@@ -15,9 +15,9 @@ import { fileURLToPath } from 'node:url';
 import { setTimeout as delay } from 'node:timers/promises';
 
 const ROOT_DIR = resolve(fileURLToPath(new URL('../..', import.meta.url)));
-const POCKETBASE_EXE = join(ROOT_DIR, 'app', 'pocketbase.exe');
+export const POCKETBASE_EXE = join(ROOT_DIR, 'app', 'pocketbase.exe');
 const APP_HOOKS_DIR = join(ROOT_DIR, 'app', 'pb_hooks');
-const APP_MIGRATIONS_DIR = join(ROOT_DIR, 'app', 'pb_migrations');
+export const APP_MIGRATIONS_DIR = join(ROOT_DIR, 'app', 'pb_migrations');
 // Test-only hooks (OF-15), copied on top of app/pb_hooks when the folder exists.
 const FIXTURE_HOOKS_DIR = join(ROOT_DIR, 'tests', 'fixtures', 'pb_hooks');
 const TASKKILL_EXE = join(process.env.SystemRoot ?? 'C:\\Windows', 'System32', 'taskkill.exe');
@@ -37,11 +37,7 @@ const EXIT_SIGNALS = ['SIGINT', 'SIGTERM', 'SIGBREAK', 'SIGHUP'];
  * @returns {Promise<{ url: string, email: string, password: string, stop: () => Promise<void> }>}
  */
 export async function startPocketBase() {
-	if (!existsSync(POCKETBASE_EXE)) {
-		throw new Error(
-			'app/pocketbase.exe is missing. Run .\\scripts\\fetch-pocketbase.ps1 first.'
-		);
-	}
+	assertExecutable();
 
 	const state = {
 		baseDir: await mkdtemp(join(tmpdir(), TEMP_PREFIX)),
@@ -101,6 +97,64 @@ export async function startPocketBase() {
 	}
 }
 
+/**
+ * Runs `fn` with a fresh, empty data folder for one-shot commands such as `migrate`
+ * (never `serve`). The folder uses the byl-test- prefix and is removed afterwards, also on
+ * Ctrl+C or process exit.
+ * @template T
+ * @param {(dirs: { dataDir: string, hooksDir: string, args: string[] }) => Promise<T>} fn
+ *   `args` holds --dir, --hooksDir (empty folder) and --migrationsDir (app/pb_migrations).
+ * @returns {Promise<T>}
+ */
+export async function withTempDataDir(fn) {
+	assertExecutable();
+	const state = {
+		baseDir: await mkdtemp(join(tmpdir(), TEMP_PREFIX)),
+		child: null,
+		done: false
+	};
+	const guard = installExitGuard(state);
+	let result;
+	try {
+		const dataDir = join(state.baseDir, 'pb_data');
+		const hooksDir = join(state.baseDir, 'pb_hooks');
+		await mkdir(dataDir);
+		await mkdir(hooksDir);
+		const args = [
+			`--dir=${dataDir}`,
+			`--hooksDir=${hooksDir}`,
+			`--migrationsDir=${APP_MIGRATIONS_DIR}`,
+			'--automigrate=false'
+		];
+		result = await fn({ dataDir, hooksDir, args });
+	} finally {
+		await stop(state, guard);
+	}
+	return result;
+}
+
+/**
+ * Runs a one-shot pocketbase.exe command and collects its output.
+ * @param {string[]} args
+ * @param {{ input?: string }} [options] text written to stdin (e.g. "y\n" for `migrate down`)
+ * @returns {Promise<{ code: number | null, output: string }>}
+ */
+export function runPocketBase(args, options = {}) {
+	if (args.includes('serve')) {
+		throw new Error('runPocketBase must not start serve; use startPocketBase().');
+	}
+	if (!args.some((arg) => arg.startsWith('--dir='))) {
+		throw new Error('runPocketBase needs an explicit --dir so app/pb_data is never touched.');
+	}
+	return runToCompletion(args, options.input);
+}
+
+function assertExecutable() {
+	if (!existsSync(POCKETBASE_EXE)) {
+		throw new Error('app/pocketbase.exe is missing. Run .\\scripts\\fetch-pocketbase.ps1 first.');
+	}
+}
+
 function createCredentials() {
 	return {
 		email: `test-${randomBytes(12).toString('hex')}@example.com`,
@@ -117,12 +171,13 @@ function appendOutput(buffer, chunk) {
 	return next.length > OUTPUT_LIMIT ? next.slice(-OUTPUT_LIMIT) : next;
 }
 
-function runToCompletion(args) {
+function runToCompletion(args, input) {
 	return new Promise((resolvePromise, reject) => {
 		const child = spawn(POCKETBASE_EXE, args, {
 			windowsHide: true,
-			stdio: ['ignore', 'pipe', 'pipe']
+			stdio: [input === undefined ? 'ignore' : 'pipe', 'pipe', 'pipe']
 		});
+		if (input !== undefined) child.stdin.end(input);
 		let output = '';
 		child.stdout.on('data', (chunk) => (output = appendOutput(output, chunk)));
 		child.stderr.on('data', (chunk) => (output = appendOutput(output, chunk)));
