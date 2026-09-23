@@ -151,7 +151,24 @@ Erledigte Tickets treten in der Liste optisch zurück. Schriften: Inter für die
 - **Nicht umsetzen:** Epics, Sprints, konfigurierbare Workflows, generischer Regel-Editor, Zeiterfassung, Cloud-Hosting, Offline-Modus, externe Integrationen.
 - Keine Features außerhalb des Scopes, keine spekulativen Abstraktionen. Abweichungen vorher begründen und beim Nutzer anfragen.
 
-## 11. Arbeitsweise
+## 11. Regeln für Agenten und Automatisierung auf dem Entwicklungsrechner
+
+1. **Python-Verbot:** `python`, `python3` oder `py` aufrufen ist untersagt (öffnet auf Windows den Microsoft Store). JSON wird stattdessen mit `node -e` oder PowerShell `ConvertFrom-Json` geparst. Andere Skriptaufgaben nutzen node.js oder PowerShell.
+
+2. **PocketBase-Sicherheit:** PocketBase darf nicht mit `serve` in einem Datenordner ohne Superuser gestartet werden (sonst öffnet sich der Browser mit dem Installer). Tests und Spikes, die einen laufenden Server brauchen, erstellen vorab einen Wegwerf-Superuser in einem Wegwerf-Datenordner:
+   ```powershell
+   $tempDir = (New-Item -Type Directory -Force "$env:TEMP\td-spike-test").FullName
+   & ./app/pocketbase.exe superuser upsert --dir="$tempDir" "test@local" "testpwd123" 2>$null
+   # Server starten und testen
+   # Danach: garantiert beenden (try/finally) und $tempDir löschen
+   ```
+   Zugangsdaten werden zur Laufzeit erzeugt und niemals ins Repo geschrieben.
+
+3. **Keine Autostart-Skripte und Hintergrundprozesse:** Nie `start.bat`, `start-hidden.vbs` oder Autostart-Skripte ausführen; keinen Dev-Server oder Browser-Fenster öffnen. Jeder gestartete PocketBase-Server oder andere Hintergrundprozess wird vor Ende der Aufgabe beendet (try/finally oder afterAll); der Temp-Datenordner wird gelöscht.
+
+4. **Nur eine Claude-Session pro Repo:** Nicht mehrere schreibende Agenten in `main` parallel ausführen. Konflikte abfangen und eskalieren.
+
+## 12. Arbeitsweise
 
 - Etappen: E0 Gerüst · E1 Datenmodell/Hooks/Auth · E2 Liste/Detail/CRUD/Kommentare/Realtime · E3 Projekte/Tags/Filter/Suche · E4 Wiederkehrende Aufgaben · E5 Schnellerfassung/Theme/Feinschliff/Doku.
 - Nach jeder Etappe: Zusammenfassung, Testanleitung, Entscheidungen/offene Punkte – dann auf Freigabe warten.
