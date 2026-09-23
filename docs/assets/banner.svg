@@ -1,41 +1,54 @@
-<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<?xml version="1.0" encoding="UTF-8"?>
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 320" width="1280" height="320">
   <defs>
-    <style>
-      .banner-bg { fill: #1a3a52; }
-      .banner-title { font-family: system-ui, -apple-system, sans-serif; font-size: 72px; font-weight: 700; fill: #ffffff; }
-      .banner-subtitle { font-family: system-ui, -apple-system, sans-serif; font-size: 20px; font-weight: 400; fill: #ffffff; opacity: 0.9; }
-      .column-stroke { stroke: #07838f; stroke-width: 2; fill: none; }
-      .card-bg { fill: #07838f; opacity: 0.2; }
-    </style>
+    <linearGradient id="bgGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#0E1517;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#152023;stop-opacity:1" />
+    </linearGradient>
   </defs>
 
   <!-- Background -->
-  <rect class="banner-bg" width="1280" height="320"/>
+  <rect width="1280" height="320" fill="url(#bgGradient)"/>
 
-  <!-- Board illustration (three columns) on the right -->
-  <g transform="translate(950, 80)">
-    <!-- Column 1 -->
-    <rect class="column-stroke" x="0" y="0" width="70" height="160" rx="4"/>
-    <rect class="card-bg" x="8" y="12" width="54" height="28" rx="2"/>
-    <rect class="card-bg" x="8" y="48" width="54" height="28" rx="2"/>
-    <rect class="card-bg" x="8" y="84" width="54" height="28" rx="2"/>
-    <rect class="card-bg" x="8" y="120" width="54" height="28" rx="2"/>
+  <!-- Decorative motif: Ticket rows on the right -->
+  <g transform="translate(1050, 60)">
+    <!-- Ticket row 1 -->
+    <g transform="translate(0, 0)">
+      <rect x="0" y="0" width="180" height="40" rx="6" fill="none" stroke="#07838F" stroke-width="2" opacity="0.8"/>
+      <rect x="8" y="8" width="12" height="24" rx="3" fill="#07838F" opacity="0.7"/>
+      <text x="28" y="28" font-family="'JetBrains Mono', Consolas, monospace" font-size="12" fill="#4BB8C2" font-weight="500">TASK-42</text>
+      <circle cx="160" cy="20" r="8" fill="#DDF0F2" opacity="0.6"/>
+    </g>
 
-    <!-- Column 2 -->
-    <rect class="column-stroke" x="90" y="0" width="70" height="160" rx="4"/>
-    <rect class="card-bg" x="98" y="12" width="54" height="28" rx="2"/>
-    <rect class="card-bg" x="98" y="48" width="54" height="28" rx="2"/>
-    <rect class="card-bg" x="98" y="84" width="54" height="28" rx="2"/>
+    <!-- Ticket row 2 -->
+    <g transform="translate(0, 50)">
+      <rect x="0" y="0" width="180" height="40" rx="6" fill="none" stroke="#07838F" stroke-width="2" opacity="0.6"/>
+      <rect x="8" y="8" width="12" height="24" rx="3" fill="#07838F" opacity="0.5"/>
+      <text x="28" y="28" font-family="'JetBrains Mono', Consolas, monospace" font-size="12" fill="#4BB8C2" opacity="0.8" font-weight="500">PROJ-18</text>
+      <rect x="145" y="14" width="30" height="12" rx="3" fill="#FBF0DC" opacity="0.5"/>
+      <text x="152" y="23" font-family="Inter, 'Segoe UI', system-ui, sans-serif" font-size="9" fill="#7A4E08" opacity="0.7">Wartet</text>
+    </g>
 
-    <!-- Column 3 -->
-    <rect class="column-stroke" x="180" y="0" width="70" height="160" rx="4"/>
-    <rect class="card-bg" x="188" y="12" width="54" height="28" rx="2"/>
-    <rect class="card-bg" x="188" y="48" width="54" height="28" rx="2"/>
+    <!-- Ticket row 3 -->
+    <g transform="translate(0, 100)">
+      <rect x="0" y="0" width="180" height="40" rx="6" fill="none" stroke="#07838F" stroke-width="2" opacity="0.4"/>
+      <rect x="8" y="8" width="12" height="24" rx="3" fill="#07838F" opacity="0.3"/>
+      <text x="28" y="28" font-family="'JetBrains Mono', Consolas, monospace" font-size="12" fill="#4BB8C2" opacity="0.6" font-weight="500">TASK-41</text>
+      <circle cx="160" cy="20" r="9" fill="#ECEFF0" opacity="0.4" stroke="#4A585E" stroke-width="1.5"/>
+      <text x="155" y="24" font-family="Arial, sans-serif" font-size="12" fill="#4A585E" opacity="0.6" font-weight="bold">✓</text>
+    </g>
   </g>
 
-  <!-- Text content on the left -->
-  <text class="banner-title" x="60" y="100">becauseyoulovejira</text>
-  <text class="banner-subtitle" x="60" y="150">Eine To-do-Liste im Jira-Stil – weil du Jira ja so liebst</text>
-  <text class="banner-subtitle" x="60" y="180" style="font-size: 14px; opacity: 0.7;">Privates, portables Ticket-Dashboard für Windows</text>
+  <!-- Main title -->
+  <text x="640" y="130" font-family="Inter, 'Segoe UI', system-ui, sans-serif" font-size="72" font-weight="700" text-anchor="middle" fill="#E3ECEE" letter-spacing="-1">
+    becauseyoulovejira
+  </text>
+
+  <!-- Subtitle -->
+  <text x="640" y="200" font-family="Inter, 'Segoe UI', system-ui, sans-serif" font-size="24" text-anchor="middle" fill="#8DA1A6" font-weight="400" letter-spacing="0.5">
+    Privates Ticket-Dashboard · lokal · portabel
+  </text>
+
+  <!-- Accent line -->
+  <line x1="420" y1="220" x2="860" y2="220" stroke="#07838F" stroke-width="2" opacity="0.5"/>
 </svg>
