@@ -45,8 +45,8 @@
   </text>
 
   <!-- Subtitle -->
-  <text x="640" y="200" font-family="Inter, 'Segoe UI', system-ui, sans-serif" font-size="24" text-anchor="middle" fill="#8DA1A6" font-weight="400" letter-spacing="0.5">
-    Privates Ticket-Dashboard · lokal · portabel
+  <text x="640" y="200" font-family="Inter, 'Segoe UI', system-ui, sans-serif" font-size="18" text-anchor="middle" fill="#8DA1A6" font-weight="400" letter-spacing="0.5">
+    A lightweight, local Jira-style task &amp; to-do list
   </text>
 
   <!-- Accent line -->

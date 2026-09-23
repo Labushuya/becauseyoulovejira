@@ -10,7 +10,7 @@
 [![SvelteKit](https://img.shields.io/badge/SvelteKit-2-FF3E00?style=flat-square&logo=svelte&logoColor=white)](https://kit.svelte.dev)
 [![TypeScript](https://img.shields.io/badge/TypeScript-strict-3178C6?style=flat-square&logo=typescript&logoColor=white)](https://www.typescriptlang.org)
 [![Windows](https://img.shields.io/badge/Windows-10-0078D4?style=flat-square&logo=windows&logoColor=white)](https://www.microsoft.com/windows)
-[![Status](https://img.shields.io/badge/Status-in%20Development-yellow?style=flat-square)](CLAUDE.md)
+[![Status](https://img.shields.io/badge/Status-E0%20Scaffolding-5B6B6F?style=flat-square)](#roadmap)
 
 </div>
 
@@ -18,11 +18,11 @@
 
 ## Was ist becauseyoulovejira?
 
-Privates, lokal laufendes Ticket-Dashboard für Windows 10, genutzt im Desktop-Browser (Chrome, Firefox, Opera GX). Linear-/Jira-artig Ticket-Handling ohne Prozesslast. Die komplette Installation ist ein einzelner Ordner (`app/`): Start per Doppelklick, Sicherung und Umzug per Ordnerkopie.
+Ein privates, lokal laufendes Ticket-Dashboard für Windows 10 – Ticket-Handling im Stil von Linear oder Jira, ohne deren Prozesslast. Bedient wird es im Desktop-Browser (Chrome, Firefox, Opera GX).
 
-- **Lokal:** Keine Cloud, alles auf deinem Windows-Rechner
-- **Portabel:** Ein Ordner – kopieren, sichern, umziehen. Keine Installation nötig
-- **Desktop-first:** Browser-UI, optimiert für Desktop, auf schmalen Bildschirmen benutzbar
+- **Lokal:** Keine Cloud. Der Server lauscht ausschließlich auf `127.0.0.1`.
+- **Portabel:** Die komplette Installation ist der Ordner `app/` – Start per Doppelklick, Sicherung und Umzug per Ordnerkopie.
+- **Ohne Internet lauffähig:** Keine externen CDNs, Schriften werden lokal ausgeliefert.
 
 ---
 
@@ -83,44 +83,28 @@ becauseyoulovejira/
 
 ---
 
-## Quickstart für Entwickler
+## Entwicklung
 
-### Voraussetzungen
-
-- **Node.js** ≥ 24
-- **PowerShell** 5.0+ (für Skripte)
-
-### 1. PocketBase herunterladen
+**Voraussetzungen:** Windows 10, Node.js ≥ 24, PowerShell 5.1+
 
 ```powershell
+# 1. PocketBase laden (gepinnte Version, SHA256-geprüft)
 .\scripts\fetch-pocketbase.ps1
-```
 
-Lädt die gepinnte Version (`0.40.4`) mit SHA256-Prüfung.
-
-### 2. Frontend bauen
-
-```powershell
+# 2. Abhängigkeiten installieren, prüfen, testen und Frontend bauen
 .\scripts\build.ps1
-```
 
-Kompiliert Svelte + TypeScript → `app/pb_public/`.
-
-### 3. Starten
-
-```powershell
+# 3. Starten
 .\app\start.bat
 ```
 
-- Startet PocketBase auf `127.0.0.1:8090`
-- Öffnet den Standard-Browser auf der App-URL
-- Admin-UI unter `/admin`
-
-### 4. Tests
+Einzelne Qualitäts-Gates:
 
 ```powershell
-npm run check    # TypeScript + Linting
-npm run test     # Vitest
+npm run check   # svelte-check / TypeScript
+npm run lint    # ESLint + Prettier
+npm test        # Vitest
+npm run build   # Frontend-Build nach app/pb_public
 ```
 
 ---
@@ -164,9 +148,17 @@ Nach jeder Etappe: Zusammenfassung, Testanleitung, Entscheidungen.
 
 ---
 
+## Mögliche Erweiterungen
+
+- **Zugriff von mehreren Geräten** (z. B. über Heimnetz/Tailscale) – nicht Teil des Kerns
+
+Die obige Liste zukünftiger Features beschränkt sich auf den lokalen Single-Device-Ansatz. Multi-Device-Synchronisierung würde Backend-Infrastruktur (Cloud oder Heimnetz-Broker) erfordern und bleibt optional.
+
+---
+
 ## Lizenz
 
-[MIT](LICENSE) © 2024 [Labushuya](https://github.com/Labushuya)
+[MIT](LICENSE) © 2026 [Labushuya](https://github.com/Labushuya)
 
 ---
 
