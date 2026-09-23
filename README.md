@@ -37,7 +37,15 @@ Privates, lokal laufendes Ticket-Dashboard für Windows 10, genutzt im Desktop-B
 | 📅 Wiederkehrende Aufgaben (Kalender- und Nach-Completion-Regeln) | 🚧 E4 |
 | ⌨️ Schnellerfassung (Taste `c`, Strg+K; Kurzsyntax `Titel @CODE !Priorität`) | 🚧 E5 |
 | 🎨 Hell-/Dunkel-Theme (Systemeinstellung, manueller Umschalter) | 🚧 E5 |
-| 👥 Haushalt-Sharing (separat; MVP nur privat) | 🚧 Stufe 2 (Nachfrage) |
+
+### Später (nach Freigabe)
+
+- 👥 Haushalte / gemeinsame Dashboards
+- 🎯 Sub-Tickets und Fortschrittsanzeige
+- 🔗 Abhängigkeiten mit Entsperr-Automation
+- 📊 Board-Ansicht (Kanban)
+- 🔔 Browser-Benachrichtigungen
+- 📎 Anhänge (Bilder, Dateien)
 
 ---
 
@@ -49,7 +57,7 @@ Privates, lokal laufendes Ticket-Dashboard für Windows 10, genutzt im Desktop-B
 | **Frontend** | [SvelteKit 2](https://kit.svelte.dev) + [Svelte 5](https://svelte.dev) + [TypeScript](https://www.typescriptlang.org) | Geringster JS-Footprint, SPA-Modus, native Reaktivität (Runes) |
 | **Runtime** | [Node.js](https://nodejs.org) (nur Dev) | Build-Werkzeug, nicht für Betrieb erforderlich |
 | **Tests** | [Vitest](https://vitest.dev) | Hooks-Integration, JS-Geschäftslogik |
-| **Styling** | CSS-Custom-Properties + System-Font-Stack | Offline-Betrieb, minimalistisch |
+| **Styling** | CSS-Custom-Properties + System-Font-Stack | Läuft ohne Internetverbindung, keine externen CDNs; minimalistisch |
 | **Datenbank** | [SQLite](https://www.sqlite.org) (PocketBase intern) | Einzeldatei, keine Separate Datenbank nötig |
 
 ---
@@ -79,7 +87,7 @@ becauseyoulovejira/
 
 ### Voraussetzungen
 
-- **Node.js** ≥ 24 (portabel unter `H:\DEV\tools\node` auf dieser Machine)
+- **Node.js** ≥ 24
 - **PowerShell** 5.0+ (für Skripte)
 
 ### 1. PocketBase herunterladen
@@ -125,6 +133,9 @@ npm run test     # Vitest
 # Starten (Browser öffnet sich automatisch)
 .\app\start.bat
 
+# Stoppen
+.\app\stop.bat
+
 # Autostart ein/aus
 .\app\autostart-an.bat
 .\app\autostart-aus.bat
@@ -134,7 +145,9 @@ npm run test     # Vitest
 
 ### Backup
 
-PocketBase bietet eine eingebaute Backup-Funktion über das Admin-Dashboard unter `/admin` → Settings. Verwende diese zum Sichern und zum Umzug auf einen anderen Rechner. Alternativ: `app/`-Ordner mit Windows-Explorer kopieren (einfacher).
+**Empfohlene Methode:** PocketBase bietet eine eingebaute Backup-Funktion über das Admin-Dashboard unter `http://127.0.0.1:8090/_/` → Settings → Backups. Verwende diese zum Sichern und zum Umzug auf einen anderen Rechner.
+
+**Alternative (Ordner kopieren):** `app/`-Ordner mit Windows-Explorer kopieren. **Wichtig:** Stoppe PocketBase zuerst mit `.\app\stop.bat`, da SQLite-Dateien während des Betriebs inkonsistent sein können.
 
 ---
 
@@ -159,6 +172,6 @@ Nach jeder Etappe: Zusammenfassung, Testanleitung, Entscheidungen.
 
 <div align="center">
 
-*Privat · Lokal · Portabel · Offline*
+*Privat · Lokal · Portabel*
 
 </div>
