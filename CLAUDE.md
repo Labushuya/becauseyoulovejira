@@ -157,10 +157,26 @@ Erledigte Tickets treten in der Liste optisch zurück. Schriften: Inter für die
 
 2. **PocketBase-Sicherheit:** PocketBase darf nicht mit `serve` in einem Datenordner ohne Superuser gestartet werden (sonst öffnet sich der Browser mit dem Installer). Tests und Spikes, die einen laufenden Server brauchen, erstellen vorab einen Wegwerf-Superuser in einem Wegwerf-Datenordner:
    ```powershell
-   $tempDir = (New-Item -Type Directory -Force "$env:TEMP\td-spike-test").FullName
-   & ./app/pocketbase.exe superuser upsert --dir="$tempDir" "test@local" "testpwd123" 2>$null
-   # Server starten und testen
-   # Danach: garantiert beenden (try/finally) und $tempDir löschen
+   $tempDir = Join-Path $env:TEMP ("td-spike-" + [guid]::NewGuid().ToString('N'))
+   $email   = "spike-$([guid]::NewGuid().ToString('N'))@example.com"
+   $bytes   = New-Object byte[] 24
+   $rng     = [System.Security.Cryptography.RandomNumberGenerator]::Create()
+   $rng.GetBytes($bytes); $rng.Dispose()
+   $pass    = [Convert]::ToBase64String($bytes)
+   $server  = $null
+   try {
+       New-Item -ItemType Directory -Path $tempDir | Out-Null
+       & ./app/pocketbase.exe superuser upsert --dir="$tempDir" $email $pass
+       if ($LASTEXITCODE -ne 0) { throw "superuser upsert failed ($LASTEXITCODE)" }
+       $server = Start-Process -FilePath ./app/pocketbase.exe -PassThru -NoNewWindow `
+           -ArgumentList 'serve', "--dir=$tempDir", '--http=127.0.0.1:8099'
+       # Tests gegen http://127.0.0.1:8099 ausführen (Login mit $email / $pass)
+   }
+   finally {
+       if ($server -and -not $server.HasExited) { Stop-Process -Id $server.Id -Force }
+       if ($server) { $server.WaitForExit() }
+       Remove-Item -Recurse -Force -ErrorAction SilentlyContinue $tempDir
+   }
    ```
    Zugangsdaten werden zur Laufzeit erzeugt und niemals ins Repo geschrieben.
 
