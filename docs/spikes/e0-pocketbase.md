@@ -33,11 +33,11 @@ pocketbase.exe serve `
 | `--automigrate=false` | Migrations nur aus Dateien, nicht automatisch | Verhindert Drift durch Admin-UI-Änderungen |
 
 ### SPA-Fallback
-**Status:** nicht verifiziert (geplant für E0-Gates)
+**Status:** Verifiziert gegen PocketBase v0.40.4
 
-PocketBase 0.40.4 muss mit einem Config-Flag oder via Hook so konfiguriert werden, dass 404-Anfragen zur SvelteKit SPA auf `index.html` fallen. Dies ist entscheidend, damit z. B. `/tasks` (Client-Route) nicht als 404 vom Server endet.
+Das Flag `--indexFallback` (Boolean, default `true`) konfiguriert den Fallback für 404-Anfragen zur SPA-Indexdatei. Mit der Einstellung werden 404-Anfragen auf fehlende statische Pfade automatisch auf `index.html` weitergeleitet, was für SPA-Routing entscheidend ist (z. B. `/tasks` wird nicht als 404 behandelt, sondern an die SPA übergeben).
 
-**Annahme:** Das Flag `--indexFallback` ist verfügbar und wird in `start.bat` ergänzt, falls Verifizierung in Phase 3 es bestätigt.
+**Umsetzung:** Flag wird in `start-hidden.vbs` via `--indexFallback` (boolean, ohne Wertangabe) gesetzt. Da der Default bereits `true` ist, ist die explizite Angabe optional, aber empfohlen zur Klarheit.
 
 ## Hooks und Migrationen
 
@@ -46,13 +46,13 @@ PocketBase 0.40.4 muss mit einem Config-Flag oder via Hook so konfiguriert werde
 - **Sprache:** JavaScript (CommonJS, keine Abhängigkeiten vom Node.js-Umfeld)
 - **Ort:** `app/pb_hooks/*.pb.js` und `app/pb_hooks/lib/*.js`
 - **Laden:** Automatisch von PocketBase geladen, wenn Server startet
-- **Struktur:** `onBootstrap()` für Initalisierung, `routerAdd()` für Custom-Routen
+- **Struktur:** `onBootstrap()` für Initalisierung (top-level, muss `e.next()` aufrufen), `routerAdd()` für Custom-Routen
 
 Hooks sind **reiner JavaScript** – keine npm-Dependencies. Sie laufen auf der PocketBase-Go-Engine (Goja-VM).
 
-**Nicht verifiziert:**
-- Seiteneigenschaften des `e.next()` in `onBootstrap()`-Hooks
-- Verfügbarkeit von `require()` unter Windows in Hooks
+**Verifiziert:**
+- `onBootstrap((e) => { e.next(); ... })` ist in JSVM v0.40.4 verfügbar und muss top-level registriert sein; nach `e.next()` können DB-Abfragen per `e.app` durchgeführt werden (zuverlässig für Recurrence-Catch-up beim Boot).
+- `require()` unter Windows funktioniert mit Template-Literal-Syntax: `require(\`${__hooks}/lib/<name>.js\`)` laden Module innerhalb des Handlers (Handler laufen in isolierten Scopes, daher `require()` immer innerhalb des Handlers, nicht top-level).
 
 ### Migrationen (PocketBase JS)
 
@@ -76,10 +76,10 @@ Hooks sind **reiner JavaScript** – keine npm-Dependencies. Sie laufen auf der 
 
 ## Offene Punkte für E0-Gates
 
-1. **SPA-Fallback:** Verifiziere, ob `--indexFallback` Flag in PocketBase 0.40.4 existiert, oder ob es ein Hook-basierter Fallback sein muss
+1. **SPA-Fallback:** ✓ Verifiziert – `--indexFallback` Boolean-Flag existiert, default `true`
 2. **TypeScript-Version:** Prüfe `svelte-check` gegen aktuelste TypeScript, fallback auf stable, wenn nötig
-3. **Windows require():** Falls Hooks `require()` benötigen, verifiziere Verfügbarkeit (annahme: funktioniert)
-4. **Boot-Hook e.next():** Teste `onBootstrap()` mit `e.next()` Aufruf
+3. **Windows require():** ✓ Verifiziert – Template-Literal-Syntax `require(\`${__hooks}/...\`)` funktioniert auf Windows
+4. **Boot-Hook e.next():** ✓ Verifiziert – `onBootstrap()` mit `e.next()` top-level registrierbar, DB-Zugriff per `e.app` möglich
 
 ## Startmechanismus (unsichtbar)
 
