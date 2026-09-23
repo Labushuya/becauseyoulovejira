@@ -6,7 +6,21 @@
 var ticketKey = require(__hooks + '/lib/ticket-key.js');
 var counters = require(__hooks + '/lib/counters.js');
 var rules = require(__hooks + '/lib/ticket-rules.js');
+var history = require(__hooks + '/lib/history.js');
 var errors = require(__hooks + '/lib/errors.js');
+
+// Transient record key for the acting user (E1 plan OF-4, variant A). Field names cannot contain
+// "@", PocketBase neither stores nor exports unknown keys, and the Record API does not load
+// unknown keys from the request body, so clients cannot set it.
+var ACTOR_KEY = '@actor';
+
+var SCOPE_MISMATCH = 'Verknüpfter Datensatz nicht gefunden oder in einem anderen Bereich.';
+
+var PARENT_MESSAGES = {
+  validation_parent_self: 'Ein Ticket kann nicht sein eigenes Eltern-Ticket sein.',
+  validation_parent_nested: 'Das Eltern-Ticket ist selbst ein Unter-Ticket (nur eine Ebene erlaubt).',
+  validation_parent_has_children: 'Ein Ticket mit Unter-Tickets kann kein Eltern-Ticket bekommen.'
+};
 
 function scopeOfRecord(record) {
   return ticketKey.scopeOf(record.getString('owner'), record.getString('household'));
@@ -18,10 +32,32 @@ function findById(txApp, collection, id) {
   return found.length > 0 ? found[0] : null;
 }
 
-// Loads the referenced project, tags and recurrence rule and rejects references that are
-// missing or belong to another scope (E1 plan OF-3 c). Returns the project record or null.
+function hasChildren(txApp, record) {
+  if (record.id === '') {
+    return false;
+  }
+  return txApp.findRecordsByFilter('tickets', 'parent = {:id}', '', 1, 0, { id: record.id }).length > 0;
+}
+
+// Called from the request hooks: remembers the signed-in app user for the history. Superusers
+// and anonymous requests leave it empty (ticket_history.user relates to users only).
+function rememberActor(e) {
+  if (e.auth && e.auth.collection().name === 'users') {
+    e.record.set(ACTOR_KEY, e.auth.id);
+  }
+}
+
+function actorOf(record) {
+  var actor = record.get(ACTOR_KEY);
+  return actor ? String(actor) : '';
+}
+
+// Loads the referenced project, tags, recurrence rule and parent. Rejects references that are
+// missing or belong to another scope (OF-3 c) and parents that break the one-level rule.
+// Returns the project record or null.
 function checkRelations(txApp, record, scope) {
   var related = [];
+  var fields = {};
   var project = null;
 
   var projectId = record.getString('project');
@@ -42,16 +78,59 @@ function checkRelations(txApp, record, scope) {
     related.push({ field: 'recurrence', scope: rule ? scopeOfRecord(rule) : null });
   }
 
-  var violations = rules.scopeViolations(scope, related);
-  if (violations.length > 0) {
-    var message = 'Verknüpfter Datensatz nicht gefunden oder in einem anderen Bereich.';
-    var fields = {};
-    for (var j = 0; j < violations.length; j++) {
-      fields[violations[j]] = { code: 'validation_scope_mismatch', message: message };
+  var parentId = record.getString('parent');
+  if (parentId !== '') {
+    var parent = parentId === record.id ? null : findById(txApp, 'tickets', parentId);
+    var parentCode = rules.parentViolation({
+      id: record.id,
+      parent: parentId,
+      parentExists: parent !== null,
+      parentParent: parent ? parent.getString('parent') : '',
+      hasChildren: hasChildren(txApp, record)
+    });
+    if (parentCode !== '') {
+      fields.parent = { code: parentCode, message: PARENT_MESSAGES[parentCode] };
+    } else {
+      related.push({ field: 'parent', scope: parent ? parent.getString('scope') : null });
     }
-    throw errors.validationFailure(message, fields);
+  }
+
+  var violations = rules.scopeViolations(scope, related);
+  for (var j = 0; j < violations.length; j++) {
+    fields[violations[j]] = { code: 'validation_scope_mismatch', message: SCOPE_MISMATCH };
+  }
+  var failed = Object.keys(fields);
+  if (failed.length > 0) {
+    throw errors.validationFailure(fields[failed[0]].message, fields);
   }
   return project;
+}
+
+// Due dates are calendar dates only (CLAUDE.md section 5).
+function checkDue(record) {
+  if (!rules.isCalendarDate(record.getString('due'))) {
+    throw errors.fieldFailure(
+      'due',
+      'validation_calendar_date',
+      'Die Fälligkeit muss ein reines Datum sein (YYYY-MM-DD).'
+    );
+  }
+}
+
+// completed_at follows the status; client values are overwritten.
+function applyCompletedAt(record, original) {
+  var action = rules.completedAtAction(
+    original === null,
+    original ? original.getString('status') : '',
+    record.getString('status')
+  );
+  if (action === 'set') {
+    record.set('completed_at', new Date().toISOString());
+  } else if (action === 'keep') {
+    record.set('completed_at', original.getString('completed_at'));
+  } else {
+    record.set('completed_at', '');
+  }
 }
 
 // Draws the next number of the scope/project counter and sets number and key.
@@ -62,8 +141,40 @@ function assignKey(txApp, record, scope, project) {
   record.set('key', ticketKey.formatKey(code, number));
 }
 
-// onRecordCreate: scope, defaults, relation scopes and a fresh key. Client values for scope,
-// number and key are always overwritten.
+// Plain values of the tracked fields for lib/history.js (DateTime and slices become strings and
+// arrays).
+function historyValues(record) {
+  var values = {};
+  for (var i = 0; i < history.TRACKED_FIELDS.length; i++) {
+    var field = history.TRACKED_FIELDS[i];
+    if (field === 'blocks_parent') {
+      values[field] = record.getBool(field);
+    } else if (history.MULTI_VALUE_FIELDS.indexOf(field) !== -1) {
+      var items = record.getStringSlice(field);
+      var list = [];
+      for (var j = 0; j < items.length; j++) {
+        list.push(String(items[j]));
+      }
+      values[field] = list;
+    } else {
+      values[field] = record.getString(field);
+    }
+  }
+  return values;
+}
+
+function saveHistoryEntry(txApp, record, entry) {
+  var item = new Record(txApp.findCollectionByNameOrId('ticket_history'));
+  item.set('ticket', record.id);
+  item.set('field', entry.field);
+  item.set('old_value', entry.old_value);
+  item.set('new_value', entry.new_value);
+  item.set('user', actorOf(record));
+  txApp.save(item);
+}
+
+// onRecordCreate before e.next(): scope, defaults, guards, completed_at and a fresh key. Client
+// values for scope, number, key and completed_at are always overwritten.
 function prepareCreate(txApp, record) {
   var scope = scopeOfRecord(record);
   record.set('scope', scope);
@@ -78,18 +189,41 @@ function prepareCreate(txApp, record) {
     }
   }
 
+  checkDue(record);
   var project = checkRelations(txApp, record, scope);
+  applyCompletedAt(record, null);
   assignKey(txApp, record, scope, project);
 }
 
-// onRecordUpdate: recomputes the scope; a changed scope or project draws a new key in the target
-// counter, otherwise number and key keep their stored values whatever the client sends.
+// onRecordCreate after e.next(): the creation itself is recorded with the key.
+function recordCreation(txApp, record) {
+  saveHistoryEntry(txApp, record, {
+    field: 'created',
+    old_value: '',
+    new_value: record.getString('key')
+  });
+}
+
+// onRecordUpdate before e.next(): recomputes the scope; a changed scope or project draws a new
+// key in the target counter, otherwise number and key keep their stored values whatever the
+// client sends. A ticket with sub-tickets keeps its scope. Returns the tracked values before the
+// change for recordChanges().
 function prepareUpdate(txApp, record) {
   var original = record.original();
   var scope = scopeOfRecord(record);
   record.set('scope', scope);
 
+  if (scope !== original.getString('scope') && hasChildren(txApp, record)) {
+    throw errors.fieldFailure(
+      'household',
+      'validation_ticket_has_children',
+      'Ein Ticket mit Unter-Tickets kann den Bereich nicht wechseln.'
+    );
+  }
+  checkDue(record);
   var project = checkRelations(txApp, record, scope);
+  applyCompletedAt(record, original);
+
   var before = {
     key: original.getString('key'),
     scope: original.getString('scope'),
@@ -101,10 +235,23 @@ function prepareUpdate(txApp, record) {
     record.set('number', original.getInt('number'));
     record.set('key', before.key);
   }
+  return historyValues(original);
+}
+
+// onRecordUpdate after e.next(): one history entry per changed tracked field (OF-12).
+function recordChanges(txApp, record, before) {
+  var changes = history.diff(before, historyValues(record));
+  for (var i = 0; i < changes.length; i++) {
+    saveHistoryEntry(txApp, record, changes[i]);
+  }
 }
 
 module.exports = {
+  ACTOR_KEY: ACTOR_KEY,
   scopeOfRecord: scopeOfRecord,
+  rememberActor: rememberActor,
   prepareCreate: prepareCreate,
-  prepareUpdate: prepareUpdate
+  recordCreation: recordCreation,
+  prepareUpdate: prepareUpdate,
+  recordChanges: recordChanges
 };

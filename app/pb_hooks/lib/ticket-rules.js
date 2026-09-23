@@ -45,10 +45,56 @@ function scopeViolations(scope, related) {
   return fields;
 }
 
+// completed_at (CLAUDE.md section 5): 'set' when the ticket becomes done, 'keep' while it stays
+// done, 'clear' otherwise. Client values are never taken over.
+function completedAtAction(isNew, oldStatus, newStatus) {
+  if (newStatus !== 'done') {
+    return 'clear';
+  }
+  return !isNew && oldStatus === 'done' ? 'keep' : 'set';
+}
+
+// Due dates are pure calendar dates, stored as "YYYY-MM-DD 00:00:00.000Z" (CLAUDE.md section 5).
+var CALENDAR_DATE_PATTERN = /^\d{4}-\d{2}-\d{2} 00:00:00\.000Z$/;
+
+function isCalendarDate(value) {
+  return value === '' || (typeof value === 'string' && CALENDAR_DATE_PATTERN.test(value));
+}
+
+// Parent guard (stage 2 data model, one level only). `input`:
+//   id            the ticket's id ('' when not known yet)
+//   parent        the parent id ('' when none)
+//   parentExists  whether the parent was found
+//   parentParent  the parent's own parent id
+//   hasChildren   whether other tickets use this ticket as parent
+// Returns an error code or '' when the parent is allowed. Scope equality is checked separately.
+function parentViolation(input) {
+  if (input.parent === '') {
+    return '';
+  }
+  if (input.id !== '' && input.parent === input.id) {
+    return 'validation_parent_self';
+  }
+  if (!input.parentExists) {
+    return '';
+  }
+  if (input.parentParent !== '') {
+    return 'validation_parent_nested';
+  }
+  if (input.hasChildren) {
+    return 'validation_parent_has_children';
+  }
+  return '';
+}
+
 module.exports = {
   DEFAULT_STATUS: DEFAULT_STATUS,
   DEFAULT_PRIORITY: DEFAULT_PRIORITY,
+  CALENDAR_DATE_PATTERN: CALENDAR_DATE_PATTERN,
   createDefaults: createDefaults,
   needsNewKey: needsNewKey,
-  scopeViolations: scopeViolations
+  scopeViolations: scopeViolations,
+  completedAtAction: completedAtAction,
+  isCalendarDate: isCalendarDate,
+  parentViolation: parentViolation
 };
