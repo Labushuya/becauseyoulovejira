@@ -50,9 +50,9 @@ Das Flag `--indexFallback` (Boolean, default `true`) konfiguriert den Fallback f
 
 Hooks sind **reiner JavaScript** – keine npm-Dependencies. Sie laufen auf der PocketBase-Go-Engine (Goja-VM).
 
-**Verifiziert:**
-- `onBootstrap((e) => { e.next(); ... })` ist in JSVM v0.40.4 verfügbar und muss top-level registriert sein; nach `e.next()` können DB-Abfragen per `e.app` durchgeführt werden (zuverlässig für Recurrence-Catch-up beim Boot).
-- `require()` unter Windows funktioniert mit Template-Literal-Syntax: `require(\`${__hooks}/lib/<name>.js\`)` laden Module innerhalb des Handlers (Handler laufen in isolierten Scopes, daher `require()` immer innerhalb des Handlers, nicht top-level).
+**Verifiziert (Spike, 2026-09-23):**
+- `onBootstrap((e) => { e.next(); ... })` ist in JSVM v0.40.4 verfügbar und muss top-level registriert sein; nach `e.next()` können DB-Abfragen per `e.app` durchgeführt werden. Spike-Befund: Hook wurde erfolgreich registriert und DB-Operationen (`e.app.findAllCollections()`) funktionieren nach `e.next()`.
+- `require()` unter Windows funktioniert mit Template-Literal-Syntax: `require(\`${__hooks}/lib/<name>.js\`)` laden Module innerhalb des Handlers (Handler laufen in isolierten Scopes, daher `require()` immer innerhalb des Handlers, nicht top-level). Spike-Befund: CommonJS-Modul (`module.exports = { add: ... }`) wurde erfolgreich geladen und aufgerufen.
 
 ### Migrationen (PocketBase JS)
 
@@ -76,10 +76,10 @@ Hooks sind **reiner JavaScript** – keine npm-Dependencies. Sie laufen auf der 
 
 ## Offene Punkte für E0-Gates
 
-1. **SPA-Fallback:** ✓ Verifiziert – `--indexFallback` Boolean-Flag existiert, default `true`
+1. **SPA-Fallback:** ✓ Verifiziert (Spike, 2026-09-23) – `--indexFallback` Boolean-Flag existiert, default `true`; kein expliziter Wert nötig, Fallback zu `index.html` funktioniert
 2. **TypeScript-Version:** Prüfe `svelte-check` gegen aktuelste TypeScript, fallback auf stable, wenn nötig
-3. **Windows require():** ✓ Verifiziert – Template-Literal-Syntax `require(\`${__hooks}/...\`)` funktioniert auf Windows
-4. **Boot-Hook e.next():** ✓ Verifiziert – `onBootstrap()` mit `e.next()` top-level registrierbar, DB-Zugriff per `e.app` möglich
+3. **Windows require():** ✓ Verifiziert (Spike, 2026-09-23) – Template-Literal-Syntax `require(\`${__hooks}/...\`)` funktioniert auf Windows; CommonJS-Module werden korrekt geladen
+4. **Boot-Hook e.next():** ✓ Verifiziert (Spike, 2026-09-23) – `onBootstrap()` mit `e.next()` top-level registrierbar, DB-Zugriff per `e.app` möglich; Testroute `/spike/hello` antwortet mit HTTP 200 OK
 
 ## Startmechanismus (unsichtbar)
 
