@@ -28,7 +28,7 @@ becauseyoulovejira/
 - **Backend:** PocketBase **v0.40.4**, Windows-Binary unverändert, kein Go-Build. Datenhaltung SQLite.
   - Serverlogik ausschließlich über JS-Hooks (`app/pb_hooks`, Goja-Runtime, ES5-kompatibel, kein ESM, keine Node-APIs).
   - Schema ausschließlich über handgeschriebene JS-Migrationen (`app/pb_migrations`). Server läuft mit `--automigrate=false`; keine Schemaänderungen über das Admin-Dashboard.
-  - Bindung nur an `127.0.0.1:8090`.
+  - Bindung nur an `127.0.0.1:8090` (vorerst; Mehrgeräte geplant, siehe [ADR-0001](docs/adr/0001-betriebsmodell-lokal-mehrgeraete-spaeter.md)).
 - **Frontend:** SvelteKit 2 + Svelte 5 + TypeScript (strict), `@sveltejs/adapter-static` im SPA-Modus (`ssr = false`, `prerender = false`, `fallback: 'index.html'`), Build nach `app/pb_public`. PocketBase JS SDK für API und Realtime.
 - **Schriften:** Inter (UI) und JetBrains Mono (Ticket-Keys) lokal über `@fontsource-variable/*`. **Keine externen CDNs** – die App muss offline funktionieren.
 - **Tests:** Vitest; Hook-Integrationstests per Skript gegen eine Wegwerf-Instanz (temporäres `--dir`).

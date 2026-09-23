@@ -37,6 +37,7 @@ Ein privates, lokal laufendes Ticket-Dashboard für Windows 10 – Ticket-Handli
 | 📅 Wiederkehrende Aufgaben (Kalender- und Nach-Completion-Regeln) | 🚧 E4 |
 | ⌨️ Schnellerfassung (Taste `c`, Strg+K; Kurzsyntax `Titel @CODE !Priorität`) | 🚧 E5 |
 | 🎨 Hell-/Dunkel-Theme (Systemeinstellung, manueller Umschalter) | 🚧 E5 |
+| 🌐 Zugriff von mehreren Geräten über Tailscale (HTTPS, Server bleibt auf `127.0.0.1`) – [ADR-0001](docs/adr/0001-betriebsmodell-lokal-mehrgeraete-spaeter.md) | 🗓️ E6 |
 
 ### Später (nach Freigabe)
 
@@ -125,7 +126,7 @@ npm run build   # Frontend-Build nach app/pb_public
 .\app\autostart-aus.bat
 ```
 
-**Bindung:** `127.0.0.1:8090` (nur lokal, nicht im Netz erreichbar)
+**Bindung:** `127.0.0.1:8090` (nur lokal, nicht im Netz erreichbar – vorerst; Mehrgerätezugriff über Tailscale ist geplant, siehe [ADR-0001](docs/adr/0001-betriebsmodell-lokal-mehrgeraete-spaeter.md))
 
 ### Backup
 
@@ -143,16 +144,9 @@ npm run build   # Frontend-Build nach app/pb_public
 - [ ] **E3:** Projekte, Tags, Filter, Suche, Sortierung
 - [ ] **E4:** Wiederkehrende Aufgaben (Kalender-Regeln, RRULE-Subset)
 - [ ] **E5:** Schnellerfassung, Theme-Umschalter, Feinschliff, Doku
+- [ ] **E6:** Zugriff von mehreren Geräten über Tailscale (`tailscale serve` mit HTTPS, Proxy-Header, Superuser nur lokal) – ohne Datenmigration, siehe [ADR-0001](docs/adr/0001-betriebsmodell-lokal-mehrgeraete-spaeter.md)
 
-Nach jeder Etappe: Zusammenfassung, Testanleitung, Entscheidungen.
-
----
-
-## Mögliche Erweiterungen
-
-- **Zugriff von mehreren Geräten** (z. B. über Heimnetz/Tailscale) – nicht Teil des Kerns
-
-Die obige Liste zukünftiger Features beschränkt sich auf den lokalen Single-Device-Ansatz. Multi-Device-Synchronisierung würde Backend-Infrastruktur (Cloud oder Heimnetz-Broker) erfordern und bleibt optional.
+Nach jeder Etappe: Zusammenfassung, Testanleitung, Entscheidungen. Architekturentscheidungen stehen in [docs/adr/](docs/adr/README.md), der Umsetzungsplan für E1 in [docs/plan/e1.md](docs/plan/e1.md).
 
 ---
 
