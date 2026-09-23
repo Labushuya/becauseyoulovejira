@@ -99,6 +99,12 @@ becauseyoulovejira/
 .\app\start.bat
 ```
 
+`build.ps1` erwartet `node` (≥ 24) und `npm` im `PATH` und bricht sonst mit einem Hinweis ab. Blockiert die Execution Policy die Skripte, lassen sie sich so aufrufen:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\build.ps1
+```
+
 Einzelne Qualitäts-Gates:
 
 ```powershell
