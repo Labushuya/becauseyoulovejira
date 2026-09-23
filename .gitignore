@@ -1,0 +1,15 @@
+node_modules/
+web/.svelte-kit/
+web/build/
+app/pocketbase.exe
+app/pb_data/
+app/pb_public/
+*.log
+.env
+.env.*
+!.env.example
+coverage/
+.DS_Store
+Thumbs.db
+.tmp/
+tmp/
