@@ -18,6 +18,7 @@ import {
 	readDataDir
 } from '../support/schema.mjs';
 
+const RULES_MIGRATION = '1790200900_api_rules.js';
 const MIGRATION_FILES = readdirSync(APP_MIGRATIONS_DIR)
 	.filter((name) => name.endsWith('.js'))
 	.sort();
@@ -56,6 +57,21 @@ describe('migration rollback', () => {
 				expect(first.settings.backups).toMatchObject(EXPECTED_BACKUPS);
 				expect(first.userCount).toBe(0);
 				expect(first.superuserCount).toBe(0);
+
+				// Rolling back to before the API rules (package 4) leaves every rule null again.
+				const fromRules = MIGRATION_FILES.slice(MIGRATION_FILES.indexOf(RULES_MIGRATION));
+				expect(fromRules[0]).toBe(RULES_MIGRATION);
+				const rulesDown = await migrate(args, 'down', String(fromRules.length));
+				expect(appliedFiles(rulesDown, 'Reverted')).toEqual([...fromRules].reverse());
+				for (const collection of readDataDir(dataDir).collections) {
+					if (!(collection.name in EXPECTED_COLLECTIONS)) continue;
+					for (const rule of RULE_NAMES) {
+						expect(collection[rule], `${collection.name}.${rule} after rules down`).toBeNull();
+					}
+				}
+				const rulesUp = await migrate(args, 'up');
+				expect(appliedFiles(rulesUp, 'Applied')).toEqual(fromRules);
+				assertSchema(readDataDir(dataDir).collections);
 
 				const down = await migrate(args, 'down', String(MIGRATION_FILES.length));
 				expect(appliedFiles(down, 'Reverted')).toEqual([...MIGRATION_FILES].reverse());

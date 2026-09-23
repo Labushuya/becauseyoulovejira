@@ -28,7 +28,7 @@ const ownership = () => ({
 	household: relation('households')
 });
 
-/** Collections created by app/pb_migrations; every API rule is null in package 3. */
+/** Collections created by app/pb_migrations; API rules are listed in EXPECTED_RULES. */
 export const EXPECTED_COLLECTIONS = {
 	households: {
 		fields: { name: text({ required: true, max: 100 }), ...timestamps() },
@@ -159,6 +159,58 @@ export const EXPECTED_COLLECTIONS = {
 
 export const RULE_NAMES = ['listRule', 'viewRule', 'createRule', 'updateRule', 'deleteRule'];
 
+// API rules of package 4 (CLAUDE.md section 5, OF-2, OF-3, OF-5), written out literally so the
+// test does not reuse the construction logic of the migration.
+const AUTH = '@request.auth.id != ""';
+const OWNED =
+	`${AUTH} && (owner = @request.auth.id || (household != "" && ` +
+	'@collection.household_members.household ?= household && ' +
+	'@collection.household_members.user ?= @request.auth.id))';
+const VIA_TICKET =
+	`${AUTH} && (ticket.owner = @request.auth.id || (ticket.household != "" && ` +
+	'@collection.household_members.household ?= ticket.household && ' +
+	'@collection.household_members.user ?= @request.auth.id))';
+const BODY_HOUSEHOLD_ALLOWED =
+	'(@request.body.household:isset = false || @request.body.household = "" || (' +
+	'@collection.household_members:target.household ?= @request.body.household && ' +
+	'@collection.household_members:target.user ?= @request.auth.id))';
+const OWNED_RULES = {
+	listRule: OWNED,
+	viewRule: OWNED,
+	createRule: `${AUTH} && @request.body.owner = @request.auth.id && ${BODY_HOUSEHOLD_ALLOWED}`,
+	updateRule: `${OWNED} && @request.body.owner:changed = false && ${BODY_HOUSEHOLD_ALLOWED}`,
+	deleteRule: OWNED
+};
+const READ_ONLY = { createRule: null, updateRule: null, deleteRule: null };
+const HOUSEHOLD_MEMBER =
+	`${AUTH} && @collection.household_members.household ?= id && ` +
+	'@collection.household_members.user ?= @request.auth.id';
+
+export const EXPECTED_RULES = {
+	households: { listRule: HOUSEHOLD_MEMBER, viewRule: HOUSEHOLD_MEMBER, ...READ_ONLY },
+	household_members: {
+		listRule: 'user = @request.auth.id',
+		viewRule: 'user = @request.auth.id',
+		...READ_ONLY
+	},
+	projects: OWNED_RULES,
+	tags: OWNED_RULES,
+	recurrence_rules: OWNED_RULES,
+	tickets: OWNED_RULES,
+	comments: {
+		listRule: VIA_TICKET,
+		viewRule: VIA_TICKET,
+		createRule: `${VIA_TICKET} && @request.body.author = @request.auth.id`,
+		updateRule:
+			`${VIA_TICKET} && author = @request.auth.id && ` +
+			'@request.body.author:changed = false && @request.body.ticket:changed = false',
+		deleteRule: `${VIA_TICKET} && author = @request.auth.id`
+	},
+	ticket_history: { listRule: VIA_TICKET, viewRule: VIA_TICKET, ...READ_ONLY },
+	dependencies: { listRule: OWNED, viewRule: OWNED, ...READ_ONLY },
+	ticket_counters: { listRule: null, viewRule: null, ...READ_ONLY }
+};
+
 export const EXPECTED_USERS_RULES = {
 	listRule: 'id = @request.auth.id',
 	viewRule: 'id = @request.auth.id',
@@ -190,7 +242,7 @@ export function assertSchema(collections) {
 		expect(collection, `collection ${name}`).toBeDefined();
 		expect(collection.type, `${name}.type`).toBe('base');
 		for (const rule of RULE_NAMES) {
-			expect(collection[rule], `${name}.${rule}`).toBeNull();
+			expect(collection[rule], `${name}.${rule}`).toBe(EXPECTED_RULES[name][rule]);
 		}
 
 		const fields = collection.fields.filter((field) => !field.system);

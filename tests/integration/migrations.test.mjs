@@ -9,7 +9,7 @@ import { APP_MIGRATIONS_DIR } from '../support/pocketbase-harness.mjs';
 import { EXPECTED_BACKUPS, EXPECTED_COLLECTIONS, assertSchema } from '../support/schema.mjs';
 
 describe('schema migrations', () => {
-	it('creates every E1 collection with fields, relations, indexes and null rules', async () => {
+	it('creates every E1 collection with fields, relations, indexes and API rules', async () => {
 		const superuser = await superuserClient();
 		const collections = await superuser.collections.getFullList();
 		assertSchema(collections);
