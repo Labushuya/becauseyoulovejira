@@ -11,3 +11,16 @@ onRecordCreateExecute(function (e) {
   }
   e.next();
 }, 'tickets');
+
+// Fails the history entry of a ticket whose (new) title is the marker. The history is written
+// in the transaction of the ticket hook, so the lookup sees the uncommitted ticket; the ticket
+// change and its key must be rolled back with it.
+onRecordCreate(function (e) {
+  var found = e.app.findRecordsByFilter('tickets', 'id = {:id}', '', 1, 0, {
+    id: e.record.getString('ticket')
+  });
+  if (found.length > 0 && found[0].getString('title') === '__byl_fail_history__') {
+    throw new BadRequestError('Injected history failure.');
+  }
+  e.next();
+}, 'ticket_history');

@@ -3,11 +3,16 @@
 // counters start at 1 regardless of other test files sharing the instance.
 
 import { beforeAll, describe, expect, it } from 'vitest';
-import { createAppUser, rejectionOf, statusOf, userClient } from '../support/api.mjs';
-import { createScenario, scopeOf, uniqueCode, uniqueSuffix } from '../support/scenario.mjs';
-
-/** Marker title of tests/fixtures/pb_hooks/fault-injection.pb.js (fails after key assignment). */
-const FAIL_TICKET_INSERT = '__byl_fail_ticket_insert__';
+import { rejectionOf, statusOf } from '../support/api.mjs';
+import {
+	FAIL_TICKET_INSERT,
+	counterValue,
+	createOwner,
+	createScenario,
+	scopeOf,
+	uniqueCode,
+	uniqueSuffix
+} from '../support/scenario.mjs';
 
 let s;
 
@@ -15,28 +20,8 @@ beforeAll(async () => {
 	s = await createScenario();
 });
 
-/** Fresh user with its own private scope, so all counters of the scope start empty. */
-async function freshUser() {
-	const user = await createAppUser(s.superuser);
-	const client = await userClient(user);
-	const id = user.record.id;
-	return {
-		id,
-		client,
-		ticket: (data = {}) =>
-			client.collection('tickets').create({ owner: id, title: `Ticket ${uniqueSuffix()}`, ...data }),
-		project: (code, data = {}) =>
-			client.collection('projects').create({ owner: id, name: `Projekt ${code}`, code, ...data }),
-		tag: (name, data = {}) => client.collection('tags').create({ owner: id, name, ...data })
-	};
-}
-
-async function counterValue(key) {
-	const found = await s.superuser
-		.collection('ticket_counters')
-		.getFullList({ filter: s.superuser.filter('key = {:key}', { key }) });
-	return found.length === 0 ? 0 : found[0].value;
-}
+const freshUser = () => createOwner(s.superuser);
+const counterOf = (key) => counterValue(s.superuser, key);
 
 describe('ticket keys', () => {
 	it('starts with TASK-1 without project and ABC-1 with project, in separate counters', async () => {
@@ -50,8 +35,8 @@ describe('ticket keys', () => {
 		expect((await u.ticket()).key).toBe('TASK-2');
 		expect((await u.ticket({ project: abc.id })).key).toBe('ABC-2');
 
-		expect(await counterValue(`u:${u.id}:TASK`)).toBe(2);
-		expect(await counterValue(`u:${u.id}:${abc.id}`)).toBe(2);
+		expect(await counterOf(`u:${u.id}:TASK`)).toBe(2);
+		expect(await counterOf(`u:${u.id}:${abc.id}`)).toBe(2);
 	});
 
 	it('numbers household tickets in the household scope', async () => {
@@ -71,7 +56,7 @@ describe('ticket keys', () => {
 		expect(numbers).toEqual(Array.from({ length: 25 }, (_, index) => index + 1));
 		expect(new Set(created.map((ticket) => ticket.key)).size).toBe(25);
 		for (const ticket of created) expect(ticket.key).toBe(`TASK-${ticket.number}`);
-		expect(await counterValue(`u:${u.id}:TASK`)).toBe(25);
+		expect(await counterOf(`u:${u.id}:TASK`)).toBe(25);
 	});
 
 	it('does not advance the counter when a creation fails', async () => {
@@ -85,7 +70,7 @@ describe('ticket keys', () => {
 		});
 		// Injected failure after validation, right before the insert.
 		expect(await statusOf(u.ticket({ title: FAIL_TICKET_INSERT }))).toBe(400);
-		expect(await counterValue(`u:${u.id}:TASK`)).toBe(1);
+		expect(await counterOf(`u:${u.id}:TASK`)).toBe(1);
 
 		expect((await u.ticket()).key).toBe('TASK-2');
 		const titles = (await u.client.collection('tickets').getFullList()).map((t) => t.title);
@@ -134,12 +119,12 @@ describe('ticket keys', () => {
 		const moved = await tickets.update(ticket.id, { household: s.h1.id });
 		expect(moved.scope).toBe(scopeOf(s.ids.a, s.h1.id));
 		expect(moved.key).toMatch(/^TASK-\d+$/);
-		expect(await counterValue(`${scopeOf(s.ids.a, s.h1.id)}:TASK`)).toBe(moved.number);
+		expect(await counterOf(`${scopeOf(s.ids.a, s.h1.id)}:TASK`)).toBe(moved.number);
 
 		const back = await tickets.update(ticket.id, { household: '' });
 		expect(back.scope).toBe(scopeOf(s.ids.a));
 		expect(back.key).not.toBe(privateKey);
-		expect(back.number).toBe(await counterValue(`${scopeOf(s.ids.a)}:TASK`));
+		expect(back.number).toBe(await counterOf(`${scopeOf(s.ids.a)}:TASK`));
 	});
 });
 

@@ -85,3 +85,42 @@ export async function createScenario() {
 		members: { aH1: members[0], bH1: members[1], cH2: members[2] }
 	};
 }
+
+/** Marker titles of tests/fixtures/pb_hooks/fault-injection.pb.js (OF-15). */
+export const FAIL_TICKET_INSERT = '__byl_fail_ticket_insert__';
+export const FAIL_HISTORY = '__byl_fail_history__';
+
+/**
+ * Fresh app user with an own private scope, so every counter of that scope starts empty.
+ * @param {PocketBase} superuser authenticated superuser client
+ */
+export async function createOwner(superuser) {
+	const user = await createAppUser(superuser);
+	const client = await userClient(user);
+	const id = user.record.id;
+	return {
+		id,
+		client,
+		ticket: (data = {}) =>
+			client.collection('tickets').create({ owner: id, title: `Ticket ${uniqueSuffix()}`, ...data }),
+		project: (code, data = {}) =>
+			client.collection('projects').create({ owner: id, name: `Projekt ${code}`, code, ...data }),
+		tag: (name, data = {}) => client.collection('tags').create({ owner: id, name, ...data })
+	};
+}
+
+/** Current value of a ticket counter (0 if it does not exist), read by the superuser. */
+export async function counterValue(superuser, key) {
+	const found = await superuser
+		.collection('ticket_counters')
+		.getFullList({ filter: superuser.filter('key = {:key}', { key }) });
+	return found.length === 0 ? 0 : found[0].value;
+}
+
+/** History entries of a ticket in creation order, read by the superuser. */
+export async function historyOf(superuser, ticketId) {
+	return superuser.collection('ticket_history').getFullList({
+		filter: superuser.filter('ticket = {:id}', { id: ticketId }),
+		sort: 'created,id'
+	});
+}

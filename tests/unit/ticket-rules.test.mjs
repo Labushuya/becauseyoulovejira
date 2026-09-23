@@ -77,3 +77,77 @@ describe('scopeViolations', () => {
 		).toEqual(['project', 'tags']);
 	});
 });
+
+describe('completedAtAction', () => {
+	it('sets completed_at when a ticket becomes done', () => {
+		expect(rules.completedAtAction(true, '', 'done')).toBe('set');
+		expect(rules.completedAtAction(false, 'open', 'done')).toBe('set');
+		expect(rules.completedAtAction(false, 'waiting', 'done')).toBe('set');
+	});
+
+	it('keeps completed_at while the ticket stays done', () => {
+		expect(rules.completedAtAction(false, 'done', 'done')).toBe('keep');
+	});
+
+	it('clears completed_at for every other status', () => {
+		for (const status of ['backlog', 'open', 'in_progress', 'waiting']) {
+			expect(rules.completedAtAction(true, '', status)).toBe('clear');
+			expect(rules.completedAtAction(false, 'done', status)).toBe('clear');
+			expect(rules.completedAtAction(false, 'open', status)).toBe('clear');
+		}
+	});
+});
+
+describe('isCalendarDate', () => {
+	it('accepts empty values and midnight UTC in PocketBase format', () => {
+		expect(rules.isCalendarDate('')).toBe(true);
+		expect(rules.isCalendarDate('2026-10-01 00:00:00.000Z')).toBe(true);
+		expect(rules.isCalendarDate('2028-02-29 00:00:00.000Z')).toBe(true);
+	});
+
+	it('rejects times of day and other formats', () => {
+		expect(rules.isCalendarDate('2026-10-01 12:30:00.000Z')).toBe(false);
+		expect(rules.isCalendarDate('2026-10-01 00:00:00.001Z')).toBe(false);
+		expect(rules.isCalendarDate('2026-10-01')).toBe(false);
+		expect(rules.isCalendarDate('2026-10-01T00:00:00.000Z')).toBe(false);
+		expect(rules.isCalendarDate(null)).toBe(false);
+	});
+});
+
+describe('parentViolation', () => {
+	const allowed = {
+		id: 'child',
+		parent: 'parent',
+		parentExists: true,
+		parentParent: '',
+		hasChildren: false
+	};
+
+	it('allows no parent and a top-level parent', () => {
+		expect(rules.parentViolation({ ...allowed, parent: '' })).toBe('');
+		expect(rules.parentViolation(allowed)).toBe('');
+		expect(rules.parentViolation({ ...allowed, id: '' })).toBe('');
+	});
+
+	it('rejects the ticket itself as parent', () => {
+		expect(rules.parentViolation({ ...allowed, parent: 'child', parentExists: false })).toBe(
+			'validation_parent_self'
+		);
+	});
+
+	it('rejects a parent that is a sub-ticket itself', () => {
+		expect(rules.parentViolation({ ...allowed, parentParent: 'grandparent' })).toBe(
+			'validation_parent_nested'
+		);
+	});
+
+	it('rejects a parent for a ticket that has sub-tickets', () => {
+		expect(rules.parentViolation({ ...allowed, hasChildren: true })).toBe(
+			'validation_parent_has_children'
+		);
+	});
+
+	it('leaves missing parents to the scope check', () => {
+		expect(rules.parentViolation({ ...allowed, parentExists: false })).toBe('');
+	});
+});
