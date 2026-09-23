@@ -1,0 +1,147 @@
+/* Design Tokens */
+
+:root {
+	/* Light mode (default) */
+	--color-bg: #f5f8f8;
+	--color-surface: #ffffff;
+	--color-line: #dde5e6;
+	--color-text: #172326;
+	--color-text-muted: #5b6b6f;
+	--color-brand: #07838f;
+	--color-brand-text: #07838f;
+	--color-brand-soft-bg: #ddf0f2;
+	--color-brand-soft-text: #055c65;
+	--color-on-brand: #ffffff;
+
+	/* Status pill colors - light mode */
+	--status-backlog-bg: transparent;
+	--status-backlog-text: #5b6b6f;
+	--status-backlog-border: #dde5e6;
+
+	--status-open-bg: transparent;
+	--status-open-text: #07838f;
+	--status-open-border: #07838f;
+
+	--status-in-progress-bg: #ddf0f2;
+	--status-in-progress-text: #055c65;
+	--status-in-progress-border: transparent;
+
+	--status-waiting-bg: #fbf0dc;
+	--status-waiting-text: #7a4e08;
+	--status-waiting-border: #fbf0dc;
+
+	--status-done-bg: #eceff0;
+	--status-done-text: #4a585e;
+	--status-done-border: #eceff0;
+
+	/* Fonts */
+	--font-ui: 'Inter Variable', system-ui, sans-serif;
+	--font-mono: 'JetBrains Mono Variable', ui-monospace, monospace;
+}
+
+/* Dark mode via media query */
+@media (prefers-color-scheme: dark) {
+	:root:not([data-theme='light']) {
+		--color-bg: #0e1517;
+		--color-surface: #152023;
+		--color-line: #26353a;
+		--color-text: #e3ecee;
+		--color-text-muted: #8da1a6;
+		--color-brand: #07838f;
+		--color-brand-text: #4bb8c2;
+		--color-brand-soft-bg: #123a3f;
+		--color-brand-soft-text: #9fdce2;
+		--color-on-brand: #ffffff;
+
+		/* Status pill colors - dark mode */
+		--status-backlog-bg: transparent;
+		--status-backlog-text: #8da1a6;
+		--status-backlog-border: #26353a;
+
+		--status-open-bg: transparent;
+		--status-open-text: #4bb8c2;
+		--status-open-border: #4bb8c2;
+
+		--status-in-progress-bg: #123a3f;
+		--status-in-progress-text: #9fdce2;
+		--status-in-progress-border: transparent;
+
+		--status-waiting-bg: #3a2c12;
+		--status-waiting-text: #f2c77a;
+		--status-waiting-border: #3a2c12;
+
+		--status-done-bg: #223036;
+		--status-done-text: #b3c2c6;
+		--status-done-border: #223036;
+	}
+}
+
+/* Explicit light mode override */
+:root[data-theme='light'] {
+	--color-bg: #f5f8f8;
+	--color-surface: #ffffff;
+	--color-line: #dde5e6;
+	--color-text: #172326;
+	--color-text-muted: #5b6b6f;
+	--color-brand: #07838f;
+	--color-brand-text: #07838f;
+	--color-brand-soft-bg: #ddf0f2;
+	--color-brand-soft-text: #055c65;
+	--color-on-brand: #ffffff;
+
+	/* Status pill colors - light mode */
+	--status-backlog-bg: transparent;
+	--status-backlog-text: #5b6b6f;
+	--status-backlog-border: #dde5e6;
+
+	--status-open-bg: transparent;
+	--status-open-text: #07838f;
+	--status-open-border: #07838f;
+
+	--status-in-progress-bg: #ddf0f2;
+	--status-in-progress-text: #055c65;
+	--status-in-progress-border: transparent;
+
+	--status-waiting-bg: #fbf0dc;
+	--status-waiting-text: #7a4e08;
+	--status-waiting-border: #fbf0dc;
+
+	--status-done-bg: #eceff0;
+	--status-done-text: #4a585e;
+	--status-done-border: #eceff0;
+}
+
+/* Explicit dark mode override */
+:root[data-theme='dark'] {
+	--color-bg: #0e1517;
+	--color-surface: #152023;
+	--color-line: #26353a;
+	--color-text: #e3ecee;
+	--color-text-muted: #8da1a6;
+	--color-brand: #07838f;
+	--color-brand-text: #4bb8c2;
+	--color-brand-soft-bg: #123a3f;
+	--color-brand-soft-text: #9fdce2;
+	--color-on-brand: #ffffff;
+
+	/* Status pill colors - dark mode */
+	--status-backlog-bg: transparent;
+	--status-backlog-text: #8da1a6;
+	--status-backlog-border: #26353a;
+
+	--status-open-bg: transparent;
+	--status-open-text: #4bb8c2;
+	--status-open-border: #4bb8c2;
+
+	--status-in-progress-bg: #123a3f;
+	--status-in-progress-text: #9fdce2;
+	--status-in-progress-border: transparent;
+
+	--status-waiting-bg: #3a2c12;
+	--status-waiting-text: #f2c77a;
+	--status-waiting-border: #3a2c12;
+
+	--status-done-bg: #223036;
+	--status-done-text: #b3c2c6;
+	--status-done-border: #223036;
+}

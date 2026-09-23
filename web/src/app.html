@@ -1,0 +1,21 @@
+<!doctype html>
+<html lang="de">
+	<head>
+		<meta charset="utf-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		<meta name="text-scale" content="scale" />
+		%sveltekit.head%
+		<script>
+			// FOUC prevention: detect theme preference before rendering
+			const theme = localStorage.getItem('td-theme');
+			if (theme) {
+				document.documentElement.setAttribute('data-theme', theme);
+			} else if (window.matchMedia('(prefers-color-scheme: dark)').matches) {
+				// System preference will apply via CSS, no need to set data-theme
+			}
+		</script>
+	</head>
+	<body data-sveltekit-preload-data="hover">
+		<div style="display: contents">%sveltekit.body%</div>
+	</body>
+</html>

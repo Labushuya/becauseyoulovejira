@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 128 128">
+  <!-- Rounded square background (petrol) -->
+  <rect x="12" y="12" width="104" height="104" rx="20" ry="20" fill="#07838F"/>
+  <!-- White check mark glyph -->
+  <path d="M40 64 L56 80 L88 48" stroke="#ffffff" stroke-width="6" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+</svg>
