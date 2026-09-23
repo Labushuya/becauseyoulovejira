@@ -9,12 +9,15 @@
 	},
 	"scripts": {
 		"test": "vitest run",
+		"test:unit": "vitest run --project unit --passWithNoTests",
+		"test:integration": "vitest run --project integration",
 		"check": "npm --prefix web run check",
 		"lint": "npm --prefix web run lint",
 		"format": "npm --prefix web run format",
 		"build": "npm --prefix web run build"
 	},
 	"devDependencies": {
+		"pocketbase": "^0.28.1",
 		"vitest": "^5.0.1"
 	}
 }

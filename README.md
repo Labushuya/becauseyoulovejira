@@ -104,9 +104,18 @@ Einzelne Qualitäts-Gates:
 ```powershell
 npm run check   # svelte-check / TypeScript
 npm run lint    # ESLint + Prettier
-npm test        # Vitest
+npm test        # Vitest (Unit- und Integrationstests)
 npm run build   # Frontend-Build nach app/pb_public
 ```
+
+### Tests
+
+```powershell
+npm run test:unit          # nur reine Logik, ohne PocketBase
+npm run test:integration   # gegen eine Wegwerf-PocketBase-Instanz
+```
+
+Die Integrationstests brauchen `app/pocketbase.exe` (siehe Schritt 1). Pro Lauf startet ein Vitest-`globalSetup` eine eigene PocketBase-Instanz in einem frischen Temp-Ordner (`%TEMP%\byl-test-*`), mit zufälligem Superuser und auf einem freien Port (nie 8090). Danach beendet es die Instanz und löscht den Ordner, auch bei fehlschlagenden Tests oder Strg+C. Eine laufende Produktivinstanz und `app/pb_data` bleiben unberührt. Details: [ADR-0004](docs/adr/0004-teststrategie-hooks-migrationen.md).
 
 ---
 
