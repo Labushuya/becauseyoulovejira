@@ -1,4 +1,4 @@
-// Expected E1 schema after all migrations (E1 plan, section 3 and package 3) plus helpers to
+// Expected E1 schema after all migrations (E1 plan, section 3, packages 3 and 5) plus helpers to
 // read the actual schema from the Superuser API or directly from a data folder.
 
 import { join } from 'node:path';
@@ -51,7 +51,7 @@ export const EXPECTED_COLLECTIONS = {
 			code: text({ required: true, max: 6, pattern: '^[A-Z]{2,6}$' }),
 			archived: bool(),
 			...ownership(),
-			scope: text(),
+			scope: text({ required: true }),
 			...timestamps()
 		},
 		indexes: [
@@ -63,7 +63,7 @@ export const EXPECTED_COLLECTIONS = {
 		fields: {
 			name: text({ required: true, max: 50 }),
 			...ownership(),
-			scope: text(),
+			scope: text({ required: true }),
 			...timestamps()
 		},
 		indexes: ['CREATE UNIQUE INDEX idx_tags_scope_name ON tags (scope, name COLLATE NOCASE)']
@@ -89,8 +89,8 @@ export const EXPECTED_COLLECTIONS = {
 	},
 	tickets: {
 		fields: {
-			number: number({ min: 1, max: null }),
-			key: text(),
+			number: number({ required: true, min: 1, max: null }),
+			key: text({ required: true }),
 			title: text({ required: true, max: 200 }),
 			description: text({ max: 100000 }),
 			status: select(STATUSES, true),
@@ -101,7 +101,7 @@ export const EXPECTED_COLLECTIONS = {
 			completed_at: date(),
 			blocks_parent: bool(),
 			recurrence: relation('recurrence_rules'),
-			scope: text(),
+			scope: text({ required: true }),
 			...ownership(),
 			...timestamps(),
 			parent: relation('tickets')

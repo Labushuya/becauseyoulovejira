@@ -6,19 +6,8 @@
 // create -> 400, rule null (locked) -> 403 for everyone except superusers.
 
 import { beforeAll, describe, expect, it } from 'vitest';
-import { createAppUser, userClient } from '../support/api.mjs';
-import { createScenario, ownedPayload, scopeOf, uniqueSuffix } from '../support/scenario.mjs';
-
-/** HTTP status of an SDK call: 200 on success, otherwise the status of the error. */
-async function statusOf(promise) {
-	try {
-		await promise;
-		return 200;
-	} catch (error) {
-		if (typeof error?.status !== 'number' || error.status === 0) throw error;
-		return error.status;
-	}
-}
+import { createAppUser, statusOf, userClient } from '../support/api.mjs';
+import { createScenario, ownedPayload, uniqueSuffix } from '../support/scenario.mjs';
 
 async function listIds(client, collection) {
 	const records = await client.collection(collection).getFullList({ batch: 500 });
@@ -121,15 +110,9 @@ describe.each(OWNED_COLLECTIONS)('%s', (collection) => {
 	it('allows moving into own households only', async () => {
 		const own = s.a.collection(collection);
 		expect(await statusOf(own.update(rec.aPrivate.id, { household: s.h2.id }))).toBe(404);
-		const moved = await own.update(rec.aPrivate.id, {
-			household: s.h1.id,
-			...(collection === 'recurrence_rules' ? {} : { scope: scopeOf(s.ids.a, s.h1.id) })
-		});
+		const moved = await own.update(rec.aPrivate.id, { household: s.h1.id });
 		expect(moved.household).toBe(s.h1.id);
-		const back = await own.update(rec.aPrivate.id, {
-			household: '',
-			...(collection === 'recurrence_rules' ? {} : { scope: scopeOf(s.ids.a) })
-		});
+		const back = await own.update(rec.aPrivate.id, { household: '' });
 		expect(back.household).toBe('');
 	});
 
@@ -293,7 +276,7 @@ describe('ticket_counters', () => {
 	it('is locked for every operation, including the owner of the scope', async () => {
 		const counter = await s.superuser
 			.collection('ticket_counters')
-			.create({ key: `${scopeOf(s.ids.a)}:TASK`, value: 3 });
+			.create({ key: `test-${uniqueSuffix()}`, value: 3 });
 		const counters = s.a.collection('ticket_counters');
 		expect(await statusOf(counters.getList())).toBe(403);
 		expect(await statusOf(counters.getOne(counter.id))).toBe(403);

@@ -1,9 +1,8 @@
 // Multi-user scenario for the API rule tests (E1 plan, package 4; ADR-0004 section 4):
 // users A and B are members of household H1, user C is the only member of household H2.
 //
-// Until the hooks of package 5 exist, the tests set `scope`, `key`, `number` and `code`
-// themselves with unique values, because empty values would collide in the unique indexes
-// tickets(scope, key), projects(scope, code) and tags(scope, name).
+// Since package 5 the hooks set `scope`, `key` and `number` and default `status` and
+// `priority`, so the payloads only carry what a client sends.
 
 import { randomBytes } from 'node:crypto';
 import { createAppUser, createClient, superuserClient, userClient } from './api.mjs';
@@ -19,7 +18,7 @@ export function uniqueCode() {
 	return [...randomBytes(6)].map((byte) => LETTERS[byte % LETTERS.length]).join('');
 }
 
-/** Scope as the hook of package 5 will compute it (CLAUDE.md section 5). */
+/** Scope as the hooks compute it (CLAUDE.md section 5). */
 export function scopeOf(ownerId, householdId) {
 	return householdId ? `h:${householdId}` : `u:${ownerId}`;
 }
@@ -32,25 +31,16 @@ export function scopeOf(ownerId, householdId) {
  */
 export function ownedPayload(collection, ownerId, householdId = '') {
 	const base = { owner: ownerId, household: householdId };
-	const scope = scopeOf(ownerId, householdId);
 	const suffix = uniqueSuffix();
 	switch (collection) {
 		case 'projects':
-			return { ...base, scope, name: `Projekt ${suffix}`, code: uniqueCode() };
+			return { ...base, name: `Projekt ${suffix}`, code: uniqueCode() };
 		case 'tags':
-			return { ...base, scope, name: `tag-${suffix}` };
+			return { ...base, name: `tag-${suffix}` };
 		case 'recurrence_rules':
 			return { ...base, title: `Regel ${suffix}`, mode: 'calendar' };
 		case 'tickets':
-			return {
-				...base,
-				scope,
-				key: `T-${suffix}`,
-				number: 1,
-				title: `Ticket ${suffix}`,
-				status: 'open',
-				priority: 'medium'
-			};
+			return { ...base, title: `Ticket ${suffix}` };
 		default:
 			throw new Error(`No payload for ${collection}`);
 	}

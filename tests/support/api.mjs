@@ -40,3 +40,30 @@ export async function userClient(user) {
 	await client.collection('users').authWithPassword(user.email, user.password);
 	return client;
 }
+
+/** HTTP status of an SDK call: 200 on success, otherwise the status of the error. */
+export async function statusOf(promise) {
+	try {
+		await promise;
+		return 200;
+	} catch (error) {
+		if (typeof error?.status !== 'number' || error.status === 0) throw error;
+		return error.status;
+	}
+}
+
+/**
+ * Rejection of an SDK call: HTTP status and the validation codes per field
+ * (`data` of the PocketBase error response). Fails if the call succeeds.
+ */
+export async function rejectionOf(promise) {
+	try {
+		await promise;
+	} catch (error) {
+		if (typeof error?.status !== 'number' || error.status === 0) throw error;
+		const data = error.response?.data ?? {};
+		const codes = Object.fromEntries(Object.entries(data).map(([field, value]) => [field, value.code]));
+		return { status: error.status, codes };
+	}
+	throw new Error('Expected the request to be rejected, but it succeeded.');
+}
