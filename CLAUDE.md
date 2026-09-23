@@ -1,4 +1,4 @@
-# CLAUDE.md – Task Dashboard
+# CLAUDE.md – becauseyoulovejira
 
 Verbindliche Projektregeln. Gilt für jede Änderung in diesem Repo. Bei jeder relevanten Entscheidung aktualisieren.
 
@@ -9,7 +9,7 @@ Privates, lokal laufendes Ticket-Dashboard (Linear-/Jira-artiges Ticket-Handling
 ## 2. Repo-Struktur
 
 ```
-task-dashboard/
+becauseyoulovejira/
   app/                 portabler Laufzeitordner (wird kopiert/gesichert)
     pocketbase.exe     gitignored, via scripts/fetch-pocketbase.ps1 (SHA256-geprüft)
     pb_hooks/          *.pb.js Hooks, lib/*.js reine CommonJS-Module
@@ -155,7 +155,7 @@ Erledigte Tickets treten in der Liste optisch zurück. Schriften: Inter für die
 
 - Etappen: E0 Gerüst · E1 Datenmodell/Hooks/Auth · E2 Liste/Detail/CRUD/Kommentare/Realtime · E3 Projekte/Tags/Filter/Suche · E4 Wiederkehrende Aufgaben · E5 Schnellerfassung/Theme/Feinschliff/Doku.
 - Nach jeder Etappe: Zusammenfassung, Testanleitung, Entscheidungen/offene Punkte – dann auf Freigabe warten.
-- Ein Commit pro abgeschlossenem Arbeitsschritt, Conventional Commits (`feat:`, `fix:`, `chore:`, `docs:`, `test:`, `refactor:`), direkt auf `main`. Push nach jeder Etappe in das öffentliche Repo `Labushuya/task-dashboard`.
+- Ein Commit pro abgeschlossenem Arbeitsschritt, Conventional Commits (`feat:`, `fix:`, `chore:`, `docs:`, `test:`, `refactor:`), direkt auf `main`. Push nach jeder Etappe in das öffentliche Repo `Labushuya/becauseyoulovejira`.
 - Kein toter oder auskommentierter Code, keine TODOs ohne verlinktes Issue.
 - Qualitäts-Gates vor jedem Commit mit Code: `npm run check`, `npm run lint`, `npm test` grün.
 - Niemals Secrets, `pb_data/` oder Backups committen (öffentliches Repo).

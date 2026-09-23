@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 320" width="1280" height="320">
+  <defs>
+    <style>
+      .banner-bg { fill: #1a3a52; }
+      .banner-title { font-family: system-ui, -apple-system, sans-serif; font-size: 72px; font-weight: 700; fill: #ffffff; }
+      .banner-subtitle { font-family: system-ui, -apple-system, sans-serif; font-size: 20px; font-weight: 400; fill: #ffffff; opacity: 0.9; }
+      .column-stroke { stroke: #07838f; stroke-width: 2; fill: none; }
+      .card-bg { fill: #07838f; opacity: 0.2; }
+    </style>
+  </defs>
+
+  <!-- Background -->
+  <rect class="banner-bg" width="1280" height="320"/>
+
+  <!-- Board illustration (three columns) on the right -->
+  <g transform="translate(950, 80)">
+    <!-- Column 1 -->
+    <rect class="column-stroke" x="0" y="0" width="70" height="160" rx="4"/>
+    <rect class="card-bg" x="8" y="12" width="54" height="28" rx="2"/>
+    <rect class="card-bg" x="8" y="48" width="54" height="28" rx="2"/>
+    <rect class="card-bg" x="8" y="84" width="54" height="28" rx="2"/>
+    <rect class="card-bg" x="8" y="120" width="54" height="28" rx="2"/>
+
+    <!-- Column 2 -->
+    <rect class="column-stroke" x="90" y="0" width="70" height="160" rx="4"/>
+    <rect class="card-bg" x="98" y="12" width="54" height="28" rx="2"/>
+    <rect class="card-bg" x="98" y="48" width="54" height="28" rx="2"/>
+    <rect class="card-bg" x="98" y="84" width="54" height="28" rx="2"/>
+
+    <!-- Column 3 -->
+    <rect class="column-stroke" x="180" y="0" width="70" height="160" rx="4"/>
+    <rect class="card-bg" x="188" y="12" width="54" height="28" rx="2"/>
+    <rect class="card-bg" x="188" y="48" width="54" height="28" rx="2"/>
+  </g>
+
+  <!-- Text content on the left -->
+  <text class="banner-title" x="60" y="100">becauseyoulovejira</text>
+  <text class="banner-subtitle" x="60" y="150">Eine To-do-Liste im Jira-Stil – weil du Jira ja so liebst</text>
+  <text class="banner-subtitle" x="60" y="180" style="font-size: 14px; opacity: 0.7;">Privates, portables Ticket-Dashboard für Windows</text>
+</svg>
