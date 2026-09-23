@@ -1,0 +1,20 @@
+{
+	"name": "becauseyoulovejira",
+	"version": "0.0.1",
+	"type": "module",
+	"private": true,
+	"description": "Private, locally-running ticket dashboard",
+	"engines": {
+		"node": ">=24"
+	},
+	"scripts": {
+		"test": "vitest run",
+		"check": "npm --prefix web run check",
+		"lint": "npm --prefix web run lint",
+		"format": "npm --prefix web run format",
+		"build": "npm --prefix web run build"
+	},
+	"devDependencies": {
+		"vitest": "^5.0.1"
+	}
+}
