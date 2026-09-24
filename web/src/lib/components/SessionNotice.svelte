@@ -12,7 +12,7 @@
 	const TEXTS: Record<SessionFailure, { title: string; body: string }> = {
 		network: {
 			title: 'Server nicht erreichbar',
-			body: 'Die Anmeldung bleibt erhalten. Bitte prüfen, ob PocketBase läuft, und erneut versuchen.'
+			body: 'Die Anmeldung bleibt erhalten. Bitte prüfen, ob becauseyoulovejira gestartet ist (start.bat), und erneut versuchen.'
 		},
 		server: {
 			title: 'Sitzung konnte nicht geprüft werden',

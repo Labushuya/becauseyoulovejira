@@ -146,7 +146,8 @@ describe('start', () => {
 		expect(hint).toContain('„users“');
 		expect(hint).toContain('30 Minuten');
 		const login = readFileSync(join(ROOT_DIR, 'web', 'src', 'routes', 'login', '+page.svelte'), 'utf8');
-		expect(login).toContain('Admin-UI unter /_/');
+		expect(login).toContain('href="/_/"');
+		expect(login).toContain('Verwaltung (nur Admin)');
 	});
 
 	it('start.bat pauses on errors and on the first-run hint only', () => {

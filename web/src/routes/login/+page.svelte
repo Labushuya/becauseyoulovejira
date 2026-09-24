@@ -8,13 +8,15 @@
 	// One message for every refusal, so the page never reveals whether an e-mail exists.
 	const MESSAGES: Record<LoginFailure, string> = {
 		rejected: 'Anmeldung fehlgeschlagen. Bitte E-Mail und Passwort prüfen.',
-		network: 'Server nicht erreichbar. Bitte prüfen, ob PocketBase läuft, und erneut versuchen.'
+		network:
+			'Server nicht erreichbar. Bitte prüfen, ob becauseyoulovejira gestartet ist (start.bat), und erneut versuchen.'
 	};
 
 	let email = $state('');
 	let password = $state('');
 	let pending = $state(false);
 	let message = $state('');
+	let rejected = $state(false);
 	let emailInput = $state<HTMLInputElement>();
 	let passwordInput = $state<HTMLInputElement>();
 
@@ -29,6 +31,7 @@
 		if (pending) return;
 		pending = true;
 		message = '';
+		rejected = false;
 
 		const result = await auth.login(email, password);
 		if (result.ok) {
@@ -41,6 +44,7 @@
 		}
 
 		message = MESSAGES[result.failure];
+		rejected = result.failure === 'rejected';
 		password = '';
 		pending = false;
 		passwordInput?.focus();
@@ -65,6 +69,10 @@
 				</svg>
 				<span>{message}</span>
 			</p>
+			{#if rejected}
+				<!-- Shown for every refusal, so it reveals nothing about the e-mail address. -->
+				<p class="note">Hinweis: Das Admin-Konto gilt nur für die Verwaltung, nicht für die App.</p>
+			{/if}
 		{/if}
 	</div>
 
@@ -104,12 +112,12 @@
 	</form>
 
 	<div class="hints">
-		<!-- rel="external": the PocketBase admin UI is not part of the SPA (full page load). -->
-		<p>Noch kein Zugang? Nutzer im <a href="/_/" rel="external">Admin-UI unter /_/</a> anlegen.</p>
 		<p>
-			Passwort vergessen? Es gibt keine Passwort-Mail; das Passwort lässt sich im
-			<a href="/_/" rel="external">Admin-UI unter /_/</a> zurücksetzen.
+			Kein Zugang oder Passwort vergessen? Wende dich an die Person, die becauseyoulovejira
+			eingerichtet hat.
 		</p>
+		<!-- rel="external": the admin UI is not part of the SPA (full page load). -->
+		<p><a class="admin-link" href="/_/" rel="external">Verwaltung (nur Admin)</a></p>
 	</div>
 </CenteredCard>
 
@@ -203,7 +211,13 @@
 		border-top: 1px solid var(--color-line);
 	}
 
-	.hints a {
-		color: var(--color-brand-text);
+	.note {
+		margin-top: 0.5rem;
+		font-size: 0.8125rem;
+		color: var(--color-text-muted);
+	}
+
+	.admin-link {
+		color: var(--color-text-muted);
 	}
 </style>

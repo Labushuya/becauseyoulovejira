@@ -26,7 +26,8 @@ const USER = {
 };
 const GENERIC_MESSAGE = 'Anmeldung fehlgeschlagen. Bitte E-Mail und Passwort prüfen.';
 const NETWORK_MESSAGE =
-	'Server nicht erreichbar. Bitte prüfen, ob PocketBase läuft, und erneut versuchen.';
+	'Server nicht erreichbar. Bitte prüfen, ob becauseyoulovejira gestartet ist (start.bat), und erneut versuchen.';
+const ADMIN_NOTE = 'Hinweis: Das Admin-Konto gilt nur für die Verwaltung, nicht für die App.';
 
 function stubFetch(respond: () => Response | Promise<Response>) {
 	const fetchMock = vi.fn<typeof fetch>(async () => respond());
@@ -85,14 +86,25 @@ describe('login form', () => {
 		expect(buttons[0]).toMatchObject({ type: 'submit', form });
 	});
 
-	it('explains where to create users and reset passwords', () => {
+	it('tells every visitor whom to ask, without pointing end users at the admin UI', () => {
 		openLoginPage();
 
-		const links = screen.getAllByRole('link', { name: 'Admin-UI unter /_/' });
-		expect(links).toHaveLength(2);
-		for (const link of links) expect(link.getAttribute('href')).toBe('/_/');
-		expect(screen.getByText(/^Noch kein Zugang\?/)).toBeTruthy();
-		expect(screen.getByText(/Es gibt keine Passwort-Mail/)).toBeTruthy();
+		expect(
+			screen.getByText(
+				'Kein Zugang oder Passwort vergessen? Wende dich an die Person, die becauseyoulovejira eingerichtet hat.'
+			)
+		).toBeTruthy();
+		expect(screen.getAllByRole('link')).toHaveLength(1);
+		const link = screen.getByRole('link', { name: 'Verwaltung (nur Admin)' });
+		expect(link.getAttribute('href')).toBe('/_/');
+		expect(link.getAttribute('rel')).toBe('external');
+	});
+
+	it('never mentions PocketBase to end users', () => {
+		const { container } = openLoginPage();
+
+		expect(container.textContent).not.toMatch(/PocketBase/i);
+		expect(screen.queryByText(ADMIN_NOTE)).toBeNull();
 	});
 });
 
@@ -124,6 +136,7 @@ describe('submitting', () => {
 
 		const message = await screen.findByText(GENERIC_MESSAGE);
 		expect(message.closest('[aria-live="polite"]')).not.toBeNull();
+		expect(screen.getByText(ADMIN_NOTE).closest('[aria-live="polite"]')).not.toBeNull();
 		expect(passwordField().value).toBe('');
 		expect(document.activeElement).toBe(passwordField());
 		expect(emailField().value).toBe(USER.email);
@@ -141,6 +154,7 @@ describe('submitting', () => {
 		const message = await screen.findByText(NETWORK_MESSAGE);
 		expect(message.closest('[aria-live="polite"]')).not.toBeNull();
 		expect(screen.queryByText(GENERIC_MESSAGE)).toBeNull();
+		expect(screen.queryByText(ADMIN_NOTE)).toBeNull();
 		expect(document.activeElement).toBe(passwordField());
 	});
 });
