@@ -1,0 +1,1207 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>becauseyoulovejira — Test-Manifest E1–E3</title>
+<style>
+  :root {
+    --bg: #f5f8f8;
+    --surface: #ffffff;
+    --surface-sunken: #eceff0;
+    --border: #dde5e6;
+    --text: #172326;
+    --text-muted: #5b6b6f;
+    --primary: #07838f;
+    --primary-text: #055c65;
+    --primary-subtle: #ddf0f2;
+    --ok: #07838f;
+    --ok-subtle: #ddf0f2;
+    --warn: #7a4e08;
+    --warn-subtle: #fbf0dc;
+    --danger: #a13a40;
+    --radius: 12px;
+    --radius-sm: 8px;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #0e1517; --surface: #152023; --surface-sunken: #223036;
+      --border: #26353a; --text: #e3ecee; --text-muted: #8da1a6;
+      --primary: #07838f; --primary-text: #9fdce2; --primary-subtle: #123a3f;
+      --ok: #4bb8c2; --ok-subtle: #123a3f;
+      --warn: #f2c77a; --warn-subtle: #3a2c12; --danger: #eaa0a0;
+    }
+  }
+  * { box-sizing: border-box; }
+  html { -webkit-text-size-adjust: 100%; }
+  body {
+    margin: 0; background: var(--bg); color: var(--text);
+    font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    line-height: 1.55; font-size: 16px;
+  }
+  .wrap { max-width: 860px; margin: 0 auto; padding: 20px 16px 120px; }
+  header.top { margin-bottom: 20px; }
+  h1 { font-size: 1.6rem; margin: 0 0 4px; letter-spacing: -0.02em; }
+  .subtitle { color: var(--text-muted); font-size: 0.95rem; margin: 0 0 16px; }
+
+  .pre {
+    background: var(--warn-subtle); border: 1px solid var(--warn);
+    border-radius: var(--radius); padding: 14px 16px; margin-bottom: 16px;
+  }
+  .pre h2 { margin: 0 0 6px; font-size: 1rem; color: var(--warn); }
+  .pre ul { margin: 6px 0 0; padding-left: 20px; }
+  .pre li { margin: 2px 0; font-size: 0.9rem; }
+
+  .legend {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: var(--radius); padding: 12px 16px; margin-bottom: 16px; font-size: 0.88rem;
+  }
+  .legend h2 { margin: 0 0 6px; font-size: 1rem; }
+  .legend dl { display: grid; grid-template-columns: max-content 1fr; gap: 4px 12px; margin: 0; }
+  .legend dt { margin: 0; }
+  .legend dd { margin: 0; color: var(--text-muted); }
+
+  .progress-bar {
+    position: sticky; top: 0; z-index: 10; background: var(--bg);
+    padding: 10px 0; border-bottom: 1px solid var(--border); margin-bottom: 16px;
+  }
+  .progress-track { height: 10px; background: var(--surface-sunken); border-radius: 999px; overflow: hidden; }
+  .progress-fill { height: 100%; background: var(--ok); width: 0%; transition: width 0.2s; }
+  .progress-meta { display: flex; justify-content: space-between; align-items: center; margin-top: 6px; font-size: 0.85rem; color: var(--text-muted); gap: 8px; flex-wrap: wrap; }
+  .actions { display: flex; gap: 8px; flex-wrap: wrap; }
+  .filters { display: flex; gap: 12px; flex-wrap: wrap; margin-top: 8px; font-size: 0.85rem; }
+  .filters label { display: flex; gap: 6px; align-items: center; color: var(--text-muted); font-weight: 600; }
+  .filters select {
+    border: 1px solid var(--border); background: var(--surface); color: var(--text);
+    border-radius: var(--radius-sm); padding: 5px 8px; font: inherit;
+  }
+  button.act {
+    border: 1px solid var(--border); background: var(--surface); color: var(--text);
+    border-radius: var(--radius-sm); padding: 7px 12px; font-size: 0.85rem; font-weight: 600; cursor: pointer;
+  }
+  button.act:hover { border-color: var(--primary); color: var(--primary-text); }
+  button.act.primary { background: var(--primary); color: #fff; border-color: var(--primary); }
+  button.act.primary:hover { opacity: 0.9; color: #fff; }
+  button.act:focus-visible, .filters select:focus-visible, .item-cb:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
+
+  section.block { margin-bottom: 26px; }
+  .block-head { display: flex; align-items: baseline; gap: 10px; margin: 0 0 4px; }
+  .block-head h2 { font-size: 1.2rem; margin: 0; }
+  .block-tag { font-size: 0.72rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; color: var(--primary-text); background: var(--primary-subtle); padding: 2px 8px; border-radius: 999px; }
+  .block-desc { color: var(--text-muted); font-size: 0.9rem; margin: 0 0 12px; }
+
+  .item {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: var(--radius); padding: 12px 14px; margin-bottom: 10px;
+  }
+  .item.done { border-color: var(--ok); background: var(--ok-subtle); }
+  .item.planned { border-style: dashed; }
+  .item-top { display: flex; gap: 10px; align-items: flex-start; }
+  .item-cb { width: 22px; height: 22px; flex-shrink: 0; margin-top: 2px; accent-color: var(--ok); cursor: pointer; }
+  .item-cb-spacer { width: 22px; flex-shrink: 0; }
+  .item-body { flex: 1; min-width: 0; }
+  .item-id { font-size: 0.7rem; font-weight: 700; color: var(--text-muted); letter-spacing: 0.03em; display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+  .badge { font-size: 0.68rem; font-weight: 700; padding: 1px 7px; border-radius: 999px; border: 1px solid var(--border); color: var(--text-muted); background: var(--surface); }
+  .badge.st-bestanden, .badge.st-bestaetigt { color: var(--primary-text); background: var(--primary-subtle); border-color: var(--primary); }
+  .badge.st-offen { color: var(--warn); background: var(--warn-subtle); border-color: var(--warn); }
+  .badge.st-geplant { border-style: dashed; }
+  .badge.st-nz { background: var(--surface-sunken); }
+  .item-title { font-weight: 600; margin: 1px 0 4px; }
+  .item-pre { margin: 4px 0 0; font-size: 0.88rem; color: var(--text-muted); }
+  .item-pre b { color: var(--text); }
+  .item-steps { margin: 6px 0 0; padding-left: 18px; font-size: 0.9rem; }
+  .item-steps li { margin: 2px 0; }
+  .item-sub { margin: 8px 0 0; font-size: 0.78rem; font-weight: 700; color: var(--text-muted); }
+  .expect {
+    margin: 8px 0 0; padding: 8px 10px; background: var(--surface-sunken);
+    border-left: 3px solid var(--ok); border-radius: 0 var(--radius-sm) var(--radius-sm) 0; font-size: 0.88rem;
+  }
+  .expect b { color: var(--primary-text); }
+  .refs { margin: 8px 0 0; padding-left: 18px; font-size: 0.82rem; }
+  .refs li { margin: 1px 0; overflow-wrap: anywhere; }
+  .note-wrap { margin-top: 10px; }
+  .note-wrap label { display: block; font-size: 0.75rem; color: var(--text-muted); margin-bottom: 3px; font-weight: 600; }
+  textarea.note {
+    width: 100%; min-height: 40px; resize: vertical; border: 1px solid var(--border);
+    border-radius: var(--radius-sm); background: var(--bg); color: var(--text);
+    padding: 7px 9px; font-family: inherit; font-size: 0.9rem;
+  }
+  textarea.note:focus { outline: none; border-color: var(--primary); }
+  code { background: var(--surface-sunken); padding: 1px 5px; border-radius: 4px; font-size: 0.85em; }
+  footer.foot { text-align: center; color: var(--text-muted); font-size: 0.8rem; margin-top: 30px; }
+  .toast { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); background: var(--text); color: var(--bg); padding: 10px 18px; border-radius: 999px; font-size: 0.9rem; font-weight: 600; opacity: 0; transition: opacity 0.2s; pointer-events: none; z-index: 50; }
+  .toast.show { opacity: 1; }
+  [hidden] { display: none !important; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="top">
+    <h1>becauseyoulovejira — Test-Manifest</h1>
+    <p class="subtitle" id="stand">Etappen E1, E1.1, E2 und E3 · automatisierte Tests bereichsweise zusammengefasst · manuelle Prüfpunkte aus den Plänen an einem Ort</p>
+
+    <div class="pre">
+      <h2>Voraussetzung für die manuellen Prüfungen (kein Testschritt)</h2>
+      <ul>
+        <li>Der aktuelle Build liegt in <code>app\pb_public</code> (<code>powershell -ExecutionPolicy Bypass -File scripts\build.ps1</code> komplett grün).</li>
+        <li>Die App läuft (<code>app\start.bat</code>), im Browser einmal <b>F5</b> drücken und mit dem App-Konto anmelden.</li>
+        <li>Für die Live-Tests ein zweites Browserfenster mit demselben Konto öffnen (Fenster A und B).</li>
+        <li>Prüfungen zu Erststart, Admin-Reset und Wiederherstellung in einer <b>Kopie</b> von <code>app\</code> durchführen, nie mit den echten Daten.</li>
+      </ul>
+      Hake jeden bestätigten manuellen Punkt ab und trage Abweichungen ins Notizfeld ein.
+    </div>
+
+    <div class="legend">
+      <h2>Legende</h2>
+      <dl>
+        <dt><span class="badge st-bestanden">bestanden</span></dt><dd>automatisiert, im letzten vollständigen Lauf von <code>scripts\build.ps1</code> grün</dd>
+        <dt><span class="badge st-offen">offen</span></dt><dd>manuell, noch nicht vom Nutzer bestätigt (das Häkchen setzt lokal „bestätigt“)</dd>
+        <dt><span class="badge st-geplant">geplant</span></dt><dd>Arbeitspaket noch nicht umgesetzt; es gelten die Akzeptanzkriterien aus dem Plan</dd>
+        <dt><span class="badge st-nz">nicht zutreffend</span></dt><dd>entfällt für diesen Stand</dd>
+        <dt><span class="badge">Unit</span> <span class="badge">Komponente</span> <span class="badge">Integration</span> <span class="badge">Manuell</span></dt><dd>Art: reine Logik · Svelte-Komponente mit jsdom · gegen eine Wegwerf-Instanz · von Hand im Browser bzw. unter Windows</dd>
+      </dl>
+    </div>
+  </header>
+
+  <div class="progress-bar">
+    <div class="progress-track"><div class="progress-fill" id="fill"></div></div>
+    <div class="progress-meta">
+      <span id="count" aria-live="polite">0 / 0 manuelle Prüfungen bestätigt</span>
+      <span class="actions">
+        <button type="button" class="act primary" id="copy-open">Offene + Notizen kopieren</button>
+        <button type="button" class="act" id="copy-all">Alles kopieren</button>
+        <button type="button" class="act" id="reset">Zurücksetzen</button>
+      </span>
+    </div>
+    <div class="filters">
+      <label for="filter-art">Art
+        <select id="filter-art">
+          <option value="">alle</option>
+          <option value="unit">Unit</option>
+          <option value="komponente">Komponente</option>
+          <option value="integration">Integration</option>
+          <option value="manuell">Manuell</option>
+        </select>
+      </label>
+      <label for="filter-status">Status
+        <select id="filter-status">
+          <option value="">alle</option>
+          <option value="bestanden">bestanden</option>
+          <option value="offen">offen</option>
+          <option value="geplant">geplant</option>
+          <option value="nicht zutreffend">nicht zutreffend</option>
+        </select>
+      </label>
+      <span id="visible-count"></span>
+    </div>
+  </div>
+
+  <div id="manifest"></div>
+
+  <footer class="foot">
+    Häkchen und Notizen werden automatisch im Browser gespeichert (localStorage). „Kopieren“ legt eine Markdown-Übersicht
+    in die Zwischenablage. Pflege: Jedes Arbeitspaket aktualisiert diese Datei; <code>tests/unit/test-manifest.test.mjs</code> prüft sie.
+  </footer>
+</div>
+<div class="toast" id="toast" role="status"></div>
+
+<!-- Manifest-Daten: JSON, damit tests/unit/test-manifest.test.mjs sie ohne Browser prüfen kann.
+     Punkt: id, title, art[] (unit|komponente|integration|manuell), status (bestanden|offen|geplant|nicht zutreffend),
+     pre (Vorbedingung), steps[] (Schritte bzw. Akzeptanzkriterien bei „geplant“), expect, tests[] ("Pfad" oder "Pfad::Testname"). -->
+<script type="application/json" id="manifest-data">
+{
+  "meta": {
+    "projekt": "becauseyoulovejira",
+    "stand": "2026-09-24",
+    "commit": "c6ff46e",
+    "etappe": "E0, E1, E1.1 und E2 abgeschlossen; E3 Pakete 1–4 umgesetzt, Pakete 5–15 geplant"
+  },
+  "blocks": [
+    {
+      "tag": "E1", "name": "Test-Harness", "desc": "Wegwerf-PocketBase für die Integrationstests (E1-Plan, Paket 1; ADR-0004).",
+      "items": [
+        { "id": "BYL-E1-001", "title": "Wegwerf-Instanz startet isoliert", "art": ["integration"], "status": "bestanden",
+          "pre": "app\\pocketbase.exe vorhanden (scripts\\fetch-pocketbase.ps1).",
+          "steps": ["npm run test:integration"],
+          "expect": "Eine Instanz auf freiem Port ungleich 8090, /api/health antwortet 200, Superuser-Login mit injizierten Zugangsdaten, isolierter App-Nutzer kann sich anmelden.",
+          "tests": ["tests/integration/harness.test.mjs"] },
+        { "id": "BYL-E1-002", "title": "Aufräumen nach absichtlich fehlschlagendem Test", "art": ["manuell"], "status": "offen",
+          "pre": "Entwicklungsrechner, Repo mit installierten Abhängigkeiten.",
+          "steps": ["In einer lokalen Arbeitskopie einen Integrationstest vorübergehend fehlschlagen lassen (nicht committen).", "npm run test:integration ausführen, einmal bis zum Ende und einmal mit Strg+C abbrechen.", "Task-Manager: nach pocketbase.exe suchen; %TEMP% nach byl-test-* durchsuchen.", "Änderung am Test verwerfen."],
+          "expect": "Kein pocketbase.exe-Prozess aus dem Test läuft weiter, kein byl-test-*-Ordner bleibt zurück, keine Zugangsdaten in der Konsole.",
+          "tests": [] },
+        { "id": "BYL-E1-003", "title": "Fehlende pocketbase.exe bricht mit Hinweis ab", "art": ["manuell"], "status": "offen",
+          "pre": "Keine laufende Instanz aus app\\.",
+          "steps": ["app\\pocketbase.exe vorübergehend umbenennen.", "npm run test:integration ausführen.", "Datei zurückbenennen."],
+          "expect": "Der Lauf bricht sofort ab und nennt scripts\\fetch-pocketbase.ps1.",
+          "tests": [] }
+      ]
+    },
+    {
+      "tag": "E1 / E1.1", "name": "Start, Stopp und Erststart", "desc": "Start-/Stopp-Skripte, Erststart-Hinweis, verpasster Installer, Autostart (E1-Plan Paket 8, E1.1 Maßnahme 5). Die Skripte werden von Tests nie ausgeführt; geprüft werden die Funktionen in byl-functions.ps1 und die Skripttexte.",
+      "items": [
+        { "id": "BYL-E1-010", "title": "Nur die eigene Instanz wird gestoppt", "art": ["unit"], "status": "bestanden",
+          "pre": "–", "steps": ["npm run test:unit"],
+          "expect": "Aus einer gemischten Prozessliste wird nur pocketbase.exe aus app\\ mit serve auf 127.0.0.1:8090 und app\\pb_data gewählt; gestoppt wird per Prozess-ID, nie per Imagename.",
+          "tests": ["tests/unit/start-logic.test.mjs::selects only the own instance from a mixed process list", "tests/unit/start-scripts.test.mjs::stops only processes chosen by Select-AppProcess, by process id"] },
+        { "id": "BYL-E1-011", "title": "Portprüfung und kein Doppelstart", "art": ["unit"], "status": "bestanden",
+          "pre": "–", "steps": ["npm run test:unit"],
+          "expect": "Belegter Port durch ein fremdes Programm führt zum Abbruch mit Namen des Besitzers; eine laufende eigene Instanz wird erkannt.",
+          "tests": ["tests/unit/start-logic.test.mjs::names the foreign owner", "tests/unit/start-scripts.test.mjs::checks the port before starting and aborts for a foreign owner"] },
+        { "id": "BYL-E1-012", "title": "Health-Polling statt fester Wartezeit", "art": ["unit"], "status": "bestanden",
+          "pre": "–", "steps": ["npm run test:unit"],
+          "expect": "start.bat fragt /api/health der festen Bindung mit Timeout ab und wartet nicht fest.",
+          "tests": ["tests/unit/start-scripts.test.mjs::polls /api/health with a timeout", "tests/unit/start-scripts.test.mjs::has no fixed waiting time (only stop.bat keeps its message readable)", "tests/unit/start-logic.test.mjs::polls the health endpoint of the fixed binding"] },
+        { "id": "BYL-E1-013", "title": "Erststart-Erkennung und Hinweis", "art": ["unit"], "status": "bestanden",
+          "pre": "–", "steps": ["npm run test:unit"],
+          "expect": "Neue Datenbank bzw. Installer-Link im Log wird erkannt; der Erststart-Zweig öffnet keinen zweiten Tab; der Hinweistext passt zur Login-Seite.",
+          "tests": ["tests/unit/start-logic.test.mjs::first-run detection", "tests/unit/start-scripts.test.mjs::has a first-run branch that opens no second tab", "tests/unit/start-scripts.test.mjs::the first-run hint matches the login page"] },
+        { "id": "BYL-E1-014", "title": "Verpasster Installer-Link wird erneut angeboten (E1.1)", "art": ["unit", "integration"], "status": "bestanden",
+          "pre": "–", "steps": ["npm run test:unit", "npm run test:integration"],
+          "expect": "Nur ein Link aus dem aktuellen Serverlauf, noch gültig und vom Server angenommen, wird gemeldet und genau einmal geöffnet; die URL wird auf der festen Bindung neu aufgebaut; ein abgelehntes Token gilt als abgeschlossene Einrichtung, ein unklares Ergebnis als offen.",
+          "tests": ["tests/unit/start-logic.test.mjs::installer link of the running server (E1.1)", "tests/unit/start-scripts.test.mjs::opens a still working installer link of the running instance once and pauses", "tests/unit/start-scripts.test.mjs::only opens links it rebuilt on the fixed binding", "tests/integration/installer-check.test.mjs"] },
+        { "id": "BYL-E1-015", "title": "Skriptform: CRLF, BOM, relative Pfade, keine Zugangsdaten", "art": ["unit"], "status": "bestanden",
+          "pre": "–", "steps": ["npm run test:unit"],
+          "expect": "Alle Skripte mit CRLF, byl-control.ps1 mit UTF-8-BOM, keine absoluten Pfade oder Zugangsdaten, kein wmic/taskkill, fehlerfrei parsebar.",
+          "tests": ["tests/unit/start-scripts.test.mjs::byl-control.ps1 has a UTF-8 BOM (Windows PowerShell 5.1 reads BOM-less files as ANSI)", "tests/unit/start-scripts.test.mjs::PowerShell syntax"] },
+        { "id": "BYL-E1-016", "title": "Serverargumente, Log-Ordner und Autostart-Verknüpfung", "art": ["unit"], "status": "bestanden",
+          "pre": "–", "steps": ["npm run test:unit"],
+          "expect": "Flags aus CLAUDE.md mit Pfaden aus dem app-Ordner, Server-Log in app\\logs, Verknüpfung startet start-hidden.vbs über wscript.exe.",
+          "tests": ["tests/unit/start-logic.test.mjs::server arguments and autostart shortcut", "tests/unit/start-scripts.test.mjs::start-hidden.vbs starts the control script hidden with -NoProfile -ExecutionPolicy Bypass"] },
+        { "id": "BYL-E1-017", "title": "Fensterverhalten von start.bat und stop.bat", "art": ["unit"], "status": "bestanden",
+          "pre": "–", "steps": ["npm run test:unit"],
+          "expect": "start.bat pausiert nur bei Fehlern und beim Erststart-Hinweis; stop.bat zeigt Erfolg 5 s und wartet bei Fehlern auf eine Taste.",
+          "tests": ["tests/unit/start-scripts.test.mjs::start.bat pauses on errors and on the first-run hint only", "tests/unit/start-scripts.test.mjs::stop.bat shows success for 5 seconds and waits for a key on errors"] },
+        { "id": "BYL-E1-018", "title": "SPA-Fallback für tiefe Links", "art": ["integration"], "status": "bestanden",
+          "pre": "Frontend-Build in app\\pb_public.", "steps": ["npm run build", "npm run test:integration"],
+          "expect": "Unbekannte App-Pfade liefern index.html, API-Anfragen weiter JSON.",
+          "tests": ["tests/integration/spa-fallback.test.mjs"] },
+        { "id": "BYL-E1-019", "title": "Erststart in einer frischen Kopie von app\\", "art": ["manuell"], "status": "offen",
+          "pre": "Kopie von app\\ ohne pb_data; keine andere Instanz auf Port 8090.",
+          "steps": ["start.bat in der Kopie doppelklicken.", "Im geöffneten Tab (Einrichtung) das Admin-Konto anlegen.", "Unter Collections → users → New record ein App-Konto anlegen.", "http://127.0.0.1:8090/ öffnen und mit dem App-Konto anmelden."],
+          "expect": "Das Fenster meldet „Erster Start: …“ mit Einrichtungslink und wartet auf eine Taste; es öffnet sich nur ein Tab (Einrichtung, nicht die App). Danach funktioniert die Anmeldung in der App.",
+          "tests": [] },
+        { "id": "BYL-E1-020", "title": "Einrichtung verpasst", "art": ["manuell"], "status": "offen",
+          "pre": "Kopie von app\\ ohne pb_data, Einrichtungstab geschlossen, weniger als 30 Minuten seit dem Start.",
+          "steps": ["start.bat erneut ausführen."],
+          "expect": "start.bat erkennt die offene Einrichtung, zeigt den Link, öffnet ihn erneut (statt der App) und wartet auf eine Taste. Nach erfolgreicher Einrichtung erscheint kein Hinweis mehr.",
+          "tests": [] },
+        { "id": "BYL-E1-021", "title": "Normaler Start und zweiter Start", "art": ["manuell"], "status": "offen",
+          "pre": "Eingerichtete Instanz, App gestoppt.",
+          "steps": ["start.bat doppelklicken.", "start.bat ein zweites Mal doppelklicken."],
+          "expect": "Erster Start: kein sichtbares Konsolenfenster bleibt offen, der Browser öffnet genau einmal die App. Zweiter Start: kein zweiter Server, nur der Browser öffnet sich.",
+          "tests": [] },
+        { "id": "BYL-E1-022", "title": "stop.bat beendet nur die eigene Instanz", "art": ["manuell"], "status": "offen",
+          "pre": "App läuft.",
+          "steps": ["stop.bat doppelklicken."],
+          "expect": "Die Erfolgsmeldung bleibt 5 s stehen (eine Taste schließt sofort); andere PocketBase-Prozesse laufen weiter; die App ist danach nicht mehr erreichbar.",
+          "tests": [] },
+        { "id": "BYL-E1-023", "title": "Port 8090 durch ein fremdes Programm belegt", "art": ["manuell"], "status": "offen",
+          "pre": "App gestoppt, ein anderes Programm lauscht auf 127.0.0.1:8090.",
+          "steps": ["start.bat doppelklicken."],
+          "expect": "Abbruch mit Meldung und Namen des Programms, das Fenster bleibt bis zu einem Tastendruck offen.",
+          "tests": [] },
+        { "id": "BYL-E1-024", "title": "Autostart an und aus", "art": ["manuell"], "status": "offen",
+          "pre": "Eingerichtete Instanz.",
+          "steps": ["autostart-an.bat ausführen, Windows ab- und wieder anmelden.", "autostart-aus.bat ausführen."],
+          "expect": "Die Verknüpfung becauseyoulovejira.lnk liegt im Autostart-Ordner; nach der Anmeldung läuft die App still ohne Browser. autostart-aus.bat entfernt die Verknüpfung.",
+          "tests": [] },
+        { "id": "BYL-E1-025", "title": "Umzug per Ordnerkopie", "art": ["manuell"], "status": "offen",
+          "pre": "App gestoppt.",
+          "steps": ["Den Ordner app\\ an einen anderen Pfad kopieren.", "Dort start.bat ausführen und anmelden."],
+          "expect": "Die App startet ohne weitere Schritte mit denselben Daten und Konten.",
+          "tests": [] }
+      ]
+    },
+    {
+      "tag": "E1 / E2", "name": "Konten und Login", "desc": "Login, Sitzung, Route-Guard, Sitzungspflege und App-Layout (E1-Plan Paket 7, E1.1 Maßnahme 2 und 6, E2-Plan Paket 2).",
+      "items": [
+        { "id": "BYL-E1-030", "title": "Anmeldung mit E-Mail und Passwort ohne Enumeration", "art": ["integration", "komponente"], "status": "bestanden",
+          "pre": "–", "steps": ["npm run test:integration", "npm run test:web"],
+          "expect": "Ein vom Superuser angelegter Nutzer meldet sich an; falsches Passwort und unbekannte E-Mail werden identisch beantwortet; das Formular hat Labels, Autocomplete und eine deutsche Fehlermeldung.",
+          "tests": ["tests/integration/auth.test.mjs::answers a wrong password and an unknown e-mail identically", "web/src/routes/login/login-page.test.ts", "web/src/lib/auth.test.ts::Auth.login"] },
+        { "id": "BYL-E1-031", "title": "Sitzung übersteht Neuladen, ungültiger Token führt zum Login", "art": ["unit", "integration"], "status": "bestanden",
+          "pre": "–", "steps": ["npm run test:web", "npm run test:integration"],
+          "expect": "authRefresh stellt die Sitzung wieder her; manipulierte Tokens (401) und Tokens einer anderen Auth-Collection (403) werden abgelehnt.",
+          "tests": ["web/src/lib/auth.test.ts::Auth.restore", "web/src/lib/auth.test.ts::session persistence (LocalAuthStore)", "tests/integration/auth.test.mjs::rejects a manipulated token with 401", "tests/integration/auth.test.mjs::rejects the token of another auth collection with 403"] },
+        { "id": "BYL-E1-032", "title": "Route-Guard mit sicherem Rücksprungziel", "art": ["unit", "komponente"], "status": "bestanden",
+          "pre": "–", "steps": ["npm run test:web"],
+          "expect": "Ohne gültige Sitzung geht es zu /login?redirect=…, danach zurück zur Zielseite; fremde Ziele werden verworfen.",
+          "tests": ["web/src/lib/guard.test.ts", "web/src/routes/layout.test.ts"] },
+        { "id": "BYL-E2-001", "title": "Sitzungspflege (Keep-alive)", "art": ["unit", "integration"], "status": "bestanden",
+          "pre": "–", "steps": ["npm run test:web", "npm run test:integration"],
+          "expect": "Ein Token mit weniger als 24 h Restlaufzeit wird bei Start, Sichtbarkeitswechsel, online und alle 30 Minuten erneuert; 401/403 beendet die Sitzung, ein Netzwerkfehler nicht; authRefresh verlängert exp.",
+          "tests": ["web/src/lib/auth.test.ts::Auth.keepAlive", "web/src/lib/auth.test.ts::Auth.ensureValid", "tests/integration/session.test.mjs::extends the token expiry with authRefresh"] },
+        { "id": "BYL-E2-002", "title": "Abmelden beendet Realtime-Abos vor dem Leeren", "art": ["unit", "integration"], "status": "bestanden",
+          "pre": "–", "steps": ["npm run test:web", "npm run test:integration"],
+          "expect": "unsubscribe läuft vor clear; danach kommen keine Events mehr, ein zweiter Nutzer kann ohne 403 abonnieren.",
+          "tests": ["web/src/lib/auth.test.ts::Auth.logout", "tests/integration/session.test.mjs::delivers nothing after unsubscribe and clear, and lets another user subscribe"] },
+        { "id": "BYL-E2-003", "title": "Login-Meldungen und Hinweise", "art": ["komponente"], "status": "bestanden",
+          "pre": "–", "steps": ["npm run test:web"],
+          "expect": "429 und 5xx zeigen eigene Meldungen; nach jeder Ablehnung erscheint „Das Admin-Konto gilt nur für die Verwaltung, nicht für die App.“; Hinweis für alle und Link „Verwaltung (nur Admin)“; Fehler rot mit Icon.",
+          "tests": ["web/src/routes/login/login-page.test.ts::submitting"] },
+        { "id": "BYL-E2-004", "title": "App-Layout mit Kopfzeile, Fehlerseite, SDK ohne festen Host", "art": ["komponente", "unit"], "status": "bestanden",
+          "pre": "–", "steps": ["npm run test:web"],
+          "expect": "Kopfzeile mit „Angemeldet als …“ und „Abmelden“ nur unter (app); deutsche Fehlerseite mit „Zur Startseite“; SDK-Instanz über die eigene Origin.",
+          "tests": ["web/src/routes/(app)/app-layout.test.ts", "web/src/routes/error-page.test.ts", "web/src/lib/pocketbase.test.ts"] },
+        { "id": "BYL-E1-033", "title": "Selbstregistrierung gesperrt", "art": ["integration"], "status": "bestanden",
+          "pre": "–", "steps": ["npm run test:integration"],
+          "expect": "POST auf users ohne Superuser und das Löschen des eigenen Kontos sind verboten.",
+          "tests": ["tests/integration/migrations.test.mjs::rejects user self-registration", "tests/integration/rules.test.mjs::forbids self-registration and account deletion through the API"] },
+        { "id": "BYL-E1-034", "title": "Falsche Anmeldedaten im Browser", "art": ["manuell"], "status": "offen",
+          "pre": "App läuft, abgemeldet.",
+          "steps": ["Mit falschem Passwort anmelden.", "Mit unbekannter E-Mail anmelden.", "Mit dem Admin-Konto anmelden."],
+          "expect": "Jedes Mal dieselbe deutsche Fehlermeldung mit Icon und der Zusatz zum Admin-Konto; nichts verrät, ob die E-Mail existiert; das Admin-Konto kommt nicht in die App.",
+          "tests": [] },
+        { "id": "BYL-E1-035", "title": "Sitzung, Abmelden und Rücksprung", "art": ["manuell"], "status": "offen",
+          "pre": "Angemeldet.",
+          "steps": ["F5 drücken.", "Ein Ticket öffnen, die Adresse kopieren, „Abmelden“.", "Die kopierte Adresse aufrufen und anmelden."],
+          "expect": "Nach F5 bleibt die Sitzung; nach dem Abmelden erscheint die Login-Seite; nach der Anmeldung öffnet sich das kopierte Ticket.",
+          "tests": [] }
+      ]
+    },
+    {
+      "tag": "E1.1", "name": "Admin-Reset", "desc": "Notfallskript admin-zuruecksetzen.bat (E1.1 Maßnahme 4, ADR-0002 Nachtrag).",
+      "items": [
+        { "id": "BYL-E1-040", "title": "Passwortregeln und sichere Argumentübergabe", "art": ["unit"], "status": "bestanden",
+          "pre": "–", "steps": ["npm run test:unit"],
+          "expect": "Mindestens 10 Zeichen und höchstens 71 Bytes; jeder Wert übersteht die Windows-Kommandozeile unverändert.",
+          "tests": ["tests/unit/admin-reset-logic.test.mjs"] },
+        { "id": "BYL-E1-041", "title": "Passwort erscheint nirgends", "art": ["unit"], "status": "bestanden",
+          "pre": "–", "steps": ["npm run test:unit"],
+          "expect": "Doppelte verdeckte Eingabe als SecureString, Freigabe mit ZeroFreeBSTR, Start über ProcessStartInfo mit geschwärzter Ausgabe; das Fenster pausiert immer.",
+          "tests": ["tests/unit/start-scripts.test.mjs::admin reset"] },
+        { "id": "BYL-E1-042", "title": "Admin anlegen bzw. Passwort setzen ohne Datenverlust", "art": ["integration"], "status": "bestanden",
+          "pre": "–", "steps": ["npm run test:integration"],
+          "expect": "Legt das erste Admin-Konto in einem leeren Ordner an, setzt bei laufendem Server ein neues Passwort, App-Daten bleiben; Fehler ohne Passwort im Text.",
+          "tests": ["tests/integration/admin-reset.test.mjs"] },
+        { "id": "BYL-E1-043", "title": "admin-zuruecksetzen.bat von Hand", "art": ["manuell"], "status": "offen",
+          "pre": "Kopie von app\\ mit Daten.",
+          "steps": ["admin-zuruecksetzen.bat doppelklicken.", "E-Mail eingeben, zweimal ein neues Passwort (mindestens 10 Zeichen).", "Unter http://127.0.0.1:8090/_/ mit dem neuen Passwort anmelden."],
+          "expect": "Nur Erfolg oder Fehler wird angezeigt, nie das Passwort; die Anmeldung in der Verwaltung klappt; Tickets und App-Konten sind unverändert.",
+          "tests": [] },
+        { "id": "BYL-E1-044", "title": "Ungültige Eingaben beim Admin-Reset", "art": ["manuell"], "status": "offen",
+          "pre": "Kopie von app\\.",
+          "steps": ["admin-zuruecksetzen.bat mit zu kurzem Passwort ausführen.", "Erneut mit zwei unterschiedlichen Passwörtern ausführen."],
+          "expect": "Klare Fehlermeldung, nichts wird geändert, das Fenster bleibt bis zu einem Tastendruck offen.",
+          "tests": [] }
+      ]
+    },
+    {
+      "tag": "E1.1", "name": "Mail-Sperre", "desc": "Kein Mailer eingerichtet: Mail-Abläufe werden abgelehnt statt Erfolg vorzutäuschen (E1.1 Maßnahme 3).",
+      "items": [
+        { "id": "BYL-E1-050", "title": "Mail-Abläufe einheitlich mit 400 abgelehnt", "art": ["integration", "unit"], "status": "bestanden",
+          "pre": "–", "steps": ["npm run test:integration", "npm run test:unit"],
+          "expect": "request-password-reset, request-verification, request-email-change und request-otp jeder Auth-Collection (Name oder ID) antworten 400, byte-gleich für bekannte und unbekannte Adressen; die Meldung verweist auf README und Notfallskript.",
+          "tests": ["tests/integration/mail-flows.test.mjs::also rejects an authenticated e-mail change and requests by collection id", "tests/unit/mail-flows.test.mjs"] },
+        { "id": "BYL-E1-051", "title": "Login und authRefresh funktionieren weiter", "art": ["integration"], "status": "bestanden",
+          "pre": "–", "steps": ["npm run test:integration"],
+          "expect": "Passwort-Login und Sitzungserneuerung sind von der Sperre nicht betroffen.",
+          "tests": ["tests/integration/mail-flows.test.mjs::keeps password login and session refresh working"] },
+        { "id": "BYL-E1-052", "title": "Login-Warnmails abgeschaltet", "art": ["integration"], "status": "bestanden",
+          "pre": "–", "steps": ["npm run test:integration"],
+          "expect": "authAlert ist für alle Auth-Collections aus; die Migration lässt sich zurückrollen.",
+          "tests": ["tests/integration/mail-flows.test.mjs::are disabled for every auth collection", "tests/integration/migrations-rollback.test.mjs"] },
+        { "id": "BYL-E1-053", "title": "„Forgotten password“ in der Verwaltung", "art": ["manuell"], "status": "offen",
+          "pre": "App läuft, abgemeldet in der Verwaltung.",
+          "steps": ["http://127.0.0.1:8090/_/ öffnen, „Forgotten password“ wählen, eine Adresse absenden."],
+          "expect": "Fehlermeldung „E-Mail-Versand ist nicht eingerichtet …“, keine Erfolgsmeldung.",
+          "tests": [] }
+      ]
+    },
+    {
+      "tag": "E1", "name": "Backup und Restore", "desc": "Automatische Backups und manuelle Wiederherstellung (ADR-0003, README).",
+      "items": [
+        { "id": "BYL-E1-060", "title": "Automatische Backups alle 4 Stunden, 12 behalten", "art": ["integration"], "status": "bestanden",
+          "pre": "–", "steps": ["npm run test:integration"],
+          "expect": "backups.cron = 0 */4 * * *, cronMaxKeep = 12.",
+          "tests": ["tests/integration/migrations.test.mjs::enables automatic backups every four hours, keeping 12 (ADR-0003)"] },
+        { "id": "BYL-E1-061", "title": "Wiederherstellung aus dem Backup-ZIP", "art": ["integration"], "status": "bestanden",
+          "pre": "–", "steps": ["npm run test:integration"],
+          "expect": "Backup per API, Expand-Archive in einen neuen Datenordner, Start: Ticket, Key und Login sind vorhanden.",
+          "tests": ["tests/integration/backup-restore.test.mjs"] },
+        { "id": "BYL-E1-062", "title": "Manuelles Backup in der Verwaltung", "art": ["manuell"], "status": "offen",
+          "pre": "App läuft, Admin-Konto.",
+          "steps": ["Settings → Backups → Initialize new backup.", "Das Backup herunterladen."],
+          "expect": "Das ZIP erscheint in der Liste und in app\\pb_data\\backups\\ und lässt sich herunterladen.",
+          "tests": [] },
+        { "id": "BYL-E1-063", "title": "Manuelle Wiederherstellung nach README", "art": ["manuell"], "status": "offen",
+          "pre": "Kopie von app\\ mit mindestens einem Backup; die echte Instanz ist gestoppt.",
+          "steps": ["In der Kopie die Schritte 1–5 aus README „Wiederherstellen (nur manuell)“ ausführen.", "Anmelden und Daten prüfen."],
+          "expect": "Daten, Konten und Passwörter entsprechen dem Stand des Backups; ältere Backups liegen wieder in pb_data\\backups.",
+          "tests": [] },
+        { "id": "BYL-E1-064", "title": "Automatisches Backup im Betrieb", "art": ["manuell"], "status": "offen",
+          "pre": "App läuft über eine volle 4-Stunden-Grenze (UTC).",
+          "steps": ["Nach der Grenze app\\pb_data\\backups\\ ansehen."],
+          "expect": "Ein neues automatisches Backup liegt dort; höchstens 12 automatische bleiben.",
+          "tests": [] }
+      ]
+    },
+    {
+      "tag": "E1", "name": "Datenmodell und API-Regeln", "desc": "Migrationen, Enums, API-Regeln mit Negativtests (E1-Plan Pakete 2–4).",
+      "items": [
+        { "id": "BYL-E1-070", "title": "Schema per Migration", "art": ["integration"], "status": "bestanden",
+          "pre": "–", "steps": ["npm run test:integration"],
+          "expect": "Alle Collections mit Feldern, Relationen, Indizes und Regeln wie im E1-Plan; keine Nutzer oder Zugangsdaten in Migrationen.",
+          "tests": ["tests/integration/migrations.test.mjs::creates every E1 collection with fields, relations, indexes and API rules", "tests/integration/migrations.test.mjs::contains no users or credentials in migration files"] },
+        { "id": "BYL-E1-071", "title": "Migrationen lassen sich zurückrollen", "art": ["integration"], "status": "bestanden",
+          "pre": "–", "steps": ["npm run test:integration"],
+          "expect": "migrate up → down (alle) → up läuft im Wegwerf-Ordner ohne Fehler.",
+          "tests": ["tests/integration/migrations-rollback.test.mjs"] },
+        { "id": "BYL-E1-072", "title": "Status, Priorität und Kategorien", "art": ["unit"], "status": "bestanden",
+          "pre": "–", "steps": ["npm run test:unit"],
+          "expect": "Werte und Kategorien exakt nach CLAUDE.md §5, status.js und status.ts identisch.",
+          "tests": ["tests/unit/status.test.mjs"] },
+        { "id": "BYL-E1-073", "title": "Nur eigene Datensätze sichtbar", "art": ["integration"], "status": "bestanden",
+          "pre": "–", "steps": ["npm run test:integration"],
+          "expect": "Nutzer B bekommt für Datensätze von A eine leere Liste bzw. 404; anonyme Anfragen werden abgelehnt.",
+          "tests": ["tests/integration/rules.test.mjs::lists own private and household records only", "tests/integration/rules.test.mjs::returns 404 on view, update and delete of records outside the own scopes", "tests/integration/rules.test.mjs::rejects anonymous access"] },
+        { "id": "BYL-E1-074", "title": "Anlage und Änderung nur mit eigenem owner", "art": ["integration"], "status": "bestanden",
+          "pre": "–", "steps": ["npm run test:integration"],
+          "expect": "Fremder owner und Haushalt ohne Mitgliedschaft werden abgelehnt; owner ist unveränderlich.",
+          "tests": ["tests/integration/rules.test.mjs::rejects create with a foreign owner", "tests/integration/rules.test.mjs::rejects create in a household without membership", "tests/integration/rules.test.mjs::rejects updates that change the owner"] },
+        { "id": "BYL-E1-075", "title": "Haushalts-Join-Semantik", "art": ["integration"], "status": "bestanden",
+          "pre": "–", "steps": ["npm run test:integration"],
+          "expect": "Mitglieder sehen und ändern Haushaltsdatensätze; Verschieben nur in eigene Haushalte.",
+          "tests": ["tests/integration/rules.test.mjs::lets household members view and update household records", "tests/integration/rules.test.mjs::allows moving into own households only"] },
+        { "id": "BYL-E1-076", "title": "Regeln für Kommentare, Verlauf, Abhängigkeiten, Zähler", "art": ["integration"], "status": "bestanden",
+          "pre": "–", "steps": ["npm run test:integration"],
+          "expect": "Kommentare: author = eigene ID, Sichtbarkeit wie das Ticket, nur der Autor ändert. ticket_history und dependencies nur lesbar, ticket_counters komplett gesperrt.",
+          "tests": ["tests/integration/rules.test.mjs::comments", "tests/integration/rules.test.mjs::ticket_history", "tests/integration/rules.test.mjs::dependencies", "tests/integration/rules.test.mjs::ticket_counters"] },
+        { "id": "BYL-E1-077", "title": "Regeln für Haushalte, Mitgliedschaften und Nutzer", "art": ["integration"], "status": "bestanden",
+          "pre": "–", "steps": ["npm run test:integration"],
+          "expect": "Haushalte nur für Mitglieder und schreibgeschützt; nur eigene Mitgliedschaften; users nur der eigene Datensatz.",
+          "tests": ["tests/integration/rules.test.mjs::households and household_members", "tests/integration/rules.test.mjs::exposes only the own record"] },
+        { "id": "BYL-E1-078", "title": "Realtime liefert keine fremden Events", "art": ["integration"], "status": "bestanden",
+          "pre": "–", "steps": ["npm run test:integration"],
+          "expect": "Mit dem EventSource von Node 24 kommen keine Events über Datensätze außerhalb der eigenen Scopes an.",
+          "tests": ["tests/integration/realtime-rules.test.mjs"] },
+        { "id": "BYL-E1-079", "title": "Relationen nur im selben Scope", "art": ["unit", "integration"], "status": "bestanden",
+          "pre": "–", "steps": ["npm run test:unit", "npm run test:integration"],
+          "expect": "Projekte, Tags und Wiederholungsregeln anderer Scopes werden abgelehnt, ohne zu verraten, ob der Datensatz existiert.",
+          "tests": ["tests/integration/ticket-keys.test.mjs::relations across scopes (OF-3 c)", "tests/unit/ticket-rules.test.mjs::scopeViolations"] },
+        { "id": "BYL-E1-080", "title": "Längenlimits von Frontend und Schema gleich", "art": ["unit"], "status": "bestanden",
+          "pre": "–", "steps": ["npm run test:unit"],
+          "expect": "Titel, Beschreibung, Kommentar, Projekt- und Tag-Name haben im Frontend dieselben Grenzen wie in der Migration.",
+          "tests": ["tests/unit/web-limits.test.mjs"] }
+      ]
+    },
+    {
+      "tag": "E1", "name": "Ticketnummern", "desc": "Scope und atomare Key-Vergabe (E1-Plan Paket 5, OF-1, OF-8, OF-14).",
+      "items": [
+        { "id": "BYL-E1-090", "title": "Getrennte Nummernkreise", "art": ["unit", "integration"], "status": "bestanden",
+          "pre": "–", "steps": ["npm run test:unit", "npm run test:integration"],
+          "expect": "Ohne Projekt TASK-1, mit Projekt ABC-1 in eigenem Zähler; Haushaltstickets im Haushalts-Scope.",
+          "tests": ["tests/integration/ticket-keys.test.mjs::starts with TASK-1 without project and ABC-1 with project, in separate counters", "tests/integration/ticket-keys.test.mjs::numbers household tickets in the household scope", "tests/unit/ticket-key.test.mjs"] },
+        { "id": "BYL-E1-091", "title": "Parallele Anlage lückenlos", "art": ["integration"], "status": "bestanden",
+          "pre": "–", "steps": ["npm run test:integration"],
+          "expect": "25 parallele Anlagen ergeben 25 verschiedene, lückenlose Keys.",
+          "tests": ["tests/integration/ticket-keys.test.mjs::gives 25 parallel creations 25 distinct, gapless keys"] },
+        { "id": "BYL-E1-092", "title": "Fehlschlag verbraucht keine Nummer", "art": ["unit", "integration"], "status": "bestanden",
+          "pre": "–", "steps": ["npm run test:unit", "npm run test:integration"],
+          "expect": "Eine gescheiterte Anlage erhöht den Zähler nicht; das UPSERT bindet Schlüssel und ID als Parameter.",
+          "tests": ["tests/integration/ticket-keys.test.mjs::does not advance the counter when a creation fails", "tests/unit/counters.test.mjs"] },
+        { "id": "BYL-E1-093", "title": "Clientwerte für Scope, Key und Nummer werden ignoriert", "art": ["integration"], "status": "bestanden",
+          "pre": "–", "steps": ["npm run test:integration"],
+          "expect": "Der Hook überschreibt scope, key und number.",
+          "tests": ["tests/integration/ticket-keys.test.mjs::ignores scope, key and number sent by the client"] },
+        { "id": "BYL-E1-094", "title": "Neuer Key bei Projekt- oder Scopewechsel", "art": ["unit", "integration"], "status": "bestanden",
+          "pre": "–", "steps": ["npm run test:unit", "npm run test:integration"],
+          "expect": "Wechsel von Projekt oder Haushalt vergibt einen Key im Ziel-Nummernkreis; sonst bleibt der Key.",
+          "tests": ["tests/integration/ticket-keys.test.mjs::draws a new key in the target counter when the project changes", "tests/integration/ticket-keys.test.mjs::draws a new key in the target scope when the household changes", "tests/unit/ticket-rules.test.mjs::needsNewKey"] },
+        { "id": "BYL-E1-095", "title": "Projektcodes", "art": ["unit", "integration"], "status": "bestanden",
+          "pre": "–", "steps": ["npm run test:unit", "npm run test:integration"],
+          "expect": "2–6 Großbuchstaben, TASK reserviert, doppelt im selben Scope abgelehnt; Code fest und Löschen gesperrt, solange Tickets das Projekt nutzen; Archivieren erlaubt.",
+          "tests": ["tests/integration/ticket-keys.test.mjs::projects", "tests/unit/ticket-key.test.mjs::isValidProjectCode"] },
+        { "id": "BYL-E1-096", "title": "Tags eindeutig pro Scope", "art": ["integration"], "status": "bestanden",
+          "pre": "–", "steps": ["npm run test:integration"],
+          "expect": "Gleichnamige Tags ohne Rücksicht auf Groß-/Kleinschreibung im selben Scope abgelehnt, in anderem erlaubt; Scope bleibt, solange Tickets sie nutzen.",
+          "tests": ["tests/integration/ticket-keys.test.mjs::tags (OF-8)"] },
+        { "id": "BYL-E1-097", "title": "Standardwerte bei der Anlage", "art": ["unit", "integration"], "status": "bestanden",
+          "pre": "–", "steps": ["npm run test:unit", "npm run test:integration"],
+          "expect": "Ohne Angabe status open, priority medium, blocks_parent true; gesendete Werte bleiben.",
+          "tests": ["tests/integration/ticket-keys.test.mjs::ticket defaults (OF-11)", "tests/unit/ticket-rules.test.mjs::createDefaults"] }
+      ]
+    },
+    {
+      "tag": "E1", "name": "Verlauf und Guards", "desc": "completed_at, Fälligkeit, Historie in derselben Transaktion, Parent-Guards (E1-Plan Paket 6).",
+      "items": [
+        { "id": "BYL-E1-100", "title": "completed_at folgt dem Status", "art": ["unit", "integration"], "status": "bestanden",
+          "pre": "–", "steps": ["npm run test:unit", "npm run test:integration"],
+          "expect": "Gesetzt beim Wechsel nach done (auch bei Anlage als done), geleert beim Verlassen; Clientwerte werden ignoriert.",
+          "tests": ["tests/integration/ticket-lifecycle.test.mjs::completed_at", "tests/unit/ticket-rules.test.mjs::completedAtAction"] },
+        { "id": "BYL-E1-101", "title": "Fälligkeit nur als Kalenderdatum", "art": ["unit", "integration"], "status": "bestanden",
+          "pre": "–", "steps": ["npm run test:unit", "npm run test:integration"],
+          "expect": "Kalenderdaten werden als Mitternacht UTC gespeichert, Uhrzeiten abgelehnt.",
+          "tests": ["tests/integration/ticket-lifecycle.test.mjs::due", "tests/unit/ticket-rules.test.mjs::isCalendarDate"] },
+        { "id": "BYL-E1-102", "title": "Historie: Anlage und je geändertem Feld ein Eintrag", "art": ["unit", "integration"], "status": "bestanden",
+          "pre": "–", "steps": ["npm run test:unit", "npm run test:integration"],
+          "expect": "Anlage mit Key und Akteur; ein Eintrag je geändertem Whitelist-Feld, keiner für unveränderte; Tags reihenfolgeunabhängig; Frontend-Labels decken alle Felder ab.",
+          "tests": ["tests/integration/ticket-history.test.mjs::writes one entry per changed field and none for unchanged ones", "tests/unit/history.test.mjs", "tests/unit/web-labels.test.mjs"] },
+        { "id": "BYL-E1-103", "title": "Alter Key und Haushaltswechsel im Verlauf", "art": ["integration"], "status": "bestanden",
+          "pre": "–", "steps": ["npm run test:integration"],
+          "expect": "Ein Projektwechsel protokolliert den alten Key, ein Haushaltswechsel den neuen.",
+          "tests": ["tests/integration/ticket-history.test.mjs::records the old key when the project changes (package 5 addendum)", "tests/integration/ticket-history.test.mjs::records household moves with the new key"] },
+        { "id": "BYL-E1-104", "title": "Akteur im Verlauf", "art": ["integration"], "status": "bestanden",
+          "pre": "–", "steps": ["npm run test:integration"],
+          "expect": "Das ändernde Haushaltsmitglied wird genannt; Superuser- und Systemänderungen ohne Nutzer; der Akteur ist weder setzbar noch gespeichert.",
+          "tests": ["tests/integration/ticket-history.test.mjs::names the household member who changed the ticket, not the owner", "tests/integration/ticket-history.test.mjs::leaves the user empty for superuser and system changes", "tests/integration/ticket-history.test.mjs::keeps the actor transient: not settable, not stored, not returned"] },
+        { "id": "BYL-E1-105", "title": "Fehler im Verlauf rollt die Änderung zurück", "art": ["integration"], "status": "bestanden",
+          "pre": "–", "steps": ["npm run test:integration"],
+          "expect": "Scheitert der Historien-Eintrag, werden Update samt neuem Key bzw. Anlage samt Zähler zurückgerollt (OF-15).",
+          "tests": ["tests/integration/ticket-history.test.mjs::history failures roll back the ticket change (OF-15)"] },
+        { "id": "BYL-E1-106", "title": "Parent höchstens eine Ebene", "art": ["unit", "integration"], "status": "bestanden",
+          "pre": "–", "steps": ["npm run test:unit", "npm run test:integration"],
+          "expect": "Kein Parent auf sich selbst, keine zweite Ebene, keine Zyklen, gleicher Scope; Löschen des Parents leert den Verweis der Kinder.",
+          "tests": ["tests/integration/ticket-guards.test.mjs", "tests/unit/ticket-rules.test.mjs::parentViolation"] }
+      ]
+    },
+    {
+      "tag": "E2", "name": "Ticketliste", "desc": "Liste „Alle Tickets“ mit Standard-Reihenfolge, Häkchen und „Erledigte anzeigen“ (E2-Plan Pakete 3–5; Browser-Checkliste §9).",
+      "items": [
+        { "id": "BYL-E2-010", "title": "Standard-Reihenfolge (P-2)", "art": ["unit"], "status": "bestanden",
+          "pre": "–", "steps": ["npm run test:web"],
+          "expect": "Überfällige und bald fällige (7 Tage) nach Datum, dann nach Priorität, mit Fälligkeit vor ohne, dann neueste; unabhängig von der Eingabereihenfolge.",
+          "tests": ["web/src/lib/domain/ordering.test.ts", "web/src/lib/stores/ticket-list.test.ts::loading and order"] },
+        { "id": "BYL-E2-011", "title": "„Heute“ nach Berliner Zeit, Neusortierung um Mitternacht", "art": ["unit"], "status": "bestanden",
+          "pre": "–", "steps": ["npm run test:web"],
+          "expect": "berlinToday stimmt an den Sommerzeit-Umstellungen, um Mitternacht, am Jahreswechsel und am 29.02.; die Liste sortiert über Mitternacht ohne Reload neu.",
+          "tests": ["web/src/lib/domain/berlin-date.test.ts", "web/src/lib/stores/ticket-list.test.ts::today"] },
+        { "id": "BYL-E2-012", "title": "Offene Tickets laden", "art": ["integration"], "status": "bestanden",
+          "pre": "–", "steps": ["npm run test:integration"],
+          "expect": "Nur nicht erledigte, nur eigene Tickets, ohne Beschreibung; Projekt und Tags über expand.",
+          "tests": ["tests/integration/web-data-tickets.test.mjs::lists open tickets without done tickets and without tickets of other users", "tests/integration/web-data-tickets.test.mjs::returns list entries without the description", "tests/integration/web-data-tickets.test.mjs::shows project and tags through expand and in the lookup lists"] },
+        { "id": "BYL-E2-013", "title": "„Erledigte anzeigen“ mit Seiten und URL", "art": ["integration", "komponente", "unit"], "status": "bestanden",
+          "pre": "–", "steps": ["npm run test:integration", "npm run test:web"],
+          "expect": "Zuletzt erledigte zuerst, 50 pro Seite mit „Weitere laden“; der Schalter steht als ?erledigte=1 in der URL und in allen Links.",
+          "tests": ["tests/integration/web-data-tickets.test.mjs::pages done tickets, most recently completed first", "web/src/lib/components/ticket-list-view.test.ts", "web/src/lib/ticket-links.test.ts", "web/src/routes/(app)/(tickets)/tickets-layout.test.ts"] },
+        { "id": "BYL-E2-014", "title": "Zeileninhalt und Textersatz", "art": ["komponente", "unit"], "status": "bestanden",
+          "pre": "–", "steps": ["npm run test:web"],
+          "expect": "Key, Titel mit Tags, Status-Pille, Prioritäts-Icon, Projekt, Fälligkeit und „wiederkehrend“ mit Textersatz; deutsche Bezeichnungen und Datumsformate.",
+          "tests": ["web/src/lib/components/ticket-row.test.ts", "web/src/lib/domain/labels.test.ts", "web/src/lib/domain/format.test.ts"] },
+        { "id": "BYL-E2-015", "title": "Häkchen mit „Rückgängig“", "art": ["unit", "komponente", "integration"], "status": "bestanden",
+          "pre": "–", "steps": ["npm run test:web", "npm run test:integration"],
+          "expect": "Setzt bzw. entfernt done, gesperrt während der Anfrage, springt bei Fehler mit Meldung zurück; 5 s „Rückgängig“ stellt den vorherigen Status her; Entfernen setzt „Offen“.",
+          "tests": ["web/src/lib/stores/ticket-list.test.ts::check mark", "web/src/lib/components/ticket-row.test.ts", "tests/integration/web-data-tickets.test.mjs::sets and clears completed_at with the check mark"] },
+        { "id": "BYL-E2-016", "title": "Leere Zustände, Laden und Fehler", "art": ["komponente"], "status": "bestanden",
+          "pre": "–", "steps": ["npm run test:web"],
+          "expect": "„Keine offenen Tickets.“ mit „Neues Ticket“, „Noch keine erledigten Tickets.“, verzögerter Ladehinweis, Fehler als .alert-error mit „Erneut versuchen“.",
+          "tests": ["web/src/lib/components/ticket-list-view.test.ts::ticket list view"] },
+        { "id": "BYL-E2-017", "title": "Fehlerarten des Datenzugriffs", "art": ["unit", "integration"], "status": "bestanden",
+          "pre": "–", "steps": ["npm run test:web", "npm run test:integration"],
+          "expect": "aborted, network, auth, not_found und validation werden strukturell erkannt und deutsch benannt; Feldfehler kommen am Feld an.",
+          "tests": ["web/src/lib/data/errors.test.ts", "tests/integration/web-data-tickets.test.mjs::reports tickets of other users as not found"] },
+        { "id": "BYL-E2-018", "title": "Startansicht", "art": ["manuell"], "status": "offen",
+          "pre": "Angemeldet.",
+          "steps": ["Die Startseite ansehen, einmal ohne und einmal mit Tickets."],
+          "expect": "Nur nicht erledigte Tickets; ohne Tickets steht „Keine offenen Tickets.“ mit „Neues Ticket“.",
+          "tests": [] },
+        { "id": "BYL-E2-019", "title": "Reihenfolge mit drei Tickets", "art": ["manuell"], "status": "offen",
+          "pre": "Angemeldet.",
+          "steps": ["Ticket ohne Fälligkeit mit Priorität „Dringend“ anlegen.", "Ticket mit Fälligkeit gestern und Priorität „Niedrig“ anlegen.", "Ticket mit Fälligkeit in 20 Tagen und Priorität „Hoch“ anlegen."],
+          "expect": "Reihenfolge: gestern (mit „überfällig“), dann „Dringend“ ohne Datum, dann „Hoch“ mit Datum.",
+          "tests": [] },
+        { "id": "BYL-E2-020", "title": "Fälligkeitshinweise nicht rot", "art": ["manuell"], "status": "offen",
+          "pre": "Tickets mit Fälligkeit gestern, heute und morgen.",
+          "steps": ["Die Liste ansehen."],
+          "expect": "„überfällig“, „heute“ und „morgen“ sind nicht rot.",
+          "tests": [] },
+        { "id": "BYL-E2-021", "title": "Häkchen und „Rückgängig“ im Browser", "art": ["manuell"], "status": "offen",
+          "pre": "Ein Ticket mit Status „In Arbeit“.",
+          "steps": ["Häkchen setzen.", "Erneut: Häkchen setzen und „Rückgängig“ klicken."],
+          "expect": "Die Zeile bleibt 5 s durchgestrichen mit „Rückgängig“ stehen und verschwindet dann; „Rückgängig“ stellt „In Arbeit“ wieder her.",
+          "tests": [] },
+        { "id": "BYL-E2-022", "title": "„Erledigte anzeigen“ im Browser", "art": ["manuell"], "status": "offen",
+          "pre": "Mindestens ein erledigtes Ticket.",
+          "steps": ["„Erledigte anzeigen“ einschalten.", "F5 drücken, dann Zurück."],
+          "expect": "Der Abschnitt „Erledigt“ erscheint, die Adresse enthält ?erledigte=1, F5 und Zurück behalten den Zustand.",
+          "tests": [] }
+      ]
+    },
+    {
+      "tag": "E2", "name": "Detail-Panel", "desc": "Seitenpanel mit Inline-Bearbeitung und Markdown (E2-Plan Pakete 6, 7 und 12).",
+      "items": [
+        { "id": "BYL-E2-030", "title": "Speichern je Feld mit Entwurfsschutz", "art": ["unit", "integration"], "status": "bestanden",
+          "pre": "–", "steps": ["npm run test:web", "npm run test:integration"],
+          "expect": "Nur das geänderte Feld wird gesendet; ein Fehler behält den Entwurf und setzt den Feldfehler; ein eingehendes Update überschreibt den Entwurf nicht.",
+          "tests": ["web/src/lib/stores/ticket-detail.test.ts::saving", "web/src/lib/stores/ticket-detail.test.ts::drafts and updates", "tests/integration/web-data-tickets.test.mjs::changes only the sent fields"] },
+        { "id": "BYL-E2-031", "title": "Inline-Bearbeitung im Panel", "art": ["komponente"], "status": "bestanden",
+          "pre": "–", "steps": ["npm run test:web"],
+          "expect": "Enter und Blur speichern, Escape verwirft, Datum entfernen, „Ticket nicht gefunden“, Escape schließt das Panel, Attribute für Barrierefreiheit.",
+          "tests": ["web/src/lib/components/ticket-panel.test.ts::ticket panel", "web/src/lib/components/ticket-panel.test.ts::ticket route"] },
+        { "id": "BYL-E2-032", "title": "Fälligkeit im Kalenderformat", "art": ["unit", "integration"], "status": "bestanden",
+          "pre": "–", "steps": ["npm run test:web", "npm run test:integration"],
+          "expect": "YYYY-MM-DD ↔ YYYY-MM-DD 00:00:00.000Z hin und zurück, leerer Wert entfernt die Fälligkeit.",
+          "tests": ["web/src/lib/domain/ticket.test.ts", "tests/integration/web-data-tickets.test.mjs::stores a due date given as YYYY-MM-DD in the calendar format and clears it"] },
+        { "id": "BYL-E2-033", "title": "Markdown sanitisiert", "art": ["unit", "komponente"], "status": "bestanden",
+          "pre": "–", "steps": ["npm run test:web"],
+          "expect": "XSS-Fälle aus ADR-0008 neutralisiert, erlaubte Formatierung bleibt, Links mit rel=\"noopener noreferrer\", keine Bilder; {@html} nur in Markdown.svelte; Editor mit Vorschau und Zeichenlimit.",
+          "tests": ["web/src/lib/markdown.test.ts", "web/src/lib/no-raw-html.test.ts", "web/src/lib/components/markdown-editor.test.ts"] },
+        { "id": "BYL-E2-034", "title": "Rückfrage „Änderungen verwerfen?“", "art": ["komponente"], "status": "bestanden",
+          "pre": "–", "steps": ["npm run test:web"],
+          "expect": "Ungespeicherte Beschreibung oder ungespeicherter Kommentar lösen beim Verlassen des Panels die Rückfrage aus; ohne Änderungen keine.",
+          "tests": ["web/src/lib/components/ticket-panel.test.ts::ticket route: unsaved text"] },
+        { "id": "BYL-E2-035", "title": "Felder im Panel bearbeiten", "art": ["manuell"], "status": "offen",
+          "pre": "Ein Ticket ist im Panel geöffnet.",
+          "steps": ["Titel, Status, Priorität, Fälligkeit (auch „Entfernen“) und Beschreibung ändern.", "Den Titel leeren und speichern."],
+          "expect": "Die Liste zeigt jede Änderung sofort; der leere Titel wird mit rotem Hinweis abgelehnt.",
+          "tests": [] },
+        { "id": "BYL-E2-036", "title": "Markdown in der Beschreibung", "art": ["manuell"], "status": "offen",
+          "pre": "Ein Ticket ist im Panel geöffnet.",
+          "steps": ["Beschreibung mit Überschrift, Liste, Link und Code speichern.", "Zusätzlich ein Script-Tag und ein Markdown-Bild eintragen und speichern."],
+          "expect": "Vorschau und Anzeige formatieren korrekt; Script-Tag und Bild erscheinen nicht als HTML bzw. Bild.",
+          "tests": [] },
+        { "id": "BYL-E2-037", "title": "Adresse des Panels", "art": ["manuell"], "status": "offen",
+          "pre": "Ein Ticket ist im Panel geöffnet.",
+          "steps": ["F5 drücken."],
+          "expect": "Die Adresse ist /tickets/<id>, nach dem Neuladen ist dasselbe Ticket offen.",
+          "tests": [] },
+        { "id": "BYL-E2-038", "title": "Rückfrage bei ungespeicherter Beschreibung", "art": ["manuell"], "status": "offen",
+          "pre": "Ein Ticket ist im Panel geöffnet.",
+          "steps": ["Beschreibung bearbeiten und Text ändern.", "„Schließen“, Escape (außerhalb des Textfelds) oder ein anderes Ticket anklicken.", "„Abbrechen“ wählen."],
+          "expect": "Die Rückfrage erscheint; „Abbrechen“ bleibt im Panel mit dem Text.",
+          "tests": [] },
+        { "id": "BYL-E2-039", "title": "Rückfrage bei angefangenem Kommentar", "art": ["manuell"], "status": "offen",
+          "pre": "Ein Ticket ist im Panel geöffnet.",
+          "steps": ["Einen Kommentar anfangen und das Panel verlassen.", "Ohne Änderungen das Panel verlassen."],
+          "expect": "Mit angefangenem Kommentar erscheint die Rückfrage, ohne Änderungen nicht.",
+          "tests": [] }
+      ]
+    },
+    {
+      "tag": "E2", "name": "Neues Ticket", "desc": "Anlageformular im Seitenpanel (E2-Plan Paket 8).",
+      "items": [
+        { "id": "BYL-E2-040", "title": "Anlageformular", "art": ["komponente", "unit"], "status": "bestanden",
+          "pre": "–", "steps": ["npm run test:web"],
+          "expect": "Pflichtfeld Titel mit Erklärung, Standardwerte, Strg+Enter, Sperre während der Anfrage, Navigation per replaceState auf die neue ID, Serverfehler als .alert-error.",
+          "tests": ["web/src/lib/components/new-ticket.test.ts", "web/src/lib/stores/ticket-detail.test.ts::creating"] },
+        { "id": "BYL-E2-041", "title": "Anlage über die Datenschicht", "art": ["integration"], "status": "bestanden",
+          "pre": "–", "steps": ["npm run test:integration"],
+          "expect": "Key TASK-n, Status open, Priorität medium, Fälligkeit möglich; ohne Titel Fehlerart validation am Feld title.",
+          "tests": ["tests/integration/web-data-tickets.test.mjs::creates a private ticket with key, default status and priority", "tests/integration/web-data-tickets.test.mjs::creates a ticket with a due date", "tests/integration/web-data-tickets.test.mjs::rejects a ticket without title on creation"] },
+        { "id": "BYL-E2-042", "title": "Neues Ticket im Browser", "art": ["manuell"], "status": "offen",
+          "pre": "Angemeldet.",
+          "steps": ["„Neues Ticket“ klicken, ohne Titel „Anlegen“ versuchen.", "Titel eingeben, Strg+Enter."],
+          "expect": "Ohne Titel ist „Anlegen“ gesperrt und erklärt warum; danach zeigt das Panel den neuen Key und die Zeile steht an der richtigen Stelle.",
+          "tests": [] },
+        { "id": "BYL-E2-043", "title": "Abbrechen mit Eingabe", "art": ["manuell"], "status": "offen",
+          "pre": "Formular „Neues Ticket“ offen.",
+          "steps": ["Etwas eintragen, dann „Abbrechen“ bzw. Escape."],
+          "expect": "Die Rückfrage erscheint; ohne Eingabe schließt das Formular sofort.",
+          "tests": [] }
+      ]
+    },
+    {
+      "tag": "E2", "name": "Kommentare", "desc": "Kommentare mit Markdown, Bearbeiten und Löschen nur durch den Autor (E2-Plan Paket 9).",
+      "items": [
+        { "id": "BYL-E2-050", "title": "Kommentarliste und -formular", "art": ["komponente", "unit"], "status": "bestanden",
+          "pre": "–", "steps": ["npm run test:web"],
+          "expect": "Sanitisiertes Markdown, Knöpfe nur bei eigenen Kommentaren, Bearbeiten und Abbrechen, Löschen mit Rückfrage, Zeichenlimit 20 000; Autor „Du“.",
+          "tests": ["web/src/lib/components/comments.test.ts", "web/src/lib/stores/ticket-activity.test.ts", "web/src/lib/domain/people.test.ts"] },
+        { "id": "BYL-E2-051", "title": "Kommentare über die Datenschicht", "art": ["integration"], "status": "bestanden",
+          "pre": "–", "steps": ["npm run test:integration"],
+          "expect": "Anlage als angemeldeter Nutzer, älteste zuerst, nur des Tickets; der Autor bearbeitet und löscht; B bekommt not_found; leerer Kommentar ist ein Feldfehler.",
+          "tests": ["tests/integration/web-data-comments.test.mjs::web data layer: comments"] },
+        { "id": "BYL-E2-052", "title": "Kommentar schreiben", "art": ["manuell"], "status": "offen",
+          "pre": "Ein Ticket ist im Panel geöffnet.",
+          "steps": ["Reiter „Kommentare“ prüfen.", "Kommentar mit **fett** schreiben, Vorschau ansehen, Strg+Enter."],
+          "expect": "Der Reiter ist vorausgewählt; der Kommentar steht unten, Autor „Du“, Zeit in deutscher Ortszeit.",
+          "tests": [] },
+        { "id": "BYL-E2-053", "title": "Kommentar bearbeiten und löschen", "art": ["manuell"], "status": "offen",
+          "pre": "Ein eigener Kommentar existiert.",
+          "steps": ["Kommentar bearbeiten und speichern.", "„Löschen“, in der Rückfrage „Abbrechen“, dann erneut und bestätigen."],
+          "expect": "„bearbeitet“ erscheint; die Rückfrage „Kommentar löschen?“ lässt ihn bei „Abbrechen“ stehen und entfernt ihn nach Bestätigung.",
+          "tests": [] }
+      ]
+    },
+    {
+      "tag": "E2", "name": "Verlauf-UI", "desc": "Reiter „Verlauf“ mit lesbaren Einträgen (E2-Plan Paket 10).",
+      "items": [
+        { "id": "BYL-E2-060", "title": "Aufbereitung der Einträge", "art": ["unit"], "status": "bestanden",
+          "pre": "–", "steps": ["npm run test:web"],
+          "expect": "Jede Feldart lesbar, leerer Akteur als „System“, unbekannte IDs als „(gelöscht)“, Zeit TT.MM.JJJJ HH:MM Berliner Zeit.",
+          "tests": ["web/src/lib/domain/history-format.test.ts"] },
+        { "id": "BYL-E2-061", "title": "Verlaufsliste und Reiter", "art": ["komponente"], "status": "bestanden",
+          "pre": "–", "steps": ["npm run test:web"],
+          "expect": "Reiter per Pfeiltasten, Pos1 und Ende; aufklappbare Beschreibung als reiner Text.",
+          "tests": ["web/src/lib/components/history-list.test.ts::activity tabs", "web/src/lib/components/history-list.test.ts::history list"] },
+        { "id": "BYL-E2-062", "title": "Verlauf über die Datenschicht", "art": ["integration"], "status": "bestanden",
+          "pre": "–", "steps": ["npm run test:integration"],
+          "expect": "Anlage-Eintrag und je geändertem Feld ein Eintrag, neueste zuerst, Schreibreihenfolge bei gleichem Zeitpunkt.",
+          "tests": ["tests/integration/web-data-comments.test.mjs::web data layer: history"] },
+        { "id": "BYL-E2-063", "title": "Verlauf im Browser", "art": ["manuell"], "status": "offen",
+          "pre": "Ein Ticket mit mehreren Änderungen ist im Panel geöffnet.",
+          "steps": ["Reiter „Verlauf“ per Pfeiltaste öffnen."],
+          "expect": "Neueste Änderung oben (etwa „Status: Offen → In Arbeit“, „Fälligkeit gesetzt: …“), ganz unten „hat das Ticket angelegt (TASK-n)“.",
+          "tests": [] },
+        { "id": "BYL-E2-064", "title": "Geänderte Beschreibung aufklappen", "art": ["manuell"], "status": "offen",
+          "pre": "Die Beschreibung des Tickets wurde geändert.",
+          "steps": ["„Beschreibung geändert“ aufklappen."],
+          "expect": "Alter und neuer Text erscheinen als reiner Text.",
+          "tests": [] }
+      ]
+    },
+    {
+      "tag": "E2", "name": "Löschen", "desc": "Endgültiges Löschen mit Sicherheitsabfrage (E2-Plan Paket 11, P-4).",
+      "items": [
+        { "id": "BYL-E2-070", "title": "Löschdialog", "art": ["komponente", "unit"], "status": "bestanden",
+          "pre": "–", "steps": ["npm run test:web"],
+          "expect": "Dialog mit Key und Hinweis auf Kommentare und Verlauf, „Abbrechen“ löscht nicht, Bestätigen löscht genau einmal, Fehler im Dialog.",
+          "tests": ["web/src/lib/components/delete-ticket.test.ts", "web/src/lib/stores/ticket-detail.test.ts::TicketDetailStore: deleting"] },
+        { "id": "BYL-E2-071", "title": "Löschen entfernt Kommentare und Verlauf", "art": ["integration"], "status": "bestanden",
+          "pre": "–", "steps": ["npm run test:integration"],
+          "expect": "Nach deleteTicket sind Kommentare und Verlauf leer.",
+          "tests": ["tests/integration/web-data-tickets.test.mjs::deletes a ticket together with its comments and history"] },
+        { "id": "BYL-E2-072", "title": "Löschdialog im Browser", "art": ["manuell"], "status": "offen",
+          "pre": "Ein Ticket ist im Panel geöffnet.",
+          "steps": ["„Löschen …“ klicken."],
+          "expect": "Der Dialog nennt den Key und warnt, dass Kommentare und Verlauf mitgelöscht werden; Fokus auf „Abbrechen“; „Endgültig löschen“ ist nicht rot.",
+          "tests": [] },
+        { "id": "BYL-E2-073", "title": "Escape im Löschdialog", "art": ["manuell"], "status": "offen",
+          "pre": "Löschdialog offen.",
+          "steps": ["Escape drücken."],
+          "expect": "Nur der Dialog schließt, das Panel bleibt offen.",
+          "tests": [] },
+        { "id": "BYL-E2-074", "title": "Endgültig löschen", "art": ["manuell"], "status": "offen",
+          "pre": "Löschdialog offen.",
+          "steps": ["„Endgültig löschen“ klicken."],
+          "expect": "Das Panel schließt, die Zeile ist weg, eine Statusmeldung nennt den Key, der Fokus steht auf „Alle Tickets“.",
+          "tests": [] }
+      ]
+    },
+    {
+      "tag": "E2", "name": "Realtime", "desc": "Live-Aktualisierung von Liste, Panel, Kommentaren und Verlauf mit Abgleich nach dem Neuverbinden (E2-Plan Paket 12, ADR-0007).",
+      "items": [
+        { "id": "BYL-E2-080", "title": "Stores folgen Realtime gezielt", "art": ["unit"], "status": "bestanden",
+          "pre": "–", "steps": ["npm run test:web"],
+          "expect": "create, update und delete wirken gezielt; ein älteres Event wird ignoriert; Abgleich fügt ein, ersetzt und entfernt; zweites PB_CONNECT bricht den laufenden Abgleich ab; alle Abos werden beendet.",
+          "tests": ["web/src/lib/stores/realtime.test.ts", "web/src/lib/stores/ticket-list.test.ts::upsert and remove"] },
+        { "id": "BYL-E2-081", "title": "Realtime gegen den Server", "art": ["integration"], "status": "bestanden",
+          "pre": "–", "steps": ["npm run test:integration"],
+          "expect": "Änderungen eines zweiten Clients kommen an, nichts bei fremden Nutzern; Listenfelder mit expand.project ohne Beschreibung; Panel-Thema mit Beschreibung; Kommentare und Verlauf nur des gefilterten Tickets; Neuverbinden wird gemeldet; nach unsubscribe nichts mehr.",
+          "tests": ["tests/integration/web-realtime.test.mjs::delivers changes and deletions of a second client, and nothing to a foreign user", "tests/integration/web-realtime.test.mjs::delivers only comments and history of the filtered ticket", "tests/integration/web-realtime.test.mjs::reports a reconnection but not the first connection, and keeps delivering", "tests/integration/web-realtime.test.mjs::delivers nothing after unsubscribing"] },
+        { "id": "BYL-E2-082", "title": "Panel eines anderswo gelöschten Tickets", "art": ["komponente"], "status": "bestanden",
+          "pre": "–", "steps": ["npm run test:web"],
+          "expect": "„Dieses Ticket wurde gelöscht.“ mit „Zur Liste“.",
+          "tests": ["web/src/lib/components/ticket-panel.test.ts::ticket panel: deleted elsewhere"] },
+        { "id": "BYL-E2-083", "title": "Abo bleibt nach authRefresh", "art": ["integration"], "status": "bestanden",
+          "pre": "–", "steps": ["npm run test:integration"],
+          "expect": "Ein Realtime-Abo bekommt nach authRefresh weiter Events.",
+          "tests": ["tests/integration/session.test.mjs::keeps delivering realtime events after authRefresh"] },
+        { "id": "BYL-E2-084", "title": "Liste folgt dem zweiten Fenster", "art": ["manuell"], "status": "offen",
+          "pre": "Fenster A und B mit demselben Konto.",
+          "steps": ["In B ein Ticket anlegen, ändern und abhaken."],
+          "expect": "A zeigt es jeweils ohne Neuladen an der richtigen Stelle.",
+          "tests": [] },
+        { "id": "BYL-E2-085", "title": "Beschreibung live, Entwurf bleibt", "art": ["manuell"], "status": "offen",
+          "pre": "Dasselbe Ticket in A und B geöffnet.",
+          "steps": ["In B die Beschreibung ändern.", "In A die Beschreibung in Bearbeitung nehmen, in B erneut ändern."],
+          "expect": "A zeigt die neue Beschreibung; ein Entwurf in A bleibt stehen.",
+          "tests": [] },
+        { "id": "BYL-E2-086", "title": "Kommentar und Verlauf live", "art": ["manuell"], "status": "offen",
+          "pre": "Dasselbe Ticket in A und B geöffnet.",
+          "steps": ["In B einen Kommentar schreiben und den Status ändern."],
+          "expect": "A zeigt den Kommentar im Reiter „Kommentare“ und die Statusänderung im „Verlauf“.",
+          "tests": [] },
+        { "id": "BYL-E2-087", "title": "Offenes Ticket anderswo gelöscht", "art": ["manuell"], "status": "offen",
+          "pre": "Dasselbe Ticket in A und B geöffnet.",
+          "steps": ["In B das Ticket löschen."],
+          "expect": "A zeigt „Dieses Ticket wurde gelöscht.“ mit „Zur Liste“.",
+          "tests": [] },
+        { "id": "BYL-E2-088", "title": "Anderes Konto sieht nichts", "art": ["manuell"], "status": "offen",
+          "pre": "Ein zweites App-Konto (falls vorhanden) in einem anderen Browserprofil.",
+          "steps": ["Die Schritte aus BYL-E2-084 wiederholen."],
+          "expect": "Das andere Konto sieht keine dieser Änderungen.",
+          "tests": [] },
+        { "id": "BYL-E2-089", "title": "Server weg und wieder da", "art": ["manuell"], "status": "offen",
+          "pre": "Fenster A und B offen.",
+          "steps": ["app\\stop.bat, dann in A ein Häkchen setzen oder etwas speichern.", "app\\start.bat, dann in B etwas ändern."],
+          "expect": "Rote Meldung mit Icon („Server nicht erreichbar …“), der Wert springt zurück; nach dem Neustart übernimmt A die Änderung aus B ohne Neuladen und ohne Flackern.",
+          "tests": [] }
+      ]
+    },
+    {
+      "tag": "E2", "name": "Barrierefreiheit, Tastatur und Darstellung", "desc": "Farben nur aus tokens.css, Fehlerfarbe, Fokusführung, Bereichs-Umschalter (E2-Plan Pakete 1, 2 und §3).",
+      "items": [
+        { "id": "BYL-E2-090", "title": "Farbtoken und Kontraste", "art": ["unit"], "status": "bestanden",
+          "pre": "–", "steps": ["npm run test:web"],
+          "expect": "Alle vier Blöcke von tokens.css haben dieselben Tokens, Kontraste nach ADR-0009 mindestens 4,5 : 1, keine Farbwerte außerhalb von tokens.css.",
+          "tests": ["web/src/lib/styles/tokens.test.ts", "web/src/lib/styles/color-literals.test.ts"] },
+        { "id": "BYL-E2-091", "title": "Bereichs-Umschalter", "art": ["komponente"], "status": "bestanden",
+          "pre": "–", "steps": ["npm run test:web"],
+          "expect": "„Privat“ mit aria-pressed=true; „Haushalt“ mit aria-disabled, fokussierbar, ohne Wirkung, „Demnächst“ per aria-describedby.",
+          "tests": ["web/src/lib/components/area-switch.test.ts"] },
+        { "id": "BYL-E2-092", "title": "Bereichs-Umschalter im Browser", "art": ["manuell"], "status": "offen",
+          "pre": "Angemeldet.",
+          "steps": ["Mit Tab zum Umschalter, „Haushalt“ mit Enter und Klick auslösen."],
+          "expect": "„Privat“ ist aktiv, „Haushalt“ ausgegraut mit „Demnächst“, erreichbar und ohne Wirkung.",
+          "tests": [] },
+        { "id": "BYL-E2-093", "title": "Hell- und Dunkelmodus", "art": ["manuell"], "status": "offen",
+          "pre": "Angemeldet.",
+          "steps": ["Die Windows-Einstellung zwischen „Hell“ und „Dunkel“ umschalten."],
+          "expect": "Die Farben folgen, Petrol bleibt die einzige Akzentfarbe, Fehler bleiben lesbar.",
+          "tests": [] },
+        { "id": "BYL-E2-094", "title": "Schmales Fenster", "art": ["manuell"], "status": "offen",
+          "pre": "Ein Ticket ist im Panel geöffnet.",
+          "steps": ["Das Fenster schmaler als etwa 48 rem ziehen."],
+          "expect": "Das Panel überdeckt die Liste, „Schließen“ steht oben.",
+          "tests": [] },
+        { "id": "BYL-E2-095", "title": "Bedienung ohne Maus", "art": ["manuell"], "status": "offen",
+          "pre": "Angemeldet.",
+          "steps": ["Liste, Häkchen, Panel, Reiter, Anlage und Löschen nur mit Tab, Enter, Leertaste, Escape, Strg+Enter und Pfeiltasten bedienen."],
+          "expect": "Alles ist erreichbar, der Fokus ist immer sichtbar; beim Öffnen steht er auf der Überschrift des Panels, beim Schließen wieder auf der Zeile.",
+          "tests": [] }
+      ]
+    },
+    {
+      "tag": "E3", "name": "E3-Domäne und Katalog", "desc": "Umgesetzte E3-Pakete 1–4: Listenzustand, Filter, relative Fälligkeit, Sortierung und Gruppierung als reine Domäne; Hook-Sperre für archivierte Projekte samt Datenzugriff Projekte/Tags; Katalog-Store. Sichtbar wird das erst mit den Oberflächenpaketen 5–14.",
+      "items": [
+        { "id": "BYL-E3-001", "title": "Listenzustand aus der URL", "art": ["unit"], "status": "bestanden",
+          "pre": "–", "steps": ["npm run test:web"],
+          "expect": "Jede URL ergibt eine gültige ListQuery; ungültige oder doppelte Werte gelten als nicht gesetzt; URL → Query → URL ist stabil mit fester Parameterfolge; unbekannte Parameter bleiben erhalten.",
+          "tests": ["web/src/lib/domain/list-query.test.ts", "web/src/lib/ticket-links.test.ts"] },
+        { "id": "BYL-E3-002", "title": "Filterprädikat und Fälligkeitsgruppen", "art": ["unit"], "status": "bestanden",
+          "pre": "–", "steps": ["npm run test:web"],
+          "expect": "matchesFilter prüft Status, Priorität, Fälligkeit, Projekt und Tag; „Überfällig“ trifft nie erledigte Tickets; „Bald“ endet an Tag 7.",
+          "tests": ["web/src/lib/domain/filter.test.ts"] },
+        { "id": "BYL-E3-003", "title": "Relative Fälligkeitslabels (Domäne)", "art": ["unit"], "status": "bestanden",
+          "pre": "–", "steps": ["npm run test:web"],
+          "expect": "Labels für −30, −2, −1, 0, 1, 2, 7 und 8 Tage und über den Jahreswechsel, mit Text für Screenreader.",
+          "tests": ["web/src/lib/domain/due-label.test.ts"] },
+        { "id": "BYL-E3-004", "title": "Spaltensortierung und Klickzyklus", "art": ["unit"], "status": "bestanden",
+          "pre": "–", "steps": ["npm run test:web"],
+          "expect": "Jede Spalte in beiden Richtungen, leere Werte zuletzt, Gleichstand nach Standard-Reihenfolge, deutsche Titelsortierung, HAUS-9 vor HAUS-10; Zyklus Standard → natürlich → umgekehrt → Standard; aria-sort-Richtung.",
+          "tests": ["web/src/lib/domain/column-order.test.ts"] },
+        { "id": "BYL-E3-005", "title": "Gruppierung", "art": ["unit"], "status": "bestanden",
+          "pre": "–", "steps": ["npm run test:web"],
+          "expect": "Fachliche Gruppenfolge, keine leeren Gruppen, „Ohne Projekt“ zuletzt; Filter, Sortierung und Gruppierung mit 2 000 Tickets laufen durch.",
+          "tests": ["web/src/lib/domain/grouping.test.ts"] },
+        { "id": "BYL-E3-006", "title": "Domänenmodule bleiben rein", "art": ["unit"], "status": "bestanden",
+          "pre": "–", "steps": ["npm run test:web"],
+          "expect": "Keine Imports aus $app, $lib/pocketbase oder dem SDK; von Intl nur Intl.Collator.",
+          "tests": ["web/src/lib/domain/purity.test.ts"] },
+        { "id": "BYL-E3-007", "title": "Keine Tickets in archivierte Projekte", "art": ["unit", "integration"], "status": "bestanden",
+          "pre": "–", "steps": ["npm run test:unit", "npm run test:integration"],
+          "expect": "Anlage oder Wechsel in ein archiviertes Projekt: 400 mit validation_project_archived am Feld project, keine Nummer verbraucht; Tickets, die schon darin liegen, bleiben bearbeitbar; fremdes Projekt meldet weiter validation_scope_mismatch.",
+          "tests": ["tests/integration/project-archived.test.mjs", "tests/unit/ticket-rules.test.mjs::archivedProjectViolation (E3 plan, T-11)"] },
+        { "id": "BYL-E3-008", "title": "Projektcode prüfen und vorschlagen", "art": ["unit"], "status": "bestanden",
+          "pre": "–", "steps": ["npm run test:web", "npm run test:unit"],
+          "expect": "Muster, Länge und TASK wie ticket-key.js und Schema; Vorschlag aus Anfangsbuchstaben bzw. den ersten vier Buchstaben, Umlaute ersetzt.",
+          "tests": ["web/src/lib/domain/project.test.ts", "tests/unit/web-project-code.test.mjs"] },
+        { "id": "BYL-E3-009", "title": "Datenzugriff Projekte", "art": ["integration", "unit"], "status": "bestanden",
+          "pre": "–", "steps": ["npm run test:integration"],
+          "expect": "Anlegen, Umbenennen, Archivieren und Wiederherstellen nur für den Eigentümer sichtbar; doppelter Code, TASK und falsches Muster am Feld code; Code und Löschen gesperrt bei Tickets; countDoneTickets zählt nur erledigte.",
+          "tests": ["tests/integration/web-data-projects.test.mjs", "web/src/lib/data/data-layer.test.ts"] },
+        { "id": "BYL-E3-010", "title": "Datenzugriff Tags", "art": ["integration"], "status": "bestanden",
+          "pre": "–", "steps": ["npm run test:integration"],
+          "expect": "Anlegen, Umbenennen, Löschen nur für den Eigentümer; andere Schreibweise im selben Scope abgelehnt; Zählung mit erledigten; Löschen entfernt den Tag aus Tickets mit Verlaufseintrag ohne Nutzer.",
+          "tests": ["tests/integration/web-data-tags.test.mjs"] },
+        { "id": "BYL-E3-011", "title": "Katalog-Store", "art": ["unit"], "status": "bestanden",
+          "pre": "–", "steps": ["npm run test:web"],
+          "expect": "Lädt einmal pro Sitzung, folgt Realtime (anlegen, umbenennen, archivieren, löschen), älteres updated wird ignoriert, Abgleich nach Neuverbinden, Abmelden verwirft den Katalog; der Aktivitäts-Store lädt nur noch den Verlauf.",
+          "tests": ["web/src/lib/stores/catalog.test.ts", "web/src/lib/stores/ticket-activity.test.ts::TicketActivityStore: history"] },
+        { "id": "BYL-E3-012", "title": "Katalog über Realtime", "art": ["integration"], "status": "bestanden",
+          "pre": "–", "steps": ["npm run test:integration"],
+          "expect": "Projekt- und Tag-Änderungen eines zweiten Clients kommen mit den Katalogfeldern an, bei fremden Nutzern nichts.",
+          "tests": ["tests/integration/web-realtime.test.mjs::delivers project changes of a second client with the catalog fields, none to a foreign user", "tests/integration/web-realtime.test.mjs::delivers tag changes of a second client, none to a foreign user"] },
+        { "id": "BYL-E3-013", "title": "Verlauf löst Namen über den Katalog auf", "art": ["komponente"], "status": "bestanden",
+          "pre": "–", "steps": ["npm run test:web"],
+          "expect": "Archivierte Projekte bleiben auflösbar, gelöschte erscheinen als „(gelöscht)“; solange der Katalog lädt, „Verlauf wird geladen …“, bei Fehler „Erneut versuchen“.",
+          "tests": ["web/src/lib/components/history-list.test.ts::history names from the catalog (E3 plan, T-16)"] }
+      ]
+    },
+    {
+      "tag": "E3", "name": "E3 geplant", "desc": "Pakete 5–15 aus dem E3-Plan (Abschnitt 5). Die Schritte sind hier die Akzeptanzkriterien; mit der Umsetzung werden daraus automatisierte und manuelle Fälle.",
+      "items": [
+        { "id": "BYL-E3-105", "title": "Paket 5 – Layout-Umbau: Kopfzeile, Abschnittsleiste, Tabelle", "art": ["komponente"], "status": "geplant",
+          "pre": "Pakete 1–4 umgesetzt.",
+          "steps": ["Alle E2-Verhalten der Liste gelten unverändert (Häkchen, 5 s „Rückgängig“, Wiederöffnen als „Offen“, Fokuswiederherstellung, aria-current, Query in Links, ?erledigte=1, leere Zustände, Laden, Fehler, Realtime).", "Tabelle mit caption und th scope=\"col\"; ein Klick irgendwo in der Zeile öffnet das Panel.", "Neben dem offenen Panel scrollt die Tabelle waagerecht, die Seite nicht.", "Keine Farbwerte außerhalb von tokens.css."],
+          "expect": "Geplante Tests: ticket-table, ticket-table-row, section-bar, angepasste app-layout-Tests.",
+          "tests": [] },
+        { "id": "BYL-E3-106", "title": "Paket 6 – Relative Fälligkeitslabels in der Oberfläche", "art": ["komponente"], "status": "geplant",
+          "pre": "Paket 5.",
+          "steps": ["Anzeige nach T-9.", "Über Mitternacht (Berlin) wechseln die Labels ohne Neuladen.", "Überfällig ist nicht rot und hat Icon und Text."],
+          "expect": "Geplante Tests: due-label-Komponente mit festem today (jede Label-Art, datetime, title, unsichtbarer Zusatz, erledigte nur mit Datum).",
+          "tests": [] },
+        { "id": "BYL-E3-107", "title": "Paket 7 – Projekt im Panel und bei der Anlage", "art": ["komponente", "integration"], "status": "geplant",
+          "pre": "Paket 5.",
+          "steps": ["Zuordnen, Wechseln und Entfernen ändern den Key; die Liste zeigt ihn sofort, die URL bleibt, der Verlauf zeigt „Projekt: …“ und „Key geändert: …“.", "Archivierte Projekte sind nicht wählbar; ein Serverfehler erscheint am Feld, der alte Wert kehrt zurück.", "Bei der Anlage ist das gefilterte aktive Projekt vorausgewählt."],
+          "expect": "Geplante Tests: project-select, Erweiterungen von ticket-detail, ticket-panel, new-ticket und web-data-tickets (CODE-1, zurück zur nächsten TASK-Nummer).",
+          "tests": [] },
+        { "id": "BYL-E3-108", "title": "Paket 8 – Tags im Panel und bei der Anlage", "art": ["komponente", "integration"], "status": "geplant",
+          "pre": "Paket 5.",
+          "steps": ["Combobox nach APG-Muster (role=\"combobox\", aria-expanded, aria-controls, aria-activedescendant; Pfeiltasten, Enter, Escape).", "Chips per Tastatur entfernbar, danach Fokus im Eingabefeld.", "Ein neuer Tag entsteht genau einmal, auch bei schnellem Doppel-Enter; andere Schreibweise wird wiederverwendet.", "Die Tags-Spalte zeigt die Namen aus dem Katalog."],
+          "expect": "Geplante Tests: tag-picker, Panel- und Anlagetests, Harness: updateTicket mit tags protokolliert „Tag(s) hinzugefügt“.",
+          "tests": [] },
+        { "id": "BYL-E3-109", "title": "Paket 9 – Sortierung per Spaltenkopf", "art": ["komponente"], "status": "geplant",
+          "pre": "Paket 5.",
+          "steps": ["Jeder sortierbare Spaltenkopf enthält einen button, das th trägt aria-sort nur, wenn sortiert.", "Richtung zusätzlich als Icon und im zugänglichen Namen.", "Zurück im Browser stellt die vorige Sortierung wieder her.", "„Erledigt“ bleibt „zuletzt erledigte zuerst“ und sagt das im Kopf.", "Realtime-Änderungen landen an der richtigen Stelle."],
+          "expect": "Geplante Tests: table-sort (Klickzyklus mit URL-Wechsel, aria-sort, Tastatur, Reihenfolge, Upsert während einer Sortierung).",
+          "tests": [] },
+        { "id": "BYL-E3-110", "title": "Paket 10 – Filterleiste mit Zustand in der URL", "art": ["komponente", "unit", "integration"], "status": "geplant",
+          "pre": "Paket 5.",
+          "steps": ["Chip-Gruppen Status, Priorität und Fällig als fieldset/legend mit Radios, dazu Projekt, Tag und „Zurücksetzen“.", "Jede Änderung steht sofort in der URL, übersteht Neuladen, Zurück und Vor; das Öffnen eines Tickets behält die Filter.", "Unbekannte Projekt- oder Tag-ID: leere Liste mit „Filter zurücksetzen“.", "„Aufgaben“ zählt die sichtbaren Tickets, aria-live meldet die Anzahl.", "„Keine Tickets für diese Filter.“ getrennt vom leeren Zustand.", "„Erledigte anzeigen“ verhält sich nach T-6 zum Statusfilter."],
+          "expect": "Geplante Tests: filter-bar, ticket-list-Erweiterung, Paritätstest web-filter-parity (Serverausdruck = matchesFilter).",
+          "tests": [] },
+        { "id": "BYL-E3-111", "title": "Paket 11 – Suche", "art": ["unit", "komponente", "integration"], "status": "geplant",
+          "pre": "Paket 10; Befund zu % und _ in ~ (Harness).",
+          "steps": ["Treffer in Titel, Beschreibung und Key, kombiniert mit allen Filtern, auch im Abschnitt „Erledigt“.", "Schnelles Tippen erzeugt eine Anfrage pro Pause, veraltete Antworten werden verworfen.", "Ein per Realtime geändertes Ticket erscheint oder verschwindet passend.", "q steht in der URL, ohne einen Verlaufseintrag pro Buchstabe."],
+          "expect": "Geplante Tests: ticket-list mit Fake-Timern, filter-bar (Label, Escape, aria-busy, Fehler), web-search (Harness).",
+          "tests": [] },
+        { "id": "BYL-E3-112", "title": "Paket 12 – Kennzahlen-Kacheln", "art": ["unit", "komponente"], "status": "geplant",
+          "pre": "Paket 10.",
+          "steps": ["Kacheln sind Knöpfe mit aria-pressed und Namen aus Zahl und Bezeichnung.", "Ein Klick setzt bzw. entfernt nur die eigene Filtergruppe; „Nicht erledigt“ setzt alle Filter und die Suche zurück.", "Zahlen folgen Realtime und dem Wechsel um Mitternacht.", "„Überfällig“ ist nicht rot."],
+          "expect": "Geplante Tests: kpis (Zählung, Grenzen heute/gestern, erledigte nie), kpi-tiles.",
+          "tests": [] },
+        { "id": "BYL-E3-113", "title": "Paket 13 – Gruppierung in der Tabelle", "art": ["komponente"], "status": "geplant",
+          "pre": "Pakete 5 und 9.",
+          "steps": ["Gruppenköpfe mit Anzahl als th scope=\"rowgroup\".", "Gruppierung steht in der URL und wirkt mit Filtern, Suche und Sortierung zusammen.", "Häkchen, „Rückgängig“ und Fokus funktionieren auch beim Gruppenwechsel oder wenn eine Gruppe leer wird.", "„Erledigt“ bleibt ungruppiert."],
+          "expect": "Geplante Tests: group-popover, Erweiterung von ticket-table.",
+          "tests": [] },
+        { "id": "BYL-E3-114", "title": "Paket 14 – Projektansicht und Tag-Verwaltung", "art": ["komponente", "unit"], "status": "geplant",
+          "pre": "Pakete 4, 7, 8 und 10.",
+          "steps": ["Umschalter „Aufgaben | Projekte“ als Navigation mit aria-current=\"page\"; keine Kennzahlen und Filterleiste in der Projektansicht.", "Klick auf eine Kachel öffnet /?projekt=<id>, die Filterleiste zeigt das Projekt.", "Anlegen, Bearbeiten, Archivieren, Wiederherstellen und Löschen (nur ohne Tickets); Serverfehler am Feld; Fokus zurück auf den auslösenden Knopf.", "Archivierte nur mit „Archivierte anzeigen“ (?archiviert=1).", "Tags umbenennen und nach Rückfrage löschen; die Tabelle folgt sofort."],
+          "expect": "Geplante Tests: project-tiles, project-dialog, tag-manager, view-switch, project-stats.",
+          "tests": [] },
+        { "id": "BYL-E3-115", "title": "Paket 15 – Dokumentation und Etappenabschluss", "art": ["manuell"], "status": "geplant",
+          "pre": "Pakete 5–14.",
+          "steps": ["Browser-Checkliste deckt P-2 bis P-5 und T-4 bis T-15 ab: Popover mit Escape und Klick daneben, waagerechtes Scrollen neben dem Panel.", "Hell- und Dunkelmodus, keine roten Nicht-Fehler.", "Vollständige Bedienung per Tastatur.", "Realtime mit zwei Fenstern: Projekt umbenennen, Tag löschen, Ticket in ein anderes Projekt verschieben.", "Alle Gates grün; README, CLAUDE.md und e3.md aktualisiert."],
+          "expect": "Die Browser-Checkliste aus e3.md wird hier als manuelle Fälle übernommen.",
+          "tests": [] }
+      ]
+    },
+    {
+      "tag": "Alle", "name": "Querschnitt", "desc": "Prüfungen über alle Etappen: Testumgebung, statische Regeln der Datenschicht, dieses Manifest.",
+      "items": [
+        { "id": "BYL-X-001", "title": "Web-Testumgebung", "art": ["unit"], "status": "bestanden",
+          "pre": "–", "steps": ["npm run test:web"],
+          "expect": "jsdom und Testing Library sind korrekt eingerichtet.",
+          "tests": ["web/src/test-environment.test.ts"] },
+        { "id": "BYL-X-002", "title": "Regeln der Datenschicht", "art": ["unit"], "status": "bestanden",
+          "pre": "–", "steps": ["npm run test:web", "npm run test:integration"],
+          "expect": "Instanz als erster Parameter, signal, DataError, Filter nur über pb.filter(), kein any; der Root-Vitest lädt die TypeScript-Module.",
+          "tests": ["web/src/lib/data/data-layer.test.ts", "tests/integration/web-data-tickets.test.mjs::loads the TypeScript modules of web/src/lib/data in the root Vitest"] },
+        { "id": "BYL-X-003", "title": "Hook-Module in ES5 und CommonJS", "art": ["unit"], "status": "bestanden",
+          "pre": "–", "steps": ["npm run test:unit"],
+          "expect": "Jedes Modul in app/pb_hooks/lib parst als ES5-Skript, exportiert per CommonJS und nutzt keine Zeitzonen-Funktionen der Laufzeit (ADR-0005).",
+          "tests": ["tests/unit/hooks-lib-constraints.test.mjs"] },
+        { "id": "BYL-X-004", "title": "Test-Manifest konsistent", "art": ["unit"], "status": "bestanden",
+          "pre": "–", "steps": ["npm run test:unit"],
+          "expect": "Diese Datei ist wohlgeformt und offline nutzbar, IDs eindeutig, alle referenzierten Testdateien und -namen existieren, jede Testdatei ist referenziert, keine Reste der Vorlage.",
+          "tests": ["tests/unit/test-manifest.test.mjs"] }
+      ]
+    }
+  ]
+}
+</script>
+
+<script>
+// ── Rendering ───────────────────────────────────────────────────────────────
+const DATA = JSON.parse(document.getElementById("manifest-data").textContent);
+const BLOCKS = DATA.blocks;
+const STORAGE_KEY = "byl-test-manifest-v1";
+const ART_LABELS = { unit: "Unit", komponente: "Komponente", integration: "Integration", manuell: "Manuell" };
+const STATUS_CLASS = { "bestanden": "st-bestanden", "offen": "st-offen", "geplant": "st-geplant", "nicht zutreffend": "st-nz" };
+let state = {};
+try { state = JSON.parse(localStorage.getItem(STORAGE_KEY) || "{}"); } catch (e) { state = {}; }
+
+const manifestEl = document.getElementById("manifest");
+const manualIds = [];
+const meta = DATA.meta;
+document.getElementById("stand").textContent =
+  `Stand ${meta.stand} · Commit ${meta.commit} · ${meta.etappe}`;
+
+function isManual(it) { return it.art.includes("manuell") && it.status === "offen"; }
+function shownStatus(it) {
+  if (isManual(it) && state[it.id] && state[it.id].done) return { text: "bestätigt", cls: "st-bestaetigt" };
+  return { text: it.status, cls: STATUS_CLASS[it.status] || "" };
+}
+function refHtml(ref) {
+  const [file, name] = ref.split("::");
+  return `<li><code>${escapeHtml(file)}</code>${name ? " — " + escapeHtml(name) : ""}</li>`;
+}
+
+for (const block of BLOCKS) {
+  const sec = document.createElement("section");
+  sec.className = "block";
+  const head = document.createElement("div");
+  head.className = "block-head";
+  head.innerHTML = `<span class="block-tag">${escapeHtml(block.tag)}</span><h2>${escapeHtml(block.name)}</h2>`;
+  sec.appendChild(head);
+  const desc = document.createElement("p");
+  desc.className = "block-desc";
+  desc.textContent = block.desc;
+  sec.appendChild(desc);
+
+  for (const it of block.items) {
+    const manual = isManual(it);
+    if (manual) manualIds.push(it.id);
+    const item = document.createElement("div");
+    item.className = "item" + (it.status === "geplant" ? " planned" : "");
+    item.id = "item-" + it.id;
+    item.dataset.art = it.art.join(" ");
+    item.dataset.status = it.status;
+
+    const checked = manual && !!(state[it.id] && state[it.id].done);
+    if (checked) item.classList.add("done");
+
+    const st = shownStatus(it);
+    const artHtml = it.art.map(a => `<span class="badge">${escapeHtml(ART_LABELS[a] || a)}</span>`).join("");
+    const stepsHtml = (it.steps || []).map(s => `<li>${escapeHtml(s)}</li>`).join("");
+    const stepsLabel = it.status === "geplant" ? "Akzeptanzkriterien" : "Schritte";
+    const refsHtml = (it.tests || []).length
+      ? `<p class="item-sub">Testdateien</p><ul class="refs">${it.tests.map(refHtml).join("")}</ul>` : "";
+    const cbHtml = manual
+      ? `<input type="checkbox" class="item-cb" ${checked ? "checked" : ""} data-id="${escapeHtml(it.id)}" aria-label="${escapeHtml(it.id)} bestätigt" />`
+      : `<span class="item-cb-spacer" aria-hidden="true"></span>`;
+
+    item.innerHTML = `
+      <div class="item-top">
+        ${cbHtml}
+        <div class="item-body">
+          <div class="item-id">${escapeHtml(it.id)} ${artHtml}<span class="badge ${st.cls}" data-role="status">${escapeHtml(st.text)}</span></div>
+          <div class="item-title">${escapeHtml(it.title)}</div>
+          <p class="item-pre"><b>Vorbedingung:</b> ${escapeHtml(it.pre)}</p>
+          <p class="item-sub">${stepsLabel}</p>
+          <ol class="item-steps">${stepsHtml}</ol>
+          <div class="expect"><b>${it.status === "geplant" ? "Hinweis" : "Erwartung"}:</b> ${escapeHtml(it.expect)}</div>
+          ${refsHtml}
+          <div class="note-wrap">
+            <label for="note-${escapeHtml(it.id)}">Notiz / Abweichung</label>
+            <textarea class="note" id="note-${escapeHtml(it.id)}" data-id="${escapeHtml(it.id)}" placeholder="Alles wie erwartet? Sonst hier notieren …">${escapeHtml(state[it.id] && state[it.id].note ? state[it.id].note : "")}</textarea>
+          </div>
+        </div>
+      </div>`;
+    sec.appendChild(item);
+  }
+  manifestEl.appendChild(sec);
+}
+
+// ── Interaktion ───────────────────────────────────────────────────────────
+manifestEl.addEventListener("change", (e) => {
+  const cb = e.target.closest(".item-cb");
+  if (cb) {
+    const id = cb.dataset.id;
+    ensure(id).done = cb.checked;
+    const el = document.getElementById("item-" + id);
+    el.classList.toggle("done", cb.checked);
+    const badge = el.querySelector('[data-role="status"]');
+    badge.textContent = cb.checked ? "bestätigt" : "offen";
+    badge.className = "badge " + (cb.checked ? "st-bestaetigt" : "st-offen");
+    save();
+    updateProgress();
+  }
+});
+manifestEl.addEventListener("input", (e) => {
+  const ta = e.target.closest(".note");
+  if (ta) { ensure(ta.dataset.id).note = ta.value; save(); }
+});
+document.getElementById("copy-open").addEventListener("click", () => copyExport(true));
+document.getElementById("copy-all").addEventListener("click", () => copyExport(false));
+document.getElementById("reset").addEventListener("click", resetAll);
+document.getElementById("filter-art").addEventListener("change", applyFilters);
+document.getElementById("filter-status").addEventListener("change", applyFilters);
+
+function ensure(id) { if (!state[id]) state[id] = { done: false, note: "" }; return state[id]; }
+function save() { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); }
+function escapeHtml(s) { return String(s).replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c])); }
+
+function applyFilters() {
+  const art = document.getElementById("filter-art").value;
+  const status = document.getElementById("filter-status").value;
+  let visible = 0;
+  document.querySelectorAll("section.block").forEach(sec => {
+    let any = false;
+    sec.querySelectorAll(".item").forEach(el => {
+      const show = (!art || el.dataset.art.split(" ").includes(art)) && (!status || el.dataset.status === status);
+      el.hidden = !show;
+      if (show) { any = true; visible++; }
+    });
+    sec.hidden = !any;
+  });
+  document.getElementById("visible-count").textContent = `${visible} Fälle sichtbar`;
+}
+
+function updateProgress() {
+  const done = manualIds.filter(id => state[id] && state[id].done).length;
+  const total = manualIds.length;
+  document.getElementById("count").textContent = `${done} / ${total} manuelle Prüfungen bestätigt`;
+  document.getElementById("fill").style.width = total ? (done / total * 100) + "%" : "0%";
+}
+updateProgress();
+applyFilters();
+
+// ── Export (Markdown → Zwischenablage) ──────────────────────────────────────
+function buildMarkdown(onlyOpen = false) {
+  const done = manualIds.filter(id => state[id] && state[id].done).length;
+  const lines = [];
+  lines.push("# becauseyoulovejira — Test-Ergebnis");
+  lines.push("");
+  lines.push(`Stand ${meta.stand} (Commit ${meta.commit}): ${done} / ${manualIds.length} manuelle Prüfungen bestätigt`);
+  if (onlyOpen) lines.push("_Gefiltert: nur offene manuelle Punkte und Punkte mit Notiz_");
+  lines.push("");
+  let bodyCount = 0;
+  for (const block of BLOCKS) {
+    const blockLines = [];
+    for (const it of block.items) {
+      const st = state[it.id] || {};
+      const note = (st.note || "").trim();
+      const manual = isManual(it);
+      // Im Filter-Modus: nur offene manuelle Punkte und Punkte mit Notiz.
+      if (onlyOpen && !note && !(manual && !st.done)) continue;
+      const box = manual ? (st.done ? "[x]" : "[ ]") : `(${it.status})`;
+      blockLines.push(`- ${box} **${it.id}** — ${it.title}`);
+      if (note) {
+        for (const nl of note.split("\n")) blockLines.push(`    - Notiz: ${nl}`);
+      }
+    }
+    if (blockLines.length === 0) continue;
+    lines.push(`## [${block.tag}] ${block.name}`);
+    lines.push(...blockLines);
+    lines.push("");
+    bodyCount += blockLines.length;
+  }
+  if (bodyCount === 0) {
+    lines.push("Alle manuellen Punkte bestätigt, keine offenen Hinweise.");
+    lines.push("");
+  }
+  return lines.join("\n");
+}
+
+function copyExport(onlyOpen = false) {
+  const md = buildMarkdown(onlyOpen);
+  const fallback = () => {
+    const ta = document.createElement("textarea");
+    ta.value = md; document.body.appendChild(ta); ta.select();
+    try { document.execCommand("copy"); showToast("In die Zwischenablage kopiert"); }
+    catch (e) { showToast("Kopieren nicht möglich — Text manuell markieren"); }
+    document.body.removeChild(ta);
+  };
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(md).then(() => showToast("In die Zwischenablage kopiert"), fallback);
+  } else { fallback(); }
+}
+
+function resetAll() {
+  if (!confirm("Alle Häkchen und Notizen zurücksetzen?")) return;
+  state = {}; save();
+  document.querySelectorAll(".item-cb").forEach(cb => {
+    cb.checked = false;
+    const badge = document.getElementById("item-" + cb.dataset.id).querySelector('[data-role="status"]');
+    badge.textContent = "offen"; badge.className = "badge st-offen";
+  });
+  document.querySelectorAll(".note").forEach(ta => ta.value = "");
+  document.querySelectorAll(".item").forEach(el => el.classList.remove("done"));
+  updateProgress();
+}
+
+let toastTimer = null;
+function showToast(msg) {
+  const t = document.getElementById("toast");
+  t.textContent = msg; t.classList.add("show");
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => t.classList.remove("show"), 2000);
+}
+</script>
+</body>
+</html>

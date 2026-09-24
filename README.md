@@ -129,6 +129,8 @@ npm test        # Vitest: Unit- und Integrationstests, danach die web-Tests
 | `tests/integration/` | gegen Wegwerf-PocketBase-Instanzen: Migrationen, API-Regeln, Hooks, Login, gesperrte Mail-Abläufe, Admin-Reset, SPA-Fallback, Backup-Wiederherstellung, Datenzugriff und Realtime des Frontends (`web/src/lib/data`) |
 | `web/src/**/*.test.ts` | Frontend: Unit- und Komponententests (jsdom) |
 
+Alle Testfälle stehen im **[Test-Manifest](docs/test-manifest.html)** (im Browser öffnen, funktioniert offline): automatisierte Tests bereichsweise mit Verweis auf die Testdateien, dazu die manuellen Prüfpunkte aus den Plänen zum Abhaken und die geplanten Pakete. `tests/unit/test-manifest.test.mjs` prüft, dass es zu den Testdateien passt.
+
 ```powershell
 npm run test:unit          # nur reine Logik, ohne PocketBase
 npm run test:integration   # gegen eine Wegwerf-PocketBase-Instanz
