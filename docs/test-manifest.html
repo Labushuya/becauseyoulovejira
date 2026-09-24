@@ -213,7 +213,7 @@
   "meta": {
     "projekt": "becauseyoulovejira",
     "stand": "2026-09-24",
-    "commit": "e84126c",
+    "commit": "e81a4c0",
     "etappe": "E0, E1, E1.1 und E2 abgeschlossen; E3 Pakete 1–8 umgesetzt, Pakete 9–15 geplant"
   },
   "blocks": [
@@ -911,7 +911,7 @@
       ]
     },
     {
-      "tag": "E3", "name": "E3-Oberfläche", "desc": "Umgesetzte Oberflächenpakete des E3-Plans: Paket 5 (Kopfzeile, Abschnittsleiste, Tabelle), Paket 6 (relative Fälligkeitslabels), Paket 7 (Projekt im Panel und bei der Anlage), Paket 8 (Tags im Panel und bei der Anlage) und Paket 10 (Filterleiste mit Zustand in der URL). Die E2-Fälle der Liste gelten weiter und laufen jetzt gegen die Tabelle.",
+      "tag": "E3", "name": "E3-Oberfläche", "desc": "Umgesetzte Oberflächenpakete des E3-Plans: Paket 5 (Kopfzeile, Abschnittsleiste, Tabelle), Paket 6 (relative Fälligkeitslabels), Paket 7 (Projekt im Panel und bei der Anlage), Paket 8 (Tags im Panel und bei der Anlage), Paket 10 (Filterleiste mit Zustand in der URL) und Paket 12 (Kennzahlen-Kacheln). Die E2-Fälle der Liste gelten weiter und laufen jetzt gegen die Tabelle.",
       "items": [
         { "id": "BYL-E3-014", "title": "Tabelle mit Spalten, Beschriftung und Scrollbereich", "art": ["komponente"], "status": "bestanden",
           "pre": "–", "steps": ["npm run test:web"],
@@ -1048,11 +1048,27 @@
         { "id": "BYL-E3-045", "title": "Filter und zweites Fenster", "art": ["manuell"], "status": "offen",
           "pre": "Zwei Fenster mit derselben Anmeldung; im ersten Priorität „Dringend“ und „Erledigte anzeigen“.", "steps": ["Im zweiten Fenster ein Ticket auf „Dringend“ setzen, ein anderes von „Dringend“ auf „Hoch“.", "Im zweiten Fenster ein dringendes Ticket abhaken."],
           "expect": "Im ersten Fenster erscheint bzw. verschwindet die Zeile ohne Neuladen; das abgehakte dringende Ticket erscheint im Abschnitt „Erledigt“.",
+          "tests": [] },
+        { "id": "BYL-E3-046", "title": "Zählung der Kennzahlen", "art": ["unit"], "status": "bestanden",
+          "pre": "–", "steps": ["npm run test:web"],
+          "expect": "Nicht erledigt, In Arbeit, Heute fällig, Überfällig und Dringend zählen nur nicht erledigte Tickets; Grenzen gestern (überfällig) und heute; Wechsel mit dem Berliner Datum; jede Kachel zählt genau die Tickets, die ihr Filter zeigt; der Store zählt unabhängig von Filtern mit derselben Grenze wie der Kopfzeilen-Zähler (abgehakte Zeilen zählen nicht) und folgt Upsert, Löschen und Mitternacht.",
+          "tests": ["web/src/lib/domain/kpis.test.ts", "web/src/lib/stores/ticket-list.test.ts::KPI numbers (E3 plan, package 12)"] },
+        { "id": "BYL-E3-047", "title": "Kennzahlen-Kacheln", "art": ["komponente"], "status": "bestanden",
+          "pre": "–", "steps": ["npm run test:web"],
+          "expect": "Gruppe „Kennzahlen“ mit fünf Knöpfen, Name aus Zahl und Bezeichnung („4 überfällig“), Hinweis per aria-describedby; aria-pressed, wenn die Gruppe der Kachel genau ihren Wert hat, „Nicht erledigt“ ohne Filter; ein Klick setzt nur die eigene Gruppe, ein Klick auf die gedrückte Kachel entfernt sie, „Nicht erledigt“ setzt Filter und Suche zurück und lässt Sortierung, Gruppierung und Panel stehen; ohne geladene Liste „–“; keine Fehlerfarbe; im Layout über der Filterleiste.",
+          "tests": ["web/src/lib/components/kpi-tiles.test.ts", "web/src/routes/(app)/(tickets)/tickets-layout.test.ts::shows the KPI tiles and the filter bar above the table"] },
+        { "id": "BYL-E3-048", "title": "Kennzahlen im Browser", "art": ["manuell"], "status": "offen",
+          "pre": "Angemeldet; Tickets in Arbeit, heute fällig, überfällig und dringend.", "steps": ["Die Kacheln ansehen und mit den Zahlen der Tabelle vergleichen.", "„Überfällig“ anklicken, dann „Dringend“, dann erneut „Überfällig“.", "„Nicht erledigt“ anklicken.", "Mit Tab zu den Kacheln und mit Leertaste auslösen; Hell- und Dunkelmodus ansehen."],
+          "expect": "Die Zahlen stimmen und ändern sich nicht durch Filter; „Überfällig“ filtert, „Dringend“ kommt hinzu, der zweite Klick auf „Überfällig“ nimmt nur diesen Filter heraus; „Nicht erledigt“ leert alle Filter; gedrückte Kacheln sind hinterlegt und haben ein Häkchen; „Überfällig“ ist nicht rot.",
+          "tests": [] },
+        { "id": "BYL-E3-049", "title": "Kennzahlen folgen dem zweiten Fenster", "art": ["manuell"], "status": "offen",
+          "pre": "Zwei Fenster mit derselben Anmeldung.", "steps": ["Im zweiten Fenster ein Ticket auf „In Arbeit“ und „Dringend“ setzen, dann abhaken."],
+          "expect": "Im ersten Fenster ändern sich „In Arbeit“, „Dringend“ und „Nicht erledigt“ ohne Neuladen und entsprechen dem Zähler in der Kopfzeile.",
           "tests": [] }
       ]
     },
     {
-      "tag": "E3", "name": "E3 geplant", "desc": "Pakete 9 und 11–15 aus dem E3-Plan (Abschnitt 5). Die Schritte sind hier die Akzeptanzkriterien; mit der Umsetzung werden daraus automatisierte und manuelle Fälle.",
+      "tag": "E3", "name": "E3 geplant", "desc": "Pakete 9, 11 und 13–15 aus dem E3-Plan (Abschnitt 5). Die Schritte sind hier die Akzeptanzkriterien; mit der Umsetzung werden daraus automatisierte und manuelle Fälle.",
       "items": [
         { "id": "BYL-E3-109", "title": "Paket 9 – Sortierung per Spaltenkopf", "art": ["komponente"], "status": "geplant",
           "pre": "Paket 5.",
@@ -1063,11 +1079,6 @@
           "pre": "Paket 10 (umgesetzt); Befund zu % und _ in ~ (Harness).",
           "steps": ["Treffer in Titel, Beschreibung und Key, kombiniert mit allen Filtern, auch im Abschnitt „Erledigt“.", "Schnelles Tippen erzeugt eine Anfrage pro Pause, veraltete Antworten werden verworfen.", "Ein per Realtime geändertes Ticket erscheint oder verschwindet passend.", "q steht in der URL, ohne einen Verlaufseintrag pro Buchstabe."],
           "expect": "Geplante Tests: ticket-list mit Fake-Timern, filter-bar (Label, Escape, aria-busy, Fehler), web-search (Harness).",
-          "tests": [] },
-        { "id": "BYL-E3-112", "title": "Paket 12 – Kennzahlen-Kacheln", "art": ["unit", "komponente"], "status": "geplant",
-          "pre": "Paket 10.",
-          "steps": ["Kacheln sind Knöpfe mit aria-pressed und Namen aus Zahl und Bezeichnung.", "Ein Klick setzt bzw. entfernt nur die eigene Filtergruppe; „Nicht erledigt“ setzt alle Filter und die Suche zurück.", "Zahlen folgen Realtime und dem Wechsel um Mitternacht.", "„Überfällig“ ist nicht rot."],
-          "expect": "Geplante Tests: kpis (Zählung, Grenzen heute/gestern, erledigte nie), kpi-tiles.",
           "tests": [] },
         { "id": "BYL-E3-113", "title": "Paket 13 – Gruppierung in der Tabelle", "art": ["komponente"], "status": "geplant",
           "pre": "Pakete 5 und 9.",
