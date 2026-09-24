@@ -16,7 +16,8 @@ const WRAPPERS = {
 	'start.bat': 'Start',
 	'stop.bat': 'Stop',
 	'autostart-an.bat': 'AutostartOn',
-	'autostart-aus.bat': 'AutostartOff'
+	'autostart-aus.bat': 'AutostartOff',
+	'admin-zuruecksetzen.bat': 'ResetAdmin'
 };
 const APP_SCRIPTS = [...Object.keys(WRAPPERS), 'start-hidden.vbs', 'byl-control.ps1', 'byl-functions.ps1'];
 const POWERSHELL_FILES = [
@@ -81,8 +82,21 @@ describe('wrappers', () => {
 		const source = read(name);
 		expect(source).not.toMatch(/\b[A-Za-z]:[\\/]/);
 		expect(source).not.toMatch(/[\w.+-]+@[\w-]+\.[\w.]+/);
-		expect(source).not.toMatch(/superuser\s+(upsert|create)/i);
 	});
+
+	it.each(APP_SCRIPTS)(
+		'%s builds a superuser command only in Get-AdminUpsertArgument, from runtime input',
+		(name) => {
+			let source = read(name);
+			if (name === 'byl-functions.ps1') {
+				const body = functionBody(source, 'Get-AdminUpsertArgument');
+				expect(body).toMatch(/'superuser', 'upsert'/);
+				expect(body).toMatch(/'--', \$Email, \$Password\s*\)/);
+				source = source.replace(body, '');
+			}
+			expect(source).not.toMatch(/superuser['",\s]+(upsert|create)/i);
+		}
+	);
 
 	it.each(APP_SCRIPTS)('%s uses neither wmic nor taskkill by image name', (name) => {
 		const source = read(name);
@@ -161,6 +175,47 @@ describe('stop', () => {
 		expect(body).toMatch(/Select-AppProcess -Process \(Get-ProcessSnapshot\) -AppDir \$AppDir/);
 		expect(body).toMatch(/Stop-Process -Id \$processId -Force/);
 		expect(body).not.toMatch(/Stop-Process\s+-Name|Get-Process\s+-Name|\|\s*Stop-Process/i);
+	});
+});
+
+describe('admin reset', () => {
+	it('admin-zuruecksetzen.bat always pauses, so the result stays readable', () => {
+		expect(read('admin-zuruecksetzen.bat')).toMatch(/set "BYL_EXIT=%ERRORLEVEL%"\r\npause\r\nexit \/b %BYL_EXIT%/);
+	});
+
+	it('reads the password twice as SecureString and frees the unmanaged copy with ZeroFreeBSTR', () => {
+		const reader = functionBody(control(), 'Read-Secret');
+		expect(reader).toMatch(/Read-Host -Prompt \$Prompt -AsSecureString/);
+		expect(reader).toMatch(/SecureStringToBSTR\(\$secure\)/);
+		expect(reader).toMatch(/finally \{[\s\S]*ZeroFreeBSTR\(\$bstr\)/);
+		const body = functionBody(control(), 'Invoke-ResetAdmin');
+		expect(body.match(/Read-Secret -Prompt/g)).toHaveLength(2);
+		expect(body).toMatch(/Test-AdminCredential -Email \$email -Password \$password -Confirmation \$confirmation/);
+		expect(body.indexOf('Test-AdminCredential')).toBeLessThan(body.indexOf('Invoke-AdminUpsert'));
+	});
+
+	it('never prints, logs or passes the password anywhere but to Invoke-AdminUpsert', () => {
+		const body = functionBody(control(), 'Invoke-ResetAdmin');
+		const uses = [...body.matchAll(/^.*\$password\b.*$/gim)].map((match) => match[0].trim());
+		expect(uses).toEqual([
+			'$password = $null',
+			"$password = Read-Secret -Prompt \"Neues Passwort (mindestens $BylAdminPasswordMinLength Zeichen)\"",
+			'$problem = Test-AdminCredential -Email $email -Password $password -Confirmation $confirmation',
+			'$result = Invoke-AdminUpsert -ExePath $exe -AppDir $AppDir -Email $email -Password $password',
+			'$password = $null'
+		]);
+		for (const source of [control(), functions()]) {
+			expect(source).not.toMatch(/Start-Transcript|Out-File|Add-Content|Set-Content/i);
+		}
+	});
+
+	it('starts PocketBase via ProcessStartInfo with redirected output and redacts the password', () => {
+		const body = functionBody(functions(), 'Invoke-AdminUpsert');
+		expect(body).toMatch(/New-Object System\.Diagnostics\.ProcessStartInfo/);
+		expect(body).toMatch(/\.UseShellExecute = \$false/);
+		expect(body).toMatch(/\.RedirectStandardOutput = \$true/);
+		expect(body).toMatch(/\.RedirectStandardError = \$true/);
+		expect(body).toMatch(/\.Replace\(\$Password, '\*\*\*'\)/);
 	});
 });
 

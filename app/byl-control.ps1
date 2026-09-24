@@ -1,6 +1,7 @@
-﻿# Start, stop and autostart of becauseyoulovejira (E1 plan, package 8). Called by start.bat,
-# start-hidden.vbs, stop.bat, autostart-an.bat and autostart-aus.bat, always with
-# -NoProfile -ExecutionPolicy Bypass (script execution is disabled on the target machine).
+﻿# Start, stop and autostart of becauseyoulovejira (E1 plan, package 8) and the admin reset (E1.1).
+# Called by start.bat, start-hidden.vbs, stop.bat, autostart-an.bat, autostart-aus.bat and
+# admin-zuruecksetzen.bat, always with -NoProfile -ExecutionPolicy Bypass (script execution is
+# disabled on the target machine).
 #
 # Exit codes: 0 = done, 1 = error (message shown), 2 = first run (hint shown; start.bat pauses so
 # the hint stays readable).
@@ -13,7 +14,7 @@
 
 [CmdletBinding()]
 param(
-    [Parameter(Mandatory = $true)][ValidateSet('Start', 'Stop', 'AutostartOn', 'AutostartOff')][string]$Action,
+    [Parameter(Mandatory = $true)][ValidateSet('Start', 'Stop', 'AutostartOn', 'AutostartOff', 'ResetAdmin')][string]$Action,
     [switch]$Hidden
 )
 
@@ -237,12 +238,90 @@ function Invoke-AutostartOff {
     return 0
 }
 
+function Read-Secret {
+    # One Read-Host -AsSecureString prompt as plain text. The plain text exists only as the
+    # returned string; the unmanaged copy is zeroed and freed at once.
+    param([Parameter(Mandatory = $true)][string]$Prompt)
+
+    $secure = Read-Host -Prompt $Prompt -AsSecureString
+    $bstr = [IntPtr]::Zero
+    try {
+        $bstr = [System.Runtime.InteropServices.Marshal]::SecureStringToBSTR($secure)
+        return [System.Runtime.InteropServices.Marshal]::PtrToStringBSTR($bstr)
+    }
+    finally {
+        if ($bstr -ne [IntPtr]::Zero) { [System.Runtime.InteropServices.Marshal]::ZeroFreeBSTR($bstr) }
+        $secure.Dispose()
+    }
+}
+
+function Invoke-ResetAdmin {
+    # Creates an admin account (PocketBase superuser) or sets a new password for an existing one;
+    # tickets and app accounts stay untouched. Works while the app is running. Prints nothing but
+    # the prompts, success or the error (the password never appears; PocketBase output is shown
+    # only with the password replaced by ***).
+    if ($Hidden) {
+        Show-Message -Kind Error -Text 'Das Zurücksetzen des Admin-Kontos braucht ein Konsolenfenster: admin-zuruecksetzen.bat doppelklicken.'
+        return 1
+    }
+    $exe = [System.IO.Path]::Combine($AppDir, 'pocketbase.exe')
+    if (-not (Test-Path -LiteralPath $exe -PathType Leaf)) {
+        Show-Message -Kind Error -Text "pocketbase.exe fehlt in:`n$AppDir`n`nBitte zuerst scripts\fetch-pocketbase.ps1 ausführen."
+        return 1
+    }
+
+    Write-Host 'Admin-Konto zurücksetzen'
+    Write-Host ('Legt ein Admin-Konto für die Verwaltung ({0}_/) an oder setzt das Passwort eines vorhandenen ' -f $BylAppUrl) -NoNewline
+    Write-Host 'Admin-Kontos neu. Tickets und App-Konten bleiben unverändert.'
+    Write-Host ''
+    $email = ([string](Read-Host -Prompt 'E-Mail-Adresse des Admin-Kontos')).Trim()
+    $password = $null
+    $confirmation = $null
+    try {
+        $password = Read-Secret -Prompt "Neues Passwort (mindestens $BylAdminPasswordMinLength Zeichen)"
+        $confirmation = Read-Secret -Prompt 'Passwort wiederholen'
+        $problem = Test-AdminCredential -Email $email -Password $password -Confirmation $confirmation
+        if ($null -ne $problem) {
+            $reason = switch ($problem) {
+                'EmailInvalid' { 'Das ist keine gültige E-Mail-Adresse.' }
+                'PasswordMismatch' { 'Die beiden Passwörter stimmen nicht überein.' }
+                'PasswordTooShort' { "Das Passwort muss mindestens $BylAdminPasswordMinLength Zeichen lang sein." }
+                'PasswordTooLong' { "Das Passwort ist zu lang (höchstens $BylAdminPasswordMaxBytes Byte; Umlaute und Sonderzeichen zählen mehrfach)." }
+                'PasswordCharacter' { 'Das Passwort darf keine Anführungszeichen (") und keine Steuerzeichen enthalten.' }
+            }
+            Show-Message -Kind Error -Text "$reason`nEs wurde nichts geändert. Bitte admin-zuruecksetzen.bat erneut ausführen."
+            return 1
+        }
+        Write-Host ''
+        Write-Host 'Speichere das Admin-Konto ...'
+        $result = Invoke-AdminUpsert -ExePath $exe -AppDir $AppDir -Email $email -Password $password
+    }
+    finally {
+        $password = $null
+        $confirmation = $null
+    }
+
+    if ($result.ExitCode -ne 0) {
+        $text = if ($result.ExitCode -eq -1) { 'PocketBase hat nicht innerhalb von 60 Sekunden geantwortet.' } else { "PocketBase meldet einen Fehler (Exit-Code $($result.ExitCode))." }
+        if ($result.Output -match 'locked|busy') {
+            $text += "`nDie Datenbank ist gerade gesperrt. Bitte zuerst stop.bat ausführen und es dann erneut versuchen."
+        }
+        if ($result.Output) { $text += "`n`n$($result.Output)" }
+        Show-Message -Kind Error -Text "Das Admin-Konto konnte nicht gespeichert werden.`n$text"
+        return 1
+    }
+    Show-Message ("Admin-Konto gespeichert: $email`nAnmelden in der Verwaltung: $($BylAppUrl)_/`n" +
+        'Ein noch offener Einrichtungs-Tab wird damit ungültig und kann geschlossen werden.')
+    return 0
+}
+
 try {
     $exitCode = switch ($Action) {
         'Start' { Invoke-Start }
         'Stop' { Invoke-Stop }
         'AutostartOn' { Invoke-AutostartOn }
         'AutostartOff' { Invoke-AutostartOff }
+        'ResetAdmin' { Invoke-ResetAdmin }
     }
 }
 catch {

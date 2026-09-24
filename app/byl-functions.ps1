@@ -274,3 +274,128 @@ function Get-ListenerSnapshot {
     # LISTEN sockets on port 8090 (empty if there are none).
     return @(Get-NetTCPConnection -State Listen -LocalPort $BylPort -ErrorAction SilentlyContinue)
 }
+
+# --- Admin reset (admin-zuruecksetzen.bat, E1.1) ----------------------------------------------
+
+$BylAdminPasswordMinLength = 10
+# bcrypt reads at most 72 bytes; PocketBase's password field allows 71 by default.
+$BylAdminPasswordMaxBytes = 71
+
+function Test-AdminCredential {
+    # Checks the input of the admin reset before anything runs. Returns $null if it is valid,
+    # otherwise one code: EmailInvalid, PasswordMismatch, PasswordTooShort, PasswordTooLong or
+    # PasswordCharacter (double quote or control character; the quote is rejected so the command
+    # line never needs quote escaping).
+    param(
+        [AllowNull()][AllowEmptyString()][string]$Email,
+        [AllowNull()][AllowEmptyString()][string]$Password,
+        [AllowNull()][AllowEmptyString()][string]$Confirmation
+    )
+
+    if ([string]::IsNullOrEmpty($Email) -or $Email.Length -gt 254 -or $Email -notmatch '^[^\s@"]+@[^\s@"]+\.[^\s@"]+$') {
+        return 'EmailInvalid'
+    }
+    if (-not [string]::Equals($Password, $Confirmation, [System.StringComparison]::Ordinal)) { return 'PasswordMismatch' }
+    if ($Password.Length -lt $BylAdminPasswordMinLength) { return 'PasswordTooShort' }
+    if ([System.Text.Encoding]::UTF8.GetByteCount($Password) -gt $BylAdminPasswordMaxBytes) { return 'PasswordTooLong' }
+    foreach ($character in $Password.ToCharArray()) {
+        if ($character -eq [char]'"' -or [char]::IsControl($character)) { return 'PasswordCharacter' }
+    }
+    return $null
+}
+
+function ConvertTo-ProcessArgument {
+    # Quotes one argument for a Windows command line so that the usual parser (CommandLineToArgvW
+    # rules, also used by Go programs) yields exactly $Value: arguments with whitespace or quotes
+    # are quoted, backslashes before a quote and at the end are doubled, quotes are escaped.
+    param([AllowEmptyString()][string]$Value)
+
+    if ($Value.Length -gt 0 -and $Value -notmatch '[\s"]') { return $Value }
+    $backslash = [char]92
+    $builder = New-Object System.Text.StringBuilder
+    [void]$builder.Append('"')
+    $pending = 0
+    foreach ($character in $Value.ToCharArray()) {
+        if ($character -eq $backslash) {
+            $pending++
+            continue
+        }
+        if ($character -eq [char]'"') {
+            [void]$builder.Append($backslash, 2 * $pending + 1)
+        }
+        elseif ($pending -gt 0) {
+            [void]$builder.Append($backslash, $pending)
+        }
+        [void]$builder.Append($character)
+        $pending = 0
+    }
+    if ($pending -gt 0) { [void]$builder.Append($backslash, 2 * $pending) }
+    [void]$builder.Append('"')
+    return $builder.ToString()
+}
+
+function Get-AdminUpsertArgument {
+    # Command line for pocketbase.exe to create a superuser or set its password, on the app's own
+    # folders (as Get-ServerArgumentString) with --automigrate=false. The flags come first and
+    # "--" ends them, so an e-mail or password starting with "-" is never read as a flag.
+    param(
+        [Parameter(Mandatory = $true)][string]$AppDir,
+        [Parameter(Mandatory = $true)][string]$Email,
+        [Parameter(Mandatory = $true)][string]$Password
+    )
+
+    $folder = { param([string]$Name) [System.IO.Path]::Combine($AppDir, $Name) }
+    $arguments = @(
+        'superuser', 'upsert',
+        "--dir=$(& $folder 'pb_data')",
+        "--hooksDir=$(& $folder 'pb_hooks')",
+        "--migrationsDir=$(& $folder 'pb_migrations')",
+        '--automigrate=false',
+        '--', $Email, $Password
+    )
+    return (@($arguments | ForEach-Object { ConvertTo-ProcessArgument -Value $_ }) -join ' ')
+}
+
+function Invoke-AdminUpsert {
+    # Runs the admin reset (Get-AdminUpsertArgument) and waits for it. Returns ExitCode (-1 on
+    # timeout) and Output with every occurrence of the password replaced by ***. The password is
+    # passed on the command line: PocketBase has no other input for it, so it is visible in the
+    # process list for the moment the command runs (documented in ADR-0002).
+    param(
+        [Parameter(Mandatory = $true)][string]$ExePath,
+        [Parameter(Mandatory = $true)][string]$AppDir,
+        [Parameter(Mandatory = $true)][string]$Email,
+        [Parameter(Mandatory = $true)][string]$Password,
+        [int]$TimeoutSeconds = 60
+    )
+
+    $startInfo = New-Object System.Diagnostics.ProcessStartInfo
+    $startInfo.FileName = $ExePath
+    $startInfo.Arguments = Get-AdminUpsertArgument -AppDir $AppDir -Email $Email -Password $Password
+    $startInfo.WorkingDirectory = $AppDir
+    $startInfo.UseShellExecute = $false
+    $startInfo.CreateNoWindow = $true
+    $startInfo.RedirectStandardOutput = $true
+    $startInfo.RedirectStandardError = $true
+    $process = [System.Diagnostics.Process]::Start($startInfo)
+    $startInfo.Arguments = ''
+    try {
+        # Read both streams asynchronously: a full pipe buffer would otherwise block the process.
+        $standardOutput = $process.StandardOutput.ReadToEndAsync()
+        $standardError = $process.StandardError.ReadToEndAsync()
+        if ($process.WaitForExit($TimeoutSeconds * 1000)) {
+            $process.WaitForExit()
+            $exitCode = $process.ExitCode
+        }
+        else {
+            try { $process.Kill() } catch { $null = $_ }
+            $process.WaitForExit()
+            $exitCode = -1
+        }
+        $output = ($standardOutput.Result + $standardError.Result).Replace($Password, '***')
+    }
+    finally {
+        $process.Dispose()
+    }
+    return [pscustomobject]@{ ExitCode = $exitCode; Output = $output.Trim() }
+}
