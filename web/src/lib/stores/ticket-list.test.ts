@@ -205,6 +205,25 @@ describe('loading and order', () => {
 		expect(invalid.listOpen).not.toHaveBeenCalled();
 		expect(invalid.listDone).not.toHaveBeenCalled();
 	});
+
+	it('loads the open tickets once for the project view without a list state (package 14)', async () => {
+		const item = ticket();
+		const data = fakeData([item]);
+		const store = new TicketListStore(data, session());
+
+		store.loadOpen();
+		store.loadOpen();
+		await settle();
+
+		expect(data.listOpen).toHaveBeenCalledOnce();
+		expect(data.listDone).not.toHaveBeenCalled();
+		expect(store.open).toEqual([item]);
+		store.loadOpen();
+		store.activate(withDone(false));
+		await settle();
+		expect(data.listOpen).toHaveBeenCalledOnce();
+		expect(store.announcement).toBe('');
+	});
 });
 
 describe('upsert and remove', () => {

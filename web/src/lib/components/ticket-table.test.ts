@@ -188,6 +188,19 @@ describe('ticket table', () => {
 		expect(screen.queryByRole('rowgroup', { name: /^Erledigt/ })).toBeNull();
 	});
 
+	it('has the switch "Aufgaben | Projekte" in the section bar (package 14)', async () => {
+		await showTable(fakeData([ticket()]));
+
+		const nav = screen.getByRole('navigation', { name: 'Ansicht' });
+		expect(nav.closest('.start')).not.toBeNull();
+		expect(within(nav).getByRole('link', { name: 'Aufgaben' }).getAttribute('aria-current')).toBe(
+			'page'
+		);
+		expect(within(nav).getByRole('link', { name: 'Projekte' }).getAttribute('href')).toBe(
+			'/projekte'
+		);
+	});
+
 	it('resolves project and tags through the catalog and follows a rename', async () => {
 		const item = ticket({
 			projectId: HOUSE.id,

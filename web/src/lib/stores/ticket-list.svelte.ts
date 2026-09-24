@@ -361,6 +361,14 @@ export class TicketListStore {
 		else this.#announcement = countMessage(this.visibleCount);
 	}
 
+	/**
+	 * Loads the open tickets once without showing the list: the project view counts its "aktiv"
+	 * numbers from them (E3 plan, package 14), even when the app starts there.
+	 */
+	loadOpen(): void {
+		if (this.#openState === 'idle') void this.#loadOpen();
+	}
+
 	/** Loads everything shown again ("Erneut versuchen"). */
 	async reload(): Promise<void> {
 		await Promise.all([this.#loadOpen(), this.#showDone ? this.#loadDone(1) : undefined]);

@@ -18,6 +18,7 @@
 	import ErrorIcon from './ErrorIcon.svelte';
 	import SectionBar from './SectionBar.svelte';
 	import TicketTableRow from './TicketTableRow.svelte';
+	import ViewSwitch from './ViewSwitch.svelte';
 
 	// Ticket table (E3 plan, T-4 and packages 5, 9 and 10; E2 plan, P-1 to P-5): section bar
 	// "Aufgaben" with the number of shown tickets and the switch "Erledigte anzeigen"
@@ -267,6 +268,9 @@
 		{countLabel}
 		bind:heading
 	>
+		{#snippet start()}
+			<ViewSwitch current="tasks" />
+		{/snippet}
 		{#snippet end()}
 			<label class="switch" class:locked={switchHint !== null}>
 				<input

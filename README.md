@@ -37,7 +37,7 @@ Ein privates, lokal laufendes Ticket-Dashboard für Windows 10: Ticket-Handling 
 | **E0 Gerüst** | Repo, PocketBase 0.40.4 (SHA256-geprüfter Download), SvelteKit-SPA, Build- und Testskripte | fertig |
 | **E1 Datenmodell, Auth, Hooks** | Datenmodell mit privaten Scopes und Nummernkreisen (`TASK-1`, `<CODE>-<NR>`), API-Regeln je Nutzer, gesperrte Selbstregistrierung, Hooks für Keys, Erledigt-Zeitpunkt und Verlauf, automatische Backups, Start-, Stopp-, Autostart- und Admin-Reset-Skripte | fertig ([Plan](docs/plan/e1.md)) |
 | **E2 Liste und Detail** | Liste „Alle Tickets“ mit Standard-Reihenfolge, Abhaken mit „Rückgängig“, „Erledigte anzeigen“, Detailpanel mit Inline-Bearbeitung, Anlegen, Löschen mit Sicherheitsabfrage, Markdown (sanitisiert), Kommentare, Verlauf, Live-Aktualisierung über Realtime | fertig ([Plan und Bilanz](docs/plan/e2.md)) |
-| **E3 Übersicht und Ordnung** | Seitenaufbau nach Task-Board-Vorbild ([ADR-0010](docs/adr/0010-layout-nach-task-board.md)): Kennzahlen, Filterleiste, sortierbare Tabelle, Gruppierung, Projekte mit Projektansicht, Tags, Suche. **Bereits umgesetzt (Pakete 1–10 und 12 von 15):** Domänenlogik für Listenzustand in der URL, Filter, relative Fälligkeit, Sortierung und Gruppierung; Sperre für neue Tickets in archivierten Projekten; Datenzugriff und Live-Katalog für Projekte und Tags; Kopfzeile mit Zähler und „Neues Ticket“, Tabelle „Aufgaben“, relative Fälligkeitslabels, Projekt und Tags im Panel und bei der Anlage, Filterleiste mit Zustand in der Adresse, Kennzahlen-Kacheln, Sortierung per Spaltenkopf. Suche, Gruppierung und Projektansicht folgen. | in Arbeit ([Plan](docs/plan/e3.md)) |
+| **E3 Übersicht und Ordnung** | Seitenaufbau nach Task-Board-Vorbild ([ADR-0010](docs/adr/0010-layout-nach-task-board.md)): Kennzahlen, Filterleiste, sortierbare Tabelle, Gruppierung, Projekte mit Projektansicht, Tags, Suche. **Bereits umgesetzt (Pakete 1–10, 12 und 14 von 15):** Domänenlogik für Listenzustand in der URL, Filter, relative Fälligkeit, Sortierung und Gruppierung; Sperre für neue Tickets in archivierten Projekten; Datenzugriff und Live-Katalog für Projekte und Tags; Kopfzeile mit Zähler und „Neues Ticket“, Tabelle „Aufgaben“, relative Fälligkeitslabels, Projekt und Tags im Panel und bei der Anlage, Filterleiste mit Zustand in der Adresse, Kennzahlen-Kacheln, Sortierung per Spaltenkopf, Projektansicht mit Projekt- und Tag-Verwaltung. Gruppierung und Suche folgen. | in Arbeit ([Plan](docs/plan/e3.md)) |
 | **E4 Eingang und Kanäle** | Schnellerfassung (`c`, `Strg+K`, Kurzsyntax `Titel @CODE !Priorität`), Zwischenablage, Web-Links per Bookmarklet, `.ics`- und `.eml`-Dateien per Drag & Drop | geplant |
 | **E5 Wiederkehrende Aufgaben** | Kalender- und Nach-Erledigung-Regeln (RRULE-Teilmenge), Vorschläge aus `.ics` | geplant |
 | **E6 Feinschliff** | Papierkorb, Spaltenauswahl, Vollansicht, Tastaturkürzel, Hilfe, Theme-Umschalter | geplant |
@@ -237,6 +237,14 @@ Danach anmelden und die Daten prüfen; es gelten die Konten und Passwörter zum 
 - Die Zahl neben „Aufgaben“ zählt die gefilterten Tickets; die Zahl in der Kopfzeile zählt weiter alle nicht erledigten. Passt nichts, steht dort „Keine Tickets für diese Filter.“ mit „Filter zurücksetzen“.
 - Der Status **„Erledigt“** zeigt nur den Abschnitt „Erledigt“. Bei einem anderen Status sind erledigte Tickets ausgeblendet, und „Erledigte anzeigen“ ist gesperrt.
 
+### Projekte und Tags
+
+- Der Umschalter **„Aufgaben | Projekte“** links in der Abschnittsleiste wechselt zwischen der Tabelle und der **Projektansicht** (`/projekte`). Dort gibt es keine Kennzahlen und keine Filterleiste.
+- Jedes Projekt ist eine Kachel mit Name, Code und **„N aktiv · M gesamt“**: aktiv sind alle nicht erledigten Tickets, gesamt zählt die erledigten mit. Ein Klick auf die Kachel öffnet die Tabelle mit diesem Projekt als Filter (`/?projekt=<id>`).
+- **„Neues Projekt“** fragt Name und Code ab. Der Code hat 2 bis 6 Großbuchstaben (A–Z), `TASK` ist reserviert; die App schlägt ihn aus dem Namen vor („Garten und Haus“ → `GUH`, „Büro“ → `BUER`), der Vorschlag lässt sich ändern. Die Tickets des Projekts heißen dann `GUH-1`, `GUH-2` …
+- Der Stift auf einer Kachel öffnet **„Projekt bearbeiten“**: Name und Code ändern (der Code bleibt fest, sobald Tickets das Projekt verwenden), **„Archivieren“** bzw. **„Aus dem Archiv holen“** und **„Löschen …“**, das es nur für Projekte ohne Tickets gibt. Archivierte Projekte lassen sich keinem Ticket neu zuordnen; ihre Tickets bleiben bearbeitbar. Sie erscheinen nur mit **„Archivierte anzeigen“** (`?archiviert=1`), in der Filterleiste unter „Archiviert“.
+- Unter den Kacheln stehen alle **Tags**: **„Umbenennen“** ändert den Namen direkt in der Zeile (Enter speichert, Escape bricht ab; einen Namen, den ein anderer Tag in irgendeiner Schreibweise schon hat, lehnt die App ab). **„Löschen …“** nennt vorher die Zahl der Tickets mit diesem Tag; der Tag verschwindet aus ihnen, und ihr Verlauf zeigt die Änderung als „System“. Neue Tags entstehen im Detailpanel und bei „Neues Ticket“.
+
 ### Abhaken und „Erledigte anzeigen“
 
 - Das Kästchen in der Spalte „Aktionen“ setzt ein Ticket auf **Erledigt**. Die Zeile bleibt 5 Sekunden durchgestrichen mit **„Rückgängig“** stehen (stellt den vorherigen Status wieder her) und verschwindet dann.
@@ -246,7 +254,7 @@ Danach anmelden und die Daten prüfen; es gelten die Konten und Passwörter zum 
 ### Detailpanel
 
 - Ein Klick auf eine Zeile öffnet das Ticket rechts im Panel (auf schmalen Bildschirmen über der Liste). Die Adresse `/tickets/<id>` öffnet nach dem Neuladen dasselbe Ticket.
-- **Titel** („Titel bearbeiten“) und **Fälligkeit** speichern mit Enter oder beim Verlassen des Felds, Escape verwirft. **Status**, **Priorität** und **Projekt** speichern sofort bei der Auswahl. Ein anderes Projekt gibt dem Ticket einen neuen Key (`HAUS-4`, ohne Projekt wieder `TASK-n`); die Adresse bleibt gleich, der alte Key steht im Verlauf. Archivierte Projekte sind nicht wählbar. Bis zur Projektansicht (E3, Paket 14) werden Projekte in der Verwaltung unter `/_/` angelegt.
+- **Titel** („Titel bearbeiten“) und **Fälligkeit** speichern mit Enter oder beim Verlassen des Felds, Escape verwirft. **Status**, **Priorität** und **Projekt** speichern sofort bei der Auswahl. Ein anderes Projekt gibt dem Ticket einen neuen Key (`HAUS-4`, ohne Projekt wieder `TASK-n`); die Adresse bleibt gleich, der alte Key steht im Verlauf. Archivierte Projekte sind nicht wählbar. Projekte entstehen in der [Projektansicht](#projekte-und-tags).
 - **Tags:** Im Feld „Tags“ tippen, mit den Pfeiltasten einen Vorschlag wählen und Enter drücken; die letzte Option legt einen neuen Tag an („„Steuer“ als neuen Tag anlegen“). Einen Namen, den es in anderer Schreibweise schon gibt, nimmt die App wieder. Jede Änderung speichert sofort; ein Chip verschwindet über „Tag … entfernen“. Escape schließt die Vorschläge, ein zweites Escape leert das Feld. Die **Beschreibung** (Markdown) hat „Bearbeiten“, eine Vorschau und „Speichern“ (`Strg+Enter`).
 - „Schließen“ oder Escape führt zurück zur Liste. Ist noch eine Beschreibung, ein Kommentar oder ein getippter Tag-Name ungespeichert, fragt die App vorher „Änderungen verwerfen?“.
 
@@ -261,7 +269,7 @@ Danach anmelden und die Daten prüfen; es gelten die Konten und Passwörter zum 
 
 ### Live-Aktualisierung
 
-- Änderungen aus einem anderen Tab oder Browserfenster erscheinen ohne Neuladen in der Liste, im offenen Panel, in den Kommentaren und im Verlauf. Wird das offene Ticket woanders gelöscht, zeigt das Panel „Dieses Ticket wurde gelöscht.“. Eine angefangene Eingabe wird dabei nicht überschrieben.
+- Änderungen aus einem anderen Tab oder Browserfenster erscheinen ohne Neuladen in der Liste, im offenen Panel, in den Kommentaren, im Verlauf und in der Projektansicht (umbenannte Projekte und Tags auch in allen Zeilen). Wird das offene Ticket woanders gelöscht, zeigt das Panel „Dieses Ticket wurde gelöscht.“. Eine angefangene Eingabe wird dabei nicht überschrieben.
 
 ### Tastatur
 

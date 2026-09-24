@@ -1,7 +1,7 @@
 // Projects (E3 plan, T-11). Pure. The code rule mirrors app/pb_hooks/lib/ticket-key.js
 // (tests/unit/web-project-code.test.mjs keeps both equal); the hooks stay authoritative.
 
-import type { ProjectRef } from './ticket';
+import type { ProjectRef, TicketSummary } from './ticket';
 
 /** Project of the catalog: the reference plus `updated`, so older events can be ignored. */
 export interface Project extends ProjectRef {
@@ -66,4 +66,41 @@ export function suggestProjectCode(name: string): string {
 					.join('')
 			: (words[0] ?? '').slice(0, SINGLE_WORD_CODE_LENGTH);
 	return isValidProjectCode(code) ? code : '';
+}
+
+/** Code as typed: trimmed and in capitals, so "haus" becomes "HAUS" (T-11). */
+export function normalizeProjectCode(code: string): string {
+	return code.trim().toUpperCase();
+}
+
+/** Why a name cannot name a project, or null if it can. */
+export function projectNameProblem(name: string): string | null {
+	const normalized = name.trim();
+	if (normalized === '') return 'Der Name darf nicht leer sein.';
+	if (normalized.length > PROJECT_NAME_MAX_LENGTH) {
+		return `Höchstens ${PROJECT_NAME_MAX_LENGTH} Zeichen.`;
+	}
+	return null;
+}
+
+/** Why a (normalized) code is not allowed, or null if it is; the hooks stay authoritative. */
+export function projectCodeProblem(code: string): string | null {
+	if (code === '') return 'Bitte einen Code eingeben.';
+	if (code === RESERVED_CODE) return `Der Code ${RESERVED_CODE} ist reserviert.`;
+	return PROJECT_CODE_PATTERN.test(code) ? null : 'Nur 2 bis 6 Großbuchstaben (A–Z).';
+}
+
+/**
+ * Tickets that are not done per project ID (OF-E3-1: "aktiv" on a project tile). A just
+ * checked row that still stands with "Rückgängig" is done and does not count.
+ */
+export function countActiveByProject(
+	tickets: Iterable<Pick<TicketSummary, 'projectId' | 'status'>>
+): Map<string, number> {
+	const counts = new Map<string, number>();
+	for (const ticket of tickets) {
+		if (ticket.projectId === null || ticket.status === 'done') continue;
+		counts.set(ticket.projectId, (counts.get(ticket.projectId) ?? 0) + 1);
+	}
+	return counts;
 }

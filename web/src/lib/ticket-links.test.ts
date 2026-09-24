@@ -5,9 +5,13 @@ import { EMPTY_LIST_QUERY } from './domain/list-query';
 import {
 	listHref,
 	newTicketHref,
+	projectsHref,
+	projectTicketsHref,
+	showArchivedFrom,
 	showDoneFrom,
 	ticketHref,
 	withListQuery,
+	withShowArchived,
 	withShowDone
 } from './ticket-links';
 
@@ -65,5 +69,20 @@ describe('ticket links', () => {
 			})
 		).toBe('/tickets/abc?x=1&prio=low&gruppe=faellig');
 		expect(withListQuery(at('/?status=open'), EMPTY_LIST_QUERY)).toBe('/');
+	});
+
+	it('opens the tickets of a project with only the project filter set (package 14)', () => {
+		expect(projectTicketsHref('proj00000000001')).toBe('/?projekt=proj00000000001');
+		expect(projectsHref()).toBe('/projekte');
+	});
+
+	it('reads, sets and removes the switch "Archivierte anzeigen" and keeps other parameters', () => {
+		expect(showArchivedFrom(at('/projekte?archiviert=1'))).toBe(true);
+		expect(showArchivedFrom(at('/projekte'))).toBe(false);
+		expect(showArchivedFrom(at('/projekte?archiviert=0'))).toBe(false);
+		expect(showArchivedFrom(at('/projekte?archiviert=1&archiviert=1'))).toBe(false);
+		expect(withShowArchived(at('/projekte?x=1'), true)).toBe('/projekte?x=1&archiviert=1');
+		expect(withShowArchived(at('/projekte?archiviert=1&x=1'), false)).toBe('/projekte?x=1');
+		expect(withShowArchived(at('/projekte?archiviert=1'), false)).toBe('/projekte');
 	});
 });
