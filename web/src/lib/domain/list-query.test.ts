@@ -2,6 +2,8 @@
 
 import { describe, expect, it } from 'vitest';
 import {
+	activeSearch,
+	SEARCH_MIN_LENGTH,
 	EMPTY_LIST_QUERY,
 	FILTER_KEYS,
 	NO_PROJECT,
@@ -259,5 +261,15 @@ describe('withFilter, resetFilters, hasFilters', () => {
 			expect(hasFilters({ ...EMPTY_LIST_QUERY, [key]: full[key] }), key).toBe(true);
 		}
 		expect(hasFilters(resetFilters(full))).toBe(false);
+	});
+});
+
+describe('activeSearch (E3 plan, package 11)', () => {
+	it('applies a search from two characters on, a shorter one narrows nothing', () => {
+		expect(SEARCH_MIN_LENGTH).toBe(2);
+		expect(activeSearch({ search: null })).toBeNull();
+		expect(activeSearch({ search: 'M' })).toBeNull();
+		expect(activeSearch({ search: 'Mi' })).toBe('Mi');
+		expect(activeSearch(parseListQuery(new URLSearchParams('q=%20Miete%20')))).toBe('Miete');
 	});
 });

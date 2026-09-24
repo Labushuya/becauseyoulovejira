@@ -4,7 +4,7 @@
 
 import type PocketBase from 'pocketbase';
 import { addDays, type CalendarDate } from '../domain/berlin-date';
-import { EMPTY_LIST_QUERY, NO_PROJECT, type ListQuery } from '../domain/list-query';
+import { EMPTY_LIST_QUERY, NO_PROJECT, activeSearch, type ListQuery } from '../domain/list-query';
 import { SOON_DAYS } from '../domain/ordering';
 import { isPriority, isStatus, type Status } from '../domain/status';
 import {
@@ -17,6 +17,7 @@ import {
 	type TicketSummary
 } from '../domain/ticket';
 import { DataError, withDataErrors } from './errors';
+import { likeText } from './like';
 import { toProjectRef, type ProjectRecord } from './projects';
 import { toTagRef, type TagRecord } from './tags';
 import { currentUserId, type RequestOptions } from './options';
@@ -147,6 +148,35 @@ export interface DoneFilter {
 	today: CalendarDate;
 }
 
+/** Open tickets that match a search: title, description or key contain the text. */
+const OPEN_SEARCH_FILTER = [
+	'status != {:done}',
+	'(title ~ {:q} || description ~ {:q} || key ~ {:q})'
+].join(' && ');
+
+/**
+ * IDs of the open tickets that match the search (ADR-0013 section 2): the list intersects them
+ * with its own filters, so the description is still not loaded into the list.
+ */
+export function searchOpenTicketIds(
+	pb: PocketBase,
+	search: string,
+	{ signal }: RequestOptions = {}
+): Promise<string[]> {
+	return withDataErrors(signal, async () => {
+		const records = await pb.collection(TICKETS).getFullList<{ id: string }>({
+			batch: 500,
+			filter: pb.filter(OPEN_SEARCH_FILTER, {
+				done: 'done' satisfies Status,
+				q: likeText(search)
+			}),
+			fields: 'id',
+			signal
+		});
+		return records.map((record) => record.id);
+	});
+}
+
 /** Without list filters: every done ticket. */
 const NO_DONE_FILTER: DoneFilter = { query: EMPTY_LIST_QUERY, today: '' };
 
@@ -155,11 +185,13 @@ const NO_DONE_FILTER: DoneFilter = { query: EMPTY_LIST_QUERY, today: '' };
  * One fixed expression of fixed conditions joined with AND; each condition only applies when its
  * parameter selects it, so every value reaches the server as a parameter of pb.filter(). The
  * rules are those of the client: a done ticket is never overdue, "Bald" is tomorrow up to
- * today + SOON_DAYS, project and tag compare the stored relations.
+ * today + SOON_DAYS, project and tag compare the stored relations. The search (ADR-0013 section
+ * 2) is part of the expression, because the list does not load the description.
  * tests/integration/web-filter-parity.test.mjs keeps both forms equal.
  */
 const DONE_FILTER = [
 	'status = {:done}',
+	'({:q} = "" || title ~ {:q} || description ~ {:q} || key ~ {:q})',
 	'({:status} = "" || status = {:status})',
 	'({:priority} = "" || priority = {:priority})',
 	'({:due} != "overdue" || (due != "" && due < {:today} && status != {:done}))',
@@ -183,6 +215,7 @@ function doneFilterParams({ query, today }: DoneFilter): Record<string, string> 
 				};
 	return {
 		done: 'done' satisfies Status,
+		q: likeText(activeSearch(query) ?? ''),
 		status: query.status ?? '',
 		priority: query.priority ?? '',
 		due: query.due ?? '',

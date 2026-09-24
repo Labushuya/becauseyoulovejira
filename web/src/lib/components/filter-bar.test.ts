@@ -206,3 +206,89 @@ describe('filter bar', () => {
 		expect(names.size).toBe(3);
 	});
 });
+
+describe('filter bar: search (E3 plan, package 11)', () => {
+	async function showSearch(path = '/', props: Record<string, unknown> = {}) {
+		mocks.page.url = new URL(path, 'http://localhost:3000');
+		const catalog = new CatalogStore(
+			{ listProjects: vi.fn(async () => []), listTags: vi.fn(async () => []), createTag: vi.fn() },
+			SESSION
+		);
+		await catalog.load();
+		render(FilterBar, { props: { catalog, ...props } });
+		return screen.getByRole<HTMLInputElement>('searchbox', { name: 'Suche' });
+	}
+
+	it('is a search field with a label, placeholder, limit and the hint on two characters', async () => {
+		const field = await showSearch('/?q=Miete');
+
+		expect(field.type).toBe('search');
+		expect(field.placeholder).toBe('Titel, Beschreibung oder Key');
+		expect(field.maxLength).toBe(200);
+		expect(field.value).toBe('Miete');
+		expect(field.getAttribute('aria-busy')).toBe('false');
+		expect(
+			document.getElementById(String(field.getAttribute('aria-describedby')))?.textContent?.trim()
+		).toBe('Die Suche beginnt ab 2 Zeichen.');
+	});
+
+	it('writes the text into the URL and replaces the history entry', async () => {
+		const field = await showSearch('/tickets/abc123def456ghi?status=open&sort=titel');
+
+		await fireEvent.input(field, { target: { value: 'Miete' } });
+
+		expect(mocks.goto).toHaveBeenCalledExactlyOnceWith(
+			'/tickets/abc123def456ghi?status=open&q=Miete&sort=titel',
+			{ replaceState: true, keepFocus: true, noScroll: true }
+		);
+		expect(field.value).toBe('Miete');
+	});
+
+	it('empties a field that is not empty with Escape and leaves Escape alone otherwise', async () => {
+		const field = await showSearch('/?q=Miete');
+		const outside = vi.fn();
+		document.addEventListener('keydown', outside);
+
+		await fireEvent.keyDown(field, { key: 'Escape' });
+		expect(lastTarget()).toBe('/');
+		expect(outside).not.toHaveBeenCalled();
+
+		mocks.goto.mockClear();
+		field.value = '';
+		await fireEvent.keyDown(field, { key: 'Escape' });
+		expect(mocks.goto).not.toHaveBeenCalled();
+		expect(outside).toHaveBeenCalledOnce();
+		document.removeEventListener('keydown', outside);
+	});
+
+	it('shows aria-busy while the search waits', async () => {
+		const field = await showSearch('/?q=Miete', { searchBusy: true });
+
+		expect(field.getAttribute('aria-busy')).toBe('true');
+	});
+
+	it('shows a failure with "Erneut versuchen" and says that the table shows no search', async () => {
+		const onretrysearch = vi.fn();
+		const field = await showSearch('/?q=Miete', {
+			searchError: 'Server nicht erreichbar.',
+			onretrysearch
+		});
+
+		const alert = screen.getByRole('alert');
+		expect(alert.classList.contains('alert-error')).toBe(true);
+		expect(alert.textContent).toMatch(
+			'Die Suche ist fehlgeschlagen. Server nicht erreichbar. Die Tabelle zeigt die Tickets ohne Suche.'
+		);
+		expect(field.getAttribute('aria-describedby')?.split(' ')[0]).toBe(alert.id);
+		await fireEvent.click(within(alert).getByRole('button', { name: 'Erneut versuchen' }));
+		expect(onretrysearch).toHaveBeenCalledOnce();
+	});
+
+	it('clears the search with "Zurücksetzen"', async () => {
+		await showSearch('/?q=Miete&gruppe=status');
+
+		await fireEvent.click(screen.getByRole('button', { name: 'Zurücksetzen' }));
+
+		expect(lastTarget()).toBe('/?gruppe=status');
+	});
+});

@@ -19,6 +19,9 @@ export const NO_PROJECT = 'ohne';
 /** Longest search text in the URL (ADR-0013 section 4). */
 export const SEARCH_MAX_LENGTH = 200;
 
+/** Shortest search text that is sent to the server (E3 plan, T-15); shorter ones are ignored. */
+export const SEARCH_MIN_LENGTH = 2;
+
 /**
  * Record IDs of PocketBase (default id field: 15 characters a-z and 0-9). A well-formed but
  * unknown ID stays set and simply matches nothing (ADR-0013 section 4).
@@ -218,4 +221,12 @@ export function resetFilters(query: ListQuery): ListQuery {
 /** True if a filter or the search is set (otherwise "Zurücksetzen" is locked). */
 export function hasFilters(query: ListQuery): boolean {
 	return FILTER_KEYS.some((key) => query[key] !== null);
+}
+
+/**
+ * Search text that applies (E3 plan, T-15): the search of the query from SEARCH_MIN_LENGTH
+ * characters on, else null. A shorter one stays in the URL but narrows nothing.
+ */
+export function activeSearch(query: Pick<ListQuery, 'search'>): string | null {
+	return query.search !== null && query.search.length >= SEARCH_MIN_LENGTH ? query.search : null;
 }

@@ -179,6 +179,7 @@ describe('list store live', () => {
 					Promise.resolve({ items: done[page - 1] ?? [], page, hasMore: page < done.length })
 				)
 			),
+			searchOpen: vi.fn(async (): Promise<string[]> => []),
 			setDone: vi.fn(async (id: string, isDone: boolean): Promise<TicketSummary> =>
 				summary({
 					id,

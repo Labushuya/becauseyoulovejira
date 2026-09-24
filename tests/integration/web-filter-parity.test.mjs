@@ -1,7 +1,9 @@
-// Parity of the two forms of the list filter (E3 plan, package 10; ADR-0013 section 3): the
-// server expression of listDoneTickets returns exactly the done tickets that matchesFilter lets
-// pass, for a matrix of tickets (every priority, due dates yesterday, today, +7, +8 and none,
-// with and without project and tags) and of filter combinations.
+// Parity of the two forms of the list filter (E3 plan, packages 10 and 11; ADR-0013 section 3):
+// the server expression of listDoneTickets returns exactly the done tickets that matchesFilter
+// lets pass, for a matrix of tickets (every priority, due dates yesterday, today, +7, +8 and
+// none, with and without project and tags) and of filter combinations. With a search, the client
+// side adds the reference rule of ADR-0013 section 2 (title, description or key contain the
+// text, ASCII letters regardless of case), because the list does not load the description.
 
 import { beforeAll, describe, expect, it } from 'vitest';
 import { superuserClient } from '../support/api.mjs';
@@ -9,7 +11,12 @@ import { createOwner, uniqueCode } from '../support/scenario.mjs';
 import { listDoneTickets, listOpenTickets } from '../../web/src/lib/data/tickets.ts';
 import { addDays } from '../../web/src/lib/domain/berlin-date.ts';
 import { matchesFilter } from '../../web/src/lib/domain/filter.ts';
-import { DUE_FILTERS, EMPTY_LIST_QUERY, NO_PROJECT } from '../../web/src/lib/domain/list-query.ts';
+import {
+	DUE_FILTERS,
+	EMPTY_LIST_QUERY,
+	NO_PROJECT,
+	activeSearch
+} from '../../web/src/lib/domain/list-query.ts';
 import { PRIORITIES, STATUSES } from '../../web/src/lib/domain/status.ts';
 
 /** "Today" is a parameter of the expression, so any fixed Berlin date works. */
@@ -17,6 +24,15 @@ const TODAY = '2026-09-25';
 const DUE_OFFSETS = [-1, 0, 7, 8, null];
 /** Well-formed record ID that belongs to nobody. */
 const UNKNOWN_ID = 'zzzzzzzzzzzzzzz';
+
+/** Texts of the done tickets in turn: hits in the title, only in the description, with "%". */
+const TEXTS = [
+	{ title: 'Miete zahlen' },
+	{ title: 'Garten', description: 'Nebenkosten der MIETE' },
+	{ title: 'Rabatt 50% nutzen' },
+	{ title: 'Steuer 500 Euro' }
+];
+const SEARCHES = ['miete', 'NEBENKOSTEN', '50%', '500', 'TASK-1', '_', 'M'];
 
 function stored(offset) {
 	return offset === null ? '' : `${addDays(TODAY, offset)} 00:00:00.000Z`;
@@ -27,6 +43,8 @@ describe('web filter parity: server expression and matchesFilter', () => {
 	let projects;
 	let tags;
 	let tickets;
+	/** Title, description and key per ticket ID, for the reference search. */
+	const texts = new Map();
 
 	beforeAll(async () => {
 		const superuser = await superuserClient();
@@ -47,7 +65,8 @@ describe('web filter parity: server expression and matchesFilter', () => {
 						priority,
 						due: stored(offset),
 						project,
-						tags: tagSets[index % tagSets.length]
+						tags: tagSets[index % tagSets.length],
+						...TEXTS[index % TEXTS.length]
 					});
 					index += 1;
 				}
@@ -59,7 +78,10 @@ describe('web filter parity: server expression and matchesFilter', () => {
 				drafts.push({ status, priority: 'urgent', due: stored(offset), project: '', tags: [] });
 			}
 		}
-		for (const draft of drafts) await owner.ticket(draft);
+		for (const draft of drafts) {
+			const record = await owner.ticket(draft);
+			texts.set(record.id, [record.title, record.description, record.key]);
+		}
 
 		const open = await listOpenTickets(owner.client);
 		const done = await listDoneTickets(owner.client, 1, { perPage: 500 });
@@ -76,9 +98,17 @@ describe('web filter parity: server expression and matchesFilter', () => {
 		return page.items.map((ticket) => ticket.id).sort();
 	}
 
+	/** Reference search: title, description or key contain the text (ASCII case folded). */
+	function matchesSearch(id, search) {
+		if (search === null) return true;
+		const needle = search.toLowerCase();
+		return texts.get(id).some((text) => text.toLowerCase().includes(needle));
+	}
+
 	function clientIds(query) {
 		return tickets
 			.filter((ticket) => ticket.status === 'done' && matchesFilter(ticket, query, TODAY))
+			.filter((ticket) => matchesSearch(ticket.id, activeSearch(query)))
 			.map((ticket) => ticket.id)
 			.sort();
 	}
@@ -126,6 +156,18 @@ describe('web filter parity: server expression and matchesFilter', () => {
 				}
 			}
 		}
+	});
+
+	it('agrees with a search alone and combined with the other filters (package 11)', async () => {
+		for (const search of SEARCHES) {
+			await expectParity({ search });
+			await expectParity({ search, priority: 'urgent', tag: tags[0].id });
+			await expectParity({ search, due: 'none', project: NO_PROJECT });
+			await expectParity({ search, status: 'done', project: projects[0].id });
+		}
+		expect((await serverIds({ ...EMPTY_LIST_QUERY, search: 'nebenkosten' })).length).toBe(
+			PRIORITIES.length * DUE_OFFSETS.length * 3 / TEXTS.length
+		);
 	});
 
 	it('ignores sort, grouping and the switch', async () => {
