@@ -10,7 +10,7 @@
 [![SvelteKit](https://img.shields.io/badge/SvelteKit-2-FF3E00?style=flat-square&logo=svelte&logoColor=white)](https://kit.svelte.dev)
 [![TypeScript](https://img.shields.io/badge/TypeScript-strict-3178C6?style=flat-square&logo=typescript&logoColor=white)](https://www.typescriptlang.org)
 [![Windows](https://img.shields.io/badge/Windows-10-0078D4?style=flat-square&logo=windows&logoColor=white)](https://www.microsoft.com/windows)
-[![Status](https://img.shields.io/badge/Status-E1%20abgeschlossen-07838F?style=flat-square)](#roadmap)
+[![Status](https://img.shields.io/badge/Status-E2%20in%20Arbeit-07838F?style=flat-square)](#roadmap)
 
 </div>
 
@@ -242,13 +242,13 @@ Danach anmelden und die Daten prüfen; es gelten die Konten und Passwörter zum 
 
 - [x] **E0:** Gerüst (Repo, PocketBase, SvelteKit, dieser README)
 - [x] **E1:** Datenmodell, Authentifizierung, Hooks, Start-/Stopp-Skripte
-- [ ] **E2:** Listen-View, Detail-View, CRUD, Kommentare, Realtime
+- [ ] **E2:** Listen-View, Detail-View, CRUD, Kommentare, Realtime – *in Arbeit*, Plan: [docs/plan/e2.md](docs/plan/e2.md)
 - [ ] **E3:** Projekte, Tags, Filter, Suche, Sortierung
 - [ ] **E4:** Wiederkehrende Aufgaben (Kalender-Regeln, RRULE-Subset)
 - [ ] **E5:** Schnellerfassung, Theme-Umschalter, Feinschliff, Doku
 - [ ] **E6:** Zugriff von mehreren Geräten über Tailscale (`tailscale serve` mit HTTPS, Proxy-Header, Superuser nur lokal) – ohne Datenmigration, siehe [ADR-0001](docs/adr/0001-betriebsmodell-lokal-mehrgeraete-spaeter.md)
 
-Nach jeder Etappe: Zusammenfassung, Testanleitung, Entscheidungen. Architekturentscheidungen stehen in [docs/adr/](docs/adr/README.md), der Umsetzungsplan für E1 in [docs/plan/e1.md](docs/plan/e1.md).
+Nach jeder Etappe: Zusammenfassung, Testanleitung, Entscheidungen. Architekturentscheidungen stehen in [docs/adr/](docs/adr/README.md), die Umsetzungspläne in [docs/plan/](docs/plan/) (E1: [e1.md](docs/plan/e1.md), E2: [e2.md](docs/plan/e2.md)).
 
 ---
 
