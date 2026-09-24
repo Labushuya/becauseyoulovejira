@@ -145,6 +145,8 @@ describe('web data layer: realtime', () => {
 
 		expect(change.record).toMatchObject({
 			key: `${code}-1`,
+			projectId: project.id,
+			tagIds: [],
 			project: { id: project.id, name: `Projekt ${code}`, code, archived: false },
 			tags: [],
 			recurring: false

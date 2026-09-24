@@ -167,10 +167,15 @@ function assertExecutable() {
 	}
 }
 
-function createCredentials() {
+/**
+ * Random superuser credentials for `superuser upsert`. The password goes to the command line as
+ * a positional argument, so it must not start with "-": base64url can (1 in 64), and the CLI then
+ * reads it as a flag ("unknown shorthand flag"). The fixed first letter rules that out.
+ */
+export function createCredentials() {
 	return {
 		email: `test-${randomBytes(12).toString('hex')}@example.com`,
-		password: randomBytes(32).toString('base64url')
+		password: `P${randomBytes(32).toString('base64url')}`
 	};
 }
 

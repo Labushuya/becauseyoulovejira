@@ -73,6 +73,8 @@ describe('web data layer: tickets', () => {
 			status: 'open',
 			priority: 'medium',
 			due: null,
+			projectId: null,
+			tagIds: [],
 			project: null,
 			tags: [],
 			recurring: false,
@@ -243,8 +245,14 @@ describe('web data layer: tickets', () => {
 
 		const projectRef = { id: project.id, name: `Projekt ${code}`, code, archived: false };
 		const tagRef = { id: tag.id, name: 'garten' };
-		expect(listed).toMatchObject({ key: `${code}-1`, project: projectRef, tags: [tagRef] });
-		expect(detail).toMatchObject({ project: projectRef, tags: [tagRef] });
+		const relations = { projectId: project.id, tagIds: [tag.id] };
+		expect(listed).toMatchObject({
+			key: `${code}-1`,
+			...relations,
+			project: projectRef,
+			tags: [tagRef]
+		});
+		expect(detail).toMatchObject({ ...relations, project: projectRef, tags: [tagRef] });
 		expect(await listProjects(owner.client)).toEqual([
 			{ ...projectRef, updated: project.updated }
 		]);

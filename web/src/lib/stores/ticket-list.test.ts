@@ -23,6 +23,8 @@ function ticket(overrides: Partial<TicketSummary> = {}): TicketSummary {
 		status: 'open',
 		priority: 'medium',
 		due: null,
+		projectId: null,
+		tagIds: [],
 		project: null,
 		tags: [],
 		recurring: false,
@@ -246,6 +248,27 @@ describe('upsert and remove', () => {
 
 		store.upsert({ ...second, priority: 'urgent', updated: '2026-09-24 09:00:00.000Z' });
 		expect(store.open.map((entry) => entry.id)).toEqual([second.id, first.id]);
+	});
+});
+
+describe('visible rows and counter (E3 plan, package 5)', () => {
+	it('shows the open tickets in the default order and counts those that are not done', async () => {
+		const first = ticket({ priority: 'urgent' });
+		const second = ticket();
+		const store = new TicketListStore(fakeData([second, first]), session());
+		store.activate(false);
+		await settle();
+
+		expect(store.visible.map((entry) => entry.id)).toEqual([first.id, second.id]);
+		expect(store.openCount).toBe(2);
+
+		await store.setDone(first.id, true);
+		// The checked row stays visible for "Rückgängig" but no longer counts.
+		expect(store.visible.map((entry) => entry.id)).toContain(first.id);
+		expect(store.openCount).toBe(1);
+
+		store.upsert(ticket());
+		expect(store.openCount).toBe(2);
 	});
 });
 

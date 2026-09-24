@@ -259,6 +259,48 @@ describe('CatalogStore: updates', () => {
 	});
 });
 
+describe('CatalogStore: project and tags of a ticket (E3 plan, package 5)', () => {
+	const expanded = {
+		projectId: HOUSE.id,
+		project: { id: HOUSE.id, name: 'Expand', code: 'EXP', archived: false },
+		tagIds: [CALL.id, GARDEN.id],
+		tags: [
+			{ id: GARDEN.id, name: 'garten (expand)' },
+			{ id: CALL.id, name: 'anrufen (expand)' }
+		]
+	};
+
+	it('resolves through the catalog, in stored tag order, and follows a rename', async () => {
+		const { store } = setup();
+		await store.load();
+
+		expect(store.projectOf(expanded)?.name).toBe('Haus');
+		expect(store.tagsOf(expanded).map((t) => t.name)).toEqual(['anrufen', 'Garten']);
+
+		store.upsertProject({ ...HOUSE, name: 'Wohnung', updated: T1 });
+		expect(store.projectOf(expanded)?.name).toBe('Wohnung');
+	});
+
+	it('falls back to the expanded records while the catalog does not know them', () => {
+		const { store } = setup();
+
+		expect(store.projectOf(expanded)?.name).toBe('Expand');
+		expect(store.tagsOf(expanded).map((t) => t.name)).toEqual([
+			'anrufen (expand)',
+			'garten (expand)'
+		]);
+	});
+
+	it('has no project without a project ID and leaves out unknown tags', async () => {
+		const { store } = setup();
+		await store.load();
+
+		expect(store.projectOf({ projectId: null, project: expanded.project })).toBeNull();
+		expect(store.projectOf({ projectId: 'proj00000000099', project: expanded.project })).toBeNull();
+		expect(store.tagsOf({ tagIds: ['tag000000000099', GARDEN.id], tags: [] })).toEqual([GARDEN]);
+	});
+});
+
 describe('CatalogStore: realtime', () => {
 	it('follows create, rename, archive and delete events of projects and tags', async () => {
 		const { store } = setup();

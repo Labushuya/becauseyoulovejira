@@ -17,11 +17,22 @@ export function formatCalendarDate(date: CalendarDate): string {
 	return `${day}.${month}.${year}`;
 }
 
-/** UTC timestamp of PocketBase as Berlin local time `TT.MM.JJJJ HH:MM`. */
-export function formatBerlinDateTime(timestamp: string): string {
+/** Berlin local time of a UTC timestamp of PocketBase, as a Date read with the UTC getters. */
+function berlinLocal(timestamp: string): Date {
 	const ms = TIMESTAMP.test(timestamp) ? Date.parse(timestamp.replace(' ', 'T')) : NaN;
 	if (!Number.isFinite(ms)) throw new RangeError(`Not a timestamp: ${timestamp}`);
-	const local = new Date(ms + berlinOffsetHours(ms) * HOUR_MS);
+	return new Date(ms + berlinOffsetHours(ms) * HOUR_MS);
+}
+
+/** UTC timestamp of PocketBase as Berlin local time `TT.MM.JJJJ HH:MM`. */
+export function formatBerlinDateTime(timestamp: string): string {
+	const local = berlinLocal(timestamp);
 	const date = `${pad(local.getUTCDate())}.${pad(local.getUTCMonth() + 1)}.${local.getUTCFullYear()}`;
 	return `${date} ${pad(local.getUTCHours())}:${pad(local.getUTCMinutes())}`;
+}
+
+/** Berlin calendar date `YYYY-MM-DD` of a UTC timestamp of PocketBase (column "Erstellt"). */
+export function berlinDateOf(timestamp: string): CalendarDate {
+	const local = berlinLocal(timestamp);
+	return `${local.getUTCFullYear()}-${pad(local.getUTCMonth() + 1)}-${pad(local.getUTCDate())}`;
 }

@@ -221,15 +221,16 @@ Danach anmelden und die Daten prüfen; es gelten die Konten und Passwörter zum 
 
 ## Bedienung
 
-### Liste „Alle Tickets“
+### Kopfzeile und Tabelle „Aufgaben“
 
-- Nach der Anmeldung stehen alle **nicht erledigten** Tickets in einer Liste. Oben die überfälligen und bald fälligen (bis 7 Tage im Voraus) nach Datum, danach die übrigen nach Priorität (Dringend, Hoch, Mittel, Niedrig); bei gleicher Priorität zuerst die mit Fälligkeit, dann die neuesten.
-- Jede Zeile zeigt Key, Titel mit Tags, Status, Priorität, Projekt, Fälligkeit (mit „überfällig“, „heute“ oder „morgen“) und ein Symbol für wiederkehrende Tickets. Projekte und Tags lassen sich ab E3 zuweisen.
+- Die **Kopfzeile** zeigt neben dem App-Namen die Zahl der nicht erledigten Tickets und rechts den Knopf **„Neues Ticket“**.
+- Darunter stehen alle **nicht erledigten** Tickets in der Tabelle „Aufgaben“ (mit ihrer Anzahl). Oben die überfälligen und bald fälligen (bis 7 Tage im Voraus) nach Datum, danach die übrigen nach Priorität (Dringend, Hoch, Mittel, Niedrig); bei gleicher Priorität zuerst die mit Fälligkeit, dann die neuesten.
+- Spalten: Key, Priorität, Status, Titel (mit Symbol für wiederkehrende Tickets), Projekt, Tags, Fälligkeit (mit „überfällig“, „heute“ oder „morgen“), Erstellt und die Aktionen. Ist die Tabelle breiter als der Platz, etwa neben dem Panel, lässt sie sich waagerecht scrollen.
 - **„Neues Ticket“** öffnet rechts das Anlageformular: Titel (Pflicht), Status, Priorität, Fälligkeit und Beschreibung. „Anlegen“ oder `Strg+Enter` legt an, den Key vergibt der Server (`TASK-1`, `TASK-2` …).
 
 ### Abhaken und „Erledigte anzeigen“
 
-- Das Kästchen vorn in der Zeile setzt ein Ticket auf **Erledigt**. Die Zeile bleibt 5 Sekunden durchgestrichen mit **„Rückgängig“** stehen (stellt den vorherigen Status wieder her) und verschwindet dann.
+- Das Kästchen in der Spalte „Aktionen“ setzt ein Ticket auf **Erledigt**. Die Zeile bleibt 5 Sekunden durchgestrichen mit **„Rückgängig“** stehen (stellt den vorherigen Status wieder her) und verschwindet dann.
 - Der Schalter **„Erledigte anzeigen“** blendet unter den offenen Tickets den Abschnitt „Erledigt“ ein: zuletzt erledigte zuerst, 50 auf einmal, mehr über „Weitere laden“. Der Schalter steht in der Adresse (`?erledigte=1`) und übersteht Neuladen und Zurück.
 - Wer bei einem erledigten Ticket das Häkchen entfernt, setzt es auf **Offen**.
 

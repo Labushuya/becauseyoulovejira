@@ -16,6 +16,7 @@ import { historyLookups, type HistoryLookups } from '$lib/domain/history-format'
 import { compareTitles } from '$lib/domain/ordering';
 import type { Project } from '$lib/domain/project';
 import type { Tag } from '$lib/domain/tag';
+import type { ProjectRef, TagRef, TicketSummary } from '$lib/domain/ticket';
 import { hold, type LiveSource } from './realtime';
 import type { LoadState, SessionGuard } from './ticket-list.svelte';
 
@@ -137,6 +138,24 @@ export class CatalogStore {
 
 	tagById(id: string): Tag | null {
 		return this.#tags.map.get(id) ?? null;
+	}
+
+	/**
+	 * Project of a ticket as rows and panel show it (T-16): from the catalog, so a rename shows
+	 * without a ticket event; the expanded project only while the catalog does not know the ID.
+	 */
+	projectOf(ticket: Pick<TicketSummary, 'projectId' | 'project'>): ProjectRef | null {
+		if (ticket.projectId === null) return null;
+		const expanded = ticket.project?.id === ticket.projectId ? ticket.project : null;
+		return this.projectById(ticket.projectId) ?? expanded;
+	}
+
+	/** Tags of a ticket in stored order, resolved like `projectOf`; unknown IDs are left out. */
+	tagsOf(ticket: Pick<TicketSummary, 'tagIds' | 'tags'>): TagRef[] {
+		return ticket.tagIds.flatMap((id) => {
+			const tag = this.tagById(id) ?? ticket.tags.find((expanded) => expanded.id === id);
+			return tag === undefined ? [] : [tag];
+		});
 	}
 
 	/** Loads the catalog once per session; a failed load is loaded again. */

@@ -29,6 +29,12 @@ export function ticketHref(id: string, url: URL): ResolvedPathname {
 	return `${resolve(`/tickets/${encodeURIComponent(id)}`)}${url.search}` as ResolvedPathname;
 }
 
+/**
+ * Element ID of the main button "Neues Ticket" in the header (E3 plan, T-18): the table returns
+ * the focus to it when the form closes without a new ticket.
+ */
+export const NEW_TICKET_LINK_ID = 'new-ticket-link';
+
 /** Path of the form "Neues Ticket" with the query of `url`. */
 export function newTicketHref(url: URL): ResolvedPathname {
 	return `${resolve('/tickets/neu')}${url.search}` as ResolvedPathname;

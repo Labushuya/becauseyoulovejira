@@ -1,9 +1,10 @@
-// Component test for the tickets layout (E2 plan, T-4 and T-5): the list follows the switch in
-// the URL, and the panel area renders the child page next to it.
+// Component test for the tickets layout (E2 plan, T-4 and T-5; E3 plan, package 5): the table
+// follows the switch in the URL, and the panel area renders the child page next to it.
 
 import { render, screen } from '@testing-library/svelte';
 import { createRawSnippet } from 'svelte';
 import { describe, expect, it, vi } from 'vitest';
+import { CatalogStore } from '$lib/stores/catalog.svelte';
 import { TicketListStore } from '$lib/stores/ticket-list.svelte';
 import Layout from './+layout.svelte';
 
@@ -13,7 +14,8 @@ const mocks = vi.hoisted(() => ({
 		params: {} as Record<string, string>,
 		route: { id: '/(app)/(tickets)' }
 	},
-	store: null as unknown
+	store: null as unknown,
+	catalog: null as unknown
 }));
 
 vi.mock('$app/navigation', () => ({ goto: vi.fn() }));
@@ -21,6 +23,10 @@ vi.mock('$app/state', () => ({ page: mocks.page }));
 vi.mock('$lib/stores/ticket-list.svelte', async (importOriginal) => ({
 	...(await importOriginal<object>()),
 	getTicketListStore: () => mocks.store
+}));
+vi.mock('$lib/stores/catalog.svelte', async (importOriginal) => ({
+	...(await importOriginal<object>()),
+	getCatalogStore: () => mocks.catalog
 }));
 
 function renderLayout(path: string, id?: string) {
@@ -38,6 +44,10 @@ function renderLayout(path: string, id?: string) {
 	);
 	const activate = vi.spyOn(store, 'activate');
 	mocks.store = store;
+	mocks.catalog = new CatalogStore(
+		{ listProjects: vi.fn(async () => []), listTags: vi.fn(async () => []) },
+		{ ensureValid: () => true, logout: vi.fn() }
+	);
 	const children = createRawSnippet(() => ({ render: () => '<p>Panel</p>' }));
 	render(Layout, { props: { children } });
 	return { store, activate };
@@ -48,7 +58,7 @@ describe('tickets layout', () => {
 		const { activate } = renderLayout('/');
 
 		expect(activate).toHaveBeenCalledExactlyOnceWith(false);
-		expect(screen.getByRole('heading', { name: 'Alle Tickets' })).toBeTruthy();
+		expect(screen.getByRole('heading', { name: 'Aufgaben' })).toBeTruthy();
 		expect(screen.getByText('Panel')).toBeTruthy();
 	});
 

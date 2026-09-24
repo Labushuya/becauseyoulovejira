@@ -54,7 +54,7 @@
 	$effect(() => untrack(() => catalog.connect(live)));
 </script>
 
-<AppHeader />
+<AppHeader openCount={tickets.openState === 'ready' ? tickets.openCount : null} />
 <main class="content">
 	{@render children()}
 </main>

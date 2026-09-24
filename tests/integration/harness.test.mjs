@@ -5,8 +5,17 @@ import {
 	superuserClient,
 	userClient
 } from '../support/api.mjs';
+import { createCredentials } from '../support/pocketbase-harness.mjs';
 
 describe('disposable PocketBase instance', () => {
+	it('creates superuser passwords the CLI cannot mistake for a flag', () => {
+		for (let run = 0; run < 2000; run += 1) {
+			const { password } = createCredentials();
+			expect(password.startsWith('-'), password).toBe(false);
+			expect(password.length).toBeGreaterThanOrEqual(40);
+		}
+	});
+
 	it('answers /api/health with 200 on a non-production port', async () => {
 		const url = new URL(pocketBaseUrl());
 		expect(url.hostname).toBe('127.0.0.1');

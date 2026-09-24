@@ -1,12 +1,15 @@
-// Component tests for the app layout (E2 plan, package 2): header on every page of the (app)
-// group, keep-alive for the session while it is shown, logout. The auth module is replaced by a
-// plain object; its behaviour is covered in src/lib/auth.test.ts.
+// Component tests for the app layout (E2 plan, package 2; E3 plan, T-18 and package 5): header on
+// every page of the (app) group with the counter of tickets that are not done and "Neues Ticket",
+// keep-alive for the session while it is shown, logout. The auth module is replaced by a plain
+// object; its behaviour is covered in src/lib/auth.test.ts.
 
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { fireEvent, render, screen, within } from '@testing-library/svelte';
 import { createRawSnippet, tick } from 'svelte';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import type { TicketSummary } from '$lib/domain/ticket';
+import { NEW_TICKET_LINK_ID } from '$lib/ticket-links';
 import Layout from './+layout.svelte';
 
 const mocks = vi.hoisted(() => {
@@ -14,8 +17,11 @@ const mocks = vi.hoisted(() => {
 	const calls: string[] = [];
 	/** Topics with an active fake subscription; a stop removes its entry. */
 	const subscribed: string[] = [];
-	const subscribe = (topic: string) => async () => {
+	/** Last callback per topic, to send fake events. */
+	const handlers: Record<string, (change: unknown) => void> = {};
+	const subscribe = (topic: string) => async (onChange: (change: unknown) => void) => {
 		subscribed.push(topic);
+		handlers[topic] = onChange;
 		return async () => {
 			subscribed.splice(subscribed.indexOf(topic), 1);
 		};
@@ -24,6 +30,9 @@ const mocks = vi.hoisted(() => {
 		calls,
 		stopKeepAlive,
 		subscribed,
+		handlers,
+		session: { valid: false },
+		list: { store: null as null | { activate(showDone: boolean): void } },
 		live: {
 			tickets: vi.fn(subscribe('tickets')),
 			ticket: vi.fn(subscribe('ticket')),
@@ -40,8 +49,9 @@ const mocks = vi.hoisted(() => {
 		auth: {
 			email: 'anna@example.com',
 			keepAlive: vi.fn(() => stopKeepAlive),
-			// No valid session in the fake: the catalog loads nothing (no server in these tests).
-			ensureValid: vi.fn(() => false),
+			// Without a valid session in the fake the stores load nothing (no server in these tests);
+			// the counter tests switch it on together with fake data layers.
+			ensureValid: vi.fn((): boolean => mocks.session.valid),
 			logout: vi.fn(() => {
 				calls.push('logout');
 			})
@@ -56,6 +66,45 @@ vi.mock('$lib/stores/realtime', async (importOriginal) => ({
 	...(await importOriginal<object>()),
 	liveSource: () => mocks.live
 }));
+vi.mock('$lib/stores/ticket-list.svelte', async (importOriginal) => {
+	const original = await importOriginal<typeof import('$lib/stores/ticket-list.svelte')>();
+	return {
+		...original,
+		ticketListData: () => ({
+			listOpen: async () => [ticket('t00000000000001'), ticket('t00000000000002')],
+			listDone: async (page: number) => ({ items: [], page, hasMore: false }),
+			setDone: async () => ticket('t00000000000001'),
+			update: async () => ticket('t00000000000001')
+		}),
+		setTicketListStore: (store: InstanceType<typeof original.TicketListStore>) => {
+			mocks.list.store = store;
+			return original.setTicketListStore(store);
+		}
+	};
+});
+vi.mock('$lib/stores/catalog.svelte', async (importOriginal) => ({
+	...(await importOriginal<object>()),
+	catalogData: () => ({ listProjects: async () => [], listTags: async () => [] })
+}));
+
+function ticket(id: string, status: TicketSummary['status'] = 'open'): TicketSummary {
+	return {
+		id,
+		key: `TASK-${id.slice(-1)}`,
+		title: `Ticket ${id}`,
+		status,
+		priority: 'medium',
+		due: null,
+		projectId: null,
+		tagIds: [],
+		project: null,
+		tags: [],
+		recurring: false,
+		completedAt: null,
+		created: '2026-09-01 10:00:00.000Z',
+		updated: '2026-09-01 10:00:00.000Z'
+	};
+}
 
 const CONTENT = 'Seiteninhalt';
 
@@ -74,6 +123,8 @@ beforeEach(() => {
 	mocks.auth.logout.mockClear();
 	mocks.auth.ensureValid.mockClear();
 	mocks.stopKeepAlive.mockClear();
+	mocks.session.valid = false;
+	mocks.list.store = null;
 	for (const subscribe of Object.values(mocks.live)) subscribe.mockClear();
 });
 
@@ -149,6 +200,40 @@ describe('app layout', () => {
 		await fireEvent.click(screen.getByRole('button', { name: 'Abmelden' }));
 
 		expect(mocks.goto).toHaveBeenCalledWith('/login', { replaceState: true });
+	});
+
+	it('offers "Neues Ticket" in the header with the current query', async () => {
+		await renderLayout('/tickets/abc123def456ghi?erledigte=1');
+
+		const link = within(screen.getByRole('banner')).getByRole('link', { name: 'Neues Ticket' });
+		expect(link.getAttribute('href')).toBe('/tickets/neu?erledigte=1');
+		expect(link.id).toBe(NEW_TICKET_LINK_ID);
+	});
+
+	it('shows no counter while the list is not loaded', async () => {
+		await renderLayout();
+
+		expect(within(screen.getByRole('banner')).queryByText(/nicht erledigte/)).toBeNull();
+	});
+
+	it('counts the tickets that are not done in the header and follows the store', async () => {
+		mocks.session.valid = true;
+		await renderLayout();
+		mocks.list.store?.activate(false);
+		const header = within(screen.getByRole('banner'));
+
+		await vi.waitFor(() => expect(header.getByText('2 nicht erledigte Tickets')).toBeTruthy());
+		expect(header.getByText('2', { selector: '[aria-hidden="true"]' })).toBeTruthy();
+
+		// A realtime event: one ticket is done now.
+		await vi.waitFor(() => expect(mocks.handlers.tickets).toBeDefined());
+		mocks.handlers.tickets?.({
+			action: 'update',
+			record: { ...ticket('t00000000000002', 'done'), updated: '2026-09-24 10:00:00.000Z' }
+		});
+		await tick();
+
+		expect(header.getByText('1 nicht erledigtes Ticket')).toBeTruthy();
 	});
 
 	it('keeps the login page outside the (app) group, so it has no header', () => {
