@@ -279,7 +279,7 @@ npm run build   # Frontend-Build nach app/pb_public
 npm test        # Vitest: Unit- und Integrationstests, danach die web-Tests
 ```
 
-Die CI ([`.github/workflows/ci.yml`](.github/workflows/ci.yml)) läuft bei jedem Push und Pull Request auf `main` auf einem Windows-Runner: Node.js 24, `scripts\fetch-pocketbase.ps1`, dann `scripts\build.ps1`. Dependabot hält npm-Pakete und Actions aktuell.
+Die CI ([`.github/workflows/ci.yml`](.github/workflows/ci.yml)) läuft bei jedem Push und Pull Request auf `main` auf einem Windows-Runner: Node.js 24, `scripts\fetch-pocketbase.ps1`, dann `scripts\build.ps1`. Dependabot hält npm-Pakete und Actions aktuell; Major-Sprünge von `typescript` und `@types/node` schlägt er nicht vor, sie werden bewusst separat geprüft.
 
 ### Tests
 
@@ -303,7 +303,7 @@ Pro Lauf startet ein Vitest-`globalSetup` eine eigene PocketBase-Instanz in eine
 
 Für den Vite-Dev-Server (`npm --prefix web run dev`) leitet `web/vite.config.ts` die Pfade `/api` und `/_/` an die laufende Instanz auf `127.0.0.1:8090` weiter; im Betrieb liefert PocketBase die App selbst aus (gleiche Origin).
 
-**Beiträge:** Conventional Commits (`feat:`, `fix:`, `docs:`, `test:`, `refactor:`, `chore:`, `ci:`); die [PR-Vorlage](.github/pull_request_template.md) enthält die Checkliste. Sicherheitslücken bitte privat melden, siehe [SECURITY.md](.github/SECURITY.md).
+**Beiträge:** Jede Änderung läuft über einen kurzlebigen Branch (`feat/…`, `fix/…`, `chore/…`) und einen Pull Request in `main`. Gemergt wird nur bei grüner CI, per Squash-Merge mit einem Titel nach Conventional Commits (`feat:`, `fix:`, `docs:`, `test:`, `refactor:`, `chore:`, `ci:`); direkte Pushes auf `main` gibt es nicht. Die [PR-Vorlage](.github/pull_request_template.md) enthält die Checkliste. Sicherheitslücken bitte privat melden, siehe [SECURITY.md](.github/SECURITY.md).
 
 ---
 

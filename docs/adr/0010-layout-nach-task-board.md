@@ -10,7 +10,7 @@ Der Nutzer betreibt privat ein eigenes Task-Board (eine einzelne HTML-Seite mit 
 
 Die Frage an den Nutzer lautete: „Unsere Farben beibehalten oder das Layout des Task-Boards übernehmen?“ Er hat sich für das Layout entschieden. Der Advisor legt das so aus: Seitenaufbau, Anordnung und Bedienmuster werden vollständig übernommen. Farben, Schriften und Design-Regeln bleiben die eigenen (CLAUDE.md §8, [ADR-0009](0009-fehlerfarbe.md)).
 
-Das Vorbild ist mit Firmenbezügen gebaut: Firmenname in der Kopfzeile, Synchronisation mit Firmenwerkzeugen, interne Adressen. Außerdem nutzt es Glas-Optik, Farbverläufe, Schatten, Signalfarben für Priorität und Überfälligkeit und ein Skript von einem CDN. Nichts davon passt zu diesem Projekt (öffentliches Repo, offline lauffähig, Petrol als einzige Akzentfarbe).
+Das Vorbild ist mit Firmenbezügen gebaut: Firmenname in der Kopfzeile, Synchronisation mit Firmenwerkzeugen, interne Adressen. Außerdem nutzt es Glas-Optik, Farbverläufe, Schatten, Signalfarben für Priorität und Überfälligkeit und ein Skript von einem CDN. Nichts davon passt zu diesem Projekt (Repo auf GitHub, offline lauffähig, Petrol als einzige Akzentfarbe).
 
 ## Entscheidung
 
