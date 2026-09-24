@@ -207,4 +207,5 @@ Erledigte Tickets treten in der Liste optisch zurück. Schriften: Inter für die
 - Ein Commit pro abgeschlossenem Arbeitsschritt, Conventional Commits (`feat:`, `fix:`, `chore:`, `docs:`, `test:`, `refactor:`), direkt auf `main`. Push nach jeder Etappe in das öffentliche Repo `Labushuya/becauseyoulovejira`.
 - Kein toter oder auskommentierter Code, keine TODOs ohne verlinktes Issue.
 - Qualitäts-Gates vor jedem Commit mit Code: `npm run check`, `npm run lint`, `npm test` grün.
+- Jedes Arbeitspaket aktualisiert `docs/test-manifest.html` (neue bzw. geänderte Testfälle, Status, Stand); der Konsistenztest `tests/unit/test-manifest.test.mjs` muss grün sein.
 - Niemals Secrets, `pb_data/` oder Backups committen (öffentliches Repo).
