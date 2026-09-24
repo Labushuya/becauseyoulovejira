@@ -96,6 +96,7 @@ Umsetzung in `app/pb_migrations/1790200900_api_rules.js`, Details und Befunde im
 - `dependencies`: list/view wie oben, Schreiben `null` bis Stufe 2.
 - `households`: list/view nur für Mitglieder; `household_members`: list/view nur eigene Zeilen; Schreiben jeweils `null` bis zur Haushaltsstufe.
 - `users`: list/view/update nur der eigene Datensatz, create/delete `null`. `ticket_counters`: alle Regeln `null`.
+- Mail-Flows: Solange kein Mailer eingerichtet ist, lehnt `app/pb_hooks/mail-flows.pb.js` (`routerUse`) POST auf `request-password-reset`, `request-verification`, `request-email-change` und `request-otp` jeder Auth-Collection einheitlich mit 400 ab (keine Enumeration). Login-Warnmails (`authAlert`) sind per Migration `1790201100_disable_auth_alerts.js` aus.
 - Bedingungen auf denselben `@collection`-Alias gelten für dieselbe Zeile. Join-Semantik und Realtime-Verhalten sind per Negativtests mit mehreren Nutzern und Haushalten belegt (`tests/integration/rules.test.mjs`, `realtime-rules.test.mjs`).
 
 ## 6. Wiederkehrende Aufgaben (Kernfunktion)

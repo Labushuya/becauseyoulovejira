@@ -48,3 +48,32 @@ PocketBase 0.40.4 verhält sich beim `serve` ohne Superuser so (geprüft im Quel
 ## Nachtrag (E1, Paket 8, 2026-09-24)
 
 Umsetzung abweichend von Punkt 5 und den Konsequenzen oben: Beim Erststart öffnet sich **nur ein** Tab (die Einrichtung, von PocketBase selbst geöffnet); das Start-Skript öffnet die App dann nicht. Erkannt wird der Erststart bevorzugt am Installer-Link in der Server-Ausgabe, Fallback ist ein fehlendes `pb_data\data.db`. Damit erscheint der Hinweis auch nach einem abgebrochenen Installer wieder. Details im [E1-Plan](../plan/e1.md), Abschnitt 6, Paket 8.
+
+## Nachtrag (E1.1, 2026-09-24): Notfallskript `admin-zuruecksetzen.bat`
+
+**Anlass:** Beim ersten echten Test wurde der Installer-Tab übersehen. Ein vergessenes Admin-Passwort ließ sich nicht zurücksetzen: Ohne Mailserver meldet „Forgotten password“ zwar Erfolg, eine Mail kommt aber nie an. Einen Weg zurück, der keine Daten löscht, gab es nicht.
+
+**Entscheidung:** Zur Entscheidung gehört jetzt das Notfallskript `app\admin-zuruecksetzen.bat`. Es ist eine dünne Hülle um die Aktion `ResetAdmin` in `byl-control.ps1`.
+
+- Das Skript fragt die E-Mail ab und das Passwort zweimal verdeckt (`Read-Host -AsSecureString`). Der Klartext entsteht nur kurz über `SecureStringToBSTR`, die unverwaltete Kopie wird mit `ZeroFreeBSTR` gelöscht.
+- Es prüft die Eingabe: gültige E-Mail, beide Passwörter gleich, 10 Zeichen bis 71 Byte (bcrypt-Grenze), keine Anführungszeichen und keine Steuerzeichen.
+- Danach ruft es `pocketbase.exe superuser upsert` auf den Ordnern der App auf (`pb_data`, `pb_hooks`, `pb_migrations`, `--automigrate=false`). Der Aufruf läuft über `ProcessStartInfo` mit korrekt gequoteten Argumenten. Die Flags stehen vorn und `--` beendet sie, damit ein Passwort mit führendem `-` nicht als Flag gelesen wird.
+- Mit `upsert` wird ein fehlendes Admin-Konto angelegt oder das Passwort eines vorhandenen neu gesetzt. Tickets und App-Konten bleiben unberührt. Existiert noch kein Admin-Konto, entfernt PocketBase dabei das interne Installer-Konto, und ein offener Einrichtungslink wird ungültig.
+- Ausgegeben werden nur Erfolg oder Fehler. Die PocketBase-Ausgabe erscheint nur im Fehlerfall, und das Passwort ist darin durch `***` ersetzt. Protokolliert wird nichts.
+- Das Skript funktioniert auch bei laufendem Server. Geprüft wurde das mit einem Wegwerf-Ordner (SQLite im WAL-Modus): Ein neues Konto und ein geändertes Passwort gelten sofort. Meldet PocketBase trotzdem eine gesperrte Datenbank, rät das Skript, zuerst `stop.bat` auszuführen.
+
+**Begründung:** Ohne Mailserver ist das der einzige Weg, ein vergessenes Admin-Passwort oder einen verpassten Installer ohne Datenverlust zu beheben. Der Installer bleibt der Standardweg für den Erststart. Die oben verworfene Alternative „Superuser per `superuser upsert` in `start.bat`“ gilt weiterhin für den Startpfad. Das Notfallskript ist ein getrenntes Werkzeug und nimmt die Eingabe in PowerShell entgegen, nicht in Batch. Damit sind die damaligen Einwände behoben: Sonderzeichen werden sauber gequotet, und das Passwort erscheint nicht in der Eingabezeile. Eine neue Netzwerkschnittstelle entsteht nicht. Wer das Skript ausführen kann, hat ohnehin Zugriff auf `app\pb_data`.
+
+**Restrisiko (bewusst akzeptiert):**
+
+- PocketBase nimmt das Passwort nur als Kommandozeilenargument an, nicht über stdin oder eine Datei. Solange `pocketbase.exe superuser upsert` läuft (gemessen rund 0,1–0,2 s), steht das Passwort deshalb in der Prozess-Kommandozeile. Jeder Prozess desselben Benutzers oder eines Administrators kann es in diesem Moment lesen, etwa über `Win32_Process.CommandLine`.
+- .NET-Zeichenketten lassen sich nicht überschreiben. Der Klartext bleibt im Speicher des PowerShell-Prozesses, bis dieser endet. Das Skript beendet sich direkt nach der Pause.
+- Für einen lokalen Einzelplatzrechner ist das vertretbar. Wer im Benutzerkontext Code ausführen kann, kann auch `pb_data` direkt lesen.
+
+**Konsequenzen und Änderungen gegenüber oben:**
+
+- Die Konsequenz „Kein Skript muss Passwörter verarbeiten“ gilt nicht mehr, sie betrifft nur noch das Notfallskript.
+- Punkt 5 der Entscheidung ist geändert:
+  - Die Login-Seite verweist Endnutzer nicht mehr auf `/_/`. Ohne Admin-Konto führte das in eine Sackgasse. Sie zeigt jetzt „Kein Zugang oder Passwort vergessen? Wende dich an die Person, die becauseyoulovejira eingerichtet hat.“ Darunter steht ein klar markierter Link „Verwaltung (nur Admin)“.
+  - Der Erststart-Hinweis und die README nennen das Notfallskript für den Fall „Link verpasst oder abgelaufen“.
+- Mail-basierte Abläufe werden serverseitig abgewiesen, solange kein Mailer eingerichtet ist: `request-password-reset`, `request-verification`, `request-email-change` und `request-otp` bekommen einheitlich 400 mit Verweis auf README und Notfallskript. Login-Warnmails (`authAlert`) sind abgeschaltet. Details im [E1-Plan](../plan/e1.md), Abschnitt „E1.1 Nachbesserung“.
