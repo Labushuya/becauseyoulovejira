@@ -13,6 +13,7 @@
 	const showDone = $derived(showDoneFrom(page.url));
 	const activeId = $derived(page.params.id ?? null);
 	const withPanel = $derived(page.route.id !== '/(app)/(tickets)');
+	const creating = $derived(page.route.id === '/(app)/(tickets)/tickets/neu');
 
 	// Loads the list and follows the switch in the URL (reload, back and forward included).
 	// untrack: only the switch triggers it, not the store state that activate() reads.
@@ -23,7 +24,7 @@
 </script>
 
 <div class="tickets" class:with-panel={withPanel}>
-	<TicketList store={tickets} {activeId} />
+	<TicketList store={tickets} {activeId} {creating} />
 	{@render children()}
 </div>
 

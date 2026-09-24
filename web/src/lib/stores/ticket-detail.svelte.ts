@@ -8,10 +8,10 @@ import { createContext } from 'svelte';
 import { SvelteMap, SvelteSet } from 'svelte/reactivity';
 import { toDataError } from '$lib/data/errors';
 import type { RequestOptions } from '$lib/data/options';
-import { getTicket, updateTicket } from '$lib/data/tickets';
+import { createTicket, getTicket, updateTicket } from '$lib/data/tickets';
 import { isCalendarDate } from '$lib/domain/berlin-date';
 import { isPriority, isStatus, type Status } from '$lib/domain/status';
-import type { Ticket, TicketPatch, TicketSummary } from '$lib/domain/ticket';
+import type { Ticket, TicketDraft, TicketPatch, TicketSummary } from '$lib/domain/ticket';
 import type { SessionGuard } from './ticket-list.svelte';
 
 /** Fields editable in E2 (E2 plan, section 2). */
@@ -26,7 +26,21 @@ export const INVALID_DATE_MESSAGE = 'Ungültiges Datum.';
 export interface TicketDetailData {
 	get(id: string, options: RequestOptions): Promise<Ticket>;
 	update(id: string, patch: TicketPatch): Promise<Ticket>;
+	create(draft: TicketDraft): Promise<Ticket>;
 }
+
+/** Outcome of creating a ticket; a failure carries a message and/or errors per field. */
+export type CreateResult =
+	| { ok: true; ticket: Ticket }
+	| { ok: false; message: string | null; fields: Partial<Record<keyof TicketDraft, string>> };
+
+const DRAFT_FIELDS: readonly (keyof TicketDraft)[] = [
+	'title',
+	'description',
+	'status',
+	'priority',
+	'due'
+];
 
 /** The part of the list store the panel updates, so the list shows a change at once. */
 export interface TicketListSync {
@@ -38,7 +52,8 @@ export interface TicketListSync {
 export function ticketDetailData(pb: PocketBase): TicketDetailData {
 	return {
 		get: (id, options) => getTicket(pb, id, options),
-		update: (id, patch) => updateTicket(pb, id, patch)
+		update: (id, patch) => updateTicket(pb, id, patch),
+		create: (draft) => createTicket(pb, draft)
 	};
 }
 
@@ -245,6 +260,39 @@ export class TicketDetailStore {
 				this.#drafts.delete(field);
 				return;
 			}
+		}
+	}
+
+	/**
+	 * Creates a ticket (E2 plan, T-8). The new ticket joins the list at once and becomes the
+	 * ticket of the panel, so the route switch to its ID needs no further request.
+	 */
+	async create(draft: TicketDraft): Promise<CreateResult> {
+		const title = draft.title.trim();
+		if (title === '')
+			return { ok: false, message: null, fields: { title: TITLE_REQUIRED_MESSAGE } };
+		if (!this.#session.ensureValid()) return { ok: false, message: null, fields: {} };
+		try {
+			const ticket = await this.#data.create({ ...draft, title });
+			this.#list.upsert(ticket);
+			this.reset();
+			this.#id = ticket.id;
+			this.#own = ticket;
+			this.#state = 'ready';
+			return { ok: true, ticket };
+		} catch (error) {
+			const failure = toDataError(error);
+			if (failure.kind === 'session') this.#session.logout();
+			if (failure.kind === 'session' || failure.kind === 'aborted') {
+				return { ok: false, message: null, fields: {} };
+			}
+			const fields: Partial<Record<keyof TicketDraft, string>> = {};
+			for (const field of DRAFT_FIELDS) {
+				const message = failure.fields[field]?.message;
+				if (message !== undefined) fields[field] = message;
+			}
+			const known = Object.keys(fields).length > 0;
+			return { ok: false, message: known ? null : failure.message, fields };
 		}
 	}
 

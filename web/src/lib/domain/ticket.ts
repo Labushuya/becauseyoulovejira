@@ -64,6 +64,10 @@ export interface TicketDraft {
  */
 export const REOPEN_STATUS: Status = 'open';
 
+/** Defaults of a new ticket (E2 plan, T-8). */
+export const DEFAULT_STATUS: Status = 'open';
+export const DEFAULT_PRIORITY: Priority = 'medium';
+
 /** Changed fields of an update; only these are sent (ADR-0006 section 5). */
 export type TicketPatch = Partial<TicketDraft>;
 

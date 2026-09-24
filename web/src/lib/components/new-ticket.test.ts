@@ -1,0 +1,233 @@
+// Component tests for "Neues Ticket" (E2 plan, package 8): required title, defaults, Ctrl+Enter,
+// lock during the request, switching to the new ID with replaceState, server errors, discarding
+// after a question. The creation itself is covered against the harness in package 4.
+
+import { fireEvent, render, screen } from '@testing-library/svelte';
+import { tick } from 'svelte';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import type { Ticket, TicketDraft } from '$lib/domain/ticket';
+import type { CreateResult } from '$lib/stores/ticket-detail.svelte';
+import NewTicketForm from './NewTicketForm.svelte';
+import NewTicketPage from '../../routes/(app)/(tickets)/tickets/neu/+page.svelte';
+
+const mocks = vi.hoisted(() => ({
+	goto: vi.fn(async () => undefined),
+	page: { url: new URL('http://localhost:3000/tickets/neu?erledigte=1') },
+	detail: { create: vi.fn() }
+}));
+
+vi.mock('$app/navigation', () => ({ goto: mocks.goto }));
+vi.mock('$app/state', () => ({ page: mocks.page }));
+vi.mock('$lib/stores/ticket-detail.svelte', async (importOriginal) => ({
+	...(await importOriginal<object>()),
+	getTicketDetailStore: () => mocks.detail
+}));
+
+const CREATED: Ticket = {
+	id: 'new000000000000',
+	key: 'TASK-9',
+	title: 'Neu',
+	description: '',
+	status: 'open',
+	priority: 'medium',
+	due: null,
+	project: null,
+	tags: [],
+	recurring: false,
+	completedAt: null,
+	created: '2026-09-24 10:00:00.000Z',
+	updated: '2026-09-24 10:00:00.000Z'
+};
+
+function deferred<T>() {
+	let resolve!: (value: T) => void;
+	const promise = new Promise<T>((res) => {
+		resolve = res;
+	});
+	return { promise, resolve };
+}
+
+function renderForm(
+	create: (draft: TicketDraft) => Promise<CreateResult> = async () => ({
+		ok: true,
+		ticket: CREATED
+	})
+) {
+	const oncreate = vi.fn(create);
+	const oncreated = vi.fn();
+	const oncancel = vi.fn();
+	render(NewTicketForm, { props: { oncreate, oncreated, oncancel } });
+	return { oncreate, oncreated, oncancel };
+}
+
+function titleField() {
+	return screen.getByLabelText<HTMLInputElement>('Titel');
+}
+
+function createButton() {
+	return screen.getByRole('button', { name: /^(Anlegen|Wird angelegt …)$/ });
+}
+
+beforeEach(() => {
+	mocks.goto.mockClear();
+});
+
+afterEach(() => {
+	vi.restoreAllMocks();
+});
+
+describe('new ticket form', () => {
+	it('focuses the required title and starts with the defaults', async () => {
+		renderForm();
+		await tick();
+
+		expect(screen.getByRole('heading', { level: 2 }).textContent).toBe('Neues Ticket');
+		expect(document.activeElement).toBe(titleField());
+		expect(titleField().required).toBe(true);
+		expect(titleField().maxLength).toBe(200);
+		expect(screen.getByLabelText<HTMLSelectElement>('Status').value).toBe('open');
+		expect(screen.getByLabelText<HTMLSelectElement>('Priorität').value).toBe('medium');
+		expect(screen.getByLabelText<HTMLInputElement>('Fälligkeit').value).toBe('');
+		expect(screen.getByLabelText<HTMLTextAreaElement>('Beschreibung').value).toBe('');
+	});
+
+	it('locks "Anlegen" without a title and explains why', async () => {
+		const { oncreate } = renderForm();
+
+		expect(createButton().getAttribute('aria-disabled')).toBe('true');
+		const hint = document.getElementById(createButton().getAttribute('aria-describedby') ?? '');
+		expect(hint?.textContent).toBe('Zum Anlegen fehlt noch ein Titel.');
+		await fireEvent.click(createButton());
+		await fireEvent.input(titleField(), { target: { value: '   ' } });
+		await fireEvent.click(createButton());
+
+		expect(oncreate).not.toHaveBeenCalled();
+		expect(document.activeElement).toBe(titleField());
+	});
+
+	it('creates with all fields and switches to the new ticket', async () => {
+		const { oncreate, oncreated } = renderForm();
+
+		await fireEvent.input(titleField(), { target: { value: 'Neu' } });
+		expect(createButton().getAttribute('aria-disabled')).toBeNull();
+		await fireEvent.change(screen.getByLabelText('Status'), { target: { value: 'in_progress' } });
+		await fireEvent.change(screen.getByLabelText('Priorität'), { target: { value: 'urgent' } });
+		await fireEvent.input(screen.getByLabelText('Fälligkeit'), { target: { value: '2026-10-01' } });
+		await fireEvent.input(screen.getByLabelText('Beschreibung'), { target: { value: '*Text*' } });
+		await fireEvent.click(createButton());
+
+		expect(oncreate).toHaveBeenCalledExactlyOnceWith({
+			title: 'Neu',
+			description: '*Text*',
+			status: 'in_progress',
+			priority: 'urgent',
+			due: '2026-10-01'
+		});
+		await vi.waitFor(() => expect(oncreated).toHaveBeenCalledWith('new000000000000'));
+	});
+
+	it('creates with Ctrl+Enter from any field', async () => {
+		const { oncreate } = renderForm();
+
+		await fireEvent.input(titleField(), { target: { value: 'Neu' } });
+		await fireEvent.keyDown(screen.getByLabelText('Beschreibung'), { key: 'Enter', ctrlKey: true });
+
+		expect(oncreate).toHaveBeenCalledOnce();
+		expect(oncreate.mock.calls[0]?.[0]).toMatchObject({ title: 'Neu', status: 'open', due: null });
+	});
+
+	it('creates only once during a running request', async () => {
+		const answer = deferred<CreateResult>();
+		const { oncreate, oncreated } = renderForm(() => answer.promise);
+
+		await fireEvent.input(titleField(), { target: { value: 'Neu' } });
+		await fireEvent.click(createButton());
+		await fireEvent.click(createButton());
+		await fireEvent.keyDown(titleField(), { key: 'Enter', ctrlKey: true });
+
+		expect(oncreate).toHaveBeenCalledOnce();
+		expect(createButton().textContent?.trim()).toBe('Wird angelegt …');
+		expect(createButton().getAttribute('aria-disabled')).toBe('true');
+		answer.resolve({ ok: true, ticket: CREATED });
+		await vi.waitFor(() => expect(oncreated).toHaveBeenCalledOnce());
+	});
+
+	it('shows a server error as an error message and unlocks again', async () => {
+		renderForm(async () => ({
+			ok: false,
+			message: 'Der Server hat mit einem Fehler geantwortet. Bitte später erneut versuchen.',
+			fields: {}
+		}));
+
+		await fireEvent.input(titleField(), { target: { value: 'Neu' } });
+		await fireEvent.click(createButton());
+
+		const message = await screen.findByText(/Der Server hat mit einem Fehler geantwortet/);
+		const alert = message.closest('.alert-error');
+		expect(alert?.querySelector('svg[aria-hidden="true"]')).not.toBeNull();
+		expect(createButton().getAttribute('aria-disabled')).toBeNull();
+	});
+
+	it('shows field errors of the server at the field', async () => {
+		renderForm(async () => ({ ok: false, message: null, fields: { title: 'Zu lang.' } }));
+
+		await fireEvent.input(titleField(), { target: { value: 'Neu' } });
+		await fireEvent.click(createButton());
+
+		await vi.waitFor(() => expect(titleField().getAttribute('aria-invalid')).toBe('true'));
+		const error = document.getElementById(titleField().getAttribute('aria-describedby') ?? '');
+		expect(error?.textContent).toBe('Zu lang.');
+	});
+
+	it('cancels at once when nothing was entered', async () => {
+		const confirm = vi.spyOn(window, 'confirm');
+		const { oncancel } = renderForm();
+
+		await fireEvent.click(screen.getByRole('button', { name: 'Abbrechen' }));
+
+		expect(confirm).not.toHaveBeenCalled();
+		expect(oncancel).toHaveBeenCalledOnce();
+	});
+
+	it('asks before discarding entered data, with "Abbrechen" and with Escape', async () => {
+		const confirm = vi
+			.spyOn(window, 'confirm')
+			.mockReturnValueOnce(false)
+			.mockReturnValueOnce(true);
+		const { oncancel } = renderForm();
+
+		await fireEvent.input(titleField(), { target: { value: 'Entwurf' } });
+		await fireEvent.click(screen.getByRole('button', { name: 'Abbrechen' }));
+		expect(confirm).toHaveBeenCalledWith('Neues Ticket verwerfen? Die Eingaben gehen verloren.');
+		expect(oncancel).not.toHaveBeenCalled();
+
+		await fireEvent.keyDown(titleField(), { key: 'Escape' });
+		expect(confirm).toHaveBeenCalledTimes(2);
+		expect(oncancel).toHaveBeenCalledOnce();
+	});
+});
+
+describe('new ticket route', () => {
+	it('switches to the new ticket with replaceState and keeps the query', async () => {
+		mocks.detail.create.mockResolvedValueOnce({ ok: true, ticket: CREATED });
+		render(NewTicketPage);
+
+		await fireEvent.input(titleField(), { target: { value: 'Neu' } });
+		await fireEvent.click(createButton());
+
+		await vi.waitFor(() =>
+			expect(mocks.goto).toHaveBeenCalledWith('/tickets/new000000000000?erledigte=1', {
+				replaceState: true
+			})
+		);
+		expect(mocks.detail.create).toHaveBeenCalledOnce();
+	});
+
+	it('goes back to the list on "Abbrechen"', async () => {
+		render(NewTicketPage);
+
+		await fireEvent.click(screen.getByRole('button', { name: 'Abbrechen' }));
+
+		expect(mocks.goto).toHaveBeenCalledWith('/?erledigte=1');
+	});
+});

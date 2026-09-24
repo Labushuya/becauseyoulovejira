@@ -22,6 +22,11 @@ export function ticketHref(id: string, url: URL): ResolvedPathname {
 	return `${resolve(`/tickets/${encodeURIComponent(id)}`)}${url.search}` as ResolvedPathname;
 }
 
+/** Path of the form "Neues Ticket" with the query of `url`. */
+export function newTicketHref(url: URL): ResolvedPathname {
+	return `${resolve('/tickets/neu')}${url.search}` as ResolvedPathname;
+}
+
 /** The current path with the switch "Erledigte anzeigen" set or removed; other parameters stay. */
 export function withShowDone(url: URL, show: boolean): ResolvedPathname {
 	const params = new URLSearchParams(url.search);

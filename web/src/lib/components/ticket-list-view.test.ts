@@ -3,7 +3,7 @@
 // store runs for real on a fake data layer; SvelteKit navigation and page state are mocked.
 
 import { fireEvent, render, screen, within } from '@testing-library/svelte';
-import { createRawSnippet, tick } from 'svelte';
+import { tick } from 'svelte';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { DataError } from '$lib/data/errors';
 import type { DoneTicketPage } from '$lib/data/tickets';
@@ -114,7 +114,9 @@ describe('ticket list view', () => {
 		const item = ticket();
 		await showList(fakeData([item], [[]]), '/?erledigte=1');
 
-		expect(screen.getByRole('link').getAttribute('href')).toBe(`/tickets/${item.id}?erledigte=1`);
+		expect(within(openRows()[0]!).getByRole('link').getAttribute('href')).toBe(
+			`/tickets/${item.id}?erledigte=1`
+		);
 	});
 
 	it('shows the empty states', async () => {
@@ -299,12 +301,22 @@ describe('ticket list view', () => {
 		expect(status.className).toContain('loading');
 	});
 
-	it('renders "Neues Ticket" and other actions in the header', async () => {
-		mocks.page.url = new URL('http://localhost:3000/');
-		const store = new TicketListStore(fakeData([]), { ensureValid: () => true, logout: vi.fn() });
-		const actions = createRawSnippet(() => ({ render: () => '<button>Aktion</button>' }));
-		render(TicketList, { props: { store, actions } });
+	it('offers "Neues Ticket" in the header and in the empty state, with the query', async () => {
+		await showList(fakeData([], [[]]), '/?erledigte=1');
 
-		expect(screen.getByRole('button', { name: 'Aktion' })).toBeTruthy();
+		const links = screen.getAllByRole('link', { name: 'Neues Ticket' });
+		expect(links).toHaveLength(2);
+		for (const link of links) expect(link.getAttribute('href')).toBe('/tickets/neu?erledigte=1');
+	});
+
+	it('returns the focus to "Neues Ticket" when the form closes without a ticket', async () => {
+		const { rerender } = await showList(fakeData([ticket()]));
+
+		await rerender({ creating: true });
+		(document.activeElement as HTMLElement | null)?.blur();
+		await rerender({ creating: false });
+		await tick();
+
+		expect(document.activeElement).toBe(screen.getByRole('link', { name: 'Neues Ticket' }));
 	});
 });

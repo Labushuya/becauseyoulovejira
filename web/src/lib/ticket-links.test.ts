@@ -1,7 +1,7 @@
 // URLs of the ticket views (E2 plan, T-4 and T-5).
 
 import { describe, expect, it } from 'vitest';
-import { listHref, showDoneFrom, ticketHref, withShowDone } from './ticket-links';
+import { listHref, newTicketHref, showDoneFrom, ticketHref, withShowDone } from './ticket-links';
 
 const at = (path: string) => new URL(path, 'http://localhost:3000');
 
@@ -17,6 +17,11 @@ describe('ticket links', () => {
 			'/tickets/abc123def456ghi?erledigte=1'
 		);
 		expect(ticketHref('abc123def456ghi', at('/tickets/other'))).toBe('/tickets/abc123def456ghi');
+	});
+
+	it('opens the form "Neues Ticket" with the current query', () => {
+		expect(newTicketHref(at('/?erledigte=1'))).toBe('/tickets/neu?erledigte=1');
+		expect(newTicketHref(at('/tickets/abc'))).toBe('/tickets/neu');
 	});
 
 	it('leads back to the list with the current query', () => {

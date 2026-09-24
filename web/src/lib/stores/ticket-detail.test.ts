@@ -4,7 +4,7 @@
 import { SvelteMap } from 'svelte/reactivity';
 import { describe, expect, it, vi } from 'vitest';
 import { DataError } from '$lib/data/errors';
-import type { Ticket, TicketPatch, TicketSummary } from '$lib/domain/ticket';
+import type { Ticket, TicketDraft, TicketPatch, TicketSummary } from '$lib/domain/ticket';
 import {
 	INVALID_DATE_MESSAGE,
 	TITLE_REQUIRED_MESSAGE,
@@ -59,7 +59,18 @@ function setup(initial: Ticket = ticket()) {
 				updated: `2026-09-24 10:00:${String(clock).padStart(2, '0')}.000Z`
 			};
 			return current;
-		})
+		}),
+		create: vi.fn(async (draft: TicketDraft): Promise<Ticket> => ({
+			...ticket(draft),
+			id: 'new000000000000',
+			key: 'TASK-9',
+			project: null,
+			tags: [],
+			recurring: false,
+			completedAt: null,
+			created: '2026-09-24 10:00:00.000Z',
+			updated: '2026-09-24 10:00:00.000Z'
+		}))
 	} satisfies TicketDetailData;
 	// Reactive like the real list store, whose newer versions the panel follows.
 	const listTickets = new SvelteMap<string, TicketSummary>();
@@ -337,5 +348,70 @@ describe('drafts and updates', () => {
 		expect(store.isEditing('title')).toBe(false);
 		expect(store.fieldError('title')).toBeNull();
 		expect(store.dirty).toBe(false);
+	});
+});
+
+describe('creating', () => {
+	const DRAFT: TicketDraft = {
+		title: '  Neues Ticket  ',
+		description: '',
+		status: 'open',
+		priority: 'medium',
+		due: null
+	};
+
+	it('creates with a trimmed title, adds the ticket to the list and shows it', async () => {
+		const { store, data, list } = setup();
+
+		const result = await store.create(DRAFT);
+
+		expect(data.create).toHaveBeenCalledExactlyOnceWith({ ...DRAFT, title: 'Neues Ticket' });
+		expect(result).toMatchObject({ ok: true, ticket: { id: 'new000000000000', key: 'TASK-9' } });
+		expect(list.upsert).toHaveBeenCalledWith(expect.objectContaining({ id: 'new000000000000' }));
+		expect(store.state).toBe('ready');
+		expect(store.ticket?.key).toBe('TASK-9');
+
+		store.open('new000000000000');
+		expect(data.get).not.toHaveBeenCalled();
+	});
+
+	it('refuses an empty title without a request', async () => {
+		const { store, data } = setup();
+
+		const result = await store.create({ ...DRAFT, title: ' ' });
+
+		expect(result).toEqual({ ok: false, message: null, fields: { title: TITLE_REQUIRED_MESSAGE } });
+		expect(data.create).not.toHaveBeenCalled();
+	});
+
+	it('returns field errors of the server and other failures as a message', async () => {
+		const { store, data } = setup();
+		data.create.mockRejectedValueOnce(
+			new DataError('validation', {
+				status: 400,
+				fields: { due: { code: 'validation_calendar_date', message: 'Ungültiges Datum.' } }
+			})
+		);
+		data.create.mockRejectedValueOnce(new DataError('server', { status: 400 }));
+
+		expect(await store.create(DRAFT)).toEqual({
+			ok: false,
+			message: null,
+			fields: { due: 'Ungültiges Datum.' }
+		});
+		expect(await store.create(DRAFT)).toEqual({
+			ok: false,
+			message: expect.stringMatching(/Der Server hat mit einem Fehler geantwortet/),
+			fields: {}
+		});
+		expect(store.state).toBe('idle');
+	});
+
+	it('ends the session on a session error', async () => {
+		const { store, data, session } = setup();
+		data.create.mockRejectedValueOnce(new DataError('session'));
+
+		expect(await store.create(DRAFT)).toEqual({ ok: false, message: null, fields: {} });
+		expect(session.logout).toHaveBeenCalledOnce();
 	});
 });

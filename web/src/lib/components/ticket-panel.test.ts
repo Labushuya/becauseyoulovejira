@@ -64,7 +64,8 @@ function createStore(initial: Ticket = ticket()) {
 			clock += 1;
 			current = { ...current, ...patch, updated: `2026-09-24 10:00:0${clock}.000Z` };
 			return current;
-		})
+		}),
+		create: vi.fn()
 	} satisfies TicketDetailData;
 	const listTickets = new SvelteMap<string, TicketSummary>();
 	const list = {

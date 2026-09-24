@@ -104,7 +104,7 @@
 {/snippet}
 
 <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
-<aside class="panel" aria-labelledby={headingId} {onkeydown}>
+<aside class="side-panel" aria-labelledby={headingId} {onkeydown}>
 	<header class="bar">
 		<span class="key">{ticket?.key ?? ''}</span>
 		<button class="close" type="button" onclick={onclose}>
@@ -281,37 +281,6 @@
 </aside>
 
 <style>
-	.panel {
-		display: grid;
-		gap: 1.25rem;
-		align-content: start;
-		padding: 1rem 1.25rem 1.5rem;
-		background: var(--color-surface);
-		border: 1px solid var(--color-line);
-		border-radius: 0.5rem;
-	}
-
-	/* Next to the list from 48rem (T-16); below it covers the list completely. */
-	@media (min-width: 48rem) {
-		.panel {
-			position: sticky;
-			top: 1rem;
-			max-height: calc(100vh - 2rem);
-			overflow-y: auto;
-		}
-	}
-
-	@media (max-width: 47.99rem) {
-		.panel {
-			position: fixed;
-			inset: 0;
-			z-index: 10;
-			overflow-y: auto;
-			border: none;
-			border-radius: 0;
-		}
-	}
-
 	.bar {
 		display: flex;
 		gap: 0.75rem;

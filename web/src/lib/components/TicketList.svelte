@@ -1,9 +1,9 @@
 <script lang="ts">
-	import { tick, type Snippet } from 'svelte';
+	import { tick } from 'svelte';
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
 	import type { TicketListStore } from '$lib/stores/ticket-list.svelte';
-	import { showDoneFrom, ticketHref, withShowDone } from '$lib/ticket-links';
+	import { newTicketHref, showDoneFrom, ticketHref, withShowDone } from '$lib/ticket-links';
 	import type { TicketSummary } from '$lib/domain/ticket';
 	import ErrorIcon from './ErrorIcon.svelte';
 	import TicketRow from './TicketRow.svelte';
@@ -13,13 +13,13 @@
 	let {
 		store,
 		activeId = null,
-		actions
+		creating = false
 	}: {
 		store: TicketListStore;
 		/** Ticket shown in the detail panel; its row is marked as current. */
 		activeId?: string | null;
-		/** Buttons in the list header (e.g. "Neues Ticket"). */
-		actions?: Snippet;
+		/** The form "Neues Ticket" is open. */
+		creating?: boolean;
 	} = $props();
 
 	const uid = $props.id();
@@ -27,6 +27,7 @@
 
 	let root = $state<HTMLElement>();
 	let heading = $state<HTMLElement>();
+	let newButton = $state<HTMLElement>();
 	/** Row that last had the focus, to restore it when that row moves or disappears. */
 	let lastFocus: { id: string; section: string; index: number } | null = null;
 
@@ -101,6 +102,19 @@
 			(rowOf(previous)?.querySelector<HTMLElement>('a') ?? heading)?.focus();
 		});
 	});
+
+	/** Whether the form "Neues Ticket" was open. */
+	let wasCreating = false;
+
+	// Leaving the form without a new ticket returns the focus to "Neues Ticket".
+	$effect(() => {
+		const before = wasCreating;
+		wasCreating = creating;
+		if (!before || creating) return;
+		void tick().then(() => {
+			if (focusLost()) (newButton ?? heading)?.focus();
+		});
+	});
 </script>
 
 {#snippet rows(tickets: readonly TicketSummary[], section: string, label: string)}
@@ -142,9 +156,9 @@
 			<input type="checkbox" checked={showDone} onchange={toggleShowDone} />
 			Erledigte anzeigen
 		</label>
-		{#if actions}
-			<div class="actions">{@render actions()}</div>
-		{/if}
+		<a class="button-primary new" href={newTicketHref(page.url)} bind:this={newButton}
+			>Neues Ticket</a
+		>
 	</div>
 
 	<p class="visually-hidden" aria-live="polite">{store.announcement}</p>
@@ -163,7 +177,10 @@
 	{#if store.openState === 'error' && store.openError}
 		{@render failure(store.openError, 'Erneut versuchen', () => store.reload())}
 	{:else if store.openState === 'ready' && store.open.length === 0}
-		<p class="empty">Keine offenen Tickets.</p>
+		<div class="empty">
+			<p>Keine offenen Tickets.</p>
+			<a class="button-primary" href={newTicketHref(page.url)}>Neues Ticket</a>
+		</div>
 	{:else if store.open.length > 0}
 		{@render rows(store.open, 'open', 'Offene Tickets')}
 	{:else if store.openState === 'loading'}
@@ -230,8 +247,16 @@
 		accent-color: var(--color-brand);
 	}
 
-	.actions {
+	.new {
 		margin-left: auto;
+		padding: 0.375rem 0.875rem;
+		font-size: 0.875rem;
+		text-decoration: none;
+	}
+
+	.empty .button-primary {
+		margin-top: 0.75rem;
+		text-decoration: none;
 	}
 
 	.rows {
