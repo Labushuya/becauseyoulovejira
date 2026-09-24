@@ -99,11 +99,7 @@
 			<span class="tag">{tag.name}</span>
 		{/each}
 	</td>
-	<td class="due">
-		{#if ticket.due}
-			<DueLabel due={ticket.due} {today} {done} />
-		{/if}
-	</td>
+	<td class="due"><DueLabel due={ticket.due} {today} {done} /></td>
 	<td class="created">
 		<time datetime={createdDate} title={formatBerlinDateTime(ticket.created)}>
 			{formatCalendarDate(createdDate)}

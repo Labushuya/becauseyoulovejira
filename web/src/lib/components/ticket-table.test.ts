@@ -248,6 +248,21 @@ describe('ticket table', () => {
 		expect(within(doneBody()).getByText('Noch keine erledigten Tickets.')).toBeTruthy();
 	});
 
+	it('changes the due labels at the Berlin midnight without a reload (package 6)', async () => {
+		// 23:59 in Berlin (CEST).
+		vi.setSystemTime(Date.UTC(2026, 8, 24, 21, 59));
+		const item = ticket({ due: '2026-09-25' });
+		const { store } = await showTable(fakeData([item]));
+		const stop = store.start();
+		const label = () => openRows()[0]!.querySelector('.due time')?.textContent;
+		expect(label()).toBe('morgen, 25.09.2026');
+
+		await vi.advanceTimersByTimeAsync(2 * 60 * 1000);
+
+		expect(label()).toBe('heute, 25.09.2026');
+		stop();
+	});
+
 	it('shows no table without open tickets and without done tickets', async () => {
 		await showTable(fakeData([]));
 

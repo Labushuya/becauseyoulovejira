@@ -213,8 +213,8 @@
   "meta": {
     "projekt": "becauseyoulovejira",
     "stand": "2026-09-24",
-    "commit": "4d2f501",
-    "etappe": "E0, E1, E1.1 und E2 abgeschlossen; E3 Pakete 1–5 umgesetzt, Pakete 6–15 geplant"
+    "commit": "51a28be",
+    "etappe": "E0, E1, E1.1 und E2 abgeschlossen; E3 Pakete 1–6 umgesetzt, Pakete 7–15 geplant"
   },
   "blocks": [
     {
@@ -911,7 +911,7 @@
       ]
     },
     {
-      "tag": "E3", "name": "E3-Oberfläche", "desc": "Umgesetzte Oberflächenpakete des E3-Plans, ab Paket 5 (Kopfzeile, Abschnittsleiste, Tabelle). Die E2-Fälle der Liste gelten weiter und laufen jetzt gegen die Tabelle.",
+      "tag": "E3", "name": "E3-Oberfläche", "desc": "Umgesetzte Oberflächenpakete des E3-Plans, ab Paket 5 (Kopfzeile, Abschnittsleiste, Tabelle) und Paket 6 (relative Fälligkeitslabels). Die E2-Fälle der Liste gelten weiter und laufen jetzt gegen die Tabelle.",
       "items": [
         { "id": "BYL-E3-014", "title": "Tabelle mit Spalten, Beschriftung und Scrollbereich", "art": ["komponente"], "status": "bestanden",
           "pre": "–", "steps": ["npm run test:web"],
@@ -951,17 +951,25 @@
           "pre": "Zwei Fenster mit derselben Anmeldung.",
           "steps": ["Im zweiten Fenster ein Ticket anlegen und ein anderes abhaken."],
           "expect": "Im ersten Fenster ändern sich der Zähler in der Kopfzeile und die Zahl bei „Aufgaben“ ohne Neuladen.",
+          "tests": [] },
+        { "id": "BYL-E3-023", "title": "Relative Fälligkeitslabels in der Tabelle", "art": ["komponente"], "status": "bestanden",
+          "pre": "–", "steps": ["npm run test:web"],
+          "expect": "„seit N Tagen überfällig“, „gestern“, „heute“, „morgen“, „in N Tagen“ (2 bis 7), danach das Datum, über den Jahreswechsel; <time datetime> mit dem Datum als title und als unsichtbarem Zusatz („heute, 25.09.2026“); ohne Fälligkeit „–“ mit „keine Fälligkeit“; erledigte nur mit Datum; Überfällig mit Icon und Text, keine Fehlerfarbe.",
+          "tests": ["web/src/lib/components/due-label.test.ts", "web/src/lib/components/ticket-table-row.test.ts::labels the due date", "web/src/lib/components/ticket-table-row.test.ts::shows only the date for done tickets"] },
+        { "id": "BYL-E3-024", "title": "Labels wechseln um Mitternacht", "art": ["komponente"], "status": "bestanden",
+          "pre": "–", "steps": ["npm run test:web"],
+          "expect": "Um Mitternacht (Berlin) wird aus „morgen“ ohne Neuladen „heute“, weil today aus dem Listen-Store kommt.",
+          "tests": ["web/src/lib/components/ticket-table.test.ts::changes the due labels at the Berlin midnight without a reload", "web/src/lib/components/due-label.test.ts::changes the label when"] },
+        { "id": "BYL-E3-025", "title": "Fälligkeitslabels im Browser", "art": ["manuell"], "status": "offen",
+          "pre": "Tickets mit Fälligkeit vor 3 Tagen, gestern, heute, morgen, in 3 Tagen, in 10 Tagen und eines ohne; ein erledigtes mit Fälligkeit gestern.",
+          "steps": ["Die Spalte „Fällig“ ansehen, mit der Maus über ein Label fahren.", "„Erledigte anzeigen“ einschalten."],
+          "expect": "„seit 3 Tagen überfällig“ und „gestern“ fett mit Uhr-Symbol, „heute“ und „morgen“ in Petrol mit Kalender-Symbol, „in 3 Tagen“, das Datum und „–“ gedämpft; nichts ist rot; der Tooltip zeigt das Datum; das erledigte Ticket zeigt nur das Datum.",
           "tests": [] }
       ]
     },
     {
-      "tag": "E3", "name": "E3 geplant", "desc": "Pakete 6–15 aus dem E3-Plan (Abschnitt 5). Die Schritte sind hier die Akzeptanzkriterien; mit der Umsetzung werden daraus automatisierte und manuelle Fälle.",
+      "tag": "E3", "name": "E3 geplant", "desc": "Pakete 7–15 aus dem E3-Plan (Abschnitt 5). Die Schritte sind hier die Akzeptanzkriterien; mit der Umsetzung werden daraus automatisierte und manuelle Fälle.",
       "items": [
-        { "id": "BYL-E3-106", "title": "Paket 6 – Relative Fälligkeitslabels in der Oberfläche", "art": ["komponente"], "status": "geplant",
-          "pre": "Paket 5.",
-          "steps": ["Anzeige nach T-9.", "Über Mitternacht (Berlin) wechseln die Labels ohne Neuladen.", "Überfällig ist nicht rot und hat Icon und Text."],
-          "expect": "Geplante Tests: due-label-Komponente mit festem today (jede Label-Art, datetime, title, unsichtbarer Zusatz, erledigte nur mit Datum).",
-          "tests": [] },
         { "id": "BYL-E3-107", "title": "Paket 7 – Projekt im Panel und bei der Anlage", "art": ["komponente", "integration"], "status": "geplant",
           "pre": "Paket 5.",
           "steps": ["Zuordnen, Wechseln und Entfernen ändern den Key; die Liste zeigt ihn sofort, die URL bleibt, der Verlauf zeigt „Projekt: …“ und „Key geändert: …“.", "Archivierte Projekte sind nicht wählbar; ein Serverfehler erscheint am Feld, der alte Wert kehrt zurück.", "Bei der Anlage ist das gefilterte aktive Projekt vorausgewählt."],
