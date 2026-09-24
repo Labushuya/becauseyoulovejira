@@ -145,3 +145,11 @@ E1 wird auf dieser Basis aufbauen:
 - Authentifizierung (Local-Auth oder OAuth)
 
 Die Start-Infrastruktur ist bereit und wird nicht mehr geändert.
+
+## Nachtrag (E1, 2026-09-24)
+
+Dieser Abschnitt korrigiert den Spike, ohne den Text oben umzuschreiben ([E1-Plan](../plan/e1.md), OF-19).
+
+- **`--automigrate=false`:** Das Flag steuert nur das automatische *Erzeugen* von Migrationsdateien, wenn im Admin-UI Collections geändert werden (`plugins/migratecmd`). Ausstehende Migrationen aus `app/pb_migrations` wendet `serve` trotzdem beim Start an. Die Aussagen „Migrations nur aus Dateien, nicht automatisch“ (Tabelle der Startflags) und „Automatisch: Nein“ (Abschnitt Migrationen) sind in diesem Sinn zu lesen: Das Schema entsteht nur aus den handgeschriebenen Dateien, angewendet werden sie aber automatisch. Wie Migrationen getestet werden, beschreibt [ADR-0004](../adr/0004-teststrategie-hooks-migrationen.md).
+- **Zeitzonen in der Goja-Laufzeit:** `new Timezone(...)` und `new DateTime(x, "Europe/Berlin")` liefern ohne tzdata stillschweigend UTC; fachliche Datumsberechnungen laufen deshalb über ein eigenes Modul, siehe [ADR-0005](../adr/0005-zeitzone-europe-berlin.md).
+- **Startmechanismus:** Anders als oben beschrieben wartete `start.bat` aus E0 fest vier Sekunden. Seit E1, Paket 8, fragt `app/byl-control.ps1` `/api/health` ab, erkennt eine laufende eigene Instanz und den Erststart; `stop.bat` beendet nur die eigene Instanz (README, Abschnitt „Starten und Beenden“). Der Satz „Die Start-Infrastruktur … wird nicht mehr geändert“ ist damit überholt.
