@@ -72,7 +72,7 @@ Alle fachlichen Datensätze tragen `owner` (Pflicht, Relation `users`) und `hous
 - **Status (Enum):** `backlog`, `open`, `in_progress`, `waiting`, `done`. Interne Kategorie: backlog/open → *offen*, in_progress/waiting → *aktiv*, done → *abgeschlossen*. Zuordnung zentral in `app/pb_hooks/lib/status.js`, gespiegelt in `web/src/lib/domain/status.ts`.
 - **Priorität (Enum):** `low`, `medium`, `high`, `urgent`.
 - **completed_at:** vom Hook gesetzt bei Wechsel nach `done`, geleert beim Verlassen von `done`.
-- **Fälligkeit:** reines Kalenderdatum, gespeichert als `YYYY-MM-DD 00:00:00.000Z`. Maßgebliche Zeitzone für „heute": `Europe/Berlin`, serverseitig berechnet durch das reine Modul `app/pb_hooks/lib/berlin-time.js` (ab E4, EU-Sommerzeitregel), nicht über Zeitzonen-APIs der Laufzeit ([ADR-0005](docs/adr/0005-zeitzone-europe-berlin.md)).
+- **Fälligkeit:** reines Kalenderdatum, gespeichert als `YYYY-MM-DD 00:00:00.000Z`. Maßgebliche Zeitzone für „heute": `Europe/Berlin`, serverseitig berechnet durch das reine Modul `app/pb_hooks/lib/berlin-time.js` (ab E5 bzw. mit dem ersten Nutzer auf dem Server, EU-Sommerzeitregel; [ADR-0011](docs/adr/0011-roadmap-e3-bis-e7.md)), nicht über Zeitzonen-APIs der Laufzeit ([ADR-0005](docs/adr/0005-zeitzone-europe-berlin.md)).
 - **Historie:** `onRecordUpdate` vergleicht `e.record.original()` feldweise (Whitelist fachlicher Felder) und schreibt in derselben, vom Hook geöffneten Transaktion wie die Änderung nach `ticket_history`; die Anlage wird ebenfalls protokolliert.
 - **Parent (Stufe 2, nur Guard):** maximal eine Ebene, im Hook erzwungen.
 
@@ -110,6 +110,7 @@ Umsetzung in `app/pb_migrations/1790200900_api_rules.js`, Details und Befunde im
 ## 7. Frontend & UX
 
 - UI-Sprache Deutsch. Desktop zuerst, auf schmalen Bildschirmen benutzbar.
+- Seitenaufbau ab E3 nach dem Vorbild des Task-Boards, mit eigenen Farben und eigenem Code ([ADR-0010](docs/adr/0010-layout-nach-task-board.md)); was Client und Server bei Filter, Suche und Sortierung rechnen: [ADR-0013](docs/adr/0013-filter-suche-sortierung-gruppierung.md).
 - „Alle Tickets": dichte Zeilenliste (Key, Titel mit Tags, Status-Pille, Prioritäts-Icon, Projekt, Fälligkeit; Icons für wiederkehrend und blockiert).
 - Filter (Status, Projekt, Tag, Priorität, Fälligkeit), Sortierung, Suche (PocketBase-Filter auf Titel und Beschreibung); Filterzustand in der URL.
 - Projektansicht mit Projektauswahl; Ticket-Detail als Seitenpanel mit Inline-Bearbeitung, Kommentaren, Historie.
@@ -161,8 +162,9 @@ Erledigte Tickets treten in der Liste optisch zurück. Schriften: Inter für die
 
 - **MVP:** alles oben Beschriebene außer Stufe 2.
 - **Stufe 2 (nur auf ausdrückliche Anweisung; Datenmodell bereits vorbereitet):** Sub-Tickets inkl. Fortschritt und Schalter „blockiert Eltern-Ticket", Abhängigkeiten mit Entsperr-Automation, Board-Ansicht, Browser-Benachrichtigungen bei offenem Tab, Anhänge.
-- **Haushalts-UI:** eigene spätere Stufe nach ausdrücklicher Freigabe; im MVP nur der ausgegraute Umschalter.
-- **Nicht umsetzen:** Epics, Sprints, konfigurierbare Workflows, generischer Regel-Editor, Zeiterfassung, Cloud-Hosting, Offline-Modus, externe Integrationen.
+- **Haushalts-UI:** Etappe E7 zusammen mit Mehrgeräten, Start nach ausdrücklicher Freigabe; bis dahin nur der ausgegraute Umschalter.
+- **Nicht umsetzen:** Epics, Sprints, Story Points, Ticket-Typen ([ADR-0012](docs/adr/0012-plain-ticketing.md)), konfigurierbare Workflows, generischer Regel-Editor, Zeiterfassung, Cloud-Hosting, Offline-Modus.
+- **Kanäle:** Lokale Eingangskanäle ohne fremden Dienst (Schnellerfassung, Zwischenablage, Bookmarklet, `.ics`, `.eml`) ab E4. Externe Dienste (Google Calendar, WhatsApp, Telegram, Notion) sind in Prüfung und kommen nur mit eigener ADR und Freigabe ([ADR-0011](docs/adr/0011-roadmap-e3-bis-e7.md) §2).
 - Keine Features außerhalb des Scopes, keine spekulativen Abstraktionen. Abweichungen vorher begründen und beim Nutzer anfragen.
 
 ## 11. Regeln für Agenten und Automatisierung auf dem Entwicklungsrechner
@@ -200,7 +202,7 @@ Erledigte Tickets treten in der Liste optisch zurück. Schriften: Inter für die
 
 ## 12. Arbeitsweise
 
-- Etappen: E0 Gerüst · E1 Datenmodell/Hooks/Auth · E2 Liste/Detail/CRUD/Kommentare/Realtime · E3 Projekte/Tags/Filter/Suche · E4 Wiederkehrende Aufgaben · E5 Schnellerfassung/Theme/Feinschliff/Doku.
+- Etappen ([ADR-0011](docs/adr/0011-roadmap-e3-bis-e7.md)): E0 Gerüst · E1 Datenmodell/Hooks/Auth · E2 Liste/Detail/CRUD/Kommentare/Realtime · E3 Übersicht & Ordnung · E4 Eingang & Kanäle · E5 Wiederkehrende Aufgaben · E6 Feinschliff · E7 Haushalt & Mehrgeräte. Pläne je Etappe unter `docs/plan/`.
 - Nach jeder Etappe: Zusammenfassung, Testanleitung, Entscheidungen/offene Punkte – dann auf Freigabe warten.
 - Ein Commit pro abgeschlossenem Arbeitsschritt, Conventional Commits (`feat:`, `fix:`, `chore:`, `docs:`, `test:`, `refactor:`), direkt auf `main`. Push nach jeder Etappe in das öffentliche Repo `Labushuya/becauseyoulovejira`.
 - Kein toter oder auskommentierter Code, keine TODOs ohne verlinktes Issue.

@@ -10,7 +10,7 @@
 [![SvelteKit](https://img.shields.io/badge/SvelteKit-2-FF3E00?style=flat-square&logo=svelte&logoColor=white)](https://kit.svelte.dev)
 [![TypeScript](https://img.shields.io/badge/TypeScript-strict-3178C6?style=flat-square&logo=typescript&logoColor=white)](https://www.typescriptlang.org)
 [![Windows](https://img.shields.io/badge/Windows-10-0078D4?style=flat-square&logo=windows&logoColor=white)](https://www.microsoft.com/windows)
-[![Status](https://img.shields.io/badge/Status-E2%20abgeschlossen-07838F?style=flat-square)](#roadmap)
+[![Status](https://img.shields.io/badge/Status-E3%20in%20Planung-07838F?style=flat-square)](#roadmap)
 
 </div>
 
@@ -31,17 +31,19 @@ Ein privates, lokal laufendes Ticket-Dashboard für Windows 10 – Ticket-Handli
 | Feature | Status |
 |---|---|
 | 📝 Tickets mit Status (Backlog, Offen, In Arbeit, Wartet, Erledigt): Liste, Detailpanel, Anlegen, Bearbeiten, Abhaken, Löschen | ✅ E2 |
-| 🏷️ Projekte, Tags, Filter, Suche | 🚧 E3 |
+| 🗂️ Übersicht im Task-Board-Layout: Kennzahlen, Filterleiste, sortierbare Tabelle, Gruppierung – [ADR-0010](docs/adr/0010-layout-nach-task-board.md) | 🚧 E3 |
+| 🏷️ Projekte mit Projektansicht, Tags, Suche | 🚧 E3 |
 | 💬 Kommentare (Markdown), Ticket-Verlauf | ✅ E2 |
 | 🔄 Live-Aktualisierung (Realtime-Subscriptions) | ✅ E2 |
-| 📅 Wiederkehrende Aufgaben (Kalender- und Nach-Completion-Regeln) | 🚧 E4 |
-| ⌨️ Schnellerfassung (Taste `c`, Strg+K; Kurzsyntax `Titel @CODE !Priorität`) | 🚧 E5 |
-| 🎨 Hell-/Dunkel-Theme (Systemeinstellung, manueller Umschalter) | 🚧 E5 |
-| 🌐 Zugriff von mehreren Geräten über Tailscale (HTTPS, Server bleibt auf `127.0.0.1`) – [ADR-0001](docs/adr/0001-betriebsmodell-lokal-mehrgeraete-spaeter.md) | 🗓️ E6 |
+| ⌨️ Schnellerfassung (Taste `c`, Strg+K; Kurzsyntax `Titel @CODE !Priorität`) und Zwischenablage | 🗓️ E4 |
+| 📥 Kanäle: Web-Links per Bookmarklet, `.ics`- und `.eml`-Dateien per Drag & Drop | 🗓️ E4 |
+| 🔎 Google Calendar, WhatsApp, Telegram, Notion | 🔍 in Prüfung |
+| 📅 Wiederkehrende Aufgaben (Kalender- und Nach-Completion-Regeln, Vorschläge aus `.ics`) | 🗓️ E5 |
+| 🗑️ Papierkorb, Spaltenauswahl, Vollansicht, Tastatur, Hilfe, Theme-Umschalter | 🗓️ E6 |
+| 👥 Haushalte und Zugriff von mehreren Geräten über Tailscale (HTTPS, Server bleibt auf `127.0.0.1`) – [ADR-0001](docs/adr/0001-betriebsmodell-lokal-mehrgeraete-spaeter.md) | 🗓️ E7 |
 
 ### Später (nach Freigabe)
 
-- 👥 Haushalte / gemeinsame Dashboards
 - 🎯 Sub-Tickets und Fortschrittsanzeige
 - 🔗 Abhängigkeiten mit Entsperr-Automation
 - 📊 Board-Ansicht (Kanban)
@@ -282,7 +284,7 @@ Danach anmelden und die Daten prüfen; es gelten die Konten und Passwörter zum 
 | `Strg+Enter` | Beschreibung speichern, Kommentar senden oder speichern, neues Ticket anlegen |
 | `Pfeil links/rechts`, `Pos1`, `Ende` | zwischen den Reitern „Kommentare“ und „Verlauf“ wechseln |
 
-Die Schnellerfassung per `c` und `Strg+K` folgt in E5.
+Die Schnellerfassung per `c` und `Strg+K` folgt in E4, weitere Tastaturkürzel in E6.
 
 ---
 
@@ -291,12 +293,15 @@ Die Schnellerfassung per `c` und `Strg+K` folgt in E5.
 - [x] **E0:** Gerüst (Repo, PocketBase, SvelteKit, dieser README)
 - [x] **E1:** Datenmodell, Authentifizierung, Hooks, Start-/Stopp-Skripte
 - [x] **E2:** Listen-View, Detail-View, CRUD, Kommentare, Verlauf, Realtime – Plan und Bilanz: [docs/plan/e2.md](docs/plan/e2.md)
-- [ ] **E3:** Projekte, Tags, Filter, Suche, Sortierung
-- [ ] **E4:** Wiederkehrende Aufgaben (Kalender-Regeln, RRULE-Subset)
-- [ ] **E5:** Schnellerfassung, Theme-Umschalter, Feinschliff, Doku
-- [ ] **E6:** Zugriff von mehreren Geräten über Tailscale (`tailscale serve` mit HTTPS, Proxy-Header, Superuser nur lokal) – ohne Datenmigration, siehe [ADR-0001](docs/adr/0001-betriebsmodell-lokal-mehrgeraete-spaeter.md)
+- [ ] **E3 Übersicht & Ordnung:** Task-Board-Layout ([ADR-0010](docs/adr/0010-layout-nach-task-board.md)), Projekte mit Projektansicht, Tags, Filter, Suche, Sortierung, Gruppierung – Plan: [docs/plan/e3.md](docs/plan/e3.md)
+- [ ] **E4 Eingang & Kanäle:** Schnellerfassung und Zwischenablage, Web-Links (Bookmarklet), `.ics`, `.eml` per Drag & Drop; in Prüfung: Google Calendar, WhatsApp, Telegram, Notion
+- [ ] **E5 Wiederkehrende Aufgaben:** Kalender- und Nach-Completion-Regeln (RRULE-Teilmenge), Vorschläge aus `.ics`-RRULE
+- [ ] **E6 Feinschliff:** Papierkorb, Spalten, Vollansicht, Tastatur, Hilfe, Theme-Umschalter
+- [ ] **E7 Haushalt & Mehrgeräte:** gemeinsame Tickets im Haushalt, Zugriff über Tailscale (`tailscale serve` mit HTTPS, Superuser nur lokal) – ohne Datenmigration, siehe [ADR-0001](docs/adr/0001-betriebsmodell-lokal-mehrgeraete-spaeter.md)
 
-Nach jeder Etappe: Zusammenfassung, Testanleitung, Entscheidungen. Architekturentscheidungen stehen in [docs/adr/](docs/adr/README.md), die Umsetzungspläne in [docs/plan/](docs/plan/) (E1: [e1.md](docs/plan/e1.md), E2: [e2.md](docs/plan/e2.md)).
+Etappenfolge und Begründung: [ADR-0011](docs/adr/0011-roadmap-e3-bis-e7.md). Ohne Ticket-Typen, Epics, Sprints und Story Points: [ADR-0012](docs/adr/0012-plain-ticketing.md).
+
+Nach jeder Etappe: Zusammenfassung, Testanleitung, Entscheidungen. Architekturentscheidungen stehen in [docs/adr/](docs/adr/README.md), die Umsetzungspläne in [docs/plan/](docs/plan/) (E1: [e1.md](docs/plan/e1.md), E2: [e2.md](docs/plan/e2.md), E3: [e3.md](docs/plan/e3.md)).
 
 ---
 
