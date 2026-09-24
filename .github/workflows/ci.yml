@@ -1,0 +1,52 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  build:
+    name: Check, lint, build and test
+    # The start/stop logic tests and the integration tests need Windows PowerShell
+    # and the Windows PocketBase binary.
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Node.js 24
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            web/package-lock.json
+
+      - name: Cache PocketBase binary
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: app/pocketbase.exe
+          key: pocketbase-${{ runner.os }}-${{ hashFiles('scripts/fetch-pocketbase.ps1') }}
+
+      # Downloads the pinned version and verifies its SHA256 checksum; with a cache hit
+      # the script only confirms the version of the cached binary.
+      - name: Fetch PocketBase
+        shell: pwsh
+        run: powershell -NoProfile -ExecutionPolicy Bypass -File scripts\fetch-pocketbase.ps1
+
+      - name: Check, lint, build and test
+        shell: pwsh
+        run: powershell -NoProfile -ExecutionPolicy Bypass -File scripts\build.ps1
