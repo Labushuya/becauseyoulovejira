@@ -212,8 +212,8 @@
 {
   "meta": {
     "projekt": "becauseyoulovejira",
-    "stand": "2026-09-24",
-    "commit": "e81a4c0",
+    "stand": "2026-09-25",
+    "commit": "3dfad2e",
     "etappe": "E0, E1, E1.1 und E2 abgeschlossen; E3 Pakete 1–8 umgesetzt, Pakete 9–15 geplant"
   },
   "blocks": [
@@ -911,7 +911,7 @@
       ]
     },
     {
-      "tag": "E3", "name": "E3-Oberfläche", "desc": "Umgesetzte Oberflächenpakete des E3-Plans: Paket 5 (Kopfzeile, Abschnittsleiste, Tabelle), Paket 6 (relative Fälligkeitslabels), Paket 7 (Projekt im Panel und bei der Anlage), Paket 8 (Tags im Panel und bei der Anlage), Paket 10 (Filterleiste mit Zustand in der URL) und Paket 12 (Kennzahlen-Kacheln). Die E2-Fälle der Liste gelten weiter und laufen jetzt gegen die Tabelle.",
+      "tag": "E3", "name": "E3-Oberfläche", "desc": "Umgesetzte Oberflächenpakete des E3-Plans: Paket 5 (Kopfzeile, Abschnittsleiste, Tabelle), Paket 6 (relative Fälligkeitslabels), Paket 7 (Projekt im Panel und bei der Anlage), Paket 8 (Tags im Panel und bei der Anlage), Paket 10 (Filterleiste mit Zustand in der URL), Paket 12 (Kennzahlen-Kacheln) und Paket 9 (Sortierung per Spaltenkopf). Die E2-Fälle der Liste gelten weiter und laufen jetzt gegen die Tabelle.",
       "items": [
         { "id": "BYL-E3-014", "title": "Tabelle mit Spalten, Beschriftung und Scrollbereich", "art": ["komponente"], "status": "bestanden",
           "pre": "–", "steps": ["npm run test:web"],
@@ -1064,24 +1064,35 @@
         { "id": "BYL-E3-049", "title": "Kennzahlen folgen dem zweiten Fenster", "art": ["manuell"], "status": "offen",
           "pre": "Zwei Fenster mit derselben Anmeldung.", "steps": ["Im zweiten Fenster ein Ticket auf „In Arbeit“ und „Dringend“ setzen, dann abhaken."],
           "expect": "Im ersten Fenster ändern sich „In Arbeit“, „Dringend“ und „Nicht erledigt“ ohne Neuladen und entsprechen dem Zähler in der Kopfzeile.",
+          "tests": [] },
+        { "id": "BYL-E3-050", "title": "Sortierknöpfe in den Spaltenköpfen", "art": ["komponente", "unit"], "status": "bestanden",
+          "pre": "–", "steps": ["npm run test:web"],
+          "expect": "Key, Priorität, Status, Titel, Projekt, Fälligkeit und Erstellt haben im th einen button „Nach … sortieren“, Tags und Aktionen nicht; aria-sort nur am sortierten th mit der tatsächlichen Richtung (Priorität und Erstellt natürlich descending); der Name nennt die Richtung („, sortiert: Dringend zuerst“), ein Pfeil zeigt sie; die caption nennt „Standard-Reihenfolge“ bzw. „sortiert nach …“; der Fokus bleibt auf dem Knopf.",
+          "tests": ["web/src/lib/components/table-sort.test.ts::has a sort button in every sortable column header", "web/src/lib/components/table-sort.test.ts::marks only the sorted column with aria-sort", "web/src/lib/components/table-sort.test.ts::sets aria-sort to the actual direction", "web/src/lib/components/table-sort.test.ts::keeps the keyboard focus on the sort button", "web/src/lib/domain/labels.test.ts::sort labels (E3 plan, T-5)", "web/src/lib/components/ticket-table.test.ts::is a table with caption, column headers and a scrollable named region"] },
+        { "id": "BYL-E3-051", "title": "Klickzyklus in der URL und Zurück", "art": ["komponente"], "status": "bestanden",
+          "pre": "–", "steps": ["npm run test:web"],
+          "expect": "Erster Klick sort=<spalte>, zweiter sort=-<spalte>, dritter entfernt sort; ein Klick auf eine andere Spalte beginnt dort; andere Parameter bleiben; die Navigation erzeugt einen Verlaufseintrag, und der Wechsel der URL (Zurück) stellt die vorige Sortierung bzw. die Standard-Reihenfolge wieder her.",
+          "tests": ["web/src/lib/components/table-sort.test.ts::navigates to", "web/src/lib/components/table-sort.test.ts::restores the previous sort and the default order when going back"] },
+        { "id": "BYL-E3-052", "title": "Reihenfolge der Zeilen je Sortierung", "art": ["komponente", "unit"], "status": "bestanden",
+          "pre": "–", "steps": ["npm run test:web"],
+          "expect": "Titel deutsch („äpfel“ bei A, „Ticket 2“ vor „Ticket 10“), Fälligkeit mit leeren Werten in beiden Richtungen zuletzt, Priorität Dringend zuerst; Projekt nach Name über den Katalog, eine Umbenennung sortiert sofort neu, ohne Projekt zuletzt; ein Realtime-Upsert landet an seiner Stelle; eine abgehakte Zeile bleibt unter der Status-Sortierung 5 s an ihrem Platz; „Erledigt“ bleibt „zuletzt erledigte zuerst“.",
+          "tests": ["web/src/lib/components/table-sort.test.ts::orders the rows by the chosen column", "web/src/lib/components/table-sort.test.ts::sorts projects by name through the catalog and follows a rename", "web/src/lib/components/table-sort.test.ts::puts a ticket from a realtime event at its place", "web/src/lib/components/table-sort.test.ts::keeps the section \"Erledigt\" most recently completed first", "web/src/lib/stores/ticket-list.test.ts::column sort (E3 plan, package 9)", "web/src/lib/domain/column-order.test.ts"] },
+        { "id": "BYL-E3-053", "title": "Sortierung im Browser", "art": ["manuell"], "status": "offen",
+          "pre": "Angemeldet; Tickets mit verschiedenen Titeln, Prioritäten, Fälligkeiten (auch ohne) und Projekten (auch ohne).", "steps": ["Dreimal auf „Prio“ klicken.", "„Fällig“ anklicken, dann „Fällig“ erneut.", "Mit Tab auf „Titel“ und Enter drücken, dann im Browser Zurück.", "„Erledigte anzeigen“ einschalten und nach Titel sortieren."],
+          "expect": "Erst Dringend oben, dann Niedrig oben, dann Standard-Reihenfolge; der sortierte Kopf zeigt einen Pfeil in Petrol, die Beschriftung über der Tabelle nennt die Sortierung; Tickets ohne Datum stehen in beiden Richtungen unten; Zurück stellt die vorige Sortierung her; der Abschnitt „Erledigt“ bleibt nach Erledigungsdatum sortiert.",
           "tests": [] }
       ]
     },
     {
-      "tag": "E3", "name": "E3 geplant", "desc": "Pakete 9, 11 und 13–15 aus dem E3-Plan (Abschnitt 5). Die Schritte sind hier die Akzeptanzkriterien; mit der Umsetzung werden daraus automatisierte und manuelle Fälle.",
+      "tag": "E3", "name": "E3 geplant", "desc": "Pakete 11 und 13–15 aus dem E3-Plan (Abschnitt 5). Die Schritte sind hier die Akzeptanzkriterien; mit der Umsetzung werden daraus automatisierte und manuelle Fälle.",
       "items": [
-        { "id": "BYL-E3-109", "title": "Paket 9 – Sortierung per Spaltenkopf", "art": ["komponente"], "status": "geplant",
-          "pre": "Paket 5.",
-          "steps": ["Jeder sortierbare Spaltenkopf enthält einen button, das th trägt aria-sort nur, wenn sortiert.", "Richtung zusätzlich als Icon und im zugänglichen Namen.", "Zurück im Browser stellt die vorige Sortierung wieder her.", "„Erledigt“ bleibt „zuletzt erledigte zuerst“ und sagt das im Kopf.", "Realtime-Änderungen landen an der richtigen Stelle."],
-          "expect": "Geplante Tests: table-sort (Klickzyklus mit URL-Wechsel, aria-sort, Tastatur, Reihenfolge, Upsert während einer Sortierung).",
-          "tests": [] },
         { "id": "BYL-E3-111", "title": "Paket 11 – Suche", "art": ["unit", "komponente", "integration"], "status": "geplant",
           "pre": "Paket 10 (umgesetzt); Befund zu % und _ in ~ (Harness).",
           "steps": ["Treffer in Titel, Beschreibung und Key, kombiniert mit allen Filtern, auch im Abschnitt „Erledigt“.", "Schnelles Tippen erzeugt eine Anfrage pro Pause, veraltete Antworten werden verworfen.", "Ein per Realtime geändertes Ticket erscheint oder verschwindet passend.", "q steht in der URL, ohne einen Verlaufseintrag pro Buchstabe."],
           "expect": "Geplante Tests: ticket-list mit Fake-Timern, filter-bar (Label, Escape, aria-busy, Fehler), web-search (Harness).",
           "tests": [] },
         { "id": "BYL-E3-113", "title": "Paket 13 – Gruppierung in der Tabelle", "art": ["komponente"], "status": "geplant",
-          "pre": "Pakete 5 und 9.",
+          "pre": "Pakete 5 und 9 (umgesetzt).",
           "steps": ["Gruppenköpfe mit Anzahl als th scope=\"rowgroup\".", "Gruppierung steht in der URL und wirkt mit Filtern, Suche und Sortierung zusammen.", "Häkchen, „Rückgängig“ und Fokus funktionieren auch beim Gruppenwechsel oder wenn eine Gruppe leer wird.", "„Erledigt“ bleibt ungruppiert."],
           "expect": "Geplante Tests: group-popover, Erweiterung von ticket-table.",
           "tests": [] },

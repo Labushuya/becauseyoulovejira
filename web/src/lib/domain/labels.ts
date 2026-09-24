@@ -1,6 +1,7 @@
 // German UI labels for status, priority and history fields (CLAUDE.md sections 7 and 8).
 // The identifiers stay English in code (E1 plan, package 2).
 
+import type { SortKey, SortSpec } from './ordering';
 import type { Priority, Status } from './status';
 
 export const STATUS_LABELS: Readonly<Record<Status, string>> = Object.freeze({
@@ -43,4 +44,37 @@ export function historyFieldLabel(field: string): string {
 	return Object.hasOwn(HISTORY_FIELD_LABELS, field)
 		? (HISTORY_FIELD_LABELS[field] ?? field)
 		: field;
+}
+
+/** Column names of the sort buttons (E3 plan, T-5): "Nach Priorität sortieren". */
+export const SORT_COLUMN_LABELS: Readonly<Record<SortKey, string>> = Object.freeze({
+	key: 'Key',
+	priority: 'Priorität',
+	status: 'Status',
+	title: 'Titel',
+	project: 'Projekt',
+	due: 'Fälligkeit',
+	created: 'Erstellt'
+});
+
+/** Order of a column in words: natural direction (first click), then reversed (T-5). */
+const SORT_ORDER_LABELS: Readonly<Record<SortKey, readonly [string, string]>> = Object.freeze({
+	key: ['aufsteigend', 'absteigend'],
+	priority: ['Dringend zuerst', 'Niedrig zuerst'],
+	status: ['Backlog zuerst', 'Wartet zuerst'],
+	title: ['A bis Z', 'Z bis A'],
+	project: ['A bis Z', 'Z bis A'],
+	due: ['früheste zuerst', 'späteste zuerst'],
+	created: ['neueste zuerst', 'älteste zuerst']
+});
+
+/** The order of a column sort in words, e.g. "Dringend zuerst". */
+export function sortOrderLabel(spec: SortSpec): string {
+	const [natural, reversed] = SORT_ORDER_LABELS[spec.key];
+	return spec.reversed ? reversed : natural;
+}
+
+/** The column sort in words, e.g. "Priorität, Dringend zuerst". */
+export function sortLabel(spec: SortSpec): string {
+	return `${SORT_COLUMN_LABELS[spec.key]}, ${sortOrderLabel(spec)}`;
 }
