@@ -38,6 +38,7 @@ describe('web/src/lib/domain', () => {
 				'due-label.ts',
 				'filter.ts',
 				'grouping.ts',
+				'kpis.ts',
 				'labels.ts',
 				'list-query.ts',
 				'ordering.ts',
