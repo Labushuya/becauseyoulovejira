@@ -1,32 +1,23 @@
-' start-hidden.vbs - Startet PocketBase ohne sichtbares Konsolenfenster
+' start-hidden.vbs - startet becauseyoulovejira ohne sichtbares Fenster (Ziel der Autostart-
+' Verknuepfung). Ruft byl-control.ps1 -Action Start -Hidden auf: Hinweise und Fehler erscheinen
+' dann als Meldungsfenster, bei normalem Start oeffnet sich kein Browser.
+Option Explicit
 
-Dim objShell, strCommand, objFSO, strScriptDir, strPBExe
+Dim shell, fso, appDir, script, powershell, command
 
-Set objShell = CreateObject("WScript.Shell")
-Set objFSO = CreateObject("Scripting.FileSystemObject")
+Set shell = CreateObject("WScript.Shell")
+Set fso = CreateObject("Scripting.FileSystemObject")
 
-' Ermittle das Skriptverzeichnis
-strScriptDir = objFSO.GetParentFolderName(WScript.ScriptFullName)
-
-' Prüfe, ob pocketbase.exe existiert
-strPBExe = objFSO.BuildPath(strScriptDir, "pocketbase.exe")
-if not objFSO.FileExists(strPBExe) then
-    MsgBox "Fehler: pocketbase.exe nicht gefunden in " & strScriptDir, vbCritical, "becauseyoulovejira"
+appDir = fso.GetParentFolderName(WScript.ScriptFullName)
+script = fso.BuildPath(appDir, "byl-control.ps1")
+If Not fso.FileExists(script) Then
+    MsgBox "byl-control.ps1 wurde nicht gefunden in:" & vbCrLf & appDir, vbCritical, "becauseyoulovejira"
     WScript.Quit 1
-end if
+End If
 
-' Baue den Befehl zusammen
-strCommand = Chr(34) & strPBExe & Chr(34) & " serve " & _
-    "--http=127.0.0.1:8090 " & _
-    "--dir=" & Chr(34) & objFSO.BuildPath(strScriptDir, "pb_data") & Chr(34) & " " & _
-    "--hooksDir=" & Chr(34) & objFSO.BuildPath(strScriptDir, "pb_hooks") & Chr(34) & " " & _
-    "--migrationsDir=" & Chr(34) & objFSO.BuildPath(strScriptDir, "pb_migrations") & Chr(34) & " " & _
-    "--publicDir=" & Chr(34) & objFSO.BuildPath(strScriptDir, "pb_public") & Chr(34) & " " & _
-    "--automigrate=false " & _
-    "--indexFallback=true"
+powershell = shell.ExpandEnvironmentStrings("%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe")
+command = Chr(34) & powershell & Chr(34) & " -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File " & _
+    Chr(34) & script & Chr(34) & " -Action Start -Hidden"
 
-' Starte den Prozess im Hintergrund (Fenster 0 = versteckt)
-objShell.Run strCommand, 0, False
-
-' Keine weitere Wartezeit - wird von start.bat abgefragt
-WScript.Quit 0
+' 0 = kein Fenster, True = auf das Ende warten und den Exit-Code weitergeben.
+WScript.Quit shell.Run(command, 0, True)

@@ -1,0 +1,276 @@
+# Functions for byl-control.ps1: start, stop and autostart of becauseyoulovejira (E1 plan, package 8).
+#
+# Dot-sourced by byl-control.ps1 and by the tests; loading the file has no side effects. The
+# selection and detection logic is pure (every input is a parameter), so the tests check it with
+# fake processes, sockets and log texts and never run the start or stop scripts themselves.
+
+# The only binding of the app (CLAUDE.md section 3).
+$BylHttpAddress = '127.0.0.1:8090'
+$BylPort = 8090
+$BylAppUrl = 'http://127.0.0.1:8090/'
+$BylHealthUrl = 'http://127.0.0.1:8090/api/health'
+# PocketBase prints the installer link (/_/#/pbinstall/<token>) while no superuser exists.
+$BylInstallerMarker = 'pbinstal'
+$BylShortcutName = 'becauseyoulovejira.lnk'
+
+function Split-CommandLine {
+    # Splits a Windows command line into arguments: whitespace separates, double quotes group and
+    # are removed (also in the middle, as in --dir="<folder with spaces>"). Backslash escapes before quotes are
+    # not modelled; they would only matter for paths ending in "\" plus quote, which the start
+    # never produces and which are no valid folder names.
+    param([AllowNull()][AllowEmptyString()][string]$CommandLine)
+
+    $arguments = New-Object System.Collections.Generic.List[string]
+    if ([string]::IsNullOrEmpty($CommandLine)) { return , $arguments.ToArray() }
+    $current = New-Object System.Text.StringBuilder
+    $inQuotes = $false
+    $hasToken = $false
+    foreach ($character in $CommandLine.ToCharArray()) {
+        if ($character -eq [char]'"') {
+            $inQuotes = -not $inQuotes
+            $hasToken = $true
+            continue
+        }
+        if (-not $inQuotes -and [char]::IsWhiteSpace($character)) {
+            if ($hasToken) {
+                $arguments.Add($current.ToString())
+                [void]$current.Clear()
+                $hasToken = $false
+            }
+            continue
+        }
+        [void]$current.Append($character)
+        $hasToken = $true
+    }
+    if ($hasToken) { $arguments.Add($current.ToString()) }
+    return , $arguments.ToArray()
+}
+
+function Get-FlagValue {
+    # Value of the last "--<name>=<value>" argument (the last one wins, as in PocketBase's flag
+    # parser); $null if the flag is missing. Flag names are case-sensitive.
+    param([AllowNull()][string[]]$Arguments, [Parameter(Mandatory = $true)][string]$Name)
+
+    $prefix = "--$Name="
+    $value = $null
+    foreach ($argument in @($Arguments)) {
+        if ($null -ne $argument -and $argument.StartsWith($prefix, [System.StringComparison]::Ordinal)) {
+            $value = $argument.Substring($prefix.Length)
+        }
+    }
+    return $value
+}
+
+function Test-SamePath {
+    # True if $Path is a fully qualified path (drive or UNC) that names the same location as
+    # $Expected (case-insensitive, / and \ and a trailing separator do not matter). Relative paths
+    # never match: they depend on the working directory of a foreign process.
+    param([AllowNull()][AllowEmptyString()][string]$Path, [Parameter(Mandatory = $true)][string]$Expected)
+
+    if ([string]::IsNullOrWhiteSpace($Path) -or $Path -notmatch '^(?:[A-Za-z]:[\\/]|[\\/]{2}[^\\/])') { return $false }
+    try {
+        $actualFull = [System.IO.Path]::GetFullPath($Path).TrimEnd('\')
+        $expectedFull = [System.IO.Path]::GetFullPath($Expected).TrimEnd('\')
+    }
+    catch {
+        return $false
+    }
+    return [string]::Equals($actualFull, $expectedFull, [System.StringComparison]::OrdinalIgnoreCase)
+}
+
+function Select-AppProcess {
+    # Returns the app's own PocketBase instance(s) from process objects shaped like Win32_Process
+    # (ProcessId, ExecutablePath, CommandLine). A process qualifies only if ALL of this holds:
+    #   ExecutablePath = <AppDir>\pocketbase.exe, argument "serve", --http=127.0.0.1:8090 and
+    #   --dir=<AppDir>\pb_data.
+    # Test instances of the harness (same exe, --dir in the temp folder, random port), one-shot
+    # commands (superuser, migrate) and foreign processes never qualify. Processes whose
+    # command line is unreadable (other users) never qualify either.
+    param([AllowNull()][object[]]$Process, [Parameter(Mandatory = $true)][string]$AppDir)
+
+    $exePath = [System.IO.Path]::Combine($AppDir, 'pocketbase.exe')
+    $dataDir = [System.IO.Path]::Combine($AppDir, 'pb_data')
+    foreach ($candidate in @($Process)) {
+        if ($null -eq $candidate) { continue }
+        if (-not (Test-SamePath -Path $candidate.ExecutablePath -Expected $exePath)) { continue }
+        # Assign first: Split-CommandLine emits the whole array as ONE pipeline object.
+        $allArguments = Split-CommandLine -CommandLine $candidate.CommandLine
+        $arguments = @($allArguments | Select-Object -Skip 1)
+        if ($arguments -cnotcontains 'serve') { continue }
+        if ((Get-FlagValue -Arguments $arguments -Name 'http') -cne $BylHttpAddress) { continue }
+        if (-not (Test-SamePath -Path (Get-FlagValue -Arguments $arguments -Name 'dir') -Expected $dataDir)) { continue }
+        $candidate
+    }
+}
+
+function Resolve-PortState {
+    # Classifies LISTEN sockets shaped like Get-NetTCPConnection (LocalAddress, LocalPort,
+    # OwningProcess) for http://127.0.0.1:8090:
+    #   App     - the own instance (Select-AppProcess) listens on 127.0.0.1:8090,
+    #   Foreign - another process listens on 127.0.0.1, 0.0.0.0 or :: (the wildcards accept
+    #             127.0.0.1 as well), ProcessId/ProcessName name the owner,
+    #   Free    - nothing relevant listens (a socket on ::1 or another address does not collide).
+    param(
+        [AllowNull()][object[]]$Listener,
+        [AllowNull()][object[]]$Process,
+        [Parameter(Mandatory = $true)][string]$AppDir
+    )
+
+    $relevant = @(@($Listener) | Where-Object {
+            $null -ne $_ -and [int]$_.LocalPort -eq $BylPort -and @('127.0.0.1', '0.0.0.0', '::') -contains [string]$_.LocalAddress
+        })
+    if ($relevant.Count -eq 0) {
+        return [pscustomobject]@{ State = 'Free'; ProcessId = $null; ProcessName = $null }
+    }
+    $ownIds = @(Select-AppProcess -Process $Process -AppDir $AppDir | ForEach-Object { [int]$_.ProcessId })
+    $own = @($relevant | Where-Object { [string]$_.LocalAddress -eq '127.0.0.1' -and $ownIds -contains [int]$_.OwningProcess })
+    if ($own.Count -gt 0) {
+        return [pscustomobject]@{ State = 'App'; ProcessId = [int]$own[0].OwningProcess; ProcessName = 'pocketbase.exe' }
+    }
+    $foreign = @($relevant | Where-Object { $ownIds -notcontains [int]$_.OwningProcess })
+    if ($foreign.Count -eq 0) { $foreign = $relevant }
+    $ownerId = [int]$foreign[0].OwningProcess
+    $owner = @(@($Process) | Where-Object { $null -ne $_ -and [int]$_.ProcessId -eq $ownerId })
+    $ownerName = if ($owner.Count -gt 0 -and $owner[0].Name) { [string]$owner[0].Name } else { 'unbekanntes Programm' }
+    return [pscustomobject]@{ State = 'Foreign'; ProcessId = $ownerId; ProcessName = $ownerName }
+}
+
+function Test-FirstRun {
+    # First run = no superuser yet. Preferred signal: the server printed the installer link
+    # (it also covers an installer that was closed without creating an account). Fallback while
+    # the log shows nothing (not written yet or unreadable): pb_data\data.db was missing before
+    # the start, so the database is new and cannot contain a superuser.
+    param([AllowNull()][AllowEmptyString()][string]$LogText, [Parameter(Mandatory = $true)][bool]$DatabaseExisted)
+
+    if (-not [string]::IsNullOrEmpty($LogText) -and $LogText.Contains($BylInstallerMarker)) { return $true }
+    return -not $DatabaseExisted
+}
+
+function Wait-FirstRunSignal {
+    # Decides the first run after /api/health answered 200. PocketBase checks for a superuser in a
+    # goroutine that runs concurrently with the server start, so the installer link can appear in
+    # the log shortly AFTER the health check. With a new database the answer is known at once;
+    # otherwise the log is watched for at most $GraceMilliseconds (a bounded observation window,
+    # not a start delay: the server is already healthy). $ReadLog returns the current log text.
+    param(
+        [Parameter(Mandatory = $true)][scriptblock]$ReadLog,
+        [Parameter(Mandatory = $true)][bool]$DatabaseExisted,
+        [int]$GraceMilliseconds = 1500,
+        [int]$PollMilliseconds = 100
+    )
+
+    if (-not $DatabaseExisted) { return $true }
+    $deadline = [DateTime]::UtcNow.AddMilliseconds($GraceMilliseconds)
+    while ($true) {
+        if (Test-FirstRun -LogText ([string](& $ReadLog)) -DatabaseExisted $true) { return $true }
+        if ([DateTime]::UtcNow -ge $deadline) { return $false }
+        Start-Sleep -Milliseconds $PollMilliseconds
+    }
+}
+
+function Get-ServerLogPath {
+    # Output of the server process (overwritten at every start; *.log is gitignored). Standard
+    # output and error need separate files (Start-Process cannot redirect both into one).
+    param([Parameter(Mandatory = $true)][string]$AppDir)
+
+    $logDir = [System.IO.Path]::Combine($AppDir, 'logs')
+    return [pscustomobject]@{
+        Directory = $logDir
+        Output    = [System.IO.Path]::Combine($logDir, 'pocketbase.out.log')
+        Error     = [System.IO.Path]::Combine($logDir, 'pocketbase.err.log')
+    }
+}
+
+function Get-ServerArgumentString {
+    # Arguments for pocketbase.exe (CLAUDE.md sections 3 and 9): only 127.0.0.1:8090, data, hooks,
+    # migrations and web build from the app folder, --automigrate=false, never --dev. Paths are
+    # quoted (spaces, #); Windows paths cannot contain double quotes.
+    param([Parameter(Mandatory = $true)][string]$AppDir)
+
+    $folder = { param([string]$Name) [System.IO.Path]::Combine($AppDir, $Name) }
+    return ('serve --http={0} --dir="{1}" --hooksDir="{2}" --migrationsDir="{3}" --publicDir="{4}" --automigrate=false --indexFallback=true' -f
+        $BylHttpAddress, (& $folder 'pb_data'), (& $folder 'pb_hooks'), (& $folder 'pb_migrations'), (& $folder 'pb_public'))
+}
+
+function Get-AutostartShortcut {
+    # Shortcut in the Windows startup folder: wscript.exe runs start-hidden.vbs (no window).
+    param(
+        [Parameter(Mandatory = $true)][string]$AppDir,
+        [Parameter(Mandatory = $true)][string]$StartupDir,
+        [Parameter(Mandatory = $true)][string]$SystemDir
+    )
+
+    return [pscustomobject]@{
+        Path             = [System.IO.Path]::Combine($StartupDir, $BylShortcutName)
+        TargetPath       = [System.IO.Path]::Combine($SystemDir, 'wscript.exe')
+        Arguments        = '"' + [System.IO.Path]::Combine($AppDir, 'start-hidden.vbs') + '"'
+        WorkingDirectory = $AppDir.TrimEnd('\')
+    }
+}
+
+function Test-Health {
+    # One GET on /api/health; true only for status 200. No proxy: a system proxy must never see
+    # (or answer) requests to the loopback address.
+    param([string]$Url = $BylHealthUrl, [int]$TimeoutMilliseconds = 2000)
+
+    $request = [System.Net.WebRequest]::Create($Url)
+    $request.Proxy = $null
+    $request.Timeout = $TimeoutMilliseconds
+    $request.KeepAlive = $false
+    try {
+        $response = $request.GetResponse()
+        try { return [int]$response.StatusCode -eq 200 } finally { $response.Close() }
+    }
+    catch [System.Net.WebException] {
+        if ($null -ne $_.Exception.Response) { $_.Exception.Response.Close() }
+        return $false
+    }
+}
+
+function Wait-ServerReady {
+    # Polls /api/health until it answers 200 (no fixed waiting time). Returns 'Ready', 'Exited'
+    # (the process ended first) or 'Timeout'. $Process needs HasExited (System.Diagnostics.Process).
+    param(
+        [Parameter(Mandatory = $true)][object]$Process,
+        [string]$Url = $BylHealthUrl,
+        [int]$TimeoutSeconds = 30,
+        [int]$RequestTimeoutMilliseconds = 2000
+    )
+
+    $deadline = [DateTime]::UtcNow.AddSeconds($TimeoutSeconds)
+    while ($true) {
+        if ($Process.HasExited) { return 'Exited' }
+        if (Test-Health -Url $Url -TimeoutMilliseconds $RequestTimeoutMilliseconds) {
+            if ($Process.HasExited) { return 'Exited' }
+            return 'Ready'
+        }
+        if ([DateTime]::UtcNow -ge $deadline) { return 'Timeout' }
+        Start-Sleep -Milliseconds 250
+    }
+}
+
+function Read-SharedText {
+    # Whole text of a file that another process may still be writing ('' if it does not exist).
+    param([Parameter(Mandatory = $true)][string]$Path)
+
+    if (-not [System.IO.File]::Exists($Path)) { return '' }
+    $stream = [System.IO.File]::Open($Path, [System.IO.FileMode]::Open, [System.IO.FileAccess]::Read, [System.IO.FileShare]'ReadWrite, Delete')
+    try {
+        $reader = New-Object System.IO.StreamReader($stream)
+        return $reader.ReadToEnd()
+    }
+    finally {
+        $stream.Dispose()
+    }
+}
+
+function Get-ProcessSnapshot {
+    # All processes with the fields Select-AppProcess and Resolve-PortState need (CIM instead of
+    # the deprecated WMI command-line tool).
+    return @(Get-CimInstance -ClassName Win32_Process -Property ProcessId, Name, ExecutablePath, CommandLine)
+}
+
+function Get-ListenerSnapshot {
+    # LISTEN sockets on port 8090 (empty if there are none).
+    return @(Get-NetTCPConnection -State Listen -LocalPort $BylPort -ErrorAction SilentlyContinue)
+}
