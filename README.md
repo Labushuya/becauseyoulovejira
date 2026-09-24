@@ -57,7 +57,7 @@ Ein privates, lokal laufendes Ticket-Dashboard für Windows 10 – Ticket-Handli
 | **Backend** | [PocketBase 0.40.4](https://pocketbase.io) (Windows Binary) | Alles-in-Eins: SQLite, Admin-UI, Hooks/JS, Realtime |
 | **Frontend** | [SvelteKit 2](https://kit.svelte.dev) + [Svelte 5](https://svelte.dev) + [TypeScript](https://www.typescriptlang.org) | Geringster JS-Footprint, SPA-Modus, native Reaktivität (Runes) |
 | **Runtime** | [Node.js](https://nodejs.org) (nur Dev) | Build-Werkzeug, nicht für Betrieb erforderlich |
-| **Tests** | [Vitest](https://vitest.dev) | Hooks-Integration, JS-Geschäftslogik |
+| **Tests** | [Vitest](https://vitest.dev), [Testing Library](https://testing-library.com/docs/svelte-testing-library/intro) + jsdom | Hooks-Integration, JS-Geschäftslogik, Svelte-Komponenten |
 | **Styling** | CSS-Custom-Properties + System-Font-Stack | Läuft ohne Internetverbindung, keine externen CDNs; minimalistisch |
 | **Datenbank** | [SQLite](https://www.sqlite.org) (PocketBase intern) | Einzeldatei, keine Separate Datenbank nötig |
 
@@ -76,9 +76,9 @@ becauseyoulovejira/
     start.bat             Starter
     autostart-an.bat      Autostart einrichten
     autostart-aus.bat     Autostart entfernen
-  web/                    SvelteKit-Quellcode (Build → ../app/pb_public)
+  web/                    SvelteKit-Quellcode (Build → ../app/pb_public), Tests unter src/**/*.test.ts
   scripts/                Build-/Setup-Skripte (PowerShell)
-  tests/                  Vitest-Tests (Hooks, Recurrence-Logik)
+  tests/                  Vitest-Tests (Hooks, Regeln, Login- und SPA-Integration)
   docs/                   README-Assets, Architektur-Dokumente
 ```
 
@@ -110,8 +110,8 @@ Einzelne Qualitäts-Gates:
 ```powershell
 npm run check   # svelte-check / TypeScript
 npm run lint    # ESLint + Prettier
-npm test        # Vitest (Unit- und Integrationstests)
 npm run build   # Frontend-Build nach app/pb_public
+npm test        # Vitest: Unit- und Integrationstests, danach die web-Tests
 ```
 
 ### Tests
@@ -119,9 +119,12 @@ npm run build   # Frontend-Build nach app/pb_public
 ```powershell
 npm run test:unit          # nur reine Logik, ohne PocketBase
 npm run test:integration   # gegen eine Wegwerf-PocketBase-Instanz
+npm run test:web           # Frontend: Unit- und Komponententests (jsdom)
 ```
 
-Die Integrationstests brauchen `app/pocketbase.exe` (siehe Schritt 1). Pro Lauf startet ein Vitest-`globalSetup` eine eigene PocketBase-Instanz in einem frischen Temp-Ordner (`%TEMP%\byl-test-*`), mit zufälligem Superuser und auf einem freien Port (nie 8090). Danach beendet es die Instanz und löscht den Ordner, auch bei fehlschlagenden Tests oder Strg+C. Eine laufende Produktivinstanz und `app/pb_data` bleiben unberührt. Details: [ADR-0004](docs/adr/0004-teststrategie-hooks-migrationen.md).
+Die Integrationstests brauchen `app/pocketbase.exe` (siehe Schritt 1) und für den SPA-Fallback-Test den Frontend-Build in `app/pb_public` (`npm run build`; `build.ps1` baut deshalb vor den Tests). Pro Lauf startet ein Vitest-`globalSetup` eine eigene PocketBase-Instanz in einem frischen Temp-Ordner (`%TEMP%\byl-test-*`), mit zufälligem Superuser und auf einem freien Port (nie 8090). Danach beendet es die Instanz und löscht den Ordner, auch bei fehlschlagenden Tests oder Strg+C. Eine laufende Produktivinstanz und `app/pb_data` bleiben unberührt. Der SPA-Fallback-Test startet nach demselben Muster eine zweite Instanz mit dem Frontend-Build als `publicDir`. Details: [ADR-0004](docs/adr/0004-teststrategie-hooks-migrationen.md).
+
+Für den Vite-Dev-Server (`npm --prefix web run dev`) leitet `web/vite.config.ts` die Pfade `/api` und `/_/` an die laufende Instanz auf `127.0.0.1:8090` weiter; im Betrieb liefert PocketBase die App selbst aus (gleiche Origin).
 
 ---
 
