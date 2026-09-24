@@ -39,6 +39,15 @@ function appliedFiles(output, verb) {
 	);
 }
 
+/** authAlert.enabled per auth collection (users and the superusers). */
+function authAlerts(collections) {
+	return Object.fromEntries(
+		collections
+			.filter((collection) => collection.type === 'auth')
+			.map((collection) => [collection.name, collection.authAlert.enabled])
+	);
+}
+
 function withoutTimestamps(collections) {
 	return collections.map(({ created, updated, ...rest }) => rest);
 }
@@ -57,6 +66,7 @@ describe('migration rollback', () => {
 				expect(first.settings.backups).toMatchObject(EXPECTED_BACKUPS);
 				expect(first.userCount).toBe(0);
 				expect(first.superuserCount).toBe(0);
+				expect(authAlerts(first.collections)).toEqual({ _superusers: false, users: false });
 
 				// Rolling back to before the API rules (package 4) leaves every rule null again.
 				const fromRules = MIGRATION_FILES.slice(MIGRATION_FILES.indexOf(RULES_MIGRATION));
@@ -85,6 +95,7 @@ describe('migration rollback', () => {
 					expect(users[rule], `users.${rule}`).toBe(DEFAULT_USERS_RULES[rule]);
 				}
 				expect(reverted.settings.backups).toMatchObject(DEFAULT_BACKUPS);
+				expect(authAlerts(reverted.collections)).toEqual({ _superusers: true, users: true });
 
 				const secondUp = await migrate(args, 'up');
 				expect(appliedFiles(secondUp, 'Applied')).toEqual(MIGRATION_FILES);
