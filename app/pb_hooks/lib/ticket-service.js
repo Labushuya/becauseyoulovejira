@@ -16,6 +16,8 @@ var ACTOR_KEY = '@actor';
 
 var SCOPE_MISMATCH = 'Verknüpfter Datensatz nicht gefunden oder in einem anderen Bereich.';
 
+var PROJECT_ARCHIVED = 'Das Projekt ist archiviert.';
+
 var PARENT_MESSAGES = {
   validation_parent_self: 'Ein Ticket kann nicht sein eigenes Eltern-Ticket sein.',
   validation_parent_nested: 'Das Eltern-Ticket ist selbst ein Unter-Ticket (nur eine Ebene erlaubt).',
@@ -53,9 +55,10 @@ function actorOf(record) {
 }
 
 // Loads the referenced project, tags, recurrence rule and parent. Rejects references that are
-// missing or belong to another scope (OF-3 c) and parents that break the one-level rule.
-// Returns the project record or null.
-function checkRelations(txApp, record, scope) {
+// missing or belong to another scope (OF-3 c), parents that break the one-level rule and a newly
+// assigned archived project (E3 plan, T-11). `previousProject` is the stored project id before
+// the write ('' on create). Returns the project record or null.
+function checkRelations(txApp, record, scope, previousProject) {
   var related = [];
   var fields = {};
   var project = null;
@@ -98,6 +101,16 @@ function checkRelations(txApp, record, scope) {
   var violations = rules.scopeViolations(scope, related);
   for (var j = 0; j < violations.length; j++) {
     fields[violations[j]] = { code: 'validation_scope_mismatch', message: SCOPE_MISMATCH };
+  }
+  if (project && !fields.project) {
+    var archivedCode = rules.archivedProjectViolation({
+      project: projectId,
+      previousProject: previousProject || '',
+      archived: project.getBool('archived')
+    });
+    if (archivedCode !== '') {
+      fields.project = { code: archivedCode, message: PROJECT_ARCHIVED };
+    }
   }
   var failed = Object.keys(fields);
   if (failed.length > 0) {
@@ -190,7 +203,7 @@ function prepareCreate(txApp, record) {
   }
 
   checkDue(record);
-  var project = checkRelations(txApp, record, scope);
+  var project = checkRelations(txApp, record, scope, '');
   applyCompletedAt(record, null);
   assignKey(txApp, record, scope, project);
 }
@@ -221,7 +234,7 @@ function prepareUpdate(txApp, record) {
     );
   }
   checkDue(record);
-  var project = checkRelations(txApp, record, scope);
+  var project = checkRelations(txApp, record, scope, original.getString('project'));
   applyCompletedAt(record, original);
 
   var before = {

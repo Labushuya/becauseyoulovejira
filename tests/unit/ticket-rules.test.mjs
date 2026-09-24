@@ -151,3 +151,20 @@ describe('parentViolation', () => {
 		expect(rules.parentViolation({ ...allowed, parentExists: false })).toBe('');
 	});
 });
+
+describe('archivedProjectViolation (E3 plan, T-11)', () => {
+	const ARCHIVED = 'validation_project_archived';
+
+	it.each([
+		['create in an archived project', { project: 'p1', previousProject: '', archived: true }, ARCHIVED],
+		['move into an archived project', { project: 'p2', previousProject: 'p1', archived: true }, ARCHIVED],
+		['move from no project into an archived one', { project: 'p2', previousProject: '', archived: true }, ARCHIVED],
+		['stay in the archived project', { project: 'p1', previousProject: 'p1', archived: true }, ''],
+		['leave the archived project', { project: '', previousProject: 'p1', archived: false }, ''],
+		['create in an active project', { project: 'p1', previousProject: '', archived: false }, ''],
+		['move into an active project', { project: 'p2', previousProject: 'p1', archived: false }, ''],
+		['create without project', { project: '', previousProject: '', archived: false }, '']
+	])('%s', (_name, input, expected) => {
+		expect(rules.archivedProjectViolation(input)).toBe(expected);
+	});
+});

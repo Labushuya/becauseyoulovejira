@@ -7,7 +7,8 @@ import { beforeAll, describe, expect, it } from 'vitest';
 import { superuserClient } from '../support/api.mjs';
 import { createOwner, historyOf, uniqueCode, uniqueSuffix } from '../support/scenario.mjs';
 import { DataError } from '../../web/src/lib/data/errors.ts';
-import { listProjects, listTags } from '../../web/src/lib/data/lookups.ts';
+import { listProjects } from '../../web/src/lib/data/projects.ts';
+import { listTags } from '../../web/src/lib/data/tags.ts';
 import {
 	createTicket,
 	deleteTicket,
@@ -244,9 +245,11 @@ describe('web data layer: tickets', () => {
 		const tagRef = { id: tag.id, name: 'garten' };
 		expect(listed).toMatchObject({ key: `${code}-1`, project: projectRef, tags: [tagRef] });
 		expect(detail).toMatchObject({ project: projectRef, tags: [tagRef] });
-		expect(await listProjects(owner.client)).toEqual([projectRef]);
-		expect(await listTags(owner.client)).toEqual([tagRef]);
-		expect(await listProjects(a.client)).not.toContainEqual(projectRef);
+		expect(await listProjects(owner.client)).toEqual([
+			{ ...projectRef, updated: project.updated }
+		]);
+		expect(await listTags(owner.client)).toEqual([{ ...tagRef, updated: tag.updated }]);
+		expect((await listProjects(a.client)).map((entry) => entry.id)).not.toContain(project.id);
 	});
 
 	it('reports an aborted call as "aborted", not as "network"', async () => {

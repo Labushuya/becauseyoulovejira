@@ -17,9 +17,16 @@ function read(name: string): string {
 }
 
 describe('web/src/lib/data', () => {
-	it('contains the E2 modules', () => {
+	it('contains the E2 and E3 modules', () => {
 		expect(modules).toEqual(
-			expect.arrayContaining(['comments.ts', 'errors.ts', 'history.ts', 'lookups.ts', 'tickets.ts'])
+			expect.arrayContaining([
+				'comments.ts',
+				'errors.ts',
+				'history.ts',
+				'projects.ts',
+				'tags.ts',
+				'tickets.ts'
+			])
 		);
 	});
 
@@ -51,7 +58,7 @@ describe('web/src/lib/data', () => {
 		expect(code).not.toMatch(/\bany\b/);
 	});
 
-	it.each(['tickets.ts', 'comments.ts', 'history.ts', 'lookups.ts'])(
+	it.each(['tickets.ts', 'comments.ts', 'history.ts', 'projects.ts', 'tags.ts'])(
 		'%s: exported access functions take pb first and accept a signal',
 		(name) => {
 			const source = read(name);

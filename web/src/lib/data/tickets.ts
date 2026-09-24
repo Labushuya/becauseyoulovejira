@@ -15,7 +15,8 @@ import {
 	type TicketSummary
 } from '../domain/ticket';
 import { DataError, withDataErrors } from './errors';
-import { toProjectRef, toTagRef, type ProjectRecord, type TagRecord } from './lookups';
+import { toProjectRef, type ProjectRecord } from './projects';
+import { toTagRef, type TagRecord } from './tags';
 import { currentUserId, type RequestOptions } from './options';
 
 const TICKETS = 'tickets';

@@ -32,9 +32,34 @@ const FIELD_MESSAGES: Readonly<Record<string, string>> = Object.freeze({
 	validation_invalid_value: 'Ungültiger Wert.',
 	validation_calendar_date: 'Ungültiges Datum.',
 	validation_invalid_date: 'Ungültiges Datum.',
-	validation_scope_mismatch: 'Nicht verfügbar.'
+	validation_scope_mismatch: 'Nicht verfügbar.',
+	// Unique indexes, e.g. projects(scope, code) and tags(scope, name COLLATE NOCASE).
+	validation_not_unique: 'Schon vergeben.',
+	validation_invalid_format: 'Ungültiges Format.',
+	// Hook codes (E1 plan, OF-6 and OF-14; E3 plan, T-11).
+	validation_reserved_code: 'Der Code TASK ist reserviert.',
+	validation_project_in_use: 'Das Projekt wird von Tickets verwendet.',
+	validation_project_archived: 'Das Projekt ist archiviert.'
+});
+
+/** Texts that depend on the field as well, keyed by `<field>:<code>`; they win over the above. */
+const FIELD_CODE_MESSAGES: Readonly<Record<string, string>> = Object.freeze({
+	'code:validation_invalid_format': 'Nur 2 bis 6 Großbuchstaben (A–Z).',
+	'code:validation_project_in_use': 'Der Code bleibt fest, weil Tickets das Projekt verwenden.',
+	'id:validation_project_in_use':
+		'Ein Projekt mit Tickets lässt sich nicht löschen. Bitte archivieren.'
 });
 const DEFAULT_FIELD_MESSAGE = 'Ungültige Eingabe.';
+
+function fieldMessage(field: string, code: string): string {
+	const specific = `${field}:${code}`;
+	if (Object.hasOwn(FIELD_CODE_MESSAGES, specific)) {
+		return FIELD_CODE_MESSAGES[specific] ?? DEFAULT_FIELD_MESSAGE;
+	}
+	return Object.hasOwn(FIELD_MESSAGES, code)
+		? (FIELD_MESSAGES[code] ?? DEFAULT_FIELD_MESSAGE)
+		: DEFAULT_FIELD_MESSAGE;
+}
 
 export class DataError extends Error {
 	readonly kind: DataErrorKind;
@@ -74,12 +99,7 @@ function fieldErrorsOf(response: unknown): Record<string, FieldError> {
 	if (!isRecord(data)) return fields;
 	for (const [field, detail] of Object.entries(data)) {
 		const code = isRecord(detail) && typeof detail.code === 'string' ? detail.code : '';
-		fields[field] = {
-			code,
-			message: Object.hasOwn(FIELD_MESSAGES, code)
-				? (FIELD_MESSAGES[code] ?? DEFAULT_FIELD_MESSAGE)
-				: DEFAULT_FIELD_MESSAGE
-		};
+		fields[field] = { code, message: fieldMessage(field, code) };
 	}
 	return fields;
 }

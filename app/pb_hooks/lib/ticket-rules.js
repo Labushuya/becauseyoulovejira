@@ -87,6 +87,19 @@ function parentViolation(input) {
   return '';
 }
 
+// Archived projects (E3 plan, T-11): a ticket must not newly join an archived project, neither
+// on create nor by a project change. Tickets already in it stay editable. `input`:
+//   project          the project id after the write ('' when none)
+//   previousProject  the stored project id before the write ('' on create)
+//   archived         whether the project after the write is archived
+// Returns an error code or '' when the assignment is allowed.
+function archivedProjectViolation(input) {
+  if (input.project === '' || input.project === input.previousProject || !input.archived) {
+    return '';
+  }
+  return 'validation_project_archived';
+}
+
 module.exports = {
   DEFAULT_STATUS: DEFAULT_STATUS,
   DEFAULT_PRIORITY: DEFAULT_PRIORITY,
@@ -96,5 +109,6 @@ module.exports = {
   scopeViolations: scopeViolations,
   completedAtAction: completedAtAction,
   isCalendarDate: isCalendarDate,
-  parentViolation: parentViolation
+  parentViolation: parentViolation,
+  archivedProjectViolation: archivedProjectViolation
 };

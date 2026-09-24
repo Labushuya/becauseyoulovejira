@@ -72,6 +72,43 @@ describe('toDataError', () => {
 		expect(Object.isFrozen(error.fields)).toBe(true);
 	});
 
+	it('has German texts for the project and tag codes, some per field (E3 plan, package 3)', () => {
+		const error = toDataError(
+			responseError(400, {
+				code: { code: 'validation_project_in_use', message: 'x' },
+				id: { code: 'validation_project_in_use', message: 'x' },
+				household: { code: 'validation_project_in_use', message: 'x' },
+				project: { code: 'validation_project_archived', message: 'x' },
+				name: { code: 'validation_not_unique', message: 'Value must be unique.' },
+				scope: { code: 'validation_reserved_code', message: 'x' },
+				owner: { code: 'validation_invalid_format', message: 'x' }
+			})
+		);
+
+		expect(error.fields).toEqual({
+			code: {
+				code: 'validation_project_in_use',
+				message: 'Der Code bleibt fest, weil Tickets das Projekt verwenden.'
+			},
+			id: {
+				code: 'validation_project_in_use',
+				message: 'Ein Projekt mit Tickets lässt sich nicht löschen. Bitte archivieren.'
+			},
+			household: {
+				code: 'validation_project_in_use',
+				message: 'Das Projekt wird von Tickets verwendet.'
+			},
+			project: { code: 'validation_project_archived', message: 'Das Projekt ist archiviert.' },
+			name: { code: 'validation_not_unique', message: 'Schon vergeben.' },
+			scope: { code: 'validation_reserved_code', message: 'Der Code TASK ist reserviert.' },
+			owner: { code: 'validation_invalid_format', message: 'Ungültiges Format.' }
+		});
+		expect(
+			toDataError(responseError(400, { code: { code: 'validation_invalid_format' } })).fields.code
+				?.message
+		).toBe('Nur 2 bis 6 Großbuchstaben (A–Z).');
+	});
+
 	it('maps a 400 without field errors (e.g. a failed create rule) to "server"', () => {
 		const error = toDataError(responseError(400));
 
