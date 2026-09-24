@@ -6,6 +6,7 @@ import type PocketBase from 'pocketbase';
 import type { CalendarDate } from '../domain/berlin-date';
 import { isPriority, isStatus, type Status } from '../domain/status';
 import {
+	REOPEN_STATUS,
 	fromDueInput,
 	toDueInput,
 	type Ticket,
@@ -203,8 +204,8 @@ export function updateTicket(
 }
 
 /**
- * Check mark of the list (E2 plan, T-6): done sets the status "done", removing it sets "open"
- * (OF-E2-3). The hook sets or clears `completed_at`.
+ * Check mark of the list (E2 plan, T-6): done sets the status "done", removing it sets
+ * REOPEN_STATUS (OF-E2-3). The hook sets or clears `completed_at`.
  */
 export function setTicketDone(
 	pb: PocketBase,
@@ -212,7 +213,7 @@ export function setTicketDone(
 	done: boolean,
 	options: RequestOptions = {}
 ): Promise<Ticket> {
-	return updateTicket(pb, id, { status: done ? 'done' : 'open' }, options);
+	return updateTicket(pb, id, { status: done ? 'done' : REOPEN_STATUS }, options);
 }
 
 /** Deletes the ticket; PocketBase deletes its comments and history in the same transaction. */

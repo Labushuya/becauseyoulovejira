@@ -1,0 +1,55 @@
+// Component test for the tickets layout (E2 plan, T-4 and T-5): the list follows the switch in
+// the URL, and the panel area renders the child page next to it.
+
+import { render, screen } from '@testing-library/svelte';
+import { createRawSnippet } from 'svelte';
+import { describe, expect, it, vi } from 'vitest';
+import { TicketListStore } from '$lib/stores/ticket-list.svelte';
+import Layout from './+layout.svelte';
+
+const mocks = vi.hoisted(() => ({
+	page: { url: new URL('http://localhost:3000/') },
+	store: null as unknown
+}));
+
+vi.mock('$app/navigation', () => ({ goto: vi.fn() }));
+vi.mock('$app/state', () => ({ page: mocks.page }));
+vi.mock('$lib/stores/ticket-list.svelte', async (importOriginal) => ({
+	...(await importOriginal<object>()),
+	getTicketListStore: () => mocks.store
+}));
+
+function renderLayout(path: string) {
+	mocks.page.url = new URL(path, 'http://localhost:3000');
+	const store = new TicketListStore(
+		{
+			listOpen: vi.fn(async () => []),
+			listDone: vi.fn(async (page: number) => ({ items: [], page, hasMore: false })),
+			setDone: vi.fn(),
+			update: vi.fn()
+		},
+		{ ensureValid: () => true, logout: vi.fn() }
+	);
+	const activate = vi.spyOn(store, 'activate');
+	mocks.store = store;
+	const children = createRawSnippet(() => ({ render: () => '<p>Panel</p>' }));
+	render(Layout, { props: { children } });
+	return { store, activate };
+}
+
+describe('tickets layout', () => {
+	it('loads the list without done tickets by default', () => {
+		const { activate } = renderLayout('/');
+
+		expect(activate).toHaveBeenCalledExactlyOnceWith(false);
+		expect(screen.getByRole('heading', { name: 'Alle Tickets' })).toBeTruthy();
+		expect(screen.getByText('Panel')).toBeTruthy();
+	});
+
+	it('shows done tickets when the URL says so (reload, back and forward)', () => {
+		const { activate, store } = renderLayout('/tickets/abc123def456ghi?erledigte=1');
+
+		expect(activate).toHaveBeenCalledExactlyOnceWith(true);
+		expect(store.showDone).toBe(true);
+	});
+});

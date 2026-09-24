@@ -53,6 +53,12 @@ export interface TicketDraft {
 	due: CalendarDate | null;
 }
 
+/**
+ * Status after removing the check mark of a done ticket (OF-E2-3, recommendation until decided):
+ * the status before "done" is not stored. Only "Rückgängig" right after checking restores it.
+ */
+export const REOPEN_STATUS: Status = 'open';
+
 /** Changed fields of an update; only these are sent (ADR-0006 section 5). */
 export type TicketPatch = Partial<TicketDraft>;
 

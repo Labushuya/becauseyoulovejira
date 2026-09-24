@@ -8,7 +8,6 @@ import { fireEvent, render, screen, within } from '@testing-library/svelte';
 import { createRawSnippet, tick } from 'svelte';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import Layout from './+layout.svelte';
-import StartPage from './+page.svelte';
 
 const mocks = vi.hoisted(() => {
 	const stopKeepAlive = vi.fn();
@@ -105,16 +104,8 @@ describe('app layout', () => {
 		expect(existsSync(join(routes, 'login', '+page.svelte'))).toBe(true);
 		expect(existsSync(join(import.meta.dirname, 'login'))).toBe(false);
 		expect(existsSync(join(routes, '+page.svelte'))).toBe(false);
-	});
-});
-
-describe('start page', () => {
-	it('shows the empty state until the ticket list replaces it', () => {
-		const { container } = render(StartPage);
-
-		expect(container.textContent?.trim()).toBe(
-			'Hier erscheinen bald deine Tickets – die Ticketansicht folgt in der nächsten Ausbaustufe.'
-		);
-		expect(container.textContent).not.toMatch(/PocketBase/i);
+		// The route / exists only as the ticket list (E2 plan, package 5).
+		expect(existsSync(join(import.meta.dirname, '+page.svelte'))).toBe(false);
+		expect(existsSync(join(import.meta.dirname, '(tickets)', '+page.svelte'))).toBe(true);
 	});
 });
