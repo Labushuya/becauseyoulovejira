@@ -34,9 +34,12 @@ const EXIT_SIGNALS = ['SIGINT', 'SIGTERM', 'SIGBREAK', 'SIGHUP'];
 
 /**
  * Starts a disposable PocketBase instance.
- * @param {{ publicFiles?: string }} [options] `publicFiles`: folder copied into the public folder
- *   of the instance (e.g. the web build); without it the public folder stays empty.
- * @returns {Promise<{ url: string, email: string, password: string, stop: () => Promise<void> }>}
+ * @param {{ publicFiles?: string, prepareDataDir?: (dataDir: string) => Promise<void> }} [options]
+ *   `publicFiles`: folder copied into the public folder of the instance (e.g. the web build);
+ *   without it the public folder stays empty. `prepareDataDir`: fills the still empty data folder
+ *   before `superuser upsert` and `serve` (e.g. with an unpacked backup).
+ * @returns {Promise<{ url: string, email: string, password: string, dataDir: string,
+ *   stop: () => Promise<void> }>} `dataDir` is removed by `stop()`.
  */
 export async function startPocketBase(options = {}) {
 	assertExecutable();
@@ -56,6 +59,9 @@ export async function startPocketBase(options = {}) {
 		await mkdir(publicDir);
 		if (options.publicFiles !== undefined) {
 			await cp(options.publicFiles, publicDir, { recursive: true });
+		}
+		if (options.prepareDataDir !== undefined) {
+			await options.prepareDataDir(dataDir);
 		}
 		await cp(APP_HOOKS_DIR, hooksDir, { recursive: true });
 		if (existsSync(FIXTURE_HOOKS_DIR)) {
@@ -90,6 +96,7 @@ export async function startPocketBase(options = {}) {
 			url,
 			email,
 			password,
+			dataDir,
 			stop: () => stop(state, guard)
 		};
 	} catch (error) {
