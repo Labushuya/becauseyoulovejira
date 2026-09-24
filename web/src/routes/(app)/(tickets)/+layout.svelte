@@ -1,15 +1,17 @@
 <script lang="ts">
 	import { untrack } from 'svelte';
 	import { page } from '$app/state';
-	import TicketList from '$lib/components/TicketList.svelte';
+	import TicketTable from '$lib/components/TicketTable.svelte';
+	import { getCatalogStore } from '$lib/stores/catalog.svelte';
 	import { getTicketListStore } from '$lib/stores/ticket-list.svelte';
 	import { showDoneFrom } from '$lib/ticket-links';
 
-	// List plus panel area (E2 plan, T-4): the list stays in place while the detail panel opens
-	// and closes, so scroll position and loaded pages survive.
+	// Table plus panel area (E2 plan, T-4; E3 plan, T-3 and package 5): the table stays in place
+	// while the detail panel opens and closes, so scroll position and loaded pages survive.
 	let { children } = $props();
 
 	const tickets = getTicketListStore();
+	const catalog = getCatalogStore();
 	const showDone = $derived(showDoneFrom(page.url));
 	const activeId = $derived(page.params.id ?? null);
 	const withPanel = $derived(page.route.id !== '/(app)/(tickets)');
@@ -24,7 +26,7 @@
 </script>
 
 <div class="tickets" class:with-panel={withPanel}>
-	<TicketList store={tickets} {activeId} {creating} />
+	<TicketTable store={tickets} {catalog} {activeId} {creating} />
 	{@render children()}
 </div>
 

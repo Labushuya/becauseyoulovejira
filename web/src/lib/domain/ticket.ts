@@ -32,9 +32,15 @@ export interface TicketSummary {
 	priority: Priority;
 	/** Due calendar date, null without one. */
 	due: CalendarDate | null;
+	/** ID of the related project, null without one; names come from the catalog (E3 plan, T-16). */
+	projectId: string | null;
+	/** IDs of the related tags in stored order. */
+	tagIds: string[];
+	/** Expanded project; only a fallback while the catalog does not know it. */
 	project: ProjectRef | null;
+	/** Expanded tags; only a fallback while the catalog does not know them. */
 	tags: TagRef[];
-	/** True if a recurrence rule created the ticket (E4). */
+	/** True if a recurrence rule created the ticket (E5). */
 	recurring: boolean;
 	/** UTC timestamp of PocketBase (`YYYY-MM-DD HH:MM:SS.sssZ`), null unless done. */
 	completedAt: string | null;

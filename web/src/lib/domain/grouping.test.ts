@@ -30,6 +30,8 @@ function row(id: string, overrides: Partial<TicketSummary> = {}): TicketSummary 
 		status: 'open',
 		priority: 'medium',
 		due: null,
+		projectId: null,
+		tagIds: [],
 		project: null,
 		tags: [],
 		recurring: false,

@@ -60,6 +60,8 @@ function ticket(overrides: Partial<Ticket> = {}): Ticket {
 		status: 'in_progress',
 		priority: 'high',
 		due: '2026-10-01',
+		projectId: null,
+		tagIds: [],
 		project: null,
 		tags: [],
 		recurring: false,

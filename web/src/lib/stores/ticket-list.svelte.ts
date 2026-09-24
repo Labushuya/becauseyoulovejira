@@ -1,5 +1,6 @@
-// State of the ticket list (ADR-0006 sections 1 to 5, E2 plan package 5). Open tickets are loaded
-// in full and sorted client side; done tickets are loaded page by page in the server order. The
+// State of the ticket list (ADR-0006 sections 1 to 5; E2 plan, package 5; E3 plan, package 5).
+// Open tickets are loaded in full and sorted client side; done tickets are loaded page by page in
+// the server order. The
 // store is created per app layout and handed out through a typed context, so a logout leaves no
 // data behind. Own answers and realtime events (ADR-0007) go through the same idempotent `upsert`
 // and `remove`; after a reconnection the store reconciles once with the server.
@@ -134,6 +135,19 @@ export class TicketListStore {
 	/** Open tickets in the default order (P-2), including rows that were just checked. */
 	get open(): readonly TicketSummary[] {
 		return this.#openList;
+	}
+
+	/**
+	 * Rows of the table above the section "Erledigt" (E3 plan, package 5). Equal to `open` until
+	 * sorting (package 9) and filters (package 10) come in.
+	 */
+	get visible(): readonly TicketSummary[] {
+		return this.#openList;
+	}
+
+	/** Number of tickets that are not done (header counter, T-18); just checked rows count as done. */
+	get openCount(): number {
+		return this.#open.size;
 	}
 
 	/** Loaded done tickets, most recently completed first (OF-E2-4). */

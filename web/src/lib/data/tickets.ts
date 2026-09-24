@@ -81,6 +81,8 @@ export function toTicketSummary(record: TicketRecord): TicketSummary {
 		status: record.status,
 		priority: record.priority,
 		due: toDueInput(record.due) || null,
+		projectId: record.project || null,
+		tagIds: [...(record.tags ?? [])],
 		project: record.expand?.project ? toProjectRef(record.expand.project) : null,
 		tags: (record.expand?.tags ?? []).map(toTagRef),
 		recurring: record.recurrence !== '',
