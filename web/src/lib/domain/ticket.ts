@@ -4,6 +4,11 @@
 import { isCalendarDate, type CalendarDate } from './berlin-date';
 import type { Priority, Status } from './status';
 
+/** Length limits of the schema (app/pb_migrations; tests/unit/web-limits.test.mjs keeps them equal). */
+export const TITLE_MAX_LENGTH = 200;
+export const DESCRIPTION_MAX_LENGTH = 100_000;
+export const COMMENT_MAX_LENGTH = 20_000;
+
 /** Project as shown next to a ticket (expanded relation). */
 export interface ProjectRef {
 	id: string;
