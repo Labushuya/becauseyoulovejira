@@ -19,6 +19,9 @@ import type { SessionGuard } from './ticket-list.svelte';
 /** Fields editable in the panel (E2 plan, section 2; E3 plan, T-13). */
 export type EditableField = 'title' | 'description' | 'status' | 'priority' | 'due' | 'project';
 
+/** Fields with their own saving state and error: the editable ones plus the tags (T-14). */
+export type FieldKey = EditableField | 'tags';
+
 /** Fields that save at once when chosen (T-7, T-13). */
 export type ChoiceField = 'status' | 'priority' | 'project';
 
@@ -56,7 +59,8 @@ const DRAFT_FIELDS: readonly (keyof TicketDraft)[] = [
 	'status',
 	'priority',
 	'due',
-	'project'
+	'project',
+	'tags'
 ];
 
 /** The part of the list store the panel updates, so the list shows a change at once. */
@@ -117,8 +121,8 @@ export class TicketDetailStore {
 	readonly #list: TicketListSync;
 
 	readonly #drafts = new SvelteMap<EditableField, string>();
-	readonly #saving = new SvelteSet<EditableField>();
-	readonly #fieldErrors = new SvelteMap<EditableField, string>();
+	readonly #saving = new SvelteSet<FieldKey>();
+	readonly #fieldErrors = new SvelteMap<FieldKey, string>();
 	#controller: AbortController | null = null;
 	#live: LiveSource | null = null;
 	/** Ends the subscription of the shown ticket. */
@@ -129,6 +133,8 @@ export class TicketDetailStore {
 	#id = $state<string | null>(null);
 	#own = $state.raw<Ticket | null>(null);
 	#state = $state<DetailState>('idle');
+	/** Text in the input of the tag picker (T-14), kept here for the question on leaving. */
+	#tagInput = $state('');
 	#error = $state<string | null>(null);
 
 	/** The loaded ticket, or the list's version of it if that one is newer (check mark). */
@@ -173,11 +179,11 @@ export class TicketDetailStore {
 		return this.#drafts.has(field);
 	}
 
-	isSaving(field: EditableField): boolean {
+	isSaving(field: FieldKey): boolean {
 		return this.#saving.has(field);
 	}
 
-	fieldError(field: EditableField): string | null {
+	fieldError(field: FieldKey): string | null {
 		return this.#fieldErrors.get(field) ?? null;
 	}
 
@@ -193,6 +199,40 @@ export class TicketDetailStore {
 	get unsavedDescription(): boolean {
 		const draft = this.#drafts.get('description');
 		return draft !== undefined && this.#ticket !== null && draft !== this.#ticket.description;
+	}
+
+	/** Text typed into the tag picker and not yet turned into a tag. */
+	get tagInput(): string {
+		return this.#tagInput;
+	}
+
+	setTagInput(text: string): void {
+		this.#tagInput = text;
+	}
+
+	/**
+	 * True while leaving the panel would lose typed text (question "Änderungen verwerfen?"): a
+	 * changed description or a name in the tag picker (E2 plan, section 10; E3 plan, T-14).
+	 */
+	get hasUnsavedInput(): boolean {
+		return this.unsavedDescription || this.#tagInput.trim() !== '';
+	}
+
+	/** Adds a tag to the shown ticket and saves the whole list at once (T-14). */
+	addTag(id: string): Promise<boolean> {
+		const ticket = this.#ticket;
+		if (ticket === null || ticket.tagIds.includes(id)) return Promise.resolve(true);
+		return this.#saveTags(ticket, [...ticket.tagIds, id]);
+	}
+
+	/** Removes a tag from the shown ticket and saves the whole list at once. */
+	removeTag(id: string): Promise<boolean> {
+		const ticket = this.#ticket;
+		if (ticket === null || !ticket.tagIds.includes(id)) return Promise.resolve(true);
+		return this.#saveTags(
+			ticket,
+			ticket.tagIds.filter((tagId) => tagId !== id)
+		);
 	}
 
 	/**
@@ -258,7 +298,7 @@ export class TicketDetailStore {
 	}
 
 	/** Marks a field as invalid without a request (e.g. an incomplete date in the browser). */
-	reject(field: EditableField, message: string): void {
+	reject(field: FieldKey, message: string): void {
 		this.#fieldErrors.set(field, message);
 	}
 
@@ -396,10 +436,37 @@ export class TicketDetailStore {
 		this.#drafts.clear();
 		this.#saving.clear();
 		this.#fieldErrors.clear();
+		this.#tagInput = '';
 		this.#id = null;
 		this.#own = null;
 		this.#state = 'idle';
 		this.#error = null;
+	}
+
+	/**
+	 * Saves the tags of a ticket. One save at a time: a change during a running save is refused
+	 * (the picker is locked meanwhile). A failure keeps the old tags and shows the error.
+	 */
+	async #saveTags(ticket: Ticket, tags: string[]): Promise<boolean> {
+		if (this.#saving.has('tags')) return false;
+		if (!this.#session.ensureValid()) return false;
+		this.#saving.add('tags');
+		this.#fieldErrors.delete('tags');
+		try {
+			const saved = await this.#data.update(ticket.id, { tags });
+			this.#list.upsert(saved);
+			if (saved.id === this.#id) this.upsert(saved);
+			return true;
+		} catch (error) {
+			const failure = toDataError(error);
+			if (failure.kind === 'session') this.#session.logout();
+			else if (failure.kind !== 'aborted' && ticket.id === this.#id) {
+				this.#fieldErrors.set('tags', failure.fields.tags?.message ?? failure.message);
+			}
+			return false;
+		} finally {
+			this.#saving.delete('tags');
+		}
 	}
 
 	/** Subscribes to the shown ticket (updates with description, deletion elsewhere). */

@@ -101,8 +101,8 @@ function dueBody(due: CalendarDate | null): string {
 }
 
 /** Request body of a patch: only the given fields (ADR-0006 section 5). */
-function patchBody(patch: TicketPatch): Record<string, string> {
-	const body: Record<string, string> = {};
+function patchBody(patch: TicketPatch): Record<string, string | string[]> {
+	const body: Record<string, string | string[]> = {};
 	if (patch.title !== undefined) body.title = patch.title;
 	if (patch.description !== undefined) body.description = patch.description;
 	if (patch.status !== undefined) body.status = patch.status;
@@ -110,6 +110,8 @@ function patchBody(patch: TicketPatch): Record<string, string> {
 	if (patch.due !== undefined) body.due = dueBody(patch.due);
 	// '' removes the project; the hook gives the ticket a key in the new number range.
 	if (patch.project !== undefined) body.project = patch.project ?? '';
+	// The whole list: PocketBase replaces the relation, the history hook records the difference.
+	if (patch.tags !== undefined) body.tags = [...patch.tags];
 	return body;
 }
 
@@ -185,7 +187,8 @@ export function createTicket(pb: PocketBase, draft: TicketDraft, { signal }: Req
 				status: draft.status,
 				priority: draft.priority,
 				due: dueBody(draft.due),
-				project: draft.project ?? ''
+				project: draft.project ?? '',
+				tags: [...(draft.tags ?? [])]
 			},
 			{ fields: TICKET_DETAIL_FIELDS, expand: TICKET_EXPAND, signal }
 		);

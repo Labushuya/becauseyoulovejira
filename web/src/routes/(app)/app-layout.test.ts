@@ -84,7 +84,13 @@ vi.mock('$lib/stores/ticket-list.svelte', async (importOriginal) => {
 });
 vi.mock('$lib/stores/catalog.svelte', async (importOriginal) => ({
 	...(await importOriginal<object>()),
-	catalogData: () => ({ listProjects: async () => [], listTags: async () => [] })
+	catalogData: () => ({
+		listProjects: async () => [],
+		listTags: async () => [],
+		createTag: async () => {
+			throw new Error('not used');
+		}
+	})
 }));
 
 function ticket(id: string, status: TicketSummary['status'] = 'open'): TicketSummary {

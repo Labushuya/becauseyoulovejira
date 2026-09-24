@@ -11,11 +11,17 @@ import { SvelteMap, SvelteSet } from 'svelte/reactivity';
 import { toDataError } from '$lib/data/errors';
 import type { RequestOptions } from '$lib/data/options';
 import { listProjects } from '$lib/data/projects';
-import { listTags } from '$lib/data/tags';
+import { createTag, listTags } from '$lib/data/tags';
 import { historyLookups, type HistoryLookups } from '$lib/domain/history-format';
 import { compareTitles } from '$lib/domain/ordering';
 import type { Project } from '$lib/domain/project';
-import type { Tag } from '$lib/domain/tag';
+import {
+	findTagByName,
+	normalizeTagName,
+	tagNameKey,
+	tagNameProblem,
+	type Tag
+} from '$lib/domain/tag';
 import type { ProjectRef, TagRef, TicketSummary } from '$lib/domain/ticket';
 import { hold, type LiveSource } from './realtime';
 import type { LoadState, SessionGuard } from './ticket-list.svelte';
@@ -24,12 +30,17 @@ import type { LoadState, SessionGuard } from './ticket-list.svelte';
 export interface CatalogData {
 	listProjects(options: RequestOptions): Promise<Project[]>;
 	listTags(options: RequestOptions): Promise<Tag[]>;
+	createTag(name: string): Promise<Tag>;
 }
+
+/** Outcome of `ensureTag`; a failure carries a message unless nothing is to be shown. */
+export type EnsureTagResult = { ok: true; tag: Tag } | { ok: false; message: string | null };
 
 export function catalogData(pb: PocketBase): CatalogData {
 	return {
 		listProjects: (options) => listProjects(pb, options),
-		listTags: (options) => listTags(pb, options)
+		listTags: (options) => listTags(pb, options),
+		createTag: (name) => createTag(pb, name)
 	};
 }
 
@@ -90,6 +101,8 @@ export class CatalogStore {
 	readonly #projects = new Records<Project>();
 	readonly #tags = new Records<Tag>();
 	#controller: AbortController | null = null;
+	/** Running creations by name key, so a double Enter creates one tag (T-14). */
+	readonly #creating = new SvelteMap<string, Promise<EnsureTagResult>>();
 
 	#state = $state<LoadState>('idle');
 	#error = $state<string | null>(null);
@@ -185,6 +198,27 @@ export class CatalogStore {
 		this.#projects.remove(id);
 	}
 
+	/**
+	 * Tag for a name typed in the tag picker (T-14): an existing one in any spelling, else a new
+	 * one. Concurrent calls for the same name share one request. If the server still reports the
+	 * name as taken (a tag from another tab that has not arrived yet), the catalog loads again and
+	 * the existing tag is used.
+	 */
+	ensureTag(name: string): Promise<EnsureTagResult> {
+		const problem = tagNameProblem(name);
+		if (problem !== null) return Promise.resolve({ ok: false, message: problem });
+		const existing = findTagByName(this.tags, name);
+		if (existing !== null) return Promise.resolve({ ok: true, tag: existing });
+		const key = tagNameKey(name);
+		const running = this.#creating.get(key);
+		if (running !== undefined) return running;
+		const created = this.#createTag(normalizeTagName(name)).finally(() => {
+			this.#creating.delete(key);
+		});
+		this.#creating.set(key, created);
+		return created;
+	}
+
 	upsertTag(tag: Tag): void {
 		this.#tags.upsert(tag);
 	}
@@ -238,8 +272,27 @@ export class CatalogStore {
 		this.#abort();
 		this.#projects.clear();
 		this.#tags.clear();
+		this.#creating.clear();
 		this.#state = 'idle';
 		this.#error = null;
+	}
+
+	async #createTag(name: string): Promise<EnsureTagResult> {
+		if (!this.#session.ensureValid()) return { ok: false, message: null };
+		try {
+			const tag = await this.#data.createTag(name);
+			this.upsertTag(tag);
+			return { ok: true, tag };
+		} catch (error) {
+			const failure = toDataError(error);
+			if (failure.fields.name?.code === 'validation_not_unique') {
+				await this.#load(true);
+				const existing = findTagByName(this.tags, name);
+				if (existing !== null) return { ok: true, tag: existing };
+			}
+			const fieldMessage = failure.fields.name?.message;
+			return { ok: false, message: fieldMessage ?? this.#failureMessage(error) };
+		}
 	}
 
 	#abort(): void {

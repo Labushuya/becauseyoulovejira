@@ -59,7 +59,8 @@ const HISTORY: HistoryEntry[] = [
 async function loadedCatalog(projects: Project[] = [], tags: Tag[] = []) {
 	const data = {
 		listProjects: vi.fn<CatalogData['listProjects']>(async () => projects),
-		listTags: vi.fn<CatalogData['listTags']>(async () => tags)
+		listTags: vi.fn<CatalogData['listTags']>(async () => tags),
+		createTag: vi.fn<CatalogData['createTag']>()
 	} satisfies CatalogData;
 	const catalog = new CatalogStore(data, { ensureValid: () => true, logout: vi.fn() });
 	await catalog.load();
@@ -276,7 +277,8 @@ describe('history names from the catalog (E3 plan, T-16)', () => {
 			listProjects: vi.fn<CatalogData['listProjects']>(
 				() => new Promise((resolve) => (finish = resolve))
 			),
-			listTags: vi.fn<CatalogData['listTags']>(async () => [GARDEN])
+			listTags: vi.fn<CatalogData['listTags']>(async () => [GARDEN]),
+			createTag: vi.fn<CatalogData['createTag']>()
 		} satisfies CatalogData;
 		const catalog = new CatalogStore(catalogData, { ensureValid: () => true, logout: vi.fn() });
 		void catalog.load();
@@ -296,7 +298,8 @@ describe('history names from the catalog (E3 plan, T-16)', () => {
 				.fn<CatalogData['listProjects']>()
 				.mockRejectedValueOnce(new DataError('network'))
 				.mockResolvedValueOnce([HOUSE, OLD]),
-			listTags: vi.fn<CatalogData['listTags']>(async () => [GARDEN])
+			listTags: vi.fn<CatalogData['listTags']>(async () => [GARDEN]),
+			createTag: vi.fn<CatalogData['createTag']>()
 		} satisfies CatalogData;
 		const catalog = new CatalogStore(catalogData, { ensureValid: () => true, logout: vi.fn() });
 		await catalog.load();

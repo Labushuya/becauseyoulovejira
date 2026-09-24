@@ -64,6 +64,8 @@ export interface TicketDraft {
 	due: CalendarDate | null;
 	/** Project ID, null without a project (E3 plan, T-13); a change gives the ticket a new key. */
 	project: string | null;
+	/** Tag IDs in the chosen order (T-14). */
+	tags: string[];
 }
 
 /**

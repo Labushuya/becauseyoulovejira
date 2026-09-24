@@ -14,13 +14,14 @@
 	import PrioritySelect from './PrioritySelect.svelte';
 	import ProjectSelect from './ProjectSelect.svelte';
 	import StatusSelect from './StatusSelect.svelte';
+	import TagPicker from './TagPicker.svelte';
 
-	// Detail panel (E2 plan, package 7; E3 plan, T-13): header with key and "Schließen", title,
-	// status, priority, due date, project and description editable in place, the remaining fields
-	// for display. Project and tags come from the catalog.
+	// Detail panel (E2 plan, package 7; E3 plan, T-13 and T-14): header with key and "Schließen",
+	// title, status, priority, due date, project, tags and description editable in place, the
+	// remaining fields for display. Project and tags come from the catalog.
 	// Escape closes the panel unless a form field has the focus (fields handle Escape
-	// themselves). Comments and history (packages 9 and 10) come in through `activity`.
-	// "Löschen …" asks in a modal dialog before deleting for good (package 11).
+	// themselves). Comments and history (E2 plan, packages 9 and 10) come in through `activity`.
+	// "Löschen …" asks in a modal dialog before deleting for good (E2 plan, package 11).
 	let {
 		store,
 		catalog,
@@ -48,6 +49,7 @@
 		due: `${uid}-due`,
 		project: `${uid}-project`,
 		projectHint: `${uid}-project-hint`,
+		tags: `${uid}-tags`,
 		description: `${uid}-description`
 	};
 	const errorIdOf = (field: string) => `${uid}-${field}-error`;
@@ -134,6 +136,16 @@
 		}
 	}
 
+	/** New tag from the picker: an existing one in another spelling or a new one, then assigned. */
+	async function createTag(name: string): Promise<boolean> {
+		const result = await catalog.ensureTag(name);
+		if (!result.ok) {
+			if (result.message !== null) store.reject('tags', result.message);
+			return false;
+		}
+		return store.addTag(result.tag.id);
+	}
+
 	function onDescriptionKeydown(event: KeyboardEvent) {
 		if (event.key === 'Enter' && (event.ctrlKey || event.metaKey)) {
 			event.preventDefault();
@@ -142,7 +154,7 @@
 	}
 </script>
 
-{#snippet fieldError(field: 'status' | 'priority' | 'due' | 'project' | 'description')}
+{#snippet fieldError(field: 'status' | 'priority' | 'due' | 'project' | 'tags' | 'description')}
 	{@const error = store.fieldError(field)}
 	{#if error}
 		<p class="field-error" id={errorIdOf(field)}><ErrorIcon /><span>{error}</span></p>
@@ -268,14 +280,22 @@
 				{@render fieldError('project')}
 			</div>
 
-			{#if ticketTags.length > 0}
-				<span class="term">Tags</span>
-				<span class="detail tags">
-					{#each ticketTags as tag (tag.id)}
-						<span class="tag">{tag.name}</span>
-					{/each}
-				</span>
-			{/if}
+			<label for={ids.tags}>Tags</label>
+			<div class="control">
+				<TagPicker
+					id={ids.tags}
+					selected={ticketTags}
+					tags={catalog.tags}
+					bind:text={() => store.tagInput, (text) => store.setTagInput(text)}
+					busy={store.isSaving('tags')}
+					error={store.fieldError('tags')}
+					errorId={errorIdOf('tags')}
+					onadd={(tagId) => store.addTag(tagId)}
+					onremove={(tagId) => store.removeTag(tagId)}
+					oncreate={createTag}
+				/>
+				{@render fieldError('tags')}
+			</div>
 			{#if ticket.recurring}
 				<span class="term">Wiederholung</span>
 				<span class="detail">wiederkehrend</span>
@@ -436,20 +456,6 @@
 		background: var(--color-surface);
 		border: 1px solid var(--color-text-muted);
 		border-radius: 0.375rem;
-	}
-
-	.tags {
-		display: flex;
-		flex-wrap: wrap;
-		gap: 0.25rem;
-	}
-
-	.tag {
-		padding: 0 0.375rem;
-		font-size: 0.75rem;
-		color: var(--color-text-muted);
-		border: 1px solid var(--color-line);
-		border-radius: 0.25rem;
 	}
 
 	.description {

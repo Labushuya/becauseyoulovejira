@@ -7,8 +7,13 @@ import { beforeAll, describe, expect, it } from 'vitest';
 import { superuserClient } from '../support/api.mjs';
 import { createOwner, historyOf, uniqueCode, uniqueSuffix } from '../support/scenario.mjs';
 import { DataError } from '../../web/src/lib/data/errors.ts';
+import { listHistory } from '../../web/src/lib/data/history.ts';
 import { listProjects } from '../../web/src/lib/data/projects.ts';
-import { listTags } from '../../web/src/lib/data/tags.ts';
+import { createTag, listTags } from '../../web/src/lib/data/tags.ts';
+import {
+	describeHistoryEntry,
+	historyLookups
+} from '../../web/src/lib/domain/history-format.ts';
 import {
 	createTicket,
 	deleteTicket,
@@ -292,6 +297,26 @@ describe('web data layer: tickets', () => {
 				['key', `${code}-1`, 'TASK-3']
 			])
 		);
+	});
+
+	it('saves the whole tag list and records "Tag hinzugefügt" (E3 plan, T-14)', async () => {
+		const owner = await createOwner(superuser);
+		const garden = await createTag(owner.client, `garten-${uniqueSuffix()}`);
+		const call = await createTag(owner.client, `anrufen-${uniqueSuffix()}`);
+		const ticket = await createTicket(owner.client, draft({ tags: [garden.id] }));
+		expect(ticket.tagIds).toEqual([garden.id]);
+
+		const added = await updateTicket(owner.client, ticket.id, { tags: [garden.id, call.id] });
+		expect(added.tagIds).toEqual([garden.id, call.id]);
+		expect(added.tags.map((tag) => tag.name)).toEqual([garden.name, call.name]);
+		const removed = await updateTicket(owner.client, ticket.id, { tags: [call.id] });
+		expect(removed.tagIds).toEqual([call.id]);
+
+		const lookups = historyLookups([], [garden, call]);
+		const texts = (await listHistory(owner.client, ticket.id))
+			.filter((entry) => entry.field === 'tags')
+			.map((entry) => describeHistoryEntry(entry, lookups, owner.id).text);
+		expect(texts).toEqual([`Tag entfernt: ${garden.name}`, `Tag hinzugefügt: ${call.name}`]);
 	});
 
 	it('creates a ticket in a project and refuses an archived one at the field project', async () => {

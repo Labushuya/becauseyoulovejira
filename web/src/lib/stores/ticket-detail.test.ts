@@ -53,11 +53,15 @@ let clock = 0;
 const HOUSE = { id: 'proj00000000001', name: 'Haushalt', code: 'HAUS', archived: false };
 
 /** Applies a patch like the server: `project` is an ID and changes the key (E3 plan, T-13). */
-function applyPatch(current: Ticket, { project, ...fields }: TicketPatch): Ticket {
-	if (project === undefined) return { ...current, ...fields };
+function applyPatch(current: Ticket, { project, tags, ...fields }: TicketPatch): Ticket {
+	const next: Ticket = { ...current, ...fields };
+	if (tags !== undefined) {
+		next.tagIds = [...tags];
+		next.tags = tags.map((id) => ({ id, name: id }));
+	}
+	if (project === undefined) return next;
 	return {
-		...current,
-		...fields,
+		...next,
 		projectId: project,
 		project: project === HOUSE.id ? HOUSE : null,
 		key: project === null ? 'TASK-10' : 'HAUS-1'
@@ -77,12 +81,12 @@ function setup(initial: Ticket = ticket()) {
 			};
 			return current;
 		}),
-		create: vi.fn(async ({ project, ...draft }: TicketDraft): Promise<Ticket> => ({
+		create: vi.fn(async ({ project, tags, ...draft }: TicketDraft): Promise<Ticket> => ({
 			...ticket(draft),
 			id: 'new000000000000',
 			key: project === null ? 'TASK-9' : 'HAUS-1',
 			projectId: project,
-			tagIds: [],
+			tagIds: tags,
 			project: project === HOUSE.id ? HOUSE : null,
 			tags: [],
 			recurring: false,
@@ -380,7 +384,8 @@ describe('creating', () => {
 		status: 'open',
 		priority: 'medium',
 		due: null,
-		project: null
+		project: null,
+		tags: []
 	};
 
 	it('creates with a trimmed title, adds the ticket to the list and shows it', async () => {
@@ -455,7 +460,8 @@ describe('project (E3 plan, T-13)', () => {
 			status: 'open',
 			priority: 'medium',
 			due: null,
-			project: HOUSE.id
+			project: HOUSE.id,
+			tags: []
 		};
 
 		const result = await store.create(draft);
@@ -526,6 +532,83 @@ describe('project (E3 plan, T-13)', () => {
 		await store.choose('priority', 'high');
 
 		expect(list.announce).not.toHaveBeenCalled();
+	});
+});
+
+describe('tags (E3 plan, T-14)', () => {
+	const GARDEN = 'tag000000000001';
+	const CALL = 'tag000000000002';
+
+	it('adds and removes a tag by saving the whole list at once', async () => {
+		const { store, data, list } = await opened(ticket({ tagIds: [GARDEN] }));
+
+		expect(await store.addTag(CALL)).toBe(true);
+		expect(data.update).toHaveBeenLastCalledWith(ID, { tags: [GARDEN, CALL] });
+		expect(store.ticket?.tagIds).toEqual([GARDEN, CALL]);
+		expect(list.upsert).toHaveBeenLastCalledWith(
+			expect.objectContaining({ tagIds: [GARDEN, CALL] })
+		);
+
+		expect(await store.removeTag(GARDEN)).toBe(true);
+		expect(data.update).toHaveBeenLastCalledWith(ID, { tags: [CALL] });
+		expect(store.ticket?.tagIds).toEqual([CALL]);
+	});
+
+	it('sends nothing for a tag the ticket has or lacks already', async () => {
+		const { store, data } = await opened(ticket({ tagIds: [GARDEN] }));
+
+		expect(await store.addTag(GARDEN)).toBe(true);
+		expect(await store.removeTag(CALL)).toBe(true);
+		expect(data.update).not.toHaveBeenCalled();
+	});
+
+	it('refuses a second change while one is saved', async () => {
+		const { store, data } = await opened();
+		const answer = deferred<Ticket>();
+		data.update.mockImplementationOnce(() => answer.promise);
+
+		const first = store.addTag(GARDEN);
+		expect(store.isSaving('tags')).toBe(true);
+		expect(await store.addTag(CALL)).toBe(false);
+		answer.resolve(ticket({ tagIds: [GARDEN], updated: '2026-09-24 11:00:00.000Z' }));
+
+		expect(await first).toBe(true);
+		expect(data.update).toHaveBeenCalledOnce();
+		expect(store.isSaving('tags')).toBe(false);
+	});
+
+	it('keeps the tags and shows the error at the field when saving fails', async () => {
+		const { store, data } = await opened(ticket({ tagIds: [GARDEN] }));
+		data.update.mockRejectedValueOnce(new DataError('network'));
+
+		expect(await store.addTag(CALL)).toBe(false);
+
+		expect(store.ticket?.tagIds).toEqual([GARDEN]);
+		expect(store.fieldError('tags')).toMatch(/Server nicht erreichbar/);
+	});
+
+	it('counts a name in the tag picker as unsaved input until the panel is reset', async () => {
+		const { store } = await opened();
+		expect(store.hasUnsavedInput).toBe(false);
+
+		store.setTagInput('   ');
+		expect(store.hasUnsavedInput).toBe(false);
+		store.setTagInput(' Steuer');
+		expect(store.hasUnsavedInput).toBe(true);
+		expect(store.tagInput).toBe(' Steuer');
+
+		store.reset();
+		expect(store.tagInput).toBe('');
+		expect(store.hasUnsavedInput).toBe(false);
+	});
+
+	it('counts a changed description as unsaved input as before', async () => {
+		const { store } = await opened();
+
+		store.edit('description');
+		store.setDraft('description', 'neu');
+
+		expect(store.hasUnsavedInput).toBe(true);
 	});
 });
 
