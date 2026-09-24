@@ -2,25 +2,27 @@
 	import { tick } from 'svelte';
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
+	import { hasFilters, resetFilters } from '$lib/domain/list-query';
 	import type { TicketSummary } from '$lib/domain/ticket';
 	import type { CatalogStore } from '$lib/stores/catalog.svelte';
 	import type { TicketListStore } from '$lib/stores/ticket-list.svelte';
 	import {
 		NEW_TICKET_LINK_ID,
 		newTicketHref,
-		showDoneFrom,
 		ticketHref,
+		withListQuery,
 		withShowDone
 	} from '$lib/ticket-links';
 	import ErrorIcon from './ErrorIcon.svelte';
 	import SectionBar from './SectionBar.svelte';
 	import TicketTableRow from './TicketTableRow.svelte';
 
-	// Ticket table (E3 plan, T-4 and package 5; E2 plan, P-1 to P-5): section bar "Aufgaben" with
-	// the switch "Erledigte anzeigen" (?erledigte=1), open tickets in the default order and, in a
-	// section of their own below, the done tickets with "Weitere laden". Project and tags come
-	// from the catalog. Wider than its space (next to the panel), the table scrolls sideways in a
-	// named region; the page itself does not.
+	// Ticket table (E3 plan, T-4 and packages 5 and 10; E2 plan, P-1 to P-5): section bar
+	// "Aufgaben" with the number of shown tickets and the switch "Erledigte anzeigen"
+	// (?erledigte=1), the open tickets that pass the filters (the store holds the query of the
+	// URL) in the default order and, in a section of their own below, the done tickets with
+	// "Weitere laden". Project and tags come from the catalog. Wider than its space (next to the
+	// panel), the table scrolls sideways in a named region; the page itself does not.
 	let {
 		store,
 		catalog,
@@ -42,11 +44,33 @@
 	const ids = {
 		heading: `${uid}-heading`,
 		caption: `${uid}-caption`,
-		done: `${uid}-done`
+		done: `${uid}-done`,
+		switchHint: `${uid}-switch-hint`
 	};
-	const showDone = $derived(showDoneFrom(page.url));
-	const visibleCount = $derived(store.visible.filter((ticket) => ticket.status !== 'done').length);
+	const query = $derived(store.query);
+	const filtered = $derived(hasFilters(query));
+	const showDone = $derived(store.showDone);
+	/** Only the section "Erledigt" is shown (status filter "Erledigt"). */
+	const onlyDone = $derived(query.status === 'done');
 	const hasOpenRows = $derived(store.visible.length > 0);
+	const countReady = $derived(
+		store.openState === 'ready' && (!onlyDone || store.doneState === 'ready')
+	);
+	const countLabel = $derived.by(() => {
+		const count = store.visibleCount;
+		if (store.visibleCountMore) return `mehr als ${count} Tickets`;
+		return count === 1 ? '1 Ticket' : `${count} Tickets`;
+	});
+	/**
+	 * With a status filter the switch has no effect (T-6): "Erledigt" shows the done tickets
+	 * anyway, any other status hides them. The switch is locked with this hint.
+	 */
+	const switchHint = $derived.by(() => {
+		if (query.status === null) return null;
+		return onlyDone
+			? 'Der Statusfilter „Erledigt“ zeigt nur erledigte Tickets.'
+			: 'Bei einem anderen Statusfilter als „Erledigt“ sind erledigte Tickets ausgeblendet.';
+	});
 
 	let root = $state<HTMLElement>();
 	let heading = $state<HTMLElement>();
@@ -58,6 +82,17 @@
 			keepFocus: true,
 			noScroll: true
 		});
+	}
+
+	/** Locked switch (aria-disabled keeps it focusable for its hint): a click changes nothing. */
+	function keepSwitch(event: MouseEvent) {
+		if (switchHint !== null) event.preventDefault();
+	}
+
+	/** "Filter zurücksetzen" of the empty result; the focus goes to the heading "Aufgaben". */
+	async function clearFilters() {
+		await goto(withListQuery(page.url, resetFilters(query)), { keepFocus: true, noScroll: true });
+		heading?.focus();
 	}
 
 	function rowsOf(section: string): HTMLElement[] {
@@ -181,15 +216,25 @@
 	<SectionBar
 		title="Aufgaben"
 		headingId={ids.heading}
-		count={store.openState === 'ready' ? visibleCount : null}
-		countLabel={visibleCount === 1 ? '1 Ticket' : `${visibleCount} Tickets`}
+		count={countReady ? `${store.visibleCount}${store.visibleCountMore ? '+' : ''}` : null}
+		{countLabel}
 		bind:heading
 	>
 		{#snippet end()}
-			<label class="switch">
-				<input type="checkbox" checked={showDone} onchange={toggleShowDone} />
+			<label class="switch" class:locked={switchHint !== null}>
+				<input
+					type="checkbox"
+					checked={showDone}
+					aria-disabled={switchHint === null ? undefined : 'true'}
+					aria-describedby={switchHint === null ? undefined : ids.switchHint}
+					onclick={keepSwitch}
+					onchange={toggleShowDone}
+				/>
 				Erledigte anzeigen
 			</label>
+			{#if switchHint !== null}
+				<span class="switch-hint" id={ids.switchHint}>{switchHint}</span>
+			{/if}
 		{/snippet}
 	</SectionBar>
 
@@ -208,11 +253,20 @@
 
 	{#if store.openState === 'error' && store.openError}
 		{@render failure(store.openError, 'Erneut versuchen', () => store.reload())}
-	{:else if store.openState === 'ready' && !hasOpenRows}
-		<div class="empty">
-			<p>Keine offenen Tickets.</p>
-			<a class="button-primary" href={newTicketHref(page.url)}>Neues Ticket</a>
-		</div>
+	{:else if store.openState === 'ready' && !hasOpenRows && !onlyDone}
+		{#if filtered}
+			<div class="empty">
+				<p>Keine Tickets für diese Filter.</p>
+				<button class="text-button reset" type="button" onclick={clearFilters}>
+					Filter zurücksetzen
+				</button>
+			</div>
+		{:else}
+			<div class="empty">
+				<p>Keine offenen Tickets.</p>
+				<a class="button-primary" href={newTicketHref(page.url)}>Neues Ticket</a>
+			</div>
+		{/if}
 	{:else if store.openState === 'loading' && !hasOpenRows}
 		<p class="loading" role="status">Tickets werden geladen …</p>
 	{/if}
@@ -257,7 +311,16 @@
 								{#if store.doneState === 'error' && store.doneError}
 									{@render failure(store.doneError, 'Erneut versuchen', () => store.reload())}
 								{:else if store.doneState === 'ready' && store.done.length === 0}
-									<p class="muted">Noch keine erledigten Tickets.</p>
+									{#if !filtered}
+										<p class="muted">Noch keine erledigten Tickets.</p>
+									{:else if onlyDone}
+										<p class="muted">Keine Tickets für diese Filter.</p>
+										<button class="text-button reset" type="button" onclick={clearFilters}>
+											Filter zurücksetzen
+										</button>
+									{:else}
+										<p class="muted">Keine erledigten Tickets für diese Filter.</p>
+									{/if}
 								{:else if store.done.length > 0}
 									{#if store.doneState === 'ready' && store.doneError}
 										{@render failure(store.doneError, 'Weitere laden', () => store.loadMoreDone())}
@@ -295,6 +358,15 @@
 		font-size: 0.875rem;
 		color: var(--color-text-muted);
 		cursor: pointer;
+	}
+
+	.switch.locked {
+		cursor: not-allowed;
+	}
+
+	.switch-hint {
+		font-size: 0.75rem;
+		color: var(--color-text-muted);
 	}
 
 	.switch input {
@@ -361,6 +433,10 @@
 
 	.section-foot td:empty {
 		padding: 0;
+	}
+
+	.reset {
+		margin-top: 0.5rem;
 	}
 
 	.empty .button-primary {

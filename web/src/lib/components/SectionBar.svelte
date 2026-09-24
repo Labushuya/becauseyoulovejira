@@ -15,8 +15,8 @@
 	}: {
 		title: string;
 		headingId: string;
-		/** Number next to the heading; null shows none (e.g. while loading). */
-		count?: number | null;
+		/** Number next to the heading ("12", "50+"); null shows none (e.g. while loading). */
+		count?: number | string | null;
 		/** Full text of the number for screen readers, e.g. "12 Tickets". */
 		countLabel?: string;
 		/** The heading element; views move the focus to it (tabindex -1). */

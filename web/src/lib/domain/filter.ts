@@ -1,6 +1,7 @@
 // Filter of the ticket list (E3 plan, T-6; ADR-0013 sections 1 and 3). Pure. The groups are
 // combined with AND, each with at most one value (OF-E3-3). The search is not part of this
-// predicate: the server answers it as a set of IDs (T-1, T-15).
+// predicate: the server answers it as a set of IDs (T-1, T-15). Project and tag compare the stored
+// relations (projectId, tagIds), the same fields the server expression of the done tickets uses.
 
 import { addDays, type CalendarDate } from './berlin-date';
 import { NO_PROJECT, type ListQuery } from './list-query';
@@ -22,7 +23,7 @@ export function dueBucket(due: CalendarDate | null, today: CalendarDate): DueBuc
 
 export type FilterableTicket = Pick<
 	TicketSummary,
-	'status' | 'priority' | 'due' | 'project' | 'tags'
+	'status' | 'priority' | 'due' | 'projectId' | 'tagIds'
 >;
 
 function matchesDue(ticket: FilterableTicket, filter: ListQuery['due'], today: CalendarDate) {
@@ -35,8 +36,8 @@ function matchesDue(ticket: FilterableTicket, filter: ListQuery['due'], today: C
 
 function matchesProject(ticket: FilterableTicket, filter: string | null): boolean {
 	if (filter === null) return true;
-	if (filter === NO_PROJECT) return ticket.project === null;
-	return ticket.project?.id === filter;
+	if (filter === NO_PROJECT) return ticket.projectId === null;
+	return ticket.projectId === filter;
 }
 
 /**
@@ -53,6 +54,6 @@ export function matchesFilter(
 		(query.priority === null || ticket.priority === query.priority) &&
 		matchesDue(ticket, query.due, today) &&
 		matchesProject(ticket, query.project) &&
-		(query.tag === null || ticket.tags.some((tag) => tag.id === query.tag))
+		(query.tag === null || ticket.tagIds.includes(query.tag))
 	);
 }

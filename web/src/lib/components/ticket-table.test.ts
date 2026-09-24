@@ -9,6 +9,7 @@ import { tick } from 'svelte';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { DataError } from '$lib/data/errors';
 import type { DoneTicketPage } from '$lib/data/tickets';
+import { parseListQuery } from '$lib/domain/list-query';
 import type { Project } from '$lib/domain/project';
 import type { Tag } from '$lib/domain/tag';
 import type { TicketPatch, TicketSummary } from '$lib/domain/ticket';
@@ -105,7 +106,7 @@ async function showTable(
 		SESSION
 	);
 	void catalog.load();
-	store.activate(mocks.page.url.searchParams.get('erledigte') === '1');
+	store.activate(parseListQuery(mocks.page.url.searchParams));
 	const result = render(TicketTable, { props: { store, catalog } });
 	await vi.advanceTimersByTimeAsync(0);
 	return { ...result, store, catalog };
@@ -131,6 +132,8 @@ beforeEach(() => {
 	vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] });
 	vi.setSystemTime(Date.UTC(2026, 8, 24, 10));
 	mocks.goto.mockClear();
+	// Creation dates are days of September: every test starts with fresh numbers.
+	sequence = 0;
 });
 
 afterEach(() => {
@@ -471,5 +474,84 @@ describe('ticket table', () => {
 		await tick();
 
 		expect(document.activeElement).toBe(header);
+	});
+});
+
+describe('ticket table: filters (E3 plan, package 10)', () => {
+	it('shows only the tickets that pass the filters and counts them', async () => {
+		const urgent = ticket({ priority: 'urgent' });
+		await showTable(fakeData([urgent, ticket(), ticket()]), '/?prio=urgent');
+
+		expect(openRows().map((row) => row.dataset.ticketId)).toEqual([urgent.id]);
+		expect(screen.getByText('1 Ticket')).toBeTruthy();
+	});
+
+	it('tells an empty filter result apart from an empty list and resets the filters', async () => {
+		await showTable(fakeData([ticket()]), '/?prio=urgent&sort=titel&erledigte=1');
+
+		expect(screen.getByText('Keine Tickets für diese Filter.')).toBeTruthy();
+		expect(screen.queryByText('Keine offenen Tickets.')).toBeNull();
+		await fireEvent.click(screen.getAllByRole('button', { name: 'Filter zurücksetzen' })[0]!);
+
+		expect(mocks.goto).toHaveBeenCalledWith('/?sort=titel&erledigte=1', {
+			keepFocus: true,
+			noScroll: true
+		});
+		expect(document.activeElement).toBe(screen.getByRole('heading', { name: 'Aufgaben' }));
+	});
+
+	it('shows an empty result for an unknown project', async () => {
+		await showTable(fakeData([ticket()]), '/?projekt=zzzzzzzzzzzzzzz');
+
+		expect(screen.queryByRole('table')).toBeNull();
+		expect(screen.getByText('Keine Tickets für diese Filter.')).toBeTruthy();
+		expect(screen.getByRole('button', { name: 'Filter zurücksetzen' })).toBeTruthy();
+	});
+
+	it('shows only the section "Erledigt" with the status filter "Erledigt"', async () => {
+		const finished = ticket({ status: 'done', completedAt: '2026-09-20 10:00:00.000Z' });
+		await showTable(fakeData([ticket()], [[finished]]), '/?status=done');
+
+		expect(screen.queryByRole('rowgroup', { name: 'Offene Tickets' })).toBeNull();
+		expect(within(doneBody()).getByText(finished.title)).toBeTruthy();
+		expect(screen.getByText('1 Ticket')).toBeTruthy();
+		const toggle = screen.getByRole('checkbox', { name: 'Erledigte anzeigen' });
+		expect(toggle).toHaveProperty('checked', true);
+		expect(toggle.getAttribute('aria-disabled')).toBe('true');
+		expect(
+			document.getElementById(String(toggle.getAttribute('aria-describedby')))?.textContent
+		).toBe('Der Statusfilter „Erledigt“ zeigt nur erledigte Tickets.');
+	});
+
+	it('offers "Filter zurücksetzen" when no done ticket passes the filters', async () => {
+		await showTable(fakeData([ticket()], [[]]), '/?status=done&prio=low');
+
+		expect(within(doneBody()).getByText('Keine Tickets für diese Filter.')).toBeTruthy();
+		expect(within(doneBody()).getByRole('button', { name: 'Filter zurücksetzen' })).toBeTruthy();
+	});
+
+	it('locks the switch "Erledigte anzeigen" with another status filter', async () => {
+		await showTable(fakeData([ticket()], [[]]), '/?status=open&erledigte=1');
+
+		expect(screen.queryByRole('rowgroup', { name: /^Erledigt/ })).toBeNull();
+		const toggle = screen.getByRole('checkbox', { name: 'Erledigte anzeigen' });
+		expect(toggle).toHaveProperty('checked', false);
+		expect(toggle.getAttribute('aria-disabled')).toBe('true');
+		expect(
+			document.getElementById(String(toggle.getAttribute('aria-describedby')))?.textContent
+		).toMatch(/erledigte Tickets ausgeblendet/);
+
+		await fireEvent.click(toggle);
+		expect(toggle).toHaveProperty('checked', false);
+		expect(mocks.goto).not.toHaveBeenCalled();
+	});
+
+	it('announces the new number after a filter change', async () => {
+		const { store } = await showTable(fakeData([ticket({ priority: 'high' }), ticket()]));
+
+		store.activate({ ...store.query, priority: 'high' });
+		await tick();
+
+		expect(screen.getByText('1 Ticket.').getAttribute('aria-live') ?? '').toBe('polite');
 	});
 });

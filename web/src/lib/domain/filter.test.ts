@@ -14,7 +14,14 @@ const SHOP = { id: 't00000000000001', name: 'Einkauf' };
 const CALL = { id: 't00000000000002', name: 'Anruf' };
 
 function ticket(overrides: Partial<FilterableTicket> = {}): FilterableTicket {
-	return { status: 'open', priority: 'medium', due: null, project: null, tags: [], ...overrides };
+	return {
+		status: 'open',
+		priority: 'medium',
+		due: null,
+		projectId: null,
+		tagIds: [],
+		...overrides
+	};
 }
 
 const query = (overrides: Partial<ListQuery>): ListQuery => ({ ...EMPTY_LIST_QUERY, ...overrides });
@@ -110,8 +117,8 @@ describe('matchesFilter', () => {
 	});
 
 	it('filters by project, without project and by an unknown project', () => {
-		const inHouse = ticket({ project: HOUSE });
-		const inCar = ticket({ project: CAR });
+		const inHouse = ticket({ projectId: HOUSE.id });
+		const inCar = ticket({ projectId: CAR.id });
 		const without = ticket();
 
 		expect(matchesFilter(inHouse, query({ project: HOUSE.id }), TODAY)).toBe(true);
@@ -126,10 +133,12 @@ describe('matchesFilter', () => {
 	});
 
 	it('filters by tag', () => {
-		const both = ticket({ tags: [SHOP, CALL] });
+		const both = ticket({ tagIds: [SHOP.id, CALL.id] });
 		expect(matchesFilter(both, query({ tag: SHOP.id }), TODAY)).toBe(true);
 		expect(matchesFilter(both, query({ tag: CALL.id }), TODAY)).toBe(true);
-		expect(matchesFilter(ticket({ tags: [CALL] }), query({ tag: SHOP.id }), TODAY)).toBe(false);
+		expect(matchesFilter(ticket({ tagIds: [CALL.id] }), query({ tag: SHOP.id }), TODAY)).toBe(
+			false
+		);
 		expect(matchesFilter(ticket(), query({ tag: SHOP.id }), TODAY)).toBe(false);
 	});
 
@@ -145,8 +154,8 @@ describe('matchesFilter', () => {
 			status: 'in_progress',
 			priority: 'urgent',
 			due: addDays(TODAY, 3),
-			project: HOUSE,
-			tags: [CALL, SHOP]
+			projectId: HOUSE.id,
+			tagIds: [CALL.id, SHOP.id]
 		});
 
 		expect(matchesFilter(match, filters, TODAY)).toBe(true);
@@ -154,8 +163,8 @@ describe('matchesFilter', () => {
 			{ status: 'open' },
 			{ priority: 'high' },
 			{ due: TODAY },
-			{ project: CAR },
-			{ tags: [CALL] }
+			{ projectId: CAR.id },
+			{ tagIds: [CALL.id] }
 		];
 		for (const miss of misses) {
 			expect(matchesFilter({ ...match, ...miss }, filters, TODAY), JSON.stringify(miss)).toBe(

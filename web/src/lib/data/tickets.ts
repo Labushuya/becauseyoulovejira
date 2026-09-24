@@ -3,7 +3,9 @@
 // always go through pb.filter().
 
 import type PocketBase from 'pocketbase';
-import type { CalendarDate } from '../domain/berlin-date';
+import { addDays, type CalendarDate } from '../domain/berlin-date';
+import { EMPTY_LIST_QUERY, NO_PROJECT, type ListQuery } from '../domain/list-query';
+import { SOON_DAYS } from '../domain/ordering';
 import { isPriority, isStatus, type Status } from '../domain/status';
 import {
 	REOPEN_STATUS,
@@ -138,15 +140,75 @@ export interface DoneTicketPage {
 	hasMore: boolean;
 }
 
-/** One page of done tickets, most recently completed first (ADR-0006 section 3). */
+/** List filters of the section "Erledigt" (E3 plan, T-6): the query of the URL at a Berlin date. */
+export interface DoneFilter {
+	query: ListQuery;
+	/** Berlin calendar date the due filters refer to. */
+	today: CalendarDate;
+}
+
+/** Without list filters: every done ticket. */
+const NO_DONE_FILTER: DoneFilter = { query: EMPTY_LIST_QUERY, today: '' };
+
+/**
+ * Server form of `matchesFilter` (domain/filter.ts) for the done tickets (ADR-0013 section 3).
+ * One fixed expression of fixed conditions joined with AND; each condition only applies when its
+ * parameter selects it, so every value reaches the server as a parameter of pb.filter(). The
+ * rules are those of the client: a done ticket is never overdue, "Bald" is tomorrow up to
+ * today + SOON_DAYS, project and tag compare the stored relations.
+ * tests/integration/web-filter-parity.test.mjs keeps both forms equal.
+ */
+const DONE_FILTER = [
+	'status = {:done}',
+	'({:status} = "" || status = {:status})',
+	'({:priority} = "" || priority = {:priority})',
+	'({:due} != "overdue" || (due != "" && due < {:today} && status != {:done}))',
+	'({:due} != "today" || due = {:today})',
+	'({:due} != "soon" || (due >= {:tomorrow} && due <= {:horizon}))',
+	'({:due} != "none" || due = "")',
+	'({:project} = "" || {:project} = {:noProject} || project = {:project})',
+	'({:project} != {:noProject} || project = "")',
+	'({:tag} = "" || tags.id ?= {:tag})'
+].join(' && ');
+
+/** Parameters of DONE_FILTER; an unset filter is '', which switches its conditions off. */
+function doneFilterParams({ query, today }: DoneFilter): Record<string, string> {
+	const dates =
+		query.due === null
+			? { today: '', tomorrow: '', horizon: '' }
+			: {
+					today: fromDueInput(today),
+					tomorrow: fromDueInput(addDays(today, 1)),
+					horizon: fromDueInput(addDays(today, SOON_DAYS))
+				};
+	return {
+		done: 'done' satisfies Status,
+		status: query.status ?? '',
+		priority: query.priority ?? '',
+		due: query.due ?? '',
+		...dates,
+		project: query.project ?? '',
+		noProject: NO_PROJECT,
+		tag: query.tag ?? ''
+	};
+}
+
+/**
+ * One page of done tickets, most recently completed first (ADR-0006 section 3), narrowed by the
+ * list filters when given (E3 plan, package 10).
+ */
 export function listDoneTickets(
 	pb: PocketBase,
 	page: number,
-	{ signal, perPage = DONE_PAGE_SIZE }: RequestOptions & { perPage?: number } = {}
+	{
+		signal,
+		perPage = DONE_PAGE_SIZE,
+		filter = NO_DONE_FILTER
+	}: RequestOptions & { perPage?: number; filter?: DoneFilter } = {}
 ): Promise<DoneTicketPage> {
 	return withDataErrors(signal, async () => {
 		const result = await pb.collection(TICKETS).getList<TicketRecord>(page, perPage, {
-			filter: pb.filter('status = {:done}', { done: 'done' satisfies Status }),
+			filter: pb.filter(DONE_FILTER, doneFilterParams(filter)),
 			sort: '-completed_at,-created,-id',
 			fields: TICKET_LIST_FIELDS,
 			expand: TICKET_EXPAND,
