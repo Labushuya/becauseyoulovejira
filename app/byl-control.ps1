@@ -13,7 +13,7 @@
 
 [CmdletBinding()]
 param(
-    [Parameter(Mandatory = $true)][ValidateSet('Start', 'Stop')][string]$Action,
+    [Parameter(Mandatory = $true)][ValidateSet('Start', 'Stop', 'AutostartOn', 'AutostartOff')][string]$Action,
     [switch]$Hidden
 )
 
@@ -195,10 +195,54 @@ function Invoke-Stop {
     return 0
 }
 
+function Invoke-AutostartOn {
+    $vbs = [System.IO.Path]::Combine($AppDir, 'start-hidden.vbs')
+    if (-not (Test-Path -LiteralPath $vbs -PathType Leaf)) {
+        Show-Message -Kind Error -Text "start-hidden.vbs fehlt in:`n$AppDir"
+        return 1
+    }
+    $spec = Get-AutostartShortcut -AppDir $AppDir -StartupDir ([Environment]::GetFolderPath('Startup')) `
+        -SystemDir ([Environment]::SystemDirectory)
+    try {
+        $shortcut = (New-Object -ComObject WScript.Shell).CreateShortcut($spec.Path)
+        $shortcut.TargetPath = $spec.TargetPath
+        $shortcut.Arguments = $spec.Arguments
+        $shortcut.WorkingDirectory = $spec.WorkingDirectory
+        $shortcut.Description = 'becauseyoulovejira im Hintergrund starten'
+        $shortcut.Save()
+    }
+    catch {
+        Show-Message -Kind Error -Text "Autostart konnte nicht eingerichtet werden: $($_.Exception.Message)"
+        return 1
+    }
+    Show-Message "Autostart aktiviert:`n$($spec.Path)"
+    return 0
+}
+
+function Invoke-AutostartOff {
+    $spec = Get-AutostartShortcut -AppDir $AppDir -StartupDir ([Environment]::GetFolderPath('Startup')) `
+        -SystemDir ([Environment]::SystemDirectory)
+    if (-not (Test-Path -LiteralPath $spec.Path -PathType Leaf)) {
+        Show-Message 'Autostart ist nicht aktiviert.'
+        return 0
+    }
+    try {
+        Remove-Item -LiteralPath $spec.Path -Force
+    }
+    catch {
+        Show-Message -Kind Error -Text "Autostart konnte nicht entfernt werden: $($_.Exception.Message)"
+        return 1
+    }
+    Show-Message 'Autostart deaktiviert.'
+    return 0
+}
+
 try {
     $exitCode = switch ($Action) {
         'Start' { Invoke-Start }
         'Stop' { Invoke-Stop }
+        'AutostartOn' { Invoke-AutostartOn }
+        'AutostartOff' { Invoke-AutostartOff }
     }
 }
 catch {

@@ -1,18 +1,7 @@
 @echo off
 setlocal
-
-set STARTUP_DIR=%APPDATA%\Microsoft\Windows\Start Menu\Programs\Startup
-set SHORTCUT_PATH=%STARTUP_DIR%\becauseyoulovejira.lnk
-
-if exist "%SHORTCUT_PATH%" (
-    del "%SHORTCUT_PATH%" >nul 2>&1
-    if %ERRORLEVEL% equ 0 (
-        echo Autostart deaktiviert.
-    ) else (
-        echo Fehler beim L?schen.
-        pause
-        exit /b 1
-    )
-) else (
-    echo Autostart ist nicht aktiviert.
-)
+rem autostart-aus.bat - entfernt die Verknuepfung becauseyoulovejira.lnk aus dem Autostart-Ordner.
+"%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -ExecutionPolicy Bypass -File "%~dp0byl-control.ps1" -Action AutostartOff
+set "BYL_EXIT=%ERRORLEVEL%"
+pause
+exit /b %BYL_EXIT%
