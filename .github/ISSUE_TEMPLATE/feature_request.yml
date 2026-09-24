@@ -1,0 +1,38 @@
+name: Funktion vorschlagen
+description: Idee für eine neue Funktion oder eine Verbesserung.
+title: 'feat: '
+labels: [enhancement]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Der Umfang ist bewusst schlank (siehe README, Abschnitt Roadmap). Epics, Sprints, Story Points und Ticket-Typen sind ausgeschlossen ([ADR-0012](https://github.com/Labushuya/becauseyoulovejira/blob/main/docs/adr/0012-plain-ticketing.md)).
+  - type: textarea
+    id: problem
+    attributes:
+      label: Welches Problem soll gelöst werden?
+    validations:
+      required: true
+  - type: textarea
+    id: vorschlag
+    attributes:
+      label: Vorschlag
+      description: Wie könnte die Lösung aussehen?
+    validations:
+      required: true
+  - type: dropdown
+    id: etappe
+    attributes:
+      label: Passende Etappe (falls bekannt)
+      options:
+        - unklar
+        - E3 Übersicht & Ordnung
+        - E4 Eingang & Kanäle
+        - E5 Wiederkehrende Aufgaben
+        - E6 Feinschliff
+        - E7 Haushalt & Mehrgeräte
+        - Stufe 2 (nach Freigabe)
+  - type: textarea
+    id: alternativen
+    attributes:
+      label: Erwogene Alternativen

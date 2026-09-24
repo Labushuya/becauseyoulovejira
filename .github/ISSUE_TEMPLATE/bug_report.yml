@@ -1,0 +1,49 @@
+name: Fehler melden
+description: Etwas funktioniert nicht wie beschrieben.
+title: 'fix: '
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Danke für die Meldung. Bitte keine Zugangsdaten, Backups oder Inhalte aus `app/pb_data` anhängen.
+        Sicherheitslücken bitte nicht hier, sondern privat melden (siehe [SECURITY.md](https://github.com/Labushuya/becauseyoulovejira/blob/main/.github/SECURITY.md)).
+  - type: textarea
+    id: beschreibung
+    attributes:
+      label: Was ist passiert?
+      description: Kurze Beschreibung des Fehlers.
+    validations:
+      required: true
+  - type: textarea
+    id: schritte
+    attributes:
+      label: Schritte zum Nachstellen
+      placeholder: |
+        1. „Alle Tickets“ öffnen
+        2. …
+        3. Fehler tritt auf
+    validations:
+      required: true
+  - type: textarea
+    id: erwartet
+    attributes:
+      label: Was hast du erwartet?
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Stand (Commit oder Etappe)
+      placeholder: z. B. 49da678 oder E2
+  - type: input
+    id: umgebung
+    attributes:
+      label: Browser und Windows-Version
+      placeholder: z. B. Firefox 140, Windows 10 22H2
+  - type: textarea
+    id: logs
+    attributes:
+      label: Meldungen oder Log-Auszug
+      description: Aus der Browser-Konsole oder `app\logs\`. Bitte vorher auf Passwörter, E-Mail-Adressen und Tokens prüfen.
+      render: text
