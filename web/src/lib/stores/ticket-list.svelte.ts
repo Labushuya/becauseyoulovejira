@@ -21,6 +21,7 @@ import {
 } from '$lib/data/tickets';
 import { berlinToday, msUntilNextBerlinMidnight, type CalendarDate } from '$lib/domain/berlin-date';
 import { matchesFilter } from '$lib/domain/filter';
+import { countKpis, type Kpis } from '$lib/domain/kpis';
 import { EMPTY_LIST_QUERY, FILTER_KEYS, type ListQuery } from '$lib/domain/list-query';
 import { ticketOrder } from '$lib/domain/ordering';
 import type { Status } from '$lib/domain/status';
@@ -174,6 +175,7 @@ export class TicketListStore {
 			.filter((ticket) => matchesFilter(ticket, query, today))
 			.sort(compareDone);
 	});
+	#kpis = $derived(countKpis(this.#open.values(), this.#today));
 
 	constructor(data: TicketListData, session: SessionGuard, now: () => number = Date.now) {
 		this.#data = data;
@@ -218,6 +220,15 @@ export class TicketListStore {
 	/** Number of tickets that are not done (header counter, T-18); just checked rows count as done. */
 	get openCount(): number {
 		return this.#open.size;
+	}
+
+	/**
+	 * Numbers of the KPI tiles (E3 plan, T-10 and package 12): every ticket that is not done,
+	 * independent of filters and search, with the same boundary as `openCount` (just checked rows
+	 * count as done). They follow realtime and the Berlin midnight.
+	 */
+	get kpis(): Kpis {
+		return this.#kpis;
 	}
 
 	/** Loaded done tickets that pass the filters, most recently completed first (OF-E2-4). */

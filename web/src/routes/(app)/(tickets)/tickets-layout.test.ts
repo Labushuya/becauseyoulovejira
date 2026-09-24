@@ -63,6 +63,24 @@ describe('tickets layout', () => {
 		expect(screen.getByText('Panel')).toBeTruthy();
 	});
 
+	it('shows the KPI tiles and the filter bar above the table, in this order', async () => {
+		renderLayout('/?faellig=heute');
+		await vi.waitFor(() =>
+			expect(screen.getByRole('button', { name: '0 nicht erledigt' })).toBeTruthy()
+		);
+
+		const tiles = screen.getByRole('group', { name: 'Kennzahlen' });
+		const filters = screen.getByRole('region', { name: 'Filter' });
+		const heading = screen.getByRole('heading', { name: 'Aufgaben' });
+		expect(tiles.compareDocumentPosition(filters) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+		expect(
+			filters.compareDocumentPosition(heading) & Node.DOCUMENT_POSITION_FOLLOWING
+		).toBeTruthy();
+		expect(
+			screen.getByRole('button', { name: '0 heute fällig' }).getAttribute('aria-pressed')
+		).toBe('true');
+	});
+
 	it('shows done tickets when the URL says so (reload, back and forward)', () => {
 		const { activate, store } = renderLayout(
 			'/tickets/abc123def456ghi?erledigte=1',

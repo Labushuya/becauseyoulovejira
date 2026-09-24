@@ -453,6 +453,42 @@ describe('filters (E3 plan, package 10)', () => {
 	});
 });
 
+describe('KPI numbers (E3 plan, package 12)', () => {
+	it('count the tickets that are not done, independent of the filters, and follow changes', async () => {
+		const overdue = ticket({ due: '2026-09-23', priority: 'urgent' });
+		const working = ticket({ status: 'in_progress', due: '2026-09-24' });
+		const store = new TicketListStore(fakeData([overdue, working, ticket()]), session());
+		store.activate({ ...EMPTY_LIST_QUERY, priority: 'low' });
+		await settle();
+
+		expect(store.kpis).toEqual({ notDone: 3, inProgress: 1, dueToday: 1, overdue: 1, urgent: 1 });
+		expect(store.kpis.notDone).toBe(store.openCount);
+
+		// A just checked row counts as done, like the header counter.
+		await store.setDone(overdue.id, true);
+		expect(store.kpis).toMatchObject({ notDone: 2, overdue: 0, urgent: 0 });
+
+		store.upsert(ticket({ priority: 'urgent' }));
+		expect(store.kpis).toMatchObject({ notDone: 3, urgent: 1 });
+		store.remove(working.id);
+		expect(store.kpis).toMatchObject({ notDone: 2, inProgress: 0, dueToday: 0 });
+	});
+
+	it('move the due numbers at the Berlin midnight', async () => {
+		// 2026-09-24 23:59 in Berlin.
+		vi.setSystemTime(Date.UTC(2026, 8, 24, 21, 59, 0));
+		const store = new TicketListStore(fakeData([ticket({ due: '2026-09-24' })]), session());
+		const stop = store.start();
+		store.activate(EMPTY_LIST_QUERY);
+		await settle();
+		expect(store.kpis).toMatchObject({ dueToday: 1, overdue: 0 });
+
+		await vi.advanceTimersByTimeAsync(61_000);
+		expect(store.kpis).toMatchObject({ dueToday: 0, overdue: 1 });
+		stop();
+	});
+});
+
 describe('today', () => {
 	it('computes the order again after the Berlin midnight without a reload', async () => {
 		// 2026-09-24 23:59 in Berlin.

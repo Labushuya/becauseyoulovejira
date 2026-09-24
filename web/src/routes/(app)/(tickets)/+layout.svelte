@@ -2,14 +2,16 @@
 	import { untrack } from 'svelte';
 	import { page } from '$app/state';
 	import FilterBar from '$lib/components/FilterBar.svelte';
+	import KpiTiles from '$lib/components/KpiTiles.svelte';
 	import TicketTable from '$lib/components/TicketTable.svelte';
 	import { parseListQuery } from '$lib/domain/list-query';
 	import { getCatalogStore } from '$lib/stores/catalog.svelte';
 	import { getTicketListStore } from '$lib/stores/ticket-list.svelte';
 
-	// Filter bar, table and panel area (E2 plan, T-4; E3 plan, T-3 and packages 5 and 10): the
-	// table stays in place while the detail panel opens and closes, so scroll position and loaded
-	// pages survive. The filter bar spans the width above table and panel (ADR-0010 section 1).
+	// KPI tiles, filter bar, table and panel area (E2 plan, T-4; E3 plan, T-3 and packages 5, 10
+	// and 12): the table stays in place while the detail panel opens and closes, so scroll position
+	// and loaded pages survive. Tiles and filter bar span the width above table and panel
+	// (ADR-0010 section 1).
 	let { children } = $props();
 
 	const tickets = getTicketListStore();
@@ -27,6 +29,7 @@
 	});
 </script>
 
+<KpiTiles kpis={tickets.openState === 'ready' ? tickets.kpis : null} />
 <FilterBar {catalog} />
 <div class="tickets" class:with-panel={withPanel}>
 	<TicketTable store={tickets} {catalog} {activeId} {creating} />
