@@ -55,4 +55,11 @@ describe('web/src/lib/domain', () => {
 			expect(source, `${name} matches ${pattern}`).not.toMatch(pattern);
 		}
 	});
+
+	it.each(modules)('%s has no any', (name) => {
+		const code = readFileSync(join(DOMAIN_DIR, name), 'utf8')
+			.replace(/\/\*[\s\S]*?\*\//g, '')
+			.replace(/\/\/.*$/gm, '');
+		expect(code).not.toMatch(/\bany\b/);
+	});
 });

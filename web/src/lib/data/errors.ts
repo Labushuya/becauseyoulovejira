@@ -1,0 +1,126 @@
+// Error kinds of the data layer (ADR-0006 section 4). Errors are recognised by their structure
+// (`status`, `isAbort`, `response`) instead of `instanceof ClientResponseError`, because the
+// root integration tests and the web app each load their own copy of the SDK.
+
+export type DataErrorKind =
+	'aborted' | 'network' | 'not_found' | 'forbidden' | 'validation' | 'session' | 'server';
+
+export interface FieldError {
+	/** Validation code of the server, e.g. `validation_required`. */
+	code: string;
+	/** German text for the field. */
+	message: string;
+}
+
+/** German default texts per kind; the UI may use more specific ones. */
+export const DATA_ERROR_MESSAGES: Readonly<Record<DataErrorKind, string>> = Object.freeze({
+	aborted: 'Die Anfrage wurde abgebrochen.',
+	network:
+		'Server nicht erreichbar. Bitte prüfen, ob becauseyoulovejira gestartet ist (start.bat), und erneut versuchen.',
+	not_found: 'Nicht gefunden. Der Eintrag wurde gelöscht oder ist nicht sichtbar.',
+	forbidden: 'Dafür fehlt die Berechtigung.',
+	validation: 'Bitte die markierten Eingaben prüfen.',
+	session: 'Die Sitzung ist abgelaufen. Bitte erneut anmelden.',
+	server: 'Der Server hat mit einem Fehler geantwortet. Bitte später erneut versuchen.'
+});
+
+const FIELD_MESSAGES: Readonly<Record<string, string>> = Object.freeze({
+	validation_required: 'Pflichtfeld.',
+	validation_max_text_constraint: 'Zu lang.',
+	validation_min_text_constraint: 'Zu kurz.',
+	validation_length_out_of_range: 'Länge nicht zulässig.',
+	validation_invalid_value: 'Ungültiger Wert.',
+	validation_calendar_date: 'Ungültiges Datum.',
+	validation_invalid_date: 'Ungültiges Datum.',
+	validation_scope_mismatch: 'Nicht verfügbar.'
+});
+const DEFAULT_FIELD_MESSAGE = 'Ungültige Eingabe.';
+
+export class DataError extends Error {
+	readonly kind: DataErrorKind;
+	/** HTTP status, 0 without a response. */
+	readonly status: number;
+	/** Field errors of a validation error, keyed by field name. */
+	readonly fields: Readonly<Record<string, FieldError>>;
+
+	constructor(
+		kind: DataErrorKind,
+		options: { status?: number; fields?: Record<string, FieldError>; cause?: unknown } = {}
+	) {
+		super(DATA_ERROR_MESSAGES[kind], { cause: options.cause });
+		this.name = 'DataError';
+		this.kind = kind;
+		this.status = options.status ?? 0;
+		this.fields = Object.freeze({ ...options.fields });
+	}
+}
+
+export function isDataError(error: unknown): error is DataError {
+	return error instanceof DataError;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+	return typeof value === 'object' && value !== null;
+}
+
+function isAbortLike(error: Record<string, unknown>): boolean {
+	return error.isAbort === true || error.name === 'AbortError';
+}
+
+/** Field errors from `response.data` of a PocketBase error response. */
+function fieldErrorsOf(response: unknown): Record<string, FieldError> {
+	const data = isRecord(response) ? response.data : undefined;
+	const fields: Record<string, FieldError> = {};
+	if (!isRecord(data)) return fields;
+	for (const [field, detail] of Object.entries(data)) {
+		const code = isRecord(detail) && typeof detail.code === 'string' ? detail.code : '';
+		fields[field] = {
+			code,
+			message: Object.hasOwn(FIELD_MESSAGES, code)
+				? (FIELD_MESSAGES[code] ?? DEFAULT_FIELD_MESSAGE)
+				: DEFAULT_FIELD_MESSAGE
+		};
+	}
+	return fields;
+}
+
+/**
+ * Maps any error of an SDK call to a DataError. `signal` is the signal of the call: once it is
+ * aborted, the failure counts as "aborted" whatever the runtime reports.
+ */
+export function toDataError(error: unknown, signal?: AbortSignal): DataError {
+	if (isDataError(error)) return error;
+	if (signal?.aborted) return new DataError('aborted', { cause: error });
+	if (!isRecord(error)) return new DataError('server', { cause: error });
+	if (isAbortLike(error)) return new DataError('aborted', { cause: error });
+	if (typeof error.status !== 'number') return new DataError('server', { cause: error });
+
+	const status = error.status;
+	switch (status) {
+		case 0:
+			return new DataError('network', { status, cause: error });
+		case 401:
+			return new DataError('session', { status, cause: error });
+		case 403:
+			return new DataError('forbidden', { status, cause: error });
+		case 404:
+			return new DataError('not_found', { status, cause: error });
+	}
+	const fields = status === 400 ? fieldErrorsOf(error.response) : {};
+	if (Object.keys(fields).length > 0) {
+		return new DataError('validation', { status, fields, cause: error });
+	}
+	return new DataError('server', { status, cause: error });
+}
+
+/** Runs one SDK call and turns every failure into a DataError. */
+export async function withDataErrors<T>(
+	signal: AbortSignal | undefined,
+	call: () => Promise<T>
+): Promise<T> {
+	try {
+		return await call();
+	} catch (error) {
+		throw toDataError(error, signal);
+	}
+}
