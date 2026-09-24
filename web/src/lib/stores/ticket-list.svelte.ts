@@ -1,7 +1,7 @@
-// State of the ticket list (ADR-0006 sections 1 to 5; E2 plan, package 5; E3 plan, packages 5
-// and 10). Open tickets are loaded in full, filtered and sorted client side (ADR-0013 section 1);
-// done tickets are loaded page by page in the server order and filtered by the server (section
-// 3). The store is created per app layout and handed out through a typed context, so a logout
+// State of the ticket list (ADR-0006 sections 1 to 5; E2 plan, package 5; E3 plan, packages 5,
+// 10, 11 and 13). Open tickets are loaded in full, filtered, sorted and grouped client side
+// (ADR-0013 section 1); the search comes from the server as a set of IDs (section 2); done
+// tickets are loaded page by page in the server order and filtered by the server (section 3). The store is created per app layout and handed out through a typed context, so a logout
 // leaves no data behind. Own answers and realtime events (ADR-0007) go through the same
 // idempotent `upsert` and `remove`; after a reconnection the store reconciles once with the
 // server.
@@ -14,6 +14,7 @@ import type { RequestOptions } from '$lib/data/options';
 import {
 	listDoneTickets,
 	listOpenTickets,
+	searchOpenTicketIds,
 	setTicketDone,
 	updateTicket,
 	type DoneFilter,
@@ -23,7 +24,12 @@ import { berlinToday, msUntilNextBerlinMidnight, type CalendarDate } from '$lib/
 import { matchesFilter } from '$lib/domain/filter';
 import { groupTickets, type TicketGroup } from '$lib/domain/grouping';
 import { countKpis, type Kpis } from '$lib/domain/kpis';
-import { EMPTY_LIST_QUERY, FILTER_KEYS, type ListQuery } from '$lib/domain/list-query';
+import {
+	EMPTY_LIST_QUERY,
+	FILTER_KEYS,
+	activeSearch,
+	type ListQuery
+} from '$lib/domain/list-query';
 import { columnOrder, ticketOrder, type ResolveProject } from '$lib/domain/ordering';
 import type { Status } from '$lib/domain/status';
 import type { TicketPatch, TicketSummary } from '$lib/domain/ticket';
@@ -38,6 +44,12 @@ export const UNDO_WINDOW_MS = 5000;
 /** Delay after the Berlin midnight before "today" is computed again (E2 plan, T-3). */
 export const MIDNIGHT_BUFFER_MS = 1000;
 
+/**
+ * Pause after the last change of the search text before it applies, and after the last ticket
+ * event before the IDs of an active search are asked for again (E3 plan, T-15).
+ */
+export const SEARCH_DEBOUNCE_MS = 250;
+
 /** idle: not requested; loading: first request running; ready: loaded; error: loading failed. */
 export type LoadState = 'idle' | 'loading' | 'ready' | 'error';
 
@@ -46,6 +58,8 @@ export interface TicketListData {
 	listOpen(options: RequestOptions): Promise<TicketSummary[]>;
 	/** One page of done tickets narrowed by `filter` (the list filters at the Berlin date). */
 	listDone(page: number, options: RequestOptions & { filter: DoneFilter }): Promise<DoneTicketPage>;
+	/** IDs of the open tickets whose title, description or key contain the search text. */
+	searchOpen(search: string, options: RequestOptions): Promise<string[]>;
 	setDone(id: string, done: boolean): Promise<TicketSummary>;
 	update(id: string, patch: TicketPatch): Promise<TicketSummary>;
 }
@@ -61,6 +75,7 @@ export function ticketListData(pb: PocketBase): TicketListData {
 	return {
 		listOpen: (options) => listOpenTickets(pb, options),
 		listDone: (page, options) => listDoneTickets(pb, page, options),
+		searchOpen: (search, options) => searchOpenTicketIds(pb, search, options),
 		setDone: (id, done) => setTicketDone(pb, id, done),
 		update: (id, patch) => updateTicket(pb, id, patch)
 	};
@@ -82,8 +97,11 @@ export function showsDoneSection(query: ListQuery): boolean {
 	return query.status === null ? query.showDone : query.status === 'done';
 }
 
-function sameFilters(a: ListQuery, b: ListQuery): boolean {
-	return FILTER_KEYS.every((key) => a[key] === b[key]);
+/** The filters besides the search, which applies after a pause and announces on its own. */
+const FILTERS_BESIDES_SEARCH = FILTER_KEYS.filter((key) => key !== 'search');
+
+function sameFiltersBesidesSearch(a: ListQuery, b: ListQuery): boolean {
+	return FILTERS_BESIDES_SEARCH.every((key) => a[key] === b[key]);
 }
 
 /** Text of the live region after a filter change (E3 plan, package 10). */
@@ -149,6 +167,13 @@ export class TicketListStore {
 	#doneKey: string | null = null;
 	/** Filters changed while the section "Erledigt" alone is shown: announce after loading. */
 	#announceDone = false;
+	/** Search the URL asks for (from SEARCH_MIN_LENGTH characters), applied or waiting for the pause. */
+	#wantedSearch: string | null = null;
+	/** Search the IDs in #searchIds belong to. */
+	#searchIdsFor: string | null = null;
+	#searchTimer: ReturnType<typeof setTimeout> | undefined;
+	#searchRefreshTimer: ReturnType<typeof setTimeout> | undefined;
+	#searchController: AbortController | null = null;
 
 	#today = $state<CalendarDate>('');
 	#query = $state<ListQuery>(EMPTY_LIST_QUERY);
@@ -161,6 +186,15 @@ export class TicketListStore {
 	#loadingMoreDone = $state(false);
 	#notice = $state<string | null>(null);
 	#announcement = $state('');
+	/** Search that narrows the list and the done section (after the pause), null without one. */
+	#search = $state<string | null>(null);
+	/**
+	 * Open tickets that match the search. A newer search keeps the older IDs until its answer, so
+	 * the table keeps its rows instead of flickering; null shows the list without search.
+	 */
+	#searchIds = $state<ReadonlySet<string> | null>(null);
+	#searchBusy = $state(false);
+	#searchError = $state<string | null>(null);
 
 	#openList = $derived.by(() => {
 		const lingering = [...this.#lingering.values()].map((entry) => entry.ticket);
@@ -176,12 +210,16 @@ export class TicketListStore {
 		if (query.status === 'done') return [];
 		const today = this.#today;
 		const order = columnOrder(query.sort, today, this.#projectOf);
+		const ids = this.#search === null ? null : this.#searchIds;
 		return this.#openList
 			.map((ticket) => {
 				const previousStatus = this.#lingering.get(ticket.id)?.previousStatus;
 				return { ticket, subject: previousStatus ? { ...ticket, status: previousStatus } : ticket };
 			})
-			.filter(({ subject }) => matchesFilter(subject, query, today))
+			.filter(
+				({ ticket, subject }) =>
+					matchesFilter(subject, query, today) && (ids === null || ids.has(ticket.id))
+			)
 			.sort((a, b) => order(a.subject, b.subject));
 	});
 	#visibleList = $derived(this.#visibleEntries.map(({ ticket }) => ticket));
@@ -320,6 +358,26 @@ export class TicketListStore {
 		return this.#loadingMoreDone;
 	}
 
+	/** Search that narrows the list (ADR-0013 section 2), null without one or during the pause. */
+	get search(): string | null {
+		return this.#search;
+	}
+
+	/** True while a changed search waits for its pause or its answer (aria-busy of the field). */
+	get searchBusy(): boolean {
+		return this.#searchBusy;
+	}
+
+	/** Failure of the search; the table then shows the list without search. */
+	get searchError(): string | null {
+		return this.#searchError;
+	}
+
+	/** Asks for the IDs of the search again ("Erneut versuchen"). */
+	retrySearch(): void {
+		if (this.#search !== null) void this.#loadSearch(true);
+	}
+
 	/** Error of the last check mark or undo action, null without one. */
 	get notice(): string | null {
 		return this.#notice;
@@ -375,15 +433,19 @@ export class TicketListStore {
 	}
 
 	/**
-	 * Shows the list for the state of the URL: filters and the switch "Erledigte anzeigen" (E3
-	 * plan, package 10). Loads the open tickets once; they are only filtered, never loaded again.
-	 * The section "Erledigt" is loaded, loaded again for other filters, or dropped; a request that
-	 * became stale is aborted. A filter change announces the new number of tickets.
+	 * Shows the list for the state of the URL: filters, search and the switch "Erledigte anzeigen"
+	 * (E3 plan, packages 10 and 11). Loads the open tickets once; they are only filtered, never
+	 * loaded again. The section "Erledigt" is loaded, loaded again for other filters, or dropped; a
+	 * request that became stale is aborted. A filter change announces the new number of tickets, a
+	 * search announces it when its answer arrives.
 	 */
 	activate(query: ListQuery): void {
-		if (this.#openState === 'idle') void this.#loadOpen();
-		const filtersChanged = !sameFilters(this.#query, query);
+		const first = this.#openState === 'idle';
+		if (first) void this.#loadOpen();
+		const filtersChanged = !sameFiltersBesidesSearch(this.#query, query);
 		this.#query = query;
+		// A search from the URL of a fresh page applies at once, typing waits for the pause.
+		this.#followSearch(activeSearch(query), first);
 		this.#syncDone();
 		if (!filtersChanged || this.#openState !== 'ready') return;
 		if (query.status === 'done') this.#announceDone = true;
@@ -517,8 +579,13 @@ export class TicketListStore {
 		const stops = [
 			hold(
 				live.tickets((change) => {
-					if (change.action === 'delete') this.remove(change.id);
-					else this.upsert(change.record);
+					if (change.action === 'delete') {
+						this.remove(change.id);
+						return;
+					}
+					this.upsert(change.record);
+					// Title, description or key may have changed: ask for the IDs again.
+					this.#refreshSearch();
 				})
 			),
 			hold(live.reconnected(() => void this.reconcile()))
@@ -565,6 +632,7 @@ export class TicketListStore {
 			// The done pages only count if the section still shows the same filters and pages.
 			const sameDone = this.#donePage === doneLoaded && this.#doneKey === doneKey;
 			if (doneLoaded > 0 && this.#showDone && sameDone) this.#mergeDone(pages, touched);
+			this.#refreshSearch();
 		} catch (error) {
 			if (controller.signal.aborted) return;
 			// Nothing to show: the list stays as it is, the next reconnection tries again.
@@ -593,6 +661,16 @@ export class TicketListStore {
 		this.#donePage = 0;
 		this.#doneKey = null;
 		this.#announceDone = false;
+		clearTimeout(this.#searchTimer);
+		clearTimeout(this.#searchRefreshTimer);
+		this.#searchController?.abort();
+		this.#searchController = null;
+		this.#wantedSearch = null;
+		this.#searchIdsFor = null;
+		this.#search = null;
+		this.#searchIds = null;
+		this.#searchBusy = false;
+		this.#searchError = null;
 		this.#query = EMPTY_LIST_QUERY;
 		this.#openState = 'idle';
 		this.#openError = null;
@@ -706,6 +784,10 @@ export class TicketListStore {
 	#belongsToLoadedDone(ticket: TicketSummary): boolean {
 		if (!this.#showDone || this.#doneState !== 'ready') return false;
 		if (!matchesFilter(ticket, this.#query, this.#today)) return false;
+		// An active search knows only the loaded rows and the IDs it found while they were open.
+		if (this.#search !== null && !this.#done.has(ticket.id) && !this.#searchIds?.has(ticket.id)) {
+			return false;
+		}
 		if (this.#done.has(ticket.id) || !this.#doneHasMore) return true;
 		const last = this.#doneList.at(-1);
 		return last === undefined || compareDone(ticket, last) < 0;
@@ -713,7 +795,95 @@ export class TicketListStore {
 
 	/** Filter of the done section for the server: the query at the current Berlin date. */
 	#doneFilter(): DoneFilter {
-		return { query: this.#query, today: this.#today };
+		return { query: { ...this.#query, search: this.#search }, today: this.#today };
+	}
+
+	/**
+	 * Follows the search the URL asks for: none or a shorter one applies at once, a new text after
+	 * the pause SEARCH_DEBOUNCE_MS (or at once for a fresh page), so fast typing costs one request.
+	 */
+	#followSearch(wanted: string | null, immediately: boolean): void {
+		if (wanted === this.#wantedSearch) return;
+		this.#wantedSearch = wanted;
+		clearTimeout(this.#searchTimer);
+		if (wanted === null || immediately) {
+			this.#applySearch(wanted);
+			return;
+		}
+		this.#searchBusy = true;
+		this.#searchTimer = setTimeout(() => this.#applySearch(wanted), SEARCH_DEBOUNCE_MS);
+	}
+
+	/** Applies a search to the list and the done section; null shows both without search. */
+	#applySearch(search: string | null): void {
+		const changed = search !== this.#search;
+		this.#search = search;
+		this.#searchError = null;
+		if (search === null) {
+			this.#searchController?.abort();
+			this.#searchController = null;
+			clearTimeout(this.#searchRefreshTimer);
+			this.#searchIds = null;
+			this.#searchIdsFor = null;
+			this.#searchBusy = false;
+		} else {
+			void this.#loadSearch(true);
+		}
+		if (!changed) return;
+		const ready = this.#openState === 'ready';
+		if (ready && this.#query.status === 'done') this.#announceDone = true;
+		this.#syncDone();
+		if (search === null && ready && this.#query.status !== 'done') {
+			this.#announcement = countMessage(this.visibleCount);
+		}
+	}
+
+	/** Asks for the IDs of the search again after the pause (ticket events, reconnection). */
+	#refreshSearch(): void {
+		if (this.#search === null) return;
+		clearTimeout(this.#searchRefreshTimer);
+		this.#searchRefreshTimer = setTimeout(() => void this.#loadSearch(false), SEARCH_DEBOUNCE_MS);
+	}
+
+	/**
+	 * Loads the IDs of the open tickets that match the search; a newer request aborts an older one
+	 * and a stale answer is dropped. A just checked row keeps its place: its ID stays while it
+	 * stands with "Rückgängig", although the server no longer counts it as open. `announce` (a new
+	 * search) marks the field as busy and announces the new number.
+	 */
+	async #loadSearch(announce: boolean): Promise<void> {
+		const search = this.#search;
+		if (search === null) return;
+		this.#searchController?.abort();
+		this.#searchController = null;
+		if (!this.#session.ensureValid()) return;
+		const controller = new AbortController();
+		this.#searchController = controller;
+		if (announce) this.#searchBusy = true;
+		try {
+			const ids = await this.#data.searchOpen(search, { signal: controller.signal });
+			if (controller.signal.aborted || search !== this.#search) return;
+			const previous = this.#searchIdsFor === search ? this.#searchIds : null;
+			const kept = [...this.#lingering.keys()].filter((id) => previous?.has(id) === true);
+			this.#searchIds = new SvelteSet([...ids, ...kept]);
+			this.#searchIdsFor = search;
+			this.#searchError = null;
+			if (announce && this.#openState === 'ready' && this.#query.status !== 'done') {
+				this.#announcement = countMessage(this.visibleCount);
+			}
+		} catch (error) {
+			if (controller.signal.aborted) return;
+			const message = this.#failureMessage(error);
+			if (message === null) return;
+			this.#searchError = message;
+			this.#searchIds = null;
+			this.#searchIdsFor = null;
+		} finally {
+			if (this.#searchController === controller) {
+				this.#searchController = null;
+				this.#searchBusy = false;
+			}
+		}
 	}
 
 	/**
@@ -722,7 +892,8 @@ export class TicketListStore {
 	 * drops it. The date only counts while a due filter is set.
 	 */
 	#syncDone(): void {
-		const query = this.#query;
+		// The done section follows the applied search, not every typed character.
+		const query = { ...this.#query, search: this.#search };
 		const show = showsDoneSection(query);
 		const key = show
 			? JSON.stringify([

@@ -74,6 +74,7 @@ vi.mock('$lib/stores/ticket-list.svelte', async (importOriginal) => {
 		ticketListData: () => ({
 			listOpen: async () => [ticket('t00000000000001'), ticket('t00000000000002')],
 			listDone: async (page: number) => ({ items: [], page, hasMore: false }),
+			searchOpen: async (): Promise<string[]> => [],
 			setDone: async () => ticket('t00000000000001'),
 			update: async () => ticket('t00000000000001')
 		}),

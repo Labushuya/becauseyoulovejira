@@ -7,7 +7,13 @@ import type { DoneFilter, DoneTicketPage } from '$lib/data/tickets';
 import type { RequestOptions } from '$lib/data/options';
 import { EMPTY_LIST_QUERY, NO_PROJECT, type ListQuery } from '$lib/domain/list-query';
 import type { TicketPatch, TicketSummary } from '$lib/domain/ticket';
-import { TicketListStore, UNDO_WINDOW_MS, type TicketListData } from './ticket-list.svelte';
+import type { LiveSource, RecordChange, Unsubscribe } from './realtime';
+import {
+	SEARCH_DEBOUNCE_MS,
+	TicketListStore,
+	UNDO_WINDOW_MS,
+	type TicketListData
+} from './ticket-list.svelte';
 
 // 2026-09-24 12:00 in Berlin (CEST).
 const NOON = Date.UTC(2026, 8, 24, 10, 0, 0);
@@ -74,6 +80,7 @@ function fakeData(open: TicketSummary[] = [], donePages: TicketSummary[][] = [])
 				})
 			)
 		),
+		searchOpen: vi.fn<TicketListData['searchOpen']>(async () => []),
 		setDone: vi.fn(async (id: string, isDone: boolean): Promise<TicketSummary> => {
 			const current = [...open, ...donePages.flat()].find((entry) => entry.id === id);
 			if (!current) throw new DataError('not_found');
@@ -774,5 +781,254 @@ describe('grouping (E3 plan, package 13)', () => {
 		store.upsert({ ...item, status: 'in_progress', updated: '2026-09-24 11:00:00.000Z' });
 
 		expect(shape(store)).toEqual([['in_progress', [item.id]]]);
+	});
+});
+
+describe('search (E3 plan, package 11)', () => {
+	const searching = (search: string | null, extra: Partial<ListQuery> = {}): ListQuery => ({
+		...EMPTY_LIST_QUERY,
+		search,
+		...extra
+	});
+	const visibleIds = (store: TicketListStore) => store.visible.map((entry) => entry.id);
+
+	/** Realtime source with ticket events only. */
+	function fakeLive() {
+		const listeners: ((change: RecordChange<TicketSummary>) => void)[] = [];
+		const never = async (): Promise<Unsubscribe> => async () => undefined;
+		const source: LiveSource = {
+			tickets: async (call) => {
+				listeners.push(call);
+				return async () => undefined;
+			},
+			ticket: never,
+			comments: never,
+			history: never,
+			projects: never,
+			tags: never,
+			reconnected: never
+		};
+		return {
+			source,
+			send: (change: RecordChange<TicketSummary>) => {
+				for (const listener of listeners) listener(change);
+			}
+		};
+	}
+
+	async function started(open: TicketSummary[], ids: string[] = []) {
+		const data = fakeData(open);
+		data.searchOpen.mockImplementation((_search, options) =>
+			abortable(options, Promise.resolve(ids))
+		);
+		const store = new TicketListStore(data, session());
+		store.activate(EMPTY_LIST_QUERY);
+		await settle();
+		return { store, data };
+	}
+
+	it('asks once after the pause while typing and narrows the list to the found IDs', async () => {
+		const hit = ticket({ title: 'Miete zahlen' });
+		const other = ticket();
+		const { store, data } = await started([hit, other], [hit.id]);
+
+		store.activate(searching('Mi'));
+		store.activate(searching('Mie'));
+		await vi.advanceTimersByTimeAsync(SEARCH_DEBOUNCE_MS - 1);
+		store.activate(searching('Miete'));
+		expect(store.searchBusy).toBe(true);
+		expect(visibleIds(store)).toEqual([hit.id, other.id]);
+		await vi.advanceTimersByTimeAsync(SEARCH_DEBOUNCE_MS);
+
+		expect(data.searchOpen).toHaveBeenCalledOnce();
+		expect(data.searchOpen.mock.calls[0]?.[0]).toBe('Miete');
+		expect(store.search).toBe('Miete');
+		expect(visibleIds(store)).toEqual([hit.id]);
+		expect(store.searchBusy).toBe(false);
+		expect(store.announcement).toBe('1 Ticket.');
+	});
+
+	it('ignores a search shorter than two characters and clears the search at once', async () => {
+		const hit = ticket();
+		const other = ticket();
+		const { store, data } = await started([hit, other], [hit.id]);
+
+		store.activate(searching('M'));
+		await vi.advanceTimersByTimeAsync(SEARCH_DEBOUNCE_MS);
+		expect(data.searchOpen).not.toHaveBeenCalled();
+		expect(store.search).toBeNull();
+
+		store.activate(searching('Mi'));
+		await vi.advanceTimersByTimeAsync(SEARCH_DEBOUNCE_MS);
+		expect(visibleIds(store)).toEqual([hit.id]);
+
+		store.activate(searching(null));
+		expect(store.search).toBeNull();
+		expect(visibleIds(store)).toEqual([hit.id, other.id]);
+		expect(store.announcement).toBe('2 Tickets.');
+	});
+
+	it('applies a search from the URL of a fresh page at once', async () => {
+		const hit = ticket();
+		const data = fakeData([hit, ticket()]);
+		data.searchOpen.mockResolvedValue([hit.id]);
+		const store = new TicketListStore(data, session());
+
+		store.activate(searching('Miete'));
+		await settle();
+
+		expect(data.searchOpen).toHaveBeenCalledOnce();
+		expect(visibleIds(store)).toEqual([hit.id]);
+	});
+
+	it('aborts a stale request and drops its answer', async () => {
+		const first = ticket();
+		const second = ticket();
+		const { store, data } = await started([first, second]);
+		const signals: AbortSignal[] = [];
+		const answers = [deferred<string[]>(), deferred<string[]>()];
+		data.searchOpen.mockImplementation((_search, options) => {
+			if (options.signal) signals.push(options.signal);
+			return abortable(options, answers[signals.length - 1]!.promise);
+		});
+
+		store.activate(searching('Mi'));
+		await vi.advanceTimersByTimeAsync(SEARCH_DEBOUNCE_MS);
+		store.activate(searching('Miete'));
+		await vi.advanceTimersByTimeAsync(SEARCH_DEBOUNCE_MS);
+		expect(signals[0]?.aborted).toBe(true);
+
+		answers[0]!.resolve([first.id]);
+		answers[1]!.resolve([second.id]);
+		await settle();
+		expect(visibleIds(store)).toEqual([second.id]);
+	});
+
+	it('keeps the old rows while a newer search loads (no flicker)', async () => {
+		const first = ticket();
+		const second = ticket();
+		const { store, data } = await started([first, second], [first.id]);
+		store.activate(searching('Mi'));
+		await vi.advanceTimersByTimeAsync(SEARCH_DEBOUNCE_MS);
+		const answer = deferred<string[]>();
+		data.searchOpen.mockImplementation((_search, options) => abortable(options, answer.promise));
+
+		store.activate(searching('Miete'));
+		await vi.advanceTimersByTimeAsync(SEARCH_DEBOUNCE_MS);
+		expect(store.searchBusy).toBe(true);
+		expect(visibleIds(store)).toEqual([first.id]);
+
+		answer.resolve([second.id]);
+		await settle();
+		expect(visibleIds(store)).toEqual([second.id]);
+	});
+
+	it('asks again after create and update events, but not after a delete', async () => {
+		const hit = ticket();
+		const { store, data } = await started([hit], [hit.id]);
+		const live = fakeLive();
+		const stop = store.connect(live.source);
+		await settle();
+		store.activate(searching('Miete'));
+		await vi.advanceTimersByTimeAsync(SEARCH_DEBOUNCE_MS);
+		expect(data.searchOpen).toHaveBeenCalledOnce();
+
+		const created = ticket({ title: 'Miete Garage' });
+		data.searchOpen.mockImplementation((_search, options) =>
+			abortable(options, Promise.resolve([hit.id, created.id]))
+		);
+		live.send({ action: 'create', record: created });
+		live.send({ action: 'update', record: { ...hit, updated: '2026-09-24 11:00:00.000Z' } });
+		expect(visibleIds(store)).toEqual([hit.id]);
+		await vi.advanceTimersByTimeAsync(SEARCH_DEBOUNCE_MS);
+		expect(data.searchOpen).toHaveBeenCalledTimes(2);
+		expect(visibleIds(store).sort()).toEqual([hit.id, created.id].sort());
+
+		live.send({ action: 'delete', id: created.id });
+		await vi.advanceTimersByTimeAsync(SEARCH_DEBOUNCE_MS);
+		expect(data.searchOpen).toHaveBeenCalledTimes(2);
+		expect(visibleIds(store)).toEqual([hit.id]);
+		stop();
+	});
+
+	it('keeps a just checked row with "Rückgängig" although the server no longer finds it', async () => {
+		const hit = ticket();
+		const { store, data } = await started([hit], [hit.id]);
+		const live = fakeLive();
+		const stop = store.connect(live.source);
+		store.activate(searching('Miete'));
+		await vi.advanceTimersByTimeAsync(SEARCH_DEBOUNCE_MS);
+
+		await store.setDone(hit.id, true);
+		data.searchOpen.mockImplementation((_search, options) =>
+			abortable(options, Promise.resolve([]))
+		);
+		live.send({ action: 'update', record: store.find(hit.id) as TicketSummary });
+		await vi.advanceTimersByTimeAsync(SEARCH_DEBOUNCE_MS);
+
+		expect(visibleIds(store)).toEqual([hit.id]);
+		stop();
+	});
+
+	it('shows the list without search on a failure and asks again on "Erneut versuchen"', async () => {
+		const hit = ticket();
+		const other = ticket();
+		const { store, data } = await started([hit, other], [hit.id]);
+		data.searchOpen.mockRejectedValueOnce(new DataError('network'));
+
+		store.activate(searching('Miete'));
+		await vi.advanceTimersByTimeAsync(SEARCH_DEBOUNCE_MS);
+		expect(store.searchError).toMatch(/Server nicht erreichbar/);
+		expect(visibleIds(store)).toEqual([hit.id, other.id]);
+
+		store.retrySearch();
+		await settle();
+		expect(store.searchError).toBeNull();
+		expect(visibleIds(store)).toEqual([hit.id]);
+	});
+
+	it('sends the applied search with the done filter, not every typed letter', async () => {
+		const { store, data } = await started([]);
+		store.activate(searching(null, { showDone: true }));
+		await settle();
+		data.listDone.mockClear();
+
+		store.activate(searching('Mi', { showDone: true }));
+		store.activate(searching('Mie', { showDone: true }));
+		expect(data.listDone).not.toHaveBeenCalled();
+		await vi.advanceTimersByTimeAsync(SEARCH_DEBOUNCE_MS);
+
+		expect(data.listDone).toHaveBeenCalledOnce();
+		expect(data.listDone.mock.calls[0]?.[1].filter?.query.search).toBe('Mie');
+	});
+
+	it('accepts a done ticket from an event with a search only if it was found or is loaded', async () => {
+		const found = done({ title: 'Miete' });
+		const data = fakeData([], [[found]]);
+		data.searchOpen.mockResolvedValue([]);
+		const store = new TicketListStore(data, session());
+		store.activate(searching('Miete', { showDone: true }));
+		await settle();
+		expect(store.done.map((entry) => entry.id)).toEqual([found.id]);
+
+		const unknown = done({ completedAt: '2026-09-24 09:00:00.000Z' });
+		store.upsert(unknown);
+		expect(store.done.map((entry) => entry.id)).toEqual([found.id]);
+
+		store.upsert({ ...found, title: 'Miete Mai', updated: '2026-09-24 11:00:00.000Z' });
+		expect(store.done[0]?.title).toBe('Miete Mai');
+	});
+
+	it('forgets the search on reset', async () => {
+		const hit = ticket();
+		const { store } = await started([hit], [hit.id]);
+		store.activate(searching('Miete'));
+		await vi.advanceTimersByTimeAsync(SEARCH_DEBOUNCE_MS);
+
+		store.reset();
+
+		expect(store.search).toBeNull();
+		expect(store.searchBusy).toBe(false);
+		expect(store.searchError).toBeNull();
 	});
 });

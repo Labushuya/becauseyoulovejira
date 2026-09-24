@@ -72,6 +72,7 @@ function fakeData(open: TicketSummary[], donePages: TicketSummary[][] = []) {
 			page,
 			hasMore: page < donePages.length
 		})),
+		searchOpen: vi.fn(async (): Promise<string[]> => []),
 		setDone: vi.fn(async (id: string, done: boolean): Promise<TicketSummary> => {
 			const current = all().find((entry) => entry.id === id);
 			if (!current) throw new DataError('not_found');

@@ -30,7 +30,12 @@
 </script>
 
 <KpiTiles kpis={tickets.openState === 'ready' ? tickets.kpis : null} />
-<FilterBar {catalog} />
+<FilterBar
+	{catalog}
+	searchBusy={tickets.searchBusy}
+	searchError={tickets.searchError}
+	onretrysearch={() => tickets.retrySearch()}
+/>
 <div class="tickets" class:with-panel={withPanel}>
 	<TicketTable store={tickets} {catalog} {activeId} {creating} />
 	{@render children()}

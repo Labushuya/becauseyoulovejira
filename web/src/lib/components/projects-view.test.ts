@@ -119,6 +119,7 @@ async function show(
 			ticket(null)
 		],
 		listDone: async (page) => ({ items: [], page, hasMore: false }),
+		searchOpen: vi.fn(async (): Promise<string[]> => []),
 		setDone: vi.fn(),
 		update: vi.fn()
 	};

@@ -213,8 +213,8 @@
   "meta": {
     "projekt": "becauseyoulovejira",
     "stand": "2026-09-25",
-    "commit": "0a6c272",
-    "etappe": "E0, E1, E1.1 und E2 abgeschlossen; E3 Pakete 1–10 und 12–14 umgesetzt, Pakete 11 und 15 geplant"
+    "commit": "6803ef4",
+    "etappe": "E0, E1, E1.1 und E2 abgeschlossen; E3 Pakete 1–14 umgesetzt, Paket 15 geplant"
   },
   "blocks": [
     {
@@ -1122,17 +1122,32 @@
         { "id": "BYL-E3-064", "title": "Gruppierung im Browser", "art": ["manuell"], "status": "offen",
           "pre": "Angemeldet; Tickets mit verschiedenen Status, Prioritäten, Projekten und Fälligkeiten.", "steps": ["„Gruppieren“ öffnen, mit Escape schließen; erneut öffnen und daneben klicken.", "Per Tastatur öffnen, mit den Pfeiltasten durch die Gruppierungen gehen, mit Enter schließen.", "„Nach Projekt“ wählen, nach Titel sortieren, einen Filter setzen, dann Zurück.", "In einer Gruppe mit einer Zeile das Häkchen setzen und 5 s warten; in einem zweiten Fenster ein Ticket in einen anderen Status setzen.", "Hell- und Dunkelmodus ansehen; „Erledigte anzeigen“ einschalten."],
           "expect": "Escape und Klick daneben schließen, der Fokus steht danach auf dem Knopf; die Pfeiltasten gruppieren sofort um, Enter schließt; der Knopf zeigt „Gruppiert: Projekt“; Gruppenköpfe zeigen Bezeichnung und Zahl, Sortierung und Filter gelten in den Gruppen, Zurück stellt die vorige Ansicht her; die abgehakte Zeile bleibt 5 s in ihrer Gruppe, danach verschwindet die Gruppe und der Fokus steht in der nächsten Zeile; das Ticket aus dem zweiten Fenster wechselt die Gruppe; „Erledigt“ bleibt ein ungruppierter Abschnitt; nichts ist rot.",
+          "tests": [] },
+        { "id": "BYL-E3-065", "title": "Suche über die Datenschicht (Harness)", "art": ["integration", "unit"], "status": "bestanden",
+          "pre": "Wegwerf-Instanz des Harness.", "steps": ["npm run test:integration"],
+          "expect": "searchOpenTicketIds liefert nur IDs eigener, offener Tickets mit Treffer in Titel, Beschreibung oder Key (ASCII ohne Groß- und Kleinschreibung); listDoneTickets grenzt die erledigten mit der Suche und den übrigen Filtern ein, unter 2 Zeichen ohne Suche; ein Abbruch meldet „aborted“. Befund: ohne Maskierung ist „%“ ein Platzhalter ohne Umschließen („50%“ findet „500 Euro“), mit likeText gelten %, _ und \\ wörtlich; Umlaute unterscheiden Groß- und Kleinschreibung.",
+          "tests": ["tests/integration/web-search.test.mjs", "web/src/lib/data/like.test.ts"] },
+        { "id": "BYL-E3-066", "title": "Paritätstest mit Suche", "art": ["integration"], "status": "bestanden",
+          "pre": "Wegwerf-Instanz des Harness.", "steps": ["npm run test:integration"],
+          "expect": "Für 7 Suchtexte (Titel, nur Beschreibung, %, Key, _, ein Zeichen), allein und mit Priorität, Tag, Fälligkeit, Projekt und Status kombiniert, liefert der Serverausdruck der erledigten Tickets dieselben IDs wie matchesFilter plus die Referenzsuche über Titel, Beschreibung und Key.",
+          "tests": ["tests/integration/web-filter-parity.test.mjs::agrees with a search alone and combined with the other filters"] },
+        { "id": "BYL-E3-067", "title": "Suche im Listen-Store", "art": ["unit"], "status": "bestanden",
+          "pre": "–", "steps": ["npm run test:web"],
+          "expect": "Mit Fake-Timern: schnelles Tippen fragt einmal nach 250 ms Pause; unter 2 Zeichen keine Anfrage, Leeren sofort mit Live-Meldung; eine Seite mit ?q= sucht sofort; eine veraltete Anfrage wird abgebrochen, ihre Antwort verworfen; bis zur neuen Antwort bleiben die alten Zeilen; create und update fragen erneut, delete nicht; eine abgehakte Zeile bleibt während „Rückgängig“; ein Fehler zeigt die Liste ohne Suche, „Erneut versuchen“ fragt erneut; der Abschnitt „Erledigt“ lädt nur für die angewandte Suche neu und nimmt bei Suche nur bekannte erledigte Tickets aus Events.",
+          "tests": ["web/src/lib/stores/ticket-list.test.ts::search (E3 plan, package 11)", "web/src/lib/domain/list-query.test.ts::activeSearch (E3 plan, package 11)"] },
+        { "id": "BYL-E3-068", "title": "Suchfeld in der Filterleiste", "art": ["komponente"], "status": "bestanden",
+          "pre": "–", "steps": ["npm run test:web"],
+          "expect": "Suchfeld (type=search) mit Label „Suche“, Platzhalter, maxlength 200 und Hinweis „ab 2 Zeichen“; jede Eingabe schreibt q mit replaceState und behält andere Parameter; Escape leert ein nicht leeres Feld und lässt Escape bei leerem Feld durch; aria-busy während der Suche; ein Fehler steht als .alert-error mit „Erneut versuchen“ und dem Hinweis, dass die Tabelle ohne Suche zeigt; „Zurücksetzen“ leert auch die Suche.",
+          "tests": ["web/src/lib/components/filter-bar.test.ts::filter bar: search (E3 plan, package 11)"] },
+        { "id": "BYL-E3-069", "title": "Suche im Browser", "art": ["manuell"], "status": "offen",
+          "pre": "Angemeldet; Tickets mit „Miete“ im Titel, eines mit „Nebenkosten“ nur in der Beschreibung, ein erledigtes mit „Miete“, eines mit „50%“ im Titel.", "steps": ["„miete“ zügig tippen, dann „Nebenkosten“, dann den Key eines Tickets.", "Einen Statusfilter und „Erledigte anzeigen“ dazunehmen.", "„50%“ suchen.", "Zurück im Browser; danach Escape im Suchfeld.", "In einem zweiten Fenster den Titel eines Tickets so ändern, dass es passt bzw. nicht mehr passt."],
+          "expect": "Die Tabelle folgt kurz nach dem Tippen ohne Flackern, das Feld zeigt dabei, dass es sucht; Treffer aus Titel, Beschreibung und Key erscheinen, auch im Abschnitt „Erledigt“; „50%“ findet nur das Ticket mit „50%“; Zurück überspringt die einzelnen Buchstaben; Escape leert das Feld; das geänderte Ticket erscheint bzw. verschwindet ohne Neuladen.",
           "tests": [] }
       ]
     },
     {
-      "tag": "E3", "name": "E3 geplant", "desc": "Pakete 11 und 15 aus dem E3-Plan (Abschnitt 5). Die Schritte sind hier die Akzeptanzkriterien; mit der Umsetzung werden daraus automatisierte und manuelle Fälle.",
+      "tag": "E3", "name": "E3 geplant", "desc": "Paket 15 aus dem E3-Plan (Abschnitt 5). Die Schritte sind hier die Akzeptanzkriterien; mit der Umsetzung werden daraus automatisierte und manuelle Fälle.",
       "items": [
-        { "id": "BYL-E3-111", "title": "Paket 11 – Suche", "art": ["unit", "komponente", "integration"], "status": "geplant",
-          "pre": "Paket 10 (umgesetzt); Befund zu % und _ in ~ (Harness).",
-          "steps": ["Treffer in Titel, Beschreibung und Key, kombiniert mit allen Filtern, auch im Abschnitt „Erledigt“.", "Schnelles Tippen erzeugt eine Anfrage pro Pause, veraltete Antworten werden verworfen.", "Ein per Realtime geändertes Ticket erscheint oder verschwindet passend.", "q steht in der URL, ohne einen Verlaufseintrag pro Buchstabe."],
-          "expect": "Geplante Tests: ticket-list mit Fake-Timern, filter-bar (Label, Escape, aria-busy, Fehler), web-search (Harness).",
-          "tests": [] },
         { "id": "BYL-E3-115", "title": "Paket 15 – Dokumentation und Etappenabschluss", "art": ["manuell"], "status": "geplant",
           "pre": "Pakete 5–14.",
           "steps": ["Browser-Checkliste deckt P-2 bis P-5 und T-4 bis T-15 ab: Popover mit Escape und Klick daneben, waagerechtes Scrollen neben dem Panel.", "Hell- und Dunkelmodus, keine roten Nicht-Fehler.", "Vollständige Bedienung per Tastatur.", "Realtime mit zwei Fenstern: Projekt umbenennen, Tag löschen, Ticket in ein anderes Projekt verschieben.", "Alle Gates grün; README, CLAUDE.md und e3.md aktualisiert."],

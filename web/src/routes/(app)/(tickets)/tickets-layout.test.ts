@@ -38,6 +38,7 @@ function renderLayout(path: string, id?: string) {
 		{
 			listOpen: vi.fn(async () => []),
 			listDone: vi.fn(async (page: number) => ({ items: [], page, hasMore: false })),
+			searchOpen: vi.fn(async (): Promise<string[]> => []),
 			setDone: vi.fn(),
 			update: vi.fn()
 		},
