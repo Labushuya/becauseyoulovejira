@@ -28,7 +28,12 @@
 	// Stores live per layout instance (ADR-0006 section 1): a logout removes the layout and with
 	// it every loaded ticket, project and tag.
 	const catalog = setCatalogStore(new CatalogStore(catalogData(pb), auth));
-	const tickets = setTicketListStore(new TicketListStore(ticketListData(pb), auth));
+	// The column sort "Projekt" resolves projects through the catalog (E3 plan, package 9).
+	const tickets = setTicketListStore(
+		new TicketListStore(ticketListData(pb), auth, {
+			projectOf: (ticket) => catalog.projectOf(ticket)
+		})
+	);
 	const detail = setTicketDetailStore(new TicketDetailStore(ticketDetailData(pb), auth, tickets));
 	const activity = setTicketActivityStore(
 		new TicketActivityStore(ticketActivityData(pb), auth, () => auth.userId)

@@ -2,7 +2,9 @@
 	import { tick } from 'svelte';
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
-	import { hasFilters, resetFilters } from '$lib/domain/list-query';
+	import { SORT_COLUMN_LABELS, sortLabel, sortOrderLabel } from '$lib/domain/labels';
+	import { hasFilters, parseListQuery, resetFilters } from '$lib/domain/list-query';
+	import { nextSort, sortDirection, type SortKey } from '$lib/domain/ordering';
 	import type { TicketSummary } from '$lib/domain/ticket';
 	import type { CatalogStore } from '$lib/stores/catalog.svelte';
 	import type { TicketListStore } from '$lib/stores/ticket-list.svelte';
@@ -17,12 +19,14 @@
 	import SectionBar from './SectionBar.svelte';
 	import TicketTableRow from './TicketTableRow.svelte';
 
-	// Ticket table (E3 plan, T-4 and packages 5 and 10; E2 plan, P-1 to P-5): section bar
+	// Ticket table (E3 plan, T-4 and packages 5, 9 and 10; E2 plan, P-1 to P-5): section bar
 	// "Aufgaben" with the number of shown tickets and the switch "Erledigte anzeigen"
 	// (?erledigte=1), the open tickets that pass the filters (the store holds the query of the
-	// URL) in the default order and, in a section of their own below, the done tickets with
-	// "Weitere laden". Project and tags come from the catalog. Wider than its space (next to the
-	// panel), the table scrolls sideways in a named region; the page itself does not.
+	// URL) in the column sort of the URL or the default order and, in a section of their own
+	// below, the done tickets with "Weitere laden", always most recently completed first. Sort
+	// buttons sit in the column headers (T-5). Project and tags come from the catalog. Wider than
+	// its space (next to the panel), the table scrolls sideways in a named region; the page itself
+	// does not.
 	let {
 		store,
 		catalog,
@@ -93,6 +97,19 @@
 	async function clearFilters() {
 		await goto(withListQuery(page.url, resetFilters(query)), { keepFocus: true, noScroll: true });
 		heading?.focus();
+	}
+
+	/**
+	 * Click cycle of a column header (T-5): natural direction, reversed, default order. It is a
+	 * navigation with a history entry, so back restores the previous sort; the focus stays on the
+	 * button.
+	 */
+	async function sortBy(key: SortKey) {
+		const current = parseListQuery(page.url.searchParams);
+		await goto(withListQuery(page.url, { ...current, sort: nextSort(current.sort, key) }), {
+			keepFocus: true,
+			noScroll: true
+		});
 	}
 
 	function rowsOf(section: string): HTMLElement[] {
@@ -198,6 +215,36 @@
 	{/each}
 {/snippet}
 
+{#snippet sortable(key: SortKey, text: string, className = '')}
+	{@const sorted = query.sort?.key === key ? query.sort : null}
+	{@const direction = sorted === null ? null : sortDirection(sorted)}
+	<th scope="col" class={className} aria-sort={direction ?? undefined}>
+		<button class="sort" class:sorted={sorted !== null} type="button" onclick={() => sortBy(key)}>
+			<span aria-hidden="true">{text}</span>
+			<span class="visually-hidden">
+				Nach {SORT_COLUMN_LABELS[key]} sortieren{sorted === null
+					? ''
+					: `, sortiert: ${sortOrderLabel(sorted)}`}
+			</span>
+			<svg
+				class="sort-icon"
+				data-direction={direction ?? 'none'}
+				viewBox="0 0 12 12"
+				aria-hidden="true"
+				focusable="false"
+			>
+				{#if direction === 'ascending'}
+					<path d="M6 2.5v7M3 5.5l3-3 3 3" />
+				{:else if direction === 'descending'}
+					<path d="M6 2.5v7M3 6.5l3 3 3-3" />
+				{:else}
+					<path d="M3.5 4.5L6 2l2.5 2.5M3.5 7.5L6 10l2.5-2.5" />
+				{/if}
+			</svg>
+		</button>
+	</th>
+{/snippet}
+
 {#snippet failure(message: string, retryLabel: string, onretry: () => void)}
 	<div class="alert-error failure">
 		<ErrorIcon />
@@ -276,20 +323,22 @@
 		<div class="scroll" role="region" aria-labelledby={ids.caption} tabindex="0">
 			<table>
 				<caption id={ids.caption}>
-					Tickets<span class="caption-order"> · Standard-Reihenfolge</span>
+					Tickets<span class="caption-order">
+						· {query.sort === null
+							? 'Standard-Reihenfolge'
+							: `sortiert nach ${sortLabel(query.sort)}`}
+					</span>
 				</caption>
 				<thead>
 					<tr>
-						<th scope="col">Key</th>
-						<th scope="col">
-							<span aria-hidden="true">Prio</span><span class="visually-hidden">Priorität</span>
-						</th>
-						<th scope="col">Status</th>
-						<th scope="col" class="title-col">Titel</th>
-						<th scope="col">Projekt</th>
+						{@render sortable('key', 'Key')}
+						{@render sortable('priority', 'Prio')}
+						{@render sortable('status', 'Status')}
+						{@render sortable('title', 'Titel', 'title-col')}
+						{@render sortable('project', 'Projekt')}
 						<th scope="col">Tags</th>
-						<th scope="col">Fällig</th>
-						<th scope="col">Erstellt</th>
+						{@render sortable('due', 'Fällig')}
+						{@render sortable('created', 'Erstellt')}
 						<th scope="col"><span class="visually-hidden">Aktionen</span></th>
 					</tr>
 				</thead>
@@ -412,6 +461,41 @@
 		white-space: nowrap;
 		color: var(--color-text-muted);
 		border-bottom: 1px solid var(--color-line);
+	}
+
+	.sort {
+		display: inline-flex;
+		gap: 0.25rem;
+		align-items: center;
+		padding: 0;
+		font: inherit;
+		color: inherit;
+		background: none;
+		border: none;
+		cursor: pointer;
+	}
+
+	.sort:hover,
+	.sort.sorted {
+		color: var(--color-text);
+	}
+
+	.sort-icon {
+		width: 0.75rem;
+		height: 0.75rem;
+		fill: none;
+		stroke: currentColor;
+		stroke-width: 1.5;
+		stroke-linecap: round;
+		stroke-linejoin: round;
+	}
+
+	.sort-icon[data-direction='none'] {
+		opacity: 0.45;
+	}
+
+	.sort.sorted .sort-icon {
+		color: var(--color-brand-text);
 	}
 
 	.title-col {

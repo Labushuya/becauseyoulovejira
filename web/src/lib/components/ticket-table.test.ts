@@ -149,12 +149,16 @@ describe('ticket table', () => {
 		expect(table.querySelector('caption')?.textContent).toMatch(
 			/Tickets\s*·\s*Standard-Reihenfolge/
 		);
+		// Visible text of each header (sortable ones: the text of their button) and its scope.
 		const headers = within(table)
 			.getAllByRole('columnheader')
-			.map((header) => [header.textContent?.trim(), header.getAttribute('scope')]);
+			.map((header) => [
+				(header.querySelector('[aria-hidden="true"]') ?? header).textContent?.trim(),
+				header.getAttribute('scope')
+			]);
 		expect(headers).toEqual([
 			['Key', 'col'],
-			['PrioPriorität', 'col'],
+			['Prio', 'col'],
 			['Status', 'col'],
 			['Titel', 'col'],
 			['Projekt', 'col'],

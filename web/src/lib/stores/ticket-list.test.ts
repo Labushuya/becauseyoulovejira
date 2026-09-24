@@ -453,6 +453,49 @@ describe('filters (E3 plan, package 10)', () => {
 	});
 });
 
+describe('column sort (E3 plan, package 9)', () => {
+	const sorted = (key: 'status' | 'project', reversed = false): ListQuery => ({
+		...EMPTY_LIST_QUERY,
+		sort: { key, reversed }
+	});
+
+	it('keeps a just checked row at its place in the status sort until undo expires', async () => {
+		const backlog = ticket({ status: 'backlog' });
+		const working = ticket({ status: 'in_progress' });
+		const waiting = ticket({ status: 'waiting' });
+		const store = new TicketListStore(fakeData([waiting, working, backlog]), session());
+		store.activate(sorted('status'));
+		await settle();
+		expect(store.visible.map((entry) => entry.id)).toEqual([backlog.id, working.id, waiting.id]);
+
+		await store.setDone(working.id, true);
+		expect(store.visible.map((entry) => entry.id)).toEqual([backlog.id, working.id, waiting.id]);
+
+		await vi.advanceTimersByTimeAsync(UNDO_WINDOW_MS);
+		expect(store.visible.map((entry) => entry.id)).toEqual([backlog.id, waiting.id]);
+	});
+
+	it('resolves projects through the given function, by default through expand', async () => {
+		const first = { id: 'proj00000000001', name: 'Bau', code: 'BAU', archived: false };
+		const second = { id: 'proj00000000002', name: 'Auto', code: 'AUTO', archived: false };
+		const a = ticket({ projectId: first.id, project: first });
+		const b = ticket({ projectId: second.id, project: second });
+
+		const byExpand = new TicketListStore(fakeData([a, b]), session());
+		byExpand.activate(sorted('project'));
+		await settle();
+		expect(byExpand.visible.map((entry) => entry.id)).toEqual([b.id, a.id]);
+
+		const renamed = new TicketListStore(fakeData([a, b]), session(), {
+			projectOf: (entry) =>
+				entry.projectId === second.id ? { ...second, name: 'Zelt' } : entry.project
+		});
+		renamed.activate(sorted('project'));
+		await settle();
+		expect(renamed.visible.map((entry) => entry.id)).toEqual([a.id, b.id]);
+	});
+});
+
 describe('KPI numbers (E3 plan, package 12)', () => {
 	it('count the tickets that are not done, independent of the filters, and follow changes', async () => {
 		const overdue = ticket({ due: '2026-09-23', priority: 'urgent' });

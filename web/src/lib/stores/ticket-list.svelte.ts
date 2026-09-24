@@ -23,7 +23,7 @@ import { berlinToday, msUntilNextBerlinMidnight, type CalendarDate } from '$lib/
 import { matchesFilter } from '$lib/domain/filter';
 import { countKpis, type Kpis } from '$lib/domain/kpis';
 import { EMPTY_LIST_QUERY, FILTER_KEYS, type ListQuery } from '$lib/domain/list-query';
-import { ticketOrder } from '$lib/domain/ordering';
+import { columnOrder, ticketOrder, type ResolveProject } from '$lib/domain/ordering';
 import type { Status } from '$lib/domain/status';
 import type { TicketPatch, TicketSummary } from '$lib/domain/ticket';
 import { hold, type LiveSource } from './realtime';
@@ -105,10 +105,21 @@ function compareDone(a: TicketSummary, b: TicketSummary): number {
 	return 0;
 }
 
+export interface TicketListOptions {
+	/** Clock of "today"; tests pass a fixed one. */
+	now?: () => number;
+	/**
+	 * Project of a ticket for the column sort "Projekt" (E3 plan, package 9): the app passes the
+	 * catalog (`catalog.projectOf`), so a rename sorts again at once; default is `expand`.
+	 */
+	projectOf?: ResolveProject<TicketSummary>;
+}
+
 export class TicketListStore {
 	readonly #data: TicketListData;
 	readonly #session: SessionGuard;
 	readonly #now: () => number;
+	readonly #projectOf: ResolveProject<TicketSummary>;
 
 	readonly #open = new SvelteMap<string, TicketSummary>();
 	readonly #done = new SvelteMap<string, TicketSummary>();
@@ -158,12 +169,17 @@ export class TicketListStore {
 		const query = this.#query;
 		if (query.status === 'done') return [];
 		const today = this.#today;
-		// A just checked row stays in place with "Rückgängig": it is filtered as it was before.
-		return this.#openList.filter((ticket) => {
-			const previousStatus = this.#lingering.get(ticket.id)?.previousStatus;
-			const subject = previousStatus ? { ...ticket, status: previousStatus } : ticket;
-			return matchesFilter(subject, query, today);
-		});
+		const order = columnOrder(query.sort, today, this.#projectOf);
+		// A just checked row stays in place with "Rückgängig": it is filtered and sorted with the
+		// status it had before.
+		return this.#openList
+			.map((ticket) => {
+				const previousStatus = this.#lingering.get(ticket.id)?.previousStatus;
+				return { ticket, subject: previousStatus ? { ...ticket, status: previousStatus } : ticket };
+			})
+			.filter(({ subject }) => matchesFilter(subject, query, today))
+			.sort((a, b) => order(a.subject, b.subject))
+			.map(({ ticket }) => ticket);
 	});
 	#doneList = $derived.by(() => {
 		const query = this.#query;
@@ -177,10 +193,15 @@ export class TicketListStore {
 	});
 	#kpis = $derived(countKpis(this.#open.values(), this.#today));
 
-	constructor(data: TicketListData, session: SessionGuard, now: () => number = Date.now) {
+	constructor(
+		data: TicketListData,
+		session: SessionGuard,
+		{ now = Date.now, projectOf = (ticket) => ticket.project }: TicketListOptions = {}
+	) {
 		this.#data = data;
 		this.#session = session;
 		this.#now = now;
+		this.#projectOf = projectOf;
 		this.#today = berlinToday(now());
 	}
 
@@ -190,9 +211,9 @@ export class TicketListStore {
 	}
 
 	/**
-	 * Rows of the table above the section "Erledigt" (E3 plan, packages 5 and 10): the open
-	 * tickets that pass the filters of the URL, in the default order; none with the status filter
-	 * "Erledigt".
+	 * Rows of the table above the section "Erledigt" (E3 plan, packages 5, 9 and 10): the open
+	 * tickets that pass the filters of the URL, in its column sort (T-5; ties and no sort: the
+	 * default order); none with the status filter "Erledigt".
 	 */
 	get visible(): readonly TicketSummary[] {
 		return this.#visibleList;
