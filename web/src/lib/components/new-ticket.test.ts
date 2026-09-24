@@ -1,11 +1,14 @@
-// Component tests for "Neues Ticket" (E2 plan, package 8): required title, defaults, Ctrl+Enter,
-// lock during the request, switching to the new ID with replaceState, server errors, discarding
-// after a question. The creation itself is covered against the harness in package 4.
+// Component tests for "Neues Ticket" (E2 plan, package 8; E3 plan, T-13): required title,
+// defaults, project with the filtered project chosen in advance, Ctrl+Enter, lock during the
+// request, switching to the new ID with replaceState, server errors, discarding after a question.
+// The creation itself is covered against the harness (E2 plan, package 4).
 
 import { fireEvent, render, screen } from '@testing-library/svelte';
 import { tick } from 'svelte';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import type { Project } from '$lib/domain/project';
 import type { Ticket, TicketDraft } from '$lib/domain/ticket';
+import { CatalogStore } from '$lib/stores/catalog.svelte';
 import type { CreateResult } from '$lib/stores/ticket-detail.svelte';
 import NewTicketForm from './NewTicketForm.svelte';
 import NewTicketPage from '../../routes/(app)/(tickets)/tickets/neu/+page.svelte';
@@ -13,7 +16,8 @@ import NewTicketPage from '../../routes/(app)/(tickets)/tickets/neu/+page.svelte
 const mocks = vi.hoisted(() => ({
 	goto: vi.fn(async () => undefined),
 	page: { url: new URL('http://localhost:3000/tickets/neu?erledigte=1') },
-	detail: { create: vi.fn() }
+	detail: { create: vi.fn() },
+	catalog: null as unknown
 }));
 
 vi.mock('$app/navigation', () => ({ goto: mocks.goto }));
@@ -22,6 +26,45 @@ vi.mock('$lib/stores/ticket-detail.svelte', async (importOriginal) => ({
 	...(await importOriginal<object>()),
 	getTicketDetailStore: () => mocks.detail
 }));
+vi.mock('$lib/stores/catalog.svelte', async (importOriginal) => ({
+	...(await importOriginal<object>()),
+	getCatalogStore: () => mocks.catalog
+}));
+
+const HOUSE: Project = {
+	id: 'proj00000000001',
+	name: 'Haushalt',
+	code: 'HAUS',
+	archived: false,
+	updated: '2026-09-01 10:00:00.000Z'
+};
+const CAR: Project = { ...HOUSE, id: 'proj00000000002', name: 'Auto', code: 'AUTO' };
+const OLD: Project = {
+	...HOUSE,
+	id: 'proj00000000003',
+	name: 'Altbau',
+	code: 'ALT',
+	archived: true
+};
+
+/** Catalog of the route tests; `load` resolves when the test says so. */
+function catalog(projects: Project[] = [HOUSE, CAR, OLD]) {
+	let release!: () => void;
+	const ready = new Promise<void>((resolve) => (release = resolve));
+	const store = new CatalogStore(
+		{
+			listProjects: vi.fn(async () => {
+				await ready;
+				return projects;
+			}),
+			listTags: vi.fn(async () => [])
+		},
+		{ ensureValid: () => true, logout: vi.fn() }
+	);
+	void store.load();
+	mocks.catalog = store;
+	return { store, release };
+}
 
 const CREATED: Ticket = {
 	id: 'new000000000000',
@@ -53,12 +96,13 @@ function renderForm(
 	create: (draft: TicketDraft) => Promise<CreateResult> = async () => ({
 		ok: true,
 		ticket: CREATED
-	})
+	}),
+	props: Record<string, unknown> = {}
 ) {
 	const oncreate = vi.fn(create);
 	const oncreated = vi.fn();
 	const oncancel = vi.fn();
-	render(NewTicketForm, { props: { oncreate, oncreated, oncancel } });
+	render(NewTicketForm, { props: { oncreate, oncreated, oncancel, ...props } });
 	return { oncreate, oncreated, oncancel };
 }
 
@@ -72,6 +116,8 @@ function createButton() {
 
 beforeEach(() => {
 	mocks.goto.mockClear();
+	mocks.page.url = new URL('http://localhost:3000/tickets/neu?erledigte=1');
+	catalog().release();
 });
 
 afterEach(() => {
@@ -123,7 +169,8 @@ describe('new ticket form', () => {
 			description: '*Text*',
 			status: 'in_progress',
 			priority: 'urgent',
-			due: '2026-10-01'
+			due: '2026-10-01',
+			project: null
 		});
 		await vi.waitFor(() => expect(oncreated).toHaveBeenCalledWith('new000000000000'));
 	});
@@ -231,5 +278,101 @@ describe('new ticket route', () => {
 		await fireEvent.click(screen.getByRole('button', { name: 'Abbrechen' }));
 
 		expect(mocks.goto).toHaveBeenCalledWith('/?erledigte=1');
+	});
+});
+
+describe('new ticket: project (E3 plan, T-13)', () => {
+	function projectField() {
+		return screen.getByLabelText<HTMLSelectElement>('Projekt');
+	}
+
+	it('offers the active projects only and creates with the chosen one', async () => {
+		const { oncreate } = renderForm(undefined, { projects: [CAR, HOUSE] });
+
+		expect([...projectField().options].map((option) => option.textContent?.trim())).toEqual([
+			'Kein Projekt',
+			'Auto (AUTO)',
+			'Haushalt (HAUS)'
+		]);
+		expect(projectField().value).toBe('');
+		expect(screen.getByText('Beim Wechsel bekommt das Ticket einen neuen Key.')).toBeTruthy();
+		await fireEvent.input(titleField(), { target: { value: 'Neu' } });
+		await fireEvent.change(projectField(), { target: { value: HOUSE.id } });
+		await fireEvent.click(createButton());
+
+		expect(oncreate.mock.calls[0]?.[0]).toMatchObject({ title: 'Neu', project: HOUSE.id });
+	});
+
+	it('shows a server error at the project field', async () => {
+		renderForm(
+			async () => ({
+				ok: false,
+				message: null,
+				fields: { project: 'Das Projekt ist archiviert.' }
+			}),
+			{ projects: [HOUSE] }
+		);
+
+		await fireEvent.input(titleField(), { target: { value: 'Neu' } });
+		await fireEvent.change(projectField(), { target: { value: HOUSE.id } });
+		await fireEvent.click(createButton());
+
+		await vi.waitFor(() => expect(projectField().getAttribute('aria-invalid')).toBe('true'));
+		const describedBy = projectField().getAttribute('aria-describedby') ?? '';
+		const texts = describedBy.split(' ').map((id) => document.getElementById(id)?.textContent);
+		expect(texts).toContain('Das Projekt ist archiviert.');
+	});
+
+	it('asks before discarding a chosen project', async () => {
+		const confirm = vi.spyOn(window, 'confirm').mockReturnValueOnce(false);
+		const { oncancel } = renderForm(undefined, { projects: [HOUSE] });
+
+		await fireEvent.change(projectField(), { target: { value: HOUSE.id } });
+		await fireEvent.click(screen.getByRole('button', { name: 'Abbrechen' }));
+
+		expect(confirm).toHaveBeenCalledOnce();
+		expect(oncancel).not.toHaveBeenCalled();
+	});
+
+	it('chooses the filtered active project in advance, also when the catalog arrives later', async () => {
+		const { release } = catalog();
+		mocks.page.url = new URL(`http://localhost:3000/tickets/neu?projekt=${HOUSE.id}`);
+		mocks.detail.create.mockResolvedValueOnce({ ok: true, ticket: CREATED });
+		render(NewTicketPage);
+		expect(projectField().value).toBe('');
+
+		release();
+		await vi.waitFor(() => expect(projectField().value).toBe(HOUSE.id));
+		expect([...projectField().options].map((option) => option.value)).not.toContain(OLD.id);
+		await fireEvent.input(titleField(), { target: { value: 'Neu' } });
+		await fireEvent.click(createButton());
+
+		expect(mocks.detail.create).toHaveBeenLastCalledWith(
+			expect.objectContaining({ project: HOUSE.id })
+		);
+	});
+
+	it.each([
+		['an archived project', `?projekt=${OLD.id}`],
+		['"ohne"', '?projekt=ohne'],
+		['no filter', '']
+	])('chooses no project in advance for %s', async (_name, query) => {
+		mocks.page.url = new URL(`http://localhost:3000/tickets/neu${query}`);
+		render(NewTicketPage);
+		await vi.waitFor(() => expect(projectField().options.length).toBe(3));
+
+		expect(projectField().value).toBe('');
+	});
+
+	it('does not ask before leaving when only the project filled in advance is set', async () => {
+		const confirm = vi.spyOn(window, 'confirm');
+		mocks.page.url = new URL(`http://localhost:3000/tickets/neu?projekt=${HOUSE.id}`);
+		render(NewTicketPage);
+		await vi.waitFor(() => expect(projectField().value).toBe(HOUSE.id));
+
+		await fireEvent.click(screen.getByRole('button', { name: 'Abbrechen' }));
+
+		expect(confirm).not.toHaveBeenCalled();
+		expect(mocks.goto).toHaveBeenCalledWith(`/?projekt=${HOUSE.id}`);
 	});
 });

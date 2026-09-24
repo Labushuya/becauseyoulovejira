@@ -108,6 +108,8 @@ function patchBody(patch: TicketPatch): Record<string, string> {
 	if (patch.status !== undefined) body.status = patch.status;
 	if (patch.priority !== undefined) body.priority = patch.priority;
 	if (patch.due !== undefined) body.due = dueBody(patch.due);
+	// '' removes the project; the hook gives the ticket a key in the new number range.
+	if (patch.project !== undefined) body.project = patch.project ?? '';
 	return body;
 }
 
@@ -182,7 +184,8 @@ export function createTicket(pb: PocketBase, draft: TicketDraft, { signal }: Req
 				description: draft.description,
 				status: draft.status,
 				priority: draft.priority,
-				due: dueBody(draft.due)
+				due: dueBody(draft.due),
+				project: draft.project ?? ''
 			},
 			{ fields: TICKET_DETAIL_FIELDS, expand: TICKET_EXPAND, signal }
 		);

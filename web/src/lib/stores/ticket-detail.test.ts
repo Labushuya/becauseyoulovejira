@@ -1,5 +1,6 @@
-// Detail store with a fake data layer (E2 plan, package 7): saving sends only the changed field,
-// a failure keeps the draft and sets the field error, an incoming update keeps the draft.
+// Detail store with a fake data layer (E2 plan, package 7; E3 plan, T-13): saving sends only the
+// changed field, a failure keeps the draft and sets the field error, an incoming update keeps the
+// draft, a new project gives a new key.
 
 import { SvelteMap } from 'svelte/reactivity';
 import { describe, expect, it, vi } from 'vitest';
@@ -48,6 +49,21 @@ function deferred<T>() {
 
 let clock = 0;
 
+/** Projects the fake server knows; a project change gives the key of the new number range. */
+const HOUSE = { id: 'proj00000000001', name: 'Haushalt', code: 'HAUS', archived: false };
+
+/** Applies a patch like the server: `project` is an ID and changes the key (E3 plan, T-13). */
+function applyPatch(current: Ticket, { project, ...fields }: TicketPatch): Ticket {
+	if (project === undefined) return { ...current, ...fields };
+	return {
+		...current,
+		...fields,
+		projectId: project,
+		project: project === HOUSE.id ? HOUSE : null,
+		key: project === null ? 'TASK-10' : 'HAUS-1'
+	};
+}
+
 function setup(initial: Ticket = ticket()) {
 	let current = initial;
 	const data = {
@@ -55,20 +71,19 @@ function setup(initial: Ticket = ticket()) {
 		update: vi.fn(async (_id: string, patch: TicketPatch): Promise<Ticket> => {
 			clock += 1;
 			current = {
-				...current,
-				...patch,
+				...applyPatch(current, patch),
 				completedAt: patch.status === 'done' ? '2026-09-24 10:00:00.000Z' : current.completedAt,
 				updated: `2026-09-24 10:00:${String(clock).padStart(2, '0')}.000Z`
 			};
 			return current;
 		}),
-		create: vi.fn(async (draft: TicketDraft): Promise<Ticket> => ({
+		create: vi.fn(async ({ project, ...draft }: TicketDraft): Promise<Ticket> => ({
 			...ticket(draft),
 			id: 'new000000000000',
-			key: 'TASK-9',
-			projectId: null,
+			key: project === null ? 'TASK-9' : 'HAUS-1',
+			projectId: project,
 			tagIds: [],
-			project: null,
+			project: project === HOUSE.id ? HOUSE : null,
 			tags: [],
 			recurring: false,
 			completedAt: null,
@@ -364,7 +379,8 @@ describe('creating', () => {
 		description: '',
 		status: 'open',
 		priority: 'medium',
-		due: null
+		due: null,
+		project: null
 	};
 
 	it('creates with a trimmed title, adds the ticket to the list and shows it', async () => {
@@ -420,6 +436,96 @@ describe('creating', () => {
 
 		expect(await store.create(DRAFT)).toEqual({ ok: false, message: null, fields: {} });
 		expect(session.logout).toHaveBeenCalledOnce();
+	});
+});
+
+describe('project (E3 plan, T-13)', () => {
+	const ARCHIVED = new DataError('validation', {
+		status: 400,
+		fields: {
+			project: { code: 'validation_project_archived', message: 'Das Projekt ist archiviert.' }
+		}
+	});
+
+	it('creates with a project and reports an archived project at the field', async () => {
+		const { store, data } = setup();
+		const draft: TicketDraft = {
+			title: 'Neu',
+			description: '',
+			status: 'open',
+			priority: 'medium',
+			due: null,
+			project: HOUSE.id
+		};
+
+		const result = await store.create(draft);
+		expect(data.create).toHaveBeenLastCalledWith(draft);
+		expect(result).toMatchObject({ ok: true, ticket: { key: 'HAUS-1', projectId: HOUSE.id } });
+
+		data.create.mockRejectedValueOnce(ARCHIVED);
+		expect(await store.create(draft)).toEqual({
+			ok: false,
+			message: null,
+			fields: { project: 'Das Projekt ist archiviert.' }
+		});
+	});
+
+	it('saves a chosen project at once, sends only the project and announces the new key', async () => {
+		const { store, data, list } = await opened();
+		expect(store.value('project')).toBe('');
+
+		await store.choose('project', HOUSE.id);
+
+		expect(data.update).toHaveBeenCalledExactlyOnceWith(ID, { project: HOUSE.id });
+		expect(store.ticket).toMatchObject({ key: 'HAUS-1', projectId: HOUSE.id });
+		expect(store.value('project')).toBe(HOUSE.id);
+		expect(store.isEditing('project')).toBe(false);
+		expect(list.upsert).toHaveBeenLastCalledWith(expect.objectContaining({ key: 'HAUS-1' }));
+		expect(list.announce).toHaveBeenCalledExactlyOnceWith('Neuer Key: HAUS-1');
+		expect(store.id).toBe(ID);
+	});
+
+	it('removes the project with null', async () => {
+		const { store, data, list } = await opened(
+			ticket({ key: 'HAUS-1', projectId: HOUSE.id, project: HOUSE })
+		);
+		expect(store.value('project')).toBe(HOUSE.id);
+
+		await store.choose('project', '');
+
+		expect(data.update).toHaveBeenCalledExactlyOnceWith(ID, { project: null });
+		expect(store.ticket?.key).toBe('TASK-10');
+		expect(list.announce).toHaveBeenCalledWith('Neuer Key: TASK-10');
+	});
+
+	it('restores the old project and shows the error at the field when saving fails', async () => {
+		const { store, data, list } = await opened();
+		data.update.mockRejectedValueOnce(ARCHIVED);
+
+		await store.choose('project', HOUSE.id);
+
+		expect(store.value('project')).toBe('');
+		expect(store.fieldError('project')).toBe('Das Projekt ist archiviert.');
+		expect(store.ticket?.key).toBe('TASK-3');
+		expect(list.announce).not.toHaveBeenCalled();
+	});
+
+	it('refuses a value that is no record ID without a request', async () => {
+		const { store, data } = await opened();
+
+		await store.choose('project', 'kein-projekt');
+
+		expect(data.update).not.toHaveBeenCalled();
+		expect(store.fieldError('project')).toBe('Ungültiger Wert.');
+		expect(store.value('project')).toBe('');
+	});
+
+	it('announces nothing when a save keeps the key', async () => {
+		const { store, list } = await opened();
+
+		await store.choose('priority', 'high');
+
+		expect(list.announce).not.toHaveBeenCalled();
 	});
 });
 

@@ -10,6 +10,7 @@ import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import type { ResolvedPathname } from '$app/types';
 import { DataError } from '$lib/data/errors';
 import type { Ticket, TicketSummary } from '$lib/domain/ticket';
+import { CatalogStore } from '$lib/stores/catalog.svelte';
 import {
 	TicketDetailStore,
 	type TicketDetailData,
@@ -83,7 +84,11 @@ async function renderPanel() {
 	const onclose = vi.fn();
 	const ondeleted = vi.fn();
 	store.open(ID);
-	render(TicketPanel, { props: { store, listHref: LIST, onclose, ondeleted } });
+	const catalog = new CatalogStore(
+		{ listProjects: vi.fn(async () => []), listTags: vi.fn(async () => []) },
+		{ ensureValid: () => true, logout: vi.fn() }
+	);
+	render(TicketPanel, { props: { store, catalog, listHref: LIST, onclose, ondeleted } });
 	await vi.waitFor(() => expect(store.state).toBe('ready'));
 	await tick();
 	return { store, data, list, onclose, ondeleted };

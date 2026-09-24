@@ -213,8 +213,8 @@
   "meta": {
     "projekt": "becauseyoulovejira",
     "stand": "2026-09-24",
-    "commit": "51a28be",
-    "etappe": "E0, E1, E1.1 und E2 abgeschlossen; E3 Pakete 1–6 umgesetzt, Pakete 7–15 geplant"
+    "commit": "8e78338",
+    "etappe": "E0, E1, E1.1 und E2 abgeschlossen; E3 Pakete 1–7 umgesetzt, Pakete 8–15 geplant"
   },
   "blocks": [
     {
@@ -911,7 +911,7 @@
       ]
     },
     {
-      "tag": "E3", "name": "E3-Oberfläche", "desc": "Umgesetzte Oberflächenpakete des E3-Plans, ab Paket 5 (Kopfzeile, Abschnittsleiste, Tabelle) und Paket 6 (relative Fälligkeitslabels). Die E2-Fälle der Liste gelten weiter und laufen jetzt gegen die Tabelle.",
+      "tag": "E3", "name": "E3-Oberfläche", "desc": "Umgesetzte Oberflächenpakete des E3-Plans: Paket 5 (Kopfzeile, Abschnittsleiste, Tabelle), Paket 6 (relative Fälligkeitslabels) und Paket 7 (Projekt im Panel und bei der Anlage). Die E2-Fälle der Liste gelten weiter und laufen jetzt gegen die Tabelle.",
       "items": [
         { "id": "BYL-E3-014", "title": "Tabelle mit Spalten, Beschriftung und Scrollbereich", "art": ["komponente"], "status": "bestanden",
           "pre": "–", "steps": ["npm run test:web"],
@@ -964,17 +964,34 @@
           "pre": "Tickets mit Fälligkeit vor 3 Tagen, gestern, heute, morgen, in 3 Tagen, in 10 Tagen und eines ohne; ein erledigtes mit Fälligkeit gestern.",
           "steps": ["Die Spalte „Fällig“ ansehen, mit der Maus über ein Label fahren.", "„Erledigte anzeigen“ einschalten."],
           "expect": "„seit 3 Tagen überfällig“ und „gestern“ fett mit Uhr-Symbol, „heute“ und „morgen“ in Petrol mit Kalender-Symbol, „in 3 Tagen“, das Datum und „–“ gedämpft; nichts ist rot; der Tooltip zeigt das Datum; das erledigte Ticket zeigt nur das Datum.",
+          "tests": [] },
+        { "id": "BYL-E3-026", "title": "Projekt im Panel", "art": ["komponente", "unit"], "status": "bestanden",
+          "pre": "–", "steps": ["npm run test:web"],
+          "expect": "Auswahl „Projekt“ mit „Kein Projekt“ und den aktiven Projekten („Name (CODE)“), ein zugeordnetes archiviertes als „Name (CODE, archiviert)“; Hinweis zum neuen Key per aria-describedby; speichert sofort nur das Feld project, zeigt den neuen Key, meldet „Neuer Key: HAUS-1“ über die Live-Region der Liste, die URL bleibt; ein Serverfehler erscheint am Feld (aria-invalid, Icon), der alte Wert kehrt zurück; Werte, die keine Record-ID sind, gehen nicht zum Server.",
+          "tests": ["web/src/lib/components/ticket-panel.test.ts::ticket panel: project (E3 plan, T-13)", "web/src/lib/stores/ticket-detail.test.ts::project (E3 plan, T-13)"] },
+        { "id": "BYL-E3-027", "title": "Projekt bei der Anlage", "art": ["komponente"], "status": "bestanden",
+          "pre": "–", "steps": ["npm run test:web"],
+          "expect": "Nur aktive Projekte wählbar; ist die Liste nach einem aktiven Projekt gefiltert (?projekt=<id>), ist es vorausgewählt, auch wenn der Katalog erst später lädt; archiviertes Projekt, „ohne“ oder kein Filter wählen nichts vor; Serverfehler am Feld; ein selbst gewähltes Projekt zählt für die Rückfrage beim Abbrechen, die Vorauswahl nicht.",
+          "tests": ["web/src/lib/components/new-ticket.test.ts::new ticket: project (E3 plan, T-13)"] },
+        { "id": "BYL-E3-028", "title": "Projektwechsel über die Datenschicht", "art": ["integration"], "status": "bestanden",
+          "pre": "–", "steps": ["npm run test:integration"],
+          "expect": "updateTicket mit project vergibt CODE-1, der Wechsel zurück die nächste TASK-Nummer; der Verlauf hat je Wechsel einen Eintrag für project und für key; createTicket mit Projekt vergibt CODE-1, ein archiviertes Projekt meldet validation_project_archived am Feld project mit deutschem Text.",
+          "tests": ["tests/integration/web-data-tickets.test.mjs::moves a ticket into a project and back with new keys and history", "tests/integration/web-data-tickets.test.mjs::creates a ticket in a project and refuses an archived one at the field project"] },
+        { "id": "BYL-E3-029", "title": "Projekt im Browser zuordnen und wechseln", "art": ["manuell"], "status": "offen",
+          "pre": "Zwei Projekte des eigenen Kontos, angelegt in der Verwaltung unter /_/ (Collection projects: owner = eigener Nutzer, name, code), bis Paket 14 die Projektansicht bringt; ein Ticket TASK-n offen im Panel.",
+          "steps": ["Im Panel unter „Projekt“ das erste Projekt wählen.", "Ein anderes Projekt wählen, dann „Kein Projekt“.", "Den Reiter „Verlauf“ öffnen."],
+          "expect": "Nach jeder Auswahl steht sofort ein neuer Key im Panel und in der Tabelle (CODE-1, dann CODE2-1, dann TASK-m), die Adresse bleibt /tickets/<id>; der Verlauf zeigt „Projekt: …“ und „Key geändert: …“.",
+          "tests": [] },
+        { "id": "BYL-E3-030", "title": "Anlage im gefilterten Projekt und archivierte Projekte", "art": ["manuell"], "status": "offen",
+          "pre": "Wie BYL-E3-029; ein drittes Projekt mit archived = true (in der Verwaltung gesetzt).",
+          "steps": ["Die Adresse /?projekt=<id eines aktiven Projekts> öffnen und „Neues Ticket“ klicken.", "Die Auswahl „Projekt“ im Formular und im Panel eines anderen Tickets aufklappen."],
+          "expect": "Im Formular ist das Projekt vorausgewählt, das neue Ticket bekommt CODE-n; das archivierte Projekt fehlt in beiden Auswahlen.",
           "tests": [] }
       ]
     },
     {
-      "tag": "E3", "name": "E3 geplant", "desc": "Pakete 7–15 aus dem E3-Plan (Abschnitt 5). Die Schritte sind hier die Akzeptanzkriterien; mit der Umsetzung werden daraus automatisierte und manuelle Fälle.",
+      "tag": "E3", "name": "E3 geplant", "desc": "Pakete 8–15 aus dem E3-Plan (Abschnitt 5). Die Schritte sind hier die Akzeptanzkriterien; mit der Umsetzung werden daraus automatisierte und manuelle Fälle.",
       "items": [
-        { "id": "BYL-E3-107", "title": "Paket 7 – Projekt im Panel und bei der Anlage", "art": ["komponente", "integration"], "status": "geplant",
-          "pre": "Paket 5.",
-          "steps": ["Zuordnen, Wechseln und Entfernen ändern den Key; die Liste zeigt ihn sofort, die URL bleibt, der Verlauf zeigt „Projekt: …“ und „Key geändert: …“.", "Archivierte Projekte sind nicht wählbar; ein Serverfehler erscheint am Feld, der alte Wert kehrt zurück.", "Bei der Anlage ist das gefilterte aktive Projekt vorausgewählt."],
-          "expect": "Geplante Tests: project-select, Erweiterungen von ticket-detail, ticket-panel, new-ticket und web-data-tickets (CODE-1, zurück zur nächsten TASK-Nummer).",
-          "tests": [] },
         { "id": "BYL-E3-108", "title": "Paket 8 – Tags im Panel und bei der Anlage", "art": ["komponente", "integration"], "status": "geplant",
           "pre": "Paket 5.",
           "steps": ["Combobox nach APG-Muster (role=\"combobox\", aria-expanded, aria-controls, aria-activedescendant; Pfeiltasten, Enter, Escape).", "Chips per Tastatur entfernbar, danach Fokus im Eingabefeld.", "Ein neuer Tag entsteht genau einmal, auch bei schnellem Doppel-Enter; andere Schreibweise wird wiederverwendet.", "Die Tags-Spalte zeigt die Namen aus dem Katalog."],

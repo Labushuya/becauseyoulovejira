@@ -260,6 +260,55 @@ describe('web data layer: tickets', () => {
 		expect((await listProjects(a.client)).map((entry) => entry.id)).not.toContain(project.id);
 	});
 
+	it('moves a ticket into a project and back with new keys and history (E3 plan, T-13)', async () => {
+		const owner = await createOwner(superuser);
+		const code = uniqueCode();
+		const project = await owner.project(code);
+		await createTicket(owner.client, draft());
+		const ticket = await createTicket(owner.client, draft());
+		expect(ticket.key).toBe('TASK-2');
+
+		const moved = await updateTicket(owner.client, ticket.id, { project: project.id });
+		expect(moved).toMatchObject({
+			id: ticket.id,
+			key: `${code}-1`,
+			projectId: project.id,
+			project: { id: project.id, code }
+		});
+
+		const back = await updateTicket(owner.client, ticket.id, { project: null });
+		expect(back).toMatchObject({ id: ticket.id, key: 'TASK-3', projectId: null, project: null });
+
+		// Entries of one change share their timestamp, so their order is not fixed.
+		const history = (await historyOf(superuser, ticket.id))
+			.filter((entry) => entry.field !== 'created')
+			.map((entry) => [entry.field, entry.old_value, entry.new_value]);
+		expect(history).toHaveLength(4);
+		expect(history).toEqual(
+			expect.arrayContaining([
+				['project', '', project.id],
+				['key', 'TASK-2', `${code}-1`],
+				['project', project.id, ''],
+				['key', `${code}-1`, 'TASK-3']
+			])
+		);
+	});
+
+	it('creates a ticket in a project and refuses an archived one at the field project', async () => {
+		const owner = await createOwner(superuser);
+		const code = uniqueCode();
+		const project = await owner.project(code);
+
+		const created = await createTicket(owner.client, draft({ project: project.id }));
+		expect(created).toMatchObject({ key: `${code}-1`, projectId: project.id });
+
+		await owner.client.collection('projects').update(project.id, { archived: true });
+		const error = await dataErrorOf(createTicket(owner.client, draft({ project: project.id })));
+		expect(error.kind).toBe('validation');
+		expect(error.fields.project.code).toBe('validation_project_archived');
+		expect(error.fields.project.message).toBe('Das Projekt ist archiviert.');
+	});
+
 	it('reports an aborted call as "aborted", not as "network"', async () => {
 		const before = new AbortController();
 		before.abort();
