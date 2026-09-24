@@ -21,6 +21,7 @@ import {
 } from '$lib/data/tickets';
 import { berlinToday, msUntilNextBerlinMidnight, type CalendarDate } from '$lib/domain/berlin-date';
 import { matchesFilter } from '$lib/domain/filter';
+import { groupTickets, type TicketGroup } from '$lib/domain/grouping';
 import { countKpis, type Kpis } from '$lib/domain/kpis';
 import { EMPTY_LIST_QUERY, FILTER_KEYS, type ListQuery } from '$lib/domain/list-query';
 import { columnOrder, ticketOrder, type ResolveProject } from '$lib/domain/ordering';
@@ -165,21 +166,40 @@ export class TicketListStore {
 		const lingering = [...this.#lingering.values()].map((entry) => entry.ticket);
 		return [...this.#open.values(), ...lingering].sort(ticketOrder(this.#today));
 	});
-	#visibleList = $derived.by(() => {
+	/**
+	 * Visible open rows with the ticket they are filtered, sorted and grouped as (`subject`): a
+	 * just checked row stays in place with "Rückgängig", so it counts with the status it had
+	 * before.
+	 */
+	#visibleEntries = $derived.by(() => {
 		const query = this.#query;
 		if (query.status === 'done') return [];
 		const today = this.#today;
 		const order = columnOrder(query.sort, today, this.#projectOf);
-		// A just checked row stays in place with "Rückgängig": it is filtered and sorted with the
-		// status it had before.
 		return this.#openList
 			.map((ticket) => {
 				const previousStatus = this.#lingering.get(ticket.id)?.previousStatus;
 				return { ticket, subject: previousStatus ? { ...ticket, status: previousStatus } : ticket };
 			})
 			.filter(({ subject }) => matchesFilter(subject, query, today))
-			.sort((a, b) => order(a.subject, b.subject))
-			.map(({ ticket }) => ticket);
+			.sort((a, b) => order(a.subject, b.subject));
+	});
+	#visibleList = $derived(this.#visibleEntries.map(({ ticket }) => ticket));
+	#groupList = $derived.by((): TicketGroup<TicketSummary>[] | null => {
+		const grouping = this.#query.grouping;
+		if (grouping === null) return null;
+		const entries = this.#visibleEntries;
+		// Rows are keyed by ID: a just checked row is grouped as its copy with the previous status.
+		const ticketOf = Object.fromEntries(entries.map(({ ticket }) => [ticket.id, ticket]));
+		return groupTickets(
+			entries.map(({ subject }) => subject),
+			grouping,
+			this.#today,
+			this.#projectOf
+		).map((group) => ({
+			...group,
+			tickets: group.tickets.map((subject) => ticketOf[subject.id] ?? subject)
+		}));
 	});
 	#doneList = $derived.by(() => {
 		const query = this.#query;
@@ -217,6 +237,15 @@ export class TicketListStore {
 	 */
 	get visible(): readonly TicketSummary[] {
 		return this.#visibleList;
+	}
+
+	/**
+	 * The visible rows in groups (E3 plan, T-7 and package 13), null without a grouping. Groups
+	 * follow the order of the domain, empty ones are left out, and each keeps the column sort. A
+	 * just checked row stays for UNDO_WINDOW_MS in the group of its previous status.
+	 */
+	get groups(): readonly TicketGroup<TicketSummary>[] | null {
+		return this.#groupList;
 	}
 
 	/** List state of the URL the store shows (set by `activate`). */

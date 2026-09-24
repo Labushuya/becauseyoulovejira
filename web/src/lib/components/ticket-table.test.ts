@@ -572,3 +572,127 @@ describe('ticket table: filters (E3 plan, package 10)', () => {
 		expect(screen.getByText('1 Ticket.').getAttribute('aria-live') ?? '').toBe('polite');
 	});
 });
+
+describe('ticket table: grouping (E3 plan, package 13)', () => {
+	/** Group bodies of the open tickets with their heading. */
+	function groupBodies() {
+		return [...document.querySelectorAll<HTMLElement>('tbody[data-group]')];
+	}
+
+	function groupTitles(body: HTMLElement): string[] {
+		return [...body.querySelectorAll<HTMLElement>('tr[data-ticket-id]')].map(
+			(row) => titleLink(row).textContent ?? ''
+		);
+	}
+
+	it('shows one tbody per group with a rowgroup heading, label and number', async () => {
+		const waiting = ticket({ status: 'waiting', title: 'Warten' });
+		const open = ticket({ title: 'Offen eins' });
+		const second = ticket({ title: 'Offen zwei', priority: 'high' });
+		await showTable(fakeData([waiting, open, second]), '/?gruppe=status');
+
+		expect(screen.queryByRole('rowgroup', { name: 'Offene Tickets' })).toBeNull();
+		const bodies = groupBodies();
+		expect(bodies.map((body) => body.dataset.group)).toEqual(['open', 'waiting']);
+		expect(screen.getByRole('rowgroup', { name: 'Offen, 2 Tickets' })).toBe(bodies[0]);
+		expect(screen.getByRole('rowgroup', { name: 'Wartet, 1 Ticket' })).toBe(bodies[1]);
+		const head = within(bodies[0]!).getByRole('rowheader', { name: 'Offen, 2 Tickets' });
+		expect(head.getAttribute('scope')).toBe('rowgroup');
+		expect(head.getAttribute('colspan')).toBe('9');
+		expect(groupTitles(bodies[0]!)).toEqual(['Offen zwei', 'Offen eins']);
+		expect(screen.getByText('3 Tickets')).toBeTruthy();
+		expect(document.querySelector('caption')?.textContent).toMatch(
+			'Standard-Reihenfolge · gruppiert nach Status'
+		);
+	});
+
+	it('keeps filters and the column sort within the groups', async () => {
+		const items = [
+			ticket({ title: 'B', priority: 'high', projectId: HOUSE.id, project: HOUSE }),
+			ticket({ title: 'A', priority: 'high', projectId: HOUSE.id, project: HOUSE }),
+			ticket({ title: 'C', priority: 'low' }),
+			ticket({ title: 'D', priority: 'urgent', status: 'waiting' })
+		];
+		await showTable(fakeData(items), '/?status=open&sort=titel&gruppe=projekt', {
+			projects: [HOUSE]
+		});
+		await vi.advanceTimersByTimeAsync(0);
+
+		const bodies = groupBodies();
+		expect(bodies.map((body) => body.dataset.group)).toEqual([HOUSE.id, 'ohne']);
+		expect(groupTitles(bodies[0]!)).toEqual(['A', 'B']);
+		expect(groupTitles(bodies[1]!)).toEqual(['C']);
+		expect(screen.getByRole('rowgroup', { name: 'Haushalt, 2 Tickets' })).toBeTruthy();
+		expect(screen.getByRole('rowgroup', { name: 'Ohne Projekt, 1 Ticket' })).toBeTruthy();
+	});
+
+	it('follows a change of the URL and leaves the section "Erledigt" ungrouped', async () => {
+		const open = ticket({ due: '2026-09-20' });
+		const later = ticket();
+		const doneItem = ticket({ status: 'done', completedAt: '2026-09-23 10:00:00.000Z' });
+		const { store } = await showTable(fakeData([open, later], [[doneItem]]), '/?erledigte=1');
+		expect(groupBodies()).toEqual([]);
+
+		mocks.page.url = new URL('/?gruppe=faellig&erledigte=1', 'http://localhost:3000');
+		store.activate(parseListQuery(mocks.page.url.searchParams));
+		await tick();
+
+		expect(groupBodies().map((body) => body.dataset.group)).toEqual(['overdue', 'none']);
+		expect(doneBody().hasAttribute('data-group')).toBe(false);
+		expect(within(doneBody()).getAllByRole('rowheader')[0]?.textContent?.trim()).toBe(
+			'Erledigt – zuletzt erledigte zuerst'
+		);
+	});
+
+	it('keeps a checked row in the group of its previous status for the undo window', async () => {
+		const waiting = ticket({ status: 'waiting', title: 'Warten' });
+		const open = ticket({ title: 'Offen' });
+		await showTable(fakeData([waiting, open]), '/?gruppe=status');
+
+		await fireEvent.click(screen.getByRole('checkbox', { name: `${waiting.key} erledigt` }));
+		await vi.advanceTimersByTimeAsync(0);
+
+		expect(screen.getByRole('rowgroup', { name: 'Wartet, 0 Tickets' })).toBeTruthy();
+		expect(groupTitles(groupBodies()[1]!)).toEqual(['Warten']);
+
+		await vi.advanceTimersByTimeAsync(UNDO_WINDOW_MS);
+		await tick();
+		expect(groupBodies().map((body) => body.dataset.group)).toEqual(['open']);
+	});
+
+	it('moves the focus to the next row when the last row of a group goes away', async () => {
+		const first = ticket({ status: 'in_progress', title: 'Einzige in Arbeit' });
+		const second = ticket({ status: 'waiting', title: 'Wartet' });
+		await showTable(fakeData([first, second]), '/?gruppe=status');
+
+		const toggle = screen.getByRole('checkbox', { name: `${first.key} erledigt` });
+		toggle.focus();
+		await fireEvent.click(toggle);
+		await vi.advanceTimersByTimeAsync(0);
+		expect(document.activeElement).toBe(
+			screen.getByRole('checkbox', { name: `${first.key} erledigt` })
+		);
+
+		await vi.advanceTimersByTimeAsync(UNDO_WINDOW_MS);
+		await tick();
+
+		expect(groupBodies().map((body) => body.dataset.group)).toEqual(['waiting']);
+		expect(document.activeElement?.textContent).toBe('Wartet');
+	});
+
+	it('restores the previous status into its group with "Rückgängig"', async () => {
+		const waiting = ticket({ status: 'waiting', title: 'Warten' });
+		const data = fakeData([waiting]);
+		await showTable(data, '/?gruppe=status');
+
+		await fireEvent.click(screen.getByRole('checkbox', { name: `${waiting.key} erledigt` }));
+		await vi.advanceTimersByTimeAsync(0);
+		await fireEvent.click(
+			screen.getByRole('button', { name: `Rückgängig: ${waiting.key} wieder öffnen` })
+		);
+		await vi.advanceTimersByTimeAsync(0);
+
+		expect(data.update).toHaveBeenCalledWith(waiting.id, { status: 'waiting' });
+		expect(screen.getByRole('rowgroup', { name: 'Wartet, 1 Ticket' })).toBeTruthy();
+	});
+});

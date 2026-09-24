@@ -2,6 +2,7 @@
 	import { tick } from 'svelte';
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
+	import { GROUPING_LABELS } from '$lib/domain/grouping';
 	import { SORT_COLUMN_LABELS, sortLabel, sortOrderLabel } from '$lib/domain/labels';
 	import { hasFilters, parseListQuery, resetFilters } from '$lib/domain/list-query';
 	import { nextSort, sortDirection, type SortKey } from '$lib/domain/ordering';
@@ -16,18 +17,20 @@
 		withShowDone
 	} from '$lib/ticket-links';
 	import ErrorIcon from './ErrorIcon.svelte';
+	import GroupPopover from './GroupPopover.svelte';
 	import SectionBar from './SectionBar.svelte';
 	import TicketTableRow from './TicketTableRow.svelte';
 	import ViewSwitch from './ViewSwitch.svelte';
 
-	// Ticket table (E3 plan, T-4 and packages 5, 9 and 10; E2 plan, P-1 to P-5): section bar
-	// "Aufgaben" with the number of shown tickets and the switch "Erledigte anzeigen"
-	// (?erledigte=1), the open tickets that pass the filters (the store holds the query of the
-	// URL) in the column sort of the URL or the default order and, in a section of their own
-	// below, the done tickets with "Weitere laden", always most recently completed first. Sort
-	// buttons sit in the column headers (T-5). Project and tags come from the catalog. Wider than
-	// its space (next to the panel), the table scrolls sideways in a named region; the page itself
-	// does not.
+	// Ticket table (E3 plan, T-4 and packages 5, 9, 10, 13 and 14; E2 plan, P-1 to P-5): section
+	// bar "Aufgaben" with the number of shown tickets, the switch "Aufgaben | Projekte", the switch
+	// "Erledigte anzeigen" (?erledigte=1) and the popover "Gruppieren"; the open tickets that pass
+	// the filters (the store holds the query of the URL) in the column sort of the URL or the
+	// default order, with a grouping in one tbody per group; and, in a section of their own below,
+	// the done tickets with "Weitere laden", always most recently completed first and never
+	// grouped. Sort buttons sit in the column headers (T-5). Project and tags come from the
+	// catalog. Wider than its space (next to the panel), the table scrolls sideways in a named
+	// region; the page itself does not.
 	let {
 		store,
 		catalog,
@@ -165,6 +168,7 @@
 	$effect(() => {
 		// Re-run whenever the rendered rows change.
 		void store.visible;
+		void store.groups;
 		void store.done;
 		restoreFocus();
 	});
@@ -286,6 +290,7 @@
 			{#if switchHint !== null}
 				<span class="switch-hint" id={ids.switchHint}>{switchHint}</span>
 			{/if}
+			<GroupPopover />
 		{/snippet}
 	</SectionBar>
 
@@ -330,7 +335,9 @@
 					Tickets<span class="caption-order">
 						· {query.sort === null
 							? 'Standard-Reihenfolge'
-							: `sortiert nach ${sortLabel(query.sort)}`}
+							: `sortiert nach ${sortLabel(query.sort)}`}{query.grouping === null
+							? ''
+							: ` · gruppiert nach ${GROUPING_LABELS[query.grouping]}`}
 					</span>
 				</caption>
 				<thead>
@@ -346,7 +353,27 @@
 						<th scope="col"><span class="visually-hidden">Aktionen</span></th>
 					</tr>
 				</thead>
-				{#if hasOpenRows}
+				{#if hasOpenRows && store.groups !== null}
+					{#each store.groups as group (group.key)}
+						{@const count = group.tickets.filter((ticket) => ticket.status !== 'done').length}
+						<tbody
+							data-section="open"
+							data-group={group.key}
+							aria-labelledby={`${uid}-group-${group.key}`}
+						>
+							<tr class="section-head group-head">
+								<th scope="rowgroup" colspan={COLUMNS} id={`${uid}-group-${group.key}`}>
+									{group.label}<span class="group-count"
+										><span aria-hidden="true">{count}</span><span class="visually-hidden"
+											>, {count === 1 ? '1 Ticket' : `${count} Tickets`}</span
+										></span
+									>
+								</th>
+							</tr>
+							{@render rows(group.tickets)}
+						</tbody>
+					{/each}
+				{:else if hasOpenRows}
 					<tbody data-section="open" aria-label="Offene Tickets">
 						{@render rows(store.visible)}
 					</tbody>
@@ -513,6 +540,25 @@
 		text-align: left;
 		color: var(--color-text-muted);
 		border-bottom: 1px solid var(--color-line);
+	}
+
+	.group-head th {
+		padding-top: 0.75rem;
+		color: var(--color-text);
+	}
+
+	.group-count {
+		display: inline-block;
+		min-width: 1.5rem;
+		margin-left: 0.5rem;
+		padding: 0 0.375rem;
+		font-size: 0.75rem;
+		line-height: 1.25rem;
+		text-align: center;
+		font-variant-numeric: tabular-nums;
+		color: var(--color-text-muted);
+		border: 1px solid var(--color-line);
+		border-radius: 0.625rem;
 	}
 
 	.section-foot td {
