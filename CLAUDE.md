@@ -31,14 +31,14 @@ becauseyoulovejira/
   - Bindung nur an `127.0.0.1:8090` (vorerst; Mehrgeräte geplant, siehe [ADR-0001](docs/adr/0001-betriebsmodell-lokal-mehrgeraete-spaeter.md)).
 - **Frontend:** SvelteKit 2 + Svelte 5 + TypeScript (strict), `@sveltejs/adapter-static` im SPA-Modus (`ssr = false`, `prerender = false`, `fallback: 'index.html'`), Build nach `app/pb_public`. PocketBase JS SDK für API und Realtime.
 - **Schriften:** Inter (UI) und JetBrains Mono (Ticket-Keys) lokal über `@fontsource-variable/*`. **Keine externen CDNs** – die App muss offline funktionieren.
-- **Tests:** Vitest; Hook-Integrationstests per Skript gegen eine Wegwerf-Instanz (temporäres `--dir`).
+- **Tests:** Vitest; Hook-Integrationstests per Skript gegen eine Wegwerf-Instanz (temporäres `--dir`). Die Root-Tests liegen unter `tests/unit` und `tests/integration`, die web-Tests unter `web/src/**/*.test.ts`. `npm test` im Root braucht vorher den Web-Build (`app/pb_public`) für den SPA-Fallback-Test; `scripts\build.ps1` hält die Reihenfolge ein (check → lint → build → test) und wird mit `powershell -ExecutionPolicy Bypass -File scripts\build.ps1` aufgerufen.
 - **Node.js:** nur Dev-Werkzeug (Build/Test), portabel unter `H:\DEV\tools\node`. Für den Betrieb nicht nötig.
 
 ### PocketBase-API-Disziplin
 
 Die APIs (Hooks, Migrationen, SDK) haben sich zwischen Versionen stark geändert. Vor jedem Hook-/Migrationscode die Doku der gepinnten Version prüfen (pocketbase.io/docs, JSVM-Referenz pocketbase.io/jsvm) – nicht aus Erinnerung schreiben.
 - Hook-Handler müssen `e.next()` aufrufen.
-- Create und Update über die Record-API laufen in v0.40.4 **nicht** automatisch in einer Transaktion (nur Delete mit Kaskaden). Hooks, die mehrere Schreibvorgänge atomar brauchen, öffnen sie selbst: `e.app.runInTransaction((txApp) => { e.app = txApp; … e.next(); })` ([E1-Plan](docs/plan/e1.md) §2, OF-1).
+- Create und Update über die Record-API laufen in v0.40.4 **nicht** automatisch in einer Transaktion (nur Delete mit Kaskaden). Hooks, die mehrere Schreibvorgänge atomar brauchen, öffnen sie selbst, und zwar verbindlich über den Helfer `inTransaction(e, fn)` aus `app/pb_hooks/lib/transaction.js` (`fn(txApp)` ruft `e.next()` auf). Ein bloßes `e.app = txApp` ohne Zurücksetzen ist fehlerhaft: Nach dem Commit zeigt `e.app` sonst auf die beendete Transaktion, und die After-Success-Hooks sowie der Realtime-Broadcast scheitern still. Der Helfer setzt `e.app` für die Dauer der Transaktion auf `txApp` und stellt es danach (auch im Fehlerfall) wieder her ([E1-Plan](docs/plan/e1.md) §2, OF-1 und Abschnitt 6, Paket 5).
 - In Hooks für DB-Zugriffe `e.app` verwenden, nicht `$app` (Deadlock-Gefahr innerhalb von Transaktionen). In `runInTransaction((txApp) => …)` nur `txApp` verwenden.
 - Module per `require(`${__hooks}/lib/<name>.js`)` **innerhalb** des Handlers laden (Handler laufen in isolierten Scopes).
 - Filter mit Nutzereingaben immer parametrisiert (`{:param}` bzw. `pb.filter()` im SDK), nie per String-Konkatenation.
