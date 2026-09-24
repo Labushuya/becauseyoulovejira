@@ -70,14 +70,17 @@ function setup(initial: Ticket = ticket()) {
 			completedAt: null,
 			created: '2026-09-24 10:00:00.000Z',
 			updated: '2026-09-24 10:00:00.000Z'
-		}))
+		})),
+		delete: vi.fn(async (): Promise<void> => undefined)
 	} satisfies TicketDetailData;
 	// Reactive like the real list store, whose newer versions the panel follows.
 	const listTickets = new SvelteMap<string, TicketSummary>();
 	const list = {
 		find: vi.fn((id: string) => listTickets.get(id) ?? null),
 		upsert: vi.fn((summary: TicketSummary) => listTickets.set(summary.id, summary)),
-		completed: vi.fn((summary: TicketSummary) => listTickets.set(summary.id, summary))
+		completed: vi.fn((summary: TicketSummary) => listTickets.set(summary.id, summary)),
+		remove: vi.fn((id: string) => listTickets.delete(id)),
+		announce: vi.fn()
 	} satisfies TicketListSync;
 	const session = { ensureValid: vi.fn(() => true), logout: vi.fn() };
 	const store = new TicketDetailStore(data, session, list);
@@ -413,5 +416,58 @@ describe('creating', () => {
 
 		expect(await store.create(DRAFT)).toEqual({ ok: false, message: null, fields: {} });
 		expect(session.logout).toHaveBeenCalledOnce();
+	});
+});
+
+describe('TicketDetailStore: deleting', () => {
+	it('deletes the ticket, removes it from the list and announces it', async () => {
+		const { store, data, list } = await opened();
+
+		expect(await store.deleteTicket()).toEqual({ ok: true, key: 'TASK-3' });
+
+		expect(data.delete).toHaveBeenCalledExactlyOnceWith(ID);
+		expect(list.remove).toHaveBeenCalledWith(ID);
+		expect(list.announce).toHaveBeenCalledWith('TASK-3 wurde gelöscht.');
+	});
+
+	it('treats a ticket that is already gone as deleted', async () => {
+		const { store, data, list } = await opened();
+		data.delete.mockRejectedValueOnce(new DataError('not_found', { status: 404 }));
+
+		expect(await store.deleteTicket()).toEqual({ ok: true, key: 'TASK-3' });
+		expect(list.remove).toHaveBeenCalledWith(ID);
+	});
+
+	it('keeps the ticket and returns the message on failure', async () => {
+		const { store, data, list } = await opened();
+		data.delete.mockRejectedValueOnce(new DataError('network'));
+
+		const result = await store.deleteTicket();
+
+		expect(result).toEqual({
+			ok: false,
+			message: expect.stringMatching(/Server nicht erreichbar/)
+		});
+		expect(list.remove).not.toHaveBeenCalled();
+		expect(store.ticket?.id).toBe(ID);
+	});
+
+	it('ends the session on 401 without a message', async () => {
+		const { store, data, session } = await opened();
+		data.delete.mockRejectedValueOnce(new DataError('session', { status: 401 }));
+
+		expect(await store.deleteTicket()).toEqual({ ok: false, message: null });
+		expect(session.logout).toHaveBeenCalled();
+	});
+
+	it('sends no request without a valid session or ticket', async () => {
+		const { store, data, session } = setup();
+		expect(await store.deleteTicket()).toEqual({ ok: false, message: null });
+
+		store.open(ID);
+		await vi.waitFor(() => expect(store.state).toBe('ready'));
+		session.ensureValid.mockReturnValue(false);
+		expect(await store.deleteTicket()).toEqual({ ok: false, message: null });
+		expect(data.delete).not.toHaveBeenCalled();
 	});
 });

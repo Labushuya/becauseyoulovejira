@@ -394,3 +394,18 @@ describe('reset', () => {
 		expect(vi.getTimerCount()).toBe(0);
 	});
 });
+
+describe('announce', () => {
+	it('sets the polite status message, e.g. after a deletion in the panel', async () => {
+		const item = ticket();
+		const store = new TicketListStore(fakeData([item]), session());
+		store.activate(false);
+		await settle();
+
+		store.remove(item.id);
+		store.announce('TASK-1 wurde gelöscht.');
+
+		expect(store.open).toEqual([]);
+		expect(store.announcement).toBe('TASK-1 wurde gelöscht.');
+	});
+});

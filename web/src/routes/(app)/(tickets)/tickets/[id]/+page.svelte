@@ -37,7 +37,7 @@
 	<title>{detail.ticket ? `${detail.ticket.key} · ` : ''}becauseyoulovejira</title>
 </svelte:head>
 
-<TicketPanel store={detail} listHref={back} onclose={close}>
+<TicketPanel store={detail} listHref={back} onclose={close} ondeleted={close}>
 	{#snippet activity()}
 		<TicketActivity store={comments} />
 	{/snippet}

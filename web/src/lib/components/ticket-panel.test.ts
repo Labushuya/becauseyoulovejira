@@ -71,13 +71,16 @@ function createStore(initial: Ticket = ticket()) {
 			current = { ...current, ...patch, updated: `2026-09-24 10:00:0${clock}.000Z` };
 			return current;
 		}),
-		create: vi.fn()
+		create: vi.fn(),
+		delete: vi.fn()
 	} satisfies TicketDetailData;
 	const listTickets = new SvelteMap<string, TicketSummary>();
 	const list = {
 		find: (id: string) => listTickets.get(id) ?? null,
 		upsert: vi.fn((summary: TicketSummary) => listTickets.set(summary.id, summary)),
-		completed: vi.fn((summary: TicketSummary) => listTickets.set(summary.id, summary))
+		completed: vi.fn((summary: TicketSummary) => listTickets.set(summary.id, summary)),
+		remove: vi.fn((id: string) => listTickets.delete(id)),
+		announce: vi.fn()
 	} satisfies TicketListSync;
 	const store = new TicketDetailStore(data, { ensureValid: () => true, logout: vi.fn() }, list);
 	return { store, data, list };
@@ -88,7 +91,7 @@ async function renderPanel(initial?: Ticket, props: Record<string, unknown> = {}
 	const onclose = vi.fn();
 	context.store.open(ID);
 	const result = render(TicketPanel, {
-		props: { store: context.store, listHref: LIST, onclose, ...props }
+		props: { store: context.store, listHref: LIST, onclose, ondeleted: vi.fn(), ...props }
 	});
 	await vi.waitFor(() => expect(context.store.state).not.toBe('loading'));
 	await tick();
@@ -297,7 +300,9 @@ describe('ticket panel', () => {
 		const context = createStore();
 		context.data.get.mockRejectedValueOnce(new DataError('not_found'));
 		context.store.open('unknown00000000');
-		render(TicketPanel, { props: { store: context.store, listHref: LIST, onclose: vi.fn() } });
+		render(TicketPanel, {
+			props: { store: context.store, listHref: LIST, onclose: vi.fn(), ondeleted: vi.fn() }
+		});
 		await vi.waitFor(() => expect(context.store.state).toBe('not_found'));
 		await tick();
 
@@ -310,7 +315,9 @@ describe('ticket panel', () => {
 		const context = createStore();
 		context.data.get.mockRejectedValueOnce(new DataError('server', { status: 500 }));
 		context.store.open(ID);
-		render(TicketPanel, { props: { store: context.store, listHref: LIST, onclose: vi.fn() } });
+		render(TicketPanel, {
+			props: { store: context.store, listHref: LIST, onclose: vi.fn(), ondeleted: vi.fn() }
+		});
 		await vi.waitFor(() => expect(context.store.state).toBe('error'));
 		await tick();
 

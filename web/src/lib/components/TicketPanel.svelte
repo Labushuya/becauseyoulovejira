@@ -4,6 +4,7 @@
 	import { formatBerlinDateTime } from '$lib/domain/format';
 	import { DESCRIPTION_MAX_LENGTH, type Ticket } from '$lib/domain/ticket';
 	import type { TicketDetailStore } from '$lib/stores/ticket-detail.svelte';
+	import ConfirmDialog from './ConfirmDialog.svelte';
 	import DueInput from './DueInput.svelte';
 	import EditableTitle from './EditableTitle.svelte';
 	import ErrorIcon from './ErrorIcon.svelte';
@@ -16,16 +17,20 @@
 	// priority, due date and description editable in place, the remaining fields for display.
 	// Escape closes the panel unless a form field has the focus (fields handle Escape
 	// themselves). Comments and history (packages 9 and 10) come in through `activity`.
+	// "Löschen …" asks in a modal dialog before deleting for good (package 11).
 	let {
 		store,
 		listHref,
 		onclose,
+		ondeleted,
 		activity
 	}: {
 		store: TicketDetailStore;
 		/** Link back to the list with the current query. */
 		listHref: ResolvedPathname;
 		onclose: () => void;
+		/** Called after the ticket was deleted; the owner closes the panel. */
+		ondeleted: () => void;
 		activity?: Snippet<[Ticket]>;
 	} = $props();
 
@@ -43,6 +48,10 @@
 	let messageHeading = $state<HTMLElement>();
 	let descriptionButton = $state<HTMLButtonElement>();
 	let descriptionText = $state<HTMLTextAreaElement>();
+	let deleteButton = $state<HTMLButtonElement>();
+	let confirmingDelete = $state(false);
+	let deleting = $state(false);
+	let deleteError = $state<string | null>(null);
 	/** Ticket the focus was last moved to, so it moves only once per opened ticket. */
 	let focusedFor: string | null = null;
 
@@ -88,6 +97,34 @@
 		descriptionButton?.focus();
 	}
 
+	function askDelete() {
+		deleteError = null;
+		confirmingDelete = true;
+	}
+
+	async function cancelDelete() {
+		confirmingDelete = false;
+		deleteError = null;
+		await tick();
+		deleteButton?.focus();
+	}
+
+	async function confirmDelete() {
+		if (deleting) return;
+		deleting = true;
+		deleteError = null;
+		const result = await store.deleteTicket();
+		deleting = false;
+		if (result.ok) {
+			confirmingDelete = false;
+			ondeleted();
+		} else if (result.message !== null) {
+			deleteError = result.message;
+		} else {
+			confirmingDelete = false;
+		}
+	}
+
 	function onDescriptionKeydown(event: KeyboardEvent) {
 		if (event.key === 'Enter' && (event.ctrlKey || event.metaKey)) {
 			event.preventDefault();
@@ -107,6 +144,17 @@
 <aside class="side-panel" aria-labelledby={headingId} {onkeydown}>
 	<header class="bar">
 		<span class="key">{ticket?.key ?? ''}</span>
+		{#if store.state === 'ready' && ticket}
+			<button
+				class="close delete"
+				type="button"
+				aria-haspopup="dialog"
+				bind:this={deleteButton}
+				onclick={askDelete}
+			>
+				Löschen …
+			</button>
+		{/if}
 		<button class="close" type="button" onclick={onclose}>
 			<svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true" focusable="false">
 				<path
@@ -275,6 +323,21 @@
 		</dl>
 
 		{@render activity?.(ticket)}
+
+		<ConfirmDialog
+			open={confirmingDelete}
+			title={`${ticket.key} endgültig löschen?`}
+			confirmLabel="Endgültig löschen"
+			busy={deleting}
+			error={deleteError}
+			onconfirm={confirmDelete}
+			oncancel={cancelDelete}
+		>
+			<p>
+				Dabei werden auch alle Kommentare und der gesamte Verlauf dieses Tickets gelöscht. Das lässt
+				sich nicht rückgängig machen.
+			</p>
+		</ConfirmDialog>
 	{:else}
 		<p class="loading" role="status">Ticket wird geladen …</p>
 	{/if}
@@ -292,6 +355,10 @@
 		font-family: var(--font-mono);
 		font-size: 0.8125rem;
 		color: var(--color-text-muted);
+	}
+
+	.delete {
+		margin-left: auto;
 	}
 
 	.close {

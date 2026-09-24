@@ -8,7 +8,7 @@ import { createContext } from 'svelte';
 import { SvelteMap, SvelteSet } from 'svelte/reactivity';
 import { toDataError } from '$lib/data/errors';
 import type { RequestOptions } from '$lib/data/options';
-import { createTicket, getTicket, updateTicket } from '$lib/data/tickets';
+import { createTicket, deleteTicket, getTicket, updateTicket } from '$lib/data/tickets';
 import { isCalendarDate } from '$lib/domain/berlin-date';
 import { isPriority, isStatus, type Status } from '$lib/domain/status';
 import type { Ticket, TicketDraft, TicketPatch, TicketSummary } from '$lib/domain/ticket';
@@ -27,7 +27,11 @@ export interface TicketDetailData {
 	get(id: string, options: RequestOptions): Promise<Ticket>;
 	update(id: string, patch: TicketPatch): Promise<Ticket>;
 	create(draft: TicketDraft): Promise<Ticket>;
+	delete(id: string): Promise<void>;
 }
+
+/** Outcome of deleting the ticket; a failure carries a message unless nothing is to be shown. */
+export type DeleteResult = { ok: true; key: string } | { ok: false; message: string | null };
 
 /** Outcome of creating a ticket; a failure carries a message and/or errors per field. */
 export type CreateResult =
@@ -47,13 +51,17 @@ export interface TicketListSync {
 	find(id: string): TicketSummary | null;
 	upsert(ticket: TicketSummary): void;
 	completed(ticket: TicketSummary, previousStatus: Status): void;
+	remove(id: string): void;
+	/** Polite status message of the list (aria-live), which stays when the panel closes. */
+	announce(message: string): void;
 }
 
 export function ticketDetailData(pb: PocketBase): TicketDetailData {
 	return {
 		get: (id, options) => getTicket(pb, id, options),
 		update: (id, patch) => updateTicket(pb, id, patch),
-		create: (draft) => createTicket(pb, draft)
+		create: (draft) => createTicket(pb, draft),
+		delete: (id) => deleteTicket(pb, id)
 	};
 }
 
@@ -294,6 +302,30 @@ export class TicketDetailStore {
 			const known = Object.keys(fields).length > 0;
 			return { ok: false, message: known ? null : failure.message, fields };
 		}
+	}
+
+	/**
+	 * Deletes the shown ticket for good (E2 plan, T-12 and P-4; comments and history go with it
+	 * by cascade). On success the ticket leaves the list and the list announces it. A ticket that
+	 * is already gone (404) counts as deleted. Any other failure keeps the ticket.
+	 */
+	async deleteTicket(): Promise<DeleteResult> {
+		const ticket = this.#ticket;
+		if (ticket === null) return { ok: false, message: null };
+		if (!this.#session.ensureValid()) return { ok: false, message: null };
+		try {
+			await this.#data.delete(ticket.id);
+		} catch (error) {
+			const failure = toDataError(error);
+			if (failure.kind === 'session') this.#session.logout();
+			if (failure.kind === 'session' || failure.kind === 'aborted') {
+				return { ok: false, message: null };
+			}
+			if (failure.kind !== 'not_found') return { ok: false, message: failure.message };
+		}
+		this.#list.remove(ticket.id);
+		this.#list.announce(`${ticket.key} wurde gelöscht.`);
+		return { ok: true, key: ticket.key };
 	}
 
 	/** Empties the store and aborts a running request. */

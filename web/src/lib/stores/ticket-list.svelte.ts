@@ -333,6 +333,11 @@ export class TicketListStore {
 		}
 	}
 
+	/** Polite status message (aria-live), e.g. after the panel deleted a ticket. */
+	announce(message: string): void {
+		this.#announcement = message;
+	}
+
 	dismissNotice(): void {
 		this.#notice = null;
 	}
