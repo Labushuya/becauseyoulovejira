@@ -34,8 +34,8 @@ export default defineConfig(
 		}
 	},
 	{
-		// Override or add rule settings here, such as:
-		// 'svelte/button-has-type': 'error'
-		rules: {}
+		// No console output from app code, so tokens and session data never end up in it.
+		// {@html} is already an error through svelte.configs.recommended (svelte/no-at-html-tags).
+		rules: { 'no-console': 'error' }
 	}
 );
