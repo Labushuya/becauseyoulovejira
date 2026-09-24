@@ -11,3 +11,7 @@ Bereits verbindlich in der [Projekt-CLAUDE.md](../../CLAUDE.md) festgelegt und d
 | [0003](0003-pb-data-und-backups.md) | Speicherort von `pb_data` und Backup-Strategie | Angenommen | 2026-09-24 |
 | [0004](0004-teststrategie-hooks-migrationen.md) | Teststrategie für Hooks und Migrationen | Angenommen | 2026-09-24 |
 | [0005](0005-zeitzone-europe-berlin.md) | Zeitzone Europe/Berlin ohne Zeitzonendatenbank der Laufzeit | Angenommen | 2026-09-24 |
+| [0006](0006-frontend-zustand-und-datenzugriff.md) | Frontend-Zustand, Datenzugriff und Standard-Sortierung | Angenommen | 2026-09-24 |
+| [0007](0007-realtime-und-sitzungspflege.md) | Realtime-Abos und Sitzungspflege im Frontend | Angenommen | 2026-09-24 |
+| [0008](0008-markdown-rendering-und-sanitizing.md) | Markdown-Rendering und Sanitizing | Angenommen | 2026-09-24 |
+| [0009](0009-fehlerfarbe.md) | Fehlerfarbe als eigenes Design-Token | Angenommen | 2026-09-24 |
