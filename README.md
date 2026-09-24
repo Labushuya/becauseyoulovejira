@@ -225,7 +225,7 @@ Danach anmelden und die Daten prüfen; es gelten die Konten und Passwörter zum 
 
 - Die **Kopfzeile** zeigt neben dem App-Namen die Zahl der nicht erledigten Tickets und rechts den Knopf **„Neues Ticket“**.
 - Darunter stehen alle **nicht erledigten** Tickets in der Tabelle „Aufgaben“ (mit ihrer Anzahl). Oben die überfälligen und bald fälligen (bis 7 Tage im Voraus) nach Datum, danach die übrigen nach Priorität (Dringend, Hoch, Mittel, Niedrig); bei gleicher Priorität zuerst die mit Fälligkeit, dann die neuesten.
-- Spalten: Key, Priorität, Status, Titel (mit Symbol für wiederkehrende Tickets), Projekt, Tags, Fälligkeit (mit „überfällig“, „heute“ oder „morgen“), Erstellt und die Aktionen. Ist die Tabelle breiter als der Platz, etwa neben dem Panel, lässt sie sich waagerecht scrollen.
+- Spalten: Key, Priorität, Status, Titel (mit Symbol für wiederkehrende Tickets), Projekt, Tags, Fällig (relativ: „seit 3 Tagen überfällig“, „gestern“, „heute“, „morgen“, „in 4 Tagen“, ab 8 Tagen das Datum; das Datum steht immer im Tooltip, erledigte zeigen nur das Datum), Erstellt und die Aktionen. Ist die Tabelle breiter als der Platz, etwa neben dem Panel, lässt sie sich waagerecht scrollen.
 - **„Neues Ticket“** öffnet rechts das Anlageformular: Titel (Pflicht), Status, Priorität, Fälligkeit und Beschreibung. „Anlegen“ oder `Strg+Enter` legt an, den Key vergibt der Server (`TASK-1`, `TASK-2` …).
 
 ### Abhaken und „Erledigte anzeigen“

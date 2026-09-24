@@ -112,10 +112,9 @@ describe('ticket table row', () => {
 			'Finanzen',
 			'Amt'
 		]);
-		expect(within(cell(row, 'due')).getByText('20.09.2026').getAttribute('datetime')).toBe(
-			'2026-09-20'
-		);
-		expect(within(cell(row, 'due')).getByText('überfällig')).toBeTruthy();
+		const due = cell(row, 'due').querySelector('time');
+		expect(due?.getAttribute('datetime')).toBe('2026-09-20');
+		expect(due?.textContent).toBe('seit 4 Tagen überfällig, 20.09.2026');
 		// 22:30 UTC is already the next day in Berlin.
 		const created = within(cell(row, 'created')).getByText('02.09.2026');
 		expect(created.getAttribute('datetime')).toBe('2026-09-02');
@@ -128,24 +127,26 @@ describe('ticket table row', () => {
 		expect(cell(row, 'project').textContent?.trim()).toBe('');
 		expect(cell(row, 'tags').textContent?.trim()).toBe('');
 		expect(cell(row, 'due').querySelector('time')).toBeNull();
+		expect(within(cell(row, 'due')).getByText('keine Fälligkeit')).toBeTruthy();
 		expect(screen.queryByText('wiederkehrend')).toBeNull();
 	});
 
 	it.each([
-		['2026-09-24', 'heute'],
-		['2026-09-25', 'morgen'],
-		['2026-09-28', null]
-	])('marks the due date %s with "%s"', (due, hint) => {
+		['2026-09-24', 'heute, 24.09.2026'],
+		['2026-09-25', 'morgen, 25.09.2026'],
+		['2026-09-28', 'in 4 Tagen, 28.09.2026'],
+		['2026-10-05', '05.10.2026']
+	])('labels the due date %s as "%s"', (due, text) => {
 		const { row } = renderRow({ due });
 
-		if (hint) expect(within(cell(row, 'due')).getByText(hint)).toBeTruthy();
-		else expect(cell(row, 'due').textContent?.trim()).toBe('28.09.2026');
+		expect(cell(row, 'due').querySelector('time')?.textContent).toBe(text);
 	});
 
-	it('shows no overdue hint for done tickets', () => {
+	it('shows only the date for done tickets', () => {
 		const { row } = renderRow({ status: 'done', due: '2026-09-01' });
 
-		expect(screen.queryByText('überfällig')).toBeNull();
+		expect(cell(row, 'due').querySelector('time')?.textContent).toBe('01.09.2026');
+		expect(screen.queryByText(/überfällig/)).toBeNull();
 		expect(within(cell(row, 'status')).getByText('Erledigt')).toBeTruthy();
 	});
 
