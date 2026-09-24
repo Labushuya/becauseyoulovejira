@@ -1,0 +1,188 @@
+// Static checks of the start, stop and autostart scripts in app/ (E1 plan, package 8). The
+// scripts are never executed by agents or tests (CLAUDE.md section 11.3); the logic behind them
+// is covered by start-logic.test.mjs.
+
+import { readdirSync, readFileSync } from 'node:fs';
+import { join, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { beforeAll, describe, expect, it } from 'vitest';
+import { runPowerShellJson } from '../support/powershell.mjs';
+
+const ROOT_DIR = resolve(fileURLToPath(new URL('../..', import.meta.url)));
+const APP_DIR = join(ROOT_DIR, 'app');
+const SCRIPTS_DIR = join(ROOT_DIR, 'scripts');
+
+const WRAPPERS = {
+	'start.bat': 'Start',
+	'stop.bat': 'Stop',
+	'autostart-an.bat': 'AutostartOn',
+	'autostart-aus.bat': 'AutostartOff'
+};
+const APP_SCRIPTS = [...Object.keys(WRAPPERS), 'start-hidden.vbs', 'byl-control.ps1', 'byl-functions.ps1'];
+const POWERSHELL_FILES = [
+	...['byl-control.ps1', 'byl-functions.ps1'].map((name) => join(APP_DIR, name)),
+	...readdirSync(SCRIPTS_DIR)
+		.filter((name) => name.endsWith('.ps1'))
+		.map((name) => join(SCRIPTS_DIR, name))
+];
+
+const read = (name) => readFileSync(join(APP_DIR, name), 'utf8').replace(/^﻿/, '');
+const control = () => read('byl-control.ps1');
+const functions = () => read('byl-functions.ps1');
+
+/** Body of a PowerShell function, up to the next top-level function. */
+function functionBody(source, name) {
+	const start = source.indexOf(`function ${name} {`);
+	if (start < 0) throw new Error(`function ${name} not found`);
+	const next = source.indexOf('\nfunction ', start + 1);
+	return source.slice(start, next < 0 ? undefined : next);
+}
+
+describe('wrappers', () => {
+	it.each(Object.entries(WRAPPERS))(
+		'%s calls byl-control.ps1 -Action %s with -NoProfile -ExecutionPolicy Bypass',
+		(name, action) => {
+			const lines = read(name)
+				.split(/\r\n/)
+				.filter((line) => /powershell/i.test(line) && !/^\s*rem\b/i.test(line));
+			expect(lines).toEqual([
+				`"%SystemRoot%\\System32\\WindowsPowerShell\\v1.0\\powershell.exe" -NoProfile -ExecutionPolicy Bypass -File "%~dp0byl-control.ps1" -Action ${action}`
+			]);
+		}
+	);
+
+	it('start-hidden.vbs starts the control script hidden with -NoProfile -ExecutionPolicy Bypass', () => {
+		const source = read('start-hidden.vbs');
+		expect(source).toContain('WScript.ScriptFullName');
+		expect(source).toContain('"byl-control.ps1"');
+		expect(source).toMatch(/" -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File "/);
+		expect(source).toContain('" -Action Start -Hidden"');
+		expect(source).toMatch(/shell\.Run\(command, 0, True\)/);
+	});
+
+	it.each(APP_SCRIPTS)('%s has CRLF line endings', (name) => {
+		const raw = readFileSync(join(APP_DIR, name), 'utf8');
+		expect(raw).toContain('\r\n');
+		expect(raw.replace(/\r\n/g, '')).not.toContain('\n');
+	});
+
+	it.each([...Object.keys(WRAPPERS), 'start-hidden.vbs', 'byl-functions.ps1'])(
+		'%s is plain ASCII (cmd and WSH read the ANSI code page)',
+		(name) => {
+			expect(readFileSync(join(APP_DIR, name), 'utf8')).toMatch(/^[\x00-\x7F]*$/);
+		}
+	);
+
+	it('byl-control.ps1 has a UTF-8 BOM (Windows PowerShell 5.1 reads BOM-less files as ANSI)', () => {
+		expect(readFileSync(join(APP_DIR, 'byl-control.ps1'))[0]).toBe(0xef);
+	});
+
+	it.each(APP_SCRIPTS)('%s has no absolute paths and no credentials', (name) => {
+		const source = read(name);
+		expect(source).not.toMatch(/\b[A-Za-z]:[\\/]/);
+		expect(source).not.toMatch(/[\w.+-]+@[\w-]+\.[\w.]+/);
+		expect(source).not.toMatch(/superuser\s+(upsert|create)/i);
+	});
+
+	it.each(APP_SCRIPTS)('%s uses neither wmic nor taskkill by image name', (name) => {
+		const source = read(name);
+		expect(source).not.toMatch(/\bwmic\b/i);
+		expect(source).not.toMatch(/taskkill[^\r\n]*\/IM\b/i);
+	});
+
+	it('the old helper autostart-create.ps1 is gone', () => {
+		expect(readdirSync(APP_DIR)).not.toContain('autostart-create.ps1');
+	});
+});
+
+describe('start', () => {
+	it('has no fixed waiting time', () => {
+		for (const name of APP_SCRIPTS) {
+			const source = read(name);
+			expect(source, name).not.toMatch(/\btimeout(\.exe)?\s+\/t\b/i);
+			expect(source, name).not.toMatch(/\bping(\.exe)?\s+-n\b/i);
+			expect(source, name).not.toMatch(/Start-Sleep\s+(-Seconds\s+)?\d/i);
+			expect(source, name).not.toMatch(/WScript\.Sleep/i);
+		}
+	});
+
+	it('polls /api/health with a timeout', () => {
+		expect(functions()).toContain("'http://127.0.0.1:8090/api/health'");
+		expect(functionBody(functions(), 'Wait-ServerReady')).toMatch(/Test-Health/);
+		expect(functionBody(control(), 'Invoke-Start')).toMatch(
+			/Wait-ServerReady -Process \$server -TimeoutSeconds \$HealthTimeoutSeconds/
+		);
+		expect(control()).toMatch(/\$HealthTimeoutSeconds = 30\b/);
+	});
+
+	it('checks the port before starting and aborts for a foreign owner', () => {
+		const body = functionBody(control(), 'Invoke-Start');
+		expect(body.indexOf('Resolve-PortState')).toBeLessThan(body.indexOf('Start-Process -FilePath $exe'));
+		expect(body).toMatch(/'Foreign'\)[\s\S]*?return 1/);
+		expect(functions()).toMatch(/Get-NetTCPConnection -State Listen/);
+		expect(functions()).toMatch(/Get-CimInstance -ClassName Win32_Process/);
+	});
+
+	it('starts the server with the arguments from Get-ServerArgumentString', () => {
+		expect(functionBody(control(), 'Invoke-Start')).toMatch(
+			/Start-Process -FilePath \$exe -ArgumentList \(Get-ServerArgumentString -AppDir \$AppDir\)/
+		);
+	});
+
+	it('has a first-run branch that opens no second tab', () => {
+		const body = functionBody(control(), 'Invoke-Start');
+		const firstRun = body.slice(body.indexOf('if (Wait-FirstRunSignal'));
+		const branch = firstRun.slice(0, firstRun.indexOf('return 2') + 'return 2'.length);
+		expect(branch).toContain('$FirstRunHint');
+		expect(branch).not.toContain('Open-App');
+		expect(body.indexOf('if (Wait-FirstRunSignal')).toBeLessThan(body.lastIndexOf('Open-App'));
+	});
+
+	it('the first-run hint matches the login page', () => {
+		const hint = control().match(/\$FirstRunHint = @"\r\n([\s\S]*?)\r\n"@/)[1];
+		expect(hint).toContain('Erster Start');
+		expect(hint).toContain('Admin-Konto');
+		expect(hint).toContain('_/)');
+		expect(hint).toContain('„users“');
+		expect(hint).toContain('30 Minuten');
+		const login = readFileSync(join(ROOT_DIR, 'web', 'src', 'routes', 'login', '+page.svelte'), 'utf8');
+		expect(login).toContain('Admin-UI unter /_/');
+	});
+
+	it('start.bat pauses on errors and on the first-run hint only', () => {
+		expect(read('start.bat')).toMatch(/if not "%BYL_EXIT%"=="0" pause/);
+	});
+});
+
+describe('stop', () => {
+	it('stops only processes chosen by Select-AppProcess, by process id', () => {
+		const body = functionBody(control(), 'Invoke-Stop');
+		expect(body).toMatch(/Select-AppProcess -Process \(Get-ProcessSnapshot\) -AppDir \$AppDir/);
+		expect(body).toMatch(/Stop-Process -Id \$processId -Force/);
+		expect(body).not.toMatch(/Stop-Process\s+-Name|Get-Process\s+-Name|\|\s*Stop-Process/i);
+	});
+});
+
+describe('PowerShell syntax', () => {
+	let errors;
+
+	beforeAll(() => {
+		errors = runPowerShellJson(
+			String.raw`
+$files = $env:BYL_TEST_INPUT | ConvertFrom-Json
+$result = @{}
+foreach ($file in $files) {
+    $tokens = $null
+    $parseErrors = $null
+    [void][System.Management.Automation.Language.Parser]::ParseFile($file, [ref]$tokens, [ref]$parseErrors)
+    $result[$file] = @($parseErrors | ForEach-Object { $_.Message + ' (line ' + $_.Extent.StartLineNumber + ')' })
+}
+$result | ConvertTo-Json -Depth 4 -Compress`,
+			POWERSHELL_FILES
+		);
+	}, 60_000);
+
+	it.each(POWERSHELL_FILES)('%s parses without errors', (file) => {
+		expect(errors[file]).toEqual([]);
+	});
+});
