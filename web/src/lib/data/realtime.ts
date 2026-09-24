@@ -4,9 +4,13 @@
 // filters every event by the list and view rules of the collection.
 
 import type PocketBase from 'pocketbase';
+import type { Project } from '../domain/project';
+import type { Tag } from '../domain/tag';
 import type { Comment, HistoryEntry, Ticket, TicketSummary } from '../domain/ticket';
 import { COMMENT_FIELDS, toComment, type CommentRecord } from './comments';
 import { HISTORY_FIELDS, toHistoryEntry, type HistoryRecord } from './history';
+import { PROJECT_FIELDS, toProject, type ProjectRecord } from './projects';
+import { TAG_FIELDS, toTag, type TagRecord } from './tags';
 import {
 	TICKET_DETAIL_FIELDS,
 	TICKET_EXPAND,
@@ -100,6 +104,26 @@ export function subscribeHistory(
 			filter: pb.filter('ticket = {:ticket}', { ticket: ticketId }),
 			fields: HISTORY_FIELDS
 		});
+}
+
+/** All visible projects, archived ones included, with the fields of the catalog (E3 plan, T-16). */
+export function subscribeProjects(
+	pb: PocketBase,
+	onChange: (change: RecordChange<Project>) => void
+): Promise<Unsubscribe> {
+	return pb
+		.collection('projects')
+		.subscribe<ProjectRecord>('*', changes(toProject, onChange), { fields: PROJECT_FIELDS });
+}
+
+/** All visible tags with the fields of the catalog (E3 plan, T-16). */
+export function subscribeTags(
+	pb: PocketBase,
+	onChange: (change: RecordChange<Tag>) => void
+): Promise<Unsubscribe> {
+	return pb
+		.collection('tags')
+		.subscribe<TagRecord>('*', changes(toTag, onChange), { fields: TAG_FIELDS });
 }
 
 /**

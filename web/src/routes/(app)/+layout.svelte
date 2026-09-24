@@ -3,6 +3,7 @@
 	import { auth } from '$lib/auth.svelte';
 	import AppHeader from '$lib/components/AppHeader.svelte';
 	import { pb } from '$lib/pocketbase';
+	import { CatalogStore, catalogData, setCatalogStore } from '$lib/stores/catalog.svelte';
 	import { liveSource } from '$lib/stores/realtime';
 	import {
 		TicketActivityStore,
@@ -25,7 +26,8 @@
 	let { children } = $props();
 
 	// Stores live per layout instance (ADR-0006 section 1): a logout removes the layout and with
-	// it every loaded ticket.
+	// it every loaded ticket, project and tag.
+	const catalog = setCatalogStore(new CatalogStore(catalogData(pb), auth));
 	const tickets = setTicketListStore(new TicketListStore(ticketListData(pb), auth));
 	const detail = setTicketDetailStore(new TicketDetailStore(ticketDetailData(pb), auth, tickets));
 	const activity = setTicketActivityStore(
@@ -40,12 +42,16 @@
 	// Clock of "today" for the list order (T-3); the cleanup also empties the store.
 	$effect(() => untrack(() => tickets.start()));
 
-	// Live updates (ADR-0007 section 2): list, panel, comments and history. The cleanups end
-	// every subscription when the layout goes away; a logout has already ended them all.
+	// Projects and tags, loaded once per session (E3 plan, T-16); the cleanup empties the catalog.
+	$effect(() => untrack(() => catalog.start()));
+
+	// Live updates (ADR-0007 section 2): list, panel, comments, history and the catalog. The
+	// cleanups end every subscription when the layout goes away; a logout has already ended them.
 	const live = liveSource(pb);
 	$effect(() => untrack(() => tickets.connect(live)));
 	$effect(() => untrack(() => detail.connect(live)));
 	$effect(() => untrack(() => activity.connect(live)));
+	$effect(() => untrack(() => catalog.connect(live)));
 </script>
 
 <AppHeader />

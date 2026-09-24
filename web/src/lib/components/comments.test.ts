@@ -41,9 +41,7 @@ async function renderComments(initial: Comment[] = [comment()]) {
 			updated: '2026-09-24 13:00:00.000Z'
 		})),
 		deleteComment: vi.fn(async (): Promise<void> => undefined),
-		listHistory: vi.fn(async () => []),
-		listProjects: vi.fn(async () => []),
-		listTags: vi.fn(async () => [])
+		listHistory: vi.fn(async () => [])
 	} satisfies TicketActivityData;
 	const store = new TicketActivityStore(
 		data,
@@ -118,9 +116,7 @@ describe('comment list', () => {
 			createComment: vi.fn(),
 			updateComment: vi.fn(),
 			deleteComment: vi.fn(),
-			listHistory: vi.fn(async () => []),
-			listProjects: vi.fn(async () => []),
-			listTags: vi.fn(async () => [])
+			listHistory: vi.fn(async () => [])
 		} satisfies TicketActivityData;
 		const store = new TicketActivityStore(
 			data,

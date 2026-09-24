@@ -1,20 +1,30 @@
 // Realtime through the web data layer (E2 plan, package 12; ADR-0007 section 2): a second client
 // of the same user changes and deletes, the first receives it, a foreign user receives nothing.
 // The subscriptions carry the fields of list and panel and are filtered to one ticket where the
-// panel needs it. Node 24 provides EventSource only with --experimental-eventsource, which
-// vitest.config.mjs passes to the integration workers.
+// panel needs it. Projects and tags follow for the catalog (E3 plan, package 4). Node 24
+// provides EventSource only with --experimental-eventsource, which vitest.config.mjs passes to
+// the integration workers.
 
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { superuserClient, userClient } from '../support/api.mjs';
 import { createOwner, uniqueCode, uniqueSuffix } from '../support/scenario.mjs';
 import { createComment } from '../../web/src/lib/data/comments.ts';
 import {
+	createProject,
+	deleteProject,
+	setProjectArchived,
+	updateProject
+} from '../../web/src/lib/data/projects.ts';
+import {
 	onReconnect,
 	subscribeComments,
 	subscribeHistory,
+	subscribeProjects,
+	subscribeTags,
 	subscribeTicket,
 	subscribeTickets
 } from '../../web/src/lib/data/realtime.ts';
+import { createTag, deleteTag, renameTag } from '../../web/src/lib/data/tags.ts';
 import { createTicket, deleteTicket, updateTicket } from '../../web/src/lib/data/tickets.ts';
 
 const EVENT_TIMEOUT_MS = 5_000;
@@ -211,6 +221,73 @@ describe('web data layer: realtime', () => {
 		} finally {
 			await client.realtime.unsubscribe();
 		}
+	});
+
+	it('delivers project changes of a second client with the catalog fields, none to a foreign user', async () => {
+		const own = collector();
+		const other = collector();
+		await subscribe(subscribeProjects(first, own.onChange));
+		await subscribe(subscribeProjects(foreign, other.onChange));
+		const code = uniqueCode();
+
+		const project = await createProject(second, { name: 'Keller', code });
+		const created = await own.waitFor(
+			(change) => change.action === 'create' && change.record.id === project.id,
+			'create project'
+		);
+		await updateProject(second, project.id, { name: 'Dachboden' });
+		const renamed = await own.waitFor(
+			(change) => change.action === 'update' && change.record.name === 'Dachboden',
+			'rename project'
+		);
+		await setProjectArchived(second, project.id, true);
+		const archived = await own.waitFor(
+			(change) => change.action === 'update' && change.record.archived === true,
+			'archive project'
+		);
+		await deleteProject(second, project.id);
+		await own.waitFor(
+			(change) => change.action === 'delete' && change.id === project.id,
+			'delete project'
+		);
+		await delay(QUIET_PERIOD_MS);
+
+		expect(created.record).toEqual(project);
+		expect(Object.keys(created.record).sort()).toEqual([
+			'archived',
+			'code',
+			'id',
+			'name',
+			'updated'
+		]);
+		expect(renamed.record).toMatchObject({ id: project.id, name: 'Dachboden', code });
+		expect(archived.record.updated >= renamed.record.updated).toBe(true);
+		expect(other.changes.filter((change) => idOf(change) === project.id)).toEqual([]);
+	});
+
+	it('delivers tag changes of a second client, none to a foreign user', async () => {
+		const own = collector();
+		const other = collector();
+		await subscribe(subscribeTags(first, own.onChange));
+		await subscribe(subscribeTags(foreign, other.onChange));
+
+		const tag = await createTag(second, `Einkauf-${uniqueSuffix()}`);
+		const created = await own.waitFor(
+			(change) => change.action === 'create' && change.record.id === tag.id,
+			'create tag'
+		);
+		await renameTag(second, tag.id, 'Wocheneinkauf');
+		const renamed = await own.waitFor(
+			(change) => change.action === 'update' && change.record.name === 'Wocheneinkauf',
+			'rename tag'
+		);
+		await deleteTag(second, tag.id);
+		await own.waitFor((change) => change.action === 'delete' && change.id === tag.id, 'delete tag');
+		await delay(QUIET_PERIOD_MS);
+
+		expect(created.record).toEqual(tag);
+		expect(Object.keys(renamed.record).sort()).toEqual(['id', 'name', 'updated']);
+		expect(other.changes.filter((change) => idOf(change) === tag.id)).toEqual([]);
 	});
 
 	it('delivers nothing after unsubscribing', async () => {

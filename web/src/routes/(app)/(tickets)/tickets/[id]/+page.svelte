@@ -4,6 +4,7 @@
 	import { page } from '$app/state';
 	import TicketActivity from '$lib/components/TicketActivity.svelte';
 	import TicketPanel from '$lib/components/TicketPanel.svelte';
+	import { getCatalogStore } from '$lib/stores/catalog.svelte';
 	import { getTicketActivityStore } from '$lib/stores/ticket-activity.svelte';
 	import { getTicketDetailStore } from '$lib/stores/ticket-detail.svelte';
 	import { listHref } from '$lib/ticket-links';
@@ -14,6 +15,7 @@
 	const DISCARD_QUESTION = 'Änderungen verwerfen? Der nicht gespeicherte Text geht verloren.';
 	const detail = getTicketDetailStore();
 	const comments = getTicketActivityStore();
+	const catalog = getCatalogStore();
 	const id = $derived(page.params.id ?? '');
 	const back = $derived(listHref(page.url));
 
@@ -61,6 +63,6 @@
 
 <TicketPanel store={detail} listHref={back} onclose={close} ondeleted={deleted}>
 	{#snippet activity()}
-		<TicketActivity store={comments} />
+		<TicketActivity store={comments} {catalog} />
 	{/snippet}
 </TicketPanel>

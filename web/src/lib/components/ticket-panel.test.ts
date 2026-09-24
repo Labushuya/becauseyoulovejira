@@ -10,6 +10,7 @@ import type { BeforeNavigate } from '@sveltejs/kit';
 import type { ResolvedPathname } from '$app/types';
 import { DataError } from '$lib/data/errors';
 import type { Ticket, TicketPatch, TicketSummary } from '$lib/domain/ticket';
+import { CatalogStore } from '$lib/stores/catalog.svelte';
 import type { LiveSource, RecordChange } from '$lib/stores/realtime';
 import { TicketActivityStore, type TicketActivityData } from '$lib/stores/ticket-activity.svelte';
 import {
@@ -28,7 +29,8 @@ const mocks = vi.hoisted(() => ({
 		params: { id: 'abc123def456ghi' } as Record<string, string>
 	},
 	detail: null as unknown,
-	activity: null as unknown
+	activity: null as unknown,
+	catalog: null as unknown
 }));
 
 vi.mock('$app/navigation', () => ({ goto: mocks.goto, beforeNavigate: mocks.beforeNavigate }));
@@ -40,6 +42,10 @@ vi.mock('$lib/stores/ticket-detail.svelte', async (importOriginal) => ({
 vi.mock('$lib/stores/ticket-activity.svelte', async (importOriginal) => ({
 	...(await importOriginal<object>()),
 	getTicketActivityStore: () => mocks.activity
+}));
+vi.mock('$lib/stores/catalog.svelte', async (importOriginal) => ({
+	...(await importOriginal<object>()),
+	getCatalogStore: () => mocks.catalog
 }));
 
 const ID = 'abc123def456ghi';
@@ -345,12 +351,17 @@ function activityStore() {
 		createComment: vi.fn(),
 		updateComment: vi.fn(),
 		deleteComment: vi.fn(),
-		listHistory: vi.fn(async () => []),
-		listProjects: vi.fn(async () => []),
-		listTags: vi.fn(async () => [])
+		listHistory: vi.fn(async () => [])
 	} satisfies TicketActivityData;
 	return new TicketActivityStore(data, { ensureValid: () => true, logout: vi.fn() }, () => 'me');
 }
+
+beforeEach(() => {
+	mocks.catalog = new CatalogStore(
+		{ listProjects: vi.fn(async () => []), listTags: vi.fn(async () => []) },
+		{ ensureValid: () => true, logout: vi.fn() }
+	);
+});
 
 describe('ticket route', () => {
 	it('opens the ticket of the URL and closes back to the list with the same query', async () => {
@@ -505,6 +516,8 @@ describe('ticket panel: deleted elsewhere', () => {
 			},
 			comments: async () => stop,
 			history: async () => stop,
+			projects: async () => stop,
+			tags: async () => stop,
 			reconnected: async () => stop
 		};
 		const disconnect = context.store.connect(live);

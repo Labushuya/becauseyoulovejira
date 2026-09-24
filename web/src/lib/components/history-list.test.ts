@@ -6,7 +6,10 @@ import { fireEvent, render, screen, within } from '@testing-library/svelte';
 import { tick } from 'svelte';
 import { describe, expect, it, vi } from 'vitest';
 import { DataError } from '$lib/data/errors';
+import type { Project } from '$lib/domain/project';
+import type { Tag } from '$lib/domain/tag';
 import type { HistoryEntry } from '$lib/domain/ticket';
+import { CatalogStore, type CatalogData } from '$lib/stores/catalog.svelte';
 import { TicketActivityStore, type TicketActivityData } from '$lib/stores/ticket-activity.svelte';
 import TicketActivity from './TicketActivity.svelte';
 
@@ -52,15 +55,24 @@ const HISTORY: HistoryEntry[] = [
 	entry({ id: 'h1' })
 ];
 
-async function renderActivity(history: HistoryEntry[] = HISTORY) {
+/** Loaded catalog (E3 plan, T-16) with the given projects and tags. */
+async function loadedCatalog(projects: Project[] = [], tags: Tag[] = []) {
+	const data = {
+		listProjects: vi.fn<CatalogData['listProjects']>(async () => projects),
+		listTags: vi.fn<CatalogData['listTags']>(async () => tags)
+	} satisfies CatalogData;
+	const catalog = new CatalogStore(data, { ensureValid: () => true, logout: vi.fn() });
+	await catalog.load();
+	return { catalog, data };
+}
+
+async function renderActivity(history: HistoryEntry[] = HISTORY, catalog?: CatalogStore) {
 	const data = {
 		listComments: vi.fn(async () => []),
 		createComment: vi.fn(),
 		updateComment: vi.fn(),
 		deleteComment: vi.fn(),
-		listHistory: vi.fn<TicketActivityData['listHistory']>(async () => history),
-		listProjects: vi.fn(async () => []),
-		listTags: vi.fn(async () => [])
+		listHistory: vi.fn<TicketActivityData['listHistory']>(async () => history)
 	} satisfies TicketActivityData;
 	const store = new TicketActivityStore(
 		data,
@@ -68,10 +80,11 @@ async function renderActivity(history: HistoryEntry[] = HISTORY) {
 		() => ME
 	);
 	store.open(TICKET);
-	const result = render(TicketActivity, { props: { store } });
+	const shown = catalog ?? (await loadedCatalog()).catalog;
+	const result = render(TicketActivity, { props: { store, catalog: shown } });
 	await vi.waitFor(() => expect(store.historyState).not.toBe('loading'));
 	await tick();
-	return { ...result, store, data };
+	return { ...result, store, data, catalog: shown };
 }
 
 function tab(name: string) {
@@ -168,9 +181,7 @@ describe('history list', () => {
 			listHistory: vi
 				.fn<TicketActivityData['listHistory']>()
 				.mockRejectedValueOnce(new DataError('server', { status: 500 }))
-				.mockResolvedValueOnce([entry({})]),
-			listProjects: vi.fn(async () => []),
-			listTags: vi.fn(async () => [])
+				.mockResolvedValueOnce([entry({})])
 		} satisfies TicketActivityData;
 		const store = new TicketActivityStore(
 			data,
@@ -178,7 +189,7 @@ describe('history list', () => {
 			() => ME
 		);
 		store.open(TICKET);
-		render(TicketActivity, { props: { store } });
+		render(TicketActivity, { props: { store, catalog: (await loadedCatalog()).catalog } });
 		await vi.waitFor(() => expect(store.historyState).toBe('error'));
 		await fireEvent.click(tab('Verlauf'));
 
@@ -188,5 +199,115 @@ describe('history list', () => {
 		await vi.waitFor(() =>
 			expect(screen.getByText('hat das Ticket angelegt (TASK-3)')).toBeTruthy()
 		);
+	});
+});
+
+describe('history names from the catalog (E3 plan, T-16)', () => {
+	const UPDATED = '2026-09-24 08:00:00.000Z';
+	const HOUSE: Project = {
+		id: 'proj00000000001',
+		name: 'Haus',
+		code: 'HAUS',
+		archived: false,
+		updated: UPDATED
+	};
+	const OLD: Project = {
+		id: 'proj00000000002',
+		name: 'Altbau',
+		code: 'ALT',
+		archived: true,
+		updated: UPDATED
+	};
+	const GARDEN: Tag = { id: 'tag000000000001', name: 'Garten', updated: UPDATED };
+	const NAMED: HistoryEntry[] = [
+		entry({
+			id: 'h3',
+			field: 'tags',
+			oldValue: '',
+			newValue: JSON.stringify([GARDEN.id, 'tag000000000009']),
+			created: '2026-09-24 11:00:00.000Z'
+		}),
+		entry({
+			id: 'h2',
+			field: 'project',
+			oldValue: OLD.id,
+			newValue: HOUSE.id,
+			created: '2026-09-24 10:00:00.000Z'
+		})
+	];
+
+	function texts() {
+		const panel = screen.getByRole('tabpanel', { name: 'Verlauf' });
+		return within(panel)
+			.getAllByRole('listitem')
+			.map((item) => item.querySelector('.text-line')?.textContent?.trim());
+	}
+
+	it('resolves active and archived projects and tags, unknown ones as "(gelöscht)"', async () => {
+		const { catalog } = await loadedCatalog([HOUSE, OLD], [GARDEN]);
+		await renderActivity(NAMED, catalog);
+		await fireEvent.click(tab('Verlauf'));
+
+		expect(texts()).toEqual([
+			'Tags hinzugefügt: Garten, (gelöscht)',
+			'Projekt: Altbau (ALT) → Haus (HAUS)'
+		]);
+	});
+
+	it('follows renames and deletions in the catalog without loading the history again', async () => {
+		const { catalog } = await loadedCatalog([HOUSE, OLD], [GARDEN]);
+		const { data } = await renderActivity(NAMED, catalog);
+		await fireEvent.click(tab('Verlauf'));
+
+		catalog.upsertProject({ ...HOUSE, name: 'Wohnung', updated: '2026-09-24 09:00:00.000Z' });
+		catalog.removeTag(GARDEN.id);
+		await tick();
+
+		expect(texts()).toEqual([
+			'Tags hinzugefügt: (gelöscht), (gelöscht)',
+			'Projekt: Altbau (ALT) → Wohnung (HAUS)'
+		]);
+		expect(data.listHistory).toHaveBeenCalledTimes(1);
+	});
+
+	it('waits for the catalog instead of showing names as deleted', async () => {
+		let finish: (projects: Project[]) => void = () => undefined;
+		const catalogData = {
+			listProjects: vi.fn<CatalogData['listProjects']>(
+				() => new Promise((resolve) => (finish = resolve))
+			),
+			listTags: vi.fn<CatalogData['listTags']>(async () => [GARDEN])
+		} satisfies CatalogData;
+		const catalog = new CatalogStore(catalogData, { ensureValid: () => true, logout: vi.fn() });
+		void catalog.load();
+		await renderActivity(NAMED, catalog);
+		await fireEvent.click(tab('Verlauf'));
+
+		expect(screen.getByRole('status').textContent).toContain('Verlauf wird geladen');
+		expect(screen.queryByText(/gelöscht/)).toBeNull();
+
+		finish([HOUSE, OLD]);
+		await vi.waitFor(() => expect(texts()[1]).toBe('Projekt: Altbau (ALT) → Haus (HAUS)'));
+	});
+
+	it('shows a failed catalog as error and loads it again with "Erneut versuchen"', async () => {
+		const catalogData = {
+			listProjects: vi
+				.fn<CatalogData['listProjects']>()
+				.mockRejectedValueOnce(new DataError('network'))
+				.mockResolvedValueOnce([HOUSE, OLD]),
+			listTags: vi.fn<CatalogData['listTags']>(async () => [GARDEN])
+		} satisfies CatalogData;
+		const catalog = new CatalogStore(catalogData, { ensureValid: () => true, logout: vi.fn() });
+		await catalog.load();
+		const { data } = await renderActivity(NAMED, catalog);
+		await fireEvent.click(tab('Verlauf'));
+
+		expect(screen.getByText(/Server nicht erreichbar/).closest('.alert-error')).not.toBeNull();
+		await fireEvent.click(screen.getByRole('button', { name: 'Erneut versuchen' }));
+
+		await vi.waitFor(() => expect(texts()[1]).toBe('Projekt: Altbau (ALT) → Haus (HAUS)'));
+		expect(catalogData.listProjects).toHaveBeenCalledTimes(2);
+		expect(data.listHistory).toHaveBeenCalledTimes(1);
 	});
 });

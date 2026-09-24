@@ -29,6 +29,8 @@ const mocks = vi.hoisted(() => {
 			ticket: vi.fn(subscribe('ticket')),
 			comments: vi.fn(subscribe('comments')),
 			history: vi.fn(subscribe('history')),
+			projects: vi.fn(subscribe('projects')),
+			tags: vi.fn(subscribe('tags')),
 			reconnected: vi.fn(subscribe('PB_CONNECT'))
 		},
 		goto: vi.fn(async () => {
@@ -38,6 +40,8 @@ const mocks = vi.hoisted(() => {
 		auth: {
 			email: 'anna@example.com',
 			keepAlive: vi.fn(() => stopKeepAlive),
+			// No valid session in the fake: the catalog loads nothing (no server in these tests).
+			ensureValid: vi.fn(() => false),
 			logout: vi.fn(() => {
 				calls.push('logout');
 			})
@@ -68,6 +72,7 @@ beforeEach(() => {
 	mocks.goto.mockClear();
 	mocks.auth.keepAlive.mockClear();
 	mocks.auth.logout.mockClear();
+	mocks.auth.ensureValid.mockClear();
 	mocks.stopKeepAlive.mockClear();
 	for (const subscribe of Object.values(mocks.live)) subscribe.mockClear();
 });
@@ -100,18 +105,26 @@ describe('app layout', () => {
 		expect(mocks.auth.keepAlive).toHaveBeenCalledOnce();
 	});
 
-	it('subscribes to tickets and reconnections while shown and ends them when it goes away', async () => {
+	it('subscribes to tickets, the catalog and reconnections while shown and ends them when it goes away', async () => {
 		const { unmount } = await renderLayout();
-		await vi.waitFor(() => expect(mocks.subscribed).toHaveLength(4));
+		await vi.waitFor(() => expect(mocks.subscribed).toHaveLength(7));
 
-		// The list follows all tickets; list, panel and activity each reconcile after a reconnect.
+		// The list follows all tickets, the catalog all projects and tags (E3 plan, T-16); list,
+		// panel, activity and catalog each reconcile after a reconnect.
 		expect([...mocks.subscribed].sort()).toEqual([
 			'PB_CONNECT',
 			'PB_CONNECT',
 			'PB_CONNECT',
+			'PB_CONNECT',
+			'projects',
+			'tags',
 			'tickets'
 		]);
 		expect(mocks.live.tickets).toHaveBeenCalledOnce();
+		expect(mocks.live.projects).toHaveBeenCalledOnce();
+		expect(mocks.live.tags).toHaveBeenCalledOnce();
+		// The catalog tries to load once when the layout is shown.
+		expect(mocks.auth.ensureValid).toHaveBeenCalled();
 
 		unmount();
 

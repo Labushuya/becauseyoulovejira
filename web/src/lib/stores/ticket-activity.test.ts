@@ -26,9 +26,6 @@ function comment(overrides: Partial<Comment> = {}): Comment {
 	};
 }
 
-const PROJECT = { id: 'proj00000000001', name: 'Finanzen', code: 'FIN', archived: false };
-const TAG = { id: 'tag000000000001', name: 'Amt' };
-
 function entry(overrides: Partial<HistoryEntry> = {}): HistoryEntry {
 	return {
 		id: 'hist00000000001',
@@ -69,9 +66,7 @@ function setup(initial: Comment[] = [comment()], history: HistoryEntry[] = [entr
 			return { ...found, body, updated: stamp() };
 		}),
 		deleteComment: vi.fn(async (): Promise<void> => undefined),
-		listHistory: vi.fn<TicketActivityData['listHistory']>(async () => history),
-		listProjects: vi.fn<TicketActivityData['listProjects']>(async () => [PROJECT]),
-		listTags: vi.fn<TicketActivityData['listTags']>(async () => [TAG])
+		listHistory: vi.fn<TicketActivityData['listHistory']>(async () => history)
 	} satisfies TicketActivityData;
 	const session = { ensureValid: vi.fn(() => true), logout: vi.fn() };
 	const store = new TicketActivityStore(data, session, () => ME);
@@ -358,19 +353,19 @@ describe('TicketActivityStore: updates', () => {
 });
 
 describe('TicketActivityStore: history', () => {
-	it('loads the history with projects and tags for the lookups', async () => {
+	it('loads only the history; names come from the catalog (E3 plan, T-16)', async () => {
 		const { store, data } = await opened();
 		await vi.waitFor(() => expect(store.historyState).toBe('ready'));
 
 		expect(data.listHistory).toHaveBeenCalledWith(TICKET, expect.anything());
 		expect(store.history.map((item) => item.id)).toEqual(['hist00000000001']);
-		expect(store.lookups.projects.get(PROJECT.id)).toEqual(PROJECT);
-		expect(store.lookups.tags.get(TAG.id)).toEqual(TAG);
+		expect(Object.keys(data)).not.toContain('listProjects');
+		expect('lookups' in store).toBe(false);
 	});
 
-	it('fails as a whole when a lookup fails and loads again', async () => {
+	it('shows a failed history and loads it again', async () => {
 		const { store, data } = setup();
-		data.listTags.mockRejectedValueOnce(new DataError('network'));
+		data.listHistory.mockRejectedValueOnce(new DataError('network'));
 		store.open(TICKET);
 		await vi.waitFor(() => expect(store.historyState).toBe('error'));
 

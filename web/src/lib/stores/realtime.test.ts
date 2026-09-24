@@ -8,6 +8,8 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { DataError } from '$lib/data/errors';
 import type { RequestOptions } from '$lib/data/options';
 import type { DoneTicketPage } from '$lib/data/tickets';
+import type { Project } from '$lib/domain/project';
+import type { Tag } from '$lib/domain/tag';
 import type { Comment, HistoryEntry, Ticket, TicketSummary } from '$lib/domain/ticket';
 import { hold, type LiveSource, type RecordChange, type Unsubscribe } from './realtime';
 import { TicketActivityStore, type TicketActivityData } from './ticket-activity.svelte';
@@ -18,7 +20,7 @@ import {
 } from './ticket-detail.svelte';
 import { TicketListStore, type TicketListData } from './ticket-list.svelte';
 
-type Kind = 'tickets' | 'ticket' | 'comments' | 'history' | 'reconnected';
+type Kind = 'tickets' | 'ticket' | 'comments' | 'history' | 'projects' | 'tags' | 'reconnected';
 
 /** Realtime source for tests: records subscriptions and delivers events on demand. */
 class FakeLive implements LiveSource {
@@ -38,6 +40,14 @@ class FakeLive implements LiveSource {
 
 	history(ticketId: string, onChange: (change: RecordChange<HistoryEntry>) => void) {
 		return this.#add('history', ticketId, onChange);
+	}
+
+	projects(onChange: (change: RecordChange<Project>) => void) {
+		return this.#add('projects', '*', onChange);
+	}
+
+	tags(onChange: (change: RecordChange<Tag>) => void) {
+		return this.#add('tags', '*', onChange);
 	}
 
 	reconnected(callback: () => void) {
@@ -510,9 +520,7 @@ describe('activity store live', () => {
 			createComment: vi.fn(),
 			updateComment: vi.fn(),
 			deleteComment: vi.fn(),
-			listHistory: vi.fn<TicketActivityData['listHistory']>(async () => [entry()]),
-			listProjects: vi.fn(async () => []),
-			listTags: vi.fn(async () => [])
+			listHistory: vi.fn<TicketActivityData['listHistory']>(async () => [entry()])
 		} satisfies TicketActivityData;
 		const store = new TicketActivityStore(data, session(), () => ME);
 		const live = new FakeLive();

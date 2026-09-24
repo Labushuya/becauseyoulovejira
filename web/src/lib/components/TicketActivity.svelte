@@ -1,4 +1,5 @@
 <script lang="ts">
+	import type { CatalogStore } from '$lib/stores/catalog.svelte';
 	import type { TicketActivityStore } from '$lib/stores/ticket-activity.svelte';
 	import CommentList from './CommentList.svelte';
 	import HistoryList from './HistoryList.svelte';
@@ -6,7 +7,7 @@
 	// Activity below the ticket fields (E2 plan, T-11): tabs "Kommentare" (selected first) and
 	// "Verlauf" after the WAI-ARIA tabs pattern with automatic activation. Both panels stay in
 	// the DOM, so switching keeps a comment being written.
-	let { store }: { store: TicketActivityStore } = $props();
+	let { store, catalog }: { store: TicketActivityStore; catalog: CatalogStore } = $props();
 
 	type Tab = 'comments' | 'history';
 	const TABS: readonly { id: Tab; label: string }[] = [
@@ -85,7 +86,7 @@
 		tabindex="0"
 		hidden={selected !== 'history'}
 	>
-		<HistoryList {store} />
+		<HistoryList {store} {catalog} />
 	</div>
 </div>
 

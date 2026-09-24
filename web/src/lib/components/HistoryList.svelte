@@ -1,27 +1,45 @@
 <script lang="ts">
 	import { describeHistoryEntry } from '$lib/domain/history-format';
+	import type { CatalogStore } from '$lib/stores/catalog.svelte';
 	import type { TicketActivityStore } from '$lib/stores/ticket-activity.svelte';
 	import ErrorIcon from './ErrorIcon.svelte';
 
 	// History of the open ticket (E2 plan, T-10 and T-11): newest first, each entry with time in
 	// Berlin, actor and a readable text. A changed description opens old and new text as plain
-	// text, never as rendered Markdown.
-	let { store }: { store: TicketActivityStore } = $props();
+	// text, never as rendered Markdown. Project and tag names come from the catalog (E3 plan,
+	// T-16); until it is loaded the history waits, so nothing shows as "(gelöscht)" by mistake.
+	let { store, catalog }: { store: TicketActivityStore; catalog: CatalogStore } = $props();
 
 	const lines = $derived(
-		store.history.map((entry) => describeHistoryEntry(entry, store.lookups, store.userId))
+		store.history.map((entry) => describeHistoryEntry(entry, catalog.lookups, store.userId))
 	);
+	const error = $derived(
+		store.historyState === 'error'
+			? store.historyError
+			: catalog.state === 'error'
+				? catalog.error
+				: null
+	);
+	const loading = $derived(
+		store.historyState === 'loading' ||
+			(store.historyState === 'ready' && catalog.state !== 'ready')
+	);
+
+	async function retry() {
+		await Promise.all([
+			store.historyState === 'error' ? store.reloadHistory() : undefined,
+			catalog.state === 'error' ? catalog.reload() : undefined
+		]);
+	}
 </script>
 
-{#if store.historyState === 'error' && store.historyError}
+{#if error}
 	<div class="alert-error">
 		<ErrorIcon />
-		<span class="grow">{store.historyError}</span>
-		<button class="retry" type="button" onclick={() => store.reloadHistory()}>
-			Erneut versuchen
-		</button>
+		<span class="grow">{error}</span>
+		<button class="retry" type="button" onclick={retry}>Erneut versuchen</button>
 	</div>
-{:else if store.historyState === 'loading'}
+{:else if loading}
 	<p class="muted loading" role="status">Verlauf wird geladen …</p>
 {:else if store.historyState === 'ready' && lines.length === 0}
 	<p class="muted">Noch kein Verlauf.</p>

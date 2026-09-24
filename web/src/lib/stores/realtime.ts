@@ -1,17 +1,22 @@
-// Realtime for the stores (ADR-0007 sections 2 to 4): the subscriptions the stores need, as an
-// interface they can be tested with (fake) and bound to the app client (`liveSource`). `hold`
-// turns the asynchronous subscription into a synchronous stop for cleanups.
+// Realtime for the stores (ADR-0007 sections 2 to 4; E3 plan, T-16): the subscriptions the
+// stores need, as an interface they can be tested with (fake) and bound to the app client
+// (`liveSource`). `hold` turns the asynchronous subscription into a synchronous stop for
+// cleanups.
 
 import type PocketBase from 'pocketbase';
 import {
 	onReconnect,
 	subscribeComments,
 	subscribeHistory,
+	subscribeProjects,
+	subscribeTags,
 	subscribeTicket,
 	subscribeTickets,
 	type RecordChange,
 	type Unsubscribe
 } from '$lib/data/realtime';
+import type { Project } from '$lib/domain/project';
+import type { Tag } from '$lib/domain/tag';
 import type { Comment, HistoryEntry, Ticket, TicketSummary } from '$lib/domain/ticket';
 
 export type { RecordChange, Unsubscribe };
@@ -29,6 +34,10 @@ export interface LiveSource {
 		ticketId: string,
 		onChange: (change: RecordChange<HistoryEntry>) => void
 	): Promise<Unsubscribe>;
+	/** All visible projects, archived ones included (catalog, E3 plan T-16). */
+	projects(onChange: (change: RecordChange<Project>) => void): Promise<Unsubscribe>;
+	/** All visible tags (catalog). */
+	tags(onChange: (change: RecordChange<Tag>) => void): Promise<Unsubscribe>;
 	/** Called after a new connection that follows an interrupted one. */
 	reconnected(callback: () => void): Promise<Unsubscribe>;
 }
@@ -39,6 +48,8 @@ export function liveSource(pb: PocketBase): LiveSource {
 		ticket: (id, onChange) => subscribeTicket(pb, id, onChange),
 		comments: (ticketId, onChange) => subscribeComments(pb, ticketId, onChange),
 		history: (ticketId, onChange) => subscribeHistory(pb, ticketId, onChange),
+		projects: (onChange) => subscribeProjects(pb, onChange),
+		tags: (onChange) => subscribeTags(pb, onChange),
 		reconnected: (callback) => onReconnect(pb, callback)
 	};
 }

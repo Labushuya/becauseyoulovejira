@@ -2,7 +2,8 @@
 // and 10). Kept apart from the detail store: they load, fail and update independently of the
 // ticket fields. Own answers and realtime events (ADR-0007, filtered to the open ticket) go
 // through the same idempotent `upsertComment`, `removeComment` and `upsertHistory`. Drafts (new
-// comment, edited comments) are never overwritten by updates.
+// comment, edited comments) are never overwritten by updates. Project and tag names of the
+// history come from the catalog (E3 plan, T-16), not from lists of this store.
 
 import type PocketBase from 'pocketbase';
 import { createContext } from 'svelte';
@@ -10,11 +11,8 @@ import { SvelteMap, SvelteSet } from 'svelte/reactivity';
 import { createComment, deleteComment, listComments, updateComment } from '$lib/data/comments';
 import { toDataError } from '$lib/data/errors';
 import { listHistory } from '$lib/data/history';
-import { listProjects } from '$lib/data/projects';
-import { listTags } from '$lib/data/tags';
 import type { RequestOptions } from '$lib/data/options';
-import { historyLookups, type HistoryLookups } from '$lib/domain/history-format';
-import type { Comment, HistoryEntry, ProjectRef, TagRef } from '$lib/domain/ticket';
+import type { Comment, HistoryEntry } from '$lib/domain/ticket';
 import { hold, type LiveSource } from './realtime';
 import type { LoadState, SessionGuard } from './ticket-list.svelte';
 
@@ -26,8 +24,6 @@ export interface TicketActivityData {
 	updateComment(id: string, body: string): Promise<Comment>;
 	deleteComment(id: string): Promise<void>;
 	listHistory(ticketId: string, options: RequestOptions): Promise<HistoryEntry[]>;
-	listProjects(options: RequestOptions): Promise<ProjectRef[]>;
-	listTags(options: RequestOptions): Promise<TagRef[]>;
 }
 
 export function ticketActivityData(pb: PocketBase): TicketActivityData {
@@ -36,9 +32,7 @@ export function ticketActivityData(pb: PocketBase): TicketActivityData {
 		createComment: (ticketId, body) => createComment(pb, ticketId, body),
 		updateComment: (id, body) => updateComment(pb, id, body),
 		deleteComment: (id) => deleteComment(pb, id),
-		listHistory: (ticketId, options) => listHistory(pb, ticketId, options),
-		listProjects: (options) => listProjects(pb, options),
-		listTags: (options) => listTags(pb, options)
+		listHistory: (ticketId, options) => listHistory(pb, ticketId, options)
 	};
 }
 
@@ -47,8 +41,6 @@ function byCreated(a: Comment, b: Comment): number {
 	if (a.created === b.created) return 0;
 	return a.created < b.created ? -1 : 1;
 }
-
-const NO_LOOKUPS: HistoryLookups = historyLookups([], []);
 
 export class TicketActivityStore {
 	readonly #data: TicketActivityData;
@@ -75,7 +67,6 @@ export class TicketActivityStore {
 
 	/** Newest first (T-11), as the server sorts it (`-created,-@rowid`). */
 	#history = $state.raw<readonly HistoryEntry[]>([]);
-	#lookups = $state.raw<HistoryLookups>(NO_LOOKUPS);
 	#historyState = $state<LoadState>('idle');
 	#historyError = $state<string | null>(null);
 
@@ -112,11 +103,6 @@ export class TicketActivityStore {
 	/** History of the ticket, newest first. */
 	get history(): readonly HistoryEntry[] {
 		return this.#history;
-	}
-
-	/** Projects and tags to resolve IDs in the history (T-10), loaded with it. */
-	get lookups(): HistoryLookups {
-		return this.#lookups;
 	}
 
 	get historyState(): LoadState {
@@ -359,7 +345,6 @@ export class TicketActivityStore {
 		this.#historyController?.abort();
 		this.#historyController = null;
 		this.#history = [];
-		this.#lookups = NO_LOOKUPS;
 		this.#historyState = 'idle';
 		this.#historyError = null;
 		this.#comments.clear();
@@ -457,26 +442,20 @@ export class TicketActivityStore {
 		}
 	}
 
-	/** History plus the lookups for its IDs; one failure fails all, so nothing shows as deleted. */
+	/** History of the ticket, newest first; `quiet` (reconciliation) keeps the tab as it is. */
 	async #loadHistory(ticketId: string, quiet = false): Promise<void> {
 		this.#historyController?.abort();
 		this.#historyController = null;
 		if (!this.#session.ensureValid()) return;
 		const controller = new AbortController();
 		this.#historyController = controller;
-		const options = { signal: controller.signal };
 		if (!quiet) {
 			this.#historyState = 'loading';
 			this.#historyError = null;
 		}
 		try {
-			const [history, projects, tags] = await Promise.all([
-				this.#data.listHistory(ticketId, options),
-				this.#data.listProjects(options),
-				this.#data.listTags(options)
-			]);
+			const history = await this.#data.listHistory(ticketId, { signal: controller.signal });
 			if (controller.signal.aborted) return;
-			this.#lookups = historyLookups(projects, tags);
 			this.#history = history;
 			this.#historyState = 'ready';
 		} catch (error) {
