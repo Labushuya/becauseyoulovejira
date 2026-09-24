@@ -61,7 +61,7 @@
 
 	<div aria-live="polite">
 		{#if message}
-			<p class="error">
+			<p class="alert-error message">
 				<svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true" focusable="false">
 					<circle cx="8" cy="8" r="7" fill="none" stroke="currentColor" stroke-width="1.5" />
 					<path d="M8 4.5v4.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" />
@@ -134,22 +134,8 @@
 		font-weight: 600;
 	}
 
-	.error {
-		display: flex;
-		gap: 0.5rem;
-		align-items: flex-start;
+	.message {
 		margin-top: 1.25rem;
-		padding: 0.625rem 0.75rem;
-		font-size: 0.875rem;
-		color: var(--color-brand-soft-text);
-		background: var(--color-brand-soft-bg);
-		border-left: 3px solid var(--color-brand);
-		border-radius: 0.375rem;
-	}
-
-	.error svg {
-		flex: none;
-		margin-top: 0.125rem;
 	}
 
 	form {

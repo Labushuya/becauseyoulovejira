@@ -132,9 +132,11 @@ Alle Farben als CSS-Custom-Properties zentral in `web/src/lib/styles/tokens.css`
 | Marke (Buttons, Icons, Fokus, Rahmen) | #07838F | #07838F |
 | Marke als kleiner Text | #07838F | #4BB8C2 |
 | Marke Fläche / Text darauf | #DDF0F2 / #055C65 | #123A3F / #9FDCE2 |
+| Fehler (`--color-danger`) / Fehlerfläche (`--color-danger-soft-bg`) | #A13A40 / #F8E9E9 | #EAA0A0 / #3B1E21 |
 
 - Weißer Text auf #07838F ist in beiden Modi zulässig.
 - #07838F nie als kleiner Text im Dunkelmodus – dort #4BB8C2.
+- Rot nur für echte Fehler: fehlgeschlagene Anfragen, abgelehnte Eingaben, Feldfehler (`aria-invalid="true"` plus Fehlertext per `aria-describedby`), Login-Fehlermeldung. Nicht rot: Überfälligkeit, hohe oder dringende Priorität, „Endgültig löschen“, Warnhinweise. Fehler tragen immer Icon und Text. Klassen `.alert-error` und `[aria-invalid='true']` in `base.css` ([ADR-0009](docs/adr/0009-fehlerfarbe.md)).
 
 Status-Pillen („Ton in Ton"):
 

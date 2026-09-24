@@ -13,6 +13,10 @@
 	--color-brand-soft-text: #055c65;
 	--color-on-brand: #ffffff;
 
+	/* Errors only (ADR-0009): text, icon, invalid field border / message background */
+	--color-danger: #a13a40;
+	--color-danger-soft-bg: #f8e9e9;
+
 	/* Status pill colors - light mode */
 	--status-backlog-bg: transparent;
 	--status-backlog-text: #5b6b6f;
@@ -53,6 +57,10 @@
 		--color-brand-soft-text: #9fdce2;
 		--color-on-brand: #ffffff;
 
+		/* Errors only (ADR-0009): text, icon, invalid field border / message background */
+		--color-danger: #eaa0a0;
+		--color-danger-soft-bg: #3b1e21;
+
 		/* Status pill colors - dark mode */
 		--status-backlog-bg: transparent;
 		--status-backlog-text: #8da1a6;
@@ -89,6 +97,10 @@
 	--color-brand-soft-text: #055c65;
 	--color-on-brand: #ffffff;
 
+	/* Errors only (ADR-0009): text, icon, invalid field border / message background */
+	--color-danger: #a13a40;
+	--color-danger-soft-bg: #f8e9e9;
+
 	/* Status pill colors - light mode */
 	--status-backlog-bg: transparent;
 	--status-backlog-text: #5b6b6f;
@@ -123,6 +135,10 @@
 	--color-brand-soft-bg: #123a3f;
 	--color-brand-soft-text: #9fdce2;
 	--color-on-brand: #ffffff;
+
+	/* Errors only (ADR-0009): text, icon, invalid field border / message background */
+	--color-danger: #eaa0a0;
+	--color-danger-soft-bg: #3b1e21;
 
 	/* Status pill colors - dark mode */
 	--status-backlog-bg: transparent;

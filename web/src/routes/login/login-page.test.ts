@@ -48,6 +48,14 @@ function passwordField() {
 	return screen.getByLabelText<HTMLInputElement>('Passwort');
 }
 
+/** The message uses the error style (ADR-0009) and keeps its icon next to the text. */
+function expectErrorStyle(message: HTMLElement) {
+	const alert = message.closest('.alert-error');
+	expect(alert).not.toBeNull();
+	expect(alert?.querySelector('svg[aria-hidden="true"]')).not.toBeNull();
+	expect(alert?.textContent?.trim()).toBe(message.textContent);
+}
+
 async function submitLogin(email = USER.email, password = 'richtiges Passwort') {
 	await fireEvent.input(emailField(), { target: { value: email } });
 	await fireEvent.input(passwordField(), { target: { value: password } });
@@ -136,6 +144,7 @@ describe('submitting', () => {
 
 		const message = await screen.findByText(GENERIC_MESSAGE);
 		expect(message.closest('[aria-live="polite"]')).not.toBeNull();
+		expectErrorStyle(message);
 		expect(screen.getByText(ADMIN_NOTE).closest('[aria-live="polite"]')).not.toBeNull();
 		expect(passwordField().value).toBe('');
 		expect(document.activeElement).toBe(passwordField());
@@ -153,6 +162,7 @@ describe('submitting', () => {
 
 		const message = await screen.findByText(NETWORK_MESSAGE);
 		expect(message.closest('[aria-live="polite"]')).not.toBeNull();
+		expectErrorStyle(message);
 		expect(screen.queryByText(GENERIC_MESSAGE)).toBeNull();
 		expect(screen.queryByText(ADMIN_NOTE)).toBeNull();
 		expect(document.activeElement).toBe(passwordField());

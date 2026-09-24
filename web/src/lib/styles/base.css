@@ -51,3 +51,29 @@ input {
 	cursor: progress;
 	opacity: 0.75;
 }
+
+/* Error message (ADR-0009): red only for real errors, always with icon and text. */
+.alert-error {
+	display: flex;
+	gap: 0.5rem;
+	align-items: flex-start;
+	padding: 0.625rem 0.75rem;
+	font-size: 0.875rem;
+	color: var(--color-danger);
+	background: var(--color-danger-soft-bg);
+	border-left: 3px solid var(--color-danger);
+	border-radius: 0.375rem;
+}
+
+.alert-error > svg {
+	flex: none;
+	margin-top: 0.125rem;
+}
+
+/*
+ * Invalid fields (ADR-0009); the error text is linked via aria-describedby. ":root" raises the
+ * specificity above scoped component rules such as "input.svelte-xyz", which set the border.
+ */
+:root [aria-invalid='true'] {
+	border-color: var(--color-danger);
+}
