@@ -2,7 +2,7 @@ node_modules/
 web/.svelte-kit/
 web/build/
 app/pocketbase.exe
-app/pb_data/
+app/*pb_data*/
 app/pb_public/
 *.log
 .env
