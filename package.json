@@ -8,9 +8,10 @@
 		"node": ">=24"
 	},
 	"scripts": {
-		"test": "vitest run",
+		"test": "vitest run && npm --prefix web test",
 		"test:unit": "vitest run --project unit",
 		"test:integration": "vitest run --project integration",
+		"test:web": "npm --prefix web test",
 		"check": "npm --prefix web run check",
 		"lint": "npm --prefix web run lint",
 		"format": "npm --prefix web run format",
