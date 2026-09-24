@@ -1,4 +1,4 @@
-import PocketBase, { ClientResponseError, type AuthRecord } from 'pocketbase';
+import PocketBase, { ClientResponseError, isTokenExpired, type AuthRecord } from 'pocketbase';
 import { pb } from '$lib/pocketbase';
 
 /**
@@ -13,16 +13,34 @@ export type SessionFailure = 'network' | 'server';
 /**
  * rejected: the server refused the login. Wrong password, unknown e-mail and every other
  * refusal share one outcome, so the UI cannot reveal whether an account exists.
+ * rate_limited: too many attempts (429). server: an error response of the server (5xx).
+ * Neither depends on the account, so they reveal nothing about an e-mail address (E2 plan, T-18).
  * network: no response from the server.
  */
-export type LoginFailure = 'rejected' | 'network';
+export type LoginFailure = 'rejected' | 'rate_limited' | 'server' | 'network';
 
 export type LoginResult = { ok: true } | { ok: false; failure: LoginFailure };
 
 const USERS = 'users';
 
+/** Keep-alive cadence while the app layout is shown (ADR-0007 section 1). */
+export const KEEP_ALIVE_INTERVAL_MS = 30 * 60 * 1000;
+/** A token that expires within this many seconds is renewed by the keep-alive. */
+export const RENEW_THRESHOLD_SECONDS = 24 * 60 * 60;
+
 function statusOf(error: unknown): number | undefined {
 	return error instanceof ClientResponseError ? error.status : undefined;
+}
+
+function loginFailureOf(status: number | undefined): LoginFailure {
+	if (status === 0) return 'network';
+	if (status === 429) return 'rate_limited';
+	if (status !== undefined && status >= 500) return 'server';
+	return 'rejected';
+}
+
+function endsSession(status: number | undefined): boolean {
+	return status === 401 || status === 403;
 }
 
 /**
@@ -32,6 +50,7 @@ function statusOf(error: unknown): number | undefined {
 export class Auth {
 	readonly #client: PocketBase;
 	#restoring: Promise<void> | null = null;
+	#renewing: Promise<void> | null = null;
 
 	#status = $state<SessionStatus>('checking');
 	#failure = $state<SessionFailure | null>(null);
@@ -45,7 +64,13 @@ export class Auth {
 	constructor(client: PocketBase) {
 		this.#client = client;
 		this.#sync();
-		client.authStore.onChange(() => this.#sync());
+		client.authStore.onChange(() => {
+			const hadToken = this.#hasToken;
+			this.#sync();
+			// The session ended elsewhere (other tab, expired or revoked token): stop the realtime
+			// subscriptions as well, so none keeps running without permission (ADR-0007 section 2).
+			if (hadToken && !this.#hasToken) this.#stopRealtime();
+		});
 	}
 
 	get status(): SessionStatus {
@@ -86,14 +111,79 @@ export class Auth {
 		try {
 			await this.#client.collection(USERS).authWithPassword(email, password);
 		} catch (error) {
-			return { ok: false, failure: statusOf(error) === 0 ? 'network' : 'rejected' };
+			return { ok: false, failure: loginFailureOf(statusOf(error)) };
 		}
 		this.#settle('ready', null);
 		return { ok: true };
 	}
 
+	/**
+	 * Ends the session. The realtime subscriptions stop first, then the store is cleared
+	 * (ADR-0007 section 2): no subscription keeps running without permission, and a later login
+	 * of another user does not hit the 403 of the old connection.
+	 */
 	logout(): void {
+		this.#stopRealtime();
 		this.#client.authStore.clear();
+	}
+
+	/**
+	 * Check before every data request (ADR-0006 section 4): true if the stored token is still
+	 * valid. An expired token ends the session without a request, so the route guard leads to the
+	 * login with a redirect instead of the list rules answering with empty lists.
+	 */
+	ensureValid(): boolean {
+		if (this.#client.authStore.token === '') return false;
+		if (this.#client.authStore.isValid) return true;
+		this.logout();
+		return false;
+	}
+
+	/**
+	 * Keeps the session alive while the app layout is shown (ADR-0007 section 1): checks now,
+	 * every 30 minutes, when the tab becomes visible again and when the browser goes online.
+	 * Returns the cleanup for the layout's `$effect`.
+	 */
+	keepAlive(): () => void {
+		const check = () => void this.renew();
+		const onVisibilityChange = () => {
+			if (document.visibilityState === 'visible') check();
+		};
+		check();
+		const timer = setInterval(check, KEEP_ALIVE_INTERVAL_MS);
+		document.addEventListener('visibilitychange', onVisibilityChange);
+		window.addEventListener('online', check);
+		return () => {
+			clearInterval(timer);
+			document.removeEventListener('visibilitychange', onVisibilityChange);
+			window.removeEventListener('online', check);
+		};
+	}
+
+	/**
+	 * One keep-alive step: an expired token ends the session, a token expiring within 24 hours
+	 * is renewed with `authRefresh`. 401/403 end the session; network and server errors keep
+	 * it, the next occasion tries again. Never switches the status to "checking", so the page
+	 * stays in place. Concurrent calls share one request.
+	 */
+	renew(): Promise<void> {
+		if (!this.ensureValid()) return Promise.resolve();
+		if (!isTokenExpired(this.#client.authStore.token, RENEW_THRESHOLD_SECONDS)) {
+			return Promise.resolve();
+		}
+		this.#renewing ??= this.#client
+			.collection(USERS)
+			.authRefresh()
+			.then(
+				() => undefined,
+				(error: unknown) => {
+					if (endsSession(statusOf(error))) this.logout();
+				}
+			)
+			.finally(() => {
+				this.#renewing = null;
+			});
+		return this.#renewing;
 	}
 
 	async #refresh(): Promise<void> {
@@ -107,7 +197,7 @@ export class Auth {
 			this.#settle('ready', null);
 		} catch (error) {
 			const status = statusOf(error);
-			if (status === 401 || status === 403) {
+			if (endsSession(status)) {
 				this.#client.authStore.clear();
 				this.#settle('ready', null);
 			} else {
@@ -116,6 +206,15 @@ export class Auth {
 		} finally {
 			this.#busy = false;
 		}
+	}
+
+	/**
+	 * Removes all subscriptions synchronously; the SDK closes the connection in the next
+	 * microtask without another request. Not awaited: a hanging subscription request must not
+	 * block the logout, and a failure there changes nothing about the ended session.
+	 */
+	#stopRealtime(): void {
+		this.#client.realtime.unsubscribe().catch(() => undefined);
 	}
 
 	#settle(status: SessionStatus, failure: SessionFailure | null): void {

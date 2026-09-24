@@ -1,9 +1,14 @@
 // Unit tests for the session state (E1 plan, package 7). A real SDK client runs against a
 // stubbed fetch, so the SDK's own error mapping (status 0 without a response) is covered too.
 
-import PocketBase, { BaseAuthStore, LocalAuthStore, type AuthRecord } from 'pocketbase';
-import { afterEach, describe, expect, it, vi } from 'vitest';
-import { Auth } from './auth.svelte';
+import PocketBase, {
+	BaseAuthStore,
+	LocalAuthStore,
+	isTokenExpired,
+	type AuthRecord
+} from 'pocketbase';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { Auth, KEEP_ALIVE_INTERVAL_MS } from './auth.svelte';
 
 const ORIGIN = 'http://pb.test';
 const USER = {
@@ -172,11 +177,27 @@ describe('Auth.login', () => {
 		expect(auth.email).toBe(USER.email);
 	});
 
-	it.each([400, 429, 500])('reports every refusal (%i) as "rejected"', async (status) => {
+	it.each([400, 401, 403, 404])('reports every refusal (%i) as "rejected"', async (status) => {
 		stubFetch(error(status));
 		const auth = new Auth(new PocketBase(ORIGIN, new BaseAuthStore()));
 
 		expect(await auth.login(USER.email, 'wrong')).toEqual({ ok: false, failure: 'rejected' });
+		expect(auth.isLoggedIn).toBe(false);
+	});
+
+	it('reports too many attempts (429) as "rate_limited"', async () => {
+		stubFetch(error(429));
+		const auth = new Auth(new PocketBase(ORIGIN, new BaseAuthStore()));
+
+		expect(await auth.login(USER.email, 'wrong')).toEqual({ ok: false, failure: 'rate_limited' });
+		expect(auth.isLoggedIn).toBe(false);
+	});
+
+	it.each([500, 502, 503])('reports a server error (%i) as "server"', async (status) => {
+		stubFetch(error(status));
+		const auth = new Auth(new PocketBase(ORIGIN, new BaseAuthStore()));
+
+		expect(await auth.login(USER.email, 'secret')).toEqual({ ok: false, failure: 'server' });
 		expect(auth.isLoggedIn).toBe(false);
 	});
 
@@ -190,6 +211,32 @@ describe('Auth.login', () => {
 });
 
 describe('Auth.logout', () => {
+	it('stops all realtime subscriptions before it clears the store', () => {
+		const client = clientWithSession();
+		const auth = new Auth(client);
+		const calls: string[] = [];
+		vi.spyOn(client.realtime, 'unsubscribe').mockImplementation(async (topic) => {
+			calls.push(`unsubscribe(${topic ?? ''})`);
+		});
+		vi.spyOn(client.authStore, 'clear').mockImplementation(() => {
+			calls.push('clear');
+		});
+
+		auth.logout();
+
+		expect(calls).toEqual(['unsubscribe()', 'clear']);
+	});
+
+	it('also stops the subscriptions when the session ends elsewhere', () => {
+		const client = clientWithSession();
+		new Auth(client);
+		const unsubscribe = vi.spyOn(client.realtime, 'unsubscribe').mockResolvedValue();
+
+		client.authStore.clear();
+
+		expect(unsubscribe).toHaveBeenCalledWith();
+	});
+
 	it('clears the session', () => {
 		const client = clientWithSession();
 		const auth = new Auth(client);
@@ -240,5 +287,208 @@ describe('session persistence (LocalAuthStore)', () => {
 		window.dispatchEvent(new StorageEvent('storage', { key: storageKey }));
 
 		expect(auth.isLoggedIn).toBe(false);
+	});
+});
+
+/** JWT with an `exp` claim relative to the (possibly faked) current time. */
+function jwt(expiresInSeconds: number): string {
+	const payload = btoa(
+		JSON.stringify({ type: 'auth', exp: Math.floor(Date.now() / 1000) + expiresInSeconds })
+	);
+	return `eyJhbGciOiJIUzI1NiJ9.${payload}.signature`;
+}
+
+const HOUR = 60 * 60;
+const DAY = 24 * HOUR;
+
+function refreshed() {
+	return { status: 200, body: { token: jwt(5 * DAY), record: USER } };
+}
+
+/** Real timeout: gives a request that must not happen the chance to start. */
+function pause(ms = 20) {
+	return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+describe('Auth.ensureValid', () => {
+	it('accepts a token that has not expired, without a request', () => {
+		const fetchMock = stubFetch();
+		const auth = new Auth(clientWithSession(jwt(HOUR)));
+
+		expect(auth.ensureValid()).toBe(true);
+		expect(fetchMock).not.toHaveBeenCalled();
+		expect(auth.isLoggedIn).toBe(true);
+	});
+
+	it('ends the session for an expired token, without a request', () => {
+		const fetchMock = stubFetch();
+		const client = clientWithSession(jwt(-1));
+		const auth = new Auth(client);
+		const unsubscribe = vi.spyOn(client.realtime, 'unsubscribe');
+
+		expect(auth.ensureValid()).toBe(false);
+		expect(fetchMock).not.toHaveBeenCalled();
+		expect(unsubscribe).toHaveBeenCalled();
+		expect(client.authStore.token).toBe('');
+		expect(auth.isLoggedIn).toBe(false);
+	});
+
+	it('reports a missing session', () => {
+		const auth = new Auth(new PocketBase(ORIGIN, new BaseAuthStore()));
+
+		expect(auth.ensureValid()).toBe(false);
+	});
+});
+
+describe('Auth.keepAlive', () => {
+	let stop: (() => void) | undefined;
+
+	beforeEach(() => {
+		// Only the interval and the clock are fake; the SDK's request handling keeps real timers.
+		vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval', 'Date'] });
+		vi.setSystemTime(new Date('2026-09-24T10:00:00Z'));
+	});
+
+	afterEach(() => {
+		stop?.();
+		stop = undefined;
+		vi.useRealTimers();
+		Reflect.deleteProperty(document, 'visibilityState');
+	});
+
+	function setVisibility(state: DocumentVisibilityState) {
+		Object.defineProperty(document, 'visibilityState', { configurable: true, value: state });
+		document.dispatchEvent(new Event('visibilitychange'));
+	}
+
+	it('renews a token that expires within 24 hours right away, without a status change', async () => {
+		const fetchMock = stubFetch(refreshed());
+		const client = clientWithSession(jwt(23 * HOUR));
+		const auth = new Auth(client);
+
+		stop = auth.keepAlive();
+
+		await vi.waitFor(() => expect(isTokenExpired(client.authStore.token, 4 * DAY)).toBe(false));
+		expect(fetchMock).toHaveBeenCalledOnce();
+		expect(requestOf(fetchMock).url).toBe(`${ORIGIN}/api/collections/users/auth-refresh`);
+		expect(auth.status).toBe('checking');
+		expect(auth.busy).toBe(false);
+	});
+
+	it('leaves a token alone that is valid for more than 24 hours', async () => {
+		const fetchMock = stubFetch();
+		const auth = new Auth(clientWithSession(jwt(25 * HOUR)));
+
+		stop = auth.keepAlive();
+		await pause();
+
+		expect(fetchMock).not.toHaveBeenCalled();
+	});
+
+	it('checks again every 30 minutes', async () => {
+		const fetchMock = stubFetch(refreshed());
+		const auth = new Auth(clientWithSession(jwt(DAY + 20 * 60)));
+		stop = auth.keepAlive();
+		await pause();
+		expect(fetchMock).not.toHaveBeenCalled();
+
+		vi.advanceTimersByTime(KEEP_ALIVE_INTERVAL_MS);
+
+		await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledOnce());
+	});
+
+	it('checks when the tab becomes visible again, not when it is hidden', async () => {
+		const fetchMock = stubFetch(refreshed());
+		const auth = new Auth(clientWithSession(jwt(25 * HOUR)));
+		stop = auth.keepAlive();
+		await pause();
+		vi.setSystemTime(Date.now() + 2 * HOUR * 1000);
+
+		setVisibility('hidden');
+		await pause();
+		expect(fetchMock).not.toHaveBeenCalled();
+
+		setVisibility('visible');
+		await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledOnce());
+	});
+
+	it('checks when the browser goes online', async () => {
+		const fetchMock = stubFetch(refreshed());
+		const auth = new Auth(clientWithSession(jwt(25 * HOUR)));
+		stop = auth.keepAlive();
+		await pause();
+		vi.setSystemTime(Date.now() + 2 * HOUR * 1000);
+
+		window.dispatchEvent(new Event('online'));
+
+		await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledOnce());
+	});
+
+	it('ends an expired session without a request', async () => {
+		const fetchMock = stubFetch();
+		const client = clientWithSession(jwt(-60));
+		const auth = new Auth(client);
+
+		stop = auth.keepAlive();
+		await pause();
+
+		expect(fetchMock).not.toHaveBeenCalled();
+		expect(client.authStore.token).toBe('');
+		expect(auth.isLoggedIn).toBe(false);
+	});
+
+	it.each([401, 403])('ends the session when the renewal answers %i', async (status) => {
+		stubFetch(error(status));
+		const client = clientWithSession(jwt(HOUR));
+		const auth = new Auth(client);
+		const unsubscribe = vi.spyOn(client.realtime, 'unsubscribe');
+
+		await auth.renew();
+
+		expect(client.authStore.token).toBe('');
+		expect(unsubscribe).toHaveBeenCalled();
+		expect(auth.isLoggedIn).toBe(false);
+	});
+
+	it.each([
+		['a network error', NETWORK_DOWN],
+		['a server error', error(500)]
+	])('keeps the session after %s and tries again on the next occasion', async (_name, reply) => {
+		const token = jwt(HOUR);
+		const fetchMock = stubFetch(reply, refreshed());
+		const client = clientWithSession(token);
+		const auth = new Auth(client);
+
+		await auth.renew();
+		expect(client.authStore.token).toBe(token);
+		expect(auth.isLoggedIn).toBe(true);
+
+		await auth.renew();
+		expect(fetchMock).toHaveBeenCalledTimes(2);
+		expect(client.authStore.token).not.toBe(token);
+	});
+
+	it('shares one request between concurrent occasions', async () => {
+		const fetchMock = stubFetch(refreshed());
+		const auth = new Auth(clientWithSession(jwt(HOUR)));
+
+		await Promise.all([auth.renew(), auth.renew()]);
+
+		expect(fetchMock).toHaveBeenCalledOnce();
+	});
+
+	it('removes its timer and listeners on cleanup', async () => {
+		const fetchMock = stubFetch();
+		const auth = new Auth(clientWithSession(jwt(25 * HOUR)));
+		auth.keepAlive()();
+		vi.setSystemTime(Date.now() + 2 * HOUR * 1000);
+
+		vi.advanceTimersByTime(KEEP_ALIVE_INTERVAL_MS);
+		setVisibility('visible');
+		window.dispatchEvent(new Event('online'));
+		await pause();
+
+		expect(fetchMock).not.toHaveBeenCalled();
+		expect(vi.getTimerCount()).toBe(0);
 	});
 });

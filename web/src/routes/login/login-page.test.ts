@@ -108,6 +108,14 @@ describe('login form', () => {
 		expect(link.getAttribute('rel')).toBe('external');
 	});
 
+	it('has no app header: the login page is outside the (app) layout', () => {
+		openLoginPage();
+
+		expect(screen.queryByRole('banner')).toBeNull();
+		expect(screen.queryByRole('group', { name: 'Bereich' })).toBeNull();
+		expect(screen.queryByRole('button', { name: 'Abmelden' })).toBeNull();
+	});
+
 	it('never mentions PocketBase to end users', () => {
 		const { container } = openLoginPage();
 
@@ -166,6 +174,25 @@ describe('submitting', () => {
 		expect(screen.queryByText(GENERIC_MESSAGE)).toBeNull();
 		expect(screen.queryByText(ADMIN_NOTE)).toBeNull();
 		expect(document.activeElement).toBe(passwordField());
+	});
+
+	it.each([
+		[429, 'Zu viele Anmeldeversuche. Bitte kurz warten und erneut versuchen.'],
+		[500, 'Der Server hat mit einem Fehler geantwortet. Bitte später erneut versuchen.'],
+		[503, 'Der Server hat mit einem Fehler geantwortet. Bitte später erneut versuchen.']
+	])('shows an own message for %i, independent of the account', async (status, text) => {
+		stubFetch(() => Response.json({ status, message: 'Error', data: {} }, { status }));
+		openLoginPage();
+
+		await submitLogin();
+
+		const message = await screen.findByText(text);
+		expect(message.closest('[aria-live="polite"]')).not.toBeNull();
+		expectErrorStyle(message);
+		expect(screen.queryByText(GENERIC_MESSAGE)).toBeNull();
+		expect(screen.queryByText(ADMIN_NOTE)).toBeNull();
+		expect(passwordField().value).toBe('');
+		expect(pb.authStore.token).toBe('');
 	});
 });
 

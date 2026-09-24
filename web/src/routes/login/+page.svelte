@@ -5,9 +5,12 @@
 	import CenteredCard from '$lib/components/CenteredCard.svelte';
 	import { safeRedirect } from '$lib/guard';
 
-	// One message for every refusal, so the page never reveals whether an e-mail exists.
+	// One message for every refusal, so the page never reveals whether an e-mail exists. Too many
+	// attempts and server errors do not depend on the account (E2 plan, T-18).
 	const MESSAGES: Record<LoginFailure, string> = {
 		rejected: 'Anmeldung fehlgeschlagen. Bitte E-Mail und Passwort prüfen.',
+		rate_limited: 'Zu viele Anmeldeversuche. Bitte kurz warten und erneut versuchen.',
+		server: 'Der Server hat mit einem Fehler geantwortet. Bitte später erneut versuchen.',
 		network:
 			'Server nicht erreichbar. Bitte prüfen, ob becauseyoulovejira gestartet ist (start.bat), und erneut versuchen.'
 	};

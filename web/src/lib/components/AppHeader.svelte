@@ -3,41 +3,32 @@
 	import { page } from '$app/state';
 	import { auth } from '$lib/auth.svelte';
 	import { loginUrlFor } from '$lib/guard';
+	import AreaSwitch from './AreaSwitch.svelte';
 
-	// Same target as the layout guard, which reacts to the ended session as well.
+	// Same target as the layout guard, which reacts to the ended session as well: the login page
+	// with the current page as redirect.
 	async function logout() {
+		const target = loginUrlFor(page.url);
 		auth.logout();
-		await goto(loginUrlFor(page.url), { replaceState: true });
+		await goto(target, { replaceState: true });
 	}
 </script>
 
 <header class="app-header">
 	<h1 class="brand">becauseyoulovejira</h1>
+	<AreaSwitch />
 	<div class="session">
 		<p class="user">Angemeldet als <strong>{auth.email}</strong></p>
 		<button class="logout" type="button" onclick={logout}>Abmelden</button>
 	</div>
 </header>
 
-<main class="empty">
-	<p>Hier erscheinen bald deine Tickets – die Ticketansicht folgt in der nächsten Ausbaustufe.</p>
-</main>
-
 <style>
-	.empty {
-		display: grid;
-		place-items: center;
-		padding: 4rem 1.5rem;
-		text-align: center;
-		color: var(--color-text-muted);
-	}
-
 	.app-header {
 		display: flex;
 		flex-wrap: wrap;
 		gap: 0.75rem 1.5rem;
 		align-items: center;
-		justify-content: space-between;
 		padding: 0.75rem 1.5rem;
 		background: var(--color-surface);
 		border-bottom: 1px solid var(--color-line);
@@ -54,6 +45,7 @@
 		flex-wrap: wrap;
 		gap: 0.5rem 1rem;
 		align-items: center;
+		margin-left: auto;
 		font-size: 0.875rem;
 	}
 
