@@ -6,6 +6,7 @@
 import { resolve } from '$app/paths';
 import type { ResolvedPathname } from '$app/types';
 import {
+	EMPTY_LIST_QUERY,
 	LIST_PARAMS,
 	parseListQuery,
 	serializeListQuery,
@@ -22,6 +23,37 @@ export function showDoneFrom(url: URL): boolean {
 /** Path of the list with the query of `url`. */
 export function listHref(url: URL): ResolvedPathname {
 	return `${resolve('/')}${url.search}` as ResolvedPathname;
+}
+
+/**
+ * Tickets of a project (E3 plan, T-12): the list filtered by the project, nothing else set, so
+ * the filter bar shows it as chosen.
+ */
+export function projectTicketsHref(projectId: string): ResolvedPathname {
+	const query = serializeListQuery({ ...EMPTY_LIST_QUERY, project: projectId });
+	return `${resolve('/')}${query}` as ResolvedPathname;
+}
+
+/** Path of the project view (E3 plan, T-3 and package 14). */
+export function projectsHref(): ResolvedPathname {
+	return resolve('/projekte');
+}
+
+/** Query parameter of the switch "Archivierte anzeigen" in the project view (package 14). */
+export const SHOW_ARCHIVED_PARAM = 'archiviert';
+
+export function showArchivedFrom(url: URL): boolean {
+	const values = url.searchParams.getAll(SHOW_ARCHIVED_PARAM);
+	return values.length === 1 && values[0] === '1';
+}
+
+/** The current path with the switch "Archivierte anzeigen" set or removed; others stay. */
+export function withShowArchived(url: URL, show: boolean): ResolvedPathname {
+	const params = new URLSearchParams(url.searchParams);
+	params.delete(SHOW_ARCHIVED_PARAM);
+	if (show) params.append(SHOW_ARCHIVED_PARAM, '1');
+	const search = params.toString();
+	return `${url.pathname}${search === '' ? '' : `?${search}`}${url.hash}` as ResolvedPathname;
 }
 
 /** Path of the detail panel of a ticket with the query of `url`. */
