@@ -12,7 +12,8 @@ const modules = readdirSync(DOMAIN_DIR).filter(
 );
 
 const FORBIDDEN_TIME_ZONE_APIS = [
-	/\bIntl\b/,
+	// Intl.Collator sorts text (E3 plan, T-5) and knows no time zone; every other Intl API is out.
+	/\bIntl\b(?!\.Collator\b)/,
 	/\bgetTimezoneOffset\b/,
 	/\btoLocale\w*\s*\(/,
 	// Local-time Date methods; the UTC variants (getUTCFullYear ...) stay allowed.
@@ -51,6 +52,14 @@ describe('web/src/lib/domain', () => {
 		for (const specifier of specifiers) {
 			expect(specifier, `${name} imports ${specifier}`).toMatch(/^\.\/[\w-]+$/);
 		}
+	});
+
+	it('allows Intl.Collator but no other Intl API', () => {
+		const [intl] = FORBIDDEN_TIME_ZONE_APIS;
+		expect("new Intl.Collator('de')").not.toMatch(intl!);
+		expect("new Intl.DateTimeFormat('de')").toMatch(intl!);
+		expect('Intl.RelativeTimeFormat').toMatch(intl!);
+		expect('const { Collator } = Intl;').toMatch(intl!);
 	});
 
 	it.each(modules)('%s uses no runtime time zone functions', (name) => {

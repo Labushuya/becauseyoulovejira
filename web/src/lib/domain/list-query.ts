@@ -2,13 +2,16 @@
 // that reads and writes the list parameters. Invalid values count as not set; parameters this
 // module does not know stay untouched when writing.
 
-import { GROUPINGS, type Grouping } from './grouping';
 import { SORT_KEYS, type SortKey, type SortSpec } from './ordering';
 import { PRIORITIES, STATUSES, type Priority, type Status } from './status';
 
 /** Due filter (T-6): overdue, today, soon (tomorrow to today + SOON_DAYS), without a date. */
 export const DUE_FILTERS = ['overdue', 'today', 'soon', 'none'] as const;
 export type DueFilter = (typeof DUE_FILTERS)[number];
+
+/** Groupings of the table (T-7); domain/grouping.ts groups by them. */
+export const GROUPINGS = ['status', 'priority', 'project', 'due'] as const;
+export type Grouping = (typeof GROUPINGS)[number];
 
 /** Value of the project filter for tickets without a project. */
 export const NO_PROJECT = 'ohne';
