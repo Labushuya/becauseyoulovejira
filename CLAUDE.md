@@ -111,7 +111,7 @@ Umsetzung in `app/pb_migrations/1790200900_api_rules.js`, Details und Befunde im
 
 - UI-Sprache Deutsch. Desktop zuerst, auf schmalen Bildschirmen benutzbar.
 - Seitenaufbau ab E3 nach dem Vorbild des Task-Boards, mit eigenen Farben und eigenem Code ([ADR-0010](docs/adr/0010-layout-nach-task-board.md)); was Client und Server bei Filter, Suche und Sortierung rechnen: [ADR-0013](docs/adr/0013-filter-suche-sortierung-gruppierung.md).
-- „Alle Tickets": dichte Zeilenliste (Key, Titel mit Tags, Status-Pille, Prioritäts-Icon, Projekt, Fälligkeit; Icons für wiederkehrend und blockiert).
+- Ansicht „Aufgaben“ ([ADR-0010](docs/adr/0010-layout-nach-task-board.md)): Kopfzeile (App-Name mit Zähler der nicht erledigten Tickets, Bereichs-Umschalter, „Neues Ticket“, Sitzung), Kennzahlen-Kacheln, Filterleiste mit Suche, Abschnittsleiste (Umschalter „Aufgaben | Projekte“, „Erledigte anzeigen“, „Gruppieren“), dann die Tabelle mit sortierbaren Spaltenköpfen und Gruppen (Key, Priorität, Status-Pille, Titel mit Icon für wiederkehrend, Projekt, Tags, Fälligkeit relativ, Erstellt, Aktionen mit Häkchen; Icon für blockiert ab Stufe 2) und rechts das Detail-Panel. Die Projektansicht `/projekte` ersetzt Kennzahlen, Filterleiste und Tabelle durch Projektkacheln und die Tag-Verwaltung.
 - Filter (Status, Projekt, Tag, Priorität, Fälligkeit), Sortierung, Suche (PocketBase-Filter auf Titel und Beschreibung); Filterzustand in der URL.
 - Projektansicht mit Projektauswahl; Ticket-Detail als Seitenpanel mit Inline-Bearbeitung, Kommentaren, Historie.
 - Schnellerfassung per `c` und `Strg+K`; Kurzsyntax `Titel @CODE !hoch` (`!niedrig|mittel|hoch|dringend` bzw. `!1`–`!4`); unbekannte Tokens bleiben Teil des Titels.

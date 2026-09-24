@@ -213,8 +213,8 @@
   "meta": {
     "projekt": "becauseyoulovejira",
     "stand": "2026-09-25",
-    "commit": "6803ef4",
-    "etappe": "E0, E1, E1.1 und E2 abgeschlossen; E3 Pakete 1–14 umgesetzt, Paket 15 geplant"
+    "commit": "47d72b0",
+    "etappe": "E0, E1, E1.1, E2 und E3 abgeschlossen"
   },
   "blocks": [
     {
@@ -1142,16 +1142,18 @@
         { "id": "BYL-E3-069", "title": "Suche im Browser", "art": ["manuell"], "status": "offen",
           "pre": "Angemeldet; Tickets mit „Miete“ im Titel, eines mit „Nebenkosten“ nur in der Beschreibung, ein erledigtes mit „Miete“, eines mit „50%“ im Titel.", "steps": ["„miete“ zügig tippen, dann „Nebenkosten“, dann den Key eines Tickets.", "Einen Statusfilter und „Erledigte anzeigen“ dazunehmen.", "„50%“ suchen.", "Zurück im Browser; danach Escape im Suchfeld.", "In einem zweiten Fenster den Titel eines Tickets so ändern, dass es passt bzw. nicht mehr passt."],
           "expect": "Die Tabelle folgt kurz nach dem Tippen ohne Flackern, das Feld zeigt dabei, dass es sucht; Treffer aus Titel, Beschreibung und Key erscheinen, auch im Abschnitt „Erledigt“; „50%“ findet nur das Ticket mit „50%“; Zurück überspringt die einzelnen Buchstaben; Escape leert das Feld; das geänderte Ticket erscheint bzw. verschwindet ohne Neuladen.",
-          "tests": [] }
-      ]
-    },
-    {
-      "tag": "E3", "name": "E3 geplant", "desc": "Paket 15 aus dem E3-Plan (Abschnitt 5). Die Schritte sind hier die Akzeptanzkriterien; mit der Umsetzung werden daraus automatisierte und manuelle Fälle.",
-      "items": [
-        { "id": "BYL-E3-115", "title": "Paket 15 – Dokumentation und Etappenabschluss", "art": ["manuell"], "status": "geplant",
-          "pre": "Pakete 5–14.",
-          "steps": ["Browser-Checkliste deckt P-2 bis P-5 und T-4 bis T-15 ab: Popover mit Escape und Klick daneben, waagerechtes Scrollen neben dem Panel.", "Hell- und Dunkelmodus, keine roten Nicht-Fehler.", "Vollständige Bedienung per Tastatur.", "Realtime mit zwei Fenstern: Projekt umbenennen, Tag löschen, Ticket in ein anderes Projekt verschieben.", "Alle Gates grün; README, CLAUDE.md und e3.md aktualisiert."],
-          "expect": "Die Browser-Checkliste aus e3.md wird hier als manuelle Fälle übernommen.",
+          "tests": [] },
+        { "id": "BYL-E3-070", "title": "Hell- und Dunkelmodus, keine roten Nicht-Fehler", "art": ["manuell"], "status": "offen",
+          "pre": "Angemeldet; Tickets überfällig und dringend, ein Projekt, ein Filter und eine Gruppierung gesetzt.", "steps": ["In Windows zwischen Hell und Dunkel umschalten.", "Kacheln, Chips, Umschalter „Aufgaben | Projekte“, „Gruppieren“, Tabelle, Panel, Projektkacheln und Dialoge ansehen.", "Den Server stoppen und etwas speichern oder suchen."],
+          "expect": "Petrol bleibt die einzige Akzentfarbe; Überfällig, Dringend, die Kachel „Überfällig“ und „Endgültig löschen“ sind nicht rot; gewählte Elemente haben neben der Farbe ein zweites Merkmal (Häkchen, Schriftgewicht, Linie); echte Fehler sind rot mit Icon und Text.",
+          "tests": [] },
+        { "id": "BYL-E3-071", "title": "Vollständige Bedienung per Tastatur", "art": ["manuell"], "status": "offen",
+          "pre": "Angemeldet; einige Tickets, Projekte und Tags.", "steps": ["Nur mit Tab, Umschalt+Tab, Pfeiltasten, Enter, Leertaste und Escape: Kachel, Chip, Suche, Projekt- und Tag-Auswahl, „Zurücksetzen“, Umschalter, „Erledigte anzeigen“, „Gruppieren“, Sortierknopf, Zeile, Häkchen, „Rückgängig“ bedienen.", "Panel öffnen und schließen, ein Ticket anlegen, Projekt und Tags wählen.", "In der Projektansicht ein Projekt anlegen, bearbeiten, archivieren und einen Tag umbenennen und löschen."],
+          "expect": "Alles ist erreichbar und auslösbar, der Fokus ist immer sichtbar und landet nach Dialogen, dem Schließen des Panels und verschwundenen Zeilen an einer sinnvollen Stelle.",
+          "tests": [] },
+        { "id": "BYL-E3-072", "title": "Realtime mit zwei Fenstern über alle E3-Bereiche", "art": ["manuell"], "status": "offen",
+          "pre": "Zwei Fenster A und B mit derselben Anmeldung; in A eine Gruppierung nach Projekt und eine Suche gesetzt.", "steps": ["In B ein Projekt umbenennen.", "In B einen Tag löschen.", "In B ein Ticket in ein anderes Projekt verschieben und eines so umbenennen, dass es die Suche in A trifft."],
+          "expect": "A zeigt den neuen Projektnamen in Zeilen, Gruppenköpfen, Filter und Panel, der Tag verschwindet aus Zeilen und Filter, das verschobene Ticket wechselt Key und Gruppe, das umbenannte erscheint in der Suche, alles ohne Neuladen.",
           "tests": [] }
       ]
     },
