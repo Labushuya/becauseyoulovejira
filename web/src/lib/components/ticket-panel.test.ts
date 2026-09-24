@@ -9,6 +9,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ResolvedPathname } from '$app/types';
 import { DataError } from '$lib/data/errors';
 import type { Ticket, TicketPatch, TicketSummary } from '$lib/domain/ticket';
+import { TicketActivityStore, type TicketActivityData } from '$lib/stores/ticket-activity.svelte';
 import {
 	TicketDetailStore,
 	type TicketDetailData,
@@ -23,7 +24,8 @@ const mocks = vi.hoisted(() => ({
 		url: new URL('http://localhost:3000/tickets/abc123def456ghi?erledigte=1'),
 		params: { id: 'abc123def456ghi' } as Record<string, string>
 	},
-	detail: null as unknown
+	detail: null as unknown,
+	activity: null as unknown
 }));
 
 vi.mock('$app/navigation', () => ({ goto: mocks.goto }));
@@ -31,6 +33,10 @@ vi.mock('$app/state', () => ({ page: mocks.page }));
 vi.mock('$lib/stores/ticket-detail.svelte', async (importOriginal) => ({
 	...(await importOriginal<object>()),
 	getTicketDetailStore: () => mocks.detail
+}));
+vi.mock('$lib/stores/ticket-activity.svelte', async (importOriginal) => ({
+	...(await importOriginal<object>()),
+	getTicketActivityStore: () => mocks.activity
 }));
 
 const ID = 'abc123def456ghi';
@@ -323,20 +329,36 @@ describe('ticket panel', () => {
 	});
 });
 
+function activityStore() {
+	const data = {
+		listComments: vi.fn(async () => []),
+		createComment: vi.fn(),
+		updateComment: vi.fn(),
+		deleteComment: vi.fn()
+	} satisfies TicketActivityData;
+	return new TicketActivityStore(data, { ensureValid: () => true, logout: vi.fn() }, () => 'me');
+}
+
 describe('ticket route', () => {
 	it('opens the ticket of the URL and closes back to the list with the same query', async () => {
 		const { store } = createStore();
 		const open = vi.spyOn(store, 'open');
 		mocks.detail = store;
+		const activity = activityStore();
+		const openComments = vi.spyOn(activity, 'open');
+		mocks.activity = activity;
 
 		const { unmount } = render(TicketPage);
 		await vi.waitFor(() => expect(store.state).toBe('ready'));
 
 		expect(open).toHaveBeenCalledWith(ID);
+		expect(openComments).toHaveBeenCalledWith(ID);
+		await vi.waitFor(() => expect(screen.getByText('Noch keine Kommentare.')).toBeTruthy());
 		await fireEvent.click(screen.getByRole('button', { name: 'Schließen' }));
 		expect(mocks.goto).toHaveBeenCalledWith('/?erledigte=1');
 
 		unmount();
 		expect(store.state).toBe('idle');
+		expect(activity.ticketId).toBeNull();
 	});
 });

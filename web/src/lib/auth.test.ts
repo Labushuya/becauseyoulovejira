@@ -175,6 +175,7 @@ describe('Auth.login', () => {
 		expect(client.authStore.token).toBe('fresh-token');
 		expect(auth.isLoggedIn).toBe(true);
 		expect(auth.email).toBe(USER.email);
+		expect(auth.userId).toBe(USER.id);
 	});
 
 	it.each([400, 401, 403, 404])('reports every refusal (%i) as "rejected"', async (status) => {
@@ -247,6 +248,7 @@ describe('Auth.logout', () => {
 		expect(client.authStore.token).toBe('');
 		expect(auth.isLoggedIn).toBe(false);
 		expect(auth.email).toBe('');
+		expect(auth.userId).toBeNull();
 	});
 });
 

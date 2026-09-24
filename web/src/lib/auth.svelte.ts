@@ -60,6 +60,9 @@ export class Auth {
 
 	#loggedIn = $derived(this.#hasToken && this.#record !== null);
 	#email = $derived(typeof this.#record?.email === 'string' ? this.#record.email : '');
+	#userId = $derived(
+		typeof this.#record?.id === 'string' && this.#record.id !== '' ? this.#record.id : null
+	);
 
 	constructor(client: PocketBase) {
 		this.#client = client;
@@ -93,6 +96,11 @@ export class Auth {
 
 	get email(): string {
 		return this.#email;
+	}
+
+	/** Record ID of the signed-in user, null without a session (authors and actors, T-9). */
+	get userId(): string | null {
+		return this.#loggedIn ? this.#userId : null;
 	}
 
 	/**
