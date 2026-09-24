@@ -9,8 +9,29 @@ import { addDays, type CalendarDate } from './berlin-date';
 import type { Priority } from './status';
 import type { TicketSummary } from './ticket';
 
-/** "Soon due" horizon in days after today (OF-E2-1, recommendation until decided). */
+/** "Soon due" horizon in days after today (OF-E2-1, confirmed by the user as P-5 of E3). */
 export const SOON_DAYS = 7;
+
+/** Sortable columns of the table (E3 plan, T-5); tags and actions are not sortable. */
+export const SORT_KEYS = [
+	'key',
+	'priority',
+	'status',
+	'title',
+	'project',
+	'due',
+	'created'
+] as const;
+export type SortKey = (typeof SORT_KEYS)[number];
+
+/**
+ * Column sort: `reversed` false is the natural direction of the column (first click), true the
+ * opposite one (second click). No sort spec means the default order.
+ */
+export interface SortSpec {
+	key: SortKey;
+	reversed: boolean;
+}
 
 /** Lower rank sorts first. */
 export const PRIORITY_RANK: Readonly<Record<Priority, number>> = Object.freeze({

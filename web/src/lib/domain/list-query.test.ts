@@ -1,0 +1,263 @@
+// List state in the URL (E3 plan, T-2 and package 1; ADR-0013 section 4).
+
+import { describe, expect, it } from 'vitest';
+import {
+	EMPTY_LIST_QUERY,
+	FILTER_KEYS,
+	NO_PROJECT,
+	SEARCH_MAX_LENGTH,
+	hasFilters,
+	parseListQuery,
+	resetFilters,
+	serializeListQuery,
+	withFilter,
+	type ListQuery
+} from './list-query';
+import { PRIORITIES, STATUSES } from './status';
+
+const PROJECT_ID = 'p0000000000abcd';
+const TAG_ID = 't0000000000abcd';
+
+const parse = (search: string) => parseListQuery(new URLSearchParams(search));
+const query = (overrides: Partial<ListQuery>): ListQuery => ({ ...EMPTY_LIST_QUERY, ...overrides });
+/** URL → query → URL. */
+const normalize = (search: string) =>
+	serializeListQuery(parse(search), new URLSearchParams(search));
+
+describe('parseListQuery', () => {
+	it('gives the empty query without parameters', () => {
+		expect(parse('')).toEqual(EMPTY_LIST_QUERY);
+	});
+
+	it.each(STATUSES)('reads status=%s', (status) => {
+		expect(parse(`status=${status}`)).toEqual(query({ status }));
+	});
+
+	it.each(PRIORITIES)('reads prio=%s', (priority) => {
+		expect(parse(`prio=${priority}`)).toEqual(query({ priority }));
+	});
+
+	it.each([
+		['ueberfaellig', 'overdue'],
+		['heute', 'today'],
+		['bald', 'soon'],
+		['ohne', 'none']
+	] as const)('reads faellig=%s as %s', (value, due) => {
+		expect(parse(`faellig=${value}`)).toEqual(query({ due }));
+	});
+
+	it('reads a project ID, "ohne" and a tag ID', () => {
+		expect(parse(`projekt=${PROJECT_ID}`)).toEqual(query({ project: PROJECT_ID }));
+		expect(parse('projekt=ohne')).toEqual(query({ project: NO_PROJECT }));
+		expect(parse(`tag=${TAG_ID}`)).toEqual(query({ tag: TAG_ID }));
+	});
+
+	it('reads the search text trimmed', () => {
+		expect(parse('q=%20Rechnung%20Mai%20')).toEqual(query({ search: 'Rechnung Mai' }));
+		expect(parse(`q=${'x'.repeat(SEARCH_MAX_LENGTH)}`).search).toHaveLength(SEARCH_MAX_LENGTH);
+	});
+
+	it.each([
+		['key', 'key'],
+		['prio', 'priority'],
+		['status', 'status'],
+		['titel', 'title'],
+		['projekt', 'project'],
+		['faellig', 'due'],
+		['erstellt', 'created']
+	] as const)('reads sort=%s in both directions', (value, key) => {
+		expect(parse(`sort=${value}`)).toEqual(query({ sort: { key, reversed: false } }));
+		expect(parse(`sort=-${value}`)).toEqual(query({ sort: { key, reversed: true } }));
+	});
+
+	it.each([
+		['status', 'status'],
+		['prio', 'priority'],
+		['projekt', 'project'],
+		['faellig', 'due']
+	] as const)('reads gruppe=%s', (value, grouping) => {
+		expect(parse(`gruppe=${value}`)).toEqual(query({ grouping }));
+	});
+
+	it('reads the switch "Erledigte anzeigen" only as 1', () => {
+		expect(parse('erledigte=1').showDone).toBe(true);
+		expect(parse('erledigte=0').showDone).toBe(false);
+		expect(parse('erledigte=true').showDone).toBe(false);
+	});
+
+	it('combines every group', () => {
+		expect(
+			parse(
+				`status=waiting&prio=high&faellig=bald&projekt=${PROJECT_ID}&tag=${TAG_ID}&q=Auto` +
+					'&sort=-faellig&gruppe=projekt&erledigte=1'
+			)
+		).toEqual({
+			status: 'waiting',
+			priority: 'high',
+			due: 'soon',
+			project: PROJECT_ID,
+			tag: TAG_ID,
+			search: 'Auto',
+			sort: { key: 'due', reversed: true },
+			grouping: 'project',
+			showDone: true
+		});
+	});
+
+	it.each([
+		['status=foo', 'status'],
+		['status=Open', 'status'],
+		['status=', 'status'],
+		['status=open&status=done', 'status'],
+		['prio=wichtig', 'priority'],
+		['prio=urgent&prio=urgent', 'priority'],
+		['faellig=overdue', 'due'],
+		['faellig=morgen', 'due'],
+		['projekt=abc', 'project'],
+		['projekt=P0000000000ABCD', 'project'],
+		["projekt=p000000000'abcd", 'project'],
+		['projekt=', 'project'],
+		['tag=ohne', 'tag'],
+		['tag=t0000000000abcde', 'tag'],
+		['q=', 'search'],
+		['q=%20%20', 'search'],
+		[`q=${'x'.repeat(SEARCH_MAX_LENGTH + 1)}`, 'search'],
+		['q=a&q=b', 'search'],
+		['sort=tags', 'sort'],
+		['sort=--key', 'sort'],
+		['sort=-', 'sort'],
+		['sort=+key', 'sort'],
+		['gruppe=tag', 'grouping'],
+		['gruppe=keine', 'grouping']
+	] as const)('treats %s as not set', (search, key) => {
+		expect(parse(search)[key]).toBeNull();
+	});
+
+	it('keeps valid groups when others are invalid', () => {
+		expect(parse('status=foo&prio=low&sort=bar&gruppe=status')).toEqual(
+			query({ priority: 'low', grouping: 'status' })
+		);
+	});
+
+	it('ignores doubled switches', () => {
+		expect(parse('erledigte=1&erledigte=1').showDone).toBe(false);
+	});
+});
+
+describe('serializeListQuery', () => {
+	it('writes nothing for the empty query', () => {
+		expect(serializeListQuery(EMPTY_LIST_QUERY)).toBe('');
+	});
+
+	it('writes the parameters in a fixed order', () => {
+		const full: ListQuery = {
+			showDone: true,
+			grouping: 'due',
+			sort: { key: 'created', reversed: false },
+			search: 'Öl wechseln',
+			tag: TAG_ID,
+			project: NO_PROJECT,
+			due: 'overdue',
+			priority: 'urgent',
+			status: 'backlog'
+		};
+		expect(serializeListQuery(full)).toBe(
+			`?status=backlog&prio=urgent&faellig=ueberfaellig&projekt=ohne&tag=${TAG_ID}` +
+				'&q=%C3%96l+wechseln&sort=erstellt&gruppe=faellig&erledigte=1'
+		);
+	});
+
+	it('gives the same URL for the same filters in any input order', () => {
+		expect(normalize(`gruppe=status&prio=low&status=open`)).toBe(
+			normalize(`status=open&prio=low&gruppe=status`)
+		);
+		expect(normalize('erledigte=1&sort=-titel')).toBe('?sort=-titel&erledigte=1');
+	});
+
+	it('writes the reversed sort with a minus sign', () => {
+		expect(serializeListQuery(query({ sort: { key: 'priority', reversed: true } }))).toBe(
+			'?sort=-prio'
+		);
+	});
+
+	it('trims the search and leaves out an empty or too long one', () => {
+		expect(serializeListQuery(query({ search: '  Miete ' }))).toBe('?q=Miete');
+		expect(serializeListQuery(query({ search: '   ' }))).toBe('');
+		expect(serializeListQuery(query({ search: 'x'.repeat(SEARCH_MAX_LENGTH + 1) }))).toBe('');
+	});
+
+	it('keeps unknown parameters in their order and replaces the known ones', () => {
+		const base = new URLSearchParams('x=2&status=open&archiviert=1&x=3&q=alt');
+		expect(serializeListQuery(query({ priority: 'high' }), base)).toBe(
+			'?x=2&archiviert=1&x=3&prio=high'
+		);
+	});
+
+	it('drops invalid list parameters of the base', () => {
+		expect(normalize('status=foo&x=1&sort=bar')).toBe('?x=1');
+		expect(normalize('status=open&status=done')).toBe('');
+	});
+
+	it.each([
+		'',
+		'status=in_progress',
+		'prio=medium&faellig=heute',
+		`projekt=${PROJECT_ID}&tag=${TAG_ID}`,
+		'faellig=ohne&projekt=ohne',
+		'q=Rechnung+%26+Mahnung',
+		'q=100%25',
+		'sort=-key&gruppe=prio',
+		'erledigte=1',
+		`status=done&prio=low&faellig=bald&projekt=${PROJECT_ID}&tag=${TAG_ID}&q=a%2Bb&sort=faellig&gruppe=status&erledigte=1`
+	])('round trip of "%s" is stable', (search) => {
+		const once = normalize(search);
+		expect(once).toBe(search === '' ? '' : `?${search}`);
+		expect(normalize(once.slice(1))).toBe(once);
+		expect(parse(once.slice(1))).toEqual(parse(search));
+	});
+});
+
+describe('withFilter, resetFilters, hasFilters', () => {
+	const full: ListQuery = {
+		status: 'open',
+		priority: 'high',
+		due: 'today',
+		project: PROJECT_ID,
+		tag: TAG_ID,
+		search: 'Auto',
+		sort: { key: 'title', reversed: false },
+		grouping: 'priority',
+		showDone: true
+	};
+
+	it('sets one filter and leaves the others', () => {
+		expect(withFilter(EMPTY_LIST_QUERY, 'status', 'waiting')).toEqual(query({ status: 'waiting' }));
+		expect(withFilter(full, 'due', null)).toEqual({ ...full, due: null });
+		expect(withFilter(full, 'project', NO_PROJECT)).toEqual({ ...full, project: NO_PROJECT });
+	});
+
+	it('does not change the given query', () => {
+		const before = { ...full };
+		withFilter(full, 'priority', 'low');
+		resetFilters(full);
+		expect(full).toEqual(before);
+	});
+
+	it('resets filters and search, keeps sort, grouping and the switch', () => {
+		expect(resetFilters(full)).toEqual(
+			query({ sort: { key: 'title', reversed: false }, grouping: 'priority', showDone: true })
+		);
+	});
+
+	it('knows whether a filter is set', () => {
+		expect(hasFilters(EMPTY_LIST_QUERY)).toBe(false);
+		expect(hasFilters(query({ sort: { key: 'key', reversed: true }, grouping: 'due' }))).toBe(
+			false
+		);
+		expect(hasFilters(query({ showDone: true }))).toBe(false);
+		for (const key of FILTER_KEYS) {
+			expect(hasFilters({ ...EMPTY_LIST_QUERY, [key]: full[key] }), key).toBe(true);
+		}
+		expect(hasFilters(resetFilters(full))).toBe(false);
+	});
+});

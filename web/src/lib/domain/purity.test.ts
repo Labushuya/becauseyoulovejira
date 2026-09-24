@@ -30,11 +30,15 @@ function importSpecifiers(source: string): string[] {
 }
 
 describe('web/src/lib/domain', () => {
-	it('contains the E2 modules', () => {
+	it('contains the E2 and E3 modules', () => {
 		expect(modules).toEqual(
 			expect.arrayContaining([
 				'berlin-date.ts',
+				'due-label.ts',
+				'filter.ts',
+				'grouping.ts',
 				'labels.ts',
+				'list-query.ts',
 				'ordering.ts',
 				'status.ts',
 				'ticket.ts'
