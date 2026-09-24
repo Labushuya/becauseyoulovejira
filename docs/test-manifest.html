@@ -223,7 +223,7 @@
         { "id": "BYL-E1-001", "title": "Wegwerf-Instanz startet isoliert", "art": ["integration"], "status": "bestanden",
           "pre": "app\\pocketbase.exe vorhanden (scripts\\fetch-pocketbase.ps1).",
           "steps": ["npm run test:integration"],
-          "expect": "Eine Instanz auf freiem Port ungleich 8090, /api/health antwortet 200, Superuser-Login mit injizierten Zugangsdaten, isolierter App-Nutzer kann sich anmelden.",
+          "expect": "Eine Instanz auf freiem Port ungleich 8090, /api/health antwortet 200, Superuser-Login mit injizierten Zugangsdaten (das Passwort beginnt nie mit „-“, sonst hielte die CLI es für eine Option), isolierter App-Nutzer kann sich anmelden.",
           "tests": ["tests/integration/harness.test.mjs"] },
         { "id": "BYL-E1-002", "title": "Aufräumen nach absichtlich fehlschlagendem Test", "art": ["manuell"], "status": "offen",
           "pre": "Entwicklungsrechner, Repo mit installierten Abhängigkeiten.",
