@@ -9,6 +9,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { BeforeNavigate } from '@sveltejs/kit';
 import type { ResolvedPathname } from '$app/types';
 import { DataError } from '$lib/data/errors';
+import type { Project } from '$lib/domain/project';
 import type { Ticket, TicketPatch, TicketSummary } from '$lib/domain/ticket';
 import { CatalogStore } from '$lib/stores/catalog.svelte';
 import type { LiveSource, RecordChange } from '$lib/stores/realtime';
@@ -72,6 +73,45 @@ function ticket(overrides: Partial<Ticket> = {}): Ticket {
 	};
 }
 
+/** Projects of the fake catalog and server (E3 plan, T-13). */
+const HOUSE: Project = {
+	id: 'proj00000000001',
+	name: 'Haushalt',
+	code: 'HAUS',
+	archived: false,
+	updated: '2026-09-01 10:00:00.000Z'
+};
+const OLD: Project = {
+	id: 'proj00000000002',
+	name: 'Altbau',
+	code: 'ALT',
+	archived: true,
+	updated: '2026-09-01 10:00:00.000Z'
+};
+
+/** A catalog with the given projects, loaded synchronously enough for the tests. */
+function catalogOf(projects: Project[] = []): CatalogStore {
+	const catalog = new CatalogStore(
+		{ listProjects: vi.fn(async () => projects), listTags: vi.fn(async () => []) },
+		{ ensureValid: () => true, logout: vi.fn() }
+	);
+	void catalog.load();
+	return catalog;
+}
+
+/** Applies a patch like the server: `project` is an ID and changes the key. */
+function applyPatch(current: Ticket, { project, ...fields }: TicketPatch): Ticket {
+	if (project === undefined) return { ...current, ...fields };
+	const ref = [HOUSE, OLD].find((entry) => entry.id === project) ?? null;
+	return {
+		...current,
+		...fields,
+		projectId: project,
+		project: ref,
+		key: ref === null ? 'TASK-10' : `${ref.code}-1`
+	};
+}
+
 function createStore(initial: Ticket = ticket()) {
 	let current = initial;
 	let clock = 0;
@@ -79,7 +119,7 @@ function createStore(initial: Ticket = ticket()) {
 		get: vi.fn(async () => current),
 		update: vi.fn(async (_id: string, patch: TicketPatch): Promise<Ticket> => {
 			clock += 1;
-			current = { ...current, ...patch, updated: `2026-09-24 10:00:0${clock}.000Z` };
+			current = { ...applyPatch(current, patch), updated: `2026-09-24 10:00:0${clock}.000Z` };
 			return current;
 		}),
 		create: vi.fn(),
@@ -102,7 +142,14 @@ async function renderPanel(initial?: Ticket, props: Record<string, unknown> = {}
 	const onclose = vi.fn();
 	context.store.open(ID);
 	const result = render(TicketPanel, {
-		props: { store: context.store, listHref: LIST, onclose, ondeleted: vi.fn(), ...props }
+		props: {
+			store: context.store,
+			catalog: catalogOf(),
+			listHref: LIST,
+			onclose,
+			ondeleted: vi.fn(),
+			...props
+		}
 	});
 	await vi.waitFor(() => expect(context.store.state).not.toBe('loading'));
 	await tick();
@@ -121,7 +168,9 @@ describe('ticket panel', () => {
 	it('shows the ticket and moves the focus to its heading', async () => {
 		await renderPanel(
 			ticket({
+				projectId: 'p1',
 				project: { id: 'p1', name: 'Finanzen', code: 'FIN', archived: false },
+				tagIds: ['g1'],
 				tags: [{ id: 'g1', name: 'Amt' }],
 				recurring: true
 			})
@@ -134,7 +183,8 @@ describe('ticket panel', () => {
 		expect(screen.getByLabelText<HTMLSelectElement>('Priorität').value).toBe('high');
 		expect(screen.getByLabelText<HTMLInputElement>('Fälligkeit').value).toBe('2026-10-01');
 		expect(panel.querySelector('.markdown strong')?.textContent).toBe('Belege');
-		expect(within(panel).getByText('Finanzen')).toBeTruthy();
+		const project = screen.getByLabelText<HTMLSelectElement>('Projekt');
+		expect(project.selectedOptions[0]?.textContent?.trim()).toBe('Finanzen (FIN)');
 		expect(within(panel).getByText('Amt')).toBeTruthy();
 		expect(within(panel).getByText('wiederkehrend')).toBeTruthy();
 		expect(within(panel).getByText('01.09.2026 12:00')).toBeTruthy();
@@ -142,10 +192,10 @@ describe('ticket panel', () => {
 		expect(within(panel).queryByText('Erledigt am')).toBeNull();
 	});
 
-	it('leaves out project, tags and recurrence when the ticket has none', async () => {
+	it('leaves out tags and recurrence when the ticket has none; the project says "Kein Projekt"', async () => {
 		await renderPanel(ticket({ description: '' }));
 
-		expect(screen.queryByText('Projekt')).toBeNull();
+		expect(screen.getByLabelText<HTMLSelectElement>('Projekt').value).toBe('');
 		expect(screen.queryByText('Tags')).toBeNull();
 		expect(screen.queryByText('wiederkehrend')).toBeNull();
 		expect(screen.getByText('Keine Beschreibung.')).toBeTruthy();
@@ -312,7 +362,13 @@ describe('ticket panel', () => {
 		context.data.get.mockRejectedValueOnce(new DataError('not_found'));
 		context.store.open('unknown00000000');
 		render(TicketPanel, {
-			props: { store: context.store, listHref: LIST, onclose: vi.fn(), ondeleted: vi.fn() }
+			props: {
+				store: context.store,
+				catalog: catalogOf(),
+				listHref: LIST,
+				onclose: vi.fn(),
+				ondeleted: vi.fn()
+			}
 		});
 		await vi.waitFor(() => expect(context.store.state).toBe('not_found'));
 		await tick();
@@ -327,7 +383,13 @@ describe('ticket panel', () => {
 		context.data.get.mockRejectedValueOnce(new DataError('server', { status: 500 }));
 		context.store.open(ID);
 		render(TicketPanel, {
-			props: { store: context.store, listHref: LIST, onclose: vi.fn(), ondeleted: vi.fn() }
+			props: {
+				store: context.store,
+				catalog: catalogOf(),
+				listHref: LIST,
+				onclose: vi.fn(),
+				ondeleted: vi.fn()
+			}
 		});
 		await vi.waitFor(() => expect(context.store.state).toBe('error'));
 		await tick();
@@ -344,6 +406,77 @@ describe('ticket panel', () => {
 		await renderPanel(undefined, { activity });
 
 		expect(screen.getByText('Aktivität')).toBeTruthy();
+	});
+});
+
+describe('ticket panel: project (E3 plan, T-13)', () => {
+	async function renderWithProjects(initial?: Ticket) {
+		const catalog = catalogOf([HOUSE, OLD]);
+		await vi.waitFor(() => expect(catalog.state).toBe('ready'));
+		const result = await renderPanel(initial, { catalog });
+		return { ...result, select: screen.getByLabelText<HTMLSelectElement>('Projekt') };
+	}
+
+	function options(select: HTMLSelectElement) {
+		return [...select.options].map((option) => [option.value, option.textContent?.trim()]);
+	}
+
+	it('offers "Kein Projekt" and the active projects with a hint about the key', async () => {
+		const { select } = await renderWithProjects();
+
+		expect(options(select)).toEqual([
+			['', 'Kein Projekt'],
+			[HOUSE.id, 'Haushalt (HAUS)']
+		]);
+		const hint = screen.getByText('Beim Wechsel bekommt das Ticket einen neuen Key.');
+		expect(select.getAttribute('aria-describedby')).toBe(hint.id);
+	});
+
+	it('keeps an assigned archived project visible as "archiviert"', async () => {
+		const { select } = await renderWithProjects(
+			ticket({ key: 'ALT-1', projectId: OLD.id, project: OLD })
+		);
+
+		expect(options(select)).toEqual([
+			['', 'Kein Projekt'],
+			[HOUSE.id, 'Haushalt (HAUS)'],
+			[OLD.id, 'Altbau (ALT, archiviert)']
+		]);
+		expect(select.value).toBe(OLD.id);
+	});
+
+	it('saves at once, shows the new key and announces it; the URL stays', async () => {
+		const { select, data, list } = await renderWithProjects();
+
+		await fireEvent.change(select, { target: { value: HOUSE.id } });
+		await vi.waitFor(() => expect(data.update).toHaveBeenCalledWith(ID, { project: HOUSE.id }));
+		await tick();
+
+		const panel = screen.getByRole('complementary');
+		expect(within(panel).getByText('HAUS-1')).toBeTruthy();
+		expect(select.value).toBe(HOUSE.id);
+		expect(list.announce).toHaveBeenCalledWith('Neuer Key: HAUS-1');
+		expect(mocks.goto).not.toHaveBeenCalled();
+	});
+
+	it('shows a server error at the field and returns to the old value', async () => {
+		const { select, data } = await renderWithProjects();
+		data.update.mockRejectedValueOnce(
+			new DataError('validation', {
+				status: 400,
+				fields: {
+					project: { code: 'validation_project_archived', message: 'Das Projekt ist archiviert.' }
+				}
+			})
+		);
+
+		await fireEvent.change(select, { target: { value: HOUSE.id } });
+		const error = await screen.findByText('Das Projekt ist archiviert.');
+
+		expect(select.value).toBe('');
+		expect(select.getAttribute('aria-invalid')).toBe('true');
+		expect(select.getAttribute('aria-describedby')).toContain(error.closest('p')?.id);
+		expect(error.closest('p')?.querySelector('svg[aria-hidden="true"]')).not.toBeNull();
 	});
 });
 
@@ -525,7 +658,13 @@ describe('ticket panel: deleted elsewhere', () => {
 		const disconnect = context.store.connect(live);
 		context.store.open(ID);
 		render(TicketPanel, {
-			props: { store: context.store, listHref: LIST, onclose: vi.fn(), ondeleted: vi.fn() }
+			props: {
+				store: context.store,
+				catalog: catalogOf(),
+				listHref: LIST,
+				onclose: vi.fn(),
+				ondeleted: vi.fn()
+			}
 		});
 		await vi.waitFor(() => expect(context.store.state).toBe('ready'));
 

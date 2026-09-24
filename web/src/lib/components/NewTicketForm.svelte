@@ -6,23 +6,32 @@
 		DEFAULT_STATUS,
 		DESCRIPTION_MAX_LENGTH,
 		TITLE_MAX_LENGTH,
+		type ProjectRef,
 		type TicketDraft
 	} from '$lib/domain/ticket';
 	import type { CreateResult } from '$lib/stores/ticket-detail.svelte';
 	import ErrorIcon from './ErrorIcon.svelte';
 	import MarkdownEditor from './MarkdownEditor.svelte';
 	import PrioritySelect from './PrioritySelect.svelte';
+	import ProjectSelect from './ProjectSelect.svelte';
 	import StatusSelect from './StatusSelect.svelte';
 
-	// "Neues Ticket" in the side panel (E2 plan, T-8 and package 8): title (required, focused),
-	// priority "Mittel", status "Offen", due date and description. "Anlegen" or Ctrl+Enter
+	// "Neues Ticket" in the side panel (E2 plan, T-8 and package 8; E3 plan, T-13): title
+	// (required, focused), priority "Mittel", status "Offen", due date, project and description.
+	// With the list filtered by an active project, that project is chosen in advance. "Anlegen" or Ctrl+Enter
 	// creates; the button is locked during the request, so a double click creates one ticket.
 	// "Abbrechen" and Escape ask first if something was entered.
 	let {
+		projects = [],
+		initialProject = null,
 		oncreate,
 		oncreated,
 		oncancel
 	}: {
+		/** Projects that can be chosen (the active ones). */
+		projects?: readonly ProjectRef[];
+		/** Project chosen in advance (list filter); ignored unless it is among `projects`. */
+		initialProject?: string | null;
 		oncreate: (draft: TicketDraft) => Promise<CreateResult>;
 		oncreated: (id: string) => void;
 		oncancel: () => void;
@@ -40,6 +49,9 @@
 		priority: `${uid}-priority`,
 		due: `${uid}-due`,
 		dueError: `${uid}-due-error`,
+		project: `${uid}-project`,
+		projectHint: `${uid}-project-hint`,
+		projectError: `${uid}-project-error`,
 		description: `${uid}-description-error`
 	};
 
@@ -49,11 +61,19 @@
 	let due = $state('');
 	let dueInvalid = $state(false);
 	let description = $state('');
+	/** Project chosen by the user; null until then, so a late catalog still sets the default. */
+	let chosenProject = $state<string | null>(null);
 	let pending = $state(false);
 	let message = $state<string | null>(null);
 	let fieldErrors = $state<Partial<Record<keyof TicketDraft, string>>>({});
 	let titleInput = $state<HTMLInputElement>();
 
+	const defaultProject = $derived(
+		initialProject !== null && projects.some((entry) => entry.id === initialProject)
+			? initialProject
+			: ''
+	);
+	const project = $derived(chosenProject ?? defaultProject);
 	const missingTitle = $derived(title.trim() === '');
 	const dirty = $derived(
 		title !== '' ||
@@ -61,7 +81,8 @@
 			due !== '' ||
 			dueInvalid ||
 			status !== DEFAULT_STATUS ||
-			priority !== DEFAULT_PRIORITY
+			priority !== DEFAULT_PRIORITY ||
+			project !== defaultProject
 	);
 	const dueError = $derived(dueInvalid ? 'Ungültiges Datum.' : (fieldErrors.due ?? null));
 
@@ -84,7 +105,8 @@
 			description,
 			status,
 			priority,
-			due: due === '' ? null : (due as CalendarDate)
+			due: due === '' ? null : (due as CalendarDate),
+			project: project === '' ? null : project
 		});
 		if (result.ok) {
 			oncreated(result.ticket.id);
@@ -184,6 +206,25 @@
 		{#if dueError}
 			<p class="field-error" id={ids.dueError}><ErrorIcon /><span>{dueError}</span></p>
 		{/if}
+
+		<div class="field">
+			<label for={ids.project}>Projekt</label>
+			<ProjectSelect
+				id={ids.project}
+				value={project}
+				{projects}
+				disabled={pending}
+				error={fieldErrors.project ?? null}
+				errorId={ids.projectError}
+				hintId={ids.projectHint}
+				onchoose={(value) => (chosenProject = value)}
+			/>
+			{#if fieldErrors.project}
+				<p class="field-error" id={ids.projectError}>
+					<ErrorIcon /><span>{fieldErrors.project}</span>
+				</p>
+			{/if}
+		</div>
 
 		<MarkdownEditor
 			label="Beschreibung"

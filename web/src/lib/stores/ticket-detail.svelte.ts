@@ -16,8 +16,11 @@ import type { Ticket, TicketDraft, TicketPatch, TicketSummary } from '$lib/domai
 import { hold, type LiveSource } from './realtime';
 import type { SessionGuard } from './ticket-list.svelte';
 
-/** Fields editable in E2 (E2 plan, section 2). */
-export type EditableField = 'title' | 'description' | 'status' | 'priority' | 'due';
+/** Fields editable in the panel (E2 plan, section 2; E3 plan, T-13). */
+export type EditableField = 'title' | 'description' | 'status' | 'priority' | 'due' | 'project';
+
+/** Fields that save at once when chosen (T-7, T-13). */
+export type ChoiceField = 'status' | 'priority' | 'project';
 
 /**
  * idle: no ticket; loading; ready; not_found: unknown or foreign ID; error: loading failed;
@@ -27,6 +30,10 @@ export type DetailState = 'idle' | 'loading' | 'ready' | 'not_found' | 'error' |
 
 export const TITLE_REQUIRED_MESSAGE = 'Der Titel darf nicht leer sein.';
 export const INVALID_DATE_MESSAGE = 'Ungültiges Datum.';
+export const INVALID_VALUE_MESSAGE = 'Ungültiger Wert.';
+
+/** Record ID as PocketBase creates it (15 characters a–z and 0–9). */
+const RECORD_ID = /^[a-z0-9]{15}$/;
 
 export interface TicketDetailData {
 	get(id: string, options: RequestOptions): Promise<Ticket>;
@@ -48,7 +55,8 @@ const DRAFT_FIELDS: readonly (keyof TicketDraft)[] = [
 	'description',
 	'status',
 	'priority',
-	'due'
+	'due',
+	'project'
 ];
 
 /** The part of the list store the panel updates, so the list shows a change at once. */
@@ -70,9 +78,11 @@ export function ticketDetailData(pb: PocketBase): TicketDetailData {
 	};
 }
 
-/** Current value of a field as the text of its control ('' for no due date). */
+/** Current value of a field as the text of its control ('' for no due date or project). */
 function fieldText(ticket: Ticket, field: EditableField): string {
-	return field === 'due' ? (ticket.due ?? '') : ticket[field];
+	if (field === 'due') return ticket.due ?? '';
+	if (field === 'project') return ticket.projectId ?? '';
+	return ticket[field];
 }
 
 type PatchResult = { patch: TicketPatch } | { error: string };
@@ -90,9 +100,14 @@ function patchFor(field: EditableField, draft: string): PatchResult {
 			if (draft === '') return { patch: { due: null } };
 			return isCalendarDate(draft) ? { patch: { due: draft } } : { error: INVALID_DATE_MESSAGE };
 		case 'status':
-			return isStatus(draft) ? { patch: { status: draft } } : { error: 'Ungültiger Wert.' };
+			return isStatus(draft) ? { patch: { status: draft } } : { error: INVALID_VALUE_MESSAGE };
 		case 'priority':
-			return isPriority(draft) ? { patch: { priority: draft } } : { error: 'Ungültiger Wert.' };
+			return isPriority(draft) ? { patch: { priority: draft } } : { error: INVALID_VALUE_MESSAGE };
+		case 'project':
+			if (draft === '') return { patch: { project: null } };
+			return RECORD_ID.test(draft)
+				? { patch: { project: draft } }
+				: { error: INVALID_VALUE_MESSAGE };
 	}
 }
 
@@ -276,6 +291,8 @@ export class TicketDetailStore {
 			} else {
 				this.#list.upsert(saved);
 			}
+			// A new project means a new key (T-13); the URL keeps the record ID.
+			if (saved.key !== ticket.key) this.#list.announce(`Neuer Key: ${saved.key}`);
 			if (saved.id === this.#id) {
 				this.upsert(saved);
 				if (this.#drafts.get(field) === draft) this.#drafts.delete(field);
@@ -294,10 +311,11 @@ export class TicketDetailStore {
 	}
 
 	/**
-	 * Status and priority save at once when chosen (T-7); a failure restores the old value. A
-	 * choice during a running save (arrow keys on a closed select) is saved right after it.
+	 * Status, priority and project save at once when chosen (T-7, T-13); a failure restores the
+	 * old value and shows the error at the field. A choice during a running save (arrow keys on a
+	 * closed select) is saved right after it.
 	 */
-	async choose(field: 'status' | 'priority', value: string): Promise<void> {
+	async choose(field: ChoiceField, value: string): Promise<void> {
 		this.#drafts.set(field, value);
 		if (this.#saving.has(field)) return;
 		while (this.#drafts.has(field)) {

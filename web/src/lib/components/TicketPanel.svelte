@@ -3,6 +3,7 @@
 	import type { ResolvedPathname } from '$app/types';
 	import { formatBerlinDateTime } from '$lib/domain/format';
 	import { DESCRIPTION_MAX_LENGTH, type Ticket } from '$lib/domain/ticket';
+	import type { CatalogStore } from '$lib/stores/catalog.svelte';
 	import type { TicketDetailStore } from '$lib/stores/ticket-detail.svelte';
 	import ConfirmDialog from './ConfirmDialog.svelte';
 	import DueInput from './DueInput.svelte';
@@ -11,21 +12,26 @@
 	import Markdown from './Markdown.svelte';
 	import MarkdownEditor from './MarkdownEditor.svelte';
 	import PrioritySelect from './PrioritySelect.svelte';
+	import ProjectSelect from './ProjectSelect.svelte';
 	import StatusSelect from './StatusSelect.svelte';
 
-	// Detail panel (E2 plan, package 7): header with key and "Schließen", title, status,
-	// priority, due date and description editable in place, the remaining fields for display.
+	// Detail panel (E2 plan, package 7; E3 plan, T-13): header with key and "Schließen", title,
+	// status, priority, due date, project and description editable in place, the remaining fields
+	// for display. Project and tags come from the catalog.
 	// Escape closes the panel unless a form field has the focus (fields handle Escape
 	// themselves). Comments and history (packages 9 and 10) come in through `activity`.
 	// "Löschen …" asks in a modal dialog before deleting for good (package 11).
 	let {
 		store,
+		catalog,
 		listHref,
 		onclose,
 		ondeleted,
 		activity
 	}: {
 		store: TicketDetailStore;
+		/** Projects and tags (E3 plan, T-16). */
+		catalog: CatalogStore;
 		/** Link back to the list with the current query. */
 		listHref: ResolvedPathname;
 		onclose: () => void;
@@ -40,6 +46,8 @@
 		status: `${uid}-status`,
 		priority: `${uid}-priority`,
 		due: `${uid}-due`,
+		project: `${uid}-project`,
+		projectHint: `${uid}-project-hint`,
 		description: `${uid}-description`
 	};
 	const errorIdOf = (field: string) => `${uid}-${field}-error`;
@@ -56,6 +64,7 @@
 	let focusedFor: string | null = null;
 
 	const ticket = $derived(store.ticket);
+	const ticketTags = $derived(ticket ? catalog.tagsOf(ticket) : []);
 	const editingDescription = $derived(store.isEditing('description'));
 
 	// Focus on opening (E2 plan, section 3): the heading of the ticket, or the message heading.
@@ -133,7 +142,7 @@
 	}
 </script>
 
-{#snippet fieldError(field: 'status' | 'priority' | 'due' | 'description')}
+{#snippet fieldError(field: 'status' | 'priority' | 'due' | 'project' | 'description')}
 	{@const error = store.fieldError(field)}
 	{#if error}
 		<p class="field-error" id={errorIdOf(field)}><ErrorIcon /><span>{error}</span></p>
@@ -243,17 +252,26 @@
 				{@render fieldError('due')}
 			</div>
 
-			{#if ticket.project}
-				<span class="term">Projekt</span>
-				<span class="detail" title={ticket.project.name}>
-					<span class="code">{ticket.project.code}</span>
-					{ticket.project.name}
-				</span>
-			{/if}
-			{#if ticket.tags.length > 0}
+			<label for={ids.project}>Projekt</label>
+			<div class="control">
+				<ProjectSelect
+					id={ids.project}
+					value={store.value('project')}
+					projects={catalog.activeProjects}
+					current={catalog.projectOf(ticket)}
+					busy={store.isSaving('project')}
+					error={store.fieldError('project')}
+					errorId={errorIdOf('project')}
+					hintId={ids.projectHint}
+					onchoose={(value) => store.choose('project', value)}
+				/>
+				{@render fieldError('project')}
+			</div>
+
+			{#if ticketTags.length > 0}
 				<span class="term">Tags</span>
 				<span class="detail tags">
-					{#each ticket.tags as tag (tag.id)}
+					{#each ticketTags as tag (tag.id)}
 						<span class="tag">{tag.name}</span>
 					{/each}
 				</span>
@@ -418,11 +436,6 @@
 		background: var(--color-surface);
 		border: 1px solid var(--color-text-muted);
 		border-radius: 0.375rem;
-	}
-
-	.code {
-		margin-right: 0.25rem;
-		font-weight: 500;
 	}
 
 	.tags {

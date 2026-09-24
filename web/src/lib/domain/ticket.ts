@@ -62,10 +62,12 @@ export interface TicketDraft {
 	status: Status;
 	priority: Priority;
 	due: CalendarDate | null;
+	/** Project ID, null without a project (E3 plan, T-13); a change gives the ticket a new key. */
+	project: string | null;
 }
 
 /**
- * Status after removing the check mark of a done ticket (OF-E2-3, recommendation until decided):
+ * Status after removing the check mark of a done ticket (OF-E2-3, confirmed as P-5 in E3):
  * the status before "done" is not stored. Only "Rückgängig" right after checking restores it.
  */
 export const REOPEN_STATUS: Status = 'open';
