@@ -19,7 +19,7 @@ export function listHref(url: URL): ResolvedPathname {
 
 /** Path of the detail panel of a ticket with the query of `url`. */
 export function ticketHref(id: string, url: URL): ResolvedPathname {
-	return `${resolve('/')}tickets/${encodeURIComponent(id)}${url.search}` as ResolvedPathname;
+	return `${resolve(`/tickets/${encodeURIComponent(id)}`)}${url.search}` as ResolvedPathname;
 }
 
 /** The current path with the switch "Erledigte anzeigen" set or removed; other parameters stay. */

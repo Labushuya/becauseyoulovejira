@@ -4,6 +4,11 @@
 	import AppHeader from '$lib/components/AppHeader.svelte';
 	import { pb } from '$lib/pocketbase';
 	import {
+		TicketDetailStore,
+		setTicketDetailStore,
+		ticketDetailData
+	} from '$lib/stores/ticket-detail.svelte';
+	import {
 		TicketListStore,
 		setTicketListStore,
 		ticketListData
@@ -16,6 +21,7 @@
 	// Stores live per layout instance (ADR-0006 section 1): a logout removes the layout and with
 	// it every loaded ticket.
 	const tickets = setTicketListStore(new TicketListStore(ticketListData(pb), auth));
+	setTicketDetailStore(new TicketDetailStore(ticketDetailData(pb), auth, tickets));
 
 	// Session care while the app is shown (ADR-0007 section 1). The returned cleanup removes the
 	// timer and the listeners when the layout goes away (logout, session end). untrack: the

@@ -8,7 +8,11 @@ import { TicketListStore } from '$lib/stores/ticket-list.svelte';
 import Layout from './+layout.svelte';
 
 const mocks = vi.hoisted(() => ({
-	page: { url: new URL('http://localhost:3000/') },
+	page: {
+		url: new URL('http://localhost:3000/'),
+		params: {} as Record<string, string>,
+		route: { id: '/(app)/(tickets)' }
+	},
 	store: null as unknown
 }));
 
@@ -19,8 +23,10 @@ vi.mock('$lib/stores/ticket-list.svelte', async (importOriginal) => ({
 	getTicketListStore: () => mocks.store
 }));
 
-function renderLayout(path: string) {
+function renderLayout(path: string, id?: string) {
 	mocks.page.url = new URL(path, 'http://localhost:3000');
+	mocks.page.params = id ? { id } : {};
+	mocks.page.route = { id: id ? '/(app)/(tickets)/tickets/[id]' : '/(app)/(tickets)' };
 	const store = new TicketListStore(
 		{
 			listOpen: vi.fn(async () => []),
@@ -47,7 +53,10 @@ describe('tickets layout', () => {
 	});
 
 	it('shows done tickets when the URL says so (reload, back and forward)', () => {
-		const { activate, store } = renderLayout('/tickets/abc123def456ghi?erledigte=1');
+		const { activate, store } = renderLayout(
+			'/tickets/abc123def456ghi?erledigte=1',
+			'abc123def456ghi'
+		);
 
 		expect(activate).toHaveBeenCalledExactlyOnceWith(true);
 		expect(store.showDone).toBe(true);

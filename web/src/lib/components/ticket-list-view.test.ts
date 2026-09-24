@@ -203,6 +203,47 @@ describe('ticket list view', () => {
 		expect(document.activeElement).toBe(within(openRows()[0]!).getByRole('link'));
 	});
 
+	it('marks the row of the open panel and returns the focus to it when the panel closes', async () => {
+		const first = ticket({ priority: 'urgent' });
+		const second = ticket();
+		const { rerender } = await showList(fakeData([first, second]));
+
+		await rerender({ activeId: second.id });
+		const link = within(openRows()[1]!).getByRole('link');
+		expect(link.getAttribute('aria-current')).toBe('page');
+
+		(document.activeElement as HTMLElement | null)?.blur();
+		await rerender({ activeId: null });
+		await tick();
+
+		expect(link.getAttribute('aria-current')).toBeNull();
+		expect(document.activeElement).toBe(link);
+	});
+
+	it('returns the focus to the heading when the row of the closed panel is gone', async () => {
+		const { rerender } = await showList(fakeData([ticket()]));
+
+		await rerender({ activeId: 'gone00000000000' });
+		await rerender({ activeId: null });
+		await tick();
+
+		expect(document.activeElement).toBe(screen.getByRole('heading', { name: 'Alle Tickets' }));
+	});
+
+	it('keeps the focus where it is when another row opens the panel', async () => {
+		const first = ticket({ priority: 'urgent' });
+		const second = ticket();
+		const { rerender } = await showList(fakeData([first, second]));
+
+		await rerender({ activeId: first.id });
+		const link = within(openRows()[1]!).getByRole('link');
+		link.focus();
+		await rerender({ activeId: second.id });
+		await tick();
+
+		expect(document.activeElement).toBe(link);
+	});
+
 	it('keeps the focus on the check mark when an unchecked ticket moves up', async () => {
 		const closed = ticket({ status: 'done', completedAt: '2026-09-20 10:00:00.000Z' });
 		await showList(fakeData([], [[closed]]), '/?erledigte=1');

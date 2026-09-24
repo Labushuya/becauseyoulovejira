@@ -1,5 +1,5 @@
 <script lang="ts">
-	import type { Snippet } from 'svelte';
+	import { tick, type Snippet } from 'svelte';
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
 	import type { TicketListStore } from '$lib/stores/ticket-list.svelte';
@@ -41,6 +41,17 @@
 		return [...(root?.querySelectorAll<HTMLElement>(`[data-section="${section}"] > li`) ?? [])];
 	}
 
+	function rowOf(id: string): HTMLElement | undefined {
+		return [...(root?.querySelectorAll<HTMLElement>('li[data-ticket-id]') ?? [])].find(
+			(row) => row.dataset.ticketId === id
+		);
+	}
+
+	function focusLost(): boolean {
+		const active = document.activeElement;
+		return active === null || active === document.body;
+	}
+
 	function onfocusin(event: FocusEvent) {
 		const row = event.target instanceof Element ? event.target.closest('li') : null;
 		const section = row?.parentElement?.dataset.section;
@@ -61,12 +72,9 @@
 	 * check mark of the same ticket, else to the row now at the same place, else to the heading.
 	 */
 	function restoreFocus() {
-		const active = document.activeElement;
-		if (lastFocus === null || (active !== null && active !== document.body)) return;
+		if (lastFocus === null || !focusLost()) return;
 		const { id, section, index } = lastFocus;
-		const moved = [...(root?.querySelectorAll<HTMLElement>('li[data-ticket-id]') ?? [])]
-			.find((row) => row.dataset.ticketId === id)
-			?.querySelector<HTMLElement>('input');
+		const moved = rowOf(id)?.querySelector<HTMLElement>('input');
 		const rows = rowsOf(section);
 		const neighbour = rows[Math.min(index, rows.length - 1)]?.querySelector<HTMLElement>('a');
 		(moved ?? neighbour ?? heading)?.focus();
@@ -77,6 +85,21 @@
 		void store.open;
 		void store.done;
 		restoreFocus();
+	});
+
+	/** Ticket whose panel was shown last. */
+	let shownId: string | null = null;
+
+	// Closing the panel (button, Escape, browser back) returns the focus to the row of its
+	// ticket, or to the heading if the row is gone (E2 plan, section 3).
+	$effect(() => {
+		const previous = shownId;
+		shownId = activeId;
+		if (previous === null || previous === activeId) return;
+		void tick().then(() => {
+			if (!focusLost()) return;
+			(rowOf(previous)?.querySelector<HTMLElement>('a') ?? heading)?.focus();
+		});
 	});
 </script>
 

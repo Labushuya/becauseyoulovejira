@@ -11,6 +11,8 @@
 
 	const tickets = getTicketListStore();
 	const showDone = $derived(showDoneFrom(page.url));
+	const activeId = $derived(page.params.id ?? null);
+	const withPanel = $derived(page.route.id !== '/(app)/(tickets)');
 
 	// Loads the list and follows the switch in the URL (reload, back and forward included).
 	// untrack: only the switch triggers it, not the store state that activate() reads.
@@ -20,7 +22,21 @@
 	});
 </script>
 
-<div class="tickets">
-	<TicketList store={tickets} />
+<div class="tickets" class:with-panel={withPanel}>
+	<TicketList store={tickets} {activeId} />
 	{@render children()}
 </div>
+
+<style>
+	.tickets {
+		display: grid;
+		gap: 1.5rem;
+		align-items: start;
+	}
+
+	@media (min-width: 48rem) {
+		.with-panel {
+			grid-template-columns: minmax(0, 1fr) 32rem;
+		}
+	}
+</style>

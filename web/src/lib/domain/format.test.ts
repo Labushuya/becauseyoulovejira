@@ -1,7 +1,7 @@
 // German date display (CLAUDE.md section 7).
 
 import { describe, expect, it } from 'vitest';
-import { formatCalendarDate } from './format';
+import { formatBerlinDateTime, formatCalendarDate } from './format';
 
 describe('formatCalendarDate', () => {
 	it.each([
@@ -14,5 +14,23 @@ describe('formatCalendarDate', () => {
 
 	it.each(['2026-02-30', '24.09.2026', ''])('rejects "%s"', (date) => {
 		expect(() => formatCalendarDate(date)).toThrow(RangeError);
+	});
+});
+
+describe('formatBerlinDateTime', () => {
+	it.each([
+		['2026-09-24 10:05:00.000Z', '24.09.2026 12:05'],
+		['2026-12-31 23:30:00.000Z', '01.01.2027 00:30'],
+		['2026-03-29 00:59:59.999Z', '29.03.2026 01:59'],
+		['2026-03-29 01:00:00.000Z', '29.03.2026 03:00'],
+		['2026-10-25 00:59:00.000Z', '25.10.2026 02:59'],
+		['2026-10-25 01:00:00.000Z', '25.10.2026 02:00'],
+		['2026-09-24T22:00:00Z', '25.09.2026 00:00']
+	])('shows %s as %s', (timestamp, text) => {
+		expect(formatBerlinDateTime(timestamp)).toBe(text);
+	});
+
+	it.each(['', '2026-09-24', '2026-09-24 10:00:00', 'garbage'])('rejects "%s"', (timestamp) => {
+		expect(() => formatBerlinDateTime(timestamp)).toThrow(RangeError);
 	});
 });
