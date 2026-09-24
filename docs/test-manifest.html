@@ -213,8 +213,8 @@
   "meta": {
     "projekt": "becauseyoulovejira",
     "stand": "2026-09-24",
-    "commit": "8e78338",
-    "etappe": "E0, E1, E1.1 und E2 abgeschlossen; E3 Pakete 1–7 umgesetzt, Pakete 8–15 geplant"
+    "commit": "0ba84f2",
+    "etappe": "E0, E1, E1.1 und E2 abgeschlossen; E3 Pakete 1–8 umgesetzt, Pakete 9–15 geplant"
   },
   "blocks": [
     {
@@ -911,7 +911,7 @@
       ]
     },
     {
-      "tag": "E3", "name": "E3-Oberfläche", "desc": "Umgesetzte Oberflächenpakete des E3-Plans: Paket 5 (Kopfzeile, Abschnittsleiste, Tabelle), Paket 6 (relative Fälligkeitslabels) und Paket 7 (Projekt im Panel und bei der Anlage). Die E2-Fälle der Liste gelten weiter und laufen jetzt gegen die Tabelle.",
+      "tag": "E3", "name": "E3-Oberfläche", "desc": "Umgesetzte Oberflächenpakete des E3-Plans: Paket 5 (Kopfzeile, Abschnittsleiste, Tabelle), Paket 6 (relative Fälligkeitslabels), Paket 7 (Projekt im Panel und bei der Anlage) und Paket 8 (Tags im Panel und bei der Anlage). Die E2-Fälle der Liste gelten weiter und laufen jetzt gegen die Tabelle.",
       "items": [
         { "id": "BYL-E3-014", "title": "Tabelle mit Spalten, Beschriftung und Scrollbereich", "art": ["komponente"], "status": "bestanden",
           "pre": "–", "steps": ["npm run test:web"],
@@ -986,17 +986,38 @@
           "pre": "Wie BYL-E3-029; ein drittes Projekt mit archived = true (in der Verwaltung gesetzt).",
           "steps": ["Die Adresse /?projekt=<id eines aktiven Projekts> öffnen und „Neues Ticket“ klicken.", "Die Auswahl „Projekt“ im Formular und im Panel eines anderen Tickets aufklappen."],
           "expect": "Im Formular ist das Projekt vorausgewählt, das neue Ticket bekommt CODE-n; das archivierte Projekt fehlt in beiden Auswahlen.",
+          "tests": [] },
+        { "id": "BYL-E3-031", "title": "Tag-Auswahl nach dem Combobox-Muster", "art": ["komponente", "unit"], "status": "bestanden",
+          "pre": "–", "steps": ["npm run test:web"],
+          "expect": "role=combobox mit aria-expanded, aria-controls, aria-activedescendant und aria-autocomplete=list; Vorschläge gefiltert (Anfang zuerst, ohne gewählte), Pfeiltasten, Enter, Maus ohne Fokusverlust; letzte Option „„xyz“ als neuen Tag anlegen“ mit getrimmtem Namen; Escape schließt, ein zweites leert, ein drittes geht an Formular bzw. Panel; Enter sendet kein Formular ab, Strg+Enter bleibt beim Formular; höchstens 50 Zeichen; Chips mit „Tag X entfernen“, danach Fokus im Eingabefeld; gesperrt während einer Anfrage.",
+          "tests": ["web/src/lib/components/tag-picker.test.ts", "web/src/lib/domain/tag.test.ts"] },
+        { "id": "BYL-E3-032", "title": "Tags im Panel", "art": ["komponente", "unit"], "status": "bestanden",
+          "pre": "–", "steps": ["npm run test:web"],
+          "expect": "Namen aus dem Katalog; Hinzufügen und Entfernen speichern sofort die ganze Liste; ein neuer Tag entsteht genau einmal, auch bei Doppel-Enter, und wird zugeordnet; meldet der Server den Namen als vergeben, lädt der Katalog neu und ordnet das bestehende Tag zu; ein Fehler erscheint am Feld, die Tags bleiben; eine zweite Änderung während einer laufenden wird abgewiesen; Escape im Eingabefeld schließt nicht das Panel.",
+          "tests": ["web/src/lib/components/ticket-panel.test.ts::ticket panel: tags (E3 plan, T-14)", "web/src/lib/stores/ticket-detail.test.ts::tags (E3 plan, T-14)", "web/src/lib/stores/catalog.test.ts::CatalogStore: tag for a typed name"] },
+        { "id": "BYL-E3-033", "title": "Tags bei der Anlage und Rückfrage", "art": ["komponente"], "status": "bestanden",
+          "pre": "–", "steps": ["npm run test:web"],
+          "expect": "Das Anlageformular nimmt bestehende und neue Tags auf und sendet ihre IDs; ein Fehler beim Anlegen des Tags erscheint am Feld; ein gewählter Tag oder ein getippter Name zählen für „Neues Ticket verwerfen?“; im Panel fragt „Änderungen verwerfen?“ auch bei einem getippten Namen.",
+          "tests": ["web/src/lib/components/new-ticket.test.ts::new ticket: tags (E3 plan, T-14)", "web/src/lib/components/ticket-panel.test.ts::asks before a name typed into the tag picker is lost"] },
+        { "id": "BYL-E3-034", "title": "Tags über die Datenschicht", "art": ["integration"], "status": "bestanden",
+          "pre": "–", "steps": ["npm run test:integration"],
+          "expect": "createTicket mit tags und updateTicket mit der ganzen Liste speichern die IDs in Reihenfolge; der Verlauf zeigt „Tag hinzugefügt: …“ und „Tag entfernt: …“.",
+          "tests": ["tests/integration/web-data-tickets.test.mjs::saves the whole tag list and records"] },
+        { "id": "BYL-E3-035", "title": "Tags im Browser", "art": ["manuell"], "status": "offen",
+          "pre": "Ein Ticket offen im Panel.",
+          "steps": ["Im Feld „Tags“ „gar“ tippen, mit Pfeil runter wählen und Enter drücken.", "„Steuer“ tippen und zweimal schnell Enter drücken.", "Den Chip „Steuer“ mit Tab ansteuern und mit Enter entfernen.", "„GARTEN“ tippen, Enter.", "„Test“ tippen und „Schließen“ klicken."],
+          "expect": "Vorschläge erscheinen unter dem Feld, der aktive ist markiert (Fläche und Balken); „Steuer“ entsteht genau einmal; nach dem Entfernen steht der Fokus im Eingabefeld; „GARTEN“ ordnet das bestehende „Garten“ zu; beim Schließen mit getipptem Namen fragt die App „Änderungen verwerfen?“; die Tags-Spalte der Tabelle zeigt die Namen sofort.",
+          "tests": [] },
+        { "id": "BYL-E3-036", "title": "Tags aus zwei Fenstern", "art": ["manuell"], "status": "offen",
+          "pre": "Zwei Fenster mit derselben Anmeldung.",
+          "steps": ["Im ersten Fenster einen neuen Tag „Einkauf“ anlegen.", "Im zweiten Fenster, ohne Neuladen, „einkauf“ tippen."],
+          "expect": "Das zweite Fenster schlägt das bestehende „Einkauf“ vor und legt kein zweites an.",
           "tests": [] }
       ]
     },
     {
-      "tag": "E3", "name": "E3 geplant", "desc": "Pakete 8–15 aus dem E3-Plan (Abschnitt 5). Die Schritte sind hier die Akzeptanzkriterien; mit der Umsetzung werden daraus automatisierte und manuelle Fälle.",
+      "tag": "E3", "name": "E3 geplant", "desc": "Pakete 9–15 aus dem E3-Plan (Abschnitt 5). Die Schritte sind hier die Akzeptanzkriterien; mit der Umsetzung werden daraus automatisierte und manuelle Fälle.",
       "items": [
-        { "id": "BYL-E3-108", "title": "Paket 8 – Tags im Panel und bei der Anlage", "art": ["komponente", "integration"], "status": "geplant",
-          "pre": "Paket 5.",
-          "steps": ["Combobox nach APG-Muster (role=\"combobox\", aria-expanded, aria-controls, aria-activedescendant; Pfeiltasten, Enter, Escape).", "Chips per Tastatur entfernbar, danach Fokus im Eingabefeld.", "Ein neuer Tag entsteht genau einmal, auch bei schnellem Doppel-Enter; andere Schreibweise wird wiederverwendet.", "Die Tags-Spalte zeigt die Namen aus dem Katalog."],
-          "expect": "Geplante Tests: tag-picker, Panel- und Anlagetests, Harness: updateTicket mit tags protokolliert „Tag(s) hinzugefügt“.",
-          "tests": [] },
         { "id": "BYL-E3-109", "title": "Paket 9 – Sortierung per Spaltenkopf", "art": ["komponente"], "status": "geplant",
           "pre": "Paket 5.",
           "steps": ["Jeder sortierbare Spaltenkopf enthält einen button, das th trägt aria-sort nur, wenn sortiert.", "Richtung zusätzlich als Icon und im zugänglichen Namen.", "Zurück im Browser stellt die vorige Sortierung wieder her.", "„Erledigt“ bleibt „zuletzt erledigte zuerst“ und sagt das im Kopf.", "Realtime-Änderungen landen an der richtigen Stelle."],

@@ -99,7 +99,8 @@ async function showTable(
 	const catalog = new CatalogStore(
 		{
 			listProjects: vi.fn(async () => catalogContent.projects ?? []),
-			listTags: vi.fn(async () => catalogContent.tags ?? [])
+			listTags: vi.fn(async () => catalogContent.tags ?? []),
+			createTag: vi.fn()
 		},
 		SESSION
 	);

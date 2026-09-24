@@ -10,8 +10,9 @@ import type { BeforeNavigate } from '@sveltejs/kit';
 import type { ResolvedPathname } from '$app/types';
 import { DataError } from '$lib/data/errors';
 import type { Project } from '$lib/domain/project';
+import type { Tag } from '$lib/domain/tag';
 import type { Ticket, TicketPatch, TicketSummary } from '$lib/domain/ticket';
-import { CatalogStore } from '$lib/stores/catalog.svelte';
+import { CatalogStore, type CatalogData } from '$lib/stores/catalog.svelte';
 import type { LiveSource, RecordChange } from '$lib/stores/realtime';
 import { TicketActivityStore, type TicketActivityData } from '$lib/stores/ticket-activity.svelte';
 import {
@@ -90,9 +91,18 @@ const OLD: Project = {
 };
 
 /** A catalog with the given projects, loaded synchronously enough for the tests. */
-function catalogOf(projects: Project[] = []): CatalogStore {
+function catalogOf(
+	projects: Project[] = [],
+	tags: Tag[] = [],
+	data: Partial<CatalogData> = {}
+): CatalogStore {
 	const catalog = new CatalogStore(
-		{ listProjects: vi.fn(async () => projects), listTags: vi.fn(async () => []) },
+		{
+			listProjects: vi.fn(async () => projects),
+			listTags: vi.fn(async () => tags),
+			createTag: vi.fn<CatalogData['createTag']>(),
+			...data
+		},
 		{ ensureValid: () => true, logout: vi.fn() }
 	);
 	void catalog.load();
@@ -100,12 +110,16 @@ function catalogOf(projects: Project[] = []): CatalogStore {
 }
 
 /** Applies a patch like the server: `project` is an ID and changes the key. */
-function applyPatch(current: Ticket, { project, ...fields }: TicketPatch): Ticket {
-	if (project === undefined) return { ...current, ...fields };
+function applyPatch(current: Ticket, { project, tags, ...fields }: TicketPatch): Ticket {
+	const next: Ticket = { ...current, ...fields };
+	if (tags !== undefined) {
+		next.tagIds = [...tags];
+		next.tags = tags.map((id) => ({ id, name: id }));
+	}
+	if (project === undefined) return next;
 	const ref = [HOUSE, OLD].find((entry) => entry.id === project) ?? null;
 	return {
-		...current,
-		...fields,
+		...next,
 		projectId: project,
 		project: ref,
 		key: ref === null ? 'TASK-10' : `${ref.code}-1`
@@ -192,11 +206,11 @@ describe('ticket panel', () => {
 		expect(within(panel).queryByText('Erledigt am')).toBeNull();
 	});
 
-	it('leaves out tags and recurrence when the ticket has none; the project says "Kein Projekt"', async () => {
+	it('shows "Kein Projekt", no tags and no recurrence when the ticket has none', async () => {
 		await renderPanel(ticket({ description: '' }));
 
 		expect(screen.getByLabelText<HTMLSelectElement>('Projekt').value).toBe('');
-		expect(screen.queryByText('Tags')).toBeNull();
+		expect(screen.queryByRole('list', { name: 'Gewählte Tags' })).toBeNull();
 		expect(screen.queryByText('wiederkehrend')).toBeNull();
 		expect(screen.getByText('Keine Beschreibung.')).toBeTruthy();
 	});
@@ -480,6 +494,137 @@ describe('ticket panel: project (E3 plan, T-13)', () => {
 	});
 });
 
+describe('ticket panel: tags (E3 plan, T-14)', () => {
+	const GARDEN: Tag = {
+		id: 'tag000000000001',
+		name: 'Garten',
+		updated: '2026-09-01 10:00:00.000Z'
+	};
+	const CALL: Tag = { id: 'tag000000000002', name: 'anrufen', updated: '2026-09-01 10:00:00.000Z' };
+
+	async function renderWithTags(initial?: Ticket, data: Partial<CatalogData> = {}) {
+		const catalog = catalogOf([], [GARDEN, CALL], data);
+		await vi.waitFor(() => expect(catalog.state).toBe('ready'));
+		const result = await renderPanel(initial, { catalog });
+		return {
+			...result,
+			catalog,
+			input: screen.getByRole<HTMLInputElement>('combobox', { name: 'Tags' })
+		};
+	}
+
+	function chips() {
+		const list = screen.queryByRole('list', { name: 'Gewählte Tags' });
+		return list
+			? within(list)
+					.getAllByRole('listitem')
+					.map((chip) => chip.textContent?.trim())
+			: [];
+	}
+
+	it('shows the tags of the ticket with names from the catalog', async () => {
+		await renderWithTags(ticket({ tagIds: [GARDEN.id], tags: [{ id: GARDEN.id, name: 'alt' }] }));
+
+		expect(chips()).toEqual(['Garten']);
+	});
+
+	it('adds a tag by keyboard and saves the whole list at once', async () => {
+		const { input, data } = await renderWithTags(ticket({ tagIds: [GARDEN.id] }));
+
+		await fireEvent.input(input, { target: { value: 'anr' } });
+		await fireEvent.keyDown(input, { key: 'Enter' });
+
+		await vi.waitFor(() =>
+			expect(data.update).toHaveBeenCalledWith(ID, { tags: [GARDEN.id, CALL.id] })
+		);
+		await tick();
+		expect(chips()).toEqual(['Garten', 'anrufen']);
+		expect(input.value).toBe('');
+	});
+
+	it('removes a tag by keyboard and puts the focus into the input', async () => {
+		const { input, data } = await renderWithTags(ticket({ tagIds: [GARDEN.id, CALL.id] }));
+
+		const remove = screen.getByRole('button', { name: 'Tag Garten entfernen' });
+		remove.focus();
+		await fireEvent.click(remove);
+
+		await vi.waitFor(() => expect(data.update).toHaveBeenCalledWith(ID, { tags: [CALL.id] }));
+		await tick();
+		expect(chips()).toEqual(['anrufen']);
+		expect(document.activeElement).toBe(input);
+	});
+
+	it('creates a new tag once and assigns it', async () => {
+		const created: Tag = {
+			id: 'tag000000000009',
+			name: 'Steuer',
+			updated: '2026-09-24 10:00:00.000Z'
+		};
+		const createTag = vi.fn(async () => created);
+		const { input, data } = await renderWithTags(undefined, { createTag });
+
+		await fireEvent.input(input, { target: { value: ' Steuer ' } });
+		await fireEvent.keyDown(input, { key: 'Enter' });
+		await fireEvent.keyDown(input, { key: 'Enter' });
+
+		await vi.waitFor(() => expect(data.update).toHaveBeenCalledWith(ID, { tags: [created.id] }));
+		expect(createTag).toHaveBeenCalledExactlyOnceWith('Steuer');
+		await tick();
+		expect(chips()).toEqual(['Steuer']);
+	});
+
+	it('takes the existing tag when the server reports the name as taken', async () => {
+		const other: Tag = {
+			id: 'tag000000000009',
+			name: 'steuer',
+			updated: '2026-09-24 10:00:00.000Z'
+		};
+		const listTags = vi
+			.fn<CatalogData['listTags']>()
+			.mockResolvedValueOnce([GARDEN, CALL])
+			.mockResolvedValue([GARDEN, CALL, other]);
+		const createTag = vi.fn(async (): Promise<Tag> => {
+			throw new DataError('validation', {
+				status: 400,
+				fields: { name: { code: 'validation_not_unique', message: 'Schon vergeben.' } }
+			});
+		});
+		const { input, data } = await renderWithTags(undefined, { listTags, createTag });
+
+		await fireEvent.input(input, { target: { value: 'Steuer' } });
+		await fireEvent.keyDown(input, { key: 'Enter' });
+
+		await vi.waitFor(() => expect(data.update).toHaveBeenCalledWith(ID, { tags: [other.id] }));
+		expect(createTag).toHaveBeenCalledOnce();
+	});
+
+	it('shows a failed save at the field and keeps the tags', async () => {
+		const { input, data } = await renderWithTags(ticket({ tagIds: [GARDEN.id] }));
+		data.update.mockRejectedValueOnce(new DataError('network'));
+
+		await fireEvent.input(input, { target: { value: 'anr' } });
+		await fireEvent.keyDown(input, { key: 'Enter' });
+
+		const error = await screen.findByText(/Server nicht erreichbar/);
+		expect(input.getAttribute('aria-invalid')).toBe('true');
+		expect(input.getAttribute('aria-describedby')).toContain(error.closest('p')?.id);
+		expect(chips()).toEqual(['Garten']);
+		expect(input.value).toBe('anr');
+	});
+
+	it('lets Escape in the tag input close the suggestions, not the panel', async () => {
+		const { input, onclose } = await renderWithTags();
+
+		await fireEvent.input(input, { target: { value: 'gar' } });
+		await fireEvent.keyDown(input, { key: 'Escape' });
+		await fireEvent.keyDown(input, { key: 'Escape' });
+
+		expect(input.value).toBe('');
+		expect(onclose).not.toHaveBeenCalled();
+	});
+});
+
 function activityStore() {
 	const data = {
 		listComments: vi.fn(async () => []),
@@ -493,7 +638,7 @@ function activityStore() {
 
 beforeEach(() => {
 	mocks.catalog = new CatalogStore(
-		{ listProjects: vi.fn(async () => []), listTags: vi.fn(async () => []) },
+		{ listProjects: vi.fn(async () => []), listTags: vi.fn(async () => []), createTag: vi.fn() },
 		{ ensureValid: () => true, logout: vi.fn() }
 	);
 });
@@ -592,6 +737,22 @@ describe('ticket route: unsaved text', () => {
 		guard(to);
 
 		expect(cancel).not.toHaveBeenCalled();
+	});
+
+	it('asks before a name typed into the tag picker is lost (E3 plan, T-14)', async () => {
+		const { guard } = await renderRoute();
+		await fireEvent.input(screen.getByRole('combobox', { name: 'Tags' }), {
+			target: { value: 'Steu' }
+		});
+		const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false);
+		const { navigation: to, cancel } = navigation(...OTHER_TICKET);
+
+		guard(to);
+
+		expect(confirm).toHaveBeenCalledWith(
+			'Änderungen verwerfen? Der nicht gespeicherte Text geht verloren.'
+		);
+		expect(cancel).toHaveBeenCalledOnce();
 	});
 
 	it('asks for a comment being written when switching to another ticket', async () => {

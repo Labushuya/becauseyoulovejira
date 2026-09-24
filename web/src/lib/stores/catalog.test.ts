@@ -106,7 +106,12 @@ function abortable<T>(options: RequestOptions, value: Promise<T>): Promise<T> {
 function setup(projects: Project[] = [HOUSE, CAR, OLD], tags: Tag[] = [GARDEN, CALL]) {
 	const data = {
 		listProjects: vi.fn<CatalogData['listProjects']>(async () => projects),
-		listTags: vi.fn<CatalogData['listTags']>(async () => tags)
+		listTags: vi.fn<CatalogData['listTags']>(async () => tags),
+		createTag: vi.fn<CatalogData['createTag']>(async (name) => ({
+			id: 'tag000000000099',
+			name,
+			updated: T2
+		}))
 	} satisfies CatalogData;
 	const session = { ensureValid: vi.fn(() => true), logout: vi.fn() };
 	const store = new CatalogStore(data, session);
@@ -298,6 +303,86 @@ describe('CatalogStore: project and tags of a ticket (E3 plan, package 5)', () =
 		expect(store.projectOf({ projectId: null, project: expanded.project })).toBeNull();
 		expect(store.projectOf({ projectId: 'proj00000000099', project: expanded.project })).toBeNull();
 		expect(store.tagsOf({ tagIds: ['tag000000000099', GARDEN.id], tags: [] })).toEqual([GARDEN]);
+	});
+});
+
+describe('CatalogStore: tag for a typed name (E3 plan, T-14 and package 8)', () => {
+	it('reuses a tag in another spelling without a request', async () => {
+		const { store, data } = setup();
+		await store.load();
+
+		expect(await store.ensureTag('  GARTEN ')).toEqual({ ok: true, tag: GARDEN });
+		expect(data.createTag).not.toHaveBeenCalled();
+	});
+
+	it('creates a new tag with the trimmed name and adds it to the catalog', async () => {
+		const { store, data } = setup();
+		await store.load();
+
+		const result = await store.ensureTag('  Steuer ');
+
+		expect(data.createTag).toHaveBeenCalledExactlyOnceWith('Steuer');
+		expect(result).toMatchObject({ ok: true, tag: { name: 'Steuer' } });
+		expect(store.tags.map((t) => t.name)).toContain('Steuer');
+	});
+
+	it('shares one request between quick calls for the same name', async () => {
+		const { store, data } = setup();
+		await store.load();
+		const answer = deferred<Tag>();
+		data.createTag.mockImplementationOnce(() => answer.promise);
+
+		const first = store.ensureTag('Steuer');
+		const second = store.ensureTag('steuer ');
+		answer.resolve(tag({ id: 'tag000000000009', name: 'Steuer', updated: T1 }));
+
+		expect(await first).toEqual(await second);
+		expect(data.createTag).toHaveBeenCalledOnce();
+	});
+
+	it('loads again and takes the existing tag when the server reports the name as taken', async () => {
+		const { store, data } = setup();
+		await store.load();
+		const other = tag({ id: 'tag000000000009', name: 'steuer', updated: T1 });
+		data.createTag.mockRejectedValueOnce(
+			new DataError('validation', {
+				status: 400,
+				fields: { name: { code: 'validation_not_unique', message: 'Schon vergeben.' } }
+			})
+		);
+		data.listTags.mockResolvedValueOnce([GARDEN, CALL, other]);
+
+		expect(await store.ensureTag('Steuer')).toEqual({ ok: true, tag: other });
+		expect(data.listTags).toHaveBeenCalledTimes(2);
+	});
+
+	it('refuses an empty or too long name without a request', async () => {
+		const { store, data } = setup();
+		await store.load();
+
+		expect(await store.ensureTag('   ')).toEqual({
+			ok: false,
+			message: 'Der Name darf nicht leer sein.'
+		});
+		expect(await store.ensureTag('x'.repeat(51))).toEqual({
+			ok: false,
+			message: 'Höchstens 50 Zeichen.'
+		});
+		expect(data.createTag).not.toHaveBeenCalled();
+	});
+
+	it('reports a failed request with its message', async () => {
+		const { store, data } = setup();
+		await store.load();
+		data.createTag.mockRejectedValueOnce(new DataError('network'));
+
+		const result = await store.ensureTag('Steuer');
+
+		expect(result).toEqual({
+			ok: false,
+			message: expect.stringMatching(/Server nicht erreichbar/)
+		});
+		expect(store.tags.map((t) => t.name)).not.toContain('Steuer');
 	});
 });
 

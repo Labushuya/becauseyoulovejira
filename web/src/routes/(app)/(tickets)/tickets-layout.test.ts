@@ -45,7 +45,7 @@ function renderLayout(path: string, id?: string) {
 	const activate = vi.spyOn(store, 'activate');
 	mocks.store = store;
 	mocks.catalog = new CatalogStore(
-		{ listProjects: vi.fn(async () => []), listTags: vi.fn(async () => []) },
+		{ listProjects: vi.fn(async () => []), listTags: vi.fn(async () => []), createTag: vi.fn() },
 		{ ensureValid: () => true, logout: vi.fn() }
 	);
 	const children = createRawSnippet(() => ({ render: () => '<p>Panel</p>' }));

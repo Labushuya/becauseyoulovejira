@@ -85,7 +85,7 @@ async function renderPanel() {
 	const ondeleted = vi.fn();
 	store.open(ID);
 	const catalog = new CatalogStore(
-		{ listProjects: vi.fn(async () => []), listTags: vi.fn(async () => []) },
+		{ listProjects: vi.fn(async () => []), listTags: vi.fn(async () => []), createTag: vi.fn() },
 		{ ensureValid: () => true, logout: vi.fn() }
 	);
 	render(TicketPanel, { props: { store, catalog, listHref: LIST, onclose, ondeleted } });

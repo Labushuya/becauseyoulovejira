@@ -11,7 +11,7 @@
 
 	// Detail panel of /tickets/<record id> (E2 plan, T-4); a reload opens the same panel.
 
-	/** Question before a description or comment that is not saved would be lost. */
+	/** Question before typed text would be lost: description, comment or a name in the tag picker. */
 	const DISCARD_QUESTION = 'Änderungen verwerfen? Der nicht gespeicherte Text geht verloren.';
 	const detail = getTicketDetailStore();
 	const comments = getTicketActivityStore();
@@ -37,13 +37,14 @@
 	let discarding = false;
 
 	// Leaving the panel within the app (Schließen, Escape, another ticket, "Neues Ticket", browser
-	// back) asks first while a description or comment is not saved. Logout and session end go to
-	// the login page and are not held up; closing the browser tab is not covered.
+	// back) asks first while a description, a comment or a name in the tag picker (E3 plan, T-14) is
+	// not saved. Logout and session end go to the login page and are not held up; closing the
+	// browser tab is not covered.
 	beforeNavigate((navigation) => {
 		const to = navigation.to;
 		if (discarding || navigation.type === 'leave' || to === null) return;
 		if (!to.route.id?.startsWith('/(app)/') || to.url.pathname === page.url.pathname) return;
-		if (detail.state !== 'ready' || !(detail.unsavedDescription || comments.dirty)) return;
+		if (detail.state !== 'ready' || !(detail.hasUnsavedInput || comments.dirty)) return;
 		if (!window.confirm(DISCARD_QUESTION)) navigation.cancel();
 	});
 

@@ -7,23 +7,29 @@
 		DESCRIPTION_MAX_LENGTH,
 		TITLE_MAX_LENGTH,
 		type ProjectRef,
+		type TagRef,
 		type TicketDraft
 	} from '$lib/domain/ticket';
+	import type { EnsureTagResult } from '$lib/stores/catalog.svelte';
 	import type { CreateResult } from '$lib/stores/ticket-detail.svelte';
 	import ErrorIcon from './ErrorIcon.svelte';
 	import MarkdownEditor from './MarkdownEditor.svelte';
 	import PrioritySelect from './PrioritySelect.svelte';
 	import ProjectSelect from './ProjectSelect.svelte';
 	import StatusSelect from './StatusSelect.svelte';
+	import TagPicker from './TagPicker.svelte';
 
-	// "Neues Ticket" in the side panel (E2 plan, T-8 and package 8; E3 plan, T-13): title
-	// (required, focused), priority "Mittel", status "Offen", due date, project and description.
-	// With the list filtered by an active project, that project is chosen in advance. "Anlegen" or Ctrl+Enter
-	// creates; the button is locked during the request, so a double click creates one ticket.
-	// "Abbrechen" and Escape ask first if something was entered.
+	// "Neues Ticket" in the side panel (E2 plan, T-8 and package 8; E3 plan, T-13 and T-14):
+	// title (required, focused), priority "Mittel", status "Offen", due date, project, tags and
+	// description. With the list filtered by an active project, that project is chosen in
+	// advance. "Anlegen" or Ctrl+Enter creates; the button is locked during the request, so a
+	// double click creates one ticket. "Abbrechen" and Escape ask first if something was entered,
+	// a name in the tag picker included.
 	let {
 		projects = [],
 		initialProject = null,
+		tags = [],
+		oncreatetag = async () => ({ ok: false, message: null }),
 		oncreate,
 		oncreated,
 		oncancel
@@ -32,6 +38,10 @@
 		projects?: readonly ProjectRef[];
 		/** Project chosen in advance (list filter); ignored unless it is among `projects`. */
 		initialProject?: string | null;
+		/** Tags that can be chosen (the catalog). */
+		tags?: readonly TagRef[];
+		/** Existing or new tag for a typed name (T-14). */
+		oncreatetag?: (name: string) => Promise<EnsureTagResult>;
 		oncreate: (draft: TicketDraft) => Promise<CreateResult>;
 		oncreated: (id: string) => void;
 		oncancel: () => void;
@@ -52,6 +62,8 @@
 		project: `${uid}-project`,
 		projectHint: `${uid}-project-hint`,
 		projectError: `${uid}-project-error`,
+		tags: `${uid}-tags`,
+		tagsError: `${uid}-tags-error`,
 		description: `${uid}-description-error`
 	};
 
@@ -63,6 +75,9 @@
 	let description = $state('');
 	/** Project chosen by the user; null until then, so a late catalog still sets the default. */
 	let chosenProject = $state<string | null>(null);
+	let tagIds = $state<string[]>([]);
+	let tagText = $state('');
+	let tagError = $state<string | null>(null);
 	let pending = $state(false);
 	let message = $state<string | null>(null);
 	let fieldErrors = $state<Partial<Record<keyof TicketDraft, string>>>({});
@@ -74,6 +89,14 @@
 			: ''
 	);
 	const project = $derived(chosenProject ?? defaultProject);
+	/** Chosen tags from the catalog; a new tag is in it before it is chosen. */
+	const chosenTags = $derived(
+		tagIds.flatMap((tagId) => {
+			const tag = tags.find((entry) => entry.id === tagId);
+			return tag === undefined ? [] : [tag];
+		})
+	);
+	const tagsError = $derived(tagError ?? fieldErrors.tags ?? null);
 	const missingTitle = $derived(title.trim() === '');
 	const dirty = $derived(
 		title !== '' ||
@@ -82,7 +105,9 @@
 			dueInvalid ||
 			status !== DEFAULT_STATUS ||
 			priority !== DEFAULT_PRIORITY ||
-			project !== defaultProject
+			project !== defaultProject ||
+			tagIds.length > 0 ||
+			tagText.trim() !== ''
 	);
 	const dueError = $derived(dueInvalid ? 'Ungültiges Datum.' : (fieldErrors.due ?? null));
 
@@ -106,7 +131,8 @@
 			status,
 			priority,
 			due: due === '' ? null : (due as CalendarDate),
-			project: project === '' ? null : project
+			project: project === '' ? null : project,
+			tags: tagIds
 		});
 		if (result.ok) {
 			oncreated(result.ticket.id);
@@ -116,6 +142,21 @@
 		message = result.message;
 		fieldErrors = result.fields;
 		if (result.fields.title) titleInput?.focus();
+	}
+
+	function addTag(tagId: string): boolean {
+		if (!tagIds.includes(tagId)) tagIds = [...tagIds, tagId];
+		tagError = null;
+		return true;
+	}
+
+	async function createTag(name: string): Promise<boolean> {
+		const result = await oncreatetag(name);
+		if (!result.ok) {
+			tagError = result.message;
+			return false;
+		}
+		return addTag(result.tag.id);
 	}
 
 	function cancel() {
@@ -223,6 +264,28 @@
 				<p class="field-error" id={ids.projectError}>
 					<ErrorIcon /><span>{fieldErrors.project}</span>
 				</p>
+			{/if}
+		</div>
+
+		<div class="field">
+			<label for={ids.tags}>Tags</label>
+			<TagPicker
+				id={ids.tags}
+				selected={chosenTags}
+				{tags}
+				bind:text={tagText}
+				busy={pending}
+				error={tagsError}
+				errorId={ids.tagsError}
+				onadd={addTag}
+				onremove={(tagId) => {
+					tagIds = tagIds.filter((entry) => entry !== tagId);
+					return true;
+				}}
+				oncreate={createTag}
+			/>
+			{#if tagsError}
+				<p class="field-error" id={ids.tagsError}><ErrorIcon /><span>{tagsError}</span></p>
 			{/if}
 		</div>
 

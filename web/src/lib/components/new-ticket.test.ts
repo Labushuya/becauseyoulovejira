@@ -1,9 +1,9 @@
-// Component tests for "Neues Ticket" (E2 plan, package 8; E3 plan, T-13): required title,
-// defaults, project with the filtered project chosen in advance, Ctrl+Enter, lock during the
-// request, switching to the new ID with replaceState, server errors, discarding after a question.
+// Component tests for "Neues Ticket" (E2 plan, package 8; E3 plan, T-13 and T-14): required
+// title, defaults, project with the filtered project chosen in advance, tags, Ctrl+Enter, lock
+// during the request, switching to the new ID with replaceState, server errors, discarding after a question.
 // The creation itself is covered against the harness (E2 plan, package 4).
 
-import { fireEvent, render, screen } from '@testing-library/svelte';
+import { fireEvent, render, screen, within } from '@testing-library/svelte';
 import { tick } from 'svelte';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Project } from '$lib/domain/project';
@@ -57,7 +57,8 @@ function catalog(projects: Project[] = [HOUSE, CAR, OLD]) {
 				await ready;
 				return projects;
 			}),
-			listTags: vi.fn(async () => [])
+			listTags: vi.fn(async () => []),
+			createTag: vi.fn()
 		},
 		{ ensureValid: () => true, logout: vi.fn() }
 	);
@@ -170,7 +171,8 @@ describe('new ticket form', () => {
 			status: 'in_progress',
 			priority: 'urgent',
 			due: '2026-10-01',
-			project: null
+			project: null,
+			tags: []
 		});
 		await vi.waitFor(() => expect(oncreated).toHaveBeenCalledWith('new000000000000'));
 	});
@@ -375,4 +377,85 @@ describe('new ticket: project (E3 plan, T-13)', () => {
 		expect(confirm).not.toHaveBeenCalled();
 		expect(mocks.goto).toHaveBeenCalledWith(`/?projekt=${HOUSE.id}`);
 	});
+});
+
+describe('new ticket: tags (E3 plan, T-14)', () => {
+	const GARDEN = { id: 'tag000000000001', name: 'Garten' };
+	const CALL = { id: 'tag000000000002', name: 'anrufen' };
+
+	function tagInput() {
+		return screen.getByRole<HTMLInputElement>('combobox', { name: 'Tags' });
+	}
+
+	function chips() {
+		const list = screen.queryByRole('list', { name: 'Gewählte Tags' });
+		return list
+			? within(list)
+					.getAllByRole('listitem')
+					.map((chip) => chip.textContent?.trim())
+			: [];
+	}
+
+	it('creates with existing and new tags; Enter in the tag input does not submit', async () => {
+		const created = { id: 'tag000000000009', name: 'Steuer', updated: '2026-09-24 10:00:00.000Z' };
+		const tags = [CALL, GARDEN];
+		const oncreatetag = vi.fn(async () => ({ ok: true as const, tag: created }));
+		const { oncreate, rerender } = renderFormWithTags({ tags, oncreatetag });
+
+		await fireEvent.input(titleField(), { target: { value: 'Neu' } });
+		await fireEvent.input(tagInput(), { target: { value: 'gar' } });
+		await fireEvent.keyDown(tagInput(), { key: 'Enter' });
+		await tick();
+		await fireEvent.input(tagInput(), { target: { value: 'Steuer' } });
+		await fireEvent.keyDown(tagInput(), { key: 'Enter' });
+		await vi.waitFor(() => expect(oncreatetag).toHaveBeenCalledExactlyOnceWith('Steuer'));
+		// The catalog now has the new tag.
+		await rerender({ tags: [...tags, created] });
+
+		expect(oncreate).not.toHaveBeenCalled();
+		expect(chips()).toEqual(['Garten', 'Steuer']);
+		await fireEvent.click(createButton());
+		expect(oncreate.mock.calls[0]?.[0]).toMatchObject({ tags: [GARDEN.id, created.id] });
+	});
+
+	it('shows a failure to create a tag at the field', async () => {
+		const oncreatetag = vi.fn(async () => ({ ok: false as const, message: 'Schon vergeben.' }));
+		renderFormWithTags({ tags: [], oncreatetag });
+
+		await fireEvent.input(tagInput(), { target: { value: 'Steuer' } });
+		await fireEvent.keyDown(tagInput(), { key: 'Enter' });
+
+		await vi.waitFor(() => expect(tagInput().getAttribute('aria-invalid')).toBe('true'));
+		const error = document.getElementById(tagInput().getAttribute('aria-describedby') ?? '');
+		expect(error?.textContent).toBe('Schon vergeben.');
+		expect(tagInput().value).toBe('Steuer');
+	});
+
+	it.each([
+		['a chosen tag', async () => fireEvent.keyDown(tagInput(), { key: 'Enter' })],
+		['a typed name', async () => undefined]
+	])('asks before discarding %s', async (_name, finish) => {
+		const confirm = vi.spyOn(window, 'confirm').mockReturnValueOnce(false);
+		const { oncancel } = renderFormWithTags({ tags: [GARDEN] });
+
+		await fireEvent.input(tagInput(), { target: { value: 'gar' } });
+		await finish();
+		await tick();
+		await fireEvent.click(screen.getByRole('button', { name: 'Abbrechen' }));
+
+		expect(confirm).toHaveBeenCalledOnce();
+		expect(oncancel).not.toHaveBeenCalled();
+	});
+
+	function renderFormWithTags(props: Record<string, unknown>) {
+		const oncreate = vi.fn<(draft: TicketDraft) => Promise<CreateResult>>(async () => ({
+			ok: true,
+			ticket: CREATED
+		}));
+		const oncancel = vi.fn();
+		const result = render(NewTicketForm, {
+			props: { oncreate, oncreated: vi.fn(), oncancel, ...props }
+		});
+		return { ...result, oncreate, oncancel };
+	}
 });
