@@ -5,7 +5,7 @@ import type { HistoryEntry } from '../domain/ticket';
 import { withDataErrors } from './errors';
 import type { RequestOptions } from './options';
 
-const HISTORY_FIELDS = 'id,ticket,field,old_value,new_value,user,created';
+export const HISTORY_FIELDS = 'id,ticket,field,old_value,new_value,user,created';
 
 export interface HistoryRecord {
 	id: string;

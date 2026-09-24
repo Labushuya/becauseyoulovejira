@@ -1,8 +1,8 @@
 // Comments and history of the ticket in the detail panel (E2 plan, T-10, T-11, T-13, packages 9
 // and 10). Kept apart from the detail store: they load, fail and update independently of the
-// ticket fields. Own answers and (from package 12) realtime events go through the same idempotent
-// `upsertComment`, `removeComment` and `upsertHistory`. Drafts (new comment, edited comments)
-// are never overwritten by updates.
+// ticket fields. Own answers and realtime events (ADR-0007, filtered to the open ticket) go
+// through the same idempotent `upsertComment`, `removeComment` and `upsertHistory`. Drafts (new
+// comment, edited comments) are never overwritten by updates.
 
 import type PocketBase from 'pocketbase';
 import { createContext } from 'svelte';
@@ -14,6 +14,7 @@ import { listProjects, listTags } from '$lib/data/lookups';
 import type { RequestOptions } from '$lib/data/options';
 import { historyLookups, type HistoryLookups } from '$lib/domain/history-format';
 import type { Comment, HistoryEntry, ProjectRef, TagRef } from '$lib/domain/ticket';
+import { hold, type LiveSource } from './realtime';
 import type { LoadState, SessionGuard } from './ticket-list.svelte';
 
 export const COMMENT_REQUIRED_MESSAGE = 'Der Kommentar darf nicht leer sein.';
@@ -60,6 +61,9 @@ export class TicketActivityStore {
 	readonly #commentErrors = new SvelteMap<string, string>();
 	#controller: AbortController | null = null;
 	#historyController: AbortController | null = null;
+	#live: LiveSource | null = null;
+	/** Ends the comment and history subscriptions of the open ticket. */
+	#stopFollowing: (() => void) | null = null;
 
 	#ticketId = $state<string | null>(null);
 	#state = $state<LoadState>('idle');
@@ -174,11 +178,29 @@ export class TicketActivityStore {
 		return false;
 	}
 
+	/**
+	 * Follows comments and history of the open ticket live (ADR-0007 section 2); after a
+	 * reconnection both are loaded again without a loading state (section 3). Returns the
+	 * cleanup, which ends every subscription.
+	 */
+	connect(live: LiveSource): () => void {
+		this.#live = live;
+		if (this.#ticketId !== null) this.#follow(this.#ticketId);
+		const stopReconnect = hold(live.reconnected(() => void this.#refresh()));
+		return () => {
+			stopReconnect();
+			this.#stopFollowing?.();
+			this.#stopFollowing = null;
+			if (this.#live === live) this.#live = null;
+		};
+	}
+
 	/** Shows the comments of a ticket; another ticket drops drafts and aborts loading. */
 	open(ticketId: string): void {
 		if (ticketId === this.#ticketId && this.#state !== 'error') return;
 		this.reset();
 		this.#ticketId = ticketId;
+		this.#follow(ticketId);
 		void this.#load(ticketId);
 		void this.#loadHistory(ticketId);
 	}
@@ -329,6 +351,8 @@ export class TicketActivityStore {
 
 	/** Empties the store and aborts a running request. */
 	reset(): void {
+		this.#stopFollowing?.();
+		this.#stopFollowing = null;
 		this.#controller?.abort();
 		this.#controller = null;
 		this.#historyController?.abort();
@@ -347,6 +371,64 @@ export class TicketActivityStore {
 		this.#newComment = '';
 		this.#posting = false;
 		this.#postError = null;
+	}
+
+	#follow(ticketId: string): void {
+		this.#stopFollowing?.();
+		this.#stopFollowing = null;
+		if (this.#live === null) return;
+		const stops = [
+			hold(
+				this.#live.comments(ticketId, (change) => {
+					if (change.action === 'delete') this.removeComment(change.id);
+					else this.upsertComment(change.record);
+				})
+			),
+			hold(
+				this.#live.history(ticketId, (change) => {
+					if (change.action === 'create') this.upsertHistory(change.record);
+				})
+			)
+		];
+		this.#stopFollowing = () => {
+			for (const stop of stops) stop();
+		};
+	}
+
+	/**
+	 * Loads comments and history again after a reconnection. Comments are merged (new ones in,
+	 * changed ones replaced, missing ones out), so drafts and the scroll position stay; the
+	 * history is replaced. A tab that failed to load is simply loaded again.
+	 */
+	async #refresh(): Promise<void> {
+		const ticketId = this.#ticketId;
+		if (ticketId === null) return;
+		await Promise.all([
+			this.#state === 'ready' ? this.#refreshComments(ticketId) : this.reload(),
+			this.#historyState === 'ready' ? this.#loadHistory(ticketId, true) : this.reloadHistory()
+		]);
+	}
+
+	async #refreshComments(ticketId: string): Promise<void> {
+		this.#controller?.abort();
+		if (!this.#session.ensureValid()) return;
+		const controller = new AbortController();
+		this.#controller = controller;
+		try {
+			const comments = await this.#data.listComments(ticketId, { signal: controller.signal });
+			if (controller.signal.aborted) return;
+			const ids = new SvelteSet(comments.map((comment) => comment.id));
+			for (const id of [...this.#comments.keys()]) {
+				if (!ids.has(id)) this.removeComment(id);
+			}
+			for (const comment of comments) this.upsertComment(comment);
+		} catch (error) {
+			if (controller.signal.aborted) return;
+			// Nothing to show: the comments stay as they are, the next reconnection tries again.
+			this.#failureMessage(error);
+		} finally {
+			if (this.#controller === controller) this.#controller = null;
+		}
 	}
 
 	async #load(ticketId: string): Promise<void> {
@@ -375,15 +457,17 @@ export class TicketActivityStore {
 	}
 
 	/** History plus the lookups for its IDs; one failure fails all, so nothing shows as deleted. */
-	async #loadHistory(ticketId: string): Promise<void> {
+	async #loadHistory(ticketId: string, quiet = false): Promise<void> {
 		this.#historyController?.abort();
 		this.#historyController = null;
 		if (!this.#session.ensureValid()) return;
 		const controller = new AbortController();
 		this.#historyController = controller;
 		const options = { signal: controller.signal };
-		this.#historyState = 'loading';
-		this.#historyError = null;
+		if (!quiet) {
+			this.#historyState = 'loading';
+			this.#historyError = null;
+		}
 		try {
 			const [history, projects, tags] = await Promise.all([
 				this.#data.listHistory(ticketId, options),
@@ -397,7 +481,7 @@ export class TicketActivityStore {
 		} catch (error) {
 			if (controller.signal.aborted) return;
 			const message = this.#failureMessage(error);
-			if (message === null) return;
+			if (message === null || quiet) return;
 			this.#historyError = message;
 			this.#historyState = 'error';
 		} finally {

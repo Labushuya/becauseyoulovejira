@@ -1,12 +1,12 @@
 // State of the ticket list (ADR-0006 sections 1 to 5, E2 plan package 5). Open tickets are loaded
 // in full and sorted client side; done tickets are loaded page by page in the server order. The
 // store is created per app layout and handed out through a typed context, so a logout leaves no
-// data behind. Own answers and (from package 12) realtime events go through the same idempotent
-// `upsert` and `remove`.
+// data behind. Own answers and realtime events (ADR-0007) go through the same idempotent `upsert`
+// and `remove`; after a reconnection the store reconciles once with the server.
 
 import type PocketBase from 'pocketbase';
 import { createContext } from 'svelte';
-import { SvelteMap } from 'svelte/reactivity';
+import { SvelteMap, SvelteSet } from 'svelte/reactivity';
 import { toDataError } from '$lib/data/errors';
 import type { RequestOptions } from '$lib/data/options';
 import {
@@ -20,6 +20,7 @@ import { berlinToday, msUntilNextBerlinMidnight, type CalendarDate } from '$lib/
 import { ticketOrder } from '$lib/domain/ordering';
 import type { Status } from '$lib/domain/status';
 import type { TicketPatch, TicketSummary } from '$lib/domain/ticket';
+import { hold, type LiveSource } from './realtime';
 
 /**
  * How long a checked row stays in place, struck through and with "Rückgängig" (OF-E2-2,
@@ -88,9 +89,20 @@ export class TicketListStore {
 	readonly #lingering = new SvelteMap<string, Lingering>();
 	/** Target state of running check mark requests, keyed by ticket ID. */
 	readonly #pending = new SvelteMap<string, boolean>();
+	/**
+	 * IDs of deleted tickets: a late event or answer must not bring them back. Record IDs are
+	 * never reused, so the set only grows until the store is reset.
+	 */
+	readonly #deleted = new SvelteSet<string>();
+	/**
+	 * IDs changed by answers or events while a reconciliation runs: its older snapshot must not
+	 * remove them (e.g. a ticket created in the meantime). Null while none runs.
+	 */
+	#touched: Set<string> | null = null;
 
 	#openController: AbortController | null = null;
 	#doneController: AbortController | null = null;
+	#reconcileController: AbortController | null = null;
 	#donePage = 0;
 
 	#today = $state<CalendarDate>('');
@@ -252,6 +264,8 @@ export class TicketListStore {
 	 * one in the store is ignored, so a late event does not overwrite a newer answer.
 	 */
 	upsert(ticket: TicketSummary): void {
+		if (this.#deleted.has(ticket.id)) return;
+		this.#touched?.add(ticket.id);
 		const existing = this.find(ticket.id);
 		if (existing !== null && existing.updated > ticket.updated) return;
 		const lingering = this.#lingering.get(ticket.id);
@@ -268,6 +282,7 @@ export class TicketListStore {
 
 	/** Removes a ticket from every part of the list (deleted or no longer visible). */
 	remove(id: string): void {
+		this.#deleted.add(id);
 		this.#open.delete(id);
 		this.#done.delete(id);
 		this.#stopLingering(id);
@@ -342,12 +357,81 @@ export class TicketListStore {
 		this.#notice = null;
 	}
 
+	/**
+	 * Keeps the list live (ADR-0007 sections 2 and 3): created and updated tickets go through
+	 * `upsert`, deleted ones through `remove`, and after a reconnection the store reconciles
+	 * once. Returns the cleanup, which ends both subscriptions and a running reconciliation.
+	 */
+	connect(live: LiveSource): () => void {
+		const stops = [
+			hold(
+				live.tickets((change) => {
+					if (change.action === 'delete') this.remove(change.id);
+					else this.upsert(change.record);
+				})
+			),
+			hold(live.reconnected(() => void this.reconcile()))
+		];
+		return () => {
+			for (const stop of stops) stop();
+			this.#reconcileController?.abort();
+			this.#reconcileController = null;
+		};
+	}
+
+	/**
+	 * Reconciles with the server after events may have been lost (ADR-0007 section 3): loads the
+	 * open tickets and the loaded pages of done tickets again and merges them into the store
+	 * (insert, replace, remove) without a loading state, so nothing flickers. Rows that stand
+	 * with "Rückgängig" stay. A second call aborts a running one. A list that failed to load is
+	 * simply loaded again.
+	 */
+	async reconcile(): Promise<void> {
+		this.#reconcileController?.abort();
+		this.#reconcileController = null;
+		if (this.#openState === 'error') {
+			await this.reload();
+			return;
+		}
+		if (this.#openState !== 'ready' || !this.#session.ensureValid()) return;
+		const controller = new AbortController();
+		this.#reconcileController = controller;
+		const touched = new SvelteSet<string>();
+		this.#touched = touched;
+		const options = { signal: controller.signal };
+		const doneLoaded = this.#showDone && this.#doneState === 'ready' ? this.#donePage : 0;
+		try {
+			const open = await this.#data.listOpen(options);
+			const pages: DoneTicketPage[] = [];
+			for (let page = 1; page <= doneLoaded; page += 1) {
+				pages.push(await this.#data.listDone(page, options));
+			}
+			if (controller.signal.aborted) return;
+			this.#touched = null;
+			this.#mergeOpen(open, touched);
+			if (doneLoaded > 0 && this.#showDone && this.#donePage === doneLoaded) {
+				this.#mergeDone(pages, touched);
+			}
+		} catch (error) {
+			if (controller.signal.aborted) return;
+			// Nothing to show: the list stays as it is, the next reconnection tries again.
+			this.#failureMessage(error);
+		} finally {
+			if (this.#touched === touched) this.#touched = null;
+			if (this.#reconcileController === controller) this.#reconcileController = null;
+		}
+	}
+
 	/** Aborts all requests and timers and empties the store. */
 	reset(): void {
 		this.#openController?.abort();
 		this.#doneController?.abort();
+		this.#reconcileController?.abort();
 		this.#openController = null;
 		this.#doneController = null;
+		this.#reconcileController = null;
+		this.#touched = null;
+		this.#deleted.clear();
 		for (const { timer } of this.#lingering.values()) clearTimeout(timer);
 		this.#open.clear();
 		this.#done.clear();
@@ -425,6 +509,31 @@ export class TicketListStore {
 				this.#loadingMoreDone = false;
 			}
 		}
+	}
+
+	#mergeOpen(open: readonly TicketSummary[], touched: ReadonlySet<string>): void {
+		const ids = new SvelteSet(open.map((ticket) => ticket.id));
+		for (const id of [...this.#open.keys()]) {
+			if (!ids.has(id) && !touched.has(id)) this.#open.delete(id);
+		}
+		for (const ticket of open) this.upsert(ticket);
+	}
+
+	#mergeDone(pages: readonly DoneTicketPage[], touched: ReadonlySet<string>): void {
+		const items = pages.flatMap((page) => page.items);
+		const ids = new SvelteSet(items.map((ticket) => ticket.id));
+		for (const id of [...this.#done.keys()]) {
+			if (!ids.has(id) && !touched.has(id)) this.#done.delete(id);
+		}
+		for (const ticket of items) {
+			if (this.#deleted.has(ticket.id) || touched.has(ticket.id)) continue;
+			const existing = this.#done.get(ticket.id);
+			if (existing === undefined || existing.updated <= ticket.updated) {
+				this.#open.delete(ticket.id);
+				this.#done.set(ticket.id, ticket);
+			}
+		}
+		this.#doneHasMore = pages.at(-1)?.hasMore ?? false;
 	}
 
 	/**

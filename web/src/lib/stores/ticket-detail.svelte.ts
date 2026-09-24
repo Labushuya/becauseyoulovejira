@@ -1,7 +1,8 @@
 // State of the detail panel (ADR-0006 sections 1 to 5, E2 plan T-7 and package 7): one ticket,
 // saving per field and protection of drafts. A draft stays while an update for the same ticket
-// arrives (own list, from package 12 realtime); every other field follows the update. Only the
-// changed field is sent, and the answer of the server replaces the ticket.
+// arrives (own list or realtime, ADR-0007); every other field follows the update. Only the
+// changed field is sent, and the answer of the server replaces the ticket. While a ticket is
+// shown, the store follows it live, including its description and its deletion elsewhere.
 
 import type PocketBase from 'pocketbase';
 import { createContext } from 'svelte';
@@ -12,13 +13,17 @@ import { createTicket, deleteTicket, getTicket, updateTicket } from '$lib/data/t
 import { isCalendarDate } from '$lib/domain/berlin-date';
 import { isPriority, isStatus, type Status } from '$lib/domain/status';
 import type { Ticket, TicketDraft, TicketPatch, TicketSummary } from '$lib/domain/ticket';
+import { hold, type LiveSource } from './realtime';
 import type { SessionGuard } from './ticket-list.svelte';
 
 /** Fields editable in E2 (E2 plan, section 2). */
 export type EditableField = 'title' | 'description' | 'status' | 'priority' | 'due';
 
-/** idle: no ticket; loading; ready; not_found: unknown or foreign ID; error: loading failed. */
-export type DetailState = 'idle' | 'loading' | 'ready' | 'not_found' | 'error';
+/**
+ * idle: no ticket; loading; ready; not_found: unknown or foreign ID; error: loading failed;
+ * deleted: the shown ticket was deleted elsewhere (ADR-0007 section 2).
+ */
+export type DetailState = 'idle' | 'loading' | 'ready' | 'not_found' | 'error' | 'deleted';
 
 export const TITLE_REQUIRED_MESSAGE = 'Der Titel darf nicht leer sein.';
 export const INVALID_DATE_MESSAGE = 'Ungültiges Datum.';
@@ -100,6 +105,11 @@ export class TicketDetailStore {
 	readonly #saving = new SvelteSet<EditableField>();
 	readonly #fieldErrors = new SvelteMap<EditableField, string>();
 	#controller: AbortController | null = null;
+	#live: LiveSource | null = null;
+	/** Ends the subscription of the shown ticket. */
+	#stopTicket: (() => void) | null = null;
+	/** Ticket this panel is deleting: its delete event is the own one, not a deletion elsewhere. */
+	#deletingId: string | null = null;
 
 	#id = $state<string | null>(null);
 	#own = $state.raw<Ticket | null>(null);
@@ -161,11 +171,38 @@ export class TicketDetailStore {
 		return this.#drafts.size > 0;
 	}
 
+	/**
+	 * True while the description editor holds text that differs from the saved description, so
+	 * leaving the panel would lose it (question "Änderungen verwerfen?").
+	 */
+	get unsavedDescription(): boolean {
+		const draft = this.#drafts.get('description');
+		return draft !== undefined && this.#ticket !== null && draft !== this.#ticket.description;
+	}
+
+	/**
+	 * Follows the shown ticket live (ADR-0007 sections 2 and 3). A later `open` subscribes to its
+	 * ticket; after a reconnection the ticket is loaded again without a loading state. Returns the
+	 * cleanup, which ends every subscription.
+	 */
+	connect(live: LiveSource): () => void {
+		this.#live = live;
+		if (this.#id !== null) this.#follow(this.#id);
+		const stopReconnect = hold(live.reconnected(() => void this.#refresh()));
+		return () => {
+			stopReconnect();
+			this.#stopTicket?.();
+			this.#stopTicket = null;
+			if (this.#live === live) this.#live = null;
+		};
+	}
+
 	/** Shows the given ticket; another ID drops drafts and aborts the previous request. */
 	open(id: string): void {
 		if (id === this.#id && this.#state !== 'error') return;
 		this.reset();
 		this.#id = id;
+		this.#follow(id);
 		void this.#load(id);
 	}
 
@@ -179,7 +216,7 @@ export class TicketDetailStore {
 	 * running input keeps its text; an older `updated` is ignored.
 	 */
 	upsert(ticket: Ticket): void {
-		if (ticket.id !== this.#id) return;
+		if (ticket.id !== this.#id || this.#state === 'deleted') return;
 		if (this.#own !== null && this.#own.updated > ticket.updated) return;
 		this.#own = ticket;
 		if (this.#state !== 'ready') {
@@ -285,6 +322,7 @@ export class TicketDetailStore {
 			this.#list.upsert(ticket);
 			this.reset();
 			this.#id = ticket.id;
+			this.#follow(ticket.id);
 			this.#own = ticket;
 			this.#state = 'ready';
 			return { ok: true, ticket };
@@ -313,9 +351,11 @@ export class TicketDetailStore {
 		const ticket = this.#ticket;
 		if (ticket === null) return { ok: false, message: null };
 		if (!this.#session.ensureValid()) return { ok: false, message: null };
+		this.#deletingId = ticket.id;
 		try {
 			await this.#data.delete(ticket.id);
 		} catch (error) {
+			if (this.#deletingId === ticket.id) this.#deletingId = null;
 			const failure = toDataError(error);
 			if (failure.kind === 'session') this.#session.logout();
 			if (failure.kind === 'session' || failure.kind === 'aborted') {
@@ -328,10 +368,13 @@ export class TicketDetailStore {
 		return { ok: true, key: ticket.key };
 	}
 
-	/** Empties the store and aborts a running request. */
+	/** Empties the store, ends the subscription and aborts a running request. */
 	reset(): void {
 		this.#controller?.abort();
 		this.#controller = null;
+		this.#stopTicket?.();
+		this.#stopTicket = null;
+		this.#deletingId = null;
 		this.#drafts.clear();
 		this.#saving.clear();
 		this.#fieldErrors.clear();
@@ -339,6 +382,61 @@ export class TicketDetailStore {
 		this.#own = null;
 		this.#state = 'idle';
 		this.#error = null;
+	}
+
+	/** Subscribes to the shown ticket (updates with description, deletion elsewhere). */
+	#follow(id: string): void {
+		this.#stopTicket?.();
+		this.#stopTicket = null;
+		if (this.#live === null) return;
+		this.#stopTicket = hold(
+			this.#live.ticket(id, (change) => {
+				if (change.action !== 'delete') this.upsert(change.record);
+				else if (change.id === this.#id && change.id !== this.#deletingId) this.#gone();
+			})
+		);
+	}
+
+	/**
+	 * The shown ticket was deleted elsewhere: the panel says so instead of vanishing. Drafts go,
+	 * because there is nothing left to save them to.
+	 */
+	#gone(): void {
+		this.#controller?.abort();
+		this.#controller = null;
+		this.#drafts.clear();
+		this.#saving.clear();
+		this.#fieldErrors.clear();
+		this.#state = 'deleted';
+		this.#error = null;
+	}
+
+	/**
+	 * Loads the shown ticket again after a reconnection, without a loading state; drafts stay.
+	 * A ticket that is gone by now counts as deleted.
+	 */
+	async #refresh(): Promise<void> {
+		const id = this.#id;
+		if (id === null || this.#state === 'deleted' || this.#state === 'not_found') return;
+		if (this.#state !== 'ready') {
+			await this.reload();
+			return;
+		}
+		if (!this.#session.ensureValid()) return;
+		this.#controller?.abort();
+		const controller = new AbortController();
+		this.#controller = controller;
+		try {
+			const ticket = await this.#data.get(id, { signal: controller.signal });
+			if (!controller.signal.aborted) this.upsert(ticket);
+		} catch (error) {
+			if (controller.signal.aborted) return;
+			const failure = toDataError(error);
+			if (failure.kind === 'session') this.#session.logout();
+			else if (failure.kind === 'not_found' || failure.kind === 'forbidden') this.#gone();
+		} finally {
+			if (this.#controller === controller) this.#controller = null;
+		}
 	}
 
 	async #load(id: string): Promise<void> {

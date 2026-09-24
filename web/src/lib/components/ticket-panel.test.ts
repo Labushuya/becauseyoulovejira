@@ -5,10 +5,12 @@
 import { fireEvent, render, screen, within } from '@testing-library/svelte';
 import { createRawSnippet, tick } from 'svelte';
 import { SvelteMap } from 'svelte/reactivity';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import type { BeforeNavigate } from '@sveltejs/kit';
 import type { ResolvedPathname } from '$app/types';
 import { DataError } from '$lib/data/errors';
 import type { Ticket, TicketPatch, TicketSummary } from '$lib/domain/ticket';
+import type { LiveSource, RecordChange } from '$lib/stores/realtime';
 import { TicketActivityStore, type TicketActivityData } from '$lib/stores/ticket-activity.svelte';
 import {
 	TicketDetailStore,
@@ -20,6 +22,7 @@ import TicketPage from '../../routes/(app)/(tickets)/tickets/[id]/+page.svelte';
 
 const mocks = vi.hoisted(() => ({
 	goto: vi.fn(async () => undefined),
+	beforeNavigate: vi.fn(),
 	page: {
 		url: new URL('http://localhost:3000/tickets/abc123def456ghi?erledigte=1'),
 		params: { id: 'abc123def456ghi' } as Record<string, string>
@@ -28,7 +31,7 @@ const mocks = vi.hoisted(() => ({
 	activity: null as unknown
 }));
 
-vi.mock('$app/navigation', () => ({ goto: mocks.goto }));
+vi.mock('$app/navigation', () => ({ goto: mocks.goto, beforeNavigate: mocks.beforeNavigate }));
 vi.mock('$app/state', () => ({ page: mocks.page }));
 vi.mock('$lib/stores/ticket-detail.svelte', async (importOriginal) => ({
 	...(await importOriginal<object>()),
@@ -370,5 +373,157 @@ describe('ticket route', () => {
 		unmount();
 		expect(store.state).toBe('idle');
 		expect(activity.ticketId).toBeNull();
+	});
+});
+
+describe('ticket route: unsaved text', () => {
+	type Guard = (navigation: BeforeNavigate) => void;
+
+	async function renderRoute() {
+		const context = createStore();
+		const activity = activityStore();
+		mocks.detail = context.store;
+		mocks.activity = activity;
+		mocks.beforeNavigate.mockClear();
+		render(TicketPage);
+		await vi.waitFor(() => expect(context.store.state).toBe('ready'));
+		const guard = mocks.beforeNavigate.mock.lastCall?.[0] as Guard | undefined;
+		if (guard === undefined) throw new Error('No navigation guard registered');
+		return { store: context.store, activity, guard };
+	}
+
+	function navigation(path: string, routeId: string | null, type: BeforeNavigate['type'] = 'link') {
+		const cancel = vi.fn();
+		const target = {
+			url: new URL(path, 'http://localhost:3000'),
+			route: { id: routeId },
+			params: {}
+		};
+		return {
+			navigation: { type, to: target, from: null, cancel } as unknown as BeforeNavigate,
+			cancel
+		};
+	}
+
+	const OTHER_TICKET = ['/tickets/zzz999zzz999zzz', '/(app)/(tickets)/tickets/[id]'] as const;
+
+	afterEach(() => {
+		vi.restoreAllMocks();
+	});
+
+	it('leaves without a question while nothing is unsaved', async () => {
+		const { guard } = await renderRoute();
+		const confirm = vi.spyOn(window, 'confirm');
+		const { navigation: to, cancel } = navigation(...OTHER_TICKET);
+
+		guard(to);
+
+		expect(confirm).not.toHaveBeenCalled();
+		expect(cancel).not.toHaveBeenCalled();
+	});
+
+	it('asks before a changed description is lost and stays on "Abbrechen"', async () => {
+		const { store, guard } = await renderRoute();
+		store.edit('description');
+		store.setDraft('description', 'Neuer Text');
+		const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false);
+		const { navigation: to, cancel } = navigation('/?erledigte=1', '/(app)/(tickets)');
+
+		guard(to);
+
+		expect(confirm).toHaveBeenCalledWith(
+			'Änderungen verwerfen? Der nicht gespeicherte Text geht verloren.'
+		);
+		expect(cancel).toHaveBeenCalledOnce();
+	});
+
+	it('leaves after confirming', async () => {
+		const { activity, guard } = await renderRoute();
+		activity.setNewComment('Halber Kommentar');
+		vi.spyOn(window, 'confirm').mockReturnValue(true);
+		const { navigation: to, cancel } = navigation(...OTHER_TICKET);
+
+		guard(to);
+
+		expect(cancel).not.toHaveBeenCalled();
+	});
+
+	it('asks for a comment being written when switching to another ticket', async () => {
+		const { activity, guard } = await renderRoute();
+		activity.setNewComment('Halber Kommentar');
+		const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false);
+		const { navigation: to, cancel } = navigation(...OTHER_TICKET);
+
+		guard(to);
+
+		expect(confirm).toHaveBeenCalledOnce();
+		expect(cancel).toHaveBeenCalledOnce();
+	});
+
+	it('does not ask for an unchanged description editor', async () => {
+		const { store, guard } = await renderRoute();
+		store.edit('description');
+		const confirm = vi.spyOn(window, 'confirm');
+
+		guard(navigation(...OTHER_TICKET).navigation);
+
+		expect(confirm).not.toHaveBeenCalled();
+	});
+
+	it.each<[string, string, string | null, BeforeNavigate['type']]>([
+		[
+			'a query change of the same panel',
+			'/tickets/abc123def456ghi',
+			'/(app)/(tickets)/tickets/[id]',
+			'goto'
+		],
+		['the login page (logout, session end)', '/login', '/login', 'goto'],
+		['closing the tab', '/tickets/zzz999zzz999zzz', '/(app)/(tickets)/tickets/[id]', 'leave']
+	])('does not ask for %s', async (_name, path, routeId, type) => {
+		const { activity, guard } = await renderRoute();
+		activity.setNewComment('Halber Kommentar');
+		const confirm = vi.spyOn(window, 'confirm');
+		const { navigation: to, cancel } = navigation(path, routeId, type);
+
+		guard(to);
+
+		expect(confirm).not.toHaveBeenCalled();
+		expect(cancel).not.toHaveBeenCalled();
+	});
+});
+
+describe('ticket panel: deleted elsewhere', () => {
+	it('says so with a link to the list and moves the focus to the message', async () => {
+		const context = createStore();
+		let deliver: ((change: RecordChange<Ticket>) => void) | undefined;
+		const stop = async () => undefined;
+		const live: LiveSource = {
+			tickets: async () => stop,
+			ticket: async (_id, onChange) => {
+				deliver = onChange;
+				return stop;
+			},
+			comments: async () => stop,
+			history: async () => stop,
+			reconnected: async () => stop
+		};
+		const disconnect = context.store.connect(live);
+		context.store.open(ID);
+		render(TicketPanel, {
+			props: { store: context.store, listHref: LIST, onclose: vi.fn(), ondeleted: vi.fn() }
+		});
+		await vi.waitFor(() => expect(context.store.state).toBe('ready'));
+
+		deliver?.({ action: 'delete', id: ID });
+		await tick();
+
+		const message = screen.getByRole('heading', {
+			level: 2,
+			name: 'Dieses Ticket wurde gelöscht.'
+		});
+		expect(document.activeElement).toBe(message);
+		expect(screen.getByRole('link', { name: 'Zur Liste' }).getAttribute('href')).toBe(LIST);
+		expect(screen.queryByRole('button', { name: 'Löschen …' })).toBeNull();
+		disconnect();
 	});
 });

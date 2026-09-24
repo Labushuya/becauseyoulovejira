@@ -3,6 +3,7 @@
 	import { auth } from '$lib/auth.svelte';
 	import AppHeader from '$lib/components/AppHeader.svelte';
 	import { pb } from '$lib/pocketbase';
+	import { liveSource } from '$lib/stores/realtime';
 	import {
 		TicketActivityStore,
 		setTicketActivityStore,
@@ -26,8 +27,10 @@
 	// Stores live per layout instance (ADR-0006 section 1): a logout removes the layout and with
 	// it every loaded ticket.
 	const tickets = setTicketListStore(new TicketListStore(ticketListData(pb), auth));
-	setTicketDetailStore(new TicketDetailStore(ticketDetailData(pb), auth, tickets));
-	setTicketActivityStore(new TicketActivityStore(ticketActivityData(pb), auth, () => auth.userId));
+	const detail = setTicketDetailStore(new TicketDetailStore(ticketDetailData(pb), auth, tickets));
+	const activity = setTicketActivityStore(
+		new TicketActivityStore(ticketActivityData(pb), auth, () => auth.userId)
+	);
 
 	// Session care while the app is shown (ADR-0007 section 1). The returned cleanup removes the
 	// timer and the listeners when the layout goes away (logout, session end). untrack: the
@@ -36,6 +39,13 @@
 
 	// Clock of "today" for the list order (T-3); the cleanup also empties the store.
 	$effect(() => untrack(() => tickets.start()));
+
+	// Live updates (ADR-0007 section 2): list, panel, comments and history. The cleanups end
+	// every subscription when the layout goes away; a logout has already ended them all.
+	const live = liveSource(pb);
+	$effect(() => untrack(() => tickets.connect(live)));
+	$effect(() => untrack(() => detail.connect(live)));
+	$effect(() => untrack(() => activity.connect(live)));
 </script>
 
 <AppHeader />

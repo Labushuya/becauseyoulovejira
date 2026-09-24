@@ -48,7 +48,8 @@ export const TICKET_LIST_FIELDS = [
 	'expand.tags.name'
 ].join(',');
 
-const TICKET_DETAIL_FIELDS = `${TICKET_LIST_FIELDS},description`;
+/** Fields of the detail panel: the list fields plus the description. */
+export const TICKET_DETAIL_FIELDS = `${TICKET_LIST_FIELDS},description`;
 
 /** Ticket record as the API returns it with the fields above. */
 export interface TicketRecord {

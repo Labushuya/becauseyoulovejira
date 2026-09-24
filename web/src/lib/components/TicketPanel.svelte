@@ -174,6 +174,12 @@
 			<p>Das Ticket gibt es nicht, oder es ist für dich nicht sichtbar.</p>
 			<a href={listHref}>Zur Liste</a>
 		</div>
+	{:else if store.state === 'deleted'}
+		<div class="message">
+			<h2 id={headingId} tabindex="-1" bind:this={messageHeading}>Dieses Ticket wurde gelöscht.</h2>
+			<p>Es wurde an anderer Stelle gelöscht, samt Kommentaren und Verlauf.</p>
+			<a href={listHref}>Zur Liste</a>
+		</div>
 	{:else if store.state === 'error'}
 		<div class="message">
 			<h2 id={headingId} tabindex="-1" bind:this={messageHeading}>

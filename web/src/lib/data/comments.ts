@@ -7,7 +7,7 @@ import { DataError, withDataErrors } from './errors';
 import { currentUserId, type RequestOptions } from './options';
 
 const COMMENTS = 'comments';
-const COMMENT_FIELDS = 'id,ticket,author,body,created,updated';
+export const COMMENT_FIELDS = 'id,ticket,author,body,created,updated';
 
 export interface CommentRecord {
 	id: string;
