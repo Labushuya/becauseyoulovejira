@@ -13,7 +13,7 @@
 
 [CmdletBinding()]
 param(
-    [Parameter(Mandatory = $true)][ValidateSet('Start')][string]$Action,
+    [Parameter(Mandatory = $true)][ValidateSet('Start', 'Stop')][string]$Action,
     [switch]$Hidden
 )
 
@@ -158,9 +158,47 @@ function Invoke-Start {
     return 0
 }
 
+function Invoke-Stop {
+    # Only the app's own instance (Select-AppProcess): never test instances of the harness, never
+    # foreign processes, no taskkill by image name. Stop-Process -Force ends the process hard
+    # (TerminateProcess). SQLite in WAL mode treats that like a crash: committed transactions are
+    # in the WAL and survive, an unfinished one is rolled back on the next open. See README.
+    $own = @(Select-AppProcess -Process (Get-ProcessSnapshot) -AppDir $AppDir)
+    if ($own.Count -eq 0) {
+        Show-Message 'becauseyoulovejira läuft nicht.'
+        return 0
+    }
+    $failed = @()
+    foreach ($candidate in $own) {
+        $processId = [int]$candidate.ProcessId
+        # Re-check right before stopping: the PID could have been reused since the snapshot.
+        $current = @(Get-CimInstance -ClassName Win32_Process -Filter "ProcessId = $processId" -Property ProcessId, Name, ExecutablePath, CommandLine)
+        if (@(Select-AppProcess -Process $current -AppDir $AppDir).Count -eq 0) { continue }
+        Write-Status "Beende PocketBase (PID $processId) ..."
+        try {
+            Stop-Process -Id $processId -Force
+            Wait-Process -Id $processId -Timeout 10 -ErrorAction SilentlyContinue
+        }
+        catch {
+            $failed += "PID ${processId}: $($_.Exception.Message)"
+            continue
+        }
+        if (Get-Process -Id $processId -ErrorAction SilentlyContinue) {
+            $failed += "PID ${processId}: läuft nach 10 Sekunden noch"
+        }
+    }
+    if ($failed.Count -gt 0) {
+        Show-Message -Kind Error -Text ("PocketBase konnte nicht beendet werden:`n" + ($failed -join "`n"))
+        return 1
+    }
+    Show-Message 'becauseyoulovejira wurde beendet.'
+    return 0
+}
+
 try {
     $exitCode = switch ($Action) {
         'Start' { Invoke-Start }
+        'Stop' { Invoke-Stop }
     }
 }
 catch {

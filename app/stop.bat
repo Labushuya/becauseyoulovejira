@@ -1,26 +1,8 @@
 @echo off
-setlocal enabledelayedexpansion
-
-REM stop.bat - Beendet den PocketBase-Prozess
-
-set SCRIPT_DIR=%~dp0
-set POCKETBASE_EXE=%SCRIPT_DIR%pocketbase.exe
-
-REM Gehe zum Script-Verzeichnis
-cd /d "%SCRIPT_DIR%"
-
-REM Finde und beende alle pocketbase.exe Prozesse, die von diesem Verzeichnis aus gestartet wurden
-for /f "tokens=2" %%a in ('wmic process list brief /format:csv 2^>nul ^| findstr /R /C:"pocketbase\.exe"') do (
-    REM Prüfe, ob der Prozess vom aktuellen Verzeichnis aus läuft
-    for /f "tokens=*" %%b in ('wmic process where processid=%%a get executablepath 2^>nul ^| findstr /R /C:"pocketbase"') do (
-        if "%%b"=="%POCKETBASE_EXE%" (
-            echo Beende PocketBase (PID: %%a)...
-            taskkill /PID %%a /F >nul 2>&1
-        )
-    )
-)
-
-REM Alternative: taskkill by name (könnte andere Instanzen treffen)
-taskkill /IM pocketbase.exe /F >nul 2>&1
-
-echo PocketBase wurde beendet.
+setlocal
+rem stop.bat - beendet nur die eigene PocketBase-Instanz dieses Ordners (pocketbase.exe aus diesem
+rem Ordner mit serve, --http=127.0.0.1:8090 und --dir auf pb_data). Logik in byl-control.ps1.
+"%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -ExecutionPolicy Bypass -File "%~dp0byl-control.ps1" -Action Stop
+set "BYL_EXIT=%ERRORLEVEL%"
+if not "%BYL_EXIT%"=="0" pause
+exit /b %BYL_EXIT%
