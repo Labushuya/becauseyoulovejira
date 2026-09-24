@@ -711,3 +711,68 @@ describe('announce', () => {
 		expect(store.announcement).toBe('TASK-1 wurde gelöscht.');
 	});
 });
+
+describe('grouping (E3 plan, package 13)', () => {
+	const grouped = (grouping: ListQuery['grouping'], extra: Partial<ListQuery> = {}): ListQuery => ({
+		...EMPTY_LIST_QUERY,
+		grouping,
+		...extra
+	});
+	const shape = (store: TicketListStore) =>
+		store.groups?.map((group) => [group.key, group.tickets.map((entry) => entry.id)]) ?? null;
+
+	it('has no groups without a grouping', async () => {
+		const store = new TicketListStore(fakeData([ticket()]), session());
+		store.activate(EMPTY_LIST_QUERY);
+		await settle();
+
+		expect(store.groups).toBeNull();
+	});
+
+	it('groups the visible rows in the order of the domain, keeping filter and sort', async () => {
+		const low = ticket({ priority: 'low', title: 'B' });
+		const urgent = ticket({ priority: 'urgent', title: 'C' });
+		const lowToo = ticket({ priority: 'low', title: 'A' });
+		const hidden = ticket({ priority: 'urgent', status: 'waiting' });
+		const store = new TicketListStore(fakeData([low, urgent, lowToo, hidden]), session());
+		store.activate(
+			grouped('priority', { status: 'open', sort: { key: 'title', reversed: false } })
+		);
+		await settle();
+
+		expect(shape(store)).toEqual([
+			['urgent', [urgent.id]],
+			['low', [lowToo.id, low.id]]
+		]);
+		expect(store.groups?.map((group) => group.label)).toEqual(['Dringend', 'Niedrig']);
+	});
+
+	it('keeps a just checked row in the group of its previous status until undo expires', async () => {
+		const waiting = ticket({ status: 'waiting' });
+		const open = ticket();
+		const store = new TicketListStore(fakeData([waiting, open]), session());
+		store.activate(grouped('status'));
+		await settle();
+
+		await store.setDone(waiting.id, true);
+		expect(shape(store)).toEqual([
+			['open', [open.id]],
+			['waiting', [waiting.id]]
+		]);
+		expect(store.groups?.[1]?.tickets[0]?.status).toBe('done');
+
+		await vi.advanceTimersByTimeAsync(UNDO_WINDOW_MS);
+		expect(shape(store)).toEqual([['open', [open.id]]]);
+	});
+
+	it('moves a ticket into its new group after a realtime update', async () => {
+		const item = ticket();
+		const store = new TicketListStore(fakeData([item]), session());
+		store.activate(grouped('status'));
+		await settle();
+
+		store.upsert({ ...item, status: 'in_progress', updated: '2026-09-24 11:00:00.000Z' });
+
+		expect(shape(store)).toEqual([['in_progress', [item.id]]]);
+	});
+});
