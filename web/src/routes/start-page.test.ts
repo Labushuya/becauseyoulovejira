@@ -35,8 +35,18 @@ describe('start page', () => {
 
 		expect(screen.getByRole('heading', { level: 1, name: 'becauseyoulovejira' })).toBeTruthy();
 		expect(screen.getByText(/^Angemeldet als/).textContent).toBe(`Angemeldet als ${USER.email}`);
-		expect(container.children).toHaveLength(1);
 		expect(container.firstElementChild?.tagName).toBe('HEADER');
+	});
+
+	it('shows an empty state until the ticket view exists, without placeholder content', () => {
+		const { container } = render(StartPage);
+
+		const main = screen.getByRole('main');
+		expect(main.textContent?.trim()).toBe(
+			'Hier erscheinen bald deine Tickets – die Ticketansicht folgt in der nächsten Ausbaustufe.'
+		);
+		expect(main.querySelectorAll('*')).toHaveLength(1);
+		expect(Array.from(container.children, (child) => child.tagName)).toEqual(['HEADER', 'MAIN']);
 	});
 
 	it('ends the session and goes to the login page', async () => {

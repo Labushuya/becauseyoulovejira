@@ -19,7 +19,19 @@
 	</div>
 </header>
 
+<main class="empty">
+	<p>Hier erscheinen bald deine Tickets – die Ticketansicht folgt in der nächsten Ausbaustufe.</p>
+</main>
+
 <style>
+	.empty {
+		display: grid;
+		place-items: center;
+		padding: 4rem 1.5rem;
+		text-align: center;
+		color: var(--color-text-muted);
+	}
+
 	.app-header {
 		display: flex;
 		flex-wrap: wrap;
