@@ -1,9 +1,10 @@
-// State of the ticket list (ADR-0006 sections 1 to 5; E2 plan, package 5; E3 plan, package 5).
-// Open tickets are loaded in full and sorted client side; done tickets are loaded page by page in
-// the server order. The
-// store is created per app layout and handed out through a typed context, so a logout leaves no
-// data behind. Own answers and realtime events (ADR-0007) go through the same idempotent `upsert`
-// and `remove`; after a reconnection the store reconciles once with the server.
+// State of the ticket list (ADR-0006 sections 1 to 5; E2 plan, package 5; E3 plan, packages 5
+// and 10). Open tickets are loaded in full, filtered and sorted client side (ADR-0013 section 1);
+// done tickets are loaded page by page in the server order and filtered by the server (section
+// 3). The store is created per app layout and handed out through a typed context, so a logout
+// leaves no data behind. Own answers and realtime events (ADR-0007) go through the same
+// idempotent `upsert` and `remove`; after a reconnection the store reconciles once with the
+// server.
 
 import type PocketBase from 'pocketbase';
 import { createContext } from 'svelte';
@@ -15,9 +16,12 @@ import {
 	listOpenTickets,
 	setTicketDone,
 	updateTicket,
+	type DoneFilter,
 	type DoneTicketPage
 } from '$lib/data/tickets';
 import { berlinToday, msUntilNextBerlinMidnight, type CalendarDate } from '$lib/domain/berlin-date';
+import { matchesFilter } from '$lib/domain/filter';
+import { EMPTY_LIST_QUERY, FILTER_KEYS, type ListQuery } from '$lib/domain/list-query';
 import { ticketOrder } from '$lib/domain/ordering';
 import type { Status } from '$lib/domain/status';
 import type { TicketPatch, TicketSummary } from '$lib/domain/ticket';
@@ -38,7 +42,8 @@ export type LoadState = 'idle' | 'loading' | 'ready' | 'error';
 /** Data access of the list; tests pass a fake, the app binds the data layer to its client. */
 export interface TicketListData {
 	listOpen(options: RequestOptions): Promise<TicketSummary[]>;
-	listDone(page: number, options: RequestOptions): Promise<DoneTicketPage>;
+	/** One page of done tickets narrowed by `filter` (the list filters at the Berlin date). */
+	listDone(page: number, options: RequestOptions & { filter: DoneFilter }): Promise<DoneTicketPage>;
 	setDone(id: string, done: boolean): Promise<TicketSummary>;
 	update(id: string, patch: TicketPatch): Promise<TicketSummary>;
 }
@@ -65,6 +70,25 @@ interface Lingering {
 	previousStatus: Status;
 	/** Ends the undo window. */
 	timer: ReturnType<typeof setTimeout>;
+}
+
+/**
+ * True if the section "Erledigt" is shown (T-6): the status filter "Erledigt" shows only this
+ * section, another status hides it, without a status the switch "Erledigte anzeigen" decides.
+ */
+export function showsDoneSection(query: ListQuery): boolean {
+	return query.status === null ? query.showDone : query.status === 'done';
+}
+
+function sameFilters(a: ListQuery, b: ListQuery): boolean {
+	return FILTER_KEYS.every((key) => a[key] === b[key]);
+}
+
+/** Text of the live region after a filter change (E3 plan, package 10). */
+export function countMessage(count: number, more = false): string {
+	if (more) return `Mehr als ${count} Tickets.`;
+	if (count === 0) return 'Keine Tickets für diese Filter.';
+	return count === 1 ? '1 Ticket.' : `${count} Tickets.`;
 }
 
 /** Server order of done tickets: `-completed_at,-created,-id`. */
@@ -105,8 +129,16 @@ export class TicketListStore {
 	#doneController: AbortController | null = null;
 	#reconcileController: AbortController | null = null;
 	#donePage = 0;
+	/**
+	 * Filter the loaded done pages belong to (filters and, with a due filter, the date as one key),
+	 * null while the section is hidden; a different key loads the section again.
+	 */
+	#doneKey: string | null = null;
+	/** Filters changed while the section "Erledigt" alone is shown: announce after loading. */
+	#announceDone = false;
 
 	#today = $state<CalendarDate>('');
+	#query = $state<ListQuery>(EMPTY_LIST_QUERY);
 	#openState = $state<LoadState>('idle');
 	#openError = $state<string | null>(null);
 	#showDone = $state(false);
@@ -121,9 +153,27 @@ export class TicketListStore {
 		const lingering = [...this.#lingering.values()].map((entry) => entry.ticket);
 		return [...this.#open.values(), ...lingering].sort(ticketOrder(this.#today));
 	});
-	#doneList = $derived(
-		[...this.#done.values()].filter((ticket) => !this.#lingering.has(ticket.id)).sort(compareDone)
-	);
+	#visibleList = $derived.by(() => {
+		const query = this.#query;
+		if (query.status === 'done') return [];
+		const today = this.#today;
+		// A just checked row stays in place with "Rückgängig": it is filtered as it was before.
+		return this.#openList.filter((ticket) => {
+			const previousStatus = this.#lingering.get(ticket.id)?.previousStatus;
+			const subject = previousStatus ? { ...ticket, status: previousStatus } : ticket;
+			return matchesFilter(subject, query, today);
+		});
+	});
+	#doneList = $derived.by(() => {
+		const query = this.#query;
+		const today = this.#today;
+		// With the status filter "Erledigt" there is no other place for a just checked row.
+		const onlyDone = query.status === 'done';
+		return [...this.#done.values()]
+			.filter((ticket) => onlyDone || !this.#lingering.has(ticket.id))
+			.filter((ticket) => matchesFilter(ticket, query, today))
+			.sort(compareDone);
+	});
 
 	constructor(data: TicketListData, session: SessionGuard, now: () => number = Date.now) {
 		this.#data = data;
@@ -138,11 +188,31 @@ export class TicketListStore {
 	}
 
 	/**
-	 * Rows of the table above the section "Erledigt" (E3 plan, package 5). Equal to `open` until
-	 * sorting (package 9) and filters (package 10) come in.
+	 * Rows of the table above the section "Erledigt" (E3 plan, packages 5 and 10): the open
+	 * tickets that pass the filters of the URL, in the default order; none with the status filter
+	 * "Erledigt".
 	 */
 	get visible(): readonly TicketSummary[] {
-		return this.#openList;
+		return this.#visibleList;
+	}
+
+	/** List state of the URL the store shows (set by `activate`). */
+	get query(): ListQuery {
+		return this.#query;
+	}
+
+	/**
+	 * Number of shown tickets for the heading "Aufgaben" (package 10): the visible rows that are
+	 * not done, or with the status filter "Erledigt" the loaded done rows (`visibleCountMore`).
+	 */
+	get visibleCount(): number {
+		if (this.#query.status === 'done') return this.#doneList.length;
+		return this.#visibleList.filter((ticket) => ticket.status !== 'done').length;
+	}
+
+	/** True if more tickets match than `visibleCount` says (further pages of done tickets). */
+	get visibleCountMore(): boolean {
+		return this.#query.status === 'done' && this.#doneHasMore;
 	}
 
 	/** Number of tickets that are not done (header counter, T-18); just checked rows count as done. */
@@ -150,7 +220,7 @@ export class TicketListStore {
 		return this.#open.size;
 	}
 
-	/** Loaded done tickets, most recently completed first (OF-E2-4). */
+	/** Loaded done tickets that pass the filters, most recently completed first (OF-E2-4). */
 	get done(): readonly TicketSummary[] {
 		return this.#doneList;
 	}
@@ -168,6 +238,7 @@ export class TicketListStore {
 		return this.#openError;
 	}
 
+	/** True if the section "Erledigt" is shown (`showsDoneSection` of the current query). */
 	get showDone(): boolean {
 		return this.#showDone;
 	}
@@ -227,6 +298,8 @@ export class TicketListStore {
 			timer = setTimeout(
 				() => {
 					this.#today = berlinToday(this.#now());
+					// Due filters of the done section refer to the date: load them for the new day.
+					this.#syncDone();
 					schedule();
 				},
 				msUntilNextBerlinMidnight(this.#now()) + MIDNIGHT_BUFFER_MS
@@ -241,25 +314,19 @@ export class TicketListStore {
 	}
 
 	/**
-	 * Shows the list with or without done tickets (switch from the URL). Loads the open tickets
-	 * once; switching loads or drops the done tickets and aborts a request that became stale.
+	 * Shows the list for the state of the URL: filters and the switch "Erledigte anzeigen" (E3
+	 * plan, package 10). Loads the open tickets once; they are only filtered, never loaded again.
+	 * The section "Erledigt" is loaded, loaded again for other filters, or dropped; a request that
+	 * became stale is aborted. A filter change announces the new number of tickets.
 	 */
-	activate(showDone: boolean): void {
+	activate(query: ListQuery): void {
 		if (this.#openState === 'idle') void this.#loadOpen();
-		if (showDone === this.#showDone) return;
-		this.#showDone = showDone;
-		if (showDone) {
-			void this.#loadDone(1);
-		} else {
-			this.#doneController?.abort();
-			this.#doneController = null;
-			this.#done.clear();
-			this.#donePage = 0;
-			this.#doneHasMore = false;
-			this.#loadingMoreDone = false;
-			this.#doneState = 'idle';
-			this.#doneError = null;
-		}
+		const filtersChanged = !sameFilters(this.#query, query);
+		this.#query = query;
+		this.#syncDone();
+		if (!filtersChanged || this.#openState !== 'ready') return;
+		if (query.status === 'done') this.#announceDone = true;
+		else this.#announcement = countMessage(this.visibleCount);
 	}
 
 	/** Loads everything shown again ("Erneut versuchen"). */
@@ -292,6 +359,7 @@ export class TicketListStore {
 		this.#open.delete(ticket.id);
 		if (lingering) this.#lingering.set(ticket.id, { ...lingering, ticket });
 		if (this.#belongsToLoadedDone(ticket)) this.#done.set(ticket.id, ticket);
+		else this.#done.delete(ticket.id);
 	}
 
 	/** Removes a ticket from every part of the list (deleted or no longer visible). */
@@ -414,18 +482,20 @@ export class TicketListStore {
 		this.#touched = touched;
 		const options = { signal: controller.signal };
 		const doneLoaded = this.#showDone && this.#doneState === 'ready' ? this.#donePage : 0;
+		const doneKey = this.#doneKey;
+		const filter = this.#doneFilter();
 		try {
 			const open = await this.#data.listOpen(options);
 			const pages: DoneTicketPage[] = [];
 			for (let page = 1; page <= doneLoaded; page += 1) {
-				pages.push(await this.#data.listDone(page, options));
+				pages.push(await this.#data.listDone(page, { ...options, filter }));
 			}
 			if (controller.signal.aborted) return;
 			this.#touched = null;
 			this.#mergeOpen(open, touched);
-			if (doneLoaded > 0 && this.#showDone && this.#donePage === doneLoaded) {
-				this.#mergeDone(pages, touched);
-			}
+			// The done pages only count if the section still shows the same filters and pages.
+			const sameDone = this.#donePage === doneLoaded && this.#doneKey === doneKey;
+			if (doneLoaded > 0 && this.#showDone && sameDone) this.#mergeDone(pages, touched);
 		} catch (error) {
 			if (controller.signal.aborted) return;
 			// Nothing to show: the list stays as it is, the next reconnection tries again.
@@ -452,6 +522,9 @@ export class TicketListStore {
 		this.#lingering.clear();
 		this.#pending.clear();
 		this.#donePage = 0;
+		this.#doneKey = null;
+		this.#announceDone = false;
+		this.#query = EMPTY_LIST_QUERY;
 		this.#openState = 'idle';
 		this.#openError = null;
 		this.#showDone = false;
@@ -501,7 +574,10 @@ export class TicketListStore {
 		else this.#loadingMoreDone = true;
 		this.#doneError = null;
 		try {
-			const result = await this.#data.listDone(page, { signal: controller.signal });
+			const result = await this.#data.listDone(page, {
+				signal: controller.signal,
+				filter: this.#doneFilter()
+			});
 			if (controller.signal.aborted) return;
 			if (first) this.#done.clear();
 			for (const ticket of result.items) {
@@ -511,6 +587,10 @@ export class TicketListStore {
 			this.#donePage = result.page;
 			this.#doneHasMore = result.hasMore;
 			this.#doneState = 'ready';
+			if (first && this.#announceDone) {
+				this.#announceDone = false;
+				this.#announcement = countMessage(this.#doneList.length, result.hasMore);
+			}
 		} catch (error) {
 			if (controller.signal.aborted) return;
 			const message = this.#failureMessage(error);
@@ -556,9 +636,47 @@ export class TicketListStore {
 	 */
 	#belongsToLoadedDone(ticket: TicketSummary): boolean {
 		if (!this.#showDone || this.#doneState !== 'ready') return false;
+		if (!matchesFilter(ticket, this.#query, this.#today)) return false;
 		if (this.#done.has(ticket.id) || !this.#doneHasMore) return true;
 		const last = this.#doneList.at(-1);
 		return last === undefined || compareDone(ticket, last) < 0;
+	}
+
+	/** Filter of the done section for the server: the query at the current Berlin date. */
+	#doneFilter(): DoneFilter {
+		return { query: this.#query, today: this.#today };
+	}
+
+	/**
+	 * Brings the section "Erledigt" in line with the query and the date: shows and loads it, loads
+	 * it again for other filters (old rows stay until the answer, as far as they still pass), or
+	 * drops it. The date only counts while a due filter is set.
+	 */
+	#syncDone(): void {
+		const query = this.#query;
+		const show = showsDoneSection(query);
+		const key = show
+			? JSON.stringify([
+					...FILTER_KEYS.map((name) => query[name]),
+					query.due === null ? '' : this.#today
+				])
+			: null;
+		if (key === this.#doneKey) return;
+		this.#doneKey = key;
+		this.#showDone = show;
+		if (show) {
+			void this.#loadDone(1);
+			return;
+		}
+		this.#doneController?.abort();
+		this.#doneController = null;
+		this.#done.clear();
+		this.#donePage = 0;
+		this.#doneHasMore = false;
+		this.#loadingMoreDone = false;
+		this.#doneState = 'idle';
+		this.#doneError = null;
+		this.#announceDone = false;
 	}
 
 	#expire(id: string): void {

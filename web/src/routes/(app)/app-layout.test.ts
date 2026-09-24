@@ -8,6 +8,7 @@ import { join } from 'node:path';
 import { fireEvent, render, screen, within } from '@testing-library/svelte';
 import { createRawSnippet, tick } from 'svelte';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { EMPTY_LIST_QUERY, type ListQuery } from '$lib/domain/list-query';
 import type { TicketSummary } from '$lib/domain/ticket';
 import { NEW_TICKET_LINK_ID } from '$lib/ticket-links';
 import Layout from './+layout.svelte';
@@ -32,7 +33,7 @@ const mocks = vi.hoisted(() => {
 		subscribed,
 		handlers,
 		session: { valid: false },
-		list: { store: null as null | { activate(showDone: boolean): void } },
+		list: { store: null as null | { activate(query: ListQuery): void } },
 		live: {
 			tickets: vi.fn(subscribe('tickets')),
 			ticket: vi.fn(subscribe('ticket')),
@@ -225,7 +226,7 @@ describe('app layout', () => {
 	it('counts the tickets that are not done in the header and follows the store', async () => {
 		mocks.session.valid = true;
 		await renderLayout();
-		mocks.list.store?.activate(false);
+		mocks.list.store?.activate(EMPTY_LIST_QUERY);
 		const header = within(screen.getByRole('banner'));
 
 		await vi.waitFor(() => expect(header.getByText('2 nicht erledigte Tickets')).toBeTruthy());

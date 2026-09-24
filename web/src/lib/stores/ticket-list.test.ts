@@ -3,13 +3,17 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { DataError } from '$lib/data/errors';
-import type { DoneTicketPage } from '$lib/data/tickets';
+import type { DoneFilter, DoneTicketPage } from '$lib/data/tickets';
 import type { RequestOptions } from '$lib/data/options';
+import { EMPTY_LIST_QUERY, NO_PROJECT, type ListQuery } from '$lib/domain/list-query';
 import type { TicketPatch, TicketSummary } from '$lib/domain/ticket';
 import { TicketListStore, UNDO_WINDOW_MS, type TicketListData } from './ticket-list.svelte';
 
 // 2026-09-24 12:00 in Berlin (CEST).
 const NOON = Date.UTC(2026, 8, 24, 10, 0, 0);
+
+/** List state with only the switch "Erledigte anzeigen" set. */
+const withDone = (showDone: boolean) => ({ ...EMPTY_LIST_QUERY, showDone });
 
 let sequence = 0;
 
@@ -60,7 +64,7 @@ function deferred<T>() {
 function fakeData(open: TicketSummary[] = [], donePages: TicketSummary[][] = []) {
 	const data = {
 		listOpen: vi.fn((options: RequestOptions) => abortable(options, Promise.resolve(open))),
-		listDone: vi.fn((page: number, options: RequestOptions) =>
+		listDone: vi.fn((page: number, options: RequestOptions & { filter?: DoneFilter }) =>
 			abortable<DoneTicketPage>(
 				options,
 				Promise.resolve({
@@ -119,7 +123,7 @@ describe('loading and order', () => {
 		const data = fakeData([later, soon, overdue]);
 		const store = new TicketListStore(data, session());
 
-		store.activate(false);
+		store.activate(withDone(false));
 		expect(store.openState).toBe('loading');
 		await settle();
 
@@ -136,7 +140,7 @@ describe('loading and order', () => {
 		const data = fakeData([], [[first, second], [third]]);
 		const store = new TicketListStore(data, session());
 
-		store.activate(true);
+		store.activate(withDone(true));
 		await settle();
 		expect(store.done.map((entry) => entry.id)).toEqual([first.id, second.id]);
 		expect(store.doneHasMore).toBe(true);
@@ -153,9 +157,9 @@ describe('loading and order', () => {
 		data.listDone.mockImplementationOnce((_page, options) => abortable(options, pending.promise));
 		const store = new TicketListStore(data, session());
 
-		store.activate(true);
-		store.activate(false);
-		store.activate(true);
+		store.activate(withDone(true));
+		store.activate(withDone(false));
+		store.activate(withDone(true));
 		await settle();
 
 		const firstSignal = data.listDone.mock.calls[0]?.[1].signal;
@@ -174,7 +178,7 @@ describe('loading and order', () => {
 		data.listOpen.mockRejectedValueOnce(new DataError('network'));
 		const store = new TicketListStore(data, session());
 
-		store.activate(false);
+		store.activate(withDone(false));
 		await settle();
 		expect(store.openState).toBe('error');
 		expect(store.openError).toMatch(/Server nicht erreichbar/);
@@ -191,13 +195,13 @@ describe('loading and order', () => {
 		const guard = session();
 		const store = new TicketListStore(data, guard);
 
-		store.activate(false);
+		store.activate(withDone(false));
 		await settle();
 		expect(guard.logout).toHaveBeenCalledOnce();
 		expect(store.openError).toBeNull();
 
 		const invalid = fakeData();
-		new TicketListStore(invalid, session(false)).activate(true);
+		new TicketListStore(invalid, session(false)).activate(withDone(true));
 		expect(invalid.listOpen).not.toHaveBeenCalled();
 		expect(invalid.listDone).not.toHaveBeenCalled();
 	});
@@ -207,7 +211,7 @@ describe('upsert and remove', () => {
 	it('moves a ticket between open and done and ignores an older update', async () => {
 		const item = ticket();
 		const store = new TicketListStore(fakeData([item]), session());
-		store.activate(true);
+		store.activate(withDone(true));
 		await settle();
 
 		const closed = { ...item, status: 'done' as const, updated: '2026-09-24 09:00:00.000Z' };
@@ -230,7 +234,7 @@ describe('upsert and remove', () => {
 
 	it('keeps done tickets out of the list while the switch is off', async () => {
 		const store = new TicketListStore(fakeData(), session());
-		store.activate(false);
+		store.activate(withDone(false));
 		await settle();
 
 		store.upsert(done());
@@ -242,7 +246,7 @@ describe('upsert and remove', () => {
 		const first = ticket({ priority: 'high' });
 		const second = ticket({ priority: 'low' });
 		const store = new TicketListStore(fakeData([first, second]), session());
-		store.activate(false);
+		store.activate(withDone(false));
 		await settle();
 		expect(store.open.map((entry) => entry.id)).toEqual([first.id, second.id]);
 
@@ -256,7 +260,7 @@ describe('visible rows and counter (E3 plan, package 5)', () => {
 		const first = ticket({ priority: 'urgent' });
 		const second = ticket();
 		const store = new TicketListStore(fakeData([second, first]), session());
-		store.activate(false);
+		store.activate(withDone(false));
 		await settle();
 
 		expect(store.visible.map((entry) => entry.id)).toEqual([first.id, second.id]);
@@ -272,6 +276,183 @@ describe('visible rows and counter (E3 plan, package 5)', () => {
 	});
 });
 
+describe('filters (E3 plan, package 10)', () => {
+	const HOUSE = 'proj00000000001';
+	const query = (overrides: Partial<ListQuery>): ListQuery => ({
+		...EMPTY_LIST_QUERY,
+		...overrides
+	});
+
+	it('filters the open tickets without loading them again and announces the number', async () => {
+		const urgent = ticket({ priority: 'urgent', projectId: HOUSE });
+		const high = ticket({ priority: 'high' });
+		const data = fakeData([urgent, high]);
+		const store = new TicketListStore(data, session());
+		store.activate(EMPTY_LIST_QUERY);
+		await settle();
+
+		store.activate(query({ priority: 'urgent' }));
+		expect(store.visible.map((entry) => entry.id)).toEqual([urgent.id]);
+		expect(store.visibleCount).toBe(1);
+		expect(store.announcement).toBe('1 Ticket.');
+
+		store.activate(query({ priority: 'urgent', project: NO_PROJECT }));
+		expect(store.visible).toEqual([]);
+		expect(store.announcement).toBe('Keine Tickets für diese Filter.');
+
+		store.activate(EMPTY_LIST_QUERY);
+		expect(store.visibleCount).toBe(2);
+		expect(store.announcement).toBe('2 Tickets.');
+		// The open tickets and the header counter stay unfiltered.
+		expect(store.openCount).toBe(2);
+		expect(data.listOpen).toHaveBeenCalledOnce();
+	});
+
+	it('announces nothing when only the view changes', async () => {
+		const store = new TicketListStore(fakeData([ticket()]), session());
+		store.activate(EMPTY_LIST_QUERY);
+		await settle();
+
+		store.activate(query({ sort: { key: 'title', reversed: false }, grouping: 'status' }));
+		expect(store.announcement).toBe('');
+	});
+
+	it('shows new and changed tickets only when they pass the filters', async () => {
+		const store = new TicketListStore(fakeData([]), session());
+		store.activate(query({ status: 'in_progress' }));
+		await settle();
+
+		const item = ticket({ status: 'open', updated: '2026-09-24 09:00:00.000Z' });
+		store.upsert(item);
+		expect(store.visible).toEqual([]);
+		store.upsert({ ...item, status: 'in_progress', updated: '2026-09-24 09:01:00.000Z' });
+		expect(store.visible.map((entry) => entry.id)).toEqual([item.id]);
+	});
+
+	it('keeps a just checked row in place under a status filter until undo expires', async () => {
+		const item = ticket({ status: 'in_progress' });
+		const store = new TicketListStore(fakeData([item]), session());
+		store.activate(query({ status: 'in_progress' }));
+		await settle();
+
+		await store.setDone(item.id, true);
+		expect(store.visible.map((entry) => entry.id)).toEqual([item.id]);
+		expect(store.visibleCount).toBe(0);
+
+		await vi.advanceTimersByTimeAsync(UNDO_WINDOW_MS);
+		expect(store.visible).toEqual([]);
+	});
+
+	it('shows only the section "Erledigt" with the status filter "Erledigt"', async () => {
+		const open = ticket();
+		const first = done({ completedAt: '2026-09-22 10:00:00.000Z' });
+		const data = fakeData([open], [[first]]);
+		const store = new TicketListStore(data, session());
+		const onlyDone = query({ status: 'done', priority: 'medium' });
+
+		store.activate(onlyDone);
+		await settle();
+
+		expect(store.showDone).toBe(true);
+		expect(store.visible).toEqual([]);
+		expect(store.done.map((entry) => entry.id)).toEqual([first.id]);
+		expect(store.visibleCount).toBe(1);
+		expect(data.listDone).toHaveBeenCalledWith(
+			1,
+			expect.objectContaining({ filter: { query: onlyDone, today: '2026-09-24' } })
+		);
+	});
+
+	it('hides the section "Erledigt" with another status, even with the switch on', async () => {
+		const data = fakeData([ticket()], [[done()]]);
+		const store = new TicketListStore(data, session());
+
+		store.activate(query({ status: 'open', showDone: true }));
+		await settle();
+
+		expect(store.showDone).toBe(false);
+		expect(data.listDone).not.toHaveBeenCalled();
+	});
+
+	it('loads the done tickets again for other filters and aborts the stale request', async () => {
+		const data = fakeData([], [[done({ priority: 'low' })]]);
+		const store = new TicketListStore(data, session());
+		store.activate(query({ showDone: true }));
+		await settle();
+		const pending = deferred<DoneTicketPage>();
+		data.listDone.mockImplementationOnce((_page, options) => abortable(options, pending.promise));
+
+		store.activate(query({ showDone: true, priority: 'high' }));
+		store.activate(query({ showDone: true, priority: 'low' }));
+		await settle();
+
+		expect(data.listDone).toHaveBeenCalledTimes(3);
+		expect(data.listDone.mock.calls[1]?.[1].signal?.aborted).toBe(true);
+		expect(data.listDone.mock.calls[2]?.[1].filter?.query.priority).toBe('low');
+		expect(store.done).toHaveLength(1);
+
+		// Same filters, other view: nothing is loaded again.
+		store.activate(query({ showDone: true, priority: 'low', grouping: 'project' }));
+		expect(data.listDone).toHaveBeenCalledTimes(3);
+	});
+
+	it('keeps done tickets that do not pass the filters out of the section', async () => {
+		const shown = done({ priority: 'high', completedAt: '2026-09-22 10:00:00.000Z' });
+		const store = new TicketListStore(fakeData([], [[shown]]), session());
+		store.activate(query({ showDone: true, priority: 'high' }));
+		await settle();
+
+		store.upsert(done({ priority: 'low', completedAt: '2026-09-23 10:00:00.000Z' }));
+		expect(store.done.map((entry) => entry.id)).toEqual([shown.id]);
+
+		store.upsert({ ...shown, priority: 'low', updated: '2026-09-24 10:00:00.000Z' });
+		expect(store.done).toEqual([]);
+	});
+
+	it('announces the number of done tickets once they are loaded', async () => {
+		const data = fakeData([ticket()], [[done(), done()], [done()]]);
+		const store = new TicketListStore(data, session());
+		store.activate(EMPTY_LIST_QUERY);
+		await settle();
+
+		store.activate(query({ status: 'done' }));
+		expect(store.announcement).toBe('');
+		await settle();
+		expect(store.announcement).toBe('Mehr als 2 Tickets.');
+		expect(store.visibleCountMore).toBe(true);
+	});
+
+	it('loads the done tickets again at midnight while a due filter is set', async () => {
+		// 2026-09-24 23:59 in Berlin.
+		vi.setSystemTime(Date.UTC(2026, 8, 24, 21, 59, 0));
+		const data = fakeData([], [[done({ due: '2026-09-25' })]]);
+		const store = new TicketListStore(data, session());
+		const stop = store.start();
+		store.activate(query({ showDone: true, due: 'today' }));
+		await settle();
+		expect(data.listDone).toHaveBeenCalledOnce();
+
+		await vi.advanceTimersByTimeAsync(61_000);
+		expect(data.listDone).toHaveBeenCalledTimes(2);
+		expect(data.listDone.mock.calls[1]?.[1].filter?.today).toBe('2026-09-25');
+		stop();
+	});
+
+	it('reconciles the done tickets with the current filters', async () => {
+		const data = fakeData([], [[done({ priority: 'high' })]]);
+		const store = new TicketListStore(data, session());
+		const filters = query({ showDone: true, priority: 'high' });
+		store.activate(filters);
+		await settle();
+
+		await store.reconcile();
+		expect(data.listDone).toHaveBeenLastCalledWith(
+			1,
+			expect.objectContaining({ filter: { query: filters, today: '2026-09-24' } })
+		);
+	});
+});
+
 describe('today', () => {
 	it('computes the order again after the Berlin midnight without a reload', async () => {
 		// 2026-09-24 23:59 in Berlin.
@@ -280,7 +461,7 @@ describe('today', () => {
 		const nextWeek = ticket({ due: '2026-10-02', priority: 'low' });
 		const store = new TicketListStore(fakeData([urgent, nextWeek]), session());
 		const stop = store.start();
-		store.activate(false);
+		store.activate(withDone(false));
 		await settle();
 		expect(store.today).toBe('2026-09-24');
 		expect(store.open.map((entry) => entry.id)).toEqual([urgent.id, nextWeek.id]);
@@ -307,7 +488,7 @@ describe('check mark', () => {
 		const answer = deferred<TicketSummary>();
 		data.setDone.mockImplementationOnce(() => answer.promise);
 		const store = new TicketListStore(data, session());
-		store.activate(false);
+		store.activate(withDone(false));
 		await settle();
 
 		const request = store.setDone(item.id, true);
@@ -333,7 +514,7 @@ describe('check mark', () => {
 		const item = ticket({ status: 'waiting' });
 		const data = fakeData([item]);
 		const store = new TicketListStore(data, session());
-		store.activate(false);
+		store.activate(withDone(false));
 		await settle();
 
 		await store.setDone(item.id, true);
@@ -349,7 +530,7 @@ describe('check mark', () => {
 	it('moves the row into the section "Erledigt" after the undo window when shown', async () => {
 		const item = ticket();
 		const store = new TicketListStore(fakeData([item]), session());
-		store.activate(true);
+		store.activate(withDone(true));
 		await settle();
 
 		await store.setDone(item.id, true);
@@ -363,7 +544,7 @@ describe('check mark', () => {
 		const closed = done();
 		const data = fakeData([], [[closed]]);
 		const store = new TicketListStore(data, session());
-		store.activate(true);
+		store.activate(withDone(true));
 		await settle();
 
 		await store.setDone(closed.id, false);
@@ -379,7 +560,7 @@ describe('check mark', () => {
 		const data = fakeData([item]);
 		data.setDone.mockRejectedValueOnce(new DataError('server', { status: 500 }));
 		const store = new TicketListStore(data, session());
-		store.activate(false);
+		store.activate(withDone(false));
 		await settle();
 
 		await store.setDone(item.id, true);
@@ -399,7 +580,7 @@ describe('reset', () => {
 		const item = ticket();
 		const data = fakeData([item, ticket()], [[done()]]);
 		const store = new TicketListStore(data, session());
-		store.activate(true);
+		store.activate(withDone(true));
 		await settle();
 		await store.setDone(item.id, true);
 		const pending = deferred<DoneTicketPage>();
@@ -422,7 +603,7 @@ describe('announce', () => {
 	it('sets the polite status message, e.g. after a deletion in the panel', async () => {
 		const item = ticket();
 		const store = new TicketListStore(fakeData([item]), session());
-		store.activate(false);
+		store.activate(withDone(false));
 		await settle();
 
 		store.remove(item.id);

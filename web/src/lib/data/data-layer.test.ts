@@ -47,7 +47,21 @@ describe('web/src/lib/data', () => {
 
 	it.each(modules)('%s builds every filter with pb.filter()', (name) => {
 		for (const [, value] of read(name).matchAll(/\bfilter:\s*([^\n]+)/g)) {
-			expect(value, `${name}: filter ${value}`).toMatch(/^pb\.filter\('[^'`$+]*',/);
+			expect(value, `${name}: filter ${value}`).toMatch(/^pb\.filter\(('[^'`$+]*'|[A-Z_]+),/);
+		}
+	});
+
+	it.each(modules)('%s builds filter constants only from plain text literals', (name) => {
+		const code = read(name);
+		for (const [, constant] of code.matchAll(/\bfilter:\s*pb\.filter\(([A-Z_]+),/g)) {
+			const definition = new RegExp(
+				`^const ${constant} = \\[\\n([\\s\\S]*?)\\n\\]\\.join\\(' && '\\);$`,
+				'm'
+			).exec(code);
+			expect(definition, `${name}: definition of ${constant}`).not.toBeNull();
+			for (const line of definition?.[1]?.split('\n') ?? []) {
+				expect(line, `${name}: ${constant}`).toMatch(/^\t'[^'`$+]*',?$/);
+			}
 		}
 	});
 

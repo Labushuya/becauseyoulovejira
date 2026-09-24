@@ -4,6 +4,7 @@
 import { render, screen } from '@testing-library/svelte';
 import { createRawSnippet } from 'svelte';
 import { describe, expect, it, vi } from 'vitest';
+import { EMPTY_LIST_QUERY } from '$lib/domain/list-query';
 import { CatalogStore } from '$lib/stores/catalog.svelte';
 import { TicketListStore } from '$lib/stores/ticket-list.svelte';
 import Layout from './+layout.svelte';
@@ -57,7 +58,7 @@ describe('tickets layout', () => {
 	it('loads the list without done tickets by default', () => {
 		const { activate } = renderLayout('/');
 
-		expect(activate).toHaveBeenCalledExactlyOnceWith(false);
+		expect(activate).toHaveBeenCalledExactlyOnceWith(EMPTY_LIST_QUERY);
 		expect(screen.getByRole('heading', { name: 'Aufgaben' })).toBeTruthy();
 		expect(screen.getByText('Panel')).toBeTruthy();
 	});
@@ -68,7 +69,7 @@ describe('tickets layout', () => {
 			'abc123def456ghi'
 		);
 
-		expect(activate).toHaveBeenCalledExactlyOnceWith(true);
+		expect(activate).toHaveBeenCalledExactlyOnceWith({ ...EMPTY_LIST_QUERY, showDone: true });
 		expect(store.showDone).toBe(true);
 	});
 });

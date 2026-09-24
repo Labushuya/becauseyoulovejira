@@ -8,6 +8,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { DataError } from '$lib/data/errors';
 import type { RequestOptions } from '$lib/data/options';
 import type { DoneTicketPage } from '$lib/data/tickets';
+import { EMPTY_LIST_QUERY } from '$lib/domain/list-query';
 import type { Project } from '$lib/domain/project';
 import type { Tag } from '$lib/domain/tag';
 import type { Comment, HistoryEntry, Ticket, TicketSummary } from '$lib/domain/ticket';
@@ -198,7 +199,7 @@ describe('list store live', () => {
 
 	async function ready(open?: TicketSummary[], done?: TicketSummary[][], showDone = false) {
 		const context = setup(open, done);
-		context.store.activate(showDone);
+		context.store.activate({ ...EMPTY_LIST_QUERY, showDone });
 		await vi.waitFor(() => expect(context.store.openState).toBe('ready'));
 		if (showDone) await vi.waitFor(() => expect(context.store.doneState).toBe('ready'));
 		return context;
@@ -332,7 +333,7 @@ describe('list store live', () => {
 	it('loads a list that failed to load again after a reconnection', async () => {
 		const { store, data, live } = setup();
 		data.listOpen.mockRejectedValueOnce(new DataError('network'));
-		store.activate(false);
+		store.activate(EMPTY_LIST_QUERY);
 		await vi.waitFor(() => expect(store.openState).toBe('error'));
 
 		live.reconnect();
