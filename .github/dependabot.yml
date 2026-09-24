@@ -13,6 +13,10 @@ updates:
       # The type definitions follow the Node.js runtime major (engines: node >= 24).
       - dependency-name: '@types/node'
         update-types: ['version-update:semver-major']
+      # A TypeScript major needs its own evaluation (svelte-check, typescript-eslint);
+      # applies to both directories above.
+      - dependency-name: 'typescript'
+        update-types: ['version-update:semver-major']
     commit-message:
       prefix: chore
       include: scope

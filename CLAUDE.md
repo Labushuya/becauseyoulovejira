@@ -32,7 +32,7 @@ becauseyoulovejira/
 - **Frontend:** SvelteKit 2 + Svelte 5 + TypeScript (strict), `@sveltejs/adapter-static` im SPA-Modus (`ssr = false`, `prerender = false`, `fallback: 'index.html'`), Build nach `app/pb_public`. PocketBase JS SDK für API und Realtime.
 - **Schriften:** Inter (UI) und JetBrains Mono (Ticket-Keys) lokal über `@fontsource-variable/*`. **Keine externen CDNs** – die App muss offline funktionieren.
 - **Tests:** Vitest; Hook-Integrationstests per Skript gegen eine Wegwerf-Instanz (temporäres `--dir`). Die Root-Tests liegen unter `tests/unit` und `tests/integration`, die web-Tests unter `web/src/**/*.test.ts`. `npm test` im Root braucht vorher den Web-Build (`app/pb_public`) für den SPA-Fallback-Test; `scripts\build.ps1` hält die Reihenfolge ein (check → lint → build → test) und wird mit `powershell -ExecutionPolicy Bypass -File scripts\build.ps1` aufgerufen.
-- **Node.js:** nur Dev-Werkzeug (Build/Test), portabel unter `H:\DEV\tools\node`. Für den Betrieb nicht nötig.
+- **Node.js:** nur Dev-Werkzeug (Build/Test), Version 24, portabel in einem beliebigen Ordner (`<Node-24-Ordner>`). Dieser Ordner muss im `PATH` liegen; `scripts\build.ps1` prüft das. Für den Betrieb nicht nötig.
 
 ### PocketBase-API-Disziplin
 
@@ -204,8 +204,9 @@ Erledigte Tickets treten in der Liste optisch zurück. Schriften: Inter für die
 
 - Etappen ([ADR-0011](docs/adr/0011-roadmap-e3-bis-e7.md)): E0 Gerüst · E1 Datenmodell/Hooks/Auth · E2 Liste/Detail/CRUD/Kommentare/Realtime · E3 Übersicht & Ordnung · E4 Eingang & Kanäle · E5 Wiederkehrende Aufgaben · E6 Feinschliff · E7 Haushalt & Mehrgeräte. Pläne je Etappe unter `docs/plan/`.
 - Nach jeder Etappe: Zusammenfassung, Testanleitung, Entscheidungen/offene Punkte – dann auf Freigabe warten.
-- Ein Commit pro abgeschlossenem Arbeitsschritt, Conventional Commits (`feat:`, `fix:`, `chore:`, `docs:`, `test:`, `refactor:`), direkt auf `main`. Push nach jeder Etappe in das öffentliche Repo `Labushuya/becauseyoulovejira`.
+- Privates GitHub-Repo `Labushuya/becauseyoulovejira`. Jede Änderung läuft über einen kurzlebigen Branch (`feat/…`, `fix/…`, `chore/…`) und einen Pull Request in `main`; gemergt wird nur bei grüner CI, per Squash-Merge mit einem Titel nach Conventional Commits. Gepusht wird nur der Branch des PR, nie direkt auf `main`.
+- Commits im Branch: ein Commit pro abgeschlossenem Arbeitsschritt, Conventional Commits (`feat:`, `fix:`, `chore:`, `docs:`, `test:`, `refactor:`, `ci:`). Keine Force-Pushes, keine Änderung der Historie.
 - Kein toter oder auskommentierter Code, keine TODOs ohne verlinktes Issue.
-- Qualitäts-Gates vor jedem Commit mit Code: `npm run check`, `npm run lint`, `npm test` grün.
+- Qualitäts-Gates vor jedem Commit mit Code: `npm run check`, `npm run lint`, `npm test` grün; vor jedem PR läuft `scripts\build.ps1` lokal komplett grün. Die PR-Beschreibung folgt `.github/pull_request_template.md` mit ausgefüllter Checkliste.
 - Jedes Arbeitspaket aktualisiert `docs/test-manifest.html` (neue bzw. geänderte Testfälle, Status, Stand); der Konsistenztest `tests/unit/test-manifest.test.mjs` muss grün sein.
-- Niemals Secrets, `pb_data/` oder Backups committen (öffentliches Repo).
+- Niemals Secrets, `pb_data/` oder Backups committen, auch nicht im privaten Repo.

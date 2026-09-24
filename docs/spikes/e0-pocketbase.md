@@ -66,7 +66,7 @@ Hooks sind **reiner JavaScript** – keine npm-Dependencies. Sie laufen auf der 
 | Komponente | Version | Hinweis |
 |---|---|---|
 | PocketBase | 0.40.4 | Windows amd64 Binary, SHA256-geprüft in `fetch-pocketbase.ps1` |
-| Node.js | ≥ 24 | Portabel in `H:\DEV\tools\node`, nicht im Repo |
+| Node.js | ≥ 24 | Portabel in `<Node-24-Ordner>` (muss im `PATH` liegen), nicht im Repo |
 | Svelte | 5.57 | Runes, aktuell |
 | SvelteKit | 2.70.x | Nicht 3.0 (noch RC), `adapter-static` 3.0.x |
 | Vite | 8 | Build-Tool |
@@ -95,7 +95,7 @@ Grund: Kein Konsolenfenster, das über das App-Fenster schwebt.
 ## Architektur im Überblick
 
 ```
-H:\DEV\github\task-dashboard\
+<Repo-Ordner>\
   app/                       Portabler Laufzeit-Ordner (kopierbar, sicherbar)
     pocketbase.exe           Binary (gitignored, fetched)
     pb_data/                 SQLite + pb_config.json (gitignored)

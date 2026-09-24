@@ -6,7 +6,7 @@
 
 ## Kontext
 
-Eine frische Installation (`app/` ohne `pb_data/`) hat weder einen PocketBase-Superuser noch einen App-Nutzer. Das Repo ist öffentlich, deshalb dürfen Zugangsdaten weder im Repo noch in Start-Skripten stehen. Selbstregistrierung ist laut CLAUDE.md §5 gesperrt.
+Eine frische Installation (`app/` ohne `pb_data/`) hat weder einen PocketBase-Superuser noch einen App-Nutzer. Das Repo liegt auf GitHub (inzwischen privat) und kann jederzeit weitergegeben werden, deshalb dürfen Zugangsdaten weder im Repo noch in Start-Skripten stehen. Selbstregistrierung ist laut CLAUDE.md §5 gesperrt.
 
 PocketBase 0.40.4 verhält sich beim `serve` ohne Superuser so (geprüft im Quelltext `apis/installer.go`, Tag `v0.40.4`):
 
@@ -32,7 +32,7 @@ PocketBase 0.40.4 verhält sich beim `serve` ohne Superuser so (geprüft im Quel
 ## Alternativen
 
 - **Superuser per `superuser upsert` in `start.bat` mit Eingabeaufforderung:** Das Passwort landet in der Kommandozeile bzw. Prozessliste, und die Batch-Eingabe ist fehleranfällig (Sonderzeichen). Der Installer bietet dasselbe mit besserer UX. Verworfen.
-- **Seed-Migration mit Standard-Zugangsdaten:** unsicher im öffentlichen Repo und bei späterem Tailnet-Zugriff. Verworfen.
+- **Seed-Migration mit Standard-Zugangsdaten:** unsicher in einem Repo auf GitHub (auch einem privaten) und bei späterem Tailnet-Zugriff. Verworfen.
 - **Eigene Setup-Seite in der SPA, die Superuser und App-Nutzer in einem Schritt anlegt:** bräuchte eine unauthentifizierte Hook-Route mit Schreibrechten, also zusätzliche Angriffsfläche. Verworfen.
 - **Installer abschalten (`e.installerFunc = null` im `onServe`-Hook):** Dann bräuchte der Nutzer die CLI. Verworfen.
 
