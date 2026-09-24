@@ -3,8 +3,8 @@
 # admin-zuruecksetzen.bat, always with -NoProfile -ExecutionPolicy Bypass (script execution is
 # disabled on the target machine).
 #
-# Exit codes: 0 = done, 1 = error (message shown), 2 = first run (hint shown; start.bat pauses so
-# the hint stays readable).
+# Exit codes: 0 = done, 1 = error (message shown), 2 = setup pending (first-run hint, or a running
+# instance whose installer link still works; start.bat pauses so the hint stays readable).
 #
 # -Hidden (autostart via start-hidden.vbs): no console exists, so hints and errors appear as a
 # message box, and a normal start does not open the browser (silent start at logon). In the first
@@ -27,12 +27,25 @@ $AppDir = $PSScriptRoot
 $Title = 'becauseyoulovejira'
 $HealthTimeoutSeconds = 30
 
+$MissedLinkHint = 'Link verpasst oder abgelaufen? admin-zuruecksetzen.bat legt ein Admin-Konto an, ohne Daten zu löschen.'
+
 $FirstRunHint = @"
-Erster Start: Im Browser öffnet sich einmalig die PocketBase-Einrichtung.
+Erster Start: Im Browser öffnet sich einmalig die Einrichtung.
   1. Lege dort dein Admin-Konto an.
   2. Lege danach im Admin-Bereich ($($BylAppUrl)_/) unter „users“ dein App-Konto an (E-Mail und Passwort).
   3. Öffne $BylAppUrl und melde dich mit dem App-Konto an.
 Der Einrichtungslink ist 30 Minuten gültig – ist er abgelaufen, starte die App neu (stop.bat, dann start.bat).
+$MissedLinkHint
+"@
+
+# {0} = expiry time (HH:mm), {1} = installer URL.
+$PendingSetupHint = @"
+becauseyoulovejira läuft, aber die Einrichtung ist noch nicht abgeschlossen: Es gibt noch kein Admin-Konto.
+Der Einrichtungslink öffnet sich jetzt im Browser (gültig bis {0} Uhr):
+{1}
+  1. Lege dort dein Admin-Konto an.
+  2. Lege danach im Admin-Bereich unter „users“ dein App-Konto an (E-Mail und Passwort).
+$MissedLinkHint
 "@
 
 function Show-Message {
@@ -74,6 +87,31 @@ function Open-App {
     Start-Process -FilePath $BylAppUrl
 }
 
+function Get-ProcessStartUtc {
+    # Start time of the server process; if it cannot be read, a time that makes the "issued by
+    # this run" check of Get-InstallerLink accept any link that has not expired yet.
+    param([AllowNull()][object]$Process)
+
+    try {
+        if ($null -ne $Process) { return $Process.StartTime.ToUniversalTime() }
+    }
+    catch {
+        $null = $_
+    }
+    return [DateTime]::UtcNow.AddMinutes(-($BylInstallerLifetimeMinutes + 1))
+}
+
+function Get-PendingInstallerLink {
+    # Installer link of the running instance if the setup was missed: the link was printed by this
+    # run of the server, has not expired and still works (no real admin account yet). $null otherwise.
+    param([Parameter(Mandatory = $true)][int]$ProcessId)
+
+    $startUtc = Get-ProcessStartUtc -Process (Get-Process -Id $ProcessId -ErrorAction SilentlyContinue)
+    $link = Get-InstallerLink -LogText (Read-ServerLog) -ProcessStartUtc $startUtc -NowUtc ([DateTime]::UtcNow)
+    if ($null -eq $link -or -not (Test-InstallerPending -Token $link.Token)) { return $null }
+    return $link
+}
+
 function Invoke-Start {
     $exe = [System.IO.Path]::Combine($AppDir, 'pocketbase.exe')
     if (-not (Test-Path -LiteralPath $exe -PathType Leaf)) {
@@ -95,9 +133,12 @@ function Invoke-Start {
 
     if ($port.State -eq 'App') {
         Write-Status "becauseyoulovejira läuft bereits (PID $($port.ProcessId))."
-        if (Test-FirstRun -LogText (Read-ServerLog) -DatabaseExisted $true) {
-            Show-Message ("Die laufende Instanz wurde ohne Admin-Konto gestartet. Ist die Einrichtung noch nicht " +
-                "abgeschlossen, starte die App neu (stop.bat, dann start.bat), um einen frischen Einrichtungslink zu bekommen.")
+        $link = Get-PendingInstallerLink -ProcessId $port.ProcessId
+        if ($null -ne $link) {
+            # Setup missed: open the installer link (once, instead of the app) and pause start.bat.
+            Show-Message ($PendingSetupHint -f $link.ExpiresUtc.ToLocalTime().ToString('HH:mm'), $link.Url)
+            Start-Process -FilePath $link.Url
+            return 2
         }
         if (-not $Hidden) {
             Write-Status "Öffne $BylAppUrl ..."
@@ -146,8 +187,17 @@ function Invoke-Start {
     }
 
     if (Wait-FirstRunSignal -ReadLog { Read-ServerLog } -DatabaseExisted $databaseExisted) {
-        # PocketBase opens the installer itself; opening the app as well would mean two tabs.
-        Show-Message ($FirstRunHint + "`nÖffnet sich kein Browser, steht der Einrichtungslink im Log:`n$($log.Error)`n$($log.Output)")
+        # PocketBase opens the installer itself; opening the app (or the link) as well would mean
+        # two tabs. The link is only shown.
+        $link = Wait-InstallerLink -ReadLog { Read-ServerLog } -ProcessStartUtc (Get-ProcessStartUtc -Process $server)
+        $where = if ($null -ne $link) {
+            "`nÖffnet sich kein Browser, kopiere diesen Link in den Browser (gültig bis {0} Uhr):`n{1}" -f
+            $link.ExpiresUtc.ToLocalTime().ToString('HH:mm'), $link.Url
+        }
+        else {
+            "`nÖffnet sich kein Browser, steht der Einrichtungslink im Log:`n$($log.Error)`n$($log.Output)"
+        }
+        Show-Message ($FirstRunHint + $where)
         return 2
     }
 

@@ -79,6 +79,42 @@ const PORT_CASES = {
 	unknownOwner: [listener('127.0.0.1', 8090, 999)]
 };
 
+// Installer links (E1.1): fake JWTs, only the "exp" claim matters. Times in Unix seconds.
+const NOW = Date.UTC(2026, 8, 24, 12, 0, 0) / 1000;
+const PROCESS_START = NOW - 10 * 60;
+const LIFETIME = 30 * 60;
+
+function fakeToken(exp) {
+	const part = (value) => Buffer.from(JSON.stringify(value)).toString('base64url');
+	return `${part({ alg: 'HS256', typ: 'JWT' })}.${part({ exp, id: 'installer', type: 'auth' })}.c2lnbmF0dXJl`;
+}
+
+const TOKENS = {
+	thisRun: fakeToken(PROCESS_START + 10 + LIFETIME),
+	withinTolerance: fakeToken(PROCESS_START - 3 + LIFETIME),
+	olderRun: fakeToken(PROCESS_START - 60 + LIFETIME),
+	expired: fakeToken(NOW - 1),
+	notJson: `aGVhZGVy.${Buffer.from('kein json').toString('base64url')}.c2ln`
+};
+
+const installerLog = (token, base = 'http://127.0.0.1:8090') =>
+	`(!) Launch the URL below in the browser if it hasn't been open already to create your first superuser account:\n${base}/_/#/pbinstall/${token}\n(you can also create your first superuser by running: pocketbase superuser upsert EMAIL PASS)\n`;
+
+const INSTALLER_LOGS = {
+	thisRun: installerLog(TOKENS.thisRun),
+	withinTolerance: installerLog(TOKENS.withinTolerance),
+	olderRun: installerLog(TOKENS.olderRun),
+	expired: installerLog(TOKENS.expired),
+	lastWins: installerLog(TOKENS.olderRun) + installerLog(TOKENS.thisRun),
+	lastIsOld: installerLog(TOKENS.thisRun) + installerLog(TOKENS.olderRun),
+	colored: `\u001b[1;36mhttp://127.0.0.1:8090/_/#/pbinstall/${TOKENS.thisRun}\u001b[0m\n`,
+	foreignHost: installerLog(TOKENS.thisRun, 'http://evil.example'),
+	noJwt: 'http://127.0.0.1:8090/_/#/pbinstall/abc',
+	notJson: installerLog(TOKENS.notJson),
+	noLink: 'Server started at http://127.0.0.1:8090',
+	empty: ''
+};
+
 const SCRIPT = String.raw`
 . $env:BYL_FUNCTIONS
 $in = $env:BYL_TEST_INPUT | ConvertFrom-Json
@@ -122,6 +158,32 @@ $result.waitFirstRun = @{
     never = $never; neverCalls = $script:calls; neverMs = $watch.ElapsedMilliseconds
 }
 
+function ConvertFrom-UnixTime([double]$Seconds) { [DateTimeOffset]::FromUnixTimeSeconds([long]$Seconds).UtcDateTime }
+function ConvertTo-LinkResult($Link) {
+    if ($null -eq $Link) { return $null }
+    return @{ url = $Link.Url; token = $Link.Token; expires = ([DateTimeOffset]$Link.ExpiresUtc).ToUnixTimeSeconds() }
+}
+$start = ConvertFrom-UnixTime $in.processStart
+$now = ConvertFrom-UnixTime $in.now
+$links = @{}
+foreach ($entry in $in.installerLogs.PSObject.Properties) {
+    $links[$entry.Name] = ConvertTo-LinkResult (Get-InstallerLink -LogText $entry.Value -ProcessStartUtc $start -NowUtc $now)
+}
+$links.nullLog = ConvertTo-LinkResult (Get-InstallerLink -LogText $null -ProcessStartUtc $start -NowUtc $now)
+$result.installerLinks = $links
+
+$script:calls = 0
+$lateStart = [DateTime]::UtcNow
+$late = Wait-InstallerLink -ReadLog { $script:calls++; if ($script:calls -ge 3) { $in.lateLog } else { 'Server started' } } -ProcessStartUtc $lateStart -GraceMilliseconds 5000 -PollMilliseconds 10
+$lateCalls = $script:calls
+$script:calls = 0
+$watch = [Diagnostics.Stopwatch]::StartNew()
+$none = Wait-InstallerLink -ReadLog { $script:calls++; 'Server started' } -ProcessStartUtc $lateStart -GraceMilliseconds 300 -PollMilliseconds 20
+$result.waitInstaller = @{
+    late = (ConvertTo-LinkResult $late); lateCalls = $lateCalls
+    none = $none; noneCalls = $script:calls; noneMs = $watch.ElapsedMilliseconds
+}
+
 $result.serverArgs = Get-ServerArgumentString -AppDir $in.appDir
 $result.serverArgsSplit = Split-CommandLine -CommandLine ('pocketbase.exe ' + $result.serverArgs)
 $result.shortcut = Get-AutostartShortcut -AppDir ($in.appDir + '\') -StartupDir 'C:\Users\me\Start Menu\Startup' -SystemDir 'C:\Windows\system32'
@@ -138,7 +200,15 @@ let result;
 beforeAll(() => {
 	result = runPowerShellJson(
 		SCRIPT,
-		{ appDir: APP, processes: PROCESSES, ports: PORT_CASES },
+		{
+			appDir: APP,
+			processes: PROCESSES,
+			ports: PORT_CASES,
+			now: NOW,
+			processStart: PROCESS_START,
+			installerLogs: INSTALLER_LOGS,
+			lateLog: installerLog(fakeToken(Math.floor(Date.now() / 1000) + LIFETIME))
+		},
 		{ BYL_FUNCTIONS: FUNCTIONS_FILE }
 	);
 }, 60_000);
@@ -262,5 +332,41 @@ describe('command line parsing', () => {
 
 	it('takes the last value of a repeated flag', () => {
 		expect(result.flag).toBe('last');
+	});
+});
+
+describe('installer link of the running server (E1.1)', () => {
+	const link = (token) => ({
+		url: `http://127.0.0.1:8090/_/#/pbinstall/${token}`,
+		token,
+		expires: JSON.parse(Buffer.from(token.split('.')[1], 'base64url').toString()).exp
+	});
+
+	it.each([
+		['thisRun', TOKENS.thisRun],
+		['withinTolerance', TOKENS.withinTolerance],
+		['lastWins', TOKENS.thisRun],
+		['colored', TOKENS.thisRun]
+	])('finds the link of this run in the %s log', (name, token) => {
+		expect(result.installerLinks[name]).toEqual(link(token));
+	});
+
+	it('rebuilds the URL on the fixed binding instead of trusting the log', () => {
+		expect(result.installerLinks.foreignHost).toEqual(link(TOKENS.thisRun));
+	});
+
+	it.each(['olderRun', 'lastIsOld', 'expired', 'noJwt', 'notJson', 'noLink', 'empty', 'nullLog'])(
+		'ignores the %s log',
+		(name) => {
+			expect(result.installerLinks[name]).toBeNull();
+		}
+	);
+
+	it('waits a bounded time for a link that appears after the health check', () => {
+		expect(result.waitInstaller.late?.token).toMatch(/^[\w-]+\.[\w-]+\.[\w-]+$/);
+		expect(result.waitInstaller.lateCalls).toBe(3);
+		expect(result.waitInstaller.none).toBeNull();
+		expect(result.waitInstaller.noneCalls).toBeGreaterThan(1);
+		expect(result.waitInstaller.noneMs).toBeLessThan(3000);
 	});
 });

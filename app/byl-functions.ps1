@@ -275,6 +275,114 @@ function Get-ListenerSnapshot {
     return @(Get-NetTCPConnection -State Listen -LocalPort $BylPort -ErrorAction SilentlyContinue)
 }
 
+# --- Missed first-run installer (E1.1) --------------------------------------------------------
+
+# PocketBase issues the installer token for 30 minutes (apis/installer.go, v0.40.4).
+$BylInstallerLifetimeMinutes = 30
+
+function ConvertFrom-Base64Url {
+    # Bytes of a base64url string (JWT segment, no padding); $null if it is not valid base64url.
+    param([AllowNull()][AllowEmptyString()][string]$Value)
+
+    if ([string]::IsNullOrEmpty($Value) -or $Value -notmatch '^[A-Za-z0-9_-]+$') { return $null }
+    $base64 = $Value.Replace('-', '+').Replace('_', '/')
+    $base64 += '=' * ((4 - $base64.Length % 4) % 4)
+    try {
+        return , [Convert]::FromBase64String($base64)
+    }
+    catch {
+        return $null
+    }
+}
+
+function Get-InstallerLink {
+    # Installer link of the running server, read from its log text. Only the token is taken from
+    # the log (pattern /_/#/pbinstall/<jwt>); the URL is rebuilt on the fixed binding, so nothing
+    # but the local admin UI is ever opened. Returns Url, Token and ExpiresUtc of the LAST link, or
+    # $null if there is none, if it was issued before $ProcessStartUtc (a log of an older run) or
+    # if it has expired at $NowUtc. The token is a JWT without "iat"; issue time = exp - 30 min.
+    param(
+        [AllowNull()][AllowEmptyString()][string]$LogText,
+        [Parameter(Mandatory = $true)][DateTime]$ProcessStartUtc,
+        [Parameter(Mandatory = $true)][DateTime]$NowUtc,
+        [int]$ToleranceSeconds = 5
+    )
+
+    if ([string]::IsNullOrEmpty($LogText)) { return $null }
+    $found = [regex]::Matches($LogText, '/_/#/pbinstall/([A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+)')
+    if ($found.Count -eq 0) { return $null }
+    $token = $found[$found.Count - 1].Groups[1].Value
+    $payload = ConvertFrom-Base64Url -Value $token.Split('.')[1]
+    if ($null -eq $payload) { return $null }
+    try {
+        $claims = [System.Text.Encoding]::UTF8.GetString($payload) | ConvertFrom-Json
+        $expiresUtc = (New-Object DateTime 1970, 1, 1, 0, 0, 0, ([DateTimeKind]::Utc)).AddSeconds([double]$claims.exp)
+    }
+    catch {
+        return $null
+    }
+    $issuedUtc = $expiresUtc.AddMinutes(-$BylInstallerLifetimeMinutes)
+    if ($issuedUtc -lt $ProcessStartUtc.ToUniversalTime().AddSeconds(-$ToleranceSeconds)) { return $null }
+    if ($NowUtc.ToUniversalTime() -ge $expiresUtc) { return $null }
+    return [pscustomobject]@{
+        Url        = "$($BylAppUrl)_/#/pbinstall/$token"
+        Token      = $token
+        ExpiresUtc = $expiresUtc
+    }
+}
+
+function Wait-InstallerLink {
+    # Get-InstallerLink on the current log, polled for at most $GraceMilliseconds: the link can
+    # appear in the log shortly after /api/health answers (see Wait-FirstRunSignal).
+    param(
+        [Parameter(Mandatory = $true)][scriptblock]$ReadLog,
+        [Parameter(Mandatory = $true)][DateTime]$ProcessStartUtc,
+        [int]$GraceMilliseconds = 2000,
+        [int]$PollMilliseconds = 100
+    )
+
+    $deadline = [DateTime]::UtcNow.AddMilliseconds($GraceMilliseconds)
+    while ($true) {
+        $link = Get-InstallerLink -LogText ([string](& $ReadLog)) -ProcessStartUtc $ProcessStartUtc -NowUtc ([DateTime]::UtcNow)
+        if ($null -ne $link -or [DateTime]::UtcNow -ge $deadline) { return $link }
+        Start-Sleep -Milliseconds $PollMilliseconds
+    }
+}
+
+function Test-InstallerPending {
+    # True while the installer token still works, i.e. no real superuser exists yet: PocketBase
+    # deletes its installer account as soon as the first real superuser is saved
+    # (core/record_model_superusers.go, v0.40.4), which invalidates the token. One read-only
+    # request, the answer is discarded. 401/403 = setup done; any other outcome (network error,
+    # 5xx) counts as pending, so a missed installer is never hidden. No proxy (see Test-Health).
+    param(
+        [Parameter(Mandatory = $true)][string]$Token,
+        [string]$Url = "$($BylAppUrl)api/collections/_superusers/records?perPage=1&skipTotal=1&fields=id",
+        [int]$TimeoutMilliseconds = 2000
+    )
+
+    $request = [System.Net.WebRequest]::Create($Url)
+    $request.Proxy = $null
+    $request.Timeout = $TimeoutMilliseconds
+    $request.KeepAlive = $false
+    $request.Headers.Add('Authorization', $Token)
+    try {
+        $response = $request.GetResponse()
+        $response.Close()
+        return $true
+    }
+    catch [System.Net.WebException] {
+        $response = $_.Exception.Response
+        if ($null -eq $response) { return $true }
+        try {
+            return -not (@(401, 403) -contains [int]$response.StatusCode)
+        }
+        finally {
+            $response.Close()
+        }
+    }
+}
+
 # --- Admin reset (admin-zuruecksetzen.bat, E1.1) ----------------------------------------------
 
 $BylAdminPasswordMinLength = 10

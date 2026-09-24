@@ -27,6 +27,9 @@ const POWERSHELL_FILES = [
 		.map((name) => join(SCRIPTS_DIR, name))
 ];
 
+// The only allowed wait: stop.bat shows its success message for 5 s (a key ends it at once).
+const STOP_CLOSE_LINE = 'if "%BYL_EXIT%"=="0" (timeout /t 5 2>nul) else (pause)';
+
 const read = (name) => readFileSync(join(APP_DIR, name), 'utf8').replace(/^﻿/, '');
 const control = () => read('byl-control.ps1');
 const functions = () => read('byl-functions.ps1');
@@ -110,9 +113,9 @@ describe('wrappers', () => {
 });
 
 describe('start', () => {
-	it('has no fixed waiting time', () => {
+	it('has no fixed waiting time (only stop.bat keeps its message readable)', () => {
 		for (const name of APP_SCRIPTS) {
-			const source = read(name);
+			const source = read(name).replace(STOP_CLOSE_LINE, '');
 			expect(source, name).not.toMatch(/\btimeout(\.exe)?\s+\/t\b/i);
 			expect(source, name).not.toMatch(/\bping(\.exe)?\s+-n\b/i);
 			expect(source, name).not.toMatch(/Start-Sleep\s+(-Seconds\s+)?\d/i);
@@ -150,6 +153,36 @@ describe('start', () => {
 		expect(branch).toContain('$FirstRunHint');
 		expect(branch).not.toContain('Open-App');
 		expect(body.indexOf('if (Wait-FirstRunSignal')).toBeLessThan(body.lastIndexOf('Open-App'));
+		// The link is shown, never opened a second time (PocketBase opened it already).
+		expect(branch).toContain(
+			'Wait-InstallerLink -ReadLog { Read-ServerLog } -ProcessStartUtc (Get-ProcessStartUtc -Process $server)'
+		);
+		expect(branch).not.toContain('Start-Process');
+	});
+
+	it('opens a still working installer link of the running instance once and pauses', () => {
+		const body = functionBody(control(), 'Invoke-Start');
+		const running = body.slice(body.indexOf("if ($port.State -eq 'App')"));
+		const branch = running.slice(0, running.indexOf('return 2') + 'return 2'.length);
+		expect(branch).toContain('$link = Get-PendingInstallerLink -ProcessId $port.ProcessId');
+		expect(branch).toContain('$PendingSetupHint');
+		expect(branch.match(/Start-Process/g)).toHaveLength(1);
+		expect(branch).toMatch(/Start-Process -FilePath \$link\.Url\r\n\s*return 2$/);
+		expect(branch).not.toContain('Open-App');
+
+		const pending = functionBody(control(), 'Get-PendingInstallerLink');
+		expect(pending).toContain('Get-InstallerLink -LogText (Read-ServerLog) -ProcessStartUtc $startUtc');
+		expect(pending).toContain('Test-InstallerPending -Token $link.Token');
+		const hint = control().match(/\$PendingSetupHint = @"\r\n([\s\S]*?)\r\n"@/)[1];
+		expect(hint).toContain('{0} Uhr');
+		expect(hint).toContain('{1}');
+		expect(hint).toContain('$MissedLinkHint');
+	});
+
+	it('only opens links it rebuilt on the fixed binding', () => {
+		const body = functionBody(functions(), 'Get-InstallerLink');
+		expect(body).toContain('Url        = "$($BylAppUrl)_/#/pbinstall/$token"');
+		expect(body).toContain(String.raw`'/_/#/pbinstall/([A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+)'`);
 	});
 
 	it('the first-run hint matches the login page', () => {
@@ -159,6 +192,10 @@ describe('start', () => {
 		expect(hint).toContain('_/)');
 		expect(hint).toContain('„users“');
 		expect(hint).toContain('30 Minuten');
+		expect(hint).toContain('$MissedLinkHint');
+		expect(control()).toContain(
+			"$MissedLinkHint = 'Link verpasst oder abgelaufen? admin-zuruecksetzen.bat legt ein Admin-Konto an, ohne Daten zu löschen.'"
+		);
 		const login = readFileSync(join(ROOT_DIR, 'web', 'src', 'routes', 'login', '+page.svelte'), 'utf8');
 		expect(login).toContain('href="/_/"');
 		expect(login).toContain('Verwaltung (nur Admin)');
@@ -170,6 +207,14 @@ describe('start', () => {
 });
 
 describe('stop', () => {
+	it('stop.bat shows success for 5 seconds and waits for a key on errors', () => {
+		const lines = read('stop.bat').split('\r\n');
+		expect(lines).toContain(STOP_CLOSE_LINE);
+		expect(lines.filter((line) => /\b(pause|timeout)\b/i.test(line) && !/^rem\b/i.test(line))).toEqual([
+			STOP_CLOSE_LINE
+		]);
+	});
+
 	it('stops only processes chosen by Select-AppProcess, by process id', () => {
 		const body = functionBody(control(), 'Invoke-Stop');
 		expect(body).toMatch(/Select-AppProcess -Process \(Get-ProcessSnapshot\) -AppDir \$AppDir/);
