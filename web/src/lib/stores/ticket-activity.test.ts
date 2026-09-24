@@ -3,7 +3,7 @@
 
 import { describe, expect, it, vi } from 'vitest';
 import { DataError } from '$lib/data/errors';
-import type { Comment } from '$lib/domain/ticket';
+import type { Comment, HistoryEntry } from '$lib/domain/ticket';
 import {
 	COMMENT_REQUIRED_MESSAGE,
 	TicketActivityStore,
@@ -26,6 +26,22 @@ function comment(overrides: Partial<Comment> = {}): Comment {
 	};
 }
 
+const PROJECT = { id: 'proj00000000001', name: 'Finanzen', code: 'FIN', archived: false };
+const TAG = { id: 'tag000000000001', name: 'Amt' };
+
+function entry(overrides: Partial<HistoryEntry> = {}): HistoryEntry {
+	return {
+		id: 'hist00000000001',
+		ticket: TICKET,
+		field: 'created',
+		oldValue: '',
+		newValue: 'TASK-3',
+		user: ME,
+		created: '2026-09-24 09:00:00.000Z',
+		...overrides
+	};
+}
+
 function deferred<T>() {
 	let resolve!: (value: T) => void;
 	let reject!: (error: unknown) => void;
@@ -36,7 +52,7 @@ function deferred<T>() {
 	return { promise, resolve, reject };
 }
 
-function setup(initial: Comment[] = [comment()]) {
+function setup(initial: Comment[] = [comment()], history: HistoryEntry[] = [entry()]) {
 	let clock = 0;
 	const stamp = () => {
 		clock += 1;
@@ -52,7 +68,10 @@ function setup(initial: Comment[] = [comment()]) {
 			const found = initial.find((entry) => entry.id === id) ?? comment({ id });
 			return { ...found, body, updated: stamp() };
 		}),
-		deleteComment: vi.fn(async (): Promise<void> => undefined)
+		deleteComment: vi.fn(async (): Promise<void> => undefined),
+		listHistory: vi.fn<TicketActivityData['listHistory']>(async () => history),
+		listProjects: vi.fn<TicketActivityData['listProjects']>(async () => [PROJECT]),
+		listTags: vi.fn<TicketActivityData['listTags']>(async () => [TAG])
 	} satisfies TicketActivityData;
 	const session = { ensureValid: vi.fn(() => true), logout: vi.fn() };
 	const store = new TicketActivityStore(data, session, () => ME);
@@ -335,5 +354,62 @@ describe('TicketActivityStore: updates', () => {
 		expect(store.comments).toEqual([]);
 		expect(store.newComment).toBe('');
 		expect(store.commentsState).toBe('idle');
+	});
+});
+
+describe('TicketActivityStore: history', () => {
+	it('loads the history with projects and tags for the lookups', async () => {
+		const { store, data } = await opened();
+		await vi.waitFor(() => expect(store.historyState).toBe('ready'));
+
+		expect(data.listHistory).toHaveBeenCalledWith(TICKET, expect.anything());
+		expect(store.history.map((item) => item.id)).toEqual(['hist00000000001']);
+		expect(store.lookups.projects.get(PROJECT.id)).toEqual(PROJECT);
+		expect(store.lookups.tags.get(TAG.id)).toEqual(TAG);
+	});
+
+	it('fails as a whole when a lookup fails and loads again', async () => {
+		const { store, data } = setup();
+		data.listTags.mockRejectedValueOnce(new DataError('network'));
+		store.open(TICKET);
+		await vi.waitFor(() => expect(store.historyState).toBe('error'));
+
+		expect(store.historyError).toMatch(/Server nicht erreichbar/);
+		expect(store.history).toEqual([]);
+		await store.reloadHistory();
+		expect(store.historyState).toBe('ready');
+		expect(store.history).toHaveLength(1);
+	});
+
+	it('adds new entries newest first and ignores known ones and other tickets', async () => {
+		const older = entry({ id: 'h1', created: '2026-09-24 09:00:00.000Z' });
+		const { store } = setup([], [older]);
+		store.open(TICKET);
+		await vi.waitFor(() => expect(store.historyState).toBe('ready'));
+
+		const first = entry({ id: 'h2', field: 'status', created: '2026-09-24 10:00:00.000Z' });
+		const second = entry({ id: 'h3', field: 'priority', created: '2026-09-24 10:00:00.000Z' });
+		store.upsertHistory(first);
+		store.upsertHistory(second);
+		store.upsertHistory(first);
+		store.upsertHistory(entry({ id: 'h9', ticket: 'ticket000000009' }));
+
+		expect(store.history.map((item) => item.id)).toEqual(['h3', 'h2', 'h1']);
+	});
+
+	it('aborts the history request of the previous ticket and empties it on reset', async () => {
+		const { store, data } = setup();
+		const pending = deferred<HistoryEntry[]>();
+		data.listHistory.mockReturnValueOnce(pending.promise);
+		store.open(TICKET);
+		const signal = data.listHistory.mock.calls[0]?.[1].signal;
+
+		store.reset();
+
+		expect(signal?.aborted).toBe(true);
+		pending.resolve([entry()]);
+		await Promise.resolve();
+		expect(store.history).toEqual([]);
+		expect(store.historyState).toBe('idle');
 	});
 });

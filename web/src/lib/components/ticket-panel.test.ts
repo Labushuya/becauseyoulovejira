@@ -334,7 +334,10 @@ function activityStore() {
 		listComments: vi.fn(async () => []),
 		createComment: vi.fn(),
 		updateComment: vi.fn(),
-		deleteComment: vi.fn()
+		deleteComment: vi.fn(),
+		listHistory: vi.fn(async () => []),
+		listProjects: vi.fn(async () => []),
+		listTags: vi.fn(async () => [])
 	} satisfies TicketActivityData;
 	return new TicketActivityStore(data, { ensureValid: () => true, logout: vi.fn() }, () => 'me');
 }

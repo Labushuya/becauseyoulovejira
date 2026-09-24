@@ -1,15 +1,19 @@
-// Comments of the ticket in the detail panel (E2 plan, T-11, T-13 and package 9). Kept apart
-// from the detail store: it loads, fails and updates independently of the ticket fields. Own
-// answers and (from package 12) realtime events go through the same idempotent `upsertComment`
-// and `removeComment`. Drafts (new comment, edited comments) are never overwritten by updates.
+// Comments and history of the ticket in the detail panel (E2 plan, T-10, T-11, T-13, packages 9
+// and 10). Kept apart from the detail store: they load, fail and update independently of the
+// ticket fields. Own answers and (from package 12) realtime events go through the same idempotent
+// `upsertComment`, `removeComment` and `upsertHistory`. Drafts (new comment, edited comments)
+// are never overwritten by updates.
 
 import type PocketBase from 'pocketbase';
 import { createContext } from 'svelte';
 import { SvelteMap, SvelteSet } from 'svelte/reactivity';
 import { createComment, deleteComment, listComments, updateComment } from '$lib/data/comments';
 import { toDataError } from '$lib/data/errors';
+import { listHistory } from '$lib/data/history';
+import { listProjects, listTags } from '$lib/data/lookups';
 import type { RequestOptions } from '$lib/data/options';
-import type { Comment } from '$lib/domain/ticket';
+import { historyLookups, type HistoryLookups } from '$lib/domain/history-format';
+import type { Comment, HistoryEntry, ProjectRef, TagRef } from '$lib/domain/ticket';
 import type { LoadState, SessionGuard } from './ticket-list.svelte';
 
 export const COMMENT_REQUIRED_MESSAGE = 'Der Kommentar darf nicht leer sein.';
@@ -19,6 +23,9 @@ export interface TicketActivityData {
 	createComment(ticketId: string, body: string): Promise<Comment>;
 	updateComment(id: string, body: string): Promise<Comment>;
 	deleteComment(id: string): Promise<void>;
+	listHistory(ticketId: string, options: RequestOptions): Promise<HistoryEntry[]>;
+	listProjects(options: RequestOptions): Promise<ProjectRef[]>;
+	listTags(options: RequestOptions): Promise<TagRef[]>;
 }
 
 export function ticketActivityData(pb: PocketBase): TicketActivityData {
@@ -26,7 +33,10 @@ export function ticketActivityData(pb: PocketBase): TicketActivityData {
 		listComments: (ticketId, options) => listComments(pb, ticketId, options),
 		createComment: (ticketId, body) => createComment(pb, ticketId, body),
 		updateComment: (id, body) => updateComment(pb, id, body),
-		deleteComment: (id) => deleteComment(pb, id)
+		deleteComment: (id) => deleteComment(pb, id),
+		listHistory: (ticketId, options) => listHistory(pb, ticketId, options),
+		listProjects: (options) => listProjects(pb, options),
+		listTags: (options) => listTags(pb, options)
 	};
 }
 
@@ -35,6 +45,8 @@ function byCreated(a: Comment, b: Comment): number {
 	if (a.created === b.created) return 0;
 	return a.created < b.created ? -1 : 1;
 }
+
+const NO_LOOKUPS: HistoryLookups = historyLookups([], []);
 
 export class TicketActivityStore {
 	readonly #data: TicketActivityData;
@@ -47,6 +59,7 @@ export class TicketActivityStore {
 	readonly #busy = new SvelteSet<string>();
 	readonly #commentErrors = new SvelteMap<string, string>();
 	#controller: AbortController | null = null;
+	#historyController: AbortController | null = null;
 
 	#ticketId = $state<string | null>(null);
 	#state = $state<LoadState>('idle');
@@ -54,6 +67,12 @@ export class TicketActivityStore {
 	#newComment = $state('');
 	#posting = $state(false);
 	#postError = $state<string | null>(null);
+
+	/** Newest first (T-11), as the server sorts it (`-created,-@rowid`). */
+	#history = $state.raw<readonly HistoryEntry[]>([]);
+	#lookups = $state.raw<HistoryLookups>(NO_LOOKUPS);
+	#historyState = $state<LoadState>('idle');
+	#historyError = $state<string | null>(null);
 
 	#sorted = $derived([...this.#comments.values()].sort(byCreated));
 
@@ -83,6 +102,24 @@ export class TicketActivityStore {
 
 	get commentsError(): string | null {
 		return this.#error;
+	}
+
+	/** History of the ticket, newest first. */
+	get history(): readonly HistoryEntry[] {
+		return this.#history;
+	}
+
+	/** Projects and tags to resolve IDs in the history (T-10), loaded with it. */
+	get lookups(): HistoryLookups {
+		return this.#lookups;
+	}
+
+	get historyState(): LoadState {
+		return this.#historyState;
+	}
+
+	get historyError(): string | null {
+		return this.#historyError;
 	}
 
 	/** Only the author may edit or delete; the API rules enforce it (T-13). */
@@ -143,11 +180,31 @@ export class TicketActivityStore {
 		this.reset();
 		this.#ticketId = ticketId;
 		void this.#load(ticketId);
+		void this.#loadHistory(ticketId);
 	}
 
 	/** Loads the comments again ("Erneut versuchen"). */
 	async reload(): Promise<void> {
 		if (this.#ticketId !== null) await this.#load(this.#ticketId);
+	}
+
+	/** Loads the history again ("Erneut versuchen"). */
+	async reloadHistory(): Promise<void> {
+		if (this.#ticketId !== null) await this.#loadHistory(this.#ticketId);
+	}
+
+	/**
+	 * Adds a history entry of the open ticket (realtime). Entries never change, so a known ID is
+	 * ignored. A new entry goes before the first one that is not newer, which keeps the server
+	 * order for entries written in the same millisecond.
+	 */
+	upsertHistory(entry: HistoryEntry): void {
+		if (entry.ticket !== this.#ticketId || this.#historyState !== 'ready') return;
+		if (this.#history.some((known) => known.id === entry.id)) return;
+		const index = this.#history.findIndex((known) => known.created <= entry.created);
+		const next = [...this.#history];
+		next.splice(index === -1 ? next.length : index, 0, entry);
+		this.#history = next;
 	}
 
 	/**
@@ -274,6 +331,12 @@ export class TicketActivityStore {
 	reset(): void {
 		this.#controller?.abort();
 		this.#controller = null;
+		this.#historyController?.abort();
+		this.#historyController = null;
+		this.#history = [];
+		this.#lookups = NO_LOOKUPS;
+		this.#historyState = 'idle';
+		this.#historyError = null;
 		this.#comments.clear();
 		this.#edits.clear();
 		this.#busy.clear();
@@ -311,6 +374,37 @@ export class TicketActivityStore {
 		}
 	}
 
+	/** History plus the lookups for its IDs; one failure fails all, so nothing shows as deleted. */
+	async #loadHistory(ticketId: string): Promise<void> {
+		this.#historyController?.abort();
+		this.#historyController = null;
+		if (!this.#session.ensureValid()) return;
+		const controller = new AbortController();
+		this.#historyController = controller;
+		const options = { signal: controller.signal };
+		this.#historyState = 'loading';
+		this.#historyError = null;
+		try {
+			const [history, projects, tags] = await Promise.all([
+				this.#data.listHistory(ticketId, options),
+				this.#data.listProjects(options),
+				this.#data.listTags(options)
+			]);
+			if (controller.signal.aborted) return;
+			this.#lookups = historyLookups(projects, tags);
+			this.#history = history;
+			this.#historyState = 'ready';
+		} catch (error) {
+			if (controller.signal.aborted) return;
+			const message = this.#failureMessage(error);
+			if (message === null) return;
+			this.#historyError = message;
+			this.#historyState = 'error';
+		} finally {
+			if (this.#historyController === controller) this.#historyController = null;
+		}
+	}
+
 	/**
 	 * German message of a failed request, null if nothing is to be shown (aborted, or the
 	 * session ended and the guard leads to the login). A field error of `field` wins.
@@ -329,5 +423,5 @@ export class TicketActivityStore {
 
 const [getTicketActivityStore, setTicketActivityStore] = createContext<TicketActivityStore>();
 
-/** Store of comments (and from package 10 the history) of the panel, set by the app layout. */
+/** Store of comments and history of the panel, set by the app layout. */
 export { getTicketActivityStore, setTicketActivityStore };

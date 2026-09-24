@@ -5,13 +5,11 @@
 	import ErrorIcon from './ErrorIcon.svelte';
 
 	// Comments of the open ticket (E2 plan, T-11): oldest first, the newest directly above the
-	// input field. After a deletion the focus goes to the region, so it is not lost.
-	let { store, label = 'Kommentare' }: { store: TicketActivityStore; label?: string } = $props();
-
-	let region = $state<HTMLElement>();
+	// input field. After a deletion the owner moves the focus (`ondeleted`), so it is not lost.
+	let { store, ondeleted }: { store: TicketActivityStore; ondeleted: () => void } = $props();
 </script>
 
-<div class="comments" role="region" aria-label={label} tabindex="-1" bind:this={region}>
+<div class="comments">
 	{#if store.commentsState === 'error' && store.commentsError}
 		<div class="alert-error">
 			<ErrorIcon />
@@ -25,7 +23,7 @@
 	{:else}
 		<ol class="list">
 			{#each store.comments as comment (comment.id)}
-				<CommentItem {comment} {store} ondeleted={() => region?.focus()} />
+				<CommentItem {comment} {store} {ondeleted} />
 			{/each}
 		</ol>
 	{/if}
@@ -39,10 +37,6 @@
 	.comments {
 		display: grid;
 		gap: 0.5rem;
-	}
-
-	.comments:focus {
-		outline: none;
 	}
 
 	.list {

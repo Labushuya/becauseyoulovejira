@@ -40,7 +40,10 @@ async function renderComments(initial: Comment[] = [comment()]) {
 			body,
 			updated: '2026-09-24 13:00:00.000Z'
 		})),
-		deleteComment: vi.fn(async (): Promise<void> => undefined)
+		deleteComment: vi.fn(async (): Promise<void> => undefined),
+		listHistory: vi.fn(async () => []),
+		listProjects: vi.fn(async () => []),
+		listTags: vi.fn(async () => [])
 	} satisfies TicketActivityData;
 	const store = new TicketActivityStore(
 		data,
@@ -48,10 +51,11 @@ async function renderComments(initial: Comment[] = [comment()]) {
 		() => ME
 	);
 	store.open(TICKET);
-	const result = render(CommentList, { props: { store } });
+	const ondeleted = vi.fn();
+	const result = render(CommentList, { props: { store, ondeleted } });
 	await vi.waitFor(() => expect(store.commentsState).toBe('ready'));
 	await tick();
-	return { ...result, store, data };
+	return { ...result, store, data, ondeleted };
 }
 
 function newCommentField() {
@@ -113,7 +117,10 @@ describe('comment list', () => {
 				.mockResolvedValueOnce([comment()]),
 			createComment: vi.fn(),
 			updateComment: vi.fn(),
-			deleteComment: vi.fn()
+			deleteComment: vi.fn(),
+			listHistory: vi.fn(async () => []),
+			listProjects: vi.fn(async () => []),
+			listTags: vi.fn(async () => [])
 		} satisfies TicketActivityData;
 		const store = new TicketActivityStore(
 			data,
@@ -121,7 +128,7 @@ describe('comment list', () => {
 			() => ME
 		);
 		store.open(TICKET);
-		render(CommentList, { props: { store } });
+		render(CommentList, { props: { store, ondeleted: vi.fn() } });
 		await vi.waitFor(() => expect(store.commentsState).toBe('error'));
 		await tick();
 
@@ -249,15 +256,15 @@ describe('editing and deleting', () => {
 		expect(screen.getByText('fetter')).toBeTruthy();
 	});
 
-	it('deletes after confirmation and keeps the focus in the comments', async () => {
-		const { data } = await renderComments();
+	it('deletes after confirmation and hands the focus to the owner', async () => {
+		const { data, ondeleted } = await renderComments();
 		vi.spyOn(window, 'confirm').mockReturnValue(true);
 
 		await fireEvent.click(screen.getByRole('button', { name: /^Löschen: / }));
 
 		await vi.waitFor(() => expect(screen.getByText('Noch keine Kommentare.')).toBeTruthy());
 		expect(data.deleteComment).toHaveBeenCalledOnce();
-		expect(document.activeElement).toBe(screen.getByRole('region', { name: 'Kommentare' }));
+		expect(ondeleted).toHaveBeenCalledOnce();
 	});
 
 	it('shows an error when deleting fails', async () => {
