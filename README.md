@@ -10,7 +10,7 @@
 [![SvelteKit](https://img.shields.io/badge/SvelteKit-2-FF3E00?style=flat-square&logo=svelte&logoColor=white)](https://kit.svelte.dev)
 [![TypeScript](https://img.shields.io/badge/TypeScript-strict-3178C6?style=flat-square&logo=typescript&logoColor=white)](https://www.typescriptlang.org)
 [![Windows](https://img.shields.io/badge/Windows-10-0078D4?style=flat-square&logo=windows&logoColor=white)](https://www.microsoft.com/windows)
-[![Status](https://img.shields.io/badge/Status-E2%20in%20Arbeit-07838F?style=flat-square)](#roadmap)
+[![Status](https://img.shields.io/badge/Status-E2%20abgeschlossen-07838F?style=flat-square)](#roadmap)
 
 </div>
 
@@ -30,10 +30,10 @@ Ein privates, lokal laufendes Ticket-Dashboard für Windows 10 – Ticket-Handli
 
 | Feature | Status |
 |---|---|
-| 📝 Tickets mit Status (Backlog, Offen, In Arbeit, Wartet, Erledigt) | 🚧 E1–E2 |
+| 📝 Tickets mit Status (Backlog, Offen, In Arbeit, Wartet, Erledigt): Liste, Detailpanel, Anlegen, Bearbeiten, Abhaken, Löschen | ✅ E2 |
 | 🏷️ Projekte, Tags, Filter, Suche | 🚧 E3 |
-| 💬 Kommentare, Ticket-Historie | 🚧 E2 |
-| 🔄 Realtime-Updates (Subscriptions) | 🚧 E2 |
+| 💬 Kommentare (Markdown), Ticket-Verlauf | ✅ E2 |
+| 🔄 Live-Aktualisierung (Realtime-Subscriptions) | ✅ E2 |
 | 📅 Wiederkehrende Aufgaben (Kalender- und Nach-Completion-Regeln) | 🚧 E4 |
 | ⌨️ Schnellerfassung (Taste `c`, Strg+K; Kurzsyntax `Titel @CODE !Priorität`) | 🚧 E5 |
 | 🎨 Hell-/Dunkel-Theme (Systemeinstellung, manueller Umschalter) | 🚧 E5 |
@@ -124,7 +124,7 @@ npm test        # Vitest: Unit- und Integrationstests, danach die web-Tests
 | Ort | Inhalt |
 |---|---|
 | `tests/unit/` | reine Logik ohne PocketBase: Hook-Module aus `app/pb_hooks/lib`, Start-/Stopp- und Admin-Reset-Logik (`app/byl-functions.ps1` mit gefälschten Prozessen, Sockets, Log-Texten und Eingaben) und statische Prüfungen der Skripte |
-| `tests/integration/` | gegen Wegwerf-PocketBase-Instanzen: Migrationen, API-Regeln, Hooks, Login, gesperrte Mail-Abläufe, Admin-Reset, SPA-Fallback, Backup-Wiederherstellung |
+| `tests/integration/` | gegen Wegwerf-PocketBase-Instanzen: Migrationen, API-Regeln, Hooks, Login, gesperrte Mail-Abläufe, Admin-Reset, SPA-Fallback, Backup-Wiederherstellung, Datenzugriff und Realtime des Frontends (`web/src/lib/data`) |
 | `web/src/**/*.test.ts` | Frontend: Unit- und Komponententests (jsdom) |
 
 ```powershell
@@ -238,11 +238,59 @@ Danach anmelden und die Daten prüfen; es gelten die Konten und Passwörter zum 
 
 ---
 
+## Bedienung
+
+### Liste „Alle Tickets“
+
+- Nach der Anmeldung stehen alle **nicht erledigten** Tickets in einer Liste. Oben die überfälligen und bald fälligen (bis 7 Tage im Voraus) nach Datum, danach die übrigen nach Priorität (Dringend, Hoch, Mittel, Niedrig); bei gleicher Priorität zuerst die mit Fälligkeit, dann die neuesten.
+- Jede Zeile zeigt Key, Titel mit Tags, Status, Priorität, Projekt, Fälligkeit (mit „überfällig“, „heute“ oder „morgen“) und ein Symbol für wiederkehrende Tickets. Projekte und Tags lassen sich ab E3 zuweisen.
+- **„Neues Ticket“** öffnet rechts das Anlageformular: Titel (Pflicht), Status, Priorität, Fälligkeit und Beschreibung. „Anlegen“ oder `Strg+Enter` legt an, den Key vergibt der Server (`TASK-1`, `TASK-2` …).
+
+### Abhaken und „Erledigte anzeigen“
+
+- Das Kästchen vorn in der Zeile setzt ein Ticket auf **Erledigt**. Die Zeile bleibt 5 Sekunden durchgestrichen mit **„Rückgängig“** stehen (stellt den vorherigen Status wieder her) und verschwindet dann.
+- Der Schalter **„Erledigte anzeigen“** blendet unter den offenen Tickets den Abschnitt „Erledigt“ ein: zuletzt erledigte zuerst, 50 auf einmal, mehr über „Weitere laden“. Der Schalter steht in der Adresse (`?erledigte=1`) und übersteht Neuladen und Zurück.
+- Wer bei einem erledigten Ticket das Häkchen entfernt, setzt es auf **Offen**.
+
+### Detailpanel
+
+- Ein Klick auf eine Zeile öffnet das Ticket rechts im Panel (auf schmalen Bildschirmen über der Liste). Die Adresse `/tickets/<id>` öffnet nach dem Neuladen dasselbe Ticket.
+- **Titel** („Titel bearbeiten“) und **Fälligkeit** speichern mit Enter oder beim Verlassen des Felds, Escape verwirft. **Status** und **Priorität** speichern sofort bei der Auswahl. Die **Beschreibung** (Markdown) hat „Bearbeiten“, eine Vorschau und „Speichern“ (`Strg+Enter`).
+- „Schließen“ oder Escape führt zurück zur Liste. Ist noch eine Beschreibung oder ein Kommentar ungespeichert, fragt die App vorher „Änderungen verwerfen?“.
+
+### Kommentare und Verlauf
+
+- Unter den Feldern stehen zwei Reiter. **Kommentare:** älteste oben, das Eingabefeld unten (Markdown mit Vorschau, `Strg+Enter` sendet). Eigene Kommentare lassen sich bearbeiten und nach einer Rückfrage löschen; geänderte tragen den Hinweis „bearbeitet“.
+- **Verlauf:** jede Änderung mit Zeitpunkt, Urheber („Du“ oder „System“) und Inhalt, die neueste oben. Bei geänderten Beschreibungen lassen sich alter und neuer Text aufklappen.
+
+### Löschen
+
+- **„Löschen …“** oben im Panel fragt nach, bevor etwas passiert. Das Löschen ist **endgültig** und entfernt auch alle Kommentare und den gesamten Verlauf des Tickets. Wiederherstellen lässt es sich nur aus einem Backup (siehe [Backup und Wiederherstellung](#backup-und-wiederherstellung)).
+
+### Live-Aktualisierung
+
+- Änderungen aus einem anderen Tab oder Browserfenster erscheinen ohne Neuladen in der Liste, im offenen Panel, in den Kommentaren und im Verlauf. Wird das offene Ticket woanders gelöscht, zeigt das Panel „Dieses Ticket wurde gelöscht.“. Eine angefangene Eingabe wird dabei nicht überschrieben.
+
+### Tastatur
+
+| Taste | Wirkung |
+|---|---|
+| `Tab` / `Umschalt+Tab` | durch Liste, Häkchen, Panel und Knöpfe |
+| `Enter` | Zeile öffnen; im Titel- oder Datumsfeld speichern |
+| `Leertaste` | Häkchen setzen oder entfernen |
+| `Escape` | im Titel- oder Datumsfeld: Eingabe verwerfen; außerhalb von Eingabefeldern: Panel schließen; im Formular „Neues Ticket“ (nach Rückfrage) und im Löschdialog: abbrechen |
+| `Strg+Enter` | Beschreibung speichern, Kommentar senden oder speichern, neues Ticket anlegen |
+| `Pfeil links/rechts`, `Pos1`, `Ende` | zwischen den Reitern „Kommentare“ und „Verlauf“ wechseln |
+
+Die Schnellerfassung per `c` und `Strg+K` folgt in E5.
+
+---
+
 ## Roadmap (Etappen)
 
 - [x] **E0:** Gerüst (Repo, PocketBase, SvelteKit, dieser README)
 - [x] **E1:** Datenmodell, Authentifizierung, Hooks, Start-/Stopp-Skripte
-- [ ] **E2:** Listen-View, Detail-View, CRUD, Kommentare, Realtime – *in Arbeit*, Plan: [docs/plan/e2.md](docs/plan/e2.md)
+- [x] **E2:** Listen-View, Detail-View, CRUD, Kommentare, Verlauf, Realtime – Plan und Bilanz: [docs/plan/e2.md](docs/plan/e2.md)
 - [ ] **E3:** Projekte, Tags, Filter, Suche, Sortierung
 - [ ] **E4:** Wiederkehrende Aufgaben (Kalender-Regeln, RRULE-Subset)
 - [ ] **E5:** Schnellerfassung, Theme-Umschalter, Feinschliff, Doku
