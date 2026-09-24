@@ -10,7 +10,7 @@
 [![PocketBase](https://img.shields.io/badge/PocketBase-0.40.4-07838F?style=flat-square&logo=pocketbase&logoColor=white)](https://pocketbase.io)
 [![Svelte](https://img.shields.io/badge/SvelteKit%202%20%2B%20Svelte%205-FF3E00?style=flat-square&logo=svelte&logoColor=white)](https://svelte.dev)
 [![Windows](https://img.shields.io/badge/Windows-10-0078D4?style=flat-square&logo=windows&logoColor=white)](https://www.microsoft.com/windows)
-[![Status](https://img.shields.io/badge/Status-E3%20abgeschlossen-07838F?style=flat-square)](#roadmap)
+[![Status](https://img.shields.io/badge/Status-E4%20in%20Planung-07838F?style=flat-square)](#roadmap)
 
 **Ein schlankes, lokal laufendes Ticket-Dashboard im Jira-Stil, ohne dessen Prozesslast.**
 
@@ -38,12 +38,12 @@ Ein privates, lokal laufendes Ticket-Dashboard für Windows 10: Ticket-Handling 
 | **E1 Datenmodell, Auth, Hooks** | Datenmodell mit privaten Scopes und Nummernkreisen (`TASK-1`, `<CODE>-<NR>`), API-Regeln je Nutzer, gesperrte Selbstregistrierung, Hooks für Keys, Erledigt-Zeitpunkt und Verlauf, automatische Backups, Start-, Stopp-, Autostart- und Admin-Reset-Skripte | fertig ([Plan](docs/plan/e1.md)) |
 | **E2 Liste und Detail** | Liste „Alle Tickets“ mit Standard-Reihenfolge, Abhaken mit „Rückgängig“, „Erledigte anzeigen“, Detailpanel mit Inline-Bearbeitung, Anlegen, Löschen mit Sicherheitsabfrage, Markdown (sanitisiert), Kommentare, Verlauf, Live-Aktualisierung über Realtime | fertig ([Plan und Bilanz](docs/plan/e2.md)) |
 | **E3 Übersicht und Ordnung** | Seitenaufbau nach Task-Board-Vorbild ([ADR-0010](docs/adr/0010-layout-nach-task-board.md)): Kennzahlen, Filterleiste, sortierbare Tabelle, Gruppierung, Projekte mit Projektansicht, Tags, Suche: Kopfzeile mit Zähler und „Neues Ticket“, Kennzahlen-Kacheln, Filterleiste mit Suche und Zustand in der Adresse, Tabelle „Aufgaben“ mit relativen Fälligkeitslabels, Sortierung per Spaltenkopf und Gruppierung, Projekt und Tags im Panel und bei der Anlage, Projektansicht mit Projekt- und Tag-Verwaltung, Sperre für neue Tickets in archivierten Projekten, Live-Katalog für Projekte und Tags | fertig ([Plan und Bilanz](docs/plan/e3.md)) |
-| **E4 Eingang und Kanäle** | Schnellerfassung (`c`, `Strg+K`, Kurzsyntax `Titel @CODE !Priorität`), Zwischenablage, Web-Links per Bookmarklet, `.ics`- und `.eml`-Dateien per Drag & Drop | geplant |
+| **E4 Eingang und Kanäle** | Eingang, aus dem jedes Workload-Objekt per Klick zum Ticket wird (mit Rückverweis und Duplikaterkennung), „Neu“-Markierung, manuelle Erfassung mit Vorlagen, Schnellerfassung (`c`, `Strg+K`, Kurzsyntax), Zwischenablage, Bookmarklet, `.eml` und `.ics` per Drag & Drop, Web.de, Proton und Gmail per IMAP (Hilfsprogramm, vorgeschlagen), Google Calendar, WhatsApp-Export, Telegram-Bot, Quelle als Filter | in Planung ([Plan](docs/plan/e4.md)) |
 | **E5 Wiederkehrende Aufgaben** | Kalender- und Nach-Erledigung-Regeln (RRULE-Teilmenge), Vorschläge aus `.ics` | geplant |
 | **E6 Feinschliff** | Papierkorb, Spaltenauswahl, Vollansicht, Tastaturkürzel, Hilfe, Theme-Umschalter | geplant |
 | **E7 Haushalt und Mehrgeräte** | gemeinsame Tickets im Haushalt, Zugriff von mehreren Geräten über Tailscale (HTTPS, Server bleibt auf `127.0.0.1`), siehe [ADR-0001](docs/adr/0001-betriebsmodell-lokal-mehrgeraete-spaeter.md) | geplant, Start nach Freigabe |
 
-In Prüfung, jeweils nur mit eigener ADR und Freigabe: Google Calendar, WhatsApp, Telegram, Notion ([ADR-0011](docs/adr/0011-roadmap-e3-bis-e7.md)). Später, nach ausdrücklicher Freigabe (Stufe 2, Datenmodell vorbereitet): Sub-Tickets mit Fortschritt, Abhängigkeiten mit Entsperr-Automation, Board-Ansicht, Browser-Benachrichtigungen, Anhänge.
+Externe Kanäle kommen nur mit eigener ADR und Freigabe ([ADR-0011](docs/adr/0011-roadmap-e3-bis-e7.md)); für E4 beschreibt sie [ADR-0016](docs/adr/0016-kanal-architektur-und-mail.md). Notion ist vorerst zurückgestellt. Später, nach ausdrücklicher Freigabe (Stufe 2, Datenmodell vorbereitet): Sub-Tickets mit Fortschritt, Abhängigkeiten mit Entsperr-Automation, Board-Ansicht, Browser-Benachrichtigungen, Anhänge.
 
 ---
 
@@ -335,7 +335,7 @@ Für den Vite-Dev-Server (`npm --prefix web run dev`) leitet `web/vite.config.ts
 - [x] **E1:** Datenmodell, Authentifizierung, Hooks, Start-/Stopp-Skripte – [docs/plan/e1.md](docs/plan/e1.md), [ADR-0002](docs/adr/0002-erststart-und-superuser.md) bis [ADR-0005](docs/adr/0005-zeitzone-europe-berlin.md)
 - [x] **E2:** Listen-View, Detail-View, CRUD, Kommentare, Verlauf, Realtime – [docs/plan/e2.md](docs/plan/e2.md), [ADR-0006](docs/adr/0006-frontend-zustand-und-datenzugriff.md) bis [ADR-0009](docs/adr/0009-fehlerfarbe.md)
 - [x] **E3 Übersicht & Ordnung:** Task-Board-Layout ([ADR-0010](docs/adr/0010-layout-nach-task-board.md)), Projekte mit Projektansicht, Tags, Filter, Suche, Sortierung, Gruppierung ([ADR-0013](docs/adr/0013-filter-suche-sortierung-gruppierung.md)) – [docs/plan/e3.md](docs/plan/e3.md)
-- [ ] **E4 Eingang & Kanäle:** Schnellerfassung und Zwischenablage, Web-Links (Bookmarklet), `.ics`, `.eml` per Drag & Drop; in Prüfung: Google Calendar, WhatsApp, Telegram, Notion
+- [ ] **E4 Eingang & Kanäle (in Planung):** Eingang mit Umwandeln zum Ticket, Rückverweis und Duplikaterkennung ([ADR-0014](docs/adr/0014-datenmodell-eingang.md)), „Neu“-Markierung ([ADR-0015](docs/adr/0015-neu-markierung-pro-nutzer.md)); Kanäle in dieser Reihenfolge: manuelle Erfassung, Schnellerfassung und Zwischenablage, Bookmarklet, `.eml`, Web.de, Proton, Gmail, `.ics`, Google Calendar, WhatsApp-Export, Telegram; Notion zurückgestellt ([ADR-0016](docs/adr/0016-kanal-architektur-und-mail.md) bis [ADR-0019](docs/adr/0019-kanal-filter-und-gruppierung.md)) – [docs/plan/e4.md](docs/plan/e4.md)
 - [ ] **E5 Wiederkehrende Aufgaben:** Kalender- und Nach-Erledigung-Regeln (RRULE-Teilmenge), Vorschläge aus `.ics`-RRULE
 - [ ] **E6 Feinschliff:** Papierkorb, Spalten, Vollansicht, Tastatur, Hilfe, Theme-Umschalter
 - [ ] **E7 Haushalt & Mehrgeräte:** gemeinsame Tickets im Haushalt, Zugriff über Tailscale (`tailscale serve` mit HTTPS, Superuser nur lokal), ohne Datenmigration – [ADR-0001](docs/adr/0001-betriebsmodell-lokal-mehrgeraete-spaeter.md)
