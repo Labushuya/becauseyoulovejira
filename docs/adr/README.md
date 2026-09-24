@@ -15,3 +15,7 @@ Bereits verbindlich in der [Projekt-CLAUDE.md](../../CLAUDE.md) festgelegt und d
 | [0007](0007-realtime-und-sitzungspflege.md) | Realtime-Abos und Sitzungspflege im Frontend | Angenommen | 2026-09-24 |
 | [0008](0008-markdown-rendering-und-sanitizing.md) | Markdown-Rendering und Sanitizing | Angenommen | 2026-09-24 |
 | [0009](0009-fehlerfarbe.md) | Fehlerfarbe als eigenes Design-Token | Angenommen | 2026-09-24 |
+| [0010](0010-layout-nach-task-board.md) | Seitenaufbau nach dem Vorbild des Task-Boards, im eigenen Stack und mit eigenen Farben | Angenommen | 2026-09-25 |
+| [0011](0011-roadmap-e3-bis-e7.md) | Neue Etappen E3 bis E7 mit vorgezogenen Eingangskanälen | Angenommen | 2026-09-25 |
+| [0012](0012-plain-ticketing.md) | Plain Ticketing ohne Ticket-Typen, Epics, Sprints und Story Points | Angenommen | 2026-09-25 |
+| [0013](0013-filter-suche-sortierung-gruppierung.md) | Filter, Suche, Sortierung und Gruppierung: was der Client und was der Server rechnet | Angenommen | 2026-09-25 |
