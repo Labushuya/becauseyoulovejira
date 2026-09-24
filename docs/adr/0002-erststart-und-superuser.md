@@ -44,3 +44,7 @@ PocketBase 0.40.4 verhält sich beim `serve` ohne Superuser so (geprüft im Quel
 - Negativ: Beim Autostart vor der Ersteinrichtung öffnet sich der Installer ungefragt. Das ist beabsichtigt; ohne Superuser ist die App ohnehin nicht nutzbar.
 - Die Erkennung „Erststart“ über fehlendes `data.db` ist eine Näherung. Bricht der Nutzer den Installer ab, zeigt der nächste Start keinen Hinweis mehr, der Installer öffnet sich aber erneut. Das reicht aus.
 - Für Agenten und Tests gilt unverändert CLAUDE.md §11.2: vor jedem `serve` erst `superuser upsert` in einem Wegwerf-Datenordner, damit sich nie der Installer öffnet.
+
+## Nachtrag (E1, Paket 8, 2026-09-24)
+
+Umsetzung abweichend von Punkt 5 und den Konsequenzen oben: Beim Erststart öffnet sich **nur ein** Tab (die Einrichtung, von PocketBase selbst geöffnet); das Start-Skript öffnet die App dann nicht. Erkannt wird der Erststart bevorzugt am Installer-Link in der Server-Ausgabe, Fallback ist ein fehlendes `pb_data\data.db`. Damit erscheint der Hinweis auch nach einem abgebrochenen Installer wieder. Details im [E1-Plan](../plan/e1.md), Abschnitt 6, Paket 8.
