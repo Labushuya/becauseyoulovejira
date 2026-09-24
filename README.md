@@ -4,13 +4,15 @@
 
 <p>&nbsp;</p>
 
+[![CI](https://github.com/Labushuya/becauseyoulovejira/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/Labushuya/becauseyoulovejira/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-07838F?style=flat-square)](LICENSE)
-[![PocketBase](https://img.shields.io/badge/PocketBase-0.40.4-07838F?style=flat-square&logo=python&logoColor=white)](https://pocketbase.io)
-[![Svelte](https://img.shields.io/badge/Svelte-5-FF3E00?style=flat-square&logo=svelte&logoColor=white)](https://svelte.dev)
-[![SvelteKit](https://img.shields.io/badge/SvelteKit-2-FF3E00?style=flat-square&logo=svelte&logoColor=white)](https://kit.svelte.dev)
-[![TypeScript](https://img.shields.io/badge/TypeScript-strict-3178C6?style=flat-square&logo=typescript&logoColor=white)](https://www.typescriptlang.org)
+[![Node.js](https://img.shields.io/badge/Node.js-%E2%89%A5%2024%20(nur%20Dev)-5FA04E?style=flat-square&logo=nodedotjs&logoColor=white)](https://nodejs.org)
+[![PocketBase](https://img.shields.io/badge/PocketBase-0.40.4-07838F?style=flat-square&logo=pocketbase&logoColor=white)](https://pocketbase.io)
+[![Svelte](https://img.shields.io/badge/SvelteKit%202%20%2B%20Svelte%205-FF3E00?style=flat-square&logo=svelte&logoColor=white)](https://svelte.dev)
 [![Windows](https://img.shields.io/badge/Windows-10-0078D4?style=flat-square&logo=windows&logoColor=white)](https://www.microsoft.com/windows)
-[![Status](https://img.shields.io/badge/Status-E3%20in%20Planung-07838F?style=flat-square)](#roadmap)
+[![Status](https://img.shields.io/badge/Status-E3%20in%20Arbeit-07838F?style=flat-square)](#roadmap)
+
+**Ein schlankes, lokal laufendes Ticket-Dashboard im Jira-Stil, ohne dessen Prozesslast.**
 
 </div>
 
@@ -18,60 +20,66 @@
 
 ## Was ist becauseyoulovejira?
 
-Ein privates, lokal laufendes Ticket-Dashboard für Windows 10 – Ticket-Handling im Stil von Linear oder Jira, ohne deren Prozesslast. Bedient wird es im Desktop-Browser (Chrome, Firefox, Opera GX).
+Ein privates, lokal laufendes Ticket-Dashboard für Windows 10: Ticket-Handling im Stil von Linear oder Jira mit Keys wie `HAUS-12`, Status-Pillen, Detailpanel, Kommentaren und Verlauf, aber ohne Epics, Sprints, Story Points und Ticket-Typen ([ADR-0012](docs/adr/0012-plain-ticketing.md)). Bedient wird es im Desktop-Browser (Chrome, Firefox, Opera GX).
 
 - **Lokal:** Keine Cloud. Der Server lauscht ausschließlich auf `127.0.0.1`.
-- **Portabel:** Die komplette Installation ist der Ordner `app/` – Start per Doppelklick, Sicherung und Umzug per Ordnerkopie.
+- **Portabel:** Die komplette Installation ist der Ordner `app/`: Start per Doppelklick, Sicherung und Umzug per Ordnerkopie.
 - **Ohne Internet lauffähig:** Keine externen CDNs, Schriften werden lokal ausgeliefert.
 
----
-
-## Geplante Features
-
-| Feature | Status |
-|---|---|
-| 📝 Tickets mit Status (Backlog, Offen, In Arbeit, Wartet, Erledigt): Liste, Detailpanel, Anlegen, Bearbeiten, Abhaken, Löschen | ✅ E2 |
-| 🗂️ Übersicht im Task-Board-Layout: Kennzahlen, Filterleiste, sortierbare Tabelle, Gruppierung – [ADR-0010](docs/adr/0010-layout-nach-task-board.md) | 🚧 E3 |
-| 🏷️ Projekte mit Projektansicht, Tags, Suche | 🚧 E3 |
-| 💬 Kommentare (Markdown), Ticket-Verlauf | ✅ E2 |
-| 🔄 Live-Aktualisierung (Realtime-Subscriptions) | ✅ E2 |
-| ⌨️ Schnellerfassung (Taste `c`, Strg+K; Kurzsyntax `Titel @CODE !Priorität`) und Zwischenablage | 🗓️ E4 |
-| 📥 Kanäle: Web-Links per Bookmarklet, `.ics`- und `.eml`-Dateien per Drag & Drop | 🗓️ E4 |
-| 🔎 Google Calendar, WhatsApp, Telegram, Notion | 🔍 in Prüfung |
-| 📅 Wiederkehrende Aufgaben (Kalender- und Nach-Completion-Regeln, Vorschläge aus `.ics`) | 🗓️ E5 |
-| 🗑️ Papierkorb, Spaltenauswahl, Vollansicht, Tastatur, Hilfe, Theme-Umschalter | 🗓️ E6 |
-| 👥 Haushalte und Zugriff von mehreren Geräten über Tailscale (HTTPS, Server bleibt auf `127.0.0.1`) – [ADR-0001](docs/adr/0001-betriebsmodell-lokal-mehrgeraete-spaeter.md) | 🗓️ E7 |
-
-### Später (nach Freigabe)
-
-- 🎯 Sub-Tickets und Fortschrittsanzeige
-- 🔗 Abhängigkeiten mit Entsperr-Automation
-- 📊 Board-Ansicht (Kanban)
-- 🔔 Browser-Benachrichtigungen
-- 📎 Anhänge (Bilder, Dateien)
+**Inhalt:** [Features](#features-nach-etappe) · [Architektur und Stack](#architektur-und-stack) · [Quickstart](#quickstart-windows) · [Betrieb](#betrieb) · [Bedienung](#bedienung) · [Entwicklung und Tests](#entwicklung-und-tests) · [Roadmap](#roadmap) · [Lizenz und Marken](#lizenz-und-marken)
 
 ---
 
-## Tech Stack
+## Features nach Etappe
+
+| Etappe | Inhalt | Stand |
+|---|---|---|
+| **E0 Gerüst** | Repo, PocketBase 0.40.4 (SHA256-geprüfter Download), SvelteKit-SPA, Build- und Testskripte | fertig |
+| **E1 Datenmodell, Auth, Hooks** | Datenmodell mit privaten Scopes und Nummernkreisen (`TASK-1`, `<CODE>-<NR>`), API-Regeln je Nutzer, gesperrte Selbstregistrierung, Hooks für Keys, Erledigt-Zeitpunkt und Verlauf, automatische Backups, Start-, Stopp-, Autostart- und Admin-Reset-Skripte | fertig ([Plan](docs/plan/e1.md)) |
+| **E2 Liste und Detail** | Liste „Alle Tickets“ mit Standard-Reihenfolge, Abhaken mit „Rückgängig“, „Erledigte anzeigen“, Detailpanel mit Inline-Bearbeitung, Anlegen, Löschen mit Sicherheitsabfrage, Markdown (sanitisiert), Kommentare, Verlauf, Live-Aktualisierung über Realtime | fertig ([Plan und Bilanz](docs/plan/e2.md)) |
+| **E3 Übersicht und Ordnung** | Seitenaufbau nach Task-Board-Vorbild ([ADR-0010](docs/adr/0010-layout-nach-task-board.md)): Kennzahlen, Filterleiste, sortierbare Tabelle, Gruppierung, Projekte mit Projektansicht, Tags, Suche. **Bereits umgesetzt (Pakete 1–4 von 15):** Domänenlogik für Listenzustand in der URL, Filter, relative Fälligkeit, Sortierung und Gruppierung; Sperre für neue Tickets in archivierten Projekten; Datenzugriff und Live-Katalog für Projekte und Tags. Die Oberfläche dazu folgt. | in Arbeit ([Plan](docs/plan/e3.md)) |
+| **E4 Eingang und Kanäle** | Schnellerfassung (`c`, `Strg+K`, Kurzsyntax `Titel @CODE !Priorität`), Zwischenablage, Web-Links per Bookmarklet, `.ics`- und `.eml`-Dateien per Drag & Drop | geplant |
+| **E5 Wiederkehrende Aufgaben** | Kalender- und Nach-Erledigung-Regeln (RRULE-Teilmenge), Vorschläge aus `.ics` | geplant |
+| **E6 Feinschliff** | Papierkorb, Spaltenauswahl, Vollansicht, Tastaturkürzel, Hilfe, Theme-Umschalter | geplant |
+| **E7 Haushalt und Mehrgeräte** | gemeinsame Tickets im Haushalt, Zugriff von mehreren Geräten über Tailscale (HTTPS, Server bleibt auf `127.0.0.1`), siehe [ADR-0001](docs/adr/0001-betriebsmodell-lokal-mehrgeraete-spaeter.md) | geplant, Start nach Freigabe |
+
+In Prüfung, jeweils nur mit eigener ADR und Freigabe: Google Calendar, WhatsApp, Telegram, Notion ([ADR-0011](docs/adr/0011-roadmap-e3-bis-e7.md)). Später, nach ausdrücklicher Freigabe (Stufe 2, Datenmodell vorbereitet): Sub-Tickets mit Fortschritt, Abhängigkeiten mit Entsperr-Automation, Board-Ansicht, Browser-Benachrichtigungen, Anhänge.
+
+---
+
+## Architektur und Stack
+
+```mermaid
+flowchart LR
+    B["Browser<br/>SvelteKit-SPA"] -- "REST und Realtime<br/>PocketBase JS SDK" --> P["pocketbase.exe<br/>127.0.0.1:8090"]
+    P -- "liefert die SPA aus" --> PUB["app/pb_public<br/>Frontend-Build"]
+    P --- H["app/pb_hooks<br/>JS-Hooks"]
+    P --- M["app/pb_migrations<br/>JS-Migrationen"]
+    P --- D[("app/pb_data<br/>SQLite und Backups")]
+```
+
+- **Ein Prozess, eine Origin:** PocketBase liefert die gebaute SPA selbst aus und stellt API und Realtime-Abos bereit. Node.js wird nur zum Bauen und Testen gebraucht, nicht für den Betrieb.
+- **Serverlogik** nur in JS-Hooks (Ticket-Keys, Erledigt-Zeitpunkt, Verlauf, Schutzregeln); mehrteilige Schreibvorgänge laufen in einer Transaktion. Reine Hilfsmodule liegen unter `app/pb_hooks/lib/` und sind ohne PocketBase testbar.
+- **Schema** nur über handgeschriebene Migrationen (`--automigrate=false`); die Zugriffsregeln je Nutzer und Scope sind per Negativtests belegt.
+- **Frontend** in Schichten: `web/src/lib/domain` (reine Logik), `web/src/lib/data` (Datenzugriff und Realtime über das SDK), `web/src/lib/stores` (geteilter Zustand in `.svelte.ts` mit Runes), `web/src/lib/components` und `web/src/routes`. Details: [ADR-0006](docs/adr/0006-frontend-zustand-und-datenzugriff.md), [ADR-0007](docs/adr/0007-realtime-und-sitzungspflege.md).
 
 | Komponente | Technologie | Warum |
 |---|---|---|
-| **Backend** | [PocketBase 0.40.4](https://pocketbase.io) (Windows Binary) | Alles-in-Eins: SQLite, Admin-UI, Hooks/JS, Realtime |
-| **Frontend** | [SvelteKit 2](https://kit.svelte.dev) + [Svelte 5](https://svelte.dev) + [TypeScript](https://www.typescriptlang.org) | Geringster JS-Footprint, SPA-Modus, native Reaktivität (Runes) |
-| **Runtime** | [Node.js](https://nodejs.org) (nur Dev) | Build-Werkzeug, nicht für Betrieb erforderlich |
-| **Tests** | [Vitest](https://vitest.dev), [Testing Library](https://testing-library.com/docs/svelte-testing-library/intro) + jsdom | Hooks-Integration, JS-Geschäftslogik, Svelte-Komponenten |
-| **Styling** | CSS-Custom-Properties, Schriften Inter und JetBrains Mono lokal über `@fontsource-variable` | Läuft ohne Internetverbindung, keine externen CDNs; minimalistisch |
-| **Datenbank** | [SQLite](https://www.sqlite.org) (PocketBase intern) | Einzeldatei, keine Separate Datenbank nötig |
+| **Backend** | [PocketBase 0.40.4](https://pocketbase.io) (Windows-Binary, unverändert) | Alles in einem: SQLite, Admin-UI, JS-Hooks, Realtime |
+| **Frontend** | [SvelteKit 2](https://kit.svelte.dev) + [Svelte 5](https://svelte.dev) (Runes) + [TypeScript](https://www.typescriptlang.org) (strict), `adapter-static` im SPA-Modus | geringer JS-Footprint, native Reaktivität |
+| **Datenbank** | [SQLite](https://www.sqlite.org) (in PocketBase) | Einzeldatei, keine separate Datenbank nötig |
+| **Markdown** | markdown-it und DOMPurify | Ausgabe wird sanitisiert ([ADR-0008](docs/adr/0008-markdown-rendering-und-sanitizing.md)) |
+| **Styling** | CSS-Custom-Properties, Inter und JetBrains Mono lokal über `@fontsource-variable` | offline lauffähig, Petrol als einzige Akzentfarbe |
+| **Tests** | [Vitest](https://vitest.dev), [Testing Library](https://testing-library.com/docs/svelte-testing-library/intro) und jsdom | Hook-Integration gegen Wegwerf-Instanzen, Domänenlogik, Komponenten |
+| **Dev-Werkzeug** | [Node.js](https://nodejs.org) ≥ 24, Windows PowerShell 5.1 | nur Build und Test |
 
----
-
-## Repo-Struktur
+### Repo-Struktur
 
 ```
 becauseyoulovejira/
   app/                    Portabler Laufzeitordner (wird kopiert/gesichert)
     pocketbase.exe        Binary (gitignored, via scripts/fetch-pocketbase.ps1)
-    pb_hooks/             *.pb.js Hooks
+    pb_hooks/             *.pb.js Hooks, lib/*.js reine CommonJS-Module
     pb_migrations/        Handgeschriebene JS-Migrationen
     pb_public/            Frontend-Build (gitignored)
     pb_data/              Daten und Backups (gitignored, niemals committen)
@@ -86,62 +94,31 @@ becauseyoulovejira/
   web/                    SvelteKit-Quellcode (Build → ../app/pb_public), Tests unter src/**/*.test.ts
   scripts/                Build-/Setup-Skripte (PowerShell)
   tests/                  Vitest-Tests (Hooks, Regeln, Login- und SPA-Integration)
-  docs/                   README-Assets, Architektur-Dokumente
+  docs/                   ADRs, Etappenpläne, Test-Manifest, README-Assets
+  .github/                CI-Workflow, Dependabot, Issue- und PR-Vorlagen, Sicherheitsrichtlinie
 ```
 
 ---
 
-## Entwicklung
+## Quickstart (Windows)
 
-**Voraussetzungen:** Windows 10, Node.js ≥ 24, PowerShell 5.1+
+**Voraussetzungen:** Windows 10, [Node.js](https://nodejs.org) ≥ 24 (nur zum Bauen), Windows PowerShell 5.1, Git.
 
 ```powershell
-# 1. PocketBase laden (gepinnte Version, SHA256-geprüft)
-.\scripts\fetch-pocketbase.ps1
+git clone https://github.com/Labushuya/becauseyoulovejira.git
+cd becauseyoulovejira
 
-# 2. Abhängigkeiten installieren, prüfen, testen und Frontend bauen
-.\scripts\build.ps1
+# 1. PocketBase laden (gepinnte Version 0.40.4, SHA256-geprüft)
+powershell -ExecutionPolicy Bypass -File scripts\fetch-pocketbase.ps1
 
-# 3. Starten
+# 2. Abhängigkeiten installieren, prüfen, Frontend bauen und testen
+powershell -ExecutionPolicy Bypass -File scripts\build.ps1
+
+# 3. Starten (öffnet den Browser)
 .\app\start.bat
 ```
 
-`build.ps1` erwartet `node` (≥ 24) und `npm` im `PATH` und bricht sonst mit einem Hinweis ab. Blockiert die Execution Policy die Skripte, lassen sie sich so aufrufen:
-
-```powershell
-powershell -ExecutionPolicy Bypass -File scripts\build.ps1
-```
-
-Einzelne Qualitäts-Gates:
-
-```powershell
-npm run check   # svelte-check / TypeScript
-npm run lint    # ESLint + Prettier
-npm run build   # Frontend-Build nach app/pb_public
-npm test        # Vitest: Unit- und Integrationstests, danach die web-Tests
-```
-
-### Tests
-
-| Ort | Inhalt |
-|---|---|
-| `tests/unit/` | reine Logik ohne PocketBase: Hook-Module aus `app/pb_hooks/lib`, Start-/Stopp- und Admin-Reset-Logik (`app/byl-functions.ps1` mit gefälschten Prozessen, Sockets, Log-Texten und Eingaben) und statische Prüfungen der Skripte |
-| `tests/integration/` | gegen Wegwerf-PocketBase-Instanzen: Migrationen, API-Regeln, Hooks, Login, gesperrte Mail-Abläufe, Admin-Reset, SPA-Fallback, Backup-Wiederherstellung, Datenzugriff und Realtime des Frontends (`web/src/lib/data`) |
-| `web/src/**/*.test.ts` | Frontend: Unit- und Komponententests (jsdom) |
-
-Alle Testfälle stehen im **[Test-Manifest](docs/test-manifest.html)** (im Browser öffnen, funktioniert offline): automatisierte Tests bereichsweise mit Verweis auf die Testdateien, dazu die manuellen Prüfpunkte aus den Plänen zum Abhaken und die geplanten Pakete. `tests/unit/test-manifest.test.mjs` prüft, dass es zu den Testdateien passt.
-
-```powershell
-npm run test:unit          # nur reine Logik, ohne PocketBase
-npm run test:integration   # gegen eine Wegwerf-PocketBase-Instanz
-npm run test:web           # Frontend: Unit- und Komponententests (jsdom)
-```
-
-`npm test` im Root führt erst die Root-Tests (Unit und Integration) und danach die web-Tests aus. **Vorher muss der Frontend-Build existieren** (`npm run build` nach `app/pb_public`), sonst schlägt der SPA-Fallback-Test mit einem Hinweis fehl. `scripts\build.ps1` hält die Reihenfolge ein (check → lint → build → test). Die Integrationstests brauchen außerdem `app/pocketbase.exe` (siehe Schritt 1). Die Start-Skripte selbst werden von den Tests nie ausgeführt; die Tests der Start-Logik rufen nur die Funktionen in Windows PowerShell auf (`-NoProfile -ExecutionPolicy Bypass`).
-
-Pro Lauf startet ein Vitest-`globalSetup` eine eigene PocketBase-Instanz in einem frischen Temp-Ordner (`%TEMP%\byl-test-*`), mit zufälligem Superuser und auf einem freien Port (nie 8090). Danach beendet es die Instanz und löscht den Ordner, auch bei fehlschlagenden Tests oder Strg+C. Eine laufende Produktivinstanz und `app/pb_data` bleiben unberührt. Der SPA-Fallback-Test startet nach demselben Muster eine zweite Instanz mit dem Frontend-Build als `publicDir`. Details: [ADR-0004](docs/adr/0004-teststrategie-hooks-migrationen.md).
-
-Für den Vite-Dev-Server (`npm --prefix web run dev`) leitet `web/vite.config.ts` die Pfade `/api` und `/_/` an die laufende Instanz auf `127.0.0.1:8090` weiter; im Betrieb liefert PocketBase die App selbst aus (gleiche Origin).
+`build.ps1` erwartet `node` (≥ 24) und `npm` im `PATH` und bricht sonst mit einem Hinweis ab. Beim allerersten Start legst du ein Admin- und ein App-Konto an, siehe [Erster Start](#erster-start). Danach ist `app\` eigenständig: Der Ordner lässt sich auf einen anderen Windows-Rechner kopieren und dort ohne Node.js starten.
 
 ---
 
@@ -288,28 +265,68 @@ Danach anmelden und die Daten prüfen; es gelten die Konten und Passwörter zum 
 
 Die Schnellerfassung per `c` und `Strg+K` folgt in E4, weitere Tastaturkürzel in E6.
 
+
 ---
 
-## Roadmap (Etappen)
+## Entwicklung und Tests
 
-- [x] **E0:** Gerüst (Repo, PocketBase, SvelteKit, dieser README)
-- [x] **E1:** Datenmodell, Authentifizierung, Hooks, Start-/Stopp-Skripte
-- [x] **E2:** Listen-View, Detail-View, CRUD, Kommentare, Verlauf, Realtime – Plan und Bilanz: [docs/plan/e2.md](docs/plan/e2.md)
-- [ ] **E3 Übersicht & Ordnung:** Task-Board-Layout ([ADR-0010](docs/adr/0010-layout-nach-task-board.md)), Projekte mit Projektansicht, Tags, Filter, Suche, Sortierung, Gruppierung – Plan: [docs/plan/e3.md](docs/plan/e3.md)
+Qualitäts-Gates (alle über den Root, `scripts\build.ps1` führt sie in dieser Reihenfolge aus):
+
+```powershell
+npm run check   # svelte-check / TypeScript
+npm run lint    # Prettier + ESLint
+npm run build   # Frontend-Build nach app/pb_public
+npm test        # Vitest: Unit- und Integrationstests, danach die web-Tests
+```
+
+Die CI ([`.github/workflows/ci.yml`](.github/workflows/ci.yml)) läuft bei jedem Push und Pull Request auf `main` auf einem Windows-Runner: Node.js 24, `scripts\fetch-pocketbase.ps1`, dann `scripts\build.ps1`. Dependabot hält npm-Pakete und Actions aktuell.
+
+### Tests
+
+| Ort | Inhalt |
+|---|---|
+| `tests/unit/` | reine Logik ohne PocketBase: Hook-Module aus `app/pb_hooks/lib`, Start-/Stopp- und Admin-Reset-Logik (`app/byl-functions.ps1` mit gefälschten Prozessen, Sockets, Log-Texten und Eingaben) und statische Prüfungen der Skripte |
+| `tests/integration/` | gegen Wegwerf-PocketBase-Instanzen: Migrationen, API-Regeln, Hooks, Login, gesperrte Mail-Abläufe, Admin-Reset, SPA-Fallback, Backup-Wiederherstellung, Datenzugriff und Realtime des Frontends (`web/src/lib/data`) |
+| `web/src/**/*.test.ts` | Frontend: Domänenlogik, Stores, Unit- und Komponententests (jsdom) |
+
+```powershell
+npm run test:unit          # nur reine Logik, ohne PocketBase
+npm run test:integration   # gegen eine Wegwerf-PocketBase-Instanz
+npm run test:web           # Frontend: Unit- und Komponententests (jsdom)
+```
+
+**Test-Manifest:** Alle Testfälle stehen in [`docs/test-manifest.html`](docs/test-manifest.html) (lokal im Browser öffnen, funktioniert offline): automatisierte Tests bereichsweise mit Verweis auf die Testdateien, die manuellen Prüfpunkte aus den Plänen zum Abhaken und die geplanten Pakete. Jedes Arbeitspaket pflegt es mit; `tests/unit/test-manifest.test.mjs` prüft, dass es zu den Testdateien passt.
+
+`npm test` im Root führt erst die Root-Tests (Unit und Integration) und danach die web-Tests aus. **Vorher muss der Frontend-Build existieren** (`npm run build` nach `app/pb_public`), sonst schlägt der SPA-Fallback-Test mit einem Hinweis fehl. Die Integrationstests brauchen außerdem `app/pocketbase.exe` (Quickstart, Schritt 1). Die Start-Skripte selbst werden von den Tests nie ausgeführt; die Tests der Start-Logik rufen nur die Funktionen in Windows PowerShell auf (`-NoProfile -ExecutionPolicy Bypass`).
+
+Pro Lauf startet ein Vitest-`globalSetup` eine eigene PocketBase-Instanz in einem frischen Temp-Ordner (`%TEMP%\byl-test-*`), mit zufälligem Superuser und auf einem freien Port (nie 8090). Danach beendet es die Instanz und löscht den Ordner, auch bei fehlschlagenden Tests oder Strg+C. Eine laufende Produktivinstanz und `app/pb_data` bleiben unberührt. Der SPA-Fallback-Test startet nach demselben Muster eine zweite Instanz mit dem Frontend-Build als `publicDir`. Details: [ADR-0004](docs/adr/0004-teststrategie-hooks-migrationen.md).
+
+Für den Vite-Dev-Server (`npm --prefix web run dev`) leitet `web/vite.config.ts` die Pfade `/api` und `/_/` an die laufende Instanz auf `127.0.0.1:8090` weiter; im Betrieb liefert PocketBase die App selbst aus (gleiche Origin).
+
+**Beiträge:** Conventional Commits (`feat:`, `fix:`, `docs:`, `test:`, `refactor:`, `chore:`, `ci:`); die [PR-Vorlage](.github/pull_request_template.md) enthält die Checkliste. Sicherheitslücken bitte privat melden, siehe [SECURITY.md](.github/SECURITY.md).
+
+---
+
+## Roadmap
+
+- [x] **E0:** Gerüst (Repo, PocketBase, SvelteKit, README)
+- [x] **E1:** Datenmodell, Authentifizierung, Hooks, Start-/Stopp-Skripte – [docs/plan/e1.md](docs/plan/e1.md), [ADR-0002](docs/adr/0002-erststart-und-superuser.md) bis [ADR-0005](docs/adr/0005-zeitzone-europe-berlin.md)
+- [x] **E2:** Listen-View, Detail-View, CRUD, Kommentare, Verlauf, Realtime – [docs/plan/e2.md](docs/plan/e2.md), [ADR-0006](docs/adr/0006-frontend-zustand-und-datenzugriff.md) bis [ADR-0009](docs/adr/0009-fehlerfarbe.md)
+- [ ] **E3 Übersicht & Ordnung** (in Arbeit, Pakete 1–4 von 15): Task-Board-Layout ([ADR-0010](docs/adr/0010-layout-nach-task-board.md)), Projekte mit Projektansicht, Tags, Filter, Suche, Sortierung, Gruppierung ([ADR-0013](docs/adr/0013-filter-suche-sortierung-gruppierung.md)) – [docs/plan/e3.md](docs/plan/e3.md)
 - [ ] **E4 Eingang & Kanäle:** Schnellerfassung und Zwischenablage, Web-Links (Bookmarklet), `.ics`, `.eml` per Drag & Drop; in Prüfung: Google Calendar, WhatsApp, Telegram, Notion
-- [ ] **E5 Wiederkehrende Aufgaben:** Kalender- und Nach-Completion-Regeln (RRULE-Teilmenge), Vorschläge aus `.ics`-RRULE
+- [ ] **E5 Wiederkehrende Aufgaben:** Kalender- und Nach-Erledigung-Regeln (RRULE-Teilmenge), Vorschläge aus `.ics`-RRULE
 - [ ] **E6 Feinschliff:** Papierkorb, Spalten, Vollansicht, Tastatur, Hilfe, Theme-Umschalter
-- [ ] **E7 Haushalt & Mehrgeräte:** gemeinsame Tickets im Haushalt, Zugriff über Tailscale (`tailscale serve` mit HTTPS, Superuser nur lokal) – ohne Datenmigration, siehe [ADR-0001](docs/adr/0001-betriebsmodell-lokal-mehrgeraete-spaeter.md)
+- [ ] **E7 Haushalt & Mehrgeräte:** gemeinsame Tickets im Haushalt, Zugriff über Tailscale (`tailscale serve` mit HTTPS, Superuser nur lokal), ohne Datenmigration – [ADR-0001](docs/adr/0001-betriebsmodell-lokal-mehrgeraete-spaeter.md)
 
-Etappenfolge und Begründung: [ADR-0011](docs/adr/0011-roadmap-e3-bis-e7.md). Ohne Ticket-Typen, Epics, Sprints und Story Points: [ADR-0012](docs/adr/0012-plain-ticketing.md).
-
-Nach jeder Etappe: Zusammenfassung, Testanleitung, Entscheidungen. Architekturentscheidungen stehen in [docs/adr/](docs/adr/README.md), die Umsetzungspläne in [docs/plan/](docs/plan/) (E1: [e1.md](docs/plan/e1.md), E2: [e2.md](docs/plan/e2.md), E3: [e3.md](docs/plan/e3.md)).
+Etappenfolge und Begründung: [ADR-0011](docs/adr/0011-roadmap-e3-bis-e7.md). Ohne Ticket-Typen, Epics, Sprints und Story Points: [ADR-0012](docs/adr/0012-plain-ticketing.md). Alle Architekturentscheidungen: [docs/adr/](docs/adr/README.md); Umsetzungspläne: [docs/plan/](docs/plan/).
 
 ---
 
-## Lizenz
+## Lizenz und Marken
 
 [MIT](LICENSE) © 2026 [Labushuya](https://github.com/Labushuya)
+
+Jira und Atlassian sind Marken der Atlassian Pty Ltd. becauseyoulovejira ist ein unabhängiges Projekt, steht in keiner Verbindung zu Atlassian und wird von Atlassian weder unterstützt noch gesponsert.
 
 ---
 
