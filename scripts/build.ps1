@@ -54,14 +54,14 @@ try {
 	npm run lint
 	if ($LASTEXITCODE -ne 0) { exit 1 }
 
-	# Run tests
-	Write-Host "Running tests..."
-	npm test
-	if ($LASTEXITCODE -ne 0) { exit 1 }
-
-	# Run build
+	# Run build (before the tests: the SPA fallback test serves app/pb_public)
 	Write-Host "Running build..."
 	npm run build
+	if ($LASTEXITCODE -ne 0) { exit 1 }
+
+	# Run tests (root unit and integration tests, then the web tests)
+	Write-Host "Running tests..."
+	npm test
 	if ($LASTEXITCODE -ne 0) { exit 1 }
 
 	Write-Host "Build complete!"

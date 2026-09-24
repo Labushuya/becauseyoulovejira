@@ -34,9 +34,11 @@ const EXIT_SIGNALS = ['SIGINT', 'SIGTERM', 'SIGBREAK', 'SIGHUP'];
 
 /**
  * Starts a disposable PocketBase instance.
+ * @param {{ publicFiles?: string }} [options] `publicFiles`: folder copied into the public folder
+ *   of the instance (e.g. the web build); without it the public folder stays empty.
  * @returns {Promise<{ url: string, email: string, password: string, stop: () => Promise<void> }>}
  */
-export async function startPocketBase() {
+export async function startPocketBase(options = {}) {
 	assertExecutable();
 
 	const state = {
@@ -52,6 +54,9 @@ export async function startPocketBase() {
 		const publicDir = join(state.baseDir, 'pb_public');
 		await mkdir(dataDir);
 		await mkdir(publicDir);
+		if (options.publicFiles !== undefined) {
+			await cp(options.publicFiles, publicDir, { recursive: true });
+		}
 		await cp(APP_HOOKS_DIR, hooksDir, { recursive: true });
 		if (existsSync(FIXTURE_HOOKS_DIR)) {
 			await cp(FIXTURE_HOOKS_DIR, hooksDir, { recursive: true });

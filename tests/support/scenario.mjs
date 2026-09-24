@@ -100,6 +100,9 @@ export async function createOwner(superuser) {
 	const id = user.record.id;
 	return {
 		id,
+		// Random credentials, in memory only (login tests).
+		email: user.email,
+		password: user.password,
 		client,
 		ticket: (data = {}) =>
 			client.collection('tickets').create({ owner: id, title: `Ticket ${uniqueSuffix()}`, ...data }),
