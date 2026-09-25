@@ -43,7 +43,9 @@ const mocks = vi.hoisted(() => {
 			tags: vi.fn(subscribe('tags')),
 			inbox: vi.fn(subscribe('inbox')),
 			reads: vi.fn(subscribe('reads')),
-			reconnected: vi.fn(subscribe('PB_CONNECT'))
+			reconnected: vi.fn(subscribe('PB_CONNECT')),
+			// Recurrence rules have their own small live source (E5 plan, package 4).
+			rules: vi.fn(subscribe('rules'))
 		},
 		goto: vi.fn(async () => {
 			calls.push('goto');
@@ -107,6 +109,28 @@ vi.mock('$lib/stores/inbox.svelte', async (importOriginal) => ({
 			throw new Error('not used');
 		}
 	})
+}));
+vi.mock('$lib/stores/recurrence.svelte', async (importOriginal) => ({
+	...(await importOriginal<object>()),
+	recurrenceData: () => ({
+		listRules: async () => [],
+		createRule: async () => {
+			throw new Error('not used');
+		},
+		updateRule: async () => {
+			throw new Error('not used');
+		},
+		setActive: async () => {
+			throw new Error('not used');
+		},
+		deleteRule: async () => {
+			throw new Error('not used');
+		},
+		detachTicket: async () => {
+			throw new Error('not used');
+		}
+	}),
+	recurrenceLive: () => ({ rules: mocks.live.rules, reconnected: mocks.live.reconnected })
 }));
 vi.mock('$lib/stores/catalog.svelte', async (importOriginal) => ({
 	...(await importOriginal<object>()),
@@ -189,14 +213,15 @@ describe('app layout', () => {
 		expect(mocks.auth.keepAlive).toHaveBeenCalledOnce();
 	});
 
-	it('subscribes to tickets, the catalog, the inbox and reconnections while shown and ends them when it goes away', async () => {
+	it('subscribes to tickets, the catalog, the inbox, the rules and reconnections while shown and ends them when it goes away', async () => {
 		const { unmount } = await renderLayout();
-		await vi.waitFor(() => expect(mocks.subscribed).toHaveLength(9));
+		await vi.waitFor(() => expect(mocks.subscribed).toHaveLength(11));
 
 		// The list follows all tickets, the catalog all projects and tags (E3 plan, T-16), the
-		// inbox all entries (E4 plan, T-4); list, panel, activity, catalog and inbox each reconcile
-		// after a reconnect.
+		// inbox all entries (E4 plan, T-4), the rules all rules (E5 plan, T-7); list, panel,
+		// activity, catalog, inbox and rules each reconcile after a reconnect.
 		expect([...mocks.subscribed].sort()).toEqual([
+			'PB_CONNECT',
 			'PB_CONNECT',
 			'PB_CONNECT',
 			'PB_CONNECT',
@@ -204,6 +229,7 @@ describe('app layout', () => {
 			'PB_CONNECT',
 			'inbox',
 			'projects',
+			'rules',
 			'tags',
 			'tickets'
 		]);
@@ -211,6 +237,7 @@ describe('app layout', () => {
 		expect(mocks.live.projects).toHaveBeenCalledOnce();
 		expect(mocks.live.tags).toHaveBeenCalledOnce();
 		expect(mocks.live.inbox).toHaveBeenCalledOnce();
+		expect(mocks.live.rules).toHaveBeenCalledOnce();
 		// The catalog tries to load once when the layout is shown.
 		expect(mocks.auth.ensureValid).toHaveBeenCalled();
 
