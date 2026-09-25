@@ -213,8 +213,8 @@
   "meta": {
     "projekt": "becauseyoulovejira",
     "stand": "2026-09-25",
-    "commit": "a6c74ce",
-    "etappe": "E0 bis E4 abgeschlossen (E4: Pakete 1 bis 11, 13 bis 17, 19 bis 24; Paket 12 entfällt, Paket 18 zurückgestellt); E5 in Arbeit (Pakete 1 bis 4: BYL-E5-001 bis BYL-E5-005); E6 UI-Konsistenz vorgezogen (UI-0 bis UI-6: BYL-E6-001 bis BYL-E6-020)"
+    "commit": "8119a96",
+    "etappe": "E0 bis E4 abgeschlossen (E4: Pakete 1 bis 11, 13 bis 17, 19 bis 24; Paket 12 entfällt, Paket 18 zurückgestellt); E5 in Arbeit (Pakete 1 bis 4: BYL-E5-001 bis BYL-E5-005); E6 UI-Konsistenz vorgezogen (UI-0 bis UI-7: BYL-E6-001 bis BYL-E6-022)"
   },
   "blocks": [
     {
@@ -1442,14 +1442,14 @@
           "pre": "Plan UI-Konsistenz, Paket UI-6. Automatisch mit einer matchMedia-Attrappe; manuell mit dem Build von main in app\\, F5, in Chrome, Firefox und Opera GX.", "steps": ["Ein Ticket öffnen: das Panel gleitet einmal von rechts ein (480 px), ein Klick auf eine andere Zeile wechselt ohne erneutes Einblenden; Kopf und Fuß bleiben beim Scrollen stehen.", "Das Fenster schmaler als 48rem ziehen: das Panel deckt die Liste ab, Tab erreicht die Liste nicht.", "Mit ausgeschalteten Animationseffekten erscheint das Panel ohne Bewegung.", "Eintrag im Eingang öffnen: „Umwandeln“, „Verwerfen“ stehen im festen Fuß."],
           "expect": "Auf schmalen Fenstern springt der Tab-Fokus nicht in die verdeckte Liste. Automatisch geprüft: ViewWithPanel setzt inert auf die Liste nur schmal und nur mit Panel, folgt einer Änderung der Fensterbreite, markiert das Einblenden nur beim Öffnen neben der Liste (nicht beim Wechsel) und nutzt --drawer-width.",
           "tests": ["web/src/lib/components/view-with-panel.test.ts"] },
-        { "id": "BYL-E6-021", "title": "Vollansicht öffnen und schließen", "art": ["komponente"], "status": "geplant",
-          "pre": "Plan UI-Konsistenz, Paket UI-7; Nutzerentscheidung 2.", "steps": ["„Vollansicht“ im Panel öffnet das XL-Modal mit zwei Spalten.", "×, Esc und Blanket führen zurück ins Panel, Fokus auf „Vollansicht“."],
-          "expect": "Die Vollansicht zeigt ein Ticket groß, ohne den Kontext zu verlieren.",
-          "tests": [] },
-        { "id": "BYL-E6-022", "title": "Vollansicht per Adresse", "art": ["komponente", "manuell"], "status": "geplant",
-          "pre": "Plan UI-Konsistenz, Paket UI-7.", "steps": ["/tickets/<id>/voll neu laden und per Mittelklick öffnen.", "Der Browser-Tab zeigt den Key."],
-          "expect": "Die Vollansicht ist verlinkbar.",
-          "tests": [] },
+        { "id": "BYL-E6-021", "title": "Vollansicht öffnen und schließen", "art": ["komponente", "unit"], "status": "bestanden",
+          "pre": "Plan UI-Konsistenz, Paket UI-7; ADR-0025 §7, Nutzerentscheidung 2. Route mit Layout und Vollansicht über ein Test-Harness, Stores mit Fake-Daten, Navigation gefälscht.", "steps": ["npm run test:web"],
+          "expect": "Das Panel bietet „Vollansicht öffnen“ als Link auf /tickets/<id>/voll mit der Query der Liste. Die Vollansicht ist ein Modal XL mit dem Namen „KEY · Titel“ über dem Panel: links Titel (bearbeitbar), Beschreibung, Kommentare und Verlauf; rechts Karten „Details“ (Status, Priorität, Fälligkeit, Projekt, Tags), „Wiederholung“, „Quelle“ (nur mit Quelle) und „Metadaten“; im Kopf „Löschen …“. Felder speichern wie im Panel (dieselben Bausteine TicketFields, TicketDescription, TicketMeta, TicketDelete). ×, Esc und Blanket führen zurück zu /tickets/<id> mit derselben Query, der Fokus steht danach auf „Vollansicht öffnen“. Zwischen Panel und Vollansicht desselben Tickets fragt nichts nach ungespeichertem Text, zu einem anderen Ticket schon. Löschen aus der Vollansicht führt zur Liste.",
+          "tests": ["web/src/lib/components/ticket-panel.test.ts::ticket route: full view", "web/src/lib/ticket-links.test.ts::addresses the full view of a ticket"] },
+        { "id": "BYL-E6-022", "title": "Vollansicht per Adresse", "art": ["komponente", "manuell"], "status": "offen",
+          "pre": "Plan UI-Konsistenz, Paket UI-7. Automatisch: Titel des Dokuments; manuell mit dem Build von main in app\\, F5, in Chrome, Firefox und Opera GX.", "steps": ["/tickets/<id>/voll neu laden: Liste, Panel und darüber die Vollansicht erscheinen.", "„Vollansicht öffnen“ per Mittelklick: ein neuer Tab zeigt die Vollansicht.", "Der Browser-Tab zeigt „KEY · Vollansicht“.", "Fenster unter 64rem: eine Spalte, die Karten unter dem Inhalt; unter 48rem füllt die Vollansicht den Bildschirm."],
+          "expect": "Die Vollansicht ist verlinkbar und übersteht Neuladen.",
+          "tests": ["web/src/lib/components/ticket-panel.test.ts::opens as XL modal over the panel"] },
         { "id": "BYL-E6-023", "title": "Projekt-Panel", "art": ["komponente"], "status": "geplant",
           "pre": "Plan UI-Konsistenz, Paket UI-8; Nutzerentscheidung 4.", "steps": ["Kachelklick öffnet /projekte/<id>, „Neues Projekt“ /projekte/neu.", "Name und Code bearbeiten, Archiviert, Zahlen, „Tickets anzeigen“.", "Löschen über die Bestätigung mit Ticketzahl, Rückmeldung als Flag."],
           "expect": "Projekte bedienen sich wie Tickets und Eingang.",
