@@ -8,13 +8,14 @@
 	// because each has its own address. The current one carries aria-current="page" and is marked
 	// by weight and a line besides its colour. "Aufgaben" keeps the list state of the URL while the
 	// list is shown, "Eingang" its chips while the inbox is shown. The number of new inbox entries
-	// stands next to "Eingang" (ADR-0015 section 5), as text for screen readers too.
+	// stands next to "Eingang" (ADR-0015 section 5), as text for screen readers too. In the settings
+	// (ADR-0026 section 1) no view is current: current is null, and all links lead to the plain views.
 	let {
 		current,
 		inboxCount = null,
 		projectsNewCount = 0
 	}: {
-		current: 'tasks' | 'projects' | 'inbox';
+		current: 'tasks' | 'projects' | 'inbox' | null;
 		/** New inbox entries; null while not loaded (no number is shown). */
 		inboxCount?: number | null;
 		/** New tickets in projects (ADR-0015 section 5); 0 shows no number. */

@@ -52,6 +52,8 @@ const mocks = vi.hoisted(() => {
 		goto: vi.fn(async () => {
 			calls.push('goto');
 		}),
+		// Callbacks of afterNavigate (the way back of the settings, EH-1), called by the tests.
+		afterNavigate: [] as ((navigation: { to: { url: URL } | null }) => void)[],
 		page: { url: new URL('http://localhost:3000/') },
 		auth: {
 			email: 'anna@example.com',
@@ -66,7 +68,12 @@ const mocks = vi.hoisted(() => {
 	};
 });
 
-vi.mock('$app/navigation', () => ({ goto: mocks.goto }));
+vi.mock('$app/navigation', () => ({
+	goto: mocks.goto,
+	afterNavigate: (callback: (navigation: { to: { url: URL } | null }) => void) => {
+		mocks.afterNavigate.push(callback);
+	}
+}));
 vi.mock('$app/state', () => ({ page: mocks.page }));
 vi.mock('$lib/auth.svelte', () => ({ auth: mocks.auth }));
 vi.mock('$lib/stores/realtime', async (importOriginal) => ({
@@ -177,6 +184,7 @@ async function renderLayout(path = '/') {
 
 beforeEach(() => {
 	mocks.calls.length = 0;
+	mocks.afterNavigate.length = 0;
 	mocks.goto.mockClear();
 	mocks.auth.keepAlive.mockClear();
 	mocks.auth.logout.mockClear();
@@ -274,6 +282,52 @@ describe('app layout', () => {
 		const link = within(screen.getByRole('banner')).getByRole('link', { name: 'Neues Ticket' });
 		expect(link.getAttribute('href')).toBe('/tickets/neu?erledigte=1');
 		expect(link.id).toBe(NEW_TICKET_LINK_ID);
+	});
+
+	it('leads from the app name to "Aufgaben" (EH-1)', async () => {
+		await renderLayout('/eingang?quelle=mail');
+
+		const heading = within(screen.getByRole('banner')).getByRole('heading', { level: 1 });
+		const link = within(heading).getByRole('link', { name: 'becauseyoulovejira' });
+		expect(link.getAttribute('href')).toBe('/');
+	});
+
+	it('offers the settings as a gear icon button, current in the settings (EH-1)', async () => {
+		await renderLayout('/?status=open');
+
+		const header = within(screen.getByRole('banner'));
+		const gear = header.getByRole('link', { name: 'Einstellungen' });
+		expect(gear.getAttribute('href')).toBe('/einstellungen/kanaele');
+		expect(gear.classList.contains('button-icon')).toBe(true);
+		expect(gear.getAttribute('title')).toBe('Einstellungen');
+		expect(gear.textContent?.trim()).toBe('');
+		expect(gear.hasAttribute('aria-current')).toBe(false);
+		expect(header.queryByRole('link', { name: 'Kanäle' })).toBeNull();
+
+		document.body.innerHTML = '';
+		await renderLayout('/einstellungen/datei-importe');
+		expect(
+			within(screen.getByRole('banner'))
+				.getByRole('link', { name: 'Einstellungen' })
+				.getAttribute('aria-current')
+		).toBe('page');
+	});
+
+	it('remembers the views for the way back from the settings (EH-1)', async () => {
+		sessionStorage.clear();
+		await renderLayout('/');
+		const navigate = (path: string) => {
+			for (const callback of mocks.afterNavigate) {
+				callback({ to: { url: new URL(path, 'http://localhost:3000') } });
+			}
+		};
+
+		navigate('/tickets/abc123def456ghi?status=open');
+		navigate('/einstellungen/kanaele');
+		navigate('/tickets/abc123def456ghi/voll?status=open');
+
+		expect(sessionStorage.getItem('byl-last-view')).toBe('/tickets/abc123def456ghi?status=open');
+		sessionStorage.clear();
 	});
 
 	it('shows no counter while the list is not loaded', async () => {

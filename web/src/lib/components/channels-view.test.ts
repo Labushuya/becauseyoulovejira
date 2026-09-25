@@ -5,7 +5,6 @@ import { fireEvent, render, screen } from '@testing-library/svelte';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { bookmarkletCode } from '$lib/domain/bookmarklet';
 import { ConnectionsStore } from '$lib/stores/connections.svelte';
-import { ImportKeywordsStore } from '$lib/stores/import-keywords.svelte';
 import ChannelsView from './ChannelsView.svelte';
 
 const CAPTURE = 'http://127.0.0.1:8090/eingang/neu';
@@ -30,15 +29,6 @@ function idleConnections() {
 	);
 }
 
-/** Keywords of the file imports that were not loaded: the section shows only its text. */
-function idleKeywords() {
-	const never = () => Promise.reject(new Error('not used'));
-	return new ImportKeywordsStore(
-		{ load: never, save: never },
-		{ ensureValid: () => true, logout: () => undefined }
-	);
-}
-
 afterEach(() => {
 	vi.unstubAllGlobals();
 	vi.restoreAllMocks();
@@ -47,9 +37,13 @@ afterEach(() => {
 describe('channels view', () => {
 	it('offers the bookmarklet as draggable link for the address of the app', () => {
 		render(ChannelsView, {
-			props: { captureUrl: CAPTURE, connections: idleConnections(), importKeywords: idleKeywords() }
+			props: { captureUrl: CAPTURE, connections: idleConnections() }
 		});
-		expect(screen.getByRole('heading', { level: 2 }).textContent).toBe('Kanäle');
+		// The heading "Kanäle" belongs to the settings layout since EH-1 (settings-layout.test.ts).
+		expect(screen.queryByRole('heading', { level: 2 })).toBeNull();
+		expect(
+			screen.getByRole('heading', { level: 3, name: 'Bookmarklet für Web-Links' })
+		).toBeTruthy();
 		const link = screen.getByRole('link', { name: 'In den Eingang' });
 		expect(link.getAttribute('href')).toBe(bookmarkletCode(CAPTURE));
 		expect(link.getAttribute('draggable')).toBe('true');
@@ -58,7 +52,7 @@ describe('channels view', () => {
 
 	it('does nothing on a click in the app and says why', async () => {
 		render(ChannelsView, {
-			props: { captureUrl: CAPTURE, connections: idleConnections(), importKeywords: idleKeywords() }
+			props: { captureUrl: CAPTURE, connections: idleConnections() }
 		});
 		const link = screen.getByRole('link', { name: 'In den Eingang' });
 		const click = new MouseEvent('click', { bubbles: true, cancelable: true });
@@ -71,7 +65,7 @@ describe('channels view', () => {
 		const writeText = vi.fn(async () => undefined);
 		vi.stubGlobal('navigator', { clipboard: { writeText } });
 		render(ChannelsView, {
-			props: { captureUrl: CAPTURE, connections: idleConnections(), importKeywords: idleKeywords() }
+			props: { captureUrl: CAPTURE, connections: idleConnections() }
 		});
 		const area = screen.getByLabelText<HTMLTextAreaElement>('Code des Bookmarklets');
 		expect(area.readOnly).toBe(true);
@@ -90,7 +84,7 @@ describe('channels view', () => {
 			}
 		});
 		render(ChannelsView, {
-			props: { captureUrl: CAPTURE, connections: idleConnections(), importKeywords: idleKeywords() }
+			props: { captureUrl: CAPTURE, connections: idleConnections() }
 		});
 		await fireEvent.click(screen.getByRole('button', { name: 'Code kopieren' }));
 		expect(screen.getByRole('status').textContent).toMatch(/Strg\+C/);

@@ -4,15 +4,18 @@
 	import { page } from '$app/state';
 	import { auth } from '$lib/auth.svelte';
 	import { loginUrlFor } from '$lib/guard';
+	import { isSettingsPath } from '$lib/settings-sections';
 	import { NEW_TICKET_LINK_ID, newTicketHref } from '$lib/ticket-links';
 	import AreaSwitch from './AreaSwitch.svelte';
 	import ThemeMenu from './ThemeMenu.svelte';
 
 	// Header of every signed-in page (E2 plan, T-4; E3 plan, T-18; ADR-0025 section 10): app name
 	// with the counter of tickets that are not done, area switch, the main button "Neues Ticket",
-	// "Kanäle", the theme switcher and the session. From 64rem it stays at the top while the page
-	// scrolls, and its height goes to --app-header-height, below which the embedded side panel
-	// stands (package UI-6b). While a side panel covers the view (below 64rem) it is inert.
+	// the gear "Einstellungen", the theme switcher and the session. The app name leads to "Aufgaben";
+	// the gear is an icon button like the theme switcher and carries aria-current in the settings
+	// (ADR-0026 section 1, EH-1). From 64rem the header stays at the top while the page scrolls, and
+	// its height goes to --app-header-height, below which the embedded side panel stands (package
+	// UI-6b). While a side panel covers the view (below 64rem) it is inert.
 	let {
 		openCount = null,
 		covered = false,
@@ -25,6 +28,8 @@
 		/** Opens the quick entry (E4 plan, package 6); without it there is no button. */
 		onquick?: () => void;
 	} = $props();
+
+	const inSettings = $derived(isSettingsPath(page.url.pathname));
 
 	const countLabel = $derived(
 		openCount === 1 ? '1 nicht erledigtes Ticket' : `${openCount} nicht erledigte Tickets`
@@ -58,7 +63,7 @@
 
 <header class="app-header" inert={covered} bind:this={header}>
 	<div class="brand-group">
-		<h1 class="brand">becauseyoulovejira</h1>
+		<h1 class="brand"><a href={resolve('/')}>becauseyoulovejira</a></h1>
 		{#if openCount !== null}
 			<span class="counter">
 				<span aria-hidden="true">{openCount}</span>
@@ -83,7 +88,20 @@
 		</svg>
 		Neues Ticket
 	</a>
-	<a class="settings" href={resolve('/einstellungen/kanaele')}>Kanäle</a>
+	<a
+		class="button-icon settings"
+		href={resolve('/einstellungen/kanaele')}
+		aria-label="Einstellungen"
+		title="Einstellungen"
+		aria-current={inSettings ? 'page' : undefined}
+	>
+		<svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true" focusable="false">
+			<path
+				d="M6.76 2.95L7.02 1.07L8.98 1.07L9.24 2.95L10.7 3.55L12.21 2.41L13.59 3.79L12.45 5.3L13.05 6.76L14.93 7.02L14.93 8.98L13.05 9.24L12.45 10.7L13.59 12.21L12.21 13.59L10.7 12.45L9.24 13.05L8.98 14.93L7.02 14.93L6.76 13.05L5.3 12.45L3.79 13.59L2.41 12.21L3.55 10.7L2.95 9.24L1.07 8.98L1.07 7.02L2.95 6.76L3.55 5.3L2.41 3.79L3.79 2.41L5.3 3.55Z"
+			/>
+			<circle cx="8" cy="8" r="2.25" />
+		</svg>
+	</a>
 	<ThemeMenu />
 	<div class="session">
 		<p class="user">Angemeldet als <strong>{auth.email}</strong></p>
@@ -120,6 +138,17 @@
 		font-size: 1rem;
 		font-weight: 600;
 		color: var(--color-brand-text);
+	}
+
+	/* The app name leads to "Aufgaben": no underline, a visible focus from base.css. */
+	.brand a {
+		color: inherit;
+		text-decoration: none;
+		border-radius: var(--radius-control);
+	}
+
+	.brand a:hover {
+		text-decoration: underline;
 	}
 
 	.counter {
@@ -171,9 +200,18 @@
 		margin-left: 0;
 	}
 
-	.settings {
-		font-size: 0.875rem;
-		color: var(--color-brand-text);
+	.settings svg {
+		fill: none;
+		stroke: currentColor;
+		stroke-width: 1.25;
+		stroke-linejoin: round;
+	}
+
+	/* In the settings: surface "Marke Fläche / Text darauf" besides aria-current. */
+	.settings[aria-current='page'] {
+		color: var(--color-brand-soft-text);
+		background: var(--color-brand-soft-bg);
+		border-color: var(--color-brand);
 	}
 
 	.session {
