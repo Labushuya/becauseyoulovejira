@@ -7,7 +7,6 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { DataError } from '$lib/data/errors';
 import type { InboxItem } from '$lib/domain/inbox';
 import type { TicketSummary } from '$lib/domain/ticket';
-import type { ResolvedPathname } from '$app/types';
 import { InboxStore, type InboxData } from '$lib/stores/inbox.svelte';
 import InboxPanel from './InboxPanel.svelte';
 
@@ -79,7 +78,6 @@ function setup(item: InboxItem | Error = entry(), tickets: TicketSummary[] = [])
 			id: ID,
 			store,
 			openTickets: tickets,
-			closeHref: '/eingang?quelle=mail' as ResolvedPathname,
 			onclose
 		}
 	});
@@ -92,7 +90,7 @@ afterEach(() => {
 
 describe('inbox panel', () => {
 	it('shows the details of the source and focuses the title', async () => {
-		setup();
+		const { onclose } = setup();
 		const heading = await screen.findByRole('heading', { name: 'Rechnung September' });
 		await vi.waitFor(() => expect(document.activeElement).toBe(heading));
 		const details = within(screen.getByRole('complementary'));
@@ -110,9 +108,10 @@ describe('inbox panel', () => {
 		expect(link.getAttribute('rel')).toBe('noopener noreferrer');
 		expect(link.getAttribute('target')).toBe('_blank');
 		expect(screen.getByText(/Das Quelldatum wird nicht zur Fälligkeit/)).toBeTruthy();
-		expect(screen.getByRole('link', { name: 'Schließen' }).getAttribute('href')).toBe(
-			'/eingang?quelle=mail'
-		);
+		// × of the side panel (UI-6) instead of the link "Schließen".
+		expect(screen.queryByRole('link', { name: 'Schließen' })).toBeNull();
+		await fireEvent.click(screen.getByRole('button', { name: 'Panel schließen' }));
+		expect(onclose).toHaveBeenCalledOnce();
 	});
 
 	it('shows the text as sanitised Markdown', async () => {

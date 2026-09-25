@@ -19,11 +19,5 @@
 </svelte:head>
 
 {#key id}
-	<InboxPanel
-		{id}
-		store={inbox}
-		openTickets={tickets.open}
-		closeHref={back}
-		onclose={() => goto(back)}
-	/>
+	<InboxPanel {id} store={inbox} openTickets={tickets.open} onclose={() => goto(back)} />
 {/key}

@@ -30,6 +30,13 @@ function show(tags: Tag[] = [CALL, GARDEN], overrides: Partial<Editor> = {}) {
 		...overrides
 	};
 	const onannounce = vi.fn();
+	// The heading of the view (SectionBar) takes the focus when the deleted tag is gone (UI-6).
+	for (const old of document.querySelectorAll('[data-view-heading]')) old.remove();
+	const view = document.createElement('h2');
+	view.textContent = 'Projekte';
+	view.tabIndex = -1;
+	view.dataset.viewHeading = '';
+	document.body.append(view);
 	const result = render(TagManager, { props: { tags, editor, onannounce } });
 	return { editor, onannounce, ...result };
 }
@@ -117,7 +124,9 @@ describe('tag manager', () => {
 	it('asks with the number of tickets before deleting and deletes after confirming', async () => {
 		const { editor, onannounce } = show();
 
-		await fireEvent.click(screen.getByRole('button', { name: 'Tag „Garten“ löschen …' }));
+		const trigger = screen.getByRole('button', { name: 'Tag „Garten“ löschen …' });
+		trigger.focus();
+		await fireEvent.click(trigger);
 
 		const dialog = screen.getByRole('dialog', { name: 'Tag „Garten“ löschen?' });
 		await vi.waitFor(() =>
@@ -132,7 +141,9 @@ describe('tag manager', () => {
 
 		expect(editor.deleteTag).toHaveBeenCalledExactlyOnceWith(GARDEN);
 		await vi.waitFor(() => expect(onannounce).toHaveBeenCalledWith('Tag „Garten“ gelöscht.'));
-		expect(document.activeElement).toBe(screen.getByRole('heading', { name: 'Tags' }));
+		// The list of this test keeps the tag, so the modal returns the focus to its button (the
+		// fallback to the heading of the view when it is gone: modal.test.ts, UI-6).
+		await vi.waitFor(() => expect(document.activeElement).toBe(trigger));
 	});
 
 	it('names one ticket, no ticket, and a count that failed', async () => {
@@ -153,7 +164,9 @@ describe('tag manager', () => {
 			'Kein Ticket trägt diesen Tag.',
 			'Wie viele Tickets ihn tragen, ließ sich nicht ermitteln.'
 		]) {
-			await fireEvent.click(screen.getByRole('button', { name: 'Tag „Garten“ löschen …' }));
+			const trigger = screen.getByRole('button', { name: 'Tag „Garten“ löschen …' });
+			trigger.focus();
+			await fireEvent.click(trigger);
 			await vi.waitFor(() => expect(dialog().textContent).toMatch(text));
 			await fireEvent.click(within(dialog()).getByRole('button', { name: 'Abbrechen' }));
 			await vi.waitFor(() =>

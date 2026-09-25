@@ -385,7 +385,7 @@ describe('ticket panel', () => {
 		);
 	});
 
-	it('closes with Escape and with "Schließen", but not from a form field', async () => {
+	it('closes with Escape and with × "Panel schließen", but not from a form field', async () => {
 		const { onclose } = await renderPanel();
 
 		await fireEvent.keyDown(screen.getByLabelText('Status'), { key: 'Escape' });
@@ -394,7 +394,7 @@ describe('ticket panel', () => {
 		await fireEvent.keyDown(heading(), { key: 'Escape' });
 		expect(onclose).toHaveBeenCalledOnce();
 
-		await fireEvent.click(screen.getByRole('button', { name: 'Schließen' }));
+		await fireEvent.click(screen.getByRole('button', { name: 'Panel schließen' }));
 		expect(onclose).toHaveBeenCalledTimes(2);
 	});
 
@@ -685,7 +685,7 @@ describe('ticket route', () => {
 		expect(open).toHaveBeenCalledWith(ID);
 		expect(openComments).toHaveBeenCalledWith(ID);
 		await vi.waitFor(() => expect(screen.getByText('Noch keine Kommentare.')).toBeTruthy());
-		await fireEvent.click(screen.getByRole('button', { name: 'Schließen' }));
+		await fireEvent.click(screen.getByRole('button', { name: 'Panel schließen' }));
 		expect(mocks.goto).toHaveBeenCalledWith('/?erledigte=1');
 
 		unmount();

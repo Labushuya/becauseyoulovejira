@@ -81,7 +81,9 @@ function deleteButton() {
 	return screen.getByRole('button', { name: 'Löschen …' });
 }
 
+/** Opens the question like a browser does: the clicked button has the focus (UI-6: the modal returns it). */
 async function openDialog() {
+	deleteButton().focus();
 	await fireEvent.click(deleteButton());
 	await tick();
 	await tick();

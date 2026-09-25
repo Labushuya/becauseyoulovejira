@@ -3,6 +3,7 @@
 	import { page } from '$app/state';
 	import ErrorIcon from '$lib/components/ErrorIcon.svelte';
 	import NewTicketForm from '$lib/components/NewTicketForm.svelte';
+	import Drawer from '$lib/components/overlay/Drawer.svelte';
 	import { toDataError } from '$lib/data/errors';
 	import { CHANNEL_LABELS, ticketPrefill, type InboxItem } from '$lib/domain/inbox';
 	import { parseListQuery } from '$lib/domain/list-query';
@@ -107,27 +108,28 @@
 		/>
 	{/key}
 {:else if source?.state === 'refused'}
-	<aside class="side-panel" aria-labelledby="convert-refused">
-		<h2 id="convert-refused">Neues Ticket</h2>
-		<p class="alert-error"><ErrorIcon /><span>{source.message}</span></p>
-		<a href={inboxItemHref(source.id)}>Zum Eintrag im Eingang</a>
-	</aside>
+	{@const refused = source}
+	<Drawer labelledby="convert-refused" onclose={() => goto(inboxItemHref(refused.id))}>
+		{#snippet context()}Aus dem Eingang{/snippet}
+		<h2 id="convert-refused" tabindex="-1">Neues Ticket</h2>
+		<p class="alert-error"><ErrorIcon /><span>{refused.message}</span></p>
+		<a href={inboxItemHref(refused.id)}>Zum Eintrag im Eingang</a>
+	</Drawer>
 {:else}
-	<aside class="side-panel" aria-label="Neues Ticket">
+	<Drawer labelledby="convert-loading" onclose={() => goto(listHref(page.url))}>
+		{#snippet context()}Aus dem Eingang{/snippet}
+		<h2 id="convert-loading" class="visually-hidden">Neues Ticket</h2>
 		<p class="loading" role="status">Eintrag wird geladen …</p>
-	</aside>
+	</Drawer>
 {/if}
 
 <style>
 	h2 {
-		margin-bottom: 0.75rem;
 		font-size: 1.125rem;
 		font-weight: 600;
 	}
 
 	a {
-		display: inline-block;
-		margin-top: 0.75rem;
 		color: var(--color-brand-text);
 	}
 

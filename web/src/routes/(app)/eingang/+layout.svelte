@@ -7,6 +7,7 @@
 	import DropZone from '$lib/components/DropZone.svelte';
 	import FileImportDialog from '$lib/components/FileImportDialog.svelte';
 	import InboxTable from '$lib/components/InboxTable.svelte';
+	import ViewWithPanel from '$lib/components/ViewWithPanel.svelte';
 	import WhatsAppImport from '$lib/components/WhatsAppImport.svelte';
 	import type { InboxItemSummary } from '$lib/domain/inbox';
 	import { parseInboxQuery } from '$lib/domain/inbox-query';
@@ -209,30 +210,32 @@
 
 <svelte:document {onpaste} {ondragover} {ondrop} />
 
-<div class="inbox" class:with-panel={withPanel}>
-	<InboxTable
-		store={inbox}
-		{flags}
-		openTickets={tickets.open}
-		{activeId}
-		projectsNewCount={tickets.newInProjects}
-		bind:selected
-		onbulk={openBulk}
-		onclipboard={fromClipboard}
-		{clipboardHint}
-	>
-		{#snippet tools()}
-			<DropZone
-				busy={importing}
-				results={importResults}
-				onfiles={(files) => void importFiles(files)}
-				itemHref={(id) => inboxItemHref(id, page.url)}
-				ticketHref={ticketPath}
-			/>
-		{/snippet}
-	</InboxTable>
+<ViewWithPanel {withPanel}>
+	{#snippet list()}
+		<InboxTable
+			store={inbox}
+			{flags}
+			openTickets={tickets.open}
+			{activeId}
+			projectsNewCount={tickets.newInProjects}
+			bind:selected
+			onbulk={openBulk}
+			onclipboard={fromClipboard}
+			{clipboardHint}
+		>
+			{#snippet tools()}
+				<DropZone
+					busy={importing}
+					results={importResults}
+					onfiles={(files) => void importFiles(files)}
+					itemHref={(id) => inboxItemHref(id, page.url)}
+					ticketHref={ticketPath}
+				/>
+			{/snippet}
+		</InboxTable>
+	{/snippet}
 	{@render children()}
-</div>
+</ViewWithPanel>
 
 {#if clipboardText !== null}
 	<ClipboardImport
@@ -271,17 +274,3 @@
 		onclose={closeBulk}
 	/>
 {/if}
-
-<style>
-	.inbox {
-		display: grid;
-		gap: 1.5rem;
-		align-items: start;
-	}
-
-	@media (min-width: 48rem) {
-		.with-panel {
-			grid-template-columns: minmax(0, 1fr) 32rem;
-		}
-	}
-</style>

@@ -37,7 +37,6 @@
 	let deleteError = $state<string | null>(null);
 	let countController: AbortController | null = null;
 
-	let heading = $state<HTMLElement>();
 	let list = $state<HTMLElement>();
 	let input = $state<HTMLInputElement>();
 
@@ -105,12 +104,11 @@
 		else countFailed = result.message !== null;
 	}
 
-	async function endDelete(tag: Tag, removed: boolean) {
+	/** Ends the question; the dialog returns the focus (to the heading of the view if the tag is gone). */
+	function endDelete() {
 		countController?.abort();
 		countController = null;
 		deleting = null;
-		await tick();
-		(removed ? heading : buttonOf(tag, 'delete'))?.focus();
 	}
 
 	async function confirmDelete() {
@@ -122,7 +120,7 @@
 			const result = await editor.deleteTag(tag);
 			if (result.ok) {
 				onannounce(`Tag „${tag.name}“ gelöscht.`);
-				await endDelete(tag, true);
+				endDelete();
 			} else {
 				deleteError = result.message ?? result.fields.name ?? null;
 			}
@@ -142,7 +140,7 @@
 
 <section class="tag-manager" aria-labelledby={ids.heading}>
 	<div class="head">
-		<h2 id={ids.heading} tabindex="-1" bind:this={heading}>Tags</h2>
+		<h2 id={ids.heading}>Tags</h2>
 		<span class="count">
 			<span aria-hidden="true">{tags.length}</span>
 			<span class="visually-hidden">{tags.length === 1 ? '1 Tag' : `${tags.length} Tags`}</span>
@@ -223,7 +221,7 @@
 		error={deleteError}
 		onconfirm={() => void confirmDelete()}
 		oncancel={() => {
-			if (deleting !== null) void endDelete(deleting, false);
+			if (deleting !== null) endDelete();
 		}}
 	>
 		<p>{usage(count)}</p>
