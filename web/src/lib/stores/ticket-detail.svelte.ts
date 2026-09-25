@@ -12,7 +12,13 @@ import type { RequestOptions } from '$lib/data/options';
 import { createTicket, deleteTicket, getTicket, updateTicket } from '$lib/data/tickets';
 import { isCalendarDate } from '$lib/domain/berlin-date';
 import { isPriority, isStatus, type Status } from '$lib/domain/status';
-import type { Ticket, TicketDraft, TicketPatch, TicketSummary } from '$lib/domain/ticket';
+import type {
+	Ticket,
+	TicketDraft,
+	TicketOrigin,
+	TicketPatch,
+	TicketSummary
+} from '$lib/domain/ticket';
 import { hold, type LiveSource } from './realtime';
 import type { SessionGuard } from './ticket-list.svelte';
 
@@ -41,7 +47,7 @@ const RECORD_ID = /^[a-z0-9]{15}$/;
 export interface TicketDetailData {
 	get(id: string, options: RequestOptions): Promise<Ticket>;
 	update(id: string, patch: TicketPatch): Promise<Ticket>;
-	create(draft: TicketDraft): Promise<Ticket>;
+	create(draft: TicketDraft, origin?: TicketOrigin): Promise<Ticket>;
 	delete(id: string): Promise<void>;
 }
 
@@ -77,7 +83,7 @@ export function ticketDetailData(pb: PocketBase): TicketDetailData {
 	return {
 		get: (id, options) => getTicket(pb, id, options),
 		update: (id, patch) => updateTicket(pb, id, patch),
-		create: (draft) => createTicket(pb, draft),
+		create: (draft, origin) => createTicket(pb, draft, { origin }),
 		delete: (id) => deleteTicket(pb, id)
 	};
 }
@@ -368,15 +374,17 @@ export class TicketDetailStore {
 
 	/**
 	 * Creates a ticket (E2 plan, T-8). The new ticket joins the list at once and becomes the
-	 * ticket of the panel, so the route switch to its ID needs no further request.
+	 * ticket of the panel, so the route switch to its ID needs no further request. `origin` is
+	 * the form by default; with an inbox entry the server converts it (ADR-0014 section 2), and a
+	 * refusal of the entry (already handled, not visible) comes back as message.
 	 */
-	async create(draft: TicketDraft): Promise<CreateResult> {
+	async create(draft: TicketDraft, origin?: TicketOrigin): Promise<CreateResult> {
 		const title = draft.title.trim();
 		if (title === '')
 			return { ok: false, message: null, fields: { title: TITLE_REQUIRED_MESSAGE } };
 		if (!this.#session.ensureValid()) return { ok: false, message: null, fields: {} };
 		try {
-			const ticket = await this.#data.create({ ...draft, title });
+			const ticket = await this.#data.create({ ...draft, title }, origin);
 			this.#list.upsert(ticket);
 			this.reset();
 			this.#id = ticket.id;
@@ -396,6 +404,8 @@ export class TicketDetailStore {
 				if (message !== undefined) fields[field] = message;
 			}
 			const known = Object.keys(fields).length > 0;
+			const itemMessage = failure.fields.source_item?.message;
+			if (itemMessage !== undefined) return { ok: false, message: itemMessage, fields };
 			return { ok: false, message: known ? null : failure.message, fields };
 		}
 	}
