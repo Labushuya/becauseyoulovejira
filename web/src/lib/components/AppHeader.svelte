@@ -6,9 +6,11 @@
 	import { loginUrlFor } from '$lib/guard';
 	import { NEW_TICKET_LINK_ID, newTicketHref } from '$lib/ticket-links';
 	import AreaSwitch from './AreaSwitch.svelte';
+	import ThemeMenu from './ThemeMenu.svelte';
 
-	// Header of every signed-in page (E2 plan, T-4; E3 plan, T-18): app name with the counter of
-	// tickets that are not done, area switch, the main button "Neues Ticket" and the session.
+	// Header of every signed-in page (E2 plan, T-4; E3 plan, T-18; ADR-0025 section 10): app name
+	// with the counter of tickets that are not done, area switch, the main button "Neues Ticket",
+	// "Kanäle", the theme switcher and the session.
 	let {
 		openCount = null,
 		onquick
@@ -60,6 +62,7 @@
 		Neues Ticket
 	</a>
 	<a class="settings" href={resolve('/einstellungen/kanaele')}>Kanäle</a>
+	<ThemeMenu />
 	<div class="session">
 		<p class="user">Angemeldet als <strong>{auth.email}</strong></p>
 		<button class="logout" type="button" onclick={logout}>Abmelden</button>

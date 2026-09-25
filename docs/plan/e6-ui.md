@@ -140,14 +140,20 @@ Wird je Paket ergänzt.
 | 2026-09-25 | UI-1 | Reduzierte Bewegung: Overlays tragen das Attribut `data-overlay`. Eine Regel in `base.css` setzt dafür (samt `::backdrop` und Kindern) `animation` und `transition` mit `!important` auf `none`, weil die Animationen als gescopte Regeln der Komponenten eine höhere Spezifität haben. Die Scroll-Sperre `html:has(dialog:modal)` wirkt sofort auch für die vorhandenen nativen Dialoge; das ist gewollt. |
 | 2026-09-25 | UI-1 | Knopfklassen: `.button-secondary` (Umriss `--color-line`), `.button-subtle` (ohne Rahmen, gedämpft) und `.button-icon` (2rem quadratisch) teilen Schrift, Radius `--radius-control` und den Zustand `aria-disabled="true"`. Die lokalen `.secondary` ziehen mit ihren Komponenten in UI-3 und UI-4 um. |
 | 2026-09-25 | UI-1 | Stubs in `web/src/lib/test/overlay-stubs.ts`: `installOverlayStubs()` ersetzt nur, was jsdom fehlt, und gibt eine Funktion zum Wiederherstellen zurück; `useOverlayStubs()` registriert das per `beforeAll`/`afterAll`. Popover: `toggle` mit `oldState`/`newState` als einfaches `Event` (jsdom kennt kein `ToggleEvent`), `:popover-open` über ein gepatchtes `Element.prototype.matches`, nur ein Auto-Popover zugleich, ein Klick auf `button[popovertarget]` schaltet um. `close()` feuert `close` synchron wie die bisherigen Attrappen. Die vorhandenen Tests ziehen je Paket um. |
+| 2026-09-25 | UI-2 | `Popover.svelte` rendert Knopf und Popover selbst (Props `kind`, `label` bzw. `labelledby`, `placement`, `buttonClass`, `buttonLabel`, Snippets `button` und `children({ close })`, optional `initialFocus`). So hält der Baustein `aria-expanded`, `aria-controls`, `popovertarget` und die Fokus-Rückgabe an einer Stelle. Aufrufer gestalten ihren Knopf über `buttonClass` und `:global()` in einem eigenen Wrapper. |
+| 2026-09-25 | UI-2 | Der Fokus geht beim Öffnen immer ins Popover (gewählter bzw. erster Eintrag), auch nach einem Zeigerklick, wie beim APG-Menübutton. Die Position wird beim `toggle` berechnet; vorher setzt `beforetoggle` das Popover unsichtbar, damit es nie an der Standardstelle des Browsers aufblitzt. `resize` und `scroll` (capture, passiv) werden nur gehört, solange es offen ist. Ein Klick daneben gibt den Fokus nicht zurück (er geht dorthin, wohin geklickt wurde); Esc und eine Wahl geben ihn an den Knopf. |
+| 2026-09-25 | UI-2 | jsdom stellt ein Popover als `display: none` dar und berechnet dafür keinen zugänglichen Namen (accname Schritt 2A). Die Tests prüfen den Namen von Menü und Panel deshalb am Attribut (`aria-label` bzw. Legende über `aria-labelledby`), Einträge und Optionen weiter über Rolle und Namen. |
+| 2026-09-25 | UI-2 | Theme: `lib/theme.svelte.ts` mit `parsePreference`, `readPreference`, `writePreference`, `applyPreference` und `ThemeStore` (`choose`, `connect` für das `storage`-Ereignis, auch `key === null` nach `localStorage.clear()`); die App nutzt eine geteilte Instanz (`getThemeStore`), Tests eine eigene. Knopfname „Darstellung: System|Hell|Dunkel“, Menüeinträge „Hell“, „Dunkel“, „Wie System“. Das Boot-Skript steht jetzt **vor** `%sveltekit.head%` (bisher danach), als IIFE in ES5 mit `try/catch`; der leere `else`-Zweig und die Prüfung per `matchMedia` entfallen. |
+| 2026-09-25 | UI-2 | „Gruppieren“: rechtsbündig (`bottom-end`) auf dem Baustein, Trennlinie nach „Keine“. Der gewählte Eintrag bleibt am Radio und am Schriftgewicht erkennbar; ein zusätzliches Häkchen wäre bei sichtbaren Radios doppelt. Das Theme-Menü hat keine Radios und zeigt deshalb Häkchen plus Schriftgewicht. |
 
 ## 7. Status
 
 | Paket | Stand |
 |---|---|
 | UI-0 | gemergt (#45) |
-| UI-1 | in Arbeit |
-| UI-2 bis UI-9 | geplant |
+| UI-1 | gemergt (#46) |
+| UI-2 | in Arbeit |
+| UI-3 bis UI-9 | geplant |
 
 ## Quellen (nur Verhalten und Maße)
 
