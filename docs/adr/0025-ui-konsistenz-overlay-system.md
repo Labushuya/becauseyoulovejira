@@ -93,6 +93,7 @@ Grenzen: Clean-Room nach [ADR-0010](0010-layout-nach-task-board.md) §4. Aus dem
 - **Schmal (unter 48rem)** deckt es die Liste ab; die Liste ist dann `inert`.
 - **Eine Esc-Regel für alle Panels:** × und Esc führen zur Liste mit der aktuellen Query. Esc wirkt, wenn der Fokus im Panel liegt und kein Feld gerade bearbeitet wird. Bei `dirty` kommt die Bestätigung aus Abschnitt 4.
 - **Fokus:** beim Öffnen und Wechseln auf den Titel, beim Schließen auf die Zeile des Eintrags, sonst auf die Überschrift der Ansicht.
+- **Präzisiert durch Abschnitt 11** (Paket UI-6b): Breakpoints 64rem und 36rem statt 48rem, eingebettete volle Spalte, Overlay mit Schleier und Tabellen ohne seitliches Scrollen.
 
 ### 7. Vollansicht (`overlay/FullView.svelte`, Routen `…/[id]/voll`)
 
@@ -127,6 +128,20 @@ Grenzen: Clean-Room nach [ADR-0010](0010-layout-nach-task-board.md) §4. Aus dem
 - **Umschalter** in der Kopfzeile zwischen „Kanäle“ und der Sitzung: Symbolknopf (Sonne, Mond, Monitor, eigene Inline-SVG) mit `aria-label="Darstellung: …"`, der ein `menu` mit „Hell“, „Dunkel“, „Wie System“ (`menuitemradio`) öffnet.
 - **Nicht rot**, **kein Schatten-Token**, native `<select>` in Formularen bleiben, **keine Projekt-Vollansicht**.
 - **Projekt-UI:** Die Abschnittsleiste mit „Aufgaben | Projekte | Eingang“ steht in allen Ansichten direkt unter der Kopfzeile; darunter folgen Kennzahlen und Filterleiste (Aufgaben), Chips (Eingang) oder nichts (Projekte). Projekt-Panel unter `/projekte/neu` und `/projekte/<id>`, Löschen über die Bestätigung mit der Zahl der Tickets, ein Kachelklick öffnet das Panel, „Tickets anzeigen“ steht im Panel. Ein gemeinsamer Wrapper ersetzt die kopierten Layout-Grids.
+
+### 11. Nachtrag (2026-09-25, Paket UI-6b): Seitenpanel eingebettet wie in Jira
+
+Präzisiert Abschnitt 6 und Nutzerentscheidung 1, ohne sie aufzuheben. Anlass: Mit UI-6 wirkte das Panel auf üblichen Fensterbreiten (1093 bis 1280 CSS-px, etwa 1366 px bei 125 % oder 1920 px bei 150 % Skalierung) wie ein Overlay. Die Tabellen hatten eine Mindestbreite (60 bzw. 48rem) und scrollten seitlich; ihre rechten Spalten samt Häkchen verschwanden direkt an der Kante des Panels. **Nutzervorgabe:** Das Panel staucht den Hauptinhalt, statt darüber zu liegen, wie in Jira.
+
+| Fensterbreite | Verhalten |
+|---|---|
+| ab 64rem (1024 px) | **eingebettet:** volle rechte Spalte `--drawer-width` (480 px) neben der **ganzen** Ansicht (Kennzahlen, Filterleiste, Abschnittsleiste, Tabelle), von der Unterkante der Kopfzeile bis zum unteren Fensterrand, mit einer Linie links statt eines umrandeten Kastens. Die Kopfzeile steht ab 64rem fest oben (`sticky`), ihre Höhe steht in `--app-header-height`. Die Ansicht wird schmaler. |
+| 36rem bis 64rem | **Overlay** von rechts, 480 px, mit `--color-blanket` dahinter; Ansicht und Kopfzeile sind `inert`, die Seite scrollt nicht. Ein Klick auf den Schleier schließt wie das × (samt Verwerfen-Frage). |
+| unter 36rem (576 px) | Overlay in voller Breite. |
+
+- **Tabellen scrollen nie seitlich:** kein `min-width`, keine Scrollfläche. Ihr Rahmen ist ein Container (`container-type: inline-size`); Container-Queries blenden Spalten in fester Reihenfolge aus. Aufgaben: „Erstellt“, dann „Tags“, dann „Projekt“, zuletzt „Fällig“. Eingang: Eingangs- bzw. Bearbeitungsdatum, dann „Quelle“, dann „Art“, zuletzt „Quelldatum“. Key, Priorität, Status, Titel, Häkchen bzw. Auswahl und Aktionen bleiben immer. Ausgeblendete Spalten sind auch für Screenreader weg; ihre Werte stehen im Panel, und die Beschriftung der Tabelle endet dann mit „Weitere Spalten im Panel“. Die Reihenfolge ist die Vorgabe für „automatisch“ im späteren Popover „Spalten“.
+- Esc-Regel, Fokusführung, Slide-in und Vollansicht bleiben wie in den Abschnitten 6 und 7.
+- **Alternative verworfen:** Eingebettet schon ab 48rem mit seitlich scrollender Tabelle (Stand UI-6). Zwischen 768 und etwa 1100 px blieben der Liste weniger als 500 px, und die Tabelle wirkte überdeckt.
 
 ## Alternativen
 
