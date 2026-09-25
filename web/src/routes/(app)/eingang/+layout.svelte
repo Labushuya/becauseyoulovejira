@@ -4,10 +4,14 @@
 	import { auth } from '$lib/auth.svelte';
 	import BulkConvertDialog from '$lib/components/BulkConvertDialog.svelte';
 	import ClipboardImport from '$lib/components/ClipboardImport.svelte';
+	import DropZone from '$lib/components/DropZone.svelte';
 	import InboxTable, { BULK_BUTTON_ID } from '$lib/components/InboxTable.svelte';
 	import type { InboxItemSummary } from '$lib/domain/inbox';
 	import { parseInboxQuery } from '$lib/domain/inbox-query';
 	import { pastedText, readClipboardText } from '$lib/clipboard';
+	import { readMailFile } from '$lib/mail-file';
+	import { importMailFiles, importSummary, type FileImportResult } from '$lib/stores/mail-import';
+	import { inboxItemHref, ticketPath } from '$lib/ticket-links';
 	import { pb } from '$lib/pocketbase';
 	import { BulkConverter, bulkConvertData } from '$lib/stores/bulk-convert.svelte';
 	import { draftsSummary, saveDrafts, type DraftsOutcome } from '$lib/stores/capture';
@@ -85,6 +89,40 @@
 		}
 	}
 
+	// Mail files (E4 plan, package 8): dropped on the zone or anywhere in the inbox view, or chosen
+	// with "Datei wählen"; one after the other, each with its own result.
+	let importing = $state(false);
+	let importResults = $state<FileImportResult[]>([]);
+
+	async function importFiles(files: File[]) {
+		if (importing) return;
+		importing = true;
+		importResults = [];
+		const results = await importMailFiles(files, {
+			read: readMailFile,
+			createItem: (draft) => inbox.create(draft)
+		});
+		importing = false;
+		importResults = results;
+		inbox.announce(importSummary(results));
+	}
+
+	function carriesFiles(event: DragEvent): boolean {
+		return [...(event.dataTransfer?.types ?? [])].includes('Files');
+	}
+
+	/** Files dropped outside the zone would open in the browser; they are taken in as well. */
+	function ondragover(event: DragEvent) {
+		if (carriesFiles(event)) event.preventDefault();
+	}
+
+	function ondrop(event: DragEvent) {
+		if (!carriesFiles(event)) return;
+		event.preventDefault();
+		const files = [...(event.dataTransfer?.files ?? [])];
+		if (files.length > 0) void importFiles(files);
+	}
+
 	async function closeBulk() {
 		const converted = converter.converted;
 		bulkItems = null;
@@ -99,7 +137,7 @@
 	}
 </script>
 
-<svelte:document {onpaste} />
+<svelte:document {onpaste} {ondragover} {ondrop} />
 
 <div class="inbox" class:with-panel={withPanel}>
 	<InboxTable
@@ -111,7 +149,17 @@
 		onbulk={openBulk}
 		onclipboard={fromClipboard}
 		{clipboardHint}
-	/>
+	>
+		{#snippet tools()}
+			<DropZone
+				busy={importing}
+				results={importResults}
+				onfiles={(files) => void importFiles(files)}
+				itemHref={(id) => inboxItemHref(id, page.url)}
+				ticketHref={ticketPath}
+			/>
+		{/snippet}
+	</InboxTable>
 	{@render children()}
 </div>
 

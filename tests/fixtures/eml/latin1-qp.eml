@@ -1,0 +1,11 @@
+From: =?ISO-8859-1?Q?J=FCrgen_M=FCller?= <juergen@example.com>
+To: anna@example.com
+Subject: =?ISO-8859-1?Q?Stra=DFenfest_am_S=FCdplatz?=
+Date: Mon, 5 Oct 2026 08:00:00 +0000
+Message-ID: <latin1.qp@example.com>
+MIME-Version: 1.0
+Content-Type: text/plain; charset=ISO-8859-1
+Content-Transfer-Encoding: quoted-printable
+
+Sch=F6ne Gr=FC=DFe, das Fest beginnt um 15 Uhr. Eine sehr lange Zeile, die =
+umbrochen wurde.

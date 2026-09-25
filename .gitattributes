@@ -12,3 +12,6 @@
 *.exe binary
 *.zip binary
 *.db binary
+
+# Mail fixtures keep their exact bytes (CRLF, Latin-1, Windows-1252).
+*.eml binary
