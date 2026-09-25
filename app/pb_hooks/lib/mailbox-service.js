@@ -28,7 +28,11 @@ function mailConnection(e) {
 }
 
 // POST to the helper. { unavailable: true } when it cannot be asked (no token, invalid port,
-// nothing listens, timeout), else { statusCode, json }.
+// nothing listens, timeout), else { statusCode, json }. "Connection: close": Go would otherwise
+// keep the connection and reuse it for the next request; after a restart of the helper (or its
+// keep-alive timeout) that connection is gone, and Go does not retry a POST, so the first request
+// would answer "Der Mail-Hilfsprozess läuft nicht". A new connection per request costs nothing on
+// 127.0.0.1.
 function askHelper(path, payload) {
   var token = secrets.read(ingestRules.TOKEN_ENV, getenv);
   var base = rules.helperUrl($os.getenv(rules.PORT_ENV));
@@ -41,7 +45,7 @@ function askHelper(path, payload) {
       url: base + path,
       method: 'POST',
       body: JSON.stringify(payload),
-      headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token },
+      headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token, Connection: 'close' },
       timeout: rules.TIMEOUT_SECONDS
     });
   } catch (err) {
