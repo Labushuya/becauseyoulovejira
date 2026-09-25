@@ -101,7 +101,8 @@ describe('capture form', () => {
 			'Anruf',
 			'Einkauf',
 			'Termin',
-			'Projektaufgabe'
+			'Projektaufgabe',
+			'Web-Link'
 		]);
 		expect(radios[0]?.checked).toBe(true);
 		await fireEvent.click(within(group).getByLabelText('Einkauf'));
@@ -279,5 +280,116 @@ describe('capture route /eingang/neu', () => {
 		expect(mocks.detail.reset).toHaveBeenCalledOnce();
 		const link = await screen.findByRole('link', { name: 'Ticket ansehen' });
 		expect(link.getAttribute('href')).toBe('/tickets/tick00000000002');
+	});
+});
+
+describe('capture form: web link and bookmarklet (E4 plan, package 7)', () => {
+	it('always puts a web link into the inbox and offers no switch', async () => {
+		const { onsave } = renderForm({
+			template: 'link',
+			initial: { url: 'https://example.com/a', what: 'Artikel', excerpt: 'Zitat' }
+		});
+		expect(screen.queryByLabelText('In den Eingang statt direkt als Ticket')).toBeNull();
+		expect(screen.getByText('Web-Links kommen immer in den Eingang.')).toBeTruthy();
+		expect(field(/^Adresse/).value).toBe('https://example.com/a');
+		expect(field(/^Adresse/).type).toBe('url');
+		expect(field(/^Titel/).value).toBe('Artikel');
+		expect(screen.getByLabelText<HTMLTextAreaElement>(/^Auszug/).value).toBe('Zitat');
+		expect(submitButton().textContent?.trim()).toBe('In den Eingang');
+		await fireEvent.keyDown(field(/^Titel/), { key: 'Enter', ctrlKey: true });
+		expect(onsave.mock.calls[0]?.[1]).toBe('inbox');
+		expect(onsave.mock.calls[0]?.[0]).toMatchObject({ sourceUrl: 'https://example.com/a' });
+	});
+
+	it('refuses an address that is not http(s) with a field error', async () => {
+		const { onsave } = renderForm({ template: 'link', initial: { url: 'javascript:alert(1)' } });
+		await fireEvent.input(field(/^Titel/), { target: { value: 'X' } });
+		await fireEvent.click(submitButton());
+		expect(onsave).not.toHaveBeenCalled();
+		expect(field(/^Adresse/).getAttribute('aria-invalid')).toBe('true');
+		expect(screen.getByText('Nur http- und https-Adressen.')).toBeTruthy();
+	});
+
+	it('names a duplicate neutrally with a link to the existing entry and keeps the input', async () => {
+		const { onsave } = renderForm({
+			template: 'link',
+			initial: { url: 'https://example.com/a', what: 'Artikel' }
+		});
+		onsave.mockResolvedValueOnce({
+			ok: false,
+			message: 'Schon Ticket HAUS-12.',
+			fields: {},
+			duplicate: { itemId: 'item00000000007', ticketId: 'tick00000000012' }
+		});
+		await fireEvent.click(submitButton());
+		const link = await screen.findByRole('link', { name: 'Ticket ansehen' });
+		expect(link.getAttribute('href')).toBe('/tickets/tick00000000012');
+		expect(link.closest('[aria-live="polite"]')?.textContent).toMatch(/Schon Ticket HAUS-12./);
+		expect(document.querySelector('.alert-error')).toBeNull();
+		expect(field(/^Adresse/).value).toBe('https://example.com/a');
+	});
+
+	it('shows a neutral hint', () => {
+		renderForm({ template: 'link', hint: 'Die Adresse wurde nicht übernommen.' });
+		const note = screen.getByRole('note');
+		expect(note.textContent).toBe('Die Adresse wurde nicht übernommen.');
+		expect(note.closest('.alert-error')).toBeNull();
+	});
+});
+
+describe('capture route with the parameters of the bookmarklet', () => {
+	beforeEach(() => {
+		mocks.inbox.create.mockReset();
+		mocks.detail.create.mockReset();
+	});
+
+	it('fills a web link from url, titel and auswahl and saves nothing before the click', async () => {
+		mocks.page.url = new URL(
+			'http://localhost:3000/eingang/neu?url=https%3A%2F%2Fexample.com%2Fa&titel=Artikel&auswahl=Zitat'
+		);
+		mocks.inbox.create.mockResolvedValue({
+			kind: 'created',
+			item: { id: 'item00000000001', title: 'Artikel' }
+		});
+		render(CapturePage);
+		await tick();
+		expect(screen.getByLabelText<HTMLInputElement>('Web-Link').checked).toBe(true);
+		expect(field(/^Adresse/).value).toBe('https://example.com/a');
+		expect(mocks.inbox.create).not.toHaveBeenCalled();
+		expect(mocks.detail.create).not.toHaveBeenCalled();
+
+		await fireEvent.click(submitButton());
+		await vi.waitFor(() =>
+			expect(mocks.inbox.create).toHaveBeenCalledWith({
+				channel: 'link',
+				kind: 'link',
+				title: 'Artikel',
+				body: '> Zitat',
+				sourceUrl: 'https://example.com/a',
+				sourceDate: null,
+				sourceMeta: { template: 'weblink' }
+			})
+		);
+		expect(mocks.detail.create).not.toHaveBeenCalled();
+	});
+
+	it('explains a refused address of the page', () => {
+		mocks.page.url = new URL(
+			'http://localhost:3000/eingang/neu?url=javascript%3Aalert(1)&titel=Böse'
+		);
+		render(CapturePage);
+		expect(screen.getByRole('note').textContent).toBe(
+			'Die Adresse der Seite ist kein http- oder https-Link und wurde nicht übernommen.'
+		);
+		expect(field(/^Adresse/).value).toBe('');
+		expect(field(/^Titel/).value).toBe('Böse');
+	});
+
+	it('lets a template chosen later win over the bookmarklet', () => {
+		mocks.page.url = new URL(
+			'http://localhost:3000/eingang/neu?url=https%3A%2F%2Fa.de&vorlage=anruf'
+		);
+		render(CapturePage);
+		expect(screen.getByLabelText<HTMLInputElement>('Anruf').checked).toBe(true);
 	});
 });

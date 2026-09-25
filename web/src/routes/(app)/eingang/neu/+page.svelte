@@ -2,8 +2,9 @@
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
 	import CaptureForm from '$lib/components/CaptureForm.svelte';
+	import { bookmarkletValues } from '$lib/domain/bookmarklet';
 	import { MANUAL_ORIGIN } from '$lib/domain/ticket';
-	import { templateFrom } from '$lib/domain/templates';
+	import { TEMPLATE_PARAM, templateFrom, type CaptureInput } from '$lib/domain/templates';
 	import { saveCapture, type CaptureDeps } from '$lib/stores/capture';
 	import { getCatalogStore } from '$lib/stores/catalog.svelte';
 	import { getInboxStore } from '$lib/stores/inbox.svelte';
@@ -14,11 +15,29 @@
 	// Capture by template (E4 plan, T-3 and package 5): the form in the panel of the inbox view.
 	// The chosen template stays in the URL (?vorlage=), so reload and back keep it. A ticket is
 	// created with source "manual" and counts as read; an inbox entry gets channel "manual".
+	// The bookmarklet (package 7) opens this page with url, titel and auswahl: the form comes
+	// filled as "Web-Link" and saves only on a click, never on opening.
 	const catalog = getCatalogStore();
 	const inbox = getInboxStore();
 	const detail = getTicketDetailStore();
 	const tickets = getTicketListStore();
-	const template = $derived(templateFrom(page.url.searchParams));
+	const clipped = $derived(bookmarkletValues(page.url.searchParams));
+	// A template chosen in the URL wins; a page from the bookmarklet is a web link.
+	const template = $derived(
+		clipped !== null && !page.url.searchParams.has(TEMPLATE_PARAM)
+			? 'link'
+			: templateFrom(page.url.searchParams)
+	);
+	const initial = $derived<Partial<CaptureInput>>(
+		clipped === null
+			? {}
+			: { url: clipped.url ?? '', what: clipped.title, excerpt: clipped.selection }
+	);
+	const hint = $derived(
+		clipped?.refusedUrl
+			? 'Die Adresse der Seite ist kein http- oder https-Link und wurde nicht übernommen.'
+			: null
+	);
 
 	const deps: CaptureDeps = {
 		ensureTag: (name) => catalog.ensureTag(name),
@@ -37,14 +56,19 @@
 	<title>Erfassen · Eingang · becauseyoulovejira</title>
 </svelte:head>
 
-<CaptureForm
-	{template}
-	projects={catalog.activeProjects}
-	tags={catalog.tags}
-	oncreatetag={(name) => catalog.ensureTag(name)}
-	ontemplate={(next) =>
-		goto(withTemplate(page.url, next), { replaceState: true, keepFocus: true, noScroll: true })}
-	onsave={(capture, target) => saveCapture(capture, target, deps)}
-	onclose={() => goto(inboxHref(page.url))}
-	resultHref={(target, id) => (target === 'ticket' ? ticketPath(id) : inboxItemHref(id, page.url))}
-/>
+{#key page.url.searchParams.get('url')}
+	<CaptureForm
+		{template}
+		{initial}
+		{hint}
+		projects={catalog.activeProjects}
+		tags={catalog.tags}
+		oncreatetag={(name) => catalog.ensureTag(name)}
+		ontemplate={(next) =>
+			goto(withTemplate(page.url, next), { replaceState: true, keepFocus: true, noScroll: true })}
+		onsave={(capture, target) => saveCapture(capture, target, deps)}
+		onclose={() => goto(inboxHref(page.url))}
+		resultHref={(target, id) =>
+			target === 'ticket' ? ticketPath(id) : inboxItemHref(id, page.url)}
+	/>
+{/key}

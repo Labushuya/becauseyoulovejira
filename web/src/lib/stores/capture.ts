@@ -5,7 +5,12 @@
 import type PocketBase from 'pocketbase';
 import { toDataError } from '$lib/data/errors';
 import { createTicket } from '$lib/data/tickets';
-import { PRESET_META_KEY, presetMeta, type InboxDraft } from '$lib/domain/inbox';
+import {
+	PRESET_META_KEY,
+	presetMeta,
+	type InboxDraft,
+	type InboxDuplicate
+} from '$lib/domain/inbox';
 import type { QuickEntry } from '$lib/domain/quick-syntax';
 import {
 	captureInboxDraft,
@@ -42,7 +47,16 @@ export interface CaptureDeps {
 export type CaptureSaveResult =
 	| { ok: true; target: 'ticket'; id: string; message: string }
 	| { ok: true; target: 'inbox'; id: string; message: string }
-	| { ok: false; message: string | null; fields: CaptureErrors };
+	| {
+			ok: false;
+			message: string | null;
+			fields: CaptureErrors;
+			/**
+			 * The object is in the inbox already (ADR-0014 section 3): an outcome, not an error; the
+			 * form names it neutrally with a link to the existing entry or its ticket.
+			 */
+			duplicate?: { itemId: string; ticketId: string };
+	  };
 
 /** Field of the form that shows a failure of a ticket field. */
 function formField(template: Capture['template'], field: keyof TicketDraft): CaptureField | null {
@@ -101,7 +115,7 @@ export async function saveCapture(
 				message: `„${result.item.title}“ liegt im Eingang.`
 			};
 		}
-		if (result.kind === 'duplicate') return { ok: false, message: result.message, fields: {} };
+		if (result.kind === 'duplicate') return duplicateResult(result);
 		return { ok: false, message: result.message ?? inboxFieldMessage(result.fields), fields: {} };
 	}
 
@@ -186,7 +200,7 @@ export async function saveQuickEntry(
 				message: `„${result.item.title}“ liegt im Eingang.`
 			};
 		}
-		if (result.kind === 'duplicate') return { ok: false, message: result.message, fields: {} };
+		if (result.kind === 'duplicate') return duplicateResult(result);
 		return { ok: false, message: result.message ?? inboxFieldMessage(result.fields), fields: {} };
 	}
 
@@ -297,4 +311,14 @@ export function draftsSummary(outcome: DraftsOutcome): string {
 /** Ticket creation of the quick entry, bound to the client: source "quick". */
 export function quickTicketData(pb: PocketBase): (draft: TicketDraft) => Promise<Ticket> {
 	return (draft) => createTicket(pb, draft, { origin: QUICK_ORIGIN });
+}
+
+/** Save result of a duplicate answer of the server. */
+function duplicateResult(duplicate: InboxDuplicate): CaptureSaveResult {
+	return {
+		ok: false,
+		message: duplicate.message,
+		fields: {},
+		duplicate: { itemId: duplicate.itemId, ticketId: duplicate.ticketId }
+	};
 }

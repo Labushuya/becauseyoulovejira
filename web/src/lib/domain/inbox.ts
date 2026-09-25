@@ -44,6 +44,26 @@ export type HandledState = Exclude<InboxState, 'new'>;
 /** Length limits of the schema (1790201200_create_inbox_items.js). */
 export const INBOX_TITLE_MAX_LENGTH = 200;
 export const INBOX_BODY_MAX_LENGTH = 100_000;
+export const INBOX_SOURCE_URL_MAX_LENGTH = 2000;
+
+/**
+ * The address as a link of a source may keep it (ADR-0011 section 2, like the hook in
+ * app/pb_hooks/lib/inbox-rules.js): http or https, no whitespace, a host, at most
+ * INBOX_SOURCE_URL_MAX_LENGTH characters; trimmed. Null for anything else (javascript:, data:,
+ * file:, relative addresses).
+ */
+export function httpUrlOf(value: string): string | null {
+	const url = value.trim();
+	if (url.length > INBOX_SOURCE_URL_MAX_LENGTH || !/^https?:\/\/[^\s]+$/i.test(url)) return null;
+	try {
+		const parsed = new URL(url);
+		return (parsed.protocol === 'http:' || parsed.protocol === 'https:') && parsed.hostname !== ''
+			? url
+			: null;
+	} catch {
+		return null;
+	}
+}
 
 export const CHANNEL_LABELS: Readonly<Record<InboxChannel, string>> = Object.freeze({
 	manual: 'Formular',

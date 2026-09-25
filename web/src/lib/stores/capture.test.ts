@@ -146,7 +146,8 @@ describe('saveCapture', () => {
 		expect(await saveCapture(capture('todo', { what: 'A' }), 'inbox', duplicate)).toEqual({
 			ok: false,
 			message: 'Schon im Eingang.',
-			fields: {}
+			fields: {},
+			duplicate: { itemId: '', ticketId: '' }
 		});
 	});
 });

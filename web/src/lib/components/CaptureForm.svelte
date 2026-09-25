@@ -1,14 +1,18 @@
 <script lang="ts">
+	import { untrack } from 'svelte';
 	import type { ResolvedPathname } from '$app/types';
+	import { INBOX_BODY_MAX_LENGTH, INBOX_SOURCE_URL_MAX_LENGTH } from '$lib/domain/inbox';
 	import { isPriority } from '$lib/domain/status';
 	import {
 		CAPTURE_TEMPLATES,
 		DEFAULT_CAPTURE_TARGET,
 		EMPTY_CAPTURE_INPUT,
+		FIXED_TARGETS,
 		TEMPLATE_FIELDS,
 		TEMPLATE_LABELS,
 		TEMPLATE_TAGS,
 		buildCapture,
+		targetOf,
 		type Capture,
 		type CaptureErrors,
 		type CaptureField,
@@ -27,9 +31,13 @@
 	// the fields of the chosen one with required marks and field errors (ADR-0009), and the target
 	// after OF-E4-3: a ticket by default, the inbox with the switch or Alt+Enter. Ctrl+Enter saves
 	// to the chosen target. After saving, the form empties for the next object, keeps the
-	// template and announces the result with a link.
+	// template and announces the result with a link. A web link (package 7, bookmarklet) always
+	// goes into the inbox; the form comes filled from the page, and nothing is saved before the
+	// click. A duplicate is named neutrally with a link to what exists.
 	let {
 		template,
+		initial = {},
+		hint = null,
 		projects = [],
 		tags = [],
 		oncreatetag = async () => ({ ok: false, message: null }),
@@ -39,6 +47,10 @@
 		resultHref
 	}: {
 		template: CaptureTemplate;
+		/** Values the form starts with (bookmarklet); read once. */
+		initial?: Partial<CaptureInput>;
+		/** Neutral note above the form, e.g. why the address of a page was not taken. */
+		hint?: string | null;
 		/** Projects that can be chosen (the active ones). */
 		projects?: readonly ProjectRef[];
 		/** Tags that can be chosen (the catalog). */
@@ -61,15 +73,21 @@
 	const headingId = `${uid}-heading`;
 	const targetHintId = `${uid}-target-hint`;
 
-	let input = $state<CaptureInput>({ ...EMPTY_CAPTURE_INPUT, tagIds: [] });
+	const start: CaptureInput = untrack(() => ({ ...EMPTY_CAPTURE_INPUT, tagIds: [], ...initial }));
+	let input = $state<CaptureInput>({ ...start, tagIds: [...start.tagIds] });
+	/** Values that count as untouched: the start, after a save the empty form. */
+	let baseline = $state<CaptureInput>(start);
 	let tagText = $state('');
 	let target = $state<CaptureTarget>(DEFAULT_CAPTURE_TARGET);
+	const fixedTarget = $derived(FIXED_TARGETS[template] ?? null);
+	const effectiveTarget = $derived(targetOf(template, target));
 	let errors = $state<CaptureErrors>({});
 	let pending = $state(false);
 	let message = $state<string | null>(null);
 	let result = $state<{
 		text: string;
-		href: ResolvedPathname;
+		/** Link to the saved or existing ticket or entry; null if the server named none. */
+		href: ResolvedPathname | null;
 		target: CaptureTarget;
 	} | null>(null);
 	let form = $state<HTMLFormElement>();
@@ -82,8 +100,8 @@
 	const dirty = $derived(
 		Object.entries(input).some(([key, value]) =>
 			key === 'tagIds'
-				? (value as string[]).length > 0
-				: value !== EMPTY_CAPTURE_INPUT[key as keyof CaptureInput]
+				? (value as string[]).join(',') !== baseline.tagIds.join(',')
+				: value !== baseline[key as keyof CaptureInput]
 		) || tagText.trim() !== ''
 	);
 
@@ -116,15 +134,35 @@
 		}
 		errors = {};
 		pending = true;
-		const outcome = await onsave(built.capture, to);
+		const outcome = await onsave(built.capture, targetOf(template, to));
 		pending = false;
+		if (!outcome.ok && outcome.duplicate !== undefined) {
+			// Already there: a result, not an error; the input stays for a change.
+			const { itemId, ticketId } = outcome.duplicate;
+			const existing: CaptureTarget | null =
+				ticketId !== '' ? 'ticket' : itemId !== '' ? 'inbox' : null;
+			result =
+				existing === null
+					? { text: outcome.message ?? '', href: null, target: 'inbox' }
+					: {
+							text: outcome.message ?? '',
+							href: resultHref(existing, existing === 'ticket' ? ticketId : itemId),
+							target: existing
+						};
+			return;
+		}
 		if (!outcome.ok) {
 			message = outcome.message;
 			errors = outcome.fields;
 			return;
 		}
-		result = { text: outcome.message, href: resultHref(outcome.target, outcome.id), target: to };
+		result = {
+			text: outcome.message,
+			href: resultHref(outcome.target, outcome.id),
+			target: outcome.target
+		};
 		input = { ...EMPTY_CAPTURE_INPUT, tagIds: [] };
+		baseline = input;
 		tagText = '';
 		focusFirst();
 	}
@@ -141,7 +179,7 @@
 			void save('inbox');
 		} else if (event.key === 'Enter' && (event.ctrlKey || event.metaKey)) {
 			event.preventDefault();
-			void save(target);
+			void save(effectiveTarget);
 		} else if (event.key === 'Escape' && !event.defaultPrevented) {
 			event.preventDefault();
 			close();
@@ -179,13 +217,19 @@
 <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
 <aside class="side-panel" aria-labelledby={headingId} {onkeydown}>
 	<h2 id={headingId}>Erfassen</h2>
+	{#if hint}
+		<p class="hint" role="note">{hint}</p>
+	{/if}
 
 	<div aria-live="polite">
 		{#if result}
 			<p class="result">
 				{result.text}
-				<a href={result.href}>{result.target === 'ticket' ? 'Ticket ansehen' : 'Eintrag ansehen'}</a
-				>
+				{#if result.href !== null}
+					<a href={result.href}>
+						{result.target === 'ticket' ? 'Ticket ansehen' : 'Eintrag ansehen'}
+					</a>
+				{/if}
 			</p>
 		{/if}
 	</div>
@@ -195,7 +239,7 @@
 		{/if}
 	</div>
 
-	<form class="form" novalidate onsubmit={(event) => save(target, event)} bind:this={form}>
+	<form class="form" novalidate onsubmit={(event) => save(effectiveTarget, event)} bind:this={form}>
 		<fieldset class="templates">
 			<legend>Vorlage</legend>
 			{#each CAPTURE_TEMPLATES as option (option)}
@@ -214,17 +258,18 @@
 
 		{#each fields as { field, label: text, required } (field)}
 			<div class="field">
-				{#if field === 'items'}
+				{#if field === 'items' || field === 'excerpt'}
 					{@render label(field, text, required)}
 					<textarea
 						id={fieldId(field)}
 						data-capture-field
 						rows="5"
+						maxlength={field === 'excerpt' ? INBOX_BODY_MAX_LENGTH : undefined}
 						required={required || undefined}
 						aria-required={required ? 'true' : undefined}
 						aria-invalid={errors[field] ? 'true' : undefined}
 						aria-describedby={describedBy(field)}
-						bind:value={input.items}></textarea>
+						bind:value={input[field]}></textarea>
 				{:else if field === 'date' || field === 'due'}
 					{@render label(field, text, required)}
 					<input
@@ -242,6 +287,20 @@
 							Der Termin wird nicht zur Fälligkeit des Tickets.
 						</p>
 					{/if}
+				{:else if field === 'url'}
+					{@render label(field, text, required)}
+					<input
+						id={fieldId(field)}
+						data-capture-field
+						type="url"
+						inputmode="url"
+						maxlength={INBOX_SOURCE_URL_MAX_LENGTH}
+						required={required || undefined}
+						aria-required={required ? 'true' : undefined}
+						aria-invalid={errors[field] ? 'true' : undefined}
+						aria-describedby={describedBy(field)}
+						bind:value={input.url}
+					/>
 				{:else if field === 'time'}
 					{@render label(field, text, required)}
 					<input
@@ -322,19 +381,27 @@
 			<p class="hint">Bekommt den Tag „{templateTag}“.</p>
 		{/if}
 
-		<label class="target">
-			<input
-				type="checkbox"
-				checked={target === 'inbox'}
-				aria-describedby={targetHintId}
-				onchange={(event) => (target = event.currentTarget.checked ? 'inbox' : 'ticket')}
-			/>
-			In den Eingang statt direkt als Ticket
-		</label>
+		{#if fixedTarget === null}
+			<label class="target">
+				<input
+					type="checkbox"
+					checked={target === 'inbox'}
+					aria-describedby={targetHintId}
+					onchange={(event) => (target = event.currentTarget.checked ? 'inbox' : 'ticket')}
+				/>
+				In den Eingang statt direkt als Ticket
+			</label>
+		{:else}
+			<p class="hint">Web-Links kommen immer in den Eingang.</p>
+		{/if}
 
 		<div class="buttons">
 			<button class="button-primary" type="submit" aria-disabled={pending ? 'true' : undefined}>
-				{pending ? 'Wird gespeichert …' : target === 'inbox' ? 'In den Eingang' : 'Ticket anlegen'}
+				{pending
+					? 'Wird gespeichert …'
+					: effectiveTarget === 'inbox'
+						? 'In den Eingang'
+						: 'Ticket anlegen'}
 			</button>
 			<button class="secondary" type="button" onclick={close}>Schließen</button>
 		</div>
@@ -405,6 +472,7 @@
 
 	.field input[type='text'],
 	.field input[type='tel'],
+	.field input[type='url'],
 	.field textarea {
 		width: 100%;
 		font: inherit;
