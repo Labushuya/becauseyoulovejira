@@ -222,6 +222,10 @@ Erledigte Tickets treten in der Liste optisch zurück. Schriften: Inter für die
 
 4. **Nur eine Claude-Session pro Repo:** Nicht mehrere schreibende Agenten in `main` parallel ausführen. Konflikte abfangen und eskalieren.
 
+5. **Texte nie über die Shell schreiben:** Eine Shell führt Befehle in Backticks bzw. `$(…)` innerhalb von Heredocs und doppelt gequoteten Zeichenketten aus. So hat ein Agent beim Schreiben einer Markdown-Datei versehentlich Beispielbefehle gestartet.
+   - Markdown- und Textdateien (Doku, Pläne, ADRs, PR-Texte, Commit-Nachrichten) werden ausschließlich mit den Datei-Werkzeugen (Write/Edit) geschrieben, nie per Shell-Heredoc, `echo`, `printf` oder Umleitung. PR-Texte und Commit-Nachrichten entstehen als Datei im Scratchpad und gehen per `gh pr create --body-file` bzw. `git commit -F` an Git.
+   - Beispielbefehle mit `setx`, `stop.bat`, `start.bat` oder anderen Start- und Stopp-Skripten stehen nie in einer Shell-Befehlszeile, auch nicht als Text in Anführungszeichen. Sie gehören nur in Dateien, die mit Write/Edit entstehen.
+
 ## 12. Arbeitsweise
 
 - Etappen ([ADR-0011](docs/adr/0011-roadmap-e3-bis-e7.md)): E0 Gerüst · E1 Datenmodell/Hooks/Auth · E2 Liste/Detail/CRUD/Kommentare/Realtime · E3 Übersicht & Ordnung · E4 Eingang & Kanäle · E5 Wiederkehrende Aufgaben · E6 Feinschliff · E7 Haushalt & Mehrgeräte. Pläne je Etappe unter `docs/plan/`.
