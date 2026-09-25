@@ -280,4 +280,32 @@ describe('E5 hooks before the E5 migrations', () => {
 		expect((await tickets.update(other.id, { recurrence: rule.id })).recurrence).toBe(rule.id);
 		expect((await tickets.update(ticket.id, { recurrence: '' })).recurrence).toBe('');
 	});
+
+	it('lets completing, reopening, deleting, the cron job and the start create nothing (package 3)', async () => {
+		const superuser = new PocketBase(before.url);
+		superuser.autoCancellation(false);
+		await superuser.collection('_superusers').authWithPassword(before.email, before.password);
+		const rule = await who
+			.collection('recurrence_rules')
+			.create({ owner: who.userId, title: 'Serie', mode: 'after_completion', next_due: '2026-01-01' });
+		const tickets = who.collection('tickets');
+		const ticket = await tickets.create({ owner: who.userId, title: 'Instanz', recurrence: rule.id });
+		const count = async () => (await superuser.collection('tickets').getFullList()).length;
+		const initial = await count();
+
+		const done = await tickets.update(ticket.id, { status: 'done' });
+		expect(done.completed_at).not.toBe('');
+		expect((await tickets.update(ticket.id, { status: 'open' })).completed_at).toBe('');
+		const cron = await fetch(`${before.url}/api/crons/byl-recurrence`, {
+			method: 'POST',
+			headers: { Authorization: superuser.authStore.token }
+		});
+		expect(cron.status).toBe(204);
+		await tickets.delete(ticket.id);
+
+		expect(await count()).toBe(initial - 1);
+		expect((await superuser.collection('recurrence_rules').getOne(rule.id)).next_due).toBe('2026-01-01 00:00:00.000Z');
+		// The start of this instance ran the catch-up on the old schema; it answered and changed nothing.
+		expect((await fetch(`${before.url}/api/health`)).status).toBe(200);
+	});
 });

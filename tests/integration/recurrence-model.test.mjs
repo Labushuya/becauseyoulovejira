@@ -252,7 +252,8 @@ describe('tickets.recurrence', () => {
 describe('editing a rule (ADR-0023 sections 4, 5 and 8)', () => {
 	it('keeps next_due for the template, a pause and client values, and recomputes it for a new rhythm', async () => {
 		const now = today();
-		const rule = await createRule({ weekdays: ['MO'], anchor: '2026-01-05' });
+		// Paused, so that no ticket is generated in between (package 3) and next_due stays computed.
+		const rule = await createRule({ weekdays: ['MO'], anchor: '2026-01-05', active: false });
 		const monday = onOrAfter({ mode: 'calendar', freq: 'weekly', weekdays: ['MO'], anchor: '2026-01-05' }, now);
 		expect(dateOf(rule.next_due)).toBe(monday);
 
@@ -265,9 +266,12 @@ describe('editing a rule (ADR-0023 sections 4, 5 and 8)', () => {
 			onOrAfter({ mode: 'calendar', freq: 'weekly', weekdays: ['TH'], anchor: '2026-01-05' }, now)
 		);
 
-		const paused = await rules().update(rule.id, { active: false });
+		// A running rule far ahead: pausing keeps its date.
+		const ahead = await createRule({ weekdays: ['MO'], anchor: '2031-01-06', lead_days: 0 });
+		expect(dateOf(ahead.next_due)).toBe('2031-01-06');
+		const paused = await rules().update(ahead.id, { active: false });
 		expect(paused.active).toBe(false);
-		expect(paused.next_due).toBe(thursday.next_due);
+		expect(paused.next_due).toBe(ahead.next_due);
 	});
 
 	it('does not catch up a pause when resuming', async () => {
