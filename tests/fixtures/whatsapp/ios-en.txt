@@ -1,0 +1,4 @@
+[25/09/2026, 14:03:12] Sam Example: ‎Messages and calls are end-to-end encrypted.
+[25/09/2026, 18:30:00] Sam Example: Book the table for Friday
+‎[25/09/2026, 18:31:00] Sam Example: ‎image omitted
+[13/10/2026, 08:00:00] Sam Example: Reminder: bins
