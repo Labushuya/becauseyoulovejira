@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>becauseyoulovejira — Test-Manifest E1–E5</title>
+<title>becauseyoulovejira — Test-Manifest E1–E6</title>
 <style>
   :root {
     --bg: #f5f8f8;
@@ -138,7 +138,7 @@
 <div class="wrap">
   <header class="top">
     <h1>becauseyoulovejira — Test-Manifest</h1>
-    <p class="subtitle" id="stand">Etappen E1, E1.1, E2, E3, E4 und E5 (in Planung) · automatisierte Tests bereichsweise zusammengefasst · manuelle Prüfpunkte aus den Plänen an einem Ort</p>
+    <p class="subtitle" id="stand">Etappen E1, E1.1, E2, E3, E4, E5 (in Arbeit) und E6 UI-Konsistenz (in Arbeit) · automatisierte Tests bereichsweise zusammengefasst · manuelle Prüfpunkte aus den Plänen an einem Ort</p>
 
     <div class="pre">
       <h2>Voraussetzung für die manuellen Prüfungen (kein Testschritt)</h2>
@@ -213,8 +213,8 @@
   "meta": {
     "projekt": "becauseyoulovejira",
     "stand": "2026-09-25",
-    "commit": "40e712d",
-    "etappe": "E0 bis E4 abgeschlossen (E4: Pakete 1 bis 11, 13 bis 17, 19 bis 24; Paket 12 entfällt, Paket 18 zurückgestellt); E5 in Arbeit (Pakete 1 bis 4: BYL-E5-001 bis BYL-E5-005)"
+    "commit": "8bb0c3c",
+    "etappe": "E0 bis E4 abgeschlossen (E4: Pakete 1 bis 11, 13 bis 17, 19 bis 24; Paket 12 entfällt, Paket 18 zurückgestellt); E5 in Arbeit (Pakete 1 bis 4: BYL-E5-001 bis BYL-E5-005); E6 UI-Konsistenz vorgezogen (UI-0: geplante Fälle BYL-E6-001 bis BYL-E6-026)"
   },
   "blocks": [
     {
@@ -1356,6 +1356,115 @@
         { "id": "BYL-E5-008", "title": "Wiederkehrende Aufgaben im Browser", "art": ["manuell"], "status": "geplant",
           "pre": "E5-Plan, Paket 7: Browser-Checkliste; Build von main in app\\ und einmal neu gestartet (E5-Migrationen).", "steps": ["„Wiederholen…“ an einem Ticket, Erledigen per Häkchen, Folgeticket sichtbar, „Rückgängig“.", "Übersicht: anlegen, bearbeiten, pausieren, fortsetzen, löschen.", "Eine Serie aus .ics und aus Google Calendar umwandeln, mit und ohne Vorschlag.", "App über Nacht bzw. mehrere Tage aus, danach Start: fällige Tickets ohne Stapel.", "Hell- und Dunkelmodus, Bedienung nur mit der Tastatur."],
           "expect": "Serien laufen im Alltag verlässlich und verständlich.",
+          "tests": [] }
+      ]
+    },
+    {
+      "tag": "E6", "name": "UI-Konsistenz", "desc": "Geplante Testfälle des Plans docs/plan/e6-ui.md (ADR-0025): ein Overlay-System aus Modal, Bestätigung, Popover, Seitenpanel, Vollansicht und Flags, Theme-Umschalter, angeglichene Projekt-UI. Status „geplant“ bis zum Merge des Pakets; die Schritte sind die Akzeptanzkriterien.",
+      "items": [
+        { "id": "BYL-E6-001", "title": "Overlay-Tokens in allen Blöcken", "art": ["unit"], "status": "geplant",
+          "pre": "Plan UI-Konsistenz, Paket UI-1; ADR-0025 §2.", "steps": ["--color-blanket in allen vier Blöcken von tokens.css, nicht farbige Tokens nur in :root.", "color-scheme light bzw. dark in allen vier Blöcken.", "Keine Farbwerte außerhalb von tokens.css; gemeinsame Stubs für dialog und popover."],
+          "expect": "Die Grundlage der Bausteine steht, ohne sichtbare Änderung außer color-scheme.",
+          "tests": [] },
+        { "id": "BYL-E6-002", "title": "Native Controls folgen dem Modus", "art": ["manuell"], "status": "geplant",
+          "pre": "Plan UI-Konsistenz, Paket UI-1; Browser mit dunkler Systemeinstellung und erzwungenem Modus.", "steps": ["Scrollbalken, select, Datumsfeld, Checkboxen und dialog im Dunkelmodus ansehen.", "Dasselbe mit erzwungenem hellen Modus bei dunklem System."],
+          "expect": "Native Controls passen zum gewählten Modus.",
+          "tests": [] },
+        { "id": "BYL-E6-003", "title": "Popover-Positionierung", "art": ["unit"], "status": "geplant",
+          "pre": "Plan UI-Konsistenz, Paket UI-2; ADR-0025 §5.", "steps": ["bottom-start und bottom-end mit 4 px Abstand.", "Flip nach oben bei zu wenig Platz unten.", "Klemmen an den Viewport-Rand mit 8 px."],
+          "expect": "Popover stehen in allen Zielbrowsern gleich unter ihrem Knopf.",
+          "tests": [] },
+        { "id": "BYL-E6-004", "title": "Popover-Tastatur und Schließen", "art": ["komponente"], "status": "geplant",
+          "pre": "Plan UI-Konsistenz, Paket UI-2; ADR-0025 §5.", "steps": ["aria-haspopup, aria-expanded über das toggle-Ereignis, aria-controls.", "Fokus beim Öffnen auf den gewählten bzw. ersten Eintrag.", "menu: ↑/↓ mit Umlauf, Home/End, Enter, Tab, Esc; Fokus zurück zum Knopf.", "„Gruppieren“ mit den bestehenden Fällen."],
+          "expect": "Popover sind per Tastatur vollständig bedienbar und geben den Fokus zurück.",
+          "tests": [] },
+        { "id": "BYL-E6-005", "title": "Theme-Umschalter", "art": ["komponente"], "status": "geplant",
+          "pre": "Plan UI-Konsistenz, Paket UI-2; ADR-0025 §10.", "steps": ["Knopf in der Kopfzeile mit Namen „Darstellung: …“.", "Menü mit „Hell“, „Dunkel“, „Wie System“ als menuitemradio mit aria-checked.", "Wahl setzt data-theme und byl-theme, „Wie System“ entfernt beides; andere Tabs folgen über storage."],
+          "expect": "Hell, Dunkel und System lassen sich umschalten und bleiben gespeichert.",
+          "tests": [] },
+        { "id": "BYL-E6-006", "title": "FOUC-Schutz und Migration td-theme", "art": ["unit"], "status": "geplant",
+          "pre": "Plan UI-Konsistenz, Paket UI-2; Inline-Skript aus app.html in jsdom.", "steps": ["light und dark setzen data-theme, andere Werte nicht.", "td-theme wird einmalig nach byl-theme übernommen und gelöscht.", "Ein werfender Speicher bricht nichts ab."],
+          "expect": "Die Wahl gilt vor dem ersten Rendern, ohne Aufblitzen.",
+          "tests": [] },
+        { "id": "BYL-E6-007", "title": "Kein Aufblitzen beim Neuladen, Popover in Firefox", "art": ["manuell"], "status": "geplant",
+          "pre": "Plan UI-Konsistenz, Paket UI-2; Build von main in app\\, F5.", "steps": ["Dunkel wählen bei hellem System, F5: kein heller Blitz.", "„Wie System“: OS-Einstellung umstellen, die App folgt live.", "„Gruppieren“ in Chrome, Firefox und Opera GX: rechtsbündig unter dem Knopf, am unteren Rand nach oben."],
+          "expect": "Theme und Popover verhalten sich in allen Zielbrowsern gleich.",
+          "tests": [] },
+        { "id": "BYL-E6-008", "title": "Modal: Schließen-Regeln", "art": ["unit"], "status": "geplant",
+          "pre": "Plan UI-Konsistenz, Paket UI-3; ADR-0025 §3.", "steps": ["Auslöser Esc, ×, Abbrechen, Blanket × dirty × busy ergeben schließen, fragen oder ignorieren."],
+          "expect": "Eine reine Entscheidungstabelle für alle Modals.",
+          "tests": [] },
+        { "id": "BYL-E6-009", "title": "Modal: Fokus, Esc, Blanket", "art": ["komponente"], "status": "geplant",
+          "pre": "Plan UI-Konsistenz, Paket UI-3; ADR-0025 §3.", "steps": ["Fokus beim Öffnen auf das erste Element, beim Schließen zurück.", "Esc per keydown, zweimal Esc bei busy schließt nicht.", "Blanket-Klick mit und ohne dirty; Markieren und außerhalb Loslassen schließt nicht.", "Inline-Verwerfen-Frage; aria-labelledby, aria-busy."],
+          "expect": "Alle Modals schließen gleich und geben den Fokus zurück.",
+          "tests": [] },
+        { "id": "BYL-E6-010", "title": "Bestätigung statt window.confirm", "art": ["komponente", "unit"], "status": "geplant",
+          "pre": "Plan UI-Konsistenz, Paket UI-3; ADR-0025 §4.", "steps": ["Ticket, Tag, Verbindung und Kommentar löschen über die Bestätigung.", "Verwerfen-Frage in „Neues Ticket“ und „Erfassen“ über die Bestätigung.", "Statischer Test: kein window.confirm im Code."],
+          "expect": "Jede Rückfrage sieht gleich aus und ist per Tastatur bedienbar.",
+          "tests": [] },
+        { "id": "BYL-E6-011", "title": "Verwerfen-Frage bei Navigation und Zurück", "art": ["komponente", "manuell"], "status": "geplant",
+          "pre": "Plan UI-Konsistenz, Paket UI-3; ADR-0025 §4.", "steps": ["Ungespeicherte Beschreibung, Klick auf eine andere Zeile: Frage, „Weiter bearbeiten“ bleibt, „Verwerfen“ navigiert.", "Dasselbe mit „Neues Ticket“ und mit Zurück im Browser."],
+          "expect": "Kein Text geht ohne Frage verloren, und nach „Verwerfen“ landet man am Ziel.",
+          "tests": [] },
+        { "id": "BYL-E6-012", "title": "Scroll-Sperre und Animation, reduzierte Bewegung", "art": ["manuell"], "status": "geplant",
+          "pre": "Plan UI-Konsistenz, Paket UI-3; Build von main in app\\.", "steps": ["Bestätigung öffnen: die Seite dahinter scrollt nicht und springt nicht.", "Einblenden sichtbar; mit reduzierter Bewegung im System keine Animation.", "Schleier dunkel in beiden Modi."],
+          "expect": "Modals wirken ruhig und sperren den Hintergrund.",
+          "tests": [] },
+        { "id": "BYL-E6-013", "title": "Alle Dialoge über den Modal-Baustein", "art": ["komponente", "unit"], "status": "geplant",
+          "pre": "Plan UI-Konsistenz, Paket UI-4.", "steps": ["Schnellerfassung, Zwischenablage, Sammelumwandlung, Datei-, WhatsApp- und Postfach-Auswahl, Projekt, „Wiederholen…“ nutzen das Modal.", "Drei Größen, × überall, Regel „Abbrechen“/„Schließen“.", "Statischer Test: kein ::backdrop und kein lokales .secondary in Komponenten."],
+          "expect": "Dialoge sehen gleich aus und verhalten sich gleich.",
+          "tests": [] },
+        { "id": "BYL-E6-014", "title": "Schnellerfassung fragt vor Verwerfen", "art": ["komponente"], "status": "geplant",
+          "pre": "Plan UI-Konsistenz, Paket UI-4.", "steps": ["Text tippen, Esc: Verwerfen-Frage im Dialog; „Weiter bearbeiten“ behält den Text."],
+          "expect": "Getippter Text geht nicht versehentlich verloren.",
+          "tests": [] },
+        { "id": "BYL-E6-015", "title": "Flag-Store", "art": ["unit"], "status": "geplant",
+          "pre": "Plan UI-Konsistenz, Paket UI-5; ADR-0025 §8.", "steps": ["8 s für Erfolg und Info, Fehler bleiben.", "Pause bei Hover, Fokus, verborgenem Tab und offenem Modal.", "Höchstens drei sichtbar, neuestes oben."],
+          "expect": "Rückmeldungen erscheinen verlässlich und lange genug.",
+          "tests": [] },
+        { "id": "BYL-E6-016", "title": "Flags: Anzeige und Ansage", "art": ["komponente"], "status": "geplant",
+          "pre": "Plan UI-Konsistenz, Paket UI-5.", "steps": ["Live-Regionen existieren vor dem ersten Flag.", "Rollen status und alert, × „Benachrichtigung schließen“, eine Aktion.", "Der Fokus bleibt, wo er ist."],
+          "expect": "Erfolg und Fehler sind sichtbar und werden angesagt.",
+          "tests": [] },
+        { "id": "BYL-E6-017", "title": "Rückgängig im Flag", "art": ["komponente"], "status": "geplant",
+          "pre": "Plan UI-Konsistenz, Paket UI-5; Nutzerentscheidung 3.", "steps": ["Erledigen per Häkchen: Zeile verschwindet, Flag mit „Rückgängig“ 8 s.", "Verwerfen im Eingang ebenso.", "„Rückgängig“ stellt den vorherigen Zustand her."],
+          "expect": "Rückgängig ist an einem Ort und lange genug erreichbar.",
+          "tests": [] },
+        { "id": "BYL-E6-018", "title": "Flags mit Screenreader", "art": ["manuell"], "status": "geplant",
+          "pre": "Plan UI-Konsistenz, Paket UI-5; NVDA oder Sprachausgabe von Windows.", "steps": ["Projekt anlegen, Ticket erledigen, Import: Ansage ohne Fokussprung.", "Flag per Tab erreichen, „Rückgängig“ auslösen."],
+          "expect": "Rückmeldungen sind auch ohne Sicht nutzbar.",
+          "tests": [] },
+        { "id": "BYL-E6-019", "title": "Seitenpanel: Aufbau und Esc-Regel", "art": ["komponente"], "status": "geplant",
+          "pre": "Plan UI-Konsistenz, Paket UI-6; ADR-0025 §6.", "steps": ["Gleicher Kopf in allen Panels, fester Kopf und Fuß.", "Esc schließt aus dem Panel, nicht aus einem Feld im Bearbeitungsmodus.", "Fokusführung zur Zeile wie bisher."],
+          "expect": "Alle Panels bedienen sich gleich.",
+          "tests": [] },
+        { "id": "BYL-E6-020", "title": "Seitenpanel schmal: Liste nicht erreichbar", "art": ["komponente", "manuell"], "status": "geplant",
+          "pre": "Plan UI-Konsistenz, Paket UI-6.", "steps": ["Unter 48rem deckt das Panel die Liste ab, die Liste ist inert.", "Slide-in nur beim ersten Öffnen, nicht bei reduzierter Bewegung."],
+          "expect": "Auf schmalen Fenstern springt der Tab-Fokus nicht in die verdeckte Liste.",
+          "tests": [] },
+        { "id": "BYL-E6-021", "title": "Vollansicht öffnen und schließen", "art": ["komponente"], "status": "geplant",
+          "pre": "Plan UI-Konsistenz, Paket UI-7; Nutzerentscheidung 2.", "steps": ["„Vollansicht“ im Panel öffnet das XL-Modal mit zwei Spalten.", "×, Esc und Blanket führen zurück ins Panel, Fokus auf „Vollansicht“."],
+          "expect": "Die Vollansicht zeigt ein Ticket groß, ohne den Kontext zu verlieren.",
+          "tests": [] },
+        { "id": "BYL-E6-022", "title": "Vollansicht per Adresse", "art": ["komponente", "manuell"], "status": "geplant",
+          "pre": "Plan UI-Konsistenz, Paket UI-7.", "steps": ["/tickets/<id>/voll neu laden und per Mittelklick öffnen.", "Der Browser-Tab zeigt den Key."],
+          "expect": "Die Vollansicht ist verlinkbar.",
+          "tests": [] },
+        { "id": "BYL-E6-023", "title": "Projekt-Panel", "art": ["komponente"], "status": "geplant",
+          "pre": "Plan UI-Konsistenz, Paket UI-8; Nutzerentscheidung 4.", "steps": ["Kachelklick öffnet /projekte/<id>, „Neues Projekt“ /projekte/neu.", "Name und Code bearbeiten, Archiviert, Zahlen, „Tickets anzeigen“.", "Löschen über die Bestätigung mit Ticketzahl, Rückmeldung als Flag."],
+          "expect": "Projekte bedienen sich wie Tickets und Eingang.",
+          "tests": [] },
+        { "id": "BYL-E6-024", "title": "Gleiche Kopfordnung in allen Ansichten", "art": ["komponente", "manuell"], "status": "geplant",
+          "pre": "Plan UI-Konsistenz, Paket UI-8.", "steps": ["Aufgaben, Projekte, Eingang: der Umschalter steht an derselben Stelle direkt unter der Kopfzeile.", "Radien und Abstände wie in den Tabellenansichten."],
+          "expect": "Beim Ansichtswechsel springt nichts.",
+          "tests": [] },
+        { "id": "BYL-E6-025", "title": "Filterauswahl als Popover", "art": ["komponente"], "status": "geplant",
+          "pre": "Plan UI-Konsistenz, Paket UI-9.", "steps": ["Projekt und Tag als Popover mit Radios, Suchfeld ab 10 Einträgen.", "Ein Wert je Gruppe, URL-Zustand wie bisher."],
+          "expect": "Filter wählen sich wie „Gruppieren“.",
+          "tests": [] },
+        { "id": "BYL-E6-026", "title": "Tag-Liste im Top-Layer", "art": ["komponente", "manuell"], "status": "geplant",
+          "pre": "Plan UI-Konsistenz, Paket UI-9.", "steps": ["Die Vorschläge des Tag-Felds werden im Panel nicht abgeschnitten.", "Combobox-Verhalten wie bisher."],
+          "expect": "Tags lassen sich auch unten im Panel bequem wählen.",
           "tests": [] }
       ]
     },

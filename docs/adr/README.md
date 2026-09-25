@@ -15,7 +15,7 @@ Bereits verbindlich in der [Projekt-CLAUDE.md](../../CLAUDE.md) festgelegt und d
 | [0007](0007-realtime-und-sitzungspflege.md) | Realtime-Abos und Sitzungspflege im Frontend | Angenommen | 2026-09-24 |
 | [0008](0008-markdown-rendering-und-sanitizing.md) | Markdown-Rendering und Sanitizing | Angenommen | 2026-09-24 |
 | [0009](0009-fehlerfarbe.md) | Fehlerfarbe als eigenes Design-Token | Angenommen | 2026-09-24 |
-| [0010](0010-layout-nach-task-board.md) | Seitenaufbau nach dem Vorbild des Task-Boards, im eigenen Stack und mit eigenen Farben | Angenommen | 2026-09-25 |
+| [0010](0010-layout-nach-task-board.md) | Seitenaufbau nach dem Vorbild des Task-Boards, im eigenen Stack und mit eigenen Farben | Angenommen, teilweise ersetzt durch 0025 | 2026-09-25 |
 | [0011](0011-roadmap-e3-bis-e7.md) | Neue Etappen E3 bis E7 mit vorgezogenen Eingangskanälen | Angenommen | 2026-09-25 |
 | [0012](0012-plain-ticketing.md) | Plain Ticketing ohne Ticket-Typen, Epics, Sprints und Story Points | Angenommen | 2026-09-25 |
 | [0013](0013-filter-suche-sortierung-gruppierung.md) | Filter, Suche, Sortierung und Gruppierung: was der Client und was der Server rechnet | Angenommen | 2026-09-25 |
@@ -30,3 +30,4 @@ Bereits verbindlich in der [Projekt-CLAUDE.md](../../CLAUDE.md) festgelegt und d
 | [0022](0022-erzeugung-von-instanzen.md) | Erzeugung der Tickets aus Regeln: Zeitpunkt, Cron, Nachholen beim Start, keine Duplikate | Vorgeschlagen | 2026-09-25 |
 | [0023](0023-lebenszyklus-von-regeln-und-instanzen.md) | Lebenszyklus von Regeln und Instanzen: Anlegen, Erledigen, Rückgängig, Pausieren, Bearbeiten, Löschen | Vorgeschlagen | 2026-09-25 |
 | [0024](0024-serien-aus-kalendern.md) | Serien aus `.ics` und Google Calendar als Vorschlag für eine Regel | Vorgeschlagen | 2026-09-25 |
+| [0025](0025-ui-konsistenz-overlay-system.md) | UI-Konsistenz: ein Overlay-System, Theme-Umschalter und angeglichene Projekt-UI | Angenommen | 2026-09-25 |
