@@ -213,8 +213,8 @@
   "meta": {
     "projekt": "becauseyoulovejira",
     "stand": "2026-09-25",
-    "commit": "2ba2ecd",
-    "etappe": "E0, E1, E1.1, E2 und E3 abgeschlossen, E4 in Arbeit (Pakete 1 bis 4)"
+    "commit": "0ce4f4b",
+    "etappe": "E0, E1, E1.1, E2 und E3 abgeschlossen, E4 in Arbeit (Pakete 1 bis 9 und 14)"
   },
   "blocks": [
     {
@@ -1252,13 +1252,13 @@
           "pre": "E4-Plan, Paket 13.", "steps": ["App-Passwort anlegen, Verbindung einrichten, Mail mit Stern abrufen.", "App-Passwort widerrufen: Statusmeldung prüfen."],
           "expect": "Browser-Checkliste im E4-Plan.",
           "tests": [] },
-        { "id": "BYL-E4-024", "title": ".ics-Parser, berlin-time.js und .ics-Import", "art": ["unit", "integration"], "status": "geplant",
-          "pre": "E4-Plan, Paket 14.", "steps": ["berlin-time.js mit den Pflichtfällen aus ADR-0005 §3 und Abgleich mit berlin-date.ts.", "ical.js: Faltung, Escapes, VEVENT und VTODO, ganztägig, TZID Europe/Berlin, Serie mit RRULE, abgesagte übersprungen.", "Route meldet neu, schon vorhanden, übersprungen; über 20 MB abgelehnt."],
-          "expect": "Fixtures unter tests/fixtures/ics.",
-          "tests": [] },
-        { "id": "BYL-E4-025", "title": ".ics aus echten Kalendern", "art": ["manuell"], "status": "geplant",
-          "pre": "E4-Plan, Paket 14.", "steps": ["Termin aus Google, Outlook und Thunderbird exportieren und hereinziehen.", "Ganztägigen Termin und Termin am Tag der Zeitumstellung prüfen."],
-          "expect": "Browser-Checkliste im E4-Plan.",
+        { "id": "BYL-E4-024", "title": ".ics-Parser, berlin-time.js und .ics-Import", "art": ["unit", "komponente", "integration"], "status": "bestanden",
+          "pre": "E4-Plan, Paket 14; erfundene Fixtures unter tests/fixtures/ics (Google, Outlook, Apple, Randfälle); für die Integration app/pocketbase.exe.", "steps": ["npm run test:unit", "npm run test:web", "npm run test:integration"],
+          "expect": "berlin-time.js (ES5) rechnet nach der EU-Regel: beide Umstellungen ±1 Minute, Jahreswechsel, Schalttag, Tagesgrenze 22:00/23:00 UTC, Wanduhrzeit in der übersprungenen und der doppelten Stunde; Abgleich mit berlin-date.ts über zwei Jahre alle 37 Minuten und minütlich um jede Umstellung. ical.js entfaltet CRLF, LF und CR samt BOM, liest Parameter mit Anführungszeichen, löst Escapes einmal auf, nimmt VEVENT und VTODO (DUE als Quelldatum), überspringt abgesagte Termine und METHOD:CANCEL, liest VALARM nicht, rechnet TZID Europe/Berlin und „W. Europe Standard Time“ an beiden Umstellungstagen richtig, markiert Floating und fremde Zonen als angenähert, lässt ganztägige Termine auf ihrem Datum, nimmt DURATION statt DTEND, speichert eine Serie einmal mit RRULE und die verschobene Einzelinstanz mit RECURRENCE-ID getrennt, zählt ungültige Zeilen und abgeschnittene Komponenten, liest höchstens 5 000 Komponenten und nichts über 20 MB. Route POST /api/byl/inbox/ics: je Komponente ein privater Eintrag (Kanal ics) mit eigenem VCALENDAR-Ausschnitt samt VTIMEZONE als geschützter Originaldatei; Antwort „neu, schon vorhanden, übersprungen“; dieselbe Datei erneut ergibt nur Duplikate, auch für verworfene Einträge; ein anderer Nutzer bekommt eigene Einträge; ohne Anmeldung 401, ohne Datei 400, über 20 MB 400; vor den E4-Migrationen 503 mit Hinweis. Drop-Zone nimmt .ics an (Auswahl und Ziehen) und zeigt je Datei die Zahlen; Zusammenfassung in der Live-Region; ganztägige Quelldaten ohne Uhrzeit.",
+          "tests": ["tests/unit/berlin-time.test.mjs", "tests/unit/ical.test.mjs", "tests/integration/inbox-ics.test.mjs", "tests/integration/hooks-before-migration.test.mjs::answers the .ics route with a hint", "tests/integration/web-data-inbox.test.mjs::calendar files (E4 plan, package 14)", "web/src/lib/mail-file.test.ts::calendar files (E4 plan, package 14)", "web/src/lib/stores/inbox-store.test.ts::imports a calendar file", "web/src/lib/components/drop-zone.test.ts::.eml and .ics files", "web/src/lib/domain/inbox.test.ts::sourceDateText"] },
+        { "id": "BYL-E4-025", "title": ".ics aus echten Kalendern", "art": ["manuell"], "status": "offen",
+          "pre": "App läuft (kein Neustart nötig, sobald die E4-Migrationen gelaufen sind); je ein Termin aus Google Calendar (Einstellungen → „Importieren und exportieren“ → „Exportieren“, .zip entpacken), Outlook (Termin → „Speichern unter“ → .ics) und Thunderbird (Termin → „Exportieren“) als .ics gespeichert.", "steps": ["Die drei Dateien gleichzeitig in die Eingangsansicht ziehen; eine davon ein zweites Mal ziehen.", "Einen ganztägigen Termin und einen Termin am Tag der Zeitumstellung (letzter Sonntag im März bzw. Oktober) prüfen: Quelldatum im Panel.", "Eine Serie mit einer verschobenen Einzelinstanz exportieren und hereinziehen.", "„Originaldatei herunterladen“ öffnen und in einem Kalenderprogramm importieren.", "Per Tastatur über „Datei wählen“ importieren."],
+          "expect": "Je Datei „N neu, M schon vorhanden, K übersprungen“; ganztägige Termine zeigen ihr Datum ohne Uhrzeit, Termine am Umstellungstag die richtige Berliner Uhrzeit; die Serie ist ein Eintrag, die verschobene Instanz ein zweiter; das Original ist nur der eine Termin und lässt sich wieder importieren.",
           "tests": [] },
         { "id": "BYL-E4-026", "title": "Google Calendar per Cron", "art": ["unit", "integration"], "status": "geplant",
           "pre": "E4-Plan, Paket 15.", "steps": ["Neue Termine im Fenster nach Cron oder „Jetzt abrufen“ im Eingang; verworfene kommen nicht wieder.", "Datei und Feed ergeben einen Eintrag.", "Fehler, Zeitüberschreitung, zu große Antwort bereinigt an der Verbindung; Laufsperre gegen Überlappung."],
