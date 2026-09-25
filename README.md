@@ -243,6 +243,22 @@ Die App liest den Kalender über seine **geheime iCal-Adresse** (nur lesend) und
 - Anfragen brechen nach 30 Sekunden ab. Antworten über 20 MB werden verworfen, und zwei Abrufe derselben Verbindung laufen nie gleichzeitig. Fehler stehen bereinigt an der Verbindung.
 - **Widerrufen:** In denselben Google-Einstellungen bei der Privatadresse auf **Zurücksetzen** klicken. Danach die neue Adresse per `setx` eintragen und die App neu starten. Wer die alte Adresse kennt, kann den Kalender damit nicht mehr lesen.
 
+#### Telegram-Bot
+
+Du schreibst deinem eigenen Bot, was in den Eingang soll. Die App fragt jede Minute per `getUpdates` nach neuen Nachrichten (kein Webhook, der Server bleibt aus dem Internet unerreichbar). Nur Nachrichten aus freigegebenen Chats werden gespeichert, und jede beantwortet der Bot mit **„Im Eingang gespeichert“**. Text und Bildunterschriften werden übernommen, Bilder und Dateien nicht.
+
+1. In Telegram **@BotFather** öffnen, `/newbot` senden, Namen und Benutzernamen (endet auf „bot“) wählen.
+2. Den Token aus der Antwort setzen: `setx BYL_TELEGRAM_TOKEN "123456789:AA…"`.
+3. **Eigene ID finden:** Die Verbindung zunächst mit einer beliebigen Zahl in `BYL_TELEGRAM_ALLOWED_IDS` einrichten (Schritte 4 und 5), dem Bot schreiben und unter **Kanäle** „Jetzt abrufen“ wählen. Die Verbindung zeigt dann „Nachricht aus einem nicht freigegebenen Chat (Chat-ID …)“. Im Chat mit dem Bot ist das deine User-ID. Für eine Gruppe den Bot hinzufügen; ihre Chat-ID beginnt mit `-100`.
+4. `setx BYL_TELEGRAM_ALLOWED_IDS "424242"`, mehrere IDs durch Komma getrennt.
+5. `stop.bat`, dann `start.bat`. Unter **Kanäle** → **Verbindungen** die Art **Telegram-Bot** mit `BYL_TELEGRAM_TOKEN` und `BYL_TELEGRAM_ALLOWED_IDS` anlegen.
+
+- Der Offset rückt erst weiter, wenn eine Nachricht gespeichert ist; ein erneuter Abruf legt nichts doppelt an. Nachrichten fremder Chats werden nicht gespeichert, nur ihre Chat-ID erscheint als Hinweis an der Verbindung.
+- Telegram hält Nachrichten für den Bot höchstens **24 Stunden**. Läuft die App länger nicht, gehen sie verloren. Fehlt die Antwort „Im Eingang gespeichert“, ist die Nachricht nicht angekommen.
+- In Gruppen sieht ein Bot normalerweise nur Befehle und Antworten an ihn. Soll er alles lesen, bei BotFather `/setprivacy` auf **Disable** stellen.
+- **Widerrufen:** Bei BotFather `/revoke` (neuer Token, dann `setx` und Neustart) oder `/deletebot`.
+- Optional: `BYL_TELEGRAM_API_BASE` zeigt auf einen eigenen [Telegram Bot API Server](https://core.telegram.org/bots/api#using-a-local-bot-api-server) statt `https://api.telegram.org`. Die Tests nutzen die Variable für ihren lokalen Fake-Server.
+
 ---
 
 ## Bedienung
