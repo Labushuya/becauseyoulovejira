@@ -1,15 +1,41 @@
-// Connections of the channels (ADR-0016 section 2, ADR-0018, ADR-0020; E4 plan packages 10 and 20).
+// Connections of the channels (ADR-0016 section 2, ADR-0018, ADR-0020; E4 plan packages 10, 20 and 22).
 // Pure: types, labels and the checks of the form. Access data are Windows user environment variables; a
 // connection stores only their names. The name pattern mirrors app/pb_hooks/lib/secrets.js
+// and the mail settings mirror app/pb_hooks/lib/connection-rules.js
 // (tests/unit/web-connections.test.mjs compares both).
 
-export const CONNECTION_TYPES = ['calendar', 'telegram'] as const;
+export const CONNECTION_TYPES = ['calendar', 'telegram', 'mail'] as const;
 export type ConnectionType = (typeof CONNECTION_TYPES)[number];
 
 export const CONNECTION_TYPE_LABELS: Readonly<Record<ConnectionType, string>> = Object.freeze({
 	calendar: 'Google Calendar',
-	telegram: 'Telegram-Bot'
+	telegram: 'Telegram-Bot',
+	mail: 'Postfach (IMAP)'
 });
+
+/** Mail providers; host, port and TLS follow from the provider in byl-mail.exe (ADR-0016 section 4). */
+export const MAIL_PROVIDERS = ['webde'] as const;
+export type MailProvider = (typeof MAIL_PROVIDERS)[number];
+
+export const MAIL_PROVIDER_LABELS: Readonly<Record<MailProvider, string>> = Object.freeze({
+	webde: 'Web.de'
+});
+
+export const MAIL_USER_MAX_LENGTH = 254;
+
+/** User name of a mailbox: 1 to 254 characters without white space or control characters. */
+export function isMailUser(value: string): boolean {
+	return (
+		value.length > 0 &&
+		value.length <= MAIL_USER_MAX_LENGTH &&
+		// eslint-disable-next-line no-control-regex -- control characters are exactly what is refused
+		!/[\s\u0000-\u001f\u007f]/.test(value)
+	);
+}
+
+export function isMailProvider(value: unknown): value is MailProvider {
+	return typeof value === 'string' && (MAIL_PROVIDERS as readonly string[]).includes(value);
+}
 
 /** "BYL_" plus capital letters, digits and "_", at most 64 characters (ADR-0018 section 1). */
 export const SECRET_NAME_PATTERN = /^BYL_[A-Z0-9_]{1,60}$/;
@@ -17,7 +43,8 @@ export const SECRET_NAME_PATTERN = /^BYL_[A-Z0-9_]{1,60}$/;
 /** Suggested names of the variables per kind. */
 export const DEFAULT_SECRET_NAMES: Readonly<Record<ConnectionType, string>> = Object.freeze({
 	calendar: 'BYL_GOOGLE_CALENDAR_URL',
-	telegram: 'BYL_TELEGRAM_TOKEN'
+	telegram: 'BYL_TELEGRAM_TOKEN',
+	mail: 'BYL_WEBDE_PASSWORD'
 });
 export const DEFAULT_ALLOWLIST_NAME = 'BYL_TELEGRAM_ALLOWED_IDS';
 
@@ -42,6 +69,11 @@ export interface Connection {
 	keywords: string[];
 	/** Telegram: whether the bot answers a message without keyword; true for other kinds. */
 	replyNoMatch: boolean;
+	/** Mail: provider and user name of the mailbox ('' for other kinds). */
+	mailProvider: MailProvider | '';
+	mailUser: string;
+	/** Mail: whether the first 500 characters of the text are searched as well (ADR-0020). */
+	matchBody: boolean;
 	runningSince: string | null;
 	created: string;
 	updated: string;
@@ -58,6 +90,8 @@ export interface SecretStatus {
 export interface ConnectionSettingsDraft {
 	keywords: string[];
 	replyNoMatch: boolean;
+	/** Mail only; ignored for other kinds. */
+	matchBody: boolean;
 }
 
 /** Shown at a connection without keywords (ADR-0020 section 4); neutral, not an error. */
@@ -67,7 +101,8 @@ export const NO_KEYWORDS_WARNING =
 /** Where the keywords of a kind are searched (ADR-0020 section 1). */
 export const KEYWORD_SEARCH_TEXT: Readonly<Record<ConnectionType, string>> = Object.freeze({
 	calendar: 'Gesucht wird in Titel und Beschreibung der Termine.',
-	telegram: 'Gesucht wird im Text der Nachricht bzw. in der Bildunterschrift.'
+	telegram: 'Gesucht wird im Text der Nachricht bzw. in der Bildunterschrift.',
+	mail: 'Gesucht wird im Betreff, auf Wunsch auch in den ersten 500 Zeichen des Textes.'
 });
 
 export interface ConnectionDraft {
@@ -75,6 +110,9 @@ export interface ConnectionDraft {
 	label: string;
 	secretEnv: string;
 	allowlistEnv: string;
+	/** Mail only. */
+	mailProvider: MailProvider;
+	mailUser: string;
 }
 
 export function isConnectionType(value: unknown): value is ConnectionType {
@@ -90,18 +128,25 @@ export function emptyConnectionDraft(type: ConnectionType = 'calendar'): Connect
 		type,
 		label: CONNECTION_TYPE_LABELS[type],
 		secretEnv: DEFAULT_SECRET_NAMES[type],
-		allowlistEnv: type === 'telegram' ? DEFAULT_ALLOWLIST_NAME : ''
+		allowlistEnv: type === 'telegram' ? DEFAULT_ALLOWLIST_NAME : '',
+		mailProvider: 'webde',
+		mailUser: ''
 	};
 }
 
 export const SECRET_NAME_MESSAGE =
 	'Nur BYL_ mit Großbuchstaben, Ziffern und _, höchstens 64 Zeichen (etwa BYL_TELEGRAM_TOKEN).';
 
-/** Field errors of the form: label, secretEnv and allowlistEnv; empty if the draft is fine. */
+export const MAIL_USER_MESSAGE =
+	'Benutzername des Postfachs (meist die E-Mail-Adresse), ohne Leerzeichen, höchstens 254 Zeichen.';
+
+export type ConnectionDraftField = 'label' | 'secretEnv' | 'allowlistEnv' | 'mailUser';
+
+/** Field errors of the form; empty if the draft is fine. */
 export function connectionDraftErrors(
 	draft: ConnectionDraft
-): Partial<Record<'label' | 'secretEnv' | 'allowlistEnv', string>> {
-	const errors: Partial<Record<'label' | 'secretEnv' | 'allowlistEnv', string>> = {};
+): Partial<Record<ConnectionDraftField, string>> {
+	const errors: Partial<Record<ConnectionDraftField, string>> = {};
 	const label = draft.label.trim();
 	if (label === '') errors.label = 'Pflichtfeld.';
 	else if (label.length > LABEL_MAX_LENGTH) errors.label = 'Höchstens 100 Zeichen.';
@@ -109,6 +154,8 @@ export function connectionDraftErrors(
 	if (draft.type === 'telegram' && !isSecretName(draft.allowlistEnv.trim())) {
 		errors.allowlistEnv = SECRET_NAME_MESSAGE;
 	}
+	if (draft.type === 'mail' && !isMailUser(draft.mailUser.trim()))
+		errors.mailUser = MAIL_USER_MESSAGE;
 	return errors;
 }
 

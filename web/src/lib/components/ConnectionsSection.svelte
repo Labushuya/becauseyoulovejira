@@ -3,13 +3,16 @@
 		CONNECTION_TYPES,
 		CONNECTION_TYPE_LABELS,
 		KEYWORD_SEARCH_TEXT,
+		MAIL_PROVIDERS,
+		MAIL_PROVIDER_LABELS,
 		NO_KEYWORDS_WARNING,
 		connectionDraftErrors,
 		emptyConnectionDraft,
 		secretStatusText,
 		type Connection,
 		type ConnectionDraft,
-		type ConnectionType
+		type ConnectionType,
+		type MailProvider
 	} from '$lib/domain/connections';
 	import { formatBerlinDateTime } from '$lib/domain/format';
 	import {
@@ -25,7 +28,9 @@
 	// "Löschen" with a safety question, "Jetzt abrufen" (package 15) and "Aktualisieren" for the
 	// result of a run of the cron job. Access data are Windows user environment variables; the app
 	// stores and shows only their names. Each connection has its keywords (package 20, ADR-0020) and,
-	// for Telegram, the switch for the answer to messages without keyword.
+	// for Telegram, the switch for the answer to messages without keyword. Mailboxes (package 22)
+	// name provider and user; the mail helper byl-mail.exe fetches them, not the server, so they
+	// have no "Jetzt abrufen" but a switch for searching the start of the text.
 	let {
 		store
 	}: {
@@ -39,7 +44,9 @@
 		type: `${uid}-type`,
 		label: `${uid}-label`,
 		secret: `${uid}-secret`,
-		allowlist: `${uid}-allowlist`
+		allowlist: `${uid}-allowlist`,
+		provider: `${uid}-provider`,
+		user: `${uid}-user`
 	};
 
 	let draft = $state<ConnectionDraft>(emptyConnectionDraft());
@@ -56,7 +63,9 @@
 	const errors = $derived({
 		label: clientErrors.label ?? serverFields.label,
 		secretEnv: clientErrors.secretEnv ?? serverFields.secret_env,
-		allowlistEnv: clientErrors.allowlistEnv ?? serverFields.settings
+		allowlistEnv:
+			clientErrors.allowlistEnv ?? (draft.type === 'telegram' ? serverFields.settings : undefined),
+		mailUser: clientErrors.mailUser ?? (draft.type === 'mail' ? serverFields.settings : undefined)
 	});
 
 	function chooseType(type: ConnectionType) {
@@ -94,7 +103,7 @@
 	async function saveKeywords(connection: Connection, keywords: string[], announcement: string) {
 		const result = await store.saveSettings(
 			connection.id,
-			{ keywords, replyNoMatch: connection.replyNoMatch },
+			{ keywords, replyNoMatch: connection.replyNoMatch, matchBody: connection.matchBody },
 			announcement
 		);
 		if (result.ok) return null;
@@ -109,19 +118,35 @@
 		rowMessage = null;
 		const result = await store.saveSettings(
 			connection.id,
-			{ keywords: connection.keywords, replyNoMatch },
+			{ keywords: connection.keywords, replyNoMatch, matchBody: connection.matchBody },
 			replyNoMatch
 				? `„${connection.label}“ antwortet auf Nachrichten ohne Stichwort.`
 				: `„${connection.label}“ antwortet nicht mehr auf Nachrichten ohne Stichwort.`
 		);
-		if (!result.ok)
-			rowMessage = {
-				id: connection.id,
-				text:
-					result.message ??
-					Object.values(result.fields)[0] ??
-					'Die Einstellung ließ sich nicht speichern.'
-			};
+		if (!result.ok) showSettingsError(connection, result.message, result.fields);
+	}
+
+	async function setMatchBody(connection: Connection, matchBody: boolean) {
+		rowMessage = null;
+		const result = await store.saveSettings(
+			connection.id,
+			{ keywords: connection.keywords, replyNoMatch: connection.replyNoMatch, matchBody },
+			matchBody
+				? `„${connection.label}“ durchsucht auch den Anfang des Textes.`
+				: `„${connection.label}“ durchsucht nur den Betreff.`
+		);
+		if (!result.ok) showSettingsError(connection, result.message, result.fields);
+	}
+
+	function showSettingsError(
+		connection: Connection,
+		message: string | null,
+		fields: Record<string, string>
+	) {
+		rowMessage = {
+			id: connection.id,
+			text: message ?? Object.values(fields)[0] ?? 'Die Einstellung ließ sich nicht speichern.'
+		};
 	}
 
 	async function runNow(connection: Connection) {
@@ -149,8 +174,9 @@
 <section class="card" aria-labelledby={ids.heading}>
 	<h3 id={ids.heading}>Verbindungen</h3>
 	<p>
-		Google Calendar und Telegram holt die App selbst ab, solange sie läuft. Die Zugangsdaten
-		(geheime Kalenderadresse, Bot-Token, erlaubte IDs) liegen nur als Windows-Umgebungsvariablen
+		Google Calendar und Telegram holt die App selbst ab, solange sie läuft, Postfächer der
+		Mail-Hilfsprozess <code>byl-mail.exe</code>. Die Zugangsdaten (geheime Kalenderadresse,
+		Bot-Token, erlaubte IDs, Passwort des Postfachs) liegen nur als Windows-Umgebungsvariablen
 		deines Benutzerkontos, nie in der App oder ihren Sicherungen. Hier steht nur der Name der
 		Variablen.
 	</p>
@@ -181,8 +207,8 @@
 					Aktualisieren
 				</button>
 				<span class="hint">
-					Solange die App läuft, ruft Google Calendar alle 15 Minuten ab und Telegram jede Minute;
-					„Aktualisieren“ zeigt das Ergebnis.
+					Solange die App läuft, ruft Google Calendar alle 15 Minuten ab, Telegram jede Minute und
+					ein Postfach alle 5 Minuten; „Aktualisieren“ zeigt das Ergebnis.
 				</span>
 			</p>
 			<ul class="connections">
@@ -207,6 +233,16 @@
 							{#if connection.type === 'telegram'}
 								<dt>Erlaubte IDs</dt>
 								<dd><code>{connection.allowlistEnv}</code></dd>
+							{/if}
+							{#if connection.type === 'mail'}
+								<dt>Anbieter</dt>
+								<dd>
+									{connection.mailProvider === ''
+										? 'unbekannt'
+										: MAIL_PROVIDER_LABELS[connection.mailProvider]}
+								</dd>
+								<dt>Benutzer</dt>
+								<dd>{connection.mailUser}</dd>
 							{/if}
 							<dt>Letzter Abruf</dt>
 							<dd>{time(connection.lastRunAt)}</dd>
@@ -241,23 +277,41 @@
 								Auf Nachrichten ohne Stichwort antworten („Kein Stichwort erkannt – nicht gespeichert“)
 							</label>
 						{/if}
+						{#if connection.type === 'mail'}
+							<label class="reply">
+								<input
+									type="checkbox"
+									checked={connection.matchBody}
+									onchange={(event) => void setMatchBody(connection, event.currentTarget.checked)}
+								/>
+								Auch die ersten 500 Zeichen des Textes durchsuchen
+							</label>
+						{/if}
 						{#if rowMessage !== null && rowMessage.id === connection.id}
 							<p class="alert-error" role="alert"><ErrorIcon /><span>{rowMessage.text}</span></p>
 						{/if}
+						{#if connection.type === 'mail'}
+							<p class="hint">
+								Der Mail-Hilfsprozess byl-mail.exe ruft dieses Postfach alle 5 Minuten ab, solange
+								die App läuft; dabei ändert er nichts im Postfach.
+							</p>
+						{/if}
 						<div class="buttons">
-							<button
-								class="secondary"
-								type="button"
-								aria-disabled={store.isRunning(connection.id) || !connection.enabled
-									? 'true'
-									: undefined}
-								onclick={() => {
-									if (!store.isRunning(connection.id) && connection.enabled)
-										void runNow(connection);
-								}}
-							>
-								{store.isRunning(connection.id) ? 'Wird abgerufen …' : 'Jetzt abrufen'}
-							</button>
+							{#if connection.type !== 'mail'}
+								<button
+									class="secondary"
+									type="button"
+									aria-disabled={store.isRunning(connection.id) || !connection.enabled
+										? 'true'
+										: undefined}
+									onclick={() => {
+										if (!store.isRunning(connection.id) && connection.enabled)
+											void runNow(connection);
+									}}
+								>
+									{store.isRunning(connection.id) ? 'Wird abgerufen …' : 'Jetzt abrufen'}
+								</button>
+							{/if}
 							<button
 								class="secondary"
 								type="button"
@@ -309,7 +363,9 @@
 				<label for={ids.secret}>
 					{draft.type === 'calendar'
 						? 'Variable mit der geheimen iCal-Adresse (Pflichtfeld)'
-						: 'Variable mit dem Bot-Token (Pflichtfeld)'}
+						: draft.type === 'mail'
+							? 'Variable mit dem Passwort bzw. App-Passwort des Postfachs (Pflichtfeld)'
+							: 'Variable mit dem Bot-Token (Pflichtfeld)'}
 				</label>
 				<input
 					id={ids.secret}
@@ -328,6 +384,39 @@
 					</p>
 				{/if}
 			</div>
+			{#if draft.type === 'mail'}
+				<div class="field">
+					<label for={ids.provider}>Anbieter</label>
+					<select
+						id={ids.provider}
+						value={draft.mailProvider}
+						onchange={(event) => (draft.mailProvider = event.currentTarget.value as MailProvider)}
+					>
+						{#each MAIL_PROVIDERS as provider (provider)}
+							<option value={provider}>{MAIL_PROVIDER_LABELS[provider]}</option>
+						{/each}
+					</select>
+				</div>
+				<div class="field">
+					<label for={ids.user}>Benutzername, meist die E-Mail-Adresse (Pflichtfeld)</label>
+					<input
+						id={ids.user}
+						type="text"
+						maxlength="254"
+						spellcheck="false"
+						autocomplete="off"
+						aria-required="true"
+						aria-invalid={errors.mailUser ? 'true' : undefined}
+						aria-describedby={errors.mailUser ? `${ids.user}-error` : undefined}
+						bind:value={draft.mailUser}
+					/>
+					{#if errors.mailUser}
+						<p id={`${ids.user}-error`} class="field-error">
+							<ErrorIcon /><span>{errors.mailUser}</span>
+						</p>
+					{/if}
+				</div>
+			{/if}
 			{#if draft.type === 'telegram'}
 				<div class="field">
 					<label for={ids.allowlist}
