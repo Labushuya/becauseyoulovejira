@@ -156,6 +156,18 @@ describe('start', () => {
 		expect(sync).not.toMatch(/Write-|Show-Message|Out-|Add-Content|Set-Content/);
 	});
 
+	it('creates the ingest token before handing on the variables and never prints it', () => {
+		const start = functionBody(control(), 'Invoke-Start');
+		expect(start.indexOf('Initialize-IngestToken')).toBeGreaterThan(-1);
+		expect(start.indexOf('Initialize-IngestToken')).toBeLessThan(start.indexOf('Sync-BylEnvironment'));
+		const init = functionBody(control(), 'Initialize-IngestToken');
+		expect(init).toMatch(/Test-IngestTokenNeeded -HelperExists \(Test-Path -LiteralPath \$helper -PathType Leaf\)/);
+		expect(init).toContain("[Environment]::SetEnvironmentVariable($BylIngestTokenName, (New-IngestTokenValue), 'User')");
+		// The only output is a hint with the type of the exception, never a value.
+		expect(init.match(/Write-\w+|Show-Message|Out-\w+|Add-Content|Set-Content/g)).toEqual(['Write-Status']);
+		expect(init).not.toMatch(/\$current\b[^\n]*Write|Write[^\n]*\$current|Exception\.Message/);
+	});
+
 	it('has a first-run branch that opens no second tab', () => {
 		const body = functionBody(control(), 'Invoke-Start');
 		const firstRun = body.slice(body.indexOf('if (Wait-FirstRunSignal'));

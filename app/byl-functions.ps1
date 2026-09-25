@@ -528,3 +528,36 @@ function Get-BylEnvironmentChange {
     $remove = @($ProcessNames | Where-Object { ($_ -cmatch $BylSecretNamePattern) -and ($keep -notcontains $_) } | Sort-Object -Unique)
     return [pscustomobject]@{ Set = $set; Remove = $remove }
 }
+
+# --- Ingest token of the mail helper (ADR-0018 section 8, E4 plan package 22) ------------------
+
+# Variable of the token byl-mail.exe and PocketBase share; never printed or logged.
+$BylIngestTokenName = 'BYL_INGEST_TOKEN'
+$BylMailHelperName = 'byl-mail.exe'
+# 24 random bytes as Base64 (32 characters).
+$BylIngestTokenBytes = 24
+
+function Test-IngestTokenNeeded {
+    # True if the start has to create the ingest token: the mail helper exists in the app folder
+    # and the user scope has no usable token yet (missing, empty or only white space).
+    param(
+        [Parameter(Mandatory = $true)][bool]$HelperExists,
+        [AllowNull()][AllowEmptyString()][string]$CurrentValue
+    )
+
+    return $HelperExists -and [string]::IsNullOrWhiteSpace($CurrentValue)
+}
+
+function New-IngestTokenValue {
+    # A new token: $BylIngestTokenBytes bytes from the cryptographic random number generator as
+    # Base64. Only returned, never printed.
+    $bytes = New-Object byte[] $BylIngestTokenBytes
+    $generator = [System.Security.Cryptography.RandomNumberGenerator]::Create()
+    try {
+        $generator.GetBytes($bytes)
+    }
+    finally {
+        $generator.Dispose()
+    }
+    return [Convert]::ToBase64String($bytes)
+}

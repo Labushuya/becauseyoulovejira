@@ -58,17 +58,17 @@ function guardUpdate(e) {
   throwIf(rules.updateViolation(valuesOf(e.record.original()), valuesOf(e.record), secrets, keywords));
 }
 
-// onRecordCreate/onRecordUpdate before e.next(), for every save: the scope, and a changed
-// variable name starts over (new bot, new calendar): cursor, error and hint are cleared.
+// onRecordCreate/onRecordUpdate before e.next(), for every save: the scope, and a changed source
+// starts over (new variable, bot, calendar or mailbox): cursor, error and hint are cleared.
 function prepareSave(record, isNew) {
   record.set('scope', ticketKey.scopeOf(record.getString('owner'), record.getString('household')));
   if (isNew) {
     return;
   }
   var before = record.original();
-  var namesBefore = rules.variableNames(before.getString('type'), before.getString('secret_env'), jsonOf(before, 'settings'));
-  var namesAfter = rules.variableNames(record.getString('type'), record.getString('secret_env'), jsonOf(record, 'settings'));
-  if (namesBefore.secret !== namesAfter.secret || namesBefore.allowlist !== namesAfter.allowlist) {
+  var sourceBefore = rules.sourceIdentity(before.getString('type'), before.getString('secret_env'), jsonOf(before, 'settings'));
+  var sourceAfter = rules.sourceIdentity(record.getString('type'), record.getString('secret_env'), jsonOf(record, 'settings'));
+  if (sourceBefore !== sourceAfter) {
     record.set('cursor', '');
     record.set('last_error', '');
     record.set('last_hint', '');

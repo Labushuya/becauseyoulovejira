@@ -1,7 +1,7 @@
 // Connections on the page "Kanäle" (E4 plan, packages 10, 15, 17 and 20; ADR-0018, ADR-0020): list
 // with the state of the variables, switch, errors and hints, the form with field errors, delete
 // with a safety question, the hint before the migration, the setup of the variables, and the
-// keywords with the answer of the bot to messages without one.
+// keywords with the answer of the bot to messages without one; mailboxes (package 22).
 
 import { fireEvent, render, screen, within } from '@testing-library/svelte';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
@@ -61,6 +61,9 @@ function connection(id: string, overrides: Partial<Connection> = {}): Connection
 		lastHint: '',
 		keywords: [],
 		replyNoMatch: true,
+		mailProvider: '',
+		mailUser: '',
+		matchBody: false,
 		runningSince: null,
 		created: '2026-09-25 08:00:00.000Z',
 		updated: '2026-09-25 08:00:00.000Z',
@@ -91,6 +94,8 @@ function setup(items: Connection[] = [CAL, BOT], statuses: Record<string, Secret
 				label: draft.label,
 				secretEnv: draft.secretEnv,
 				allowlistEnv: draft.allowlistEnv,
+				mailProvider: draft.type === 'mail' ? draft.mailProvider : '',
+				mailUser: draft.type === 'mail' ? draft.mailUser : '',
 				created: '2026-09-25 10:00:00.000Z'
 			})
 		),
@@ -101,7 +106,8 @@ function setup(items: Connection[] = [CAL, BOT], statuses: Record<string, Secret
 		saveSettings: vi.fn<ConnectionsData['saveSettings']>(async (current, settings) => ({
 			...current,
 			keywords: settings.keywords,
-			replyNoMatch: settings.replyNoMatch
+			replyNoMatch: settings.replyNoMatch,
+			matchBody: settings.matchBody
 		})),
 		remove: vi.fn<ConnectionsData['remove']>(async () => undefined),
 		secretStatus: vi.fn<ConnectionsData['secretStatus']>(
@@ -137,7 +143,9 @@ describe('connections domain', () => {
 				type: 'telegram',
 				label: ' ',
 				secretEnv: 'PATH',
-				allowlistEnv: 'byl_x'
+				allowlistEnv: 'byl_x',
+				mailProvider: 'webde',
+				mailUser: ''
 			})
 		).toEqual({
 			label: 'Pflichtfeld.',
@@ -252,7 +260,9 @@ describe('connections section', () => {
 			type: 'telegram',
 			label: 'Telegram-Bot',
 			secretEnv: 'BYL_TELEGRAM_TOKEN',
-			allowlistEnv: 'BYL_BOT_IDS'
+			allowlistEnv: 'BYL_BOT_IDS',
+			mailProvider: 'webde',
+			mailUser: ''
 		});
 		await vi.waitFor(() => expect(screen.getAllByRole('listitem')).toHaveLength(3));
 	});
@@ -458,7 +468,8 @@ describe('Stichwörter (E4 plan, package 20)', () => {
 				expect.objectContaining({ id: BOT.id }),
 				{
 					keywords: ['Einkauf'],
-					replyNoMatch: true
+					replyNoMatch: true,
+					matchBody: false
 				}
 			)
 		);
@@ -482,7 +493,8 @@ describe('Stichwörter (E4 plan, package 20)', () => {
 				expect.objectContaining({ id: BOT.id }),
 				{
 					keywords: ['Einkauf', 'todo', 'aufgabe', 'erledigen', 'ticket', '#byl'],
-					replyNoMatch: true
+					replyNoMatch: true,
+					matchBody: false
 				}
 			)
 		);
@@ -498,7 +510,8 @@ describe('Stichwörter (E4 plan, package 20)', () => {
 				expect.objectContaining({ id: BOT.id }),
 				{
 					keywords: ['Einkauf', 'todo', 'aufgabe', 'erledigen', 'ticket', '#byl'],
-					replyNoMatch: false
+					replyNoMatch: false,
+					matchBody: false
 				}
 			)
 		);
@@ -510,4 +523,87 @@ describe('Stichwörter (E4 plan, package 20)', () => {
 		render(ConnectionsSection, { props: { store: context.store } });
 		expect(screen.queryByRole('checkbox', { name: /ohne Stichwort antworten/ })).toBeNull();
 	});
+});
+
+describe('Postfächer (E4 plan, package 22)', () => {
+	const MAIL = connection('conn00000000003', {
+		type: 'mail',
+		label: 'Web.de',
+		secretEnv: 'BYL_WEBDE_PASSWORD',
+		mailProvider: 'webde',
+		mailUser: 'anna@web.de',
+		keywords: ['todo']
+	});
+
+	it('checks the user name of a mailbox', () => {
+		expect(
+			connectionDraftErrors({ ...emptyConnectionDraft('mail'), mailUser: 'anna@web.de' })
+		).toEqual({});
+		for (const mailUser of ['', ' ', 'anna @web.de', `${'a'.repeat(250)}@x.de`]) {
+			expect(connectionDraftErrors({ ...emptyConnectionDraft('mail'), mailUser })).toEqual({
+				mailUser: expect.stringContaining('Benutzername')
+			});
+		}
+	});
+
+	it('shows provider and user, no "Jetzt abrufen" and the switch for the text', async () => {
+		const context = setup([MAIL]);
+		await context.store.load();
+		render(ConnectionsSection, { props: { store: context.store } });
+		const [item] = screen
+			.getAllByRole('listitem')
+			.filter((li) => li.classList.contains('connection'));
+		const scope = within(item as HTMLElement);
+		expect(scope.getByText('Web.de', { selector: 'dd' })).toBeTruthy();
+		expect(scope.getByText('anna@web.de')).toBeTruthy();
+		expect(scope.getByText('BYL_WEBDE_PASSWORD')).toBeTruthy();
+		expect(scope.getByText(/im Betreff, auf Wunsch auch in den ersten 500 Zeichen/)).toBeTruthy();
+		expect(scope.getByText(/byl-mail\.exe ruft dieses Postfach alle 5 Minuten ab/)).toBeTruthy();
+		expect(scope.queryByRole('button', { name: 'Jetzt abrufen' })).toBeNull();
+		await fireEvent.click(
+			scope.getByRole('checkbox', { name: 'Auch die ersten 500 Zeichen des Textes durchsuchen' })
+		);
+		await vi.waitFor(() =>
+			expect(context.data.saveSettings).toHaveBeenLastCalledWith(
+				expect.objectContaining({ id: MAIL.id }),
+				{ keywords: ['todo'], replyNoMatch: true, matchBody: true }
+			)
+		);
+		await vi.waitFor(() =>
+			expect(context.store.announcement).toBe('„Web.de“ durchsucht auch den Anfang des Textes.')
+		);
+	});
+
+	it('creates a mailbox with provider, user and the variable of the password', async () => {
+		const { data } = await renderSection();
+		await fireEvent.change(screen.getByLabelText('Art'), { target: { value: 'mail' } });
+		expect((screen.getByLabelText('Anbieter') as HTMLSelectElement).value).toBe('webde');
+		const secret = screen.getByLabelText(
+			'Variable mit dem Passwort bzw. App-Passwort des Postfachs (Pflichtfeld)'
+		) as HTMLInputElement;
+		expect(secret.value).toBe('BYL_WEBDE_PASSWORD');
+		const user = screen.getByLabelText(
+			'Benutzername, meist die E-Mail-Adresse (Pflichtfeld)'
+		) as HTMLInputElement;
+		await fireEvent.click(screen.getByRole('button', { name: 'Verbindung anlegen' }));
+		expect(user.getAttribute('aria-invalid')).toBe('true');
+		expect(data.create).not.toHaveBeenCalled();
+		await fireEvent.input(user, { target: { value: ' anna@web.de ' } });
+		await fireEvent.click(screen.getByRole('button', { name: 'Verbindung anlegen' }));
+		expect(data.create).toHaveBeenCalledWith({
+			type: 'mail',
+			label: 'Postfach (IMAP)',
+			secretEnv: 'BYL_WEBDE_PASSWORD',
+			allowlistEnv: '',
+			mailProvider: 'webde',
+			mailUser: ' anna@web.de '
+		});
+	});
+
+	async function renderSection() {
+		const context = setup([CAL]);
+		await context.store.load();
+		render(ConnectionsSection, { props: { store: context.store } });
+		return context;
+	}
 });

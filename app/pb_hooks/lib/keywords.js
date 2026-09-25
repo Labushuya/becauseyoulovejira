@@ -228,6 +228,14 @@ function importSettingsOf(value, kind) {
   return { keywords: listOf(entry.keywords), matchBody: kind === 'eml' && entry.match_body === true };
 }
 
+/**
+ * Texts of a mail that are searched (ADR-0020 section 1): the subject and, with `matchBody`,
+ * the first MAIL_BODY_CHARS characters of the text. Mirrors mailKeywordTexts of the web app.
+ */
+function mailTexts(title, body, matchBody) {
+  return matchBody ? [text(title), text(body).slice(0, MAIL_BODY_CHARS)] : [text(title)];
+}
+
 /** The usable keywords of a stored value: invalid entries are left out, never an error. */
 function listOf(value) {
   if (Object.prototype.toString.call(value) !== '[object Array]') {
@@ -259,6 +267,7 @@ module.exports = {
   fold: fold,
   isWordChar: isWordChar,
   matchKeyword: matchKeyword,
+  mailTexts: mailTexts,
   keyOf: keyOf,
   listViolation: listViolation,
   listOf: listOf

@@ -10,6 +10,8 @@ import { unreadSinceOf } from '../../web/src/lib/domain/unread.ts';
 
 // First migration of E4; the instance runs only the migrations before it.
 const E4_FIRST_MIGRATION = '1790201200_create_inbox_items.js';
+// Invented token of the mail helper (package 22).
+const INGEST_TOKEN = randomBytes(24).toString('base64');
 
 let instance;
 let client;
@@ -22,7 +24,10 @@ function newClient() {
 }
 
 beforeAll(async () => {
-	instance = await startPocketBase({ migrationFilter: (name) => name < E4_FIRST_MIGRATION });
+	instance = await startPocketBase({
+		migrationFilter: (name) => name < E4_FIRST_MIGRATION,
+		env: { BYL_INGEST_TOKEN: INGEST_TOKEN }
+	});
 	const superuser = newClient();
 	await superuser.collection('_superusers').authWithPassword(instance.email, instance.password);
 	const email = `user-${randomBytes(12).toString('hex')}@example.com`;
@@ -136,6 +141,25 @@ describe('E4 hooks on the schema before the E4 migrations', () => {
 		expect(cron.status).toBe(204);
 		const logs = JSON.stringify(await superuser.send('/api/logs', { query: { perPage: 200 } }));
 		expect(logs).not.toMatch(/byl-calendar/);
+	});
+
+	it('answers the ingest routes of the mail helper with the hint (package 22)', async () => {
+		const headers = { Authorization: `Bearer ${INGEST_TOKEN}`, 'Content-Type': 'application/json' };
+		const list = await fetch(`${instance.url}/api/byl/ingest/connections`, { headers });
+		expect(list.status).toBe(503);
+		expect((await list.json()).message).toMatch(/nach dem nächsten Start/);
+		const item = await fetch(`${instance.url}/api/byl/ingest/items`, {
+			method: 'POST',
+			headers,
+			body: JSON.stringify({ connection: 'abcdefghijklmno', origin: 'auto', title: 'Todo' })
+		});
+		expect(item.status).toBe(503);
+		const status = await fetch(`${instance.url}/api/byl/ingest/connections/abcdefghijklmno/status`, {
+			method: 'POST',
+			headers,
+			body: '{}'
+		});
+		expect(status.status).toBe(503);
 	});
 });
 

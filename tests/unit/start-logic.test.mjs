@@ -196,6 +196,20 @@ $result.bylEnv = @{ set = @($bylEnv.Set); remove = @($bylEnv.Remove) }
 $noneEnv = Get-BylEnvironmentChange -UserNames @() -MachineNames @() -ProcessNames @()
 $result.bylEnvNone = @{ set = @($noneEnv.Set).Count; remove = @($noneEnv.Remove).Count }
 
+$result.ingestToken = @{
+    needed = @(
+        (Test-IngestTokenNeeded -HelperExists $true -CurrentValue $null),
+        (Test-IngestTokenNeeded -HelperExists $true -CurrentValue ''),
+        (Test-IngestTokenNeeded -HelperExists $true -CurrentValue '   '),
+        (Test-IngestTokenNeeded -HelperExists $true -CurrentValue 'abc'),
+        (Test-IngestTokenNeeded -HelperExists $false -CurrentValue $null)
+    )
+    first = New-IngestTokenValue
+    second = New-IngestTokenValue
+    name = $BylIngestTokenName
+    helper = $BylMailHelperName
+}
+
 $result | ConvertTo-Json -Depth 6 -Compress
 `;
 
@@ -333,6 +347,22 @@ describe('BYL_* variables for PocketBase (ADR-0018 section 6)', () => {
 	it('hands on the valid names of the user scope and drops stale ones of the process', () => {
 		expect(result.bylEnv).toEqual({ set: ['BYL_CAL', 'BYL_TOKEN'], remove: ['BYL_OLD'] });
 		expect(result.bylEnvNone).toEqual({ set: 0, remove: 0 });
+	});
+});
+
+describe('ingest token of the mail helper (ADR-0018 section 8)', () => {
+	it('is needed only with byl-mail.exe and without a usable value', () => {
+		expect(result.ingestToken.needed).toEqual([true, true, true, false, false]);
+		expect(result.ingestToken.name).toBe('BYL_INGEST_TOKEN');
+		expect(result.ingestToken.helper).toBe('byl-mail.exe');
+	});
+
+	it('creates 24 random bytes as Base64', () => {
+		for (const value of [result.ingestToken.first, result.ingestToken.second]) {
+			expect(value).toMatch(/^[A-Za-z0-9+/]{32}$/);
+			expect(Buffer.from(value, 'base64')).toHaveLength(24);
+		}
+		expect(result.ingestToken.first).not.toBe(result.ingestToken.second);
 	});
 });
 

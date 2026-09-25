@@ -130,6 +130,22 @@ function Sync-BylEnvironment {
     }
 }
 
+function Initialize-IngestToken {
+    # Ingest token of the mail helper (ADR-0018 section 8): created once in the user scope when
+    # byl-mail.exe is in the app folder and the variable is missing; Sync-BylEnvironment then hands
+    # it to PocketBase and the helper. Neither name nor value is printed; a failure only means that
+    # the helper cannot deliver mails, the app itself starts anyway.
+    $helper = [System.IO.Path]::Combine($AppDir, $BylMailHelperName)
+    $current = [Environment]::GetEnvironmentVariable($BylIngestTokenName, 'User')
+    if (-not (Test-IngestTokenNeeded -HelperExists (Test-Path -LiteralPath $helper -PathType Leaf) -CurrentValue $current)) { return }
+    try {
+        [Environment]::SetEnvironmentVariable($BylIngestTokenName, (New-IngestTokenValue), 'User')
+    }
+    catch {
+        Write-Status "Hinweis: Der Zugang für byl-mail.exe konnte nicht angelegt werden ($($_.Exception.GetType().Name)). Postfächer werden nicht abgerufen."
+    }
+}
+
 function Invoke-Start {
     $exe = [System.IO.Path]::Combine($AppDir, 'pocketbase.exe')
     if (-not (Test-Path -LiteralPath $exe -PathType Leaf)) {
@@ -180,6 +196,7 @@ function Invoke-Start {
         Write-Status 'Starte PocketBase ...'
         try {
             [void](New-Item -ItemType Directory -Force -Path $log.Directory)
+            Initialize-IngestToken
             Sync-BylEnvironment
             $server = Start-Process -FilePath $exe -ArgumentList (Get-ServerArgumentString -AppDir $AppDir) `
                 -WorkingDirectory $AppDir -WindowStyle Hidden -PassThru `

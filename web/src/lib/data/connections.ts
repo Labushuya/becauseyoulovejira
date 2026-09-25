@@ -1,10 +1,11 @@
-// Connections of the channels (ADR-0016 section 2, ADR-0018, ADR-0020; E4 plan packages 10 and 20;
+// Connections of the channels (ADR-0016 section 2, ADR-0018, ADR-0020; E4 plan packages 10, 20 and 22;
 // ADR-0006 sections 1 to 5). Stateless functions with the PocketBase instance as first parameter. The
 // hook sets scope and refuses changes of server fields (app/pb_hooks/connections.pb.js).
 
 import type PocketBase from 'pocketbase';
 import {
 	isConnectionType,
+	isMailProvider,
 	type Connection,
 	type ConnectionDraft,
 	type ConnectionSettingsDraft,
@@ -60,9 +61,24 @@ function allowlistOf(settings: unknown): string {
 	return typeof value === 'string' ? value : '';
 }
 
+function mailSettingsOf(
+	settings: unknown
+): Pick<Connection, 'mailProvider' | 'mailUser' | 'matchBody'> {
+	const value = settingsRecord(settings);
+	return {
+		mailProvider: isMailProvider(value.provider) ? value.provider : '',
+		mailUser: typeof value.user === 'string' ? value.user : '',
+		matchBody: value.match_body === true
+	};
+}
+
 export function toConnection(record: ConnectionRecord): Connection {
 	if (!isConnectionType(record.type))
 		throw new RangeError(`Unknown connection type: ${record.type}`);
+	const mail =
+		record.type === 'mail'
+			? mailSettingsOf(record.settings)
+			: { mailProvider: '' as const, mailUser: '', matchBody: false };
 	return {
 		id: record.id,
 		type: record.type,
@@ -76,6 +92,7 @@ export function toConnection(record: ConnectionRecord): Connection {
 		lastHint: record.last_hint ?? '',
 		keywords: keywordListOf(settingsRecord(record.settings).keywords),
 		replyNoMatch: settingsRecord(record.settings).reply_no_match !== false,
+		...mail,
 		runningSince: record.running_since || null,
 		created: record.created,
 		updated: record.updated
@@ -97,8 +114,12 @@ export function listConnections(
 	});
 }
 
-function settingsOf(draft: Pick<ConnectionDraft, 'type' | 'allowlistEnv'>): Record<string, string> {
-	return draft.type === 'telegram' ? { allowed_env: draft.allowlistEnv.trim() } : {};
+function settingsOf(
+	draft: Pick<ConnectionDraft, 'type' | 'allowlistEnv' | 'mailProvider' | 'mailUser'>
+): Record<string, string> {
+	if (draft.type === 'telegram') return { allowed_env: draft.allowlistEnv.trim() };
+	if (draft.type === 'mail') return { provider: draft.mailProvider, user: draft.mailUser.trim() };
+	return {};
 }
 
 /** Creates a switched-on private connection of the signed-in user. */
@@ -125,22 +146,44 @@ export function createConnection(
 	});
 }
 
+/** The whole `settings` of a connection with new keywords and switches. */
+function settingsValue(
+	connection: Pick<Connection, 'type' | 'allowlistEnv' | 'mailProvider' | 'mailUser'>,
+	settings: ConnectionSettingsDraft
+): Record<string, unknown> {
+	const keywords = settings.keywords.map((keyword) => keyword.trim());
+	switch (connection.type) {
+		case 'telegram':
+			return {
+				allowed_env: connection.allowlistEnv,
+				keywords,
+				reply_no_match: settings.replyNoMatch
+			};
+		case 'mail':
+			return {
+				provider: connection.mailProvider,
+				user: connection.mailUser,
+				keywords,
+				match_body: settings.matchBody
+			};
+		case 'calendar':
+			return { keywords };
+	}
+}
+
 /**
- * Saves keywords and, for Telegram, the answer without keyword. `settings` is written whole, so
- * the name of the allowlist variable goes along unchanged.
+ * Saves keywords and, for Telegram, the answer without keyword, for mail whether the start of
+ * the text is searched. `settings` is written whole, so the name of the allowlist variable and
+ * the mailbox go along unchanged.
  */
 export function saveConnectionSettings(
 	pb: PocketBase,
-	connection: Pick<Connection, 'id' | 'type' | 'allowlistEnv'>,
+	connection: Pick<Connection, 'id' | 'type' | 'allowlistEnv' | 'mailProvider' | 'mailUser'>,
 	settings: ConnectionSettingsDraft,
 	{ signal }: RequestOptions = {}
 ): Promise<Connection> {
 	return withDataErrors(signal, async () => {
-		const keywords = settings.keywords.map((keyword) => keyword.trim());
-		const value =
-			connection.type === 'telegram'
-				? { allowed_env: connection.allowlistEnv, keywords, reply_no_match: settings.replyNoMatch }
-				: { keywords };
+		const value = settingsValue(connection, settings);
 		const record = await pb
 			.collection(CONNECTIONS)
 			.update<ConnectionRecord>(

@@ -23,7 +23,7 @@ describe('connection-rules.js', () => {
 	});
 
 	it('refuses kinds of later packages, server fields and invalid names', () => {
-		expect(rules.createViolation({ ...base, ...empty, type: 'mail' }, secrets, keywords)).toMatchObject({
+		expect(rules.createViolation({ ...base, ...empty, type: 'notion' }, secrets, keywords)).toMatchObject({
 			field: 'type',
 			code: 'validation_connection_type'
 		});
@@ -121,5 +121,63 @@ describe('connection-rules.js', () => {
 			secret: 'BYL_BOT',
 			allowlist: 'BYL_IDS'
 		});
+	});
+});
+
+describe('mail connections (E4 plan, package 22)', () => {
+	const mail = { ...empty, type: 'mail', secret_env: 'BYL_WEBDE_PASSWORD' };
+	const settings = { provider: 'webde', user: 'anna@web.de' };
+
+	it('can be created with provider and user name', () => {
+		expect(rules.CREATABLE_TYPES).toContain('mail');
+		expect(rules.MAIL_PROVIDERS).toEqual(['webde']);
+		expect(rules.createViolation({ ...mail, settings }, secrets, keywords)).toBe('');
+		expect(
+			rules.createViolation(
+				{ ...mail, settings: { ...settings, keywords: ['todo'], match_body: true } },
+				secrets,
+				keywords
+			)
+		).toBe('');
+	});
+
+	it.each([
+		['no provider', { user: 'anna@web.de' }, 'validation_mail_provider'],
+		['an unknown provider', { ...settings, provider: 'proton' }, 'validation_mail_provider'],
+		['no user', { provider: 'webde' }, 'validation_mail_user'],
+		['a user with a space', { ...settings, user: 'anna @web.de' }, 'validation_mail_user'],
+		['a user with a line break', { ...settings, user: 'anna@web.de\n' }, 'validation_mail_user'],
+		['a user that is too long', { ...settings, user: `${'a'.repeat(250)}@x.de` }, 'validation_mail_user'],
+		['a number as user', { ...settings, user: 3 }, 'validation_mail_user'],
+		['match_body as text', { ...settings, match_body: 'ja' }, 'validation_connection_settings'],
+		['a host', { ...settings, host: 'imap.example.com' }, 'validation_connection_settings'],
+		['a password', { ...settings, password: 'x' }, 'validation_connection_settings']
+	])('refuses %s', (name, value, code) => {
+		expect(rules.settingsViolation('mail', value, secrets, keywords)).toMatchObject({ field: 'settings', code });
+	});
+
+	it('reads the mail settings tolerant of missing values', () => {
+		expect(rules.mailSettingsOf({ ...settings, match_body: true })).toEqual({
+			provider: 'webde',
+			user: 'anna@web.de',
+			matchBody: true
+		});
+		expect(rules.mailSettingsOf(null)).toEqual({ provider: '', user: '', matchBody: false });
+		expect(rules.variableNames('mail', 'BYL_WEBDE_PASSWORD', settings)).toEqual({
+			secret: 'BYL_WEBDE_PASSWORD',
+			allowlist: ''
+		});
+	});
+
+	it('starts over when the mailbox or a variable changes, not for keywords', () => {
+		const identity = (secret, value) => rules.sourceIdentity('mail', secret, value);
+		const before = identity('BYL_A', settings);
+		expect(identity('BYL_A', { ...settings, keywords: ['todo'], match_body: true })).toBe(before);
+		expect(identity('BYL_A', { ...settings, user: 'ANNA@web.de' })).toBe(before);
+		expect(identity('BYL_A', { ...settings, user: 'bert@web.de' })).not.toBe(before);
+		expect(identity('BYL_B', settings)).not.toBe(before);
+		expect(rules.sourceIdentity('telegram', 'BYL_BOT', { allowed_env: 'BYL_IDS' })).not.toBe(
+			rules.sourceIdentity('telegram', 'BYL_BOT', { allowed_env: 'BYL_OTHER' })
+		);
 	});
 });
