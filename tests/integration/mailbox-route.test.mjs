@@ -228,6 +228,15 @@ describe('mail helper stopped, restarted or with another token', () => {
 		expect((await listMailbox(owner.pb, mailbox.id, 50)).kind).toBe('ok');
 	});
 
+	it('reaches a restarted helper at the first request (no reused connection)', async () => {
+		for (let round = 0; round < 5; round++) {
+			expect((await listMailbox(owner.pb, mailbox.id, 5)).kind).toBe('ok');
+			await stopHelper();
+			await startHelper();
+			expect((await listMailbox(owner.pb, mailbox.id, 5)).kind, `round ${round}`).toBe('ok');
+		}
+	});
+
 	it('explains a helper that has another token', async () => {
 		await stopHelper();
 		await startHelper('ein-anderer-token');
@@ -244,7 +253,12 @@ describe('mail helper stopped, restarted or with another token', () => {
 			let body = '';
 			request.on('data', (chunk) => (body += chunk));
 			request.on('end', () => {
-				received.push({ url: request.url, auth: request.headers.authorization, body: JSON.parse(body) });
+				received.push({
+					url: request.url,
+					auth: request.headers.authorization,
+					connection: request.headers.connection,
+					body: JSON.parse(body)
+				});
 				response.writeHead(200, { 'Content-Type': 'application/json' });
 				response.end('{"items":[]}');
 			});
@@ -256,7 +270,12 @@ describe('mail helper stopped, restarted or with another token', () => {
 			await new Promise((resolve) => spy.close(resolve));
 		}
 		expect(received).toEqual([
-			{ url: '/mailbox/list', auth: `Bearer ${TOKEN}`, body: { connection: mailbox.id, limit: 20 } }
+			{
+				url: '/mailbox/list',
+				auth: `Bearer ${TOKEN}`,
+				connection: 'close',
+				body: { connection: mailbox.id, limit: 20 }
+			}
 		]);
 		await startHelper();
 		const everything = [
