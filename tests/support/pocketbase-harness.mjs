@@ -7,7 +7,7 @@
 import { spawn, spawnSync } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
 import { existsSync, rmSync } from 'node:fs';
-import { cp, mkdir, mkdtemp, rm } from 'node:fs/promises';
+import { cp, mkdir, mkdtemp, readdir, rm } from 'node:fs/promises';
 import { createServer } from 'node:net';
 import { constants, tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
@@ -34,10 +34,13 @@ const EXIT_SIGNALS = ['SIGINT', 'SIGTERM', 'SIGBREAK', 'SIGHUP'];
 
 /**
  * Starts a disposable PocketBase instance.
- * @param {{ publicFiles?: string, prepareDataDir?: (dataDir: string) => Promise<void> }} [options]
+ * @param {{ publicFiles?: string, prepareDataDir?: (dataDir: string) => Promise<void>,
+ *   migrationFilter?: (fileName: string) => boolean }} [options]
  *   `publicFiles`: folder copied into the public folder of the instance (e.g. the web build);
  *   without it the public folder stays empty. `prepareDataDir`: fills the still empty data folder
- *   before `superuser upsert` and `serve` (e.g. with an unpacked backup).
+ *   before `superuser upsert` and `serve` (e.g. with an unpacked backup). `migrationFilter`:
+ *   runs only the app migrations it accepts (e.g. the state before a new migration, while the
+ *   hooks are already the new ones).
  * @returns {Promise<{ url: string, email: string, password: string, dataDir: string,
  *   stop: () => Promise<void> }>} `dataDir` is removed by `stop()`.
  */
@@ -67,11 +70,21 @@ export async function startPocketBase(options = {}) {
 		if (existsSync(FIXTURE_HOOKS_DIR)) {
 			await cp(FIXTURE_HOOKS_DIR, hooksDir, { recursive: true });
 		}
+		let migrationsDir = APP_MIGRATIONS_DIR;
+		if (options.migrationFilter !== undefined) {
+			migrationsDir = join(state.baseDir, 'pb_migrations');
+			await mkdir(migrationsDir);
+			for (const name of await readdir(APP_MIGRATIONS_DIR)) {
+				if (name.endsWith('.js') && options.migrationFilter(name)) {
+					await cp(join(APP_MIGRATIONS_DIR, name), join(migrationsDir, name));
+				}
+			}
+		}
 
 		const commonArgs = [
 			`--dir=${dataDir}`,
 			`--hooksDir=${hooksDir}`,
-			`--migrationsDir=${APP_MIGRATIONS_DIR}`,
+			`--migrationsDir=${migrationsDir}`,
 			`--publicDir=${publicDir}`,
 			'--automigrate=false'
 		];

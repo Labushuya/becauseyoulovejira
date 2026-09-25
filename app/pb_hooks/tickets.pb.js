@@ -3,7 +3,8 @@
 // lib/ticket-service.js; handlers run in isolated scopes, so modules are required inside them.
 // Create and update through the Record API are not transactional in PocketBase 0.40.4, hence
 // each model hook runs in its own transaction (lib/transaction.js, OF-1): key, ticket and
-// history entries are written together or not at all.
+// history entries (and the converted inbox item, ADR-0014 section 2) are written together or not
+// at all.
 
 // Request hooks: remember the acting user for the history (OF-4, variant A). blocks_parent
 // defaults to true unless the client sends the field (OF-11); bool fields have no schema default
@@ -17,16 +18,18 @@ onRecordCreateRequest(function (e) {
 }, 'tickets');
 
 onRecordUpdateRequest(function (e) {
-  require(`${__hooks}/lib/ticket-service.js`).rememberActor(e);
+  var service = require(`${__hooks}/lib/ticket-service.js`);
+  service.guardSourceChange(e.record);
+  service.rememberActor(e);
   e.next();
 }, 'tickets');
 
 onRecordCreate(function (e) {
   var service = require(`${__hooks}/lib/ticket-service.js`);
   require(`${__hooks}/lib/transaction.js`).inTransaction(e, function (txApp) {
-    service.prepareCreate(txApp, e.record);
+    var item = service.prepareCreate(txApp, e.record);
     e.next();
-    service.recordCreation(txApp, e.record);
+    service.recordCreation(txApp, e.record, item);
   });
 }, 'tickets');
 

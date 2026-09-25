@@ -8,6 +8,7 @@ var counters = require(__hooks + '/lib/counters.js');
 var rules = require(__hooks + '/lib/ticket-rules.js');
 var history = require(__hooks + '/lib/history.js');
 var errors = require(__hooks + '/lib/errors.js');
+var inbox = require(__hooks + '/lib/inbox-service.js');
 
 // Transient record key for the acting user (E1 plan OF-4, variant A). Field names cannot contain
 // "@", PocketBase neither stores nor exports unknown keys, and the Record API does not load
@@ -186,8 +187,10 @@ function saveHistoryEntry(txApp, record, entry) {
   txApp.save(item);
 }
 
-// onRecordCreate before e.next(): scope, defaults, guards, completed_at and a fresh key. Client
-// values for scope, number, key and completed_at are always overwritten.
+// onRecordCreate before e.next(): scope, defaults, guards, the inbox item to convert, completed_at
+// and a fresh key. Client values for scope, number, key and completed_at are always overwritten.
+// Every check runs before the key is drawn, so a rejected create uses no number. Returns the
+// inbox item for recordCreation() (null without one).
 function prepareCreate(txApp, record) {
   var scope = scopeOfRecord(record);
   record.set('scope', scope);
@@ -204,17 +207,38 @@ function prepareCreate(txApp, record) {
 
   checkDue(record);
   var project = checkRelations(txApp, record, scope, '');
+  var item = inbox.prepareConversion(txApp, record, scope);
   applyCompletedAt(record, null);
   assignKey(txApp, record, scope, project);
+  return item;
 }
 
-// onRecordCreate after e.next(): the creation itself is recorded with the key.
-function recordCreation(txApp, record) {
+// onRecordCreate after e.next(): the creation itself is recorded with the key, and the inbox
+// item the ticket came from becomes "converted" (ADR-0014 section 2), in the same transaction.
+function recordCreation(txApp, record, item) {
   saveHistoryEntry(txApp, record, {
     field: 'created',
     old_value: '',
     new_value: record.getString('key')
   });
+  inbox.completeConversion(txApp, item || null, record);
+}
+
+// onRecordUpdateRequest: source and source_item are fixed after the create (ADR-0014 section
+// 2). Only client updates pass through here; PocketBase clearing source_item when the inbox item
+// is deleted does not.
+function guardSourceChange(record) {
+  var original = record.original();
+  var fields = ['source', 'source_item'];
+  for (var i = 0; i < fields.length; i++) {
+    if (record.getString(fields[i]) !== original.getString(fields[i])) {
+      throw errors.fieldFailure(
+        fields[i],
+        'validation_source_immutable',
+        'Die Quelle eines Tickets lässt sich nicht ändern.'
+      );
+    }
+  }
 }
 
 // onRecordUpdate before e.next(): recomputes the scope; a changed scope or project draws a new
@@ -265,6 +289,7 @@ module.exports = {
   rememberActor: rememberActor,
   prepareCreate: prepareCreate,
   recordCreation: recordCreation,
+  guardSourceChange: guardSourceChange,
   prepareUpdate: prepareUpdate,
   recordChanges: recordChanges
 };

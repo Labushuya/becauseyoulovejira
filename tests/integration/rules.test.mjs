@@ -14,7 +14,7 @@ async function listIds(client, collection) {
 	return records.map((record) => record.id);
 }
 
-const OWNED_COLLECTIONS = ['projects', 'tags', 'recurrence_rules', 'tickets'];
+const OWNED_COLLECTIONS = ['projects', 'tags', 'recurrence_rules', 'tickets', 'inbox_items'];
 
 let s;
 
