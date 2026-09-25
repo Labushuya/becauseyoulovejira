@@ -1,5 +1,4 @@
 <script lang="ts">
-	import type { Snippet } from 'svelte';
 	import {
 		CONNECTION_TYPES,
 		CONNECTION_TYPE_LABELS,
@@ -20,15 +19,13 @@
 
 	// Connections of the channels (E4 plan, package 10; ADR-0016 section 2, ADR-0018): list with the
 	// state of the variables, switch, last run and cleaned error, a form for a new connection and
-	// "Löschen" with a safety question. Access data are Windows user environment variables; the
-	// app stores and shows only their names. `actions` adds buttons per connection (package 15:
-	// "Jetzt abrufen").
+	// "Löschen" with a safety question, "Jetzt abrufen" (package 15) and "Aktualisieren" for the
+	// result of a run of the cron job. Access data are Windows user environment variables; the app
+	// stores and shows only their names.
 	let {
-		store,
-		actions
+		store
 	}: {
 		store: ConnectionsStore;
-		actions?: Snippet<[Connection]>;
 	} = $props();
 
 	const uid = $props.id();
@@ -90,6 +87,13 @@
 			rowMessage = { id: connection.id, text: result.message };
 	}
 
+	async function runNow(connection: Connection) {
+		rowMessage = null;
+		const result = await store.runNow(connection.id);
+		if (!result.ok && result.message !== null)
+			rowMessage = { id: connection.id, text: result.message };
+	}
+
 	async function confirmDelete() {
 		if (pendingDelete === null) return;
 		deleting = true;
@@ -131,6 +135,15 @@
 		{#if store.connections.length === 0}
 			<p class="hint">Noch keine Verbindung.</p>
 		{:else}
+			<p class="refresh">
+				<button class="secondary" type="button" onclick={() => void store.load()}>
+					Aktualisieren
+				</button>
+				<span class="hint">
+					Google Calendar ruft alle 15 Minuten ab, solange die App läuft; „Aktualisieren“ zeigt das
+					Ergebnis.
+				</span>
+			</p>
 			<ul class="connections">
 				{#each store.connections as connection (connection.id)}
 					{@const secret = secretStatusText(connection, store.status(connection.id))}
@@ -174,7 +187,19 @@
 							<p class="alert-error" role="alert"><ErrorIcon /><span>{rowMessage.text}</span></p>
 						{/if}
 						<div class="buttons">
-							{@render actions?.(connection)}
+							<button
+								class="secondary"
+								type="button"
+								aria-disabled={store.isRunning(connection.id) || !connection.enabled
+									? 'true'
+									: undefined}
+								onclick={() => {
+									if (!store.isRunning(connection.id) && connection.enabled)
+										void runNow(connection);
+								}}
+							>
+								{store.isRunning(connection.id) ? 'Wird abgerufen …' : 'Jetzt abrufen'}
+							</button>
 							<button
 								class="secondary"
 								type="button"
@@ -411,6 +436,13 @@
 		border-radius: 0.375rem;
 	}
 
+	.refresh {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 0.5rem 0.75rem;
+		align-items: center;
+	}
+
 	.buttons {
 		display: flex;
 		flex-wrap: wrap;
@@ -425,6 +457,7 @@
 		cursor: pointer;
 	}
 
+	.secondary[aria-disabled='true'],
 	.button-primary[aria-disabled='true'] {
 		cursor: not-allowed;
 		opacity: 0.6;

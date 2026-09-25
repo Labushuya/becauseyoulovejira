@@ -213,8 +213,8 @@
   "meta": {
     "projekt": "becauseyoulovejira",
     "stand": "2026-09-25",
-    "commit": "68f5710",
-    "etappe": "E0, E1, E1.1, E2 und E3 abgeschlossen, E4 in Arbeit (Pakete 1 bis 9, 10 ohne Ingest-Route, 14 und 16)"
+    "commit": "e0bd4e7",
+    "etappe": "E0, E1, E1.1, E2 und E3 abgeschlossen, E4 in Arbeit (Pakete 1 bis 9, 10 ohne Ingest-Route, 14, 15 und 16)"
   },
   "blocks": [
     {
@@ -1260,13 +1260,13 @@
           "pre": "App läuft (kein Neustart nötig, sobald die E4-Migrationen gelaufen sind); je ein Termin aus Google Calendar (Einstellungen → „Importieren und exportieren“ → „Exportieren“, .zip entpacken), Outlook (Termin → „Speichern unter“ → .ics) und Thunderbird (Termin → „Exportieren“) als .ics gespeichert.", "steps": ["Die drei Dateien gleichzeitig in die Eingangsansicht ziehen; eine davon ein zweites Mal ziehen.", "Einen ganztägigen Termin und einen Termin am Tag der Zeitumstellung (letzter Sonntag im März bzw. Oktober) prüfen: Quelldatum im Panel.", "Eine Serie mit einer verschobenen Einzelinstanz exportieren und hereinziehen.", "„Originaldatei herunterladen“ öffnen und in einem Kalenderprogramm importieren.", "Per Tastatur über „Datei wählen“ importieren."],
           "expect": "Je Datei „N neu, M schon vorhanden, K übersprungen“; ganztägige Termine zeigen ihr Datum ohne Uhrzeit, Termine am Umstellungstag die richtige Berliner Uhrzeit; die Serie ist ein Eintrag, die verschobene Instanz ein zweiter; das Original ist nur der eine Termin und lässt sich wieder importieren.",
           "tests": [] },
-        { "id": "BYL-E4-026", "title": "Google Calendar per Cron", "art": ["unit", "integration"], "status": "geplant",
-          "pre": "E4-Plan, Paket 15.", "steps": ["Neue Termine im Fenster nach Cron oder „Jetzt abrufen“ im Eingang; verworfene kommen nicht wieder.", "Datei und Feed ergeben einen Eintrag.", "Fehler, Zeitüberschreitung, zu große Antwort bereinigt an der Verbindung; Laufsperre gegen Überlappung."],
-          "expect": "Fake-Server im Test statt Google.",
-          "tests": [] },
-        { "id": "BYL-E4-027", "title": "Echter Google-Kalender", "art": ["manuell"], "status": "geplant",
-          "pre": "E4-Plan, Paket 15.", "steps": ["Geheime iCal-Adresse als Variable setzen, Termin anlegen, „Jetzt abrufen“.", "Adresse in Google zurücksetzen: Statusmeldung prüfen."],
-          "expect": "Browser-Checkliste im E4-Plan.",
+        { "id": "BYL-E4-026", "title": "Google Calendar per Cron", "art": ["unit", "komponente", "integration"], "status": "bestanden",
+          "pre": "E4-Plan, Paket 15; für die Integration app/pocketbase.exe und ein lokaler Fake-Server (Node http auf 127.0.0.1) statt Google; die Wegwerf-Instanz bekommt die erfundenen Adressen als BYL_TEST_CAL*-Variablen.", "steps": ["npm run test:unit", "npm run test:web", "npm run test:integration"],
+          "expect": "Fenster heute bis +30 Tage (Berlin): gestern und +31 fallen weg, ein Termin, der gestern begann und heute endet, bleibt; laufende Serien einmal, beendete (UNTIL) und künftige nicht; abgesagte übersprungen. „Jetzt abrufen“ (POST /api/byl/connections/{id}/run) und der Cron-Job byl-calendar (alle 15 Minuten, per /api/crons ausgelöst) nutzen denselben Lauf: Einträge mit Kanal calendar, Art event und Verbindung; ein zweiter Lauf ergibt nur Duplikate; verworfene bleiben verworfen, auch wenn sich der Termin ändert; ein noch neuer Eintrag zieht einem geänderten Termin nach (Titel, Zeit, Ort, Original); derselbe Termin aus .ics-Datei und Feed ist ein Eintrag. Laufsperre: ein zweiter Lauf während running_since meldet „running“, eine Sperre älter als 10 Minuten wird übernommen. Ausgeschaltete Verbindungen fragen nichts an; fremde antworten 404. HTTP 404, eine HTML-Seite, 25 MB und eine Variable ohne http(s) ergeben bereinigte Fehler an der Verbindung ohne Eintrag und ohne last_ok_at; eine Antwort nach 40 Sekunden bricht nach 30 Sekunden ab und nennt nur den Host. Ohne Variable tut der Cron-Job nichts, schreibt nichts an die Verbindung und loggt den Hinweis genau einmal. Die geheime Adresse steht weder in Antworten noch in last_error, /api/logs oder der Konsolenausgabe. Vor den Migrationen: Route 503, Cron-Job still. Seite „Kanäle“: „Jetzt abrufen“ mit Ergebnis in der Live-Region und neuem Stand, gesperrt für ausgeschaltete Verbindungen, „Aktualisieren“, Anleitung zur geheimen iCal-Adresse samt Widerruf.",
+          "tests": ["tests/unit/channel-calendar.test.mjs", "tests/integration/channel-calendar.test.mjs", "tests/integration/hooks-before-migration.test.mjs::answers \"Jetzt abrufen\" with the hint", "web/src/lib/components/connections-page.test.ts::Jetzt abrufen (E4 plan, package 15)"] },
+        { "id": "BYL-E4-027", "title": "Echter Google-Kalender", "art": ["manuell"], "status": "offen",
+          "pre": "App nach dem Merge von Paket 10 einmal neu gestartet; Google-Konto mit einem Testkalender; Variable BYL_GOOGLE_CALENDAR_URL nach der Anleitung unter „Kanäle“ gesetzt, danach stop.bat und start.bat.", "steps": ["Verbindung „Google Calendar“ anlegen: „Zugangsdaten gesetzt.“", "In Google einen Termin für morgen und einen in 40 Tagen anlegen, „Jetzt abrufen“: nur der für morgen erscheint im Eingang.", "Den Termin in Google verschieben, nach höchstens 15 Minuten oder mit „Jetzt abrufen“ prüfen: der Eintrag zeigt die neue Zeit.", "Einen Eintrag verwerfen, erneut abrufen: er kommt nicht wieder.", "Den Termin zusätzlich als .ics exportieren und hereinziehen: „schon vorhanden“.", "In Google die Privatadresse zurücksetzen, „Jetzt abrufen“: Fehler „HTTP 404 …“ ohne die Adresse; neue Adresse per setx eintragen, neu starten, wieder erfolgreich."],
+          "expect": "Termine im Fenster kommen einmal, Änderungen ziehen nach, verworfene bleiben weg; die Adresse erscheint nirgends in der App.",
           "tests": [] },
         { "id": "BYL-E4-028", "title": "WhatsApp-Export", "art": ["unit", "komponente", "integration"], "status": "bestanden",
           "pre": "E4-Plan, Paket 16; erfundene Exporte unter tests/fixtures/whatsapp (Android deutsch und englisch/US, iOS deutsch und englisch/UK); ZIP-Archive entstehen im Test mit node:zlib; für die Integration app/pocketbase.exe.", "steps": ["npm run test:web", "npm run test:integration"],

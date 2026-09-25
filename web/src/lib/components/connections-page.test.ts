@@ -8,6 +8,7 @@ import { DataError } from '$lib/data/errors';
 import {
 	connectionDraftErrors,
 	emptyConnectionDraft,
+	runResultText,
 	secretStatusText,
 	type Connection,
 	type SecretStatus
@@ -95,7 +96,23 @@ function setup(items: Connection[] = [CAL, BOT], statuses: Record<string, Secret
 		remove: vi.fn<ConnectionsData['remove']>(async () => undefined),
 		secretStatus: vi.fn<ConnectionsData['secretStatus']>(
 			async (id) => statuses[id] ?? { secret: true, allowlist: null }
-		)
+		),
+		run: vi.fn<ConnectionsData['run']>(async () => ({
+			status: 'ok',
+			created: 3,
+			duplicates: 1,
+			updated: 1,
+			skipped: 0,
+			failed: 0,
+			error: '',
+			missing: []
+		})),
+		get: vi.fn<ConnectionsData['get']>(async (id) => ({
+			...(items.find((item) => item.id === id) as Connection),
+			lastRunAt: '2026-09-25 10:00:00.000Z',
+			lastOkAt: '2026-09-25 10:00:00.000Z',
+			lastError: ''
+		}))
 	} satisfies ConnectionsData;
 	const session = { ensureValid: vi.fn(() => true), logout: vi.fn() };
 	return { store: new ConnectionsStore(data, session), data, session };
@@ -263,5 +280,88 @@ describe('channels view: variables', () => {
 		expect(text).toMatch(/setx BYL_TELEGRAM_TOKEN/);
 		expect(text).toMatch(/Umgebungsvariablen für dieses Konto bearbeiten/);
 		expect(text).toMatch(/stop\.bat und dann start\.bat/);
+	});
+});
+
+describe('Jetzt abrufen (E4 plan, package 15)', () => {
+	it('describes every result of a run', () => {
+		const base = {
+			created: 0,
+			duplicates: 0,
+			updated: 0,
+			skipped: 0,
+			failed: 0,
+			error: '',
+			missing: []
+		};
+		expect(
+			runResultText('Kalender', {
+				...base,
+				status: 'ok',
+				created: 3,
+				duplicates: 1,
+				updated: 2,
+				skipped: 1
+			})
+		).toBe('„Kalender“: 3 neu, 1 schon vorhanden, 2 aktualisiert, 1 übersprungen.');
+		expect(runResultText('Kalender', { ...base, status: 'ok' })).toBe('„Kalender“: 0 neu.');
+		expect(runResultText('Kalender', { ...base, status: 'error', error: 'HTTP 404.' })).toBe(
+			'„Kalender“: Abruf fehlgeschlagen. HTTP 404.'
+		);
+		expect(runResultText('Kalender', { ...base, status: 'missing', missing: ['BYL_X'] })).toMatch(
+			/Zugangsdaten fehlen \(BYL_X\)/
+		);
+		expect(runResultText('Kalender', { ...base, status: 'running' })).toMatch(/ruft gerade ab/);
+		expect(runResultText('Kalender', { ...base, status: 'disabled' })).toBe(
+			'„Kalender“ ist ausgeschaltet.'
+		);
+	});
+
+	it('runs a connection, announces the result and shows its new state', async () => {
+		const context = setup();
+		await context.store.load();
+		render(ConnectionsSection, { props: { store: context.store } });
+		const [cal] = screen.getAllByRole('listitem');
+		await fireEvent.click(
+			within(cal as HTMLElement).getByRole('button', { name: 'Jetzt abrufen' })
+		);
+		expect(context.data.run).toHaveBeenCalledWith(CAL.id);
+		await vi.waitFor(() =>
+			expect(context.store.announcement).toBe(
+				'„Google Kalender“: 3 neu, 1 schon vorhanden, 1 aktualisiert.'
+			)
+		);
+		await vi.waitFor(() =>
+			expect(within(cal as HTMLElement).queryByText(/Letzter Fehler/)).toBeNull()
+		);
+		expect(within(cal as HTMLElement).getAllByText('25.09.2026 12:00')).toHaveLength(2);
+	});
+
+	it('offers no run for a switched-off connection and reloads with "Aktualisieren"', async () => {
+		const context = setup([{ ...CAL, enabled: false }]);
+		await context.store.load();
+		render(ConnectionsSection, { props: { store: context.store } });
+		const button = screen.getByRole('button', { name: 'Jetzt abrufen' });
+		expect(button.getAttribute('aria-disabled')).toBe('true');
+		await fireEvent.click(button);
+		expect(context.data.run).not.toHaveBeenCalled();
+		await fireEvent.click(screen.getByRole('button', { name: 'Aktualisieren' }));
+		expect(context.data.list).toHaveBeenCalledTimes(2);
+	});
+
+	it('explains how to set up Google Calendar and how to revoke the address', () => {
+		const { store } = setup();
+		render(ChannelsView, {
+			props: { captureUrl: 'http://127.0.0.1:8090/eingang/neu', connections: store }
+		});
+		const section = screen.getByRole('region', { name: 'Google Calendar einrichten' });
+		const text = (section.textContent ?? '').replace(/\s+/g, ' ');
+		expect(text).toMatch(/Einstellungen und Freigabe/);
+		expect(text).toMatch(/Privatadresse im iCal-Format/);
+		expect(text).toMatch(/setx BYL_GOOGLE_CALENDAR_URL/);
+		expect(text).toMatch(/stop\.bat und dann start\.bat/);
+		expect(text).toMatch(/Zurücksetzen/);
+		const link = within(section).getByRole('link', { name: 'Google Calendar' });
+		expect(link.getAttribute('rel')).toBe('noopener noreferrer');
 	});
 });

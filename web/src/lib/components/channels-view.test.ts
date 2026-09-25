@@ -13,7 +13,15 @@ const CAPTURE = 'http://127.0.0.1:8090/eingang/neu';
 function idleConnections() {
 	const never = () => Promise.reject(new Error('not used'));
 	return new ConnectionsStore(
-		{ list: never, create: never, setEnabled: never, remove: never, secretStatus: never },
+		{
+			list: never,
+			create: never,
+			setEnabled: never,
+			remove: never,
+			secretStatus: never,
+			run: never,
+			get: never
+		},
 		{ ensureValid: () => true, logout: () => undefined }
 	);
 }
