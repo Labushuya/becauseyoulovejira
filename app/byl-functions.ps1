@@ -561,3 +561,84 @@ function New-IngestTokenValue {
     }
     return [Convert]::ToBase64String($bytes)
 }
+
+# --- Mail helper byl-mail.exe (ADR-0016 section 5, E4 plan package 11) -------------------------
+
+# The helper talks to the app's own PocketBase only.
+$BylMailHelperUrl = 'http://127.0.0.1:8090'
+
+function Get-MailHelperArgumentString {
+    # Arguments for byl-mail.exe: fetch the mailboxes of the app's own PocketBase.
+    return "run --url=$BylMailHelperUrl"
+}
+
+function Get-MailHelperLogPath {
+    # Output of the helper (overwritten at every start, like the server log). It logs counts and
+    # cleaned errors only, never access data or contents of mails.
+    param([Parameter(Mandatory = $true)][string]$AppDir)
+
+    $logDir = [System.IO.Path]::Combine($AppDir, 'logs')
+    return [pscustomobject]@{
+        Directory = $logDir
+        Output    = [System.IO.Path]::Combine($logDir, 'byl-mail.log')
+        Error     = [System.IO.Path]::Combine($logDir, 'byl-mail.err.log')
+    }
+}
+
+function Select-MailHelperProcess {
+    # Returns the app's own mail helper(s) from process objects shaped like Win32_Process, by the same
+    # rules as Select-AppProcess: ExecutablePath = <AppDir>\byl-mail.exe, argument "run" and
+    # --url=http://127.0.0.1:8090. Helpers of the tests (other folder or port), one-shot calls
+    # (--version, --self-test) and processes with an unreadable command line never qualify.
+    param([AllowNull()][object[]]$Process, [Parameter(Mandatory = $true)][string]$AppDir)
+
+    $exePath = [System.IO.Path]::Combine($AppDir, $BylMailHelperName)
+    foreach ($candidate in @($Process)) {
+        if ($null -eq $candidate) { continue }
+        if (-not (Test-SamePath -Path $candidate.ExecutablePath -Expected $exePath)) { continue }
+        $allArguments = Split-CommandLine -CommandLine $candidate.CommandLine
+        $arguments = @($allArguments | Select-Object -Skip 1)
+        if ($arguments.Count -eq 0 -or $arguments[0] -cne 'run') { continue }
+        if ((Get-FlagValue -Arguments $arguments -Name 'url') -cne $BylMailHelperUrl) { continue }
+        $candidate
+    }
+}
+
+function Get-MailHelperDecision {
+    # Whether start.bat starts byl-mail.exe (E4 plan package 11): only if the file is in the app
+    # folder, the ingest token is set, no own helper runs yet and PocketBase lists at least one
+    # switched-on mail connection. $MailConnectionCount is the number PocketBase reported, -1 if it
+    # could not be asked (the helper is started anyway and asks again every five minutes) and -2 if
+    # PocketBase has no ingest route (it was started before the token existed).
+    # Returns Start, Running, NoHelper, NoToken, NoConnection or NoRoute.
+    param(
+        [Parameter(Mandatory = $true)][bool]$HelperExists,
+        [Parameter(Mandatory = $true)][bool]$TokenSet,
+        [Parameter(Mandatory = $true)][bool]$Running,
+        [Parameter(Mandatory = $true)][int]$MailConnectionCount
+    )
+
+    if (-not $HelperExists) { return 'NoHelper' }
+    if ($Running) { return 'Running' }
+    if (-not $TokenSet) { return 'NoToken' }
+    if ($MailConnectionCount -eq -2) { return 'NoRoute' }
+    if ($MailConnectionCount -eq 0) { return 'NoConnection' }
+    return 'Start'
+}
+
+function ConvertFrom-MailConnectionAnswer {
+    # Number of mail connections in the answer of GET /api/byl/ingest/connections: the length of
+    # "items" for status 200, -2 for 404 (no ingest route), -1 for anything else.
+    param([int]$StatusCode, [AllowNull()][AllowEmptyString()][string]$Body)
+
+    if ($StatusCode -eq 404) { return -2 }
+    if ($StatusCode -ne 200) { return -1 }
+    try {
+        $answer = $Body | ConvertFrom-Json
+    }
+    catch {
+        return -1
+    }
+    if ($null -eq $answer -or $null -eq $answer.PSObject.Properties['items']) { return -1 }
+    return @($answer.items).Count
+}
