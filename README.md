@@ -269,6 +269,22 @@ Du schreibst deinem eigenen Bot, was in den Eingang soll. Die App fragt jede Min
 - **Widerrufen:** Bei BotFather `/revoke` (neuer Token, dann `setx` und Neustart) oder `/deletebot`.
 - Optional: `BYL_TELEGRAM_API_BASE` zeigt auf einen eigenen [Telegram Bot API Server](https://core.telegram.org/bots/api#using-a-local-bot-api-server) statt `https://api.telegram.org`. Die Tests nutzen die Variable für ihren lokalen Fake-Server.
 
+#### Dateien hereinziehen und Proton Mail
+
+Mail-Dateien (`.eml`), Kalenderdateien (`.ics`) und WhatsApp-Exporte (`.txt`, `.zip`) zieht man in die Eingangsansicht oder wählt sie mit **Datei wählen**. Es öffnet sich eine **Auswahl** ([ADR-0020](docs/adr/0020-stichwoerter-pro-kanal.md)):
+
+- Einträge mit einem Stichwort der Kanalart sind vorausgewählt, alle anderen kannst du dazuwählen. Die Listen stehen unter **Kanäle** → **Stichwörter für Datei-Importe**, getrennt für Mail-Dateien (Betreff, auf Wunsch auch die ersten 500 Zeichen des Textes), Kalenderdateien (Titel und Beschreibung) und WhatsApp-Export (Nachricht).
+- Was schon im Eingang ist (auch verworfen oder umgewandelt), steht in der Auswahl, lässt sich aber nicht wählen.
+- Nur die ausgewählten Einträge kommen in den Eingang; das Stichwort steht dann im Panel des Eintrags.
+
+**Proton Mail** hat im Free-Tarif keinen automatischen Abruf (Proton Mail Bridge setzt einen bezahlten Tarif voraus). Mails aus Proton kommen deshalb als Datei:
+
+1. [mail.proton.me](https://mail.proton.me) öffnen und die Mail öffnen.
+2. Unter den Absenderangaben auf das Symbol mit den drei Punkten (**Mehr**) klicken und **Exportieren** wählen (englische Oberfläche: **Export**).
+3. Die `.eml`-Datei speichern und in die Eingangsansicht ziehen.
+
+Das Exportieren einzelner Mails geht laut [Proton-Hilfe](https://proton.me/support/export-import-emails) in jedem Tarif.
+
 ---
 
 ## Bedienung
@@ -387,7 +403,7 @@ Für den Vite-Dev-Server (`npm --prefix web run dev`) leitet `web/vite.config.ts
 - [x] **E1:** Datenmodell, Authentifizierung, Hooks, Start-/Stopp-Skripte – [docs/plan/e1.md](docs/plan/e1.md), [ADR-0002](docs/adr/0002-erststart-und-superuser.md) bis [ADR-0005](docs/adr/0005-zeitzone-europe-berlin.md)
 - [x] **E2:** Listen-View, Detail-View, CRUD, Kommentare, Verlauf, Realtime – [docs/plan/e2.md](docs/plan/e2.md), [ADR-0006](docs/adr/0006-frontend-zustand-und-datenzugriff.md) bis [ADR-0009](docs/adr/0009-fehlerfarbe.md)
 - [x] **E3 Übersicht & Ordnung:** Task-Board-Layout ([ADR-0010](docs/adr/0010-layout-nach-task-board.md)), Projekte mit Projektansicht, Tags, Filter, Suche, Sortierung, Gruppierung ([ADR-0013](docs/adr/0013-filter-suche-sortierung-gruppierung.md)) – [docs/plan/e3.md](docs/plan/e3.md)
-- [ ] **E4 Eingang & Kanäle (in Planung):** Eingang mit Umwandeln zum Ticket, Rückverweis und Duplikaterkennung ([ADR-0014](docs/adr/0014-datenmodell-eingang.md)), „Neu“-Markierung ([ADR-0015](docs/adr/0015-neu-markierung-pro-nutzer.md)); Kanäle in dieser Reihenfolge: manuelle Erfassung, Schnellerfassung und Zwischenablage, Bookmarklet, `.eml`, Web.de, Proton, Gmail, `.ics`, Google Calendar, WhatsApp-Export, Telegram; Notion zurückgestellt ([ADR-0016](docs/adr/0016-kanal-architektur-und-mail.md) bis [ADR-0019](docs/adr/0019-kanal-filter-und-gruppierung.md)) – [docs/plan/e4.md](docs/plan/e4.md)
+- [ ] **E4 Eingang & Kanäle (in Planung):** Eingang mit Umwandeln zum Ticket, Rückverweis und Duplikaterkennung ([ADR-0014](docs/adr/0014-datenmodell-eingang.md)), „Neu“-Markierung ([ADR-0015](docs/adr/0015-neu-markierung-pro-nutzer.md)); Kanäle in dieser Reihenfolge: manuelle Erfassung, Schnellerfassung und Zwischenablage, Bookmarklet, `.eml`, Web.de, Proton (als `.eml`), Gmail, `.ics`, Google Calendar, WhatsApp-Export, Telegram; Notion zurückgestellt ([ADR-0016](docs/adr/0016-kanal-architektur-und-mail.md) bis [ADR-0019](docs/adr/0019-kanal-filter-und-gruppierung.md)) – [docs/plan/e4.md](docs/plan/e4.md)
 - [ ] **E5 Wiederkehrende Aufgaben:** Kalender- und Nach-Erledigung-Regeln (RRULE-Teilmenge), Vorschläge aus `.ics`-RRULE
 - [ ] **E6 Feinschliff:** Papierkorb, Spalten, Vollansicht, Tastatur, Hilfe, Theme-Umschalter
 - [ ] **E7 Haushalt & Mehrgeräte:** gemeinsame Tickets im Haushalt, Zugriff über Tailscale (`tailscale serve` mit HTTPS, Superuser nur lokal), ohne Datenmigration – [ADR-0001](docs/adr/0001-betriebsmodell-lokal-mehrgeraete-spaeter.md)

@@ -147,8 +147,10 @@ describe('migration rollback', () => {
 					{ source: '', source_item: '' },
 					{ source: '', source_item: '' }
 				]);
-				// The base line of "new" (ADR-0015) is the only value an existing row gets.
-				expect(migrated.users.map(({ unread_since, ...rest }) => rest)).toEqual(before.users);
+				// The base line of "new" (ADR-0015) is the only value an existing row gets; the keyword
+				// lists of the file imports (package 21) stay empty.
+				expect(migrated.users.map(({ unread_since, import_keywords, ...rest }) => rest)).toEqual(before.users);
+				expect(migrated.users.map((user) => user.import_keywords)).toEqual([null]);
 				for (const user of migrated.users) {
 					expect(user.unread_since).toMatch(/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\.\d{3}Z$/);
 				}
@@ -208,9 +210,50 @@ describe('migration rollback', () => {
 		},
 		60_000
 	);
+
+	it(
+		'keeps users unchanged when the keywords of the file imports come and go (package 21)',
+		async () => {
+			const fromKeywords = MIGRATION_FILES.slice(MIGRATION_FILES.indexOf(IMPORT_KEYWORDS_MIGRATION));
+			expect(fromKeywords[0]).toBe(IMPORT_KEYWORDS_MIGRATION);
+
+			await withTempDataDir(async ({ dataDir, args }) => {
+				await migrate(args, 'up');
+				await migrate(args, 'down', String(fromKeywords.length));
+				withDatabase(dataDir, (db) => {
+					const insert = db.prepare(
+						'INSERT INTO users (id, email, tokenKey, password, unread_since, created, updated) VALUES (?, ?, ?, ?, ?, ?, ?)'
+					);
+					insert.run('user00000000001', 'eins@example.invalid', 'tk1', 'hash', STAMP, STAMP, STAMP);
+					insert.run('user00000000002', 'zwei@example.invalid', 'tk2', 'hash', '', STAMP, STAMP);
+				});
+				const before = withDatabase(dataDir, snapshot);
+
+				const up = await migrate(args, 'up');
+				expect(appliedFiles(up, 'Applied')).toEqual(fromKeywords);
+				const migrated = withDatabase(dataDir, snapshot);
+				expect(migrated.users.map(({ import_keywords, ...rest }) => rest)).toEqual(before.users);
+				expect(migrated.users.map((user) => user.import_keywords)).toEqual([null, null]);
+
+				// Lists for one user, then back down: the other columns stay as they were.
+				withDatabase(dataDir, (db) => {
+					db.prepare('UPDATE users SET import_keywords = ? WHERE id = ?').run(
+						'{"ics":{"keywords":["todo"]}}',
+						'user00000000001'
+					);
+				});
+				await migrate(args, 'down', String(fromKeywords.length));
+				const reverted = withDatabase(dataDir, snapshot);
+				expect(reverted.users).toEqual(before.users);
+				expect(reverted.inbox_items).toEqual(before.inbox_items);
+			});
+		},
+		60_000
+	);
 });
 
 const CONNECTIONS_MIGRATION = '1790201400_create_connections.js';
+const IMPORT_KEYWORDS_MIGRATION = '1790201500_users_import_keywords.js';
 const INBOX_CONNECTION_MIGRATION = '1790201410_inbox_items_connection.js';
 
 const STAMP = '2026-09-01 10:00:00.000Z';

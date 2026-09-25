@@ -20,6 +20,7 @@ import {
 	ConnectionsStore,
 	type ConnectionsData
 } from '$lib/stores/connections.svelte';
+import { ImportKeywordsStore } from '$lib/stores/import-keywords.svelte';
 import ChannelsView from './ChannelsView.svelte';
 import ConnectionsSection from './ConnectionsSection.svelte';
 
@@ -281,7 +282,17 @@ describe('channels view: variables', () => {
 	it('explains setx, the control panel and the restart', () => {
 		const { store } = setup();
 		render(ChannelsView, {
-			props: { captureUrl: 'http://127.0.0.1:8090/eingang/neu', connections: store }
+			props: {
+				captureUrl: 'http://127.0.0.1:8090/eingang/neu',
+				connections: store,
+				importKeywords: new ImportKeywordsStore(
+					{
+						load: () => Promise.reject(new Error('not used')),
+						save: () => Promise.reject(new Error('not used'))
+					},
+					{ ensureValid: () => true, logout: () => undefined }
+				)
+			}
 		});
 		const section = screen.getByRole('region', {
 			name: 'Zugangsdaten als Windows-Variable setzen'
@@ -366,7 +377,17 @@ describe('Jetzt abrufen (E4 plan, package 15)', () => {
 	it('explains how to set up Google Calendar and how to revoke the address', () => {
 		const { store } = setup();
 		render(ChannelsView, {
-			props: { captureUrl: 'http://127.0.0.1:8090/eingang/neu', connections: store }
+			props: {
+				captureUrl: 'http://127.0.0.1:8090/eingang/neu',
+				connections: store,
+				importKeywords: new ImportKeywordsStore(
+					{
+						load: () => Promise.reject(new Error('not used')),
+						save: () => Promise.reject(new Error('not used'))
+					},
+					{ ensureValid: () => true, logout: () => undefined }
+				)
+			}
 		});
 		const section = screen.getByRole('region', { name: 'Google Calendar einrichten' });
 		const text = (section.textContent ?? '').replace(/\s+/g, ' ');
@@ -384,7 +405,17 @@ describe('Telegram-Bot einrichten (E4 plan, package 17)', () => {
 	it('explains BotFather, the token, the own ID, the allowlist and the restart', () => {
 		const { store } = setup();
 		render(ChannelsView, {
-			props: { captureUrl: 'http://127.0.0.1:8090/eingang/neu', connections: store }
+			props: {
+				captureUrl: 'http://127.0.0.1:8090/eingang/neu',
+				connections: store,
+				importKeywords: new ImportKeywordsStore(
+					{
+						load: () => Promise.reject(new Error('not used')),
+						save: () => Promise.reject(new Error('not used'))
+					},
+					{ ensureValid: () => true, logout: () => undefined }
+				)
+			}
 		});
 		const section = screen.getByRole('region', { name: 'Telegram-Bot einrichten' });
 		const text = (section.textContent ?? '').replace(/\s+/g, ' ');

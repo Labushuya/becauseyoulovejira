@@ -200,6 +200,7 @@ describe('Google Calendar: fetch into the inbox', () => {
 		const shared = event('cal-shared', 'Aus Datei und Feed', day(3));
 		const form = new FormData();
 		form.append('file', new Blob([calendarText([shared])]), 'termin.ics');
+		form.append('select', '[0]');
 		const upload = await fetch(`${instance.url}/api/byl/inbox/ics`, {
 			method: 'POST',
 			body: form,

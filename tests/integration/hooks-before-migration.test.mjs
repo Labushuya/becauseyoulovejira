@@ -87,6 +87,29 @@ describe('E4 hooks on the schema before the E4 migrations', () => {
 		);
 	});
 
+	it('answers the preview and the lookup of the file selection with the hint (package 21)', async () => {
+		const form = new FormData();
+		form.append('file', new Blob(['BEGIN:VCALENDAR\r\nEND:VCALENDAR\r\n']), 'kalender.ics');
+		const preview = await fetch(`${instance.url}/api/byl/inbox/ics/preview`, {
+			method: 'POST',
+			body: form,
+			headers: { Authorization: client.authStore.token }
+		});
+		expect(preview.status).toBe(503);
+		const lookup = await fetch(`${instance.url}/api/byl/inbox/lookup`, {
+			method: 'POST',
+			body: JSON.stringify({ items: [] }),
+			headers: { Authorization: client.authStore.token, 'Content-Type': 'application/json' }
+		});
+		expect(lookup.status).toBe(503);
+	});
+
+	it('lets users change their record without the keyword field', async () => {
+		const updated = await client.collection('users').update(userId, { name: 'Anna' });
+		expect(updated.name).toBe('Anna');
+		expect(updated.import_keywords).toBeUndefined();
+	});
+
 	it('has no connections yet and answers their route with a hint', async () => {
 		await expect(client.collection('connections').getList(1, 1)).rejects.toMatchObject({ status: 404 });
 		const response = await fetch(`${instance.url}/api/byl/connections/abcdefghijklmno/secret-status`, {
@@ -113,5 +136,57 @@ describe('E4 hooks on the schema before the E4 migrations', () => {
 		expect(cron.status).toBe(204);
 		const logs = JSON.stringify(await superuser.send('/api/logs', { query: { perPage: 200 } }));
 		expect(logs).not.toMatch(/byl-calendar/);
+	});
+});
+
+// The instance of the user after the merge of package 21, before its next start: every
+// migration but 1790201500. The selection of .ics files works without keywords.
+describe('package 21 hooks before the migration of the import keywords', () => {
+	const KEYWORDS_MIGRATION = '1790201500_users_import_keywords.js';
+	let before;
+	let who;
+
+	beforeAll(async () => {
+		before = await startPocketBase({ migrationFilter: (name) => name < KEYWORDS_MIGRATION });
+		const superuser = new PocketBase(before.url);
+		superuser.autoCancellation(false);
+		await superuser.collection('_superusers').authWithPassword(before.email, before.password);
+		const email = `user-${randomBytes(12).toString('hex')}@example.com`;
+		const password = randomBytes(24).toString('base64url');
+		const id = (await superuser.collection('users').create({ email, password, passwordConfirm: password })).id;
+		who = new PocketBase(before.url);
+		who.autoCancellation(false);
+		await who.collection('users').authWithPassword(email, password);
+		who.userId = id;
+	}, 60_000);
+
+	afterAll(async () => {
+		await before?.stop();
+	});
+
+	it('previews and imports a chosen event without keywords', async () => {
+		const calendar = 'BEGIN:VCALENDAR\r\nBEGIN:VEVENT\r\nUID:vorher-1\r\nSUMMARY:Todo: Termin\r\nDTSTART;VALUE=DATE:20261001\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n';
+		const send = async (route, select) => {
+			const form = new FormData();
+			form.append('file', new Blob([calendar]), 'kalender.ics');
+			if (select !== undefined) form.append('select', JSON.stringify(select));
+			const response = await fetch(`${before.url}${route}`, {
+				method: 'POST',
+				body: form,
+				headers: { Authorization: who.authStore.token }
+			});
+			return { status: response.status, body: await response.json() };
+		};
+		const preview = await send('/api/byl/inbox/ics/preview');
+		expect(preview.status).toBe(200);
+		expect(preview.body.items).toMatchObject([{ index: 0, title: 'Todo: Termin', keyword: '' }]);
+		const imported = await send('/api/byl/inbox/ics', [0]);
+		expect(imported.body).toMatchObject({ created: 1 });
+	});
+
+	it('lets users change their record; the keyword field is not there yet', async () => {
+		const updated = await who.collection('users').update(who.userId, { name: 'Ben' });
+		expect(updated.name).toBe('Ben');
+		expect(updated.import_keywords).toBeUndefined();
 	});
 });

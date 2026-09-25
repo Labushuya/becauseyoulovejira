@@ -62,6 +62,21 @@ describe('keywords: web app against the hooks', () => {
 		for (const keyword of ['Prüfen', 'pruefen', '#BYL']) expect(web.keywordKey(keyword)).toBe(hook.keyOf(keyword));
 	});
 
+	it('stores the lists of the file imports in the shape the hook accepts (package 21)', () => {
+		expect([...web.IMPORT_KINDS]).toEqual(hook.IMPORT_KINDS);
+		const settings = {
+			eml: { keywords: ['rechnung'], matchBody: true },
+			ics: { keywords: ['todo', '#byl'], matchBody: false },
+			whatsapp: { keywords: [], matchBody: false }
+		};
+		const value = web.importKeywordsValue(settings);
+		expect(hook.importSettingsViolation(value)).toBe('');
+		expect(web.importKeywordsOf(value)).toEqual(settings);
+		for (const kind of web.IMPORT_KINDS) {
+			expect(hook.importSettingsOf(value, kind)).toEqual(web.importKeywordsOf(value)[kind]);
+		}
+	});
+
 	it('accepts in the hook every list the web app can build', () => {
 		let list = [];
 		for (const input of ['todo', ' Zu erledigen ', 'x'.repeat(100), ...web.KEYWORD_SUGGESTIONS]) {

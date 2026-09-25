@@ -72,3 +72,46 @@ describe('keywords.js: stored lists', () => {
 		expect(keywords.MAIL_BODY_CHARS).toBe(500);
 	});
 });
+
+describe('keywords.js: lists of the file imports (package 21)', () => {
+	it('accepts the shape of users.import_keywords', () => {
+		for (const value of [
+			null,
+			undefined,
+			'',
+			{},
+			{ eml: { keywords: ['rechnung'], match_body: true } },
+			{ ics: { keywords: [] }, whatsapp: { keywords: ['milch'] } }
+		]) {
+			expect(keywords.importSettingsViolation(value), JSON.stringify(value)).toBe('');
+		}
+	});
+
+	it('refuses other kinds, keys, types and bad lists', () => {
+		for (const value of [
+			'todo',
+			[],
+			{ mail: { keywords: [] } },
+			{ eml: [] },
+			{ ics: { keywords: [], match_body: true } },
+			{ eml: { keywords: [], match_body: 'ja' } },
+			{ whatsapp: { keywords: [], extra: 1 } }
+		]) {
+			expect(keywords.importSettingsViolation(value), JSON.stringify(value)).toBe(keywords.IMPORT_MESSAGE);
+		}
+		expect(keywords.importSettingsViolation({ eml: { keywords: [''] } })).toBe(keywords.MESSAGE);
+	});
+
+	it('reads one kind tolerantly', () => {
+		expect(keywords.importSettingsOf({ eml: { keywords: [' a ', 1], match_body: true } }, 'eml')).toEqual({
+			keywords: ['a'],
+			matchBody: true
+		});
+		expect(keywords.importSettingsOf({ ics: { keywords: ['x'], match_body: true } }, 'ics')).toEqual({
+			keywords: ['x'],
+			matchBody: false
+		});
+		expect(keywords.importSettingsOf(null, 'whatsapp')).toEqual({ keywords: [], matchBody: false });
+		expect(keywords.IMPORT_KINDS).toEqual(['eml', 'ics', 'whatsapp']);
+	});
+});

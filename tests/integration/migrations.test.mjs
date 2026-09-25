@@ -29,6 +29,16 @@ describe('schema migrations', () => {
 		});
 	});
 
+	it('adds the keywords of the file imports to users (ADR-0020, package 21)', async () => {
+		const superuser = await superuserClient();
+		const users = await superuser.collections.getOne('users');
+		expect(users.fields.find((field) => field.name === 'import_keywords')).toMatchObject({
+			type: 'json',
+			required: false,
+			maxSize: 20000
+		});
+	});
+
 	it('enables automatic backups every four hours, keeping 12 (ADR-0003)', async () => {
 		const superuser = await superuserClient();
 		const settings = await superuser.settings.getAll();

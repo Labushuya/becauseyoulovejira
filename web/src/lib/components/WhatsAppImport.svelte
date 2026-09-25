@@ -1,8 +1,9 @@
 <script lang="ts">
-	import { tick } from 'svelte';
+	import { tick, untrack } from 'svelte';
 	import { SvelteSet } from 'svelte/reactivity';
 	import { formatCalendarDate } from '$lib/domain/format';
 	import type { InboxDraft } from '$lib/domain/inbox';
+	import { matchKeyword } from '$lib/domain/keywords';
 	import {
 		matchesMessageFilter,
 		messageDraft,
@@ -14,12 +15,14 @@
 
 	// Selection view of a WhatsApp export (E4 plan, package 16) as a native modal <dialog>: every
 	// message with a checkbox, filters by sender and period, "Alle sichtbaren auswählen". Only the
-	// chosen messages become entries; nothing is chosen at first. Failures stay listed with their
-	// reason; Escape and "Schließen" close, the focus returns to where it was.
+	// chosen messages become entries; messages a keyword of the user matches are chosen at first
+	// (package 21, ADR-0020) and keep it in source_meta. Failures stay listed with their reason;
+	// Escape and "Schließen" close, the focus returns to where it was.
 	let {
 		chat,
 		messages,
 		leftOut,
+		keywords = [],
 		onsave,
 		onclose
 	}: {
@@ -27,6 +30,8 @@
 		messages: readonly ChatMessage[];
 		/** System lines, media and deleted messages that are not offered. */
 		leftOut: number;
+		/** Keywords of the WhatsApp export (users.import_keywords). */
+		keywords?: readonly string[];
 		onsave: (drafts: InboxDraft[]) => Promise<DraftsOutcome>;
 		onclose: (outcome: DraftsOutcome | null) => void;
 	} = $props();
@@ -46,7 +51,17 @@
 	let sender = $state('');
 	let from = $state('');
 	let to = $state('');
-	const chosen = new SvelteSet<number>();
+	/** Keyword that matches each message, by index ('' for none). */
+	const keywordOf = $derived(
+		new Map(messages.map((message) => [message.index, matchKeyword(keywords, [message.text])]))
+	);
+	const chosen = new SvelteSet<number>(
+		untrack(() =>
+			messages
+				.filter((message) => matchKeyword(keywords, [message.text]) !== '')
+				.map((message) => message.index)
+		)
+	);
 	let pending = $state(false);
 	let outcome = $state<DraftsOutcome | null>(null);
 
@@ -89,7 +104,15 @@
 		event.preventDefault();
 		if (pending || chosenMessages.length === 0) return;
 		pending = true;
-		const result = await onsave(chosenMessages.map((message) => messageDraft(message, chat)));
+		const result = await onsave(
+			chosenMessages.map((message) => {
+				const draft = messageDraft(message, chat);
+				const keyword = keywordOf.get(message.index) ?? '';
+				return keyword === ''
+					? draft
+					: { ...draft, sourceMeta: { ...(draft.sourceMeta ?? {}), keyword } };
+			})
+		);
 		pending = false;
 		if (result.failures.length === 0) {
 			onclose(result);
@@ -117,6 +140,11 @@
 	<p id={ids.summary} class="hint">
 		{countText(messages.length)} zur Auswahl{#if leftOut > 0}, {leftOut} ausgelassen (Systemzeilen, Medien,
 			gelöschte Nachrichten){/if}. Nur die ausgewählten Nachrichten kommen in den Eingang.
+		{#if keywords.length === 0}
+			Für den WhatsApp-Export sind keine Stichwörter festgelegt, deshalb ist nichts vorausgewählt.
+		{:else}
+			Nachrichten mit einem deiner Stichwörter sind vorausgewählt.
+		{/if}
 	</p>
 	<form class="form" novalidate onsubmit={save}>
 		<div class="filters">
@@ -179,6 +207,9 @@
 									{message.time} · {message.sender}
 								</span>
 								<span class="text">{message.text}</span>
+								{#if (keywordOf.get(message.index) ?? '') !== ''}
+									<span class="meta">Stichwort: {keywordOf.get(message.index)}</span>
+								{/if}
 							</label>
 						</li>
 					{/each}
@@ -306,11 +337,12 @@
 	}
 
 	.messages input {
-		grid-row: span 2;
+		grid-row: span 3;
 		margin-top: 0.125rem;
 	}
 
 	.meta {
+		grid-column: 2;
 		font-size: 0.75rem;
 		color: var(--color-text-muted);
 	}

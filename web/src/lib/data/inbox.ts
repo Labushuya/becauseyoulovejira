@@ -306,8 +306,123 @@ export function originalFileUrl(
 	});
 }
 
-/** Route of the hook that parses an .ics file (ADR-0017 section 1; E4 plan, package 14). */
+/** Route of the hook that parses an .ics file (ADR-0017 section 1; E4 plan, packages 14 and 21). */
 const CALENDAR_IMPORT_ROUTE = '/api/byl/inbox/ics';
+const CALENDAR_PREVIEW_ROUTE = '/api/byl/inbox/ics/preview';
+const LOOKUP_ROUTE = '/api/byl/inbox/lookup';
+/** Most drafts per lookup request (the hook refuses more). */
+export const LOOKUP_BATCH = 200;
+
+/** One component of an .ics file in the selection view (E4 plan, package 21). */
+export interface CalendarPreviewItem {
+	index: number;
+	kind: 'event' | 'todo';
+	title: string;
+	/** UTC in PocketBase format, null without a date. */
+	sourceDate: string | null;
+	allDay: boolean;
+	series: boolean;
+	location: string;
+	/** Keyword of the user that matches, '' for none (ADR-0020). */
+	keyword: string;
+	/** State of the entry in the inbox already ('' for none) and its text, e.g. "Schon verworfen." */
+	state: '' | 'new' | 'discarded' | 'converted';
+	message: string;
+}
+
+export interface CalendarPreview {
+	items: CalendarPreviewItem[];
+	/** Cancelled events and cut-off components. */
+	skipped: number;
+}
+
+/** Whether a draft is in the inbox already: the state ('' for not) and the text of the hook. */
+export interface LookupState {
+	state: '' | 'new' | 'discarded' | 'converted';
+	message: string;
+}
+
+const STATES = ['', 'new', 'discarded', 'converted'] as const;
+
+function stateOf(value: unknown): LookupState['state'] {
+	return STATES.find((state) => state === value) ?? '';
+}
+
+function textOf(value: unknown): string {
+	return typeof value === 'string' ? value : '';
+}
+
+/**
+ * Sends an .ics file to the preview of the hook: its components with keyword and state, nothing is
+ * saved. Before the migrations of E4 the route answers 503.
+ */
+export function previewCalendarFile(
+	pb: PocketBase,
+	file: File,
+	{ signal }: RequestOptions = {}
+): Promise<CalendarPreview> {
+	return withDataErrors(signal, async () => {
+		const body = new FormData();
+		body.append('file', file);
+		const result = await pb.send<Record<string, unknown>>(CALENDAR_PREVIEW_ROUTE, {
+			method: 'POST',
+			body,
+			signal
+		});
+		const items = Array.isArray(result.items) ? result.items : [];
+		return {
+			skipped: countOf(result.skipped),
+			items: items.map((raw: Record<string, unknown>) => ({
+				index: countOf(raw.index),
+				kind: raw.kind === 'todo' ? 'todo' : 'event',
+				title: textOf(raw.title),
+				sourceDate: textOf(raw.source_date) || null,
+				allDay: raw.all_day === true,
+				series: raw.series === true,
+				location: textOf(raw.location),
+				keyword: textOf(raw.keyword),
+				state: stateOf(raw.state),
+				message: textOf(raw.message)
+			}))
+		};
+	});
+}
+
+/**
+ * Whether drafts (mail files) are in the private inbox already, in batches of LOOKUP_BATCH; one
+ * state per draft in the same order. Nothing is saved.
+ */
+export function lookupDrafts(
+	pb: PocketBase,
+	drafts: readonly InboxDraft[],
+	{ signal }: RequestOptions = {}
+): Promise<LookupState[]> {
+	return withDataErrors(signal, async () => {
+		const states: LookupState[] = [];
+		for (let start = 0; start < drafts.length; start += LOOKUP_BATCH) {
+			const items = drafts.slice(start, start + LOOKUP_BATCH).map((draft) => ({
+				channel: draft.channel,
+				kind: draft.kind,
+				title: draft.title,
+				source_url: draft.sourceUrl ?? '',
+				source_ref: draft.sourceRef ?? '',
+				source_date: draft.sourceDate ?? '',
+				source_meta: draft.sourceMeta ?? {}
+			}));
+			const result = await pb.send<Record<string, unknown>>(LOOKUP_ROUTE, {
+				method: 'POST',
+				body: { items },
+				signal
+			});
+			const answered = Array.isArray(result.items) ? result.items : [];
+			for (let i = 0; i < items.length; i++) {
+				const raw = (answered[i] ?? {}) as Record<string, unknown>;
+				states.push({ state: stateOf(raw.state), message: textOf(raw.message) });
+			}
+		}
+		return states;
+	});
+}
 
 /** Counts of an .ics import: new, already there, skipped (cancelled) and failed entries. */
 export interface CalendarImportSummary {
@@ -324,17 +439,20 @@ function countOf(value: unknown): number {
 }
 
 /**
- * Uploads an .ics file; the hook creates one private entry per event or task of the signed-in
- * user and answers with counts. Before the migrations of E4 the route answers 503.
+ * Uploads an .ics file with the chosen components (indices of the preview); the hook creates one
+ * private entry per chosen event or task of the signed-in user and answers with counts. Before
+ * the migrations of E4 the route answers 503.
  */
 export function importCalendarFile(
 	pb: PocketBase,
 	file: File,
+	select: readonly number[],
 	{ signal }: RequestOptions = {}
 ): Promise<CalendarImportSummary> {
 	return withDataErrors(signal, async () => {
 		const body = new FormData();
 		body.append('file', file);
+		body.append('select', JSON.stringify(select));
 		const result = await pb.send<Record<string, unknown>>(CALENDAR_IMPORT_ROUTE, {
 			method: 'POST',
 			body,

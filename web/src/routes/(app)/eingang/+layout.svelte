@@ -5,17 +5,23 @@
 	import BulkConvertDialog from '$lib/components/BulkConvertDialog.svelte';
 	import ClipboardImport from '$lib/components/ClipboardImport.svelte';
 	import DropZone from '$lib/components/DropZone.svelte';
+	import FileImportDialog from '$lib/components/FileImportDialog.svelte';
 	import InboxTable, { BULK_BUTTON_ID } from '$lib/components/InboxTable.svelte';
 	import WhatsAppImport from '$lib/components/WhatsAppImport.svelte';
 	import type { InboxItemSummary } from '$lib/domain/inbox';
 	import { parseInboxQuery } from '$lib/domain/inbox-query';
 	import { pastedText, readClipboardText } from '$lib/clipboard';
 	import { readMailFile } from '$lib/mail-file';
+	import { getImportKeywords } from '$lib/data/import-keywords';
+	import { lookupDrafts, previewCalendarFile } from '$lib/data/inbox';
+	import { EMPTY_IMPORT_KEYWORDS, type ImportKeywords } from '$lib/domain/keywords';
 	import {
-		importDroppedFiles,
 		importSummary,
+		prepareDroppedFiles,
+		saveFileSelection,
 		type ChatSelection,
-		type FileImportResult
+		type FileImportResult,
+		type FileSelection
 	} from '$lib/stores/mail-import';
 	import { inboxItemHref, ticketPath } from '$lib/ticket-links';
 	import { pb } from '$lib/pocketbase';
@@ -81,7 +87,7 @@
 
 	/** Ctrl+V in the inbox view, unless the user pastes into a field or a dialog is open. */
 	function onpaste(event: ClipboardEvent) {
-		if (clipboardText !== null || bulkItems !== null || chat !== null) return;
+		if (clipboardText !== null || bulkItems !== null || chat !== null || selection !== null) return;
 		const text = pastedText(event);
 		if (text === null) return;
 		event.preventDefault();
@@ -96,28 +102,64 @@
 		}
 	}
 
-	// Mail and calendar files and WhatsApp exports (E4 plan, packages 8, 14 and 16): dropped on the
-	// zone or anywhere in the inbox view, or chosen with "Datei wählen"; one after the other, each
-	// with its own result. A chat export opens the selection view afterwards.
+	// Mail and calendar files and WhatsApp exports (E4 plan, packages 8, 14, 16 and 21): dropped on
+	// the zone or anywhere in the inbox view, or chosen with "Datei wählen". Mails and events open
+	// one selection view with the keyword matches chosen (ADR-0020), a chat export its own view
+	// afterwards. Files that cannot be read keep their reason in the drop zone.
 	let importing = $state(false);
 	let importResults = $state<FileImportResult[]>([]);
+	/** Mails and events of the open selection view, null while it is closed. */
+	let selection = $state<FileSelection | null>(null);
 	/** Chat export of the open selection view, null while it is closed. */
 	let chat = $state<ChatSelection | null>(null);
+	/** Chat export that waits until the selection of the other files is closed. */
+	let pendingChat: ChatSelection | null = null;
+	let importKeywords = $state<ImportKeywords>(EMPTY_IMPORT_KEYWORDS);
 
 	async function importFiles(files: File[]) {
-		if (importing || chat !== null) return;
+		if (importing || chat !== null || selection !== null) return;
+		if (!auth.ensureValid()) return;
 		importing = true;
 		importResults = [];
-		const imported = await importDroppedFiles(files, {
+		const prepared = await prepareDroppedFiles(files, {
 			read: readMailFile,
-			createItem: (draft) => inbox.create(draft),
-			importCalendar: (file) => inbox.importCalendar(file),
-			readChat: readWhatsAppFile
+			readChat: readWhatsAppFile,
+			previewCalendar: (file) => previewCalendarFile(pb, file),
+			lookup: (drafts) => lookupDrafts(pb, drafts),
+			keywords: () => getImportKeywords(pb),
+			onSessionLost: () => auth.logout()
 		});
 		importing = false;
-		importResults = imported.results;
-		if (imported.results.length > 0) inbox.announce(importSummary(imported.results));
-		chat = imported.chat;
+		importResults = prepared.results;
+		importKeywords = prepared.keywords;
+		if (prepared.results.length > 0 && prepared.selection === null) {
+			inbox.announce(importSummary(prepared.results));
+		}
+		if (prepared.selection !== null) {
+			selection = prepared.selection;
+			pendingChat = prepared.chat;
+		} else {
+			chat = prepared.chat;
+		}
+	}
+
+	function saveSelection(current: FileSelection, chosen: ReadonlySet<string>) {
+		return saveFileSelection(current, chosen, {
+			createItem: (draft) => inbox.create(draft),
+			importCalendar: (file, select) => inbox.importCalendar(file, select)
+		});
+	}
+
+	function closeSelection(saved: FileImportResult[] | null) {
+		selection = null;
+		if (saved !== null) {
+			importResults = [...importResults, ...saved];
+			inbox.announce(importSummary(importResults));
+		} else if (importResults.length > 0) {
+			inbox.announce(importSummary(importResults));
+		}
+		chat = pendingChat;
+		pendingChat = null;
 	}
 
 	function closeChat(outcome: DraftsOutcome | null) {
@@ -191,11 +233,20 @@
 	/>
 {/if}
 
+{#if selection !== null}
+	<FileImportDialog
+		{selection}
+		onsave={(chosen) => saveSelection(selection as FileSelection, chosen)}
+		onclose={closeSelection}
+	/>
+{/if}
+
 {#if chat !== null}
 	<WhatsAppImport
 		chat={chat.chat}
 		messages={chat.messages}
 		leftOut={chat.leftOut}
+		keywords={importKeywords.whatsapp.keywords}
 		onsave={(drafts) => saveDrafts(drafts, (draft) => inbox.create(draft))}
 		onclose={closeChat}
 	/>

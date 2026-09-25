@@ -57,7 +57,8 @@ const FIELD_MESSAGES: Readonly<Record<string, string>> = Object.freeze({
 	validation_connection_type: 'Diese Verbindungsart gibt es noch nicht.',
 	validation_connection_immutable: 'Die Art einer Verbindung lässt sich nicht ändern.',
 	validation_connection_server_field: 'Dieses Feld setzt nur der Server.',
-	validation_connection_settings: 'Unbekannte Einstellung.'
+	validation_connection_settings: 'Unbekannte Einstellung.',
+	validation_keywords: 'Stichwörter: höchstens 50, je 1 bis 100 Zeichen, ohne Zeilenumbruch.'
 });
 
 /** Texts that depend on the field as well, keyed by `<field>:<code>`; they win over the above. */
