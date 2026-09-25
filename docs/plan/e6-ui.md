@@ -136,13 +136,18 @@ Wird je Paket ergänzt.
 | 2026-09-25 | UI-0 | Entscheidungen des Nutzers: (1) Seitenpanel nicht modal neben der Liste, Aufbau wie im Task-Board (480 px, fester Kopf und Fuß, Slide-in); (2) Vollansicht als XL-Modal unter `/tickets/<id>/voll`; (3) „Rückgängig“ als Flag unten links, 8 s, Pause bei Hover und Fokus; (4) Projekt-Kacheln bleiben, dazu ein Projekt-Panel statt des Dialogs im gleichen Stil. |
 | 2026-09-25 | UI-0 | Festlegungen des Advisors: Pakete unter E6 (vorgezogen), Theme nur lokal unter `byl-theme` bis E7, nichts Destruktives in Rot, kein Schatten-Token, native `<select>` in Formularen bleiben, keine Projekt-Vollansicht. |
 | 2026-09-25 | UI-0 | ADR-0010 wird nach der Regel in `docs/adr/README.md` nicht umgeschrieben. Es bekommt den Status „Teilweise ersetzt durch ADR-0025“ und einen Verweis am Ende; der Originaltext bleibt. |
+| 2026-09-25 | UI-1 | Die XL-Höhe ist ein eigenes Token `--overlay-max-height-xl` (`92dvh`) neben `--overlay-max-height` (`calc(100dvh - 2rem)`), damit keine Komponente einen Wert selbst schreibt. `tokens.test.ts` führt die nicht farbigen Tokens (samt Schriften) als erlaubte Liste mit Werten: nur in `:root`, nie in einem Theme-Block, kein Name mit „shadow“. `color-scheme` steht als normale Eigenschaft in jedem der vier Blöcke. |
+| 2026-09-25 | UI-1 | Reduzierte Bewegung: Overlays tragen das Attribut `data-overlay`. Eine Regel in `base.css` setzt dafür (samt `::backdrop` und Kindern) `animation` und `transition` mit `!important` auf `none`, weil die Animationen als gescopte Regeln der Komponenten eine höhere Spezifität haben. Die Scroll-Sperre `html:has(dialog:modal)` wirkt sofort auch für die vorhandenen nativen Dialoge; das ist gewollt. |
+| 2026-09-25 | UI-1 | Knopfklassen: `.button-secondary` (Umriss `--color-line`), `.button-subtle` (ohne Rahmen, gedämpft) und `.button-icon` (2rem quadratisch) teilen Schrift, Radius `--radius-control` und den Zustand `aria-disabled="true"`. Die lokalen `.secondary` ziehen mit ihren Komponenten in UI-3 und UI-4 um. |
+| 2026-09-25 | UI-1 | Stubs in `web/src/lib/test/overlay-stubs.ts`: `installOverlayStubs()` ersetzt nur, was jsdom fehlt, und gibt eine Funktion zum Wiederherstellen zurück; `useOverlayStubs()` registriert das per `beforeAll`/`afterAll`. Popover: `toggle` mit `oldState`/`newState` als einfaches `Event` (jsdom kennt kein `ToggleEvent`), `:popover-open` über ein gepatchtes `Element.prototype.matches`, nur ein Auto-Popover zugleich, ein Klick auf `button[popovertarget]` schaltet um. `close()` feuert `close` synchron wie die bisherigen Attrappen. Die vorhandenen Tests ziehen je Paket um. |
 
 ## 7. Status
 
 | Paket | Stand |
 |---|---|
-| UI-0 | in Arbeit |
-| UI-1 bis UI-9 | geplant |
+| UI-0 | gemergt (#45) |
+| UI-1 | in Arbeit |
+| UI-2 bis UI-9 | geplant |
 
 ## Quellen (nur Verhalten und Maße)
 

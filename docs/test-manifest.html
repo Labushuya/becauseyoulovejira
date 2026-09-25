@@ -213,8 +213,8 @@
   "meta": {
     "projekt": "becauseyoulovejira",
     "stand": "2026-09-25",
-    "commit": "8bb0c3c",
-    "etappe": "E0 bis E4 abgeschlossen (E4: Pakete 1 bis 11, 13 bis 17, 19 bis 24; Paket 12 entfällt, Paket 18 zurückgestellt); E5 in Arbeit (Pakete 1 bis 4: BYL-E5-001 bis BYL-E5-005); E6 UI-Konsistenz vorgezogen (UI-0: geplante Fälle BYL-E6-001 bis BYL-E6-026)"
+    "commit": "ac5c237",
+    "etappe": "E0 bis E4 abgeschlossen (E4: Pakete 1 bis 11, 13 bis 17, 19 bis 24; Paket 12 entfällt, Paket 18 zurückgestellt); E5 in Arbeit (Pakete 1 bis 4: BYL-E5-001 bis BYL-E5-005); E6 UI-Konsistenz vorgezogen (UI-0 und UI-1: BYL-E6-001, BYL-E6-002)"
   },
   "blocks": [
     {
@@ -1362,13 +1362,13 @@
     {
       "tag": "E6", "name": "UI-Konsistenz", "desc": "Geplante Testfälle des Plans docs/plan/e6-ui.md (ADR-0025): ein Overlay-System aus Modal, Bestätigung, Popover, Seitenpanel, Vollansicht und Flags, Theme-Umschalter, angeglichene Projekt-UI. Status „geplant“ bis zum Merge des Pakets; die Schritte sind die Akzeptanzkriterien.",
       "items": [
-        { "id": "BYL-E6-001", "title": "Overlay-Tokens in allen Blöcken", "art": ["unit"], "status": "geplant",
-          "pre": "Plan UI-Konsistenz, Paket UI-1; ADR-0025 §2.", "steps": ["--color-blanket in allen vier Blöcken von tokens.css, nicht farbige Tokens nur in :root.", "color-scheme light bzw. dark in allen vier Blöcken.", "Keine Farbwerte außerhalb von tokens.css; gemeinsame Stubs für dialog und popover."],
-          "expect": "Die Grundlage der Bausteine steht, ohne sichtbare Änderung außer color-scheme.",
-          "tests": [] },
-        { "id": "BYL-E6-002", "title": "Native Controls folgen dem Modus", "art": ["manuell"], "status": "geplant",
-          "pre": "Plan UI-Konsistenz, Paket UI-1; Browser mit dunkler Systemeinstellung und erzwungenem Modus.", "steps": ["Scrollbalken, select, Datumsfeld, Checkboxen und dialog im Dunkelmodus ansehen.", "Dasselbe mit erzwungenem hellen Modus bei dunklem System."],
-          "expect": "Native Controls passen zum gewählten Modus.",
+        { "id": "BYL-E6-001", "title": "Overlay-Tokens in allen Blöcken", "art": ["unit"], "status": "bestanden",
+          "pre": "Plan UI-Konsistenz, Paket UI-1; ADR-0025 §2.", "steps": ["npm run test:web"],
+          "expect": "tokens.css: --color-blanket in allen vier Blöcken (hell rgb(23 35 38 / 0.45), dunkel rgb(0 0 0 / 0.6)), die Farb-Tokens aller Blöcke gleichnamig, color-scheme light bzw. dark in jedem Block. Die nicht farbigen Tokens (Overlay-Breiten 25/37.5/50/62.5rem, --overlay-max-height und --overlay-max-height-xl, --drawer-width 30rem, --full-view-sidebar 21.25rem, --radius-control, --radius-surface, --motion-fast 120ms, --motion-medium 200ms, --motion-ease) stehen genau einmal in :root, kein Schatten-Token. Keine Farbwerte außerhalb von tokens.css. base.css: scrollbar-gutter stable, Scroll-Sperre html:has(dialog:modal), bei prefers-reduced-motion keine Animation für [data-overlay], gemeinsame Knöpfe .button-secondary, .button-subtle, .button-icon mit --radius-control, keine Schatten. Gemeinsame Stubs für jsdom: showModal/close mit close-Ereignis, showPopover/hidePopover/togglePopover mit toggle-Ereignis (oldState, newState), :popover-open, nur ein Auto-Popover zugleich, popovertarget-Knopf; die Prototypen werden wiederhergestellt.",
+          "tests": ["web/src/lib/styles/tokens.test.ts", "web/src/lib/styles/base-css.test.ts", "web/src/lib/styles/color-literals.test.ts", "web/src/lib/test/overlay-stubs.test.ts"] },
+        { "id": "BYL-E6-002", "title": "Native Controls folgen dem Modus", "art": ["manuell"], "status": "offen",
+          "pre": "Plan UI-Konsistenz, Paket UI-1; Build von main in app\\, F5. Den Modus bis UI-2 über die Systemeinstellung von Windows wählen, ab UI-2 zusätzlich über den Umschalter in der Kopfzeile.", "steps": ["Dunkler Modus: Scrollbalken der Seite, Auswahl „Status“ im Panel, Datumsfeld „Fälligkeit“, Kästchen in der Tabelle und ein Dialog (etwa „Löschen …“) ansehen.", "Heller Modus: dasselbe.", "Einen Dialog öffnen (etwa „Löschen …“ oder die Schnellerfassung per c): die Seite dahinter scrollt nicht und springt nicht zur Seite."],
+          "expect": "Native Controls sind im Dunkelmodus dunkel und im hellen Modus hell; die Scrollbar-Spur bleibt reserviert, die Seite springt beim Öffnen eines Dialogs nicht.",
           "tests": [] },
         { "id": "BYL-E6-003", "title": "Popover-Positionierung", "art": ["unit"], "status": "geplant",
           "pre": "Plan UI-Konsistenz, Paket UI-2; ADR-0025 §5.", "steps": ["bottom-start und bottom-end mit 4 px Abstand.", "Flip nach oben bei zu wenig Platz unten.", "Klemmen an den Viewport-Rand mit 8 px."],
