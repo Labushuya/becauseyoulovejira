@@ -912,13 +912,20 @@ Wird je Paket ergänzt.
 | 2026-09-26 | EH-0 | Manifest-IDs ab `BYL-E6-029` (Block um 2 verschoben, weil UI-6b `BYL-E6-027` und `BYL-E6-028` vergeben hat); vergeben bis `BYL-E6-059`, reserviert bis `BYL-E6-064`. Die geplanten Fälle stehen im Manifest-Block „E6 | Einstellungen und Hilfe“ mit Status „geplant“. |
 | 2026-09-26 | EH-0 | Die Tour wird ein eigenes, letztes Paket EH-13 nach EH-9 („?“-Menü) und EH-12 („Erste Schritte“), weil beide ihre Startpunkte sind. driver.js ist eine begründete Ausnahme von „keine UI-Bibliothek“ (ADR-0025 §1, §2 Grundsatz 2) und CLAUDE.md §3; die Grenzen stehen in ADR-0026 §8. |
 | 2026-09-26 | EH-0 | Die Fenster „nach UI-6/7“ und „nach UI-8“ des Entwurfs entfallen, weil UI-6 bis UI-9 gemergt sind. Neu ist der Abschnitt „Hinweise aus UI-6b, UI-8 und UI-9“ in §4 (`--app-header-height`, `ViewWithPanel`/`Drawer`, `FilterPopover` als Vorlage, Tabellen ohne `min-width`). |
+| 2026-09-26 | EH-1 | Aufbau: Das `(app)`-Layout legt einen `LastViewStore` (`stores/last-view.svelte.ts`) in den Kontext und gibt ihm per `afterNavigate` jede Adresse; er behält nur Ansichten (nicht `/einstellungen/*`, `…/voll`, `/login`) mit Query und Hash in `sessionStorage` `byl-last-view`. Beim Lesen prüft `safeRedirect` den Wert und danach noch einmal `isViewPath`, damit ein manipulierter Wert weder auf eine fremde Adresse noch in die Einstellungen selbst führt. Fehler des Speichers (gesperrt, voll) fängt der Store ab; der Wert bleibt dann nur für diese Seite. |
+| 2026-09-26 | EH-1 | Beschriftung des Rückwegs nach dem Ziel: „Zurück zu Aufgaben“ (auch `/tickets/neu`), „Zurück zu ‹Key›“ für ein offenes Ticket (Key aus der geladenen Liste, sonst „Zurück zum Ticket“), „Zurück zu Projekte“ (auch mit Projekt-Panel), „Zurück zum Eingang“ (auch `/eingang/neu`), „Zurück zum Eintrag“. |
+| 2026-09-26 | EH-1 | Layout `einstellungen/+layout.svelte`: eine Leiste mit dem `ViewSwitch` (`current = null`, Zahlen aus `InboxStore` und `TicketListStore`), darunter ab 64rem ein Grid `15rem minmax(0, 1fr)`; die Navigation steht `sticky` bei `calc(var(--app-header-height, 0px) + 1rem)`. Keine Höchstbreite (Nutzervorgabe), nur Absätze haben 80ch. Überschrift `h2` mit `data-view-heading`, damit der Fokus-Rückfall der Modals sie findet; nach einem Wechsel der Seite **innerhalb** der Einstellungen bekommt sie den Fokus (`afterNavigate`), beim Kommen aus einer Ansicht bleibt es beim Standard von SvelteKit. Die Leiste zeigt nur den Umschalter, ohne Titel davor; der Titel steht als Brotkrumenpfad und `h2` über dem Inhalt (Aufbau wie in der Spezifikation §3.3). |
+| 2026-09-26 | EH-1 | Seiten: `SETTINGS_SECTIONS` in `lib/settings-sections.ts` ist die eine Liste für Navigation, Titel und Brotkrumen; „Darstellung“, „Konto“ und „Hilfe“ kommen erst mit EH-8 und EH-9 dazu. `/einstellungen` leitet per `+page.ts` mit 307 weiter. `ChannelsView` hat keine eigene `h2` und keine Höchstbreite (48rem) mehr, die Karte „Stichwörter für Datei-Importe“ zieht auf `/einstellungen/datei-importe` (eigene Seite mit `ImportKeywordsStore`), der Link im Datei-Dialog heißt „Stichwörter unter „Datei-Importe“ festlegen“. |
+| 2026-09-26 | EH-1 | Kopfzeile: Das Zahnrad ist ein Link mit `.button-icon`, `aria-label` und `title` „Einstellungen“ und eigener Zahnrad-SVG; unter `/einstellungen/*` trägt es `aria-current="page"` und die Marke-Fläche mit Rahmen in der Markenfarbe. Der App-Name ist ein Link auf `/` im `h1`, ohne Unterstreichung (nur bei Hover); der Zähler bleibt daneben. Brotkrumen: Trenner „›“ als `::before` mit leerem Alternativtext (`content: '›' / ''`), damit Screenreader ihn nicht vorlesen. |
+| 2026-09-26 | EH-1 | Bewusst angepasste Tests: `channels-view` (keine `h2` „Kanäle“ mehr in der Komponente, stattdessen die Karte „Bookmarklet für Web-Links“; die Überschrift prüft `settings-layout`), `channels-view` und `connections-page` ohne die Prop `importKeywords`, `file-import-dialog` (neues Linkziel und -text), `app-layout` (Attrappe von `afterNavigate`). Neu: `last-view.test.ts`, `settings-layout.test.ts`, Fälle in `app-layout` (Zahnrad, App-Name, Rückweg) und `view-switch` (`current = null`). Manifest: BYL-E6-029 und BYL-E6-030 bestanden, BYL-E6-031 offen (manuell). |
 
 ## 8. Status
 
 | Paket | Stand |
 |---|---|
-| EH-0 | umgesetzt (PR „docs: add ADR-0026 and the plan for settings and guidance (E6 EH-0)“) |
-| EH-1 bis EH-13 | geplant |
+| EH-0 | gemergt (#58) |
+| EH-1 | umgesetzt (dieser PR) |
+| EH-2 bis EH-13 | geplant |
 
 ## Quellen (nur Muster, keine Assets)
 

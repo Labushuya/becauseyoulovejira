@@ -7,32 +7,24 @@
 	import { pb } from '$lib/pocketbase';
 	import { ConnectionsStore, connectionsData } from '$lib/stores/connections.svelte';
 	import { getFlagStore } from '$lib/stores/flags.svelte';
-	import { ImportKeywordsStore, importKeywordsData } from '$lib/stores/import-keywords.svelte';
 
-	// Settings of the channels (E4 plan, T-3): bookmarklet (package 7), connections (package 10) and
-	// the keywords of the file imports (package 21). The capture address is absolute, since the
-	// bookmarklet runs on other pages. Connections and keywords load when the page opens and leave
-	// with it.
+	// Settings of the channels (E4 plan, T-3): bookmarklet (package 7) and connections (package 10).
+	// Since EH-1 the page lies in the settings area; the keywords of the file imports have their own
+	// page "Datei-Importe". The capture address is absolute, since the bookmarklet runs on other
+	// pages. Connections load when the page opens and leave with it.
 	const captureUrl = $derived(new URL(resolve('/eingang/neu'), page.url.origin).href);
 	// Results of actions go out as flags (ADR-0025 section 8).
 	const flags = getFlagStore();
 	const connections = new ConnectionsStore(connectionsData(pb), auth, flags);
-	const importKeywords = new ImportKeywordsStore(importKeywordsData(pb), auth, flags);
 
 	$effect(() => {
-		untrack(() => {
-			void connections.load();
-			void importKeywords.load();
-		});
-		return () => {
-			connections.reset();
-			importKeywords.reset();
-		};
+		untrack(() => void connections.load());
+		return () => connections.reset();
 	});
 </script>
 
 <svelte:head>
-	<title>Kanäle · becauseyoulovejira</title>
+	<title>Kanäle · Einstellungen · becauseyoulovejira</title>
 </svelte:head>
 
-<ChannelsView {captureUrl} {connections} {importKeywords} />
+<ChannelsView {captureUrl} {connections} />

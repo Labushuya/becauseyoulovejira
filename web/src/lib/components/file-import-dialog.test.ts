@@ -127,9 +127,9 @@ describe('FileImportDialog', () => {
 		).toBeTruthy();
 		expect(
 			screen
-				.getByRole('link', { name: 'Stichwörter unter „Kanäle“ festlegen' })
+				.getByRole('link', { name: 'Stichwörter unter „Datei-Importe“ festlegen' })
 				.getAttribute('href')
-		).toBe('/einstellungen/kanaele');
+		).toBe('/einstellungen/datei-importe');
 	});
 
 	it('explains that keywords come with the next start', () => {

@@ -1,31 +1,26 @@
 <script lang="ts">
 	import { bookmarkletCode } from '$lib/domain/bookmarklet';
 	import type { ConnectionsStore } from '$lib/stores/connections.svelte';
-	import type { ImportKeywordsStore } from '$lib/stores/import-keywords.svelte';
 	import ConnectionsSection from './ConnectionsSection.svelte';
-	import ImportKeywordsSection from './ImportKeywordsSection.svelte';
 
-	// Settings "Kanäle" (E4 plan, T-3 and packages 7, 10, 11, 13, 15, 17, 21 and 23): the bookmarklet, the
-	// connections with access data from Windows user environment variables (ADR-0018), the keywords
-	// of the file imports (ADR-0020), how to set the variables and how to set up Google Calendar,
-	// the Telegram bot, Web.de and Gmail. The
-	// bookmarklet link is dragged to the bookmarks bar; for the keyboard the code can be copied and
-	// saved as the address of a new bookmark. A click on the link here does nothing, so the page
-	// does not capture itself.
+	// Settings "Kanäle" (E4 plan, T-3 and packages 7, 10, 11, 13, 15, 17 and 23): the bookmarklet,
+	// the connections with access data from Windows user environment variables (ADR-0018), how to set
+	// the variables and how to set up Google Calendar, the Telegram bot, Web.de and Gmail. Since EH-1
+	// the page lies in the settings area, which shows its heading; the keywords of the file imports
+	// have their own page. The bookmarklet link is dragged to the bookmarks bar; for the keyboard the
+	// code can be copied and saved as the address of a new bookmark. A click on the link here does
+	// nothing, so the page does not capture itself.
 	let {
 		captureUrl,
-		connections,
-		importKeywords
+		connections
 	}: {
 		/** Absolute address of the capture form, e.g. http://127.0.0.1:8090/eingang/neu. */
 		captureUrl: string;
 		connections: ConnectionsStore;
-		importKeywords: ImportKeywordsStore;
 	} = $props();
 
 	const uid = $props.id();
 	const ids = {
-		heading: `${uid}-heading`,
 		bookmarklet: `${uid}-bookmarklet`,
 		code: `${uid}-code`,
 		variables: `${uid}-variables`,
@@ -48,9 +43,7 @@
 	}
 </script>
 
-<section class="channels" aria-labelledby={ids.heading}>
-	<h2 id={ids.heading}>Kanäle</h2>
-
+<div class="channels">
 	<section class="card" aria-labelledby={ids.bookmarklet}>
 		<h3 id={ids.bookmarklet}>Bookmarklet für Web-Links</h3>
 		<p>
@@ -95,8 +88,6 @@
 	</section>
 
 	<ConnectionsSection store={connections} />
-
-	<ImportKeywordsSection store={importKeywords} />
 
 	<section class="card" aria-labelledby={ids.variables}>
 		<h3 id={ids.variables}>Zugangsdaten als Windows-Variable setzen</h3>
@@ -330,18 +321,13 @@
 			<code>BYL_GMAIL_PASSWORD</code> löschen. Ändert sich dein Google-Passwort, verfallen alle App-Passwörter.
 		</p>
 	</section>
-</section>
+</div>
 
 <style>
+	/* Full width like the views (ADR-0026 section 1); running text keeps its line length. */
 	.channels {
 		display: grid;
 		gap: 1rem;
-		max-width: 48rem;
-	}
-
-	h2 {
-		font-size: 1.125rem;
-		font-weight: 600;
 	}
 
 	h3 {

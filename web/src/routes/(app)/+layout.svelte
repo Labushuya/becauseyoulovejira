@@ -1,5 +1,7 @@
 <script lang="ts">
 	import { untrack } from 'svelte';
+	import { afterNavigate } from '$app/navigation';
+	import { page } from '$app/state';
 	import { auth } from '$lib/auth.svelte';
 	import AppHeader from '$lib/components/AppHeader.svelte';
 	import FlagGroup from '$lib/components/overlay/FlagGroup.svelte';
@@ -15,6 +17,7 @@
 	import { CatalogStore, catalogData, setCatalogStore } from '$lib/stores/catalog.svelte';
 	import { FlagStore, setFlagStore } from '$lib/stores/flags.svelte';
 	import { InboxStore, inboxData, setInboxStore } from '$lib/stores/inbox.svelte';
+	import { LastViewStore, sessionStore, setLastViewStore } from '$lib/stores/last-view.svelte';
 	import { liveSource } from '$lib/stores/realtime';
 	import { PanelShell, setPanelShell } from '$lib/overlay/panel-host.svelte';
 	import {
@@ -53,6 +56,12 @@
 	// A side panel over the view (below 64rem, UI-6b) makes the header inert as well.
 	const panelShell = setPanelShell(new PanelShell());
 	$effect(() => () => flags.clear());
+	// The last view outside the settings, for "Zurück zu …" there (ADR-0026 section 1, EH-1): every
+	// shown address is offered, the store keeps only views (no settings, no full view).
+	const lastView = setLastViewStore(new LastViewStore(sessionStore, () => page.url.origin));
+	afterNavigate(({ to }) => {
+		if (to) lastView.remember(to.url);
+	});
 	// The column sort "Projekt" resolves projects through the catalog (E3 plan, package 9); the
 	// "new" mark follows the own read rows and base line (E4 plan, package 4).
 	const tickets = setTicketListStore(

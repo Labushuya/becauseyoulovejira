@@ -39,6 +39,17 @@ describe('view switch', () => {
 		expect(projects.getAttribute('href')).toBe('/projekte');
 	});
 
+	it('marks no view as current in the settings and leads to the plain views (EH-1)', () => {
+		mocks.page.url = new URL('/einstellungen/kanaele?x=1', 'http://localhost:3000');
+		render(ViewSwitch, { props: { current: null, inboxCount: 2, projectsNewCount: 1 } });
+		const nav = within(screen.getByRole('navigation', { name: 'Ansicht' }));
+
+		const links = nav.getAllByRole('link');
+		expect(links.map((link) => link.hasAttribute('aria-current'))).toEqual([false, false, false]);
+		expect(links.map((link) => link.getAttribute('href'))).toEqual(['/', '/projekte', '/eingang']);
+		expect(nav.getByRole('link', { name: 'Eingang (2 neu)' })).toBeTruthy();
+	});
+
 	it('marks the project view as current and leads to the plain list', () => {
 		const nav = show('projects', '/projekte?archiviert=1');
 

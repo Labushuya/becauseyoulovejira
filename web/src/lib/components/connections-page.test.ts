@@ -21,7 +21,6 @@ import {
 	type ConnectionsData
 } from '$lib/stores/connections.svelte';
 import { FlagStore } from '$lib/stores/flags.svelte';
-import { ImportKeywordsStore } from '$lib/stores/import-keywords.svelte';
 import { useOverlayStubs } from '$lib/test/overlay-stubs';
 import ChannelsView from './ChannelsView.svelte';
 import ConnectionsSection from './ConnectionsSection.svelte';
@@ -289,14 +288,7 @@ describe('channels view: variables', () => {
 		render(ChannelsView, {
 			props: {
 				captureUrl: 'http://127.0.0.1:8090/eingang/neu',
-				connections: store,
-				importKeywords: new ImportKeywordsStore(
-					{
-						load: () => Promise.reject(new Error('not used')),
-						save: () => Promise.reject(new Error('not used'))
-					},
-					{ ensureValid: () => true, logout: () => undefined }
-				)
+				connections: store
 			}
 		});
 		const section = screen.getByRole('region', {
@@ -384,14 +376,7 @@ describe('Jetzt abrufen (E4 plan, package 15)', () => {
 		render(ChannelsView, {
 			props: {
 				captureUrl: 'http://127.0.0.1:8090/eingang/neu',
-				connections: store,
-				importKeywords: new ImportKeywordsStore(
-					{
-						load: () => Promise.reject(new Error('not used')),
-						save: () => Promise.reject(new Error('not used'))
-					},
-					{ ensureValid: () => true, logout: () => undefined }
-				)
+				connections: store
 			}
 		});
 		const section = screen.getByRole('region', { name: 'Google Calendar einrichten' });
@@ -412,14 +397,7 @@ describe('Telegram-Bot einrichten (E4 plan, package 17)', () => {
 		render(ChannelsView, {
 			props: {
 				captureUrl: 'http://127.0.0.1:8090/eingang/neu',
-				connections: store,
-				importKeywords: new ImportKeywordsStore(
-					{
-						load: () => Promise.reject(new Error('not used')),
-						save: () => Promise.reject(new Error('not used'))
-					},
-					{ ensureValid: () => true, logout: () => undefined }
-				)
+				connections: store
 			}
 		});
 		const section = screen.getByRole('region', { name: 'Telegram-Bot einrichten' });
@@ -637,14 +615,7 @@ describe('Web.de-Postfach einrichten (E4 plan, package 11)', () => {
 		render(ChannelsView, {
 			props: {
 				captureUrl: 'http://127.0.0.1:8090/eingang/neu',
-				connections: store,
-				importKeywords: new ImportKeywordsStore(
-					{
-						load: () => Promise.reject(new Error('not used')),
-						save: () => Promise.reject(new Error('not used'))
-					},
-					{ ensureValid: () => true, logout: () => undefined }
-				)
+				connections: store
 			}
 		});
 		const section = screen.getByRole('region', { name: 'Web.de-Postfach einrichten' });
@@ -669,14 +640,7 @@ describe('Gmail einrichten (E4 plan, package 13)', () => {
 		render(ChannelsView, {
 			props: {
 				captureUrl: 'http://127.0.0.1:8090/eingang/neu',
-				connections: store,
-				importKeywords: new ImportKeywordsStore(
-					{
-						load: () => Promise.reject(new Error('not used')),
-						save: () => Promise.reject(new Error('not used'))
-					},
-					{ ensureValid: () => true, logout: () => undefined }
-				)
+				connections: store
 			}
 		});
 		const section = screen.getByRole('region', { name: 'Gmail einrichten' });

@@ -106,7 +106,9 @@
 		{:else if missingLists !== ''}
 			<p class="notice">
 				Für {missingLists} sind keine Stichwörter festgelegt, deshalb ist dort nichts vorausgewählt.
-				<a href={resolve('/einstellungen/kanaele')}>Stichwörter unter „Kanäle“ festlegen</a>
+				<a href={resolve('/einstellungen/datei-importe')}
+					>Stichwörter unter „Datei-Importe“ festlegen</a
+				>
 			</p>
 		{/if}
 	</div>
