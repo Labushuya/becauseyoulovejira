@@ -8,11 +8,11 @@ import { createScenario, ownedPayload } from '../support/scenario.mjs';
 const EVENT_TIMEOUT_MS = 5_000;
 const QUIET_PERIOD_MS = 500;
 
-/** Collects realtime events of one client for the "tickets" collection. */
-async function subscribeTickets(client) {
+/** Collects realtime events of one client for a collection ("tickets" by default). */
+async function subscribeTickets(client, collection = 'tickets') {
 	const events = [];
 	const waiters = [];
-	await client.collection('tickets').subscribe('*', (event) => {
+	await client.collection(collection).subscribe('*', (event) => {
 		events.push({ action: event.action, id: event.record.id });
 		for (const waiter of [...waiters]) waiter();
 	});
@@ -78,6 +78,54 @@ describe('realtime subscriptions on tickets', () => {
 		await new Promise((resolve) => setTimeout(resolve, QUIET_PERIOD_MS));
 
 		expect(b.events.filter((event) => event.id === aPrivate.id)).toEqual([]);
+		expect(c.events).toEqual([]);
+	});
+});
+
+describe('realtime subscriptions on inbox_items', () => {
+	let s;
+
+	beforeAll(async () => {
+		s = await createScenario();
+	});
+
+	afterAll(async () => {
+		for (const client of [s?.a, s?.b, s?.c]) {
+			await client?.realtime.unsubscribe();
+		}
+	});
+
+	it('delivers no events about inbox items outside the own scopes', async () => {
+		const a = await subscribeTickets(s.a, 'inbox_items');
+		const b = await subscribeTickets(s.b, 'inbox_items');
+		const c = await subscribeTickets(s.c, 'inbox_items');
+		const items = s.a.collection('inbox_items');
+
+		const aPrivate = await items.create(ownedPayload('inbox_items', s.ids.a));
+		await items.update(aPrivate.id, { state: 'discarded' });
+		const aH1 = await items.create(ownedPayload('inbox_items', s.ids.a, s.h1.id));
+		await items.delete(aPrivate.id);
+		const last = await items.create(ownedPayload('inbox_items', s.ids.a, s.h1.id));
+
+		await a.waitFor('create', aPrivate.id);
+		await a.waitFor('update', aPrivate.id);
+		await a.waitFor('delete', aPrivate.id);
+		await a.waitFor('create', last.id);
+		await b.waitFor('create', aH1.id);
+		await b.waitFor('create', last.id);
+		await new Promise((resolve) => setTimeout(resolve, QUIET_PERIOD_MS));
+
+		expect(b.events.filter((event) => event.id === aPrivate.id)).toEqual([]);
+		expect(c.events).toEqual([]);
+	});
+
+	it('sends the update of a converted item to the owner', async () => {
+		const a = await subscribeTickets(s.a, 'inbox_items');
+		const c = await subscribeTickets(s.c, 'inbox_items');
+		const item = await s.a.collection('inbox_items').create(ownedPayload('inbox_items', s.ids.a));
+		await s.a.collection('tickets').create({ owner: s.ids.a, title: 'Aus dem Eingang', source_item: item.id });
+		await a.waitFor('update', item.id);
+		await new Promise((resolve) => setTimeout(resolve, QUIET_PERIOD_MS));
 		expect(c.events).toEqual([]);
 	});
 });

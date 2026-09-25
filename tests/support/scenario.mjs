@@ -25,7 +25,7 @@ export function scopeOf(ownerId, householdId) {
 
 /**
  * Minimal valid payload for a domain collection with owner/household.
- * @param {'projects' | 'tags' | 'recurrence_rules' | 'tickets'} collection
+ * @param {'projects' | 'tags' | 'recurrence_rules' | 'tickets' | 'inbox_items'} collection
  * @param {string} ownerId
  * @param {string} [householdId]
  */
@@ -41,6 +41,8 @@ export function ownedPayload(collection, ownerId, householdId = '') {
 			return { ...base, title: `Regel ${suffix}`, mode: 'calendar' };
 		case 'tickets':
 			return { ...base, title: `Ticket ${suffix}` };
+		case 'inbox_items':
+			return { ...base, channel: 'manual', kind: 'todo', title: `Eintrag ${suffix}` };
 		default:
 			throw new Error(`No payload for ${collection}`);
 	}

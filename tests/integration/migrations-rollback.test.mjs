@@ -2,6 +2,8 @@
 // in an own disposable data folder, without `serve` (E1 plan, package 3; ADR-0004).
 
 import { readdirSync } from 'node:fs';
+import { join } from 'node:path';
+import { DatabaseSync } from 'node:sqlite';
 import { describe, expect, it } from 'vitest';
 import {
 	APP_MIGRATIONS_DIR,
@@ -19,6 +21,8 @@ import {
 } from '../support/schema.mjs';
 
 const RULES_MIGRATION = '1790200900_api_rules.js';
+// First migration of E4 (docs/plan/e4.md); everything from here on runs on existing data.
+const E4_FIRST_MIGRATION = '1790201200_create_inbox_items.js';
 const MIGRATION_FILES = readdirSync(APP_MIGRATIONS_DIR)
 	.filter((name) => name.endsWith('.js'))
 	.sort();
@@ -109,4 +113,67 @@ describe('migration rollback', () => {
 		},
 		60_000
 	);
+
+	it(
+		'keeps existing rows unchanged when the E4 migrations run and are rolled back',
+		async () => {
+			const e4 = MIGRATION_FILES.slice(MIGRATION_FILES.indexOf(E4_FIRST_MIGRATION));
+			expect(e4[0]).toBe(E4_FIRST_MIGRATION);
+
+			await withTempDataDir(async ({ dataDir, args }) => {
+				await migrate(args, 'up');
+				const down = await migrate(args, 'down', String(e4.length));
+				expect(appliedFiles(down, 'Reverted')).toEqual([...e4].reverse());
+
+				// Data as it exists before E4, written straight into the database.
+				withDatabase(dataDir, (db) => {
+					db.prepare(
+						"INSERT INTO users (id, email, tokenKey, password, created, updated) VALUES (?, ?, ?, ?, ?, ?)"
+					).run('user00000000001', 'alt@example.invalid', 'tk', 'hash', STAMP, STAMP);
+					const insert = db.prepare(
+						'INSERT INTO tickets (id, number, key, title, description, status, priority, due, scope, owner, created, updated) ' +
+							'VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+					);
+					insert.run('ticket000000001', 1, 'TASK-1', 'Alt', 'Text', 'open', 'high', '', 'u:user00000000001', 'user00000000001', STAMP, STAMP);
+					insert.run('ticket000000002', 2, 'TASK-2', 'Erledigt', '', 'done', 'low', '2026-09-01 00:00:00.000Z', 'u:user00000000001', 'user00000000001', STAMP, STAMP);
+				});
+				const before = withDatabase(dataDir, snapshot);
+
+				const up = await migrate(args, 'up');
+				expect(appliedFiles(up, 'Applied')).toEqual(e4);
+				const migrated = withDatabase(dataDir, snapshot);
+				expect(migrated.tickets.map(({ source, source_item, ...rest }) => rest)).toEqual(before.tickets);
+				expect(migrated.tickets.map(({ source, source_item }) => ({ source, source_item }))).toEqual([
+					{ source: '', source_item: '' },
+					{ source: '', source_item: '' }
+				]);
+				expect(migrated.users).toEqual(before.users);
+				expect(migrated.inbox_items).toEqual([]);
+
+				await migrate(args, 'down', String(e4.length));
+				const reverted = withDatabase(dataDir, snapshot);
+				expect(reverted).toEqual(before);
+			});
+		},
+		60_000
+	);
 });
+
+const STAMP = '2026-09-01 10:00:00.000Z';
+
+function withDatabase(dataDir, fn) {
+	const db = new DatabaseSync(join(dataDir, 'data.db'));
+	try {
+		return fn(db);
+	} finally {
+		db.close();
+	}
+}
+
+/** Rows of the tables the E4 migrations touch; a missing table gives null. */
+function snapshot(db) {
+	const exists = (table) =>
+		db.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?").get(table) !== undefined;
+	const rows = (table) => (exists(table) ? db.prepare(`SELECT * FROM ${table} ORDER BY id`).all() : null);
+	return { users: rows('users'), tickets: rows('tickets'), inbox_items: rows('inbox_items') };
+}

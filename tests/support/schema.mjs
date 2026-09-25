@@ -7,6 +7,22 @@ import { expect } from 'vitest';
 
 const STATUSES = ['backlog', 'open', 'in_progress', 'waiting', 'done'];
 const PRIORITIES = ['low', 'medium', 'high', 'urgent'];
+/** Ways into the inbox and values of tickets.source (ADR-0014), written out literally. */
+export const CHANNELS = [
+	'manual',
+	'quick',
+	'clipboard',
+	'link',
+	'eml',
+	'mail',
+	'ics',
+	'calendar',
+	'whatsapp',
+	'telegram',
+	'notion'
+];
+export const INBOX_KINDS = ['todo', 'task', 'project_task', 'mail', 'event', 'message', 'link'];
+export const INBOX_STATES = ['new', 'converted', 'discarded'];
 
 const text = (options = {}) => ({ type: 'text', required: false, max: 0, pattern: '', ...options });
 const number = (options = {}) => ({ type: 'number', required: false, onlyInt: true, ...options });
@@ -104,7 +120,9 @@ export const EXPECTED_COLLECTIONS = {
 			scope: text({ required: true }),
 			...ownership(),
 			...timestamps(),
-			parent: relation('tickets')
+			parent: relation('tickets'),
+			source: select(CHANNELS, false),
+			source_item: relation('inbox_items')
 		},
 		indexes: [
 			'CREATE UNIQUE INDEX idx_tickets_scope_key ON tickets (scope, key)',
@@ -112,7 +130,33 @@ export const EXPECTED_COLLECTIONS = {
 			'CREATE INDEX idx_tickets_project ON tickets (project)',
 			'CREATE INDEX idx_tickets_status ON tickets (status)',
 			'CREATE INDEX idx_tickets_due ON tickets (due)',
-			'CREATE INDEX idx_tickets_parent ON tickets (parent)'
+			'CREATE INDEX idx_tickets_parent ON tickets (parent)',
+			'CREATE INDEX idx_tickets_source_item ON tickets (source_item)'
+		]
+	},
+	inbox_items: {
+		fields: {
+			channel: select(CHANNELS, true),
+			kind: select(INBOX_KINDS, true),
+			title: text({ required: true, max: 200 }),
+			body: text({ max: 100000 }),
+			source_url: text({ max: 2000 }),
+			source_ref: text({ max: 500 }),
+			source_date: date(),
+			source_meta: { type: 'json', required: false, maxSize: 20000 },
+			original: { type: 'file', required: false, maxSelect: 1, maxSize: 10485760, protected: true },
+			fingerprint: text({ required: true, max: 100 }),
+			state: select(INBOX_STATES, true),
+			ticket: relation('tickets'),
+			handled_at: date(),
+			scope: text({ required: true }),
+			...ownership(),
+			...timestamps()
+		},
+		indexes: [
+			'CREATE UNIQUE INDEX idx_inbox_items_scope_fingerprint ON inbox_items (scope, fingerprint)',
+			'CREATE INDEX idx_inbox_items_owner_state ON inbox_items (owner, state)',
+			'CREATE INDEX idx_inbox_items_ticket ON inbox_items (ticket)'
 		]
 	},
 	comments: {
@@ -197,6 +241,7 @@ export const EXPECTED_RULES = {
 	tags: OWNED_RULES,
 	recurrence_rules: OWNED_RULES,
 	tickets: OWNED_RULES,
+	inbox_items: OWNED_RULES,
 	comments: {
 		listRule: VIA_TICKET,
 		viewRule: VIA_TICKET,
