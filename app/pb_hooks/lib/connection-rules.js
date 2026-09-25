@@ -6,14 +6,20 @@
 // Written by the server only (runner and hooks); a client change is refused.
 var SERVER_FIELDS = ['cursor', 'last_run_at', 'last_ok_at', 'last_error', 'last_hint', 'running_since'];
 
-// Kinds a user can set up now; notion and mail stay in the value list for later packages.
-var CREATABLE_TYPES = ['calendar', 'telegram'];
+// Kinds a user can set up now; notion stays in the value list for later.
+var CREATABLE_TYPES = ['calendar', 'telegram', 'mail'];
+
+// Mail providers (ADR-0016 section 4): host, port and TLS follow from the provider in the mail
+// helper; the connection stores only the provider and the user name (E4 plan packages 11 and 22).
+var MAIL_PROVIDERS = ['webde'];
+var MAIL_USER_MAX_LENGTH = 254;
 
 // Keys of `settings` per kind. Only names of variables, never values (ADR-0018 section 2), the
 // keywords (ADR-0020 section 3) and, for Telegram, whether the bot answers messages without one.
 var SETTINGS_KEYS = {
   calendar: ['keywords'],
-  telegram: ['allowed_env', 'keywords', 'reply_no_match']
+  telegram: ['allowed_env', 'keywords', 'reply_no_match'],
+  mail: ['provider', 'user', 'keywords', 'match_body']
 };
 
 var MESSAGES = {
@@ -21,7 +27,9 @@ var MESSAGES = {
   validation_connection_immutable: 'Die Art einer Verbindung lässt sich nicht ändern.',
   validation_connection_server_field: 'Dieses Feld setzt nur der Server.',
   validation_connection_settings: 'Unbekannte Einstellung.',
-  validation_secret_name: 'Nur BYL_ mit Großbuchstaben, Ziffern und _ (höchstens 64 Zeichen).'
+  validation_secret_name: 'Nur BYL_ mit Großbuchstaben, Ziffern und _ (höchstens 64 Zeichen).',
+  validation_mail_provider: 'Diesen Mail-Anbieter gibt es nicht.',
+  validation_mail_user: 'Benutzername des Postfachs (meist die E-Mail-Adresse), ohne Leerzeichen, höchstens 254 Zeichen.'
 };
 
 function text(value) {
@@ -63,7 +71,46 @@ function settingsViolation(type, settings, secrets, keywords) {
   if (type === 'telegram' && !secrets.isValidName(value.allowed_env)) {
     return failure('settings', 'validation_secret_name');
   }
+  if (type === 'mail') {
+    return mailSettingsViolation(value);
+  }
   return '';
+}
+
+/** A user name of a mailbox: 1 to 254 characters without white space or control characters. */
+function isMailUser(value) {
+  return (
+    typeof value === 'string' &&
+    value.length > 0 &&
+    value.length <= MAIL_USER_MAX_LENGTH &&
+    !/[\s\u0000-\u001f\u007f]/.test(value)
+  );
+}
+
+function mailSettingsViolation(value) {
+  if (MAIL_PROVIDERS.indexOf(value.provider) === -1) {
+    return failure('settings', 'validation_mail_provider');
+  }
+  if (!isMailUser(value.user)) {
+    return failure('settings', 'validation_mail_user');
+  }
+  if (value.match_body !== undefined && typeof value.match_body !== 'boolean') {
+    return failure('settings', 'validation_connection_settings');
+  }
+  return '';
+}
+
+/**
+ * { provider, user, matchBody } of a mail connection; missing or invalid values read as '' and
+ * false (the hook refuses them on save, so this only matters for repaired records).
+ */
+function mailSettingsOf(settings) {
+  var value = isPlainObject(settings) ? settings : {};
+  return {
+    provider: MAIL_PROVIDERS.indexOf(value.provider) === -1 ? '' : value.provider,
+    user: isMailUser(value.user) ? value.user : '',
+    matchBody: value.match_body === true
+  };
 }
 
 /**
@@ -110,6 +157,20 @@ function keywordsOf(settings, keywords) {
   return isPlainObject(settings) ? keywords.listOf(settings.keywords) : [];
 }
 
+/**
+ * What a connection reads from: the variables and, for mail, the mailbox. When it changes, the
+ * cursor, the error and the hint of the old source no longer apply.
+ */
+function sourceIdentity(type, secretEnv, settings) {
+  var names = variableNames(type, secretEnv, settings);
+  var parts = [names.secret, names.allowlist];
+  if (type === 'mail') {
+    var mail = mailSettingsOf(settings);
+    parts.push(mail.provider, mail.user.toLowerCase());
+  }
+  return parts.join('\n');
+}
+
 /** Telegram: whether the bot answers a message without keyword (default yes). */
 function repliesWithoutMatch(settings) {
   return !(isPlainObject(settings) && settings.reply_no_match === false);
@@ -139,6 +200,8 @@ function secretStatus(type, secretEnv, settings, secrets, getenv) {
 module.exports = {
   SERVER_FIELDS: SERVER_FIELDS,
   CREATABLE_TYPES: CREATABLE_TYPES,
+  MAIL_PROVIDERS: MAIL_PROVIDERS,
+  MAIL_USER_MAX_LENGTH: MAIL_USER_MAX_LENGTH,
   MESSAGES: MESSAGES,
   settingsViolation: settingsViolation,
   createViolation: createViolation,
@@ -146,5 +209,8 @@ module.exports = {
   variableNames: variableNames,
   secretStatus: secretStatus,
   keywordsOf: keywordsOf,
+  isMailUser: isMailUser,
+  mailSettingsOf: mailSettingsOf,
+  sourceIdentity: sourceIdentity,
   repliesWithoutMatch: repliesWithoutMatch
 };

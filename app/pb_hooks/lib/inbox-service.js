@@ -141,9 +141,10 @@ function findByFingerprint(txApp, scope, fingerprint) {
 
 /**
  * Creates a private inbox item of `owner` from a draft of a channel that runs in the server (the
- * .ics route, the calendar feed, the Telegram bot). The draft has the fields of inbox_items:
- * { channel, kind, title, body, source_url, source_ref, source_date, meta, original,
- * originalName, connection }; `original` is the text of the original file.
+ * .ics route, the calendar feed, the Telegram bot, the mail helper). The draft has the fields of
+ * inbox_items: { channel, kind, title, body, source_url, source_ref, source_date, meta, original,
+ * originalName, originalFile, connection }; `original` is the text of the original file,
+ * `originalFile` an uploaded file (the mail helper), taken as it is.
  * Returns { kind: 'created', item } or { kind: 'duplicate', item } with the existing record, so a
  * channel counts duplicates instead of failing (ADR-0014 section 3). Validation errors throw.
  * Runs in its own transaction; the record hook repeats the check as a safety net.
@@ -158,7 +159,9 @@ function ingest(app, owner, draft) {
       outcome = { kind: 'duplicate', item: existing };
       return;
     }
-    if (draft.original) {
+    if (draft.originalFile) {
+      record.set('original', draft.originalFile);
+    } else if (draft.original) {
       record.set('original', $filesystem.fileFromBytes(draft.original, draft.originalName || 'original.txt'));
     }
     txApp.save(record);

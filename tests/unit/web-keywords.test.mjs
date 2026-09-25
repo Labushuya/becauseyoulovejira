@@ -62,6 +62,14 @@ describe('keywords: web app against the hooks', () => {
 		for (const keyword of ['Prüfen', 'pruefen', '#BYL']) expect(web.keywordKey(keyword)).toBe(hook.keyOf(keyword));
 	});
 
+	it('searches the same texts of a mail (subject, optionally the start of the text)', () => {
+		const body = `${'ä'.repeat(499)}😀 und noch mehr Text`;
+		for (const matchBody of [false, true]) {
+			expect(hook.mailTexts('Betreff', body, matchBody)).toEqual(web.mailKeywordTexts('Betreff', body, matchBody));
+		}
+		expect(hook.mailTexts('Betreff', body, true)[1]).toHaveLength(hook.MAIL_BODY_CHARS);
+	});
+
 	it('stores the lists of the file imports in the shape the hook accepts (package 21)', () => {
 		expect([...web.IMPORT_KINDS]).toEqual(hook.IMPORT_KINDS);
 		const settings = {
