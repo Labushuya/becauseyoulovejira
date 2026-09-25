@@ -102,18 +102,23 @@ describe('web/src/lib/data', () => {
 		expect(code).not.toMatch(/\bany\b/);
 	});
 
-	it.each(['tickets.ts', 'comments.ts', 'history.ts', 'projects.ts', 'tags.ts', 'inbox.ts'])(
-		'%s: exported access functions take pb first and accept a signal',
-		(name) => {
-			const source = read(name);
-			const signatures = [...source.matchAll(/^export function (\w+)\(([\s\S]*?)\)(?::|\s*\{)/gm)]
-				.map(([, fn = '', params = '']) => ({ fn, params }))
-				.filter(({ fn }) => !/^to[A-Z]/.test(fn));
-			expect(signatures.length).toBeGreaterThan(0);
-			for (const { fn, params } of signatures) {
-				expect(params.trim(), fn).toMatch(/^pb: PocketBase/);
-				expect(params, fn).toMatch(/RequestOptions/);
-			}
+	it.each([
+		'tickets.ts',
+		'comments.ts',
+		'history.ts',
+		'projects.ts',
+		'tags.ts',
+		'inbox.ts',
+		'recurrence.ts'
+	])('%s: exported access functions take pb first and accept a signal', (name) => {
+		const source = read(name);
+		const signatures = [...source.matchAll(/^export function (\w+)\(([\s\S]*?)\)(?::|\s*\{)/gm)]
+			.map(([, fn = '', params = '']) => ({ fn, params }))
+			.filter(({ fn }) => !/^to[A-Z]/.test(fn));
+		expect(signatures.length).toBeGreaterThan(0);
+		for (const { fn, params } of signatures) {
+			expect(params.trim(), fn).toMatch(/^pb: PocketBase/);
+			expect(params, fn).toMatch(/RequestOptions/);
 		}
-	);
+	});
 });

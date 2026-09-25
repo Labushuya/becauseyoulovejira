@@ -2,9 +2,12 @@
 	import { untrack } from 'svelte';
 	import { beforeNavigate, goto } from '$app/navigation';
 	import { page } from '$app/state';
+	import RecurrenceSummary from '$lib/components/RecurrenceSummary.svelte';
 	import TicketActivity from '$lib/components/TicketActivity.svelte';
 	import TicketPanel from '$lib/components/TicketPanel.svelte';
+	import type { Ticket } from '$lib/domain/ticket';
 	import { getCatalogStore } from '$lib/stores/catalog.svelte';
+	import { getRecurrenceStore } from '$lib/stores/recurrence.svelte';
 	import { getTicketActivityStore } from '$lib/stores/ticket-activity.svelte';
 	import { getTicketDetailStore } from '$lib/stores/ticket-detail.svelte';
 	import { getTicketListStore } from '$lib/stores/ticket-list.svelte';
@@ -18,6 +21,7 @@
 	const comments = getTicketActivityStore();
 	const catalog = getCatalogStore();
 	const tickets = getTicketListStore();
+	const rules = getRecurrenceStore();
 	const id = $derived(page.params.id ?? '');
 	const back = $derived(listHref(page.url));
 
@@ -71,6 +75,17 @@
 </svelte:head>
 
 <TicketPanel store={detail} {catalog} listHref={back} onclose={close} ondeleted={deleted}>
+	{#snippet recurrence(ticket: Ticket)}
+		<RecurrenceSummary
+			{ticket}
+			store={rules}
+			today={tickets.today}
+			onticket={(changed) => {
+				detail.upsert(changed);
+				tickets.upsert(changed);
+			}}
+		/>
+	{/snippet}
 	{#snippet activity()}
 		<TicketActivity store={comments} {catalog} />
 	{/snippet}

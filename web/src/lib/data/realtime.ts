@@ -6,6 +6,7 @@
 import type PocketBase from 'pocketbase';
 import type { InboxItemSummary } from '../domain/inbox';
 import type { Project } from '../domain/project';
+import type { RecurrenceRule } from '../domain/recurrence-rule';
 import type { Tag } from '../domain/tag';
 import type { Comment, HistoryEntry, Ticket, TicketSummary } from '../domain/ticket';
 import { COMMENT_FIELDS, toComment, type CommentRecord } from './comments';
@@ -13,6 +14,7 @@ import { HISTORY_FIELDS, toHistoryEntry, type HistoryRecord } from './history';
 import { INBOX_LIST_FIELDS, toInboxItemSummary, type InboxRecord } from './inbox';
 import { PROJECT_FIELDS, toProject, type ProjectRecord } from './projects';
 import { READ_FIELDS, toTicketRead, type TicketRead } from './reads';
+import { RULE_FIELDS, toRecurrenceRule, type RuleRecord } from './recurrence';
 import { TAG_FIELDS, toTag, type TagRecord } from './tags';
 import {
 	TICKET_DETAIL_FIELDS,
@@ -127,6 +129,16 @@ export function subscribeTags(
 	return pb
 		.collection('tags')
 		.subscribe<TagRecord>('*', changes(toTag, onChange), { fields: TAG_FIELDS });
+}
+
+/** All visible recurrence rules with every field of the store (E5 plan, T-7). */
+export function subscribeRules(
+	pb: PocketBase,
+	onChange: (change: RecordChange<RecurrenceRule>) => void
+): Promise<Unsubscribe> {
+	return pb
+		.collection('recurrence_rules')
+		.subscribe<RuleRecord>('*', changes(toRecurrenceRule, onChange), { fields: RULE_FIELDS });
 }
 
 /** All visible inbox entries with the fields of the lists (E4 plan, T-4). */

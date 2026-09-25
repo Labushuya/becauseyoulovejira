@@ -25,6 +25,7 @@
 		lingering,
 		active = false,
 		isNew = false,
+		recurrenceText = '',
 		ontoggle,
 		onundo
 	}: {
@@ -43,11 +44,17 @@
 		active?: boolean;
 		/** New for the signed-in user (ADR-0015): a dot before the key, "neu" for screen readers. */
 		isNew?: boolean;
+		/** Rhythm of the series ("jeden Montag"), '' while unknown (E5 plan, package 4). */
+		recurrenceText?: string;
 		ontoggle: (done: boolean) => void;
 		onundo: () => void;
 	} = $props();
 
 	const done = $derived(ticket.status === 'done');
+	/** Name of the recurring symbol: "Wiederkehrend: jeden Montag", or only "wiederkehrend". */
+	const recurringLabel = $derived(
+		recurrenceText === '' ? 'wiederkehrend' : `Wiederkehrend: ${recurrenceText}`
+	);
 	const createdDate = $derived(berlinDateOf(ticket.created));
 
 	/** Controls of the row handle their own clicks; the row only takes clicks outside of them. */
@@ -75,7 +82,10 @@
 		<SourceIcon source={ticket.source} />
 		<a class="title-link" {href} aria-current={active ? 'page' : undefined}>{ticket.title}</a>
 		{#if ticket.recurring}
-			<span class="recurring-icon" title="Wiederkehrend">
+			<span
+				class="recurring-icon"
+				title={recurrenceText === '' ? 'Wiederkehrend' : `Wiederkehrend: ${recurrenceText}`}
+			>
 				<svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true" focusable="false">
 					<path
 						d="M13 6.5A5.25 5.25 0 0 0 3.6 4.4M3 9.5a5.25 5.25 0 0 0 9.4 2.1"
@@ -93,7 +103,7 @@
 						stroke-linejoin="round"
 					/>
 				</svg>
-				<span class="visually-hidden">wiederkehrend</span>
+				<span class="visually-hidden">{recurringLabel}</span>
 			</span>
 		{/if}
 	</th>

@@ -97,6 +97,26 @@ describe('toDataError', () => {
 		});
 	});
 
+	it('has the texts of the recurrence codes and names the open ticket (E5 plan, package 4)', () => {
+		const error = toDataError(
+			responseError(400, {
+				status: {
+					code: 'validation_recurrence_open_instance',
+					message: 'x',
+					params: { key: 'HAUS-12', ticket: 'ticket000000001' }
+				},
+				weekdays: { code: 'validation_recurrence_weekdays', message: 'x' },
+				ticket: { code: 'validation_recurrence_ticket_linked', message: 'x' }
+			})
+		);
+
+		expect(error.fields.status?.message).toBe(
+			'Von dieser Serie ist schon HAUS-12 offen. Erledige es zuerst oder löse ein Ticket aus der Serie.'
+		);
+		expect(error.fields.weekdays?.message).toBe('Bitte mindestens einen Wochentag wählen.');
+		expect(error.fields.ticket?.message).toBe('Das Ticket gehört schon zu einer Serie.');
+	});
+
 	it('has German texts for the project and tag codes, some per field (E3 plan, package 3)', () => {
 		const error = toDataError(
 			responseError(400, {

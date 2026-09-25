@@ -34,6 +34,11 @@ vi.mock('$lib/stores/inbox.svelte', async (importOriginal) => ({
 	...(await importOriginal<object>()),
 	getInboxStore: () => ({ newCount: 2 })
 }));
+// The rows name the rhythm of recurring tickets (E5 plan, package 4).
+vi.mock('$lib/stores/recurrence.svelte', async (importOriginal) => ({
+	...(await importOriginal<object>()),
+	getRecurrenceStore: () => ({ textOf: () => '' })
+}));
 
 function renderLayout(path: string, id?: string) {
 	mocks.page.url = new URL(path, 'http://localhost:3000');

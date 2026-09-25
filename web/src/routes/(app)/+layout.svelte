@@ -15,6 +15,12 @@
 	import { InboxStore, inboxData, setInboxStore } from '$lib/stores/inbox.svelte';
 	import { liveSource } from '$lib/stores/realtime';
 	import {
+		RecurrenceStore,
+		recurrenceData,
+		recurrenceLive,
+		setRecurrenceStore
+	} from '$lib/stores/recurrence.svelte';
+	import {
 		TicketActivityStore,
 		setTicketActivityStore,
 		ticketActivityData
@@ -53,6 +59,10 @@
 	const activity = setTicketActivityStore(
 		new TicketActivityStore(ticketActivityData(pb), auth, () => auth.userId)
 	);
+	// Recurrence rules (E5 plan, T-7): all of them, for the table, the panel and the overview.
+	const rules = setRecurrenceStore(new RecurrenceStore(recurrenceData(pb), auth));
+	$effect(() => untrack(() => rules.start()));
+	$effect(() => untrack(() => rules.connect(recurrenceLive(pb))));
 
 	// Session care while the app is shown (ADR-0007 section 1). The returned cleanup removes the
 	// timer and the listeners when the layout goes away (logout, session end). untrack: the

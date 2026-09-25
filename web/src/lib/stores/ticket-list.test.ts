@@ -633,6 +633,34 @@ describe('check mark', () => {
 		expect(store.open).toHaveLength(1);
 	});
 
+	it('names the open follow-up when undo is refused (E5 plan, package 4)', async () => {
+		const item = ticket({ status: 'open' });
+		const data = fakeData([item]);
+		vi.mocked(data.update).mockRejectedValueOnce(
+			new DataError('validation', {
+				status: 400,
+				fields: {
+					status: {
+						code: 'validation_recurrence_open_instance',
+						message:
+							'Von dieser Serie ist schon HAUS-12 offen. Erledige es zuerst oder löse ein Ticket aus der Serie.',
+						params: { key: 'HAUS-12' }
+					}
+				}
+			})
+		);
+		const store = new TicketListStore(data, session());
+		store.activate(withDone(false));
+		await settle();
+
+		await store.setDone(item.id, true);
+		await store.undo(item.id);
+
+		expect(store.notice).toBe(
+			`${item.key} konnte nicht zurückgesetzt werden. Von dieser Serie ist schon HAUS-12 offen. Erledige es zuerst oder löse ein Ticket aus der Serie.`
+		);
+	});
+
 	it('moves the row into the section "Erledigt" after the undo window when shown', async () => {
 		const item = ticket();
 		const store = new TicketListStore(fakeData([item]), session());

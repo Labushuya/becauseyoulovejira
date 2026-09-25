@@ -36,7 +36,8 @@
 		catalog,
 		activeId = null,
 		creating = false,
-		inboxCount = null
+		inboxCount = null,
+		recurrenceTextOf = () => ''
 	}: {
 		store: TicketListStore;
 		catalog: CatalogStore;
@@ -46,6 +47,8 @@
 		creating?: boolean;
 		/** New inbox entries for the switch (E4 plan, package 3). */
 		inboxCount?: number | null;
+		/** Rhythm of the series of a ticket in words, '' while unknown (E5 plan, package 4). */
+		recurrenceTextOf?: (ticket: TicketSummary) => string;
 	} = $props();
 
 	/** Columns of the table (T-4); the section rows span all of them. */
@@ -218,6 +221,7 @@
 			lingering={store.isLingering(ticket.id)}
 			active={ticket.id === activeId}
 			isNew={store.isNew(ticket)}
+			recurrenceText={ticket.recurring ? recurrenceTextOf(ticket) : ''}
 			ontoggle={(done) => store.setDone(ticket.id, done)}
 			onundo={() => store.undo(ticket.id)}
 		/>

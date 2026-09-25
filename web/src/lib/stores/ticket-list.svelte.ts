@@ -1097,6 +1097,13 @@ export class TicketListStore {
 	}
 
 	#fail(error: unknown, prefix: string): void {
+		// Reopening an instance whose follow-up was already edited (ADR-0023 section 3): the
+		// refusal names that ticket and what to do.
+		const status = toDataError(error).fields.status;
+		if (status?.code === 'validation_recurrence_open_instance') {
+			this.#notice = `${prefix} ${status.message}`;
+			return;
+		}
 		const message = this.#failureMessage(error);
 		if (message !== null) this.#notice = `${prefix} ${message}`;
 	}

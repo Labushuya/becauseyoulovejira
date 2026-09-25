@@ -122,6 +122,15 @@ describe('ticket table row', () => {
 		expect(created.getAttribute('title')).toBe('02.09.2026 00:30');
 	});
 
+	it('names the rhythm at the recurring symbol (E5 plan, package 4)', () => {
+		const { row } = renderRow({ recurring: true }, { recurrenceText: 'jeden Montag' });
+		const title = cell(row, 'title');
+		expect(within(title).getByText('Wiederkehrend: jeden Montag')).toBeTruthy();
+		expect(title.querySelector('.recurring-icon')?.getAttribute('title')).toBe(
+			'Wiederkehrend: jeden Montag'
+		);
+	});
+
 	it('leaves project, tags, due date and icon empty when the ticket has none', () => {
 		const { row } = renderRow();
 
