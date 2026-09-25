@@ -20,7 +20,7 @@ const mocks = vi.hoisted(() => ({
 	detail: { create: vi.fn() },
 	catalog: null as unknown,
 	inbox: { fetch: vi.fn(), markConverted: vi.fn() },
-	tickets: { announce: vi.fn() }
+	tickets: { announce: vi.fn(), markRead: vi.fn(async () => undefined) }
 }));
 
 vi.mock('$app/navigation', () => ({ goto: mocks.goto }));
@@ -285,6 +285,8 @@ describe('new ticket route', () => {
 			})
 		);
 		expect(mocks.detail.create).toHaveBeenCalledOnce();
+		// A ticket created one by one is read at once (E4 plan, package 4).
+		expect(mocks.tickets.markRead).toHaveBeenCalledWith(CREATED);
 	});
 
 	it('goes back to the list on "Abbrechen"', async () => {

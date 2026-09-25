@@ -192,6 +192,17 @@ export const EXPECTED_COLLECTIONS = {
 			'CREATE UNIQUE INDEX idx_dependencies_blocker_blocked ON dependencies (blocker, blocked)'
 		]
 	},
+	ticket_reads: {
+		fields: {
+			user: relation('users', { required: true, cascadeDelete: true }),
+			ticket: relation('tickets', { required: true, cascadeDelete: true }),
+			seen_at: created()
+		},
+		indexes: [
+			'CREATE UNIQUE INDEX idx_ticket_reads_user_ticket ON ticket_reads (user, ticket)',
+			'CREATE INDEX idx_ticket_reads_ticket ON ticket_reads (ticket)'
+		]
+	},
 	ticket_counters: {
 		fields: {
 			key: text({ required: true }),
@@ -253,7 +264,18 @@ export const EXPECTED_RULES = {
 	},
 	ticket_history: { listRule: VIA_TICKET, viewRule: VIA_TICKET, ...READ_ONLY },
 	dependencies: { listRule: OWNED, viewRule: OWNED, ...READ_ONLY },
-	ticket_counters: { listRule: null, viewRule: null, ...READ_ONLY }
+	ticket_counters: { listRule: null, viewRule: null, ...READ_ONLY },
+	ticket_reads: {
+		listRule: `${AUTH} && user = @request.auth.id`,
+		viewRule: `${AUTH} && user = @request.auth.id`,
+		createRule:
+			`${AUTH} && @request.body.user = @request.auth.id && ` +
+			'(ticket.owner = @request.auth.id || (ticket.household != "" && ' +
+			'@collection.household_members.household ?= ticket.household && ' +
+			'@collection.household_members.user ?= @request.auth.id))',
+		updateRule: null,
+		deleteRule: `${AUTH} && user = @request.auth.id`
+	}
 };
 
 export const EXPECTED_USERS_RULES = {

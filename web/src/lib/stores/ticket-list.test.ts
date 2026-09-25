@@ -808,6 +808,7 @@ describe('search (E3 plan, package 11)', () => {
 			projects: never,
 			tags: never,
 			inbox: never,
+			reads: never,
 			reconnected: never
 		};
 		return {

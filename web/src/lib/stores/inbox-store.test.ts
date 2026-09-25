@@ -103,6 +103,7 @@ function fakeLive() {
 		projects: never,
 		tags: never,
 		inbox: (call) => add(inbox, call),
+		reads: never,
 		reconnected: (call) => add(reconnected, call)
 	};
 	return {

@@ -698,3 +698,44 @@ describe('ticket table: grouping (E3 plan, package 13)', () => {
 		expect(screen.getByRole('rowgroup', { name: 'Wartet, 1 Ticket' })).toBeTruthy();
 	});
 });
+
+describe('ticket table: new (E4 plan, package 4)', () => {
+	async function showWithReads() {
+		const fresh = ticket({ title: 'Neu aus dem Eingang', created: '2026-09-25 10:00:00.000Z' });
+		const old = ticket({ title: 'Alt', created: '2026-09-01 10:00:00.000Z' });
+		const reads = {
+			unreadSince: () => '2026-09-20 00:00:00.000Z',
+			list: vi.fn(async () => []),
+			markRead: vi.fn(async (id: string) => ({ id: 'read00000000001', ticket: id })),
+			markAllRead: vi.fn(async () => '2026-09-26 00:00:00.000Z')
+		};
+		mocks.page.url = new URL('/', 'http://localhost:3000');
+		const store = new TicketListStore(fakeData([fresh, old]), SESSION, { reads });
+		const catalog = new CatalogStore(
+			{ listProjects: vi.fn(async () => []), listTags: vi.fn(async () => []), createTag: vi.fn() },
+			SESSION
+		);
+		store.activate(parseListQuery(mocks.page.url.searchParams));
+		render(TicketTable, { props: { store, catalog } });
+		await vi.advanceTimersByTimeAsync(0);
+		return { store, reads, fresh, old };
+	}
+
+	it('marks new rows and offers "Alle als gelesen markieren"', async () => {
+		const { reads, fresh, old } = await showWithReads();
+		const rowOf = (title: string) =>
+			screen.getByRole('link', { name: title }).closest('tr') as HTMLElement;
+		expect(rowOf(fresh.title).querySelector('.new-dot')).toBeTruthy();
+		expect(rowOf(old.title).querySelector('.new-dot')).toBeNull();
+
+		const button = screen.getByRole('button', {
+			name: 'Alle als gelesen markieren, 1 neues Ticket'
+		});
+		await fireEvent.click(button);
+		await vi.advanceTimersByTimeAsync(0);
+		expect(reads.markAllRead).toHaveBeenCalledOnce();
+		expect(rowOf(fresh.title).querySelector('.new-dot')).toBeNull();
+		expect(screen.queryByRole('button', { name: /Alle als gelesen markieren/ })).toBeNull();
+		expect(screen.getByText('Alle Tickets als gelesen markiert.')).toBeTruthy();
+	});
+});

@@ -68,6 +68,14 @@ describe('view switch', () => {
 		expect(nav.getByRole('link', { name: 'Aufgaben' }).getAttribute('href')).toBe('/');
 	});
 
+	it('shows the number of new tickets in projects at "Projekte" (E4 plan, package 4)', () => {
+		mocks.page.url = new URL('/', 'http://localhost:3000');
+		render(ViewSwitch, { props: { current: 'tasks', projectsNewCount: 2 } });
+		expect(screen.getByRole('link', { name: 'Projekte (2 neu)' }).getAttribute('href')).toBe(
+			'/projekte'
+		);
+	});
+
 	it('marks the current view by weight and a line besides its colour (ADR-0010 section 3)', () => {
 		const rule = /a\[aria-current='page'\]\s*\{([^}]*)\}/.exec(source)?.[1] ?? '';
 		expect(rule).toMatch(/font-weight:\s*600/);

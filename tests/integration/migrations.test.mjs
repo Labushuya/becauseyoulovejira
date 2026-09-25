@@ -20,6 +20,15 @@ describe('schema migrations', () => {
 		);
 	});
 
+	it('adds the base line of "new" to users (ADR-0015)', async () => {
+		const superuser = await superuserClient();
+		const users = await superuser.collections.getOne('users');
+		expect(users.fields.find((field) => field.name === 'unread_since')).toMatchObject({
+			type: 'date',
+			required: false
+		});
+	});
+
 	it('enables automatic backups every four hours, keeping 12 (ADR-0003)', async () => {
 		const superuser = await superuserClient();
 		const settings = await superuser.settings.getAll();

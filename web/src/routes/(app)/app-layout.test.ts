@@ -42,6 +42,7 @@ const mocks = vi.hoisted(() => {
 			projects: vi.fn(subscribe('projects')),
 			tags: vi.fn(subscribe('tags')),
 			inbox: vi.fn(subscribe('inbox')),
+			reads: vi.fn(subscribe('reads')),
 			reconnected: vi.fn(subscribe('PB_CONNECT'))
 		},
 		goto: vi.fn(async () => {

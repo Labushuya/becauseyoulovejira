@@ -32,7 +32,8 @@ const mocks = vi.hoisted(() => ({
 	},
 	detail: null as unknown,
 	activity: null as unknown,
-	catalog: null as unknown
+	catalog: null as unknown,
+	tickets: { markRead: vi.fn(async () => undefined) }
 }));
 
 vi.mock('$app/navigation', () => ({ goto: mocks.goto, beforeNavigate: mocks.beforeNavigate }));
@@ -48,6 +49,10 @@ vi.mock('$lib/stores/ticket-activity.svelte', async (importOriginal) => ({
 vi.mock('$lib/stores/catalog.svelte', async (importOriginal) => ({
 	...(await importOriginal<object>()),
 	getCatalogStore: () => mocks.catalog
+}));
+vi.mock('$lib/stores/ticket-list.svelte', async (importOriginal) => ({
+	...(await importOriginal<object>()),
+	getTicketListStore: () => mocks.tickets
 }));
 
 const ID = 'abc123def456ghi';
@@ -669,6 +674,20 @@ describe('ticket route', () => {
 	});
 });
 
+describe('ticket route: new (E4 plan, package 4)', () => {
+	it('marks the opened ticket as read', async () => {
+		mocks.tickets.markRead.mockClear();
+		const context = createStore();
+		mocks.detail = context.store;
+		mocks.catalog = catalogOf();
+		mocks.activity = activityStore();
+		render(TicketPage);
+		await vi.waitFor(() =>
+			expect(mocks.tickets.markRead).toHaveBeenCalledWith(expect.objectContaining({ id: ID }))
+		);
+	});
+});
+
 describe('ticket route: unsaved text', () => {
 	type Guard = (navigation: BeforeNavigate) => void;
 
@@ -817,6 +836,7 @@ describe('ticket panel: deleted elsewhere', () => {
 			projects: async () => stop,
 			tags: async () => stop,
 			inbox: async () => stop,
+			reads: async () => stop,
 			reconnected: async () => stop
 		};
 		const disconnect = context.store.connect(live);

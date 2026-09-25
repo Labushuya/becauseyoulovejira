@@ -147,8 +147,13 @@ describe('migration rollback', () => {
 					{ source: '', source_item: '' },
 					{ source: '', source_item: '' }
 				]);
-				expect(migrated.users).toEqual(before.users);
+				// The base line of "new" (ADR-0015) is the only value an existing row gets.
+				expect(migrated.users.map(({ unread_since, ...rest }) => rest)).toEqual(before.users);
+				for (const user of migrated.users) {
+					expect(user.unread_since).toMatch(/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\.\d{3}Z$/);
+				}
 				expect(migrated.inbox_items).toEqual([]);
+				expect(migrated.ticket_reads).toEqual([]);
 
 				await migrate(args, 'down', String(e4.length));
 				const reverted = withDatabase(dataDir, snapshot);
@@ -175,5 +180,10 @@ function snapshot(db) {
 	const exists = (table) =>
 		db.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?").get(table) !== undefined;
 	const rows = (table) => (exists(table) ? db.prepare(`SELECT * FROM ${table} ORDER BY id`).all() : null);
-	return { users: rows('users'), tickets: rows('tickets'), inbox_items: rows('inbox_items') };
+	return {
+		users: rows('users'),
+		tickets: rows('tickets'),
+		inbox_items: rows('inbox_items'),
+		ticket_reads: rows('ticket_reads')
+	};
 }
