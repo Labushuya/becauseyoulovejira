@@ -97,4 +97,21 @@ describe('E4 hooks on the schema before the E4 migrations', () => {
 			'Die Verbindungen stehen nach dem nächsten Start der App bereit (start.bat).'
 		);
 	});
+
+	it('answers "Jetzt abrufen" with the hint and lets the calendar job do nothing', async () => {
+		const response = await fetch(`${instance.url}/api/byl/connections/abcdefghijklmno/run`, {
+			method: 'POST',
+			headers: { Authorization: client.authStore.token }
+		});
+		expect(response.status).toBe(503);
+		const superuser = newClient();
+		await superuser.collection('_superusers').authWithPassword(instance.email, instance.password);
+		const cron = await fetch(`${instance.url}/api/crons/byl-calendar`, {
+			method: 'POST',
+			headers: { Authorization: superuser.authStore.token }
+		});
+		expect(cron.status).toBe(204);
+		const logs = JSON.stringify(await superuser.send('/api/logs', { query: { perPage: 200 } }));
+		expect(logs).not.toMatch(/byl-calendar/);
+	});
 });
