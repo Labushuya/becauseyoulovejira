@@ -1,6 +1,6 @@
 # ADR-0010: Seitenaufbau nach dem Vorbild des Task-Boards, im eigenen Stack und mit eigenen Farben
 
-- **Status:** Angenommen
+- **Status:** Angenommen, teilweise ersetzt durch [ADR-0025](0025-ui-konsistenz-overlay-system.md) (siehe Nachtrag am Ende)
 - **Datum:** 2026-09-25
 - **Entscheidung durch:** Nutzer (Layout übernehmen, 2026-09-25), Advisor (Auslegung: eigene Farben, Clean-Room-Regel)
 
@@ -88,3 +88,16 @@ Später folgen, jeweils in ihrer Etappe ([ADR-0011](0011-roadmap-e3-bis-e7.md)):
 - CLAUDE.md §7 beschreibt den Seitenaufbau ab E3 mit Verweis auf dieses ADR. Die Zeilenbeschreibung aus E2 wird im Doku-Paket von E3 angepasst.
 - Neue Farb-Tokens sind möglich, aber nur nach Abschnitt 3.
 - Die Clean-Room-Regel gilt für alle weiteren Etappen, in denen das Task-Board als Vorbild dient (etwa Spalten und Hilfe in E6).
+
+## Nachtrag (2026-09-25): teilweise ersetzt durch ADR-0025
+
+[ADR-0025](0025-ui-konsistenz-overlay-system.md) legt ein gemeinsames Overlay-System fest. Der Text oben bleibt unverändert; wo er abweicht, gilt ADR-0025. Das betrifft:
+
+- **§1, Reihenfolge der Leisten:** Die Abschnittsleiste mit dem Umschalter „Aufgaben | Projekte | Eingang“ steht in allen Ansichten direkt unter der Kopfzeile. Darunter folgen Kennzahlen und Filterleiste (Aufgaben), Chips (Eingang) oder nichts (Projekte). Umgesetzt mit Paket UI-8.
+- **§1, „Rückgängig“:** Statt 5 s in der Zeile erscheint es 8 s in einem Flag unten links, mit Pause bei Hover und Fokus. Umgesetzt mit UI-5.
+- **§1, Projektansicht:** Die Kacheln bleiben. Ein Klick öffnet das Projekt-Panel (`/projekte/<id>`) statt direkt die gefilterte Liste; „Tickets anzeigen“ steht im Panel. Umgesetzt mit UI-8.
+- **§2, Detail-Panel:** Es bleibt nicht modal neben der Tabelle, bekommt aber den Aufbau des Task-Boards: 480 px, fester Kopf mit „Vollansicht“ und ×, fester Fuß, Slide-in beim ersten Öffnen. Schmal ist die Liste dahinter `inert`. Umgesetzt mit UI-6.
+- **§2, Vollansicht:** neu als XL-Modal unter `/tickets/<id>/voll`. Umgesetzt mit UI-7.
+- **§5, Popover:** Sie laufen über einen gemeinsamen Baustein mit JS-Positionierung statt CSS Anchor Positioning. Umgesetzt mit UI-2.
+
+Die Farb- und Gestaltungsregeln aus §3 und die Clean-Room-Regel aus §4 gelten unverändert.
