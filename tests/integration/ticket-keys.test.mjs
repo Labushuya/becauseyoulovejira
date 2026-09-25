@@ -255,13 +255,8 @@ describe('relations across scopes (OF-3 c)', () => {
 			aRule: await create(s.a, 'recurrence_rules', {
 				owner: s.ids.a,
 				title: 'Regel',
-				mode: 'calendar'
-			}),
-			aH1Rule: await create(s.a, 'recurrence_rules', {
-				owner: s.ids.a,
-				household: s.h1.id,
-				title: 'Regel',
-				mode: 'calendar'
+				mode: 'calendar',
+				freq: 'daily'
 			})
 		};
 	});
@@ -270,20 +265,27 @@ describe('relations across scopes (OF-3 c)', () => {
 		s.a.collection('tickets').create({ owner: s.ids.a, title: 'privat', ...data });
 	const householdTicket = (data) =>
 		s.a.collection('tickets').create({ owner: s.ids.a, household: s.h1.id, title: 'H1', ...data });
+	// Since E5 a ticket joins a rule only through "Wiederholen…": the rule is created with `ticket`
+	// (ADR-0023 section 1).
+	const repeat = (ticket, household = '') =>
+		s.a.collection('recurrence_rules').create({
+			owner: s.ids.a,
+			household,
+			title: 'Regel',
+			mode: 'calendar',
+			freq: 'daily',
+			ticket: ticket.id
+		});
 
 	it('accepts relations within the own scope', async () => {
-		const ticket = await privateTicket({
-			project: rec.aProject.id,
-			tags: [rec.aTag.id],
-			recurrence: rec.aRule.id
-		});
+		const ticket = await privateTicket({ project: rec.aProject.id, tags: [rec.aTag.id] });
 		expect(ticket.key).toBe(`${rec.aProject.code}-1`);
-		const h1 = await householdTicket({
-			project: rec.aH1Project.id,
-			tags: [rec.aH1Tag.id],
-			recurrence: rec.aH1Rule.id
-		});
+		const rule = await repeat(ticket);
+		expect((await s.a.collection('tickets').getOne(ticket.id)).recurrence).toBe(rule.id);
+		const h1 = await householdTicket({ project: rec.aH1Project.id, tags: [rec.aH1Tag.id] });
 		expect(h1.key).toBe(`${rec.aH1Project.code}-1`);
+		const h1Rule = await repeat(h1, s.h1.id);
+		expect((await s.a.collection('tickets').getOne(h1.id)).recurrence).toBe(h1Rule.id);
 	});
 
 	it('rejects a project of another scope, even of the same owner', async () => {
@@ -298,9 +300,14 @@ describe('relations across scopes (OF-3 c)', () => {
 			status: 400,
 			codes: { tags: 'validation_scope_mismatch' }
 		});
+		// A rule of another scope cannot take the ticket; a client cannot set the link at all.
+		expect(await rejectionOf(repeat(await householdTicket({})))).toEqual({
+			status: 400,
+			codes: { ticket: 'validation_recurrence_ticket_missing' }
+		});
 		expect(await rejectionOf(householdTicket({ recurrence: rec.aRule.id }))).toEqual({
 			status: 400,
-			codes: { recurrence: 'validation_scope_mismatch' }
+			codes: { recurrence: 'validation_recurrence_managed' }
 		});
 	});
 

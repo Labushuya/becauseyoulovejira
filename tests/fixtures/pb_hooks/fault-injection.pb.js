@@ -12,6 +12,16 @@ onRecordCreateExecute(function (e) {
   e.next();
 }, 'tickets');
 
+// Fails the save of a ticket with the marker title once it gets a recurrence rule (E5 plan,
+// package 2): "Wiederholen…" links the ticket after the insert of the rule, in the same
+// transaction, so the rule must be rolled back with it.
+onRecordUpdateExecute(function (e) {
+  if (e.record.getString('title') === '__byl_fail_ticket_link__' && e.record.getString('recurrence') !== '') {
+    throw new BadRequestError('Injected ticket link failure.');
+  }
+  e.next();
+}, 'tickets');
+
 // Fails the history entry of a ticket whose (new) title is the marker. The history is written
 // in the transaction of the ticket hook, so the lookup sees the uncommitted ticket; the ticket
 // change and its key must be rolled back with it.

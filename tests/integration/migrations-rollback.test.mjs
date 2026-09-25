@@ -267,7 +267,7 @@ function withDatabase(dataDir, fn) {
 	}
 }
 
-/** Rows of the tables the E4 migrations touch; a missing table gives null. */
+/** Rows of the tables the E4 and E5 migrations touch; a missing table gives null. */
 function snapshot(db) {
 	const exists = (table) =>
 		db.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?").get(table) !== undefined;
@@ -277,6 +277,136 @@ function snapshot(db) {
 		tickets: rows('tickets'),
 		inbox_items: rows('inbox_items'),
 		ticket_reads: rows('ticket_reads'),
-		connections: rows('connections')
+		connections: rows('connections'),
+		recurrence_rules: rows('recurrence_rules')
 	};
 }
+
+const E5_FIRST_MIGRATION = '1790201600_recurrence_rule_params.js';
+const E5_RULE_FIELDS = ['freq', 'interval', 'weekdays', 'month_day', 'anchor', 'lead_days', 'scope', 'last_hint'];
+const INCOMPLETE_HINT = 'Regel unvollständig – bitte Rhythmus wählen.';
+
+function withoutFields(rows, fields) {
+	return rows.map((row) => Object.fromEntries(Object.entries(row).filter(([name]) => !fields.includes(name))));
+}
+
+/** Data as it exists before E5: users, rules with the base fields only, tickets with and without a rule. */
+function insertPreE5Data(db) {
+	const user = db.prepare(
+		'INSERT INTO users (id, email, tokenKey, password, created, updated) VALUES (?, ?, ?, ?, ?, ?)'
+	);
+	user.run('user00000000001', 'eins@example.invalid', 'tk1', 'hash', STAMP, STAMP);
+	db.prepare('INSERT INTO households (id, name, created, updated) VALUES (?, ?, ?, ?)').run(
+		'household000001',
+		'Haus',
+		STAMP,
+		STAMP
+	);
+	const rule = db.prepare(
+		'INSERT INTO recurrence_rules (id, title, description, priority, mode, next_due, last_generated_at, active, owner, household, created, updated) ' +
+			'VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+	);
+	rule.run('rule00000000001', 'Müll', 'Text', 'high', 'calendar', '2026-09-28 00:00:00.000Z', '', 1, 'user00000000001', '', STAMP, STAMP);
+	rule.run('rule00000000002', 'Blumen', '', '', 'after_completion', '', '2026-09-01 08:00:00.000Z', 0, 'user00000000001', 'household000001', STAMP, STAMP);
+	const ticket = db.prepare(
+		'INSERT INTO tickets (id, number, key, title, status, priority, due, completed_at, recurrence, scope, owner, created, updated) ' +
+			'VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+	);
+	ticket.run('ticket000000001', 1, 'TASK-1', 'Müll (erledigt)', 'done', 'high', '2026-09-14 00:00:00.000Z', '2026-09-14 09:00:00.000Z', 'rule00000000001', 'u:user00000000001', 'user00000000001', STAMP, STAMP);
+	ticket.run('ticket000000002', 2, 'TASK-2', 'Müll (erledigt)', 'done', 'high', '2026-09-21 00:00:00.000Z', '2026-09-21 09:00:00.000Z', 'rule00000000001', 'u:user00000000001', 'user00000000001', STAMP, STAMP);
+	ticket.run('ticket000000003', 3, 'TASK-3', 'Müll', 'open', 'high', '2026-09-28 00:00:00.000Z', '', 'rule00000000001', 'u:user00000000001', 'user00000000001', STAMP, STAMP);
+	ticket.run('ticket000000004', 4, 'TASK-4', 'Ohne Serie', 'in_progress', 'low', '', '', '', 'u:user00000000001', 'user00000000001', STAMP, STAMP);
+}
+
+describe('migration rollback of E5 (package 2)', () => {
+	it(
+		'keeps tickets unchanged and pauses rules without a rhythm, there and back',
+		async () => {
+			const e5 = MIGRATION_FILES.slice(MIGRATION_FILES.indexOf(E5_FIRST_MIGRATION));
+			expect(e5.slice(0, 2)).toEqual([E5_FIRST_MIGRATION, '1790201610_tickets_open_recurrence.js']);
+
+			await withTempDataDir(async ({ dataDir, args }) => {
+				await migrate(args, 'up');
+				await migrate(args, 'down', String(e5.length));
+				withDatabase(dataDir, insertPreE5Data);
+				const before = withDatabase(dataDir, snapshot);
+
+				const up = await migrate(args, 'up');
+				expect(appliedFiles(up, 'Applied')).toEqual(e5);
+				const migrated = withDatabase(dataDir, snapshot);
+				expect(migrated.tickets).toEqual(before.tickets);
+				expect(migrated.users).toEqual(before.users);
+				// The base fields stay, except that a rule without a rhythm is paused.
+				expect(withoutFields(migrated.recurrence_rules, [...E5_RULE_FIELDS, 'active'])).toEqual(
+					withoutFields(before.recurrence_rules, ['active'])
+				);
+				expect(
+					migrated.recurrence_rules.map(({ id, active, freq, interval, weekdays, month_day, anchor, lead_days, scope, last_hint }) => ({
+						id,
+						active,
+						freq,
+						interval,
+						weekdays,
+						month_day,
+						anchor,
+						lead_days,
+						scope,
+						last_hint
+					}))
+				).toEqual([
+					{ id: 'rule00000000001', active: 0, freq: '', interval: 0, weekdays: '[]', month_day: 0, anchor: '', lead_days: 3, scope: 'u:user00000000001', last_hint: INCOMPLETE_HINT },
+					{ id: 'rule00000000002', active: 0, freq: '', interval: 0, weekdays: '[]', month_day: 0, anchor: '', lead_days: 3, scope: 'h:household000001', last_hint: INCOMPLETE_HINT }
+				]);
+
+				// A second open instance of the rule is refused by the partial index; done ones are not.
+				withDatabase(dataDir, (db) => {
+					const insert = db.prepare(
+						'INSERT INTO tickets (id, number, key, title, status, priority, recurrence, scope, owner, created, updated) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+					);
+					expect(() =>
+						insert.run('ticket000000005', 5, 'TASK-5', 'Zweite', 'open', 'low', 'rule00000000001', 'u:user00000000001', 'user00000000001', STAMP, STAMP)
+					).toThrow(/UNIQUE constraint failed/);
+					insert.run('ticket000000006', 6, 'TASK-6', 'Erledigt', 'done', 'low', 'rule00000000001', 'u:user00000000001', 'user00000000001', STAMP, STAMP);
+					db.prepare('DELETE FROM tickets WHERE id = ?').run('ticket000000006');
+				});
+
+				const down = await migrate(args, 'down', String(e5.length));
+				expect(appliedFiles(down, 'Reverted')).toEqual([...e5].reverse());
+				const reverted = withDatabase(dataDir, snapshot);
+				expect(reverted.tickets).toEqual(before.tickets);
+				expect(reverted.users).toEqual(before.users);
+				expect(reverted.recurrence_rules).toEqual(withoutFields(migrated.recurrence_rules, E5_RULE_FIELDS));
+			});
+		},
+		60_000
+	);
+
+	it(
+		'keeps only the newest open ticket of a rule linked when older data has several',
+		async () => {
+			const e5 = MIGRATION_FILES.slice(MIGRATION_FILES.indexOf(E5_FIRST_MIGRATION));
+			await withTempDataDir(async ({ dataDir, args }) => {
+				await migrate(args, 'up');
+				await migrate(args, 'down', String(e5.length));
+				withDatabase(dataDir, (db) => {
+					insertPreE5Data(db);
+					db.prepare(
+						'INSERT INTO tickets (id, number, key, title, status, priority, recurrence, scope, owner, created, updated) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+					).run('ticket000000009', 9, 'TASK-9', 'Später', 'waiting', 'low', 'rule00000000001', 'u:user00000000001', 'user00000000001', '2026-09-02 10:00:00.000Z', STAMP);
+				});
+				const before = withDatabase(dataDir, snapshot);
+
+				await migrate(args, 'up');
+				const migrated = withDatabase(dataDir, snapshot);
+				const byId = Object.fromEntries(migrated.tickets.map((ticket) => [ticket.id, ticket]));
+				// TASK-3 (older, open) leaves the series; TASK-9 (newest open) and the done ones stay.
+				expect(byId.ticket000000003.recurrence).toBe('');
+				expect(byId.ticket000000009.recurrence).toBe('rule00000000001');
+				expect(byId.ticket000000001.recurrence).toBe('rule00000000001');
+				expect(byId.ticket000000002.recurrence).toBe('rule00000000001');
+				expect(withoutFields(migrated.tickets, ['recurrence'])).toEqual(withoutFields(before.tickets, ['recurrence']));
+			});
+		},
+		60_000
+	);
+});

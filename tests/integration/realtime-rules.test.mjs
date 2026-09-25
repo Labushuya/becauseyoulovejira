@@ -129,3 +129,41 @@ describe('realtime subscriptions on inbox_items', () => {
 		expect(c.events).toEqual([]);
 	});
 });
+
+describe('realtime subscriptions on recurrence_rules (E5 plan, package 2)', () => {
+	let s;
+
+	beforeAll(async () => {
+		s = await createScenario();
+	});
+
+	afterAll(async () => {
+		for (const client of [s?.a, s?.b, s?.c]) {
+			await client?.realtime.unsubscribe();
+		}
+	});
+
+	it('delivers no events about rules outside the own scopes', async () => {
+		const a = await subscribeTickets(s.a, 'recurrence_rules');
+		const b = await subscribeTickets(s.b, 'recurrence_rules');
+		const c = await subscribeTickets(s.c, 'recurrence_rules');
+		const rules = s.a.collection('recurrence_rules');
+
+		const aPrivate = await rules.create(ownedPayload('recurrence_rules', s.ids.a));
+		await rules.update(aPrivate.id, { active: false });
+		const aH1 = await rules.create(ownedPayload('recurrence_rules', s.ids.a, s.h1.id));
+		await rules.delete(aPrivate.id);
+		const last = await rules.create(ownedPayload('recurrence_rules', s.ids.a, s.h1.id));
+
+		await a.waitFor('create', aPrivate.id);
+		await a.waitFor('update', aPrivate.id);
+		await a.waitFor('delete', aPrivate.id);
+		await a.waitFor('create', last.id);
+		await b.waitFor('create', aH1.id);
+		await b.waitFor('create', last.id);
+		await new Promise((resolve) => setTimeout(resolve, QUIET_PERIOD_MS));
+
+		expect(b.events.filter((event) => event.id === aPrivate.id)).toEqual([]);
+		expect(c.events).toEqual([]);
+	});
+});
