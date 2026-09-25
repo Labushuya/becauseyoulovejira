@@ -7,6 +7,7 @@ import { dueBucket, type DueBucket } from './filter';
 import { PRIORITY_LABELS, STATUS_LABELS } from './labels';
 import { NO_PROJECT, type Grouping } from './list-query';
 import { compareTitles, type ResolveProject } from './ordering';
+import { SOURCE_FAMILIES, SOURCE_FAMILY_LABELS, sourceFamily, type SourceFamily } from './source';
 import { PRIORITIES, STATUSES } from './status';
 import type { ProjectRef, TicketSummary } from './ticket';
 
@@ -18,7 +19,8 @@ export const GROUPING_LABELS: Readonly<Record<Grouping, string>> = Object.freeze
 	status: 'Status',
 	priority: 'Priorität',
 	project: 'Projekt',
-	due: 'Fälligkeit'
+	due: 'Fälligkeit',
+	source: 'Quelle'
 });
 
 /** Group of tickets without a project; always last. */
@@ -46,7 +48,10 @@ export interface TicketGroup<T> {
 	tickets: T[];
 }
 
-export type GroupableTicket = Pick<TicketSummary, 'status' | 'priority' | 'due' | 'project'>;
+export type GroupableTicket = Pick<
+	TicketSummary,
+	'status' | 'priority' | 'due' | 'project' | 'source'
+>;
 
 /** Tickets per key in the input order. */
 function collect<T>(tickets: readonly T[], keyOf: (ticket: T) => string): Map<string, T[]> {
@@ -95,7 +100,8 @@ function projectGroups<T>(
 /**
  * Splits already sorted tickets into groups (T-7): status in the order of work, priority urgent
  * first, project by name with "Ohne Projekt" last, due date overdue · today · next 7 days ·
- * later · without date. `today` is the Berlin calendar date.
+ * later · without date, source in the order of the families (ADR-0019 section 3). `today` is the
+ * Berlin calendar date.
  */
 export function groupTickets<T extends GroupableTicket>(
 	tickets: readonly T[],
@@ -123,6 +129,12 @@ export function groupTickets<T extends GroupableTicket>(
 				collect(tickets, (ticket) => dueBucket(ticket.due, today)),
 				DUE_GROUP_ORDER,
 				(key) => DUE_GROUP_LABELS[key as DueBucket]
+			);
+		case 'source':
+			return inOrder(
+				collect(tickets, (ticket) => sourceFamily(ticket.source)),
+				SOURCE_FAMILIES,
+				(key) => SOURCE_FAMILY_LABELS[key as SourceFamily]
 			);
 	}
 }

@@ -90,13 +90,14 @@ describe('parseListQuery', () => {
 	it('combines every group', () => {
 		expect(
 			parse(
-				`status=waiting&prio=high&faellig=bald&projekt=${PROJECT_ID}&tag=${TAG_ID}&q=Auto` +
-					'&sort=-faellig&gruppe=projekt&erledigte=1'
+				`status=waiting&prio=high&faellig=bald&quelle=chat&projekt=${PROJECT_ID}&tag=${TAG_ID}` +
+					'&q=Auto&sort=-faellig&gruppe=projekt&erledigte=1'
 			)
 		).toEqual({
 			status: 'waiting',
 			priority: 'high',
 			due: 'soon',
+			source: 'chat',
 			project: PROJECT_ID,
 			tag: TAG_ID,
 			search: 'Auto',
@@ -159,12 +160,13 @@ describe('serializeListQuery', () => {
 			search: 'Öl wechseln',
 			tag: TAG_ID,
 			project: NO_PROJECT,
+			source: 'calendar',
 			due: 'overdue',
 			priority: 'urgent',
 			status: 'backlog'
 		};
 		expect(serializeListQuery(full)).toBe(
-			`?status=backlog&prio=urgent&faellig=ueberfaellig&projekt=ohne&tag=${TAG_ID}` +
+			`?status=backlog&prio=urgent&faellig=ueberfaellig&quelle=kalender&projekt=ohne&tag=${TAG_ID}` +
 				'&q=%C3%96l+wechseln&sort=erstellt&gruppe=faellig&erledigte=1'
 		);
 	});
@@ -210,7 +212,9 @@ describe('serializeListQuery', () => {
 		'q=100%25',
 		'sort=-key&gruppe=prio',
 		'erledigte=1',
-		`status=done&prio=low&faellig=bald&projekt=${PROJECT_ID}&tag=${TAG_ID}&q=a%2Bb&sort=faellig&gruppe=status&erledigte=1`
+		'quelle=manuell',
+		'faellig=heute&quelle=chat&gruppe=quelle',
+		`status=done&prio=low&faellig=bald&quelle=mail&projekt=${PROJECT_ID}&tag=${TAG_ID}&q=a%2Bb&sort=faellig&gruppe=status&erledigte=1`
 	])('round trip of "%s" is stable', (search) => {
 		const once = normalize(search);
 		expect(once).toBe(search === '' ? '' : `?${search}`);
@@ -224,6 +228,7 @@ describe('withFilter, resetFilters, hasFilters', () => {
 		status: 'open',
 		priority: 'high',
 		due: 'today',
+		source: 'link',
 		project: PROJECT_ID,
 		tag: TAG_ID,
 		search: 'Auto',
@@ -271,5 +276,38 @@ describe('activeSearch (E3 plan, package 11)', () => {
 		expect(activeSearch({ search: 'M' })).toBeNull();
 		expect(activeSearch({ search: 'Mi' })).toBe('Mi');
 		expect(activeSearch(parseListQuery(new URLSearchParams('q=%20Miete%20')))).toBe('Miete');
+	});
+});
+
+describe('list query: source (E4 plan, package 9; ADR-0019)', () => {
+	const read = (search: string) => parseListQuery(new URLSearchParams(search));
+
+	it('reads the families of the URL and ignores unknown, empty or repeated values', () => {
+		expect(read('quelle=manuell').source).toBe('manual');
+		expect(read('quelle=link').source).toBe('link');
+		expect(read('quelle=mail').source).toBe('mail');
+		expect(read('quelle=kalender').source).toBe('calendar');
+		expect(read('quelle=chat').source).toBe('chat');
+		expect(read('quelle=notion').source).toBe('notion');
+		expect(read('quelle=eml').source).toBeNull();
+		expect(read('quelle=').source).toBeNull();
+		expect(read('quelle=mail&quelle=chat').source).toBeNull();
+		expect(read('gruppe=quelle').grouping).toBe('source');
+	});
+
+	it('keeps old addresses without quelle unchanged', () => {
+		const old = 'status=open&prio=high&faellig=bald&gruppe=projekt';
+		expect(read(old)).toEqual({ ...read(old), source: null });
+		expect(serializeListQuery(read(old))).toBe(`?${old}`);
+	});
+
+	it('counts the source as filter that "Zurücksetzen" clears', () => {
+		const withSource = {
+			...EMPTY_LIST_QUERY,
+			source: 'mail' as const,
+			grouping: 'source' as const
+		};
+		expect(hasFilters(withSource)).toBe(true);
+		expect(resetFilters(withSource)).toEqual({ ...EMPTY_LIST_QUERY, grouping: 'source' });
 	});
 });

@@ -203,7 +203,7 @@ describe('filter bar', () => {
 		const names = new Set(
 			(screen.getAllByRole('radio') as HTMLInputElement[]).map((radio) => radio.name)
 		);
-		expect(names.size).toBe(3);
+		expect(names.size).toBe(4);
 	});
 });
 
@@ -290,5 +290,41 @@ describe('filter bar: search (E3 plan, package 11)', () => {
 		await fireEvent.click(screen.getByRole('button', { name: 'Zurücksetzen' }));
 
 		expect(lastTarget()).toBe('/?gruppe=status');
+	});
+});
+
+describe('filter bar: source (E4 plan, package 9; ADR-0019 section 2)', () => {
+	it('offers the chip group "Quelle" after "Fällig", without Notion', async () => {
+		await showBar();
+		const legends = screen
+			.getAllByRole('group')
+			.map((entry) => entry.querySelector('legend')?.textContent);
+		expect(legends.indexOf('Quelle')).toBe(legends.indexOf('Fällig') + 1);
+		expect(
+			within(group('Quelle'))
+				.getAllByRole('radio')
+				.map((radio) => radio.parentElement?.textContent?.trim())
+		).toEqual(['Alle', 'Manuell', 'Web-Link', 'Mail', 'Kalender', 'Chat']);
+	});
+
+	it.each([
+		['Manuell', '/?quelle=manuell'],
+		['Mail', '/?quelle=mail'],
+		['Kalender', '/?quelle=kalender'],
+		['Chat', '/?quelle=chat']
+	])('chip %s sets %s', async (chip, target) => {
+		await showBar();
+		await fireEvent.click(within(group('Quelle')).getByRole('radio', { name: chip }));
+		expect(lastTarget()).toBe(target);
+	});
+
+	it('shows the source of the URL and clears it with "Zurücksetzen"', async () => {
+		await showBar('/?faellig=heute&quelle=link&gruppe=quelle');
+		expect(within(group('Quelle')).getByRole('radio', { name: 'Web-Link' })).toHaveProperty(
+			'checked',
+			true
+		);
+		await fireEvent.click(screen.getByRole('button', { name: 'Zurücksetzen' }));
+		expect(lastTarget()).toBe('/?gruppe=quelle');
 	});
 });

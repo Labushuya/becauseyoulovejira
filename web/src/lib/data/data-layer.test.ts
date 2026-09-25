@@ -47,7 +47,37 @@ describe('web/src/lib/data', () => {
 
 	it.each(modules)('%s builds every filter with pb.filter()', (name) => {
 		for (const [, value] of read(name).matchAll(/\bfilter:\s*([^\n]+)/g)) {
-			expect(value, `${name}: filter ${value}`).toMatch(/^pb\.filter\(('[^'`$+]*'|[A-Z_]+),/);
+			expect(value, `${name}: filter ${value}`).toMatch(
+				/^pb\.filter\(('[^'`$+]*'|[A-Z_]+|[a-z]\w*Expression\(\w+\)),/
+			);
+		}
+	});
+
+	it.each(modules)('%s chooses filter expressions only among constants', (name) => {
+		// A function *Expression (E4 package 9: the source clause joins only when a source is
+		// chosen) may only pick and join constants, so every value still reaches the server as a
+		// parameter of pb.filter().
+		const code = read(name);
+		for (const [, fn = ''] of code.matchAll(/\bfilter:\s*pb\.filter\(([a-z]\w*Expression)\(/g)) {
+			const body = new RegExp(
+				`^function ${fn}\\([^)]*\\): string \\{\\n([\\s\\S]*?)\\n\\}$`,
+				'm'
+			).exec(code)?.[1];
+			expect(body, `${name}: definition of ${fn}`).toBeDefined();
+			const shape = (body ?? '').replace(/\$\{[A-Z_]+\}/g, 'C').replace(/\b[A-Z_]{2,}\b/g, 'C');
+			expect(shape.trim(), `${name}: ${fn}`).toMatch(
+				/^return query\.\w+ === null \? C : `C( && C)*`;$/
+			);
+			for (const [, constant = ''] of (body ?? '').matchAll(/\b([A-Z_]{2,})\b/g)) {
+				const definition = new RegExp(
+					`^const ${constant} = \\[\\n([\\s\\S]*?)\\n\\]\\.join\\(' && '\\);$`,
+					'm'
+				).exec(code);
+				expect(definition, `${name}: definition of ${constant}`).not.toBeNull();
+				for (const line of definition?.[1]?.split('\n') ?? []) {
+					expect(line, `${name}: ${constant}`).toMatch(/^\t'[^'`$+]*',?$/);
+				}
+			}
 		}
 	});
 

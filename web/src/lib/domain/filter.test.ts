@@ -20,6 +20,7 @@ function ticket(overrides: Partial<FilterableTicket> = {}): FilterableTicket {
 		due: null,
 		projectId: null,
 		tagIds: [],
+		source: null,
 		...overrides
 	};
 }
@@ -181,5 +182,34 @@ describe('matchesFilter', () => {
 			showDone: true
 		});
 		expect(matchesFilter(ticket(), view, TODAY)).toBe(true);
+	});
+});
+
+describe('matchesFilter: source (E4 plan, package 9; ADR-0019 section 2)', () => {
+	it.each([
+		[null, 'manual'],
+		['manual', 'manual'],
+		['quick', 'manual'],
+		['clipboard', 'manual'],
+		['link', 'link'],
+		['eml', 'mail'],
+		['mail', 'mail'],
+		['ics', 'calendar'],
+		['calendar', 'calendar'],
+		['whatsapp', 'chat'],
+		['telegram', 'chat'],
+		['notion', 'notion']
+	] as const)('puts the source %s into the family %s only', (source, family) => {
+		const entry = ticket({ source });
+		for (const other of ['manual', 'link', 'mail', 'calendar', 'chat', 'notion'] as const) {
+			expect(matchesFilter(entry, query({ source: other }), TODAY), other).toBe(other === family);
+		}
+		expect(matchesFilter(entry, query({ source: null }), TODAY)).toBe(true);
+	});
+
+	it('combines the source with the other filters', () => {
+		const mail = ticket({ source: 'eml', priority: 'high' });
+		expect(matchesFilter(mail, query({ source: 'mail', priority: 'high' }), TODAY)).toBe(true);
+		expect(matchesFilter(mail, query({ source: 'mail', priority: 'low' }), TODAY)).toBe(false);
 	});
 });

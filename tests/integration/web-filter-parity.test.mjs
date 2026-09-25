@@ -4,11 +4,16 @@
 // none, with and without project and tags) and of filter combinations. With a search, the client
 // side adds the reference rule of ADR-0013 section 2 (title, description or key contain the
 // text, ASCII letters regardless of case), because the list does not load the description.
+// Since E4 package 9 the matrix has done tickets of every source (converted from inbox entries of
+// every channel, and direct ones with manual, quick and without source) for the chip "Quelle".
 
 import { beforeAll, describe, expect, it } from 'vitest';
 import { superuserClient } from '../support/api.mjs';
-import { createOwner, uniqueCode } from '../support/scenario.mjs';
-import { listDoneTickets, listOpenTickets } from '../../web/src/lib/data/tickets.ts';
+import { createOwner, uniqueCode, uniqueSuffix } from '../support/scenario.mjs';
+import { createItem } from '../../web/src/lib/data/inbox.ts';
+import { createTicket, listDoneTickets, listOpenTickets } from '../../web/src/lib/data/tickets.ts';
+import { INBOX_CHANNELS } from '../../web/src/lib/domain/inbox.ts';
+import { SOURCE_FAMILIES } from '../../web/src/lib/domain/source.ts';
 import { addDays } from '../../web/src/lib/domain/berlin-date.ts';
 import { matchesFilter } from '../../web/src/lib/domain/filter.ts';
 import {
@@ -33,6 +38,39 @@ const TEXTS = [
 	{ title: 'Steuer 500 Euro' }
 ];
 const SEARCHES = ['miete', 'NEBENKOSTEN', '50%', '500', 'TASK-1', '_', 'M'];
+
+/** Message IDs of the Telegram entries. */
+let messageNumber = 0;
+
+/** Inbox draft of a channel with the fields its duplicate key needs (ADR-0014 section 3). */
+function channelDraft(channel) {
+	const suffix = uniqueSuffix();
+	const draft = { channel, kind: 'todo', title: `Aus ${channel} ${suffix}` };
+	switch (channel) {
+		case 'link':
+			return { ...draft, kind: 'link', sourceUrl: `https://example.com/${suffix}` };
+		case 'eml':
+		case 'mail':
+			return { ...draft, kind: 'mail', sourceRef: `<${suffix}@example.com>` };
+		case 'ics':
+		case 'calendar':
+			return { ...draft, kind: 'event', sourceRef: `uid-${suffix}` };
+		case 'telegram':
+			return { ...draft, kind: 'message', sourceRef: `42:${(messageNumber += 1)}` };
+		case 'whatsapp':
+			return {
+				...draft,
+				kind: 'message',
+				sourceDate: '2026-09-20 10:00:00.000Z',
+				body: `Nachricht ${suffix}`,
+				sourceMeta: { chat: 'Familie', sender: 'Ben' }
+			};
+		case 'notion':
+			return { ...draft, sourceRef: `page-${suffix}` };
+		default:
+			return draft;
+	}
+}
 
 function stored(offset) {
 	return offset === null ? '' : `${addDays(TODAY, offset)} 00:00:00.000Z`;
@@ -82,12 +120,45 @@ describe('web filter parity: server expression and matchesFilter', () => {
 			const record = await owner.ticket(draft);
 			texts.set(record.id, [record.title, record.description, record.key]);
 		}
+		// Done tickets of every source: converted from an entry of each channel (two each, with
+		// rotating priority), and direct ones with manual and quick.
+		const priorities = ['low', 'high'];
+		for (const channel of INBOX_CHANNELS) {
+			for (const priority of priorities) {
+				const outcome = await createItem(owner.client, channelDraft(channel));
+				if (outcome.kind !== 'created') throw new Error(`no entry for ${channel}`);
+				const ticket = await createTicket(
+					owner.client,
+					{ ...sourceTicket(), priority },
+					{ origin: { sourceItem: outcome.item.id } }
+				);
+				texts.set(ticket.id, [ticket.title, ticket.description, ticket.key]);
+				drafts.push(ticket);
+			}
+		}
+		for (const source of ['manual', 'quick']) {
+			const ticket = await createTicket(owner.client, sourceTicket(), { origin: { source } });
+			texts.set(ticket.id, [ticket.title, ticket.description, ticket.key]);
+			drafts.push(ticket);
+		}
 
 		const open = await listOpenTickets(owner.client);
 		const done = await listDoneTickets(owner.client, 1, { perPage: 500 });
 		tickets = [...open, ...done.items];
 		expect(tickets).toHaveLength(drafts.length);
 	});
+
+	function sourceTicket() {
+		return {
+			title: `Quelle ${uniqueSuffix()}`,
+			description: '',
+			status: 'done',
+			priority: 'medium',
+			due: null,
+			project: null,
+			tags: []
+		};
+	}
 
 	async function serverIds(query) {
 		const page = await listDoneTickets(owner.client, 1, {
@@ -120,7 +191,9 @@ describe('web filter parity: server expression and matchesFilter', () => {
 
 	it('returns every done ticket and nothing else without filters', async () => {
 		const ids = await serverIds(EMPTY_LIST_QUERY);
-		expect(ids).toHaveLength(PRIORITIES.length * DUE_OFFSETS.length * 3);
+		expect(ids).toHaveLength(
+			PRIORITIES.length * DUE_OFFSETS.length * 3 + INBOX_CHANNELS.length * 2 + 2
+		);
 		expect(ids).toEqual(clientIds(EMPTY_LIST_QUERY));
 	});
 
@@ -168,6 +241,20 @@ describe('web filter parity: server expression and matchesFilter', () => {
 		expect((await serverIds({ ...EMPTY_LIST_QUERY, search: 'nebenkosten' })).length).toBe(
 			PRIORITIES.length * DUE_OFFSETS.length * 3 / TEXTS.length
 		);
+	});
+
+	it('agrees for every source family, alone and with other filters (E4 package 9)', async () => {
+		const sources = new Set(tickets.map((ticket) => ticket.source));
+		expect([...sources].sort()).toEqual([null, ...INBOX_CHANNELS].sort());
+		for (const source of SOURCE_FAMILIES) {
+			await expectParity({ source });
+			await expectParity({ source, priority: 'high' });
+			await expectParity({ source, due: 'none', project: NO_PROJECT });
+			await expectParity({ source, search: 'Quelle' });
+		}
+		// "Manuell" includes the tickets from before E4 (no source).
+		const manual = await serverIds({ ...EMPTY_LIST_QUERY, source: 'manual' });
+		expect(manual.length).toBe(PRIORITIES.length * DUE_OFFSETS.length * 3 + 3 * 2 + 2);
 	});
 
 	it('ignores sort, grouping and the switch', async () => {

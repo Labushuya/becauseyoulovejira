@@ -3,6 +3,7 @@
 // module does not know stay untouched when writing.
 
 import { SORT_KEYS, type SortKey, type SortSpec } from './ordering';
+import { SOURCE_FAMILIES, SOURCE_FAMILY_VALUES, type SourceFamily } from './source';
 import { PRIORITIES, STATUSES, type Priority, type Status } from './status';
 
 /** Due filter (T-6): overdue, today, soon (tomorrow to today + SOON_DAYS), without a date. */
@@ -10,7 +11,7 @@ export const DUE_FILTERS = ['overdue', 'today', 'soon', 'none'] as const;
 export type DueFilter = (typeof DUE_FILTERS)[number];
 
 /** Groupings of the table (T-7); domain/grouping.ts groups by them. */
-export const GROUPINGS = ['status', 'priority', 'project', 'due'] as const;
+export const GROUPINGS = ['status', 'priority', 'project', 'due', 'source'] as const;
 export type Grouping = (typeof GROUPINGS)[number];
 
 /** Value of the project filter for tickets without a project. */
@@ -33,6 +34,8 @@ export interface ListQuery {
 	status: Status | null;
 	priority: Priority | null;
 	due: DueFilter | null;
+	/** Source family (ADR-0019 section 2); tickets without a source count as "manual". */
+	source: SourceFamily | null;
 	/** Project record ID or NO_PROJECT. */
 	project: string | null;
 	/** Tag record ID. */
@@ -47,13 +50,22 @@ export interface ListQuery {
 }
 
 /** The filters "Zurücksetzen" clears (T-6); sort, grouping and the switch are view settings. */
-export const FILTER_KEYS = ['status', 'priority', 'due', 'project', 'tag', 'search'] as const;
+export const FILTER_KEYS = [
+	'status',
+	'priority',
+	'due',
+	'source',
+	'project',
+	'tag',
+	'search'
+] as const;
 export type FilterKey = (typeof FILTER_KEYS)[number];
 
 export const EMPTY_LIST_QUERY: Readonly<ListQuery> = Object.freeze({
 	status: null,
 	priority: null,
 	due: null,
+	source: null,
 	project: null,
 	tag: null,
 	search: null,
@@ -67,6 +79,7 @@ export const LIST_PARAMS = Object.freeze({
 	status: 'status',
 	priority: 'prio',
 	due: 'faellig',
+	source: 'quelle',
 	project: 'projekt',
 	tag: 'tag',
 	search: 'q',
@@ -99,7 +112,8 @@ const GROUPING_VALUES: Readonly<Record<Grouping, string>> = Object.freeze({
 	status: 'status',
 	priority: 'prio',
 	project: 'projekt',
-	due: 'faellig'
+	due: 'faellig',
+	source: 'quelle'
 });
 
 /** Prefix of a sort value for the opposite of the natural direction. */
@@ -148,6 +162,7 @@ export function parseListQuery(params: URLSearchParams): ListQuery {
 		status: oneOf(STATUSES, single(params, LIST_PARAMS.status)),
 		priority: oneOf(PRIORITIES, single(params, LIST_PARAMS.priority)),
 		due: keyOf(DUE_FILTERS, DUE_VALUES, single(params, LIST_PARAMS.due)),
+		source: keyOf(SOURCE_FAMILIES, SOURCE_FAMILY_VALUES, single(params, LIST_PARAMS.source)),
 		project: project === NO_PROJECT ? NO_PROJECT : parseRecordId(project),
 		tag: parseRecordId(single(params, LIST_PARAMS.tag)),
 		search: parseSearch(single(params, LIST_PARAMS.search)),
@@ -164,6 +179,7 @@ function queryEntries(query: ListQuery): [string, string][] {
 		[LIST_PARAMS.status, query.status],
 		[LIST_PARAMS.priority, query.priority],
 		[LIST_PARAMS.due, query.due === null ? null : DUE_VALUES[query.due]],
+		[LIST_PARAMS.source, query.source === null ? null : SOURCE_FAMILY_VALUES[query.source]],
 		[LIST_PARAMS.project, query.project],
 		[LIST_PARAMS.tag, query.tag],
 		[LIST_PARAMS.search, search],
@@ -212,6 +228,7 @@ export function resetFilters(query: ListQuery): ListQuery {
 		status: null,
 		priority: null,
 		due: null,
+		source: null,
 		project: null,
 		tag: null,
 		search: null

@@ -1,7 +1,8 @@
 // Source families (ADR-0019 section 1): the way a ticket or inbox entry came in, grouped by what
 // it is for the user, not by the technical channel (a mail is a mail, file or mailbox). Pure.
-// The inbox uses the families as chips from E4 package 3; filter, grouping and symbol of the
-// ticket table follow in package 9.
+// The inbox uses the families as chips (E4 package 3), the ticket table as chips, grouping and
+// symbol in the title cell (package 9). app/pb_hooks/lib/source.js keeps the channel list;
+// tests/unit/web-source.test.mjs checks that every channel there has exactly one family here.
 
 import type { InboxChannel } from './inbox';
 
@@ -48,6 +49,19 @@ const FAMILY_OF: Readonly<Record<InboxChannel, SourceFamily>> = Object.freeze({
 	whatsapp: 'chat',
 	telegram: 'chat',
 	notion: 'notion'
+});
+
+/**
+ * Text of the symbol in the title cell, read after the key ("aus Mail"); "Manuell" has no symbol
+ * (ADR-0019 section 4).
+ */
+export const SOURCE_FAMILY_SYMBOL_TEXT: Readonly<Record<SourceFamily, string>> = Object.freeze({
+	manual: 'manuell',
+	link: 'aus Web-Link',
+	mail: 'aus Mail',
+	calendar: 'aus Kalender',
+	chat: 'aus Chat',
+	notion: 'aus Notion'
 });
 
 /** Family of a source; no source (tickets before E4) counts as "manual" (ADR-0019). */
