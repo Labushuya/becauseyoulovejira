@@ -30,7 +30,8 @@
 		code: `${uid}-code`,
 		variables: `${uid}-variables`,
 		calendar: `${uid}-calendar`,
-		telegram: `${uid}-telegram`
+		telegram: `${uid}-telegram`,
+		webde: `${uid}-webde`
 	};
 
 	const code = $derived(bookmarkletCode(captureUrl));
@@ -222,6 +223,58 @@
 			alles lesen, bei BotFather <code>/setprivacy</code> auf „Disable“ stellen. Widerrufen: bei
 			BotFather <code>/revoke</code> (neuer Token, dann <code>setx</code> und neu starten) oder
 			<code>/deletebot</code>.
+		</p>
+	</section>
+
+	<section class="card" aria-labelledby={ids.webde}>
+		<h3 id={ids.webde}>Web.de-Postfach einrichten</h3>
+		<p>
+			Den Posteingang holt der Mail-Hilfsprozess <code>byl-mail.exe</code> aus dem Ordner
+			<code>app</code> alle 5 Minuten ab, solange die App läuft. Er liest nur: Gelesen-Status, Markierungen
+			und Ordner bleiben, wie sie sind, und er verschickt nichts. In den Eingang kommen nur Mails, die
+			nach der Einrichtung ankommen und deren Betreff ein Stichwort der Verbindung enthält (auf Wunsch
+			auch die ersten 500 Zeichen des Textes).
+		</p>
+		<ol>
+			<li>
+				Bei Web.de anmelden, oben auf deine Initialen und dann „E-Mail-Einstellungen“ klicken. Unter
+				„E-Mail empfangen“ auf „POP3/IMAP“ und den Schalter „POP3- und IMAP-Zugriff erlauben“
+				einschalten; die Sicherheitsabfrage bestätigen.
+			</li>
+			<li>
+				Nutzt du die Zwei-Faktor-Anmeldung: unter „Account verwalten“ → „Login & Sicherheit“ →
+				„Anwendungsspezifische Passwörter verwalten“ ein neues Passwort erstellen (Name etwa
+				„becauseyoulovejira“). Es wird nur einmal angezeigt. Ohne Zwei-Faktor-Anmeldung gilt dein
+				normales Web.de-Passwort.
+			</li>
+			<li>
+				In der Eingabeaufforderung <code>setx BYL_WEBDE_PASSWORD "…"</code> mit diesem Passwort eingeben.
+			</li>
+			<li>
+				Oben unter „Verbindungen“ die Art „Postfach (IMAP)“ mit Anbieter „Web.de“, deiner
+				E-Mail-Adresse als Benutzername und der Variablen <code>BYL_WEBDE_PASSWORD</code> anlegen und
+				Stichwörter eintragen.
+			</li>
+			<li>
+				<code>stop.bat</code> und dann <code>start.bat</code> ausführen. <code>start.bat</code> legt
+				beim ersten Mal den Zugang zwischen App und Hilfsprozess an (Variable
+				<code>BYL_INGEST_TOKEN</code>, nichts zu tun) und startet <code>byl-mail.exe</code>, sobald
+				eine eingeschaltete Postfach-Verbindung besteht.
+			</li>
+			<li>
+				Nach spätestens 5 Minuten zeigt die Verbindung „Letzter Abruf“ und den Hinweis „Erster
+				Abruf“. Ab dann kommen neue Mails mit Stichwort in den Eingang.
+			</li>
+		</ol>
+		<p class="hint">
+			Web.de schaltet den Abruf aus, wenn er längere Zeit nicht genutzt wird. Dann meldet die
+			Verbindung „Anmeldung bei Web.de abgelehnt.“ mit einem Hinweis; den Schalter wieder
+			einschalten, die App muss nicht neu starten. Beim ersten Start von <code>byl-mail.exe</code>
+			können SmartScreen oder ein Virenscanner nachfragen, weil die Datei nicht signiert ist. Das Protokoll
+			steht in
+			<code>app\logs\byl-mail.log</code>, ohne Zugangsdaten und ohne Inhalte der Mails. Widerrufen:
+			das anwendungsspezifische Passwort unter „Login & Sicherheit“ löschen bzw. den Abruf
+			ausschalten und die Variable <code>BYL_WEBDE_PASSWORD</code> entfernen.
 		</p>
 	</section>
 </section>

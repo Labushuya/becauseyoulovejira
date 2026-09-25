@@ -12,12 +12,14 @@ Privates, lokal laufendes Ticket-Dashboard (Linear-/Jira-artiges Ticket-Handling
 becauseyoulovejira/
   app/                 portabler Laufzeitordner (wird kopiert/gesichert)
     pocketbase.exe     gitignored, via scripts/fetch-pocketbase.ps1 (SHA256-geprüft)
+    byl-mail.exe       optionaler Mail-Hilfsprozess, gitignored, via scripts/build-mail-helper.ps1
     pb_hooks/          *.pb.js Hooks, lib/*.js reine CommonJS-Module
     pb_migrations/     handgeschriebene JS-Migrationen
     pb_public/         Frontend-Build (gitignored)
     pb_data/           Daten (gitignored, niemals committen)
     start.bat, start-hidden.vbs, autostart-an.bat, autostart-aus.bat
   web/                 SvelteKit-Quellcode, Build nach ../app/pb_public
+  helpers/mail/        Mail-Hilfsprozess (TypeScript strict, eigenes package.json), Build nach ../../app/byl-mail.exe
   scripts/             Build-/Setup-Skripte (PowerShell)
   tests/               Vitest-Tests (u. a. für app/pb_hooks/lib/recurrence.js)
   docs/                README-Assets, ADRs
@@ -32,7 +34,7 @@ becauseyoulovejira/
 - **Frontend:** SvelteKit 2 + Svelte 5 + TypeScript (strict), `@sveltejs/adapter-static` im SPA-Modus (`ssr = false`, `prerender = false`, `fallback: 'index.html'`), Build nach `app/pb_public`. PocketBase JS SDK für API und Realtime.
 - **Schriften:** Inter (UI) und JetBrains Mono (Ticket-Keys) lokal über `@fontsource-variable/*`. **Keine externen CDNs** – die App muss offline funktionieren.
 - **Tests:** Vitest; Hook-Integrationstests per Skript gegen eine Wegwerf-Instanz (temporäres `--dir`). Die Root-Tests liegen unter `tests/unit` und `tests/integration`, die web-Tests unter `web/src/**/*.test.ts`. `npm test` im Root braucht vorher den Web-Build (`app/pb_public`) für den SPA-Fallback-Test; `scripts\build.ps1` hält die Reihenfolge ein (check → lint → build → test) und wird mit `powershell -ExecutionPolicy Bypass -File scripts\build.ps1` aufgerufen.
-- **Node.js:** nur Dev-Werkzeug (Build/Test), Version 24, portabel in einem beliebigen Ordner (`<Node-24-Ordner>`). Dieser Ordner muss im `PATH` liegen; `scripts\build.ps1` prüft das. Für den Betrieb nicht nötig.
+- **Node.js:** Dev-Werkzeug (Build/Test), Version 24, portabel in einem beliebigen Ordner (`<Node-24-Ordner>`). Dieser Ordner muss im `PATH` liegen; `scripts\build.ps1` prüft das. Zur Laufzeit nur eingebettet im optionalen Mail-Hilfsprozess `app/byl-mail.exe` (Node-24-Single-Executable-Application mit `imapflow` und `postal-mime`, gebündelt mit esbuild, eingespritzt mit postject; [ADR-0016](docs/adr/0016-kanal-architektur-und-mail.md) §4 und §5). Er liest Postfächer nur (IMAP `EXAMINE`, `BODY.PEEK`, keine Flags, kein SMTP) und schreibt nur über die Ingest-Route mit `BYL_INGEST_TOKEN`. Ein installiertes Node ist für den Betrieb nicht nötig.
 
 ### PocketBase-API-Disziplin
 
@@ -155,6 +157,7 @@ Erledigte Tickets treten in der Liste optisch zurück. Schriften: Inter für die
 
 - `start.bat`: startet PocketBase ohne sichtbares Konsolenfenster (kein Doppelstart), wartet auf `/api/health`, öffnet den Standardbrowser auf `http://127.0.0.1:8090`. Alle Pfade relativ (`%~dp0`).
 - `autostart-an.bat` / `autostart-aus.bat`: Verknüpfung im Windows-Autostart-Ordner anlegen bzw. entfernen.
+- `byl-mail.exe`: `start.bat` startet ihn nach PocketBase, wenn die Datei da ist, `BYL_INGEST_TOKEN` gesetzt ist (legt `start.bat` beim ersten Mal an) und PocketBase eine eingeschaltete Mail-Verbindung meldet; `stop.bat` beendet ihn gezielt (Pfad plus Kommandozeile `run --url=http://127.0.0.1:8090`, wie bei `pocketbase.exe`). Protokoll in `app/logs/byl-mail.log`.
 - Backups über die eingebaute PocketBase-Backup-Funktion (Anleitung in der README).
 - Nach Kopie von `app/` auf einen anderen Windows-Rechner lauffähig ohne weitere Schritte.
 
@@ -164,7 +167,7 @@ Erledigte Tickets treten in der Liste optisch zurück. Schriften: Inter für die
 - **Stufe 2 (nur auf ausdrückliche Anweisung; Datenmodell bereits vorbereitet):** Sub-Tickets inkl. Fortschritt und Schalter „blockiert Eltern-Ticket", Abhängigkeiten mit Entsperr-Automation, Board-Ansicht, Browser-Benachrichtigungen bei offenem Tab, Anhänge.
 - **Haushalts-UI:** Etappe E7 zusammen mit Mehrgeräten, Start nach ausdrücklicher Freigabe; bis dahin nur der ausgegraute Umschalter.
 - **Nicht umsetzen:** Epics, Sprints, Story Points, Ticket-Typen ([ADR-0012](docs/adr/0012-plain-ticketing.md)), konfigurierbare Workflows, generischer Regel-Editor, Zeiterfassung, Cloud-Hosting, Offline-Modus.
-- **Kanäle:** Lokale Eingangskanäle ohne fremden Dienst (Schnellerfassung, Zwischenablage, Bookmarklet, `.ics`, `.eml`) ab E4. Externe Dienste (Google Calendar, WhatsApp, Telegram, Notion) sind in Prüfung und kommen nur mit eigener ADR und Freigabe ([ADR-0011](docs/adr/0011-roadmap-e3-bis-e7.md) §2).
+- **Kanäle:** Lokale Eingangskanäle ohne fremden Dienst (Schnellerfassung, Zwischenablage, Bookmarklet, `.ics`, `.eml`, WhatsApp-Export) ab E4. Externe Dienste nur mit eigener ADR und Freigabe ([ADR-0011](docs/adr/0011-roadmap-e3-bis-e7.md) §2): freigegeben sind Google Calendar, Telegram und Web.de per `byl-mail.exe` ([ADR-0016](docs/adr/0016-kanal-architektur-und-mail.md)), Gmail folgt; Notion ist zurückgestellt.
 - Keine Features außerhalb des Scopes, keine spekulativen Abstraktionen. Abweichungen vorher begründen und beim Nutzer anfragen.
 
 ## 11. Regeln für Agenten und Automatisierung auf dem Entwicklungsrechner

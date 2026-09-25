@@ -1,4 +1,5 @@
-﻿# Start, stop and autostart of becauseyoulovejira (E1 plan, package 8) and the admin reset (E1.1).
+﻿# Start, stop and autostart of becauseyoulovejira (E1 plan, package 8), the admin reset (E1.1) and
+# the mail helper byl-mail.exe next to PocketBase (E4 plan, package 11).
 # Called by start.bat, start-hidden.vbs, stop.bat, autostart-an.bat, autostart-aus.bat and
 # admin-zuruecksetzen.bat, always with -NoProfile -ExecutionPolicy Bypass (script execution is
 # disabled on the target machine).
@@ -146,6 +147,67 @@ function Initialize-IngestToken {
     }
 }
 
+function Get-MailConnectionCount {
+    # Asks the app's PocketBase how many switched-on mail connections exist (ingest route with the
+    # token; ConvertFrom-MailConnectionAnswer). No proxy: the token only goes to 127.0.0.1.
+    param([Parameter(Mandatory = $true)][string]$Token)
+
+    $request = [System.Net.WebRequest]::Create("$($BylAppUrl)api/byl/ingest/connections")
+    $request.Proxy = $null
+    $request.Timeout = 5000
+    $request.KeepAlive = $false
+    $request.Headers.Add('Authorization', "Bearer $Token")
+    try {
+        $response = $request.GetResponse()
+    }
+    catch [System.Net.WebException] {
+        $response = $_.Exception.Response
+        if ($null -eq $response) { return -1 }
+    }
+    try {
+        $reader = New-Object System.IO.StreamReader($response.GetResponseStream(), [System.Text.Encoding]::UTF8)
+        return ConvertFrom-MailConnectionAnswer -StatusCode ([int]$response.StatusCode) -Body $reader.ReadToEnd()
+    }
+    finally {
+        $response.Close()
+    }
+}
+
+function Start-MailHelper {
+    # Starts byl-mail.exe next to the running PocketBase when Get-MailHelperDecision says so: the
+    # file exists, the token is set, no own helper runs and there is a switched-on mail connection.
+    # Never breaks the start of the app; a problem only gives a hint without any value.
+    try {
+        Initialize-IngestToken
+        Sync-BylEnvironment
+        $helper = [System.IO.Path]::Combine($AppDir, $BylMailHelperName)
+        $exists = Test-Path -LiteralPath $helper -PathType Leaf
+        $token = [string][Environment]::GetEnvironmentVariable($BylIngestTokenName, 'Process')
+        $tokenSet = -not [string]::IsNullOrWhiteSpace($token)
+        $running = @(Select-MailHelperProcess -Process (Get-ProcessSnapshot) -AppDir $AppDir).Count -gt 0
+        $count = -1
+        if ($exists -and $tokenSet -and -not $running) { $count = Get-MailConnectionCount -Token $token.Trim() }
+        $decision = Get-MailHelperDecision -HelperExists $exists -TokenSet $tokenSet -Running $running -MailConnectionCount $count
+        if ($decision -eq 'Start') {
+            $log = Get-MailHelperLogPath -AppDir $AppDir
+            [void](New-Item -ItemType Directory -Force -Path $log.Directory)
+            $process = Start-Process -FilePath $helper -ArgumentList (Get-MailHelperArgumentString) `
+                -WorkingDirectory $AppDir -WindowStyle Hidden -PassThru `
+                -RedirectStandardOutput $log.Output -RedirectStandardError $log.Error
+            Write-Status "Mail-Hilfsprozess byl-mail.exe gestartet (PID $($process.Id))."
+        }
+        elseif ($decision -eq 'Running') {
+            Write-Status 'Mail-Hilfsprozess byl-mail.exe läuft bereits.'
+        }
+        elseif ($decision -eq 'NoRoute') {
+            Write-Status 'Hinweis: byl-mail.exe startet erst nach einem Neustart der App (stop.bat, dann start.bat).'
+        }
+    }
+    catch {
+        Write-Status "Hinweis: byl-mail.exe konnte nicht gestartet werden ($($_.Exception.GetType().Name))."
+    }
+}
+
 function Invoke-Start {
     $exe = [System.IO.Path]::Combine($AppDir, 'pocketbase.exe')
     if (-not (Test-Path -LiteralPath $exe -PathType Leaf)) {
@@ -174,6 +236,7 @@ function Invoke-Start {
             Start-Process -FilePath $link.Url
             return 2
         }
+        Start-MailHelper
         if (-not $Hidden) {
             Write-Status "Öffne $BylAppUrl ..."
             Open-App
@@ -238,6 +301,7 @@ function Invoke-Start {
     }
 
     Write-Status 'becauseyoulovejira läuft.'
+    Start-MailHelper
     if (-not $Hidden) {
         Write-Status "Öffne $BylAppUrl ..."
         Open-App
@@ -245,37 +309,59 @@ function Invoke-Start {
     return 0
 }
 
-function Invoke-Stop {
-    # Only the app's own instance (Select-AppProcess): never test instances of the harness, never
-    # foreign processes, no taskkill by image name. Stop-Process -Force ends the process hard
-    # (TerminateProcess). SQLite in WAL mode treats that like a crash: committed transactions are
-    # in the WAL and survive, an unfinished one is rolled back on the next open. See README.
-    $own = @(Select-AppProcess -Process (Get-ProcessSnapshot) -AppDir $AppDir)
-    if ($own.Count -eq 0) {
-        Show-Message 'becauseyoulovejira läuft nicht.'
-        return 0
-    }
-    $failed = @()
-    foreach ($candidate in $own) {
+function Stop-OwnProcess {
+    # Stops the processes of $Candidates by process id, each only if $Select still chooses it right
+    # before (the PID could have been reused since the snapshot). Stop-Process -Force ends a process
+    # hard (TerminateProcess): SQLite in WAL mode treats that like a crash (committed transactions
+    # survive, see README), the mail helper only reads and starts its interrupted run again.
+    # Returns the failures as text.
+    param(
+        [AllowEmptyCollection()][object[]]$Candidates,
+        [Parameter(Mandatory = $true)][scriptblock]$Select,
+        [Parameter(Mandatory = $true)][string]$Name
+    )
+
+    $failed = New-Object System.Collections.Generic.List[string]
+    foreach ($candidate in @($Candidates)) {
         $processId = [int]$candidate.ProcessId
-        # Re-check right before stopping: the PID could have been reused since the snapshot.
         $current = @(Get-CimInstance -ClassName Win32_Process -Filter "ProcessId = $processId" -Property ProcessId, Name, ExecutablePath, CommandLine)
-        if (@(Select-AppProcess -Process $current -AppDir $AppDir).Count -eq 0) { continue }
-        Write-Status "Beende PocketBase (PID $processId) ..."
+        if (@(& $Select $current).Count -eq 0) { continue }
+        Write-Status "Beende $Name (PID $processId) ..."
         try {
             Stop-Process -Id $processId -Force
             Wait-Process -Id $processId -Timeout 10 -ErrorAction SilentlyContinue
         }
         catch {
-            $failed += "PID ${processId}: $($_.Exception.Message)"
+            $failed.Add("$Name, PID ${processId}: $($_.Exception.Message)")
             continue
         }
         if (Get-Process -Id $processId -ErrorAction SilentlyContinue) {
-            $failed += "PID ${processId}: läuft nach 10 Sekunden noch"
+            $failed.Add("$Name, PID ${processId}: läuft nach 10 Sekunden noch")
         }
     }
+    return , $failed.ToArray()
+}
+
+function Invoke-Stop {
+    # Only the app's own processes (Select-AppProcess, Select-MailHelperProcess): never test
+    # instances of the harness, never foreign processes, no taskkill by image name. The mail helper
+    # goes first, so it does not report errors of a PocketBase that is gone.
+    $snapshot = Get-ProcessSnapshot
+    $own = @(Select-AppProcess -Process $snapshot -AppDir $AppDir)
+    $helpers = @(Select-MailHelperProcess -Process $snapshot -AppDir $AppDir)
+    if ($own.Count -eq 0 -and $helpers.Count -eq 0) {
+        Show-Message 'becauseyoulovejira läuft nicht.'
+        return 0
+    }
+    $failed = @()
+    $failed += @(Stop-OwnProcess -Candidates $helpers -Name 'byl-mail.exe' -Select {
+            param($Process) Select-MailHelperProcess -Process $Process -AppDir $AppDir
+        })
+    $failed += @(Stop-OwnProcess -Candidates $own -Name 'PocketBase' -Select {
+            param($Process) Select-AppProcess -Process $Process -AppDir $AppDir
+        })
     if ($failed.Count -gt 0) {
-        Show-Message -Kind Error -Text ("PocketBase konnte nicht beendet werden:`n" + ($failed -join "`n"))
+        Show-Message -Kind Error -Text ("becauseyoulovejira konnte nicht beendet werden:`n" + ($failed -join "`n"))
         return 1
     }
     Show-Message 'becauseyoulovejira wurde beendet.'

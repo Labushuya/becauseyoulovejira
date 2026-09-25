@@ -31,6 +31,23 @@ export interface ParsedMail {
 
 export const NO_SUBJECT = '(ohne Betreff)';
 
+/**
+ * Largest mail taken into the inbox, as file or from the mailbox (ADR-0017 section 2; schema of
+ * `original`).
+ */
+export const MAIL_MAX_BYTES = 10 * 1024 * 1024;
+
+/**
+ * Limits of the parser (postal-mime options) against crafted mails. Shared by the SPA (mail files)
+ * and the mail helper (mailboxes), so both ways have the same limits.
+ */
+export const MAIL_PARSER_OPTIONS = Object.freeze({
+	maxNestingDepth: 50,
+	maxHeadersSize: 512 * 1024,
+	maxRfc822NestingDepth: 3,
+	attachmentEncoding: 'arraybuffer' as const
+});
+
 /** Limits of the stable ID and of address lists in `source_meta` (schema: 500, 20 000 bytes). */
 export const SOURCE_REF_MAX_LENGTH = 500;
 const ADDRESS_LIST_MAX_LENGTH = 2000;

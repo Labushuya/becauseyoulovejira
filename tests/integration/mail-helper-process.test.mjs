@@ -1,0 +1,190 @@
+// byl-mail.exe as process (ADR-0016 sections 4 and 5; E4 plan package 11): the executable built by
+// scripts/build-mail-helper.ps1 runs without Node (PATH only with the Windows folders), answers
+// --version and --self-test without network, and fetches through a disposable PocketBase from the
+// fake IMAP server. It survives an unreachable PocketBase and an outage of the mailbox, and after a
+// hard stop and a new start it continues at the saved cursor without duplicates. Its log holds
+// neither access data nor contents of mails.
+
+import { spawn, spawnSync } from 'node:child_process';
+import { randomBytes } from 'node:crypto';
+import { existsSync } from 'node:fs';
+import { join, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { setTimeout as delay } from 'node:timers/promises';
+import PocketBase from 'pocketbase';
+import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
+import { startPocketBase } from '../support/pocketbase-harness.mjs';
+import { FakeImapServer, fakeMail } from '../../helpers/mail/test/fake-imap.ts';
+
+const ROOT_DIR = resolve(fileURLToPath(new URL('../..', import.meta.url)));
+const HELPER = join(ROOT_DIR, 'helpers', 'mail', 'dist', 'byl-mail.exe');
+const SYSTEM_ROOT = process.env.SystemRoot ?? 'C:\\Windows';
+
+const TOKEN = randomBytes(24).toString('base64');
+const PASSWORD = `pw-${randomBytes(8).toString('hex')}`;
+const SUBJECT_SECRET = `Vertraulich ${randomBytes(4).toString('hex')}`;
+
+let instance;
+let superuser;
+let owner;
+let imap;
+const running = new Set();
+
+/** An environment without Node: only the Windows folders in PATH, plus `extra`. */
+function environment(extra = {}) {
+	return {
+		SystemRoot: SYSTEM_ROOT,
+		PATH: `${SYSTEM_ROOT}\\System32;${SYSTEM_ROOT}`,
+		TEMP: process.env.TEMP ?? '',
+		TMP: process.env.TMP ?? '',
+		...extra
+	};
+}
+
+function runOnce(args) {
+	const result = spawnSync(HELPER, args, { env: environment(), encoding: 'utf8', timeout: 60_000, windowsHide: true });
+	return { status: result.status, output: `${result.stdout}${result.stderr}` };
+}
+
+/** Starts the helper with "run"; `output()` is its console output so far. */
+function startHelper(url = instance.url) {
+	const child = spawn(HELPER, ['run', `--url=${url}`], {
+		env: environment({
+			BYL_INGEST_TOKEN: TOKEN,
+			BYL_TEST_MAIL_PASSWORD: PASSWORD,
+			BYL_MAIL_INTERVAL_SECONDS: '1',
+			BYL_MAIL_TEST_IMAP_PORT: String(imap.port)
+		}),
+		windowsHide: true,
+		stdio: ['ignore', 'pipe', 'pipe']
+	});
+	let output = '';
+	child.stdout.on('data', (chunk) => (output += chunk));
+	child.stderr.on('data', (chunk) => (output += chunk));
+	running.add(child);
+	child.once('exit', () => running.delete(child));
+	return { child, output: () => output };
+}
+
+async function stopHelper(helper) {
+	if (helper.child.exitCode !== null) return;
+	const exited = new Promise((resolvePromise) => helper.child.once('exit', resolvePromise));
+	helper.child.kill();
+	await exited;
+}
+
+async function waitFor(check, timeoutMs = 20_000) {
+	const deadline = Date.now() + timeoutMs;
+	for (;;) {
+		const value = await check();
+		if (value) return value;
+		if (Date.now() > deadline) throw new Error('Timed out waiting for the mail helper.');
+		await delay(200);
+	}
+}
+
+let counter = 0;
+function mail(subject) {
+	counter += 1;
+	return imap.add(fakeMail({ subject, body: 'Inhalt der Mail', messageId: `<proc-${counter}-${randomBytes(4).toString('hex')}@example.com>` }));
+}
+
+const items = (box) => owner.pb.collection('inbox_items').getFullList({ filter: `connection = "${box.id}"`, sort: 'created' });
+const connection = (box) => owner.pb.collection('connections').getOne(box.id);
+
+beforeAll(async () => {
+	if (!existsSync(HELPER)) {
+		throw new Error(`${HELPER} is missing. Run scripts\\build-mail-helper.ps1 (scripts\\build.ps1 does it before the tests).`);
+	}
+	instance = await startPocketBase({ env: { BYL_INGEST_TOKEN: TOKEN, BYL_TEST_MAIL_PASSWORD: PASSWORD } });
+	superuser = new PocketBase(instance.url);
+	superuser.autoCancellation(false);
+	await superuser.collection('_superusers').authWithPassword(instance.email, instance.password);
+	const email = `user-${randomBytes(12).toString('hex')}@example.com`;
+	const password = randomBytes(24).toString('base64url');
+	const record = await superuser.collection('users').create({ email, password, passwordConfirm: password });
+	const pb = new PocketBase(instance.url);
+	pb.autoCancellation(false);
+	await pb.collection('users').authWithPassword(email, password);
+	owner = { id: record.id, pb };
+	imap = new FakeImapServer();
+	imap.password = PASSWORD;
+	await imap.start();
+}, 60_000);
+
+afterEach(async () => {
+	for (const child of running) child.kill();
+});
+
+afterAll(async () => {
+	await imap?.stop();
+	await instance?.stop();
+});
+
+describe('byl-mail.exe without Node', () => {
+	it('knows its version and passes the self-test without network', () => {
+		const version = runOnce(['--version']);
+		expect(version).toEqual({ status: 0, output: expect.stringMatching(/^byl-mail \d+\.\d+\.\d+\n$/) });
+		const selfTest = runOnce(['--self-test']);
+		expect(selfTest.status).toBe(0);
+		expect(JSON.parse(selfTest.output)).toMatchObject({ ok: true, node: expect.stringMatching(/^v24\./) });
+	});
+
+	it('refuses unknown commands and a start without token', () => {
+		expect(runOnce(['serve']).status).toBe(2);
+		expect(runOnce(['run', '--url=http://example.com'])).toMatchObject({ status: 2 });
+		const noToken = runOnce(['run']);
+		expect(noToken.status).toBe(1);
+		expect(noToken.output).toMatch(/BYL_INGEST_TOKEN fehlt/);
+	});
+});
+
+describe('byl-mail.exe as process', () => {
+	it('waits while PocketBase is not reachable', async () => {
+		const helper = startHelper('http://127.0.0.1:9');
+		await waitFor(() => /nicht erreichbar/.test(helper.output()));
+		await delay(1500);
+		expect(helper.child.exitCode).toBeNull();
+		await stopHelper(helper);
+	}, 30_000);
+
+	it('fetches, survives an outage of the mailbox and continues after a hard stop', async () => {
+		const box = await superuser.collection('connections').create({
+			owner: owner.id,
+			type: 'mail',
+			label: 'Web.de',
+			enabled: true,
+			secret_env: 'BYL_TEST_MAIL_PASSWORD',
+			settings: { provider: 'webde', user: imap.user, keywords: ['todo'] }
+		});
+		mail('Todo: alt, vor der Einrichtung');
+		let helper = startHelper();
+		await waitFor(async () => (await connection(box)).cursor !== '');
+		mail('Todo: Eins');
+		mail(`${SUBJECT_SECRET} ohne Stichwort`);
+		await waitFor(async () => (await items(box)).length === 1);
+
+		// Hard stop (like stop.bat), new mails and an outage of the mailbox before the restart.
+		await stopHelper(helper);
+		mail('Todo: Zwei');
+		await imap.stop();
+		helper = startHelper();
+		await waitFor(async () => (await connection(box)).last_error !== '');
+		expect(helper.child.exitCode).toBeNull();
+		await imap.start();
+		await waitFor(async () => (await items(box)).length === 2);
+		await waitFor(async () => (await connection(box)).last_error === '');
+		await delay(2500);
+		expect((await items(box)).map((item) => item.title)).toEqual(['Todo: Eins', 'Todo: Zwei']);
+		expect((await connection(box)).cursor).toBe(`1700000000:${imap.mails.at(-1).uid}`);
+		await stopHelper(helper);
+
+		expect(imap.writes()).toEqual([]);
+		expect(imap.flagsUnchanged()).toBe(true);
+		const log = helper.output();
+		expect(log).toMatch(/Postfach "Web.de"/);
+		for (const value of [TOKEN, PASSWORD, SUBJECT_SECRET, 'Inhalt der Mail', 'bert@example.com']) {
+			expect(log).not.toContain(value);
+		}
+	}, 90_000);
+});

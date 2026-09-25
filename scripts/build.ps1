@@ -44,7 +44,14 @@ try {
 		if ($LASTEXITCODE -ne 0) { exit 1 }
 	}
 
-	# Run check
+	# Install mail helper dependencies if node_modules missing (E4 plan, package 11)
+	if (-not (Test-Path 'helpers/mail/node_modules')) {
+		Write-Host "Installing mail helper dependencies..."
+		npm --prefix helpers/mail ci
+		if ($LASTEXITCODE -ne 0) { exit 1 }
+	}
+
+	# Run check (web app and mail helper)
 	Write-Host "Running check..."
 	npm run check
 	if ($LASTEXITCODE -ne 0) { exit 1 }
@@ -59,7 +66,12 @@ try {
 	npm run build
 	if ($LASTEXITCODE -ne 0) { exit 1 }
 
-	# Run tests (root unit and integration tests, then the web tests)
+	# Build the mail helper app/byl-mail.exe and check it without Node (before the tests: they run it)
+	Write-Host "Building mail helper..."
+	& powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot 'build-mail-helper.ps1')
+	if ($LASTEXITCODE -ne 0) { exit 1 }
+
+	# Run tests (root unit, helper and integration tests, then the web tests)
 	Write-Host "Running tests..."
 	npm test
 	if ($LASTEXITCODE -ne 0) { exit 1 }

@@ -2,6 +2,9 @@ node_modules/
 web/.svelte-kit/
 web/build/
 app/pocketbase.exe
+app/byl-mail.exe
+app/byl-mail.exe.old-*
+helpers/mail/dist/
 app/*pb_data*/
 app/pb_public/
 *.log

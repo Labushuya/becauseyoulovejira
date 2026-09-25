@@ -12,6 +12,15 @@ export default defineConfig({
 			},
 			{
 				test: {
+					// The mail helper byl-mail.exe (E4 plan, package 11), against a fake IMAP server on 127.0.0.1.
+					name: 'helper',
+					include: ['helpers/mail/src/**/*.test.ts'],
+					environment: 'node',
+					testTimeout: 20_000
+				}
+			},
+			{
+				test: {
 					name: 'integration',
 					include: ['tests/integration/**/*.test.{js,mjs,ts}'],
 					environment: 'node',

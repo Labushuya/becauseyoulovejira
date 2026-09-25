@@ -66,6 +66,30 @@ const PROCESSES = {
 	unreadable: { ProcessId: 500, Name: 'pocketbase.exe', ExecutablePath: null, CommandLine: null }
 };
 
+/** Mail helpers (E4 plan, package 11), shaped like Win32_Process. */
+const HELPER = `${APP}\\byl-mail.exe`;
+const HELPERS = {
+	own: { ProcessId: 600, Name: 'byl-mail.exe', ExecutablePath: HELPER, CommandLine: `"${HELPER}" run --url=http://127.0.0.1:8090` },
+	ownOtherSpelling: {
+		ProcessId: 601,
+		Name: 'byl-mail.exe',
+		ExecutablePath: 'c:\\program files\\BYL #1\\app\\BYL-MAIL.EXE',
+		CommandLine: '"c:\\program files\\BYL #1\\app\\BYL-MAIL.EXE" run "--url=http://127.0.0.1:8090"'
+	},
+	test: {
+		ProcessId: 602,
+		Name: 'byl-mail.exe',
+		ExecutablePath: 'C:\\repo\\helpers\\mail\\dist\\byl-mail.exe',
+		CommandLine: '"C:\\repo\\helpers\\mail\\dist\\byl-mail.exe" run --url=http://127.0.0.1:53211'
+	},
+	otherPort: { ProcessId: 603, Name: 'byl-mail.exe', ExecutablePath: HELPER, CommandLine: `"${HELPER}" run --url=http://127.0.0.1:53211` },
+	version: { ProcessId: 604, Name: 'byl-mail.exe', ExecutablePath: HELPER, CommandLine: `"${HELPER}" --version` },
+	selfTest: { ProcessId: 605, Name: 'byl-mail.exe', ExecutablePath: HELPER, CommandLine: `"${HELPER}" --self-test run` },
+	noUrl: { ProcessId: 606, Name: 'byl-mail.exe', ExecutablePath: HELPER, CommandLine: `"${HELPER}" run` },
+	pocketbase: PROCESSES.own,
+	unreadable: { ProcessId: 607, Name: 'byl-mail.exe', ExecutablePath: null, CommandLine: null }
+};
+
 const listener = (address, port, owner) => ({ LocalAddress: address, LocalPort: port, OwningProcess: owner });
 
 const PORT_CASES = {
@@ -210,6 +234,29 @@ $result.ingestToken = @{
     helper = $BylMailHelperName
 }
 
+$helpers = @($in.helpers.PSObject.Properties | ForEach-Object { $_.Value })
+$helperSingle = @{}
+foreach ($entry in $in.helpers.PSObject.Properties) {
+    $helperSingle[$entry.Name] = @(Select-MailHelperProcess -Process @($entry.Value) -AppDir $in.appDir).Count
+}
+$decisions = @{}
+foreach ($case in $in.decisions) {
+    $decisions[$case.name] = Get-MailHelperDecision -HelperExists $case.exists -TokenSet $case.token -Running $case.running -MailConnectionCount $case.count
+}
+$answers = @{}
+foreach ($case in $in.answers) {
+    $answers[$case.name] = ConvertFrom-MailConnectionAnswer -StatusCode $case.status -Body $case.body
+}
+$result.mailHelper = @{
+    selectAll = @(Select-MailHelperProcess -Process $helpers -AppDir $in.appDir | ForEach-Object { [int]$_.ProcessId })
+    single = $helperSingle
+    arguments = Get-MailHelperArgumentString
+    argumentsSplit = Split-CommandLine -CommandLine ('byl-mail.exe ' + (Get-MailHelperArgumentString))
+    log = Get-MailHelperLogPath -AppDir $in.appDir
+    decisions = $decisions
+    answers = $answers
+}
+
 $result | ConvertTo-Json -Depth 6 -Compress
 `;
 
@@ -225,7 +272,26 @@ beforeAll(() => {
 			now: NOW,
 			processStart: PROCESS_START,
 			installerLogs: INSTALLER_LOGS,
-			lateLog: installerLog(fakeToken(Math.floor(Date.now() / 1000) + LIFETIME))
+			lateLog: installerLog(fakeToken(Math.floor(Date.now() / 1000) + LIFETIME)),
+			helpers: HELPERS,
+			decisions: [
+				{ name: 'start', exists: true, token: true, running: false, count: 1 },
+				{ name: 'unknownCount', exists: true, token: true, running: false, count: -1 },
+				{ name: 'noConnection', exists: true, token: true, running: false, count: 0 },
+				{ name: 'noRoute', exists: true, token: true, running: false, count: -2 },
+				{ name: 'running', exists: true, token: true, running: true, count: 1 },
+				{ name: 'noToken', exists: true, token: false, running: false, count: 1 },
+				{ name: 'noHelper', exists: false, token: true, running: false, count: 1 }
+			],
+			answers: [
+				{ name: 'two', status: 200, body: '{"items":[{"id":"a"},{"id":"b"}]}' },
+				{ name: 'none', status: 200, body: '{"items":[]}' },
+				{ name: 'noItems', status: 200, body: '{"message":"x"}' },
+				{ name: 'broken', status: 200, body: 'kein json' },
+				{ name: 'noRoute', status: 404, body: '{"message":"Not Found."}' },
+				{ name: 'unauthorized', status: 401, body: '' },
+				{ name: 'unavailable', status: 503, body: '' }
+			]
 		},
 		{ BYL_FUNCTIONS: FUNCTIONS_FILE }
 	);
@@ -363,6 +429,57 @@ describe('ingest token of the mail helper (ADR-0018 section 8)', () => {
 			expect(Buffer.from(value, 'base64')).toHaveLength(24);
 		}
 		expect(result.ingestToken.first).not.toBe(result.ingestToken.second);
+	});
+});
+
+describe('mail helper byl-mail.exe (E4 plan, package 11)', () => {
+	it('selects only the own helper, like the own PocketBase', () => {
+		expect(result.mailHelper.selectAll).toEqual([600, 601]);
+		expect(result.mailHelper.single).toEqual({
+			own: 1,
+			ownOtherSpelling: 1,
+			test: 0,
+			otherPort: 0,
+			version: 0,
+			selfTest: 0,
+			noUrl: 0,
+			pocketbase: 0,
+			unreadable: 0
+		});
+	});
+
+	it('starts the helper for the own PocketBase and logs into app\\logs', () => {
+		expect(result.mailHelper.arguments).toBe('run --url=http://127.0.0.1:8090');
+		expect(result.mailHelper.argumentsSplit.slice(1)).toEqual(['run', '--url=http://127.0.0.1:8090']);
+		expect(result.mailHelper.log).toEqual({
+			Directory: `${APP}\\logs`,
+			Output: `${APP}\\logs\\byl-mail.log`,
+			Error: `${APP}\\logs\\byl-mail.err.log`
+		});
+	});
+
+	it('starts it only with the file, the token and a switched-on mail connection', () => {
+		expect(result.mailHelper.decisions).toEqual({
+			start: 'Start',
+			unknownCount: 'Start',
+			noConnection: 'NoConnection',
+			noRoute: 'NoRoute',
+			running: 'Running',
+			noToken: 'NoToken',
+			noHelper: 'NoHelper'
+		});
+	});
+
+	it('reads the number of mail connections from the answer of PocketBase', () => {
+		expect(result.mailHelper.answers).toEqual({
+			two: 2,
+			none: 0,
+			noItems: -1,
+			broken: -1,
+			noRoute: -2,
+			unauthorized: -1,
+			unavailable: -1
+		});
 	});
 });
 

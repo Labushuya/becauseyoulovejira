@@ -156,6 +156,28 @@ describe('start', () => {
 		expect(sync).not.toMatch(/Write-|Show-Message|Out-|Add-Content|Set-Content/);
 	});
 
+	it('starts the mail helper after PocketBase, also when the app runs already (package 11)', () => {
+		const start = functionBody(control(), 'Invoke-Start');
+		expect(start.match(/Start-MailHelper/g)).toHaveLength(2);
+		expect(start.indexOf('Start-MailHelper')).toBeLessThan(start.indexOf("Write-Status 'becauseyoulovejira läuft.'"));
+		expect(start.lastIndexOf('Start-MailHelper')).toBeGreaterThan(start.indexOf("Write-Status 'becauseyoulovejira läuft.'"));
+		// Not in the first-run branch: before the setup there is no connection.
+		const firstRun = start.slice(start.indexOf('if (Wait-FirstRunSignal'), start.indexOf("Write-Status 'becauseyoulovejira läuft.'"));
+		expect(firstRun).not.toMatch(/Start-MailHelper/);
+		const helper = functionBody(control(), 'Start-MailHelper');
+		expect(helper.indexOf('Initialize-IngestToken')).toBeLessThan(helper.indexOf('Sync-BylEnvironment'));
+		expect(helper.indexOf('Sync-BylEnvironment')).toBeLessThan(helper.indexOf('Start-Process'));
+		expect(helper).toMatch(/Get-MailHelperDecision -HelperExists \$exists -TokenSet \$tokenSet -Running \$running -MailConnectionCount \$count/);
+		expect(helper).toMatch(/Start-Process -FilePath \$helper -ArgumentList \(Get-MailHelperArgumentString\)/);
+		expect(helper).toMatch(/-WindowStyle Hidden/);
+		expect(helper).toMatch(/-RedirectStandardOutput \$log\.Output -RedirectStandardError \$log\.Error/);
+		expect(helper).not.toMatch(/Write-\w+[^\n]*\$token|Exception\.Message/);
+		const count = functionBody(control(), 'Get-MailConnectionCount');
+		expect(count).toMatch(/\$request\.Proxy = \$null/);
+		expect(count).toContain('"$($BylAppUrl)api/byl/ingest/connections"');
+		expect(count).not.toMatch(/Write-|Show-Message/);
+	});
+
 	it('creates the ingest token before handing on the variables and never prints it', () => {
 		const start = functionBody(control(), 'Invoke-Start');
 		expect(start.indexOf('Initialize-IngestToken')).toBeGreaterThan(-1);
@@ -239,9 +261,23 @@ describe('stop', () => {
 
 	it('stops only processes chosen by Select-AppProcess, by process id', () => {
 		const body = functionBody(control(), 'Invoke-Stop');
-		expect(body).toMatch(/Select-AppProcess -Process \(Get-ProcessSnapshot\) -AppDir \$AppDir/);
-		expect(body).toMatch(/Stop-Process -Id \$processId -Force/);
-		expect(body).not.toMatch(/Stop-Process\s+-Name|Get-Process\s+-Name|\|\s*Stop-Process/i);
+		expect(body).toMatch(/\$snapshot = Get-ProcessSnapshot/);
+		expect(body).toMatch(/Select-AppProcess -Process \$snapshot -AppDir \$AppDir/);
+		expect(body).toMatch(/Stop-OwnProcess -Candidates \$own -Name 'PocketBase'/);
+		const stop = functionBody(control(), 'Stop-OwnProcess');
+		expect(stop).toMatch(/Stop-Process -Id \$processId -Force/);
+		expect(stop).toMatch(/if \(@\(& \$Select \$current\)\.Count -eq 0\) \{ continue \}/);
+		for (const source of [body, stop]) {
+			expect(source).not.toMatch(/Stop-Process\s+-Name|Get-Process\s+-Name|\|\s*Stop-Process/i);
+		}
+	});
+
+	it('stops the own mail helper before PocketBase (E4 plan, package 11)', () => {
+		const body = functionBody(control(), 'Invoke-Stop');
+		expect(body).toMatch(/Select-MailHelperProcess -Process \$snapshot -AppDir \$AppDir/);
+		expect(body.indexOf("-Name 'byl-mail.exe'")).toBeGreaterThan(-1);
+		expect(body.indexOf("-Name 'byl-mail.exe'")).toBeLessThan(body.indexOf("-Name 'PocketBase'"));
+		expect(body).toMatch(/Select-MailHelperProcess -Process \$Process -AppDir \$AppDir/);
 	});
 });
 

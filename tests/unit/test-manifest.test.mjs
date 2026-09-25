@@ -26,7 +26,10 @@ function allItems() {
 	return manifestData().blocks.flatMap((block) => block.items);
 }
 
-/** Test files the manifest must cover: tests/unit, tests/integration and web/src/**\/*.test.ts. */
+/**
+ * Test files the manifest must cover: tests/unit, tests/integration, web/src/**\/*.test.ts and the
+ * mail helper helpers/mail/src/**\/*.test.ts.
+ */
 function testFiles() {
 	const list = (dir, pattern) =>
 		readdirSync(new URL(dir, ROOT), { recursive: true })
@@ -35,7 +38,8 @@ function testFiles() {
 	return [
 		...list('tests/unit', /\.test\.(js|mjs|ts)$/),
 		...list('tests/integration', /\.test\.(js|mjs|ts)$/),
-		...list('web/src', /\.test\.ts$/)
+		...list('web/src', /\.test\.ts$/),
+		...list('helpers/mail/src', /\.test\.ts$/)
 	].sort();
 }
 
