@@ -1,5 +1,6 @@
-// Guards the design tokens (CLAUDE.md section 8, ADR-0009): every theme block defines the same
-// color tokens, and the error color reaches WCAG AA contrast in light and dark mode.
+// Guards the design tokens (CLAUDE.md section 8, ADR-0009, ADR-0025): every theme block defines
+// the same color tokens and its color-scheme, the error color reaches WCAG AA contrast in light
+// and dark mode, and the overlay sizes, radii and motion exist once in :root.
 
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -26,9 +27,45 @@ function parseBlocks(css: string): Map<string, Map<string, string>> {
 	return blocks;
 }
 
-/** Theme-dependent tokens; the font stacks are defined once in :root and apply to every theme. */
+/**
+ * Tokens that are the same in every theme (ADR-0025 section 2): defined once in :root, never in a
+ * theme block. The font stacks belong to them as well.
+ */
+const NON_COLOR_TOKENS = {
+	'--font-ui': "'Inter Variable', system-ui, sans-serif",
+	'--font-mono': "'JetBrains Mono Variable', ui-monospace, monospace",
+	'--overlay-width-s': '25rem',
+	'--overlay-width-m': '37.5rem',
+	'--overlay-width-l': '50rem',
+	'--overlay-width-xl': '62.5rem',
+	'--overlay-max-height': 'calc(100dvh - 2rem)',
+	'--overlay-max-height-xl': '92dvh',
+	'--drawer-width': '30rem',
+	'--full-view-sidebar': '21.25rem',
+	'--radius-control': '0.375rem',
+	'--radius-surface': '0.5rem',
+	'--motion-fast': '120ms',
+	'--motion-medium': '200ms',
+	'--motion-ease': 'cubic-bezier(0.2, 0, 0, 1)'
+} as const;
+
+function isNonColorToken(name: string): boolean {
+	return Object.hasOwn(NON_COLOR_TOKENS, name);
+}
+
+/** Theme-dependent tokens of a block. */
 function colorTokens(block: Map<string, string>): Map<string, string> {
-	return new Map([...block].filter(([name]) => !name.startsWith('--font-')));
+	return new Map([...block].filter(([name]) => !isNonColorToken(name)));
+}
+
+/** Value of the color-scheme property of each innermost block, keyed by selector. */
+function colorSchemes(css: string): Map<string, string | undefined> {
+	const withoutComments = css.replace(/\/\*[\s\S]*?\*\//g, '');
+	const schemes = new Map<string, string | undefined>();
+	for (const [, selector = '', body = ''] of withoutComments.matchAll(/([^{}]+)\{([^{}]*)\}/g)) {
+		schemes.set(selector.trim(), /(?:^|[;\s])color-scheme\s*:\s*([^;]+);/.exec(body)?.[1]?.trim());
+	}
+	return schemes;
 }
 
 function channel(value: number): number {
@@ -79,6 +116,39 @@ describe('tokens.css', () => {
 	it('uses the same values for the default and the forced variant of each mode', () => {
 		expect(Object.fromEntries(block(FORCED_LIGHT))).toEqual(Object.fromEntries(block(LIGHT)));
 		expect(Object.fromEntries(block(FORCED_DARK))).toEqual(Object.fromEntries(block(DARK)));
+	});
+
+	it('defines the sizes, radii and motion of ADR-0025 once in :root and nowhere else', () => {
+		const light = blocks.get(LIGHT) ?? new Map<string, string>();
+		for (const [name, value] of Object.entries(NON_COLOR_TOKENS)) {
+			expect(light.get(name), name).toBe(value);
+		}
+		for (const selector of [DARK, FORCED_LIGHT, FORCED_DARK]) {
+			const names = [...(blocks.get(selector)?.keys() ?? [])];
+			expect(names.filter(isNonColorToken), selector).toEqual([]);
+		}
+	});
+
+	it('has no shadow token (ADR-0010 section 3, ADR-0025 section 2)', () => {
+		for (const [selector, properties] of blocks) {
+			expect(
+				[...properties.keys()].filter((name) => /shadow/.test(name)),
+				selector
+			).toEqual([]);
+		}
+	});
+
+	it('darkens with the blanket of ADR-0025 in both modes', () => {
+		expect(token(LIGHT, '--color-blanket')).toBe('rgb(23 35 38 / 0.45)');
+		expect(token(DARK, '--color-blanket')).toBe('rgb(0 0 0 / 0.6)');
+	});
+
+	it('sets color-scheme in every block, so native controls follow the mode', () => {
+		const schemes = colorSchemes(SOURCE);
+		expect(schemes.get(LIGHT)).toBe('light');
+		expect(schemes.get(FORCED_LIGHT)).toBe('light');
+		expect(schemes.get(DARK)).toBe('dark');
+		expect(schemes.get(FORCED_DARK)).toBe('dark');
 	});
 
 	it('has the error colors of ADR-0009', () => {

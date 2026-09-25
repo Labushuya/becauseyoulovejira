@@ -10,6 +10,26 @@ html {
 	font-family: var(--font-ui);
 	color: var(--color-text);
 	background-color: var(--color-bg);
+	/* Keeps the room of the scrollbar, so the page does not shift when a modal locks scrolling. */
+	scrollbar-gutter: stable;
+}
+
+/* Scroll lock while a modal dialog is open (ADR-0025 section 2): pure CSS, no script. */
+html:has(dialog:modal) {
+	overflow: hidden;
+}
+
+/*
+ * Reduced motion (ADR-0025 section 2): overlays marked with data-overlay appear at once, without
+ * movement or fading. !important beats the scoped animation rules of the components.
+ */
+@media (prefers-reduced-motion: reduce) {
+	[data-overlay],
+	[data-overlay]::backdrop,
+	[data-overlay] * {
+		animation: none !important;
+		transition: none !important;
+	}
 }
 
 body {
@@ -48,6 +68,61 @@ input {
 }
 
 .button-primary:disabled {
+	cursor: progress;
+	opacity: 0.75;
+}
+
+/*
+ * Shared buttons of the overlays (ADR-0025 section 2), instead of a local ".secondary" per
+ * component: outlined, without a frame (header actions), and square with an icon only. An icon
+ * button always needs an aria-label.
+ */
+.button-secondary,
+.button-subtle,
+.button-icon {
+	display: inline-flex;
+	gap: 0.375rem;
+	align-items: center;
+	justify-content: center;
+	font-size: 0.875rem;
+	color: var(--color-text);
+	background: none;
+	border-radius: var(--radius-control);
+	cursor: pointer;
+}
+
+.button-secondary {
+	padding: 0.375rem 0.875rem;
+	border: 1px solid var(--color-line);
+}
+
+.button-subtle {
+	padding: 0.375rem 0.625rem;
+	color: var(--color-text-muted);
+	border: 1px solid transparent;
+}
+
+.button-icon {
+	width: 2rem;
+	height: 2rem;
+	padding: 0;
+	color: var(--color-text-muted);
+	border: 1px solid transparent;
+}
+
+.button-secondary:hover {
+	border-color: var(--color-text-muted);
+}
+
+.button-subtle:hover,
+.button-icon:hover {
+	color: var(--color-text);
+	border-color: var(--color-line);
+}
+
+.button-secondary[aria-disabled='true'],
+.button-subtle[aria-disabled='true'],
+.button-icon[aria-disabled='true'] {
 	cursor: progress;
 	opacity: 0.75;
 }
