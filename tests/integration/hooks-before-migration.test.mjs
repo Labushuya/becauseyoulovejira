@@ -226,3 +226,58 @@ describe('package 21 hooks before the migration of the import keywords', () => {
 		expect(updated.import_keywords).toBeUndefined();
 	});
 });
+
+// The instance of the user after the merge of E5 package 2, before its next start: the schema of
+// E4 with the hooks of E5. Rules and tickets.recurrence behave as in E4 (E5 plan, section 2).
+describe('E5 hooks before the E5 migrations', () => {
+	const E5_FIRST_MIGRATION = '1790201600_recurrence_rule_params.js';
+	let before;
+	let who;
+
+	beforeAll(async () => {
+		before = await startPocketBase({ migrationFilter: (name) => name < E5_FIRST_MIGRATION });
+		const superuser = new PocketBase(before.url);
+		superuser.autoCancellation(false);
+		await superuser.collection('_superusers').authWithPassword(before.email, before.password);
+		const email = `user-${randomBytes(12).toString('hex')}@example.com`;
+		const password = randomBytes(24).toString('base64url');
+		const id = (await superuser.collection('users').create({ email, password, passwordConfirm: password })).id;
+		who = new PocketBase(before.url);
+		who.autoCancellation(false);
+		await who.collection('users').authWithPassword(email, password);
+		who.userId = id;
+	}, 60_000);
+
+	afterAll(async () => {
+		await before?.stop();
+	});
+
+	it('creates and edits rules without the rhythm checks (package 2)', async () => {
+		const rules = who.collection('recurrence_rules');
+		const rule = await rules.create({
+			owner: who.userId,
+			title: 'Vor der Migration',
+			mode: 'calendar',
+			next_due: '2026-10-01',
+			freq: 'weekly'
+		});
+		expect(rule.freq).toBeUndefined();
+		expect(rule.scope).toBeUndefined();
+		expect(rule.next_due).toBe('2026-10-01 00:00:00.000Z');
+		expect(rule.active).toBe(false);
+		const updated = await rules.update(rule.id, { title: 'Geändert', next_due: '2026-11-01' });
+		expect(updated.next_due).toBe('2026-11-01 00:00:00.000Z');
+	});
+
+	it('lets clients set and clear tickets.recurrence as in E4 (package 2)', async () => {
+		const rule = await who
+			.collection('recurrence_rules')
+			.create({ owner: who.userId, title: 'Serie', mode: 'after_completion' });
+		const tickets = who.collection('tickets');
+		const ticket = await tickets.create({ owner: who.userId, title: 'In der Serie', recurrence: rule.id });
+		expect(ticket.recurrence).toBe(rule.id);
+		const other = await tickets.create({ owner: who.userId, title: 'Auch in der Serie' });
+		expect((await tickets.update(other.id, { recurrence: rule.id })).recurrence).toBe(rule.id);
+		expect((await tickets.update(ticket.id, { recurrence: '' })).recurrence).toBe('');
+	});
+});

@@ -7,6 +7,7 @@ import { expect } from 'vitest';
 
 const STATUSES = ['backlog', 'open', 'in_progress', 'waiting', 'done'];
 const PRIORITIES = ['low', 'medium', 'high', 'urgent'];
+const WEEKDAYS = ['MO', 'TU', 'WE', 'TH', 'FR', 'SA', 'SU'];
 /** Ways into the inbox and values of tickets.source (ADR-0014), written out literally. */
 export const CHANNELS = [
 	'manual',
@@ -96,11 +97,21 @@ export const EXPECTED_COLLECTIONS = {
 			last_generated_at: date(),
 			active: bool(),
 			...ownership(),
-			...timestamps()
+			...timestamps(),
+			// E5 (ADR-0021 section 1, migration 1790201600).
+			freq: select(['daily', 'weekly', 'monthly', 'yearly'], false),
+			interval: number({ min: 1, max: 365 }),
+			weekdays: { type: 'select', required: false, values: WEEKDAYS, maxSelect: 7 },
+			month_day: number({ min: -1, max: 31 }),
+			anchor: date(),
+			lead_days: number({ min: 0, max: 30 }),
+			scope: text({ required: true }),
+			last_hint: text({ max: 500 })
 		},
 		indexes: [
 			'CREATE INDEX idx_recurrence_rules_owner ON recurrence_rules (owner)',
-			'CREATE INDEX idx_recurrence_rules_active_next_due ON recurrence_rules (active, next_due)'
+			'CREATE INDEX idx_recurrence_rules_active_next_due ON recurrence_rules (active, next_due)',
+			'CREATE INDEX idx_recurrence_rules_scope ON recurrence_rules (scope)'
 		]
 	},
 	tickets: {
@@ -131,7 +142,9 @@ export const EXPECTED_COLLECTIONS = {
 			'CREATE INDEX idx_tickets_status ON tickets (status)',
 			'CREATE INDEX idx_tickets_due ON tickets (due)',
 			'CREATE INDEX idx_tickets_parent ON tickets (parent)',
-			'CREATE INDEX idx_tickets_source_item ON tickets (source_item)'
+			'CREATE INDEX idx_tickets_source_item ON tickets (source_item)',
+			// At most one open instance per rule (ADR-0022 section 1, migration 1790201610).
+			"CREATE UNIQUE INDEX idx_tickets_open_recurrence ON tickets (recurrence) WHERE recurrence != '' AND status != 'done'"
 		]
 	},
 	inbox_items: {

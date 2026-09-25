@@ -38,7 +38,8 @@ export function ownedPayload(collection, ownerId, householdId = '') {
 		case 'tags':
 			return { ...base, name: `tag-${suffix}` };
 		case 'recurrence_rules':
-			return { ...base, title: `Regel ${suffix}`, mode: 'calendar' };
+			// Since E5 the hook needs a rhythm (ADR-0021 section 1); "Beginnt am" defaults to today.
+			return { ...base, title: `Regel ${suffix}`, mode: 'calendar', freq: 'daily' };
 		case 'tickets':
 			return { ...base, title: `Ticket ${suffix}` };
 		case 'inbox_items':
@@ -91,6 +92,7 @@ export async function createScenario() {
 /** Marker titles of tests/fixtures/pb_hooks/fault-injection.pb.js (OF-15). */
 export const FAIL_TICKET_INSERT = '__byl_fail_ticket_insert__';
 export const FAIL_HISTORY = '__byl_fail_history__';
+export const FAIL_TICKET_LINK = '__byl_fail_ticket_link__';
 
 /**
  * Fresh app user with an own private scope, so every counter of that scope starts empty.
