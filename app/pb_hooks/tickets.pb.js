@@ -8,8 +8,10 @@
 
 // Request hooks: remember the acting user for the history (OF-4, variant A). blocks_parent
 // defaults to true unless the client sends the field (OF-11); bool fields have no schema default
-// and the model hook cannot tell "false" from "not sent".
+// and the model hook cannot tell "false" from "not sent". A client never sets `recurrence`, it
+// may only clear it (ADR-0023 section 1; lib/recurrence-service.js, only after the E5 migrations).
 onRecordCreateRequest(function (e) {
+  require(`${__hooks}/lib/recurrence-service.js`).guardTicketCreate(e);
   require(`${__hooks}/lib/ticket-service.js`).rememberActor(e);
   if (e.requestInfo().body['blocks_parent'] === undefined) {
     e.record.set('blocks_parent', true);
@@ -20,6 +22,7 @@ onRecordCreateRequest(function (e) {
 onRecordUpdateRequest(function (e) {
   var service = require(`${__hooks}/lib/ticket-service.js`);
   service.guardSourceChange(e.record);
+  require(`${__hooks}/lib/recurrence-service.js`).guardTicketUpdate(e);
   service.rememberActor(e);
   e.next();
 }, 'tickets');

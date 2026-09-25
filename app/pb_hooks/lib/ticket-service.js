@@ -58,7 +58,9 @@ function actorOf(record) {
 // Loads the referenced project, tags, recurrence rule and parent. Rejects references that are
 // missing or belong to another scope (OF-3 c), parents that break the one-level rule and a newly
 // assigned archived project (E3 plan, T-11). `previousProject` is the stored project id before
-// the write ('' on create). Returns the project record or null.
+// the write ('' on create). Returns the project record or null. Also used for the template of a
+// recurrence rule (lib/recurrence-service.js), which has project and tags but no recurrence or
+// parent field (getString gives '' for them).
 function checkRelations(txApp, record, scope, previousProject) {
   var related = [];
   var fields = {};
@@ -287,6 +289,7 @@ module.exports = {
   ACTOR_KEY: ACTOR_KEY,
   scopeOfRecord: scopeOfRecord,
   rememberActor: rememberActor,
+  checkRelations: checkRelations,
   prepareCreate: prepareCreate,
   recordCreation: recordCreation,
   guardSourceChange: guardSourceChange,
