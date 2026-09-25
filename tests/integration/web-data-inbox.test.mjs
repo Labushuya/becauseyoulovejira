@@ -2,6 +2,7 @@
 // entries in full, handled ones page by page, duplicates as outcome, actions, the protected
 // original, realtime and the ticket created from an entry.
 
+import { readFileSync } from 'node:fs';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { superuserClient } from '../support/api.mjs';
 import { createOwner, uniqueSuffix } from '../support/scenario.mjs';
@@ -24,6 +25,14 @@ import {
 	buildCapture,
 	captureInboxDraft
 } from '../../web/src/lib/domain/templates.ts';
+import { readMailFile } from '../../web/src/lib/mail-file.ts';
+
+const EML = new URL('../fixtures/eml/', import.meta.url);
+
+/** A fixture as File, the way the browser hands a dropped file over. */
+function emlFile(name) {
+	return new File([readFileSync(new URL(name, EML))], name, { type: 'message/rfc822' });
+}
 
 const EVENT_TIMEOUT_MS = 5_000;
 
@@ -254,6 +263,67 @@ describe('actions', () => {
 		expect(response.status).toBe(200);
 		expect(await response.text()).toBe(content);
 		expect(await originalFileUrl(owner.client, { id: item.id, original: '' })).toBeNull();
+	});
+});
+
+describe('mail files (E4 plan, package 8)', () => {
+	async function readDraft(name) {
+		const result = await readMailFile(emlFile(name));
+		if (!result.ok) throw new Error(result.message);
+		return result.draft;
+	}
+
+	it('keeps a dropped .eml with its fields and the original file, and knows it the second time', async () => {
+		const fresh = await createOwner(superuser);
+		const outcome = await createItem(fresh.client, await readDraft('latin1-qp.eml'));
+		expect(outcome).toMatchObject({
+			kind: 'created',
+			item: {
+				channel: 'eml',
+				kind: 'mail',
+				title: 'Straßenfest am Südplatz',
+				sourceRef: '<latin1.qp@example.com>',
+				sourceDate: '2026-10-05 08:00:00.000Z',
+				sourceMeta: { from: 'Jürgen Müller <juergen@example.com>' }
+			}
+		});
+		expect(outcome.item.original).toMatch(/\.eml$/);
+		expect(outcome.item.body).toMatch(/^Schöne Grüße/);
+
+		const url = await originalFileUrl(fresh.client, outcome.item);
+		const response = await fetch(url);
+		expect(response.status).toBe(200);
+		expect(Buffer.from(await response.arrayBuffer())).toEqual(
+			readFileSync(new URL('latin1-qp.eml', EML))
+		);
+
+		expect(await createItem(fresh.client, await readDraft('latin1-qp.eml'))).toEqual({
+			kind: 'duplicate',
+			state: 'new',
+			itemId: outcome.item.id,
+			ticketId: '',
+			ticketKey: '',
+			message: 'Schon im Eingang.'
+		});
+	});
+
+	it('knows a mail without Message-ID again by sender, date and subject', async () => {
+		const fresh = await createOwner(superuser);
+		const first = await createItem(fresh.client, await readDraft('no-message-id.eml'));
+		expect(first).toMatchObject({ kind: 'created', item: { sourceRef: '' } });
+		expect(await createItem(fresh.client, await readDraft('no-message-id.eml'))).toMatchObject({
+			kind: 'duplicate',
+			itemId: first.item.id
+		});
+	});
+
+	it('takes HTML-only mails and mails with attachments as text with their count', async () => {
+		const fresh = await createOwner(superuser);
+		const html = await createItem(fresh.client, await readDraft('html-only.eml'));
+		expect(html).toMatchObject({ kind: 'created', item: { sourceMeta: { html_only: true } } });
+		expect(html.item.body).not.toMatch(/tracker|script|alert/);
+		const withFiles = await createItem(fresh.client, await readDraft('attachments.eml'));
+		expect(withFiles).toMatchObject({ kind: 'created', item: { sourceMeta: { attachments: 2 } } });
 	});
 });
 

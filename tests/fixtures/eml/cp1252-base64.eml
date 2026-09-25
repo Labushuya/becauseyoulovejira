@@ -1,0 +1,10 @@
+From: Laden <rechnung@example.com>
+To: anna@example.com
+Subject: =?windows-1252?B?UmVjaG51bmcggA==?=
+Date: Tue, 6 Oct 2026 12:00:00 +0200
+Message-ID: <cp1252.b64@example.com>
+MIME-Version: 1.0
+Content-Type: text/plain; charset=windows-1252
+Content-Transfer-Encoding: base64
+
+UmVjaG51bmc6IDEyLDUwIIAgZvxyIGRlbiCERWlua2F1ZpMuDQo=

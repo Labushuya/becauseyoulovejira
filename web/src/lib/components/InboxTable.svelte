@@ -4,7 +4,7 @@
 </script>
 
 <script lang="ts">
-	import { tick } from 'svelte';
+	import { tick, type Snippet } from 'svelte';
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
 	import { berlinDateOf, formatBerlinDateTime, formatCalendarDate } from '$lib/domain/format';
@@ -46,7 +46,8 @@
 		projectsNewCount = 0,
 		clipboardHint = null,
 		onclipboard,
-		onbulk
+		onbulk,
+		tools
 	}: {
 		store: InboxStore;
 		/** Open tickets of the list store, for the hint on possible duplicates. */
@@ -63,6 +64,8 @@
 		onclipboard?: () => void;
 		/** Why the clipboard could not be read, with the way through Ctrl+V; neutral, no error. */
 		clipboardHint?: string | null;
+		/** Further ways into the inbox under the chips (drop zone for files, package 8). */
+		tools?: Snippet;
 	} = $props();
 
 	const uid = $props.id();
@@ -266,6 +269,8 @@
 			onchange={(value: InboxState | null) => navigate({ ...query, state: value ?? 'new' })}
 		/>
 	</div>
+
+	{@render tools?.()}
 
 	<p class="visually-hidden" aria-live="polite">{store.announcement}</p>
 	<div role="status">

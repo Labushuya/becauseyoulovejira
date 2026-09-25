@@ -1,0 +1,24 @@
+From: Ben Muster <ben@example.org>
+To: anna@example.com
+Subject: Unterlagen
+Date: Fri, 9 Oct 2026 09:00:00 +0200
+Message-ID: <attachments@example.org>
+MIME-Version: 1.0
+Content-Type: multipart/mixed; boundary="grenze"
+
+--grenze
+Content-Type: text/plain; charset=utf-8
+
+Anbei die Unterlagen.
+--grenze
+Content-Type: application/pdf; name="plan.pdf"
+Content-Disposition: attachment; filename="plan.pdf"
+Content-Transfer-Encoding: base64
+
+JVBERi0xLjQgZXJmdW5kZW4=
+--grenze
+Content-Type: text/plain; name="notiz.txt"
+Content-Disposition: attachment; filename="notiz.txt"
+
+Nur eine Notiz.
+--grenze--

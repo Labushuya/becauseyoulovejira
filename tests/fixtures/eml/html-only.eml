@@ -1,0 +1,16 @@
+From: Newsletter <news@example.com>
+To: anna@example.com
+Subject: Angebot der Woche
+Date: Wed, 7 Oct 2026 07:30:00 +0200
+Message-ID: <html.only@example.com>
+MIME-Version: 1.0
+Content-Type: text/html; charset=utf-8
+
+<html><head><title>Titel</title><style>p { color: red }</style></head>
+<body><script>alert("x")</script>
+<img src="https://tracker.example.com/pixel.gif" width="1" height="1">
+<h1>Angebot</h1><p>&Auml;pfel &amp; Birnen f&uuml;r 2&nbsp;&euro; &ndash; nur heute.</p>
+<table><tr><th>Artikel</th><th>Preis</th></tr><tr><td>Brot</td><td>3 &euro;</td></tr></table>
+<p><a href="https://shop.example.com/angebot?a=1&amp;b=2">Zum Angebot</a> oder 
+<a href="javascript:alert(1)">hier</a>.</p><ul><li>Eins</li><li>Zwei</li></ul>
+<!-- versteckter Kommentar --></body></html>
