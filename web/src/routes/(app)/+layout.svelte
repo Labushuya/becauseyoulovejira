@@ -16,6 +16,7 @@
 	import { FlagStore, setFlagStore } from '$lib/stores/flags.svelte';
 	import { InboxStore, inboxData, setInboxStore } from '$lib/stores/inbox.svelte';
 	import { liveSource } from '$lib/stores/realtime';
+	import { PanelShell, setPanelShell } from '$lib/overlay/panel-host.svelte';
 	import {
 		RecurrenceStore,
 		recurrenceData,
@@ -49,6 +50,8 @@
 	const catalog = setCatalogStore(new CatalogStore(catalogData(pb), auth));
 	// Flags bottom left (ADR-0025 section 8): results and "Rückgängig" of the list and the inbox.
 	const flags = setFlagStore(new FlagStore());
+	// A side panel over the view (below 64rem, UI-6b) makes the header inert as well.
+	const panelShell = setPanelShell(new PanelShell());
 	$effect(() => () => flags.clear());
 	// The column sort "Projekt" resolves projects through the catalog (E3 plan, package 9); the
 	// "new" mark follows the own read rows and base line (E4 plan, package 4).
@@ -116,6 +119,7 @@
 <svelte:window {onkeydown} />
 
 <AppHeader
+	covered={panelShell.covering}
 	openCount={tickets.openState === 'ready' ? tickets.openCount : null}
 	onquick={() => (quickOpen = true)}
 />
@@ -135,7 +139,9 @@
 {/if}
 
 <style>
+	/* The embedded side panel reaches over this padding to the edges of the window (UI-6b). */
 	.content {
-		padding: 1.5rem;
+		--content-padding: 1.5rem;
+		padding: var(--content-padding);
 	}
 </style>

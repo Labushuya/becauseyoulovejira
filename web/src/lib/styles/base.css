@@ -19,6 +19,18 @@ html:has(dialog:modal) {
 	overflow: hidden;
 }
 
+/* The same while a side panel lies over the view (below 64rem, ADR-0025 section 6, UI-6b). */
+html:has([data-panel-mode='overlay']) {
+	overflow: hidden;
+}
+
+/* From 64rem the header stays at the top (AppHeader); focused elements do not hide below it. */
+@media (min-width: 64rem) {
+	html {
+		scroll-padding-top: var(--app-header-height, 0px);
+	}
+}
+
 /*
  * Reduced motion (ADR-0025 section 2): overlays marked with data-overlay appear at once, without
  * movement or fading. !important beats the scoped animation rules of the components.

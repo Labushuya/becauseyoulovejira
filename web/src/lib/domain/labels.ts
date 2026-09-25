@@ -74,6 +74,12 @@ export function sortOrderLabel(spec: SortSpec): string {
 	return spec.reversed ? reversed : natural;
 }
 
+/**
+ * End of a table caption while a narrow frame hides columns (package UI-6b); a component shows it
+ * through a container query. The leading space is part of the text, so it stays in the caption.
+ */
+export const MORE_COLUMNS_HINT = ' · Weitere Spalten im Panel';
+
 /** The column sort in words, e.g. "Priorität, Dringend zuerst". */
 export function sortLabel(spec: SortSpec): string {
 	return `${SORT_COLUMN_LABELS[spec.key]}, ${sortOrderLabel(spec)}`;

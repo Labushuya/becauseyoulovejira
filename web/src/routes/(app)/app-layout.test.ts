@@ -8,6 +8,7 @@ import { join } from 'node:path';
 import { fireEvent, render, screen, within } from '@testing-library/svelte';
 import { createRawSnippet, tick } from 'svelte';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import AppHeader from '$lib/components/AppHeader.svelte';
 import { EMPTY_LIST_QUERY, type ListQuery } from '$lib/domain/list-query';
 import type { TicketSummary } from '$lib/domain/ticket';
 import { useOverlayStubs } from '$lib/test/overlay-stubs';
@@ -299,6 +300,41 @@ describe('app layout', () => {
 		await tick();
 
 		expect(header.getByText('1 nicht erledigtes Ticket')).toBeTruthy();
+	});
+
+	it('makes the header inert while a side panel covers the view (UI-6b)', () => {
+		render(AppHeader, { props: { covered: true } });
+		expect(screen.getByRole('banner', { hidden: true }).inert).toBe(true);
+		document.body.innerHTML = '';
+		render(AppHeader, { props: { covered: false } });
+		expect(screen.getByRole('banner').inert).toBe(false);
+	});
+
+	it('hands its height to the embedded side panel and removes it when it goes away', async () => {
+		const observers: (() => void)[] = [];
+		vi.stubGlobal(
+			'ResizeObserver',
+			class {
+				constructor(callback: () => void) {
+					observers.push(callback);
+				}
+				observe() {}
+				disconnect() {}
+			}
+		);
+		try {
+			const { unmount } = render(AppHeader);
+			await tick();
+			const banner = screen.getByRole('banner');
+			Object.defineProperty(banner, 'offsetHeight', { configurable: true, value: 57 });
+			for (const callback of observers) callback();
+			const root = document.documentElement;
+			expect(root.style.getPropertyValue('--app-header-height')).toBe('57px');
+			unmount();
+			expect(root.style.getPropertyValue('--app-header-height')).toBe('');
+		} finally {
+			vi.unstubAllGlobals();
+		}
 	});
 
 	it('keeps the login page outside the (app) group, so it has no header', () => {

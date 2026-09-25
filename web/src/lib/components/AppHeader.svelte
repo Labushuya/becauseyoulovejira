@@ -10,13 +10,18 @@
 
 	// Header of every signed-in page (E2 plan, T-4; E3 plan, T-18; ADR-0025 section 10): app name
 	// with the counter of tickets that are not done, area switch, the main button "Neues Ticket",
-	// "Kanäle", the theme switcher and the session.
+	// "Kanäle", the theme switcher and the session. From 64rem it stays at the top while the page
+	// scrolls, and its height goes to --app-header-height, below which the embedded side panel
+	// stands (package UI-6b). While a side panel covers the view (below 64rem) it is inert.
 	let {
 		openCount = null,
+		covered = false,
 		onquick
 	}: {
 		/** Tickets that are not done; null while the list is not loaded (no counter then). */
 		openCount?: number | null;
+		/** A side panel lies over the view; the header is then not reachable either. */
+		covered?: boolean;
 		/** Opens the quick entry (E4 plan, package 6); without it there is no button. */
 		onquick?: () => void;
 	} = $props();
@@ -24,6 +29,23 @@
 	const countLabel = $derived(
 		openCount === 1 ? '1 nicht erledigtes Ticket' : `${openCount} nicht erledigte Tickets`
 	);
+
+	let header = $state<HTMLElement>();
+
+	// Height of the header for the sticky side panel; the header wraps on narrow windows.
+	$effect(() => {
+		if (header === undefined || typeof ResizeObserver !== 'function') return;
+		const root = document.documentElement;
+		const target = header;
+		const observer = new ResizeObserver(() => {
+			root.style.setProperty('--app-header-height', `${target.offsetHeight}px`);
+		});
+		observer.observe(target);
+		return () => {
+			observer.disconnect();
+			root.style.removeProperty('--app-header-height');
+		};
+	});
 
 	// Same target as the layout guard, which reacts to the ended session as well: the login page
 	// with the current page as redirect.
@@ -34,7 +56,7 @@
 	}
 </script>
 
-<header class="app-header">
+<header class="app-header" inert={covered} bind:this={header}>
 	<div class="brand-group">
 		<h1 class="brand">becauseyoulovejira</h1>
 		{#if openCount !== null}
@@ -78,6 +100,14 @@
 		padding: 0.75rem 1.5rem;
 		background: var(--color-surface);
 		border-bottom: 1px solid var(--color-line);
+	}
+
+	@media (min-width: 64rem) {
+		.app-header {
+			position: sticky;
+			top: 0;
+			z-index: 5;
+		}
 	}
 
 	.brand-group {
