@@ -203,7 +203,7 @@ Wird je Paket ergänzt.
 | UI-5 | gemergt (#51) |
 | UI-6 | gemergt (#52) |
 | UI-7 | gemergt (#53) |
-| UI-6b | in Arbeit |
+| UI-6b | gemergt (#54) |
 | UI-8 und UI-9 | geplant |
 
 ## Quellen (nur Verhalten und Maße)
