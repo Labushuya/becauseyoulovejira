@@ -33,6 +33,7 @@ import {
 	type MailboxMail,
 	type MailboxOutcome
 } from '$lib/domain/mailbox';
+import { SILENT_FLAGS, type FlagSink, type FlagTone } from './flags.svelte';
 import type { LoadState, SessionGuard } from './ticket-list.svelte';
 
 /** Shown while the server does not know the connections yet (migration at the next start). */
@@ -74,6 +75,12 @@ export function connectionsData(pb: PocketBase): ConnectionsData {
 	};
 }
 
+/** Tone of the flag after "Jetzt abrufen": a failed run is an error, a hint is neutral. */
+export function runResultTone(result: RunResult): FlagTone {
+	if (result.status === 'ok') return 'success';
+	return result.status === 'error' ? 'error' : 'info';
+}
+
 export type ConnectionActionResult =
 	{ ok: true } | { ok: false; message: string | null; fields: Readonly<Record<string, string>> };
 
@@ -88,7 +95,6 @@ export class ConnectionsStore {
 
 	#state = $state<LoadState>('idle');
 	#error = $state<string | null>(null);
-	#announcement = $state('');
 
 	#list = $derived(
 		[...this.#items.values()].sort((a, b) =>
@@ -96,8 +102,11 @@ export class ConnectionsStore {
 		)
 	);
 
-	constructor(data: ConnectionsData, session: SessionGuard) {
+	readonly #flags: FlagSink;
+
+	constructor(data: ConnectionsData, session: SessionGuard, flags: FlagSink = SILENT_FLAGS) {
 		this.#data = data;
+		this.#flags = flags;
 		this.#session = session;
 	}
 
@@ -111,10 +120,6 @@ export class ConnectionsStore {
 
 	get error(): string | null {
 		return this.#error;
-	}
-
-	get announcement(): string {
-		return this.#announcement;
 	}
 
 	status(id: string): SecretStatus | null {
@@ -164,7 +169,7 @@ export class ConnectionsStore {
 		return this.#act(async () => {
 			const created = await this.#data.create(draft);
 			this.#items.set(created.id, created);
-			this.#announcement = `Verbindung „${created.label}“ angelegt.`;
+			this.#notify(`Verbindung „${created.label}“ angelegt.`);
 			await this.#loadStatus(created.id, {});
 		});
 	}
@@ -173,13 +178,13 @@ export class ConnectionsStore {
 		return this.#act(async () => {
 			const updated = await this.#data.setEnabled(id, enabled);
 			this.#items.set(id, updated);
-			this.#announcement = `„${updated.label}“ ist ${enabled ? 'eingeschaltet' : 'ausgeschaltet'}.`;
+			this.#notify(`„${updated.label}“ ist ${enabled ? 'eingeschaltet' : 'ausgeschaltet'}.`);
 		});
 	}
 
 	/**
-	 * Saves keywords and the answer without keyword (ADR-0020). `announcement` is the text for the
-	 * live region, e.g. „Stichwort „todo“ hinzugefügt.“
+	 * Saves keywords and the answer without keyword (ADR-0020). `announcement` is the text of the
+	 * flag, e.g. „Stichwort „todo“ hinzugefügt.“
 	 */
 	async saveSettings(
 		id: string,
@@ -191,7 +196,7 @@ export class ConnectionsStore {
 		return this.#act(async () => {
 			const updated = await this.#data.saveSettings(current, settings);
 			this.#items.set(id, updated);
-			this.#announcement = announcement;
+			this.#notify(announcement);
 		});
 	}
 
@@ -201,7 +206,7 @@ export class ConnectionsStore {
 			await this.#data.remove(id);
 			this.#items.delete(id);
 			this.#status.delete(id);
-			this.#announcement = `„${label}“ gelöscht.`;
+			this.#notify(`„${label}“ gelöscht.`);
 		});
 	}
 
@@ -211,7 +216,7 @@ export class ConnectionsStore {
 
 	/**
 	 * "Jetzt abrufen" (E4 plan, package 15): runs the connection in the server, then shows its new
-	 * state (last run, error, hint). The result goes to the live region.
+	 * state (last run, error, hint). The result goes out as a flag.
 	 */
 	async runNow(id: string): Promise<ConnectionActionResult> {
 		if (this.#running.has(id)) return { ok: false, message: null, fields: {} };
@@ -220,7 +225,7 @@ export class ConnectionsStore {
 		try {
 			return await this.#act(async () => {
 				const result = await this.#data.run(id);
-				this.#announcement = runResultText(label, result);
+				this.#notify(runResultText(label, result), runResultTone(result));
 				this.#items.set(id, await this.#data.get(id));
 			});
 		} finally {
@@ -247,7 +252,7 @@ export class ConnectionsStore {
 	): Promise<MailboxOutcome<MailboxImportResult[]> | null> {
 		const label = this.#items.get(id)?.label ?? 'Postfach';
 		const outcome = await this.#mailbox(undefined, () => this.#data.importMailbox(id, uids));
-		if (outcome?.kind === 'ok') this.#announcement = `„${label}“: ${importSummary(outcome.value)}`;
+		if (outcome?.kind === 'ok') this.#notify(`„${label}“: ${importSummary(outcome.value)}`);
 		return outcome;
 	}
 
@@ -274,10 +279,6 @@ export class ConnectionsStore {
 		this.#items.set(connection.id, connection);
 	}
 
-	announce(text: string): void {
-		this.#announcement = text;
-	}
-
 	reset(): void {
 		this.#controller?.abort();
 		this.#controller = null;
@@ -285,7 +286,11 @@ export class ConnectionsStore {
 		this.#status.clear();
 		this.#state = 'idle';
 		this.#error = null;
-		this.#announcement = '';
+	}
+
+	/** Result of an action as a flag (ADR-0025 section 8). */
+	#notify(title: string, tone: FlagTone = 'success'): void {
+		this.#flags.show({ tone, title });
 	}
 
 	async #act(run: () => Promise<void>): Promise<ConnectionActionResult> {

@@ -11,9 +11,10 @@
 	import StatusPill from './StatusPill.svelte';
 
 	// One row of the ticket table (E3 plan, T-4): key, priority, status, title with the symbol of
-	// its source (ADR-0019 section 4) and the recurring icon, project, tags, due date, creation date and the actions (check mark, "Rückgängig" and
-	// "Öffnen"). The title is the link to the detail panel and the keyboard target; a mouse click
-	// anywhere else in the row outside of controls follows the same link.
+	// its source (ADR-0019 section 4) and the recurring icon, project, tags, due date, creation
+	// date and the actions (check mark and "Öffnen"; "Rückgängig" stands in the flag since UI-5).
+	// The title is the link to the detail panel and the keyboard target; a mouse click anywhere else
+	// in the row outside of controls follows the same link.
 	let {
 		ticket,
 		project,
@@ -22,12 +23,10 @@
 		today,
 		checked,
 		pending,
-		lingering,
 		active = false,
 		isNew = false,
 		recurrenceText = '',
-		ontoggle,
-		onundo
+		ontoggle
 	}: {
 		ticket: TicketSummary;
 		/** Project resolved through the catalog (T-16). */
@@ -38,8 +37,6 @@
 		today: CalendarDate;
 		checked: boolean;
 		pending: boolean;
-		/** Just checked: struck through, with "Rückgängig" (P-5). */
-		lingering: boolean;
 		/** The detail panel shows this ticket. */
 		active?: boolean;
 		/** New for the signed-in user (ADR-0015): a dot before the key, "neu" for screen readers. */
@@ -47,7 +44,6 @@
 		/** Rhythm of the series ("jeden Montag"), '' while unknown (E5 plan, package 4). */
 		recurrenceText?: string;
 		ontoggle: (done: boolean) => void;
-		onundo: () => void;
 	} = $props();
 
 	const done = $derived(ticket.status === 'done');
@@ -71,7 +67,7 @@
 </script>
 
 <!-- The title link is the keyboard target of the row; the click on the row is a mouse shortcut. -->
-<tr class="row" class:done class:lingering class:active data-ticket-id={ticket.id} {onclick}>
+<tr class="row" class:done class:active data-ticket-id={ticket.id} {onclick}>
 	<td class="key">
 		{#if isNew}<span class="new-dot" title="Neu"><span class="visually-hidden">neu,</span></span
 			>{/if}{ticket.key}
@@ -126,17 +122,6 @@
 	<td class="actions">
 		<span class="action-group">
 			<DoneToggle key={ticket.key} {checked} {pending} onchange={ontoggle} />
-			{#if lingering}
-				<button
-					class="undo"
-					type="button"
-					aria-label={`Rückgängig: ${ticket.key} wieder öffnen`}
-					disabled={pending}
-					onclick={onundo}
-				>
-					Rückgängig
-				</button>
-			{/if}
 			<!-- Mouse only: the title link does the same for keyboard and screen readers. -->
 			<a class="open" {href} tabindex="-1" aria-hidden="true" title="Öffnen">
 				<svg viewBox="0 0 16 16" width="14" height="14" focusable="false">
@@ -273,25 +258,5 @@
 	.done .title-link,
 	.done .key {
 		color: var(--color-text-muted);
-	}
-
-	.lingering .title-link {
-		text-decoration: line-through;
-	}
-
-	.undo {
-		padding: 0.125rem 0.5rem;
-		font-size: 0.8125rem;
-		color: var(--color-brand-text);
-		white-space: nowrap;
-		background: none;
-		border: 1px solid var(--color-brand);
-		border-radius: 0.375rem;
-		cursor: pointer;
-	}
-
-	.undo:disabled {
-		cursor: progress;
-		opacity: 0.6;
 	}
 </style>

@@ -5,6 +5,7 @@
 	import { countActiveByProject, type Project, type ProjectDraft } from '$lib/domain/project';
 	import type { CatalogStore } from '$lib/stores/catalog.svelte';
 	import type { CatalogEditor } from '$lib/stores/catalog-editor';
+	import type { FlagSink } from '$lib/stores/flags.svelte';
 	import type { ProjectStatsStore } from '$lib/stores/project-stats.svelte';
 	import type { TicketListStore } from '$lib/stores/ticket-list.svelte';
 	import { showArchivedFrom, withShowArchived } from '$lib/ticket-links';
@@ -20,17 +21,20 @@
 	// "Archivierte anzeigen" (?archiviert=1) and "Neues Projekt", the project tiles and below them
 	// the section "Tags". "aktiv" comes from the list store, "gesamt" adds the done tickets the
 	// server counts (ProjectStatsStore).
+	// Results of actions go out as flags (ADR-0025 section 8).
 	let {
 		catalog,
 		tickets,
 		stats,
 		editor,
+		flags,
 		inboxCount = null
 	}: {
 		catalog: CatalogStore;
 		tickets: TicketListStore;
 		stats: ProjectStatsStore;
 		editor: CatalogEditor;
+		flags: FlagSink;
 		/** New inbox entries for the switch (E4 plan, package 3). */
 		inboxCount?: number | null;
 	} = $props();
@@ -46,7 +50,6 @@
 	const countLabel = $derived(shown.length === 1 ? '1 Projekt' : `${shown.length} Projekte`);
 
 	let heading = $state<HTMLElement>();
-	let announcement = $state('');
 	/** Open dialog: `project` null creates; the trigger gets the focus back. */
 	let dialog = $state<{ project: Project | null; trigger: HTMLElement | null } | null>(null);
 
@@ -84,32 +87,36 @@
 		(trigger?.isConnected ? trigger : heading)?.focus();
 	}
 
+	function notify(title: string) {
+		flags.show({ tone: 'success', title });
+	}
+
 	async function save(project: Project | null, draft: ProjectDraft) {
 		if (project === null) {
 			const result = await editor.createProject(draft);
-			if (result.ok) {
-				announcement = `Projekt „${result.value.name}“ (${result.value.code}) angelegt.`;
-			}
+			if (result.ok) notify(`Projekt „${result.value.name}“ (${result.value.code}) angelegt.`);
 			return result;
 		}
 		const result = await editor.updateProject(project, draft);
-		if (result.ok) announcement = `Projekt „${result.value.name}“ gespeichert.`;
+		if (result.ok) notify(`Projekt „${result.value.name}“ gespeichert.`);
 		return result;
 	}
 
 	async function archive(project: Project, archived: boolean) {
 		const result = await editor.setProjectArchived(project, archived);
 		if (result.ok) {
-			announcement = archived
-				? `Projekt „${project.name}“ archiviert.`
-				: `Projekt „${project.name}“ aus dem Archiv geholt.`;
+			notify(
+				archived
+					? `Projekt „${project.name}“ archiviert.`
+					: `Projekt „${project.name}“ aus dem Archiv geholt.`
+			);
 		}
 		return result;
 	}
 
 	async function remove(project: Project) {
 		const result = await editor.deleteProject(project);
-		if (result.ok) announcement = `Projekt „${project.name}“ gelöscht.`;
+		if (result.ok) notify(`Projekt „${project.name}“ gelöscht.`);
 		return result;
 	}
 </script>
@@ -155,8 +162,6 @@
 		{/snippet}
 	</SectionBar>
 
-	<p class="visually-hidden" aria-live="polite">{announcement}</p>
-
 	{#if catalog.state === 'error' && catalog.error}
 		{@render failure(catalog.error, () => catalog.reload())}
 	{:else if catalog.state !== 'ready'}
@@ -186,7 +191,7 @@
 			<p class="empty">Alle Projekte sind archiviert. „Archivierte anzeigen“ zeigt sie.</p>
 		{/if}
 
-		<TagManager tags={catalog.tags} {editor} onannounce={(message) => (announcement = message)} />
+		<TagManager tags={catalog.tags} {editor} onannounce={notify} />
 	{/if}
 </section>
 

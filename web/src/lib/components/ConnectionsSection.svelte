@@ -189,8 +189,6 @@
 		übernimmt eine Verbindung nichts. Neue Stichwörter gelten für das, was danach ankommt.
 	</p>
 
-	<div class="visually-hidden" aria-live="polite">{store.announcement}</div>
-
 	{#if store.state === 'loading'}
 		<p class="hint" role="status">Verbindungen werden geladen …</p>
 	{:else if store.state === 'error' && store.error === CONNECTIONS_UNAVAILABLE_MESSAGE}

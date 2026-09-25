@@ -13,6 +13,7 @@
 	import { type InboxQuery } from '$lib/domain/inbox-query';
 	import { SOURCE_FAMILY_CHIPS, SOURCE_FAMILY_LABELS, type SourceFamily } from '$lib/domain/source';
 	import type { TicketSummary } from '$lib/domain/ticket';
+	import type { FlagSink } from '$lib/stores/flags.svelte';
 	import { INBOX_UNAVAILABLE_MESSAGE, type InboxStore } from '$lib/stores/inbox.svelte';
 	import {
 		captureHref,
@@ -31,10 +32,12 @@
 	// of the URL), and the table: selection, kind, title (link to the panel) with the hint on a
 	// possible duplicate, source, date at the sender, arrival and the actions. New entries are
 	// shown newest first, handled ones most recently handled first with "Weitere laden".
-	// "Verwerfen" leaves the row in place for a few seconds with "Rückgängig" and moves the focus to
-	// the next row. The date at the sender is only shown, never taken as due date (P-5).
+	// "Verwerfen" removes the row at once ("Rückgängig" stands in the flag of the store) and moves
+	// the focus to the next row; a failed row action becomes an error flag (ADR-0025 section 8).
+	// The date at the sender is only shown, never taken as due date (P-5).
 	let {
 		store,
+		flags,
 		openTickets,
 		activeId = null,
 		selected = $bindable([]),
@@ -45,6 +48,8 @@
 		tools
 	}: {
 		store: InboxStore;
+		/** Flags of the app, for failed row actions. */
+		flags: FlagSink;
 		/** Open tickets of the list store, for the hint on possible duplicates. */
 		openTickets: readonly TicketSummary[];
 		/** Entry shown in the panel; its row is marked as current. */
@@ -85,13 +90,9 @@
 	const rows = $derived(store.visible);
 	/** Chosen entries that are shown and still new (a converted or discarded one drops out). */
 	const chosen = $derived(
-		rows.filter(
-			(item) => item.state === 'new' && !store.isLingering(item.id) && selected.includes(item.id)
-		)
+		rows.filter((item) => item.state === 'new' && selected.includes(item.id))
 	);
-	const selectable = $derived(
-		rows.filter((item) => item.state === 'new' && !store.isLingering(item.id))
-	);
+	const selectable = $derived(rows.filter((item) => item.state === 'new'));
 	const allChosen = $derived(selectable.length > 0 && chosen.length === selectable.length);
 	const ready = $derived(
 		showsNew ? store.state === 'ready' : store.state === 'ready' && store.handledLoad === 'ready'
@@ -110,8 +111,11 @@
 
 	let root = $state<HTMLElement>();
 	let heading = $state<HTMLElement>();
-	/** Failure of an action (discard, restore, assign), shown until the next action. */
-	let notice = $state<string | null>(null);
+
+	/** Failure of a row action (discard, restore, assign) as an error flag; it stays until closed. */
+	function fail(message: string | null | undefined) {
+		if (message) flags.show({ tone: 'error', title: message });
+	}
 
 	async function navigate(next: InboxQuery) {
 		await goto(withInboxQuery(page.url, next), { keepFocus: true, noScroll: true });
@@ -140,10 +144,9 @@
 	async function discard(item: InboxItemSummary) {
 		const before = titleLinks();
 		const index = before.findIndex((link) => link.closest('tr')?.dataset.itemId === item.id);
-		notice = null;
 		const result = await store.discard(item.id);
 		if (!result.ok) {
-			notice = result.message;
+			fail(result.message);
 			return;
 		}
 		selected = selected.filter((entry) => entry !== item.id);
@@ -154,9 +157,8 @@
 	}
 
 	async function act(action: () => Promise<{ ok: boolean; message?: string | null }>) {
-		notice = null;
 		const result = await action();
-		if (!result.ok && result.message) notice = result.message;
+		if (!result.ok) fail(result.message);
 	}
 
 	/** Entry whose panel was shown last. */
@@ -266,19 +268,9 @@
 
 	{@render tools?.()}
 
-	<p class="visually-hidden" aria-live="polite">{store.announcement}</p>
 	<div role="status">
 		{#if clipboardHint}
 			<p class="clipboard-hint">{clipboardHint}</p>
-		{/if}
-	</div>
-	<div aria-live="assertive">
-		{#if notice}
-			<div class="alert-error notice">
-				<ErrorIcon />
-				<span class="failure-text">{notice}</span>
-				<button class="text-button" type="button" onclick={() => (notice = null)}>Schließen</button>
-			</div>
 		{/if}
 	</div>
 
@@ -351,26 +343,18 @@
 				</thead>
 				<tbody>
 					{#each rows as item (item.id)}
-						{@const lingering = store.isLingering(item.id)}
 						{@const pending = store.isPending(item.id)}
 						{@const sourceDate = sourceDateOf(item)}
 						{@const arrival = showsNew ? item.created : (item.handledAt ?? item.created)}
-						<tr
-							class="row"
-							class:active={item.id === activeId}
-							class:lingering
-							data-item-id={item.id}
-						>
+						<tr class="row" class:active={item.id === activeId} data-item-id={item.id}>
 							{#if showsNew}
 								<td class="select">
-									{#if !lingering}
-										<input
-											type="checkbox"
-											aria-label={`Eintrag „${item.title}“ auswählen`}
-											checked={selected.includes(item.id)}
-											onchange={(event) => toggle(item.id, event.currentTarget.checked)}
-										/>
-									{/if}
+									<input
+										type="checkbox"
+										aria-label={`Eintrag „${item.title}“ auswählen`}
+										checked={selected.includes(item.id)}
+										onchange={(event) => toggle(item.id, event.currentTarget.checked)}
+									/>
 								</td>
 							{/if}
 							<td class="kind">{KIND_LABELS[item.kind]}</td>
@@ -380,9 +364,7 @@
 									href={inboxItemHref(item.id, page.url)}
 									aria-current={item.id === activeId ? 'page' : undefined}>{item.title}</a
 								>
-								{#if lingering}
-									<span class="state-note">Verworfen</span>
-								{:else if item.state === 'new'}
+								{#if item.state === 'new'}
 									{@render duplicateHint(item)}
 								{/if}
 							</th>
@@ -401,17 +383,7 @@
 							</td>
 							<td class="actions">
 								<span class="action-group">
-									{#if lingering}
-										<button
-											class="undo"
-											type="button"
-											aria-label={`Rückgängig: „${item.title}“ wieder in den Eingang`}
-											disabled={pending}
-											onclick={() => act(() => store.undo(item.id))}
-										>
-											Rückgängig
-										</button>
-									{:else if item.state === 'new'}
+									{#if item.state === 'new'}
 										<a class="action primary" href={convertHref(item.id)}
 											>Umwandeln<span class="visually-hidden">: „{item.title}“</span></a
 										>
@@ -584,17 +556,6 @@
 		text-decoration: underline;
 	}
 
-	.lingering .title-link {
-		color: var(--color-text-muted);
-		text-decoration: line-through;
-	}
-
-	.state-note {
-		margin-left: 0.5rem;
-		font-size: 0.75rem;
-		color: var(--color-text-muted);
-	}
-
 	.duplicate {
 		display: flex;
 		flex-wrap: wrap;
@@ -636,8 +597,7 @@
 		white-space: nowrap;
 	}
 
-	.action,
-	.undo {
+	.action {
 		padding: 0.125rem 0.5rem;
 		font-size: 0.8125rem;
 		color: var(--color-text);
@@ -648,14 +608,12 @@
 		cursor: pointer;
 	}
 
-	.action.primary,
-	.undo {
+	.action.primary {
 		color: var(--color-brand-text);
 		border-color: var(--color-brand);
 	}
 
-	.action:disabled,
-	.undo:disabled {
+	.action:disabled {
 		cursor: progress;
 		opacity: 0.6;
 	}

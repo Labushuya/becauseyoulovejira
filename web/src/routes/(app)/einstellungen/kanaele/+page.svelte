@@ -6,6 +6,7 @@
 	import ChannelsView from '$lib/components/ChannelsView.svelte';
 	import { pb } from '$lib/pocketbase';
 	import { ConnectionsStore, connectionsData } from '$lib/stores/connections.svelte';
+	import { getFlagStore } from '$lib/stores/flags.svelte';
 	import { ImportKeywordsStore, importKeywordsData } from '$lib/stores/import-keywords.svelte';
 
 	// Settings of the channels (E4 plan, T-3): bookmarklet (package 7), connections (package 10) and
@@ -13,8 +14,10 @@
 	// bookmarklet runs on other pages. Connections and keywords load when the page opens and leave
 	// with it.
 	const captureUrl = $derived(new URL(resolve('/eingang/neu'), page.url.origin).href);
-	const connections = new ConnectionsStore(connectionsData(pb), auth);
-	const importKeywords = new ImportKeywordsStore(importKeywordsData(pb), auth);
+	// Results of actions go out as flags (ADR-0025 section 8).
+	const flags = getFlagStore();
+	const connections = new ConnectionsStore(connectionsData(pb), auth, flags);
+	const importKeywords = new ImportKeywordsStore(importKeywordsData(pb), auth, flags);
 
 	$effect(() => {
 		untrack(() => {

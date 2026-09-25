@@ -1,5 +1,5 @@
 // Ticket list store with a fake data layer (E2 plan, package 5): order, moving between open and
-// done, stale answers and requests, midnight, check mark with undo, reset.
+// done, stale answers and requests, midnight, check mark with "Rückgängig" in a flag, reset.
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { DataError } from '$lib/data/errors';
@@ -7,13 +7,9 @@ import type { DoneFilter, DoneTicketPage } from '$lib/data/tickets';
 import type { RequestOptions } from '$lib/data/options';
 import { EMPTY_LIST_QUERY, NO_PROJECT, type ListQuery } from '$lib/domain/list-query';
 import type { TicketPatch, TicketSummary } from '$lib/domain/ticket';
+import { FLAG_DURATION_MS, FlagStore } from './flags.svelte';
 import type { LiveSource, RecordChange, Unsubscribe } from './realtime';
-import {
-	SEARCH_DEBOUNCE_MS,
-	TicketListStore,
-	UNDO_WINDOW_MS,
-	type TicketListData
-} from './ticket-list.svelte';
+import { SEARCH_DEBOUNCE_MS, TicketListStore, type TicketListData } from './ticket-list.svelte';
 
 // 2026-09-24 12:00 in Berlin (CEST).
 const NOON = Date.UTC(2026, 8, 24, 10, 0, 0);
@@ -294,8 +290,8 @@ describe('visible rows and counter (E3 plan, package 5)', () => {
 		expect(store.openCount).toBe(2);
 
 		await store.setDone(first.id, true);
-		// The checked row stays visible for "Rückgängig" but no longer counts.
-		expect(store.visible.map((entry) => entry.id)).toContain(first.id);
+		// The checked row leaves at once; "Rückgängig" stands in its flag (UI-5).
+		expect(store.visible.map((entry) => entry.id)).toEqual([second.id]);
 		expect(store.openCount).toBe(1);
 
 		store.upsert(ticket());
@@ -356,18 +352,15 @@ describe('filters (E3 plan, package 10)', () => {
 		expect(store.visible.map((entry) => entry.id)).toEqual([item.id]);
 	});
 
-	it('keeps a just checked row in place under a status filter until undo expires', async () => {
+	it('removes a just checked row at once under a status filter (UI-5)', async () => {
 		const item = ticket({ status: 'in_progress' });
 		const store = new TicketListStore(fakeData([item]), session());
 		store.activate(query({ status: 'in_progress' }));
 		await settle();
 
 		await store.setDone(item.id, true);
-		expect(store.visible.map((entry) => entry.id)).toEqual([item.id]);
-		expect(store.visibleCount).toBe(0);
-
-		await vi.advanceTimersByTimeAsync(UNDO_WINDOW_MS);
 		expect(store.visible).toEqual([]);
+		expect(store.visibleCount).toBe(0);
 	});
 
 	it('shows only the section "Erledigt" with the status filter "Erledigt"', async () => {
@@ -486,7 +479,7 @@ describe('column sort (E3 plan, package 9)', () => {
 		sort: { key, reversed }
 	});
 
-	it('keeps a just checked row at its place in the status sort until undo expires', async () => {
+	it('removes a just checked row from the status sort at once (UI-5)', async () => {
 		const backlog = ticket({ status: 'backlog' });
 		const working = ticket({ status: 'in_progress' });
 		const waiting = ticket({ status: 'waiting' });
@@ -496,9 +489,6 @@ describe('column sort (E3 plan, package 9)', () => {
 		expect(store.visible.map((entry) => entry.id)).toEqual([backlog.id, working.id, waiting.id]);
 
 		await store.setDone(working.id, true);
-		expect(store.visible.map((entry) => entry.id)).toEqual([backlog.id, working.id, waiting.id]);
-
-		await vi.advanceTimersByTimeAsync(UNDO_WINDOW_MS);
 		expect(store.visible.map((entry) => entry.id)).toEqual([backlog.id, waiting.id]);
 	});
 
@@ -588,12 +578,19 @@ describe('today', () => {
 });
 
 describe('check mark', () => {
-	it('shows the new state at once, locks during the request and keeps the row with undo', async () => {
+	/** A store with real flags (ADR-0025 section 8), so the tests see "Rückgängig" in the flag. */
+	function withFlags(data: TicketListData) {
+		const flags = new FlagStore();
+		const store = new TicketListStore(data, session(), { flags });
+		return { flags, store };
+	}
+
+	it('shows the new state at once, locks during the request and offers undo in a flag', async () => {
 		const item = ticket({ status: 'in_progress' });
 		const data = fakeData([item]);
 		const answer = deferred<TicketSummary>();
 		data.setDone.mockImplementationOnce(() => answer.promise);
-		const store = new TicketListStore(data, session());
+		const { flags, store } = withFlags(data);
 		store.activate(withDone(false));
 		await settle();
 
@@ -606,31 +603,64 @@ describe('check mark', () => {
 		answer.resolve({ ...item, status: 'done', updated: '2026-09-24 10:00:00.000Z' });
 		await request;
 		expect(store.isPending(item.id)).toBe(false);
-		expect(store.isLingering(item.id)).toBe(true);
-		expect(store.open.map((entry) => entry.id)).toEqual([item.id]);
-		expect(store.open[0]?.status).toBe('done');
-		expect(store.announcement).toMatch(/erledigt/);
-
-		await vi.advanceTimersByTimeAsync(UNDO_WINDOW_MS);
-		expect(store.isLingering(item.id)).toBe(false);
+		// The row leaves at once; "Rückgängig" stands in the flag (UI-5).
 		expect(store.open).toEqual([]);
+		expect(store.canUndo(item.id)).toBe(true);
+		expect(flags.flags.map((flag) => [flag.tone, flag.title, flag.action?.label])).toEqual([
+			['success', `${item.key} erledigt.`, 'Rückgängig']
+		]);
+		expect(store.announcement).toBe('');
+
+		await vi.advanceTimersByTimeAsync(FLAG_DURATION_MS);
+		expect(flags.flags).toEqual([]);
+		expect(store.canUndo(item.id)).toBe(false);
 	});
 
-	it('restores the exact previous status with undo', async () => {
+	it('restores the exact previous status with "Rückgängig" in the flag', async () => {
 		const item = ticket({ status: 'waiting' });
 		const data = fakeData([item]);
-		const store = new TicketListStore(data, session());
+		const { flags, store } = withFlags(data);
 		store.activate(withDone(false));
 		await settle();
 
 		await store.setDone(item.id, true);
-		await store.undo(item.id);
+		flags.act(flags.flags[0]?.id ?? '');
+		await settle();
 
 		expect(data.update).toHaveBeenCalledWith(item.id, { status: 'waiting' });
-		expect(store.isLingering(item.id)).toBe(false);
+		expect(store.canUndo(item.id)).toBe(false);
 		expect(store.open.map((entry) => entry.status)).toEqual(['waiting']);
-		await vi.advanceTimersByTimeAsync(UNDO_WINDOW_MS);
-		expect(store.open).toHaveLength(1);
+		expect(flags.flags.map((flag) => flag.title)).toEqual([`${item.key} ist wieder offen.`]);
+	});
+
+	it('keeps "Rückgängig" while the flag is paused (pointer or focus on it)', async () => {
+		const item = ticket({ status: 'open' });
+		const data = fakeData([item]);
+		const { flags, store } = withFlags(data);
+		store.activate(withDone(false));
+		await settle();
+
+		await store.setDone(item.id, true);
+		flags.pause('hover');
+		await vi.advanceTimersByTimeAsync(FLAG_DURATION_MS * 3);
+		expect(store.canUndo(item.id)).toBe(true);
+		flags.resume('hover');
+		await vi.advanceTimersByTimeAsync(FLAG_DURATION_MS);
+		expect(store.canUndo(item.id)).toBe(false);
+		await store.undo(item.id);
+		expect(data.update).not.toHaveBeenCalled();
+	});
+
+	it('closes the flag when the ticket is open again by another way', async () => {
+		const item = ticket({ status: 'open' });
+		const { flags, store } = withFlags(fakeData([item]));
+		store.activate(withDone(false));
+		await settle();
+
+		await store.setDone(item.id, true);
+		store.upsert({ ...item, status: 'in_progress', updated: '2026-09-24 11:00:00.000Z' });
+		expect(flags.flags).toEqual([]);
+		expect(store.canUndo(item.id)).toBe(false);
 	});
 
 	it('names the open follow-up when undo is refused (E5 plan, package 4)', async () => {
@@ -649,35 +679,37 @@ describe('check mark', () => {
 				}
 			})
 		);
-		const store = new TicketListStore(data, session());
+		const { flags, store } = withFlags(data);
 		store.activate(withDone(false));
 		await settle();
 
 		await store.setDone(item.id, true);
 		await store.undo(item.id);
 
-		expect(store.notice).toBe(
-			`${item.key} konnte nicht zurückgesetzt werden. Von dieser Serie ist schon HAUS-12 offen. Erledige es zuerst oder löse ein Ticket aus der Serie.`
-		);
+		const errors = flags.flags.filter((flag) => flag.tone === 'error');
+		expect(errors.map((flag) => [flag.tone, flag.title])).toEqual([
+			[
+				'error',
+				`${item.key} konnte nicht zurückgesetzt werden. Von dieser Serie ist schon HAUS-12 offen. Erledige es zuerst oder löse ein Ticket aus der Serie.`
+			]
+		]);
 	});
 
-	it('moves the row into the section "Erledigt" after the undo window when shown', async () => {
+	it('moves the row into the section "Erledigt" at once when shown', async () => {
 		const item = ticket();
 		const store = new TicketListStore(fakeData([item]), session());
 		store.activate(withDone(true));
 		await settle();
 
 		await store.setDone(item.id, true);
-		expect(store.done).toEqual([]);
-		await vi.advanceTimersByTimeAsync(UNDO_WINDOW_MS);
 		expect(store.open).toEqual([]);
 		expect(store.done.map((entry) => entry.id)).toEqual([item.id]);
 	});
 
-	it('reopens a done ticket with the reopen status', async () => {
+	it('reopens a done ticket with the reopen status and says so in a flag', async () => {
 		const closed = done();
 		const data = fakeData([], [[closed]]);
-		const store = new TicketListStore(data, session());
+		const { flags, store } = withFlags(data);
 		store.activate(withDone(true));
 		await settle();
 
@@ -686,14 +718,17 @@ describe('check mark', () => {
 		expect(data.setDone).toHaveBeenCalledWith(closed.id, false);
 		expect(store.done).toEqual([]);
 		expect(store.open.map((entry) => entry.status)).toEqual(['open']);
-		expect(store.isLingering(closed.id)).toBe(false);
+		expect(store.canUndo(closed.id)).toBe(false);
+		expect(flags.flags.map((flag) => [flag.title, flag.action])).toEqual([
+			[`${closed.key} wieder offen.`, null]
+		]);
 	});
 
-	it('springs back with a message when the request fails', async () => {
+	it('springs back with an error flag when the request fails', async () => {
 		const item = ticket();
 		const data = fakeData([item]);
 		data.setDone.mockRejectedValueOnce(new DataError('server', { status: 500 }));
-		const store = new TicketListStore(data, session());
+		const { flags, store } = withFlags(data);
 		store.activate(withDone(false));
 		await settle();
 
@@ -701,11 +736,14 @@ describe('check mark', () => {
 
 		expect(store.isChecked(item)).toBe(false);
 		expect(store.isPending(item.id)).toBe(false);
-		expect(store.notice).toMatch(new RegExp(`^${item.key} konnte nicht geändert werden\\.`));
+		expect(flags.flags[0]?.tone).toBe('error');
+		expect(flags.flags[0]?.title).toMatch(
+			new RegExp(`^${item.key} konnte nicht geändert werden\\.`)
+		);
 		expect(store.open[0]?.status).toBe('open');
-
-		store.dismissNotice();
-		expect(store.notice).toBeNull();
+		// Errors stay until they are closed.
+		await vi.advanceTimersByTimeAsync(FLAG_DURATION_MS * 2);
+		expect(flags.flags).toHaveLength(1);
 	});
 });
 
@@ -713,7 +751,8 @@ describe('reset', () => {
 	it('empties everything and aborts running requests and timers', async () => {
 		const item = ticket();
 		const data = fakeData([item, ticket()], [[done()]]);
-		const store = new TicketListStore(data, session());
+		const flags = new FlagStore();
+		const store = new TicketListStore(data, session(), { flags });
 		store.activate(withDone(true));
 		await settle();
 		await store.setDone(item.id, true);
@@ -726,7 +765,8 @@ describe('reset', () => {
 		expect(data.listDone.mock.lastCall?.[1].signal?.aborted).toBe(true);
 		expect(store.open).toEqual([]);
 		expect(store.done).toEqual([]);
-		expect(store.isLingering(item.id)).toBe(false);
+		expect(store.canUndo(item.id)).toBe(false);
+		expect(flags.flags).toEqual([]);
 		expect(store.openState).toBe('idle');
 		expect(store.showDone).toBe(false);
 		expect(vi.getTimerCount()).toBe(0);
@@ -734,9 +774,10 @@ describe('reset', () => {
 });
 
 describe('announce', () => {
-	it('sets the polite status message, e.g. after a deletion in the panel', async () => {
+	it('shows a success flag, e.g. after a deletion in the panel', async () => {
 		const item = ticket();
-		const store = new TicketListStore(fakeData([item]), session());
+		const flags = new FlagStore();
+		const store = new TicketListStore(fakeData([item]), session(), { flags });
 		store.activate(withDone(false));
 		await settle();
 
@@ -744,7 +785,11 @@ describe('announce', () => {
 		store.announce('TASK-1 wurde gelöscht.');
 
 		expect(store.open).toEqual([]);
-		expect(store.announcement).toBe('TASK-1 wurde gelöscht.');
+		expect(flags.flags.map((flag) => [flag.tone, flag.title])).toEqual([
+			['success', 'TASK-1 wurde gelöscht.']
+		]);
+		// The live region of the list keeps the number of tickets only.
+		expect(store.announcement).toBe('');
 	});
 });
 
@@ -783,7 +828,7 @@ describe('grouping (E3 plan, package 13)', () => {
 		expect(store.groups?.map((group) => group.label)).toEqual(['Dringend', 'Niedrig']);
 	});
 
-	it('keeps a just checked row in the group of its previous status until undo expires', async () => {
+	it('removes a just checked row from its group at once (UI-5)', async () => {
 		const waiting = ticket({ status: 'waiting' });
 		const open = ticket();
 		const store = new TicketListStore(fakeData([waiting, open]), session());
@@ -791,13 +836,6 @@ describe('grouping (E3 plan, package 13)', () => {
 		await settle();
 
 		await store.setDone(waiting.id, true);
-		expect(shape(store)).toEqual([
-			['open', [open.id]],
-			['waiting', [waiting.id]]
-		]);
-		expect(store.groups?.[1]?.tickets[0]?.status).toBe('done');
-
-		await vi.advanceTimersByTimeAsync(UNDO_WINDOW_MS);
 		expect(shape(store)).toEqual([['open', [open.id]]]);
 	});
 
@@ -1002,22 +1040,28 @@ describe('search (E3 plan, package 11)', () => {
 		stop();
 	});
 
-	it('keeps a just checked row with "Rückgängig" although the server no longer finds it', async () => {
+	it('removes a just checked row from the search result at once (UI-5)', async () => {
 		const hit = ticket();
-		const { store, data } = await started([hit], [hit.id]);
+		const other = ticket();
+		const { store, data } = await started([hit, other], [hit.id, other.id]);
 		const live = fakeLive();
 		const stop = store.connect(live.source);
 		store.activate(searching('Miete'));
 		await vi.advanceTimersByTimeAsync(SEARCH_DEBOUNCE_MS);
+		expect(visibleIds(store)).toEqual([hit.id, other.id]);
 
 		await store.setDone(hit.id, true);
+		expect(visibleIds(store)).toEqual([other.id]);
 		data.searchOpen.mockImplementation((_search, options) =>
-			abortable(options, Promise.resolve([]))
+			abortable(options, Promise.resolve([other.id]))
 		);
-		live.send({ action: 'update', record: store.find(hit.id) as TicketSummary });
+		live.send({
+			action: 'update',
+			record: { ...hit, status: 'done', updated: '2026-09-24 11:00:00.000Z' }
+		});
 		await vi.advanceTimersByTimeAsync(SEARCH_DEBOUNCE_MS);
 
-		expect(visibleIds(store)).toEqual([hit.id]);
+		expect(visibleIds(store)).toEqual([other.id]);
 		stop();
 	});
 

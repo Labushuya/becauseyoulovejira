@@ -3,7 +3,9 @@
 // discarded entries page by page from the server (like the done tickets). The view shows what the
 // query of the URL asks for (chips "Quelle" and "Zustand"). Own answers and realtime events go
 // through the same idempotent `upsert` and `remove`; after a reconnection the store reconciles
-// once. A duplicate answer of the server is an outcome, not an error.
+// once. A duplicate answer of the server is an outcome, not an error. Results of discarding,
+// restoring and assigning go out as flags (ADR-0025 section 8): a discarded entry leaves the list
+// at once, and "Rückgängig" stands in its flag.
 
 import type PocketBase from 'pocketbase';
 import { createContext } from 'svelte';
@@ -39,8 +41,9 @@ import {
 import { DEFAULT_INBOX_QUERY, type InboxQuery } from '$lib/domain/inbox-query';
 import { channelsOf, sourceFamily } from '$lib/domain/source';
 import type { TicketSummary } from '$lib/domain/ticket';
+import { SILENT_FLAGS, type FlagSink } from './flags.svelte';
 import { hold, type LiveSource } from './realtime';
-import { UNDO_WINDOW_MS, type LoadState, type SessionGuard } from './ticket-list.svelte';
+import type { LoadState, SessionGuard } from './ticket-list.svelte';
 
 /**
  * Shown while the server does not know the inbox yet: the migration of E4 runs at the next start
@@ -97,12 +100,6 @@ export type CalendarImportResult =
 export type InboxActionResult =
 	{ ok: true; item: InboxItemSummary } | { ok: false; message: string | null };
 
-/** A just discarded entry that stays in place with "Rückgängig" for UNDO_WINDOW_MS. */
-interface Lingering {
-	item: InboxItemSummary;
-	timer: ReturnType<typeof setTimeout>;
-}
-
 function sameQuery(a: InboxQuery, b: InboxQuery): boolean {
 	return a.source === b.source && a.state === b.state;
 }
@@ -113,7 +110,9 @@ export class InboxStore {
 
 	readonly #new = new SvelteMap<string, InboxItemSummary>();
 	readonly #handled = new SvelteMap<string, InboxItemSummary>();
-	readonly #lingering = new SvelteMap<string, Lingering>();
+	readonly #flags: FlagSink;
+	/** Just discarded entries whose flag still offers "Rückgängig": entry ID to flag ID. */
+	readonly #undoFlags = new SvelteMap<string, { flagId: string; title: string }>();
 	/** Deleted IDs: a late event must not bring them back. Record IDs are never reused. */
 	readonly #deleted = new SvelteSet<string>();
 	/** IDs with a running action (discard, restore, assign). */
@@ -133,22 +132,21 @@ export class InboxStore {
 	#handledError = $state<string | null>(null);
 	#handledHasMore = $state(false);
 	#loadingMoreHandled = $state(false);
-	#announcement = $state('');
 
 	#newList = $derived([...this.#new.values()].sort(compareNewest));
 	#handledList = $derived([...this.#handled.values()].sort(compareHandled));
 	#visible = $derived.by(() => {
 		const query = this.#query;
 		if (query.state !== 'new') return this.#handledList;
-		const lingering = [...this.#lingering.values()].map((entry) => entry.item);
-		return [...this.#newList, ...lingering]
-			.filter((item) => query.source === null || sourceFamily(item.channel) === query.source)
-			.sort(compareNewest);
+		return this.#newList.filter(
+			(item) => query.source === null || sourceFamily(item.channel) === query.source
+		);
 	});
 
-	constructor(data: InboxData, session: SessionGuard) {
+	constructor(data: InboxData, session: SessionGuard, flags: FlagSink = SILENT_FLAGS) {
 		this.#data = data;
 		this.#session = session;
+		this.#flags = flags;
 	}
 
 	/** Every new entry, newest first. */
@@ -161,7 +159,7 @@ export class InboxStore {
 		return this.#state === 'ready' ? this.#new.size : null;
 	}
 
-	/** Rows of the view for the query of the URL: new ones (just discarded included) or handled. */
+	/** Rows of the view for the query of the URL: the new ones or the handled ones. */
 	get visible(): readonly InboxItemSummary[] {
 		return this.#visible;
 	}
@@ -204,22 +202,12 @@ export class InboxStore {
 		return this.#loadingMoreHandled;
 	}
 
-	/** Polite status message of the view (aria-live). */
-	get announcement(): string {
-		return this.#announcement;
-	}
-
 	find(id: string): InboxItemSummary | null {
-		return this.#new.get(id) ?? this.#handled.get(id) ?? this.#lingering.get(id)?.item ?? null;
+		return this.#new.get(id) ?? this.#handled.get(id) ?? null;
 	}
 
 	isPending(id: string): boolean {
 		return this.#pending.has(id);
-	}
-
-	/** True while a just discarded entry stands with "Rückgängig". */
-	isLingering(id: string): boolean {
-		return this.#lingering.has(id);
 	}
 
 	/** Possible duplicates of an entry among the open tickets and the other new entries. */
@@ -228,10 +216,6 @@ export class InboxStore {
 		openTickets: readonly TicketSummary[]
 	): SoftDuplicates {
 		return findSoftDuplicates(item, openTickets, this.#newList);
-	}
-
-	announce(message: string): void {
-		this.#announcement = message;
 	}
 
 	/** Loads the new entries for the app layout; the returned cleanup empties the store. */
@@ -294,14 +278,13 @@ export class InboxStore {
 		const existing = this.find(item.id);
 		if (existing !== null && existing.updated > item.updated) return;
 		if (item.state === 'new') {
-			this.#stopLingering(item.id);
+			// Back in the inbox by another way: "Rückgängig" has nothing left to do.
+			this.#dropUndo(item.id);
 			this.#handled.delete(item.id);
 			this.#new.set(item.id, item);
 			return;
 		}
 		this.#new.delete(item.id);
-		const lingering = this.#lingering.get(item.id);
-		if (lingering !== undefined) this.#lingering.set(item.id, { ...lingering, item });
 		if (this.#belongsToHandled(item)) this.#handled.set(item.id, item);
 		else this.#handled.delete(item.id);
 	}
@@ -309,7 +292,7 @@ export class InboxStore {
 	remove(id: string): void {
 		this.#deleted.add(id);
 		this.#touched?.add(id);
-		this.#stopLingering(id);
+		this.#dropUndo(id);
 		this.#new.delete(id);
 		this.#handled.delete(id);
 		this.#pending.delete(id);
@@ -383,8 +366,9 @@ export class InboxStore {
 	}
 
 	/**
-	 * "Verwerfen" (ADR-0014 section 4). A new entry stays in place for UNDO_WINDOW_MS with
-	 * "Rückgängig", like the check mark of the ticket table.
+	 * "Verwerfen" (ADR-0014 section 4). The entry leaves the new ones at once; for a new entry a
+	 * flag offers "Rückgängig" for FLAG_DURATION_MS, like the check mark of the ticket table.
+	 * A failure goes back to the caller, which shows it where the action started.
 	 */
 	async discard(id: string): Promise<InboxActionResult> {
 		const wasNew = this.#new.has(id);
@@ -394,29 +378,57 @@ export class InboxStore {
 			'konnte nicht verworfen werden.'
 		);
 		if (!result.ok) return result;
-		if (wasNew && !this.#deleted.has(id)) {
-			this.#stopLingering(id);
-			const timer = setTimeout(() => this.#lingering.delete(id), UNDO_WINDOW_MS);
-			this.#lingering.set(id, { item: result.item, timer });
+		const title = `„${result.item.title}“ verworfen.`;
+		if (!wasNew || this.#deleted.has(id)) {
+			this.#flags.show({ tone: 'success', title });
+			return result;
 		}
-		this.#announcement = `„${result.item.title}“ verworfen. Rückgängig ist kurz möglich.`;
+		this.#dropUndo(id);
+		const flagId = this.#flags.show({
+			tone: 'success',
+			title,
+			action: { label: 'Rückgängig', run: () => void this.undo(id) },
+			onclose: () => {
+				if (this.#undoFlags.get(id)?.flagId === flagId) this.#undoFlags.delete(id);
+			}
+		});
+		this.#undoFlags.set(id, { flagId, title: result.item.title });
 		return result;
 	}
 
 	/** "Wiederherstellen" of a discarded entry. */
-	async restore(id: string): Promise<InboxActionResult> {
-		const result = await this.#act(
-			id,
-			() => this.#data.restore(id),
-			'konnte nicht wiederhergestellt werden.'
-		);
-		if (result.ok) this.#announcement = `„${result.item.title}“ ist wieder im Eingang.`;
+	restore(id: string): Promise<InboxActionResult> {
+		return this.#restore(id, undefined);
+	}
+
+	/** "Rückgängig" of the flag after discarding; a failure becomes an error flag. */
+	async undo(id: string): Promise<InboxActionResult> {
+		// The entry left the list with the discard; its title still names it in a failure.
+		const title = this.#undoFlags.get(id)?.title;
+		this.#undoFlags.delete(id);
+		const result = await this.#restore(id, title);
+		if (!result.ok && result.message !== null) {
+			this.#flags.show({ tone: 'error', title: result.message });
+		}
 		return result;
 	}
 
-	/** "Rückgängig" right after discarding. */
-	undo(id: string): Promise<InboxActionResult> {
-		return this.restore(id);
+	async #restore(id: string, knownTitle: string | undefined): Promise<InboxActionResult> {
+		const result = await this.#act(
+			id,
+			() => this.#data.restore(id),
+			'konnte nicht wiederhergestellt werden.',
+			knownTitle
+		);
+		if (result.ok) {
+			this.#flags.show({ tone: 'success', title: `„${result.item.title}“ ist wieder im Eingang.` });
+		}
+		return result;
+	}
+
+	/** True while the flag of a just discarded entry offers "Rückgängig". */
+	canUndo(id: string): boolean {
+		return this.#undoFlags.has(id);
 	}
 
 	/** "Dem Ticket zuordnen": the entry counts as converted into the ticket. */
@@ -428,7 +440,10 @@ export class InboxStore {
 		);
 		if (result.ok) {
 			const target = ticketKey === '' ? 'dem Ticket' : ticketKey;
-			this.#announcement = `„${result.item.title}“ ist ${target} zugeordnet.`;
+			this.#flags.show({
+				tone: 'success',
+				title: `„${result.item.title}“ ist ${target} zugeordnet.`
+			});
 		}
 		return result;
 	}
@@ -517,8 +532,7 @@ export class InboxStore {
 		this.#handledController = null;
 		this.#reconcileController = null;
 		this.#touched = null;
-		for (const { timer } of this.#lingering.values()) clearTimeout(timer);
-		this.#lingering.clear();
+		for (const id of [...this.#undoFlags.keys()]) this.#dropUndo(id);
 		this.#new.clear();
 		this.#handled.clear();
 		this.#deleted.clear();
@@ -531,13 +545,13 @@ export class InboxStore {
 		this.#handledError = null;
 		this.#handledHasMore = false;
 		this.#loadingMoreHandled = false;
-		this.#announcement = '';
 	}
 
 	async #act(
 		id: string,
 		call: () => Promise<InboxItemSummary>,
-		failure: string
+		failure: string,
+		knownTitle?: string
 	): Promise<InboxActionResult> {
 		if (this.#pending.has(id)) return { ok: false, message: null };
 		if (!this.#session.ensureValid()) return { ok: false, message: null };
@@ -549,7 +563,7 @@ export class InboxStore {
 		} catch (error) {
 			const message = this.#failureMessage(error);
 			if (message === null) return { ok: false, message: null };
-			const title = this.find(id)?.title;
+			const title = this.find(id)?.title ?? knownTitle;
 			const field = Object.values(toDataError(error).fields)[0]?.message;
 			const prefix = title === undefined ? `Der Eintrag ${failure}` : `„${title}“ ${failure}`;
 			return { ok: false, message: `${prefix} ${field ?? message}` };
@@ -558,11 +572,12 @@ export class InboxStore {
 		}
 	}
 
-	#stopLingering(id: string): void {
-		const lingering = this.#lingering.get(id);
-		if (lingering === undefined) return;
-		clearTimeout(lingering.timer);
-		this.#lingering.delete(id);
+	/** Ends the chance of "Rückgängig" for an entry and closes its flag. */
+	#dropUndo(id: string): void {
+		const undoable = this.#undoFlags.get(id);
+		if (undoable === undefined) return;
+		this.#undoFlags.delete(id);
+		this.#flags.dismiss(undoable.flagId);
 	}
 
 	/** Channels of the source chip for the server filter of handled entries, null for all. */

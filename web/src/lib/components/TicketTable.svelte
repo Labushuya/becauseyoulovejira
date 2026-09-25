@@ -158,8 +158,9 @@
 	}
 
 	/**
-	 * Keyboard focus after rows moved or vanished (checked, unchecked, undo expired): back to the
-	 * check mark of the same ticket, else to the row now at the same place, else to the heading.
+	 * Keyboard focus after rows moved or vanished (checked, unchecked, "Rückgängig" in the flag):
+	 * back to the check mark of the same ticket, else to the row now at the same place, else to the
+	 * heading. It never goes to the flag (ADR-0025 section 8).
 	 */
 	function restoreFocus() {
 		if (lastFocus === null || !focusLost()) return;
@@ -218,12 +219,10 @@
 			today={store.today}
 			checked={store.isChecked(ticket)}
 			pending={store.isPending(ticket.id)}
-			lingering={store.isLingering(ticket.id)}
 			active={ticket.id === activeId}
 			isNew={store.isNew(ticket)}
 			recurrenceText={ticket.recurring ? recurrenceTextOf(ticket) : ''}
 			ontoggle={(done) => store.setDone(ticket.id, done)}
-			onundo={() => store.undo(ticket.id)}
 		/>
 	{/each}
 {/snippet}
@@ -310,17 +309,6 @@
 	</SectionBar>
 
 	<p class="visually-hidden" aria-live="polite">{store.announcement}</p>
-	<div aria-live="assertive">
-		{#if store.notice}
-			<div class="alert-error notice">
-				<ErrorIcon />
-				<span class="failure-text">{store.notice}</span>
-				<button class="text-button" type="button" onclick={() => store.dismissNotice()}>
-					Schließen
-				</button>
-			</div>
-		{/if}
-	</div>
 
 	{#if store.openState === 'error' && store.openError}
 		{@render failure(store.openError, 'Erneut versuchen', () => store.reload())}
@@ -627,8 +615,7 @@
 		}
 	}
 
-	.failure,
-	.notice {
+	.failure {
 		align-items: center;
 		margin-bottom: 0.75rem;
 	}

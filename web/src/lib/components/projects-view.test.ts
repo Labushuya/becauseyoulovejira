@@ -11,6 +11,7 @@ import type { Tag } from '$lib/domain/tag';
 import type { TicketSummary } from '$lib/domain/ticket';
 import { CatalogStore, type CatalogData } from '$lib/stores/catalog.svelte';
 import { CatalogEditor, type CatalogEditorData } from '$lib/stores/catalog-editor';
+import { FlagStore } from '$lib/stores/flags.svelte';
 import { ProjectStatsStore } from '$lib/stores/project-stats.svelte';
 import { TicketListStore, type TicketListData } from '$lib/stores/ticket-list.svelte';
 import ProjectsView from './ProjectsView.svelte';
@@ -129,11 +130,15 @@ async function show(
 	const editor = new CatalogEditor(editorData, session, catalog);
 	await catalog.load();
 	tickets.loadOpen();
-	render(ProjectsView, { props: { catalog, tickets, stats, editor } });
+	const flags = new FlagStore();
+	render(ProjectsView, { props: { catalog, tickets, stats, editor, flags } });
 	await vi.waitFor(() => expect(tickets.openState).toBe('ready'));
 	await tick();
-	return { catalog, tickets, stats, editorData, countDone };
+	return { catalog, tickets, stats, editorData, countDone, flags };
 }
+
+/** Titles of the shown flags, newest first (ADR-0025 section 8). */
+const flagTitles = (flags: FlagStore) => flags.flags.map((flag) => flag.title);
 
 const tileText = (name: string) =>
 	screen
@@ -187,7 +192,7 @@ describe('project view', () => {
 	});
 
 	it('opens the dialog and returns the focus to "Neues Projekt" after creating', async () => {
-		const { editorData, catalog } = await show();
+		const { editorData, catalog, flags } = await show();
 		const button = screen.getByRole('button', { name: 'Neues Projekt' });
 		button.focus();
 
@@ -202,12 +207,12 @@ describe('project view', () => {
 		await vi.waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
 		expect(document.activeElement).toBe(button);
 		expect(catalog.projectById('proj00000000009')).not.toBeNull();
-		expect(screen.getByText('Projekt „Garten“ (GART) angelegt.')).toBeTruthy();
+		expect(flagTitles(flags)).toEqual(['Projekt „Garten“ (GART) angelegt.']);
 		expect(tileText('Garten')).toMatch(/^Garten GART/);
 	});
 
 	it('returns the focus to "Bearbeiten" after cancelling and to the heading if the tile is gone', async () => {
-		await show();
+		const { flags } = await show();
 		const edit = screen.getByRole('button', { name: 'Projekt Haus bearbeiten' });
 
 		await fireEvent.click(edit);
@@ -220,7 +225,7 @@ describe('project view', () => {
 		await vi.waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
 		expect(screen.queryByRole('link', { name: /^Haus/ })).toBeNull();
 		expect(document.activeElement).toBe(screen.getByRole('heading', { name: 'Projekte' }));
-		expect(screen.getByText('Projekt „Haus“ archiviert.')).toBeTruthy();
+		expect(flagTitles(flags)).toEqual(['Projekt „Haus“ archiviert.']);
 	});
 
 	it('offers deleting only for a project without tickets', async () => {

@@ -5,7 +5,8 @@
 // leaves no data behind. Own answers and realtime events (ADR-0007) go through the same
 // idempotent `upsert` and `remove`; after a reconnection the store reconciles once with the
 // server. The "new" mark (ADR-0015, E4 plan package 4) is derived from the own read rows and the
-// base line of the user.
+// base line of the user. Results of actions and failures of the check mark go out as flags
+// (ADR-0025 section 8): a checked row leaves at once, "Rückgängig" stands in its flag.
 
 import type PocketBase from 'pocketbase';
 import { createContext } from 'svelte';
@@ -36,13 +37,8 @@ import { columnOrder, ticketOrder, type ResolveProject } from '$lib/domain/order
 import type { Status } from '$lib/domain/status';
 import type { TicketPatch, TicketSummary } from '$lib/domain/ticket';
 import { countNew, isNew, unreadSinceOf } from '$lib/domain/unread';
+import { SILENT_FLAGS, type FlagSink } from './flags.svelte';
 import { hold, type LiveSource } from './realtime';
-
-/**
- * How long a checked row stays in place, struck through and with "Rückgängig" (OF-E2-2,
- * recommendation until decided).
- */
-export const UNDO_WINDOW_MS = 5000;
 
 /** Delay after the Berlin midnight before "today" is computed again (E2 plan, T-3). */
 export const MIDNIGHT_BUFFER_MS = 1000;
@@ -107,12 +103,12 @@ export function readsData(pb: PocketBase): ReadsData {
 /** Key of a read row that is known only from the answer "already read" (no row ID). */
 const LOCAL_READ = 'local:';
 
-interface Lingering {
-	ticket: TicketSummary;
-	/** Status before "done", restored by "Rückgängig". */
+/** A just checked ticket whose flag offers "Rückgängig" (ADR-0025 section 8). */
+interface Undoable {
+	key: string;
+	/** Status before "done", restored by "Rückgängig" (OF-E2-3). */
 	previousStatus: Status;
-	/** Ends the undo window. */
-	timer: ReturnType<typeof setTimeout>;
+	flagId: string;
 }
 
 /**
@@ -160,6 +156,8 @@ export interface TicketListOptions {
 	projectOf?: ResolveProject<TicketSummary>;
 	/** Read rows and base line; without them nothing is marked as new. */
 	reads?: ReadsData;
+	/** Flags of the app (results, "Rückgängig", failures); without them nothing is shown. */
+	flags?: FlagSink;
 }
 
 export class TicketListStore {
@@ -170,7 +168,9 @@ export class TicketListStore {
 
 	readonly #open = new SvelteMap<string, TicketSummary>();
 	readonly #done = new SvelteMap<string, TicketSummary>();
-	readonly #lingering = new SvelteMap<string, Lingering>();
+	/** Just checked tickets whose flag still offers "Rückgängig", keyed by ticket ID. */
+	readonly #undoable = new SvelteMap<string, Undoable>();
+	readonly #flags: FlagSink;
 	/** Target state of running check mark requests, keyed by ticket ID. */
 	readonly #pending = new SvelteMap<string, boolean>();
 	/**
@@ -197,8 +197,6 @@ export class TicketListStore {
 	#announceDone = false;
 	/** Search the URL asks for (from SEARCH_MIN_LENGTH characters), applied or waiting for the pause. */
 	#wantedSearch: string | null = null;
-	/** Search the IDs in #searchIds belong to. */
-	#searchIdsFor: string | null = null;
 	#searchTimer: ReturnType<typeof setTimeout> | undefined;
 	#searchRefreshTimer: ReturnType<typeof setTimeout> | undefined;
 	#searchController: AbortController | null = null;
@@ -212,7 +210,6 @@ export class TicketListStore {
 	#doneError = $state<string | null>(null);
 	#doneHasMore = $state(false);
 	#loadingMoreDone = $state(false);
-	#notice = $state<string | null>(null);
 	#announcement = $state('');
 	/** Search that narrows the list and the done section (after the pause), null without one. */
 	#search = $state<string | null>(null);
@@ -224,56 +221,29 @@ export class TicketListStore {
 	#searchBusy = $state(false);
 	#searchError = $state<string | null>(null);
 
-	#openList = $derived.by(() => {
-		const lingering = [...this.#lingering.values()].map((entry) => entry.ticket);
-		return [...this.#open.values(), ...lingering].sort(ticketOrder(this.#today));
-	});
-	/**
-	 * Visible open rows with the ticket they are filtered, sorted and grouped as (`subject`): a
-	 * just checked row stays in place with "Rückgängig", so it counts with the status it had
-	 * before.
-	 */
-	#visibleEntries = $derived.by(() => {
+	#openList = $derived([...this.#open.values()].sort(ticketOrder(this.#today)));
+	/** Visible open rows: filtered, narrowed by the search and in the column sort. */
+	#visibleList = $derived.by(() => {
 		const query = this.#query;
 		if (query.status === 'done') return [];
 		const today = this.#today;
 		const order = columnOrder(query.sort, today, this.#projectOf);
 		const ids = this.#search === null ? null : this.#searchIds;
 		return this.#openList
-			.map((ticket) => {
-				const previousStatus = this.#lingering.get(ticket.id)?.previousStatus;
-				return { ticket, subject: previousStatus ? { ...ticket, status: previousStatus } : ticket };
-			})
 			.filter(
-				({ ticket, subject }) =>
-					matchesFilter(subject, query, today) && (ids === null || ids.has(ticket.id))
+				(ticket) => matchesFilter(ticket, query, today) && (ids === null || ids.has(ticket.id))
 			)
-			.sort((a, b) => order(a.subject, b.subject));
+			.sort(order);
 	});
-	#visibleList = $derived(this.#visibleEntries.map(({ ticket }) => ticket));
 	#groupList = $derived.by((): TicketGroup<TicketSummary>[] | null => {
 		const grouping = this.#query.grouping;
 		if (grouping === null) return null;
-		const entries = this.#visibleEntries;
-		// Rows are keyed by ID: a just checked row is grouped as its copy with the previous status.
-		const ticketOf = Object.fromEntries(entries.map(({ ticket }) => [ticket.id, ticket]));
-		return groupTickets(
-			entries.map(({ subject }) => subject),
-			grouping,
-			this.#today,
-			this.#projectOf
-		).map((group) => ({
-			...group,
-			tickets: group.tickets.map((subject) => ticketOf[subject.id] ?? subject)
-		}));
+		return groupTickets(this.#visibleList, grouping, this.#today, this.#projectOf);
 	});
 	#doneList = $derived.by(() => {
 		const query = this.#query;
 		const today = this.#today;
-		// With the status filter "Erledigt" there is no other place for a just checked row.
-		const onlyDone = query.status === 'done';
 		return [...this.#done.values()]
-			.filter((ticket) => onlyDone || !this.#lingering.has(ticket.id))
 			.filter((ticket) => matchesFilter(ticket, query, today))
 			.sort(compareDone);
 	});
@@ -297,7 +267,12 @@ export class TicketListStore {
 	constructor(
 		data: TicketListData,
 		session: SessionGuard,
-		{ now = Date.now, projectOf = (ticket) => ticket.project, reads }: TicketListOptions = {}
+		{
+			now = Date.now,
+			projectOf = (ticket) => ticket.project,
+			reads,
+			flags = SILENT_FLAGS
+		}: TicketListOptions = {}
 	) {
 		this.#data = data;
 		this.#session = session;
@@ -305,6 +280,7 @@ export class TicketListStore {
 		this.#projectOf = projectOf;
 		this.#today = berlinToday(now());
 		this.#reads = reads ?? null;
+		this.#flags = flags;
 	}
 
 	/** True if the ticket is new for the signed-in user (ADR-0015 section 2). */
@@ -353,16 +329,15 @@ export class TicketListStore {
 	/** "Alle als gelesen markieren" (ADR-0015 section 4): the base line moves to now. */
 	async markAllRead(): Promise<void> {
 		if (this.#reads === null || !this.#session.ensureValid()) return;
-		this.#notice = null;
 		try {
 			this.#unreadSince = await this.#reads.markAllRead();
-			this.#announcement = 'Alle Tickets als gelesen markiert.';
+			this.#flags.show({ tone: 'success', title: 'Alle Tickets als gelesen markiert.' });
 		} catch (error) {
 			this.#fail(error, 'Die Tickets konnten nicht als gelesen markiert werden.');
 		}
 	}
 
-	/** Open tickets in the default order (P-2), including rows that were just checked. */
+	/** Open tickets in the default order (P-2). */
 	get open(): readonly TicketSummary[] {
 		return this.#openList;
 	}
@@ -378,8 +353,7 @@ export class TicketListStore {
 
 	/**
 	 * The visible rows in groups (E3 plan, T-7 and package 13), null without a grouping. Groups
-	 * follow the order of the domain, empty ones are left out, and each keeps the column sort. A
-	 * just checked row stays for UNDO_WINDOW_MS in the group of its previous status.
+	 * follow the order of the domain, empty ones are left out, and each keeps the column sort.
 	 */
 	get groups(): readonly TicketGroup<TicketSummary>[] | null {
 		return this.#groupList;
@@ -396,7 +370,7 @@ export class TicketListStore {
 	 */
 	get visibleCount(): number {
 		if (this.#query.status === 'done') return this.#doneList.length;
-		return this.#visibleList.filter((ticket) => ticket.status !== 'done').length;
+		return this.#visibleList.length;
 	}
 
 	/** True if more tickets match than `visibleCount` says (further pages of done tickets). */
@@ -404,15 +378,15 @@ export class TicketListStore {
 		return this.#query.status === 'done' && this.#doneHasMore;
 	}
 
-	/** Number of tickets that are not done (header counter, T-18); just checked rows count as done. */
+	/** Number of tickets that are not done (header counter, T-18). */
 	get openCount(): number {
 		return this.#open.size;
 	}
 
 	/**
 	 * Numbers of the KPI tiles (E3 plan, T-10 and package 12): every ticket that is not done,
-	 * independent of filters and search, with the same boundary as `openCount` (just checked rows
-	 * count as done). They follow realtime and the Berlin midnight.
+	 * independent of filters and search, with the same boundary as `openCount`. They follow
+	 * realtime and the Berlin midnight.
 	 */
 	get kpis(): Kpis {
 		return this.#kpis;
@@ -477,19 +451,17 @@ export class TicketListStore {
 		if (this.#search !== null) void this.#loadSearch(true);
 	}
 
-	/** Error of the last check mark or undo action, null without one. */
-	get notice(): string | null {
-		return this.#notice;
-	}
-
-	/** Polite status message for screen readers (aria-live). */
+	/**
+	 * Polite status message of the list for screen readers (aria-live): the number of tickets after
+	 * a filter change or a search. Results of actions go out as flags.
+	 */
 	get announcement(): string {
 		return this.#announcement;
 	}
 
 	/** Ticket from the list, null if it is not loaded. */
 	find(id: string): TicketSummary | null {
-		return this.#open.get(id) ?? this.#lingering.get(id)?.ticket ?? this.#done.get(id) ?? null;
+		return this.#open.get(id) ?? this.#done.get(id) ?? null;
 	}
 
 	/** State the check mark shows: the requested one while a request runs. */
@@ -499,11 +471,6 @@ export class TicketListStore {
 
 	isPending(id: string): boolean {
 		return this.#pending.has(id);
-	}
-
-	/** True while a just checked row still stands with "Rückgängig". */
-	isLingering(id: string): boolean {
-		return this.#lingering.has(id);
 	}
 
 	/**
@@ -579,15 +546,14 @@ export class TicketListStore {
 		this.#touched?.add(ticket.id);
 		const existing = this.find(ticket.id);
 		if (existing !== null && existing.updated > ticket.updated) return;
-		const lingering = this.#lingering.get(ticket.id);
 		if (ticket.status !== 'done') {
-			if (lingering) this.#stopLingering(ticket.id);
+			// Open again by another way: "Rückgängig" has nothing left to do.
+			this.#dropUndo(ticket.id);
 			this.#done.delete(ticket.id);
 			this.#open.set(ticket.id, ticket);
 			return;
 		}
 		this.#open.delete(ticket.id);
-		if (lingering) this.#lingering.set(ticket.id, { ...lingering, ticket });
 		if (this.#belongsToLoadedDone(ticket)) this.#done.set(ticket.id, ticket);
 		else this.#done.delete(ticket.id);
 	}
@@ -597,25 +563,34 @@ export class TicketListStore {
 		this.#deleted.add(id);
 		this.#open.delete(id);
 		this.#done.delete(id);
-		this.#stopLingering(id);
+		this.#dropUndo(id);
 		this.#pending.delete(id);
 	}
 
 	/**
 	 * A ticket was just completed with the given previous status (check mark, or the status
-	 * select of the panel): the row stays in place with "Rückgängig" for UNDO_WINDOW_MS.
+	 * select of the panel): the row leaves the open list at once, and a flag offers "Rückgängig"
+	 * for FLAG_DURATION_MS (paused while the user points at it, ADR-0025 section 8).
 	 */
 	completed(ticket: TicketSummary, previousStatus: Status): void {
 		if (ticket.status !== 'done' || previousStatus === 'done') {
 			this.upsert(ticket);
 			return;
 		}
-		this.#stopLingering(ticket.id);
 		const existing = this.find(ticket.id);
 		if (existing !== null && existing.updated > ticket.updated) return;
-		const timer = setTimeout(() => this.#expire(ticket.id), UNDO_WINDOW_MS);
-		this.#lingering.set(ticket.id, { ticket, previousStatus, timer });
 		this.upsert(ticket);
+		this.#dropUndo(ticket.id);
+		const id = ticket.id;
+		const flagId = this.#flags.show({
+			tone: 'success',
+			title: `${ticket.key} erledigt.`,
+			action: { label: 'Rückgängig', run: () => void this.undo(id) },
+			onclose: () => {
+				if (this.#undoable.get(id)?.flagId === flagId) this.#undoable.delete(id);
+			}
+		});
+		this.#undoable.set(id, { key: ticket.key, previousStatus, flagId });
 	}
 
 	/**
@@ -627,14 +602,14 @@ export class TicketListStore {
 		if (ticket === null || this.#pending.has(id) || (ticket.status === 'done') === done) return;
 		if (!this.#session.ensureValid()) return;
 		this.#pending.set(id, done);
-		this.#notice = null;
 		try {
 			const saved = await this.#data.setDone(id, done);
-			if (done) this.completed(saved, ticket.status);
-			else this.upsert(saved);
-			this.#announcement = done
-				? `${saved.key} erledigt. Rückgängig ist kurz möglich.`
-				: `${saved.key} wieder offen.`;
+			if (done) {
+				this.completed(saved, ticket.status);
+			} else {
+				this.upsert(saved);
+				this.#flags.show({ tone: 'success', title: `${saved.key} wieder offen.` });
+			}
 		} catch (error) {
 			this.#fail(error, `${ticket.key} konnte nicht geändert werden.`);
 		} finally {
@@ -642,31 +617,32 @@ export class TicketListStore {
 		}
 	}
 
-	/** "Rückgängig" right after checking: restores the exact previous status (OF-E2-3). */
+	/** "Rückgängig" of the flag after checking: restores the exact previous status (OF-E2-3). */
 	async undo(id: string): Promise<void> {
-		const lingering = this.#lingering.get(id);
-		if (!lingering || this.#pending.has(id)) return;
+		const undoable = this.#undoable.get(id);
+		if (undoable === undefined || this.#pending.has(id)) return;
 		if (!this.#session.ensureValid()) return;
+		this.#undoable.delete(id);
 		this.#pending.set(id, false);
-		this.#notice = null;
 		try {
-			const saved = await this.#data.update(id, { status: lingering.previousStatus });
+			const saved = await this.#data.update(id, { status: undoable.previousStatus });
 			this.upsert(saved);
-			this.#announcement = `${saved.key} ist wieder offen.`;
+			this.#flags.show({ tone: 'success', title: `${saved.key} ist wieder offen.` });
 		} catch (error) {
-			this.#fail(error, `${lingering.ticket.key} konnte nicht zurückgesetzt werden.`);
+			this.#fail(error, `${undoable.key} konnte nicht zurückgesetzt werden.`);
 		} finally {
 			this.#pending.delete(id);
 		}
 	}
 
-	/** Polite status message (aria-live), e.g. after the panel deleted a ticket. */
-	announce(message: string): void {
-		this.#announcement = message;
+	/** True while the flag of a just checked ticket offers "Rückgängig". */
+	canUndo(id: string): boolean {
+		return this.#undoable.has(id);
 	}
 
-	dismissNotice(): void {
-		this.#notice = null;
+	/** Result of an action in another view (panel, "Neues Ticket") as a success flag. */
+	announce(message: string): void {
+		this.#flags.show({ tone: 'success', title: message });
 	}
 
 	/**
@@ -765,10 +741,9 @@ export class TicketListStore {
 		this.#reconcileController = null;
 		this.#touched = null;
 		this.#deleted.clear();
-		for (const { timer } of this.#lingering.values()) clearTimeout(timer);
+		for (const id of [...this.#undoable.keys()]) this.#dropUndo(id);
 		this.#open.clear();
 		this.#done.clear();
-		this.#lingering.clear();
 		this.#pending.clear();
 		this.#donePage = 0;
 		this.#doneKey = null;
@@ -778,7 +753,6 @@ export class TicketListStore {
 		this.#searchController?.abort();
 		this.#searchController = null;
 		this.#wantedSearch = null;
-		this.#searchIdsFor = null;
 		this.#search = null;
 		this.#searchIds = null;
 		this.#searchBusy = false;
@@ -791,7 +765,6 @@ export class TicketListStore {
 		this.#doneError = null;
 		this.#doneHasMore = false;
 		this.#loadingMoreDone = false;
-		this.#notice = null;
 		this.#announcement = '';
 		this.#readsController?.abort();
 		this.#readsController = null;
@@ -840,8 +813,9 @@ export class TicketListStore {
 			const tickets = await this.#data.listOpen({ signal: controller.signal });
 			if (controller.signal.aborted) return;
 			this.#open.clear();
+			// A just checked ticket may still be open in an answer that started before the check.
 			for (const ticket of tickets) {
-				if (!this.#lingering.has(ticket.id)) this.#open.set(ticket.id, ticket);
+				if (!this.#undoable.has(ticket.id)) this.#open.set(ticket.id, ticket);
 			}
 			this.#openState = 'ready';
 			void this.#loadReads();
@@ -903,7 +877,10 @@ export class TicketListStore {
 		for (const id of [...this.#open.keys()]) {
 			if (!ids.has(id) && !touched.has(id)) this.#open.delete(id);
 		}
-		for (const ticket of open) this.upsert(ticket);
+		// A just checked ticket may still be open in a snapshot that started before the check.
+		for (const ticket of open) {
+			if (!this.#undoable.has(ticket.id)) this.upsert(ticket);
+		}
 	}
 
 	#mergeDone(pages: readonly DoneTicketPage[], touched: ReadonlySet<string>): void {
@@ -970,7 +947,6 @@ export class TicketListStore {
 			this.#searchController = null;
 			clearTimeout(this.#searchRefreshTimer);
 			this.#searchIds = null;
-			this.#searchIdsFor = null;
 			this.#searchBusy = false;
 		} else {
 			void this.#loadSearch(true);
@@ -993,9 +969,8 @@ export class TicketListStore {
 
 	/**
 	 * Loads the IDs of the open tickets that match the search; a newer request aborts an older one
-	 * and a stale answer is dropped. A just checked row keeps its place: its ID stays while it
-	 * stands with "Rückgängig", although the server no longer counts it as open. `announce` (a new
-	 * search) marks the field as busy and announces the new number.
+	 * and a stale answer is dropped. `announce` (a new search) marks the field as busy and announces
+	 * the new number.
 	 */
 	async #loadSearch(announce: boolean): Promise<void> {
 		const search = this.#search;
@@ -1009,10 +984,7 @@ export class TicketListStore {
 		try {
 			const ids = await this.#data.searchOpen(search, { signal: controller.signal });
 			if (controller.signal.aborted || search !== this.#search) return;
-			const previous = this.#searchIdsFor === search ? this.#searchIds : null;
-			const kept = [...this.#lingering.keys()].filter((id) => previous?.has(id) === true);
-			this.#searchIds = new SvelteSet([...ids, ...kept]);
-			this.#searchIdsFor = search;
+			this.#searchIds = new SvelteSet(ids);
 			this.#searchError = null;
 			if (announce && this.#openState === 'ready' && this.#query.status !== 'done') {
 				this.#announcement = countMessage(this.visibleCount);
@@ -1023,7 +995,6 @@ export class TicketListStore {
 			if (message === null) return;
 			this.#searchError = message;
 			this.#searchIds = null;
-			this.#searchIdsFor = null;
 		} finally {
 			if (this.#searchController === controller) {
 				this.#searchController = null;
@@ -1065,21 +1036,12 @@ export class TicketListStore {
 		this.#announceDone = false;
 	}
 
-	#expire(id: string): void {
-		const lingering = this.#lingering.get(id);
-		if (!lingering) return;
-		// A request for this row is still running: keep it until the answer arrives.
-		if (this.#pending.has(id)) {
-			const timer = setTimeout(() => this.#expire(id), UNDO_WINDOW_MS);
-			this.#lingering.set(id, { ...lingering, timer });
-			return;
-		}
-		this.#lingering.delete(id);
-	}
-
-	#stopLingering(id: string): void {
-		clearTimeout(this.#lingering.get(id)?.timer);
-		this.#lingering.delete(id);
+	/** Ends the chance of "Rückgängig" for a ticket and closes its flag. */
+	#dropUndo(id: string): void {
+		const undoable = this.#undoable.get(id);
+		if (undoable === undefined) return;
+		this.#undoable.delete(id);
+		this.#flags.dismiss(undoable.flagId);
 	}
 
 	/**
@@ -1096,16 +1058,16 @@ export class TicketListStore {
 		return failure.message;
 	}
 
+	/** A failed check mark or "Rückgängig" as an error flag; it stays until it is closed. */
 	#fail(error: unknown, prefix: string): void {
 		// Reopening an instance whose follow-up was already edited (ADR-0023 section 3): the
 		// refusal names that ticket and what to do.
 		const status = toDataError(error).fields.status;
-		if (status?.code === 'validation_recurrence_open_instance') {
-			this.#notice = `${prefix} ${status.message}`;
-			return;
-		}
-		const message = this.#failureMessage(error);
-		if (message !== null) this.#notice = `${prefix} ${message}`;
+		const message =
+			status?.code === 'validation_recurrence_open_instance'
+				? status.message
+				: this.#failureMessage(error);
+		if (message !== null) this.#flags.show({ tone: 'error', title: `${prefix} ${message}` });
 	}
 }
 
