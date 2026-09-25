@@ -365,3 +365,23 @@ describe('Jetzt abrufen (E4 plan, package 15)', () => {
 		expect(link.getAttribute('rel')).toBe('noopener noreferrer');
 	});
 });
+
+describe('Telegram-Bot einrichten (E4 plan, package 17)', () => {
+	it('explains BotFather, the token, the own ID, the allowlist and the restart', () => {
+		const { store } = setup();
+		render(ChannelsView, {
+			props: { captureUrl: 'http://127.0.0.1:8090/eingang/neu', connections: store }
+		});
+		const section = screen.getByRole('region', { name: 'Telegram-Bot einrichten' });
+		const text = (section.textContent ?? '').replace(/\s+/g, ' ');
+		expect(text).toMatch(/@BotFather/);
+		expect(text).toMatch(/\/newbot/);
+		expect(text).toMatch(/setx BYL_TELEGRAM_TOKEN/);
+		expect(text).toMatch(/nicht freigegebenen Chat \(Chat-ID …\)/);
+		expect(text).toMatch(/setx BYL_TELEGRAM_ALLOWED_IDS/);
+		expect(text).toMatch(/stop\.bat und dann start\.bat/);
+		expect(text).toMatch(/Im Eingang gespeichert/);
+		expect(text).toMatch(/24 Stunden/);
+		expect(text).toMatch(/\/revoke/);
+	});
+});

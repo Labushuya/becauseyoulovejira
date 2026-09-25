@@ -14,7 +14,7 @@ var rules = require(__hooks + '/lib/connection-rules.js');
 
 var COLLECTION = 'connections';
 var LOCK_MS = 10 * 60 * 1000;
-// Seconds per request: the calendar runs every 15 minutes, Telegram every minute.
+// Seconds per request of the calendar (every 15 minutes); Telegram (every minute) uses 20.
 var HTTP_TIMEOUT_SECONDS = 30;
 var MAX_BODY_BYTES = 20 * 1024 * 1024;
 // New entries per run and connection; the rest follows with the next run.
@@ -47,6 +47,9 @@ function isLocked(runningSince, now) {
 function channelOf(type) {
   if (type === 'calendar') {
     return require(__hooks + '/lib/channel-calendar-run.js');
+  }
+  if (type === 'telegram') {
+    return require(__hooks + '/lib/channel-telegram-run.js');
   }
   return null;
 }

@@ -3,9 +3,9 @@
 	import type { ConnectionsStore } from '$lib/stores/connections.svelte';
 	import ConnectionsSection from './ConnectionsSection.svelte';
 
-	// Settings "Kanäle" (E4 plan, T-3 and packages 7, 10 and 15): the bookmarklet, the connections
-	// with access data from Windows user environment variables (ADR-0018), how to set them and how
-	// to set up Google Calendar. The
+	// Settings "Kanäle" (E4 plan, T-3 and packages 7, 10, 15 and 17): the bookmarklet, the
+	// connections with access data from Windows user environment variables (ADR-0018), how to set
+	// them and how to set up Google Calendar and the Telegram bot. The
 	// bookmarklet link is dragged to the bookmarks bar; for the keyboard the code can be copied and
 	// saved as the address of a new bookmark. A click on the link here does nothing, so the page
 	// does not capture itself.
@@ -24,7 +24,8 @@
 		bookmarklet: `${uid}-bookmarklet`,
 		code: `${uid}-code`,
 		variables: `${uid}-variables`,
-		calendar: `${uid}-calendar`
+		calendar: `${uid}-calendar`,
+		telegram: `${uid}-telegram`
 	};
 
 	const code = $derived(bookmarkletCode(captureUrl));
@@ -158,6 +159,51 @@
 			Kalender zu lesen. Gib sie nicht weiter. Widerrufen: in denselben Einstellungen bei
 			„Privatadresse im iCal-Format“ auf „Zurücksetzen“, dann die neue Adresse per
 			<code>setx</code> eintragen und die App neu starten.
+		</p>
+	</section>
+
+	<section class="card" aria-labelledby={ids.telegram}>
+		<h3 id={ids.telegram}>Telegram-Bot einrichten</h3>
+		<p>
+			Du legst einen eigenen Bot an und schreibst ihm, was in den Eingang soll. Die App fragt jede
+			Minute nach neuen Nachrichten, solange sie läuft. Nur Nachrichten aus freigegebenen Chats
+			werden gespeichert; jede beantwortet der Bot mit „Im Eingang gespeichert“. Text und
+			Bildunterschriften werden übernommen, Bilder und Dateien nicht.
+		</p>
+		<ol>
+			<li>
+				In Telegram den Chat mit <strong>@BotFather</strong> öffnen (blauer Haken),
+				<code>/newbot</code>
+				senden, einen Namen und einen Benutzernamen wählen, der auf „bot“ endet.
+			</li>
+			<li>
+				BotFather antwortet mit dem Token (etwa <code>123456789:AA…</code>). In der
+				Eingabeaufforderung <code>setx BYL_TELEGRAM_TOKEN "…"</code> mit dem Token eingeben.
+			</li>
+			<li>
+				Deine ID herausfinden: Richte die Verbindung zunächst mit einer beliebigen Zahl als ID ein
+				(nächster Schritt), schreibe dem Bot eine Nachricht und wähle hier „Jetzt abrufen“. Die
+				Verbindung zeigt dann „Nachricht aus einem nicht freigegebenen Chat (Chat-ID …)“. Im Chat
+				mit dem Bot ist das deine User-ID. Für eine Gruppe den Bot hinzufügen; ihre Chat-ID beginnt
+				mit „-100“.
+			</li>
+			<li>
+				<code>setx BYL_TELEGRAM_ALLOWED_IDS "…"</code> mit der ID eingeben, mehrere durch Komma
+				getrennt (etwa <code>"424242,-100123456"</code>).
+			</li>
+			<li>
+				<code>stop.bat</code> und dann <code>start.bat</code> ausführen. Oben unter „Verbindungen“
+				die Art „Telegram-Bot“ mit <code>BYL_TELEGRAM_TOKEN</code> und
+				<code>BYL_TELEGRAM_ALLOWED_IDS</code> anlegen, falls noch nicht geschehen.
+			</li>
+		</ol>
+		<p class="hint">
+			Telegram hält Nachrichten für den Bot höchstens 24 Stunden bereit. Läuft die App länger nicht,
+			gehen sie verloren; fehlt die Antwort „Im Eingang gespeichert“, ist die Nachricht nicht
+			angekommen. In Gruppen sieht ein Bot normalerweise nur Befehle und Antworten an ihn; soll er
+			alles lesen, bei BotFather <code>/setprivacy</code> auf „Disable“ stellen. Widerrufen: bei
+			BotFather <code>/revoke</code> (neuer Token, dann <code>setx</code> und neu starten) oder
+			<code>/deletebot</code>.
 		</p>
 	</section>
 </section>

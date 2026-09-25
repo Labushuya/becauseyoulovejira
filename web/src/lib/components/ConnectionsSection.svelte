@@ -140,8 +140,8 @@
 					Aktualisieren
 				</button>
 				<span class="hint">
-					Google Calendar ruft alle 15 Minuten ab, solange die App läuft; „Aktualisieren“ zeigt das
-					Ergebnis.
+					Solange die App läuft, ruft Google Calendar alle 15 Minuten ab und Telegram jede Minute;
+					„Aktualisieren“ zeigt das Ergebnis.
 				</span>
 			</p>
 			<ul class="connections">

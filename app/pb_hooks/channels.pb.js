@@ -9,6 +9,11 @@ cronAdd('byl-calendar', '*/15 * * * *', function () {
   require(`${__hooks}/lib/channel-runner.js`).runAll($app, 'calendar');
 });
 
+// Telegram every minute (getUpdates without webhook; Telegram keeps updates for 24 hours).
+cronAdd('byl-telegram', '* * * * *', function () {
+  require(`${__hooks}/lib/channel-runner.js`).runAll($app, 'telegram');
+});
+
 // "Jetzt abrufen": runs one connection at once with the same code as the cron job. Answers with
 // the counts or the cleaned error; a connection the request may not see answers 404.
 routerAdd(

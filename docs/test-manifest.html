@@ -213,8 +213,8 @@
   "meta": {
     "projekt": "becauseyoulovejira",
     "stand": "2026-09-25",
-    "commit": "e0bd4e7",
-    "etappe": "E0, E1, E1.1, E2 und E3 abgeschlossen, E4 in Arbeit (Pakete 1 bis 9, 10 ohne Ingest-Route, 14, 15 und 16)"
+    "commit": "bcaf77e",
+    "etappe": "E0, E1, E1.1, E2 und E3 abgeschlossen, E4 in Arbeit (Pakete 1 bis 9, 10 ohne Ingest-Route, 14 bis 17)"
   },
   "blocks": [
     {
@@ -1276,13 +1276,13 @@
           "pre": "App läuft (kein Neustart nötig); ein Chat ohne Medien exportiert: Android „Chat → ⋮ → Mehr → Chat exportieren → Ohne Medien“ (.txt), iOS „Chat → Name → Chat exportieren → Ohne Medien“ (.zip), jeweils auf den Rechner kopiert.", "steps": ["Die .txt von Android in die Eingangsansicht ziehen: Auswahlansicht prüfen (Nachrichtenzahl, ausgelassene Systemzeilen).", "Nach Absender und Zeitraum filtern, „Alle sichtbaren auswählen“, zwei Nachrichten wieder abwählen, übernehmen.", "Dieselbe Datei erneut ziehen und dieselben Nachrichten übernehmen: „schon vorhanden“.", "Die .zip von iOS per „Datei wählen“ (Tastatur) übernehmen.", "Im Panel Von, Chat und Zeit (Berliner Zeit) prüfen."],
           "expect": "Beide Formate werden erkannt; mehrzeilige Nachrichten stehen zusammen, Medien und Systemzeilen fehlen; nur die ausgewählten Nachrichten landen im Eingang; der zweite Import meldet sie als schon vorhanden.",
           "tests": [] },
-        { "id": "BYL-E4-030", "title": "Telegram-Bot", "art": ["unit", "integration"], "status": "geplant",
-          "pre": "E4-Plan, Paket 17.", "steps": ["Nur erlaubte Chats werden Einträge; fremde Chat-ID nur als Einrichtungshinweis.", "Offset rückt erst nach dem Speichern vor; Bestätigung je Nachricht.", "Token erscheint nie in Fehlern."],
-          "expect": "Fake-Bot-API im Test.",
-          "tests": [] },
-        { "id": "BYL-E4-031", "title": "Echter Telegram-Bot", "art": ["manuell"], "status": "geplant",
-          "pre": "E4-Plan, Paket 17.", "steps": ["Bot bei @BotFather anlegen, Token als Variable setzen, eigene Chat-ID eintragen, Nachricht senden.", "Bestätigung im Chat und Eintrag im Eingang prüfen."],
-          "expect": "Browser-Checkliste im E4-Plan.",
+        { "id": "BYL-E4-030", "title": "Telegram-Bot", "art": ["unit", "komponente", "integration"], "status": "bestanden",
+          "pre": "E4-Plan, Paket 17; für die Integration app/pocketbase.exe und eine Fake-Bot-API (Node http auf 127.0.0.1); die Wegwerf-Instanz bekommt erfundenen Token, Erlaubnisliste und BYL_TELEGRAM_API_BASE auf den Fake-Server. Jede Wegwerf-Instanz zeigt sonst auf einen geschlossenen lokalen Port, nie auf api.telegram.org.", "steps": ["npm run test:unit", "npm run test:web", "npm run test:integration"],
+          "expect": "getUpdates ohne Webhook mit offset = Cursor + 1, timeout 0 und allowed_updates [message], Cron byl-telegram jede Minute und „Jetzt abrufen“ mit demselben Lauf. Nur Nachrichten aus Chats oder von Absendern der Erlaubnisliste (Variable, IDs mit Komma, Leerzeichen oder Semikolon) werden Einträge (Kanal telegram, Art message, Titel aus der ersten Zeile, Text bzw. Bildunterschrift, Chat, Absender und Chat-ID in source_meta, source_ref chat:message); Medien ohne Text und andere Updates werden übersprungen. Jede neue Nachricht bekommt per sendMessage „Im Eingang gespeichert“, Duplikate nicht. Der Offset rückt erst nach dem Speichern vor: scheitert das Speichern, bleibt er vor dieser Nachricht und der Lauf endet; scheitert die Bestätigung, bleibt der Eintrag und der Fehler steht an der Verbindung. Fremde Chats werden nicht gespeichert, ihre Chat-ID steht als Hinweis mit dem Namen der Variablen an der Verbindung, ohne den Text. Abgelehnter Token (401) und abgebrochene Verbindung ergeben bereinigte Fehler ohne Cursoränderung; ohne Erlaubnis-Variable fragt der Lauf nichts an. Der Token steht weder in Antworten noch in Datensätzen, /api/logs oder der Konsolenausgabe. Seite „Kanäle“: Anleitung für BotFather, Token, eigene ID über den Hinweis, Erlaubnisliste, Neustart, 24-Stunden-Grenze, Gruppen-Privatsphäre und Widerruf.",
+          "tests": ["tests/unit/channel-telegram.test.mjs", "tests/integration/channel-telegram.test.mjs", "web/src/lib/components/connections-page.test.ts::Telegram-Bot einrichten (E4 plan, package 17)"] },
+        { "id": "BYL-E4-031", "title": "Echter Telegram-Bot", "art": ["manuell"], "status": "offen",
+          "pre": "App nach dem Merge von Paket 10 einmal neu gestartet; Telegram-Konto; Bot nach der Anleitung unter „Kanäle“ bei @BotFather angelegt; BYL_TELEGRAM_TOKEN und BYL_TELEGRAM_ALLOWED_IDS per setx gesetzt, danach stop.bat und start.bat.", "steps": ["Verbindung „Telegram-Bot“ anlegen: „Zugangsdaten gesetzt.“", "Dem Bot „Milch kaufen“ schreiben: nach höchstens einer Minute oder mit „Jetzt abrufen“ steht der Eintrag im Eingang, der Bot antwortet „Im Eingang gespeichert“.", "Ein Foto mit Bildunterschrift und eines ohne senden: nur das mit Unterschrift wird ein Eintrag.", "Von einem zweiten, nicht freigegebenen Konto schreiben: kein Eintrag, die Verbindung zeigt dessen Chat-ID als Hinweis.", "App mit stop.bat beenden, dem Bot schreiben, start.bat: die Nachricht kommt nach dem Start an.", "Bei BotFather /revoke: die Verbindung meldet „HTTP 401“ ohne Token; neuen Token per setx setzen, neu starten, wieder erfolgreich."],
+          "expect": "Nur freigegebene Nachrichten kommen einmal an und werden bestätigt; fremde Chats nur als Hinweis; der Token erscheint nirgends in der App.",
           "tests": [] },
         { "id": "BYL-E4-032", "title": "E4-Browser-Checkliste gesamt", "art": ["manuell"], "status": "geplant",
           "pre": "E4-Plan, Paket 19.", "steps": ["Alle manuellen E4-Prüfpunkte, zwei Fenster, ein Durchlauf ohne Internet, Hell- und Dunkelmodus, Tastatur."],

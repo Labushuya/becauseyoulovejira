@@ -221,13 +221,17 @@ function runToCompletion(args, input) {
 	});
 }
 
-/** Environment of the server: the own one without BYL_* variables, plus `extra`. */
+/**
+ * Environment of the server: the own one without BYL_* variables, plus `extra`. The Telegram Bot
+ * API points to a closed local port unless a test sets its fake server, so no test instance can
+ * ever reach api.telegram.org (E4 plan, package 17).
+ */
 export function serverEnvironment(extra = {}) {
 	const env = {};
 	for (const [name, value] of Object.entries(process.env)) {
 		if (!/^BYL_/i.test(name)) env[name] = value;
 	}
-	return { ...env, ...extra };
+	return { ...env, BYL_TELEGRAM_API_BASE: 'http://127.0.0.1:9', ...extra };
 }
 
 function startServer(args, extraEnv) {
