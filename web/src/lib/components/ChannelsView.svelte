@@ -89,7 +89,7 @@
 		<label for={ids.code}>Code des Bookmarklets</label>
 		<textarea id={ids.code} rows="3" readonly value={code}></textarea>
 		<p>
-			<button class="secondary" type="button" onclick={copy}>Code kopieren</button>
+			<button class="button-secondary" type="button" onclick={copy}>Code kopieren</button>
 		</p>
 		<p class="hint" role="status">{status ?? ''}</p>
 	</section>
@@ -389,14 +389,6 @@
 		background: var(--color-surface);
 		border: 1px solid var(--color-text-muted);
 		border-radius: 0.375rem;
-	}
-
-	.secondary {
-		padding: 0.5rem 1rem;
-		background: none;
-		border: 1px solid var(--color-line);
-		border-radius: 0.375rem;
-		cursor: pointer;
 	}
 
 	.hint {

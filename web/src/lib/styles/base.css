@@ -67,7 +67,8 @@ input {
 	cursor: pointer;
 }
 
-.button-primary:disabled {
+.button-primary:disabled,
+.button-primary[aria-disabled='true'] {
 	cursor: progress;
 	opacity: 0.75;
 }
@@ -120,6 +121,9 @@ input {
 	border-color: var(--color-line);
 }
 
+.button-secondary:disabled,
+.button-subtle:disabled,
+.button-icon:disabled,
 .button-secondary[aria-disabled='true'],
 .button-subtle[aria-disabled='true'],
 .button-icon[aria-disabled='true'] {

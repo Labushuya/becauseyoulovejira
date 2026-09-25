@@ -198,7 +198,7 @@
 	{:else if store.state === 'error'}
 		<div class="alert-error" role="alert">
 			<ErrorIcon /><span>{store.error}</span>
-			<button class="secondary" type="button" onclick={() => void store.load()}>
+			<button class="button-secondary" type="button" onclick={() => void store.load()}>
 				Erneut versuchen
 			</button>
 		</div>
@@ -207,7 +207,7 @@
 			<p class="hint">Noch keine Verbindung.</p>
 		{:else}
 			<p class="refresh">
-				<button class="secondary" type="button" onclick={() => void store.load()}>
+				<button class="button-secondary" type="button" onclick={() => void store.load()}>
 					Aktualisieren
 				</button>
 				<span class="hint">
@@ -310,7 +310,7 @@
 						<div class="buttons">
 							{#if connection.type === 'mail'}
 								<button
-									class="secondary"
+									class="button-secondary"
 									type="button"
 									aria-disabled={connection.enabled ? undefined : 'true'}
 									aria-describedby={connection.enabled
@@ -325,7 +325,7 @@
 							{/if}
 							{#if connection.type !== 'mail'}
 								<button
-									class="secondary"
+									class="button-secondary"
 									type="button"
 									aria-disabled={store.isRunning(connection.id) || !connection.enabled
 										? 'true'
@@ -339,7 +339,7 @@
 								</button>
 							{/if}
 							<button
-								class="secondary"
+								class="button-secondary"
 								type="button"
 								onclick={() => {
 									deleteError = null;
@@ -642,15 +642,7 @@
 		gap: 0.5rem;
 	}
 
-	.secondary {
-		padding: 0.375rem 0.875rem;
-		background: none;
-		border: 1px solid var(--color-line);
-		border-radius: 0.375rem;
-		cursor: pointer;
-	}
-
-	.secondary[aria-disabled='true'],
+	.button-secondary[aria-disabled='true'],
 	.button-primary[aria-disabled='true'] {
 		cursor: not-allowed;
 		opacity: 0.6;
