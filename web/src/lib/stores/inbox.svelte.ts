@@ -1,8 +1,9 @@
-// State of the inbox (E4 plan, T-4 and package 2; ADR-0014; ADR-0006 and ADR-0007). One store
-// per app layout: every new entry is loaded in full (like the open tickets), converted and
-// discarded entries page by page from the server (like the done tickets). Own answers and
-// realtime events go through the same idempotent `upsert` and `remove`; after a reconnection the
-// store reconciles once. A duplicate answer of the server is an outcome, not an error.
+// State of the inbox (E4 plan, T-4 and packages 2 and 3; ADR-0014; ADR-0006 and ADR-0007). One
+// store per app layout: every new entry is loaded in full (like the open tickets), converted and
+// discarded entries page by page from the server (like the done tickets). The view shows what the
+// query of the URL asks for (chips "Quelle" and "Zustand"). Own answers and realtime events go
+// through the same idempotent `upsert` and `remove`; after a reconnection the store reconciles
+// once. A duplicate answer of the server is an outcome, not an error.
 
 import type PocketBase from 'pocketbase';
 import { createContext } from 'svelte';
@@ -15,6 +16,7 @@ import {
 	getItem,
 	listHandledItems,
 	listNewItems,
+	originalFileUrl,
 	restoreItem,
 	type CreateItemOutcome,
 	type HandledItemPage
@@ -25,15 +27,18 @@ import {
 	compareNewest,
 	findSoftDuplicates,
 	type HandledState,
+	type InboxChannel,
 	type InboxDraft,
 	type InboxDuplicate,
 	type InboxItem,
 	type InboxItemSummary,
 	type SoftDuplicates
 } from '$lib/domain/inbox';
+import { DEFAULT_INBOX_QUERY, type InboxQuery } from '$lib/domain/inbox-query';
+import { channelsOf, sourceFamily } from '$lib/domain/source';
 import type { TicketSummary } from '$lib/domain/ticket';
 import { hold, type LiveSource } from './realtime';
-import type { LoadState, SessionGuard } from './ticket-list.svelte';
+import { UNDO_WINDOW_MS, type LoadState, type SessionGuard } from './ticket-list.svelte';
 
 /**
  * Shown while the server does not know the inbox yet: the migration of E4 runs at the next start
@@ -45,12 +50,17 @@ export const INBOX_UNAVAILABLE_MESSAGE =
 /** Data access of the inbox; tests pass a fake, the app binds the data layer to its client. */
 export interface InboxData {
 	listNew(options: RequestOptions): Promise<InboxItemSummary[]>;
-	listHandled(state: HandledState, page: number, options: RequestOptions): Promise<HandledItemPage>;
+	listHandled(
+		state: HandledState,
+		page: number,
+		options: RequestOptions & { channels: readonly InboxChannel[] | null }
+	): Promise<HandledItemPage>;
 	get(id: string, options: RequestOptions): Promise<InboxItem>;
 	create(draft: InboxDraft): Promise<CreateItemOutcome>;
 	discard(id: string): Promise<InboxItemSummary>;
 	restore(id: string): Promise<InboxItemSummary>;
 	assign(id: string, ticketId: string): Promise<InboxItemSummary>;
+	originalUrl(item: Pick<InboxItemSummary, 'id' | 'original'>): Promise<string | null>;
 }
 
 export function inboxData(pb: PocketBase): InboxData {
@@ -61,7 +71,8 @@ export function inboxData(pb: PocketBase): InboxData {
 		create: (draft) => createItem(pb, draft),
 		discard: (id) => discardItem(pb, id),
 		restore: (id) => restoreItem(pb, id),
-		assign: (id, ticketId) => assignToTicket(pb, id, ticketId)
+		assign: (id, ticketId) => assignToTicket(pb, id, ticketId),
+		originalUrl: (item) => originalFileUrl(pb, item)
 	};
 }
 
@@ -75,12 +86,23 @@ export type InboxCreateResult =
 export type InboxActionResult =
 	{ ok: true; item: InboxItemSummary } | { ok: false; message: string | null };
 
+/** A just discarded entry that stays in place with "Rückgängig" for UNDO_WINDOW_MS. */
+interface Lingering {
+	item: InboxItemSummary;
+	timer: ReturnType<typeof setTimeout>;
+}
+
+function sameQuery(a: InboxQuery, b: InboxQuery): boolean {
+	return a.source === b.source && a.state === b.state;
+}
+
 export class InboxStore {
 	readonly #data: InboxData;
 	readonly #session: SessionGuard;
 
 	readonly #new = new SvelteMap<string, InboxItemSummary>();
 	readonly #handled = new SvelteMap<string, InboxItemSummary>();
+	readonly #lingering = new SvelteMap<string, Lingering>();
 	/** Deleted IDs: a late event must not bring them back. Record IDs are never reused. */
 	readonly #deleted = new SvelteSet<string>();
 	/** IDs with a running action (discard, restore, assign). */
@@ -95,15 +117,23 @@ export class InboxStore {
 
 	#state = $state<LoadState>('idle');
 	#error = $state<string | null>(null);
-	/** Handled entries shown ("Verworfen", "Umgewandelt"), null while only the new ones are shown. */
-	#handledState = $state<HandledState | null>(null);
+	#query = $state<InboxQuery>(DEFAULT_INBOX_QUERY);
 	#handledLoad = $state<LoadState>('idle');
 	#handledError = $state<string | null>(null);
 	#handledHasMore = $state(false);
 	#loadingMoreHandled = $state(false);
+	#announcement = $state('');
 
 	#newList = $derived([...this.#new.values()].sort(compareNewest));
 	#handledList = $derived([...this.#handled.values()].sort(compareHandled));
+	#visible = $derived.by(() => {
+		const query = this.#query;
+		if (query.state !== 'new') return this.#handledList;
+		const lingering = [...this.#lingering.values()].map((entry) => entry.item);
+		return [...this.#newList, ...lingering]
+			.filter((item) => query.source === null || sourceFamily(item.channel) === query.source)
+			.sort(compareNewest);
+	});
 
 	constructor(data: InboxData, session: SessionGuard) {
 		this.#data = data;
@@ -120,6 +150,15 @@ export class InboxStore {
 		return this.#state === 'ready' ? this.#new.size : null;
 	}
 
+	/** Rows of the view for the query of the URL: new ones (just discarded included) or handled. */
+	get visible(): readonly InboxItemSummary[] {
+		return this.#visible;
+	}
+
+	get query(): InboxQuery {
+		return this.#query;
+	}
+
 	get state(): LoadState {
 		return this.#state;
 	}
@@ -128,13 +167,14 @@ export class InboxStore {
 		return this.#error;
 	}
 
-	/** Loaded handled entries of `handledState`, most recently handled first. */
+	/** Loaded handled entries of the shown state, most recently handled first. */
 	get handled(): readonly InboxItemSummary[] {
 		return this.#handledList;
 	}
 
+	/** Handled state shown, null while the new entries are shown. */
 	get handledState(): HandledState | null {
-		return this.#handledState;
+		return this.#query.state === 'new' ? null : this.#query.state;
 	}
 
 	get handledLoad(): LoadState {
@@ -153,12 +193,22 @@ export class InboxStore {
 		return this.#loadingMoreHandled;
 	}
 
+	/** Polite status message of the view (aria-live). */
+	get announcement(): string {
+		return this.#announcement;
+	}
+
 	find(id: string): InboxItemSummary | null {
-		return this.#new.get(id) ?? this.#handled.get(id) ?? null;
+		return this.#new.get(id) ?? this.#handled.get(id) ?? this.#lingering.get(id)?.item ?? null;
 	}
 
 	isPending(id: string): boolean {
 		return this.#pending.has(id);
+	}
+
+	/** True while a just discarded entry stands with "Rückgängig". */
+	isLingering(id: string): boolean {
+		return this.#lingering.has(id);
 	}
 
 	/** Possible duplicates of an entry among the open tickets and the other new entries. */
@@ -167,6 +217,10 @@ export class InboxStore {
 		openTickets: readonly TicketSummary[]
 	): SoftDuplicates {
 		return findSoftDuplicates(item, openTickets, this.#newList);
+	}
+
+	announce(message: string): void {
+		this.#announcement = message;
 	}
 
 	/** Loads the new entries for the app layout; the returned cleanup empties the store. */
@@ -184,31 +238,36 @@ export class InboxStore {
 	async reload(): Promise<void> {
 		await Promise.all([
 			this.#loadNew(),
-			this.#handledState === null ? undefined : this.#loadHandled(1)
+			this.handledState === null ? undefined : this.#loadHandled(1)
 		]);
 	}
 
 	/**
-	 * Shows the converted or discarded entries (first page from the server) or, with null, only the
-	 * new ones. The same state again loads nothing.
+	 * Shows the view for the query of the URL. New entries are only filtered; converted or
+	 * discarded ones load their first page from the server (with the source family as filter), and
+	 * a request that became stale is aborted. The same query again loads nothing.
 	 */
-	showHandled(state: HandledState | null): void {
-		if (state === this.#handledState) return;
+	activate(query: InboxQuery): void {
+		void this.load();
+		const before = this.#query;
+		this.#query = query;
+		if (sameQuery(before, query) && (query.state === 'new' || this.#handledLoad !== 'idle')) {
+			return;
+		}
 		this.#handledController?.abort();
 		this.#handledController = null;
-		this.#handledState = state;
 		this.#handled.clear();
 		this.#handledPage = 0;
 		this.#handledHasMore = false;
 		this.#handledError = null;
 		this.#loadingMoreHandled = false;
 		this.#handledLoad = 'idle';
-		if (state !== null) void this.#loadHandled(1);
+		if (query.state !== 'new') void this.#loadHandled(1);
 	}
 
 	/** Next page of handled entries ("Weitere laden"). */
 	async loadMoreHandled(): Promise<void> {
-		if (this.#handledState === null || !this.#handledHasMore) return;
+		if (this.handledState === null || !this.#handledHasMore) return;
 		if (this.#handledController !== null) return;
 		await this.#loadHandled(this.#handledPage + 1);
 	}
@@ -224,11 +283,14 @@ export class InboxStore {
 		const existing = this.find(item.id);
 		if (existing !== null && existing.updated > item.updated) return;
 		if (item.state === 'new') {
+			this.#stopLingering(item.id);
 			this.#handled.delete(item.id);
 			this.#new.set(item.id, item);
 			return;
 		}
 		this.#new.delete(item.id);
+		const lingering = this.#lingering.get(item.id);
+		if (lingering !== undefined) this.#lingering.set(item.id, { ...lingering, item });
 		if (this.#belongsToHandled(item)) this.#handled.set(item.id, item);
 		else this.#handled.delete(item.id);
 	}
@@ -236,9 +298,20 @@ export class InboxStore {
 	remove(id: string): void {
 		this.#deleted.add(id);
 		this.#touched?.add(id);
+		this.#stopLingering(id);
 		this.#new.delete(id);
 		this.#handled.delete(id);
 		this.#pending.delete(id);
+	}
+
+	/**
+	 * A ticket was made from an entry (panel "Neues Ticket" or collected conversion): the entry
+	 * leaves the new ones at once, before the realtime event with the answer of the hook arrives.
+	 */
+	markConverted(id: string, ticketId: string, at: string): void {
+		const item = this.find(id);
+		if (item === null || item.state === 'converted') return;
+		this.upsert({ ...item, state: 'converted', ticketId, handledAt: at });
 	}
 
 	/** One entry with its text (panel, prefill of the ticket); it joins the store as well. */
@@ -248,18 +321,17 @@ export class InboxStore {
 		return item;
 	}
 
-	/**
-	 * Loads one entry again, e.g. after a ticket was made from it: the hook converted it, and the
-	 * list follows without waiting for the event. Failures are left to the next event.
-	 */
-	async refresh(id: string): Promise<void> {
-		if (!this.#session.ensureValid()) return;
+	/** Address of the protected original with a fresh file token, or a message. */
+	async originalUrl(
+		item: Pick<InboxItemSummary, 'id' | 'original'>
+	): Promise<{ ok: true; url: string } | { ok: false; message: string | null }> {
+		if (!this.#session.ensureValid()) return { ok: false, message: null };
 		try {
-			await this.fetch(id);
+			const url = await this.#data.originalUrl(item);
+			if (url === null) return { ok: false, message: 'Zu diesem Eintrag gibt es keine Datei.' };
+			return { ok: true, url };
 		} catch (error) {
-			const failure = toDataError(error);
-			if (failure.kind === 'not_found') this.remove(id);
-			else this.#failureMessage(error);
+			return { ok: false, message: this.#failureMessage(error) };
 		}
 	}
 
@@ -280,19 +352,55 @@ export class InboxStore {
 		}
 	}
 
-	/** "Verwerfen" (ADR-0014 section 4). */
-	discard(id: string): Promise<InboxActionResult> {
-		return this.#act(id, () => this.#data.discard(id), 'konnte nicht verworfen werden.');
+	/**
+	 * "Verwerfen" (ADR-0014 section 4). A new entry stays in place for UNDO_WINDOW_MS with
+	 * "Rückgängig", like the check mark of the ticket table.
+	 */
+	async discard(id: string): Promise<InboxActionResult> {
+		const wasNew = this.#new.has(id);
+		const result = await this.#act(
+			id,
+			() => this.#data.discard(id),
+			'konnte nicht verworfen werden.'
+		);
+		if (!result.ok) return result;
+		if (wasNew && !this.#deleted.has(id)) {
+			this.#stopLingering(id);
+			const timer = setTimeout(() => this.#lingering.delete(id), UNDO_WINDOW_MS);
+			this.#lingering.set(id, { item: result.item, timer });
+		}
+		this.#announcement = `„${result.item.title}“ verworfen. Rückgängig ist kurz möglich.`;
+		return result;
 	}
 
-	/** "Wiederherstellen" and "Rückgängig" after discarding. */
-	restore(id: string): Promise<InboxActionResult> {
-		return this.#act(id, () => this.#data.restore(id), 'konnte nicht wiederhergestellt werden.');
+	/** "Wiederherstellen" of a discarded entry. */
+	async restore(id: string): Promise<InboxActionResult> {
+		const result = await this.#act(
+			id,
+			() => this.#data.restore(id),
+			'konnte nicht wiederhergestellt werden.'
+		);
+		if (result.ok) this.#announcement = `„${result.item.title}“ ist wieder im Eingang.`;
+		return result;
+	}
+
+	/** "Rückgängig" right after discarding. */
+	undo(id: string): Promise<InboxActionResult> {
+		return this.restore(id);
 	}
 
 	/** "Dem Ticket zuordnen": the entry counts as converted into the ticket. */
-	assign(id: string, ticketId: string): Promise<InboxActionResult> {
-		return this.#act(id, () => this.#data.assign(id, ticketId), 'konnte nicht zugeordnet werden.');
+	async assign(id: string, ticketId: string, ticketKey = ''): Promise<InboxActionResult> {
+		const result = await this.#act(
+			id,
+			() => this.#data.assign(id, ticketId),
+			'konnte nicht zugeordnet werden.'
+		);
+		if (result.ok) {
+			const target = ticketKey === '' ? 'dem Ticket' : ticketKey;
+			this.#announcement = `„${result.item.title}“ ist ${target} zugeordnet.`;
+		}
+		return result;
 	}
 
 	/**
@@ -334,18 +442,24 @@ export class InboxStore {
 		const touched = new SvelteSet<string>();
 		this.#touched = touched;
 		const options = { signal: controller.signal };
-		const handledState = this.#handledState;
+		const query = this.#query;
+		const handledState = this.handledState;
 		const pagesLoaded = this.#handledLoad === 'ready' ? this.#handledPage : 0;
 		try {
 			const items = await this.#data.listNew(options);
 			const pages: HandledItemPage[] = [];
 			for (let page = 1; handledState !== null && page <= pagesLoaded; page += 1) {
-				pages.push(await this.#data.listHandled(handledState, page, options));
+				pages.push(
+					await this.#data.listHandled(handledState, page, {
+						...options,
+						channels: this.#channels(query)
+					})
+				);
 			}
 			if (controller.signal.aborted) return;
 			this.#touched = null;
 			this.#merge(this.#new, items, touched);
-			const same = this.#handledState === handledState && this.#handledPage === pagesLoaded;
+			const same = sameQuery(this.#query, query) && this.#handledPage === pagesLoaded;
 			if (pagesLoaded > 0 && same) {
 				this.#merge(
 					this.#handled,
@@ -364,7 +478,7 @@ export class InboxStore {
 		}
 	}
 
-	/** Aborts all requests and empties the store. */
+	/** Aborts all requests and timers and empties the store. */
 	reset(): void {
 		this.#newController?.abort();
 		this.#handledController?.abort();
@@ -373,6 +487,8 @@ export class InboxStore {
 		this.#handledController = null;
 		this.#reconcileController = null;
 		this.#touched = null;
+		for (const { timer } of this.#lingering.values()) clearTimeout(timer);
+		this.#lingering.clear();
 		this.#new.clear();
 		this.#handled.clear();
 		this.#deleted.clear();
@@ -380,11 +496,12 @@ export class InboxStore {
 		this.#handledPage = 0;
 		this.#state = 'idle';
 		this.#error = null;
-		this.#handledState = null;
+		this.#query = DEFAULT_INBOX_QUERY;
 		this.#handledLoad = 'idle';
 		this.#handledError = null;
 		this.#handledHasMore = false;
 		this.#loadingMoreHandled = false;
+		this.#announcement = '';
 	}
 
 	async #act(
@@ -411,6 +528,18 @@ export class InboxStore {
 		}
 	}
 
+	#stopLingering(id: string): void {
+		const lingering = this.#lingering.get(id);
+		if (lingering === undefined) return;
+		clearTimeout(lingering.timer);
+		this.#lingering.delete(id);
+	}
+
+	/** Channels of the source chip for the server filter of handled entries, null for all. */
+	#channels(query: InboxQuery): readonly InboxChannel[] | null {
+		return query.source === null ? null : channelsOf(query.source);
+	}
+
 	/** Merges a loaded snapshot into `map`: new ones in, changed ones replaced, missing ones out. */
 	#merge(
 		map: SvelteMap<string, InboxItemSummary>,
@@ -433,7 +562,9 @@ export class InboxStore {
 
 	/** A handled entry joins the loaded ones only where the loaded pages cover it. */
 	#belongsToHandled(item: InboxItemSummary): boolean {
-		if (this.#handledState !== item.state || this.#handledLoad !== 'ready') return false;
+		const query = this.#query;
+		if (query.state !== item.state || this.#handledLoad !== 'ready') return false;
+		if (query.source !== null && sourceFamily(item.channel) !== query.source) return false;
 		if (this.#handled.has(item.id) || !this.#handledHasMore) return true;
 		const last = this.#handledList.at(-1);
 		return last === undefined || compareHandled(item, last) < 0;
@@ -467,7 +598,8 @@ export class InboxStore {
 	}
 
 	async #loadHandled(page: number): Promise<void> {
-		const state = this.#handledState;
+		const query = this.#query;
+		const state = this.handledState;
 		if (state === null) return;
 		this.#handledController?.abort();
 		this.#handledController = null;
@@ -479,7 +611,10 @@ export class InboxStore {
 		else this.#loadingMoreHandled = true;
 		this.#handledError = null;
 		try {
-			const result = await this.#data.listHandled(state, page, { signal: controller.signal });
+			const result = await this.#data.listHandled(state, page, {
+				signal: controller.signal,
+				channels: this.#channels(query)
+			});
 			if (controller.signal.aborted) return;
 			if (first) this.#handled.clear();
 			for (const item of result.items) {

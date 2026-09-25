@@ -1,0 +1,307 @@
+// Component tests for the inbox view (E4 plan, package 3; ADR-0014 sections 3 and 4; ADR-0019
+// section 6): table with caption and named checkboxes, chips in the URL, "Umwandeln", "Verwerfen"
+// with "Rückgängig" and the focus on the next row, hints on possible duplicates with "Dem Ticket
+// zuordnen", selection for "Gesammelt umwandeln", handled entries, empty and missing inbox.
+// The store is real with fake data; page state and navigation are mocked.
+
+import { fireEvent, render, screen, within } from '@testing-library/svelte';
+import { tick } from 'svelte';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { DataError } from '$lib/data/errors';
+import type { InboxItemSummary } from '$lib/domain/inbox';
+import type { InboxQuery } from '$lib/domain/inbox-query';
+import type { TicketSummary } from '$lib/domain/ticket';
+import { InboxStore, type InboxData } from '$lib/stores/inbox.svelte';
+import InboxTable from './InboxTable.svelte';
+import source from './InboxTable.svelte?raw';
+
+const mocks = vi.hoisted(() => ({
+	goto: vi.fn(async () => undefined),
+	page: { url: new URL('http://localhost:3000/eingang') }
+}));
+
+vi.mock('$app/navigation', () => ({ goto: mocks.goto }));
+vi.mock('$app/state', () => ({ page: mocks.page }));
+
+function item(id: string, overrides: Partial<InboxItemSummary> = {}): InboxItemSummary {
+	return {
+		id,
+		channel: 'manual',
+		kind: 'todo',
+		title: `Eintrag ${id.slice(-1)}`,
+		sourceUrl: '',
+		sourceRef: '',
+		sourceDate: null,
+		sourceMeta: {},
+		original: '',
+		state: 'new',
+		ticketId: null,
+		handledAt: null,
+		created: '2026-09-25 08:00:00.000Z',
+		updated: '2026-09-25 08:00:00.000Z',
+		...overrides
+	};
+}
+
+const A = item('item00000000001', { title: 'Milch kaufen', created: '2026-09-25 07:00:00.000Z' });
+const B = item('item00000000002', {
+	title: 'Rechnung September',
+	channel: 'eml',
+	kind: 'mail',
+	sourceDate: '2026-09-24 23:30:00.000Z',
+	created: '2026-09-25 08:00:00.000Z'
+});
+const C = item('item00000000003', {
+	title: 'Artikel',
+	channel: 'link',
+	kind: 'link',
+	created: '2026-09-25 07:30:00.000Z'
+});
+
+const OPEN_TICKET = {
+	id: 'tick00000000001',
+	key: 'HAUS-4',
+	title: '  milch KAUFEN ',
+	status: 'open'
+} as TicketSummary;
+
+function setup(
+	options: { items?: InboxItemSummary[]; query?: InboxQuery; tickets?: TicketSummary[] } = {}
+) {
+	const data = {
+		listNew: vi.fn<InboxData['listNew']>(async () => options.items ?? [A, B, C]),
+		listHandled: vi.fn<InboxData['listHandled']>(async (state, page) => ({
+			items: [
+				item('item00000000009', {
+					title: 'Alt',
+					state,
+					handledAt: '2026-09-20 10:00:00.000Z',
+					ticketId: state === 'converted' ? 'tick00000000009' : null
+				})
+			],
+			page,
+			hasMore: true
+		})),
+		get: vi.fn<InboxData['get']>(async (id) => ({ ...item(id), body: '' })),
+		create: vi.fn<InboxData['create']>(),
+		discard: vi.fn<InboxData['discard']>(async (id) => ({
+			...(options.items ?? [A, B, C]).find((entry) => entry.id === id)!,
+			state: 'discarded',
+			handledAt: '2026-09-25 09:00:00.000Z',
+			updated: '2026-09-25 09:00:00.000Z'
+		})),
+		restore: vi.fn<InboxData['restore']>(async (id) =>
+			item(id, { updated: '2026-09-25 10:00:00.000Z' })
+		),
+		assign: vi.fn<InboxData['assign']>(async (id, ticketId) =>
+			item(id, { state: 'converted', ticketId, updated: '2026-09-25 10:00:00.000Z' })
+		),
+		originalUrl: vi.fn<InboxData['originalUrl']>(async () => null)
+	} satisfies InboxData;
+	const store = new InboxStore(data, { ensureValid: () => true, logout: vi.fn() });
+	store.activate(options.query ?? { source: null, state: 'new' });
+	const onbulk = vi.fn();
+	const view = render(InboxTable, {
+		props: { store, openTickets: options.tickets ?? [], onbulk }
+	});
+	return { store, data, onbulk, view };
+}
+
+async function table() {
+	return within(await screen.findByRole('table'));
+}
+
+beforeEach(() => {
+	mocks.goto.mockClear();
+	mocks.page.url = new URL('http://localhost:3000/eingang');
+});
+
+afterEach(() => {
+	vi.useRealTimers();
+});
+
+describe('inbox table', () => {
+	it('shows the new entries newest first in a named table', async () => {
+		setup();
+		const rows = within(await table().then((t) => t.getAllByRole('rowgroup')[1]!)).getAllByRole(
+			'row'
+		);
+		expect(rows.map((row) => within(row).getByRole('rowheader').textContent?.trim())).toEqual([
+			'Rechnung September',
+			'Artikel',
+			'Milch kaufen'
+		]);
+		expect(screen.getByRole('table').querySelector('caption')?.textContent).toBe(
+			'Eingang · neu, neueste zuerst'
+		);
+		expect(screen.getByRole('heading', { name: 'Eingang' })).toBeTruthy();
+		expect(screen.getByText('3 Einträge')).toBeTruthy();
+		expect(screen.getByRole('checkbox', { name: 'Eintrag „Milch kaufen“ auswählen' })).toBeTruthy();
+		const mail = rows[0]!;
+		expect(within(mail).getByText('Mail-Datei')).toBeTruthy();
+		// 23:30 UTC is the 25th in Berlin.
+		expect(
+			within(mail).getByText('25.09.2026', { selector: 'time[title="25.09.2026 01:30"]' })
+		).toBeTruthy();
+		expect(
+			within(mail)
+				.getByRole('link', { name: 'Umwandeln: „Rechnung September“' })
+				.getAttribute('href')
+		).toBe('/tickets/neu?aus=item00000000002');
+		expect(
+			within(mail).getByRole('link', { name: 'Rechnung September' }).getAttribute('href')
+		).toBe('/eingang/item00000000002');
+	});
+
+	it('writes the chips to the URL; "Zustand" has no "Alle"', async () => {
+		setup();
+		await table();
+		const sourceChips = within(screen.getByRole('group', { name: 'Quelle' }));
+		await fireEvent.click(sourceChips.getByRole('radio', { name: 'Mail' }));
+		expect(mocks.goto).toHaveBeenLastCalledWith('/eingang?quelle=mail', {
+			keepFocus: true,
+			noScroll: true
+		});
+		const stateChips = within(screen.getByRole('group', { name: 'Zustand' }));
+		expect(
+			stateChips.getAllByRole('radio').map((radio) => radio.closest('label')?.textContent?.trim())
+		).toEqual(['Neu', 'Verworfen', 'Umgewandelt']);
+		await fireEvent.click(stateChips.getByRole('radio', { name: 'Verworfen' }));
+		expect(mocks.goto).toHaveBeenLastCalledWith('/eingang?zustand=verworfen', {
+			keepFocus: true,
+			noScroll: true
+		});
+	});
+
+	it('filters by source and offers to reset an empty result', async () => {
+		setup({ query: { source: 'chat', state: 'new' } });
+		expect(await screen.findByText('Keine Einträge für diese Filter.')).toBeTruthy();
+		await fireEvent.click(screen.getByRole('button', { name: 'Filter zurücksetzen' }));
+		expect(mocks.goto).toHaveBeenLastCalledWith('/eingang', { keepFocus: true, noScroll: true });
+	});
+
+	it('says that the inbox is empty and where entries come from', async () => {
+		setup({ items: [] });
+		expect(await screen.findByText('Der Eingang ist leer.')).toBeTruthy();
+		expect(screen.getByRole('link', { name: 'Neues Ticket' }).getAttribute('href')).toBe(
+			'/tickets/neu'
+		);
+		expect(screen.queryByRole('table')).toBeNull();
+	});
+
+	it('explains a missing inbox before the restart, without an error colour', async () => {
+		const { data, store } = setup({ items: [] });
+		data.listNew.mockRejectedValueOnce(new DataError('not_found', { status: 404 }));
+		store.reset();
+		await store.load();
+		store.activate({ source: null, state: 'new' });
+		const note = await screen.findByText(/Der Eingang steht nach dem nächsten Start/);
+		expect(note.closest('.alert-error')).toBeNull();
+	});
+
+	it('keeps a discarded row with "Rückgängig" and moves the focus to the next row', async () => {
+		vi.useFakeTimers({ shouldAdvanceTime: true });
+		const { data } = setup();
+		const view = await table();
+		await fireEvent.click(view.getByRole('button', { name: 'Verwerfen: „Artikel“' }));
+		await vi.waitFor(() => expect(data.discard).toHaveBeenCalledWith(C.id));
+		await vi.waitFor(() =>
+			expect(document.activeElement?.textContent?.trim()).toBe('Milch kaufen')
+		);
+		const undo = await screen.findByRole('button', {
+			name: 'Rückgängig: „Artikel“ wieder in den Eingang'
+		});
+		expect(screen.getByText('Verworfen', { selector: '.state-note' })).toBeTruthy();
+		expect(screen.queryByRole('checkbox', { name: 'Eintrag „Artikel“ auswählen' })).toBeNull();
+		await fireEvent.click(undo);
+		await vi.waitFor(() => expect(data.restore).toHaveBeenCalledWith(C.id));
+	});
+
+	it('drops the discarded row after the undo window', async () => {
+		vi.useFakeTimers({ shouldAdvanceTime: true });
+		setup();
+		const view = await table();
+		await fireEvent.click(view.getByRole('button', { name: 'Verwerfen: „Artikel“' }));
+		await screen.findByRole('button', { name: /^Rückgängig/ });
+		await vi.advanceTimersByTimeAsync(5000);
+		await tick();
+		expect(screen.queryByRole('link', { name: 'Artikel' })).toBeNull();
+	});
+
+	it('marks a possible duplicate and assigns the entry to the ticket', async () => {
+		const { data } = setup({ tickets: [OPEN_TICKET] });
+		const view = await table();
+		const row = view.getByRole('link', { name: 'Milch kaufen' }).closest('tr')!;
+		expect(within(row).getByText('Mögliches Duplikat:')).toBeTruthy();
+		expect(within(row).getByRole('link', { name: 'HAUS-4' }).getAttribute('href')).toBe(
+			'/tickets/tick00000000001'
+		);
+		await fireEvent.click(within(row).getByRole('button', { name: 'Dem Ticket HAUS-4 zuordnen' }));
+		await vi.waitFor(() => expect(data.assign).toHaveBeenCalledWith(A.id, 'tick00000000001'));
+		await vi.waitFor(() => expect(screen.queryByRole('link', { name: 'Milch kaufen' })).toBeNull());
+	});
+
+	it('shows the reason of a failed action with an icon', async () => {
+		const { data } = setup();
+		data.discard.mockRejectedValueOnce(new DataError('network'));
+		const view = await table();
+		await fireEvent.click(view.getByRole('button', { name: 'Verwerfen: „Artikel“' }));
+		const alert = await screen.findByText(/„Artikel“ konnte nicht verworfen werden\./);
+		expect(alert.closest('.alert-error')?.querySelector('svg')).toBeTruthy();
+	});
+
+	it('opens "Gesammelt umwandeln" only with a selection', async () => {
+		const { onbulk } = setup();
+		await table();
+		const bulk = screen.getByRole('button', { name: 'Gesammelt umwandeln' });
+		expect(bulk.getAttribute('aria-disabled')).toBe('true');
+		expect(screen.getByText('Erst Einträge auswählen.')).toBeTruthy();
+		await fireEvent.click(bulk);
+		expect(onbulk).not.toHaveBeenCalled();
+
+		await fireEvent.click(
+			screen.getByRole('checkbox', { name: 'Eintrag „Milch kaufen“ auswählen' })
+		);
+		await fireEvent.click(screen.getByRole('checkbox', { name: 'Eintrag „Artikel“ auswählen' }));
+		const chosen = screen.getByRole('button', { name: 'Gesammelt umwandeln (2)' });
+		expect(chosen.hasAttribute('aria-disabled')).toBe(false);
+		await fireEvent.click(chosen);
+		expect(onbulk).toHaveBeenCalledOnce();
+
+		await fireEvent.click(
+			screen.getByRole('checkbox', { name: 'Alle angezeigten Einträge auswählen' })
+		);
+		expect(screen.getByRole('button', { name: 'Gesammelt umwandeln (3)' })).toBeTruthy();
+		await fireEvent.click(
+			screen.getByRole('checkbox', { name: 'Alle angezeigten Einträge auswählen' })
+		);
+		expect(screen.getByRole('button', { name: 'Gesammelt umwandeln' })).toBeTruthy();
+	});
+
+	it('shows discarded entries with "Wiederherstellen" and "Weitere laden"', async () => {
+		const { data } = setup({ query: { source: null, state: 'discarded' } });
+		const view = await table();
+		expect(screen.getByRole('table').querySelector('caption')?.textContent).toBe(
+			'Eingang · verworfen, zuletzt verworfene zuerst'
+		);
+		expect(view.queryByRole('checkbox')).toBeNull();
+		expect(screen.queryByRole('button', { name: /Gesammelt umwandeln/ })).toBeNull();
+		await fireEvent.click(view.getByRole('button', { name: 'Wiederherstellen: „Alt“' }));
+		await vi.waitFor(() => expect(data.restore).toHaveBeenCalledWith('item00000000009'));
+		await fireEvent.click(await screen.findByRole('button', { name: 'Weitere laden' }));
+		expect(data.listHandled).toHaveBeenLastCalledWith('discarded', 2, expect.anything());
+	});
+
+	it('links converted entries to their ticket', async () => {
+		setup({ query: { source: null, state: 'converted' } });
+		const view = await table();
+		expect(view.getByRole('link', { name: 'Ticket ansehen: „Alt“' }).getAttribute('href')).toBe(
+			'/tickets/tick00000000009'
+		);
+	});
+
+	it('uses no error colour outside of real failures', () => {
+		const withoutAlerts = source.replace(/class="alert-error[^"]*"/g, '');
+		expect(withoutAlerts).not.toMatch(/danger/);
+	});
+});

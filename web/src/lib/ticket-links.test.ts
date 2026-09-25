@@ -3,6 +3,10 @@
 import { describe, expect, it } from 'vitest';
 import { EMPTY_LIST_QUERY } from './domain/list-query';
 import {
+	convertFrom,
+	convertHref,
+	inboxHref,
+	inboxItemHref,
 	listHref,
 	newTicketHref,
 	projectsHref,
@@ -10,9 +14,12 @@ import {
 	showArchivedFrom,
 	showDoneFrom,
 	ticketHref,
+	ticketPath,
+	withInboxQuery,
 	withListQuery,
 	withShowArchived,
-	withShowDone
+	withShowDone,
+	withoutConvert
 } from './ticket-links';
 
 const at = (path: string) => new URL(path, 'http://localhost:3000');
@@ -84,5 +91,33 @@ describe('ticket links', () => {
 		expect(withShowArchived(at('/projekte?x=1'), true)).toBe('/projekte?x=1&archiviert=1');
 		expect(withShowArchived(at('/projekte?archiviert=1&x=1'), false)).toBe('/projekte?x=1');
 		expect(withShowArchived(at('/projekte?archiviert=1'), false)).toBe('/projekte');
+	});
+});
+
+describe('inbox links (E4 plan, package 3)', () => {
+	it('keeps only the chips of the inbox', () => {
+		expect(inboxHref()).toBe('/eingang');
+		expect(inboxHref(at('/eingang/abc?zustand=verworfen&quelle=mail&status=open'))).toBe(
+			'/eingang?quelle=mail&zustand=verworfen'
+		);
+		expect(inboxItemHref('item00000000001', at('/eingang?quelle=chat'))).toBe(
+			'/eingang/item00000000001?quelle=chat'
+		);
+		expect(inboxItemHref('item00000000001')).toBe('/eingang/item00000000001');
+		expect(withInboxQuery(at('/eingang/x?y=1#a'), { source: 'link', state: 'converted' })).toBe(
+			'/eingang/x?y=1&quelle=link&zustand=umgewandelt#a'
+		);
+	});
+
+	it('opens "Neues Ticket" for an entry and reads it back only as record ID', () => {
+		expect(convertHref('item00000000001')).toBe('/tickets/neu?aus=item00000000001');
+		expect(convertFrom(at('/tickets/neu?aus=item00000000001'))).toBe('item00000000001');
+		expect(convertFrom(at('/tickets/neu?aus=../x'))).toBeNull();
+		expect(convertFrom(at('/tickets/neu?aus=a&aus=b'))).toBeNull();
+		expect(convertFrom(at('/tickets/neu'))).toBeNull();
+		expect(withoutConvert(at('/tickets/neu?erledigte=1&aus=item00000000001')).search).toBe(
+			'?erledigte=1'
+		);
+		expect(ticketPath('tick00000000001')).toBe('/tickets/tick00000000001');
 	});
 });

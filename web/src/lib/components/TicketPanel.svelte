@@ -2,9 +2,11 @@
 	import { tick, type Snippet } from 'svelte';
 	import type { ResolvedPathname } from '$app/types';
 	import { formatBerlinDateTime } from '$lib/domain/format';
+	import { CHANNEL_LABELS } from '$lib/domain/inbox';
 	import { DESCRIPTION_MAX_LENGTH, type Ticket } from '$lib/domain/ticket';
 	import type { CatalogStore } from '$lib/stores/catalog.svelte';
 	import type { TicketDetailStore } from '$lib/stores/ticket-detail.svelte';
+	import { inboxItemHref } from '$lib/ticket-links';
 	import ConfirmDialog from './ConfirmDialog.svelte';
 	import DueInput from './DueInput.svelte';
 	import EditableTitle from './EditableTitle.svelte';
@@ -350,6 +352,17 @@
 		</section>
 
 		<dl class="meta">
+			{#if ticket.source !== null}
+				<div>
+					<dt>Quelle</dt>
+					<dd>
+						{CHANNEL_LABELS[ticket.source]}
+						{#if ticket.sourceItem !== null}
+							· <a href={inboxItemHref(ticket.sourceItem)}>Original ansehen</a>
+						{/if}
+					</dd>
+				</div>
+			{/if}
 			<div>
 				<dt>Erstellt</dt>
 				<dd>{formatBerlinDateTime(ticket.created)}</dd>
@@ -526,6 +539,10 @@
 
 	.meta dd {
 		color: var(--color-text);
+	}
+
+	.meta a {
+		color: var(--color-brand-text);
 	}
 
 	.grow {

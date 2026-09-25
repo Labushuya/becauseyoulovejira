@@ -2,7 +2,8 @@
 // inbox_items to these types. The value lists mirror app/pb_hooks/lib/source.js
 // (tests/unit/source.test.mjs keeps them equal).
 
-import type { TicketSummary } from './ticket';
+import { formatBerlinDateTime } from './format';
+import { DESCRIPTION_MAX_LENGTH, TITLE_MAX_LENGTH, type TicketSummary } from './ticket';
 
 /** Ways into the inbox; also the values of `tickets.source`. */
 export const INBOX_CHANNELS = [
@@ -216,4 +217,73 @@ export function compareHandled(a: InboxItemSummary, b: InboxItemSummary): number
 		if (left !== right) return left < right ? -1 : 1;
 	}
 	return 0;
+}
+
+/** Text of a detail in `sourceMeta` (sender, place, chat), '' if missing or not text. */
+export function metaText(item: Pick<InboxItemSummary, 'sourceMeta'>, key: string): string {
+	const value = item.sourceMeta[key];
+	return typeof value === 'string' ? value.trim() : '';
+}
+
+/** Markdown characters of a value from a source, escaped so they show as typed. */
+function escapeMarkdown(value: string): string {
+	return value.replace(/[\\`*_{}[\]()#+\-.!|<>~]/g, (character) => `\\${character}`);
+}
+
+/** Header lines of the description per kind (T-5): sender and date of a mail and so on. */
+function headerLines(item: InboxItem): string[] {
+	const date = item.sourceDate === null ? '' : formatBerlinDateTime(item.sourceDate);
+	const from = (key: string) => escapeMarkdown(metaText(item, key));
+	const lines: [string, string][] =
+		item.kind === 'mail'
+			? [
+					['Von', from('from')],
+					['Datum', date]
+				]
+			: item.kind === 'event'
+				? [
+						['Beginn', date],
+						['Ort', from('location')]
+					]
+				: item.kind === 'message'
+					? [
+							['Von', from('sender')],
+							['Chat', from('chat')],
+							['Zeit', date]
+						]
+					: [];
+	const header = lines
+		.filter(([, value]) => value !== '')
+		.map(([label, value]) => `- **${label}:** ${value}`);
+	if (item.sourceUrl !== '') header.push(`- **Link:** <${item.sourceUrl}>`);
+	return header;
+}
+
+/** Values of the form "Neues Ticket" taken from an inbox entry (E4 plan, T-5). */
+export interface TicketPrefill {
+	title: string;
+	/** Header lines of the source, then the text of the entry (Markdown). */
+	description: string;
+	/**
+	 * Time at the sender. It is only a hint with "Als Fälligkeit übernehmen": the source date never
+	 * becomes the due date by itself (P-5).
+	 */
+	sourceDate: string | null;
+}
+
+/**
+ * Prefill of a ticket from an inbox entry (T-5): the title, and as description the header of the
+ * source (mail: "Von", "Datum"; event: "Beginn", "Ort"; message: "Von", "Chat", "Zeit"; a link of
+ * the source) followed by the text, cut to the limits of the ticket. Project, tags, status and
+ * priority stay with the defaults of the form.
+ */
+export function ticketPrefill(item: InboxItem): TicketPrefill {
+	const header = headerLines(item);
+	const body = item.body.trim();
+	const parts = [header.join('\n'), body].filter((part) => part !== '');
+	return {
+		title: item.title.slice(0, TITLE_MAX_LENGTH),
+		description: parts.join('\n\n').slice(0, DESCRIPTION_MAX_LENGTH),
+		sourceDate: item.sourceDate
+	};
 }

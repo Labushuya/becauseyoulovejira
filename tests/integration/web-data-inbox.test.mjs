@@ -164,6 +164,30 @@ describe('actions', () => {
 		expect((await listHandledItems(fresh.client, 'converted', 1)).items).toEqual([]);
 	});
 
+	it('narrows handled entries to the channels of a source family on the server', async () => {
+		const fresh = await createOwner(superuser);
+		const fromMail = await created(fresh.client, mail());
+		const fromLink = await created(fresh.client, {
+			channel: 'link',
+			kind: 'link',
+			title: 'Artikel',
+			sourceUrl: `https://example.com/${uniqueSuffix()}`
+		});
+		const typed = await created(fresh.client, { channel: 'quick', kind: 'todo', title: 'Notiz' });
+		for (const item of [fromMail, fromLink, typed]) await discardItem(fresh.client, item.id);
+
+		const ids = async (channels) =>
+			(await listHandledItems(fresh.client, 'discarded', 1, { channels })).items.map(
+				(item) => item.id
+			);
+		expect(await ids(['eml', 'mail'])).toEqual([fromMail.id]);
+		expect(await ids(['manual', 'quick', 'clipboard'])).toEqual([typed.id]);
+		expect((await ids(null)).sort()).toEqual([fromMail.id, fromLink.id, typed.id].sort());
+		await expect(
+			listHandledItems(fresh.client, 'discarded', 1, { channels: ['a', 'b', 'c', 'd'] })
+		).rejects.toBeInstanceOf(DataError);
+	});
+
 	it('assigns an entry to an existing ticket', async () => {
 		const item = await created(owner.client, mail());
 		const ticket = await createTicket(owner.client, ticketDraft());

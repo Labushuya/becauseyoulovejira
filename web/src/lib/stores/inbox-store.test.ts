@@ -2,12 +2,14 @@
 // in full, handled entries page by page, targeted updates, reconciliation after a reconnection,
 // duplicates as outcome, actions with messages, the missing collection before the migration.
 
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { DataError } from '$lib/data/errors';
 import type { InboxDraft, InboxItem, InboxItemSummary } from '$lib/domain/inbox';
+import type { InboxQuery } from '$lib/domain/inbox-query';
 import type { TicketSummary } from '$lib/domain/ticket';
 import { INBOX_UNAVAILABLE_MESSAGE, InboxStore, type InboxData } from './inbox.svelte';
 import type { LiveSource, RecordChange, Unsubscribe } from './realtime';
+import { UNDO_WINDOW_MS } from './ticket-list.svelte';
 
 const T0 = '2026-09-25 08:00:00.000Z';
 const T1 = '2026-09-25 09:00:00.000Z';
@@ -71,6 +73,9 @@ function setup(options: { newItems?: InboxItemSummary[]; valid?: boolean } = {})
 		restore: vi.fn<InboxData['restore']>(async (id) => item(id, { updated: T2 })),
 		assign: vi.fn<InboxData['assign']>(async (id, ticketId) =>
 			item(id, { state: 'converted', ticketId, handledAt: T2, updated: T2 })
+		),
+		originalUrl: vi.fn<InboxData['originalUrl']>(async (entry) =>
+			entry.original === '' ? null : `http://pb.test/${entry.original}?token=t`
 		)
 	} satisfies InboxData;
 	const session = { ensureValid: vi.fn(() => options.valid ?? true), logout: vi.fn() };
@@ -159,7 +164,10 @@ describe('loading', () => {
 	});
 });
 
-describe('handled entries', () => {
+describe('view (E4 plan, package 3)', () => {
+	const NEW: InboxQuery = { source: null, state: 'new' };
+	const DISCARDED: InboxQuery = { source: null, state: 'discarded' };
+
 	it('loads the chosen state page by page and drops it again', async () => {
 		const { store, data } = setup();
 		await store.load();
@@ -169,27 +177,56 @@ describe('handled entries', () => {
 			.mockResolvedValueOnce({ items: [first], page: 1, hasMore: true })
 			.mockResolvedValueOnce({ items: [second], page: 2, hasMore: false });
 
-		store.showHandled('discarded');
+		store.activate(DISCARDED);
 		await vi.waitFor(() => expect(store.handledLoad).toBe('ready'));
-		expect(store.handled.map((entry) => entry.id)).toEqual([first.id]);
+		expect(store.visible.map((entry) => entry.id)).toEqual([first.id]);
 		expect(store.handledHasMore).toBe(true);
+		expect(data.listHandled).toHaveBeenLastCalledWith(
+			'discarded',
+			1,
+			expect.objectContaining({ channels: null })
+		);
 
 		await store.loadMoreHandled();
 		expect(data.listHandled).toHaveBeenLastCalledWith('discarded', 2, expect.anything());
-		expect(store.handled.map((entry) => entry.id)).toEqual([first.id, second.id]);
+		expect(store.visible.map((entry) => entry.id)).toEqual([first.id, second.id]);
 		expect(store.handledHasMore).toBe(false);
 
-		store.showHandled('discarded');
+		store.activate({ ...DISCARDED });
 		expect(data.listHandled).toHaveBeenCalledTimes(2);
-		store.showHandled(null);
+		store.activate(NEW);
 		expect(store.handled).toEqual([]);
 		expect(store.handledState).toBeNull();
+		expect(store.visible.map((entry) => entry.id)).toEqual([B.id, A.id]);
+	});
+
+	it('filters new entries by source family and asks the server for the handled ones', async () => {
+		const mail = item('item00000000003', { channel: 'eml', kind: 'mail', created: T2 });
+		const link = item('item00000000004', { channel: 'link', kind: 'link', created: T2 });
+		const { store, data } = setup({ newItems: [A, mail, link] });
+		await store.load();
+		store.activate({ source: 'mail', state: 'new' });
+		expect(store.visible.map((entry) => entry.id)).toEqual([mail.id]);
+		store.activate({ source: 'manual', state: 'new' });
+		expect(store.visible.map((entry) => entry.id)).toEqual([A.id]);
+		expect(store.newCount).toBe(3);
+
+		store.activate({ source: 'mail', state: 'converted' });
+		await vi.waitFor(() => expect(store.handledLoad).toBe('ready'));
+		expect(data.listHandled).toHaveBeenLastCalledWith(
+			'converted',
+			1,
+			expect.objectContaining({ channels: ['eml', 'mail'] })
+		);
+		// A converted link does not join the mails shown.
+		store.upsert({ ...link, state: 'converted', ticketId: 't', handledAt: T2, updated: T2 });
+		expect(store.visible).toEqual([]);
 	});
 
 	it('moves entries between new and handled on upsert', async () => {
 		const { store } = setup();
 		await store.load();
-		store.showHandled('discarded');
+		store.activate(DISCARDED);
 		await vi.waitFor(() => expect(store.handledLoad).toBe('ready'));
 
 		store.upsert(discarded(A, T2));
@@ -214,12 +251,60 @@ describe('handled entries', () => {
 			page: 1,
 			hasMore: true
 		});
-		store.showHandled('discarded');
+		store.activate(DISCARDED);
 		await vi.waitFor(() => expect(store.handledLoad).toBe('ready'));
 		store.upsert(discarded(A, T0));
 		expect(store.handled.map((entry) => entry.id)).toEqual(['item00000000010']);
 		store.upsert(discarded(B, '2026-09-25 12:00:00.000Z'));
 		expect(store.handled.map((entry) => entry.id)).toEqual([B.id, 'item00000000010']);
+	});
+});
+
+describe('discard with "Rückgängig"', () => {
+	afterEach(() => {
+		vi.useRealTimers();
+	});
+
+	it('keeps a discarded entry in place for the undo window, then drops it', async () => {
+		vi.useFakeTimers();
+		const { store } = setup();
+		await store.load();
+		const result = await store.discard(A.id);
+		expect(result.ok).toBe(true);
+		expect(store.isLingering(A.id)).toBe(true);
+		expect(store.visible.map((entry) => entry.id)).toEqual([B.id, A.id]);
+		expect(store.visible.find((entry) => entry.id === A.id)?.state).toBe('discarded');
+		expect(store.newCount).toBe(1);
+		expect(store.announcement).toBe(`„${A.title}“ verworfen. Rückgängig ist kurz möglich.`);
+
+		await vi.advanceTimersByTimeAsync(UNDO_WINDOW_MS);
+		expect(store.isLingering(A.id)).toBe(false);
+		expect(store.visible.map((entry) => entry.id)).toEqual([B.id]);
+	});
+
+	it('restores the entry with "Rückgängig"', async () => {
+		vi.useFakeTimers();
+		const { store, data } = setup();
+		await store.load();
+		await store.discard(A.id);
+		const undone = await store.undo(A.id);
+		expect(undone.ok).toBe(true);
+		expect(data.restore).toHaveBeenCalledWith(A.id);
+		expect(store.isLingering(A.id)).toBe(false);
+		expect(store.newItems.map((entry) => entry.id)).toContain(A.id);
+		expect(store.announcement).toBe(`„${A.title}“ ist wieder im Eingang.`);
+	});
+
+	it('does not linger an entry that was not new, and clears the timers on reset', async () => {
+		vi.useFakeTimers();
+		const { store } = setup();
+		await store.load();
+		await store.discard('item00000000077');
+		expect(store.isLingering('item00000000077')).toBe(false);
+		await store.discard(A.id);
+		store.reset();
+		expect(store.isLingering(A.id)).toBe(false);
+		expect(vi.getTimerCount()).toBe(0);
 	});
 });
 
@@ -330,7 +415,8 @@ describe('actions', () => {
 		const { store, data } = setup();
 		await store.load();
 		expect(await store.discard(A.id)).toMatchObject({ ok: true, item: { state: 'discarded' } });
-		expect(store.find(A.id)).toBeNull();
+		expect(store.newItems.map((entry) => entry.id)).toEqual([B.id]);
+		expect(store.isLingering(A.id)).toBe(true);
 		expect(await store.restore(A.id)).toMatchObject({ ok: true, item: { state: 'new' } });
 		expect(store.find(A.id)?.state).toBe('new');
 		expect(await store.assign(B.id, 'tick00000000001')).toMatchObject({ ok: true });
@@ -370,18 +456,36 @@ describe('actions', () => {
 		expect(store.find(A.id)?.state).toBe('new');
 	});
 
-	it('loads one entry with its text and follows a conversion', async () => {
-		const { store, data } = setup();
+	it('loads one entry with its text and marks a conversion before the event arrives', async () => {
+		const { store } = setup();
 		await store.load();
 		expect(await store.fetch(A.id)).toMatchObject({ id: A.id, body: 'Text' });
-		data.get.mockResolvedValueOnce(
-			withBody(item(A.id, { state: 'converted', ticketId: 't', handledAt: T2, updated: T2 }))
-		);
-		await store.refresh(A.id);
+		store.markConverted(A.id, 'tick00000000001', T2);
 		expect(store.newItems.map((entry) => entry.id)).toEqual([B.id]);
-		data.get.mockRejectedValueOnce(new DataError('not_found', { status: 404 }));
-		await store.refresh(B.id);
-		expect(store.newItems).toEqual([]);
+		// The event of the hook (newer) still replaces the local mark.
+		store.upsert(
+			item(A.id, { state: 'converted', ticketId: 'tick00000000001', handledAt: T2, updated: T2 })
+		);
+		expect(store.find(A.id)).toBeNull();
+		store.markConverted('item00000000099', 't', T2);
+		expect(store.newItems.map((entry) => entry.id)).toEqual([B.id]);
+	});
+
+	it('gives the address of the original or says there is none', async () => {
+		const { store, data } = setup();
+		expect(await store.originalUrl({ id: A.id, original: 'mail_abc.eml' })).toEqual({
+			ok: true,
+			url: 'http://pb.test/mail_abc.eml?token=t'
+		});
+		expect(await store.originalUrl({ id: A.id, original: '' })).toEqual({
+			ok: false,
+			message: 'Zu diesem Eintrag gibt es keine Datei.'
+		});
+		data.originalUrl.mockRejectedValueOnce(new DataError('network'));
+		expect(await store.originalUrl({ id: A.id, original: 'x.eml' })).toMatchObject({
+			ok: false,
+			message: expect.stringContaining('Server nicht erreichbar')
+		});
 	});
 
 	it('finds soft duplicates among open tickets and the other new entries', async () => {

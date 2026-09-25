@@ -1,16 +1,25 @@
 <script lang="ts">
 	import { resolve } from '$app/paths';
 	import { page } from '$app/state';
-	import { listHref, projectsHref } from '$lib/ticket-links';
+	import { inboxHref, listHref, projectsHref } from '$lib/ticket-links';
 
-	// Switch "Aufgaben | Projekte" in the section bar of both views (E3 plan, T-3 and package 14;
-	// ADR-0010 section 5): a navigation with two links, because both views have their own
-	// address. The current one carries aria-current="page" and is marked by weight and a line
-	// besides its colour. "Aufgaben" keeps the list state of the URL while the list is shown and
-	// opens the plain list from the project view.
-	let { current }: { current: 'tasks' | 'projects' } = $props();
+	// Switch "Aufgaben | Projekte | Eingang" in the section bar of the views (E3 plan, T-3 and
+	// package 14; E4 plan, package 3; ADR-0010 section 5): a navigation with one link per view,
+	// because each has its own address. The current one carries aria-current="page" and is marked
+	// by weight and a line besides its colour. "Aufgaben" keeps the list state of the URL while the
+	// list is shown, "Eingang" its chips while the inbox is shown. The number of new inbox entries
+	// stands next to "Eingang" (ADR-0015 section 5), as text for screen readers too.
+	let {
+		current,
+		inboxCount = null
+	}: {
+		current: 'tasks' | 'projects' | 'inbox';
+		/** New inbox entries; null while not loaded (no number is shown). */
+		inboxCount?: number | null;
+	} = $props();
 
 	const tasksHref = $derived(current === 'tasks' ? listHref(page.url) : resolve('/'));
+	const inboxLink = $derived(current === 'inbox' ? inboxHref(page.url) : inboxHref());
 </script>
 
 <nav class="view-switch" aria-label="Ansicht">
@@ -25,6 +34,19 @@
 			<path d="M2.5 4.5v7.5h11V6H8L6.5 4.5z" />
 		</svg>
 		Projekte
+	</a>
+	<a href={inboxLink} aria-current={current === 'inbox' ? 'page' : undefined}>
+		<svg viewBox="0 0 16 16" aria-hidden="true" focusable="false">
+			<path d="M2.5 9.5l1.75-6h7.5l1.75 6v3.5h-11zM2.5 9.5h3l1 1.5h3l1-1.5h3" />
+		</svg>
+		Eingang
+		{#if inboxCount !== null && inboxCount > 0}
+			<span class="count"
+				><span aria-hidden="true">{inboxCount}</span><span class="visually-hidden"
+					>({inboxCount} neu)</span
+				></span
+			>
+		{/if}
 	</a>
 </nav>
 
@@ -65,6 +87,20 @@
 		color: var(--color-brand-soft-text);
 		background: var(--color-brand-soft-bg);
 		border-bottom-color: var(--color-brand);
+	}
+
+	.count {
+		min-width: 1.25rem;
+		padding: 0 0.3125rem;
+		font-size: 0.6875rem;
+		font-weight: 600;
+		line-height: 1.125rem;
+		text-align: center;
+		font-variant-numeric: tabular-nums;
+		color: var(--color-brand-soft-text);
+		background: var(--color-brand-soft-bg);
+		border: 1px solid var(--color-brand);
+		border-radius: 0.5625rem;
 	}
 
 	svg {

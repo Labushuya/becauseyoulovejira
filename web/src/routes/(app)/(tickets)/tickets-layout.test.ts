@@ -29,6 +29,11 @@ vi.mock('$lib/stores/catalog.svelte', async (importOriginal) => ({
 	...(await importOriginal<object>()),
 	getCatalogStore: () => mocks.catalog
 }));
+// The switch shows the number of new inbox entries (E4 plan, package 3).
+vi.mock('$lib/stores/inbox.svelte', async (importOriginal) => ({
+	...(await importOriginal<object>()),
+	getInboxStore: () => ({ newCount: 2 })
+}));
 
 function renderLayout(path: string, id?: string) {
 	mocks.page.url = new URL(path, 'http://localhost:3000');

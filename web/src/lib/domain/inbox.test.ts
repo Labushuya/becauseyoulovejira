@@ -11,6 +11,8 @@ import {
 	isInboxKind,
 	isInboxState,
 	normalizeTitle,
+	ticketPrefill,
+	type InboxItem,
 	type InboxItemSummary
 } from './inbox';
 import type { TicketSummary } from './ticket';
@@ -134,5 +136,59 @@ describe('value lists and texts', () => {
 		expect(duplicateMessage('discarded', '')).toBe('Schon verworfen.');
 		expect(duplicateMessage('converted', 'HAUS-12')).toBe('Schon Ticket HAUS-12.');
 		expect(duplicateMessage('converted', '')).toBe('Schon umgewandelt.');
+	});
+});
+
+describe('ticketPrefill (E4 plan, T-5)', () => {
+	function full(overrides: Partial<InboxItem> = {}): InboxItem {
+		return { ...item(), body: 'Text', ...overrides };
+	}
+
+	it('takes title and text and adds the header of a mail', () => {
+		const prefill = ticketPrefill(
+			full({
+				kind: 'mail',
+				channel: 'mail',
+				sourceDate: '2026-09-25 08:15:00.000Z',
+				sourceMeta: { from: 'Anna *A.* <anna@example.com>' }
+			})
+		);
+		expect(prefill.title).toBe('Milch kaufen');
+		expect(prefill.description).toBe(
+			'- **Von:** Anna \\*A\\.\\* \\<anna@example\\.com\\>\n- **Datum:** 25.09.2026 10:15\n\nText'
+		);
+		expect(prefill.sourceDate).toBe('2026-09-25 08:15:00.000Z');
+	});
+
+	it('adds begin and place of an event and sender, chat and time of a message', () => {
+		expect(
+			ticketPrefill(
+				full({
+					kind: 'event',
+					sourceDate: '2026-12-24 17:00:00.000Z',
+					sourceMeta: { location: 'Kirche' },
+					body: ''
+				})
+			).description
+		).toBe('- **Beginn:** 24.12.2026 18:00\n- **Ort:** Kirche');
+		expect(
+			ticketPrefill(
+				full({ kind: 'message', sourceMeta: { sender: 'Ben', chat: 'Familie', extra: 3 } })
+			).description
+		).toBe('- **Von:** Ben\n- **Chat:** Familie\n\nText');
+	});
+
+	it('links the source and leaves out empty parts', () => {
+		expect(
+			ticketPrefill(full({ kind: 'link', sourceUrl: 'https://example.com/a', body: '  ' }))
+				.description
+		).toBe('- **Link:** <https://example.com/a>');
+		expect(ticketPrefill(full({ kind: 'todo', body: '' })).description).toBe('');
+	});
+
+	it('cuts to the limits of the ticket', () => {
+		const prefill = ticketPrefill(full({ title: 'x'.repeat(250), body: 'y'.repeat(100_010) }));
+		expect(prefill.title).toHaveLength(200);
+		expect(prefill.description).toHaveLength(100_000);
 	});
 });

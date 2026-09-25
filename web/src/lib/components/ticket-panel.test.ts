@@ -845,3 +845,32 @@ describe('ticket panel: deleted elsewhere', () => {
 		disconnect();
 	});
 });
+
+describe('ticket panel: source (E4 plan, package 3)', () => {
+	function sourceText() {
+		const term = screen.queryByText('Quelle', { selector: 'dt' });
+		return term?.nextElementSibling ?? null;
+	}
+
+	it('names the source and links the original entry in the inbox', async () => {
+		await renderPanel(ticket({ source: 'eml', sourceItem: 'item00000000001' }));
+		const value = sourceText();
+		expect(value?.textContent?.replace(/\s+/g, ' ').trim()).toBe('Mail-Datei · Original ansehen');
+		expect(
+			within(value as HTMLElement)
+				.getByRole('link', { name: 'Original ansehen' })
+				.getAttribute('href')
+		).toBe('/eingang/item00000000001');
+	});
+
+	it('names the source without a link once the entry is gone', async () => {
+		await renderPanel(ticket({ source: 'quick', sourceItem: null }));
+		expect(sourceText()?.textContent?.trim()).toBe('Schnellerfassung');
+		expect(screen.queryByRole('link', { name: 'Original ansehen' })).toBeNull();
+	});
+
+	it('shows no source for tickets from before E4', async () => {
+		await renderPanel(ticket({ source: null, sourceItem: null }));
+		expect(sourceText()).toBeNull();
+	});
+});
