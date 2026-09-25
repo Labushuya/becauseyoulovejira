@@ -217,8 +217,12 @@ describe('completing, reopening and releasing instances (ADR-0023 sections 2, 3 
 	it('writes one timestamp into created and updated of every generated ticket', async () => {
 		const rule = await createRule({ mode: 'after_completion', freq: 'daily', interval: 1, lead_days: 3, anchor: today() });
 		const differing = [];
+		const start = Date.now();
 		for (let round = 0; round < 60; round += 1) {
 			const [open] = await openOf(rule.id);
+			const created = Date.parse(open.created.replace(' ', 'T'));
+			expect(created).toBeGreaterThanOrEqual(start - 1_000);
+			expect(created).toBeLessThanOrEqual(Date.now());
 			if (open.updated !== open.created) differing.push([open.created, open.updated]);
 			await tickets().update(open.id, { status: 'done' });
 		}

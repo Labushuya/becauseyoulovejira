@@ -152,6 +152,7 @@ Wird je Paket ergänzt.
 | 2026-09-25 | UI-3 | Rückfragen statt `window.confirm`: „Kommentar löschen?“ („Der Kommentar von … vom … wird endgültig gelöscht.“, Verb „Löschen“; ein Fehler steht weiter am Kommentar, der Dialog schließt), „Neues Ticket verwerfen?“ und „Erfassung verwerfen?“ („Die Eingaben gehen verloren.“, „Weiter bearbeiten“/„Verwerfen“; die Bestätigung liegt außerhalb des `aside`, und Tastenkürzel des Formulars ruhen, solange sie offen ist). Die Texte der bisherigen Fragen bleiben, geteilt in Titel und Beschreibung. |
 | 2026-09-25 | UI-3 | Navigation mit ungespeichertem Text (`tickets/[id]/+page.svelte`): `beforeNavigate` ruft `navigation.cancel()` auf, merkt Ziel und bei `popstate` das `delta` und öffnet „Änderungen verwerfen?“. „Verwerfen“ setzt `discarding` und führt `goto(appHref(url))` aus bzw. bei Zurück/Vor `history.go(delta)`, damit der Verlauf stimmt (SvelteKit hat die Position beim Abbrechen zurückgesetzt). `discarding` wird beim Wechsel auf ein anderes Ticket derselben Route zurückgesetzt. Neuer Helfer `appHref(url)` in `ticket-links.ts`, weil `svelte/no-navigation-without-resolve` ein `goto` auf ein URL-Objekt ablehnt. |
 | 2026-09-25 | UI-3 | Bewusst angepasste Tests: `delete-ticket.test.ts` erwartet, dass Esc im Dialog verbraucht wird (`keyDown` liefert `false`, vorher `true`), weil nur so Chromium bei `busy` nicht schließt; `comments`, `new-ticket`, `capture-form` und `ticket-panel` bedienen den Dialog statt `window.confirm` zu fälschen; `delete-ticket`, `tag-manager` und `connections-page` nutzen die gemeinsamen Stubs. |
+| 2026-09-25 | vor UI-4 | Der CI-Ausreißer aus #47 ist behoben (eigener PR vor UI-4, Einzelheiten im [E5-Plan](e5.md) §7, „3 (Nachtrag)“): PocketBase setzt `created` und `updated` mit je eigener Uhrzeit, die sich um 1 ms unterscheiden können; der Erzeugungsdienst schreibt jetzt einen Zeitstempel in beide. Die Testdatei lief 20-mal hintereinander grün. |
 
 ## 7. Status
 
@@ -160,7 +161,7 @@ Wird je Paket ergänzt.
 | UI-0 | gemergt (#45) |
 | UI-1 | gemergt (#46) |
 | UI-2 | gemergt (#47) |
-| UI-3 | in Arbeit |
+| UI-3 | gemergt (#48) |
 | UI-4 bis UI-9 | geplant |
 
 ## Quellen (nur Verhalten und Maße)

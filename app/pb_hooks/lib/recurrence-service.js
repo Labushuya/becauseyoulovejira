@@ -321,12 +321,14 @@ function errorText(err) {
 // run inside the same transaction (the nested inTransaction reuses it).
 // created and updated get one timestamp: PocketBase reads the clock once per autodate field, so
 // the two can differ by a millisecond, and isUntouched() takes `updated = created` as "never
-// edited" when an instance is reopened (ADR-0023 section 3). PocketBase keeps a value set here.
+// edited" when an instance is reopened (ADR-0023 section 3). record.set() ignores autodate
+// fields; a value from setRaw() is kept, because it differs from the empty original. The value is
+// the stored form, like last_generated_at, with the real clock (a run may pass another nowMs).
 function newInstance(txApp, rule, due) {
   var ticket = new Record(txApp.findCollectionByNameOrId(TICKETS));
-  var now = new Date().toISOString();
-  ticket.set('created', now);
-  ticket.set('updated', now);
+  var now = berlinTime.toPocketBaseDate(Date.now());
+  ticket.setRaw('created', now);
+  ticket.setRaw('updated', now);
   ticket.set('title', rule.getString('title'));
   ticket.set('description', rule.getString('description'));
   ticket.set('project', rule.getString('project'));
