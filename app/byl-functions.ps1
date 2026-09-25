@@ -507,3 +507,24 @@ function Invoke-AdminUpsert {
     }
     return [pscustomobject]@{ ExitCode = $exitCode; Output = $output.Trim() }
 }
+
+# Names of the access data of the channels (ADR-0018 section 1): "BYL_" plus capital letters,
+# digits and "_", at most 64 characters. Same pattern as app/pb_hooks/lib/secrets.js.
+$BylSecretNamePattern = '^BYL_[A-Z0-9_]{1,60}$'
+
+function Get-BylEnvironmentChange {
+    # Which BYL_* variables start.bat hands to PocketBase (ADR-0018 section 6): every valid name of
+    # the user scope (its value is read fresh from there), and the removal of valid names this
+    # process still has from its own start although they are gone from the user and the machine
+    # scope. Only names go in and out; values are never printed.
+    param(
+        [AllowEmptyCollection()][string[]]$UserNames = @(),
+        [AllowEmptyCollection()][string[]]$MachineNames = @(),
+        [AllowEmptyCollection()][string[]]$ProcessNames = @()
+    )
+
+    $set = @($UserNames | Where-Object { $_ -cmatch $BylSecretNamePattern } | Sort-Object -Unique)
+    $keep = @($set) + @($MachineNames | Where-Object { $_ -cmatch $BylSecretNamePattern })
+    $remove = @($ProcessNames | Where-Object { ($_ -cmatch $BylSecretNamePattern) -and ($keep -notcontains $_) } | Sort-Object -Unique)
+    return [pscustomobject]@{ Set = $set; Remove = $remove }
+}

@@ -146,6 +146,16 @@ describe('start', () => {
 		);
 	});
 
+	it('hands the BYL_* variables of the user scope to the server without printing them', () => {
+		const start = functionBody(control(), 'Invoke-Start');
+		expect(start.indexOf('Sync-BylEnvironment')).toBeGreaterThan(-1);
+		expect(start.indexOf('Sync-BylEnvironment')).toBeLessThan(start.indexOf('Start-Process -FilePath $exe'));
+		const sync = functionBody(control(), 'Sync-BylEnvironment');
+		expect(sync).toContain("GetEnvironmentVariables('User')");
+		expect(sync).toMatch(/Get-BylEnvironmentChange/);
+		expect(sync).not.toMatch(/Write-|Show-Message|Out-|Add-Content|Set-Content/);
+	});
+
 	it('has a first-run branch that opens no second tab', () => {
 		const body = functionBody(control(), 'Invoke-Start');
 		const firstRun = body.slice(body.indexOf('if (Wait-FirstRunSignal'));
