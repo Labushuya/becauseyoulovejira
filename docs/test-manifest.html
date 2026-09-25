@@ -213,8 +213,8 @@
   "meta": {
     "projekt": "becauseyoulovejira",
     "stand": "2026-09-25",
-    "commit": "02a1854",
-    "etappe": "E0 bis E4 abgeschlossen (E4: Pakete 1 bis 11, 13 bis 17, 19 bis 24; Paket 12 entfällt, Paket 18 zurückgestellt); E5 in Planung (BYL-E5-001 bis BYL-E5-008 geplant)"
+    "commit": "9e99d4f",
+    "etappe": "E0 bis E4 abgeschlossen (E4: Pakete 1 bis 11, 13 bis 17, 19 bis 24; Paket 12 entfällt, Paket 18 zurückgestellt); E5 in Arbeit (Paket 1: BYL-E5-001)"
   },
   "blocks": [
     {
@@ -1325,10 +1325,10 @@
     {
       "tag": "E5", "name": "E5 Wiederkehrende Aufgaben", "desc": "Geplante Testfälle des E5-Plans (docs/plan/e5.md, ADR-0021 bis ADR-0024) je Paket. Status „geplant“ bis zum Merge des Pakets; die Schritte sind die Akzeptanzkriterien.",
       "items": [
-        { "id": "BYL-E5-001", "title": "Terminberechnung rein und in Hook und SPA gleich", "art": ["unit"], "status": "geplant",
-          "pre": "E5-Plan, Paket 1; ADR-0021 §2 und §3.", "steps": ["Falltabelle tests/fixtures/recurrence/cases.json in lib/recurrence.js und domain/recurrence.ts: gleiches Ergebnis je Zeile.", "Paritätstest mit mindestens 5 000 Zufallsregeln und -daten ohne Abweichung.", "Pflichtfälle: Monatsenden (31., 30., -1, Februar), Schaltjahre (29.02., 2000, 2100), Tageswechsel an beiden Umstellungstagen, Ausfälle von 1, 3 und 10 Jahren.", "validate meldet jeden unzulässigen Wert mit Code; Rhythmus in Worten je Modus."],
-          "expect": "Beide Module rechnen dieselben Termine; catchUp liefert das jüngste Vorkommen ≤ heute; lange Ausfälle kosten keine Rechenzeit.",
-          "tests": [] },
+        { "id": "BYL-E5-001", "title": "Terminberechnung rein und in Hook und SPA gleich", "art": ["unit"], "status": "bestanden",
+          "pre": "E5-Plan, Paket 1; ADR-0021 §2 und §3.", "steps": ["npm run test:unit", "npm run test:web"],
+          "expect": "lib/recurrence.js (ES5, ohne require) und domain/recurrence.ts liefern für jede Zeile der Falltabelle tests/fixtures/recurrence/cases.json dasselbe Ergebnis (normalize, validate, onOrAfter, after, latestOnOrBefore, afterCompletion, catchUp, createOn, upcoming); 5 000 Zufallsregeln aus festem Seed (auch ungültige) ergeben in beiden Modulen dieselben Daten und dieselben Ablehnungen. 400 Zufallsregeln stimmen mit einer tageweisen Prüfung der Definition aus ADR-0021 §2 überein. Pflichtfälle: 31., 30. und -1 werden am Monatsende geklemmt (auch im Februar von Schaltjahren), 29.02. jährlich wird in Gemeinjahren der 28.02., 2000 und 2104 haben den Schalttag, 2100 nicht; der Tageswechsel über berlin-time.js stimmt um 21:59, 22:00, 22:59 und 23:00 UTC an beiden Umstellungstagen; nach 1, 3 und 10 Jahren Ausfall liefert catchUp für jeden Rhythmus das jüngste Vorkommen ≤ heute und nie eines vor dem ausstehenden Termin. validate meldet freq, mode, interval (0, 366, gebrochen), weekdays (unbekannt, leer, falscher Modus), month_day (0, 32, -2, falscher Modus), anchor (unmöglich, mit Uhrzeit, außerhalb 1900 bis 2999) und lead_days (31, -1) mit ihrem Code. Vorlauf standardmäßig 3 Tage (OF-E5-1, DEFAULT_LEAD_DAYS). Ein Aufruf dauert für 10-jährige Serien weit unter 1 ms. Rhythmus in Worten: „Täglich“, „Alle 2 Tage“, „Jeden Montag und Donnerstag“, „Alle 2 Wochen am Montag“, „Werktags“, „Monatlich am 15.“, „Monatlich am letzten Tag“, „Jährlich am 29. Februar“, „3 Tage nach Erledigung“, „1 Monat nach Erledigung“.",
+          "tests": ["tests/unit/recurrence.test.mjs", "tests/unit/web-recurrence.test.mjs", "web/src/lib/domain/recurrence.test.ts", "web/src/lib/domain/recurrence-text.test.ts"] },
         { "id": "BYL-E5-002", "title": "Regeln: Datenmodell, Hooks, Teilindex", "art": ["unit", "integration"], "status": "geplant",
           "pre": "E5-Plan, Paket 2; ADR-0021 §1, ADR-0022 §1, ADR-0023 §1.", "steps": ["Felder, Indizes und Regeln; Server-Felder überschrieben; Feldfehler mit Code.", "Anlegen mit ticket atomar; fremdes, erledigtes oder schon verknüpftes Ticket abgelehnt.", "tickets.recurrence vom Client nur leerbar.", "Teilindex lehnt eine zweite offene Instanz ab.", "Migrationen hin und zurück mit Daten; Hooks vor der Migration wie in E4."],
           "expect": "Regeln sind typisiert, scope-sicher und nur über die vorgesehenen Wege mit Tickets verknüpft; die Migration verändert vorhandene Daten nicht.",
