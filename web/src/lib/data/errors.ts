@@ -50,7 +50,14 @@ const FIELD_MESSAGES: Readonly<Record<string, string>> = Object.freeze({
 	validation_inbox_ticket_required: 'Zum Zuordnen fehlt das Ticket.',
 	validation_invalid_url: 'Nur http- und https-Adressen.',
 	validation_source_not_allowed: 'Diese Quelle lässt sich nicht direkt setzen.',
-	validation_source_immutable: 'Die Quelle eines Tickets lässt sich nicht ändern.'
+	validation_source_immutable: 'Die Quelle eines Tickets lässt sich nicht ändern.',
+	// Connections (ADR-0018; E4 plan, package 10).
+	validation_secret_name:
+		'Nur BYL_ mit Großbuchstaben, Ziffern und _, höchstens 64 Zeichen (etwa BYL_TELEGRAM_TOKEN).',
+	validation_connection_type: 'Diese Verbindungsart gibt es noch nicht.',
+	validation_connection_immutable: 'Die Art einer Verbindung lässt sich nicht ändern.',
+	validation_connection_server_field: 'Dieses Feld setzt nur der Server.',
+	validation_connection_settings: 'Unbekannte Einstellung.'
 });
 
 /** Texts that depend on the field as well, keyed by `<field>:<code>`; they win over the above. */
