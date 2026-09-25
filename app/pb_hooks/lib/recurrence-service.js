@@ -1,7 +1,8 @@
-// Recurring tasks, the database part (ADR-0021 to ADR-0023; E5 plan package 2: saving rules).
-// CommonJS module, ES5 only, Goja runtime only. Every function takes the app of the running
-// transaction (`txApp`) and never uses `$app`. The pure decisions are in lib/recurrence-rules.js
-// and lib/recurrence.js.
+// Recurring tasks, the database part (ADR-0021 to ADR-0023; E5 plan package 2: saving rules,
+// package 3: generation, completion, reopening, release, cron and start). CommonJS module, ES5
+// only, Goja runtime only. Functions inside a hook take the app of the running transaction
+// (`txApp`); materialize, runDue and runStartup open their own transactions on the app they get
+// and never throw. The pure decisions are in lib/recurrence-rules.js and lib/recurrence.js.
 //
 // The running instance loads new hooks at once but runs the E5 migrations only at its next
 // start (E4 plan section 12). Until then `recurrence_rules` has no `freq`, and every function
@@ -24,6 +25,12 @@ var TICKETS = 'tickets';
 // values of next_due, last_generated_at, last_hint and active the model hook keeps.
 var TICKET_KEY = '@recurrence_ticket';
 var SYSTEM_KEY = '@recurrence_system';
+// On tickets: COMPLETED_KEY carries the rule of an instance that was just completed to the
+// after-success hook; DETACH_KEY marks a client request that clears `recurrence`; UNDO_KEY marks
+// the untouched follow-up that reopening an instance removes (no release logic for it).
+var COMPLETED_KEY = '@recurrence_completed';
+var DETACH_KEY = '@recurrence_detach';
+var UNDO_KEY = '@recurrence_undo';
 
 // Whether the E5 migrations ran (the rule parameters exist).
 function schemaReady(app) {
@@ -149,11 +156,17 @@ function guardTicketCreate(e) {
   }
 }
 
+// A client that clears `recurrence` releases the ticket from its series ("Aus der Serie lösen");
+// the model hook then treats an open instance like a deleted one (ADR-0023 section 6).
 function guardTicketUpdate(e) {
   var next = e.record.getString('recurrence');
-  if (next !== '' && next !== e.record.original().getString('recurrence') && schemaReady(e.app)) {
+  if (next === e.record.original().getString('recurrence') || !schemaReady(e.app)) {
+    return;
+  }
+  if (next !== '') {
     throw fail('recurrence', 'validation_recurrence_managed');
   }
+  e.record.set(DETACH_KEY, true);
 }
 
 // --- Model hooks -----------------------------------------------------------------------------
@@ -275,10 +288,299 @@ function prepareUpdate(txApp, record, nowMs) {
   }
 }
 
+// --- Generation (ADR-0022; E5 plan package 3) -------------------------------------------------
+
+// Normalized rule with the state the generation needs.
+function ruleState(rule) {
+  var raw = paramsOf(rule);
+  var state = recurrence.normalize(raw);
+  state.active = raw.active;
+  state.next_due = raw.next_due;
+  return state;
+}
+
+function saveSystem(txApp, rule) {
+  rule.set(SYSTEM_KEY, true);
+  txApp.save(rule);
+}
+
+function setNextDue(txApp, rule, nextDue) {
+  if (nextDue === null) {
+    return;
+  }
+  rule.set('next_due', rules.storedDateOf(nextDue));
+  saveSystem(txApp, rule);
+}
+
+function errorText(err) {
+  return err && err.message ? err.message : String(err);
+}
+
+// The new ticket of a rule: template, status open, the due date, the rule and the owner. Key,
+// scope, history ("created" without a user) and the "new" mark come from the ticket hooks, which
+// run inside the same transaction (the nested inTransaction reuses it).
+function newInstance(txApp, rule, due) {
+  var ticket = new Record(txApp.findCollectionByNameOrId(TICKETS));
+  ticket.set('title', rule.getString('title'));
+  ticket.set('description', rule.getString('description'));
+  ticket.set('project', rule.getString('project'));
+  ticket.set('tags', listOf(rule.getStringSlice('tags')));
+  ticket.set('priority', rule.getString('priority') || 'medium');
+  ticket.set('status', 'open');
+  ticket.set('due', rules.storedDateOf(due));
+  ticket.set('blocks_parent', true);
+  ticket.set('recurrence', rule.id);
+  ticket.set('owner', rule.getString('owner'));
+  ticket.set('household', rule.getString('household'));
+  txApp.save(ticket);
+  return ticket;
+}
+
+// Writes the hint of a failed generation in an own transaction; the rule stays active and the
+// next run tries again (ADR-0022 section 2).
+function recordFailure(app, ruleId, err) {
+  app.logger().warn('Wiederholung: Ticket nicht erzeugt', 'rule', ruleId, 'error', errorText(err));
+  try {
+    app.runInTransaction(function (txApp) {
+      var rule = findById(txApp, RULES, ruleId);
+      if (rule) {
+        rule.set('last_hint', rules.failureHint(errorText(err)));
+        saveSystem(txApp, rule);
+      }
+    });
+  } catch (hintErr) {
+    app.logger().warn('Wiederholung: Hinweis nicht gespeichert', 'rule', ruleId, 'error', errorText(hintErr));
+  }
+}
+
+/**
+ * Creates the next ticket of one rule if it is due, in one transaction (ADR-0022 section 2):
+ * nothing for an inactive rule, without next_due, with an open instance or before the lead time.
+ * An archived project pauses the rule with a neutral hint. Never throws: another error becomes a
+ * hint at the rule and a log line. Returns { status: 'created' | 'paused' | 'skipped' | 'failed'
+ * | 'unavailable', ticket }.
+ */
+function materialize(app, ruleId, nowMs) {
+  var result = { status: 'skipped', ticket: '' };
+  if (!schemaReady(app)) {
+    result.status = 'unavailable';
+    return result;
+  }
+  var today = berlinTime.berlinToday(nowMs);
+  try {
+    app.runInTransaction(function (txApp) {
+      var rule = findById(txApp, RULES, ruleId);
+      if (rule === null) {
+        return;
+      }
+      var plan = rules.generation(
+        { rule: ruleState(rule), hasOpenInstance: openInstance(txApp, rule.id) !== null, today: today },
+        recurrence
+      );
+      if (plan === null) {
+        return;
+      }
+      var projectId = rule.getString('project');
+      var project = projectId === '' ? null : findById(txApp, 'projects', projectId);
+      if (project && project.getBool('archived')) {
+        rule.set('active', false);
+        rule.set('last_hint', rules.ARCHIVED_HINT);
+        saveSystem(txApp, rule);
+        result.status = 'paused';
+        return;
+      }
+      var ticket = newInstance(txApp, rule, plan.due);
+      rule.set('next_due', rules.storedDateOf(plan.nextDue));
+      rule.set('last_generated_at', berlinTime.toPocketBaseDate(nowMs));
+      rule.set('last_hint', '');
+      saveSystem(txApp, rule);
+      result.status = 'created';
+      result.ticket = ticket.id;
+    });
+  } catch (err) {
+    if (rules.isOpenInstanceConflict(errorText(err))) {
+      return { status: 'skipped', ticket: '' };
+    }
+    recordFailure(app, ruleId, err);
+    return { status: 'failed', ticket: '' };
+  }
+  return result;
+}
+
+/**
+ * All rules that may be due (ADR-0022 section 2): active, with next_due up to today plus the
+ * largest lead time; each one alone through materialize, so one failing rule stops no other.
+ * Returns the counts { checked, created, paused, failed, unavailable }.
+ */
+function runDue(app, nowMs) {
+  var counts = { checked: 0, created: 0, paused: 0, failed: 0, unavailable: false };
+  if (!schemaReady(app)) {
+    counts.unavailable = true;
+    return counts;
+  }
+  var limit = berlinTime.addDays(berlinTime.berlinToday(nowMs), recurrence.LEAD_DAYS_MAX);
+  var due = app.findRecordsByFilter(
+    RULES,
+    "active = true && next_due != '' && next_due <= {:limit}",
+    'next_due,id',
+    0,
+    0,
+    { limit: rules.storedDateOf(limit) }
+  );
+  for (var i = 0; i < due.length; i++) {
+    counts.checked += 1;
+    var status = materialize(app, due[i].id, nowMs).status;
+    if (status === 'created' || status === 'paused' || status === 'failed') {
+      counts[status] += 1;
+    }
+  }
+  if (counts.created > 0 || counts.paused > 0 || counts.failed > 0) {
+    app
+      .logger()
+      .info('Wiederholungen erzeugt', 'created', counts.created, 'paused', counts.paused, 'failed', counts.failed);
+  }
+  return counts;
+}
+
+// Catch-up at the start (ADR-0022 section 4): the due tickets, then the cleanup of discarded
+// inbox items, which would otherwise wait for 11:30 UTC. Each part on its own, never throwing:
+// a failure must not keep the server from starting.
+function runStartup(app, nowMs) {
+  try {
+    runDue(app, nowMs);
+  } catch (err) {
+    app.logger().error('Wiederholungen: Nachholen beim Start gescheitert', 'error', errorText(err));
+  }
+  try {
+    require(__hooks + '/lib/inbox-cleanup-service.js').run(app, nowMs);
+  } catch (err) {
+    app.logger().error('Eingang: Bereinigung beim Start gescheitert', 'error', errorText(err));
+  }
+}
+
+// --- Ticket hooks (ADR-0022 section 4, ADR-0023 sections 2, 3 and 6) -------------------------
+
+/**
+ * onRecordUpdate of tickets, inside its transaction and before e.next() (completed_at is set):
+ * - completing an instance fixes next_due of an after-completion rule and marks the ticket for
+ *   the generation after the commit;
+ * - reopening an instance removes an untouched follow-up or refuses when it was edited;
+ * - releasing an open instance ("Aus der Serie lösen") works like deleting it.
+ */
+function prepareTicketUpdate(txApp, record, nowMs) {
+  if (!schemaReady(txApp)) {
+    return;
+  }
+  var original = record.original();
+  var ruleId = record.getString('recurrence');
+  var previousRule = original.getString('recurrence');
+  var wasDone = original.getString('status') === 'done';
+  var isDone = record.getString('status') === 'done';
+  var today = berlinTime.berlinToday(nowMs);
+
+  if (previousRule !== '' && ruleId === '' && record.get(DETACH_KEY) && !wasDone) {
+    release(txApp, previousRule, today);
+    return;
+  }
+  if (ruleId === '') {
+    return;
+  }
+  var rule = findById(txApp, RULES, ruleId);
+  if (rule === null) {
+    return;
+  }
+  if (!wasDone && isDone) {
+    // The completion is now; its Berlin date is today (ADR-0022 section 6).
+    setNextDue(txApp, rule, rules.nextDueOnCompletion(ruleState(rule), today, recurrence));
+    record.set(COMPLETED_KEY, ruleId);
+  } else if (wasDone && !isDone) {
+    reopen(txApp, record, rule);
+  }
+}
+
+function reopen(txApp, record, rule) {
+  var others = txApp.findRecordsByFilter(
+    TICKETS,
+    "recurrence = {:rule} && status != 'done' && id != {:id}",
+    '-created',
+    1,
+    0,
+    { rule: rule.id, id: record.id }
+  );
+  var state = ruleState(rule);
+  if (others.length === 0) {
+    setNextDue(txApp, rule, rules.nextDueOnReopen(state, false, ''));
+    return;
+  }
+  var followUp = others[0];
+  var comments = txApp.findRecordsByFilter('comments', 'ticket = {:id}', '', 1, 0, { id: followUp.id });
+  var untouched = rules.isUntouched(
+    {
+      created: followUp.getString('created'),
+      updated: followUp.getString('updated'),
+      comments: comments.length
+    },
+    record.original().getString('completed_at')
+  );
+  if (!untouched) {
+    var key = followUp.getString('key');
+    throw errors.fieldFailure('status', 'validation_recurrence_open_instance', rules.openInstanceMessage(key), {
+      key: key,
+      ticket: followUp.id
+    });
+  }
+  var removedDue = rules.calendarDateOf(followUp.getString('due'));
+  followUp.set(UNDO_KEY, true);
+  txApp.delete(followUp);
+  setNextDue(txApp, rule, rules.nextDueOnReopen(state, true, removedDue));
+}
+
+function release(txApp, ruleId, today) {
+  var rule = findById(txApp, RULES, ruleId);
+  if (rule !== null) {
+    setNextDue(txApp, rule, rules.nextDueOnRelease(ruleState(rule), today, recurrence));
+  }
+}
+
+// onRecordDelete of tickets, inside its transaction: deleting the open instance (ADR-0023
+// section 6). The follow-up removed by reopening is left alone (UNDO_KEY).
+function prepareTicketDelete(txApp, record, nowMs) {
+  var ruleId = record.getString('recurrence');
+  if (ruleId === '' || record.get(UNDO_KEY) || record.getString('status') === 'done' || !schemaReady(txApp)) {
+    return;
+  }
+  release(txApp, ruleId, berlinTime.berlinToday(nowMs));
+}
+
+// onRecordAfterUpdateSuccess of tickets: after the commit of a completion, the next ticket if its
+// lead time is reached. A failure never undoes the completion; the cron job catches up.
+function afterTicketUpdate(app, record, nowMs) {
+  var ruleId = record.get(COMPLETED_KEY);
+  if (ruleId) {
+    materialize(app, String(ruleId), nowMs);
+  }
+}
+
+// onRecordAfterCreateSuccess/onRecordAfterUpdateSuccess of rules: a new, resumed or changed rule
+// creates its ticket at once when it is due already (ADR-0023 sections 1 and 4). Writes of the
+// server itself do not start another run.
+function afterRuleSaved(app, record, nowMs) {
+  if (!record.get(SYSTEM_KEY)) {
+    materialize(app, record.id, nowMs);
+  }
+}
+
 module.exports = {
   TICKET_KEY: TICKET_KEY,
   SYSTEM_KEY: SYSTEM_KEY,
   schemaReady: schemaReady,
+  materialize: materialize,
+  runDue: runDue,
+  runStartup: runStartup,
+  prepareTicketUpdate: prepareTicketUpdate,
+  prepareTicketDelete: prepareTicketDelete,
+  afterTicketUpdate: afterTicketUpdate,
+  afterRuleSaved: afterRuleSaved,
   openInstance: openInstance,
   paramsOf: paramsOf,
   prepareCreateRequest: prepareCreateRequest,
