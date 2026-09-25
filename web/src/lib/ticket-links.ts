@@ -64,6 +64,17 @@ export function ticketHref(id: string, url: URL): ResolvedPathname {
 }
 
 /**
+ * Path of the full view of a ticket (ADR-0025 section 7) with the query of `url`, so closing it
+ * returns to the panel over the same list.
+ */
+export function fullViewHref(id: string, url: URL): ResolvedPathname {
+	return `${resolve(`/tickets/${encodeURIComponent(id)}/voll`)}${url.search}` as ResolvedPathname;
+}
+
+/** Selector of the link "Vollansicht öffnen" in the panel; closing the full view focuses it. */
+export const FULL_VIEW_LINK = '[data-full-view-link]';
+
+/**
  * Element ID of the main button "Neues Ticket" in the header (E3 plan, T-18): the table returns
  * the focus to it when the form closes without a new ticket.
  */

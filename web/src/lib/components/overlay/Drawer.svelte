@@ -70,6 +70,7 @@
 					href={fullViewHref}
 					aria-label="Vollansicht öffnen"
 					title="Vollansicht"
+					data-full-view-link
 				>
 					<svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true" focusable="false">
 						<path d="M9.5 2.5h4v4M13.5 2.5L9 7M6.5 13.5h-4v-4M2.5 13.5L7 9" />

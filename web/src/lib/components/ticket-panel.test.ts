@@ -20,11 +20,18 @@ import {
 	type TicketDetailData,
 	type TicketListSync
 } from '$lib/stores/ticket-detail.svelte';
+import FullViewRouteHarness from '$lib/test/FullViewRouteHarness.svelte';
 import { useOverlayStubs } from '$lib/test/overlay-stubs';
 import TicketPanel from './TicketPanel.svelte';
-import TicketPage from '../../routes/(app)/(tickets)/tickets/[id]/+page.svelte';
+import TicketLayout from '../../routes/(app)/(tickets)/tickets/[id]/+layout.svelte';
 
 useOverlayStubs();
+
+/** The route of a ticket (UI-7: its +layout.svelte) with the panel alone as child page. */
+const renderTicketRoute = () =>
+	render(TicketLayout, {
+		props: { children: createRawSnippet(() => ({ render: () => '<span></span>' })) }
+	});
 
 const mocks = vi.hoisted(() => ({
 	goto: vi.fn(async () => undefined),
@@ -679,7 +686,7 @@ describe('ticket route', () => {
 		const openComments = vi.spyOn(activity, 'open');
 		mocks.activity = activity;
 
-		const { unmount } = render(TicketPage);
+		const { unmount } = renderTicketRoute();
 		await vi.waitFor(() => expect(store.state).toBe('ready'));
 
 		expect(open).toHaveBeenCalledWith(ID);
@@ -700,7 +707,7 @@ describe('ticket route: recurrence (E5 plan, package 4)', () => {
 		mocks.detail = context.store;
 		mocks.catalog = catalogOf();
 		mocks.activity = activityStore();
-		render(TicketPage);
+		renderTicketRoute();
 		await vi.waitFor(() => expect(context.store.state).toBe('ready'));
 		expect(screen.getByRole('button', { name: 'Wiederholen…' })).toBeTruthy();
 		expect(screen.queryByText('wiederkehrend')).toBeNull();
@@ -714,7 +721,7 @@ describe('ticket route: new (E4 plan, package 4)', () => {
 		mocks.detail = context.store;
 		mocks.catalog = catalogOf();
 		mocks.activity = activityStore();
-		render(TicketPage);
+		renderTicketRoute();
 		await vi.waitFor(() =>
 			expect(mocks.tickets.markRead).toHaveBeenCalledWith(expect.objectContaining({ id: ID }))
 		);
@@ -730,7 +737,7 @@ describe('ticket route: unsaved text', () => {
 		mocks.detail = context.store;
 		mocks.activity = activity;
 		mocks.beforeNavigate.mockClear();
-		render(TicketPage);
+		renderTicketRoute();
 		await vi.waitFor(() => expect(context.store.state).toBe('ready'));
 		const guard = mocks.beforeNavigate.mock.lastCall?.[0] as Guard | undefined;
 		if (guard === undefined) throw new Error('No navigation guard registered');
@@ -971,5 +978,142 @@ describe('ticket panel: source (E4 plan, package 3)', () => {
 	it('shows no source for tickets from before E4', async () => {
 		await renderPanel(ticket({ source: null, sourceItem: null }));
 		expect(sourceText()).toBeNull();
+	});
+});
+
+describe('ticket route: full view (ADR-0025 section 7, UI-7)', () => {
+	const PANEL_URL = 'http://localhost:3000/tickets/abc123def456ghi?erledigte=1';
+
+	type Guard = (navigation: BeforeNavigate) => void;
+
+	async function renderFullView(initial?: Ticket) {
+		mocks.page.url = new URL(`http://localhost:3000/tickets/${ID}/voll?erledigte=1`);
+		const context = createStore(initial);
+		const activity = activityStore();
+		mocks.detail = context.store;
+		mocks.activity = activity;
+		mocks.beforeNavigate.mockClear();
+		mocks.goto.mockClear();
+		render(FullViewRouteHarness);
+		await vi.waitFor(() => expect(context.store.state).toBe('ready'));
+		await tick();
+		await tick();
+		const dialog = screen.getByRole<HTMLDialogElement>('dialog', {
+			name: 'TASK-3 · Steuererklärung'
+		});
+		const guard = mocks.beforeNavigate.mock.lastCall?.[0] as Guard | undefined;
+		return { ...context, activity, dialog, guard };
+	}
+
+	afterEach(() => {
+		mocks.page.url = new URL(PANEL_URL);
+	});
+
+	it('offers "Vollansicht öffnen" in the panel with the address of the full view', async () => {
+		mocks.detail = createStore().store;
+		mocks.activity = activityStore();
+		renderTicketRoute();
+		const link = await screen.findByRole('link', { name: 'Vollansicht öffnen' });
+		expect(link.getAttribute('href')).toBe(`/tickets/${ID}/voll?erledigte=1`);
+	});
+
+	it('opens as XL modal over the panel: content left, cards right, the key in the tab', async () => {
+		const { dialog } = await renderFullView(
+			ticket({ source: 'mail', sourceItem: 'item00000000001' })
+		);
+		expect(dialog.open).toBe(true);
+		expect(dialog.classList.contains('size-xl')).toBe(true);
+		const view = within(dialog);
+		expect(view.getByRole('heading', { level: 2, name: 'Steuererklärung' })).toBeTruthy();
+		expect(view.getByRole('region', { name: 'Beschreibung' })).toBeTruthy();
+		await vi.waitFor(() => expect(view.getByText('Noch keine Kommentare.')).toBeTruthy());
+		for (const card of ['Details', 'Wiederholung', 'Quelle', 'Metadaten']) {
+			expect(view.getByRole('region', { name: card }), card).toBeTruthy();
+		}
+		expect(
+			within(view.getByRole('region', { name: 'Details' })).getByLabelText('Status')
+		).toBeTruthy();
+		expect(view.getByRole('button', { name: 'Löschen …' })).toBeTruthy();
+		// The panel stays below the full view.
+		expect(screen.getByRole('complementary', { name: 'Steuererklärung' })).toBeTruthy();
+		await vi.waitFor(() => expect(document.title).toMatch(/^TASK-3 · Vollansicht/));
+	});
+
+	it('shows no card "Quelle" for a ticket without source', async () => {
+		const { dialog } = await renderFullView();
+		expect(within(dialog).queryByRole('region', { name: 'Quelle' })).toBeNull();
+	});
+
+	it('edits the fields like the panel', async () => {
+		const { dialog, data } = await renderFullView();
+		const details = within(within(dialog).getByRole('region', { name: 'Details' }));
+		await fireEvent.change(details.getByLabelText('Status'), { target: { value: 'waiting' } });
+		await vi.waitFor(() =>
+			expect(data.update).toHaveBeenCalledWith(ID, expect.objectContaining({ status: 'waiting' }))
+		);
+	});
+
+	it.each([
+		['×', 'close-button'],
+		['Escape', 'escape'],
+		['the veil', 'blanket']
+	])('closes with %s back to the panel, with the focus on "Vollansicht"', async (way) => {
+		const { dialog } = await renderFullView();
+		if (way === '×') {
+			await fireEvent.click(within(dialog).getByRole('button', { name: 'Schließen' }));
+		} else if (way === 'Escape') {
+			await fireEvent.keyDown(dialog, { key: 'Escape' });
+		} else {
+			await fireEvent.pointerDown(dialog);
+			await fireEvent.click(dialog);
+		}
+		await vi.waitFor(() =>
+			expect(mocks.goto).toHaveBeenCalledWith(`/tickets/${ID}?erledigte=1`, { noScroll: true })
+		);
+		await vi.waitFor(() =>
+			expect(document.activeElement).toBe(screen.getByRole('link', { name: 'Vollansicht öffnen' }))
+		);
+	});
+
+	it('moves between panel and full view of the same ticket without asking', async () => {
+		const { store, guard } = await renderFullView();
+		store.edit('description');
+		store.setDraft('description', 'Halber Text');
+		if (guard === undefined) throw new Error('No navigation guard registered');
+		const cancel = vi.fn();
+		guard({
+			type: 'link',
+			from: null,
+			cancel,
+			to: {
+				url: new URL(`/tickets/${ID}?erledigte=1`, 'http://localhost:3000'),
+				route: { id: '/(app)/(tickets)/tickets/[id]' },
+				params: { id: ID }
+			}
+		} as unknown as BeforeNavigate);
+		expect(cancel).not.toHaveBeenCalled();
+		guard({
+			type: 'link',
+			from: null,
+			cancel,
+			to: {
+				url: new URL('/tickets/zzz999zzz999zzz/voll', 'http://localhost:3000'),
+				route: { id: '/(app)/(tickets)/tickets/[id]/voll' },
+				params: { id: 'zzz999zzz999zzz' }
+			}
+		} as unknown as BeforeNavigate);
+		expect(cancel).toHaveBeenCalledOnce();
+	});
+
+	it('deletes from the full view and goes back to the list', async () => {
+		const { dialog, data } = await renderFullView();
+		data.delete.mockResolvedValueOnce(undefined);
+		const trigger = within(dialog).getByRole('button', { name: 'Löschen …' });
+		trigger.focus();
+		await fireEvent.click(trigger);
+		const question = await screen.findByRole('dialog', { name: 'TASK-3 endgültig löschen?' });
+		await fireEvent.click(within(question).getByRole('button', { name: 'Endgültig löschen' }));
+		await vi.waitFor(() => expect(data.delete).toHaveBeenCalledWith(ID));
+		await vi.waitFor(() => expect(mocks.goto).toHaveBeenCalledWith('/?erledigte=1'));
 	});
 });

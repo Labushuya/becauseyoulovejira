@@ -3,10 +3,12 @@
 import { describe, expect, it } from 'vitest';
 import { EMPTY_LIST_QUERY } from './domain/list-query';
 import {
+	FULL_VIEW_LINK,
 	appHref,
 	captureHref,
 	convertFrom,
 	convertHref,
+	fullViewHref,
 	inboxHref,
 	inboxItemHref,
 	listHref,
@@ -46,6 +48,14 @@ describe('ticket links', () => {
 			'/tickets/abc123def456ghi?erledigte=1'
 		);
 		expect(ticketHref('abc123def456ghi', at('/tickets/other'))).toBe('/tickets/abc123def456ghi');
+	});
+
+	it('addresses the full view of a ticket with the current query (ADR-0025 section 7)', () => {
+		expect(fullViewHref('abc123def456ghi', at('/tickets/abc123def456ghi?erledigte=1'))).toBe(
+			'/tickets/abc123def456ghi/voll?erledigte=1'
+		);
+		expect(fullViewHref('abc123def456ghi', at('/'))).toBe('/tickets/abc123def456ghi/voll');
+		expect(FULL_VIEW_LINK).toBe('[data-full-view-link]');
 	});
 
 	it('opens the form "Neues Ticket" with the current query', () => {
