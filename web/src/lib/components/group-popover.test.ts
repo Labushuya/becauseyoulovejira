@@ -1,12 +1,17 @@
-// Component tests for the popover "Gruppieren" (E3 plan, T-7, T-8 and package 13): popover
-// attributes, button label, radio choices in a fieldset, the choice as URL change, closing on a
-// pointer click and on Enter. jsdom has no popover API: the tests check attributes and choices,
-// the browser behaviour (Escape, click outside, focus return) is on the browser checklist.
+// Component tests for the popover "Gruppieren" (E3 plan, T-7, T-8 and package 13; since UI-2 on
+// the popover building block of ADR-0025): popover attributes, button label, radio choices in a
+// fieldset, the choice as URL change, closing on a pointer click and on Enter, opening with the
+// focus on the chosen grouping and Escape. The shared stubs stand in for the popover API of
+// jsdom; the position in the browsers is on the browser checklist (BYL-E6-007).
 
 import { fireEvent, render, screen, within } from '@testing-library/svelte';
+import { tick } from 'svelte';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { useOverlayStubs } from '$lib/test/overlay-stubs';
 import GroupPopover from './GroupPopover.svelte';
 import source from './GroupPopover.svelte?raw';
+
+useOverlayStubs();
 
 const mocks = vi.hoisted(() => ({
 	goto: vi.fn(async () => undefined),
@@ -123,5 +128,29 @@ describe('group popover', () => {
 
 	it('uses no error colour and no shadows (ADR-0010 section 3)', () => {
 		expect(source).not.toMatch(/danger|box-shadow|gradient|backdrop-filter/);
+	});
+
+	it('opens as a panel with the focus on the chosen grouping and closes with Escape (UI-2)', async () => {
+		show('/?gruppe=faellig');
+		const button = screen.getByRole('button', { name: 'Gruppiert: Fälligkeit' });
+		expect(button.getAttribute('aria-haspopup')).toBe('dialog');
+		expect(button.getAttribute('aria-expanded')).toBe('false');
+
+		await fireEvent.click(button);
+		await tick();
+
+		expect(button.getAttribute('aria-expanded')).toBe('true');
+		expect(document.activeElement).toBe(choice('Nach Fälligkeit'));
+
+		await fireEvent.keyDown(choice('Nach Fälligkeit'), { key: 'Escape' });
+
+		expect(button.getAttribute('aria-expanded')).toBe('false');
+		expect(document.activeElement).toBe(button);
+		expect(mocks.goto).not.toHaveBeenCalled();
+	});
+
+	it('uses the building block, right-aligned, instead of CSS anchor positioning (UI-2)', () => {
+		expect(source).toMatch(/<Popover[\s\S]*placement="bottom-end"/);
+		expect(source).not.toMatch(/anchor-name|position-anchor|popover="auto"/);
 	});
 });
