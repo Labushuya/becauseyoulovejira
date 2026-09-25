@@ -17,7 +17,7 @@ function renderZone(props: Record<string, unknown> = {}) {
 			...props
 		}
 	});
-	return { onfiles, zone: screen.getByRole('group', { name: 'Mail-Dateien übernehmen' }) };
+	return { onfiles, zone: screen.getByRole('group', { name: 'Dateien übernehmen' }) };
 }
 
 function transfer(files: File[]) {
@@ -31,7 +31,9 @@ describe('drop zone', () => {
 	it('explains the limits and takes several dropped files at once', async () => {
 		const { onfiles, zone } = renderZone();
 		expect(zone.getAttribute('aria-describedby')).toBeTruthy();
-		expect(screen.getByText(/höchstens 10 MB je Datei/)).toBeTruthy();
+		expect(
+			screen.getByText(/\(\.eml, höchstens 10 MB\) und Kalenderdateien \(\.ics, höchstens 20 MB\)/)
+		).toBeTruthy();
 		await fireEvent.dragOver(zone, { dataTransfer: transfer([A, B]) });
 		expect(zone.classList.contains('active')).toBe(true);
 		await fireEvent.drop(zone, { dataTransfer: transfer([A, B]) });
@@ -47,11 +49,11 @@ describe('drop zone', () => {
 		expect(onfiles).not.toHaveBeenCalled();
 	});
 
-	it('offers "Datei wählen" for the keyboard with several .eml files', async () => {
+	it('offers "Datei wählen" for the keyboard with several .eml and .ics files', async () => {
 		const { onfiles } = renderZone();
 		const input = document.querySelector<HTMLInputElement>('input[type="file"]');
 		expect(input?.multiple).toBe(true);
-		expect(input?.accept).toBe('.eml,message/rfc822');
+		expect(input?.accept).toBe('.eml,message/rfc822,.ics,text/calendar');
 		const click = vi.spyOn(input as HTMLInputElement, 'click');
 		await fireEvent.click(screen.getByRole('button', { name: 'Datei wählen' }));
 		expect(click).toHaveBeenCalledOnce();
@@ -86,7 +88,25 @@ describe('drop zone', () => {
 				itemId: 'item00000000003',
 				ticketId: ''
 			},
-			{ name: 'd.eml', kind: 'error', message: 'Größer als 10 MB, deshalb nicht übernommen.' }
+			{ name: 'd.eml', kind: 'error', message: 'Größer als 10 MB, deshalb nicht übernommen.' },
+			{
+				name: 'kalender.ics',
+				kind: 'calendar',
+				created: 3,
+				duplicates: 1,
+				skipped: 1,
+				failed: 0,
+				itemId: ''
+			},
+			{
+				name: 'termin.ics',
+				kind: 'calendar',
+				created: 1,
+				duplicates: 0,
+				skipped: 0,
+				failed: 0,
+				itemId: 'item00000000005'
+			}
 		];
 		renderZone({ results });
 		const items = screen.getAllByRole('listitem');
@@ -94,8 +114,15 @@ describe('drop zone', () => {
 			'a.eml: neu – Rechnung',
 			'b.eml: schon vorhanden (Schon Ticket HAUS-2.) Ticket ansehen',
 			'c.eml: schon vorhanden (Schon verworfen.) Eintrag ansehen',
-			'd.eml: Größer als 10 MB, deshalb nicht übernommen.'
+			'd.eml: Größer als 10 MB, deshalb nicht übernommen.',
+			'kalender.ics: 3 neu, 1 schon vorhanden, 1 übersprungen',
+			'termin.ics: 1 neu Eintrag ansehen'
 		]);
+		expect(
+			within(items[5] as HTMLElement)
+				.getByRole('link')
+				.getAttribute('href')
+		).toBe('/eingang/item00000000005');
 		expect(
 			within(items[0] as HTMLElement)
 				.getByRole('link')

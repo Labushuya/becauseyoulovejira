@@ -89,8 +89,8 @@
 		}
 	}
 
-	// Mail files (E4 plan, package 8): dropped on the zone or anywhere in the inbox view, or chosen
-	// with "Datei wählen"; one after the other, each with its own result.
+	// Mail and calendar files (E4 plan, packages 8 and 14): dropped on the zone or anywhere in the
+	// inbox view, or chosen with "Datei wählen"; one after the other, each with its own result.
 	let importing = $state(false);
 	let importResults = $state<FileImportResult[]>([]);
 
@@ -100,7 +100,8 @@
 		importResults = [];
 		const results = await importMailFiles(files, {
 			read: readMailFile,
-			createItem: (draft) => inbox.create(draft)
+			createItem: (draft) => inbox.create(draft),
+			importCalendar: (file) => inbox.importCalendar(file)
 		});
 		importing = false;
 		importResults = results;

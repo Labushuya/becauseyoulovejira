@@ -96,7 +96,14 @@ function setup(
 		assign: vi.fn<InboxData['assign']>(async (id, ticketId) =>
 			item(id, { state: 'converted', ticketId, updated: '2026-09-25 10:00:00.000Z' })
 		),
-		originalUrl: vi.fn<InboxData['originalUrl']>(async () => null)
+		originalUrl: vi.fn<InboxData['originalUrl']>(async () => null),
+		importCalendar: vi.fn<InboxData['importCalendar']>(async () => ({
+			created: 0,
+			duplicates: 0,
+			skipped: 0,
+			failed: 0,
+			itemId: ''
+		}))
 	} satisfies InboxData;
 	const store = new InboxStore(data, { ensureValid: () => true, logout: vi.fn() });
 	store.activate(options.query ?? { source: null, state: 'new' });

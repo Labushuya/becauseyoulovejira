@@ -3,7 +3,7 @@
 // (tests/unit/source.test.mjs keeps them equal).
 
 import { isCalendarDate, type CalendarDate } from './berlin-date';
-import { formatBerlinDateTime } from './format';
+import { berlinDateOf, formatBerlinDateTime, formatCalendarDate } from './format';
 import { isPriority, type Priority } from './status';
 import { DESCRIPTION_MAX_LENGTH, TITLE_MAX_LENGTH, type TicketSummary } from './ticket';
 
@@ -247,6 +247,17 @@ export function metaText(item: Pick<InboxItemSummary, 'sourceMeta'>, key: string
 	return typeof value === 'string' ? value.trim() : '';
 }
 
+/**
+ * Date at the sender as text: an all-day date (`source_meta.all_day`, e.g. an all-day event of an
+ * .ics file) without a time, everything else as Berlin date and time; '' without a date.
+ */
+export function sourceDateText(item: Pick<InboxItemSummary, 'sourceDate' | 'sourceMeta'>): string {
+	if (item.sourceDate === null) return '';
+	return item.sourceMeta.all_day === true
+		? formatCalendarDate(berlinDateOf(item.sourceDate))
+		: formatBerlinDateTime(item.sourceDate);
+}
+
 /** Markdown characters of a value from a source, escaped so they show as typed. */
 export function escapeMarkdown(value: string): string {
 	return value.replace(/[\\`*_{}[\]()#+\-.!|<>~]/g, (character) => `\\${character}`);
@@ -254,7 +265,7 @@ export function escapeMarkdown(value: string): string {
 
 /** Header lines of the description per kind (T-5): sender and date of a mail and so on. */
 function headerLines(item: InboxItem): string[] {
-	const date = item.sourceDate === null ? '' : formatBerlinDateTime(item.sourceDate);
+	const date = sourceDateText(item);
 	const from = (key: string) => escapeMarkdown(metaText(item, key));
 	const lines: [string, string][] =
 		item.kind === 'mail'

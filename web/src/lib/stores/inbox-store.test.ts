@@ -76,7 +76,14 @@ function setup(options: { newItems?: InboxItemSummary[]; valid?: boolean } = {})
 		),
 		originalUrl: vi.fn<InboxData['originalUrl']>(async (entry) =>
 			entry.original === '' ? null : `http://pb.test/${entry.original}?token=t`
-		)
+		),
+		importCalendar: vi.fn<InboxData['importCalendar']>(async () => ({
+			created: 0,
+			duplicates: 0,
+			skipped: 0,
+			failed: 0,
+			itemId: ''
+		}))
 	} satisfies InboxData;
 	const session = { ensureValid: vi.fn(() => options.valid ?? true), logout: vi.fn() };
 	return { store: new InboxStore(data, session), data, session };
@@ -388,6 +395,43 @@ describe('actions', () => {
 		});
 		expect(await store.create(draft)).toMatchObject({ kind: 'duplicate', ticketKey: 'HAUS-4' });
 		expect(store.newCount).toBe(3);
+	});
+
+	it('imports a calendar file, reconciles after new entries and explains failures', async () => {
+		const { store, data, session } = setup();
+		await store.load();
+		const file = new File(['BEGIN:VCALENDAR'], 'kalender.ics', { type: 'text/calendar' });
+		data.importCalendar.mockResolvedValueOnce({
+			created: 2,
+			duplicates: 1,
+			skipped: 1,
+			failed: 0,
+			itemId: ''
+		});
+		expect(await store.importCalendar(file)).toEqual({
+			kind: 'imported',
+			created: 2,
+			duplicates: 1,
+			skipped: 1,
+			failed: 0,
+			itemId: ''
+		});
+		expect(data.importCalendar).toHaveBeenCalledWith(file);
+		await vi.waitFor(() => expect(data.listNew).toHaveBeenCalledTimes(2));
+
+		data.importCalendar.mockRejectedValueOnce(new DataError('server', { status: 503 }));
+		expect(await store.importCalendar(file)).toEqual({
+			kind: 'error',
+			message: INBOX_UNAVAILABLE_MESSAGE
+		});
+		data.importCalendar.mockRejectedValueOnce(new DataError('network'));
+		expect(await store.importCalendar(file)).toMatchObject({
+			kind: 'error',
+			message: expect.stringContaining('Server nicht erreichbar')
+		});
+		data.importCalendar.mockRejectedValueOnce(new DataError('session', { status: 401 }));
+		expect(await store.importCalendar(file)).toEqual({ kind: 'error', message: null });
+		expect(session.logout).toHaveBeenCalledOnce();
 	});
 
 	it('reports failures of create per field', async () => {

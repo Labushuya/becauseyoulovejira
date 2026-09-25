@@ -15,3 +15,6 @@
 
 # Mail fixtures keep their exact bytes (CRLF, Latin-1, Windows-1252).
 *.eml binary
+
+# Calendar fixtures keep their exact bytes (CRLF, LF only, BOM).
+*.ics binary

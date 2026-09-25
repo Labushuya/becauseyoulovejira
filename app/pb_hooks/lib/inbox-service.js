@@ -60,18 +60,10 @@ function metaOf(record) {
 // Throws the duplicate result with state, item and ticket of the existing entry as params, so
 // every way into the inbox can report "schon im Eingang / verworfen / Ticket HAUS-12".
 function assertNoDuplicate(txApp, scope, fingerprint) {
-  var found = txApp.findRecordsByFilter(
-    INBOX,
-    'scope = {:scope} && fingerprint = {:fingerprint}',
-    '',
-    1,
-    0,
-    { scope: scope, fingerprint: fingerprint }
-  );
-  if (found.length === 0) {
+  var existing = findByFingerprint(txApp, scope, fingerprint);
+  if (!existing) {
     return;
   }
-  var existing = found[0];
   var state = existing.getString('state');
   var ticketId = existing.getString('ticket');
   var ticket = ticketId === '' ? null : findById(txApp, 'tickets', ticketId);
@@ -84,10 +76,11 @@ function assertNoDuplicate(txApp, scope, fingerprint) {
   });
 }
 
-// onRecordCreate before e.next(): scope, cleaned title and body, the state "new" and the
-// fingerprint; rejects links other than http(s) and duplicates in the scope. Client values for
-// scope, fingerprint, state, ticket and handled_at are always overwritten.
-function prepareCreate(txApp, record) {
+// Scope, cleaned title and body, the state "new" and the fingerprint of a new record; rejects
+// links other than http(s). Client values for scope, fingerprint, state, ticket and handled_at
+// are always overwritten. Returns { scope, fingerprint } (fingerprint '' for an unknown channel,
+// which the select field rejects with its own message during validation).
+function prepareRecord(record) {
   var scope = applyScope(record);
   record.set('title', rules.normalizeTitle(record.getString('title')));
   record.set('body', rules.normalizeBody(record.getString('body')));
@@ -101,9 +94,8 @@ function prepareCreate(txApp, record) {
   }
   var channel = record.getString('channel');
   if (!source.isChannel(channel)) {
-    // The select field rejects the value with its own message during validation.
     record.set('fingerprint', '');
-    return;
+    return { scope: scope, fingerprint: '' };
   }
   var result = fingerprints.fingerprint(
     {
@@ -124,7 +116,68 @@ function prepareCreate(txApp, record) {
     throw fail(result.missing, 'validation_required');
   }
   record.set('fingerprint', result.fingerprint);
-  assertNoDuplicate(txApp, scope, result.fingerprint);
+  return { scope: scope, fingerprint: result.fingerprint };
+}
+
+// onRecordCreate before e.next(): prepareRecord plus the duplicate check in the scope.
+function prepareCreate(txApp, record) {
+  var prepared = prepareRecord(record);
+  if (prepared.fingerprint !== '') {
+    assertNoDuplicate(txApp, prepared.scope, prepared.fingerprint);
+  }
+}
+
+function findByFingerprint(txApp, scope, fingerprint) {
+  var found = txApp.findRecordsByFilter(
+    INBOX,
+    'scope = {:scope} && fingerprint = {:fingerprint}',
+    '',
+    1,
+    0,
+    { scope: scope, fingerprint: fingerprint }
+  );
+  return found.length > 0 ? found[0] : null;
+}
+
+/**
+ * Creates a private inbox item of `owner` from a draft of a channel that runs in the server (the
+ * .ics route, the calendar feed, the Telegram bot). The draft has the fields of inbox_items:
+ * { channel, kind, title, body, source_url, source_ref, source_date, meta, original,
+ * originalName, connection }; `original` is the text of the original file.
+ * Returns { kind: 'created', item } or { kind: 'duplicate', item } with the existing record, so a
+ * channel counts duplicates instead of failing (ADR-0014 section 3). Validation errors throw.
+ * Runs in its own transaction; the record hook repeats the check as a safety net.
+ */
+function ingest(app, owner, draft) {
+  var outcome = null;
+  app.runInTransaction(function (txApp) {
+    var record = new Record(txApp.findCollectionByNameOrId(INBOX));
+    record.set('owner', owner);
+    record.set('household', '');
+    record.set('channel', draft.channel);
+    record.set('kind', draft.kind);
+    record.set('title', draft.title);
+    record.set('body', draft.body || '');
+    record.set('source_url', draft.source_url || '');
+    record.set('source_ref', draft.source_ref || '');
+    record.set('source_date', draft.source_date || '');
+    record.set('source_meta', draft.meta || {});
+    if (draft.connection) {
+      record.set('connection', draft.connection);
+    }
+    var prepared = prepareRecord(record);
+    var existing = prepared.fingerprint === '' ? null : findByFingerprint(txApp, prepared.scope, prepared.fingerprint);
+    if (existing) {
+      outcome = { kind: 'duplicate', item: existing };
+      return;
+    }
+    if (draft.original) {
+      record.set('original', $filesystem.fileFromBytes(draft.original, draft.originalName || 'original.txt'));
+    }
+    txApp.save(record);
+    outcome = { kind: 'created', item: record };
+  });
+  return outcome;
 }
 
 // onRecordUpdateRequest: what a client may change (ADR-0014 section 1). Internal saves (the
@@ -210,6 +263,7 @@ function completeConversion(txApp, item, ticket) {
 module.exports = {
   IMMUTABLE_FIELDS: IMMUTABLE_FIELDS,
   prepareCreate: prepareCreate,
+  ingest: ingest,
   guardClientUpdate: guardClientUpdate,
   prepareUpdate: prepareUpdate,
   prepareConversion: prepareConversion,

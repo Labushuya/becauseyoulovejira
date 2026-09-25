@@ -72,4 +72,18 @@ describe('E4 hooks on the schema before the E4 migrations', () => {
 		await tickets.delete(ticket.id);
 		await expect(tickets.getOne(ticket.id)).rejects.toMatchObject({ status: 404 });
 	});
+
+	it('answers the .ics route with a hint instead of an error', async () => {
+		const form = new FormData();
+		form.append('file', new Blob(['BEGIN:VCALENDAR\r\nEND:VCALENDAR\r\n']), 'kalender.ics');
+		const response = await fetch(`${instance.url}/api/byl/inbox/ics`, {
+			method: 'POST',
+			body: form,
+			headers: { Authorization: client.authStore.token }
+		});
+		expect(response.status).toBe(503);
+		expect((await response.json()).message).toBe(
+			'Der Eingang steht nach dem nächsten Start der App bereit (start.bat).'
+		);
+	});
 });

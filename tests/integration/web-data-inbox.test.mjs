@@ -3,6 +3,7 @@
 // original, realtime and the ticket created from an entry.
 
 import { readFileSync } from 'node:fs';
+import PocketBase from 'pocketbase';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { superuserClient } from '../support/api.mjs';
 import { createOwner, uniqueSuffix } from '../support/scenario.mjs';
@@ -12,6 +13,7 @@ import {
 	createItem,
 	discardItem,
 	getItem,
+	importCalendarFile,
 	listHandledItems,
 	listNewItems,
 	originalFileUrl,
@@ -324,6 +326,42 @@ describe('mail files (E4 plan, package 8)', () => {
 		expect(html.item.body).not.toMatch(/tracker|script|alert/);
 		const withFiles = await createItem(fresh.client, await readDraft('attachments.eml'));
 		expect(withFiles).toMatchObject({ kind: 'created', item: { sourceMeta: { attachments: 2 } } });
+	});
+});
+
+describe('calendar files (E4 plan, package 14)', () => {
+	const ics = (name) =>
+		new File([readFileSync(new URL(`../fixtures/ics/${name}`, import.meta.url))], name, {
+			type: 'text/calendar'
+		});
+
+	it('uploads an .ics file and gets the counts; the entries are events of channel ics', async () => {
+		const fresh = await createOwner(superuser);
+		expect(await importCalendarFile(fresh.client, ics('outlook.ics'))).toEqual({
+			created: 2,
+			duplicates: 0,
+			skipped: 0,
+			failed: 0,
+			itemId: ''
+		});
+		const items = await listNewItems(fresh.client);
+		expect(items.map((item) => [item.channel, item.kind, item.title]).sort()).toEqual([
+			['ics', 'event', 'Quartalsplanung'],
+			['ics', 'event', 'Weihnachten bei der Familie']
+		]);
+		const holiday = items.find((item) => item.title === 'Weihnachten bei der Familie');
+		expect(holiday?.sourceMeta).toMatchObject({ all_day: true });
+		expect(await importCalendarFile(fresh.client, ics('outlook.ics'))).toMatchObject({
+			created: 0,
+			duplicates: 2
+		});
+	});
+
+	it('fails with a data error for guests', async () => {
+		const guest = new PocketBase(superuser.baseURL);
+		await expect(importCalendarFile(guest, ics('apple.ics'))).rejects.toMatchObject({
+			kind: 'session'
+		});
 	});
 });
 

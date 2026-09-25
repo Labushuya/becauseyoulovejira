@@ -14,6 +14,7 @@ import {
 	normalizeTitle,
 	presetMeta,
 	presetOf,
+	sourceDateText,
 	ticketPrefill,
 	type InboxItem,
 	type InboxItemSummary
@@ -269,5 +270,17 @@ describe('httpUrlOf', () => {
 			expect(httpUrlOf(value), value).toBeNull();
 		}
 		expect(httpUrlOf(`https://example.com/${'x'.repeat(2000)}`)).toBeNull();
+	});
+});
+
+describe('sourceDateText (E4 plan, package 14)', () => {
+	it('shows an all-day date without a time and other dates in Berlin time', () => {
+		expect(
+			sourceDateText({ sourceDate: '2026-12-23 23:00:00.000Z', sourceMeta: { all_day: true } })
+		).toBe('24.12.2026');
+		expect(sourceDateText({ sourceDate: '2026-03-29 08:00:00.000Z', sourceMeta: {} })).toBe(
+			'29.03.2026 10:00'
+		);
+		expect(sourceDateText({ sourceDate: null, sourceMeta: { all_day: true } })).toBe('');
 	});
 });

@@ -2,7 +2,7 @@
 // rule is implemented here instead of relying on the time zone data of the runtime. Summer time
 // (UTC+2) runs from the last Sunday of March, 01:00 UTC, to the last Sunday of October,
 // 01:00 UTC; otherwise UTC+1. The hook module app/pb_hooks/lib/berlin-time.js (E4) implements
-// the same rule in ES5; a root unit test will then compare both.
+// the same rule in ES5; tests/unit/berlin-time.test.mjs compares both.
 
 /** Calendar date as `YYYY-MM-DD`. */
 export type CalendarDate = string;
