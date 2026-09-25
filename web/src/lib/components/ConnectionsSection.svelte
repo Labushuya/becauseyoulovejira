@@ -2,6 +2,8 @@
 	import {
 		CONNECTION_TYPES,
 		CONNECTION_TYPE_LABELS,
+		KEYWORD_SEARCH_TEXT,
+		NO_KEYWORDS_WARNING,
 		connectionDraftErrors,
 		emptyConnectionDraft,
 		secretStatusText,
@@ -16,12 +18,14 @@
 	} from '$lib/stores/connections.svelte';
 	import ConfirmDialog from './ConfirmDialog.svelte';
 	import ErrorIcon from './ErrorIcon.svelte';
+	import KeywordEditor from './KeywordEditor.svelte';
 
 	// Connections of the channels (E4 plan, package 10; ADR-0016 section 2, ADR-0018): list with the
 	// state of the variables, switch, last run and cleaned error, a form for a new connection and
 	// "Löschen" with a safety question, "Jetzt abrufen" (package 15) and "Aktualisieren" for the
 	// result of a run of the cron job. Access data are Windows user environment variables; the app
-	// stores and shows only their names.
+	// stores and shows only their names. Each connection has its keywords (package 20, ADR-0020) and,
+	// for Telegram, the switch for the answer to messages without keyword.
 	let {
 		store
 	}: {
@@ -87,6 +91,39 @@
 			rowMessage = { id: connection.id, text: result.message };
 	}
 
+	async function saveKeywords(connection: Connection, keywords: string[], announcement: string) {
+		const result = await store.saveSettings(
+			connection.id,
+			{ keywords, replyNoMatch: connection.replyNoMatch },
+			announcement
+		);
+		if (result.ok) return null;
+		return (
+			result.message ??
+			Object.values(result.fields)[0] ??
+			'Die Stichwörter ließen sich nicht speichern.'
+		);
+	}
+
+	async function setReply(connection: Connection, replyNoMatch: boolean) {
+		rowMessage = null;
+		const result = await store.saveSettings(
+			connection.id,
+			{ keywords: connection.keywords, replyNoMatch },
+			replyNoMatch
+				? `„${connection.label}“ antwortet auf Nachrichten ohne Stichwort.`
+				: `„${connection.label}“ antwortet nicht mehr auf Nachrichten ohne Stichwort.`
+		);
+		if (!result.ok)
+			rowMessage = {
+				id: connection.id,
+				text:
+					result.message ??
+					Object.values(result.fields)[0] ??
+					'Die Einstellung ließ sich nicht speichern.'
+			};
+	}
+
 	async function runNow(connection: Connection) {
 		rowMessage = null;
 		const result = await store.runNow(connection.id);
@@ -116,6 +153,10 @@
 		(geheime Kalenderadresse, Bot-Token, erlaubte IDs) liegen nur als Windows-Umgebungsvariablen
 		deines Benutzerkontos, nie in der App oder ihren Sicherungen. Hier steht nur der Name der
 		Variablen.
+	</p>
+	<p>
+		Automatisch kommt nur in den Eingang, was ein Stichwort der Verbindung trifft. Ohne Stichwörter
+		übernimmt eine Verbindung nichts. Neue Stichwörter gelten für das, was danach ankommt.
 	</p>
 
 	<div class="visually-hidden" aria-live="polite">{store.announcement}</div>
@@ -182,6 +223,23 @@
 						{/if}
 						{#if connection.lastHint !== ''}
 							<p class="notice">{connection.lastHint}</p>
+						{/if}
+						<KeywordEditor
+							keywords={connection.keywords}
+							name={connection.label}
+							description={KEYWORD_SEARCH_TEXT[connection.type]}
+							emptyText={NO_KEYWORDS_WARNING}
+							onsave={(next, announcement) => saveKeywords(connection, next, announcement)}
+						/>
+						{#if connection.type === 'telegram'}
+							<label class="reply">
+								<input
+									type="checkbox"
+									checked={connection.replyNoMatch}
+									onchange={(event) => void setReply(connection, event.currentTarget.checked)}
+								/>
+								Auf Nachrichten ohne Stichwort antworten („Kein Stichwort erkannt – nicht gespeichert“)
+							</label>
 						{/if}
 						{#if rowMessage !== null && rowMessage.id === connection.id}
 							<p class="alert-error" role="alert"><ErrorIcon /><span>{rowMessage.text}</span></p>
@@ -422,8 +480,17 @@
 		color: var(--color-text-muted);
 	}
 
-	.switch {
+	.switch,
+	.reply {
 		color: var(--color-text);
+	}
+
+	.reply {
+		display: flex;
+		gap: 0.375rem;
+		align-items: baseline;
+		font-size: 0.875rem;
+		cursor: pointer;
 	}
 
 	input[type='text'],

@@ -1,6 +1,7 @@
-// Connections on the page "Kanäle" (E4 plan, package 10; ADR-0018): list with the state of the
-// variables, switch, errors and hints, the form with field errors, delete with a safety question,
-// the hint before the migration, and the setup of the variables.
+// Connections on the page "Kanäle" (E4 plan, packages 10, 15, 17 and 20; ADR-0018, ADR-0020): list
+// with the state of the variables, switch, errors and hints, the form with field errors, delete
+// with a safety question, the hint before the migration, the setup of the variables, and the
+// keywords with the answer of the bot to messages without one.
 
 import { fireEvent, render, screen, within } from '@testing-library/svelte';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
@@ -8,6 +9,7 @@ import { DataError } from '$lib/data/errors';
 import {
 	connectionDraftErrors,
 	emptyConnectionDraft,
+	NO_KEYWORDS_WARNING,
 	runResultText,
 	secretStatusText,
 	type Connection,
@@ -56,6 +58,8 @@ function connection(id: string, overrides: Partial<Connection> = {}): Connection
 		lastOkAt: null,
 		lastError: '',
 		lastHint: '',
+		keywords: [],
+		replyNoMatch: true,
 		runningSince: null,
 		created: '2026-09-25 08:00:00.000Z',
 		updated: '2026-09-25 08:00:00.000Z',
@@ -93,6 +97,11 @@ function setup(items: Connection[] = [CAL, BOT], statuses: Record<string, Secret
 			...(items.find((item) => item.id === id) as Connection),
 			enabled
 		})),
+		saveSettings: vi.fn<ConnectionsData['saveSettings']>(async (current, settings) => ({
+			...current,
+			keywords: settings.keywords,
+			replyNoMatch: settings.replyNoMatch
+		})),
 		remove: vi.fn<ConnectionsData['remove']>(async () => undefined),
 		secretStatus: vi.fn<ConnectionsData['secretStatus']>(
 			async (id) => statuses[id] ?? { secret: true, allowlist: null }
@@ -104,6 +113,7 @@ function setup(items: Connection[] = [CAL, BOT], statuses: Record<string, Secret
 			updated: 1,
 			skipped: 0,
 			failed: 0,
+			unmatched: 0,
 			error: '',
 			missing: []
 		})),
@@ -291,6 +301,7 @@ describe('Jetzt abrufen (E4 plan, package 15)', () => {
 			updated: 0,
 			skipped: 0,
 			failed: 0,
+			unmatched: 0,
 			error: '',
 			missing: []
 		};
@@ -305,6 +316,9 @@ describe('Jetzt abrufen (E4 plan, package 15)', () => {
 			})
 		).toBe('„Kalender“: 3 neu, 1 schon vorhanden, 2 aktualisiert, 1 übersprungen.');
 		expect(runResultText('Kalender', { ...base, status: 'ok' })).toBe('„Kalender“: 0 neu.');
+		expect(runResultText('Bot', { ...base, status: 'ok', created: 1, unmatched: 2 })).toBe(
+			'„Bot“: 1 neu, 2 ohne Stichwort.'
+		);
 		expect(runResultText('Kalender', { ...base, status: 'error', error: 'HTTP 404.' })).toBe(
 			'„Kalender“: Abruf fehlgeschlagen. HTTP 404.'
 		);
@@ -383,5 +397,86 @@ describe('Telegram-Bot einrichten (E4 plan, package 17)', () => {
 		expect(text).toMatch(/Im Eingang gespeichert/);
 		expect(text).toMatch(/24 Stunden/);
 		expect(text).toMatch(/\/revoke/);
+	});
+});
+
+describe('Stichwörter (E4 plan, package 20)', () => {
+	it('warns at a connection without keywords and says where they are searched', async () => {
+		const context = setup();
+		await context.store.load();
+		render(ConnectionsSection, { props: { store: context.store } });
+		const [cal, bot] = screen.getAllByRole('listitem');
+		const calendar = within(cal as HTMLElement);
+		expect(calendar.getByText(NO_KEYWORDS_WARNING)).toBeTruthy();
+		expect(calendar.getByText(/Titel und Beschreibung der Termine/)).toBeTruthy();
+		expect(within(bot as HTMLElement).getByText(/im Text der Nachricht/)).toBeTruthy();
+	});
+
+	it('adds keywords and the suggestions and keeps the answer switch of the bot', async () => {
+		const context = setup();
+		await context.store.load();
+		render(ConnectionsSection, { props: { store: context.store } });
+		const [, bot] = screen.getAllByRole('listitem');
+		const scope = within(bot as HTMLElement);
+		await fireEvent.input(scope.getByLabelText('Neues Stichwort'), {
+			target: { value: ' Einkauf ' }
+		});
+		await fireEvent.click(scope.getByRole('button', { name: 'Hinzufügen' }));
+		await vi.waitFor(() =>
+			expect(context.data.saveSettings).toHaveBeenCalledWith(
+				expect.objectContaining({ id: BOT.id }),
+				{
+					keywords: ['Einkauf'],
+					replyNoMatch: true
+				}
+			)
+		);
+		await vi.waitFor(() =>
+			expect(context.store.announcement).toBe('Stichwort „Einkauf“ hinzugefügt.')
+		);
+		await vi.waitFor(() =>
+			expect((scope.getByLabelText('Neues Stichwort') as HTMLInputElement).value).toBe('')
+		);
+		const list = within(screen.getByRole('list', { name: 'Stichwörter von „Telegram-Bot“' }));
+		expect(list.getByText('Einkauf')).toBeTruthy();
+
+		const [, botAgain] = screen
+			.getAllByRole('listitem')
+			.filter((item) => item.classList.contains('connection'));
+		await fireEvent.click(
+			within(botAgain as HTMLElement).getByRole('button', { name: 'Vorschläge übernehmen' })
+		);
+		await vi.waitFor(() =>
+			expect(context.data.saveSettings).toHaveBeenLastCalledWith(
+				expect.objectContaining({ id: BOT.id }),
+				{
+					keywords: ['Einkauf', 'todo', 'aufgabe', 'erledigen', 'ticket', '#byl'],
+					replyNoMatch: true
+				}
+			)
+		);
+		await vi.waitFor(() => expect(within(botAgain as HTMLElement).getByText('#byl')).toBeTruthy());
+
+		await fireEvent.click(
+			within(botAgain as HTMLElement).getByRole('checkbox', {
+				name: /Auf Nachrichten ohne Stichwort antworten/
+			})
+		);
+		await vi.waitFor(() =>
+			expect(context.data.saveSettings).toHaveBeenLastCalledWith(
+				expect.objectContaining({ id: BOT.id }),
+				{
+					keywords: ['Einkauf', 'todo', 'aufgabe', 'erledigen', 'ticket', '#byl'],
+					replyNoMatch: false
+				}
+			)
+		);
+	});
+
+	it('shows no answer switch for the calendar', async () => {
+		const context = setup([CAL]);
+		await context.store.load();
+		render(ConnectionsSection, { props: { store: context.store } });
+		expect(screen.queryByRole('checkbox', { name: /ohne Stichwort antworten/ })).toBeNull();
 	});
 });

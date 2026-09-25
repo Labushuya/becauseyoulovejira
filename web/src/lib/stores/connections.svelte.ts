@@ -1,4 +1,4 @@
-// Connections on the page "Kanäle" (E4 plan, packages 10 and 15; ADR-0006). Loaded when the page opens and
+// Connections on the page "Kanäle" (E4 plan, packages 10, 15 and 20; ADR-0006). Loaded when the page opens and
 // after every own action; the state of the variables comes from the server per connection. No
 // realtime subscription: the list changes only here, and the page offers "Aktualisieren" for
 // the result of a background run.
@@ -12,6 +12,7 @@ import {
 	getSecretStatus,
 	listConnections,
 	runConnection,
+	saveConnectionSettings,
 	setConnectionEnabled
 } from '$lib/data/connections';
 import { toDataError } from '$lib/data/errors';
@@ -20,6 +21,7 @@ import {
 	runResultText,
 	type Connection,
 	type ConnectionDraft,
+	type ConnectionSettingsDraft,
 	type RunResult,
 	type SecretStatus
 } from '$lib/domain/connections';
@@ -33,6 +35,7 @@ export interface ConnectionsData {
 	list(options: RequestOptions): Promise<Connection[]>;
 	create(draft: ConnectionDraft): Promise<Connection>;
 	setEnabled(id: string, enabled: boolean): Promise<Connection>;
+	saveSettings(connection: Connection, settings: ConnectionSettingsDraft): Promise<Connection>;
 	remove(id: string): Promise<void>;
 	secretStatus(id: string, options: RequestOptions): Promise<SecretStatus>;
 	run(id: string): Promise<RunResult>;
@@ -44,6 +47,7 @@ export function connectionsData(pb: PocketBase): ConnectionsData {
 		list: (options) => listConnections(pb, options),
 		create: (draft) => createConnection(pb, draft),
 		setEnabled: (id, enabled) => setConnectionEnabled(pb, id, enabled),
+		saveSettings: (connection, settings) => saveConnectionSettings(pb, connection, settings),
 		remove: (id) => deleteConnection(pb, id),
 		secretStatus: (id, options) => getSecretStatus(pb, id, options),
 		run: (id) => runConnection(pb, id),
@@ -151,6 +155,24 @@ export class ConnectionsStore {
 			const updated = await this.#data.setEnabled(id, enabled);
 			this.#items.set(id, updated);
 			this.#announcement = `„${updated.label}“ ist ${enabled ? 'eingeschaltet' : 'ausgeschaltet'}.`;
+		});
+	}
+
+	/**
+	 * Saves keywords and the answer without keyword (ADR-0020). `announcement` is the text for the
+	 * live region, e.g. „Stichwort „todo“ hinzugefügt.“
+	 */
+	async saveSettings(
+		id: string,
+		settings: ConnectionSettingsDraft,
+		announcement: string
+	): Promise<ConnectionActionResult> {
+		const current = this.#items.get(id);
+		if (current === undefined) return { ok: false, message: null, fields: {} };
+		return this.#act(async () => {
+			const updated = await this.#data.saveSettings(current, settings);
+			this.#items.set(id, updated);
+			this.#announcement = announcement;
 		});
 	}
 

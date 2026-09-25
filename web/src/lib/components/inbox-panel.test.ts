@@ -23,7 +23,7 @@ function entry(overrides: Partial<InboxItem> = {}): InboxItem {
 		sourceUrl: 'https://shop.example.com/rechnung',
 		sourceRef: '<a@b>',
 		sourceDate: '2026-09-24 23:30:00.000Z',
-		sourceMeta: { from: 'Shop <shop@example.com>', to: 'ich@example.com' },
+		sourceMeta: { from: 'Shop <shop@example.com>', to: 'ich@example.com', keyword: 'rechnung' },
 		original: 'mail_abc.eml',
 		state: 'new',
 		ticketId: null,
@@ -103,6 +103,7 @@ describe('inbox panel', () => {
 		expect(text('Zustand')).toBe('Neu');
 		expect(text('Von')).toBe('Shop <shop@example.com>');
 		expect(text('An')).toBe('ich@example.com');
+		expect(text('Stichwort')).toBe('rechnung');
 		expect(text('Quelldatum')).toBe('25.09.2026 01:30');
 		expect(text('Eingang')).toBe('25.09.2026 10:00');
 		const link = details.getByRole('link', { name: 'https://shop.example.com/rechnung' });
@@ -154,6 +155,12 @@ describe('inbox panel', () => {
 		setup(entry({ original: '' }));
 		await screen.findByRole('heading', { name: 'Rechnung September' });
 		expect(screen.queryByRole('button', { name: 'Originaldatei herunterladen' })).toBeNull();
+	});
+
+	it('shows no keyword row without a keyword (manual import)', async () => {
+		setup(entry({ sourceMeta: { from: 'Shop <shop@example.com>' } }));
+		await screen.findByRole('heading', { name: 'Rechnung September' });
+		expect(screen.queryByText('Stichwort', { selector: 'dt' })).toBeNull();
 	});
 
 	it('links a converted entry to its ticket', async () => {

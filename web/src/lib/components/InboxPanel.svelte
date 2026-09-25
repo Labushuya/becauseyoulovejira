@@ -68,6 +68,7 @@
 			['An', metaText(item, 'to')],
 			['Ort', metaText(item, 'location')],
 			['Chat', metaText(item, 'chat')],
+			['Stichwort', metaText(item, 'keyword')],
 			['Quelldatum', sourceDateText(item)],
 			['Eingang', formatBerlinDateTime(item.created)],
 			['Bearbeitet', item.handledAt === null ? '' : formatBerlinDateTime(item.handledAt)]

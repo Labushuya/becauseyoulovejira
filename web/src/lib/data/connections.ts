@@ -1,5 +1,5 @@
-// Connections of the channels (ADR-0016 section 2, ADR-0018; E4 plan package 10; ADR-0006
-// sections 1 to 5). Stateless functions with the PocketBase instance as first parameter. The
+// Connections of the channels (ADR-0016 section 2, ADR-0018, ADR-0020; E4 plan packages 10 and 20;
+// ADR-0006 sections 1 to 5). Stateless functions with the PocketBase instance as first parameter. The
 // hook sets scope and refuses changes of server fields (app/pb_hooks/connections.pb.js).
 
 import type PocketBase from 'pocketbase';
@@ -7,9 +7,11 @@ import {
 	isConnectionType,
 	type Connection,
 	type ConnectionDraft,
+	type ConnectionSettingsDraft,
 	type RunResult,
 	type SecretStatus
 } from '../domain/connections';
+import { keywordListOf } from '../domain/keywords';
 import { DataError, withDataErrors } from './errors';
 import { currentUserId, type RequestOptions } from './options';
 
@@ -47,9 +49,14 @@ export interface ConnectionRecord {
 	updated: string;
 }
 
+function settingsRecord(settings: unknown): Record<string, unknown> {
+	return typeof settings === 'object' && settings !== null && !Array.isArray(settings)
+		? (settings as Record<string, unknown>)
+		: {};
+}
+
 function allowlistOf(settings: unknown): string {
-	if (typeof settings !== 'object' || settings === null || Array.isArray(settings)) return '';
-	const value = (settings as Record<string, unknown>).allowed_env;
+	const value = settingsRecord(settings).allowed_env;
 	return typeof value === 'string' ? value : '';
 }
 
@@ -67,6 +74,8 @@ export function toConnection(record: ConnectionRecord): Connection {
 		lastOkAt: record.last_ok_at || null,
 		lastError: record.last_error ?? '',
 		lastHint: record.last_hint ?? '',
+		keywords: keywordListOf(settingsRecord(record.settings).keywords),
+		replyNoMatch: settingsRecord(record.settings).reply_no_match !== false,
 		runningSince: record.running_since || null,
 		created: record.created,
 		updated: record.updated
@@ -112,6 +121,33 @@ export function createConnection(
 			},
 			{ fields: CONNECTION_FIELDS, signal }
 		);
+		return toConnection(record);
+	});
+}
+
+/**
+ * Saves keywords and, for Telegram, the answer without keyword. `settings` is written whole, so
+ * the name of the allowlist variable goes along unchanged.
+ */
+export function saveConnectionSettings(
+	pb: PocketBase,
+	connection: Pick<Connection, 'id' | 'type' | 'allowlistEnv'>,
+	settings: ConnectionSettingsDraft,
+	{ signal }: RequestOptions = {}
+): Promise<Connection> {
+	return withDataErrors(signal, async () => {
+		const keywords = settings.keywords.map((keyword) => keyword.trim());
+		const value =
+			connection.type === 'telegram'
+				? { allowed_env: connection.allowlistEnv, keywords, reply_no_match: settings.replyNoMatch }
+				: { keywords };
+		const record = await pb
+			.collection(CONNECTIONS)
+			.update<ConnectionRecord>(
+				connection.id,
+				{ settings: value },
+				{ fields: CONNECTION_FIELDS, signal }
+			);
 		return toConnection(record);
 	});
 }
@@ -185,6 +221,7 @@ export function runConnection(
 			updated: count(result.updated),
 			skipped: count(result.skipped),
 			failed: count(result.failed),
+			unmatched: count(result.unmatched),
 			error: typeof result.error === 'string' ? result.error : '',
 			missing: Array.isArray(result.missing)
 				? result.missing.filter((name): name is string => typeof name === 'string')
