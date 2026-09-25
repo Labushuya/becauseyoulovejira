@@ -129,12 +129,12 @@
 		flex-direction: column;
 		gap: 0.125rem;
 		align-items: flex-start;
-		padding: 0.625rem 0.875rem;
+		padding: 0.75rem 1rem;
 		text-align: left;
 		color: var(--color-text);
 		background: var(--color-surface);
 		border: 1px solid var(--color-line);
-		border-radius: 0.375rem;
+		border-radius: var(--radius-surface);
 		cursor: pointer;
 	}
 

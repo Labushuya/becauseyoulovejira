@@ -1,18 +1,20 @@
 <script lang="ts">
+	import type { ResolvedPathname } from '$app/types';
 	import type { Project } from '$lib/domain/project';
-	import { projectTicketsHref } from '$lib/ticket-links';
 
-	// Project tiles (E3 plan, T-12 and package 14; ADR-0010 section 1): a responsive grid in the
-	// given order (by name). Each tile is a link to the tickets of the project (`/?projekt=<id>`)
-	// with name, code and "N aktiv · M gesamt" (and "K neu", ADR-0015); "Bearbeiten" sits next to the
-	// link, not in it.
-	// Archived projects say so in words. While a number is unknown the tile shows "–".
+	// Project tiles (E3 plan, T-12 and package 14; ADR-0010 section 1; ADR-0025 section 10, package
+	// UI-8): a responsive grid in the given order (by name). Each tile is one link that opens the
+	// project panel, like a row of the tables, with name, code and "N aktiv · M gesamt" (and "K neu",
+	// ADR-0015); the project in the panel is marked with aria-current and a frame in the brand colour
+	// (not only colour: also the bar at its start). "Tickets anzeigen" stands in the panel. Archived
+	// projects say so in words. While a number is unknown the tile shows "–".
 	let {
 		projects,
 		activeOf,
 		totalOf,
 		newOf = () => 0,
-		onedit
+		hrefOf,
+		activeId = null
 	}: {
 		projects: readonly Project[];
 		/** Tickets of the project that are not done (OF-E3-1); null while not loaded. */
@@ -21,8 +23,10 @@
 		totalOf: (project: Project) => number | null;
 		/** New tickets of the project for the signed-in user (ADR-0015 section 5). */
 		newOf?: (project: Project) => number;
-		/** "Bearbeiten"; the button is passed along to return the focus to it. */
-		onedit: (project: Project, trigger: HTMLButtonElement) => void;
+		/** Address of the project panel. */
+		hrefOf: (project: Project) => ResolvedPathname;
+		/** Project shown in the panel. */
+		activeId?: string | null;
 	} = $props();
 
 	function number(value: number | null): string {
@@ -35,8 +39,13 @@
 		{@const active = activeOf(project)}
 		{@const total = totalOf(project)}
 		{@const fresh = newOf(project)}
-		<li class="tile" class:archived={project.archived}>
-			<a class="tile-link" href={projectTicketsHref(project.id)}>
+		<li class="tile" class:archived={project.archived} class:current={project.id === activeId}>
+			<a
+				class="tile-link"
+				href={hrefOf(project)}
+				data-project-id={project.id}
+				aria-current={project.id === activeId ? 'page' : undefined}
+			>
 				<span class="head">
 					<span class="name">{project.name}</span>
 					<span class="code">{project.code}</span>
@@ -54,17 +63,6 @@
 					{/if}
 				</span>
 			</a>
-			<button
-				class="edit"
-				type="button"
-				title="Bearbeiten"
-				onclick={(event) => onedit(project, event.currentTarget)}
-			>
-				<svg viewBox="0 0 16 16" aria-hidden="true" focusable="false">
-					<path d="M10.5 3l2.5 2.5L6 12.5H3.5V10z" />
-				</svg>
-				<span class="visually-hidden">Projekt {project.name} bearbeiten</span>
-			</button>
 		</li>
 	{/each}
 </ul>
@@ -77,25 +75,45 @@
 		list-style: none;
 	}
 
+	/* Same surface as the KPI tiles: radius, line and padding (ADR-0025 section 10). */
 	.tile {
-		position: relative;
 		min-width: 0;
 		background: var(--color-surface);
 		border: 1px solid var(--color-line);
-		border-radius: 0.5rem;
+		border-radius: var(--radius-surface);
 	}
 
 	.tile:hover {
 		border-color: var(--color-brand);
 	}
 
+	.tile.current {
+		background: var(--color-brand-soft-bg);
+		border-color: var(--color-brand);
+	}
+
 	.tile-link {
 		display: grid;
 		gap: 0.5rem;
-		padding: 0.875rem 2.75rem 0.875rem 1rem;
+		height: 100%;
+		padding: 0.75rem 1rem;
 		color: var(--color-text);
 		text-decoration: none;
-		border-radius: 0.5rem;
+		border-radius: var(--radius-surface);
+	}
+
+	/* Second, non-colour mark of the current tile: a bar at its start, like the current row. */
+	.current .tile-link {
+		position: relative;
+	}
+
+	.current .tile-link::before {
+		position: absolute;
+		inset: 0 auto 0 0;
+		width: 3px;
+		content: '';
+		background: var(--color-brand);
+		border-radius: var(--radius-surface) 0 0 var(--radius-surface);
 	}
 
 	.head {
@@ -147,32 +165,5 @@
 	.stats .new,
 	.stats .new strong {
 		color: var(--color-brand-text);
-	}
-
-	.edit {
-		position: absolute;
-		top: 0.625rem;
-		right: 0.625rem;
-		display: inline-flex;
-		padding: 0.25rem;
-		color: var(--color-text-muted);
-		background: none;
-		border: 1px solid transparent;
-		border-radius: 0.375rem;
-		cursor: pointer;
-	}
-
-	.edit:hover {
-		color: var(--color-text);
-		border-color: var(--color-line);
-	}
-
-	.edit svg {
-		width: 1rem;
-		height: 1rem;
-		fill: none;
-		stroke: currentColor;
-		stroke-width: 1.5;
-		stroke-linejoin: round;
 	}
 </style>

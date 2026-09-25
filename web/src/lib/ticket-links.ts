@@ -49,6 +49,29 @@ export function showArchivedFrom(url: URL): boolean {
 	return values.length === 1 && values[0] === '1';
 }
 
+/** The switch "Archivierte anzeigen" of `url` as query, so the panel keeps the tiles as they were. */
+function projectViewQuery(url: URL): string {
+	return showArchivedFrom(url) ? `?${SHOW_ARCHIVED_PARAM}=1` : '';
+}
+
+/** Project view with the switch "Archivierte anzeigen" of `url` (closing a project panel, UI-8). */
+export function projectsViewHref(url: URL): ResolvedPathname {
+	return `${resolve('/projekte')}${projectViewQuery(url)}` as ResolvedPathname;
+}
+
+/** Panel of a project (ADR-0025 section 10, UI-8) with the switch of `url`. */
+export function projectHref(id: string, url: URL): ResolvedPathname {
+	return `${resolve(`/projekte/${encodeURIComponent(id)}`)}${projectViewQuery(url)}` as ResolvedPathname;
+}
+
+/** Panel "Neues Projekt" (UI-8) with the switch of `url`. */
+export function newProjectHref(url: URL): ResolvedPathname {
+	return `${resolve('/projekte/neu')}${projectViewQuery(url)}` as ResolvedPathname;
+}
+
+/** Element ID of "Neues Projekt" in the section bar; closing its panel returns the focus to it. */
+export const NEW_PROJECT_LINK_ID = 'new-project-link';
+
 /** The current path with the switch "Archivierte anzeigen" set or removed; others stay. */
 export function withShowArchived(url: URL, show: boolean): ResolvedPathname {
 	const params = new URLSearchParams(url.searchParams);

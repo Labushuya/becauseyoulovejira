@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { tick } from 'svelte';
+	import { tick, type Snippet } from 'svelte';
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
 	import { GROUPING_LABELS } from '$lib/domain/grouping';
@@ -45,7 +45,8 @@
 		activeId = null,
 		creating = false,
 		inboxCount = null,
-		recurrenceTextOf = () => ''
+		recurrenceTextOf = () => '',
+		tools
 	}: {
 		store: TicketListStore;
 		catalog: CatalogStore;
@@ -57,6 +58,11 @@
 		inboxCount?: number | null;
 		/** Rhythm of the series of a ticket in words, '' while unknown (E5 plan, package 4). */
 		recurrenceTextOf?: (ticket: TicketSummary) => string;
+		/**
+		 * KPI tiles and filter bar, below the section bar: the switch "Aufgaben | Projekte |
+		 * Eingang" stands at the same place in every view (ADR-0025 section 10, package UI-8).
+		 */
+		tools?: Snippet;
 	} = $props();
 
 	/** Columns of the table (T-4); the section rows span all of them. */
@@ -321,6 +327,8 @@
 		{/snippet}
 	</SectionBar>
 
+	{@render tools?.()}
+
 	<p class="visually-hidden" aria-live="polite">{store.announcement}</p>
 
 	{#if store.openState === 'error' && store.openError}
@@ -477,7 +485,7 @@
 		container-type: inline-size;
 		background: var(--color-surface);
 		border: 1px solid var(--color-line);
-		border-radius: 0.375rem;
+		border-radius: var(--radius-surface);
 	}
 
 	table {

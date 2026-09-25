@@ -181,6 +181,12 @@ describe('inbox table', () => {
 		expect(frame.classList.contains('frame')).toBe(true);
 		expect(frame.hasAttribute('role')).toBe(false);
 		expect(screen.getByRole('heading', { name: 'Eingang' })).toBeTruthy();
+		// Same order as in the other views: the section bar with the switch comes first (UI-8).
+		const section = screen.getByRole('region', { name: /^Eingang/ });
+		expect(section.firstElementChild?.classList.contains('section-bar')).toBe(true);
+		expect(
+			section.firstElementChild?.contains(screen.getByRole('navigation', { name: 'Ansicht' }))
+		).toBe(true);
 		expect(screen.getByText('3 Einträge')).toBeTruthy();
 		expect(screen.getByRole('checkbox', { name: 'Eintrag „Milch kaufen“ auswählen' })).toBeTruthy();
 		const mail = rows[0]!;

@@ -13,8 +13,9 @@
 
 	// KPI tiles, filter bar, table and panel area (E2 plan, T-4; E3 plan, T-3 and packages 5, 10
 	// and 12): the table stays in place while the detail panel opens and closes, so scroll position
-	// and loaded pages survive. Tiles, filter bar and table form the view left of the panel, which
-	// stands as a full column on the right from 64rem (ADR-0025 section 6, package UI-6b).
+	// and loaded pages survive. Section bar, KPI tiles, filter bar and table form the view left of
+	// the panel, which stands as a full column on the right from 64rem (ADR-0025 section 6, package
+	// UI-6b). The section bar with the switch comes first, as in the other views (package UI-8).
 	let { children } = $props();
 
 	const tickets = getTicketListStore();
@@ -36,13 +37,6 @@
 
 <ViewWithPanel {withPanel}>
 	{#snippet list()}
-		<KpiTiles kpis={tickets.openState === 'ready' ? tickets.kpis : null} />
-		<FilterBar
-			{catalog}
-			searchBusy={tickets.searchBusy}
-			searchError={tickets.searchError}
-			onretrysearch={() => tickets.retrySearch()}
-		/>
 		<TicketTable
 			store={tickets}
 			{catalog}
@@ -50,7 +44,17 @@
 			{creating}
 			inboxCount={inbox.newCount}
 			recurrenceTextOf={(ticket) => rules.textOf(ticket.recurrenceId)}
-		/>
+		>
+			{#snippet tools()}
+				<KpiTiles kpis={tickets.openState === 'ready' ? tickets.kpis : null} />
+				<FilterBar
+					{catalog}
+					searchBusy={tickets.searchBusy}
+					searchError={tickets.searchError}
+					onretrysearch={() => tickets.retrySearch()}
+				/>
+			{/snippet}
+		</TicketTable>
 	{/snippet}
 	{@render children()}
 </ViewWithPanel>
