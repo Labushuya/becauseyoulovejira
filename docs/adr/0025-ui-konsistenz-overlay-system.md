@@ -143,6 +143,16 @@ Präzisiert Abschnitt 6 und Nutzerentscheidung 1, ohne sie aufzuheben. Anlass: M
 - Esc-Regel, Fokusführung, Slide-in und Vollansicht bleiben wie in den Abschnitten 6 und 7.
 - **Alternative verworfen:** Eingebettet schon ab 48rem mit seitlich scrollender Tabelle (Stand UI-6). Zwischen 768 und etwa 1100 px blieben der Liste weniger als 500 px, und die Tabelle wirkte überdeckt.
 
+### 12. Nachtrag (2026-09-26): Verweis auf ADR-0026
+
+Ergänzt Abschnitt 1, ohne ihn aufzuheben:
+
+- **Hinweis-Bausteine:** `SectionMessage`, `EmptyState`, `Lozenge`, `CodeBlock`, `ExternalLink` und `Stepper` aus [ADR-0026](0026-einstellungsbereich-und-hinweis-bausteine.md) sind **keine Overlays**. Sie liegen unter `components/guidance/`. Die Regel „genau sechs Bausteine“ gilt für sie nicht.
+- **Geführte Tour:** Die optionale Tour mit driver.js (ADR-0026 §8, Nutzerentscheidung) ist die einzige Ausnahme von „keine UI-Bibliothek“.
+  - Sie ist nur manuell startbar und hat höchstens etwa 5 Schritte.
+  - Sie ist mit den Tokens gestaltet und lokal gebündelt.
+  - Sie ersetzt keinen der sechs Bausteine, und keine andere Stelle darf die Bibliothek nutzen.
+
 ## Alternativen
 
 - **Seitenpanel als Overlay mit Schleier (Task-Board) oder Drawer (ADS):** verdeckt die Liste, ein Zeilenwechsel braucht zwei Klicks; ADS kündigt den Drawer ab. Vom Nutzer verworfen.

@@ -31,3 +31,4 @@ Bereits verbindlich in der [Projekt-CLAUDE.md](../../CLAUDE.md) festgelegt und d
 | [0023](0023-lebenszyklus-von-regeln-und-instanzen.md) | Lebenszyklus von Regeln und Instanzen: Anlegen, Erledigen, Rückgängig, Pausieren, Bearbeiten, Löschen | Vorgeschlagen | 2026-09-25 |
 | [0024](0024-serien-aus-kalendern.md) | Serien aus `.ics` und Google Calendar als Vorschlag für eine Regel | Vorgeschlagen | 2026-09-25 |
 | [0025](0025-ui-konsistenz-overlay-system.md) | UI-Konsistenz: ein Overlay-System, Theme-Umschalter und angeglichene Projekt-UI | Angenommen | 2026-09-25 |
+| [0026](0026-einstellungsbereich-und-hinweis-bausteine.md) | Einstellungsbereich, Hinweis-Bausteine, Einrichtungsassistent und geführte Tour | Angenommen | 2026-09-26 |
