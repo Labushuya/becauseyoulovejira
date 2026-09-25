@@ -7,12 +7,17 @@
 		tagSuggestions
 	} from '$lib/domain/tag';
 	import type { TagRef } from '$lib/domain/ticket';
+	import { place } from '$lib/overlay/position';
 
 	// Tag picker (E3 plan, T-14 and package 8) after the WAI-ARIA pattern "combobox with listbox":
 	// an input with suggestions (arrow keys move, Enter chooses, Escape closes), the chosen tags as
 	// chips with "Tag X entfernen". The last option creates a new tag from the input. Every action
 	// runs through the callbacks, which save at once; while one runs the picker takes no further
-	// action, so a quick double Enter creates one tag.
+	// action, so a quick double Enter creates one tag. The list of suggestions lies in the top layer
+	// (popover="manual", ADR-0025 section 5, package UI-9), placed below the input by place() and
+	// following scrolling and resizing, so a scrolling panel or a modal no longer cuts it off. It
+	// opens and closes by code as before; the focus stays in the input. Escape closes the list and
+	// is consumed (preventDefault), so the panel or the modal around stays open.
 	let {
 		id,
 		selected,
@@ -53,6 +58,7 @@
 	const optionId = (index: number) => `${uid}-option-${index}`;
 
 	let input = $state<HTMLInputElement>();
+	let list = $state<HTMLElement>();
 	let expanded = $state(false);
 	let activeIndex = $state(-1);
 	/** An action of this picker is running. */
@@ -156,6 +162,47 @@
 	function onblur() {
 		close();
 	}
+
+	/** Highest list in CSS pixels, as before in the flow of the panel (12rem). */
+	const LIST_MAX_HEIGHT = 192;
+
+	function position() {
+		if (!list || !input) return;
+		const anchor = input.getBoundingClientRect();
+		const at = place(
+			anchor,
+			{ width: anchor.width, height: Math.min(list.scrollHeight, LIST_MAX_HEIGHT) },
+			{ width: window.innerWidth, height: window.innerHeight },
+			'bottom-start'
+		);
+		list.style.top = `${at.top}px`;
+		list.style.left = `${at.left}px`;
+		list.style.width = `${anchor.width}px`;
+		list.style.maxHeight = `${Math.min(at.maxHeight, LIST_MAX_HEIGHT)}px`;
+	}
+
+	// Shows the list in the top layer while there is something to show, and keeps it below the
+	// input while the page or the panel scrolls.
+	$effect(() => {
+		const element = list;
+		if (!element || !showList || typeof element.showPopover !== 'function') return;
+		element.showPopover();
+		position();
+		const update = () => position();
+		window.addEventListener('resize', update, { passive: true });
+		window.addEventListener('scroll', update, { passive: true, capture: true });
+		return () => {
+			window.removeEventListener('resize', update);
+			window.removeEventListener('scroll', update, { capture: true });
+			if (element.matches(':popover-open')) element.hidePopover();
+		};
+	});
+
+	// The suggestions change the height of the list; it stays below (or above) the input.
+	$effect(() => {
+		void options;
+		if (showList) position();
+	});
 </script>
 
 <div class="tag-picker">
@@ -208,7 +255,16 @@
 				if (!showList) open(normalizeTagName(text) === '' ? -1 : 0);
 			}}
 		/>
-		<ul class="listbox" id={listboxId} role="listbox" aria-label="Vorschläge" hidden={!showList}>
+		<ul
+			class="listbox"
+			id={listboxId}
+			role="listbox"
+			aria-label="Vorschläge"
+			popover="manual"
+			hidden={!showList}
+			data-overlay
+			bind:this={list}
+		>
 			{#each options as option, index (option.kind === 'tag' ? option.tag.id : 'create')}
 				<!-- Options are never focused: the keyboard works on the input (aria-activedescendant),
 				     the click is for the mouse. -->
@@ -274,10 +330,6 @@
 		opacity: 0.6;
 	}
 
-	.combo {
-		position: relative;
-	}
-
 	input {
 		width: 100%;
 		padding: 0.25rem 0.5rem;
@@ -290,17 +342,29 @@
 		cursor: progress;
 	}
 
+	/* In the top layer, placed by position(); the surface of the popovers. */
 	.listbox {
-		position: absolute;
-		z-index: 5;
-		inset: calc(100% + 0.125rem) 0 auto;
+		position: fixed;
+		inset: auto;
+		margin: 0;
 		max-height: 12rem;
 		overflow-y: auto;
 		padding: 0.25rem 0;
 		list-style: none;
+		color: var(--color-text);
 		background: var(--color-surface);
 		border: 1px solid var(--color-line);
-		border-radius: 0.375rem;
+		border-radius: var(--radius-surface);
+	}
+
+	.listbox:popover-open {
+		animation: list-in var(--motion-fast) var(--motion-ease);
+	}
+
+	@keyframes list-in {
+		from {
+			opacity: 0;
+		}
 	}
 
 	.option {

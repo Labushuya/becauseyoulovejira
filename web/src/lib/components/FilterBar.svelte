@@ -21,9 +21,12 @@
 	import { withListQuery } from '$lib/ticket-links';
 	import ChipGroup from './ChipGroup.svelte';
 	import ErrorIcon from './ErrorIcon.svelte';
+	import FilterPopover from './FilterPopover.svelte';
 
 	// Filter bar (E3 plan, T-6, T-15 and packages 10 and 11; ADR-0010 section 1): chip groups for
-	// status, priority, due date and source (E4 package 9, ADR-0019 section 2), the search, selects for project and tag, and "Zurücksetzen".
+	// status, priority, due date and source (E4 package 9, ADR-0019 section 2), the search, the
+	// choices "Projekt" and "Tag" as popovers of the overlay system (ADR-0025 section 5, package
+	// UI-9, instead of native selects), and "Zurücksetzen".
 	// The state lives only in the URL (ADR-0013 section 4): every change navigates with a history
 	// entry, so reload, back and forward keep it; opening a ticket keeps it because links carry
 	// the query. Typing in the search replaces the entry instead, so back does not go through
@@ -44,8 +47,6 @@
 
 	const uid = $props.id();
 	const ids = {
-		project: `${uid}-project`,
-		tag: `${uid}-tag`,
 		search: `${uid}-search`,
 		searchHint: `${uid}-search-hint`,
 		searchError: `${uid}-search-error`,
@@ -72,14 +73,33 @@
 
 	const query = $derived(parseListQuery(page.url.searchParams));
 	const filtered = $derived(hasFilters(query));
-	const activeProjects = $derived(catalog.projects.filter((project) => !project.archived));
-	const archivedProjects = $derived(catalog.projects.filter((project) => project.archived));
 	/** A project or tag in the URL the catalog does not know (foreign, deleted or mistyped). */
 	const unknownProject = $derived(
 		query.project !== null && query.project !== NO_PROJECT && !catalog.projectById(query.project)
 	);
 	const unknownTag = $derived(query.tag !== null && !catalog.tagById(query.tag));
 	const unknownLabel = $derived(catalog.state === 'ready' ? 'Unbekannt' : 'Wird geladen …');
+	/** "Ohne Projekt", the active projects, then the archived ones under "Archiviert". */
+	const projectOptions = $derived([
+		{ value: NO_PROJECT, label: 'Ohne Projekt' },
+		...catalog.projects
+			.filter((project) => !project.archived)
+			.map((project) => ({ value: project.id, label: `${project.name} (${project.code})` })),
+		...catalog.projects
+			.filter((project) => project.archived)
+			.map((project) => ({
+				value: project.id,
+				label: `${project.name} (${project.code})`,
+				section: 'Archiviert'
+			})),
+		...(unknownProject && query.project !== null
+			? [{ value: query.project, label: unknownLabel }]
+			: [])
+	]);
+	const tagOptions = $derived([
+		...catalog.tags.map((tag) => ({ value: tag.id, label: tag.name })),
+		...(unknownTag && query.tag !== null ? [{ value: query.tag, label: unknownLabel }] : [])
+	]);
 
 	async function navigate(next: ListQuery) {
 		await goto(withListQuery(page.url, next), { keepFocus: true, noScroll: true });
@@ -176,49 +196,21 @@
 			</span>
 		</div>
 
-		<label class="select" for={ids.project}>
-			<span class="select-label">Projekt</span>
-			<select
-				id={ids.project}
-				onchange={(event) => setFilter('project', event.currentTarget.value || null)}
-			>
-				<option value="" selected={query.project === null}>Alle</option>
-				<option value={NO_PROJECT} selected={query.project === NO_PROJECT}>Ohne Projekt</option>
-				{#each activeProjects as project (project.id)}
-					<option value={project.id} selected={query.project === project.id}>
-						{project.name} ({project.code})
-					</option>
-				{/each}
-				{#if archivedProjects.length > 0}
-					<optgroup label="Archiviert">
-						{#each archivedProjects as project (project.id)}
-							<option value={project.id} selected={query.project === project.id}>
-								{project.name} ({project.code})
-							</option>
-						{/each}
-					</optgroup>
-				{/if}
-				{#if unknownProject && query.project !== null}
-					<option value={query.project} selected>{unknownLabel}</option>
-				{/if}
-			</select>
-		</label>
+		<FilterPopover
+			legend="Projekt"
+			name={`${uid}-project`}
+			options={projectOptions}
+			value={query.project}
+			onchange={(value) => setFilter('project', value)}
+		/>
 
-		<label class="select" for={ids.tag}>
-			<span class="select-label">Tag</span>
-			<select
-				id={ids.tag}
-				onchange={(event) => setFilter('tag', event.currentTarget.value || null)}
-			>
-				<option value="" selected={query.tag === null}>Alle</option>
-				{#each catalog.tags as tag (tag.id)}
-					<option value={tag.id} selected={query.tag === tag.id}>{tag.name}</option>
-				{/each}
-				{#if unknownTag && query.tag !== null}
-					<option value={query.tag} selected>{unknownLabel}</option>
-				{/if}
-			</select>
-		</label>
+		<FilterPopover
+			legend="Tag"
+			name={`${uid}-tag`}
+			options={tagOptions}
+			value={query.tag}
+			onchange={(value) => setFilter('tag', value)}
+		/>
 
 		<button
 			class="reset"
@@ -266,29 +258,6 @@
 		flex-wrap: wrap;
 		gap: 0.5rem 1rem;
 		align-items: center;
-	}
-
-	.select {
-		display: inline-flex;
-		gap: 0.375rem;
-		align-items: center;
-	}
-
-	.select-label {
-		font-size: 0.75rem;
-		font-weight: 600;
-		color: var(--color-text-muted);
-	}
-
-	select {
-		max-width: 14rem;
-		padding: 0.1875rem 0.375rem;
-		font: inherit;
-		font-size: 0.8125rem;
-		color: var(--color-text);
-		background: var(--color-surface);
-		border: 1px solid var(--color-line);
-		border-radius: 0.375rem;
 	}
 
 	.search {
