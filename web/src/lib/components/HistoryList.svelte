@@ -84,7 +84,8 @@
 
 	.head {
 		display: flex;
-		gap: 0.5rem;
+		flex-wrap: wrap;
+		gap: 0.125rem 0.5rem;
 		align-items: baseline;
 	}
 

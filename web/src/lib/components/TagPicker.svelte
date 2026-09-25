@@ -303,8 +303,10 @@
 		display: inline-flex;
 		gap: 0.125rem;
 		align-items: center;
+		max-width: 100%;
 		padding: 0 0.125rem 0 0.375rem;
 		font-size: 0.75rem;
+		overflow-wrap: anywhere;
 		line-height: 1.25rem;
 		color: var(--color-text);
 		border: 1px solid var(--color-line);

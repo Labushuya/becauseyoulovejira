@@ -42,6 +42,7 @@
 <style>
 	.full-view {
 		display: grid;
+		grid-template-columns: minmax(0, 1fr);
 		gap: 1.5rem;
 		align-items: start;
 	}
@@ -49,6 +50,7 @@
 	.main,
 	.side {
 		display: grid;
+		grid-template-columns: minmax(0, 1fr);
 		gap: 1.25rem;
 		align-content: start;
 		min-width: 0;

@@ -394,6 +394,7 @@
 		display: grid;
 		gap: 0.375rem;
 		align-content: start;
+		min-width: 0;
 	}
 
 	.row {
@@ -410,6 +411,7 @@
 
 	input,
 	.form :global(select) {
+		max-width: 100%;
 		padding: 0.375rem 0.5rem;
 		background: var(--color-surface);
 		border: 1px solid var(--color-text-muted);

@@ -1,6 +1,7 @@
 <script lang="ts">
 	// Due date as a native date field (E2 plan, T-7): Enter or leaving the field saves, Escape
-	// restores the saved value, "Entfernen" clears it. An incomplete date in the browser
+	// restores the saved value, the icon button "Fälligkeit entfernen" clears it (an icon instead of
+	// text, so the row fits the 480 px panel). An incomplete date in the browser
 	// (validity.badInput) is rejected instead of being saved as "no due date".
 	let {
 		id,
@@ -63,8 +64,17 @@
 		{onkeydown}
 	/>
 	{#if value !== ''}
-		<button class="clear" type="button" disabled={saving} onclick={onclear}>
-			Entfernen<span class="visually-hidden">: Fälligkeit</span>
+		<button
+			class="button-icon clear"
+			type="button"
+			aria-label="Fälligkeit entfernen"
+			title="Fälligkeit entfernen"
+			disabled={saving}
+			onclick={onclear}
+		>
+			<svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true" focusable="false">
+				<path d="M4 4l8 8M12 4l-8 8" />
+			</svg>
 		</button>
 	{/if}
 </div>
@@ -72,17 +82,24 @@
 <style>
 	.due-input {
 		display: flex;
-		gap: 0.5rem;
+		flex-wrap: wrap;
+		gap: 0.25rem;
 		align-items: center;
+		min-width: 0;
+	}
+
+	input {
+		max-width: 100%;
 	}
 
 	.clear {
-		padding: 0.125rem 0.5rem;
-		font-size: 0.8125rem;
-		color: var(--color-text-muted);
-		background: none;
-		border: 1px solid var(--color-line);
-		border-radius: 0.375rem;
-		cursor: pointer;
+		flex: none;
+	}
+
+	.clear svg {
+		fill: none;
+		stroke: currentColor;
+		stroke-width: 1.5;
+		stroke-linecap: round;
 	}
 </style>

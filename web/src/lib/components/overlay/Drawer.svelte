@@ -152,8 +152,10 @@
 		stroke-linejoin: round;
 	}
 
+	/* One column that may shrink: long words, code and fields never push the panel wider. */
 	.body {
 		display: grid;
+		grid-template-columns: minmax(0, 1fr);
 		gap: 1.25rem;
 		align-content: start;
 		flex: 1 1 auto;
