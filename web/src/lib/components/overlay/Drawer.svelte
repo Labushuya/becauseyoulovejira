@@ -1,15 +1,16 @@
 <script lang="ts">
 	import type { Snippet } from 'svelte';
 	import type { ResolvedPathname } from '$app/types';
+	import { getPanelHost } from '$lib/overlay/panel-host.svelte';
 
-	// Side panel building block (ADR-0025 section 6; plan UI-Konsistenz, package UI-6): not modal,
-	// right of the list (ViewWithPanel places it), 480 px. A fixed header with the context on the
-	// left and on the right the actions, "Vollansicht" (a link, so a middle click opens a tab; only
-	// with `fullViewHref`) and the × "Panel schließen"; a content area that scrolls alone and an
-	// optional fixed footer. One Escape rule for every panel: Escape closes unless something inside
+	// Side panel building block (ADR-0025 section 6; plan UI-Konsistenz, package UI-6): right of the
+	// view, 480 px. A fixed header with the context on the left and on the right the actions,
+	// "Vollansicht" (a link, so a middle click opens a tab; only with `fullViewHref`) and the ×
+	// "Panel schließen"; a content area that scrolls alone and an optional fixed footer. One Escape rule for every panel: Escape closes unless something inside
 	// consumed it (a field in edit mode, the tag picker, a dialog). In detail panels the form fields
 	// keep Escape, in form panels ("Neues Ticket", "Erfassen") it means "Abbrechen" from anywhere.
-	// The slide-in comes from ViewWithPanel, only when the panel opens next to the list.
+	// ViewWithPanel places it (embedded column from 64rem, overlay below) and slides it in only when
+	// it opens; a click on its blanket closes like the × (package UI-6b).
 	let {
 		labelledby,
 		onclose,
@@ -39,6 +40,11 @@
 		footer?: Snippet;
 		children: Snippet;
 	} = $props();
+
+	const host = getPanelHost();
+
+	// The blanket of the overlay (below 64rem) closes the shown panel like its ×.
+	$effect(() => host?.register(() => onclose()));
 
 	function isFormField(target: EventTarget | null): boolean {
 		return (
@@ -95,32 +101,19 @@
 </aside>
 
 <style>
+	/*
+	 * Fills its column, from below the header to the bottom of the window, or the overlay of
+	 * ViewWithPanel (--drawer-width wide); header and footer stand. A line at the left instead of a
+	 * framed box, like the side panel of Jira.
+	 */
 	.drawer {
 		display: flex;
 		flex-direction: column;
+		height: 100%;
 		min-width: 0;
 		color: var(--color-text);
 		background: var(--color-surface);
-		border: 1px solid var(--color-line);
-		border-radius: var(--radius-surface);
-	}
-
-	/* Next to the list (ViewWithPanel keeps its column in view): header and footer stand. */
-	@media (min-width: 48rem) {
-		.drawer {
-			max-height: calc(100dvh - 2rem);
-		}
-	}
-
-	/* Narrow: over the list, which ViewWithPanel makes inert. */
-	@media (max-width: 47.99rem) {
-		.drawer {
-			position: fixed;
-			inset: 0;
-			z-index: 10;
-			border: none;
-			border-radius: 0;
-		}
+		border-left: 1px solid var(--color-line);
 	}
 
 	.head,

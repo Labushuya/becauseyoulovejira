@@ -103,18 +103,18 @@
 			</span>
 		{/if}
 	</th>
-	<td class="project">
+	<td class="project" data-col="project">
 		{#if project}
 			<span title={`${project.name} (${project.code})`}>{project.name}</span>
 		{/if}
 	</td>
-	<td class="tags">
+	<td class="tags" data-col="tags">
 		{#each tags as tag (tag.id)}
 			<span class="tag">{tag.name}</span>
 		{/each}
 	</td>
-	<td class="due"><DueLabel due={ticket.due} {today} {done} /></td>
-	<td class="created">
+	<td class="due" data-col="due"><DueLabel due={ticket.due} {today} {done} /></td>
+	<td class="created" data-col="created">
 		<time datetime={createdDate} title={formatBerlinDateTime(ticket.created)}>
 			{formatCalendarDate(createdDate)}
 		</time>

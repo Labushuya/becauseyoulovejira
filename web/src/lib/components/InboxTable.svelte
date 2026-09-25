@@ -11,6 +11,7 @@
 		type InboxState
 	} from '$lib/domain/inbox';
 	import { type InboxQuery } from '$lib/domain/inbox-query';
+	import { MORE_COLUMNS_HINT } from '$lib/domain/labels';
 	import { SOURCE_FAMILY_CHIPS, SOURCE_FAMILY_LABELS, type SourceFamily } from '$lib/domain/source';
 	import type { TicketSummary } from '$lib/domain/ticket';
 	import type { FlagSink } from '$lib/stores/flags.svelte';
@@ -34,7 +35,10 @@
 	// shown newest first, handled ones most recently handled first with "Weitere laden".
 	// "Verwerfen" removes the row at once ("Rückgängig" stands in the flag of the store) and moves
 	// the focus to the next row; a failed row action becomes an error flag (ADR-0025 section 8).
-	// The date at the sender is only shown, never taken as due date (P-5).
+	// The date at the sender is only shown, never taken as due date (P-5). The table never scrolls
+	// sideways (package UI-6b): in a narrow frame container queries hide columns in a fixed order,
+	// first the arrival (or handling) date, then "Quelle", then "Art", last "Quelldatum"; selection,
+	// title and the actions always stay, and the caption then names the panel.
 	let {
 		store,
 		flags,
@@ -316,10 +320,11 @@
 	{/if}
 
 	{#if rows.length > 0}
-		<!-- svelte-ignore a11y_no_noninteractive_tabindex -->
-		<div class="scroll" role="region" aria-labelledby={ids.caption} tabindex="0">
+		<div class="frame">
 			<table>
-				<caption id={ids.caption}>{caption}</caption>
+				<caption id={ids.caption}
+					>{caption}<span class="caption-more">{MORE_COLUMNS_HINT}</span></caption
+				>
 				<thead>
 					<tr>
 						{#if showsNew}
@@ -333,11 +338,13 @@
 								/>
 							</th>
 						{/if}
-						<th scope="col">Art</th>
+						<th scope="col" data-col="kind">Art</th>
 						<th scope="col" class="title-col">Titel</th>
-						<th scope="col">Quelle</th>
-						<th scope="col">Quelldatum</th>
-						<th scope="col">{showsNew ? 'Eingang' : STATE_LABELS[query.state]}</th>
+						<th scope="col" data-col="source">Quelle</th>
+						<th scope="col" data-col="source-date">Quelldatum</th>
+						<th scope="col" data-col="arrival"
+							>{showsNew ? 'Eingang' : STATE_LABELS[query.state]}</th
+						>
 						<th scope="col"><span class="visually-hidden">Aktionen</span></th>
 					</tr>
 				</thead>
@@ -357,7 +364,7 @@
 									/>
 								</td>
 							{/if}
-							<td class="kind">{KIND_LABELS[item.kind]}</td>
+							<td class="kind" data-col="kind">{KIND_LABELS[item.kind]}</td>
 							<th class="title" scope="row">
 								<a
 									class="title-link"
@@ -368,15 +375,15 @@
 									{@render duplicateHint(item)}
 								{/if}
 							</th>
-							<td class="source">{CHANNEL_LABELS[item.channel]}</td>
-							<td class="date">
+							<td class="source" data-col="source">{CHANNEL_LABELS[item.channel]}</td>
+							<td class="date" data-col="source-date">
 								{#if sourceDate !== null}
 									<time datetime={sourceDate.date} title={sourceDate.title}>{sourceDate.text}</time>
 								{:else}
 									<span aria-hidden="true">–</span><span class="visually-hidden">kein Datum</span>
 								{/if}
 							</td>
-							<td class="date">
+							<td class="date" data-col="arrival">
 								<time datetime={berlinDateOf(arrival)} title={formatBerlinDateTime(arrival)}>
 									{formatCalendarDate(berlinDateOf(arrival))}
 								</time>
@@ -481,22 +488,54 @@
 		color: var(--color-text-muted);
 	}
 
-	.scroll {
-		overflow-x: auto;
+	/* Container of the column rules; the table takes its width and never more. */
+	.frame {
+		container-type: inline-size;
 		background: var(--color-surface);
 		border: 1px solid var(--color-line);
 		border-radius: 0.375rem;
 	}
 
-	.scroll:focus-visible {
-		outline-offset: 2px;
-	}
-
 	table {
 		width: 100%;
-		min-width: 48rem;
 		font-size: 0.875rem;
 		border-collapse: collapse;
+	}
+
+	.caption-more {
+		display: none;
+		font-weight: 400;
+	}
+
+	/* Columns that give way, in this order: arrival, Quelle, Art, Quelldatum. */
+	@container (max-width: 52rem) {
+		.caption-more {
+			display: inline;
+		}
+	}
+
+	@container (max-width: 52rem) {
+		.frame :global([data-col='arrival']) {
+			display: none;
+		}
+	}
+
+	@container (max-width: 46rem) {
+		.frame :global([data-col='source']) {
+			display: none;
+		}
+	}
+
+	@container (max-width: 40rem) {
+		.frame :global([data-col='kind']) {
+			display: none;
+		}
+	}
+
+	@container (max-width: 34rem) {
+		.frame :global([data-col='source-date']) {
+			display: none;
+		}
 	}
 
 	caption {

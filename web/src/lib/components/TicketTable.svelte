@@ -3,7 +3,12 @@
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
 	import { GROUPING_LABELS } from '$lib/domain/grouping';
-	import { SORT_COLUMN_LABELS, sortLabel, sortOrderLabel } from '$lib/domain/labels';
+	import {
+		MORE_COLUMNS_HINT,
+		SORT_COLUMN_LABELS,
+		sortLabel,
+		sortOrderLabel
+	} from '$lib/domain/labels';
 	import { hasFilters, parseListQuery, resetFilters } from '$lib/domain/list-query';
 	import { nextSort, sortDirection, type SortKey } from '$lib/domain/ordering';
 	import type { TicketSummary } from '$lib/domain/ticket';
@@ -29,8 +34,11 @@
 	// default order, with a grouping in one tbody per group; and, in a section of their own below,
 	// the done tickets with "Weitere laden", always most recently completed first and never
 	// grouped. Sort buttons sit in the column headers (T-5). Project and tags come from the
-	// catalog. Wider than its space (next to the panel), the table scrolls sideways in a named
-	// region; the page itself does not.
+	// catalog. The table never scrolls sideways (package UI-6b): when its frame gets narrow (next to
+	// the panel, on a small window) container queries hide columns in a fixed order, first
+	// "Erstellt", then "Tags", then "Projekt", last "Fällig" (data-col on header and cells); key,
+	// priority, status, title and the check mark always stay. The caption then names the panel,
+	// where the hidden values stand.
 	let {
 		store,
 		catalog,
@@ -230,7 +238,12 @@
 {#snippet sortable(key: SortKey, text: string, className = '')}
 	{@const sorted = query.sort?.key === key ? query.sort : null}
 	{@const direction = sorted === null ? null : sortDirection(sorted)}
-	<th scope="col" class={className} aria-sort={direction ?? undefined}>
+	<th
+		scope="col"
+		class={className}
+		aria-sort={direction ?? undefined}
+		data-col={key === 'project' || key === 'due' || key === 'created' ? key : undefined}
+	>
 		<button class="sort" class:sorted={sorted !== null} type="button" onclick={() => sortBy(key)}>
 			<span aria-hidden="true">{text}</span>
 			<span class="visually-hidden">
@@ -331,8 +344,7 @@
 	{/if}
 
 	{#if hasOpenRows || showDone}
-		<!-- svelte-ignore a11y_no_noninteractive_tabindex -->
-		<div class="scroll" role="region" aria-labelledby={ids.caption} tabindex="0">
+		<div class="frame">
 			<table>
 				<caption id={ids.caption}>
 					Tickets<span class="caption-order">
@@ -341,7 +353,7 @@
 							: `sortiert nach ${sortLabel(query.sort)}`}{query.grouping === null
 							? ''
 							: ` · gruppiert nach ${GROUPING_LABELS[query.grouping]}`}
-					</span>
+					</span><span class="caption-more">{MORE_COLUMNS_HINT}</span>
 				</caption>
 				<thead>
 					<tr>
@@ -350,7 +362,7 @@
 						{@render sortable('status', 'Status')}
 						{@render sortable('title', 'Titel', 'title-col')}
 						{@render sortable('project', 'Projekt')}
-						<th scope="col">Tags</th>
+						<th scope="col" data-col="tags">Tags</th>
 						{@render sortable('due', 'Fällig')}
 						{@render sortable('created', 'Erstellt')}
 						<th scope="col"><span class="visually-hidden">Aktionen</span></th>
@@ -460,22 +472,54 @@
 		accent-color: var(--color-brand);
 	}
 
-	.scroll {
-		overflow-x: auto;
+	/* Container of the column rules; the table takes its width and never more. */
+	.frame {
+		container-type: inline-size;
 		background: var(--color-surface);
 		border: 1px solid var(--color-line);
 		border-radius: 0.375rem;
 	}
 
-	.scroll:focus-visible {
-		outline-offset: 2px;
-	}
-
 	table {
 		width: 100%;
-		min-width: 60rem;
 		font-size: 0.875rem;
 		border-collapse: collapse;
+	}
+
+	.caption-more {
+		display: none;
+		font-weight: 400;
+	}
+
+	/* Columns that give way, in this order: Erstellt, Tags, Projekt, Fällig. */
+	@container (max-width: 60rem) {
+		.caption-more {
+			display: inline;
+		}
+	}
+
+	@container (max-width: 60rem) {
+		.frame :global([data-col='created']) {
+			display: none;
+		}
+	}
+
+	@container (max-width: 52rem) {
+		.frame :global([data-col='tags']) {
+			display: none;
+		}
+	}
+
+	@container (max-width: 44rem) {
+		.frame :global([data-col='project']) {
+			display: none;
+		}
+	}
+
+	@container (max-width: 36rem) {
+		.frame :global([data-col='due']) {
+			display: none;
+		}
 	}
 
 	caption {

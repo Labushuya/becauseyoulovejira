@@ -150,7 +150,9 @@ afterEach(() => {
 });
 
 describe('ticket table', () => {
-	it('is a table with caption, column headers and a scrollable named region', async () => {
+	// Since UI-6b the table no longer scrolls sideways in a focusable region; it hides the columns
+	// marked with data-col through container queries of its frame (table-columns.test.ts).
+	it('is a table with caption, column headers and columns that give way', async () => {
 		await showTable(fakeData([ticket()]));
 
 		const table = screen.getByRole('table', { name: /^Tickets/ });
@@ -175,9 +177,34 @@ describe('ticket table', () => {
 			['Erstellt', 'col'],
 			['Aktionen', 'col']
 		]);
-		const region = screen.getByRole('region', { name: /^Tickets/ });
-		expect(region.getAttribute('tabindex')).toBe('0');
-		expect(region.contains(table)).toBe(true);
+		expect(screen.queryByRole('region', { name: /^Tickets/ })).toBeNull();
+		expect(table.parentElement?.classList.contains('frame')).toBe(true);
+		// Key, priority, status, title and the actions with the check mark always stay.
+		const marks = (cells: Element[]) => cells.map((cell) => cell.getAttribute('data-col'));
+		expect(marks(within(table).getAllByRole('columnheader'))).toEqual([
+			null,
+			null,
+			null,
+			null,
+			'project',
+			'tags',
+			'due',
+			'created',
+			null
+		]);
+		const row = table.querySelector('tr[data-ticket-id]') as HTMLElement;
+		expect(marks([...row.children])).toEqual([
+			null,
+			null,
+			null,
+			null,
+			'project',
+			'tags',
+			'due',
+			'created',
+			null
+		]);
+		expect(table.querySelector('caption')?.textContent).toMatch(/Weitere Spalten im Panel$/);
 	});
 
 	it('shows the open tickets in the default order under "Aufgaben" with their number', async () => {

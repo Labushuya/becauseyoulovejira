@@ -78,8 +78,11 @@ describe('side panel', () => {
 		expect(onkeydown).toHaveBeenCalledWith(expect.objectContaining({ key: 'Enter' }));
 	});
 
-	it('uses the tokens and no shadow', () => {
-		expect(source).toMatch(/--drawer-width|--radius-surface/);
+	// Since UI-6b the width comes from ViewWithPanel (column or overlay) and the panel has a line on
+	// the left instead of a framed box with a radius, like the side panel of Jira.
+	it('uses the tokens, a line on the left and no shadow', () => {
+		expect(source).toMatch(/border-left:\s*1px solid var\(--color-line\)/);
+		expect(source).not.toMatch(/border-radius/);
 		expect(source).toMatch(/--motion-medium/);
 		expect(source).not.toMatch(/box-shadow|gradient|backdrop-filter|danger/);
 	});

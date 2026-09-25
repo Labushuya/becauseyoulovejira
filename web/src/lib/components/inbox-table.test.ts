@@ -154,8 +154,32 @@ describe('inbox table', () => {
 			'Milch kaufen'
 		]);
 		expect(screen.getByRole('table').querySelector('caption')?.textContent).toBe(
-			'Eingang · neu, neueste zuerst'
+			// The hint on the panel shows only while columns are hidden (UI-6b, container queries).
+			'Eingang · neu, neueste zuerst · Weitere Spalten im Panel'
 		);
+		// Selection, title and actions always stay; the other columns give way in a narrow frame.
+		const marks = (cells: Element[]) => cells.map((cell) => cell.getAttribute('data-col'));
+		expect(marks(screen.getAllByRole('columnheader'))).toEqual([
+			null,
+			'kind',
+			null,
+			'source',
+			'source-date',
+			'arrival',
+			null
+		]);
+		expect(marks([...rows[0]!.children])).toEqual([
+			null,
+			'kind',
+			null,
+			'source',
+			'source-date',
+			'arrival',
+			null
+		]);
+		const frame = screen.getByRole('table').parentElement as HTMLElement;
+		expect(frame.classList.contains('frame')).toBe(true);
+		expect(frame.hasAttribute('role')).toBe(false);
 		expect(screen.getByRole('heading', { name: 'Eingang' })).toBeTruthy();
 		expect(screen.getByText('3 Einträge')).toBeTruthy();
 		expect(screen.getByRole('checkbox', { name: 'Eintrag „Milch kaufen“ auswählen' })).toBeTruthy();
@@ -342,7 +366,7 @@ describe('inbox table', () => {
 		const { data } = setup({ query: { source: null, state: 'discarded' } });
 		const view = await table();
 		expect(screen.getByRole('table').querySelector('caption')?.textContent).toBe(
-			'Eingang · verworfen, zuletzt verworfene zuerst'
+			'Eingang · verworfen, zuletzt verworfene zuerst · Weitere Spalten im Panel'
 		);
 		expect(view.queryByRole('checkbox')).toBeNull();
 		expect(screen.queryByRole('button', { name: /Gesammelt umwandeln/ })).toBeNull();
