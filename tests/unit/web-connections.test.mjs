@@ -1,16 +1,19 @@
 // The connections of the web app (web/src/lib/domain/connections.ts) against the hook modules:
 // the same name pattern for variables, only kinds a user may create (E4 plan, package 10) and the
-// same check of mailboxes (package 22).
+// same check of mailboxes (package 22), and the suggestions per mail provider (package 13).
 
 import { describe, expect, it } from 'vitest';
 import { loadHookLib } from '../support/hook-lib.mjs';
 import {
 	CONNECTION_TYPES,
 	MAIL_PROVIDERS,
+	MAIL_PROVIDER_SECRET_NAMES,
 	MAIL_USER_MAX_LENGTH,
 	SECRET_NAME_PATTERN,
+	emptyConnectionDraft,
 	isMailUser,
-	isSecretName
+	isSecretName,
+	withMailProvider
 } from '../../web/src/lib/domain/connections.ts';
 
 const secrets = loadHookLib('secrets.js');
@@ -33,5 +36,28 @@ describe('web connections against the hooks', () => {
 		expect(MAIL_USER_MAX_LENGTH).toBe(rules.MAIL_USER_MAX_LENGTH);
 		const names = ['anna@web.de', 'anna', '', ' ', 'a b', 'a\tb', 'a\u0000', 'a\u007f', 'x'.repeat(254), 'x'.repeat(255), 'ä@ü.de'];
 		for (const name of names) expect(isMailUser(name), JSON.stringify(name)).toBe(rules.isMailUser(name));
+	});
+});
+
+describe('mail provider in the form (E4 plan, package 13)', () => {
+	it('suggests a valid variable per provider', () => {
+		expect(MAIL_PROVIDER_SECRET_NAMES).toEqual({ webde: 'BYL_WEBDE_PASSWORD', gmail: 'BYL_GMAIL_PASSWORD' });
+		for (const name of Object.values(MAIL_PROVIDER_SECRET_NAMES)) expect(secrets.isValidName(name), name).toBe(true);
+	});
+
+	it('moves variable and label along with the provider while they are the suggestion', () => {
+		const draft = emptyConnectionDraft('mail');
+		const gmail = withMailProvider(draft, 'gmail');
+		expect(gmail).toMatchObject({ mailProvider: 'gmail', secretEnv: 'BYL_GMAIL_PASSWORD', label: 'Gmail' });
+		expect(withMailProvider(gmail, 'webde')).toMatchObject({ secretEnv: 'BYL_WEBDE_PASSWORD', label: 'Web.de' });
+		expect(withMailProvider({ ...draft, secretEnv: '', label: ' ' }, 'gmail')).toMatchObject({
+			secretEnv: 'BYL_GMAIL_PASSWORD',
+			label: 'Gmail'
+		});
+	});
+
+	it('keeps what the user typed', () => {
+		const typed = { ...emptyConnectionDraft('mail'), secretEnv: 'BYL_PRIVAT', label: 'Privat', mailUser: 'anna@gmail.com' };
+		expect(withMailProvider(typed, 'gmail')).toEqual({ ...typed, mailProvider: 'gmail' });
 	});
 });

@@ -1,4 +1,4 @@
-// Mail providers of the helper against the kinds the hook accepts (E4 plan, packages 11 and 22).
+// Mail providers of the helper against the kinds the hook accepts (E4 plan, packages 11, 13 and 22).
 
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -26,6 +26,15 @@ describe('providers', () => {
 		expect(providerOf('webde')?.loginHint).toMatch(/POP3- und IMAP-Zugriff erlauben/);
 		expect(providerOf('webde')?.loginHint).toMatch(/anwendungsspezifisches Passwort/);
 		expect(providerOf('toString')).toBeNull();
-		expect(providerOf('gmail')).toBeNull();
+	});
+
+	it('reaches Gmail over IMAP with TLS on port 993 and asks for an app password after a refused login', () => {
+		expect(providerOf('gmail')).toMatchObject({ label: 'Gmail', host: 'imap.gmail.com', port: 993, secure: true });
+		const hint = providerOf('gmail')?.loginHint ?? '';
+		expect(hint.startsWith('App-Passwort nötig (Bestätigung in zwei Schritten)')).toBe(true);
+		expect(hint).toContain('myaccount.google.com/apppasswords');
+		expect(hint).toMatch(/setx/);
+		expect(hint.length).toBeLessThanOrEqual(1000);
+		expect(providerOf('proton')).toBeNull();
 	});
 });

@@ -608,6 +608,34 @@ describe('Postfächer (E4 plan, package 22)', () => {
 		});
 	});
 
+	it('suggests the Gmail variable and label when the provider changes (E4 plan, package 13)', async () => {
+		const { data } = await renderSection();
+		await fireEvent.change(screen.getByLabelText('Art'), { target: { value: 'mail' } });
+		const provider = screen.getByLabelText('Anbieter') as HTMLSelectElement;
+		expect([...provider.options].map((option) => option.textContent)).toEqual(['Web.de', 'Gmail']);
+		await fireEvent.change(provider, { target: { value: 'gmail' } });
+		const secret = screen.getByLabelText(
+			'Variable mit dem Passwort bzw. App-Passwort des Postfachs (Pflichtfeld)'
+		) as HTMLInputElement;
+		expect(secret.value).toBe('BYL_GMAIL_PASSWORD');
+		expect((screen.getByLabelText('Bezeichnung (Pflichtfeld)') as HTMLInputElement).value).toBe(
+			'Gmail'
+		);
+		await fireEvent.input(
+			screen.getByLabelText('Benutzername, meist die E-Mail-Adresse (Pflichtfeld)'),
+			{ target: { value: 'anna@gmail.com' } }
+		);
+		await fireEvent.click(screen.getByRole('button', { name: 'Verbindung anlegen' }));
+		expect(data.create).toHaveBeenCalledWith({
+			type: 'mail',
+			label: 'Gmail',
+			secretEnv: 'BYL_GMAIL_PASSWORD',
+			allowlistEnv: '',
+			mailProvider: 'gmail',
+			mailUser: 'anna@gmail.com'
+		});
+	});
+
 	async function renderSection() {
 		const context = setup([CAL]);
 		await context.store.load();
@@ -645,6 +673,37 @@ describe('Web.de-Postfach einrichten (E4 plan, package 11)', () => {
 		expect(text).toMatch(/Gelesen-Status, Markierungen und Ordner bleiben/);
 		// Package 23: older mails and mails without keyword come through the mailbox selection.
 		expect(text).toMatch(/„Aus dem Postfach wählen“ an der Verbindung/);
+	});
+});
+
+describe('Gmail einrichten (E4 plan, package 13)', () => {
+	it('explains 2-Step Verification, the app password, the variable, the connection and the restart', () => {
+		const { store } = setup();
+		render(ChannelsView, {
+			props: {
+				captureUrl: 'http://127.0.0.1:8090/eingang/neu',
+				connections: store,
+				importKeywords: new ImportKeywordsStore(
+					{
+						load: () => Promise.reject(new Error('not used')),
+						save: () => Promise.reject(new Error('not used'))
+					},
+					{ ensureValid: () => true, logout: () => undefined }
+				)
+			}
+		});
+		const section = screen.getByRole('region', { name: 'Gmail einrichten' });
+		const text = (section.textContent ?? '').replace(/\s+/g, ' ');
+		expect(text).toMatch(/Bestätigung in zwei Schritten/);
+		expect(text).toContain('myaccount.google.com/apppasswords');
+		expect(text).toMatch(/setx BYL_GMAIL_PASSWORD/);
+		expect(text).toMatch(/Anbieter „Gmail“/);
+		expect(text).toMatch(/stop\.bat und dann start\.bat/);
+		expect(text).toMatch(/App-Passwort nötig/);
+		expect(text).toMatch(/„Aus dem Postfach wählen“/);
+		const link = within(section).getByRole('link', { name: 'myaccount.google.com/apppasswords' });
+		expect(link.getAttribute('href')).toBe('https://myaccount.google.com/apppasswords');
+		expect(link.getAttribute('rel')).toBe('noopener noreferrer');
 	});
 });
 

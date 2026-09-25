@@ -188,6 +188,25 @@ describe('POST /mailbox/list', () => {
 		});
 		expect(JSON.stringify(answer.json)).not.toContain(PASSWORD);
 	});
+
+	it('lists and imports from a Gmail inbox and asks for an app password after a refused login', async () => {
+		const [box] = ingest.connections;
+		if (box === undefined) throw new Error('no connection');
+		Object.assign(box, { label: 'Gmail', provider: 'gmail' });
+		mail('Todo: Gmail');
+		const list = await call('/mailbox/list', { connection: ID });
+		expect(list.status).toBe(200);
+		expect(await call('/mailbox/import', { connection: ID, uids: [1] })).toMatchObject({ status: 200 });
+		expect(ingest.items).toHaveLength(1);
+		imap.refuseLogin = true;
+		const refused = await call('/mailbox/list', { connection: ID });
+		expect(refused.status).toBe(502);
+		expect(refused.json).toMatchObject({
+			message: 'Anmeldung bei Gmail abgelehnt.',
+			hint: expect.stringMatching(/^App-Passwort nötig \(Bestätigung in zwei Schritten\)/)
+		});
+		expect(imap.writes()).toEqual([]);
+	});
 });
 
 describe('POST /mailbox/import', () => {

@@ -9,6 +9,7 @@
 		connectionDraftErrors,
 		emptyConnectionDraft,
 		secretStatusText,
+		withMailProvider,
 		type Connection,
 		type ConnectionDraft,
 		type ConnectionType,
@@ -415,7 +416,8 @@
 					<select
 						id={ids.provider}
 						value={draft.mailProvider}
-						onchange={(event) => (draft.mailProvider = event.currentTarget.value as MailProvider)}
+						onchange={(event) =>
+							(draft = withMailProvider(draft, event.currentTarget.value as MailProvider))}
 					>
 						{#each MAIL_PROVIDERS as provider (provider)}
 							<option value={provider}>{MAIL_PROVIDER_LABELS[provider]}</option>
