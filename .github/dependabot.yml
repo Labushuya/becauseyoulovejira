@@ -4,6 +4,7 @@ updates:
     directories:
       - /
       - /web
+      - /helpers/mail
     schedule:
       interval: weekly
       day: monday
