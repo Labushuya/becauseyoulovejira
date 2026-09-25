@@ -1,16 +1,24 @@
 // Component tests for the tag picker (E3 plan, T-14 and package 8): combobox attributes after the
 // WAI-ARIA pattern, filtered suggestions, choosing by keyboard and mouse, creating a new tag,
-// removing chips by keyboard, the lock during a request and the length limit.
+// removing chips by keyboard, the lock during a request and the length limit. Since UI-9 the list
+// lies in the top layer (popover="manual"): the shared stubs stand in for the popover API, and a
+// harness opens the picker inside a modal. jsdom counts every popover as hidden, so options are
+// found with { hidden: true }; the look in the browsers is BYL-E6-026.
 
 import { fireEvent, render, screen, within } from '@testing-library/svelte';
 import { tick } from 'svelte';
 import { describe, expect, it, vi } from 'vitest';
 import type { TagRef } from '$lib/domain/ticket';
+import { useOverlayStubs } from '$lib/test/overlay-stubs';
+import TagPickerModalHarness from '$lib/test/TagPickerModalHarness.svelte';
 import TagPicker from './TagPicker.svelte';
+import source from './TagPicker.svelte?raw';
 
 const GARDEN: TagRef = { id: 'tag000000000001', name: 'Garten' };
 const CALL: TagRef = { id: 'tag000000000002', name: 'anrufen' };
 const ROOF: TagRef = { id: 'tag000000000003', name: 'Dachgarten' };
+
+useOverlayStubs();
 
 function deferred() {
 	let resolve!: (value: boolean) => void;
@@ -106,7 +114,7 @@ describe('tag picker', () => {
 		input.focus();
 		await type(input, 'an');
 
-		const option = within(listbox()).getByRole('option', { name: 'anrufen' });
+		const option = within(listbox()).getByRole('option', { hidden: true, name: 'anrufen' });
 		const mousedown = new MouseEvent('mousedown', { bubbles: true, cancelable: true });
 		option.dispatchEvent(mousedown);
 		expect(mousedown.defaultPrevented).toBe(true);
@@ -241,5 +249,98 @@ describe('tag picker', () => {
 		await type(input, 'GARTEN');
 		// Garten is chosen already; only the other tag containing the name is left.
 		expect(optionTexts()).toEqual(['Dachgarten']);
+	});
+});
+
+describe('tag picker: list in the top layer (UI-9)', () => {
+	it('shows the list as a manual popover below the input and hides it again', async () => {
+		const { input } = renderPicker();
+		expect(listbox().getAttribute('popover')).toBe('manual');
+		expect(listbox().matches(':popover-open')).toBe(false);
+
+		await type(input, 'gar');
+		await tick();
+		expect(listbox().matches(':popover-open')).toBe(true);
+		expect(listbox().hidden).toBe(false);
+		// jsdom has no layout: the input sits at 0, so the list starts 4 px below it and keeps the
+		// margin of 8 px to the edge of the window.
+		expect(listbox().style.top).toBe('4px');
+		expect(listbox().style.left).toBe('8px');
+		expect(listbox().style.width).toBe('0px');
+
+		await fireEvent.keyDown(input, { key: 'Escape' });
+		await tick();
+		expect(listbox().matches(':popover-open')).toBe(false);
+		expect(listbox().hidden).toBe(true);
+		expect(input.getAttribute('aria-expanded')).toBe('false');
+	});
+
+	it('follows scrolling while it is open', async () => {
+		const { input } = renderPicker();
+		await type(input, 'gar');
+		await tick();
+		input.getBoundingClientRect = () => new DOMRect(40, 100, 200, 30);
+
+		window.dispatchEvent(new Event('scroll'));
+		expect(listbox().style.top).toBe('134px');
+		expect(listbox().style.left).toBe('40px');
+		expect(listbox().style.width).toBe('200px');
+	});
+
+	it('opens from within a modal and consumes Escape, so the modal stays open', async () => {
+		const onreason = vi.fn();
+		render(TagPickerModalHarness, { props: { tags: [CALL, ROOF, GARDEN], onreason } });
+		await tick();
+		const dialog = screen.getByRole<HTMLDialogElement>('dialog', { name: 'Gesammelt umwandeln' });
+		const input = within(dialog).getByRole<HTMLInputElement>('combobox');
+		input.focus();
+
+		await type(input, 'gar');
+		await tick();
+		const list = listbox();
+		expect(dialog.contains(list)).toBe(true);
+		expect(list.matches(':popover-open')).toBe(true);
+
+		// First Escape closes the list, the second empties the field; both stay in the picker.
+		const first = new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true });
+		input.dispatchEvent(first);
+		await tick();
+		expect(first.defaultPrevented).toBe(true);
+		expect(list.matches(':popover-open')).toBe(false);
+		expect(dialog.open).toBe(true);
+		const second = new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true });
+		input.dispatchEvent(second);
+		await tick();
+		expect(second.defaultPrevented).toBe(true);
+		expect(input.value).toBe('');
+		expect(dialog.open).toBe(true);
+		expect(onreason).not.toHaveBeenCalled();
+
+		// With the list closed and the field empty, Escape belongs to the modal again.
+		await fireEvent.keyDown(input, { key: 'Escape' });
+		expect(onreason).toHaveBeenCalledExactlyOnceWith('escape');
+	});
+
+	it('chooses a suggestion with the mouse inside the modal', async () => {
+		render(TagPickerModalHarness, { props: { tags: [CALL, ROOF, GARDEN] } });
+		await tick();
+		const input = screen.getByRole<HTMLInputElement>('combobox');
+		input.focus();
+		await type(input, 'an');
+		await tick();
+
+		await fireEvent.click(within(listbox()).getByRole('option', { hidden: true, name: 'anrufen' }));
+		await tick();
+		expect(screen.getByRole('list', { name: 'Gewählte Tags' }).textContent).toContain('anrufen');
+		expect(listbox().matches(':popover-open')).toBe(false);
+		expect(document.activeElement).toBe(input);
+	});
+
+	it('uses the popover surface and no own positioning in the flow', () => {
+		expect(source).toMatch(/import \{ place \} from '\$lib\/overlay\/position';/);
+		expect(source).not.toMatch(/z-index|position: absolute/);
+		expect(source).toMatch(
+			/\.listbox \{[^}]*position: fixed;[^}]*border-radius: var\(--radius-surface\)/
+		);
 	});
 });

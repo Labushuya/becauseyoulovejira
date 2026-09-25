@@ -1,14 +1,20 @@
 // Component tests for the filter bar (E3 plan, T-6 and package 10): chip groups as fieldset with
-// radio inputs, project and tag selects from the catalog, "Zurücksetzen", and the state in the
-// URL (each change navigates with the new query; view settings stay). SvelteKit navigation and
-// page state are mocked; the catalog runs for real on a fake data layer.
+// radio inputs, the choices "Projekt" and "Tag" from the catalog (since UI-9 popovers of the
+// overlay system instead of native selects), "Zurücksetzen", and the state in the URL (each change
+// navigates with the new query; view settings stay). SvelteKit navigation and page state are
+// mocked; the catalog runs for real on a fake data layer, the shared stubs stand in for the
+// popover API (jsdom counts every popover as hidden, hence { hidden: true }).
 
 import { fireEvent, render, screen, within } from '@testing-library/svelte';
+import { tick } from 'svelte';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Project } from '$lib/domain/project';
 import type { Tag } from '$lib/domain/tag';
 import { CatalogStore } from '$lib/stores/catalog.svelte';
+import { useOverlayStubs } from '$lib/test/overlay-stubs';
 import FilterBar from './FilterBar.svelte';
+import filterBarSource from './FilterBar.svelte?raw';
+import source from './FilterPopover.svelte?raw';
 
 const mocks = vi.hoisted(() => ({
 	goto: vi.fn(async () => undefined),
@@ -17,6 +23,8 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock('$app/navigation', () => ({ goto: mocks.goto }));
 vi.mock('$app/state', () => ({ page: mocks.page }));
+
+useOverlayStubs();
 
 const SESSION = { ensureValid: () => true, logout: vi.fn() };
 const UPDATED = '2026-09-01 10:00:00.000Z';
@@ -36,12 +44,12 @@ const OLD: Project = {
 };
 const GARDEN: Tag = { id: 'tag000000000001', name: 'Garten', updated: UPDATED };
 
-async function showBar(path = '/') {
+async function showBar(path = '/', tags: Tag[] = [GARDEN]) {
 	mocks.page.url = new URL(path, 'http://localhost:3000');
 	const catalog = new CatalogStore(
 		{
 			listProjects: vi.fn(async () => [HOUSE, OLD]),
-			listTags: vi.fn(async () => [GARDEN]),
+			listTags: vi.fn(async () => tags),
 			createTag: vi.fn()
 		},
 		SESSION
@@ -59,6 +67,38 @@ function lastTarget(): string {
 function group(name: string) {
 	return screen.getByRole('group', { name });
 }
+
+/** Button of a filter popover, found by the start of its name ("Projekt: Alle"). */
+function toggle(legend: string) {
+	return screen.getByRole('button', { name: new RegExp(`^${legend}:`) });
+}
+
+/** Fieldset in the popover of a choice (always "hidden" for jsdom). */
+function choices(legend: string) {
+	const popover = document.getElementById(String(toggle(legend).getAttribute('aria-controls')));
+	return within(popover as HTMLElement).getByRole('group', { hidden: true, name: legend });
+}
+
+function choiceLabels(legend: string) {
+	return within(choices(legend))
+		.getAllByRole('radio', { hidden: true })
+		.map((radio) => radio.closest('label')?.textContent?.trim());
+}
+
+function radio(legend: string, name: string) {
+	return within(choices(legend)).getByRole<HTMLInputElement>('radio', { hidden: true, name });
+}
+
+async function open(legend: string) {
+	await fireEvent.click(toggle(legend));
+	await tick();
+	await tick();
+}
+
+const isOpen = (legend: string) =>
+	document
+		.getElementById(String(toggle(legend).getAttribute('aria-controls')))
+		?.matches(':popover-open');
 
 beforeEach(() => {
 	mocks.goto.mockClear();
@@ -127,45 +167,127 @@ describe('filter bar', () => {
 		expect(lastTarget()).toBe('/tickets/abc123def456ghi?x=1&status=open&erledigte=1');
 	});
 
-	it('offers the projects with "Ohne Projekt" and the archived ones in their own group', async () => {
+	it('offers the projects in a popover with "Ohne Projekt" and the archived ones in their own group', async () => {
 		await showBar('/?projekt=ohne');
 
-		const select = screen.getByRole('combobox', { name: 'Projekt' }) as HTMLSelectElement;
-		expect([...select.options].map((option) => option.textContent?.trim())).toEqual([
+		const button = toggle('Projekt');
+		expect(button.textContent?.replace(/\s+/g, ' ').trim()).toBe('Projekt: Ohne Projekt');
+		expect(button.getAttribute('aria-haspopup')).toBe('dialog');
+		expect(button.getAttribute('aria-expanded')).toBe('false');
+		const popover = document.getElementById(String(button.getAttribute('aria-controls')));
+		expect(popover?.getAttribute('popover')).toBe('auto');
+		expect(screen.queryByRole('combobox', { name: 'Projekt' })).toBeNull();
+		expect(choiceLabels('Projekt')).toEqual([
 			'Alle',
 			'Ohne Projekt',
 			'Haushalt (HAUS)',
 			'Umzug (UMZ)'
 		]);
-		expect(select.querySelector('optgroup')?.label).toBe('Archiviert');
-		expect(select.value).toBe('ohne');
+		expect(
+			within(choices('Projekt')).getByRole('group', { hidden: true, name: 'Archiviert' })
+				.textContent
+		).toContain('Umzug (UMZ)');
+		expect(radio('Projekt', 'Ohne Projekt').checked).toBe(true);
+		// No search field below 10 entries.
+		expect(within(choices('Projekt')).queryByRole('searchbox', { hidden: true })).toBeNull();
 
-		await fireEvent.change(select, { target: { value: HOUSE.id } });
+		await open('Projekt');
+		expect(button.getAttribute('aria-expanded')).toBe('true');
+		expect(document.activeElement).toBe(radio('Projekt', 'Ohne Projekt'));
+		await fireEvent.click(radio('Projekt', 'Haushalt (HAUS)'), { detail: 1 });
 		expect(lastTarget()).toBe(`/?projekt=${HOUSE.id}`);
-		await fireEvent.change(select, { target: { value: '' } });
-		expect(lastTarget()).toBe('/');
+		expect(isOpen('Projekt')).toBe(false);
 	});
 
-	it('sets the tag filter from the catalog', async () => {
+	it('chooses like "Gruppieren": arrows apply and stay open, Enter closes, Escape returns the focus', async () => {
 		await showBar();
+		await open('Tag');
 
-		const select = screen.getByRole('combobox', { name: 'Tag' }) as HTMLSelectElement;
-		expect([...select.options].map((option) => option.textContent?.trim())).toEqual([
-			'Alle',
-			'Garten'
-		]);
-		await fireEvent.change(select, { target: { value: GARDEN.id } });
+		const garden = radio('Tag', 'Garten');
+		await fireEvent.click(garden);
 		expect(lastTarget()).toBe(`/?tag=${GARDEN.id}`);
+		expect(isOpen('Tag')).toBe(true);
+
+		const enter = await fireEvent.keyDown(garden, { key: 'Enter' });
+		expect(enter).toBe(false);
+		expect(isOpen('Tag')).toBe(false);
+		expect(document.activeElement).toBe(toggle('Tag'));
+
+		await open('Tag');
+		const escape = new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true });
+		(document.activeElement as HTMLElement).dispatchEvent(escape);
+		expect(escape.defaultPrevented).toBe(true);
+		expect(isOpen('Tag')).toBe(false);
+		expect(document.activeElement).toBe(toggle('Tag'));
+	});
+
+	it('removes the parameter with "Alle" and shows the chosen tag in the button', async () => {
+		await showBar(`/?tag=${GARDEN.id}&faellig=heute`);
+
+		const button = toggle('Tag');
+		expect(button.textContent?.replace(/\s+/g, ' ').trim()).toBe('Tag: Garten');
+		expect(button.classList.contains('active')).toBe(true);
+		expect(toggle('Projekt').classList.contains('active')).toBe(false);
+		await open('Tag');
+		await fireEvent.click(radio('Tag', 'Alle'), { detail: 1 });
+		expect(lastTarget()).toBe('/?faellig=heute');
 	});
 
 	it('shows an unknown project or tag of the URL as chosen', async () => {
 		await showBar('/?projekt=zzzzzzzzzzzzzzz&tag=yyyyyyyyyyyyyyy');
 
-		const project = screen.getByRole('combobox', { name: 'Projekt' }) as HTMLSelectElement;
-		const tag = screen.getByRole('combobox', { name: 'Tag' }) as HTMLSelectElement;
-		expect(project.value).toBe('zzzzzzzzzzzzzzz');
-		expect(project.selectedOptions[0]?.textContent?.trim()).toBe('Unbekannt');
-		expect(tag.selectedOptions[0]?.textContent?.trim()).toBe('Unbekannt');
+		expect(toggle('Projekt').textContent?.replace(/\s+/g, ' ').trim()).toBe('Projekt: Unbekannt');
+		expect(toggle('Tag').textContent?.replace(/\s+/g, ' ').trim()).toBe('Tag: Unbekannt');
+		expect(radio('Projekt', 'Unbekannt').checked).toBe(true);
+		expect(radio('Tag', 'Unbekannt').value).toBe('yyyyyyyyyyyyyyy');
+	});
+
+	it('offers a search field from 10 entries, which narrows the list and takes the first match', async () => {
+		const tags: Tag[] = [
+			'Arbeit',
+			'Auto',
+			'Bank',
+			'Einkauf',
+			'Garten',
+			'Gesundheit',
+			'Haushalt',
+			'Kinder',
+			'Reise',
+			'Steuer'
+		].map((name, index) => ({
+			id: `tag0000000000${String(index).padStart(2, '0')}`,
+			name,
+			updated: UPDATED
+		}));
+		await showBar('/', tags);
+		await open('Tag');
+
+		const search = within(choices('Tag')).getByRole<HTMLInputElement>('searchbox', {
+			hidden: true,
+			name: 'Tag suchen'
+		});
+		expect(document.activeElement).toBe(search);
+		await fireEvent.input(search, { target: { value: 'ge' } });
+		expect(choiceLabels('Tag')).toEqual(['Alle', 'Gesundheit']);
+		await fireEvent.input(search, { target: { value: 'xyz' } });
+		expect(choiceLabels('Tag')).toEqual(['Alle']);
+		expect(within(choices('Tag')).getByText('Keine Treffer.')).toBeTruthy();
+
+		await fireEvent.input(search, { target: { value: 'au' } });
+		expect(choiceLabels('Tag')).toEqual(['Alle', 'Auto', 'Einkauf', 'Haushalt']);
+		await fireEvent.keyDown(search, { key: 'ArrowDown' });
+		expect(document.activeElement).toBe(radio('Tag', 'Alle'));
+		search.focus();
+		await fireEvent.keyDown(search, { key: 'Enter' });
+		expect(lastTarget()).toBe('/?tag=tag000000000001');
+		expect(isOpen('Tag')).toBe(false);
+	});
+
+	it('has no native select any more and uses the popover building block', () => {
+		expect(filterBarSource).not.toMatch(/<select\b/);
+		expect(filterBarSource).toMatch(/import FilterPopover from '\.\/FilterPopover\.svelte';/);
+		expect(source).toMatch(/import Popover from '\.\/overlay\/Popover\.svelte';/);
+		expect(source).toMatch(/kind="panel"/);
 	});
 
 	it('resets the filters but keeps sort, grouping and the switch', async () => {
