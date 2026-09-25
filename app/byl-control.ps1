@@ -112,6 +112,24 @@ function Get-PendingInstallerLink {
     return $link
 }
 
+function Sync-BylEnvironment {
+    # Access data of the channels (ADR-0018 section 6): a process sees environment variables only
+    # as they were at its start, so the BYL_* variables are read fresh from the user scope and set
+    # in this process, which Start-Process hands on to PocketBase. Removed ones are dropped. A
+    # changed variable therefore works after stop.bat and start.bat, without logging off. Nothing
+    # is printed, neither names nor values.
+    $user = [Environment]::GetEnvironmentVariables('User')
+    $machine = [Environment]::GetEnvironmentVariables('Machine')
+    $process = [Environment]::GetEnvironmentVariables('Process')
+    $change = Get-BylEnvironmentChange -UserNames @($user.Keys) -MachineNames @($machine.Keys) -ProcessNames @($process.Keys)
+    foreach ($name in $change.Set) {
+        [Environment]::SetEnvironmentVariable($name, [string]$user[$name], 'Process')
+    }
+    foreach ($name in $change.Remove) {
+        [Environment]::SetEnvironmentVariable($name, $null, 'Process')
+    }
+}
+
 function Invoke-Start {
     $exe = [System.IO.Path]::Combine($AppDir, 'pocketbase.exe')
     if (-not (Test-Path -LiteralPath $exe -PathType Leaf)) {
@@ -162,6 +180,7 @@ function Invoke-Start {
         Write-Status 'Starte PocketBase ...'
         try {
             [void](New-Item -ItemType Directory -Force -Path $log.Directory)
+            Sync-BylEnvironment
             $server = Start-Process -FilePath $exe -ArgumentList (Get-ServerArgumentString -AppDir $AppDir) `
                 -WorkingDirectory $AppDir -WindowStyle Hidden -PassThru `
                 -RedirectStandardOutput $log.Output -RedirectStandardError $log.Error

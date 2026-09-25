@@ -191,6 +191,10 @@ $result.logPath = Get-ServerLogPath -AppDir $in.appDir
 $result.split = Split-CommandLine -CommandLine '"C:\a b\x.exe"  serve --dir="C:\a b\#c" plain'
 $result.flag = Get-FlagValue -Arguments @('--dir=first', 'serve', '--dir=last', '--http=x') -Name 'dir'
 $result.health = @{ url = $BylHealthUrl; app = $BylAppUrl }
+$bylEnv = Get-BylEnvironmentChange -UserNames @('BYL_TOKEN', 'byl_lower', 'PATH', 'BYL_CAL', 'BYL_TOKEN', 'BYL_') -MachineNames @('BYL_MACHINE', 'TEMP') -ProcessNames @('BYL_OLD', 'BYL_MACHINE', 'BYL_TOKEN', 'Path', 'byl_old2')
+$result.bylEnv = @{ set = @($bylEnv.Set); remove = @($bylEnv.Remove) }
+$noneEnv = Get-BylEnvironmentChange -UserNames @() -MachineNames @() -ProcessNames @()
+$result.bylEnvNone = @{ set = @($noneEnv.Set).Count; remove = @($noneEnv.Remove).Count }
 
 $result | ConvertTo-Json -Depth 6 -Compress
 `;
@@ -322,6 +326,13 @@ describe('server arguments and autostart shortcut', () => {
 			url: 'http://127.0.0.1:8090/api/health',
 			app: 'http://127.0.0.1:8090/'
 		});
+	});
+});
+
+describe('BYL_* variables for PocketBase (ADR-0018 section 6)', () => {
+	it('hands on the valid names of the user scope and drops stale ones of the process', () => {
+		expect(result.bylEnv).toEqual({ set: ['BYL_CAL', 'BYL_TOKEN'], remove: ['BYL_OLD'] });
+		expect(result.bylEnvNone).toEqual({ set: 0, remove: 0 });
 	});
 });
 

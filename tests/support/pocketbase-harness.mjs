@@ -35,14 +35,18 @@ const EXIT_SIGNALS = ['SIGINT', 'SIGTERM', 'SIGBREAK', 'SIGHUP'];
 /**
  * Starts a disposable PocketBase instance.
  * @param {{ publicFiles?: string, prepareDataDir?: (dataDir: string) => Promise<void>,
- *   migrationFilter?: (fileName: string) => boolean }} [options]
+ *   migrationFilter?: (fileName: string) => boolean, env?: Record<string, string> }} [options]
  *   `publicFiles`: folder copied into the public folder of the instance (e.g. the web build);
  *   without it the public folder stays empty. `prepareDataDir`: fills the still empty data folder
  *   before `superuser upsert` and `serve` (e.g. with an unpacked backup). `migrationFilter`:
  *   runs only the app migrations it accepts (e.g. the state before a new migration, while the
- *   hooks are already the new ones).
+ *   hooks are already the new ones). `env`: variables for the server process, e.g. invented
+ *   access data of a channel (ADR-0018: tests set them only for the disposable instance). The
+ *   instance never inherits BYL_* variables of the developer, so a channel in a test can reach
+ *   no real service.
  * @returns {Promise<{ url: string, email: string, password: string, dataDir: string,
- *   stop: () => Promise<void> }>} `dataDir` is removed by `stop()`.
+ *   output: () => string, stop: () => Promise<void> }>} `dataDir` is removed by `stop()`;
+ *   `output()` is the recent console output of the server.
  */
 export async function startPocketBase(options = {}) {
 	assertExecutable();
@@ -101,7 +105,7 @@ export async function startPocketBase(options = {}) {
 
 		const port = await findFreePort();
 		const url = `http://127.0.0.1:${port}`;
-		const server = startServer(['serve', `--http=127.0.0.1:${port}`, ...commonArgs]);
+		const server = startServer(['serve', `--http=127.0.0.1:${port}`, ...commonArgs], options.env);
 		state.child = server.child;
 		await waitForHealth(url, server, secrets);
 
@@ -110,6 +114,7 @@ export async function startPocketBase(options = {}) {
 			email,
 			password,
 			dataDir,
+			output: () => server.output,
 			stop: () => stop(state, guard)
 		};
 	} catch (error) {
@@ -216,10 +221,20 @@ function runToCompletion(args, input) {
 	});
 }
 
-function startServer(args) {
+/** Environment of the server: the own one without BYL_* variables, plus `extra`. */
+export function serverEnvironment(extra = {}) {
+	const env = {};
+	for (const [name, value] of Object.entries(process.env)) {
+		if (!/^BYL_/i.test(name)) env[name] = value;
+	}
+	return { ...env, ...extra };
+}
+
+function startServer(args, extraEnv) {
 	const child = spawn(POCKETBASE_EXE, args, {
 		windowsHide: true,
-		stdio: ['ignore', 'pipe', 'pipe']
+		stdio: ['ignore', 'pipe', 'pipe'],
+		env: serverEnvironment(extraEnv)
 	});
 	const server = { child, output: '', spawnError: null };
 	child.stdout.on('data', (chunk) => (server.output = appendOutput(server.output, chunk)));

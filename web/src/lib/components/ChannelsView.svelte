@@ -1,22 +1,28 @@
 <script lang="ts">
 	import { bookmarkletCode } from '$lib/domain/bookmarklet';
+	import type { ConnectionsStore } from '$lib/stores/connections.svelte';
+	import ConnectionsSection from './ConnectionsSection.svelte';
 
-	// Settings "Kanäle" (E4 plan, T-3 and package 7): for now the bookmarklet; connections with
-	// access data follow with package 10. The link is dragged to the bookmarks bar; for the
-	// keyboard the code can be copied and saved as the address of a new bookmark. A click on the
-	// link here does nothing, so the page does not capture itself.
+	// Settings "Kanäle" (E4 plan, T-3 and packages 7 and 10): the bookmarklet, the connections with
+	// access data from Windows user environment variables (ADR-0018) and how to set them. The
+	// bookmarklet link is dragged to the bookmarks bar; for the keyboard the code can be copied and
+	// saved as the address of a new bookmark. A click on the link here does nothing, so the page
+	// does not capture itself.
 	let {
-		captureUrl
+		captureUrl,
+		connections
 	}: {
 		/** Absolute address of the capture form, e.g. http://127.0.0.1:8090/eingang/neu. */
 		captureUrl: string;
+		connections: ConnectionsStore;
 	} = $props();
 
 	const uid = $props.id();
 	const ids = {
 		heading: `${uid}-heading`,
 		bookmarklet: `${uid}-bookmarklet`,
-		code: `${uid}-code`
+		code: `${uid}-code`,
+		variables: `${uid}-variables`
 	};
 
 	const code = $derived(bookmarkletCode(captureUrl));
@@ -76,6 +82,40 @@
 			<button class="secondary" type="button" onclick={copy}>Code kopieren</button>
 		</p>
 		<p class="hint" role="status">{status ?? ''}</p>
+	</section>
+
+	<ConnectionsSection store={connections} />
+
+	<section class="card" aria-labelledby={ids.variables}>
+		<h3 id={ids.variables}>Zugangsdaten als Windows-Variable setzen</h3>
+		<p>
+			Jede Verbindung liest ihre Zugangsdaten aus einer Umgebungsvariablen deines Windows-Kontos,
+			deren Name mit <code>BYL_</code> beginnt (nur Großbuchstaben, Ziffern und _). So landen sie weder
+			in der App noch in Sicherungen oder Kopien des Ordners.
+		</p>
+		<ol>
+			<li>
+				<strong>Per Eingabeaufforderung:</strong> Windows-Taste, „cmd“ eingeben, Eingabetaste. Dann
+				<code>setx NAME "Wert"</code> eingeben, also etwa
+				<code>setx BYL_TELEGRAM_TOKEN "123456789:AA…"</code>. Den Wert in Anführungszeichen setzen.
+				Die Meldung „Erfolgreich: Der angegebene Wert wurde gespeichert.“ bestätigt es.
+			</li>
+			<li>
+				<strong>Oder per Systemsteuerung:</strong> Windows-Taste, „Umgebungsvariablen“ eingeben und „Umgebungsvariablen
+				für dieses Konto bearbeiten“ öffnen. Unter „Benutzervariablen“ auf „Neu…“, Name und Wert eintragen,
+				mit „OK“ bestätigen.
+			</li>
+			<li>
+				Danach die App neu starten: <code>stop.bat</code> und dann <code>start.bat</code> im Ordner
+				<code>app</code> doppelklicken. Erst dann sieht die App die Variable; die Verbindung zeigt „Zugangsdaten
+				gesetzt.“
+			</li>
+		</ol>
+		<p class="hint">
+			Ändern geht genauso (<code>setx</code> mit neuem Wert, dann neu starten). Entfernen: in der
+			Systemsteuerung die Variable löschen oder <code>reg delete HKCU\Environment /v NAME /f</code>,
+			dann neu starten. Auf einem anderen Rechner musst du die Variablen neu anlegen.
+		</p>
 	</section>
 </section>
 

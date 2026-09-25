@@ -162,7 +162,56 @@ describe('migration rollback', () => {
 		},
 		60_000
 	);
+
+	it(
+		'keeps inbox items unchanged when the connections come and go (package 10)',
+		async () => {
+			const fromConnections = MIGRATION_FILES.slice(MIGRATION_FILES.indexOf(CONNECTIONS_MIGRATION));
+			expect(fromConnections.slice(0, 2)).toEqual([CONNECTIONS_MIGRATION, INBOX_CONNECTION_MIGRATION]);
+
+			await withTempDataDir(async ({ dataDir, args }) => {
+				await migrate(args, 'up');
+				await migrate(args, 'down', String(fromConnections.length));
+				withDatabase(dataDir, (db) => {
+					db.prepare(
+						'INSERT INTO users (id, email, tokenKey, password, created, updated) VALUES (?, ?, ?, ?, ?, ?)'
+					).run('user00000000001', 'alt@example.invalid', 'tk', 'hash', STAMP, STAMP);
+					const insert = db.prepare(
+						'INSERT INTO inbox_items (id, channel, kind, title, body, source_ref, source_meta, fingerprint, state, scope, owner, created, updated) ' +
+							'VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+					);
+					insert.run('item00000000001', 'ics', 'event', 'Termin', 'Text', 'uid-1', '{"all_day":true}', 'f1', 'new', 'u:user00000000001', 'user00000000001', STAMP, STAMP);
+					insert.run('item00000000002', 'eml', 'mail', 'Mail', '', '<a@b>', 'null', 'f2', 'discarded', 'u:user00000000001', 'user00000000001', STAMP, STAMP);
+				});
+				const before = withDatabase(dataDir, snapshot);
+
+				const up = await migrate(args, 'up');
+				expect(appliedFiles(up, 'Applied')).toEqual(fromConnections);
+				const migrated = withDatabase(dataDir, snapshot);
+				expect(migrated.inbox_items.map(({ connection, ...rest }) => rest)).toEqual(before.inbox_items);
+				expect(migrated.inbox_items.map((item) => item.connection)).toEqual(['', '']);
+				expect(migrated.connections).toEqual([]);
+
+				// A connection with an item of its own, then back down: the items stay as they were.
+				withDatabase(dataDir, (db) => {
+					db.prepare(
+						'INSERT INTO connections (id, type, label, enabled, secret_env, settings, scope, owner, created, updated) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+					).run('conn00000000001', 'calendar', 'Kalender', 1, 'BYL_TEST_CALENDAR', '{}', 'u:user00000000001', 'user00000000001', STAMP, STAMP);
+					db.prepare('UPDATE inbox_items SET connection = ? WHERE id = ?').run('conn00000000001', 'item00000000001');
+				});
+				await migrate(args, 'down', String(fromConnections.length));
+				const reverted = withDatabase(dataDir, snapshot);
+				expect(reverted.inbox_items).toEqual(before.inbox_items);
+				expect(reverted.connections).toBeNull();
+				expect(reverted.users).toEqual(before.users);
+			});
+		},
+		60_000
+	);
 });
+
+const CONNECTIONS_MIGRATION = '1790201400_create_connections.js';
+const INBOX_CONNECTION_MIGRATION = '1790201410_inbox_items_connection.js';
 
 const STAMP = '2026-09-01 10:00:00.000Z';
 
@@ -184,6 +233,7 @@ function snapshot(db) {
 		users: rows('users'),
 		tickets: rows('tickets'),
 		inbox_items: rows('inbox_items'),
-		ticket_reads: rows('ticket_reads')
+		ticket_reads: rows('ticket_reads'),
+		connections: rows('connections')
 	};
 }
