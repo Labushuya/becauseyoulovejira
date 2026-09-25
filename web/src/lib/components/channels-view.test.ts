@@ -22,7 +22,9 @@ function idleConnections() {
 			remove: never,
 			secretStatus: never,
 			run: never,
-			get: never
+			get: never,
+			listMailbox: never,
+			importMailbox: never
 		},
 		{ ensureValid: () => true, logout: () => undefined }
 	);

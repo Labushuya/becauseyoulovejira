@@ -22,6 +22,7 @@
 	import ConfirmDialog from './ConfirmDialog.svelte';
 	import ErrorIcon from './ErrorIcon.svelte';
 	import KeywordEditor from './KeywordEditor.svelte';
+	import MailboxPicker from './MailboxPicker.svelte';
 
 	// Connections of the channels (E4 plan, package 10; ADR-0016 section 2, ADR-0018): list with the
 	// state of the variables, switch, last run and cleaned error, a form for a new connection and
@@ -30,7 +31,8 @@
 	// stores and shows only their names. Each connection has its keywords (package 20, ADR-0020) and,
 	// for Telegram, the switch for the answer to messages without keyword. Mailboxes (package 22)
 	// name provider and user; the mail helper byl-mail.exe fetches them, not the server, so they
-	// have no "Jetzt abrufen" but a switch for searching the start of the text.
+	// have no "Jetzt abrufen" but a switch for searching the start of the text, and "Aus dem Postfach
+	// wählen" for the mailbox selection (package 23).
 	let {
 		store
 	}: {
@@ -58,6 +60,7 @@
 	let deleting = $state(false);
 	let deleteError = $state<string | null>(null);
 	let rowMessage = $state<{ id: string; text: string } | null>(null);
+	let picking = $state<Connection | null>(null);
 
 	const clientErrors = $derived(submitted ? connectionDraftErrors(draft) : {});
 	const errors = $derived({
@@ -297,8 +300,28 @@
 								Postfach-Verbindung die App einmal neu starten (stop.bat, dann start.bat), damit er
 								startet.
 							</p>
+							{#if !connection.enabled}
+								<p class="hint" id={`${uid}-${connection.id}-picker`}>
+									Zum Wählen aus dem Postfach die Verbindung einschalten.
+								</p>
+							{/if}
 						{/if}
 						<div class="buttons">
+							{#if connection.type === 'mail'}
+								<button
+									class="secondary"
+									type="button"
+									aria-disabled={connection.enabled ? undefined : 'true'}
+									aria-describedby={connection.enabled
+										? undefined
+										: `${uid}-${connection.id}-picker`}
+									onclick={() => {
+										if (connection.enabled) picking = connection;
+									}}
+								>
+									Aus dem Postfach wählen
+								</button>
+							{/if}
 							{#if connection.type !== 'mail'}
 								<button
 									class="secondary"
@@ -457,6 +480,16 @@
 		</form>
 	{/if}
 </section>
+
+{#if picking !== null}
+	{@const connection = picking}
+	<MailboxPicker
+		label={connection.label}
+		load={(limit, signal) => store.listMailbox(connection.id, limit, signal)}
+		save={(uids) => store.importMailbox(connection.id, uids)}
+		onclose={() => (picking = null)}
+	/>
+{/if}
 
 <ConfirmDialog
 	open={pendingDelete !== null}

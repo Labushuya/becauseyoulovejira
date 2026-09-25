@@ -13,7 +13,13 @@ import {
 	type SecretStatus
 } from '../domain/connections';
 import { keywordListOf } from '../domain/keywords';
-import { DataError, withDataErrors } from './errors';
+import {
+	MAILBOX_IMPORT_BATCH,
+	type MailboxImportResult,
+	type MailboxMail,
+	type MailboxOutcome
+} from '../domain/mailbox';
+import { DATA_ERROR_MESSAGES, DataError, toDataError, withDataErrors } from './errors';
 import { currentUserId, type RequestOptions } from './options';
 
 const CONNECTIONS = 'connections';
@@ -284,5 +290,107 @@ export function getConnection(
 			.collection(CONNECTIONS)
 			.getOne<ConnectionRecord>(id, { fields: CONNECTION_FIELDS, signal });
 		return toConnection(record);
+	});
+}
+
+function textOf(value: unknown): string {
+	return typeof value === 'string' ? value : '';
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+	return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+/**
+ * Runs a call of the mailbox routes: 503 (mail helper not running) and 400/502 (refused by the
+ * route, the helper or the mailbox) become an outcome with the message and hint of the server;
+ * every other failure is a DataError.
+ */
+async function mailboxCall<T>(
+	signal: AbortSignal | undefined,
+	call: () => Promise<T>
+): Promise<MailboxOutcome<T>> {
+	try {
+		return { kind: 'ok', value: await call() };
+	} catch (error) {
+		const status = isRecord(error) && typeof error.status === 'number' ? error.status : 0;
+		const response = isRecord(error) && isRecord(error.response) ? error.response : {};
+		if (!signal?.aborted && [400, 502, 503].includes(status)) {
+			return {
+				kind: status === 503 ? 'unavailable' : 'failed',
+				message: textOf(response.message) || DATA_ERROR_MESSAGES.server,
+				hint: textOf(response.hint)
+			};
+		}
+		throw toDataError(error, signal);
+	}
+}
+
+const INBOX_STATES_OF_MAILBOX = ['new', 'converted', 'discarded'] as const;
+
+function toMailboxMail(raw: Record<string, unknown>): MailboxMail {
+	const state = INBOX_STATES_OF_MAILBOX.find((value) => value === raw.state) ?? '';
+	return {
+		uid: count(raw.uid),
+		size: count(raw.size),
+		subject: textOf(raw.subject),
+		from: textOf(raw.from),
+		date: textOf(raw.date) || null,
+		keyword: textOf(raw.keyword),
+		state,
+		stateMessage: textOf(raw.message)
+	};
+}
+
+/** The last `limit` mails of the inbox of a mail connection, from the mail helper through the hook. */
+export function listMailbox(
+	pb: PocketBase,
+	id: string,
+	limit: number,
+	{ signal }: RequestOptions = {}
+): Promise<MailboxOutcome<MailboxMail[]>> {
+	return mailboxCall(signal, async () => {
+		const result = await pb.send<Record<string, unknown>>(
+			`/api/byl/connections/${encodeURIComponent(id)}/mailbox`,
+			{ method: 'GET', query: { limit }, signal }
+		);
+		const items = Array.isArray(result.items) ? result.items : [];
+		return items
+			.filter(isRecord)
+			.map(toMailboxMail)
+			.filter((mail) => mail.uid > 0);
+	});
+}
+
+const IMPORT_STATUSES = ['created', 'duplicate', 'failed'] as const;
+
+/**
+ * Takes the chosen mails into the inbox, in batches of MAILBOX_IMPORT_BATCH; a refusal stops at the
+ * batch it happened in, the results so far are lost only for that batch.
+ */
+export function importFromMailbox(
+	pb: PocketBase,
+	id: string,
+	uids: readonly number[],
+	{ signal }: RequestOptions = {}
+): Promise<MailboxOutcome<MailboxImportResult[]>> {
+	return mailboxCall(signal, async () => {
+		const results: MailboxImportResult[] = [];
+		for (let start = 0; start < uids.length; start += MAILBOX_IMPORT_BATCH) {
+			const batch = uids.slice(start, start + MAILBOX_IMPORT_BATCH);
+			const result = await pb.send<Record<string, unknown>>(
+				`/api/byl/connections/${encodeURIComponent(id)}/mailbox/import`,
+				{ method: 'POST', body: { uids: batch }, signal }
+			);
+			const items = Array.isArray(result.items) ? result.items.filter(isRecord) : [];
+			for (const item of items) {
+				results.push({
+					uid: count(item.uid),
+					status: IMPORT_STATUSES.find((value) => value === item.status) ?? 'failed',
+					message: textOf(item.message)
+				});
+			}
+		}
+		return results;
 	});
 }
