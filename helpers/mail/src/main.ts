@@ -1,6 +1,7 @@
 // Entry of byl-mail.exe (ADR-0016 sections 4 and 5; E4 plan package 11). byl-control.ps1 starts it
 // with "run" next to PocketBase and stop.bat ends it; it fetches the mail connections every five
-// minutes and waits quietly while there are none. "--version" and "--self-test" run without
+// minutes and waits quietly while there are none. Next to it runs the local interface of the mailbox
+// selection (server.ts, package 23) on 127.0.0.1. "--version" and "--self-test" run without
 // network, so the build can check the executable on a machine without Node.
 
 import { ImapFlow } from 'imapflow';
@@ -10,6 +11,7 @@ import { createLogger, errorText, type Logger } from './log';
 import { ingestDraft, keywordOf, parseMail } from './mail';
 import { pollAll } from './poll';
 import { PROVIDERS } from './providers';
+import { startMailboxServer } from './server';
 
 declare const __BYL_MAIL_VERSION__: string | undefined;
 
@@ -58,6 +60,14 @@ const sleep = (ms: number, signal: AbortSignal) =>
 /** Runs until `signal` aborts: one run over all connections, then the interval. */
 export async function runLoop(config: HelperConfig, log: Logger, signal: AbortSignal): Promise<void> {
 	const ingest = new IngestClient(config.appUrl, config.token);
+	const server = await startMailboxServer({
+		token: config.token,
+		ingest,
+		env: process.env,
+		log,
+		imapOverride: config.imapOverride
+	});
+	signal.addEventListener('abort', () => server?.close(), { once: true });
 	log.info(`byl-mail ${VERSION} gestartet (PocketBase ${config.appUrl}, Abruf alle ${Math.round(config.intervalMs / 1000)} s).`);
 	while (!signal.aborted) {
 		try {

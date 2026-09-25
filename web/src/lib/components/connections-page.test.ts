@@ -129,6 +129,14 @@ function setup(items: Connection[] = [CAL, BOT], statuses: Record<string, Secret
 			lastRunAt: '2026-09-25 10:00:00.000Z',
 			lastOkAt: '2026-09-25 10:00:00.000Z',
 			lastError: ''
+		})),
+		listMailbox: vi.fn<ConnectionsData['listMailbox']>(async () => ({
+			kind: 'ok' as const,
+			value: []
+		})),
+		importMailbox: vi.fn<ConnectionsData['importMailbox']>(async () => ({
+			kind: 'ok' as const,
+			value: []
 		}))
 	} satisfies ConnectionsData;
 	const session = { ensureValid: vi.fn(() => true), logout: vi.fn() };
@@ -635,5 +643,75 @@ describe('Web.de-Postfach einrichten (E4 plan, package 11)', () => {
 		expect(text).toMatch(/längere Zeit nicht genutzt/);
 		expect(text).toContain('app\\logs\\byl-mail.log');
 		expect(text).toMatch(/Gelesen-Status, Markierungen und Ordner bleiben/);
+		// Package 23: older mails and mails without keyword come through the mailbox selection.
+		expect(text).toMatch(/„Aus dem Postfach wählen“ an der Verbindung/);
+	});
+});
+
+describe('Aus dem Postfach wählen (E4 plan, package 23)', () => {
+	const MAILBOX = connection('conn00000000004', {
+		type: 'mail',
+		label: 'Web.de',
+		secretEnv: 'BYL_WEBDE_PASSWORD',
+		mailProvider: 'webde',
+		mailUser: 'anna@web.de'
+	});
+
+	it('opens the selection of a switched-on mailbox and announces the import', async () => {
+		const context = setup([MAILBOX]);
+		context.data.listMailbox.mockResolvedValue({
+			kind: 'ok',
+			value: [
+				{
+					uid: 7,
+					size: 1000,
+					subject: 'Alte Mail',
+					from: 'Bert',
+					date: null,
+					keyword: '',
+					state: '',
+					stateMessage: ''
+				}
+			]
+		});
+		context.data.importMailbox.mockResolvedValue({
+			kind: 'ok',
+			value: [{ uid: 7, status: 'created', message: '' }]
+		});
+		await context.store.load();
+		render(ConnectionsSection, { props: { store: context.store } });
+		await fireEvent.click(screen.getByRole('button', { name: 'Aus dem Postfach wählen' }));
+		const dialog = await screen.findByRole('dialog', { name: 'Aus dem Postfach wählen' });
+		expect(context.data.listMailbox).toHaveBeenCalledWith(MAILBOX.id, 50, {
+			signal: expect.any(AbortSignal)
+		});
+		await fireEvent.click(await within(dialog).findByRole('checkbox'));
+		await fireEvent.click(within(dialog).getByRole('button', { name: '1 Mail in den Eingang' }));
+		expect(context.data.importMailbox).toHaveBeenCalledWith(MAILBOX.id, [7]);
+		await vi.waitFor(() => expect(context.store.announcement).toBe('„Web.de“: 1 neu.'));
+		await fireEvent.click(within(dialog).getByRole('button', { name: 'Schließen' }));
+		expect(screen.queryByRole('dialog', { name: 'Aus dem Postfach wählen' })).toBeNull();
+	});
+
+	it('asks to switch a mailbox on first', async () => {
+		const context = setup([{ ...MAILBOX, enabled: false }]);
+		await context.store.load();
+		render(ConnectionsSection, { props: { store: context.store } });
+		const button = screen.getByRole('button', { name: 'Aus dem Postfach wählen' });
+		expect(button.getAttribute('aria-disabled')).toBe('true');
+		await fireEvent.click(button);
+		expect(screen.queryByRole('dialog', { name: 'Aus dem Postfach wählen' })).toBeNull();
+		expect(
+			document.getElementById(button.getAttribute('aria-describedby') ?? '')?.textContent
+		).toMatch(/Verbindung einschalten/);
+		expect(screen.queryByRole('alert')).toBeNull();
+		expect(context.data.listMailbox).not.toHaveBeenCalled();
+	});
+
+	it('offers the selection only at mailboxes', async () => {
+		const context = setup();
+		await context.store.load();
+		render(ConnectionsSection, { props: { store: context.store } });
+		expect(screen.queryByRole('button', { name: 'Aus dem Postfach wählen' })).toBeNull();
 	});
 });

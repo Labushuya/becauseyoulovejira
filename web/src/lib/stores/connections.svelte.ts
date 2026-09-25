@@ -1,4 +1,4 @@
-// Connections on the page "Kanäle" (E4 plan, packages 10, 15 and 20; ADR-0006). Loaded when the page opens and
+// Connections on the page "Kanäle" (E4 plan, packages 10, 15, 20 and 23; ADR-0006). Loaded when the page opens and
 // after every own action; the state of the variables comes from the server per connection. No
 // realtime subscription: the list changes only here, and the page offers "Aktualisieren" for
 // the result of a background run.
@@ -10,7 +10,9 @@ import {
 	deleteConnection,
 	getConnection,
 	getSecretStatus,
+	importFromMailbox,
 	listConnections,
+	listMailbox,
 	runConnection,
 	saveConnectionSettings,
 	setConnectionEnabled
@@ -25,6 +27,12 @@ import {
 	type RunResult,
 	type SecretStatus
 } from '$lib/domain/connections';
+import {
+	importSummary,
+	type MailboxImportResult,
+	type MailboxMail,
+	type MailboxOutcome
+} from '$lib/domain/mailbox';
 import type { LoadState, SessionGuard } from './ticket-list.svelte';
 
 /** Shown while the server does not know the connections yet (migration at the next start). */
@@ -40,6 +48,15 @@ export interface ConnectionsData {
 	secretStatus(id: string, options: RequestOptions): Promise<SecretStatus>;
 	run(id: string): Promise<RunResult>;
 	get(id: string): Promise<Connection>;
+	listMailbox(
+		id: string,
+		limit: number,
+		options: RequestOptions
+	): Promise<MailboxOutcome<MailboxMail[]>>;
+	importMailbox(
+		id: string,
+		uids: readonly number[]
+	): Promise<MailboxOutcome<MailboxImportResult[]>>;
 }
 
 export function connectionsData(pb: PocketBase): ConnectionsData {
@@ -51,7 +68,9 @@ export function connectionsData(pb: PocketBase): ConnectionsData {
 		remove: (id) => deleteConnection(pb, id),
 		secretStatus: (id, options) => getSecretStatus(pb, id, options),
 		run: (id) => runConnection(pb, id),
-		get: (id) => getConnection(pb, id)
+		get: (id) => getConnection(pb, id),
+		listMailbox: (id, limit, options) => listMailbox(pb, id, limit, options),
+		importMailbox: (id, uids) => importFromMailbox(pb, id, uids)
 	};
 }
 
@@ -206,6 +225,47 @@ export class ConnectionsStore {
 			});
 		} finally {
 			this.#running.delete(id);
+		}
+	}
+
+	/**
+	 * The last mails of a mail connection for the mailbox selection (E4 plan, package 23). null when
+	 * the session ended (the store logs out) or the request was aborted.
+	 */
+	async listMailbox(
+		id: string,
+		limit: number,
+		signal?: AbortSignal
+	): Promise<MailboxOutcome<MailboxMail[]> | null> {
+		return this.#mailbox(signal, () => this.#data.listMailbox(id, limit, { signal }));
+	}
+
+	/** Takes the chosen mails into the inbox and announces the result. */
+	async importMailbox(
+		id: string,
+		uids: readonly number[]
+	): Promise<MailboxOutcome<MailboxImportResult[]> | null> {
+		const label = this.#items.get(id)?.label ?? 'Postfach';
+		const outcome = await this.#mailbox(undefined, () => this.#data.importMailbox(id, uids));
+		if (outcome?.kind === 'ok') this.#announcement = `„${label}“: ${importSummary(outcome.value)}`;
+		return outcome;
+	}
+
+	async #mailbox<T>(
+		signal: AbortSignal | undefined,
+		call: () => Promise<MailboxOutcome<T>>
+	): Promise<MailboxOutcome<T> | null> {
+		if (!this.#session.ensureValid()) return null;
+		try {
+			return await call();
+		} catch (error) {
+			const failure = toDataError(error, signal);
+			if (failure.kind === 'aborted') return null;
+			if (failure.kind === 'session') {
+				this.#session.logout();
+				return null;
+			}
+			return { kind: 'failed', message: failure.message, hint: '' };
 		}
 	}
 

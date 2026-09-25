@@ -8,6 +8,7 @@
 import { spawn, spawnSync } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
 import { existsSync } from 'node:fs';
+import { createServer as createNetServer } from 'node:net';
 import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { setTimeout as delay } from 'node:timers/promises';
@@ -28,7 +29,16 @@ let instance;
 let superuser;
 let owner;
 let imap;
+let helperPort;
 const running = new Set();
+
+async function freePort() {
+	const probe = createNetServer();
+	await new Promise((resolvePromise) => probe.listen(0, '127.0.0.1', resolvePromise));
+	const { port } = probe.address();
+	await new Promise((resolvePromise) => probe.close(resolvePromise));
+	return port;
+}
 
 /** An environment without Node: only the Windows folders in PATH, plus `extra`. */
 function environment(extra = {}) {
@@ -53,7 +63,9 @@ function startHelper(url = instance.url) {
 			BYL_INGEST_TOKEN: TOKEN,
 			BYL_TEST_MAIL_PASSWORD: PASSWORD,
 			BYL_MAIL_INTERVAL_SECONDS: '1',
-			BYL_MAIL_TEST_IMAP_PORT: String(imap.port)
+			BYL_MAIL_TEST_IMAP_PORT: String(imap.port),
+			// Never the default 8091: a helper of the app on this machine may use it.
+			BYL_MAIL_HELPER_PORT: String(helperPort)
 		}),
 		windowsHide: true,
 		stdio: ['ignore', 'pipe', 'pipe']
@@ -110,6 +122,7 @@ beforeAll(async () => {
 	imap = new FakeImapServer();
 	imap.password = PASSWORD;
 	await imap.start();
+	helperPort = await freePort();
 }, 60_000);
 
 afterEach(async () => {
@@ -187,4 +200,30 @@ describe('byl-mail.exe as process', () => {
 			expect(log).not.toContain(value);
 		}
 	}, 90_000);
+
+	it('offers the mailbox selection on 127.0.0.1 with the token only (package 23)', async () => {
+		const box = await superuser.collection('connections').create({
+			owner: owner.id,
+			type: 'mail',
+			label: 'Auswahl',
+			enabled: true,
+			secret_env: 'BYL_TEST_MAIL_PASSWORD',
+			settings: { provider: 'webde', user: imap.user, keywords: ['todo'] }
+		});
+		const helper = startHelper();
+		await waitFor(() => /Postfach-Auswahl auf http:\/\/127\.0\.0\.1:\d+ bereit/.test(helper.output()));
+		const ask = (token) =>
+			fetch(`http://127.0.0.1:${helperPort}/mailbox/list`, {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+				body: JSON.stringify({ connection: box.id, limit: 5 })
+			});
+		expect((await ask(null)).status).toBe(401);
+		expect((await ask('falsch')).status).toBe(401);
+		const answer = await ask(TOKEN);
+		expect(answer.status).toBe(200);
+		expect((await answer.json()).items.length).toBeGreaterThan(0);
+		await stopHelper(helper);
+		await superuser.collection('connections').delete(box.id);
+	}, 60_000);
 });

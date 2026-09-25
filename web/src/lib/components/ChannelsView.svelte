@@ -266,6 +266,11 @@
 				Abruf“. Ab dann kommen neue Mails mit Stichwort in den Eingang.
 			</li>
 		</ol>
+		<p>
+			Ältere Mails und Mails ohne Stichwort holst du mit „Aus dem Postfach wählen“ an der
+			Verbindung: Die Ansicht zeigt die letzten 50 (bis 200) Mails des Posteingangs, Mails mit
+			Stichwort sind vorausgewählt, und nur die ausgewählten kommen in den Eingang.
+		</p>
 		<p class="hint">
 			Web.de schaltet den Abruf aus, wenn er längere Zeit nicht genutzt wird. Dann meldet die
 			Verbindung „Anmeldung bei Web.de abgelehnt.“ mit einem Hinweis; den Schalter wieder
