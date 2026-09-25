@@ -9,10 +9,13 @@
 	// Header of every signed-in page (E2 plan, T-4; E3 plan, T-18): app name with the counter of
 	// tickets that are not done, area switch, the main button "Neues Ticket" and the session.
 	let {
-		openCount = null
+		openCount = null,
+		onquick
 	}: {
 		/** Tickets that are not done; null while the list is not loaded (no counter then). */
 		openCount?: number | null;
+		/** Opens the quick entry (E4 plan, package 6); without it there is no button. */
+		onquick?: () => void;
 	} = $props();
 
 	const countLabel = $derived(
@@ -39,7 +42,17 @@
 		{/if}
 	</div>
 	<AreaSwitch />
-	<a class="button-primary new" id={NEW_TICKET_LINK_ID} href={newTicketHref(page.url)}>
+	{#if onquick}
+		<button class="quick" type="button" aria-keyshortcuts="C Control+K" onclick={onquick}>
+			Schnellerfassung <kbd>c</kbd>
+		</button>
+	{/if}
+	<a
+		class="button-primary new"
+		class:after-quick={onquick !== undefined}
+		id={NEW_TICKET_LINK_ID}
+		href={newTicketHref(page.url)}
+	>
 		<svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true" focusable="false">
 			<path d="M8 3v10M3 8h10" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" />
 		</svg>
@@ -95,6 +108,32 @@
 		padding: 0.375rem 0.875rem;
 		font-size: 0.875rem;
 		text-decoration: none;
+	}
+
+	.quick {
+		display: inline-flex;
+		gap: 0.375rem;
+		align-items: center;
+		margin-left: auto;
+		padding: 0.375rem 0.75rem;
+		font-size: 0.875rem;
+		background: none;
+		border: 1px solid var(--color-line);
+		border-radius: 0.375rem;
+		cursor: pointer;
+	}
+
+	.quick kbd {
+		padding: 0 0.25rem;
+		font-family: var(--font-mono);
+		font-size: 0.75rem;
+		color: var(--color-text-muted);
+		border: 1px solid var(--color-line);
+		border-radius: 0.25rem;
+	}
+
+	.after-quick {
+		margin-left: 0;
 	}
 
 	.session {

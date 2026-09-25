@@ -3,11 +3,14 @@
 	import { page } from '$app/state';
 	import { auth } from '$lib/auth.svelte';
 	import BulkConvertDialog from '$lib/components/BulkConvertDialog.svelte';
+	import ClipboardImport from '$lib/components/ClipboardImport.svelte';
 	import InboxTable, { BULK_BUTTON_ID } from '$lib/components/InboxTable.svelte';
 	import type { InboxItemSummary } from '$lib/domain/inbox';
 	import { parseInboxQuery } from '$lib/domain/inbox-query';
+	import { pastedText, readClipboardText } from '$lib/clipboard';
 	import { pb } from '$lib/pocketbase';
 	import { BulkConverter, bulkConvertData } from '$lib/stores/bulk-convert.svelte';
+	import { draftsSummary, saveDrafts, type DraftsOutcome } from '$lib/stores/capture';
 	import { getCatalogStore } from '$lib/stores/catalog.svelte';
 	import { getInboxStore } from '$lib/stores/inbox.svelte';
 	import { getTicketListStore } from '$lib/stores/ticket-list.svelte';
@@ -52,6 +55,36 @@
 			.map(({ id, title }) => ({ id, title }));
 	}
 
+	/** Text for the dialog "Aus der Zwischenablage", null while it is closed. */
+	let clipboardText = $state<string | null>(null);
+	let clipboardHint = $state<string | null>(null);
+
+	// "Aus Zwischenablage" (E4 plan, package 6): reading needs the permission of the browser; if
+	// it refuses, the hint names Ctrl+V, which works through the paste event without one.
+	async function fromClipboard() {
+		clipboardHint = null;
+		const read = await readClipboardText();
+		if (read.ok) clipboardText = read.text;
+		else clipboardHint = read.message;
+	}
+
+	/** Ctrl+V in the inbox view, unless the user pastes into a field or a dialog is open. */
+	function onpaste(event: ClipboardEvent) {
+		if (clipboardText !== null || bulkItems !== null) return;
+		const text = pastedText(event);
+		if (text === null) return;
+		event.preventDefault();
+		clipboardHint = null;
+		clipboardText = text;
+	}
+
+	function closeClipboard(outcome: DraftsOutcome | null) {
+		clipboardText = null;
+		if (outcome !== null && outcome.created + outcome.duplicates > 0) {
+			inbox.announce(draftsSummary(outcome));
+		}
+	}
+
 	async function closeBulk() {
 		const converted = converter.converted;
 		bulkItems = null;
@@ -66,6 +99,8 @@
 	}
 </script>
 
+<svelte:document {onpaste} />
+
 <div class="inbox" class:with-panel={withPanel}>
 	<InboxTable
 		store={inbox}
@@ -74,9 +109,19 @@
 		projectsNewCount={tickets.newInProjects}
 		bind:selected
 		onbulk={openBulk}
+		onclipboard={fromClipboard}
+		{clipboardHint}
 	/>
 	{@render children()}
 </div>
+
+{#if clipboardText !== null}
+	<ClipboardImport
+		text={clipboardText}
+		onsave={(drafts) => saveDrafts(drafts, (draft) => inbox.create(draft))}
+		onclose={closeClipboard}
+	/>
+{/if}
 
 {#if bulkItems !== null}
 	<BulkConvertDialog

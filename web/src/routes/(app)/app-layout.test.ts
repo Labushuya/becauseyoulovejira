@@ -7,7 +7,7 @@ import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { fireEvent, render, screen, within } from '@testing-library/svelte';
 import { createRawSnippet, tick } from 'svelte';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { EMPTY_LIST_QUERY, type ListQuery } from '$lib/domain/list-query';
 import type { TicketSummary } from '$lib/domain/ticket';
 import { NEW_TICKET_LINK_ID } from '$lib/ticket-links';
@@ -281,5 +281,90 @@ describe('app layout', () => {
 		// The route / exists only as the ticket list (E2 plan, package 5).
 		expect(existsSync(join(import.meta.dirname, '+page.svelte'))).toBe(false);
 		expect(existsSync(join(import.meta.dirname, '(tickets)', '+page.svelte'))).toBe(true);
+	});
+});
+
+describe('app layout: quick entry keys (E4 plan, T-11 and package 6)', () => {
+	const nativeShowModal = HTMLDialogElement.prototype.showModal;
+
+	beforeEach(() => {
+		if (typeof nativeShowModal !== 'function') {
+			HTMLDialogElement.prototype.showModal = function (this: HTMLDialogElement) {
+				this.open = true;
+			};
+		}
+	});
+
+	afterEach(() => {
+		HTMLDialogElement.prototype.showModal = nativeShowModal;
+	});
+
+	const quick = () => screen.queryByRole('dialog', { name: 'Schnellerfassung' });
+
+	/** Sends a key to `target` and tells whether the default action was prevented. */
+	function press(target: EventTarget, init: KeyboardEventInit): boolean {
+		const event = new KeyboardEvent('keydown', { bubbles: true, cancelable: true, ...init });
+		target.dispatchEvent(event);
+		return event.defaultPrevented;
+	}
+
+	it('opens with c on the page', async () => {
+		await renderLayout();
+		expect(quick()).toBeNull();
+		expect(press(document.body, { key: 'c' })).toBe(true);
+		await tick();
+		expect(quick()).not.toBeNull();
+	});
+
+	it('opens with Ctrl+K and prevents the search of the browser only then', async () => {
+		await renderLayout();
+		expect(press(document.body, { key: 'k', ctrlKey: true })).toBe(true);
+		await tick();
+		expect(quick()).not.toBeNull();
+		// Open already: the key belongs to the dialog, the browser keeps it.
+		const input = screen.getByLabelText('Titel mit Kurzsyntax');
+		expect(press(input, { key: 'k', ctrlKey: true })).toBe(false);
+	});
+
+	it('does not open in input fields, the tag picker, dialogs and open popovers', async () => {
+		await renderLayout();
+		const main = screen.getByRole('main');
+		const field = document.createElement('input');
+		const combobox = document.createElement('div');
+		combobox.setAttribute('role', 'combobox');
+		combobox.tabIndex = 0;
+		main.append(field, combobox);
+		expect(press(field, { key: 'c' })).toBe(false);
+		expect(press(combobox, { key: 'k', ctrlKey: true })).toBe(false);
+
+		const dialog = document.createElement('dialog');
+		dialog.setAttribute('open', '');
+		main.append(dialog);
+		expect(press(document.body, { key: 'c' })).toBe(false);
+		dialog.remove();
+
+		const popover = document.createElement('div');
+		popover.setAttribute('popover', 'auto');
+		Object.defineProperty(popover, 'matches', {
+			value: (selector: string) => selector === ':popover-open'
+		});
+		main.append(popover);
+		expect(press(document.body, { key: 'c' })).toBe(false);
+		popover.remove();
+
+		await tick();
+		expect(quick()).toBeNull();
+	});
+
+	it('opens from the button in the header and closes with "Schließen"', async () => {
+		await renderLayout();
+		const button = within(screen.getByRole('banner')).getByRole('button', {
+			name: /Schnellerfassung/
+		});
+		expect(button.getAttribute('aria-keyshortcuts')).toBe('C Control+K');
+		await fireEvent.click(button);
+		expect(quick()).not.toBeNull();
+		await fireEvent.click(screen.getByRole('button', { name: 'Schließen' }));
+		expect(quick()).toBeNull();
 	});
 });

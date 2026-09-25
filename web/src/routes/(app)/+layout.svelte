@@ -2,7 +2,15 @@
 	import { untrack } from 'svelte';
 	import { auth } from '$lib/auth.svelte';
 	import AppHeader from '$lib/components/AppHeader.svelte';
+	import QuickCapture from '$lib/components/QuickCapture.svelte';
+	import { isQuickCaptureKey, isTypingTarget } from '$lib/domain/keyboard';
 	import { pb } from '$lib/pocketbase';
+	import {
+		panelFreeTicketCreate,
+		quickTicketData,
+		saveQuickEntry,
+		type CaptureDeps
+	} from '$lib/stores/capture';
 	import { CatalogStore, catalogData, setCatalogStore } from '$lib/stores/catalog.svelte';
 	import { InboxStore, inboxData, setInboxStore } from '$lib/stores/inbox.svelte';
 	import { liveSource } from '$lib/stores/realtime';
@@ -22,6 +30,7 @@
 		setTicketListStore,
 		ticketListData
 	} from '$lib/stores/ticket-list.svelte';
+	import { inboxItemHref, ticketPath } from '$lib/ticket-links';
 
 	// Shell of every signed-in page (E2 plan, T-4). The root layout renders it only with a
 	// session; the login page stays outside this group.
@@ -67,12 +76,46 @@
 	$effect(() => untrack(() => activity.connect(live)));
 	$effect(() => untrack(() => catalog.connect(live)));
 	$effect(() => untrack(() => inbox.connect(live)));
+
+	// Quick entry (E4 plan, T-11 and package 6): one key handler for the whole app. `c` and Ctrl+K
+	// open it, but not while the user types, picks a tag, searches, or a dialog or popover is open;
+	// only then does Ctrl+K lose the search of the browser. Tickets get the source "quick" and join
+	// the list without touching an open panel.
+	let quickOpen = $state(false);
+	const quickDeps: CaptureDeps = {
+		ensureTag: (name) => catalog.ensureTag(name),
+		createTicket: panelFreeTicketCreate(quickTicketData(pb), auth, tickets),
+		createItem: (draft) => inbox.create(draft),
+		markRead: (ticket) => tickets.markRead(ticket)
+	};
+
+	function onkeydown(event: KeyboardEvent) {
+		if (quickOpen || event.defaultPrevented) return;
+		if (!isQuickCaptureKey(event) || isTypingTarget(event)) return;
+		event.preventDefault();
+		quickOpen = true;
+	}
 </script>
 
-<AppHeader openCount={tickets.openState === 'ready' ? tickets.openCount : null} />
+<svelte:window {onkeydown} />
+
+<AppHeader
+	openCount={tickets.openState === 'ready' ? tickets.openCount : null}
+	onquick={() => (quickOpen = true)}
+/>
 <main class="content">
 	{@render children()}
 </main>
+
+{#if quickOpen}
+	<QuickCapture
+		projects={catalog.projects}
+		tags={catalog.tags}
+		onsave={(entry, target) => saveQuickEntry(entry, target, quickDeps)}
+		onclose={() => (quickOpen = false)}
+		resultHref={(target, id) => (target === 'ticket' ? ticketPath(id) : inboxItemHref(id))}
+	/>
+{/if}
 
 <style>
 	.content {

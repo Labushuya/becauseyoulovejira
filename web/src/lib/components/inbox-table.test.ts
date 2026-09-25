@@ -190,6 +190,30 @@ describe('inbox table', () => {
 		expect(screen.queryByRole('table')).toBeNull();
 	});
 
+	it('offers "Aus Zwischenablage" and shows the hint on Ctrl+V as status, not as error', async () => {
+		const { store } = setup({ items: [] });
+		const onclipboard = vi.fn();
+		const other = render(InboxTable, {
+			props: {
+				store,
+				openTickets: [],
+				onbulk: vi.fn(),
+				onclipboard,
+				clipboardHint: 'Bitte in der Eingangsansicht Strg+V drücken.'
+			}
+		});
+		const view = within(other.container);
+		const button = view.getByRole('button', { name: 'Aus Zwischenablage' });
+		expect(button.getAttribute('aria-keyshortcuts')).toBe('Control+V');
+		await fireEvent.click(button);
+		expect(onclipboard).toHaveBeenCalledOnce();
+		const hint = view.getByText('Bitte in der Eingangsansicht Strg+V drücken.');
+		expect(hint.closest('[role="status"]')).not.toBeNull();
+		expect(hint.closest('.alert-error')).toBeNull();
+		// Without the callback there is no button.
+		expect(screen.getAllByRole('button', { name: 'Aus Zwischenablage' })).toHaveLength(1);
+	});
+
 	it('explains a missing inbox before the restart, without an error colour', async () => {
 		const { data, store } = setup({ items: [] });
 		data.listNew.mockRejectedValueOnce(new DataError('not_found', { status: 404 }));
