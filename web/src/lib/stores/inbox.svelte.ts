@@ -44,13 +44,13 @@ import type { TicketSummary } from '$lib/domain/ticket';
 import { SILENT_FLAGS, type FlagSink } from './flags.svelte';
 import { hold, type LiveSource } from './realtime';
 import type { LoadState, SessionGuard } from './ticket-list.svelte';
+import { restartNeeded } from '$lib/guidance/texts';
 
 /**
  * Shown while the server does not know the inbox yet: the migration of E4 runs at the next start
  * of the app (docs/plan/e4.md, section 7).
  */
-export const INBOX_UNAVAILABLE_MESSAGE =
-	'Der Eingang steht nach dem nächsten Start der App bereit (start.bat).';
+export const INBOX_UNAVAILABLE_MESSAGE = restartNeeded('Der Eingang ist');
 
 /** Data access of the inbox; tests pass a fake, the app binds the data layer to its client. */
 export interface InboxData {

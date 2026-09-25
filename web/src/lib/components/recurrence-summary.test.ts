@@ -155,7 +155,9 @@ describe('RecurrenceSummary', () => {
 	it('says neutrally that recurrences come with the next start', async () => {
 		await setup(ticket(), null);
 		expect(screen.queryByRole('button', { name: 'Wiederholen…' })).toBeNull();
-		expect(screen.getByText(/nach dem nächsten Start der App bereit/)).toBeTruthy();
+		expect(
+			screen.getByText(/Wiederholungen sind nach dem nächsten Neustart verfügbar/)
+		).toBeTruthy();
 		expect(document.querySelector('.alert-error')).toBeNull();
 	});
 

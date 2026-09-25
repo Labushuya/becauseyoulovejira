@@ -134,7 +134,13 @@ describe('FileImportDialog', () => {
 
 	it('explains that keywords come with the next start', () => {
 		renderDialog({ keywordsAvailable: false });
-		expect(screen.getByText(/nach dem nächsten Start der App/)).toBeTruthy();
+		// One wording for the restart since EH-2 (lib/guidance/texts.ts).
+		expect(
+			screen.getByText(
+				/Die Stichwörter für Datei-Importe sind nach dem nächsten Neustart verfügbar/
+			)
+		).toBeTruthy();
+		expect(screen.getByText(/stop\.bat, dann start\.bat/)).toBeTruthy();
 	});
 
 	it('closes with Escape without saving', async () => {

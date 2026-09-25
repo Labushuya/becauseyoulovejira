@@ -149,13 +149,13 @@ Umsetzung in `app/pb_migrations/1790200900_api_rules.js`, Details und Befunde im
 - Seite „Kanäle“ `/einstellungen/kanaele` (seit EH-1 im Einstellungsbereich): Bookmarklet, Verbindungen (Status der Variablen, letzter Lauf, bereinigter Fehler, Hinweis, „Jetzt abrufen“, bei Postfächern „Aus dem Postfach wählen“), Stichwörter je Verbindung, Einrichtungsanleitungen je Dienst. Die Stichwörter je Art der Datei-Importe stehen auf der Seite „Datei-Importe“ `/einstellungen/datei-importe`. Hinweise wie „Keine Stichwörter“ oder „Hilfsprozess läuft nicht“ sind neutral, nicht rot.
 - **Einstellungen, Hinweise und Anleitungen ([ADR-0026](docs/adr/0026-einstellungsbereich-und-hinweis-bausteine.md), Umsetzung in Paketen EH-1 bis EH-13 nach [docs/plan/e6-einstellungen.md](docs/plan/e6-einstellungen.md)):**
   - Einstellungsbereich `/einstellungen/*` über die volle Breite wie „Aufgaben“, mit Unternavigation links, „← Zurück zu …“ (letzte Ansicht mit Filtern und Panel, `sessionStorage` `byl-last-view`, geprüft mit `safeRedirect`), Brotkrumenpfad und dem Umschalter ohne aktiven Eintrag. Einstieg über ein Zahnrad in der Kopfzeile, der App-Name führt zu „Aufgaben“.
-  - Hinweise über die Bausteine unter `components/guidance/` (`SectionMessage`, `EmptyState`, `Lozenge`, `CodeBlock`, `ExternalLink`, `Stepper`); sie sind keine Overlays. Nach Migrationen gilt ein Neustart-Text mit „stop.bat, dann start.bat“.
+  - Hinweise über die Bausteine unter `components/guidance/` (`SectionMessage`, `EmptyState`, `Lozenge`, `CodeBlock`, `ExternalLink`, `Stepper`); sie sind keine Overlays. Nach Migrationen gilt ein Neustart-Text mit „stop.bat, dann start.bat“ (`RESTART_NEEDED` und `restartNeeded()` in `lib/guidance/texts.ts`, seit EH-2; ein statischer Test verbietet einen Neustart-Hinweis mit `start.bat` ohne `stop.bat`).
   - Kanäle als Karten mit Status-Lozenge, Einrichtung über einen Assistenten (Modal L). Das optionale Feld „Wert hier einsetzen“ speichert und sendet nie etwas und warnt vor dem Zwischenablage-Verlauf (Win+V).
   - „Erste Schritte“ im leeren Zustand; eine optionale Tour mit driver.js (lokal gebündelt, nur manuell startbar, höchstens etwa 5 Schritte) ist die einzige Ausnahme von „keine UI-Bibliothek“.
   - Bis ein Paket gemergt ist, gilt für seinen Bereich die Beschreibung oben.
 - Inhalte aus Kanälen sind nicht vertrauenswürdig: Anzeige nur über `Markdown.svelte`, Links nur `http:`/`https:`/`mailto:`, Bilder aus Mails werden nie geladen.
 - Realtime: Subscriptions aktualisieren gezielt einzelne Datensätze; kein Polling, kein komplettes Neuladen.
-- Bereichs-Umschalter: „Privat" aktiv, „Haushalt" ausgegraut, nicht klickbar (`aria-disabled`), darin ein dezentes Etikett „Demnächst" (per `aria-describedby`), kein dritter Eintrag.
+- Bereichs-Umschalter: „Privat" aktiv, „Haushalt" ausgegraut, nicht klickbar (`aria-disabled`), darin ein dezentes Etikett „Demnächst" (`Lozenge` `muted`, per `aria-describedby`), kein dritter Eintrag.
 - Markdown-Ausgabe wird sanitisiert.
 
 ## 8. Design-System

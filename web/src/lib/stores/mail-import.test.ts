@@ -10,6 +10,7 @@ import type { CalendarPreview, LookupState } from '$lib/data/inbox';
 import { DataError } from '$lib/data/errors';
 import type { InboxDraft } from '$lib/domain/inbox';
 import { EMPTY_IMPORT_KEYWORDS, type ImportKeywords } from '$lib/domain/keywords';
+import { restartNeeded } from '$lib/guidance/texts';
 import { NOT_EML_MESSAGE, readMailFile } from '$lib/mail-file';
 import { readWhatsAppFile } from '$lib/whatsapp-file';
 import {
@@ -228,7 +229,7 @@ describe('prepareDroppedFiles', () => {
 			{
 				name: 'vorher.ics',
 				kind: 'error',
-				message: 'Der Eingang steht nach dem nächsten Start der App bereit (start.bat).'
+				message: restartNeeded('Der Eingang ist')
 			},
 			{
 				name: 'abgelaufen.ics',

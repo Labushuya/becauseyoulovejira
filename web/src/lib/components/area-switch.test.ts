@@ -28,7 +28,7 @@ describe('area switch', () => {
 		expect(household().getAttribute('aria-disabled')).toBe('true');
 		expect(household().getAttribute('aria-pressed')).toBeNull();
 		const hintId = household().getAttribute('aria-describedby') ?? '';
-		expect(document.getElementById(hintId)?.textContent).toBe('Demnächst');
+		expect(document.getElementById(hintId)?.textContent?.trim()).toBe('Demnächst');
 		expect(screen.getByText('Demnächst')).toBeTruthy();
 	});
 
@@ -38,7 +38,9 @@ describe('area switch', () => {
 		const group = screen.getByRole('group', { name: 'Bereich' });
 		const lozenge = screen.getByText('Demnächst');
 		expect(household().contains(lozenge)).toBe(true);
-		expect(lozenge.classList.contains('soon')).toBe(true);
+		// Since EH-2 the building block Lozenge, muted and with an icon.
+		expect(lozenge.closest('.lozenge')?.getAttribute('data-tone')).toBe('muted');
+		expect(lozenge.closest('.lozenge')?.querySelector('svg[aria-hidden="true"]')).toBeTruthy();
 		expect(Array.from(group.children).map((child) => child.tagName)).toEqual(['BUTTON', 'BUTTON']);
 	});
 

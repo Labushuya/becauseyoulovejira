@@ -918,14 +918,19 @@ Wird je Paket ergänzt.
 | 2026-09-26 | EH-1 | Seiten: `SETTINGS_SECTIONS` in `lib/settings-sections.ts` ist die eine Liste für Navigation, Titel und Brotkrumen; „Darstellung“, „Konto“ und „Hilfe“ kommen erst mit EH-8 und EH-9 dazu. `/einstellungen` leitet per `+page.ts` mit 307 weiter. `ChannelsView` hat keine eigene `h2` und keine Höchstbreite (48rem) mehr, die Karte „Stichwörter für Datei-Importe“ zieht auf `/einstellungen/datei-importe` (eigene Seite mit `ImportKeywordsStore`), der Link im Datei-Dialog heißt „Stichwörter unter „Datei-Importe“ festlegen“. |
 | 2026-09-26 | EH-1 | Kopfzeile: Das Zahnrad ist ein Link mit `.button-icon`, `aria-label` und `title` „Einstellungen“ und eigener Zahnrad-SVG; unter `/einstellungen/*` trägt es `aria-current="page"` und die Marke-Fläche mit Rahmen in der Markenfarbe. Der App-Name ist ein Link auf `/` im `h1`, ohne Unterstreichung (nur bei Hover); der Zähler bleibt daneben. Brotkrumen: Trenner „›“ als `::before` mit leerem Alternativtext (`content: '›' / ''`), damit Screenreader ihn nicht vorlesen. |
 | 2026-09-26 | EH-1 | Bewusst angepasste Tests: `channels-view` (keine `h2` „Kanäle“ mehr in der Komponente, stattdessen die Karte „Bookmarklet für Web-Links“; die Überschrift prüft `settings-layout`), `channels-view` und `connections-page` ohne die Prop `importKeywords`, `file-import-dialog` (neues Linkziel und -text), `app-layout` (Attrappe von `afterNavigate`). Neu: `last-view.test.ts`, `settings-layout.test.ts`, Fälle in `app-layout` (Zahnrad, App-Name, Rückweg) und `view-switch` (`current = null`). Manifest: BYL-E6-029 und BYL-E6-030 bestanden, BYL-E6-031 offen (manuell). |
+| 2026-09-26 | EH-2 | Bausteine unter `components/guidance/`: `SectionMessage` (Props `tone`, `title`, `compact`, `live`, `headingLevel`; Snippets `children` und `actions`; `TONE_PREFIX` als versteckter Präfix, bei Titel in der Überschrift, sonst vor dem Text), `EmptyState` (`title`, `description`, `size`, `icon`, `headingLevel`; Snippets `primary` und `secondary`), `Lozenge` (`label`, `icon`, `tone`, optional `id` für `aria-describedby`) und `GuidanceIcon` (eigener Satz aus Linien-SVG: Töne, Status, leere Zustände). Große Icons (48 px) zeichnen mit 0.75 statt 1.5 Strichbreite, damit die Linie fein bleibt. Die Warnung ist neutral: Fläche `--color-surface`, Rahmen `--color-line`, Linie links `--color-text-muted`, Titel 700. |
+| 2026-09-26 | EH-2 | Neustart: `RESTART_NEEDED` (Titel und Text) und `restartNeeded(subject)` für einen Satz („Der Eingang ist nach dem nächsten Neustart verfügbar. Die App hat ein Update bekommen …: stop.bat, dann start.bat im Ordner app.“). Die fünf Konstanten der Stores und der Hinweis im Datei-Dialog nutzen ihn; die Oberfläche zeigt in „Kanäle“ und „Datei-Importe“ Titel plus Text als `SectionMessage` (Info, `live`). Die Hinweise „Server nicht erreichbar … (start.bat)“ bleiben, weil sie den Start der App meinen, nicht eine Migration. |
+| 2026-09-26 | EH-2 | Erste Nutzung: `ConnectionsSection` (nicht verfügbar, Fehler mit „Erneut versuchen“, leerer Zustand „Noch kein Kanal verbunden“ mit „Kanal hinzufügen“; der Knopf setzt bis EH-3 den Fokus auf „Art“ im Formular „Neue Verbindung“), `ImportKeywordsSection` (nicht verfügbar, Fehler) und „Demnächst“ am Bereichs-Umschalter (Lozenge `muted` mit Uhr statt eigener Pille aus dem Fix nach UI-9). Das Laden bleibt ein Statustext; Platzhalterkarten kommen mit den Karten in EH-3. |
+| 2026-09-26 | EH-2 | Bewusst angepasste Tests: `connections-page` und `import-keywords-section` (Hinweis vor der Migration jetzt als Section Message mit Titel statt Einzeiler), `file-import-dialog`, `inbox-table`, `recurrence-summary` und `mail-import` (neuer Wortlaut), `area-switch` (Lozenge statt Klasse `soon`, Text mit `trim()`, weil die Lozenge Icon und Text trägt). Neu: `section-message.test.ts`, `empty-state.test.ts` (samt Lozenge), `lib/guidance/texts.test.ts`, zwei Fälle in `connections-page` (leerer Zustand, Ladefehler). Manifest: BYL-E6-032 bis BYL-E6-034 bestanden. |
 
 ## 8. Status
 
 | Paket | Stand |
 |---|---|
 | EH-0 | gemergt (#58) |
-| EH-1 | umgesetzt (dieser PR) |
-| EH-2 bis EH-13 | geplant |
+| EH-1 | gemergt (#59) |
+| EH-2 | umgesetzt (dieser PR) |
+| EH-3 bis EH-13 | geplant |
 
 ## Quellen (nur Muster, keine Assets)
 

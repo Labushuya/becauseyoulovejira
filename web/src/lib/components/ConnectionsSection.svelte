@@ -16,10 +16,13 @@
 		type MailProvider
 	} from '$lib/domain/connections';
 	import { formatBerlinDateTime } from '$lib/domain/format';
+	import { RESTART_NEEDED } from '$lib/guidance/texts';
 	import {
 		CONNECTIONS_UNAVAILABLE_MESSAGE,
 		type ConnectionsStore
 	} from '$lib/stores/connections.svelte';
+	import EmptyState from './guidance/EmptyState.svelte';
+	import SectionMessage from './guidance/SectionMessage.svelte';
 	import ConfirmDialog from './overlay/ConfirmDialog.svelte';
 	import ErrorIcon from './ErrorIcon.svelte';
 	import KeywordEditor from './KeywordEditor.svelte';
@@ -71,6 +74,13 @@
 			clientErrors.allowlistEnv ?? (draft.type === 'telegram' ? serverFields.settings : undefined),
 		mailUser: clientErrors.mailUser ?? (draft.type === 'mail' ? serverFields.settings : undefined)
 	});
+
+	/** "Kanal hinzufügen" of the empty state: to the form "Neue Verbindung" (catalog from EH-3). */
+	function focusForm() {
+		const field = document.getElementById(ids.type);
+		field?.scrollIntoView?.({ block: 'center' });
+		field?.focus();
+	}
 
 	function chooseType(type: ConnectionType) {
 		draft = emptyConnectionDraft(type);
@@ -192,17 +202,31 @@
 	{#if store.state === 'loading'}
 		<p class="hint" role="status">Verbindungen werden geladen …</p>
 	{:else if store.state === 'error' && store.error === CONNECTIONS_UNAVAILABLE_MESSAGE}
-		<p class="hint" role="status">{store.error}</p>
+		<SectionMessage tone="info" title={RESTART_NEEDED.title} live headingLevel={4}>
+			{RESTART_NEEDED.text}
+		</SectionMessage>
 	{:else if store.state === 'error'}
-		<div class="alert-error" role="alert">
-			<ErrorIcon /><span>{store.error}</span>
-			<button class="button-secondary" type="button" onclick={() => void store.load()}>
-				Erneut versuchen
-			</button>
-		</div>
+		<SectionMessage tone="error" live>
+			{store.error}
+			{#snippet actions()}
+				<button class="button-secondary" type="button" onclick={() => void store.load()}>
+					Erneut versuchen
+				</button>
+			{/snippet}
+		</SectionMessage>
 	{:else if store.state === 'ready'}
 		{#if store.connections.length === 0}
-			<p class="hint">Noch keine Verbindung.</p>
+			<EmptyState
+				size="narrow"
+				icon="channels"
+				headingLevel={4}
+				title="Noch kein Kanal verbunden"
+				description="Verbinde einen Kalender, einen Telegram-Bot oder ein Postfach. Die Einrichtung dauert etwa fünf Minuten."
+			>
+				{#snippet primary()}
+					<button class="button-primary" type="button" onclick={focusForm}>Kanal hinzufügen</button>
+				{/snippet}
+			</EmptyState>
 		{:else}
 			<p class="refresh">
 				<button class="button-secondary" type="button" onclick={() => void store.load()}>

@@ -10,6 +10,7 @@
 		type FileSelection,
 		type SelectionEntry
 	} from '$lib/stores/mail-import';
+	import { IMPORT_KEYWORDS_UNAVAILABLE_MESSAGE } from '$lib/stores/import-keywords.svelte';
 	import Modal from './overlay/Modal.svelte';
 
 	// Selection view of dropped mail and calendar files (E4 plan, package 21; ADR-0020) on the modal
@@ -100,8 +101,7 @@
 		</p>
 		{#if !selection.keywordsAvailable}
 			<p class="notice">
-				Stichwörter für Datei-Importe gibt es nach dem nächsten Start der App (stop.bat, dann
-				start.bat). Bis dahin ist nichts vorausgewählt.
+				{IMPORT_KEYWORDS_UNAVAILABLE_MESSAGE} Bis dahin ist nichts vorausgewählt.
 			</p>
 		{:else if missingLists !== ''}
 			<p class="notice">

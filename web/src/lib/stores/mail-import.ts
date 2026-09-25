@@ -9,6 +9,7 @@ import { CALENDAR_TOO_LARGE_MESSAGE, ICS_MAX_BYTES, isCalendarFile } from '$lib/
 import type { CalendarPreview, LookupState } from '$lib/data/inbox';
 import { DATA_ERROR_MESSAGES, toDataError } from '$lib/data/errors';
 import type { InboxDraft } from '$lib/domain/inbox';
+import { restartNeeded } from '$lib/guidance/texts';
 import {
 	EMPTY_IMPORT_KEYWORDS,
 	mailKeywordTexts,
@@ -73,7 +74,7 @@ export const ONE_CHAT_AT_A_TIME =
 	'Nur ein WhatsApp-Chat auf einmal; diesen bitte danach übernehmen.';
 
 /** Shown for a calendar file before the migrations of E4 (answer 503 of the hook). */
-const INBOX_UNAVAILABLE = 'Der Eingang steht nach dem nächsten Start der App bereit (start.bat).';
+const INBOX_UNAVAILABLE = restartNeeded('Der Eingang ist');
 
 export interface PrepareDeps {
 	read(file: File): Promise<MailFileResult>;
