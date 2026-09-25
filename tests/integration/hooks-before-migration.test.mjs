@@ -143,6 +143,18 @@ describe('E4 hooks on the schema before the E4 migrations', () => {
 		expect(logs).not.toMatch(/byl-calendar/);
 	});
 
+	it('lets the cleanup of discarded items do nothing without the inbox (package 24)', async () => {
+		const superuser = newClient();
+		await superuser.collection('_superusers').authWithPassword(instance.email, instance.password);
+		const cron = await fetch(`${instance.url}/api/crons/byl-inbox-cleanup`, {
+			method: 'POST',
+			headers: { Authorization: superuser.authStore.token }
+		});
+		expect(cron.status).toBe(204);
+		const logs = JSON.stringify(await superuser.send('/api/logs', { query: { perPage: 200 } }));
+		expect(logs).not.toMatch(/byl-inbox-cleanup|verworfen/);
+	});
+
 	it('answers the ingest routes of the mail helper with the hint (package 22)', async () => {
 		const headers = { Authorization: `Bearer ${INGEST_TOKEN}`, 'Content-Type': 'application/json' };
 		const list = await fetch(`${instance.url}/api/byl/ingest/connections`, { headers });

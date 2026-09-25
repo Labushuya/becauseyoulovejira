@@ -26,6 +26,13 @@ onRecordUpdate(function (e) {
   });
 }, 'inbox_items');
 
+// Discarded items lose their content after 30 days (OF-E4-6, E4 plan package 24); fingerprint and
+// state stay as tombstone. Once a day at 11:30 UTC, when the app usually runs; idempotent, so a
+// missed day is caught up by the next run. Before the migration of inbox_items it does nothing.
+cronAdd('byl-inbox-cleanup', '30 11 * * *', function () {
+  require(`${__hooks}/lib/inbox-cleanup-service.js`).run($app, Date.now());
+});
+
 // .ics files (ADR-0017 section 1, E4 plan packages 14 and 21): the SPA uploads one file as
 // multipart field "file". The preview lists its components with the keyword of the user that
 // matches (ADR-0020) and whether each is in the inbox already, and saves nothing. The import
