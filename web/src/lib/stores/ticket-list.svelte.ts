@@ -4,13 +4,15 @@
 // tickets are loaded page by page in the server order and filtered by the server (section 3). The store is created per app layout and handed out through a typed context, so a logout
 // leaves no data behind. Own answers and realtime events (ADR-0007) go through the same
 // idempotent `upsert` and `remove`; after a reconnection the store reconciles once with the
-// server.
+// server. The "new" mark (ADR-0015, E4 plan package 4) is derived from the own read rows and the
+// base line of the user.
 
 import type PocketBase from 'pocketbase';
 import { createContext } from 'svelte';
 import { SvelteMap, SvelteSet } from 'svelte/reactivity';
 import { toDataError } from '$lib/data/errors';
 import type { RequestOptions } from '$lib/data/options';
+import { listReads, markAllRead, markRead, type TicketRead } from '$lib/data/reads';
 import {
 	listDoneTickets,
 	listOpenTickets,
@@ -33,6 +35,7 @@ import {
 import { columnOrder, ticketOrder, type ResolveProject } from '$lib/domain/ordering';
 import type { Status } from '$lib/domain/status';
 import type { TicketPatch, TicketSummary } from '$lib/domain/ticket';
+import { countNew, isNew, unreadSinceOf } from '$lib/domain/unread';
 import { hold, type LiveSource } from './realtime';
 
 /**
@@ -80,6 +83,29 @@ export function ticketListData(pb: PocketBase): TicketListData {
 		update: (id, patch) => updateTicket(pb, id, patch)
 	};
 }
+
+/** Read rows and base line of the "new" mark (ADR-0015); tests pass a fake. */
+export interface ReadsData {
+	/** Base line of the signed-in user, null before the migration (nothing is new then). */
+	unreadSince(): string | null;
+	list(since: string, options: RequestOptions): Promise<TicketRead[]>;
+	/** The own row, or null if it existed already. */
+	markRead(ticketId: string): Promise<TicketRead | null>;
+	/** Moves the base line to now and returns it. */
+	markAllRead(): Promise<string>;
+}
+
+export function readsData(pb: PocketBase): ReadsData {
+	return {
+		unreadSince: () => unreadSinceOf(pb.authStore.record),
+		list: (since, options) => listReads(pb, since, options),
+		markRead: (ticketId) => markRead(pb, ticketId),
+		markAllRead: () => markAllRead(pb)
+	};
+}
+
+/** Key of a read row that is known only from the answer "already read" (no row ID). */
+const LOCAL_READ = 'local:';
 
 interface Lingering {
 	ticket: TicketSummary;
@@ -132,6 +158,8 @@ export interface TicketListOptions {
 	 * catalog (`catalog.projectOf`), so a rename sorts again at once; default is `expand`.
 	 */
 	projectOf?: ResolveProject<TicketSummary>;
+	/** Read rows and base line; without them nothing is marked as new. */
+	reads?: ReadsData;
 }
 
 export class TicketListStore {
@@ -251,16 +279,87 @@ export class TicketListStore {
 	});
 	#kpis = $derived(countKpis(this.#open.values(), this.#today));
 
+	readonly #reads: ReadsData | null;
+	/** Own read rows: row ID (or LOCAL_READ + ticket ID) to ticket ID. */
+	readonly #readRows = new SvelteMap<string, string>();
+	/** Tickets with a running request of `markRead`. */
+	readonly #marking = new SvelteSet<string>();
+	#readsController: AbortController | null = null;
+	/** Base line of the user; null: nothing is new (no data or before the migration). */
+	#unreadSince = $state<string | null>(null);
+	/** The read rows are loaded; until then no ticket counts as new, so nothing flashes up. */
+	#readsReady = $state(false);
+	#readTickets = $derived(new SvelteSet(this.#readRows.values()));
+	#newCounts = $derived(
+		countNew(this.#open.values(), this.#readTickets, this.#readsReady ? this.#unreadSince : null)
+	);
+
 	constructor(
 		data: TicketListData,
 		session: SessionGuard,
-		{ now = Date.now, projectOf = (ticket) => ticket.project }: TicketListOptions = {}
+		{ now = Date.now, projectOf = (ticket) => ticket.project, reads }: TicketListOptions = {}
 	) {
 		this.#data = data;
 		this.#session = session;
 		this.#now = now;
 		this.#projectOf = projectOf;
 		this.#today = berlinToday(now());
+		this.#reads = reads ?? null;
+	}
+
+	/** True if the ticket is new for the signed-in user (ADR-0015 section 2). */
+	isNew(ticket: Pick<TicketSummary, 'id' | 'created' | 'status'>): boolean {
+		if (!this.#readsReady) return false;
+		return isNew(ticket, this.#readTickets, this.#unreadSince);
+	}
+
+	/** New tickets that are not done (button "Alle als gelesen markieren"). */
+	get newCount(): number {
+		return this.#newCounts.total;
+	}
+
+	/** New tickets of a project (project tile, ADR-0015 section 5). */
+	newInProject(projectId: string): number {
+		return this.#newCounts.byProject.get(projectId) ?? 0;
+	}
+
+	/** New tickets that belong to a project (switch "Projekte"). */
+	get newInProjects(): number {
+		let sum = 0;
+		for (const count of this.#newCounts.byProject.values()) sum += count;
+		return sum;
+	}
+
+	/**
+	 * Marks a ticket as read: opened in the panel or created one by one (ADR-0015 section 3).
+	 * Costs a request only for a new ticket; a row that exists already counts as success, a failure
+	 * leaves the mark (the next opening tries again).
+	 */
+	async markRead(ticket: Pick<TicketSummary, 'id' | 'created' | 'status'>): Promise<void> {
+		const id = ticket.id;
+		if (this.#reads === null || this.#marking.has(id) || !this.isNew(ticket)) return;
+		if (!this.#session.ensureValid()) return;
+		this.#marking.add(id);
+		try {
+			const row = await this.#reads.markRead(id);
+			this.#readRows.set(row === null ? `${LOCAL_READ}${id}` : row.id, id);
+		} catch (error) {
+			this.#failureMessage(error);
+		} finally {
+			this.#marking.delete(id);
+		}
+	}
+
+	/** "Alle als gelesen markieren" (ADR-0015 section 4): the base line moves to now. */
+	async markAllRead(): Promise<void> {
+		if (this.#reads === null || !this.#session.ensureValid()) return;
+		this.#notice = null;
+		try {
+			this.#unreadSince = await this.#reads.markAllRead();
+			this.#announcement = 'Alle Tickets als gelesen markiert.';
+		} catch (error) {
+			this.#fail(error, 'Die Tickets konnten nicht als gelesen markiert werden.');
+		}
 	}
 
 	/** Open tickets in the default order (P-2), including rows that were just checked. */
@@ -590,6 +689,18 @@ export class TicketListStore {
 			),
 			hold(live.reconnected(() => void this.reconcile()))
 		];
+		// Read rows and base line only where the server knows them (after the migration).
+		if (this.#reads !== null && this.#reads.unreadSince() !== null) {
+			stops.push(
+				hold(
+					live.reads((change) => {
+						if (change.action === 'baseline') this.#unreadSince = change.unreadSince;
+						else if (change.action === 'delete') this.#readRows.delete(change.id);
+						else this.#readRows.set(change.read.id, change.read.ticket);
+					})
+				)
+			);
+		}
 		return () => {
 			for (const stop of stops) stop();
 			this.#reconcileController?.abort();
@@ -633,6 +744,7 @@ export class TicketListStore {
 			const sameDone = this.#donePage === doneLoaded && this.#doneKey === doneKey;
 			if (doneLoaded > 0 && this.#showDone && sameDone) this.#mergeDone(pages, touched);
 			this.#refreshSearch();
+			void this.#loadReads();
 		} catch (error) {
 			if (controller.signal.aborted) return;
 			// Nothing to show: the list stays as it is, the next reconnection tries again.
@@ -681,6 +793,39 @@ export class TicketListStore {
 		this.#loadingMoreDone = false;
 		this.#notice = null;
 		this.#announcement = '';
+		this.#readsController?.abort();
+		this.#readsController = null;
+		this.#readRows.clear();
+		this.#marking.clear();
+		this.#readsReady = false;
+		this.#unreadSince = null;
+	}
+
+	/**
+	 * Loads the own read rows of the tickets that can still be new (ADR-0015 section 6) and adds
+	 * them; rows go only with their ticket, so none is removed. Without a base line (before the
+	 * migration) nothing is loaded and nothing is new. A failure leaves the marks off rather than
+	 * showing every ticket as new.
+	 */
+	async #loadReads(): Promise<void> {
+		const reads = this.#reads;
+		if (reads === null) return;
+		const since = this.#unreadSince ?? reads.unreadSince();
+		if (since === null) return;
+		this.#readsController?.abort();
+		const controller = new AbortController();
+		this.#readsController = controller;
+		try {
+			const rows = await reads.list(since, { signal: controller.signal });
+			if (controller.signal.aborted) return;
+			for (const row of rows) this.#readRows.set(row.id, row.ticket);
+			this.#unreadSince ??= since;
+			this.#readsReady = true;
+		} catch (error) {
+			if (!controller.signal.aborted) this.#failureMessage(error);
+		} finally {
+			if (this.#readsController === controller) this.#readsController = null;
+		}
 	}
 
 	async #loadOpen(): Promise<void> {
@@ -699,6 +844,7 @@ export class TicketListStore {
 				if (!this.#lingering.has(ticket.id)) this.#open.set(ticket.id, ticket);
 			}
 			this.#openState = 'ready';
+			void this.#loadReads();
 		} catch (error) {
 			if (controller.signal.aborted) return;
 			const message = this.#failureMessage(error);

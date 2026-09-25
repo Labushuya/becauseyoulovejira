@@ -67,7 +67,14 @@
 </script>
 
 <div class="inbox" class:with-panel={withPanel}>
-	<InboxTable store={inbox} openTickets={tickets.open} {activeId} bind:selected onbulk={openBulk} />
+	<InboxTable
+		store={inbox}
+		openTickets={tickets.open}
+		{activeId}
+		projectsNewCount={tickets.newInProjects}
+		bind:selected
+		onbulk={openBulk}
+	/>
 	{@render children()}
 </div>
 

@@ -69,6 +69,8 @@
 	async function create(draft: TicketDraft) {
 		const itemId = source?.state === 'ready' ? source.item.id : null;
 		const result = await detail.create(draft, itemId === null ? undefined : { sourceItem: itemId });
+		// A ticket created one by one is read (ADR-0015 section 3).
+		if (result.ok) void tickets.markRead(result.ticket);
 		if (result.ok && itemId !== null) {
 			inbox.markConverted(itemId, result.ticket.id, result.ticket.created);
 			tickets.announce(`Ticket ${result.ticket.key} angelegt.`);

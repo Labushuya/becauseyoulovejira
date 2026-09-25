@@ -11,11 +11,14 @@
 	// stands next to "Eingang" (ADR-0015 section 5), as text for screen readers too.
 	let {
 		current,
-		inboxCount = null
+		inboxCount = null,
+		projectsNewCount = 0
 	}: {
 		current: 'tasks' | 'projects' | 'inbox';
 		/** New inbox entries; null while not loaded (no number is shown). */
 		inboxCount?: number | null;
+		/** New tickets in projects (ADR-0015 section 5); 0 shows no number. */
+		projectsNewCount?: number;
 	} = $props();
 
 	const tasksHref = $derived(current === 'tasks' ? listHref(page.url) : resolve('/'));
@@ -34,6 +37,13 @@
 			<path d="M2.5 4.5v7.5h11V6H8L6.5 4.5z" />
 		</svg>
 		Projekte
+		{#if projectsNewCount > 0}
+			<span class="count"
+				><span aria-hidden="true">{projectsNewCount}</span><span class="visually-hidden"
+					>({projectsNewCount} neu)</span
+				></span
+			>
+		{/if}
 	</a>
 	<a href={inboxLink} aria-current={current === 'inbox' ? 'page' : undefined}>
 		<svg viewBox="0 0 16 16" aria-hidden="true" focusable="false">

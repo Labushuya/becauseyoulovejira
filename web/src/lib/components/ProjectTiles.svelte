@@ -4,12 +4,14 @@
 
 	// Project tiles (E3 plan, T-12 and package 14; ADR-0010 section 1): a responsive grid in the
 	// given order (by name). Each tile is a link to the tickets of the project (`/?projekt=<id>`)
-	// with name, code and "N aktiv · M gesamt"; "Bearbeiten" sits next to the link, not in it.
+	// with name, code and "N aktiv · M gesamt" (and "K neu", ADR-0015); "Bearbeiten" sits next to the
+	// link, not in it.
 	// Archived projects say so in words. While a number is unknown the tile shows "–".
 	let {
 		projects,
 		activeOf,
 		totalOf,
+		newOf = () => 0,
 		onedit
 	}: {
 		projects: readonly Project[];
@@ -17,6 +19,8 @@
 		activeOf: (project: Project) => number | null;
 		/** Active plus done tickets; null while not counted. */
 		totalOf: (project: Project) => number | null;
+		/** New tickets of the project for the signed-in user (ADR-0015 section 5). */
+		newOf?: (project: Project) => number;
 		/** "Bearbeiten"; the button is passed along to return the focus to it. */
 		onedit: (project: Project, trigger: HTMLButtonElement) => void;
 	} = $props();
@@ -30,6 +34,7 @@
 	{#each projects as project (project.id)}
 		{@const active = activeOf(project)}
 		{@const total = totalOf(project)}
+		{@const fresh = newOf(project)}
 		<li class="tile" class:archived={project.archived}>
 			<a class="tile-link" href={projectTicketsHref(project.id)}>
 				<span class="head">
@@ -43,6 +48,10 @@
 					<span><strong>{number(active)}</strong> aktiv</span>
 					<span aria-hidden="true">·</span>
 					<span><strong>{number(total)}</strong> gesamt</span>
+					{#if fresh > 0}
+						<span aria-hidden="true">·</span>
+						<span class="new"><strong>{fresh}</strong> neu</span>
+					{/if}
 				</span>
 			</a>
 			<button
@@ -133,6 +142,11 @@
 		font-weight: 600;
 		font-variant-numeric: tabular-nums;
 		color: var(--color-text);
+	}
+
+	.stats .new,
+	.stats .new strong {
+		color: var(--color-brand-text);
 	}
 
 	.edit {
