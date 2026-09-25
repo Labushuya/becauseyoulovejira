@@ -7,6 +7,7 @@
 		KIND_LABELS,
 		STATE_LABELS,
 		metaText,
+		sourceDateText,
 		type InboxItem,
 		type InboxItemSummary
 	} from '$lib/domain/inbox';
@@ -67,7 +68,7 @@
 			['An', metaText(item, 'to')],
 			['Ort', metaText(item, 'location')],
 			['Chat', metaText(item, 'chat')],
-			['Quelldatum', item.sourceDate === null ? '' : formatBerlinDateTime(item.sourceDate)],
+			['Quelldatum', sourceDateText(item)],
 			['Eingang', formatBerlinDateTime(item.created)],
 			['Bearbeitet', item.handledAt === null ? '' : formatBerlinDateTime(item.handledAt)]
 		];

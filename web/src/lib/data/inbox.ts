@@ -305,3 +305,47 @@ export function originalFileUrl(
 		});
 	});
 }
+
+/** Route of the hook that parses an .ics file (ADR-0017 section 1; E4 plan, package 14). */
+const CALENDAR_IMPORT_ROUTE = '/api/byl/inbox/ics';
+
+/** Counts of an .ics import: new, already there, skipped (cancelled) and failed entries. */
+export interface CalendarImportSummary {
+	created: number;
+	duplicates: number;
+	skipped: number;
+	failed: number;
+	/** ID of the only new entry, '' otherwise. */
+	itemId: string;
+}
+
+function countOf(value: unknown): number {
+	return typeof value === 'number' && Number.isInteger(value) && value >= 0 ? value : 0;
+}
+
+/**
+ * Uploads an .ics file; the hook creates one private entry per event or task of the signed-in
+ * user and answers with counts. Before the migrations of E4 the route answers 503.
+ */
+export function importCalendarFile(
+	pb: PocketBase,
+	file: File,
+	{ signal }: RequestOptions = {}
+): Promise<CalendarImportSummary> {
+	return withDataErrors(signal, async () => {
+		const body = new FormData();
+		body.append('file', file);
+		const result = await pb.send<Record<string, unknown>>(CALENDAR_IMPORT_ROUTE, {
+			method: 'POST',
+			body,
+			signal
+		});
+		return {
+			created: countOf(result.created),
+			duplicates: countOf(result.duplicates),
+			skipped: countOf(result.skipped),
+			failed: countOf(result.failed),
+			itemId: typeof result.item === 'string' ? result.item : ''
+		};
+	});
+}

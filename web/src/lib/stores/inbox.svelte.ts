@@ -14,10 +14,12 @@ import {
 	createItem,
 	discardItem,
 	getItem,
+	importCalendarFile,
 	listHandledItems,
 	listNewItems,
 	originalFileUrl,
 	restoreItem,
+	type CalendarImportSummary,
 	type CreateItemOutcome,
 	type HandledItemPage
 } from '$lib/data/inbox';
@@ -61,6 +63,7 @@ export interface InboxData {
 	restore(id: string): Promise<InboxItemSummary>;
 	assign(id: string, ticketId: string): Promise<InboxItemSummary>;
 	originalUrl(item: Pick<InboxItemSummary, 'id' | 'original'>): Promise<string | null>;
+	importCalendar(file: File): Promise<CalendarImportSummary>;
 }
 
 export function inboxData(pb: PocketBase): InboxData {
@@ -72,7 +75,8 @@ export function inboxData(pb: PocketBase): InboxData {
 		discard: (id) => discardItem(pb, id),
 		restore: (id) => restoreItem(pb, id),
 		assign: (id, ticketId) => assignToTicket(pb, id, ticketId),
-		originalUrl: (item) => originalFileUrl(pb, item)
+		originalUrl: (item) => originalFileUrl(pb, item),
+		importCalendar: (file) => importCalendarFile(pb, file)
 	};
 }
 
@@ -81,6 +85,13 @@ export type InboxCreateResult =
 	| { kind: 'created'; item: InboxItem }
 	| InboxDuplicate
 	| { kind: 'error'; message: string | null; fields: Readonly<Record<string, string>> };
+
+/**
+ * Outcome of an .ics import: the counts of the hook, or a failure with its message (null after a
+ * lost session, which leads to the login).
+ */
+export type CalendarImportResult =
+	({ kind: 'imported' } & CalendarImportSummary) | { kind: 'error'; message: string | null };
 
 /** Outcome of discarding, restoring and assigning; a failure carries a message unless hidden. */
 export type InboxActionResult =
@@ -349,6 +360,25 @@ export class InboxStore {
 			const message = this.#failureMessage(error);
 			const known = Object.keys(fields).length > 0;
 			return { kind: 'error', message: known ? null : message, fields };
+		}
+	}
+
+	/**
+	 * Takes an .ics file into the inbox (E4 plan, package 14). The new entries come by realtime;
+	 * the store reconciles afterwards in case an event is late.
+	 */
+	async importCalendar(file: File): Promise<CalendarImportResult> {
+		if (!this.#session.ensureValid()) return { kind: 'error', message: null };
+		try {
+			const summary = await this.#data.importCalendar(file);
+			if (summary.created > 0) void this.reconcile();
+			return { kind: 'imported', ...summary };
+		} catch (error) {
+			if (toDataError(error).status === 503) {
+				return { kind: 'error', message: INBOX_UNAVAILABLE_MESSAGE };
+			}
+			const message = this.#failureMessage(error);
+			return { kind: 'error', message };
 		}
 	}
 

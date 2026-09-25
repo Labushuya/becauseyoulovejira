@@ -1,11 +1,12 @@
 <script lang="ts">
 	import type { ResolvedPathname } from '$app/types';
-	import type { FileImportResult } from '$lib/stores/mail-import';
+	import { importCounts, type FileImportResult } from '$lib/stores/mail-import';
 	import ErrorIcon from './ErrorIcon.svelte';
 
-	// Drop zone of the inbox view (E4 plan, package 8): mail files (.eml) by drag and drop or, for
-	// the keyboard, with "Datei wählen"; several at once. Each file gets its own result: "neu" and
-	// "schon vorhanden" with a link, or an error with icon and reason.
+	// Drop zone of the inbox view (E4 plan, packages 8 and 14): mail files (.eml) and calendar files
+	// (.ics) by drag and drop or, for the keyboard, with "Datei wählen"; several at once. Each file
+	// gets its own result: "neu" and "schon vorhanden" with a link, the counts of a calendar file,
+	// or an error with icon and reason.
 	let {
 		busy = false,
 		results = [],
@@ -58,7 +59,7 @@
 	class="drop-zone"
 	class:active
 	role="group"
-	aria-label="Mail-Dateien übernehmen"
+	aria-label="Dateien übernehmen"
 	aria-describedby={hintId}
 	aria-busy={busy ? 'true' : undefined}
 	{ondragover}
@@ -66,8 +67,8 @@
 	{ondrop}
 >
 	<p id={hintId}>
-		Mail-Dateien (.eml) hierher ziehen, höchstens 10 MB je Datei. Bilder und Links der Mail werden
-		nicht geladen.
+		Mail-Dateien (.eml, höchstens 10 MB) und Kalenderdateien (.ics, höchstens 20 MB) hierher ziehen.
+		Bilder und Links der Mail werden nicht geladen.
 	</p>
 	<button
 		class="pick"
@@ -82,7 +83,7 @@
 	<input
 		class="visually-hidden"
 		type="file"
-		accept=".eml,message/rfc822"
+		accept=".eml,message/rfc822,.ics,text/calendar"
 		multiple
 		tabindex="-1"
 		aria-hidden="true"
@@ -99,6 +100,12 @@
 					{#if result.kind === 'created'}
 						<span class="name">{result.name}:</span> neu –
 						<a href={itemHref(result.itemId)}>{result.title}</a>
+					{:else if result.kind === 'calendar'}
+						<span class="name">{result.name}:</span>
+						{importCounts(result)}
+						{#if result.itemId !== ''}
+							<a href={itemHref(result.itemId)}>Eintrag ansehen</a>
+						{/if}
 					{:else if result.kind === 'duplicate'}
 						<span class="name">{result.name}:</span> schon vorhanden ({result.message})
 						{#if result.ticketId !== ''}

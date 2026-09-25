@@ -63,7 +63,14 @@ function setup(item: InboxItem | Error = entry(), tickets: TicketSummary[] = [])
 		})),
 		originalUrl: vi.fn<InboxData['originalUrl']>(
 			async () => 'http://127.0.0.1:8090/api/files/inbox_items/x/mail_abc.eml?download=1&token=t'
-		)
+		),
+		importCalendar: vi.fn<InboxData['importCalendar']>(async () => ({
+			created: 0,
+			duplicates: 0,
+			skipped: 0,
+			failed: 0,
+			itemId: ''
+		}))
 	} satisfies InboxData;
 	const store = new InboxStore(data, { ensureValid: () => true, logout: vi.fn() });
 	const onclose = vi.fn();
