@@ -244,7 +244,8 @@ function nextDueOnRelease(rule, today, recurrence) {
  * Whether the follow-up ticket of a reopened instance is untouched (ADR-0023 section 3): created
  * after the completion of the reopened one (the same millisecond counts as after: the follow-up
  * is written after the commit of the completion), never updated since and without comments.
- * Timestamps in the stored form `YYYY-MM-DD HH:MM:SS.sssZ`, which sorts like the time.
+ * Timestamps in the stored form `YYYY-MM-DD HH:MM:SS.sssZ`, which sorts like the time. The
+ * generation writes one timestamp into created and updated (recurrence-service newInstance).
  */
 function isUntouched(followUp, completedAt) {
   return (

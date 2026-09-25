@@ -212,6 +212,24 @@ describe('completing, reopening and releasing instances (ADR-0023 sections 2, 3 
 		expect((await ruleOf(rule.id)).next_due).toBe('');
 	});
 
+	// PocketBase reads the clock once per autodate field; for about one ticket in 200 created and
+	// updated differed by a millisecond, and reopening then took the follow-up for edited.
+	it('writes one timestamp into created and updated of every generated ticket', async () => {
+		const rule = await createRule({ mode: 'after_completion', freq: 'daily', interval: 1, lead_days: 3, anchor: today() });
+		const differing = [];
+		const start = Date.now();
+		for (let round = 0; round < 60; round += 1) {
+			const [open] = await openOf(rule.id);
+			const created = Date.parse(open.created.replace(' ', 'T'));
+			expect(created).toBeGreaterThanOrEqual(start - 1_000);
+			expect(created).toBeLessThanOrEqual(Date.now());
+			if (open.updated !== open.created) differing.push([open.created, open.updated]);
+			await tickets().update(open.id, { status: 'done' });
+		}
+		expect(differing).toEqual([]);
+		expect(await instancesOf(rule.id)).toHaveLength(61);
+	}, 60_000);
+
 	it('removes an untouched follow-up when the instance is reopened (calendar)', async () => {
 		const ticket = await tickets().create({ owner: owner.id, title: 'Täglich', due: today() });
 		const rule = await createRule({ lead_days: 3, ticket: ticket.id });
