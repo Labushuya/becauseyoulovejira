@@ -173,6 +173,11 @@ Wird je Paket ergänzt.
 | 2026-09-25 | UI-6 | Fokus: Fehlt beim Schließen eines Modals der Auslöser, geht der Fokus auf die Überschrift der Ansicht (`data-view-heading` an der `SectionBar`), sonst bleibt er beim Browser. Die eigene Rückgabe in `TicketPanel` (auf „Löschen …“) und `TagManager` (auf „Tag löschen …“ bzw. die Überschrift „Tags“) entfällt; nach dem Löschen eines Tags landet der Fokus damit auf „Projekte“ statt auf „Tags“. Die Rückkehr zur Zeile beim Schließen des Panels bleibt in `TicketTable` und `InboxTable`. |
 | 2026-09-25 | UI-6 | Abweichung vom Plan: Die Zerlegung von `TicketPanel` in `TicketFields`, `TicketDescription` und `TicketMeta` folgt erst mit UI-7, wo die Vollansicht die Teile braucht; UI-6 ändert nur Rahmen, Kopf und Esc-Regel des Panels. |
 | 2026-09-25 | UI-6 | Bewusst angepasste Tests: `ticket-panel` und `inbox-panel` (× „Panel schließen“ statt „Schließen“ bzw. Link „Schließen“), `delete-ticket` und `tag-manager` (der Test fokussiert den Auslöser vor dem Klick wie ein Browser, weil die Rückgabe jetzt im Modal liegt; die Tag-Liste des Tests bleibt statisch, deshalb kehrt der Fokus zum Knopf zurück, der Rückfall auf die Überschrift der Ansicht steht in `modal.test.ts`). |
+| 2026-09-25 | UI-7 | Routen: `tickets/[id]/+page.svelte` wird zu `+layout.svelte` (Laden von Ticket und Kommentaren, Lesemarke, Verwerfen-Frage mit `discarding`, Panel); `+page.svelte` ist leer, `voll/+page.svelte` legt die Vollansicht über das Panel. Die Vollansicht löscht über den Weg des Layouts (`lib/ticket-route.ts`, Kontext mit `deleted()`), damit `discarding` gesetzt wird. `beforeNavigate` lässt den Wechsel zwischen Panel und Vollansicht desselben Tickets ohne Frage durch, weil die Entwürfe im Store bleiben. |
+| 2026-09-25 | UI-7 | `TicketPanel` ist zerlegt in `TicketFields` (Status, Priorität, Fälligkeit, Projekt, Tags), `TicketDescription`, `TicketMeta` (`show`: alles, nur Quelle, nur Daten) und `TicketDelete` („Löschen …“ samt Bestätigung). Panel und Vollansicht setzen sie nur anders zusammen; Entwürfe und Bearbeitungszustand teilen sie über den Store. |
+| 2026-09-25 | UI-7 | `overlay/FullView.svelte`: Modal XL mit Titel „KEY · Titel“, Aktionen im Kopf („Löschen …“), Snippets `main` und `side`; ab 64rem zwei Spalten (`minmax(0, 1fr) var(--full-view-sidebar)`), darunter eine Spalte mit den Karten **unter** dem Inhalt. Abweichung von der Spezifikation (Karten oben): So bleibt die Reihenfolge auf dem Schirm die der Tastatur, und der erste Fokus liegt auf dem Titel. Die Karte „Wiederholung“ zeigt nur den sichtbaren Titel, weil `RecurrenceSummary` selbst der benannte Abschnitt ist. |
+| 2026-09-25 | UI-7 | Keine Verwerfen-Frage beim Schließen der Vollansicht, anders als im Entwurf der Spezifikation (C.6): Schließen führt ins Panel desselben Tickets, dort stehen dieselben Entwürfe, also geht nichts verloren. Das Verlassen des Tickets fragt weiter über das Layout. Kein Fuß „Speichern & Schließen“, jedes Feld speichert sofort. |
+| 2026-09-25 | UI-7 | Fokus nach dem Schließen: `goto` zurück ins Panel (`noScroll`), danach Fokus auf den Link „Vollansicht öffnen“ (`data-full-view-link`, `FULL_VIEW_LINK` in `ticket-links.ts`), auch wenn die Vollansicht direkt per Adresse geöffnet wurde und das Modal keinen Auslöser kennt. Der Browser-Tab heißt „KEY · Vollansicht · becauseyoulovejira“. Eine Vollansicht für Eingangseinträge (optional) folgt nicht. |
 
 ## 7. Status
 
@@ -185,7 +190,8 @@ Wird je Paket ergänzt.
 | UI-4 | gemergt (#50) |
 | UI-5 | gemergt (#51) |
 | UI-6 | gemergt (#52) |
-| UI-7 bis UI-9 | geplant |
+| UI-7 | gemergt (#53) |
+| UI-8 und UI-9 | geplant |
 
 ## Quellen (nur Verhalten und Maße)
 
