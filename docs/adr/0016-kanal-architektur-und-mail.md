@@ -1,9 +1,10 @@
 # ADR-0016: Architektur der Kanäle: HTTP-Kanäle im Hook per Cron, Mail über einen Hilfsprozess
 
-- **Status:** Vorgeschlagen. Die HTTP-Kanäle (Abschnitt 2) gelten mit der vom Nutzer festgelegten Kanalreihenfolge als freigegeben. Der Mail-Hilfsprozess (Abschnitt 4) ändert CLAUDE.md §3 („Node nur Dev-Werkzeug“) und wird erst nach Antwort auf OF-E4-4 und OF-E4-5 im [E4-Plan](../plan/e4.md) angenommen.
+- **Status:** Angenommen (2026-09-25). Die HTTP-Kanäle (Abschnitt 2) galten mit der Kanalreihenfolge des Nutzers als freigegeben. Den Mail-Hilfsprozess (Abschnitt 4) hat der Nutzer am 2026-09-25 freigegeben (OF-E4-4), zusammen mit den Antworten auf OF-E4-5 und den Stichwörtern pro Kanal ([ADR-0020](0020-stichwoerter-pro-kanal.md)). Der Umfang der Mails (Abschnitt 5) und die Postfach-Auswahl (Abschnitt 6) folgen daraus. Proton läuft nur über `.eml` (Abschnitt 4).
 - **Datum:** 2026-09-25
-- **Entscheidung durch:** Nutzer (Kanalreihenfolge, WhatsApp nur als Export, 2026-09-25), Advisor (Architektur)
+- **Entscheidung durch:** Nutzer (Kanalreihenfolge, WhatsApp nur als Export, `byl-mail.exe`, Proton nur manuell, Gmail mit App-Passwort, Web.de-IMAP, 2026-09-25), Advisor (Architektur)
 - **Ergänzt:** [ADR-0011](0011-roadmap-e3-bis-e7.md) §2 (externe Dienste nur mit eigener ADR und Freigabe)
+- **Ergänzt durch:** [ADR-0020](0020-stichwoerter-pro-kanal.md) (Stichwörter pro Kanal: was automatisch in den Eingang kommt)
 
 ## Kontext
 
@@ -46,7 +47,11 @@ Quellen: `plugins/jsvm/binds.go` im Tag `v0.40.4`, Doku „Sending HTTP requests
 |---|---|---|
 | **Im Browser** | Formular/Vorlage, Schnellerfassung, Zwischenablage, Bookmarklet, `.eml`-Datei, WhatsApp-Export | SPA; legt `inbox_items` über die Record-API an. `.ics`-Dateien gehen als Upload an eine Hook-Route, weil ihr Parser im Hook liegt ([ADR-0017](0017-parser-ics-eml.md)). |
 | **Im Hook per Cron** (HTTP-Dienste) | Google Calendar (geheime iCal-Adresse), Telegram (Bot, `getUpdates`), Notion (zurückgestellt) | `app/pb_hooks/channels.pb.js` mit `cronAdd` und `$http.send`, Logik in reinen Modulen unter `lib/` |
-| **Im Hilfsprozess** (IMAP) | Web.de, Proton (Bridge), Gmail | `byl-mail.exe` (Abschnitt 4), schreibt über eine Ingest-Route in den Eingang |
+| **Im Hilfsprozess** (IMAP) | Web.de, Gmail | `byl-mail.exe` (Abschnitt 4), schreibt über eine Ingest-Route in den Eingang |
+
+Proton Mail hat keinen automatischen Weg (Abschnitt 4) und kommt nur als `.eml` im Browser.
+
+Was die automatischen Wege (Hook und Hilfsprozess) übernehmen, entscheiden die Stichwörter der Verbindung ([ADR-0020](0020-stichwoerter-pro-kanal.md)).
 
 Alle drei Arten erzeugen Einträge über **denselben** Dienst `app/pb_hooks/lib/inbox-service.js` (Validierung, Kürzen, Fingerprint, Duplikat-Ergebnis). So gelten dieselben Grenzen und dieselbe Duplikaterkennung für jeden Weg ([ADR-0014](0014-datenmodell-eingang.md)).
 
@@ -63,7 +68,7 @@ Alle drei Arten erzeugen Einträge über **denselben** Dienst `app/pb_hooks/lib/
 
 Nur der offizielle Chat-Export (`.txt` bzw. `.zip` mit `_chat.txt`) als Datei-Import im Browser, mit Auswahlansicht. Die WhatsApp Cloud API (Webhooks, lokal nicht erreichbar) und inoffizielle Bibliotheken (Sperrrisiko für das Konto) sind abgelehnt. Ein Share Target kommt frühestens mit E7 (PWA, HTTPS über Tailscale).
 
-### 4. Mail: Optionen und Empfehlung
+### 4. Mail: Optionen und Entscheidung
 
 | Option | Portabilität | Sicherheit | Aufwand und Wartung |
 |---|---|---|---|
@@ -73,21 +78,42 @@ Nur der offizielle Chat-Export (`.txt` bzw. `.zip` mit `_chat.txt`) als Datei-Im
 | (d) PowerShell mit MailKit-DLLs | ohne Node, kleine DLLs | wie (a) | MailKit bringt unter .NET Framework 4.8 mehrere abhängige DLLs mit, die gepinnt und geprüft werden müssen; Tests außerhalb von Vitest; zweiter MIME-Parser neben dem der SPA. Verworfen. |
 | (e) Hilfsprozess von PocketBase per `$os.cmd` starten | wie (a) | wie (a) | Wird PocketBase hart beendet (`Stop-Process -Force`), bleibt der Kindprozess unter Windows zurück. `byl-control.ps1` verwaltet Prozesse schon. Verworfen. |
 
-**Empfehlung: (a) mit (c) als immer verfügbarer Grundlage.** `.eml` per Drag & Drop kommt vor der Postfachanbindung und bleibt der Weg ohne Zugangsdaten. (b) wird für Gmail nicht umgesetzt; neu bewerten, falls Google App-Passwörter für private Konten abschafft.
+**Entscheidung: (a) mit (c) als immer verfügbarer Grundlage** (vom Nutzer am 2026-09-25 freigegeben, OF-E4-4). `.eml` per Drag & Drop kommt vor der Postfachanbindung und bleibt der Weg ohne Zugangsdaten. (b) wird für Gmail nicht umgesetzt; neu bewerten, falls Google App-Passwörter für private Konten abschafft.
 
-Einschätzung pro Anbieter:
+Festlegung pro Anbieter (Antworten des Nutzers auf OF-E4-5):
 
-- **Web.de:** IMAP über (a) ist der einzige automatische Weg. Voraussetzungen: „POP3/IMAP-Abruf“ einschalten, bei 2FA ein anwendungsspezifisches Passwort. Risiko: automatische Abschaltung bei längerer Nichtnutzung; der Hilfsprozess meldet Anmeldefehler an der Verbindung mit Hinweis auf die Einstellung.
-- **Proton:** (a) gegen Bridge auf `127.0.0.1`, nur mit bezahltem Tarif und laufender Bridge. Der Hilfsprozess vertraut ausschließlich dem aus Bridge exportierten Zertifikat (Pfad in `settings`, Fingerprint-Vergleich), nicht beliebigen selbstsignierten. Ohne bezahlten Tarif bleibt nur (c).
-- **Gmail:** (a) mit App-Passwort (setzt Bestätigung in zwei Schritten voraus). Die Gmail-API (b) scheitert praktisch an den eingeschränkten Scopes und den 7-Tage-Tokens. Ist ein App-Passwort nicht möglich (Erweiterter Schutz), bleibt (c).
+- **Web.de:** IMAP über (a) ist der einzige automatische Weg. Der Nutzer schaltet „POP3/IMAP-Abruf“ ein; bei 2FA braucht es ein anwendungsspezifisches Passwort. Risiko: automatische Abschaltung bei längerer Nichtnutzung; der Hilfsprozess meldet Anmeldefehler an der Verbindung mit Hinweis auf die Einstellung.
+- **Proton:** Der Nutzer hat den Free-Tarif, also keine Bridge und keinen automatischen Abruf. Proton läuft **nur über (c)**: Mail als `.eml` speichern und hereinziehen (Anleitung in der README). Ein Bridge-Anschluss (lokaler IMAP-Server mit gepinntem Zertifikat) wird nicht gebaut; neu bewerten, falls der Tarif wechselt.
+- **Gmail:** (a) mit App-Passwort (Bestätigung in zwei Schritten ist beim Nutzer vermutlich aktiv). Die Gmail-API (b) scheitert praktisch an den eingeschränkten Scopes und den 7-Tage-Tokens. Ist ein App-Passwort nicht möglich (Erweiterter Schutz), bleibt (c).
 
 ### 5. Der Hilfsprozess im Detail
 
-- **Ablauf:** alle 5 Minuten je Postfach: verbinden (TLS; bei Bridge STARTTLS mit gepinntem Zertifikat), Ordner **nur lesend** öffnen, suchen nach dem vom Nutzer gewählten Umfang (OF-E4-2; Vorschlag: markierte Mails im Posteingang seit dem Einrichtungsdatum), Quelltext der Treffer holen, mit `postal-mime` parsen, über die gemeinsame Normalisierung ([ADR-0017](0017-parser-ics-eml.md)) in einen Entwurf umwandeln und an die Ingest-Route senden, abmelden. Duplikate prüft der Server über den Fingerprint (Message-ID); ein erneuter Abruf ist deshalb folgenlos.
+- **Ablauf:** alle 5 Minuten je Postfach: verbinden (TLS), den Posteingang (`INBOX`) **nur lesend** öffnen, die Mails nach dem Cursor holen, mit `postal-mime` parsen, über die gemeinsame Normalisierung ([ADR-0017](0017-parser-ics-eml.md)) in einen Entwurf umwandeln, mit den Stichwörtern der Verbindung abgleichen ([ADR-0020](0020-stichwoerter-pro-kanal.md)) und nur Treffer an die Ingest-Route senden, abmelden. Duplikate prüft der Server über den Fingerprint (Message-ID); ein erneuter Abruf ist deshalb folgenlos.
+- **Umfang (ersetzt OF-E4-2):** Posteingang, ab der Einrichtung, nur Treffer. Der erste Lauf einer Verbindung setzt den Cursor auf `UIDVALIDITY:<höchste UID>` und übernimmt nichts Älteres. Danach rückt der Cursor über jede geprüfte Mail vor, auch ohne Treffer; eine Mail ohne Treffer wird nicht gespeichert. Ändert sich `UIDVALIDITY`, beginnt der Cursor neu bei der höchsten UID (keine Flut alter Mails), und die Verbindung meldet das als Hinweis. Ältere Mails holt nur die Postfach-Auswahl (Abschnitt 6).
 - **Kein Schreibzugriff aufs Postfach:** kein `SELECT`, kein `STORE`, kein `EXPUNGE`, kein `APPEND`, kein SMTP. Ein Test prüft am Mock, dass nur lesende Befehle abgesetzt werden.
-- **Ingest-Route statt Dienstkonto:** `POST /api/byl/ingest/items` und `GET /api/byl/ingest/connections` (nur Verbindungen vom Typ `mail`, ohne Geheimnisse), `POST /api/byl/ingest/connections/{id}/status` (Cursor, letzter Lauf, bereinigter Fehler). Die Route prüft `Authorization: Bearer <Token>` gegen `$os.getenv("BYL_INGEST_TOKEN")` in konstanter Zeit; ist die Variable leer, ist die Route aus (404). Der Token darf nur Einträge für aktive Mail-Verbindungen anlegen, und zwar für deren Besitzer. Ein eigenes Auth-Konto (Collection `service_accounts` mit Regeln) wäre möglich, bräuchte aber eine Kontoanlage, Passwortpflege, Token-Erneuerung und weitere Regeln auf mehreren Collections; der Token ist enger und einfacher.
+- **Ingest-Route statt Dienstkonto:** `POST /api/byl/ingest/items` (Feld `origin`: `auto` für den Abruf, dann prüft die Route den Treffer mit `keywords.js` nach und lehnt Nichttreffer ab; `selected` für die Postfach-Auswahl, ohne Stichwortpflicht) und `GET /api/byl/ingest/connections` (nur Verbindungen vom Typ `mail`, ohne Geheimnisse), `POST /api/byl/ingest/connections/{id}/status` (Cursor, letzter Lauf, bereinigter Fehler). Die Route prüft `Authorization: Bearer <Token>` gegen `$os.getenv("BYL_INGEST_TOKEN")` in konstanter Zeit; ist die Variable leer, ist die Route aus (404). Der Token darf nur Einträge für aktive Mail-Verbindungen anlegen, und zwar für deren Besitzer. Ein eigenes Auth-Konto (Collection `service_accounts` mit Regeln) wäre möglich, bräuchte aber eine Kontoanlage, Passwortpflege, Token-Erneuerung und weitere Regeln auf mehreren Collections; der Token ist enger und einfacher.
 - **Start und Stopp:** `byl-control.ps1 Start` startet nach PocketBase auch `byl-mail.exe`, wenn die Datei vorhanden ist; `Stop` beendet beide. Ohne Mail-Verbindung wartet der Prozess untätig und fragt alle 5 Minuten die Verbindungen neu ab. Protokoll nach `app/logs/byl-mail.log`, ohne Zugangsdaten und ohne Mailinhalte.
 - **Build:** Quellcode unter `helpers/mail/` (TypeScript, strict), gebündelt mit esbuild, als SEA nach `app/byl-mail.exe` (gitignored wie `pocketbase.exe`) über `scripts/build-mail-helper.ps1`. Die CI baut und testet ihn mit.
+
+### 6. Postfach-Auswahl: der Hook fragt den Hilfsprozess über eine lokale HTTP-Schnittstelle
+
+Der Nutzer kann die letzten N Mails des Posteingangs einer Verbindung auflisten (Standard 50, höchstens 200) und einzelne davon übernehmen, auch ohne Stichwort und auch aus der Zeit vor der Einrichtung. Das ist der einzige rückwirkende Weg ([ADR-0020](0020-stichwoerter-pro-kanal.md) §4). Die SPA braucht dafür eine Antwort vom Hilfsprozess, der allein das Postfach erreicht.
+
+| Option | Bewertung |
+|---|---|
+| **(A) Anfrage-Collection** (`mail_requests`), die der Hilfsprozess abarbeitet | Der Hilfsprozess müsste die Collection alle paar Sekunden abfragen (Last und Verzögerung) oder ein Realtime-Abo mit eigener Anmeldung halten, die er heute nicht hat. Die Liste mit Betreffs und Absendern läge in `pb_data` und damit in jedem Backup. Dazu kommen Migration, Regeln, Negativtests und ein asynchroner Ablauf mit Zuständen in der Oberfläche. |
+| **(B) Browser spricht den Hilfsprozess direkt an** (`http://127.0.0.1:<Port>`) | Der Browser bräuchte den Token oder eine eigene Anmeldung am Hilfsprozess, die Seite hätte einen zweiten Ursprung (CORS), und jede andere Webseite im Browser könnte den Port ansprechen. Verworfen. |
+| **(C) Der Hook reicht die Anfrage durch** an eine lokale HTTP-Schnittstelle des Hilfsprozesses, nur auf `127.0.0.1`, mit Token | Die SPA spricht wie immer nur PocketBase an (Anmeldung, Sichtbarkeit der Verbindung wie „Jetzt abrufen“). Der Token bleibt zwischen den beiden Prozessen, die ihn ohnehin kennen. Synchron, ohne neues Schema, und nichts von der Liste wird gespeichert. |
+
+**Entscheidung: (C).**
+
+- **Hilfsprozess:** hört auf `127.0.0.1` (nie auf anderen Adressen), Port `8091` oder aus `BYL_MAIL_HELPER_PORT`, nur solange `BYL_INGEST_TOKEN` gesetzt ist. Jede Anfrage braucht `Authorization: Bearer <BYL_INGEST_TOKEN>` (Vergleich in konstanter Zeit), sonst 401. Endpunkte:
+  - `POST /mailbox/list` mit `{ connection, limit }`: je Mail UID, Datum, Absender, Betreff, Message-ID, Größe und das greifende Stichwort. Nur Kopfdaten (`ENVELOPE`), der Ordner nur lesend.
+  - `POST /mailbox/import` mit `{ connection, uids }` (höchstens 50): holt die Quelltexte, parst sie und sendet sie mit `origin: selected` an die Ingest-Route. Antwort: neu, schon vorhanden, Fehler je UID.
+
+  Die Zugangsdaten der Verbindung holt der Hilfsprozess wie beim Abruf über die Ingest-Route. Die Schnittstelle nimmt keine Zugangsdaten und keine Hostnamen von außen an, nur die ID einer aktiven Mail-Verbindung.
+- **Hook:** Routen `GET /api/byl/connections/{id}/mailbox?limit=` und `POST /api/byl/connections/{id}/mailbox/import`. Beide verlangen Anmeldung und Sichtbarkeit der Verbindung (sonst 404), Art `mail`, eingeschaltet. Sie senden mit `$http.send` an den Hilfsprozess (Timeout 60 s). Die Liste ergänzt der Hook je Mail um den Zustand im Eingang über den Fingerprint (neu, verworfen, umgewandelt), damit die Oberfläche „schon im Eingang“ zeigt. Läuft der Hilfsprozess nicht, antwortet die Route mit 503 und „Der Mail-Hilfsprozess läuft nicht (byl-mail.exe fehlt oder ist beendet).“.
+- **Oberfläche:** „Aus dem Postfach wählen“ an der Verbindung öffnet eine Auswahlansicht nach dem Muster des WhatsApp-Imports. Treffer sind vorausgewählt, Mails, die schon im Eingang sind, sind gesperrt.
 
 ## Alternativen
 
@@ -100,6 +126,8 @@ Siehe Tabelle in Abschnitt 4. Außerdem verworfen:
 ## Konsequenzen
 
 - ADR-0011 §2 wird für Google Calendar, WhatsApp (Export) und Telegram erfüllt; Notion bleibt zurückgestellt.
-- Nach Annahme von Abschnitt 4: CLAUDE.md §3 bekommt „Node.js ist Dev-Werkzeug; zur Laufzeit nur eingebettet im optionalen `byl-mail.exe`“, §2 die Ordner `helpers/mail/` und die Datei `app/byl-mail.exe`, §10 die Kanalliste.
+- Abschnitt 4 ist angenommen. CLAUDE.md ändert sich mit dem ersten Code des Hilfsprozesses (Paket 11 im E4-Plan), nicht vorher: §3 bekommt „Node.js ist Dev-Werkzeug; zur Laufzeit nur eingebettet im optionalen `byl-mail.exe`“, §2 die Ordner `helpers/mail/` und die Datei `app/byl-mail.exe`, §10 die Kanalliste.
 - Der Server stellt erstmals selbst Verbindungen ins Internet her (Kalender, Telegram) bzw. der Hilfsprozess (IMAP). Ohne Internet laufen die Kanäle mit Fehlerstatus an der Verbindung weiter; der Rest der App ist davon unberührt.
+- Proton braucht keinen Code im Hilfsprozess; der Weg über `.eml` bekommt eine Anleitung in der README.
+- Der Hilfsprozess öffnet einen lokalen Port (nur `127.0.0.1`, mit Token) für die Postfach-Auswahl. Ist der Port belegt, meldet der Hilfsprozess das im Protokoll und die Route mit 503; der Abruf läuft davon unabhängig weiter.
 - Neue Abhängigkeiten nur im Hilfsprozess (`imapflow`, `postal-mime`, als Dev-Werkzeug `esbuild`, `postject`) und in der SPA (`postal-mime`).

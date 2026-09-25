@@ -21,7 +21,8 @@ Bereits verbindlich in der [Projekt-CLAUDE.md](../../CLAUDE.md) festgelegt und d
 | [0013](0013-filter-suche-sortierung-gruppierung.md) | Filter, Suche, Sortierung und Gruppierung: was der Client und was der Server rechnet | Angenommen | 2026-09-25 |
 | [0014](0014-datenmodell-eingang.md) | Datenmodell des Eingangs (`inbox_items`) mit Rückverweis am Ticket und Duplikaterkennung | Angenommen | 2026-09-25 |
 | [0015](0015-neu-markierung-pro-nutzer.md) | „Neu“-Markierung pro Nutzer | Angenommen | 2026-09-25 |
-| [0016](0016-kanal-architektur-und-mail.md) | Architektur der Kanäle: HTTP-Kanäle im Hook per Cron, Mail über einen Hilfsprozess | Vorgeschlagen | 2026-09-25 |
+| [0016](0016-kanal-architektur-und-mail.md) | Architektur der Kanäle: HTTP-Kanäle im Hook per Cron, Mail über einen Hilfsprozess | Angenommen | 2026-09-25 |
 | [0017](0017-parser-ics-eml.md) | Parser für `.ics` im Hook, für `.eml` im Browser und im Hilfsprozess | Angenommen | 2026-09-25 |
 | [0018](0018-secrets.md) | Zugangsdaten der Kanäle als Windows-Umgebungsvariablen | Angenommen | 2026-09-25 |
 | [0019](0019-kanal-filter-und-gruppierung.md) | Quelle als Filter, Gruppierung und Merkmal in der Tabelle | Angenommen | 2026-09-25 |
+| [0020](0020-stichwoerter-pro-kanal.md) | Stichwörter pro Kanal entscheiden, was automatisch in den Eingang kommt | Angenommen | 2026-09-25 |
