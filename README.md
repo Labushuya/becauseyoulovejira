@@ -56,9 +56,12 @@ flowchart LR
     P --- H["app/pb_hooks<br/>JS-Hooks"]
     P --- M["app/pb_migrations<br/>JS-Migrationen"]
     P --- D[("app/pb_data<br/>SQLite und Backups")]
+    MH["byl-mail.exe<br/>Mail-Hilfsprozess (optional)"] -- "Ingest-Route mit Token" --> P
+    MH -- "IMAP, nur lesend" --> IMAP["Postfach<br/>(Web.de)"]
 ```
 
 - **Ein Prozess, eine Origin:** PocketBase liefert die gebaute SPA selbst aus und stellt API und Realtime-Abos bereit. Node.js wird nur zum Bauen und Testen gebraucht, nicht für den Betrieb.
+- **Mail-Hilfsprozess (optional):** PocketBase-Hooks können kein IMAP. Postfächer holt deshalb `app\byl-mail.exe` ab, ein eigenständiges Programm mit eingebettetem Node.js ([Single Executable Application](https://nodejs.org/docs/latest-v24.x/api/single-executable-applications.html), etwa 90 MB), das `start.bat` nur bei einer eingeschalteten Postfach-Verbindung startet. Es liest nur (IMAP `EXAMINE`, `BODY.PEEK`) und liefert Mails mit Stichwort über eine Ingest-Route mit Token an PocketBase ([ADR-0016](docs/adr/0016-kanal-architektur-und-mail.md)).
 - **Serverlogik** nur in JS-Hooks (Ticket-Keys, Erledigt-Zeitpunkt, Verlauf, Schutzregeln); mehrteilige Schreibvorgänge laufen in einer Transaktion. Reine Hilfsmodule liegen unter `app/pb_hooks/lib/` und sind ohne PocketBase testbar.
 - **Schema** nur über handgeschriebene Migrationen (`--automigrate=false`); die Zugriffsregeln je Nutzer und Scope sind per Negativtests belegt.
 - **Frontend** in Schichten: `web/src/lib/domain` (reine Logik), `web/src/lib/data` (Datenzugriff und Realtime über das SDK), `web/src/lib/stores` (geteilter Zustand in `.svelte.ts` mit Runes), `web/src/lib/components` und `web/src/routes`. Details: [ADR-0006](docs/adr/0006-frontend-zustand-und-datenzugriff.md), [ADR-0007](docs/adr/0007-realtime-und-sitzungspflege.md).
@@ -71,7 +74,8 @@ flowchart LR
 | **Markdown** | markdown-it und DOMPurify | Ausgabe wird sanitisiert ([ADR-0008](docs/adr/0008-markdown-rendering-und-sanitizing.md)) |
 | **Styling** | CSS-Custom-Properties, Inter und JetBrains Mono lokal über `@fontsource-variable` | offline lauffähig, Petrol als einzige Akzentfarbe |
 | **Tests** | [Vitest](https://vitest.dev), [Testing Library](https://testing-library.com/docs/svelte-testing-library/intro) und jsdom | Hook-Integration gegen Wegwerf-Instanzen, Domänenlogik, Komponenten |
-| **Dev-Werkzeug** | [Node.js](https://nodejs.org) ≥ 24, Windows PowerShell 5.1 | nur Build und Test |
+| **Mail-Hilfsprozess** | [imapflow](https://imapflow.com) und [postal-mime](https://github.com/postalsys/postal-mime), gebündelt mit esbuild als Node-24-SEA `byl-mail.exe` | IMAP nur lesend, derselbe Mail-Parser wie für `.eml`-Dateien |
+| **Dev-Werkzeug** | [Node.js](https://nodejs.org) ≥ 24, Windows PowerShell 5.1 | Build und Test; zur Laufzeit nur eingebettet in `byl-mail.exe` |
 
 ### Repo-Struktur
 
@@ -79,6 +83,7 @@ flowchart LR
 becauseyoulovejira/
   app/                    Portabler Laufzeitordner (wird kopiert/gesichert)
     pocketbase.exe        Binary (gitignored, via scripts/fetch-pocketbase.ps1)
+    byl-mail.exe          Mail-Hilfsprozess (gitignored, via scripts/build-mail-helper.ps1)
     pb_hooks/             *.pb.js Hooks, lib/*.js reine CommonJS-Module
     pb_migrations/        Handgeschriebene JS-Migrationen
     pb_public/            Frontend-Build (gitignored)
@@ -92,6 +97,7 @@ becauseyoulovejira/
     autostart-aus.bat     Autostart entfernen
     byl-control.ps1       Logik hinter den Skripten (byl-functions.ps1: testbare Funktionen)
   web/                    SvelteKit-Quellcode (Build → ../app/pb_public), Tests unter src/**/*.test.ts
+  helpers/mail/           Mail-Hilfsprozess in TypeScript (Build → ../../app/byl-mail.exe), Tests unter src/*.test.ts
   scripts/                Build-/Setup-Skripte (PowerShell)
   tests/                  Vitest-Tests (Hooks, Regeln, Login- und SPA-Integration)
   docs/                   ADRs, Etappenpläne, Test-Manifest, README-Assets
@@ -149,9 +155,11 @@ Grenzen der Erkennung: `start.bat` meldet eine offene Einrichtung nur, wenn der 
 | Skript | Verhalten |
 |---|---|
 | `app\start.bat` | Startet PocketBase ohne sichtbares Fenster mit den Daten in `app\pb_data`, wartet, bis `/api/health` antwortet (höchstens 30 s), und öffnet dann genau einmal `http://127.0.0.1:8090/`. Läuft die App schon, öffnet es nur den Browser. Ist dort die Einrichtung noch offen, öffnet es stattdessen den Einrichtungslink (siehe oben). Ist Port 8090 von einem anderen Programm belegt, bricht es mit einer Meldung ab. Bei Fehlern und Einrichtungshinweisen bleibt das Fenster offen, bis eine Taste gedrückt wird. Bei einem normalen Start schließt es sich von selbst. Details stehen in `app\logs\`. |
-| `app\stop.bat` | Beendet nur die eigene Instanz (`pocketbase.exe` aus diesem Ordner, gestartet mit `serve` auf `127.0.0.1:8090` und `app\pb_data`). Andere PocketBase-Prozesse, etwa Testinstanzen, bleiben unberührt. Die Erfolgsmeldung bleibt 5 Sekunden stehen (eine Taste schließt sofort), eine Fehlermeldung bis zu einem Tastendruck. |
+| `app\stop.bat` | Beendet nur die eigene Instanz (`pocketbase.exe` aus diesem Ordner, gestartet mit `serve` auf `127.0.0.1:8090` und `app\pb_data`) und den eigenen Mail-Hilfsprozess (`byl-mail.exe` aus diesem Ordner mit `run --url=http://127.0.0.1:8090`). Andere Prozesse, etwa Testinstanzen, bleiben unberührt. Die Erfolgsmeldung bleibt 5 Sekunden stehen (eine Taste schließt sofort), eine Fehlermeldung bis zu einem Tastendruck. |
 | `app\admin-zuruecksetzen.bat` | Legt ein Admin-Konto an oder setzt das Admin-Passwort neu, ohne Daten zu löschen. Siehe [Konten verwalten](#konten-verwalten). |
 | `app\autostart-an.bat` / `app\autostart-aus.bat` | Legt die Verknüpfung `becauseyoulovejira.lnk` im Windows-Autostart-Ordner an bzw. entfernt sie. Sie startet `start-hidden.vbs`: Die App startet bei der Anmeldung still im Hintergrund, **ohne** Browser. Hinweise (Erststart) und Fehler erscheinen dann als Meldungsfenster. Nach dem Verschieben von `app\` einfach `autostart-an.bat` erneut ausführen. |
+
+`start.bat` startet nach PocketBase auch `app\byl-mail.exe`, wenn die Datei da ist und es mindestens eine eingeschaltete Postfach-Verbindung gibt (auch wenn die App schon läuft und nur der Hilfsprozess fehlt). Beim ersten Mal legt es dafür die Benutzervariable `BYL_INGEST_TOKEN` an (24 Zufallsbytes), die nur PocketBase und der Hilfsprozess kennen. Das Protokoll des Hilfsprozesses steht in `app\logs\byl-mail.log`.
 
 Die Skripte sind dünne Hüllen um `app\byl-control.ps1` und rufen es mit `powershell -NoProfile -ExecutionPolicy Bypass` auf; eine gesperrte Skriptausführung stört also nicht.
 
@@ -219,7 +227,7 @@ Danach anmelden und die Daten prüfen; es gelten die Konten und Passwörter zum 
 
 ### Kanäle und Zugangsdaten
 
-Google Calendar und Telegram holt die App selbst ab, solange sie läuft. Eingerichtet werden sie unter **Kanäle** (`http://127.0.0.1:8090/einstellungen/kanaele`). Details: [ADR-0016](docs/adr/0016-kanal-architektur-und-mail.md), [ADR-0018](docs/adr/0018-secrets.md).
+Google Calendar und Telegram holt die App selbst ab, Postfächer der Mail-Hilfsprozess `byl-mail.exe`, solange die App läuft. Eingerichtet werden sie unter **Kanäle** (`http://127.0.0.1:8090/einstellungen/kanaele`). Details: [ADR-0016](docs/adr/0016-kanal-architektur-und-mail.md), [ADR-0018](docs/adr/0018-secrets.md).
 
 - **Zugangsdaten nur als Windows-Variable:** Geheime Kalenderadresse, Bot-Token und erlaubte IDs stehen als Umgebungsvariablen deines Windows-Kontos, deren Name mit `BYL_` beginnt (Großbuchstaben, Ziffern, `_`). Die App speichert nur den Namen, nie den Wert. So stehen die Werte weder in `pb_data` noch in Backups oder Kopien von `app\`.
 - **Variable setzen:** Eingabeaufforderung öffnen (Windows-Taste, `cmd`) und `setx NAME "Wert"` eingeben, etwa `setx BYL_TELEGRAM_TOKEN "123456789:AA…"`. Alternativ: Windows-Taste, „Umgebungsvariablen“, dann **Umgebungsvariablen für dieses Konto bearbeiten** → **Benutzervariablen** → **Neu…**.
@@ -231,7 +239,7 @@ Google Calendar und Telegram holt die App selbst ab, solange sie läuft. Eingeri
 **Stichwörter** ([ADR-0020](docs/adr/0020-stichwoerter-pro-kanal.md)): Jede Verbindung hat eine eigene Liste. Automatisch kommt nur in den Eingang, was ein Stichwort trifft; ohne Stichwörter übernimmt eine Verbindung nichts und zeigt eine Warnung.
 
 - Groß- und Kleinschreibung und Umlaute zählen nicht („prüfen“, „pruefen“ und „prufen“ finden einander). Gesucht wird am Wortanfang: „todo“ trifft „Todo-Liste“, nicht „Fotodoku“. Mehrere Wörter wie „zu erledigen“ sind erlaubt.
-- Gesucht wird beim Kalender in Titel und Beschreibung, bei Telegram im Text bzw. in der Bildunterschrift.
+- Gesucht wird beim Kalender in Titel und Beschreibung, bei Telegram im Text bzw. in der Bildunterschrift, bei Postfächern im Betreff (auf Wunsch auch in den ersten 500 Zeichen des Textes).
 - „Vorschläge übernehmen“ trägt todo, aufgabe, erledigen, ticket und #byl ein.
 - Was kein Stichwort trifft, wird nicht gespeichert, auch nicht als verworfen. Neue Stichwörter gelten bei Telegram erst für neue Nachrichten; beim Kalender für alle Termine, die beim nächsten Abruf im Fenster liegen.
 - Das Stichwort, das gegriffen hat, steht im Panel des Eintrags.
@@ -268,6 +276,24 @@ Du schreibst deinem eigenen Bot, was in den Eingang soll. Die App fragt jede Min
 - In Gruppen sieht ein Bot normalerweise nur Befehle und Antworten an ihn. Soll er alles lesen, bei BotFather `/setprivacy` auf **Disable** stellen.
 - **Widerrufen:** Bei BotFather `/revoke` (neuer Token, dann `setx` und Neustart) oder `/deletebot`.
 - Optional: `BYL_TELEGRAM_API_BASE` zeigt auf einen eigenen [Telegram Bot API Server](https://core.telegram.org/bots/api#using-a-local-bot-api-server) statt `https://api.telegram.org`. Die Tests nutzen die Variable für ihren lokalen Fake-Server.
+
+#### Web.de-Postfach
+
+Der Mail-Hilfsprozess `app\byl-mail.exe` holt den Posteingang alle 5 Minuten ab, solange die App läuft. In den Eingang kommen nur Mails, die **nach der Einrichtung** ankommen und deren **Betreff ein Stichwort** der Verbindung enthält (auf Wunsch auch die ersten 500 Zeichen des Textes). Er liest nur: Gelesen-Status, Markierungen und Ordner bleiben unverändert, er löscht, verschiebt und verschickt nichts.
+
+1. Bei [Web.de](https://web.de) anmelden, oben auf die Initialen → **E-Mail-Einstellungen** → unter „E-Mail empfangen“ **POP3/IMAP** → Schalter **POP3- und IMAP-Zugriff erlauben** einschalten und die Sicherheitsabfrage bestätigen.
+2. Mit Zwei-Faktor-Anmeldung: **Account verwalten** → **Login & Sicherheit** → **Anwendungsspezifische Passwörter verwalten** → neues Passwort erstellen (Name etwa „becauseyoulovejira“); es wird nur einmal angezeigt. Ohne Zwei-Faktor-Anmeldung gilt das normale Web.de-Passwort.
+3. Eingabeaufforderung: `setx BYL_WEBDE_PASSWORD "<Passwort>"`.
+4. Unter **Kanäle** → **Verbindungen** die Art **Postfach (IMAP)** anlegen: Anbieter **Web.de**, Benutzername = deine E-Mail-Adresse, Variable `BYL_WEBDE_PASSWORD`. Stichwörter eintragen.
+5. `stop.bat`, dann `start.bat`. Beim ersten Mal legt `start.bat` die Variable `BYL_INGEST_TOKEN` an (nichts zu tun) und startet `byl-mail.exe`.
+6. Nach spätestens 5 Minuten zeigt die Verbindung „Letzter Abruf“ und den Hinweis „Erster Abruf“: Ältere Mails bleiben im Postfach, ab jetzt kommen neue Mails mit Stichwort.
+
+- **Einmal pro Mail:** Die Message-ID ist das Duplikatmerkmal. Dieselbe Mail als `.eml`-Datei oder ein zweiter Abruf ergibt keinen zweiten Eintrag. Die Originalmail hängt am Eintrag („Originaldatei herunterladen“).
+- **Abschaltung durch Web.de:** Web.de schaltet den POP3/IMAP-Abruf nach längerer Nichtnutzung aus. Die Verbindung meldet dann „Anmeldung bei Web.de abgelehnt.“ mit einem Hinweis auf den Schalter; wieder einschalten genügt.
+- **Ausfälle:** Ohne Internet oder bei beendetem PocketBase versucht es der Hilfsprozess beim nächsten Intervall erneut. Er merkt sich die zuletzt geprüfte Mail an der Verbindung (`UIDVALIDITY:UID`) und macht dort weiter. Nummeriert Web.de den Posteingang neu, beginnt er bei den neuesten Mails und meldet das als Hinweis.
+- **Erster Start:** SmartScreen oder ein Virenscanner können bei `byl-mail.exe` nachfragen, weil die Datei nicht signiert ist.
+- **Protokoll:** `app\logs\byl-mail.log` (Anzahlen und bereinigte Fehler, keine Zugangsdaten, keine Betreffs oder Inhalte).
+- **Widerrufen:** das anwendungsspezifische Passwort unter **Login & Sicherheit** löschen bzw. den POP3/IMAP-Zugriff ausschalten; die Variable `BYL_WEBDE_PASSWORD` entfernen und neu starten.
 
 #### Dateien hereinziehen und Proton Mail
 
@@ -366,7 +392,8 @@ Qualitäts-Gates (alle über den Root, `scripts\build.ps1` führt sie in dieser 
 npm run check   # svelte-check / TypeScript
 npm run lint    # Prettier + ESLint
 npm run build   # Frontend-Build nach app/pb_public
-npm test        # Vitest: Unit- und Integrationstests, danach die web-Tests
+powershell -ExecutionPolicy Bypass -File scripts\build-mail-helper.ps1   # app\byl-mail.exe bauen und ohne Node prüfen
+npm test        # Vitest: Unit-, Hilfsprozess- und Integrationstests, danach die web-Tests
 ```
 
 Die CI ([`.github/workflows/ci.yml`](.github/workflows/ci.yml)) läuft bei jedem Push und Pull Request auf `main` auf einem Windows-Runner: Node.js 24, `scripts\fetch-pocketbase.ps1`, dann `scripts\build.ps1`. Dependabot hält npm-Pakete und Actions aktuell; Major-Sprünge von `typescript` und `@types/node` schlägt er nicht vor, sie werden bewusst separat geprüft.
@@ -378,9 +405,11 @@ Die CI ([`.github/workflows/ci.yml`](.github/workflows/ci.yml)) läuft bei jedem
 | `tests/unit/` | reine Logik ohne PocketBase: Hook-Module aus `app/pb_hooks/lib`, Start-/Stopp- und Admin-Reset-Logik (`app/byl-functions.ps1` mit gefälschten Prozessen, Sockets, Log-Texten und Eingaben) und statische Prüfungen der Skripte |
 | `tests/integration/` | gegen Wegwerf-PocketBase-Instanzen: Migrationen, API-Regeln, Hooks, Login, gesperrte Mail-Abläufe, Admin-Reset, SPA-Fallback, Backup-Wiederherstellung, Datenzugriff und Realtime des Frontends (`web/src/lib/data`) |
 | `web/src/**/*.test.ts` | Frontend: Domänenlogik, Stores, Unit- und Komponententests (jsdom) |
+| `helpers/mail/src/*.test.ts` | Mail-Hilfsprozess gegen einen kleinen IMAP-Server im Test (`helpers/mail/test/fake-imap.ts`, nur `127.0.0.1`): nur lesende Befehle, Cursor, Stichwörter, Fehler; dazu `tests/integration/mail-*.test.mjs` mit PocketBase und dem gebauten `byl-mail.exe` ohne Node |
 
 ```powershell
 npm run test:unit          # nur reine Logik, ohne PocketBase
+npm run test:helper        # Mail-Hilfsprozess gegen den Test-IMAP-Server
 npm run test:integration   # gegen eine Wegwerf-PocketBase-Instanz
 npm run test:web           # Frontend: Unit- und Komponententests (jsdom)
 ```
