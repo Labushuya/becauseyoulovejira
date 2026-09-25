@@ -213,8 +213,8 @@
   "meta": {
     "projekt": "becauseyoulovejira",
     "stand": "2026-09-25",
-    "commit": "2ad2f43",
-    "etappe": "E0, E1, E1.1, E2 und E3 abgeschlossen, E4 in Arbeit (Pakete 1 bis 11, 13 bis 17, 20 bis 23; geplant 24, 19)"
+    "commit": "4ff04a6",
+    "etappe": "E0, E1, E1.1, E2 und E3 abgeschlossen, E4 in Arbeit (Pakete 1 bis 11, 13 bis 17, 20 bis 24; geplant 19)"
   },
   "blocks": [
     {
@@ -1316,10 +1316,10 @@
           "pre": "Nach dem Merge von Paket 23 und dem Build auf main; Web.de-Verbindung aus BYL-E4-019 läuft (byl-mail.exe gestartet, nach dem Build einmal stop.bat und start.bat, damit die neue Version läuft).", "steps": ["An der Web.de-Verbindung „Aus dem Postfach wählen“: die letzten 50 Mails erscheinen neueste zuerst, Mails mit Stichwort im Betreff sind vorausgewählt, schon übernommene gesperrt.", "Anzahl auf 200 stellen: die Liste wird länger.", "Eine alte Mail ohne Stichwort auswählen und übernehmen: „Jetzt im Eingang.“, der Eintrag erscheint im Eingang mit Originaldatei.", "Im Webmail prüfen: Gelesen-Status und Markierungen unverändert.", "byl-mail.exe im Task-Manager beenden und die Auswahl öffnen: neutraler Hinweis „Der Mail-Hilfsprozess läuft nicht …“ statt einer Fehlerseite; start.bat startet ihn wieder, „Erneut versuchen“ zeigt die Liste.", "Den ganzen Dialog per Tastatur bedienen (Tab, Leertaste, Escape)."],
           "expect": "Auch ältere Mails ohne Stichwort lassen sich gezielt übernehmen; das Postfach bleibt unverändert.",
           "tests": [] },
-        { "id": "BYL-E4-040", "title": "Inhalt verworfener Einträge nach 30 Tagen löschen", "art": ["unit", "integration"], "status": "geplant",
-          "pre": "E4-Plan, Paket 24 (OF-E4-6).", "steps": ["Verworfene Einträge älter als 30 Tage verlieren Text, Originaldatei und Inhalte in source_meta; Titel, Kanal, Art, Quelldatum, source_ref und Fingerprint bleiben.", "Neue und umgewandelte Einträge bleiben unberührt; Wiederherstellen geht weiter.", "Der Lauf ist idempotent, ein Fehler an einem Eintrag hält die anderen nicht auf."],
-          "expect": "Tombstone bleibt, Inhalt verschwindet nach 30 Tagen.",
-          "tests": [] }
+        { "id": "BYL-E4-040", "title": "Inhalt verworfener Einträge nach 30 Tagen löschen", "art": ["unit","komponente","integration"], "status": "bestanden",
+          "pre": "E4-Plan, Paket 24 (OF-E4-6; ADR-0014 §3). Für die Integration app/pocketbase.exe mit erfundenem Ingest-Token; handled_at wird direkt in data.db der Wegwerf-Instanz zurückgedatiert, der Job läuft über POST /api/crons/byl-inbox-cleanup.", "steps": ["npm run test:unit","npm run test:integration","npm run test:web"],
+          "expect": "Täglicher Cron-Job byl-inbox-cleanup (30 11 * * * UTC). Verworfene Einträge, die länger als DISCARDED_RETENTION_DAYS (30) volle Berliner Tage verworfen sind (Stichtag über berlin-time.js, an beiden Zeitumstellungen und nach Berliner statt UTC-Datum geprüft), bekommen den Platzhaltertext, verlieren die Originaldatei (auch im Speicherordner) und alle Angaben in source_meta außer keyword, all_day und recurrence_id; der Titel wird auf 40 Zeichen gekürzt. Fingerprint, Zustand, Kanal, Art, source_ref, source_date, connection und handled_at bleiben, in allen Scopes und für alle Kanäle einschließlich mail. Die Ingest-Route meldet dieselbe Mail danach als Duplikat „verworfen“, lookup als „Schon verworfen.“, eine neue Anlage wird abgelehnt; Wiederherstellen geht weiter. Neue, umgewandelte und erst 29 Tage verworfene Einträge bleiben unberührt. Der Lauf ist idempotent (updated bleibt beim zweiten Lauf gleich); ein Eintrag, dessen Speichern scheitert, steht im Log und hält die anderen nicht auf. Vor der Migration tut der Job nichts. Das Panel eines verworfenen Eintrags nennt die 30 Tage neutral.",
+          "tests": ["tests/unit/inbox-cleanup.test.mjs","tests/integration/inbox-cleanup.test.mjs","tests/integration/hooks-before-migration.test.mjs::lets the cleanup of discarded items do nothing without the inbox","web/src/lib/components/inbox-panel.test.ts::tells that a discarded entry loses its content after 30 days"] }
       ]
     },
     {
