@@ -10,6 +10,7 @@ import DrawerHarness from '$lib/test/DrawerHarness.svelte';
 import captureForm from '../CaptureForm.svelte?raw';
 import inboxPanel from '../InboxPanel.svelte?raw';
 import newTicketForm from '../NewTicketForm.svelte?raw';
+import projectPanel from '../ProjectPanel.svelte?raw';
 import ticketPanel from '../TicketPanel.svelte?raw';
 import source from './Drawer.svelte?raw';
 
@@ -91,7 +92,8 @@ describe('side panel', () => {
 		['TicketPanel', ticketPanel],
 		['InboxPanel', inboxPanel],
 		['NewTicketForm', newTicketForm],
-		['CaptureForm', captureForm]
+		['CaptureForm', captureForm],
+		['ProjectPanel', projectPanel]
 	])('%s is built on it', (_name, panel) => {
 		expect(panel).toMatch(/import Drawer from '\.\/overlay\/Drawer\.svelte';/);
 		expect(panel).not.toMatch(/<aside\b|side-panel/);

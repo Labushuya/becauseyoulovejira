@@ -1,12 +1,14 @@
-// Component tests for the project view (E3 plan, T-3, T-12 and package 14): section bar with the
-// switch "Aufgaben | Projekte", "Archivierte anzeigen" in the URL, tiles with "aktiv" from the
-// list store and "gesamt" with the done tickets of the server, the dialog and the focus after it,
-// empty states. Navigation and page state are mocked; the stores run with fake data layers.
+// Component tests for the project view (E3 plan, T-3, T-12 and package 14; package UI-8): section
+// bar with the switch "Aufgaben | Projekte | Eingang" first, "Archivierte anzeigen" in the URL,
+// tiles with "aktiv" from the list store and "gesamt" with the done tickets of the server, links to
+// the project panel and "Neues Projekt", the focus after closing a panel, empty states. Navigation
+// and page state are mocked; the stores run with fake data layers. The panel itself is covered in
+// project-panel.test.ts and the projects layout test.
 
 import { fireEvent, render, screen, within } from '@testing-library/svelte';
 import { tick } from 'svelte';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import type { Project } from '$lib/domain/project';
+import { countActiveByProject, type Project } from '$lib/domain/project';
 import type { Tag } from '$lib/domain/tag';
 import type { TicketSummary } from '$lib/domain/ticket';
 import { CatalogStore, type CatalogData } from '$lib/stores/catalog.svelte';
@@ -81,7 +83,12 @@ function ticket(projectId: string | null, status: TicketSummary['status'] = 'ope
 
 async function show(
 	path = '/projekte',
-	{ projects = [HOUSE, CAR, OLD], done = { [HOUSE.id]: 2 } as Record<string, number> } = {}
+	{
+		projects = [HOUSE, CAR, OLD],
+		done = { [HOUSE.id]: 2 } as Record<string, number>,
+		activeId = null as string | null,
+		creating = false
+	} = {}
 ) {
 	mocks.page.url = new URL(path, 'http://localhost:3000');
 	const session = { ensureValid: () => true, logout: vi.fn() };
@@ -131,14 +138,23 @@ async function show(
 	await catalog.load();
 	tickets.loadOpen();
 	const flags = new FlagStore();
-	render(ProjectsView, { props: { catalog, tickets, stats, editor, flags } });
+	// As in projekte/+layout.svelte.
+	const activeOf = (project: Project) =>
+		tickets.openState === 'ready'
+			? (countActiveByProject(tickets.open).get(project.id) ?? 0)
+			: null;
+	const totalOf = (project: Project) => {
+		const active = activeOf(project);
+		return active === null ? null : stats.total(project.id, active);
+	};
+	const view = render(ProjectsView, {
+		props: { catalog, tickets, stats, editor, flags, activeOf, totalOf, activeId, creating }
+	});
 	await vi.waitFor(() => expect(tickets.openState).toBe('ready'));
 	await tick();
-	return { catalog, tickets, stats, editorData, countDone, flags };
+	const props = { catalog, tickets, stats, editor, flags, activeOf, totalOf, activeId, creating };
+	return { catalog, tickets, stats, editorData, countDone, flags, view, props };
 }
-
-/** Titles of the shown flags, newest first (ADR-0025 section 8). */
-const flagTitles = (flags: FlagStore) => flags.flags.map((flag) => flag.title);
 
 const tileText = (name: string) =>
 	screen
@@ -158,7 +174,13 @@ describe('project view', () => {
 			'page'
 		);
 		expect(screen.getByRole('checkbox', { name: 'Archivierte anzeigen' })).toBeTruthy();
-		expect(screen.getByRole('button', { name: 'Neues Projekt' })).toBeTruthy();
+		expect(screen.getByRole('link', { name: 'Neues Projekt' }).getAttribute('href')).toBe(
+			'/projekte/neu'
+		);
+		// Same order as in the other views: the section bar with the switch comes first (UI-8).
+		const section = screen.getByRole('region', { name: 'Projekte' });
+		expect(section.firstElementChild?.classList.contains('section-bar')).toBe(true);
+		expect(section.firstElementChild?.contains(nav)).toBe(true);
 		expect(screen.queryByRole('group', { name: 'Kennzahlen' })).toBeNull();
 		expect(screen.queryByRole('region', { name: 'Filter' })).toBeNull();
 	});
@@ -191,58 +213,70 @@ describe('project view', () => {
 		await vi.waitFor(() => expect(countDone).toHaveBeenCalledWith(OLD.id, expect.anything()));
 	});
 
-	it('opens the dialog and returns the focus to "Neues Projekt" after creating', async () => {
-		const { editorData, catalog, flags } = await show();
-		const button = screen.getByRole('button', { name: 'Neues Projekt' });
-		button.focus();
+	it('opens the project panel from a tile and "Neues Projekt", keeping the switch', async () => {
+		await show('/projekte?archiviert=1');
 
-		await fireEvent.click(button);
-		const dialog = screen.getByRole('dialog', { name: 'Neues Projekt' });
-		await fireEvent.input(within(dialog).getByRole('textbox', { name: 'Name' }), {
-			target: { value: 'Garten' }
-		});
-		await fireEvent.click(within(dialog).getByRole('button', { name: 'Anlegen' }));
-
-		expect(editorData.createProject).toHaveBeenCalledWith({ name: 'Garten', code: 'GART' });
-		await vi.waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
-		expect(document.activeElement).toBe(button);
-		expect(catalog.projectById('proj00000000009')).not.toBeNull();
-		expect(flagTitles(flags)).toEqual(['Projekt „Garten“ (GART) angelegt.']);
-		expect(tileText('Garten')).toMatch(/^Garten GART/);
+		expect(screen.getByRole('link', { name: /^Haus/ }).getAttribute('href')).toBe(
+			'/projekte/proj00000000001?archiviert=1'
+		);
+		expect(screen.getByRole('link', { name: 'Neues Projekt' }).getAttribute('href')).toBe(
+			'/projekte/neu?archiviert=1'
+		);
+		expect(screen.queryByRole('button', { name: /bearbeiten$/ })).toBeNull();
+		expect(screen.queryByRole('dialog')).toBeNull();
 	});
 
-	it('returns the focus to "Bearbeiten" after cancelling and to the heading if the tile is gone', async () => {
-		const { flags } = await show();
-		const edit = screen.getByRole('button', { name: 'Projekt Haus bearbeiten' });
+	it('marks the tile of the project in the panel and counts it even when it is not shown', async () => {
+		const { countDone } = await show('/projekte', { activeId: OLD.id });
 
-		await fireEvent.click(edit);
-		const dialog = screen.getByRole('dialog', { name: 'Projekt bearbeiten' });
-		await fireEvent.click(within(dialog).getByRole('button', { name: 'Abbrechen' }));
-		await vi.waitFor(() => expect(document.activeElement).toBe(edit));
+		await vi.waitFor(() => expect(countDone).toHaveBeenCalledWith(OLD.id, expect.anything()));
+		expect(screen.queryByRole('link', { name: /^Büro/ })).toBeNull();
 
-		await fireEvent.click(edit);
-		await fireEvent.click(screen.getByRole('button', { name: 'Archivieren' }));
-		await vi.waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
-		expect(screen.queryByRole('link', { name: /^Haus/ })).toBeNull();
-		expect(document.activeElement).toBe(screen.getByRole('heading', { name: 'Projekte' }));
-		expect(flagTitles(flags)).toEqual(['Projekt „Haus“ archiviert.']);
+		document.body.innerHTML = '';
+		await show('/projekte', { activeId: HOUSE.id });
+		expect(screen.getByRole('link', { name: /^Haus/ }).getAttribute('aria-current')).toBe('page');
 	});
 
-	it('offers deleting only for a project without tickets', async () => {
-		await show('/projekte', { projects: [HOUSE, { ...CAR, id: 'proj00000000004', name: 'Leer' }] });
+	it('returns the focus to the tile after closing the panel, else to the heading', async () => {
+		const { view, props } = await show('/projekte', { activeId: HOUSE.id });
 
-		await fireEvent.click(screen.getByRole('button', { name: 'Projekt Haus bearbeiten' }));
-		expect(screen.queryByRole('button', { name: 'Löschen …' })).toBeNull();
-		await fireEvent.click(screen.getByRole('button', { name: 'Abbrechen' }));
+		await view.rerender({ ...props, activeId: null });
+		await vi.waitFor(() =>
+			expect(document.activeElement).toBe(screen.getByRole('link', { name: /^Haus/ }))
+		);
 
-		await fireEvent.click(screen.getByRole('button', { name: 'Projekt Leer bearbeiten' }));
-		await vi.waitFor(() => expect(screen.getByRole('button', { name: 'Löschen …' })).toBeTruthy());
+		// A tile that is gone (archived or deleted): the heading of the view.
+		await view.rerender({ ...props, activeId: 'proj00000000099' });
+		(document.activeElement as HTMLElement).blur();
+		await view.rerender({ ...props, activeId: null });
+		await vi.waitFor(() =>
+			expect(document.activeElement).toBe(screen.getByRole('heading', { name: 'Projekte' }))
+		);
+	});
+
+	it('keeps the focus where it is when the panel closes through a click elsewhere', async () => {
+		const { view, props } = await show('/projekte', { activeId: HOUSE.id });
+		const auto = screen.getByRole('link', { name: /^Auto/ });
+		auto.focus();
+
+		await view.rerender({ ...props, activeId: null });
+		await tick();
+		expect(document.activeElement).toBe(auto);
+	});
+
+	it('returns the focus to "Neues Projekt" when its panel closes without a project', async () => {
+		const { view, props } = await show('/projekte', { creating: true });
+
+		await view.rerender({ ...props, creating: false });
+		await vi.waitFor(() =>
+			expect(document.activeElement).toBe(screen.getByRole('link', { name: 'Neues Projekt' }))
+		);
 	});
 
 	it('says "Noch keine Projekte." with "Neues Projekt", and that all are archived', async () => {
 		await show('/projekte', { projects: [] });
 		const empty = screen.getByText('Noch keine Projekte.').parentElement as HTMLElement;
-		expect(within(empty).getByRole('button', { name: 'Neues Projekt' })).toBeTruthy();
+		expect(within(empty).getByRole('link', { name: 'Neues Projekt' })).toBeTruthy();
 
 		document.body.innerHTML = '';
 		await show('/projekte', { projects: [OLD] });

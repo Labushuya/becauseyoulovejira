@@ -12,8 +12,11 @@ import {
 	inboxHref,
 	inboxItemHref,
 	listHref,
+	newProjectHref,
 	newTicketHref,
+	projectHref,
 	projectsHref,
+	projectsViewHref,
 	projectTicketsHref,
 	showArchivedFrom,
 	showDoneFrom,
@@ -111,6 +114,19 @@ describe('ticket links', () => {
 		expect(withShowArchived(at('/projekte?x=1'), true)).toBe('/projekte?x=1&archiviert=1');
 		expect(withShowArchived(at('/projekte?archiviert=1&x=1'), false)).toBe('/projekte?x=1');
 		expect(withShowArchived(at('/projekte?archiviert=1'), false)).toBe('/projekte');
+	});
+
+	it('addresses the project panel and keeps only the switch "Archivierte anzeigen" (UI-8)', () => {
+		expect(projectHref('proj00000000001', at('/projekte'))).toBe('/projekte/proj00000000001');
+		expect(projectHref('proj00000000001', at('/projekte/neu?archiviert=1&x=1'))).toBe(
+			'/projekte/proj00000000001?archiviert=1'
+		);
+		expect(newProjectHref(at('/projekte?archiviert=1'))).toBe('/projekte/neu?archiviert=1');
+		expect(newProjectHref(at('/projekte?archiviert=0'))).toBe('/projekte/neu');
+		expect(projectsViewHref(at('/projekte/proj00000000001?archiviert=1'))).toBe(
+			'/projekte?archiviert=1'
+		);
+		expect(projectsViewHref(at('/projekte/neu'))).toBe('/projekte');
 	});
 });
 

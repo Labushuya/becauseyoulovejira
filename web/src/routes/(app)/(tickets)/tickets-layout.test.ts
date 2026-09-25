@@ -74,19 +74,28 @@ describe('tickets layout', () => {
 		expect(screen.getByText('Panel')).toBeTruthy();
 	});
 
-	it('shows the KPI tiles and the filter bar above the table, in this order', async () => {
+	// Since UI-8 the section bar with the switch comes first, as in the projects and the inbox; the
+	// KPI tiles and the filter bar follow it (ADR-0025 section 10).
+	it('shows the section bar, the KPI tiles, the filter bar and the table, in this order', async () => {
 		renderLayout('/?faellig=heute');
 		await vi.waitFor(() =>
 			expect(screen.getByRole('button', { name: '0 nicht erledigt' })).toBeTruthy()
 		);
 
+		const heading = screen.getByRole('heading', { name: 'Aufgaben' });
+		const views = screen.getByRole('navigation', { name: 'Ansicht' });
 		const tiles = screen.getByRole('group', { name: 'Kennzahlen' });
 		const filters = screen.getByRole('region', { name: 'Filter' });
-		const heading = screen.getByRole('heading', { name: 'Aufgaben' });
-		expect(tiles.compareDocumentPosition(filters) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-		expect(
-			filters.compareDocumentPosition(heading) & Node.DOCUMENT_POSITION_FOLLOWING
-		).toBeTruthy();
+		const section = screen.getByRole('region', { name: 'Aufgaben' });
+		const order = [heading, views, tiles, filters];
+		for (const [index, element] of order.slice(1).entries()) {
+			expect(
+				(order[index] as HTMLElement).compareDocumentPosition(element) &
+					Node.DOCUMENT_POSITION_FOLLOWING
+			).toBeTruthy();
+		}
+		expect(section.firstElementChild?.classList.contains('section-bar')).toBe(true);
+		expect(section.firstElementChild?.contains(views)).toBe(true);
 		expect(
 			screen.getByRole('button', { name: '0 heute fällig' }).getAttribute('aria-pressed')
 		).toBe('true');

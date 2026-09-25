@@ -38,7 +38,6 @@ const SIZES: Readonly<Record<string, 's' | 'm' | 'l'>> = {
 	'QuickCapture.svelte': 'm',
 	'ClipboardImport.svelte': 'm',
 	'BulkConvertDialog.svelte': 'm',
-	'ProjectDialog.svelte': 'm',
 	'RecurrenceDialog.svelte': 'm',
 	'FileImportDialog.svelte': 'l',
 	'WhatsAppImport.svelte': 'l',
