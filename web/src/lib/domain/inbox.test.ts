@@ -11,6 +11,8 @@ import {
 	isInboxKind,
 	isInboxState,
 	normalizeTitle,
+	presetMeta,
+	presetOf,
 	ticketPrefill,
 	type InboxItem,
 	type InboxItemSummary
@@ -190,5 +192,58 @@ describe('ticketPrefill (E4 plan, T-5)', () => {
 		const prefill = ticketPrefill(full({ title: 'x'.repeat(250), body: 'y'.repeat(100_010) }));
 		expect(prefill.title).toHaveLength(200);
 		expect(prefill.description).toHaveLength(100_000);
+	});
+});
+
+describe('preset of typed-in entries (E4 plan, package 5)', () => {
+	const preset = {
+		project: 'proj00000000001',
+		tags: ['tag000000000001', 'tag000000000002', 'tag000000000001', 'Einkauf'],
+		priority: 'high',
+		due: '2026-10-01'
+	};
+
+	it('reads project, tags, priority and due date of manual and quick entries', () => {
+		for (const channel of ['manual', 'quick'] as const) {
+			expect(presetOf(item({ channel, sourceMeta: { preset } }))).toEqual({
+				project: 'proj00000000001',
+				tagIds: ['tag000000000001', 'tag000000000002'],
+				priority: 'high',
+				due: '2026-10-01'
+			});
+		}
+	});
+
+	it('ignores presets of other channels and invalid values', () => {
+		const empty = { project: null, tagIds: [], priority: null, due: null };
+		expect(presetOf(item({ channel: 'eml', sourceMeta: { preset } }))).toEqual(empty);
+		expect(presetOf(item({ sourceMeta: { preset: 'x' } }))).toEqual(empty);
+		expect(
+			presetOf(
+				item({
+					sourceMeta: {
+						preset: { project: '../x', tags: 'a', priority: 'very', due: '2026-02-30' }
+					}
+				})
+			)
+		).toEqual(empty);
+	});
+
+	it('writes only the chosen parts', () => {
+		expect(presetMeta({ project: null, tagIds: [], priority: null, due: null })).toEqual({});
+		expect(
+			presetMeta({ project: 'proj00000000001', tagIds: ['t'], priority: 'low', due: '2026-01-02' })
+		).toEqual({ project: 'proj00000000001', tags: ['t'], priority: 'low', due: '2026-01-02' });
+	});
+
+	it('hands the preset to the prefill', () => {
+		const prefill = ticketPrefill({ ...item({ sourceMeta: { preset } }), body: '' });
+		expect(prefill.preset.project).toBe('proj00000000001');
+		expect(ticketPrefill({ ...item(), body: '' }).preset).toEqual({
+			project: null,
+			tagIds: [],
+			priority: null,
+			due: null
+		});
 	});
 });

@@ -183,9 +183,10 @@ describe('inbox table', () => {
 	it('says that the inbox is empty and where entries come from', async () => {
 		setup({ items: [] });
 		expect(await screen.findByText('Der Eingang ist leer.')).toBeTruthy();
-		expect(screen.getByRole('link', { name: 'Neues Ticket' }).getAttribute('href')).toBe(
-			'/tickets/neu'
-		);
+		// Two links "Erfassen": in the section bar and in the text of the empty inbox.
+		const links = screen.getAllByRole('link', { name: 'Erfassen' });
+		expect(links).toHaveLength(2);
+		for (const link of links) expect(link.getAttribute('href')).toBe('/eingang/neu');
 		expect(screen.queryByRole('table')).toBeNull();
 	});
 

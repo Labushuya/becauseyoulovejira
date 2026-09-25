@@ -3,6 +3,7 @@
 import { describe, expect, it } from 'vitest';
 import { EMPTY_LIST_QUERY } from './domain/list-query';
 import {
+	captureHref,
 	convertFrom,
 	convertHref,
 	inboxHref,
@@ -19,6 +20,7 @@ import {
 	withListQuery,
 	withShowArchived,
 	withShowDone,
+	withTemplate,
 	withoutConvert
 } from './ticket-links';
 
@@ -119,5 +121,18 @@ describe('inbox links (E4 plan, package 3)', () => {
 			'?erledigte=1'
 		);
 		expect(ticketPath('tick00000000001')).toBe('/tickets/tick00000000001');
+	});
+});
+
+describe('capture links (E4 plan, package 5)', () => {
+	it('opens the capture with the chips of the inbox and keeps the template in the URL', () => {
+		expect(captureHref()).toBe('/eingang/neu');
+		expect(captureHref(at('/eingang?quelle=mail&status=open'))).toBe('/eingang/neu?quelle=mail');
+		expect(withTemplate(at('/eingang/neu?quelle=mail'), 'call')).toBe(
+			'/eingang/neu?quelle=mail&vorlage=anruf'
+		);
+		expect(withTemplate(at('/eingang/neu?vorlage=anruf#x'), 'event')).toBe(
+			'/eingang/neu?vorlage=termin#x'
+		);
 	});
 });

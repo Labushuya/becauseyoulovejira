@@ -524,6 +524,49 @@ describe('new ticket from the inbox (E4 plan, package 3)', () => {
 		expect(screen.getByText(/Quelldatum: 25\.09\.2026 01:30/)).toBeTruthy();
 	});
 
+	it('takes project, tags, priority and due date chosen when the entry was typed in', async () => {
+		const { store, release } = catalog();
+		release();
+		await vi.waitFor(() => expect(store.state).toBe('ready'));
+		store.upsertTag({ id: 'tagcall00000001', name: 'Anruf', updated: '2026-09-01 10:00:00.000Z' });
+		openFor(
+			entry({
+				channel: 'manual',
+				kind: 'task',
+				title: 'Anrufen: Anna',
+				body: '',
+				sourceDate: null,
+				sourceMeta: {
+					template: 'anruf',
+					preset: {
+						project: HOUSE.id,
+						tags: ['tagcall00000001', 'gonetag00000001'],
+						priority: 'high',
+						due: '2026-10-02'
+					}
+				}
+			})
+		);
+		mocks.detail.create.mockResolvedValueOnce({ ok: true, ticket: CREATED });
+		await vi.waitFor(() => expect(titleField().value).toBe('Anrufen: Anna'));
+		expect(screen.getByLabelText<HTMLSelectElement>('Priorität').value).toBe('high');
+		expect(screen.getByLabelText<HTMLInputElement>('Fälligkeit').value).toBe('2026-10-02');
+		expect(screen.getByText('Aus dem Eingang (Formular)')).toBeTruthy();
+		await fireEvent.click(createButton());
+
+		await vi.waitFor(() => expect(mocks.detail.create).toHaveBeenCalledOnce());
+		// A tag deleted since is left out; the project must be active.
+		expect(mocks.detail.create).toHaveBeenCalledWith(
+			expect.objectContaining({
+				priority: 'high',
+				due: '2026-10-02',
+				project: HOUSE.id,
+				tags: ['tagcall00000001']
+			}),
+			{ sourceItem: ITEM_ID }
+		);
+	});
+
 	it('never takes the date at the sender as due date by itself (P-5)', async () => {
 		openFor(entry());
 		mocks.detail.create.mockResolvedValueOnce({

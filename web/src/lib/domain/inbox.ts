@@ -2,7 +2,9 @@
 // inbox_items to these types. The value lists mirror app/pb_hooks/lib/source.js
 // (tests/unit/source.test.mjs keeps them equal).
 
+import { isCalendarDate, type CalendarDate } from './berlin-date';
 import { formatBerlinDateTime } from './format';
+import { isPriority, type Priority } from './status';
 import { DESCRIPTION_MAX_LENGTH, TITLE_MAX_LENGTH, type TicketSummary } from './ticket';
 
 /** Ways into the inbox; also the values of `tickets.source`. */
@@ -226,7 +228,7 @@ export function metaText(item: Pick<InboxItemSummary, 'sourceMeta'>, key: string
 }
 
 /** Markdown characters of a value from a source, escaped so they show as typed. */
-function escapeMarkdown(value: string): string {
+export function escapeMarkdown(value: string): string {
 	return value.replace(/[\\`*_{}[\]()#+\-.!|<>~]/g, (character) => `\\${character}`);
 }
 
@@ -259,6 +261,63 @@ function headerLines(item: InboxItem): string[] {
 	return header;
 }
 
+/**
+ * Key in `sourceMeta` under which an entry typed in by the user (capture form, quick entry) keeps
+ * the ticket values chosen there: project, tags, priority and due date. Converting the entry
+ * offers them again (E4 plan, T-5: project and tags from the template).
+ */
+export const PRESET_META_KEY = 'preset';
+
+/** Ticket values chosen when an entry was typed in; empty for every other entry. */
+export interface TicketPreset {
+	project: string | null;
+	tagIds: string[];
+	priority: Priority | null;
+	/** Due date the user typed in; never a date at the sender (P-5). */
+	due: CalendarDate | null;
+}
+
+export const EMPTY_PRESET: Readonly<TicketPreset> = Object.freeze({
+	project: null,
+	tagIds: [],
+	priority: null,
+	due: null
+});
+
+/** Channels whose entries the user typed in; only they carry a preset. */
+const PRESET_CHANNELS: readonly InboxChannel[] = ['manual', 'quick'];
+
+const RECORD_ID = /^[a-z0-9]{15}$/;
+
+/** `sourceMeta` value of a preset; empty parts are left out. */
+export function presetMeta(preset: TicketPreset): Record<string, unknown> {
+	const meta: Record<string, unknown> = {};
+	if (preset.project !== null) meta.project = preset.project;
+	if (preset.tagIds.length > 0) meta.tags = [...preset.tagIds];
+	if (preset.priority !== null) meta.priority = preset.priority;
+	if (preset.due !== null) meta.due = preset.due;
+	return meta;
+}
+
+/**
+ * Preset of an entry the user typed in (channels manual and quick). Values that are no record ID,
+ * priority or calendar date are dropped, so a changed or foreign value never reaches the form.
+ */
+export function presetOf(item: Pick<InboxItemSummary, 'channel' | 'sourceMeta'>): TicketPreset {
+	const raw = item.sourceMeta[PRESET_META_KEY];
+	if (!PRESET_CHANNELS.includes(item.channel) || typeof raw !== 'object' || raw === null) {
+		return { ...EMPTY_PRESET, tagIds: [] };
+	}
+	const value = raw as Record<string, unknown>;
+	const id = (entry: unknown) => typeof entry === 'string' && RECORD_ID.test(entry);
+	return {
+		project: id(value.project) ? (value.project as string) : null,
+		tagIds: Array.isArray(value.tags) ? [...new Set(value.tags.filter(id) as string[])] : [],
+		priority: isPriority(value.priority) ? value.priority : null,
+		due: typeof value.due === 'string' && isCalendarDate(value.due) ? value.due : null
+	};
+}
+
 /** Values of the form "Neues Ticket" taken from an inbox entry (E4 plan, T-5). */
 export interface TicketPrefill {
 	title: string;
@@ -269,13 +328,15 @@ export interface TicketPrefill {
 	 * becomes the due date by itself (P-5).
 	 */
 	sourceDate: string | null;
+	/** Values the user chose when typing the entry in; empty for entries from a source. */
+	preset: TicketPreset;
 }
 
 /**
  * Prefill of a ticket from an inbox entry (T-5): the title, and as description the header of the
  * source (mail: "Von", "Datum"; event: "Beginn", "Ort"; message: "Von", "Chat", "Zeit"; a link of
- * the source) followed by the text, cut to the limits of the ticket. Project, tags, status and
- * priority stay with the defaults of the form.
+ * the source) followed by the text, cut to the limits of the ticket. Status and priority stay
+ * with the defaults of the form unless the user chose them when typing the entry in (preset).
  */
 export function ticketPrefill(item: InboxItem): TicketPrefill {
 	const header = headerLines(item);
@@ -284,6 +345,7 @@ export function ticketPrefill(item: InboxItem): TicketPrefill {
 	return {
 		title: item.title.slice(0, TITLE_MAX_LENGTH),
 		description: parts.join('\n\n').slice(0, DESCRIPTION_MAX_LENGTH),
-		sourceDate: item.sourceDate
+		sourceDate: item.sourceDate,
+		preset: presetOf(item)
 	};
 }

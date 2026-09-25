@@ -13,6 +13,7 @@ import {
 	type ListQuery
 } from './domain/list-query';
 import { parseInboxQuery, serializeInboxQuery, type InboxQuery } from './domain/inbox-query';
+import { TEMPLATE_PARAM, TEMPLATE_VALUES, type CaptureTemplate } from './domain/templates';
 
 /** Query parameter of the switch "Erledigte anzeigen" (CLAUDE.md section 7). */
 export const SHOW_DONE_PARAM = LIST_PARAMS.showDone;
@@ -130,4 +131,17 @@ export function withoutConvert(url: URL): URL {
 /** Path of the panel of a ticket without any list state (links from the inbox). */
 export function ticketPath(id: string): ResolvedPathname {
 	return resolve(`/tickets/${encodeURIComponent(id)}`);
+}
+
+/** Path of the capture form (E4 plan, T-3 and package 5) with the view state of `url`. */
+export function captureHref(url?: URL): ResolvedPathname {
+	const query = url === undefined ? '' : serializeInboxQuery(parseInboxQuery(url.searchParams));
+	return `${resolve('/eingang/neu')}${query}` as ResolvedPathname;
+}
+
+/** The current path with the template `template` in `?vorlage=`; other parameters stay. */
+export function withTemplate(url: URL, template: CaptureTemplate): ResolvedPathname {
+	const params = new URLSearchParams(url.searchParams);
+	params.set(TEMPLATE_PARAM, TEMPLATE_VALUES[template]);
+	return `${url.pathname}?${params.toString()}${url.hash}` as ResolvedPathname;
 }
