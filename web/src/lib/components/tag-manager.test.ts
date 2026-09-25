@@ -1,41 +1,21 @@
 // Component tests for the section "Tags" of the project view (E3 plan, T-14 and package 14):
 // renaming inline (Enter saves, Escape cancels, conflicts at the field), deleting after the
-// question with the number of tickets, focus afterwards. jsdom has no showModal()/close(); the
-// test adds a minimal stand-in.
+// question with the number of tickets, focus afterwards. The question is the confirmation of
+// ADR-0025 section 4 (since UI-3); jsdom has no showModal(), the shared stubs stand in.
 
 import { fireEvent, render, screen, within } from '@testing-library/svelte';
 import { tick } from 'svelte';
-import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import type { Tag } from '$lib/domain/tag';
 import type { CatalogEditor, EditResult } from '$lib/stores/catalog-editor';
+import { useOverlayStubs } from '$lib/test/overlay-stubs';
 import TagManager from './TagManager.svelte';
 
 const T0 = '2026-09-24 08:00:00.000Z';
 const GARDEN: Tag = { id: 'tag000000000001', name: 'Garten', updated: T0 };
 const CALL: Tag = { id: 'tag000000000002', name: 'anrufen', updated: T0 };
 
-const nativeDialog = {
-	showModal: HTMLDialogElement.prototype.showModal,
-	close: HTMLDialogElement.prototype.close
-};
-
-beforeAll(() => {
-	if (typeof nativeDialog.showModal !== 'function') {
-		HTMLDialogElement.prototype.showModal = function (this: HTMLDialogElement) {
-			this.open = true;
-		};
-	}
-	if (typeof nativeDialog.close !== 'function') {
-		HTMLDialogElement.prototype.close = function (this: HTMLDialogElement) {
-			this.open = false;
-		};
-	}
-});
-
-afterAll(() => {
-	HTMLDialogElement.prototype.showModal = nativeDialog.showModal;
-	HTMLDialogElement.prototype.close = nativeDialog.close;
-});
+useOverlayStubs();
 
 type Editor = Pick<CatalogEditor, 'renameTag' | 'deleteTag' | 'countTicketsWithTag'>;
 

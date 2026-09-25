@@ -133,6 +133,14 @@ export function ticketPath(id: string): ResolvedPathname {
 	return resolve(`/tickets/${encodeURIComponent(id)}`);
 }
 
+/**
+ * Path, query and hash of a URL of this app, e.g. the target of a navigation that was held up for
+ * a question (ADR-0025 section 4). SvelteKit gives such targets with the base path already in.
+ */
+export function appHref(url: URL): ResolvedPathname {
+	return `${url.pathname}${url.search}${url.hash}` as ResolvedPathname;
+}
+
 /** Path of the capture form (E4 plan, T-3 and package 5) with the view state of `url`. */
 export function captureHref(url?: URL): ResolvedPathname {
 	const query = url === undefined ? '' : serializeInboxQuery(parseInboxQuery(url.searchParams));

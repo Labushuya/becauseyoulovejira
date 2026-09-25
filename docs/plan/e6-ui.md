@@ -145,6 +145,13 @@ Wird je Paket ergänzt.
 | 2026-09-25 | UI-2 | jsdom stellt ein Popover als `display: none` dar und berechnet dafür keinen zugänglichen Namen (accname Schritt 2A). Die Tests prüfen den Namen von Menü und Panel deshalb am Attribut (`aria-label` bzw. Legende über `aria-labelledby`), Einträge und Optionen weiter über Rolle und Namen. |
 | 2026-09-25 | UI-2 | Theme: `lib/theme.svelte.ts` mit `parsePreference`, `readPreference`, `writePreference`, `applyPreference` und `ThemeStore` (`choose`, `connect` für das `storage`-Ereignis, auch `key === null` nach `localStorage.clear()`); die App nutzt eine geteilte Instanz (`getThemeStore`), Tests eine eigene. Knopfname „Darstellung: System|Hell|Dunkel“, Menüeinträge „Hell“, „Dunkel“, „Wie System“. Das Boot-Skript steht jetzt **vor** `%sveltekit.head%` (bisher danach), als IIFE in ES5 mit `try/catch`; der leere `else`-Zweig und die Prüfung per `matchMedia` entfallen. |
 | 2026-09-25 | UI-2 | „Gruppieren“: rechtsbündig (`bottom-end`) auf dem Baustein, Trennlinie nach „Keine“. Der gewählte Eintrag bleibt am Radio und am Schriftgewicht erkennbar; ein zusätzliches Häkchen wäre bei sichtbaren Radios doppelt. Das Theme-Menü hat keine Radios und zeigt deshalb Häkchen plus Schriftgewicht. |
+| 2026-09-25 | UI-2 | CI: Der erste Lauf von #47 scheiterte an `recurrence-generate.test.mjs` („removes an untouched follow-up when the instance is reopened (after completion)“, E5 Paket 3), ohne Bezug zu UI-2; der zweite Lauf war grün. Das Folgeticket galt dort einmal als bearbeitet, vermutlich eine Zeitgrenze (`updated = created` bzw. `completed_at` in derselben Millisekunde). Offener Punkt für E5. |
+| 2026-09-25 | UI-3 | `Modal.svelte`: Props `open`, `size`, `title`, `describedBy`, `busy`, `dirty`, `initialFocus`, `discardQuestion`/`discardText`, `onclose(reason)`, Snippets `children`, `footer({ close })` und `headerActions`. Der Inhalt wird nur gerendert, solange der Dialog offen ist; so gibt es keine doppelten Namen („Schließen“, „Abbrechen“) mit Knöpfen der Seite. Der Fokus geht an `initialFocus`, sonst an das erste Element des Inhalts, dann des Fußes, dann an das ×; beim Schließen und beim Entfernen im offenen Zustand zurück an das gemerkte Element, wenn es noch im DOM ist (nicht an `body`). Ist es weg, bleibt der Fokus beim Browser; eine Überschrift der Ansicht als Rückfall kommt mit den Panels in UI-6. |
+| 2026-09-25 | UI-3 | Esc wird auf `keydown` verbraucht (`preventDefault`, `stopPropagation`); ein Esc, das ein inneres Element schon verbraucht hat (`defaultPrevented`), bleibt dort. `cancel` ist Rückfall mit denselben Regeln; schließt der Browser trotz `busy` bzw. `dirty`, zeigt `close` den Dialog wieder (bzw. stellt die Frage). Kopf und Fuß stehen über ein Flex-Layout mit scrollendem Inhalt. Kein Exit-Übergang. Die Verwerfen-Frage im Fuß nennt „Verwerfen“ als Primärknopf und gibt nach „Weiter bearbeiten“ den Fokus an das vorher fokussierte Feld zurück. |
+| 2026-09-25 | UI-3 | `ConfirmDialog` zieht nach `components/overlay/` und bekommt `cancelLabel` (Standard „Abbrechen“); die API sonst wie bisher, so ändern sich in `TicketPanel`, `TagManager` und `ConnectionsSection` nur die Importe. Die Aufrufer behalten ihre eigene Fokus-Rückgabe vorerst (sie zielt auf dasselbe Element); sie entfällt mit dem Umzug der Panels. |
+| 2026-09-25 | UI-3 | Rückfragen statt `window.confirm`: „Kommentar löschen?“ („Der Kommentar von … vom … wird endgültig gelöscht.“, Verb „Löschen“; ein Fehler steht weiter am Kommentar, der Dialog schließt), „Neues Ticket verwerfen?“ und „Erfassung verwerfen?“ („Die Eingaben gehen verloren.“, „Weiter bearbeiten“/„Verwerfen“; die Bestätigung liegt außerhalb des `aside`, und Tastenkürzel des Formulars ruhen, solange sie offen ist). Die Texte der bisherigen Fragen bleiben, geteilt in Titel und Beschreibung. |
+| 2026-09-25 | UI-3 | Navigation mit ungespeichertem Text (`tickets/[id]/+page.svelte`): `beforeNavigate` ruft `navigation.cancel()` auf, merkt Ziel und bei `popstate` das `delta` und öffnet „Änderungen verwerfen?“. „Verwerfen“ setzt `discarding` und führt `goto(appHref(url))` aus bzw. bei Zurück/Vor `history.go(delta)`, damit der Verlauf stimmt (SvelteKit hat die Position beim Abbrechen zurückgesetzt). `discarding` wird beim Wechsel auf ein anderes Ticket derselben Route zurückgesetzt. Neuer Helfer `appHref(url)` in `ticket-links.ts`, weil `svelte/no-navigation-without-resolve` ein `goto` auf ein URL-Objekt ablehnt. |
+| 2026-09-25 | UI-3 | Bewusst angepasste Tests: `delete-ticket.test.ts` erwartet, dass Esc im Dialog verbraucht wird (`keyDown` liefert `false`, vorher `true`), weil nur so Chromium bei `busy` nicht schließt; `comments`, `new-ticket`, `capture-form` und `ticket-panel` bedienen den Dialog statt `window.confirm` zu fälschen; `delete-ticket`, `tag-manager` und `connections-page` nutzen die gemeinsamen Stubs. |
 
 ## 7. Status
 
@@ -152,8 +159,9 @@ Wird je Paket ergänzt.
 |---|---|
 | UI-0 | gemergt (#45) |
 | UI-1 | gemergt (#46) |
-| UI-2 | in Arbeit |
-| UI-3 bis UI-9 | geplant |
+| UI-2 | gemergt (#47) |
+| UI-3 | in Arbeit |
+| UI-4 bis UI-9 | geplant |
 
 ## Quellen (nur Verhalten und Maße)
 

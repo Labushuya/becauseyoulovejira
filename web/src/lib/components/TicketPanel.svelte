@@ -7,7 +7,7 @@
 	import type { CatalogStore } from '$lib/stores/catalog.svelte';
 	import type { TicketDetailStore } from '$lib/stores/ticket-detail.svelte';
 	import { inboxItemHref } from '$lib/ticket-links';
-	import ConfirmDialog from './ConfirmDialog.svelte';
+	import ConfirmDialog from './overlay/ConfirmDialog.svelte';
 	import DueInput from './DueInput.svelte';
 	import EditableTitle from './EditableTitle.svelte';
 	import ErrorIcon from './ErrorIcon.svelte';

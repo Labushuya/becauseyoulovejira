@@ -26,6 +26,7 @@
 	import ErrorIcon from './ErrorIcon.svelte';
 	import PrioritySelect from './PrioritySelect.svelte';
 	import TagPicker from './TagPicker.svelte';
+	import ConfirmDialog from './overlay/ConfirmDialog.svelte';
 
 	// Capture by template (E4 plan, package 5; OF-E4-1 (a)): a radio group of the fixed templates,
 	// the fields of the chosen one with required marks and field errors (ADR-0009), and the target
@@ -65,7 +66,8 @@
 		resultHref: (target: CaptureTarget, id: string) => ResolvedPathname;
 	} = $props();
 
-	const DISCARD_QUESTION = 'Erfassung verwerfen? Die Eingaben gehen verloren.';
+	/** The question before entered data is lost (ADR-0025 section 4); "Weiter bearbeiten" keeps it. */
+	let confirmingDiscard = $state(false);
 
 	const uid = $props.id();
 	const fieldId = (field: CaptureField) => `${uid}-${field}`;
@@ -169,11 +171,12 @@
 
 	function close() {
 		if (pending) return;
-		if (dirty && !window.confirm(DISCARD_QUESTION)) return;
-		onclose();
+		if (dirty) confirmingDiscard = true;
+		else onclose();
 	}
 
 	function onkeydown(event: KeyboardEvent) {
+		if (confirmingDiscard) return;
 		if (event.key === 'Enter' && event.altKey && !event.ctrlKey && !event.metaKey) {
 			event.preventDefault();
 			void save('inbox');
@@ -408,6 +411,20 @@
 		<p class="hint" id={targetHintId}>Tipp: Strg+Enter speichert, Alt+Enter legt in den Eingang.</p>
 	</form>
 </aside>
+
+<ConfirmDialog
+	open={confirmingDiscard}
+	title="Erfassung verwerfen?"
+	confirmLabel="Verwerfen"
+	cancelLabel="Weiter bearbeiten"
+	onconfirm={() => {
+		confirmingDiscard = false;
+		onclose();
+	}}
+	oncancel={() => (confirmingDiscard = false)}
+>
+	<p>Die Eingaben gehen verloren.</p>
+</ConfirmDialog>
 
 <style>
 	h2 {

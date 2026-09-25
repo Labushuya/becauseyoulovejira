@@ -1,12 +1,13 @@
 // Component tests for deleting a ticket (E2 plan, package 11; T-12, P-4): the dialog names the
 // key and warns about comments and history, starts on "Abbrechen", Escape and "Abbrechen" keep
 // the ticket (and the panel), confirming deletes exactly once, a failure shows in the dialog.
-// jsdom has no showModal()/close(); the test adds a minimal stand-in, the product code is as is.
+// Since UI-3 the dialog is the confirmation of ADR-0025 section 4; jsdom has no showModal(), the
+// shared stubs stand in.
 
 import { fireEvent, render, screen, within } from '@testing-library/svelte';
 import { tick } from 'svelte';
 import { SvelteMap } from 'svelte/reactivity';
-import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import type { ResolvedPathname } from '$app/types';
 import { DataError } from '$lib/data/errors';
 import type { Ticket, TicketSummary } from '$lib/domain/ticket';
@@ -16,34 +17,13 @@ import {
 	type TicketDetailData,
 	type TicketListSync
 } from '$lib/stores/ticket-detail.svelte';
+import { useOverlayStubs } from '$lib/test/overlay-stubs';
 import TicketPanel from './TicketPanel.svelte';
 
 const ID = 'abc123def456ghi';
 const LIST = '/' as ResolvedPathname;
 
-const nativeDialog = {
-	showModal: HTMLDialogElement.prototype.showModal,
-	close: HTMLDialogElement.prototype.close
-};
-
-beforeAll(() => {
-	if (typeof nativeDialog.showModal !== 'function') {
-		HTMLDialogElement.prototype.showModal = function (this: HTMLDialogElement) {
-			this.open = true;
-		};
-	}
-	if (typeof nativeDialog.close !== 'function') {
-		HTMLDialogElement.prototype.close = function (this: HTMLDialogElement) {
-			this.open = false;
-			this.dispatchEvent(new Event('close'));
-		};
-	}
-});
-
-afterAll(() => {
-	HTMLDialogElement.prototype.showModal = nativeDialog.showModal;
-	HTMLDialogElement.prototype.close = nativeDialog.close;
-});
+useOverlayStubs();
 
 function ticket(overrides: Partial<Ticket> = {}): Ticket {
 	return {
@@ -159,12 +139,13 @@ describe('deleting a ticket', () => {
 		const { data, onclose } = await renderPanel();
 		const dialog = await openDialog();
 
-		// The browser sends the key, then the cancel event of the modal dialog.
+		// Since UI-3 the dialog consumes the key itself (ADR-0025 section 3), so the browser sends no
+		// cancel event after it; a late cancel event must not cancel a second time.
 		const key = await fireEvent.keyDown(dialog, { key: 'Escape' });
 		await fireEvent(dialog, new Event('cancel', { cancelable: true }));
 		await tick();
 
-		expect(key).toBe(true);
+		expect(key).toBe(false);
 		expect(onclose).not.toHaveBeenCalled();
 		expect((dialog as HTMLDialogElement).open).toBe(false);
 		expect(data.delete).not.toHaveBeenCalled();

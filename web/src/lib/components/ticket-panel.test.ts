@@ -20,8 +20,11 @@ import {
 	type TicketDetailData,
 	type TicketListSync
 } from '$lib/stores/ticket-detail.svelte';
+import { useOverlayStubs } from '$lib/test/overlay-stubs';
 import TicketPanel from './TicketPanel.svelte';
 import TicketPage from '../../routes/(app)/(tickets)/tickets/[id]/+page.svelte';
+
+useOverlayStubs();
 
 const mocks = vi.hoisted(() => ({
 	goto: vi.fn(async () => undefined),
@@ -734,7 +737,12 @@ describe('ticket route: unsaved text', () => {
 		return { store: context.store, activity, guard };
 	}
 
-	function navigation(path: string, routeId: string | null, type: BeforeNavigate['type'] = 'link') {
+	function navigation(
+		path: string,
+		routeId: string | null,
+		type: BeforeNavigate['type'] = 'link',
+		delta?: number
+	) {
 		const cancel = vi.fn();
 		const target = {
 			url: new URL(path, 'http://localhost:3000'),
@@ -742,52 +750,99 @@ describe('ticket route: unsaved text', () => {
 			params: {}
 		};
 		return {
-			navigation: { type, to: target, from: null, cancel } as unknown as BeforeNavigate,
+			navigation: { type, to: target, from: null, cancel, delta } as unknown as BeforeNavigate,
 			cancel
 		};
 	}
 
 	const OTHER_TICKET = ['/tickets/zzz999zzz999zzz', '/(app)/(tickets)/tickets/[id]'] as const;
 
+	/**
+	 * The question "Änderungen verwerfen?" (ADR-0025 section 4; since UI-3 instead of
+	 * window.confirm), or null. beforeNavigate cannot wait, so it opens after the guard returned.
+	 */
+	async function question(): Promise<HTMLDialogElement | null> {
+		await tick();
+		return screen.queryByRole<HTMLDialogElement>('dialog', { name: 'Änderungen verwerfen?' });
+	}
+
+	async function answer(choice: 'Weiter bearbeiten' | 'Verwerfen') {
+		const dialog = await question();
+		if (dialog === null) throw new Error('No question open');
+		await fireEvent.click(within(dialog).getByRole('button', { name: choice }));
+	}
+
 	afterEach(() => {
 		vi.restoreAllMocks();
+		mocks.goto.mockClear();
 	});
 
 	it('leaves without a question while nothing is unsaved', async () => {
 		const { guard } = await renderRoute();
-		const confirm = vi.spyOn(window, 'confirm');
 		const { navigation: to, cancel } = navigation(...OTHER_TICKET);
 
 		guard(to);
 
-		expect(confirm).not.toHaveBeenCalled();
+		expect(await question()).toBeNull();
 		expect(cancel).not.toHaveBeenCalled();
 	});
 
-	it('asks before a changed description is lost and stays on "Abbrechen"', async () => {
+	it('asks before a changed description is lost and stays on "Weiter bearbeiten"', async () => {
 		const { store, guard } = await renderRoute();
 		store.edit('description');
 		store.setDraft('description', 'Neuer Text');
-		const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false);
 		const { navigation: to, cancel } = navigation('/?erledigte=1', '/(app)/(tickets)');
 
 		guard(to);
 
-		expect(confirm).toHaveBeenCalledWith(
-			'Änderungen verwerfen? Der nicht gespeicherte Text geht verloren.'
-		);
 		expect(cancel).toHaveBeenCalledOnce();
+		const dialog = await question();
+		const text = document.getElementById(dialog?.getAttribute('aria-describedby') ?? '');
+		expect(text?.textContent?.trim()).toBe('Der nicht gespeicherte Text geht verloren.');
+		expect(document.activeElement?.textContent?.trim()).toBe('Weiter bearbeiten');
+
+		await answer('Weiter bearbeiten');
+
+		expect(dialog?.open).toBe(false);
+		expect(mocks.goto).not.toHaveBeenCalled();
+		expect(store.hasUnsavedInput).toBe(true);
 	});
 
-	it('leaves after confirming', async () => {
+	it('leaves after "Verwerfen" and does not ask again on the way', async () => {
 		const { activity, guard } = await renderRoute();
 		activity.setNewComment('Halber Kommentar');
-		vi.spyOn(window, 'confirm').mockReturnValue(true);
-		const { navigation: to, cancel } = navigation(...OTHER_TICKET);
+		const { navigation: to, cancel } = navigation(
+			`${OTHER_TICKET[0]}?status=open`,
+			OTHER_TICKET[1]
+		);
 
 		guard(to);
+		expect(cancel).toHaveBeenCalledOnce();
+		await answer('Verwerfen');
 
-		expect(cancel).not.toHaveBeenCalled();
+		expect(mocks.goto).toHaveBeenCalledExactlyOnceWith('/tickets/zzz999zzz999zzz?status=open');
+		const again = navigation(`${OTHER_TICKET[0]}?status=open`, OTHER_TICKET[1]);
+		guard(again.navigation);
+		expect(again.cancel).not.toHaveBeenCalled();
+	});
+
+	it('goes the same steps back in the history after "Verwerfen" for browser back', async () => {
+		const { activity, guard } = await renderRoute();
+		activity.setNewComment('Halber Kommentar');
+		const go = vi.spyOn(history, 'go').mockImplementation(() => undefined);
+		const { navigation: to, cancel } = navigation(
+			'/?erledigte=1',
+			'/(app)/(tickets)',
+			'popstate',
+			-1
+		);
+
+		guard(to);
+		expect(cancel).toHaveBeenCalledOnce();
+		await answer('Verwerfen');
+
+		expect(go).toHaveBeenCalledExactlyOnceWith(-1);
+		expect(mocks.goto).not.toHaveBeenCalled();
 	});
 
 	it('asks before a name typed into the tag picker is lost (E3 plan, T-14)', async () => {
@@ -795,37 +850,32 @@ describe('ticket route: unsaved text', () => {
 		await fireEvent.input(screen.getByRole('combobox', { name: 'Tags' }), {
 			target: { value: 'Steu' }
 		});
-		const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false);
 		const { navigation: to, cancel } = navigation(...OTHER_TICKET);
 
 		guard(to);
 
-		expect(confirm).toHaveBeenCalledWith(
-			'Änderungen verwerfen? Der nicht gespeicherte Text geht verloren.'
-		);
 		expect(cancel).toHaveBeenCalledOnce();
+		expect(await question()).not.toBeNull();
 	});
 
 	it('asks for a comment being written when switching to another ticket', async () => {
 		const { activity, guard } = await renderRoute();
 		activity.setNewComment('Halber Kommentar');
-		const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false);
 		const { navigation: to, cancel } = navigation(...OTHER_TICKET);
 
 		guard(to);
 
-		expect(confirm).toHaveBeenCalledOnce();
 		expect(cancel).toHaveBeenCalledOnce();
+		expect(await question()).not.toBeNull();
 	});
 
 	it('does not ask for an unchanged description editor', async () => {
 		const { store, guard } = await renderRoute();
 		store.edit('description');
-		const confirm = vi.spyOn(window, 'confirm');
 
 		guard(navigation(...OTHER_TICKET).navigation);
 
-		expect(confirm).not.toHaveBeenCalled();
+		expect(await question()).toBeNull();
 	});
 
 	it.each<[string, string, string | null, BeforeNavigate['type']]>([
@@ -840,12 +890,11 @@ describe('ticket route: unsaved text', () => {
 	])('does not ask for %s', async (_name, path, routeId, type) => {
 		const { activity, guard } = await renderRoute();
 		activity.setNewComment('Halber Kommentar');
-		const confirm = vi.spyOn(window, 'confirm');
 		const { navigation: to, cancel } = navigation(path, routeId, type);
 
 		guard(to);
 
-		expect(confirm).not.toHaveBeenCalled();
+		expect(await question()).toBeNull();
 		expect(cancel).not.toHaveBeenCalled();
 	});
 });

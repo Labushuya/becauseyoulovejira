@@ -4,7 +4,7 @@
 // keywords with the answer of the bot to messages without one; mailboxes (package 22).
 
 import { fireEvent, render, screen, within } from '@testing-library/svelte';
-import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { DataError } from '$lib/data/errors';
 import {
 	connectionDraftErrors,
@@ -21,31 +21,13 @@ import {
 	type ConnectionsData
 } from '$lib/stores/connections.svelte';
 import { ImportKeywordsStore } from '$lib/stores/import-keywords.svelte';
+import { useOverlayStubs } from '$lib/test/overlay-stubs';
 import ChannelsView from './ChannelsView.svelte';
 import ConnectionsSection from './ConnectionsSection.svelte';
 
-const nativeDialog = {
-	showModal: HTMLDialogElement.prototype.showModal,
-	close: HTMLDialogElement.prototype.close
-};
-
-beforeAll(() => {
-	if (typeof nativeDialog.showModal !== 'function') {
-		HTMLDialogElement.prototype.showModal = function (this: HTMLDialogElement) {
-			this.open = true;
-		};
-	}
-	if (typeof nativeDialog.close !== 'function') {
-		HTMLDialogElement.prototype.close = function (this: HTMLDialogElement) {
-			this.open = false;
-		};
-	}
-});
-
-afterAll(() => {
-	HTMLDialogElement.prototype.showModal = nativeDialog.showModal;
-	HTMLDialogElement.prototype.close = nativeDialog.close;
-});
+// The safety question is the confirmation of ADR-0025 section 4 (since UI-3); jsdom has no
+// showModal(), the shared stubs stand in (also for the mailbox picker).
+useOverlayStubs();
 
 function connection(id: string, overrides: Partial<Connection> = {}): Connection {
 	return {

@@ -3,6 +3,7 @@
 import { describe, expect, it } from 'vitest';
 import { EMPTY_LIST_QUERY } from './domain/list-query';
 import {
+	appHref,
 	captureHref,
 	convertFrom,
 	convertHref,
@@ -27,6 +28,13 @@ import {
 const at = (path: string) => new URL(path, 'http://localhost:3000');
 
 describe('ticket links', () => {
+	it('keeps path, query and hash of a held-up navigation target (ADR-0025 section 4)', () => {
+		expect(appHref(at('/tickets/abc123def456ghi?status=open#kommentare'))).toBe(
+			'/tickets/abc123def456ghi?status=open#kommentare'
+		);
+		expect(appHref(at('/'))).toBe('/');
+	});
+
 	it('reads the switch "Erledigte anzeigen" from the query', () => {
 		expect(showDoneFrom(at('/?erledigte=1'))).toBe(true);
 		expect(showDoneFrom(at('/'))).toBe(false);
