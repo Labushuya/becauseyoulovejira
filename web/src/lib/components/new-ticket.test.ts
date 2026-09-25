@@ -6,6 +6,7 @@
 import { fireEvent, render, screen, within } from '@testing-library/svelte';
 import { tick } from 'svelte';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import type { InboxItem } from '$lib/domain/inbox';
 import type { Project } from '$lib/domain/project';
 import type { Ticket, TicketDraft } from '$lib/domain/ticket';
 import { CatalogStore } from '$lib/stores/catalog.svelte';
@@ -17,7 +18,9 @@ const mocks = vi.hoisted(() => ({
 	goto: vi.fn(async () => undefined),
 	page: { url: new URL('http://localhost:3000/tickets/neu?erledigte=1') },
 	detail: { create: vi.fn() },
-	catalog: null as unknown
+	catalog: null as unknown,
+	inbox: { fetch: vi.fn(), markConverted: vi.fn() },
+	tickets: { announce: vi.fn() }
 }));
 
 vi.mock('$app/navigation', () => ({ goto: mocks.goto }));
@@ -29,6 +32,14 @@ vi.mock('$lib/stores/ticket-detail.svelte', async (importOriginal) => ({
 vi.mock('$lib/stores/catalog.svelte', async (importOriginal) => ({
 	...(await importOriginal<object>()),
 	getCatalogStore: () => mocks.catalog
+}));
+vi.mock('$lib/stores/inbox.svelte', async (importOriginal) => ({
+	...(await importOriginal<object>()),
+	getInboxStore: () => mocks.inbox
+}));
+vi.mock('$lib/stores/ticket-list.svelte', async (importOriginal) => ({
+	...(await importOriginal<object>()),
+	getTicketListStore: () => mocks.tickets
 }));
 
 const HOUSE: Project = {
@@ -352,7 +363,8 @@ describe('new ticket: project (E3 plan, T-13)', () => {
 		await fireEvent.click(createButton());
 
 		expect(mocks.detail.create).toHaveBeenLastCalledWith(
-			expect.objectContaining({ project: HOUSE.id })
+			expect.objectContaining({ project: HOUSE.id }),
+			undefined
 		);
 	});
 
@@ -460,4 +472,130 @@ describe('new ticket: tags (E3 plan, T-14)', () => {
 		});
 		return { ...result, oncreate, oncancel };
 	}
+});
+
+describe('new ticket from the inbox (E4 plan, package 3)', () => {
+	const ITEM_ID = 'item00000000001';
+
+	function entry(overrides: Partial<InboxItem> = {}): InboxItem {
+		return {
+			id: ITEM_ID,
+			channel: 'eml',
+			kind: 'mail',
+			title: 'Rechnung September',
+			body: 'Bitte bis Monatsende zahlen.',
+			sourceUrl: '',
+			sourceRef: '<a@b>',
+			// 23:30 UTC is already the next day in Berlin.
+			sourceDate: '2026-09-24 23:30:00.000Z',
+			sourceMeta: { from: 'Shop <shop@example.com>' },
+			original: '',
+			state: 'new',
+			ticketId: null,
+			handledAt: null,
+			created: '2026-09-25 08:00:00.000Z',
+			updated: '2026-09-25 08:00:00.000Z',
+			...overrides
+		};
+	}
+
+	function openFor(item: InboxItem) {
+		mocks.page.url = new URL(`http://localhost:3000/tickets/neu?aus=${ITEM_ID}`);
+		mocks.inbox.fetch.mockReset();
+		mocks.inbox.fetch.mockResolvedValue(item);
+		mocks.inbox.markConverted.mockReset();
+		mocks.tickets.announce.mockReset();
+		mocks.detail.create.mockReset();
+		render(NewTicketPage);
+	}
+
+	it('fills title and description from the entry, with the header of the mail', async () => {
+		openFor(entry());
+		await vi.waitFor(() => expect(titleField().value).toBe('Rechnung September'));
+		const description = screen.getByLabelText<HTMLTextAreaElement>('Beschreibung');
+		expect(description.value).toBe(
+			'- **Von:** Shop \\<shop@example\\.com\\>\n- **Datum:** 25.09.2026 01:30\n\nBitte bis Monatsende zahlen.'
+		);
+		expect(screen.getByText('Aus dem Eingang (Mail-Datei)')).toBeTruthy();
+		expect(screen.getByLabelText<HTMLInputElement>('Priorität')).toBeTruthy();
+		expect(screen.getByLabelText<HTMLInputElement>('Fälligkeit').value).toBe('');
+		expect(screen.getByText(/Quelldatum: 25\.09\.2026 01:30/)).toBeTruthy();
+	});
+
+	it('never takes the date at the sender as due date by itself (P-5)', async () => {
+		openFor(entry());
+		mocks.detail.create.mockResolvedValueOnce({
+			ok: true,
+			ticket: { ...CREATED, key: 'HAUS-4', source: 'eml', sourceItem: ITEM_ID }
+		});
+		await vi.waitFor(() => expect(titleField().value).toBe('Rechnung September'));
+		await fireEvent.click(createButton());
+
+		await vi.waitFor(() => expect(mocks.detail.create).toHaveBeenCalledOnce());
+		expect(mocks.detail.create).toHaveBeenCalledWith(
+			expect.objectContaining({
+				title: 'Rechnung September',
+				due: null,
+				status: 'open',
+				priority: 'medium'
+			}),
+			{ sourceItem: ITEM_ID }
+		);
+		await vi.waitFor(() =>
+			expect(mocks.goto).toHaveBeenCalledWith('/tickets/new000000000000', { replaceState: true })
+		);
+		expect(mocks.inbox.markConverted).toHaveBeenCalledWith(ITEM_ID, CREATED.id, CREATED.created);
+		expect(mocks.tickets.announce).toHaveBeenCalledWith('Ticket HAUS-4 angelegt.');
+	});
+
+	it('takes the Berlin date of the source as due date on "Als Fälligkeit übernehmen"', async () => {
+		openFor(entry());
+		mocks.detail.create.mockResolvedValueOnce({ ok: true, ticket: CREATED });
+		const take = await screen.findByRole('button', { name: 'Als Fälligkeit übernehmen' });
+		await fireEvent.click(take);
+		expect(screen.getByLabelText<HTMLInputElement>('Fälligkeit').value).toBe('2026-09-25');
+		await fireEvent.click(createButton());
+		await vi.waitFor(() =>
+			expect(mocks.detail.create).toHaveBeenCalledWith(
+				expect.objectContaining({ due: '2026-09-25' }),
+				{ sourceItem: ITEM_ID }
+			)
+		);
+	});
+
+	it('shows no source date hint without a date and fills other kinds by their header', async () => {
+		openFor(
+			entry({
+				kind: 'link',
+				channel: 'link',
+				sourceUrl: 'https://example.com/artikel',
+				sourceDate: null,
+				sourceMeta: {},
+				body: ''
+			})
+		);
+		await vi.waitFor(() => expect(titleField().value).toBe('Rechnung September'));
+		expect(screen.getByLabelText<HTMLTextAreaElement>('Beschreibung').value).toBe(
+			'- **Link:** <https://example.com/artikel>'
+		);
+		expect(screen.queryByRole('button', { name: 'Als Fälligkeit übernehmen' })).toBeNull();
+	});
+
+	it('returns to the entry on "Abbrechen" without asking for the untouched prefill', async () => {
+		openFor(entry());
+		const confirm = vi.spyOn(window, 'confirm');
+		await vi.waitFor(() => expect(titleField().value).toBe('Rechnung September'));
+		await fireEvent.click(screen.getByRole('button', { name: 'Abbrechen' }));
+		expect(confirm).not.toHaveBeenCalled();
+		expect(mocks.goto).toHaveBeenCalledWith(`/eingang/${ITEM_ID}`);
+	});
+
+	it('refuses an entry that was handled already', async () => {
+		openFor(entry({ state: 'converted', ticketId: 'tick00000000001' }));
+		expect(await screen.findByText('Dieser Eintrag wurde schon bearbeitet.')).toBeTruthy();
+		expect(screen.queryByLabelText('Titel')).toBeNull();
+		expect(screen.getByRole('link', { name: 'Zum Eintrag im Eingang' }).getAttribute('href')).toBe(
+			`/eingang/${ITEM_ID}`
+		);
+	});
 });

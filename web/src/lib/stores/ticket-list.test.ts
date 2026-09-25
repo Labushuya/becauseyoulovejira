@@ -953,6 +953,26 @@ describe('search (E3 plan, package 11)', () => {
 		stop();
 	});
 
+	it('asks once for 50 tickets created in a row by "Gesammelt umwandeln" (E4 plan, package 3)', async () => {
+		const hit = ticket();
+		const { store, data } = await started([hit], [hit.id]);
+		const live = fakeLive();
+		const stop = store.connect(live.source);
+		await settle();
+		store.activate(searching('Miete'));
+		await vi.advanceTimersByTimeAsync(SEARCH_DEBOUNCE_MS);
+		expect(data.searchOpen).toHaveBeenCalledOnce();
+
+		for (let index = 0; index < 50; index += 1) {
+			const id = `bulk${String(index).padStart(11, '0')}`;
+			live.send({ action: 'create', record: ticket({ id, title: `Eintrag ${index}` }) });
+			await vi.advanceTimersByTimeAsync(10);
+		}
+		await vi.advanceTimersByTimeAsync(SEARCH_DEBOUNCE_MS);
+		expect(data.searchOpen).toHaveBeenCalledTimes(2);
+		stop();
+	});
+
 	it('keeps a just checked row with "Rückgängig" although the server no longer finds it', async () => {
 		const hit = ticket();
 		const { store, data } = await started([hit], [hit.id]);
