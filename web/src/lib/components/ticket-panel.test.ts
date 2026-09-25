@@ -59,6 +59,7 @@ function ticket(overrides: Partial<Ticket> = {}): Ticket {
 		key: 'TASK-3',
 		title: 'Steuererklärung',
 		description: '**Belege** sammeln',
+		sourceItem: null,
 		status: 'in_progress',
 		priority: 'high',
 		due: '2026-10-01',
@@ -67,6 +68,7 @@ function ticket(overrides: Partial<Ticket> = {}): Ticket {
 		project: null,
 		tags: [],
 		recurring: false,
+		source: null,
 		completedAt: null,
 		created: '2026-09-01 10:00:00.000Z',
 		updated: '2026-09-02 12:30:00.000Z',
@@ -814,6 +816,7 @@ describe('ticket panel: deleted elsewhere', () => {
 			history: async () => stop,
 			projects: async () => stop,
 			tags: async () => stop,
+			inbox: async () => stop,
 			reconnected: async () => stop
 		};
 		const disconnect = context.store.connect(live);

@@ -2,6 +2,7 @@
 // layer (web/src/lib/data) maps PocketBase records to these types.
 
 import { isCalendarDate, type CalendarDate } from './berlin-date';
+import type { InboxChannel } from './inbox';
 import type { Priority, Status } from './status';
 
 /** Length limits of the schema (app/pb_migrations; tests/unit/web-limits.test.mjs keeps them equal). */
@@ -42,6 +43,11 @@ export interface TicketSummary {
 	tags: TagRef[];
 	/** True if a recurrence rule created the ticket (E5). */
 	recurring: boolean;
+	/**
+	 * Way the ticket came in (ADR-0014 section 2); null for tickets before E4 and before the
+	 * migration, which count as "manual" (ADR-0019).
+	 */
+	source: InboxChannel | null;
 	/** UTC timestamp of PocketBase (`YYYY-MM-DD HH:MM:SS.sssZ`), null unless done. */
 	completedAt: string | null;
 	/** UTC timestamps of PocketBase; they sort as text. */
@@ -53,6 +59,8 @@ export interface TicketSummary {
 export interface Ticket extends TicketSummary {
 	/** Markdown, '' without a description. */
 	description: string;
+	/** Inbox entry the ticket came from; null without one or after the entry was deleted. */
+	sourceItem: string | null;
 }
 
 /** Fields a user sets when creating a ticket; key, scope and number come from the hook. */
@@ -77,6 +85,15 @@ export const REOPEN_STATUS: Status = 'open';
 /** Defaults of a new ticket (E2 plan, T-8). */
 export const DEFAULT_STATUS: Status = 'open';
 export const DEFAULT_PRIORITY: Priority = 'medium';
+
+/**
+ * Origin of a new ticket (ADR-0014 section 2): typed in directly (form "Neues Ticket" or quick
+ * entry), or converted from an inbox entry, whose channel the hook then takes as source.
+ */
+export type TicketOrigin = { source: 'manual' | 'quick' } | { sourceItem: string };
+
+/** Origin of the form "Neues Ticket". */
+export const MANUAL_ORIGIN: TicketOrigin = Object.freeze({ source: 'manual' });
 
 /** Changed fields of an update; only these are sent (ADR-0006 section 5). */
 export type TicketPatch = Partial<TicketDraft>;

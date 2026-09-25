@@ -4,11 +4,13 @@
 // filters every event by the list and view rules of the collection.
 
 import type PocketBase from 'pocketbase';
+import type { InboxItemSummary } from '../domain/inbox';
 import type { Project } from '../domain/project';
 import type { Tag } from '../domain/tag';
 import type { Comment, HistoryEntry, Ticket, TicketSummary } from '../domain/ticket';
 import { COMMENT_FIELDS, toComment, type CommentRecord } from './comments';
 import { HISTORY_FIELDS, toHistoryEntry, type HistoryRecord } from './history';
+import { INBOX_LIST_FIELDS, toInboxItemSummary, type InboxRecord } from './inbox';
 import { PROJECT_FIELDS, toProject, type ProjectRecord } from './projects';
 import { TAG_FIELDS, toTag, type TagRecord } from './tags';
 import {
@@ -124,6 +126,18 @@ export function subscribeTags(
 	return pb
 		.collection('tags')
 		.subscribe<TagRecord>('*', changes(toTag, onChange), { fields: TAG_FIELDS });
+}
+
+/** All visible inbox entries with the fields of the lists (E4 plan, T-4). */
+export function subscribeInboxItems(
+	pb: PocketBase,
+	onChange: (change: RecordChange<InboxItemSummary>) => void
+): Promise<Unsubscribe> {
+	return pb
+		.collection('inbox_items')
+		.subscribe<InboxRecord>('*', changes(toInboxItemSummary, onChange), {
+			fields: INBOX_LIST_FIELDS
+		});
 }
 
 /**

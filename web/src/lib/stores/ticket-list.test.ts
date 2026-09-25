@@ -38,6 +38,7 @@ function ticket(overrides: Partial<TicketSummary> = {}): TicketSummary {
 		project: null,
 		tags: [],
 		recurring: false,
+		source: null,
 		completedAt: null,
 		created: '2026-09-01 10:00:00.000Z',
 		updated: '2026-09-01 10:00:00.000Z',
@@ -806,6 +807,7 @@ describe('search (E3 plan, package 11)', () => {
 			history: never,
 			projects: never,
 			tags: never,
+			inbox: never,
 			reconnected: never
 		};
 		return {

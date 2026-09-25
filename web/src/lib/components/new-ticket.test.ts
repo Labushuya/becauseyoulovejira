@@ -72,6 +72,7 @@ const CREATED: Ticket = {
 	key: 'TASK-9',
 	title: 'Neu',
 	description: '',
+	sourceItem: null,
 	status: 'open',
 	priority: 'medium',
 	due: null,
@@ -80,6 +81,7 @@ const CREATED: Ticket = {
 	project: null,
 	tags: [],
 	recurring: false,
+	source: null,
 	completedAt: null,
 	created: '2026-09-24 10:00:00.000Z',
 	updated: '2026-09-24 10:00:00.000Z'

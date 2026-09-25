@@ -10,6 +10,8 @@ export interface FieldError {
 	code: string;
 	/** German text for the field. */
 	message: string;
+	/** Details of the server (e.g. state and ticket key of a duplicate, ADR-0014 section 3). */
+	params?: Readonly<Record<string, unknown>>;
 }
 
 /** German default texts per kind; the UI may use more specific ones. */
@@ -39,7 +41,16 @@ const FIELD_MESSAGES: Readonly<Record<string, string>> = Object.freeze({
 	// Hook codes (E1 plan, OF-6 and OF-14; E3 plan, T-11).
 	validation_reserved_code: 'Der Code TASK ist reserviert.',
 	validation_project_in_use: 'Das Projekt wird von Tickets verwendet.',
-	validation_project_archived: 'Das Projekt ist archiviert.'
+	validation_project_archived: 'Das Projekt ist archiviert.',
+	// Inbox and ticket source (ADR-0014; E4 plan, package 1).
+	validation_inbox_duplicate: 'Schon im Eingang.',
+	validation_inbox_immutable: 'Lässt sich nach dem Eingang nicht ändern.',
+	validation_inbox_transition: 'Dieser Zustandswechsel ist nicht erlaubt.',
+	validation_inbox_item_handled: 'Dieser Eintrag wurde schon bearbeitet.',
+	validation_inbox_ticket_required: 'Zum Zuordnen fehlt das Ticket.',
+	validation_invalid_url: 'Nur http- und https-Adressen.',
+	validation_source_not_allowed: 'Diese Quelle lässt sich nicht direkt setzen.',
+	validation_source_immutable: 'Die Quelle eines Tickets lässt sich nicht ändern.'
 });
 
 /** Texts that depend on the field as well, keyed by `<field>:<code>`; they win over the above. */
@@ -47,7 +58,9 @@ const FIELD_CODE_MESSAGES: Readonly<Record<string, string>> = Object.freeze({
 	'code:validation_invalid_format': 'Nur 2 bis 6 Großbuchstaben (A–Z).',
 	'code:validation_project_in_use': 'Der Code bleibt fest, weil Tickets das Projekt verwenden.',
 	'id:validation_project_in_use':
-		'Ein Projekt mit Tickets lässt sich nicht löschen. Bitte archivieren.'
+		'Ein Projekt mit Tickets lässt sich nicht löschen. Bitte archivieren.',
+	'ticket:validation_scope_mismatch': 'Das Ticket ist nicht verfügbar.',
+	'source_item:validation_scope_mismatch': 'Der Eintrag ist nicht verfügbar.'
 });
 const DEFAULT_FIELD_MESSAGE = 'Ungültige Eingabe.';
 
@@ -99,7 +112,8 @@ function fieldErrorsOf(response: unknown): Record<string, FieldError> {
 	if (!isRecord(data)) return fields;
 	for (const [field, detail] of Object.entries(data)) {
 		const code = isRecord(detail) && typeof detail.code === 'string' ? detail.code : '';
-		fields[field] = { code, message: fieldMessage(field, code) };
+		const params = isRecord(detail) && isRecord(detail.params) ? { ...detail.params } : undefined;
+		fields[field] = { code, message: fieldMessage(field, code), ...(params && { params }) };
 	}
 	return fields;
 }

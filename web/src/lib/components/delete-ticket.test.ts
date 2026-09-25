@@ -51,6 +51,7 @@ function ticket(): Ticket {
 		key: 'TASK-12',
 		title: 'Keller aufräumen',
 		description: '',
+		sourceItem: null,
 		status: 'open',
 		priority: 'medium',
 		due: null,
@@ -59,6 +60,7 @@ function ticket(): Ticket {
 		project: null,
 		tags: [],
 		recurring: false,
+		source: null,
 		completedAt: null,
 		created: '2026-09-01 10:00:00.000Z',
 		updated: '2026-09-01 10:00:00.000Z'

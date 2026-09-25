@@ -8,6 +8,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { DataError } from '$lib/data/errors';
 import type { RequestOptions } from '$lib/data/options';
 import type { DoneTicketPage } from '$lib/data/tickets';
+import type { InboxItemSummary } from '$lib/domain/inbox';
 import { EMPTY_LIST_QUERY } from '$lib/domain/list-query';
 import type { Project } from '$lib/domain/project';
 import type { Tag } from '$lib/domain/tag';
@@ -21,7 +22,8 @@ import {
 } from './ticket-detail.svelte';
 import { TicketListStore, type TicketListData } from './ticket-list.svelte';
 
-type Kind = 'tickets' | 'ticket' | 'comments' | 'history' | 'projects' | 'tags' | 'reconnected';
+type Kind =
+	'tickets' | 'ticket' | 'comments' | 'history' | 'projects' | 'tags' | 'inbox' | 'reconnected';
 
 /** Realtime source for tests: records subscriptions and delivers events on demand. */
 class FakeLive implements LiveSource {
@@ -49,6 +51,10 @@ class FakeLive implements LiveSource {
 
 	tags(onChange: (change: RecordChange<Tag>) => void) {
 		return this.#add('tags', '*', onChange);
+	}
+
+	inbox(onChange: (change: RecordChange<InboxItemSummary>) => void) {
+		return this.#add('inbox', '*', onChange);
 	}
 
 	reconnected(callback: () => void) {
@@ -97,6 +103,7 @@ function summary(overrides: Partial<TicketSummary> = {}): TicketSummary {
 		project: null,
 		tags: [],
 		recurring: false,
+		source: null,
 		completedAt: null,
 		created: '2026-09-24 08:00:00.000Z',
 		updated: '2026-09-24 08:00:00.000Z',
@@ -105,7 +112,7 @@ function summary(overrides: Partial<TicketSummary> = {}): TicketSummary {
 }
 
 function full(overrides: Partial<Ticket> = {}): Ticket {
-	return { ...summary(), description: 'Belege sammeln', ...overrides };
+	return { ...summary(), description: 'Belege sammeln', sourceItem: null, ...overrides };
 }
 
 function deferred<T>() {

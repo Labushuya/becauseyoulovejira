@@ -72,6 +72,31 @@ describe('toDataError', () => {
 		expect(Object.isFrozen(error.fields)).toBe(true);
 	});
 
+	it('keeps the params of a field error (duplicate in the inbox, E4 plan, package 2)', () => {
+		const error = toDataError(
+			responseError(400, {
+				fingerprint: {
+					code: 'validation_inbox_duplicate',
+					message: 'Schon Ticket HAUS-2.',
+					params: { state: 'converted', ticketKey: 'HAUS-2' }
+				},
+				source_item: { code: 'validation_scope_mismatch', message: 'x', params: 'no object' }
+			})
+		);
+
+		expect(error.fields).toEqual({
+			fingerprint: {
+				code: 'validation_inbox_duplicate',
+				message: 'Schon im Eingang.',
+				params: { state: 'converted', ticketKey: 'HAUS-2' }
+			},
+			source_item: {
+				code: 'validation_scope_mismatch',
+				message: 'Der Eintrag ist nicht verfügbar.'
+			}
+		});
+	});
+
 	it('has German texts for the project and tag codes, some per field (E3 plan, package 3)', () => {
 		const error = toDataError(
 			responseError(400, {

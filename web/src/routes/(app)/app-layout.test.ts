@@ -41,6 +41,7 @@ const mocks = vi.hoisted(() => {
 			history: vi.fn(subscribe('history')),
 			projects: vi.fn(subscribe('projects')),
 			tags: vi.fn(subscribe('tags')),
+			inbox: vi.fn(subscribe('inbox')),
 			reconnected: vi.fn(subscribe('PB_CONNECT'))
 		},
 		goto: vi.fn(async () => {
@@ -84,6 +85,28 @@ vi.mock('$lib/stores/ticket-list.svelte', async (importOriginal) => {
 		}
 	};
 });
+vi.mock('$lib/stores/inbox.svelte', async (importOriginal) => ({
+	...(await importOriginal<object>()),
+	inboxData: () => ({
+		listNew: async () => [],
+		listHandled: async (_state: string, page: number) => ({ items: [], page, hasMore: false }),
+		get: async () => {
+			throw new Error('not used');
+		},
+		create: async () => {
+			throw new Error('not used');
+		},
+		discard: async () => {
+			throw new Error('not used');
+		},
+		restore: async () => {
+			throw new Error('not used');
+		},
+		assign: async () => {
+			throw new Error('not used');
+		}
+	})
+}));
 vi.mock('$lib/stores/catalog.svelte', async (importOriginal) => ({
 	...(await importOriginal<object>()),
 	catalogData: () => ({
@@ -108,6 +131,7 @@ function ticket(id: string, status: TicketSummary['status'] = 'open'): TicketSum
 		project: null,
 		tags: [],
 		recurring: false,
+		source: null,
 		completedAt: null,
 		created: '2026-09-01 10:00:00.000Z',
 		updated: '2026-09-01 10:00:00.000Z'
@@ -164,17 +188,20 @@ describe('app layout', () => {
 		expect(mocks.auth.keepAlive).toHaveBeenCalledOnce();
 	});
 
-	it('subscribes to tickets, the catalog and reconnections while shown and ends them when it goes away', async () => {
+	it('subscribes to tickets, the catalog, the inbox and reconnections while shown and ends them when it goes away', async () => {
 		const { unmount } = await renderLayout();
-		await vi.waitFor(() => expect(mocks.subscribed).toHaveLength(7));
+		await vi.waitFor(() => expect(mocks.subscribed).toHaveLength(9));
 
-		// The list follows all tickets, the catalog all projects and tags (E3 plan, T-16); list,
-		// panel, activity and catalog each reconcile after a reconnect.
+		// The list follows all tickets, the catalog all projects and tags (E3 plan, T-16), the
+		// inbox all entries (E4 plan, T-4); list, panel, activity, catalog and inbox each reconcile
+		// after a reconnect.
 		expect([...mocks.subscribed].sort()).toEqual([
 			'PB_CONNECT',
 			'PB_CONNECT',
 			'PB_CONNECT',
 			'PB_CONNECT',
+			'PB_CONNECT',
+			'inbox',
 			'projects',
 			'tags',
 			'tickets'
@@ -182,6 +209,7 @@ describe('app layout', () => {
 		expect(mocks.live.tickets).toHaveBeenCalledOnce();
 		expect(mocks.live.projects).toHaveBeenCalledOnce();
 		expect(mocks.live.tags).toHaveBeenCalledOnce();
+		expect(mocks.live.inbox).toHaveBeenCalledOnce();
 		// The catalog tries to load once when the layout is shown.
 		expect(mocks.auth.ensureValid).toHaveBeenCalled();
 

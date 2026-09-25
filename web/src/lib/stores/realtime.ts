@@ -8,6 +8,7 @@ import {
 	onReconnect,
 	subscribeComments,
 	subscribeHistory,
+	subscribeInboxItems,
 	subscribeProjects,
 	subscribeTags,
 	subscribeTicket,
@@ -15,6 +16,7 @@ import {
 	type RecordChange,
 	type Unsubscribe
 } from '$lib/data/realtime';
+import type { InboxItemSummary } from '$lib/domain/inbox';
 import type { Project } from '$lib/domain/project';
 import type { Tag } from '$lib/domain/tag';
 import type { Comment, HistoryEntry, Ticket, TicketSummary } from '$lib/domain/ticket';
@@ -38,6 +40,8 @@ export interface LiveSource {
 	projects(onChange: (change: RecordChange<Project>) => void): Promise<Unsubscribe>;
 	/** All visible tags (catalog). */
 	tags(onChange: (change: RecordChange<Tag>) => void): Promise<Unsubscribe>;
+	/** All visible inbox entries (E4 plan, T-4). */
+	inbox(onChange: (change: RecordChange<InboxItemSummary>) => void): Promise<Unsubscribe>;
 	/** Called after a new connection that follows an interrupted one. */
 	reconnected(callback: () => void): Promise<Unsubscribe>;
 }
@@ -50,6 +54,7 @@ export function liveSource(pb: PocketBase): LiveSource {
 		history: (ticketId, onChange) => subscribeHistory(pb, ticketId, onChange),
 		projects: (onChange) => subscribeProjects(pb, onChange),
 		tags: (onChange) => subscribeTags(pb, onChange),
+		inbox: (onChange) => subscribeInboxItems(pb, onChange),
 		reconnected: (callback) => onReconnect(pb, callback)
 	};
 }

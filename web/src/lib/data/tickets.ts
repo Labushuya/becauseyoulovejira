@@ -4,15 +4,18 @@
 
 import type PocketBase from 'pocketbase';
 import { addDays, type CalendarDate } from '../domain/berlin-date';
+import { isInboxChannel } from '../domain/inbox';
 import { EMPTY_LIST_QUERY, NO_PROJECT, activeSearch, type ListQuery } from '../domain/list-query';
 import { SOON_DAYS } from '../domain/ordering';
 import { isPriority, isStatus, type Status } from '../domain/status';
 import {
+	MANUAL_ORIGIN,
 	REOPEN_STATUS,
 	fromDueInput,
 	toDueInput,
 	type Ticket,
 	type TicketDraft,
+	type TicketOrigin,
 	type TicketPatch,
 	type TicketSummary
 } from '../domain/ticket';
@@ -41,6 +44,8 @@ export const TICKET_LIST_FIELDS = [
 	'project',
 	'tags',
 	'recurrence',
+	// Way the ticket came in (ADR-0014 section 2); unknown to the server before the migration.
+	'source',
 	'completed_at',
 	'created',
 	'updated',
@@ -52,8 +57,8 @@ export const TICKET_LIST_FIELDS = [
 	'expand.tags.name'
 ].join(',');
 
-/** Fields of the detail panel: the list fields plus the description. */
-export const TICKET_DETAIL_FIELDS = `${TICKET_LIST_FIELDS},description`;
+/** Fields of the detail panel: the list fields plus the description and the inbox entry. */
+export const TICKET_DETAIL_FIELDS = `${TICKET_LIST_FIELDS},description,source_item`;
 
 /** Ticket record as the API returns it with the fields above. */
 export interface TicketRecord {
@@ -67,6 +72,9 @@ export interface TicketRecord {
 	project: string;
 	tags: string[];
 	recurrence: string;
+	/** Missing before the migration 1790201210 (the server leaves unknown fields out). */
+	source?: string;
+	source_item?: string;
 	completed_at: string;
 	created: string;
 	updated: string;
@@ -89,6 +97,7 @@ export function toTicketSummary(record: TicketRecord): TicketSummary {
 		project: record.expand?.project ? toProjectRef(record.expand.project) : null,
 		tags: (record.expand?.tags ?? []).map(toTagRef),
 		recurring: record.recurrence !== '',
+		source: isInboxChannel(record.source) ? record.source : null,
 		completedAt: record.completed_at || null,
 		created: record.created,
 		updated: record.updated
@@ -96,7 +105,11 @@ export function toTicketSummary(record: TicketRecord): TicketSummary {
 }
 
 export function toTicket(record: TicketRecord): Ticket {
-	return { ...toTicketSummary(record), description: record.description ?? '' };
+	return {
+		...toTicketSummary(record),
+		description: record.description ?? '',
+		sourceItem: record.source_item || null
+	};
 }
 
 function dueBody(due: CalendarDate | null): string {
@@ -266,16 +279,27 @@ export function getTicket(pb: PocketBase, id: string, { signal }: RequestOptions
 	});
 }
 
+/** Request fields of the origin: the source, or the inbox entry whose channel the hook takes. */
+function originBody(origin: TicketOrigin): Record<string, string> {
+	return 'sourceItem' in origin ? { source_item: origin.sourceItem } : { source: origin.source };
+}
+
 /**
  * Creates a private ticket of the signed-in user (E2 plan, T-8). Key, scope and number come
- * from the hook; `household` stays empty.
+ * from the hook; `household` stays empty. `origin` is the form by default (source "manual");
+ * with an inbox entry the hook converts the entry in the same transaction (ADR-0014 section 2).
  */
-export function createTicket(pb: PocketBase, draft: TicketDraft, { signal }: RequestOptions = {}) {
+export function createTicket(
+	pb: PocketBase,
+	draft: TicketDraft,
+	{ signal, origin = MANUAL_ORIGIN }: RequestOptions & { origin?: TicketOrigin } = {}
+) {
 	return withDataErrors(signal, async (): Promise<Ticket> => {
 		const owner = currentUserId(pb.authStore.record);
 		if (owner === null) throw new DataError('session');
 		const record = await pb.collection(TICKETS).create<TicketRecord>(
 			{
+				...originBody(origin),
 				owner,
 				title: draft.title,
 				description: draft.description,
