@@ -39,3 +39,24 @@ routerAdd(
   },
   $apis.requireAuth('users')
 );
+
+// Mailbox selection (ADR-0016 section 6; E4 plan package 23): the last mails of a mail connection
+// and the import of chosen ones, passed on to the mail helper on 127.0.0.1. A connection the
+// request may not see answers 404; a stopped helper 503 with a hint.
+routerAdd(
+  'GET',
+  '/api/byl/connections/{id}/mailbox',
+  function (e) {
+    return require(`${__hooks}/lib/mailbox-service.js`).list(e);
+  },
+  $apis.requireAuth('users')
+);
+
+routerAdd(
+  'POST',
+  '/api/byl/connections/{id}/mailbox/import',
+  function (e) {
+    return require(`${__hooks}/lib/mailbox-service.js`).importMails(e);
+  },
+  $apis.requireAuth('users')
+);
