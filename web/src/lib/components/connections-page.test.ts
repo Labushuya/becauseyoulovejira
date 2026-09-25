@@ -20,6 +20,7 @@ import {
 	ConnectionsStore,
 	type ConnectionsData
 } from '$lib/stores/connections.svelte';
+import { FlagStore } from '$lib/stores/flags.svelte';
 import { ImportKeywordsStore } from '$lib/stores/import-keywords.svelte';
 import { useOverlayStubs } from '$lib/test/overlay-stubs';
 import ChannelsView from './ChannelsView.svelte';
@@ -122,8 +123,12 @@ function setup(items: Connection[] = [CAL, BOT], statuses: Record<string, Secret
 		}))
 	} satisfies ConnectionsData;
 	const session = { ensureValid: vi.fn(() => true), logout: vi.fn() };
-	return { store: new ConnectionsStore(data, session), data, session };
+	const flags = new FlagStore();
+	return { store: new ConnectionsStore(data, session, flags), data, session, flags };
 }
+
+/** Title of the newest flag (ADR-0025 section 8), `undefined` without one. */
+const latestFlag = (flags: FlagStore) => flags.flags[0]?.title;
 
 describe('connections domain', () => {
 	it('checks names of variables and the label', () => {
@@ -219,11 +224,11 @@ describe('connections section', () => {
 	});
 
 	it('switches a connection off', async () => {
-		const { data, store } = await renderSection();
+		const { data, flags } = await renderSection();
 		const [cal] = screen.getAllByRole('listitem');
 		await fireEvent.click(within(cal as HTMLElement).getByLabelText('Eingeschaltet'));
 		expect(data.setEnabled).toHaveBeenCalledWith(CAL.id, false);
-		await vi.waitFor(() => expect(store.announcement).toBe('„Google Kalender“ ist ausgeschaltet.'));
+		await vi.waitFor(() => expect(latestFlag(flags)).toBe('„Google Kalender“ ist ausgeschaltet.'));
 	});
 
 	it('creates a Telegram connection with both variable names and marks wrong names', async () => {
@@ -352,7 +357,7 @@ describe('Jetzt abrufen (E4 plan, package 15)', () => {
 		);
 		expect(context.data.run).toHaveBeenCalledWith(CAL.id);
 		await vi.waitFor(() =>
-			expect(context.store.announcement).toBe(
+			expect(latestFlag(context.flags)).toBe(
 				'„Google Kalender“: 3 neu, 1 schon vorhanden, 1 aktualisiert.'
 			)
 		);
@@ -464,7 +469,7 @@ describe('Stichwörter (E4 plan, package 20)', () => {
 			)
 		);
 		await vi.waitFor(() =>
-			expect(context.store.announcement).toBe('Stichwort „Einkauf“ hinzugefügt.')
+			expect(latestFlag(context.flags)).toBe('Stichwort „Einkauf“ hinzugefügt.')
 		);
 		await vi.waitFor(() =>
 			expect((scope.getByLabelText('Neues Stichwort') as HTMLInputElement).value).toBe('')
@@ -560,7 +565,7 @@ describe('Postfächer (E4 plan, package 22)', () => {
 			)
 		);
 		await vi.waitFor(() =>
-			expect(context.store.announcement).toBe('„Web.de“ durchsucht auch den Anfang des Textes.')
+			expect(latestFlag(context.flags)).toBe('„Web.de“ durchsucht auch den Anfang des Textes.')
 		);
 	});
 
@@ -729,7 +734,7 @@ describe('Aus dem Postfach wählen (E4 plan, package 23)', () => {
 		await fireEvent.click(await within(dialog).findByRole('checkbox'));
 		await fireEvent.click(within(dialog).getByRole('button', { name: '1 Mail in den Eingang' }));
 		expect(context.data.importMailbox).toHaveBeenCalledWith(MAILBOX.id, [7]);
-		await vi.waitFor(() => expect(context.store.announcement).toBe('„Web.de“: 1 neu.'));
+		await vi.waitFor(() => expect(latestFlag(context.flags)).toBe('„Web.de“: 1 neu.'));
 		await fireEvent.click(within(dialog).getByRole('button', { name: 'Schließen' }));
 		expect(screen.queryByRole('dialog', { name: 'Aus dem Postfach wählen' })).toBeNull();
 	});

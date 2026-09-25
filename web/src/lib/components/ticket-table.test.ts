@@ -14,12 +14,10 @@ import type { Project } from '$lib/domain/project';
 import type { Tag } from '$lib/domain/tag';
 import type { TicketPatch, TicketSummary } from '$lib/domain/ticket';
 import { CatalogStore } from '$lib/stores/catalog.svelte';
-import {
-	TicketListStore,
-	UNDO_WINDOW_MS,
-	type TicketListData
-} from '$lib/stores/ticket-list.svelte';
+import { FLAG_DURATION_MS, FlagStore } from '$lib/stores/flags.svelte';
+import { TicketListStore, type TicketListData } from '$lib/stores/ticket-list.svelte';
 import { NEW_TICKET_LINK_ID } from '$lib/ticket-links';
+import FlagGroup from './overlay/FlagGroup.svelte';
 import TicketTable from './TicketTable.svelte';
 
 const mocks = vi.hoisted(() => ({
@@ -98,7 +96,8 @@ async function showTable(
 	catalogContent: { projects?: Project[]; tags?: Tag[] } = {}
 ) {
 	mocks.page.url = new URL(path, 'http://localhost:3000');
-	const store = new TicketListStore(data, SESSION);
+	const flags = new FlagStore();
+	const store = new TicketListStore(data, SESSION, { flags });
 	const catalog = new CatalogStore(
 		{
 			listProjects: vi.fn(async () => catalogContent.projects ?? []),
@@ -110,8 +109,15 @@ async function showTable(
 	void catalog.load();
 	store.activate(parseListQuery(mocks.page.url.searchParams));
 	const result = render(TicketTable, { props: { store, catalog } });
+	// The flags of the app layout, after the table like after `main` (ADR-0025 section 8).
+	render(FlagGroup, { props: { store: flags } });
 	await vi.advanceTimersByTimeAsync(0);
-	return { ...result, store, catalog };
+	return { ...result, store, catalog, flags };
+}
+
+/** The flag section bottom left. */
+function flagSection() {
+	return within(screen.getByRole('region', { name: 'Benachrichtigungen' }));
 }
 
 function openBody() {
@@ -335,7 +341,7 @@ describe('ticket table', () => {
 		expect(within(section).queryByRole('button', { name: 'Weitere laden' })).toBeNull();
 	});
 
-	it('checks a ticket, keeps the row with "Rückgängig" and restores the previous status', async () => {
+	it('checks a ticket, removes the row and restores the previous status from the flag (UI-5)', async () => {
 		const item = ticket({ status: 'waiting' });
 		const data = fakeData([item]);
 		await showTable(data);
@@ -343,22 +349,45 @@ describe('ticket table', () => {
 		await fireEvent.click(screen.getByRole('checkbox', { name: `${item.key} erledigt` }));
 		await vi.advanceTimersByTimeAsync(0);
 		expect(data.setDone).toHaveBeenCalledWith(item.id, true);
-		expect(screen.getByText(`${item.key} erledigt. Rückgängig ist kurz möglich.`)).toBeTruthy();
-		// A just checked row counts as done.
+		expect(screen.queryByRole('rowgroup', { name: 'Offene Tickets' })).toBeNull();
 		expect(screen.getByText('0 Tickets')).toBeTruthy();
+		// No "Rückgängig" in the table; it stands in the flag bottom left.
+		expect(
+			within(screen.getByRole('region', { name: /Aufgaben/ })).queryByRole('button', {
+				name: /Rückgängig/
+			})
+		).toBeNull();
+		const flag = flagSection().getByRole('listitem');
+		expect(flag.textContent).toContain(`${item.key} erledigt.`);
+		expect(flagSection().getByRole('status').textContent).toContain(`${item.key} erledigt.`);
 
-		await fireEvent.click(
-			screen.getByRole('button', { name: `Rückgängig: ${item.key} wieder öffnen` })
-		);
+		await fireEvent.click(flagSection().getByRole('button', { name: 'Rückgängig' }));
 		await vi.advanceTimersByTimeAsync(0);
 
 		expect(data.update).toHaveBeenCalledWith(item.id, { status: 'waiting' });
 		expect(within(openRows()[0]!).getByText('Wartet')).toBeTruthy();
-		expect(screen.queryByRole('button', { name: /Rückgängig/ })).toBeNull();
+		expect(flagSection().queryByRole('button', { name: 'Rückgängig' })).toBeNull();
+		expect(flagSection().getByRole('listitem').textContent).toContain(
+			`${item.key} ist wieder offen.`
+		);
 		expect(mocks.goto).not.toHaveBeenCalled();
 	});
 
-	it('moves the focus to the next row when a checked row goes away', async () => {
+	it('offers "Rückgängig" for 8 s, longer while the pointer rests on the flag', async () => {
+		const item = ticket();
+		await showTable(fakeData([item]));
+		await fireEvent.click(screen.getByRole('checkbox', { name: `${item.key} erledigt` }));
+		await vi.advanceTimersByTimeAsync(0);
+
+		await fireEvent.pointerEnter(screen.getByRole('region', { name: 'Benachrichtigungen' }));
+		await vi.advanceTimersByTimeAsync(FLAG_DURATION_MS * 2);
+		expect(flagSection().getByRole('button', { name: 'Rückgängig' })).toBeTruthy();
+		await fireEvent.pointerLeave(screen.getByRole('region', { name: 'Benachrichtigungen' }));
+		await vi.advanceTimersByTimeAsync(FLAG_DURATION_MS);
+		expect(flagSection().queryByRole('button', { name: 'Rückgängig' })).toBeNull();
+	});
+
+	it('moves the focus to the next row when a checked row goes away, never to the flag', async () => {
 		const first = ticket({ priority: 'urgent' });
 		const second = ticket();
 		await showTable(fakeData([first, second]));
@@ -367,9 +396,6 @@ describe('ticket table', () => {
 		toggle.focus();
 		await fireEvent.click(toggle);
 		await vi.advanceTimersByTimeAsync(0);
-		screen.getByRole('button', { name: `Rückgängig: ${first.key} wieder öffnen` }).focus();
-
-		await vi.advanceTimersByTimeAsync(UNDO_WINDOW_MS);
 		await tick();
 
 		expect(openRows()).toHaveLength(1);
@@ -431,21 +457,30 @@ describe('ticket table', () => {
 		expect(document.activeElement).toBe(moved);
 	});
 
-	it('springs back and shows an error when checking fails', async () => {
+	it('springs back and shows an error flag when checking fails (UI-5)', async () => {
 		const item = ticket();
 		const data = fakeData([item]);
 		data.setDone.mockRejectedValueOnce(new DataError('network'));
 		await showTable(data);
 
 		const toggle = screen.getByRole<HTMLInputElement>('checkbox', { name: `${item.key} erledigt` });
+		toggle.focus();
 		await fireEvent.click(toggle);
 		await vi.advanceTimersByTimeAsync(0);
 
 		expect(toggle.checked).toBe(false);
-		const alert = screen.getByText(/konnte nicht geändert werden/).closest('.alert-error');
-		expect(alert?.querySelector('svg[aria-hidden="true"]')).not.toBeNull();
-		await fireEvent.click(within(alert as HTMLElement).getByRole('button', { name: 'Schließen' }));
-		expect(screen.queryByText(/konnte nicht geändert werden/)).toBeNull();
+		expect(document.activeElement).toBe(toggle);
+		const flag = flagSection().getByRole('listitem');
+		expect(flag.classList.contains('tone-error')).toBe(true);
+		expect(flag.textContent).toMatch(/konnte nicht geändert werden/);
+		expect(flag.querySelector('svg[aria-hidden="true"]')).not.toBeNull();
+		expect(flagSection().getByRole('alert').textContent).toMatch(/konnte nicht geändert werden/);
+		// Errors stay until they are closed.
+		await vi.advanceTimersByTimeAsync(FLAG_DURATION_MS * 2);
+		await fireEvent.click(
+			flagSection().getByRole('button', { name: 'Benachrichtigung schließen' })
+		);
+		expect(flagSection().queryByRole('listitem')).toBeNull();
 	});
 
 	it('shows a loading error with "Erneut versuchen"', async () => {
@@ -467,7 +502,8 @@ describe('ticket table', () => {
 		data.listOpen.mockImplementationOnce(() => new Promise(() => undefined));
 		await showTable(data);
 
-		const status = screen.getByRole('status');
+		const table = within(screen.getByRole('region', { name: /Aufgaben/ }));
+		const status = table.getByRole('status');
 		expect(status.textContent).toBe('Tickets werden geladen …');
 		expect(status.className).toContain('loading');
 		// No number while loading.
@@ -646,19 +682,15 @@ describe('ticket table: grouping (E3 plan, package 13)', () => {
 		);
 	});
 
-	it('keeps a checked row in the group of its previous status for the undo window', async () => {
+	it('removes a checked row from its group at once (UI-5)', async () => {
 		const waiting = ticket({ status: 'waiting', title: 'Warten' });
 		const open = ticket({ title: 'Offen' });
 		await showTable(fakeData([waiting, open]), '/?gruppe=status');
 
 		await fireEvent.click(screen.getByRole('checkbox', { name: `${waiting.key} erledigt` }));
 		await vi.advanceTimersByTimeAsync(0);
-
-		expect(screen.getByRole('rowgroup', { name: 'Wartet, 0 Tickets' })).toBeTruthy();
-		expect(groupTitles(groupBodies()[1]!)).toEqual(['Warten']);
-
-		await vi.advanceTimersByTimeAsync(UNDO_WINDOW_MS);
 		await tick();
+
 		expect(groupBodies().map((body) => body.dataset.group)).toEqual(['open']);
 	});
 
@@ -671,27 +703,20 @@ describe('ticket table: grouping (E3 plan, package 13)', () => {
 		toggle.focus();
 		await fireEvent.click(toggle);
 		await vi.advanceTimersByTimeAsync(0);
-		expect(document.activeElement).toBe(
-			screen.getByRole('checkbox', { name: `${first.key} erledigt` })
-		);
-
-		await vi.advanceTimersByTimeAsync(UNDO_WINDOW_MS);
 		await tick();
 
 		expect(groupBodies().map((body) => body.dataset.group)).toEqual(['waiting']);
 		expect(document.activeElement?.textContent).toBe('Wartet');
 	});
 
-	it('restores the previous status into its group with "Rückgängig"', async () => {
+	it('restores the previous status into its group with "Rückgängig" in the flag', async () => {
 		const waiting = ticket({ status: 'waiting', title: 'Warten' });
 		const data = fakeData([waiting]);
 		await showTable(data, '/?gruppe=status');
 
 		await fireEvent.click(screen.getByRole('checkbox', { name: `${waiting.key} erledigt` }));
 		await vi.advanceTimersByTimeAsync(0);
-		await fireEvent.click(
-			screen.getByRole('button', { name: `Rückgängig: ${waiting.key} wieder öffnen` })
-		);
+		await fireEvent.click(flagSection().getByRole('button', { name: 'Rückgängig' }));
 		await vi.advanceTimersByTimeAsync(0);
 
 		expect(data.update).toHaveBeenCalledWith(waiting.id, { status: 'waiting' });
@@ -710,13 +735,15 @@ describe('ticket table: new (E4 plan, package 4)', () => {
 			markAllRead: vi.fn(async () => '2026-09-26 00:00:00.000Z')
 		};
 		mocks.page.url = new URL('/', 'http://localhost:3000');
-		const store = new TicketListStore(fakeData([fresh, old]), SESSION, { reads });
+		const flags = new FlagStore();
+		const store = new TicketListStore(fakeData([fresh, old]), SESSION, { reads, flags });
 		const catalog = new CatalogStore(
 			{ listProjects: vi.fn(async () => []), listTags: vi.fn(async () => []), createTag: vi.fn() },
 			SESSION
 		);
 		store.activate(parseListQuery(mocks.page.url.searchParams));
 		render(TicketTable, { props: { store, catalog } });
+		render(FlagGroup, { props: { store: flags } });
 		await vi.advanceTimersByTimeAsync(0);
 		return { store, reads, fresh, old };
 	}
@@ -736,6 +763,8 @@ describe('ticket table: new (E4 plan, package 4)', () => {
 		expect(reads.markAllRead).toHaveBeenCalledOnce();
 		expect(rowOf(fresh.title).querySelector('.new-dot')).toBeNull();
 		expect(screen.queryByRole('button', { name: /Alle als gelesen markieren/ })).toBeNull();
-		expect(screen.getByText('Alle Tickets als gelesen markiert.')).toBeTruthy();
+		expect(flagSection().getByRole('listitem').textContent).toContain(
+			'Alle Tickets als gelesen markiert.'
+		);
 	});
 });

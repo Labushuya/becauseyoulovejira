@@ -43,8 +43,6 @@
 		eine Auswahl. Einträge mit einem dieser Stichwörter sind dort schon ausgewählt; alle anderen
 		kannst du dazuwählen.
 	</p>
-	<div class="visually-hidden" aria-live="polite">{store.announcement}</div>
-
 	{#if store.state === 'loading'}
 		<p class="hint" role="status">Stichwörter werden geladen …</p>
 	{:else if store.state === 'unavailable'}

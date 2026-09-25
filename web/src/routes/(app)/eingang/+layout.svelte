@@ -28,18 +28,22 @@
 	import { BulkConverter, bulkConvertData } from '$lib/stores/bulk-convert.svelte';
 	import { draftsSummary, saveDrafts, type DraftsOutcome } from '$lib/stores/capture';
 	import { getCatalogStore } from '$lib/stores/catalog.svelte';
+	import { getFlagStore } from '$lib/stores/flags.svelte';
 	import { getInboxStore } from '$lib/stores/inbox.svelte';
 	import { getTicketListStore } from '$lib/stores/ticket-list.svelte';
 	import { readWhatsAppFile } from '$lib/whatsapp-file';
 
 	// Inbox view (E4 plan, T-3 and package 3): the table with the chips of the URL on the left, the
 	// panel of an entry (/eingang/<id>) on the right, like the ticket view (ADR-0010 section 1).
-	// "Gesammelt umwandeln" opens a modal dialog; its tickets join the list at once.
+	// "Gesammelt umwandeln" opens a modal dialog; its tickets join the list at once. Results of
+	// imports and conversions go out as flags (ADR-0025 section 8): success, or neutral when a part
+	// failed (the drop zone and the dialogs name the reasons).
 	let { children } = $props();
 
 	const inbox = getInboxStore();
 	const tickets = getTicketListStore();
 	const catalog = getCatalogStore();
+	const flags = getFlagStore();
 	const query = $derived(parseInboxQuery(page.url.searchParams));
 	const activeId = $derived(page.params.id ?? null);
 	const withPanel = $derived(page.route.id !== '/(app)/eingang');
@@ -66,9 +70,7 @@
 
 	function openBulk() {
 		bulkItems = inbox.visible
-			.filter(
-				(item) => item.state === 'new' && !inbox.isLingering(item.id) && selected.includes(item.id)
-			)
+			.filter((item) => item.state === 'new' && selected.includes(item.id))
 			.map(({ id, title }) => ({ id, title }));
 	}
 
@@ -95,11 +97,20 @@
 		clipboardText = text;
 	}
 
+	function announceDrafts(outcome: DraftsOutcome | null) {
+		if (outcome === null || outcome.created + outcome.duplicates === 0) return;
+		const tone = outcome.failures.length > 0 ? 'info' : 'success';
+		flags.show({ tone, title: draftsSummary(outcome) });
+	}
+
+	function announceImport(results: readonly FileImportResult[]) {
+		const tone = results.some((result) => result.kind === 'error') ? 'info' : 'success';
+		flags.show({ tone, title: importSummary(results) });
+	}
+
 	function closeClipboard(outcome: DraftsOutcome | null) {
 		clipboardText = null;
-		if (outcome !== null && outcome.created + outcome.duplicates > 0) {
-			inbox.announce(draftsSummary(outcome));
-		}
+		announceDrafts(outcome);
 	}
 
 	// Mail and calendar files and WhatsApp exports (E4 plan, packages 8, 14, 16 and 21): dropped on
@@ -133,7 +144,7 @@
 		importResults = prepared.results;
 		importKeywords = prepared.keywords;
 		if (prepared.results.length > 0 && prepared.selection === null) {
-			inbox.announce(importSummary(prepared.results));
+			announceImport(prepared.results);
 		}
 		if (prepared.selection !== null) {
 			selection = prepared.selection;
@@ -154,9 +165,9 @@
 		selection = null;
 		if (saved !== null) {
 			importResults = [...importResults, ...saved];
-			inbox.announce(importSummary(importResults));
+			announceImport(importResults);
 		} else if (importResults.length > 0) {
-			inbox.announce(importSummary(importResults));
+			announceImport(importResults);
 		}
 		chat = pendingChat;
 		pendingChat = null;
@@ -164,9 +175,7 @@
 
 	function closeChat(outcome: DraftsOutcome | null) {
 		chat = null;
-		if (outcome !== null && outcome.created + outcome.duplicates > 0) {
-			inbox.announce(draftsSummary(outcome));
-		}
+		announceDrafts(outcome);
 	}
 
 	function carriesFiles(event: DragEvent): boolean {
@@ -191,9 +200,9 @@
 		bulkItems = null;
 		selected = selected.filter((id) => inbox.find(id)?.state === 'new');
 		if (converted > 0) {
-			inbox.announce(
-				converted === 1 ? '1 Eintrag umgewandelt.' : `${converted} Einträge umgewandelt.`
-			);
+			const title =
+				converted === 1 ? '1 Eintrag umgewandelt.' : `${converted} Einträge umgewandelt.`;
+			flags.show({ tone: converter.failed.length > 0 ? 'info' : 'success', title });
 		}
 	}
 </script>
@@ -203,6 +212,7 @@
 <div class="inbox" class:with-panel={withPanel}>
 	<InboxTable
 		store={inbox}
+		{flags}
 		openTickets={tickets.open}
 		{activeId}
 		projectsNewCount={tickets.newInProjects}

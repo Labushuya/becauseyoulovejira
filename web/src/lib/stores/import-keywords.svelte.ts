@@ -12,6 +12,7 @@ import {
 	type ImportKeywords,
 	type ImportKind
 } from '$lib/domain/keywords';
+import { SILENT_FLAGS, type FlagSink } from './flags.svelte';
 import type { SessionGuard } from './ticket-list.svelte';
 
 /** Shown while the server does not know the lists yet (migration at the next start). */
@@ -38,11 +39,13 @@ export class ImportKeywordsStore {
 	#state = $state<'idle' | 'loading' | 'ready' | 'unavailable' | 'error'>('idle');
 	#error = $state<string | null>(null);
 	#settings = $state<ImportKeywords>(EMPTY_IMPORT_KEYWORDS);
-	#announcement = $state('');
 
-	constructor(data: ImportKeywordsData, session: SessionGuard) {
+	readonly #flags: FlagSink;
+
+	constructor(data: ImportKeywordsData, session: SessionGuard, flags: FlagSink = SILENT_FLAGS) {
 		this.#data = data;
 		this.#session = session;
+		this.#flags = flags;
 	}
 
 	get state() {
@@ -55,10 +58,6 @@ export class ImportKeywordsStore {
 
 	get settings(): ImportKeywords {
 		return this.#settings;
-	}
-
-	get announcement(): string {
-		return this.#announcement;
 	}
 
 	async load(): Promise<void> {
@@ -91,8 +90,8 @@ export class ImportKeywordsStore {
 	}
 
 	/**
-	 * Saves the list of one kind; answers null or the text of the failure. `announcement` goes to
-	 * the live region after saving.
+	 * Saves the list of one kind; answers null or the text of the failure, which stays at the
+	 * list. `announcement` is the text of the success flag.
 	 */
 	async save(
 		kind: ImportKind,
@@ -102,7 +101,7 @@ export class ImportKeywordsStore {
 		if (!this.#session.ensureValid()) return null;
 		try {
 			this.#settings = await this.#data.save({ ...this.#settings, [kind]: list });
-			this.#announcement = announcement;
+			this.#flags.show({ tone: 'success', title: announcement });
 			return null;
 		} catch (error) {
 			const failure = toDataError(error);
@@ -121,6 +120,5 @@ export class ImportKeywordsStore {
 		this.#state = 'idle';
 		this.#error = null;
 		this.#settings = EMPTY_IMPORT_KEYWORDS;
-		this.#announcement = '';
 	}
 }

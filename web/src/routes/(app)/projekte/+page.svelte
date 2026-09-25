@@ -6,6 +6,7 @@
 	import { getCatalogStore } from '$lib/stores/catalog.svelte';
 	import { getInboxStore } from '$lib/stores/inbox.svelte';
 	import { CatalogEditor, catalogEditorData } from '$lib/stores/catalog-editor';
+	import { getFlagStore } from '$lib/stores/flags.svelte';
 	import { ProjectStatsStore, projectStatsData } from '$lib/stores/project-stats.svelte';
 	import { liveSource } from '$lib/stores/realtime';
 	import { getTicketListStore } from '$lib/stores/ticket-list.svelte';
@@ -15,6 +16,7 @@
 	const tickets = getTicketListStore();
 	const catalog = getCatalogStore();
 	const inbox = getInboxStore();
+	const flags = getFlagStore();
 	const stats = new ProjectStatsStore(projectStatsData(pb), auth);
 	const editor = new CatalogEditor(catalogEditorData(pb), auth, catalog);
 
@@ -27,4 +29,4 @@
 	<title>Projekte · becauseyoulovejira</title>
 </svelte:head>
 
-<ProjectsView {catalog} {tickets} {stats} {editor} inboxCount={inbox.newCount} />
+<ProjectsView {catalog} {tickets} {stats} {editor} {flags} inboxCount={inbox.newCount} />

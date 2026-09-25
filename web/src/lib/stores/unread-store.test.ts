@@ -5,6 +5,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { DataError } from '$lib/data/errors';
 import type { TicketSummary } from '$lib/domain/ticket';
+import { FlagStore } from './flags.svelte';
 import type { LiveSource, ReadChange, Unsubscribe } from './realtime';
 import { TicketListStore, type ReadsData, type TicketListData } from './ticket-list.svelte';
 
@@ -54,10 +55,12 @@ function setup(options: { unreadSince?: string | null; withReads?: boolean } = {
 		markAllRead: vi.fn<ReadsData['markAllRead']>(async () => '2026-09-25 12:00:00.000Z')
 	} satisfies ReadsData;
 	const session = { ensureValid: vi.fn(() => true), logout: vi.fn() };
+	const flags = new FlagStore();
 	const store = new TicketListStore(data, session, {
-		reads: options.withReads === false ? undefined : reads
+		reads: options.withReads === false ? undefined : reads,
+		flags
 	});
-	return { store, data, reads, session };
+	return { store, data, reads, session, flags };
 }
 
 async function loaded(options: Parameters<typeof setup>[0] = {}) {
@@ -148,16 +151,23 @@ describe('new tickets in the list store', () => {
 	});
 
 	it('moves the base line with "Alle als gelesen markieren"', async () => {
-		const { store, reads } = await loaded();
+		const { store, reads, flags } = await loaded();
 		await vi.waitFor(() => expect(store.newCount).toBe(2));
 		await store.markAllRead();
 		expect(reads.markAllRead).toHaveBeenCalledOnce();
 		expect(store.newCount).toBe(0);
-		expect(store.announcement).toBe('Alle Tickets als gelesen markiert.');
+		expect(flags.flags[0]).toMatchObject({
+			tone: 'success',
+			title: 'Alle Tickets als gelesen markiert.'
+		});
 
 		reads.markAllRead.mockRejectedValueOnce(new DataError('network'));
 		await store.markAllRead();
-		expect(store.notice).toMatch(/Die Tickets konnten nicht als gelesen markiert werden\./);
+		expect(flags.flags[0]?.tone).toBe('error');
+		expect(flags.flags[0]?.title).toMatch(
+			/Die Tickets konnten nicht als gelesen markiert werden\./
+		);
+		flags.clear();
 	});
 
 	it('follows read rows and the base line of other tabs', async () => {

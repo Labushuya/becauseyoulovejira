@@ -8,8 +8,8 @@ import type { InboxDraft, InboxItem, InboxItemSummary } from '$lib/domain/inbox'
 import type { InboxQuery } from '$lib/domain/inbox-query';
 import type { TicketSummary } from '$lib/domain/ticket';
 import { INBOX_UNAVAILABLE_MESSAGE, InboxStore, type InboxData } from './inbox.svelte';
+import { FLAG_DURATION_MS, FlagStore } from './flags.svelte';
 import type { LiveSource, RecordChange, Unsubscribe } from './realtime';
-import { UNDO_WINDOW_MS } from './ticket-list.svelte';
 
 const T0 = '2026-09-25 08:00:00.000Z';
 const T1 = '2026-09-25 09:00:00.000Z';
@@ -86,7 +86,8 @@ function setup(options: { newItems?: InboxItemSummary[]; valid?: boolean } = {})
 		}))
 	} satisfies InboxData;
 	const session = { ensureValid: vi.fn(() => options.valid ?? true), logout: vi.fn() };
-	return { store: new InboxStore(data, session), data, session };
+	const flags = new FlagStore();
+	return { store: new InboxStore(data, session, flags), data, session, flags };
 }
 
 /** Realtime source with inbox events and reconnections only. */
@@ -273,45 +274,61 @@ describe('discard with "Rückgängig"', () => {
 		vi.useRealTimers();
 	});
 
-	it('keeps a discarded entry in place for the undo window, then drops it', async () => {
+	it('removes a discarded entry at once and offers "Rückgängig" in a flag for 8 s (UI-5)', async () => {
 		vi.useFakeTimers();
-		const { store } = setup();
+		const { store, flags } = setup();
 		await store.load();
 		const result = await store.discard(A.id);
 		expect(result.ok).toBe(true);
-		expect(store.isLingering(A.id)).toBe(true);
-		expect(store.visible.map((entry) => entry.id)).toEqual([B.id, A.id]);
-		expect(store.visible.find((entry) => entry.id === A.id)?.state).toBe('discarded');
-		expect(store.newCount).toBe(1);
-		expect(store.announcement).toBe(`„${A.title}“ verworfen. Rückgängig ist kurz möglich.`);
-
-		await vi.advanceTimersByTimeAsync(UNDO_WINDOW_MS);
-		expect(store.isLingering(A.id)).toBe(false);
 		expect(store.visible.map((entry) => entry.id)).toEqual([B.id]);
+		expect(store.newCount).toBe(1);
+		expect(store.canUndo(A.id)).toBe(true);
+		expect(flags.flags.map((flag) => [flag.tone, flag.title, flag.action?.label])).toEqual([
+			['success', `„${A.title}“ verworfen.`, 'Rückgängig']
+		]);
+
+		await vi.advanceTimersByTimeAsync(FLAG_DURATION_MS);
+		expect(flags.flags).toEqual([]);
+		expect(store.canUndo(A.id)).toBe(false);
 	});
 
-	it('restores the entry with "Rückgängig"', async () => {
+	it('restores the entry with "Rückgängig" in the flag', async () => {
 		vi.useFakeTimers();
-		const { store, data } = setup();
+		const { store, data, flags } = setup();
 		await store.load();
 		await store.discard(A.id);
-		const undone = await store.undo(A.id);
-		expect(undone.ok).toBe(true);
-		expect(data.restore).toHaveBeenCalledWith(A.id);
-		expect(store.isLingering(A.id)).toBe(false);
-		expect(store.newItems.map((entry) => entry.id)).toContain(A.id);
-		expect(store.announcement).toBe(`„${A.title}“ ist wieder im Eingang.`);
+		flags.act(flags.flags[0]?.id ?? '');
+		await vi.waitFor(() => expect(data.restore).toHaveBeenCalledWith(A.id));
+		await vi.waitFor(() => expect(store.newItems.map((entry) => entry.id)).toContain(A.id));
+		expect(store.canUndo(A.id)).toBe(false);
+		expect(flags.flags.map((flag) => flag.title)).toEqual([`„${A.title}“ ist wieder im Eingang.`]);
 	});
 
-	it('does not linger an entry that was not new, and clears the timers on reset', async () => {
+	it('shows a refused "Rückgängig" as an error flag', async () => {
+		const { store, data, flags } = setup();
+		await store.load();
+		await store.discard(A.id);
+		data.restore.mockRejectedValueOnce(new DataError('network'));
+		const undone = await store.undo(A.id);
+		expect(undone.ok).toBe(false);
+		const errors = flags.flags.filter((flag) => flag.tone === 'error');
+		expect(errors.map((flag) => flag.title)).toEqual([
+			expect.stringMatching(/^„.*“ konnte nicht wiederhergestellt werden\./)
+		]);
+	});
+
+	it('offers no "Rückgängig" for an entry that was not new, and closes the flag on reset', async () => {
 		vi.useFakeTimers();
-		const { store } = setup();
+		const { store, flags } = setup();
 		await store.load();
 		await store.discard('item00000000077');
-		expect(store.isLingering('item00000000077')).toBe(false);
+		expect(store.canUndo('item00000000077')).toBe(false);
+		expect(flags.flags[0]?.action).toBeNull();
 		await store.discard(A.id);
 		store.reset();
-		expect(store.isLingering(A.id)).toBe(false);
+		expect(store.canUndo(A.id)).toBe(false);
+		expect(flags.flags.map((flag) => flag.action)).toEqual([null]);
+		flags.clear();
 		expect(vi.getTimerCount()).toBe(0);
 	});
 });
@@ -461,8 +478,9 @@ describe('actions', () => {
 		await store.load();
 		expect(await store.discard(A.id)).toMatchObject({ ok: true, item: { state: 'discarded' } });
 		expect(store.newItems.map((entry) => entry.id)).toEqual([B.id]);
-		expect(store.isLingering(A.id)).toBe(true);
+		expect(store.canUndo(A.id)).toBe(true);
 		expect(await store.restore(A.id)).toMatchObject({ ok: true, item: { state: 'new' } });
+		expect(store.canUndo(A.id)).toBe(false);
 		expect(store.find(A.id)?.state).toBe('new');
 		expect(await store.assign(B.id, 'tick00000000001')).toMatchObject({ ok: true });
 		expect(data.assign).toHaveBeenCalledWith(B.id, 'tick00000000001');

@@ -10,6 +10,7 @@ import {
 	ImportKeywordsStore,
 	type ImportKeywordsData
 } from '$lib/stores/import-keywords.svelte';
+import { FlagStore } from '$lib/stores/flags.svelte';
 import ImportKeywordsSection from './ImportKeywordsSection.svelte';
 
 function setup(loaded: ImportKeywords | null = EMPTY_IMPORT_KEYWORDS) {
@@ -18,8 +19,12 @@ function setup(loaded: ImportKeywords | null = EMPTY_IMPORT_KEYWORDS) {
 		save: vi.fn<ImportKeywordsData['save']>(async (settings) => settings)
 	} satisfies ImportKeywordsData;
 	const session = { ensureValid: vi.fn(() => true), logout: vi.fn() };
-	return { store: new ImportKeywordsStore(data, session), data, session };
+	const flags = new FlagStore();
+	return { store: new ImportKeywordsStore(data, session, flags), data, session, flags };
 }
+
+/** Title of the newest flag (ADR-0025 section 8), `undefined` without one. */
+const latestFlag = (flags: FlagStore) => flags.flags[0]?.title;
 
 describe('ImportKeywordsStore', () => {
 	it('loads the lists, knows the state before the migration and logs out on 401', async () => {
@@ -36,7 +41,7 @@ describe('ImportKeywordsStore', () => {
 	});
 
 	it('saves one list with the others and reports field errors', async () => {
-		const { store, data } = setup({
+		const { store, data, flags } = setup({
 			...EMPTY_IMPORT_KEYWORDS,
 			ics: { keywords: ['termin'], matchBody: false }
 		});
@@ -49,7 +54,7 @@ describe('ImportKeywordsStore', () => {
 			ics: { keywords: ['termin'], matchBody: false },
 			whatsapp: { keywords: [], matchBody: false }
 		});
-		expect(store.announcement).toBe('Gespeichert.');
+		expect(latestFlag(flags)).toBe('Gespeichert.');
 		data.save.mockRejectedValueOnce(
 			new DataError('validation', {
 				status: 400,
@@ -82,7 +87,7 @@ describe('ImportKeywordsSection', () => {
 	});
 
 	it('adds a keyword to one kind and switches the start of the text of mails', async () => {
-		const { store, data } = setup();
+		const { store, data, flags } = setup();
 		await store.load();
 		render(ImportKeywordsSection, { props: { store } });
 		const [, ics] = screen.getAllByRole('group', { name: 'Stichwörter' });
@@ -95,7 +100,7 @@ describe('ImportKeywordsSection', () => {
 			)
 		);
 		await vi.waitFor(() =>
-			expect(store.announcement).toBe('Kalenderdateien (.ics): Stichwort „todo“ hinzugefügt.')
+			expect(latestFlag(flags)).toBe('Kalenderdateien (.ics): Stichwort „todo“ hinzugefügt.')
 		);
 		await fireEvent.click(
 			screen.getByLabelText('Auch die ersten 500 Zeichen des Textes durchsuchen')

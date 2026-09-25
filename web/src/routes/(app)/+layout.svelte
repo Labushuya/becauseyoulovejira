@@ -2,6 +2,7 @@
 	import { untrack } from 'svelte';
 	import { auth } from '$lib/auth.svelte';
 	import AppHeader from '$lib/components/AppHeader.svelte';
+	import FlagGroup from '$lib/components/overlay/FlagGroup.svelte';
 	import QuickCapture from '$lib/components/QuickCapture.svelte';
 	import { isQuickCaptureKey, isTypingTarget } from '$lib/domain/keyboard';
 	import { pb } from '$lib/pocketbase';
@@ -12,6 +13,7 @@
 		type CaptureDeps
 	} from '$lib/stores/capture';
 	import { CatalogStore, catalogData, setCatalogStore } from '$lib/stores/catalog.svelte';
+	import { FlagStore, setFlagStore } from '$lib/stores/flags.svelte';
 	import { InboxStore, inboxData, setInboxStore } from '$lib/stores/inbox.svelte';
 	import { liveSource } from '$lib/stores/realtime';
 	import {
@@ -45,17 +47,21 @@
 	// Stores live per layout instance (ADR-0006 section 1): a logout removes the layout and with
 	// it every loaded ticket, project and tag.
 	const catalog = setCatalogStore(new CatalogStore(catalogData(pb), auth));
+	// Flags bottom left (ADR-0025 section 8): results and "Rückgängig" of the list and the inbox.
+	const flags = setFlagStore(new FlagStore());
+	$effect(() => () => flags.clear());
 	// The column sort "Projekt" resolves projects through the catalog (E3 plan, package 9); the
 	// "new" mark follows the own read rows and base line (E4 plan, package 4).
 	const tickets = setTicketListStore(
 		new TicketListStore(ticketListData(pb), auth, {
 			projectOf: (ticket) => catalog.projectOf(ticket),
-			reads: readsData(pb)
+			reads: readsData(pb),
+			flags
 		})
 	);
 	const detail = setTicketDetailStore(new TicketDetailStore(ticketDetailData(pb), auth, tickets));
 	// The inbox (E4 plan, T-4): new entries in full, for the view and the count at the switch.
-	const inbox = setInboxStore(new InboxStore(inboxData(pb), auth));
+	const inbox = setInboxStore(new InboxStore(inboxData(pb), auth, flags));
 	const activity = setTicketActivityStore(
 		new TicketActivityStore(ticketActivityData(pb), auth, () => auth.userId)
 	);
@@ -116,6 +122,7 @@
 <main class="content">
 	{@render children()}
 </main>
+<FlagGroup store={flags} />
 
 {#if quickOpen}
 	<QuickCapture

@@ -1,6 +1,6 @@
 // Component tests for the inbox view (E4 plan, package 3; ADR-0014 sections 3 and 4; ADR-0019
 // section 6): table with caption and named checkboxes, chips in the URL, "Umwandeln", "Verwerfen"
-// with "Rückgängig" and the focus on the next row, hints on possible duplicates with "Dem Ticket
+// with "Rückgängig" in a flag and the focus on the next row, hints on possible duplicates with "Dem Ticket
 // zuordnen", selection for "Gesammelt umwandeln", handled entries, empty and missing inbox.
 // The store is real with fake data; page state and navigation are mocked.
 
@@ -11,8 +11,10 @@ import { DataError } from '$lib/data/errors';
 import type { InboxItemSummary } from '$lib/domain/inbox';
 import type { InboxQuery } from '$lib/domain/inbox-query';
 import type { TicketSummary } from '$lib/domain/ticket';
+import { FLAG_DURATION_MS, FlagStore } from '$lib/stores/flags.svelte';
 import { InboxStore, type InboxData } from '$lib/stores/inbox.svelte';
 import InboxTable from './InboxTable.svelte';
+import FlagGroup from './overlay/FlagGroup.svelte';
 import source from './InboxTable.svelte?raw';
 
 const mocks = vi.hoisted(() => ({
@@ -105,13 +107,26 @@ function setup(
 			itemId: ''
 		}))
 	} satisfies InboxData;
-	const store = new InboxStore(data, { ensureValid: () => true, logout: vi.fn() });
+	const flags = new FlagStore();
+	const store = new InboxStore(data, { ensureValid: () => true, logout: vi.fn() }, flags);
 	store.activate(options.query ?? { source: null, state: 'new' });
 	const onbulk = vi.fn();
 	const view = render(InboxTable, {
-		props: { store, openTickets: options.tickets ?? [], onbulk }
+		props: { store, flags, openTickets: options.tickets ?? [], onbulk }
 	});
-	return { store, data, onbulk, view };
+	// The flags of the app layout (ADR-0025 section 8).
+	render(FlagGroup, { props: { store: flags } });
+	return { store, data, onbulk, view, flags };
+}
+
+/** The flag section bottom left. */
+function flagSection() {
+	return within(screen.getByRole('region', { name: 'Benachrichtigungen' }));
+}
+
+/** Waits until a flag offers "Rückgängig". */
+function flagSectionFound() {
+	return vi.waitFor(() => flagSection().getByRole('button', { name: 'Rückgängig' }));
 }
 
 async function table() {
@@ -198,11 +213,12 @@ describe('inbox table', () => {
 	});
 
 	it('offers "Aus Zwischenablage" and shows the hint on Ctrl+V as status, not as error', async () => {
-		const { store } = setup({ items: [] });
+		const { store, flags } = setup({ items: [] });
 		const onclipboard = vi.fn();
 		const other = render(InboxTable, {
 			props: {
 				store,
+				flags,
 				openTickets: [],
 				onbulk: vi.fn(),
 				onclipboard,
@@ -231,7 +247,7 @@ describe('inbox table', () => {
 		expect(note.closest('.alert-error')).toBeNull();
 	});
 
-	it('keeps a discarded row with "Rückgängig" and moves the focus to the next row', async () => {
+	it('removes a discarded row at once, moves the focus to the next row and offers "Rückgängig" in the flag', async () => {
 		vi.useFakeTimers({ shouldAdvanceTime: true });
 		const { data } = setup();
 		const view = await table();
@@ -240,23 +256,28 @@ describe('inbox table', () => {
 		await vi.waitFor(() =>
 			expect(document.activeElement?.textContent?.trim()).toBe('Milch kaufen')
 		);
-		const undo = await screen.findByRole('button', {
-			name: 'Rückgängig: „Artikel“ wieder in den Eingang'
-		});
-		expect(screen.getByText('Verworfen', { selector: '.state-note' })).toBeTruthy();
-		expect(screen.queryByRole('checkbox', { name: 'Eintrag „Artikel“ auswählen' })).toBeNull();
-		await fireEvent.click(undo);
+		expect(screen.queryByRole('link', { name: 'Artikel' })).toBeNull();
+		expect(view.queryByRole('button', { name: /Rückgängig/ })).toBeNull();
+		expect(flagSection().getByRole('listitem').textContent).toContain('„Artikel“ verworfen.');
+
+		await fireEvent.click(flagSection().getByRole('button', { name: 'Rückgängig' }));
 		await vi.waitFor(() => expect(data.restore).toHaveBeenCalledWith(C.id));
+		await vi.waitFor(() =>
+			expect(document.querySelector(`tr[data-item-id="${C.id}"]`)).not.toBeNull()
+		);
+		// The focus stays where it was; the flag never takes it.
+		expect(document.activeElement?.textContent?.trim()).toBe('Milch kaufen');
 	});
 
-	it('drops the discarded row after the undo window', async () => {
+	it('lets the "Rückgängig" flag leave after 8 s', async () => {
 		vi.useFakeTimers({ shouldAdvanceTime: true });
 		setup();
 		const view = await table();
 		await fireEvent.click(view.getByRole('button', { name: 'Verwerfen: „Artikel“' }));
-		await screen.findByRole('button', { name: /^Rückgängig/ });
-		await vi.advanceTimersByTimeAsync(5000);
+		await flagSectionFound();
+		await vi.advanceTimersByTimeAsync(FLAG_DURATION_MS);
 		await tick();
+		expect(flagSection().queryByRole('button', { name: 'Rückgängig' })).toBeNull();
 		expect(screen.queryByRole('link', { name: 'Artikel' })).toBeNull();
 	});
 
@@ -273,13 +294,20 @@ describe('inbox table', () => {
 		await vi.waitFor(() => expect(screen.queryByRole('link', { name: 'Milch kaufen' })).toBeNull());
 	});
 
-	it('shows the reason of a failed action with an icon', async () => {
+	it('shows the reason of a failed action as an error flag with an icon (UI-5)', async () => {
 		const { data } = setup();
 		data.discard.mockRejectedValueOnce(new DataError('network'));
 		const view = await table();
 		await fireEvent.click(view.getByRole('button', { name: 'Verwerfen: „Artikel“' }));
-		const alert = await screen.findByText(/„Artikel“ konnte nicht verworfen werden\./);
-		expect(alert.closest('.alert-error')?.querySelector('svg')).toBeTruthy();
+		await vi.waitFor(() =>
+			expect(flagSection().getByRole('alert').textContent).toMatch(
+				/„Artikel“ konnte nicht verworfen werden\./
+			)
+		);
+		const flag = flagSection().getByRole('listitem');
+		expect(flag.classList.contains('tone-error')).toBe(true);
+		expect(flag.querySelector('svg')).toBeTruthy();
+		expect(view.getByRole('link', { name: 'Artikel' })).toBeTruthy();
 	});
 
 	it('opens "Gesammelt umwandeln" only with a selection', async () => {

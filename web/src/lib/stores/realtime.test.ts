@@ -302,22 +302,23 @@ describe('list store live', () => {
 		]);
 	});
 
-	it('keeps a row with "Rückgängig" and a ticket created during the reconciliation', async () => {
+	it('keeps a just checked ticket out and a ticket created during the reconciliation in', async () => {
 		const first = summary();
 		const { store, data, live } = await ready([first]);
 		await store.setDone(first.id, true);
-		expect(store.isLingering(first.id)).toBe(true);
+		expect(store.canUndo(first.id)).toBe(true);
 		const pending = deferred<TicketSummary[]>();
 		data.listOpen.mockImplementationOnce((options) => abortable(options, pending.promise));
 
 		live.reconnect();
 		const created = summary({ id: 'ticket000000009', key: 'TASK-9' });
 		store.upsert(created);
-		pending.resolve([]);
+		// The snapshot started before the check and still lists the ticket as open.
+		pending.resolve([first]);
 		await flush();
 
-		expect(store.isLingering(first.id)).toBe(true);
-		expect(store.open.map((ticket) => ticket.id).sort()).toEqual([first.id, created.id].sort());
+		expect(store.canUndo(first.id)).toBe(true);
+		expect(store.open.map((ticket) => ticket.id)).toEqual([created.id]);
 	});
 
 	it('reconciles the loaded pages of done tickets', async () => {

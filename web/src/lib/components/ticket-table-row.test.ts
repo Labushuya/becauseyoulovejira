@@ -1,6 +1,7 @@
 // Component tests for one table row (E3 plan, T-4 and package 5; carried over from the E2 row
 // tests): cells with and without project, tags and due date, text alternatives of the icons, the
-// check mark, "Rückgängig", the mouse-only "Öffnen" link and the click on the row.
+// check mark (no "Rückgängig" in the row since UI-5), the mouse-only "Öffnen" link and the click on
+// the row.
 
 import { fireEvent, render, screen, within } from '@testing-library/svelte';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -41,7 +42,6 @@ function renderRow(
 	props: { project?: ProjectRef | null; tags?: TagRef[]; [key: string]: unknown } = {}
 ) {
 	const ontoggle = vi.fn();
-	const onundo = vi.fn();
 	const table = document.createElement('table');
 	const body = document.createElement('tbody');
 	table.append(body);
@@ -56,13 +56,11 @@ function renderRow(
 			today: TODAY,
 			checked: overrides.status === 'done',
 			pending: false,
-			lingering: false,
 			ontoggle,
-			onundo,
 			...props
 		}
 	});
-	return { ...result, ontoggle, onundo, row: body.querySelector('tr') as HTMLTableRowElement };
+	return { ...result, ontoggle, row: body.querySelector('tr') as HTMLTableRowElement };
 }
 
 function cell(row: HTMLElement, name: string): HTMLElement {
@@ -257,19 +255,7 @@ describe('ticket table row', () => {
 		expect(document.activeElement).toBe(toggle);
 	});
 
-	it('strikes a just checked row through and offers "Rückgängig"', async () => {
-		const { row, onundo } = renderRow({ status: 'done' }, { checked: true, lingering: true });
-
-		expect(row.classList.contains('lingering')).toBe(true);
-		const undo = screen.getByRole('button', { name: /^Rückgängig/ });
-		expect(undo.getAttribute('aria-label')).toBe('Rückgängig: TASK-3 wieder öffnen');
-		await fireEvent.click(undo);
-
-		expect(onundo).toHaveBeenCalledOnce();
-		expect(mocks.goto).not.toHaveBeenCalled();
-	});
-
-	it('offers no "Rückgängig" otherwise', () => {
+	it('offers no "Rückgängig" in the row; it stands in the flag since UI-5', () => {
 		renderRow({ status: 'done' }, { checked: true });
 
 		expect(screen.queryByRole('button', { name: /Rückgängig/ })).toBeNull();
