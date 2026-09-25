@@ -1,6 +1,6 @@
 # E6-Plan, Teil UI-Konsistenz: Overlay-System, Theme-Umschalter, Projekt-UI
 
-- **Stand:** in Arbeit (2026-09-25). Die Produktfragen 1 bis 4 hat der Nutzer entschieden ([ADR-0025](../adr/0025-ui-konsistenz-overlay-system.md) §9).
+- **Stand:** umgesetzt (2026-09-26, Pakete UI-0 bis UI-9 samt UI-6b); offen sind die manuellen Browser-Prüfungen im Test-Manifest. Die Produktfragen 1 bis 4 hat der Nutzer entschieden ([ADR-0025](../adr/0025-ui-konsistenz-overlay-system.md) §9).
 - **Grundlage:**
   - [ADR-0025](../adr/0025-ui-konsistenz-overlay-system.md) (Bausteine, Tokens, Theme, Projekt-UI, Entscheidungen)
   - [ADR-0009](../adr/0009-fehlerfarbe.md) (Rot nur für Fehler), [ADR-0010](../adr/0010-layout-nach-task-board.md) (Seitenaufbau, Clean-Room), [ADR-0011](../adr/0011-roadmap-e3-bis-e7.md) (E6 Feinschliff)
@@ -196,6 +196,10 @@ Wird je Paket ergänzt.
 | 2026-09-26 | UI-8 | Fokus: Der eigene Rückfall von `ProjectsView` (auf die Überschrift nach dem Dialog) entfällt mit dem Dialog. Wie in den Tabellen kehrt der Fokus beim Schließen des Panels auf die Kachel zurück (`data-project-id`), fehlt sie, auf die Überschrift der Ansicht, nach „Neues Projekt“ ohne Projekt auf „Neues Projekt“ (`NEW_PROJECT_LINK_ID`); nur wenn der Fokus verloren ist. `data-view-heading` bleibt an der `SectionBar`. Die Statistik zählt zusätzlich das Projekt im Panel, auch wenn seine Kachel ausgeblendet ist (archiviert). |
 | 2026-09-26 | UI-8 | Kopfordnung: `TicketTable` bekommt das Snippet `tools` direkt nach der Abschnittsleiste; `(tickets)/+layout.svelte` reicht Kennzahlen und Filterleiste dort hinein. So steht der Umschalter in allen drei Ansichten als erstes unter der Kopfzeile. Kacheln: Die Kachel ist ein einziger Link aufs Panel (Stift-Knopf entfällt), die aktuelle trägt `aria-current`, Rahmen und Fläche in der Markenfarbe und eine Linie links (als `::before`, weil die Kacheln ohne Schatten auskommen). Kennzahl- und Projektkacheln: `--radius-surface`, Innenabstand 0.75rem 1rem; die Rahmen der Tabellen ebenfalls `--radius-surface`. Die Überschreibung des Abstands der Abschnittsleiste in `ProjectsView` entfällt. |
 | 2026-09-26 | UI-8 | Tests: `project-panel.test.ts` ersetzt `project-dialog.test.ts`; neu `projekte/projects-layout.test.ts` über `ProjectRouteHarness`. Bewusst angepasst: `projects-view` (Links statt Dialog, Fokus nach dem Panel, Reihenfolge der Leisten), `project-tiles` (ein Link aufs Panel statt Link plus „Bearbeiten“), `tickets-layout` (Abschnittsleiste vor Kennzahlen und Filterleiste), `inbox-table` (Reihenfolge der Leisten), `drawer` (ProjectPanel steht auf dem Baustein), `no-own-dialogs` (Eintrag `ProjectDialog.svelte` entfällt). Manifest: BYL-E6-023 bestanden, BYL-E6-024 offen (manueller Anteil), BYL-E3-047, BYL-E3-055, BYL-E3-056 und BYL-E6-013 nachgezogen. |
+| 2026-09-26 | UI-9 | Filter „Projekt“ und „Tag“: neuer Baustein `FilterPopover.svelte` auf `Popover` (Art `panel`) statt nativer `<select>`, gewählt wie „Gruppieren“ (Zeigerklick und Enter wählen und schließen, Pfeiltasten wenden sofort an und lassen offen, Esc schließt mit Fokus auf den Knopf). Der Knopf nennt Gruppe und Wert („Projekt: Haushalt (HAUS)“) und ist bei gesetztem Filter hervorgehoben (Farbe plus Schriftgewicht). Radios in einem `fieldset`; archivierte Projekte in einem inneren `fieldset` „Archiviert“ mit Trennlinie, ein unbekannter Wert der URL als „Unbekannt“ bzw. „Wird geladen …“. Ein Wert je Gruppe, URL-Zustand wie bisher über `withFilter`. |
+| 2026-09-26 | UI-9 | Suchfeld ab 10 Einträgen (ohne „Alle“): Es bekommt beim Öffnen den Fokus (`initialFocus`), filtert ohne Groß- und Kleinschreibung nach Teiltext, „Alle“ bleibt immer stehen, ohne Treffer „Keine Treffer.“. Enter nimmt den ersten Treffer und schließt, ↓ geht zu den Radios. Der Suchtext bleibt bis zum nächsten Öffnen stehen. |
+| 2026-09-26 | UI-9 | `TagPicker`: Die Liste ist `popover="manual"` im Top-Layer, `hidden` bleibt zusätzlich gesetzt, solange nichts zu zeigen ist (so bleibt der bisherige Zustand prüfbar). Ein Effekt zeigt sie per `showPopover()`, sobald es Vorschläge gibt, und platziert sie mit `place()` unter dem Feld (Breite des Felds, höchstens 12rem hoch, Flip nach oben), auch bei `resize` und `scroll` (capture) und wenn sich die Zahl der Vorschläge ändert. Combobox-Verhalten unverändert: Fokus im Feld, `aria-activedescendant`, Esc schließt die Liste bzw. leert das Feld und wird per `preventDefault` verbraucht, sodass Panel und Modal offen bleiben; erst ein Esc bei geschlossener Liste und leerem Feld gehört wieder dem Umfeld. Ohne Popover-API (jsdom ohne Stubs) bleibt es bei `hidden`. |
+| 2026-09-26 | UI-9 | Tests: `filter-bar` (Popover statt Select: Knopf, Attribute, Reihenfolge samt „Archiviert“, Wahl per Zeiger, Pfeiltasten, Enter und Esc, „Alle“, Unbekannt, Suchfeld ab 10 Einträgen, statisch kein `<select>`), `tag-picker` (gemeinsame Stubs; Option per `{ hidden: true }`, weil jsdom Popover als verborgen führt; neu: Liste im Top-Layer, Folgen beim Scrollen, aus einem Modal heraus mit verbrauchtem Esc über `TagPickerModalHarness`, Wahl mit der Maus im Modal). Manifest: BYL-E6-025 bestanden, BYL-E6-026 offen (manueller Anteil). Damit sind alle Pakete des Plans umgesetzt; offen sind die manuellen Fälle. |
 
 ## 7. Status
 
@@ -211,7 +215,7 @@ Wird je Paket ergänzt.
 | UI-7 | gemergt (#53) |
 | UI-6b | gemergt (#54) |
 | UI-8 | gemergt (#55) |
-| UI-9 | geplant |
+| UI-9 | gemergt (#56) |
 
 ## Quellen (nur Verhalten und Maße)
 
