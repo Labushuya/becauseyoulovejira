@@ -86,4 +86,15 @@ describe('E4 hooks on the schema before the E4 migrations', () => {
 			'Der Eingang steht nach dem nächsten Start der App bereit (start.bat).'
 		);
 	});
+
+	it('has no connections yet and answers their route with a hint', async () => {
+		await expect(client.collection('connections').getList(1, 1)).rejects.toMatchObject({ status: 404 });
+		const response = await fetch(`${instance.url}/api/byl/connections/abcdefghijklmno/secret-status`, {
+			headers: { Authorization: client.authStore.token }
+		});
+		expect(response.status).toBe(503);
+		expect((await response.json()).message).toBe(
+			'Die Verbindungen stehen nach dem nächsten Start der App bereit (start.bat).'
+		);
+	});
 });

@@ -149,6 +149,7 @@ export const EXPECTED_COLLECTIONS = {
 			state: select(INBOX_STATES, true),
 			ticket: relation('tickets'),
 			handled_at: date(),
+			connection: relation('connections'),
 			scope: text({ required: true }),
 			...ownership(),
 			...timestamps()
@@ -157,6 +158,28 @@ export const EXPECTED_COLLECTIONS = {
 			'CREATE UNIQUE INDEX idx_inbox_items_scope_fingerprint ON inbox_items (scope, fingerprint)',
 			'CREATE INDEX idx_inbox_items_owner_state ON inbox_items (owner, state)',
 			'CREATE INDEX idx_inbox_items_ticket ON inbox_items (ticket)'
+		]
+	},
+	connections: {
+		fields: {
+			type: select(['calendar', 'telegram', 'notion', 'mail'], true),
+			label: text({ required: true, max: 100 }),
+			enabled: bool(),
+			secret_env: text({ required: true, max: 64, pattern: '^BYL_[A-Z0-9_]{1,60}$' }),
+			settings: { type: 'json', required: false, maxSize: 20000 },
+			cursor: text({ max: 200 }),
+			last_run_at: date(),
+			last_ok_at: date(),
+			last_error: text({ max: 1000 }),
+			last_hint: text({ max: 1000 }),
+			running_since: date(),
+			scope: text({ required: true }),
+			...ownership(),
+			...timestamps()
+		},
+		indexes: [
+			'CREATE INDEX idx_connections_owner ON connections (owner)',
+			'CREATE INDEX idx_connections_type_enabled ON connections (type, enabled)'
 		]
 	},
 	comments: {
@@ -253,6 +276,7 @@ export const EXPECTED_RULES = {
 	recurrence_rules: OWNED_RULES,
 	tickets: OWNED_RULES,
 	inbox_items: OWNED_RULES,
+	connections: OWNED_RULES,
 	comments: {
 		listRule: VIA_TICKET,
 		viewRule: VIA_TICKET,
