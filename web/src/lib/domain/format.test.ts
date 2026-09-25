@@ -1,7 +1,12 @@
 // German date display (CLAUDE.md section 7).
 
 import { describe, expect, it } from 'vitest';
-import { berlinDateOf, formatBerlinDateTime, formatCalendarDate } from './format';
+import {
+	berlinDateOf,
+	formatBerlinDateTime,
+	formatCalendarDate,
+	toPocketBaseTimestamp
+} from './format';
 
 describe('formatCalendarDate', () => {
 	it.each([
@@ -48,5 +53,14 @@ describe('berlinDateOf', () => {
 
 	it('rejects what is not a timestamp', () => {
 		expect(() => berlinDateOf('2026-09-24')).toThrow(RangeError);
+	});
+});
+
+describe('toPocketBaseTimestamp', () => {
+	it('writes the format of PocketBase and refuses invalid instants', () => {
+		expect(toPocketBaseTimestamp(Date.UTC(2026, 8, 25, 8, 5, 3, 7))).toBe(
+			'2026-09-25 08:05:03.007Z'
+		);
+		expect(() => toPocketBaseTimestamp(Number.NaN)).toThrow(RangeError);
 	});
 });

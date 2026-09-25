@@ -29,6 +29,7 @@
 	// double click creates one ticket. "Abbrechen" and Escape ask first if something was entered,
 	// a name in the tag picker included. From the inbox (E4 plan, T-5) title and description come
 	// filled in; the date at the sender is only a hint with "Als Fälligkeit übernehmen" (P-5).
+	// An entry the user typed in brings the project, tags, priority and due date chosen then.
 	let {
 		projects = [],
 		initialProject = null,
@@ -82,16 +83,21 @@
 	const initialTitle = untrack(() => prefill?.title ?? '');
 	const initialDescription = untrack(() => prefill?.description ?? '');
 	const sourceDate = untrack(() => prefill?.sourceDate ?? null);
+	// Values the user chose when typing the entry in (capture form, quick entry).
+	const preset = untrack(() => prefill?.preset ?? null);
+	const initialPriority: Priority = preset?.priority ?? DEFAULT_PRIORITY;
+	const initialDue: string = preset?.due ?? '';
+	const initialTagIds: readonly string[] = preset?.tagIds ?? [];
 
 	let title = $state(initialTitle);
 	let status = $state<Status>(DEFAULT_STATUS);
-	let priority = $state<Priority>(DEFAULT_PRIORITY);
-	let due = $state('');
+	let priority = $state<Priority>(initialPriority);
+	let due = $state(initialDue);
 	let dueInvalid = $state(false);
 	let description = $state(initialDescription);
 	/** Project chosen by the user; null until then, so a late catalog still sets the default. */
 	let chosenProject = $state<string | null>(null);
-	let tagIds = $state<string[]>([]);
+	let tagIds = $state<string[]>([...initialTagIds]);
 	let tagText = $state('');
 	let tagError = $state<string | null>(null);
 	let pending = $state(false);
@@ -99,9 +105,10 @@
 	let fieldErrors = $state<Partial<Record<keyof TicketDraft, string>>>({});
 	let titleInput = $state<HTMLInputElement>();
 
+	const wantedProject = $derived(preset?.project ?? initialProject);
 	const defaultProject = $derived(
-		initialProject !== null && projects.some((entry) => entry.id === initialProject)
-			? initialProject
+		wantedProject !== null && projects.some((entry) => entry.id === wantedProject)
+			? wantedProject
 			: ''
 	);
 	const project = $derived(chosenProject ?? defaultProject);
@@ -117,12 +124,12 @@
 	const dirty = $derived(
 		title !== initialTitle ||
 			description !== initialDescription ||
-			due !== '' ||
+			due !== initialDue ||
 			dueInvalid ||
 			status !== DEFAULT_STATUS ||
-			priority !== DEFAULT_PRIORITY ||
+			priority !== initialPriority ||
 			project !== defaultProject ||
-			tagIds.length > 0 ||
+			tagIds.join(',') !== initialTagIds.join(',') ||
 			tagText.trim() !== ''
 	);
 	const dueError = $derived(dueInvalid ? 'Ungültiges Datum.' : (fieldErrors.due ?? null));
@@ -148,7 +155,8 @@
 			priority,
 			due: due === '' ? null : (due as CalendarDate),
 			project: project === '' ? null : project,
-			tags: tagIds
+			// Only tags the catalog knows: a preset may name a tag deleted since.
+			tags: chosenTags.map((tag) => tag.id)
 		});
 		if (result.ok) {
 			oncreated(result.ticket.id);

@@ -4,8 +4,10 @@ import { describe, expect, it } from 'vitest';
 import {
 	addDays,
 	berlinOffsetHours,
+	berlinWallClockToUtc,
 	berlinToday,
 	isCalendarDate,
+	isTimeOfDay,
 	msUntilNextBerlinMidnight,
 	parseCalendarDate
 } from './berlin-date';
@@ -165,5 +167,36 @@ describe('msUntilNextBerlinMidnight', () => {
 			expect(berlinToday(ms + wait - 1)).toBe(berlinToday(ms));
 			expect(berlinToday(ms + wait)).toBe(addDays(berlinToday(ms), 1));
 		}
+	});
+});
+
+describe('berlinWallClockToUtc (E4 plan, package 5)', () => {
+	it.each([
+		['2026-01-15', '09:00', '2026-01-15T08:00:00.000Z'],
+		['2026-07-01', '14:30', '2026-07-01T12:30:00.000Z'],
+		['2026-12-24', '00:00', '2026-12-23T23:00:00.000Z'],
+		// Spring change on 2026-03-29: 01:59 is winter time, 03:00 summer time.
+		['2026-03-29', '01:59', '2026-03-29T00:59:00.000Z'],
+		['2026-03-29', '03:00', '2026-03-29T01:00:00.000Z'],
+		// The skipped hour comes out one hour later, as a clock would show it.
+		['2026-03-29', '02:30', '2026-03-29T01:30:00.000Z'],
+		// Autumn change on 2026-10-25: the doubled hour is taken as summer time.
+		['2026-10-25', '02:30', '2026-10-25T00:30:00.000Z'],
+		['2026-10-25', '03:00', '2026-10-25T02:00:00.000Z']
+	])('reads %s %s in Berlin as %s', (date, time, iso) => {
+		expect(new Date(berlinWallClockToUtc(date, time)).toISOString()).toBe(iso);
+	});
+
+	it('takes midnight without a time and refuses other values', () => {
+		expect(new Date(berlinWallClockToUtc('2026-06-01')).toISOString()).toBe(
+			'2026-05-31T22:00:00.000Z'
+		);
+		expect(() => berlinWallClockToUtc('2026-06-01', '24:00')).toThrow(RangeError);
+		expect(() => berlinWallClockToUtc('2026-02-30', '10:00')).toThrow(RangeError);
+	});
+
+	it('knows a time of day', () => {
+		expect(['00:00', '09:05', '23:59'].every(isTimeOfDay)).toBe(true);
+		expect(['24:00', '9:05', '12:60', '', '12:00:00'].some(isTimeOfDay)).toBe(false);
 	});
 });

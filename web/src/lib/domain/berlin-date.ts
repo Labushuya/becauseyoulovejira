@@ -84,3 +84,23 @@ export function msUntilNextBerlinMidnight(now: Date | number): number {
 	const ms = toMs(now);
 	return berlinMidnight(addDays(berlinToday(ms), 1)) - ms;
 }
+
+const TIME_OF_DAY = /^([01]\d|2[0-3]):([0-5]\d)$/;
+
+/** True for a time of day `HH:MM` (00:00 to 23:59), as an `<input type="time">` gives it. */
+export function isTimeOfDay(value: string): boolean {
+	return TIME_OF_DAY.test(value);
+}
+
+/**
+ * UTC instant (ms) of a Berlin wall-clock time: `date` at `time` (`HH:MM`, midnight without one).
+ * In the hour the clocks go back the summer time is taken; a time in the skipped hour of the
+ * spring change comes out one hour later, as a clock would show it.
+ */
+export function berlinWallClockToUtc(date: CalendarDate, time = '00:00'): number {
+	const match = TIME_OF_DAY.exec(time);
+	if (!match) throw new RangeError(`Not a time of day: ${time}`);
+	const local = parseCalendarDate(date) + Number(match[1]) * HOUR_MS + Number(match[2]) * 60_000;
+	const summerCandidate = local - 2 * HOUR_MS;
+	return berlinOffsetHours(summerCandidate) === 2 ? summerCandidate : local - HOUR_MS;
+}

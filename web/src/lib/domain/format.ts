@@ -36,3 +36,9 @@ export function berlinDateOf(timestamp: string): CalendarDate {
 	const local = berlinLocal(timestamp);
 	return `${local.getUTCFullYear()}-${pad(local.getUTCMonth() + 1)}-${pad(local.getUTCDate())}`;
 }
+
+/** UTC instant (ms) as a timestamp of PocketBase, `YYYY-MM-DD HH:MM:SS.sssZ`. */
+export function toPocketBaseTimestamp(ms: number): string {
+	if (!Number.isFinite(ms)) throw new RangeError('Invalid point in time');
+	return new Date(ms).toISOString().replace('T', ' ');
+}

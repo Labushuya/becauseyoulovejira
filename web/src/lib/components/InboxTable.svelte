@@ -6,7 +6,6 @@
 <script lang="ts">
 	import { tick } from 'svelte';
 	import { goto } from '$app/navigation';
-	import { resolve } from '$app/paths';
 	import { page } from '$app/state';
 	import { berlinDateOf, formatBerlinDateTime, formatCalendarDate } from '$lib/domain/format';
 	import {
@@ -20,7 +19,13 @@
 	import { SOURCE_FAMILY_CHIPS, SOURCE_FAMILY_LABELS, type SourceFamily } from '$lib/domain/source';
 	import type { TicketSummary } from '$lib/domain/ticket';
 	import { INBOX_UNAVAILABLE_MESSAGE, type InboxStore } from '$lib/stores/inbox.svelte';
-	import { convertHref, inboxItemHref, ticketPath, withInboxQuery } from '$lib/ticket-links';
+	import {
+		captureHref,
+		convertHref,
+		inboxItemHref,
+		ticketPath,
+		withInboxQuery
+	} from '$lib/ticket-links';
 	import ChipGroup from './ChipGroup.svelte';
 	import ErrorIcon from './ErrorIcon.svelte';
 	import SectionBar from './SectionBar.svelte';
@@ -212,6 +217,7 @@
 			<ViewSwitch current="inbox" inboxCount={store.newCount} {projectsNewCount} />
 		{/snippet}
 		{#snippet end()}
+			<a class="capture" href={captureHref(page.url)}>Erfassen</a>
 			{#if showsNew}
 				<button
 					id={BULK_BUTTON_ID}
@@ -289,8 +295,8 @@
 			{:else if showsNew}
 				<p>Der Eingang ist leer.</p>
 				<p class="muted">
-					Einträge kommen über die Erfassung und die Kanäle, sobald sie eingerichtet sind. Eine
-					Aufgabe lässt sich direkt als <a href={resolve('/tickets/neu')}>Neues Ticket</a> anlegen.
+					Einträge kommen über <a href={captureHref(page.url)}>Erfassen</a> und die Kanäle, sobald sie
+					eingerichtet sind.
 				</p>
 			{:else if query.state === 'discarded'}
 				<p>Keine verworfenen Einträge.</p>
@@ -447,6 +453,15 @@
 		flex-wrap: wrap;
 		gap: 0.5rem 1.5rem;
 		margin-bottom: 0.75rem;
+	}
+
+	.capture {
+		padding: 0.25rem 0.75rem;
+		font-size: 0.8125rem;
+		color: var(--color-brand-text);
+		text-decoration: none;
+		border: 1px solid var(--color-brand);
+		border-radius: 0.375rem;
 	}
 
 	.bulk {
