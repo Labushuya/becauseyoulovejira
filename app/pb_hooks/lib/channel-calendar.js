@@ -1,7 +1,8 @@
-// Google Calendar through the secret iCal address (ADR-0016 section 2, E4 plan package 15). Pure
-// CommonJS module, ES5 only (Goja runtime and Vitest): which events of the feed come into the
-// inbox, and whether an entry that is still new must follow a changed event. Fetching and saving
-// happen in channel-runner.js; berlin-time.js and inbox-rules.js are passed in.
+// Google Calendar through the secret iCal address (ADR-0016 section 2, ADR-0020; E4 plan packages
+// 15 and 20). Pure CommonJS module, ES5 only (Goja runtime and Vitest): which events of the feed
+// come into the inbox (window and keywords), and whether an entry that is still new must follow a
+// changed event. Fetching and saving happen in channel-calendar-run.js; berlin-time.js,
+// inbox-rules.js and keywords.js are passed in.
 'use strict';
 
 // Window of the feed: today (Berlin) up to 30 days ahead.
@@ -43,6 +44,39 @@ function selectDrafts(drafts, today, days, berlin) {
     }
   }
   return selected;
+}
+
+/**
+ * Keeps the drafts whose title or description matches one of `list` (ADR-0020 section 1) and notes
+ * the keyword in `meta.keyword` (on a copy). Returns { matched, unmatched } with the number of
+ * drafts without a match; those are not saved at all.
+ */
+function matchDrafts(drafts, list, keywords) {
+  var result = { matched: [], unmatched: 0 };
+  for (var i = 0; i < drafts.length; i++) {
+    var draft = drafts[i];
+    var keyword = keywords.matchKeyword(list, [draft.title, draft.body]);
+    if (keyword === '') {
+      result.unmatched++;
+      continue;
+    }
+    var copy = {};
+    for (var key in draft) {
+      if (Object.prototype.hasOwnProperty.call(draft, key)) {
+        copy[key] = draft[key];
+      }
+    }
+    var meta = {};
+    for (var name in draft.meta || {}) {
+      if (Object.prototype.hasOwnProperty.call(draft.meta, name)) {
+        meta[name] = draft.meta[name];
+      }
+    }
+    meta.keyword = keyword;
+    copy.meta = meta;
+    result.matched.push(copy);
+  }
+  return result;
 }
 
 // JSON of a plain object with sorted keys, so the order of the keys does not count as a change.
@@ -90,6 +124,7 @@ module.exports = {
   WINDOW_DAYS: WINDOW_DAYS,
   untilDate: untilDate,
   selectDrafts: selectDrafts,
+  matchDrafts: matchDrafts,
   stableJson: stableJson,
   hasChanged: hasChanged
 };

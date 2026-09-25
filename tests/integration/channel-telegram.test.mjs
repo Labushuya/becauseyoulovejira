@@ -1,5 +1,6 @@
-// Telegram bot (ADR-0016 section 2; E4 plan package 17) against a fake Bot API on 127.0.0.1
-// instead of api.telegram.org. An own disposable instance gets an invented token, the allowlist
+// Telegram bot (ADR-0016 section 2, ADR-0020; E4 plan packages 17 and 20) against a fake Bot API on
+// 127.0.0.1 instead of api.telegram.org. The bot of the tests has the keywords KEYWORDS; "mull"
+// and "uber" also check that umlauts do not count. An own disposable instance gets an invented token, the allowlist
 // and the address of the fake server (BYL_TELEGRAM_API_BASE) as variables. The token may appear
 // nowhere: not in responses, not in last_error, not in the server log and not in the console.
 // The cron job runs every minute in the instance as well; the tests therefore check the state
@@ -15,6 +16,7 @@ const TOKEN = `7${randomBytes(4).readUInt32BE()}:AA${randomBytes(18).toString('h
 const BROKEN_TOKEN = `8${randomBytes(4).readUInt32BE()}:AA${randomBytes(18).toString('hex')}`;
 const OWN_ID = 424242;
 const GROUP_ID = -100123;
+const KEYWORDS = ['milch', 'rechnung', 'mull', 'zahnarzt', 'uber'];
 
 /** Updates the fake server offers, in the order Telegram would. */
 const updates = [];
@@ -107,7 +109,7 @@ function connection(who, secret, data = {}) {
 		label: 'Telegram-Bot',
 		enabled: true,
 		secret_env: secret,
-		settings: { allowed_env: 'BYL_TEST_TG_ALLOWED' },
+		settings: { allowed_env: 'BYL_TEST_TG_ALLOWED', keywords: KEYWORDS },
 		...data
 	});
 }
@@ -173,7 +175,7 @@ describe('Telegram: messages into the inbox', () => {
 			kind: 'message',
 			body: 'Milch kaufen\nund Brot',
 			connection: bot.id,
-			source_meta: { chat: 'Anna', sender: 'Anna', chat_id: String(OWN_ID) }
+			source_meta: { chat: 'Anna', sender: 'Anna', chat_id: String(OWN_ID), keyword: 'milch' }
 		});
 		expect(confirmations.map((item) => [item.chat_id, item.text])).toEqual([
 			[OWN_ID, 'Im Eingang gespeichert'],
@@ -215,6 +217,29 @@ describe('Telegram: messages into the inbox', () => {
 		} finally {
 			failConfirmations = false;
 		}
+	});
+
+	it('leaves out messages without keyword and answers them unless switched off (ADR-0020)', async () => {
+		const before = confirmations.length;
+		const hello = send(PRIVATE, { text: 'Hallo, wie geht es?' });
+		await runNow(owner, bot.id);
+		expect((await telegramItems(owner)).map((item) => item.title)).not.toContain('Hallo, wie geht es?');
+		expect(confirmations.slice(before).map((item) => [item.chat_id, item.text, item.reply_parameters.message_id])).toEqual([
+			[OWN_ID, 'Kein Stichwort erkannt – nicht gespeichert', hello.message.message_id]
+		]);
+		const record = await owner.pb.collection('connections').getOne(bot.id);
+		expect(record.cursor).toBe(String(hello.update_id));
+		expect(record.last_error).toBe('');
+
+		await owner.pb.collection('connections').update(bot.id, { settings: { ...record.settings, reply_no_match: false } });
+		const quiet = send(PRIVATE, { text: 'Noch ein Gruß' });
+		await runNow(owner, bot.id);
+		await expect
+			.poll(async () => (await owner.pb.collection('connections').getOne(bot.id)).cursor)
+			.toBe(String(quiet.update_id));
+		expect(confirmations.length).toBe(before + 1);
+		expect(await telegramItems(owner)).toHaveLength(4);
+		await owner.pb.collection('connections').update(bot.id, { settings: record.settings });
 	});
 
 	it('fetches through the cron job as well', async () => {

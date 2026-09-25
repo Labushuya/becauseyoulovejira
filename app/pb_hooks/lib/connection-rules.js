@@ -1,6 +1,6 @@
-// Pure rules of the connections (ADR-0016 section 2, ADR-0018; E4 plan package 10). CommonJS
-// module, ES5 only, no dependencies but secrets.js, which the caller passes in (Goja runtime and
-// Vitest load the module the same way).
+// Pure rules of the connections (ADR-0016 section 2, ADR-0018, ADR-0020; E4 plan packages 10 and
+// 20). CommonJS module, ES5 only, no dependencies but secrets.js and keywords.js, which the caller
+// passes in (Goja runtime and Vitest load the module the same way).
 'use strict';
 
 // Written by the server only (runner and hooks); a client change is refused.
@@ -9,10 +9,11 @@ var SERVER_FIELDS = ['cursor', 'last_run_at', 'last_ok_at', 'last_error', 'last_
 // Kinds a user can set up now; notion and mail stay in the value list for later packages.
 var CREATABLE_TYPES = ['calendar', 'telegram'];
 
-// Keys of `settings` per kind. Only names of variables, never values (ADR-0018 section 2).
+// Keys of `settings` per kind. Only names of variables, never values (ADR-0018 section 2), the
+// keywords (ADR-0020 section 3) and, for Telegram, whether the bot answers messages without one.
 var SETTINGS_KEYS = {
-  calendar: [],
-  telegram: ['allowed_env']
+  calendar: ['keywords'],
+  telegram: ['allowed_env', 'keywords', 'reply_no_match']
 };
 
 var MESSAGES = {
@@ -39,7 +40,7 @@ function isPlainObject(value) {
  * Checks `settings` of a connection of `type`. `settings` is the parsed JSON (null for empty).
  * Returns '' or { field, code, message }.
  */
-function settingsViolation(type, settings, secrets) {
+function settingsViolation(type, settings, secrets, keywords) {
   var value = settings === null || settings === undefined || settings === '' ? {} : settings;
   if (!isPlainObject(value)) {
     return failure('settings', 'validation_connection_settings');
@@ -53,6 +54,12 @@ function settingsViolation(type, settings, secrets) {
       return failure('settings', 'validation_connection_settings');
     }
   }
+  if (keywords.listViolation(value.keywords) !== '') {
+    return { field: 'settings', code: 'validation_keywords', message: keywords.MESSAGE };
+  }
+  if (value.reply_no_match !== undefined && typeof value.reply_no_match !== 'boolean') {
+    return failure('settings', 'validation_connection_settings');
+  }
   if (type === 'telegram' && !secrets.isValidName(value.allowed_env)) {
     return failure('settings', 'validation_secret_name');
   }
@@ -63,7 +70,7 @@ function settingsViolation(type, settings, secrets) {
  * Client create (onRecordCreateRequest): the kind must be available, the server fields empty and
  * the settings valid. `values` maps field names to their string value (settings parsed).
  */
-function createViolation(values, secrets) {
+function createViolation(values, secrets, keywords) {
   if (CREATABLE_TYPES.indexOf(text(values.type)) === -1) {
     return failure('type', 'validation_connection_type');
   }
@@ -75,14 +82,14 @@ function createViolation(values, secrets) {
   if (!secrets.isValidName(values.secret_env)) {
     return failure('secret_env', 'validation_secret_name');
   }
-  return settingsViolation(text(values.type), values.settings, secrets);
+  return settingsViolation(text(values.type), values.settings, secrets, keywords);
 }
 
 /**
  * Client update (onRecordUpdateRequest): kind and server fields unchanged, settings valid.
  * `before`/`after` like `values` of createViolation.
  */
-function updateViolation(before, after, secrets) {
+function updateViolation(before, after, secrets, keywords) {
   if (text(before.type) !== text(after.type)) {
     return failure('type', 'validation_connection_immutable');
   }
@@ -95,7 +102,17 @@ function updateViolation(before, after, secrets) {
   if (!secrets.isValidName(after.secret_env)) {
     return failure('secret_env', 'validation_secret_name');
   }
-  return settingsViolation(text(after.type), after.settings, secrets);
+  return settingsViolation(text(after.type), after.settings, secrets, keywords);
+}
+
+/** The keywords of a connection (ADR-0020): invalid or missing entries count as none. */
+function keywordsOf(settings, keywords) {
+  return isPlainObject(settings) ? keywords.listOf(settings.keywords) : [];
+}
+
+/** Telegram: whether the bot answers a message without keyword (default yes). */
+function repliesWithoutMatch(settings) {
+  return !(isPlainObject(settings) && settings.reply_no_match === false);
 }
 
 /** Names of the variables a connection reads: the secret and, for Telegram, the allowlist. */
@@ -127,5 +144,7 @@ module.exports = {
   createViolation: createViolation,
   updateViolation: updateViolation,
   variableNames: variableNames,
-  secretStatus: secretStatus
+  secretStatus: secretStatus,
+  keywordsOf: keywordsOf,
+  repliesWithoutMatch: repliesWithoutMatch
 };

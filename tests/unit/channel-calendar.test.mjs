@@ -1,5 +1,6 @@
-// Google Calendar channel, pure part (E4 plan, package 15): the window today .. +30 days in
-// Berlin, series with and without UNTIL, and when a new entry follows a changed event.
+// Google Calendar channel, pure part (E4 plan, packages 15 and 20): the window today .. +30 days
+// in Berlin, series with and without UNTIL, keywords in title and description, and when a new
+// entry follows a changed event.
 
 import { describe, expect, it } from 'vitest';
 import { loadHookLib } from '../support/hook-lib.mjs';
@@ -7,6 +8,7 @@ import { loadHookLib } from '../support/hook-lib.mjs';
 const calendar = loadHookLib('channel-calendar.js');
 const berlin = loadHookLib('berlin-time.js');
 const inboxRules = loadHookLib('inbox-rules.js');
+const keywords = loadHookLib('keywords.js');
 
 const TODAY = '2026-09-25';
 const draft = (title, startDate, endDate = startDate, meta = {}) => ({ title, startDate, endDate, meta });
@@ -81,5 +83,29 @@ describe('channel-calendar.js: changed events', () => {
 
 	it('writes JSON with sorted keys', () => {
 		expect(calendar.stableJson({ b: 1, a: [{ d: 2, c: null }] })).toBe('{"a":[{"c":null,"d":2}],"b":1}');
+	});
+});
+
+describe('channel-calendar.js: keywords (ADR-0020)', () => {
+	const event = (title, body, meta = {}) => ({ title, body, meta, startDate: TODAY, endDate: TODAY });
+
+	it('keeps events whose title or description matches and notes the keyword', () => {
+		const drafts = [
+			event('Todo: Steuer', '', { all_day: true }),
+			event('Kino', 'Karten #BYL'),
+			event('Zahnarzt', 'Kontrolle'),
+			event('Fotodoku', '')
+		];
+		const result = calendar.matchDrafts(drafts, ['todo', '#byl'], keywords);
+		expect(result.unmatched).toBe(2);
+		expect(result.matched.map((item) => [item.title, item.meta])).toEqual([
+			['Todo: Steuer', { all_day: true, keyword: 'todo' }],
+			['Kino', { keyword: '#byl' }]
+		]);
+		expect(drafts[0].meta).toEqual({ all_day: true });
+	});
+
+	it('keeps nothing with an empty list', () => {
+		expect(calendar.matchDrafts([event('Todo', '')], [], keywords)).toEqual({ matched: [], unmatched: 1 });
 	});
 });

@@ -1,5 +1,7 @@
-// Google Calendar through the secret iCal address (ADR-0016 section 2; E4 plan package 15),
-// against a local fake server on 127.0.0.1 instead of Google. An own disposable instance gets the
+// Google Calendar through the secret iCal address (ADR-0016 section 2, ADR-0020; E4 plan packages
+// 15 and 20), against a local fake server on 127.0.0.1 instead of Google. The events of the fake
+// feed carry "#byl" in their description, the keyword of the connections here, unless a test
+// checks the keywords themselves. An own disposable instance gets the
 // invented addresses as BYL_* variables. The secret part of the address may appear nowhere:
 // not in responses, not in last_error, not in the server log and not in the console output.
 
@@ -48,7 +50,8 @@ let owner;
 let other;
 
 function event(uid, summary, start, extra = []) {
-	return ['BEGIN:VEVENT', `UID:${uid}`, `SUMMARY:${summary}`, `DTSTART;VALUE=DATE:${start}`, ...extra, 'END:VEVENT'];
+	const description = extra.some((line) => line.startsWith('DESCRIPTION')) ? [] : ['DESCRIPTION:Termin #byl'];
+	return ['BEGIN:VEVENT', `UID:${uid}`, `SUMMARY:${summary}`, `DTSTART;VALUE=DATE:${start}`, ...description, ...extra, 'END:VEVENT'];
 }
 
 function calendarText(events) {
@@ -89,6 +92,7 @@ function connection(who, variable, data = {}) {
 		label: 'Google Kalender',
 		enabled: true,
 		secret_env: variable,
+		settings: { keywords: ['#byl'] },
 		...data
 	});
 }
@@ -155,7 +159,13 @@ describe('Google Calendar: fetch into the inbox', () => {
 		const items = await itemsOf(owner);
 		expect(items.map((item) => item.title).sort()).toEqual([...IN_WINDOW].sort());
 		for (const item of items) {
-			expect(item).toMatchObject({ channel: 'calendar', kind: 'event', connection: cal.id, state: 'new' });
+			expect(item).toMatchObject({
+				channel: 'calendar',
+				kind: 'event',
+				connection: cal.id,
+				state: 'new',
+				source_meta: { keyword: '#byl' }
+			});
 		}
 		const record = await owner.pb.collection('connections').getOne(cal.id);
 		expect(record.last_ok_at).not.toBe('');
@@ -230,6 +240,41 @@ describe('Google Calendar: fetch into the inbox', () => {
 	});
 });
 
+describe('Google Calendar: keywords (ADR-0020)', () => {
+	it('takes only events whose title or description matches, and saves nothing else', async () => {
+		const who = await user();
+		const record = await connection(who, 'BYL_TEST_CAL', { settings: { keywords: ['chorprobe', 'HEUTE'] } });
+		const result = await runNow(who, record.id);
+		expect(result).toMatchObject({ status: 'ok', created: 2, unmatched: 2, duplicates: 0 });
+		const items = await itemsOf(who);
+		expect(items.map((item) => [item.title, item.source_meta.keyword]).sort()).toEqual([
+			['Chorprobe', 'chorprobe'],
+			['Heute', 'HEUTE']
+		]);
+		// Nothing was stored for the others, not even as discarded.
+		const all = await who.pb.collection('inbox_items').getFullList({ filter: who.pb.filter('connection = {:id}', { id: record.id }) });
+		expect(all).toHaveLength(2);
+	});
+
+	it('takes nothing with an empty list and a new keyword applies to the window at the next run', async () => {
+		const who = await user();
+		const record = await connection(who, 'BYL_TEST_CAL', { settings: {} });
+		expect(await runNow(who, record.id)).toMatchObject({ status: 'ok', created: 0, unmatched: 4 });
+		expect(await itemsOf(who)).toEqual([]);
+		await who.pb.collection('connections').update(record.id, { settings: { keywords: ['Nächste'] } });
+		expect(await runNow(who, record.id)).toMatchObject({ created: 1, unmatched: 3 });
+		expect((await itemsOf(who)).map((item) => item.title)).toEqual(['Nächste Woche']);
+	});
+
+	it('refuses invalid keyword lists', async () => {
+		const who = await user();
+		await expect(connection(who, 'BYL_TEST_CAL', { settings: { keywords: [''] } })).rejects.toMatchObject({
+			status: 400,
+			response: { data: { settings: { code: 'validation_keywords' } } }
+		});
+	});
+});
+
 describe('Google Calendar: data layer of the web app', () => {
 	it('runs a connection and reads its new state', async () => {
 		const who = await user();
@@ -242,6 +287,7 @@ describe('Google Calendar: data layer of the web app', () => {
 			updated: 0,
 			skipped: 1,
 			failed: 0,
+			unmatched: 0,
 			error: '',
 			missing: []
 		});

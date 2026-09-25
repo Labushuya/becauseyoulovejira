@@ -120,8 +120,9 @@ function label(record) {
 }
 
 /**
- * Runs one connection. Returns { status, created, duplicates, updated, skipped, failed, error,
- * missing }:
+ * Runs one connection. Returns { status, created, duplicates, updated, skipped, failed, unmatched,
+ * error, missing }; `unmatched` counts what no keyword matched and what was therefore not saved
+ * (ADR-0020):
  * status "ok", "error", "running" (another run holds the lock), "missing" (variables not set),
  * "disabled" or "unsupported". `error` is cleaned; `missing` lists names of variables only.
  */
@@ -133,6 +134,7 @@ function runConnection(app, record) {
     updated: 0,
     skipped: 0,
     failed: 0,
+    unmatched: 0,
     error: '',
     missing: []
   };
@@ -186,6 +188,7 @@ function runConnection(app, record) {
   result.updated = outcome.updated || 0;
   result.skipped = outcome.skipped || 0;
   result.failed = outcome.failed || 0;
+  result.unmatched = outcome.unmatched || 0;
   return result;
 }
 
