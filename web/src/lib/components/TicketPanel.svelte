@@ -30,7 +30,8 @@
 		listHref,
 		onclose,
 		ondeleted,
-		activity
+		activity,
+		recurrence
 	}: {
 		store: TicketDetailStore;
 		/** Projects and tags (E3 plan, T-16). */
@@ -41,6 +42,8 @@
 		/** Called after the ticket was deleted; the owner closes the panel. */
 		ondeleted: () => void;
 		activity?: Snippet<[Ticket]>;
+		/** "Wiederholen…" or the series of the ticket (E5 plan, package 4). */
+		recurrence?: Snippet<[Ticket]>;
 	} = $props();
 
 	const uid = $props.id();
@@ -298,11 +301,13 @@
 				/>
 				{@render fieldError('tags')}
 			</div>
-			{#if ticket.recurring}
+			{#if ticket.recurring && !recurrence}
 				<span class="term">Wiederholung</span>
 				<span class="detail">wiederkehrend</span>
 			{/if}
 		</div>
+
+		{@render recurrence?.(ticket)}
 
 		<section class="description" aria-labelledby={`${uid}-description-title`}>
 			<div class="section-head">
@@ -393,6 +398,7 @@
 			<p>
 				Dabei werden auch alle Kommentare und der gesamte Verlauf dieses Tickets gelöscht. Das lässt
 				sich nicht rückgängig machen.
+				{#if ticket.recurring && ticket.status !== 'done'}Die Regel läuft weiter.{/if}
 			</p>
 		</ConfirmDialog>
 	{:else}

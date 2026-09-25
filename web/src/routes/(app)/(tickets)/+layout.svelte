@@ -7,6 +7,7 @@
 	import { parseListQuery } from '$lib/domain/list-query';
 	import { getCatalogStore } from '$lib/stores/catalog.svelte';
 	import { getInboxStore } from '$lib/stores/inbox.svelte';
+	import { getRecurrenceStore } from '$lib/stores/recurrence.svelte';
 	import { getTicketListStore } from '$lib/stores/ticket-list.svelte';
 
 	// KPI tiles, filter bar, table and panel area (E2 plan, T-4; E3 plan, T-3 and packages 5, 10
@@ -18,6 +19,7 @@
 	const tickets = getTicketListStore();
 	const catalog = getCatalogStore();
 	const inbox = getInboxStore();
+	const rules = getRecurrenceStore();
 	const query = $derived(parseListQuery(page.url.searchParams));
 	const activeId = $derived(page.params.id ?? null);
 	const withPanel = $derived(page.route.id !== '/(app)/(tickets)');
@@ -39,7 +41,14 @@
 	onretrysearch={() => tickets.retrySearch()}
 />
 <div class="tickets" class:with-panel={withPanel}>
-	<TicketTable store={tickets} {catalog} {activeId} {creating} inboxCount={inbox.newCount} />
+	<TicketTable
+		store={tickets}
+		{catalog}
+		{activeId}
+		{creating}
+		inboxCount={inbox.newCount}
+		recurrenceTextOf={(ticket) => rules.textOf(ticket.recurrenceId)}
+	/>
 	{@render children()}
 </div>
 

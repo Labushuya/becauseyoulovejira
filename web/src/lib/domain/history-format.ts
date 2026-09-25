@@ -133,9 +133,25 @@ function describe(entry: HistoryEntry, lookups: HistoryLookups): string {
 			return tagsText(oldValue, newValue, lookups);
 		case 'household':
 			return change('Bereich', areaText(oldValue), areaText(newValue));
+		case 'recurrence':
+			// E5 plan, T-9: joining a series ("Wiederholen…"), leaving it or deleting its rule.
+			if (oldValue === '') return 'Wiederholung eingerichtet';
+			if (newValue === '') return 'Wiederholung entfernt';
+			return 'Wiederholung geändert';
 		default:
 			return `${historyFieldLabel(field)} geändert`;
 	}
+}
+
+/** Author of a ticket a recurrence rule created (E5 plan, T-9). */
+export const RECURRENCE_ACTOR = 'Wiederholung';
+
+/**
+ * A rule created the ticket: the entry "created" has no user and the rule as old value (the
+ * hook writes it so since E5, package 3).
+ */
+function createdByRule(entry: HistoryEntry): boolean {
+	return entry.field === 'created' && entry.user === '' && entry.oldValue !== '';
 }
 
 /** Readable form of a history entry for the signed-in user `selfId`. */
@@ -147,7 +163,7 @@ export function describeHistoryEntry(
 	return {
 		id: entry.id,
 		time: formatBerlinDateTime(entry.created),
-		actor: personLabel(entry.user, selfId),
+		actor: createdByRule(entry) ? RECURRENCE_ACTOR : personLabel(entry.user, selfId),
 		text: describe(entry, lookups),
 		details:
 			entry.field === 'description' ? { before: entry.oldValue, after: entry.newValue } : null

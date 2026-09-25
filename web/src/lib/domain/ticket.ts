@@ -41,8 +41,13 @@ export interface TicketSummary {
 	project: ProjectRef | null;
 	/** Expanded tags; only a fallback while the catalog does not know them. */
 	tags: TagRef[];
-	/** True if a recurrence rule created the ticket (E5). */
+	/** True if the ticket belongs to a recurrence rule (E5). */
 	recurring: boolean;
+	/**
+	 * ID of that rule, null without one (E5 plan, package 4). The data layer always sets it;
+	 * objects built by hand (tests, drafts) may leave it out.
+	 */
+	recurrenceId?: string | null;
 	/**
 	 * Way the ticket came in (ADR-0014 section 2); null for tickets before E4 and before the
 	 * migration, which count as "manual" (ADR-0019).

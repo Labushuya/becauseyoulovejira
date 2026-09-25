@@ -98,6 +98,7 @@ export function toTicketSummary(record: TicketRecord): TicketSummary {
 		project: record.expand?.project ? toProjectRef(record.expand.project) : null,
 		tags: (record.expand?.tags ?? []).map(toTagRef),
 		recurring: record.recurrence !== '',
+		recurrenceId: record.recurrence || null,
 		source: isInboxChannel(record.source) ? record.source : null,
 		completedAt: record.completed_at || null,
 		created: record.created,

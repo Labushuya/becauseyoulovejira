@@ -2,6 +2,8 @@
 // (`status`, `isAbort`, `response`) instead of `instanceof ClientResponseError`, because the
 // root integration tests and the web app each load their own copy of the SDK.
 
+import { RECURRENCE_MESSAGES, openInstanceMessage } from '../domain/recurrence-rule';
+
 export type DataErrorKind =
 	'aborted' | 'network' | 'not_found' | 'forbidden' | 'validation' | 'session' | 'server';
 
@@ -58,7 +60,9 @@ const FIELD_MESSAGES: Readonly<Record<string, string>> = Object.freeze({
 	validation_connection_immutable: 'Die Art einer Verbindung lässt sich nicht ändern.',
 	validation_connection_server_field: 'Dieses Feld setzt nur der Server.',
 	validation_connection_settings: 'Unbekannte Einstellung.',
-	validation_keywords: 'Stichwörter: höchstens 50, je 1 bis 100 Zeichen, ohne Zeilenumbruch.'
+	validation_keywords: 'Stichwörter: höchstens 50, je 1 bis 100 Zeichen, ohne Zeilenumbruch.',
+	// Recurrence rules (ADR-0021 to ADR-0023; E5 plan, package 4), the same texts as the hook.
+	...RECURRENCE_MESSAGES
 });
 
 /** Texts that depend on the field as well, keyed by `<field>:<code>`; they win over the above. */
@@ -121,7 +125,12 @@ function fieldErrorsOf(response: unknown): Record<string, FieldError> {
 	for (const [field, detail] of Object.entries(data)) {
 		const code = isRecord(detail) && typeof detail.code === 'string' ? detail.code : '';
 		const params = isRecord(detail) && isRecord(detail.params) ? { ...detail.params } : undefined;
-		fields[field] = { code, message: fieldMessage(field, code), ...(params && { params }) };
+		// Reopening with an edited follow-up names that ticket (ADR-0023 section 3).
+		const message =
+			code === 'validation_recurrence_open_instance' && typeof params?.key === 'string'
+				? openInstanceMessage(params.key)
+				: fieldMessage(field, code);
+		fields[field] = { code, message, ...(params && { params }) };
 	}
 	return fields;
 }
