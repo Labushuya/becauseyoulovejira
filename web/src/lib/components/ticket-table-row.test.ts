@@ -283,3 +283,32 @@ describe('ticket table row: new (E4 plan, package 4)', () => {
 		expect(cell(row, 'key').textContent?.trim()).toBe('HAUS-4');
 	});
 });
+
+describe('ticket table row: source (E4 plan, package 9; ADR-0019 section 4)', () => {
+	it.each([
+		['eml', 'Mail', 'aus Mail'],
+		['mail', 'Mail', 'aus Mail'],
+		['link', 'Web-Link', 'aus Web-Link'],
+		['calendar', 'Kalender', 'aus Kalender'],
+		['whatsapp', 'Chat', 'aus Chat'],
+		['notion', 'Notion', 'aus Notion']
+	] as const)(
+		'shows the symbol of %s before the title with tooltip and text',
+		(source, label, text) => {
+			const { row } = renderRow({ source });
+			const title = cell(row, 'title');
+			const icon = title.querySelector('.source-icon') as HTMLElement;
+			expect(icon.getAttribute('title')).toBe(`Quelle: ${label}`);
+			expect(icon.querySelector('svg')?.getAttribute('aria-hidden')).toBe('true');
+			expect(icon.querySelector('.visually-hidden')?.textContent).toBe(text);
+			expect(icon.compareDocumentPosition(title.querySelector('.title-link') as Node)).toBe(
+				Node.DOCUMENT_POSITION_FOLLOWING
+			);
+		}
+	);
+
+	it.each([null, 'manual', 'quick', 'clipboard'] as const)('shows no symbol for %s', (source) => {
+		const { row } = renderRow({ source });
+		expect(cell(row, 'title').querySelector('.source-icon')).toBeNull();
+	});
+});

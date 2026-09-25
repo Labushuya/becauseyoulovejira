@@ -2,10 +2,12 @@
 // combined with AND, each with at most one value (OF-E3-3). The search is not part of this
 // predicate: the server answers it as a set of IDs (T-1, T-15). Project and tag compare the stored
 // relations (projectId, tagIds), the same fields the server expression of the done tickets uses.
+// The source compares the family of `source` (ADR-0019 section 2); no source counts as "manual".
 
 import { addDays, type CalendarDate } from './berlin-date';
 import { NO_PROJECT, type ListQuery } from './list-query';
 import { SOON_DAYS } from './ordering';
+import { sourceFamily } from './source';
 import type { TicketSummary } from './ticket';
 
 /**
@@ -23,7 +25,7 @@ export function dueBucket(due: CalendarDate | null, today: CalendarDate): DueBuc
 
 export type FilterableTicket = Pick<
 	TicketSummary,
-	'status' | 'priority' | 'due' | 'projectId' | 'tagIds'
+	'status' | 'priority' | 'due' | 'projectId' | 'tagIds' | 'source'
 >;
 
 function matchesDue(ticket: FilterableTicket, filter: ListQuery['due'], today: CalendarDate) {
@@ -53,6 +55,7 @@ export function matchesFilter(
 		(query.status === null || ticket.status === query.status) &&
 		(query.priority === null || ticket.priority === query.priority) &&
 		matchesDue(ticket, query.due, today) &&
+		(query.source === null || sourceFamily(ticket.source) === query.source) &&
 		matchesProject(ticket, query.project) &&
 		(query.tag === null || ticket.tagIds.includes(query.tag))
 	);

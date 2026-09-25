@@ -82,7 +82,7 @@ describe('countKpis', () => {
 				ticket({ status, due: TODAY, priority: 'urgent' }),
 				ticket({ status, due: addDays(TODAY, 3) })
 			])
-		].map((entry) => ({ ...entry, projectId: null, tagIds: [] }));
+		].map((entry) => ({ ...entry, projectId: null, tagIds: [], source: null }));
 		const open = tickets.filter((entry) => entry.status !== 'done');
 		const shown = (overrides: object) =>
 			open.filter((entry) => matchesFilter(entry, { ...EMPTY_LIST_QUERY, ...overrides }, TODAY))

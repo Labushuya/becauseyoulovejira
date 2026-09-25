@@ -7,10 +7,11 @@
 	import DoneToggle from './DoneToggle.svelte';
 	import DueLabel from './DueLabel.svelte';
 	import PriorityIcon from './PriorityIcon.svelte';
+	import SourceIcon from './SourceIcon.svelte';
 	import StatusPill from './StatusPill.svelte';
 
-	// One row of the ticket table (E3 plan, T-4): key, priority, status, title with the recurring
-	// icon, project, tags, due date, creation date and the actions (check mark, "Rückgängig" and
+	// One row of the ticket table (E3 plan, T-4): key, priority, status, title with the symbol of
+	// its source (ADR-0019 section 4) and the recurring icon, project, tags, due date, creation date and the actions (check mark, "Rückgängig" and
 	// "Öffnen"). The title is the link to the detail panel and the keyboard target; a mouse click
 	// anywhere else in the row outside of controls follows the same link.
 	let {
@@ -71,6 +72,7 @@
 	<td class="priority"><PriorityIcon priority={ticket.priority} /></td>
 	<td class="status"><StatusPill status={ticket.status} /></td>
 	<th class="title" scope="row">
+		<SourceIcon source={ticket.source} />
 		<a class="title-link" {href} aria-current={active ? 'page' : undefined}>{ticket.title}</a>
 		{#if ticket.recurring}
 			<span class="recurring-icon" title="Wiederkehrend">

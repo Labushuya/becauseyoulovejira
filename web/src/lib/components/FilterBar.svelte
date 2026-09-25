@@ -15,6 +15,7 @@
 		type FilterKey,
 		type ListQuery
 	} from '$lib/domain/list-query';
+	import { SOURCE_FAMILY_CHIPS, SOURCE_FAMILY_LABELS, type SourceFamily } from '$lib/domain/source';
 	import { PRIORITIES, STATUSES, type Priority, type Status } from '$lib/domain/status';
 	import type { CatalogStore } from '$lib/stores/catalog.svelte';
 	import { withListQuery } from '$lib/ticket-links';
@@ -22,7 +23,7 @@
 	import ErrorIcon from './ErrorIcon.svelte';
 
 	// Filter bar (E3 plan, T-6, T-15 and packages 10 and 11; ADR-0010 section 1): chip groups for
-	// status, priority and due date, the search, selects for project and tag, and "Zurücksetzen".
+	// status, priority, due date and source (E4 package 9, ADR-0019 section 2), the search, selects for project and tag, and "Zurücksetzen".
 	// The state lives only in the URL (ADR-0013 section 4): every change navigates with a history
 	// entry, so reload, back and forward keep it; opening a ticket keeps it because links carry
 	// the query. Typing in the search replaces the entry instead, so back does not go through
@@ -64,6 +65,10 @@
 		.reverse()
 		.map((value) => ({ value, label: PRIORITY_LABELS[value] }));
 	const dueOptions = DUE_FILTERS.map((value) => ({ value, label: DUE_LABELS[value] }));
+	const sourceOptions = SOURCE_FAMILY_CHIPS.map((value) => ({
+		value,
+		label: SOURCE_FAMILY_LABELS[value]
+	}));
 
 	const query = $derived(parseListQuery(page.url.searchParams));
 	const filtered = $derived(hasFilters(query));
@@ -132,6 +137,13 @@
 		options={dueOptions}
 		value={query.due}
 		onchange={(value: DueFilter | null) => setFilter('due', value)}
+	/>
+	<ChipGroup
+		legend="Quelle"
+		name={`${uid}-source`}
+		options={sourceOptions}
+		value={query.source}
+		onchange={(value: SourceFamily | null) => setFilter('source', value)}
 	/>
 
 	<div class="selects">

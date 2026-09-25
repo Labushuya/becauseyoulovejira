@@ -7,6 +7,7 @@ import { addDays, type CalendarDate } from '../domain/berlin-date';
 import { isInboxChannel } from '../domain/inbox';
 import { EMPTY_LIST_QUERY, NO_PROJECT, activeSearch, type ListQuery } from '../domain/list-query';
 import { SOON_DAYS } from '../domain/ordering';
+import { channelsOf, type SourceFamily } from '../domain/source';
 import { isPriority, isStatus, type Status } from '../domain/status';
 import {
 	MANUAL_ORIGIN,
@@ -216,6 +217,39 @@ const DONE_FILTER = [
 	'({:tag} = "" || tags.id ?= {:tag})'
 ].join(' && ');
 
+/**
+ * Source family of the done tickets (ADR-0019 section 2): the channels of the family, and for
+ * "manual" also an empty source (tickets before E4). A family has one to MAX_FAMILY_CHANNELS
+ * channels; unused parameters repeat the first channel, since '' would match the tickets without
+ * source, which only {:withEmpty} may take. The clause joins DONE_FILTER only when a source is
+ * chosen: before the migration of E4 the server does not know the field, and the done list must
+ * keep working until the next start.
+ */
+const DONE_SOURCE_FILTER = [
+	'(source = {:s1} || source = {:s2} || source = {:s3} || ({:withEmpty} = "1" && source = ""))'
+].join(' && ');
+
+const MAX_FAMILY_CHANNELS = 3;
+
+function sourceParams(family: SourceFamily): Record<string, string> {
+	const channels = channelsOf(family);
+	const first = channels[0];
+	if (first === undefined || channels.length > MAX_FAMILY_CHANNELS) {
+		throw new RangeError(`No filter for the source family ${family}`);
+	}
+	return {
+		s1: first,
+		s2: channels[1] ?? first,
+		s3: channels[2] ?? first,
+		withEmpty: family === 'manual' ? '1' : ''
+	};
+}
+
+/** Expression of the done tickets: DONE_FILTER, and with a chosen source also its clause. */
+function doneFilterExpression({ query }: DoneFilter): string {
+	return query.source === null ? DONE_FILTER : `${DONE_FILTER} && ${DONE_SOURCE_FILTER}`;
+}
+
 /** Parameters of DONE_FILTER; an unset filter is '', which switches its conditions off. */
 function doneFilterParams({ query, today }: DoneFilter): Record<string, string> {
 	const dates =
@@ -235,7 +269,8 @@ function doneFilterParams({ query, today }: DoneFilter): Record<string, string> 
 		...dates,
 		project: query.project ?? '',
 		noProject: NO_PROJECT,
-		tag: query.tag ?? ''
+		tag: query.tag ?? '',
+		...(query.source === null ? {} : sourceParams(query.source))
 	};
 }
 
@@ -254,7 +289,7 @@ export function listDoneTickets(
 ): Promise<DoneTicketPage> {
 	return withDataErrors(signal, async () => {
 		const result = await pb.collection(TICKETS).getList<TicketRecord>(page, perPage, {
-			filter: pb.filter(DONE_FILTER, doneFilterParams(filter)),
+			filter: pb.filter(doneFilterExpression(filter), doneFilterParams(filter)),
 			sort: '-completed_at,-created,-id',
 			fields: TICKET_LIST_FIELDS,
 			expand: TICKET_EXPAND,

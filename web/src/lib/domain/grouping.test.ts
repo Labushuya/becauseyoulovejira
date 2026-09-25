@@ -157,7 +157,8 @@ describe('groupTickets', () => {
 			status: 'Status',
 			priority: 'Priorität',
 			project: 'Projekt',
-			due: 'Fälligkeit'
+			due: 'Fälligkeit',
+			source: 'Quelle'
 		});
 	});
 
@@ -226,5 +227,35 @@ describe('filter, sort and grouping with 2 000 tickets (T-19)', () => {
 			}
 		}
 		expect(tickets.filter((ticket) => matchesFilter(ticket, queries[1]!, TODAY)).length).toBe(500);
+	});
+});
+
+describe('groupTickets: source (E4 plan, package 9; ADR-0019 section 3)', () => {
+	it('groups by source family in the fixed order, old tickets as "Manuell", without empty groups', () => {
+		const tickets = [
+			row('c', { source: 'telegram' }),
+			row('m', { source: 'eml' }),
+			row('o', { source: null }),
+			row('q', { source: 'quick' }),
+			row('k', { source: 'ics' }),
+			row('w', { source: 'whatsapp' }),
+			row('l', { source: 'link' }),
+			row('m2', { source: 'mail' })
+		];
+		expect(shape(groupTickets(tickets, 'source', TODAY))).toEqual([
+			['manual', 'Manuell', ['o', 'q']],
+			['link', 'Web-Link', ['l']],
+			['mail', 'Mail', ['m', 'm2']],
+			['calendar', 'Kalender', ['k']],
+			['chat', 'Chat', ['c', 'w']]
+		]);
+	});
+
+	it('keeps the order of the input within a group and shows Notion once it has tickets', () => {
+		const tickets = [row('n', { source: 'notion' }), row('a', { source: 'clipboard' }), row('b')];
+		expect(shape(groupTickets(tickets, 'source', TODAY))).toEqual([
+			['manual', 'Manuell', ['a', 'b']],
+			['notion', 'Notion', ['n']]
+		]);
 	});
 });
