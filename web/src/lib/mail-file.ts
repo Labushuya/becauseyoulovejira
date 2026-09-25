@@ -3,19 +3,11 @@
 // parser only decodes; nothing of the mail is rendered or loaded (no images, no links). The
 // parser is loaded on first use, so the inbox view does not carry it before a file comes in.
 
-import { mailToDraft } from './domain/inbox-mail';
+import { MAIL_MAX_BYTES, MAIL_PARSER_OPTIONS, mailToDraft } from './domain/inbox-mail';
 import type { InboxDraft } from './domain/inbox';
 
 /** Largest .eml file taken into the inbox (ADR-0017 section 2; schema of `original`). */
-export const EML_MAX_BYTES = 10 * 1024 * 1024;
-
-/** Limits of the parser against crafted mails (postal-mime options). */
-const PARSER_OPTIONS = Object.freeze({
-	maxNestingDepth: 50,
-	maxHeadersSize: 512 * 1024,
-	maxRfc822NestingDepth: 3,
-	attachmentEncoding: 'arraybuffer' as const
-});
+export const EML_MAX_BYTES = MAIL_MAX_BYTES;
 
 export const NOT_EML_MESSAGE = 'Keine Mail-Datei (.eml).';
 export const TOO_LARGE_MESSAGE = 'Größer als 10 MB, deshalb nicht übernommen.';
@@ -37,7 +29,7 @@ export async function readMailFile(file: File): Promise<MailFileResult> {
 	if (file.size > EML_MAX_BYTES) return { ok: false, message: TOO_LARGE_MESSAGE };
 	try {
 		const { default: PostalMime } = await import('postal-mime');
-		const email = await PostalMime.parse(await file.arrayBuffer(), PARSER_OPTIONS);
+		const email = await PostalMime.parse(await file.arrayBuffer(), MAIL_PARSER_OPTIONS);
 		return { ok: true, draft: { ...mailToDraft(email, 'eml'), original: file } };
 	} catch {
 		return { ok: false, message: UNREADABLE_MESSAGE };
