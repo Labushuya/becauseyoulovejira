@@ -8,6 +8,7 @@
 	import type { TicketDetailStore } from '$lib/stores/ticket-detail.svelte';
 	import { inboxItemHref } from '$lib/ticket-links';
 	import ConfirmDialog from './overlay/ConfirmDialog.svelte';
+	import Drawer from './overlay/Drawer.svelte';
 	import DueInput from './DueInput.svelte';
 	import EditableTitle from './EditableTitle.svelte';
 	import ErrorIcon from './ErrorIcon.svelte';
@@ -18,12 +19,13 @@
 	import StatusSelect from './StatusSelect.svelte';
 	import TagPicker from './TagPicker.svelte';
 
-	// Detail panel (E2 plan, package 7; E3 plan, T-13 and T-14): header with key and "Schließen",
-	// title, status, priority, due date, project, tags and description editable in place, the
-	// remaining fields for display. Project and tags come from the catalog.
-	// Escape closes the panel unless a form field has the focus (fields handle Escape
-	// themselves). Comments and history (E2 plan, packages 9 and 10) come in through `activity`.
-	// "Löschen …" asks in a modal dialog before deleting for good (E2 plan, package 11).
+	// Detail panel (E2 plan, package 7; E3 plan, T-13 and T-14) on the side panel building block
+	// (ADR-0025 section 6): header with the key, "Löschen …" and ×; title, status, priority, due
+	// date, project, tags and description editable in place, the remaining fields for display.
+	// Project and tags come from the catalog. Escape closes the panel unless a form field has the
+	// focus (fields handle Escape themselves; the rule is the Drawer's). Comments and history (E2
+	// plan, packages 9 and 10) come in through `activity`. "Löschen …" asks in a modal dialog before
+	// deleting for good (E2 plan, package 11); the dialog returns the focus to it.
 	let {
 		store,
 		catalog,
@@ -63,7 +65,6 @@
 	let messageHeading = $state<HTMLElement>();
 	let descriptionButton = $state<HTMLButtonElement>();
 	let descriptionText = $state<HTMLTextAreaElement>();
-	let deleteButton = $state<HTMLButtonElement>();
 	let confirmingDelete = $state(false);
 	let deleting = $state(false);
 	let deleteError = $state<string | null>(null);
@@ -82,20 +83,6 @@
 		focusedFor = key;
 		target.focus();
 	});
-
-	function isFormField(target: EventTarget | null): boolean {
-		return (
-			target instanceof HTMLInputElement ||
-			target instanceof HTMLTextAreaElement ||
-			target instanceof HTMLSelectElement
-		);
-	}
-
-	function onkeydown(event: KeyboardEvent) {
-		if (event.key !== 'Escape' || event.defaultPrevented || isFormField(event.target)) return;
-		event.preventDefault();
-		onclose();
-	}
 
 	async function editDescription() {
 		store.edit('description');
@@ -118,11 +105,9 @@
 		confirmingDelete = true;
 	}
 
-	async function cancelDelete() {
+	function cancelDelete() {
 		confirmingDelete = false;
 		deleteError = null;
-		await tick();
-		deleteButton?.focus();
 	}
 
 	async function confirmDelete() {
@@ -166,33 +151,17 @@
 	{/if}
 {/snippet}
 
-<!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
-<aside class="side-panel" aria-labelledby={headingId} {onkeydown}>
-	<header class="bar">
+<Drawer labelledby={headingId} {onclose}>
+	{#snippet context()}
 		<span class="key">{ticket?.key ?? ''}</span>
+	{/snippet}
+	{#snippet actions()}
 		{#if store.state === 'ready' && ticket}
-			<button
-				class="close delete"
-				type="button"
-				aria-haspopup="dialog"
-				bind:this={deleteButton}
-				onclick={askDelete}
-			>
+			<button class="button-subtle" type="button" aria-haspopup="dialog" onclick={askDelete}>
 				Löschen …
 			</button>
 		{/if}
-		<button class="close" type="button" onclick={onclose}>
-			<svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true" focusable="false">
-				<path
-					d="M4 4l8 8M12 4l-8 8"
-					stroke="currentColor"
-					stroke-width="1.5"
-					stroke-linecap="round"
-				/>
-			</svg>
-			Schließen
-		</button>
-	</header>
+	{/snippet}
 
 	{#if store.state === 'not_found'}
 		<div class="message">
@@ -404,36 +373,13 @@
 	{:else}
 		<p class="loading" role="status">Ticket wird geladen …</p>
 	{/if}
-</aside>
+</Drawer>
 
 <style>
-	.bar {
-		display: flex;
-		gap: 0.75rem;
-		align-items: center;
-		justify-content: space-between;
-	}
-
 	.key {
 		font-family: var(--font-mono);
 		font-size: 0.8125rem;
 		color: var(--color-text-muted);
-	}
-
-	.delete {
-		margin-left: auto;
-	}
-
-	.close {
-		display: inline-flex;
-		gap: 0.375rem;
-		align-items: center;
-		padding: 0.25rem 0.625rem;
-		font-size: 0.8125rem;
-		background: none;
-		border: 1px solid var(--color-line);
-		border-radius: 0.375rem;
-		cursor: pointer;
 	}
 
 	.message {

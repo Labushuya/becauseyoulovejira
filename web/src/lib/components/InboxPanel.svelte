@@ -1,5 +1,4 @@
 <script lang="ts">
-	import type { ResolvedPathname } from '$app/types';
 	import { toDataError } from '$lib/data/errors';
 	import { formatBerlinDateTime } from '$lib/domain/format';
 	import {
@@ -17,26 +16,26 @@
 	import { convertHref, ticketPath } from '$lib/ticket-links';
 	import ErrorIcon from './ErrorIcon.svelte';
 	import Markdown from './Markdown.svelte';
+	import Drawer from './overlay/Drawer.svelte';
 
 	// Panel of one inbox entry (E4 plan, package 3; ADR-0019 section 5): title, the details of the
 	// source (kind, way, state, date at the sender, arrival, sender, place, chat, link), the text
 	// (sanitised Markdown, ADR-0008), the hint on a possible duplicate with "Dem Ticket zuordnen",
 	// the actions "Umwandeln", "Verwerfen", "Wiederherstellen" and "Originaldatei herunterladen",
 	// and for a discarded entry the note that its content goes after 30 days (package 24). Links of
-	// a source open only as http(s) (the hook refuses anything else). Escape closes the panel.
+	// a source open only as http(s) (the hook refuses anything else). On the side panel building
+	// block (ADR-0025 section 6): the actions stand in the fixed footer; × and Escape close.
 	let {
 		id,
 		store,
 		openTickets,
-		closeHref,
 		onclose
 	}: {
 		id: string;
 		store: InboxStore;
 		/** Open tickets, for the hint on possible duplicates. */
 		openTickets: readonly TicketSummary[];
-		/** Link back to the list with the chips of the URL. */
-		closeHref: ResolvedPathname;
+		/** × and Escape: back to the list with the chips of the URL. */
 		onclose: () => void;
 	} = $props();
 
@@ -128,20 +127,44 @@
 			downloading = false;
 		}
 	}
-
-	function onkeydown(event: KeyboardEvent) {
-		if (event.key !== 'Escape' || event.defaultPrevented) return;
-		event.preventDefault();
-		onclose();
-	}
 </script>
 
-<!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
-<aside class="side-panel" aria-labelledby={headingId} {onkeydown}>
-	<div class="bar">
-		<span class="bar-label">Eintrag im Eingang</span>
-		<a class="close" href={closeHref}>Schließen</a>
-	</div>
+{#snippet entryActions(entry: InboxItem)}
+	{#if entry.original !== ''}
+		<button
+			class="button-secondary"
+			type="button"
+			aria-busy={downloading ? 'true' : undefined}
+			onclick={() => download(entry)}>Originaldatei herunterladen</button
+		>
+	{/if}
+	{#if entry.state === 'new'}
+		<button
+			class="button-secondary"
+			type="button"
+			disabled={store.isPending(entry.id)}
+			onclick={() => run(() => store.discard(entry.id))}>Verwerfen</button
+		>
+		<a class="button-primary entry-action" href={convertHref(entry.id)}>Umwandeln</a>
+	{:else if entry.state === 'discarded'}
+		<button
+			class="button-secondary"
+			type="button"
+			disabled={store.isPending(entry.id)}
+			onclick={() => run(() => store.restore(entry.id))}>Wiederherstellen</button
+		>
+	{:else if entry.ticketId !== null}
+		<a class="button-secondary entry-action" href={ticketPath(entry.ticketId)}>Ticket ansehen</a>
+	{/if}
+{/snippet}
+
+<Drawer labelledby={headingId} closeFromFields {onclose}>
+	{#snippet context()}Eintrag im Eingang{/snippet}
+	{#snippet footer()}
+		{#if item !== null}
+			{@render entryActions(item)}
+		{/if}
+	{/snippet}
 
 	{#if loadState === 'not_found'}
 		<h2 id={headingId} tabindex="-1">Eintrag nicht gefunden</h2>
@@ -157,35 +180,6 @@
 		<div aria-live="polite">
 			{#if message}
 				<p class="alert-error"><ErrorIcon /><span>{message}</span></p>
-			{/if}
-		</div>
-
-		<div class="actions">
-			{#if item.state === 'new'}
-				<a class="button-primary" href={convertHref(item.id)}>Umwandeln</a>
-				<button
-					class="button-secondary"
-					type="button"
-					disabled={store.isPending(item.id)}
-					onclick={() => run(() => store.discard(item.id))}>Verwerfen</button
-				>
-			{:else if item.state === 'discarded'}
-				<button
-					class="button-secondary"
-					type="button"
-					disabled={store.isPending(item.id)}
-					onclick={() => run(() => store.restore(item.id))}>Wiederherstellen</button
-				>
-			{:else if item.ticketId !== null}
-				<a class="button-secondary" href={ticketPath(item.ticketId)}>Ticket ansehen</a>
-			{/if}
-			{#if item.original !== ''}
-				<button
-					class="button-secondary"
-					type="button"
-					aria-busy={downloading ? 'true' : undefined}
-					onclick={() => download(item)}>Originaldatei herunterladen</button
-				>
 			{/if}
 		</div>
 
@@ -248,46 +242,20 @@
 			{/if}
 		</section>
 	{/if}
-</aside>
+</Drawer>
 
 <style>
-	.bar {
-		display: flex;
-		align-items: center;
-		justify-content: space-between;
-		margin-bottom: 0.75rem;
-	}
-
-	.bar-label {
-		font-size: 0.8125rem;
-		color: var(--color-text-muted);
-	}
-
-	.close {
-		font-size: 0.8125rem;
-		color: var(--color-brand-text);
-	}
-
 	h2 {
-		margin-bottom: 0.75rem;
 		font-size: 1.125rem;
 		font-weight: 600;
 		overflow-wrap: anywhere;
 	}
 
-	.actions {
-		display: flex;
-		flex-wrap: wrap;
-		gap: 0.5rem;
-		margin-bottom: 1rem;
-	}
-
-	.actions a {
+	.entry-action {
 		text-decoration: none;
 	}
 
 	.duplicate {
-		margin-bottom: 1rem;
 		padding: 0.5rem 0.75rem;
 		font-size: 0.8125rem;
 		border: 1px solid var(--color-line);
@@ -309,7 +277,6 @@
 	.meta {
 		display: grid;
 		gap: 0.25rem;
-		margin-bottom: 0.5rem;
 		font-size: 0.8125rem;
 	}
 
@@ -338,7 +305,6 @@
 	}
 
 	.body {
-		margin-top: 1rem;
 		padding-top: 1rem;
 		border-top: 1px solid var(--color-line);
 	}

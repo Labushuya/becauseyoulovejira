@@ -22,6 +22,7 @@
 	import StatusSelect from './StatusSelect.svelte';
 	import TagPicker from './TagPicker.svelte';
 	import ConfirmDialog from './overlay/ConfirmDialog.svelte';
+	import Drawer from './overlay/Drawer.svelte';
 
 	// "Neues Ticket" in the side panel (E2 plan, T-8 and package 8; E3 plan, T-13 and T-14):
 	// title (required, focused), priority "Mittel", status "Offen", due date, project, tags and
@@ -64,6 +65,7 @@
 
 	const uid = $props.id();
 	const ids = {
+		form: `${uid}-form`,
 		heading: `${uid}-heading`,
 		title: `${uid}-title`,
 		titleHint: `${uid}-title-hint`,
@@ -203,19 +205,27 @@
 		if (event.key === 'Enter' && (event.ctrlKey || event.metaKey)) {
 			event.preventDefault();
 			void submit();
-		} else if (event.key === 'Escape' && !event.defaultPrevented) {
-			event.preventDefault();
-			cancel();
 		}
 	}
 </script>
 
-<!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
-<aside class="side-panel" aria-labelledby={ids.heading} {onkeydown}>
+<Drawer labelledby={ids.heading} closeFromFields onclose={cancel} {onkeydown}>
+	{#snippet context()}
+		{sourceLabel !== null ? `Aus dem Eingang (${sourceLabel})` : 'Aufgaben'}
+	{/snippet}
+	{#snippet footer()}
+		<button class="button-secondary" type="button" onclick={cancel}>Abbrechen</button>
+		<button
+			class="button-primary"
+			type="submit"
+			form={ids.form}
+			aria-disabled={missingTitle || pending ? 'true' : undefined}
+			aria-describedby={missingTitle ? ids.titleHint : undefined}
+		>
+			{pending ? 'Wird angelegt …' : 'Anlegen'}
+		</button>
+	{/snippet}
 	<h2 id={ids.heading}>Neues Ticket</h2>
-	{#if sourceLabel !== null}
-		<p class="hint">Aus dem Eingang ({sourceLabel})</p>
-	{/if}
 
 	<div aria-live="polite">
 		{#if message}
@@ -223,7 +233,7 @@
 		{/if}
 	</div>
 
-	<form class="form" novalidate onsubmit={submit}>
+	<form id={ids.form} class="form" novalidate onsubmit={submit}>
 		<div class="field">
 			<label for={ids.title}>Titel</label>
 			<input
@@ -348,23 +358,12 @@
 			</p>
 		{/if}
 
-		<div class="buttons">
-			<button
-				class="button-primary"
-				type="submit"
-				aria-disabled={missingTitle || pending ? 'true' : undefined}
-				aria-describedby={missingTitle ? ids.titleHint : undefined}
-			>
-				{pending ? 'Wird angelegt …' : 'Anlegen'}
-			</button>
-			<button class="button-secondary" type="button" onclick={cancel}>Abbrechen</button>
-		</div>
 		{#if missingTitle}
 			<p class="hint" id={ids.titleHint}>Zum Anlegen fehlt noch ein Titel.</p>
 		{/if}
 		<p class="hint">Tipp: Strg+Enter legt das Ticket an.</p>
 	</form>
-</aside>
+</Drawer>
 
 <ConfirmDialog
 	open={confirmingDiscard}
@@ -419,11 +418,6 @@
 
 	input[type='text'] {
 		width: 100%;
-	}
-
-	.buttons {
-		display: flex;
-		gap: 0.5rem;
 	}
 
 	.button-primary[aria-disabled='true'] {

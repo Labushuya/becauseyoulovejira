@@ -27,6 +27,7 @@
 	import PrioritySelect from './PrioritySelect.svelte';
 	import TagPicker from './TagPicker.svelte';
 	import ConfirmDialog from './overlay/ConfirmDialog.svelte';
+	import Drawer from './overlay/Drawer.svelte';
 
 	// Capture by template (E4 plan, package 5; OF-E4-1 (a)): a radio group of the fixed templates,
 	// the fields of the chosen one with required marks and field errors (ADR-0009), and the target
@@ -73,6 +74,7 @@
 	const fieldId = (field: CaptureField) => `${uid}-${field}`;
 	const errorId = (field: CaptureField) => `${uid}-${field}-error`;
 	const headingId = `${uid}-heading`;
+	const formId = `${uid}-form`;
 	const targetHintId = `${uid}-target-hint`;
 
 	const start: CaptureInput = untrack(() => ({ ...EMPTY_CAPTURE_INPUT, tagIds: [], ...initial }));
@@ -183,9 +185,6 @@
 		} else if (event.key === 'Enter' && (event.ctrlKey || event.metaKey)) {
 			event.preventDefault();
 			void save(effectiveTarget);
-		} else if (event.key === 'Escape' && !event.defaultPrevented) {
-			event.preventDefault();
-			close();
 		}
 	}
 
@@ -217,8 +216,23 @@
 	</label>
 {/snippet}
 
-<!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
-<aside class="side-panel" aria-labelledby={headingId} {onkeydown}>
+<Drawer labelledby={headingId} closeFromFields onclose={close} {onkeydown}>
+	{#snippet context()}Eingang{/snippet}
+	{#snippet footer()}
+		<button class="button-secondary" type="button" onclick={close}>Schließen</button>
+		<button
+			class="button-primary"
+			type="submit"
+			form={formId}
+			aria-disabled={pending ? 'true' : undefined}
+		>
+			{pending
+				? 'Wird gespeichert …'
+				: effectiveTarget === 'inbox'
+					? 'In den Eingang'
+					: 'Ticket anlegen'}
+		</button>
+	{/snippet}
 	<h2 id={headingId}>Erfassen</h2>
 	{#if hint}
 		<p class="hint" role="note">{hint}</p>
@@ -242,7 +256,13 @@
 		{/if}
 	</div>
 
-	<form class="form" novalidate onsubmit={(event) => save(effectiveTarget, event)} bind:this={form}>
+	<form
+		id={formId}
+		class="form"
+		novalidate
+		onsubmit={(event) => save(effectiveTarget, event)}
+		bind:this={form}
+	>
 		<fieldset class="templates">
 			<legend>Vorlage</legend>
 			{#each CAPTURE_TEMPLATES as option (option)}
@@ -398,19 +418,9 @@
 			<p class="hint">Web-Links kommen immer in den Eingang.</p>
 		{/if}
 
-		<div class="buttons">
-			<button class="button-primary" type="submit" aria-disabled={pending ? 'true' : undefined}>
-				{pending
-					? 'Wird gespeichert …'
-					: effectiveTarget === 'inbox'
-						? 'In den Eingang'
-						: 'Ticket anlegen'}
-			</button>
-			<button class="button-secondary" type="button" onclick={close}>Schließen</button>
-		</div>
 		<p class="hint" id={targetHintId}>Tipp: Strg+Enter speichert, Alt+Enter legt in den Eingang.</p>
 	</form>
-</aside>
+</Drawer>
 
 <ConfirmDialog
 	open={confirmingDiscard}
@@ -493,11 +503,6 @@
 	.field textarea {
 		width: 100%;
 		font: inherit;
-	}
-
-	.buttons {
-		display: flex;
-		gap: 0.5rem;
 	}
 
 	.button-primary[aria-disabled='true'] {

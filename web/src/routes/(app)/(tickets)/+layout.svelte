@@ -4,6 +4,7 @@
 	import FilterBar from '$lib/components/FilterBar.svelte';
 	import KpiTiles from '$lib/components/KpiTiles.svelte';
 	import TicketTable from '$lib/components/TicketTable.svelte';
+	import ViewWithPanel from '$lib/components/ViewWithPanel.svelte';
 	import { parseListQuery } from '$lib/domain/list-query';
 	import { getCatalogStore } from '$lib/stores/catalog.svelte';
 	import { getInboxStore } from '$lib/stores/inbox.svelte';
@@ -40,28 +41,16 @@
 	searchError={tickets.searchError}
 	onretrysearch={() => tickets.retrySearch()}
 />
-<div class="tickets" class:with-panel={withPanel}>
-	<TicketTable
-		store={tickets}
-		{catalog}
-		{activeId}
-		{creating}
-		inboxCount={inbox.newCount}
-		recurrenceTextOf={(ticket) => rules.textOf(ticket.recurrenceId)}
-	/>
+<ViewWithPanel {withPanel}>
+	{#snippet list()}
+		<TicketTable
+			store={tickets}
+			{catalog}
+			{activeId}
+			{creating}
+			inboxCount={inbox.newCount}
+			recurrenceTextOf={(ticket) => rules.textOf(ticket.recurrenceId)}
+		/>
+	{/snippet}
 	{@render children()}
-</div>
-
-<style>
-	.tickets {
-		display: grid;
-		gap: 1.5rem;
-		align-items: start;
-	}
-
-	@media (min-width: 48rem) {
-		.with-panel {
-			grid-template-columns: minmax(0, 1fr) 32rem;
-		}
-	}
-</style>
+</ViewWithPanel>

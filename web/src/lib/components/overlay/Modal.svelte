@@ -83,10 +83,16 @@
 		(initialFocus ?? first(body) ?? first(foot) ?? closeButton)?.focus();
 	}
 
+	/**
+	 * Back to the element that had the focus; if it is gone (a deleted row, a removed button), to
+	 * the heading of the view (SectionBar, data-view-heading), never to the body.
+	 */
 	function restoreFocus() {
 		const target = returnTarget;
 		returnTarget = null;
-		if (target?.isConnected) target.focus();
+		if (target === null) return;
+		if (target.isConnected) target.focus();
+		else document.querySelector<HTMLElement>('[data-view-heading]')?.focus();
 	}
 
 	$effect(() => {
