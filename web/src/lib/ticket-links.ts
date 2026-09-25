@@ -12,6 +12,7 @@ import {
 	serializeListQuery,
 	type ListQuery
 } from './domain/list-query';
+import { parseInboxQuery, serializeInboxQuery, type InboxQuery } from './domain/inbox-query';
 
 /** Query parameter of the switch "Erledigte anzeigen" (CLAUDE.md section 7). */
 export const SHOW_DONE_PARAM = LIST_PARAMS.showDone;
@@ -84,4 +85,49 @@ export function withListQuery(url: URL, query: ListQuery): ResolvedPathname {
 /** The current path with the switch "Erledigte anzeigen" set or removed; other parameters stay. */
 export function withShowDone(url: URL, show: boolean): ResolvedPathname {
 	return withListQuery(url, { ...parseListQuery(url.searchParams), showDone: show });
+}
+
+/** Query parameter of "Neues Ticket" with the inbox entry to convert (E4 plan, T-3). */
+export const CONVERT_PARAM = 'aus';
+
+/** Path of the inbox with the view state (chips) of `url`, or the plain inbox without `url`. */
+export function inboxHref(url?: URL): ResolvedPathname {
+	const query = url === undefined ? '' : serializeInboxQuery(parseInboxQuery(url.searchParams));
+	return `${resolve('/eingang')}${query}` as ResolvedPathname;
+}
+
+/** Path of an inbox entry in the panel, with the view state of `url`. */
+export function inboxItemHref(id: string, url?: URL): ResolvedPathname {
+	const query = url === undefined ? '' : serializeInboxQuery(parseInboxQuery(url.searchParams));
+	return `${resolve(`/eingang/${encodeURIComponent(id)}`)}${query}` as ResolvedPathname;
+}
+
+/** The current inbox path with the view state `query`; other parameters stay. */
+export function withInboxQuery(url: URL, query: InboxQuery): ResolvedPathname {
+	return `${url.pathname}${serializeInboxQuery(query, url.searchParams)}${url.hash}` as ResolvedPathname;
+}
+
+/** Form "Neues Ticket" filled from an inbox entry (T-5). */
+export function convertHref(id: string): ResolvedPathname {
+	const params = new URLSearchParams({ [CONVERT_PARAM]: id });
+	return `${resolve('/tickets/neu')}?${params.toString()}` as ResolvedPathname;
+}
+
+/** The inbox entry to convert (`?aus=`), null without one or for a value that is no record ID. */
+export function convertFrom(url: URL): string | null {
+	const values = url.searchParams.getAll(CONVERT_PARAM);
+	const id = values.length === 1 ? (values[0] ?? '') : '';
+	return /^[a-z0-9]{15}$/.test(id) ? id : null;
+}
+
+/** `url` without `?aus=`, so links after converting do not carry the entry along. */
+export function withoutConvert(url: URL): URL {
+	const next = new URL(url);
+	next.searchParams.delete(CONVERT_PARAM);
+	return next;
+}
+
+/** Path of the panel of a ticket without any list state (links from the inbox). */
+export function ticketPath(id: string): ResolvedPathname {
+	return resolve(`/tickets/${encodeURIComponent(id)}`);
 }

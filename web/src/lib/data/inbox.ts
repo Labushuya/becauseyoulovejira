@@ -9,6 +9,7 @@ import {
 	isInboxKind,
 	isInboxState,
 	type HandledState,
+	type InboxChannel,
 	type InboxDraft,
 	type InboxDuplicate,
 	type InboxItem,
@@ -141,16 +142,44 @@ export interface HandledItemPage {
 	hasMore: boolean;
 }
 
-/** One page of converted or discarded entries, most recently handled first. */
+/**
+ * Handled entries of one state, narrowed to the channels of a source family when `{:all}` is not
+ * "1" (ADR-0019 section 6). A family has at most MAX_FAMILY_CHANNELS channels; an unused
+ * parameter is '' and matches nothing, because every entry has a channel.
+ */
+const HANDLED_FILTER = [
+	'state = {:state}',
+	'({:all} = "1" || channel = {:c1} || channel = {:c2} || channel = {:c3})'
+].join(' && ');
+
+const MAX_FAMILY_CHANNELS = 3;
+
+/**
+ * One page of converted or discarded entries, most recently handled first; with `channels` only
+ * those of these channels (the chip "Quelle"), filtered by the server so the pages stay full.
+ */
 export function listHandledItems(
 	pb: PocketBase,
 	state: HandledState,
 	page: number,
-	{ signal, perPage = HANDLED_PAGE_SIZE }: RequestOptions & { perPage?: number } = {}
+	{
+		signal,
+		perPage = HANDLED_PAGE_SIZE,
+		channels = null
+	}: RequestOptions & { perPage?: number; channels?: readonly InboxChannel[] | null } = {}
 ): Promise<HandledItemPage> {
 	return withDataErrors(signal, async () => {
+		if (channels !== null && channels.length > MAX_FAMILY_CHANNELS) {
+			throw new RangeError('Too many channels for the filter');
+		}
 		const result = await pb.collection(INBOX).getList<InboxRecord>(page, perPage, {
-			filter: pb.filter('state = {:state}', { state }),
+			filter: pb.filter(HANDLED_FILTER, {
+				state,
+				all: channels === null ? '1' : '',
+				c1: channels?.[0] ?? '',
+				c2: channels?.[1] ?? '',
+				c3: channels?.[2] ?? ''
+			}),
 			sort: '-handled_at,-created,-id',
 			fields: INBOX_LIST_FIELDS,
 			signal
@@ -258,8 +287,8 @@ export function assignToTicket(
 }
 
 /**
- * Address of the protected original file with a fresh file token (valid for a few minutes), or
- * null if the entry has none. The token is asked for per download, so it never goes stale in
+ * Download address of the protected original file with a fresh file token (valid for a few
+ * minutes), or null if the entry has none. The token is asked for per download, so it never goes stale in
  * the page.
  */
 export function originalFileUrl(
@@ -270,6 +299,9 @@ export function originalFileUrl(
 	return withDataErrors(signal, async () => {
 		if (item.original === '') return null;
 		const token = await pb.files.getToken({ signal });
-		return pb.files.getURL({ id: item.id, collectionName: INBOX }, item.original, { token });
+		return pb.files.getURL({ id: item.id, collectionName: INBOX }, item.original, {
+			token,
+			download: true
+		});
 	});
 }
