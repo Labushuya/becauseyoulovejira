@@ -51,6 +51,7 @@ class FakeLive {
 		projects: (call) => this.#add({ kind: 'projects', call }),
 		tags: (call) => this.#add({ kind: 'tags', call }),
 		inbox: () => this.#never(),
+		reads: () => this.#never(),
 		reconnected: (call) => this.#add({ kind: 'reconnected', call })
 	};
 

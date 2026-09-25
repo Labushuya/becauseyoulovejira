@@ -38,6 +38,7 @@
 		openTickets,
 		activeId = null,
 		selected = $bindable([]),
+		projectsNewCount = 0,
 		onbulk
 	}: {
 		store: InboxStore;
@@ -47,6 +48,8 @@
 		activeId?: string | null;
 		/** IDs of the chosen new entries. */
 		selected?: string[];
+		/** New tickets in projects, for the switch (ADR-0015 section 5). */
+		projectsNewCount?: number;
 		/** "Gesammelt umwandeln" for the chosen entries. */
 		onbulk: () => void;
 	} = $props();
@@ -206,7 +209,7 @@
 		bind:heading
 	>
 		{#snippet start()}
-			<ViewSwitch current="inbox" inboxCount={store.newCount} />
+			<ViewSwitch current="inbox" inboxCount={store.newCount} {projectsNewCount} />
 		{/snippet}
 		{#snippet end()}
 			{#if showsNew}

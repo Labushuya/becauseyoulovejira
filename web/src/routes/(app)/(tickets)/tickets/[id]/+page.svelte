@@ -7,6 +7,7 @@
 	import { getCatalogStore } from '$lib/stores/catalog.svelte';
 	import { getTicketActivityStore } from '$lib/stores/ticket-activity.svelte';
 	import { getTicketDetailStore } from '$lib/stores/ticket-detail.svelte';
+	import { getTicketListStore } from '$lib/stores/ticket-list.svelte';
 	import { listHref } from '$lib/ticket-links';
 
 	// Detail panel of /tickets/<record id> (E2 plan, T-4); a reload opens the same panel.
@@ -16,6 +17,7 @@
 	const detail = getTicketDetailStore();
 	const comments = getTicketActivityStore();
 	const catalog = getCatalogStore();
+	const tickets = getTicketListStore();
 	const id = $derived(page.params.id ?? '');
 	const back = $derived(listHref(page.url));
 
@@ -25,6 +27,12 @@
 			detail.open(current);
 			comments.open(current);
 		});
+	});
+
+	// Opening a ticket in the panel marks it as read (ADR-0015 section 3), in every tab.
+	$effect(() => {
+		const ticket = detail.state === 'ready' ? detail.ticket : null;
+		if (ticket !== null) untrack(() => void tickets.markRead(ticket));
 	});
 
 	// Leaving the panel drops the ticket, its comments and all drafts.

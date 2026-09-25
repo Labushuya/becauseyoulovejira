@@ -6,6 +6,7 @@ import { randomBytes } from 'node:crypto';
 import PocketBase from 'pocketbase';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { startPocketBase } from '../support/pocketbase-harness.mjs';
+import { unreadSinceOf } from '../../web/src/lib/domain/unread.ts';
 
 // First migration of E4; the instance runs only the migrations before it.
 const E4_FIRST_MIGRATION = '1790201200_create_inbox_items.js';
@@ -39,6 +40,14 @@ afterAll(async () => {
 describe('E4 hooks on the schema before the E4 migrations', () => {
 	it('has no inbox yet', async () => {
 		await expect(client.collection('inbox_items').getList(1, 1)).rejects.toMatchObject({ status: 404 });
+	});
+
+	it('has no read rows and no base line yet, so the app marks nothing as new', async () => {
+		await expect(client.collection('ticket_reads').getList(1, 1)).rejects.toMatchObject({
+			status: 404
+		});
+		expect(client.authStore.record).not.toHaveProperty('unread_since');
+		expect(unreadSinceOf(client.authStore.record)).toBeNull();
 	});
 
 	it('creates, updates and deletes tickets; the new fields are ignored', async () => {

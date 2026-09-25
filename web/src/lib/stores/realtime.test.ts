@@ -13,7 +13,13 @@ import { EMPTY_LIST_QUERY } from '$lib/domain/list-query';
 import type { Project } from '$lib/domain/project';
 import type { Tag } from '$lib/domain/tag';
 import type { Comment, HistoryEntry, Ticket, TicketSummary } from '$lib/domain/ticket';
-import { hold, type LiveSource, type RecordChange, type Unsubscribe } from './realtime';
+import {
+	hold,
+	type LiveSource,
+	type ReadChange,
+	type RecordChange,
+	type Unsubscribe
+} from './realtime';
 import { TicketActivityStore, type TicketActivityData } from './ticket-activity.svelte';
 import {
 	TicketDetailStore,
@@ -23,7 +29,15 @@ import {
 import { TicketListStore, type TicketListData } from './ticket-list.svelte';
 
 type Kind =
-	'tickets' | 'ticket' | 'comments' | 'history' | 'projects' | 'tags' | 'inbox' | 'reconnected';
+	| 'tickets'
+	| 'ticket'
+	| 'comments'
+	| 'history'
+	| 'projects'
+	| 'tags'
+	| 'inbox'
+	| 'reads'
+	| 'reconnected';
 
 /** Realtime source for tests: records subscriptions and delivers events on demand. */
 class FakeLive implements LiveSource {
@@ -55,6 +69,10 @@ class FakeLive implements LiveSource {
 
 	inbox(onChange: (change: RecordChange<InboxItemSummary>) => void) {
 		return this.#add('inbox', '*', onChange);
+	}
+
+	reads(onChange: (change: ReadChange) => void) {
+		return this.#add('reads', '*', onChange);
 	}
 
 	reconnected(callback: () => void) {

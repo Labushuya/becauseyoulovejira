@@ -18,6 +18,7 @@
 	} from '$lib/stores/ticket-detail.svelte';
 	import {
 		TicketListStore,
+		readsData,
 		setTicketListStore,
 		ticketListData
 	} from '$lib/stores/ticket-list.svelte';
@@ -29,10 +30,12 @@
 	// Stores live per layout instance (ADR-0006 section 1): a logout removes the layout and with
 	// it every loaded ticket, project and tag.
 	const catalog = setCatalogStore(new CatalogStore(catalogData(pb), auth));
-	// The column sort "Projekt" resolves projects through the catalog (E3 plan, package 9).
+	// The column sort "Projekt" resolves projects through the catalog (E3 plan, package 9); the
+	// "new" mark follows the own read rows and base line (E4 plan, package 4).
 	const tickets = setTicketListStore(
 		new TicketListStore(ticketListData(pb), auth, {
-			projectOf: (ticket) => catalog.projectOf(ticket)
+			projectOf: (ticket) => catalog.projectOf(ticket),
+			reads: readsData(pb)
 		})
 	);
 	const detail = setTicketDetailStore(new TicketDetailStore(ticketDetailData(pb), auth, tickets));

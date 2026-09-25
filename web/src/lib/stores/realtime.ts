@@ -10,18 +10,21 @@ import {
 	subscribeHistory,
 	subscribeInboxItems,
 	subscribeProjects,
+	subscribeReads,
 	subscribeTags,
 	subscribeTicket,
 	subscribeTickets,
+	type ReadChange,
 	type RecordChange,
 	type Unsubscribe
 } from '$lib/data/realtime';
+import { currentUserId } from '$lib/data/options';
 import type { InboxItemSummary } from '$lib/domain/inbox';
 import type { Project } from '$lib/domain/project';
 import type { Tag } from '$lib/domain/tag';
 import type { Comment, HistoryEntry, Ticket, TicketSummary } from '$lib/domain/ticket';
 
-export type { RecordChange, Unsubscribe };
+export type { ReadChange, RecordChange, Unsubscribe };
 
 export interface LiveSource {
 	/** All visible tickets (list fields). */
@@ -42,6 +45,8 @@ export interface LiveSource {
 	tags(onChange: (change: RecordChange<Tag>) => void): Promise<Unsubscribe>;
 	/** All visible inbox entries (E4 plan, T-4). */
 	inbox(onChange: (change: RecordChange<InboxItemSummary>) => void): Promise<Unsubscribe>;
+	/** Own read rows and the own base line of the "new" mark (ADR-0015 section 6). */
+	reads(onChange: (change: ReadChange) => void): Promise<Unsubscribe>;
 	/** Called after a new connection that follows an interrupted one. */
 	reconnected(callback: () => void): Promise<Unsubscribe>;
 }
@@ -55,6 +60,11 @@ export function liveSource(pb: PocketBase): LiveSource {
 		projects: (onChange) => subscribeProjects(pb, onChange),
 		tags: (onChange) => subscribeTags(pb, onChange),
 		inbox: (onChange) => subscribeInboxItems(pb, onChange),
+		reads: (onChange) => {
+			const userId = currentUserId(pb.authStore.record);
+			if (userId === null) return Promise.reject(new Error('No signed-in user'));
+			return subscribeReads(pb, userId, onChange);
+		},
 		reconnected: (callback) => onReconnect(pb, callback)
 	};
 }

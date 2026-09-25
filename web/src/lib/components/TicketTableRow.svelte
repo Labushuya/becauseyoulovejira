@@ -23,6 +23,7 @@
 		pending,
 		lingering,
 		active = false,
+		isNew = false,
 		ontoggle,
 		onundo
 	}: {
@@ -39,6 +40,8 @@
 		lingering: boolean;
 		/** The detail panel shows this ticket. */
 		active?: boolean;
+		/** New for the signed-in user (ADR-0015): a dot before the key, "neu" for screen readers. */
+		isNew?: boolean;
 		ontoggle: (done: boolean) => void;
 		onundo: () => void;
 	} = $props();
@@ -61,7 +64,10 @@
 
 <!-- The title link is the keyboard target of the row; the click on the row is a mouse shortcut. -->
 <tr class="row" class:done class:lingering class:active data-ticket-id={ticket.id} {onclick}>
-	<td class="key">{ticket.key}</td>
+	<td class="key">
+		{#if isNew}<span class="new-dot" title="Neu"><span class="visually-hidden">neu,</span></span
+			>{/if}{ticket.key}
+	</td>
 	<td class="priority"><PriorityIcon priority={ticket.priority} /></td>
 	<td class="status"><StatusPill status={ticket.status} /></td>
 	<th class="title" scope="row">
@@ -171,6 +177,17 @@
 
 	.priority {
 		text-align: center;
+	}
+
+	/* "Neu" (ADR-0015 section 5): a dot with a text for screen readers and a title, not only colour. */
+	.new-dot {
+		display: inline-block;
+		width: 0.5rem;
+		height: 0.5rem;
+		margin-right: 0.375rem;
+		vertical-align: middle;
+		background: var(--color-brand);
+		border-radius: 50%;
 	}
 
 	.title {

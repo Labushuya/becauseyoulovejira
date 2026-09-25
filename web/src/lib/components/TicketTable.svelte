@@ -217,6 +217,7 @@
 			pending={store.isPending(ticket.id)}
 			lingering={store.isLingering(ticket.id)}
 			active={ticket.id === activeId}
+			isNew={store.isNew(ticket)}
 			ontoggle={(done) => store.setDone(ticket.id, done)}
 			onundo={() => store.undo(ticket.id)}
 		/>
@@ -276,9 +277,16 @@
 		bind:heading
 	>
 		{#snippet start()}
-			<ViewSwitch current="tasks" {inboxCount} />
+			<ViewSwitch current="tasks" {inboxCount} projectsNewCount={store.newInProjects} />
 		{/snippet}
 		{#snippet end()}
+			{#if store.newCount > 0}
+				<button class="text-button mark-read" type="button" onclick={() => store.markAllRead()}>
+					Alle als gelesen markieren<span class="visually-hidden"
+						>, {store.newCount === 1 ? '1 neues Ticket' : `${store.newCount} neue Tickets`}</span
+					>
+				</button>
+			{/if}
 			<label class="switch" class:locked={switchHint !== null}>
 				<input
 					type="checkbox"
@@ -432,6 +440,10 @@
 <style>
 	.ticket-table {
 		min-width: 0;
+	}
+
+	.mark-read {
+		color: var(--color-brand-text);
 	}
 
 	.switch {

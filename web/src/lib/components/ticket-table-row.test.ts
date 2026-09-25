@@ -266,3 +266,20 @@ describe('ticket table row', () => {
 		expect(screen.queryByRole('button', { name: /Rückgängig/ })).toBeNull();
 	});
 });
+
+describe('ticket table row: new (E4 plan, package 4)', () => {
+	it('shows a dot with "neu" for screen readers and the title "Neu" before the key', () => {
+		const { row } = renderRow({ key: 'HAUS-4' }, { isNew: true });
+		const key = cell(row, 'key');
+		const dot = key.querySelector('.new-dot');
+		expect(dot?.getAttribute('title')).toBe('Neu');
+		expect(dot?.textContent).toBe('neu,');
+		expect(key.textContent?.replace(/\s+/g, ' ').trim()).toBe('neu,HAUS-4');
+	});
+
+	it('shows no dot for a ticket that is not new', () => {
+		const { row } = renderRow({ key: 'HAUS-4' });
+		expect(cell(row, 'key').querySelector('.new-dot')).toBeNull();
+		expect(cell(row, 'key').textContent?.trim()).toBe('HAUS-4');
+	});
+});

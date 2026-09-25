@@ -144,7 +144,7 @@
 		bind:heading
 	>
 		{#snippet start()}
-			<ViewSwitch current="projects" {inboxCount} />
+			<ViewSwitch current="projects" {inboxCount} projectsNewCount={tickets.newInProjects} />
 		{/snippet}
 		{#snippet end()}
 			<label class="switch">
@@ -174,6 +174,7 @@
 				projects={shown}
 				{activeOf}
 				{totalOf}
+				newOf={(project) => tickets.newInProject(project.id)}
 				onedit={(project, trigger) => openDialog(project, trigger)}
 			/>
 		{:else if catalog.projects.length === 0}

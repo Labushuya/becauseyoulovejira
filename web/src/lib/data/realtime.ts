@@ -12,6 +12,7 @@ import { COMMENT_FIELDS, toComment, type CommentRecord } from './comments';
 import { HISTORY_FIELDS, toHistoryEntry, type HistoryRecord } from './history';
 import { INBOX_LIST_FIELDS, toInboxItemSummary, type InboxRecord } from './inbox';
 import { PROJECT_FIELDS, toProject, type ProjectRecord } from './projects';
+import { READ_FIELDS, toTicketRead, type TicketRead } from './reads';
 import { TAG_FIELDS, toTag, type TagRecord } from './tags';
 import {
 	TICKET_DETAIL_FIELDS,
@@ -152,4 +153,50 @@ export function onReconnect(pb: PocketBase, callback: () => void): Promise<Unsub
 		if (known !== '' && clientId !== known) callback();
 		known = clientId;
 	});
+}
+
+/** Change of the "new" mark: an own read row, or a new base line of the user (ADR-0015). */
+export type ReadChange =
+	| { action: 'create' | 'update'; read: TicketRead }
+	| { action: 'delete'; id: string }
+	| { action: 'baseline'; unreadSince: string };
+
+/**
+ * Own read rows and the own base line (`users.unread_since`), so a ticket opened or "Alle als
+ * gelesen markieren" in another tab shows here as well (ADR-0015 section 6). The rules deliver
+ * only the own rows and the own user record.
+ */
+export async function subscribeReads(
+	pb: PocketBase,
+	userId: string,
+	onChange: (change: ReadChange) => void
+): Promise<Unsubscribe> {
+	const reads = await pb.collection('ticket_reads').subscribe<{ id: string; ticket: string }>(
+		'*',
+		(event) => {
+			if (event.action === 'delete') onChange({ action: 'delete', id: event.record.id });
+			else if (event.action === 'create' || event.action === 'update') {
+				onChange({ action: event.action, read: toTicketRead(event.record) });
+			}
+		},
+		{ fields: READ_FIELDS }
+	);
+	try {
+		const user = await pb.collection('users').subscribe<{ id: string; unread_since?: unknown }>(
+			userId,
+			(event) => {
+				const value = event.record.unread_since;
+				if (event.action === 'update' && typeof value === 'string' && value !== '') {
+					onChange({ action: 'baseline', unreadSince: value });
+				}
+			},
+			{ fields: 'id,unread_since' }
+		);
+		return async () => {
+			await Promise.all([reads(), user()]);
+		};
+	} catch (error) {
+		await reads();
+		throw error;
+	}
 }

@@ -94,3 +94,20 @@ describe('project tiles', () => {
 		expect(source).not.toMatch(/danger|box-shadow|gradient|backdrop-filter/);
 	});
 });
+
+describe('project tiles: new (E4 plan, package 4)', () => {
+	it('adds "N neu" as text when a project has new tickets', () => {
+		const onedit = vi.fn();
+		render(ProjectTiles, {
+			props: {
+				projects: [HOUSE, OLD],
+				activeOf: () => 1,
+				totalOf: () => 2,
+				newOf: (project: Project) => (project.id === HOUSE.id ? 2 : 0),
+				onedit
+			}
+		});
+		expect(tileOf(HOUSE.name).textContent?.replace(/\s+/g, ' ')).toContain('2 neu');
+		expect(tileOf(OLD.name).textContent).not.toContain('neu');
+	});
+});
