@@ -35,10 +35,10 @@ import {
 } from '$lib/domain/mailbox';
 import { SILENT_FLAGS, type FlagSink, type FlagTone } from './flags.svelte';
 import type { LoadState, SessionGuard } from './ticket-list.svelte';
+import { restartNeeded } from '$lib/guidance/texts';
 
-/** Shown while the server does not know the connections yet (migration at the next start). */
-export const CONNECTIONS_UNAVAILABLE_MESSAGE =
-	'Die Verbindungen stehen nach dem nächsten Start der App bereit (start.bat).';
+/** Shown while the server does not know the connections yet (migration after a restart). */
+export const CONNECTIONS_UNAVAILABLE_MESSAGE = restartNeeded('Die Verbindungen sind');
 
 export interface ConnectionsData {
 	list(options: RequestOptions): Promise<Connection[]>;

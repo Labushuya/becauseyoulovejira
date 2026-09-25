@@ -14,10 +14,12 @@ import {
 } from '$lib/domain/keywords';
 import { SILENT_FLAGS, type FlagSink } from './flags.svelte';
 import type { SessionGuard } from './ticket-list.svelte';
+import { restartNeeded } from '$lib/guidance/texts';
 
-/** Shown while the server does not know the lists yet (migration at the next start). */
-export const IMPORT_KEYWORDS_UNAVAILABLE_MESSAGE =
-	'Die Stichwörter für Datei-Importe stehen nach dem nächsten Start der App bereit (stop.bat, dann start.bat).';
+/** Shown while the server does not know the lists yet (migration after a restart). */
+export const IMPORT_KEYWORDS_UNAVAILABLE_MESSAGE = restartNeeded(
+	'Die Stichwörter für Datei-Importe sind'
+);
 
 export interface ImportKeywordsData {
 	load(options: RequestOptions): Promise<ImportKeywords | null>;

@@ -5,11 +5,10 @@
 		IMPORT_SEARCH_TEXT,
 		type ImportKind
 	} from '$lib/domain/keywords';
-	import {
-		IMPORT_KEYWORDS_UNAVAILABLE_MESSAGE,
-		type ImportKeywordsStore
-	} from '$lib/stores/import-keywords.svelte';
+	import { RESTART_NEEDED } from '$lib/guidance/texts';
+	import type { ImportKeywordsStore } from '$lib/stores/import-keywords.svelte';
 	import ErrorIcon from './ErrorIcon.svelte';
+	import SectionMessage from './guidance/SectionMessage.svelte';
 	import KeywordEditor from './KeywordEditor.svelte';
 
 	// Keywords of the file imports (E4 plan, package 21; ADR-0020): one list per kind of file. They
@@ -46,14 +45,18 @@
 	{#if store.state === 'loading'}
 		<p class="hint" role="status">Stichwörter werden geladen …</p>
 	{:else if store.state === 'unavailable'}
-		<p class="hint" role="status">{IMPORT_KEYWORDS_UNAVAILABLE_MESSAGE}</p>
+		<SectionMessage tone="info" title={RESTART_NEEDED.title} live headingLevel={4}>
+			{RESTART_NEEDED.text}
+		</SectionMessage>
 	{:else if store.state === 'error'}
-		<div class="alert-error" role="alert">
-			<ErrorIcon /><span>{store.error}</span>
-			<button class="button-secondary" type="button" onclick={() => void store.load()}>
-				Erneut versuchen
-			</button>
-		</div>
+		<SectionMessage tone="error" live>
+			{store.error}
+			{#snippet actions()}
+				<button class="button-secondary" type="button" onclick={() => void store.load()}>
+					Erneut versuchen
+				</button>
+			{/snippet}
+		</SectionMessage>
 	{:else if store.state === 'ready'}
 		<ul class="kinds">
 			{#each IMPORT_KINDS as kind (kind)}

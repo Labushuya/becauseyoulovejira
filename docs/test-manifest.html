@@ -138,7 +138,7 @@
 <div class="wrap">
   <header class="top">
     <h1>becauseyoulovejira — Test-Manifest</h1>
-    <p class="subtitle" id="stand">Etappen E1, E1.1, E2, E3, E4, E5 (in Arbeit) und E6 UI-Konsistenz (umgesetzt, manuelle Prüfungen offen) sowie Einstellungen und Hilfe (in Arbeit) · automatisierte Tests bereichsweise zusammengefasst · manuelle Prüfpunkte aus den Plänen an einem Ort</p>
+    <p class="subtitle" id="stand">Etappen E1, E1.1, E2, E3, E4, E5 (in Arbeit) und E6 UI-Konsistenz (umgesetzt, manuelle Prüfungen offen) sowie Einstellungen und Hilfe (in Arbeit, EH-0 bis EH-2) · automatisierte Tests bereichsweise zusammengefasst · manuelle Prüfpunkte aus den Plänen an einem Ort</p>
 
     <div class="pre">
       <h2>Voraussetzung für die manuellen Prüfungen (kein Testschritt)</h2>
@@ -213,8 +213,8 @@
   "meta": {
     "projekt": "becauseyoulovejira",
     "stand": "2026-09-26",
-    "commit": "a88d5b3",
-    "etappe": "E0 bis E4 abgeschlossen (E4: Pakete 1 bis 11, 13 bis 17, 19 bis 24; Paket 12 entfällt, Paket 18 zurückgestellt); E5 in Arbeit (Pakete 1 bis 4: BYL-E5-001 bis BYL-E5-005); E6 UI-Konsistenz vorgezogen und umgesetzt (UI-0 bis UI-9 und UI-6b: BYL-E6-001 bis BYL-E6-028); E6 Einstellungen und Hilfe in Arbeit (EH-0 und EH-1 umgesetzt; geplant bis BYL-E6-059)"
+    "commit": "69658b3",
+    "etappe": "E0 bis E4 abgeschlossen (E4: Pakete 1 bis 11, 13 bis 17, 19 bis 24; Paket 12 entfällt, Paket 18 zurückgestellt); E5 in Arbeit (Pakete 1 bis 4: BYL-E5-001 bis BYL-E5-005); E6 UI-Konsistenz vorgezogen und umgesetzt (UI-0 bis UI-9 und UI-6b: BYL-E6-001 bis BYL-E6-028); E6 Einstellungen und Hilfe in Arbeit (EH-0 bis EH-2 umgesetzt; geplant bis BYL-E6-059)"
   },
   "blocks": [
     {
@@ -1491,18 +1491,18 @@
           "pre": "Plan Einstellungen, Paket EH-1. Build von main in app\\, F5, Chrome, Firefox und Opera GX, hell und dunkel.", "steps": ["Aufgaben mit Filter und offenem Ticket, dann das Zahnrad: Einstellungen bei 1280 px mit gleicher Seitenbreite und gleichen Rändern wie „Aufgaben“, Navigation links, nichts nach links gedrückt; Zahnrad hervorgehoben.", "„← Zurück zu ‹Key›“: die Liste erscheint mit denselben Filtern und dem offenen Panel.", "Zwischen „Kanäle“ und „Datei-Importe“ wechseln: die Überschrift bekommt den Fokus, der Tab-Titel lautet „‹Seite› · Einstellungen · becauseyoulovejira“.", "Unter 64rem: Seiten als Zeile über dem Inhalt, Zurück-Link davor; lange Seite scrollen: ab 64rem bleibt die Navigation unter der festen Kopfzeile.", "App-Name anklicken: „Aufgaben“; Fokus auf Zahnrad und App-Name sichtbar."],
           "expect": "Der Bereich sieht aus wie die übrigen Ansichten, der Rückweg stellt die Ansicht wieder her, und schmal bleibt alles bedienbar.",
           "tests": [] },
-        { "id": "BYL-E6-032", "title": "Section Message: Töne und Ansage", "art": ["komponente"], "status": "geplant",
-          "pre": "Plan Einstellungen, Paket EH-2; ADR-0026 §2.", "steps": ["Vier Töne mit Icon und verstecktem Präfix; compact ohne Fläche und Titel.", "live setzt role=status bzw. bei Fehlern alert; ohne live keine Rolle.", "Rot nur beim Ton error."],
-          "expect": "Hinweise sehen überall gleich aus und werden nur angesagt, wenn sie neu erscheinen.",
-          "tests": [] },
-        { "id": "BYL-E6-033", "title": "Empty State und Lozenge", "art": ["komponente"], "status": "geplant",
-          "pre": "Plan Einstellungen, Paket EH-2.", "steps": ["EmptyState mit Überschriftenebene, Größen wide, narrow, compact und höchstens einem Primärknopf.", "Lozenge nicht interaktiv, mit Icon, Töne neutral, brand, danger, muted."],
-          "expect": "Leere Zustände und Status-Etiketten sind einheitlich.",
-          "tests": [] },
-        { "id": "BYL-E6-034", "title": "Einheitlicher Neustart-Hinweis", "art": ["unit"], "status": "geplant",
-          "pre": "Plan Einstellungen, Paket EH-2.", "steps": ["Ein Text RESTART_NEEDED mit „stop.bat, dann start.bat“ in lib/guidance/texts.ts.", "Die Stores nutzen ihn; kein Migrationshinweis nennt nur „(start.bat)“."],
-          "expect": "Nach einem Update steht überall derselbe, richtige Neustart-Hinweis.",
-          "tests": [] },
+        { "id": "BYL-E6-032", "title": "Section Message: Töne und Ansage", "art": ["komponente", "unit"], "status": "bestanden",
+          "pre": "Plan Einstellungen, Paket EH-2; ADR-0026 §2. Baustein einzeln sowie in ConnectionsSection und ImportKeywordsSection mit Fake-Stores.", "steps": ["npm run test:web"],
+          "expect": "SectionMessage zeigt die Töne info, success, warning und error mit eigenem Icon (aria-hidden) und verstecktem Präfix („Hinweis:“, „Erledigt:“, „Achtung:“, „Fehler:“); ein Titel wird eine Überschrift der gewählten Ebene mit dem Präfix; compact ohne Fläche und Titel mit 14-px-Icon; Aktionen stehen darunter. Ohne live keine Rolle, mit live status bzw. bei Fehlern alert. Statisch: Fehlertokens nur im Ton error, kein Gelb. Die Seite „Kanäle“ zeigt die Migration als Info mit Titel „Nach dem nächsten Neustart verfügbar“, einen gescheiterten Ladevorgang als Fehler mit „Erneut versuchen“; ebenso die Seite „Datei-Importe“.",
+          "tests": ["web/src/lib/components/guidance/section-message.test.ts", "web/src/lib/components/connections-page.test.ts::shows the hint before the migration neutrally", "web/src/lib/components/connections-page.test.ts::shows a failed load as an error message", "web/src/lib/components/import-keywords-section.test.ts::explains the next start before the migration"] },
+        { "id": "BYL-E6-033", "title": "Empty State und Lozenge", "art": ["komponente", "unit"], "status": "bestanden",
+          "pre": "Plan Einstellungen, Paket EH-2; ADR-0026 §2.", "steps": ["npm run test:web"],
+          "expect": "EmptyState zeigt Überschrift der gewählten Ebene, Beschreibung, höchstens einen Primärknopf (ein Snippet primary) und weitere Aktionen; wide und narrow zentriert mit 48-px-Linien-Icon, compact linksbündig ohne Icon. Lozenge ist nicht interaktiv, zeigt Icon (aria-hidden) und Text in den Tönen neutral, brand, danger und muted und kann per id beschreiben. Ohne Verbindung zeigt „Kanäle“ den leeren Zustand „Noch kein Kanal verbunden“ mit „Kanal hinzufügen“ (Fokus ins Formular „Neue Verbindung“, bis der Katalog mit EH-3 kommt). „Demnächst“ am Bereichs-Umschalter ist eine Lozenge (muted, Uhr) im Knopf „Haushalt“.",
+          "tests": ["web/src/lib/components/guidance/empty-state.test.ts", "web/src/lib/components/connections-page.test.ts::shows an empty state that leads to the form", "web/src/lib/components/area-switch.test.ts::shows \"Demnächst\" as a lozenge inside \"Haushalt\""] },
+        { "id": "BYL-E6-034", "title": "Einheitlicher Neustart-Hinweis", "art": ["unit"], "status": "bestanden",
+          "pre": "Plan Einstellungen, Paket EH-2; ADR-0026 §2.", "steps": ["npm run test:web"],
+          "expect": "RESTART_NEEDED in lib/guidance/texts.ts (Titel „Nach dem nächsten Neustart verfügbar“, Text mit „stop.bat, dann start.bat im Ordner app“) und restartNeeded(Bereich) für einen Satz. Die Stores der Verbindungen, der Stichwörter für Datei-Importe, des Eingangs, der Wiederholungen und der Datei-Import nutzen ihn; der Datei-Dialog nennt denselben Satz. Statisch: Kein Quelltext nennt einen Neustart mit start.bat ohne stop.bat, keiner sagt mehr „(start.bat)“ zu einer Migration. Meldungen, dass der Server nicht läuft, bleiben.",
+          "tests": ["web/src/lib/guidance/texts.test.ts", "web/src/lib/components/file-import-dialog.test.ts::explains that keywords come with the next start", "web/src/lib/components/inbox-table.test.ts::explains a missing inbox before the restart", "web/src/lib/components/recurrence-summary.test.ts::says neutrally that recurrences come with the next start", "web/src/lib/stores/mail-import.test.ts"] },
         { "id": "BYL-E6-035", "title": "Kanal-Status als Lozenge", "art": ["unit", "komponente"], "status": "geplant",
           "pre": "Plan Einstellungen, Paket EH-3; ADR-0026 §3.", "steps": ["channelHealth: Wird abgerufen, Pausiert, Nicht eingerichtet, Fehler, Eingerichtet in dieser Reihenfolge; unbekannter Status der Variablen ohne „Nicht eingerichtet“.", "Karte zeigt die Lozenge mit Icon und Text."],
           "expect": "Ob ein Kanal funktioniert, steht auf einen Blick an der Karte.",

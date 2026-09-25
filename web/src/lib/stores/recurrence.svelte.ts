@@ -31,10 +31,10 @@ import type { Ticket } from '$lib/domain/ticket';
 import type { EditResult } from './catalog-editor';
 import { hold, type RecordChange, type Unsubscribe } from './realtime';
 import type { LoadState, SessionGuard } from './ticket-list.svelte';
+import { restartNeeded } from '$lib/guidance/texts';
 
 /** Shown instead of the rules until the app was started with the E5 migrations. */
-export const RECURRENCE_UNAVAILABLE =
-	'Wiederholungen stehen nach dem nächsten Start der App bereit (stop.bat, dann start.bat).';
+export const RECURRENCE_UNAVAILABLE = restartNeeded('Wiederholungen sind');
 
 export type RecurrenceState = LoadState | 'unavailable';
 

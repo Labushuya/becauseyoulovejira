@@ -277,8 +277,36 @@ describe('connections section', () => {
 		data.list.mockRejectedValueOnce(new DataError('not_found', { status: 404 }));
 		await store.load();
 		render(ConnectionsSection, { props: { store } });
-		expect(screen.getByRole('status').textContent).toBe(CONNECTIONS_UNAVAILABLE_MESSAGE);
+		// Since EH-2 a section message with title (RESTART_NEEDED), announced as status.
+		const status = screen.getByRole('status');
+		expect(status.textContent).toMatch(/Hinweis:\s*Nach dem nächsten Neustart verfügbar/);
+		expect(status.textContent).toMatch(/stop\.bat, dann start\.bat im Ordner app/);
+		expect(status.getAttribute('data-tone')).toBe('info');
 		expect(screen.queryByRole('alert')).toBeNull();
+	});
+
+	it('shows an empty state that leads to the form "Neue Verbindung" (EH-2)', async () => {
+		const { store } = setup([]);
+		await store.load();
+		render(ConnectionsSection, { props: { store } });
+
+		expect(screen.getByRole('heading', { name: 'Noch kein Kanal verbunden' })).toBeTruthy();
+		expect(screen.getByText(/Die Einrichtung dauert etwa fünf Minuten/)).toBeTruthy();
+		await fireEvent.click(screen.getByRole('button', { name: 'Kanal hinzufügen' }));
+		expect(document.activeElement).toBe(screen.getByLabelText('Art'));
+	});
+
+	it('shows a failed load as an error message with "Erneut versuchen" (EH-2)', async () => {
+		const { store, data } = setup();
+		data.list.mockRejectedValueOnce(new DataError('network'));
+		await store.load();
+		render(ConnectionsSection, { props: { store } });
+
+		const alert = screen.getByRole('alert');
+		expect(alert.getAttribute('data-tone')).toBe('error');
+		expect(alert.textContent).toMatch(/^\s*Fehler:/);
+		await fireEvent.click(within(alert).getByRole('button', { name: 'Erneut versuchen' }));
+		await vi.waitFor(() => expect(screen.getAllByRole('listitem').length).toBeGreaterThan(0));
 	});
 });
 

@@ -273,7 +273,7 @@ describe('inbox table', () => {
 		store.reset();
 		await store.load();
 		store.activate({ source: null, state: 'new' });
-		const note = await screen.findByText(/Der Eingang steht nach dem nächsten Start/);
+		const note = await screen.findByText(/Der Eingang ist nach dem nächsten Neustart verfügbar/);
 		expect(note.closest('.alert-error')).toBeNull();
 	});
 

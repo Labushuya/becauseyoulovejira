@@ -116,7 +116,11 @@ describe('ImportKeywordsSection', () => {
 		const { store } = setup(null);
 		await store.load();
 		render(ImportKeywordsSection, { props: { store } });
-		expect(screen.getByText(IMPORT_KEYWORDS_UNAVAILABLE_MESSAGE)).toBeTruthy();
+		// Since EH-2 a section message with the one restart text.
+		const status = screen.getByRole('status');
+		expect(status.textContent).toMatch(/Nach dem nächsten Neustart verfügbar/);
+		expect(status.textContent).toMatch(/stop\.bat, dann start\.bat/);
+		expect(IMPORT_KEYWORDS_UNAVAILABLE_MESSAGE).toMatch(/stop\.bat, dann start\.bat/);
 		expect(screen.queryByRole('group', { name: 'Stichwörter' })).toBeNull();
 	});
 });
