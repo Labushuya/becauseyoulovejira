@@ -167,7 +167,7 @@ Erledigte Tickets treten in der Liste optisch zurück. Schriften: Inter für die
 - **Stufe 2 (nur auf ausdrückliche Anweisung; Datenmodell bereits vorbereitet):** Sub-Tickets inkl. Fortschritt und Schalter „blockiert Eltern-Ticket", Abhängigkeiten mit Entsperr-Automation, Board-Ansicht, Browser-Benachrichtigungen bei offenem Tab, Anhänge.
 - **Haushalts-UI:** Etappe E7 zusammen mit Mehrgeräten, Start nach ausdrücklicher Freigabe; bis dahin nur der ausgegraute Umschalter.
 - **Nicht umsetzen:** Epics, Sprints, Story Points, Ticket-Typen ([ADR-0012](docs/adr/0012-plain-ticketing.md)), konfigurierbare Workflows, generischer Regel-Editor, Zeiterfassung, Cloud-Hosting, Offline-Modus.
-- **Kanäle:** Lokale Eingangskanäle ohne fremden Dienst (Schnellerfassung, Zwischenablage, Bookmarklet, `.ics`, `.eml`, WhatsApp-Export) ab E4. Externe Dienste nur mit eigener ADR und Freigabe ([ADR-0011](docs/adr/0011-roadmap-e3-bis-e7.md) §2): freigegeben sind Google Calendar, Telegram und Web.de per `byl-mail.exe` ([ADR-0016](docs/adr/0016-kanal-architektur-und-mail.md)), Gmail folgt; Notion ist zurückgestellt.
+- **Kanäle:** Lokale Eingangskanäle ohne fremden Dienst (Schnellerfassung, Zwischenablage, Bookmarklet, `.ics`, `.eml`, WhatsApp-Export) ab E4. Externe Dienste nur mit eigener ADR und Freigabe ([ADR-0011](docs/adr/0011-roadmap-e3-bis-e7.md) §2): freigegeben sind Google Calendar, Telegram sowie Web.de und Gmail per `byl-mail.exe` ([ADR-0016](docs/adr/0016-kanal-architektur-und-mail.md)); Notion ist zurückgestellt.
 - Keine Features außerhalb des Scopes, keine spekulativen Abstraktionen. Abweichungen vorher begründen und beim Nutzer anfragen.
 
 ## 11. Regeln für Agenten und Automatisierung auf dem Entwicklungsrechner

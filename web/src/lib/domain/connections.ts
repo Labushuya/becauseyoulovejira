@@ -1,4 +1,4 @@
-// Connections of the channels (ADR-0016 section 2, ADR-0018, ADR-0020; E4 plan packages 10, 20 and 22).
+// Connections of the channels (ADR-0016 section 2, ADR-0018, ADR-0020; E4 plan packages 10, 13, 20 and 22).
 // Pure: types, labels and the checks of the form. Access data are Windows user environment variables; a
 // connection stores only their names. The name pattern mirrors app/pb_hooks/lib/secrets.js
 // and the mail settings mirror app/pb_hooks/lib/connection-rules.js
@@ -14,11 +14,18 @@ export const CONNECTION_TYPE_LABELS: Readonly<Record<ConnectionType, string>> = 
 });
 
 /** Mail providers; host, port and TLS follow from the provider in byl-mail.exe (ADR-0016 section 4). */
-export const MAIL_PROVIDERS = ['webde'] as const;
+export const MAIL_PROVIDERS = ['webde', 'gmail'] as const;
 export type MailProvider = (typeof MAIL_PROVIDERS)[number];
 
 export const MAIL_PROVIDER_LABELS: Readonly<Record<MailProvider, string>> = Object.freeze({
-	webde: 'Web.de'
+	webde: 'Web.de',
+	gmail: 'Gmail'
+});
+
+/** Suggested variable for the password (Gmail: the app password) per provider. */
+export const MAIL_PROVIDER_SECRET_NAMES: Readonly<Record<MailProvider, string>> = Object.freeze({
+	webde: 'BYL_WEBDE_PASSWORD',
+	gmail: 'BYL_GMAIL_PASSWORD'
 });
 
 export const MAIL_USER_MAX_LENGTH = 254;
@@ -44,7 +51,7 @@ export const SECRET_NAME_PATTERN = /^BYL_[A-Z0-9_]{1,60}$/;
 export const DEFAULT_SECRET_NAMES: Readonly<Record<ConnectionType, string>> = Object.freeze({
 	calendar: 'BYL_GOOGLE_CALENDAR_URL',
 	telegram: 'BYL_TELEGRAM_TOKEN',
-	mail: 'BYL_WEBDE_PASSWORD'
+	mail: MAIL_PROVIDER_SECRET_NAMES.webde
 });
 export const DEFAULT_ALLOWLIST_NAME = 'BYL_TELEGRAM_ALLOWED_IDS';
 
@@ -131,6 +138,29 @@ export function emptyConnectionDraft(type: ConnectionType = 'calendar'): Connect
 		allowlistEnv: type === 'telegram' ? DEFAULT_ALLOWLIST_NAME : '',
 		mailProvider: 'webde',
 		mailUser: ''
+	};
+}
+
+/**
+ * The draft with another mail provider. Variable and label follow the provider as long as they are
+ * still the suggestion of the provider before (or empty); what the user typed stays.
+ */
+export function withMailProvider(draft: ConnectionDraft, provider: MailProvider): ConnectionDraft {
+	const secretEnv = draft.secretEnv.trim();
+	const label = draft.label.trim();
+	const suggestedLabels = [
+		'',
+		CONNECTION_TYPE_LABELS.mail,
+		MAIL_PROVIDER_LABELS[draft.mailProvider]
+	];
+	return {
+		...draft,
+		mailProvider: provider,
+		secretEnv:
+			secretEnv === '' || secretEnv === MAIL_PROVIDER_SECRET_NAMES[draft.mailProvider]
+				? MAIL_PROVIDER_SECRET_NAMES[provider]
+				: draft.secretEnv,
+		label: suggestedLabels.includes(label) ? MAIL_PROVIDER_LABELS[provider] : draft.label
 	};
 }
 

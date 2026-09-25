@@ -127,8 +127,10 @@ export class FakeImapServer {
 	user = 'anna@web.de';
 	password = 'geheim-1234';
 	uidValidity = 1_700_000_000;
-	/** Refuse every login (the Web.de setting is off). */
+	/** Refuse every login (the Web.de setting is off, or Gmail with the normal account password). */
 	refuseLogin = false;
+	/** Text of the NO answer to a refused LOGIN. */
+	loginRefusal = '[AUTHENTICATIONFAILED] Authentication failed.';
 	/** Open INBOX writable even for EXAMINE (a broken server). */
 	writableExamine = false;
 	readonly commands: RecordedCommand[] = [];
@@ -260,7 +262,7 @@ export class FakeImapServer {
 					state.authenticated = true;
 					return ok('[CAPABILITY IMAP4rev1] Logged in');
 				}
-				return no('[AUTHENTICATIONFAILED] Authentication failed.');
+				return no(this.loginRefusal);
 			}
 			case 'LIST':
 			case 'LSUB': {

@@ -41,7 +41,7 @@ export async function selfTest(): Promise<{ ok: boolean; checks: Record<string, 
 		parser: draft.title === 'Todo: Steuererklärung' && draft.body === 'Bitte bis Freitag prüfen.',
 		messageId: payload.source_ref === '<selbsttest@byl.invalid>',
 		keywords: keywordOf(draft, ['rechnung', 'todo'], false) === 'todo' && keywordOf(draft, ['prufen'], true) === 'prufen',
-		providers: PROVIDERS.webde?.host === 'imap.web.de' && PROVIDERS.webde.port === 993,
+		providers: PROVIDERS.webde?.host === 'imap.web.de' && PROVIDERS.gmail?.host === 'imap.gmail.com',
 		imap: typeof ImapFlow === 'function',
 		fetch: typeof fetch === 'function' && typeof FormData === 'function'
 	};

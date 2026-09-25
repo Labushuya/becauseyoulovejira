@@ -5,10 +5,10 @@
 	import ConnectionsSection from './ConnectionsSection.svelte';
 	import ImportKeywordsSection from './ImportKeywordsSection.svelte';
 
-	// Settings "Kanäle" (E4 plan, T-3 and packages 7, 10, 15, 17 and 21): the bookmarklet, the
+	// Settings "Kanäle" (E4 plan, T-3 and packages 7, 10, 11, 13, 15, 17, 21 and 23): the bookmarklet, the
 	// connections with access data from Windows user environment variables (ADR-0018), the keywords
-	// of the file imports (ADR-0020), how to set the variables and how to set up Google Calendar and
-	// the Telegram bot. The
+	// of the file imports (ADR-0020), how to set the variables and how to set up Google Calendar,
+	// the Telegram bot, Web.de and Gmail. The
 	// bookmarklet link is dragged to the bookmarks bar; for the keyboard the code can be copied and
 	// saved as the address of a new bookmark. A click on the link here does nothing, so the page
 	// does not capture itself.
@@ -31,7 +31,8 @@
 		variables: `${uid}-variables`,
 		calendar: `${uid}-calendar`,
 		telegram: `${uid}-telegram`,
-		webde: `${uid}-webde`
+		webde: `${uid}-webde`,
+		gmail: `${uid}-gmail`
 	};
 
 	const code = $derived(bookmarkletCode(captureUrl));
@@ -280,6 +281,53 @@
 			<code>app\logs\byl-mail.log</code>, ohne Zugangsdaten und ohne Inhalte der Mails. Widerrufen:
 			das anwendungsspezifische Passwort unter „Login & Sicherheit“ löschen bzw. den Abruf
 			ausschalten und die Variable <code>BYL_WEBDE_PASSWORD</code> entfernen.
+		</p>
+	</section>
+
+	<section class="card" aria-labelledby={ids.gmail}>
+		<h3 id={ids.gmail}>Gmail einrichten</h3>
+		<p>
+			Gmail holt derselbe Hilfsprozess <code>byl-mail.exe</code> ab wie Web.de, mit denselben Regeln:
+			nur der Posteingang, nur Mails nach der Einrichtung mit Stichwort, nur lesend. IMAP ist bei Gmail
+			immer eingeschaltet. Die Anmeldung geht nur mit einem App-Passwort, nicht mit deinem normalen Google-Passwort,
+			und ein App-Passwort gibt es nur mit der Bestätigung in zwei Schritten.
+		</p>
+		<ol>
+			<li>
+				Unter <code>myaccount.google.com</code> → „Sicherheit“ prüfen, ob die „Bestätigung in zwei Schritten“
+				(2-Faktor-Authentifizierung) eingeschaltet ist; sonst dort einschalten.
+			</li>
+			<li>
+				<a
+					href="https://myaccount.google.com/apppasswords"
+					target="_blank"
+					rel="noopener noreferrer">myaccount.google.com/apppasswords</a
+				> öffnen, einen Namen wie „becauseyoulovejira“ eingeben und „Erstellen“ klicken. Das App-Passwort
+				(16 Zeichen) wird nur einmal angezeigt.
+			</li>
+			<li>
+				In der Eingabeaufforderung <code>setx BYL_GMAIL_PASSWORD "…"</code> mit diesem App-Passwort eingeben
+				(die 16 Buchstaben ohne die Leerzeichen zwischen den Vierergruppen).
+			</li>
+			<li>
+				Oben unter „Verbindungen“ die Art „Postfach (IMAP)“ mit Anbieter „Gmail“, deiner
+				Gmail-Adresse als Benutzername und der Variablen <code>BYL_GMAIL_PASSWORD</code> anlegen und Stichwörter
+				eintragen.
+			</li>
+			<li>
+				<code>stop.bat</code> und dann <code>start.bat</code> ausführen. Nach spätestens 5 Minuten zeigt
+				die Verbindung „Letzter Abruf“ und den Hinweis „Erster Abruf“. Ältere Mails holst du mit „Aus
+				dem Postfach wählen“.
+			</li>
+		</ol>
+		<p class="hint">
+			Meldet die Verbindung „Anmeldung bei Gmail abgelehnt.“ mit dem Hinweis „App-Passwort nötig
+			(Bestätigung in zwei Schritten)“, steht in der Variablen das normale Google-Passwort oder ein
+			widerrufenes App-Passwort. Mit „Erweitertem Schutz“ oder nur mit Sicherheitsschlüssel bietet
+			Google keine App-Passwörter an; dann bleibt der Weg über <code>.eml</code>-Dateien.
+			Widerrufen: unter <code>myaccount.google.com/apppasswords</code> das App-Passwort entfernen
+			und die Variable
+			<code>BYL_GMAIL_PASSWORD</code> löschen. Ändert sich dein Google-Passwort, verfallen alle App-Passwörter.
 		</p>
 	</section>
 </section>

@@ -158,6 +158,41 @@ describe('mail helper with PocketBase (P-10)', () => {
 		expect(stored.cursor).toBe('1700000000:0');
 	});
 
+	it('fetches Gmail like Web.de, once per Message-ID, and asks for an app password (E4 plan, package 13)', async () => {
+		const gmail = { label: 'Gmail', settings: { provider: 'gmail', user: imap.user, keywords: ['todo'] } };
+		const box = await mailbox({ ...gmail, cursor: `1700000000:${imap.mails.at(-1)?.uid ?? 0}` });
+		const messageId = `<gmail-${randomBytes(4).toString('hex')}@mail.gmail.com>`;
+		const file = await owner.pb.collection('inbox_items').create({
+			owner: owner.id,
+			channel: 'eml',
+			kind: 'mail',
+			title: 'Todo: auch als Datei',
+			source_ref: messageId
+		});
+		imap.add(fakeMail({ subject: 'Todo: auch als Datei', messageId }));
+		mail('Todo: nur im Postfach');
+		mail('Newsletter');
+		const [outcome] = await pollAll(deps());
+		expect(outcome).toMatchObject({ created: 1, duplicates: 1, unmatched: 1 });
+		expect((await items(box)).map((item) => [item.title, item.source_meta.keyword])).toEqual([['Todo: nur im Postfach', 'todo']]);
+		expect((await owner.pb.collection('inbox_items').getFullList({ filter: `source_ref = "${messageId}"` })).map((item) => item.id)).toEqual([
+			file.id
+		]);
+
+		imap.refuseLogin = true;
+		imap.loginRefusal = '[ALERT] Application-specific password required: https://support.google.com/accounts/answer/185833 (Failure)';
+		try {
+			await pollAll(deps());
+		} finally {
+			imap.loginRefusal = '[AUTHENTICATIONFAILED] Authentication failed.';
+		}
+		const stored = await owner.pb.collection('connections').getOne(box.id);
+		expect(stored.last_error).toBe('Anmeldung bei Gmail abgelehnt.');
+		expect(stored.last_hint.startsWith('App-Passwort nötig (Bestätigung in zwei Schritten)')).toBe(true);
+		expect(JSON.stringify(stored)).not.toContain(PASSWORD);
+		expect(imap.writes()).toEqual([]);
+	});
+
 	it('does nothing for a switched-off connection', async () => {
 		const box = await mailbox({ enabled: false, cursor: '1700000000:0' });
 		mail('Todo: aus');

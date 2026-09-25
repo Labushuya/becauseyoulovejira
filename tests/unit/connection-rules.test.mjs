@@ -130,7 +130,7 @@ describe('mail connections (E4 plan, package 22)', () => {
 
 	it('can be created with provider and user name', () => {
 		expect(rules.CREATABLE_TYPES).toContain('mail');
-		expect(rules.MAIL_PROVIDERS).toEqual(['webde']);
+		expect(rules.MAIL_PROVIDERS).toEqual(['webde', 'gmail']);
 		expect(rules.createViolation({ ...mail, settings }, secrets, keywords)).toBe('');
 		expect(
 			rules.createViolation(
@@ -139,6 +139,13 @@ describe('mail connections (E4 plan, package 22)', () => {
 				keywords
 			)
 		).toBe('');
+	});
+
+	it('accepts Gmail as provider (E4 plan, package 13)', () => {
+		const gmail = { provider: 'gmail', user: 'anna@gmail.com', keywords: ['todo'] };
+		expect(rules.createViolation({ ...mail, secret_env: 'BYL_GMAIL_PASSWORD', settings: gmail }, secrets, keywords)).toBe('');
+		expect(rules.mailSettingsOf(gmail)).toEqual({ provider: 'gmail', user: 'anna@gmail.com', matchBody: false });
+		expect(rules.sourceIdentity('mail', 'BYL_A', gmail)).not.toBe(rules.sourceIdentity('mail', 'BYL_A', { ...gmail, provider: 'webde' }));
 	});
 
 	it.each([

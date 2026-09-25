@@ -214,6 +214,35 @@ describe('errors', () => {
 		expect(JSON.stringify(ingest.reports) + lines.join('\n')).not.toContain(PASSWORD);
 	});
 
+	it('stores a refused Gmail login with the app password hint (E4 plan, package 13)', async () => {
+		server.refuseLogin = true;
+		// What Gmail answers for the normal account password instead of an app password.
+		server.loginRefusal =
+			'[ALERT] Application-specific password required: https://support.google.com/accounts/answer/185833 (Failure)';
+		const gmail = connection({ label: 'Gmail', provider: 'gmail', cursor: '1700000000:3' });
+		const outcome = await pollConnection(deps(), gmail);
+		expect(outcome).toMatchObject({ status: 'error', error: 'Anmeldung bei Gmail abgelehnt.' });
+		const report = ingest.lastReport();
+		expect(report?.error).toBe('Anmeldung bei Gmail abgelehnt.');
+		expect(report?.hint?.startsWith('App-Passwort nötig (Bestätigung in zwei Schritten)')).toBe(true);
+		expect(report?.cursor).toBeUndefined();
+		expect(JSON.stringify(ingest.reports) + lines.join('\n')).not.toContain(PASSWORD);
+	});
+
+	it('fetches a Gmail inbox like Web.de: first run, then only keyword matches, read only', async () => {
+		mail('Todo: vor der Einrichtung');
+		const gmail = connection({ label: 'Gmail', provider: 'gmail' });
+		const first = await pollConnection(deps(), gmail);
+		expect(first).toMatchObject({ status: 'ok', created: 0, cursor: '1700000000:1' });
+		mail('Todo: Gmail');
+		mail('Werbung');
+		const second = await pollConnection(deps(), { ...gmail, cursor: first.cursor });
+		expect(second).toMatchObject({ status: 'ok', created: 1, unmatched: 1, cursor: '1700000000:3' });
+		expect(ingest.items.map((item) => item.draft.title)).toEqual(['Todo: Gmail']);
+		expect(server.writes()).toEqual([]);
+		expect(server.flagsUnchanged()).toBe(true);
+	});
+
 	it('stores an unreachable server as error and tries again next time', async () => {
 		const port = server.port;
 		await server.stop();

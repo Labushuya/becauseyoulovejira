@@ -10,8 +10,8 @@ var SERVER_FIELDS = ['cursor', 'last_run_at', 'last_ok_at', 'last_error', 'last_
 var CREATABLE_TYPES = ['calendar', 'telegram', 'mail'];
 
 // Mail providers (ADR-0016 section 4): host, port and TLS follow from the provider in the mail
-// helper; the connection stores only the provider and the user name (E4 plan packages 11 and 22).
-var MAIL_PROVIDERS = ['webde'];
+// helper; the connection stores only the provider and the user name (E4 plan packages 11, 13 and 22).
+var MAIL_PROVIDERS = ['webde', 'gmail'];
 var MAIL_USER_MAX_LENGTH = 254;
 
 // Keys of `settings` per kind. Only names of variables, never values (ADR-0018 section 2), the
