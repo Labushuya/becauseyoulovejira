@@ -213,8 +213,8 @@
   "meta": {
     "projekt": "becauseyoulovejira",
     "stand": "2026-09-25",
-    "commit": "85022fd",
-    "etappe": "E0, E1, E1.1, E2 und E3 abgeschlossen, E4 in Planung"
+    "commit": "2ba2ecd",
+    "etappe": "E0, E1, E1.1, E2 und E3 abgeschlossen, E4 in Arbeit (Paket 1)"
   },
   "blocks": [
     {
@@ -1160,14 +1160,14 @@
     {
       "tag": "E4", "name": "E4 geplant", "desc": "Geplante Testfälle des E4-Plans (Eingang & Kanäle), je Paket; Status „geplant“ bis zur Umsetzung. Die Schritte sind die Akzeptanzkriterien des Pakets.",
       "items": [
-        { "id": "BYL-E4-001", "title": "Eingang: Datenmodell und Regeln", "art": ["integration", "unit"], "status": "geplant",
-          "pre": "E4-Plan, Paket 1.", "steps": ["inbox_items mit Feldern, Indizes und Regeln nach ADR-0014; Hook setzt scope, fingerprint, handled_at.", "Unveränderliche Felder und unerlaubte Zustandswechsel werden abgelehnt.", "Gleicher Fingerprint im selben Scope wird als Duplikat abgelehnt, in anderem Scope angenommen.", "Fremde Einträge weder sichtbar noch änderbar, auch nicht per Realtime."],
-          "expect": "Negativtests mit zwei Nutzern und Haushalt wie rules.test.mjs; Migration hin und zurück.",
-          "tests": [] },
-        { "id": "BYL-E4-002", "title": "Umwandeln atomar und einmalig", "art": ["integration"], "status": "geplant",
-          "pre": "E4-Plan, Paket 1.", "steps": ["Ticket mit source_item setzt source und den Eintrag auf converted in derselben Transaktion.", "Scheitert die Ticket-Anlage, bleibt der Eintrag new.", "Zweites oder gleichzeitiges Umwandeln wird mit validation_inbox_item_handled abgelehnt.", "Löschen des Tickets leert inbox_items.ticket, der Eintrag bleibt converted."],
-          "expect": "Zwei parallele Anfragen: genau eine gewinnt.",
-          "tests": [] },
+        { "id": "BYL-E4-001", "title": "Eingang: Datenmodell und Regeln", "art": ["integration", "unit"], "status": "bestanden",
+          "pre": "app\\pocketbase.exe vorhanden; E4-Plan, Paket 1.", "steps": ["npm run test:unit", "npm run test:integration"],
+          "expect": "inbox_items mit Feldern, Indizes und Regeln nach ADR-0014 (ohne connection, die mit Paket 10 kommt); der Hook setzt scope, state new, fingerprint und handled_at, kürzt Titel auf 200 Zeichen mit „…“ und nimmt nur http(s)-Links. Fingerprint je Familie: Message-ID ohne <> und klein, URL ohne Fragment, Standardport und utm_*, UID mit und ohne RECURRENCE-ID, Telegram, WhatsApp, Notion; manuelle Wege nie gleich. Gleicher Fingerprint im selben Scope wird mit validation_inbox_duplicate samt Zustand, Eintrag und Ticket-Key abgelehnt, in anderem Scope angenommen; verworfen bleibt als Tombstone. Unveränderliche Felder (channel, source_ref, source_date, fingerprint, original) und unerlaubte Zustandswechsel werden mit Feldfehler abgelehnt. Originaldatei nur mit File-Token. Fremde Einträge weder sichtbar noch änderbar, auch nicht per Realtime. Migrationen hin und zurück; bestehende Tickets und Nutzer bleiben dabei unverändert; die neuen Hooks arbeiten auch vor der Migration.",
+          "tests": ["tests/unit/inbox-fingerprint.test.mjs", "tests/unit/inbox-rules.test.mjs", "tests/unit/source.test.mjs", "tests/integration/inbox-model.test.mjs", "tests/integration/rules.test.mjs", "tests/integration/realtime-rules.test.mjs::realtime subscriptions on inbox_items", "tests/integration/migrations.test.mjs", "tests/integration/migrations-rollback.test.mjs::keeps existing rows unchanged when the E4 migrations run and are rolled back", "tests/integration/hooks-before-migration.test.mjs"] },
+        { "id": "BYL-E4-002", "title": "Umwandeln atomar und einmalig", "art": ["integration"], "status": "bestanden",
+          "pre": "app\\pocketbase.exe vorhanden; E4-Plan, Paket 1.", "steps": ["npm run test:integration"],
+          "expect": "Ein Ticket mit source_item bekommt source aus dem Kanal, der Eintrag wird in derselben Transaktion converted (ticket, handled_at). Scheitert die Anlage (archiviertes Projekt, Einfügen, Historie), bleibt der Eintrag new und keine Nummer ist verbraucht. Zweites Umwandeln und Umwandeln eines verworfenen Eintrags: validation_inbox_item_handled; von zwei parallelen Anfragen gewinnt genau eine. Fremde Einträge und andere Scopes: validation_scope_mismatch. Ohne Eintrag nimmt der Hook nur leer, manual und quick; source und source_item sind danach unveränderlich. Löschen des Tickets leert inbox_items.ticket, der Eintrag bleibt converted; Löschen des Eintrags leert source_item, source bleibt.",
+          "tests": ["tests/integration/inbox-convert.test.mjs"] },
         { "id": "BYL-E4-003", "title": "Eingang: Datenzugriff und Store", "art": ["unit", "integration"], "status": "geplant",
           "pre": "E4-Plan, Paket 2.", "steps": ["InboxStore lädt neue Einträge vollständig, bearbeitete seitenweise, folgt Realtime und gleicht nach dem Neuverbinden ab.", "Duplikat-Antworten werden als Ergebnis statt als Fehler geliefert.", "Weiche Duplikate über den normalisierten Titel."],
           "expect": "Datenzugriff gegen die Wegwerf-Instanz.",
