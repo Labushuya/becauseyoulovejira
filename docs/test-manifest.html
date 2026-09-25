@@ -138,13 +138,13 @@
 <div class="wrap">
   <header class="top">
     <h1>becauseyoulovejira — Test-Manifest</h1>
-    <p class="subtitle" id="stand">Etappen E1, E1.1, E2 und E3, E4 geplant · automatisierte Tests bereichsweise zusammengefasst · manuelle Prüfpunkte aus den Plänen an einem Ort</p>
+    <p class="subtitle" id="stand">Etappen E1, E1.1, E2, E3 und E4 · automatisierte Tests bereichsweise zusammengefasst · manuelle Prüfpunkte aus den Plänen an einem Ort</p>
 
     <div class="pre">
       <h2>Voraussetzung für die manuellen Prüfungen (kein Testschritt)</h2>
       <ul>
         <li>Der aktuelle Build liegt in <code>app\pb_public</code> (<code>powershell -ExecutionPolicy Bypass -File scripts\build.ps1</code> komplett grün).</li>
-        <li>Die App läuft (<code>app\start.bat</code>), im Browser einmal <b>F5</b> drücken und mit dem App-Konto anmelden.</li>
+        <li>Die App läuft (<code>app\start.bat</code>), im Browser einmal <b>F5</b> drücken und mit dem App-Konto anmelden. Nach neuen Migrationen oder einer neuen <code>byl-mail.exe</code> vorher einmal <code>app\stop.bat</code> und <code>app\start.bat</code>.</li>
         <li>Für die Live-Tests ein zweites Browserfenster mit demselben Konto öffnen (Fenster A und B).</li>
         <li>Prüfungen zu Erststart, Admin-Reset und Wiederherstellung in einer <b>Kopie</b> von <code>app\</code> durchführen, nie mit den echten Daten.</li>
       </ul>
@@ -213,8 +213,8 @@
   "meta": {
     "projekt": "becauseyoulovejira",
     "stand": "2026-09-25",
-    "commit": "4ff04a6",
-    "etappe": "E0, E1, E1.1, E2 und E3 abgeschlossen, E4 in Arbeit (Pakete 1 bis 11, 13 bis 17, 20 bis 24; geplant 19)"
+    "commit": "c78f09f",
+    "etappe": "E0 bis E4 abgeschlossen (E4: Pakete 1 bis 11, 13 bis 17, 19 bis 24; Paket 12 entfällt, Paket 18 zurückgestellt)"
   },
   "blocks": [
     {
@@ -1158,7 +1158,7 @@
       ]
     },
     {
-      "tag": "E4", "name": "E4 geplant", "desc": "Geplante Testfälle des E4-Plans (Eingang & Kanäle), je Paket; Status „geplant“ bis zur Umsetzung. Die Schritte sind die Akzeptanzkriterien des Pakets.",
+      "tag": "E4", "name": "E4 Eingang und Kanäle", "desc": "Testfälle des E4-Plans (Eingang & Kanäle) je Paket: automatisierte Fälle bestanden, manuelle Fälle offen bis zum Durchgang nach der Browser-Checkliste in docs/plan/e4.md Abschnitt 11. BYL-E4-020/021 (Proton Bridge) entfallen nach P-8.",
       "items": [
         { "id": "BYL-E4-001", "title": "Eingang: Datenmodell und Regeln", "art": ["integration", "unit"], "status": "bestanden",
           "pre": "app\\pocketbase.exe vorhanden; E4-Plan, Paket 1.", "steps": ["npm run test:unit", "npm run test:integration"],
@@ -1242,7 +1242,7 @@
           "tests": [] },
         { "id": "BYL-E4-021", "title": "Echte Proton Mail Bridge", "art": ["manuell"], "status": "nicht zutreffend",
           "pre": "E4-Plan, Paket 12, entfällt nach P-8.", "steps": ["Bridge-Zertifikat exportieren, Verbindung einrichten, markierte Mail abrufen.", "Bridge beenden: Statusmeldung prüfen."],
-          "expect": "Browser-Checkliste im E4-Plan.",
+          "expect": "Browser-Checkliste im E4-Plan, Abschnitt 11.",
           "tests": [] },
         { "id": "BYL-E4-022", "title": "Gmail per IMAP", "art": ["unit","komponente","integration"], "status": "bestanden",
           "pre": "E4-Plan, Paket 13 (P-9, P-10; ADR-0016 §4). Test-IMAP-Server helpers/mail/test/fake-imap.ts auf 127.0.0.1 statt imap.gmail.com, Wegwerf-PocketBase mit erfundenem Token und Passwort; keine Verbindung zu Google.", "steps": ["npm run test:unit","npm run test:helper","npm run test:integration","npm run test:web"],
@@ -1284,9 +1284,9 @@
           "pre": "App nach dem Merge von Paket 10 einmal neu gestartet; Telegram-Konto; Bot nach der Anleitung unter „Kanäle“ bei @BotFather angelegt; BYL_TELEGRAM_TOKEN und BYL_TELEGRAM_ALLOWED_IDS per setx gesetzt, danach stop.bat und start.bat.", "steps": ["Verbindung „Telegram-Bot“ anlegen: „Zugangsdaten gesetzt.“", "Dem Bot „Milch kaufen“ schreiben: nach höchstens einer Minute oder mit „Jetzt abrufen“ steht der Eintrag im Eingang, der Bot antwortet „Im Eingang gespeichert“.", "Ein Foto mit Bildunterschrift und eines ohne senden: nur das mit Unterschrift wird ein Eintrag.", "Von einem zweiten, nicht freigegebenen Konto schreiben: kein Eintrag, die Verbindung zeigt dessen Chat-ID als Hinweis.", "App mit stop.bat beenden, dem Bot schreiben, start.bat: die Nachricht kommt nach dem Start an.", "Bei BotFather /revoke: die Verbindung meldet „HTTP 401“ ohne Token; neuen Token per setx setzen, neu starten, wieder erfolgreich."],
           "expect": "Nur freigegebene Nachrichten kommen einmal an und werden bestätigt; fremde Chats nur als Hinweis; der Token erscheint nirgends in der App.",
           "tests": [] },
-        { "id": "BYL-E4-032", "title": "E4-Browser-Checkliste gesamt", "art": ["manuell"], "status": "geplant",
-          "pre": "E4-Plan, Paket 19.", "steps": ["Alle manuellen E4-Prüfpunkte, zwei Fenster, ein Durchlauf ohne Internet, Hell- und Dunkelmodus, Tastatur."],
-          "expect": "Browser-Checkliste im E4-Plan.",
+        { "id": "BYL-E4-032", "title": "E4-Browser-Checkliste gesamt", "art": ["manuell"], "status": "offen",
+          "pre": "E4-Plan, Paket 19: Abschnitt 11 (Browser-Checkliste). Build von main in app\\, einmal stop.bat und start.bat (E4-Migrationen, byl-mail.exe 0.3.0), F5; zwei Fenster A und B; Chrome, Firefox und Opera GX, soweit möglich.", "steps": ["Eingang und Umwandeln (P-1): einzeln, gesammelt, Verwerfen mit Rückgängig, Wiederherstellen, Duplikathinweis, Rückverweis am Ticket (BYL-E4-005).","Quelldatum (P-5): wird nur per „Als Fälligkeit übernehmen“ zur Fälligkeit.","„Neu“ in zwei Fenstern (BYL-E4-007).","Erfassen, Schnellerfassung (c, Strg+K, Kurzsyntax, Alt+Enter) und Zwischenablage (BYL-E4-010); Bookmarklet in drei Browsern (BYL-E4-012).","Dateien mit Auswahl: .eml aus Web.de, Gmail und Proton, .ics aus Google, Outlook und Thunderbird, WhatsApp-Export (BYL-E4-014, -025, -029, -037).","Zugangsdaten und Stichwörter (P-4, P-6; BYL-E4-017, -035); Google Calendar und Telegram (BYL-E4-027, -031).","Postfächer: Web.de (BYL-E4-019), Gmail (BYL-E4-023), Postfach-Auswahl (BYL-E4-039).","Ein Durchlauf ohne Internet, Hell- und Dunkelmodus, Bedienung nur mit der Tastatur."],
+          "expect": "Alle Punkte der Checkliste in docs/plan/e4.md Abschnitt 11 bestätigt; Abweichungen im Notizfeld.",
           "tests": [] },
         { "id": "BYL-E4-033", "title": "Ingest-Route und Ingest-Token für den Mail-Hilfsprozess", "art": ["unit", "komponente", "integration"], "status": "bestanden",
           "pre": "E4-Plan, Paket 22 (Rest von Paket 10; ADR-0016 §5, ADR-0018 §8, ADR-0020). Für die Integration app/pocketbase.exe und eine eigene Wegwerf-Instanz mit erfundenem BYL_INGEST_TOKEN und Postfach-Passwort in ihrer Prozessumgebung; ohne Variable die gemeinsame Instanz des Testlaufs.", "steps": ["npm run test:unit", "npm run test:web", "npm run test:integration"],
