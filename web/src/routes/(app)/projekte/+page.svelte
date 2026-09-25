@@ -4,6 +4,7 @@
 	import ProjectsView from '$lib/components/ProjectsView.svelte';
 	import { pb } from '$lib/pocketbase';
 	import { getCatalogStore } from '$lib/stores/catalog.svelte';
+	import { getInboxStore } from '$lib/stores/inbox.svelte';
 	import { CatalogEditor, catalogEditorData } from '$lib/stores/catalog-editor';
 	import { ProjectStatsStore, projectStatsData } from '$lib/stores/project-stats.svelte';
 	import { liveSource } from '$lib/stores/realtime';
@@ -13,6 +14,7 @@
 	// numbers "gesamt" live only while the view is shown; leaving it ends their subscription.
 	const tickets = getTicketListStore();
 	const catalog = getCatalogStore();
+	const inbox = getInboxStore();
 	const stats = new ProjectStatsStore(projectStatsData(pb), auth);
 	const editor = new CatalogEditor(catalogEditorData(pb), auth, catalog);
 
@@ -25,4 +27,4 @@
 	<title>Projekte · becauseyoulovejira</title>
 </svelte:head>
 
-<ProjectsView {catalog} {tickets} {stats} {editor} />
+<ProjectsView {catalog} {tickets} {stats} {editor} inboxCount={inbox.newCount} />

@@ -24,12 +24,15 @@
 		catalog,
 		tickets,
 		stats,
-		editor
+		editor,
+		inboxCount = null
 	}: {
 		catalog: CatalogStore;
 		tickets: TicketListStore;
 		stats: ProjectStatsStore;
 		editor: CatalogEditor;
+		/** New inbox entries for the switch (E4 plan, package 3). */
+		inboxCount?: number | null;
 	} = $props();
 
 	const uid = $props.id();
@@ -141,7 +144,7 @@
 		bind:heading
 	>
 		{#snippet start()}
-			<ViewSwitch current="projects" />
+			<ViewSwitch current="projects" {inboxCount} />
 		{/snippet}
 		{#snippet end()}
 			<label class="switch">

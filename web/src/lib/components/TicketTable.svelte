@@ -35,7 +35,8 @@
 		store,
 		catalog,
 		activeId = null,
-		creating = false
+		creating = false,
+		inboxCount = null
 	}: {
 		store: TicketListStore;
 		catalog: CatalogStore;
@@ -43,6 +44,8 @@
 		activeId?: string | null;
 		/** The form "Neues Ticket" is open. */
 		creating?: boolean;
+		/** New inbox entries for the switch (E4 plan, package 3). */
+		inboxCount?: number | null;
 	} = $props();
 
 	/** Columns of the table (T-4); the section rows span all of them. */
@@ -273,7 +276,7 @@
 		bind:heading
 	>
 		{#snippet start()}
-			<ViewSwitch current="tasks" />
+			<ViewSwitch current="tasks" {inboxCount} />
 		{/snippet}
 		{#snippet end()}
 			<label class="switch" class:locked={switchHint !== null}>

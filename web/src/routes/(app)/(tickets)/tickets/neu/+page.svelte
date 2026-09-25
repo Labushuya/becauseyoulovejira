@@ -1,31 +1,135 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
+	import ErrorIcon from '$lib/components/ErrorIcon.svelte';
 	import NewTicketForm from '$lib/components/NewTicketForm.svelte';
+	import { toDataError } from '$lib/data/errors';
+	import { CHANNEL_LABELS, ticketPrefill, type InboxItem } from '$lib/domain/inbox';
 	import { parseListQuery } from '$lib/domain/list-query';
+	import type { TicketDraft } from '$lib/domain/ticket';
 	import { getCatalogStore } from '$lib/stores/catalog.svelte';
+	import { getInboxStore } from '$lib/stores/inbox.svelte';
 	import { getTicketDetailStore } from '$lib/stores/ticket-detail.svelte';
-	import { listHref, ticketHref } from '$lib/ticket-links';
+	import { getTicketListStore } from '$lib/stores/ticket-list.svelte';
+	import {
+		convertFrom,
+		inboxItemHref,
+		listHref,
+		ticketHref,
+		withoutConvert
+	} from '$lib/ticket-links';
 
 	// "Neues Ticket" (E2 plan, T-8; E3 plan, T-13 and T-14): after creating, the panel switches to
 	// the new ticket in place (replaceState), so "back" leads to the list and not to an empty form.
 	// A list filtered by an active project chooses that project in advance ("ohne" is no project
 	// ID and is ignored by the form). New tags come from the catalog, which reuses existing names.
+	// With ?aus=<inbox entry> (E4 plan, T-3 and T-5) the form comes filled from the entry, the
+	// server converts the entry together with the ticket, and "Abbrechen" returns to the entry.
 	const detail = getTicketDetailStore();
 	const catalog = getCatalogStore();
+	const inbox = getInboxStore();
+	const tickets = getTicketListStore();
 	const filteredProject = $derived(parseListQuery(page.url.searchParams).project);
+	const convert = $derived(convertFrom(page.url));
+
+	/** The entry to convert, once loaded; a handled entry is refused before the form opens. */
+	let source = $state<
+		| { state: 'loading'; id: string }
+		| { state: 'ready'; item: InboxItem }
+		| { state: 'refused'; id: string; message: string }
+		| null
+	>(null);
+
+	$effect(() => {
+		const id = convert;
+		if (id === null) {
+			source = null;
+			return;
+		}
+		const controller = new AbortController();
+		source = { state: 'loading', id };
+		inbox.fetch(id, { signal: controller.signal }).then(
+			(item) => {
+				if (controller.signal.aborted) return;
+				source =
+					item.state === 'new'
+						? { state: 'ready', item }
+						: { state: 'refused', id, message: 'Dieser Eintrag wurde schon bearbeitet.' };
+			},
+			(error: unknown) => {
+				if (controller.signal.aborted) return;
+				const failure = toDataError(error);
+				if (failure.kind === 'aborted') return;
+				source = { state: 'refused', id, message: failure.message };
+			}
+		);
+		return () => controller.abort();
+	});
+
+	async function create(draft: TicketDraft) {
+		const itemId = source?.state === 'ready' ? source.item.id : null;
+		const result = await detail.create(draft, itemId === null ? undefined : { sourceItem: itemId });
+		if (result.ok && itemId !== null) {
+			inbox.markConverted(itemId, result.ticket.id, result.ticket.created);
+			tickets.announce(`Ticket ${result.ticket.key} angelegt.`);
+		}
+		return result;
+	}
 </script>
 
 <svelte:head>
 	<title>Neues Ticket · becauseyoulovejira</title>
 </svelte:head>
 
-<NewTicketForm
-	projects={catalog.activeProjects}
-	initialProject={filteredProject}
-	tags={catalog.tags}
-	oncreatetag={(name) => catalog.ensureTag(name)}
-	oncreate={(draft) => detail.create(draft)}
-	oncreated={(id) => goto(ticketHref(id, page.url), { replaceState: true })}
-	oncancel={() => goto(listHref(page.url))}
-/>
+{#if convert === null}
+	<NewTicketForm
+		projects={catalog.activeProjects}
+		initialProject={filteredProject}
+		tags={catalog.tags}
+		oncreatetag={(name) => catalog.ensureTag(name)}
+		oncreate={create}
+		oncreated={(id) => goto(ticketHref(id, page.url), { replaceState: true })}
+		oncancel={() => goto(listHref(page.url))}
+	/>
+{:else if source?.state === 'ready'}
+	{#key source.item.id}
+		<NewTicketForm
+			projects={catalog.activeProjects}
+			tags={catalog.tags}
+			prefill={ticketPrefill(source.item)}
+			sourceLabel={CHANNEL_LABELS[source.item.channel]}
+			oncreatetag={(name) => catalog.ensureTag(name)}
+			oncreate={create}
+			oncreated={(id) => goto(ticketHref(id, withoutConvert(page.url)), { replaceState: true })}
+			oncancel={() => goto(inboxItemHref(convert))}
+		/>
+	{/key}
+{:else if source?.state === 'refused'}
+	<aside class="side-panel" aria-labelledby="convert-refused">
+		<h2 id="convert-refused">Neues Ticket</h2>
+		<p class="alert-error"><ErrorIcon /><span>{source.message}</span></p>
+		<a href={inboxItemHref(source.id)}>Zum Eintrag im Eingang</a>
+	</aside>
+{:else}
+	<aside class="side-panel" aria-label="Neues Ticket">
+		<p class="loading" role="status">Eintrag wird geladen …</p>
+	</aside>
+{/if}
+
+<style>
+	h2 {
+		margin-bottom: 0.75rem;
+		font-size: 1.125rem;
+		font-weight: 600;
+	}
+
+	a {
+		display: inline-block;
+		margin-top: 0.75rem;
+		color: var(--color-brand-text);
+	}
+
+	.loading {
+		color: var(--color-text-muted);
+	}
+</style>

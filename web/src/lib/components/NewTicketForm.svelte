@@ -1,5 +1,8 @@
 <script lang="ts">
+	import { untrack } from 'svelte';
 	import type { CalendarDate } from '$lib/domain/berlin-date';
+	import { berlinDateOf, formatBerlinDateTime } from '$lib/domain/format';
+	import type { TicketPrefill } from '$lib/domain/inbox';
 	import { isPriority, isStatus, type Priority, type Status } from '$lib/domain/status';
 	import {
 		DEFAULT_PRIORITY,
@@ -24,10 +27,13 @@
 	// description. With the list filtered by an active project, that project is chosen in
 	// advance. "Anlegen" or Ctrl+Enter creates; the button is locked during the request, so a
 	// double click creates one ticket. "Abbrechen" and Escape ask first if something was entered,
-	// a name in the tag picker included.
+	// a name in the tag picker included. From the inbox (E4 plan, T-5) title and description come
+	// filled in; the date at the sender is only a hint with "Als Fälligkeit übernehmen" (P-5).
 	let {
 		projects = [],
 		initialProject = null,
+		prefill = null,
+		sourceLabel = null,
 		tags = [],
 		oncreatetag = async () => ({ ok: false, message: null }),
 		oncreate,
@@ -38,6 +44,10 @@
 		projects?: readonly ProjectRef[];
 		/** Project chosen in advance (list filter); ignored unless it is among `projects`. */
 		initialProject?: string | null;
+		/** Values of an inbox entry (E4 plan, T-5); read once when the form opens. */
+		prefill?: TicketPrefill | null;
+		/** Way the entry came in, e.g. "Mail-Datei", shown under the heading. */
+		sourceLabel?: string | null;
 		/** Tags that can be chosen (the catalog). */
 		tags?: readonly TagRef[];
 		/** Existing or new tag for a typed name (T-14). */
@@ -58,6 +68,7 @@
 		status: `${uid}-status`,
 		priority: `${uid}-priority`,
 		due: `${uid}-due`,
+		sourceDate: `${uid}-source-date`,
 		dueError: `${uid}-due-error`,
 		project: `${uid}-project`,
 		projectHint: `${uid}-project-hint`,
@@ -67,12 +78,17 @@
 		description: `${uid}-description-error`
 	};
 
-	let title = $state('');
+	// The form is opened for one entry (the route keys it), so the values are read once.
+	const initialTitle = untrack(() => prefill?.title ?? '');
+	const initialDescription = untrack(() => prefill?.description ?? '');
+	const sourceDate = untrack(() => prefill?.sourceDate ?? null);
+
+	let title = $state(initialTitle);
 	let status = $state<Status>(DEFAULT_STATUS);
 	let priority = $state<Priority>(DEFAULT_PRIORITY);
 	let due = $state('');
 	let dueInvalid = $state(false);
-	let description = $state('');
+	let description = $state(initialDescription);
 	/** Project chosen by the user; null until then, so a late catalog still sets the default. */
 	let chosenProject = $state<string | null>(null);
 	let tagIds = $state<string[]>([]);
@@ -99,8 +115,8 @@
 	const tagsError = $derived(tagError ?? fieldErrors.tags ?? null);
 	const missingTitle = $derived(title.trim() === '');
 	const dirty = $derived(
-		title !== '' ||
-			description !== '' ||
+		title !== initialTitle ||
+			description !== initialDescription ||
 			due !== '' ||
 			dueInvalid ||
 			status !== DEFAULT_STATUS ||
@@ -144,6 +160,13 @@
 		if (result.fields.title) titleInput?.focus();
 	}
 
+	/** "Als Fälligkeit übernehmen": the Berlin calendar date of the date at the sender. */
+	function takeSourceDate() {
+		if (sourceDate === null) return;
+		due = berlinDateOf(sourceDate);
+		dueInvalid = false;
+	}
+
 	function addTag(tagId: string): boolean {
 		if (!tagIds.includes(tagId)) tagIds = [...tagIds, tagId];
 		tagError = null;
@@ -179,6 +202,9 @@
 <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
 <aside class="side-panel" aria-labelledby={ids.heading} {onkeydown}>
 	<h2 id={ids.heading}>Neues Ticket</h2>
+	{#if sourceLabel !== null}
+		<p class="hint">Aus dem Eingang ({sourceLabel})</p>
+	{/if}
 
 	<div aria-live="polite">
 		{#if message}
@@ -244,6 +270,14 @@
 				/>
 			</div>
 		</div>
+		{#if sourceDate !== null}
+			<p class="hint source-date" id={ids.sourceDate}>
+				Quelldatum: {formatBerlinDateTime(sourceDate)}
+				<button class="text-button" type="button" onclick={takeSourceDate}>
+					Als Fälligkeit übernehmen
+				</button>
+			</p>
+		{/if}
 		{#if dueError}
 			<p class="field-error" id={ids.dueError}><ErrorIcon /><span>{dueError}</span></p>
 		{/if}
@@ -383,5 +417,22 @@
 	.hint {
 		font-size: 0.8125rem;
 		color: var(--color-text-muted);
+	}
+
+	.source-date {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 0.25rem 0.5rem;
+		align-items: center;
+	}
+
+	.text-button {
+		padding: 0.0625rem 0.5rem;
+		font-size: 0.8125rem;
+		color: var(--color-brand-text);
+		background: none;
+		border: 1px solid var(--color-brand);
+		border-radius: 0.375rem;
+		cursor: pointer;
 	}
 </style>

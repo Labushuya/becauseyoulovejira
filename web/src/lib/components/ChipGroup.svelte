@@ -8,6 +8,7 @@
 		name,
 		options,
 		value,
+		all = 'Alle',
 		onchange
 	}: {
 		legend: string;
@@ -16,13 +17,15 @@
 		options: readonly { value: T; label: string }[];
 		/** Chosen value, null for "Alle". */
 		value: T | null;
+		/** Label of the chip for no value; null leaves it out (a group that always has a value). */
+		all?: string | null;
 		onchange: (value: T | null) => void;
 	} = $props();
 
 	/** Value of the radio "Alle"; the real values are never empty. */
 	const ALL = '';
 
-	const choices = $derived([{ value: ALL, label: 'Alle' }, ...options]);
+	const choices = $derived(all === null ? [...options] : [{ value: ALL, label: all }, ...options]);
 
 	function choose(event: Event & { currentTarget: HTMLInputElement }) {
 		const chosen = event.currentTarget.value;
