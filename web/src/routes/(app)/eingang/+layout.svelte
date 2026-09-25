@@ -6,11 +6,17 @@
 	import ClipboardImport from '$lib/components/ClipboardImport.svelte';
 	import DropZone from '$lib/components/DropZone.svelte';
 	import InboxTable, { BULK_BUTTON_ID } from '$lib/components/InboxTable.svelte';
+	import WhatsAppImport from '$lib/components/WhatsAppImport.svelte';
 	import type { InboxItemSummary } from '$lib/domain/inbox';
 	import { parseInboxQuery } from '$lib/domain/inbox-query';
 	import { pastedText, readClipboardText } from '$lib/clipboard';
 	import { readMailFile } from '$lib/mail-file';
-	import { importMailFiles, importSummary, type FileImportResult } from '$lib/stores/mail-import';
+	import {
+		importDroppedFiles,
+		importSummary,
+		type ChatSelection,
+		type FileImportResult
+	} from '$lib/stores/mail-import';
 	import { inboxItemHref, ticketPath } from '$lib/ticket-links';
 	import { pb } from '$lib/pocketbase';
 	import { BulkConverter, bulkConvertData } from '$lib/stores/bulk-convert.svelte';
@@ -18,6 +24,7 @@
 	import { getCatalogStore } from '$lib/stores/catalog.svelte';
 	import { getInboxStore } from '$lib/stores/inbox.svelte';
 	import { getTicketListStore } from '$lib/stores/ticket-list.svelte';
+	import { readWhatsAppFile } from '$lib/whatsapp-file';
 
 	// Inbox view (E4 plan, T-3 and package 3): the table with the chips of the URL on the left, the
 	// panel of an entry (/eingang/<id>) on the right, like the ticket view (ADR-0010 section 1).
@@ -74,7 +81,7 @@
 
 	/** Ctrl+V in the inbox view, unless the user pastes into a field or a dialog is open. */
 	function onpaste(event: ClipboardEvent) {
-		if (clipboardText !== null || bulkItems !== null) return;
+		if (clipboardText !== null || bulkItems !== null || chat !== null) return;
 		const text = pastedText(event);
 		if (text === null) return;
 		event.preventDefault();
@@ -89,23 +96,35 @@
 		}
 	}
 
-	// Mail and calendar files (E4 plan, packages 8 and 14): dropped on the zone or anywhere in the
-	// inbox view, or chosen with "Datei wählen"; one after the other, each with its own result.
+	// Mail and calendar files and WhatsApp exports (E4 plan, packages 8, 14 and 16): dropped on the
+	// zone or anywhere in the inbox view, or chosen with "Datei wählen"; one after the other, each
+	// with its own result. A chat export opens the selection view afterwards.
 	let importing = $state(false);
 	let importResults = $state<FileImportResult[]>([]);
+	/** Chat export of the open selection view, null while it is closed. */
+	let chat = $state<ChatSelection | null>(null);
 
 	async function importFiles(files: File[]) {
-		if (importing) return;
+		if (importing || chat !== null) return;
 		importing = true;
 		importResults = [];
-		const results = await importMailFiles(files, {
+		const imported = await importDroppedFiles(files, {
 			read: readMailFile,
 			createItem: (draft) => inbox.create(draft),
-			importCalendar: (file) => inbox.importCalendar(file)
+			importCalendar: (file) => inbox.importCalendar(file),
+			readChat: readWhatsAppFile
 		});
 		importing = false;
-		importResults = results;
-		inbox.announce(importSummary(results));
+		importResults = imported.results;
+		if (imported.results.length > 0) inbox.announce(importSummary(imported.results));
+		chat = imported.chat;
+	}
+
+	function closeChat(outcome: DraftsOutcome | null) {
+		chat = null;
+		if (outcome !== null && outcome.created + outcome.duplicates > 0) {
+			inbox.announce(draftsSummary(outcome));
+		}
 	}
 
 	function carriesFiles(event: DragEvent): boolean {
@@ -169,6 +188,16 @@
 		text={clipboardText}
 		onsave={(drafts) => saveDrafts(drafts, (draft) => inbox.create(draft))}
 		onclose={closeClipboard}
+	/>
+{/if}
+
+{#if chat !== null}
+	<WhatsAppImport
+		chat={chat.chat}
+		messages={chat.messages}
+		leftOut={chat.leftOut}
+		onsave={(drafts) => saveDrafts(drafts, (draft) => inbox.create(draft))}
+		onclose={closeChat}
 	/>
 {/if}
 

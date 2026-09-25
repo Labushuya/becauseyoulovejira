@@ -1,0 +1,7 @@
+[25.09.26, 14:03:12] Familie Beispiel: ‎Nachrichten und Anrufe sind Ende-zu-Ende-verschlüsselt. Niemand außerhalb dieses Chats, nicht einmal WhatsApp, kann sie lesen oder anhören.
+[25.09.26, 14:03:12] Anna Beispiel: ‎Anna Beispiel hat die Gruppe erstellt.
+[25.09.26, 14:04:30] Anna Beispiel: Zahnarzttermin für Ben ausmachen
+‎[25.09.26, 14:05:00] Ben Muster: ‎Bild weggelassen
+[25.09.26, 14:06:45] Ben Muster: Mache ich morgen.
+Oder übermorgen.
+‎[25.09.26, 14:07:00] Anna Beispiel: ‎<Anhang: 00000012-PHOTO-2026-09-25-14-07-00.jpg>

@@ -32,7 +32,9 @@ describe('drop zone', () => {
 		const { onfiles, zone } = renderZone();
 		expect(zone.getAttribute('aria-describedby')).toBeTruthy();
 		expect(
-			screen.getByText(/\(\.eml, höchstens 10 MB\) und Kalenderdateien \(\.ics, höchstens 20 MB\)/)
+			screen.getByText(
+				/\(\.eml, höchstens 10 MB\), Kalenderdateien \(\.ics\) und WhatsApp-Chatexporte \(\.txt,\s+\.zip; je höchstens 20 MB\)/
+			)
 		).toBeTruthy();
 		await fireEvent.dragOver(zone, { dataTransfer: transfer([A, B]) });
 		expect(zone.classList.contains('active')).toBe(true);
@@ -49,11 +51,11 @@ describe('drop zone', () => {
 		expect(onfiles).not.toHaveBeenCalled();
 	});
 
-	it('offers "Datei wählen" for the keyboard with several .eml and .ics files', async () => {
+	it('offers "Datei wählen" for the keyboard with several .eml, .ics and chat files', async () => {
 		const { onfiles } = renderZone();
 		const input = document.querySelector<HTMLInputElement>('input[type="file"]');
 		expect(input?.multiple).toBe(true);
-		expect(input?.accept).toBe('.eml,message/rfc822,.ics,text/calendar');
+		expect(input?.accept).toBe('.eml,message/rfc822,.ics,text/calendar,.txt,.zip');
 		const click = vi.spyOn(input as HTMLInputElement, 'click');
 		await fireEvent.click(screen.getByRole('button', { name: 'Datei wählen' }));
 		expect(click).toHaveBeenCalledOnce();
