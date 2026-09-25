@@ -214,7 +214,7 @@
     "projekt": "becauseyoulovejira",
     "stand": "2026-09-25",
     "commit": "2ba2ecd",
-    "etappe": "E0, E1, E1.1, E2 und E3 abgeschlossen, E4 in Arbeit (Paket 1)"
+    "etappe": "E0, E1, E1.1, E2 und E3 abgeschlossen, E4 in Arbeit (Pakete 1 und 2)"
   },
   "blocks": [
     {
@@ -1168,10 +1168,10 @@
           "pre": "app\\pocketbase.exe vorhanden; E4-Plan, Paket 1.", "steps": ["npm run test:integration"],
           "expect": "Ein Ticket mit source_item bekommt source aus dem Kanal, der Eintrag wird in derselben Transaktion converted (ticket, handled_at). Scheitert die Anlage (archiviertes Projekt, Einfügen, Historie), bleibt der Eintrag new und keine Nummer ist verbraucht. Zweites Umwandeln und Umwandeln eines verworfenen Eintrags: validation_inbox_item_handled; von zwei parallelen Anfragen gewinnt genau eine. Fremde Einträge und andere Scopes: validation_scope_mismatch. Ohne Eintrag nimmt der Hook nur leer, manual und quick; source und source_item sind danach unveränderlich. Löschen des Tickets leert inbox_items.ticket, der Eintrag bleibt converted; Löschen des Eintrags leert source_item, source bleibt.",
           "tests": ["tests/integration/inbox-convert.test.mjs"] },
-        { "id": "BYL-E4-003", "title": "Eingang: Datenzugriff und Store", "art": ["unit", "integration"], "status": "geplant",
-          "pre": "E4-Plan, Paket 2.", "steps": ["InboxStore lädt neue Einträge vollständig, bearbeitete seitenweise, folgt Realtime und gleicht nach dem Neuverbinden ab.", "Duplikat-Antworten werden als Ergebnis statt als Fehler geliefert.", "Weiche Duplikate über den normalisierten Titel."],
-          "expect": "Datenzugriff gegen die Wegwerf-Instanz.",
-          "tests": [] },
+        { "id": "BYL-E4-003", "title": "Eingang: Datenzugriff und Store", "art": ["unit", "integration"], "status": "bestanden",
+          "pre": "E4-Plan, Paket 2; für die Integration app/pocketbase.exe.", "steps": ["npm run test:web", "npm run test:integration", "npm run test:unit"],
+          "expect": "InboxStore lädt neue Einträge vollständig (neueste zuerst, Zahl für den Umschalter), verworfene und umgewandelte seitenweise, folgt Realtime gezielt (ältere Events und gelöschte Einträge bleiben draußen) und gleicht nach dem Neuverbinden ab, ohne zwischendurch geänderte Einträge zu verlieren. Duplikat-Antworten des Servers kommen als Ergebnis { kind: duplicate, state, ticketKey } mit Text wie im Hook, andere Fehler je Feld. Verwerfen, Wiederherstellen und Zuordnen übernehmen die Antwort des Servers, sperren den Eintrag während der Anfrage und nennen bei Fehlern Eintrag und Grund. Vor der Migration meldet der Eingang, dass er nach dem nächsten Start bereitsteht. Weiche Duplikate über den normalisierten Titel (Groß/klein und Leerraum gleich, Umlaute verschieden). Datenzugriff gegen die Wegwerf-Instanz: Anlegen mit allen Feldern, Liste ohne Text, Seiten, Datei-Token, Realtime; createTicket sendet source manual bzw. quick oder source_item, TICKET_LIST_FIELDS enthält source; Wertelisten und Längen gleich mit Hook und Migration.",
+          "tests": ["web/src/lib/domain/inbox.test.ts", "web/src/lib/stores/inbox-store.test.ts", "tests/integration/web-data-inbox.test.mjs", "web/src/lib/data/errors.test.ts::keeps the params of a field error", "web/src/lib/stores/ticket-detail.test.ts::passes the origin and reports a refused inbox entry as message", "tests/unit/source.test.mjs::mirrors the value lists of source.js", "tests/unit/web-limits.test.mjs::match the inbox collection"] },
         { "id": "BYL-E4-004", "title": "Eingangsansicht: Umwandeln, Verwerfen, Duplikate", "art": ["komponente"], "status": "geplant",
           "pre": "E4-Plan, Paket 3.", "steps": ["Umwandeln öffnet das vorbefüllte Panel; das Quelldatum wird nur per Klick zur Fälligkeit.", "Gesammelt umwandeln mit Standardwerten meldet Teilfehler je Eintrag.", "Verwerfen mit 5 s Rückgängig, Wiederherstellen aus „Verworfen“.", "Hinweis „mögliches Duplikat“ mit „Dem Ticket zuordnen“.", "Panel des Tickets zeigt „Quelle“ mit Link „Original ansehen“."],
           "expect": "Komponententests mit Store-Doubles.",
