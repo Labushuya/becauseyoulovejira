@@ -11,9 +11,12 @@ import {
 } from './berlin-date';
 import { formatCalendarDate, toPocketBaseTimestamp } from './format';
 import {
+	INBOX_BODY_MAX_LENGTH,
 	PRESET_META_KEY,
 	escapeMarkdown,
+	httpUrlOf,
 	presetMeta,
+	type InboxChannel,
 	type InboxDraft,
 	type InboxKind
 } from './inbox';
@@ -26,7 +29,18 @@ import {
 	type TicketDraft
 } from './ticket';
 
-export const CAPTURE_TEMPLATES = ['todo', 'call', 'shopping', 'event', 'project_task'] as const;
+/**
+ * The templates of OF-E4-1 and "Web-Link" (package 7), which the bookmarklet opens and which can
+ * be chosen for a link typed in by hand.
+ */
+export const CAPTURE_TEMPLATES = [
+	'todo',
+	'call',
+	'shopping',
+	'event',
+	'project_task',
+	'link'
+] as const;
 export type CaptureTemplate = (typeof CAPTURE_TEMPLATES)[number];
 
 export const DEFAULT_CAPTURE_TEMPLATE: CaptureTemplate = 'todo';
@@ -40,7 +54,8 @@ export const TEMPLATE_VALUES: Readonly<Record<CaptureTemplate, string>> = Object
 	call: 'anruf',
 	shopping: 'einkauf',
 	event: 'termin',
-	project_task: 'projektaufgabe'
+	project_task: 'projektaufgabe',
+	link: 'weblink'
 });
 
 export const TEMPLATE_LABELS: Readonly<Record<CaptureTemplate, string>> = Object.freeze({
@@ -48,7 +63,8 @@ export const TEMPLATE_LABELS: Readonly<Record<CaptureTemplate, string>> = Object
 	call: 'Anruf',
 	shopping: 'Einkauf',
 	event: 'Termin',
-	project_task: 'Projektaufgabe'
+	project_task: 'Projektaufgabe',
+	link: 'Web-Link'
 });
 
 /** Kind of the inbox entry per template (ADR-0014 section 1); never a ticket type (ADR-0012). */
@@ -57,7 +73,8 @@ export const TEMPLATE_KINDS: Readonly<Record<CaptureTemplate, InboxKind>> = Obje
 	call: 'task',
 	shopping: 'task',
 	event: 'event',
-	project_task: 'project_task'
+	project_task: 'project_task',
+	link: 'link'
 });
 
 /** Tag a template gives its tickets; created through the catalog if it does not exist yet. */
@@ -66,7 +83,18 @@ export const TEMPLATE_TAGS: Readonly<Record<CaptureTemplate, string | null>> = O
 	call: 'Anruf',
 	shopping: 'Einkauf',
 	event: 'Termin',
-	project_task: null
+	project_task: null,
+	link: null
+});
+
+/** Channel of an inbox entry per template: a web link is a link, whether typed or clipped. */
+export const TEMPLATE_CHANNELS: Readonly<Record<CaptureTemplate, InboxChannel>> = Object.freeze({
+	todo: 'manual',
+	call: 'manual',
+	shopping: 'manual',
+	event: 'manual',
+	project_task: 'manual',
+	link: 'link'
 });
 
 /**
@@ -75,6 +103,18 @@ export const TEMPLATE_TAGS: Readonly<Record<CaptureTemplate, string | null>> = O
  */
 export type CaptureTarget = 'ticket' | 'inbox';
 export const DEFAULT_CAPTURE_TARGET: CaptureTarget = 'ticket';
+
+/**
+ * Templates whose objects always go into the inbox (OF-E4-3: bookmarklet and channels land in the
+ * inbox); the form offers no switch for them.
+ */
+export const FIXED_TARGETS: Readonly<Partial<Record<CaptureTemplate, CaptureTarget>>> =
+	Object.freeze({ link: 'inbox' });
+
+/** Target of a template: the fixed one, else what the user chose. */
+export function targetOf(template: CaptureTemplate, chosen: CaptureTarget): CaptureTarget {
+	return FIXED_TARGETS[template] ?? chosen;
+}
 
 export type CaptureField =
 	| 'what'
@@ -89,7 +129,9 @@ export type CaptureField =
 	| 'project'
 	| 'priority'
 	| 'due'
-	| 'tags';
+	| 'tags'
+	| 'url'
+	| 'excerpt';
 
 export interface CaptureFieldSpec {
 	field: CaptureField;
@@ -127,7 +169,8 @@ export const TEMPLATE_FIELDS: Readonly<Record<CaptureTemplate, readonly CaptureF
 			spec('priority', 'Priorität'),
 			spec('due', 'Fällig'),
 			spec('tags', 'Tags')
-		]
+		],
+		link: [spec('url', 'Adresse', true), spec('what', 'Titel', true), spec('excerpt', 'Auszug')]
 	});
 
 /** Everything the form can hold; a template reads only its own fields. */
@@ -151,9 +194,15 @@ export interface CaptureInput {
 	due: string;
 	/** Tag IDs chosen in the form. */
 	tagIds: string[];
+	/** Address of a web link. */
+	url: string;
+	/** Selected text of the page (bookmarklet) or a note. */
+	excerpt: string;
 }
 
 export const EMPTY_CAPTURE_INPUT: Readonly<CaptureInput> = Object.freeze({
+	url: '',
+	excerpt: '',
 	what: '',
 	who: '',
 	phone: '',
@@ -189,6 +238,8 @@ export interface Capture {
 	sourceDate: string | null;
 	/** Place and all-day flag of an event. */
 	sourceMeta: Record<string, unknown>;
+	/** http(s) address of a web link, null otherwise. */
+	sourceUrl: string | null;
 }
 
 export type CaptureErrors = Partial<Record<CaptureField, string>>;
@@ -197,6 +248,7 @@ export type CaptureOutcome = { ok: true; capture: Capture } | { ok: false; error
 export const REQUIRED_MESSAGE = 'Pflichtfeld.';
 export const INVALID_DATE_MESSAGE = 'Ungültiges Datum.';
 export const INVALID_TIME_MESSAGE = 'Ungültige Uhrzeit.';
+export const INVALID_URL_MESSAGE = 'Nur http- und https-Adressen.';
 
 /** Template of `?vorlage=`; missing, repeated or unknown values give the default. */
 export function templateFrom(params: URLSearchParams): CaptureTemplate {
@@ -259,6 +311,17 @@ function descriptionOf(template: CaptureTemplate, input: CaptureInput, withEvent
 			// The date is formatted here, not typed in: it needs no escaping.
 			return [`- **Termin:** ${when}`, ...detail('Ort', line(input.place))].join('\n');
 		}
+		case 'link': {
+			// The excerpt comes from a foreign page: quoted and escaped, shown sanitised only.
+			const quote = input.excerpt
+				.trim()
+				.split(/\r?\n/)
+				.map((part) => `> ${escapeMarkdown(part.trim())}`.trimEnd())
+				.join('\n');
+			const link = `- **Link:** <${input.url.trim()}>`;
+			if (input.excerpt.trim() === '') return withEvent ? link : '';
+			return withEvent ? `${link}\n\n${quote}` : quote;
+		}
 		default:
 			return '';
 	}
@@ -290,6 +353,9 @@ function check(template: CaptureTemplate, input: CaptureInput): CaptureErrors {
 	if (has(template, 'due') && input.due !== '' && !isCalendarDate(input.due)) {
 		errors.due = INVALID_DATE_MESSAGE;
 	}
+	if (has(template, 'url') && errors.url === undefined && httpUrlOf(input.url) === null) {
+		errors.url = INVALID_URL_MESSAGE;
+	}
 	return errors;
 }
 
@@ -311,7 +377,7 @@ export function buildCapture(template: CaptureTemplate, input: CaptureInput): Ca
 			kind: TEMPLATE_KINDS[template],
 			title: fitTitle(titleOf(template, input)),
 			description: descriptionOf(template, input, true).slice(0, DESCRIPTION_MAX_LENGTH),
-			body: descriptionOf(template, input, false).slice(0, DESCRIPTION_MAX_LENGTH),
+			body: descriptionOf(template, input, false).slice(0, INBOX_BODY_MAX_LENGTH),
 			priority: has(template, 'priority') ? input.priority : DEFAULT_PRIORITY,
 			due: has(template, 'due') && input.due !== '' ? input.due : null,
 			project: has(template, 'project') && input.project !== '' ? input.project : null,
@@ -325,7 +391,8 @@ export function buildCapture(template: CaptureTemplate, input: CaptureInput): Ca
 						...(line(input.place) === '' ? {} : { location: line(input.place) }),
 						...(input.time === '' ? { all_day: true } : {})
 					}
-				: {}
+				: {},
+			sourceUrl: has(template, 'url') ? httpUrlOf(input.url) : null
 		}
 	};
 }
@@ -363,10 +430,11 @@ export function captureInboxDraft(capture: Capture, templateTagIds: readonly str
 		due: capture.due
 	});
 	return {
-		channel: 'manual',
+		channel: TEMPLATE_CHANNELS[capture.template],
 		kind: capture.kind,
 		title: capture.title,
 		body: capture.body,
+		...(capture.sourceUrl !== null && { sourceUrl: capture.sourceUrl }),
 		sourceDate: capture.sourceDate,
 		sourceMeta: {
 			...capture.sourceMeta,

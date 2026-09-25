@@ -18,6 +18,12 @@ import {
 } from '../../web/src/lib/data/inbox.ts';
 import { subscribeInboxItems } from '../../web/src/lib/data/realtime.ts';
 import { createTicket, getTicket, listOpenTickets } from '../../web/src/lib/data/tickets.ts';
+import { bookmarkletValues } from '../../web/src/lib/domain/bookmarklet.ts';
+import {
+	EMPTY_CAPTURE_INPUT,
+	buildCapture,
+	captureInboxDraft
+} from '../../web/src/lib/domain/templates.ts';
 
 const EVENT_TIMEOUT_MS = 5_000;
 
@@ -124,6 +130,48 @@ describe('create and read', () => {
 			ticketId: ticket.id,
 			ticketKey: ticket.key,
 			message: `Schon Ticket ${ticket.key}.`
+		});
+	});
+
+	it('reports the same web link from the bookmarklet twice as duplicate (package 7)', async () => {
+		const path = `/artikel-${uniqueSuffix()}`;
+		const draftFor = (query) => {
+			const values = bookmarkletValues(new URLSearchParams(query));
+			const outcome = buildCapture('link', {
+				...EMPTY_CAPTURE_INPUT,
+				tagIds: [],
+				url: values.url ?? '',
+				what: values.title,
+				excerpt: values.selection
+			});
+			if (!outcome.ok) throw new Error('invalid capture');
+			return captureInboxDraft(outcome.capture, []);
+		};
+		const first = await createItem(
+			owner.client,
+			draftFor(new URLSearchParams({ url: `https://Example.com${path}#oben`, titel: 'Artikel' }))
+		);
+		expect(first).toMatchObject({
+			kind: 'created',
+			item: { channel: 'link', kind: 'link', sourceUrl: `https://Example.com${path}#oben` }
+		});
+		const again = await createItem(
+			owner.client,
+			draftFor(
+				new URLSearchParams({
+					url: `https://example.com:443${path}?utm_source=x`,
+					titel: 'Anderer Titel',
+					auswahl: 'Zitat'
+				})
+			)
+		);
+		expect(again).toEqual({
+			kind: 'duplicate',
+			state: 'new',
+			itemId: first.item.id,
+			ticketId: '',
+			ticketKey: '',
+			message: 'Schon im Eingang.'
 		});
 	});
 

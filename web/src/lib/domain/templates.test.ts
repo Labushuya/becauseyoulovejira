@@ -11,6 +11,7 @@ import {
 	EMPTY_CAPTURE_INPUT,
 	INVALID_DATE_MESSAGE,
 	INVALID_TIME_MESSAGE,
+	INVALID_URL_MESSAGE,
 	REQUIRED_MESSAGE,
 	TEMPLATE_FIELDS,
 	TEMPLATE_KINDS,
@@ -21,6 +22,7 @@ import {
 	captureTicketDraft,
 	fitTitle,
 	shoppingItems,
+	targetOf,
 	templateFrom,
 	type Capture,
 	type CaptureInput,
@@ -42,14 +44,22 @@ function built(template: CaptureTemplate, overrides: Partial<CaptureInput>): Cap
 }
 
 describe('templates: value lists', () => {
-	it('offers the five templates of OF-E4-1 with fixed URL values and kinds', () => {
-		expect(CAPTURE_TEMPLATES).toEqual(['todo', 'call', 'shopping', 'event', 'project_task']);
+	it('offers the five templates of OF-E4-1 and the web link with fixed URL values and kinds', () => {
+		expect(CAPTURE_TEMPLATES).toEqual([
+			'todo',
+			'call',
+			'shopping',
+			'event',
+			'project_task',
+			'link'
+		]);
 		expect(Object.values(TEMPLATE_VALUES)).toEqual([
 			'todo',
 			'anruf',
 			'einkauf',
 			'termin',
-			'projektaufgabe'
+			'projektaufgabe',
+			'weblink'
 		]);
 		for (const template of CAPTURE_TEMPLATES) {
 			expect(INBOX_KINDS).toContain(TEMPLATE_KINDS[template]);
@@ -299,5 +309,55 @@ describe('templates: drafts', () => {
 			sourceDate: '2026-08-01 16:00:00.000Z',
 			sourceMeta: { template: 'termin' }
 		});
+	});
+});
+
+describe('templates: web link (E4 plan, package 7)', () => {
+	it('keeps the address, the title and the excerpt as quote, and always goes into the inbox', () => {
+		const capture = built('link', {
+			url: ' https://example.com/a ',
+			what: 'Artikel',
+			excerpt: 'Erste *Zeile*\nZweite [Link](javascript:x)'
+		});
+		expect(capture).toMatchObject({
+			kind: 'link',
+			title: 'Artikel',
+			sourceUrl: 'https://example.com/a',
+			body: '> Erste \\*Zeile\\*\n> Zweite \\[Link\\]\\(javascript:x\\)',
+			tagNames: []
+		});
+		expect(capture.description.startsWith('- **Link:** <https://example.com/a>\n\n> Erste')).toBe(
+			true
+		);
+		expect(targetOf('link', 'ticket')).toBe('inbox');
+		expect(targetOf('todo', 'ticket')).toBe('ticket');
+		expect(captureInboxDraft(capture, [])).toEqual({
+			channel: 'link',
+			kind: 'link',
+			title: 'Artikel',
+			body: capture.body,
+			sourceUrl: 'https://example.com/a',
+			sourceDate: null,
+			sourceMeta: { template: 'weblink' }
+		});
+	});
+
+	it('requires address and title and refuses other schemes', () => {
+		expect(buildCapture('link', input())).toEqual({
+			ok: false,
+			errors: { url: REQUIRED_MESSAGE, what: REQUIRED_MESSAGE }
+		});
+		for (const url of ['javascript:alert(1)', 'data:text/html,x', 'file:///C:/x', 'example.com']) {
+			expect(buildCapture('link', input({ url, what: 'T' }))).toEqual({
+				ok: false,
+				errors: { url: INVALID_URL_MESSAGE }
+			});
+		}
+	});
+
+	it('has no text without an excerpt', () => {
+		const capture = built('link', { url: 'http://example.com', what: 'T' });
+		expect(capture.body).toBe('');
+		expect(capture.description).toBe('- **Link:** <http://example.com>');
 	});
 });

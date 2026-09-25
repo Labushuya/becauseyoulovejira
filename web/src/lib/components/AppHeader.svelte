@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
+	import { resolve } from '$app/paths';
 	import { page } from '$app/state';
 	import { auth } from '$lib/auth.svelte';
 	import { loginUrlFor } from '$lib/guard';
@@ -58,6 +59,7 @@
 		</svg>
 		Neues Ticket
 	</a>
+	<a class="settings" href={resolve('/einstellungen/kanaele')}>Kanäle</a>
 	<div class="session">
 		<p class="user">Angemeldet als <strong>{auth.email}</strong></p>
 		<button class="logout" type="button" onclick={logout}>Abmelden</button>
@@ -134,6 +136,11 @@
 
 	.after-quick {
 		margin-left: 0;
+	}
+
+	.settings {
+		font-size: 0.875rem;
+		color: var(--color-brand-text);
 	}
 
 	.session {

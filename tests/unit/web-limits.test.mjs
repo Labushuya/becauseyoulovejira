@@ -5,6 +5,7 @@ import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import {
 	INBOX_BODY_MAX_LENGTH,
+	INBOX_SOURCE_URL_MAX_LENGTH,
 	INBOX_TITLE_MAX_LENGTH
 } from '../../web/src/lib/domain/inbox.ts';
 import { PROJECT_NAME_MAX_LENGTH } from '../../web/src/lib/domain/project.ts';
@@ -51,5 +52,6 @@ describe('length limits (web/src/lib/domain)', () => {
 		const file = '1790201200_create_inbox_items.js';
 		expect(INBOX_TITLE_MAX_LENGTH).toBe(maxOf(file, 'title'));
 		expect(INBOX_BODY_MAX_LENGTH).toBe(maxOf(file, 'body'));
+		expect(INBOX_SOURCE_URL_MAX_LENGTH).toBe(maxOf(file, 'source_url'));
 	});
 });

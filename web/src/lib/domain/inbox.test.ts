@@ -10,6 +10,7 @@ import {
 	isInboxChannel,
 	isInboxKind,
 	isInboxState,
+	httpUrlOf,
 	normalizeTitle,
 	presetMeta,
 	presetOf,
@@ -245,5 +246,28 @@ describe('preset of typed-in entries (E4 plan, package 5)', () => {
 			priority: null,
 			due: null
 		});
+	});
+});
+
+describe('httpUrlOf', () => {
+	it('takes http and https addresses with a host, trimmed', () => {
+		expect(httpUrlOf(' https://example.com/a?b#c ')).toBe('https://example.com/a?b#c');
+		expect(httpUrlOf('HTTP://EXAMPLE.COM')).toBe('HTTP://EXAMPLE.COM');
+	});
+
+	it('refuses other schemes, whitespace, missing hosts and over-long addresses', () => {
+		for (const value of [
+			'javascript:alert(1)',
+			'data:text/plain,x',
+			'file:///C:/x',
+			'mailto:a@b.de',
+			'https://exa mple.com',
+			'http://',
+			'/pfad',
+			''
+		]) {
+			expect(httpUrlOf(value), value).toBeNull();
+		}
+		expect(httpUrlOf(`https://example.com/${'x'.repeat(2000)}`)).toBeNull();
 	});
 });
