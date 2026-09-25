@@ -151,20 +151,7 @@ function findByFingerprint(txApp, scope, fingerprint) {
 function ingest(app, owner, draft) {
   var outcome = null;
   app.runInTransaction(function (txApp) {
-    var record = new Record(txApp.findCollectionByNameOrId(INBOX));
-    record.set('owner', owner);
-    record.set('household', '');
-    record.set('channel', draft.channel);
-    record.set('kind', draft.kind);
-    record.set('title', draft.title);
-    record.set('body', draft.body || '');
-    record.set('source_url', draft.source_url || '');
-    record.set('source_ref', draft.source_ref || '');
-    record.set('source_date', draft.source_date || '');
-    record.set('source_meta', draft.meta || {});
-    if (draft.connection) {
-      record.set('connection', draft.connection);
-    }
+    var record = draftRecord(txApp, owner, draft);
     var prepared = prepareRecord(record);
     var existing = prepared.fingerprint === '' ? null : findByFingerprint(txApp, prepared.scope, prepared.fingerprint);
     if (existing) {
@@ -178,6 +165,50 @@ function ingest(app, owner, draft) {
     outcome = { kind: 'created', item: record };
   });
   return outcome;
+}
+
+// An unsaved private record of `owner` with the fields of a draft (see ingest).
+function draftRecord(app, owner, draft) {
+  var record = new Record(app.findCollectionByNameOrId(INBOX));
+  record.set('owner', owner);
+  record.set('household', '');
+  record.set('channel', draft.channel);
+  record.set('kind', draft.kind);
+  record.set('title', draft.title);
+  record.set('body', draft.body || '');
+  record.set('source_url', draft.source_url || '');
+  record.set('source_ref', draft.source_ref || '');
+  record.set('source_date', draft.source_date || '');
+  record.set('source_meta', draft.meta || {});
+  if (draft.connection) {
+    record.set('connection', draft.connection);
+  }
+  return record;
+}
+
+/**
+ * Whether a draft is in the private inbox of `owner` already, without saving anything (selection
+ * views, E4 plan package 21): { state, item, ticketKey, message } of the existing entry, or null.
+ * A draft the hook would refuse (e.g. a link other than http(s)) counts as not there; saving it
+ * reports the reason.
+ */
+function lookup(app, owner, draft) {
+  var record = draftRecord(app, owner, draft);
+  var prepared;
+  try {
+    prepared = prepareRecord(record);
+  } catch (err) {
+    return null;
+  }
+  var existing = prepared.fingerprint === '' ? null : findByFingerprint(app, prepared.scope, prepared.fingerprint);
+  if (!existing) {
+    return null;
+  }
+  var state = existing.getString('state');
+  var ticketId = existing.getString('ticket');
+  var ticket = ticketId === '' ? null : findById(app, 'tickets', ticketId);
+  var key = ticket ? ticket.getString('key') : '';
+  return { state: state, item: existing.id, ticketKey: key, message: rules.duplicateMessage(state, key) };
 }
 
 // onRecordUpdateRequest: what a client may change (ADR-0014 section 1). Internal saves (the
@@ -264,6 +295,7 @@ module.exports = {
   IMMUTABLE_FIELDS: IMMUTABLE_FIELDS,
   prepareCreate: prepareCreate,
   ingest: ingest,
+  lookup: lookup,
   guardClientUpdate: guardClientUpdate,
   prepareUpdate: prepareUpdate,
   prepareConversion: prepareConversion,

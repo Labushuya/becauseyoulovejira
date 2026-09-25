@@ -26,47 +26,95 @@ onRecordUpdate(function (e) {
   });
 }, 'inbox_items');
 
-// .ics files (ADR-0017 section 1, E4 plan package 14): the SPA uploads one file as multipart
-// field "file"; every VEVENT/VTODO becomes a private item of the signed-in user. Answers with the
-// counts "neu, schon vorhanden, übersprungen" instead of the items.
+// .ics files (ADR-0017 section 1, E4 plan packages 14 and 21): the SPA uploads one file as
+// multipart field "file". The preview lists its components with the keyword of the user that
+// matches (ADR-0020) and whether each is in the inbox already, and saves nothing. The import
+// takes only the chosen components (field "select": JSON list of their indices) as private
+// items of the signed-in user and answers with the counts "neu, schon vorhanden, übersprungen".
+// Before the migrations of E4 (docs/plan/e4.md, section 7) both answer 503 with a hint.
+routerAdd(
+  'POST',
+  '/api/byl/inbox/ics/preview',
+  function (e) {
+    var ics = require(`${__hooks}/lib/inbox-ics.js`);
+    var upload = ics.uploadedText(e);
+    if (upload.unavailable) {
+      return e.json(503, { message: ics.UNAVAILABLE });
+    }
+    var result = ics.previewFile(e.app, e.auth.id, upload.text, ics.userKeywords(e.auth));
+    if (result.tooLarge) {
+      throw new BadRequestError(ics.TOO_LARGE);
+    }
+    return e.json(200, { items: result.items, skipped: result.skipped });
+  },
+  $apis.requireAuth('users'),
+  $apis.bodyLimit(21 * 1024 * 1024)
+);
+
 routerAdd(
   'POST',
   '/api/byl/inbox/ics',
   function (e) {
-    var ical = require(`${__hooks}/lib/ical.js`);
-    var MAX_BYTES = 20 * 1024 * 1024;
-    try {
-      e.app.findCollectionByNameOrId('inbox_items');
-    } catch (err) {
-      // Before the migrations of E4 (docs/plan/e4.md, section 7).
-      return e.json(503, { message: 'Der Eingang steht nach dem nächsten Start der App bereit (start.bat).' });
+    var ics = require(`${__hooks}/lib/inbox-ics.js`);
+    var upload = ics.uploadedText(e);
+    if (upload.unavailable) {
+      return e.json(503, { message: ics.UNAVAILABLE });
     }
-    var files = [];
-    try {
-      files = e.findUploadedFiles('file');
-    } catch (err) {
-      files = [];
-    }
-    if (!files || files.length !== 1) {
-      throw new BadRequestError('Genau eine .ics-Datei erwartet.');
-    }
-    var file = files[0];
-    if (file.size > MAX_BYTES || file.size > ical.MAX_TEXT_LENGTH) {
-      throw new BadRequestError('Größer als 20 MB, deshalb nicht übernommen.');
-    }
-    var reader = file.reader.open();
-    var text;
-    try {
-      text = toString(reader, MAX_BYTES);
-    } finally {
-      reader.close();
-    }
-    var result = require(`${__hooks}/lib/inbox-ics.js`).importFile(e.app, e.auth.id, text);
+    var body = e.requestInfo().body || {};
+    var result = ics.importFile(e.app, e.auth.id, upload.text, body.select, ics.userKeywords(e.auth));
     if (result.tooLarge) {
-      throw new BadRequestError('Größer als 20 MB, deshalb nicht übernommen.');
+      throw new BadRequestError(ics.TOO_LARGE);
     }
-    return e.json(200, result);
+    if (result.invalidSelection) {
+      throw new BadRequestError('Keine gültige Auswahl: bitte mindestens einen Termin der Datei wählen.');
+    }
+    return e.json(200, {
+      created: result.created,
+      duplicates: result.duplicates,
+      skipped: result.skipped,
+      failed: result.failed,
+      item: result.item
+    });
   },
   $apis.requireAuth('users'),
   $apis.bodyLimit(21 * 1024 * 1024)
+);
+
+// Whether drafts of the selection views (mail files, E4 plan package 21) are in the private inbox
+// of the signed-in user already: JSON { items: [draft] } with at most 200 drafts in the fields of
+// inbox_items (channel, kind, title, source_ref, source_date, source_meta); answers per draft
+// { state, message } with '' for not there. Saves nothing.
+routerAdd(
+  'POST',
+  '/api/byl/inbox/lookup',
+  function (e) {
+    try {
+      e.app.findCollectionByNameOrId('inbox_items');
+    } catch (err) {
+      return e.json(503, { message: require(`${__hooks}/lib/inbox-ics.js`).UNAVAILABLE });
+    }
+    var service = require(`${__hooks}/lib/inbox-service.js`);
+    var body = e.requestInfo().body || {};
+    var drafts = body.items;
+    if (Object.prototype.toString.call(drafts) !== '[object Array]' || drafts.length > 200) {
+      throw new BadRequestError('Höchstens 200 Einträge je Anfrage.');
+    }
+    var states = [];
+    for (var i = 0; i < drafts.length; i++) {
+      var draft = drafts[i] || {};
+      var existing = service.lookup(e.app, e.auth.id, {
+        channel: String(draft.channel || ''),
+        kind: String(draft.kind || ''),
+        title: String(draft.title || ''),
+        body: '',
+        source_url: String(draft.source_url || ''),
+        source_ref: String(draft.source_ref || ''),
+        source_date: String(draft.source_date || ''),
+        meta: draft.source_meta && typeof draft.source_meta === 'object' ? draft.source_meta : {}
+      });
+      states.push(existing ? { state: existing.state, message: existing.message } : { state: '', message: '' });
+    }
+    return e.json(200, { items: states });
+  },
+  $apis.requireAuth('users')
 );

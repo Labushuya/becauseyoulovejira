@@ -15,10 +15,13 @@ import {
 	getItem,
 	importCalendarFile,
 	listHandledItems,
+	lookupDrafts,
+	previewCalendarFile,
 	listNewItems,
 	originalFileUrl,
 	restoreItem
 } from '../../web/src/lib/data/inbox.ts';
+import { getImportKeywords, saveImportKeywords } from '../../web/src/lib/data/import-keywords.ts';
 import { subscribeInboxItems } from '../../web/src/lib/data/realtime.ts';
 import { createTicket, getTicket, listOpenTickets } from '../../web/src/lib/data/tickets.ts';
 import { bookmarkletValues } from '../../web/src/lib/domain/bookmarklet.ts';
@@ -338,7 +341,7 @@ describe('calendar files (E4 plan, package 14)', () => {
 
 	it('uploads an .ics file and gets the counts; the entries are events of channel ics', async () => {
 		const fresh = await createOwner(superuser);
-		expect(await importCalendarFile(fresh.client, ics('outlook.ics'))).toEqual({
+		expect(await importCalendarFile(fresh.client, ics('outlook.ics'), [0, 1])).toEqual({
 			created: 2,
 			duplicates: 0,
 			skipped: 0,
@@ -352,7 +355,7 @@ describe('calendar files (E4 plan, package 14)', () => {
 		]);
 		const holiday = items.find((item) => item.title === 'Weihnachten bei der Familie');
 		expect(holiday?.sourceMeta).toMatchObject({ all_day: true });
-		expect(await importCalendarFile(fresh.client, ics('outlook.ics'))).toMatchObject({
+		expect(await importCalendarFile(fresh.client, ics('outlook.ics'), [1, 0])).toMatchObject({
 			created: 0,
 			duplicates: 2
 		});
@@ -360,9 +363,64 @@ describe('calendar files (E4 plan, package 14)', () => {
 
 	it('fails with a data error for guests', async () => {
 		const guest = new PocketBase(superuser.baseURL);
-		await expect(importCalendarFile(guest, ics('apple.ics'))).rejects.toMatchObject({
+		await expect(importCalendarFile(guest, ics('apple.ics'), [0])).rejects.toMatchObject({
 			kind: 'session'
 		});
+	});
+});
+
+describe('selection of dropped files (E4 plan, package 21)', () => {
+	const ics = (name) =>
+		new File([readFileSync(new URL(`../fixtures/ics/${name}`, import.meta.url))], name, {
+			type: 'text/calendar'
+		});
+
+	it('keeps the keyword lists of the user and uses them in the calendar preview', async () => {
+		const fresh = await createOwner(superuser);
+		expect(await getImportKeywords(fresh.client)).toEqual({
+			eml: { keywords: [], matchBody: false },
+			ics: { keywords: [], matchBody: false },
+			whatsapp: { keywords: [], matchBody: false }
+		});
+		const saved = await saveImportKeywords(fresh.client, {
+			eml: { keywords: ['rechnung'], matchBody: true },
+			ics: { keywords: ['quartal'], matchBody: false },
+			whatsapp: { keywords: ['milch'], matchBody: false }
+		});
+		expect(saved.ics.keywords).toEqual(['quartal']);
+		expect(await getImportKeywords(fresh.client)).toEqual(saved);
+		await expect(
+			saveImportKeywords(fresh.client, { ...saved, ics: { keywords: ['x'.repeat(101)], matchBody: false } })
+		).rejects.toMatchObject({ kind: 'validation', fields: { import_keywords: expect.anything() } });
+
+		const preview = await previewCalendarFile(fresh.client, ics('outlook.ics'));
+		expect(preview.items.map((item) => [item.title, item.keyword, item.state]).sort()).toEqual([
+			['Quartalsplanung', 'quartal', ''],
+			['Weihnachten bei der Familie', '', '']
+		]);
+		const planning = preview.items.find((item) => item.keyword === 'quartal');
+		expect(await importCalendarFile(fresh.client, ics('outlook.ics'), [planning.index])).toMatchObject({
+			created: 1
+		});
+		const [item] = await listNewItems(fresh.client);
+		expect(item.sourceMeta).toMatchObject({ keyword: 'quartal' });
+		const again = await previewCalendarFile(fresh.client, ics('outlook.ics'));
+		expect(again.items.find((entry) => entry.index === planning.index)).toMatchObject({
+			state: 'new',
+			message: 'Schon im Eingang.'
+		});
+	});
+
+	it('looks up whether dropped mails are in the inbox already', async () => {
+		const fresh = await createOwner(superuser);
+		const read = await readMailFile(emlFile('utf8-plain.eml'));
+		if (!read.ok) throw new Error(read.message);
+		expect(await lookupDrafts(fresh.client, [read.draft])).toEqual([{ state: '', message: '' }]);
+		await createItem(fresh.client, read.draft);
+		expect(await lookupDrafts(fresh.client, [read.draft])).toEqual([
+			{ state: 'new', message: 'Schon im Eingang.' }
+		]);
+		expect(await lookupDrafts(fresh.client, [])).toEqual([]);
 	});
 });
 

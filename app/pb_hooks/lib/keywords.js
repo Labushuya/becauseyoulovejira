@@ -20,6 +20,12 @@ var SUGGESTIONS = ['todo', 'aufgabe', 'erledigen', 'ticket', '#byl'];
 
 var MESSAGE = 'Stichwörter: höchstens 50, je 1 bis 100 Zeichen, ohne Zeilenumbruch.';
 
+// Kinds of file imports with their own list (users.import_keywords, ADR-0020 section 3) and the
+// keys each may have; only mail files search the start of the text on request.
+var IMPORT_KINDS = ['eml', 'ics', 'whatsapp'];
+var IMPORT_KEYS = { eml: ['keywords', 'match_body'], ics: ['keywords'], whatsapp: ['keywords'] };
+var IMPORT_MESSAGE = 'Unbekannte Einstellung der Datei-Importe.';
+
 // Umlauts: [fold "a", fold "ae"]; after toLowerCase.
 var UMLAUTS = { 'ä': ['a', 'ae'], 'ö': ['o', 'oe'], 'ü': ['u', 'ue'] };
 // Other letters, the same in both foldings. The final sigma becomes sigma: JavaScript lowers a
@@ -176,6 +182,52 @@ function listViolation(value) {
   return '';
 }
 
+function isPlainObject(value) {
+  return value !== null && typeof value === 'object' && Object.prototype.toString.call(value) === '[object Object]';
+}
+
+/**
+ * Checks users.import_keywords (parsed JSON; null, undefined and '' count as not set): only the
+ * kinds of IMPORT_KINDS with their keys, valid lists and a boolean match_body. Returns '' or the
+ * message.
+ */
+function importSettingsViolation(value) {
+  if (value === undefined || value === null || value === '') {
+    return '';
+  }
+  if (!isPlainObject(value)) {
+    return IMPORT_MESSAGE;
+  }
+  for (var kind in value) {
+    if (!Object.prototype.hasOwnProperty.call(value, kind)) {
+      continue;
+    }
+    var entry = value[kind];
+    if (!Object.prototype.hasOwnProperty.call(IMPORT_KEYS, kind) || !isPlainObject(entry)) {
+      return IMPORT_MESSAGE;
+    }
+    for (var key in entry) {
+      if (Object.prototype.hasOwnProperty.call(entry, key) && IMPORT_KEYS[kind].indexOf(key) === -1) {
+        return IMPORT_MESSAGE;
+      }
+    }
+    if (entry.match_body !== undefined && typeof entry.match_body !== 'boolean') {
+      return IMPORT_MESSAGE;
+    }
+    var violation = listViolation(entry.keywords);
+    if (violation !== '') {
+      return violation;
+    }
+  }
+  return '';
+}
+
+/** { keywords, matchBody } of one kind of file import; missing or invalid values count as none. */
+function importSettingsOf(value, kind) {
+  var entry = isPlainObject(value) && isPlainObject(value[kind]) ? value[kind] : {};
+  return { keywords: listOf(entry.keywords), matchBody: kind === 'eml' && entry.match_body === true };
+}
+
 /** The usable keywords of a stored value: invalid entries are left out, never an error. */
 function listOf(value) {
   if (Object.prototype.toString.call(value) !== '[object Array]') {
@@ -200,6 +252,10 @@ module.exports = {
   MAIL_BODY_CHARS: MAIL_BODY_CHARS,
   SUGGESTIONS: SUGGESTIONS,
   MESSAGE: MESSAGE,
+  IMPORT_KINDS: IMPORT_KINDS,
+  IMPORT_MESSAGE: IMPORT_MESSAGE,
+  importSettingsViolation: importSettingsViolation,
+  importSettingsOf: importSettingsOf,
   fold: fold,
   isWordChar: isWordChar,
   matchKeyword: matchKeyword,
