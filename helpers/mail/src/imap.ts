@@ -14,6 +14,11 @@ export interface MailRef {
 	size: number;
 }
 
+/** A mail of the inbox with its header only (mailbox selection, ADR-0016 section 6). */
+export interface MailHeader extends MailRef {
+	headers: Uint8Array;
+}
+
 export interface InboxSession {
 	/** UIDVALIDITY of the inbox as text (it can exceed a safe integer in theory). */
 	readonly uidValidity: string;
@@ -21,6 +26,8 @@ export interface InboxSession {
 	readonly highestUid: number;
 	/** Mails with a UID above `afterUid`, ascending, at most `limit`. */
 	listAfter(afterUid: number, limit: number): Promise<MailRef[]>;
+	/** Header of the last `limit` mails of the inbox (by position), ascending by UID. */
+	listRecent(limit: number): Promise<MailHeader[]>;
 	/** The source of one mail, or null if it is gone. */
 	source(uid: number): Promise<Uint8Array | null>;
 	/** Logs out; errors while closing are ignored. */
@@ -110,6 +117,20 @@ export async function openInbox(
 					if (message.uid > afterUid) found.push({ uid: message.uid, size: message.size ?? 0 });
 				}
 				return found.sort((a, b) => a.uid - b.uid).slice(0, limit);
+			},
+			async listRecent(limit) {
+				if (mailbox.exists === 0) return [];
+				const from = Math.max(1, mailbox.exists - limit + 1);
+				const found: MailHeader[] = [];
+				// Sequence numbers, not UIDs: the last messages by position. BODY.PEEK[HEADER] only.
+				for await (const message of client.fetch(`${from}:*`, { uid: true, size: true, headers: true })) {
+					found.push({
+						uid: message.uid,
+						size: message.size ?? 0,
+						headers: new Uint8Array(message.headers ?? Buffer.alloc(0))
+					});
+				}
+				return found.sort((a, b) => a.uid - b.uid).slice(-limit);
 			},
 			async source(uid) {
 				const message = await client.fetchOne(String(uid), { uid: true, source: true }, { uid: true });
