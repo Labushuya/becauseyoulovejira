@@ -607,3 +607,33 @@ describe('Postfächer (E4 plan, package 22)', () => {
 		return context;
 	}
 });
+
+describe('Web.de-Postfach einrichten (E4 plan, package 11)', () => {
+	it('explains IMAP access, the app password, the variable, the restart and the switch-off', () => {
+		const { store } = setup();
+		render(ChannelsView, {
+			props: {
+				captureUrl: 'http://127.0.0.1:8090/eingang/neu',
+				connections: store,
+				importKeywords: new ImportKeywordsStore(
+					{
+						load: () => Promise.reject(new Error('not used')),
+						save: () => Promise.reject(new Error('not used'))
+					},
+					{ ensureValid: () => true, logout: () => undefined }
+				)
+			}
+		});
+		const section = screen.getByRole('region', { name: 'Web.de-Postfach einrichten' });
+		const text = (section.textContent ?? '').replace(/\s+/g, ' ');
+		expect(text).toMatch(/POP3- und IMAP-Zugriff erlauben/);
+		expect(text).toMatch(/Anwendungsspezifische Passwörter verwalten/);
+		expect(text).toMatch(/setx BYL_WEBDE_PASSWORD/);
+		expect(text).toMatch(/Postfach \(IMAP\)/);
+		expect(text).toMatch(/stop\.bat und dann start\.bat/);
+		expect(text).toMatch(/BYL_INGEST_TOKEN/);
+		expect(text).toMatch(/längere Zeit nicht genutzt/);
+		expect(text).toContain('app\\logs\\byl-mail.log');
+		expect(text).toMatch(/Gelesen-Status, Markierungen und Ordner bleiben/);
+	});
+});

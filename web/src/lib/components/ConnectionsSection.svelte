@@ -293,7 +293,9 @@
 						{#if connection.type === 'mail'}
 							<p class="hint">
 								Der Mail-Hilfsprozess byl-mail.exe ruft dieses Postfach alle 5 Minuten ab, solange
-								die App läuft; dabei ändert er nichts im Postfach.
+								die App läuft; dabei ändert er nichts im Postfach. Nach dem Anlegen einer
+								Postfach-Verbindung die App einmal neu starten (stop.bat, dann start.bat), damit er
+								startet.
 							</p>
 						{/if}
 						<div class="buttons">
