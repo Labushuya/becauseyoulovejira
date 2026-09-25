@@ -1,17 +1,18 @@
 <script lang="ts">
-	import { tick } from 'svelte';
 	import type { ResolvedPathname } from '$app/types';
 	import { describeQuickEntry, parseQuickEntry, type QuickEntry } from '$lib/domain/quick-syntax';
 	import type { CaptureTarget } from '$lib/domain/templates';
 	import type { ProjectRef, TagRef } from '$lib/domain/ticket';
 	import type { CaptureSaveResult } from '$lib/stores/capture';
 	import ErrorIcon from './ErrorIcon.svelte';
+	import Modal from './overlay/Modal.svelte';
 
-	// Quick entry (CLAUDE.md section 7; E4 plan, package 6; OF-E4-3) as a native modal <dialog>:
-	// one line with the short syntax `Titel @CODE !hoch #tag`, a preview of what was recognised,
-	// Enter creates a ticket (source "quick"), Alt+Enter puts the line into the inbox. After saving
-	// the field empties for the next line and the result is announced with a link; Escape closes
-	// and the focus returns to where it was.
+	// Quick entry (CLAUDE.md section 7; E4 plan, package 6; OF-E4-3) on the modal building block
+	// (ADR-0025 section 3, size M), shown while the component is mounted: one line with the short
+	// syntax `Titel @CODE !hoch #tag`, a preview of what was recognised, Enter creates a ticket
+	// (source "quick"), Alt+Enter puts the line into the inbox. After saving the field empties for
+	// the next line and the result is announced with a link. Typed text counts as unsaved: ×,
+	// Escape and "Abbrechen" ask before it is lost. The modal returns the focus on closing.
 	let {
 		projects = [],
 		tags = [],
@@ -29,32 +30,22 @@
 
 	const uid = $props.id();
 	const ids = {
-		heading: `${uid}-heading`,
+		form: `${uid}-form`,
 		input: `${uid}-input`,
 		preview: `${uid}-preview`,
 		hint: `${uid}-hint`
 	};
 
-	let dialog = $state<HTMLDialogElement>();
 	let input = $state<HTMLInputElement>();
 	let text = $state('');
 	let pending = $state(false);
+	/** Something was saved in this dialog: the footer says "Schließen" instead of "Abbrechen". */
+	let saved = $state(false);
 	let message = $state<string | null>(null);
 	let result = $state<{ text: string; href: ResolvedPathname; target: CaptureTarget } | null>(null);
 
 	const entry = $derived(parseQuickEntry(text, projects, tags));
 	const recognised = $derived(describeQuickEntry(entry));
-
-	$effect(() => {
-		const element = dialog;
-		if (element === undefined) return;
-		const previous = document.activeElement;
-		if (!element.open) element.showModal();
-		void tick().then(() => input?.focus());
-		return () => {
-			if (previous instanceof HTMLElement && previous.isConnected) previous.focus();
-		};
-	});
 
 	async function save(target: CaptureTarget) {
 		if (pending) return;
@@ -72,6 +63,7 @@
 			message = outcome.message;
 			return;
 		}
+		saved = true;
 		result = { text: outcome.message, href: resultHref(target, outcome.id), target };
 		text = '';
 		input?.focus();
@@ -82,17 +74,20 @@
 		event.preventDefault();
 		void save(event.altKey ? 'inbox' : 'ticket');
 	}
-
-	/** Escape of the browser: close unless a save runs. */
-	function oncancel(event: Event) {
-		event.preventDefault();
-		if (!pending) onclose();
-	}
 </script>
 
-<dialog class="quick" bind:this={dialog} aria-labelledby={ids.heading} {oncancel}>
-	<h2 id={ids.heading}>Schnellerfassung</h2>
+<Modal
+	open
+	size="m"
+	title="Schnellerfassung"
+	busy={pending}
+	dirty={text.trim() !== ''}
+	initialFocus={input}
+	discardText="Der getippte Text geht verloren."
+	onclose={() => onclose()}
+>
 	<form
+		id={ids.form}
 		class="form"
 		novalidate
 		onsubmit={(event) => {
@@ -142,46 +137,32 @@
 				<p class="alert-error"><ErrorIcon /><span>{message}</span></p>
 			{/if}
 		</div>
-
-		<div class="buttons">
-			<button class="secondary" type="button" onclick={() => onclose()}>Schließen</button>
-			<button
-				class="secondary"
-				type="button"
-				aria-disabled={pending ? 'true' : undefined}
-				onclick={() => save('inbox')}
-			>
-				In den Eingang
-			</button>
-			<button class="button-primary" type="submit" aria-disabled={pending ? 'true' : undefined}>
-				{pending ? 'Wird gespeichert …' : 'Ticket anlegen'}
-			</button>
-		</div>
 	</form>
-</dialog>
+
+	{#snippet footer({ close })}
+		<button class="button-secondary" type="button" onclick={close}>
+			{saved ? 'Schließen' : 'Abbrechen'}
+		</button>
+		<button
+			class="button-secondary"
+			type="button"
+			aria-disabled={pending ? 'true' : undefined}
+			onclick={() => save('inbox')}
+		>
+			In den Eingang
+		</button>
+		<button
+			class="button-primary"
+			type="submit"
+			form={ids.form}
+			aria-disabled={pending ? 'true' : undefined}
+		>
+			{pending ? 'Wird gespeichert …' : 'Ticket anlegen'}
+		</button>
+	{/snippet}
+</Modal>
 
 <style>
-	.quick {
-		width: min(36rem, calc(100vw - 2rem));
-		margin: 12vh auto auto;
-		padding: 1.25rem;
-		color: var(--color-text);
-		background: var(--color-surface);
-		border: 1px solid var(--color-line);
-		border-radius: 0.5rem;
-	}
-
-	.quick::backdrop {
-		background: var(--color-bg);
-		opacity: 0.75;
-	}
-
-	h2 {
-		margin-bottom: 0.75rem;
-		font-size: 1rem;
-		font-weight: 600;
-	}
-
 	.form {
 		display: grid;
 		gap: 0.625rem;
@@ -199,7 +180,7 @@
 		font: inherit;
 		background: var(--color-surface);
 		border: 1px solid var(--color-text-muted);
-		border-radius: 0.375rem;
+		border-radius: var(--radius-control);
 	}
 
 	.preview ul {
@@ -225,25 +206,5 @@
 
 	.result a {
 		color: var(--color-brand-text);
-	}
-
-	.buttons {
-		display: flex;
-		flex-wrap: wrap;
-		gap: 0.5rem;
-		justify-content: flex-end;
-	}
-
-	.secondary {
-		padding: 0.625rem 1rem;
-		background: none;
-		border: 1px solid var(--color-line);
-		border-radius: 0.375rem;
-		cursor: pointer;
-	}
-
-	[aria-disabled='true'] {
-		cursor: not-allowed;
-		opacity: 0.6;
 	}
 </style>

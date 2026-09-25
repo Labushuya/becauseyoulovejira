@@ -357,7 +357,7 @@
 			>
 				{pending ? 'Wird angelegt …' : 'Anlegen'}
 			</button>
-			<button class="secondary" type="button" onclick={cancel}>Abbrechen</button>
+			<button class="button-secondary" type="button" onclick={cancel}>Abbrechen</button>
 		</div>
 		{#if missingTitle}
 			<p class="hint" id={ids.titleHint}>Zum Anlegen fehlt noch ein Titel.</p>
@@ -429,14 +429,6 @@
 	.button-primary[aria-disabled='true'] {
 		cursor: not-allowed;
 		opacity: 0.6;
-	}
-
-	.secondary {
-		padding: 0.625rem 1rem;
-		background: none;
-		border: 1px solid var(--color-line);
-		border-radius: 0.375rem;
-		cursor: pointer;
 	}
 
 	.hint {

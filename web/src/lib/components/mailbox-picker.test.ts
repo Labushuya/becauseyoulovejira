@@ -3,7 +3,7 @@
 // the neutral hint for a stopped mail helper and errors with icon and reason.
 
 import { fireEvent, render, screen, within } from '@testing-library/svelte';
-import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import {
 	importSummary,
 	preselectedUids,
@@ -13,29 +13,9 @@ import {
 	type MailboxOutcome
 } from '$lib/domain/mailbox';
 import MailboxPicker from './MailboxPicker.svelte';
+import { useOverlayStubs } from '$lib/test/overlay-stubs';
 
-const nativeDialog = {
-	showModal: HTMLDialogElement.prototype.showModal,
-	close: HTMLDialogElement.prototype.close
-};
-
-beforeAll(() => {
-	if (typeof nativeDialog.showModal !== 'function') {
-		HTMLDialogElement.prototype.showModal = function (this: HTMLDialogElement) {
-			this.open = true;
-		};
-	}
-	if (typeof nativeDialog.close !== 'function') {
-		HTMLDialogElement.prototype.close = function (this: HTMLDialogElement) {
-			this.open = false;
-		};
-	}
-});
-
-afterAll(() => {
-	HTMLDialogElement.prototype.showModal = nativeDialog.showModal;
-	HTMLDialogElement.prototype.close = nativeDialog.close;
-});
+useOverlayStubs();
 
 function mail(uid: number, overrides: Partial<MailboxMail> = {}): MailboxMail {
 	return {
@@ -133,6 +113,9 @@ describe('MailboxPicker', () => {
 	it('takes the chosen mails, shows the result per mail and keeps failed ones selectable', async () => {
 		const { save } = setup();
 		await screen.findByText('Todo: Steuer');
+		const dialog = screen.getByRole('dialog', { name: 'Aus dem Postfach wählen' });
+		expect(dialog.classList.contains('size-l')).toBe(true);
+		expect(within(dialog).getByRole('button', { name: 'Abbrechen' })).toBeTruthy();
 		await fireEvent.click(row('Hallo').getByRole('checkbox'));
 		await fireEvent.click(screen.getByRole('button', { name: '3 Mails in den Eingang' }));
 		expect(save).toHaveBeenCalledWith([5, 4, 2]);
@@ -142,6 +125,9 @@ describe('MailboxPicker', () => {
 		expect(failed.closest('.failed')?.querySelector('svg')).not.toBeNull();
 		expect((row('Rechnung').getByRole('checkbox') as HTMLInputElement).disabled).toBe(false);
 		expect(screen.getByText('1 neu, 1 mit Fehler.')).toBeTruthy();
+		// Mails are taken: the footer says "Schließen" (× and footer).
+		expect(within(dialog).queryByRole('button', { name: 'Abbrechen' })).toBeNull();
+		expect(within(dialog).getAllByRole('button', { name: 'Schließen' })).toHaveLength(2);
 	});
 
 	it('explains a stopped mail helper neutrally and tries again', async () => {

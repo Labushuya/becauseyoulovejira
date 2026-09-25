@@ -7,9 +7,10 @@ import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { fireEvent, render, screen, within } from '@testing-library/svelte';
 import { createRawSnippet, tick } from 'svelte';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { EMPTY_LIST_QUERY, type ListQuery } from '$lib/domain/list-query';
 import type { TicketSummary } from '$lib/domain/ticket';
+import { useOverlayStubs } from '$lib/test/overlay-stubs';
 import { NEW_TICKET_LINK_ID } from '$lib/ticket-links';
 import Layout from './+layout.svelte';
 
@@ -312,19 +313,7 @@ describe('app layout', () => {
 });
 
 describe('app layout: quick entry keys (E4 plan, T-11 and package 6)', () => {
-	const nativeShowModal = HTMLDialogElement.prototype.showModal;
-
-	beforeEach(() => {
-		if (typeof nativeShowModal !== 'function') {
-			HTMLDialogElement.prototype.showModal = function (this: HTMLDialogElement) {
-				this.open = true;
-			};
-		}
-	});
-
-	afterEach(() => {
-		HTMLDialogElement.prototype.showModal = nativeShowModal;
-	});
+	useOverlayStubs();
 
 	const quick = () => screen.queryByRole('dialog', { name: 'Schnellerfassung' });
 

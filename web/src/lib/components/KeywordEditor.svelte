@@ -130,7 +130,7 @@
 			/>
 			<button
 				type="button"
-				class="secondary"
+				class="button-secondary"
 				aria-disabled={saving ? 'true' : undefined}
 				onclick={() => {
 					if (!saving) void add();
@@ -140,7 +140,7 @@
 			</button>
 			<button
 				type="button"
-				class="secondary"
+				class="button-secondary"
 				aria-disabled={saving || !suggestionsMissing ? 'true' : undefined}
 				title={`Vorschläge: ${KEYWORD_SUGGESTIONS.join(', ')}`}
 				onclick={() => {
@@ -233,14 +233,6 @@
 		background: var(--color-surface);
 		border: 1px solid var(--color-text-muted);
 		border-radius: 0.375rem;
-	}
-
-	.secondary {
-		padding: 0.375rem 0.875rem;
-		background: none;
-		border: 1px solid var(--color-line);
-		border-radius: 0.375rem;
-		cursor: pointer;
 	}
 
 	[aria-disabled='true'] {

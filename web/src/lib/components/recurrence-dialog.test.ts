@@ -1,9 +1,10 @@
 import { fireEvent, render, screen, within } from '@testing-library/svelte';
 import { tick } from 'svelte';
-import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { defaultFormValues, type RecurrenceFormValues } from '$lib/domain/recurrence-rule';
 import type { EditResult } from '$lib/stores/catalog-editor';
 import RecurrenceDialog from './RecurrenceDialog.svelte';
+import { useOverlayStubs } from '$lib/test/overlay-stubs';
 
 // "Wiederholen…" as a modal dialog (E5 plan, package 4): focus, preview that follows every
 // change, checks before sending, field errors of the server at their field, other refusals as a
@@ -11,28 +12,7 @@ import RecurrenceDialog from './RecurrenceDialog.svelte';
 
 const TODAY = '2026-09-25';
 
-const nativeDialog = {
-	showModal: HTMLDialogElement.prototype.showModal,
-	close: HTMLDialogElement.prototype.close
-};
-
-beforeAll(() => {
-	if (typeof nativeDialog.showModal !== 'function') {
-		HTMLDialogElement.prototype.showModal = function (this: HTMLDialogElement) {
-			this.open = true;
-		};
-	}
-	if (typeof nativeDialog.close !== 'function') {
-		HTMLDialogElement.prototype.close = function (this: HTMLDialogElement) {
-			this.open = false;
-		};
-	}
-});
-
-afterAll(() => {
-	HTMLDialogElement.prototype.showModal = nativeDialog.showModal;
-	HTMLDialogElement.prototype.close = nativeDialog.close;
-});
+useOverlayStubs();
 
 function renderDialog(
 	onsave: (values: RecurrenceFormValues) => Promise<EditResult<unknown>> = async () => ({

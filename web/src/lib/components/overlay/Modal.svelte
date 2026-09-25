@@ -20,6 +20,7 @@
 		discardQuestion = 'Änderungen verwerfen?',
 		discardText = 'Der nicht gespeicherte Text geht verloren.',
 		onclose,
+		onbusyescape,
 		headerActions,
 		footer,
 		children
@@ -40,6 +41,11 @@
 		discardText?: string;
 		/** The modal asks its owner to close, with the way the user chose. */
 		onclose: (reason: CloseTrigger) => void;
+		/**
+		 * Escape while busy: the owner's own rule ("Gesammelt umwandeln" stops after the current
+		 * entry). Without it Escape does nothing while busy.
+		 */
+		onbusyescape?: () => void;
 		headerActions?: Snippet;
 		/** Buttons of the footer; `close` is "Abbrechen"/"Schließen" under the closing rules. */
 		footer?: Snippet<[{ close: () => void }]>;
@@ -103,6 +109,10 @@
 	});
 
 	function request(trigger: CloseTrigger) {
+		if (trigger === 'escape' && busy && onbusyescape) {
+			onbusyescape();
+			return;
+		}
 		switch (closeAction(trigger, { dirty, busy, asking })) {
 			case 'close':
 				onclose(trigger);
@@ -219,7 +229,7 @@
 						<button class="button-secondary" type="button" bind:this={keepButton} onclick={resume}>
 							Weiter bearbeiten
 						</button>
-						<button class="button-primary small" type="button" onclick={discard}>Verwerfen</button>
+						<button class="button-primary" type="button" onclick={discard}>Verwerfen</button>
 					</div>
 				</div>
 			{:else if footer}
@@ -358,7 +368,8 @@
 		justify-content: flex-end;
 	}
 
-	.small {
+	/* Primary buttons of every footer have the size of the secondary ones. */
+	.foot :global(.button-primary) {
 		padding: 0.375rem 0.875rem;
 		font-size: 0.875rem;
 	}

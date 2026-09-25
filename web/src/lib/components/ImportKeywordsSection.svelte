@@ -52,7 +52,7 @@
 	{:else if store.state === 'error'}
 		<div class="alert-error" role="alert">
 			<ErrorIcon /><span>{store.error}</span>
-			<button class="secondary" type="button" onclick={() => void store.load()}>
+			<button class="button-secondary" type="button" onclick={() => void store.load()}>
 				Erneut versuchen
 			</button>
 		</div>
@@ -137,13 +137,5 @@
 	.hint {
 		font-size: 0.8125rem;
 		color: var(--color-text-muted);
-	}
-
-	.secondary {
-		padding: 0.375rem 0.875rem;
-		background: none;
-		border: 1px solid var(--color-line);
-		border-radius: 0.375rem;
-		cursor: pointer;
 	}
 </style>

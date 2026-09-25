@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { tick, untrack } from 'svelte';
+	import { untrack } from 'svelte';
 	import { SvelteSet } from 'svelte/reactivity';
 	import { formatCalendarDate } from '$lib/domain/format';
 	import type { InboxDraft } from '$lib/domain/inbox';
@@ -12,12 +12,14 @@
 	} from '$lib/domain/whatsapp-export';
 	import { draftsSummary, type DraftsOutcome } from '$lib/stores/capture';
 	import ErrorIcon from './ErrorIcon.svelte';
+	import Modal from './overlay/Modal.svelte';
 
-	// Selection view of a WhatsApp export (E4 plan, package 16) as a native modal <dialog>: every
-	// message with a checkbox, filters by sender and period, "Alle sichtbaren auswählen". Only the
-	// chosen messages become entries; messages a keyword of the user matches are chosen at first
-	// (package 21, ADR-0020) and keep it in source_meta. Failures stay listed with their reason;
-	// Escape and "Schließen" close, the focus returns to where it was.
+	// Selection view of a WhatsApp export (E4 plan, package 16) on the modal building block
+	// (ADR-0025 section 3, size L): every message with a checkbox, filters by sender and period,
+	// "Alle sichtbaren auswählen". Only the chosen messages become entries; messages a keyword of
+	// the user matches are chosen at first (package 21, ADR-0020) and keep it in source_meta.
+	// Failures stay listed with their reason, and the footer then says "Schließen", because some
+	// entries are saved already.
 	let {
 		chat,
 		messages,
@@ -38,7 +40,7 @@
 
 	const uid = $props.id();
 	const ids = {
-		heading: `${uid}-heading`,
+		form: `${uid}-form`,
 		summary: `${uid}-summary`,
 		sender: `${uid}-sender`,
 		from: `${uid}-from`,
@@ -46,8 +48,6 @@
 		count: `${uid}-count`
 	};
 
-	let dialog = $state<HTMLDialogElement>();
-	let senderSelect = $state<HTMLSelectElement>();
 	let sender = $state('');
 	let from = $state('');
 	let to = $state('');
@@ -71,17 +71,6 @@
 	);
 	const chosenMessages = $derived(messages.filter((message) => chosen.has(message.index)));
 	const periodInvalid = $derived(from !== '' && to !== '' && from > to);
-
-	$effect(() => {
-		const element = dialog;
-		if (element === undefined) return;
-		const previous = document.activeElement;
-		if (!element.open) element.showModal();
-		void tick().then(() => senderSelect?.focus());
-		return () => {
-			if (previous instanceof HTMLElement && previous.isConnected) previous.focus();
-		};
-	});
 
 	function chooseVisible() {
 		for (const message of visible) chosen.add(message.index);
@@ -120,23 +109,16 @@
 		}
 		outcome = result;
 	}
-
-	function close() {
-		if (!pending) onclose(outcome);
-	}
 </script>
 
-<dialog
-	class="whatsapp"
-	bind:this={dialog}
-	aria-labelledby={ids.heading}
-	aria-describedby={ids.summary}
-	oncancel={(event) => {
-		event.preventDefault();
-		close();
-	}}
+<Modal
+	open
+	size="l"
+	title={`WhatsApp-Chat „${chat}“`}
+	describedBy={ids.summary}
+	busy={pending}
+	onclose={() => onclose(outcome)}
 >
-	<h2 id={ids.heading}>WhatsApp-Chat „{chat}“</h2>
 	<p id={ids.summary} class="hint">
 		{countText(messages.length)} zur Auswahl{#if leftOut > 0}, {leftOut} ausgelassen (Systemzeilen, Medien,
 			gelöschte Nachrichten){/if}. Nur die ausgewählten Nachrichten kommen in den Eingang.
@@ -146,11 +128,11 @@
 			Nachrichten mit einem deiner Stichwörter sind vorausgewählt.
 		{/if}
 	</p>
-	<form class="form" novalidate onsubmit={save}>
+	<form id={ids.form} class="form" novalidate onsubmit={save}>
 		<div class="filters">
 			<div class="field">
 				<label for={ids.sender}>Absender</label>
-				<select id={ids.sender} bind:value={sender} bind:this={senderSelect}>
+				<select id={ids.sender} bind:value={sender}>
 					<option value="">Alle</option>
 					{#each senders as name (name)}
 						<option value={name}>{name}</option>
@@ -179,10 +161,12 @@
 		{/if}
 
 		<div class="choice">
-			<button class="secondary" type="button" onclick={chooseVisible}>
+			<button class="button-secondary" type="button" onclick={chooseVisible}>
 				Alle sichtbaren auswählen
 			</button>
-			<button class="secondary" type="button" onclick={clearChoice}>Auswahl aufheben</button>
+			<button class="button-secondary" type="button" onclick={clearChoice}>
+				Auswahl aufheben
+			</button>
 			<span id={ids.count} class="hint" aria-live="polite">
 				{countText(visible.length)} sichtbar, {chosen.size} ausgewählt
 			</span>
@@ -230,47 +214,27 @@
 				</div>
 			</div>
 		{/if}
-
-		<div class="buttons">
-			<button class="secondary" type="button" onclick={close}>Schließen</button>
-			<button
-				class="button-primary"
-				type="submit"
-				aria-disabled={pending || chosenMessages.length === 0 ? 'true' : undefined}
-			>
-				{pending ? 'Wird übernommen …' : `${countText(chosenMessages.length)} in den Eingang`}
-			</button>
-		</div>
 	</form>
-</dialog>
+
+	{#snippet footer({ close })}
+		<button class="button-secondary" type="button" onclick={close}>
+			{outcome === null ? 'Abbrechen' : 'Schließen'}
+		</button>
+		<button
+			class="button-primary"
+			type="submit"
+			form={ids.form}
+			aria-disabled={pending || chosenMessages.length === 0 ? 'true' : undefined}
+		>
+			{pending ? 'Wird übernommen …' : `${countText(chosenMessages.length)} in den Eingang`}
+		</button>
+	{/snippet}
+</Modal>
 
 <style>
-	.whatsapp {
-		width: min(44rem, calc(100vw - 2rem));
-		max-height: calc(100vh - 2rem);
-		margin: auto;
-		padding: 1.25rem;
-		color: var(--color-text);
-		background: var(--color-surface);
-		border: 1px solid var(--color-line);
-		border-radius: 0.5rem;
-	}
-
-	.whatsapp::backdrop {
-		background: var(--color-bg);
-		opacity: 0.75;
-	}
-
-	h2 {
-		margin-bottom: 0.5rem;
-		font-size: 1rem;
-		font-weight: 600;
-	}
-
 	.form {
 		display: grid;
 		gap: 0.625rem;
-		margin-top: 0.75rem;
 	}
 
 	.filters {
@@ -297,7 +261,7 @@
 		color: var(--color-text);
 		background: var(--color-surface);
 		border: 1px solid var(--color-text-muted);
-		border-radius: 0.375rem;
+		border-radius: var(--radius-control);
 	}
 
 	.choice {
@@ -307,13 +271,12 @@
 		align-items: center;
 	}
 
+	/* The content of the modal scrolls; the list has no scroll area of its own. */
 	.messages {
-		max-height: 22rem;
-		overflow-y: auto;
 		margin: 0;
 		padding: 0;
 		border: 1px solid var(--color-line);
-		border-radius: 0.375rem;
+		border-radius: var(--radius-control);
 	}
 
 	.messages ul {
@@ -360,25 +323,5 @@
 	.hint {
 		font-size: 0.8125rem;
 		color: var(--color-text-muted);
-	}
-
-	.buttons {
-		display: flex;
-		flex-wrap: wrap;
-		gap: 0.5rem;
-		justify-content: flex-end;
-	}
-
-	.secondary {
-		padding: 0.5rem 0.875rem;
-		background: none;
-		border: 1px solid var(--color-line);
-		border-radius: 0.375rem;
-		cursor: pointer;
-	}
-
-	.button-primary[aria-disabled='true'] {
-		cursor: not-allowed;
-		opacity: 0.6;
 	}
 </style>

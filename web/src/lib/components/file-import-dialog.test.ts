@@ -3,33 +3,14 @@
 // only the chosen entries, Escape without saving.
 
 import { fireEvent, render, screen, within } from '@testing-library/svelte';
-import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
+import { tick } from 'svelte';
+import { describe, expect, it, vi } from 'vitest';
 import type { InboxDraft } from '$lib/domain/inbox';
 import type { FileImportResult, FileSelection, SelectionEntry } from '$lib/stores/mail-import';
 import FileImportDialog from './FileImportDialog.svelte';
+import { useOverlayStubs } from '$lib/test/overlay-stubs';
 
-const nativeDialog = {
-	showModal: HTMLDialogElement.prototype.showModal,
-	close: HTMLDialogElement.prototype.close
-};
-
-beforeAll(() => {
-	if (typeof nativeDialog.showModal !== 'function') {
-		HTMLDialogElement.prototype.showModal = function (this: HTMLDialogElement) {
-			this.open = true;
-		};
-	}
-	if (typeof nativeDialog.close !== 'function') {
-		HTMLDialogElement.prototype.close = function (this: HTMLDialogElement) {
-			this.open = false;
-		};
-	}
-});
-
-afterAll(() => {
-	HTMLDialogElement.prototype.showModal = nativeDialog.showModal;
-	HTMLDialogElement.prototype.close = nativeDialog.close;
-});
+useOverlayStubs();
 
 const ENTRIES: SelectionEntry[] = [
 	{
@@ -160,6 +141,19 @@ describe('FileImportDialog', () => {
 		const { onsave, onclose, dialog } = renderDialog();
 		await fireEvent(dialog, new Event('cancel', { cancelable: true }));
 		expect(onclose).toHaveBeenCalledWith(null);
+		expect(onsave).not.toHaveBeenCalled();
+	});
+
+	it('is a modal of size L; ×, "Abbrechen" and the veil close without saving', async () => {
+		const { onsave, onclose, dialog } = renderDialog();
+		await tick();
+		expect(dialog.classList.contains('size-l')).toBe(true);
+		expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Alle auswählen' }));
+		await fireEvent.click(within(dialog).getByRole('button', { name: 'Schließen' }));
+		await fireEvent.click(within(dialog).getByRole('button', { name: 'Abbrechen' }));
+		await fireEvent.pointerDown(dialog);
+		await fireEvent.click(dialog);
+		expect(onclose.mock.calls).toEqual([[null], [null], [null]]);
 		expect(onsave).not.toHaveBeenCalled();
 	});
 });

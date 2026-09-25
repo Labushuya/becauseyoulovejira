@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { tick, untrack } from 'svelte';
+	import { untrack } from 'svelte';
 	import { SvelteMap, SvelteSet } from 'svelte/reactivity';
 	import { formatBerlinDateTime } from '$lib/domain/format';
 	import {
@@ -14,13 +14,15 @@
 		type MailboxOutcome
 	} from '$lib/domain/mailbox';
 	import ErrorIcon from './ErrorIcon.svelte';
+	import Modal from './overlay/Modal.svelte';
 
-	// Mailbox selection (E4 plan, package 23; ADR-0016 section 6, ADR-0020 section 4) as a native modal
-	// <dialog> after the model of the file import: the last mails of the inbox of a mail connection
-	// with a checkbox each. Mails with a keyword in the subject are chosen at first, mails that are
-	// in the inbox already are shown but cannot be chosen. Only the chosen mails are taken, also
-	// without keyword and also from before the setup. The dialog stays open after taking them and
-	// shows the result per mail; a failed mail can be chosen again. The mailbox itself stays as it is.
+	// Mailbox selection (E4 plan, package 23; ADR-0016 section 6, ADR-0020 section 4) on the modal
+	// building block (ADR-0025 section 3, size L), after the model of the file import: the last
+	// mails of the inbox of a mail connection with a checkbox each. Mails with a keyword in the
+	// subject are chosen at first, mails that are in the inbox already are shown but cannot be
+	// chosen. Only the chosen mails are taken, also without keyword and also from before the setup.
+	// The dialog stays open after taking them and shows the result per mail; a failed mail can be
+	// chosen again, and the footer says "Schließen" from then on. The mailbox stays as it is.
 	let {
 		label,
 		load,
@@ -37,7 +39,7 @@
 
 	const uid = $props.id();
 	const ids = {
-		heading: `${uid}-heading`,
+		form: `${uid}-form`,
 		summary: `${uid}-summary`,
 		limit: `${uid}-limit`
 	};
@@ -47,8 +49,6 @@
 		| { kind: 'ready'; mails: MailboxMail[] }
 		| { kind: 'unavailable' | 'failed'; message: string; hint: string };
 
-	let dialog = $state<HTMLDialogElement>();
-	let limitSelect = $state<HTMLSelectElement>();
 	let limit = $state<MailboxLimit>(MAILBOX_DEFAULT_LIMIT);
 	let view = $state<View>({ kind: 'loading' });
 	let pending = $state(false);
@@ -63,17 +63,8 @@
 	const chosenCount = $derived(open.filter((mail) => chosen.has(mail.uid)).length);
 	const preselected = $derived(preselectedUids(mails).length);
 
-	$effect(() => {
-		const element = dialog;
-		if (element === undefined) return;
-		const previous = document.activeElement;
-		if (!element.open) element.showModal();
-		void tick().then(() => limitSelect?.focus());
-		return () => {
-			controller?.abort();
-			if (previous instanceof HTMLElement && previous.isConnected) previous.focus();
-		};
-	});
+	// A request still running when the dialog goes away is aborted.
+	$effect(() => () => controller?.abort());
 
 	// Loads the list at the start and whenever the number changes.
 	$effect(() => {
@@ -147,23 +138,16 @@
 		}
 		announcement = importSummary(outcome.value);
 	}
-
-	function close() {
-		if (!pending) onclose();
-	}
 </script>
 
-<dialog
-	class="mailbox"
-	bind:this={dialog}
-	aria-labelledby={ids.heading}
-	aria-describedby={ids.summary}
-	oncancel={(event) => {
-		event.preventDefault();
-		close();
-	}}
+<Modal
+	open
+	size="l"
+	title="Aus dem Postfach wählen"
+	describedBy={ids.summary}
+	busy={pending}
+	onclose={() => onclose()}
 >
-	<h2 id={ids.heading}>Aus dem Postfach wählen</h2>
 	<p id={ids.summary} class="hint">
 		„{label}“: die letzten Mails des Posteingangs. Nur die ausgewählten kommen in den Eingang, auch
 		ohne Stichwort und auch aus der Zeit vor der Einrichtung. Das Postfach bleibt unverändert.
@@ -177,7 +161,6 @@
 		<label for={ids.limit}>Anzahl</label>
 		<select
 			id={ids.limit}
-			bind:this={limitSelect}
 			value={limit}
 			disabled={pending}
 			onchange={(event) => (limit = Number(event.currentTarget.value) as MailboxLimit)}
@@ -196,7 +179,7 @@
 			{#if view.hint !== ''}<p>{view.hint}</p>{/if}
 		</div>
 		<p>
-			<button class="secondary" type="button" onclick={() => void refresh(limit)}
+			<button class="button-secondary" type="button" onclick={() => void refresh(limit)}
 				>Erneut versuchen</button
 			>
 		</p>
@@ -204,20 +187,20 @@
 		<div class="alert-error" role="alert"><ErrorIcon /><span>{view.message}</span></div>
 		{#if view.hint !== ''}<p class="notice">{view.hint}</p>{/if}
 		<p>
-			<button class="secondary" type="button" onclick={() => void refresh(limit)}
+			<button class="button-secondary" type="button" onclick={() => void refresh(limit)}
 				>Erneut versuchen</button
 			>
 		</p>
 	{/if}
 
-	<form class="form" novalidate onsubmit={submit}>
+	<form id={ids.form} class="form" novalidate onsubmit={submit}>
 		{#if view.kind === 'ready'}
 			{#if mails.length === 0}
 				<p class="hint">Der Posteingang ist leer.</p>
 			{:else}
 				<div class="choice">
 					<button
-						class="secondary"
+						class="button-secondary"
 						type="button"
 						onclick={() => {
 							for (const mail of open) chosen.add(mail.uid);
@@ -225,7 +208,7 @@
 					>
 						Alle auswählen
 					</button>
-					<button class="secondary" type="button" onclick={() => chosen.clear()}>
+					<button class="button-secondary" type="button" onclick={() => chosen.clear()}>
 						Auswahl aufheben
 					</button>
 					<span class="hint" aria-live="polite">{chosenCount} ausgewählt</span>
@@ -265,50 +248,30 @@
 			<div class="alert-error" role="alert"><ErrorIcon /><span>{saveError.message}</span></div>
 			{#if saveError.hint !== ''}<p class="notice">{saveError.hint}</p>{/if}
 		{/if}
-
-		<div class="buttons">
-			<button class="secondary" type="button" onclick={close}>Schließen</button>
-			{#if view.kind === 'ready' && mails.length > 0}
-				<button
-					class="button-primary"
-					type="submit"
-					aria-disabled={pending || chosenCount === 0 ? 'true' : undefined}
-				>
-					{pending ? 'Wird übernommen …' : `${countText(chosenCount)} in den Eingang`}
-				</button>
-			{/if}
-		</div>
 	</form>
-</dialog>
+
+	{#snippet footer({ close })}
+		<button class="button-secondary" type="button" onclick={close}>
+			{results.size === 0 ? 'Abbrechen' : 'Schließen'}
+		</button>
+		{#if view.kind === 'ready' && mails.length > 0}
+			<button
+				class="button-primary"
+				type="submit"
+				form={ids.form}
+				aria-disabled={pending || chosenCount === 0 ? 'true' : undefined}
+			>
+				{pending ? 'Wird übernommen …' : `${countText(chosenCount)} in den Eingang`}
+			</button>
+		{/if}
+	{/snippet}
+</Modal>
 
 <style>
-	.mailbox {
-		width: min(44rem, calc(100vw - 2rem));
-		max-height: calc(100vh - 2rem);
-		margin: auto;
-		padding: 1.25rem;
-		color: var(--color-text);
-		background: var(--color-surface);
-		border: 1px solid var(--color-line);
-		border-radius: 0.5rem;
-	}
-
-	.mailbox::backdrop {
-		background: var(--color-bg);
-		opacity: 0.75;
-	}
-
-	h2 {
-		margin-bottom: 0.5rem;
-		font-size: 1rem;
-		font-weight: 600;
-	}
-
 	.field {
 		display: flex;
 		gap: 0.5rem;
 		align-items: center;
-		margin: 0.75rem 0;
 	}
 
 	label[for] {
@@ -323,13 +286,12 @@
 		color: var(--color-text);
 		background: var(--color-surface);
 		border: 1px solid var(--color-text-muted);
-		border-radius: 0.375rem;
+		border-radius: var(--radius-control);
 	}
 
 	.form {
 		display: grid;
 		gap: 0.625rem;
-		margin-top: 0.75rem;
 	}
 
 	.choice {
@@ -339,13 +301,12 @@
 		align-items: center;
 	}
 
+	/* The content of the modal scrolls; the list has no scroll area of its own. */
 	.entries {
-		max-height: 22rem;
-		overflow-y: auto;
 		margin: 0;
 		padding: 0;
 		border: 1px solid var(--color-line);
-		border-radius: 0.375rem;
+		border-radius: var(--radius-control);
 	}
 
 	.entries ul {
@@ -410,26 +371,6 @@
 		font-size: 0.8125rem;
 		color: var(--color-brand-soft-text);
 		background: var(--color-brand-soft-bg);
-		border-radius: 0.375rem;
-	}
-
-	.buttons {
-		display: flex;
-		flex-wrap: wrap;
-		gap: 0.5rem;
-		justify-content: flex-end;
-	}
-
-	.secondary {
-		padding: 0.5rem 0.875rem;
-		background: none;
-		border: 1px solid var(--color-line);
-		border-radius: 0.375rem;
-		cursor: pointer;
-	}
-
-	.button-primary[aria-disabled='true'] {
-		cursor: not-allowed;
-		opacity: 0.6;
+		border-radius: var(--radius-control);
 	}
 </style>

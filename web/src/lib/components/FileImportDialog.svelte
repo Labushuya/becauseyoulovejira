@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { tick, untrack } from 'svelte';
+	import { untrack } from 'svelte';
 	import { SvelteSet } from 'svelte/reactivity';
 	import { resolve } from '$app/paths';
 	import { sourceDateText } from '$lib/domain/inbox';
@@ -10,12 +10,13 @@
 		type FileSelection,
 		type SelectionEntry
 	} from '$lib/stores/mail-import';
+	import Modal from './overlay/Modal.svelte';
 
-	// Selection view of dropped mail and calendar files (E4 plan, package 21; ADR-0020) as a native
-	// modal <dialog>, after the model of the WhatsApp import: one row per mail and per event with a
-	// checkbox. Keyword matches are chosen at first; what is in the inbox already is shown but cannot
-	// be chosen. Only the chosen entries are saved; the results per file go back to the drop zone.
-	// Escape and "Abbrechen" close without saving, the focus returns to where it was.
+	// Selection view of dropped mail and calendar files (E4 plan, package 21; ADR-0020) on the modal
+	// building block (ADR-0025 section 3, size L), after the model of the WhatsApp import: one row
+	// per mail and per event with a checkbox. Keyword matches are chosen at first; what is in the
+	// inbox already is shown but cannot be chosen. Only the chosen entries are saved; the results
+	// per file go back to the drop zone. ×, Escape and "Abbrechen" close without saving.
 	let {
 		selection,
 		onsave,
@@ -29,7 +30,7 @@
 
 	const uid = $props.id();
 	const ids = {
-		heading: `${uid}-heading`,
+		form: `${uid}-form`,
 		summary: `${uid}-summary`,
 		count: `${uid}-count`
 	};
@@ -40,7 +41,6 @@
 		todo: 'Aufgabe'
 	};
 
-	let dialog = $state<HTMLDialogElement>();
 	let firstButton = $state<HTMLButtonElement>();
 	const chosen = new SvelteSet<string>(untrack(() => preselectedKeys(selection)));
 	let pending = $state(false);
@@ -51,17 +51,6 @@
 	const missingLists = $derived(
 		selection.withoutKeywords.map((kind) => IMPORT_KIND_LABELS[kind]).join(' und ')
 	);
-
-	$effect(() => {
-		const element = dialog;
-		if (element === undefined) return;
-		const previous = document.activeElement;
-		if (!element.open) element.showModal();
-		void tick().then(() => firstButton?.focus());
-		return () => {
-			if (previous instanceof HTMLElement && previous.isConnected) previous.focus();
-		};
-	});
 
 	function countText(count: number): string {
 		return count === 1 ? '1 Eintrag' : `${count} Einträge`;
@@ -91,23 +80,17 @@
 		pending = false;
 		onclose(results);
 	}
-
-	function cancel() {
-		if (!pending) onclose(null);
-	}
 </script>
 
-<dialog
-	class="files"
-	bind:this={dialog}
-	aria-labelledby={ids.heading}
-	aria-describedby={ids.summary}
-	oncancel={(event) => {
-		event.preventDefault();
-		cancel();
-	}}
+<Modal
+	open
+	size="l"
+	title="Dateien übernehmen"
+	describedBy={ids.summary}
+	busy={pending}
+	initialFocus={firstButton}
+	onclose={() => onclose(null)}
 >
-	<h2 id={ids.heading}>Dateien übernehmen</h2>
 	<div id={ids.summary} class="summary">
 		<p class="hint">
 			{countText(selection.entries.length)} zur Auswahl. Nur die ausgewählten kommen in den Eingang.
@@ -127,10 +110,10 @@
 			</p>
 		{/if}
 	</div>
-	<form class="form" novalidate onsubmit={save}>
+	<form id={ids.form} class="form" novalidate onsubmit={save}>
 		<div class="choice">
 			<button
-				class="secondary"
+				class="button-secondary"
 				type="button"
 				bind:this={firstButton}
 				onclick={() => {
@@ -139,7 +122,7 @@
 			>
 				Alle auswählen
 			</button>
-			<button class="secondary" type="button" onclick={() => chosen.clear()}>
+			<button class="button-secondary" type="button" onclick={() => chosen.clear()}>
 				Auswahl aufheben
 			</button>
 			<span id={ids.count} class="hint" aria-live="polite">{chosenCount} ausgewählt</span>
@@ -169,43 +152,22 @@
 				{/each}
 			</ul>
 		</fieldset>
-
-		<div class="buttons">
-			<button class="secondary" type="button" onclick={cancel}>Abbrechen</button>
-			<button
-				class="button-primary"
-				type="submit"
-				aria-disabled={pending || chosenCount === 0 ? 'true' : undefined}
-			>
-				{pending ? 'Wird übernommen …' : `${countText(chosenCount)} in den Eingang`}
-			</button>
-		</div>
 	</form>
-</dialog>
+
+	{#snippet footer({ close })}
+		<button class="button-secondary" type="button" onclick={close}>Abbrechen</button>
+		<button
+			class="button-primary"
+			type="submit"
+			form={ids.form}
+			aria-disabled={pending || chosenCount === 0 ? 'true' : undefined}
+		>
+			{pending ? 'Wird übernommen …' : `${countText(chosenCount)} in den Eingang`}
+		</button>
+	{/snippet}
+</Modal>
 
 <style>
-	.files {
-		width: min(44rem, calc(100vw - 2rem));
-		max-height: calc(100vh - 2rem);
-		margin: auto;
-		padding: 1.25rem;
-		color: var(--color-text);
-		background: var(--color-surface);
-		border: 1px solid var(--color-line);
-		border-radius: 0.5rem;
-	}
-
-	.files::backdrop {
-		background: var(--color-bg);
-		opacity: 0.75;
-	}
-
-	h2 {
-		margin-bottom: 0.5rem;
-		font-size: 1rem;
-		font-weight: 600;
-	}
-
 	.summary {
 		display: grid;
 		gap: 0.5rem;
@@ -214,7 +176,6 @@
 	.form {
 		display: grid;
 		gap: 0.625rem;
-		margin-top: 0.75rem;
 	}
 
 	.choice {
@@ -224,13 +185,12 @@
 		align-items: center;
 	}
 
+	/* The content of the modal scrolls; the list has no scroll area of its own. */
 	.entries {
-		max-height: 22rem;
-		overflow-y: auto;
 		margin: 0;
 		padding: 0;
 		border: 1px solid var(--color-line);
-		border-radius: 0.375rem;
+		border-radius: var(--radius-control);
 	}
 
 	.entries ul {
@@ -286,30 +246,10 @@
 		font-size: 0.8125rem;
 		color: var(--color-brand-soft-text);
 		background: var(--color-brand-soft-bg);
-		border-radius: 0.375rem;
+		border-radius: var(--radius-control);
 	}
 
 	.notice a {
 		color: inherit;
-	}
-
-	.buttons {
-		display: flex;
-		flex-wrap: wrap;
-		gap: 0.5rem;
-		justify-content: flex-end;
-	}
-
-	.secondary {
-		padding: 0.5rem 0.875rem;
-		background: none;
-		border: 1px solid var(--color-line);
-		border-radius: 0.375rem;
-		cursor: pointer;
-	}
-
-	.button-primary[aria-disabled='true'] {
-		cursor: not-allowed;
-		opacity: 0.6;
 	}
 </style>

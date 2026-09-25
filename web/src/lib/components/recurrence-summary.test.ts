@@ -1,11 +1,12 @@
 import { fireEvent, render, screen, within } from '@testing-library/svelte';
 import { tick } from 'svelte';
-import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { DataError } from '$lib/data/errors';
 import type { RecurrenceRule } from '$lib/domain/recurrence-rule';
 import type { Ticket } from '$lib/domain/ticket';
 import { RecurrenceStore, type RecurrenceData } from '$lib/stores/recurrence.svelte';
 import RecurrenceSummary from './RecurrenceSummary.svelte';
+import { useOverlayStubs } from '$lib/test/overlay-stubs';
 
 // Recurrence in the ticket panel (E5 plan, package 4): "Wiederholen…" for an open ticket, the
 // line "Wiederholt sich: …" with its actions for a ticket in a series, neutral hints, errors of
@@ -13,28 +14,7 @@ import RecurrenceSummary from './RecurrenceSummary.svelte';
 
 const TODAY = '2026-09-25';
 
-const nativeDialog = {
-	showModal: HTMLDialogElement.prototype.showModal,
-	close: HTMLDialogElement.prototype.close
-};
-
-beforeAll(() => {
-	if (typeof nativeDialog.showModal !== 'function') {
-		HTMLDialogElement.prototype.showModal = function (this: HTMLDialogElement) {
-			this.open = true;
-		};
-	}
-	if (typeof nativeDialog.close !== 'function') {
-		HTMLDialogElement.prototype.close = function (this: HTMLDialogElement) {
-			this.open = false;
-		};
-	}
-});
-
-afterAll(() => {
-	HTMLDialogElement.prototype.showModal = nativeDialog.showModal;
-	HTMLDialogElement.prototype.close = nativeDialog.close;
-});
+useOverlayStubs();
 
 function rule(overrides: Partial<RecurrenceRule> = {}): RecurrenceRule {
 	return {

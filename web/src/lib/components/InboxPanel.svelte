@@ -164,24 +164,24 @@
 			{#if item.state === 'new'}
 				<a class="button-primary" href={convertHref(item.id)}>Umwandeln</a>
 				<button
-					class="secondary"
+					class="button-secondary"
 					type="button"
 					disabled={store.isPending(item.id)}
 					onclick={() => run(() => store.discard(item.id))}>Verwerfen</button
 				>
 			{:else if item.state === 'discarded'}
 				<button
-					class="secondary"
+					class="button-secondary"
 					type="button"
 					disabled={store.isPending(item.id)}
 					onclick={() => run(() => store.restore(item.id))}>Wiederherstellen</button
 				>
 			{:else if item.ticketId !== null}
-				<a class="secondary" href={ticketPath(item.ticketId)}>Ticket ansehen</a>
+				<a class="button-secondary" href={ticketPath(item.ticketId)}>Ticket ansehen</a>
 			{/if}
 			{#if item.original !== ''}
 				<button
-					class="secondary"
+					class="button-secondary"
 					type="button"
 					aria-busy={downloading ? 'true' : undefined}
 					onclick={() => download(item)}>Originaldatei herunterladen</button
@@ -284,21 +284,6 @@
 
 	.actions a {
 		text-decoration: none;
-	}
-
-	.secondary {
-		padding: 0.5rem 0.875rem;
-		font-size: 0.875rem;
-		color: var(--color-text);
-		background: none;
-		border: 1px solid var(--color-line);
-		border-radius: 0.375rem;
-		cursor: pointer;
-	}
-
-	.secondary:disabled {
-		cursor: progress;
-		opacity: 0.6;
 	}
 
 	.duplicate {

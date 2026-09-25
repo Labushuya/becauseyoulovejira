@@ -213,8 +213,8 @@
   "meta": {
     "projekt": "becauseyoulovejira",
     "stand": "2026-09-25",
-    "commit": "d7fd930",
-    "etappe": "E0 bis E4 abgeschlossen (E4: Pakete 1 bis 11, 13 bis 17, 19 bis 24; Paket 12 entfällt, Paket 18 zurückgestellt); E5 in Arbeit (Pakete 1 bis 4: BYL-E5-001 bis BYL-E5-005); E6 UI-Konsistenz vorgezogen (UI-0 bis UI-3: BYL-E6-001 bis BYL-E6-012)"
+    "commit": "902b414",
+    "etappe": "E0 bis E4 abgeschlossen (E4: Pakete 1 bis 11, 13 bis 17, 19 bis 24; Paket 12 entfällt, Paket 18 zurückgestellt); E5 in Arbeit (Pakete 1 bis 4: BYL-E5-001 bis BYL-E5-005); E6 UI-Konsistenz vorgezogen (UI-0 bis UI-4: BYL-E6-001 bis BYL-E6-014)"
   },
   "blocks": [
     {
@@ -1410,14 +1410,14 @@
           "pre": "Plan UI-Konsistenz, Paket UI-3; Build von main in app\\, F5. Reduzierte Bewegung: Windows-Einstellungen > Barrierefreiheit > Visuelle Effekte > Animationseffekte aus.", "steps": ["Die Liste so lang machen, dass sie scrollt; an einem Ticket „Löschen …“: die Seite dahinter scrollt nicht und springt nicht zur Seite.", "Der Dialog blendet kurz ein, der Schleier dunkelt ab, in Hell und Dunkel; Klick auf den Schleier und Esc heißen „Abbrechen“, der Fokus steht danach wieder auf „Löschen …“.", "Mit ausgeschalteten Animationseffekten erscheinen Dialog und „Darstellung“-Menü ohne Bewegung."],
           "expect": "Modals wirken ruhig, sperren den Hintergrund und geben den Fokus zurück.",
           "tests": [] },
-        { "id": "BYL-E6-013", "title": "Alle Dialoge über den Modal-Baustein", "art": ["komponente", "unit"], "status": "geplant",
-          "pre": "Plan UI-Konsistenz, Paket UI-4.", "steps": ["Schnellerfassung, Zwischenablage, Sammelumwandlung, Datei-, WhatsApp- und Postfach-Auswahl, Projekt, „Wiederholen…“ nutzen das Modal.", "Drei Größen, × überall, Regel „Abbrechen“/„Schließen“.", "Statischer Test: kein ::backdrop und kein lokales .secondary in Komponenten."],
-          "expect": "Dialoge sehen gleich aus und verhalten sich gleich.",
-          "tests": [] },
-        { "id": "BYL-E6-014", "title": "Schnellerfassung fragt vor Verwerfen", "art": ["komponente"], "status": "geplant",
-          "pre": "Plan UI-Konsistenz, Paket UI-4.", "steps": ["Text tippen, Esc: Verwerfen-Frage im Dialog; „Weiter bearbeiten“ behält den Text."],
-          "expect": "Getippter Text geht nicht versehentlich verloren.",
-          "tests": [] },
+        { "id": "BYL-E6-013", "title": "Alle Dialoge über den Modal-Baustein", "art": ["komponente", "unit"], "status": "bestanden",
+          "pre": "Plan UI-Konsistenz, Paket UI-4; ADR-0025 §2 und §3. Dialog-API über die gemeinsamen Stubs (useOverlayStubs) statt eigener showModal-Attrappen.", "steps": ["npm run test:web"],
+          "expect": "Schnellerfassung, Zwischenablage, „Gesammelt umwandeln“, „Wiederholen…“ und das Projekt (bis UI-8) sind Modals der Größe M, Datei-, WhatsApp- und Postfach-Auswahl der Größe L, die Bestätigung S; nur Modal.svelte hat ein eigenes dialog, showModal oder ::backdrop (statischer Test). Jeder Dialog hat das × „Schließen“, einen stehenden Fuß (sekundär links von primär, Absenden per form-Attribut) und einen scrollenden Inhalt ohne eigene Scrollfläche der Listen. Der Fuß heißt „Abbrechen“, solange nichts gespeichert ist, und „Schließen“, sobald der Dialog Ergebnisse gespeichert hat (Schnellerfassung nach dem ersten Ticket, Zwischenablage und WhatsApp nach Teilfehlern, Postfach nach der Übernahme, Sammelumwandlung nach dem Lauf). ×, „Abbrechen“ und Blanket schließen die Datei-Auswahl ohne zu speichern. „Gesammelt umwandeln“ behält seine Esc-Regel: während des Laufs heißt Esc (auch zweimal) „Nach diesem Eintrag anhalten“, ×, Blanket und Schließen bleiben gesperrt (aria-busy); danach schließt Esc. Im Projekt-Dialog führt Esc aus der Löschfrage zurück ins Formular, das × schließt. Der Fokus kehrt über den Baustein zum Auslöser zurück (auch zu „Gesammelt umwandeln“). Kein lokales .secondary mehr in Komponenten, Symbolknöpfe tragen aria-label (statischer Test).",
+          "tests": ["web/src/lib/no-own-dialogs.test.ts", "web/src/lib/components/quick-capture.test.ts", "web/src/lib/components/bulk-convert-dialog.test.ts::keeps its own Escape rule while running", "web/src/lib/components/file-import-dialog.test.ts::is a modal of size L", "web/src/lib/components/whatsapp-import.test.ts::keeps the view open with the failures", "web/src/lib/components/mailbox-picker.test.ts::takes the chosen mails", "web/src/lib/components/project-dialog.test.ts::is a modal of size M whose × closes", "web/src/lib/components/recurrence-dialog.test.ts", "web/src/routes/(app)/app-layout.test.ts::app layout: quick entry keys"] },
+        { "id": "BYL-E6-014", "title": "Schnellerfassung fragt vor Verwerfen", "art": ["komponente"], "status": "bestanden",
+          "pre": "Plan UI-Konsistenz, Paket UI-4; ADR-0025 §3.", "steps": ["npm run test:web"],
+          "expect": "Mit getipptem Text (nicht nur Leerzeichen) ersetzen Esc, × und „Abbrechen“ den Fuß durch „Änderungen verwerfen? Der getippte Text geht verloren.“ mit Fokus auf „Weiter bearbeiten“; „Weiter bearbeiten“ behält Text und Dialog und gibt den Fokus ins Feld zurück, „Verwerfen“ schließt. Ein Klick auf den Schleier wird dann ignoriert. Ohne Text schließen Esc, × und „Abbrechen“ sofort.",
+          "tests": ["web/src/lib/components/quick-capture.test.ts::quick capture: typed text is not lost without asking"] },
         { "id": "BYL-E6-015", "title": "Flag-Store", "art": ["unit"], "status": "geplant",
           "pre": "Plan UI-Konsistenz, Paket UI-5; ADR-0025 §8.", "steps": ["8 s für Erfolg und Info, Fehler bleiben.", "Pause bei Hover, Fokus, verborgenem Tab und offenem Modal.", "Höchstens drei sichtbar, neuestes oben."],
           "expect": "Rückmeldungen erscheinen verlässlich und lange genug.",

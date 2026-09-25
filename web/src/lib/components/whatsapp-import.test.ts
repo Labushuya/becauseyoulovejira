@@ -5,7 +5,7 @@ import { fireEvent, render, screen, within } from '@testing-library/svelte';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { deflateRawSync } from 'node:zlib';
-import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import type { InboxDraft } from '$lib/domain/inbox';
 import { FORMAT_NOT_RECOGNISED, parseWhatsAppExport } from '$lib/domain/whatsapp-export';
 import type { DraftsOutcome } from '$lib/stores/capture';
@@ -19,29 +19,9 @@ import {
 } from '$lib/whatsapp-file';
 import { ZIP_DAMAGED_MESSAGE } from '$lib/zip-text';
 import WhatsAppImport from './WhatsAppImport.svelte';
+import { useOverlayStubs } from '$lib/test/overlay-stubs';
 
-const nativeDialog = {
-	showModal: HTMLDialogElement.prototype.showModal,
-	close: HTMLDialogElement.prototype.close
-};
-
-beforeAll(() => {
-	if (typeof nativeDialog.showModal !== 'function') {
-		HTMLDialogElement.prototype.showModal = function (this: HTMLDialogElement) {
-			this.open = true;
-		};
-	}
-	if (typeof nativeDialog.close !== 'function') {
-		HTMLDialogElement.prototype.close = function (this: HTMLDialogElement) {
-			this.open = false;
-		};
-	}
-});
-
-afterAll(() => {
-	HTMLDialogElement.prototype.showModal = nativeDialog.showModal;
-	HTMLDialogElement.prototype.close = nativeDialog.close;
-});
+useOverlayStubs();
 
 const FIXTURES = join(import.meta.dirname, '../../../../tests/fixtures/whatsapp');
 const ANDROID = 'WhatsApp Chat mit Familie Beispiel.txt';
@@ -294,12 +274,17 @@ describe('WhatsApp selection view', () => {
 			failures: [{ title: 'Uhr umgestellt?', message: 'Server nicht erreichbar.' }]
 		};
 		const { onclose, dialog } = renderView(failed);
+		expect(dialog.classList.contains('size-l')).toBe(true);
+		expect(within(dialog).getByRole('button', { name: 'Abbrechen' })).toBeTruthy();
 		await fireEvent.click(screen.getByRole('button', { name: 'Alle sichtbaren auswählen' }));
 		await fireEvent.click(submit());
 		const alert = await screen.findByRole('alert');
 		expect(alert.textContent).toContain('„Uhr umgestellt?“: Server nicht erreichbar.');
 		expect(alert.querySelector('svg')).not.toBeNull();
 		expect(onclose).not.toHaveBeenCalled();
+		// Some messages are saved: the footer says "Schließen" (× and footer).
+		expect(within(dialog).queryByRole('button', { name: 'Abbrechen' })).toBeNull();
+		expect(within(dialog).getAllByRole('button', { name: 'Schließen' })).toHaveLength(2);
 		await fireEvent(dialog, new Event('cancel', { cancelable: true }));
 		expect(onclose).toHaveBeenCalledWith(failed);
 	});

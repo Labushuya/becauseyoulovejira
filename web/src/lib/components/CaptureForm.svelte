@@ -406,7 +406,7 @@
 						? 'In den Eingang'
 						: 'Ticket anlegen'}
 			</button>
-			<button class="secondary" type="button" onclick={close}>Schließen</button>
+			<button class="button-secondary" type="button" onclick={close}>Schließen</button>
 		</div>
 		<p class="hint" id={targetHintId}>Tipp: Strg+Enter speichert, Alt+Enter legt in den Eingang.</p>
 	</form>
@@ -503,14 +503,6 @@
 	.button-primary[aria-disabled='true'] {
 		cursor: not-allowed;
 		opacity: 0.6;
-	}
-
-	.secondary {
-		padding: 0.625rem 1rem;
-		background: none;
-		border: 1px solid var(--color-line);
-		border-radius: 0.375rem;
-		cursor: pointer;
 	}
 
 	.hint {
