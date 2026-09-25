@@ -28,6 +28,8 @@ var MESSAGES = {
   validation_recurrence_ticket_done: 'Ein erledigtes Ticket kann keine Serie beginnen.',
   validation_recurrence_ticket_linked: 'Das Ticket gehört schon zu einer Serie.',
   validation_recurrence_managed: 'Eine Wiederholung entsteht über „Wiederholen…“ am Ticket.',
+  validation_recurrence_open_instance:
+    'Von dieser Serie ist schon ein anderes Ticket offen. Erledige es zuerst oder löse ein Ticket aus der Serie.',
   validation_project_archived: 'Das Projekt ist archiviert. Wähle ein anderes oder kein Projekt, um die Regel fortzusetzen.'
 };
 
@@ -199,7 +201,109 @@ function clearsHint(before, after) {
   return (!before.active && after.active) || rhythmChanged(before, after);
 }
 
+// --- Generation (ADR-0022, ADR-0023 sections 3 and 6; E5 plan package 3) --------------------
+
+/**
+ * Whether a rule creates its next ticket now (ADR-0022 section 2). `input`:
+ *   rule             normalized rule with `active` and `next_due`
+ *   hasOpenInstance  whether a ticket of the rule is not done
+ *   today            Berlin date
+ * Returns null (nothing to do) or { due, nextDue }: the due date of the new ticket (the latest
+ * missed occurrence of a calendar rule, never a stack) and the next_due after it ('' for after
+ * completion, which waits for the completion).
+ */
+function generation(input, recurrence) {
+  var rule = input.rule;
+  if (!rule.active || isEmpty(rule.next_due) || input.hasOpenInstance || !recurrence.isValid(rule)) {
+    return null;
+  }
+  if (input.today < recurrence.createOn(rule.next_due, rule.lead_days)) {
+    return null;
+  }
+  if (rule.mode === 'calendar') {
+    var due = recurrence.catchUp(rule, rule.next_due, input.today);
+    return { due: due, nextDue: recurrence.after(rule, due) };
+  }
+  return { due: rule.next_due, nextDue: '' };
+}
+
+// next_due when an instance is completed (ADR-0022 section 4): the completion date plus the
+// interval for after-completion rules; calendar rules keep theirs (null: unchanged).
+function nextDueOnCompletion(rule, completedDate, recurrence) {
+  return rule.mode === 'after_completion' ? recurrence.afterCompletion(rule, completedDate) : null;
+}
+
+// next_due when the open instance is deleted or leaves the series (ADR-0023 section 6): a calendar
+// date counts as skipped (unchanged, null); after completion it is as if the instance was done
+// today, so no replacement appears at once.
+function nextDueOnRelease(rule, today, recurrence) {
+  return rule.mode === 'after_completion' ? recurrence.afterCompletion(rule, today) : null;
+}
+
+/**
+ * Whether the follow-up ticket of a reopened instance is untouched (ADR-0023 section 3): created
+ * after the completion of the reopened one (the same millisecond counts as after: the follow-up
+ * is written after the commit of the completion), never updated since and without comments.
+ * Timestamps in the stored form `YYYY-MM-DD HH:MM:SS.sssZ`, which sorts like the time.
+ */
+function isUntouched(followUp, completedAt) {
+  return (
+    !isEmpty(completedAt) &&
+    followUp.created >= completedAt &&
+    followUp.updated === followUp.created &&
+    followUp.comments === 0
+  );
+}
+
+// next_due after reopening an instance (ADR-0023 section 3). `removedDue` is the due date of the
+// untouched follow-up that was removed ('' if there was none). Returns the new value or null.
+function nextDueOnReopen(rule, hadFollowUp, removedDue) {
+  if (rule.mode === 'after_completion') {
+    return '';
+  }
+  return hadFollowUp ? removedDue : null;
+}
+
+var OPEN_INSTANCE_MESSAGE =
+  'Von dieser Serie ist schon {key} offen. Erledige es zuerst oder löse ein Ticket aus der Serie.';
+
+function openInstanceMessage(key) {
+  return OPEN_INSTANCE_MESSAGE.replace('{key}', key);
+}
+
+var ARCHIVED_HINT = 'Projekt archiviert – Regel pausiert.';
+var FAILED_HINT = 'Ticket nicht erzeugt: ';
+var HINT_MAX_LENGTH = 500;
+
+// Neutral hint at a rule whose ticket could not be created; Go prefixes are removed and the text
+// is cut to the field length.
+function failureHint(message) {
+  var text = String(message === undefined || message === null ? '' : message)
+    .replace(/^(GoError|Error):\s*/, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+  var hint = FAILED_HINT + (text === '' ? 'unbekannter Fehler.' : text);
+  return hint.length > HINT_MAX_LENGTH ? hint.slice(0, HINT_MAX_LENGTH - 1) + '…' : hint;
+}
+
+// A violation of the partial index means another run created the instance in the meantime; it
+// counts as "already there", not as an error (ADR-0022 section 5).
+function isOpenInstanceConflict(message) {
+  var text = String(message);
+  return /recurrence: Value must be unique/.test(text) || /UNIQUE constraint failed: tickets\.recurrence/.test(text);
+}
+
 module.exports = {
+  ARCHIVED_HINT: ARCHIVED_HINT,
+  HINT_MAX_LENGTH: HINT_MAX_LENGTH,
+  generation: generation,
+  nextDueOnCompletion: nextDueOnCompletion,
+  nextDueOnRelease: nextDueOnRelease,
+  isUntouched: isUntouched,
+  nextDueOnReopen: nextDueOnReopen,
+  openInstanceMessage: openInstanceMessage,
+  failureHint: failureHint,
+  isOpenInstanceConflict: isOpenInstanceConflict,
   RHYTHM_FIELDS: RHYTHM_FIELDS,
   SERVER_FIELDS: SERVER_FIELDS,
   INCOMPLETE_HINT: INCOMPLETE_HINT,

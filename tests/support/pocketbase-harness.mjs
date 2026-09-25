@@ -45,8 +45,10 @@ const EXIT_SIGNALS = ['SIGINT', 'SIGTERM', 'SIGBREAK', 'SIGHUP'];
  *   instance never inherits BYL_* variables of the developer, so a channel in a test can reach
  *   no real service.
  * @returns {Promise<{ url: string, email: string, password: string, dataDir: string,
- *   output: () => string, stop: () => Promise<void> }>} `dataDir` is removed by `stop()`;
- *   `output()` is the recent console output of the server.
+ *   output: () => string, stop: () => Promise<void>,
+ *   restart: (options?: { migrationFilter?: (fileName: string) => boolean }) => Promise<void> }>}
+ *   `dataDir` is removed by `stop()`; `output()` is the recent console output of the server;
+ *   `restart()` serves the same data folder again (new `url`).
  */
 export async function startPocketBase(options = {}) {
 	assertExecutable();
@@ -74,24 +76,15 @@ export async function startPocketBase(options = {}) {
 		if (existsSync(FIXTURE_HOOKS_DIR)) {
 			await cp(FIXTURE_HOOKS_DIR, hooksDir, { recursive: true });
 		}
-		let migrationsDir = APP_MIGRATIONS_DIR;
-		if (options.migrationFilter !== undefined) {
-			migrationsDir = join(state.baseDir, 'pb_migrations');
-			await mkdir(migrationsDir);
-			for (const name of await readdir(APP_MIGRATIONS_DIR)) {
-				if (name.endsWith('.js') && options.migrationFilter(name)) {
-					await cp(join(APP_MIGRATIONS_DIR, name), join(migrationsDir, name));
-				}
-			}
-		}
-
-		const commonArgs = [
+		const migrationsDir = await migrationsFor(state.baseDir, 'pb_migrations', options.migrationFilter);
+		const argsWith = (migrations) => [
 			`--dir=${dataDir}`,
 			`--hooksDir=${hooksDir}`,
-			`--migrationsDir=${migrationsDir}`,
+			`--migrationsDir=${migrations}`,
 			`--publicDir=${publicDir}`,
 			'--automigrate=false'
 		];
+		const commonArgs = argsWith(migrationsDir);
 		const { email, password } = createCredentials();
 		const secrets = [email, password];
 
@@ -103,20 +96,44 @@ export async function startPocketBase(options = {}) {
 			);
 		}
 
-		const port = await findFreePort();
-		const url = `http://127.0.0.1:${port}`;
-		const server = startServer(['serve', `--http=127.0.0.1:${port}`, ...commonArgs], options.env);
-		state.child = server.child;
-		await waitForHealth(url, server, secrets);
+		const serve = async (args) => {
+			const port = await findFreePort();
+			const url = `http://127.0.0.1:${port}`;
+			const server = startServer(['serve', `--http=127.0.0.1:${port}`, ...args], options.env);
+			state.child = server.child;
+			await waitForHealth(url, server, secrets);
+			return { url, server };
+		};
+		let current = await serve(commonArgs);
+		let restarts = 0;
 
-		return {
-			url,
+		const instance = {
+			url: current.url,
 			email,
 			password,
 			dataDir,
-			output: () => server.output,
-			stop: () => stop(state, guard)
+			output: () => current.server.output,
+			stop: () => stop(state, guard),
+			/**
+			 * Stops the server and serves the same data folder again on a new port (`url` changes),
+			 * e.g. to run the start hooks once more or, with all migrations, to start like the
+			 * instance of the user after an update. `migrationFilter` as for the start; without it
+			 * every app migration.
+			 * @param {{ migrationFilter?: (fileName: string) => boolean }} [restartOptions]
+			 */
+			restart: async (restartOptions = {}) => {
+				await killProcessTree(state.child);
+				restarts += 1;
+				const migrations = await migrationsFor(
+					state.baseDir,
+					`pb_migrations_${restarts}`,
+					restartOptions.migrationFilter
+				);
+				current = await serve(argsWith(migrations));
+				instance.url = current.url;
+			}
 		};
+		return instance;
 	} catch (error) {
 		try {
 			await stop(state, guard);
@@ -125,6 +142,19 @@ export async function startPocketBase(options = {}) {
 		}
 		throw error;
 	}
+}
+
+/** app/pb_migrations, or a copy under `baseDir/name` with only the files `filter` accepts. */
+async function migrationsFor(baseDir, name, filter) {
+	if (filter === undefined) return APP_MIGRATIONS_DIR;
+	const dir = join(baseDir, name);
+	await mkdir(dir);
+	for (const file of await readdir(APP_MIGRATIONS_DIR)) {
+		if (file.endsWith('.js') && filter(file)) {
+			await cp(join(APP_MIGRATIONS_DIR, file), join(dir, file));
+		}
+	}
+	return dir;
 }
 
 /**

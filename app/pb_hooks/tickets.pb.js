@@ -36,11 +36,37 @@ onRecordCreate(function (e) {
   });
 }, 'tickets');
 
+// Recurring tasks (ADR-0022 section 4, ADR-0023 sections 2, 3 and 6; E5 plan package 3): in the
+// same transaction, completing an instance fixes the next date of an after-completion rule,
+// reopening one removes an untouched follow-up (or is refused), and releasing an open instance
+// works like deleting it. The next ticket follows after the commit, so completing never fails
+// because of the generation. Before the E5 migrations lib/recurrence-service.js does nothing.
 onRecordUpdate(function (e) {
   var service = require(`${__hooks}/lib/ticket-service.js`);
+  var recurrence = require(`${__hooks}/lib/recurrence-service.js`);
   require(`${__hooks}/lib/transaction.js`).inTransaction(e, function (txApp) {
     var before = service.prepareUpdate(txApp, e.record);
+    recurrence.prepareTicketUpdate(txApp, e.record, Date.now());
     e.next();
     service.recordChanges(txApp, e.record, before);
+  });
+}, 'tickets');
+
+onRecordAfterUpdateSuccess(function (e) {
+  e.next();
+  try {
+    require(`${__hooks}/lib/recurrence-service.js`).afterTicketUpdate(e.app, e.record, Date.now());
+  } catch (err) {
+    e.app.logger().warn('Wiederholung: Folgeticket nicht erzeugt', 'ticket', e.record.id, 'error', String(err));
+  }
+}, 'tickets');
+
+// Deleting the open instance of a series (ADR-0023 section 6): a calendar date counts as skipped,
+// an after-completion rule waits as if the instance was done today.
+onRecordDelete(function (e) {
+  var recurrence = require(`${__hooks}/lib/recurrence-service.js`);
+  require(`${__hooks}/lib/transaction.js`).inTransaction(e, function (txApp) {
+    recurrence.prepareTicketDelete(txApp, e.record, Date.now());
+    e.next();
   });
 }, 'tickets');

@@ -180,3 +180,96 @@ describe('nextDueAfterEdit (ADR-0023 sections 4 and 5)', () => {
 		expect(rules.rhythmChanged(weekly(), weekly({ anchor: '2026-09-14' }))).toBe(true);
 	});
 });
+
+describe('generation (ADR-0022 sections 2 and 3; package 3)', () => {
+	const running = (rule, nextDue, lead = 3) => ({ ...rule, lead_days: lead, active: true, next_due: nextDue });
+
+	it('waits for the lead time, an active rule, a date and no open instance', () => {
+		const rule = running(weekly(), '2026-09-28');
+		expect(rules.generation({ rule, hasOpenInstance: false, today: '2026-09-24' }, recurrence)).toBeNull();
+		expect(rules.generation({ rule, hasOpenInstance: false, today: '2026-09-25' }, recurrence)).toEqual({
+			due: '2026-09-28',
+			nextDue: '2026-10-05'
+		});
+		expect(rules.generation({ rule, hasOpenInstance: true, today: '2026-09-25' }, recurrence)).toBeNull();
+		expect(rules.generation({ rule: { ...rule, active: false }, hasOpenInstance: false, today: '2026-09-28' }, recurrence)).toBeNull();
+		expect(rules.generation({ rule: { ...rule, next_due: '' }, hasOpenInstance: false, today: '2026-09-28' }, recurrence)).toBeNull();
+		const incomplete = { mode: 'calendar', freq: '', interval: 1, weekdays: [], month_day: null, anchor: '', lead_days: 3 };
+		expect(rules.generation({ rule: running(incomplete, '2026-09-28'), hasOpenInstance: false, today: '2026-09-28' }, recurrence)).toBeNull();
+	});
+
+	it('takes the latest missed date of a calendar rule, never a stack', () => {
+		const rule = running(weekly(), '2026-09-07', 0);
+		expect(rules.generation({ rule, hasOpenInstance: false, today: '2026-09-23' }, recurrence)).toEqual({
+			due: '2026-09-21',
+			nextDue: '2026-09-28'
+		});
+	});
+
+	it('creates the waiting ticket of an after-completion rule and then waits for the completion', () => {
+		const rule = running(completion(), '2026-09-27');
+		expect(rules.generation({ rule, hasOpenInstance: false, today: '2026-09-24' }, recurrence)).toEqual({
+			due: '2026-09-27',
+			nextDue: ''
+		});
+	});
+
+	it('fixes the next date at completion and release only for after-completion rules', () => {
+		expect(rules.nextDueOnCompletion(completion(), '2026-09-25', recurrence)).toBe('2026-09-28');
+		expect(rules.nextDueOnCompletion(weekly(), '2026-09-25', recurrence)).toBeNull();
+		expect(rules.nextDueOnRelease(completion(), '2026-09-25', recurrence)).toBe('2026-09-28');
+		expect(rules.nextDueOnRelease(weekly(), '2026-09-25', recurrence)).toBeNull();
+	});
+});
+
+describe('reopening an instance (ADR-0023 section 3; package 3)', () => {
+	const completedAt = '2026-09-25 10:00:00.000Z';
+	const followUp = (overrides = {}) => ({
+		created: '2026-09-25 10:00:00.200Z',
+		updated: '2026-09-25 10:00:00.200Z',
+		comments: 0,
+		...overrides
+	});
+
+	it('removes only an untouched follow-up', () => {
+		expect(rules.isUntouched(followUp(), completedAt)).toBe(true);
+		expect(rules.isUntouched(followUp({ created: completedAt, updated: completedAt }), completedAt)).toBe(true);
+		expect(rules.isUntouched(followUp({ updated: '2026-09-25 10:01:00.000Z' }), completedAt)).toBe(false);
+		expect(rules.isUntouched(followUp({ comments: 1 }), completedAt)).toBe(false);
+		expect(rules.isUntouched(followUp({ created: '2026-09-24 09:00:00.000Z', updated: '2026-09-24 09:00:00.000Z' }), completedAt)).toBe(false);
+		expect(rules.isUntouched(followUp(), '')).toBe(false);
+	});
+
+	it('restores next_due: the date of the removed follow-up, or empty after completion', () => {
+		expect(rules.nextDueOnReopen(weekly(), true, '2026-10-05')).toBe('2026-10-05');
+		expect(rules.nextDueOnReopen(weekly(), false, '')).toBeNull();
+		expect(rules.nextDueOnReopen(completion(), true, '2026-10-05')).toBe('');
+		expect(rules.nextDueOnReopen(completion(), false, '')).toBe('');
+	});
+
+	it('names the open ticket in the refusal', () => {
+		expect(rules.openInstanceMessage('HAUS-12')).toBe(
+			'Von dieser Serie ist schon HAUS-12 offen. Erledige es zuerst oder löse ein Ticket aus der Serie.'
+		);
+	});
+});
+
+describe('hints of failed runs (ADR-0022 section 2; package 3)', () => {
+	it('writes a neutral, cleaned and cut hint', () => {
+		expect(rules.failureHint('GoError: Injected ticket insert failure.')).toBe(
+			'Ticket nicht erzeugt: Injected ticket insert failure.'
+		);
+		expect(rules.failureHint('  zwei\n  Zeilen ')).toBe('Ticket nicht erzeugt: zwei Zeilen');
+		expect(rules.failureHint('')).toBe('Ticket nicht erzeugt: unbekannter Fehler.');
+		const long = rules.failureHint('x'.repeat(2000));
+		expect(long).toHaveLength(rules.HINT_MAX_LENGTH);
+		expect(long.endsWith('…')).toBe(true);
+		expect(rules.ARCHIVED_HINT).toBe('Projekt archiviert – Regel pausiert.');
+	});
+
+	it('counts a violation of the partial index as "already there"', () => {
+		expect(rules.isOpenInstanceConflict('recurrence: Value must be unique.')).toBe(true);
+		expect(rules.isOpenInstanceConflict('UNIQUE constraint failed: tickets.recurrence')).toBe(true);
+		expect(rules.isOpenInstanceConflict('UNIQUE constraint failed: tickets.scope, tickets.key')).toBe(false);
+	});
+});

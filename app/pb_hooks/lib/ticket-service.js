@@ -217,10 +217,12 @@ function prepareCreate(txApp, record) {
 
 // onRecordCreate after e.next(): the creation itself is recorded with the key, and the inbox
 // item the ticket came from becomes "converted" (ADR-0014 section 2), in the same transaction.
+// A ticket a recurrence rule created (only the server sets `recurrence` on create since E5)
+// carries the rule as old value, so the history can name "Wiederholung" as its author (T-9).
 function recordCreation(txApp, record, item) {
   saveHistoryEntry(txApp, record, {
     field: 'created',
-    old_value: '',
+    old_value: record.getString('recurrence'),
     new_value: record.getString('key')
   });
   inbox.completeConversion(txApp, item || null, record);
