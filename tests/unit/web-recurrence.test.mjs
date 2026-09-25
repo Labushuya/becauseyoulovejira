@@ -7,8 +7,10 @@ import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { loadHookLib } from '../support/hook-lib.mjs';
 import * as web from '../../web/src/lib/domain/recurrence.ts';
+import { RECURRENCE_MESSAGES, openInstanceMessage } from '../../web/src/lib/domain/recurrence-rule.ts';
 
 const hook = loadHookLib('recurrence.js');
+const hookRules = loadHookLib('recurrence-rules.js');
 const { cases } = JSON.parse(readFileSync(new URL('../fixtures/recurrence/cases.json', import.meta.url), 'utf8'));
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -121,5 +123,13 @@ describe('recurrence: web app against the hooks', () => {
 		expect([web.ANCHOR_MIN_YEAR, web.ANCHOR_MAX_YEAR]).toEqual([hook.ANCHOR_MIN_YEAR, hook.ANCHOR_MAX_YEAR]);
 		expect({ ...web.RECURRENCE_CODES }).toEqual(hook.CODES);
 		for (const date of ['2026-09-28', '2026-10-04', '2000-02-29']) expect(web.weekdayOf(date)).toBe(hook.weekdayOf(date));
+	});
+
+	it('shows the same texts for the codes as the hook sends (package 4)', () => {
+		const hookRecurrence = Object.fromEntries(
+			Object.entries(hookRules.MESSAGES).filter(([code]) => code.startsWith('validation_recurrence_'))
+		);
+		expect({ ...RECURRENCE_MESSAGES }).toEqual(hookRecurrence);
+		expect(openInstanceMessage('HAUS-12')).toBe(hookRules.openInstanceMessage('HAUS-12'));
 	});
 });

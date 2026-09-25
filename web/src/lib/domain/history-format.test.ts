@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
 	DELETED_VALUE,
 	EMPTY_VALUE,
+	RECURRENCE_ACTOR,
 	describeHistoryEntry,
 	historyLookups,
 	type HistoryLookups
@@ -54,6 +55,23 @@ describe('describeHistoryEntry', () => {
 		[ME, 'Du']
 	])('labels the actor %j as %j', (user, actor) => {
 		expect(describeHistoryEntry(entry({ user }), lookups, ME).actor).toBe(actor);
+	});
+
+	it('names "Wiederholung" as the author of a ticket a rule created (E5 plan, T-9)', () => {
+		const generated = entry({
+			field: 'created',
+			oldValue: 'rule00000000001',
+			newValue: 'HAUS-4',
+			user: ''
+		});
+		expect(describeHistoryEntry(generated, lookups, ME)).toMatchObject({
+			actor: RECURRENCE_ACTOR,
+			text: 'hat das Ticket angelegt (HAUS-4)'
+		});
+		expect(RECURRENCE_ACTOR).toBe('Wiederholung');
+		// Created by a user or by the system without a rule: as before.
+		expect(describeHistoryEntry({ ...generated, user: ME }, lookups, ME).actor).toBe('Du');
+		expect(describeHistoryEntry({ ...generated, oldValue: '' }, lookups, ME).actor).toBe('System');
 	});
 
 	it.each<[string, Partial<HistoryEntry>, string]>([
@@ -140,7 +158,21 @@ describe('describeHistoryEntry', () => {
 			{ field: 'household', oldValue: 'house0000000001' },
 			'Bereich: Haushalt → Privat'
 		],
-		['recurrence', { field: 'recurrence', newValue: 'rule00000000001' }, 'Wiederholung geändert'],
+		[
+			'recurrence set',
+			{ field: 'recurrence', newValue: 'rule00000000001' },
+			'Wiederholung eingerichtet'
+		],
+		[
+			'recurrence removed',
+			{ field: 'recurrence', oldValue: 'rule00000000001' },
+			'Wiederholung entfernt'
+		],
+		[
+			'recurrence changed',
+			{ field: 'recurrence', oldValue: 'rule00000000001', newValue: 'rule00000000002' },
+			'Wiederholung geändert'
+		],
 		['unknown field', { field: 'mystery' }, 'mystery geändert'],
 		['empty title', { field: 'title', oldValue: 'Alt' }, `Titel: Alt → ${EMPTY_VALUE}`]
 	])('describes %s', (_name, overrides, expected) => {

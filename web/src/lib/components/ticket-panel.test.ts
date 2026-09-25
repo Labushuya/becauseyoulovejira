@@ -33,7 +33,7 @@ const mocks = vi.hoisted(() => ({
 	detail: null as unknown,
 	activity: null as unknown,
 	catalog: null as unknown,
-	tickets: { markRead: vi.fn(async () => undefined) }
+	tickets: { markRead: vi.fn(async () => undefined), today: '2026-09-25', upsert: vi.fn() }
 }));
 
 vi.mock('$app/navigation', () => ({ goto: mocks.goto, beforeNavigate: mocks.beforeNavigate }));
@@ -54,6 +54,23 @@ vi.mock('$lib/stores/ticket-list.svelte', async (importOriginal) => ({
 	...(await importOriginal<object>()),
 	getTicketListStore: () => mocks.tickets
 }));
+// The route shows "Wiederholen…" (E5 plan, package 4); rules are covered in
+// recurrence-summary.test.ts, here the store stays unloaded.
+vi.mock('$lib/stores/recurrence.svelte', async (importOriginal) => {
+	const original = await importOriginal<typeof import('$lib/stores/recurrence.svelte')>();
+	const store = new original.RecurrenceStore(
+		{
+			listRules: async () => [],
+			createRule: vi.fn(),
+			updateRule: vi.fn(),
+			setActive: vi.fn(),
+			deleteRule: vi.fn(),
+			detachTicket: vi.fn()
+		},
+		{ ensureValid: () => true, logout: vi.fn() }
+	);
+	return { ...original, getRecurrenceStore: () => store };
+});
 
 const ID = 'abc123def456ghi';
 const LIST = '/?erledigte=1' as ResolvedPathname;
@@ -671,6 +688,19 @@ describe('ticket route', () => {
 		unmount();
 		expect(store.state).toBe('idle');
 		expect(activity.ticketId).toBeNull();
+	});
+});
+
+describe('ticket route: recurrence (E5 plan, package 4)', () => {
+	it('offers "Wiederholen…" in the panel instead of the plain recurrence line', async () => {
+		const context = createStore();
+		mocks.detail = context.store;
+		mocks.catalog = catalogOf();
+		mocks.activity = activityStore();
+		render(TicketPage);
+		await vi.waitFor(() => expect(context.store.state).toBe('ready'));
+		expect(screen.getByRole('button', { name: 'Wiederholen…' })).toBeTruthy();
+		expect(screen.queryByText('wiederkehrend')).toBeNull();
 	});
 });
 

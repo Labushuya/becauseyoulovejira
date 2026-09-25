@@ -6,6 +6,7 @@ import { randomBytes } from 'node:crypto';
 import PocketBase from 'pocketbase';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { startPocketBase } from '../support/pocketbase-harness.mjs';
+import { listRules } from '../../web/src/lib/data/recurrence.ts';
 import { unreadSinceOf } from '../../web/src/lib/domain/unread.ts';
 
 // First migration of E4; the instance runs only the migrations before it.
@@ -279,6 +280,10 @@ describe('E5 hooks before the E5 migrations', () => {
 		const other = await tickets.create({ owner: who.userId, title: 'Auch in der Serie' });
 		expect((await tickets.update(other.id, { recurrence: rule.id })).recurrence).toBe(rule.id);
 		expect((await tickets.update(ticket.id, { recurrence: '' })).recurrence).toBe('');
+	});
+
+	it('lets the web app see that the rules come with the next start (package 4)', async () => {
+		expect(await listRules(who)).toBeNull();
 	});
 
 	it('lets completing, reopening, deleting, the cron job and the start create nothing (package 3)', async () => {

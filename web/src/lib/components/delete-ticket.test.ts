@@ -45,7 +45,7 @@ afterAll(() => {
 	HTMLDialogElement.prototype.close = nativeDialog.close;
 });
 
-function ticket(): Ticket {
+function ticket(overrides: Partial<Ticket> = {}): Ticket {
 	return {
 		id: ID,
 		key: 'TASK-12',
@@ -63,13 +63,14 @@ function ticket(): Ticket {
 		source: null,
 		completedAt: null,
 		created: '2026-09-01 10:00:00.000Z',
-		updated: '2026-09-01 10:00:00.000Z'
+		updated: '2026-09-01 10:00:00.000Z',
+		...overrides
 	};
 }
 
-async function renderPanel() {
+async function renderPanel(overrides: Partial<Ticket> = {}) {
 	const data = {
-		get: vi.fn(async () => ticket()),
+		get: vi.fn(async () => ticket(overrides)),
 		update: vi.fn(),
 		create: vi.fn(),
 		delete: vi.fn<TicketDetailData['delete']>(async () => undefined)
@@ -121,6 +122,15 @@ describe('deleting a ticket', () => {
 		);
 		expect(within(dialog).getByRole('button', { name: 'Endgültig löschen' })).toBeTruthy();
 		expect(document.activeElement).toBe(within(dialog).getByRole('button', { name: 'Abbrechen' }));
+	});
+
+	it('says that the rule goes on when the open instance of a series is deleted (E5)', async () => {
+		await renderPanel({ recurring: true, recurrenceId: 'rule00000000001' });
+		const dialog = await openDialog();
+		const text = document.getElementById(dialog.getAttribute('aria-describedby') ?? '');
+		expect(text?.textContent?.replace(/\s+/g, ' ').trim()).toBe(
+			'Dabei werden auch alle Kommentare und der gesamte Verlauf dieses Tickets gelöscht. Das lässt sich nicht rückgängig machen. Die Regel läuft weiter.'
+		);
 	});
 
 	it('does not use the error color for "Endgültig löschen"', async () => {
