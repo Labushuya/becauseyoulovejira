@@ -6,16 +6,25 @@
 	import ChannelsView from '$lib/components/ChannelsView.svelte';
 	import { pb } from '$lib/pocketbase';
 	import { ConnectionsStore, connectionsData } from '$lib/stores/connections.svelte';
+	import { ImportKeywordsStore, importKeywordsData } from '$lib/stores/import-keywords.svelte';
 
-	// Settings of the channels (E4 plan, T-3): bookmarklet (package 7) and connections (package 10).
-	// The capture address is absolute, since the bookmarklet runs on other pages. The connections
-	// load when the page opens and leave with it.
+	// Settings of the channels (E4 plan, T-3): bookmarklet (package 7), connections (package 10) and
+	// the keywords of the file imports (package 21). The capture address is absolute, since the
+	// bookmarklet runs on other pages. Connections and keywords load when the page opens and leave
+	// with it.
 	const captureUrl = $derived(new URL(resolve('/eingang/neu'), page.url.origin).href);
 	const connections = new ConnectionsStore(connectionsData(pb), auth);
+	const importKeywords = new ImportKeywordsStore(importKeywordsData(pb), auth);
 
 	$effect(() => {
-		untrack(() => void connections.load());
-		return () => connections.reset();
+		untrack(() => {
+			void connections.load();
+			void importKeywords.load();
+		});
+		return () => {
+			connections.reset();
+			importKeywords.reset();
+		};
 	});
 </script>
 
@@ -23,4 +32,4 @@
 	<title>Kanäle · becauseyoulovejira</title>
 </svelte:head>
 
-<ChannelsView {captureUrl} {connections} />
+<ChannelsView {captureUrl} {connections} {importKeywords} />

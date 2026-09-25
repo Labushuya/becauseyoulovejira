@@ -9,7 +9,8 @@ import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import type { InboxDraft } from '$lib/domain/inbox';
 import { FORMAT_NOT_RECOGNISED, parseWhatsAppExport } from '$lib/domain/whatsapp-export';
 import type { DraftsOutcome } from '$lib/stores/capture';
-import { ONE_CHAT_AT_A_TIME, importDroppedFiles } from '$lib/stores/mail-import';
+import { EMPTY_IMPORT_KEYWORDS } from '$lib/domain/keywords';
+import { ONE_CHAT_AT_A_TIME, prepareDroppedFiles } from '$lib/stores/mail-import';
 import {
 	WHATSAPP_MAX_BYTES,
 	WHATSAPP_TOO_LARGE_MESSAGE,
@@ -132,38 +133,34 @@ describe('readWhatsAppFile', () => {
 	});
 });
 
-describe('importDroppedFiles', () => {
-	it('opens the first chat and imports the other files as before', async () => {
-		const createItem = vi.fn().mockResolvedValue({
-			kind: 'created',
-			item: { id: 'item00000000001', title: 'Brief' }
-		});
-		const read = vi
-			.fn()
-			.mockResolvedValue({ ok: true, draft: { channel: 'eml', kind: 'mail', title: 'Brief' } });
-		const result = await importDroppedFiles(
-			[file(ANDROID), file('brief.eml', 'x'), file('_chat.txt'), file('no-export.txt')],
-			{ read, createItem, importCalendar: vi.fn(), readChat: readWhatsAppFile }
+describe('prepareDroppedFiles with chat exports', () => {
+	const deps = {
+		read: vi.fn(),
+		readChat: readWhatsAppFile,
+		previewCalendar: vi.fn(),
+		lookup: vi.fn(),
+		keywords: async () => EMPTY_IMPORT_KEYWORDS,
+		onSessionLost: vi.fn()
+	};
+
+	it('opens the first chat and refuses further ones', async () => {
+		const result = await prepareDroppedFiles(
+			[file(ANDROID), file('_chat.txt'), file('no-export.txt')],
+			deps
 		);
 		expect(result.chat).toMatchObject({ chat: 'Familie Beispiel' });
 		expect(result.results).toEqual([
-			{ name: 'brief.eml', kind: 'created', itemId: 'item00000000001', title: 'Brief' },
 			{ name: '_chat.txt', kind: 'error', message: ONE_CHAT_AT_A_TIME },
 			{ name: 'no-export.txt', kind: 'error', message: ONE_CHAT_AT_A_TIME }
 		]);
 	});
 
 	it('names a file that is no export', async () => {
-		const result = await importDroppedFiles([file('no-export.txt')], {
-			read: vi.fn(),
-			createItem: vi.fn(),
-			importCalendar: vi.fn(),
-			readChat: readWhatsAppFile
-		});
-		expect(result).toEqual({
-			chat: null,
-			results: [{ name: 'no-export.txt', kind: 'error', message: FORMAT_NOT_RECOGNISED }]
-		});
+		const result = await prepareDroppedFiles([file('no-export.txt')], deps);
+		expect(result.chat).toBeNull();
+		expect(result.results).toEqual([
+			{ name: 'no-export.txt', kind: 'error', message: FORMAT_NOT_RECOGNISED }
+		]);
 	});
 });
 
@@ -172,7 +169,7 @@ describe('WhatsApp selection view', () => {
 	if (!parsed.ok) throw new Error('fixture');
 	const saved: DraftsOutcome = { created: 2, duplicates: 0, failures: [] };
 
-	function renderView(outcome: DraftsOutcome = saved) {
+	function renderView(outcome: DraftsOutcome = saved, keywords: string[] = []) {
 		const onsave = vi.fn<(drafts: InboxDraft[]) => Promise<DraftsOutcome>>(async () => outcome);
 		const onclose = vi.fn();
 		render(WhatsAppImport, {
@@ -180,6 +177,7 @@ describe('WhatsApp selection view', () => {
 				chat: 'Familie Beispiel',
 				messages: parsed.ok ? parsed.messages : [],
 				leftOut: 4,
+				keywords,
 				onsave,
 				onclose
 			}
@@ -203,6 +201,32 @@ describe('WhatsApp selection view', () => {
 		expect(submit().getAttribute('aria-disabled')).toBe('true');
 		expect(submit().textContent).toContain('0 Nachrichten in den Eingang');
 		expect(screen.getByText('29.03.2026 03:05 · Ben Muster')).toBeTruthy();
+	});
+
+	it('chooses the messages with a keyword at first and keeps the keyword (package 21)', async () => {
+		const { onsave } = renderView(saved, ['getranke', 'Uhr']);
+		expect(
+			screen.getByText(/Nachrichten mit einem deiner Stichwörter sind vorausgewählt/)
+		).toBeTruthy();
+		const chosen = screen
+			.getAllByRole('checkbox')
+			.filter((box) => (box as HTMLInputElement).checked)
+			.map((box) => box.closest('label')?.textContent ?? '');
+		expect(chosen).toHaveLength(2);
+		expect(chosen[0]).toMatch(/Wer holt am Samstag die Getränke\?\s*Stichwort: getranke/);
+		expect(chosen[1]).toMatch(/Uhr umgestellt\?\s*Stichwort: Uhr/);
+		await fireEvent.click(submit());
+		expect(onsave.mock.calls[0]?.[0].map((draft) => draft.sourceMeta?.keyword)).toEqual([
+			'getranke',
+			'Uhr'
+		]);
+	});
+
+	it('says that nothing is chosen without keywords', () => {
+		renderView();
+		expect(
+			screen.getByText(/keine Stichwörter festgelegt, deshalb ist nichts vorausgewählt/)
+		).toBeTruthy();
 	});
 
 	it('saves only the chosen messages as drafts and closes', async () => {

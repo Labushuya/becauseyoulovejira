@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import {
+	EMPTY_IMPORT_KEYWORDS,
 	KEYWORD_SUGGESTIONS,
+	importKeywordsOf,
+	importKeywordsValue,
+	mailKeywordTexts,
 	foldKeywordText,
 	keywordInputError,
 	keywordListOf,
@@ -57,5 +61,35 @@ describe('withSuggestions and keywordListOf', () => {
 	it('reads stored lists and leaves out bad entries', () => {
 		expect(keywordListOf(undefined)).toEqual([]);
 		expect(keywordListOf([' todo ', 1, ''])).toEqual(['todo']);
+	});
+});
+
+describe('keywords of the file imports (package 21)', () => {
+	it('reads stored settings tolerantly and writes them back', () => {
+		expect(importKeywordsOf(null)).toEqual(EMPTY_IMPORT_KEYWORDS);
+		const settings = importKeywordsOf({
+			eml: { keywords: ['rechnung', 3], match_body: true },
+			ics: { keywords: 'todo', match_body: true },
+			other: {}
+		});
+		expect(settings).toEqual({
+			eml: { keywords: ['rechnung'], matchBody: true },
+			ics: { keywords: [], matchBody: false },
+			whatsapp: { keywords: [], matchBody: false }
+		});
+		expect(importKeywordsValue(settings)).toEqual({
+			eml: { keywords: ['rechnung'], match_body: true },
+			ics: { keywords: [] },
+			whatsapp: { keywords: [] }
+		});
+	});
+
+	it('searches the start of a mail text only on request', () => {
+		const body = `${'x '.repeat(260)}todo`;
+		expect(mailKeywordTexts('Betreff', body, false)).toEqual(['Betreff']);
+		const texts = mailKeywordTexts('Betreff', body, true);
+		expect(texts[1]).toHaveLength(500);
+		expect(matchKeyword(['todo'], texts)).toBe('');
+		expect(matchKeyword(['todo'], mailKeywordTexts('Betreff', 'todo: zahlen', true))).toBe('todo');
 	});
 });

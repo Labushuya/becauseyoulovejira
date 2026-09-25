@@ -1,21 +1,26 @@
 <script lang="ts">
 	import { bookmarkletCode } from '$lib/domain/bookmarklet';
 	import type { ConnectionsStore } from '$lib/stores/connections.svelte';
+	import type { ImportKeywordsStore } from '$lib/stores/import-keywords.svelte';
 	import ConnectionsSection from './ConnectionsSection.svelte';
+	import ImportKeywordsSection from './ImportKeywordsSection.svelte';
 
-	// Settings "Kanäle" (E4 plan, T-3 and packages 7, 10, 15 and 17): the bookmarklet, the
-	// connections with access data from Windows user environment variables (ADR-0018), how to set
-	// them and how to set up Google Calendar and the Telegram bot. The
+	// Settings "Kanäle" (E4 plan, T-3 and packages 7, 10, 15, 17 and 21): the bookmarklet, the
+	// connections with access data from Windows user environment variables (ADR-0018), the keywords
+	// of the file imports (ADR-0020), how to set the variables and how to set up Google Calendar and
+	// the Telegram bot. The
 	// bookmarklet link is dragged to the bookmarks bar; for the keyboard the code can be copied and
 	// saved as the address of a new bookmark. A click on the link here does nothing, so the page
 	// does not capture itself.
 	let {
 		captureUrl,
-		connections
+		connections,
+		importKeywords
 	}: {
 		/** Absolute address of the capture form, e.g. http://127.0.0.1:8090/eingang/neu. */
 		captureUrl: string;
 		connections: ConnectionsStore;
+		importKeywords: ImportKeywordsStore;
 	} = $props();
 
 	const uid = $props.id();
@@ -88,6 +93,8 @@
 	</section>
 
 	<ConnectionsSection store={connections} />
+
+	<ImportKeywordsSection store={importKeywords} />
 
 	<section class="card" aria-labelledby={ids.variables}>
 		<h3 id={ids.variables}>Zugangsdaten als Windows-Variable setzen</h3>

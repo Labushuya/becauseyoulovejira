@@ -63,7 +63,7 @@ export interface InboxData {
 	restore(id: string): Promise<InboxItemSummary>;
 	assign(id: string, ticketId: string): Promise<InboxItemSummary>;
 	originalUrl(item: Pick<InboxItemSummary, 'id' | 'original'>): Promise<string | null>;
-	importCalendar(file: File): Promise<CalendarImportSummary>;
+	importCalendar(file: File, select: readonly number[]): Promise<CalendarImportSummary>;
 }
 
 export function inboxData(pb: PocketBase): InboxData {
@@ -76,7 +76,7 @@ export function inboxData(pb: PocketBase): InboxData {
 		restore: (id) => restoreItem(pb, id),
 		assign: (id, ticketId) => assignToTicket(pb, id, ticketId),
 		originalUrl: (item) => originalFileUrl(pb, item),
-		importCalendar: (file) => importCalendarFile(pb, file)
+		importCalendar: (file, select) => importCalendarFile(pb, file, select)
 	};
 }
 
@@ -364,13 +364,13 @@ export class InboxStore {
 	}
 
 	/**
-	 * Takes an .ics file into the inbox (E4 plan, package 14). The new entries come by realtime;
-	 * the store reconciles afterwards in case an event is late.
+	 * Takes the chosen components of an .ics file into the inbox (E4 plan, packages 14 and 21).
+	 * The new entries come by realtime; the store reconciles afterwards in case an event is late.
 	 */
-	async importCalendar(file: File): Promise<CalendarImportResult> {
+	async importCalendar(file: File, select: readonly number[]): Promise<CalendarImportResult> {
 		if (!this.#session.ensureValid()) return { kind: 'error', message: null };
 		try {
-			const summary = await this.#data.importCalendar(file);
+			const summary = await this.#data.importCalendar(file, select);
 			if (summary.created > 0) void this.reconcile();
 			return { kind: 'imported', ...summary };
 		} catch (error) {

@@ -217,3 +217,67 @@ export function withSuggestions(list: readonly string[]): string[] {
 	}
 	return result;
 }
+
+/** Kinds of file imports with their own list (users.import_keywords, ADR-0020 section 3). */
+export const IMPORT_KINDS = ['eml', 'ics', 'whatsapp'] as const;
+export type ImportKind = (typeof IMPORT_KINDS)[number];
+
+export const IMPORT_KIND_LABELS: Readonly<Record<ImportKind, string>> = Object.freeze({
+	eml: 'Mail-Dateien (.eml)',
+	ics: 'Kalenderdateien (.ics)',
+	whatsapp: 'WhatsApp-Export'
+});
+
+/** Where the keywords of a kind of file are searched (ADR-0020 section 1). */
+export const IMPORT_SEARCH_TEXT: Readonly<Record<ImportKind, string>> = Object.freeze({
+	eml: 'Gesucht wird im Betreff, auf Wunsch auch in den ersten 500 Zeichen des Textes.',
+	ics: 'Gesucht wird in Titel und Beschreibung der Termine.',
+	whatsapp: 'Gesucht wird im Text der Nachricht.'
+});
+
+/** Keywords of one kind of file import; only mail files search the start of the text. */
+export interface ImportKeywordList {
+	keywords: string[];
+	matchBody: boolean;
+}
+
+export type ImportKeywords = Readonly<Record<ImportKind, ImportKeywordList>>;
+
+export const EMPTY_IMPORT_KEYWORDS: ImportKeywords = Object.freeze({
+	eml: { keywords: [], matchBody: false },
+	ics: { keywords: [], matchBody: false },
+	whatsapp: { keywords: [], matchBody: false }
+});
+
+function objectOf(value: unknown): Record<string, unknown> {
+	return typeof value === 'object' && value !== null && !Array.isArray(value)
+		? (value as Record<string, unknown>)
+		: {};
+}
+
+/** The stored value of users.import_keywords as settings; missing or bad parts count as empty. */
+export function importKeywordsOf(value: unknown): ImportKeywords {
+	const stored = objectOf(value);
+	const entry = (kind: ImportKind): ImportKeywordList => {
+		const part = objectOf(stored[kind]);
+		return {
+			keywords: keywordListOf(part.keywords),
+			matchBody: kind === 'eml' && part.match_body === true
+		};
+	};
+	return { eml: entry('eml'), ics: entry('ics'), whatsapp: entry('whatsapp') };
+}
+
+/** The settings as the server stores them (the shape keywords.js checks). */
+export function importKeywordsValue(settings: ImportKeywords): Record<string, unknown> {
+	return {
+		eml: { keywords: settings.eml.keywords, match_body: settings.eml.matchBody },
+		ics: { keywords: settings.ics.keywords },
+		whatsapp: { keywords: settings.whatsapp.keywords }
+	};
+}
+
+/** Subject and, with `matchBody`, the first MAIL_BODY_CHARS characters of the text of a mail. */
+export function mailKeywordTexts(title: string, body: string, matchBody: boolean): string[] {
+	return matchBody ? [title, body.slice(0, MAIL_BODY_CHARS)] : [title];
+}

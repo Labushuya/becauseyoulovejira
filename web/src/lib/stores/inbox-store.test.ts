@@ -408,7 +408,7 @@ describe('actions', () => {
 			failed: 0,
 			itemId: ''
 		});
-		expect(await store.importCalendar(file)).toEqual({
+		expect(await store.importCalendar(file, [0, 2])).toEqual({
 			kind: 'imported',
 			created: 2,
 			duplicates: 1,
@@ -416,21 +416,21 @@ describe('actions', () => {
 			failed: 0,
 			itemId: ''
 		});
-		expect(data.importCalendar).toHaveBeenCalledWith(file);
+		expect(data.importCalendar).toHaveBeenCalledWith(file, [0, 2]);
 		await vi.waitFor(() => expect(data.listNew).toHaveBeenCalledTimes(2));
 
 		data.importCalendar.mockRejectedValueOnce(new DataError('server', { status: 503 }));
-		expect(await store.importCalendar(file)).toEqual({
+		expect(await store.importCalendar(file, [0, 2])).toEqual({
 			kind: 'error',
 			message: INBOX_UNAVAILABLE_MESSAGE
 		});
 		data.importCalendar.mockRejectedValueOnce(new DataError('network'));
-		expect(await store.importCalendar(file)).toMatchObject({
+		expect(await store.importCalendar(file, [0, 2])).toMatchObject({
 			kind: 'error',
 			message: expect.stringContaining('Server nicht erreichbar')
 		});
 		data.importCalendar.mockRejectedValueOnce(new DataError('session', { status: 401 }));
-		expect(await store.importCalendar(file)).toEqual({ kind: 'error', message: null });
+		expect(await store.importCalendar(file, [0, 2])).toEqual({ kind: 'error', message: null });
 		expect(session.logout).toHaveBeenCalledOnce();
 	});
 

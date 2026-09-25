@@ -1,10 +1,10 @@
-// Mail files (E4 plan, package 8): type and size checks, parsing with the file as original,
-// refusal of crafted mails, and the import one file after the other with its summary; calendar
-// files (package 14) go to the hook instead.
+// Mail files (E4 plan, package 8): type and size checks, parsing with the file as original and
+// refusal of crafted mails; calendar files (package 14) are recognised by name or type. The import
+// with its selection view is tested in stores/mail-import.test.ts (package 21).
 
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { describe, expect, it, vi } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import {
 	EML_MAX_BYTES,
 	NOT_EML_MESSAGE,
@@ -13,8 +13,7 @@ import {
 	isMailFile,
 	readMailFile
 } from './mail-file';
-import { CALENDAR_TOO_LARGE_MESSAGE, ICS_MAX_BYTES, isCalendarFile } from './calendar-file';
-import { importCounts, importMailFiles, importSummary } from './stores/mail-import';
+import { isCalendarFile } from './calendar-file';
 
 const FIXTURES = join(import.meta.dirname, '../../../tests/fixtures/eml');
 
@@ -64,142 +63,10 @@ describe('readMailFile', () => {
 	});
 });
 
-describe('importMailFiles', () => {
-	const item = (id: string, title: string) => ({ id, title }) as never;
-
-	it('reads and saves one file after the other, each with its result', async () => {
-		const createItem = vi
-			.fn()
-			.mockResolvedValueOnce({ kind: 'created', item: item('item00000000001', 'Grüße aus Köln') })
-			.mockResolvedValueOnce({
-				kind: 'duplicate',
-				state: 'converted',
-				itemId: 'item00000000002',
-				ticketId: 'tick00000000002',
-				ticketKey: 'HAUS-2',
-				message: 'Schon Ticket HAUS-2.'
-			})
-			.mockResolvedValueOnce({ kind: 'error', message: 'Server nicht erreichbar.', fields: {} });
-		const files = [
-			fixture('utf8-plain.eml'),
-			fixture('latin1-qp.eml'),
-			new File(['x'], 'bild.png', { type: 'image/png' }),
-			fixture('attachments.eml')
-		];
-		const results = await importMailFiles(files, {
-			read: readMailFile,
-			createItem,
-			importCalendar: vi.fn()
-		});
-		expect(results).toEqual([
-			{
-				name: 'utf8-plain.eml',
-				kind: 'created',
-				itemId: 'item00000000001',
-				title: 'Grüße aus Köln'
-			},
-			{
-				name: 'latin1-qp.eml',
-				kind: 'duplicate',
-				message: 'Schon Ticket HAUS-2.',
-				itemId: 'item00000000002',
-				ticketId: 'tick00000000002'
-			},
-			{ name: 'bild.png', kind: 'error', message: NOT_EML_MESSAGE },
-			{ name: 'attachments.eml', kind: 'error', message: 'Server nicht erreichbar.' }
-		]);
-		expect(createItem).toHaveBeenCalledTimes(3);
-		expect(importSummary(results)).toBe('1 neu, 1 schon vorhanden, 2 mit Fehler.');
-	});
-
-	it('stops at a lost session', async () => {
-		const createItem = vi.fn().mockResolvedValue({ kind: 'error', message: null, fields: {} });
-		const results = await importMailFiles([fixture('utf8-plain.eml'), fixture('latin1-qp.eml')], {
-			read: readMailFile,
-			createItem,
-			importCalendar: vi.fn()
-		});
-		expect(results).toEqual([
-			{
-				name: 'utf8-plain.eml',
-				kind: 'error',
-				message: 'Die Sitzung ist abgelaufen. Bitte erneut anmelden.'
-			}
-		]);
-		expect(importSummary([])).toBe('0 neu.');
-	});
-});
-
 describe('calendar files (E4 plan, package 14)', () => {
-	const calendar = (name = 'kalender.ics', size = 10, type = 'text/calendar') =>
-		new File([new Uint8Array(size)], name, { type });
-
 	it('recognises calendar files by name or type', () => {
 		expect(isCalendarFile({ name: 'Termin.ICS', type: '' })).toBe(true);
 		expect(isCalendarFile({ name: 'export', type: 'text/calendar' })).toBe(true);
 		expect(isCalendarFile({ name: 'a.eml', type: 'message/rfc822' })).toBe(false);
-	});
-
-	it('sends calendar files to the hook and mail files to the parser', async () => {
-		const createItem = vi.fn().mockResolvedValue({
-			kind: 'created',
-			item: { id: 'item00000000001', title: 'Grüße aus Köln' }
-		});
-		const importCalendar = vi
-			.fn()
-			.mockResolvedValueOnce({
-				kind: 'imported',
-				created: 3,
-				duplicates: 1,
-				skipped: 1,
-				failed: 0,
-				itemId: ''
-			})
-			.mockResolvedValueOnce({ kind: 'error', message: 'Server nicht erreichbar.' });
-		const big = calendar('gross.ics', ICS_MAX_BYTES + 1);
-		const results = await importMailFiles(
-			[calendar(), fixture('utf8-plain.eml'), big, calendar('zweiter.ics')],
-			{ read: readMailFile, createItem, importCalendar }
-		);
-		expect(results).toEqual([
-			{
-				name: 'kalender.ics',
-				kind: 'calendar',
-				created: 3,
-				duplicates: 1,
-				skipped: 1,
-				failed: 0,
-				itemId: ''
-			},
-			{
-				name: 'utf8-plain.eml',
-				kind: 'created',
-				itemId: 'item00000000001',
-				title: 'Grüße aus Köln'
-			},
-			{ name: 'gross.ics', kind: 'error', message: CALENDAR_TOO_LARGE_MESSAGE },
-			{ name: 'zweiter.ics', kind: 'error', message: 'Server nicht erreichbar.' }
-		]);
-		expect(importCalendar).toHaveBeenCalledTimes(2);
-		expect(createItem).toHaveBeenCalledOnce();
-		expect(importSummary(results)).toBe('4 neu, 1 schon vorhanden, 1 übersprungen, 2 mit Fehler.');
-	});
-
-	it('stops at a lost session and counts without zero parts', async () => {
-		const importCalendar = vi.fn().mockResolvedValue({ kind: 'error', message: null });
-		const results = await importMailFiles([calendar(), calendar('b.ics')], {
-			read: readMailFile,
-			createItem: vi.fn(),
-			importCalendar
-		});
-		expect(results).toEqual([
-			{
-				name: 'kalender.ics',
-				kind: 'error',
-				message: 'Die Sitzung ist abgelaufen. Bitte erneut anmelden.'
-			}
-		]);
-		expect(importCalendar).toHaveBeenCalledOnce();
-		expect(importCounts({ created: 2, duplicates: 0, skipped: 0, failed: 0 })).toBe('2 neu');
 	});
 });
