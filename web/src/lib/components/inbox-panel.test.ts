@@ -137,6 +137,17 @@ describe('inbox panel', () => {
 		expect(screen.queryByRole('link', { name: 'Umwandeln' })).toBeNull();
 	});
 
+	it('tells that a discarded entry loses its content after 30 days (E4 plan, package 24)', async () => {
+		setup();
+		await screen.findByRole('heading', { name: 'Rechnung September' });
+		expect(screen.queryByText(/behalten ihren Inhalt 30 Tage/)).toBeNull();
+		await fireEvent.click(screen.getByRole('button', { name: 'Verwerfen' }));
+		const note = await screen.findByText(/Verworfene Einträge behalten ihren Inhalt 30 Tage/);
+		expect(note.textContent).toMatch(/Duplikatmerkmal/);
+		expect(note.classList.contains('hint')).toBe(true);
+		expect(note.closest('.alert-error')).toBeNull();
+	});
+
 	it('downloads the original with a fresh file token', async () => {
 		const assign = vi.fn();
 		vi.spyOn(window, 'location', 'get').mockReturnValue({ ...window.location, assign });

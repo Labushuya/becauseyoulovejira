@@ -296,6 +296,7 @@ function completeConversion(txApp, item, ticket) {
 
 module.exports = {
   IMMUTABLE_FIELDS: IMMUTABLE_FIELDS,
+  metaOf: metaOf,
   prepareCreate: prepareCreate,
   ingest: ingest,
   lookup: lookup,

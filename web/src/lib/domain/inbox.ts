@@ -47,6 +47,15 @@ export const INBOX_BODY_MAX_LENGTH = 100_000;
 export const INBOX_SOURCE_URL_MAX_LENGTH = 2000;
 
 /**
+ * Days a discarded entry keeps its content (OF-E4-6, E4 plan package 24); mirrors
+ * DISCARDED_RETENTION_DAYS of app/pb_hooks/lib/inbox-cleanup.js (tests/unit/inbox-cleanup.test.mjs).
+ */
+export const DISCARDED_RETENTION_DAYS = 30;
+
+/** Neutral note in the panel of a discarded entry. */
+export const DISCARDED_CONTENT_NOTE = `Verworfene Einträge behalten ihren Inhalt ${DISCARDED_RETENTION_DAYS} Tage. Danach bleiben nur ein gekürzter Titel, Quelle, Datum und das Duplikatmerkmal, damit derselbe Eintrag nicht wiederkommt. Wiederherstellen geht auch dann.`;
+
+/**
  * The address as a link of a source may keep it (ADR-0011 section 2, like the hook in
  * app/pb_hooks/lib/inbox-rules.js): http or https, no whitespace, a host, at most
  * INBOX_SOURCE_URL_MAX_LENGTH characters; trimmed. Null for anything else (javascript:, data:,

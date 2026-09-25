@@ -4,6 +4,7 @@
 	import { formatBerlinDateTime } from '$lib/domain/format';
 	import {
 		CHANNEL_LABELS,
+		DISCARDED_CONTENT_NOTE,
 		KIND_LABELS,
 		STATE_LABELS,
 		metaText,
@@ -20,9 +21,9 @@
 	// Panel of one inbox entry (E4 plan, package 3; ADR-0019 section 5): title, the details of the
 	// source (kind, way, state, date at the sender, arrival, sender, place, chat, link), the text
 	// (sanitised Markdown, ADR-0008), the hint on a possible duplicate with "Dem Ticket zuordnen",
-	// and the actions "Umwandeln", "Verwerfen", "Wiederherstellen" and "Originaldatei
-	// herunterladen". Links of a source open only as http(s) (the hook refuses anything else).
-	// Escape closes the panel.
+	// the actions "Umwandeln", "Verwerfen", "Wiederherstellen" and "Originaldatei herunterladen",
+	// and for a discarded entry the note that its content goes after 30 days (package 24). Links of
+	// a source open only as http(s) (the hook refuses anything else). Escape closes the panel.
 	let {
 		id,
 		store,
@@ -187,6 +188,10 @@
 				>
 			{/if}
 		</div>
+
+		{#if item.state === 'discarded'}
+			<p class="hint">{DISCARDED_CONTENT_NOTE}</p>
+		{/if}
 
 		{#if duplicates !== null && (duplicates.tickets.length > 0 || duplicates.items.length > 0)}
 			<div class="duplicate" role="note">
