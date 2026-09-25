@@ -319,8 +319,14 @@ function errorText(err) {
 // The new ticket of a rule: template, status open, the due date, the rule and the owner. Key,
 // scope, history ("created" without a user) and the "new" mark come from the ticket hooks, which
 // run inside the same transaction (the nested inTransaction reuses it).
+// created and updated get one timestamp: PocketBase reads the clock once per autodate field, so
+// the two can differ by a millisecond, and isUntouched() takes `updated = created` as "never
+// edited" when an instance is reopened (ADR-0023 section 3). PocketBase keeps a value set here.
 function newInstance(txApp, rule, due) {
   var ticket = new Record(txApp.findCollectionByNameOrId(TICKETS));
+  var now = new Date().toISOString();
+  ticket.set('created', now);
+  ticket.set('updated', now);
   ticket.set('title', rule.getString('title'));
   ticket.set('description', rule.getString('description'));
   ticket.set('project', rule.getString('project'));
