@@ -15,6 +15,7 @@
 
 <style>
 	.markdown {
+		min-width: 0;
 		font-size: 0.875rem;
 		line-height: 1.55;
 		overflow-wrap: anywhere;
@@ -62,6 +63,7 @@
 	}
 
 	.markdown :global(pre) {
+		max-width: 100%;
 		padding: 0.5rem 0.75rem;
 		overflow-x: auto;
 		background: var(--color-bg);
@@ -81,7 +83,11 @@
 		border-left: 3px solid var(--color-line);
 	}
 
+	/* Wide tables from Markdown scroll inside their block instead of widening the panel. */
 	.markdown :global(table) {
+		display: block;
+		max-width: 100%;
+		overflow-x: auto;
 		border-collapse: collapse;
 	}
 

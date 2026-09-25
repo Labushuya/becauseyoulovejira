@@ -338,7 +338,7 @@ describe('ticket panel', () => {
 		expect(error?.textContent).toMatch(/Server nicht erreichbar/);
 	});
 
-	it('saves the due date when the field is left and removes it with "Entfernen"', async () => {
+	it('saves the due date when the field is left and removes it with the icon button "Fälligkeit entfernen"', async () => {
 		const { data } = await renderPanel();
 
 		const input = screen.getByLabelText<HTMLInputElement>('Fälligkeit');
@@ -347,10 +347,18 @@ describe('ticket panel', () => {
 		await fireEvent.blur(input);
 		await vi.waitFor(() => expect(data.update).toHaveBeenCalledWith(ID, { due: '2026-12-24' }));
 
-		await fireEvent.click(screen.getByRole('button', { name: 'Entfernen: Fälligkeit' }));
+		const remove = screen.getByRole('button', { name: 'Fälligkeit entfernen' });
+		expect(remove.classList.contains('button-icon')).toBe(true);
+		expect(remove.getAttribute('title')).toBe('Fälligkeit entfernen');
+		expect(remove.textContent?.trim()).toBe('');
+		expect(
+			screen.queryAllByRole('button').filter((button) => /Entfernen/.test(button.textContent ?? ''))
+		).toEqual([]);
+
+		await fireEvent.click(remove);
 		await vi.waitFor(() => expect(data.update).toHaveBeenLastCalledWith(ID, { due: null }));
 		expect(screen.getByLabelText<HTMLInputElement>('Fälligkeit').value).toBe('');
-		expect(screen.queryByRole('button', { name: 'Entfernen: Fälligkeit' })).toBeNull();
+		expect(screen.queryByRole('button', { name: 'Fälligkeit entfernen' })).toBeNull();
 	});
 
 	it('restores the due date with Escape', async () => {

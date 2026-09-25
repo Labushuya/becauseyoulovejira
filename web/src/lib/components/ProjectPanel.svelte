@@ -386,6 +386,7 @@
 
 	.stats {
 		display: flex;
+		flex-wrap: wrap;
 		gap: 0.375rem;
 		font-size: 0.8125rem;
 		color: var(--color-text-muted);
@@ -423,6 +424,7 @@
 	}
 
 	input {
+		max-width: 100%;
 		padding: 0.375rem 0.5rem;
 		font-size: 0.875rem;
 		background: var(--color-surface);

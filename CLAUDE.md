@@ -149,7 +149,7 @@ Umsetzung in `app/pb_migrations/1790200900_api_rules.js`, Details und Befunde im
 - Seite „Kanäle“ `/einstellungen/kanaele`: Bookmarklet, Verbindungen (Status der Variablen, letzter Lauf, bereinigter Fehler, Hinweis, „Jetzt abrufen“, bei Postfächern „Aus dem Postfach wählen“), Stichwörter je Verbindung und je Art der Datei-Importe, Einrichtungsanleitungen je Dienst. Hinweise wie „Keine Stichwörter“ oder „Hilfsprozess läuft nicht“ sind neutral, nicht rot.
 - Inhalte aus Kanälen sind nicht vertrauenswürdig: Anzeige nur über `Markdown.svelte`, Links nur `http:`/`https:`/`mailto:`, Bilder aus Mails werden nie geladen.
 - Realtime: Subscriptions aktualisieren gezielt einzelne Datensätze; kein Polling, kein komplettes Neuladen.
-- Bereichs-Umschalter: „Privat" aktiv, „Haushalt" ausgegraut, nicht klickbar, Hinweis „Demnächst" (`aria-disabled`).
+- Bereichs-Umschalter: „Privat" aktiv, „Haushalt" ausgegraut, nicht klickbar (`aria-disabled`), darin ein dezentes Etikett „Demnächst" (per `aria-describedby`), kein dritter Eintrag.
 - Markdown-Ausgabe wird sanitisiert.
 
 ## 8. Design-System

@@ -32,6 +32,16 @@ describe('area switch', () => {
 		expect(screen.getByText('Demnächst')).toBeTruthy();
 	});
 
+	it('shows "Demnächst" as a lozenge inside "Haushalt", not as a third entry', () => {
+		render(AreaSwitch);
+
+		const group = screen.getByRole('group', { name: 'Bereich' });
+		const lozenge = screen.getByText('Demnächst');
+		expect(household().contains(lozenge)).toBe(true);
+		expect(lozenge.classList.contains('soon')).toBe(true);
+		expect(Array.from(group.children).map((child) => child.tagName)).toEqual(['BUTTON', 'BUTTON']);
+	});
+
 	it('keeps both buttons reachable by keyboard', () => {
 		render(AreaSwitch);
 

@@ -74,7 +74,9 @@
 	}
 
 	.meta dd {
+		min-width: 0;
 		color: var(--color-text);
+		overflow-wrap: anywhere;
 	}
 
 	.meta a {

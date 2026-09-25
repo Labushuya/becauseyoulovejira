@@ -89,11 +89,14 @@
 <style>
 	.description {
 		display: grid;
+		grid-template-columns: minmax(0, 1fr);
 		gap: 0.5rem;
 	}
 
 	.section-head {
 		display: flex;
+		flex-wrap: wrap;
+		gap: 0.5rem;
 		align-items: center;
 		justify-content: space-between;
 	}
@@ -105,6 +108,7 @@
 
 	.buttons {
 		display: flex;
+		flex-wrap: wrap;
 		gap: 0.5rem;
 	}
 
