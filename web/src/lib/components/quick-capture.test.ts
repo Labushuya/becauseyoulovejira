@@ -5,7 +5,7 @@
 
 import { fireEvent, render, screen } from '@testing-library/svelte';
 import { tick } from 'svelte';
-import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import type { ResolvedPathname } from '$app/types';
 import type { InboxDraft } from '$lib/domain/inbox';
 import type { QuickEntry } from '$lib/domain/quick-syntax';
@@ -14,29 +14,9 @@ import type { ProjectRef, TagRef } from '$lib/domain/ticket';
 import type { CaptureSaveResult, DraftsOutcome } from '$lib/stores/capture';
 import ClipboardImport from './ClipboardImport.svelte';
 import QuickCapture from './QuickCapture.svelte';
+import { useOverlayStubs } from '$lib/test/overlay-stubs';
 
-const nativeDialog = {
-	showModal: HTMLDialogElement.prototype.showModal,
-	close: HTMLDialogElement.prototype.close
-};
-
-beforeAll(() => {
-	if (typeof nativeDialog.showModal !== 'function') {
-		HTMLDialogElement.prototype.showModal = function (this: HTMLDialogElement) {
-			this.open = true;
-		};
-	}
-	if (typeof nativeDialog.close !== 'function') {
-		HTMLDialogElement.prototype.close = function (this: HTMLDialogElement) {
-			this.open = false;
-		};
-	}
-});
-
-afterAll(() => {
-	HTMLDialogElement.prototype.showModal = nativeDialog.showModal;
-	HTMLDialogElement.prototype.close = nativeDialog.close;
-});
+useOverlayStubs();
 
 const HOUSE: ProjectRef = {
 	id: 'proj00000000001',
@@ -138,13 +118,85 @@ describe('quick capture', () => {
 		expect(input.value).toBe('A');
 	});
 
-	it('closes with Escape and with "Schließen"', async () => {
+	it('closes with Escape, × and "Abbrechen" while nothing is typed', async () => {
 		const { onclose } = renderQuick();
-		const dialog = screen.getByRole('dialog', { name: 'Schnellerfassung' });
+		const dialog = screen.getByRole<HTMLDialogElement>('dialog', { name: 'Schnellerfassung' });
+		expect(dialog.classList.contains('size-m')).toBe(true);
 		await fireEvent(dialog, new Event('cancel', { cancelable: true }));
 		expect(onclose).toHaveBeenCalledOnce();
-		await fireEvent.click(screen.getByRole('button', { name: 'Schließen' }));
+		await fireEvent.keyDown(dialog, { key: 'Escape' });
 		expect(onclose).toHaveBeenCalledTimes(2);
+		await fireEvent.click(screen.getByRole('button', { name: 'Schließen' }));
+		expect(onclose).toHaveBeenCalledTimes(3);
+		await fireEvent.click(screen.getByRole('button', { name: 'Abbrechen' }));
+		expect(onclose).toHaveBeenCalledTimes(4);
+	});
+
+	it('says "Schließen" in the footer once something is saved', async () => {
+		const { input } = renderQuick();
+		expect(screen.queryByRole('button', { name: 'Abbrechen' })).not.toBeNull();
+		await fireEvent.input(input, { target: { value: 'Milch' } });
+		await fireEvent.keyDown(input, { key: 'Enter' });
+		await screen.findByRole('link', { name: 'Ticket ansehen' });
+		expect(screen.queryByRole('button', { name: 'Abbrechen' })).toBeNull();
+		expect(screen.getAllByRole('button', { name: 'Schließen' })).toHaveLength(2);
+	});
+});
+
+describe('quick capture: typed text is not lost without asking (plan UI-4)', () => {
+	async function typed() {
+		const view = renderQuick();
+		await tick();
+		await fireEvent.input(view.input, { target: { value: 'Zahnarzt anrufen' } });
+		const dialog = screen.getByRole<HTMLDialogElement>('dialog', { name: 'Schnellerfassung' });
+		return { ...view, dialog };
+	}
+
+	const question = () => screen.queryByRole('group', { name: /Änderungen verwerfen\?/ });
+
+	it('asks on Escape and keeps editing with "Weiter bearbeiten"', async () => {
+		const { onclose, input, dialog } = await typed();
+		input.focus();
+		await fireEvent.keyDown(input, { key: 'Escape' });
+		expect(onclose).not.toHaveBeenCalled();
+		expect(question()?.textContent).toMatch(/Der getippte Text geht verloren\./);
+		const keep = screen.getByRole('button', { name: 'Weiter bearbeiten' });
+		await vi.waitFor(() => expect(document.activeElement).toBe(keep));
+
+		await fireEvent.click(keep);
+		await vi.waitFor(() => expect(document.activeElement).toBe(input));
+		expect(question()).toBeNull();
+		expect(input.value).toBe('Zahnarzt anrufen');
+		expect(dialog.open).toBe(true);
+		expect(onclose).not.toHaveBeenCalled();
+	});
+
+	it('asks on × and "Abbrechen" and closes after "Verwerfen"', async () => {
+		const { onclose } = await typed();
+		await fireEvent.click(screen.getByRole('button', { name: 'Schließen' }));
+		expect(question()).not.toBeNull();
+		await fireEvent.click(screen.getByRole('button', { name: 'Weiter bearbeiten' }));
+
+		await fireEvent.click(screen.getByRole('button', { name: 'Abbrechen' }));
+		expect(question()).not.toBeNull();
+		expect(onclose).not.toHaveBeenCalled();
+		await fireEvent.click(screen.getByRole('button', { name: 'Verwerfen' }));
+		expect(onclose).toHaveBeenCalledOnce();
+	});
+
+	it('ignores a click on the veil while text is typed', async () => {
+		const { onclose, dialog } = await typed();
+		await fireEvent.pointerDown(dialog);
+		await fireEvent.click(dialog);
+		expect(onclose).not.toHaveBeenCalled();
+		expect(question()).toBeNull();
+	});
+
+	it('does not ask for blanks only', async () => {
+		const { onclose, input } = renderQuick();
+		await fireEvent.input(input, { target: { value: '   ' } });
+		await fireEvent.keyDown(input, { key: 'Escape' });
+		expect(onclose).toHaveBeenCalledOnce();
 	});
 });
 
@@ -204,7 +256,24 @@ describe('clipboard import', () => {
 		expect(alert.textContent).toMatch(/1 Eintrag im Eingang, 1 fehlgeschlagen\./);
 		expect(alert.textContent).toMatch(/„b“: Server nicht erreichbar\./);
 		expect(onclose).not.toHaveBeenCalled();
-		await fireEvent.click(screen.getByRole('button', { name: 'Schließen' }));
+		// Some entries are saved: the footer says "Schließen", like the × in the header.
+		const [cross, footer] = screen.getAllByRole('button', { name: 'Schließen' });
+		expect(cross?.getAttribute('aria-label')).toBe('Schließen');
+		await fireEvent.click(footer as HTMLElement);
 		expect(onclose).toHaveBeenCalledWith(expect.objectContaining({ created: 1 }));
+	});
+
+	it('is a modal of size M with ×, "Abbrechen" before saving and the focus in the text', async () => {
+		const { onclose } = renderImport('Milch');
+		await tick();
+		const dialog = screen.getByRole<HTMLDialogElement>('dialog', {
+			name: 'Aus der Zwischenablage'
+		});
+		expect(dialog.classList.contains('size-m')).toBe(true);
+		expect(document.activeElement).toBe(screen.getByLabelText('Text'));
+		await fireEvent.click(screen.getByRole('button', { name: 'Abbrechen' }));
+		await fireEvent.click(screen.getByRole('button', { name: 'Schließen' }));
+		expect(onclose).toHaveBeenCalledTimes(2);
+		expect(onclose).toHaveBeenCalledWith(null);
 	});
 });

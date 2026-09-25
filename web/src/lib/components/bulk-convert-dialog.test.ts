@@ -4,36 +4,16 @@
 
 import { fireEvent, render, screen, within } from '@testing-library/svelte';
 import { tick } from 'svelte';
-import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { DataError } from '$lib/data/errors';
 import type { InboxItem } from '$lib/domain/inbox';
 import type { ProjectRef, Ticket } from '$lib/domain/ticket';
 import { BulkConverter, type BulkConvertData } from '$lib/stores/bulk-convert.svelte';
 import BulkConvertDialog from './BulkConvertDialog.svelte';
 import source from './BulkConvertDialog.svelte?raw';
+import { useOverlayStubs } from '$lib/test/overlay-stubs';
 
-const nativeDialog = {
-	showModal: HTMLDialogElement.prototype.showModal,
-	close: HTMLDialogElement.prototype.close
-};
-
-beforeAll(() => {
-	if (typeof nativeDialog.showModal !== 'function') {
-		HTMLDialogElement.prototype.showModal = function (this: HTMLDialogElement) {
-			this.open = true;
-		};
-	}
-	if (typeof nativeDialog.close !== 'function') {
-		HTMLDialogElement.prototype.close = function (this: HTMLDialogElement) {
-			this.open = false;
-		};
-	}
-});
-
-afterAll(() => {
-	HTMLDialogElement.prototype.showModal = nativeDialog.showModal;
-	HTMLDialogElement.prototype.close = nativeDialog.close;
-});
+useOverlayStubs();
 
 const HOUSE: ProjectRef = {
 	id: 'proj00000000001',
@@ -168,9 +148,11 @@ describe('bulk convert dialog', () => {
 			'/tickets/tick00000000001'
 		);
 
-		const close = dialog.getByRole('button', { name: 'Schließen' });
+		// After the run the footer says "Schließen", like the × in the header; the focus is on it.
+		const [cross, close] = dialog.getAllByRole('button', { name: 'Schließen' });
+		expect(cross?.getAttribute('aria-label')).toBe('Schließen');
 		await vi.waitFor(() => expect(document.activeElement).toBe(close));
-		await fireEvent.click(close);
+		await fireEvent.click(close as HTMLElement);
 		expect(onclose).toHaveBeenCalledOnce();
 	});
 
@@ -182,6 +164,61 @@ describe('bulk convert dialog', () => {
 		await fireEvent(dialog, new Event('cancel', { cancelable: true }));
 		expect(onclose).toHaveBeenCalledTimes(2);
 		expect(data.createTicket).not.toHaveBeenCalled();
+	});
+
+	it('is a modal of size M with × on the modal building block', async () => {
+		const { onclose } = show();
+		await tick();
+		const dialog = screen.getByRole<HTMLDialogElement>('dialog', { name: '3 Einträge umwandeln' });
+		expect(dialog.classList.contains('size-m')).toBe(true);
+		await fireEvent.click(within(dialog).getByRole('button', { name: 'Schließen' }));
+		expect(onclose).toHaveBeenCalledOnce();
+		expect(source).not.toMatch(/<dialog|::backdrop|showModal/);
+	});
+
+	it('keeps its own Escape rule while running: "Anhalten", never closing (plan UI-4)', async () => {
+		const release: (() => void)[] = [];
+		const data = {
+			get: vi.fn<BulkConvertData['get']>(async (id) => entry(id)),
+			createTicket: vi.fn<BulkConvertData['createTicket']>(
+				() =>
+					new Promise<Ticket>((resolve) => {
+						release.push(() => resolve(ticket(release.length)));
+					})
+			)
+		} satisfies BulkConvertData;
+		const converter = new BulkConverter(
+			data,
+			{ ensureValid: () => true, logout: vi.fn() },
+			{ upsertTicket: vi.fn(), markConverted: vi.fn() }
+		);
+		const stop = vi.spyOn(converter, 'stop');
+		const onclose = vi.fn();
+		render(BulkConvertDialog, {
+			props: { items: ITEMS, converter, projects: [HOUSE], tags: [], onclose }
+		});
+		await tick();
+		const dialog = screen.getByRole<HTMLDialogElement>('dialog', { name: '3 Einträge umwandeln' });
+		await fireEvent.click(within(dialog).getByRole('button', { name: '3 Einträge umwandeln' }));
+		await vi.waitFor(() => expect(release).toHaveLength(1));
+		expect(dialog.getAttribute('aria-busy')).toBe('true');
+
+		// Twice Escape (Chromium's close watcher), × and the veil: the run stops, nothing closes.
+		expect(await fireEvent.keyDown(dialog, { key: 'Escape' })).toBe(false);
+		expect(await fireEvent.keyDown(dialog, { key: 'Escape' })).toBe(false);
+		expect(stop).toHaveBeenCalledTimes(2);
+		await fireEvent.click(within(dialog).getByRole('button', { name: 'Schließen' }));
+		await fireEvent.pointerDown(dialog);
+		await fireEvent.click(dialog);
+		expect(onclose).not.toHaveBeenCalled();
+		expect(dialog.open).toBe(true);
+
+		release[0]?.();
+		await vi.waitFor(() => expect(within(dialog).getByText('1 Eintrag umgewandelt.')).toBeTruthy());
+		expect(data.createTicket).toHaveBeenCalledOnce();
+		expect(dialog.getAttribute('aria-busy')).toBe('false');
+		await fireEvent.keyDown(dialog, { key: 'Escape' });
+		expect(onclose).toHaveBeenCalledOnce();
 	});
 
 	it('marks failures with icon and text only', () => {

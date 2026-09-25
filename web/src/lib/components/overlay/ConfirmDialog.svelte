@@ -67,7 +67,7 @@
 			{cancelLabel}
 		</button>
 		<button
-			class="button-primary confirm-button"
+			class="button-primary"
 			type="button"
 			aria-disabled={busy}
 			onclick={() => {
@@ -83,15 +83,5 @@
 	.text {
 		display: grid;
 		gap: 0.5rem;
-	}
-
-	.confirm-button {
-		padding: 0.375rem 0.875rem;
-		font-size: 0.875rem;
-	}
-
-	.confirm-button[aria-disabled='true'] {
-		cursor: progress;
-		opacity: 0.75;
 	}
 </style>

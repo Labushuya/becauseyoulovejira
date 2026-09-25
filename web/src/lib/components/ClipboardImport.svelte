@@ -1,14 +1,16 @@
 <script lang="ts">
-	import { tick, untrack } from 'svelte';
+	import { untrack } from 'svelte';
 	import { clipboardDrafts, textLines } from '$lib/clipboard';
 	import type { InboxDraft } from '$lib/domain/inbox';
 	import { draftsSummary, type DraftsOutcome } from '$lib/stores/capture';
 	import ErrorIcon from './ErrorIcon.svelte';
+	import Modal from './overlay/Modal.svelte';
 
-	// Text from the clipboard into the inbox (E4 plan, package 6) as a native modal <dialog>: the
-	// text stays editable, the first line becomes the title and the rest the text, or with "Jede
-	// Zeile als eigener Eintrag" one entry per line (at most 100). Failures stay listed with their
-	// reason; Escape and "Schließen" close, the focus returns to where it was.
+	// Text from the clipboard into the inbox (E4 plan, package 6) on the modal building block
+	// (ADR-0025 section 3, size M): the text stays editable, the first line becomes the title and
+	// the rest the text, or with "Jede Zeile als eigener Eintrag" one entry per line (at most 100).
+	// Failures stay listed with their reason, and the footer then says "Schließen", because some
+	// entries are saved already. The modal returns the focus on closing.
 	let {
 		text: initialText,
 		onsave,
@@ -22,12 +24,11 @@
 
 	const uid = $props.id();
 	const ids = {
-		heading: `${uid}-heading`,
+		form: `${uid}-form`,
 		text: `${uid}-text`,
 		preview: `${uid}-preview`
 	};
 
-	let dialog = $state<HTMLDialogElement>();
 	let area = $state<HTMLTextAreaElement>();
 	let text = $state(untrack(() => initialText));
 	let eachLine = $state(false);
@@ -44,17 +45,6 @@
 				: `Werden ${planned.drafts.length} Einträge.`
 	);
 
-	$effect(() => {
-		const element = dialog;
-		if (element === undefined) return;
-		const previous = document.activeElement;
-		if (!element.open) element.showModal();
-		void tick().then(() => area?.focus());
-		return () => {
-			if (previous instanceof HTMLElement && previous.isConnected) previous.focus();
-		};
-	});
-
 	async function save(event: Event) {
 		event.preventDefault();
 		if (pending || !planned.ok) return;
@@ -67,23 +57,17 @@
 		}
 		outcome = result;
 	}
-
-	function close() {
-		if (!pending) onclose(outcome);
-	}
 </script>
 
-<dialog
-	class="clipboard"
-	bind:this={dialog}
-	aria-labelledby={ids.heading}
-	oncancel={(event) => {
-		event.preventDefault();
-		close();
-	}}
+<Modal
+	open
+	size="m"
+	title="Aus der Zwischenablage"
+	busy={pending}
+	initialFocus={area}
+	onclose={() => onclose(outcome)}
 >
-	<h2 id={ids.heading}>Aus der Zwischenablage</h2>
-	<form class="form" novalidate onsubmit={save}>
+	<form id={ids.form} class="form" novalidate onsubmit={save}>
 		<label for={ids.text}>Text</label>
 		<textarea
 			id={ids.text}
@@ -117,42 +101,24 @@
 				</div>
 			</div>
 		{/if}
-
-		<div class="buttons">
-			<button class="secondary" type="button" onclick={close}>Schließen</button>
-			<button
-				class="button-primary"
-				type="submit"
-				aria-disabled={pending || !planned.ok ? 'true' : undefined}
-			>
-				{pending ? 'Wird übernommen …' : 'In den Eingang'}
-			</button>
-		</div>
 	</form>
-</dialog>
+
+	{#snippet footer({ close })}
+		<button class="button-secondary" type="button" onclick={close}>
+			{outcome === null ? 'Abbrechen' : 'Schließen'}
+		</button>
+		<button
+			class="button-primary"
+			type="submit"
+			form={ids.form}
+			aria-disabled={pending || !planned.ok ? 'true' : undefined}
+		>
+			{pending ? 'Wird übernommen …' : 'In den Eingang'}
+		</button>
+	{/snippet}
+</Modal>
 
 <style>
-	.clipboard {
-		width: min(36rem, calc(100vw - 2rem));
-		margin: auto;
-		padding: 1.25rem;
-		color: var(--color-text);
-		background: var(--color-surface);
-		border: 1px solid var(--color-line);
-		border-radius: 0.5rem;
-	}
-
-	.clipboard::backdrop {
-		background: var(--color-bg);
-		opacity: 0.75;
-	}
-
-	h2 {
-		margin-bottom: 0.75rem;
-		font-size: 1rem;
-		font-weight: 600;
-	}
-
 	.form {
 		display: grid;
 		gap: 0.625rem;
@@ -178,31 +144,11 @@
 		font: inherit;
 		background: var(--color-surface);
 		border: 1px solid var(--color-text-muted);
-		border-radius: 0.375rem;
+		border-radius: var(--radius-control);
 	}
 
 	.hint {
 		font-size: 0.8125rem;
 		color: var(--color-text-muted);
-	}
-
-	.buttons {
-		display: flex;
-		flex-wrap: wrap;
-		gap: 0.5rem;
-		justify-content: flex-end;
-	}
-
-	.secondary {
-		padding: 0.625rem 1rem;
-		background: none;
-		border: 1px solid var(--color-line);
-		border-radius: 0.375rem;
-		cursor: pointer;
-	}
-
-	.button-primary[aria-disabled='true'] {
-		cursor: not-allowed;
-		opacity: 0.6;
 	}
 </style>

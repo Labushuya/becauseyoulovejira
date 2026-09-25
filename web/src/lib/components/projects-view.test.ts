@@ -5,7 +5,7 @@
 
 import { fireEvent, render, screen, within } from '@testing-library/svelte';
 import { tick } from 'svelte';
-import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Project } from '$lib/domain/project';
 import type { Tag } from '$lib/domain/tag';
 import type { TicketSummary } from '$lib/domain/ticket';
@@ -14,6 +14,7 @@ import { CatalogEditor, type CatalogEditorData } from '$lib/stores/catalog-edito
 import { ProjectStatsStore } from '$lib/stores/project-stats.svelte';
 import { TicketListStore, type TicketListData } from '$lib/stores/ticket-list.svelte';
 import ProjectsView from './ProjectsView.svelte';
+import { useOverlayStubs } from '$lib/test/overlay-stubs';
 
 const mocks = vi.hoisted(() => ({
 	goto: vi.fn(async () => undefined),
@@ -47,28 +48,7 @@ const OLD: Project = {
 };
 const GARDEN: Tag = { id: 'tag000000000001', name: 'Garten', updated: T0 };
 
-const nativeDialog = {
-	showModal: HTMLDialogElement.prototype.showModal,
-	close: HTMLDialogElement.prototype.close
-};
-
-beforeAll(() => {
-	if (typeof nativeDialog.showModal !== 'function') {
-		HTMLDialogElement.prototype.showModal = function (this: HTMLDialogElement) {
-			this.open = true;
-		};
-	}
-	if (typeof nativeDialog.close !== 'function') {
-		HTMLDialogElement.prototype.close = function (this: HTMLDialogElement) {
-			this.open = false;
-		};
-	}
-});
-
-afterAll(() => {
-	HTMLDialogElement.prototype.showModal = nativeDialog.showModal;
-	HTMLDialogElement.prototype.close = nativeDialog.close;
-});
+useOverlayStubs();
 
 beforeEach(() => {
 	mocks.goto.mockClear();

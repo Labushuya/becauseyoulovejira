@@ -12,6 +12,7 @@
 	import type { EnsureTagResult } from '$lib/stores/catalog.svelte';
 	import { ticketPath } from '$lib/ticket-links';
 	import ErrorIcon from './ErrorIcon.svelte';
+	import Modal from './overlay/Modal.svelte';
 	import PrioritySelect from './PrioritySelect.svelte';
 	import ProjectSelect from './ProjectSelect.svelte';
 	import StatusSelect from './StatusSelect.svelte';
@@ -22,6 +23,8 @@
 	// description come from each entry. The entries are converted one after the other; a progress
 	// bar and a live region follow, failures are listed per entry with their reason, and entries
 	// that succeeded stay converted. No due date: the date at the sender never becomes one (P-5).
+	// On the modal building block (ADR-0025 section 3, size M): while the run goes on nothing
+	// closes, and Escape keeps its own rule "Nach diesem Eintrag anhalten" (plan UI-4).
 	let {
 		items,
 		converter,
@@ -44,7 +47,7 @@
 
 	const uid = $props.id();
 	const ids = {
-		title: `${uid}-title`,
+		form: `${uid}-form`,
 		status: `${uid}-status`,
 		priority: `${uid}-priority`,
 		project: `${uid}-project`,
@@ -62,10 +65,10 @@
 	/** The run has started; the form gives way to progress and results. */
 	let started = $state(false);
 
-	let dialog = $state<HTMLDialogElement>();
 	let closeButton = $state<HTMLButtonElement>();
 
 	const count = $derived(items.length);
+	const heading = $derived(count === 1 ? '1 Eintrag umwandeln' : `${count} Einträge umwandeln`);
 	const chosenTags = $derived(
 		tagIds.flatMap((tagId) => {
 			const tag = tags.find((entry) => entry.id === tagId);
@@ -86,16 +89,6 @@
 		return `${done}, ${failed} nicht umgewandelt.`;
 	});
 
-	$effect(() => {
-		const element = dialog;
-		if (element === undefined || element.open) return;
-		element.showModal();
-		void tick().then(() => document.getElementById(ids.status)?.focus());
-		return () => {
-			if (element.open) element.close();
-		};
-	});
-
 	async function start(event: SubmitEvent) {
 		event.preventDefault();
 		if (started || count === 0) return;
@@ -108,22 +101,6 @@
 		});
 		await tick();
 		closeButton?.focus();
-	}
-
-	function close() {
-		if (running) return;
-		onclose();
-	}
-
-	/** Escape: like "Abbrechen"; during the run it stops after the current entry. */
-	function onDialogCancel(event: Event) {
-		event.preventDefault();
-		if (running) converter.stop();
-		else onclose();
-	}
-
-	function onkeydown(event: KeyboardEvent) {
-		if (event.key === 'Escape') event.stopPropagation();
 	}
 
 	function addTag(tagId: string): boolean {
@@ -142,19 +119,16 @@
 	}
 </script>
 
-<dialog
-	class="dialog"
-	aria-labelledby={ids.title}
-	bind:this={dialog}
-	oncancel={onDialogCancel}
-	{onkeydown}
+<Modal
+	open
+	size="m"
+	title={heading}
+	busy={running}
+	onbusyescape={() => converter.stop()}
+	onclose={() => onclose()}
 >
-	<h2 id={ids.title}>
-		{count === 1 ? '1 Eintrag umwandeln' : `${count} Einträge umwandeln`}
-	</h2>
-
 	{#if !started}
-		<form class="form" onsubmit={start}>
+		<form id={ids.form} class="form" onsubmit={start}>
 			<p class="hint">
 				Titel und Text kommen aus dem jeweiligen Eintrag. Diese Werte gelten für alle; eine
 				Fälligkeit wird nicht gesetzt.
@@ -217,16 +191,10 @@
 					<p class="field-error" id={ids.tagsError}><ErrorIcon /><span>{tagError}</span></p>
 				{/if}
 			</div>
-			<div class="buttons">
-				<button class="button-primary" type="submit">
-					{count === 1 ? '1 Eintrag umwandeln' : `${count} Einträge umwandeln`}
-				</button>
-				<button class="secondary" type="button" onclick={close}>Abbrechen</button>
-			</div>
 		</form>
 	{:else}
 		<div class="progress">
-			<progress max={converter.total} value={handled} aria-labelledby={ids.title}></progress>
+			<progress max={converter.total} value={handled} aria-label={heading}></progress>
 			<p aria-live="polite">{finished ? summary : progressText}</p>
 		</div>
 
@@ -256,38 +224,25 @@
 				</ul>
 			</details>
 		{/if}
-
-		<div class="buttons">
-			{#if running}
-				<button class="secondary" type="button" onclick={() => converter.stop()}>
-					Nach diesem Eintrag anhalten
-				</button>
-			{:else}
-				<button class="button-primary" type="button" bind:this={closeButton} onclick={close}>
-					Schließen
-				</button>
-			{/if}
-		</div>
 	{/if}
-</dialog>
+
+	{#snippet footer({ close })}
+		{#if !started}
+			<button class="button-secondary" type="button" onclick={close}>Abbrechen</button>
+			<button class="button-primary" type="submit" form={ids.form}>{heading}</button>
+		{:else if running}
+			<button class="button-secondary" type="button" onclick={() => converter.stop()}>
+				Nach diesem Eintrag anhalten
+			</button>
+		{:else}
+			<button class="button-primary" type="button" bind:this={closeButton} onclick={close}>
+				Schließen
+			</button>
+		{/if}
+	{/snippet}
+</Modal>
 
 <style>
-	.dialog {
-		width: min(32rem, calc(100vw - 2rem));
-		margin: auto;
-		padding: 1.25rem;
-		color: var(--color-text);
-		background: var(--color-surface);
-		border: 1px solid var(--color-line);
-		border-radius: 0.5rem;
-	}
-
-	h2 {
-		margin-bottom: 0.75rem;
-		font-size: 1.125rem;
-		font-weight: 600;
-	}
-
 	h3 {
 		margin-bottom: 0.25rem;
 		font-size: 0.875rem;
@@ -321,26 +276,12 @@
 		padding: 0.375rem 0.5rem;
 		background: var(--color-surface);
 		border: 1px solid var(--color-text-muted);
-		border-radius: 0.375rem;
+		border-radius: var(--radius-control);
 	}
 
 	.hint {
 		font-size: 0.8125rem;
 		color: var(--color-text-muted);
-	}
-
-	.buttons {
-		display: flex;
-		gap: 0.5rem;
-		margin-top: 1rem;
-	}
-
-	.secondary {
-		padding: 0.625rem 1rem;
-		background: none;
-		border: 1px solid var(--color-line);
-		border-radius: 0.375rem;
-		cursor: pointer;
 	}
 
 	.progress {
@@ -355,7 +296,6 @@
 
 	.failures {
 		display: block;
-		margin-top: 1rem;
 	}
 
 	.failures ul,
@@ -372,7 +312,6 @@
 	}
 
 	.created {
-		margin-top: 1rem;
 		font-size: 0.8125rem;
 	}
 

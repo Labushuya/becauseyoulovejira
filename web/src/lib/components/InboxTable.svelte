@@ -1,8 +1,3 @@
-<script lang="ts" module>
-	/** Element ID of "Gesammelt umwandeln"; the focus returns to it when the dialog closes. */
-	export const BULK_BUTTON_ID = 'inbox-bulk-button';
-</script>
-
 <script lang="ts">
 	import { tick, type Snippet } from 'svelte';
 	import { goto } from '$app/navigation';
@@ -234,7 +229,6 @@
 			{/if}
 			{#if showsNew}
 				<button
-					id={BULK_BUTTON_ID}
 					class="bulk"
 					type="button"
 					aria-disabled={chosen.length === 0 ? 'true' : undefined}

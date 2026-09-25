@@ -1,12 +1,12 @@
 <script lang="ts">
-	import { tick, untrack } from 'svelte';
+	import { untrack } from 'svelte';
 	import { page } from '$app/state';
 	import { auth } from '$lib/auth.svelte';
 	import BulkConvertDialog from '$lib/components/BulkConvertDialog.svelte';
 	import ClipboardImport from '$lib/components/ClipboardImport.svelte';
 	import DropZone from '$lib/components/DropZone.svelte';
 	import FileImportDialog from '$lib/components/FileImportDialog.svelte';
-	import InboxTable, { BULK_BUTTON_ID } from '$lib/components/InboxTable.svelte';
+	import InboxTable from '$lib/components/InboxTable.svelte';
 	import WhatsAppImport from '$lib/components/WhatsAppImport.svelte';
 	import type { InboxItemSummary } from '$lib/domain/inbox';
 	import { parseInboxQuery } from '$lib/domain/inbox-query';
@@ -185,7 +185,8 @@
 		if (files.length > 0) void importFiles(files);
 	}
 
-	async function closeBulk() {
+	/** The modal returns the focus to "Gesammelt umwandeln" (ADR-0025 section 3). */
+	function closeBulk() {
 		const converted = converter.converted;
 		bulkItems = null;
 		selected = selected.filter((id) => inbox.find(id)?.state === 'new');
@@ -194,8 +195,6 @@
 				converted === 1 ? '1 Eintrag umgewandelt.' : `${converted} Einträge umgewandelt.`
 			);
 		}
-		await tick();
-		document.getElementById(BULK_BUTTON_ID)?.focus();
 	}
 </script>
 

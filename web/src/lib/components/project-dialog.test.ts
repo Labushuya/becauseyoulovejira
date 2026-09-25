@@ -5,12 +5,13 @@
 
 import { fireEvent, render, screen } from '@testing-library/svelte';
 import { tick } from 'svelte';
-import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import type { Project, ProjectDraft } from '$lib/domain/project';
 import { CatalogStore } from '$lib/stores/catalog.svelte';
 import { CatalogEditor, type CatalogEditorData, type EditResult } from '$lib/stores/catalog-editor';
 import ProjectDialog from './ProjectDialog.svelte';
 import source from './ProjectDialog.svelte?raw';
+import { useOverlayStubs } from '$lib/test/overlay-stubs';
 
 const T0 = '2026-09-24 08:00:00.000Z';
 const HOUSE: Project = {
@@ -21,28 +22,7 @@ const HOUSE: Project = {
 	updated: T0
 };
 
-const nativeDialog = {
-	showModal: HTMLDialogElement.prototype.showModal,
-	close: HTMLDialogElement.prototype.close
-};
-
-beforeAll(() => {
-	if (typeof nativeDialog.showModal !== 'function') {
-		HTMLDialogElement.prototype.showModal = function (this: HTMLDialogElement) {
-			this.open = true;
-		};
-	}
-	if (typeof nativeDialog.close !== 'function') {
-		HTMLDialogElement.prototype.close = function (this: HTMLDialogElement) {
-			this.open = false;
-		};
-	}
-});
-
-afterAll(() => {
-	HTMLDialogElement.prototype.showModal = nativeDialog.showModal;
-	HTMLDialogElement.prototype.close = nativeDialog.close;
-});
+useOverlayStubs();
 
 type SaveResult = EditResult<Project>;
 
@@ -245,6 +225,17 @@ describe('project dialog: editing', () => {
 		await fireEvent.click(screen.getByRole('button', { name: 'Endgültig löschen' }));
 		expect(props.ondelete).toHaveBeenCalledOnce();
 		await vi.waitFor(() => expect(props.onclose).toHaveBeenCalledOnce());
+	});
+
+	it('is a modal of size M whose × closes, also from the question before deleting', async () => {
+		const props = show(HOUSE, 0);
+		const dialog = screen.getByRole<HTMLDialogElement>('dialog', { name: 'Projekt bearbeiten' });
+		expect(dialog.classList.contains('size-m')).toBe(true);
+
+		await fireEvent.click(screen.getByRole('button', { name: 'Löschen …' }));
+		await fireEvent.click(screen.getByRole('button', { name: 'Schließen' }));
+		expect(props.onclose).toHaveBeenCalledOnce();
+		expect(props.ondelete).not.toHaveBeenCalled();
 	});
 
 	it('shows a refusal of the server in the dialog', async () => {

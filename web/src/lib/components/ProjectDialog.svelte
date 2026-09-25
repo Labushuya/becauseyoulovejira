@@ -8,15 +8,18 @@
 		type Project,
 		type ProjectDraft
 	} from '$lib/domain/project';
+	import type { CloseTrigger } from '$lib/overlay/close-rules';
 	import type { EditResult } from '$lib/stores/catalog-editor';
 	import ErrorIcon from './ErrorIcon.svelte';
+	import Modal from './overlay/Modal.svelte';
 
-	// "Neues Projekt" and "Projekt bearbeiten" as a native modal <dialog> (E3 plan, T-11, T-12
-	// and package 14), shown while the component is mounted. Name and code; when creating, the
-	// code follows the name as a suggestion until the user types one. Editing also offers
-	// "Archivieren" or "Aus dem Archiv holen" and, only without tickets, "Löschen …" with a
-	// second step in the same dialog. Problems of the input and field errors of the server stand
-	// at their field; the parent returns the focus to the button that opened the dialog.
+	// "Neues Projekt" and "Projekt bearbeiten" (E3 plan, T-11, T-12 and package 14) on the modal
+	// building block (ADR-0025 section 3, size M), shown while the component is mounted; the project
+	// panel replaces it in UI-8. Name and code; when creating, the code follows the name as a
+	// suggestion until the user types one. Editing also offers "Archivieren" or "Aus dem Archiv
+	// holen" and, only without tickets, "Löschen …" with a second step in the same dialog (no dialog
+	// from a dialog); Escape goes back from there to the form. Problems of the input and field
+	// errors of the server stand at their field.
 	let {
 		project = null,
 		total = null,
@@ -38,7 +41,7 @@
 
 	const uid = $props.id();
 	const ids = {
-		title: `${uid}-title`,
+		form: `${uid}-form`,
 		name: `${uid}-name`,
 		nameError: `${uid}-name-error`,
 		code: `${uid}-code`,
@@ -63,36 +66,14 @@
 	const codeFixed = $derived(!creating && total !== null && total > 0);
 	const canDelete = $derived(!creating && total === 0);
 
-	let dialog = $state<HTMLDialogElement>();
 	let nameInput = $state<HTMLInputElement>();
 	let codeInput = $state<HTMLInputElement>();
 	let keepButton = $state<HTMLButtonElement>();
 
-	$effect(() => {
-		const element = dialog;
-		if (element === undefined || element.open) return;
-		element.showModal();
-		void tick().then(() => nameInput?.focus());
-		return () => {
-			if (element.open) element.close();
-		};
-	});
-
-	function close() {
-		if (!busy) onclose();
-	}
-
-	/** Escape: back from the question before deleting, else like "Abbrechen". */
-	function onDialogCancel(event: Event) {
-		event.preventDefault();
-		if (busy) return;
-		if (confirmingDelete) void stopDeleting();
+	/** Escape in the question before deleting goes back to the form; every other way closes. */
+	function requestClose(reason: CloseTrigger) {
+		if (confirmingDelete && reason === 'escape') void stopDeleting();
 		else onclose();
-	}
-
-	function onkeydown(event: KeyboardEvent) {
-		// Escape stays in the dialog, the page behind must not react as well.
-		if (event.key === 'Escape') event.stopPropagation();
 	}
 
 	async function run<T>(action: () => Promise<EditResult<T>>): Promise<boolean> {
@@ -138,17 +119,15 @@
 	}
 </script>
 
-<dialog
-	class="project-dialog"
-	bind:this={dialog}
-	aria-labelledby={ids.title}
-	aria-describedby={confirmingDelete ? ids.deleteText : undefined}
-	aria-busy={busy}
-	oncancel={onDialogCancel}
-	{onkeydown}
+<Modal
+	open
+	size="m"
+	title={creating ? 'Neues Projekt' : 'Projekt bearbeiten'}
+	describedBy={confirmingDelete ? ids.deleteText : undefined}
+	{busy}
+	initialFocus={nameInput}
+	onclose={requestClose}
 >
-	<h2 id={ids.title}>{creating ? 'Neues Projekt' : 'Projekt bearbeiten'}</h2>
-
 	{#if confirmingDelete && project !== null}
 		<p id={ids.deleteText}>
 			Projekt „{project.name}“ ({project.code}) endgültig löschen? Das lässt sich nicht rückgängig
@@ -157,29 +136,8 @@
 		{#if message}
 			<div class="alert-error" role="alert"><ErrorIcon /><span>{message}</span></div>
 		{/if}
-		<div class="buttons">
-			<button
-				class="secondary"
-				type="button"
-				bind:this={keepButton}
-				aria-disabled={busy}
-				onclick={() => {
-					if (!busy) void stopDeleting();
-				}}
-			>
-				Abbrechen
-			</button>
-			<button
-				class="button-primary action"
-				type="button"
-				aria-disabled={busy}
-				onclick={() => void run(ondelete)}
-			>
-				{busy ? 'Wird gelöscht …' : 'Endgültig löschen'}
-			</button>
-		</div>
 	{:else}
-		<form class="form" novalidate onsubmit={save}>
+		<form id={ids.form} class="form" novalidate onsubmit={save}>
 			<div class="field">
 				<label for={ids.name}>Name</label>
 				<input
@@ -240,7 +198,7 @@
 				{@const current = project}
 				<div class="manage">
 					<button
-						class="secondary"
+						class="button-secondary"
 						type="button"
 						aria-disabled={busy}
 						onclick={() => void run(() => onarchive(!current.archived))}
@@ -249,7 +207,7 @@
 					</button>
 					{#if canDelete}
 						<button
-							class="secondary"
+							class="button-secondary"
 							type="button"
 							aria-disabled={busy}
 							onclick={() => {
@@ -267,46 +225,42 @@
 					{/if}
 				</div>
 			{/if}
-
-			<div class="buttons">
-				<button class="secondary" type="button" aria-disabled={busy} onclick={close}>
-					Abbrechen
-				</button>
-				<button class="button-primary action" type="submit" aria-disabled={busy}>
-					{busy ? 'Wird gespeichert …' : creating ? 'Anlegen' : 'Speichern'}
-				</button>
-			</div>
 		</form>
 	{/if}
-</dialog>
+
+	{#snippet footer({ close })}
+		{#if confirmingDelete && project !== null}
+			<button
+				class="button-secondary"
+				type="button"
+				bind:this={keepButton}
+				aria-disabled={busy}
+				onclick={() => {
+					if (!busy) void stopDeleting();
+				}}
+			>
+				Abbrechen
+			</button>
+			<button
+				class="button-primary"
+				type="button"
+				aria-disabled={busy}
+				onclick={() => void run(ondelete)}
+			>
+				{busy ? 'Wird gelöscht …' : 'Endgültig löschen'}
+			</button>
+		{:else}
+			<button class="button-secondary" type="button" aria-disabled={busy} onclick={close}>
+				Abbrechen
+			</button>
+			<button class="button-primary" type="submit" form={ids.form} aria-disabled={busy}>
+				{busy ? 'Wird gespeichert …' : creating ? 'Anlegen' : 'Speichern'}
+			</button>
+		{/if}
+	{/snippet}
+</Modal>
 
 <style>
-	.project-dialog {
-		width: min(30rem, calc(100vw - 2rem));
-		margin: auto;
-		padding: 1.25rem;
-		color: var(--color-text);
-		background: var(--color-surface);
-		border: 1px solid var(--color-line);
-		border-radius: 0.5rem;
-	}
-
-	.project-dialog[open] {
-		display: grid;
-		gap: 0.875rem;
-	}
-
-	/* Veils the page in the background color of the mode (no extra color token). */
-	.project-dialog::backdrop {
-		background: var(--color-bg);
-		opacity: 0.75;
-	}
-
-	h2 {
-		font-size: 1rem;
-		font-weight: 600;
-	}
-
 	p {
 		font-size: 0.875rem;
 		line-height: 1.5;
@@ -332,7 +286,7 @@
 		font-size: 0.875rem;
 		background: var(--color-surface);
 		border: 1px solid var(--color-line);
-		border-radius: 0.375rem;
+		border-radius: var(--radius-control);
 	}
 
 	input.code {
@@ -358,31 +312,5 @@
 		align-items: center;
 		padding-top: 0.75rem;
 		border-top: 1px solid var(--color-line);
-	}
-
-	.buttons {
-		display: flex;
-		flex-wrap: wrap;
-		gap: 0.5rem;
-		justify-content: flex-end;
-	}
-
-	.secondary {
-		padding: 0.375rem 0.875rem;
-		font-size: 0.875rem;
-		background: none;
-		border: 1px solid var(--color-line);
-		border-radius: 0.375rem;
-		cursor: pointer;
-	}
-
-	.action {
-		padding: 0.375rem 0.875rem;
-		font-size: 0.875rem;
-	}
-
-	[aria-disabled='true'] {
-		cursor: progress;
-		opacity: 0.75;
 	}
 </style>
