@@ -4,6 +4,14 @@
 import { describe, expect, it } from 'vitest';
 import { loadHookLib } from '../support/hook-lib.mjs';
 import { CHANNELS, EXPECTED_COLLECTIONS, INBOX_KINDS, INBOX_STATES } from '../support/schema.mjs';
+import {
+	CHANNEL_LABELS,
+	INBOX_CHANNELS,
+	INBOX_KINDS as WEB_KINDS,
+	INBOX_STATES as WEB_STATES,
+	KIND_LABELS,
+	STATE_LABELS
+} from '../../web/src/lib/domain/inbox.ts';
 
 const source = loadHookLib('source.js');
 
@@ -36,5 +44,16 @@ describe('source.js', () => {
 		expect(source.isChannel('eml')).toBe(true);
 		expect(source.isChannel('EML')).toBe(false);
 		expect(source.isChannel('')).toBe(false);
+	});
+});
+
+describe('web/src/lib/domain/inbox.ts', () => {
+	it('mirrors the value lists of source.js with a German label each', () => {
+		expect([...INBOX_CHANNELS]).toEqual([...source.CHANNELS]);
+		expect([...WEB_KINDS]).toEqual([...source.KINDS]);
+		expect([...WEB_STATES]).toEqual([...source.STATES]);
+		expect(Object.keys(CHANNEL_LABELS)).toEqual([...source.CHANNELS]);
+		expect(Object.keys(KIND_LABELS)).toEqual([...source.KINDS]);
+		expect(Object.keys(STATE_LABELS)).toEqual([...source.STATES]);
 	});
 });

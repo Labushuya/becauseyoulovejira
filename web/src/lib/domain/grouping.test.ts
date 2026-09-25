@@ -35,6 +35,7 @@ function row(id: string, overrides: Partial<TicketSummary> = {}): TicketSummary 
 		project: null,
 		tags: [],
 		recurring: false,
+		source: null,
 		completedAt: null,
 		created: '2026-01-01 08:00:00.000Z',
 		updated: '2026-01-01 08:00:00.000Z',

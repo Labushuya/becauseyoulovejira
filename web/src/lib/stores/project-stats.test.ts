@@ -46,6 +46,7 @@ function fakeLive() {
 		history: never,
 		projects: never,
 		tags: never,
+		inbox: never,
 		reconnected: (call) => add(reconnected, call)
 	};
 	return { source, tickets, reconnected };

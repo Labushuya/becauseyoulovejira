@@ -91,6 +91,7 @@ function ticket(projectId: string | null, status: TicketSummary['status'] = 'ope
 		project: null,
 		tags: [],
 		recurring: false,
+		source: null,
 		completedAt: null,
 		created: T0,
 		updated: T0

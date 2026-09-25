@@ -72,7 +72,7 @@ describe('web/src/lib/data', () => {
 		expect(code).not.toMatch(/\bany\b/);
 	});
 
-	it.each(['tickets.ts', 'comments.ts', 'history.ts', 'projects.ts', 'tags.ts'])(
+	it.each(['tickets.ts', 'comments.ts', 'history.ts', 'projects.ts', 'tags.ts', 'inbox.ts'])(
 		'%s: exported access functions take pb first and accept a signal',
 		(name) => {
 			const source = read(name);

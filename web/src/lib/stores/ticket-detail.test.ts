@@ -22,6 +22,7 @@ function ticket(overrides: Partial<Ticket> = {}): Ticket {
 		key: 'TASK-3',
 		title: 'Steuererklärung',
 		description: 'Belege sammeln',
+		sourceItem: null,
 		status: 'in_progress',
 		priority: 'medium',
 		due: '2026-10-01',
@@ -30,6 +31,7 @@ function ticket(overrides: Partial<Ticket> = {}): Ticket {
 		project: null,
 		tags: [],
 		recurring: false,
+		source: null,
 		completedAt: null,
 		created: '2026-09-01 10:00:00.000Z',
 		updated: '2026-09-01 10:00:00.000Z',
@@ -90,6 +92,7 @@ function setup(initial: Ticket = ticket()) {
 			project: project === HOUSE.id ? HOUSE : null,
 			tags: [],
 			recurring: false,
+			source: null,
 			completedAt: null,
 			created: '2026-09-24 10:00:00.000Z',
 			updated: '2026-09-24 10:00:00.000Z'
@@ -393,7 +396,10 @@ describe('creating', () => {
 
 		const result = await store.create(DRAFT);
 
-		expect(data.create).toHaveBeenCalledExactlyOnceWith({ ...DRAFT, title: 'Neues Ticket' });
+		expect(data.create).toHaveBeenCalledExactlyOnceWith(
+			{ ...DRAFT, title: 'Neues Ticket' },
+			undefined
+		);
 		expect(result).toMatchObject({ ok: true, ticket: { id: 'new000000000000', key: 'TASK-9' } });
 		expect(list.upsert).toHaveBeenCalledWith(expect.objectContaining({ id: 'new000000000000' }));
 		expect(store.state).toBe('ready');
@@ -401,6 +407,30 @@ describe('creating', () => {
 
 		store.open('new000000000000');
 		expect(data.get).not.toHaveBeenCalled();
+	});
+
+	it('passes the origin and reports a refused inbox entry as message (E4 plan, package 2)', async () => {
+		const { store, data } = setup();
+		const origin = { sourceItem: 'item00000000001' };
+		await store.create(DRAFT, origin);
+		expect(data.create).toHaveBeenLastCalledWith({ ...DRAFT, title: 'Neues Ticket' }, origin);
+
+		data.create.mockRejectedValueOnce(
+			new DataError('validation', {
+				status: 400,
+				fields: {
+					source_item: {
+						code: 'validation_inbox_item_handled',
+						message: 'Dieser Eintrag wurde schon bearbeitet.'
+					}
+				}
+			})
+		);
+		expect(await store.create(DRAFT, origin)).toEqual({
+			ok: false,
+			message: 'Dieser Eintrag wurde schon bearbeitet.',
+			fields: {}
+		});
 	});
 
 	it('refuses an empty title without a request', async () => {
@@ -465,7 +495,7 @@ describe('project (E3 plan, T-13)', () => {
 		};
 
 		const result = await store.create(draft);
-		expect(data.create).toHaveBeenLastCalledWith(draft);
+		expect(data.create).toHaveBeenLastCalledWith(draft, undefined);
 		expect(result).toMatchObject({ ok: true, ticket: { key: 'HAUS-1', projectId: HOUSE.id } });
 
 		data.create.mockRejectedValueOnce(ARCHIVED);

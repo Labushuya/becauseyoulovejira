@@ -3,6 +3,10 @@
 
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
+import {
+	INBOX_BODY_MAX_LENGTH,
+	INBOX_TITLE_MAX_LENGTH
+} from '../../web/src/lib/domain/inbox.ts';
 import { PROJECT_NAME_MAX_LENGTH } from '../../web/src/lib/domain/project.ts';
 import { TAG_NAME_MAX_LENGTH } from '../../web/src/lib/domain/tag.ts';
 import {
@@ -41,5 +45,11 @@ describe('length limits (web/src/lib/domain)', () => {
 		expect(PROJECT_NAME_MAX_LENGTH).toBe(maxOf(file, 'name', 'projects'));
 		expect(TAG_NAME_MAX_LENGTH).toBe(maxOf(file, 'name', 'tags'));
 		expect(PROJECT_NAME_MAX_LENGTH).not.toBe(TAG_NAME_MAX_LENGTH);
+	});
+
+	it('match the inbox collection (E4 plan, package 2)', () => {
+		const file = '1790201200_create_inbox_items.js';
+		expect(INBOX_TITLE_MAX_LENGTH).toBe(maxOf(file, 'title'));
+		expect(INBOX_BODY_MAX_LENGTH).toBe(maxOf(file, 'body'));
 	});
 });

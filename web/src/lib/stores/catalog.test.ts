@@ -50,6 +50,7 @@ class FakeLive {
 		history: () => this.#never(),
 		projects: (call) => this.#add({ kind: 'projects', call }),
 		tags: (call) => this.#add({ kind: 'tags', call }),
+		inbox: () => this.#never(),
 		reconnected: (call) => this.#add({ kind: 'reconnected', call })
 	};
 
