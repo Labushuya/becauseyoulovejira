@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>becauseyoulovejira — Test-Manifest E1–E4</title>
+<title>becauseyoulovejira — Test-Manifest E1–E5</title>
 <style>
   :root {
     --bg: #f5f8f8;
@@ -138,7 +138,7 @@
 <div class="wrap">
   <header class="top">
     <h1>becauseyoulovejira — Test-Manifest</h1>
-    <p class="subtitle" id="stand">Etappen E1, E1.1, E2, E3 und E4 · automatisierte Tests bereichsweise zusammengefasst · manuelle Prüfpunkte aus den Plänen an einem Ort</p>
+    <p class="subtitle" id="stand">Etappen E1, E1.1, E2, E3, E4 und E5 (in Planung) · automatisierte Tests bereichsweise zusammengefasst · manuelle Prüfpunkte aus den Plänen an einem Ort</p>
 
     <div class="pre">
       <h2>Voraussetzung für die manuellen Prüfungen (kein Testschritt)</h2>
@@ -213,8 +213,8 @@
   "meta": {
     "projekt": "becauseyoulovejira",
     "stand": "2026-09-25",
-    "commit": "06f8f39",
-    "etappe": "E0 bis E4 abgeschlossen (E4: Pakete 1 bis 11, 13 bis 17, 19 bis 24; Paket 12 entfällt, Paket 18 zurückgestellt)"
+    "commit": "02a1854",
+    "etappe": "E0 bis E4 abgeschlossen (E4: Pakete 1 bis 11, 13 bis 17, 19 bis 24; Paket 12 entfällt, Paket 18 zurückgestellt); E5 in Planung (BYL-E5-001 bis BYL-E5-008 geplant)"
   },
   "blocks": [
     {
@@ -1320,6 +1320,43 @@
           "pre": "E4-Plan, Paket 24 (OF-E4-6; ADR-0014 §3). Für die Integration app/pocketbase.exe mit erfundenem Ingest-Token; handled_at wird direkt in data.db der Wegwerf-Instanz zurückgedatiert, der Job läuft über POST /api/crons/byl-inbox-cleanup.", "steps": ["npm run test:unit","npm run test:integration","npm run test:web"],
           "expect": "Täglicher Cron-Job byl-inbox-cleanup (30 11 * * * UTC). Verworfene Einträge, die länger als DISCARDED_RETENTION_DAYS (30) volle Berliner Tage verworfen sind (Stichtag über berlin-time.js, an beiden Zeitumstellungen und nach Berliner statt UTC-Datum geprüft), bekommen den Platzhaltertext, verlieren die Originaldatei (auch im Speicherordner) und alle Angaben in source_meta außer keyword, all_day und recurrence_id; der Titel wird auf 40 Zeichen gekürzt. Fingerprint, Zustand, Kanal, Art, source_ref, source_date, connection und handled_at bleiben, in allen Scopes und für alle Kanäle einschließlich mail. Die Ingest-Route meldet dieselbe Mail danach als Duplikat „verworfen“, lookup als „Schon verworfen.“, eine neue Anlage wird abgelehnt; Wiederherstellen geht weiter. Neue, umgewandelte und erst 29 Tage verworfene Einträge bleiben unberührt. Der Lauf ist idempotent (updated bleibt beim zweiten Lauf gleich); ein Eintrag, dessen Speichern scheitert, steht im Log und hält die anderen nicht auf. Vor der Migration tut der Job nichts. Das Panel eines verworfenen Eintrags nennt die 30 Tage neutral.",
           "tests": ["tests/unit/inbox-cleanup.test.mjs","tests/integration/inbox-cleanup.test.mjs","tests/integration/hooks-before-migration.test.mjs::lets the cleanup of discarded items do nothing without the inbox","web/src/lib/components/inbox-panel.test.ts::tells that a discarded entry loses its content after 30 days"] }
+      ]
+    },
+    {
+      "tag": "E5", "name": "E5 Wiederkehrende Aufgaben", "desc": "Geplante Testfälle des E5-Plans (docs/plan/e5.md, ADR-0021 bis ADR-0024) je Paket. Status „geplant“ bis zum Merge des Pakets; die Schritte sind die Akzeptanzkriterien.",
+      "items": [
+        { "id": "BYL-E5-001", "title": "Terminberechnung rein und in Hook und SPA gleich", "art": ["unit"], "status": "geplant",
+          "pre": "E5-Plan, Paket 1; ADR-0021 §2 und §3.", "steps": ["Falltabelle tests/fixtures/recurrence/cases.json in lib/recurrence.js und domain/recurrence.ts: gleiches Ergebnis je Zeile.", "Paritätstest mit mindestens 5 000 Zufallsregeln und -daten ohne Abweichung.", "Pflichtfälle: Monatsenden (31., 30., -1, Februar), Schaltjahre (29.02., 2000, 2100), Tageswechsel an beiden Umstellungstagen, Ausfälle von 1, 3 und 10 Jahren.", "validate meldet jeden unzulässigen Wert mit Code; Rhythmus in Worten je Modus."],
+          "expect": "Beide Module rechnen dieselben Termine; catchUp liefert das jüngste Vorkommen ≤ heute; lange Ausfälle kosten keine Rechenzeit.",
+          "tests": [] },
+        { "id": "BYL-E5-002", "title": "Regeln: Datenmodell, Hooks, Teilindex", "art": ["unit", "integration"], "status": "geplant",
+          "pre": "E5-Plan, Paket 2; ADR-0021 §1, ADR-0022 §1, ADR-0023 §1.", "steps": ["Felder, Indizes und Regeln; Server-Felder überschrieben; Feldfehler mit Code.", "Anlegen mit ticket atomar; fremdes, erledigtes oder schon verknüpftes Ticket abgelehnt.", "tickets.recurrence vom Client nur leerbar.", "Teilindex lehnt eine zweite offene Instanz ab.", "Migrationen hin und zurück mit Daten; Hooks vor der Migration wie in E4."],
+          "expect": "Regeln sind typisiert, scope-sicher und nur über die vorgesehenen Wege mit Tickets verknüpft; die Migration verändert vorhandene Daten nicht.",
+          "tests": [] },
+        { "id": "BYL-E5-003", "title": "Erzeugung beim Erledigen, verpasste Termine, Rückgängig", "art": ["unit", "integration"], "status": "geplant",
+          "pre": "E5-Plan, Paket 3; ADR-0022 §2 bis §5, ADR-0023 §2, §3, §6 und §8.", "steps": ["Erledigen: Folgetermin atomar, Folgeticket im Vorlauf direkt danach.", "Ausfall von 3 Wochen bzw. 2 Jahren: genau ein Ticket mit dem jüngsten Vorkommen.", "Parallele Läufe: höchstens eine offene Instanz.", "Rückgängig mit unberührtem Folgeticket stellt den Stand wieder her; mit bearbeitetem wird abgelehnt.", "Archiviertes Projekt pausiert die Regel mit neutralem Hinweis."],
+          "expect": "Pro Regel höchstens eine offene Instanz, keine Stapel, und das Erledigen scheitert nie an der Erzeugung.",
+          "tests": [] },
+        { "id": "BYL-E5-004", "title": "Cron und Nachholen beim Start mit Bereinigung des Eingangs", "art": ["integration"], "status": "geplant",
+          "pre": "E5-Plan, Paket 3; ADR-0022 §4; Uhr über den Test-Hook der Wegwerf-Instanz.", "steps": ["Cron byl-recurrence stündlich in UTC: Ticket mit Vorlauf 0 im ersten Lauf nach Berliner Mitternacht, an beiden Umstellungstagen.", "Start: fällige Tickets entstehen, verworfene Einträge über 30 Tage werden bereinigt.", "Ein Fehler in einer Regel oder in der Bereinigung verhindert den Start nicht.", "Vor der Migration tun Cron und Start nichts."],
+          "expect": "Auch nach ausgeschaltetem PC erscheinen fällige Tickets beim Start, ohne Duplikate; die Bereinigung läuft nach.",
+          "tests": [] },
+        { "id": "BYL-E5-005", "title": "„Wiederholen…“ im Ticket-Panel und Symbol in der Tabelle", "art": ["komponente", "integration"], "status": "geplant",
+          "pre": "E5-Plan, Paket 4.", "steps": ["Dialog vorbefüllt, Vorschau der nächsten drei Termine je Modus.", "Feldfehler am Feld, Serverfehler als Meldung.", "Nach dem Speichern „Wiederholt sich: …“ im Panel und Symbol mit Rhythmus in der Tabelle, per Realtime in allen Tabs.", "Pausieren, Fortsetzen, Aus der Serie lösen; Tastatur und Fokus."],
+          "expect": "Aus jedem offenen Ticket wird mit einem Dialog eine Serie; nichts wird still gesetzt.",
+          "tests": [] },
+        { "id": "BYL-E5-006", "title": "Übersicht „Wiederholungen“", "art": ["komponente", "integration"], "status": "geplant",
+          "pre": "E5-Plan, Paket 5; ADR-0023 §4, §5 und §7.", "steps": ["Liste mit Rhythmus, nächstem Ticket, offenem Ticket und Zustand; leerer Zustand.", "Neue Regel ohne Ticket; Bearbeiten von Vorlage und Rhythmus.", "Löschen mit Sicherheitsabfrage: Tickets bleiben, Historie „Wiederholung entfernt“.", "Neutraler Hinweis bei vom Server pausierter Regel."],
+          "expect": "Alle Regeln an einem Ort, mit denselben Regeln für Bearbeiten, Pausieren und Löschen wie im Panel.",
+          "tests": [] },
+        { "id": "BYL-E5-007", "title": "Vorschläge aus der RRULE beim Umwandeln", "art": ["unit", "komponente"], "status": "geplant",
+          "pre": "E5-Plan, Paket 6; ADR-0024.", "steps": ["Abbildbare Serien ergeben einen Vorschlag mit Rhythmus in Worten und sichtbarem Hinweis zum Klemmen.", "Nicht abbildbare Serien (UNTIL, COUNT, BYSETPOS, 2MO, Stunden-Takte, Unbekanntes) ergeben nur einen neutralen Hinweis.", "Ohne Klick keine Regel und keine Fälligkeit (P-5); mit Klick Ticket und Regel.", "Fehler im zweiten Schritt: Ticket bleibt, „Wiederholen…“ vorbefüllt angeboten."],
+          "expect": "Kalenderserien werden auf Wunsch zu Regeln, nie still und nie als Teilvorschlag.",
+          "tests": [] },
+        { "id": "BYL-E5-008", "title": "Wiederkehrende Aufgaben im Browser", "art": ["manuell"], "status": "geplant",
+          "pre": "E5-Plan, Paket 7: Browser-Checkliste; Build von main in app\\ und einmal neu gestartet (E5-Migrationen).", "steps": ["„Wiederholen…“ an einem Ticket, Erledigen per Häkchen, Folgeticket sichtbar, „Rückgängig“.", "Übersicht: anlegen, bearbeiten, pausieren, fortsetzen, löschen.", "Eine Serie aus .ics und aus Google Calendar umwandeln, mit und ohne Vorschlag.", "App über Nacht bzw. mehrere Tage aus, danach Start: fällige Tickets ohne Stapel.", "Hell- und Dunkelmodus, Bedienung nur mit der Tastatur."],
+          "expect": "Serien laufen im Alltag verlässlich und verständlich.",
+          "tests": [] }
       ]
     },
     {

@@ -26,3 +26,7 @@ Bereits verbindlich in der [Projekt-CLAUDE.md](../../CLAUDE.md) festgelegt und d
 | [0018](0018-secrets.md) | Zugangsdaten der Kanäle als Windows-Umgebungsvariablen | Angenommen | 2026-09-25 |
 | [0019](0019-kanal-filter-und-gruppierung.md) | Quelle als Filter, Gruppierung und Merkmal in der Tabelle | Angenommen | 2026-09-25 |
 | [0020](0020-stichwoerter-pro-kanal.md) | Stichwörter pro Kanal entscheiden, was automatisch in den Eingang kommt | Angenommen | 2026-09-25 |
+| [0021](0021-regelmodell-wiederkehrende-aufgaben.md) | Regelmodell der wiederkehrenden Aufgaben und reine Terminberechnung | Vorgeschlagen | 2026-09-25 |
+| [0022](0022-erzeugung-von-instanzen.md) | Erzeugung der Tickets aus Regeln: Zeitpunkt, Cron, Nachholen beim Start, keine Duplikate | Vorgeschlagen | 2026-09-25 |
+| [0023](0023-lebenszyklus-von-regeln-und-instanzen.md) | Lebenszyklus von Regeln und Instanzen: Anlegen, Erledigen, Rückgängig, Pausieren, Bearbeiten, Löschen | Vorgeschlagen | 2026-09-25 |
+| [0024](0024-serien-aus-kalendern.md) | Serien aus `.ics` und Google Calendar als Vorschlag für eine Regel | Vorgeschlagen | 2026-09-25 |
