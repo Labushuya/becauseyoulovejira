@@ -27,6 +27,7 @@ import {
 	buildCapture,
 	captureInboxDraft
 } from '../../web/src/lib/domain/templates.ts';
+import { messageDraft, parseWhatsAppExport } from '../../web/src/lib/domain/whatsapp-export.ts';
 import { readMailFile } from '../../web/src/lib/mail-file.ts';
 
 const EML = new URL('../fixtures/eml/', import.meta.url);
@@ -362,6 +363,38 @@ describe('calendar files (E4 plan, package 14)', () => {
 		await expect(importCalendarFile(guest, ics('apple.ics'))).rejects.toMatchObject({
 			kind: 'session'
 		});
+	});
+});
+
+describe('WhatsApp export (E4 plan, package 16)', () => {
+	const exported = parseWhatsAppExport(
+		readFileSync(
+			new URL('../fixtures/whatsapp/WhatsApp Chat mit Familie Beispiel.txt', import.meta.url),
+			'utf8'
+		)
+	);
+
+	it('takes chosen messages as entries and knows the same export again', async () => {
+		const fresh = await createOwner(superuser);
+		const drafts = exported.messages.map((message) => messageDraft(message, 'Familie Beispiel'));
+		for (const draft of drafts) {
+			expect(await createItem(fresh.client, draft)).toMatchObject({
+				kind: 'created',
+				item: { channel: 'whatsapp', kind: 'message', sourceMeta: { chat: 'Familie Beispiel' } }
+			});
+		}
+		const [list] = await listNewItems(fresh.client).then((items) =>
+			items.filter((item) => item.title === 'Ich! Liste bitte:')
+		);
+		expect(list.sourceDate).toBe('2026-03-29 01:05:00.000Z');
+		for (const draft of drafts) {
+			expect(await createItem(fresh.client, draft)).toMatchObject({ kind: 'duplicate' });
+		}
+		// The same text at the same minute from the same sender in the same chat counts as one.
+		const again = { ...drafts[0], title: 'Anderer Titel' };
+		expect(await createItem(fresh.client, again)).toMatchObject({ kind: 'duplicate' });
+		const otherChat = { ...drafts[0], sourceMeta: { chat: 'Anderer Chat', sender: 'Anna Beispiel' } };
+		expect(await createItem(fresh.client, otherChat)).toMatchObject({ kind: 'created' });
 	});
 });
 

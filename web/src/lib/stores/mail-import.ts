@@ -1,5 +1,6 @@
-// Import of dropped or chosen files (E4 plan, packages 8 and 14): mail files are parsed in the
-// browser and saved as one entry each; calendar files go to the hook, which answers with counts.
+// Import of dropped or chosen files (E4 plan, packages 8, 14 and 16): mail files are parsed in the
+// browser and saved as one entry each; calendar files go to the hook, which answers with counts;
+// a WhatsApp export opens the selection view.
 // One file after the other, each with its own result. Without runes and SDK; the layout passes
 // the reader, InboxStore.create and InboxStore.importCalendar.
 
@@ -7,6 +8,7 @@ import { CALENDAR_TOO_LARGE_MESSAGE, ICS_MAX_BYTES, isCalendarFile } from '$lib/
 import { DATA_ERROR_MESSAGES } from '$lib/data/errors';
 import type { InboxDraft } from '$lib/domain/inbox';
 import type { MailFileResult } from '$lib/mail-file';
+import { isWhatsAppFile, type WhatsAppFileResult } from '$lib/whatsapp-file';
 import type { CalendarImportResult, InboxCreateResult } from './inbox.svelte';
 
 export type FileImportResult =
@@ -127,4 +129,37 @@ export function importSummary(results: readonly FileImportResult[]): string {
 		}
 	}
 	return `${importCounts(counts)}.`;
+}
+
+/** A readable chat export waiting for the selection view (E4 plan, package 16). */
+export type ChatSelection = Extract<WhatsAppFileResult, { ok: true }>;
+
+export const ONE_CHAT_AT_A_TIME =
+	'Nur ein WhatsApp-Chat auf einmal; diesen bitte danach übernehmen.';
+
+/**
+ * Dropped or chosen files: WhatsApp exports (.txt, .zip) are read for the selection view, only
+ * the first one; every other file goes through importMailFiles. Returns the results per file and
+ * the chat to choose messages from, or null.
+ */
+export async function importDroppedFiles(
+	files: readonly File[],
+	deps: MailImportDeps & { readChat(file: File): Promise<WhatsAppFileResult> }
+): Promise<{ results: FileImportResult[]; chat: ChatSelection | null }> {
+	const chats = files.filter(isWhatsAppFile);
+	const results = await importMailFiles(
+		files.filter((file) => !isWhatsAppFile(file)),
+		deps
+	);
+	let chat: ChatSelection | null = null;
+	for (const file of chats) {
+		if (chat !== null) {
+			results.push({ name: file.name, kind: 'error', message: ONE_CHAT_AT_A_TIME });
+			continue;
+		}
+		const read = await deps.readChat(file);
+		if (read.ok) chat = read;
+		else results.push({ name: file.name, kind: 'error', message: read.message });
+	}
+	return { results, chat };
 }

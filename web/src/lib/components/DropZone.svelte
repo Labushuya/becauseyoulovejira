@@ -3,8 +3,8 @@
 	import { importCounts, type FileImportResult } from '$lib/stores/mail-import';
 	import ErrorIcon from './ErrorIcon.svelte';
 
-	// Drop zone of the inbox view (E4 plan, packages 8 and 14): mail files (.eml) and calendar files
-	// (.ics) by drag and drop or, for the keyboard, with "Datei wählen"; several at once. Each file
+	// Drop zone of the inbox view (E4 plan, packages 8, 14 and 16): mail files (.eml), calendar files
+	// (.ics) and WhatsApp exports (.txt, .zip; they open the selection view) by drag and drop or, for the keyboard, with "Datei wählen"; several at once. Each file
 	// gets its own result: "neu" and "schon vorhanden" with a link, the counts of a calendar file,
 	// or an error with icon and reason.
 	let {
@@ -67,8 +67,8 @@
 	{ondrop}
 >
 	<p id={hintId}>
-		Mail-Dateien (.eml, höchstens 10 MB) und Kalenderdateien (.ics, höchstens 20 MB) hierher ziehen.
-		Bilder und Links der Mail werden nicht geladen.
+		Mail-Dateien (.eml, höchstens 10 MB), Kalenderdateien (.ics) und WhatsApp-Chatexporte (.txt,
+		.zip; je höchstens 20 MB) hierher ziehen. Bilder und Links der Mail werden nicht geladen.
 	</p>
 	<button
 		class="pick"
@@ -83,7 +83,7 @@
 	<input
 		class="visually-hidden"
 		type="file"
-		accept=".eml,message/rfc822,.ics,text/calendar"
+		accept=".eml,message/rfc822,.ics,text/calendar,.txt,.zip"
 		multiple
 		tabindex="-1"
 		aria-hidden="true"
