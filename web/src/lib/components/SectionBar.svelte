@@ -30,7 +30,7 @@
 
 <div class="section-bar">
 	<div class="start">
-		<h2 id={headingId} tabindex="-1" bind:this={heading}>{title}</h2>
+		<h2 id={headingId} tabindex="-1" data-view-heading bind:this={heading}>{title}</h2>
 		{#if count !== null}
 			<span class="count">
 				<span aria-hidden="true">{count}</span>

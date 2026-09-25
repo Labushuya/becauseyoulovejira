@@ -104,6 +104,27 @@ describe('modal: closing without unsaved input', () => {
 		expect(document.activeElement).toBe(opener);
 	});
 
+	it('falls back to the heading of the view when the opener is gone (UI-6), never to the body', async () => {
+		const { opener } = await openModal();
+		opener.remove();
+		await fireEvent.click(within(dialog()).getByRole('button', { name: 'Schließen' }));
+		await tick();
+		// Without a heading of the view the focus stays where the browser puts it.
+		expect(document.activeElement).not.toBe(opener);
+
+		document.body.innerHTML = '';
+		const view = document.createElement('h2');
+		view.tabIndex = -1;
+		view.dataset.viewHeading = '';
+		view.textContent = 'Aufgaben';
+		document.body.append(view);
+		const second = await openModal();
+		second.opener.remove();
+		await fireEvent.click(within(dialog()).getByRole('button', { name: 'Schließen' }));
+		await tick();
+		expect(document.activeElement).toBe(view);
+	});
+
 	it('keeps Escape to itself, so a panel behind does not close as well', async () => {
 		await openModal();
 		const outer = vi.fn();
