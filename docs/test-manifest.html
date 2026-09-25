@@ -213,8 +213,8 @@
   "meta": {
     "projekt": "becauseyoulovejira",
     "stand": "2026-09-25",
-    "commit": "817d7bf",
-    "etappe": "E0, E1, E1.1, E2 und E3 abgeschlossen, E4 in Arbeit (Pakete 1 bis 11, 14 bis 17, 20 bis 23; geplant 13, 24, 19)"
+    "commit": "2ad2f43",
+    "etappe": "E0, E1, E1.1, E2 und E3 abgeschlossen, E4 in Arbeit (Pakete 1 bis 11, 13 bis 17, 20 bis 23; geplant 24, 19)"
   },
   "blocks": [
     {
@@ -1244,13 +1244,13 @@
           "pre": "E4-Plan, Paket 12, entfällt nach P-8.", "steps": ["Bridge-Zertifikat exportieren, Verbindung einrichten, markierte Mail abrufen.", "Bridge beenden: Statusmeldung prüfen."],
           "expect": "Browser-Checkliste im E4-Plan.",
           "tests": [] },
-        { "id": "BYL-E4-022", "title": "Gmail per IMAP", "art": ["unit"], "status": "geplant",
-          "pre": "E4-Plan, Paket 13 (P-9, P-10).", "steps": ["Provider gmail mit imap.gmail.com:993, Umfang wie Web.de (INBOX, ab Einrichtung, nur Treffer).", "Eine Mail aus Postfach und .eml entsteht einmal (Message-ID).", "Anmeldung ohne App-Passwort wird als „App-Passwort erforderlich …“ gemeldet, bereinigt."],
-          "expect": "Fehlerabbildung und Anbietervorgaben am Mock.",
-          "tests": [] },
-        { "id": "BYL-E4-023", "title": "Echtes Gmail-Konto", "art": ["manuell"], "status": "geplant",
-          "pre": "E4-Plan, Paket 13.", "steps": ["App-Passwort anlegen, Verbindung mit Stichwörtern einrichten, Mail mit Stichwort im Betreff abrufen, eine ältere über die Postfach-Auswahl übernehmen.", "App-Passwort widerrufen: Statusmeldung prüfen."],
-          "expect": "Browser-Checkliste im E4-Plan.",
+        { "id": "BYL-E4-022", "title": "Gmail per IMAP", "art": ["unit","komponente","integration"], "status": "bestanden",
+          "pre": "E4-Plan, Paket 13 (P-9, P-10; ADR-0016 §4). Test-IMAP-Server helpers/mail/test/fake-imap.ts auf 127.0.0.1 statt imap.gmail.com, Wegwerf-PocketBase mit erfundenem Token und Passwort; keine Verbindung zu Google.", "steps": ["npm run test:unit","npm run test:helper","npm run test:integration","npm run test:web"],
+          "expect": "Anbieter gmail steht gleich in connection-rules.js, domain/connections.ts und helpers/mail/src/providers.ts (imap.gmail.com:993, TLS). Abruf wie Web.de: erster Lauf setzt nur den Cursor, danach nur Stichwort-Treffer aus INBOX, nur lesend (kein SELECT, STORE, EXPUNGE, APPEND, MOVE; Flags unverändert); eine Mail, die schon als .eml im Eingang ist, zählt als Duplikat (Message-ID). Die Postfach-Auswahl listet und übernimmt Gmail-Mails. Eine abgelehnte Anmeldung (refuseLogin, auch mit Gmails Antwort „Application-specific password required“) steht als „Anmeldung bei Gmail abgelehnt.“ mit dem Hinweis „App-Passwort nötig (Bestätigung in zwei Schritten) …“ an der Verbindung bzw. in der Antwort der Auswahl, ohne Passwort. Das Formular schlägt beim Wechsel auf Gmail BYL_GMAIL_PASSWORD und die Bezeichnung „Gmail“ vor und lässt Eigenes stehen; „Kanäle“ erklärt die Einrichtung (Bestätigung in zwei Schritten, myaccount.google.com/apppasswords, setx, Verbindung, Neustart). byl-mail.exe hat die Version 0.3.0.",
+          "tests": ["helpers/mail/src/providers.test.ts::reaches Gmail over IMAP","helpers/mail/src/poll.test.ts::stores a refused Gmail login with the app password hint","helpers/mail/src/poll.test.ts::fetches a Gmail inbox like Web.de","helpers/mail/src/server.test.ts::lists and imports from a Gmail inbox","tests/unit/connection-rules.test.mjs::accepts Gmail as provider","tests/unit/web-connections.test.mjs::mail provider in the form","tests/integration/mail-ingest.test.mjs::fetches Gmail like Web.de","web/src/lib/components/connections-page.test.ts::suggests the Gmail variable and label","web/src/lib/components/connections-page.test.ts::Gmail einrichten (E4 plan, package 13)"] },
+        { "id": "BYL-E4-023", "title": "Echtes Gmail-Konto", "art": ["manuell"], "status": "offen",
+          "pre": "Nach dem Merge von Paket 13 und dem Build auf main (app\\byl-mail.exe in Version 0.3.0; läuft schon ein Helfer, einmal stop.bat und start.bat); Gmail-Konto des Nutzers mit Bestätigung in zwei Schritten; Einrichtung nach „Kanäle“ → „Gmail einrichten“ bzw. README.", "steps": ["Unter myaccount.google.com → Sicherheit die Bestätigung in zwei Schritten prüfen, unter myaccount.google.com/apppasswords ein App-Passwort anlegen und per setx BYL_GMAIL_PASSWORD \"…\" (ohne Leerzeichen) setzen.","Unter „Kanäle“ die Verbindung „Postfach (IMAP)“ anlegen, Anbieter Gmail wählen: Variable BYL_GMAIL_PASSWORD und Bezeichnung „Gmail“ sind vorgeschlagen; Gmail-Adresse eintragen, Stichwort „todo“ eintragen; stop.bat, dann start.bat.","Nach spätestens 5 Minuten: „Letzter Abruf“ und Hinweis „Erster Abruf“. Eine Mail mit „todo“ im Betreff an das Konto schicken: Sie erscheint im Eingang mit „Stichwort: todo“; eine Mail ohne Stichwort nicht. In Gmail bleibt sie ungelesen.","„Aus dem Postfach wählen“: eine ältere Mail ohne Stichwort übernehmen; dieselbe Mail zusätzlich als .eml herunterladen und hereinziehen: „schon vorhanden“.","Zum Schluss setx BYL_GMAIL_PASSWORD mit dem normalen Google-Passwort (oder das App-Passwort widerrufen), stop.bat und start.bat: Die Verbindung meldet „Anmeldung bei Gmail abgelehnt.“ mit dem Hinweis „App-Passwort nötig (Bestätigung in zwei Schritten)“. Danach wieder das App-Passwort setzen."],
+          "expect": "Gmail verhält sich wie Web.de; eine falsche Anmeldung nennt das App-Passwort als Ursache; das Postfach bleibt unverändert.",
           "tests": [] },
         { "id": "BYL-E4-024", "title": ".ics-Parser, berlin-time.js und .ics-Import", "art": ["unit", "komponente", "integration"], "status": "bestanden",
           "pre": "E4-Plan, Paket 14; erfundene Fixtures unter tests/fixtures/ics (Google, Outlook, Apple, Randfälle); für die Integration app/pocketbase.exe.", "steps": ["npm run test:unit", "npm run test:web", "npm run test:integration"],
