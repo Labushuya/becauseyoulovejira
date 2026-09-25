@@ -44,6 +44,8 @@
 		activeId = null,
 		selected = $bindable([]),
 		projectsNewCount = 0,
+		clipboardHint = null,
+		onclipboard,
 		onbulk
 	}: {
 		store: InboxStore;
@@ -57,6 +59,10 @@
 		projectsNewCount?: number;
 		/** "Gesammelt umwandeln" for the chosen entries. */
 		onbulk: () => void;
+		/** "Aus Zwischenablage" (E4 plan, package 6); without it there is no button. */
+		onclipboard?: () => void;
+		/** Why the clipboard could not be read, with the way through Ctrl+V; neutral, no error. */
+		clipboardHint?: string | null;
 	} = $props();
 
 	const uid = $props.id();
@@ -218,6 +224,11 @@
 		{/snippet}
 		{#snippet end()}
 			<a class="capture" href={captureHref(page.url)}>Erfassen</a>
+			{#if onclipboard}
+				<button class="capture" type="button" aria-keyshortcuts="Control+V" onclick={onclipboard}>
+					Aus Zwischenablage
+				</button>
+			{/if}
 			{#if showsNew}
 				<button
 					id={BULK_BUTTON_ID}
@@ -257,6 +268,11 @@
 	</div>
 
 	<p class="visually-hidden" aria-live="polite">{store.announcement}</p>
+	<div role="status">
+		{#if clipboardHint}
+			<p class="clipboard-hint">{clipboardHint}</p>
+		{/if}
+	</div>
 	<div aria-live="assertive">
 		{#if notice}
 			<div class="alert-error notice">
@@ -460,8 +476,16 @@
 		font-size: 0.8125rem;
 		color: var(--color-brand-text);
 		text-decoration: none;
+		cursor: pointer;
+		background: var(--color-surface);
 		border: 1px solid var(--color-brand);
 		border-radius: 0.375rem;
+	}
+
+	.clipboard-hint {
+		margin-bottom: 0.75rem;
+		font-size: 0.875rem;
+		color: var(--color-text-muted);
 	}
 
 	.bulk {

@@ -95,6 +95,9 @@ export type TicketOrigin = { source: 'manual' | 'quick' } | { sourceItem: string
 /** Origin of the form "Neues Ticket". */
 export const MANUAL_ORIGIN: TicketOrigin = Object.freeze({ source: 'manual' });
 
+/** Origin of the quick entry (E4 plan, package 6). */
+export const QUICK_ORIGIN: TicketOrigin = Object.freeze({ source: 'quick' });
+
 /** Changed fields of an update; only these are sent (ADR-0006 section 5). */
 export type TicketPatch = Partial<TicketDraft>;
 
