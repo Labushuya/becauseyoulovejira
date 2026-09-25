@@ -1,7 +1,9 @@
-// One run of a Telegram connection (ADR-0016 section 2; E4 plan package 17): getUpdates without
-// webhook (the server is not reachable from the internet), only messages of allowed chats become
-// inbox entries, each gets the confirmation "Im Eingang gespeichert", and the offset moves only
-// after saving (lib/channel-telegram.js). Called by channel-runner.js, which holds the lock and
+// One run of a Telegram connection (ADR-0016 section 2, ADR-0020; E4 plan packages 17 and 20):
+// getUpdates without webhook (the server is not reachable from the internet), only messages of
+// allowed chats with a keyword of the connection become inbox entries, each gets the confirmation
+// "Im Eingang gespeichert", messages without keyword get "Kein Stichwort erkannt – nicht
+// gespeichert" unless switched off, and the offset moves only after saving
+// (lib/channel-telegram.js). Called by channel-runner.js, which holds the lock and
 // cleans errors (the bot token is part of every request URL). CommonJS module, ES5 only, Goja
 // runtime only.
 'use strict';
@@ -9,6 +11,7 @@
 var berlin = require(__hooks + '/lib/berlin-time.js');
 var telegram = require(__hooks + '/lib/channel-telegram.js');
 var rules = require(__hooks + '/lib/connection-rules.js');
+var keywords = require(__hooks + '/lib/keywords.js');
 var inboxIcs = require(__hooks + '/lib/inbox-ics.js');
 var service = require(__hooks + '/lib/inbox-service.js');
 
@@ -41,6 +44,15 @@ function call(token, method, body) {
   return json.result;
 }
 
+// Answers a message of the chat with `text`.
+function reply(token, chatId, messageId, text) {
+  call(token, 'sendMessage', {
+    chat_id: chatId,
+    text: text,
+    reply_parameters: { message_id: messageId, allow_sending_without_reply: true }
+  });
+}
+
 function settingsOf(record) {
   var raw = record.getString('settings');
   try {
@@ -63,28 +75,34 @@ function run(app, record, values) {
     allowed_updates: ['message']
   });
   var owner = record.getString('owner');
-  var names = rules.variableNames('telegram', record.getString('secret_env'), settingsOf(record));
+  var settings = settingsOf(record);
+  var names = rules.variableNames('telegram', record.getString('secret_env'), settings);
+  var list = rules.keywordsOf(settings, keywords);
   var outcome = telegram.processUpdates(updates, cursor, {
     allowed: telegram.parseAllowlist(values.allowlist),
     allowlistName: names.allowlist,
     berlin: berlin,
+    match: function (body) {
+      return keywords.matchKeyword(list, [body]);
+    },
+    replyNoMatch: rules.repliesWithoutMatch(settings),
+    decline: function (chatId, messageId) {
+      reply(values.secret, chatId, messageId, telegram.NO_MATCH);
+    },
     save: function (draft) {
       var draftWithConnection = inboxIcs.toInboxDraft(draft, 'telegram', record.id);
       draftWithConnection.original = '';
       return service.ingest(app, owner, draftWithConnection).kind;
     },
     confirm: function (chatId, messageId) {
-      call(values.secret, 'sendMessage', {
-        chat_id: chatId,
-        text: telegram.CONFIRMATION,
-        reply_parameters: { message_id: messageId, allow_sending_without_reply: true }
-      });
+      reply(values.secret, chatId, messageId, telegram.CONFIRMATION);
     }
   });
   return {
     created: outcome.created,
     duplicates: outcome.duplicates,
     skipped: outcome.skipped,
+    unmatched: outcome.unmatched,
     cursor: String(outcome.cursor),
     hint: outcome.hint,
     error: outcome.error

@@ -1,15 +1,19 @@
-// One run of a Google Calendar connection (ADR-0016 section 2; E4 plan package 15): fetch the
-// secret iCal address, parse it with the parser of the .ics files, take the events of the window
-// into the inbox (channel "calendar", fingerprint UID plus RECURRENCE-ID, so the same event from
-// a file and from the feed is one entry) and let entries that are still new follow a changed
-// event. Discarded and converted entries stay as they are. Called by channel-runner.js, which
-// holds the lock and cleans errors. CommonJS module, ES5 only, Goja runtime only.
+// One run of a Google Calendar connection (ADR-0016 section 2, ADR-0020; E4 plan packages 15 and
+// 20): fetch the secret iCal address, parse it with the parser of the .ics files, take the events
+// of the window whose title or description matches a keyword of the connection into the inbox
+// (channel "calendar", fingerprint UID plus RECURRENCE-ID, so the same event from a file and from
+// the feed is one entry; events without a match are not saved) and let entries that are still new
+// follow a changed event. Discarded and converted entries stay as they are. Called by
+// channel-runner.js, which holds the lock and cleans errors. CommonJS module, ES5 only, Goja
+// runtime only.
 'use strict';
 
 var ical = require(__hooks + '/lib/ical.js');
 var berlin = require(__hooks + '/lib/berlin-time.js');
 var calendar = require(__hooks + '/lib/channel-calendar.js');
 var inboxRules = require(__hooks + '/lib/inbox-rules.js');
+var keywords = require(__hooks + '/lib/keywords.js');
+var rules = require(__hooks + '/lib/connection-rules.js');
 var inboxIcs = require(__hooks + '/lib/inbox-ics.js');
 var service = require(__hooks + '/lib/inbox-service.js');
 
@@ -23,6 +27,18 @@ function metaOf(record) {
     return value && typeof value === 'object' ? value : {};
   } catch (err) {
     return {};
+  }
+}
+
+function settingsOf(record) {
+  var raw = record.getString('settings');
+  if (raw === '' || raw === 'null') {
+    return null;
+  }
+  try {
+    return JSON.parse(raw);
+  } catch (err) {
+    return null;
   }
 }
 
@@ -52,7 +68,8 @@ function follow(app, existing, draft) {
 }
 
 /**
- * values.secret is the iCal address. Returns { created, duplicates, updated, skipped, failed } or
+ * values.secret is the iCal address. Returns { created, duplicates, updated, skipped, failed,
+ * unmatched } or
  * { error } with a text that may still hold the address (the runner cleans it).
  */
 function run(app, record, values) {
@@ -77,9 +94,19 @@ function run(app, record, values) {
     return { error: 'Die Antwort ist kein Kalender im iCal-Format.' };
   }
   var parsed = ical.parse(text, berlin);
-  var drafts = calendar.selectDrafts(parsed.drafts, berlin.berlinToday(Date.now()), calendar.WINDOW_DAYS, berlin);
+  var inWindow = calendar.selectDrafts(parsed.drafts, berlin.berlinToday(Date.now()), calendar.WINDOW_DAYS, berlin);
+  var list = rules.keywordsOf(settingsOf(record), keywords);
+  var matching = calendar.matchDrafts(inWindow, list, keywords);
+  var drafts = matching.matched;
   var owner = record.getString('owner');
-  var outcome = { created: 0, duplicates: 0, updated: 0, skipped: parsed.skipped, failed: 0 };
+  var outcome = {
+    created: 0,
+    duplicates: 0,
+    updated: 0,
+    skipped: parsed.skipped,
+    failed: 0,
+    unmatched: matching.unmatched
+  };
   for (var i = 0; i < drafts.length; i++) {
     if (outcome.created >= limits.MAX_NEW_PER_RUN) {
       outcome.skipped += drafts.length - i;

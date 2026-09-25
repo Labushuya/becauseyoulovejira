@@ -1,10 +1,12 @@
-// Telegram bot, pure part (E4 plan, package 17): allowlist, text and captions, the order "save,
-// confirm, move the offset", the hint for unknown chats, and failures of saving and confirming.
+// Telegram bot, pure part (E4 plan, packages 17 and 20): allowlist, text and captions, the order
+// "save, confirm, move the offset", the hint for unknown chats, keywords with the answer for
+// messages without one, and failures of saving, confirming and answering.
 
 import { describe, expect, it } from 'vitest';
 import { loadHookLib } from '../support/hook-lib.mjs';
 
 const telegram = loadHookLib('channel-telegram.js');
+const keywords = loadHookLib('keywords.js');
 const berlin = loadHookLib('berlin-time.js');
 
 const ME = { id: 424242, is_bot: false, first_name: 'Anna', last_name: 'Beispiel', username: 'anna_b' };
@@ -39,6 +41,9 @@ function context(overrides = {}) {
 				return 'created';
 			},
 			confirm: (chatId, messageId) => log.push(['confirm', chatId, messageId]),
+			match: (body) => keywords.matchKeyword(['nachricht', 'todo'], [body]),
+			replyNoMatch: true,
+			decline: (chatId, messageId) => log.push(['decline', chatId, messageId]),
 			...overrides
 		}
 	};
@@ -75,6 +80,12 @@ describe('channel-telegram.js: allowlist and drafts', () => {
 		expect(telegram.messageText({ photo: [{}] })).toBe('');
 		expect(telegram.messageText({ text: '   ' })).toBe('');
 		expect(telegram.toDraft(update(4, PRIVATE, { text: 'x'.repeat(300) }).message, berlin).title).toHaveLength(200);
+		expect(telegram.toDraft(update(5, PRIVATE).message, berlin, 'todo').meta).toEqual({
+			chat: 'Anna Beispiel',
+			sender: 'Anna Beispiel',
+			chat_id: '424242',
+			keyword: 'todo'
+		});
 	});
 });
 
@@ -138,6 +149,59 @@ describe('channel-telegram.js: processing', () => {
 		expect(result).toMatchObject({ cursor: 12, created: 2 });
 		expect(result.error).toBe(
 			'Gespeichert, aber die Bestätigung „Im Eingang gespeichert“ ging nicht raus (2×): Telegram antwortet auf sendMessage mit HTTP 500'
+		);
+	});
+
+	it('saves only messages with a keyword and answers the others (ADR-0020)', () => {
+		const saved = [];
+		const { ctx, log } = context({
+			save: (draft) => {
+				saved.push(draft);
+				log.push(['save', draft.source_ref]);
+				return 'created';
+			}
+		});
+		const result = telegram.processUpdates(
+			[update(11, PRIVATE, { text: 'Hallo' }), update(12, PRIVATE, { text: 'TODO: Müll' }), update(13, STRANGER, { text: 'todo' })],
+			10,
+			ctx
+		);
+		expect(log).toEqual([
+			['decline', 424242, 110],
+			['save', '424242:120'],
+			['confirm', 424242, 120]
+		]);
+		expect(saved[0].meta.keyword).toBe('todo');
+		expect(result).toMatchObject({ cursor: 13, created: 1, unmatched: 1, skipped: 1, error: '' });
+		expect(telegram.NO_MATCH).toBe('Kein Stichwort erkannt – nicht gespeichert');
+	});
+
+	it('stays silent without keyword when the answer is switched off, and with an empty list', () => {
+		const quiet = context({ replyNoMatch: false });
+		expect(telegram.processUpdates([update(11, PRIVATE, { text: 'Hallo' })], 10, quiet.ctx)).toMatchObject({
+			cursor: 11,
+			created: 0,
+			unmatched: 1
+		});
+		expect(quiet.log).toEqual([]);
+		const empty = context({ match: (body) => keywords.matchKeyword([], [body]) });
+		expect(telegram.processUpdates([update(11, PRIVATE)], 10, empty.ctx)).toMatchObject({ created: 0, unmatched: 1 });
+		expect(empty.log).toEqual([['decline', 424242, 110]]);
+	});
+
+	it('moves on when the answer fails and reports it with a failed confirmation', () => {
+		const { ctx } = context({
+			decline: () => {
+				throw new Error('HTTP 403');
+			},
+			confirm: () => {
+				throw new Error('HTTP 500');
+			}
+		});
+		const result = telegram.processUpdates([update(11, PRIVATE, { text: 'Hallo' }), update(12, PRIVATE)], 10, ctx);
+		expect(result).toMatchObject({ cursor: 12, created: 1, unmatched: 1 });
+		expect(result.error).toBe(
+			'Gespeichert, aber die Bestätigung „Im Eingang gespeichert“ ging nicht raus (1×): HTTP 500 Die Antwort „Kein Stichwort erkannt – nicht gespeichert“ ging nicht raus (1×): HTTP 403'
 		);
 	});
 

@@ -1,5 +1,5 @@
-// Connections of the channels (ADR-0016 section 2, ADR-0018; E4 plan package 10). Pure: types,
-// labels and the checks of the form. Access data are Windows user environment variables; a
+// Connections of the channels (ADR-0016 section 2, ADR-0018, ADR-0020; E4 plan packages 10 and 20).
+// Pure: types, labels and the checks of the form. Access data are Windows user environment variables; a
 // connection stores only their names. The name pattern mirrors app/pb_hooks/lib/secrets.js
 // (tests/unit/web-connections.test.mjs compares both).
 
@@ -38,6 +38,10 @@ export interface Connection {
 	lastError: string;
 	/** Setup hint of the last run, e.g. the ID of a chat that is not allowed yet. */
 	lastHint: string;
+	/** Keywords (ADR-0020): only what one of them matches comes into the inbox automatically. */
+	keywords: string[];
+	/** Telegram: whether the bot answers a message without keyword; true for other kinds. */
+	replyNoMatch: boolean;
 	runningSince: string | null;
 	created: string;
 	updated: string;
@@ -49,6 +53,22 @@ export interface SecretStatus {
 	/** null for kinds without an allowlist. */
 	allowlist: boolean | null;
 }
+
+/** The settings a user changes on an existing connection. */
+export interface ConnectionSettingsDraft {
+	keywords: string[];
+	replyNoMatch: boolean;
+}
+
+/** Shown at a connection without keywords (ADR-0020 section 4); neutral, not an error. */
+export const NO_KEYWORDS_WARNING =
+	'Keine Stichwörter: Diese Verbindung übernimmt nichts automatisch.';
+
+/** Where the keywords of a kind are searched (ADR-0020 section 1). */
+export const KEYWORD_SEARCH_TEXT: Readonly<Record<ConnectionType, string>> = Object.freeze({
+	calendar: 'Gesucht wird in Titel und Beschreibung der Termine.',
+	telegram: 'Gesucht wird im Text der Nachricht bzw. in der Bildunterschrift.'
+});
 
 export interface ConnectionDraft {
 	type: ConnectionType;
@@ -122,6 +142,8 @@ export interface RunResult {
 	updated: number;
 	skipped: number;
 	failed: number;
+	/** Not saved because no keyword matched (ADR-0020). */
+	unmatched: number;
 	/** Cleaned error of the run (no secrets). */
 	error: string;
 	/** Names of the variables that are not set. */
@@ -138,6 +160,7 @@ export function runResultText(label: string, result: RunResult): string {
 			if (result.updated > 0) parts.push(`${result.updated} aktualisiert`);
 			if (result.skipped > 0) parts.push(`${result.skipped} übersprungen`);
 			if (result.failed > 0) parts.push(`${result.failed} mit Fehler`);
+			if (result.unmatched > 0) parts.push(`${result.unmatched} ohne Stichwort`);
 			return `${name}: ${parts.join(', ')}.`;
 		}
 		case 'error':

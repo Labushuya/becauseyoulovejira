@@ -17,6 +17,7 @@ function idleConnections() {
 			list: never,
 			create: never,
 			setEnabled: never,
+			saveSettings: never,
 			remove: never,
 			secretStatus: never,
 			run: never,

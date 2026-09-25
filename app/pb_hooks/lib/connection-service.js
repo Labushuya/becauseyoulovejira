@@ -6,6 +6,7 @@ var ticketKey = require(__hooks + '/lib/ticket-key.js');
 var errors = require(__hooks + '/lib/errors.js');
 var secrets = require(__hooks + '/lib/secrets.js');
 var rules = require(__hooks + '/lib/connection-rules.js');
+var keywords = require(__hooks + '/lib/keywords.js');
 
 var COLLECTION = 'connections';
 var UNAVAILABLE = 'Die Verbindungen stehen nach dem nächsten Start der App bereit (start.bat).';
@@ -46,7 +47,7 @@ function guardCreate(e) {
   if (e.hasSuperuserAuth()) {
     return;
   }
-  throwIf(rules.createViolation(valuesOf(e.record), secrets));
+  throwIf(rules.createViolation(valuesOf(e.record), secrets, keywords));
 }
 
 // onRecordUpdateRequest; a superuser may set every field.
@@ -54,7 +55,7 @@ function guardUpdate(e) {
   if (e.hasSuperuserAuth()) {
     return;
   }
-  throwIf(rules.updateViolation(valuesOf(e.record.original()), valuesOf(e.record), secrets));
+  throwIf(rules.updateViolation(valuesOf(e.record.original()), valuesOf(e.record), secrets, keywords));
 }
 
 // onRecordCreate/onRecordUpdate before e.next(), for every save: the scope, and a changed

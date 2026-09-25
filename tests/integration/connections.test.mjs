@@ -11,6 +11,7 @@ import {
 	deleteConnection,
 	getSecretStatus,
 	listConnections,
+	saveConnectionSettings,
 	setConnectionEnabled
 } from '../../web/src/lib/data/connections.ts';
 
@@ -143,6 +144,30 @@ describe('connections: create and guard', () => {
 		});
 	});
 
+	it('takes keywords and the answer switch, and refuses bad lists (ADR-0020)', async () => {
+		const record = await telegram(owner, {
+			settings: { allowed_env: 'BYL_TEST_ALLOWED', keywords: ['todo', 'zu erledigen'], reply_no_match: false }
+		});
+		expect(record.settings).toEqual({
+			allowed_env: 'BYL_TEST_ALLOWED',
+			keywords: ['todo', 'zu erledigen'],
+			reply_no_match: false
+		});
+		const tooMany = Array.from({ length: 51 }, (_, i) => `k${i}`);
+		for (const keywords of ['todo', [3], ['x'.repeat(101)], tooMany]) {
+			expect((await codesOf(calendar(owner, { settings: { keywords } }))).codes).toEqual({
+				settings: 'validation_keywords'
+			});
+		}
+		expect(
+			(await codesOf(owner.pb.collection('connections').update(record.id, { settings: { allowed_env: 'BYL_TEST_ALLOWED', reply_no_match: 1 } })))
+				.codes
+		).toEqual({ settings: 'validation_connection_settings' });
+		expect((await codesOf(calendar(owner, { settings: { reply_no_match: true } }))).codes).toEqual({
+			settings: 'validation_connection_settings'
+		});
+	});
+
 	it('lets the owner change label, switch and variable, but not kind or server fields', async () => {
 		const record = await calendar(owner);
 		const connections = owner.pb.collection('connections');
@@ -246,7 +271,13 @@ describe('data layer of the web app', () => {
 		});
 		expect(await getSecretStatus(fresh.pb, created.id)).toEqual({ secret: true, allowlist: false });
 		expect((await listConnections(fresh.pb)).map((item) => item.id)).toEqual([created.id]);
-		expect(await setConnectionEnabled(fresh.pb, created.id, false)).toMatchObject({ enabled: false });
+		expect(created).toMatchObject({ keywords: [], replyNoMatch: true });
+		const saved = await saveConnectionSettings(fresh.pb, created, { keywords: [' todo ', '#byl'], replyNoMatch: false });
+		expect(saved).toMatchObject({ keywords: ['todo', '#byl'], replyNoMatch: false, allowlistEnv: 'BYL_TEST_UNSET' });
+		await expect(
+			saveConnectionSettings(fresh.pb, created, { keywords: ['x'.repeat(101)], replyNoMatch: true })
+		).rejects.toMatchObject({ kind: 'validation', fields: { settings: expect.anything() } });
+		expect(await setConnectionEnabled(fresh.pb, created.id, false)).toMatchObject({ enabled: false, keywords: ['todo', '#byl'] });
 		await deleteConnection(fresh.pb, created.id);
 		expect(await listConnections(fresh.pb)).toEqual([]);
 		await expect(

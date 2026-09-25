@@ -125,7 +125,8 @@
 		<h3 id={ids.calendar}>Google Calendar einrichten</h3>
 		<p>
 			Die App liest deinen Kalender über seine geheime iCal-Adresse. Sie übernimmt Termine von heute
-			bis 30 Tage im Voraus alle 15 Minuten in den Eingang, solange die App läuft. An Google ändert
+			bis 30 Tage im Voraus alle 15 Minuten in den Eingang, solange die App läuft, und zwar nur
+			solche, deren Titel oder Beschreibung ein Stichwort der Verbindung enthält. An Google ändert
 			sie nichts.
 		</p>
 		<ol>
@@ -149,7 +150,11 @@
 			<li><code>stop.bat</code> und dann <code>start.bat</code> ausführen.</li>
 			<li>
 				Oben unter „Verbindungen“ die Art „Google Calendar“ mit der Variablen
-				<code>BYL_GOOGLE_CALENDAR_URL</code> anlegen und „Jetzt abrufen“ wählen.
+				<code>BYL_GOOGLE_CALENDAR_URL</code> anlegen.
+			</li>
+			<li>
+				An der Verbindung Stichwörter eintragen (etwa „Vorschläge übernehmen“) und „Jetzt abrufen“
+				wählen. Ohne Stichwörter übernimmt sie nichts.
 			</li>
 		</ol>
 		<p class="hint">
@@ -166,9 +171,11 @@
 		<h3 id={ids.telegram}>Telegram-Bot einrichten</h3>
 		<p>
 			Du legst einen eigenen Bot an und schreibst ihm, was in den Eingang soll. Die App fragt jede
-			Minute nach neuen Nachrichten, solange sie läuft. Nur Nachrichten aus freigegebenen Chats
-			werden gespeichert; jede beantwortet der Bot mit „Im Eingang gespeichert“. Text und
-			Bildunterschriften werden übernommen, Bilder und Dateien nicht.
+			Minute nach neuen Nachrichten, solange sie läuft. Nur Nachrichten aus freigegebenen Chats mit
+			einem Stichwort der Verbindung werden gespeichert; jede beantwortet der Bot mit „Im Eingang
+			gespeichert“. Auf Nachrichten ohne Stichwort antwortet er „Kein Stichwort erkannt – nicht
+			gespeichert“ (abschaltbar). Text und Bildunterschriften werden übernommen, Bilder und Dateien
+			nicht.
 		</p>
 		<ol>
 			<li>
@@ -195,6 +202,10 @@
 				<code>stop.bat</code> und dann <code>start.bat</code> ausführen. Oben unter „Verbindungen“
 				die Art „Telegram-Bot“ mit <code>BYL_TELEGRAM_TOKEN</code> und
 				<code>BYL_TELEGRAM_ALLOWED_IDS</code> anlegen, falls noch nicht geschehen.
+			</li>
+			<li>
+				An der Verbindung Stichwörter eintragen, etwa „todo“ oder „#byl“. Nur Nachrichten mit einem
+				davon landen im Eingang.
 			</li>
 		</ol>
 		<p class="hint">
