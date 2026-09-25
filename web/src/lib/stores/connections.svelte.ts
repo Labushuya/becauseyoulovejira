@@ -1,4 +1,4 @@
-// Connections on the page "Kanäle" (E4 plan, package 10; ADR-0006). Loaded when the page opens and
+// Connections on the page "Kanäle" (E4 plan, packages 10 and 15; ADR-0006). Loaded when the page opens and
 // after every own action; the state of the variables comes from the server per connection. No
 // realtime subscription: the list changes only here, and the page offers "Aktualisieren" for
 // the result of a background run.
@@ -8,13 +8,21 @@ import { SvelteMap } from 'svelte/reactivity';
 import {
 	createConnection,
 	deleteConnection,
+	getConnection,
 	getSecretStatus,
 	listConnections,
+	runConnection,
 	setConnectionEnabled
 } from '$lib/data/connections';
 import { toDataError } from '$lib/data/errors';
 import type { RequestOptions } from '$lib/data/options';
-import type { Connection, ConnectionDraft, SecretStatus } from '$lib/domain/connections';
+import {
+	runResultText,
+	type Connection,
+	type ConnectionDraft,
+	type RunResult,
+	type SecretStatus
+} from '$lib/domain/connections';
 import type { LoadState, SessionGuard } from './ticket-list.svelte';
 
 /** Shown while the server does not know the connections yet (migration at the next start). */
@@ -27,6 +35,8 @@ export interface ConnectionsData {
 	setEnabled(id: string, enabled: boolean): Promise<Connection>;
 	remove(id: string): Promise<void>;
 	secretStatus(id: string, options: RequestOptions): Promise<SecretStatus>;
+	run(id: string): Promise<RunResult>;
+	get(id: string): Promise<Connection>;
 }
 
 export function connectionsData(pb: PocketBase): ConnectionsData {
@@ -35,7 +45,9 @@ export function connectionsData(pb: PocketBase): ConnectionsData {
 		create: (draft) => createConnection(pb, draft),
 		setEnabled: (id, enabled) => setConnectionEnabled(pb, id, enabled),
 		remove: (id) => deleteConnection(pb, id),
-		secretStatus: (id, options) => getSecretStatus(pb, id, options)
+		secretStatus: (id, options) => getSecretStatus(pb, id, options),
+		run: (id) => runConnection(pb, id),
+		get: (id) => getConnection(pb, id)
 	};
 }
 
@@ -47,6 +59,8 @@ export class ConnectionsStore {
 	readonly #session: SessionGuard;
 	readonly #items = new SvelteMap<string, Connection>();
 	readonly #status = new SvelteMap<string, SecretStatus>();
+	/** IDs with a running "Jetzt abrufen". */
+	readonly #running = new SvelteMap<string, true>();
 	#controller: AbortController | null = null;
 
 	#state = $state<LoadState>('idle');
@@ -148,6 +162,29 @@ export class ConnectionsStore {
 			this.#status.delete(id);
 			this.#announcement = `„${label}“ gelöscht.`;
 		});
+	}
+
+	isRunning(id: string): boolean {
+		return this.#running.has(id);
+	}
+
+	/**
+	 * "Jetzt abrufen" (E4 plan, package 15): runs the connection in the server, then shows its new
+	 * state (last run, error, hint). The result goes to the live region.
+	 */
+	async runNow(id: string): Promise<ConnectionActionResult> {
+		if (this.#running.has(id)) return { ok: false, message: null, fields: {} };
+		const label = this.#items.get(id)?.label ?? 'Verbindung';
+		this.#running.set(id, true);
+		try {
+			return await this.#act(async () => {
+				const result = await this.#data.run(id);
+				this.#announcement = runResultText(label, result);
+				this.#items.set(id, await this.#data.get(id));
+			});
+		} finally {
+			this.#running.delete(id);
+		}
 	}
 
 	/** Takes a connection as the server answered it (e.g. after "Jetzt abrufen"). */

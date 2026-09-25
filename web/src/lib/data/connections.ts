@@ -7,6 +7,7 @@ import {
 	isConnectionType,
 	type Connection,
 	type ConnectionDraft,
+	type RunResult,
 	type SecretStatus
 } from '../domain/connections';
 import { DataError, withDataErrors } from './errors';
@@ -156,5 +157,52 @@ export function getSecretStatus(
 			secret: result.secret === true,
 			allowlist: typeof result.allowlist === 'boolean' ? result.allowlist : null
 		};
+	});
+}
+
+const RUN_STATUSES = ['ok', 'error', 'running', 'missing', 'disabled', 'unsupported'] as const;
+
+function count(value: unknown): number {
+	return typeof value === 'number' && Number.isInteger(value) && value >= 0 ? value : 0;
+}
+
+/** "Jetzt abrufen": runs the connection once in the server and answers with its result. */
+export function runConnection(
+	pb: PocketBase,
+	id: string,
+	{ signal }: RequestOptions = {}
+): Promise<RunResult> {
+	return withDataErrors(signal, async () => {
+		const result = await pb.send<Record<string, unknown>>(
+			`/api/byl/connections/${encodeURIComponent(id)}/run`,
+			{ method: 'POST', signal }
+		);
+		const status = RUN_STATUSES.find((value) => value === result.status) ?? 'error';
+		return {
+			status,
+			created: count(result.created),
+			duplicates: count(result.duplicates),
+			updated: count(result.updated),
+			skipped: count(result.skipped),
+			failed: count(result.failed),
+			error: typeof result.error === 'string' ? result.error : '',
+			missing: Array.isArray(result.missing)
+				? result.missing.filter((name): name is string => typeof name === 'string')
+				: []
+		};
+	});
+}
+
+/** One connection with the fields of the list (after a run). */
+export function getConnection(
+	pb: PocketBase,
+	id: string,
+	{ signal }: RequestOptions = {}
+): Promise<Connection> {
+	return withDataErrors(signal, async () => {
+		const record = await pb
+			.collection(CONNECTIONS)
+			.getOne<ConnectionRecord>(id, { fields: CONNECTION_FIELDS, signal });
+		return toConnection(record);
 	});
 }

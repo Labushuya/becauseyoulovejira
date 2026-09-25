@@ -113,3 +113,42 @@ export function secretStatusText(
 		text: `Zugangsdaten fehlen: ${variable} ${names} anlegen, dann die App neu starten (stop.bat, dann start.bat).`
 	};
 }
+
+/** Answer of "Jetzt abrufen" (E4 plan, package 15): the counts of the run or why it did not run. */
+export interface RunResult {
+	status: 'ok' | 'error' | 'running' | 'missing' | 'disabled' | 'unsupported';
+	created: number;
+	duplicates: number;
+	updated: number;
+	skipped: number;
+	failed: number;
+	/** Cleaned error of the run (no secrets). */
+	error: string;
+	/** Names of the variables that are not set. */
+	missing: string[];
+}
+
+/** Text of a run for the live region, e.g. "„Kalender“: 3 neu, 1 schon vorhanden." */
+export function runResultText(label: string, result: RunResult): string {
+	const name = `„${label}“`;
+	switch (result.status) {
+		case 'ok': {
+			const parts = [`${result.created} neu`];
+			if (result.duplicates > 0) parts.push(`${result.duplicates} schon vorhanden`);
+			if (result.updated > 0) parts.push(`${result.updated} aktualisiert`);
+			if (result.skipped > 0) parts.push(`${result.skipped} übersprungen`);
+			if (result.failed > 0) parts.push(`${result.failed} mit Fehler`);
+			return `${name}: ${parts.join(', ')}.`;
+		}
+		case 'error':
+			return `${name}: Abruf fehlgeschlagen. ${result.error}`;
+		case 'running':
+			return `${name} ruft gerade ab. Bitte gleich noch einmal versuchen.`;
+		case 'missing':
+			return `${name}: Zugangsdaten fehlen (${result.missing.join(', ')}). Variable anlegen, dann die App neu starten.`;
+		case 'disabled':
+			return `${name} ist ausgeschaltet.`;
+		case 'unsupported':
+			return `${name}: Diese Art ruft noch nicht ab.`;
+	}
+}

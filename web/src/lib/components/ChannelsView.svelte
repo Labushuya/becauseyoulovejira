@@ -3,8 +3,9 @@
 	import type { ConnectionsStore } from '$lib/stores/connections.svelte';
 	import ConnectionsSection from './ConnectionsSection.svelte';
 
-	// Settings "Kanäle" (E4 plan, T-3 and packages 7 and 10): the bookmarklet, the connections with
-	// access data from Windows user environment variables (ADR-0018) and how to set them. The
+	// Settings "Kanäle" (E4 plan, T-3 and packages 7, 10 and 15): the bookmarklet, the connections
+	// with access data from Windows user environment variables (ADR-0018), how to set them and how
+	// to set up Google Calendar. The
 	// bookmarklet link is dragged to the bookmarks bar; for the keyboard the code can be copied and
 	// saved as the address of a new bookmark. A click on the link here does nothing, so the page
 	// does not capture itself.
@@ -22,7 +23,8 @@
 		heading: `${uid}-heading`,
 		bookmarklet: `${uid}-bookmarklet`,
 		code: `${uid}-code`,
-		variables: `${uid}-variables`
+		variables: `${uid}-variables`,
+		calendar: `${uid}-calendar`
 	};
 
 	const code = $derived(bookmarkletCode(captureUrl));
@@ -115,6 +117,47 @@
 			Ändern geht genauso (<code>setx</code> mit neuem Wert, dann neu starten). Entfernen: in der
 			Systemsteuerung die Variable löschen oder <code>reg delete HKCU\Environment /v NAME /f</code>,
 			dann neu starten. Auf einem anderen Rechner musst du die Variablen neu anlegen.
+		</p>
+	</section>
+
+	<section class="card" aria-labelledby={ids.calendar}>
+		<h3 id={ids.calendar}>Google Calendar einrichten</h3>
+		<p>
+			Die App liest deinen Kalender über seine geheime iCal-Adresse. Sie übernimmt Termine von heute
+			bis 30 Tage im Voraus alle 15 Minuten in den Eingang, solange die App läuft. An Google ändert
+			sie nichts.
+		</p>
+		<ol>
+			<li>
+				<a href="https://calendar.google.com" target="_blank" rel="noopener noreferrer"
+					>Google Calendar</a
+				>
+				im Browser öffnen. Links unter „Meine Kalender“ beim gewünschten Kalender auf die drei Punkte
+				⋮ und dann „Einstellungen und Freigabe“ klicken.
+			</li>
+			<li>
+				Ganz unten im Abschnitt „Kalender integrieren“ steht „Privatadresse im iCal-Format“. Mit dem
+				Symbol daneben kopieren. Die Adresse beginnt mit
+				<code>https://calendar.google.com/calendar/ical/</code> und endet auf
+				<code>/basic.ics</code>.
+			</li>
+			<li>
+				In der Eingabeaufforderung <code>setx BYL_GOOGLE_CALENDAR_URL "…"</code> eingeben und statt der
+				Punkte die kopierte Adresse einfügen (Rechtsklick).
+			</li>
+			<li><code>stop.bat</code> und dann <code>start.bat</code> ausführen.</li>
+			<li>
+				Oben unter „Verbindungen“ die Art „Google Calendar“ mit der Variablen
+				<code>BYL_GOOGLE_CALENDAR_URL</code> anlegen und „Jetzt abrufen“ wählen.
+			</li>
+		</ol>
+		<p class="hint">
+			Ein Termin landet nur einmal im Eingang, auch wenn du ihn zusätzlich als .ics-Datei
+			hereinziehst. Ändert sich ein Termin, zieht sein Eintrag nach, solange er noch neu ist.
+			Verworfene Termine kommen nicht wieder. Die Adresse erlaubt jedem, der sie kennt, den ganzen
+			Kalender zu lesen. Gib sie nicht weiter. Widerrufen: in denselben Einstellungen bei
+			„Privatadresse im iCal-Format“ auf „Zurücksetzen“, dann die neue Adresse per
+			<code>setx</code> eintragen und die App neu starten.
 		</p>
 	</section>
 </section>
