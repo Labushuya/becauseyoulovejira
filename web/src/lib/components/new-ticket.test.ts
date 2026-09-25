@@ -1,7 +1,8 @@
 // Component tests for "Neues Ticket" (E2 plan, package 8; E3 plan, T-13 and T-14): required
 // title, defaults, project with the filtered project chosen in advance, tags, Ctrl+Enter, lock
 // during the request, switching to the new ID with replaceState, server errors, discarding after a question.
-// The creation itself is covered against the harness (E2 plan, package 4).
+// The creation itself is covered against the harness (E2 plan, package 4). Since UI-3 the question
+// is the confirmation of ADR-0025 section 4 instead of window.confirm.
 
 import { fireEvent, render, screen, within } from '@testing-library/svelte';
 import { tick } from 'svelte';
@@ -11,8 +12,24 @@ import type { Project } from '$lib/domain/project';
 import type { Ticket, TicketDraft } from '$lib/domain/ticket';
 import { CatalogStore } from '$lib/stores/catalog.svelte';
 import type { CreateResult } from '$lib/stores/ticket-detail.svelte';
+import { useOverlayStubs } from '$lib/test/overlay-stubs';
 import NewTicketForm from './NewTicketForm.svelte';
 import NewTicketPage from '../../routes/(app)/(tickets)/tickets/neu/+page.svelte';
+
+useOverlayStubs();
+
+/** The open question "Neues Ticket verwerfen?", or null. */
+async function discardQuestion(): Promise<HTMLDialogElement | null> {
+	await tick();
+	return screen.queryByRole<HTMLDialogElement>('dialog', { name: 'Neues Ticket verwerfen?' });
+}
+
+/** Answers the open question with "Weiter bearbeiten" or "Verwerfen". */
+async function answer(choice: 'Weiter bearbeiten' | 'Verwerfen') {
+	const dialog = await discardQuestion();
+	if (dialog === null) throw new Error('No question open');
+	await fireEvent.click(within(dialog).getByRole('button', { name: choice }));
+}
 
 const mocks = vi.hoisted(() => ({
 	goto: vi.fn(async () => undefined),
@@ -244,30 +261,43 @@ describe('new ticket form', () => {
 	});
 
 	it('cancels at once when nothing was entered', async () => {
-		const confirm = vi.spyOn(window, 'confirm');
 		const { oncancel } = renderForm();
 
 		await fireEvent.click(screen.getByRole('button', { name: 'Abbrechen' }));
 
-		expect(confirm).not.toHaveBeenCalled();
+		expect(await discardQuestion()).toBeNull();
 		expect(oncancel).toHaveBeenCalledOnce();
 	});
 
 	it('asks before discarding entered data, with "Abbrechen" and with Escape', async () => {
-		const confirm = vi
-			.spyOn(window, 'confirm')
-			.mockReturnValueOnce(false)
-			.mockReturnValueOnce(true);
 		const { oncancel } = renderForm();
 
 		await fireEvent.input(titleField(), { target: { value: 'Entwurf' } });
 		await fireEvent.click(screen.getByRole('button', { name: 'Abbrechen' }));
-		expect(confirm).toHaveBeenCalledWith('Neues Ticket verwerfen? Die Eingaben gehen verloren.');
+		const question = await discardQuestion();
+		const text = document.getElementById(question?.getAttribute('aria-describedby') ?? '');
+		expect(text?.textContent?.trim()).toBe('Die Eingaben gehen verloren.');
+		expect(document.activeElement?.textContent?.trim()).toBe('Weiter bearbeiten');
+		await answer('Weiter bearbeiten');
 		expect(oncancel).not.toHaveBeenCalled();
+		expect(titleField().value).toBe('Entwurf');
 
 		await fireEvent.keyDown(titleField(), { key: 'Escape' });
-		expect(confirm).toHaveBeenCalledTimes(2);
+		await answer('Verwerfen');
 		expect(oncancel).toHaveBeenCalledOnce();
+	});
+
+	it('does not create with Ctrl+Enter while the question is open', async () => {
+		const { oncancel, oncreate } = renderForm();
+		await fireEvent.input(titleField(), { target: { value: 'Entwurf' } });
+		await fireEvent.keyDown(titleField(), { key: 'Escape' });
+		const question = await discardQuestion();
+
+		await fireEvent.keyDown(titleField(), { key: 'Enter', ctrlKey: true });
+
+		expect(oncreate).not.toHaveBeenCalled();
+		expect(question?.open).toBe(true);
+		expect(oncancel).not.toHaveBeenCalled();
 	});
 });
 
@@ -341,13 +371,12 @@ describe('new ticket: project (E3 plan, T-13)', () => {
 	});
 
 	it('asks before discarding a chosen project', async () => {
-		const confirm = vi.spyOn(window, 'confirm').mockReturnValueOnce(false);
 		const { oncancel } = renderForm(undefined, { projects: [HOUSE] });
 
 		await fireEvent.change(projectField(), { target: { value: HOUSE.id } });
 		await fireEvent.click(screen.getByRole('button', { name: 'Abbrechen' }));
 
-		expect(confirm).toHaveBeenCalledOnce();
+		expect(await discardQuestion()).not.toBeNull();
 		expect(oncancel).not.toHaveBeenCalled();
 	});
 
@@ -383,14 +412,13 @@ describe('new ticket: project (E3 plan, T-13)', () => {
 	});
 
 	it('does not ask before leaving when only the project filled in advance is set', async () => {
-		const confirm = vi.spyOn(window, 'confirm');
 		mocks.page.url = new URL(`http://localhost:3000/tickets/neu?projekt=${HOUSE.id}`);
 		render(NewTicketPage);
 		await vi.waitFor(() => expect(projectField().value).toBe(HOUSE.id));
 
 		await fireEvent.click(screen.getByRole('button', { name: 'Abbrechen' }));
 
-		expect(confirm).not.toHaveBeenCalled();
+		expect(await discardQuestion()).toBeNull();
 		expect(mocks.goto).toHaveBeenCalledWith(`/?projekt=${HOUSE.id}`);
 	});
 });
@@ -451,7 +479,6 @@ describe('new ticket: tags (E3 plan, T-14)', () => {
 		['a chosen tag', async () => fireEvent.keyDown(tagInput(), { key: 'Enter' })],
 		['a typed name', async () => undefined]
 	])('asks before discarding %s', async (_name, finish) => {
-		const confirm = vi.spyOn(window, 'confirm').mockReturnValueOnce(false);
 		const { oncancel } = renderFormWithTags({ tags: [GARDEN] });
 
 		await fireEvent.input(tagInput(), { target: { value: 'gar' } });
@@ -459,7 +486,7 @@ describe('new ticket: tags (E3 plan, T-14)', () => {
 		await tick();
 		await fireEvent.click(screen.getByRole('button', { name: 'Abbrechen' }));
 
-		expect(confirm).toHaveBeenCalledOnce();
+		expect(await discardQuestion()).not.toBeNull();
 		expect(oncancel).not.toHaveBeenCalled();
 	});
 
@@ -628,10 +655,9 @@ describe('new ticket from the inbox (E4 plan, package 3)', () => {
 
 	it('returns to the entry on "Abbrechen" without asking for the untouched prefill', async () => {
 		openFor(entry());
-		const confirm = vi.spyOn(window, 'confirm');
 		await vi.waitFor(() => expect(titleField().value).toBe('Rechnung September'));
 		await fireEvent.click(screen.getByRole('button', { name: 'Abbrechen' }));
-		expect(confirm).not.toHaveBeenCalled();
+		expect(await discardQuestion()).toBeNull();
 		expect(mocks.goto).toHaveBeenCalledWith(`/eingang/${ITEM_ID}`);
 	});
 

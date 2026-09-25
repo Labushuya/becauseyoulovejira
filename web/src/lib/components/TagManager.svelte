@@ -2,7 +2,7 @@
 	import { tick } from 'svelte';
 	import type { Tag } from '$lib/domain/tag';
 	import type { CatalogEditor } from '$lib/stores/catalog-editor';
-	import ConfirmDialog from './ConfirmDialog.svelte';
+	import ConfirmDialog from './overlay/ConfirmDialog.svelte';
 	import ErrorIcon from './ErrorIcon.svelte';
 
 	// Section "Tags" of the project view (E3 plan, T-14 and package 14): every tag with

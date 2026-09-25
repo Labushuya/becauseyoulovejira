@@ -20,7 +20,7 @@
 		CONNECTIONS_UNAVAILABLE_MESSAGE,
 		type ConnectionsStore
 	} from '$lib/stores/connections.svelte';
-	import ConfirmDialog from './ConfirmDialog.svelte';
+	import ConfirmDialog from './overlay/ConfirmDialog.svelte';
 	import ErrorIcon from './ErrorIcon.svelte';
 	import KeywordEditor from './KeywordEditor.svelte';
 	import MailboxPicker from './MailboxPicker.svelte';

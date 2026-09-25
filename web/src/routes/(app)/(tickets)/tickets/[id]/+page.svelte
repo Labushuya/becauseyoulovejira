@@ -2,6 +2,7 @@
 	import { untrack } from 'svelte';
 	import { beforeNavigate, goto } from '$app/navigation';
 	import { page } from '$app/state';
+	import ConfirmDialog from '$lib/components/overlay/ConfirmDialog.svelte';
 	import RecurrenceSummary from '$lib/components/RecurrenceSummary.svelte';
 	import TicketActivity from '$lib/components/TicketActivity.svelte';
 	import TicketPanel from '$lib/components/TicketPanel.svelte';
@@ -11,12 +12,10 @@
 	import { getTicketActivityStore } from '$lib/stores/ticket-activity.svelte';
 	import { getTicketDetailStore } from '$lib/stores/ticket-detail.svelte';
 	import { getTicketListStore } from '$lib/stores/ticket-list.svelte';
-	import { listHref } from '$lib/ticket-links';
+	import { appHref, listHref } from '$lib/ticket-links';
 
 	// Detail panel of /tickets/<record id> (E2 plan, T-4); a reload opens the same panel.
 
-	/** Question before typed text would be lost: description, comment or a name in the tag picker. */
-	const DISCARD_QUESTION = 'Änderungen verwerfen? Der nicht gespeicherte Text geht verloren.';
 	const detail = getTicketDetailStore();
 	const comments = getTicketActivityStore();
 	const catalog = getCatalogStore();
@@ -28,6 +27,8 @@
 	$effect(() => {
 		const current = id;
 		untrack(() => {
+			// Another ticket in the same panel: its drafts are new, so leaving asks again.
+			discarding = false;
 			detail.open(current);
 			comments.open(current);
 		});
@@ -45,20 +46,37 @@
 		comments.reset();
 	});
 
-	/** Set once the ticket was deleted here: leaving then needs no question. */
+	/** Set once the ticket was deleted or its drafts discarded here: leaving needs no question. */
 	let discarding = false;
+	/** Navigation held up by the question: its target and, for back/forward, the history step. */
+	let leaving = $state<{ url: URL; delta: number | undefined } | null>(null);
 
 	// Leaving the panel within the app (Schließen, Escape, another ticket, "Neues Ticket", browser
 	// back) asks first while a description, a comment or a name in the tag picker (E3 plan, T-14) is
-	// not saved. Logout and session end go to the login page and are not held up; closing the
-	// browser tab is not covered.
+	// not saved. beforeNavigate cannot wait for a dialog (ADR-0025 section 4): the navigation is
+	// cancelled (SvelteKit restores the history position for back and forward), the confirmation
+	// opens, and "Verwerfen" starts it again. Logout and session end go to the login page and are
+	// not held up; closing the browser tab is not covered.
 	beforeNavigate((navigation) => {
 		const to = navigation.to;
 		if (discarding || navigation.type === 'leave' || to === null) return;
 		if (!to.route.id?.startsWith('/(app)/') || to.url.pathname === page.url.pathname) return;
 		if (detail.state !== 'ready' || !(detail.hasUnsavedInput || comments.dirty)) return;
-		if (!window.confirm(DISCARD_QUESTION)) navigation.cancel();
+		navigation.cancel();
+		leaving = {
+			url: to.url,
+			delta: navigation.type === 'popstate' ? navigation.delta : undefined
+		};
 	});
+
+	async function discardAndLeave() {
+		const target = leaving;
+		leaving = null;
+		if (target === null) return;
+		discarding = true;
+		if (target.delta !== undefined && target.delta !== 0) history.go(target.delta);
+		else await goto(appHref(target.url));
+	}
 
 	async function close() {
 		await goto(back);
@@ -90,3 +108,14 @@
 		<TicketActivity store={comments} {catalog} />
 	{/snippet}
 </TicketPanel>
+
+<ConfirmDialog
+	open={leaving !== null}
+	title="Änderungen verwerfen?"
+	confirmLabel="Verwerfen"
+	cancelLabel="Weiter bearbeiten"
+	onconfirm={() => void discardAndLeave()}
+	oncancel={() => (leaving = null)}
+>
+	<p>Der nicht gespeicherte Text geht verloren.</p>
+</ConfirmDialog>

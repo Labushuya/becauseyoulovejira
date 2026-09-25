@@ -21,13 +21,14 @@
 	import ProjectSelect from './ProjectSelect.svelte';
 	import StatusSelect from './StatusSelect.svelte';
 	import TagPicker from './TagPicker.svelte';
+	import ConfirmDialog from './overlay/ConfirmDialog.svelte';
 
 	// "Neues Ticket" in the side panel (E2 plan, T-8 and package 8; E3 plan, T-13 and T-14):
 	// title (required, focused), priority "Mittel", status "Offen", due date, project, tags and
 	// description. With the list filtered by an active project, that project is chosen in
 	// advance. "Anlegen" or Ctrl+Enter creates; the button is locked during the request, so a
-	// double click creates one ticket. "Abbrechen" and Escape ask first if something was entered,
-	// a name in the tag picker included. From the inbox (E4 plan, T-5) title and description come
+	// double click creates one ticket. "Abbrechen" and Escape ask first through the confirmation
+	// (ADR-0025 section 4) if something was entered, a name in the tag picker included. From the inbox (E4 plan, T-5) title and description come
 	// filled in; the date at the sender is only a hint with "Als Fälligkeit übernehmen" (P-5).
 	// An entry the user typed in brings the project, tags, priority and due date chosen then.
 	let {
@@ -58,7 +59,8 @@
 		oncancel: () => void;
 	} = $props();
 
-	const DISCARD_QUESTION = 'Neues Ticket verwerfen? Die Eingaben gehen verloren.';
+	/** The question before entered data is lost; "Weiter bearbeiten" keeps it. */
+	let confirmingDiscard = $state(false);
 
 	const uid = $props.id();
 	const ids = {
@@ -192,11 +194,12 @@
 
 	function cancel() {
 		if (pending) return;
-		if (dirty && !window.confirm(DISCARD_QUESTION)) return;
-		oncancel();
+		if (dirty) confirmingDiscard = true;
+		else oncancel();
 	}
 
 	function onkeydown(event: KeyboardEvent) {
+		if (confirmingDiscard) return;
 		if (event.key === 'Enter' && (event.ctrlKey || event.metaKey)) {
 			event.preventDefault();
 			void submit();
@@ -362,6 +365,20 @@
 		<p class="hint">Tipp: Strg+Enter legt das Ticket an.</p>
 	</form>
 </aside>
+
+<ConfirmDialog
+	open={confirmingDiscard}
+	title="Neues Ticket verwerfen?"
+	confirmLabel="Verwerfen"
+	cancelLabel="Weiter bearbeiten"
+	onconfirm={() => {
+		confirmingDiscard = false;
+		oncancel();
+	}}
+	oncancel={() => (confirmingDiscard = false)}
+>
+	<p>Die Eingaben gehen verloren.</p>
+</ConfirmDialog>
 
 <style>
 	h2 {

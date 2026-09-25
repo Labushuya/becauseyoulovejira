@@ -1,6 +1,7 @@
 // Component tests for comments (E2 plan, package 9): sanitized Markdown, own and foreign
 // comments, editing and cancelling, deleting with a question, `Strg+Enter`, the limit of
-// 20 000 characters and the error display. The store runs for real on a fake data layer.
+// 20 000 characters and the error display. The store runs for real on a fake data layer. Since
+// UI-3 the question is the confirmation of ADR-0025 section 4 instead of window.confirm.
 
 import { fireEvent, render, screen, within } from '@testing-library/svelte';
 import { tick } from 'svelte';
@@ -8,7 +9,16 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { DataError } from '$lib/data/errors';
 import { COMMENT_MAX_LENGTH, type Comment } from '$lib/domain/ticket';
 import { TicketActivityStore, type TicketActivityData } from '$lib/stores/ticket-activity.svelte';
+import { useOverlayStubs } from '$lib/test/overlay-stubs';
 import CommentList from './CommentList.svelte';
+
+useOverlayStubs();
+
+/** The open question "Kommentar löschen?". */
+async function deleteQuestion() {
+	await tick();
+	return screen.getByRole<HTMLDialogElement>('dialog', { name: 'Kommentar löschen?' });
+}
 
 const TICKET = 'ticket000000001';
 const ME = 'user0000000001';
@@ -243,20 +253,39 @@ describe('editing and deleting', () => {
 
 	it('asks before deleting and keeps the comment on "Abbrechen"', async () => {
 		const { data } = await renderComments();
-		const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false);
 
 		await fireEvent.click(screen.getByRole('button', { name: /^Löschen: / }));
+		const dialog = await deleteQuestion();
 
-		expect(confirm).toHaveBeenCalledWith('Kommentar löschen?');
+		expect(dialog.open).toBe(true);
+		const text = document.getElementById(dialog.getAttribute('aria-describedby') ?? '');
+		expect(text?.textContent?.trim()).toMatch(/^Der Kommentar von .+ wird endgültig gelöscht\.$/);
+		const cancel = within(dialog).getByRole('button', { name: 'Abbrechen' });
+		expect(document.activeElement).toBe(cancel);
+
+		await fireEvent.click(cancel);
+
+		expect(dialog.open).toBe(false);
 		expect(data.deleteComment).not.toHaveBeenCalled();
 		expect(screen.getByText('fetter')).toBeTruthy();
 	});
 
+	it('keeps the comment on Escape', async () => {
+		const { data } = await renderComments();
+		await fireEvent.click(screen.getByRole('button', { name: /^Löschen: / }));
+		const dialog = await deleteQuestion();
+
+		await fireEvent.keyDown(dialog, { key: 'Escape' });
+
+		expect(dialog.open).toBe(false);
+		expect(data.deleteComment).not.toHaveBeenCalled();
+	});
+
 	it('deletes after confirmation and hands the focus to the owner', async () => {
 		const { data, ondeleted } = await renderComments();
-		vi.spyOn(window, 'confirm').mockReturnValue(true);
 
 		await fireEvent.click(screen.getByRole('button', { name: /^Löschen: / }));
+		await fireEvent.click(within(await deleteQuestion()).getByRole('button', { name: 'Löschen' }));
 
 		await vi.waitFor(() => expect(screen.getByText('Noch keine Kommentare.')).toBeTruthy());
 		expect(data.deleteComment).toHaveBeenCalledOnce();
@@ -265,13 +294,15 @@ describe('editing and deleting', () => {
 
 	it('shows an error when deleting fails', async () => {
 		const { data } = await renderComments();
-		vi.spyOn(window, 'confirm').mockReturnValue(true);
 		data.deleteComment.mockRejectedValueOnce(new DataError('forbidden', { status: 403 }));
 
 		await fireEvent.click(screen.getByRole('button', { name: /^Löschen: / }));
+		const dialog = await deleteQuestion();
+		await fireEvent.click(within(dialog).getByRole('button', { name: 'Löschen' }));
 
 		const error = await screen.findByText('Dafür fehlt die Berechtigung.');
 		expect(error.closest('.field-error')).not.toBeNull();
+		expect(dialog.open).toBe(false);
 		expect(screen.getByText('fetter')).toBeTruthy();
 	});
 });

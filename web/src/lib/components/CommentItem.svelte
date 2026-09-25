@@ -7,9 +7,11 @@
 	import ErrorIcon from './ErrorIcon.svelte';
 	import Markdown from './Markdown.svelte';
 	import MarkdownEditor from './MarkdownEditor.svelte';
+	import ConfirmDialog from './overlay/ConfirmDialog.svelte';
 
 	// One comment (E2 plan, T-9 and T-13): author relative to the signed-in user, time in Berlin,
-	// "bearbeitet" after a change, sanitized Markdown. Only own comments offer "Bearbeiten" and
+	// "bearbeitet" after a change, sanitized Markdown. "Löschen" asks through the confirmation of
+	// ADR-0025 section 4; a failure shows at the comment. Only own comments offer "Bearbeiten" and
 	// "Löschen"; the API rules enforce it.
 	let {
 		comment,
@@ -61,9 +63,19 @@
 		}
 	}
 
-	async function remove() {
-		if (busy || !window.confirm('Kommentar löschen?')) return;
-		if (await store.deleteComment(comment.id)) ondeleted();
+	let confirmingDelete = $state(false);
+	let deleting = $state(false);
+
+	function remove() {
+		if (!busy) confirmingDelete = true;
+	}
+
+	async function confirmRemove() {
+		deleting = true;
+		const deleted = await store.deleteComment(comment.id);
+		deleting = false;
+		confirmingDelete = false;
+		if (deleted) ondeleted();
 	}
 </script>
 
@@ -121,6 +133,16 @@
 			{/if}
 		{/if}
 	</article>
+	<ConfirmDialog
+		open={confirmingDelete}
+		title="Kommentar löschen?"
+		confirmLabel="Löschen"
+		busy={deleting}
+		onconfirm={() => void confirmRemove()}
+		oncancel={() => (confirmingDelete = false)}
+	>
+		<p>Der Kommentar von {author} vom {time} wird endgültig gelöscht.</p>
+	</ConfirmDialog>
 </li>
 
 <style>

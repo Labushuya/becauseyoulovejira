@@ -1,7 +1,8 @@
 // Component tests of the capture by template (E4 plan, package 5; OF-E4-1 (a), OF-E4-3): radio
 // group of the templates, required fields with field errors (ADR-0009), target ticket or inbox
 // (switch, Alt+Enter, Ctrl+Enter), result with link, emptied form, and the route /eingang/neu
-// with the template in the URL.
+// with the template in the URL. Since UI-3 the question before discarding is the confirmation of
+// ADR-0025 section 4 instead of window.confirm.
 
 import { fireEvent, render, screen, within } from '@testing-library/svelte';
 import { tick } from 'svelte';
@@ -11,8 +12,11 @@ import type { Project } from '$lib/domain/project';
 import type { Capture, CaptureTarget } from '$lib/domain/templates';
 import type { Ticket } from '$lib/domain/ticket';
 import type { CaptureSaveResult } from '$lib/stores/capture';
+import { useOverlayStubs } from '$lib/test/overlay-stubs';
 import CaptureForm from './CaptureForm.svelte';
 import CapturePage from '../../routes/(app)/eingang/neu/+page.svelte';
+
+useOverlayStubs();
 
 const mocks = vi.hoisted(() => ({
 	goto: vi.fn(async () => undefined),
@@ -228,16 +232,33 @@ describe('capture form', () => {
 	});
 
 	it('asks before closing with input and closes at once without', async () => {
-		const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false);
 		const { onclose } = renderForm();
 		await fireEvent.click(screen.getByRole('button', { name: 'Schließen' }));
-		expect(confirm).not.toHaveBeenCalled();
+		expect(document.querySelector('dialog[open]')).toBeNull();
 		expect(onclose).toHaveBeenCalledOnce();
 
 		await fireEvent.input(field(/^Was\?/), { target: { value: 'A' } });
 		await fireEvent.keyDown(field(/^Was\?/), { key: 'Escape' });
-		expect(confirm).toHaveBeenCalledOnce();
+		await tick();
+		const question = screen.getByRole<HTMLDialogElement>('dialog', {
+			name: 'Erfassung verwerfen?'
+		});
+		expect(document.activeElement).toBe(
+			within(question).getByRole('button', { name: 'Weiter bearbeiten' })
+		);
+		await fireEvent.click(within(question).getByRole('button', { name: 'Weiter bearbeiten' }));
+		expect(question.open).toBe(false);
 		expect(onclose).toHaveBeenCalledOnce();
+		expect(field(/^Was\?/).value).toBe('A');
+
+		await fireEvent.click(screen.getByRole('button', { name: 'Schließen' }));
+		await tick();
+		await fireEvent.click(
+			within(screen.getByRole('dialog', { name: 'Erfassung verwerfen?' })).getByRole('button', {
+				name: 'Verwerfen'
+			})
+		);
+		expect(onclose).toHaveBeenCalledTimes(2);
 	});
 });
 
