@@ -960,6 +960,9 @@ Wird je Paket ergänzt.
 | 2026-09-26 | EH-10 | Bewusst **nicht** umgestellt: `ClipboardImport`, `BulkConvertDialog` und `RecurrenceForm` haben keine Hinweise im Sinne von §3.9, nur Feldhilfen (`.hint`, bleiben nach §3.9 „Tipps in Formularen“) und Ergebnisfehler mit Liste als `.alert-error` (bleibt für Formularfehler, §3.9 „Verhältnis zu `.alert-error`“). Leere Listen heißen jetzt nach der Regel ohne Punkt („Der Posteingang ist leer“, „Keine Nachricht passt zu den Filtern“). |
 | 2026-09-26 | EH-10 | `no-own-notices.test.ts` (unter `lib/`): verbietet in allen `.svelte`-Dateien außerhalb von `components/guidance/` lokale Klassen `.notice`/`.empty` (Stil, `class`-Attribut, `class:`; `empty-state` zählt nicht) und in allen Quellen außer `lib/guidance/texts.ts` den Wortlaut „nächsten Start/Neustart“. Er erfasst die Bausteine (`SectionMessage`, `EmptyState`, `Lozenge` müssen unter `guidance/` liegen) und prüft, dass die fünf umgestellten Dateien sie importieren. Ausnahmeliste: `InboxTable`, `TicketTable` (EH-11) und `ProjectsView` (EH-12); ein Eintrag ohne lokale Klasse lässt den Test scheitern, damit die Liste nur schrumpft. |
 | 2026-09-26 | EH-10 | Bewusst angepasste Tests: `mailbox-picker` (leerer Posteingang als Überschrift ohne Punkt), `whatsapp-import` (Hinweis ohne Stichwörter als Info mit Link; leerer Filter als Überschrift), `keyword-editor` und `file-import-dialog` (Ton und Aufbau der Meldung zusätzlich geprüft). Neu: `lib/no-own-notices.test.ts`. Manifest: BYL-E6-054 bestanden. |
+| 2026-09-26 | EH-11 | Aufgaben (`TicketTable`): „Keine offenen Tickets“ (`EmptyState` wide, Icon `tickets`, ein Satz, Primär „Ticket anlegen“ statt „Neues Ticket“ nach der Verb-Regel, sekundär „Schnellerfassung c“ als `.button-subtle`) und „Keine Tickets für diese Filter“ (Icon `search`, einzige Aktion „Filter zurücksetzen“ als Primärknopf; Fokus danach wie bisher auf „Aufgaben“). Die Zeilen im Abschnitt „Erledigt“ bleiben gedämpfter Text in der Tabellenzelle (kein leerer Zustand einer Ansicht). Die Schnellerfassung erreicht die Tabelle über den neuen Kontext `lib/quick-capture-context.ts` (`setQuickCaptureOpener` im `(app)`-Layout, `getQuickCaptureOpener` in der Ansicht); ohne Layout fehlt die Aktion. `base.css`: Links mit `.button-primary`/`-secondary`/`-subtle` ohne Unterstreichung. |
+| 2026-09-26 | EH-11 | Eingang (`InboxTable`): „Der Eingang ist leer“ (wide, Icon `inbox`, „Hier landet, was du erfasst oder was deine Kanäle abrufen.“, Primär „Erfassen“, sekundär „Kanal einrichten“), Filter ohne Treffer (narrow, `search`, „Filter zurücksetzen“), „Keine verworfenen Einträge“ und „Keine umgewandelten Einträge“ (narrow, ohne Aktion, ein erklärender Satz). „Nicht verfügbar“ ist eine Info `live`, Ladefehler ein Fehler `live` mit „Erneut versuchen“ (ein Snippet für beide Fehler). Panels: `CommentList` und `HistoryList` mit `EmptyState compact` (Überschrift h3), `InboxPanel` mit dem Hinweis zu verworfenen Einträgen als Info compact. Ladefehler in Kommentaren und Verlauf bleiben `.alert-error` (§3.9, schon so gebaut); „Kein Text.“ und „Keine Beschreibung.“ sind Feldwerte, keine leeren Zustände. `TicketActivity`, `TicketFields` und `TicketMeta` hatten keine Hinweise. |
+| 2026-09-26 | EH-11 | `no-own-notices.test.ts`: Ausnahmeliste nur noch `ProjectsView` (EH-12); die zehn umgestellten Dateien von EH-10 und EH-11 müssen die Bausteine importieren. Bewusst angepasste Tests: `ticket-table` (Überschriften ohne Punkt, Link „Ticket anlegen“, Primärknopf „Filter zurücksetzen“), `inbox-table` (Überschriften, Aktionen des leeren Eingangs), `comments`, `ticket-panel` und `history-list` (Texte ohne Punkt), `inbox-panel` (Info compact statt `.hint`). Neu: Fälle für die Schnellerfassung aus dem leeren Zustand, Ladefehler im Eingang und leere Zustände „verworfen“/„umgewandelt“. Manifest: BYL-E6-055 bestanden. |
 
 ## 8. Status
 
@@ -975,8 +978,9 @@ Wird je Paket ergänzt.
 | EH-6 | gemergt (#66) |
 | EH-9 | gemergt (#67) |
 | EH-8 | gemergt (#68) |
-| EH-10 | umgesetzt (dieser PR) |
-| EH-11 bis EH-13 | geplant |
+| EH-10 | gemergt (#69) |
+| EH-11 | umgesetzt (dieser PR) |
+| EH-12, EH-13 | geplant |
 
 ## Quellen (nur Muster, keine Assets)
 

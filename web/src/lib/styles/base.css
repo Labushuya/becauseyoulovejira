@@ -80,6 +80,13 @@ input {
 	outline-offset: 2px;
 }
 
+/* Links that look like buttons (empty states, guides) carry no underline (plan EH-11). */
+a.button-primary,
+a.button-secondary,
+a.button-subtle {
+	text-decoration: none;
+}
+
 .button-primary {
 	display: inline-flex;
 	align-items: center;

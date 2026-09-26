@@ -114,7 +114,7 @@ describe('comment list', () => {
 	it('shows the empty state', async () => {
 		await renderComments([]);
 
-		expect(screen.getByText('Noch keine Kommentare.')).toBeTruthy();
+		expect(screen.getByText('Noch keine Kommentare')).toBeTruthy();
 	});
 
 	it('shows a loading error with "Erneut versuchen"', async () => {
@@ -287,7 +287,7 @@ describe('editing and deleting', () => {
 		await fireEvent.click(screen.getByRole('button', { name: /^Löschen: / }));
 		await fireEvent.click(within(await deleteQuestion()).getByRole('button', { name: 'Löschen' }));
 
-		await vi.waitFor(() => expect(screen.getByText('Noch keine Kommentare.')).toBeTruthy());
+		await vi.waitFor(() => expect(screen.getByText('Noch keine Kommentare')).toBeTruthy());
 		expect(data.deleteComment).toHaveBeenCalledOnce();
 		expect(ondeleted).toHaveBeenCalledOnce();
 	});

@@ -15,6 +15,7 @@
 	import type { InboxStore } from '$lib/stores/inbox.svelte';
 	import { convertHref, ticketPath } from '$lib/ticket-links';
 	import ErrorIcon from './ErrorIcon.svelte';
+	import SectionMessage from './guidance/SectionMessage.svelte';
 	import Markdown from './Markdown.svelte';
 	import Drawer from './overlay/Drawer.svelte';
 
@@ -184,7 +185,7 @@
 		</div>
 
 		{#if item.state === 'discarded'}
-			<p class="hint">{DISCARDED_CONTENT_NOTE}</p>
+			<SectionMessage tone="info" compact>{DISCARDED_CONTENT_NOTE}</SectionMessage>
 		{/if}
 
 		{#if duplicates !== null && (duplicates.tickets.length > 0 || duplicates.items.length > 0)}

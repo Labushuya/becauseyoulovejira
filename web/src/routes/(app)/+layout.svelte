@@ -9,6 +9,7 @@
 	import QuickCapture from '$lib/components/QuickCapture.svelte';
 	import { isHelpKey, isQuickCaptureKey, isTypingTarget } from '$lib/domain/keyboard';
 	import { pb } from '$lib/pocketbase';
+	import { setQuickCaptureOpener } from '$lib/quick-capture-context';
 	import {
 		panelFreeTicketCreate,
 		quickTicketData,
@@ -117,6 +118,8 @@
 		createItem: (draft) => inbox.create(draft),
 		markRead: (ticket) => tickets.markRead(ticket)
 	};
+	// Empty states offer "Schnellerfassung (c)" through the context (plan EH-11).
+	setQuickCaptureOpener(() => (quickOpen = true));
 
 	// Modal "Tastaturkürzel" (plan EH-9): `?` opens it under the same conditions as `c`, the help
 	// menu in the header as well.

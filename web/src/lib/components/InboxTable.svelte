@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { tick, type Snippet } from 'svelte';
 	import { goto } from '$app/navigation';
+	import { resolve } from '$app/paths';
 	import { page } from '$app/state';
 	import { berlinDateOf, formatBerlinDateTime, formatCalendarDate } from '$lib/domain/format';
 	import {
@@ -24,7 +25,8 @@
 		withInboxQuery
 	} from '$lib/ticket-links';
 	import ChipGroup from './ChipGroup.svelte';
-	import ErrorIcon from './ErrorIcon.svelte';
+	import EmptyState from './guidance/EmptyState.svelte';
+	import SectionMessage from './guidance/SectionMessage.svelte';
 	import SectionBar from './SectionBar.svelte';
 	import ViewSwitch from './ViewSwitch.svelte';
 
@@ -278,43 +280,67 @@
 		{/if}
 	</div>
 
-	{#if unavailable && store.error}
-		{#if store.error === INBOX_UNAVAILABLE_MESSAGE}
-			<p class="empty" role="status">{store.error}</p>
-		{:else}
-			<div class="alert-error notice">
-				<ErrorIcon />
-				<span class="failure-text">{store.error}</span>
-				<button class="text-button" type="button" onclick={() => store.reload()}>
+	{#snippet failure(message: string)}
+		<SectionMessage tone="error" live>
+			{message}
+			{#snippet actions()}
+				<button class="button-subtle" type="button" onclick={() => store.reload()}>
 					Erneut versuchen
 				</button>
-			</div>
+			{/snippet}
+		</SectionMessage>
+	{/snippet}
+
+	{#if unavailable && store.error}
+		{#if store.error === INBOX_UNAVAILABLE_MESSAGE}
+			<SectionMessage tone="info" live>{store.error}</SectionMessage>
+		{:else}
+			{@render failure(store.error)}
 		{/if}
 	{:else if !showsNew && store.handledLoad === 'error' && store.handledError}
-		<div class="alert-error notice">
-			<ErrorIcon />
-			<span class="failure-text">{store.handledError}</span>
-			<button class="text-button" type="button" onclick={() => store.reload()}>
-				Erneut versuchen
-			</button>
-		</div>
+		{@render failure(store.handledError)}
 	{:else if ready && rows.length === 0 && !store.handledHasMore}
-		<div class="empty">
-			{#if query.source !== null}
-				<p>Keine Einträge für diese Filter.</p>
-				<button class="text-button" type="button" onclick={clearSource}>Filter zurücksetzen</button>
-			{:else if showsNew}
-				<p>Der Eingang ist leer.</p>
-				<p class="muted">
-					Einträge kommen über <a href={captureHref(page.url)}>Erfassen</a> und die Kanäle, sobald sie
-					eingerichtet sind.
-				</p>
-			{:else if query.state === 'discarded'}
-				<p>Keine verworfenen Einträge.</p>
-			{:else}
-				<p>Keine umgewandelten Einträge.</p>
-			{/if}
-		</div>
+		{#if query.source !== null}
+			<EmptyState
+				size="narrow"
+				icon="search"
+				title="Keine Einträge für diese Filter"
+				description="Andere Quellen wählen oder den Filter zurücksetzen."
+			>
+				{#snippet primary()}
+					<button class="button-primary" type="button" onclick={clearSource}>
+						Filter zurücksetzen
+					</button>
+				{/snippet}
+			</EmptyState>
+		{:else if showsNew}
+			<EmptyState
+				icon="inbox"
+				title="Der Eingang ist leer"
+				description="Hier landet, was du erfasst oder was deine Kanäle abrufen."
+			>
+				{#snippet primary()}
+					<a class="button-primary" href={captureHref(page.url)}>Erfassen</a>
+				{/snippet}
+				{#snippet secondary()}
+					<a class="button-subtle" href={resolve('/einstellungen/kanaele')}>Kanal einrichten</a>
+				{/snippet}
+			</EmptyState>
+		{:else if query.state === 'discarded'}
+			<EmptyState
+				size="narrow"
+				icon="inbox"
+				title="Keine verworfenen Einträge"
+				description="Verworfenes bleibt hier; der Inhalt wird nach 30 Tagen geleert."
+			/>
+		{:else}
+			<EmptyState
+				size="narrow"
+				icon="inbox"
+				title="Keine umgewandelten Einträge"
+				description="Was du in ein Ticket umwandelst, steht danach hier mit einem Link zum Ticket."
+			/>
+		{/if}
 	{:else if !ready}
 		<p class="loading" role="status">Eingang wird geladen …</p>
 	{/if}
@@ -482,8 +508,7 @@
 		cursor: not-allowed;
 	}
 
-	.hint,
-	.muted {
+	.hint {
 		font-size: 0.75rem;
 		color: var(--color-text-muted);
 	}
@@ -671,7 +696,6 @@
 		cursor: progress;
 	}
 
-	.empty,
 	.loading {
 		padding: 1.5rem 0;
 		color: var(--color-text-muted);
@@ -690,15 +714,6 @@
 		to {
 			visibility: visible;
 		}
-	}
-
-	.notice {
-		align-items: center;
-		margin-bottom: 0.75rem;
-	}
-
-	.failure-text {
-		flex: 1;
 	}
 
 	.text-button {

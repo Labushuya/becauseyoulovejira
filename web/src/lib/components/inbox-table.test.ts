@@ -227,18 +227,29 @@ describe('inbox table', () => {
 
 	it('filters by source and offers to reset an empty result', async () => {
 		setup({ query: { source: 'chat', state: 'new' } });
-		expect(await screen.findByText('Keine Einträge für diese Filter.')).toBeTruthy();
+		expect(
+			await screen.findByRole('heading', { name: 'Keine Einträge für diese Filter' })
+		).toBeTruthy();
 		await fireEvent.click(screen.getByRole('button', { name: 'Filter zurücksetzen' }));
 		expect(mocks.goto).toHaveBeenLastCalledWith('/eingang', { keepFocus: true, noScroll: true });
 	});
 
 	it('says that the inbox is empty and where entries come from', async () => {
 		setup({ items: [] });
-		expect(await screen.findByText('Der Eingang ist leer.')).toBeTruthy();
-		// Two links "Erfassen": in the section bar and in the text of the empty inbox.
+		const heading = await screen.findByRole('heading', { name: 'Der Eingang ist leer' });
+		const empty = heading.closest('.empty-state') as HTMLElement;
+		expect(empty.textContent).toMatch(/Hier landet, was du erfasst oder was deine Kanäle abrufen/);
+		// Two links "Erfassen": in the section bar and as the primary action of the empty inbox.
 		const links = screen.getAllByRole('link', { name: 'Erfassen' });
 		expect(links).toHaveLength(2);
 		for (const link of links) expect(link.getAttribute('href')).toBe('/eingang/neu');
+		expect(within(empty).getByRole('link', { name: 'Erfassen' }).className).toMatch(
+			/button-primary/
+		);
+		// The second way in: set up a channel (EH-11).
+		const channel = within(empty).getByRole('link', { name: 'Kanal einrichten' });
+		expect(channel.getAttribute('href')).toBe('/einstellungen/kanaele');
+		expect(channel.className).not.toMatch(/button-primary/);
 		expect(screen.queryByRole('table')).toBeNull();
 	});
 
@@ -275,6 +286,48 @@ describe('inbox table', () => {
 		store.activate({ source: null, state: 'new' });
 		const note = await screen.findByText(/Der Eingang ist nach dem nächsten Neustart verfügbar/);
 		expect(note.closest('.alert-error')).toBeNull();
+		// Section message "info" with the role status since EH-11.
+		expect(note.closest('[data-tone]')?.getAttribute('data-tone')).toBe('info');
+		expect(note.closest('[role="status"]')).not.toBeNull();
+	});
+
+	it('shows a failed load as an error message with "Erneut versuchen" (EH-11)', async () => {
+		const { data, store } = setup({ items: [] });
+		data.listNew.mockRejectedValue(new DataError('network'));
+		const reload = vi.spyOn(store, 'reload');
+		store.reset();
+		await store.load();
+		store.activate({ source: null, state: 'new' });
+		// activate() loads once more; wait until that failed as well, so the message stays.
+		await vi.waitFor(() => expect(data.listNew).toHaveBeenCalledTimes(3));
+		await vi.waitFor(() => expect(store.state).toBe('error'));
+		await tick();
+		const alert = await vi.waitFor(() => {
+			const found = screen
+				.getAllByRole('alert')
+				.find((element) => element.getAttribute('data-tone') === 'error');
+			if (!found) throw new Error('no section message');
+			return found;
+		});
+		expect(alert.textContent).toMatch(/^\s*Fehler:/);
+		await fireEvent.click(within(alert).getByRole('button', { name: 'Erneut versuchen' }));
+		expect(reload).toHaveBeenCalledOnce();
+	});
+
+	it.each([
+		['discarded', 'Keine verworfenen Einträge'],
+		['converted', 'Keine umgewandelten Einträge']
+	] as const)('shows the empty state for %s entries without an action', async (state, title) => {
+		const { data, store } = setup({ query: { source: null, state } });
+		data.listHandled.mockResolvedValue({ items: [], page: 1, hasMore: false });
+		store.reset();
+		await store.load();
+		store.activate({ source: null, state });
+		const heading = await screen.findByRole('heading', { name: title });
+		const empty = heading.closest('.empty-state') as HTMLElement;
+		expect(empty.classList.contains('narrow')).toBe(true);
+		expect(within(empty).queryByRole('button')).toBeNull();
+		expect(within(empty).queryByRole('link')).toBeNull();
 	});
 
 	it('removes a discarded row at once, moves the focus to the next row and offers "Rückgängig" in the flag', async () => {
