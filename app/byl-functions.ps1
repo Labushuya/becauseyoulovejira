@@ -604,6 +604,47 @@ function Select-MailHelperProcess {
     }
 }
 
+function Stop-SelectedProcess {
+    # Stops the processes of $Candidates by process id (stop.bat), each only if $Select still
+    # chooses the process right before (the PID could have been reused since the snapshot).
+    # The operations are parameters, so the tests run this with fake processes:
+    #   $GetCurrent  param($ProcessId) -> process objects shaped like Win32_Process (none if gone),
+    #   $StopProcess param($ProcessId) -> ends the process and waits for it; may throw,
+    #   $Report      param($Text)      -> progress line ("Beende ..."),
+    #   $StillRunningText              -> reason if the process runs on without an error (the text
+    #                                     comes from byl-control.ps1: this file stays ASCII).
+    # A process counts as failed only if $Select still chooses it afterwards: a stop that throws
+    # because the process ended on its own is no failure, and a foreign process that reused the PID
+    # is not "still running". Emits one readable line per failure, each as its own string (never a
+    # nested array, which turned into "System.String[]" in the message of stop.bat).
+    param(
+        [AllowNull()][AllowEmptyCollection()][object[]]$Candidates,
+        [Parameter(Mandatory = $true)][scriptblock]$Select,
+        [Parameter(Mandatory = $true)][string]$Name,
+        [Parameter(Mandatory = $true)][scriptblock]$GetCurrent,
+        [Parameter(Mandatory = $true)][scriptblock]$StopProcess,
+        [Parameter(Mandatory = $true)][string]$StillRunningText,
+        [scriptblock]$Report = { param($Text) $null = $Text }
+    )
+
+    foreach ($candidate in @($Candidates)) {
+        if ($null -eq $candidate) { continue }
+        $processId = [int]$candidate.ProcessId
+        if (@(& $Select @(& $GetCurrent $processId)).Count -eq 0) { continue }
+        & $Report "Beende $Name (PID $processId) ..."
+        $problem = $null
+        try {
+            & $StopProcess $processId
+        }
+        catch {
+            $problem = $_.Exception.Message
+        }
+        if (@(& $Select @(& $GetCurrent $processId)).Count -eq 0) { continue }
+        if ([string]::IsNullOrWhiteSpace($problem)) { $problem = $StillRunningText }
+        [string]"$Name (PID $processId): $problem"
+    }
+}
+
 function Get-MailHelperDecision {
     # Whether start.bat starts byl-mail.exe (E4 plan package 11): only if the file is in the app
     # folder, the ingest token is set, no own helper runs yet and PocketBase lists at least one

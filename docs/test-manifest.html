@@ -212,9 +212,9 @@
 {
   "meta": {
     "projekt": "becauseyoulovejira",
-    "stand": "2026-09-26",
-    "commit": "f94b140",
-    "etappe": "E0 bis E4 abgeschlossen (E4: Pakete 1 bis 11, 13 bis 17, 19 bis 24; Paket 12 entfällt, Paket 18 zurückgestellt); E5 abgeschlossen (Pakete 1 bis 7: BYL-E5-001 bis BYL-E5-007 bestanden, Browser-Prüfung BYL-E5-008 offen); E6 UI-Konsistenz vorgezogen und umgesetzt (UI-0 bis UI-9 und UI-6b: BYL-E6-001 bis BYL-E6-028; Projektliste und Tags in den Einstellungen nach Nutzerwunsch: BYL-E6-065 bis BYL-E6-067); E6 Einstellungen und Hilfe umgesetzt (EH-0 bis EH-13: BYL-E6-029 bis BYL-E6-059, manuelle Browser-Prüfungen offen); Akzent-Themes nach ADR-0027 (Nutzerwunsch): Tokens und Tests BYL-E6-068 bis BYL-E6-070, Auswahl BYL-E6-071 bis BYL-E6-073, Sichtprüfung BYL-E6-074 offen"
+    "stand": "2026-09-27",
+    "commit": "ccb4297",
+    "etappe": "E0 bis E4 abgeschlossen (E4: Pakete 1 bis 11, 13 bis 17, 19 bis 24; Paket 12 entfällt, Paket 18 zurückgestellt); E5 abgeschlossen (Pakete 1 bis 7: BYL-E5-001 bis BYL-E5-007 bestanden, Browser-Prüfung BYL-E5-008 offen); E6 UI-Konsistenz vorgezogen und umgesetzt (UI-0 bis UI-9 und UI-6b: BYL-E6-001 bis BYL-E6-028; Projektliste und Tags in den Einstellungen nach Nutzerwunsch: BYL-E6-065 bis BYL-E6-067); E6 Einstellungen und Hilfe umgesetzt (EH-0 bis EH-13: BYL-E6-029 bis BYL-E6-059, manuelle Browser-Prüfungen offen); Akzent-Themes nach ADR-0027 (Nutzerwunsch): Tokens und Tests BYL-E6-068 bis BYL-E6-070, Auswahl BYL-E6-071 bis BYL-E6-073, Sichtprüfung BYL-E6-074 offen; Testfeedback Paket A: stop.bat BYL-E6-075 (manuell BYL-E6-076 offen)"
   },
   "blocks": [
     {
@@ -1647,6 +1647,19 @@
         { "id": "BYL-E6-074", "title": "Sichtprüfung aller Themes in hell und dunkel", "art": ["manuell"], "status": "offen",
           "pre": "ADR-0027. Build von main in app\\, F5; Chrome, Firefox und Opera GX. Ein paar Tickets in allen Status (Backlog, Offen, In Arbeit, Wartet, Erledigt), ein Projekt, ein Eingangseintrag.", "steps": ["Für jede der fünf Farben (Menü „Darstellung“ → „Farbe“) jeweils in „Hell“ und „Dunkel“: Aufgaben mit Kennzahlen, aktivem Filter-Chip, gewählter Zeile und offenem Seitenpanel ansehen; „Neues Ticket“ (Primärknopf), Links, Fokusring (Tab), Status-Pillen „Offen“, „In Arbeit“, „Wartet“, „Erledigt“ und die Umschalter Aufgaben | Projekte | Eingang | Wiederholungen: alles in der gewählten Farbe, gut lesbar, keine Reste von Petrol.", "Rubin, hell und dunkel: bei „Neues Ticket“ ohne Titel speichern (Feldfehler): der Fehler ist ziegelrot, klar anders als der Rubin-Akzent, mit Symbol und Text.", "Honig hell: Knöpfe und Links bernsteinbraun, gewählte Zeile und Chips goldgelb mit dunkler Schrift; Honig dunkel: goldener Primärknopf mit dunkler Schrift. „Wartet“ ist schiefergrau-blau und von „In Arbeit“ zu unterscheiden.", "Smaragd neben Petrol (zwei Fenster): deutlich grün gegen blaugrün.", "Einstellungen → Darstellung: die fünf Farbkacheln zeigen je ihre eigene Farbe, auch wenn eine andere gewählt ist; mit Tab in die Gruppe und mit den Pfeiltasten wählen.", "Eine Farbe wählen, F5: kein Aufblitzen in Petrol; ein zweites Fenster schaltet beim Wechsel mit um.", "Geführte Tour („?“ → „Kurze Einführung“) in einer anderen Farbe: „Weiter“ trägt die Farbe."],
           "expect": "Jede Farbe wirkt in beiden Modi ruhig und stimmig, nur mit einer Akzentfarbe; Text bleibt lesbar, Fehler bleiben eindeutig, nichts blitzt beim Laden auf.",
+          "tests": [] }
+      ]
+    },
+    {
+      "tag": "E6", "name": "Testfeedback Paket A", "desc": "Rückmeldungen aus dem Test des Nutzers (Paket A): stop.bat, Stichwörter bei Mail, Stichwort-Eingabe, manueller Abruf, Farbthemes, Checkboxen und Radios.",
+      "items": [
+        { "id": "BYL-E6-075", "title": "stop.bat meldet nach erfolgreichem Beenden keinen Fehler", "art": ["unit"], "status": "bestanden",
+          "pre": "Stop-SelectedProcess in app/byl-functions.ps1 mit gefälschten Prozessen; die Skripte selbst laufen nie (CLAUDE.md §11.3).", "steps": ["npm run test:unit"],
+          "expect": "Enden Mail-Hilfsprozess und PocketBase, gibt es keinen Fehler und keinen Text „System.String[]“; gemeldet werden nur „Beende … (PID …) …“. Ein Prozess, der vor dem Stopp schon weg oder fremd ist, wird übersprungen. Wirft der Stopp, obwohl der Prozess endete, ist das kein Fehler; läuft er weiter, steht eine lesbare Zeile wie „PocketBase (PID 705): Zugriff verweigert“ bzw. „… läuft nach 10 Sekunden noch“ da. Ein fremder Prozess mit derselben PID zählt nicht als „läuft noch“. Invoke-Stop sammelt die Fehler als einzelne Zeichenketten, ohne „return ,“ und ohne „$failed +=“.",
+          "tests": ["tests/unit/start-logic.test.mjs::Stop-SelectedProcess (stop.bat)", "tests/unit/start-scripts.test.mjs::collects the failures as single strings, never as a nested array", "tests/unit/start-scripts.test.mjs::stops only processes chosen by Select-AppProcess, by process id"] },
+        { "id": "BYL-E6-076", "title": "stop.bat im echten Betrieb", "art": ["manuell"], "status": "offen",
+          "pre": "App läuft mit eingeschalteter Mail-Verbindung (byl-mail.exe aktiv).", "steps": ["stop.bat doppelklicken."],
+          "expect": "Es erscheinen „Beende byl-mail.exe (PID …) …“, „Beende PocketBase (PID …) …“ und „becauseyoulovejira wurde beendet.“; das Fenster schließt nach 5 Sekunden, ohne „System.String[]“ und ohne „Drücken Sie eine beliebige Taste“.",
           "tests": [] }
       ]
     },

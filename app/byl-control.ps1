@@ -310,36 +310,27 @@ function Invoke-Start {
 }
 
 function Stop-OwnProcess {
-    # Stops the processes of $Candidates by process id, each only if $Select still chooses it right
-    # before (the PID could have been reused since the snapshot). Stop-Process -Force ends a process
-    # hard (TerminateProcess): SQLite in WAL mode treats that like a crash (committed transactions
-    # survive, see README), the mail helper only reads and starts its interrupted run again.
-    # Returns the failures as text.
+    # Stops the own processes of $Candidates through Stop-SelectedProcess (byl-functions.ps1) with
+    # the real operations. Stop-Process -Force ends a process hard (TerminateProcess): SQLite in WAL
+    # mode treats that like a crash (committed transactions survive, see README), the mail helper
+    # only reads and starts its interrupted run again. Emits the failures as single strings.
     param(
         [AllowEmptyCollection()][object[]]$Candidates,
         [Parameter(Mandatory = $true)][scriptblock]$Select,
         [Parameter(Mandatory = $true)][string]$Name
     )
 
-    $failed = New-Object System.Collections.Generic.List[string]
-    foreach ($candidate in @($Candidates)) {
-        $processId = [int]$candidate.ProcessId
-        $current = @(Get-CimInstance -ClassName Win32_Process -Filter "ProcessId = $processId" -Property ProcessId, Name, ExecutablePath, CommandLine)
-        if (@(& $Select $current).Count -eq 0) { continue }
-        Write-Status "Beende $Name (PID $processId) ..."
-        try {
-            Stop-Process -Id $processId -Force
-            Wait-Process -Id $processId -Timeout 10 -ErrorAction SilentlyContinue
-        }
-        catch {
-            $failed.Add("$Name, PID ${processId}: $($_.Exception.Message)")
-            continue
-        }
-        if (Get-Process -Id $processId -ErrorAction SilentlyContinue) {
-            $failed.Add("$Name, PID ${processId}: läuft nach 10 Sekunden noch")
-        }
+    Stop-SelectedProcess -Candidates $Candidates -Select $Select -Name $Name -GetCurrent {
+        param($processId)
+        Get-CimInstance -ClassName Win32_Process -Filter "ProcessId = $([int]$processId)" -Property ProcessId, Name, ExecutablePath, CommandLine
+    } -StopProcess {
+        param($processId)
+        Stop-Process -Id $processId -Force
+        Wait-Process -Id $processId -Timeout 10 -ErrorAction SilentlyContinue
+    } -StillRunningText 'läuft nach 10 Sekunden noch' -Report {
+        param($Text)
+        Write-Status $Text
     }
-    return , $failed.ToArray()
 }
 
 function Invoke-Stop {
@@ -353,13 +344,14 @@ function Invoke-Stop {
         Show-Message 'becauseyoulovejira läuft nicht.'
         return 0
     }
-    $failed = @()
-    $failed += @(Stop-OwnProcess -Candidates $helpers -Name 'byl-mail.exe' -Select {
-            param($Process) Select-MailHelperProcess -Process $Process -AppDir $AppDir
-        })
-    $failed += @(Stop-OwnProcess -Candidates $own -Name 'PocketBase' -Select {
-            param($Process) Select-AppProcess -Process $Process -AppDir $AppDir
-        })
+    # Collected as single strings (Stop-SelectedProcess emits one per failure); empty means done.
+    $failed = New-Object System.Collections.Generic.List[string]
+    foreach ($line in @(Stop-OwnProcess -Candidates $helpers -Name 'byl-mail.exe' -Select {
+                param($Process) Select-MailHelperProcess -Process $Process -AppDir $AppDir
+            })) { $failed.Add([string]$line) }
+    foreach ($line in @(Stop-OwnProcess -Candidates $own -Name 'PocketBase' -Select {
+                param($Process) Select-AppProcess -Process $Process -AppDir $AppDir
+            })) { $failed.Add([string]$line) }
     if ($failed.Count -gt 0) {
         Show-Message -Kind Error -Text ("becauseyoulovejira konnte nicht beendet werden:`n" + ($failed -join "`n"))
         return 1
