@@ -3,7 +3,8 @@
 // and the overview read the rhythm from here. Own answers and realtime events go through the
 // same upsert and remove; after a reconnection the store reconciles once (ADR-0007 section 3).
 // Before the E5 migration the server does not know the rules yet: the store then says so neutrally
-// ("unavailable") instead of showing an error.
+// ("unavailable") instead of showing an error. Results of actions go out as success flags
+// (ADR-0025 section 8; E5 plan, package 5); refusals come back as EditResult for their place.
 
 import type PocketBase from 'pocketbase';
 import { createContext } from 'svelte';
@@ -29,6 +30,7 @@ import {
 } from '$lib/domain/recurrence-rule';
 import type { Ticket } from '$lib/domain/ticket';
 import type { EditResult } from './catalog-editor';
+import { SILENT_FLAGS, type FlagSink } from './flags.svelte';
 import { hold, type RecordChange, type Unsubscribe } from './realtime';
 import type { LoadState, SessionGuard } from './ticket-list.svelte';
 import { restartNeeded } from '$lib/guidance/texts';
@@ -84,6 +86,7 @@ function byNextTicket(a: RecurrenceRule, b: RecurrenceRule): number {
 /** Fields of the form whose server errors show at the field. */
 const FORM_FIELDS = [
 	'title',
+	'description',
 	'project',
 	'tags',
 	'priority',
@@ -100,6 +103,7 @@ const FORM_FIELDS = [
 export class RecurrenceStore {
 	readonly #data: RecurrenceData;
 	readonly #session: SessionGuard;
+	readonly #flags: FlagSink;
 
 	readonly #rules = new SvelteMap<string, RecurrenceRule>();
 	/** Deleted IDs: a late event must not bring them back. */
@@ -110,13 +114,13 @@ export class RecurrenceStore {
 
 	#state = $state<RecurrenceState>('idle');
 	#error = $state<string | null>(null);
-	#announcement = $state('');
 
 	#list = $derived([...this.#rules.values()].sort(byNextTicket));
 
-	constructor(data: RecurrenceData, session: SessionGuard) {
+	constructor(data: RecurrenceData, session: SessionGuard, flags: FlagSink = SILENT_FLAGS) {
 		this.#data = data;
 		this.#session = session;
+		this.#flags = flags;
 	}
 
 	/** All rules: active first, then by next ticket. */
@@ -130,11 +134,6 @@ export class RecurrenceStore {
 
 	get error(): string | null {
 		return this.#error;
-	}
-
-	/** Polite status message (aria-live) of the last action. */
-	get announcement(): string {
-		return this.#announcement;
 	}
 
 	ruleById(id: string | null | undefined): RecurrenceRule | null {
@@ -231,7 +230,7 @@ export class RecurrenceStore {
 		return this.#run(async () => {
 			const rule = await this.#data.createRule(draft, ticket);
 			this.upsert(rule);
-			this.#announcement = `Wiederholung angelegt: ${ruleText(rule)}.`;
+			this.#notify(`Wiederholung angelegt: ${ruleText(rule)}.`);
 			return rule;
 		});
 	}
@@ -240,7 +239,7 @@ export class RecurrenceStore {
 		return this.#run(async () => {
 			const rule = await this.#data.updateRule(id, patch);
 			this.upsert(rule);
-			this.#announcement = 'Regel gespeichert.';
+			this.#notify('Regel gespeichert.');
 			return rule;
 		});
 	}
@@ -250,7 +249,7 @@ export class RecurrenceStore {
 		return this.#run(async () => {
 			const rule = await this.#data.setActive(id, active);
 			this.upsert(rule);
-			this.#announcement = active ? 'Regel fortgesetzt.' : 'Regel pausiert.';
+			this.#notify(active ? 'Regel fortgesetzt.' : 'Regel pausiert.');
 			return rule;
 		});
 	}
@@ -260,7 +259,7 @@ export class RecurrenceStore {
 		return this.#run(async () => {
 			await this.#data.deleteRule(id);
 			this.remove(id);
-			this.#announcement = 'Regel gelöscht. Die Tickets bleiben erhalten.';
+			this.#notify('Regel gelöscht. Die Tickets bleiben erhalten.');
 		});
 	}
 
@@ -268,7 +267,7 @@ export class RecurrenceStore {
 	detach(ticketId: string): Promise<EditResult<Ticket>> {
 		return this.#run(async () => {
 			const ticket = await this.#data.detachTicket(ticketId);
-			this.#announcement = `${ticket.key} ist aus der Serie gelöst.`;
+			this.#notify(`${ticket.key} ist aus der Serie gelöst.`);
 			return ticket;
 		});
 	}
@@ -279,7 +278,11 @@ export class RecurrenceStore {
 		this.#deleted.clear();
 		this.#state = 'idle';
 		this.#error = null;
-		this.#announcement = '';
+	}
+
+	/** Success flag of an action; the flag group announces it (role status). */
+	#notify(title: string): void {
+		this.#flags.show({ tone: 'success', title });
 	}
 
 	#abort(): void {

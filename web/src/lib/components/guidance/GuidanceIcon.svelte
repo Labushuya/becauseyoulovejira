@@ -17,7 +17,8 @@
 		| 'channels'
 		| 'search'
 		| 'tags'
-		| 'comments';
+		| 'comments'
+		| 'recurrence';
 </script>
 
 <script lang="ts">
@@ -80,6 +81,9 @@
 		<circle class="dot" cx="5.5" cy="5.5" r="0.9" />
 	{:else if name === 'comments'}
 		<path d="M2.5 3h11v7.5H7l-3 2.5v-2.5H2.5z" />
+	{:else if name === 'recurrence'}
+		<path d="M13 6.5A5.25 5.25 0 0 0 3.6 4.4M3 9.5a5.25 5.25 0 0 0 9.4 2.1" />
+		<path d="M3.25 1.75v3h3M12.75 14.25v-3h-3" />
 	{/if}
 </svg>
 

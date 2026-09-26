@@ -95,7 +95,8 @@ export const SHORTCUTS: readonly Shortcut[] = [
 		id: 'ctrl-enter',
 		context: 'panel',
 		keys: [['Strg', 'Enter']],
-		action: 'Beschreibung speichern, Kommentar senden oder speichern'
+		action:
+			'Beschreibung speichern, Kommentar senden, „Neues Ticket“ anlegen oder eine Regel speichern'
 	},
 	{
 		id: 'activity-tabs',

@@ -82,8 +82,9 @@
 	const activity = setTicketActivityStore(
 		new TicketActivityStore(ticketActivityData(pb), auth, () => auth.userId)
 	);
-	// Recurrence rules (E5 plan, T-7): all of them, for the table, the panel and the overview.
-	const rules = setRecurrenceStore(new RecurrenceStore(recurrenceData(pb), auth));
+	// Recurrence rules (E5 plan, T-7): all of them, for the table, the panel and the overview;
+	// results of their actions go out as flags (package 5).
+	const rules = setRecurrenceStore(new RecurrenceStore(recurrenceData(pb), auth, flags));
 	$effect(() => untrack(() => rules.start()));
 	$effect(() => untrack(() => rules.connect(recurrenceLive(pb))));
 

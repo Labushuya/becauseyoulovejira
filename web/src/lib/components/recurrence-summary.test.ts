@@ -4,6 +4,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { DataError } from '$lib/data/errors';
 import type { RecurrenceRule } from '$lib/domain/recurrence-rule';
 import type { Ticket } from '$lib/domain/ticket';
+import type { FlagSink } from '$lib/stores/flags.svelte';
 import { RecurrenceStore, type RecurrenceData } from '$lib/stores/recurrence.svelte';
 import RecurrenceSummary from './RecurrenceSummary.svelte';
 import { useOverlayStubs } from '$lib/test/overlay-stubs';
@@ -85,16 +86,22 @@ async function setup(
 		),
 		...data
 	};
-	const store = new RecurrenceStore(fake, { ensureValid: () => true, logout: vi.fn() });
+	// Results go out as flags of the store (package 5); the test records their titles.
+	const flagTitles: string[] = [];
+	const flags: FlagSink = {
+		show: (input) => String(flagTitles.push(input.title)),
+		dismiss: () => undefined
+	};
+	const store = new RecurrenceStore(fake, { ensureValid: () => true, logout: vi.fn() }, flags);
 	await store.load();
 	const onticket = vi.fn();
 	render(RecurrenceSummary, { props: { ticket: item, store, today: TODAY, onticket } });
-	return { fake, store, onticket };
+	return { fake, store, onticket, flagTitles };
 }
 
 describe('RecurrenceSummary', () => {
 	it('offers "Wiederholen…" for an open ticket and makes it the first instance', async () => {
-		const { fake, onticket } = await setup(ticket());
+		const { fake, onticket, flagTitles } = await setup(ticket());
 		const button = screen.getByRole('button', { name: 'Wiederholen…' });
 		expect(button.getAttribute('aria-haspopup')).toBe('dialog');
 
@@ -120,7 +127,7 @@ describe('RecurrenceSummary', () => {
 			recurrenceId: 'rule00000000009',
 			due: '2026-09-28'
 		});
-		expect(screen.getByText('Wiederholung angelegt: jeden Montag.')).toBeTruthy();
+		expect(flagTitles).toEqual(['Wiederholung angelegt: jeden Montag.']);
 	});
 
 	it('names the first date of a ticket without due date and passes it on', async () => {
@@ -136,9 +143,11 @@ describe('RecurrenceSummary', () => {
 		expect(onticket.mock.calls[0]?.[0]).toMatchObject({ due: '2026-09-25' });
 	});
 
-	it('returns the focus to "Wiederholen…" after Escape', async () => {
+	it('returns the focus to "Wiederholen…" after Escape through the modal (no own fallback)', async () => {
 		await setup(ticket());
 		const button = screen.getByRole('button', { name: 'Wiederholen…' });
+		// A browser focuses the button on the click; the modal returns the focus to it.
+		button.focus();
 		await fireEvent.click(button);
 		await fireEvent(screen.getByRole('dialog'), new Event('cancel', { cancelable: true }));
 		await tick();
@@ -162,18 +171,21 @@ describe('RecurrenceSummary', () => {
 	});
 
 	it('shows the series of a ticket and pauses and resumes it', async () => {
-		const { fake } = await setup(ticket({ recurring: true, recurrenceId: 'rule00000000001' }), [
-			rule()
-		]);
+		const { fake, flagTitles } = await setup(
+			ticket({ recurring: true, recurrenceId: 'rule00000000001' }),
+			[rule()]
+		);
 		expect(screen.getByText('Wiederholt sich: jeden Montag')).toBeTruthy();
 		expect(screen.getByText('Nächstes Ticket am 28.09.')).toBeTruthy();
 
 		await fireEvent.click(screen.getByRole('button', { name: 'Pausieren' }));
 		await vi.waitFor(() => expect(screen.getByText('Pausiert')).toBeTruthy());
 		expect(fake.setActive).toHaveBeenCalledWith('rule00000000001', false);
-		expect(screen.getByText('Regel pausiert.')).toBeTruthy();
+		expect(flagTitles).toEqual(['Regel pausiert.']);
 		await fireEvent.click(screen.getByRole('button', { name: 'Fortsetzen' }));
-		await vi.waitFor(() => expect(screen.getByText('Regel fortgesetzt.')).toBeTruthy());
+		await vi.waitFor(() => expect(flagTitles).toEqual(['Regel pausiert.', 'Regel fortgesetzt.']));
+		// No own live region any more: the flag group announces the results.
+		expect(document.querySelector('[aria-live]')).toBeNull();
 	});
 
 	it('shows the hint of a paused rule neutrally', async () => {
@@ -210,7 +222,7 @@ describe('RecurrenceSummary', () => {
 	});
 
 	it('releases the ticket from its series', async () => {
-		const { fake, onticket } = await setup(
+		const { fake, onticket, flagTitles } = await setup(
 			ticket({ recurring: true, recurrenceId: 'rule00000000001' }),
 			[rule()]
 		);
@@ -218,7 +230,7 @@ describe('RecurrenceSummary', () => {
 		await vi.waitFor(() => expect(onticket).toHaveBeenCalledTimes(1));
 		expect(fake.detachTicket).toHaveBeenCalledWith('ticket000000001');
 		expect(onticket.mock.calls[0]?.[0]).toMatchObject({ recurring: false });
-		expect(screen.getByText('TASK-3 ist aus der Serie gelöst.')).toBeTruthy();
+		expect(flagTitles).toEqual(['TASK-3 ist aus der Serie gelöst.']);
 	});
 
 	it('edits the rhythm of the rule', async () => {

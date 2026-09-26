@@ -9,6 +9,7 @@ import { describe, expect, it } from 'vitest';
 import { MORE_COLUMNS_HINT } from '$lib/domain/labels';
 import inboxTable from './InboxTable.svelte?raw';
 import projectTable from './ProjectTable.svelte?raw';
+import recurrenceTable from './RecurrenceTable.svelte?raw';
 import ticketTable from './TicketTable.svelte?raw';
 
 const components = import.meta.glob('/src/**/*.svelte', {
@@ -50,6 +51,7 @@ describe('tables without sideways scrolling', () => {
 		expect(tables.map(([path]) => path.split('/').pop()).sort()).toEqual([
 			'InboxTable.svelte',
 			'ProjectTable.svelte',
+			'RecurrenceTable.svelte',
 			'TicketTable.svelte'
 		]);
 	});
@@ -89,5 +91,9 @@ describe('tables without sideways scrolling', () => {
 
 	it('hides the project columns in the order archiviert, neu, gesamt, aktiv', () => {
 		expect(hideOrder(projectTable)).toEqual(['archived', 'new', 'total', 'active']);
+	});
+
+	it('hides the rule columns in the order Projekt, Offenes Ticket, Nächstes Ticket, Rhythmus', () => {
+		expect(hideOrder(recurrenceTable)).toEqual(['project', 'open', 'next', 'rhythm']);
 	});
 });

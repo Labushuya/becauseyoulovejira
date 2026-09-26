@@ -5,10 +5,13 @@ import {
 	formParams,
 	formPreview,
 	formValuesOf,
+	nextTicketDate,
 	nextTicketText,
 	openInstanceMessage,
 	ruleParams,
+	ruleStateLabel,
 	ruleText,
+	sameRhythm,
 	type RecurrenceRule
 } from './recurrence-rule';
 
@@ -163,5 +166,36 @@ describe('the form', () => {
 		});
 		expect(formPreview(defaultFormValues(null, TODAY), TODAY, true).firstDue).toBe(TODAY);
 		expect(formPreview({ ...values, weekdays: [] }, TODAY)).toEqual({ dates: [], firstDue: null });
+	});
+});
+
+describe('overview and rule panel (package 5)', () => {
+	it('names the next ticket as a short date or "nach dem Erledigen"', () => {
+		expect(nextTicketDate(rule({ nextDue: '2026-10-01' }), TODAY)).toBe('01.10.');
+		expect(nextTicketDate(rule({ nextDue: '2027-01-01' }), TODAY)).toBe('01.01.2027');
+		expect(nextTicketDate(rule({ mode: 'after_completion', nextDue: null }), TODAY)).toBe(
+			'nach dem Erledigen'
+		);
+		// A paused rule keeps its date for display (ADR-0023 section 4).
+		expect(nextTicketDate(rule({ active: false, nextDue: '2026-10-01' }), TODAY)).toBe('01.10.');
+	});
+
+	it('names the state as text', () => {
+		expect(ruleStateLabel({ active: true })).toBe('Aktiv');
+		expect(ruleStateLabel({ active: false })).toBe('Pausiert');
+	});
+
+	it('compares the rhythm as it is sent, not as it is typed', () => {
+		const weekly = defaultFormValues('2026-09-28', TODAY);
+		expect(sameRhythm(weekly, { ...weekly, weekdays: [...weekly.weekdays] })).toBe(true);
+		// The day of the month is not sent for a weekly rhythm.
+		expect(sameRhythm(weekly, { ...weekly, monthDay: '15' })).toBe(true);
+		expect(sameRhythm(weekly, { ...weekly, interval: '01' })).toBe(true);
+		expect(sameRhythm(weekly, { ...weekly, weekdays: ['MO', 'TH'] })).toBe(false);
+		expect(sameRhythm(weekly, { ...weekly, anchor: '2026-10-05' })).toBe(false);
+		expect(sameRhythm(weekly, { ...weekly, leadDays: '0' })).toBe(false);
+		expect(sameRhythm(weekly, { ...weekly, mode: 'after_completion' })).toBe(false);
+		expect(sameRhythm(weekly, { ...weekly, interval: 'x' })).toBe(false);
+		expect(sameRhythm({ ...weekly, interval: 'x' }, { ...weekly, interval: 'y' })).toBe(true);
 	});
 });

@@ -1,5 +1,4 @@
 <script lang="ts">
-	import { tick } from 'svelte';
 	import type { CalendarDate } from '$lib/domain/berlin-date';
 	import {
 		defaultFormValues,
@@ -19,8 +18,8 @@
 	// Recurrence of the ticket in the panel (E5 plan, package 4). A ticket in a series shows
 	// "Wiederholt sich: jeden Montag · Nächstes Ticket am 28.09." with "Regel bearbeiten",
 	// "Pausieren" or "Fortsetzen" and "Aus der Serie lösen"; an open ticket without a series offers
-	// "Wiederholen…". Actions work at once and are announced (aria-live); a paused rule shows its
-	// hint neutrally, a refused request as an error (ADR-0009).
+	// "Wiederholen…". Actions work at once and are announced as flags by the store; a paused rule
+	// shows its hint neutrally, a refused request as an error (ADR-0009).
 	let {
 		ticket,
 		store,
@@ -41,15 +40,11 @@
 	let dialog = $state<'create' | 'edit' | null>(null);
 	let busy = $state(false);
 	let error = $state<string | null>(null);
-	let repeatButton = $state<HTMLButtonElement>();
-	let editButton = $state<HTMLButtonElement>();
 
-	async function closeDialog() {
-		const opener = dialog;
+	// The modal returns the focus to its opener, or to the heading of the view when the opener is
+	// gone (after "Wiederholen…" the button gives way to the summary; ADR-0025 section 3).
+	function closeDialog() {
 		dialog = null;
-		await tick();
-		if (opener === 'create' && repeatButton?.isConnected) repeatButton.focus();
-		else editButton?.focus();
 	}
 
 	async function repeat(values: RecurrenceFormValues) {
@@ -111,7 +106,6 @@
 					class="small"
 					type="button"
 					aria-haspopup="dialog"
-					bind:this={editButton}
 					onclick={() => (dialog = 'edit')}
 				>
 					Regel bearbeiten
@@ -132,20 +126,13 @@
 	{:else if store.state === 'unavailable'}
 		<SectionMessage tone="info" compact>{RECURRENCE_UNAVAILABLE}</SectionMessage>
 	{:else if ticket.status !== 'done'}
-		<button
-			class="small"
-			type="button"
-			aria-haspopup="dialog"
-			bind:this={repeatButton}
-			onclick={() => (dialog = 'create')}
-		>
+		<button class="small" type="button" aria-haspopup="dialog" onclick={() => (dialog = 'create')}>
 			Wiederholen…
 		</button>
 	{/if}
 	{#if error}
 		<div class="alert-error" role="alert"><ErrorIcon /><span>{error}</span></div>
 	{/if}
-	<p class="visually-hidden" aria-live="polite">{store.announcement}</p>
 </section>
 
 {#if dialog === 'create'}

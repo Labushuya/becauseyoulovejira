@@ -1,0 +1,282 @@
+// Component tests for the rule panel (E5 plan, T-6 and package 5): "Neue Regel" with the template
+// and the rhythm, checks before sending, a new rule with the whole draft; an existing rule with its
+// state, open ticket and neutral hint, saving the template without the rhythm (the next ticket
+// stays) and a new rhythm with it, field errors of the server at their field (also for
+// "Fortsetzen" with an archived project), "Löschen …" with the confirmation and the question
+// about unsaved input.
+
+import { fireEvent, render, screen, within } from '@testing-library/svelte';
+import { tick } from 'svelte';
+import { describe, expect, it, vi } from 'vitest';
+import type { ResolvedPathname } from '$app/types';
+import type { RuleDraft } from '$lib/data/recurrence';
+import type { RecurrenceRule } from '$lib/domain/recurrence-rule';
+import type { ProjectRef } from '$lib/domain/ticket';
+import type { EditResult } from '$lib/stores/catalog-editor';
+import { useOverlayStubs } from '$lib/test/overlay-stubs';
+import RecurrencePanel from './RecurrencePanel.svelte';
+import source from './RecurrencePanel.svelte?raw';
+
+// A Friday: a new rule starts weekly on Fridays.
+const TODAY = '2026-09-25';
+const HOUSE: ProjectRef = { id: 'proj00000000001', name: 'Haus', code: 'HAUS', archived: false };
+const OLD: ProjectRef = { id: 'proj00000000002', name: 'Alt', code: 'ALT', archived: true };
+
+useOverlayStubs();
+
+function rule(overrides: Partial<RecurrenceRule> = {}): RecurrenceRule {
+	return {
+		id: 'rule00000000001',
+		title: 'Müll rausbringen',
+		description: 'Gelbe Tonne',
+		projectId: null,
+		tagIds: [],
+		priority: 'high',
+		mode: 'calendar',
+		freq: 'weekly',
+		interval: 1,
+		weekdays: ['MO'],
+		monthDay: null,
+		anchor: '2026-09-07',
+		leadDays: 3,
+		nextDue: '2026-09-28',
+		lastGeneratedAt: null,
+		active: true,
+		lastHint: '',
+		created: '2026-09-01 10:00:00.000Z',
+		updated: '2026-09-01 10:00:00.000Z',
+		...overrides
+	};
+}
+
+type SaveResult = EditResult<RecurrenceRule>;
+
+function show(current: RecurrenceRule | null, overrides: Record<string, unknown> = {}) {
+	const props = {
+		rule: current,
+		today: TODAY,
+		projects: [HOUSE],
+		tags: [{ id: 'tag000000000001', name: 'haushalt' }],
+		projectById: (id: string) => [HOUSE, OLD].find((project) => project.id === id) ?? null,
+		openTicket:
+			current === null ? null : { id: 'ticket000000001', key: 'TASK-7', title: 'Müll rausbringen' },
+		ticketHrefOf: (id: string) => `/tickets/${id}` as ResolvedPathname,
+		oncreatetag: vi.fn(async () => ({ ok: false as const, message: null })),
+		onsave: vi.fn(async (draft: Partial<RuleDraft>): Promise<SaveResult> => ({
+			ok: true,
+			value: rule({ id: 'rule00000000009', title: draft.title ?? 'Neu' })
+		})),
+		onsaved: vi.fn(),
+		onclose: vi.fn(),
+		...(current === null
+			? {}
+			: {
+					ontoggle: vi.fn(async (active: boolean): Promise<SaveResult> => ({
+						ok: true,
+						value: { ...current, active }
+					})),
+					ondelete: vi.fn(async (): Promise<EditResult<void>> => ({ ok: true, value: undefined })),
+					ondeleted: vi.fn()
+				}),
+		...overrides
+	};
+	render(RecurrencePanel, { props });
+	return props as typeof props & {
+		ontoggle: ReturnType<typeof vi.fn>;
+		ondelete: ReturnType<typeof vi.fn>;
+		ondeleted: ReturnType<typeof vi.fn>;
+	};
+}
+
+const panel = () => screen.getByRole('complementary');
+
+describe('RecurrencePanel: "Neue Regel"', () => {
+	it('focuses the title and checks it before sending', async () => {
+		const props = show(null);
+		await tick();
+		expect(screen.getByRole('heading', { level: 2, name: 'Neue Regel' })).toBeTruthy();
+		const title = screen.getByLabelText<HTMLInputElement>('Titel');
+		expect(document.activeElement).toBe(title);
+
+		await fireEvent.click(screen.getByRole('button', { name: 'Anlegen' }));
+		await tick();
+		expect(props.onsave).not.toHaveBeenCalled();
+		expect(title.getAttribute('aria-invalid')).toBe('true');
+		expect(screen.getByText('Bitte einen Titel eingeben.')).toBeTruthy();
+		expect(document.activeElement).toBe(title);
+	});
+
+	it('creates a rule with template and rhythm and hands the rule on', async () => {
+		const props = show(null);
+		await fireEvent.input(screen.getByLabelText('Titel'), {
+			target: { value: '  Blumen gießen ' }
+		});
+		await fireEvent.change(screen.getByLabelText('Projekt'), { target: { value: HOUSE.id } });
+		await fireEvent.click(screen.getByRole('button', { name: 'Anlegen' }));
+
+		await vi.waitFor(() => expect(props.onsaved).toHaveBeenCalledTimes(1));
+		expect(props.onsave).toHaveBeenCalledWith({
+			title: 'Blumen gießen',
+			description: '',
+			project: HOUSE.id,
+			tags: [],
+			priority: 'medium',
+			mode: 'calendar',
+			freq: 'weekly',
+			interval: 1,
+			weekdays: ['FR'],
+			month_day: 0,
+			anchor: TODAY,
+			lead_days: 3
+		});
+		expect(props.onsaved.mock.calls[0]?.[0]).toMatchObject({ id: 'rule00000000009' });
+		expect(
+			screen.getByText(/Das erste Ticket entsteht, sobald der Vorlauf erreicht ist/)
+		).toBeTruthy();
+	});
+
+	it('checks the rhythm with the rules of the hook before sending', async () => {
+		const props = show(null);
+		await fireEvent.input(screen.getByLabelText('Titel'), { target: { value: 'Blumen' } });
+		await fireEvent.click(screen.getByRole('checkbox', { name: 'Freitag' }));
+		await fireEvent.click(screen.getByRole('button', { name: 'Anlegen' }));
+		await tick();
+		expect(props.onsave).not.toHaveBeenCalled();
+		expect(screen.getByText('Bitte mindestens einen Wochentag wählen.')).toBeTruthy();
+	});
+
+	it('closes without a question while nothing is typed, else asks first', async () => {
+		const props = show(null);
+		await fireEvent.click(screen.getByRole('button', { name: 'Abbrechen' }));
+		expect(props.onclose).toHaveBeenCalledTimes(1);
+
+		await fireEvent.input(screen.getByLabelText('Titel'), { target: { value: 'Blumen' } });
+		await fireEvent.click(screen.getByRole('button', { name: 'Panel schließen' }));
+		const question = screen.getByRole('dialog', { name: 'Neue Regel verwerfen?' });
+		expect(props.onclose).toHaveBeenCalledTimes(1);
+		await fireEvent.click(within(question).getByRole('button', { name: 'Verwerfen' }));
+		expect(props.onclose).toHaveBeenCalledTimes(2);
+	});
+});
+
+describe('RecurrencePanel: a rule', () => {
+	it('shows the rule with its state, next ticket and open ticket', async () => {
+		show(rule({ projectId: HOUSE.id, tagIds: ['tag000000000001'] }));
+		await tick();
+		const heading = screen.getByRole('heading', { level: 2, name: 'Müll rausbringen' });
+		expect(document.activeElement).toBe(heading);
+		expect(within(panel()).getByText('Aktiv')).toBeTruthy();
+		expect(screen.getByText('Nächstes Ticket am 28.09.')).toBeTruthy();
+		expect(screen.getByRole('link', { name: 'TASK-7' }).getAttribute('href')).toBe(
+			'/tickets/ticket000000001'
+		);
+		expect(screen.getByLabelText<HTMLInputElement>('Titel').value).toBe('Müll rausbringen');
+		expect(screen.getByLabelText<HTMLSelectElement>('Projekt').value).toBe(HOUSE.id);
+		expect(screen.getByLabelText<HTMLSelectElement>('Priorität').value).toBe('high');
+		expect(screen.getByRole<HTMLInputElement>('checkbox', { name: 'Montag' }).checked).toBe(true);
+		expect(screen.getByLabelText<HTMLInputElement>('Beginnt am').value).toBe('2026-09-07');
+	});
+
+	it('saves a new template without the rhythm, so the next ticket stays', async () => {
+		const props = show(rule());
+		await fireEvent.input(screen.getByLabelText('Titel'), { target: { value: 'Müll (gelb)' } });
+		await fireEvent.click(screen.getByRole('button', { name: 'Speichern' }));
+		await vi.waitFor(() => expect(props.onsave).toHaveBeenCalledTimes(1));
+		expect(props.onsave).toHaveBeenCalledWith({
+			title: 'Müll (gelb)',
+			description: 'Gelbe Tonne',
+			project: null,
+			tags: [],
+			priority: 'high'
+		});
+	});
+
+	it('sends a changed rhythm with the template', async () => {
+		const props = show(rule());
+		await fireEvent.click(screen.getByRole('checkbox', { name: 'Donnerstag' }));
+		await fireEvent.click(screen.getByRole('button', { name: 'Speichern' }));
+		await vi.waitFor(() => expect(props.onsave).toHaveBeenCalledTimes(1));
+		expect(props.onsave.mock.calls[0]?.[0]).toMatchObject({
+			title: 'Müll rausbringen',
+			mode: 'calendar',
+			freq: 'weekly',
+			weekdays: ['MO', 'TH'],
+			anchor: '2026-09-07',
+			lead_days: 3
+		});
+	});
+
+	it('shows field errors of the server at their field and other refusals as message', async () => {
+		const onsave = vi.fn(async (): Promise<SaveResult> => ({
+			ok: false,
+			message: null,
+			fields: { project: 'Das Projekt ist archiviert.', anchor: 'Bitte ein gültiges Datum.' }
+		}));
+		show(rule(), { onsave });
+		await fireEvent.click(screen.getByRole('checkbox', { name: 'Donnerstag' }));
+		await fireEvent.click(screen.getByRole('button', { name: 'Speichern' }));
+		await vi.waitFor(() =>
+			expect(screen.getByLabelText('Projekt').getAttribute('aria-invalid')).toBe('true')
+		);
+		expect(screen.getByText('Das Projekt ist archiviert.')).toBeTruthy();
+		expect(screen.getByLabelText('Beginnt am').getAttribute('aria-invalid')).toBe('true');
+	});
+
+	it('shows the hint of a paused rule neutrally and resumes it', async () => {
+		const props = show(rule({ active: false, lastHint: 'Projekt archiviert – Regel pausiert.' }));
+		expect(within(panel()).getByText('Pausiert')).toBeTruthy();
+		const hint = screen.getByText('Projekt archiviert – Regel pausiert.');
+		expect(hint.closest('.alert-error')).toBeNull();
+		expect(hint.closest('[role="status"], [role="alert"]')).toBeNull();
+		await fireEvent.click(screen.getByRole('button', { name: 'Fortsetzen' }));
+		expect(props.ontoggle).toHaveBeenCalledWith(true);
+	});
+
+	it('shows a refused "Fortsetzen" at the project field and at the button', async () => {
+		const ontoggle = vi.fn(async (): Promise<SaveResult> => ({
+			ok: false,
+			message: null,
+			fields: { project: 'Das Projekt ist archiviert.' }
+		}));
+		show(rule({ active: false, projectId: OLD.id }), { ontoggle });
+		expect(screen.getByLabelText<HTMLSelectElement>('Projekt').value).toBe(OLD.id);
+		await fireEvent.click(screen.getByRole('button', { name: 'Fortsetzen' }));
+		const alert = await screen.findByRole('alert');
+		expect(alert.textContent).toContain('Das Projekt ist archiviert.');
+		expect(screen.getByLabelText('Projekt').getAttribute('aria-invalid')).toBe('true');
+		// Choosing another project clears both.
+		await fireEvent.change(screen.getByLabelText('Projekt'), { target: { value: '' } });
+		expect(screen.queryByRole('alert')).toBeNull();
+		expect(screen.getByLabelText('Projekt').hasAttribute('aria-invalid')).toBe(false);
+	});
+
+	it('deletes after the question and says that the tickets stay', async () => {
+		const props = show(rule());
+		await fireEvent.click(screen.getByRole('button', { name: 'Löschen …' }));
+		const question = screen.getByRole('dialog', { name: 'Regel löschen?' });
+		expect(question.textContent).toContain('Bestehende Tickets bleiben erhalten.');
+		expect(question.textContent).toContain('TASK-7 bleibt als normales Ticket offen');
+		expect(document.activeElement).toBe(
+			within(question).getByRole('button', { name: 'Abbrechen' })
+		);
+		await fireEvent.click(within(question).getByRole('button', { name: 'Löschen' }));
+		await vi.waitFor(() => expect(props.ondeleted).toHaveBeenCalledTimes(1));
+		expect(props.ondelete).toHaveBeenCalledTimes(1);
+	});
+
+	it('asks before unsaved changes are lost on Escape', async () => {
+		const props = show(rule());
+		const title = screen.getByLabelText('Titel');
+		await fireEvent.input(title, { target: { value: 'Anders' } });
+		await fireEvent.keyDown(title, { key: 'Escape' });
+		expect(screen.getByRole('dialog', { name: 'Änderungen verwerfen?' })).toBeTruthy();
+		expect(props.onclose).not.toHaveBeenCalled();
+	});
+
+	it('is built on the side panel and uses no own hints or dialogs', () => {
+		expect(source).toMatch(/import Drawer from '\.\/overlay\/Drawer\.svelte';/);
+		expect(source).toMatch(/import ConfirmDialog from '\.\/overlay\/ConfirmDialog\.svelte';/);
+		expect(source).toMatch(/import SectionMessage from '\.\/guidance\/SectionMessage\.svelte';/);
+		expect(source).not.toMatch(/<dialog\b|window\.confirm|class="notice/);
+	});
+});
