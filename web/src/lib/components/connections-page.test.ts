@@ -283,19 +283,21 @@ describe('connections section', () => {
 		await vi.waitFor(() => expect(latestFlag(flags)).toBe('„Google Kalender“ läuft wieder.'));
 	});
 
-	it('creates a Telegram connection from the catalog and marks wrong names (EH-3)', async () => {
+	it('creates a Telegram connection in the assistant and marks wrong names (EH-3, EH-6)', async () => {
 		const { store, data } = setup([CAL]);
 		await store.load();
-		renderView(store);
-		await fireEvent.click(screen.getByRole('button', { name: 'Einrichten: Telegram-Bot' }));
-		const dialog = within(screen.getByRole('dialog', { name: 'Verbindung anlegen' }));
-		expect((dialog.getByLabelText('Art') as HTMLSelectElement).value).toBe('telegram');
+		const onchange = vi.fn();
+		render(ChannelsViewHarness, {
+			props: { connections: store, setup: { kind: 'telegram', connectionId: null }, onchange }
+		});
+		const dialog = within(screen.getByRole('dialog', { name: 'Telegram-Bot einrichten' }));
+		await fireEvent.click(dialog.getByRole('button', { name: /Verbinden, offen/ }));
 		const token = dialog.getByLabelText(
-			'Variable mit dem Bot-Token (Pflichtfeld)'
+			'Name der Variablen für das Bot-Token (Pflichtfeld)'
 		) as HTMLInputElement;
 		expect(token.value).toBe('BYL_TELEGRAM_TOKEN');
 		const allowlist = dialog.getByLabelText(
-			'Variable mit den erlaubten Chat- bzw. User-IDs (Pflichtfeld)'
+			'Name der Variablen für die erlaubten IDs (Pflichtfeld)'
 		) as HTMLInputElement;
 		expect(allowlist.value).toBe('BYL_TELEGRAM_ALLOWED_IDS');
 		await fireEvent.input(allowlist, { target: { value: 'PATH' } });
@@ -315,10 +317,15 @@ describe('connections section', () => {
 			mailProvider: 'webde',
 			mailUser: ''
 		});
-		await vi.waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+		await vi.waitFor(() =>
+			expect(onchange).toHaveBeenLastCalledWith({
+				kind: 'telegram',
+				connectionId: 'conn00000000009'
+			})
+		);
 		expect(screen.getByRole('article', { name: 'Telegram-Bot' })).toBeTruthy();
 		// The tile stays: several connections of a kind are allowed.
-		expect(screen.getByRole('button', { name: 'Weitere einrichten: Telegram-Bot' })).toBeTruthy();
+		expect(screen.getByRole('link', { name: 'Weitere einrichten: Telegram-Bot' })).toBeTruthy();
 	});
 
 	it('deletes through the menu after the safety question (EH-3)', async () => {
@@ -372,16 +379,13 @@ describe('connections section', () => {
 		const headings = screen
 			.getAllByRole('heading', { level: 3 })
 			.map((heading) => heading.textContent?.replace(/\s+/g, ' ').trim());
+		// Since EH-5 to EH-7 every service opens in the app: no section "Anleitungen" any more.
 		expect(headings).toEqual([
 			'Deine Verbindungen 2(2 Verbindungen)',
 			'Selbst hereinbringen',
-			'Kanal hinzufügen',
-			'Anleitungen'
+			'Kanal hinzufügen'
 		]);
-		// Since EH-5 and EH-7 calendar, mailboxes and Proton open in the app; only Telegram is folded.
-		const guides = document.querySelectorAll<HTMLDetailsElement>('.guide details');
-		expect(guides).toHaveLength(1);
-		expect([...guides].every((details) => !details.open)).toBe(true);
+		expect(document.querySelectorAll('.guide details')).toHaveLength(0);
 		const files = within(screen.getByRole('region', { name: 'Dateien hereinziehen' }));
 		expect(files.getByRole('link', { name: 'Stichwörter bearbeiten' }).getAttribute('href')).toBe(
 			'/einstellungen/datei-importe'
@@ -389,18 +393,16 @@ describe('connections section', () => {
 		expect(files.getByRole('link', { name: 'Zum Eingang' }).getAttribute('href')).toBe('/eingang');
 	});
 
-	it('links Proton to its guide and opens the guide of a card without assistant (EH-3, EH-7)', async () => {
+	it('links Proton to its guide and opens the assistant of a card (EH-3, EH-6, EH-7)', async () => {
 		const { store } = setup([BOT], { [BOT.id]: { secret: false, allowlist: true } });
 		await store.load();
-		renderView(store);
+		const { onsetupchange } = renderView(store);
 		const proton = screen.getByRole('link', { name: 'Anleitung: Proton Mail' });
 		expect(proton.getAttribute('href')).toBe('/einstellungen/kanaele?einrichten=proton');
 		await fireEvent.click(
 			screen.getByRole('button', { name: 'Einrichtung fortsetzen: Telegram-Bot' })
 		);
-		const telegram = screen.getByRole('region', { name: 'Telegram-Bot einrichten' });
-		await vi.waitFor(() => expect(telegram.querySelector('details')?.open).toBe(true));
-		expect(document.activeElement?.textContent).toBe('Telegram-Bot einrichten');
+		expect(onsetupchange).toHaveBeenLastCalledWith({ kind: 'telegram', connectionId: BOT.id });
 	});
 
 	it('shows placeholder cards and a status while loading (EH-3)', () => {
@@ -543,24 +545,17 @@ describe('Jetzt abrufen (E4 plan, package 15)', () => {
 	});
 });
 
-describe('Telegram-Bot einrichten (E4 plan, package 17)', () => {
-	it('explains BotFather, the token, the own ID, the allowlist and the restart', () => {
-		const { store } = setup();
-		render(ChannelsView, {
-			props: {
-				captureUrl: 'http://127.0.0.1:8090/eingang/neu',
-				connections: store,
-				onsetupchange: vi.fn()
-			}
-		});
-		const section = screen.getByRole('region', { name: 'Telegram-Bot einrichten' });
-		const text = (section.textContent ?? '').replace(/\s+/g, ' ');
+describe('Telegram-Bot einrichten (E4 plan, package 17; since EH-6 in the assistant)', () => {
+	it('explains BotFather, the token, the own ID, the allowlist and the restart', async () => {
+		const { store } = setup([]);
+		const { text } = await allSteps(store, 'telegram', 'Telegram-Bot einrichten');
+		expect(screen.queryByRole('region', { name: 'Telegram-Bot einrichten' })).toBeNull();
 		expect(text).toMatch(/@BotFather/);
 		expect(text).toMatch(/\/newbot/);
 		expect(text).toMatch(/setx BYL_TELEGRAM_TOKEN/);
-		expect(text).toMatch(/nicht freigegebenen Chat \(Chat-ID …\)/);
-		expect(text).toMatch(/setx BYL_TELEGRAM_ALLOWED_IDS/);
-		expect(text).toMatch(/stop\.bat und dann start\.bat/);
+		expect(text).toMatch(/setx BYL_TELEGRAM_ALLOWED_IDS "0"/);
+		expect(text).toMatch(/beginnt mit -100/);
+		expect(text).toMatch(/stop\.bat, dann start\.bat/);
 		expect(text).toMatch(/Im Eingang gespeichert/);
 		expect(text).toMatch(/24 Stunden/);
 		expect(text).toMatch(/\/revoke/);
@@ -815,7 +810,11 @@ describe('Postfächer (E4 plan, package 22)', () => {
 });
 
 /** The text of all steps of an assistant ("Alle Schritte anzeigen"). */
-async function allSteps(store: ConnectionsStore, kind: 'webde' | 'gmail', title: string) {
+async function allSteps(
+	store: ConnectionsStore,
+	kind: 'webde' | 'gmail' | 'telegram',
+	title: string
+) {
 	await store.load();
 	render(ChannelsViewHarness, {
 		props: { connections: store, setup: { kind, connectionId: null }, onchange: vi.fn() }

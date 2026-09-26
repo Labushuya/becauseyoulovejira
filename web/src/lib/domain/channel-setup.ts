@@ -10,15 +10,15 @@ import type { Connection, SecretStatus } from './connections';
 import { NO_KEYWORDS_WARNING } from './connections';
 import { formatBerlinDateTime } from './format';
 
-/** Kinds of the address `?einrichten=<art>` (the IDs of the catalog). */
+/**
+ * Kinds of the address `?einrichten=<art>` (the IDs of the catalog). Each opens in the app: the
+ * assistant, for Proton (no automatic fetch, three short steps) the guide as a modal M.
+ */
 export const SETUP_KINDS = ['kalender', 'telegram', 'webde', 'gmail', 'proton'] as const;
 export type SetupKind = (typeof SETUP_KINDS)[number];
 
-/**
- * Kinds whose setup opens in the app: the assistant, for Proton (no automatic fetch, three short
- * steps) the guide as a modal M. Telegram keeps its folded guide until EH-6.
- */
-export const ASSISTED_KINDS: readonly SetupKind[] = ['kalender', 'webde', 'gmail', 'proton'];
+/** Name of the variable with the allowed chat IDs a new Telegram connection suggests. */
+export const DEFAULT_ALLOWLIST = 'BYL_TELEGRAM_ALLOWED_IDS';
 
 export function isSetupKind(value: unknown): value is SetupKind {
 	return typeof value === 'string' && (SETUP_KINDS as readonly string[]).includes(value);
@@ -77,6 +77,9 @@ export function setupKindOf(connection: Pick<Connection, 'type' | 'mailProvider'
 }
 
 export type SetupStepId =
+	| 'bot'
+	| 'token'
+	| 'chat'
 	| 'allow'
 	| 'two-step'
 	| 'password'
@@ -424,8 +427,133 @@ const GMAIL_STEPS: readonly SetupStep[] = [
 	...mailTail('Gmail')
 ];
 
+/** The name of the variable with the allowed chat IDs in the commands of Telegram. */
+const ALLOWLIST: SetupPlaceholder = { label: 'Variable der IDs', secret: false };
+
+const TELEGRAM_STEPS: readonly SetupStep[] = [
+	{
+		id: 'bot',
+		label: 'Bot anlegen',
+		title: 'Eigenen Bot anlegen',
+		intro:
+			'Du legst bei BotFather einen eigenen Bot an und schreibst ihm später, was in den Eingang soll.',
+		actions: [
+			'In Telegram den Chat mit @BotFather öffnen (blauer Haken).',
+			'Den Befehl unten senden, einen Namen und einen Benutzernamen wählen, der auf „bot“ endet.',
+			'BotFather antwortet mit dem Token (etwa 123456789:AA…); er ist geheim.'
+		],
+		links: [{ href: 'https://t.me/BotFather', text: 't.me/BotFather' }],
+		commands: [
+			{ label: 'Befehl an BotFather', template: '/newbot', placeholders: {}, copyable: true }
+		],
+		more: [
+			'Widerrufen: bei BotFather /revoke (neuer Token, dann Variable neu setzen und die App neu starten) oder /deletebot.'
+		],
+		checked: false
+	},
+	{
+		id: 'token',
+		label: 'Token setzen',
+		title: 'Token und vorläufige IDs setzen',
+		intro:
+			'Der Token kommt in eine Variable deines Windows-Kontos. Die erlaubten IDs setzt du vorläufig auf 0, die richtige ID zeigt die App im Schritt „Chat freigeben“.',
+		actions: [],
+		links: [],
+		commands: [
+			{
+				label: 'Befehl für die Eingabeaufforderung',
+				template: 'setx {{variable}} "{{wert}}"',
+				placeholders: {
+					variable: { label: 'Variable', secret: false },
+					wert: { label: 'Bot-Token', secret: true }
+				},
+				value: 'wert',
+				copyable: true
+			},
+			{
+				label: 'Vorläufige erlaubte IDs',
+				template: 'setx {{allowlist}} "0"',
+				placeholders: { allowlist: ALLOWLIST },
+				copyable: true
+			}
+		],
+		more: ['Der Befehl bleibt im Verlauf dieses Fensters, bis du es schließt.'],
+		checked: false
+	},
+	{
+		id: 'connect',
+		label: 'Verbinden',
+		title: 'Verbindung anlegen',
+		intro:
+			'Gib der Verbindung einen Namen; die Namen der beiden Variablen sind vorbelegt. Die App speichert nur die Namen, nie die Werte.',
+		actions: [],
+		links: [],
+		commands: [],
+		more: [],
+		checked: true
+	},
+	{
+		id: 'restart',
+		label: 'Neu starten',
+		title: 'App neu starten',
+		intro:
+			'Die App sieht neue Variablen erst nach einem Neustart. Im Ordner app erst stop.bat, dann start.bat per Doppelklick starten.',
+		actions: [],
+		links: [],
+		commands: [
+			{ label: 'Erst diese Datei', template: 'app\\stop.bat', placeholders: {}, copyable: false },
+			{ label: 'Dann diese Datei', template: 'app\\start.bat', placeholders: {}, copyable: false }
+		],
+		more: [
+			'Vor dem Neustart kann die App nicht unterscheiden, ob eine Variable fehlt oder nur noch nicht geladen ist.'
+		],
+		checked: true
+	},
+	{
+		id: 'chat',
+		label: 'Chat freigeben',
+		title: 'Deinen Chat freigeben',
+		intro:
+			'Schreibe deinem Bot eine Nachricht, dann „Jetzt abrufen“. Die App liest die ID des Chats aus dem Ergebnis und baut daraus den Befehl.',
+		actions: [],
+		links: [],
+		commands: [],
+		more: [
+			'Im Chat mit dem Bot ist die ID deine User-ID. Für eine Gruppe den Bot hinzufügen; ihre ID beginnt mit -100. Mehrere IDs trennst du mit Komma.',
+			'In Gruppen sieht ein Bot normalerweise nur Befehle und Antworten an ihn. Soll er alles lesen, bei BotFather /setprivacy auf „Disable“ stellen.',
+			'Nach dem neuen Wert die App noch einmal neu starten (stop.bat, dann start.bat) und erneut „Jetzt abrufen“: Dann meldet die App keinen fremden Chat mehr.'
+		],
+		checked: true
+	},
+	{
+		id: 'first-run',
+		label: 'Test',
+		title: 'Stichwörter festlegen und testen',
+		intro:
+			'In den Eingang kommen nur Nachrichten mit einem Stichwort. Schicke „todo Test“ an den Bot, dann „Jetzt abrufen“.',
+		actions: [],
+		links: [],
+		commands: [],
+		more: [
+			'Jede gespeicherte Nachricht beantwortet der Bot mit „Im Eingang gespeichert“. Auf Nachrichten ohne Stichwort antwortet er „Kein Stichwort erkannt – nicht gespeichert“ (abschaltbar unter „Bearbeiten“).',
+			'Telegram hält Nachrichten für den Bot höchstens 24 Stunden bereit; läuft die App länger nicht, gehen sie verloren.'
+		],
+		checked: true
+	}
+];
+
+/** Placeholder of the allowed IDs in the command of the step "Chat freigeben". */
+export const CHAT_COMMAND: SetupCommand = {
+	label: 'Befehl mit der erkannten ID',
+	template: 'setx {{allowlist}} "{{ids}}"',
+	placeholders: { allowlist: ALLOWLIST, ids: { label: 'Chat-IDs', secret: false } },
+	value: 'ids',
+	copyable: true
+};
+
 const STEPS: Readonly<Partial<Record<SetupKind, readonly SetupStep[]>>> = {
 	kalender: CALENDAR_STEPS,
+	telegram: TELEGRAM_STEPS,
 	webde: WEBDE_STEPS,
 	gmail: GMAIL_STEPS
 };
@@ -472,7 +600,14 @@ export const CONTROL_PANEL_STEPS: readonly string[] = [
 export interface SetupFacts {
 	connection: Pick<
 		Connection,
-		'label' | 'secretEnv' | 'keywords' | 'lastRunAt' | 'lastOkAt' | 'lastError'
+		| 'label'
+		| 'secretEnv'
+		| 'allowlistEnv'
+		| 'keywords'
+		| 'lastRunAt'
+		| 'lastOkAt'
+		| 'lastError'
+		| 'lastHint'
 	> | null;
 	secretStatus: SecretStatus | null;
 }
@@ -485,17 +620,39 @@ function checkHolds(kind: SetupKind, id: SetupStepId, facts: SetupFacts): boolea
 		case 'connect':
 			return true;
 		case 'restart':
-			return secretStatus?.secret === true;
+			// Telegram needs both variables: the token and the allowed IDs.
+			return (
+				secretStatus?.secret === true && (kind !== 'telegram' || secretStatus.allowlist === true)
+			);
 		case 'keywords':
 			return connection.keywords.length > 0;
+		case 'chat':
+			// A run happened and reported no chat that is not allowed.
+			return (
+				connection.lastRunAt !== null &&
+				connection.lastError === '' &&
+				chatIdFromHint(connection.lastHint) === null
+			);
 		case 'first-run':
 			// A mailbox has run once when the helper wrote the last run (the hint "Erster Abruf");
-			// calendar and bot need a good run.
+			// calendar and bot need a good run, the bot also a keyword.
 			if (connection.lastError !== '') return false;
-			return isMailKind(kind) ? connection.lastRunAt !== null : connection.lastOkAt !== null;
+			if (isMailKind(kind)) return connection.lastRunAt !== null;
+			if (kind === 'telegram' && connection.keywords.length === 0) return false;
+			return connection.lastOkAt !== null;
 		default:
 			return false;
 	}
+}
+
+/**
+ * The chat ID in the hint of a run of the bot, e.g. "Nachricht aus einem nicht freigegebenen Chat
+ * (Chat-ID 424242)." (plan §3.13): digits only, with an optional minus for groups, at most 20
+ * digits; anything else gives null. The ID is no secret; it stands at the connection anyway.
+ */
+export function chatIdFromHint(hint: string): string | null {
+	const match = /Chat-ID (-?\d{1,20})(?!\d)/.exec(hint);
+	return match?.[1] ?? null;
 }
 
 function isMailKind(kind: SetupKind): boolean {
@@ -577,9 +734,39 @@ export function stepCheck(kind: SetupKind, id: SetupStepId, facts: SetupFacts): 
 					text: `Ob die App ${connection.secretEnv} sieht, ließ sich nicht prüfen.`
 				};
 			}
+			if (kind === 'telegram') {
+				const seen = [
+					secretStatus.secret ? connection.secretEnv : null,
+					secretStatus.allowlist === true ? connection.allowlistEnv : null
+				].filter((name): name is string => name !== null);
+				const missing = [
+					secretStatus.secret ? null : connection.secretEnv,
+					secretStatus.allowlist === true ? null : connection.allowlistEnv
+				].filter((name): name is string => name !== null);
+				if (missing.length === 0) {
+					return { tone: 'done', text: `Die App sieht ${seen.join(' und ')}.` };
+				}
+				return { tone: 'open', text: `Die App sieht ${missing.join(' und ')} noch nicht.` };
+			}
 			return secretStatus.secret
 				? { tone: 'done', text: `Die App sieht ${connection.secretEnv}.` }
 				: { tone: 'open', text: `Die App sieht ${connection.secretEnv} noch nicht.` };
+		}
+		case 'chat': {
+			if (connection === null) return { tone: 'open', text: 'Erst die Verbindung anlegen.' };
+			if (connection.lastError !== '') {
+				return { tone: 'error', text: `Letzter Abruf fehlgeschlagen: ${connection.lastError}` };
+			}
+			const chat = chatIdFromHint(connection.lastHint);
+			if (chat !== null) {
+				return {
+					tone: 'open',
+					text: `Nachricht aus einem Chat, der noch nicht freigegeben ist (Chat-ID ${chat}).`
+				};
+			}
+			return connection.lastRunAt === null
+				? { tone: 'open', text: 'Noch kein Abruf: erst dem Bot schreiben, dann „Jetzt abrufen“.' }
+				: { tone: 'done', text: 'Kein fremder Chat mehr gemeldet.' };
 		}
 		case 'keywords': {
 			if (connection === null) return { tone: 'open', text: 'Erst die Verbindung anlegen.' };
@@ -595,6 +782,9 @@ export function stepCheck(kind: SetupKind, id: SetupStepId, facts: SetupFacts): 
 			if (connection === null) return { tone: 'open', text: 'Erst die Verbindung anlegen.' };
 			if (connection.lastError !== '') {
 				return { tone: 'error', text: `Letzter Abruf fehlgeschlagen: ${connection.lastError}` };
+			}
+			if (kind === 'telegram' && connection.keywords.length === 0) {
+				return { tone: 'warning', text: NO_KEYWORDS_WARNING };
 			}
 			if (isMailKind(kind)) {
 				return connection.lastRunAt === null

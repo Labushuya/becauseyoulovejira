@@ -5,10 +5,11 @@
 
 import { describe, expect, it } from 'vitest';
 import {
-	ASSISTED_KINDS,
+	CHAT_COMMAND,
 	PROTON_LINK,
 	PROTON_STEPS,
 	SETUP_KINDS,
+	chatIdFromHint,
 	defaultVariable,
 	matchesSetupKind,
 	openCheckBefore,
@@ -30,10 +31,12 @@ function connection(overrides: Partial<Connection> = {}): NonNullable<SetupFacts
 	return {
 		label: 'Kalender',
 		secretEnv: 'BYL_GOOGLE_CALENDAR_URL',
+		allowlistEnv: '',
 		keywords: [],
 		lastRunAt: null,
 		lastOkAt: null,
 		lastError: '',
+		lastHint: '',
 		...overrides
 	};
 }
@@ -93,7 +96,7 @@ describe('address of the assistant', () => {
 });
 
 describe('step data', () => {
-	it.each(ASSISTED_KINDS.filter((kind) => kind !== 'proton'))(
+	it.each(SETUP_KINDS.filter((kind) => kind !== 'proton'))(
 		'%s has 3 to 6 steps with short labels',
 		(kind) => {
 			const steps = setupSteps(kind);
@@ -142,7 +145,6 @@ describe('step data', () => {
 		expect(text).toMatch(/setx \{\{variable\}\} \\"\{\{wert\}\}\\"/);
 		expect(text).toMatch(/stop\.bat, dann start\.bat/);
 		expect(text).toMatch(/Zurücksetzen/);
-		expect(setupSteps('telegram')).toEqual([]);
 	});
 });
 
@@ -336,6 +338,92 @@ describe('mailboxes (plan EH-7)', () => {
 		expect(setupSteps('proton')).toEqual([]);
 		expect(PROTON_STEPS).toHaveLength(3);
 		expect(new URL(PROTON_LINK.href).protocol).toBe('https:');
-		expect(ASSISTED_KINDS).toEqual(['kalender', 'webde', 'gmail', 'proton']);
+	});
+});
+
+describe('Telegram (plan EH-6)', () => {
+	const BOT = connection({
+		label: 'Bot',
+		secretEnv: 'BYL_TELEGRAM_TOKEN',
+		allowlistEnv: 'BYL_TELEGRAM_ALLOWED_IDS'
+	});
+	const bot = (overrides: Partial<Connection>, allowlist: boolean | null = true): SetupFacts => ({
+		connection: connection({ ...BOT, ...overrides }),
+		secretStatus: { secret: true, allowlist }
+	});
+	const HINT = 'Nachricht aus einem nicht freigegebenen Chat (Chat-ID 424242).';
+
+	it.each([
+		[HINT, '424242'],
+		['Nachricht aus einem nicht freigegebenen Chat (Chat-ID -1001234567890).', '-1001234567890'],
+		['Chat-ID 12345678901234567890', '12345678901234567890'],
+		['Chat-ID 123456789012345678901', null],
+		['Chat-ID abc', null],
+		['Chat-ID --5', null],
+		['Erster Abruf', null],
+		['', null]
+	])('reads the chat ID from "%s"', (hint, id) => {
+		expect(chatIdFromHint(hint)).toBe(id);
+	});
+
+	it('guides through six steps with BotFather, both variables and the chat', () => {
+		expect(setupSteps('telegram').map((step) => step.label)).toEqual([
+			'Bot anlegen',
+			'Token setzen',
+			'Verbinden',
+			'Neu starten',
+			'Chat freigeben',
+			'Test'
+		]);
+		const text = JSON.stringify(setupSteps('telegram'));
+		expect(text).toMatch(/\/newbot/);
+		expect(text).toMatch(/setx \{\{allowlist\}\} \\"0\\"/);
+		expect(text).toMatch(/-100/);
+		expect(text).toMatch(/\/setprivacy/);
+		expect(CHAT_COMMAND.template).toBe('setx {{allowlist}} "{{ids}}"');
+		expect(CHAT_COMMAND.placeholders.ids?.secret).toBe(false);
+		expect(defaultVariable('telegram')).toBe('BYL_TELEGRAM_TOKEN');
+	});
+
+	it('needs both variables after the restart', () => {
+		expect(setupProgress('telegram', bot({}, false))).toBe(3);
+		expect(stepCheck('telegram', 'restart', bot({}, false))).toEqual({
+			tone: 'open',
+			text: 'Die App sieht BYL_TELEGRAM_ALLOWED_IDS noch nicht.'
+		});
+		expect(stepCheck('telegram', 'restart', bot({}))).toEqual({
+			tone: 'done',
+			text: 'Die App sieht BYL_TELEGRAM_TOKEN und BYL_TELEGRAM_ALLOWED_IDS.'
+		});
+	});
+
+	it('names a chat that is not allowed and is done once no foreign chat is reported', () => {
+		expect(setupProgress('telegram', bot({}))).toBe(4);
+		expect(stepCheck('telegram', 'chat', bot({}))?.tone).toBe('open');
+		const foreign = bot({ lastRunAt: '2026-09-26 10:00:00.000Z', lastHint: HINT });
+		expect(stepCheck('telegram', 'chat', foreign)).toEqual({
+			tone: 'open',
+			text: 'Nachricht aus einem Chat, der noch nicht freigegeben ist (Chat-ID 424242).'
+		});
+		expect(setupProgress('telegram', foreign)).toBe(4);
+		const allowed = bot({ lastRunAt: '2026-09-26 10:30:00.000Z', lastHint: '' });
+		expect(stepCheck('telegram', 'chat', allowed)).toEqual({
+			tone: 'done',
+			text: 'Kein fremder Chat mehr gemeldet.'
+		});
+		expect(setupProgress('telegram', allowed)).toBe(5);
+	});
+
+	it('is done after a good run with a keyword', () => {
+		const run = {
+			lastRunAt: '2026-09-26 11:00:00.000Z',
+			lastOkAt: '2026-09-26 11:00:00.000Z'
+		};
+		expect(stepCheck('telegram', 'first-run', bot(run))).toEqual({
+			tone: 'warning',
+			text: NO_KEYWORDS_WARNING
+		});
+		expect(setupComplete('telegram', bot(run))).toBe(false);
+		expect(setupComplete('telegram', bot({ ...run, keywords: ['todo'] }))).toBe(true);
 	});
 });

@@ -1,7 +1,10 @@
 <script lang="ts">
 	import { tick, untrack } from 'svelte';
 	import {
+		CHAT_COMMAND,
 		CONTROL_PANEL_STEPS,
+		DEFAULT_ALLOWLIST,
+		chatIdFromHint,
 		SETUP_TITLES,
 		SETX_WAY_KEY,
 		defaultVariable,
@@ -79,6 +82,12 @@
 		secretStatus: connection === null ? null : store.status(connection.id)
 	});
 	const variable = $derived(connection?.secretEnv ?? defaultVariable(kind));
+	/** Telegram: name of the variable with the allowed IDs. */
+	const allowlist = $derived(connection?.allowlistEnv || DEFAULT_ALLOWLIST);
+	/** Names of the variables in the commands; no secrets. */
+	const fixedValues = $derived({ variable, allowlist });
+	/** Telegram: the chat ID of the last run that is not allowed yet (plan §3.13). */
+	const chatId = $derived(connection === null ? null : chatIdFromHint(connection.lastHint));
 	/** Postfächer: the helper fetches, so the last step waits instead of "Jetzt abrufen" (EH-7). */
 	const mailbox = $derived(kind === 'webde' || kind === 'gmail');
 
@@ -284,7 +293,7 @@
 			code={command.template}
 			label={command.label}
 			placeholders={command.placeholders}
-			values={{ variable }}
+			values={fixedValues}
 			copyable={command.copyable}
 		/>
 		{#if withValue && command.value !== undefined}
@@ -293,7 +302,7 @@
 				template={command.template}
 				placeholders={command.placeholders}
 				name={command.value}
-				fixed={{ variable }}
+				fixed={fixedValues}
 				normalize={command.normalize ?? 'other'}
 			/>
 		{/if}
@@ -307,7 +316,51 @@
 		{/each}
 	</ol>
 	<CodeBlock code={variable} label="Name der Variablen" />
+	{#if kind === 'telegram'}
+		<CodeBlock code={allowlist} label="Name der Variablen für die IDs (Wert vorläufig 0)" />
+	{/if}
 	<p class="hint">Der Wert geht so nicht über die Zwischenablage.</p>
+{/snippet}
+
+{#snippet runBlock()}
+	{#if connection !== null}
+		<div>
+			<button
+				class="button-secondary"
+				type="button"
+				aria-busy={running}
+				aria-disabled={running}
+				onclick={() => void runNow()}
+			>
+				{running ? 'Wird abgerufen …' : 'Jetzt abrufen'}
+			</button>
+		</div>
+		{#if lastRun !== null}
+			<SectionMessage
+				tone={lastRun.status === 'ok' ? 'success' : lastRun.status === 'error' ? 'error' : 'info'}
+				title={lastRun.status === 'ok' ? 'Abgerufen' : undefined}
+				compact={lastRun.status !== 'ok'}
+				live
+				headingLevel={4}
+			>
+				{runResultText(connection.label, lastRun)}
+				{#snippet actions()}
+					{#if lastRun?.status === 'missing' && stepIndex('restart') >= 0}
+						<button
+							class="button-subtle"
+							type="button"
+							onclick={() => void goTo(stepIndex('restart'))}
+						>
+							Zu Schritt {stepIndex('restart') + 1}
+						</button>
+					{/if}
+				{/snippet}
+			</SectionMessage>
+		{/if}
+		{#if runError !== null}
+			<SectionMessage tone="error" compact live>{runError}</SectionMessage>
+		{/if}
+	{/if}
 {/snippet}
 
 {#snippet body(entry: SetupStep)}
@@ -323,7 +376,7 @@
 				onsave={saveKeywords}
 			/>
 		{/if}
-	{:else if entry.id === 'variable'}
+	{:else if entry.id === 'variable' || entry.id === 'token'}
 		<Tabs
 			label="Weg zur Variablen"
 			tabs={[
@@ -343,7 +396,7 @@
 		</Tabs>
 	{:else if entry.id === 'restart'}
 		{@render commandBlocks(entry, false)}
-		{#if connection !== null && facts.secretStatus?.secret === false}
+		{#if connection !== null && facts.secretStatus !== null && check?.tone === 'open'}
 			<SectionMessage tone="warning" compact>
 				Hast du setx schon ausgeführt? Dann starte die App neu: stop.bat, dann start.bat. Danach
 				„Erneut prüfen“.
@@ -379,45 +432,38 @@
 				<SectionMessage tone="error" live>{helper.message} {helper.hint}</SectionMessage>
 			{/if}
 		{/if}
-	{:else if entry.id === 'first-run'}
-		{#if connection !== null}
-			<div>
-				<button
-					class="button-secondary"
-					type="button"
-					aria-busy={running}
-					aria-disabled={running}
-					onclick={() => void runNow()}
-				>
-					{running ? 'Wird abgerufen …' : 'Jetzt abrufen'}
-				</button>
-			</div>
-			{#if lastRun !== null}
-				<SectionMessage
-					tone={lastRun.status === 'ok' ? 'success' : lastRun.status === 'error' ? 'error' : 'info'}
-					title={lastRun.status === 'ok' ? 'Abgerufen' : undefined}
-					compact={lastRun.status !== 'ok'}
-					live
-					headingLevel={4}
-				>
-					{runResultText(connection.label, lastRun)}
-					{#snippet actions()}
-						{#if lastRun?.status === 'missing' && stepIndex('restart') >= 0}
-							<button
-								class="button-subtle"
-								type="button"
-								onclick={() => void goTo(stepIndex('restart'))}
-							>
-								Zu Schritt {stepIndex('restart') + 1}
-							</button>
-						{/if}
-					{/snippet}
-				</SectionMessage>
-			{/if}
-			{#if runError !== null}
-				<SectionMessage tone="error" compact live>{runError}</SectionMessage>
-			{/if}
+	{:else if entry.id === 'chat'}
+		{@render runBlock()}
+		{#if chatId !== null}
+			<SectionMessage tone="info" title={`Erkannte Chat-ID: ${chatId}`} live headingLevel={4}>
+				Gib diese ID frei: den Befehl ausführen, dann die App neu starten (stop.bat, dann start.bat)
+				und erneut „Jetzt abrufen“.
+			</SectionMessage>
+			<CodeBlock
+				code={CHAT_COMMAND.template}
+				label={CHAT_COMMAND.label}
+				placeholders={CHAT_COMMAND.placeholders}
+				values={{ ...fixedValues, ids: chatId }}
+			/>
+			<SecretValueField
+				label="Befehl für mehrere IDs"
+				template={CHAT_COMMAND.template}
+				placeholders={CHAT_COMMAND.placeholders}
+				name="ids"
+				fixed={fixedValues}
+			/>
 		{/if}
+	{:else if entry.id === 'first-run'}
+		{#if kind === 'telegram' && connection !== null}
+			<KeywordEditor
+				keywords={connection.keywords}
+				name={connection.label}
+				description={KEYWORD_SEARCH_TEXT[connection.type]}
+				emptyText={NO_KEYWORDS_WARNING}
+				onsave={saveKeywords}
+			/>
+		{/if}
+		{@render runBlock()}
 	{/if}
 {/snippet}
 
@@ -484,7 +530,7 @@
 						{@render links(entry)}
 						{@render actionsList(entry)}
 						{@render commandBlocks(entry, false)}
-						{#if entry.id === 'variable'}
+						{#if entry.id === 'variable' || entry.id === 'token'}
 							<p>Oder über die Systemsteuerung:</p>
 							{@render controlPanel()}
 						{/if}
