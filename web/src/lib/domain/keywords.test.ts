@@ -86,10 +86,33 @@ describe('keywords of the file imports (package 21)', () => {
 
 	it('searches the start of a mail text only on request', () => {
 		const body = `${'x '.repeat(260)}todo`;
-		expect(mailKeywordTexts('Betreff', body, false)).toEqual(['Betreff']);
-		const texts = mailKeywordTexts('Betreff', body, true);
+		expect(mailKeywordTexts('Betreff', body, false, '')).toEqual(['Betreff']);
+		const texts = mailKeywordTexts('Betreff', body, true, '');
 		expect(texts[1]).toHaveLength(500);
 		expect(matchKeyword(['todo'], texts)).toBe('');
-		expect(matchKeyword(['todo'], mailKeywordTexts('Betreff', 'todo: zahlen', true))).toBe('todo');
+		expect(matchKeyword(['todo'], mailKeywordTexts('Betreff', 'todo: zahlen', true, ''))).toBe(
+			'todo'
+		);
+	});
+
+	it('searches the sender of a mail, name and address (package A)', () => {
+		const from = 'Europa-Go Reisen <info@europa-go.de>';
+		expect(mailKeywordTexts('Betreff', 'Text', false, from)).toEqual(['Betreff', from]);
+		expect(matchKeyword(['europa-go'], mailKeywordTexts('Angebot', '', false, from))).toBe(
+			'europa-go'
+		);
+		expect(matchKeyword(['reisen'], mailKeywordTexts('Angebot', '', false, from))).toBe('reisen');
+		expect(matchKeyword(['europa-go'], mailKeywordTexts('Angebot', '', false, ''))).toBe('');
+	});
+
+	it('ignores case in keyword and text, also with hyphens and domains (package A)', () => {
+		for (const keyword of ['europa-go', 'Europa-Go', 'EUROPA-GO']) {
+			for (const text of ['europa-go', 'Europa-Go', 'EUROPA-GO.DE', 'info@Europa-Go.de']) {
+				expect(matchKeyword([keyword], [text]), `${keyword} in ${text}`).toBe(keyword);
+			}
+		}
+		for (const keyword of ['Todo', 'TODO', 'todo']) {
+			expect(matchKeyword([keyword], ['tOdO: Steuer'])).toBe(keyword);
+		}
 	});
 });

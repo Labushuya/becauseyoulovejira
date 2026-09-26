@@ -16,6 +16,10 @@ var MAX_KEYWORDS = 50;
 var MAX_LENGTH = 100;
 // Characters of the text of a mail that are searched besides the subject (settings.match_body).
 var MAIL_BODY_CHARS = 500;
+// Whether the sender of a mail (name and address, as source_meta.from) is searched as well
+// (user feedback, package A; ADR-0020 addendum). On for every mail: mailbox, mailbox selection and
+// .eml files.
+var MAIL_MATCH_FROM = true;
 var SUGGESTIONS = ['todo', 'aufgabe', 'erledigen', 'ticket', '#byl'];
 
 var MESSAGE = 'Stichwörter: höchstens 50, je 1 bis 100 Zeichen, ohne Zeilenumbruch.';
@@ -229,11 +233,19 @@ function importSettingsOf(value, kind) {
 }
 
 /**
- * Texts of a mail that are searched (ADR-0020 section 1): the subject and, with `matchBody`,
- * the first MAIL_BODY_CHARS characters of the text. Mirrors mailKeywordTexts of the web app.
+ * Texts of a mail that are searched (ADR-0020 section 1 and addendum): the subject, the sender
+ * ("Name <address>", with MAIL_MATCH_FROM) and, with `matchBody`, the first MAIL_BODY_CHARS
+ * characters of the text. Each is its own part. Mirrors mailKeywordTexts of the web app.
  */
-function mailTexts(title, body, matchBody) {
-  return matchBody ? [text(title), text(body).slice(0, MAIL_BODY_CHARS)] : [text(title)];
+function mailTexts(title, body, matchBody, from) {
+  var texts = [text(title)];
+  if (MAIL_MATCH_FROM && typeof from === 'string' && from !== '') {
+    texts.push(from);
+  }
+  if (matchBody) {
+    texts.push(text(body).slice(0, MAIL_BODY_CHARS));
+  }
+  return texts;
 }
 
 /** The usable keywords of a stored value: invalid entries are left out, never an error. */
@@ -258,6 +270,7 @@ module.exports = {
   MAX_KEYWORDS: MAX_KEYWORDS,
   MAX_LENGTH: MAX_LENGTH,
   MAIL_BODY_CHARS: MAIL_BODY_CHARS,
+  MAIL_MATCH_FROM: MAIL_MATCH_FROM,
   SUGGESTIONS: SUGGESTIONS,
   MESSAGE: MESSAGE,
   IMPORT_KINDS: IMPORT_KINDS,

@@ -1,6 +1,7 @@
 <script lang="ts">
 	import {
 		KEYWORD_SEARCH_TEXT,
+		MAIL_NEW_ONLY_HINT,
 		NO_KEYWORDS_WARNING,
 		type Connection
 	} from '$lib/domain/connections';
@@ -55,6 +56,7 @@
 			</label>
 		{/if}
 		{#if connection.type === 'mail'}
+			<SectionMessage tone="info" compact>{MAIL_NEW_ONLY_HINT}</SectionMessage>
 			<label class="switch">
 				<input
 					type="checkbox"

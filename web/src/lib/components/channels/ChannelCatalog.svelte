@@ -54,14 +54,14 @@
 		{
 			id: 'webde',
 			name: 'Web.de',
-			text: 'Mails mit Stichwort im Betreff, alle 5 Minuten.',
+			text: 'Mails mit Stichwort in Betreff oder Absender, alle 5 Minuten.',
 			icon: 'mail',
 			exists: (connection) => connection.type === 'mail' && connection.mailProvider === 'webde'
 		},
 		{
 			id: 'gmail',
 			name: 'Gmail',
-			text: 'Mails mit Stichwort im Betreff, alle 5 Minuten.',
+			text: 'Mails mit Stichwort in Betreff oder Absender, alle 5 Minuten.',
 			icon: 'mail',
 			exists: (connection) => connection.type === 'mail' && connection.mailProvider === 'gmail'
 		}

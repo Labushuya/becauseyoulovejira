@@ -105,11 +105,18 @@ export interface ConnectionSettingsDraft {
 export const NO_KEYWORDS_WARNING =
 	'Keine Stichwörter: Diese Verbindung übernimmt nichts automatisch.';
 
+/**
+ * What a mailbox takes automatically (ADR-0016 section 5): the first run only sets the cursor, so
+ * only mails that arrive after it come in; older ones only through the mailbox selection.
+ */
+export const MAIL_NEW_ONLY_HINT =
+	'Automatisch kommen nur neue Mails, die nach dem ersten Abruf dieser Verbindung eintreffen. Ältere Mails holst du über „Aus dem Postfach wählen“.';
+
 /** Where the keywords of a kind are searched (ADR-0020 section 1). */
 export const KEYWORD_SEARCH_TEXT: Readonly<Record<ConnectionType, string>> = Object.freeze({
 	calendar: 'Gesucht wird in Titel und Beschreibung der Termine.',
 	telegram: 'Gesucht wird im Text der Nachricht bzw. in der Bildunterschrift.',
-	mail: 'Gesucht wird im Betreff, auf Wunsch auch in den ersten 500 Zeichen des Textes.'
+	mail: 'Gesucht wird in Betreff und Absender (Name und Adresse), auf Wunsch auch in den ersten 500 Zeichen des Textes.'
 });
 
 export interface ConnectionDraft {

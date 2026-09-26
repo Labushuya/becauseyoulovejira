@@ -91,3 +91,21 @@ Ein reiner Algorithmus, zweimal implementiert und per Paritätstest abgeglichen:
 - `connection-rules.js`, die Kanäle Kalender und Telegram, der Datei-Import (Auswahlansicht für `.eml` und `.ics`) und der WhatsApp-Import ändern sich; eine additive Migration für `users.import_keywords`.
 - Das Ergebnis eines Laufs bekommt die Zahl „ohne Stichwort“ (`unmatched`).
 - Ein Termin ohne Treffer kann später doch kommen, wenn er so geändert wird, dass ein Stichwort greift, oder wenn ein passendes Stichwort dazukommt, solange er im Fenster liegt. Das ist gewollt: Es gibt keinen Tombstone für Nichttreffer.
+
+## Nachtrag (2026-09-27): Absender bei Mail
+
+**Anlass (Testfeedback Paket A):** Der Nutzer hatte an seiner Web.de-Verbindung das Stichwort „europa-go“ und „Textanfang durchsuchen“ gesetzt. Eine Mail mit „europa-go“ im Text und im Absender kam trotzdem nicht in den Eingang. Die Diagnose lief ohne Nutzerdaten, nur über Code und Tests:
+
+- **(a) Bindestrich und Domain:** trifft nicht zu. „europa-go“ greift in „europa-go“, „Europa-Go“, „europa-go.de“, „www.europa-go.de“ und „info@europa-go.de“, denn `@`, `.` und `<` sind keine Wortzeichen. Belegt in der gemeinsamen Falltabelle.
+- **(b) Cursor:** möglich. Der erste Abruf setzt den Cursor auf die höchste UID. Eine Mail, die vor dem ersten Abruf im Posteingang lag, kommt deshalb nie automatisch, auch wenn sie nach dem Anlegen der Verbindung eintraf, aber vor dem ersten Lauf von `byl-mail.exe`. Das ist gewollt (ADR-0016 §5), stand aber nur in einem zugeklappten Absatz des Assistenten.
+- **(c) `match_body`:** wirkt wie beschrieben. Durchsucht werden die ersten 500 Zeichen des Textteils, bei reinen HTML-Mails des Textes nach `htmlToText`, nach der Dekodierung durch postal-mime (Quoted-Printable, Zeichensatz). Steht das Stichwort erst nach Zeichen 500, etwa im Fuß eines Newsletters, greift es nicht.
+- **(d) Absender:** trifft zu. Der Absender wurde bisher nirgends durchsucht (§1: „Absender … werden nicht durchsucht“).
+
+**Entscheidung:**
+- Bei Mail wird zusätzlich der Absender durchsucht, also Name und Adresse, wie sie in `source_meta.from` stehen („Name <adresse>“). Das gilt für den Abruf, die Nachprüfung in der Ingest-Route, die Vorauswahl der Postfach-Auswahl (aus dem Kopf) und für `.eml`-Dateien.
+- Gesteuert wird das über die Konstante `MAIL_MATCH_FROM` (Standard an) in `keywords.js` und `keywords.ts`, gleich per Paritätstest. Es gibt bewusst keinen Schalter je Verbindung, denn ein Stichwort im Absender ist fast immer gewollt, und ein Schalter hieße Migration der Einstellungen und mehr Oberfläche. Kommt der Wunsch nach einem Schalter, wird `match_from` in `settings` ergänzt, mit Standard an.
+- Der Absender ist ein eigener Textteil. Eine Phrase über Betreff und Absender hinweg greift nicht, wie bisher zwischen Betreff und Text.
+- Die Oberfläche sagt deutlicher, was gilt:
+  - Unter „Kanäle“ und im Dialog „Bearbeiten“ steht an Postfächern „Automatisch kommen nur neue Mails, die nach dem ersten Abruf dieser Verbindung eintreffen. Ältere Mails holst du über „Aus dem Postfach wählen“.“ Der Assistent sagt dasselbe im Schritt „Erster Abruf“.
+  - Der Stichwort-Editor nennt „Groß-/Kleinschreibung egal“ und ein Beispiel mit Adresse.
+- `byl-mail.exe` geht auf 0.4.0. Die Ingest-Route ist abwärtsverträglich: Ein älterer Hilfsprozess sendet nur Treffer aus Betreff und Text, die weiter angenommen werden.

@@ -273,7 +273,7 @@ function mailTail(provider: string): readonly SetupStep[] {
 			id: 'connect',
 			label: 'Verbinden',
 			title: 'Postfach verbinden',
-			intro: `Anbieter ${provider}, deine E-Mail-Adresse und der Name der Variablen. Danach legst du die Stichwörter fest, denn nur Mails mit Stichwort im Betreff kommen in den Eingang.`,
+			intro: `Anbieter ${provider}, deine E-Mail-Adresse und der Name der Variablen. Danach legst du die Stichwörter fest, denn nur Mails mit Stichwort in Betreff oder Absender kommen in den Eingang.`,
 			actions: [],
 			links: [],
 			commands: [],
@@ -306,12 +306,12 @@ function mailTail(provider: string): readonly SetupStep[] {
 			label: 'Erster Abruf',
 			title: 'Auf den ersten Abruf warten',
 			intro:
-				'Der Hilfsprozess ruft das Postfach alle 5 Minuten ab, solange die App läuft. Der erste Abruf erscheint hier von selbst.',
+				'Der Hilfsprozess ruft das Postfach alle 5 Minuten ab, der erste Abruf erscheint hier von selbst. Automatisch kommen nur neue Mails, die danach eintreffen; ältere holst du über „Aus dem Postfach wählen“ an der Karte.',
 			actions: [],
 			links: [],
 			commands: [],
 			more: [
-				'In den Eingang kommen nur Mails, die nach der Einrichtung ankommen und ein Stichwort treffen. Ältere Mails und Mails ohne Stichwort holst du mit „Aus dem Postfach wählen“ an der Karte.',
+				'In den Eingang kommen nur neue Mails, deren Betreff oder Absender ein Stichwort trifft (mit dem Schalter auch der Textanfang). Mails ohne Stichwort holst du ebenfalls mit „Aus dem Postfach wählen“ an der Karte.',
 				'Der Hilfsprozess liest nur: Gelesen-Status, Markierungen und Ordner bleiben, und er verschickt nichts.'
 			],
 			checked: true

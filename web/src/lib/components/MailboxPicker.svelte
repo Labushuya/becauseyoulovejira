@@ -154,7 +154,7 @@
 		„{label}“: die letzten Mails des Posteingangs. Nur die ausgewählten kommen in den Eingang, auch
 		ohne Stichwort und auch aus der Zeit vor der Einrichtung. Das Postfach bleibt unverändert.
 		{#if preselected > 0}
-			Mails mit einem Stichwort im Betreff sind vorausgewählt.
+			Mails mit einem Stichwort in Betreff oder Absender sind vorausgewählt.
 		{/if}
 	</p>
 	<div class="visually-hidden" aria-live="polite">{announcement}</div>

@@ -42,6 +42,17 @@
     { "name": "typographic quote before", "keywords": ["todo"], "texts": ["„todo“"], "expect": "todo" },
     { "name": "multiplication sign before", "keywords": ["todo"], "texts": ["2×todo"], "expect": "todo" },
     { "name": "greek final sigma", "keywords": ["\u039f\u0394\u039f\u03a3"], "texts": ["\u03bf\u03b4\u03bf\u03c2"], "expect": "\u039f\u0394\u039f\u03a3" },
-    { "name": "keyword longer than the text", "keywords": ["erledigen"], "texts": ["erle"], "expect": "" }
+    { "name": "keyword longer than the text", "keywords": ["erledigen"], "texts": ["erle"], "expect": "" },
+    { "name": "hyphenated keyword", "keywords": ["europa-go"], "texts": ["Neu bei europa-go"], "expect": "europa-go" },
+    { "name": "hyphenated keyword, other case", "keywords": ["europa-go"], "texts": ["Europa-Go Reisen"], "expect": "europa-go" },
+    { "name": "hyphenated keyword in capitals", "keywords": ["Europa-Go"], "texts": ["EUROPA-GO"], "expect": "Europa-Go" },
+    { "name": "hyphenated keyword in a domain", "keywords": ["europa-go"], "texts": ["www.europa-go.de"], "expect": "europa-go" },
+    { "name": "hyphenated keyword as domain alone", "keywords": ["europa-go"], "texts": ["europa-go.de"], "expect": "europa-go" },
+    { "name": "hyphenated keyword in an address", "keywords": ["europa-go"], "texts": ["info@europa-go.de"], "expect": "europa-go" },
+    { "name": "hyphenated keyword in a sender with name", "keywords": ["europa-go"], "texts": ["Reisen <info@europa-go.de>"], "expect": "europa-go" },
+    { "name": "hyphenated keyword as local part", "keywords": ["europa-go"], "texts": ["<europa-go@example.com>"], "expect": "europa-go" },
+    { "name": "hyphenated keyword not inside a word", "keywords": ["europa-go"], "texts": ["neueuropa-go"], "expect": "" },
+    { "name": "hyphen is part of the keyword", "keywords": ["europa-go"], "texts": ["europago"], "expect": "" },
+    { "name": "domain keyword", "keywords": ["europa-go.de"], "texts": ["Absender info@Europa-Go.DE"], "expect": "europa-go.de" }
   ]
 }

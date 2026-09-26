@@ -111,14 +111,16 @@ function parseDraft(value) {
 }
 
 /**
- * The keyword of a mail connection that matches the draft (subject, with match_body also the first
- * 500 characters of the text; ADR-0020). { accepted, keyword }: "auto" needs a keyword, "selected"
- * does not; the keyword is kept in both cases.
+ * The keyword of a mail connection that matches the draft (subject, sender from source_meta.from,
+ * with match_body also the first 500 characters of the text; ADR-0020 and addendum).
+ * { accepted, keyword }: "auto" needs a keyword, "selected" does not; the keyword is kept in both
+ * cases.
  */
 function keywordDecision(origin, settings, draft, keywords, connectionRules) {
   var list = connectionRules.keywordsOf(settings, keywords);
   var mail = connectionRules.mailSettingsOf(settings);
-  var keyword = keywords.matchKeyword(list, keywords.mailTexts(draft.title, draft.body, mail.matchBody));
+  var from = draft.meta && typeof draft.meta.from === 'string' ? draft.meta.from : '';
+  var keyword = keywords.matchKeyword(list, keywords.mailTexts(draft.title, draft.body, mail.matchBody, from));
   return { accepted: origin === 'selected' || keyword !== '', keyword: keyword };
 }
 

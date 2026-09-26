@@ -146,6 +146,12 @@ describe('mailbox assistant (EH-7)', () => {
 			within(dialog).getByText('Warte auf den ersten Abruf (spätestens 5 Minuten) …')
 		).toBeTruthy();
 		expect(within(dialog).queryByRole('button', { name: 'Jetzt abrufen' })).toBeNull();
+		// Package A: the step says openly that only mails after the first run come automatically.
+		expect(
+			within(dialog).getByText(
+				/Automatisch kommen nur neue Mails, die danach eintreffen; ältere holst du über „Aus dem Postfach wählen“/
+			)
+		).toBeTruthy();
 		await vi.waitFor(() => expect(listeners.length).toBe(1));
 
 		listeners[0]?.({

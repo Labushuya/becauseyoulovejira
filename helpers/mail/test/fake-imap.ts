@@ -355,13 +355,18 @@ export function fakeMail({
 	body = 'Text der Mail.',
 	messageId,
 	from = 'Bert Beispiel <bert@example.com>',
-	date = 'Fri, 25 Sep 2026 10:00:00 +0200'
+	date = 'Fri, 25 Sep 2026 10:00:00 +0200',
+	contentType = 'text/plain',
+	transferEncoding = '8bit'
 }: {
 	subject: string;
+	/** Already encoded as `transferEncoding` says. */
 	body?: string;
 	messageId: string;
 	from?: string;
 	date?: string;
+	contentType?: 'text/plain' | 'text/html';
+	transferEncoding?: '8bit' | 'quoted-printable';
 }): string {
 	return [
 		`From: ${from}`,
@@ -370,8 +375,8 @@ export function fakeMail({
 		`Message-ID: ${messageId}`,
 		`Date: ${date}`,
 		'MIME-Version: 1.0',
-		'Content-Type: text/plain; charset=UTF-8',
-		'Content-Transfer-Encoding: 8bit',
+		`Content-Type: ${contentType}; charset=UTF-8`,
+		`Content-Transfer-Encoding: ${transferEncoding}`,
 		'',
 		body,
 		''

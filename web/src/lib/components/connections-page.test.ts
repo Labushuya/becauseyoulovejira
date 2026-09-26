@@ -695,7 +695,11 @@ describe('Postfächer (E4 plan, package 22)', () => {
 		await fireEvent.click(scope.getByRole('button', { name: 'Bearbeiten: Web.de' }));
 		const dialog = within(screen.getByRole('dialog', { name: 'Web.de bearbeiten' }));
 		expect(dialog.getByText('BYL_WEBDE_PASSWORD')).toBeTruthy();
-		expect(dialog.getByText(/im Betreff, auf Wunsch auch in den ersten 500 Zeichen/)).toBeTruthy();
+		expect(
+			dialog.getByText(
+				/in Betreff und Absender \(Name und Adresse\), auf Wunsch auch in den ersten 500 Zeichen/
+			)
+		).toBeTruthy();
 		await fireEvent.click(
 			dialog.getByRole('checkbox', { name: 'Auch die ersten 500 Zeichen des Textes durchsuchen' })
 		);

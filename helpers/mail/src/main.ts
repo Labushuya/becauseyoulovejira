@@ -18,7 +18,8 @@ declare const __BYL_MAIL_VERSION__: string | undefined;
 /** Version of the helper; set by the build (esbuild define), "dev" when run from source. */
 export const VERSION = typeof __BYL_MAIL_VERSION__ === 'string' ? __BYL_MAIL_VERSION__ : 'dev';
 
-// Invented mail for the self-test: quoted-printable, umlauts, a keyword in the subject.
+// Invented mail for the self-test: quoted-printable, umlauts, a keyword in the subject and one in
+// the sender.
 const SELF_TEST_MAIL = [
 	'From: Anna Beispiel <anna@example.com>',
 	'To: bert@example.com',
@@ -41,6 +42,7 @@ export async function selfTest(): Promise<{ ok: boolean; checks: Record<string, 
 		parser: draft.title === 'Todo: Steuererklärung' && draft.body === 'Bitte bis Freitag prüfen.',
 		messageId: payload.source_ref === '<selbsttest@byl.invalid>',
 		keywords: keywordOf(draft, ['rechnung', 'todo'], false) === 'todo' && keywordOf(draft, ['prufen'], true) === 'prufen',
+		sender: keywordOf(draft, ['beispiel'], false) === 'beispiel' && keywordOf(draft, ['prufen'], false) === '',
 		providers: PROVIDERS.webde?.host === 'imap.web.de' && PROVIDERS.gmail?.host === 'imap.gmail.com',
 		imap: typeof ImapFlow === 'function',
 		fetch: typeof fetch === 'function' && typeof FormData === 'function'

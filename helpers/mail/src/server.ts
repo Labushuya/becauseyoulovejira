@@ -50,7 +50,7 @@ export interface MailboxEntry {
 	/** PocketBase timestamp or '' (unreadable date). */
 	date: string;
 	messageId: string;
-	/** Keyword of the connection that matches the subject, or ''. */
+	/** Keyword of the connection that matches the subject or the sender, or ''. */
 	keyword: string;
 	/** Fields of the inbox draft (title, source_ref, source_date, source_meta.from). */
 	title: string;
@@ -190,7 +190,7 @@ export async function listMailbox(deps: ServerDeps, body: Record<string, unknown
 				from: typeof draft.sourceMeta?.from === 'string' ? draft.sourceMeta.from : '',
 				date: draft.sourceDate ?? '',
 				messageId: draft.sourceRef ?? '',
-				keyword: keywordOf({ title: draft.title, body: '' }, connection.keywords, false),
+				keyword: keywordOf({ title: draft.title, body: '', sourceMeta: draft.sourceMeta }, connection.keywords, false),
 				title: draft.title,
 				sourceRef: draft.sourceRef ?? '',
 				sourceDate: draft.sourceDate ?? '',

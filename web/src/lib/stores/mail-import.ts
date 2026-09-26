@@ -211,7 +211,12 @@ export async function prepareDroppedFiles(
 			}
 			const keyword = matchKeyword(
 				keywords.eml.keywords,
-				mailKeywordTexts(read.draft.title, read.draft.body ?? '', keywords.eml.matchBody)
+				mailKeywordTexts(
+					read.draft.title,
+					read.draft.body ?? '',
+					keywords.eml.matchBody,
+					senderOf(read.draft)
+				)
 			);
 			const key = `m:${fileNo}`;
 			const draft = withKeyword(read.draft, keyword);

@@ -2,6 +2,7 @@
 	import { channelHealth, keywordSummary } from '$lib/domain/channel-health';
 	import {
 		CONNECTION_TYPE_LABELS,
+		MAIL_NEW_ONLY_HINT,
 		MAIL_PROVIDER_LABELS,
 		type Connection,
 		type SecretStatus
@@ -99,6 +100,12 @@
 			<dt>Stichwörter</dt>
 			<dd>{keywordSummary(connection.keywords)}</dd>
 		</div>
+		{#if connection.type === 'mail'}
+			<div>
+				<dt>Automatisch</dt>
+				<dd>{MAIL_NEW_ONLY_HINT}</dd>
+			</div>
+		{/if}
 	</dl>
 
 	{#if health.hint !== null}
