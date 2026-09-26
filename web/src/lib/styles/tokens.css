@@ -29,6 +29,13 @@
 	--color-brand-soft-text: #055c65;
 	--color-on-brand: #ffffff;
 
+	/* Swatches of the accent themes for the choice (ADR-0027 section 6): each accent in this mode */
+	--swatch-petrol: #07838f;
+	--swatch-rubin: #a0174f;
+	--swatch-purpur: #6a2c91;
+	--swatch-smaragd: #13854a;
+	--swatch-honig: #8a5a00;
+
 	/* Errors only (ADR-0009): text, icon, invalid field border / message background */
 	--color-danger: #a13a40;
 	--color-danger-soft-bg: #f8e9e9;
@@ -95,6 +102,13 @@
 		--color-brand-soft-text: #9fdce2;
 		--color-on-brand: #ffffff;
 
+		/* Swatches of the accent themes for the choice (ADR-0027 section 6) */
+		--swatch-petrol: #07838f;
+		--swatch-rubin: #ca2b70;
+		--swatch-purpur: #9155be;
+		--swatch-smaragd: #15874a;
+		--swatch-honig: #e0a93a;
+
 		/* Errors only (ADR-0009): text, icon, invalid field border / message background */
 		--color-danger: #eaa0a0;
 		--color-danger-soft-bg: #3b1e21;
@@ -139,6 +153,13 @@
 	--color-brand-soft-text: #055c65;
 	--color-on-brand: #ffffff;
 
+	/* Swatches of the accent themes for the choice (ADR-0027 section 6): each accent in this mode */
+	--swatch-petrol: #07838f;
+	--swatch-rubin: #a0174f;
+	--swatch-purpur: #6a2c91;
+	--swatch-smaragd: #13854a;
+	--swatch-honig: #8a5a00;
+
 	/* Errors only (ADR-0009): text, icon, invalid field border / message background */
 	--color-danger: #a13a40;
 	--color-danger-soft-bg: #f8e9e9;
@@ -181,6 +202,13 @@
 	--color-brand-soft-bg: #123a3f;
 	--color-brand-soft-text: #9fdce2;
 	--color-on-brand: #ffffff;
+
+	/* Swatches of the accent themes for the choice (ADR-0027 section 6) */
+	--swatch-petrol: #07838f;
+	--swatch-rubin: #ca2b70;
+	--swatch-purpur: #9155be;
+	--swatch-smaragd: #15874a;
+	--swatch-honig: #e0a93a;
 
 	/* Errors only (ADR-0009): text, icon, invalid field border / message background */
 	--color-danger: #eaa0a0;
