@@ -143,7 +143,10 @@ describe('inbox panel', () => {
 		await fireEvent.click(screen.getByRole('button', { name: 'Verwerfen' }));
 		const note = await screen.findByText(/Verworfene Einträge behalten ihren Inhalt 30 Tage/);
 		expect(note.textContent).toMatch(/Duplikatmerkmal/);
-		expect(note.classList.contains('hint')).toBe(true);
+		// Compact info since EH-11, without a role (the focus stays, nothing is announced twice).
+		const message = note.closest('[data-tone]');
+		expect(message?.getAttribute('data-tone')).toBe('info');
+		expect(message?.classList.contains('compact')).toBe(true);
 		expect(note.closest('.alert-error')).toBeNull();
 	});
 

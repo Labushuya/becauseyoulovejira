@@ -170,7 +170,8 @@ describe('history list', () => {
 		await renderActivity([]);
 		await fireEvent.click(tab('Verlauf'));
 
-		expect(screen.getByText('Noch kein Verlauf.')).toBeTruthy();
+		// Compact empty state since EH-11: a heading without full stop.
+		expect(screen.getByRole('heading', { name: 'Noch kein Verlauf' })).toBeTruthy();
 	});
 
 	it('shows a loading error with "Erneut versuchen"', async () => {

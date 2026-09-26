@@ -21,7 +21,9 @@
 		withListQuery,
 		withShowDone
 	} from '$lib/ticket-links';
+	import { getQuickCaptureOpener } from '$lib/quick-capture-context';
 	import ErrorIcon from './ErrorIcon.svelte';
+	import EmptyState from './guidance/EmptyState.svelte';
 	import GroupPopover from './GroupPopover.svelte';
 	import SectionBar from './SectionBar.svelte';
 	import TicketTableRow from './TicketTableRow.svelte';
@@ -99,6 +101,9 @@
 			? 'Der Statusfilter „Erledigt“ zeigt nur erledigte Tickets.'
 			: 'Bei einem anderen Statusfilter als „Erledigt“ sind erledigte Tickets ausgeblendet.';
 	});
+
+	/** Quick entry of the (app) layout for the empty state; undefined outside it (plan EH-11). */
+	const openQuickCapture = getQuickCaptureOpener();
 
 	let root = $state<HTMLElement>();
 	let heading = $state<HTMLElement>();
@@ -335,17 +340,34 @@
 		{@render failure(store.openError, 'Erneut versuchen', () => store.reload())}
 	{:else if store.openState === 'ready' && !hasOpenRows && !onlyDone}
 		{#if filtered}
-			<div class="empty">
-				<p>Keine Tickets für diese Filter.</p>
-				<button class="text-button reset" type="button" onclick={clearFilters}>
-					Filter zurücksetzen
-				</button>
-			</div>
+			<EmptyState
+				icon="search"
+				title="Keine Tickets für diese Filter"
+				description="Ändere die Filter oder setze sie zurück, um wieder alle Tickets zu sehen."
+			>
+				{#snippet primary()}
+					<button class="button-primary" type="button" onclick={clearFilters}>
+						Filter zurücksetzen
+					</button>
+				{/snippet}
+			</EmptyState>
 		{:else}
-			<div class="empty">
-				<p>Keine offenen Tickets.</p>
-				<a class="button-primary" href={newTicketHref(page.url)}>Neues Ticket</a>
-			</div>
+			<EmptyState
+				icon="tickets"
+				title="Keine offenen Tickets"
+				description="Lege ein Ticket an oder erfasse eine Zeile mit der Kurzsyntax."
+			>
+				{#snippet primary()}
+					<a class="button-primary" href={newTicketHref(page.url)}>Ticket anlegen</a>
+				{/snippet}
+				{#snippet secondary()}
+					{#if openQuickCapture}
+						<button class="button-subtle" type="button" onclick={openQuickCapture}>
+							Schnellerfassung <kbd>c</kbd>
+						</button>
+					{/if}
+				{/snippet}
+			</EmptyState>
 		{/if}
 	{:else if store.openState === 'loading' && !hasOpenRows}
 		<p class="loading" role="status">Tickets werden geladen …</p>
@@ -632,24 +654,13 @@
 		margin-top: 0.5rem;
 	}
 
-	.empty .button-primary {
-		margin-top: 0.75rem;
-		text-decoration: none;
-	}
-
-	.empty,
 	.loading,
 	.muted {
 		color: var(--color-text-muted);
 	}
 
-	.empty,
 	.loading {
 		padding: 1.5rem 0;
-	}
-
-	.empty {
-		margin-bottom: 1rem;
 	}
 
 	/* Only shown if loading takes noticeably long: no flash on a fast local server. */

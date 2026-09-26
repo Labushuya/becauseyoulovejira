@@ -699,7 +699,7 @@ describe('ticket route', () => {
 
 		expect(open).toHaveBeenCalledWith(ID);
 		expect(openComments).toHaveBeenCalledWith(ID);
-		await vi.waitFor(() => expect(screen.getByText('Noch keine Kommentare.')).toBeTruthy());
+		await vi.waitFor(() => expect(screen.getByText('Noch keine Kommentare')).toBeTruthy());
 		await fireEvent.click(screen.getByRole('button', { name: 'Panel schließen' }));
 		expect(mocks.goto).toHaveBeenCalledWith('/?erledigte=1');
 
@@ -1034,7 +1034,7 @@ describe('ticket route: full view (ADR-0025 section 7, UI-7)', () => {
 		const view = within(dialog);
 		expect(view.getByRole('heading', { level: 2, name: 'Steuererklärung' })).toBeTruthy();
 		expect(view.getByRole('region', { name: 'Beschreibung' })).toBeTruthy();
-		await vi.waitFor(() => expect(view.getByText('Noch keine Kommentare.')).toBeTruthy());
+		await vi.waitFor(() => expect(view.getByText('Noch keine Kommentare')).toBeTruthy());
 		for (const card of ['Details', 'Wiederholung', 'Quelle', 'Metadaten']) {
 			expect(view.getByRole('region', { name: card }), card).toBeTruthy();
 		}

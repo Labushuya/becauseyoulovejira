@@ -16,6 +16,7 @@ import type { TicketPatch, TicketSummary } from '$lib/domain/ticket';
 import { CatalogStore } from '$lib/stores/catalog.svelte';
 import { FLAG_DURATION_MS, FlagStore } from '$lib/stores/flags.svelte';
 import { TicketListStore, type TicketListData } from '$lib/stores/ticket-list.svelte';
+import { QUICK_CAPTURE_CONTEXT } from '$lib/quick-capture-context';
 import { NEW_TICKET_LINK_ID } from '$lib/ticket-links';
 import FlagGroup from './overlay/FlagGroup.svelte';
 import TicketTable from './TicketTable.svelte';
@@ -93,7 +94,8 @@ function fakeData(open: TicketSummary[], donePages: TicketSummary[][] = []) {
 async function showTable(
 	data: TicketListData,
 	path = '/',
-	catalogContent: { projects?: Project[]; tags?: Tag[] } = {}
+	catalogContent: { projects?: Project[]; tags?: Tag[] } = {},
+	context?: Map<unknown, unknown>
 ) {
 	mocks.page.url = new URL(path, 'http://localhost:3000');
 	const flags = new FlagStore();
@@ -108,7 +110,7 @@ async function showTable(
 	);
 	void catalog.load();
 	store.activate(parseListQuery(mocks.page.url.searchParams));
-	const result = render(TicketTable, { props: { store, catalog } });
+	const result = render(TicketTable, { props: { store, catalog }, context });
 	// The flags of the app layout, after the table like after `main` (ADR-0025 section 8).
 	render(FlagGroup, { props: { store: flags } });
 	await vi.advanceTimersByTimeAsync(0);
@@ -296,10 +298,13 @@ describe('ticket table', () => {
 	it('shows the empty states', async () => {
 		await showTable(fakeData([], [[]]), '/?erledigte=1');
 
-		expect(screen.getByText('Keine offenen Tickets.')).toBeTruthy();
-		expect(screen.getByRole('link', { name: 'Neues Ticket' }).getAttribute('href')).toBe(
+		// Empty state since EH-11: heading, one sentence, the primary action as a verb.
+		expect(screen.getByRole('heading', { level: 3, name: 'Keine offenen Tickets' })).toBeTruthy();
+		expect(screen.getByRole('link', { name: 'Ticket anlegen' }).getAttribute('href')).toBe(
 			'/tickets/neu?erledigte=1'
 		);
+		// Without the (app) layout there is no quick entry to offer.
+		expect(screen.queryByRole('button', { name: /Schnellerfassung/ })).toBeNull();
 		expect(screen.getByText('0 Tickets')).toBeTruthy();
 		expect(within(doneBody()).getByText('Noch keine erledigten Tickets.')).toBeTruthy();
 	});
@@ -319,10 +324,24 @@ describe('ticket table', () => {
 		stop();
 	});
 
+	it('offers the quick entry of the layout in the empty state (EH-11)', async () => {
+		const open = vi.fn();
+		await showTable(fakeData([]), '/', {}, new Map([[QUICK_CAPTURE_CONTEXT, open]]));
+
+		const quick = screen.getByRole('button', { name: /Schnellerfassung/ });
+		expect(quick.classList.contains('button-subtle')).toBe(true);
+		expect(quick.querySelector('kbd')?.textContent).toBe('c');
+		await fireEvent.click(quick);
+		expect(open).toHaveBeenCalledOnce();
+		// Exactly one primary action.
+		const empty = quick.closest('.empty-state') as HTMLElement;
+		expect(empty.querySelectorAll('.button-primary')).toHaveLength(1);
+	});
+
 	it('shows no table without open tickets and without done tickets', async () => {
 		await showTable(fakeData([]));
 
-		expect(screen.getByText('Keine offenen Tickets.')).toBeTruthy();
+		expect(screen.getByText('Keine offenen Tickets')).toBeTruthy();
 		expect(screen.queryByRole('table')).toBeNull();
 	});
 
@@ -571,9 +590,12 @@ describe('ticket table: filters (E3 plan, package 10)', () => {
 	it('tells an empty filter result apart from an empty list and resets the filters', async () => {
 		await showTable(fakeData([ticket()]), '/?prio=urgent&sort=titel&erledigte=1');
 
-		expect(screen.getByText('Keine Tickets für diese Filter.')).toBeTruthy();
-		expect(screen.queryByText('Keine offenen Tickets.')).toBeNull();
-		await fireEvent.click(screen.getAllByRole('button', { name: 'Filter zurücksetzen' })[0]!);
+		expect(screen.getByRole('heading', { name: 'Keine Tickets für diese Filter' })).toBeTruthy();
+		expect(screen.queryByText('Keine offenen Tickets')).toBeNull();
+		const reset = screen.getAllByRole('button', { name: 'Filter zurücksetzen' })[0]!;
+		// The only action of the empty result is the primary one (EH-11).
+		expect(reset.classList.contains('button-primary')).toBe(true);
+		await fireEvent.click(reset);
 
 		expect(mocks.goto).toHaveBeenCalledWith('/?sort=titel&erledigte=1', {
 			keepFocus: true,
@@ -586,7 +608,7 @@ describe('ticket table: filters (E3 plan, package 10)', () => {
 		await showTable(fakeData([ticket()]), '/?projekt=zzzzzzzzzzzzzzz');
 
 		expect(screen.queryByRole('table')).toBeNull();
-		expect(screen.getByText('Keine Tickets für diese Filter.')).toBeTruthy();
+		expect(screen.getByRole('heading', { name: 'Keine Tickets für diese Filter' })).toBeTruthy();
 		expect(screen.getByRole('button', { name: 'Filter zurücksetzen' })).toBeTruthy();
 	});
 

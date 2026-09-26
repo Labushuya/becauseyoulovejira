@@ -3,9 +3,11 @@
 	import CommentForm from './CommentForm.svelte';
 	import CommentItem from './CommentItem.svelte';
 	import ErrorIcon from './ErrorIcon.svelte';
+	import EmptyState from './guidance/EmptyState.svelte';
 
 	// Comments of the open ticket (E2 plan, T-11): oldest first, the newest directly above the
 	// input field. After a deletion the owner moves the focus (`ondeleted`), so it is not lost.
+	// Without comments a compact empty state stands above the form (plan EH-11).
 	let { store, ondeleted }: { store: TicketActivityStore; ondeleted: () => void } = $props();
 </script>
 
@@ -19,7 +21,7 @@
 	{:else if store.commentsState === 'loading' && store.comments.length === 0}
 		<p class="muted loading" role="status">Kommentare werden geladen …</p>
 	{:else if store.commentsState === 'ready' && store.comments.length === 0}
-		<p class="muted">Noch keine Kommentare.</p>
+		<EmptyState size="compact" title="Noch keine Kommentare" headingLevel={3} />
 	{:else}
 		<ol class="list">
 			{#each store.comments as comment (comment.id)}
