@@ -213,8 +213,8 @@
   "meta": {
     "projekt": "becauseyoulovejira",
     "stand": "2026-09-26",
-    "commit": "687009e",
-    "etappe": "E0 bis E4 abgeschlossen (E4: Pakete 1 bis 11, 13 bis 17, 19 bis 24; Paket 12 entfällt, Paket 18 zurückgestellt); E5 in Arbeit (Pakete 1 bis 4: BYL-E5-001 bis BYL-E5-005); E6 UI-Konsistenz vorgezogen und umgesetzt (UI-0 bis UI-9 und UI-6b: BYL-E6-001 bis BYL-E6-028; Projektliste und Tags in den Einstellungen nach Nutzerwunsch: BYL-E6-065 bis BYL-E6-067); E6 Einstellungen und Hilfe in Arbeit (EH-0 bis EH-9 umgesetzt; geplant bis BYL-E6-059)"
+    "commit": "6328225",
+    "etappe": "E0 bis E4 abgeschlossen (E4: Pakete 1 bis 11, 13 bis 17, 19 bis 24; Paket 12 entfällt, Paket 18 zurückgestellt); E5 in Arbeit (Pakete 1 bis 4: BYL-E5-001 bis BYL-E5-005); E6 UI-Konsistenz vorgezogen und umgesetzt (UI-0 bis UI-9 und UI-6b: BYL-E6-001 bis BYL-E6-028; Projektliste und Tags in den Einstellungen nach Nutzerwunsch: BYL-E6-065 bis BYL-E6-067); E6 Einstellungen und Hilfe in Arbeit (EH-0 bis EH-10 umgesetzt; geplant bis BYL-E6-059)"
   },
   "blocks": [
     {
@@ -1591,10 +1591,10 @@
           "pre": "Plan Einstellungen, Paket EH-9; ADR-0026 §7.", "steps": ["npm run test:web"],
           "expect": "„Einstellungen → Hilfe“ steht als letzter Eintrag in der Navigation. Oben Sprunglinks zu fünf Abschnitten (Tastaturkürzel, Kurzsyntax, Kanäle und Zugangsdaten, Häufige Fragen, Betrieb), die es auf der Seite gibt. Tastaturkürzel in allen vier Kontexten als Beschreibungsliste (keine Tabelle), Kurzsyntax mit Beispiel ohne „Kopieren“ und allen Tokens (@CODE, !niedrig bis !dringend, !1 bis !4, #tag). „Kanäle und Zugangsdaten“ erklärt setx, die Systemsteuerung und „stop.bat und dann start.bat“; die Seite „Kanäle“ hat dafür nur noch den Link „Wie funktionieren die Zugangsdaten?“. Fünf häufige Fragen zugeklappt, Betrieb mit Neustart, byl-mail.log und der Verwaltung (/_/, rel=external). „Mehr zur Kurzsyntax“ in der Schnellerfassung öffnet die Hilfe in einem neuen Tab und behält den getippten Text.",
           "tests": ["web/src/routes/(app)/einstellungen/hilfe/help-page.test.ts", "web/src/lib/components/connections-page.test.ts::leads to the explanation of the access data in the help", "web/src/routes/(app)/einstellungen/settings-layout.test.ts::offers the pages in a named navigation", "web/src/lib/components/quick-capture.test.ts::leads to the short syntax in the help in a new tab"] },
-        { "id": "BYL-E6-054", "title": "Hinweise in Dialogen einheitlich", "art": ["komponente", "unit"], "status": "geplant",
-          "pre": "Plan Einstellungen, Paket EH-10.", "steps": ["Dialoge und Editoren nutzen SectionMessage bzw. EmptyState compact; no-own-notices.test.ts mit Ausnahmeliste."],
-          "expect": "Keine lokalen .notice/.empty mehr in diesen Dateien.",
-          "tests": [] },
+        { "id": "BYL-E6-054", "title": "Hinweise in Dialogen einheitlich", "art": ["komponente", "unit"], "status": "bestanden",
+          "pre": "Plan Einstellungen, Paket EH-10; ADR-0026 §2.", "steps": ["npm run test:web"],
+          "expect": "Datei-Dialog (Stichwörter nicht verfügbar, Stichwörter fehlen mit Link „Stichwörter unter „Datei-Importe“ festlegen“), WhatsApp-Auswahl (keine Stichwörter mit demselben Link) und Wiederholung (Hinweis der Regel, nicht verfügbar) zeigen Hinweise als Section Message „info“; der Stichwort-Editor ohne Stichwörter eine kompakte Warnung mit „Achtung:“ ohne Rolle; die Postfach-Auswahl „Hilfsprozess läuft nicht“ als Info mit Rolle status, einen abgelehnten Abruf als Fehler (alert) mit Hinweis und „Erneut versuchen“. Leere Listen („Der Posteingang ist leer“, „Keine Nachricht passt zu den Filtern“) sind kompakte leere Zustände mit Überschrift. Statisch: keine lokale Klasse .notice/.empty außerhalb der Bausteine (Ausnahmen nur InboxTable, TicketTable, ProjectsView bis EH-11/EH-12), kein Neustart-Wortlaut außerhalb von lib/guidance/texts.ts.",
+          "tests": ["web/src/lib/no-own-notices.test.ts", "web/src/lib/components/file-import-dialog.test.ts::names the kinds without keywords", "web/src/lib/components/keyword-editor.test.ts::shows the warning without keywords", "web/src/lib/components/mailbox-picker.test.ts::explains a stopped mail helper neutrally", "web/src/lib/components/mailbox-picker.test.ts::says when the inbox is empty", "web/src/lib/components/whatsapp-import.test.ts::says that nothing is chosen without keywords", "web/src/lib/components/recurrence-summary.test.ts::shows the hint of a paused rule neutrally"] },
         { "id": "BYL-E6-055", "title": "Leere Zustände in Listen und Panels", "art": ["komponente"], "status": "geplant",
           "pre": "Plan Einstellungen, Paket EH-11.", "steps": ["Leere Zustände nach Plan §3.9 mit einem Primärknopf; „Der Eingang ist leer“ mit „Erfassen“ und „Kanal einrichten“."],
           "expect": "Jeder leere Zustand zeigt einen nächsten Schritt.",

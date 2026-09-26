@@ -14,6 +14,8 @@
 		type MailboxOutcome
 	} from '$lib/domain/mailbox';
 	import ErrorIcon from './ErrorIcon.svelte';
+	import EmptyState from './guidance/EmptyState.svelte';
+	import SectionMessage from './guidance/SectionMessage.svelte';
 	import Modal from './overlay/Modal.svelte';
 
 	// Mailbox selection (E4 plan, package 23; ADR-0016 section 6, ADR-0020 section 4) on the modal
@@ -173,30 +175,23 @@
 
 	{#if view.kind === 'loading'}
 		<p class="hint" role="status">Das Postfach wird gelesen …</p>
-	{:else if view.kind === 'unavailable'}
-		<div class="notice" role="status">
+	{:else if view.kind === 'unavailable' || view.kind === 'failed'}
+		<!-- A stopped helper is neutral (info), a refused login or a broken mailbox an error. -->
+		<SectionMessage tone={view.kind === 'failed' ? 'error' : 'info'} live>
 			<p>{view.message}</p>
 			{#if view.hint !== ''}<p>{view.hint}</p>{/if}
-		</div>
-		<p>
-			<button class="button-secondary" type="button" onclick={() => void refresh(limit)}
-				>Erneut versuchen</button
-			>
-		</p>
-	{:else if view.kind === 'failed'}
-		<div class="alert-error" role="alert"><ErrorIcon /><span>{view.message}</span></div>
-		{#if view.hint !== ''}<p class="notice">{view.hint}</p>{/if}
-		<p>
-			<button class="button-secondary" type="button" onclick={() => void refresh(limit)}
-				>Erneut versuchen</button
-			>
-		</p>
+			{#snippet actions()}
+				<button class="button-subtle" type="button" onclick={() => void refresh(limit)}
+					>Erneut versuchen</button
+				>
+			{/snippet}
+		</SectionMessage>
 	{/if}
 
 	<form id={ids.form} class="form" novalidate onsubmit={submit}>
 		{#if view.kind === 'ready'}
 			{#if mails.length === 0}
-				<p class="hint">Der Posteingang ist leer.</p>
+				<EmptyState size="compact" title="Der Posteingang ist leer" headingLevel={3} />
 			{:else}
 				<div class="choice">
 					<button
@@ -245,8 +240,10 @@
 		{/if}
 
 		{#if saveError !== null}
-			<div class="alert-error" role="alert"><ErrorIcon /><span>{saveError.message}</span></div>
-			{#if saveError.hint !== ''}<p class="notice">{saveError.hint}</p>{/if}
+			<SectionMessage tone="error" live>
+				<p>{saveError.message}</p>
+				{#if saveError.hint !== ''}<p>{saveError.hint}</p>{/if}
+			</SectionMessage>
 		{/if}
 	</form>
 
@@ -362,15 +359,5 @@
 	.hint {
 		font-size: 0.8125rem;
 		color: var(--color-text-muted);
-	}
-
-	.notice {
-		display: grid;
-		gap: 0.25rem;
-		padding: 0.375rem 0.625rem;
-		font-size: 0.8125rem;
-		color: var(--color-brand-soft-text);
-		background: var(--color-brand-soft-bg);
-		border-radius: var(--radius-control);
 	}
 </style>

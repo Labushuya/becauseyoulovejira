@@ -956,6 +956,10 @@ Wird je Paket ergänzt.
 | 2026-09-26 | EH-8 | „Darstellung“ (`/einstellungen/darstellung`): `fieldset` „Farbschema“ mit drei Radios als Kacheln (Radio sichtbar, Name über `aria-labelledby` nur aus dem Titel, Beschreibung per `aria-describedby`), auf `getThemeStore()`, `THEME_PREFERENCES` und `THEME_LABELS` wie das Menü der Kopfzeile. Weil beide denselben Store teilen, stimmen sie in beiden Richtungen überein; `connect()` folgt anderen Tabs. Die „Vorschau“ ist das Symbol der Wahl (neu `ThemeIcon.svelte`, auch im Menü), keine Farbvorschau: Die Tokens gelten nur an `:root`, eine echte Vorschau des anderen Modus bräuchte doppelte Farbblöcke in `tokens.css`. |
 | 2026-09-26 | EH-8 | „Konto“ (`/einstellungen/konto`) nach der Vorgabe „nur Anzeige“: E-Mail des App-Kontos, Art, und eine Info „Konten verwalten“ (Admin- gegenüber App-Konto, „Collections → users“, `admin-zuruecksetzen.bat`) mit Link „Verwaltung öffnen“ auf `/_/` (`rel="external"`). Abweichung von §3.1/EH-8: kein Knopf „Abmelden“ auf der Seite, weil er in der Kopfzeile steht und die Seite nur anzeigt; kein Passwortfeld, „Passwort ändern“ bleibt zurückgestellt. Navigation: Kanäle, Datei-Importe, Tags, Darstellung, Konto, Hilfe. |
 | 2026-09-26 | EH-8 | Bewusst angepasste Tests: `settings-layout` (sechs Seiten). Neu: `einstellungen/darstellung/appearance-page.test.ts` (Radios, sofortige Wirkung, Gleichlauf mit dem Menü in beiden Richtungen, andere Tabs), `einstellungen/konto/account-page.test.ts` (E-Mail, Hinweis, `rel="external"`, kein Feld und kein Knopf). `theme-menu.test.ts` bleibt unverändert grün (die Symbole kommen jetzt aus `ThemeIcon`). Manifest: BYL-E6-051 bestanden. |
+| 2026-09-26 | EH-10 | Umgestellt: `FileImportDialog` (Stichwörter nicht verfügbar: Info; Stichwörter fehlen: Info mit dem Link als Aktion), `KeywordEditor` (keine Stichwörter: Warnung compact), `MailboxPicker` (Hilfsprozess läuft nicht: Info `live`, abgelehnter Abruf und Fehler beim Übernehmen: Fehler `live` mit Hinweis als zweitem Absatz, „Erneut versuchen“ als Aktion `.button-subtle`; leerer Posteingang: `EmptyState compact`), `WhatsAppImport` (keine Stichwörter: Info mit Link wie im Datei-Dialog, statt eines Satzes in der Zusammenfassung; keine Nachricht für die Filter: `EmptyState compact`), `RecurrenceSummary` (letzter Hinweis der Regel und „nicht verfügbar“: Info compact). |
+| 2026-09-26 | EH-10 | Bewusst **nicht** umgestellt: `ClipboardImport`, `BulkConvertDialog` und `RecurrenceForm` haben keine Hinweise im Sinne von §3.9, nur Feldhilfen (`.hint`, bleiben nach §3.9 „Tipps in Formularen“) und Ergebnisfehler mit Liste als `.alert-error` (bleibt für Formularfehler, §3.9 „Verhältnis zu `.alert-error`“). Leere Listen heißen jetzt nach der Regel ohne Punkt („Der Posteingang ist leer“, „Keine Nachricht passt zu den Filtern“). |
+| 2026-09-26 | EH-10 | `no-own-notices.test.ts` (unter `lib/`): verbietet in allen `.svelte`-Dateien außerhalb von `components/guidance/` lokale Klassen `.notice`/`.empty` (Stil, `class`-Attribut, `class:`; `empty-state` zählt nicht) und in allen Quellen außer `lib/guidance/texts.ts` den Wortlaut „nächsten Start/Neustart“. Er erfasst die Bausteine (`SectionMessage`, `EmptyState`, `Lozenge` müssen unter `guidance/` liegen) und prüft, dass die fünf umgestellten Dateien sie importieren. Ausnahmeliste: `InboxTable`, `TicketTable` (EH-11) und `ProjectsView` (EH-12); ein Eintrag ohne lokale Klasse lässt den Test scheitern, damit die Liste nur schrumpft. |
+| 2026-09-26 | EH-10 | Bewusst angepasste Tests: `mailbox-picker` (leerer Posteingang als Überschrift ohne Punkt), `whatsapp-import` (Hinweis ohne Stichwörter als Info mit Link; leerer Filter als Überschrift), `keyword-editor` und `file-import-dialog` (Ton und Aufbau der Meldung zusätzlich geprüft). Neu: `lib/no-own-notices.test.ts`. Manifest: BYL-E6-054 bestanden. |
 
 ## 8. Status
 
@@ -970,8 +974,9 @@ Wird je Paket ergänzt.
 | EH-7 | gemergt (#65) |
 | EH-6 | gemergt (#66) |
 | EH-9 | gemergt (#67) |
-| EH-8 | umgesetzt (dieser PR) |
-| EH-10 bis EH-13 | geplant |
+| EH-8 | gemergt (#68) |
+| EH-10 | umgesetzt (dieser PR) |
+| EH-11 bis EH-13 | geplant |
 
 ## Quellen (nur Muster, keine Assets)
 

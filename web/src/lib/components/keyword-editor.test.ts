@@ -26,7 +26,12 @@ function renderEditor(keywords: string[] = [], result: string | null = null) {
 describe('KeywordEditor', () => {
 	it('shows the warning without keywords and the list with them', () => {
 		renderEditor();
-		expect(screen.getByText('Keine Stichwörter.')).toBeTruthy();
+		// A compact warning (EH-10): tone "warning" with the hidden prefix, not a local notice.
+		const warning = screen.getByText('Keine Stichwörter.').closest('[data-tone]');
+		expect(warning?.getAttribute('data-tone')).toBe('warning');
+		expect(warning?.classList.contains('compact')).toBe(true);
+		expect(warning?.textContent).toMatch(/Achtung:/);
+		expect(warning?.getAttribute('role')).toBeNull();
 		expect(screen.getByRole('group', { name: 'Stichwörter' })).toBeTruthy();
 		expect(screen.getByText(/Gesucht wird im Text\. Groß- und Kleinschreibung/)).toBeTruthy();
 	});
