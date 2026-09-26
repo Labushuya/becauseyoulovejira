@@ -6,9 +6,12 @@ import {
 	importKeywordsValue,
 	mailKeywordTexts,
 	foldKeywordText,
+	hasKeywordSeparator,
 	keywordInputError,
 	keywordListOf,
 	matchKeyword,
+	planKeywordAdditions,
+	splitKeywordInput,
 	withSuggestions
 } from './keywords';
 
@@ -114,5 +117,33 @@ describe('keywords of the file imports (package 21)', () => {
 		for (const keyword of ['Todo', 'TODO', 'todo']) {
 			expect(matchKeyword([keyword], ['tOdO: Steuer'])).toBe(keyword);
 		}
+	});
+});
+
+describe('input of the keyword editor (package A)', () => {
+	it('splits at commas and line breaks and keeps the rest unless finished', () => {
+		expect(splitKeywordInput('todo', false)).toEqual({ parts: [], rest: 'todo' });
+		expect(splitKeywordInput('todo', true)).toEqual({ parts: ['todo'], rest: '' });
+		expect(splitKeywordInput('a, b ,, c', false)).toEqual({ parts: ['a', 'b'], rest: ' c' });
+		expect(splitKeywordInput('a\r\nb\nc,', true)).toEqual({ parts: ['a', 'b', 'c'], rest: '' });
+		expect(splitKeywordInput(' , ', true)).toEqual({ parts: [], rest: '' });
+		expect(hasKeywordSeparator('zu erledigen')).toBe(false);
+		expect(hasKeywordSeparator('a,b')).toBe(true);
+		expect(hasKeywordSeparator('a\nb')).toBe(true);
+	});
+
+	it('plans additions one after the other, also against duplicates among them', () => {
+		expect(planKeywordAdditions(['todo'], [' neu ', 'TODO', 'Neu', ''])).toEqual({
+			accepted: ['neu'],
+			refused: [
+				{ keyword: 'TODO', error: 'Das Stichwort „todo“ gibt es schon.' },
+				{ keyword: 'Neu', error: 'Das Stichwort „neu“ gibt es schon.' },
+				{ keyword: '', error: 'Bitte ein Stichwort eingeben.' }
+			]
+		});
+		const full = Array.from({ length: 49 }, (_, index) => `k${index}`);
+		expect(planKeywordAdditions(full, ['a', 'b']).refused).toEqual([
+			{ keyword: 'b', error: 'Höchstens 50 Stichwörter.' }
+		]);
 	});
 });

@@ -1,17 +1,23 @@
 <script lang="ts">
+	import { tick } from 'svelte';
 	import {
 		KEYWORD_MAX_LENGTH,
 		KEYWORD_SUGGESTIONS,
-		keywordInputError,
+		hasKeywordSeparator,
+		planKeywordAdditions,
+		splitKeywordInput,
 		withSuggestions
 	} from '$lib/domain/keywords';
 	import ErrorIcon from './ErrorIcon.svelte';
 	import SectionMessage from './guidance/SectionMessage.svelte';
 
-	// List of keywords (ADR-0020; E4 plan package 20): add one by one, remove, take over the
-	// suggestions. Every change is saved at once through `onsave`, which answers with an error text
-	// or null. Without keywords a neutral warning says what that means (`emptyText`), as a compact
-	// section message of the tone "warning" (plan EH-10): icon and hidden "Achtung:", no yellow.
+	// List of keywords (ADR-0020; E4 plan package 20): add, remove, take over the suggestions. Every
+	// change is saved at once through `onsave`, which answers with an error text or null. Without
+	// keywords a neutral warning says what that means (`emptyText`), as a compact section message of
+	// the tone "warning" (plan EH-10): icon and hidden "Achtung:", no yellow.
+	// Input (user feedback, package A): a comma, Enter and pasting a comma-separated list take the
+	// text as keywords and empty the field; Backspace in the empty field brings the last keyword back
+	// as editable text. What happens to the field is said in a polite live region.
 	let {
 		keywords,
 		name,
@@ -34,7 +40,8 @@
 		legend: `${uid}-legend`,
 		input: `${uid}-input`,
 		inputError: `${uid}-input-error`,
-		hint: `${uid}-hint`
+		hint: `${uid}-hint`,
+		keys: `${uid}-keys`
 	};
 
 	let input = $state('');
@@ -42,6 +49,7 @@
 	let saveError = $state<string | null>(null);
 	let saving = $state(false);
 	let field = $state<HTMLInputElement>();
+	let live = $state('');
 
 	const suggestionsMissing = $derived(withSuggestions(keywords).length > keywords.length);
 
@@ -53,17 +61,6 @@
 		saving = false;
 		saveError = error;
 		return error === null;
-	}
-
-	async function add() {
-		const error = keywordInputError(keywords, input);
-		inputError = error;
-		if (error !== null) {
-			field?.focus();
-			return;
-		}
-		const keyword = input.trim();
-		if (await save([...keywords, keyword], `Stichwort „${keyword}“ hinzugefügt.`)) input = '';
 	}
 
 	async function remove(keyword: string) {
@@ -80,6 +77,128 @@
 		const added = next.length - keywords.length;
 		if (added === 0) return;
 		await save(next, `${added} ${added === 1 ? 'Vorschlag' : 'Vorschläge'} übernommen.`);
+	}
+
+	/** Says `text` in the live region, also when it is the same text as before. */
+	async function announce(text: string) {
+		live = '';
+		await tick();
+		live = text;
+	}
+
+	/**
+	 * Takes `candidates` as keywords; `rest` stays in the field. Refused ones go back into the field
+	 * in front of the rest, with the reason of the first as field error. The field changes only
+	 * after a successful save (a failed one leaves it as it was), and what was typed during the
+	 * save stays behind the rest, so no character is lost. After a failed save the field shows
+	 * `unsaved` (a pasted list that is not in the field yet).
+	 */
+	async function commit(
+		candidates: string[],
+		rest: string,
+		original: string,
+		unsaved: string = original
+	) {
+		if (candidates.length === 0) {
+			input = rest;
+			return;
+		}
+		const { accepted, refused } = planKeywordAdditions(keywords, candidates);
+		const back = [...refused.map((entry) => entry.keyword), ...(rest.trim() === '' ? [] : [rest])];
+		const remaining = back.length === 0 ? rest : back.join(', ');
+		inputError = refused[0]?.error ?? null;
+		if (accepted.length === 0) {
+			input = remaining;
+			field?.focus();
+			return;
+		}
+		const added =
+			accepted.length === 1
+				? `Stichwort „${accepted[0]}“ hinzugefügt.`
+				: `${accepted.length} Stichwörter hinzugefügt.`;
+		if (!(await save([...keywords, ...accepted], added))) {
+			if (input === original) input = unsaved;
+			return;
+		}
+		if (input.startsWith(original)) input = remaining + input.slice(original.length);
+		const taken =
+			accepted.length === 1
+				? `„${accepted[0]}“ übernommen.`
+				: `${accepted.length} Stichwörter übernommen.`;
+		await announce(refused.length === 0 ? taken : `${taken} ${refused.length} nicht übernommen.`);
+	}
+
+	/** Enter or "Hinzufügen": the whole field, split at commas. */
+	function add() {
+		const original = input;
+		if (original.trim() === '') {
+			inputError = 'Bitte ein Stichwort eingeben.';
+			field?.focus();
+			return;
+		}
+		void commit(splitKeywordInput(original, true).parts, '', original);
+	}
+
+	/** A typed comma: the text before the caret becomes keywords, the text after it stays. */
+	function commitAtCaret(target: HTMLInputElement) {
+		const original = input;
+		const start = target.selectionStart ?? original.length;
+		const end = target.selectionEnd ?? start;
+		void commit(
+			splitKeywordInput(original.slice(0, start), true).parts,
+			original.slice(end),
+			original
+		);
+	}
+
+	/** Backspace in the empty field: the last keyword comes back as editable text. */
+	async function takeBackLast() {
+		const last = keywords.at(-1);
+		if (last === undefined) return;
+		inputError = null;
+		input = last;
+		await tick();
+		field?.setSelectionRange(last.length, last.length);
+		if (await save(keywords.slice(0, -1), `Stichwort „${last}“ zum Bearbeiten ins Feld geholt.`)) {
+			await announce(`„${last}“ zum Bearbeiten im Feld.`);
+		} else if (input === last) {
+			input = '';
+		}
+	}
+
+	function onkeydown(event: KeyboardEvent & { currentTarget: HTMLInputElement }) {
+		if (event.key === 'Enter') {
+			event.preventDefault();
+			if (!saving) add();
+		} else if (event.key === ',') {
+			event.preventDefault();
+			if (!saving) commitAtCaret(event.currentTarget);
+		} else if (event.key === 'Backspace' && input === '' && keywords.length > 0) {
+			// Held down, the key repeats: only the first press takes a keyword back.
+			event.preventDefault();
+			if (!saving && !event.repeat) void takeBackLast();
+		}
+	}
+
+	/** A pasted list with commas or line breaks becomes keywords at once, its last part too. */
+	function onpaste(event: ClipboardEvent & { currentTarget: HTMLInputElement }) {
+		const text = event.clipboardData?.getData('text') ?? '';
+		if (!hasKeywordSeparator(text)) return;
+		event.preventDefault();
+		if (saving) return;
+		const original = input;
+		const start = event.currentTarget.selectionStart ?? original.length;
+		const end = event.currentTarget.selectionEnd ?? start;
+		const combined = original.slice(0, start) + text + original.slice(end);
+		void commit(splitKeywordInput(combined, true).parts, '', original, combined);
+	}
+
+	/** A separator that came another way (autocorrect, drag and drop): like a typed comma. */
+	function oninput() {
+		if (saving || !hasKeywordSeparator(input)) return;
+		const original = input;
+		const { parts, rest } = splitKeywordInput(original, false);
+		void commit(parts, rest, original);
 	}
 </script>
 
@@ -121,21 +240,20 @@
 				maxlength={KEYWORD_MAX_LENGTH}
 				autocomplete="off"
 				aria-invalid={inputError !== null ? 'true' : undefined}
-				aria-describedby={inputError !== null ? `${ids.inputError} ${ids.hint}` : ids.hint}
+				aria-describedby={inputError !== null
+					? `${ids.inputError} ${ids.keys} ${ids.hint}`
+					: `${ids.keys} ${ids.hint}`}
 				bind:value={input}
-				onkeydown={(event) => {
-					if (event.key === 'Enter') {
-						event.preventDefault();
-						if (!saving) void add();
-					}
-				}}
+				{onkeydown}
+				{onpaste}
+				{oninput}
 			/>
 			<button
 				type="button"
 				class="button-secondary"
 				aria-disabled={saving ? 'true' : undefined}
 				onclick={() => {
-					if (!saving) void add();
+					if (!saving) add();
 				}}
 			>
 				Hinzufügen
@@ -152,9 +270,14 @@
 				Vorschläge übernehmen
 			</button>
 		</div>
+		<p class="hint" id={ids.keys}>
+			Komma oder Enter übernimmt das Stichwort, auch aus einer eingefügten Liste. Die Rücktaste im
+			leeren Feld holt das letzte Stichwort zum Bearbeiten zurück.
+		</p>
 		{#if inputError !== null}
 			<p id={ids.inputError} class="field-error"><ErrorIcon /><span>{inputError}</span></p>
 		{/if}
+		<p class="visually-hidden" aria-live="polite">{live}</p>
 	</div>
 	{#if saveError !== null}
 		<p class="alert-error" role="alert"><ErrorIcon /><span>{saveError}</span></p>
