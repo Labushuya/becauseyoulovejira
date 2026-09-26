@@ -3,6 +3,7 @@
 	import { describeQuickEntry, parseQuickEntry, type QuickEntry } from '$lib/domain/quick-syntax';
 	import type { CaptureTarget } from '$lib/domain/templates';
 	import type { ProjectRef, TagRef } from '$lib/domain/ticket';
+	import { helpHref } from '$lib/settings-sections';
 	import type { CaptureSaveResult } from '$lib/stores/capture';
 	import ErrorIcon from './ErrorIcon.svelte';
 	import Modal from './overlay/Modal.svelte';
@@ -120,6 +121,10 @@
 		<p class="hint" id={ids.hint}>
 			Enter legt ein Ticket an, Alt+Enter legt es in den Eingang. Beispiel: „Zahnarzt anrufen @HAUS
 			!hoch #anruf“ (Priorität !niedrig, !mittel, !hoch, !dringend oder !1 bis !4).
+			<!-- A new tab, so typed text is never lost (plan UI-4) and the dialog stays as it is. -->
+			<a href={helpHref('kurzsyntax')} target="_blank" rel="noopener">
+				Mehr zur Kurzsyntax<span class="visually-hidden"> (öffnet in neuem Tab)</span>
+			</a>
 		</p>
 
 		<div aria-live="polite">
@@ -204,7 +209,8 @@
 		gap: 0.25rem 0.5rem;
 	}
 
-	.result a {
+	.result a,
+	.hint a {
 		color: var(--color-brand-text);
 	}
 </style>

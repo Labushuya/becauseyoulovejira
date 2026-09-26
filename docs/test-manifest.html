@@ -213,8 +213,8 @@
   "meta": {
     "projekt": "becauseyoulovejira",
     "stand": "2026-09-26",
-    "commit": "37e5b97",
-    "etappe": "E0 bis E4 abgeschlossen (E4: Pakete 1 bis 11, 13 bis 17, 19 bis 24; Paket 12 entfällt, Paket 18 zurückgestellt); E5 in Arbeit (Pakete 1 bis 4: BYL-E5-001 bis BYL-E5-005); E6 UI-Konsistenz vorgezogen und umgesetzt (UI-0 bis UI-9 und UI-6b: BYL-E6-001 bis BYL-E6-028; Projektliste und Tags in den Einstellungen nach Nutzerwunsch: BYL-E6-065 bis BYL-E6-067); E6 Einstellungen und Hilfe in Arbeit (EH-0 bis EH-7 umgesetzt; geplant bis BYL-E6-059)"
+    "commit": "1143550",
+    "etappe": "E0 bis E4 abgeschlossen (E4: Pakete 1 bis 11, 13 bis 17, 19 bis 24; Paket 12 entfällt, Paket 18 zurückgestellt); E5 in Arbeit (Pakete 1 bis 4: BYL-E5-001 bis BYL-E5-005); E6 UI-Konsistenz vorgezogen und umgesetzt (UI-0 bis UI-9 und UI-6b: BYL-E6-001 bis BYL-E6-028; Projektliste und Tags in den Einstellungen nach Nutzerwunsch: BYL-E6-065 bis BYL-E6-067); E6 Einstellungen und Hilfe in Arbeit (EH-0 bis EH-7 und EH-9 umgesetzt; geplant bis BYL-E6-059)"
   },
   "blocks": [
     {
@@ -1583,14 +1583,14 @@
           "pre": "Plan Einstellungen, Paket EH-8.", "steps": ["Darstellung als Radiogruppe, im Gleichlauf mit dem Menü der Kopfzeile.", "Konto mit E-Mail, Admin/App, Link zur Verwaltung (rel=external) und „Abmelden“."],
           "expect": "Darstellung und Konto haben einen Ort.",
           "tests": [] },
-        { "id": "BYL-E6-052", "title": "Hilfe-Menü und Taste ?", "art": ["komponente"], "status": "geplant",
-          "pre": "Plan Einstellungen, Paket EH-9.", "steps": ["„?“-Menü mit „Tastaturkürzel“, „Hilfe öffnen“, „Kanäle einrichten“.", "Die Taste ? öffnet das Modal „Tastaturkürzel“, nicht in Feldern, Dialogen und Popovers."],
-          "expect": "Hilfe ist überall einen Klick oder eine Taste entfernt.",
-          "tests": [] },
-        { "id": "BYL-E6-053", "title": "Hilfeseite: Kürzel, Kurzsyntax, FAQ", "art": ["komponente"], "status": "geplant",
-          "pre": "Plan Einstellungen, Paket EH-9.", "steps": ["Sprunglinks, Tastaturkürzel aus einer Quelle, Kurzsyntax, häufige Fragen, Betrieb."],
-          "expect": "Die Hilfe beantwortet die üblichen Fragen in der App.",
-          "tests": [] },
+        { "id": "BYL-E6-052", "title": "Hilfe-Menü und Taste ?", "art": ["komponente", "unit"], "status": "bestanden",
+          "pre": "Plan Einstellungen, Paket EH-9; ADR-0026 §7. Popover und Modal über die gemeinsamen Stubs.", "steps": ["npm run test:web"],
+          "expect": "Die Kopfzeile hat zwischen „Neues Ticket“ und dem Zahnrad den Symbolknopf „Hilfe“ mit einem Menü aus drei Einträgen: „Tastaturkürzel“ (aria-keyshortcuts „?“, sichtbares ?, öffnet das Modal, der Fokus steht vorher wieder auf dem Knopf), „Hilfe öffnen“ (/einstellungen/hilfe) und „Kanäle einrichten“ (/einstellungen/kanaele). Die Taste ? (auch Umschalt+ß) öffnet das Modal „Tastaturkürzel“ (M, „Überall“ und „Liste“, Fuß „Schließen“ und „Ganze Hilfe“ zu /einstellungen/hilfe#tastaturkuerzel), nicht in Feldern, Dialogen und offenen Popovers und nicht mit Strg, Alt oder Cmd. Die Kürzel kommen aus shortcuts.ts; deren globale Einträge passen zu isQuickCaptureKey und isHelpKey und zu aria-keyshortcuts von Kopfzeile und Menü.",
+          "tests": ["web/src/lib/components/help/help-menu.test.ts", "web/src/lib/domain/shortcuts.test.ts", "web/src/lib/domain/keyboard.test.ts::isHelpKey (plan EH-9)", "web/src/routes/(app)/app-layout.test.ts::app layout: shortcuts and help menu (EH-9)"] },
+        { "id": "BYL-E6-053", "title": "Hilfeseite: Kürzel, Kurzsyntax, FAQ", "art": ["komponente"], "status": "bestanden",
+          "pre": "Plan Einstellungen, Paket EH-9; ADR-0026 §7.", "steps": ["npm run test:web"],
+          "expect": "„Einstellungen → Hilfe“ steht als letzter Eintrag in der Navigation. Oben Sprunglinks zu fünf Abschnitten (Tastaturkürzel, Kurzsyntax, Kanäle und Zugangsdaten, Häufige Fragen, Betrieb), die es auf der Seite gibt. Tastaturkürzel in allen vier Kontexten als Beschreibungsliste (keine Tabelle), Kurzsyntax mit Beispiel ohne „Kopieren“ und allen Tokens (@CODE, !niedrig bis !dringend, !1 bis !4, #tag). „Kanäle und Zugangsdaten“ erklärt setx, die Systemsteuerung und „stop.bat und dann start.bat“; die Seite „Kanäle“ hat dafür nur noch den Link „Wie funktionieren die Zugangsdaten?“. Fünf häufige Fragen zugeklappt, Betrieb mit Neustart, byl-mail.log und der Verwaltung (/_/, rel=external). „Mehr zur Kurzsyntax“ in der Schnellerfassung öffnet die Hilfe in einem neuen Tab und behält den getippten Text.",
+          "tests": ["web/src/routes/(app)/einstellungen/hilfe/help-page.test.ts", "web/src/lib/components/connections-page.test.ts::leads to the explanation of the access data in the help", "web/src/routes/(app)/einstellungen/settings-layout.test.ts::offers the pages in a named navigation", "web/src/lib/components/quick-capture.test.ts::leads to the short syntax in the help in a new tab"] },
         { "id": "BYL-E6-054", "title": "Hinweise in Dialogen einheitlich", "art": ["komponente", "unit"], "status": "geplant",
           "pre": "Plan Einstellungen, Paket EH-10.", "steps": ["Dialoge und Editoren nutzen SectionMessage bzw. EmptyState compact; no-own-notices.test.ts mit Ausnahmeliste."],
           "expect": "Keine lokalen .notice/.empty mehr in diesen Dateien.",

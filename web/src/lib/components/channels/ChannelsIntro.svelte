@@ -1,11 +1,11 @@
 <script lang="ts">
+	import { helpHref } from '$lib/settings-sections';
 	import GuidanceIcon from '../guidance/GuidanceIcon.svelte';
 
 	// Explanation at the top of "Kanäle" (ADR-0026 section 3, plan §3.4): the two ways into the inbox
-	// side by side, with own texts after the pattern of the task board, and below, folded, how the
-	// access data work (Windows user variables, ADR-0018). The folded part is the former card
-	// "Zugangsdaten als Windows-Variable setzen"; it moves into the help with EH-9.
-	const uid = $props.id();
+	// side by side, with own texts after the pattern of the task board, and below one sentence on the
+	// access data (Windows user variables, ADR-0018) with a link to the help. The folded guide
+	// "Zugangsdaten als Windows-Variable setzen" moved into the help with EH-9.
 </script>
 
 <div class="intro">
@@ -33,44 +33,10 @@
 		</div>
 	</div>
 
-	<section class="variables" aria-labelledby={`${uid}-variables`}>
-		<details>
-			<summary id={`${uid}-variables`}>Zugangsdaten als Windows-Variable setzen</summary>
-			<div class="details">
-				<p>
-					Jede Verbindung liest ihre Zugangsdaten aus einer Umgebungsvariablen deines
-					Windows-Kontos, deren Name mit <code>BYL_</code> beginnt (nur Großbuchstaben, Ziffern und _).
-					So landen sie weder in der App noch in Sicherungen oder Kopien des Ordners.
-				</p>
-				<ol>
-					<li>
-						<strong>Per Eingabeaufforderung:</strong> Windows-Taste, „cmd“ eingeben, Eingabetaste.
-						Dann
-						<code>setx NAME "Wert"</code> eingeben, also etwa
-						<code>setx BYL_TELEGRAM_TOKEN "123456789:AA…"</code>. Den Wert in Anführungszeichen
-						setzen. Die Meldung „Erfolgreich: Der angegebene Wert wurde gespeichert.“ bestätigt es.
-					</li>
-					<li>
-						<strong>Oder per Systemsteuerung:</strong> Windows-Taste, „Umgebungsvariablen“ eingeben und
-						„Umgebungsvariablen für dieses Konto bearbeiten“ öffnen. Unter „Benutzervariablen“ auf „Neu…“,
-						Name und Wert eintragen, mit „OK“ bestätigen.
-					</li>
-					<li>
-						Danach die App neu starten: <code>stop.bat</code> und dann <code>start.bat</code> im
-						Ordner
-						<code>app</code> doppelklicken. Erst dann sieht die App die Variable, und die Karte der Verbindung
-						steht nicht mehr auf „Nicht eingerichtet“.
-					</li>
-				</ol>
-				<p class="hint">
-					Ändern geht genauso (<code>setx</code> mit neuem Wert, dann neu starten). Entfernen: in
-					der Systemsteuerung die Variable löschen oder
-					<code>reg delete HKCU\Environment /v NAME /f</code>, dann neu starten. Auf einem anderen
-					Rechner musst du die Variablen neu anlegen.
-				</p>
-			</div>
-		</details>
-	</section>
+	<p class="variables">
+		Zugangsdaten stehen nur als Windows-Variable in deinem Konto, nie in der App.
+		<a href={helpHref('zugangsdaten')}>Wie funktionieren die Zugangsdaten?</a>
+	</p>
 </div>
 
 <style>
@@ -125,28 +91,11 @@
 		color: var(--color-text-muted);
 	}
 
-	summary {
-		font-size: 0.875rem;
-		font-weight: 500;
-		color: var(--color-brand-text);
-		cursor: pointer;
-	}
-
-	.details {
-		display: grid;
-		gap: 0.5rem;
-		padding: 0.75rem 0 0 1rem;
-	}
-
-	ol {
-		display: grid;
-		gap: 0.25rem;
-		padding-left: 1.25rem;
-		font-size: 0.875rem;
-	}
-
-	.hint {
-		font-size: 0.8125rem;
+	.variables {
 		color: var(--color-text-muted);
+	}
+
+	.variables a {
+		color: var(--color-brand-text);
 	}
 </style>

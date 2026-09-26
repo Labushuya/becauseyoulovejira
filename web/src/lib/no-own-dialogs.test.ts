@@ -44,7 +44,8 @@ const SIZES: Readonly<Record<string, 's' | 'm' | 'l'>> = {
 	'MailboxPicker.svelte': 'l',
 	'channels/ChannelEditModal.svelte': 'm',
 	'channels/ChannelSetup.svelte': 'l',
-	'channels/ProtonGuide.svelte': 'm'
+	'channels/ProtonGuide.svelte': 'm',
+	'help/ShortcutsModal.svelte': 'm'
 };
 
 describe('dialogs on the modal building block', () => {

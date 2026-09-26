@@ -1,8 +1,8 @@
 // Global keys (E4 plan, T-11 and package 6): `c` and Ctrl+K open the quick entry, but not in input
-// fields, the tag picker, the search, dialogs and open popovers.
+// fields, the tag picker, the search, dialogs and open popovers; `?` opens the shortcuts (EH-9).
 
 import { afterEach, describe, expect, it } from 'vitest';
-import { isQuickCaptureKey, isTypingTarget } from './keyboard';
+import { isHelpKey, isQuickCaptureKey, isTypingTarget } from './keyboard';
 
 function key(overrides: Partial<KeyboardEvent> = {}) {
 	return {
@@ -46,6 +46,24 @@ describe('isQuickCaptureKey', () => {
 		expect(isQuickCaptureKey(key({ repeat: true }))).toBe(false);
 		expect(isQuickCaptureKey(key({ isComposing: true }))).toBe(false);
 		expect(isQuickCaptureKey(key({ key: 'x' }))).toBe(false);
+	});
+});
+
+describe('isHelpKey (plan EH-9)', () => {
+	it('takes ? with or without Shift (Shift+ß on a German keyboard)', () => {
+		expect(isHelpKey(key({ key: '?' }))).toBe(true);
+		expect(isHelpKey(key({ key: '?', shiftKey: true }))).toBe(true);
+	});
+
+	it('refuses ß alone, other modifiers, repeats and composition', () => {
+		expect(isHelpKey(key({ key: 'ß' }))).toBe(false);
+		expect(isHelpKey(key({ key: '/' }))).toBe(false);
+		expect(isHelpKey(key({ key: '?', ctrlKey: true }))).toBe(false);
+		expect(isHelpKey(key({ key: '?', altKey: true }))).toBe(false);
+		expect(isHelpKey(key({ key: '?', metaKey: true }))).toBe(false);
+		expect(isHelpKey(key({ key: '?', ctrlKey: true, altKey: true }))).toBe(false);
+		expect(isHelpKey(key({ key: '?', repeat: true }))).toBe(false);
+		expect(isHelpKey(key({ key: '?', isComposing: true }))).toBe(false);
 	});
 });
 

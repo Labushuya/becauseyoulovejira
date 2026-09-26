@@ -1,4 +1,5 @@
-// Global keys (E4 plan, T-11; E3 plan section 10): `c` and Ctrl+K open the quick entry, but never
+// Global keys (E4 plan, T-11; E3 plan section 10; plan EH-9 for `?`): `c` and Ctrl+K open the
+// quick entry, `?` the modal "Tastaturkürzel", but never
 // while the user types or works in something that has its own keys: input fields (the search
 // and the tag picker included), a dialog or an open popover. Pure checks on the event and the
 // document it happened in; no SvelteKit, no stores.
@@ -64,4 +65,16 @@ export function isQuickCaptureKey(
 	const key = event.key.toLowerCase();
 	if (key === 'k') return (event.ctrlKey || event.metaKey) && !event.altKey && !event.shiftKey;
 	return event.key === 'c' && !event.ctrlKey && !event.metaKey && !event.altKey && !event.shiftKey;
+}
+
+/**
+ * The key opens the modal "Tastaturkürzel" (plan EH-9): the character `?`, whatever the layout
+ * needs for it (Shift+ß on a German keyboard, Shift+/ on a US one). Shift is therefore allowed,
+ * Ctrl, Alt and Cmd are not (AltGr combinations report Ctrl+Alt on Windows).
+ */
+export function isHelpKey(
+	event: Pick<KeyboardEvent, 'key' | 'ctrlKey' | 'metaKey' | 'altKey' | 'repeat' | 'isComposing'>
+): boolean {
+	if (event.repeat || event.isComposing) return false;
+	return event.key === '?' && !event.ctrlKey && !event.metaKey && !event.altKey;
 }

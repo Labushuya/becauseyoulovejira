@@ -3,23 +3,26 @@
 	import { resolve } from '$app/paths';
 	import { page } from '$app/state';
 	import { auth } from '$lib/auth.svelte';
+	import { QUICK_CAPTURE_KEYSHORTCUTS } from '$lib/domain/shortcuts';
 	import { loginUrlFor } from '$lib/guard';
 	import { isSettingsPath } from '$lib/settings-sections';
 	import { NEW_TICKET_LINK_ID, newTicketHref } from '$lib/ticket-links';
 	import AreaSwitch from './AreaSwitch.svelte';
+	import HelpMenu from './help/HelpMenu.svelte';
 	import ThemeMenu from './ThemeMenu.svelte';
 
 	// Header of every signed-in page (E2 plan, T-4; E3 plan, T-18; ADR-0025 section 10): app name
 	// with the counter of tickets that are not done, area switch, the main button "Neues Ticket",
-	// the gear "Einstellungen", the theme switcher and the session. The app name leads to "Aufgaben";
-	// the gear is an icon button like the theme switcher and carries aria-current in the settings
-	// (ADR-0026 section 1, EH-1). From 64rem the header stays at the top while the page scrolls, and
-	// its height goes to --app-header-height, below which the embedded side panel stands (package
-	// UI-6b). While a side panel covers the view (below 64rem) it is inert.
+	// the help menu "?" (EH-9), the gear "Einstellungen", the theme switcher and the session. The app
+	// name leads to "Aufgaben"; the gear is an icon button like the theme switcher and carries
+	// aria-current in the settings (ADR-0026 section 1, EH-1). From 64rem the header stays at the top
+	// while the page scrolls, and its height goes to --app-header-height, below which the embedded
+	// side panel stands (package UI-6b). While a side panel covers the view (below 64rem) it is inert.
 	let {
 		openCount = null,
 		covered = false,
-		onquick
+		onquick,
+		onshortcuts
 	}: {
 		/** Tickets that are not done; null while the list is not loaded (no counter then). */
 		openCount?: number | null;
@@ -27,6 +30,8 @@
 		covered?: boolean;
 		/** Opens the quick entry (E4 plan, package 6); without it there is no button. */
 		onquick?: () => void;
+		/** Opens the modal "Tastaturkürzel" (EH-9); without it there is no help menu. */
+		onshortcuts?: () => void;
 	} = $props();
 
 	const inSettings = $derived(isSettingsPath(page.url.pathname));
@@ -73,7 +78,12 @@
 	</div>
 	<AreaSwitch />
 	{#if onquick}
-		<button class="quick" type="button" aria-keyshortcuts="C Control+K" onclick={onquick}>
+		<button
+			class="quick"
+			type="button"
+			aria-keyshortcuts={QUICK_CAPTURE_KEYSHORTCUTS}
+			onclick={onquick}
+		>
 			Schnellerfassung <kbd>c</kbd>
 		</button>
 	{/if}
@@ -88,6 +98,9 @@
 		</svg>
 		Neues Ticket
 	</a>
+	{#if onshortcuts}
+		<HelpMenu {onshortcuts} />
+	{/if}
 	<a
 		class="button-icon settings"
 		href={resolve('/einstellungen/kanaele')}
