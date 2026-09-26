@@ -1,6 +1,6 @@
 # ADR-0022: Erzeugung der Tickets aus Regeln: Zeitpunkt, Cron, Nachholen beim Start, keine Duplikate
 
-- **Status:** Vorgeschlagen (wird mit den Antworten auf OF-E5-1 und OF-E5-2 im [E5-Plan](../plan/e5.md) angenommen)
+- **Status:** Angenommen (2026-09-26: Der Nutzer hat die Empfehlungen zu OF-E5-1 bis OF-E5-5 bestätigt; umgesetzt in E5, siehe Nachtrag am Ende)
 - **Datum:** 2026-09-25
 - **Entscheidung durch:** Advisor
 - **Ergänzt:** CLAUDE.md §6, [ADR-0005](0005-zeitzone-europe-berlin.md) (Zeitzone, Cron in UTC), [ADR-0021](0021-regelmodell-wiederkehrende-aufgaben.md) (Regelmodell)
@@ -106,3 +106,14 @@ Vor der Migration von E5 tun alle drei nichts: Fehlt `freq` in `recurrence_rules
 - Die Integrationstests brauchen ein steuerbares „jetzt“. Der Dienst nimmt `nowMs` als Parameter. Die Tests nutzen zwei Wege:
   - Sie rufen ihn über eine reine Test-Route in einer Hook-Datei unter `tests/fixtures/pb_hooks/` auf. Der Harness kopiert sie nur in die Wegwerf-Instanz, wie `fault-injection.pb.js`, und nie in `app/`.
   - Oder sie datieren `next_due` bzw. `completed_at` in `data.db` der Wegwerf-Instanz zurück, wie bei `byl-inbox-cleanup` (BYL-E4-040).
+
+## Nachtrag (2026-09-26, Umsetzung E5)
+
+Der Text oben bleibt unverändert. Wo die Umsetzung abweicht, gilt dieser Nachtrag. Einzelheiten stehen im [E5-Plan](../plan/e5.md) §7, Pakete 2 und 3.
+
+- **§1, Teilindex:** PocketBase 0.40.4 nimmt ihn an (`collection.addIndex(name, unique, columns, where)`), die Migration heißt `1790201610_tickets_open_recurrence.js`. Vorher löst sie mehrere offene Tickets derselben Regel auf; nur das jüngste bleibt in der Serie. Ein Verstoß über die Record-API kommt als Feldfehler „recurrence: Value must be unique.“ und zählt im Dienst als „schon vorhanden“.
+- **§4, Start:** Die JSVM von 0.40.4 kennt **kein `onServe`**. Ein Aufruf wirft beim Laden der Hook-Datei. `pocketbase serve` führt ausstehende Migrationen erst nach `onBootstrap` aus. Das Nachholen läuft deshalb nach `e.next()` von `onBootstrap`, nur beim Befehl `serve` (`$os.args`) und in `try/catch`. Beim ersten Start nach einem Update mit neuen Migrationen sieht es noch das alte Schema und tut nichts. Spätestens nach gut einer Stunde holt der Cron nach. Belegt in `recurrence-startup.test.mjs`.
+- **§2, verschachtelte Transaktion:** Der Ticket-Hook öffnet in `materialize` erneut `inTransaction`, und PocketBase führt sie auf der äußeren aus. Key, Historie und Ticket landen im selben Commit. Scheitert ein Teil, bleiben Nummer und `next_due` unverbraucht (Fehlerinjektion in `recurrence-generate.test.mjs`).
+- **§2, Zeitstempel:** PocketBase liest die Uhr je Autodate-Feld einzeln, deshalb wichen `created` und `updated` gelegentlich um 1 ms ab. Der Dienst schreibt beide Felder mit einem gemeinsamen Zeitstempel (`newInstance`, `record.setRaw`), sonst würde ADR-0023 §3 ein frisches Folgeticket für bearbeitet halten. Das zweistufige Anlegen aus einer Kalenderserie ([ADR-0024](0024-serien-aus-kalendern.md)) erzeugt kein Ticket auf einem neuen Weg und braucht das nicht (`web-data-recurrence.test.mjs`).
+- **Historie:** Der Eintrag „created“ eines erzeugten Tickets hat keinen Nutzer und die Regel als `old_value`. Daran erkennt die SPA „Wiederholung“ als Urheber.
+- **Neue oder fortgesetzte Regeln** erzeugen nach dem Commit sofort, wenn ihr Termin schon im Vorlauf liegt. Das gilt nicht für Schreibvorgänge des Servers oder eines Superusers.

@@ -26,9 +26,9 @@ Bereits verbindlich in der [Projekt-CLAUDE.md](../../CLAUDE.md) festgelegt und d
 | [0018](0018-secrets.md) | Zugangsdaten der Kanäle als Windows-Umgebungsvariablen | Angenommen | 2026-09-25 |
 | [0019](0019-kanal-filter-und-gruppierung.md) | Quelle als Filter, Gruppierung und Merkmal in der Tabelle | Angenommen | 2026-09-25 |
 | [0020](0020-stichwoerter-pro-kanal.md) | Stichwörter pro Kanal entscheiden, was automatisch in den Eingang kommt | Angenommen | 2026-09-25 |
-| [0021](0021-regelmodell-wiederkehrende-aufgaben.md) | Regelmodell der wiederkehrenden Aufgaben und reine Terminberechnung | Vorgeschlagen | 2026-09-25 |
-| [0022](0022-erzeugung-von-instanzen.md) | Erzeugung der Tickets aus Regeln: Zeitpunkt, Cron, Nachholen beim Start, keine Duplikate | Vorgeschlagen | 2026-09-25 |
-| [0023](0023-lebenszyklus-von-regeln-und-instanzen.md) | Lebenszyklus von Regeln und Instanzen: Anlegen, Erledigen, Rückgängig, Pausieren, Bearbeiten, Löschen | Vorgeschlagen | 2026-09-25 |
-| [0024](0024-serien-aus-kalendern.md) | Serien aus `.ics` und Google Calendar als Vorschlag für eine Regel | Vorgeschlagen | 2026-09-25 |
+| [0021](0021-regelmodell-wiederkehrende-aufgaben.md) | Regelmodell der wiederkehrenden Aufgaben und reine Terminberechnung | Angenommen (mit Nachtrag) | 2026-09-25 |
+| [0022](0022-erzeugung-von-instanzen.md) | Erzeugung der Tickets aus Regeln: Zeitpunkt, Cron, Nachholen beim Start, keine Duplikate | Angenommen (mit Nachtrag) | 2026-09-25 |
+| [0023](0023-lebenszyklus-von-regeln-und-instanzen.md) | Lebenszyklus von Regeln und Instanzen: Anlegen, Erledigen, Rückgängig, Pausieren, Bearbeiten, Löschen | Angenommen (mit Nachtrag) | 2026-09-25 |
+| [0024](0024-serien-aus-kalendern.md) | Serien aus `.ics` und Google Calendar als Vorschlag für eine Regel | Angenommen (mit Nachtrag) | 2026-09-25 |
 | [0025](0025-ui-konsistenz-overlay-system.md) | UI-Konsistenz: ein Overlay-System, Theme-Umschalter und angeglichene Projekt-UI | Angenommen | 2026-09-25 |
 | [0026](0026-einstellungsbereich-und-hinweis-bausteine.md) | Einstellungsbereich, Hinweis-Bausteine, Einrichtungsassistent und geführte Tour | Angenommen | 2026-09-26 |
