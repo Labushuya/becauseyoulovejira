@@ -162,8 +162,8 @@ Die Bausteine liegen unter `web/src/lib/components/guidance/`, ihre reine Logik 
   - Die Taste `?` öffnet das Modal „Tastaturkürzel“. Wie bei `c` gilt das nicht in Feldern, Dialogen und Popovers.
 - **„Erste Schritte“ (Nutzerentscheidung 3):**
   - eine Liste im leeren Zustand der Aufgabenansicht
-  - Sie erscheint nur ohne Tickets **und** ohne Verbindung.
-  - Ihr Zustand wird aus Daten abgeleitet, nicht gespeichert. Sie verschwindet von selbst.
+  - ~~Sie erscheint nur ohne Tickets **und** ohne Verbindung. Ihr Zustand wird aus Daten abgeleitet, nicht gespeichert. Sie verschwindet von selbst.~~
+  - **Geändert mit EH-12 (Vorgabe zum Paket, 2026-09-26):** Die Liste steht unter dem leeren Zustand „Keine offenen Tickets“ und zeigt Fortschritt („2 von 4 erledigt“) über die Schritte erstes Ticket, Schnellerfassung ausprobiert, Kanal eingerichtet, Projekt angelegt und (ab EH-13) Tour gestartet. Erreichte Schritte und „Ausblenden“ merkt sich der Browser (`localStorage` `byl-first-steps`, nur auf diesem Gerät, keine Daten des Kontos). Sie verschwindet, wenn der Nutzer sie ausblendet oder alle angebotenen Schritte erledigt sind. Einzelheiten im [Plan](../plan/e6-einstellungen.md) §7 (EH-12).
 
 ### 8. Geführte Tour mit driver.js (Nutzerentscheidung 3, begründete Ausnahme)
 

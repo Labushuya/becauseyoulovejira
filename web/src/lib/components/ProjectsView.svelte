@@ -118,10 +118,20 @@
 	}
 
 	async function toggleArchived(event: Event & { currentTarget: HTMLInputElement }) {
-		await goto(withShowArchived(page.url, event.currentTarget.checked), {
-			keepFocus: true,
-			noScroll: true
-		});
+		await showArchived(event.currentTarget.checked);
+	}
+
+	async function showArchived(on: boolean) {
+		await goto(withShowArchived(page.url, on), { keepFocus: true, noScroll: true });
+	}
+
+	/**
+	 * "Archivierte anzeigen" of the empty state (plan EH-12): the button disappears with the state,
+	 * so the focus goes to the heading "Projekte", like after "Suche zurücksetzen".
+	 */
+	async function showAllArchived() {
+		await showArchived(true);
+		heading?.focus();
 	}
 
 	/**
@@ -331,10 +341,15 @@
 				/>
 			{/if}
 		{:else if catalog.projects.length === 0}
-			<div class="empty">
-				<p>Noch keine Projekte.</p>
-				{@render newProjectLink()}
-			</div>
+			<EmptyState
+				title="Noch keine Projekte"
+				description="Ein Projekt fasst Tickets unter einem Code zusammen, etwa HAUS-12."
+				icon="projects"
+			>
+				{#snippet primary()}
+					<a class="button-primary" href={newProjectHref(page.url)}>Projekt anlegen</a>
+				{/snippet}
+			</EmptyState>
 		{:else if query.search !== null && available.length > 0}
 			<EmptyState
 				title="Keine Projekte gefunden"
@@ -349,7 +364,18 @@
 				{/snippet}
 			</EmptyState>
 		{:else}
-			<p class="empty">Alle Projekte sind archiviert. „Archivierte anzeigen“ zeigt sie.</p>
+			<EmptyState
+				title="Alle Projekte sind archiviert"
+				description="Archivierte Projekte bleiben mit ihren Tickets erhalten und lassen sich einblenden."
+				size="narrow"
+				icon="projects"
+			>
+				{#snippet secondary()}
+					<button class="button-secondary" type="button" onclick={() => void showAllArchived()}>
+						Archivierte anzeigen
+					</button>
+				{/snippet}
+			</EmptyState>
 		{/if}
 	{/if}
 </section>
@@ -445,15 +471,8 @@
 		text-decoration: none;
 	}
 
-	.empty,
 	.loading {
 		color: var(--color-text-muted);
-	}
-
-	.empty {
-		display: grid;
-		gap: 0.75rem;
-		justify-items: start;
 	}
 
 	/* Only shown if loading takes noticeably long: no flash on a fast local server. */

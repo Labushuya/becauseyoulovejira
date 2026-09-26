@@ -17,6 +17,7 @@
 		type CaptureDeps
 	} from '$lib/stores/capture';
 	import { CatalogStore, catalogData, setCatalogStore } from '$lib/stores/catalog.svelte';
+	import { FirstStepsStore, localStore, setFirstStepsStore } from '$lib/stores/first-steps.svelte';
 	import { FlagStore, setFlagStore } from '$lib/stores/flags.svelte';
 	import { InboxStore, inboxData, setInboxStore } from '$lib/stores/inbox.svelte';
 	import { LastViewStore, sessionStore, setLastViewStore } from '$lib/stores/last-view.svelte';
@@ -120,6 +121,22 @@
 	};
 	// Empty states offer "Schnellerfassung (c)" through the context (plan EH-11).
 	setQuickCaptureOpener(() => (quickOpen = true));
+
+	// "Erste Schritte" (plan EH-12): the steps are marked where the app sees them. Opening the quick
+	// entry counts as trying it; an open ticket and a project are read from the stores here, a
+	// channel on the page "Kanäle", the tour where it starts (EH-13).
+	const firstSteps = setFirstStepsStore(new FirstStepsStore(localStore));
+	$effect(() => {
+		if (quickOpen) untrack(() => firstSteps.reach('quick'));
+	});
+	$effect(() => {
+		if (tickets.openState === 'ready' && tickets.openCount > 0) {
+			untrack(() => firstSteps.reach('ticket'));
+		}
+	});
+	$effect(() => {
+		if (catalog.projects.length > 0) untrack(() => firstSteps.reach('project'));
+	});
 
 	// Modal "Tastaturkürzel" (plan EH-9): `?` opens it under the same conditions as `c`, the help
 	// menu in the header as well.

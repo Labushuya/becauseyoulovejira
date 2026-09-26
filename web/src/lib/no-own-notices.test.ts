@@ -2,8 +2,7 @@
 // through the guidance building blocks (SectionMessage, EmptyState under components/guidance/),
 // not through local classes ".notice" or ".empty"; and only lib/guidance/texts.ts words the hint
 // "nach dem nächsten Neustart". The building blocks themselves are the one place with such styles.
-// Files that EH-12 still moves stand in an exception list, which must only shrink: an entry
-// without a local class fails, so a finished file cannot stay on the list.
+// Since EH-12 there is no exception left: every component outside components/guidance/ is checked.
 
 import { readdirSync, readFileSync } from 'node:fs';
 import { join, relative, resolve } from 'node:path';
@@ -35,10 +34,10 @@ const OWN_NOTICE =
 /** The hint after an update, in any wording with "nächsten Start" or "nächsten Neustart". */
 const RESTART_TEXT = /n(?:ä|ae)chsten (?:Neu)?[Ss]tart/;
 
-/** Files of EH-12 (projects) that still have local classes. */
-const NOT_YET_MOVED = new Set([join('lib', 'components', 'ProjectsView.svelte')]);
-
-/** Files moved with EH-10 (dialogs, editors) and EH-11 (tables, panels): they use the blocks. */
+/**
+ * Files moved with EH-10 (dialogs, editors), EH-11 (tables, panels) and EH-12 (projects, tags):
+ * they use the blocks.
+ */
 const MOVED = [
 	'FileImportDialog.svelte',
 	'KeywordEditor.svelte',
@@ -49,7 +48,9 @@ const MOVED = [
 	'InboxTable.svelte',
 	'InboxPanel.svelte',
 	'CommentList.svelte',
-	'HistoryList.svelte'
+	'HistoryList.svelte',
+	'ProjectsView.svelte',
+	'TagManager.svelte'
 ];
 
 const components = files(SRC_DIR, /\.svelte$/).map(
@@ -72,15 +73,8 @@ describe('hints through the guidance building blocks', () => {
 		expect(outsideGuidance.length).toBeGreaterThan(50);
 	});
 
-	it.each(outsideGuidance.filter(([name]) => !NOT_YET_MOVED.has(name)))(
-		'%s has no local .notice or .empty',
-		(_name, path) => {
-			expect(code(path)).not.toMatch(OWN_NOTICE);
-		}
-	);
-
-	it.each([...NOT_YET_MOVED])('%s is still on the exception list for a reason', (name) => {
-		expect(code(join(SRC_DIR, name))).toMatch(OWN_NOTICE);
+	it.each(outsideGuidance)('%s has no local .notice or .empty', (_name, path) => {
+		expect(code(path)).not.toMatch(OWN_NOTICE);
 	});
 
 	it.each(MOVED)('%s uses SectionMessage or EmptyState', (file) => {

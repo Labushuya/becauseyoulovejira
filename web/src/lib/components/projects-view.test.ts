@@ -452,13 +452,29 @@ describe('project view', () => {
 		);
 	});
 
-	it('says "Noch keine Projekte." with "Neues Projekt", and that all are archived', async () => {
+	// Empty states since EH-12: heading, one sentence, a verb as action.
+	it('says "Noch keine Projekte" with "Projekt anlegen", and that all are archived', async () => {
 		await show('/projekte', { projects: [] });
-		const empty = screen.getByText('Noch keine Projekte.').parentElement as HTMLElement;
-		expect(within(empty).getByRole('link', { name: 'Neues Projekt' })).toBeTruthy();
+		const empty = screen
+			.getByRole('heading', { name: 'Noch keine Projekte' })
+			.closest('.empty-state') as HTMLElement;
+		const create = within(empty).getByRole('link', { name: 'Projekt anlegen' });
+		expect(create.getAttribute('href')).toBe('/projekte/neu');
+		expect(create.classList.contains('button-primary')).toBe(true);
+		// The section bar keeps its own "Neues Projekt".
+		expect(screen.getByRole('link', { name: 'Neues Projekt' })).toBeTruthy();
 
 		document.body.innerHTML = '';
 		await show('/projekte', { projects: [OLD] });
-		expect(screen.getByText(/Alle Projekte sind archiviert\./)).toBeTruthy();
+		const archived = screen
+			.getByRole('heading', { name: 'Alle Projekte sind archiviert' })
+			.closest('.empty-state') as HTMLElement;
+		expect(within(archived).queryByRole('link')).toBeNull();
+		await fireEvent.click(within(archived).getByRole('button', { name: 'Archivierte anzeigen' }));
+		expect(mocks.goto).toHaveBeenLastCalledWith('/projekte?archiviert=1', {
+			keepFocus: true,
+			noScroll: true
+		});
+		expect(document.activeElement).toBe(screen.getByRole('heading', { name: 'Projekte' }));
 	});
 });

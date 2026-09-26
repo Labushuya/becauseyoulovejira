@@ -1,9 +1,11 @@
 <script lang="ts">
 	import { tick } from 'svelte';
+	import { resolve } from '$app/paths';
 	import type { Tag } from '$lib/domain/tag';
 	import type { CatalogEditor } from '$lib/stores/catalog-editor';
 	import ConfirmDialog from './overlay/ConfirmDialog.svelte';
 	import ErrorIcon from './ErrorIcon.svelte';
+	import EmptyState from './guidance/EmptyState.svelte';
 
 	// Section "Deine Tags" of the settings page "Tags" (E3 plan, T-14 and package 14; since the user
 	// request after EH-4 no longer below the projects): every tag with "Umbenennen" (inline: Enter
@@ -149,9 +151,16 @@
 	</div>
 
 	{#if tags.length === 0}
-		<p class="muted">
-			Noch keine Tags. Tags entstehen im Detail eines Tickets oder bei „Neues Ticket“.
-		</p>
+		<EmptyState
+			size="compact"
+			headingLevel={4}
+			title="Noch keine Tags"
+			description="Tags entstehen im Detail eines Tickets oder bei „Neues Ticket“; hier benennst du sie später um."
+		>
+			{#snippet secondary()}
+				<a class="button-secondary" href={resolve('/tickets/neu')}>Ticket anlegen</a>
+			{/snippet}
+		</EmptyState>
 	{:else}
 		<ul class="tag-list" bind:this={list}>
 			{#each tags as tag (tag.id)}
@@ -257,11 +266,6 @@
 		color: var(--color-text-muted);
 		border: 1px solid var(--color-line);
 		border-radius: 0.625rem;
-	}
-
-	.muted {
-		font-size: 0.875rem;
-		color: var(--color-text-muted);
 	}
 
 	.tag-list {

@@ -48,7 +48,8 @@
 		creating = false,
 		inboxCount = null,
 		recurrenceTextOf = () => '',
-		tools
+		tools,
+		emptyExtra
 	}: {
 		store: TicketListStore;
 		catalog: CatalogStore;
@@ -65,6 +66,8 @@
 		 * Eingang" stands at the same place in every view (ADR-0025 section 10, package UI-8).
 		 */
 		tools?: Snippet;
+		/** Below the empty state "Keine offenen Tickets", e.g. "Erste Schritte" (plan EH-12). */
+		emptyExtra?: Snippet;
 	} = $props();
 
 	/** Columns of the table (T-4); the section rows span all of them. */
@@ -368,6 +371,7 @@
 					{/if}
 				{/snippet}
 			</EmptyState>
+			{@render emptyExtra?.()}
 		{/if}
 	{:else if store.openState === 'loading' && !hasOpenRows}
 		<p class="loading" role="status">Tickets werden geladen …</p>
