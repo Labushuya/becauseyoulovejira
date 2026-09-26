@@ -1,4 +1,5 @@
-// Component tests for the section "Tags" of the project view (E3 plan, T-14 and package 14):
+// Component tests for the section "Deine Tags" of the settings page "Tags" (E3 plan, T-14 and
+// package 14; below the project tiles until the user request after EH-4):
 // renaming inline (Enter saves, Escape cancels, conflicts at the field), deleting after the
 // question with the number of tickets, focus afterwards. The question is the confirmation of
 // ADR-0025 section 4 (since UI-3); jsdom has no showModal(), the shared stubs stand in.
@@ -30,10 +31,10 @@ function show(tags: Tag[] = [CALL, GARDEN], overrides: Partial<Editor> = {}) {
 		...overrides
 	};
 	const onannounce = vi.fn();
-	// The heading of the view (SectionBar) takes the focus when the deleted tag is gone (UI-6).
+	// The heading of the settings page takes the focus when the deleted tag is gone (UI-6).
 	for (const old of document.querySelectorAll('[data-view-heading]')) old.remove();
 	const view = document.createElement('h2');
-	view.textContent = 'Projekte';
+	view.textContent = 'Tags';
 	view.tabIndex = -1;
 	view.dataset.viewHeading = '';
 	document.body.append(view);
@@ -45,7 +46,8 @@ describe('tag manager', () => {
 	it('lists the tags with their number and the actions per tag', () => {
 		show();
 
-		const section = screen.getByRole('region', { name: 'Tags' });
+		const section = screen.getByRole('region', { name: 'Deine Tags' });
+		expect(screen.getByRole('heading', { level: 3, name: 'Deine Tags' })).toBeTruthy();
 		expect(within(section).getByText('2 Tags')).toBeTruthy();
 		expect(
 			within(section)

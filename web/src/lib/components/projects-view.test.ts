@@ -1,19 +1,21 @@
-// Component tests for the project view (E3 plan, T-3, T-12 and package 14; package UI-8): section
-// bar with the switch "Aufgaben | Projekte | Eingang" first, "Archivierte anzeigen" in the URL,
-// tiles with "aktiv" from the list store and "gesamt" with the done tickets of the server, links to
-// the project panel and "Neues Projekt", the focus after closing a panel, empty states. Navigation
-// and page state are mocked; the stores run with fake data layers. The panel itself is covered in
+// Component tests for the project view (E3 plan, T-3, T-12 and package 14; package UI-8; user
+// request after EH-4): section bar with the switch "Aufgaben | Projekte | Eingang" first, the
+// search, "Archivierte anzeigen" and the layout buttons "Liste | Kacheln"; the list as default with
+// sortable columns, the tiles as second layout; search, sort, switch and layout in the URL, the
+// layout also in localStorage; "aktiv" from the list store and "gesamt" with the done tickets of
+// the server; links to the project panel and "Neues Projekt" that keep the state, the focus after
+// closing a panel, empty states. The tags live in the settings now. Navigation and page state are
+// mocked; the stores run with fake data layers. The panel itself is covered in
 // project-panel.test.ts and the projects layout test.
 
 import { fireEvent, render, screen, within } from '@testing-library/svelte';
 import { tick } from 'svelte';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { countActiveByProject, type Project } from '$lib/domain/project';
+import { PROJECT_LAYOUT_STORAGE_KEY } from '$lib/domain/project-view';
 import type { Tag } from '$lib/domain/tag';
 import type { TicketSummary } from '$lib/domain/ticket';
 import { CatalogStore, type CatalogData } from '$lib/stores/catalog.svelte';
-import { CatalogEditor, type CatalogEditorData } from '$lib/stores/catalog-editor';
-import { FlagStore } from '$lib/stores/flags.svelte';
 import { ProjectStatsStore } from '$lib/stores/project-stats.svelte';
 import { TicketListStore, type TicketListData } from '$lib/stores/ticket-list.svelte';
 import ProjectsView from './ProjectsView.svelte';
@@ -56,6 +58,7 @@ useOverlayStubs();
 beforeEach(() => {
 	mocks.goto.mockClear();
 	document.body.innerHTML = '';
+	localStorage.clear();
 });
 
 let sequence = 0;
@@ -115,29 +118,8 @@ async function show(
 	const tickets = new TicketListStore(listData, session);
 	const countDone = vi.fn(async (id: string) => done[id] ?? 0);
 	const stats = new ProjectStatsStore({ countDone }, session);
-	const editorData = {
-		createProject: vi.fn<CatalogEditorData['createProject']>(async (draft) => ({
-			id: 'proj00000000009',
-			...draft,
-			archived: false,
-			updated: T0
-		})),
-		updateProject: vi.fn<CatalogEditorData['updateProject']>(),
-		setProjectArchived: vi.fn<CatalogEditorData['setProjectArchived']>(async (id, archived) => ({
-			...HOUSE,
-			id,
-			archived,
-			updated: '2026-09-24 09:00:00.000Z'
-		})),
-		deleteProject: vi.fn<CatalogEditorData['deleteProject']>(async () => undefined),
-		renameTag: vi.fn<CatalogEditorData['renameTag']>(),
-		deleteTag: vi.fn<CatalogEditorData['deleteTag']>(),
-		countTicketsWithTag: vi.fn<CatalogEditorData['countTicketsWithTag']>(async () => 0)
-	} satisfies CatalogEditorData;
-	const editor = new CatalogEditor(editorData, session, catalog);
 	await catalog.load();
 	tickets.loadOpen();
-	const flags = new FlagStore();
 	// As in projekte/+layout.svelte.
 	const activeOf = (project: Project) =>
 		tickets.openState === 'ready'
@@ -147,13 +129,11 @@ async function show(
 		const active = activeOf(project);
 		return active === null ? null : stats.total(project.id, active);
 	};
-	const view = render(ProjectsView, {
-		props: { catalog, tickets, stats, editor, flags, activeOf, totalOf, activeId, creating }
-	});
+	const props = { catalog, tickets, stats, activeOf, totalOf, activeId, creating };
+	const view = render(ProjectsView, { props });
 	await vi.waitFor(() => expect(tickets.openState).toBe('ready'));
 	await tick();
-	const props = { catalog, tickets, stats, editor, flags, activeOf, totalOf, activeId, creating };
-	return { catalog, tickets, stats, editorData, countDone, flags, view, props };
+	return { catalog, tickets, stats, countDone, view, props };
 }
 
 const tileText = (name: string) =>
@@ -162,8 +142,27 @@ const tileText = (name: string) =>
 		.textContent?.replace(/\s+/g, ' ')
 		.trim();
 
+/** Cells of the list row of a project, in column order. */
+function rowCells(name: string): string[] {
+	const row = screen.getByRole('link', { name }).closest('tr') as HTMLElement;
+	return [...row.children].map((cell) => cell.textContent?.replace(/\s+/g, ' ').trim() ?? '');
+}
+
+/** Project names of the list in the shown order. */
+function listNames(): string[] {
+	const table = screen.getByRole('table');
+	return [...table.querySelectorAll('tbody a[data-project-id]')].map(
+		(link) => link.textContent ?? ''
+	);
+}
+
+function layoutButton(name: 'Liste' | 'Kacheln') {
+	const group = screen.getByRole('group', { name: 'Darstellung der Projekte' });
+	return within(group).getByRole('button', { name });
+}
+
 describe('project view', () => {
-	it('shows the section bar with the switch, "Archivierte anzeigen" and "Neues Projekt"', async () => {
+	it('shows the section bar with the switch, the search, the layout and "Neues Projekt"', async () => {
 		await show();
 
 		const heading = screen.getByRole('heading', { level: 2, name: 'Projekte' });
@@ -173,7 +172,10 @@ describe('project view', () => {
 		expect(within(nav).getByRole('link', { name: 'Projekte' }).getAttribute('aria-current')).toBe(
 			'page'
 		);
+		expect(screen.getByRole('searchbox', { name: 'Projekte suchen' })).toBeTruthy();
 		expect(screen.getByRole('checkbox', { name: 'Archivierte anzeigen' })).toBeTruthy();
+		expect(layoutButton('Liste').getAttribute('aria-pressed')).toBe('true');
+		expect(layoutButton('Kacheln').getAttribute('aria-pressed')).toBe('false');
 		expect(screen.getByRole('link', { name: 'Neues Projekt' }).getAttribute('href')).toBe(
 			'/projekte/neu'
 		);
@@ -185,13 +187,177 @@ describe('project view', () => {
 		expect(screen.queryByRole('region', { name: 'Filter' })).toBeNull();
 	});
 
-	it('shows "aktiv" from the list store and "gesamt" with the done tickets of the server', async () => {
+	it('has no section "Tags" any more; the tags live in the settings', async () => {
+		await show();
+
+		expect(screen.queryByRole('region', { name: /Tags/ })).toBeNull();
+		expect(screen.queryByText('Garten')).toBeNull();
+	});
+
+	it('shows the list by default with code, name and the numbers', async () => {
 		const { countDone } = await show();
 
+		const table = screen.getByRole('table');
+		expect(
+			within(table)
+				.getAllByRole('columnheader')
+				.map((th) => th.querySelector('[aria-hidden="true"]')?.textContent)
+		).toEqual(['Code', 'Name', 'aktiv', 'gesamt', 'neu', 'archiviert']);
+		expect(table.querySelector('caption')?.textContent).toMatch(/^Projekte · nach Name/);
+		expect(listNames()).toEqual(['Auto', 'Haus']);
+		await vi.waitFor(() =>
+			expect(rowCells('Haus')).toEqual(['HAUS', 'Haus', '2', '4', '0', '–nein'])
+		);
+		expect(rowCells('Auto')).toEqual(['AUTO', 'Auto', '1', '1', '0', '–nein']);
+		expect(countDone.mock.calls.map(([id]) => id)).toEqual([CAR.id, HOUSE.id]);
+		expect(screen.getByRole('link', { name: 'Haus' }).getAttribute('href')).toBe(
+			'/projekte/proj00000000001'
+		);
+		expect(screen.getByRole('link', { name: 'Haus' }).closest('th')?.getAttribute('scope')).toBe(
+			'row'
+		);
+		expect(document.querySelector('ul.tiles')).toBeNull();
+	});
+
+	it('shows the tiles with "aktiv" and "gesamt" in the second layout', async () => {
+		await show('/projekte?darstellung=kacheln');
+
+		expect(screen.queryByRole('table')).toBeNull();
 		await vi.waitFor(() => expect(tileText('Haus')).toBe('Haus HAUS 2 aktiv · 4 gesamt'));
 		expect(tileText('Auto')).toBe('Auto AUTO 1 aktiv · 1 gesamt');
-		expect(countDone.mock.calls.map(([id]) => id)).toEqual([CAR.id, HOUSE.id]);
 		expect(screen.queryByRole('link', { name: /^Büro/ })).toBeNull();
+		expect(layoutButton('Kacheln').getAttribute('aria-pressed')).toBe('true');
+		expect(screen.getByRole('link', { name: /^Haus/ }).getAttribute('href')).toBe(
+			'/projekte/proj00000000001?darstellung=kacheln'
+		);
+	});
+
+	it('switches the layout through the URL and remembers it on the device', async () => {
+		await show();
+
+		await fireEvent.click(layoutButton('Kacheln'));
+		expect(mocks.goto).toHaveBeenCalledExactlyOnceWith('/projekte?darstellung=kacheln', {
+			keepFocus: true,
+			noScroll: true,
+			replaceState: false
+		});
+		expect(localStorage.getItem(PROJECT_LAYOUT_STORAGE_KEY)).toBe('kacheln');
+
+		// Next visit without the parameter: the remembered tiles.
+		document.body.innerHTML = '';
+		mocks.goto.mockClear();
+		await show('/projekte');
+		expect(screen.queryByRole('table')).toBeNull();
+		expect(layoutButton('Kacheln').getAttribute('aria-pressed')).toBe('true');
+
+		await fireEvent.click(layoutButton('Liste'));
+		expect(mocks.goto).toHaveBeenCalledExactlyOnceWith('/projekte', {
+			keepFocus: true,
+			noScroll: true,
+			replaceState: false
+		});
+		expect(localStorage.getItem(PROJECT_LAYOUT_STORAGE_KEY)).toBe('liste');
+		await tick();
+		expect(screen.getByRole('table')).toBeTruthy();
+	});
+
+	it('follows the URL before the remembered layout and ignores unknown values', async () => {
+		localStorage.setItem(PROJECT_LAYOUT_STORAGE_KEY, 'kacheln');
+		await show('/projekte?darstellung=liste');
+		expect(screen.getByRole('table')).toBeTruthy();
+
+		document.body.innerHTML = '';
+		localStorage.setItem(PROJECT_LAYOUT_STORAGE_KEY, 'raster');
+		await show('/projekte?darstellung=raster');
+		expect(screen.getByRole('table')).toBeTruthy();
+	});
+
+	it('sorts by a column through the URL, with aria-sort and the order in the name', async () => {
+		await show();
+
+		await fireEvent.click(screen.getByRole('button', { name: 'Nach aktiv sortieren' }));
+		expect(mocks.goto).toHaveBeenCalledExactlyOnceWith('/projekte?sort=aktiv', {
+			keepFocus: true,
+			noScroll: true,
+			replaceState: false
+		});
+
+		document.body.innerHTML = '';
+		await show('/projekte?sort=aktiv');
+		expect(listNames()).toEqual(['Haus', 'Auto']);
+		const button = screen.getByRole('button', {
+			name: 'Nach aktiv sortieren, sortiert: meiste zuerst'
+		});
+		expect(button.closest('th')?.getAttribute('aria-sort')).toBe('descending');
+		expect(screen.getByRole('table').querySelector('caption')?.textContent).toMatch(
+			/sortiert nach aktiv, meiste zuerst/
+		);
+
+		document.body.innerHTML = '';
+		await show('/projekte?sort=-name');
+		expect(listNames()).toEqual(['Haus', 'Auto']);
+		expect(
+			screen
+				.getByRole('button', { name: /^Nach Name sortieren/ })
+				.closest('th')
+				?.getAttribute('aria-sort')
+		).toBe('descending');
+	});
+
+	it('searches by name or code and keeps the history free of every letter', async () => {
+		await show();
+
+		await fireEvent.input(screen.getByRole('searchbox', { name: 'Projekte suchen' }), {
+			target: { value: 'au' }
+		});
+		expect(mocks.goto).toHaveBeenCalledExactlyOnceWith('/projekte?q=au', {
+			keepFocus: true,
+			noScroll: true,
+			replaceState: true
+		});
+
+		document.body.innerHTML = '';
+		await show('/projekte?q=au');
+		expect(listNames()).toEqual(['Auto', 'Haus']);
+		expect(screen.getByText('2 Projekte')).toBeTruthy();
+
+		document.body.innerHTML = '';
+		await show('/projekte?q=haus');
+		expect(listNames()).toEqual(['Haus']);
+		expect(screen.getByRole('table').querySelector('caption')?.textContent).toMatch(
+			/gefiltert nach Suche/
+		);
+		expect(screen.getByRole('link', { name: 'Haus' }).getAttribute('href')).toBe(
+			'/projekte/proj00000000001?q=haus'
+		);
+	});
+
+	it('says when the search finds nothing and resets it with the focus on the heading', async () => {
+		await show('/projekte?q=zzz');
+
+		expect(screen.getByRole('heading', { name: 'Keine Projekte gefunden' })).toBeTruthy();
+		await fireEvent.click(screen.getByRole('button', { name: 'Suche zurücksetzen' }));
+		expect(mocks.goto).toHaveBeenCalledExactlyOnceWith('/projekte', {
+			keepFocus: true,
+			noScroll: true,
+			replaceState: false
+		});
+		await vi.waitFor(() =>
+			expect(document.activeElement).toBe(screen.getByRole('heading', { name: 'Projekte' }))
+		);
+	});
+
+	it('empties the search with Escape and leaves an empty field alone', async () => {
+		await show('/projekte?q=au');
+		const field = screen.getByRole<HTMLInputElement>('searchbox', { name: 'Projekte suchen' });
+		expect(field.value).toBe('au');
+
+		expect(await fireEvent.keyDown(field, { key: 'Escape' })).toBe(false);
+		expect(mocks.goto).toHaveBeenCalledExactlyOnceWith('/projekte', {
+			keepFocus: true,
+			noScroll: true,
+			replaceState: true
+		});
 	});
 
 	it('shows archived projects only with the switch, which lives in the URL', async () => {
@@ -208,55 +374,68 @@ describe('project view', () => {
 		expect(
 			screen.getByRole<HTMLInputElement>('checkbox', { name: 'Archivierte anzeigen' }).checked
 		).toBe(true);
-		expect(tileText('Büro')).toMatch(/^Büro BUERO Archiviert/);
+		expect(rowCells('Büro')).toEqual(['BUERO', 'Büro', '0', '0', '0', 'Archiviert']);
 		expect(screen.getByText('3 Projekte')).toBeTruthy();
 		await vi.waitFor(() => expect(countDone).toHaveBeenCalledWith(OLD.id, expect.anything()));
+
+		document.body.innerHTML = '';
+		await show('/projekte?archiviert=1&darstellung=kacheln');
+		expect(tileText('Büro')).toMatch(/^Büro BUERO Archiviert/);
 	});
 
-	it('opens the project panel from a tile and "Neues Projekt", keeping the switch', async () => {
-		await show('/projekte?archiviert=1');
+	it('opens the project panel from a row and "Neues Projekt", keeping the state', async () => {
+		await show('/projekte?q=a&sort=-name&archiviert=1');
 
-		expect(screen.getByRole('link', { name: /^Haus/ }).getAttribute('href')).toBe(
-			'/projekte/proj00000000001?archiviert=1'
+		expect(screen.getByRole('link', { name: 'Haus' }).getAttribute('href')).toBe(
+			'/projekte/proj00000000001?q=a&sort=-name&archiviert=1'
 		);
 		expect(screen.getByRole('link', { name: 'Neues Projekt' }).getAttribute('href')).toBe(
-			'/projekte/neu?archiviert=1'
+			'/projekte/neu?q=a&sort=-name&archiviert=1'
 		);
 		expect(screen.queryByRole('button', { name: /bearbeiten$/ })).toBeNull();
 		expect(screen.queryByRole('dialog')).toBeNull();
 	});
 
-	it('marks the tile of the project in the panel and counts it even when it is not shown', async () => {
+	it('marks the row of the project in the panel and counts it even when it is not shown', async () => {
 		const { countDone } = await show('/projekte', { activeId: OLD.id });
 
 		await vi.waitFor(() => expect(countDone).toHaveBeenCalledWith(OLD.id, expect.anything()));
-		expect(screen.queryByRole('link', { name: /^Büro/ })).toBeNull();
+		expect(screen.queryByRole('link', { name: 'Büro' })).toBeNull();
 
 		document.body.innerHTML = '';
 		await show('/projekte', { activeId: HOUSE.id });
+		const link = screen.getByRole('link', { name: 'Haus' });
+		expect(link.getAttribute('aria-current')).toBe('page');
+		expect(link.closest('tr')?.classList.contains('active')).toBe(true);
+
+		document.body.innerHTML = '';
+		await show('/projekte?darstellung=kacheln', { activeId: HOUSE.id });
 		expect(screen.getByRole('link', { name: /^Haus/ }).getAttribute('aria-current')).toBe('page');
 	});
 
-	it('returns the focus to the tile after closing the panel, else to the heading', async () => {
-		const { view, props } = await show('/projekte', { activeId: HOUSE.id });
+	it.each(['/projekte', '/projekte?darstellung=kacheln'])(
+		'on %s returns the focus to the project after closing the panel, else to the heading',
+		async (path) => {
+			const { view, props } = await show(path, { activeId: HOUSE.id });
 
-		await view.rerender({ ...props, activeId: null });
-		await vi.waitFor(() =>
-			expect(document.activeElement).toBe(screen.getByRole('link', { name: /^Haus/ }))
-		);
+			await view.rerender({ ...props, activeId: null });
+			await vi.waitFor(() =>
+				expect(document.activeElement).toBe(screen.getByRole('link', { name: /^Haus/ }))
+			);
 
-		// A tile that is gone (archived or deleted): the heading of the view.
-		await view.rerender({ ...props, activeId: 'proj00000000099' });
-		(document.activeElement as HTMLElement).blur();
-		await view.rerender({ ...props, activeId: null });
-		await vi.waitFor(() =>
-			expect(document.activeElement).toBe(screen.getByRole('heading', { name: 'Projekte' }))
-		);
-	});
+			// A project that is gone (archived or deleted): the heading of the view.
+			await view.rerender({ ...props, activeId: 'proj00000000099' });
+			(document.activeElement as HTMLElement).blur();
+			await view.rerender({ ...props, activeId: null });
+			await vi.waitFor(() =>
+				expect(document.activeElement).toBe(screen.getByRole('heading', { name: 'Projekte' }))
+			);
+		}
+	);
 
 	it('keeps the focus where it is when the panel closes through a click elsewhere', async () => {
 		const { view, props } = await show('/projekte', { activeId: HOUSE.id });
-		const auto = screen.getByRole('link', { name: /^Auto/ });
+		const auto = screen.getByRole('link', { name: 'Auto' });
 		auto.focus();
 
 		await view.rerender({ ...props, activeId: null });
@@ -281,12 +460,5 @@ describe('project view', () => {
 		document.body.innerHTML = '';
 		await show('/projekte', { projects: [OLD] });
 		expect(screen.getByText(/Alle Projekte sind archiviert\./)).toBeTruthy();
-	});
-
-	it('shows the section "Tags" below the tiles', async () => {
-		await show();
-
-		expect(screen.getByRole('region', { name: 'Tags' })).toBeTruthy();
-		expect(screen.getByText('Garten')).toBeTruthy();
 	});
 });

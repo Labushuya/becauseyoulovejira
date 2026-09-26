@@ -932,6 +932,7 @@ Wird je Paket ergänzt.
 | 2026-09-26 | EH-4 | `CodeBlock`: `figure` mit `figcaption` (Beschriftung und „Kopieren“ als `.button-subtle` mit `aria-label` „‹Beschriftung› kopieren“), `pre` als benannte Region mit `tabindex="0"` (das `svelte-ignore` für `a11y_no_noninteractive_tabindex` steht bewusst dort), Props `values` (für EH-5) und `wrap` (Bookmarklet). Erfolg: 2 s „Kopiert“ mit Häkchen und eine versteckte `role="status"`; Fehler oder fehlende API: Code markiert (`Selection`) und kompakte Info „… mit Strg+C kopieren“. `lib/clipboard.ts` bekommt `writeClipboardText` (Ergebnis `true`/`false`, der Text wird nie geloggt). `ExternalLink` verlinkt nur `https:`, sonst bleibt der Text ohne Link. |
 | 2026-09-26 | EH-4 | `BookmarkletCard` ersetzt den Abschnitt in `ChannelsView` (die `textarea` und „Code kopieren“ entfallen): Kopf mit Symbol und Satz, eigene Inline-SVG (Browserfenster mit Lesezeichenleiste und freiem Platz, Knopf, gleitende Kopie im Bogen), ziehbarer Knopf als Pille mit Griff und `aria-describedby`, Hinweis beim Klick, „Loslassen auf der Lesezeichenleiste“ während des Ziehens, drei Schritte, `<details>` „Ohne Maus einrichten“ mit `CodeBlock` und die Grenzen als kompakte Info. Animation `glide` 1,8 s mit `--motion-ease`: zweimal beim ersten Sichtbarwerden (`IntersectionObserver`, danach getrennt), einmal bei Hover oder Fokus (`{#key}` startet sie neu, `animationend` setzt zurück). Reduzierte Bewegung doppelt: `matchMedia` blendet die Kopie aus und zeigt den gestrichelten Pfeil, und eine eigene CSS-Media-Query tut dasselbe ohne Skript (die `data-overlay`-Regel greift hier nicht, es ist kein Overlay). Ohne `IntersectionObserver` bleibt die Illustration still. |
 | 2026-09-26 | EH-4 | Bewusst angepasste Tests: `channels-view.test.ts` heißt jetzt `channels/bookmarklet-card.test.ts` (per `git mv`); die bisherigen vier Fälle prüfen dieselben Zusagen an der Karte (Knopf statt Link-Chip, Code im `CodeBlock` statt in der `textarea`, Name des Kopierknopfs „Code des Bookmarklets kopieren“, Hinweis beim Klick als Info statt Statuszeile). Neu: `command.test.ts`, `guidance/code-block.test.ts` (Code-Block und externer Link), Fälle für Animation, reduzierte Bewegung und Ziehen, `writeClipboardText` in `clipboard.test.ts`. Manifest: BYL-E6-038 und BYL-E6-039 bestanden, BYL-E6-040 offen (manuell); die E4-Fälle zum Bookmarklet verweisen auf die neue Testdatei. |
+| 2026-09-26 | nach EH-4 (Nutzerwunsch) | Neue Unterseite „Tags“ (`/einstellungen/tags`) nach „Datei-Importe“ in `SETTINGS_SECTIONS`: Die Tag-Verwaltung zieht aus der Projektansicht hierher, weil die Projektansicht jetzt eine Liste ist und darunter nichts mehr hängen soll. Einzelheiten und Tests in [e6-ui.md](e6-ui.md) §6 („Projektliste“). Folgen für spätere Pakete: EH-12 behandelt den leeren Zustand der Tags auf dieser Seite (nicht mehr unter den Kacheln); die Einstellungsnavigation hat damit drei Einträge vor „Darstellung“, „Konto“ und „Hilfe“. Manifest-IDs BYL-E6-065 bis BYL-E6-067 liegen hinter dem reservierten Block. |
 
 ## 8. Status
 
@@ -941,7 +942,7 @@ Wird je Paket ergänzt.
 | EH-1 | gemergt (#59) |
 | EH-2 | gemergt (#60) |
 | EH-3 | gemergt (#61) |
-| EH-4 | umgesetzt (dieser PR) |
+| EH-4 | gemergt (#62) |
 | EH-5 bis EH-13 | geplant |
 
 ## Quellen (nur Muster, keine Assets)

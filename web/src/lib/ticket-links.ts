@@ -13,6 +13,13 @@ import {
 	type ListQuery
 } from './domain/list-query';
 import { parseInboxQuery, serializeInboxQuery, type InboxQuery } from './domain/inbox-query';
+import {
+	PROJECT_VIEW_PARAMS,
+	parseProjectViewQuery,
+	replaceProjectViewQuery,
+	serializeProjectViewQuery,
+	type ProjectViewQuery
+} from './domain/project-view';
 import { TEMPLATE_PARAM, TEMPLATE_VALUES, type CaptureTemplate } from './domain/templates';
 
 /** Query parameter of the switch "Erledigte anzeigen" (CLAUDE.md section 7). */
@@ -42,19 +49,21 @@ export function projectsHref(): ResolvedPathname {
 }
 
 /** Query parameter of the switch "Archivierte anzeigen" in the project view (package 14). */
-export const SHOW_ARCHIVED_PARAM = 'archiviert';
+export const SHOW_ARCHIVED_PARAM = PROJECT_VIEW_PARAMS.showArchived;
 
 export function showArchivedFrom(url: URL): boolean {
-	const values = url.searchParams.getAll(SHOW_ARCHIVED_PARAM);
-	return values.length === 1 && values[0] === '1';
+	return parseProjectViewQuery(url.searchParams).showArchived;
 }
 
-/** The switch "Archivierte anzeigen" of `url` as query, so the panel keeps the tiles as they were. */
+/**
+ * The state of the project view in `url` (search, sort, "Archivierte anzeigen", layout) as query,
+ * so opening and closing a panel keeps the list or the tiles as they were.
+ */
 function projectViewQuery(url: URL): string {
-	return showArchivedFrom(url) ? `?${SHOW_ARCHIVED_PARAM}=1` : '';
+	return serializeProjectViewQuery(parseProjectViewQuery(url.searchParams));
 }
 
-/** Project view with the switch "Archivierte anzeigen" of `url` (closing a project panel, UI-8). */
+/** Project view with the state of `url` (closing a project panel, UI-8). */
 export function projectsViewHref(url: URL): ResolvedPathname {
 	return `${resolve('/projekte')}${projectViewQuery(url)}` as ResolvedPathname;
 }
@@ -74,11 +83,13 @@ export const NEW_PROJECT_LINK_ID = 'new-project-link';
 
 /** The current path with the switch "Archivierte anzeigen" set or removed; others stay. */
 export function withShowArchived(url: URL, show: boolean): ResolvedPathname {
-	const params = new URLSearchParams(url.searchParams);
-	params.delete(SHOW_ARCHIVED_PARAM);
-	if (show) params.append(SHOW_ARCHIVED_PARAM, '1');
-	const search = params.toString();
-	return `${url.pathname}${search === '' ? '' : `?${search}`}${url.hash}` as ResolvedPathname;
+	const query = parseProjectViewQuery(url.searchParams);
+	return withProjectViewQuery(url, { ...query, showArchived: show });
+}
+
+/** The current path with the given state of the project view; other parameters stay. */
+export function withProjectViewQuery(url: URL, query: ProjectViewQuery): ResolvedPathname {
+	return `${url.pathname}${replaceProjectViewQuery(url.searchParams, query)}${url.hash}` as ResolvedPathname;
 }
 
 /** Path of the detail panel of a ticket with the query of `url`. */

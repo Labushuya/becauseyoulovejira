@@ -3,38 +3,52 @@
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
 	import type { Project } from '$lib/domain/project';
+	import {
+		PROJECT_SEARCH_MAX_LENGTH,
+		effectiveProjectLayout,
+		filterProjects,
+		nextProjectSort,
+		parseProjectViewQuery,
+		readStoredProjectLayout,
+		sortProjects,
+		writeStoredProjectLayout,
+		type ProjectLayout,
+		type ProjectSortKey,
+		type ProjectViewQuery
+	} from '$lib/domain/project-view';
 	import type { CatalogStore } from '$lib/stores/catalog.svelte';
-	import type { CatalogEditor } from '$lib/stores/catalog-editor';
-	import type { FlagSink } from '$lib/stores/flags.svelte';
 	import type { ProjectStatsStore } from '$lib/stores/project-stats.svelte';
 	import type { TicketListStore } from '$lib/stores/ticket-list.svelte';
 	import {
 		NEW_PROJECT_LINK_ID,
 		newProjectHref,
 		projectHref,
-		showArchivedFrom,
+		withProjectViewQuery,
 		withShowArchived
 	} from '$lib/ticket-links';
 	import ErrorIcon from './ErrorIcon.svelte';
+	import EmptyState from './guidance/EmptyState.svelte';
+	import ProjectTable from './ProjectTable.svelte';
 	import ProjectTiles from './ProjectTiles.svelte';
 	import SectionBar from './SectionBar.svelte';
-	import TagManager from './TagManager.svelte';
 	import ViewSwitch from './ViewSwitch.svelte';
 
-	// Project view (E3 plan, T-3, T-11, T-12, T-14 and package 14; ADR-0010 section 1; ADR-0025
-	// section 10, package UI-8): the section bar with the switch "Aufgaben | Projekte | Eingang" at
-	// the same place as in the other views, "Archivierte anzeigen" (?archiviert=1) and "Neues
-	// Projekt", the project tiles and below them the section "Tags". A tile opens the project panel
+	// Project view (E3 plan, T-3, T-11, T-12 and package 14; ADR-0010 section 1; ADR-0025 section
+	// 10, package UI-8; user request after EH-4): the section bar with the switch "Aufgaben |
+	// Projekte | Eingang" at the same place as in the other views, the search by name or code,
+	// "Archivierte anzeigen", the pair of layout buttons "Liste | Kacheln" and "Neues Projekt"; below
+	// it the projects as a list (default, ProjectTable with sortable columns) or as tiles, in the
+	// same frame and width. Search, sort, the switch and the layout live in the URL; the layout is
+	// also remembered in localStorage for the next visit. A row or tile opens the project panel
 	// (/projekte/<id>) next to the view, "Neues Projekt" the panel /projekte/neu. Closing a panel
-	// returns the focus to the tile of its project, or to the heading if the tile is gone, like a
-	// row of the tables; closing "Neues Projekt" without a project returns it to "Neues Projekt".
-	// "aktiv" comes from the list store, "gesamt" adds the done tickets the server counts.
+	// returns the focus to the link of its project, or to the heading if it is gone; closing "Neues
+	// Projekt" without a project returns it to "Neues Projekt". The tags live in the settings
+	// (/einstellungen/tags). "aktiv" comes from the list store, "gesamt" adds the done tickets the
+	// server counts.
 	let {
 		catalog,
 		tickets,
 		stats,
-		editor,
-		flags,
 		activeOf,
 		totalOf,
 		activeId = null,
@@ -44,13 +58,11 @@
 		catalog: CatalogStore;
 		tickets: TicketListStore;
 		stats: ProjectStatsStore;
-		editor: CatalogEditor;
-		flags: FlagSink;
 		/** Tickets of a project that are not done; null while not loaded. */
 		activeOf: (project: Project) => number | null;
 		/** Active plus done tickets; null while not counted. */
 		totalOf: (project: Project) => number | null;
-		/** Project shown in the panel; its tile is marked as current. */
+		/** Project shown in the panel; its row or tile is marked as current. */
 		activeId?: string | null;
 		/** The panel "Neues Projekt" is open. */
 		creating?: boolean;
@@ -59,22 +71,51 @@
 	} = $props();
 
 	const uid = $props.id();
-	const headingId = `${uid}-heading`;
+	const ids = { heading: `${uid}-heading`, search: `${uid}-search` };
 
-	const showArchived = $derived(showArchivedFrom(page.url));
-	const shown = $derived(showArchived ? catalog.projects : catalog.activeProjects);
+	function storage(): Storage | null {
+		try {
+			return window.localStorage;
+		} catch {
+			return null;
+		}
+	}
+
+	/** Layout remembered on this device; it applies when the URL names none. */
+	let stored = $state<ProjectLayout | null>(readStoredProjectLayout(storage()));
+
+	const query = $derived(parseProjectViewQuery(page.url.searchParams));
+	const layout = $derived(effectiveProjectLayout(query, stored));
+	/** Projects of the switch "Archivierte anzeigen", before the search. */
+	const available = $derived(query.showArchived ? catalog.projects : catalog.activeProjects);
+	const newOf = (project: Project) => tickets.newInProject(project.id);
+	const shown = $derived(
+		sortProjects(filterProjects(available, query.search), query.sort, {
+			active: activeOf,
+			total: totalOf,
+			fresh: newOf
+		})
+	);
 	const countLabel = $derived(shown.length === 1 ? '1 Projekt' : `${shown.length} Projekte`);
 
 	let root = $state<HTMLElement>();
 	let heading = $state<HTMLElement>();
 
-	// Counts the done tickets of the shown projects and of the one in the panel (again when the
-	// set changes).
+	// Counts the done tickets of the available projects and of the one in the panel (again when the
+	// set changes); a search does not change the set, so clearing it shows the numbers at once.
 	$effect(() => {
-		const ids = shown.map((project) => project.id);
-		if (activeId !== null && !ids.includes(activeId)) ids.push(activeId);
-		untrack(() => stats.track(ids));
+		const projectIds = available.map((project) => project.id);
+		if (activeId !== null && !projectIds.includes(activeId)) projectIds.push(activeId);
+		untrack(() => stats.track(projectIds));
 	});
+
+	async function navigate(next: ProjectViewQuery, replaceState = false) {
+		await goto(withProjectViewQuery(page.url, next), {
+			keepFocus: true,
+			noScroll: true,
+			replaceState
+		});
+	}
 
 	async function toggleArchived(event: Event & { currentTarget: HTMLInputElement }) {
 		await goto(withShowArchived(page.url, event.currentTarget.checked), {
@@ -83,12 +124,55 @@
 		});
 	}
 
+	/**
+	 * The layout buttons: the choice is remembered and written to the URL. "Liste" is the default,
+	 * so it leaves the parameter out; the remembered choice then says the same.
+	 */
+	async function chooseLayout(next: ProjectLayout) {
+		stored = next;
+		writeStoredProjectLayout(storage(), next);
+		const current = parseProjectViewQuery(page.url.searchParams);
+		await navigate({ ...current, layout: next === 'liste' ? null : next });
+	}
+
+	/** Column header of the list: natural direction, reversed, by name; back restores it. */
+	async function sortBy(key: ProjectSortKey) {
+		const current = parseProjectViewQuery(page.url.searchParams);
+		await navigate({ ...current, sort: nextProjectSort(current.sort, key) });
+	}
+
+	/** Text in the search field while it has the focus; else the field shows the URL. */
+	let typed = $state<string | null>(null);
+	const searchValue = $derived(typed ?? query.search ?? '');
+
+	/** Typing replaces the history entry, so back does not go through every letter. */
+	async function search(text: string) {
+		typed = text;
+		const current = parseProjectViewQuery(page.url.searchParams);
+		await navigate({ ...current, search: text.trim() === '' ? null : text }, true);
+	}
+
+	/** Escape empties a field that is not empty; an empty one leaves Escape to the page. */
+	function onSearchKeydown(event: KeyboardEvent & { currentTarget: HTMLInputElement }) {
+		if (event.key !== 'Escape' || event.currentTarget.value === '') return;
+		event.preventDefault();
+		event.stopPropagation();
+		void search('');
+	}
+
+	/** "Suche zurücksetzen" of the empty result; the focus goes to the heading. */
+	async function clearSearch() {
+		typed = null;
+		await navigate({ ...query, search: null });
+		heading?.focus();
+	}
+
 	function focusLost(): boolean {
 		const active = document.activeElement;
 		return active === null || active === document.body;
 	}
 
-	function tileOf(id: string): HTMLElement | undefined {
+	function linkOf(id: string): HTMLElement | undefined {
 		return [...(root?.querySelectorAll<HTMLElement>('a[data-project-id]') ?? [])].find(
 			(link) => link.dataset.projectId === id
 		);
@@ -97,15 +181,15 @@
 	/** Project whose panel was shown last. */
 	let shownId: string | null = null;
 
-	// Closing the panel (×, Escape, blanket, browser back) returns the focus to the tile of its
-	// project, or to the heading if the tile is gone (archived, deleted).
+	// Closing the panel (×, Escape, blanket, browser back) returns the focus to the row or tile of
+	// its project, or to the heading if it is gone (archived, deleted, outside the search).
 	$effect(() => {
 		const previous = shownId;
 		shownId = activeId;
 		if (previous === null || previous === activeId) return;
 		void tick().then(() => {
 			if (!focusLost()) return;
-			(tileOf(previous) ?? heading)?.focus();
+			(linkOf(previous) ?? heading)?.focus();
 		});
 	});
 
@@ -140,10 +224,10 @@
 	</div>
 {/snippet}
 
-<section class="projects-view" aria-labelledby={headingId} bind:this={root}>
+<section class="projects-view" aria-labelledby={ids.heading} bind:this={root}>
 	<SectionBar
 		title="Projekte"
-		{headingId}
+		headingId={ids.heading}
 		count={catalog.state === 'ready' ? shown.length : null}
 		{countLabel}
 		bind:heading
@@ -152,10 +236,61 @@
 			<ViewSwitch current="projects" {inboxCount} projectsNewCount={tickets.newInProjects} />
 		{/snippet}
 		{#snippet end()}
+			<div class="search">
+				<label for={ids.search}>
+					<svg viewBox="0 0 16 16" aria-hidden="true" focusable="false">
+						<circle cx="7" cy="7" r="4.25" />
+						<path d="M10.25 10.25L13.5 13.5" />
+					</svg>
+					<span class="visually-hidden">Projekte suchen</span>
+				</label>
+				<input
+					id={ids.search}
+					type="search"
+					autocomplete="off"
+					spellcheck="false"
+					placeholder="Name oder Code"
+					maxlength={PROJECT_SEARCH_MAX_LENGTH}
+					value={searchValue}
+					oninput={(event) => void search(event.currentTarget.value)}
+					onkeydown={onSearchKeydown}
+					onblur={() => (typed = null)}
+				/>
+			</div>
 			<label class="switch">
-				<input type="checkbox" checked={showArchived} onchange={toggleArchived} />
+				<input type="checkbox" checked={query.showArchived} onchange={toggleArchived} />
 				Archivierte anzeigen
 			</label>
+			<div class="layout-switch" role="group" aria-label="Darstellung der Projekte">
+				<button
+					class="button-icon"
+					type="button"
+					aria-label="Liste"
+					title="Liste"
+					aria-pressed={layout === 'liste'}
+					onclick={() => void chooseLayout('liste')}
+				>
+					<svg viewBox="0 0 16 16" aria-hidden="true" focusable="false">
+						<path d="M5.5 4h8M5.5 8h8M5.5 12h8" />
+						<path class="dot" d="M2.5 4h.01M2.5 8h.01M2.5 12h.01" />
+					</svg>
+				</button>
+				<button
+					class="button-icon"
+					type="button"
+					aria-label="Kacheln"
+					title="Kacheln"
+					aria-pressed={layout === 'kacheln'}
+					onclick={() => void chooseLayout('kacheln')}
+				>
+					<svg viewBox="0 0 16 16" aria-hidden="true" focusable="false">
+						<rect x="2.5" y="2.5" width="4.5" height="4.5" rx="1" />
+						<rect x="9" y="2.5" width="4.5" height="4.5" rx="1" />
+						<rect x="2.5" y="9" width="4.5" height="4.5" rx="1" />
+						<rect x="9" y="9" width="4.5" height="4.5" rx="1" />
+					</svg>
+				</button>
+			</div>
 			{@render newProjectLink(NEW_PROJECT_LINK_ID)}
 		{/snippet}
 	</SectionBar>
@@ -173,37 +308,55 @@
 		{/if}
 
 		{#if shown.length > 0}
-			<ProjectTiles
-				projects={shown}
-				{activeOf}
-				{totalOf}
-				{activeId}
-				newOf={(project) => tickets.newInProject(project.id)}
-				hrefOf={(project) => projectHref(project.id, page.url)}
-			/>
+			{#if layout === 'liste'}
+				<ProjectTable
+					projects={shown}
+					{activeOf}
+					{totalOf}
+					{newOf}
+					{activeId}
+					sort={query.sort}
+					searching={query.search !== null}
+					hrefOf={(project) => projectHref(project.id, page.url)}
+					onsort={(key) => void sortBy(key)}
+				/>
+			{:else}
+				<ProjectTiles
+					projects={shown}
+					{activeOf}
+					{totalOf}
+					{activeId}
+					{newOf}
+					hrefOf={(project) => projectHref(project.id, page.url)}
+				/>
+			{/if}
 		{:else if catalog.projects.length === 0}
 			<div class="empty">
 				<p>Noch keine Projekte.</p>
 				{@render newProjectLink()}
 			</div>
+		{:else if query.search !== null && available.length > 0}
+			<EmptyState
+				title="Keine Projekte gefunden"
+				description={`Kein Projekt heißt „${query.search}“ oder hat diesen Code.`}
+				size="narrow"
+				icon="search"
+			>
+				{#snippet secondary()}
+					<button class="button-secondary" type="button" onclick={() => void clearSearch()}>
+						Suche zurücksetzen
+					</button>
+				{/snippet}
+			</EmptyState>
 		{:else}
 			<p class="empty">Alle Projekte sind archiviert. „Archivierte anzeigen“ zeigt sie.</p>
 		{/if}
-
-		<div class="tags">
-			<TagManager
-				tags={catalog.tags}
-				{editor}
-				onannounce={(title) => flags.show({ tone: 'success', title })}
-			/>
-		</div>
 	{/if}
 </section>
 
 <style>
-	/* Spacing as in the other views: the section bar keeps its own margin (no override). */
-	.tags {
-		margin-top: 1.5rem;
+	.projects-view {
+		min-width: 0;
 	}
 
 	.switch {
@@ -217,6 +370,73 @@
 
 	.switch input {
 		accent-color: var(--color-brand);
+	}
+
+	/* Same field as the search of the filter bar in "Aufgaben". */
+	.search {
+		display: inline-flex;
+		align-items: center;
+		padding: 0 0.375rem;
+		color: var(--color-text-muted);
+		background: var(--color-surface);
+		border: 1px solid var(--color-line);
+		border-radius: var(--radius-control);
+	}
+
+	.search:focus-within {
+		border-color: var(--color-brand);
+	}
+
+	.search label {
+		display: inline-flex;
+	}
+
+	.search svg {
+		width: 0.875rem;
+		height: 0.875rem;
+		fill: none;
+		stroke: currentColor;
+		stroke-width: 1.5;
+		stroke-linecap: round;
+	}
+
+	.search input {
+		width: 12rem;
+		max-width: 100%;
+		padding: 0.1875rem 0.375rem;
+		font-size: 0.8125rem;
+		background: none;
+		border: none;
+	}
+
+	.search input:focus-visible {
+		outline: none;
+	}
+
+	.layout-switch {
+		display: inline-flex;
+		gap: 0.125rem;
+	}
+
+	.layout-switch svg {
+		width: 1rem;
+		height: 1rem;
+		fill: none;
+		stroke: currentColor;
+		stroke-width: 1.5;
+		stroke-linecap: round;
+		stroke-linejoin: round;
+	}
+
+	.layout-switch .dot {
+		stroke-width: 2.25;
+	}
+
+	/* The pressed layout button: surface and frame in the brand colour, not colour alone. */
+	.layout-switch [aria-pressed='true'] {
+		color: var(--color-brand-soft-text);
+		background: var(--color-brand-soft-bg);
+		border-color: var(--color-brand);
 	}
 
 	.new {

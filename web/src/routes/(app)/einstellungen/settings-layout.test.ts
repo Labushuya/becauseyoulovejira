@@ -88,7 +88,8 @@ describe('settings layout', () => {
 		const pages = nav.getAllByRole('listitem').map((item) => within(item).getByRole('link'));
 		expect(pages.map((link) => [link.textContent?.trim(), link.getAttribute('href')])).toEqual([
 			['Kanäle', '/einstellungen/kanaele'],
-			['Datei-Importe', '/einstellungen/datei-importe']
+			['Datei-Importe', '/einstellungen/datei-importe'],
+			['Tags', '/einstellungen/tags']
 		]);
 		expect(pages[0]?.hasAttribute('aria-current')).toBe(false);
 		expect(pages[1]?.getAttribute('aria-current')).toBe('page');

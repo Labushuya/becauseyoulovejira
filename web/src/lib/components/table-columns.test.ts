@@ -8,6 +8,7 @@
 import { describe, expect, it } from 'vitest';
 import { MORE_COLUMNS_HINT } from '$lib/domain/labels';
 import inboxTable from './InboxTable.svelte?raw';
+import projectTable from './ProjectTable.svelte?raw';
 import ticketTable from './TicketTable.svelte?raw';
 
 const components = import.meta.glob('/src/**/*.svelte', {
@@ -48,6 +49,7 @@ describe('tables without sideways scrolling', () => {
 	it('finds the tables of the app', () => {
 		expect(tables.map(([path]) => path.split('/').pop()).sort()).toEqual([
 			'InboxTable.svelte',
+			'ProjectTable.svelte',
 			'TicketTable.svelte'
 		]);
 	});
@@ -83,5 +85,9 @@ describe('tables without sideways scrolling', () => {
 
 	it('hides the inbox columns in the order arrival, Quelle, Art, Quelldatum', () => {
 		expect(hideOrder(inboxTable)).toEqual(['arrival', 'source', 'kind', 'source-date']);
+	});
+
+	it('hides the project columns in the order archiviert, neu, gesamt, aktiv', () => {
+		expect(hideOrder(projectTable)).toEqual(['archived', 'new', 'total', 'active']);
 	});
 });
