@@ -1,21 +1,66 @@
 name: CI
 
+# No run on push to main: main only changes through squash merges of pull requests that
+# passed this workflow (ruleset .github/rulesets/main.json). The weekly run on main catches
+# drift of the runner image and keeps the README badge current; workflow_dispatch runs it
+# on demand.
 on:
-  push:
-    branches: [main]
   pull_request:
     branches: [main]
+  schedule:
+    - cron: '17 4 * * 1'
+  workflow_dispatch:
 
 permissions:
   contents: read
 
 concurrency:
-  group: ci-${{ github.ref }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+  group: ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 
 jobs:
+  changes:
+    name: Detect code changes
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      pull-requests: read
+    outputs:
+      code: ${{ steps.filter.outputs.code }}
+    steps:
+      # Documentation only means: every changed path (old and new name) is a Markdown file or
+      # lies under docs/, except docs/test-manifest.html, which tests/unit/test-manifest.test.mjs
+      # reads. An empty list or an API error counts as a code change.
+      - name: Classify changed files
+        id: filter
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          files=$(gh api --paginate "repos/$REPO/pulls/$PR_NUMBER/files" --jq '.[] | .filename, (.previous_filename // empty)')
+          code=false
+          if [ -z "$files" ]; then code=true; fi
+          while IFS= read -r file; do
+            [ -z "$file" ] && continue
+            case "$file" in
+              docs/test-manifest.html) code=true ;;
+              docs/* | *.md) ;;
+              *) code=true ;;
+            esac
+          done <<< "$files"
+          echo "Code changed: $code"
+          echo "code=$code" >> "$GITHUB_OUTPUT"
+
   build:
+    # Required status check of the ruleset for main. For documentation-only pull requests the
+    # job is skipped, and GitHub counts a skipped required job as passed. If the classification
+    # fails, the job runs anyway.
     name: Check, lint, build and test
+    needs: changes
+    if: ${{ !cancelled() && (needs.changes.result != 'success' || needs.changes.outputs.code == 'true') }}
     # The start/stop logic tests and the integration tests need Windows PowerShell
     # and the Windows PocketBase binary.
     runs-on: windows-latest
