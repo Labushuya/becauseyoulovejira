@@ -178,7 +178,7 @@ export class ConnectionsStore {
 		return this.#act(async () => {
 			const updated = await this.#data.setEnabled(id, enabled);
 			this.#items.set(id, updated);
-			this.#notify(`„${updated.label}“ ist ${enabled ? 'eingeschaltet' : 'ausgeschaltet'}.`);
+			this.#notify(`„${updated.label}“ ${enabled ? 'läuft wieder' : 'ist pausiert'}.`);
 		});
 	}
 

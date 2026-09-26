@@ -227,7 +227,7 @@ Danach anmelden und die Daten prüfen; es gelten die Konten und Passwörter zum 
 
 ### Kanäle und Zugangsdaten
 
-Google Calendar und Telegram holt die App selbst ab, Postfächer der Mail-Hilfsprozess `byl-mail.exe`, solange die App läuft. Eingerichtet werden sie unter **Einstellungen → Kanäle** (Zahnrad oben rechts, `http://127.0.0.1:8090/einstellungen/kanaele`); in den Anleitungen unten steht dafür kurz **Kanäle**. Details: [ADR-0016](docs/adr/0016-kanal-architektur-und-mail.md), [ADR-0018](docs/adr/0018-secrets.md).
+Google Calendar und Telegram holt die App selbst ab, Postfächer der Mail-Hilfsprozess `byl-mail.exe`, solange die App läuft. Eingerichtet werden sie unter **Einstellungen → Kanäle** (Zahnrad oben rechts, `http://127.0.0.1:8090/einstellungen/kanaele`); in den Anleitungen unten steht dafür kurz **Kanäle**. Jede Verbindung ist dort eine Karte mit ihrem Zustand (**Eingerichtet**, **Nicht eingerichtet**, **Fehler**, **Pausiert**, **Wird abgerufen**), dem letzten Abruf und den Stichwörtern; **Bearbeiten** ändert Stichwörter und Schalter, das Menü **…** pausiert, setzt fort oder löscht. Neue Verbindungen kommen über **Kanal hinzufügen**. Details: [ADR-0016](docs/adr/0016-kanal-architektur-und-mail.md), [ADR-0018](docs/adr/0018-secrets.md).
 
 - **Zugangsdaten nur als Windows-Variable:** Geheime Kalenderadresse, Bot-Token und erlaubte IDs stehen als Umgebungsvariablen deines Windows-Kontos, deren Name mit `BYL_` beginnt (Großbuchstaben, Ziffern, `_`). Die App speichert nur den Namen, nie den Wert. So stehen die Werte weder in `pb_data` noch in Backups oder Kopien von `app\`.
 - **Variable setzen:** Eingabeaufforderung öffnen (Windows-Taste, `cmd`) und `setx NAME "Wert"` eingeben, etwa `setx BYL_TELEGRAM_TOKEN "123456789:AA…"`. Alternativ: Windows-Taste, „Umgebungsvariablen“, dann **Umgebungsvariablen für dieses Konto bearbeiten** → **Benutzervariablen** → **Neu…**.
@@ -252,7 +252,7 @@ Die App liest den Kalender über seine **geheime iCal-Adresse** (nur lesend) und
 2. Ganz unten unter **Kalender integrieren** die **Privatadresse im iCal-Format** kopieren (beginnt mit `https://calendar.google.com/calendar/ical/`, endet auf `/basic.ics`).
 3. Eingabeaufforderung: `setx BYL_GOOGLE_CALENDAR_URL "<kopierte Adresse>"`.
 4. `stop.bat`, dann `start.bat`.
-5. Unter **Kanäle** → **Verbindungen** die Art **Google Calendar** mit der Variablen `BYL_GOOGLE_CALENDAR_URL` anlegen.
+5. Unter **Kanäle** → **Kanal hinzufügen** bei **Google Calendar** auf **Einrichten** und die Verbindung mit der Variablen `BYL_GOOGLE_CALENDAR_URL` anlegen.
 6. An der Verbindung Stichwörter eintragen, dann **Jetzt abrufen**.
 
 - Derselbe Termin aus Feed und `.ics`-Datei ergibt einen Eintrag (Duplikatmerkmal `UID` plus `RECURRENCE-ID`). Eine Serie ist ein Eintrag, solange sie läuft.
@@ -268,7 +268,7 @@ Du schreibst deinem eigenen Bot, was in den Eingang soll. Die App fragt jede Min
 2. Den Token aus der Antwort setzen: `setx BYL_TELEGRAM_TOKEN "123456789:AA…"`.
 3. **Eigene ID finden:** Die Verbindung zunächst mit einer beliebigen Zahl in `BYL_TELEGRAM_ALLOWED_IDS` einrichten (Schritte 4 und 5), dem Bot schreiben und unter **Kanäle** „Jetzt abrufen“ wählen. Die Verbindung zeigt dann „Nachricht aus einem nicht freigegebenen Chat (Chat-ID …)“. Im Chat mit dem Bot ist das deine User-ID. Für eine Gruppe den Bot hinzufügen; ihre Chat-ID beginnt mit `-100`.
 4. `setx BYL_TELEGRAM_ALLOWED_IDS "424242"`, mehrere IDs durch Komma getrennt.
-5. `stop.bat`, dann `start.bat`. Unter **Kanäle** → **Verbindungen** die Art **Telegram-Bot** mit `BYL_TELEGRAM_TOKEN` und `BYL_TELEGRAM_ALLOWED_IDS` anlegen.
+5. `stop.bat`, dann `start.bat`. Unter **Kanäle** → **Kanal hinzufügen** bei **Telegram-Bot** auf **Einrichten** und die Verbindung mit `BYL_TELEGRAM_TOKEN` und `BYL_TELEGRAM_ALLOWED_IDS` anlegen.
 6. An der Verbindung Stichwörter eintragen.
 
 - Der Offset rückt erst weiter, wenn eine Nachricht gespeichert ist; ein erneuter Abruf legt nichts doppelt an. Nachrichten fremder Chats werden nicht gespeichert, nur ihre Chat-ID erscheint als Hinweis an der Verbindung.
@@ -284,7 +284,7 @@ Der Mail-Hilfsprozess `app\byl-mail.exe` holt den Posteingang alle 5 Minuten ab,
 1. Bei [Web.de](https://web.de) anmelden, oben auf die Initialen → **E-Mail-Einstellungen** → unter „E-Mail empfangen“ **POP3/IMAP** → Schalter **POP3- und IMAP-Zugriff erlauben** einschalten und die Sicherheitsabfrage bestätigen.
 2. Mit Zwei-Faktor-Anmeldung: **Account verwalten** → **Login & Sicherheit** → **Anwendungsspezifische Passwörter verwalten** → neues Passwort erstellen (Name etwa „becauseyoulovejira“); es wird nur einmal angezeigt. Ohne Zwei-Faktor-Anmeldung gilt das normale Web.de-Passwort.
 3. Eingabeaufforderung: `setx BYL_WEBDE_PASSWORD "<Passwort>"`.
-4. Unter **Kanäle** → **Verbindungen** die Art **Postfach (IMAP)** anlegen: Anbieter **Web.de**, Benutzername = deine E-Mail-Adresse, Variable `BYL_WEBDE_PASSWORD`. Stichwörter eintragen.
+4. Unter **Kanäle** → **Kanal hinzufügen** bei **Web.de** auf **Einrichten** (Art **Postfach (IMAP)**, Anbieter **Web.de**), Benutzername = deine E-Mail-Adresse, Variable `BYL_WEBDE_PASSWORD`. Stichwörter eintragen.
 5. `stop.bat`, dann `start.bat`. Beim ersten Mal legt `start.bat` die Variable `BYL_INGEST_TOKEN` an (nichts zu tun) und startet `byl-mail.exe`.
 6. Nach spätestens 5 Minuten zeigt die Verbindung „Letzter Abruf“ und den Hinweis „Erster Abruf“: Ältere Mails bleiben im Postfach, ab jetzt kommen neue Mails mit Stichwort.
 
@@ -303,7 +303,7 @@ Gmail holt derselbe Hilfsprozess ab wie Web.de, mit denselben Regeln: nur der Po
 1. Unter [myaccount.google.com](https://myaccount.google.com) → **Sicherheit** prüfen, ob die **Bestätigung in zwei Schritten** (2-Faktor-Authentifizierung) eingeschaltet ist; sonst dort einschalten.
 2. [myaccount.google.com/apppasswords](https://myaccount.google.com/apppasswords) öffnen, einen Namen wie „becauseyoulovejira“ eingeben und **Erstellen** klicken. Das App-Passwort (16 Buchstaben in Vierergruppen) wird nur einmal angezeigt.
 3. Eingabeaufforderung: `setx BYL_GMAIL_PASSWORD "<App-Passwort ohne Leerzeichen>"`.
-4. Unter **Kanäle** → **Verbindungen** die Art **Postfach (IMAP)** anlegen: Anbieter **Gmail** (das Formular schlägt dann `BYL_GMAIL_PASSWORD` vor), Benutzername = deine Gmail-Adresse. Stichwörter eintragen.
+4. Unter **Kanäle** → **Kanal hinzufügen** bei **Gmail** auf **Einrichten** (Art **Postfach (IMAP)**, Anbieter **Gmail**; das Formular schlägt `BYL_GMAIL_PASSWORD` vor), Benutzername = deine Gmail-Adresse. Stichwörter eintragen.
 5. `stop.bat`, dann `start.bat`. Nach spätestens 5 Minuten zeigt die Verbindung „Letzter Abruf“ und den Hinweis „Erster Abruf“.
 
 - **Anmeldung abgelehnt:** Die Verbindung meldet „Anmeldung bei Gmail abgelehnt.“ mit dem Hinweis **„App-Passwort nötig (Bestätigung in zwei Schritten)“**. Meist steht in der Variablen das normale Google-Passwort oder ein widerrufenes App-Passwort. Neues App-Passwort per `setx` setzen und neu starten.

@@ -247,7 +247,7 @@ export function runResultText(label: string, result: RunResult): string {
 		case 'missing':
 			return `${name}: Zugangsdaten fehlen (${result.missing.join(', ')}). Variable anlegen, dann die App neu starten.`;
 		case 'disabled':
-			return `${name} ist ausgeschaltet.`;
+			return `${name} ist pausiert.`;
 		case 'unsupported':
 			return `${name}: Diese Art ruft noch nicht ab.`;
 	}
