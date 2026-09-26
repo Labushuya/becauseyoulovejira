@@ -1,6 +1,6 @@
 # ADR-0010: Seitenaufbau nach dem Vorbild des Task-Boards, im eigenen Stack und mit eigenen Farben
 
-- **Status:** Angenommen, teilweise ersetzt durch [ADR-0025](0025-ui-konsistenz-overlay-system.md) (siehe Nachtrag am Ende)
+- **Status:** Angenommen, teilweise ersetzt durch [ADR-0025](0025-ui-konsistenz-overlay-system.md), ergänzt durch [ADR-0027](0027-akzent-themes.md) (siehe Nachträge am Ende)
 - **Datum:** 2026-09-25
 - **Entscheidung durch:** Nutzer (Layout übernehmen, 2026-09-25), Advisor (Auslegung: eigene Farben, Clean-Room-Regel)
 
@@ -101,3 +101,16 @@ Später folgen, jeweils in ihrer Etappe ([ADR-0011](0011-roadmap-e3-bis-e7.md)):
 - **§5, Popover:** Sie laufen über einen gemeinsamen Baustein mit JS-Positionierung statt CSS Anchor Positioning. Umgesetzt mit UI-2.
 
 Die Farb- und Gestaltungsregeln aus §3 und die Clean-Room-Regel aus §4 gelten unverändert.
+
+## Nachtrag (2026-09-26): genau eine Akzentfarbe je Theme (ADR-0027)
+
+[ADR-0027](0027-akzent-themes.md) führt wählbare Akzent-Themes ein: Petrol (Standard), Rubin, Purpur, Smaragd und Honig, jedes hell und dunkel. Der Text oben bleibt unverändert. Für §3 gilt ab jetzt:
+
+- Aus „Petrol bleibt die einzige Akzentfarbe“ wird **„genau eine Akzentfarbe je Theme“**. Wo §3 „Petrol“ oder „petrolfarben“ sagt, ist der Akzent des gewählten Themes gemeint. Die Pille „In Arbeit“ trägt etwa den Akzent.
+- Alles andere aus §3 gilt in jedem Theme:
+  - keine Signalfarben, kein Rot außer für Fehler
+  - keine Glas-Optik, keine Verläufe, keine Schatten
+  - Pillen „Ton in Ton“
+  - Farbe nie als einziges Merkmal
+- „Wartet“ bleibt bernsteinfarben, außer im Honig-Theme. Dort würde Bernstein den Akzent treffen, deshalb ist die Pille dort schiefergrau-blau.
+- Neue Farb-Tokens entstehen weiter nur nach §3, jetzt in den Modus-Blöcken **und** in allen Theme-Blöcken, jeweils mit Kontrastprüfung in `tokens.test.ts`.

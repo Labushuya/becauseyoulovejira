@@ -1,17 +1,64 @@
-// Guards the design tokens (CLAUDE.md section 8, ADR-0009, ADR-0025): every theme block defines
-// the same color tokens and its color-scheme, the error color reaches WCAG AA contrast in light
-// and dark mode, and the overlay sizes, radii and motion exist once in :root.
+// Guards the design tokens (CLAUDE.md section 8, ADR-0009, ADR-0025, ADR-0027): every mode block
+// defines the same color tokens and its color-scheme, every accent theme overrides exactly the
+// accent tokens in its four blocks, all text and UI pairs reach WCAG AA in every theme and mode,
+// the accents keep a measurable distance (CIEDE2000) from the error color, from Petrol and from
+// each other, and the overlay sizes, radii and motion exist once in :root.
 
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
+import { contrast, deltaE2000, hslHue } from '$lib/test/color-math';
 
 const SOURCE = readFileSync(join(import.meta.dirname, 'tokens.css'), 'utf8');
 
-const LIGHT = ':root';
-const DARK = ":root:not([data-theme='light'])";
-const FORCED_LIGHT = ":root[data-theme='light']";
-const FORCED_DARK = ":root[data-theme='dark']";
+type Mode = 'light' | 'dark' | 'forced light' | 'forced dark';
+
+const MODES: readonly Mode[] = ['light', 'dark', 'forced light', 'forced dark'];
+
+const MODE_SELECTORS: Record<Mode, string> = {
+	light: ':root',
+	dark: ":root:not([data-theme='light'])",
+	'forced light': ":root[data-theme='light']",
+	'forced dark': ":root[data-theme='dark']"
+};
+
+/** The accent themes besides the default Petrol, as in data-accent (ADR-0027). */
+const ACCENTS = ['rubin', 'purpur', 'smaragd', 'honig'] as const;
+type Accent = (typeof ACCENTS)[number];
+type Theme = 'petrol' | Accent;
+const THEMES: readonly Theme[] = ['petrol', ...ACCENTS];
+
+function accentSelector(accent: Accent, mode: Mode): string {
+	const root = `:root[data-accent='${accent}']`;
+	switch (mode) {
+		case 'light':
+			return root;
+		case 'dark':
+			return `${root}:not([data-theme='light'])`;
+		case 'forced light':
+			return `${root}[data-theme='light']`;
+		case 'forced dark':
+			return `${root}[data-theme='dark']`;
+	}
+}
+
+/** Tokens an accent theme sets, in every one of its four blocks and nothing else (ADR-0027 §2). */
+const ACCENT_TOKENS = [
+	'--color-brand',
+	'--color-brand-text',
+	'--color-brand-soft-bg',
+	'--color-brand-soft-text',
+	'--color-on-brand',
+	'--color-danger',
+	'--color-danger-soft-bg',
+	'--status-open-text',
+	'--status-open-border',
+	'--status-in-progress-bg',
+	'--status-in-progress-text',
+	'--status-waiting-bg',
+	'--status-waiting-text',
+	'--status-waiting-border'
+].sort();
 
 /** Innermost rule blocks of the file, keyed by selector, with their custom properties. */
 function parseBlocks(css: string): Map<string, Map<string, string>> {
@@ -68,24 +115,6 @@ function colorSchemes(css: string): Map<string, string | undefined> {
 	return schemes;
 }
 
-function channel(value: number): number {
-	const srgb = value / 255;
-	return srgb <= 0.04045 ? srgb / 12.92 : ((srgb + 0.055) / 1.055) ** 2.4;
-}
-
-/** Relative luminance (WCAG 2.x) of a #rrggbb color. */
-function luminance(hex: string): number {
-	const match = /^#([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i.exec(hex);
-	if (!match) throw new Error(`Not a #rrggbb color: ${hex}`);
-	const [r, g, b] = match.slice(1).map((part) => channel(parseInt(part, 16)));
-	return 0.2126 * (r ?? 0) + 0.7152 * (g ?? 0) + 0.0722 * (b ?? 0);
-}
-
-function contrast(first: string, second: string): number {
-	const [lighter, darker] = [luminance(first), luminance(second)].sort((a, b) => b - a);
-	return ((lighter ?? 0) + 0.05) / ((darker ?? 0) + 0.05);
-}
-
 const blocks = parseBlocks(SOURCE);
 
 function block(selector: string): Map<string, string> {
@@ -94,28 +123,92 @@ function block(selector: string): Map<string, string> {
 	return colorTokens(found);
 }
 
-function token(selector: string, name: string): string {
-	const value = block(selector).get(name);
-	if (value === undefined) throw new Error(`${selector} does not define ${name}`);
+/** Every color token as it applies with this theme in this mode: mode block plus accent block. */
+function palette(theme: Theme, mode: Mode): Map<string, string> {
+	const merged = new Map(block(MODE_SELECTORS[mode]));
+	if (theme !== 'petrol') {
+		for (const [name, value] of block(accentSelector(theme, mode))) merged.set(name, value);
+	}
+	return merged;
+}
+
+function color(theme: Theme, mode: Mode, name: string): string {
+	const value = palette(theme, mode).get(name);
+	if (value === undefined) throw new Error(`${theme} (${mode}) does not define ${name}`);
 	return value;
 }
 
+const LIGHT = MODE_SELECTORS.light;
+const DARK = MODE_SELECTORS.dark;
+
 describe('tokens.css', () => {
-	it('has exactly the four theme blocks', () => {
-		expect([...blocks.keys()].sort()).toEqual([LIGHT, DARK, FORCED_LIGHT, FORCED_DARK].sort());
+	it('has the four mode blocks and four blocks per accent theme', () => {
+		const expected = [
+			...MODES.map((mode) => MODE_SELECTORS[mode]),
+			...ACCENTS.flatMap((accent) => MODES.map((mode) => accentSelector(accent, mode)))
+		];
+		expect([...blocks.keys()].sort()).toEqual(expected.sort());
 	});
 
-	it('defines the same color tokens in every block', () => {
+	it('defines the same color tokens in every mode block', () => {
 		const names = [...block(LIGHT).keys()].sort();
 		expect(names.length).toBeGreaterThan(0);
-		for (const selector of [DARK, FORCED_LIGHT, FORCED_DARK]) {
-			expect([...block(selector).keys()].sort(), selector).toEqual(names);
+		for (const mode of MODES) {
+			expect([...block(MODE_SELECTORS[mode]).keys()].sort(), mode).toEqual(names);
 		}
 	});
 
-	it('uses the same values for the default and the forced variant of each mode', () => {
-		expect(Object.fromEntries(block(FORCED_LIGHT))).toEqual(Object.fromEntries(block(LIGHT)));
-		expect(Object.fromEntries(block(FORCED_DARK))).toEqual(Object.fromEntries(block(DARK)));
+	it('defines every accent token in the mode blocks (Petrol is complete)', () => {
+		for (const mode of MODES) {
+			const names = [...block(MODE_SELECTORS[mode]).keys()];
+			expect(
+				ACCENT_TOKENS.filter((name) => !names.includes(name)),
+				mode
+			).toEqual([]);
+		}
+	});
+
+	it.each(ACCENTS)(
+		'gives the theme %s exactly the accent tokens in each of its blocks',
+		(accent) => {
+			for (const mode of MODES) {
+				expect([...block(accentSelector(accent, mode)).keys()].sort(), mode).toEqual(ACCENT_TOKENS);
+			}
+		}
+	);
+
+	it.each(THEMES)('uses the same values for the default and the forced variant (%s)', (theme) => {
+		expect(Object.fromEntries(palette(theme, 'forced light'))).toEqual(
+			Object.fromEntries(palette(theme, 'light'))
+		);
+		expect(Object.fromEntries(palette(theme, 'forced dark'))).toEqual(
+			Object.fromEntries(palette(theme, 'dark'))
+		);
+	});
+
+	it('keeps neutral surfaces, lines and text the same in every theme', () => {
+		for (const mode of MODES) {
+			const neutral = [...palette('petrol', mode)].filter(
+				([name]) => !ACCENT_TOKENS.includes(name)
+			);
+			for (const theme of ACCENTS) {
+				const own = palette(theme, mode);
+				expect(
+					neutral.filter(([name, value]) => own.get(name) !== value),
+					`${theme} (${mode})`
+				).toEqual([]);
+			}
+		}
+	});
+
+	it('uses #rrggbb for every accent value', () => {
+		for (const accent of ACCENTS) {
+			for (const mode of MODES) {
+				for (const [name, value] of block(accentSelector(accent, mode))) {
+					expect(value, `${accent} ${mode} ${name}`).toMatch(/^#[0-9a-f]{6}$/);
+				}
+			}
+		}
 	});
 
 	it('defines the sizes, radii and motion of ADR-0025 once in :root and nowhere else', () => {
@@ -123,9 +216,9 @@ describe('tokens.css', () => {
 		for (const [name, value] of Object.entries(NON_COLOR_TOKENS)) {
 			expect(light.get(name), name).toBe(value);
 		}
-		for (const selector of [DARK, FORCED_LIGHT, FORCED_DARK]) {
-			const names = [...(blocks.get(selector)?.keys() ?? [])];
-			expect(names.filter(isNonColorToken), selector).toEqual([]);
+		for (const [selector, properties] of blocks) {
+			if (selector === LIGHT) continue;
+			expect([...properties.keys()].filter(isNonColorToken), selector).toEqual([]);
 		}
 	});
 
@@ -139,43 +232,139 @@ describe('tokens.css', () => {
 	});
 
 	it('darkens with the blanket of ADR-0025 in both modes', () => {
-		expect(token(LIGHT, '--color-blanket')).toBe('rgb(23 35 38 / 0.45)');
-		expect(token(DARK, '--color-blanket')).toBe('rgb(0 0 0 / 0.6)');
+		expect(block(LIGHT).get('--color-blanket')).toBe('rgb(23 35 38 / 0.45)');
+		expect(block(DARK).get('--color-blanket')).toBe('rgb(0 0 0 / 0.6)');
 	});
 
-	it('sets color-scheme in every block, so native controls follow the mode', () => {
+	it('sets color-scheme in every mode block, so native controls follow the mode', () => {
 		const schemes = colorSchemes(SOURCE);
-		expect(schemes.get(LIGHT)).toBe('light');
-		expect(schemes.get(FORCED_LIGHT)).toBe('light');
-		expect(schemes.get(DARK)).toBe('dark');
-		expect(schemes.get(FORCED_DARK)).toBe('dark');
+		expect(schemes.get(MODE_SELECTORS.light)).toBe('light');
+		expect(schemes.get(MODE_SELECTORS['forced light'])).toBe('light');
+		expect(schemes.get(MODE_SELECTORS.dark)).toBe('dark');
+		expect(schemes.get(MODE_SELECTORS['forced dark'])).toBe('dark');
 	});
 
-	it('has the error colors of ADR-0009', () => {
-		expect(token(LIGHT, '--color-danger')).toBe('#a13a40');
-		expect(token(LIGHT, '--color-danger-soft-bg')).toBe('#f8e9e9');
-		expect(token(DARK, '--color-danger')).toBe('#eaa0a0');
-		expect(token(DARK, '--color-danger-soft-bg')).toBe('#3b1e21');
+	it('has the error colors of ADR-0009 in Petrol', () => {
+		expect(color('petrol', 'light', '--color-danger')).toBe('#a13a40');
+		expect(color('petrol', 'light', '--color-danger-soft-bg')).toBe('#f8e9e9');
+		expect(color('petrol', 'dark', '--color-danger')).toBe('#eaa0a0');
+		expect(color('petrol', 'dark', '--color-danger-soft-bg')).toBe('#3b1e21');
 	});
+});
 
-	describe.each([
-		['light', LIGHT],
-		['dark', DARK],
-		['forced light', FORCED_LIGHT],
-		['forced dark', FORCED_DARK]
-	])('error color contrast (%s)', (_mode, selector) => {
-		it.each(['--color-surface', '--color-bg', '--color-danger-soft-bg'])(
-			'--color-danger on %s reaches at least 4.5 : 1',
-			(background) => {
-				const ratio = contrast(token(selector, '--color-danger'), token(selector, background));
-				expect(ratio).toBeGreaterThanOrEqual(4.5);
+/** Text pairs: at least 4.5 : 1 (WCAG 1.4.3). Foreground first. */
+const TEXT_PAIRS = [
+	['--color-text', '--color-surface'],
+	['--color-text', '--color-bg'],
+	['--color-text-muted', '--color-surface'],
+	['--color-text-muted', '--color-bg'],
+	['--color-brand-text', '--color-surface'],
+	['--color-brand-text', '--color-bg'],
+	['--color-brand-text', '--color-brand-soft-bg'],
+	['--color-brand-soft-text', '--color-brand-soft-bg'],
+	['--color-text', '--color-brand-soft-bg'],
+	['--color-text-muted', '--color-brand-soft-bg'],
+	['--color-on-brand', '--color-brand'],
+	['--color-danger', '--color-surface'],
+	['--color-danger', '--color-bg'],
+	['--color-danger', '--color-danger-soft-bg'],
+	['--status-backlog-text', '--color-surface'],
+	['--status-open-text', '--color-surface'],
+	['--status-open-text', '--color-bg'],
+	['--status-in-progress-text', '--status-in-progress-bg'],
+	['--status-waiting-text', '--status-waiting-bg'],
+	['--status-done-text', '--status-done-bg']
+] as const;
+
+/** UI pairs (focus ring, borders, icons, the primary button against the page): 3 : 1 (1.4.11). */
+const UI_PAIRS = [
+	['--color-brand', '--color-surface'],
+	['--color-brand', '--color-bg'],
+	['--status-open-border', '--color-surface']
+] as const;
+
+describe.each(THEMES.flatMap((theme) => MODES.map((mode) => [theme, mode] as const)))(
+	'contrast of %s (%s)',
+	(theme, mode) => {
+		it.each(TEXT_PAIRS)('%s on %s reaches 4.5 : 1', (foreground, background) => {
+			const ratio = contrast(color(theme, mode, foreground), color(theme, mode, background));
+			expect(ratio).toBeGreaterThanOrEqual(4.5);
+		});
+
+		it.each(UI_PAIRS)('%s against %s reaches 3 : 1', (foreground, background) => {
+			const ratio = contrast(color(theme, mode, foreground), color(theme, mode, background));
+			expect(ratio).toBeGreaterThanOrEqual(3);
+		});
+	}
+);
+
+describe('distance of the colors (CIEDE2000, ADR-0027 section 4)', () => {
+	const BASE_MODES = ['light', 'dark'] as const;
+
+	describe.each(THEMES)('%s', (theme) => {
+		it.each(BASE_MODES)('keeps the accent apart from the error color (%s)', (mode) => {
+			const danger = color(theme, mode, '--color-danger');
+			for (const name of ['--color-brand', '--color-brand-text', '--color-brand-soft-text']) {
+				const distance = deltaE2000(color(theme, mode, name), danger);
+				expect(distance, name).toBeGreaterThanOrEqual(20);
 			}
-		);
+		});
+
+		it.each(BASE_MODES)('keeps the error color apart from "Wartet" (%s)', (mode) => {
+			const distance = deltaE2000(
+				color(theme, mode, '--color-danger'),
+				color(theme, mode, '--status-waiting-text')
+			);
+			expect(distance).toBeGreaterThanOrEqual(15);
+		});
+
+		it.each(BASE_MODES)('keeps "Wartet" apart from "In Arbeit" (%s)', (mode) => {
+			const text = deltaE2000(
+				color(theme, mode, '--status-waiting-text'),
+				color(theme, mode, '--status-in-progress-text')
+			);
+			const surface = deltaE2000(
+				color(theme, mode, '--status-waiting-bg'),
+				color(theme, mode, '--status-in-progress-bg')
+			);
+			expect(text).toBeGreaterThanOrEqual(20);
+			expect(surface).toBeGreaterThanOrEqual(10);
+		});
 	});
 
-	it('computes the contrast ratios documented in ADR-0009', () => {
-		expect(contrast('#a13a40', '#ffffff')).toBeCloseTo(6.57, 2);
-		expect(contrast('#eaa0a0', '#0e1517')).toBeCloseTo(8.82, 2);
-		expect(contrast('#000000', '#ffffff')).toBe(21);
+	it('moves the error color of Rubin away from ADR-0009 and keeps it in all other themes', () => {
+		for (const mode of BASE_MODES) {
+			expect(color('rubin', mode, '--color-danger')).not.toBe(
+				color('petrol', mode, '--color-danger')
+			);
+			for (const theme of ['purpur', 'smaragd', 'honig'] as const) {
+				expect(color(theme, mode, '--color-danger')).toBe(color('petrol', mode, '--color-danger'));
+			}
+		}
+	});
+
+	it.each(BASE_MODES)('makes Smaragd a true green, clearly apart from Petrol (%s)', (mode) => {
+		const smaragd = color('smaragd', mode, '--color-brand');
+		const petrol = color('petrol', mode, '--color-brand');
+		expect(hslHue(smaragd)).toBeGreaterThanOrEqual(140);
+		expect(hslHue(smaragd)).toBeLessThanOrEqual(160);
+		expect(hslHue(petrol)).toBeGreaterThanOrEqual(180);
+		expect(hslHue(petrol)).toBeLessThanOrEqual(190);
+		for (const name of ['--color-brand', '--color-brand-text']) {
+			const distance = deltaE2000(color('smaragd', mode, name), color('petrol', mode, name));
+			expect(distance, name).toBeGreaterThanOrEqual(20);
+		}
+	});
+
+	it.each(BASE_MODES)('keeps every pair of themes apart (%s)', (mode) => {
+		for (const [index, first] of THEMES.entries()) {
+			for (const second of THEMES.slice(index + 1)) {
+				const distance = deltaE2000(
+					color(first, mode, '--color-brand'),
+					color(second, mode, '--color-brand')
+				);
+				expect(distance, `${first} / ${second}`).toBeGreaterThanOrEqual(20);
+			}
+		}
 	});
 });
