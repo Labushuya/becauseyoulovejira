@@ -213,7 +213,7 @@
   "meta": {
     "projekt": "becauseyoulovejira",
     "stand": "2026-09-26",
-    "commit": "5bd7741",
+    "commit": "4eadd1f",
     "etappe": "E0 bis E4 abgeschlossen (E4: Pakete 1 bis 11, 13 bis 17, 19 bis 24; Paket 12 entfällt, Paket 18 zurückgestellt); E5 in Arbeit (Pakete 1 bis 4: BYL-E5-001 bis BYL-E5-005); E6 UI-Konsistenz vorgezogen und umgesetzt (UI-0 bis UI-9 und UI-6b: BYL-E6-001 bis BYL-E6-028; Projektliste und Tags in den Einstellungen nach Nutzerwunsch: BYL-E6-065 bis BYL-E6-067); E6 Einstellungen und Hilfe umgesetzt (EH-0 bis EH-13: BYL-E6-029 bis BYL-E6-059, manuelle Browser-Prüfungen offen)"
   },
   "blocks": [
@@ -258,7 +258,7 @@
           "tests": ["tests/unit/start-logic.test.mjs::first-run detection", "tests/unit/start-scripts.test.mjs::has a first-run branch that opens no second tab", "tests/unit/start-scripts.test.mjs::the first-run hint matches the login page"] },
         { "id": "BYL-E1-014", "title": "Verpasster Installer-Link wird erneut angeboten (E1.1)", "art": ["unit", "integration"], "status": "bestanden",
           "pre": "–", "steps": ["npm run test:unit", "npm run test:integration"],
-          "expect": "Nur ein Link aus dem aktuellen Serverlauf, noch gültig und vom Server angenommen, wird gemeldet und genau einmal geöffnet; die URL wird auf der festen Bindung neu aufgebaut; ein abgelehntes Token gilt als abgeschlossene Einrichtung, ein unklares Ergebnis als offen.",
+          "expect": "Nur ein Link aus dem aktuellen Serverlauf, noch gültig und vom Server angenommen, wird gemeldet und genau einmal geöffnet; die URL wird auf der festen Bindung neu aufgebaut; ein abgelehntes Token gilt als abgeschlossene Einrichtung, ein unklares Ergebnis als offen. Ein Link, der erst nach dem Health-Check im Log erscheint, wird beim dritten Lesen gefunden; der Unit-Test rechnet Prozessstart und Token aus demselben Eingabewert und hängt damit nicht davon ab, wie lange PowerShell zum Starten braucht (30 Läufe in Folge grün).",
           "tests": ["tests/unit/start-logic.test.mjs::installer link of the running server (E1.1)", "tests/unit/start-scripts.test.mjs::opens a still working installer link of the running instance once and pauses", "tests/unit/start-scripts.test.mjs::only opens links it rebuilt on the fixed binding", "tests/integration/installer-check.test.mjs"] },
         { "id": "BYL-E1-015", "title": "Skriptform: CRLF, BOM, relative Pfade, keine Zugangsdaten", "art": ["unit"], "status": "bestanden",
           "pre": "–", "steps": ["npm run test:unit"],

@@ -107,6 +107,9 @@ const PORT_CASES = {
 const NOW = Date.UTC(2026, 8, 24, 12, 0, 0) / 1000;
 const PROCESS_START = NOW - 10 * 60;
 const LIFETIME = 30 * 60;
+// Start of the server process for the late link: the token is issued one second after it. Near the
+// real time, because Wait-InstallerLink checks the expiry against the clock (30 minutes ahead).
+const LATE_START = Math.floor(Date.now() / 1000);
 
 function fakeToken(exp) {
 	const part = (value) => Buffer.from(JSON.stringify(value)).toString('base64url');
@@ -171,7 +174,9 @@ $script:calls = 0
 $noDb = Wait-FirstRunSignal -ReadLog { $script:calls++; '' } -DatabaseExisted $false -GraceMilliseconds 5000
 $noDbCalls = $script:calls
 $script:calls = 0
-$late = Wait-FirstRunSignal -ReadLog { $script:calls++; if ($script:calls -ge 3) { '.../_/#/pbinstall/tok' } else { 'Server started' } } -DatabaseExisted $true -GraceMilliseconds 5000 -PollMilliseconds 10
+# The link shows at the third read; the grace window is only an upper bound here, so a slow
+# machine cannot end the wait before that read (the bounded case follows with 300 ms).
+$late = Wait-FirstRunSignal -ReadLog { $script:calls++; if ($script:calls -ge 3) { '.../_/#/pbinstall/tok' } else { 'Server started' } } -DatabaseExisted $true -GraceMilliseconds 600000 -PollMilliseconds 10
 $lateCalls = $script:calls
 $script:calls = 0
 $watch = [Diagnostics.Stopwatch]::StartNew()
@@ -196,9 +201,12 @@ foreach ($entry in $in.installerLogs.PSObject.Properties) {
 $links.nullLog = ConvertTo-LinkResult (Get-InstallerLink -LogText $null -ProcessStartUtc $start -NowUtc $now)
 $result.installerLinks = $links
 
+# Process start and token of the late link come from the same input value (lateStart), not from
+# the clock of this process: PowerShell may start seconds after the test built the token, which
+# made the token look older than the process (more than the 5 s tolerance) and the link vanish.
 $script:calls = 0
-$lateStart = [DateTime]::UtcNow
-$late = Wait-InstallerLink -ReadLog { $script:calls++; if ($script:calls -ge 3) { $in.lateLog } else { 'Server started' } } -ProcessStartUtc $lateStart -GraceMilliseconds 5000 -PollMilliseconds 10
+$lateStart = ConvertFrom-UnixTime $in.lateStart
+$late = Wait-InstallerLink -ReadLog { $script:calls++; if ($script:calls -ge 3) { $in.lateLog } else { 'Server started' } } -ProcessStartUtc $lateStart -GraceMilliseconds 600000 -PollMilliseconds 10
 $lateCalls = $script:calls
 $script:calls = 0
 $watch = [Diagnostics.Stopwatch]::StartNew()
@@ -272,7 +280,8 @@ beforeAll(() => {
 			now: NOW,
 			processStart: PROCESS_START,
 			installerLogs: INSTALLER_LOGS,
-			lateLog: installerLog(fakeToken(Math.floor(Date.now() / 1000) + LIFETIME)),
+			lateStart: LATE_START,
+			lateLog: installerLog(fakeToken(LATE_START + 1 + LIFETIME)),
 			helpers: HELPERS,
 			decisions: [
 				{ name: 'start', exists: true, token: true, running: false, count: 1 },
