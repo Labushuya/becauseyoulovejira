@@ -990,7 +990,7 @@ Wird je Paket ergänzt.
 | EH-10 | gemergt (#69) |
 | EH-11 | gemergt (#70) |
 | EH-12 | gemergt (#71) |
-| EH-13 | umgesetzt (dieser PR) |
+| EH-13 | gemergt (#72) |
 
 ## Quellen (nur Muster, keine Assets)
 
