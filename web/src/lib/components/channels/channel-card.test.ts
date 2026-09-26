@@ -4,6 +4,7 @@
 
 import { fireEvent, render, screen, within } from '@testing-library/svelte';
 import { describe, expect, it, vi } from 'vitest';
+import type { ResolvedPathname } from '$app/types';
 import type { Connection } from '$lib/domain/connections';
 import { useOverlayStubs } from '$lib/test/overlay-stubs';
 import ChannelCard from './ChannelCard.svelte';
@@ -173,11 +174,10 @@ describe('channel edit modal', () => {
 
 describe('channel catalog', () => {
 	it('offers one tile per service and marks the kinds without a connection', async () => {
-		const onsetup = vi.fn();
 		render(ChannelCatalog, {
 			props: {
 				connections: [connection(), connection({ id: 'x', type: 'mail', mailProvider: 'gmail' })],
-				onsetup
+				hrefOf: (entry) => `/einstellungen/kanaele?einrichten=${entry}` as ResolvedPathname
 			}
 		});
 		const catalog = within(screen.getByRole('region', { name: 'Kanal hinzufügen' }));
@@ -191,16 +191,20 @@ describe('channel catalog', () => {
 		]);
 		expect(within(tiles[0]!).queryByText('Nicht eingerichtet')).toBeNull();
 		expect(
-			within(tiles[0]!).getByRole('button', { name: 'Weitere einrichten: Google Calendar' })
+			within(tiles[0]!).getByRole('link', { name: 'Weitere einrichten: Google Calendar' })
 		).toBeTruthy();
 		expect(within(tiles[1]!).getByText('Nicht eingerichtet')).toBeTruthy();
 		expect(within(tiles[2]!).getByText('Nicht eingerichtet')).toBeTruthy();
 		expect(within(tiles[3]!).queryByText('Nicht eingerichtet')).toBeNull();
 		expect(within(tiles[4]!).getByText('Per Datei')).toBeTruthy();
 
-		await fireEvent.click(catalog.getByRole('button', { name: 'Einrichten: Web.de' }));
-		expect(onsetup).toHaveBeenLastCalledWith('webde');
-		await fireEvent.click(catalog.getByRole('button', { name: 'Anleitung: Proton Mail' }));
-		expect(onsetup).toHaveBeenLastCalledWith('proton');
+		// Since EH-5 to EH-7 every tile links to its assistant or guide (a middle click works too).
+		expect(catalog.getByRole('link', { name: 'Einrichten: Web.de' }).getAttribute('href')).toBe(
+			'/einstellungen/kanaele?einrichten=webde'
+		);
+		expect(catalog.getByRole('link', { name: 'Anleitung: Proton Mail' }).getAttribute('href')).toBe(
+			'/einstellungen/kanaele?einrichten=proton'
+		);
+		expect(catalog.queryAllByRole('button')).toEqual([]);
 	});
 });

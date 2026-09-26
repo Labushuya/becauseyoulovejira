@@ -944,6 +944,10 @@ Wird je Paket ergänzt.
 | 2026-09-26 | EH-7 | Gmail: Der Befehl trägt `normalize: 'gmail'`; `SecretValueField` entfernt die Leerzeichen und sagt es als kompakte Info. Proton: `?einrichten=proton` öffnet `ProtonGuide` (Modal M ohne Stepper, drei Schritte, „Stichwörter für Mail-Dateien“ und „Zum Eingang“ im Fuß); die Kachel verlinkt dorthin. `ASSISTED_KINDS` nennt alle Arten, die in der App öffnen (Kalender, Web.de, Gmail, Proton). |
 | 2026-09-26 | EH-7 | Seite „Kanäle“: Die Anleitungen zu Web.de, Gmail und Proton entfallen, ihr Inhalt steht in den Schrittdaten („Mehr dazu“ und „Alle Schritte anzeigen“) bzw. im Proton-Modal; übrig bleibt bis EH-6 die Telegram-Anleitung, und „Einrichten“ öffnet nur noch für Telegram das Modal „Verbindung anlegen“. Die allgemeine Erklärung der Zugangsdaten bleibt das `<details>` im Erklärblock; ins FAQ zieht sie mit der Hilfe (EH-9). Die Karte „Dateien hereinziehen“ nennt die Zahl der Stichwörter je Art; dafür lädt die Seite zusätzlich den `ImportKeywordsStore`. Die Seite „Datei-Importe“ bekommt oben „Woher die Dateien kommen“ (`FileImportGuides`, zugeklappt: Proton, Gmail per „Nachricht herunterladen“, .ics, WhatsApp) über den drei Stichwortlisten. README beschreibt Assistenten und Wertfeld (auch für EH-5). |
 | 2026-09-26 | EH-7 | Bewusst angepasste Tests: `connections-page` (eine statt vier Anleitungen; Proton als Link; die Fälle zum Anlegen von Web.de und Gmail laufen im Assistenten über `ChannelsViewHarness`; die Fälle „Web.de-Postfach einrichten“ und „Gmail einrichten“ lesen die Texte aus „Alle Schritte anzeigen“), `channel-setup.test.ts` (`stepCheck` mit Art), `no-own-dialogs` (Größe M für `ProtonGuide`). Neu: `channels/mail-setup.test.ts`, `einstellungen/datei-importe/file-imports-page.test.ts`, Fall zur Karte „Dateien“. Manifest: BYL-E6-048 und BYL-E6-050 bestanden, BYL-E6-049 offen (manuell). |
+| 2026-09-26 | EH-6 | Telegram in 6 Schritten nach §3.7: Bot anlegen (t.me/BotFather, `/newbot` als `CodeBlock`), Token setzen (geheimer Wert im `SecretValueField`, dazu vorläufig `setx {{allowlist}} "0"`; Tabs wie bei „Variable setzen“), Verbinden (beide Variablennamen), Neu starten (geprüft sind Token **und** IDs: `secretStatus.allowlist === true`), Chat freigeben, Test (Stichwörter und „Jetzt abrufen“; ohne Stichwort gilt der Schritt nicht als erledigt, die Prüfzeile warnt). Kurzbeschriftung „Test“ statt „Stichwörter und Test“ (ADS: ein bis zwei Wörter). |
+| 2026-09-26 | EH-6 | „Chat freigeben“: `chatIdFromHint` liest `Chat-ID (-?\d{1,20})` ohne folgende Ziffer (zu lange IDs geben null). „Jetzt abrufen“ im Schritt; mit erkannter ID zeigt eine Info „Erkannte Chat-ID: …“, der `CodeBlock` den fertigen Befehl (`CHAT_COMMAND`, `values` mit der ID) und ein offenes `SecretValueField` (Platzhalter nicht geheim, also Textfeld ohne Win+V-Hinweis) den Befehl für mehrere IDs. Geprüft ist „kein fremder Chat mehr gemeldet“: ein Lauf (`lastRunAt`) ohne Fehler und ohne Chat-ID im Hinweis; er kommt nach dem zweiten Neustart per Realtime oder „Jetzt abrufen“. Der Assistent folgt den Fakten, bis der Nutzer handelt; eine Wahl oder Aktion hält den Schritt, damit ein Realtime-Ereignis ihn nicht weiterschiebt. |
+| 2026-09-26 | EH-6 | Aufräumen: Mit Telegram öffnet jede Art in der App; `ASSISTED_KINDS` entfällt (alle `SETUP_KINDS`), `ConnectionCreateDialog.svelte` und die Telegram-Anleitung samt Abschnitt „Anleitungen“, `openGuide` und `startSetup` in `ChannelsView` sind gelöscht, `ChannelCatalog` hat nur noch Links (`hrefOf` Pflicht, `onsetup` entfällt). |
+| 2026-09-26 | EH-6 | Bewusst angepasste Tests: `connections-page` (Telegram wird im Assistenten angelegt; kein Abschnitt „Anleitungen“ mehr; die Karte öffnet den Assistenten; der Fall „Telegram-Bot einrichten“ liest „Alle Schritte anzeigen“), `channel-card` (Katalog nur mit Links), `channel-setup.test.ts` (Hilfsfunktion mit `allowlistEnv` und `lastHint`, Telegram hat jetzt Schritte), `no-own-dialogs` (Eintrag `ConnectionCreateDialog` entfällt). Neu: `channels/telegram-setup.test.ts`, Telegram-Fälle in `channel-setup.test.ts`. Manifest: BYL-E6-046 bestanden, BYL-E6-047 offen (manuell). |
 
 ## 8. Status
 
@@ -955,8 +959,9 @@ Wird je Paket ergänzt.
 | EH-3 | gemergt (#61) |
 | EH-4 | gemergt (#62) |
 | EH-5 | gemergt (#64) |
-| EH-7 | umgesetzt (dieser PR) |
-| EH-6, EH-8 bis EH-13 | geplant |
+| EH-7 | gemergt (#65) |
+| EH-6 | umgesetzt (dieser PR) |
+| EH-8 bis EH-13 | geplant |
 
 ## Quellen (nur Muster, keine Assets)
 

@@ -43,7 +43,6 @@ const SIZES: Readonly<Record<string, 's' | 'm' | 'l'>> = {
 	'WhatsAppImport.svelte': 'l',
 	'MailboxPicker.svelte': 'l',
 	'channels/ChannelEditModal.svelte': 'm',
-	'channels/ConnectionCreateDialog.svelte': 'm',
 	'channels/ChannelSetup.svelte': 'l',
 	'channels/ProtonGuide.svelte': 'm'
 };

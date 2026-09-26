@@ -138,7 +138,7 @@
 <div class="wrap">
   <header class="top">
     <h1>becauseyoulovejira — Test-Manifest</h1>
-    <p class="subtitle" id="stand">Etappen E1, E1.1, E2, E3, E4, E5 (in Arbeit) und E6 UI-Konsistenz (umgesetzt, manuelle Prüfungen offen, dazu Projektliste nach Nutzerwunsch) sowie Einstellungen und Hilfe (in Arbeit, EH-0 bis EH-5 und EH-7) · automatisierte Tests bereichsweise zusammengefasst · manuelle Prüfpunkte aus den Plänen an einem Ort</p>
+    <p class="subtitle" id="stand">Etappen E1, E1.1, E2, E3, E4, E5 (in Arbeit) und E6 UI-Konsistenz (umgesetzt, manuelle Prüfungen offen, dazu Projektliste nach Nutzerwunsch) sowie Einstellungen und Hilfe (in Arbeit, EH-0 bis EH-7) · automatisierte Tests bereichsweise zusammengefasst · manuelle Prüfpunkte aus den Plänen an einem Ort</p>
 
     <div class="pre">
       <h2>Voraussetzung für die manuellen Prüfungen (kein Testschritt)</h2>
@@ -213,8 +213,8 @@
   "meta": {
     "projekt": "becauseyoulovejira",
     "stand": "2026-09-26",
-    "commit": "084d049",
-    "etappe": "E0 bis E4 abgeschlossen (E4: Pakete 1 bis 11, 13 bis 17, 19 bis 24; Paket 12 entfällt, Paket 18 zurückgestellt); E5 in Arbeit (Pakete 1 bis 4: BYL-E5-001 bis BYL-E5-005); E6 UI-Konsistenz vorgezogen und umgesetzt (UI-0 bis UI-9 und UI-6b: BYL-E6-001 bis BYL-E6-028; Projektliste und Tags in den Einstellungen nach Nutzerwunsch: BYL-E6-065 bis BYL-E6-067); E6 Einstellungen und Hilfe in Arbeit (EH-0 bis EH-5 und EH-7 umgesetzt; geplant bis BYL-E6-059)"
+    "commit": "37e5b97",
+    "etappe": "E0 bis E4 abgeschlossen (E4: Pakete 1 bis 11, 13 bis 17, 19 bis 24; Paket 12 entfällt, Paket 18 zurückgestellt); E5 in Arbeit (Pakete 1 bis 4: BYL-E5-001 bis BYL-E5-005); E6 UI-Konsistenz vorgezogen und umgesetzt (UI-0 bis UI-9 und UI-6b: BYL-E6-001 bis BYL-E6-028; Projektliste und Tags in den Einstellungen nach Nutzerwunsch: BYL-E6-065 bis BYL-E6-067); E6 Einstellungen und Hilfe in Arbeit (EH-0 bis EH-7 umgesetzt; geplant bis BYL-E6-059)"
   },
   "blocks": [
     {
@@ -1279,7 +1279,7 @@
         { "id": "BYL-E4-030", "title": "Telegram-Bot", "art": ["unit", "komponente", "integration"], "status": "bestanden",
           "pre": "E4-Plan, Paket 17; für die Integration app/pocketbase.exe und eine Fake-Bot-API (Node http auf 127.0.0.1); die Wegwerf-Instanz bekommt erfundenen Token, Erlaubnisliste und BYL_TELEGRAM_API_BASE auf den Fake-Server. Jede Wegwerf-Instanz zeigt sonst auf einen geschlossenen lokalen Port, nie auf api.telegram.org.", "steps": ["npm run test:unit", "npm run test:web", "npm run test:integration"],
           "expect": "getUpdates ohne Webhook mit offset = Cursor + 1, timeout 0 und allowed_updates [message], Cron byl-telegram jede Minute und „Jetzt abrufen“ mit demselben Lauf. Nur Nachrichten aus Chats oder von Absendern der Erlaubnisliste (Variable, IDs mit Komma, Leerzeichen oder Semikolon) werden Einträge (Kanal telegram, Art message, Titel aus der ersten Zeile, Text bzw. Bildunterschrift, Chat, Absender und Chat-ID in source_meta, source_ref chat:message); Medien ohne Text und andere Updates werden übersprungen. Jede neue Nachricht bekommt per sendMessage „Im Eingang gespeichert“, Duplikate nicht. Der Offset rückt erst nach dem Speichern vor: scheitert das Speichern, bleibt er vor dieser Nachricht und der Lauf endet; scheitert die Bestätigung, bleibt der Eintrag und der Fehler steht an der Verbindung. Fremde Chats werden nicht gespeichert, ihre Chat-ID steht als Hinweis mit dem Namen der Variablen an der Verbindung, ohne den Text. Abgelehnter Token (401) und abgebrochene Verbindung ergeben bereinigte Fehler ohne Cursoränderung; ohne Erlaubnis-Variable fragt der Lauf nichts an. Der Token steht weder in Antworten noch in Datensätzen, /api/logs oder der Konsolenausgabe. Seite „Kanäle“: Anleitung für BotFather, Token, eigene ID über den Hinweis, Erlaubnisliste, Neustart, 24-Stunden-Grenze, Gruppen-Privatsphäre und Widerruf.",
-          "tests": ["tests/unit/channel-telegram.test.mjs", "tests/integration/channel-telegram.test.mjs", "web/src/lib/components/connections-page.test.ts::Telegram-Bot einrichten (E4 plan, package 17)"] },
+          "tests": ["tests/unit/channel-telegram.test.mjs", "tests/integration/channel-telegram.test.mjs", "web/src/lib/components/connections-page.test.ts::Telegram-Bot einrichten (E4 plan, package 17; since EH-6 in the assistant)"] },
         { "id": "BYL-E4-031", "title": "Echter Telegram-Bot", "art": ["manuell"], "status": "offen",
           "pre": "App nach dem Merge von Paket 10 einmal neu gestartet; Telegram-Konto; Bot nach der Anleitung unter „Kanäle“ bei @BotFather angelegt; BYL_TELEGRAM_TOKEN und BYL_TELEGRAM_ALLOWED_IDS per setx gesetzt, danach stop.bat und start.bat.", "steps": ["Verbindung „Telegram-Bot“ anlegen: „Zugangsdaten gesetzt.“", "Dem Bot „Milch kaufen“ schreiben: nach höchstens einer Minute oder mit „Jetzt abrufen“ steht der Eintrag im Eingang, der Bot antwortet „Im Eingang gespeichert“.", "Ein Foto mit Bildunterschrift und eines ohne senden: nur das mit Unterschrift wird ein Eintrag.", "Von einem zweiten, nicht freigegebenen Konto schreiben: kein Eintrag, die Verbindung zeigt dessen Chat-ID als Hinweis.", "App mit stop.bat beenden, dem Bot schreiben, start.bat: die Nachricht kommt nach dem Start an.", "Bei BotFather /revoke: die Verbindung meldet „HTTP 401“ ohne Token; neuen Token per setx setzen, neu starten, wieder erfolgreich."],
           "expect": "Nur freigegebene Nachrichten kommen einmal an und werden bestätigt; fremde Chats nur als Hinweis; der Token erscheint nirgends in der App.",
@@ -1559,13 +1559,13 @@
           "pre": "Plan Einstellungen, Paket EH-5. NVDA mit Firefox und Chrome.", "steps": ["Schritte, Prüfzeilen, Code-Blöcke, Tabs und „Wert hier einsetzen“ mit NVDA durchgehen; unter 40rem das Menü „Alle Schritte“."],
           "expect": "Alles wird verständlich angesagt (Schritt n von m, Zustand, Prüfergebnis), der Fokus springt nicht wegen Meldungen, nach „Weiter“ steht er auf der Überschrift des Schritts.",
           "tests": [] },
-        { "id": "BYL-E6-046", "title": "Telegram: Chat-ID übernehmen", "art": ["unit", "komponente"], "status": "geplant",
-          "pre": "Plan Einstellungen, Paket EH-6.", "steps": ["chatIdFromHint: positiv, negativ, -100…, Müll, zu lang.", "Der Schritt zeigt die erkannte ID und den fertigen setx-Befehl."],
-          "expect": "Die Freigabe des Chats braucht kein Abtippen.",
-          "tests": [] },
-        { "id": "BYL-E6-047", "title": "Telegram einrichten mit zwei Neustarts", "art": ["manuell"], "status": "geplant",
-          "pre": "Plan Einstellungen, Paket EH-6.", "steps": ["Bot anlegen, Token setzen, neu starten, Chat freigeben, neu starten, Test mit Stichwort."],
-          "expect": "Telegram läuft nach dem Assistenten.",
+        { "id": "BYL-E6-046", "title": "Telegram: Chat-ID übernehmen", "art": ["unit", "komponente"], "status": "bestanden",
+          "pre": "Plan Einstellungen, Paket EH-6; ADR-0026 §4 und §5. Datenschicht als Attrappe, Realtime über die Attrappe von subscribe.", "steps": ["npm run test:web"],
+          "expect": "chatIdFromHint liest die ID aus „… (Chat-ID 424242).“, auch Gruppen (-100…), höchstens 20 Ziffern, sonst null (Müll, zu lang, leer). Der Assistent führt in 6 Schritten (Bot anlegen mit t.me/BotFather und /newbot, Token setzen mit vorläufig „0“ als IDs, Verbinden mit beiden Variablennamen, Neu starten mit Prüfung beider Variablen, Chat freigeben, Test mit Stichwörtern). „Chat freigeben“: „Jetzt abrufen“ im Schritt, danach „Erkannte Chat-ID: 424242“ und der fertige Befehl setx BYL_TELEGRAM_ALLOWED_IDS \"424242\"; das Feld für mehrere IDs ist offen (Text, kein Hinweis auf den Zwischenablage-Verlauf, keine Geheimnisse). Nach dem nächsten Lauf ohne fremden Chat meldet die Prüfzeile per Realtime „Kein fremder Chat mehr gemeldet.“. Der letzte Schritt verlangt ein Stichwort (Warnung ohne). Die Kachel und die Karte öffnen den Assistenten; das Modal „Verbindung anlegen“ und die zugeklappten Anleitungen gibt es nicht mehr.",
+          "tests": ["web/src/lib/domain/channel-setup.test.ts::Telegram (plan EH-6)", "web/src/lib/components/channels/telegram-setup.test.ts", "web/src/lib/components/connections-page.test.ts::creates a Telegram connection in the assistant", "web/src/lib/components/connections-page.test.ts::links Proton to its guide and opens the assistant of a card", "web/src/lib/components/channels/channel-card.test.ts::channel catalog"] },
+        { "id": "BYL-E6-047", "title": "Telegram einrichten mit zwei Neustarts", "art": ["manuell"], "status": "offen",
+          "pre": "Plan Einstellungen, Paket EH-6. Build von main in app\\, eigener Bot des Nutzers; Token nur als Windows-Variable.", "steps": ["Kanäle → „Einrichten: Telegram-Bot“: Bot bei BotFather anlegen, Token und vorläufig 0 setzen (auch über „Wert hier einsetzen“), Verbindung anlegen.", "stop.bat, dann start.bat; „Einrichtung fortsetzen“: „Neu starten“ zeigt beide Variablen.", "Dem Bot schreiben, „Jetzt abrufen“: erkannte Chat-ID und fertiger Befehl; Befehl ausführen, zweiter Neustart, erneut „Jetzt abrufen“: „Kein fremder Chat mehr gemeldet.“.", "Stichwort „todo“ anlegen, „todo Test“ an den Bot schicken, „Jetzt abrufen“: der Bot antwortet „Im Eingang gespeichert“, der Eintrag steht im Eingang."],
+          "expect": "Telegram läuft nach dem Assistenten, ohne eine ID abzutippen.",
           "tests": [] },
         { "id": "BYL-E6-048", "title": "Postfach einrichten: erster Abruf live", "art": ["komponente", "unit"], "status": "bestanden",
           "pre": "Plan Einstellungen, Paket EH-7; ADR-0026 §4. Datenschicht als Attrappe, Realtime-Ereignis über die Attrappe von subscribe.", "steps": ["npm run test:web"],
