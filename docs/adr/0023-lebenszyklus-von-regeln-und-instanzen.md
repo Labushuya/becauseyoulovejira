@@ -1,6 +1,6 @@
 # ADR-0023: Lebenszyklus von Regeln und Instanzen: Anlegen, Erledigen, Rückgängig, Pausieren, Bearbeiten, Löschen
 
-- **Status:** Vorgeschlagen (wird mit der Antwort auf OF-E5-4 im [E5-Plan](../plan/e5.md) angenommen)
+- **Status:** Angenommen (2026-09-26: Der Nutzer hat die Empfehlungen zu OF-E5-1 bis OF-E5-5 bestätigt; umgesetzt in E5, siehe Nachtrag am Ende)
 - **Datum:** 2026-09-25
 - **Entscheidung durch:** Advisor
 - **Ergänzt:** [ADR-0021](0021-regelmodell-wiederkehrende-aufgaben.md) (Regelmodell), [ADR-0022](0022-erzeugung-von-instanzen.md) (Erzeugung)
@@ -99,3 +99,14 @@ Ist das Projekt der Vorlage beim Erzeugen archiviert, pausiert der Dienst die Re
 - Positiv: Das versehentliche Häkchen bleibt folgenlos. Jeder Weg in der Oberfläche erhält die Invariante, und gelöschte Regeln hinterlassen keine verwaisten Verweise.
 - Negativ: Der Update-Hook von `tickets` bekommt einen weiteren Zweig (Wiedereröffnen). Er läuft nur bei `recurrence != ''` und bei einem Wechsel aus `done`.
 - Die Hooks lesen `recurrence_rules` nur, wenn die E5-Felder existieren. Vor der Migration verhalten sich Tickets wie in E4.
+
+## Nachtrag (2026-09-26, Umsetzung E5)
+
+Der Text oben bleibt unverändert. Wo die Umsetzung abweicht oder genauer ist, gilt dieser Nachtrag. Einzelheiten stehen im [E5-Plan](../plan/e5.md) §7, Pakete 2 bis 6.
+
+- **§1, „Wiederholen…“:** Für ein fremdes, unbekanntes oder anderswo liegendes Ticket kommt der Code `validation_recurrence_ticket_missing`, für ein erledigtes `_ticket_done`, für eines in einer Serie `_ticket_linked`. Von fünf gleichzeitigen Anfragen für dasselbe Ticket gewinnt genau eine. Ein nicht lesbares `anchor` lehnt der Request-Hook ab, statt still „heute“ zu nehmen. Der Dialog ist ein Modal M nach [ADR-0025](0025-ui-konsistenz-overlay-system.md), kein eigener `<dialog>`.
+- **§1, Serie aus dem Kalender:** Die Regel entsteht auf demselben Weg (`ticket` im Body), nach dem Anlegen des Tickets ([ADR-0024](0024-serien-aus-kalendern.md), Nachtrag). Scheitert sie, bleibt das Ticket bestehen, und sein Panel bietet „Wiederholen…“ vorbefüllt an.
+- **§3, Rückgängig:** Seit UI-5 steht „Rückgängig“ 8 s in einem Flag unten links, nicht mehr 5 s in der Zeile. „Unberührt“ ist genau umgesetzt: Das Folgeticket entstand nicht vor dem `completed_at` der wiedereröffneten Instanz (dieselbe Millisekunde zählt als danach), `updated = created`, und es gibt keine Kommentare. Gelöscht wird es mit dem Schlüssel `@recurrence_undo`, damit §6 nicht greift. Die Ablehnung trägt `params` `{ key, ticket }`, die Liste nennt den Key.
+- **§6, Lösen:** Nur ein Leeren durch den Client (`@recurrence_detach`) löst die Regel aus §6 aus. Das Leeren durch PocketBase beim Löschen der Regel (§7) ändert an `next_due` nichts.
+- **§4 und §5:** Pausieren, Fortsetzen und Lösen fragen nicht nach, weil sie umkehrbar sind; sie melden sich als Erfolgs-Flag. Das Regel-Panel der Übersicht sendet den Rhythmus nur, wenn er sich geändert hat. So lässt das Speichern der Vorlage allein „Nächstes Ticket“ unverändert.
+- **Offen für E7:** Wechselt eine Regel mit Tickets den Bereich, prüft das noch kein Hook.

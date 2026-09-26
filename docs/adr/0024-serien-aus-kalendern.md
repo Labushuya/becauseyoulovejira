@@ -1,6 +1,6 @@
 # ADR-0024: Serien aus `.ics` und Google Calendar als Vorschlag für eine Regel
 
-- **Status:** Vorgeschlagen (wird mit der Antwort auf OF-E5-5 im [E5-Plan](../plan/e5.md) angenommen)
+- **Status:** Angenommen (2026-09-26: Der Nutzer hat die Empfehlungen zu OF-E5-1 bis OF-E5-5 bestätigt; umgesetzt in E5, siehe Nachtrag am Ende)
 - **Datum:** 2026-09-25
 - **Entscheidung durch:** Advisor
 - **Ergänzt:** [ADR-0014](0014-datenmodell-eingang.md) (Eingang, Umwandeln), [ADR-0017](0017-parser-ics-eml.md) (Parser), [ADR-0021](0021-regelmodell-wiederkehrende-aufgaben.md) (Regelmodell), [ADR-0023](0023-lebenszyklus-von-regeln-und-instanzen.md) §1 (Anlegen mit Ticket)
@@ -80,3 +80,21 @@ Weitere Festlegungen:
 
 - Positiv: Kalenderserien werden mit zwei Klicks zu Regeln, ohne dass etwas still passiert. Der Hook bleibt frei von einem zweiten RRULE-Parser.
 - Negativ: Serien mit Enddatum, Anzahl oder „n-tem Wochentag“ bekommen nur einen Hinweis. Wie häufig das ist, zeigt der Alltag. OF-E5-3 und OF-E5-5 halten die Erweiterung offen.
+
+## Nachtrag (2026-09-26, Umsetzung E5 Paket 6)
+
+Der Text oben bleibt unverändert. Wo die Umsetzung abweicht oder genauer ist, gilt dieser Nachtrag. Einzelheiten stehen im [E5-Plan](../plan/e5.md) §7, Paket 6.
+
+- **§2, `anchor`:** Liegt der Beginn der Serie vor heute, ist „Beginnt am“ der erste Termin ab heute im selben Takt. Jährlich ist es das nächste Vorkommen mit Monat und Tag des Beginns, am 29.02. also das nächste Schaltjahr. Grund: Ein Ticket ohne Fälligkeit bekommt `onOrAfter(anchor)` ([ADR-0023](0023-lebenszyklus-von-regeln-und-instanzen.md) §1). Mit dem alten Beginn wäre eine seit Jahren laufende Serie als Jahre überfälliges Ticket erschienen. Wochen- und Monatstakt bleiben gleich, weil der neue Beginn selbst ein Termin der Serie ist. Liegt der Beginn heute oder später, gilt der Text oben.
+- **§2, Signatur:** `suggestRule(rrule, startDate, today)` bekommt `today` für die Regel oben. Dazu kommen `itemSuggestion(item, today)` (prüft `rrule`, `recurrence_id` und das Quelldatum) und `suggestionFormValues(params)`. Ein Vorschlag trägt den Rhythmus in Worten (`text`), `unsupported` alle Gründe ohne Doppelte.
+- **§2, strenger als die Tabelle:** Auch diese Fälle ergeben `unsupported`:
+  - `BYMONTHDAY` bei täglich oder wöchentlich.
+  - `BYMONTH` außer bei jährlich.
+  - `BYMONTHDAY` von -2 bis -31 („vom Monatsende“).
+  - `WKST` ungleich MO bei wöchentlich mit Intervall > 1, auch mit nur einem Tag, wenn dieser nicht der Wochentag des Beginns ist.
+
+  Ein `RRULE:`-Präfix und Kleinschreibung sind erlaubt. Ein doppelter Teil oder ein leerer Wert ist ein Syntaxfehler.
+- **§1, Oberfläche:** Der Kasten ist eine `SectionMessage` (info). „Als Wiederholung übernehmen“ öffnet den Abschnitt „Wiederholung“ mit dem Fokus auf seiner Überschrift. Statt eines Textknopfs „Entfernen“ schließt ihn der Symbolknopf „Wiederholung entfernen“ (CLAUDE.md §8). Ungültige Werte verhindern das Anlegen, bevor etwas gesendet wird.
+- **§1, Fehler im zweiten Schritt:** Der `RecurrenceStore` legt ein Angebot für das Ticket ab (`offerRepeat` mit Grund). Das Ticket-Panel holt es einmal ab (`takeOffer`), zeigt den Grund als Fehler und öffnet „Wiederholen…“ mit denselben Werten.
+- **§1, Panel des Eintrags:** „Wiederholung für TASK-12 anlegen…“ ist ein Link aufs Ticket. Er erscheint nur, solange das Ticket offen und in keiner Serie ist. Ein einfacher Klick übergibt die Werte über `offerRepeat`, und das Ticket-Panel öffnet „Wiederholen…“ sofort vorbefüllt. Ein Klick in einen neuen Tab übergibt nichts. Vor der E5-Migration zeigen Formular und Panel keinen Kasten.
+- **Server:** Das zweistufige Anlegen erzeugt kein Ticket auf einem neuen Weg, auch nicht, wenn der erste Termin im Vorlauf liegt (`web-data-recurrence.test.mjs`).

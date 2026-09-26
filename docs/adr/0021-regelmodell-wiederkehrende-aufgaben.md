@@ -1,6 +1,6 @@
 # ADR-0021: Regelmodell der wiederkehrenden Aufgaben und reine Terminberechnung
 
-- **Status:** Vorgeschlagen (wird mit den Antworten auf OF-E5-1 bis OF-E5-5 im [E5-Plan](../plan/e5.md) angenommen)
+- **Status:** Angenommen (2026-09-26: Der Nutzer hat die Empfehlungen zu OF-E5-1 bis OF-E5-5 bestätigt; umgesetzt in E5, siehe Nachtrag am Ende)
 - **Datum:** 2026-09-25
 - **Entscheidung durch:** Advisor
 - **Ergänzt:** CLAUDE.md §6 (wiederkehrende Aufgaben), [ADR-0005](0005-zeitzone-europe-berlin.md) (Zeitzone)
@@ -110,3 +110,15 @@ ES5, CommonJS, ohne `require`. Es rechnet mit `Date.UTC` und `getUTC*`, nie mit 
 - Positiv: Die Regel ist klein, typisiert und vollständig per Unit-Test prüfbar. Hook und SPA rechnen nachweislich gleich, und lange Ausfälle kosten keine Rechenzeit.
 - Negativ: Zwei Implementierungen der Datumsrechnung. Der Paritätstest hält sie gleich, wie bei `keywords`.
 - Die Migration braucht einen Rückweg-Test mit Daten (vorhandene unvollständige Regel, Ticket mit `recurrence`). Die Hooks müssen auch auf dem Schema vor der Migration laufen ([E4-Plan](../plan/e4.md) §12). Fehlt `freq` in der Collection, lassen sie Regeln unberührt und erzeugen nichts.
+
+## Nachtrag (2026-09-26, Umsetzung E5)
+
+Der Text oben bleibt unverändert. Wo die Umsetzung abweicht, gilt dieser Nachtrag. Einzelheiten stehen im [E5-Plan](../plan/e5.md) §7.
+
+- **Migrationen:** Statt `1790201500_…` heißt die Migration `1790201600_recurrence_rule_params.js`, denn die Nummer 1790201500 ist seit E4 vergeben. Der Teilindex steht in `1790201610_tickets_open_recurrence.js`.
+- **`scope`:** Das Feld ist Pflicht und wird wie bei Tickets vom Hook vor der Validierung gesetzt.
+- **Leere Zahlen:** PocketBase speichert ein leeres Zahlenfeld als 0. Deshalb liest `normalize` `interval` 0 als 1 und `month_day` 0 als „nicht gesetzt“. `lead_days` 0 bleibt 0 („am Tag selbst“). `validate` prüft ohne Normalisierung und meldet 0 bei `interval` und `month_day` als Fehler.
+- **`anchor`:** Gültig sind Jahre von 1900 bis 2999.
+- **Fehlercodes:** `validation_recurrence_mode`, `_freq`, `_interval`, `_weekdays`, `_weekdays_mode`, `_month_day`, `_month_day_mode`, `_anchor` und `_lead_days`. Die Texte stehen einmal im Hook und einmal in der SPA, ein Paritätstest hält beide gleich.
+- **Schnittstelle:** Zusätzlich gibt es `isValid`, `upcoming(rule, date, count)` für die Vorschau und `weekdayOf`. In der SPA heißen `normalize` und `validate` `normalizeRule` und `validateRule`.
+- **Rechenweg:** Beide Module rechnen mit Tagesnummern und springen zur Periode, ohne Schleife über Tage. Neben dem Paritätstest mit 5 000 Zufallsregeln prüft ein Test 400 Zufallsregeln gegen eine tageweise Aufzählung der Definition aus §2.
