@@ -1,9 +1,9 @@
 <script lang="ts">
 	import { tick } from 'svelte';
 	import { resolve } from '$app/paths';
-	import { bookmarkletCode } from '$lib/domain/bookmarklet';
 	import type { Connection, ConnectionType, MailProvider } from '$lib/domain/connections';
 	import type { ConnectionsStore } from '$lib/stores/connections.svelte';
+	import BookmarkletCard from './channels/BookmarkletCard.svelte';
 	import ChannelCatalog, { type CatalogEntry } from './channels/ChannelCatalog.svelte';
 	import ChannelIcon from './channels/ChannelIcon.svelte';
 	import ChannelsIntro from './channels/ChannelsIntro.svelte';
@@ -12,12 +12,10 @@
 
 	// Settings "Kanäle" (E4 plan, T-3 and packages 7, 10, 11, 13, 15, 17 and 23; ADR-0026 section 3,
 	// plan EH-3 and §3.4), read like an overview: the explanation of the two ways, the cards of the
-	// connections, "Selbst hereinbringen" (bookmarklet, files), the catalog "Kanal hinzufügen" and,
-	// folded per service until the assistant of EH-5 to EH-7 replaces them, the guides. Until then
-	// "Einrichten" in the catalog opens the former form as a modal ("Verbindung anlegen"). The
-	// bookmarklet link is dragged to the bookmarks bar; for the keyboard the code can be copied and
-	// saved as the address of a new bookmark. A click on the link here does nothing, so the page
-	// does not capture itself.
+	// connections, "Selbst hereinbringen" (the bookmarklet card of EH-4, files), the catalog "Kanal
+	// hinzufügen" and, folded per service until the assistant of EH-5 to EH-7 replaces them, the
+	// guides. Until then "Einrichten" in the catalog opens the former form as a modal ("Verbindung
+	// anlegen").
 	let {
 		captureUrl,
 		connections
@@ -30,9 +28,7 @@
 	const uid = $props.id();
 	const ids = {
 		own: `${uid}-own`,
-		bookmarklet: `${uid}-bookmarklet`,
 		files: `${uid}-files`,
-		code: `${uid}-code`,
 		guides: `${uid}-guides`,
 		calendar: `${uid}-calendar`,
 		telegram: `${uid}-telegram`,
@@ -49,20 +45,9 @@
 		proton: `${uid}-guide-proton`
 	};
 
-	const code = $derived(bookmarkletCode(captureUrl));
-	let status = $state<string | null>(null);
 	let catalogHeading = $state<HTMLElement>();
 	/** Kind of the modal "Verbindung anlegen", null while it is closed. */
 	let creating = $state<{ type: ConnectionType; provider: MailProvider } | null>(null);
-
-	async function copy() {
-		try {
-			await navigator.clipboard.writeText(code);
-			status = 'Code kopiert.';
-		} catch {
-			status = 'Kopieren nicht möglich. Bitte den Code im Feld markieren und mit Strg+C kopieren.';
-		}
-	}
 
 	/** "Kanal hinzufügen" in the empty state: to the catalog, with the focus on its heading. */
 	function focusCatalog() {
@@ -106,48 +91,7 @@
 	<section class="own" aria-labelledby={ids.own}>
 		<h3 id={ids.own}>Selbst hereinbringen</h3>
 		<div class="own-cards">
-			<section class="card" aria-labelledby={ids.bookmarklet}>
-				<h4 id={ids.bookmarklet}>Bookmarklet für Web-Links</h4>
-				<p>
-					Das Bookmarklet bringt die gerade offene Webseite in den Eingang: Es öffnet die Erfassung
-					in einem neuen Tab mit Adresse, Titel und markiertem Text der Seite. Gespeichert wird
-					erst, wenn du dort auf „In den Eingang“ klickst.
-				</p>
-				<p class="link-row">
-					<!-- eslint-disable svelte/no-navigation-without-resolve -- the bookmarklet itself: a javascript: address meant for the bookmarks bar, not for navigation here -->
-					<a
-						class="bookmarklet"
-						href={code}
-						draggable="true"
-						onclick={(event) => {
-							event.preventDefault();
-							status = 'Den Link in die Lesezeichenleiste ziehen; hier bewirkt ein Klick nichts.';
-						}}
-					>
-						In den Eingang
-					</a>
-					<!-- eslint-enable svelte/no-navigation-without-resolve -->
-				</p>
-				<ol>
-					<li>Lesezeichenleiste einblenden (Strg+Umschalt+B).</li>
-					<li>Den Link „In den Eingang“ mit der Maus auf die Leiste ziehen.</li>
-					<li>
-						Auf einer Webseite das Lesezeichen anklicken, im neuen Tab prüfen und „In den Eingang“
-						wählen. Ist die App nicht angemeldet, geht es nach der Anmeldung dorthin weiter.
-					</li>
-				</ol>
-				<p class="hint">
-					Ohne Maus: Code kopieren, ein neues Lesezeichen anlegen und den Code als Adresse einfügen.
-					Nur http- und https-Seiten werden übernommen. Dieselbe Seite ein zweites Mal meldet, dass
-					sie schon im Eingang ist.
-				</p>
-				<label for={ids.code}>Code des Bookmarklets</label>
-				<textarea id={ids.code} rows="3" readonly value={code}></textarea>
-				<p>
-					<button class="button-secondary" type="button" onclick={copy}>Code kopieren</button>
-				</p>
-				<p class="hint" role="status">{status ?? ''}</p>
-			</section>
+			<BookmarkletCard {captureUrl} />
 
 			<section class="card files" aria-labelledby={ids.files}>
 				<div class="files-head">
@@ -521,33 +465,6 @@
 		display: grid;
 		gap: 0.25rem;
 		padding-left: 1.25rem;
-	}
-
-	.bookmarklet {
-		display: inline-block;
-		padding: 0.375rem 0.875rem;
-		color: var(--color-brand-soft-text);
-		text-decoration: none;
-		background: var(--color-brand-soft-bg);
-		border: 1px solid var(--color-brand);
-		border-radius: 0.375rem;
-		cursor: grab;
-	}
-
-	label {
-		font-size: 0.8125rem;
-		font-weight: 500;
-		color: var(--color-text-muted);
-	}
-
-	textarea {
-		width: 100%;
-		padding: 0.375rem 0.5rem;
-		font-family: var(--font-mono);
-		font-size: 0.75rem;
-		background: var(--color-surface);
-		border: 1px solid var(--color-text-muted);
-		border-radius: 0.375rem;
 	}
 
 	.hint {

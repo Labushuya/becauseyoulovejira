@@ -1,5 +1,5 @@
 // Clipboard of the inbox (E4 plan, package 6): reading with refusal and missing API, drafts with
-// 1, 2 and 101 lines.
+// 1, 2 and 101 lines; writing for the code blocks of the guides (ADR-0026 section 6, EH-4).
 
 import { describe, expect, it, vi } from 'vitest';
 import {
@@ -10,8 +10,26 @@ import {
 	clipboardDrafts,
 	pastedText,
 	readClipboardText,
-	textLines
+	textLines,
+	writeClipboardText
 } from './clipboard';
+
+describe('writeClipboardText', () => {
+	it('writes the text and answers true', async () => {
+		const writeText = vi.fn(async () => undefined);
+		expect(await writeClipboardText('setx X "1"', { clipboard: { writeText } })).toBe(true);
+		expect(writeText).toHaveBeenCalledWith('setx X "1"');
+	});
+
+	it('answers false without the API or when the browser refuses', async () => {
+		expect(await writeClipboardText('x', {})).toBe(false);
+		expect(await writeClipboardText('x', undefined)).toBe(false);
+		const writeText = vi.fn(async () => {
+			throw new Error('denied');
+		});
+		expect(await writeClipboardText('x', { clipboard: { writeText } })).toBe(false);
+	});
+});
 
 describe('readClipboardText', () => {
 	it('returns the text', async () => {
