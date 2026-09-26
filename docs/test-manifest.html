@@ -213,8 +213,8 @@
   "meta": {
     "projekt": "becauseyoulovejira",
     "stand": "2026-09-26",
-    "commit": "1143550",
-    "etappe": "E0 bis E4 abgeschlossen (E4: Pakete 1 bis 11, 13 bis 17, 19 bis 24; Paket 12 entfällt, Paket 18 zurückgestellt); E5 in Arbeit (Pakete 1 bis 4: BYL-E5-001 bis BYL-E5-005); E6 UI-Konsistenz vorgezogen und umgesetzt (UI-0 bis UI-9 und UI-6b: BYL-E6-001 bis BYL-E6-028; Projektliste und Tags in den Einstellungen nach Nutzerwunsch: BYL-E6-065 bis BYL-E6-067); E6 Einstellungen und Hilfe in Arbeit (EH-0 bis EH-7 und EH-9 umgesetzt; geplant bis BYL-E6-059)"
+    "commit": "687009e",
+    "etappe": "E0 bis E4 abgeschlossen (E4: Pakete 1 bis 11, 13 bis 17, 19 bis 24; Paket 12 entfällt, Paket 18 zurückgestellt); E5 in Arbeit (Pakete 1 bis 4: BYL-E5-001 bis BYL-E5-005); E6 UI-Konsistenz vorgezogen und umgesetzt (UI-0 bis UI-9 und UI-6b: BYL-E6-001 bis BYL-E6-028; Projektliste und Tags in den Einstellungen nach Nutzerwunsch: BYL-E6-065 bis BYL-E6-067); E6 Einstellungen und Hilfe in Arbeit (EH-0 bis EH-9 umgesetzt; geplant bis BYL-E6-059)"
   },
   "blocks": [
     {
@@ -1579,10 +1579,10 @@
           "pre": "Plan Einstellungen, Paket EH-7. Stores mit Attrappen der Datenschicht.", "steps": ["npm run test:web"],
           "expect": "„Anleitung“ an der Kachel Proton verlinkt ?einrichten=proton und öffnet „Proton-Mails übernehmen“ als Modal M ohne Stepper: drei Schritte, mail.proton.me (noopener noreferrer), „Stichwörter für Mail-Dateien“ und „Zum Eingang“ (primär). Die Seite „Kanäle“ hat außer Telegram keine Anleitungskarten mehr; die Karte „Dateien hereinziehen“ nennt die Zahl der Stichwörter je Dateiart („Mail 3 · Kalender 0 · WhatsApp 2“). Die Seite „Datei-Importe“ erklärt oben „Woher die Dateien kommen“ (zugeklappt: Proton, Gmail mit „Nachricht herunterladen“, .ics, WhatsApp) und zeigt darunter die drei Stichwortlisten.",
           "tests": ["web/src/lib/components/channels/mail-setup.test.ts::Proton guide (EH-7)", "web/src/routes/(app)/einstellungen/datei-importe/file-imports-page.test.ts", "web/src/lib/components/connections-page.test.ts::shows the number of keywords per kind of file", "web/src/lib/components/connections-page.test.ts::links Proton to its guide", "web/src/lib/components/connections-page.test.ts::reads like an overview"] },
-        { "id": "BYL-E6-051", "title": "Darstellung und Konto in den Einstellungen", "art": ["komponente"], "status": "geplant",
-          "pre": "Plan Einstellungen, Paket EH-8.", "steps": ["Darstellung als Radiogruppe, im Gleichlauf mit dem Menü der Kopfzeile.", "Konto mit E-Mail, Admin/App, Link zur Verwaltung (rel=external) und „Abmelden“."],
-          "expect": "Darstellung und Konto haben einen Ort.",
-          "tests": [] },
+        { "id": "BYL-E6-051", "title": "Darstellung und Konto in den Einstellungen", "art": ["komponente"], "status": "bestanden",
+          "pre": "Plan Einstellungen, Paket EH-8. Echter ThemeStore auf localStorage von jsdom; auth als Attrappe.", "steps": ["npm run test:web"],
+          "expect": "Die Navigation nennt Kanäle, Datei-Importe, Tags, Darstellung, Konto, Hilfe. „Darstellung“: Gruppe „Farbschema“ mit den Radios „Hell“, „Dunkel“, „Wie System“ (je mit Beschreibung), die aktuelle Wahl ist markiert; eine Wahl wirkt sofort (data-theme) und steht in byl-theme; Seite und Menü der Kopfzeile zeigen in beiden Richtungen dieselbe Wahl, eine Wahl aus einem anderen Tab kommt an. „Konto“ zeigt nur an: „Angemeldet als“ mit der E-Mail, Art „App-Konto“, die Info „Konten verwalten“ (Collections → users, Admin-Konto, admin-zuruecksetzen.bat) mit „Verwaltung öffnen“ auf /_/ (rel=external); kein Eingabefeld und kein Knopf.",
+          "tests": ["web/src/routes/(app)/einstellungen/darstellung/appearance-page.test.ts", "web/src/routes/(app)/einstellungen/konto/account-page.test.ts", "web/src/routes/(app)/einstellungen/settings-layout.test.ts::offers the pages in a named navigation", "web/src/lib/components/theme-menu.test.ts"] },
         { "id": "BYL-E6-052", "title": "Hilfe-Menü und Taste ?", "art": ["komponente", "unit"], "status": "bestanden",
           "pre": "Plan Einstellungen, Paket EH-9; ADR-0026 §7. Popover und Modal über die gemeinsamen Stubs.", "steps": ["npm run test:web"],
           "expect": "Die Kopfzeile hat zwischen „Neues Ticket“ und dem Zahnrad den Symbolknopf „Hilfe“ mit einem Menü aus drei Einträgen: „Tastaturkürzel“ (aria-keyshortcuts „?“, sichtbares ?, öffnet das Modal, der Fokus steht vorher wieder auf dem Knopf), „Hilfe öffnen“ (/einstellungen/hilfe) und „Kanäle einrichten“ (/einstellungen/kanaele). Die Taste ? (auch Umschalt+ß) öffnet das Modal „Tastaturkürzel“ (M, „Überall“ und „Liste“, Fuß „Schließen“ und „Ganze Hilfe“ zu /einstellungen/hilfe#tastaturkuerzel), nicht in Feldern, Dialogen und offenen Popovers und nicht mit Strg, Alt oder Cmd. Die Kürzel kommen aus shortcuts.ts; deren globale Einträge passen zu isQuickCaptureKey und isHelpKey und zu aria-keyshortcuts von Kopfzeile und Menü.",

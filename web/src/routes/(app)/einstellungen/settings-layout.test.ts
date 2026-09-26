@@ -90,6 +90,8 @@ describe('settings layout', () => {
 			['Kanäle', '/einstellungen/kanaele'],
 			['Datei-Importe', '/einstellungen/datei-importe'],
 			['Tags', '/einstellungen/tags'],
+			['Darstellung', '/einstellungen/darstellung'],
+			['Konto', '/einstellungen/konto'],
 			['Hilfe', '/einstellungen/hilfe']
 		]);
 		expect(pages[0]?.hasAttribute('aria-current')).toBe(false);
