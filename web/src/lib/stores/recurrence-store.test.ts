@@ -5,7 +5,12 @@ import { defaultFormValues } from '$lib/domain/recurrence-rule';
 import type { Ticket } from '$lib/domain/ticket';
 import type { FlagSink } from './flags.svelte';
 import type { RecordChange, Unsubscribe } from './realtime';
-import { RecurrenceStore, type RecurrenceData, type RecurrenceLive } from './recurrence.svelte';
+import {
+	REPEAT_FAILED,
+	RecurrenceStore,
+	type RecurrenceData,
+	type RecurrenceLive
+} from './recurrence.svelte';
 
 // RecurrenceStore (E5 plan, T-7 and package 4): loading once, "unavailable" before the migration,
 // order, rhythm in words, live events, the actions with their success flags (package 5) and field
@@ -310,5 +315,71 @@ describe('RecurrenceStore', () => {
 			fields: {}
 		});
 		expect(data.setActive).not.toHaveBeenCalled();
+	});
+});
+
+describe('RecurrenceStore: a series from the inbox (E5 plan, package 6)', () => {
+	const values = { ...defaultFormValues('2026-10-05', '2026-09-25'), weekdays: ['MO' as const] };
+
+	it('creates the rule for a converted ticket with the ticket as its instance', async () => {
+		const data = fakeData([]);
+		const store = new RecurrenceStore(data, session());
+		const created = await store.repeatCreated(ticket({ due: null }), values);
+		expect(created?.id).toBe('rule00000000009');
+		expect(data.createRule).toHaveBeenCalledWith(
+			expect.objectContaining({ title: 'Steuer', freq: 'weekly', weekdays: ['MO'] }),
+			'ticket000000001'
+		);
+		expect(store.takeOffer('ticket000000001')).toBeNull();
+	});
+
+	it('keeps the ticket when the rule fails and offers "Wiederholen…" with the reason, once', async () => {
+		const data = fakeData([]);
+		vi.mocked(data.createRule)
+			.mockRejectedValueOnce(
+				new DataError('validation', {
+					status: 400,
+					fields: {
+						ticket: {
+							code: 'validation_recurrence_ticket_linked',
+							message: 'Das Ticket gehört schon zu einer Serie.'
+						}
+					}
+				})
+			)
+			.mockRejectedValueOnce(new DataError('network'));
+		const store = new RecurrenceStore(data, session());
+
+		expect(await store.repeatCreated(ticket(), values)).toBeNull();
+		expect(store.takeOffer('another00000001')).toBeNull();
+		const offer = store.takeOffer('ticket000000001');
+		expect(offer).toEqual({
+			ticketId: 'ticket000000001',
+			values,
+			message: `${REPEAT_FAILED} Das Ticket gehört schon zu einer Serie.`
+		});
+		// The offer holds a copy: the form may change its values without touching the caller's.
+		expect(offer?.values).not.toBe(values);
+		expect(store.takeOffer('ticket000000001')).toBeNull();
+
+		expect(await store.repeatCreated(ticket(), values)).toBeNull();
+		expect(store.takeOffer('ticket000000001')?.message).toMatch(
+			new RegExp(`^${REPEAT_FAILED} .*Server nicht erreichbar`)
+		);
+	});
+
+	it('hands values from the inbox panel to the ticket panel; the newest offer wins, logout drops it', () => {
+		const store = new RecurrenceStore(fakeData([]), session());
+		store.offerRepeat('ticket000000001', values);
+		store.offerRepeat('ticket000000002', values);
+		expect(store.takeOffer('ticket000000001')).toBeNull();
+		expect(store.takeOffer('ticket000000002')).toEqual({
+			ticketId: 'ticket000000002',
+			values,
+			message: null
+		});
+		store.offerRepeat('ticket000000003', values);
+		store.reset();
+		expect(store.takeOffer('ticket000000003')).toBeNull();
 	});
 });

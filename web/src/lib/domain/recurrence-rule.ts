@@ -308,3 +308,18 @@ export function formPreview(
 		firstDue: withoutDue ? onOrAfter(rule, rule.anchor) : null
 	};
 }
+
+/**
+ * The ticket after "Wiederholen…" (ADR-0023 section 1), as the server leaves it: in the series,
+ * and with a fixed rhythm a ticket without due date gets the first occurrence. For panel and list
+ * until the realtime event of the server follows.
+ */
+export function joinedSeries<
+	T extends { due: CalendarDate | null; recurring: boolean; recurrenceId?: string | null }
+>(ticket: T, ruleId: string, values: RecurrenceFormValues, today: CalendarDate): T {
+	const firstDue =
+		ticket.due === null && values.mode === 'calendar'
+			? formPreview(values, today, true).firstDue
+			: null;
+	return { ...ticket, recurring: true, recurrenceId: ruleId, due: ticket.due ?? firstDue };
+}

@@ -1,8 +1,14 @@
 <script lang="ts">
-	import { untrack } from 'svelte';
+	import { tick, untrack } from 'svelte';
 	import type { CalendarDate } from '$lib/domain/berlin-date';
 	import { berlinDateOf, formatBerlinDateTime } from '$lib/domain/format';
 	import type { TicketPrefill } from '$lib/domain/inbox';
+	import {
+		formErrors,
+		type RecurrenceFormField,
+		type RecurrenceFormValues
+	} from '$lib/domain/recurrence-rule';
+	import { suggestionFormValues, type RruleSuggestion } from '$lib/domain/rrule';
 	import { isPriority, isStatus, type Priority, type Status } from '$lib/domain/status';
 	import {
 		DEFAULT_PRIORITY,
@@ -17,8 +23,10 @@
 	import type { CreateResult } from '$lib/stores/ticket-detail.svelte';
 	import ErrorIcon from './ErrorIcon.svelte';
 	import MarkdownEditor from './MarkdownEditor.svelte';
+	import SectionMessage from './guidance/SectionMessage.svelte';
 	import PrioritySelect from './PrioritySelect.svelte';
 	import ProjectSelect from './ProjectSelect.svelte';
+	import RecurrenceForm from './RecurrenceForm.svelte';
 	import StatusSelect from './StatusSelect.svelte';
 	import TagPicker from './TagPicker.svelte';
 	import ConfirmDialog from './overlay/ConfirmDialog.svelte';
@@ -32,11 +40,17 @@
 	// (ADR-0025 section 4) if something was entered, a name in the tag picker included. From the inbox (E4 plan, T-5) title and description come
 	// filled in; the date at the sender is only a hint with "Als Fälligkeit übernehmen" (P-5).
 	// An entry the user typed in brings the project, tags, priority and due date chosen then.
+	// A calendar series (E5 plan, package 6; ADR-0024 section 1) shows its rhythm with "Als
+	// Wiederholung übernehmen"; only that click opens the section "Wiederholung" with the suggested
+	// values, and the icon button "Wiederholung entfernen" closes it again. A series the rules cannot express gets a neutral hint.
+	// Nothing is set without the click (P-5); the route creates the rule after the ticket.
 	let {
 		projects = [],
 		initialProject = null,
 		prefill = null,
 		sourceLabel = null,
+		suggestion = null,
+		today = null,
 		tags = [],
 		oncreatetag = async () => ({ ok: false, message: null }),
 		oncreate,
@@ -51,11 +65,19 @@
 		prefill?: TicketPrefill | null;
 		/** Way the entry came in, e.g. "Mail-Datei", shown under the heading. */
 		sourceLabel?: string | null;
+		/** Suggestion from the RRULE of the entry (rrule.ts); null without a series. */
+		suggestion?: RruleSuggestion | null;
+		/** Berlin date of today, for the preview of the section "Wiederholung". */
+		today?: CalendarDate | null;
 		/** Tags that can be chosen (the catalog). */
 		tags?: readonly TagRef[];
 		/** Existing or new tag for a typed name (T-14). */
 		oncreatetag?: (name: string) => Promise<EnsureTagResult>;
-		oncreate: (draft: TicketDraft) => Promise<CreateResult>;
+		/** Creates the ticket; `recurrence` holds the values of the open section "Wiederholung". */
+		oncreate: (
+			draft: TicketDraft,
+			recurrence: RecurrenceFormValues | null
+		) => Promise<CreateResult>;
 		oncreated: (id: string) => void;
 		oncancel: () => void;
 	} = $props();
@@ -80,7 +102,8 @@
 		projectError: `${uid}-project-error`,
 		tags: `${uid}-tags`,
 		tagsError: `${uid}-tags-error`,
-		description: `${uid}-description-error`
+		description: `${uid}-description-error`,
+		recurrence: `${uid}-recurrence`
 	};
 
 	// The form is opened for one entry (the route keys it), so the values are read once.
@@ -108,6 +131,14 @@
 	let message = $state<string | null>(null);
 	let fieldErrors = $state<Partial<Record<keyof TicketDraft, string>>>({});
 	let titleInput = $state<HTMLInputElement>();
+	/** Section "Wiederholung"; null while it is closed, so no rule comes without the click. */
+	let recurrence = $state<{ values: RecurrenceFormValues } | null>(null);
+	let recurrenceErrors = $state<Partial<Record<RecurrenceFormField, string>>>({});
+	let recurrenceSection = $state<HTMLElement>();
+	let recurrenceHeading = $state<HTMLElement>();
+	let takeOverButton = $state<HTMLButtonElement>();
+	const ruleSuggestion = $derived(suggestion?.kind === 'rule' ? suggestion : null);
+	const unsupported = $derived(suggestion?.kind === 'unsupported' ? suggestion : null);
 
 	const wantedProject = $derived(preset?.project ?? initialProject);
 	const defaultProject = $derived(
@@ -134,7 +165,8 @@
 			priority !== initialPriority ||
 			project !== defaultProject ||
 			tagIds.join(',') !== initialTagIds.join(',') ||
-			tagText.trim() !== ''
+			tagText.trim() !== '' ||
+			recurrence !== null
 	);
 	const dueError = $derived(dueInvalid ? 'Ungültiges Datum.' : (fieldErrors.due ?? null));
 
@@ -149,19 +181,30 @@
 			if (missingTitle) titleInput?.focus();
 			return;
 		}
+		if (recurrence !== null) {
+			recurrenceErrors = formErrors(recurrence.values);
+			if (Object.keys(recurrenceErrors).length > 0) {
+				await tick();
+				recurrenceSection?.querySelector<HTMLElement>('[aria-invalid="true"]')?.focus();
+				return;
+			}
+		}
 		pending = true;
 		message = null;
 		fieldErrors = {};
-		const result = await oncreate({
-			title,
-			description,
-			status,
-			priority,
-			due: due === '' ? null : (due as CalendarDate),
-			project: project === '' ? null : project,
-			// Only tags the catalog knows: a preset may name a tag deleted since.
-			tags: chosenTags.map((tag) => tag.id)
-		});
+		const result = await oncreate(
+			{
+				title,
+				description,
+				status,
+				priority,
+				due: due === '' ? null : (due as CalendarDate),
+				project: project === '' ? null : project,
+				// Only tags the catalog knows: a preset may name a tag deleted since.
+				tags: chosenTags.map((tag) => tag.id)
+			},
+			recurrence === null ? null : recurrence.values
+		);
 		if (result.ok) {
 			oncreated(result.ticket.id);
 			return;
@@ -170,6 +213,23 @@
 		message = result.message;
 		fieldErrors = result.fields;
 		if (result.fields.title) titleInput?.focus();
+	}
+
+	/** "Als Wiederholung übernehmen": opens the section with the suggested values. */
+	async function takeOver() {
+		if (ruleSuggestion === null) return;
+		recurrence = { values: suggestionFormValues(ruleSuggestion.params) };
+		recurrenceErrors = {};
+		await tick();
+		recurrenceHeading?.focus();
+	}
+
+	/** "Wiederholung entfernen": closes the section; the ticket is created without a rule. */
+	async function removeRecurrence() {
+		recurrence = null;
+		recurrenceErrors = {};
+		await tick();
+		takeOverButton?.focus();
 	}
 
 	/** "Als Fälligkeit übernehmen": the Berlin calendar date of the date at the sender. */
@@ -302,6 +362,55 @@
 		{#if dueError}
 			<p class="field-error" id={ids.dueError}><ErrorIcon /><span>{dueError}</span></p>
 		{/if}
+		{#if ruleSuggestion !== null}
+			<SectionMessage tone="info">
+				Dieser Termin wiederholt sich: {ruleSuggestion.text}.
+				{#each ruleSuggestion.notes as note (note)}
+					{note}
+				{/each}
+				{#snippet actions()}
+					{#if recurrence === null}
+						<button
+							class="button-secondary"
+							type="button"
+							bind:this={takeOverButton}
+							onclick={takeOver}
+						>
+							Als Wiederholung übernehmen
+						</button>
+					{/if}
+				{/snippet}
+			</SectionMessage>
+		{:else if unsupported !== null}
+			<SectionMessage tone="info">
+				Diese Serie lässt sich nicht als Regel übernehmen ({unsupported.reasons.join('; ')}). Nach
+				dem Anlegen kannst du am Ticket „Wiederholen…“ wählen.
+			</SectionMessage>
+		{/if}
+		{#if recurrence !== null && today !== null}
+			<section class="recurrence" aria-labelledby={ids.recurrence} bind:this={recurrenceSection}>
+				<div class="recurrence-head">
+					<h3 id={ids.recurrence} tabindex="-1" bind:this={recurrenceHeading}>Wiederholung</h3>
+					<button
+						class="button-icon"
+						type="button"
+						aria-label="Wiederholung entfernen"
+						title="Wiederholung entfernen"
+						onclick={removeRecurrence}
+					>
+						<svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true" focusable="false">
+							<path d="M4 4l8 8M12 4l-8 8" stroke="currentColor" stroke-width="1.5" />
+						</svg>
+					</button>
+				</div>
+				<RecurrenceForm
+					bind:values={recurrence.values}
+					errors={recurrenceErrors}
+					{today}
+					withoutDue={due === ''}
+				/>
+			</section>
+		{/if}
 
 		<div class="field">
 			<label for={ids.project}>Projekt</label>
@@ -430,6 +539,25 @@
 	.hint {
 		font-size: 0.8125rem;
 		color: var(--color-text-muted);
+	}
+
+	.recurrence {
+		display: grid;
+		gap: 0.75rem;
+		padding-top: 0.75rem;
+		border-top: 1px solid var(--color-line);
+	}
+
+	.recurrence-head {
+		display: flex;
+		gap: 0.5rem;
+		align-items: center;
+		justify-content: space-between;
+	}
+
+	h3 {
+		font-size: 0.9375rem;
+		font-weight: 600;
 	}
 
 	.source-date {

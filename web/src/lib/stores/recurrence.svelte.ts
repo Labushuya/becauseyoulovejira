@@ -40,6 +40,17 @@ export const RECURRENCE_UNAVAILABLE = restartNeeded('Wiederholungen sind');
 
 export type RecurrenceState = LoadState | 'unavailable';
 
+/** Start of the message when the rule of a converted series failed; the ticket stays. */
+export const REPEAT_FAILED = 'Das Ticket ist angelegt, die Wiederholung aber nicht.';
+
+/** "Wiederholen…" prepared for the panel of one ticket (E5 plan, package 6). */
+export interface RepeatOffer {
+	ticketId: string;
+	values: RecurrenceFormValues;
+	/** Why it is offered (the rule failed), shown as an error; null: open the dialog at once. */
+	message: string | null;
+}
+
 /** Data access of the store; tests pass a fake, the app binds the data layer to its client. */
 export interface RecurrenceData {
 	listRules(options: RequestOptions): Promise<RecurrenceRule[] | null>;
@@ -116,6 +127,8 @@ export class RecurrenceStore {
 	#error = $state<string | null>(null);
 
 	#list = $derived([...this.#rules.values()].sort(byNextTicket));
+	/** "Wiederholen…" handed over to the panel of one ticket, taken once (`takeOffer`). */
+	#offer: RepeatOffer | null = null;
 
 	constructor(data: RecurrenceData, session: SessionGuard, flags: FlagSink = SILENT_FLAGS) {
 		this.#data = data;
@@ -220,6 +233,44 @@ export class RecurrenceStore {
 		);
 	}
 
+	/**
+	 * Second step of converting a calendar series with "Als Wiederholung übernehmen" (ADR-0024
+	 * section 1): the ticket exists already and becomes the current instance of the new rule. If
+	 * the rule fails, the ticket stays, and its panel offers "Wiederholen…" with the same values
+	 * and the reason. The rule, or null if it failed.
+	 */
+	async repeatCreated(
+		ticket: Ticket,
+		values: RecurrenceFormValues
+	): Promise<RecurrenceRule | null> {
+		const result = await this.repeat(ticket, values);
+		if (result.ok) return result.value;
+		const reason = result.message ?? Object.values(result.fields)[0] ?? null;
+		this.offerRepeat(
+			ticket.id,
+			values,
+			reason === null ? REPEAT_FAILED : `${REPEAT_FAILED} ${reason}`
+		);
+		return null;
+	}
+
+	/**
+	 * Hands "Wiederholen…" with prepared values to the panel of a ticket (inbox panel: "Wiederholung
+	 * für TASK-12 anlegen…"). Without a message the panel opens the dialog at once; with one it
+	 * shows the message and offers the prepared dialog. A newer offer replaces an older one.
+	 */
+	offerRepeat(ticketId: string, values: RecurrenceFormValues, message: string | null = null): void {
+		this.#offer = { ticketId, values: { ...values, weekdays: [...values.weekdays] }, message };
+	}
+
+	/** The offer for this ticket, once; null without one. */
+	takeOffer(ticketId: string): RepeatOffer | null {
+		const offer = this.#offer;
+		if (offer === null || offer.ticketId !== ticketId) return null;
+		this.#offer = null;
+		return offer;
+	}
+
 	/** Saves a new rhythm of a rule; the hook computes the next ticket again. */
 	saveRhythm(id: string, values: RecurrenceFormValues): Promise<EditResult<RecurrenceRule>> {
 		return this.update(id, formParams(values));
@@ -274,6 +325,7 @@ export class RecurrenceStore {
 
 	reset(): void {
 		this.#abort();
+		this.#offer = null;
 		this.#rules.clear();
 		this.#deleted.clear();
 		this.#state = 'idle';
