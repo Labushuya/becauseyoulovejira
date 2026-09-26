@@ -42,6 +42,29 @@ export async function readClipboardText(
 	}
 }
 
+/** The part of `navigator` that is written to; tests pass a fake. */
+export interface ClipboardTarget {
+	clipboard?: { writeText?: (text: string) => Promise<void> };
+}
+
+/**
+ * Writes a text to the clipboard (ADR-0026 section 6, CodeBlock). A missing API or a refusal gives
+ * `false`; the caller then selects the text and names Ctrl+C. The text is never logged.
+ */
+export async function writeClipboardText(
+	text: string,
+	target: ClipboardTarget | undefined = typeof navigator === 'undefined' ? undefined : navigator
+): Promise<boolean> {
+	const write = target?.clipboard?.writeText;
+	if (typeof write !== 'function') return false;
+	try {
+		await write.call(target?.clipboard, text);
+		return true;
+	} catch {
+		return false;
+	}
+}
+
 /** Non-empty lines of a text, trimmed. */
 export function textLines(text: string): string[] {
 	return text
