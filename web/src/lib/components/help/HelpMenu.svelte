@@ -7,8 +7,9 @@
 	// menu on the popover building block (kind "menu", like the theme switcher). "Tastaturkürzel"
 	// opens the modal of the (app) layout and names its key; "Hilfe öffnen" and "Kanäle einrichten"
 	// are links. Every entry closes the menu first, so the focus is back on the button before a
-	// modal takes it or the page changes.
-	let { onshortcuts }: { onshortcuts: () => void } = $props();
+	// modal takes it or the page changes. With `ontour` (EH-13) "Kurze Einführung" starts the guided
+	// tour; the focus comes back to the button when the tour ends.
+	let { onshortcuts, ontour }: { onshortcuts: () => void; ontour?: () => void } = $props();
 </script>
 
 <div class="help-menu">
@@ -60,6 +61,20 @@
 			>
 				Kanäle einrichten
 			</a>
+			{#if ontour}
+				<button
+					class="item"
+					type="button"
+					role="menuitem"
+					tabindex="-1"
+					onclick={() => {
+						close();
+						ontour();
+					}}
+				>
+					Kurze Einführung
+				</button>
+			{/if}
 		{/snippet}
 	</Popover>
 </div>

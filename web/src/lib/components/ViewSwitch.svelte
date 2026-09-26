@@ -46,7 +46,7 @@
 			>
 		{/if}
 	</a>
-	<a href={inboxLink} aria-current={current === 'inbox' ? 'page' : undefined}>
+	<a href={inboxLink} aria-current={current === 'inbox' ? 'page' : undefined} data-tour="inbox">
 		<svg viewBox="0 0 16 16" aria-hidden="true" focusable="false">
 			<path d="M2.5 9.5l1.75-6h7.5l1.75 6v3.5h-11zM2.5 9.5h3l1 1.5h3l1-1.5h3" />
 		</svg>

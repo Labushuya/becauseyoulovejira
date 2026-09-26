@@ -22,7 +22,8 @@
 		openCount = null,
 		covered = false,
 		onquick,
-		onshortcuts
+		onshortcuts,
+		ontour
 	}: {
 		/** Tickets that are not done; null while the list is not loaded (no counter then). */
 		openCount?: number | null;
@@ -32,6 +33,8 @@
 		onquick?: () => void;
 		/** Opens the modal "Tastaturkürzel" (EH-9); without it there is no help menu. */
 		onshortcuts?: () => void;
+		/** Starts the guided tour (EH-13); the help menu then offers "Kurze Einführung". */
+		ontour?: () => void;
 	} = $props();
 
 	const inSettings = $derived(isSettingsPath(page.url.pathname));
@@ -82,6 +85,7 @@
 			class="quick"
 			type="button"
 			aria-keyshortcuts={QUICK_CAPTURE_KEYSHORTCUTS}
+			data-tour="quick-capture"
 			onclick={onquick}
 		>
 			Schnellerfassung <kbd>c</kbd>
@@ -99,7 +103,7 @@
 		Neues Ticket
 	</a>
 	{#if onshortcuts}
-		<HelpMenu {onshortcuts} />
+		<HelpMenu {onshortcuts} {ontour} />
 	{/if}
 	<a
 		class="button-icon settings"
