@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { untrack } from 'svelte';
 	import { SvelteSet } from 'svelte/reactivity';
+	import { resolve } from '$app/paths';
 	import { formatCalendarDate } from '$lib/domain/format';
 	import type { InboxDraft } from '$lib/domain/inbox';
 	import { matchKeyword } from '$lib/domain/keywords';
@@ -12,6 +13,8 @@
 	} from '$lib/domain/whatsapp-export';
 	import { draftsSummary, type DraftsOutcome } from '$lib/stores/capture';
 	import ErrorIcon from './ErrorIcon.svelte';
+	import EmptyState from './guidance/EmptyState.svelte';
+	import SectionMessage from './guidance/SectionMessage.svelte';
 	import Modal from './overlay/Modal.svelte';
 
 	// Selection view of a WhatsApp export (E4 plan, package 16) on the modal building block
@@ -122,12 +125,20 @@
 	<p id={ids.summary} class="hint">
 		{countText(messages.length)} zur Auswahl{#if leftOut > 0}, {leftOut} ausgelassen (Systemzeilen, Medien,
 			gelöschte Nachrichten){/if}. Nur die ausgewählten Nachrichten kommen in den Eingang.
-		{#if keywords.length === 0}
-			Für den WhatsApp-Export sind keine Stichwörter festgelegt, deshalb ist nichts vorausgewählt.
-		{:else}
+		{#if keywords.length > 0}
 			Nachrichten mit einem deiner Stichwörter sind vorausgewählt.
 		{/if}
 	</p>
+	{#if keywords.length === 0}
+		<SectionMessage tone="info">
+			Für den WhatsApp-Export sind keine Stichwörter festgelegt, deshalb ist nichts vorausgewählt.
+			{#snippet actions()}
+				<a href={resolve('/einstellungen/datei-importe')}
+					>Stichwörter unter „Datei-Importe“ festlegen</a
+				>
+			{/snippet}
+		</SectionMessage>
+	{/if}
 	<form id={ids.form} class="form" novalidate onsubmit={save}>
 		<div class="filters">
 			<div class="field">
@@ -175,7 +186,13 @@
 		<fieldset class="messages">
 			<legend class="visually-hidden">Nachrichten</legend>
 			{#if visible.length === 0}
-				<p class="hint">Keine Nachricht passt zu den Filtern.</p>
+				<div class="none">
+					<EmptyState
+						size="compact"
+						title="Keine Nachricht passt zu den Filtern"
+						headingLevel={3}
+					/>
+				</div>
 			{:else}
 				<ul>
 					{#each visible as message (message.index)}
@@ -316,7 +333,7 @@
 		overflow-wrap: anywhere;
 	}
 
-	.messages .hint {
+	.messages .none {
 		padding: 0.75rem;
 	}
 

@@ -13,6 +13,7 @@
 	import type { EditResult } from '$lib/stores/catalog-editor';
 	import { RECURRENCE_UNAVAILABLE, type RecurrenceStore } from '$lib/stores/recurrence.svelte';
 	import ErrorIcon from './ErrorIcon.svelte';
+	import SectionMessage from './guidance/SectionMessage.svelte';
 	import RecurrenceDialog from './RecurrenceDialog.svelte';
 
 	// Recurrence of the ticket in the panel (E5 plan, package 4). A ticket in a series shows
@@ -101,7 +102,7 @@
 			{/if}
 		</p>
 		{#if rule !== null && rule.lastHint !== ''}
-			<p class="hint">{rule.lastHint}</p>
+			<SectionMessage tone="info" compact>{rule.lastHint}</SectionMessage>
 		{/if}
 		<div class="actions">
 			{#if rule !== null}
@@ -129,7 +130,7 @@
 			</button>
 		</div>
 	{:else if store.state === 'unavailable'}
-		<p class="hint">{RECURRENCE_UNAVAILABLE}</p>
+		<SectionMessage tone="info" compact>{RECURRENCE_UNAVAILABLE}</SectionMessage>
 	{:else if ticket.status !== 'done'}
 		<button
 			class="small"
@@ -180,11 +181,6 @@
 		display: flex;
 		flex-wrap: wrap;
 		gap: 0.375rem;
-	}
-
-	.hint {
-		font-size: 0.8125rem;
-		color: var(--color-text-muted);
 	}
 
 	.actions {

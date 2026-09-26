@@ -6,10 +6,12 @@
 		withSuggestions
 	} from '$lib/domain/keywords';
 	import ErrorIcon from './ErrorIcon.svelte';
+	import SectionMessage from './guidance/SectionMessage.svelte';
 
 	// List of keywords (ADR-0020; E4 plan package 20): add one by one, remove, take over the
 	// suggestions. Every change is saved at once through `onsave`, which answers with an error text
-	// or null. Without keywords a neutral warning says what that means (`emptyText`).
+	// or null. Without keywords a neutral warning says what that means (`emptyText`), as a compact
+	// section message of the tone "warning" (plan EH-10): icon and hidden "Achtung:", no yellow.
 	let {
 		keywords,
 		name,
@@ -88,7 +90,7 @@
 		Wörter sind erlaubt.
 	</p>
 	{#if keywords.length === 0}
-		<p class="notice">{emptyText}</p>
+		<SectionMessage tone="warning" compact>{emptyText}</SectionMessage>
 	{:else}
 		<ul class="list" aria-label={`Stichwörter von „${name}“`}>
 			{#each keywords as keyword (keyword)}
@@ -243,13 +245,5 @@
 	.hint {
 		font-size: 0.8125rem;
 		color: var(--color-text-muted);
-	}
-
-	.notice {
-		padding: 0.375rem 0.625rem;
-		font-size: 0.8125rem;
-		color: var(--color-brand-soft-text);
-		background: var(--color-brand-soft-bg);
-		border-radius: 0.375rem;
 	}
 </style>

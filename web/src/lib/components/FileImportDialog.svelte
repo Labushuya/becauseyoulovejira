@@ -11,6 +11,7 @@
 		type SelectionEntry
 	} from '$lib/stores/mail-import';
 	import { IMPORT_KEYWORDS_UNAVAILABLE_MESSAGE } from '$lib/stores/import-keywords.svelte';
+	import SectionMessage from './guidance/SectionMessage.svelte';
 	import Modal from './overlay/Modal.svelte';
 
 	// Selection view of dropped mail and calendar files (E4 plan, package 21; ADR-0020) on the modal
@@ -100,16 +101,18 @@
 			{/if}
 		</p>
 		{#if !selection.keywordsAvailable}
-			<p class="notice">
+			<SectionMessage tone="info">
 				{IMPORT_KEYWORDS_UNAVAILABLE_MESSAGE} Bis dahin ist nichts vorausgewählt.
-			</p>
+			</SectionMessage>
 		{:else if missingLists !== ''}
-			<p class="notice">
+			<SectionMessage tone="info">
 				Für {missingLists} sind keine Stichwörter festgelegt, deshalb ist dort nichts vorausgewählt.
-				<a href={resolve('/einstellungen/datei-importe')}
-					>Stichwörter unter „Datei-Importe“ festlegen</a
-				>
-			</p>
+				{#snippet actions()}
+					<a href={resolve('/einstellungen/datei-importe')}
+						>Stichwörter unter „Datei-Importe“ festlegen</a
+					>
+				{/snippet}
+			</SectionMessage>
 		{/if}
 	</div>
 	<form id={ids.form} class="form" novalidate onsubmit={save}>
@@ -241,17 +244,5 @@
 	.hint {
 		font-size: 0.8125rem;
 		color: var(--color-text-muted);
-	}
-
-	.notice {
-		padding: 0.375rem 0.625rem;
-		font-size: 0.8125rem;
-		color: var(--color-brand-soft-text);
-		background: var(--color-brand-soft-bg);
-		border-radius: var(--radius-control);
-	}
-
-	.notice a {
-		color: inherit;
 	}
 </style>

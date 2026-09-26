@@ -204,9 +204,15 @@ describe('WhatsApp selection view', () => {
 
 	it('says that nothing is chosen without keywords', () => {
 		renderView();
+		const hint = screen.getByText(/keine Stichwörter festgelegt, deshalb ist nichts vorausgewählt/);
+		// Section message of the tone "info" with the way to the keywords (EH-10).
+		const message = hint.closest('[data-tone]') as HTMLElement;
+		expect(message.getAttribute('data-tone')).toBe('info');
 		expect(
-			screen.getByText(/keine Stichwörter festgelegt, deshalb ist nichts vorausgewählt/)
-		).toBeTruthy();
+			within(message)
+				.getByRole('link', { name: 'Stichwörter unter „Datei-Importe“ festlegen' })
+				.getAttribute('href')
+		).toBe('/einstellungen/datei-importe');
 	});
 
 	it('saves only the chosen messages as drafts and closes', async () => {
@@ -260,7 +266,10 @@ describe('WhatsApp selection view', () => {
 		expect(
 			document.getElementById(to.getAttribute('aria-describedby') ?? '')?.textContent
 		).toContain('„Bis“ liegt vor „Von“.');
-		expect(screen.getByText('Keine Nachricht passt zu den Filtern.')).toBeTruthy();
+		// Compact empty state (EH-10): heading without full stop.
+		expect(
+			screen.getByRole('heading', { name: 'Keine Nachricht passt zu den Filtern' })
+		).toBeTruthy();
 		await fireEvent.input(screen.getByLabelText('Bis'), { target: { value: '' } });
 		await fireEvent.click(screen.getByRole('button', { name: 'Alle sichtbaren auswählen' }));
 		await fireEvent.click(screen.getByRole('button', { name: 'Auswahl aufheben' }));

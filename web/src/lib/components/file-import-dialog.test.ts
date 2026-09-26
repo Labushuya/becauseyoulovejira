@@ -120,11 +120,14 @@ describe('FileImportDialog', () => {
 
 	it('names the kinds without keywords and the state before the migration', () => {
 		renderDialog({ withoutKeywords: ['eml', 'ics'] });
-		expect(
-			screen.getByText(
-				/Für Mail-Dateien \(\.eml\) und Kalenderdateien \(\.ics\) sind keine Stichwörter/
-			)
-		).toBeTruthy();
+		const hint = screen.getByText(
+			/Für Mail-Dateien \(\.eml\) und Kalenderdateien \(\.ics\) sind keine Stichwörter/
+		);
+		// Section message "info" since EH-10, the link as its action.
+		expect(hint.closest('[data-tone]')?.getAttribute('data-tone')).toBe('info');
+		expect(hint.closest('[data-tone]')?.querySelector('.actions a')?.textContent?.trim()).toBe(
+			'Stichwörter unter „Datei-Importe“ festlegen'
+		);
 		expect(
 			screen
 				.getByRole('link', { name: 'Stichwörter unter „Datei-Importe“ festlegen' })

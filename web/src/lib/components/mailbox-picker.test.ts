@@ -168,7 +168,10 @@ describe('MailboxPicker', () => {
 
 	it('loads more mails on request, says when the inbox is empty and closes with Escape', async () => {
 		const { load, onclose } = setup({ kind: 'ok', value: [] });
-		await screen.findByText('Der Posteingang ist leer.');
+		// Empty state in the compact size (EH-10): a heading in sentence case without full stop.
+		expect((await screen.findByRole('heading', { name: 'Der Posteingang ist leer' })).tagName).toBe(
+			'H3'
+		);
 		await fireEvent.change(screen.getByLabelText('Anzahl'), { target: { value: '200' } });
 		await vi.waitFor(() => expect(load).toHaveBeenLastCalledWith(200, expect.any(AbortSignal)));
 		await fireEvent(screen.getByRole('dialog'), new Event('cancel', { cancelable: true }));
