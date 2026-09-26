@@ -224,7 +224,7 @@ Wird je Paket ergänzt.
 | UI-6b | gemergt (#54) |
 | UI-8 | gemergt (#55) |
 | UI-9 | gemergt (#56) |
-| Projektliste (Nutzerwunsch nach EH-4) | umgesetzt (dieser PR) |
+| Projektliste (Nutzerwunsch nach EH-4) | gemergt (#63) |
 
 ## Quellen (nur Verhalten und Maße)
 
