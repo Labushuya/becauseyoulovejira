@@ -1,7 +1,6 @@
 // Pages of the settings area (ADR-0026 section 1, plan EH-1). A page is listed only once its
 // package brings it, so the navigation never has a dead link: "Hilfe" came with EH-9, "Darstellung"
-// and "Konto" follow with EH-8 before it. "Tags" moved here from the project view (user request
-// after EH-4).
+// and "Konto" with EH-8. "Tags" moved here from the project view (user request after EH-4).
 
 import { resolve } from '$app/paths';
 import type { ResolvedPathname } from '$app/types';
@@ -17,6 +16,8 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
 	{ id: 'kanaele', label: 'Kanäle', href: resolve('/einstellungen/kanaele') },
 	{ id: 'datei-importe', label: 'Datei-Importe', href: resolve('/einstellungen/datei-importe') },
 	{ id: 'tags', label: 'Tags', href: resolve('/einstellungen/tags') },
+	{ id: 'darstellung', label: 'Darstellung', href: resolve('/einstellungen/darstellung') },
+	{ id: 'konto', label: 'Konto', href: resolve('/einstellungen/konto') },
 	{ id: 'hilfe', label: 'Hilfe', href: resolve('/einstellungen/hilfe') }
 ];
 

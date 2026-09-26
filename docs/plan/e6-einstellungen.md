@@ -953,6 +953,9 @@ Wird je Paket ergänzt.
 | 2026-09-26 | EH-9 | Hilfeseite `/einstellungen/hilfe` (letzter Eintrag von `SETTINGS_SECTIONS`; EH-8 fügt „Darstellung“ und „Konto“ davor ein): Sprunglinks aus `HELP_SECTIONS`, Abschnitte Tastaturkürzel (alle vier Kontexte), Kurzsyntax (`CodeBlock` ohne Kopieren, Tokens als `dl`, Prioritäten aus `PRIORITY_WORDS`/`PRIORITY_NUMBERS`), „Kanäle und Zugangsdaten“, fünf häufige Fragen als `<details>` (Neustart-Frage mit `RESTART_NEEDED`), Betrieb (Neustart, `app\logs`, Verwaltung `/_/` mit `rel="external"`, Sicherung). Links von außen über `helpHref(abschnitt)`, das einen `ResolvedPathname` liefert und so die Lint-Regel `no-navigation-without-resolve` ohne Ausnahme erfüllt. |
 | 2026-09-26 | EH-9 | Das FAQ „Zugangsdaten als Windows-Variable setzen“ zieht **ganz** aus dem Erklärblock von „Kanäle“ in die Hilfe (Abschnitt `#zugangsdaten`, als offener Abschnitt statt `<details>`, damit der Sprunglink den Text zeigt); `ChannelsIntro` nennt nur noch einen Satz und den Link „Wie funktionieren die Zugangsdaten?“. Abweichung von §3.4 (dort `<details>` an beiden Orten): eine Stelle statt zwei gleicher Texte. `QuickCapture` verlinkt „Mehr zur Kurzsyntax“ in einem **neuen Tab**, weil ein Seitenwechsel getippten Text ohne Rückfrage verwerfen würde (Regel aus UI-4). |
 | 2026-09-26 | EH-9 | Bewusst angepasste Tests: `connections-page` (statt der Region „Zugangsdaten als Windows-Variable setzen“ der Link in die Hilfe; der Text wird in `help-page.test.ts` geprüft), `settings-layout` (Navigation mit „Hilfe“), `no-own-dialogs` (Größe M für `ShortcutsModal`). Neu: `domain/shortcuts.test.ts`, `help/help-menu.test.ts` (Menü, Modal, Liste), `einstellungen/hilfe/help-page.test.ts`, Fälle in `keyboard.test.ts` (`isHelpKey`), `app-layout.test.ts` (`?` öffnet, nicht aus Feldern, Dialogen und Popovers; Menü in der Kopfzeile) und `quick-capture.test.ts` (Link). Manifest: BYL-E6-052 und BYL-E6-053 bestanden. |
+| 2026-09-26 | EH-8 | „Darstellung“ (`/einstellungen/darstellung`): `fieldset` „Farbschema“ mit drei Radios als Kacheln (Radio sichtbar, Name über `aria-labelledby` nur aus dem Titel, Beschreibung per `aria-describedby`), auf `getThemeStore()`, `THEME_PREFERENCES` und `THEME_LABELS` wie das Menü der Kopfzeile. Weil beide denselben Store teilen, stimmen sie in beiden Richtungen überein; `connect()` folgt anderen Tabs. Die „Vorschau“ ist das Symbol der Wahl (neu `ThemeIcon.svelte`, auch im Menü), keine Farbvorschau: Die Tokens gelten nur an `:root`, eine echte Vorschau des anderen Modus bräuchte doppelte Farbblöcke in `tokens.css`. |
+| 2026-09-26 | EH-8 | „Konto“ (`/einstellungen/konto`) nach der Vorgabe „nur Anzeige“: E-Mail des App-Kontos, Art, und eine Info „Konten verwalten“ (Admin- gegenüber App-Konto, „Collections → users“, `admin-zuruecksetzen.bat`) mit Link „Verwaltung öffnen“ auf `/_/` (`rel="external"`). Abweichung von §3.1/EH-8: kein Knopf „Abmelden“ auf der Seite, weil er in der Kopfzeile steht und die Seite nur anzeigt; kein Passwortfeld, „Passwort ändern“ bleibt zurückgestellt. Navigation: Kanäle, Datei-Importe, Tags, Darstellung, Konto, Hilfe. |
+| 2026-09-26 | EH-8 | Bewusst angepasste Tests: `settings-layout` (sechs Seiten). Neu: `einstellungen/darstellung/appearance-page.test.ts` (Radios, sofortige Wirkung, Gleichlauf mit dem Menü in beiden Richtungen, andere Tabs), `einstellungen/konto/account-page.test.ts` (E-Mail, Hinweis, `rel="external"`, kein Feld und kein Knopf). `theme-menu.test.ts` bleibt unverändert grün (die Symbole kommen jetzt aus `ThemeIcon`). Manifest: BYL-E6-051 bestanden. |
 
 ## 8. Status
 
@@ -966,8 +969,9 @@ Wird je Paket ergänzt.
 | EH-5 | gemergt (#64) |
 | EH-7 | gemergt (#65) |
 | EH-6 | gemergt (#66) |
-| EH-9 | umgesetzt (dieser PR) |
-| EH-8, EH-10 bis EH-13 | geplant |
+| EH-9 | gemergt (#67) |
+| EH-8 | umgesetzt (dieser PR) |
+| EH-10 bis EH-13 | geplant |
 
 ## Quellen (nur Muster, keine Assets)
 
