@@ -2,10 +2,10 @@ import { fireEvent, render, screen, within } from '@testing-library/svelte';
 import { tick } from 'svelte';
 import { describe, expect, it, vi } from 'vitest';
 import { DataError } from '$lib/data/errors';
-import type { RecurrenceRule } from '$lib/domain/recurrence-rule';
+import { defaultFormValues, type RecurrenceRule } from '$lib/domain/recurrence-rule';
 import type { Ticket } from '$lib/domain/ticket';
 import type { FlagSink } from '$lib/stores/flags.svelte';
-import { RecurrenceStore, type RecurrenceData } from '$lib/stores/recurrence.svelte';
+import { REPEAT_FAILED, RecurrenceStore, type RecurrenceData } from '$lib/stores/recurrence.svelte';
 import RecurrenceSummary from './RecurrenceSummary.svelte';
 import { useOverlayStubs } from '$lib/test/overlay-stubs';
 
@@ -69,7 +69,9 @@ function ticket(overrides: Partial<Ticket> = {}): Ticket {
 async function setup(
 	item: Ticket,
 	rules: RecurrenceRule[] | null = [],
-	data: Partial<RecurrenceData> = {}
+	data: Partial<RecurrenceData> = {},
+	/** Runs on the store before the panel opens (an offer of package 6). */
+	before: (store: RecurrenceStore) => void = () => undefined
 ) {
 	const fake: RecurrenceData = {
 		listRules: vi.fn(async () => rules),
@@ -94,6 +96,7 @@ async function setup(
 	};
 	const store = new RecurrenceStore(fake, { ensureValid: () => true, logout: vi.fn() }, flags);
 	await store.load();
+	before(store);
 	const onticket = vi.fn();
 	render(RecurrenceSummary, { props: { ticket: item, store, today: TODAY, onticket } });
 	return { fake, store, onticket, flagTitles };
@@ -248,5 +251,60 @@ describe('RecurrenceSummary', () => {
 			expect.objectContaining({ weekdays: ['TH'] })
 		);
 		expect(screen.getByText('Wiederholt sich: jeden Donnerstag')).toBeTruthy();
+	});
+});
+
+describe('RecurrenceSummary: "Wiederholen…" prepared from a calendar series (E5 plan, package 6)', () => {
+	const series = {
+		...defaultFormValues(null, TODAY),
+		freq: 'monthly' as const,
+		monthDay: '31',
+		anchor: '2026-10-31'
+	};
+
+	it('opens the prepared dialog at once when the inbox panel handed it over', async () => {
+		const { fake, onticket } = await setup(ticket({ due: null }), [], {}, (store) =>
+			store.offerRepeat('ticket000000001', series)
+		);
+		const dialog = await screen.findByRole('dialog', { name: 'Wiederholen…' });
+		expect(within(dialog).getByLabelText<HTMLInputElement>('Beginnt am').value).toBe('2026-10-31');
+		expect(within(dialog).getByLabelText<HTMLSelectElement>('Einheit').value).toBe('monthly');
+		await fireEvent.click(within(dialog).getByRole('button', { name: 'Wiederholung anlegen' }));
+		await vi.waitFor(() => expect(onticket).toHaveBeenCalledTimes(1));
+		expect(fake.createRule).toHaveBeenCalledWith(
+			expect.objectContaining({ freq: 'monthly', month_day: 31, anchor: '2026-10-31' }),
+			'ticket000000001'
+		);
+		expect(onticket.mock.calls[0]?.[0]).toMatchObject({ recurring: true, due: '2026-10-31' });
+	});
+
+	it('shows why the rule failed and offers the prepared dialog, not the default', async () => {
+		await setup(ticket(), [], {}, (store) =>
+			store.offerRepeat('ticket000000001', series, `${REPEAT_FAILED} Server nicht erreichbar.`)
+		);
+		expect(screen.getByRole('alert').textContent).toContain(REPEAT_FAILED);
+		expect(screen.queryByRole('dialog')).toBeNull();
+		await fireEvent.click(screen.getByRole('button', { name: 'Wiederholen…' }));
+		const dialog = screen.getByRole('dialog', { name: 'Wiederholen…' });
+		expect(within(dialog).getByLabelText<HTMLInputElement>('Beginnt am').value).toBe('2026-10-31');
+	});
+
+	it('leaves an offer for another ticket or for a ticket in a series alone', async () => {
+		const { store } = await setup(ticket(), [], {}, (current) =>
+			current.offerRepeat('another00000001', series)
+		);
+		expect(screen.queryByRole('dialog')).toBeNull();
+		expect(store.takeOffer('another00000001')).not.toBeNull();
+	});
+
+	it('does not open the dialog for a ticket that joined a series meanwhile', async () => {
+		await setup(
+			ticket({ recurring: true, recurrenceId: 'rule00000000001' }),
+			[rule()],
+			{},
+			(store) => store.offerRepeat('ticket000000001', series)
+		);
+		expect(screen.queryByRole('dialog')).toBeNull();
+		expect(screen.getByText('Wiederholt sich: jeden Montag')).toBeTruthy();
 	});
 });

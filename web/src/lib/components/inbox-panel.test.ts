@@ -2,12 +2,13 @@
 // details of the source, sanitised text, actions, download of the protected original, hint on a
 // possible duplicate, entry not found, Escape. The store is real with fake data.
 
-import { fireEvent, render, screen, within } from '@testing-library/svelte';
+import { cleanup, fireEvent, render, screen, within } from '@testing-library/svelte';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { DataError } from '$lib/data/errors';
 import type { InboxItem } from '$lib/domain/inbox';
 import type { TicketSummary } from '$lib/domain/ticket';
 import { InboxStore, type InboxData } from '$lib/stores/inbox.svelte';
+import { RecurrenceStore, type RecurrenceData } from '$lib/stores/recurrence.svelte';
 import InboxPanel from './InboxPanel.svelte';
 
 const ID = 'item00000000001';
@@ -33,7 +34,12 @@ function entry(overrides: Partial<InboxItem> = {}): InboxItem {
 	};
 }
 
-function setup(item: InboxItem | Error = entry(), tickets: TicketSummary[] = []) {
+function setup(
+	item: InboxItem | Error = entry(),
+	tickets: TicketSummary[] = [],
+	/** Further props, e.g. the recurrence store of package 6. */
+	extra: Record<string, unknown> = {}
+) {
 	const data = {
 		listNew: vi.fn<InboxData['listNew']>(async () => []),
 		listHandled: vi.fn<InboxData['listHandled']>(async (_state, page) => ({
@@ -78,7 +84,8 @@ function setup(item: InboxItem | Error = entry(), tickets: TicketSummary[] = [])
 			id: ID,
 			store,
 			openTickets: tickets,
-			onclose
+			onclose,
+			...extra
 		}
 	});
 	return { store, data, onclose };
@@ -215,5 +222,109 @@ describe('inbox panel', () => {
 		await screen.findByRole('heading', { name: 'Rechnung September' });
 		await fireEvent.keyDown(screen.getByRole('complementary'), { key: 'Escape' });
 		expect(onclose).toHaveBeenCalledOnce();
+	});
+});
+
+describe('inbox panel: a converted calendar series (E5 plan, package 6)', () => {
+	const TICKET = {
+		id: 'tick00000000001',
+		key: 'TASK-12',
+		title: 'Chorprobe',
+		status: 'open',
+		recurring: false
+	} as TicketSummary;
+
+	/** A converted event of Monday, 5 October 2026, 18:30 in Berlin. */
+	function series(sourceMeta: Record<string, unknown>): InboxItem {
+		return entry({
+			channel: 'calendar',
+			kind: 'event',
+			title: 'Chorprobe',
+			sourceUrl: '',
+			original: '',
+			sourceDate: '2026-10-05 16:30:00.000Z',
+			sourceMeta,
+			state: 'converted',
+			ticketId: TICKET.id,
+			handledAt: '2026-09-25 09:00:00.000Z'
+		});
+	}
+
+	async function rules(state: 'ready' | 'unavailable' = 'ready') {
+		const data = {
+			listRules: vi.fn(async () => (state === 'ready' ? [] : null)),
+			createRule: vi.fn(),
+			updateRule: vi.fn(),
+			setActive: vi.fn(),
+			deleteRule: vi.fn(),
+			detachTicket: vi.fn()
+		} satisfies RecurrenceData;
+		const store = new RecurrenceStore(data, { ensureValid: () => true, logout: vi.fn() });
+		await store.load();
+		return store;
+	}
+
+	it('offers "Wiederholen…" at the open ticket with the suggested values', async () => {
+		const recurrence = await rules();
+		setup(series({ rrule: 'FREQ=MONTHLY;BYMONTHDAY=-1' }), [TICKET], {
+			recurrence,
+			today: '2026-09-25'
+		});
+		expect(
+			await screen.findByText(/Dieser Termin wiederholt sich: monatlich am letzten Tag\./)
+		).toBeTruthy();
+		const link = screen.getByRole('link', { name: 'Wiederholung für TASK-12 anlegen…' });
+		expect(link.getAttribute('href')).toBe('/tickets/tick00000000001');
+		// A new tab gets no offer; a plain click hands the values to the ticket panel.
+		await fireEvent.click(link, { ctrlKey: true });
+		expect(recurrence.takeOffer(TICKET.id)).toBeNull();
+		await fireEvent.click(link);
+		expect(recurrence.takeOffer(TICKET.id)).toEqual({
+			ticketId: TICKET.id,
+			values: expect.objectContaining({ freq: 'monthly', lastDay: true, anchor: '2026-10-05' }),
+			message: null
+		});
+	});
+
+	it('explains neutrally why a series cannot become a rule', async () => {
+		setup(series({ rrule: 'FREQ=WEEKLY;COUNT=4' }), [TICKET], {
+			recurrence: await rules(),
+			today: '2026-09-25'
+		});
+		const hint = await screen.findByText(/Diese Serie lässt sich nicht als Regel übernehmen/);
+		expect(hint.textContent).toContain('die Serie hat ein Ende');
+		expect(hint.textContent?.replace(/\s+/g, ' ')).toContain(
+			'Am Ticket TASK-12 kannst du „Wiederholen…“ wählen.'
+		);
+		expect(screen.queryByRole('link', { name: /Wiederholung für/ })).toBeNull();
+	});
+
+	it('shows nothing once the ticket is done, in a series, or before the E5 migration', async () => {
+		for (const [tickets, state] of [
+			[[], 'ready'],
+			[[{ ...TICKET, recurring: true }], 'ready'],
+			[[TICKET], 'unavailable']
+		] as const) {
+			setup(series({ rrule: 'FREQ=WEEKLY' }), [...tickets], {
+				recurrence: await rules(state),
+				today: '2026-09-25'
+			});
+			await screen.findByRole('heading', { name: 'Chorprobe' });
+			expect(screen.queryByText(/wiederholt sich|Diese Serie/)).toBeNull();
+			cleanup();
+		}
+	});
+
+	it('shows nothing for a new entry: there the conversion offers the series', async () => {
+		setup(
+			{ ...series({ rrule: 'FREQ=WEEKLY' }), state: 'new', ticketId: null, handledAt: null },
+			[],
+			{
+				recurrence: await rules(),
+				today: '2026-09-25'
+			}
+		);
+		await screen.findByRole('heading', { name: 'Chorprobe' });
+		expect(screen.queryByText(/wiederholt sich/)).toBeNull();
 	});
 });

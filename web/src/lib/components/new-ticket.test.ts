@@ -4,7 +4,7 @@
 // The creation itself is covered against the harness (E2 plan, package 4). Since UI-3 the question
 // is the confirmation of ADR-0025 section 4 instead of window.confirm.
 
-import { fireEvent, render, screen, within } from '@testing-library/svelte';
+import { cleanup, fireEvent, render, screen, within } from '@testing-library/svelte';
 import { tick } from 'svelte';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { InboxItem } from '$lib/domain/inbox';
@@ -34,10 +34,16 @@ async function answer(choice: 'Weiter bearbeiten' | 'Verwerfen') {
 const mocks = vi.hoisted(() => ({
 	goto: vi.fn(async () => undefined),
 	page: { url: new URL('http://localhost:3000/tickets/neu?erledigte=1') },
-	detail: { create: vi.fn() },
+	detail: { create: vi.fn(), upsert: vi.fn() },
 	catalog: null as unknown,
 	inbox: { fetch: vi.fn(), markConverted: vi.fn() },
-	tickets: { announce: vi.fn(), markRead: vi.fn(async () => undefined) }
+	tickets: {
+		today: '2026-09-25',
+		announce: vi.fn(),
+		markRead: vi.fn(async () => undefined),
+		upsert: vi.fn()
+	},
+	rules: { state: 'ready', repeatCreated: vi.fn() }
 }));
 
 vi.mock('$app/navigation', () => ({ goto: mocks.goto }));
@@ -57,6 +63,10 @@ vi.mock('$lib/stores/inbox.svelte', async (importOriginal) => ({
 vi.mock('$lib/stores/ticket-list.svelte', async (importOriginal) => ({
 	...(await importOriginal<object>()),
 	getTicketListStore: () => mocks.tickets
+}));
+vi.mock('$lib/stores/recurrence.svelte', async (importOriginal) => ({
+	...(await importOriginal<object>()),
+	getRecurrenceStore: () => mocks.rules
 }));
 
 const HOUSE: Project = {
@@ -195,15 +205,19 @@ describe('new ticket form', () => {
 		await fireEvent.input(screen.getByLabelText('Beschreibung'), { target: { value: '*Text*' } });
 		await fireEvent.click(createButton());
 
-		expect(oncreate).toHaveBeenCalledExactlyOnceWith({
-			title: 'Neu',
-			description: '*Text*',
-			status: 'in_progress',
-			priority: 'urgent',
-			due: '2026-10-01',
-			project: null,
-			tags: []
-		});
+		expect(oncreate).toHaveBeenCalledExactlyOnceWith(
+			{
+				title: 'Neu',
+				description: '*Text*',
+				status: 'in_progress',
+				priority: 'urgent',
+				due: '2026-10-01',
+				project: null,
+				tags: []
+			},
+			// No calendar series, so no section "Wiederholung" (package 6).
+			null
+		);
 		await vi.waitFor(() => expect(oncreated).toHaveBeenCalledWith('new000000000000'));
 	});
 
@@ -668,5 +682,155 @@ describe('new ticket from the inbox (E4 plan, package 3)', () => {
 		expect(screen.getByRole('link', { name: 'Zum Eintrag im Eingang' }).getAttribute('href')).toBe(
 			`/eingang/${ITEM_ID}`
 		);
+	});
+});
+
+describe('new ticket from a calendar series (E5 plan, package 6; ADR-0024 section 1)', () => {
+	const ITEM_ID = 'item00000000002';
+	const RULE = { id: 'rule00000000009' };
+
+	/** An event of Monday, 5 October 2026, 18:30 in Berlin. */
+	function event(sourceMeta: Record<string, unknown>): InboxItem {
+		return {
+			id: ITEM_ID,
+			channel: 'ics',
+			kind: 'event',
+			title: 'Chorprobe',
+			body: '',
+			sourceUrl: '',
+			sourceRef: 'uid-1@example.com',
+			sourceDate: '2026-10-05 16:30:00.000Z',
+			sourceMeta,
+			original: '',
+			state: 'new',
+			ticketId: null,
+			handledAt: null,
+			created: '2026-09-25 08:00:00.000Z',
+			updated: '2026-09-25 08:00:00.000Z'
+		};
+	}
+
+	function openFor(item: InboxItem, state = 'ready') {
+		mocks.page.url = new URL(`http://localhost:3000/tickets/neu?aus=${ITEM_ID}`);
+		mocks.inbox.fetch.mockReset();
+		mocks.inbox.fetch.mockResolvedValue(item);
+		mocks.detail.create.mockReset();
+		mocks.detail.create.mockResolvedValue({ ok: true, ticket: CREATED });
+		mocks.detail.upsert.mockReset();
+		mocks.tickets.upsert.mockReset();
+		mocks.rules.state = state;
+		mocks.rules.repeatCreated.mockReset();
+		mocks.rules.repeatCreated.mockResolvedValue(RULE);
+		render(NewTicketPage);
+	}
+
+	const takeOver = () => screen.findByRole('button', { name: 'Als Wiederholung übernehmen' });
+
+	it('shows the rhythm and creates no rule and no due date without the click (P-5)', async () => {
+		openFor(event({ rrule: 'FREQ=WEEKLY;BYDAY=MO' }));
+		expect(await takeOver()).toBeTruthy();
+		expect(screen.getByText(/Dieser Termin wiederholt sich: jeden Montag\./)).toBeTruthy();
+		expect(screen.queryByRole('region', { name: 'Wiederholung' })).toBeNull();
+		await fireEvent.click(createButton());
+
+		await vi.waitFor(() => expect(mocks.goto).toHaveBeenCalled());
+		expect(mocks.detail.create).toHaveBeenCalledWith(expect.objectContaining({ due: null }), {
+			sourceItem: ITEM_ID
+		});
+		expect(mocks.rules.repeatCreated).not.toHaveBeenCalled();
+	});
+
+	it('opens the section with the suggested values, closes it with the icon button and creates both', async () => {
+		openFor(event({ rrule: 'FREQ=WEEKLY;BYDAY=MO' }));
+		await fireEvent.click(await takeOver());
+		const section = screen.getByRole('region', { name: 'Wiederholung' });
+		await vi.waitFor(() =>
+			expect(document.activeElement).toBe(
+				within(section).getByRole('heading', { name: 'Wiederholung' })
+			)
+		);
+		expect(
+			within(section).getByRole<HTMLInputElement>('checkbox', { name: 'Montag' }).checked
+		).toBe(true);
+		expect(within(section).getByLabelText<HTMLInputElement>('Beginnt am').value).toBe('2026-10-05');
+		// No due date yet: the section names the first date the ticket gets.
+		expect(within(section).getByText(/bekommt den ersten Termin: 05\.10\.2026/)).toBeTruthy();
+		expect(screen.queryByRole('button', { name: 'Als Wiederholung übernehmen' })).toBeNull();
+
+		await fireEvent.click(within(section).getByRole('button', { name: 'Wiederholung entfernen' }));
+		expect(screen.queryByRole('region', { name: 'Wiederholung' })).toBeNull();
+		await vi.waitFor(() =>
+			expect(document.activeElement).toBe(
+				screen.getByRole('button', { name: 'Als Wiederholung übernehmen' })
+			)
+		);
+
+		await fireEvent.click(await takeOver());
+		await fireEvent.click(createButton());
+		await vi.waitFor(() => expect(mocks.rules.repeatCreated).toHaveBeenCalledOnce());
+		expect(mocks.detail.create).toHaveBeenCalledOnce();
+		expect(mocks.rules.repeatCreated).toHaveBeenCalledWith(
+			CREATED,
+			expect.objectContaining({
+				mode: 'calendar',
+				freq: 'weekly',
+				weekdays: ['MO'],
+				anchor: '2026-10-05'
+			})
+		);
+		// Panel and list show the ticket in its series at once, with the first date as due date.
+		const joined = { ...CREATED, recurring: true, recurrenceId: RULE.id, due: '2026-10-05' };
+		expect(mocks.detail.upsert).toHaveBeenCalledWith(joined);
+		expect(mocks.tickets.upsert).toHaveBeenCalledWith(joined);
+		await vi.waitFor(() =>
+			expect(mocks.goto).toHaveBeenCalledWith('/tickets/new000000000000', { replaceState: true })
+		);
+	});
+
+	it('keeps the ticket when the rule fails and still opens it', async () => {
+		openFor(event({ rrule: 'FREQ=MONTHLY;BYMONTHDAY=31' }));
+		mocks.rules.repeatCreated.mockResolvedValueOnce(null);
+		expect(await screen.findByText(/In kürzeren Monaten am letzten Tag\./)).toBeTruthy();
+		await fireEvent.click(await takeOver());
+		await fireEvent.click(createButton());
+		await vi.waitFor(() =>
+			expect(mocks.goto).toHaveBeenCalledWith('/tickets/new000000000000', { replaceState: true })
+		);
+		expect(mocks.rules.repeatCreated).toHaveBeenCalledOnce();
+		expect(mocks.detail.upsert).not.toHaveBeenCalled();
+	});
+
+	it('checks the section before creating anything', async () => {
+		openFor(event({ rrule: 'FREQ=WEEKLY;BYDAY=MO' }));
+		await fireEvent.click(await takeOver());
+		const section = screen.getByRole('region', { name: 'Wiederholung' });
+		await fireEvent.click(within(section).getByRole('checkbox', { name: 'Montag' }));
+		await fireEvent.click(createButton());
+		await vi.waitFor(() =>
+			expect(document.activeElement).toBe(within(section).getByRole('checkbox', { name: 'Montag' }))
+		);
+		expect(document.activeElement?.getAttribute('aria-invalid')).toBe('true');
+		expect(within(section).getByText('Bitte mindestens einen Wochentag wählen.')).toBeTruthy();
+		expect(mocks.detail.create).not.toHaveBeenCalled();
+	});
+
+	it('explains neutrally why a series cannot become a rule, without a button', async () => {
+		openFor(event({ rrule: 'FREQ=MONTHLY;BYDAY=2TU;UNTIL=20271231T000000Z' }));
+		const hint = await screen.findByText(/Diese Serie lässt sich nicht als Regel übernehmen/);
+		expect(hint.textContent).toContain('die Serie hat ein Ende');
+		expect(hint.textContent).toContain('„jeden 2. Montag“');
+		expect(hint.closest('[data-tone]')?.getAttribute('data-tone')).toBe('info');
+		expect(screen.queryByRole('button', { name: 'Als Wiederholung übernehmen' })).toBeNull();
+	});
+
+	it('shows nothing for a single changed occurrence or before the E5 migration', async () => {
+		openFor(event({ rrule: 'FREQ=WEEKLY;BYDAY=MO', recurrence_id: '20261005T183000' }));
+		await vi.waitFor(() => expect(titleField().value).toBe('Chorprobe'));
+		expect(screen.queryByText(/wiederholt sich/)).toBeNull();
+		cleanup();
+
+		openFor(event({ rrule: 'FREQ=WEEKLY;BYDAY=MO' }), 'unavailable');
+		await vi.waitFor(() => expect(titleField().value).toBe('Chorprobe'));
+		expect(screen.queryByText(/wiederholt sich/)).toBeNull();
 	});
 });

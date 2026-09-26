@@ -1,9 +1,10 @@
 <script lang="ts">
+	import { untrack } from 'svelte';
 	import type { CalendarDate } from '$lib/domain/berlin-date';
 	import {
 		defaultFormValues,
-		formPreview,
 		formValuesOf,
+		joinedSeries,
 		nextTicketText,
 		ruleText,
 		type RecurrenceFormValues
@@ -19,7 +20,9 @@
 	// "Wiederholt sich: jeden Montag · Nächstes Ticket am 28.09." with "Regel bearbeiten",
 	// "Pausieren" or "Fortsetzen" and "Aus der Serie lösen"; an open ticket without a series offers
 	// "Wiederholen…". Actions work at once and are announced as flags by the store; a paused rule
-	// shows its hint neutrally, a refused request as an error (ADR-0009).
+	// shows its hint neutrally, a refused request as an error (ADR-0009). "Wiederholen…" may come
+	// prepared from a calendar series (E5 plan, package 6; store.offerRepeat): from the inbox panel it
+	// opens at once, after a failed conversion the panel shows why and offers the prepared dialog.
 	let {
 		ticket,
 		store,
@@ -37,9 +40,18 @@
 	const rule = $derived(store.ruleById(ticket.recurrenceId));
 	const text = $derived(rule === null ? '' : ruleText(rule));
 
-	let dialog = $state<'create' | 'edit' | null>(null);
+	const initialOffer = untrack(() =>
+		ticket.recurring || ticket.status === 'done' ? null : store.takeOffer(ticket.id)
+	);
+	/** Offer taken for this ticket; it prepares "Wiederholen…" until a rule exists. */
+	let offer = $state(initialOffer);
+	const prepared = $derived(offer !== null && offer.ticketId === ticket.id ? offer.values : null);
+
+	let dialog = $state<'create' | 'edit' | null>(
+		initialOffer !== null && initialOffer.message === null ? 'create' : null
+	);
 	let busy = $state(false);
-	let error = $state<string | null>(null);
+	let error = $state<string | null>(initialOffer?.message ?? null);
 
 	// The modal returns the focus to its opener, or to the heading of the view when the opener is
 	// gone (after "Wiederholen…" the button gives way to the summary; ADR-0025 section 3).
@@ -50,16 +62,9 @@
 	async function repeat(values: RecurrenceFormValues) {
 		const result = await store.repeat(ticket, values);
 		if (result.ok) {
-			const firstDue =
-				ticket.due === null && values.mode === 'calendar'
-					? formPreview(values, today, true).firstDue
-					: null;
-			onticket({
-				...ticket,
-				recurring: true,
-				recurrenceId: result.value.id,
-				due: ticket.due ?? firstDue
-			});
+			offer = null;
+			error = null;
+			onticket(joinedSeries(ticket, result.value.id, values, today));
 		}
 		return result;
 	}
@@ -138,7 +143,7 @@
 {#if dialog === 'create'}
 	<RecurrenceDialog
 		heading="Wiederholen…"
-		initial={defaultFormValues(ticket.due, today)}
+		initial={prepared ?? defaultFormValues(ticket.due, today)}
 		{today}
 		withoutDue={ticket.due === null}
 		submitLabel="Wiederholung anlegen"

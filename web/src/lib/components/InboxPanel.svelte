@@ -11,8 +11,11 @@
 		type InboxItem,
 		type InboxItemSummary
 	} from '$lib/domain/inbox';
+	import type { CalendarDate } from '$lib/domain/berlin-date';
+	import { itemSuggestion, suggestionFormValues } from '$lib/domain/rrule';
 	import type { TicketSummary } from '$lib/domain/ticket';
 	import type { InboxStore } from '$lib/stores/inbox.svelte';
+	import type { RecurrenceStore } from '$lib/stores/recurrence.svelte';
 	import { convertHref, ticketPath } from '$lib/ticket-links';
 	import ErrorIcon from './ErrorIcon.svelte';
 	import SectionMessage from './guidance/SectionMessage.svelte';
@@ -26,16 +29,26 @@
 	// and for a discarded entry the note that its content goes after 30 days (package 24). Links of
 	// a source open only as http(s) (the hook refuses anything else). On the side panel building
 	// block (ADR-0025 section 6): the actions stand in the fixed footer; × and Escape close.
+	// A converted calendar series (E5 plan, package 6; ADR-0024 section 1) shows its rhythm with
+	// "Wiederholung für TASK-12 anlegen…" while the ticket is open and in no series yet: the link
+	// hands the suggested values to the recurrence store and opens the ticket, whose panel starts
+	// "Wiederholen…" with them. A series the rules cannot express gets a neutral hint.
 	let {
 		id,
 		store,
 		openTickets,
+		recurrence = null,
+		today = null,
 		onclose
 	}: {
 		id: string;
 		store: InboxStore;
-		/** Open tickets, for the hint on possible duplicates. */
+		/** Open tickets, for the hint on possible duplicates and the suggestion of a series. */
 		openTickets: readonly TicketSummary[];
+		/** Recurrence rules; without them (or before the E5 migration) no suggestion is shown. */
+		recurrence?: RecurrenceStore | null;
+		/** Berlin date of today, for the start of a suggested rule. */
+		today?: CalendarDate | null;
 		/** × and Escape: back to the list with the chips of the URL. */
 		onclose: () => void;
 	} = $props();
@@ -58,6 +71,21 @@
 	});
 	const duplicates = $derived(
 		item !== null && item.state === 'new' ? store.softDuplicates(item, openTickets) : null
+	);
+	/** Open ticket of a converted entry that may still start a series, else null. */
+	const seriesTicket = $derived.by((): TicketSummary | null => {
+		if (item === null || item.state !== 'converted' || item.ticketId === null) return null;
+		const ticket = openTickets.find((entry) => entry.id === item.ticketId);
+		return ticket === undefined || ticket.recurring ? null : ticket;
+	});
+	const suggestion = $derived(
+		seriesTicket === null ||
+			item === null ||
+			recurrence === null ||
+			today === null ||
+			recurrence.state === 'unavailable'
+			? null
+			: itemSuggestion(item, today)
 	);
 	const details = $derived.by((): [string, string][] => {
 		if (item === null) return [];
@@ -229,6 +257,35 @@
 				</div>
 			{/if}
 		</dl>
+		{#if seriesTicket !== null && suggestion?.kind === 'rule'}
+			{@const target = seriesTicket}
+			{@const params = suggestion.params}
+			<SectionMessage tone="info">
+				Dieser Termin wiederholt sich: {suggestion.text}.
+				{#each suggestion.notes as note (note)}
+					{note}
+				{/each}
+				{#snippet actions()}
+					<a
+						class="button-secondary entry-action"
+						href={ticketPath(target.id)}
+						onclick={(event) => {
+							// A new tab or window opens the ticket without the dialog.
+							if (event.button !== 0 || event.ctrlKey || event.metaKey || event.shiftKey) return;
+							recurrence?.offerRepeat(target.id, suggestionFormValues(params));
+						}}
+					>
+						Wiederholung für {target.key} anlegen…
+					</a>
+				{/snippet}
+			</SectionMessage>
+		{:else if seriesTicket !== null && suggestion?.kind === 'unsupported'}
+			<SectionMessage tone="info">
+				Diese Serie lässt sich nicht als Regel übernehmen ({suggestion.reasons.join('; ')}). Am
+				Ticket {seriesTicket.key} kannst du „Wiederholen…“ wählen.
+			</SectionMessage>
+		{/if}
+
 		{#if item.sourceDate !== null}
 			<p class="hint">
 				Das Quelldatum wird nicht zur Fälligkeit. Beim Umwandeln lässt es sich per Knopf übernehmen.
