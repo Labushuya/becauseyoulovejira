@@ -7,6 +7,7 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
+import { ACCENT_THEMES, STORED_ACCENTS, type AccentTheme } from '$lib/accent.svelte';
 import { contrast, deltaE2000, hslHue } from '$lib/test/color-math';
 
 const SOURCE = readFileSync(join(import.meta.dirname, 'tokens.css'), 'utf8');
@@ -22,11 +23,11 @@ const MODE_SELECTORS: Record<Mode, string> = {
 	'forced dark': ":root[data-theme='dark']"
 };
 
-/** The accent themes besides the default Petrol, as in data-accent (ADR-0027). */
-const ACCENTS = ['rubin', 'purpur', 'smaragd', 'honig'] as const;
+/** The accent themes besides the default Petrol, as in data-accent (ADR-0027), from the store. */
+const ACCENTS = STORED_ACCENTS;
 type Accent = (typeof ACCENTS)[number];
-type Theme = 'petrol' | Accent;
-const THEMES: readonly Theme[] = ['petrol', ...ACCENTS];
+type Theme = AccentTheme;
+const THEMES: readonly Theme[] = ACCENT_THEMES;
 
 function accentSelector(accent: Accent, mode: Mode): string {
 	const root = `:root[data-accent='${accent}']`;
@@ -249,6 +250,20 @@ describe('tokens.css', () => {
 		expect(color('petrol', 'light', '--color-danger-soft-bg')).toBe('#f8e9e9');
 		expect(color('petrol', 'dark', '--color-danger')).toBe('#eaa0a0');
 		expect(color('petrol', 'dark', '--color-danger-soft-bg')).toBe('#3b1e21');
+	});
+
+	it('has blocks for exactly the themes of the store, with Petrol first', () => {
+		expect(THEMES[0]).toBe('petrol');
+		const accents = [...SOURCE.matchAll(/data-accent='([a-z]+)'/g)].map((match) => match[1]);
+		expect([...new Set(accents)].sort()).toEqual([...ACCENTS].sort());
+	});
+
+	it.each(MODES)('shows each theme with its own accent as the swatch (%s)', (mode) => {
+		for (const theme of THEMES) {
+			expect(color('petrol', mode, `--swatch-${theme}`), theme).toBe(
+				color(theme, mode, '--color-brand')
+			);
+		}
 	});
 });
 

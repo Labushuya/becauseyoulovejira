@@ -1,4 +1,10 @@
 <script lang="ts">
+	import {
+		ACCENT_DESCRIPTIONS,
+		ACCENT_LABELS,
+		ACCENT_THEMES,
+		getAccentStore
+	} from '$lib/accent.svelte';
 	import ThemeIcon from '$lib/components/ThemeIcon.svelte';
 	import {
 		getThemeStore,
@@ -7,11 +13,13 @@
 		type ThemePreference
 	} from '$lib/theme.svelte';
 
-	// Settings "Darstellung" (ADR-0026 section 1, plan EH-8): the theme as a group of three radios
-	// shown as tiles, on the same store, labels and icons as the menu in the header (ADR-0025 section
-	// 10). Both show the same choice in both directions, because they share one ThemeStore; the
-	// store also follows other tabs. The choice applies at once and stays on this device.
+	// Settings "Darstellung" (ADR-0026 section 1, plan EH-8; ADR-0027 section 6): the mode as a group
+	// of three radios and the accent color as a group of five radios, both shown as tiles, on the same
+	// stores, lists and labels as the menu in the header (ADR-0025 section 10). Both show the same
+	// choice in both directions, because they share the stores; the stores also follow other tabs.
+	// A choice applies at once and stays on this device.
 	const store = getThemeStore();
+	const accentStore = getAccentStore();
 	const uid = $props.id();
 
 	const DESCRIPTIONS: Record<ThemePreference, string> = {
@@ -21,6 +29,7 @@
 	};
 
 	$effect(() => store.connect());
+	$effect(() => accentStore.connect());
 </script>
 
 <svelte:head>
@@ -57,6 +66,35 @@
 	</p>
 </fieldset>
 
+<fieldset class="themes" aria-describedby={`${uid}-accent-note`}>
+	<legend>Farbe</legend>
+	<div class="tiles">
+		{#each ACCENT_THEMES as accent (accent)}
+			<label class="tile">
+				<input
+					type="radio"
+					name={`${uid}-accent`}
+					value={accent}
+					checked={accentStore.accent === accent}
+					aria-labelledby={`${uid}-accent-${accent}-label`}
+					aria-describedby={`${uid}-accent-${accent}`}
+					onchange={() => accentStore.choose(accent)}
+				/>
+				<span class="preview swatch" style:--swatch={`var(--swatch-${accent})`} aria-hidden="true"
+				></span>
+				<span class="label" id={`${uid}-accent-${accent}-label`}>{ACCENT_LABELS[accent]}</span>
+				<span class="description" id={`${uid}-accent-${accent}`}>
+					{ACCENT_DESCRIPTIONS[accent]}
+				</span>
+			</label>
+		{/each}
+	</div>
+	<p class="note" id={`${uid}-accent-note`}>
+		Die Farbe gilt für Knöpfe, Links, Auswahl und Fokus, hell wie dunkel. Fehler bleiben rot und
+		tragen immer ein Symbol und einen Text.
+	</p>
+</fieldset>
+
 <style>
 	.intro,
 	.note {
@@ -70,6 +108,10 @@
 		min-width: 0;
 		padding: 0;
 		border: none;
+	}
+
+	.themes + .themes {
+		margin-top: 1.5rem;
 	}
 
 	legend {
@@ -113,6 +155,15 @@
 		grid-column: 2;
 		justify-self: end;
 		color: var(--color-text-muted);
+	}
+
+	/* The accent of the theme in the current mode, from tokens.css; a line keeps it apart. */
+	.swatch {
+		width: 1.75rem;
+		height: 1.75rem;
+		background: var(--swatch);
+		border: 1px solid var(--color-line);
+		border-radius: var(--radius-control);
 	}
 
 	.label {

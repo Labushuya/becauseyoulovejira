@@ -166,3 +166,12 @@ Die Rechnung steht in `web/src/lib/test/color-math.ts` und ist gegen die Referen
 - Eine neue Akzentfarbe braucht vier Blöcke, einen Eintrag in der Allowlist von Store und Boot-Skript und besteht die Tests unverändert. Eine neue akzentabhängige Farbe braucht ein Token in allen Themes.
 - CLAUDE.md §8 formuliert die Regel neu und führt die Tabelle der Themes. ADR-0009 und ADR-0010 bekommen je einen Nachtrag.
 - Die Sichtprüfung aller Themes in beiden Modi steht im Test-Manifest als manueller Fall.
+
+## Nachtrag (2026-09-26): Umsetzung der Auswahl
+
+Umgesetzt im zweiten PR nach den Tokens.
+
+- **Store:** `web/src/lib/accent.svelte.ts` enthält `ACCENT_THEMES`, `STORED_ACCENTS`, `ACCENT_LABELS`, `ACCENT_DESCRIPTIONS` und `AccentStore`, nach dem Muster von `theme.svelte.ts`. `tokens.test.ts` liest die Themes aus diesem Modul, so können Store und `tokens.css` nicht auseinanderlaufen.
+- **Farbfelder:** Die Vorschau zeigt jedes Theme in seiner eigenen Farbe, unabhängig vom gewählten Theme. Dafür tragen die vier Modus-Blöcke fünf Tokens `--swatch-petrol` bis `--swatch-honig`, jeweils mit dem Akzent des Themes in diesem Modus. Der Test prüft die Gleichheit mit `--color-brand`. So bleiben alle Farbwerte in `tokens.css`. Die Felder sind dekorativ (`aria-hidden`), der Name steht als Text daneben.
+- **Menü:** Der Knopf heißt weiter nach dem Modus („Darstellung: …“). Die Farbe steht im Menü an Häkchen und Schriftgewicht.
+- **Boot-Skript:** Die Farbe steht in einem eigenen `try`. Scheitert die Übernahme von `td-theme`, kommt die Farbe trotzdem an.

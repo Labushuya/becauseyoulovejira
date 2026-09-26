@@ -26,6 +26,17 @@
 				} catch (error) {
 					// Storage blocked: the system setting applies.
 				}
+				// Accent theme (ADR-0027 section 6; key and allowlist as in src/lib/accent.svelte.ts):
+				// only an allowed value sets data-accent, anything else keeps Petrol.
+				try {
+					var accents = ['rubin', 'purpur', 'smaragd', 'honig'];
+					var accent = localStorage.getItem('byl-accent');
+					if (accents.indexOf(accent) !== -1) {
+						document.documentElement.setAttribute('data-accent', accent);
+					}
+				} catch (error) {
+					// Storage blocked: Petrol applies.
+				}
 			})();
 		</script>
 		%sveltekit.head%

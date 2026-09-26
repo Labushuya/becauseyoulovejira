@@ -1,10 +1,12 @@
-// FOUC protection (ADR-0025 section 10; plan UI-Konsistenz, package UI-2): runs the inline script
-// of app.html in jsdom with a prepared storage. It applies only valid values, moves td-theme to
-// byl-theme once and survives a storage that throws. The keys must match theme.svelte.ts.
+// FOUC protection (ADR-0025 section 10, ADR-0027 section 6; plan UI-Konsistenz, package UI-2): runs
+// the inline script of app.html in jsdom with a prepared storage. It applies only valid values for
+// the mode and the accent theme, moves td-theme to byl-theme once and survives a storage that
+// throws. The keys and the allowlist must match theme.svelte.ts and accent.svelte.ts.
 
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
+import { ACCENT_STORAGE_KEY, STORED_ACCENTS } from './accent.svelte';
 import { LEGACY_THEME_STORAGE_KEY, THEME_STORAGE_KEY } from './theme.svelte';
 
 const APP_HTML = readFileSync(join(import.meta.dirname, '..', 'app.html'), 'utf8');
@@ -35,8 +37,15 @@ function boot(storage: FakeStorage) {
 	return document.documentElement.getAttribute('data-theme');
 }
 
+/** Runs the script and returns the accent it set. */
+function bootAccent(storage: FakeStorage) {
+	boot(storage);
+	return document.documentElement.getAttribute('data-accent');
+}
+
 afterEach(() => {
 	document.documentElement.removeAttribute('data-theme');
+	document.documentElement.removeAttribute('data-accent');
 });
 
 describe('theme boot script in app.html', () => {
@@ -98,5 +107,48 @@ describe('theme boot script in app.html', () => {
 
 		expect(() => boot(blocked)).not.toThrow();
 		expect(document.documentElement.hasAttribute('data-theme')).toBe(false);
+		expect(document.documentElement.hasAttribute('data-accent')).toBe(false);
+	});
+});
+
+describe('accent boot script in app.html (ADR-0027)', () => {
+	it('uses the key and exactly the allowlist of accent.svelte.ts', () => {
+		const script = bootScript();
+		expect(script).toContain(`'${ACCENT_STORAGE_KEY}'`);
+		const list = /var accents = \[([^\]]*)\]/.exec(script)?.[1];
+		expect(list?.split(',').map((entry) => entry.trim().replace(/'/g, ''))).toEqual([
+			...STORED_ACCENTS
+		]);
+	});
+
+	it.each(STORED_ACCENTS)('applies the stored accent %s before the first paint', (accent) => {
+		expect(bootAccent(storageWith({ 'byl-accent': accent }))).toBe(accent);
+	});
+
+	it.each(['petrol', 'Rubin', 'lila', "rubin' onload='x", '', 'dark'])(
+		'ignores the value %j (Petrol stays)',
+		(value) => {
+			expect(bootAccent(storageWith({ 'byl-accent': value }))).toBeNull();
+		}
+	);
+
+	it('sets nothing without a stored accent', () => {
+		expect(bootAccent(storageWith({}))).toBeNull();
+	});
+
+	it('sets mode and accent independently', () => {
+		const storage = storageWith({ 'byl-theme': 'dark', 'byl-accent': 'honig' });
+
+		expect(boot(storage)).toBe('dark');
+		expect(document.documentElement.getAttribute('data-accent')).toBe('honig');
+	});
+
+	it('applies the accent even when moving td-theme fails', () => {
+		const storage = storageWith({ 'td-theme': 'dark', 'byl-accent': 'smaragd' });
+		storage.setItem = () => {
+			throw new Error('QuotaExceededError');
+		};
+
+		expect(bootAccent(storage)).toBe('smaragd');
 	});
 });

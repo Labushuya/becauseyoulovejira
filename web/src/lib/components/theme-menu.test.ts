@@ -1,10 +1,12 @@
-// Theme switcher (ADR-0025 section 10; plan UI-Konsistenz, package UI-2): name of the button with
-// the current mode, menu with three menuitemradio entries and aria-checked, the choice applies at
-// once and is stored, the keyboard reaches every entry, other tabs are followed.
+// Theme switcher (ADR-0025 section 10, ADR-0027 section 6; plan UI-Konsistenz, package UI-2): name
+// of the button with the current mode, a menu with the groups "Modus" (three entries) and "Farbe"
+// (five accent themes with swatch), menuitemradio with aria-checked, a choice applies at once and
+// is stored, the keyboard reaches every entry, other tabs are followed.
 
-import { fireEvent, render, screen } from '@testing-library/svelte';
+import { fireEvent, render, screen, within } from '@testing-library/svelte';
 import { tick } from 'svelte';
 import { afterEach, describe, expect, it } from 'vitest';
+import { AccentStore } from '$lib/accent.svelte';
 import { useOverlayStubs } from '$lib/test/overlay-stubs';
 import { ThemeStore } from '$lib/theme.svelte';
 import ThemeMenu from './ThemeMenu.svelte';
@@ -15,16 +17,27 @@ useOverlayStubs();
 afterEach(() => {
 	localStorage.clear();
 	document.documentElement.removeAttribute('data-theme');
+	document.documentElement.removeAttribute('data-accent');
 });
 
 function show() {
 	const store = new ThemeStore(window);
-	render(ThemeMenu, { props: { store } });
-	return store;
+	const accentStore = new AccentStore(window);
+	render(ThemeMenu, { props: { store, accentStore } });
+	return { store, accentStore };
 }
 
-function entries() {
-	return screen.getAllByRole('menuitemradio', { hidden: true });
+function group(name: 'Modus' | 'Farbe'): HTMLElement {
+	// jsdom computes no name inside a popover it hides; the attribute carries it.
+	const found = screen
+		.getAllByRole('group', { hidden: true })
+		.find((element) => element.getAttribute('aria-label') === name);
+	if (!found) throw new Error(`no group ${name}`);
+	return found;
+}
+
+function entries(name: 'Modus' | 'Farbe' = 'Modus') {
+	return within(group(name)).getAllByRole('menuitemradio', { hidden: true });
 }
 
 async function open(name = 'Darstellung: System') {
@@ -41,7 +54,6 @@ describe('theme menu', () => {
 		expect(button.getAttribute('aria-haspopup')).toBe('menu');
 		await open('Darstellung: Dunkel');
 
-		// jsdom computes no name for a popover it hides; the attribute carries it.
 		expect(screen.getByRole('menu', { hidden: true }).getAttribute('aria-label')).toBe(
 			'Darstellung'
 		);
@@ -59,7 +71,7 @@ describe('theme menu', () => {
 	});
 
 	it('switches at once, stores the choice and returns the focus', async () => {
-		const store = show();
+		const { store } = show();
 		await open();
 
 		await fireEvent.click(screen.getByRole('menuitemradio', { hidden: true, name: 'Hell' }));
@@ -78,7 +90,7 @@ describe('theme menu', () => {
 		show();
 		await open('Darstellung: Dunkel');
 
-		await fireEvent.keyDown(document.activeElement as Element, { key: 'End' });
+		await fireEvent.keyDown(document.activeElement as Element, { key: 'ArrowDown' });
 		expect(document.activeElement?.textContent?.trim()).toBe('Wie System');
 		await fireEvent.click(document.activeElement as Element);
 
@@ -100,5 +112,90 @@ describe('theme menu', () => {
 	it('draws its own icons in currentColor, without color or shadow', () => {
 		expect(source).toMatch(/stroke: currentColor/);
 		expect(source).not.toMatch(/danger|box-shadow|gradient/);
+	});
+});
+
+describe('theme menu: color (ADR-0027)', () => {
+	it('offers the five accent themes in a group "Farbe" after a separator', async () => {
+		localStorage.setItem('byl-accent', 'smaragd');
+		show();
+		await open();
+
+		expect(entries('Farbe').map((entry) => entry.textContent?.trim())).toEqual([
+			'Petrol',
+			'Rubin',
+			'Purpur',
+			'Smaragd',
+			'Honig'
+		]);
+		expect(entries('Farbe').map((entry) => entry.getAttribute('aria-checked'))).toEqual([
+			'false',
+			'false',
+			'false',
+			'true',
+			'false'
+		]);
+		expect(screen.getByRole('separator', { hidden: true })).toBeTruthy();
+		// The focus starts on the chosen mode; the color entries follow in the same arrow key order.
+		expect(document.activeElement?.textContent?.trim()).toBe('Wie System');
+		await fireEvent.keyDown(document.activeElement as Element, { key: 'ArrowDown' });
+		expect(document.activeElement?.textContent?.trim()).toBe('Petrol');
+		await fireEvent.keyDown(document.activeElement as Element, { key: 'End' });
+		expect(document.activeElement?.textContent?.trim()).toBe('Honig');
+	});
+
+	it('shows each theme with its swatch token, decorative only', async () => {
+		show();
+		await open();
+
+		for (const entry of entries('Farbe')) {
+			const swatch = entry.querySelector<HTMLElement>('.swatch');
+			const name = entry.textContent?.trim().toLowerCase();
+			expect(swatch?.getAttribute('aria-hidden')).toBe('true');
+			expect(swatch?.style.getPropertyValue('--swatch')).toBe(`var(--swatch-${name})`);
+		}
+	});
+
+	it('switches the color at once, keeps the mode and returns the focus', async () => {
+		localStorage.setItem('byl-theme', 'dark');
+		const { store, accentStore } = show();
+		await open('Darstellung: Dunkel');
+
+		await fireEvent.click(screen.getByRole('menuitemradio', { hidden: true, name: 'Rubin' }));
+
+		expect(accentStore.accent).toBe('rubin');
+		expect(store.preference).toBe('dark');
+		expect(document.documentElement.getAttribute('data-accent')).toBe('rubin');
+		expect(localStorage.getItem('byl-accent')).toBe('rubin');
+		expect(localStorage.getItem('byl-theme')).toBe('dark');
+		const button = screen.getByRole('button', { name: 'Darstellung: Dunkel' });
+		expect(button.getAttribute('aria-expanded')).toBe('false');
+		expect(document.activeElement).toBe(button);
+	});
+
+	it('goes back to Petrol and removes the stored color', async () => {
+		localStorage.setItem('byl-accent', 'honig');
+		show();
+		await open();
+
+		await fireEvent.click(screen.getByRole('menuitemradio', { hidden: true, name: 'Petrol' }));
+
+		expect(localStorage.getItem('byl-accent')).toBeNull();
+		expect(document.documentElement.hasAttribute('data-accent')).toBe(false);
+	});
+
+	it('follows a color chosen in another tab', async () => {
+		show();
+
+		window.dispatchEvent(new StorageEvent('storage', { key: 'byl-accent', newValue: 'purpur' }));
+		await tick();
+		await open();
+
+		expect(document.documentElement.getAttribute('data-accent')).toBe('purpur');
+		expect(
+			screen
+				.getByRole('menuitemradio', { hidden: true, name: 'Purpur' })
+				.getAttribute('aria-checked')
+		).toBe('true');
 	});
 });
