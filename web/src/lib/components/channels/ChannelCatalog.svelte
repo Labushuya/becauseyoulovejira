@@ -31,6 +31,7 @@
 	} = $props();
 
 	const uid = $props.id();
+	const protonHref = $derived(hrefOf('proton'));
 
 	const ENTRIES: readonly {
 		id: CatalogEntry;
@@ -116,9 +117,21 @@
 			<p>Kein automatischer Abruf im Free-Tarif: Mails als Datei exportieren.</p>
 			<div class="foot">
 				<Lozenge label="Per Datei" icon="file" tone="muted" />
-				<button class="button-secondary" type="button" onclick={() => onsetup('proton')}>
-					Anleitung<span class="visually-hidden">: Proton Mail</span>
-				</button>
+				{#if protonHref !== null}
+					<a
+						class="button-secondary setup"
+						href={protonHref}
+						data-sveltekit-keepfocus
+						data-sveltekit-noscroll
+						data-sveltekit-replacestate
+					>
+						Anleitung<span class="visually-hidden">: Proton Mail</span>
+					</a>
+				{:else}
+					<button class="button-secondary" type="button" onclick={() => onsetup('proton')}>
+						Anleitung<span class="visually-hidden">: Proton Mail</span>
+					</button>
+				{/if}
 			</div>
 		</li>
 	</ul>

@@ -14,8 +14,11 @@ import { formatBerlinDateTime } from './format';
 export const SETUP_KINDS = ['kalender', 'telegram', 'webde', 'gmail', 'proton'] as const;
 export type SetupKind = (typeof SETUP_KINDS)[number];
 
-/** Kinds that already have an assistant; the others keep their folded guide for now. */
-export const ASSISTED_KINDS: readonly SetupKind[] = ['kalender'];
+/**
+ * Kinds whose setup opens in the app: the assistant, for Proton (no automatic fetch, three short
+ * steps) the guide as a modal M. Telegram keeps its folded guide until EH-6.
+ */
+export const ASSISTED_KINDS: readonly SetupKind[] = ['kalender', 'webde', 'gmail', 'proton'];
 
 export function isSetupKind(value: unknown): value is SetupKind {
 	return typeof value === 'string' && (SETUP_KINDS as readonly string[]).includes(value);
@@ -73,7 +76,16 @@ export function setupKindOf(connection: Pick<Connection, 'type' | 'mailProvider'
 	return connection.mailProvider === 'gmail' ? 'gmail' : 'webde';
 }
 
-export type SetupStepId = 'connect' | 'address' | 'variable' | 'restart' | 'keywords' | 'first-run';
+export type SetupStepId =
+	| 'allow'
+	| 'two-step'
+	| 'password'
+	| 'address'
+	| 'variable'
+	| 'connect'
+	| 'restart'
+	| 'keywords'
+	| 'first-run';
 
 /** A placeholder of a command; secret values are masked in the display. */
 export interface SetupPlaceholder {
@@ -89,6 +101,8 @@ export interface SetupCommand {
 	placeholders: Readonly<Record<string, SetupPlaceholder>>;
 	/** The placeholder the field "Wert hier einsetzen" fills, if any. */
 	value?: string;
+	/** Gmail app passwords: the field drops the spaces between the groups and says so. */
+	normalize?: 'gmail';
 	copyable: boolean;
 }
 
@@ -234,9 +248,204 @@ const CALENDAR_STEPS: readonly SetupStep[] = [
 	}
 ];
 
+/** Placeholders of the command for a mailbox password. */
+function passwordCommand(label: string, normalize?: 'gmail'): SetupCommand {
+	return {
+		label: 'Befehl für die Eingabeaufforderung',
+		template: 'setx {{variable}} "{{wert}}"',
+		placeholders: {
+			variable: { label: 'Variable', secret: false },
+			wert: { label, secret: true }
+		},
+		value: 'wert',
+		...(normalize === undefined ? {} : { normalize }),
+		copyable: true
+	};
+}
+
+/** Steps 4 to 6 of a mailbox (Web.de, Gmail): connect, restart, first run (plan §3.7). */
+function mailTail(provider: string): readonly SetupStep[] {
+	return [
+		{
+			id: 'connect',
+			label: 'Verbinden',
+			title: 'Postfach verbinden',
+			intro: `Anbieter ${provider}, deine E-Mail-Adresse und der Name der Variablen. Danach legst du die Stichwörter fest, denn nur Mails mit Stichwort im Betreff kommen in den Eingang.`,
+			actions: [],
+			links: [],
+			commands: [],
+			more: [
+				'Auf Wunsch sucht die App auch in den ersten 500 Zeichen des Textes; das schaltest du unter „Bearbeiten“ an der Karte ein.'
+			],
+			checked: true
+		},
+		{
+			id: 'restart',
+			label: 'Neu starten',
+			title: 'App neu starten',
+			intro:
+				'Die App sieht neue Variablen erst nach einem Neustart; dabei startet auch der Mail-Hilfsprozess byl-mail.exe. Im Ordner app erst stop.bat, dann start.bat per Doppelklick starten.',
+			actions: [],
+			links: [],
+			commands: [
+				{ label: 'Erst diese Datei', template: 'app\\stop.bat', placeholders: {}, copyable: false },
+				{ label: 'Dann diese Datei', template: 'app\\start.bat', placeholders: {}, copyable: false }
+			],
+			more: [
+				'start.bat legt beim ersten Mal den Zugang zwischen App und Hilfsprozess an (Variable BYL_INGEST_TOKEN, nichts zu tun) und startet byl-mail.exe, sobald eine eingeschaltete Postfach-Verbindung besteht.',
+				'Beim ersten Start von byl-mail.exe können SmartScreen oder ein Virenscanner nachfragen, weil die Datei nicht signiert ist.',
+				'Das Protokoll steht in app\\logs\\byl-mail.log, ohne Zugangsdaten und ohne Inhalte der Mails.'
+			],
+			checked: true
+		},
+		{
+			id: 'first-run',
+			label: 'Erster Abruf',
+			title: 'Auf den ersten Abruf warten',
+			intro:
+				'Der Hilfsprozess ruft das Postfach alle 5 Minuten ab, solange die App läuft. Der erste Abruf erscheint hier von selbst.',
+			actions: [],
+			links: [],
+			commands: [],
+			more: [
+				'In den Eingang kommen nur Mails, die nach der Einrichtung ankommen und ein Stichwort treffen. Ältere Mails und Mails ohne Stichwort holst du mit „Aus dem Postfach wählen“ an der Karte.',
+				'Der Hilfsprozess liest nur: Gelesen-Status, Markierungen und Ordner bleiben, und er verschickt nichts.'
+			],
+			checked: true
+		}
+	];
+}
+
+const WEBDE_STEPS: readonly SetupStep[] = [
+	{
+		id: 'allow',
+		label: 'Abruf erlauben',
+		title: 'Abruf per IMAP erlauben',
+		intro: 'Web.de lässt Programme erst nach einem Schalter an dein Postfach.',
+		actions: [
+			'Bei Web.de anmelden, oben auf deine Initialen und dann „E-Mail-Einstellungen“ klicken.',
+			'Unter „E-Mail empfangen“ auf „POP3/IMAP“ klicken.',
+			'Den Schalter „POP3- und IMAP-Zugriff erlauben“ einschalten und die Sicherheitsabfrage bestätigen.'
+		],
+		links: [{ href: 'https://web.de', text: 'web.de' }],
+		commands: [],
+		more: [
+			'Web.de schaltet den Abruf aus, wenn er längere Zeit nicht genutzt wird. Dann meldet die Verbindung „Anmeldung bei Web.de abgelehnt.“; den Schalter wieder einschalten, die App muss nicht neu starten.'
+		],
+		checked: false
+	},
+	{
+		id: 'password',
+		label: 'Passwort',
+		title: 'Passwort wählen',
+		intro:
+			'Mit Zwei-Faktor-Anmeldung braucht die App ein anwendungsspezifisches Passwort, sonst gilt dein normales Web.de-Passwort.',
+		actions: [
+			'Unter „Account verwalten“ → „Login & Sicherheit“ → „Anwendungsspezifische Passwörter verwalten“ ein neues Passwort erstellen (Name etwa „becauseyoulovejira“).',
+			'Das Passwort wird nur einmal angezeigt: gleich im nächsten Schritt als Variable setzen.'
+		],
+		links: [],
+		commands: [],
+		more: [
+			'Widerrufen: das anwendungsspezifische Passwort unter „Login & Sicherheit“ löschen bzw. den Abruf ausschalten und die Variable entfernen.'
+		],
+		checked: false
+	},
+	{
+		id: 'variable',
+		label: 'Variable setzen',
+		title: 'Passwort als Windows-Variable setzen',
+		intro:
+			'Das Passwort kommt in eine Variable deines Windows-Kontos; die App speichert nur ihren Namen.',
+		actions: [],
+		links: [],
+		commands: [passwordCommand('Passwort')],
+		more: ['Der Befehl bleibt im Verlauf dieses Fensters, bis du es schließt.'],
+		checked: false
+	},
+	...mailTail('Web.de')
+];
+
+const GMAIL_STEPS: readonly SetupStep[] = [
+	{
+		id: 'two-step',
+		label: 'Zwei Schritte',
+		title: 'Bestätigung in zwei Schritten einschalten',
+		intro:
+			'Gmail erlaubt den Abruf nur mit einem App-Passwort, und das gibt es nur mit der Bestätigung in zwei Schritten.',
+		actions: [
+			'Im Google-Konto „Sicherheit“ öffnen.',
+			'Prüfen, ob die „Bestätigung in zwei Schritten“ eingeschaltet ist; sonst dort einschalten.'
+		],
+		links: [
+			{ href: 'https://myaccount.google.com/security', text: 'myaccount.google.com/security' }
+		],
+		commands: [],
+		more: [
+			'Mit „Erweitertem Schutz“ oder nur mit Sicherheitsschlüssel bietet Google keine App-Passwörter an; dann bleibt der Weg über .eml-Dateien (Einstellungen → Datei-Importe).'
+		],
+		checked: false
+	},
+	{
+		id: 'password',
+		label: 'App-Passwort',
+		title: 'App-Passwort erstellen',
+		intro: 'Das App-Passwort hat 16 Zeichen und wird nur einmal angezeigt.',
+		actions: [
+			'Die Seite der App-Passwörter öffnen.',
+			'Einen Namen wie „becauseyoulovejira“ eingeben und „Erstellen“ klicken.'
+		],
+		links: [
+			{
+				href: 'https://myaccount.google.com/apppasswords',
+				text: 'myaccount.google.com/apppasswords'
+			}
+		],
+		commands: [],
+		more: [
+			'Ändert sich dein Google-Passwort, verfallen alle App-Passwörter. Widerrufen: auf derselben Seite das App-Passwort entfernen und die Variable löschen.'
+		],
+		checked: false
+	},
+	{
+		id: 'variable',
+		label: 'Variable setzen',
+		title: 'App-Passwort als Windows-Variable setzen',
+		intro:
+			'Das App-Passwort kommt ohne die Leerzeichen zwischen den Vierergruppen in eine Variable deines Windows-Kontos.',
+		actions: [],
+		links: [],
+		commands: [passwordCommand('App-Passwort', 'gmail')],
+		more: [
+			'Meldet die Verbindung später „Anmeldung bei Gmail abgelehnt.“, steht in der Variablen das normale Google-Passwort oder ein widerrufenes App-Passwort.'
+		],
+		checked: false
+	},
+	...mailTail('Gmail')
+];
+
 const STEPS: Readonly<Partial<Record<SetupKind, readonly SetupStep[]>>> = {
-	kalender: CALENDAR_STEPS
+	kalender: CALENDAR_STEPS,
+	webde: WEBDE_STEPS,
+	gmail: GMAIL_STEPS
 };
+
+/** Name of the variable a new connection of the kind suggests. */
+export function defaultVariable(kind: SetupKind): string {
+	if (kind === 'webde') return 'BYL_WEBDE_PASSWORD';
+	if (kind === 'gmail') return 'BYL_GMAIL_PASSWORD';
+	if (kind === 'telegram') return 'BYL_TELEGRAM_TOKEN';
+	return 'BYL_GOOGLE_CALENDAR_URL';
+}
+
+/** Proton Mail (plan §3.7): three short steps without a stepper, in a modal M. */
+export const PROTON_STEPS: readonly string[] = [
+	'Die Mail in Proton öffnen.',
+	'Unter den Absenderangaben auf „Mehr“ (⋮) klicken und „Exportieren“ wählen; die .eml-Datei speichern.',
+	'Die Datei in den Eingang ziehen oder dort mit „Datei wählen“ öffnen. Mails mit einem Stichwort für Mail-Dateien sind in der Auswahl schon markiert.'
+];
+
+export const PROTON_LINK: SetupLink = { href: 'https://mail.proton.me', text: 'mail.proton.me' };
 
 /** Steps of a kind; empty for kinds without an assistant yet. */
 export function setupSteps(kind: SetupKind): readonly SetupStep[] {
@@ -268,20 +477,44 @@ export interface SetupFacts {
 	secretStatus: SecretStatus | null;
 }
 
-function satisfied(id: SetupStepId, facts: SetupFacts): boolean {
+/** Whether the fact of a checked step holds. */
+function checkHolds(kind: SetupKind, id: SetupStepId, facts: SetupFacts): boolean {
 	const { connection, secretStatus } = facts;
+	if (connection === null) return false;
 	switch (id) {
 		case 'connect':
-			return connection !== null;
-		case 'address':
-		case 'variable':
+			return true;
 		case 'restart':
-			return connection !== null && secretStatus?.secret === true;
+			return secretStatus?.secret === true;
 		case 'keywords':
-			return connection !== null && connection.keywords.length > 0;
+			return connection.keywords.length > 0;
 		case 'first-run':
-			return connection !== null && connection.lastOkAt !== null && connection.lastError === '';
+			// A mailbox has run once when the helper wrote the last run (the hint "Erster Abruf");
+			// calendar and bot need a good run.
+			if (connection.lastError !== '') return false;
+			return isMailKind(kind) ? connection.lastRunAt !== null : connection.lastOkAt !== null;
+		default:
+			return false;
 	}
+}
+
+function isMailKind(kind: SetupKind): boolean {
+	return kind === 'webde' || kind === 'gmail';
+}
+
+/**
+ * Whether step `index` is done. A checked step by its fact; a step the app cannot see (open a page
+ * of the provider, set a variable) once the next checked step is done, e.g. "Variable setzen" once
+ * the server sees the variable, "Abruf erlauben" once the mailbox is connected.
+ */
+function satisfied(kind: SetupKind, index: number, facts: SetupFacts): boolean {
+	const steps = setupSteps(kind);
+	const step = steps[index];
+	if (step === undefined) return false;
+	if (step.checked) return checkHolds(kind, step.id, facts);
+	const next = steps.findIndex((entry, at) => at > index && entry.checked);
+	const checked = steps[next];
+	return checked !== undefined && checkHolds(kind, checked.id, facts);
 }
 
 /**
@@ -290,14 +523,14 @@ function satisfied(id: SetupStepId, facts: SetupFacts): boolean {
  */
 export function setupProgress(kind: SetupKind, facts: SetupFacts): number {
 	const steps = setupSteps(kind);
-	const open = steps.findIndex((step) => !satisfied(step.id, facts));
+	const open = steps.findIndex((_step, index) => !satisfied(kind, index, facts));
 	return open === -1 ? Math.max(steps.length - 1, 0) : open;
 }
 
 /** Whether every step is done. */
 export function setupComplete(kind: SetupKind, facts: SetupFacts): boolean {
 	const steps = setupSteps(kind);
-	return steps.length > 0 && steps.every((step) => satisfied(step.id, facts));
+	return steps.length > 0 && steps.every((_step, index) => satisfied(kind, index, facts));
 }
 
 export type StepState = 'current' | 'done' | 'open' | 'warning';
@@ -310,7 +543,7 @@ export type StepState = 'current' | 'done' | 'open' | 'warning';
 export function stepStates(kind: SetupKind, facts: SetupFacts, current: number): StepState[] {
 	return setupSteps(kind).map((step, index) => {
 		if (index === current) return 'current';
-		if (satisfied(step.id, facts)) return 'done';
+		if (satisfied(kind, index, facts)) return 'done';
 		if (index < current) return step.checked ? 'warning' : 'done';
 		return 'open';
 	});
@@ -324,13 +557,18 @@ export interface StepCheck {
 }
 
 /** The check line of a step (plan §3.8); null for steps the app cannot check. */
-export function stepCheck(id: SetupStepId, facts: SetupFacts): StepCheck | null {
+export function stepCheck(kind: SetupKind, id: SetupStepId, facts: SetupFacts): StepCheck | null {
 	const { connection, secretStatus } = facts;
 	switch (id) {
 		case 'connect':
-			return connection === null
-				? { tone: 'open', text: 'Noch keine Verbindung angelegt.' }
-				: { tone: 'done', text: `Verbindung „${connection.label}“ angelegt.` };
+			if (connection === null) return { tone: 'open', text: 'Noch keine Verbindung angelegt.' };
+			if (isMailKind(kind) && connection.keywords.length === 0) {
+				return {
+					tone: 'warning',
+					text: `Verbindung „${connection.label}“ angelegt. ${NO_KEYWORDS_WARNING}`
+				};
+			}
+			return { tone: 'done', text: `Verbindung „${connection.label}“ angelegt.` };
 		case 'restart': {
 			if (connection === null) return { tone: 'open', text: 'Erst die Verbindung anlegen.' };
 			if (secretStatus === null) {
@@ -358,6 +596,14 @@ export function stepCheck(id: SetupStepId, facts: SetupFacts): StepCheck | null 
 			if (connection.lastError !== '') {
 				return { tone: 'error', text: `Letzter Abruf fehlgeschlagen: ${connection.lastError}` };
 			}
+			if (isMailKind(kind)) {
+				return connection.lastRunAt === null
+					? { tone: 'open', text: 'Warte auf den ersten Abruf (spätestens 5 Minuten) …' }
+					: {
+							tone: 'done',
+							text: `Abgerufen, zuletzt ${formatBerlinDateTime(connection.lastRunAt)}.`
+						};
+			}
 			if (connection.lastOkAt !== null) {
 				return {
 					tone: 'done',
@@ -366,8 +612,7 @@ export function stepCheck(id: SetupStepId, facts: SetupFacts): StepCheck | null 
 			}
 			return { tone: 'open', text: 'Noch kein Abruf.' };
 		}
-		case 'address':
-		case 'variable':
+		default:
 			return null;
 	}
 }
@@ -384,8 +629,8 @@ export function openCheckBefore(
 	const steps = setupSteps(kind);
 	for (let index = 0; index < Math.min(current, steps.length); index += 1) {
 		const step = steps[index];
-		if (step === undefined || !step.checked || satisfied(step.id, facts)) continue;
-		const check = stepCheck(step.id, facts);
+		if (step === undefined || !step.checked || satisfied(kind, index, facts)) continue;
+		const check = stepCheck(kind, step.id, facts);
 		return { index, text: check?.text ?? step.title };
 	}
 	return null;

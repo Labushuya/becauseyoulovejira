@@ -4,6 +4,7 @@
 		CONTROL_PANEL_STEPS,
 		SETUP_TITLES,
 		SETX_WAY_KEY,
+		defaultVariable,
 		isSetxWay,
 		matchesSetupKind,
 		openCheckBefore,
@@ -18,7 +19,6 @@
 		type SetxWay
 	} from '$lib/domain/channel-setup';
 	import {
-		DEFAULT_SECRET_NAMES,
 		KEYWORD_SEARCH_TEXT,
 		NO_KEYWORDS_WARNING,
 		runResultText,
@@ -78,7 +78,9 @@
 		connection,
 		secretStatus: connection === null ? null : store.status(connection.id)
 	});
-	const variable = $derived(connection?.secretEnv ?? DEFAULT_SECRET_NAMES.calendar);
+	const variable = $derived(connection?.secretEnv ?? defaultVariable(kind));
+	/** Postfächer: the helper fetches, so the last step waits instead of "Jetzt abrufen" (EH-7). */
+	const mailbox = $derived(kind === 'webde' || kind === 'gmail');
 
 	function session(): Storage | null {
 		try {
@@ -129,7 +131,7 @@
 	const step = $derived<SetupStep | undefined>(steps[current]);
 	const states = $derived(stepStates(kind, facts, current));
 	const warning = $derived(openCheckBefore(kind, facts, current));
-	const check = $derived(step === undefined ? null : stepCheck(step.id, facts));
+	const check = $derived(step === undefined ? null : stepCheck(kind, step.id, facts));
 	const last = $derived(current >= total - 1);
 
 	let overview = $state(false);
@@ -227,6 +229,30 @@
 		await store.checkStatus(connection.id);
 	}
 
+	/** "Erneut prüfen" while a mailbox waits for its first run: reads the connection again. */
+	async function reload() {
+		if (connection === null) return;
+		hold();
+		await store.refresh(connection.id);
+	}
+
+	/** Result of "Hilfsprozess prüfen": only on a click, the helper logs in to the mailbox. */
+	let helper = $state<'ok' | 'unavailable' | { message: string; hint: string } | null>(null);
+
+	async function probe() {
+		if (connection === null) return;
+		hold();
+		helper = null;
+		const outcome = await store.probeHelper(connection.id);
+		if (outcome === null) return;
+		helper =
+			outcome.kind === 'ok'
+				? 'ok'
+				: outcome.kind === 'unavailable'
+					? 'unavailable'
+					: { message: outcome.message, hint: outcome.hint };
+	}
+
 	function stepIndex(id: SetupStep['id']): number {
 		return steps.findIndex((entry) => entry.id === id);
 	}
@@ -268,6 +294,7 @@
 				placeholders={command.placeholders}
 				name={command.value}
 				fixed={{ variable }}
+				normalize={command.normalize ?? 'other'}
 			/>
 		{/if}
 	{/each}
@@ -287,6 +314,14 @@
 	{#if entry.id === 'connect'}
 		{#if connection === null}
 			<SetupConnectForm {kind} {store} oncreated={created} />
+		{:else if mailbox}
+			<KeywordEditor
+				keywords={connection.keywords}
+				name={connection.label}
+				description={KEYWORD_SEARCH_TEXT[connection.type]}
+				emptyText={NO_KEYWORDS_WARNING}
+				onsave={saveKeywords}
+			/>
 		{/if}
 	{:else if entry.id === 'variable'}
 		<Tabs
@@ -323,6 +358,26 @@
 				emptyText={NO_KEYWORDS_WARNING}
 				onsave={saveKeywords}
 			/>
+		{/if}
+	{:else if entry.id === 'first-run' && mailbox}
+		{#if connection !== null}
+			<div class="row">
+				<button class="button-secondary" type="button" onclick={() => void probe()}>
+					Hilfsprozess prüfen
+				</button>
+			</div>
+			{#if helper === 'ok'}
+				<SectionMessage tone="success" title="Hilfsprozess läuft" live headingLevel={4}>
+					Der Mail-Hilfsprozess läuft und erreicht dein Postfach.
+				</SectionMessage>
+			{:else if helper === 'unavailable'}
+				<SectionMessage tone="info" live>
+					Der Mail-Hilfsprozess läuft nicht. Nach stop.bat, dann start.bat startet er, sobald eine
+					eingeschaltete Postfach-Verbindung besteht und die App die Variable sieht.
+				</SectionMessage>
+			{:else if helper !== null}
+				<SectionMessage tone="error" live>{helper.message} {helper.hint}</SectionMessage>
+			{/if}
 		{/if}
 	{:else if entry.id === 'first-run'}
 		{#if connection !== null}
@@ -471,6 +526,10 @@
 						{#snippet actions()}
 							{#if step?.id === 'restart' && connection !== null}
 								<button class="button-subtle" type="button" onclick={() => void recheck()}>
+									Erneut prüfen
+								</button>
+							{:else if step?.id === 'first-run' && mailbox && connection !== null}
+								<button class="button-subtle" type="button" onclick={() => void reload()}>
 									Erneut prüfen
 								</button>
 							{/if}

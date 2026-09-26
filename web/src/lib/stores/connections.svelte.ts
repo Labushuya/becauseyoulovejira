@@ -232,6 +232,24 @@ export class ConnectionsStore {
 		};
 	}
 
+	/**
+	 * "Hilfsprozess prüfen" of the assistant (plan EH-7 §3.8): asks the mail helper for one mail of
+	 * the mailbox. Only on a click, because the helper logs in to the mailbox for it. "unavailable"
+	 * means byl-mail.exe does not run; null when the session ended.
+	 */
+	async probeHelper(id: string): Promise<MailboxOutcome<null> | null> {
+		const outcome = await this.listMailbox(id, 1);
+		if (outcome === null) return null;
+		return outcome.kind === 'ok' ? { kind: 'ok', value: null } : outcome;
+	}
+
+	/** Reads one connection again ("Erneut prüfen" while waiting for the first run). */
+	async refresh(id: string): Promise<ConnectionActionResult> {
+		return this.#act(async () => {
+			this.#items.set(id, await this.#data.get(id));
+		});
+	}
+
 	/** Answer of the last "Jetzt abrufen" of a connection on this page, or null. */
 	lastRun(id: string): RunResult | null {
 		return this.#lastRun.get(id) ?? null;
