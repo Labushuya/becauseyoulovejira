@@ -21,6 +21,7 @@ import {
 } from '../domain/mailbox';
 import { DATA_ERROR_MESSAGES, DataError, toDataError, withDataErrors } from './errors';
 import { currentUserId, type RequestOptions } from './options';
+import type { RecordChange, Unsubscribe } from './realtime';
 
 const CONNECTIONS = 'connections';
 
@@ -277,6 +278,38 @@ export function runConnection(
 				: []
 		};
 	});
+}
+
+/**
+ * Realtime subscription on exactly one connection (plan EH-5 §3.8): the assistant waits for the
+ * first run without polling. The topic `connections/<id>` is checked by the server against the
+ * viewRule of the collection (the same owner and household rule as list), for every event again;
+ * other users get nothing. The runs of the server (cron, ingest route) save the record through
+ * the app, so their changes are broadcast. Events that cannot be mapped are dropped.
+ */
+export function subscribeConnection(
+	pb: PocketBase,
+	id: string,
+	onChange: (change: RecordChange<Connection>) => void
+): Promise<Unsubscribe> {
+	return pb.collection(CONNECTIONS).subscribe<ConnectionRecord>(
+		id,
+		(event) => {
+			if (event.action === 'delete') {
+				onChange({ action: 'delete', id: event.record.id });
+				return;
+			}
+			if (event.action !== 'create' && event.action !== 'update') return;
+			let connection: Connection;
+			try {
+				connection = toConnection(event.record);
+			} catch {
+				return;
+			}
+			onChange({ action: event.action, record: connection });
+		},
+		{ fields: CONNECTION_FIELDS }
+	);
 }
 
 /** One connection with the fields of the list (after a run). */

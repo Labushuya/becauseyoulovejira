@@ -21,7 +21,8 @@
 		placeholders = {},
 		values = {},
 		copyable = true,
-		wrap = false
+		wrap = false,
+		oncopied
 	}: {
 		/** Code, with placeholders as {{name}}. */
 		code: string;
@@ -32,6 +33,8 @@
 		copyable?: boolean;
 		/** Wrap long lines (e.g. the bookmarklet) instead of scrolling sideways. */
 		wrap?: boolean;
+		/** After a successful copy, e.g. to empty the field "Wert hier einsetzen" (EH-5). */
+		oncopied?: () => void;
 	} = $props();
 
 	/** How long the button says "Kopiert". */
@@ -67,6 +70,7 @@
 				copied = false;
 				status = '';
 			}, COPIED_MS);
+			oncopied?.();
 			return;
 		}
 		copied = false;

@@ -1,11 +1,19 @@
 <script lang="ts">
 	import { tick } from 'svelte';
 	import { resolve } from '$app/paths';
+	import {
+		ASSISTED_KINDS,
+		setupKindOf,
+		type SetupKind,
+		type SetupTarget
+	} from '$lib/domain/channel-setup';
 	import type { Connection, ConnectionType, MailProvider } from '$lib/domain/connections';
 	import type { ConnectionsStore } from '$lib/stores/connections.svelte';
+	import { channelSetupHref } from '$lib/ticket-links';
 	import BookmarkletCard from './channels/BookmarkletCard.svelte';
 	import ChannelCatalog, { type CatalogEntry } from './channels/ChannelCatalog.svelte';
 	import ChannelIcon from './channels/ChannelIcon.svelte';
+	import ChannelSetup from './channels/ChannelSetup.svelte';
 	import ChannelsIntro from './channels/ChannelsIntro.svelte';
 	import ConnectionCreateDialog from './channels/ConnectionCreateDialog.svelte';
 	import ConnectionsSection from './ConnectionsSection.svelte';
@@ -13,16 +21,24 @@
 	// Settings "Kanäle" (E4 plan, T-3 and packages 7, 10, 11, 13, 15, 17 and 23; ADR-0026 section 3,
 	// plan EH-3 and §3.4), read like an overview: the explanation of the two ways, the cards of the
 	// connections, "Selbst hereinbringen" (the bookmarklet card of EH-4, files), the catalog "Kanal
-	// hinzufügen" and, folded per service until the assistant of EH-5 to EH-7 replaces them, the
-	// guides. Until then "Einrichten" in the catalog opens the former form as a modal ("Verbindung
-	// anlegen").
+	// hinzufügen" and the guides of the services that have no assistant yet, folded. Since EH-5 the
+	// setup assistant (modal L, ChannelSetup) serves Google Calendar: the catalog links to it, the
+	// cards and the edit modal open it for their connection, and the owner keeps it in the address
+	// (`setup`, `onsetupchange`). Until EH-6 and EH-7 the other services keep the modal "Verbindung
+	// anlegen" and their folded guide.
 	let {
 		captureUrl,
-		connections
+		connections,
+		setup = null,
+		onsetupchange
 	}: {
 		/** Absolute address of the capture form, e.g. http://127.0.0.1:8090/eingang/neu. */
 		captureUrl: string;
 		connections: ConnectionsStore;
+		/** Assistant in the address, null without one. */
+		setup?: SetupTarget | null;
+		/** Opens, moves or closes the assistant (the owner changes the address). */
+		onsetupchange: (next: SetupTarget | null) => void;
 	} = $props();
 
 	const uid = $props.id();
@@ -30,20 +46,22 @@
 		own: `${uid}-own`,
 		files: `${uid}-files`,
 		guides: `${uid}-guides`,
-		calendar: `${uid}-calendar`,
 		telegram: `${uid}-telegram`,
 		webde: `${uid}-webde`,
 		gmail: `${uid}-gmail`,
 		proton: `${uid}-proton`
 	};
-	/** The folded guide of each catalog entry. */
-	const GUIDES: Readonly<Record<CatalogEntry, string>> = {
-		kalender: `${uid}-guide-calendar`,
+	/** The folded guide of each service without an assistant. */
+	const GUIDES: Readonly<Partial<Record<CatalogEntry, string>>> = {
 		telegram: `${uid}-guide-telegram`,
 		webde: `${uid}-guide-webde`,
 		gmail: `${uid}-guide-gmail`,
 		proton: `${uid}-guide-proton`
 	};
+
+	const assisted = (kind: SetupKind) => ASSISTED_KINDS.includes(kind);
+	/** The assistant of the address, if its service has one. */
+	const shownSetup = $derived(setup !== null && assisted(setup.kind) ? setup : null);
 
 	let catalogHeading = $state<HTMLElement>();
 	/** Kind of the modal "Verbindung anlegen", null while it is closed. */
@@ -57,7 +75,8 @@
 
 	/** Opens the folded guide of an entry and moves the focus to its summary. */
 	async function openGuide(entry: CatalogEntry) {
-		const details = document.getElementById(GUIDES[entry]);
+		const id = GUIDES[entry];
+		const details = id === undefined ? null : document.getElementById(id);
 		if (!(details instanceof HTMLDetailsElement)) return;
 		details.open = true;
 		await tick();
@@ -65,28 +84,27 @@
 		details.querySelector<HTMLElement>('summary')?.focus();
 	}
 
-	function setup(entry: CatalogEntry) {
-		if (entry === 'proton') void openGuide('proton');
+	/** "Einrichten" of a service without an assistant: the modal or the guide as before. */
+	function startSetup(entry: CatalogEntry) {
+		if (assisted(entry)) onsetupchange({ kind: entry, connectionId: null });
+		else if (entry === 'proton') void openGuide('proton');
 		else if (entry === 'kalender') creating = { type: 'calendar', provider: 'webde' };
 		else if (entry === 'telegram') creating = { type: 'telegram', provider: 'webde' };
 		else creating = { type: 'mail', provider: entry };
 	}
 
-	function guideOf(connection: Connection): CatalogEntry {
-		if (connection.type === 'calendar') return 'kalender';
-		if (connection.type === 'telegram') return 'telegram';
-		return connection.mailProvider === 'gmail' ? 'gmail' : 'webde';
+	/** "Einrichtung fortsetzen" and "Einrichtung ansehen" of a card or the edit modal. */
+	function showSetup(connection: Connection) {
+		const kind = setupKindOf(connection);
+		if (assisted(kind)) onsetupchange({ kind, connectionId: connection.id });
+		else void openGuide(kind);
 	}
 </script>
 
 <div class="channels">
 	<ChannelsIntro />
 
-	<ConnectionsSection
-		store={connections}
-		onadd={focusCatalog}
-		onsetup={(connection) => void openGuide(guideOf(connection))}
-	/>
+	<ConnectionsSection store={connections} onadd={focusCatalog} onsetup={showSetup} />
 
 	<section class="own" aria-labelledby={ids.own}>
 		<h3 id={ids.own}>Selbst hereinbringen</h3>
@@ -114,63 +132,17 @@
 	<ChannelCatalog
 		connections={connections.connections}
 		bind:heading={catalogHeading}
-		onsetup={setup}
+		hrefOf={(entry) =>
+			assisted(entry) ? channelSetupHref({ kind: entry, connectionId: null }) : null}
+		onsetup={startSetup}
 	/>
 
 	<section class="guides" aria-labelledby={ids.guides}>
 		<h3 id={ids.guides}>Anleitungen</h3>
 		<p class="hint">
-			Schritt für Schritt je Dienst; ein Assistent mit Prüfungen ersetzt sie in den nächsten
-			Paketen.
+			Schritt für Schritt je Dienst. Google Calendar richtest du mit dem Assistenten im Katalog ein;
+			für die übrigen Dienste folgt er in den nächsten Paketen.
 		</p>
-
-		<section class="guide" aria-labelledby={ids.calendar}>
-			<details id={GUIDES.kalender}>
-				<summary id={ids.calendar}>Google Calendar einrichten</summary>
-				<p>
-					Die App liest deinen Kalender über seine geheime iCal-Adresse. Sie übernimmt Termine von
-					heute bis 30 Tage im Voraus alle 15 Minuten in den Eingang, solange die App läuft, und
-					zwar nur solche, deren Titel oder Beschreibung ein Stichwort der Verbindung enthält. An
-					Google ändert sie nichts.
-				</p>
-				<ol>
-					<li>
-						<a href="https://calendar.google.com" target="_blank" rel="noopener noreferrer"
-							>Google Calendar</a
-						>
-						im Browser öffnen. Links unter „Meine Kalender“ beim gewünschten Kalender auf die drei Punkte
-						⋮ und dann „Einstellungen und Freigabe“ klicken.
-					</li>
-					<li>
-						Ganz unten im Abschnitt „Kalender integrieren“ steht „Privatadresse im iCal-Format“. Mit
-						dem Symbol daneben kopieren. Die Adresse beginnt mit
-						<code>https://calendar.google.com/calendar/ical/</code> und endet auf
-						<code>/basic.ics</code>.
-					</li>
-					<li>
-						In der Eingabeaufforderung <code>setx BYL_GOOGLE_CALENDAR_URL "…"</code> eingeben und statt
-						der Punkte die kopierte Adresse einfügen (Rechtsklick).
-					</li>
-					<li><code>stop.bat</code> und dann <code>start.bat</code> ausführen.</li>
-					<li>
-						Im Katalog „Kanal hinzufügen“ die Art „Google Calendar“ mit der Variablen
-						<code>BYL_GOOGLE_CALENDAR_URL</code> anlegen.
-					</li>
-					<li>
-						An der Verbindung Stichwörter eintragen (etwa „Vorschläge übernehmen“) und „Jetzt
-						abrufen“ wählen. Ohne Stichwörter übernimmt sie nichts.
-					</li>
-				</ol>
-				<p class="hint">
-					Ein Termin landet nur einmal im Eingang, auch wenn du ihn zusätzlich als .ics-Datei
-					hereinziehst. Ändert sich ein Termin, zieht sein Eintrag nach, solange er noch neu ist.
-					Verworfene Termine kommen nicht wieder. Die Adresse erlaubt jedem, der sie kennt, den
-					ganzen Kalender zu lesen. Gib sie nicht weiter. Widerrufen: in denselben Einstellungen bei
-					„Privatadresse im iCal-Format“ auf „Zurücksetzen“, dann die neue Adresse per
-					<code>setx</code> eintragen und die App neu starten.
-				</p>
-			</details>
-		</section>
 
 		<section class="guide" aria-labelledby={ids.telegram}>
 			<details id={GUIDES.telegram}>
@@ -371,6 +343,19 @@
 		provider={creating.provider}
 		onclose={() => (creating = null)}
 	/>
+{/if}
+
+{#if shownSetup !== null}
+	{#key shownSetup.kind}
+		<ChannelSetup
+			kind={shownSetup.kind}
+			connectionId={shownSetup.connectionId}
+			store={connections}
+			onconnection={(id) =>
+				onsetupchange({ kind: shownSetup?.kind ?? 'kalender', connectionId: id })}
+			onclose={() => onsetupchange(null)}
+		/>
+	{/key}
 {/if}
 
 <style>

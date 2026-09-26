@@ -6,6 +6,7 @@ import {
 	FULL_VIEW_LINK,
 	appHref,
 	captureHref,
+	channelSetupHref,
 	convertFrom,
 	convertHref,
 	fullViewHref,
@@ -168,5 +169,17 @@ describe('capture links (E4 plan, package 5)', () => {
 		expect(withTemplate(at('/eingang/neu?vorlage=anruf#x'), 'event')).toBe(
 			'/eingang/neu?vorlage=termin#x'
 		);
+	});
+});
+
+describe('setup links (plan EH-5)', () => {
+	it('opens the assistant of a kind, with the connection once it exists', () => {
+		expect(channelSetupHref({ kind: 'kalender', connectionId: null })).toBe(
+			'/einstellungen/kanaele?einrichten=kalender'
+		);
+		expect(channelSetupHref({ kind: 'kalender', connectionId: 'conn00000000001' })).toBe(
+			'/einstellungen/kanaele?einrichten=kalender&verbindung=conn00000000001'
+		);
+		expect(channelSetupHref(null)).toBe('/einstellungen/kanaele');
 	});
 });
