@@ -12,6 +12,7 @@ import {
 	serializeListQuery,
 	type ListQuery
 } from './domain/list-query';
+import { SETUP_PARAMS, type SetupTarget } from './domain/channel-setup';
 import { parseInboxQuery, serializeInboxQuery, type InboxQuery } from './domain/inbox-query';
 import {
 	PROJECT_VIEW_PARAMS,
@@ -190,6 +191,18 @@ export function appHref(url: URL): ResolvedPathname {
 export function captureHref(url?: URL): ResolvedPathname {
 	const query = url === undefined ? '' : serializeInboxQuery(parseInboxQuery(url.searchParams));
 	return `${resolve('/eingang/neu')}${query}` as ResolvedPathname;
+}
+
+/**
+ * The page "Kanäle" with the setup assistant of `kind` (plan EH-5 §3.1), for a connection once it
+ * exists: `?einrichten=<art>&verbindung=<id>`; without a target the page alone.
+ */
+export function channelSetupHref(target: SetupTarget | null): ResolvedPathname {
+	const base = resolve('/einstellungen/kanaele');
+	if (target === null) return base;
+	const params = new URLSearchParams({ [SETUP_PARAMS.kind]: target.kind });
+	if (target.connectionId !== null) params.set(SETUP_PARAMS.connection, target.connectionId);
+	return `${base}?${params.toString()}` as ResolvedPathname;
 }
 
 /** The current path with the template `template` in `?vorlage=`; other parameters stay. */

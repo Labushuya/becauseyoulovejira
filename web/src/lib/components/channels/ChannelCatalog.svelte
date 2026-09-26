@@ -4,6 +4,7 @@
 </script>
 
 <script lang="ts">
+	import type { ResolvedPathname } from '$app/types';
 	import type { Connection } from '$lib/domain/connections';
 	import Lozenge from '../guidance/Lozenge.svelte';
 	import ChannelIcon, { type ChannelIconKind } from './ChannelIcon.svelte';
@@ -12,15 +13,20 @@
 	// symbol, name, one sentence and "Einrichten". While there is no connection of a kind, the tile
 	// says "Nicht eingerichtet"; several connections of a kind are allowed, so the tile stays and then
 	// offers "Weitere einrichten". Proton has no automatic fetch in the free plan and leads to its
-	// guide. The heading is the target of "Kanal hinzufügen" in the empty state.
+	// guide. The heading is the target of "Kanal hinzufügen" in the empty state. A service with a
+	// setup assistant (EH-5 on) has a link to it (?einrichten=<art>), so a middle click works too;
+	// it replaces the history entry, like closing the assistant does.
 	let {
 		connections,
 		heading = $bindable(),
+		hrefOf = () => null,
 		onsetup
 	}: {
 		connections: readonly Connection[];
 		/** The heading "Kanal hinzufügen"; the empty state moves the focus to it. */
 		heading?: HTMLElement;
+		/** Address of the assistant of a service; null keeps the button of `onsetup`. */
+		hrefOf?: (entry: CatalogEntry) => ResolvedPathname | null;
 		onsetup: (entry: CatalogEntry) => void;
 	} = $props();
 
@@ -69,6 +75,7 @@
 	<ul class="tiles">
 		{#each ENTRIES as entry (entry.id)}
 			{@const exists = connections.some(entry.exists)}
+			{@const href = hrefOf(entry.id)}
 			<li class="tile">
 				<div class="head">
 					<ChannelIcon kind={entry.icon} />
@@ -79,11 +86,25 @@
 					{#if !exists}
 						<Lozenge label="Nicht eingerichtet" icon="pending" />
 					{/if}
-					<button class="button-secondary" type="button" onclick={() => onsetup(entry.id)}>
-						{exists ? 'Weitere einrichten' : 'Einrichten'}<span class="visually-hidden"
-							>: {entry.name}</span
+					{#if href !== null}
+						<a
+							class="button-secondary setup"
+							{href}
+							data-sveltekit-keepfocus
+							data-sveltekit-noscroll
+							data-sveltekit-replacestate
 						>
-					</button>
+							{exists ? 'Weitere einrichten' : 'Einrichten'}<span class="visually-hidden"
+								>: {entry.name}</span
+							>
+						</a>
+					{:else}
+						<button class="button-secondary" type="button" onclick={() => onsetup(entry.id)}>
+							{exists ? 'Weitere einrichten' : 'Einrichten'}<span class="visually-hidden"
+								>: {entry.name}</span
+							>
+						</button>
+					{/if}
 				</div>
 			</li>
 		{/each}
@@ -155,6 +176,10 @@
 	p {
 		font-size: 0.8125rem;
 		color: var(--color-text-muted);
+	}
+
+	.setup {
+		text-decoration: none;
 	}
 
 	.foot {

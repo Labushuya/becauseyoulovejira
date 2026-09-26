@@ -120,7 +120,8 @@ function setup(items: Connection[] = [CAL, BOT], statuses: Record<string, Secret
 		importMailbox: vi.fn<ConnectionsData['importMailbox']>(async () => ({
 			kind: 'ok' as const,
 			value: []
-		}))
+		})),
+		subscribe: vi.fn<ConnectionsData['subscribe']>(async () => async () => undefined)
 	} satisfies ConnectionsData;
 	const session = { ensureValid: vi.fn(() => true), logout: vi.fn() };
 	const flags = new FlagStore();
@@ -223,9 +224,11 @@ async function chooseFromMenu(name: string, entry: string) {
 
 /** The channels page with the catalog, for creating connections. */
 function renderView(store: ConnectionsStore) {
+	const onsetupchange = vi.fn();
 	render(ChannelsView, {
-		props: { captureUrl: 'http://127.0.0.1:8090/eingang/neu', connections: store }
+		props: { captureUrl: 'http://127.0.0.1:8090/eingang/neu', connections: store, onsetupchange }
 	});
+	return { onsetupchange };
 }
 
 describe('connections section', () => {
@@ -372,8 +375,9 @@ describe('connections section', () => {
 			'Kanal hinzufügen',
 			'Anleitungen'
 		]);
+		// Since EH-5 Google Calendar has the assistant instead of a folded guide.
 		const guides = document.querySelectorAll<HTMLDetailsElement>('.guide details');
-		expect(guides).toHaveLength(5);
+		expect(guides).toHaveLength(4);
 		expect([...guides].every((details) => !details.open)).toBe(true);
 		const files = within(screen.getByRole('region', { name: 'Dateien hereinziehen' }));
 		expect(files.getByRole('link', { name: 'Stichwörter bearbeiten' }).getAttribute('href')).toBe(
@@ -433,7 +437,8 @@ describe('channels view: variables', () => {
 		render(ChannelsView, {
 			props: {
 				captureUrl: 'http://127.0.0.1:8090/eingang/neu',
-				connections: store
+				connections: store,
+				onsetupchange: vi.fn()
 			}
 		});
 		const section = screen.getByRole('region', {
@@ -525,23 +530,18 @@ describe('Jetzt abrufen (E4 plan, package 15)', () => {
 		expect(context.data.list).toHaveBeenCalledTimes(2);
 	});
 
-	it('explains how to set up Google Calendar and how to revoke the address', () => {
-		const { store } = setup();
-		render(ChannelsView, {
-			props: {
-				captureUrl: 'http://127.0.0.1:8090/eingang/neu',
-				connections: store
-			}
-		});
-		const section = screen.getByRole('region', { name: 'Google Calendar einrichten' });
-		const text = (section.textContent ?? '').replace(/\s+/g, ' ');
-		expect(text).toMatch(/Einstellungen und Freigabe/);
-		expect(text).toMatch(/Privatadresse im iCal-Format/);
-		expect(text).toMatch(/setx BYL_GOOGLE_CALENDAR_URL/);
-		expect(text).toMatch(/stop\.bat und dann start\.bat/);
-		expect(text).toMatch(/Zurücksetzen/);
-		const link = within(section).getByRole('link', { name: 'Google Calendar' });
-		expect(link.getAttribute('rel')).toBe('noopener noreferrer');
+	it('leads to the assistant for Google Calendar instead of a guide (EH-5)', async () => {
+		const { store } = setup([CAL]);
+		await store.load();
+		const { onsetupchange } = renderView(store);
+
+		// The guide moved into the assistant (its texts: channel-setup.test.ts).
+		expect(screen.queryByRole('region', { name: 'Google Calendar einrichten' })).toBeNull();
+		const link = screen.getByRole('link', { name: 'Weitere einrichten: Google Calendar' });
+		expect(link.getAttribute('href')).toBe('/einstellungen/kanaele?einrichten=kalender');
+		expect(link.hasAttribute('data-sveltekit-replacestate')).toBe(true);
+		await chooseFromMenu('Google Kalender', 'Einrichtung ansehen');
+		expect(onsetupchange).toHaveBeenLastCalledWith({ kind: 'kalender', connectionId: CAL.id });
 	});
 });
 
@@ -551,7 +551,8 @@ describe('Telegram-Bot einrichten (E4 plan, package 17)', () => {
 		render(ChannelsView, {
 			props: {
 				captureUrl: 'http://127.0.0.1:8090/eingang/neu',
-				connections: store
+				connections: store,
+				onsetupchange: vi.fn()
 			}
 		});
 		const section = screen.getByRole('region', { name: 'Telegram-Bot einrichten' });
@@ -795,7 +796,8 @@ describe('Web.de-Postfach einrichten (E4 plan, package 11)', () => {
 		render(ChannelsView, {
 			props: {
 				captureUrl: 'http://127.0.0.1:8090/eingang/neu',
-				connections: store
+				connections: store,
+				onsetupchange: vi.fn()
 			}
 		});
 		const section = screen.getByRole('region', { name: 'Web.de-Postfach einrichten' });
@@ -820,7 +822,8 @@ describe('Gmail einrichten (E4 plan, package 13)', () => {
 		render(ChannelsView, {
 			props: {
 				captureUrl: 'http://127.0.0.1:8090/eingang/neu',
-				connections: store
+				connections: store,
+				onsetupchange: vi.fn()
 			}
 		});
 		const section = screen.getByRole('region', { name: 'Gmail einrichten' });

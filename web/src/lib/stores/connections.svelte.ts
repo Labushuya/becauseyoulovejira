@@ -1,7 +1,8 @@
 // Connections on the page "Kanäle" (E4 plan, packages 10, 15, 20 and 23; ADR-0006). Loaded when the page opens and
-// after every own action; the state of the variables comes from the server per connection. No
-// realtime subscription: the list changes only here, and the page offers "Aktualisieren" for
-// the result of a background run.
+// after every own action; the state of the variables comes from the server per connection. The
+// list has no realtime subscription (the page offers "Aktualisieren" for the result of a
+// background run); only the setup assistant watches its one connection while it is open
+// (`watch`, plan EH-5 §3.8), so the first run shows without polling.
 
 import type PocketBase from 'pocketbase';
 import { SvelteMap } from 'svelte/reactivity';
@@ -15,8 +16,10 @@ import {
 	listMailbox,
 	runConnection,
 	saveConnectionSettings,
-	setConnectionEnabled
+	setConnectionEnabled,
+	subscribeConnection
 } from '$lib/data/connections';
+import type { RecordChange, Unsubscribe } from '$lib/data/realtime';
 import { toDataError } from '$lib/data/errors';
 import type { RequestOptions } from '$lib/data/options';
 import {
@@ -58,6 +61,8 @@ export interface ConnectionsData {
 		id: string,
 		uids: readonly number[]
 	): Promise<MailboxOutcome<MailboxImportResult[]>>;
+	/** Realtime subscription on one connection (setup assistant). */
+	subscribe(id: string, onChange: (change: RecordChange<Connection>) => void): Promise<Unsubscribe>;
 }
 
 export function connectionsData(pb: PocketBase): ConnectionsData {
@@ -71,7 +76,8 @@ export function connectionsData(pb: PocketBase): ConnectionsData {
 		run: (id) => runConnection(pb, id),
 		get: (id) => getConnection(pb, id),
 		listMailbox: (id, limit, options) => listMailbox(pb, id, limit, options),
-		importMailbox: (id, uids) => importFromMailbox(pb, id, uids)
+		importMailbox: (id, uids) => importFromMailbox(pb, id, uids),
+		subscribe: (id, onChange) => subscribeConnection(pb, id, onChange)
 	};
 }
 
@@ -84,6 +90,11 @@ export function runResultTone(result: RunResult): FlagTone {
 export type ConnectionActionResult =
 	{ ok: true } | { ok: false; message: string | null; fields: Readonly<Record<string, string>> };
 
+/** Result of "Verbindung anlegen"; the assistant takes the new ID into its address. */
+export type ConnectionCreateResult =
+	| { ok: true; connection: Connection }
+	| { ok: false; message: string | null; fields: Readonly<Record<string, string>> };
+
 export class ConnectionsStore {
 	readonly #data: ConnectionsData;
 	readonly #session: SessionGuard;
@@ -91,6 +102,8 @@ export class ConnectionsStore {
 	readonly #status = new SvelteMap<string, SecretStatus>();
 	/** IDs with a running "Jetzt abrufen". */
 	readonly #running = new SvelteMap<string, true>();
+	/** Answer of the last "Jetzt abrufen" per connection in this page (the assistant shows it). */
+	readonly #lastRun = new SvelteMap<string, RunResult>();
 	#controller: AbortController | null = null;
 
 	#state = $state<LoadState>('idle');
@@ -165,13 +178,63 @@ export class ConnectionsStore {
 		}
 	}
 
-	async create(draft: ConnectionDraft): Promise<ConnectionActionResult> {
-		return this.#act(async () => {
-			const created = await this.#data.create(draft);
-			this.#items.set(created.id, created);
-			this.#notify(`Verbindung „${created.label}“ angelegt.`);
-			await this.#loadStatus(created.id, {});
+	async create(draft: ConnectionDraft): Promise<ConnectionCreateResult> {
+		let created: Connection | null = null;
+		const result = await this.#act(async () => {
+			const connection = await this.#data.create(draft);
+			created = connection;
+			this.#items.set(connection.id, connection);
+			this.#notify(`Verbindung „${connection.label}“ angelegt.`);
+			await this.#loadStatus(connection.id, {});
 		});
+		if (!result.ok) return result;
+		return created === null
+			? { ok: false, message: null, fields: {} }
+			: { ok: true, connection: created };
+	}
+
+	/** Asks the server again whether it sees the variables ("Erneut prüfen" in the assistant). */
+	async checkStatus(id: string): Promise<void> {
+		if (!this.#session.ensureValid()) return;
+		await this.#loadStatus(id, {});
+	}
+
+	/**
+	 * Watches one connection through realtime while the assistant is open: changes of the server
+	 * (last run, error, hint) replace it in the list, a deletion removes it. The returned function
+	 * ends the subscription, also if it is still being set up.
+	 */
+	watch(id: string): () => void {
+		let stopped = false;
+		let unsubscribe: Unsubscribe | null = null;
+		const end = (stop: Unsubscribe) => void stop().catch(() => undefined);
+		this.#data
+			.subscribe(id, (change) => {
+				if (stopped) return;
+				if (change.action === 'delete') {
+					this.#items.delete(change.id);
+					this.#status.delete(change.id);
+					return;
+				}
+				const known = this.#items.get(change.record.id);
+				if (known !== undefined && known.updated > change.record.updated) return;
+				this.#items.set(change.record.id, change.record);
+			})
+			.then((stop) => {
+				if (stopped) end(stop);
+				else unsubscribe = stop;
+			})
+			.catch(() => undefined);
+		return () => {
+			stopped = true;
+			if (unsubscribe !== null) end(unsubscribe);
+			unsubscribe = null;
+		};
+	}
+
+	/** Answer of the last "Jetzt abrufen" of a connection on this page, or null. */
+	lastRun(id: string): RunResult | null {
+		return this.#lastRun.get(id) ?? null;
 	}
 
 	async setEnabled(id: string, enabled: boolean): Promise<ConnectionActionResult> {
@@ -216,16 +279,18 @@ export class ConnectionsStore {
 
 	/**
 	 * "Jetzt abrufen" (E4 plan, package 15): runs the connection in the server, then shows its new
-	 * state (last run, error, hint). The result goes out as a flag.
+	 * state (last run, error, hint). The result goes out as a flag; the assistant shows it in its
+	 * check line instead (`announce: false`), so it is not said twice.
 	 */
-	async runNow(id: string): Promise<ConnectionActionResult> {
+	async runNow(id: string, { announce = true } = {}): Promise<ConnectionActionResult> {
 		if (this.#running.has(id)) return { ok: false, message: null, fields: {} };
 		const label = this.#items.get(id)?.label ?? 'Verbindung';
 		this.#running.set(id, true);
 		try {
 			return await this.#act(async () => {
 				const result = await this.#data.run(id);
-				this.#notify(runResultText(label, result), runResultTone(result));
+				this.#lastRun.set(id, result);
+				if (announce) this.#notify(runResultText(label, result), runResultTone(result));
 				this.#items.set(id, await this.#data.get(id));
 			});
 		} finally {
@@ -284,6 +349,7 @@ export class ConnectionsStore {
 		this.#controller = null;
 		this.#items.clear();
 		this.#status.clear();
+		this.#lastRun.clear();
 		this.#state = 'idle';
 		this.#error = null;
 	}
