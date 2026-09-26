@@ -537,3 +537,134 @@ describe('installer link of the running server (E1.1)', () => {
 		expect(result.waitInstaller.noneMs).toBeLessThan(3000);
 	});
 });
+
+// stop.bat (fix after user feedback): Stop-SelectedProcess with fake processes. Each fake stop
+// behaves as named: kill ends the process, throwGone throws although the process ended,
+// throwAlive throws and the process runs on, ignore does nothing, reuse hands the PID to a
+// foreign process. Collected exactly like Invoke-Stop does it.
+const STOP_SCRIPT = String.raw`
+. $env:BYL_FUNCTIONS
+Set-StrictMode -Version 2.0
+$in = $env:BYL_TEST_INPUT | ConvertFrom-Json
+$appDir = $in.appDir
+$script:table = @{}
+$script:behaviour = @{}
+$script:reports = New-Object System.Collections.Generic.List[string]
+function Reset-Table {
+    $script:table = @{}
+    $script:behaviour = @{}
+    $script:reports.Clear()
+    foreach ($entry in @($in.table)) {
+        $script:table[[int]$entry.process.ProcessId] = $entry.process
+        $script:behaviour[[int]$entry.process.ProcessId] = $entry.behaviour
+    }
+}
+$getCurrent = { param($processId) if ($script:table.ContainsKey([int]$processId)) { $script:table[[int]$processId] } }
+$stop = {
+    param($processId)
+    $id = [int]$processId
+    switch ($script:behaviour[$id]) {
+        'kill' { $script:table.Remove($id) }
+        'throwGone' { $script:table.Remove($id); throw 'Es wurde kein Prozess gefunden.' }
+        'throwAlive' { throw 'Zugriff verweigert' }
+        'ignore' { }
+        'reuse' { $script:table[$id] = $in.foreign }
+    }
+}
+$report = { param($Text) $script:reports.Add($Text) }
+$selectHelper = { param($Process) Select-MailHelperProcess -Process $Process -AppDir $appDir }
+$selectApp = { param($Process) Select-AppProcess -Process $Process -AppDir $appDir }
+function Invoke-Case($Helpers, $Apps) {
+    Reset-Table
+    $failed = New-Object System.Collections.Generic.List[string]
+    foreach ($line in @(Stop-SelectedProcess -Candidates @($Helpers) -Select $selectHelper -Name 'byl-mail.exe' -GetCurrent $getCurrent -StopProcess $stop -StillRunningText 'still running' -Report $report)) { $failed.Add([string]$line) }
+    foreach ($line in @(Stop-SelectedProcess -Candidates @($Apps) -Select $selectApp -Name 'PocketBase' -GetCurrent $getCurrent -StopProcess $stop -StillRunningText 'still running' -Report $report)) { $failed.Add([string]$line) }
+    return @{ failed = @($failed.ToArray()); count = $failed.Count; message = ($failed -join '|'); reports = @($script:reports.ToArray()); left = @($script:table.Keys | Sort-Object) }
+}
+$c = $in.candidates
+$result = @{
+    allOk = Invoke-Case @($c.helper) @($c.app)
+    nothing = Invoke-Case @() @()
+    nullCandidates = Invoke-Case $null $null
+    goneBefore = Invoke-Case @($c.gone) @()
+    foreignBefore = Invoke-Case @() @($c.foreignBefore)
+    throwGone = Invoke-Case @($c.throwGone) @()
+    throwAlive = Invoke-Case @() @($c.throwAlive)
+    ignore = Invoke-Case @($c.ignore) @()
+    reuse = Invoke-Case @() @($c.reuse)
+}
+$result | ConvertTo-Json -Depth 6 -Compress
+`;
+
+describe('Stop-SelectedProcess (stop.bat)', () => {
+	const withId = (process, ProcessId) => ({ ...process, ProcessId });
+	const table = [
+		{ process: withId(HELPERS.own, 700), behaviour: 'kill' },
+		{ process: withId(PROCESSES.own, 701), behaviour: 'kill' },
+		{ process: withId(PROCESSES.foreignNode, 703), behaviour: 'kill' },
+		{ process: withId(HELPERS.own, 704), behaviour: 'throwGone' },
+		{ process: withId(PROCESSES.own, 705), behaviour: 'throwAlive' },
+		{ process: withId(HELPERS.own, 706), behaviour: 'ignore' },
+		{ process: withId(PROCESSES.own, 707), behaviour: 'reuse' }
+	];
+	const candidate = (ProcessId) => ({ ProcessId });
+	let stop;
+
+	beforeAll(() => {
+		stop = runPowerShellJson(
+			STOP_SCRIPT,
+			{
+				appDir: APP,
+				table,
+				foreign: PROCESSES.foreignNode,
+				candidates: {
+					helper: candidate(700),
+					app: candidate(701),
+					gone: candidate(702),
+					foreignBefore: candidate(703),
+					throwGone: candidate(704),
+					throwAlive: candidate(705),
+					ignore: candidate(706),
+					reuse: candidate(707)
+				}
+			},
+			{ BYL_FUNCTIONS: FUNCTIONS_FILE }
+		);
+	}, 60_000);
+
+	it('reports no failure when both processes end (the old code showed "System.String[]" twice)', () => {
+		expect(stop.allOk.count).toBe(0);
+		expect(stop.allOk.message).toBe('');
+		expect(stop.allOk.message).not.toContain('System.');
+		expect(stop.allOk.reports).toEqual(['Beende byl-mail.exe (PID 700) ...', 'Beende PocketBase (PID 701) ...']);
+		expect(stop.allOk.left).not.toContain(700);
+		expect(stop.allOk.left).not.toContain(701);
+	});
+
+	it.each(['nothing', 'nullCandidates'])('has nothing to report for %s', (name) => {
+		expect(stop[name].count).toBe(0);
+		expect(stop[name].reports).toEqual([]);
+	});
+
+	it('skips a process that is gone or foreign before the stop', () => {
+		expect(stop.goneBefore.count).toBe(0);
+		expect(stop.goneBefore.reports).toEqual([]);
+		expect(stop.foreignBefore.count).toBe(0);
+		expect(stop.foreignBefore.reports).toEqual([]);
+		expect(stop.foreignBefore.left).toContain(703);
+	});
+
+	it('counts a stop that throws only if the process still runs', () => {
+		expect(stop.throwGone.count).toBe(0);
+		expect(stop.throwAlive.failed).toEqual(['PocketBase (PID 705): Zugriff verweigert']);
+	});
+
+	it('names a process that runs on in a readable line', () => {
+		expect(stop.ignore.failed).toEqual(['byl-mail.exe (PID 706): still running']);
+	});
+
+	it('does not count a foreign process that reused the PID as still running', () => {
+		expect(stop.reuse.count).toBe(0);
+		expect(stop.reuse.reports).toEqual(['Beende PocketBase (PID 707) ...']);
+	});
+});

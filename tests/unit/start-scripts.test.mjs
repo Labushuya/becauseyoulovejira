@@ -266,10 +266,25 @@ describe('stop', () => {
 		expect(body).toMatch(/Stop-OwnProcess -Candidates \$own -Name 'PocketBase'/);
 		const stop = functionBody(control(), 'Stop-OwnProcess');
 		expect(stop).toMatch(/Stop-Process -Id \$processId -Force/);
-		expect(stop).toMatch(/if \(@\(& \$Select \$current\)\.Count -eq 0\) \{ continue \}/);
-		for (const source of [body, stop]) {
+		expect(stop).toMatch(/Stop-SelectedProcess -Candidates \$Candidates -Select \$Select -Name \$Name/);
+		expect(stop).toMatch(/-Filter "ProcessId = \$\(\[int\]\$processId\)"/);
+		const selected = functionBody(functions(), 'Stop-SelectedProcess');
+		expect(selected).toMatch(/if \(@\(& \$Select @\(& \$GetCurrent \$processId\)\)\.Count -eq 0\) \{ continue \}/);
+		for (const source of [body, stop, selected]) {
 			expect(source).not.toMatch(/Stop-Process\s+-Name|Get-Process\s+-Name|\|\s*Stop-Process/i);
 		}
+	});
+
+	it('collects the failures as single strings, never as a nested array ("System.String[]")', () => {
+		const body = functionBody(control(), 'Invoke-Stop');
+		const stop = functionBody(control(), 'Stop-OwnProcess');
+		const selected = functionBody(functions(), 'Stop-SelectedProcess');
+		for (const source of [body, stop, selected]) {
+			expect(source).not.toMatch(/return\s*,/);
+			expect(source).not.toMatch(/\$failed \+= /);
+		}
+		expect(body).toMatch(/\$failed = New-Object System\.Collections\.Generic\.List\[string\]/);
+		expect(body.match(/\{ \$failed\.Add\(\[string\]\$line\) \}/g)).toHaveLength(2);
 	});
 
 	it('stops the own mail helper before PocketBase (E4 plan, package 11)', () => {
