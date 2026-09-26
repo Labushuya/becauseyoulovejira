@@ -76,6 +76,11 @@ vi.mock('$app/navigation', () => ({
 }));
 vi.mock('$app/state', () => ({ page: mocks.page }));
 vi.mock('$lib/auth.svelte', () => ({ auth: mocks.auth }));
+// The tour itself is covered in lib/tour/tour.test.ts; here only how the layout starts it (EH-13).
+const tourMocks = vi.hoisted(() => ({
+	startTour: vi.fn<(deps: unknown) => Promise<null>>(async () => null)
+}));
+vi.mock('$lib/tour/tour', () => ({ startTour: tourMocks.startTour }));
 vi.mock('$lib/stores/realtime', async (importOriginal) => ({
 	...(await importOriginal<object>()),
 	liveSource: () => mocks.live
@@ -556,5 +561,39 @@ describe('app layout: shortcuts and help menu (EH-9)', () => {
 		await fireEvent.click(screen.getByRole('menuitem', { hidden: true, name: /Tastaturkürzel/ }));
 		await tick();
 		expect(modal()).not.toBeNull();
+	});
+});
+
+describe('app layout: guided tour (EH-13)', () => {
+	useOverlayStubs();
+
+	it('starts the tour only from "Kurze Einführung", with the button as trigger, and counts the step', async () => {
+		localStorage.clear();
+		tourMocks.startTour.mockClear();
+		await renderLayout('/projekte');
+		await tick();
+		// Never on its own, also not on the first visit.
+		expect(tourMocks.startTour).not.toHaveBeenCalled();
+
+		const button = within(screen.getByRole('banner')).getByRole('button', { name: 'Hilfe' });
+		await fireEvent.click(button);
+		await tick();
+		await fireEvent.click(screen.getByRole('menuitem', { hidden: true, name: 'Kurze Einführung' }));
+		await tick();
+
+		expect(tourMocks.startTour).toHaveBeenCalledOnce();
+		const deps = tourMocks.startTour.mock.calls[0]?.[0] as unknown as {
+			trigger: HTMLElement | null;
+			currentPath: () => string;
+			navigate: (path: string) => Promise<unknown>;
+			reducedMotion: () => boolean;
+		};
+		expect(deps.trigger).toBe(button);
+		expect(deps.currentPath()).toBe('/projekte');
+		await deps.navigate('/einstellungen/kanaele');
+		expect(mocks.goto).toHaveBeenLastCalledWith('/einstellungen/kanaele');
+		expect(typeof deps.reducedMotion()).toBe('boolean');
+		expect(JSON.parse(localStorage.getItem('byl-first-steps') ?? '{}').reached).toContain('tour');
+		localStorage.clear();
 	});
 });

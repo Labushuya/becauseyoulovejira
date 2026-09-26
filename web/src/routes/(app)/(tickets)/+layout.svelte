@@ -12,6 +12,7 @@
 	import { getInboxStore } from '$lib/stores/inbox.svelte';
 	import { getRecurrenceStore } from '$lib/stores/recurrence.svelte';
 	import { getTicketListStore } from '$lib/stores/ticket-list.svelte';
+	import { getTourStarter } from '$lib/tour/tour-context';
 
 	// KPI tiles, filter bar, table and panel area (E2 plan, T-4; E3 plan, T-3 and packages 5, 10
 	// and 12): the table stays in place while the detail panel opens and closes, so scroll position
@@ -26,6 +27,8 @@
 	const rules = getRecurrenceStore();
 	// "Erste Schritte" below the empty state (plan EH-12); only inside the (app) layout.
 	const firstSteps = findFirstStepsStore();
+	// The tour of the (app) layout (EH-13); with it "Erste Schritte" offers "Kurze Einführung".
+	const startTour = getTourStarter();
 	const query = $derived(parseListQuery(page.url.searchParams));
 	const activeId = $derived(page.params.id ?? null);
 	const withPanel = $derived(page.route.id !== '/(app)/(tickets)');
@@ -60,7 +63,7 @@
 			{/snippet}
 			{#snippet emptyExtra()}
 				{#if firstSteps}
-					<FirstSteps store={firstSteps} />
+					<FirstSteps store={firstSteps} onstarttour={startTour} />
 				{/if}
 			{/snippet}
 		</TicketTable>

@@ -68,7 +68,7 @@
 	];
 </script>
 
-<section class="catalog" aria-labelledby={`${uid}-heading`}>
+<section class="catalog" aria-labelledby={`${uid}-heading`} data-tour="channel-catalog">
 	<h3 id={`${uid}-heading`} tabindex="-1" bind:this={heading}>Kanal hinzufügen</h3>
 	<ul class="tiles">
 		{#each ENTRIES as entry (entry.id)}

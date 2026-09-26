@@ -136,7 +136,7 @@
 	}
 </script>
 
-<section class="filter-bar" aria-label="Filter">
+<section class="filter-bar" aria-label="Filter" data-tour="filter-bar">
 	<ChipGroup
 		legend="Status"
 		name={`${uid}-status`}

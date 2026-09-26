@@ -271,7 +271,12 @@
 				<input type="checkbox" checked={query.showArchived} onchange={toggleArchived} />
 				Archivierte anzeigen
 			</label>
-			<div class="layout-switch" role="group" aria-label="Darstellung der Projekte">
+			<div
+				class="layout-switch"
+				role="group"
+				aria-label="Darstellung der Projekte"
+				data-tour="project-layout"
+			>
 				<button
 					class="button-icon"
 					type="button"

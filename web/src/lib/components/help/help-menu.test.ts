@@ -73,6 +73,30 @@ describe('help menu (EH-9)', () => {
 	});
 });
 
+describe('help menu with the tour (EH-13)', () => {
+	it('offers "Kurze Einführung" only with a tour and starts it after closing the menu', async () => {
+		const onshortcuts = vi.fn();
+		const ontour = vi.fn();
+		render(HelpMenu, { props: { onshortcuts, ontour } });
+		const button = screen.getByRole('button', { name: 'Hilfe' });
+		await fireEvent.click(button);
+		await tick();
+
+		const items = screen.getAllByRole('menuitem', { hidden: true });
+		expect(items.map((item) => item.textContent?.replace(/\s+/g, ' ').trim())).toEqual([
+			'Tastaturkürzel ?',
+			'Hilfe öffnen',
+			'Kanäle einrichten',
+			'Kurze Einführung'
+		]);
+		await fireEvent.click(screen.getByRole('menuitem', { hidden: true, name: 'Kurze Einführung' }));
+		expect(ontour).toHaveBeenCalledOnce();
+		expect(button.getAttribute('aria-expanded')).toBe('false');
+		// The tour returns the focus to the element that had it: the button.
+		expect(document.activeElement).toBe(button);
+	});
+});
+
 describe('modal "Tastaturkürzel" (EH-9)', () => {
 	it('shows the keys "Überall" and "Liste" and leads to the whole help', async () => {
 		const onclose = vi.fn();

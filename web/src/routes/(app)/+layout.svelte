@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { untrack } from 'svelte';
-	import { afterNavigate } from '$app/navigation';
+	import { afterNavigate, goto } from '$app/navigation';
 	import { page } from '$app/state';
 	import { auth } from '$lib/auth.svelte';
 	import AppHeader from '$lib/components/AppHeader.svelte';
@@ -10,6 +10,8 @@
 	import { isHelpKey, isQuickCaptureKey, isTypingTarget } from '$lib/domain/keyboard';
 	import { pb } from '$lib/pocketbase';
 	import { setQuickCaptureOpener } from '$lib/quick-capture-context';
+	import { startTour } from '$lib/tour/tour';
+	import { setTourStarter } from '$lib/tour/tour-context';
 	import {
 		panelFreeTicketCreate,
 		quickTicketData,
@@ -138,6 +140,40 @@
 		if (catalog.projects.length > 0) untrack(() => firstSteps.reach('project'));
 	});
 
+	// Guided tour (plan EH-13, ADR-0026 section 8): only on a click in the help menu or in "Erste
+	// Schritte", never on its own. It closes open popovers first, returns the focus to the element
+	// that started it and runs without animation for reduced motion.
+	let touring = false;
+	async function startGuidedTour() {
+		if (touring) return;
+		touring = true;
+		firstSteps.reach('tour');
+		const active = document.activeElement;
+		const trigger = active instanceof HTMLElement && active !== document.body ? active : null;
+		for (const element of document.querySelectorAll<HTMLElement>('[popover]')) {
+			try {
+				if (element.matches(':popover-open')) element.hidePopover();
+			} catch {
+				// Runtimes without :popover-open have no open popover.
+			}
+		}
+		try {
+			await startTour({
+				trigger,
+				currentPath: () => page.url.pathname,
+				navigate: (path) => goto(path),
+				reducedMotion: () =>
+					typeof window.matchMedia === 'function' &&
+					window.matchMedia('(prefers-reduced-motion: reduce)').matches
+			});
+		} catch {
+			flags.show({ tone: 'error', title: 'Die Einführung ließ sich nicht starten.' });
+		} finally {
+			touring = false;
+		}
+	}
+	setTourStarter(() => void startGuidedTour());
+
 	// Modal "Tastaturkürzel" (plan EH-9): `?` opens it under the same conditions as `c`, the help
 	// menu in the header as well.
 	let shortcutsOpen = $state(false);
@@ -159,6 +195,7 @@
 	openCount={tickets.openState === 'ready' ? tickets.openCount : null}
 	onquick={() => (quickOpen = true)}
 	onshortcuts={() => (shortcutsOpen = true)}
+	ontour={() => void startGuidedTour()}
 />
 <main class="content">
 	{@render children()}
