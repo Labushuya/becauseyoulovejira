@@ -88,36 +88,44 @@
 
 	/**
 	 * Takes `candidates` as keywords; `rest` stays in the field. Refused ones go back into the field
-	 * in front of the rest, with the reason of the first as field error. After a failed save the
-	 * field shows `original` again, so nothing typed is lost.
+	 * in front of the rest, with the reason of the first as field error. The field changes only
+	 * after a successful save (a failed one leaves it as it was), and what was typed during the
+	 * save stays behind the rest, so no character is lost. After a failed save the field shows
+	 * `unsaved` (a pasted list that is not in the field yet).
 	 */
-	async function commit(candidates: string[], rest: string, original: string) {
+	async function commit(
+		candidates: string[],
+		rest: string,
+		original: string,
+		unsaved: string = original
+	) {
 		if (candidates.length === 0) {
 			input = rest;
 			return;
 		}
 		const { accepted, refused } = planKeywordAdditions(keywords, candidates);
 		const back = [...refused.map((entry) => entry.keyword), ...(rest.trim() === '' ? [] : [rest])];
+		const remaining = back.length === 0 ? rest : back.join(', ');
 		inputError = refused[0]?.error ?? null;
 		if (accepted.length === 0) {
-			input = back.join(', ');
+			input = remaining;
 			field?.focus();
 			return;
 		}
-		input = back.length === 0 ? rest : back.join(', ');
 		const added =
 			accepted.length === 1
 				? `Stichwort „${accepted[0]}“ hinzugefügt.`
 				: `${accepted.length} Stichwörter hinzugefügt.`;
-		if (await save([...keywords, ...accepted], added)) {
-			const taken =
-				accepted.length === 1
-					? `„${accepted[0]}“ übernommen.`
-					: `${accepted.length} Stichwörter übernommen.`;
-			await announce(refused.length === 0 ? taken : `${taken} ${refused.length} nicht übernommen.`);
-		} else {
-			input = original;
+		if (!(await save([...keywords, ...accepted], added))) {
+			if (input === original) input = unsaved;
+			return;
 		}
+		if (input.startsWith(original)) input = remaining + input.slice(original.length);
+		const taken =
+			accepted.length === 1
+				? `„${accepted[0]}“ übernommen.`
+				: `${accepted.length} Stichwörter übernommen.`;
+		await announce(refused.length === 0 ? taken : `${taken} ${refused.length} nicht übernommen.`);
 	}
 
 	/** Enter or "Hinzufügen": the whole field, split at commas. */
@@ -182,7 +190,7 @@
 		const start = event.currentTarget.selectionStart ?? original.length;
 		const end = event.currentTarget.selectionEnd ?? start;
 		const combined = original.slice(0, start) + text + original.slice(end);
-		void commit(splitKeywordInput(combined, true).parts, '', original);
+		void commit(splitKeywordInput(combined, true).parts, '', original, combined);
 	}
 
 	/** A separator that came another way (autocorrect, drag and drop): like a typed comma. */

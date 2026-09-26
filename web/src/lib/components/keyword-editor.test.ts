@@ -146,7 +146,7 @@ describe('KeywordEditor input: comma, paste, Backspace (package A)', () => {
 			['todo', 'Europa-Go'],
 			'Stichwort „Europa-Go“ hinzugefügt.'
 		);
-		expect(input.value).toBe('');
+		await vi.waitFor(() => expect(input.value).toBe(''));
 		await vi.waitFor(() => expect(live()).toBe('„Europa-Go“ übernommen.'));
 		expect(screen.getByRole('list', { name: 'Stichwörter von „Web.de“' }).textContent).toMatch(
 			/Europa-Go/
@@ -158,14 +158,14 @@ describe('KeywordEditor input: comma, paste, Backspace (package A)', () => {
 		await type(input, 'rechnung ticket', 8);
 		await fireEvent.keyDown(input, { key: ',' });
 		await vi.waitFor(() => expect(onsave).toHaveBeenCalledWith(['rechnung'], expect.any(String)));
-		expect(input.value).toBe(' ticket');
+		await vi.waitFor(() => expect(input.value).toBe(' ticket'));
 	});
 
 	it('does nothing on a comma in an empty field and never writes the comma', async () => {
 		const { onsave, input } = renderWithParent(['todo']);
 		expect(await fireEvent.keyDown(input, { key: ',' })).toBe(false);
 		expect(onsave).not.toHaveBeenCalled();
-		expect(input.value).toBe('');
+		await vi.waitFor(() => expect(input.value).toBe(''));
 	});
 
 	it('splits text with commas that got into the field and takes the rest on Enter', async () => {
@@ -175,11 +175,11 @@ describe('KeywordEditor input: comma, paste, Backspace (package A)', () => {
 		await vi.waitFor(() =>
 			expect(onsave).toHaveBeenCalledWith(['a', 'b'], '2 Stichwörter hinzugefügt.')
 		);
-		expect(input.value).toBe(' c');
+		await vi.waitFor(() => expect(input.value).toBe(' c'));
 		await vi.waitFor(() => expect(live()).toBe('2 Stichwörter übernommen.'));
 		await fireEvent.keyDown(input, { key: 'Enter' });
 		await vi.waitFor(() => expect(list()).toEqual(['a', 'b', 'c']));
-		expect(input.value).toBe('');
+		await vi.waitFor(() => expect(input.value).toBe(''));
 	});
 
 	it('takes a pasted comma-separated list at once, its last part too', async () => {
@@ -194,7 +194,7 @@ describe('KeywordEditor input: comma, paste, Backspace (package A)', () => {
 				'3 Stichwörter hinzugefügt.'
 			)
 		);
-		expect(input.value).toBe('');
+		await vi.waitFor(() => expect(input.value).toBe(''));
 	});
 
 	it('keeps refused parts of a pasted list in the field with the reason', async () => {
@@ -203,10 +203,38 @@ describe('KeywordEditor input: comma, paste, Backspace (package A)', () => {
 		await vi.waitFor(() =>
 			expect(onsave).toHaveBeenCalledWith(['todo', 'neu'], expect.any(String))
 		);
-		expect(input.value).toBe('TODO');
+		await vi.waitFor(() => expect(input.value).toBe('TODO'));
 		expect(input.getAttribute('aria-invalid')).toBe('true');
 		expect(screen.getByText('Das Stichwort „todo“ gibt es schon.')).toBeTruthy();
 		await vi.waitFor(() => expect(live()).toBe('„neu“ übernommen. 1 nicht übernommen.'));
+	});
+
+	it('keeps a pasted list in the field when saving fails', async () => {
+		const { input } = renderWithParent([], 'Speichern fehlgeschlagen.');
+		await fireEvent.paste(input, { clipboardData: { getData: () => 'rechnung, todo' } });
+		expect(await screen.findByRole('alert')).toBeTruthy();
+		expect(input.value).toBe('rechnung, todo');
+	});
+
+	it('keeps what was typed while the keyword was saved', async () => {
+		let finish: (value: string | null) => void = () => undefined;
+		const onsave = vi.fn(
+			(next: string[], announcement: string) =>
+				new Promise<string | null>((resolve) => {
+					void next;
+					void announcement;
+					finish = resolve;
+				})
+		);
+		render(KeywordEditor, {
+			props: { keywords: [], name: 'Bot', description: 'x', emptyText: 'Keine.', onsave }
+		});
+		const input = screen.getByLabelText('Neues Stichwort') as HTMLInputElement;
+		await type(input, 'todo');
+		await fireEvent.keyDown(input, { key: ',' });
+		await type(input, 'todore');
+		finish(null);
+		await vi.waitFor(() => expect(input.value).toBe('re'));
 	});
 
 	it('pastes text without a comma as usual', async () => {
@@ -219,7 +247,7 @@ describe('KeywordEditor input: comma, paste, Backspace (package A)', () => {
 		const { onsave, input } = renderWithParent([]);
 		await fireEvent.input(input, { target: { value: 'eins,zwei' } });
 		await vi.waitFor(() => expect(onsave).toHaveBeenCalledWith(['eins'], expect.any(String)));
-		expect(input.value).toBe('zwei');
+		await vi.waitFor(() => expect(input.value).toBe('zwei'));
 	});
 
 	it('brings the last keyword back into the empty field on Backspace, without losing a character', async () => {
@@ -256,7 +284,7 @@ describe('KeywordEditor input: comma, paste, Backspace (package A)', () => {
 		const { input } = renderWithParent(['todo'], 'Speichern fehlgeschlagen.');
 		await fireEvent.keyDown(input, { key: 'Backspace' });
 		expect(await screen.findByRole('alert')).toBeTruthy();
-		expect(input.value).toBe('');
+		await vi.waitFor(() => expect(input.value).toBe(''));
 	});
 
 	it('explains the keys next to the field and has a polite live region', () => {
