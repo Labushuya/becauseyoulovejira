@@ -61,7 +61,13 @@ describe('tag manager', () => {
 	it('says how tags come about when there are none', () => {
 		show([]);
 
-		expect(screen.getByText(/Noch keine Tags\./)).toBeTruthy();
+		// Compact empty state since EH-12, below "Deine Tags" (h3), with a way to the first tag.
+		const heading = screen.getByRole('heading', { level: 4, name: 'Noch keine Tags' });
+		const empty = heading.closest('.empty-state') as HTMLElement;
+		expect(empty.textContent).toMatch(/Tags entstehen im Detail eines Tickets/);
+		expect(screen.getByRole('link', { name: 'Ticket anlegen' }).getAttribute('href')).toBe(
+			'/tickets/neu'
+		);
 	});
 
 	it('renames inline: the field starts with the name, Enter saves, the focus returns', async () => {

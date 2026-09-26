@@ -8,6 +8,7 @@
 	import { setupTargetOf, type SetupTarget } from '$lib/domain/channel-setup';
 	import { pb } from '$lib/pocketbase';
 	import { ConnectionsStore, connectionsData } from '$lib/stores/connections.svelte';
+	import { findFirstStepsStore } from '$lib/stores/first-steps.svelte';
 	import { getFlagStore } from '$lib/stores/flags.svelte';
 	import { ImportKeywordsStore, importKeywordsData } from '$lib/stores/import-keywords.svelte';
 	import { channelSetupHref } from '$lib/ticket-links';
@@ -39,6 +40,13 @@
 			connections.reset();
 			importKeywords.reset();
 		};
+	});
+
+	// "Erste Schritte" (plan EH-12): a connection on this page marks the step "Einen Kanal
+	// einrichten".
+	const firstSteps = findFirstStepsStore();
+	$effect(() => {
+		if (connections.connections.length > 0) untrack(() => firstSteps?.reach('channel'));
 	});
 </script>
 

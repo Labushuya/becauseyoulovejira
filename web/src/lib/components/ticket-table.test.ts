@@ -5,7 +5,7 @@
 // fake data layers; SvelteKit navigation and page state are mocked.
 
 import { fireEvent, render, screen, within } from '@testing-library/svelte';
-import { tick } from 'svelte';
+import { createRawSnippet, tick, type Snippet } from 'svelte';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { DataError } from '$lib/data/errors';
 import type { DoneTicketPage } from '$lib/data/tickets';
@@ -95,7 +95,8 @@ async function showTable(
 	data: TicketListData,
 	path = '/',
 	catalogContent: { projects?: Project[]; tags?: Tag[] } = {},
-	context?: Map<unknown, unknown>
+	context?: Map<unknown, unknown>,
+	emptyExtra?: Snippet
 ) {
 	mocks.page.url = new URL(path, 'http://localhost:3000');
 	const flags = new FlagStore();
@@ -110,7 +111,7 @@ async function showTable(
 	);
 	void catalog.load();
 	store.activate(parseListQuery(mocks.page.url.searchParams));
-	const result = render(TicketTable, { props: { store, catalog }, context });
+	const result = render(TicketTable, { props: { store, catalog, emptyExtra }, context });
 	// The flags of the app layout, after the table like after `main` (ADR-0025 section 8).
 	render(FlagGroup, { props: { store: flags } });
 	await vi.advanceTimersByTimeAsync(0);
@@ -336,6 +337,17 @@ describe('ticket table', () => {
 		// Exactly one primary action.
 		const empty = quick.closest('.empty-state') as HTMLElement;
 		expect(empty.querySelectorAll('.button-primary')).toHaveLength(1);
+	});
+
+	it('shows "Erste Schritte" below the empty state, not below an empty filter result (EH-12)', async () => {
+		const extra = createRawSnippet(() => ({ render: () => '<p>Erste Schritte hier</p>' }));
+		await showTable(fakeData([]), '/', {}, undefined, extra);
+		expect(screen.getByText('Erste Schritte hier')).toBeTruthy();
+
+		document.body.innerHTML = '';
+		await showTable(fakeData([ticket()]), '/?prio=urgent', {}, undefined, extra);
+		expect(screen.getByRole('heading', { name: 'Keine Tickets für diese Filter' })).toBeTruthy();
+		expect(screen.queryByText('Erste Schritte hier')).toBeNull();
 	});
 
 	it('shows no table without open tickets and without done tickets', async () => {

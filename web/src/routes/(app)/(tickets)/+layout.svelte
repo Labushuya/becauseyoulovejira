@@ -2,11 +2,13 @@
 	import { untrack } from 'svelte';
 	import { page } from '$app/state';
 	import FilterBar from '$lib/components/FilterBar.svelte';
+	import FirstSteps from '$lib/components/FirstSteps.svelte';
 	import KpiTiles from '$lib/components/KpiTiles.svelte';
 	import TicketTable from '$lib/components/TicketTable.svelte';
 	import ViewWithPanel from '$lib/components/ViewWithPanel.svelte';
 	import { parseListQuery } from '$lib/domain/list-query';
 	import { getCatalogStore } from '$lib/stores/catalog.svelte';
+	import { findFirstStepsStore } from '$lib/stores/first-steps.svelte';
 	import { getInboxStore } from '$lib/stores/inbox.svelte';
 	import { getRecurrenceStore } from '$lib/stores/recurrence.svelte';
 	import { getTicketListStore } from '$lib/stores/ticket-list.svelte';
@@ -22,6 +24,8 @@
 	const catalog = getCatalogStore();
 	const inbox = getInboxStore();
 	const rules = getRecurrenceStore();
+	// "Erste Schritte" below the empty state (plan EH-12); only inside the (app) layout.
+	const firstSteps = findFirstStepsStore();
 	const query = $derived(parseListQuery(page.url.searchParams));
 	const activeId = $derived(page.params.id ?? null);
 	const withPanel = $derived(page.route.id !== '/(app)/(tickets)');
@@ -53,6 +57,11 @@
 					searchError={tickets.searchError}
 					onretrysearch={() => tickets.retrySearch()}
 				/>
+			{/snippet}
+			{#snippet emptyExtra()}
+				{#if firstSteps}
+					<FirstSteps store={firstSteps} />
+				{/if}
 			{/snippet}
 		</TicketTable>
 	{/snippet}

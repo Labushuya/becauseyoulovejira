@@ -422,6 +422,19 @@ describe('app layout: quick entry keys (E4 plan, T-11 and package 6)', () => {
 		expect(quick()).not.toBeNull();
 	});
 
+	it('counts opening the quick entry as the first step "Schnellerfassung ausprobieren" (EH-12)', async () => {
+		localStorage.clear();
+		await renderLayout();
+		expect(localStorage.getItem('byl-first-steps')).toBeNull();
+		press(document.body, { key: 'c' });
+		await tick();
+		expect(JSON.parse(localStorage.getItem('byl-first-steps') ?? '{}')).toEqual({
+			dismissed: false,
+			reached: ['quick']
+		});
+		localStorage.clear();
+	});
+
 	it('opens with Ctrl+K and prevents the search of the browser only then', async () => {
 		await renderLayout();
 		expect(press(document.body, { key: 'k', ctrlKey: true })).toBe(true);
