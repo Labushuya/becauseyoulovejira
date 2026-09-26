@@ -213,7 +213,7 @@
   "meta": {
     "projekt": "becauseyoulovejira",
     "stand": "2026-09-26",
-    "commit": "4eadd1f",
+    "commit": "a29aed1",
     "etappe": "E0 bis E4 abgeschlossen (E4: Pakete 1 bis 11, 13 bis 17, 19 bis 24; Paket 12 entfällt, Paket 18 zurückgestellt); E5 in Arbeit (Pakete 1 bis 4: BYL-E5-001 bis BYL-E5-005); E6 UI-Konsistenz vorgezogen und umgesetzt (UI-0 bis UI-9 und UI-6b: BYL-E6-001 bis BYL-E6-028; Projektliste und Tags in den Einstellungen nach Nutzerwunsch: BYL-E6-065 bis BYL-E6-067); E6 Einstellungen und Hilfe umgesetzt (EH-0 bis EH-13: BYL-E6-029 bis BYL-E6-059, manuelle Browser-Prüfungen offen)"
   },
   "blocks": [
@@ -1635,7 +1635,11 @@
         { "id": "BYL-X-004", "title": "Test-Manifest konsistent", "art": ["unit"], "status": "bestanden",
           "pre": "–", "steps": ["npm run test:unit"],
           "expect": "Diese Datei ist wohlgeformt und offline nutzbar, IDs eindeutig, alle referenzierten Testdateien und -namen existieren, jede Testdatei ist referenziert, keine Reste der Vorlage.",
-          "tests": ["tests/unit/test-manifest.test.mjs"] }
+          "tests": ["tests/unit/test-manifest.test.mjs"] },
+        { "id": "BYL-X-005", "title": "CI und Ruleset für main", "art": ["manuell"], "status": "offen",
+          "pre": ".github/workflows/ci.yml mit dem Job „Detect code changes“, Ruleset „main“ nach .github/rulesets/main.json auf GitHub aktiv.", "steps": ["Einen PR öffnen, der nur eine Datei unter docs/ (nicht docs/test-manifest.html) oder eine Markdown-Datei ändert: „Detect code changes“ meldet „Code changed: false“, „Check, lint, build and test“ steht auf „übersprungen“, und gh pr merge --squash geht durch.", "Einen PR mit Code oder mit docs/test-manifest.html öffnen: der Build läuft; zwei schnelle Pushes hintereinander brechen den ersten Durchgang ab.", "Einen Merge ohne Squash, einen Push direkt auf main und einen Merge bei rotem Check versuchen: alle drei lehnt GitHub ab."],
+          "expect": "Doku-PRs kosten keinen Windows-Durchgang und blockieren trotzdem nicht; Code-PRs laufen voll; main bleibt nur per Squash-Merge mit grünem Check erreichbar.",
+          "tests": [] }
       ]
     }
   ]
