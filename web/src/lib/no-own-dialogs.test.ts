@@ -41,7 +41,9 @@ const SIZES: Readonly<Record<string, 's' | 'm' | 'l'>> = {
 	'RecurrenceDialog.svelte': 'm',
 	'FileImportDialog.svelte': 'l',
 	'WhatsAppImport.svelte': 'l',
-	'MailboxPicker.svelte': 'l'
+	'MailboxPicker.svelte': 'l',
+	'channels/ChannelEditModal.svelte': 'm',
+	'channels/ConnectionCreateDialog.svelte': 'm'
 };
 
 describe('dialogs on the modal building block', () => {
@@ -59,7 +61,7 @@ describe('dialogs on the modal building block', () => {
 
 	it.each(Object.entries(SIZES))('%s is a modal of size %s', (file, size) => {
 		const source = code(join(SRC_DIR, 'lib', 'components', file));
-		expect(source).toMatch(/import Modal from '\.\/(?:overlay\/)?Modal\.svelte';/);
+		expect(source).toMatch(/import Modal from '\.\.?\/(?:overlay\/)?Modal\.svelte';/);
 		expect(source).toMatch(new RegExp(`<Modal\\b[^>]*\\ssize="${size}"`));
 	});
 

@@ -1,7 +1,8 @@
-// Connections on the page "Kanäle" (E4 plan, packages 10, 15, 17 and 20; ADR-0018, ADR-0020): list
-// with the state of the variables, switch, errors and hints, the form with field errors, delete
-// with a safety question, the hint before the migration, the setup of the variables, and the
-// keywords with the answer of the bot to messages without one; mailboxes (package 22).
+// Connections on the page "Kanäle" (E4 plan, packages 10, 15, 17 and 20; ADR-0018, ADR-0020; since
+// EH-3 as cards, ADR-0026 section 3): cards with state, errors and hints, pausing and deleting
+// through the menu "…", creating through the catalog with field errors, the hint before the
+// migration, the setup of the variables and the folded guides, and the keywords with the answer of
+// the bot in "Bearbeiten"; mailboxes (package 22).
 
 import { fireEvent, render, screen, within } from '@testing-library/svelte';
 import { describe, expect, it, vi } from 'vitest';
@@ -197,59 +198,109 @@ describe('connections store', () => {
 	});
 });
 
+/** The section with fake callbacks for the catalog and the setup (EH-3). */
+function renderCards(store: ConnectionsStore) {
+	const onadd = vi.fn();
+	const onsetup = vi.fn();
+	render(ConnectionsSection, { props: { store, onadd, onsetup } });
+	return { onadd, onsetup };
+}
+
+/** The card of a connection by its name (article with the name of its heading). */
+function card(name: string) {
+	return within(screen.getByRole('article', { name }));
+}
+
+/** Chooses an entry of the menu "…" of a card; jsdom shows popovers as hidden. */
+async function chooseFromMenu(name: string, entry: string) {
+	const trigger = screen.getByRole('button', { name: `Weitere Aktionen für ${name}` });
+	await fireEvent.click(trigger);
+	const menu = document.getElementById(trigger.getAttribute('aria-controls') ?? '');
+	await fireEvent.click(
+		within(menu as HTMLElement).getByRole('menuitem', { name: entry, hidden: true })
+	);
+}
+
+/** The channels page with the catalog, for creating connections. */
+function renderView(store: ConnectionsStore) {
+	render(ChannelsView, {
+		props: { captureUrl: 'http://127.0.0.1:8090/eingang/neu', connections: store }
+	});
+}
+
 describe('connections section', () => {
 	async function renderSection(statuses: Record<string, SecretStatus> = {}) {
 		const context = setup([CAL, BOT], statuses);
 		await context.store.load();
-		render(ConnectionsSection, { props: { store: context.store } });
-		return context;
+		return { ...context, ...renderCards(context.store) };
 	}
 
-	it('lists each connection with variables, state, last run, error and hint', async () => {
+	it('shows each connection as a card with state, last run, keywords and one hint (EH-3)', async () => {
 		await renderSection({ [BOT.id]: { secret: false, allowlist: true } });
-		const [cal, bot] = screen.getAllByRole('listitem');
-		const calendar = within(cal as HTMLElement);
-		expect(calendar.getByRole('heading', { name: 'Google Kalender' })).toBeTruthy();
-		expect(calendar.getByText('BYL_GOOGLE_CALENDAR_URL')).toBeTruthy();
-		expect(calendar.getByText('Zugangsdaten gesetzt.')).toBeTruthy();
-		expect(calendar.getByText('25.09.2026 10:15')).toBeTruthy();
+		expect(screen.getByRole('heading', { name: /Deine Verbindungen/ }).textContent).toMatch(
+			/\(2 Verbindungen\)/
+		);
+		const calendar = card('Google Kalender');
+		expect(calendar.getByText('Google Calendar')).toBeTruthy();
+		expect(calendar.getByText('Fehler')).toBeTruthy();
+		expect(calendar.getByText(/25\.09\.2026 10:15/)).toBeTruthy();
+		expect(calendar.getByText(/zuletzt erfolgreich 25\.09\.2026 10:00/)).toBeTruthy();
+		expect(calendar.getByText('keine')).toBeTruthy();
 		const error = calendar.getByText(/Letzter Fehler: HTTP 404/);
-		expect(error.closest('.alert-error')?.querySelector('svg')).not.toBeNull();
-		const telegram = within(bot as HTMLElement);
-		expect(telegram.getByText('BYL_TELEGRAM_ALLOWED_IDS')).toBeTruthy();
-		expect(telegram.getAllByText('noch nie')).toHaveLength(2);
+		expect(error.closest('[data-tone="error"]')?.querySelector('svg')).not.toBeNull();
+		const telegram = card('Telegram-Bot');
+		expect(telegram.getByText('Nicht eingerichtet')).toBeTruthy();
+		expect(telegram.getByText('noch nie')).toBeTruthy();
 		expect(telegram.getByText(/Variable BYL_TELEGRAM_TOKEN anlegen/)).toBeTruthy();
-		expect(telegram.getByText(/Chat-ID 424242/)).toBeTruthy();
+		// One hint per card: the missing variable wins over the hint of the last run.
+		expect(telegram.queryByText(/Chat-ID 424242/)).toBeNull();
+		expect(
+			telegram.getByRole('button', { name: 'Einrichtung fortsetzen: Telegram-Bot' })
+		).toBeTruthy();
+		// No switch "Eingeschaltet" any more, no variables on the card.
+		expect(screen.queryByLabelText('Eingeschaltet')).toBeNull();
+		expect(calendar.queryByText('BYL_GOOGLE_CALENDAR_URL')).toBeNull();
 	});
 
-	it('switches a connection off', async () => {
+	it('pauses and resumes a connection through the menu "…" (EH-3)', async () => {
 		const { data, flags } = await renderSection();
-		const [cal] = screen.getAllByRole('listitem');
-		await fireEvent.click(within(cal as HTMLElement).getByLabelText('Eingeschaltet'));
+		const trigger = screen.getByRole('button', { name: 'Weitere Aktionen für Google Kalender' });
+		expect(trigger.getAttribute('aria-haspopup')).toBe('menu');
+		await chooseFromMenu('Google Kalender', 'Pausieren');
 		expect(data.setEnabled).toHaveBeenCalledWith(CAL.id, false);
-		await vi.waitFor(() => expect(latestFlag(flags)).toBe('„Google Kalender“ ist ausgeschaltet.'));
+		await vi.waitFor(() => expect(latestFlag(flags)).toBe('„Google Kalender“ ist pausiert.'));
+		const calendar = card('Google Kalender');
+		expect(calendar.getByText('Pausiert')).toBeTruthy();
+		expect(calendar.getByText(/Die App ruft nichts ab/)).toBeTruthy();
+		await fireEvent.click(calendar.getByRole('button', { name: 'Fortsetzen: Google Kalender' }));
+		expect(data.setEnabled).toHaveBeenLastCalledWith(CAL.id, true);
+		await vi.waitFor(() => expect(latestFlag(flags)).toBe('„Google Kalender“ läuft wieder.'));
 	});
 
-	it('creates a Telegram connection with both variable names and marks wrong names', async () => {
-		const { data } = await renderSection();
-		await fireEvent.change(screen.getByLabelText('Art'), { target: { value: 'telegram' } });
-		const token = screen.getByLabelText(
+	it('creates a Telegram connection from the catalog and marks wrong names (EH-3)', async () => {
+		const { store, data } = setup([CAL]);
+		await store.load();
+		renderView(store);
+		await fireEvent.click(screen.getByRole('button', { name: 'Einrichten: Telegram-Bot' }));
+		const dialog = within(screen.getByRole('dialog', { name: 'Verbindung anlegen' }));
+		expect((dialog.getByLabelText('Art') as HTMLSelectElement).value).toBe('telegram');
+		const token = dialog.getByLabelText(
 			'Variable mit dem Bot-Token (Pflichtfeld)'
 		) as HTMLInputElement;
 		expect(token.value).toBe('BYL_TELEGRAM_TOKEN');
-		const allowlist = screen.getByLabelText(
+		const allowlist = dialog.getByLabelText(
 			'Variable mit den erlaubten Chat- bzw. User-IDs (Pflichtfeld)'
 		) as HTMLInputElement;
 		expect(allowlist.value).toBe('BYL_TELEGRAM_ALLOWED_IDS');
 		await fireEvent.input(allowlist, { target: { value: 'PATH' } });
-		await fireEvent.click(screen.getByRole('button', { name: 'Verbindung anlegen' }));
+		await fireEvent.click(dialog.getByRole('button', { name: 'Verbindung anlegen' }));
 		expect(allowlist.getAttribute('aria-invalid')).toBe('true');
 		expect(
 			document.getElementById(allowlist.getAttribute('aria-describedby') ?? '')?.textContent
 		).toMatch(/BYL_/);
 		expect(data.create).not.toHaveBeenCalled();
 		await fireEvent.input(allowlist, { target: { value: 'BYL_BOT_IDS' } });
-		await fireEvent.click(screen.getByRole('button', { name: 'Verbindung anlegen' }));
+		await fireEvent.click(dialog.getByRole('button', { name: 'Verbindung anlegen' }));
 		expect(data.create).toHaveBeenCalledWith({
 			type: 'telegram',
 			label: 'Telegram-Bot',
@@ -258,25 +309,37 @@ describe('connections section', () => {
 			mailProvider: 'webde',
 			mailUser: ''
 		});
-		await vi.waitFor(() => expect(screen.getAllByRole('listitem')).toHaveLength(3));
+		await vi.waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+		expect(screen.getByRole('article', { name: 'Telegram-Bot' })).toBeTruthy();
+		// The tile stays: several connections of a kind are allowed.
+		expect(screen.getByRole('button', { name: 'Weitere einrichten: Telegram-Bot' })).toBeTruthy();
 	});
 
-	it('deletes after the safety question', async () => {
+	it('deletes through the menu after the safety question (EH-3)', async () => {
 		const { data } = await renderSection();
-		const [cal] = screen.getAllByRole('listitem');
-		await fireEvent.click(within(cal as HTMLElement).getByRole('button', { name: 'Löschen' }));
+		await chooseFromMenu('Google Kalender', 'Löschen …');
 		const dialog = screen.getByRole('dialog', { name: 'Verbindung „Google Kalender“ löschen?' });
 		expect(dialog.textContent).toMatch(/Einträge, die schon im Eingang sind, bleiben/);
 		await fireEvent.click(within(dialog).getByRole('button', { name: 'Löschen' }));
 		expect(data.remove).toHaveBeenCalledWith(CAL.id);
-		await vi.waitFor(() => expect(screen.getAllByRole('listitem')).toHaveLength(1));
+		await vi.waitFor(() => expect(screen.getAllByRole('article')).toHaveLength(1));
+	});
+
+	it('leads to the setup of the kind of a connection (EH-3)', async () => {
+		const { onsetup } = await renderSection({ [BOT.id]: { secret: false, allowlist: true } });
+		await fireEvent.click(
+			screen.getByRole('button', { name: 'Einrichtung fortsetzen: Telegram-Bot' })
+		);
+		expect(onsetup).toHaveBeenLastCalledWith(expect.objectContaining({ id: BOT.id }));
+		await chooseFromMenu('Google Kalender', 'Einrichtung ansehen');
+		expect(onsetup).toHaveBeenLastCalledWith(expect.objectContaining({ id: CAL.id }));
 	});
 
 	it('shows the hint before the migration neutrally', async () => {
 		const { store, data } = setup();
 		data.list.mockRejectedValueOnce(new DataError('not_found', { status: 404 }));
 		await store.load();
-		render(ConnectionsSection, { props: { store } });
+		renderCards(store);
 		// Since EH-2 a section message with title (RESTART_NEEDED), announced as status.
 		const status = screen.getByRole('status');
 		expect(status.textContent).toMatch(/Hinweis:\s*Nach dem nächsten Neustart verfügbar/);
@@ -285,28 +348,82 @@ describe('connections section', () => {
 		expect(screen.queryByRole('alert')).toBeNull();
 	});
 
-	it('shows an empty state that leads to the form "Neue Verbindung" (EH-2)', async () => {
+	it('shows an empty state that leads to the catalog (EH-2, EH-3)', async () => {
 		const { store } = setup([]);
 		await store.load();
-		render(ConnectionsSection, { props: { store } });
+		renderView(store);
 
 		expect(screen.getByRole('heading', { name: 'Noch kein Kanal verbunden' })).toBeTruthy();
 		expect(screen.getByText(/Die Einrichtung dauert etwa fünf Minuten/)).toBeTruthy();
 		await fireEvent.click(screen.getByRole('button', { name: 'Kanal hinzufügen' }));
-		expect(document.activeElement).toBe(screen.getByLabelText('Art'));
+		expect(document.activeElement).toBe(screen.getByRole('heading', { name: 'Kanal hinzufügen' }));
+	});
+
+	it('reads like an overview: explanation, cards, own ways, catalog, folded guides (EH-3)', async () => {
+		const { store } = setup();
+		await store.load();
+		renderView(store);
+		const headings = screen
+			.getAllByRole('heading', { level: 3 })
+			.map((heading) => heading.textContent?.replace(/\s+/g, ' ').trim());
+		expect(headings).toEqual([
+			'Deine Verbindungen 2(2 Verbindungen)',
+			'Selbst hereinbringen',
+			'Kanal hinzufügen',
+			'Anleitungen'
+		]);
+		const guides = document.querySelectorAll<HTMLDetailsElement>('.guide details');
+		expect(guides).toHaveLength(5);
+		expect([...guides].every((details) => !details.open)).toBe(true);
+		const files = within(screen.getByRole('region', { name: 'Dateien hereinziehen' }));
+		expect(files.getByRole('link', { name: 'Stichwörter bearbeiten' }).getAttribute('href')).toBe(
+			'/einstellungen/datei-importe'
+		);
+		expect(files.getByRole('link', { name: 'Zum Eingang' }).getAttribute('href')).toBe('/eingang');
+	});
+
+	it('opens the guide of Proton from the catalog and of a card, with the focus on it (EH-3)', async () => {
+		const { store } = setup([BOT], { [BOT.id]: { secret: false, allowlist: true } });
+		await store.load();
+		renderView(store);
+		await fireEvent.click(screen.getByRole('button', { name: 'Anleitung: Proton Mail' }));
+		const proton = screen.getByRole('region', { name: 'Proton Mail per Datei übernehmen' });
+		await vi.waitFor(() => expect(proton.querySelector('details')?.open).toBe(true));
+		expect(document.activeElement?.textContent).toBe('Proton Mail per Datei übernehmen');
+		expect(within(proton).getByRole('link', { name: 'mail.proton.me' }).getAttribute('rel')).toBe(
+			'noopener noreferrer'
+		);
+		await fireEvent.click(
+			screen.getByRole('button', { name: 'Einrichtung fortsetzen: Telegram-Bot' })
+		);
+		const telegram = screen.getByRole('region', { name: 'Telegram-Bot einrichten' });
+		await vi.waitFor(() => expect(telegram.querySelector('details')?.open).toBe(true));
+		expect(document.activeElement?.textContent).toBe('Telegram-Bot einrichten');
+	});
+
+	it('shows placeholder cards and a status while loading (EH-3)', () => {
+		const { store, data } = setup();
+		data.list.mockReturnValueOnce(new Promise(() => undefined));
+		void store.load();
+		const { container } = render(ConnectionsSection, {
+			props: { store, onadd: vi.fn(), onsetup: vi.fn() }
+		});
+		expect(screen.getByRole('status').textContent).toBe('Verbindungen werden geladen …');
+		expect(container.querySelectorAll('.placeholder')).toHaveLength(3);
+		expect(container.querySelector('.placeholder')?.closest('[aria-hidden="true"]')).not.toBeNull();
 	});
 
 	it('shows a failed load as an error message with "Erneut versuchen" (EH-2)', async () => {
 		const { store, data } = setup();
 		data.list.mockRejectedValueOnce(new DataError('network'));
 		await store.load();
-		render(ConnectionsSection, { props: { store } });
+		renderCards(store);
 
 		const alert = screen.getByRole('alert');
 		expect(alert.getAttribute('data-tone')).toBe('error');
 		expect(alert.textContent).toMatch(/^\s*Fehler:/);
 		await fireEvent.click(within(alert).getByRole('button', { name: 'Erneut versuchen' }));
-		await vi.waitFor(() => expect(screen.getAllByRole('listitem').length).toBeGreaterThan(0));
+		await vi.waitFor(() => expect(screen.getAllByRole('article').length).toBeGreaterThan(0));
 	});
 });
 
@@ -363,38 +480,47 @@ describe('Jetzt abrufen (E4 plan, package 15)', () => {
 		);
 		expect(runResultText('Kalender', { ...base, status: 'running' })).toMatch(/ruft gerade ab/);
 		expect(runResultText('Kalender', { ...base, status: 'disabled' })).toBe(
-			'„Kalender“ ist ausgeschaltet.'
+			'„Kalender“ ist pausiert.'
 		);
 	});
 
 	it('runs a connection, announces the result and shows its new state', async () => {
 		const context = setup();
 		await context.store.load();
-		render(ConnectionsSection, { props: { store: context.store } });
-		const [cal] = screen.getAllByRole('listitem');
-		await fireEvent.click(
-			within(cal as HTMLElement).getByRole('button', { name: 'Jetzt abrufen' })
-		);
+		renderCards(context.store);
+		const calendar = card('Google Kalender');
+		await fireEvent.click(calendar.getByRole('button', { name: 'Jetzt abrufen: Google Kalender' }));
 		expect(context.data.run).toHaveBeenCalledWith(CAL.id);
 		await vi.waitFor(() =>
 			expect(latestFlag(context.flags)).toBe(
 				'„Google Kalender“: 3 neu, 1 schon vorhanden, 1 aktualisiert.'
 			)
 		);
-		await vi.waitFor(() =>
-			expect(within(cal as HTMLElement).queryByText(/Letzter Fehler/)).toBeNull()
-		);
-		expect(within(cal as HTMLElement).getAllByText('25.09.2026 12:00')).toHaveLength(2);
+		await vi.waitFor(() => expect(calendar.queryByText(/Letzter Fehler/)).toBeNull());
+		// Last run and last success are the same now: one date, and the lozenge says so.
+		await vi.waitFor(() => expect(calendar.getByText('Eingerichtet')).toBeTruthy());
+		expect(calendar.getAllByText(/25\.09\.2026 12:00/)).toHaveLength(1);
 	});
 
-	it('offers no run for a switched-off connection and reloads with "Aktualisieren"', async () => {
+	it('shows "Wird abgerufen" while a run is going (EH-3)', async () => {
+		const context = setup();
+		context.data.run.mockReturnValueOnce(new Promise(() => undefined));
+		await context.store.load();
+		renderCards(context.store);
+		const calendar = card('Google Kalender');
+		await fireEvent.click(calendar.getByRole('button', { name: 'Jetzt abrufen: Google Kalender' }));
+		expect(calendar.getByText('Wird abgerufen')).toBeTruthy();
+		const busy = calendar.getByRole('button', { name: 'Wird abgerufen …: Google Kalender' });
+		expect(busy.getAttribute('aria-busy')).toBe('true');
+		expect(busy.getAttribute('aria-disabled')).toBe('true');
+	});
+
+	it('offers "Fortsetzen" instead of a run for a paused connection and reloads with "Aktualisieren"', async () => {
 		const context = setup([{ ...CAL, enabled: false }]);
 		await context.store.load();
-		render(ConnectionsSection, { props: { store: context.store } });
-		const button = screen.getByRole('button', { name: 'Jetzt abrufen' });
-		expect(button.getAttribute('aria-disabled')).toBe('true');
-		await fireEvent.click(button);
-		expect(context.data.run).not.toHaveBeenCalled();
+		renderCards(context.store);
+		expect(screen.queryByRole('button', { name: /^Jetzt abrufen/ })).toBeNull();
+		expect(screen.getByRole('button', { name: 'Fortsetzen: Google Kalender' })).toBeTruthy();
 		await fireEvent.click(screen.getByRole('button', { name: 'Aktualisieren' }));
 		expect(context.data.list).toHaveBeenCalledTimes(2);
 	});
@@ -442,24 +568,31 @@ describe('Telegram-Bot einrichten (E4 plan, package 17)', () => {
 	});
 });
 
-describe('Stichwörter (E4 plan, package 20)', () => {
+describe('Stichwörter (E4 plan, package 20; since EH-3 in "Bearbeiten")', () => {
 	it('warns at a connection without keywords and says where they are searched', async () => {
-		const context = setup();
+		const context = setup([{ ...CAL, lastError: '' }, BOT]);
 		await context.store.load();
-		render(ConnectionsSection, { props: { store: context.store } });
-		const [cal, bot] = screen.getAllByRole('listitem');
-		const calendar = within(cal as HTMLElement);
-		expect(calendar.getByText(NO_KEYWORDS_WARNING)).toBeTruthy();
-		expect(calendar.getByText(/Titel und Beschreibung der Termine/)).toBeTruthy();
-		expect(within(bot as HTMLElement).getByText(/im Text der Nachricht/)).toBeTruthy();
+		renderCards(context.store);
+		expect(card('Google Kalender').getByText(NO_KEYWORDS_WARNING)).toBeTruthy();
+		await fireEvent.click(screen.getByRole('button', { name: 'Bearbeiten: Google Kalender' }));
+		const dialog = within(screen.getByRole('dialog', { name: 'Google Kalender bearbeiten' }));
+		expect(dialog.getByText(NO_KEYWORDS_WARNING)).toBeTruthy();
+		expect(dialog.getByText(/Titel und Beschreibung der Termine/)).toBeTruthy();
+		expect(dialog.getByText('BYL_GOOGLE_CALENDAR_URL')).toBeTruthy();
+		// Every change is saved at once: the footer says "Schließen" (ADR-0025 section 3).
+		const close = dialog.getAllByRole('button', { name: 'Schließen' });
+		await fireEvent.click(close[close.length - 1] as HTMLElement);
+		expect(screen.queryByRole('dialog')).toBeNull();
 	});
 
 	it('adds keywords and the suggestions and keeps the answer switch of the bot', async () => {
 		const context = setup();
 		await context.store.load();
-		render(ConnectionsSection, { props: { store: context.store } });
-		const [, bot] = screen.getAllByRole('listitem');
-		const scope = within(bot as HTMLElement);
+		renderCards(context.store);
+		await fireEvent.click(screen.getByRole('button', { name: 'Bearbeiten: Telegram-Bot' }));
+		const scope = within(screen.getByRole('dialog', { name: 'Telegram-Bot bearbeiten' }));
+		expect(scope.getByText(/im Text der Nachricht/)).toBeTruthy();
+		expect(scope.getByText('BYL_TELEGRAM_ALLOWED_IDS')).toBeTruthy();
 		await fireEvent.input(scope.getByLabelText('Neues Stichwort'), {
 			target: { value: ' Einkauf ' }
 		});
@@ -480,15 +613,10 @@ describe('Stichwörter (E4 plan, package 20)', () => {
 		await vi.waitFor(() =>
 			expect((scope.getByLabelText('Neues Stichwort') as HTMLInputElement).value).toBe('')
 		);
-		const list = within(screen.getByRole('list', { name: 'Stichwörter von „Telegram-Bot“' }));
+		const list = within(scope.getByRole('list', { name: 'Stichwörter von „Telegram-Bot“' }));
 		expect(list.getByText('Einkauf')).toBeTruthy();
 
-		const [, botAgain] = screen
-			.getAllByRole('listitem')
-			.filter((item) => item.classList.contains('connection'));
-		await fireEvent.click(
-			within(botAgain as HTMLElement).getByRole('button', { name: 'Vorschläge übernehmen' })
-		);
+		await fireEvent.click(scope.getByRole('button', { name: 'Vorschläge übernehmen' }));
 		await vi.waitFor(() =>
 			expect(context.data.saveSettings).toHaveBeenLastCalledWith(
 				expect.objectContaining({ id: BOT.id }),
@@ -499,10 +627,12 @@ describe('Stichwörter (E4 plan, package 20)', () => {
 				}
 			)
 		);
-		await vi.waitFor(() => expect(within(botAgain as HTMLElement).getByText('#byl')).toBeTruthy());
+		await vi.waitFor(() => expect(scope.getByText('#byl')).toBeTruthy());
+		// The card shows the number and the first three keywords.
+		expect(card('Telegram-Bot').getByText('6 (Einkauf, todo, aufgabe, +3)')).toBeTruthy();
 
 		await fireEvent.click(
-			within(botAgain as HTMLElement).getByRole('checkbox', {
+			scope.getByRole('checkbox', {
 				name: /Auf Nachrichten ohne Stichwort antworten/
 			})
 		);
@@ -521,8 +651,20 @@ describe('Stichwörter (E4 plan, package 20)', () => {
 	it('shows no answer switch for the calendar', async () => {
 		const context = setup([CAL]);
 		await context.store.load();
-		render(ConnectionsSection, { props: { store: context.store } });
+		renderCards(context.store);
+		await fireEvent.click(screen.getByRole('button', { name: 'Bearbeiten: Google Kalender' }));
+		expect(screen.getByRole('dialog', { name: 'Google Kalender bearbeiten' })).toBeTruthy();
 		expect(screen.queryByRole('checkbox', { name: /ohne Stichwort antworten/ })).toBeNull();
+	});
+
+	it('leads from "Bearbeiten" to the setup and closes the modal first (EH-3)', async () => {
+		const context = setup([CAL]);
+		await context.store.load();
+		const { onsetup } = renderCards(context.store);
+		await fireEvent.click(screen.getByRole('button', { name: 'Bearbeiten: Google Kalender' }));
+		await fireEvent.click(screen.getByRole('button', { name: 'Einrichtung erneut ansehen' }));
+		expect(screen.queryByRole('dialog')).toBeNull();
+		expect(onsetup).toHaveBeenCalledWith(expect.objectContaining({ id: CAL.id }));
 	});
 });
 
@@ -550,19 +692,19 @@ describe('Postfächer (E4 plan, package 22)', () => {
 	it('shows provider and user, no "Jetzt abrufen" and the switch for the text', async () => {
 		const context = setup([MAIL]);
 		await context.store.load();
-		render(ConnectionsSection, { props: { store: context.store } });
-		const [item] = screen
-			.getAllByRole('listitem')
-			.filter((li) => li.classList.contains('connection'));
-		const scope = within(item as HTMLElement);
-		expect(scope.getByText('Web.de', { selector: 'dd' })).toBeTruthy();
-		expect(scope.getByText('anna@web.de')).toBeTruthy();
-		expect(scope.getByText('BYL_WEBDE_PASSWORD')).toBeTruthy();
-		expect(scope.getByText(/im Betreff, auf Wunsch auch in den ersten 500 Zeichen/)).toBeTruthy();
-		expect(scope.getByText(/byl-mail\.exe ruft dieses Postfach alle 5 Minuten ab/)).toBeTruthy();
-		expect(scope.queryByRole('button', { name: 'Jetzt abrufen' })).toBeNull();
+		renderCards(context.store);
+		const scope = card('Web.de');
+		expect(scope.getByText('Postfach · Web.de · anna@web.de')).toBeTruthy();
+		expect(scope.queryByRole('button', { name: /^Jetzt abrufen/ })).toBeNull();
+		expect(scope.getByRole('button', { name: 'Aus dem Postfach wählen: Web.de' })).toBeTruthy();
+		// The restart hint is no longer repeated at every mailbox (EH-3).
+		expect(scope.queryByText(/byl-mail\.exe ruft dieses Postfach/)).toBeNull();
+		await fireEvent.click(scope.getByRole('button', { name: 'Bearbeiten: Web.de' }));
+		const dialog = within(screen.getByRole('dialog', { name: 'Web.de bearbeiten' }));
+		expect(dialog.getByText('BYL_WEBDE_PASSWORD')).toBeTruthy();
+		expect(dialog.getByText(/im Betreff, auf Wunsch auch in den ersten 500 Zeichen/)).toBeTruthy();
 		await fireEvent.click(
-			scope.getByRole('checkbox', { name: 'Auch die ersten 500 Zeichen des Textes durchsuchen' })
+			dialog.getByRole('checkbox', { name: 'Auch die ersten 500 Zeichen des Textes durchsuchen' })
 		);
 		await vi.waitFor(() =>
 			expect(context.data.saveSettings).toHaveBeenLastCalledWith(
@@ -575,25 +717,27 @@ describe('Postfächer (E4 plan, package 22)', () => {
 		);
 	});
 
-	it('creates a mailbox with provider, user and the variable of the password', async () => {
-		const { data } = await renderSection();
-		await fireEvent.change(screen.getByLabelText('Art'), { target: { value: 'mail' } });
-		expect((screen.getByLabelText('Anbieter') as HTMLSelectElement).value).toBe('webde');
-		const secret = screen.getByLabelText(
+	it('creates a mailbox from the tile "Web.de" with provider, user and the variable of the password', async () => {
+		const { data } = await renderCatalog();
+		await fireEvent.click(screen.getByRole('button', { name: 'Einrichten: Web.de' }));
+		const dialog = within(screen.getByRole('dialog', { name: 'Verbindung anlegen' }));
+		expect((dialog.getByLabelText('Art') as HTMLSelectElement).value).toBe('mail');
+		expect((dialog.getByLabelText('Anbieter') as HTMLSelectElement).value).toBe('webde');
+		const secret = dialog.getByLabelText(
 			'Variable mit dem Passwort bzw. App-Passwort des Postfachs (Pflichtfeld)'
 		) as HTMLInputElement;
 		expect(secret.value).toBe('BYL_WEBDE_PASSWORD');
-		const user = screen.getByLabelText(
+		const user = dialog.getByLabelText(
 			'Benutzername, meist die E-Mail-Adresse (Pflichtfeld)'
 		) as HTMLInputElement;
-		await fireEvent.click(screen.getByRole('button', { name: 'Verbindung anlegen' }));
+		await fireEvent.click(dialog.getByRole('button', { name: 'Verbindung anlegen' }));
 		expect(user.getAttribute('aria-invalid')).toBe('true');
 		expect(data.create).not.toHaveBeenCalled();
 		await fireEvent.input(user, { target: { value: ' anna@web.de ' } });
-		await fireEvent.click(screen.getByRole('button', { name: 'Verbindung anlegen' }));
+		await fireEvent.click(dialog.getByRole('button', { name: 'Verbindung anlegen' }));
 		expect(data.create).toHaveBeenCalledWith({
 			type: 'mail',
-			label: 'Postfach (IMAP)',
+			label: 'Web.de',
 			secretEnv: 'BYL_WEBDE_PASSWORD',
 			allowlistEnv: '',
 			mailProvider: 'webde',
@@ -601,24 +745,32 @@ describe('Postfächer (E4 plan, package 22)', () => {
 		});
 	});
 
-	it('suggests the Gmail variable and label when the provider changes (E4 plan, package 13)', async () => {
-		const { data } = await renderSection();
-		await fireEvent.change(screen.getByLabelText('Art'), { target: { value: 'mail' } });
-		const provider = screen.getByLabelText('Anbieter') as HTMLSelectElement;
+	it('suggests the Gmail variable and label for the tile "Gmail" and when the provider changes (E4 plan, package 13)', async () => {
+		const { data } = await renderCatalog();
+		await fireEvent.click(screen.getByRole('button', { name: 'Einrichten: Gmail' }));
+		let dialog = within(screen.getByRole('dialog', { name: 'Verbindung anlegen' }));
+		expect((dialog.getByLabelText('Anbieter') as HTMLSelectElement).value).toBe('gmail');
+		const cancel = dialog.getAllByRole('button', { name: /Abbrechen|Schließen/ });
+		await fireEvent.click(cancel[cancel.length - 1] as HTMLElement);
+		expect(screen.queryByRole('dialog')).toBeNull();
+
+		await fireEvent.click(screen.getByRole('button', { name: 'Einrichten: Web.de' }));
+		dialog = within(screen.getByRole('dialog', { name: 'Verbindung anlegen' }));
+		const provider = dialog.getByLabelText('Anbieter') as HTMLSelectElement;
 		expect([...provider.options].map((option) => option.textContent)).toEqual(['Web.de', 'Gmail']);
 		await fireEvent.change(provider, { target: { value: 'gmail' } });
-		const secret = screen.getByLabelText(
+		const secret = dialog.getByLabelText(
 			'Variable mit dem Passwort bzw. App-Passwort des Postfachs (Pflichtfeld)'
 		) as HTMLInputElement;
 		expect(secret.value).toBe('BYL_GMAIL_PASSWORD');
-		expect((screen.getByLabelText('Bezeichnung (Pflichtfeld)') as HTMLInputElement).value).toBe(
+		expect((dialog.getByLabelText('Bezeichnung (Pflichtfeld)') as HTMLInputElement).value).toBe(
 			'Gmail'
 		);
 		await fireEvent.input(
-			screen.getByLabelText('Benutzername, meist die E-Mail-Adresse (Pflichtfeld)'),
+			dialog.getByLabelText('Benutzername, meist die E-Mail-Adresse (Pflichtfeld)'),
 			{ target: { value: 'anna@gmail.com' } }
 		);
-		await fireEvent.click(screen.getByRole('button', { name: 'Verbindung anlegen' }));
+		await fireEvent.click(dialog.getByRole('button', { name: 'Verbindung anlegen' }));
 		expect(data.create).toHaveBeenCalledWith({
 			type: 'mail',
 			label: 'Gmail',
@@ -629,10 +781,10 @@ describe('Postfächer (E4 plan, package 22)', () => {
 		});
 	});
 
-	async function renderSection() {
+	async function renderCatalog() {
 		const context = setup([CAL]);
 		await context.store.load();
-		render(ConnectionsSection, { props: { store: context.store } });
+		renderView(context.store);
 		return context;
 	}
 });
@@ -695,7 +847,7 @@ describe('Aus dem Postfach wählen (E4 plan, package 23)', () => {
 		mailUser: 'anna@web.de'
 	});
 
-	it('opens the selection of a switched-on mailbox and announces the import', async () => {
+	it('opens the selection of a mailbox and announces the import', async () => {
 		const context = setup([MAILBOX]);
 		context.data.listMailbox.mockResolvedValue({
 			kind: 'ok',
@@ -717,8 +869,8 @@ describe('Aus dem Postfach wählen (E4 plan, package 23)', () => {
 			value: [{ uid: 7, status: 'created', message: '' }]
 		});
 		await context.store.load();
-		render(ConnectionsSection, { props: { store: context.store } });
-		await fireEvent.click(screen.getByRole('button', { name: 'Aus dem Postfach wählen' }));
+		renderCards(context.store);
+		await fireEvent.click(screen.getByRole('button', { name: 'Aus dem Postfach wählen: Web.de' }));
 		const dialog = await screen.findByRole('dialog', { name: 'Aus dem Postfach wählen' });
 		expect(context.data.listMailbox).toHaveBeenCalledWith(MAILBOX.id, 50, {
 			signal: expect.any(AbortSignal)
@@ -731,17 +883,15 @@ describe('Aus dem Postfach wählen (E4 plan, package 23)', () => {
 		expect(screen.queryByRole('dialog', { name: 'Aus dem Postfach wählen' })).toBeNull();
 	});
 
-	it('asks to switch a mailbox on first', async () => {
+	it('offers "Fortsetzen" instead of the selection at a paused mailbox (EH-3)', async () => {
 		const context = setup([{ ...MAILBOX, enabled: false }]);
 		await context.store.load();
-		render(ConnectionsSection, { props: { store: context.store } });
-		const button = screen.getByRole('button', { name: 'Aus dem Postfach wählen' });
-		expect(button.getAttribute('aria-disabled')).toBe('true');
-		await fireEvent.click(button);
-		expect(screen.queryByRole('dialog', { name: 'Aus dem Postfach wählen' })).toBeNull();
-		expect(
-			document.getElementById(button.getAttribute('aria-describedby') ?? '')?.textContent
-		).toMatch(/Verbindung einschalten/);
+		renderCards(context.store);
+		expect(screen.queryByRole('button', { name: /^Aus dem Postfach wählen/ })).toBeNull();
+		const scope = card('Web.de');
+		expect(scope.getByText(/Der Hilfsprozess ruft pausierte Postfächer nicht ab/)).toBeTruthy();
+		await fireEvent.click(scope.getByRole('button', { name: 'Fortsetzen: Web.de' }));
+		expect(context.data.setEnabled).toHaveBeenCalledWith(MAILBOX.id, true);
 		expect(screen.queryByRole('alert')).toBeNull();
 		expect(context.data.listMailbox).not.toHaveBeenCalled();
 	});
@@ -749,7 +899,7 @@ describe('Aus dem Postfach wählen (E4 plan, package 23)', () => {
 	it('offers the selection only at mailboxes', async () => {
 		const context = setup();
 		await context.store.load();
-		render(ConnectionsSection, { props: { store: context.store } });
-		expect(screen.queryByRole('button', { name: 'Aus dem Postfach wählen' })).toBeNull();
+		renderCards(context.store);
+		expect(screen.queryByRole('button', { name: /^Aus dem Postfach wählen/ })).toBeNull();
 	});
 });

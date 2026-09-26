@@ -39,10 +39,11 @@ describe('channels view', () => {
 		render(ChannelsView, {
 			props: { captureUrl: CAPTURE, connections: idleConnections() }
 		});
-		// The heading "Kanäle" belongs to the settings layout since EH-1 (settings-layout.test.ts).
+		// The heading "Kanäle" belongs to the settings layout since EH-1 (settings-layout.test.ts); since
+		// EH-3 the bookmarklet is a card of the section "Selbst hereinbringen" (h3), so its title is h4.
 		expect(screen.queryByRole('heading', { level: 2 })).toBeNull();
 		expect(
-			screen.getByRole('heading', { level: 3, name: 'Bookmarklet für Web-Links' })
+			screen.getByRole('heading', { level: 4, name: 'Bookmarklet für Web-Links' })
 		).toBeTruthy();
 		const link = screen.getByRole('link', { name: 'In den Eingang' });
 		expect(link.getAttribute('href')).toBe(bookmarkletCode(CAPTURE));
