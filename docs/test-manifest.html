@@ -213,8 +213,8 @@
   "meta": {
     "projekt": "becauseyoulovejira",
     "stand": "2026-09-26",
-    "commit": "b9bdcde",
-    "etappe": "E0 bis E4 abgeschlossen (E4: Pakete 1 bis 11, 13 bis 17, 19 bis 24; Paket 12 entfällt, Paket 18 zurückgestellt); E5 abgeschlossen (Pakete 1 bis 7: BYL-E5-001 bis BYL-E5-007 bestanden, Browser-Prüfung BYL-E5-008 offen); E6 UI-Konsistenz vorgezogen und umgesetzt (UI-0 bis UI-9 und UI-6b: BYL-E6-001 bis BYL-E6-028; Projektliste und Tags in den Einstellungen nach Nutzerwunsch: BYL-E6-065 bis BYL-E6-067); E6 Einstellungen und Hilfe umgesetzt (EH-0 bis EH-13: BYL-E6-029 bis BYL-E6-059, manuelle Browser-Prüfungen offen)"
+    "commit": "feae7ef",
+    "etappe": "E0 bis E4 abgeschlossen (E4: Pakete 1 bis 11, 13 bis 17, 19 bis 24; Paket 12 entfällt, Paket 18 zurückgestellt); E5 abgeschlossen (Pakete 1 bis 7: BYL-E5-001 bis BYL-E5-007 bestanden, Browser-Prüfung BYL-E5-008 offen); E6 UI-Konsistenz vorgezogen und umgesetzt (UI-0 bis UI-9 und UI-6b: BYL-E6-001 bis BYL-E6-028; Projektliste und Tags in den Einstellungen nach Nutzerwunsch: BYL-E6-065 bis BYL-E6-067); E6 Einstellungen und Hilfe umgesetzt (EH-0 bis EH-13: BYL-E6-029 bis BYL-E6-059, manuelle Browser-Prüfungen offen); Akzent-Themes nach ADR-0027 (Nutzerwunsch): Tokens und Tests BYL-E6-068 bis BYL-E6-070"
   },
   "blocks": [
     {
@@ -825,7 +825,7 @@
       "items": [
         { "id": "BYL-E2-090", "title": "Farbtoken und Kontraste", "art": ["unit"], "status": "bestanden",
           "pre": "–", "steps": ["npm run test:web"],
-          "expect": "Alle vier Blöcke von tokens.css haben dieselben Tokens, Kontraste nach ADR-0009 mindestens 4,5 : 1, keine Farbwerte außerhalb von tokens.css.",
+          "expect": "Alle vier Modus-Blöcke von tokens.css haben dieselben Tokens, Kontraste nach ADR-0009 mindestens 4,5 : 1, keine Farbwerte außerhalb von tokens.css. Seit ADR-0027 gilt das für jedes Akzent-Theme (BYL-E6-068 bis BYL-E6-070).",
           "tests": ["web/src/lib/styles/tokens.test.ts", "web/src/lib/styles/color-literals.test.ts"] },
         { "id": "BYL-E2-091", "title": "Bereichs-Umschalter", "art": ["komponente"], "status": "bestanden",
           "pre": "–", "steps": ["npm run test:web"],
@@ -1615,6 +1615,23 @@
           "pre": "Plan Einstellungen, Paket EH-13. Build von main in app\\, Chrome, Firefox, Opera GX; mindestens ein Projekt, damit „Liste oder Kacheln“ erscheint.", "steps": ["„?“ → „Kurze Einführung“ in hell und in dunkel: alle fünf Schritte mit „Weiter“ durchgehen; die Tour wechselt zu „Aufgaben“, „Projekte“ und „Kanäle“; Schleier, Fläche, Linie und Knöpfe passen zur App, kein Schatten.", "Mit „Zurück“, ×, Klick auf den Schleier und Esc abbrechen (auch bei offenem Seitenpanel: das Panel bleibt offen); der Fokus steht danach wieder auf „?“.", "Nur Tastatur: Tab durch die Knöpfe, Pfeiltasten wechseln den Schritt, Enter löst aus.", "Windows „Animationen anzeigen“ aus (prefers-reduced-motion): keine Überblendung.", "Aus „Erste Schritte“ starten; unter 64rem und ohne Projekt wird der fehlende Schritt übersprungen."],
           "expect": "Die Tour sieht aus wie die App, führt über die Seiten und lässt sich jederzeit beenden.",
           "tests": [] }
+      ]
+    },
+    {
+      "tag": "E6", "name": "Akzent-Themes", "desc": "Wählbare Akzentfarben nach ADR-0027: Petrol (Standard), Rubin, Purpur, Smaragd und Honig, jeweils hell und dunkel und unabhängig vom Modus. Genau eine Akzentfarbe je Theme, alle Farbwerte in tokens.css.",
+      "items": [
+        { "id": "BYL-E6-068", "title": "Akzent-Themes: Blöcke und Tokens vollständig", "art": ["unit"], "status": "bestanden",
+          "pre": "ADR-0027 §2; tokens.css wird als Text gelesen.", "steps": ["npm run test:web"],
+          "expect": "tokens.css hat genau die vier Modus-Blöcke und je Theme (rubin, purpur, smaragd, honig) die vier Blöcke mit data-accent. Jeder Theme-Block setzt genau die 14 Akzent-Tokens (Marke, Marke als Text, Fläche und Text darauf, Text auf Marke, Fehler und Fehlerfläche, Pillen „Offen“, „In Arbeit“ und „Wartet“), nur als #rrggbb. Die Modus-Blöcke enthalten alle Akzent-Tokens (Petrol ist vollständig). Die erzwungenen Varianten gleichen den normalen in jedem Theme. Neutrale Flächen, Linien, Text und der Schleier sind in allen Themes gleich. Nicht farbige Tokens stehen nur in :root, es gibt kein Schatten-Token.",
+          "tests": ["web/src/lib/styles/tokens.test.ts::has the four mode blocks and four blocks per accent theme", "web/src/lib/styles/tokens.test.ts::exactly the accent tokens in each of its blocks", "web/src/lib/styles/tokens.test.ts::defines every accent token in the mode blocks", "web/src/lib/styles/tokens.test.ts::uses the same values for the default and the forced variant", "web/src/lib/styles/tokens.test.ts::keeps neutral surfaces, lines and text the same in every theme", "web/src/lib/styles/color-literals.test.ts"] },
+        { "id": "BYL-E6-069", "title": "Kontrastmatrix aller Themes (WCAG AA)", "art": ["unit"], "status": "bestanden",
+          "pre": "ADR-0027 §5; 5 Themes × 4 Varianten (hell, dunkel, erzwungen hell, erzwungen dunkel).", "steps": ["npm run test:web"],
+          "expect": "Text mindestens 4,5 : 1: Text und gedämpfter Text auf Fläche, Hintergrund und Akzentfläche; Marke als Text auf Fläche, Hintergrund und Akzentfläche; Text auf der Akzentfläche; Text auf der Marke; Fehler auf Fläche, Hintergrund und Fehlerfläche; die Texte der fünf Status-Pillen. UI mindestens 3 : 1: Marke (Fokusring, Rahmen, Icons) gegen Fläche und Hintergrund, Rahmen „Offen“ gegen die Fläche. Petrol hell nutzt dafür #0A737B als Marke-als-Text. Die Rechnung ist gegen bekannte Werte geprüft (ADR-0009: 6,57 und 8,82).",
+          "tests": ["web/src/lib/styles/tokens.test.ts::reaches 4.5 : 1", "web/src/lib/styles/tokens.test.ts::reaches 3 : 1", "web/src/lib/test/color-math.test.ts::computes the WCAG contrast ratios"] },
+        { "id": "BYL-E6-070", "title": "Farbabstände: Rubin und Fehler, Smaragd und Petrol", "art": ["unit"], "status": "bestanden",
+          "pre": "ADR-0027 §4 und §5, Nachtrag zu ADR-0009; CIEDE2000 gegen die Referenzpaare von Sharma, Wu und Dalal geprüft.", "steps": ["npm run test:web"],
+          "expect": "In jedem Theme liegen Marke, Marke als Text und Text auf der Akzentfläche mindestens ΔE 20 von der Fehlerfarbe entfernt (Rubin hell 22,4, dunkel 22,4 bzw. 21,8). Nur Rubin ändert die Fehlerfarbe (Ziegelrot #A7472A bzw. #E28E78), alle anderen behalten die Werte aus ADR-0009. Fehler zu „Wartet“ mindestens ΔE 15, „Wartet“ zu „In Arbeit“ Text mindestens 20 und Fläche mindestens 10 (im Honig-Theme ist „Wartet“ dafür schiefergrau-blau). Smaragd hat einen Farbton von 140 bis 160°, Petrol einen von 180 bis 190°, der Abstand beträgt mindestens ΔE 20. Je zwei Themes liegen mindestens ΔE 20 auseinander.",
+          "tests": ["web/src/lib/styles/tokens.test.ts::distance of the colors (CIEDE2000, ADR-0027 section 4)", "web/src/lib/test/color-math.test.ts::computes CIEDE2000"] }
       ]
     },
     {

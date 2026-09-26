@@ -1,6 +1,6 @@
 # ADR-0009: Fehlerfarbe als eigenes Design-Token
 
-- **Status:** Angenommen
+- **Status:** Angenommen, ergänzt durch [ADR-0027](0027-akzent-themes.md) (siehe Nachtrag am Ende)
 - **Datum:** 2026-09-24
 - **Entscheidung durch:** Nutzer (dezentes Rot nur für echte Fehler, 2026-09-24), Advisor (Farbwerte)
 
@@ -47,3 +47,22 @@ Die Töne sind entsättigt (Ziegelrot bzw. gedämpftes Rosé), damit sie neben P
 - Positiv: Fehler sind klar erkennbar, ohne eine zweite Akzentfarbe zu etablieren.
 - Die Login-Fehlermeldung wird in E2 auf die neuen Tokens umgestellt.
 - Ein Test prüft, dass alle vier Blöcke in `tokens.css` dieselben Token-Namen definieren und dass außerhalb von `tokens.css` keine Farbwerte stehen.
+
+## Nachtrag (2026-09-26): Fehlerfarbe im Rubin-Theme (ADR-0027)
+
+Mit den Akzent-Themes aus [ADR-0027](0027-akzent-themes.md) gibt es neben Petrol einen Rubin-Akzent. Kein Rubin mit brauchbarer Helligkeit erreicht gegen `#A13A40` einen Abstand von ΔE2000 20. Deshalb rückt die Fehlerfarbe **nur im Rubin-Theme** Richtung Ziegelrot:
+
+| Token | Hell | Dunkel |
+|---|---|---|
+| `--color-danger` | `#A7472A` | `#E28E78` |
+| `--color-danger-soft-bg` | `#F9ECE6` | `#3B2119` |
+
+Die Werte oben gelten in allen anderen Themes unverändert. Die Regeln dieses ADR (Rot nur für echte Fehler, immer mit Icon und Text, entsättigte Töne, kein Bernstein) gelten in jedem Theme.
+
+`tokens.test.ts` prüft je Theme und Modus:
+
+- den Kontrast der Fehlerfarbe auf Fläche, Hintergrund und Fehlerfläche (mindestens 4,5 : 1)
+- den Abstand zum Akzent (mindestens ΔE 20)
+- den Abstand zu „Wartet“ (mindestens ΔE 15)
+
+Die Kontrastwerte oben rechnet jetzt `web/src/lib/test/color-math.test.ts` nach.

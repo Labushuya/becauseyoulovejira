@@ -178,7 +178,17 @@ Umsetzung in `app/pb_migrations/1790200900_api_rules.js`, Details und Befunde im
 
 ## 8. Design-System
 
-Alle Farben als CSS-Custom-Properties zentral in `web/src/lib/styles/tokens.css`. Minimalistisch, feine Linien, wenig Farbe; Petrol ist die einzige Akzentfarbe. Keine Farbwerte außerhalb von `tokens.css`.
+Alle Farben als CSS-Custom-Properties zentral in `web/src/lib/styles/tokens.css`. Minimalistisch, feine Linien, wenig Farbe; **genau eine Akzentfarbe je Theme** (Standard Petrol, [ADR-0027](docs/adr/0027-akzent-themes.md)). Keine Farbwerte außerhalb von `tokens.css`.
+
+- **Akzent-Themes ([ADR-0027](docs/adr/0027-akzent-themes.md)):** Petrol (Standard), Rubin, Purpur, Smaragd, Honig, jedes hell und dunkel, unabhängig vom Modus.
+  - Die vier Modus-Blöcke tragen alle Tokens mit Petrol.
+  - Jedes weitere Theme hat vier Blöcke mit `data-accent` am Wurzelelement. Dort stehen genau die Akzent-Tokens: `--color-brand`, `--color-brand-text`, `--color-brand-soft-bg`, `--color-brand-soft-text`, `--color-on-brand`, `--status-open-text|border`, `--status-in-progress-bg|text`, `--color-danger`, `--color-danger-soft-bg` und `--status-waiting-bg|text|border`.
+  - Neutrale Flächen, Linien, Text und der Schleier sind in allen Themes gleich.
+  - Eine neue akzentabhängige Farbe braucht ein Token in allen Themes.
+  - `tokens.test.ts` prüft für 5 Themes × 4 Varianten:
+    - Vollständigkeit der Tokens
+    - WCAG AA: Text 4,5 : 1, Fokusring und UI-Elemente 3 : 1
+    - Abstände (ΔE2000): Akzent zu Fehler ≥ 20, Smaragd zu Petrol ≥ 20, Themes untereinander ≥ 20, Fehler zu „Wartet“ ≥ 15
 
 - **Hell/Dunkel ([ADR-0025](docs/adr/0025-ui-konsistenz-overlay-system.md) §10):** Standard ist die Systemeinstellung. Der Umschalter in der Kopfzeile (Menü „Hell“, „Dunkel“, „Wie System“) und seit EH-8 die Seite „Einstellungen → Darstellung“ (dieselbe Wahl als Radiogruppe, derselbe `ThemeStore`) speichern die Wahl in `localStorage` unter `byl-theme` (`light` oder `dark`; „Wie System“ entfernt den Schlüssel), nur lokal, nicht pro Nutzer bis E7. Das Inline-Skript in `app.html` setzt `data-theme` vor dem ersten Rendern (FOUC-Schutz), prüft den Wert, fängt Fehler des Speichers ab und übernimmt einmalig den alten Schlüssel `td-theme`. Jeder der vier Blöcke von `tokens.css` setzt `color-scheme`, damit native Controls dem Modus folgen.
 - **Overlay-Tokens (ADR-0025 §2):** `--color-blanket` (einzige neue Farbe, dunkler Schleier hinter Modals, in allen vier Blöcken). Nicht farbig und nur in `:root`: `--overlay-width-s|m|l|xl` (25/37.5/50/62.5rem), `--overlay-max-height` und `--overlay-max-height-xl`, `--drawer-width` (30rem), `--full-view-sidebar` (21.25rem), `--radius-control` (0.375rem), `--radius-surface` (0.5rem), `--motion-fast` (120ms), `--motion-medium` (200ms), `--motion-ease`. Neue Radien und Maße nur über diese Tokens. Tests der Overlays nutzen die gemeinsamen Stubs aus `web/src/lib/test/overlay-stubs.ts` statt eigener `showModal`-Attrappen.
@@ -194,12 +204,23 @@ Alle Farben als CSS-Custom-Properties zentral in `web/src/lib/styles/tokens.css`
 | Text | #172326 | #E3ECEE |
 | Text gedämpft | #5B6B6F | #8DA1A6 |
 | Marke (Buttons, Icons, Fokus, Rahmen) | #07838F | #07838F |
-| Marke als kleiner Text | #07838F | #4BB8C2 |
+| Marke als kleiner Text | #0A737B | #4BB8C2 |
 | Marke Fläche / Text darauf | #DDF0F2 / #055C65 | #123A3F / #9FDCE2 |
 | Fehler (`--color-danger`) / Fehlerfläche (`--color-danger-soft-bg`) | #A13A40 / #F8E9E9 | #EAA0A0 / #3B1E21 |
 
-- Weißer Text auf #07838F ist in beiden Modi zulässig.
-- #07838F nie als kleiner Text im Dunkelmodus – dort #4BB8C2.
+Die Tabelle nennt die Werte mit Petrol. Die übrigen Themes ersetzen nur die Akzent-Tokens:
+
+| Theme | Marke hell / dunkel | Marke als Text hell / dunkel | Fläche / Text darauf hell | Fläche / Text darauf dunkel | Text auf Marke hell / dunkel |
+|---|---|---|---|---|---|
+| Rubin | #A0174F / #CA2B70 | #A0174F / #F17EB4 | #FBE7EF / #7A1040 | #3D1628 / #F8BFD8 | #FFFFFF / #FFFFFF |
+| Purpur | #6A2C91 / #9155BE | #6A2C91 / #C9A2EC | #F1E8F7 / #4E1F6E | #2C1E3D / #DCC4F2 | #FFFFFF / #FFFFFF |
+| Smaragd | #13854A / #15874A | #11783E / #4CC585 | #DDF3E5 / #0B5A31 | #133A25 / #A3E3BF | #FFFFFF / #FFFFFF |
+| Honig | #8A5A00 / #E0A93A | #8A5A00 / #F0C35A | #FBE9B5 / #5E3E00 | #3A2E12 / #F5D98F | #FFFFFF / #1A1405 |
+
+- Weißer Text auf #07838F ist in beiden Modi zulässig. Text auf dem Akzent immer über `--color-on-brand`, nie fest weiß: Im dunklen Honig-Theme ist er dunkel.
+- Die Marke nie als kleiner Text, dafür gibt es `--color-brand-text` (Petrol hell #0A737B, weil #07838F auf dem Hintergrund nur 4,23 : 1 erreicht; dunkel #4BB8C2).
+- Honig hell: Text, Links und Knöpfe in Bernsteinbraun, Gold nur als Fläche unter dunklem Text.
+- Rubin: Im Rubin-Theme ist die Fehlerfarbe ziegelrot (hell #A7472A / #F9ECE6, dunkel #E28E78 / #3B2119), damit Akzent und Fehler mindestens ΔE 20 auseinanderliegen ([ADR-0009](docs/adr/0009-fehlerfarbe.md), Nachtrag).
 - Rot nur für echte Fehler: fehlgeschlagene Anfragen, abgelehnte Eingaben, Feldfehler (`aria-invalid="true"` plus Fehlertext per `aria-describedby`), Login-Fehlermeldung. Nicht rot: Überfälligkeit, hohe oder dringende Priorität, „Endgültig löschen“, Warnhinweise. Fehler tragen immer Icon und Text. Klassen `.alert-error` und `[aria-invalid='true']` in `base.css` ([ADR-0009](docs/adr/0009-fehlerfarbe.md)).
 
 Status-Pillen („Ton in Ton"):
@@ -207,9 +228,9 @@ Status-Pillen („Ton in Ton"):
 | Status | Darstellung Hell | Darstellung Dunkel |
 |---|---|---|
 | Backlog | nur Umriss (Linienfarbe), Text gedämpft | dito |
-| Offen | Umriss Markenfarbe, Text #07838F | Umriss Markenfarbe, Text #4BB8C2 |
-| In Arbeit | Fläche #DDF0F2, Text #055C65 | Fläche #123A3F, Text #9FDCE2 |
-| Wartet | Fläche #FBF0DC, Text #7A4E08 | Fläche #3A2C12, Text #F2C77A |
+| Offen | Umriss Markenfarbe, Text Marke als Text (Petrol #0A737B) | Umriss und Text Marke als Text (Petrol #4BB8C2) |
+| In Arbeit | Marke Fläche / Text darauf (Petrol #DDF0F2 / #055C65) | Marke Fläche / Text darauf (Petrol #123A3F / #9FDCE2) |
+| Wartet | Fläche #FBF0DC, Text #7A4E08 (Honig: #E8ECF4 / #3C4A66) | Fläche #3A2C12, Text #F2C77A (Honig: #232D40 / #B9C6DF) |
 | Erledigt | Häkchen-Icon, Fläche #ECEFF0, Text #4A585E | Häkchen-Icon, Fläche #223036, Text #B3C2C6 |
 
 Erledigte Tickets treten in der Liste optisch zurück. Schriften: Inter für die Oberfläche, JetBrains Mono für Ticket-Keys.
