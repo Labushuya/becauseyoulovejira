@@ -5,9 +5,10 @@
 	import ConfirmDialog from './overlay/ConfirmDialog.svelte';
 	import ErrorIcon from './ErrorIcon.svelte';
 
-	// Section "Tags" of the project view (E3 plan, T-14 and package 14): every tag with
-	// "Umbenennen" (inline: Enter saves, Escape cancels) and "Löschen …" with the question how many
-	// tickets carry it. Answers go into the catalog at once, so the table rows follow. New tags
+	// Section "Deine Tags" of the settings page "Tags" (E3 plan, T-14 and package 14; since the user
+	// request after EH-4 no longer below the projects): every tag with "Umbenennen" (inline: Enter
+	// saves, Escape cancels) and "Löschen …" with the question how many tickets carry it. The page
+	// has the heading h2, so the section starts at h3, like "Deine Verbindungen" on "Kanäle". Answers go into the catalog at once, so the table rows follow. New tags
 	// come from the tag picker in the panel and in "Neues Ticket".
 	let {
 		tags,
@@ -140,7 +141,7 @@
 
 <section class="tag-manager" aria-labelledby={ids.heading}>
 	<div class="head">
-		<h2 id={ids.heading}>Tags</h2>
+		<h3 id={ids.heading}>Deine Tags</h3>
 		<span class="count">
 			<span aria-hidden="true">{tags.length}</span>
 			<span class="visually-hidden">{tags.length === 1 ? '1 Tag' : `${tags.length} Tags`}</span>
@@ -240,8 +241,8 @@
 		align-items: center;
 	}
 
-	h2 {
-		font-size: 1.125rem;
+	h3 {
+		font-size: 1rem;
 		font-weight: 600;
 	}
 

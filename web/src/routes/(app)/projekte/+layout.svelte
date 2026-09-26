@@ -15,9 +15,9 @@
 	import { liveSource } from '$lib/stores/realtime';
 	import { getTicketListStore } from '$lib/stores/ticket-list.svelte';
 
-	// Project view (E3 plan, T-3 and package 14; ADR-0025 section 10, package UI-8): the tiles with
-	// the section "Tags" on the left, the project panel (/projekte/neu, /projekte/<id>) on the right,
-	// like tickets and inbox. The numbers "gesamt" live only while the view is shown; leaving it
+	// Project view (E3 plan, T-3 and package 14; ADR-0025 section 10, package UI-8; user request
+	// after EH-4): the list or the tiles on the left, the project panel (/projekte/neu,
+	// /projekte/<id>) on the right, like tickets and inbox. The tags live in the settings. The numbers "gesamt" live only while the view is shown; leaving it
 	// ends their subscription. Editor, numbers and flags reach the panels through ProjectRoute.
 	let { children } = $props();
 
@@ -63,8 +63,6 @@
 			{catalog}
 			{tickets}
 			{stats}
-			{editor}
-			{flags}
 			{activeOf}
 			{totalOf}
 			{activeId}
