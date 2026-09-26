@@ -1,12 +1,15 @@
-// Unit tests of the setup assistant (plan EH-5 §3.7/§3.8): the address, the step data of Google
-// Calendar (at most 6 steps, labels of one or two words, https links only, every secret
-// placeholder marked), the progress from the facts of the server for every state, the states of
-// the stepper, the check lines and the hint on an open earlier step.
+// Unit tests of the setup assistant (plans EH-5 and EH-7 §3.7/§3.8): the address, the step data of
+// Google Calendar, Web.de and Gmail (at most 6 steps, labels of one or two words, https links only,
+// every secret placeholder marked), the progress from the facts of the server for every state, the
+// states of the stepper, the check lines and the hint on an open earlier step; Proton as a list.
 
 import { describe, expect, it } from 'vitest';
 import {
 	ASSISTED_KINDS,
+	PROTON_LINK,
+	PROTON_STEPS,
 	SETUP_KINDS,
+	defaultVariable,
 	matchesSetupKind,
 	openCheckBefore,
 	setupComplete,
@@ -90,15 +93,18 @@ describe('address of the assistant', () => {
 });
 
 describe('step data', () => {
-	it.each(ASSISTED_KINDS)('%s has 3 to 6 steps with short labels', (kind) => {
-		const steps = setupSteps(kind);
-		expect(steps.length).toBeGreaterThanOrEqual(3);
-		expect(steps.length).toBeLessThanOrEqual(6);
-		for (const step of steps) {
-			expect(step.label.split(' ').length, step.label).toBeLessThanOrEqual(2);
-			expect(step.intro.split(/(?<=[.!?])\s/).length, step.id).toBeLessThanOrEqual(2);
+	it.each(ASSISTED_KINDS.filter((kind) => kind !== 'proton'))(
+		'%s has 3 to 6 steps with short labels',
+		(kind) => {
+			const steps = setupSteps(kind);
+			expect(steps.length).toBeGreaterThanOrEqual(3);
+			expect(steps.length).toBeLessThanOrEqual(6);
+			for (const step of steps) {
+				expect(step.label.split(' ').length, step.label).toBeLessThanOrEqual(2);
+				expect(step.intro.split(/(?<=[.!?])\s/).length, step.id).toBeLessThanOrEqual(2);
+			}
 		}
-	});
+	);
 
 	it.each(SETUP_KINDS)('%s links only to fixed https addresses', (kind) => {
 		for (const step of setupSteps(kind)) {
@@ -212,33 +218,124 @@ describe('progress from the facts of the server', () => {
 
 describe('check lines', () => {
 	it('say exactly what was checked', () => {
-		expect(stepCheck('connect', NONE)).toEqual({
+		expect(stepCheck('kalender', 'connect', NONE)).toEqual({
 			tone: 'open',
 			text: 'Noch keine Verbindung angelegt.'
 		});
-		expect(stepCheck('connect', CREATED)?.text).toBe('Verbindung „Kalender“ angelegt.');
-		expect(stepCheck('restart', CREATED)).toEqual({
+		expect(stepCheck('kalender', 'connect', CREATED)?.text).toBe('Verbindung „Kalender“ angelegt.');
+		expect(stepCheck('kalender', 'restart', CREATED)).toEqual({
 			tone: 'open',
 			text: 'Die App sieht BYL_GOOGLE_CALENDAR_URL noch nicht.'
 		});
-		expect(stepCheck('restart', VISIBLE)).toEqual({
+		expect(stepCheck('kalender', 'restart', VISIBLE)).toEqual({
 			tone: 'done',
 			text: 'Die App sieht BYL_GOOGLE_CALENDAR_URL.'
 		});
-		expect(stepCheck('restart', { ...VISIBLE, secretStatus: null })?.text).toMatch(
+		expect(stepCheck('kalender', 'restart', { ...VISIBLE, secretStatus: null })?.text).toMatch(
 			/ließ sich nicht prüfen/
 		);
-		expect(stepCheck('keywords', VISIBLE)).toEqual({ tone: 'warning', text: NO_KEYWORDS_WARNING });
-		expect(stepCheck('keywords', WITH_KEYWORDS)?.text).toBe('1 Stichwort: todo.');
-		expect(stepCheck('first-run', WITH_KEYWORDS)).toEqual({
+		expect(stepCheck('kalender', 'keywords', VISIBLE)).toEqual({
+			tone: 'warning',
+			text: NO_KEYWORDS_WARNING
+		});
+		expect(stepCheck('kalender', 'keywords', WITH_KEYWORDS)?.text).toBe('1 Stichwort: todo.');
+		expect(stepCheck('kalender', 'first-run', WITH_KEYWORDS)).toEqual({
 			tone: 'open',
 			text: 'Noch kein Abruf.'
 		});
-		expect(stepCheck('first-run', RUN)?.tone).toBe('done');
+		expect(stepCheck('kalender', 'first-run', RUN)?.tone).toBe('done');
 		expect(
-			stepCheck('first-run', { ...RUN, connection: connection({ lastError: 'HTTP 404' }) })
+			stepCheck('kalender', 'first-run', {
+				...RUN,
+				connection: connection({ lastError: 'HTTP 404' })
+			})
 		).toEqual({ tone: 'error', text: 'Letzter Abruf fehlgeschlagen: HTTP 404' });
-		expect(stepCheck('address', RUN)).toBeNull();
-		expect(stepCheck('variable', RUN)).toBeNull();
+		expect(stepCheck('kalender', 'address', RUN)).toBeNull();
+		expect(stepCheck('kalender', 'variable', RUN)).toBeNull();
+	});
+});
+
+describe('mailboxes (plan EH-7)', () => {
+	const MAIL = connection({ label: 'Web.de', secretEnv: 'BYL_WEBDE_PASSWORD' });
+	const mail = (overrides: Partial<Connection>, secret: boolean | null = true): SetupFacts => ({
+		connection: connection({ ...MAIL, ...overrides }),
+		secretStatus: secret === null ? null : { secret, allowlist: null }
+	});
+
+	it.each([
+		[
+			'webde',
+			['Abruf erlauben', 'Passwort', 'Variable setzen', 'Verbinden', 'Neu starten', 'Erster Abruf']
+		],
+		[
+			'gmail',
+			[
+				'Zwei Schritte',
+				'App-Passwort',
+				'Variable setzen',
+				'Verbinden',
+				'Neu starten',
+				'Erster Abruf'
+			]
+		]
+	] as const)('guides %s through six steps', (kind, labels) => {
+		expect(setupSteps(kind).map((step) => step.label)).toEqual(labels);
+		expect(defaultVariable(kind)).toBe(
+			kind === 'gmail' ? 'BYL_GMAIL_PASSWORD' : 'BYL_WEBDE_PASSWORD'
+		);
+	});
+
+	it('drops the spaces of the Gmail app password only', () => {
+		const gmail = setupSteps('gmail').find((step) => step.id === 'variable');
+		const webde = setupSteps('webde').find((step) => step.id === 'variable');
+		expect(gmail?.commands[0]?.normalize).toBe('gmail');
+		expect(webde?.commands[0]?.normalize).toBeUndefined();
+		expect(JSON.stringify(setupSteps('gmail'))).toMatch(/myaccount\.google\.com\/apppasswords/);
+		expect(JSON.stringify(setupSteps('webde'))).toMatch(/POP3- und IMAP-Zugriff erlauben/);
+	});
+
+	it('counts the steps before "Verbinden" as done once the mailbox is connected', () => {
+		expect(setupProgress('webde', NONE)).toBe(0);
+		expect(setupProgress('webde', mail({}, false))).toBe(4);
+		expect(stepStates('webde', mail({}, false), 4)).toEqual([
+			'done',
+			'done',
+			'done',
+			'done',
+			'current',
+			'open'
+		]);
+		expect(setupProgress('webde', mail({}))).toBe(5);
+	});
+
+	it('is done after the first run of the helper, which sets the last run and no error', () => {
+		expect(stepCheck('webde', 'first-run', mail({}))).toEqual({
+			tone: 'open',
+			text: 'Warte auf den ersten Abruf (spätestens 5 Minuten) …'
+		});
+		const run = mail({ lastRunAt: '2026-09-26 10:00:00.000Z', keywords: ['todo'] });
+		expect(stepCheck('webde', 'first-run', run)?.text).toMatch(/^Abgerufen, zuletzt/);
+		expect(setupComplete('webde', run)).toBe(true);
+		const refused = mail({
+			lastRunAt: '2026-09-26 10:00:00.000Z',
+			lastError: 'Anmeldung bei Web.de abgelehnt.'
+		});
+		expect(setupComplete('webde', refused)).toBe(false);
+		expect(stepCheck('webde', 'first-run', refused)?.tone).toBe('error');
+	});
+
+	it('warns at "Verbinden" while the mailbox has no keywords', () => {
+		expect(stepCheck('gmail', 'connect', mail({}))).toEqual({
+			tone: 'warning',
+			text: `Verbindung „Web.de“ angelegt. ${NO_KEYWORDS_WARNING}`
+		});
+		expect(stepCheck('gmail', 'connect', mail({ keywords: ['todo'] }))?.tone).toBe('done');
+	});
+
+	it('keeps Proton to three steps without a stepper', () => {
+		expect(setupSteps('proton')).toEqual([]);
+		expect(PROTON_STEPS).toHaveLength(3);
+		expect(new URL(PROTON_LINK.href).protocol).toBe('https:');
+		expect(ASSISTED_KINDS).toEqual(['kalender', 'webde', 'gmail', 'proton']);
 	});
 });

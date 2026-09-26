@@ -22,6 +22,9 @@ import {
 	type ConnectionsData
 } from '$lib/stores/connections.svelte';
 import { FlagStore } from '$lib/stores/flags.svelte';
+import { ImportKeywordsStore, type ImportKeywordsData } from '$lib/stores/import-keywords.svelte';
+import { EMPTY_IMPORT_KEYWORDS } from '$lib/domain/keywords';
+import ChannelsViewHarness from '$lib/test/ChannelsViewHarness.svelte';
 import { useOverlayStubs } from '$lib/test/overlay-stubs';
 import ChannelsView from './ChannelsView.svelte';
 import ConnectionsSection from './ConnectionsSection.svelte';
@@ -375,9 +378,9 @@ describe('connections section', () => {
 			'Kanal hinzufügen',
 			'Anleitungen'
 		]);
-		// Since EH-5 Google Calendar has the assistant instead of a folded guide.
+		// Since EH-5 and EH-7 calendar, mailboxes and Proton open in the app; only Telegram is folded.
 		const guides = document.querySelectorAll<HTMLDetailsElement>('.guide details');
-		expect(guides).toHaveLength(4);
+		expect(guides).toHaveLength(1);
 		expect([...guides].every((details) => !details.open)).toBe(true);
 		const files = within(screen.getByRole('region', { name: 'Dateien hereinziehen' }));
 		expect(files.getByRole('link', { name: 'Stichwörter bearbeiten' }).getAttribute('href')).toBe(
@@ -386,17 +389,12 @@ describe('connections section', () => {
 		expect(files.getByRole('link', { name: 'Zum Eingang' }).getAttribute('href')).toBe('/eingang');
 	});
 
-	it('opens the guide of Proton from the catalog and of a card, with the focus on it (EH-3)', async () => {
+	it('links Proton to its guide and opens the guide of a card without assistant (EH-3, EH-7)', async () => {
 		const { store } = setup([BOT], { [BOT.id]: { secret: false, allowlist: true } });
 		await store.load();
 		renderView(store);
-		await fireEvent.click(screen.getByRole('button', { name: 'Anleitung: Proton Mail' }));
-		const proton = screen.getByRole('region', { name: 'Proton Mail per Datei übernehmen' });
-		await vi.waitFor(() => expect(proton.querySelector('details')?.open).toBe(true));
-		expect(document.activeElement?.textContent).toBe('Proton Mail per Datei übernehmen');
-		expect(within(proton).getByRole('link', { name: 'mail.proton.me' }).getAttribute('rel')).toBe(
-			'noopener noreferrer'
-		);
+		const proton = screen.getByRole('link', { name: 'Anleitung: Proton Mail' });
+		expect(proton.getAttribute('href')).toBe('/einstellungen/kanaele?einrichten=proton');
 		await fireEvent.click(
 			screen.getByRole('button', { name: 'Einrichtung fortsetzen: Telegram-Bot' })
 		);
@@ -718,19 +716,57 @@ describe('Postfächer (E4 plan, package 22)', () => {
 		);
 	});
 
+	it('shows the number of keywords per kind of file on the files card (EH-7)', async () => {
+		const { store } = setup([]);
+		const importKeywords = new ImportKeywordsStore(
+			{
+				load: vi.fn<ImportKeywordsData['load']>(async () => ({
+					...EMPTY_IMPORT_KEYWORDS,
+					eml: { keywords: ['todo', 'rechnung', '#byl'], matchBody: false },
+					whatsapp: { keywords: ['todo', 'einkauf'], matchBody: false }
+				})),
+				save: vi.fn<ImportKeywordsData['save']>()
+			},
+			{ ensureValid: () => true, logout: vi.fn() }
+		);
+		await Promise.all([store.load(), importKeywords.load()]);
+		render(ChannelsView, {
+			props: {
+				captureUrl: 'http://127.0.0.1:8090/eingang/neu',
+				connections: store,
+				importKeywords,
+				onsetupchange: vi.fn()
+			}
+		});
+		const files = within(screen.getByRole('region', { name: 'Dateien hereinziehen' }));
+		expect(files.getByText('Stichwörter: Mail 3 · Kalender 0 · WhatsApp 2')).toBeTruthy();
+	});
+
+	it('links the tiles "Web.de" and "Gmail" to their assistants (EH-7)', async () => {
+		const { store } = setup([CAL]);
+		await store.load();
+		renderView(store);
+		expect(screen.getByRole('link', { name: 'Einrichten: Web.de' }).getAttribute('href')).toBe(
+			'/einstellungen/kanaele?einrichten=webde'
+		);
+		expect(screen.getByRole('link', { name: 'Einrichten: Gmail' }).getAttribute('href')).toBe(
+			'/einstellungen/kanaele?einrichten=gmail'
+		);
+		expect(screen.queryByRole('button', { name: /^Einrichten: (Web\.de|Gmail)/ })).toBeNull();
+	});
+
 	it('creates a mailbox from the tile "Web.de" with provider, user and the variable of the password', async () => {
-		const { data } = await renderCatalog();
-		await fireEvent.click(screen.getByRole('button', { name: 'Einrichten: Web.de' }));
-		const dialog = within(screen.getByRole('dialog', { name: 'Verbindung anlegen' }));
-		expect((dialog.getByLabelText('Art') as HTMLSelectElement).value).toBe('mail');
-		expect((dialog.getByLabelText('Anbieter') as HTMLSelectElement).value).toBe('webde');
-		const secret = dialog.getByLabelText(
-			'Variable mit dem Passwort bzw. App-Passwort des Postfachs (Pflichtfeld)'
-		) as HTMLInputElement;
+		const { data, store } = setup([]);
+		await store.load();
+		const onchange = vi.fn();
+		render(ChannelsViewHarness, {
+			props: { connections: store, setup: { kind: 'webde', connectionId: null }, onchange }
+		});
+		const dialog = within(screen.getByRole('dialog', { name: 'Web.de einrichten' }));
+		await fireEvent.click(dialog.getByRole('button', { name: /Verbinden, offen/ }));
+		const secret = dialog.getByLabelText(/Name der Variablen für das Passwort/) as HTMLInputElement;
 		expect(secret.value).toBe('BYL_WEBDE_PASSWORD');
-		const user = dialog.getByLabelText(
-			'Benutzername, meist die E-Mail-Adresse (Pflichtfeld)'
-		) as HTMLInputElement;
+		const user = dialog.getByLabelText(/E-Mail-Adresse des Postfachs/) as HTMLInputElement;
 		await fireEvent.click(dialog.getByRole('button', { name: 'Verbindung anlegen' }));
 		expect(user.getAttribute('aria-invalid')).toBe('true');
 		expect(data.create).not.toHaveBeenCalled();
@@ -744,33 +780,28 @@ describe('Postfächer (E4 plan, package 22)', () => {
 			mailProvider: 'webde',
 			mailUser: ' anna@web.de '
 		});
+		await vi.waitFor(() =>
+			expect(onchange).toHaveBeenLastCalledWith({ kind: 'webde', connectionId: 'conn00000000009' })
+		);
 	});
 
-	it('suggests the Gmail variable and label for the tile "Gmail" and when the provider changes (E4 plan, package 13)', async () => {
-		const { data } = await renderCatalog();
-		await fireEvent.click(screen.getByRole('button', { name: 'Einrichten: Gmail' }));
-		let dialog = within(screen.getByRole('dialog', { name: 'Verbindung anlegen' }));
-		expect((dialog.getByLabelText('Anbieter') as HTMLSelectElement).value).toBe('gmail');
-		const cancel = dialog.getAllByRole('button', { name: /Abbrechen|Schließen/ });
-		await fireEvent.click(cancel[cancel.length - 1] as HTMLElement);
-		expect(screen.queryByRole('dialog')).toBeNull();
-
-		await fireEvent.click(screen.getByRole('button', { name: 'Einrichten: Web.de' }));
-		dialog = within(screen.getByRole('dialog', { name: 'Verbindung anlegen' }));
-		const provider = dialog.getByLabelText('Anbieter') as HTMLSelectElement;
-		expect([...provider.options].map((option) => option.textContent)).toEqual(['Web.de', 'Gmail']);
-		await fireEvent.change(provider, { target: { value: 'gmail' } });
-		const secret = dialog.getByLabelText(
-			'Variable mit dem Passwort bzw. App-Passwort des Postfachs (Pflichtfeld)'
-		) as HTMLInputElement;
-		expect(secret.value).toBe('BYL_GMAIL_PASSWORD');
+	it('suggests the Gmail variable and label in the assistant for the tile "Gmail" (E4 plan, package 13; EH-7)', async () => {
+		const { data, store } = setup([]);
+		await store.load();
+		render(ChannelsViewHarness, {
+			props: { connections: store, setup: { kind: 'gmail', connectionId: null }, onchange: vi.fn() }
+		});
+		const dialog = within(screen.getByRole('dialog', { name: 'Gmail einrichten' }));
+		await fireEvent.click(dialog.getByRole('button', { name: /Verbinden, offen/ }));
+		expect(
+			(dialog.getByLabelText(/Name der Variablen für das Passwort/) as HTMLInputElement).value
+		).toBe('BYL_GMAIL_PASSWORD');
 		expect((dialog.getByLabelText('Bezeichnung (Pflichtfeld)') as HTMLInputElement).value).toBe(
 			'Gmail'
 		);
-		await fireEvent.input(
-			dialog.getByLabelText('Benutzername, meist die E-Mail-Adresse (Pflichtfeld)'),
-			{ target: { value: 'anna@gmail.com' } }
-		);
+		await fireEvent.input(dialog.getByLabelText(/E-Mail-Adresse des Postfachs/), {
+			target: { value: 'anna@gmail.com' }
+		});
 		await fireEvent.click(dialog.getByRole('button', { name: 'Verbindung anlegen' }));
 		expect(data.create).toHaveBeenCalledWith({
 			type: 'mail',
@@ -781,61 +812,48 @@ describe('Postfächer (E4 plan, package 22)', () => {
 			mailUser: 'anna@gmail.com'
 		});
 	});
-
-	async function renderCatalog() {
-		const context = setup([CAL]);
-		await context.store.load();
-		renderView(context.store);
-		return context;
-	}
 });
 
-describe('Web.de-Postfach einrichten (E4 plan, package 11)', () => {
-	it('explains IMAP access, the app password, the variable, the restart and the switch-off', () => {
-		const { store } = setup();
-		render(ChannelsView, {
-			props: {
-				captureUrl: 'http://127.0.0.1:8090/eingang/neu',
-				connections: store,
-				onsetupchange: vi.fn()
-			}
-		});
-		const section = screen.getByRole('region', { name: 'Web.de-Postfach einrichten' });
-		const text = (section.textContent ?? '').replace(/\s+/g, ' ');
+/** The text of all steps of an assistant ("Alle Schritte anzeigen"). */
+async function allSteps(store: ConnectionsStore, kind: 'webde' | 'gmail', title: string) {
+	await store.load();
+	render(ChannelsViewHarness, {
+		props: { connections: store, setup: { kind, connectionId: null }, onchange: vi.fn() }
+	});
+	const dialog = screen.getByRole('dialog', { name: title });
+	await fireEvent.click(within(dialog).getByRole('button', { name: 'Alle Schritte anzeigen' }));
+	return { dialog, text: (dialog.textContent ?? '').replace(/\s+/g, ' ') };
+}
+
+describe('Web.de-Postfach einrichten (E4 plan, package 11; since EH-7 in the assistant)', () => {
+	it('explains IMAP access, the app password, the variable, the restart and the switch-off', async () => {
+		const { store } = setup([]);
+		const { text } = await allSteps(store, 'webde', 'Web.de einrichten');
+		expect(screen.queryByRole('region', { name: 'Web.de-Postfach einrichten' })).toBeNull();
 		expect(text).toMatch(/POP3- und IMAP-Zugriff erlauben/);
 		expect(text).toMatch(/Anwendungsspezifische Passwörter verwalten/);
 		expect(text).toMatch(/setx BYL_WEBDE_PASSWORD/);
-		expect(text).toMatch(/Postfach \(IMAP\)/);
-		expect(text).toMatch(/stop\.bat und dann start\.bat/);
+		expect(text).toMatch(/stop\.bat, dann start\.bat/);
 		expect(text).toMatch(/BYL_INGEST_TOKEN/);
 		expect(text).toMatch(/längere Zeit nicht genutzt/);
 		expect(text).toContain('app\\logs\\byl-mail.log');
 		expect(text).toMatch(/Gelesen-Status, Markierungen und Ordner bleiben/);
 		// Package 23: older mails and mails without keyword come through the mailbox selection.
-		expect(text).toMatch(/„Aus dem Postfach wählen“ an der Verbindung/);
+		expect(text).toMatch(/„Aus dem Postfach wählen“ an der Karte/);
 	});
 });
 
-describe('Gmail einrichten (E4 plan, package 13)', () => {
-	it('explains 2-Step Verification, the app password, the variable, the connection and the restart', () => {
-		const { store } = setup();
-		render(ChannelsView, {
-			props: {
-				captureUrl: 'http://127.0.0.1:8090/eingang/neu',
-				connections: store,
-				onsetupchange: vi.fn()
-			}
-		});
-		const section = screen.getByRole('region', { name: 'Gmail einrichten' });
-		const text = (section.textContent ?? '').replace(/\s+/g, ' ');
+describe('Gmail einrichten (E4 plan, package 13; since EH-7 in the assistant)', () => {
+	it('explains 2-Step Verification, the app password, the variable, the connection and the restart', async () => {
+		const { store } = setup([]);
+		const { dialog, text } = await allSteps(store, 'gmail', 'Gmail einrichten');
 		expect(text).toMatch(/Bestätigung in zwei Schritten/);
-		expect(text).toContain('myaccount.google.com/apppasswords');
 		expect(text).toMatch(/setx BYL_GMAIL_PASSWORD/);
-		expect(text).toMatch(/Anbieter „Gmail“/);
-		expect(text).toMatch(/stop\.bat und dann start\.bat/);
-		expect(text).toMatch(/App-Passwort nötig/);
+		expect(text).toMatch(/Anbieter Gmail/);
+		expect(text).toMatch(/stop\.bat, dann start\.bat/);
+		expect(text).toMatch(/Anmeldung bei Gmail abgelehnt/);
 		expect(text).toMatch(/„Aus dem Postfach wählen“/);
-		const link = within(section).getByRole('link', { name: 'myaccount.google.com/apppasswords' });
+		const link = within(dialog).getByRole('link', { name: /myaccount\.google\.com\/apppasswords/ });
 		expect(link.getAttribute('href')).toBe('https://myaccount.google.com/apppasswords');
 		expect(link.getAttribute('rel')).toBe('noopener noreferrer');
 	});

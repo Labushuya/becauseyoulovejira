@@ -105,6 +105,11 @@
 				</SectionMessage>
 			</div>
 		{/if}
+		{#if normalize === 'gmail' && normalized !== value.trim()}
+			<SectionMessage tone="info" compact live>
+				Die Leerzeichen zwischen den Vierergruppen sind entfernt; Gmail braucht sie nicht.
+			</SectionMessage>
+		{/if}
 		{#if normalized !== '' && check?.level !== 'error'}
 			<CodeBlock
 				label={`${label} mit deinem Wert`}

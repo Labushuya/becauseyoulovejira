@@ -9,11 +9,13 @@
 	import { pb } from '$lib/pocketbase';
 	import { ConnectionsStore, connectionsData } from '$lib/stores/connections.svelte';
 	import { getFlagStore } from '$lib/stores/flags.svelte';
+	import { ImportKeywordsStore, importKeywordsData } from '$lib/stores/import-keywords.svelte';
 	import { channelSetupHref } from '$lib/ticket-links';
 
 	// Settings of the channels (E4 plan, T-3): bookmarklet (package 7) and connections (package 10).
 	// Since EH-1 the page lies in the settings area; the keywords of the file imports have their own
-	// page "Datei-Importe". The capture address is absolute, since the bookmarklet runs on other
+	// page "Datei-Importe", and since EH-7 the files card here shows their number per kind, so the
+	// page loads them too. The capture address is absolute, since the bookmarklet runs on other
 	// pages. Connections load when the page opens and leave with it. Since EH-5 the address holds
 	// the setup assistant (?einrichten=<art>&verbindung=<id>): a reload opens it again, and opening,
 	// creating and closing replace the history entry, so "Zurück" leaves the page.
@@ -21,6 +23,7 @@
 	// Results of actions go out as flags (ADR-0025 section 8).
 	const flags = getFlagStore();
 	const connections = new ConnectionsStore(connectionsData(pb), auth, flags);
+	const importKeywords = new ImportKeywordsStore(importKeywordsData(pb), auth, flags);
 	const setup = $derived(setupTargetOf(page.url.searchParams));
 
 	function changeSetup(next: SetupTarget | null) {
@@ -28,8 +31,14 @@
 	}
 
 	$effect(() => {
-		untrack(() => void connections.load());
-		return () => connections.reset();
+		untrack(() => {
+			void connections.load();
+			void importKeywords.load();
+		});
+		return () => {
+			connections.reset();
+			importKeywords.reset();
+		};
 	});
 </script>
 
@@ -37,4 +46,4 @@
 	<title>Kanäle · Einstellungen · becauseyoulovejira</title>
 </svelte:head>
 
-<ChannelsView {captureUrl} {connections} {setup} onsetupchange={changeSetup} />
+<ChannelsView {captureUrl} {connections} {importKeywords} {setup} onsetupchange={changeSetup} />
