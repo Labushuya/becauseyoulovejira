@@ -1,6 +1,7 @@
-// Component tests for the switch "Aufgaben | Projekte" (E3 plan, T-3 and package 14; ADR-0010
-// section 5): a navigation with two links, aria-current on the current view, the list state
-// kept while the list is shown. Page state is mocked.
+// Component tests for the switch "Aufgaben | Projekte | Eingang | Wiederholungen" (E3 plan, T-3 and
+// package 14; E5 plan, package 5; ADR-0010 section 5): a navigation with one link per view,
+// aria-current on the current view, the list state kept while the list is shown. Page state is
+// mocked.
 
 import { render, screen, within } from '@testing-library/svelte';
 import { describe, expect, it, vi } from 'vitest';
@@ -12,7 +13,7 @@ const mocks = vi.hoisted(() => ({ page: { url: new URL('http://localhost:3000/')
 vi.mock('$app/state', () => ({ page: mocks.page }));
 
 function show(
-	current: 'tasks' | 'projects' | 'inbox',
+	current: 'tasks' | 'projects' | 'inbox' | 'recurrences',
 	path: string,
 	inboxCount: number | null = null
 ) {
@@ -22,14 +23,15 @@ function show(
 }
 
 describe('view switch', () => {
-	it('is a navigation with three links and marks the list as current', () => {
+	it('is a navigation with four links and marks the list as current', () => {
 		const nav = show('tasks', '/tickets/abc123def456ghi?status=open&sort=titel');
 
 		const links = nav.getAllByRole('link');
 		expect(links.map((link) => link.textContent?.trim())).toEqual([
 			'Aufgaben',
 			'Projekte',
-			'Eingang'
+			'Eingang',
+			'Wiederholungen'
 		]);
 		const tasks = nav.getByRole('link', { name: 'Aufgaben' });
 		expect(tasks.getAttribute('aria-current')).toBe('page');
@@ -45,8 +47,18 @@ describe('view switch', () => {
 		const nav = within(screen.getByRole('navigation', { name: 'Ansicht' }));
 
 		const links = nav.getAllByRole('link');
-		expect(links.map((link) => link.hasAttribute('aria-current'))).toEqual([false, false, false]);
-		expect(links.map((link) => link.getAttribute('href'))).toEqual(['/', '/projekte', '/eingang']);
+		expect(links.map((link) => link.hasAttribute('aria-current'))).toEqual([
+			false,
+			false,
+			false,
+			false
+		]);
+		expect(links.map((link) => link.getAttribute('href'))).toEqual([
+			'/',
+			'/projekte',
+			'/eingang',
+			'/wiederholungen'
+		]);
 		expect(nav.getByRole('link', { name: 'Eingang (2 neu)' })).toBeTruthy();
 	});
 
@@ -85,6 +97,19 @@ describe('view switch', () => {
 		expect(screen.getByRole('link', { name: 'Projekte (2 neu)' }).getAttribute('href')).toBe(
 			'/projekte'
 		);
+	});
+
+	it('marks the overview "Wiederholungen" as current (E5 plan, package 5)', () => {
+		const nav = show('recurrences', '/wiederholungen/rule00000000001', 2);
+
+		const recurrences = nav.getByRole('link', { name: 'Wiederholungen' });
+		expect(recurrences.getAttribute('aria-current')).toBe('page');
+		expect(recurrences.getAttribute('href')).toBe('/wiederholungen');
+		expect(nav.getByRole('link', { name: 'Aufgaben' }).getAttribute('href')).toBe('/');
+		const inbox = nav.getByRole('link', { name: 'Eingang (2 neu)' });
+		expect(inbox.getAttribute('href')).toBe('/eingang');
+		// The tour target of the inbox stays where it was (plan EH-13).
+		expect(inbox.dataset.tour).toBe('inbox');
 	});
 
 	it('marks the current view by weight and a line besides its colour (ADR-0010 section 3)', () => {

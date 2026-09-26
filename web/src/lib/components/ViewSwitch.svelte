@@ -1,10 +1,11 @@
 <script lang="ts">
 	import { resolve } from '$app/paths';
 	import { page } from '$app/state';
-	import { inboxHref, listHref, projectsHref } from '$lib/ticket-links';
+	import { inboxHref, listHref, projectsHref, recurrencesHref } from '$lib/ticket-links';
 
-	// Switch "Aufgaben | Projekte | Eingang" in the section bar of the views (E3 plan, T-3 and
-	// package 14; E4 plan, package 3; ADR-0010 section 5): a navigation with one link per view,
+	// Switch "Aufgaben | Projekte | Eingang | Wiederholungen" in the section bar of the views (E3
+	// plan, T-3 and package 14; E4 plan, package 3; E5 plan, T-6 and package 5; ADR-0010 section
+	// 5): a navigation with one link per view,
 	// because each has its own address. The current one carries aria-current="page" and is marked
 	// by weight and a line besides its colour. "Aufgaben" keeps the list state of the URL while the
 	// list is shown, "Eingang" its chips while the inbox is shown. The number of new inbox entries
@@ -15,7 +16,7 @@
 		inboxCount = null,
 		projectsNewCount = 0
 	}: {
-		current: 'tasks' | 'projects' | 'inbox' | null;
+		current: 'tasks' | 'projects' | 'inbox' | 'recurrences' | null;
 		/** New inbox entries; null while not loaded (no number is shown). */
 		inboxCount?: number | null;
 		/** New tickets in projects (ADR-0015 section 5); 0 shows no number. */
@@ -59,11 +60,21 @@
 			>
 		{/if}
 	</a>
+	<a href={recurrencesHref()} aria-current={current === 'recurrences' ? 'page' : undefined}>
+		<svg viewBox="0 0 16 16" aria-hidden="true" focusable="false">
+			<path d="M13 6.5A5.25 5.25 0 0 0 3.6 4.4M3 9.5a5.25 5.25 0 0 0 9.4 2.1" />
+			<path d="M3.25 1.75v3h3M12.75 14.25v-3h-3" />
+		</svg>
+		Wiederholungen
+	</a>
 </nav>
 
 <style>
+	/* Four entries: on a narrow window the switch wraps instead of running over the edge. */
 	.view-switch {
 		display: inline-flex;
+		flex-wrap: wrap;
+		max-width: 100%;
 		overflow: hidden;
 		border: 1px solid var(--color-line);
 		border-radius: 0.375rem;

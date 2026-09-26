@@ -80,6 +80,20 @@ export function nextTicketText(rule: RecurrenceRule, today: CalendarDate): strin
 	return 'Nächstes Ticket nach dem Erledigen';
 }
 
+/**
+ * Column "Nächstes Ticket" of the overview (E5 plan, package 5): the due date of the next ticket
+ * ("28.09."), or "nach dem Erledigen" while an after-completion rule waits for its instance. A
+ * paused rule keeps its date for display (ADR-0023 section 4); the column "Zustand" says it pauses.
+ */
+export function nextTicketDate(rule: RecurrenceRule, today: CalendarDate): string {
+	return rule.nextDue === null ? 'nach dem Erledigen' : shortDate(rule.nextDue, today);
+}
+
+/** "Aktiv" or "Pausiert", as text next to its icon (no state by colour alone). */
+export function ruleStateLabel(rule: Pick<RecurrenceRule, 'active'>): 'Aktiv' | 'Pausiert' {
+	return rule.active ? 'Aktiv' : 'Pausiert';
+}
+
 /** German texts of the codes; the same as the hook sends (tests/unit/web-recurrence.test.mjs). */
 export const RECURRENCE_MESSAGES: Readonly<Record<string, string>> = Object.freeze({
 	validation_recurrence_mode: 'Bitte „Fester Rhythmus“ oder „Nach Erledigung“ wählen.',
@@ -220,6 +234,24 @@ export function formParams(values: RecurrenceFormValues): {
 		anchor: values.anchor,
 		lead_days: wholeNumber(values.leadDays)
 	};
+}
+
+/**
+ * Whether two sets of form values send the same rhythm and lead time. The rule panel sends the
+ * rhythm only when it changed, so saving the template alone leaves "Nächstes Ticket" as it is.
+ */
+export function sameRhythm(a: RecurrenceFormValues, b: RecurrenceFormValues): boolean {
+	const left = formParams(a);
+	const right = formParams(b);
+	return (
+		left.mode === right.mode &&
+		left.freq === right.freq &&
+		Object.is(left.interval, right.interval) &&
+		left.weekdays.join(',') === right.weekdays.join(',') &&
+		Object.is(left.month_day, right.month_day) &&
+		left.anchor === right.anchor &&
+		Object.is(left.lead_days, right.lead_days)
+	);
 }
 
 /** Problems of the form per field, with the texts of the hook; empty when it may be sent. */

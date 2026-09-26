@@ -82,6 +82,24 @@ export function newProjectHref(url: URL): ResolvedPathname {
 /** Element ID of "Neues Projekt" in the section bar; closing its panel returns the focus to it. */
 export const NEW_PROJECT_LINK_ID = 'new-project-link';
 
+/** Overview "Wiederholungen" (E5 plan, T-6 and package 5); it has no state in the URL. */
+export function recurrencesHref(): ResolvedPathname {
+	return resolve('/wiederholungen');
+}
+
+/** Panel of a rule (E5 plan, T-6), addressed by record ID. */
+export function recurrenceHref(id: string): ResolvedPathname {
+	return resolve(`/wiederholungen/${encodeURIComponent(id)}`) as ResolvedPathname;
+}
+
+/** Panel "Neue Regel" (E5 plan, T-6). */
+export function newRecurrenceHref(): ResolvedPathname {
+	return resolve('/wiederholungen/neu');
+}
+
+/** Element ID of "Neue Regel" in the section bar; closing its panel returns the focus to it. */
+export const NEW_RULE_LINK_ID = 'new-rule-link';
+
 /** The current path with the switch "Archivierte anzeigen" set or removed; others stay. */
 export function withShowArchived(url: URL, show: boolean): ResolvedPathname {
 	const query = parseProjectViewQuery(url.searchParams);

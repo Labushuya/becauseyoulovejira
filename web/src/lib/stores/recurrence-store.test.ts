@@ -3,11 +3,13 @@ import { DataError } from '$lib/data/errors';
 import type { RecurrenceRule } from '$lib/domain/recurrence-rule';
 import { defaultFormValues } from '$lib/domain/recurrence-rule';
 import type { Ticket } from '$lib/domain/ticket';
+import type { FlagSink } from './flags.svelte';
 import type { RecordChange, Unsubscribe } from './realtime';
 import { RecurrenceStore, type RecurrenceData, type RecurrenceLive } from './recurrence.svelte';
 
 // RecurrenceStore (E5 plan, T-7 and package 4): loading once, "unavailable" before the migration,
-// order, rhythm in words, live events, the actions with their announcements and field errors.
+// order, rhythm in words, live events, the actions with their success flags (package 5) and field
+// errors.
 
 function rule(overrides: Partial<RecurrenceRule> = {}): RecurrenceRule {
 	return {
@@ -72,6 +74,19 @@ function fakeData(rules: RecurrenceRule[] | null = []): RecurrenceData {
 }
 
 const session = () => ({ ensureValid: vi.fn(() => true), logout: vi.fn() });
+
+/** Flag sink that records what the store shows (E5 plan, package 5). */
+function recordedFlags() {
+	const shown: { tone: string; title: string }[] = [];
+	const sink: FlagSink = {
+		show: (input) => {
+			shown.push({ tone: input.tone, title: input.title });
+			return String(shown.length);
+		},
+		dismiss: () => undefined
+	};
+	return { sink, shown, last: () => shown.at(-1)?.title };
+}
 
 function fakeLive() {
 	let listener: ((change: RecordChange<RecurrenceRule>) => void) | null = null;
@@ -175,7 +190,8 @@ describe('RecurrenceStore', () => {
 
 	it('creates a rule from a ticket ("Wiederholen…") with the ticket as instance', async () => {
 		const data = fakeData([]);
-		const store = new RecurrenceStore(data, session());
+		const flags = recordedFlags();
+		const store = new RecurrenceStore(data, session(), flags.sink);
 		await store.load();
 		const values = defaultFormValues('2026-09-28', '2026-09-25');
 
@@ -200,19 +216,22 @@ describe('RecurrenceStore', () => {
 			'ticket000000001'
 		);
 		expect(store.ruleById('rule00000000009')).not.toBeNull();
-		expect(store.announcement).toBe('Wiederholung angelegt: jeden Montag.');
+		expect(flags.shown).toEqual([
+			{ tone: 'success', title: 'Wiederholung angelegt: jeden Montag.' }
+		]);
 	});
 
-	it('pauses, resumes, saves a rhythm, deletes and detaches with announcements', async () => {
+	it('pauses, resumes, saves a rhythm, deletes and detaches with success flags', async () => {
 		const data = fakeData([rule()]);
-		const store = new RecurrenceStore(data, session());
+		const flags = recordedFlags();
+		const store = new RecurrenceStore(data, session(), flags.sink);
 		await store.load();
 
 		expect((await store.setActive('rule00000000001', false)).ok).toBe(true);
-		expect(store.announcement).toBe('Regel pausiert.');
+		expect(flags.last()).toBe('Regel pausiert.');
 		expect(store.ruleById('rule00000000001')?.active).toBe(false);
 		await store.setActive('rule00000000001', true);
-		expect(store.announcement).toBe('Regel fortgesetzt.');
+		expect(flags.last()).toBe('Regel fortgesetzt.');
 
 		const values = { ...defaultFormValues('2026-09-28', '2026-09-25'), weekdays: ['TU' as const] };
 		await store.saveRhythm('rule00000000001', values);
@@ -223,11 +242,34 @@ describe('RecurrenceStore', () => {
 
 		const detached = await store.detach('ticket000000001');
 		expect(detached.ok && detached.value.recurring).toBe(false);
-		expect(store.announcement).toBe('TASK-3 ist aus der Serie gelöst.');
+		expect(flags.last()).toBe('TASK-3 ist aus der Serie gelöst.');
 
 		await store.deleteRule('rule00000000001');
 		expect(store.rules).toEqual([]);
-		expect(store.announcement).toBe('Regel gelöscht. Die Tickets bleiben erhalten.');
+		expect(flags.last()).toBe('Regel gelöscht. Die Tickets bleiben erhalten.');
+		expect(flags.shown.every((flag) => flag.tone === 'success')).toBe(true);
+		expect(flags.shown).toHaveLength(5);
+	});
+
+	it('shows no flag for a refused action and stays silent without a flag sink', async () => {
+		const data = fakeData([rule()]);
+		vi.mocked(data.setActive).mockRejectedValueOnce(
+			new DataError('validation', {
+				status: 400,
+				fields: { project: { code: 'validation_project_archived', message: 'Archiviert.' } }
+			})
+		);
+		const flags = recordedFlags();
+		const store = new RecurrenceStore(data, session(), flags.sink);
+		await store.load();
+
+		const refused = await store.setActive('rule00000000001', true);
+		expect(refused).toEqual({ ok: false, message: null, fields: { project: 'Archiviert.' } });
+		expect(flags.shown).toEqual([]);
+
+		const silent = new RecurrenceStore(fakeData([rule()]), session());
+		await silent.load();
+		expect((await silent.setActive('rule00000000001', false)).ok).toBe(true);
 	});
 
 	it('returns field errors of the server at their field and other refusals as message', async () => {
