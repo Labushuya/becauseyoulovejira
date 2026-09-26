@@ -121,7 +121,7 @@ Der Nutzer kann die letzten N Mails des Posteingangs einer Verbindung auflisten 
 - **Nachtrag (Umsetzung, 2026-09-25, E4-Plan Paket 23):**
   - **Header statt `ENVELOPE`:** Die Liste liest je Mail `BODY.PEEK[HEADER]` und parst den Kopf mit postal-mime und derselben Normalisierung wie der Import (`mailToDraft`). So ergeben Betreff, Absender, Datum und Message-ID dasselbe Duplikatmerkmal wie beim späteren Import. `ENVELOPE` hätte eigene Dekodierungsregeln und bei fehlender Message-ID ein anderes Merkmal.
   - Die „letzten N“ sind die letzten N nach Position im Posteingang (`FETCH n:*`), neueste zuerst.
-  - Das Stichwort der Liste sucht nur im Betreff, auch mit `match_body`. Für den Textanfang müsste jede Mail ganz geladen werden.
+  - Das Stichwort der Liste sucht nur im Betreff, auch mit `match_body`. Für den Textanfang müsste jede Mail ganz geladen werden. Seit dem Nachtrag zu [ADR-0020](0020-stichwoerter-pro-kanal.md) (2026-09-27) sucht es zusätzlich im Absender aus dem Kopf.
   - Verworfene Einträge bleiben auch nach der Bereinigung nach 30 Tagen gesperrt ([ADR-0014](0014-datenmodell-eingang.md) §3).
 
 ## Alternativen

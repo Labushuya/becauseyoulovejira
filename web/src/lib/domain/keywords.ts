@@ -15,6 +15,11 @@ export const KEYWORDS_MAX = 50;
 export const KEYWORD_MAX_LENGTH = 100;
 /** Characters of the text of a mail that are searched besides the subject (`match_body`). */
 export const MAIL_BODY_CHARS = 500;
+/**
+ * Whether the sender of a mail (name and address) is searched as well (user feedback, package A;
+ * ADR-0020 addendum): mailbox, mailbox selection and .eml files.
+ */
+export const MAIL_MATCH_FROM = true;
 /** Offered with "Vorschläge übernehmen", never set without asking. */
 export const KEYWORD_SUGGESTIONS: readonly string[] = Object.freeze([
 	'todo',
@@ -230,7 +235,7 @@ export const IMPORT_KIND_LABELS: Readonly<Record<ImportKind, string>> = Object.f
 
 /** Where the keywords of a kind of file are searched (ADR-0020 section 1). */
 export const IMPORT_SEARCH_TEXT: Readonly<Record<ImportKind, string>> = Object.freeze({
-	eml: 'Gesucht wird im Betreff, auf Wunsch auch in den ersten 500 Zeichen des Textes.',
+	eml: 'Gesucht wird in Betreff und Absender (Name und Adresse), auf Wunsch auch in den ersten 500 Zeichen des Textes.',
 	ics: 'Gesucht wird in Titel und Beschreibung der Termine.',
 	whatsapp: 'Gesucht wird im Text der Nachricht.'
 });
@@ -277,7 +282,19 @@ export function importKeywordsValue(settings: ImportKeywords): Record<string, un
 	};
 }
 
-/** Subject and, with `matchBody`, the first MAIL_BODY_CHARS characters of the text of a mail. */
-export function mailKeywordTexts(title: string, body: string, matchBody: boolean): string[] {
-	return matchBody ? [title, body.slice(0, MAIL_BODY_CHARS)] : [title];
+/**
+ * Texts of a mail that are searched, each its own part: the subject, the sender ("Name <address>",
+ * with MAIL_MATCH_FROM) and, with `matchBody`, the first MAIL_BODY_CHARS characters of the text.
+ * Mirrors mailTexts of app/pb_hooks/lib/keywords.js.
+ */
+export function mailKeywordTexts(
+	title: string,
+	body: string,
+	matchBody: boolean,
+	from: string
+): string[] {
+	const texts = [title];
+	if (MAIL_MATCH_FROM && from !== '') texts.push(from);
+	if (matchBody) texts.push(body.slice(0, MAIL_BODY_CHARS));
+	return texts;
 }

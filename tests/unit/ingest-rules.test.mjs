@@ -107,6 +107,20 @@ describe('keywords of a mail connection (ADR-0020)', () => {
 		});
 	});
 
+	it('searches the sender (name and address) as well, also without match_body (package A)', () => {
+		const europa = { ...settings, keywords: ['europa-go'] };
+		const from = (value) => ({ meta: { from: value } });
+		expect(decide('auto', europa, from('Europa-Go Reisen <info@europa-go.de>'))).toEqual({
+			accepted: true,
+			keyword: 'europa-go'
+		});
+		expect(decide('auto', europa, from('info@europa-go.de'))).toEqual({ accepted: true, keyword: 'europa-go' });
+		expect(decide('auto', europa, from('Anna <anna@example.com>'))).toEqual({ accepted: false, keyword: '' });
+		expect(decide('auto', europa, { meta: { from: ['europa-go'] } })).toEqual({ accepted: false, keyword: '' });
+		expect(decide('auto', europa, { meta: {} })).toEqual({ accepted: false, keyword: '' });
+		expect(decide('auto', europa, { meta: undefined })).toEqual({ accepted: false, keyword: '' });
+	});
+
 	it('takes a selected mail without keyword but keeps a match', () => {
 		expect(decide('selected', settings, {})).toEqual({ accepted: true, keyword: '' });
 		expect(decide('selected', settings, { title: 'Rechnung' })).toEqual({ accepted: true, keyword: 'rechnung' });

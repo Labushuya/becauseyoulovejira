@@ -140,6 +140,17 @@ describe('later runs (P-10, ADR-0020)', () => {
 		expect((await pollConnection(deps(), box)).created).toBe(1);
 	});
 
+	it('takes a mail whose keyword is only in the sender, also without match_body (package A)', async () => {
+		const box = connection({ cursor: '1700000000:0', keywords: ['europa-go'] });
+		server.add(
+			fakeMail({ subject: 'Angebot', from: 'Europa-Go Reisen <info@europa-go.de>', messageId: '<from@example.com>' })
+		);
+		mail('Angebot', 'Kein Treffer');
+		const outcome = await pollConnection(deps(), box);
+		expect(outcome).toMatchObject({ created: 1, unmatched: 1 });
+		expect(ingest.items[0]?.draft.source_meta).toMatchObject({ from: 'Europa-Go Reisen <info@europa-go.de>' });
+	});
+
 	it('takes nothing without keywords', async () => {
 		const box = connection({ cursor: '1700000000:0', keywords: [] });
 		mail('Todo');

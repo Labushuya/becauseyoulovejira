@@ -55,6 +55,8 @@ describe('keywords: web app against the hooks', () => {
 		expect(web.KEYWORDS_MAX).toBe(hook.MAX_KEYWORDS);
 		expect(web.KEYWORD_MAX_LENGTH).toBe(hook.MAX_LENGTH);
 		expect(web.MAIL_BODY_CHARS).toBe(hook.MAIL_BODY_CHARS);
+		expect(web.MAIL_MATCH_FROM).toBe(hook.MAIL_MATCH_FROM);
+		expect(web.MAIL_MATCH_FROM).toBe(true);
 		expect([...web.KEYWORD_SUGGESTIONS]).toEqual(hook.SUGGESTIONS);
 		for (const value of [null, 'todo', [' todo ', 3, '', 'x'.repeat(101), '#byl', '\u0301']]) {
 			expect(web.keywordListOf(value)).toEqual(hook.listOf(value));
@@ -62,12 +64,38 @@ describe('keywords: web app against the hooks', () => {
 		for (const keyword of ['Prüfen', 'pruefen', '#BYL']) expect(web.keywordKey(keyword)).toBe(hook.keyOf(keyword));
 	});
 
-	it('searches the same texts of a mail (subject, optionally the start of the text)', () => {
+	it('searches the same texts of a mail (subject, sender, optionally the start of the text)', () => {
 		const body = `${'ä'.repeat(499)}😀 und noch mehr Text`;
+		const from = 'Europa-Go Reisen <info@europa-go.de>';
 		for (const matchBody of [false, true]) {
-			expect(hook.mailTexts('Betreff', body, matchBody)).toEqual(web.mailKeywordTexts('Betreff', body, matchBody));
+			for (const sender of ['', from]) {
+				expect(hook.mailTexts('Betreff', body, matchBody, sender)).toEqual(
+					web.mailKeywordTexts('Betreff', body, matchBody, sender)
+				);
+			}
 		}
-		expect(hook.mailTexts('Betreff', body, true)[1]).toHaveLength(hook.MAIL_BODY_CHARS);
+		expect(hook.mailTexts('Betreff', body, true, '')[1]).toHaveLength(hook.MAIL_BODY_CHARS);
+		expect(web.mailKeywordTexts('Betreff', body, false, from)).toEqual(['Betreff', from]);
+		expect(web.mailKeywordTexts('Betreff', body, true, from)).toEqual(['Betreff', from, body.slice(0, 500)]);
+		expect(hook.mailTexts('Betreff', body, false, undefined)).toEqual(['Betreff']);
+		// Subject, sender and text stay separate parts: a phrase across them does not match.
+		expect(web.matchKeyword(['betreff europa'], web.mailKeywordTexts('Betreff', '', false, 'Europa'))).toBe('');
+	});
+
+	it('finds a keyword only in the sender, in the text or in the subject (package A, "europa-go")', () => {
+		const keywords = ['europa-go'];
+		const cases = [
+			['Angebot', 'Hallo', false, 'Europa-Go Reisen <info@europa-go.de>', 'europa-go'],
+			['Angebot', 'Hallo', false, 'info@europa-go.de', 'europa-go'],
+			['Angebot', 'Buchen bei Europa-Go.de', true, 'Anna <anna@example.com>', 'europa-go'],
+			['Angebot', 'Buchen bei Europa-Go.de', false, 'Anna <anna@example.com>', ''],
+			['Neu: EUROPA-GO', '', false, '', 'europa-go'],
+			['Angebot', 'Hallo', false, 'Anna <anna@example.com>', '']
+		];
+		for (const [title, body, matchBody, from, expected] of cases) {
+			expect(web.matchKeyword(keywords, web.mailKeywordTexts(title, body, matchBody, from))).toBe(expected);
+			expect(hook.matchKeyword(keywords, hook.mailTexts(title, body, matchBody, from))).toBe(expected);
+		}
 	});
 
 	it('stores the lists of the file imports in the shape the hook accepts (package 21)', () => {

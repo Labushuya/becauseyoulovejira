@@ -239,8 +239,8 @@ Google Calendar und Telegram holt die App selbst ab, Postfächer der Mail-Hilfsp
 
 **Stichwörter** ([ADR-0020](docs/adr/0020-stichwoerter-pro-kanal.md)): Jede Verbindung hat eine eigene Liste. Automatisch kommt nur in den Eingang, was ein Stichwort trifft; ohne Stichwörter übernimmt eine Verbindung nichts und zeigt eine Warnung.
 
-- Groß- und Kleinschreibung und Umlaute zählen nicht („prüfen“, „pruefen“ und „prufen“ finden einander). Gesucht wird am Wortanfang: „todo“ trifft „Todo-Liste“, nicht „Fotodoku“. Mehrere Wörter wie „zu erledigen“ sind erlaubt.
-- Gesucht wird beim Kalender in Titel und Beschreibung, bei Telegram im Text bzw. in der Bildunterschrift, bei Postfächern im Betreff (auf Wunsch auch in den ersten 500 Zeichen des Textes).
+- Groß-/Kleinschreibung egal, Umlaute auch („prüfen“, „pruefen“ und „prufen“ finden einander). Gesucht wird am Wortanfang: „todo“ trifft „Todo-Liste“, nicht „Fotodoku“. Bindestriche und Punkte gehören zum Stichwort, und vor dem Wortanfang darf auch ein `@` oder `.` stehen: „beispiel-shop“ trifft „Beispiel-Shop“, „beispiel-shop.de“ und „info@beispiel-shop.de“. Mehrere Wörter wie „zu erledigen“ sind erlaubt.
+- Gesucht wird beim Kalender in Titel und Beschreibung, bei Telegram im Text bzw. in der Bildunterschrift, bei Postfächern in Betreff und Absender, also Name und Adresse (auf Wunsch auch in den ersten 500 Zeichen des Textes).
 - „Vorschläge übernehmen“ trägt todo, aufgabe, erledigen, ticket und #byl ein.
 - Was kein Stichwort trifft, wird nicht gespeichert, auch nicht als verworfen. Neue Stichwörter gelten bei Telegram erst für neue Nachrichten; beim Kalender für alle Termine, die beim nächsten Abruf im Fenster liegen.
 - Das Stichwort, das gegriffen hat, steht im Panel des Eintrags.
@@ -282,7 +282,7 @@ Der Assistent (**Kanäle** → **Kanal hinzufügen** → **Telegram-Bot** → **
 
 #### Web.de-Postfach
 
-Der Mail-Hilfsprozess `app\byl-mail.exe` holt den Posteingang alle 5 Minuten ab, solange die App läuft. In den Eingang kommen nur Mails, die **nach der Einrichtung** ankommen und deren **Betreff ein Stichwort** der Verbindung enthält (auf Wunsch auch die ersten 500 Zeichen des Textes). Er liest nur: Gelesen-Status, Markierungen und Ordner bleiben unverändert, er löscht, verschiebt und verschickt nichts.
+Der Mail-Hilfsprozess `app\byl-mail.exe` holt den Posteingang alle 5 Minuten ab, solange die App läuft. In den Eingang kommen nur **neue** Mails, die **nach dem ersten Abruf** der Verbindung ankommen, und nur, wenn **Betreff oder Absender** (Name und Adresse) ein **Stichwort** der Verbindung enthalten; auf Wunsch auch die ersten 500 Zeichen des Textes. Mails, die beim ersten Abruf schon im Posteingang liegen, holst du über **Aus dem Postfach wählen**. Er liest nur: Gelesen-Status, Markierungen und Ordner bleiben unverändert, er löscht, verschiebt und verschickt nichts.
 
 1. Bei [Web.de](https://web.de) anmelden, oben auf die Initialen → **E-Mail-Einstellungen** → unter „E-Mail empfangen“ **POP3/IMAP** → Schalter **POP3- und IMAP-Zugriff erlauben** einschalten und die Sicherheitsabfrage bestätigen.
 2. Mit Zwei-Faktor-Anmeldung: **Account verwalten** → **Login & Sicherheit** → **Anwendungsspezifische Passwörter verwalten** → neues Passwort erstellen (Name etwa „becauseyoulovejira“); es wird nur einmal angezeigt. Ohne Zwei-Faktor-Anmeldung gilt das normale Web.de-Passwort.
@@ -295,13 +295,13 @@ Der Mail-Hilfsprozess `app\byl-mail.exe` holt den Posteingang alle 5 Minuten ab,
 - **Abschaltung durch Web.de:** Web.de schaltet den POP3/IMAP-Abruf nach längerer Nichtnutzung aus. Die Verbindung meldet dann „Anmeldung bei Web.de abgelehnt.“ mit einem Hinweis auf den Schalter; wieder einschalten genügt.
 - **Ausfälle:** Ohne Internet oder bei beendetem PocketBase versucht es der Hilfsprozess beim nächsten Intervall erneut. Er merkt sich die zuletzt geprüfte Mail an der Verbindung (`UIDVALIDITY:UID`) und macht dort weiter. Nummeriert Web.de den Posteingang neu, beginnt er bei den neuesten Mails und meldet das als Hinweis.
 - **Erster Start:** SmartScreen oder ein Virenscanner können bei `byl-mail.exe` nachfragen, weil die Datei nicht signiert ist.
-- **Aus dem Postfach wählen:** An der Verbindung listet dieser Knopf die letzten 50 (bis 200) Mails des Posteingangs mit Datum, Absender, Betreff und Stichwort. Mails mit Stichwort im Betreff sind vorausgewählt, Mails, die schon im Eingang sind, gesperrt. Übernommen wird nur, was du auswählst, auch ohne Stichwort und aus der Zeit vor der Einrichtung. Das ist der einzige Weg für ältere Mails. Die App fragt dafür den Hilfsprozess über `127.0.0.1:8091` (anderer Port per `BYL_MAIL_HELPER_PORT`) mit dem Token; der Browser spricht ihn nie direkt an. Läuft `byl-mail.exe` nicht, sagt die Ansicht das.
+- **Aus dem Postfach wählen:** An der Verbindung listet dieser Knopf die letzten 50 (bis 200) Mails des Posteingangs mit Datum, Absender, Betreff und Stichwort. Mails mit Stichwort in Betreff oder Absender sind vorausgewählt, Mails, die schon im Eingang sind, gesperrt. Übernommen wird nur, was du auswählst, auch ohne Stichwort und aus der Zeit vor der Einrichtung. Das ist der einzige Weg für ältere Mails. Die App fragt dafür den Hilfsprozess über `127.0.0.1:8091` (anderer Port per `BYL_MAIL_HELPER_PORT`) mit dem Token; der Browser spricht ihn nie direkt an. Läuft `byl-mail.exe` nicht, sagt die Ansicht das.
 - **Protokoll:** `app\logs\byl-mail.log` (Anzahlen und bereinigte Fehler, keine Zugangsdaten, keine Betreffs oder Inhalte).
 - **Widerrufen:** das anwendungsspezifische Passwort unter **Login & Sicherheit** löschen bzw. den POP3/IMAP-Zugriff ausschalten; die Variable `BYL_WEBDE_PASSWORD` entfernen und neu starten.
 
 #### Gmail
 
-Gmail holt derselbe Hilfsprozess ab wie Web.de, mit denselben Regeln: nur der Posteingang, nur Mails **nach der Einrichtung** mit **Stichwort im Betreff** (auf Wunsch auch in den ersten 500 Zeichen des Textes), nur lesend, dazu **Aus dem Postfach wählen** für ältere Mails. IMAP ist bei Gmail immer eingeschaltet. Angemeldet wird mit einem **App-Passwort**, nicht mit dem normalen Google-Passwort; ein App-Passwort gibt es nur mit der **Bestätigung in zwei Schritten**.
+Gmail holt derselbe Hilfsprozess ab wie Web.de, mit denselben Regeln: nur der Posteingang, nur neue Mails **nach dem ersten Abruf** mit **Stichwort in Betreff oder Absender** (auf Wunsch auch in den ersten 500 Zeichen des Textes), nur lesend, dazu **Aus dem Postfach wählen** für ältere Mails. IMAP ist bei Gmail immer eingeschaltet. Angemeldet wird mit einem **App-Passwort**, nicht mit dem normalen Google-Passwort; ein App-Passwort gibt es nur mit der **Bestätigung in zwei Schritten**.
 
 1. Unter [myaccount.google.com](https://myaccount.google.com) → **Sicherheit** prüfen, ob die **Bestätigung in zwei Schritten** (2-Faktor-Authentifizierung) eingeschaltet ist; sonst dort einschalten.
 2. [myaccount.google.com/apppasswords](https://myaccount.google.com/apppasswords) öffnen, einen Namen wie „becauseyoulovejira“ eingeben und **Erstellen** klicken. Das App-Passwort (16 Buchstaben in Vierergruppen) wird nur einmal angezeigt.
@@ -318,7 +318,7 @@ Gmail holt derselbe Hilfsprozess ab wie Web.de, mit denselben Regeln: nur der Po
 
 Mail-Dateien (`.eml`), Kalenderdateien (`.ics`) und WhatsApp-Exporte (`.txt`, `.zip`) zieht man in die Eingangsansicht oder wählt sie mit **Datei wählen**. Es öffnet sich eine **Auswahl** ([ADR-0020](docs/adr/0020-stichwoerter-pro-kanal.md)):
 
-- Einträge mit einem Stichwort der Kanalart sind vorausgewählt, alle anderen kannst du dazuwählen. Die Listen stehen unter **Einstellungen → Datei-Importe** (`/einstellungen/datei-importe`), getrennt für Mail-Dateien (Betreff, auf Wunsch auch die ersten 500 Zeichen des Textes), Kalenderdateien (Titel und Beschreibung) und WhatsApp-Export (Nachricht).
+- Einträge mit einem Stichwort der Kanalart sind vorausgewählt, alle anderen kannst du dazuwählen. Die Listen stehen unter **Einstellungen → Datei-Importe** (`/einstellungen/datei-importe`), getrennt für Mail-Dateien (Betreff und Absender, auf Wunsch auch die ersten 500 Zeichen des Textes), Kalenderdateien (Titel und Beschreibung) und WhatsApp-Export (Nachricht).
 - Was schon im Eingang ist (auch verworfen oder umgewandelt), steht in der Auswahl, lässt sich aber nicht wählen.
 - Nur die ausgewählten Einträge kommen in den Eingang; das Stichwort steht dann im Panel des Eintrags.
 

@@ -86,8 +86,8 @@
 <fieldset class="keywords" aria-labelledby={ids.legend}>
 	<legend id={ids.legend}>Stichwörter</legend>
 	<p class="hint" id={ids.hint}>
-		{description} Groß- und Kleinschreibung und Umlaute zählen nicht, gesucht wird am Wortanfang; mehrere
-		Wörter sind erlaubt.
+		{description} Groß-/Kleinschreibung egal, Umlaute auch. Gesucht wird am Wortanfang, auch in Adressen:
+		„beispiel-shop“ findet „info@beispiel-shop.de“. Mehrere Wörter sind erlaubt.
 	</p>
 	{#if keywords.length === 0}
 		<SectionMessage tone="warning" compact>{emptyText}</SectionMessage>

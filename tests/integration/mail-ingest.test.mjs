@@ -130,6 +130,72 @@ describe('mail helper with PocketBase (P-10)', () => {
 		expect(imap.flagsUnchanged()).toBe(true);
 	});
 
+	it('takes "europa-go" only in the sender, only in the text and only in the subject (package A)', async () => {
+		const box = await mailbox({
+			settings: { provider: 'webde', user: imap.user, keywords: ['europa-go'], match_body: true }
+		});
+		await pollAll(deps());
+		const id = () => `<europa-${randomBytes(4).toString('hex')}@example.com>`;
+		imap.add(fakeMail({ subject: 'Nur Absender', from: 'Europa-Go Reisen <info@europa-go.de>', messageId: id() }));
+		imap.add(fakeMail({ subject: 'Nur Text', body: 'Ihre Buchung bei Europa-Go.de ist bestätigt.', messageId: id() }));
+		imap.add(fakeMail({ subject: 'Neu bei EUROPA-GO', messageId: id() }));
+		imap.add(
+			fakeMail({
+				subject: 'Nur HTML',
+				body: '<p>Gebucht bei <b>europa-go</b>.</p>',
+				contentType: 'text/html',
+				messageId: id()
+			})
+		);
+		imap.add(fakeMail({ subject: 'Ohne Treffer', body: 'Europa geht immer.', messageId: id() }));
+		await pollAll(deps());
+		const created = await items(box);
+		expect(created.map((item) => [item.title, item.source_meta.keyword])).toEqual([
+			['Nur Absender', 'europa-go'],
+			['Nur Text', 'europa-go'],
+			['Neu bei EUROPA-GO', 'europa-go'],
+			['Nur HTML', 'europa-go']
+		]);
+		expect(lines.join('\n')).toMatch(/4 neu, 1 ohne Stichwort/);
+	});
+
+	it('refuses a mail matched only by the text when match_body is off, but not by the sender (package A)', async () => {
+		const box = await mailbox({ settings: { provider: 'webde', user: imap.user, keywords: ['europa-go'] } });
+		await pollAll(deps());
+		imap.add(fakeMail({ subject: 'Nur Text', body: 'Buchung bei europa-go', messageId: `<t-${randomBytes(4).toString('hex')}@example.com>` }));
+		imap.add(fakeMail({ subject: 'Nur Absender', from: 'info@europa-go.de', messageId: `<f-${randomBytes(4).toString('hex')}@example.com>` }));
+		await pollAll(deps());
+		expect((await items(box)).map((item) => item.title)).toEqual(['Nur Absender']);
+		// The route checks the sender itself: a fetched mail without keyword in subject and sender
+		// is refused even if a client claims it matched.
+		const refused = await fetch(`${instance.url}/api/byl/ingest/items`, {
+			method: 'POST',
+			headers: { Authorization: `Bearer ${TOKEN}`, 'Content-Type': 'application/json' },
+			body: JSON.stringify({
+				connection: box.id,
+				origin: 'auto',
+				title: 'Angebot',
+				body: 'europa-go',
+				source_ref: '<refused@example.com>',
+				source_meta: { from: 'Anna <anna@example.com>' }
+			})
+		});
+		expect(refused.status).toBe(422);
+		const accepted = await fetch(`${instance.url}/api/byl/ingest/items`, {
+			method: 'POST',
+			headers: { Authorization: `Bearer ${TOKEN}`, 'Content-Type': 'application/json' },
+			body: JSON.stringify({
+				connection: box.id,
+				origin: 'auto',
+				title: 'Angebot',
+				source_ref: '<accepted@example.com>',
+				source_meta: { from: 'Europa-Go <info@europa-go.de>' }
+			})
+		});
+		expect(accepted.status).toBe(200);
+		expect((await accepted.json()).status).toBe('created');
+	});
+
 	it('knows a mail that was dropped as .eml file before', async () => {
 		const box = await mailbox({ cursor: `1700000000:${imap.mails.at(-1)?.uid ?? 0}` });
 		const messageId = `<eml-${randomBytes(4).toString('hex')}@example.com>`;

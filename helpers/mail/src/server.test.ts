@@ -158,6 +158,19 @@ describe('POST /mailbox/list', () => {
 		expect(imap.writes()).toEqual([]);
 	});
 
+	it('preselects a mail by a keyword in the sender (package A)', async () => {
+		const [connection] = ingest.connections;
+		if (connection) connection.keywords = ['europa-go'];
+		imap.add(fakeMail({ subject: 'Angebot', from: 'Europa-Go <info@europa-go.de>', messageId: '<srv-from@example.com>' }));
+		mail('Hallo');
+		const answer = await call('/mailbox/list', { connection: ID, limit: 2 });
+		const items = answer.json.items as Record<string, unknown>[];
+		expect(items.map((item) => [item.subject, item.keyword])).toEqual([
+			['Hallo', ''],
+			['Angebot', 'europa-go']
+		]);
+	});
+
 	it('takes 50 by default and at most 200', async () => {
 		for (let i = 0; i < 60; i++) mail(`Mail ${i}`);
 		expect(((await call('/mailbox/list', { connection: ID })).json.items as unknown[]).length).toBe(50);

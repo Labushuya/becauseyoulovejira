@@ -34,6 +34,37 @@ describe('mail from the mailbox', () => {
 		expect(keywordOf({ title: 'x', body: `${'y'.repeat(500)} todo` }, ['todo'], true)).toBe('');
 	});
 
+	it('matches keywords in the sender, name and address, without match_body (package A)', async () => {
+		const draft = await parseMail(
+			new TextEncoder().encode(
+				fakeMail({ subject: 'Angebot', from: 'Europa-Go Reisen <info@europa-go.de>', messageId: '<s@b>' })
+			)
+		);
+		expect(draft.sourceMeta?.from).toBe('Europa-Go Reisen <info@europa-go.de>');
+		expect(keywordOf(draft, ['europa-go'], false)).toBe('europa-go');
+		expect(keywordOf(draft, ['EUROPA-GO.DE'], false)).toBe('EUROPA-GO.DE');
+		expect(keywordOf(draft, ['reisen'], false)).toBe('reisen');
+		expect(keywordOf({ title: 'Angebot', body: '' }, ['europa-go'], false)).toBe('');
+	});
+
+	it('searches the text of an HTML-only, quoted-printable mail with match_body (package A)', async () => {
+		const html = '<html><head><style>p{}</style></head><body><p>Ihre Buchung bei <b>Europa-Go</b>=\r\n.de</p></body></html>';
+		const draft = await parseMail(
+			new TextEncoder().encode(
+				fakeMail({
+					subject: 'Angebot',
+					body: html,
+					messageId: '<h@b>',
+					contentType: 'text/html',
+					transferEncoding: 'quoted-printable'
+				})
+			)
+		);
+		expect(draft.body).toBe('Ihre Buchung bei Europa-Go.de');
+		expect(keywordOf(draft, ['europa-go'], true)).toBe('europa-go');
+		expect(keywordOf({ ...draft, sourceMeta: {} }, ['europa-go'], false)).toBe('');
+	});
+
 	it('sends the fields of the ingest route', async () => {
 		const draft = await parseMail(
 			new TextEncoder().encode(fakeMail({ subject: 'Todo: Steuer', messageId: '<m1@example.com>' }))

@@ -33,7 +33,9 @@ describe('KeywordEditor', () => {
 		expect(warning?.textContent).toMatch(/Achtung:/);
 		expect(warning?.getAttribute('role')).toBeNull();
 		expect(screen.getByRole('group', { name: 'Stichwörter' })).toBeTruthy();
-		expect(screen.getByText(/Gesucht wird im Text\. Groß- und Kleinschreibung/)).toBeTruthy();
+		expect(
+			screen.getByText(/Gesucht wird im Text\. Groß-\/Kleinschreibung egal, Umlaute auch\./)
+		).toBeTruthy();
 	});
 
 	it('adds a keyword with Enter and trims it', async () => {

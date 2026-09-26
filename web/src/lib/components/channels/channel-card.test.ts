@@ -5,7 +5,7 @@
 import { fireEvent, render, screen, within } from '@testing-library/svelte';
 import { describe, expect, it, vi } from 'vitest';
 import type { ResolvedPathname } from '$app/types';
-import type { Connection } from '$lib/domain/connections';
+import { MAIL_NEW_ONLY_HINT, type Connection } from '$lib/domain/connections';
 import { useOverlayStubs } from '$lib/test/overlay-stubs';
 import ChannelCard from './ChannelCard.svelte';
 import ChannelCatalog from './ChannelCatalog.svelte';
@@ -69,6 +69,38 @@ describe('channel card', () => {
 		expect(card.getByText('25.09.2026 10:15')).toBeTruthy();
 		expect(card.getByText('2 (todo, ticket)')).toBeTruthy();
 		expect(card.queryByText(/zuletzt erfolgreich/)).toBeNull();
+		expect(card.queryByText(MAIL_NEW_ONLY_HINT)).toBeNull();
+	});
+
+	it('says at a mailbox that only new mails come automatically (package A)', () => {
+		const { card } = renderCard(
+			connection({ type: 'mail', label: 'Web.de', mailProvider: 'webde', mailUser: 'anna@web.de' })
+		);
+		expect(card.getByText('Automatisch')).toBeTruthy();
+		expect(card.getByText(MAIL_NEW_ONLY_HINT)).toBeTruthy();
+		expect(MAIL_NEW_ONLY_HINT).toMatch(/nur neue Mails.*ersten Abruf.*„Aus dem Postfach wählen“/);
+	});
+
+	it('repeats the hint in the edit modal of a mailbox (package A)', () => {
+		render(ChannelEditModal, {
+			props: {
+				connection: connection({
+					type: 'mail',
+					label: 'Web.de',
+					mailProvider: 'webde',
+					mailUser: 'anna@web.de'
+				}),
+				onkeywords: vi.fn(async () => null),
+				onreply: vi.fn(),
+				onmatchbody: vi.fn(),
+				onsetup: vi.fn(),
+				onclose: vi.fn()
+			}
+		});
+		const dialog = within(screen.getByRole('dialog', { name: 'Web.de bearbeiten' }));
+		expect(dialog.getByText(MAIL_NEW_ONLY_HINT)).toBeTruthy();
+		expect(dialog.getByText(/Groß-\/Kleinschreibung egal/)).toBeTruthy();
+		expect(dialog.getByText(/in Betreff und Absender \(Name und Adresse\)/)).toBeTruthy();
 	});
 
 	it('runs a calendar and names the connection in every action', async () => {

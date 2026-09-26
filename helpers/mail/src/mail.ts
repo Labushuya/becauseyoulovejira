@@ -34,13 +34,22 @@ export async function parseMail(source: Uint8Array): Promise<InboxDraft> {
 	return mailToDraft(mail as ParsedMail, 'mail');
 }
 
-/** The first keyword that matches the subject (with `matchBody` also the start of the text), or ''. */
+/** The sender of a draft ("Name <address>" in source_meta.from), or ''. */
+export function senderOf(draft: Pick<InboxDraft, 'sourceMeta'>): string {
+	const from = draft.sourceMeta?.from;
+	return typeof from === 'string' ? from : '';
+}
+
+/**
+ * The first keyword that matches the subject or the sender (with `matchBody` also the start of the
+ * text), or ''.
+ */
 export function keywordOf(
-	draft: Pick<InboxDraft, 'title' | 'body'>,
+	draft: Pick<InboxDraft, 'title' | 'body' | 'sourceMeta'>,
 	keywords: readonly string[],
 	matchBody: boolean
 ): string {
-	return matchKeyword(keywords, mailKeywordTexts(draft.title, draft.body ?? '', matchBody));
+	return matchKeyword(keywords, mailKeywordTexts(draft.title, draft.body ?? '', matchBody, senderOf(draft)));
 }
 
 /** The draft in the fields of the ingest route; the route sets channel, kind and the keyword. */
