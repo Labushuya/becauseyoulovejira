@@ -4,9 +4,10 @@
 	import { page } from '$app/state';
 	import { auth } from '$lib/auth.svelte';
 	import AppHeader from '$lib/components/AppHeader.svelte';
+	import ShortcutsModal from '$lib/components/help/ShortcutsModal.svelte';
 	import FlagGroup from '$lib/components/overlay/FlagGroup.svelte';
 	import QuickCapture from '$lib/components/QuickCapture.svelte';
-	import { isQuickCaptureKey, isTypingTarget } from '$lib/domain/keyboard';
+	import { isHelpKey, isQuickCaptureKey, isTypingTarget } from '$lib/domain/keyboard';
 	import { pb } from '$lib/pocketbase';
 	import {
 		panelFreeTicketCreate,
@@ -117,11 +118,17 @@
 		markRead: (ticket) => tickets.markRead(ticket)
 	};
 
+	// Modal "Tastaturkürzel" (plan EH-9): `?` opens it under the same conditions as `c`, the help
+	// menu in the header as well.
+	let shortcutsOpen = $state(false);
+
 	function onkeydown(event: KeyboardEvent) {
-		if (quickOpen || event.defaultPrevented) return;
-		if (!isQuickCaptureKey(event) || isTypingTarget(event)) return;
+		if (quickOpen || shortcutsOpen || event.defaultPrevented) return;
+		const quick = isQuickCaptureKey(event);
+		if ((!quick && !isHelpKey(event)) || isTypingTarget(event)) return;
 		event.preventDefault();
-		quickOpen = true;
+		if (quick) quickOpen = true;
+		else shortcutsOpen = true;
 	}
 </script>
 
@@ -131,6 +138,7 @@
 	covered={panelShell.covering}
 	openCount={tickets.openState === 'ready' ? tickets.openCount : null}
 	onquick={() => (quickOpen = true)}
+	onshortcuts={() => (shortcutsOpen = true)}
 />
 <main class="content">
 	{@render children()}
@@ -145,6 +153,10 @@
 		onclose={() => (quickOpen = false)}
 		resultHref={(target, id) => (target === 'ticket' ? ticketPath(id) : inboxItemHref(id))}
 	/>
+{/if}
+
+{#if shortcutsOpen}
+	<ShortcutsModal onclose={() => (shortcutsOpen = false)} />
 {/if}
 
 <style>

@@ -474,3 +474,74 @@ describe('app layout: quick entry keys (E4 plan, T-11 and package 6)', () => {
 		expect(quick()).toBeNull();
 	});
 });
+
+describe('app layout: shortcuts and help menu (EH-9)', () => {
+	useOverlayStubs();
+
+	const modal = () => screen.queryByRole('dialog', { name: 'Tastaturkürzel' });
+
+	function press(target: EventTarget, init: KeyboardEventInit): boolean {
+		const event = new KeyboardEvent('keydown', { bubbles: true, cancelable: true, ...init });
+		target.dispatchEvent(event);
+		return event.defaultPrevented;
+	}
+
+	it('opens the modal "Tastaturkürzel" with ? (Shift+ß) on the page', async () => {
+		await renderLayout();
+		expect(modal()).toBeNull();
+		expect(press(document.body, { key: '?', shiftKey: true })).toBe(true);
+		await tick();
+		expect(modal()).not.toBeNull();
+		// Open already: a second ? belongs to the dialog.
+		expect(press(document.body, { key: '?', shiftKey: true })).toBe(false);
+		const closers = screen.getAllByRole('button', { name: 'Schließen' });
+		await fireEvent.click(closers[closers.length - 1] as HTMLElement);
+		expect(modal()).toBeNull();
+	});
+
+	it('does not open with ? in input fields, dialogs and open popovers', async () => {
+		await renderLayout();
+		const main = screen.getByRole('main');
+		const field = document.createElement('input');
+		main.append(field);
+		expect(press(field, { key: '?', shiftKey: true })).toBe(false);
+
+		const dialog = document.createElement('dialog');
+		dialog.setAttribute('open', '');
+		main.append(dialog);
+		expect(press(document.body, { key: '?', shiftKey: true })).toBe(false);
+		dialog.remove();
+
+		const popover = document.createElement('div');
+		popover.setAttribute('popover', 'auto');
+		Object.defineProperty(popover, 'matches', {
+			value: (selector: string) => selector === ':popover-open'
+		});
+		main.append(popover);
+		expect(press(document.body, { key: '?', shiftKey: true })).toBe(false);
+		popover.remove();
+
+		await tick();
+		expect(modal()).toBeNull();
+	});
+
+	it('offers the help menu "?" between "Neues Ticket" and the gear, and opens the modal from it', async () => {
+		await renderLayout();
+		const header = within(screen.getByRole('banner'));
+		const button = header.getByRole('button', { name: 'Hilfe' });
+		const controls = [
+			...screen.getByRole('banner').querySelectorAll<HTMLElement>('a, button')
+		].filter((element) => element.closest('[popover]') === null);
+		const names = controls.map(
+			(element) => element.getAttribute('aria-label') ?? element.textContent?.trim()
+		);
+		expect(names.indexOf('Hilfe')).toBe(names.indexOf('Neues Ticket') + 1);
+		expect(names.indexOf('Einstellungen')).toBe(names.indexOf('Hilfe') + 1);
+
+		await fireEvent.click(button);
+		await tick();
+		await fireEvent.click(screen.getByRole('menuitem', { hidden: true, name: /Tastaturkürzel/ }));
+		await tick();
+		expect(modal()).not.toBeNull();
+	});
+});

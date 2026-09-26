@@ -89,7 +89,8 @@ describe('settings layout', () => {
 		expect(pages.map((link) => [link.textContent?.trim(), link.getAttribute('href')])).toEqual([
 			['Kanäle', '/einstellungen/kanaele'],
 			['Datei-Importe', '/einstellungen/datei-importe'],
-			['Tags', '/einstellungen/tags']
+			['Tags', '/einstellungen/tags'],
+			['Hilfe', '/einstellungen/hilfe']
 		]);
 		expect(pages[0]?.hasAttribute('aria-current')).toBe(false);
 		expect(pages[1]?.getAttribute('aria-current')).toBe('page');

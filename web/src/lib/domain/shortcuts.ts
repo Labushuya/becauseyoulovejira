@@ -1,0 +1,147 @@
+// Keyboard shortcuts of the app in one place (ADR-0026 section 7, plan EH-9): the help page, the
+// modal "Tastaturkürzel" and aria-keyshortcuts in the header read this list, so they never differ.
+// Pure data; the handlers stay where they are (keyboard.ts for the global keys) and
+// shortcuts.test.ts checks the global entries against them.
+
+/** Where a shortcut works, in the order of the help. */
+export type ShortcutContext = 'everywhere' | 'list' | 'panel' | 'dialogs';
+
+export const SHORTCUT_CONTEXTS: readonly { id: ShortcutContext; label: string }[] = [
+	{ id: 'everywhere', label: 'Überall' },
+	{ id: 'list', label: 'Liste' },
+	{ id: 'panel', label: 'Panel' },
+	{ id: 'dialogs', label: 'Dialoge' }
+];
+
+/**
+ * One shortcut: `keys` lists the alternatives, each a combination of key names as printed on a
+ * German keyboard ("Strg", "Umschalt", "Alt", "Enter", …), e.g. [["c"], ["Strg", "K"]].
+ */
+export interface Shortcut {
+	readonly id: string;
+	readonly context: ShortcutContext;
+	readonly keys: readonly (readonly string[])[];
+	/** What the keys do, one sentence without a full stop. */
+	readonly action: string;
+}
+
+/** aria-keyshortcuts of the button "Schnellerfassung" (WAI-ARIA key names). */
+export const QUICK_CAPTURE_KEYSHORTCUTS = 'C Control+K';
+/** aria-keyshortcuts of "Tastaturkürzel" in the help menu. */
+export const HELP_KEYSHORTCUTS = '?';
+
+export const SHORTCUTS: readonly Shortcut[] = [
+	{
+		id: 'quick-capture',
+		context: 'everywhere',
+		keys: [['c'], ['Strg', 'K']],
+		action: 'Schnellerfassung öffnen (nicht in Eingabefeldern, Dialogen und offenen Auswahlen)'
+	},
+	{
+		id: 'help',
+		context: 'everywhere',
+		keys: [['?']],
+		action: 'Diese Tastaturkürzel anzeigen (auf deutscher Tastatur Umschalt+ß)'
+	},
+	{
+		id: 'tab',
+		context: 'everywhere',
+		keys: [['Tab'], ['Umschalt', 'Tab']],
+		action: 'Zum nächsten bzw. vorigen Bedienelement'
+	},
+	{
+		id: 'open-row',
+		context: 'list',
+		keys: [['Enter']],
+		action: 'Das Ticket oder den Eintrag der Zeile im Panel öffnen'
+	},
+	{
+		id: 'toggle-done',
+		context: 'list',
+		keys: [['Leertaste']],
+		action: 'Häkchen setzen oder entfernen'
+	},
+	{
+		id: 'filter-arrows',
+		context: 'list',
+		keys: [['Pfeiltasten']],
+		action: 'In einer Filtergruppe und in „Gruppieren“ den Wert wechseln'
+	},
+	{
+		id: 'clear-search',
+		context: 'list',
+		keys: [['Esc']],
+		action: 'Im Suchfeld: die Suche leeren'
+	},
+	{
+		id: 'paste-inbox',
+		context: 'list',
+		keys: [['Strg', 'V']],
+		action: 'In der Eingangsansicht außerhalb von Feldern: Text aus der Zwischenablage übernehmen'
+	},
+	{
+		id: 'close-panel',
+		context: 'panel',
+		keys: [['Esc']],
+		action: 'Das Panel schließen (außer ein Feld wird gerade bearbeitet)'
+	},
+	{
+		id: 'field-save',
+		context: 'panel',
+		keys: [['Enter'], ['Esc']],
+		action: 'Im Titel- oder Datumsfeld: speichern bzw. die Eingabe verwerfen'
+	},
+	{
+		id: 'ctrl-enter',
+		context: 'panel',
+		keys: [['Strg', 'Enter']],
+		action: 'Beschreibung speichern, Kommentar senden oder speichern'
+	},
+	{
+		id: 'activity-tabs',
+		context: 'panel',
+		keys: [['Pfeil links'], ['Pfeil rechts'], ['Pos1'], ['Ende']],
+		action: 'Zwischen den Reitern „Kommentare“ und „Verlauf“ wechseln'
+	},
+	{
+		id: 'close-dialog',
+		context: 'dialogs',
+		keys: [['Esc']],
+		action: 'Dialog oder Auswahl schließen; bei ungespeicherten Eingaben fragt die App erst nach'
+	},
+	{
+		id: 'quick-save',
+		context: 'dialogs',
+		keys: [['Enter'], ['Alt', 'Enter']],
+		action: 'In der Schnellerfassung: Ticket anlegen bzw. in den Eingang legen'
+	},
+	{
+		id: 'new-ticket-save',
+		context: 'dialogs',
+		keys: [['Strg', 'Enter']],
+		action: 'Im Formular „Neues Ticket“ und in der Erfassung: speichern'
+	},
+	{
+		id: 'capture-inbox',
+		context: 'dialogs',
+		keys: [['Alt', 'Enter']],
+		action: 'In der Erfassung: in den Eingang legen'
+	}
+];
+
+/** The shortcuts of one context, in the order of the list. */
+export function shortcutsOf(context: ShortcutContext): Shortcut[] {
+	return SHORTCUTS.filter((shortcut) => shortcut.context === context);
+}
+
+/** The shortcut with `id`; throws for an unknown id, so a typo fails at once. */
+export function shortcutById(id: string): Shortcut {
+	const shortcut = SHORTCUTS.find((candidate) => candidate.id === id);
+	if (shortcut === undefined) throw new Error(`Unknown shortcut: ${id}`);
+	return shortcut;
+}
+
+/** Plain text of the keys, e.g. "c oder Strg+K", for names and tests. */
+export function keysText(shortcut: Pick<Shortcut, 'keys'>): string {
+	return shortcut.keys.map((combination) => combination.join('+')).join(' oder ');
+}

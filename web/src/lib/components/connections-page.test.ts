@@ -432,7 +432,8 @@ describe('connections section', () => {
 });
 
 describe('channels view: variables', () => {
-	it('explains setx, the control panel and the restart', () => {
+	// The folded guide moved into the help with EH-9 (help-page.test.ts checks its text there).
+	it('leads to the explanation of the access data in the help', () => {
 		const { store } = setup();
 		render(ChannelsView, {
 			props: {
@@ -441,13 +442,11 @@ describe('channels view: variables', () => {
 				onsetupchange: vi.fn()
 			}
 		});
-		const section = screen.getByRole('region', {
-			name: 'Zugangsdaten als Windows-Variable setzen'
-		});
-		const text = (section.textContent ?? '').replace(/\s+/g, ' ');
-		expect(text).toMatch(/setx BYL_TELEGRAM_TOKEN/);
-		expect(text).toMatch(/Umgebungsvariablen für dieses Konto bearbeiten/);
-		expect(text).toMatch(/stop\.bat und dann start\.bat/);
+		expect(
+			screen.queryByRole('region', { name: 'Zugangsdaten als Windows-Variable setzen' })
+		).toBeNull();
+		const link = screen.getByRole('link', { name: 'Wie funktionieren die Zugangsdaten?' });
+		expect(link.getAttribute('href')).toBe('/einstellungen/hilfe#zugangsdaten');
 	});
 });
 

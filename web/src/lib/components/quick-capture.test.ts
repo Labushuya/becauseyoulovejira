@@ -74,6 +74,20 @@ describe('quick capture', () => {
 		expect(screen.getByText('Das Projekt ALT ist archiviert und wird nicht gesetzt.')).toBeTruthy();
 	});
 
+	it('leads to the short syntax in the help in a new tab, keeping typed text (EH-9)', async () => {
+		const { input, onclose } = renderQuick();
+		await fireEvent.input(input, { target: { value: 'Zahnarzt' } });
+		const link = screen.getByRole('link', { name: /^Mehr zur Kurzsyntax/ });
+		expect(link.textContent).toMatch(/Mehr zur Kurzsyntax\s*\(öffnet in neuem Tab\)/);
+		expect(link.getAttribute('href')).toBe('/einstellungen/hilfe#kurzsyntax');
+		expect(link.getAttribute('target')).toBe('_blank');
+		expect(link.getAttribute('rel')).toBe('noopener');
+		link.addEventListener('click', (event) => event.preventDefault());
+		await fireEvent.click(link);
+		expect(onclose).not.toHaveBeenCalled();
+		expect(input.value).toBe('Zahnarzt');
+	});
+
 	it('creates a ticket with Enter, announces it with a link and empties the field', async () => {
 		const { onsave, input } = renderQuick();
 		await fireEvent.input(input, { target: { value: 'Milch @HAUS' } });
