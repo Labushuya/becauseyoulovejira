@@ -81,7 +81,9 @@ describe('ticket table row', () => {
 				tags: [
 					{ id: 'g1', name: 'Finanzen' },
 					{ id: 'g2', name: 'Amt' }
-				]
+				],
+				// A tag column wide enough for both chips (SP-4 fits them into one line).
+				tagsSpace: 200
 			}
 		);
 
@@ -137,6 +139,65 @@ describe('ticket table row', () => {
 		expect(cell(row, 'due').querySelector('time')).toBeNull();
 		expect(within(cell(row, 'due')).getByText('keine Fälligkeit')).toBeTruthy();
 		expect(screen.queryByText('wiederkehrend')).toBeNull();
+	});
+
+	describe('compact row (ADR-0030 section 6)', () => {
+		const TAGS = ['Haus', 'Garten', 'Bank', 'Amt', 'Steuer'].map((name, index) => ({
+			id: `g${index}`,
+			name
+		}));
+
+		it('shows the tags that fit in one line and "+N" for the rest, the whole list for screen readers', () => {
+			// Every chip 50 px: one chip, the gap and "+4" fit into 120 px, two chips and "+3" do not.
+			const { row } = renderRow({}, { tags: TAGS, tagsSpace: 120, measure: () => 50 });
+
+			const tags = cell(row, 'tags');
+			const chips = tags.querySelector('.chips') as HTMLElement;
+			expect(chips.getAttribute('aria-hidden')).toBe('true');
+			expect([...chips.querySelectorAll('.tag')].map((chip) => chip.textContent)).toEqual([
+				'Haus',
+				'+4'
+			]);
+			const more = chips.querySelector('.tag.more') as HTMLElement;
+			expect(more.getAttribute('title')).toBe('Weitere Tags: Garten, Bank, Amt, Steuer');
+			expect(more.tagName).toBe('SPAN');
+			expect(tags.querySelector('button, a, [tabindex]')).toBeNull();
+			expect(within(tags).getByText('Haus, Garten, Bank, Amt, Steuer').className).toBe(
+				'visually-hidden'
+			);
+		});
+
+		it('shows every tag without "+N" and without a hidden copy when they fit', () => {
+			const { row } = renderRow({}, { tags: TAGS.slice(0, 2), tagsSpace: 120, measure: () => 50 });
+
+			const tags = cell(row, 'tags');
+			expect(tags.querySelector('.chips')?.hasAttribute('aria-hidden')).toBe(false);
+			expect([...tags.querySelectorAll('.tag')].map((chip) => chip.textContent)).toEqual([
+				'Haus',
+				'Garten'
+			]);
+			expect(tags.querySelector('.visually-hidden')).toBeNull();
+		});
+
+		it('keeps a single very long tag as one chip (the stylesheet shortens it)', () => {
+			const long = { id: 'g9', name: 'Ein sehr langer Tag, der in keine Zelle passt' };
+			const { row } = renderRow({}, { tags: [long], tagsSpace: 104 });
+
+			const chips = [...cell(row, 'tags').querySelectorAll('.tag')];
+			expect(chips.map((chip) => chip.textContent)).toEqual([long.name]);
+		});
+
+		it('clamps the title to two lines and gives only long titles a tooltip', () => {
+			const short = renderRow({ title: 'Kurzer Titel' }).row;
+			const clamp = cell(short, 'title').querySelector('.title-clamp') as HTMLElement;
+			expect(clamp.contains(within(clamp).getByRole('link'))).toBe(true);
+			expect(within(clamp).getByRole('link').hasAttribute('title')).toBe(false);
+			document.body.innerHTML = '';
+
+			const text = 'Ein sehr langer Titel, '.repeat(3);
+			const long = renderRow({ title: text }).row;
+			expect(within(cell(long, 'title')).getByRole('link').getAttribute('title')).toBe(text);
+		});
 	});
 
 	it.each([

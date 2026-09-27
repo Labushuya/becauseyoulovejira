@@ -50,18 +50,3 @@ export function naturalWidth(cells: readonly Element[]): number {
 	}
 	return Math.ceil(widest);
 }
-
-/**
- * Natural width of the tag column: all chips of a row side by side (with the gap between them)
- * plus the padding, for the widest row.
- */
-export function chipsWidth(cells: readonly Element[], selector: string, gap: number): number {
-	let widest = 0;
-	for (const cell of cells) {
-		const chips = [...cell.querySelectorAll<HTMLElement>(selector)];
-		const line = chips.reduce((total, chip) => total + chip.offsetWidth, 0);
-		const gaps = gap * Math.max(0, chips.length - 1);
-		widest = Math.max(widest, line + gaps + horizontalPadding(cell));
-	}
-	return Math.ceil(widest);
-}

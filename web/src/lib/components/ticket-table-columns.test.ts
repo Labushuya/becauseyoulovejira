@@ -56,9 +56,13 @@ function fakeData(open: TicketSummary[]): TicketListData {
 	};
 }
 
+/** Three tags on the second ticket (expanded, as the list loads them). */
+const TAGS = ['Haus', 'Garten', 'Bank'].map((name, index) => ({ id: `tag${index}`, name }));
+
 async function showTable(path = '/', context?: Map<unknown, unknown>) {
 	mocks.page.url = new URL(path, 'http://localhost:3000');
-	const store = new TicketListStore(fakeData([ticket(1), ticket(2)]), SESSION, {});
+	const tagged = ticket(2, { tagIds: TAGS.map((tag) => tag.id), tags: TAGS });
+	const store = new TicketListStore(fakeData([ticket(1), tagged]), SESSION, {});
 	const catalog = new CatalogStore(
 		{ listProjects: vi.fn(async () => []), listTags: vi.fn(async () => []), createTag: vi.fn() },
 		SESSION
@@ -261,6 +265,21 @@ describe('columns of the ticket table (ADR-0030)', () => {
 		} finally {
 			delete (Range.prototype as { getBoundingClientRect?: unknown }).getBoundingClientRect;
 		}
+	});
+
+	it('shows the tags in one line with "+N" and fits the column to all chips on a double click', async () => {
+		await showTable();
+		const chipTexts = () =>
+			[...table().querySelectorAll('td[data-col="tags"] .tag')].map((chip) => chip.textContent);
+		// Without a canvas every chip is estimated (0.6em of 12 px per character plus 14 px): in
+		// 104 px of room only "Haus" and "+2" fit.
+		expect(chipTexts()).toEqual(['Haus', '+2']);
+
+		await fireEvent.dblClick(grip('tags'));
+
+		// 42.8 + 57.2 + 42.8 px of chips, two gaps of 4 px and 24 px of padding.
+		expect(colWidth('tags')).toBe('175px');
+		expect(chipTexts()).toEqual(['Haus', 'Garten', 'Bank']);
 	});
 
 	it('has grips only for columns with a changeable width, hidden from assistive technology', async () => {

@@ -1,8 +1,32 @@
+<script lang="ts" module>
+	import {
+		TICKET_TABLE,
+		defaultColumnPrefs,
+		estimateTextWidth,
+		fitChips,
+		moreChipText,
+		type MeasureText
+	} from '$lib/domain/columns';
+
+	const HIDDEN_BY_DEFAULT: readonly string[] = defaultColumnPrefs(TICKET_TABLE.columns).hidden;
+	/** Room for chips in the default tag column: its width without the padding of 1.5rem. */
+	const DEFAULT_TAGS_SPACE =
+		(TICKET_TABLE.columns.find((column) => column.id === 'tags')?.width ?? 0) - 24;
+	/** Gap between two chips (0.25rem). */
+	const CHIP_GAP = 4;
+	/** Titles from this length get a tooltip with the whole text (only they can be cut off). */
+	const LONG_TITLE = 60;
+
+	/** Chip without a canvas: text at 12 px plus padding and border. */
+	function estimateChip(text: string): number {
+		return estimateTextWidth(text, 12) + 14;
+	}
+</script>
+
 <script lang="ts">
 	import { goto } from '$app/navigation';
 	import type { ResolvedPathname } from '$app/types';
 	import type { CalendarDate } from '$lib/domain/berlin-date';
-	import { TICKET_TABLE, defaultColumnPrefs } from '$lib/domain/columns';
 	import { berlinDateOf, formatBerlinDateTime, formatCalendarDate } from '$lib/domain/format';
 	import { SOURCE_FAMILY_LABELS, sourceFamily } from '$lib/domain/source';
 	import type { ProjectRef, TagRef, TicketSummary } from '$lib/domain/ticket';
@@ -16,7 +40,9 @@
 	// its source (ADR-0019 section 4) and the recurring icon, project, tags, due date, creation
 	// date and the actions (check mark and "Öffnen"; "Rückgängig" stands in the flag since UI-5).
 	// The title is the link to the detail panel and the keyboard target; a mouse click anywhere else
-	// in the row outside of controls follows the same link.
+	// in the row outside of controls follows the same link. Compact (ADR-0030 section 6, SP-4): the
+	// title takes at most two lines, the tags one line with "+N" for the rest, so a row is never
+	// higher than two lines of title.
 	let {
 		ticket,
 		project,
@@ -29,6 +55,8 @@
 		isNew = false,
 		recurrenceText = '',
 		columns,
+		tagsSpace = DEFAULT_TAGS_SPACE,
+		measure = estimateChip,
 		ontoggle
 	}: {
 		ticket: TicketSummary;
@@ -48,14 +76,25 @@
 		recurrenceText?: string;
 		/** Shown columns of the table (ADR-0030); without it the columns shown by default. */
 		columns?: ReadonlySet<string>;
+		/** Room for the chips in the tag column in CSS pixels (its width without the padding). */
+		tagsSpace?: number;
+		/** Width of a whole tag chip (canvas in the browser, estimated without). */
+		measure?: MeasureText;
 		ontoggle: (done: boolean) => void;
 	} = $props();
-
-	const HIDDEN_BY_DEFAULT: readonly string[] = defaultColumnPrefs(TICKET_TABLE.columns).hidden;
 
 	function shows(id: string): boolean {
 		return columns === undefined ? !HIDDEN_BY_DEFAULT.includes(id) : columns.has(id);
 	}
+
+	const chips = $derived(
+		fitChips(
+			tags.map((tag) => tag.name),
+			tagsSpace,
+			measure,
+			CHIP_GAP
+		)
+	);
 
 	const done = $derived(ticket.status === 'done');
 	/** Name of the recurring symbol: "Wiederkehrend: jeden Montag", or only "wiederkehrend". */
@@ -90,33 +129,41 @@
 		<td class="status" data-col="status"><StatusPill status={ticket.status} /></td>
 	{/if}
 	<th class="title" scope="row" data-col="title">
-		<SourceIcon source={ticket.source} />
-		<a class="title-link" {href} aria-current={active ? 'page' : undefined}>{ticket.title}</a>
-		{#if ticket.recurring}
-			<span
-				class="recurring-icon"
-				title={recurrenceText === '' ? 'Wiederkehrend' : `Wiederkehrend: ${recurrenceText}`}
+		<!-- At most two lines, cut off only visually; screen readers read the whole title. -->
+		<div class="title-clamp">
+			<SourceIcon source={ticket.source} />
+			<a
+				class="title-link"
+				{href}
+				title={ticket.title.length >= LONG_TITLE ? ticket.title : undefined}
+				aria-current={active ? 'page' : undefined}>{ticket.title}</a
 			>
-				<svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true" focusable="false">
-					<path
-						d="M13 6.5A5.25 5.25 0 0 0 3.6 4.4M3 9.5a5.25 5.25 0 0 0 9.4 2.1"
-						fill="none"
-						stroke="currentColor"
-						stroke-width="1.5"
-						stroke-linecap="round"
-					/>
-					<path
-						d="M3.25 1.75v3h3M12.75 14.25v-3h-3"
-						fill="none"
-						stroke="currentColor"
-						stroke-width="1.5"
-						stroke-linecap="round"
-						stroke-linejoin="round"
-					/>
-				</svg>
-				<span class="visually-hidden">{recurringLabel}</span>
-			</span>
-		{/if}
+			{#if ticket.recurring}
+				<span
+					class="recurring-icon"
+					title={recurrenceText === '' ? 'Wiederkehrend' : `Wiederkehrend: ${recurrenceText}`}
+				>
+					<svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true" focusable="false">
+						<path
+							d="M13 6.5A5.25 5.25 0 0 0 3.6 4.4M3 9.5a5.25 5.25 0 0 0 9.4 2.1"
+							fill="none"
+							stroke="currentColor"
+							stroke-width="1.5"
+							stroke-linecap="round"
+						/>
+						<path
+							d="M3.25 1.75v3h3M12.75 14.25v-3h-3"
+							fill="none"
+							stroke="currentColor"
+							stroke-width="1.5"
+							stroke-linecap="round"
+							stroke-linejoin="round"
+						/>
+					</svg>
+					<span class="visually-hidden">{recurringLabel}</span>
+				</span>
+			{/if}
+		</div>
 	</th>
 	{#if shows('source')}
 		<td class="source" data-col="source">{SOURCE_FAMILY_LABELS[sourceFamily(ticket.source)]}</td>
@@ -130,9 +177,24 @@
 	{/if}
 	{#if shows('tags')}
 		<td class="tags" data-col="tags">
-			{#each tags as tag (tag.id)}
-				<span class="tag">{tag.name}</span>
-			{/each}
+			{#if chips.rest.length === 0}
+				<span class="chips">
+					{#each tags as tag (tag.id)}
+						<span class="tag">{tag.name}</span>
+					{/each}
+				</span>
+			{:else}
+				<!-- One line: the chips that fit and "+N"; the whole list for screen readers. -->
+				<span class="chips" aria-hidden="true">
+					{#each chips.shown as name, index (index)}
+						<span class="tag">{name}</span>
+					{/each}
+					<span class="tag more" title={`Weitere Tags: ${chips.rest.join(', ')}`}
+						>{moreChipText(chips.rest.length)}</span
+					>
+				</span>
+				<span class="visually-hidden">{tags.map((tag) => tag.name).join(', ')}</span>
+			{/if}
 		</td>
 	{/if}
 	{#if shows('due')}
@@ -250,19 +312,49 @@
 		white-space: nowrap;
 	}
 
+	/* Two lines at most (ADR-0030 section 6); the clamp is visual only. */
+	.title-clamp {
+		display: -webkit-box;
+		overflow: hidden;
+		-webkit-box-orient: vertical;
+		-webkit-line-clamp: 2;
+		line-clamp: 2;
+	}
+
+	/* One line of chips; fitChips decides how many, "+N" stands for the rest. */
 	.tags {
 		font-size: var(--font-size-small);
+		white-space: nowrap;
+	}
+
+	.chips {
+		display: flex;
+		flex-wrap: nowrap;
+		gap: 0.25rem;
+		align-items: center;
+		min-width: 0;
 	}
 
 	.tag {
-		display: inline-block;
-		margin: 0.0625rem 0.25rem 0.0625rem 0;
+		flex: 0 0 auto;
 		padding: 0 0.375rem;
+		overflow: hidden;
 		line-height: 1.125rem;
 		color: var(--color-text-muted);
+		text-overflow: ellipsis;
 		white-space: nowrap;
 		border: 1px solid var(--color-line);
 		border-radius: var(--radius-item);
+	}
+
+	/* A single chip that is too long shrinks with an ellipsis; "+N" never shrinks. */
+	.tag:first-child {
+		flex-shrink: 1;
+		min-width: 0;
+	}
+
+	.tag.more {
+		font-variant-numeric: tabular-nums;
 	}
 
 	.created {
