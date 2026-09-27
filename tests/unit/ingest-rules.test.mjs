@@ -3,12 +3,25 @@
 
 import { describe, expect, it } from 'vitest';
 import { loadHookLib } from '../support/hook-lib.mjs';
+import { SCAN_STATES, scanStateValue } from '../../helpers/mail/src/scan-state.ts';
 
 const rules = loadHookLib('ingest-rules.js');
 const keywords = loadHookLib('keywords.js');
 const connectionRules = loadHookLib('connection-rules.js');
 
 const ID = 'abcdefghij12345';
+// A scan state as byl-mail.exe 0.7.0 reports it (helpers/mail/src/scan-state.ts).
+const SCAN = {
+	signature: '0123456789abcdef',
+	state: 'done',
+	uid_validity: '1700000000',
+	until: 12,
+	below: 0,
+	done: 12,
+	total: 12,
+	created: 3,
+	fallback: false
+};
 const draft = (extra = {}) => ({ connection: ID, origin: 'auto', title: 'Todo: Steuer', ...extra });
 
 describe('token', () => {
@@ -162,7 +175,9 @@ describe('status of a run', () => {
 		expect(rules.parseStatus({ error: 'x'.repeat(1200), hint: 'Hinweis', cursor: '1700000000:42' })).toEqual({
 			status: { error: 'x'.repeat(1000), hint: 'Hinweis', cursor: '1700000000:42' }
 		});
-		expect(rules.parseStatus({})).toEqual({ status: { error: '', hint: undefined, cursor: undefined } });
+		expect(rules.parseStatus({})).toEqual({
+			status: { error: '', hint: undefined, cursor: undefined, scan: undefined }
+		});
 		expect(rules.parseStatus({ cursor: '' }).status.cursor).toBe('');
 	});
 
@@ -171,9 +186,53 @@ describe('status of a run', () => {
 		['a cursor without UIDVALIDITY', { cursor: '42' }],
 		['a cursor with text', { cursor: '1:2; DROP' }],
 		['a number as error', { error: 3 }],
-		['a list as hint', { hint: [] }]
+		['a list as hint', { hint: [] }],
+		['a scan as text', { scan: 'done' }],
+		['a scan with an unknown state', { scan: { ...SCAN, state: 'fertig' } }],
+		['a scan with a short signature', { scan: { ...SCAN, signature: 'abc' } }],
+		['a scan with a negative count', { scan: { ...SCAN, done: -1 } }],
+		['a scan with a numeric UIDVALIDITY', { scan: { ...SCAN, uid_validity: 1700000000 } }],
+		['a scan with a text as fallback', { scan: { ...SCAN, fallback: 'ja' } }]
 	])('refuses %s', (name, value) => {
 		expect(rules.parseStatus(value)).toEqual({ error: expect.any(String) });
+	});
+});
+
+describe('state of the full scan (ADR-0020, addendum 3)', () => {
+	it('takes exactly the state the helper reports, never the mark of the migration', () => {
+		const reported = scanStateValue({
+			signature: '0123456789abcdef',
+			state: 'paused',
+			uidValidity: '1700000000',
+			until: 4800,
+			below: 3601,
+			done: 1200,
+			total: 4800,
+			created: 200,
+			fallback: false
+		});
+		expect(rules.parseStatus({ scan: { ...reported, match_body_before: false, extra: 1 } }).status.scan).toEqual(reported);
+		expect(rules.SCAN_STATES).toEqual([...SCAN_STATES]);
+	});
+
+	it('keeps the mark of the migration when a new state is stored', () => {
+		expect(rules.mergeScan({ match_body_before: false }, SCAN)).toEqual({ ...SCAN, match_body_before: false });
+		expect(rules.mergeScan({ ...SCAN, state: 'running' }, { ...SCAN, done: 9 })).toEqual({ ...SCAN, done: 9 });
+		expect(rules.mergeScan(null, SCAN)).toEqual(SCAN);
+		expect(rules.mergeScan({ match_body_before: true }, SCAN)).toEqual(SCAN);
+	});
+
+	it('cancels a running, paused or failed scan, nothing else', () => {
+		for (const state of ['running', 'paused', 'error']) {
+			expect(rules.cancelledScan({ ...SCAN, state, match_body_before: false })).toEqual({
+				...SCAN,
+				state: 'cancelled',
+				match_body_before: false
+			});
+		}
+		for (const stored of [{ ...SCAN, state: 'done' }, { ...SCAN, state: 'cancelled' }, null, 'x', { match_body_before: false }]) {
+			expect(rules.cancelledScan(stored)).toBeNull();
+		}
 	});
 });
 
@@ -198,7 +257,22 @@ describe('connections for the helper', () => {
 			secret_env: 'BYL_WEBDE_PASSWORD',
 			keywords: ['todo'],
 			match_body: true,
-			cursor: '1:2'
+			cursor: '1:2',
+			scan: null
 		});
+	});
+
+	it('passes the stored scan state on, without the mark of the migration, and drops a broken one', () => {
+		const view = (scan) =>
+			rules.connectionView(
+				{ id: ID, label: 'Web.de', secret_env: 'BYL_WEBDE_PASSWORD', settings: {}, cursor: '', scan },
+				keywords,
+				connectionRules
+			).scan;
+		expect(view({ ...SCAN, match_body_before: false })).toEqual(SCAN);
+		expect(view({ match_body_before: false })).toBeNull();
+		expect(view({ ...SCAN, state: 'kaputt' })).toBeNull();
+		expect(view(null)).toBeNull();
+		expect(view(undefined)).toBeNull();
 	});
 });

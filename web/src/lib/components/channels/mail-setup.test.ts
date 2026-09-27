@@ -151,10 +151,10 @@ describe('mailbox assistant (EH-7)', () => {
 			within(dialog).getByText('Warte auf den ersten Abruf (spätestens 5 Minuten) …')
 		).toBeTruthy();
 		expect(within(dialog).queryByRole('button', { name: 'Jetzt abrufen' })).toBeNull();
-		// Package A: the step says openly that only mails after the first run come automatically.
+		// Full inbox: the step says that the whole inbox is searched, and nothing else.
 		expect(
 			within(dialog).getByText(
-				/Automatisch kommen nur neue Mails, die danach eintreffen; ältere holst du über „Aus dem Postfach wählen“/
+				/durchsucht er den gesamten Posteingang \(nicht Papierkorb\/Spam\/Gesendet\)/
 			)
 		).toBeTruthy();
 		await vi.waitFor(() => expect(listeners.length).toBe(1));

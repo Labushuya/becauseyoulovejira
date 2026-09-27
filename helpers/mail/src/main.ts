@@ -6,7 +6,7 @@
 
 import { ImapFlow } from 'imapflow';
 import { parseCommand, readConfig, TOKEN_ENV, USAGE, type HelperConfig } from './config';
-import { PollGate } from './gate';
+import { PollGate, ScanControl } from './gate';
 import { IngestClient } from './ingest-client';
 import { createLogger, errorText, type Logger } from './log';
 import { ingestDraft, keywordOf, parseMail } from './mail';
@@ -64,8 +64,10 @@ const sleep = (ms: number, signal: AbortSignal) =>
 /** Runs until `signal` aborts: one run over all connections, then the interval. */
 export async function runLoop(config: HelperConfig, log: Logger, signal: AbortSignal): Promise<void> {
 	const ingest = new IngestClient(config.appUrl, config.token);
-	// "Jetzt abrufen" of the interface and the interval share one gate (never two fetches at once).
+	// "Jetzt abrufen" of the interface and the interval share one gate (never two fetches at once),
+	// and one control, so "Abbrechen" also stops a scan of the interval.
 	const gate = new PollGate();
+	const control = new ScanControl();
 	const server = await startMailboxServer({
 		token: config.token,
 		ingest,
@@ -73,6 +75,7 @@ export async function runLoop(config: HelperConfig, log: Logger, signal: AbortSi
 		log,
 		imapOverride: config.imapOverride,
 		gate,
+		control,
 		version: VERSION
 	});
 	signal.addEventListener('abort', () => server?.close(), { once: true });
@@ -85,7 +88,8 @@ export async function runLoop(config: HelperConfig, log: Logger, signal: AbortSi
 					env: process.env,
 					log,
 					imapOverride: config.imapOverride,
-					secrets: [config.token]
+					secrets: [config.token],
+					control
 				})
 			);
 		} catch (error) {

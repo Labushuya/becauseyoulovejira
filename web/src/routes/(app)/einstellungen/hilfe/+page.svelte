@@ -127,10 +127,11 @@
 				<summary>Warum kommt meine Mail nicht an?</summary>
 				<ul>
 					<li>
-						Automatisch kommen nur neue Mails, die <strong>nach dem ersten Abruf</strong> der
-						Verbindung eintreffen und ein <strong>Stichwort in Betreff oder Absender</strong> haben (auf
-						Wunsch auch in Kopfzeilen und Text). Ältere Mails holst du an der Karte mit „Aus dem Postfach
-						wählen“.
+						Automatisch kommen Mails aus dem <strong>gesamten Posteingang</strong> (nicht
+						Papierkorb, Spam oder Gesendet), in denen ein <strong>Stichwort</strong> vorkommt: in Betreff,
+						Absender, Kopfzeilen oder Text. Pro Abruf kommen höchstens 200 neue Einträge; die Karte sagt
+						dann „Weitere Treffer – erneut abrufen“. Mails ohne Stichwort holst du an der Karte mit „Aus
+						dem Postfach wählen“.
 					</li>
 					<li>
 						Postfächer ruft der Hilfsprozess <code>byl-mail.exe</code> alle 5 Minuten ab. Er startet

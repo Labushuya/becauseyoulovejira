@@ -14,11 +14,27 @@
 //
 // /poll runs the regular fetch of one connection at once (same code and cursor as the interval);
 // while another fetch runs it answers 409 "running" instead of waiting. /health touches no mailbox.
+//
+// Since the full scan of the inbox (ADR-0020, addendum 3):
+//
+//   POST /scan            { connection, action: "start" | "cancel" }
+//                         -> 202 { status: "started" } | 409 { status: "running" }
+//                         -> 200 { status: "cancelling" | "idle" }
+//
+// "start" scans the whole inbox again in the background ("Posteingang neu durchsuchen"); the card
+// follows the progress through the status of the connection. "cancel" stops a running scan at the
+// next mail. /poll gives the scan POLL_SCAN_BUDGET_MS and lets a longer scan go on in the
+// background, so "Jetzt abrufen" answers before the hook gives up.
 
 import { timingSafeEqual } from 'node:crypto';
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
-import PostalMime from 'postal-mime';
-import { mailToDraft, MAIL_PARSER_OPTIONS, type ParsedMail } from '../../../web/src/lib/domain/inbox-mail';
+import PostalMime, { decodeWords } from 'postal-mime';
+import {
+	mailMatchTexts,
+	mailToDraft,
+	MAIL_PARSER_OPTIONS,
+	type ParsedMail
+} from '../../../web/src/lib/domain/inbox-mail';
 import { readSecret, type ImapEndpoint } from './config';
 import type { IngestApi, MailConnection } from './ingest-client';
 import {
@@ -28,17 +44,20 @@ import {
 	type ImapClientFactory,
 	type InboxSession
 } from './imap';
-import { PollGate } from './gate';
+import { PollGate, ScanControl } from './gate';
 import { errorText, redact, type Logger } from './log';
 import { MAIL_MAX_BYTES, ingestDraft, keywordOf, parseMail } from './mail';
-import { pollConnection } from './poll';
+import { pollConnection, type PollDeps, type PollOptions } from './poll';
 import { providerOf } from './providers';
+import { searchCriteria, searchTerms } from './scan';
 
 export const DEFAULT_PORT = 8091;
 export const PORT_ENV = 'BYL_MAIL_HELPER_PORT';
 export const LIST_DEFAULT = 50;
 export const LIST_MAX = 200;
 export const IMPORT_MAX = 50;
+/** Time the scan gets within "Jetzt abrufen"; the hook waits 90 s for the answer. */
+export const POLL_SCAN_BUDGET_MS = 45_000;
 const BODY_MAX_BYTES = 64 * 1024;
 
 export interface ServerDeps {
@@ -51,8 +70,11 @@ export interface ServerDeps {
 	open?: (endpoint: ImapEndpoint, credentials: Credentials) => Promise<InboxSession>;
 	/** Shared with the interval loop, so a manual fetch never runs next to a regular one. */
 	gate?: PollGate;
+	/** Shared with the interval loop: running scans and cancel requests. */
+	control?: ScanControl;
 	/** Version of the helper for /health. */
 	version?: string;
+	now?: () => number;
 }
 
 /** Answer of POST /poll ("Jetzt abrufen" of a mailbox). */
@@ -70,6 +92,11 @@ export interface PollAnswer {
 	missing: string[];
 }
 
+/** Answer of POST /scan. */
+export interface ScanAnswer {
+	status: 'started' | 'running' | 'cancelling' | 'idle';
+}
+
 /** One mail of the list: header data only, plus the fields PocketBase needs for the duplicate key. */
 export interface MailboxEntry {
 	uid: number;
@@ -79,7 +106,11 @@ export interface MailboxEntry {
 	/** PocketBase timestamp or '' (unreadable date). */
 	date: string;
 	messageId: string;
-	/** Keyword of the connection that matches the subject or the sender, or ''. */
+	/**
+	 * Keyword of the connection that matches the subject or the sender, with match_body also the
+	 * headers (exact) or the text (as the search of the server finds it, without loading the mail),
+	 * or ''.
+	 */
 	keyword: string;
 	/** Fields of the inbox draft (title, source_ref, source_date, source_meta.from). */
 	title: string;
@@ -167,13 +198,19 @@ export function parseUids(value: unknown): number[] {
 	return [...uids];
 }
 
+/** The ID of a connection in a request, or an HttpError. */
+function connectionId(value: unknown): string {
+	if (typeof value !== 'string' || !/^[a-z0-9]{15}$/.test(value)) throw new HttpError(400, 'connection fehlt.');
+	return value;
+}
+
 /** Opens the inbox of a switched-on mail connection, or throws an HttpError. */
 async function openConnection(
 	deps: ServerDeps,
 	id: unknown
 ): Promise<{ connection: MailConnection; session: InboxSession; secrets: string[] }> {
-	if (typeof id !== 'string' || !/^[a-z0-9]{15}$/.test(id)) throw new HttpError(400, 'connection fehlt.');
-	const connection = (await deps.ingest.listConnections()).find((item) => item.id === id);
+	const wanted = connectionId(id);
+	const connection = (await deps.ingest.listConnections()).find((item) => item.id === wanted);
 	if (connection === undefined) throw new HttpError(404, 'Keine eingeschaltete Mail-Verbindung.');
 	const provider = providerOf(connection.provider);
 	if (provider === null) throw new HttpError(502, `Unbekannter Mail-Anbieter „${connection.provider}“.`);
@@ -197,12 +234,43 @@ async function openConnection(
 	}
 }
 
-/** Header data of the last `limit` mails of the inbox, newest first. */
+/**
+ * The first keyword (in the order of the list) whose text search on the server finds each of the
+ * listed mails; only with match_body. The server is asked once per keyword over the UIDs of the
+ * list; a refused search leaves the text out (the preselection is a suggestion only).
+ */
+async function textKeywords(
+	session: InboxSession,
+	connection: MailConnection,
+	uids: readonly number[]
+): Promise<Map<number, string>> {
+	const found = new Map<number, string>();
+	if (!connection.matchBody || uids.length === 0) return found;
+	const from = Math.min(...uids);
+	const to = Math.max(...uids);
+	for (const keyword of connection.keywords) {
+		const hits = await session.searchAny(from, to, searchCriteria(searchTerms(keyword)));
+		if (hits === null) break;
+		for (const uid of hits) if (!found.has(uid)) found.set(uid, keyword);
+	}
+	return found;
+}
+
+/**
+ * Header data of the last `limit` mails of the inbox, newest first. The preselection matches the
+ * subject and the sender, with match_body also the headers (exactly, from the header) and the text
+ * as the search of the server finds it, without loading any mail.
+ */
 export async function listMailbox(deps: ServerDeps, body: Record<string, unknown>): Promise<MailboxEntry[]> {
 	const limit = parseLimit(body.limit);
 	const { connection, session } = await openConnection(deps, body.connection);
 	try {
 		const recent = await session.listRecent(limit);
+		const inText = await textKeywords(
+			session,
+			connection,
+			recent.map((mail) => mail.uid)
+		);
 		const entries: MailboxEntry[] = [];
 		for (const mail of recent) {
 			let parsed: ParsedMail;
@@ -211,7 +279,14 @@ export async function listMailbox(deps: ServerDeps, body: Record<string, unknown
 			} catch {
 				parsed = { attachments: [] };
 			}
-			const draft = mailToDraft({ ...parsed, text: '', html: undefined, attachments: [] }, 'mail');
+			const headerOnly = { ...parsed, text: '', html: undefined, attachments: [] };
+			const draft = mailToDraft(headerOnly, 'mail');
+			const matchTexts = connection.matchBody ? mailMatchTexts(headerOnly, decodeWords) : [];
+			const inHeader = keywordOf(
+				{ title: draft.title, body: '', sourceMeta: draft.sourceMeta, matchTexts },
+				connection.keywords,
+				connection.matchBody
+			);
 			entries.push({
 				uid: mail.uid,
 				size: mail.size,
@@ -219,7 +294,7 @@ export async function listMailbox(deps: ServerDeps, body: Record<string, unknown
 				from: typeof draft.sourceMeta?.from === 'string' ? draft.sourceMeta.from : '',
 				date: draft.sourceDate ?? '',
 				messageId: draft.sourceRef ?? '',
-				keyword: keywordOf({ title: draft.title, body: '', sourceMeta: draft.sourceMeta }, connection.keywords, false),
+				keyword: inHeader !== '' ? inHeader : (inText.get(mail.uid) ?? ''),
 				title: draft.title,
 				sourceRef: draft.sourceRef ?? '',
 				sourceDate: draft.sourceDate ?? '',
@@ -287,35 +362,70 @@ function emptyPollAnswer(status: PollAnswer['status']): PollAnswer {
 	return { status, created: 0, duplicates: 0, unmatched: 0, skipped: 0, failed: 0, error: '', missing: [] };
 }
 
+/** What pollConnection needs, from the interface's dependencies. */
+function pollDeps(deps: ServerDeps, control: ScanControl): PollDeps {
+	return {
+		ingest: deps.ingest,
+		env: deps.env,
+		log: deps.log,
+		imapOverride: deps.imapOverride ?? null,
+		...(deps.factory === undefined ? {} : { factory: deps.factory }),
+		...(deps.open === undefined ? {} : { open: deps.open }),
+		...(deps.now === undefined ? {} : { now: deps.now }),
+		secrets: [deps.token],
+		control
+	};
+}
+
+/**
+ * Runs pollConnection for `id` behind the gate, with the connection as PocketBase holds it when the
+ * gate is free. Does not wait; errors go to the log. `control` marks the connection active from now
+ * on, so a cancel request in between is not lost.
+ */
+function runInBackground(
+	deps: ServerDeps,
+	gate: PollGate,
+	control: ScanControl,
+	id: string,
+	options: PollOptions
+): void {
+	control.begin(id);
+	void gate
+		.run(async () => {
+			const connection = (await deps.ingest.listConnections()).find((item) => item.id === id);
+			if (connection !== undefined) await pollConnection(pollDeps(deps, control), connection, options);
+		})
+		.catch((error: unknown) => {
+			deps.log.warn(`Durchsuchen des Posteingangs (${id}): ${redact(errorText(error), [deps.token])}`);
+		})
+		.finally(() => control.end(id));
+}
+
 /**
  * "Jetzt abrufen" of a mailbox: the regular fetch of one switched-on connection, at once, with the
- * cursor PocketBase holds right now. The result is reported to PocketBase as after every run.
+ * cursor PocketBase holds right now; a paused scan continues. The scan gets POLL_SCAN_BUDGET_MS;
+ * if it needs longer, it goes on in the background after the answer. The result is reported to
+ * PocketBase as after every run.
  */
 export async function pollNow(deps: ServerDeps, body: Record<string, unknown>): Promise<PollAnswer> {
-	const id = body.connection;
-	if (typeof id !== 'string' || !/^[a-z0-9]{15}$/.test(id)) throw new HttpError(400, 'connection fehlt.');
+	const id = connectionId(body.connection);
 	const gate = deps.gate ?? new PollGate();
+	const control = deps.control ?? new ScanControl();
+	const now = deps.now ?? Date.now;
 	// The connection is read inside the gate: a fetch that just ended has saved its cursor.
 	const ran = await gate.tryRun(async () => {
 		const connection = (await deps.ingest.listConnections()).find((item) => item.id === id);
 		if (connection === undefined) return null;
-		const outcome = await pollConnection(
-			{
-				ingest: deps.ingest,
-				env: deps.env,
-				log: deps.log,
-				imapOverride: deps.imapOverride ?? null,
-				...(deps.factory === undefined ? {} : { factory: deps.factory }),
-				...(deps.open === undefined ? {} : { open: deps.open }),
-				secrets: [deps.token]
-			},
-			connection
-		);
+		const outcome = await pollConnection(pollDeps(deps, control), connection, {
+			manual: true,
+			deadline: now() + POLL_SCAN_BUDGET_MS
+		});
 		return { connection, outcome };
 	});
 	if (ran === null) return emptyPollAnswer('running');
 	if (ran.value === null) throw new HttpError(404, 'Keine eingeschaltete Mail-Verbindung.');
 	const { connection, outcome } = ran.value;
+	if (outcome.scanPending) runInBackground(deps, gate, control, id, { manual: true });
 	const answer: PollAnswer = {
 		...emptyPollAnswer('ok'),
 		created: outcome.created,
@@ -335,6 +445,26 @@ export async function pollNow(deps: ServerDeps, body: Record<string, unknown>): 
 		case 'stopped':
 			return { ...answer, status: 'error', error: outcome.error };
 	}
+}
+
+/**
+ * "Posteingang neu durchsuchen" and "Abbrechen" (ADR-0020, addendum 3). "start" answers at once and
+ * scans in the background, or "running" while another fetch holds the gate; "cancel" stops a
+ * running scan of the connection at the next mail, or answers "idle" when none runs here.
+ */
+export async function scanNow(deps: ServerDeps, body: Record<string, unknown>): Promise<ScanAnswer> {
+	const id = connectionId(body.connection);
+	const control = deps.control ?? new ScanControl();
+	if (body.action === 'cancel') return { status: control.requestCancel(id) ? 'cancelling' : 'idle' };
+	if (body.action !== 'start') throw new HttpError(400, 'action muss start oder cancel sein.');
+	const gate = deps.gate ?? new PollGate();
+	if (gate.busy) return { status: 'running' };
+	if (!(await deps.ingest.listConnections()).some((item) => item.id === id)) {
+		throw new HttpError(404, 'Keine eingeschaltete Mail-Verbindung.');
+	}
+	if (gate.busy) return { status: 'running' };
+	runInBackground(deps, gate, control, id, { manual: true, rescan: true });
+	return { status: 'started' };
 }
 
 /** The HTTP server; `listen` binds it to 127.0.0.1 only. */
@@ -363,6 +493,11 @@ async function handle(deps: ServerDeps, request: IncomingMessage, response: Serv
 			case 'POST /poll': {
 				const answer = await pollNow(deps, await readJson(request));
 				send(response, answer.status === 'running' ? 409 : 200, answer);
+				return;
+			}
+			case 'POST /scan': {
+				const answer = await scanNow(deps, await readJson(request));
+				send(response, answer.status === 'started' ? 202 : answer.status === 'running' ? 409 : 200, answer);
 				return;
 			}
 			default:

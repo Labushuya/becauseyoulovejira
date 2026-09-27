@@ -3,8 +3,9 @@
 // passes in (Goja runtime and Vitest load the module the same way).
 'use strict';
 
-// Written by the server only (runner and hooks); a client change is refused.
-var SERVER_FIELDS = ['cursor', 'last_run_at', 'last_ok_at', 'last_error', 'last_hint', 'running_since'];
+// Written by the server only (runner and hooks); a client change is refused. scan (JSON, state of
+// the full scan of an inbox, ADR-0020 addendum 3) arrives as its JSON text, "null" when empty.
+var SERVER_FIELDS = ['cursor', 'last_run_at', 'last_ok_at', 'last_error', 'last_hint', 'running_since', 'scan'];
 
 // Kinds a user can set up now; notion stays in the value list for later.
 var CREATABLE_TYPES = ['calendar', 'telegram', 'mail'];

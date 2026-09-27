@@ -36,3 +36,37 @@ export class PollGate {
 		return { value: await this.run(task) };
 	}
 }
+
+/**
+ * Which connections are being fetched or scanned right now, and which scans the user cancelled
+ * ("Abbrechen" on the card, ADR-0020 addendum 3). A cancel request only counts while the connection
+ * is active; it ends with the run.
+ */
+export class ScanControl {
+	#active = new Set<string>();
+	#cancelled = new Set<string>();
+
+	begin(id: string): void {
+		this.#active.add(id);
+	}
+
+	end(id: string): void {
+		this.#active.delete(id);
+		this.#cancelled.delete(id);
+	}
+
+	isActive(id: string): boolean {
+		return this.#active.has(id);
+	}
+
+	/** Asks the running scan of `id` to stop at the next mail; false when none is active. */
+	requestCancel(id: string): boolean {
+		if (!this.#active.has(id)) return false;
+		this.#cancelled.add(id);
+		return true;
+	}
+
+	isCancelled(id: string): boolean {
+		return this.#cancelled.has(id);
+	}
+}

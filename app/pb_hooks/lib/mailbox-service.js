@@ -132,9 +132,36 @@ function helperStatus(e) {
   return e.json(200, rules.helperStatus(askHelper('/health', null, rules.HEALTH_TIMEOUT_SECONDS)));
 }
 
+/**
+ * POST /api/byl/connections/{id}/scan with { action: "start" | "cancel" } (ADR-0020, addendum 3):
+ * "Posteingang neu durchsuchen" starts the full scan in the helper and answers at once; the card
+ * follows the progress through the realtime updates of the connection. "Abbrechen" stops the
+ * running scan; when the helper runs none (restarted, stopped), the stored scan is marked as
+ * cancelled here, so it is not continued. Answers { status, message } (mailbox-rules.scanResult).
+ */
+function scan(e) {
+  var record = mailConnection(e);
+  var body = e.requestInfo().body || {};
+  var parsed = rules.parseScanAction(body.action);
+  if (parsed.error) {
+    throw new BadRequestError(parsed.error);
+  }
+  var result = rules.scanResult(
+    askHelper('/scan', { connection: record.id, action: parsed.action }, rules.SCAN_TIMEOUT_SECONDS)
+  );
+  if (parsed.action === 'cancel' && (result.status === 'idle' || result.status === 'unavailable')) {
+    var ingest = require(__hooks + '/lib/ingest-service.js');
+    result = ingest.cancelStoredScan(e.app, record)
+      ? { status: 'cancelled', message: '' }
+      : { status: 'idle', message: '' };
+  }
+  return e.json(200, result);
+}
+
 module.exports = {
   list: list,
   importMails: importMails,
   runMail: runMail,
-  helperStatus: helperStatus
+  helperStatus: helperStatus,
+  scan: scan
 };
