@@ -1,5 +1,6 @@
 <script lang="ts">
 	import type { ResolvedPathname } from '$app/types';
+	import { MAIL_MAX_MB } from '$lib/domain/inbox-mail';
 	import { importCounts, type FileImportResult } from '$lib/stores/mail-import';
 	import ErrorIcon from './ErrorIcon.svelte';
 
@@ -67,8 +68,8 @@
 	{ondrop}
 >
 	<p id={hintId}>
-		Mail-Dateien (.eml, höchstens 10 MB), Kalenderdateien (.ics) und WhatsApp-Chatexporte (.txt,
-		.zip; je höchstens 20 MB) hierher ziehen. Bilder und Links der Mail werden nicht geladen.
+		Mail-Dateien (.eml; über {MAIL_MAX_MB} MB ohne Originaldatei), Kalenderdateien (.ics) und WhatsApp-Chatexporte
+		(.txt, .zip; je höchstens 20 MB) hierher ziehen. Bilder und Links der Mail werden nicht geladen.
 	</p>
 	<button
 		class="pick"

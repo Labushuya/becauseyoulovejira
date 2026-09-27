@@ -14,7 +14,7 @@
 //    used: it also searches Received, DKIM and the like, which the keywords never search, and
 //    would only load mails for nothing. If the server refuses the search (NO or BAD, for example
 //    BADCHARSET), every mail of the block is loaded and checked instead (fallback).
-// 3. Only the candidates are loaded (BODY.PEEK[], up to 10 MB; of a larger mail only its first
+// 3. Only the candidates are loaded (BODY.PEEK[], up to 25 MB; of a larger mail only its first
 //    2 MB, stored without the file, ADR-0031 section 4) and matched exactly with the whole text
 //    (checkMail); the ingest route checks again. Server hits without a real match count as
 //    "ohne Stichwort".

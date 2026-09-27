@@ -183,3 +183,13 @@ Nutzerentscheidungen vom 2026-09-27 nach HK-4, umgesetzt in den Paketen HK-5 bis
 - **Ticket, Quellen:** jede Quelle mit einem linken Rand in `--color-brand` (3 : 1 gegen die Fläche geprüft), „Hauptquelle“ in `--color-brand-text`.
 - **Filter „Zustand“:** „Neu“ (Standard, nur offene Einträge), „Verknüpft“ (Zustand `converted`, vorher „Umgewandelt“), „Verworfen“ und „Alle“. URL `zustand=verknuepft` bzw. `alle`; das alte `umgewandelt` öffnet weiter „Verknüpft“. „Alle“ lädt wie die anderen bearbeiteten Ansichten seitenweise vom Server, ohne Zustandsfilter und nach `-created`; neue Einträge bleiben darin, auch wenn sie verworfen oder wiederhergestellt werden, und zählen weiter für den Umschalter.
 - Keine neuen Tokens: alle Farben sind Paare, die `tokens.test.ts` in allen vier Themes und beiden Modi prüft.
+
+### D. Originaldateien bis 25 MB (HK-8)
+
+- Die Grenze für Originaldateien steigt von 10 MB auf **25 MB** (Nutzerentscheidung). §4 gilt weiter, nur mit der neuen Grenze: Eine Mail über 25 MB kommt ohne Datei, aus ihren ersten 2 MB.
+- **Eine Konstante:** `MAIL_MAX_MB = 25` und `MAIL_MAX_BYTES` in `web/src/lib/domain/inbox-mail.ts`, gemeinsam für die SPA (`.eml`-Drop, `EML_MAX_BYTES`) und den Hilfsprozess (Abruf, Vollsuche, Postfach-Auswahl, Grenzen von imapflow `maxLiteralSize`/`maxResponseSize`, Protokoll „davon 1 über 25 MB ohne Originaldatei“). Der Hinweis im Text heißt „_Originaldatei nicht gespeichert: größer als 25 MB._“.
+- **Schema:** Migration `1790202000_inbox_items_original_size.js` setzt `inbox_items.original.maxSize` auf 25 MB (Rückwärts-Migration: 10 MB; Rollback-Test mit Daten). Keine Datei wird angefasst.
+- **Ingest-Route:** Body-Limit 27 MB statt 12 MB (Datei plus Entwurf und Multipart-Rahmen). Der Record-API setzt PocketBase das Limit selbst nach der Feldgröße.
+- **Texte:** Der Hinweis im Panel nennt die Grenze nicht mehr („Die Mail war zu groß für die Originaldatei (12,4 MB).“), weil ältere Einträge noch an 10 MB gescheitert sind. Die Ablage nennt „.eml; über 25 MB ohne Originaldatei“ statt „höchstens 10 MB“.
+- **Übergang:** Hooks und SPA wirken nach F5, das Schema erst nach dem Neustart (`stop.bat`, dann `start.bat`), der auch `byl-mail.exe` 0.9.0 startet. Bis dahin lehnt der Server eine `.eml`-Datei zwischen 10 und 25 MB mit dem Feldfehler der Datei ab, und der alte Hilfsprozess arbeitet mit 10 MB.
+- **Kosten:** Größere Dateien vergrößern `pb_data` und jedes Backup (zwölf aufbewahrte). Die README weist darauf hin.

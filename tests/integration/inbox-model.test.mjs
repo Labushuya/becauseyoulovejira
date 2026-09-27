@@ -242,10 +242,21 @@ describe('original file', () => {
 		).toEqual({ original: 'validation_inbox_immutable' });
 	});
 
-	it('is limited to one file of at most 10 MB', async () => {
+	it('is limited to one file of at most 25 MB (ADR-0031, addendum D)', async () => {
 		const superuserView = await superuser.collections.getOne('inbox_items');
 		const field = superuserView.fields.find((candidate) => candidate.name === 'original');
-		expect(field).toMatchObject({ maxSelect: 1, maxSize: 10 * 1024 * 1024, protected: true });
+		expect(field).toMatchObject({ maxSelect: 1, maxSize: 25 * 1024 * 1024, protected: true });
 		expect(await statusOf(superuser.collection('inbox_items').getList(1, 1))).toBe(200);
+
+		// A dropped .eml of 20 MB goes through the record API with its file (the way of the SPA).
+		const form = new FormData();
+		form.set('owner', owner.id);
+		form.set('channel', 'eml');
+		form.set('kind', 'mail');
+		form.set('title', 'Fotos');
+		form.set('source_ref', `<${uniqueSuffix()}@example.com>`);
+		form.set('original', new Blob(['Subject: Fotos\r\n\r\n', 'x'.repeat(20 * 1024 * 1024)]), 'fotos.eml');
+		const created = await owner.client.collection('inbox_items').create(form);
+		expect(created.original).toMatch(/^fotos_\w+\.eml$/);
 	});
 });

@@ -2,8 +2,8 @@
 // with postal-mime and turn the mail into a draft with the file as protected original. The
 // parser only decodes; nothing of the mail is rendered or loaded (no images, no links). The
 // parser is loaded on first use, so the inbox view does not carry it before a file comes in.
-// A file over 10 MB is read only from its beginning and saved without the file (ADR-0031
-// section 4).
+// A file over MAIL_MAX_BYTES (25 MB) is read only from its beginning and saved without the file
+// (ADR-0031 section 4 and addendum D).
 
 import {
 	MAIL_MAX_BYTES,
@@ -34,7 +34,7 @@ export function isMailFile(file: Pick<File, 'name' | 'type'>): boolean {
 
 /**
  * Reads one mail file into an inbox draft (channel "eml") with the file as original. A file over
- * 10 MB gives a draft of its first MAIL_PARTIAL_BYTES without the file (sender, subject, date and
+ * EML_MAX_BYTES gives a draft of its first MAIL_PARTIAL_BYTES without the file (sender, subject, date and
  * the beginning of the text). Other files and files the parser refuses give a reason instead.
  */
 export async function readMailFile(file: File): Promise<MailFileResult> {

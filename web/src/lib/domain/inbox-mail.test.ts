@@ -126,6 +126,11 @@ describe('mailToDraft with the fixtures', () => {
 		expect(long.body?.endsWith(ORIGINAL_OMITTED_NOTE)).toBe(true);
 		expect(MAIL_PARTIAL_BYTES).toBe(2 * 1024 * 1024);
 	});
+
+	it('keeps originals up to 25 MB and names the limit in the note (ADR-0031, addendum D)', () => {
+		expect(MAIL_MAX_BYTES).toBe(25 * 1024 * 1024);
+		expect(ORIGINAL_OMITTED_NOTE).toBe('_Originaldatei nicht gespeichert: größer als 25 MB._');
+	});
 });
 
 describe('mail helpers', () => {

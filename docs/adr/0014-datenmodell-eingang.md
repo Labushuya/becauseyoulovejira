@@ -31,7 +31,7 @@ Randbedingungen:
 | `source_ref` | text, max. 500 | stabile Kennung beim Absender: Message-ID, `UID` (+ `RECURRENCE-ID`) eines Termins, Telegram `chat_id:message_id`, Notion-Page-ID |
 | `source_date` | date | Zeitpunkt beim Absender (Mail-Datum, Terminbeginn, Nachrichtenzeit), UTC. **Wird nie automatisch zur Fälligkeit.** |
 | `source_meta` | json, max. 20 000 Byte | kanalabhängige Zusatzangaben ohne eigene Spalte: Absender, Empfänger, Ort, Terminende, ganztägig, `RRULE` (für E5), Chatname |
-| `original` | file, max. 1 Datei, 10 MB, `protected` | Originaldatei (`.eml`, `.ics`-Ausschnitt), nur mit File-Token abrufbar |
+| `original` | file, max. 1 Datei, 10 MB (seit Migration `1790202000` 25 MB), `protected` | Originaldatei (`.eml`, `.ics`-Ausschnitt), nur mit File-Token abrufbar |
 | `connection` | relation `connections`, optional | konfigurierte Verbindung, über die das Objekt kam (Postfach, Kalender, Bot; [ADR-0016](0016-kanal-architektur-und-mail.md)) |
 | `fingerprint` | text, Pflicht (Hook) | Duplikatmerkmal, Abschnitt 3 |
 | `state` | select, Pflicht | `new`, `converted`, `discarded` |
@@ -102,7 +102,7 @@ Neue Felder an `tickets`:
 - Zwei additive Migrationen (neue Collection; zwei Felder an `tickets`). Bestehende Tickets bleiben unverändert (`source` leer).
 - Der Ticket-Hook bekommt einen weiteren Schritt in der vorhandenen Transaktion. Tests: Umwandeln atomar (Fehler im Ticket ⇒ Eintrag bleibt `new`), doppeltes Umwandeln abgelehnt, fremder Scope abgelehnt.
 - `inbox_items` braucht Negativtests für die Regeln mit mehreren Nutzern und Haushalten wie `rules.test.mjs`.
-- Originaldateien vergrößern `pb_data` und die Backups. Grenze 10 MB je Datei; größere Mails kommen ohne Original (Hinweis im Eintrag).
+- Originaldateien vergrößern `pb_data` und die Backups. Grenze 10 MB je Datei (seit dem Nachtrag D zu [ADR-0031](0031-herkunft-sichern.md) 25 MB); größere Mails kommen ohne Original (Hinweis im Eintrag).
 - `TICKET_LIST_FIELDS` und das Realtime-Abo der Tickets bekommen `source` ([E3-Plan](../plan/e3.md) §10).
 
 ## Nachtrag (2026-09-27): Quellen, Lösen und Löschschutz

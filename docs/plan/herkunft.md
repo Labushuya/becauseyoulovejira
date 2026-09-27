@@ -36,7 +36,7 @@ Folgeauftrag (Nutzerentscheidungen vom 2026-09-27, [ADR-0031](../adr/0031-herkun
 | HK-5 | Umhängen: „Anderem Ticket zuordnen …“ im Panel des Eintrags (Block „Gehört zu …“ mit „Ticket öffnen“, „Anderem Ticket zuordnen …“, „Lösen“) und in der Quellenliste; atomar im Hook mit Verlauf in beiden Tickets; Hauptquelle gesperrt mit Grund; Ticket am Eintrag per `expand` | BYL-E6-180, BYL-E6-181, BYL-E6-182 (manuell) |
 | HK-6 | Löschen eines Tickets mit Quellen: Radio in der Bestätigung („Quellen zurück in den Eingang“, „Quellen verwerfen“), atomar im Hook, eigene Route, sicherer Standard der Delete-API; Aufräumen verwaister `converted`-Einträge per Migration `1790201900_inbox_items_orphans.js` mit Rollback-Test | BYL-E6-183, BYL-E6-184, BYL-E6-185, BYL-E6-186 (manuell) |
 | HK-7 | Hervorhebung: Rand in der Akzentfarbe und Chip „→ HAUS-12“ im Eingang, Quellen im Ticket in der Akzentfarbe, Filter „Neu“ (offen, Standard), „Verknüpft“, „Verworfen“, „Alle“ | BYL-E6-187, BYL-E6-188 (manuell) |
-| HK-8 | Originaldateien bis 25 MB: Migration mit Rollback, Konstanten in SPA, Hooks und byl-mail, Texte, Version des Hilfsprozesses, README | geplant |
+| HK-8 | Originaldateien bis 25 MB: Migration `1790202000_inbox_items_original_size.js` mit Rollback, Konstanten in SPA, Hooks und byl-mail, Texte, `byl-mail.exe` 0.9.0, README (Backups) | BYL-E6-189, BYL-E6-190 (manuell) |
 
 ## 3. Entscheidungen
 
@@ -84,6 +84,10 @@ Folgeauftrag (Nutzerentscheidungen vom 2026-09-27, [ADR-0031](../adr/0031-herkun
 | 2026-09-28 | HK-7 | **„Alle“ als bearbeitete Ansicht:** Dieselbe seitenweise Liste wie „Verknüpft“ und „Verworfen“, ohne Zustandsfilter (`{:every}`) und nach `-created`. Im Store bleiben neue Einträge in `#new` (Zähler des Umschalters) und stehen zugleich in der Liste von „Alle“; `upsert`, `#merge` und `#loadHandled` löschen neue Einträge dort nicht mehr aus `#new`. Die Auswahl zum Sammelumwandeln gibt es weiter nur in „Neu“. |
 | 2026-09-28 | HK-7 | **Markierung der Zeile:** dieselbe `inset 3px`-Markierung wie die offene Zeile (die einzige erlaubte nach ADR-0029, `glass-allowlist.test.ts`); die offene Zeile unterscheidet sich weiter durch ihre Akzentfläche, verknüpfte durch den Chip. Ein eigener Rand oder eine andere Breite wäre eine neue Ausnahme gewesen. |
 | 2026-09-28 | HK-7 | **Quellen im Ticket** nur mit linkem Rand in `--color-brand`, ohne Akzentfläche: Die Lozenge „Vollständig“ (Ton `brand`) hätte auf der Akzentfläche keinen Kontrast zur Umgebung mehr. |
+| 2026-09-28 | HK-8 | **Eine Grenze, eine Konstante:** `MAIL_MAX_MB = 25` in `domain/inbox-mail.ts`; `MAIL_MAX_BYTES`, der Hinweis im Text, das Protokoll des Hilfsprozesses, die imapflow-Grenzen und die Ablage leiten sich davon ab. Die Migration setzt nur `maxSize`; ein Rollback auf 10 MB verliert nichts, weil PocketBase die Größe nur beim Hochladen prüft. |
+| 2026-09-28 | HK-8 | **Hinweis ohne Grenze:** „Die Mail war zu groß für die Originaldatei (12,4 MB).“ statt „größer als 10 MB“: Einträge von vor HK-8 sind an 10 MB gescheitert, neue an 25 MB; der gespeicherte Hinweis im Text (`ORIGINAL_OMITTED_NOTE`) nennt die Grenze zum Zeitpunkt des Eingangs. |
+| 2026-09-28 | HK-8 | **Body-Limit der Ingest-Route 27 MB** (Datei, Entwurf und Multipart-Rahmen); die Record-API rechnet ihr Limit selbst aus der Feldgröße, belegt durch eine `.eml` von 20 MB. Die Übergangszeit (neue SPA, altes Schema bis zum Neustart) lehnt Dateien zwischen 10 und 25 MB mit dem Feldfehler ab; ein Test vor der Migration belegt das. Ein Rückfall auf „ohne Datei“ in der SPA wäre Code nur für die Minuten bis zum Neustart. |
+| 2026-09-28 | HK-8 | `byl-mail.exe` **0.9.0** (neue Grenze). Die Tests des Hilfsprozesses nutzen die Konstante statt fester 10 MB und belegen eine Mail von 20 MB mit Datei. |
 
 ## 4. Status
 
@@ -96,10 +100,10 @@ Folgeauftrag (Nutzerentscheidungen vom 2026-09-27, [ADR-0031](../adr/0031-herkun
 | HK-4 | gemergt (#109) |
 | HK-5 | gemergt (#110) |
 | HK-6 | gemergt (#111) |
-| HK-7 | in Arbeit |
-| HK-8 | geplant |
+| HK-7 | gemergt (#112) |
+| HK-8 | in Arbeit |
 
 ## 5. Offene Punkte
 
-- Manuelle Browser-Prüfungen der Pakete HK-2 bis HK-7.
+- Manuelle Browser-Prüfungen der Pakete HK-2 bis HK-8.
 - **Verwaiste Einträge (HK-6):** Das Repo enthält keine Nutzerdaten, und `app\pb_data` wird nicht gelesen; wie viele Einträge die Migration beim nächsten Start des Nutzers umstellt, ist deshalb nicht bekannt. Jedes Ticket, das vor HK-6 gelöscht wurde und Quellen hatte, hat solche Einträge hinterlassen. Nach dem Neustart stehen sie als neu im Eingang mit dem Hinweis „Das Ticket wurde gelöscht; …“.

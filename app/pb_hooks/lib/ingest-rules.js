@@ -14,7 +14,8 @@ var ORIGINS = ['auto', 'selected'];
 // Keys of source_meta a mail may bring (inbox-mail.ts, mailToDraft); the route adds the keyword.
 var META_KEYS = ['from', 'to', 'cc', 'attachments', 'html_only'];
 
-// A mail over 10 MB comes without its file (ADR-0031 section 4): source_meta.original_omitted
+// A mail over 25 MB (10 MB before addendum D of ADR-0031, and with a helper before 0.9.0) comes
+// without its file (ADR-0031 section 4): source_meta.original_omitted
 // names the reason, original_size the size of the mail in bytes. Checked, not copied blindly.
 var OMITTED_REASONS = ['too_large'];
 var MAX_SAFE_SIZE = 9007199254740991;

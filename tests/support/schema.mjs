@@ -157,7 +157,8 @@ export const EXPECTED_COLLECTIONS = {
 			source_ref: text({ max: 500 }),
 			source_date: date(),
 			source_meta: { type: 'json', required: false, maxSize: 20000 },
-			original: { type: 'file', required: false, maxSelect: 1, maxSize: 10485760, protected: true },
+			// 25 MB since the migration 1790202000 (ADR-0031, addendum D), 10 MB before.
+			original: { type: 'file', required: false, maxSelect: 1, maxSize: 26214400, protected: true },
 			fingerprint: text({ required: true, max: 100 }),
 			state: select(INBOX_STATES, true),
 			ticket: relation('tickets'),

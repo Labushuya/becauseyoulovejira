@@ -412,3 +412,46 @@ describe('HK-6 hooks before the migration of the orphaned sources', () => {
 		expect(discarded.source_meta.ticket_deleted.key).toBe(second.key);
 	});
 });
+
+describe('HK-8 hooks before the migration of the 25 MB originals', () => {
+	const SIZE_MIGRATION = '1790202000_inbox_items_original_size.js';
+	let before;
+	let who;
+
+	beforeAll(async () => {
+		before = await startPocketBase({ migrationFilter: (name) => name < SIZE_MIGRATION });
+		const superuser = new PocketBase(before.url);
+		superuser.autoCancellation(false);
+		await superuser.collection('_superusers').authWithPassword(before.email, before.password);
+		const email = `user-${randomBytes(12).toString('hex')}@example.com`;
+		const password = randomBytes(24).toString('base64url');
+		const id = (await superuser.collection('users').create({ email, password, passwordConfirm: password })).id;
+		who = new PocketBase(before.url);
+		who.autoCancellation(false);
+		await who.collection('users').authWithPassword(email, password);
+		who.userId = id;
+	}, 60_000);
+
+	afterAll(async () => {
+		await before?.stop();
+	});
+
+	it('keeps the old limit of 10 MB until the restart and takes smaller files as before', async () => {
+		const items = who.collection('inbox_items');
+		const form = (name, size) => {
+			const data = new FormData();
+			data.set('owner', who.userId);
+			data.set('channel', 'eml');
+			data.set('kind', 'mail');
+			data.set('title', name);
+			data.set('source_ref', `<${randomBytes(6).toString('hex')}@example.com>`);
+			data.set('original', new Blob([`Subject: ${name}\r\n\r\n`, 'x'.repeat(size)]), `${name}.eml`);
+			return data;
+		};
+		const small = await items.create(form('klein', 1024));
+		expect(small.original).toMatch(/^klein_\w+\.eml$/);
+		const refused = await items.create(form('mittel', 12 * 1024 * 1024)).catch((error) => error);
+		expect(refused?.status).toBe(400);
+		expect(refused?.response?.data?.original).toBeTruthy();
+	});
+});

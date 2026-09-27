@@ -1,7 +1,8 @@
 // Checking one mail of the inbox (ADR-0016 section 5, ADR-0020): load its source (BODY.PEEK),
 // parse it, match the keywords of the connection exactly and hand a match to the ingest route.
 // Shared by the fetch after the cursor (poll.ts) and the full scan of the inbox (scan.ts). A mail
-// over 10 MB is read only from its beginning and stored without its file (ADR-0031 section 4).
+// over MAIL_MAX_BYTES (25 MB since 0.9.0, addendum D of ADR-0031) is read only from its beginning
+// and stored without its file (ADR-0031 section 4).
 
 import type { InboxSession } from './imap';
 import type { IngestApi, MailConnection } from './ingest-client';
@@ -16,7 +17,7 @@ export interface PollOutcome {
 	/** Part of the answer of /poll since 0.5.0; a helper since 0.8.0 skips no mail for its size. */
 	skipped: number;
 	failed: number;
-	/** New entries of mails over 10 MB, stored without their file (part of `created`). */
+	/** New entries of mails over MAIL_MAX_BYTES, stored without their file (part of `created`). */
 	omitted: number;
 	cursor: string;
 	error: string;

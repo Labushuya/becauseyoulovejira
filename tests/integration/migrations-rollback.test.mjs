@@ -479,6 +479,67 @@ describe('migration rollback of the orphaned sources (ADR-0031, addendum B)', ()
 	);
 });
 
+const ORIGINAL_SIZE_MIGRATION = '1790202000_inbox_items_original_size.js';
+
+describe('migration rollback of the 25 MB originals (ADR-0031, addendum D)', () => {
+	it(
+		'changes only the maxSize of inbox_items.original, there and back, and keeps every row',
+		async () => {
+			const fromSize = MIGRATION_FILES.slice(MIGRATION_FILES.indexOf(ORIGINAL_SIZE_MIGRATION));
+			expect(fromSize[0]).toBe(ORIGINAL_SIZE_MIGRATION);
+			const originalOf = (dataDir) =>
+				readDataDir(dataDir)
+					.collections.find((collection) => collection.name === 'inbox_items')
+					.fields.find((field) => field.name === 'original');
+
+			await withTempDataDir(async ({ dataDir, args }) => {
+				await migrate(args, 'up');
+				expect(originalOf(dataDir).maxSize).toBe(25 * 1024 * 1024);
+				await migrate(args, 'down', String(fromSize.length));
+				expect(originalOf(dataDir).maxSize).toBe(10 * 1024 * 1024);
+
+				// Entries with and without an original file.
+				withDatabase(dataDir, (db) => {
+					db.prepare('INSERT INTO users (id, email, tokenKey, password, created, updated) VALUES (?, ?, ?, ?, ?, ?)').run(
+						'user00000000001',
+						'eins@example.invalid',
+						'tk1',
+						'hash',
+						STAMP,
+						STAMP
+					);
+					const item = db.prepare(
+						'INSERT INTO inbox_items (id, channel, kind, title, body, fingerprint, state, original, scope, owner, created, updated) ' +
+							'VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+					);
+					item.run('item00000000001', 'eml', 'mail', 'Mit Datei', 'Text', 'f1', 'new', 'mail_abc.eml', 'u:user00000000001', 'user00000000001', STAMP, STAMP);
+					item.run('item00000000002', 'mail', 'mail', 'Ohne Datei', '', 'f2', 'new', '', 'u:user00000000001', 'user00000000001', STAMP, STAMP);
+				});
+				const rows = withDatabase(dataDir, snapshot);
+				const others = (dataDir) =>
+					withoutTimestamps(readDataDir(dataDir).collections).map((collection) =>
+						collection.name === 'inbox_items'
+							? { ...collection, fields: collection.fields.filter((field) => field.name !== 'original') }
+							: collection
+					);
+				const before = others(dataDir);
+
+				const up = await migrate(args, 'up');
+				expect(appliedFiles(up, 'Applied')).toEqual(fromSize);
+				expect(originalOf(dataDir)).toMatchObject({ maxSize: 25 * 1024 * 1024, maxSelect: 1, protected: true });
+				expect(others(dataDir)).toEqual(before);
+				expect(withDatabase(dataDir, snapshot)).toEqual(rows);
+
+				const down = await migrate(args, 'down', String(fromSize.length));
+				expect(appliedFiles(down, 'Reverted')).toEqual([...fromSize].reverse());
+				expect(originalOf(dataDir).maxSize).toBe(10 * 1024 * 1024);
+				expect(withDatabase(dataDir, snapshot)).toEqual(rows);
+			});
+		},
+		60_000
+	);
+});
+
 const CONNECTIONS_MIGRATION = '1790201400_create_connections.js';
 const IMPORT_KEYWORDS_MIGRATION = '1790201500_users_import_keywords.js';
 const INBOX_CONNECTION_MIGRATION = '1790201410_inbox_items_connection.js';

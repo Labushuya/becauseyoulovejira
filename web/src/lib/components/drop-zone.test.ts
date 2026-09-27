@@ -33,7 +33,7 @@ describe('drop zone', () => {
 		expect(zone.getAttribute('aria-describedby')).toBeTruthy();
 		expect(
 			screen.getByText(
-				/\(\.eml, höchstens 10 MB\), Kalenderdateien \(\.ics\) und WhatsApp-Chatexporte \(\.txt,\s+\.zip; je höchstens 20 MB\)/
+				/\(\.eml; über 25 MB ohne Originaldatei\), Kalenderdateien \(\.ics\) und\s+WhatsApp-Chatexporte \(\.txt, \.zip; je höchstens 20 MB\)/
 			)
 		).toBeTruthy();
 		await fireEvent.dragOver(zone, { dataTransfer: transfer([A, B]) });
@@ -90,7 +90,7 @@ describe('drop zone', () => {
 				itemId: 'item00000000003',
 				ticketId: ''
 			},
-			{ name: 'd.eml', kind: 'error', message: 'Größer als 10 MB, deshalb nicht übernommen.' },
+			{ name: 'd.eml', kind: 'error', message: 'Die Datei ließ sich nicht als Mail lesen.' },
 			{
 				name: 'kalender.ics',
 				kind: 'calendar',
@@ -116,7 +116,7 @@ describe('drop zone', () => {
 			'a.eml: neu – Rechnung',
 			'b.eml: schon vorhanden (Schon Ticket HAUS-2.) Ticket ansehen',
 			'c.eml: schon vorhanden (Schon verworfen.) Eintrag ansehen',
-			'd.eml: Größer als 10 MB, deshalb nicht übernommen.',
+			'd.eml: Die Datei ließ sich nicht als Mail lesen.',
 			'kalender.ics: 3 neu, 1 schon vorhanden, 1 übersprungen',
 			'termin.ics: 1 neu Eintrag ansehen'
 		]);

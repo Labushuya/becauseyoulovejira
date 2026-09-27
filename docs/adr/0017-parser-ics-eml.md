@@ -37,7 +37,7 @@ Goja hat kein `TextDecoder`. Zeichensätze außer UTF-8 und Latin-1 müssten dor
 - Parser: **`postal-mime`** (MIT-0, keine Abhängigkeiten, läuft im Browser und in Node; Grenzen `maxNestingDepth`, `maxHeadersSize`). Kein eigener MIME-Parser.
 - **Normalisierung** als reines TypeScript-Modul `web/src/lib/domain/inbox-mail.ts`: `mailToDraft(email)` → Entwurf mit `title` (Betreff, sonst „(ohne Betreff)“), `body` (Kopfblock „Von“, „An“, „Datum“, dann Text), `source_ref` (Message-ID), `source_date` (`Date`), `source_meta` (Absender, Empfänger, Anzahl Anhänge). Nur-HTML-Mails wandelt eine eigene, reine Funktion `htmlToText` in Text (Blockelemente zu Zeilen, Links als „Text (URL)“, Entities, alles andere entfernt). Kein `DOMParser`, damit SPA und Hilfsprozess **dasselbe** Ergebnis erzeugen. Der Hilfsprozess bündelt dieses Modul mit esbuild ein.
 - Anhänge werden nicht übernommen (Stufe 2); ihre Zahl steht im Eintrag, und das Original ist als Datei am Eintrag abrufbar.
-- **Grenzen:** `.eml` höchstens 10 MB (größere: Hinweis, kein Import), Text auf 100 000 Zeichen gekürzt. Seit [ADR-0031](0031-herkunft-sichern.md) §4 kommt eine größere Mail aus ihren ersten 2 MB ohne Originaldatei in den Eingang, statt abgelehnt zu werden.
+- **Grenzen:** `.eml` höchstens 10 MB (größere: Hinweis, kein Import), Text auf 100 000 Zeichen gekürzt. Seit [ADR-0031](0031-herkunft-sichern.md) §4 kommt eine größere Mail aus ihren ersten 2 MB ohne Originaldatei in den Eingang, statt abgelehnt zu werden; seit dem Nachtrag D dort liegt die Grenze bei 25 MB.
 
 ### 3. WhatsApp-Export und übrige Formate
 

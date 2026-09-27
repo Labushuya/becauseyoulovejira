@@ -49,7 +49,7 @@ function setup(
 		kind: 'ok',
 		value: [
 			{ uid: 5, status: 'created', message: '' },
-			{ uid: 2, status: 'failed', message: 'Größer als 10 MB, deshalb nicht übernommen.' }
+			{ uid: 2, status: 'failed', message: 'Die Mail ließ sich nicht lesen.' }
 		]
 	}
 ) {
@@ -121,7 +121,7 @@ describe('MailboxPicker', () => {
 		expect(save).toHaveBeenCalledWith([5, 4, 2]);
 		await screen.findByText('Jetzt im Eingang.');
 		expect((row('Todo: Steuer').getByRole('checkbox') as HTMLInputElement).disabled).toBe(true);
-		const failed = row('Rechnung').getByText('Größer als 10 MB, deshalb nicht übernommen.');
+		const failed = row('Rechnung').getByText('Die Mail ließ sich nicht lesen.');
 		expect(failed.closest('.failed')?.querySelector('svg')).not.toBeNull();
 		expect((row('Rechnung').getByRole('checkbox') as HTMLInputElement).disabled).toBe(false);
 		expect(screen.getByText('1 neu, 1 mit Fehler.')).toBeTruthy();

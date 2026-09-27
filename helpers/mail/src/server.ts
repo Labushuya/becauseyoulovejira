@@ -335,7 +335,8 @@ async function importOne(
 	uid: number
 ): Promise<ImportResult> {
 	const gone: ImportResult = { uid, status: 'failed', message: 'Die Mail ist nicht mehr im Posteingang.' };
-	// A mail over 10 MB comes from its beginning and without its file (ADR-0031 section 4).
+	// A mail over MAIL_MAX_BYTES (25 MB) comes from its beginning and without its file (ADR-0031
+	// section 4 and addendum D).
 	const size = (await session.headersOf([uid]))[0]?.size;
 	if (size === undefined) return gone;
 	const large = size > MAIL_MAX_BYTES;
