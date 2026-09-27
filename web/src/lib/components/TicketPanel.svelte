@@ -28,7 +28,8 @@
 		ondeleted,
 		activity,
 		recurrence,
-		sources
+		sources,
+		sourceCount = 0
 	}: {
 		store: TicketDetailStore;
 		/** Projects and tags (E3 plan, T-16). */
@@ -45,6 +46,8 @@
 		recurrence?: Snippet<[Ticket]>;
 		/** Section "Quellen" (ADR-0031 section 7), after source and dates. */
 		sources?: Snippet<[Ticket]>;
+		/** Number of sources, for the question of "Löschen …" (ADR-0031, addendum B). */
+		sourceCount?: number;
 	} = $props();
 
 	const uid = $props.id();
@@ -77,7 +80,7 @@
 	{/snippet}
 	{#snippet actions()}
 		{#if store.state === 'ready' && ticket}
-			<TicketDelete {store} {ondeleted} />
+			<TicketDelete {store} {ondeleted} {sourceCount} />
 		{/if}
 	{/snippet}
 

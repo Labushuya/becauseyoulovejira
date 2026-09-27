@@ -62,11 +62,31 @@ onRecordAfterUpdateSuccess(function (e) {
 }, 'tickets');
 
 // Deleting the open instance of a series (ADR-0023 section 6): a calendar date counts as skipped,
-// an after-completion rule waits as if the instance was done today.
+// an after-completion rule waits as if the instance was done today. The sources of the ticket go
+// back to the inbox or are discarded in the same transaction, never deleted and never left as
+// converted items without a ticket (ADR-0031, addendum B). Every way to delete gives them back to
+// the inbox unless the route below asks to discard them.
 onRecordDelete(function (e) {
   var recurrence = require(`${__hooks}/lib/recurrence-service.js`);
+  var inbox = require(`${__hooks}/lib/inbox-service.js`);
   require(`${__hooks}/lib/transaction.js`).inTransaction(e, function (txApp) {
     recurrence.prepareTicketDelete(txApp, e.record, Date.now());
+    var sources = inbox.sourcesOfDeletedTicket(txApp, e.record);
     e.next();
+    var handling = e.record.get(inbox.SOURCE_HANDLING_KEY);
+    inbox.settleSourcesOfDeletedTicket(txApp, sources, handling ? String(handling) : '', e.record.getString('key'));
   });
 }, 'tickets');
+
+// "Ticket löschen mit Quellenbehandlung" (ADR-0031, addendum B): JSON { sources: 'inbox' |
+// 'discard' }; deletes a ticket the request may delete (deleteRule, else 404) and settles its
+// sources as chosen, atomically in the hook above. Answers 204.
+routerAdd(
+  'POST',
+  '/api/byl/tickets/{id}/delete',
+  function (e) {
+    require(`${__hooks}/lib/ticket-service.js`).deleteWithSources(e, e.request.pathValue('id'));
+    return e.noContent(204);
+  },
+  $apis.requireAuth('users')
+);

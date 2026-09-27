@@ -165,13 +165,12 @@ describe('release', () => {
 		expect(after.ticket).toBe(ticket.id);
 	});
 
-	it('releases an item whose ticket was deleted, without a history', async () => {
+	it('finds a linked item back in the inbox once its ticket is deleted (addendum B)', async () => {
 		const ticket = await owner.ticket();
 		const item = await createItem(owner);
 		await link(owner, item.id, ticket.id);
 		await owner.client.collection('tickets').delete(ticket.id);
-		expect((await itemOf(item.id)).ticket).toBe('');
-		expect((await release(owner, item.id)).state).toBe('new');
+		expect(await itemOf(item.id)).toMatchObject({ state: 'new', ticket: '', handled_at: '' });
 	});
 
 	it('keeps the item linked when the history entry fails', async () => {
@@ -280,18 +279,6 @@ describe('move (ADR-0031 addendum)', () => {
 		expect((await rejectionOf(move({ client: s.c }, item.id, second.id))).status).toBe(404);
 		expect((await move({ client: s.b }, item.id, second.id)).ticket).toBe(second.id);
 		expect((await sourceEntries(second.id)).map((entry) => entry.user)).toEqual([s.ids.b]);
-	});
-
-	it('links an item whose ticket was deleted to a new ticket without a "moved" entry', async () => {
-		const [gone, next] = [await owner.ticket(), await owner.ticket()];
-		const item = await createItem(owner);
-		await link(owner, item.id, gone.id);
-		await superuser.collection('tickets').delete(gone.id);
-		expect(await itemOf(item.id)).toMatchObject({ state: 'converted', ticket: '' });
-		expect((await move(owner, item.id, next.id)).ticket).toBe(next.id);
-		const entries = await sourceEntries(next.id);
-		expect(entries).toHaveLength(1);
-		expect(JSON.parse(entries[0].new_value)).not.toHaveProperty('moved_from');
 	});
 });
 

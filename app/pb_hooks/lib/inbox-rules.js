@@ -137,6 +137,50 @@ function sourceLinkValue(item, move) {
   return JSON.stringify(value);
 }
 
+/**
+ * What happens to the sources of a deleted ticket (ADR-0031, addendum B): 'inbox' (back to the
+ * new ones, the default of every way to delete) or 'discard' (tombstone). Never deleted with it.
+ */
+var SOURCE_HANDLINGS = ['inbox', 'discard'];
+var DEFAULT_SOURCE_HANDLING = 'inbox';
+
+function isSourceHandling(value) {
+  return SOURCE_HANDLINGS.indexOf(value) !== -1;
+}
+
+// Key of source_meta that tells an item its ticket was deleted: { key, at }.
+var TICKET_DELETED = 'ticket_deleted';
+
+/**
+ * source_meta of an item whose ticket was deleted: a copy of `meta` with ticket_deleted = { key,
+ * at } (key of the ticket, time in PocketBase format). Other keys stay.
+ */
+function deletedTicketMeta(meta, key, at) {
+  var copy = {};
+  var source = meta && typeof meta === 'object' ? meta : {};
+  for (var name in source) {
+    if (Object.prototype.hasOwnProperty.call(source, name)) {
+      copy[name] = source[name];
+    }
+  }
+  copy[TICKET_DELETED] = { key: text(key), at: text(at) };
+  return copy;
+}
+
+/** A copy of `meta` without the note of a deleted ticket, or null if it has none. */
+function withoutDeletedTicket(meta) {
+  if (!meta || typeof meta !== 'object' || !Object.prototype.hasOwnProperty.call(meta, TICKET_DELETED)) {
+    return null;
+  }
+  var copy = {};
+  for (var name in meta) {
+    if (name !== TICKET_DELETED && Object.prototype.hasOwnProperty.call(meta, name)) {
+      copy[name] = meta[name];
+    }
+  }
+  return copy;
+}
+
 // Message of a duplicate (ADR-0014 section 3): "schon im Eingang", "schon verworfen",
 // "schon Ticket HAUS-12".
 function duplicateMessage(state, ticketKey) {
@@ -160,5 +204,11 @@ module.exports = {
   handledAtAction: handledAtAction,
   linkChange: linkChange,
   sourceLinkValue: sourceLinkValue,
+  SOURCE_HANDLINGS: SOURCE_HANDLINGS,
+  DEFAULT_SOURCE_HANDLING: DEFAULT_SOURCE_HANDLING,
+  isSourceHandling: isSourceHandling,
+  TICKET_DELETED: TICKET_DELETED,
+  deletedTicketMeta: deletedTicketMeta,
+  withoutDeletedTicket: withoutDeletedTicket,
   duplicateMessage: duplicateMessage
 };

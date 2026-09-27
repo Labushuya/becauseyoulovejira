@@ -10,6 +10,7 @@ import { SvelteMap, SvelteSet } from 'svelte/reactivity';
 import { toDataError } from '$lib/data/errors';
 import type { RequestOptions } from '$lib/data/options';
 import { createTicket, deleteTicket, getTicket, updateTicket } from '$lib/data/tickets';
+import { deletedWithSourcesText, type SourceHandling } from '$lib/domain/sources';
 import { isCalendarDate } from '$lib/domain/berlin-date';
 import { isPriority, isStatus, type Status } from '$lib/domain/status';
 import type {
@@ -48,7 +49,14 @@ export interface TicketDetailData {
 	get(id: string, options: RequestOptions): Promise<Ticket>;
 	update(id: string, patch: TicketPatch): Promise<Ticket>;
 	create(draft: TicketDraft, origin?: TicketOrigin): Promise<Ticket>;
-	delete(id: string): Promise<void>;
+	/** With `sources` the route settles the sources as chosen; without, they go to the inbox. */
+	delete(id: string, sources?: SourceHandling): Promise<void>;
+}
+
+/** Sources of the ticket to delete and what happens to them (ADR-0031, addendum B). */
+export interface DeleteSources {
+	count: number;
+	handling: SourceHandling;
 }
 
 /** Outcome of deleting the ticket; a failure carries a message unless nothing is to be shown. */
@@ -84,7 +92,7 @@ export function ticketDetailData(pb: PocketBase): TicketDetailData {
 		get: (id, options) => getTicket(pb, id, options),
 		update: (id, patch) => updateTicket(pb, id, patch),
 		create: (draft, origin) => createTicket(pb, draft, { origin }),
-		delete: (id) => deleteTicket(pb, id)
+		delete: (id, sources) => deleteTicket(pb, id, sources === undefined ? {} : { sources })
 	};
 }
 
@@ -413,15 +421,18 @@ export class TicketDetailStore {
 	/**
 	 * Deletes the shown ticket for good (E2 plan, T-12 and P-4; comments and history go with it
 	 * by cascade). On success the ticket leaves the list and the list announces it. A ticket that
-	 * is already gone (404) counts as deleted. Any other failure keeps the ticket.
+	 * is already gone (404) counts as deleted. Any other failure keeps the ticket. With `sources`
+	 * the sources go back to the inbox or are discarded as chosen (ADR-0031, addendum B), and the
+	 * announcement says so.
 	 */
-	async deleteTicket(): Promise<DeleteResult> {
+	async deleteTicket(sources?: DeleteSources): Promise<DeleteResult> {
 		const ticket = this.#ticket;
 		if (ticket === null) return { ok: false, message: null };
 		if (!this.#session.ensureValid()) return { ok: false, message: null };
 		this.#deletingId = ticket.id;
 		try {
-			await this.#data.delete(ticket.id);
+			if (sources === undefined) await this.#data.delete(ticket.id);
+			else await this.#data.delete(ticket.id, sources.handling);
 		} catch (error) {
 			if (this.#deletingId === ticket.id) this.#deletingId = null;
 			const failure = toDataError(error);
@@ -432,7 +443,9 @@ export class TicketDetailStore {
 			if (failure.kind !== 'not_found') return { ok: false, message: failure.message };
 		}
 		this.#list.remove(ticket.id);
-		this.#list.announce(`${ticket.key} wurde gelöscht.`);
+		this.#list.announce(
+			deletedWithSourcesText(ticket.key, sources?.count ?? 0, sources?.handling ?? 'inbox')
+		);
 		return { ok: true, key: ticket.key };
 	}
 

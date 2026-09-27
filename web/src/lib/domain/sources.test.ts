@@ -6,9 +6,12 @@ import {
 	COPY_LABELS,
 	copyCompleteness,
 	copyNote,
+	deletedTicketNote,
+	deletedWithSourcesText,
 	linkSummary,
 	orderSources,
 	pageCopyText,
+	sourceCountText,
 	sourceOrigin,
 	sourceWhen
 } from './sources';
@@ -142,5 +145,38 @@ describe('orderSources and linkSummary', () => {
 	it('counts linked entries', () => {
 		expect(linkSummary(1, 'TASK-4')).toBe('1 Eintrag mit TASK-4 verknüpft.');
 		expect(linkSummary(3, 'HAUS-2')).toBe('3 Einträge mit HAUS-2 verknüpft.');
+	});
+});
+
+describe('deleting a ticket with sources (ADR-0031, addendum B)', () => {
+	it('counts the sources and names what happened to them', () => {
+		expect(sourceCountText(1)).toBe('Zu diesem Ticket gehört 1 Quelle.');
+		expect(sourceCountText(3)).toBe('Zu diesem Ticket gehören 3 Quellen.');
+		expect(deletedWithSourcesText('HAUS-12', 0, 'inbox')).toBe('HAUS-12 wurde gelöscht.');
+		expect(deletedWithSourcesText('HAUS-12', 1, 'inbox')).toBe(
+			'HAUS-12 wurde gelöscht. 1 Quelle ist wieder im Eingang.'
+		);
+		expect(deletedWithSourcesText('HAUS-12', 2, 'discard')).toBe(
+			'HAUS-12 wurde gelöscht. 2 Quellen sind verworfen.'
+		);
+	});
+
+	it('tells an entry that its ticket was deleted, only while it belongs to none', () => {
+		const note = { ticket_deleted: { key: 'HAUS-12', at: '2026-09-27 10:00:00.000Z' } };
+		expect(deletedTicketNote(item({ state: 'new', sourceMeta: note }))).toBe(
+			'Ticket HAUS-12 wurde gelöscht; dieser Eintrag war eine Quelle und ist wieder im Eingang.'
+		);
+		expect(deletedTicketNote(item({ state: 'discarded', sourceMeta: note }))).toBe(
+			'Ticket HAUS-12 wurde gelöscht; dieser Eintrag war eine Quelle und wurde dabei verworfen.'
+		);
+		// The migration of old items does not know the key.
+		expect(
+			deletedTicketNote(item({ state: 'new', sourceMeta: { ticket_deleted: { key: '' } } }))
+		).toBe('Das Ticket wurde gelöscht; dieser Eintrag war eine Quelle und ist wieder im Eingang.');
+		expect(deletedTicketNote(item({ state: 'converted', sourceMeta: note }))).toBeNull();
+		expect(deletedTicketNote(item({ state: 'new', sourceMeta: {} }))).toBeNull();
+		expect(
+			deletedTicketNote(item({ state: 'new', sourceMeta: { ticket_deleted: 'x' } }))
+		).toBeNull();
 	});
 });

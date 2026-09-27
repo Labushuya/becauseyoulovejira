@@ -8,6 +8,7 @@ import { isInboxChannel } from '../domain/inbox';
 import { EMPTY_LIST_QUERY, NO_PROJECT, activeSearch, type ListQuery } from '../domain/list-query';
 import { SOON_DAYS } from '../domain/ordering';
 import { channelsOf, type SourceFamily } from '../domain/source';
+import type { SourceHandling } from '../domain/sources';
 import { isPriority, isStatus, type Status } from '../domain/status';
 import {
 	MANUAL_ORIGIN,
@@ -431,13 +432,26 @@ export function setTicketDone(
 	return updateTicket(pb, id, { status: done ? 'done' : REOPEN_STATUS }, options);
 }
 
-/** Deletes the ticket; PocketBase deletes its comments and history in the same transaction. */
+/**
+ * Deletes the ticket; PocketBase deletes its comments and history in the same transaction. Its
+ * sources are never deleted (ADR-0031, addendum B): without `sources` the hook gives them back to
+ * the inbox; with it the route "Ticket löschen mit Quellenbehandlung" settles them as chosen
+ * ('inbox' or 'discard'), in the same transaction.
+ */
 export function deleteTicket(
 	pb: PocketBase,
 	id: string,
-	{ signal }: RequestOptions = {}
+	{ signal, sources }: RequestOptions & { sources?: SourceHandling } = {}
 ): Promise<void> {
 	return withDataErrors(signal, async () => {
-		await pb.collection(TICKETS).delete(id, { signal });
+		if (sources === undefined) {
+			await pb.collection(TICKETS).delete(id, { signal });
+			return;
+		}
+		await pb.send(`/api/byl/tickets/${encodeURIComponent(id)}/delete`, {
+			method: 'POST',
+			body: { sources },
+			signal
+		});
 	});
 }

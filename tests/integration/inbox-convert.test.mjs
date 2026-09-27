@@ -215,7 +215,7 @@ describe('scopes', () => {
 });
 
 describe('deleting', () => {
-	it('clears the ticket of the item when the ticket is deleted; the item stays converted', async () => {
+	it('gives the item back to the inbox when the ticket is deleted (ADR-0031, addendum B)', async () => {
 		const ref = `<${uniqueSuffix()}@example.com>`;
 		const item = await createItem(owner, { source_ref: ref });
 		const ticket = await owner.ticket({ source_item: item.id });
@@ -223,9 +223,11 @@ describe('deleting', () => {
 		await owner.client.collection('tickets').delete(ticket.id);
 
 		const after = await itemOf(item.id);
-		expect(after.state).toBe('converted');
+		expect(after.state).toBe('new');
 		expect(after.ticket).toBe('');
-		expect(after.handled_at).toBe(converted.handled_at);
+		expect(after.handled_at).toBe('');
+		expect(after.fingerprint).toBe(converted.fingerprint);
+		expect(after.source_meta.ticket_deleted.key).toBe(ticket.key);
 		const again = await rejectionOf(createItem(owner, { source_ref: ref }));
 		expect(again.codes).toEqual({ fingerprint: 'validation_inbox_duplicate' });
 	});

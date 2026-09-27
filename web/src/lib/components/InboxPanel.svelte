@@ -17,7 +17,13 @@
 	import type { InboxStore } from '$lib/stores/inbox.svelte';
 	import type { RecurrenceStore } from '$lib/stores/recurrence.svelte';
 	import type { TicketSourcesStore } from '$lib/stores/ticket-sources.svelte';
-	import { COPY_LABELS, copyCompleteness, copyNote, pageCopyText } from '$lib/domain/sources';
+	import {
+		COPY_LABELS,
+		copyCompleteness,
+		copyNote,
+		deletedTicketNote,
+		pageCopyText
+	} from '$lib/domain/sources';
 	import { convertHref, ticketPath } from '$lib/ticket-links';
 	import ErrorIcon from './ErrorIcon.svelte';
 	import Lozenge from './guidance/Lozenge.svelte';
@@ -86,6 +92,8 @@
 	/** What of the source the entry holds (ADR-0031 section 5), with a hint when it is not all. */
 	const copy = $derived(item === null ? null : copyCompleteness(item));
 	const note = $derived(item === null ? null : copyNote(item));
+	/** The ticket of this source was deleted (ADR-0031, addendum B). */
+	const ticketGone = $derived(item === null ? null : deletedTicketNote(item));
 	const duplicates = $derived(
 		item !== null && item.state === 'new' ? store.softDuplicates(item, openTickets) : null
 	);
@@ -303,6 +311,10 @@
 
 		{#if item.state === 'converted' && item.ticketId !== null}
 			{@render belongsTo(item, item.ticketId)}
+		{/if}
+
+		{#if ticketGone !== null}
+			<SectionMessage tone="info" compact>{ticketGone}</SectionMessage>
 		{/if}
 
 		{#if item.state === 'discarded'}

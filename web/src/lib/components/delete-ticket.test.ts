@@ -48,7 +48,7 @@ function ticket(overrides: Partial<Ticket> = {}): Ticket {
 	};
 }
 
-async function renderPanel(overrides: Partial<Ticket> = {}) {
+async function renderPanel(overrides: Partial<Ticket> = {}, sourceCount = 0) {
 	const data = {
 		get: vi.fn(async () => ticket(overrides)),
 		update: vi.fn(),
@@ -71,7 +71,9 @@ async function renderPanel(overrides: Partial<Ticket> = {}) {
 		{ listProjects: vi.fn(async () => []), listTags: vi.fn(async () => []), createTag: vi.fn() },
 		{ ensureValid: () => true, logout: vi.fn() }
 	);
-	render(TicketPanel, { props: { store, catalog, listHref: LIST, onclose, ondeleted } });
+	render(TicketPanel, {
+		props: { store, catalog, listHref: LIST, onclose, ondeleted, sourceCount }
+	});
 	await vi.waitFor(() => expect(store.state).toBe('ready'));
 	await tick();
 	return { store, data, list, onclose, ondeleted };
@@ -170,6 +172,45 @@ describe('deleting a ticket', () => {
 		expect(list.remove).toHaveBeenCalledWith(ID);
 		expect(list.announce).toHaveBeenCalledWith('TASK-12 wurde gelöscht.');
 		expect((dialog as HTMLDialogElement).open).toBe(false);
+	});
+
+	it('asks nothing about sources for a ticket without them', async () => {
+		await renderPanel();
+		const dialog = await openDialog();
+		expect(within(dialog).queryByRole('group', { name: 'Quellen' })).toBeNull();
+		expect(within(dialog).queryByRole('radio')).toBeNull();
+	});
+
+	it('names the sources and gives them back to the inbox unless asked otherwise (ADR-0031)', async () => {
+		const { data, list, ondeleted } = await renderPanel({}, 2);
+		const dialog = await openDialog();
+		expect(
+			within(dialog).getByText(
+				/Zu diesem Ticket gehören 2 Quellen\. Sie werden nicht mitgelöscht\./
+			)
+		).toBeTruthy();
+		const group = within(dialog).getByRole('group', { name: 'Quellen' });
+		const back = within(group).getByRole('radio', { name: /Quellen zurück in den Eingang/ });
+		const discard = within(group).getByRole('radio', { name: /Quellen verwerfen/ });
+		expect((back as HTMLInputElement).checked).toBe(true);
+		expect((discard as HTMLInputElement).checked).toBe(false);
+		expect(discard.getAttribute('aria-describedby')).toBeTruthy();
+
+		await fireEvent.click(within(dialog).getByRole('button', { name: 'Endgültig löschen' }));
+		await vi.waitFor(() => expect(ondeleted).toHaveBeenCalledOnce());
+		expect(data.delete).toHaveBeenCalledExactlyOnceWith(ID, 'inbox');
+		expect(list.announce).toHaveBeenCalledWith(
+			'TASK-12 wurde gelöscht. 2 Quellen sind wieder im Eingang.'
+		);
+	});
+
+	it('discards the sources when chosen', async () => {
+		const { data, list } = await renderPanel({}, 1);
+		const dialog = await openDialog();
+		await fireEvent.click(within(dialog).getByRole('radio', { name: /Quellen verwerfen/ }));
+		await fireEvent.click(within(dialog).getByRole('button', { name: 'Endgültig löschen' }));
+		await vi.waitFor(() => expect(data.delete).toHaveBeenCalledExactlyOnceWith(ID, 'discard'));
+		expect(list.announce).toHaveBeenCalledWith('TASK-12 wurde gelöscht. 1 Quelle ist verworfen.');
 	});
 
 	it('shows a failure inside the dialog and keeps the ticket', async () => {

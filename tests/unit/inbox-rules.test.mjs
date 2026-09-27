@@ -146,6 +146,33 @@ describe('linkChange and sourceLinkValue (ADR-0031 section 2)', () => {
 	});
 });
 
+describe('sources of a deleted ticket (ADR-0031, addendum B)', () => {
+	it('knows the two handlings and "inbox" as default', () => {
+		expect(rules.SOURCE_HANDLINGS).toEqual(['inbox', 'discard']);
+		expect(rules.DEFAULT_SOURCE_HANDLING).toBe('inbox');
+		for (const value of ['inbox', 'discard']) expect(rules.isSourceHandling(value)).toBe(true);
+		for (const value of ['delete', '', undefined, null, 'Inbox']) expect(rules.isSourceHandling(value)).toBe(false);
+	});
+
+	it('adds the note of the deleted ticket and keeps the other keys', () => {
+		const meta = { from: 'a@example.com', keyword: 'rechnung' };
+		const noted = rules.deletedTicketMeta(meta, 'HAUS-12', '2026-09-27 10:00:00.000Z');
+		expect(noted).toEqual({
+			from: 'a@example.com',
+			keyword: 'rechnung',
+			ticket_deleted: { key: 'HAUS-12', at: '2026-09-27 10:00:00.000Z' }
+		});
+		expect(meta).not.toHaveProperty('ticket_deleted');
+		expect(rules.deletedTicketMeta(null, undefined, '')).toEqual({ ticket_deleted: { key: '', at: '' } });
+	});
+
+	it('removes the note again, and says when there is none', () => {
+		expect(rules.withoutDeletedTicket({ chat: 'Familie', ticket_deleted: { key: 'X-1' } })).toEqual({ chat: 'Familie' });
+		expect(rules.withoutDeletedTicket({ chat: 'Familie' })).toBeNull();
+		expect(rules.withoutDeletedTicket(null)).toBeNull();
+	});
+});
+
 describe('handledAtAction and duplicateMessage', () => {
 	it('follows the state', () => {
 		expect(rules.handledAtAction('new', 'converted')).toBe('set');

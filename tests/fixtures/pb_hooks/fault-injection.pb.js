@@ -46,3 +46,16 @@ onRecordCreate(function (e) {
   }
   e.next();
 }, 'ticket_history');
+
+// Fails settling a source of a deleted ticket whose title is the marker (ADR-0031, addendum B):
+// the item leaves "converted" in the transaction of the ticket delete, so the ticket must stay.
+onRecordUpdateExecute(function (e) {
+  if (
+    e.record.getString('title') === '__byl_fail_source_settle__' &&
+    e.record.original().getString('state') === 'converted' &&
+    e.record.getString('state') !== 'converted'
+  ) {
+    throw new BadRequestError('Injected source settle failure.');
+  }
+  e.next();
+}, 'inbox_items');

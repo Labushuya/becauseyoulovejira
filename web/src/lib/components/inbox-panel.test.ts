@@ -574,6 +574,19 @@ describe('inbox panel: copy and linking (ADR-0031)', () => {
 		expect(within(section).queryByRole('button')).toBeNull();
 	});
 
+	it('says that the ticket of a returned source was deleted (addendum B)', async () => {
+		setup(
+			entry({
+				sourceMeta: { ticket_deleted: { key: 'HAUS-12', at: '2026-09-27 10:00:00.000Z' } }
+			})
+		);
+		expect(
+			await screen.findByText(
+				'Ticket HAUS-12 wurde gelöscht; dieser Eintrag war eine Quelle und ist wieder im Eingang.'
+			)
+		).toBeTruthy();
+	});
+
 	it('offers no linking without the store, nor for a handled entry', async () => {
 		setup();
 		await screen.findByRole('heading', { name: 'Rechnung September' });
