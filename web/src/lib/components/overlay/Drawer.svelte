@@ -104,7 +104,12 @@
 	/*
 	 * Fills its column, from below the header to the bottom of the window, or the overlay of
 	 * ViewWithPanel (--drawer-width wide); header and footer stand. A line at the left instead of a
-	 * framed box, like the side panel of Jira.
+	 * framed box, like the side panel of Jira. Glass of the control layer (ADR-0029 section 1):
+	 * embedded in its column only the page background lies behind it (regular); as the overlay
+	 * of ViewWithPanel it floats over the blanket and the view (thick). Lines on glass in
+	 * --color-separator, no shadow: the line and, as overlay, the blanket set it apart. No fixed
+	 * descendants (glass-allowlist.test.ts), the blur would be their containing block; popovers live
+	 * in the top layer.
 	 */
 	.drawer {
 		display: flex;
@@ -112,8 +117,14 @@
 		height: 100%;
 		min-width: 0;
 		color: var(--color-text);
-		background: var(--color-surface);
-		border-left: 1px solid var(--color-line);
+		background: var(--material-regular);
+		backdrop-filter: var(--glass-filter-regular);
+		border-left: 1px solid var(--color-separator);
+	}
+
+	:global([data-panel-mode='overlay']) .drawer {
+		background: var(--material-thick);
+		backdrop-filter: var(--glass-filter-thick);
 	}
 
 	.head,
@@ -127,7 +138,7 @@
 		align-items: center;
 		justify-content: space-between;
 		padding: 0.5rem 0.5rem 0.5rem 1.25rem;
-		border-bottom: 1px solid var(--color-line);
+		border-bottom: 1px solid var(--color-separator);
 	}
 
 	.context {
@@ -171,7 +182,7 @@
 		align-items: center;
 		justify-content: flex-end;
 		padding: 0.75rem 1.25rem;
-		border-top: 1px solid var(--color-line);
+		border-top: 1px solid var(--color-separator);
 	}
 
 	/* The primary button of the footer has the size of the secondary ones. */

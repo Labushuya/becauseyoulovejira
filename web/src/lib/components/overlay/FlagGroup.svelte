@@ -152,10 +152,18 @@
 		padding: 0.625rem 0.5rem 0.625rem 0.75rem;
 		font-size: 0.875rem;
 		color: var(--color-text);
-		background: var(--color-surface);
-		border: 1px solid var(--color-line);
+		/*
+		 * Thick glass of the control layer (ADR-0029 section 1): a line on glass, the stripe on the
+		 * left in the accent or the error color stays, the neutral popover shadow.
+		 */
+		background: var(--material-thick);
+		backdrop-filter: var(--glass-filter-thick);
+		border: 1px solid var(--color-separator);
 		border-left: 3px solid var(--color-brand);
-		border-radius: var(--radius-surface);
+		border-radius: var(--radius-overlay);
+		box-shadow:
+			inset 0 1px 0 var(--glass-edge),
+			var(--shadow-popover);
 		pointer-events: auto;
 		animation: flag-in var(--motion-fast) var(--motion-ease);
 	}
