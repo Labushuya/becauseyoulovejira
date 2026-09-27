@@ -1,6 +1,6 @@
 # E6-Plan, Teil Herkunft: Quellen eines Tickets, Löschschutz, große Mails und Seitenkopie
 
-- **Stand:** geplant (2026-09-27)
+- **Stand:** umgesetzt (2026-09-27): HK-0 bis HK-4 (#105 bis #108 und der PR von HK-4). Offen sind die manuellen Browser-Prüfungen.
 - **Grundlage:**
   - [ADR-0031](../adr/0031-herkunft-sichern.md) (Datenmodell, Verknüpfen und Lösen, Löschschutz, große Mails, Kopie-Status, Seitenkopie mit SSRF-Schutz und seinen Grenzen)
   - [ADR-0014](../adr/0014-datenmodell-eingang.md), [ADR-0016](../adr/0016-kanal-architektur-und-mail.md), [ADR-0008](../adr/0008-markdown-rendering-und-sanitizing.md), [ADR-0025](../adr/0025-ui-konsistenz-overlay-system.md), [ADR-0026](../adr/0026-einstellungsbereich-und-hinweis-bausteine.md), [ADR-0029](../adr/0029-glas-materialien.md)
@@ -55,6 +55,12 @@
 | 2026-09-27 | HK-3 | **Test-IMAP-Server** beantwortet Teilabrufe `BODY.PEEK[]<start.länge>` mit `BODY[]<start>` (RFC 3501 6.4.5) und merkt sie sich (`partialFetches`), damit Tests belegen, dass nur 2 MB gelesen werden. |
 | 2026-09-27 | HK-3 | **Ingest-Route:** nimmt `original_omitted` nur mit dem Wert `too_large` und einer ganzen, nicht negativen `original_size` an, sonst 400; eine Größe ohne Kennzeichen wird verworfen. |
 | 2026-09-27 | HK-3 | `byl-mail.exe` 0.8.0. Bis zum Neustart (`stop.bat`, dann `start.bat`) läuft der alte Hilfsprozess weiter und überspringt große Mails; die Route bleibt mit ihm verträglich. |
+| 2026-09-27 | HK-4 | **Drei Module:** `lib/url-guard.js` (rein, SSRF-Schutz), `lib/html-text.js` (rein, ES5-Kopie von `htmlToText` samt Seitentitel, Paritätstest über Fälle, die HTML-Mail der Fixtures und 300 zufällige Stücke Markup) und `lib/page-copy.js` (rein: Status und Typ, Zeichensatz aus Header oder `<meta>`, Windows-1252 für Latin-1-Seiten, UTF-8-Kürzung ohne halbe Zeichen, Text und `source_meta`); `lib/page-copy-service.js` ruft ab und speichert. |
+| 2026-09-27 | HK-4 | **IP-Literale wie `inet_aton`:** Ein Host, dessen Teile alle Zahlen sind (dezimal, oktal mit führender 0, hex mit `0x`, weniger als vier Teile, eine Zahl), gilt als IPv4-Literal; ein kaputtes (etwa `256.1.1.1`, `08.1.1.1`) ist gesperrt statt als Name durchgelassen. Nicht-ASCII-Namen und `%` im Host sind ungültig, weil Go sie anders lesen könnte (IDNA). |
+| 2026-09-27 | HK-4 | **Kürzen statt ablehnen:** Eine Seite über 2 MB wird auf ihre ersten 2 MB gekürzt (`truncated`), statt sie abzulehnen: geladen ist sie ohnehin schon. `206` wird angenommen, falls der Server `Range` beachtet. |
+| 2026-09-27 | HK-4 | **Text nicht maskiert:** Der Seitentext kommt wie der Text von HTML-Mails ungemaskiert in `body`; die Anzeige ist sanitisiert (ADR-0008). Maskieren hätte jede Beschreibung nach dem Umwandeln mit Backslashes gefüllt. |
+| 2026-09-27 | HK-4 | **Einmal gesichert ist gesichert:** Die Route prüft `original` vor dem Abruf und noch einmal in der Transaktion (zwei Klicks zugleich speichern nur einmal); `fetched_at` steht in PocketBase-Schreibweise, damit die SPA es wie jedes Datum liest. |
+| 2026-09-27 | HK-4 | **Fehler der Route** (400 Adresse, 409 schon gesichert, 415 kein HTML, 502 nicht erreichbar, 503 vor dem Eingang) gibt `savePage` der Datenschicht als Ergebnis mit dem Text des Servers zurück, wie die Postfach-Routen; im Panel steht er inline, beim Erfassen in der Meldung des Formulars. Nebenbei kennt `errors.ts` jetzt die Texte von `validation_inbox_primary_source` und `validation_inbox_item_linked`. |
 
 ## 4. Status
 
@@ -63,8 +69,8 @@
 | HK-0 | gemergt (#105) |
 | HK-1 | gemergt (#106) |
 | HK-2 | gemergt (#107) |
-| HK-3 | in Arbeit |
-| HK-4 | geplant |
+| HK-3 | gemergt (#108) |
+| HK-4 | in Arbeit |
 
 ## 5. Offene Punkte
 

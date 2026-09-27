@@ -1,6 +1,6 @@
 # ADR-0031: Herkunft sichern: Quellen eines Tickets, Löschschutz, große Mails und Seitenkopie
 
-- **Status:** Angenommen; Umsetzung in den Paketen HK-1 bis HK-5 nach [docs/plan/herkunft.md](../plan/herkunft.md)
+- **Status:** Angenommen und umgesetzt in den Paketen HK-1 bis HK-4 nach [docs/plan/herkunft.md](../plan/herkunft.md) (#106 bis #108 und der PR von HK-4); manuelle Browser-Prüfungen stehen im Test-Manifest
 - **Datum:** 2026-09-27
 - **Entscheidung durch:** Nutzer („Herkunft sichern“ direkt nach „Spalten“, keine Checkbox „Kopie speichern“, Seitenkopie ja, „Quelle prüfen“ nein, Verknüpfen mit beliebigen Tickets, 2026-09-27), Advisor (Empfehlung zur Umsetzung), Executor (Datenmodell, Grenzen, Einzelheiten)
 - **Ergänzt:** [ADR-0014](0014-datenmodell-eingang.md) §1, §2 und §4 (Zustände, Rückverweis, „Einem bestehenden Ticket zuordnen“), [ADR-0016](0016-kanal-architektur-und-mail.md) §5 und §6 (Hilfsprozess, Postfach-Auswahl), [ADR-0017](0017-parser-ics-eml.md) (`.eml`)
@@ -93,7 +93,7 @@ Die reine Funktion `copyCompleteness(item)` in `web/src/lib/domain/inbox.ts` sag
 - **Abruf** mit `$http.send`, `GET`, Timeout 10 s, ohne Cookies oder Anmeldedaten, mit `Range: bytes=0-2097151`. Angenommen werden nur Status 200 und 206 mit `text/html` oder `application/xhtml+xml`. Gespeichert werden höchstens die ersten 2 MB; eine größere Seite wird gekürzt (`source_meta.page.truncated`).
 - **Speichern:**
   - Der Text der Seite wird mit `lib/html-text.js` extrahiert. Das ist eine ES5-Fassung von `htmlToText` der SPA mit Paritätstest: ohne `script`, `style`, Bilder und eingebettete Objekte, Links als „Text (Adresse)“.
-  - Er wird für Markdown maskiert und unter den Auszug in `body` gehängt, insgesamt höchstens 100.000 Zeichen. Der Auszug bleibt in `source_meta.excerpt` erhalten.
+  - Er kommt unter den Auszug in `body`, getrennt durch eine Linie (`---`), insgesamt höchstens 100.000 Zeichen. Wie der Text von HTML-Mails wird er nicht maskiert; die Anzeige ist sanitisiert (unten).
   - Die HTML-Datei liegt als `original` (`seite.html`, `protected`), dazu `source_meta.page` mit Zeitpunkt, Größe und Seitentitel.
 - **Anzeige:** Die Anzeige läuft wie jeder Kanaltext über `Markdown.svelte` ([ADR-0008](0008-markdown-rendering-und-sanitizing.md)): keine Skripte, keine Bilder, keine externen Ressourcen. Die HTML-Datei gibt es nur als Download (`download=1`), nie eingebettet.
 - **SSRF-Schutz** (`lib/url-guard.js`, rein, mit Unit-Tests):

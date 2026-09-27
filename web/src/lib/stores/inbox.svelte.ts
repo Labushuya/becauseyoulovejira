@@ -21,9 +21,11 @@ import {
 	listNewItems,
 	originalFileUrl,
 	restoreItem,
+	savePage,
 	type CalendarImportSummary,
 	type CreateItemOutcome,
-	type HandledItemPage
+	type HandledItemPage,
+	type PageCopyOutcome
 } from '$lib/data/inbox';
 import type { RequestOptions } from '$lib/data/options';
 import {
@@ -67,6 +69,7 @@ export interface InboxData {
 	assign(id: string, ticketId: string): Promise<InboxItemSummary>;
 	originalUrl(item: Pick<InboxItemSummary, 'id' | 'original'>): Promise<string | null>;
 	importCalendar(file: File, select: readonly number[]): Promise<CalendarImportSummary>;
+	savePage(id: string): Promise<PageCopyOutcome>;
 }
 
 export function inboxData(pb: PocketBase): InboxData {
@@ -79,9 +82,14 @@ export function inboxData(pb: PocketBase): InboxData {
 		restore: (id) => restoreItem(pb, id),
 		assign: (id, ticketId) => assignToTicket(pb, id, ticketId),
 		originalUrl: (item) => originalFileUrl(pb, item),
-		importCalendar: (file, select) => importCalendarFile(pb, file, select)
+		importCalendar: (file, select) => importCalendarFile(pb, file, select),
+		savePage: (id) => savePage(pb, id)
 	};
 }
+
+/** Outcome of "Seiteninhalt sichern"; a failure carries a message unless hidden (lost session). */
+export type PageCopyResult =
+	{ ok: true; truncated: boolean } | { ok: false; message: string | null };
 
 /** Outcome of creating an entry: created, already there, or failed (message and field texts). */
 export type InboxCreateResult =
@@ -446,6 +454,33 @@ export class InboxStore {
 			});
 		}
 		return result;
+	}
+
+	/**
+	 * "Seiteninhalt sichern" (ADR-0031 section 6): the server fetches the page of a web link once.
+	 * A success flag names it (and a cut page); a refusal comes back with the reason of the server.
+	 * The entry itself changes through its realtime event; the text needs `fetch` again.
+	 */
+	async savePage(item: Pick<InboxItemSummary, 'id' | 'title'>): Promise<PageCopyResult> {
+		if (this.#pending.has(item.id) || !this.#session.ensureValid()) {
+			return { ok: false, message: null };
+		}
+		this.#pending.add(item.id);
+		try {
+			const outcome = await this.#data.savePage(item.id);
+			if (outcome.kind === 'refused') return { ok: false, message: outcome.message };
+			this.#flags.show({
+				tone: 'success',
+				title: outcome.truncated
+					? `Seite von „${item.title}“ gesichert (auf 2 MB gekürzt).`
+					: `Seite von „${item.title}“ gesichert.`
+			});
+			return { ok: true, truncated: outcome.truncated };
+		} catch (error) {
+			return { ok: false, message: this.#failureMessage(error) };
+		} finally {
+			this.#pending.delete(item.id);
+		}
 	}
 
 	/**

@@ -67,6 +67,22 @@ export function copyNote(
 	}
 }
 
+/**
+ * When the page of a web link was saved (source_meta.page of the hook, ADR-0031 section 6), as
+ * "27.09.2026 21:30" and ", auf 2 MB gekürzt" for a cut page; '' without a page copy.
+ */
+export function pageCopyText(item: Pick<InboxItemSummary, 'sourceMeta'>): string {
+	const page = item.sourceMeta.page;
+	if (typeof page !== 'object' || page === null || Array.isArray(page)) return '';
+	const { fetched_at: fetchedAt, truncated } = page as Record<string, unknown>;
+	if (typeof fetchedAt !== 'string') return '';
+	try {
+		return `${formatBerlinDateTime(fetchedAt)}${truncated === true ? ', auf 2 MB gekürzt' : ''}`;
+	} catch {
+		return '';
+	}
+}
+
 /** Who or where the source came from: sender, chat or address, '' without one. */
 export function sourceOrigin(item: Pick<InboxItemSummary, 'sourceMeta' | 'sourceUrl'>): string {
 	return (

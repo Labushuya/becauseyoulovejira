@@ -79,6 +79,12 @@ function setup(
 			skipped: 0,
 			failed: 0,
 			itemId: ''
+		})),
+		savePage: vi.fn<InboxData['savePage']>(async () => ({
+			kind: 'saved',
+			title: 'Rezept',
+			size: 1234,
+			truncated: false
 		}))
 	} satisfies InboxData;
 	const store = new InboxStore(data, { ensureValid: () => true, logout: vi.fn() });
@@ -410,6 +416,54 @@ describe('inbox panel: copy and linking (ADR-0031)', () => {
 		await fireEvent.click(within(dialog).getByRole('button', { name: 'Verknüpfen' }));
 		await vi.waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
 		expect(linking.data.link).toHaveBeenCalledWith(ID, 'ticket000000004');
+	});
+
+	it('saves the page of a web link and then shows its text and file (ADR-0031 section 6)', async () => {
+		const link = entry({
+			channel: 'link',
+			kind: 'link',
+			title: 'Rezept',
+			original: '',
+			body: '> Auszug',
+			sourceUrl: 'https://example.com/rezept',
+			sourceMeta: {}
+		});
+		const { data } = setup(link);
+		await screen.findByRole('heading', { name: 'Rezept' });
+		expect(copyOf()).toBe('Nur Adresse');
+		data.get.mockResolvedValue({
+			...link,
+			original: 'seite_abc.html',
+			body: '> Auszug\n\n---\n\nApfelkuchen',
+			sourceMeta: { page: { fetched_at: '2026-09-27 19:30:00.000Z', truncated: true } },
+			updated: '2026-09-27 19:30:00.000Z'
+		});
+		await fireEvent.click(screen.getByRole('button', { name: 'Seiteninhalt sichern' }));
+		await vi.waitFor(() => expect(copyOf()).toBe('Vollständig'));
+		expect(data.savePage).toHaveBeenCalledWith(ID);
+		expect(screen.getByText('Apfelkuchen')).toBeTruthy();
+		const details = within(screen.getByRole('complementary'));
+		expect(
+			details.getByText('Seite gesichert', { selector: 'dt' }).nextElementSibling?.textContent
+		).toBe('27.09.2026 21:30, auf 2 MB gekürzt');
+		expect(screen.queryByRole('button', { name: 'Seiteninhalt sichern' })).toBeNull();
+		expect(screen.getByRole('button', { name: 'Originaldatei herunterladen' })).toBeTruthy();
+	});
+
+	it('names why a page was not saved', async () => {
+		const { data } = setup(
+			entry({ channel: 'link', kind: 'link', original: '', sourceUrl: 'http://127.0.0.1/' })
+		);
+		await screen.findByRole('heading', { name: 'Rechnung September' });
+		data.savePage.mockResolvedValueOnce({
+			kind: 'refused',
+			message: 'Lokale, private und interne Adressen werden nicht abgerufen.'
+		});
+		await fireEvent.click(screen.getByRole('button', { name: 'Seiteninhalt sichern' }));
+		expect(
+			await screen.findByText('Lokale, private und interne Adressen werden nicht abgerufen.')
+		).toBeTruthy();
+		expect(copyOf()).toBe('Nur Adresse');
 	});
 
 	it('offers no linking without the store, nor for a handled entry', async () => {

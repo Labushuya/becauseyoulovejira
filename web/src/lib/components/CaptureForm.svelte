@@ -45,6 +45,7 @@
 		oncreatetag = async () => ({ ok: false, message: null }),
 		ontemplate,
 		onsave,
+		onsavepage,
 		onclose,
 		resultHref
 	}: {
@@ -62,6 +63,14 @@
 		/** Another template was chosen; the route keeps it in the URL. */
 		ontemplate: (template: CaptureTemplate) => void;
 		onsave: (capture: Capture, target: CaptureTarget) => Promise<CaptureSaveResult>;
+		/**
+		 * "Seiteninhalt sichern" after a web link was saved (ADR-0031 section 6); without it the
+		 * template offers no page copy.
+		 */
+		onsavepage?: (
+			id: string,
+			title: string
+		) => Promise<{ ok: true; truncated: boolean } | { ok: false; message: string | null }>;
 		onclose: () => void;
 		/** Address of a saved ticket or entry, for the link in the result. */
 		resultHref: (target: CaptureTarget, id: string) => ResolvedPathname;
@@ -76,6 +85,10 @@
 	const headingId = `${uid}-heading`;
 	const formId = `${uid}-form`;
 	const targetHintId = `${uid}-target-hint`;
+	const pageHintId = `${uid}-page-hint`;
+	/** "Seiteninhalt sichern" of the template "Web-Link", on by default (ADR-0031 section 6). */
+	let savePage = $state(true);
+	const offersPage = $derived(template === 'link' && onsavepage !== undefined);
 
 	const start: CaptureInput = untrack(() => ({ ...EMPTY_CAPTURE_INPUT, tagIds: [], ...initial }));
 	let input = $state<CaptureInput>({ ...start, tagIds: [...start.tagIds] });
@@ -139,8 +152,8 @@
 		errors = {};
 		pending = true;
 		const outcome = await onsave(built.capture, targetOf(template, to));
-		pending = false;
 		if (!outcome.ok && outcome.duplicate !== undefined) {
+			pending = false;
 			// Already there: a result, not an error; the input stays for a change.
 			const { itemId, ticketId } = outcome.duplicate;
 			const existing: CaptureTarget | null =
@@ -156,12 +169,26 @@
 			return;
 		}
 		if (!outcome.ok) {
+			pending = false;
 			message = outcome.message;
 			errors = outcome.fields;
 			return;
 		}
+		// The page copy of a web link follows the save; the entry stays, whatever the page answers.
+		let pageText = '';
+		if (offersPage && savePage && outcome.target === 'inbox' && onsavepage) {
+			const page = await onsavepage(outcome.id, built.capture.title);
+			pageText = page.ok
+				? page.truncated
+					? ' Seiteninhalt gesichert (auf 2 MB gekürzt).'
+					: ' Seiteninhalt gesichert.'
+				: page.message === null
+					? ''
+					: ` Seiteninhalt nicht gesichert: ${page.message}`;
+		}
+		pending = false;
 		result = {
-			text: outcome.message,
+			text: `${outcome.message}${pageText}`,
 			href: resultHref(outcome.target, outcome.id),
 			target: outcome.target
 		};
@@ -416,6 +443,17 @@
 			</label>
 		{:else}
 			<p class="hint">Web-Links kommen immer in den Eingang.</p>
+		{/if}
+
+		{#if offersPage}
+			<label class="target">
+				<input type="checkbox" bind:checked={savePage} aria-describedby={pageHintId} />
+				Seiteninhalt sichern
+			</label>
+			<p class="hint" id={pageHintId}>
+				Die App ruft die Seite einmal ab und speichert ihren Text und die HTML-Datei, ohne Bilder
+				und Skripte. Lokale und private Adressen ruft sie nicht ab.
+			</p>
 		{/if}
 
 		<p class="hint" id={targetHintId}>Tipp: Strg+Enter speichert, Alt+Enter legt in den Eingang.</p>
