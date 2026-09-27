@@ -3,9 +3,11 @@
 // project, state as text with an icon, and the row action "Pausieren" or "Fortsetzen".
 
 import { fireEvent, render, screen, within } from '@testing-library/svelte';
-import { describe, expect, it, vi } from 'vitest';
+import { tick } from 'svelte';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { ResolvedPathname } from '$app/types';
 import type { RecurrenceRule } from '$lib/domain/recurrence-rule';
+import { resize, useResizeObserverStub } from '$lib/test/resize-observer-stub';
 import RecurrenceTable from './RecurrenceTable.svelte';
 
 const TODAY = '2026-09-25';
@@ -84,8 +86,9 @@ function setup(overrides: Record<string, unknown> = {}) {
 describe('RecurrenceTable', () => {
 	it('names its order in the caption and its columns in the head', () => {
 		const { table } = setup();
+		// "Weitere Spalten im Panel" only while columns are hidden for lack of space (ADR-0030).
 		expect(table.querySelector('caption')?.textContent).toBe(
-			'Wiederholungen · aktive zuerst, dann nach nächstem Ticket · Weitere Spalten im Panel'
+			'Wiederholungen · aktive zuerst, dann nach nächstem Ticket'
 		);
 		expect(
 			within(table)
@@ -179,10 +182,58 @@ describe('RecurrenceTable', () => {
 		expect(ontoggle).not.toHaveBeenCalled();
 	});
 
-	it('marks the columns that give way with data-col in head and body', () => {
+	it('marks every column with data-col in head and body and fixes the widths in a colgroup', () => {
 		const { table } = setup();
-		for (const column of ['rhythm', 'next', 'open', 'project']) {
-			expect(table.querySelectorAll(`[data-col='${column}']`)).toHaveLength(RULES.length + 1);
+		for (const column of ['title', 'rhythm', 'next', 'open', 'project', 'state', 'actions']) {
+			const cells = table.querySelectorAll(`th[data-col='${column}'], td[data-col='${column}']`);
+			expect(cells).toHaveLength(RULES.length + 1);
 		}
+		expect(table.querySelectorAll('colgroup > col')).toHaveLength(7);
+	});
+
+	describe('columns (ADR-0030, package SP-5)', () => {
+		useResizeObserverStub();
+
+		afterEach(() => {
+			localStorage.clear();
+		});
+
+		it('lets Projekt and Offenes Ticket give way at 700 px; title, state and action stay', async () => {
+			const { table } = setup();
+
+			resize(table.parentElement as HTMLElement, 700);
+			await tick();
+
+			expect(
+				within(table)
+					.getAllByRole('columnheader')
+					.map((header) => header.getAttribute('data-col'))
+			).toEqual(['title', 'rhythm', 'next', 'state', 'actions']);
+			expect(table.querySelector('caption')?.textContent).toMatch(/Weitere Spalten im Panel$/);
+		});
+
+		it('resizes a column with its grip and stores it under byl-columns-recurrences', async () => {
+			const { table } = setup();
+			const grip = table.querySelector('[data-column-grip="rhythm"]') as HTMLElement;
+
+			await fireEvent.pointerDown(grip, { button: 0, pointerId: 1, clientX: 100 });
+			await fireEvent.pointerUp(grip, { pointerId: 1, clientX: 164 });
+
+			expect(JSON.parse(localStorage.getItem('byl-columns-recurrences') ?? '')).toEqual({
+				v: 1,
+				widths: { rhythm: 224 },
+				hidden: []
+			});
+		});
+
+		it('clamps the title to two lines and shows rhythm and project in one line with a tooltip', () => {
+			const { table } = setup();
+			const row = table.querySelector('tr[data-rule-row="rule00000000002"]') as HTMLElement;
+
+			expect(row.querySelector('.title-clamp a.title-link')).not.toBeNull();
+			const rhythm = row.querySelector('[data-col="rhythm"]') as HTMLElement;
+			expect(rhythm.getAttribute('title')).toBe(rhythm.textContent);
+			expect(row.querySelector('[data-col="project"]')?.getAttribute('title')).toBe('Haus (HAUS)');
+		});
 	});
 });

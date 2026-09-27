@@ -191,6 +191,25 @@
 					→ users“.
 				</p>
 			</details>
+			<details>
+				<summary>Wie ändere ich Spalten und ihre Breite?</summary>
+				<ul>
+					<li>
+						Mit der Maus ziehst du den rechten Rand eines Spaltenkopfs. <kbd>Esc</kbd> beim Ziehen bricht
+						ab, ein Doppelklick passt die Breite an den längsten Inhalt an.
+					</li>
+					<li>
+						Mit der Tastatur geht alles über das Menü „Spalten“ in der Leiste über jeder Tabelle:
+						Spalten ein- und ausblenden, schmaler und breiter um je 1 rem, „Standard
+						wiederherstellen“.
+					</li>
+					<li>
+						Wird das Fenster schmal oder öffnet sich das Panel, weichen Spalten in fester
+						Reihenfolge; sie kommen mit ihrer Breite zurück. Die Einstellungen gelten nur auf diesem
+						Gerät.
+					</li>
+				</ul>
+			</details>
 		</div>
 	</section>
 

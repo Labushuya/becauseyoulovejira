@@ -2,6 +2,7 @@
 	import { tick } from 'svelte';
 	import type { RecurrenceRule } from '$lib/domain/recurrence-rule';
 	import type { CatalogStore } from '$lib/stores/catalog.svelte';
+	import { getColumnPrefs } from '$lib/stores/column-prefs.svelte';
 	import type { FlagSink } from '$lib/stores/flags.svelte';
 	import { RECURRENCE_UNAVAILABLE, type RecurrenceStore } from '$lib/stores/recurrence.svelte';
 	import type { TicketListStore } from '$lib/stores/ticket-list.svelte';
@@ -11,10 +12,12 @@
 		recurrenceHref,
 		ticketPath
 	} from '$lib/ticket-links';
+	import ColumnsPopover from './ColumnsPopover.svelte';
 	import EmptyState from './guidance/EmptyState.svelte';
 	import SectionMessage from './guidance/SectionMessage.svelte';
 	import RecurrenceTable, { type OpenInstance } from './RecurrenceTable.svelte';
 	import SectionBar from './SectionBar.svelte';
+	import { ColumnFit } from './table/column-fit.svelte';
 	import ViewSwitch from './ViewSwitch.svelte';
 
 	// Overview "Wiederholungen" (E5 plan, T-6 and package 5), built like the project view (UI-8):
@@ -63,6 +66,9 @@
 
 	let root = $state<HTMLElement>();
 	let heading = $state<HTMLElement>();
+
+	// Columns of the table (ADR-0030), shared by the table and the menu "Spalten".
+	const columnFit = new ColumnFit(getColumnPrefs('recurrences'));
 	let busyId = $state<string | null>(null);
 
 	/** "Pausieren" or "Fortsetzen" of a row; the store shows the success flag. */
@@ -173,6 +179,13 @@
 					Neue Regel
 				</a>
 			{/if}
+			{#if store.state === 'ready' && rules.length > 0}
+				<ColumnsPopover
+					store={columnFit.store}
+					autoHidden={columnFit.fit.autoHidden}
+					always="Titel, Zustand und Aktion sind immer sichtbar."
+				/>
+			{/if}
 		{/snippet}
 	</SectionBar>
 
@@ -217,6 +230,7 @@
 			today={tickets.today}
 			{activeId}
 			{busyId}
+			{columnFit}
 			hrefOf={(rule) => recurrenceHref(rule.id)}
 			{openTicketOf}
 			ticketHrefOf={ticketPath}

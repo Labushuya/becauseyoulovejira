@@ -106,7 +106,8 @@ describe('help page (EH-9)', () => {
 			'Wo sind meine Zugangsdaten gespeichert?',
 			`Was bedeutet „${RESTART_NEEDED.title}“?`,
 			'Wie widerrufe ich einen Zugang?',
-			'Warum sehe ich im Admin-Bereich andere Konten?'
+			'Warum sehe ich im Admin-Bereich andere Konten?',
+			'Wie ändere ich Spalten und ihre Breite?'
 		]);
 		expect(section.querySelectorAll('details[open]')).toHaveLength(0);
 		expect(text(section)).toContain(RESTART_NEEDED.text);

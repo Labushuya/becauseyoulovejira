@@ -13,6 +13,7 @@ import type { InboxQuery } from '$lib/domain/inbox-query';
 import type { TicketSummary } from '$lib/domain/ticket';
 import { FLAG_DURATION_MS, FlagStore } from '$lib/stores/flags.svelte';
 import { InboxStore, type InboxData } from '$lib/stores/inbox.svelte';
+import { resize, useResizeObserverStub } from '$lib/test/resize-observer-stub';
 import InboxTable from './InboxTable.svelte';
 import FlagGroup from './overlay/FlagGroup.svelte';
 import source from './InboxTable.svelte?raw';
@@ -154,29 +155,15 @@ describe('inbox table', () => {
 			'Milch kaufen'
 		]);
 		expect(screen.getByRole('table').querySelector('caption')?.textContent).toBe(
-			// The hint on the panel shows only while columns are hidden (UI-6b, container queries).
-			'Eingang · neu, neueste zuerst · Weitere Spalten im Panel'
+			// The hint on the panel shows only while columns are hidden for lack of space (ADR-0030);
+			// without a measured frame nothing gives way (inbox-table-columns.test.ts).
+			'Eingang · neu, neueste zuerst'
 		);
-		// Selection, title and actions always stay; the other columns give way in a narrow frame.
+		// Every header and cell names its column; the widths stand in the colgroup.
+		const columns = ['select', 'kind', 'title', 'source', 'source-date', 'arrival', 'actions'];
 		const marks = (cells: Element[]) => cells.map((cell) => cell.getAttribute('data-col'));
-		expect(marks(screen.getAllByRole('columnheader'))).toEqual([
-			null,
-			'kind',
-			null,
-			'source',
-			'source-date',
-			'arrival',
-			null
-		]);
-		expect(marks([...rows[0]!.children])).toEqual([
-			null,
-			'kind',
-			null,
-			'source',
-			'source-date',
-			'arrival',
-			null
-		]);
+		expect(marks(screen.getAllByRole('columnheader'))).toEqual(columns);
+		expect(marks([...rows[0]!.children])).toEqual(columns);
 		const frame = screen.getByRole('table').parentElement as HTMLElement;
 		expect(frame.classList.contains('frame')).toBe(true);
 		expect(frame.hasAttribute('role')).toBe(false);
@@ -425,7 +412,7 @@ describe('inbox table', () => {
 		const { data } = setup({ query: { source: null, state: 'discarded' } });
 		const view = await table();
 		expect(screen.getByRole('table').querySelector('caption')?.textContent).toBe(
-			'Eingang · verworfen, zuletzt verworfene zuerst · Weitere Spalten im Panel'
+			'Eingang · verworfen, zuletzt verworfene zuerst'
 		);
 		expect(view.queryByRole('checkbox')).toBeNull();
 		expect(screen.queryByRole('button', { name: /Gesammelt umwandeln/ })).toBeNull();
@@ -446,5 +433,67 @@ describe('inbox table', () => {
 	it('uses no error colour outside of real failures', () => {
 		const withoutAlerts = source.replace(/class="alert-error[^"]*"/g, '');
 		expect(withoutAlerts).not.toMatch(/danger/);
+	});
+});
+
+describe('columns of the inbox (ADR-0030, package SP-5)', () => {
+	useResizeObserverStub();
+
+	afterEach(() => {
+		localStorage.clear();
+	});
+
+	const marks = () =>
+		screen.getAllByRole('columnheader').map((header) => header.getAttribute('data-col'));
+
+	it('lets the arrival date and "Quelle" give way at 600 px; selection, title and actions stay', async () => {
+		setup();
+		await table();
+
+		resize(screen.getByRole('table').parentElement as HTMLElement, 600);
+		await tick();
+
+		expect(marks()).toEqual(['select', 'kind', 'title', 'source-date', 'actions']);
+		expect(screen.getByRole('table').querySelectorAll('colgroup > col')).toHaveLength(5);
+		expect(screen.getByRole('table').querySelector('caption')?.textContent).toMatch(
+			/Weitere Spalten im Panel$/
+		);
+	});
+
+	it('has no selection column for handled entries', async () => {
+		setup({ query: { source: null, state: 'discarded' } });
+		await table();
+
+		expect(marks()).toEqual(['kind', 'title', 'source', 'source-date', 'arrival', 'actions']);
+	});
+
+	it('resizes a column with its grip and stores it under byl-columns-inbox', async () => {
+		setup();
+		await table();
+		const grip = screen
+			.getByRole('table')
+			.querySelector('[data-column-grip="kind"]') as HTMLElement;
+
+		await fireEvent.pointerDown(grip, { button: 0, pointerId: 1, clientX: 100 });
+		await fireEvent.pointerMove(grip, { pointerId: 1, clientX: 132 });
+		await fireEvent.pointerUp(grip, { pointerId: 1, clientX: 132 });
+
+		const col = screen.getByRole('table').querySelector('col[data-column="kind"]') as HTMLElement;
+		expect(col.style.width).toBe('128px');
+		expect(JSON.parse(localStorage.getItem('byl-columns-inbox') ?? '')).toEqual({
+			v: 1,
+			widths: { kind: 128 },
+			hidden: []
+		});
+	});
+
+	it('clamps long titles to two lines and offers the menu "Spalten" in the section bar', async () => {
+		setup();
+		await table();
+
+		const title = screen.getByRole('rowheader', { name: /Milch kaufen/ });
+		expect(title.querySelector('.title-clamp a.title-link')).not.toBeNull();
+		const bar = document.querySelector('.section-bar') as HTMLElement;
+		expect(within(bar).getByRole('button', { name: 'Spalten' })).toBeTruthy();
 	});
 });

@@ -2,7 +2,7 @@
 	import { tick, type Snippet } from 'svelte';
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
-	import { TICKET_TABLE, fitColumns, type ColumnPrefs } from '$lib/domain/columns';
+	import { TICKET_TABLE } from '$lib/domain/columns';
 	import { GROUPING_LABELS } from '$lib/domain/grouping';
 	import {
 		MORE_COLUMNS_HINT,
@@ -30,7 +30,8 @@
 	import GroupPopover from './GroupPopover.svelte';
 	import SectionBar from './SectionBar.svelte';
 	import { CELL_PADDING_REM, CHIP_GAP_REM, createChipMeasure, remPx } from './table/chip-measure';
-	import { naturalWidth, observeWidth } from './table/measure';
+	import { ColumnFit, cellsOf } from './table/column-fit.svelte';
+	import { naturalWidth } from './table/measure';
 	import ResizableHeader from './table/ResizableHeader.svelte';
 	import TicketTableRow from './TicketTableRow.svelte';
 	import ViewSwitch from './ViewSwitch.svelte';
@@ -115,41 +116,23 @@
 	let root = $state<HTMLElement>();
 	let heading = $state<HTMLElement>();
 
-	// Columns (ADR-0030): the preferences of this device, the measured width of the frame and,
-	// while a grip is dragged, the live width of its column.
-	const columns = getColumnPrefs('tickets');
-	const titleMin = TICKET_TABLE.columns.find((column) => column.flexible)?.min ?? 0;
+	// Columns (ADR-0030): the preferences of this device and the measured frame decide which
+	// columns are shown and how wide they are.
+	const columnFit = new ColumnFit(getColumnPrefs('tickets'));
+	const fit = $derived(columnFit.fit);
+	const shown = $derived(columnFit.shown);
 	let frame = $state<HTMLElement>();
-	let frameWidth = $state<number | null>(null);
-	let dragging = $state<{ id: string; width: number } | null>(null);
-	const prefs = $derived.by((): ColumnPrefs => {
-		const current = columns.prefs;
-		if (dragging === null) return current;
-		return { ...current, widths: { ...current.widths, [dragging.id]: dragging.width } };
-	});
-	const fit = $derived(fitColumns(frameWidth, TICKET_TABLE.columns, prefs));
-	const shown = $derived(new Set(fit.visible));
-	const shownColumns = $derived(TICKET_TABLE.columns.filter((column) => shown.has(column.id)));
-	/** How far a column may grow: the room of the title above its minimum. */
-	const budget = $derived(
-		fit.flexWidth === null ? Number.POSITIVE_INFINITY : Math.max(0, fit.flexWidth - titleMin)
-	);
 
 	$effect(() => {
 		const element = frame;
 		if (!element) return;
-		return observeWidth(element, (width) => (frameWidth = width));
+		return columnFit.observe(element);
 	});
-
-	function commitWidth(id: string, width: number) {
-		dragging = null;
-		columns.setWidth(id, width);
-	}
 
 	// Compact tags (SP-4): one measure with its cache for all rows, and the room for the chips.
 	const measureChip = createChipMeasure();
 	const rem = remPx();
-	const tagsSpace = $derived((fit.widths.tags ?? 0) - CELL_PADDING_REM * rem);
+	const tagsSpace = $derived(columnFit.widthOf('tags') - CELL_PADDING_REM * rem);
 
 	/** All chips of the widest row side by side, plus the padding of the cell. */
 	function tagsNaturalWidth(): number {
@@ -166,15 +149,11 @@
 		return Math.ceil(widest + CELL_PADDING_REM * rem);
 	}
 
-	/** Double click on a grip: the width of the widest shown content, within max and budget. */
-	function autofit(id: string) {
+	/** Double click on the grip of "Tags": all chips, since a row renders only those that fit. */
+	function autofitTags() {
 		if (!frame) return;
-		const cells = [...frame.querySelectorAll(`th[data-col="${id}"], td[data-col="${id}"]`)];
-		const head = cells.filter((cell) => cell.tagName === 'TH');
-		const natural =
-			id === 'tags' ? Math.max(tagsNaturalWidth(), naturalWidth(head)) : naturalWidth(cells);
-		const current = fit.widths[id] ?? columns.widthOf(id);
-		columns.setWidth(id, Math.min(natural, current + budget));
+		const head = cellsOf(frame, 'tags').filter((cell) => cell.tagName === 'TH');
+		columnFit.autofit('tags', Math.max(tagsNaturalWidth(), naturalWidth(head)));
 	}
 
 	/** Row that last had the focus, to restore it when that row moves or disappears. */
@@ -327,13 +306,9 @@
 	{#if column && shown.has(id)}
 		<ResizableHeader
 			{column}
-			width={fit.widths[id] ?? 0}
-			{budget}
+			fit={columnFit}
 			ariaSort={direction ?? undefined}
-			onresize={(width) => (dragging = { id, width })}
-			oncommit={(width) => commitWidth(id, width)}
-			oncancel={() => (dragging = null)}
-			onautofit={() => autofit(id)}
+			onautofit={id === 'tags' ? autofitTags : undefined}
 		>
 			{#if key !== null}
 				<button
@@ -423,7 +398,7 @@
 			{/if}
 			<GroupPopover />
 			<ColumnsPopover
-				store={columns}
+				store={columnFit.store}
 				autoHidden={fit.autoHidden}
 				always="Key, Titel und das Häkchen sind immer sichtbar."
 			/>
@@ -486,7 +461,7 @@
 						>{/if}
 				</caption>
 				<colgroup>
-					{#each shownColumns as column (column.id)}
+					{#each columnFit.shownColumns as column (column.id)}
 						<col
 							data-column={column.id}
 							style:width={column.flexible ? undefined : `${fit.widths[column.id]}px`}
