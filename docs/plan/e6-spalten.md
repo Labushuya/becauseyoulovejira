@@ -1,6 +1,6 @@
 # E6-Plan, Teil Spalten: Breiten ziehen, ein- und ausblenden, kompakte Zeilen
 
-- **Stand:** in Arbeit (2026-09-27); SP-1 und SP-2 gemergt, SP-3 in Arbeit.
+- **Stand:** in Arbeit (2026-09-27); SP-1 bis SP-3 gemergt, SP-4 in Arbeit.
 - **Grundlage:**
   - [ADR-0030](../adr/0030-spalten-breiten-und-kompakte-zeilen.md) (berechnete Anpassung, Breiten und Schwellen, Griff, Menü „Spalten“, Speichern, kompakte Zeilen)
   - [ADR-0025](../adr/0025-ui-konsistenz-overlay-system.md) §5 und §11, [ADR-0010](../adr/0010-layout-nach-task-board.md) §1, [ADR-0019](../adr/0019-kanal-filter-und-gruppierung.md) §4, [ADR-0029](../adr/0029-glas-materialien.md)
@@ -47,6 +47,10 @@
 | 2026-09-27 | SP-3 | **Menü:** `ColumnsPopover` bekommt den Store und die gerade wegen Platz fehlenden Spalten. Die Ansage („Projekt: 9 rem“, „Erstellt ausgeblendet.“) steht in einer eigenen `aria-live`-Zeile im Popover; so hört man sie auch, wenn die Tabelle umbricht. „schmaler“ und „breiter“ sind an der Grenze `aria-disabled` (fokussierbar, ohne Wirkung) und klemmen nur auf Minimum und Maximum der Spalte: Passt die breitere Spalte nicht mehr, weichen andere, und das Menü sagt „wegen Platz ausgeblendet“. |
 | 2026-09-27 | SP-3 | **„Standard wiederherstellen“** ist `aria-disabled`, solange die Tabelle schon im Standard ist, damit kein Flag „Spalten zurückgesetzt“ für nichts kommt. Der Knopf bleibt fokussierbar, der Fokus bleibt nach dem Zurücksetzen auf ihm. |
 | 2026-09-27 | SP-3 | Die Breite steht als „8 rem“ bzw. „8,5 rem“ (halbe Schritte, `formatRem`); eine gezogene Breite wird dafür gerundet, gespeichert bleibt der Pixelwert. |
+| 2026-09-27 | SP-4 | **Messen der Chips:** `OffscreenCanvas` statt eines `<canvas>` im DOM: kein Element, und jsdom kennt sie nicht, sodass dort ohne Fehlermeldung die Schätzung (0,6em je Zeichen) greift. Schrift aus `font-family` des `body` und 0,75rem der Wurzel; Innenabstand und Rand (0,75rem + 2 px) kommen dazu. Ein Maß mit Cache je Tabelle, an alle Zeilen gereicht. |
+| 2026-09-27 | SP-4 | **„+N“ und Screenreader:** Nur wenn nicht alle Chips passen, sind die Chips `aria-hidden` und die ganze Liste steht als verborgener Text in der Zelle; passen alle, bleiben die Chips selbst lesbar (kein doppelter Text). „+N“ ist ein `span` mit `title`, ohne Tab-Stopp. Ein einzelner zu langer Chip schrumpft per Ellipse (`flex-shrink` nur am ersten Chip). |
+| 2026-09-27 | SP-4 | **Doppelklick auf „Tags“** rechnet jetzt mit denselben Maßen über die Tags aller angezeigten Tickets (Daten statt DOM, weil die Zeilen nur einen Teil der Chips rendern). |
+| 2026-09-27 | SP-4 | **Titel:** Eine Hülle `.title-clamp` um Symbol der Quelle, Link und Symbol „wiederkehrend“ mit `-webkit-line-clamp: 2` und `line-clamp: 2`. `title` am Link erst ab 60 Zeichen, damit kurze Titel keinen doppelten Tooltip bekommen. |
 
 ## 4. Status
 
@@ -54,8 +58,8 @@
 |---|---|
 | SP-1 | gemergt (#98) |
 | SP-2 | gemergt (#99) |
-| SP-3 | in Arbeit |
-| SP-4 | offen |
+| SP-3 | gemergt (#100) |
+| SP-4 | in Arbeit |
 | SP-5 | offen |
 | Tags | offen |
 | Switch | offen |

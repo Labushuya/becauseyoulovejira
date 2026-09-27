@@ -29,7 +29,8 @@
 	import EmptyState from './guidance/EmptyState.svelte';
 	import GroupPopover from './GroupPopover.svelte';
 	import SectionBar from './SectionBar.svelte';
-	import { chipsWidth, naturalWidth, observeWidth } from './table/measure';
+	import { CELL_PADDING_REM, CHIP_GAP_REM, createChipMeasure, remPx } from './table/chip-measure';
+	import { naturalWidth, observeWidth } from './table/measure';
 	import ResizableHeader from './table/ResizableHeader.svelte';
 	import TicketTableRow from './TicketTableRow.svelte';
 	import ViewSwitch from './ViewSwitch.svelte';
@@ -145,20 +146,37 @@
 		columns.setWidth(id, width);
 	}
 
+	// Compact tags (SP-4): one measure with its cache for all rows, and the room for the chips.
+	const measureChip = createChipMeasure();
+	const rem = remPx();
+	const tagsSpace = $derived((fit.widths.tags ?? 0) - CELL_PADDING_REM * rem);
+
+	/** All chips of the widest row side by side, plus the padding of the cell. */
+	function tagsNaturalWidth(): number {
+		const tickets = [...store.visible, ...(showDone ? store.done : [])];
+		const gap = CHIP_GAP_REM * rem;
+		const widest = Math.max(
+			0,
+			...tickets.map((ticket) => {
+				const names = catalog.tagsOf(ticket).map((tag) => tag.name);
+				const line = names.reduce((total, name) => total + measureChip(name), 0);
+				return line + gap * Math.max(0, names.length - 1);
+			})
+		);
+		return Math.ceil(widest + CELL_PADDING_REM * rem);
+	}
+
 	/** Double click on a grip: the width of the widest shown content, within max and budget. */
 	function autofit(id: string) {
 		if (!frame) return;
 		const cells = [...frame.querySelectorAll(`th[data-col="${id}"], td[data-col="${id}"]`)];
+		const head = cells.filter((cell) => cell.tagName === 'TH');
 		const natural =
-			id === 'tags'
-				? Math.max(
-						chipsWidth(cells, '.tag', 4),
-						naturalWidth(cells.filter((cell) => cell.tagName === 'TH'))
-					)
-				: naturalWidth(cells);
+			id === 'tags' ? Math.max(tagsNaturalWidth(), naturalWidth(head)) : naturalWidth(cells);
 		const current = fit.widths[id] ?? columns.widthOf(id);
 		columns.setWidth(id, Math.min(natural, current + budget));
 	}
+
 	/** Row that last had the focus, to restore it when that row moves or disappears. */
 	let lastFocus: { id: string; section: string; index: number } | null = null;
 
@@ -294,6 +312,8 @@
 			isNew={store.isNew(ticket)}
 			recurrenceText={ticket.recurring ? recurrenceTextOf(ticket) : ''}
 			columns={shown}
+			{tagsSpace}
+			measure={measureChip}
 			ontoggle={(done) => store.setDone(ticket.id, done)}
 		/>
 	{/each}
