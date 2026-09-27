@@ -252,6 +252,98 @@ describe('migration rollback', () => {
 	);
 });
 
+const SCAN_MIGRATION = '1790201700_connections_scan.js';
+
+describe('migration rollback of the full inbox scan (ADR-0020, addendum 3)', () => {
+	it(
+		'switches match_body on for existing mailboxes and exactly those off again, without other changes',
+		async () => {
+			const fromScan = MIGRATION_FILES.slice(MIGRATION_FILES.indexOf(SCAN_MIGRATION));
+			expect(fromScan[0]).toBe(SCAN_MIGRATION);
+			const jsonOf = (value) => (value === null || value === '' || value === 'null' ? null : JSON.parse(value));
+			const byId = (rows, field) => Object.fromEntries(rows.map((row) => [row.id, jsonOf(row[field])]));
+
+			await withTempDataDir(async ({ dataDir, args }) => {
+				await migrate(args, 'up');
+				await migrate(args, 'down', String(fromScan.length));
+				withDatabase(dataDir, (db) => {
+					db.prepare('INSERT INTO users (id, email, tokenKey, password, created, updated) VALUES (?, ?, ?, ?, ?, ?)').run(
+						'user00000000001',
+						'eins@example.invalid',
+						'tk1',
+						'hash',
+						STAMP,
+						STAMP
+					);
+					const insert = db.prepare(
+						'INSERT INTO connections (id, type, label, enabled, secret_env, settings, cursor, scope, owner, created, updated) ' +
+							'VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+					);
+					const row = (id, type, secret, settings, cursor) =>
+						insert.run(id, type, id, 1, secret, settings, cursor, 'u:user00000000001', 'user00000000001', STAMP, STAMP);
+					row('mail00000000001', 'mail', 'BYL_A', '{"provider":"webde","user":"a@web.de","keywords":["todo"]}', '1700000000:5');
+					row('mail00000000002', 'mail', 'BYL_B', '{"provider":"webde","user":"b@web.de","keywords":[],"match_body":false}', '');
+					row('mail00000000003', 'mail', 'BYL_C', '{"provider":"gmail","user":"c@gmail.com","match_body":true}', '');
+					row('cal000000000004', 'calendar', 'BYL_D', '{"keywords":["termin"]}', '');
+				});
+				const before = withDatabase(dataDir, snapshot);
+				const settingsBefore = byId(before.connections, 'settings');
+
+				const up = await migrate(args, 'up');
+				expect(appliedFiles(up, 'Applied')).toEqual(fromScan);
+				const migrated = withDatabase(dataDir, snapshot);
+				expect(byId(migrated.connections, 'settings')).toEqual({
+					mail00000000001: { ...settingsBefore.mail00000000001, match_body: true },
+					mail00000000002: { ...settingsBefore.mail00000000002, match_body: true },
+					mail00000000003: settingsBefore.mail00000000003,
+					cal000000000004: settingsBefore.cal000000000004
+				});
+				expect(byId(migrated.connections, 'scan')).toEqual({
+					mail00000000001: { match_body_before: false },
+					mail00000000002: { match_body_before: false },
+					mail00000000003: null,
+					cal000000000004: null
+				});
+				// Nothing else changes, not even `updated`.
+				expect(withoutFields(migrated.connections, ['settings', 'scan'])).toEqual(
+					withoutFields(before.connections, ['settings'])
+				);
+
+				// Later the helper stores a scan (the hook keeps the mark), and the user switches the
+				// second mailbox off again himself.
+				withDatabase(dataDir, (db) => {
+					db.prepare('UPDATE connections SET scan = ? WHERE id = ?').run(
+						'{"signature":"0123456789abcdef","state":"done","uid_validity":"1700000000","until":5,"below":0,"done":5,"total":5,"created":1,"fallback":false,"match_body_before":false}',
+						'mail00000000001'
+					);
+					db.prepare('UPDATE connections SET settings = ? WHERE id = ?').run(
+						'{"provider":"webde","user":"b@web.de","keywords":[],"match_body":false}',
+						'mail00000000002'
+					);
+				});
+
+				const down = await migrate(args, 'down', String(fromScan.length));
+				expect(appliedFiles(down, 'Reverted')).toEqual([...fromScan].reverse());
+				const reverted = withDatabase(dataDir, snapshot);
+				expect(byId(reverted.connections, 'settings')).toEqual({
+					mail00000000001: { ...settingsBefore.mail00000000001, match_body: false },
+					mail00000000002: settingsBefore.mail00000000002,
+					mail00000000003: settingsBefore.mail00000000003,
+					cal000000000004: settingsBefore.cal000000000004
+				});
+				expect(reverted.connections.every((row) => !('scan' in row))).toBe(true);
+				expect(withoutFields(reverted.connections, ['settings'])).toEqual(
+					withoutFields(before.connections, ['settings'])
+				);
+
+				// And up again.
+				expect(appliedFiles(await migrate(args, 'up'), 'Applied')).toEqual(fromScan);
+			});
+		},
+		60_000
+	);
+});
+
 const CONNECTIONS_MIGRATION = '1790201400_create_connections.js';
 const IMPORT_KEYWORDS_MIGRATION = '1790201500_users_import_keywords.js';
 const INBOX_CONNECTION_MIGRATION = '1790201410_inbox_items_connection.js';

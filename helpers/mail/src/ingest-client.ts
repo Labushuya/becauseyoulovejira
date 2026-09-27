@@ -2,6 +2,7 @@
 // token goes only into the Authorization header; answers are checked before they are used.
 
 import type { IngestDraft } from './mail';
+import { scanStateOf, type ScanState } from './scan-state';
 
 const TIMEOUT_MS = 30_000;
 const CURSOR_PATTERN = /^\d{1,10}:\d{1,10}$/;
@@ -18,6 +19,8 @@ export interface MailConnection {
 	matchBody: boolean;
 	/** "UIDVALIDITY:UID" of the last checked mail, '' before the first run. */
 	cursor: string;
+	/** State of the full scan of the inbox (connections.scan); null before the first scan. */
+	scan: ScanState | null;
 }
 
 export type IngestResult =
@@ -35,6 +38,8 @@ export interface StatusReport {
 	error: string;
 	hint?: string;
 	cursor?: string;
+	/** State of the full scan (scanStateValue); since 0.7.0. */
+	scan?: Record<string, unknown>;
 }
 
 /**
@@ -64,7 +69,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 function toConnection(value: unknown): MailConnection | null {
 	if (!isRecord(value)) return null;
-	const { id, label, provider, user, secret_env, keywords, match_body, cursor } = value;
+	const { id, label, provider, user, secret_env, keywords, match_body, cursor, scan } = value;
 	if (typeof id !== 'string' || !ID_PATTERN.test(id)) return null;
 	if (typeof secret_env !== 'string' || typeof provider !== 'string' || typeof user !== 'string')
 		return null;
@@ -79,7 +84,8 @@ function toConnection(value: unknown): MailConnection | null {
 			? keywords.filter((keyword): keyword is string => typeof keyword === 'string')
 			: [],
 		matchBody: match_body === true,
-		cursor: cursorText
+		cursor: cursorText,
+		scan: scanStateOf(scan)
 	};
 }
 

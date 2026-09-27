@@ -2,7 +2,7 @@
 	import { channelHealth, keywordSummary } from '$lib/domain/channel-health';
 	import {
 		CONNECTION_TYPE_LABELS,
-		MAIL_NEW_ONLY_HINT,
+		MAIL_INBOX_HINT,
 		MAIL_PROVIDER_LABELS,
 		lastResultText,
 		mailHelperText,
@@ -134,7 +134,7 @@
 			</div>
 			<div>
 				<dt>Automatisch</dt>
-				<dd>{MAIL_NEW_ONLY_HINT}</dd>
+				<dd>{MAIL_INBOX_HINT}</dd>
 			</div>
 		{/if}
 	</dl>

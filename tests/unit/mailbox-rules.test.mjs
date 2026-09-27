@@ -197,3 +197,42 @@ describe('mailbox-rules.js: "Jetzt abrufen" and probe of a mailbox (package A)',
 		expect(rules.HEALTH_TIMEOUT_SECONDS).toBeLessThanOrEqual(5);
 	});
 });
+
+describe('mailbox-rules.js: "Posteingang neu durchsuchen" and "Abbrechen" (full inbox)', () => {
+	it('takes only start and cancel', () => {
+		expect(rules.parseScanAction('start')).toEqual({ action: 'start' });
+		expect(rules.parseScanAction('cancel')).toEqual({ action: 'cancel' });
+		for (const value of [undefined, '', 'START', 'neu', 1]) {
+			expect(rules.parseScanAction(value), String(value)).toEqual({ error: expect.any(String) });
+		}
+	});
+
+	it('maps the answers of the helper', () => {
+		expect(rules.scanResult({ statusCode: 202, json: { status: 'started' } })).toEqual({ status: 'started', message: '' });
+		expect(rules.scanResult({ statusCode: 409, json: { status: 'running' } })).toEqual({
+			status: 'running',
+			message: rules.SCAN_RUNNING
+		});
+		expect(rules.scanResult({ statusCode: 200, json: { status: 'cancelling' } })).toEqual({ status: 'cancelling', message: '' });
+		expect(rules.scanResult({ statusCode: 200, json: { status: 'idle' } })).toEqual({ status: 'idle', message: '' });
+		expect(rules.scanResult({ unavailable: true })).toEqual({
+			status: 'unavailable',
+			message: `${rules.NOT_RUNNING} ${rules.NOT_RUNNING_HINT}`
+		});
+		expect(rules.scanResult({ statusCode: 404, json: { message: 'Nicht gefunden.' } })).toEqual({
+			status: 'error',
+			message: rules.SCAN_OUTDATED
+		});
+		expect(rules.scanResult({ statusCode: 404, json: { message: 'Keine eingeschaltete Mail-Verbindung.' } })).toEqual({
+			status: 'disabled',
+			message: rules.DISABLED
+		});
+		expect(rules.scanResult({ statusCode: 401, json: {} })).toEqual({ status: 'error', message: rules.TOKEN_REFUSED });
+		expect(rules.scanResult({ statusCode: 400, json: { message: 'action muss start oder cancel sein.' } })).toEqual({
+			status: 'error',
+			message: 'action muss start oder cancel sein.'
+		});
+		expect(rules.scanResult({ statusCode: 200, json: { status: 'seltsam' } })).toMatchObject({ status: 'error' });
+		expect(rules.SCAN_TIMEOUT_SECONDS).toBeLessThanOrEqual(10);
+	});
+});

@@ -173,9 +173,12 @@ describe('byl-mail.exe as process', () => {
 		mail('Todo: alt, vor der Einrichtung');
 		let helper = startHelper();
 		await waitFor(async () => (await connection(box)).cursor !== '');
+		// The first run searches the whole inbox (user decision 2026-09-27): the old mail comes too.
+		await waitFor(async () => (await connection(box)).scan?.state === 'done');
+		expect((await items(box)).map((item) => item.title)).toEqual(['Todo: alt, vor der Einrichtung']);
 		mail('Todo: Eins');
 		mail(`${SUBJECT_SECRET} ohne Stichwort`);
-		await waitFor(async () => (await items(box)).length === 1);
+		await waitFor(async () => (await items(box)).length === 2);
 
 		// Hard stop (like stop.bat), new mails and an outage of the mailbox before the restart.
 		await stopHelper(helper);
@@ -185,10 +188,14 @@ describe('byl-mail.exe as process', () => {
 		await waitFor(async () => (await connection(box)).last_error !== '');
 		expect(helper.child.exitCode).toBeNull();
 		await imap.start();
-		await waitFor(async () => (await items(box)).length === 2);
+		await waitFor(async () => (await items(box)).length === 3);
 		await waitFor(async () => (await connection(box)).last_error === '');
 		await delay(2500);
-		expect((await items(box)).map((item) => item.title)).toEqual(['Todo: Eins', 'Todo: Zwei']);
+		expect((await items(box)).map((item) => item.title)).toEqual([
+			'Todo: alt, vor der Einrichtung',
+			'Todo: Eins',
+			'Todo: Zwei'
+		]);
 		expect((await connection(box)).cursor).toBe(`1700000000:${imap.mails.at(-1).uid}`);
 		await stopHelper(helper);
 

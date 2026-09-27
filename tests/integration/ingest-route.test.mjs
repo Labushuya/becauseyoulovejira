@@ -148,7 +148,8 @@ describe('ingest route: connections', () => {
 			secret_env: 'BYL_TEST_MAIL_PASSWORD',
 			keywords: ['todo', 'rechnung'],
 			match_body: false,
-			cursor: ''
+			cursor: '',
+			scan: null
 		});
 		expect(answer.text).not.toContain(owner.id);
 		expectNoValues(answer.text);
@@ -209,6 +210,25 @@ describe('ingest route: items (ADR-0016 section 5, ADR-0020)', () => {
 		const item = await owner.pb.collection('inbox_items').getOne(answer.json.item);
 		expect(item.source_meta.keyword).toBe('rechnung');
 		await superuser.collection('connections').delete(withBody.id);
+	});
+
+	it('checks the headers and the HTML part (match_texts) only with match_body, and stores none of them', async () => {
+		const settings = { provider: 'webde', user: 'cc@web.de', keywords: ['projekt-x'] };
+		const withBody = await mail(owner, { label: 'Kopfzeilen', settings: { ...settings, match_body: true } });
+		const without = await mail(owner, { label: 'Ohne', settings });
+		const inCc = (box) =>
+			draft(box, { title: `Hallo ${unique()}`, body: 'Text', match_texts: ['Projekt-X Team <team@example.com>'] });
+		const answer = await call('/api/byl/ingest/items', { method: 'POST', json: inCc(withBody) });
+		expect(answer.json.status).toBe('created');
+		const item = await owner.pb.collection('inbox_items').getOne(answer.json.item);
+		expect(item.source_meta.keyword).toBe('projekt-x');
+		expect(JSON.stringify(item)).not.toContain('team@example.com');
+		expect((await call('/api/byl/ingest/items', { method: 'POST', json: inCc(without) })).status).toBe(422);
+		expect(
+			(await call('/api/byl/ingest/items', { method: 'POST', json: draft(withBody, { match_texts: 'projekt-x' }) })).status
+		).toBe(400);
+		await superuser.collection('connections').delete(withBody.id);
+		await superuser.collection('connections').delete(without.id);
 	});
 
 	it('takes a selected mail without keyword', async () => {
@@ -336,6 +356,50 @@ describe('ingest route: status of a run', () => {
 		await expect(owner.pb.collection('connections').update(mailbox.id, { cursor: '1:1' })).rejects.toMatchObject({
 			status: 400
 		});
+		await expect(
+			owner.pb.collection('connections').update(mailbox.id, { scan: { state: 'done' } })
+		).rejects.toMatchObject({ status: 400, response: { data: { scan: { code: 'validation_connection_server_field' } } } });
+		await expect(
+			owner.pb.collection('connections').create({
+				owner: owner.id,
+				type: 'mail',
+				label: 'Mit Scan',
+				enabled: true,
+				secret_env: 'BYL_TEST_MAIL_PASSWORD',
+				settings: { provider: 'webde', user: 'anna@web.de' },
+				scan: { state: 'done' }
+			})
+		).rejects.toMatchObject({ status: 400 });
+	});
+
+	it('stores the state of the full scan, keeps the mark of the migration and passes the state on', async () => {
+		const box = await mail(owner, { label: 'Durchsuchen' });
+		// The mark as the migration 1790201700 leaves it; only the server may write the field.
+		await superuser.collection('connections').update(box.id, { scan: { match_body_before: false } });
+		const scan = {
+			signature: '0123456789abcdef',
+			state: 'running',
+			uid_validity: '1700000000',
+			until: 4800,
+			below: 3601,
+			done: 1200,
+			total: 4800,
+			created: 12,
+			fallback: false
+		};
+		const ok = await call(`/api/byl/ingest/connections/${box.id}/status`, { method: 'POST', json: { cursor: '1700000000:4800', scan } });
+		expect(ok.json).toEqual({ status: 'ok' });
+		const stored = await owner.pb.collection('connections').getOne(box.id);
+		expect(stored.scan).toEqual({ ...scan, match_body_before: false });
+		const listed = (await call('/api/byl/ingest/connections')).json.items.find((item) => item.id === box.id);
+		expect(listed.scan).toEqual(scan);
+		expect(
+			(await call(`/api/byl/ingest/connections/${box.id}/status`, { method: 'POST', json: { scan: { ...scan, state: 'x' } } })).status
+		).toBe(400);
+		// A new mailbox starts the scan over; the mark stays for the rollback.
+		await owner.pb.collection('connections').update(box.id, { settings: { provider: 'webde', user: 'bert@web.de' } });
+		expect((await owner.pb.collection('connections').getOne(box.id)).scan).toEqual({ match_body_before: false });
+		await superuser.collection('connections').delete(box.id);
 	});
 });
 
@@ -349,7 +413,8 @@ describe('mail connections of the web app (package 22)', () => {
 			mailProvider: 'webde',
 			mailUser: ' anna@web.de '
 		});
-		expect(created).toMatchObject({ type: 'mail', mailProvider: 'webde', mailUser: 'anna@web.de', matchBody: false });
+		// Headers and the whole text are searched from the start (full inbox, 2026-09-27).
+		expect(created).toMatchObject({ type: 'mail', mailProvider: 'webde', mailUser: 'anna@web.de', matchBody: true });
 		expect((await listConnections(owner.pb)).map((item) => item.id)).toContain(created.id);
 		await expect(
 			owner.pb.collection('connections').create({

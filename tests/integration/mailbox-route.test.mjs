@@ -3,16 +3,17 @@
 // byl-mail.exe, started here in the test) on 127.0.0.1 with the ingest token, the helper reads the
 // fake IMAP server and takes chosen mails through the ingest route. Only a signed-in user who sees
 // the connection gets an answer; a stopped helper gives a hint; the mailbox stays unchanged.
-// Since package A (item 4) also "Jetzt abrufen" of a mailbox and the probe of the helper.
+// Since package A (item 4) also "Jetzt abrufen" of a mailbox and the probe of the helper; since the
+// full inbox scan (ADR-0020, addendum 3) "Posteingang neu durchsuchen" and "Abbrechen".
 
 import { randomBytes } from 'node:crypto';
 import { createServer } from 'node:http';
 import { createServer as createNetServer } from 'node:net';
 import PocketBase from 'pocketbase';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { startPocketBase } from '../support/pocketbase-harness.mjs';
 import { FakeImapServer, fakeMail } from '../../helpers/mail/test/fake-imap.ts';
-import { PollGate } from '../../helpers/mail/src/gate.ts';
+import { PollGate, ScanControl } from '../../helpers/mail/src/gate.ts';
 import { IngestClient } from '../../helpers/mail/src/ingest-client.ts';
 import { startMailboxServer } from '../../helpers/mail/src/server.ts';
 import {
@@ -66,6 +67,7 @@ async function startHelper(token = TOKEN) {
 		log: { info: (m) => lines.push(m), warn: (m) => lines.push(m), error: (m) => lines.push(m) },
 		imapOverride: { host: '127.0.0.1', port: imap.port, secure: false },
 		gate: new PollGate(),
+		control: new ScanControl(),
 		version: '0.5.0-test'
 	});
 	expect(helper).not.toBeNull();
@@ -225,14 +227,20 @@ describe('POST /api/byl/connections/{id}/mailbox/import', () => {
 });
 
 describe('"Jetzt abrufen" of a mailbox and the probe of the helper (package A, item 4)', () => {
-	it('runs the regular fetch at once: first the cursor, then new mails with keyword', async () => {
+	it('runs the regular fetch at once: first the whole inbox, then new mails with keyword', async () => {
 		mail('Todo: schon vor dem ersten Abruf');
 		const first = await runConnection(owner.pb, mailbox.id);
-		expect(first).toMatchObject({ status: 'ok', created: 0, error: '' });
+		expect(first).toMatchObject({ status: 'ok', error: '' });
+		expect(first.created).toBeGreaterThanOrEqual(1);
 		const afterFirst = await superuser.collection('connections').getOne(mailbox.id);
 		expect(afterFirst.cursor).toMatch(/^\d+:\d+$/);
 		expect(afterFirst.last_run_at).not.toBe('');
 		expect(afterFirst.last_hint).toMatch(/Erster Abruf/);
+		expect(afterFirst.scan).toMatchObject({ state: 'done', total: imap.mails.length });
+		const old = await owner.pb.collection('inbox_items').getFullList({
+			filter: owner.pb.filter('title = {:title}', { title: 'Todo: schon vor dem ersten Abruf' })
+		});
+		expect(old.map((item) => item.source_meta.keyword)).toEqual(['todo']);
 
 		mail('Todo: sofort abrufen');
 		mail('Nur Hallo');
@@ -284,6 +292,56 @@ describe('"Jetzt abrufen" of a mailbox and the probe of the helper (package A, i
 			await startHelper();
 		}
 		expect((await getMailHelperStatus(owner.pb)).state).toBe('running');
+	});
+});
+
+describe('"Posteingang neu durchsuchen" and "Abbrechen" (full inbox)', () => {
+	const scanCall = (who, action, id = mailbox.id) =>
+		fetch(`${instance.url}/api/byl/connections/${id}/scan`, {
+			method: 'POST',
+			headers: { Authorization: who.pb.authStore.token, 'Content-Type': 'application/json' },
+			body: JSON.stringify({ action })
+		}).then(async (response) => ({ status: response.status, json: await response.json() }));
+	const storedScan = async () => (await superuser.collection('connections').getOne(mailbox.id)).scan;
+
+	it('starts the scan in the helper, which reports the progress to the connection', async () => {
+		mail('Todo: für den neuen Durchlauf');
+		const before = await storedScan();
+		const answer = await scanCall(owner, 'start');
+		expect(answer).toEqual({ status: 200, json: { status: 'started', message: '' } });
+		await vi.waitFor(async () => {
+			const scan = await storedScan();
+			expect(scan).toMatchObject({ state: 'done', total: imap.mails.length });
+			expect(scan).not.toEqual(before);
+		});
+		expect(imap.writes()).toEqual([]);
+		expect(imap.flagsUnchanged()).toBe(true);
+	});
+
+	it('marks a stored scan as cancelled when the helper runs none, also while it is stopped', async () => {
+		const running = { ...(await storedScan()), state: 'running', below: 2 };
+		await superuser.collection('connections').update(mailbox.id, { scan: running });
+		expect(await scanCall(owner, 'cancel')).toEqual({ status: 200, json: { status: 'cancelled', message: '' } });
+		expect(await storedScan()).toEqual({ ...running, state: 'cancelled' });
+		expect(await scanCall(owner, 'cancel')).toEqual({ status: 200, json: { status: 'idle', message: '' } });
+
+		await superuser.collection('connections').update(mailbox.id, { scan: { ...running, state: 'paused' } });
+		await stopHelper();
+		try {
+			expect((await scanCall(owner, 'cancel')).json.status).toBe('cancelled');
+			const start = await scanCall(owner, 'start');
+			expect(start.json).toMatchObject({ status: 'unavailable', message: expect.stringMatching(/läuft nicht/) });
+		} finally {
+			await startHelper();
+		}
+	});
+
+	it('answers only for a visible connection and a valid action', async () => {
+		expect((await scanCall(other, 'start')).status).toBe(404);
+		expect((await scanCall(owner, 'neu')).status).toBe(400);
+		expect(
+			(await fetch(`${instance.url}/api/byl/connections/${mailbox.id}/scan`, { method: 'POST', body: '{}' })).status
+		).toBe(401);
 	});
 });
 

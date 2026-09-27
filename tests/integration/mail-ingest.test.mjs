@@ -10,6 +10,8 @@ import { startPocketBase } from '../support/pocketbase-harness.mjs';
 import { FakeImapServer, fakeMail } from '../../helpers/mail/test/fake-imap.ts';
 import { IngestClient } from '../../helpers/mail/src/ingest-client.ts';
 import { pollAll, FIRST_RUN_HINT } from '../../helpers/mail/src/poll.ts';
+import { newScan, scanSignature } from '../../helpers/mail/src/scan.ts';
+import { scanStateValue } from '../../helpers/mail/src/scan-state.ts';
 
 const TOKEN = randomBytes(24).toString('base64');
 const PASSWORD = `pw-${randomBytes(8).toString('hex')}`;
@@ -64,6 +66,18 @@ async function mailbox(extra = {}) {
 const items = (connection) =>
 	owner.pb.collection('inbox_items').getFullList({ filter: `connection = "${connection.id}"`, sort: 'created' });
 
+/**
+ * Cursor at the newest mail and a finished scan for `keywords`: the connection then only fetches
+ * what arrives from now on (for the cases that test the fetch after the cursor).
+ */
+function scanned(keywords, matchBody = false) {
+	const uid = imap.mails.at(-1)?.uid ?? 0;
+	return {
+		cursor: `1700000000:${uid}`,
+		scan: scanStateValue({ ...newScan(scanSignature(keywords, matchBody), '1700000000', uid), state: 'done', below: 0 })
+	};
+}
+
 beforeAll(async () => {
 	instance = await startPocketBase({ env: ENV });
 	superuser = client();
@@ -93,20 +107,21 @@ beforeEach(async () => {
 });
 
 describe('mail helper with PocketBase (P-10)', () => {
-	it('takes only new mails with a keyword, from the setup on, without duplicates', async () => {
+	it('takes old and new mails with a keyword from the whole inbox, without duplicates', async () => {
 		mail('Todo: vor der Einrichtung');
 		const box = await mailbox();
 		await pollAll(deps());
 		let stored = await owner.pb.collection('connections').getOne(box.id);
 		expect(stored.cursor).toBe(`1700000000:${imap.mails.at(-1).uid}`);
 		expect(stored.last_hint).toBe(FIRST_RUN_HINT);
-		expect(await items(box)).toEqual([]);
+		expect(stored.scan).toMatchObject({ state: 'done', total: imap.mails.length, created: 1 });
+		expect((await items(box)).map((item) => item.title)).toEqual(['Todo: vor der Einrichtung']);
 
 		mail('Todo: Steuer', 'Bis Freitag.');
 		mail('Hallo');
 		mail('Rechnung Handwerker');
 		await pollAll(deps());
-		const created = await items(box);
+		const created = (await items(box)).slice(1);
 		expect(created.map((item) => item.title)).toEqual(['Todo: Steuer', 'Rechnung Handwerker']);
 		expect(created[0]).toMatchObject({
 			owner: owner.id,
@@ -124,7 +139,7 @@ describe('mail helper with PocketBase (P-10)', () => {
 		// Again from an older cursor (a crash before the status was saved): nothing new.
 		await superuser.collection('connections').update(box.id, { cursor: '1700000000:1' });
 		await pollAll(deps());
-		expect(await items(box)).toHaveLength(2);
+		expect(await items(box)).toHaveLength(3);
 		expect(lines.join('\n')).toMatch(/0 neu, 2 schon vorhanden, 1 ohne Stichwort/);
 		expect(imap.writes()).toEqual([]);
 		expect(imap.flagsUnchanged()).toBe(true);
@@ -160,7 +175,7 @@ describe('mail helper with PocketBase (P-10)', () => {
 	});
 
 	it('refuses a mail matched only by the text when match_body is off, but not by the sender (package A)', async () => {
-		const box = await mailbox({ settings: { provider: 'webde', user: imap.user, keywords: ['europa-go'] } });
+		const box = await mailbox({ settings: { provider: 'webde', user: imap.user, keywords: ['europa-go'] }, ...scanned(['europa-go']) });
 		await pollAll(deps());
 		imap.add(fakeMail({ subject: 'Nur Text', body: 'Buchung bei europa-go', messageId: `<t-${randomBytes(4).toString('hex')}@example.com>` }));
 		imap.add(fakeMail({ subject: 'Nur Absender', from: 'info@europa-go.de', messageId: `<f-${randomBytes(4).toString('hex')}@example.com>` }));
@@ -197,7 +212,7 @@ describe('mail helper with PocketBase (P-10)', () => {
 	});
 
 	it('knows a mail that was dropped as .eml file before', async () => {
-		const box = await mailbox({ cursor: `1700000000:${imap.mails.at(-1)?.uid ?? 0}` });
+		const box = await mailbox(scanned(['todo', 'rechnung']));
 		const messageId = `<eml-${randomBytes(4).toString('hex')}@example.com>`;
 		const file = await owner.pb.collection('inbox_items').create({
 			owner: owner.id,
@@ -226,7 +241,7 @@ describe('mail helper with PocketBase (P-10)', () => {
 
 	it('fetches Gmail like Web.de, once per Message-ID, and asks for an app password (E4 plan, package 13)', async () => {
 		const gmail = { label: 'Gmail', settings: { provider: 'gmail', user: imap.user, keywords: ['todo'] } };
-		const box = await mailbox({ ...gmail, cursor: `1700000000:${imap.mails.at(-1)?.uid ?? 0}` });
+		const box = await mailbox({ ...gmail, ...scanned(['todo']) });
 		const messageId = `<gmail-${randomBytes(4).toString('hex')}@mail.gmail.com>`;
 		const file = await owner.pb.collection('inbox_items').create({
 			owner: owner.id,
@@ -277,5 +292,64 @@ describe('mail helper with PocketBase (P-10)', () => {
 		].join('\n');
 		expect(everything).not.toContain(TOKEN);
 		expect(everything).not.toContain(PASSWORD);
+	});
+});
+
+describe('full inbox scan with PocketBase (user decision 2026-09-27)', () => {
+	beforeEach(() => {
+		imap.mails.length = 0;
+		imap.folders.clear();
+		imap.commands.length = 0;
+	});
+
+	it('takes old mails from the whole inbox (To, Cc, deep text, HTML only), never from trash or spam', async () => {
+		const id = () => `<scan-${randomBytes(4).toString('hex')}@example.com>`;
+		imap.add(fakeMail({ subject: 'Nur An', to: 'Projekt-X Team <team@example.com>', messageId: id() }));
+		imap.add(fakeMail({ subject: 'Nur Cc', headers: ['Cc: Projekt-X <px@example.com>'], messageId: id() }));
+		imap.add(fakeMail({ subject: 'Tief im Text', body: `${'Newsletter ohne Treffer. '.repeat(300)}Projekt-X`, messageId: id() }));
+		imap.add(
+			fakeMail({ subject: 'Nur HTML', body: '<p>Neu im <b>Projekt-X</b></p>', contentType: 'text/html', messageId: id() })
+		);
+		imap.add(fakeMail({ subject: 'Ohne Treffer', messageId: id() }));
+		imap.addTo('Trash', fakeMail({ subject: 'Projekt-X im Papierkorb', messageId: id() }));
+		imap.addTo('Junk', fakeMail({ subject: 'Projekt-X im Spam', messageId: id() }));
+		imap.addTo('Sent', fakeMail({ subject: 'Projekt-X gesendet', messageId: id() }));
+		const box = await mailbox({ settings: { provider: 'webde', user: imap.user, keywords: ['projekt-x'], match_body: true } });
+		await pollAll(deps());
+		const created = await items(box);
+		expect(created.map((item) => item.title).sort()).toEqual(['Nur An', 'Nur Cc', 'Nur HTML', 'Tief im Text']);
+		expect(created.every((item) => item.source_meta.keyword === 'projekt-x')).toBe(true);
+		const stored = await owner.pb.collection('connections').getOne(box.id);
+		expect(stored.scan).toMatchObject({ state: 'done', done: 5, total: 5, created: 4 });
+		expect(imap.opened()).toEqual(['INBOX']);
+		expect(imap.writes()).toEqual([]);
+		expect(imap.flagsUnchanged()).toBe(true);
+	});
+
+	it('finds old mails after a new keyword; discarded entries stay discarded, nothing twice', async () => {
+		const id = () => `<again-${randomBytes(4).toString('hex')}@example.com>`;
+		imap.add(fakeMail({ subject: 'Todo: Garage', messageId: id() }));
+		imap.add(fakeMail({ subject: 'Rechnung Garage', messageId: id() }));
+		const box = await mailbox({ settings: { provider: 'webde', user: imap.user, keywords: ['todo'] } });
+		await pollAll(deps());
+		const [todo] = await items(box);
+		expect(todo.title).toBe('Todo: Garage');
+		await owner.pb.collection('inbox_items').update(todo.id, { state: 'discarded' });
+
+		// The user adds a keyword: the next run searches the whole inbox again.
+		await owner.pb.collection('connections').update(box.id, {
+			settings: { provider: 'webde', user: imap.user, keywords: ['todo', 'rechnung'] }
+		});
+		const [outcome] = await pollAll(deps());
+		expect(outcome).toMatchObject({ created: 1, duplicates: 1 });
+		const after = await items(box);
+		expect(after.map((item) => [item.title, item.state])).toEqual([
+			['Todo: Garage', 'discarded'],
+			['Rechnung Garage', 'new']
+		]);
+		// A further run without a change does not scan again and creates nothing.
+		const [quiet] = await pollAll(deps());
+		expect(quiet).toMatchObject({ created: 0, duplicates: 0, scan: null });
+		expect(await items(box)).toHaveLength(2);
 	});
 });
