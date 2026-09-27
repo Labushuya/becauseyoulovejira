@@ -3,13 +3,23 @@
 // arrives (own list or realtime, ADR-0007); every other field follows the update. Only the
 // changed field is sent, and the answer of the server replaces the ticket. While a ticket is
 // shown, the store follows it live, including its description and its deletion elsewhere.
+// The description never overwrites a newer one silently (ADR-0032 section 6): saving it and ticking
+// a task in it send `expected_updated`; a description that changed meanwhile ends in a question
+// (saving) or a message (ticking) instead.
 
 import type PocketBase from 'pocketbase';
 import { createContext } from 'svelte';
 import { SvelteMap, SvelteSet } from 'svelte/reactivity';
-import { toDataError } from '$lib/data/errors';
+import { toDataError, type DataError } from '$lib/data/errors';
 import type { RequestOptions } from '$lib/data/options';
-import { createTicket, deleteTicket, getTicket, updateTicket } from '$lib/data/tickets';
+import {
+	createTicket,
+	deleteTicket,
+	getTicket,
+	updateTicket,
+	type DescriptionGuard
+} from '$lib/data/tickets';
+import { toggleTask } from '$lib/markdown';
 import { deletedWithSourcesText, type SourceHandling } from '$lib/domain/sources';
 import { isCalendarDate } from '$lib/domain/berlin-date';
 import { isPriority, isStatus, type Status } from '$lib/domain/status';
@@ -41,13 +51,24 @@ export type DetailState = 'idle' | 'loading' | 'ready' | 'not_found' | 'error' |
 export const TITLE_REQUIRED_MESSAGE = 'Der Titel darf nicht leer sein.';
 export const INVALID_DATE_MESSAGE = 'Ungültiges Datum.';
 export const INVALID_VALUE_MESSAGE = 'Ungültiger Wert.';
+/** A task was ticked on a description that changed meanwhile (ADR-0032 section 6). */
+export const TASK_STALE_MESSAGE =
+	'Die Beschreibung wurde inzwischen geändert. Bitte erneut abhaken.';
+
+/** Code of the hook for a description that changed since `expected_updated`. */
+const STALE_CODE = 'validation_description_stale';
 
 /** Record ID as PocketBase creates it (15 characters a–z and 0–9). */
 const RECORD_ID = /^[a-z0-9]{15}$/;
 
+/** The hook refused a change of the description because the ticket changed meanwhile. */
+function isStale(failure: DataError): boolean {
+	return failure.fields.description?.code === STALE_CODE;
+}
+
 export interface TicketDetailData {
 	get(id: string, options: RequestOptions): Promise<Ticket>;
-	update(id: string, patch: TicketPatch): Promise<Ticket>;
+	update(id: string, patch: TicketPatch, guard?: DescriptionGuard): Promise<Ticket>;
 	create(draft: TicketDraft, origin?: TicketOrigin): Promise<Ticket>;
 	/** With `sources` the route settles the sources as chosen; without, they go to the inbox. */
 	delete(id: string, sources?: SourceHandling): Promise<void>;
@@ -61,6 +82,9 @@ export interface DeleteSources {
 
 /** Outcome of deleting the ticket; a failure carries a message unless nothing is to be shown. */
 export type DeleteResult = { ok: true; key: string } | { ok: false; message: string | null };
+
+/** Outcome of ticking a task; a failure carries a message unless nothing is to be shown. */
+export type TaskResult = { ok: true } | { ok: false; message: string | null };
 
 /** Outcome of creating a ticket; a failure carries a message and/or errors per field. */
 export type CreateResult =
@@ -90,7 +114,7 @@ export interface TicketListSync {
 export function ticketDetailData(pb: PocketBase): TicketDetailData {
 	return {
 		get: (id, options) => getTicket(pb, id, options),
-		update: (id, patch) => updateTicket(pb, id, patch),
+		update: (id, patch, guard) => updateTicket(pb, id, patch, guard),
 		create: (draft, origin) => createTicket(pb, draft, { origin }),
 		delete: (id, sources) => deleteTicket(pb, id, sources === undefined ? {} : { sources })
 	};
@@ -143,6 +167,10 @@ export class TicketDetailStore {
 	#stopTicket: (() => void) | null = null;
 	/** Ticket this panel is deleting: its delete event is the own one, not a deletion elsewhere. */
 	#deletingId: string | null = null;
+	/** Description the draft started from; saving asks if the stored one is another by now. */
+	#descriptionBase: string | null = null;
+	/** The description changed while it was being edited: "Überschreiben" or "Verwerfen". */
+	#conflict = $state(false);
 
 	#id = $state<string | null>(null);
 	#own = $state.raw<Ticket | null>(null);
@@ -199,6 +227,14 @@ export class TicketDetailStore {
 
 	fieldError(field: FieldKey): string | null {
 		return this.#fieldErrors.get(field) ?? null;
+	}
+
+	/**
+	 * True when saving the description found a newer one (ADR-0032 section 6); the draft stays
+	 * until the user overwrites it or discards it.
+	 */
+	get descriptionConflict(): boolean {
+		return this.#conflict;
 	}
 
 	/** True while any field has an unsaved draft. */
@@ -299,6 +335,10 @@ export class TicketDetailStore {
 		if (this.#ticket === null || this.#drafts.has(field)) return;
 		this.#drafts.set(field, fieldText(this.#ticket, field));
 		this.#fieldErrors.delete(field);
+		if (field === 'description') {
+			this.#descriptionBase = this.#ticket.description;
+			this.#conflict = false;
+		}
 	}
 
 	setDraft(field: EditableField, value: string): void {
@@ -309,6 +349,10 @@ export class TicketDetailStore {
 	cancel(field: EditableField): void {
 		this.#drafts.delete(field);
 		this.#fieldErrors.delete(field);
+		if (field === 'description') {
+			this.#descriptionBase = null;
+			this.#conflict = false;
+		}
 	}
 
 	/** Marks a field as invalid without a request (e.g. an incomplete date in the browser). */
@@ -319,8 +363,29 @@ export class TicketDetailStore {
 	/**
 	 * Saves the draft of a field. Returns true if nothing is left to save. An unchanged draft
 	 * ends editing without a request. On failure the draft stays and the field shows the error.
+	 * The description is saved only over the version its draft started from (ADR-0032 section 6):
+	 * if another one is stored by now, `descriptionConflict` asks what to do; if only other fields
+	 * changed meanwhile, the draft is sent once more on the new version.
 	 */
-	async save(field: EditableField): Promise<boolean> {
+	save(field: EditableField): Promise<boolean> {
+		return this.#save(field, true);
+	}
+
+	/** "Überschreiben": saves the draft of the description over the newer one. */
+	overwriteDescription(): Promise<boolean> {
+		if (this.#ticket === null || !this.#drafts.has('description')) return Promise.resolve(true);
+		this.#descriptionBase = this.#ticket.description;
+		this.#conflict = false;
+		return this.save('description');
+	}
+
+	/** "Verwerfen und neu laden": drops the draft of the description and loads the ticket again. */
+	async discardDescription(): Promise<void> {
+		this.cancel('description');
+		await this.#refresh();
+	}
+
+	async #save(field: EditableField, retryStale: boolean): Promise<boolean> {
 		const ticket = this.#ticket;
 		const draft = this.#drafts.get(field);
 		if (ticket === null || draft === undefined) return true;
@@ -335,11 +400,20 @@ export class TicketDetailStore {
 			this.cancel(field);
 			return true;
 		}
+		const base = field === 'description' ? (this.#descriptionBase ?? ticket.description) : null;
+		if (base !== null && ticket.description !== base) {
+			this.#conflict = true;
+			return false;
+		}
 		if (!this.#session.ensureValid()) return false;
 		this.#saving.add(field);
 		this.#fieldErrors.delete(field);
+		let stale = false;
 		try {
-			const saved = await this.#data.update(ticket.id, result.patch);
+			const saved =
+				base === null
+					? await this.#data.update(ticket.id, result.patch)
+					: await this.#data.update(ticket.id, result.patch, { expectedUpdated: ticket.updated });
 			if (saved.status === 'done' && ticket.status !== 'done') {
 				this.#list.completed(saved, ticket.status);
 			} else {
@@ -349,18 +423,93 @@ export class TicketDetailStore {
 			if (saved.key !== ticket.key) this.#list.announce(`Neuer Key: ${saved.key}`);
 			if (saved.id === this.#id) {
 				this.upsert(saved);
-				if (this.#drafts.get(field) === draft) this.#drafts.delete(field);
+				if (this.#drafts.get(field) === draft) this.cancel(field);
 			}
 			return true;
 		} catch (error) {
 			const failure = toDataError(error);
 			if (failure.kind === 'session') this.#session.logout();
+			else if (base !== null && isStale(failure)) stale = ticket.id === this.#id;
 			else if (failure.kind !== 'aborted' && ticket.id === this.#id) {
 				this.#fieldErrors.set(field, failure.fields[field]?.message ?? failure.message);
 			}
-			return false;
+			if (!stale) return false;
 		} finally {
 			this.#saving.delete(field);
+		}
+		return this.#afterStaleDescription(ticket.id, base ?? '', retryStale);
+	}
+
+	/**
+	 * The hook refused the description because the ticket changed meanwhile: loads it, and either
+	 * sends the draft once more (only other fields changed) or asks about the conflict.
+	 */
+	async #afterStaleDescription(id: string, base: string, retry: boolean): Promise<boolean> {
+		try {
+			this.upsert(await this.#data.get(id, {}));
+		} catch (error) {
+			const failure = toDataError(error);
+			if (failure.kind === 'session') this.#session.logout();
+			else if (failure.kind !== 'aborted' && id === this.#id) {
+				this.#fieldErrors.set('description', failure.message);
+			}
+			return false;
+		}
+		if (id !== this.#id) return false;
+		if (retry && this.#ticket?.description === base) return this.#save('description', false);
+		this.#conflict = true;
+		return false;
+	}
+
+	/**
+	 * Ticks or unticks task `index` of the description in the view (ADR-0032 section 6); not
+	 * while the description is edited or saved. The change goes with `expected_updated`. If the
+	 * ticket changed meanwhile but its description is the same, it is sent once more on the new
+	 * version; otherwise the result says that the description changed.
+	 */
+	async toggleTask(index: number, checked: boolean): Promise<TaskResult> {
+		const ticket = this.#ticket;
+		if (ticket === null || this.#drafts.has('description') || this.#saving.has('description')) {
+			return { ok: false, message: null };
+		}
+		if (!this.#session.ensureValid()) return { ok: false, message: null };
+		const source = ticket.description;
+		this.#saving.add('description');
+		try {
+			let base = ticket;
+			for (let attempt = 0; attempt < 2; attempt++) {
+				const next = toggleTask(base.description, index, checked);
+				if (next === null) return { ok: false, message: TASK_STALE_MESSAGE };
+				if (next === base.description) return { ok: true };
+				try {
+					const saved = await this.#data.update(
+						base.id,
+						{ description: next },
+						{ expectedUpdated: base.updated }
+					);
+					this.#list.upsert(saved);
+					this.upsert(saved);
+					return { ok: true };
+				} catch (error) {
+					const failure = toDataError(error);
+					if (!isStale(failure) || attempt > 0) throw failure;
+				}
+				const fresh = await this.#data.get(base.id, {});
+				this.upsert(fresh);
+				if (fresh.description !== source) return { ok: false, message: TASK_STALE_MESSAGE };
+				base = fresh;
+			}
+			return { ok: false, message: TASK_STALE_MESSAGE };
+		} catch (error) {
+			const failure = toDataError(error);
+			if (failure.kind === 'session') this.#session.logout();
+			if (failure.kind === 'session' || failure.kind === 'aborted') {
+				return { ok: false, message: null };
+			}
+			if (isStale(failure)) return { ok: false, message: TASK_STALE_MESSAGE };
+			return { ok: false, message: failure.fields.description?.message ?? failure.message };
+		} finally {
+			this.#saving.delete('description');
 		}
 	}
 
@@ -459,6 +608,8 @@ export class TicketDetailStore {
 		this.#drafts.clear();
 		this.#saving.clear();
 		this.#fieldErrors.clear();
+		this.#descriptionBase = null;
+		this.#conflict = false;
 		this.#tagInput = '';
 		this.#id = null;
 		this.#own = null;

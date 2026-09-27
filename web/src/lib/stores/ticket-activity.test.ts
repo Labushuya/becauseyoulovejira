@@ -304,6 +304,43 @@ describe('TicketActivityStore: editing and deleting', () => {
 	});
 });
 
+describe('TicketActivityStore: ticking tasks of a comment (ADR-0032 section 6)', () => {
+	const own = comment({ body: '- [ ] Anrufen\n- [ ] Schreiben' });
+	const foreign = comment({ id: 'comment00000002', author: OTHER, body: '- [ ] Fremd' });
+
+	it('ticks a task of an own comment and saves the body', async () => {
+		const { store, data } = await opened([own, foreign]);
+
+		expect(await store.toggleTask(own.id, 1, true)).toBe(true);
+
+		expect(data.updateComment).toHaveBeenCalledExactlyOnceWith(
+			own.id,
+			'- [ ] Anrufen\n- [x] Schreiben'
+		);
+		expect(store.comments[0]?.body).toBe('- [ ] Anrufen\n- [x] Schreiben');
+		expect(store.isBusy(own.id)).toBe(false);
+	});
+
+	it('refuses foreign comments, comments being edited and unknown tasks without a request', async () => {
+		const { store, data } = await opened([own, foreign]);
+
+		expect(await store.toggleTask(foreign.id, 0, true)).toBe(false);
+		expect(await store.toggleTask(own.id, 7, true)).toBe(false);
+		store.startEdit(own.id);
+		expect(await store.toggleTask(own.id, 0, true)).toBe(false);
+		expect(data.updateComment).not.toHaveBeenCalled();
+	});
+
+	it('shows the error at the comment when saving fails', async () => {
+		const { store, data } = await opened([own]);
+		data.updateComment.mockRejectedValueOnce(new DataError('network'));
+
+		expect(await store.toggleTask(own.id, 0, true)).toBe(false);
+		expect(store.commentError(own.id)).toMatch(/Server nicht erreichbar/);
+		expect(store.comments[0]?.body).toBe(own.body);
+	});
+});
+
 describe('TicketActivityStore: updates', () => {
 	it('inserts, replaces and removes comments idempotently', async () => {
 		const { store } = await opened();

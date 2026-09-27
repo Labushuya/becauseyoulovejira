@@ -15,6 +15,13 @@ var inbox = require(__hooks + '/lib/inbox-service.js');
 // unknown keys from the request body, so clients cannot set it.
 var ACTOR_KEY = '@actor';
 
+// Transient record key for the `updated` a client based its change of the description on
+// (ADR-0032 section 6). It comes from the body field `expected_updated`, which is no field of the
+// collection and is therefore never stored.
+var EXPECTED_UPDATED_KEY = '@expected_updated';
+
+var DESCRIPTION_STALE = 'Die Beschreibung wurde inzwischen geändert.';
+
 var SCOPE_MISMATCH = 'Verknüpfter Datensatz nicht gefunden oder in einem anderen Bereich.';
 
 var PROJECT_ARCHIVED = 'Das Projekt ist archiviert.';
@@ -53,6 +60,30 @@ function rememberActor(e) {
 function actorOf(record) {
   var actor = record.get(ACTOR_KEY);
   return actor ? String(actor) : '';
+}
+
+// onRecordUpdateRequest: remembers the body field `expected_updated` (ADR-0032 section 6), if
+// the client sent it. Without it an update works as before.
+function rememberExpectedUpdated(e) {
+  var value = e.requestInfo().body['expected_updated'];
+  if (value === undefined || value === null) {
+    return;
+  }
+  e.record.set(EXPECTED_UPDATED_KEY, String(value));
+}
+
+// onRecordUpdate before e.next(), inside the transaction: refuses the update when the stored
+// ticket has another `updated` than the client based its change on. The ticket is read again in
+// the transaction, so two requests with the same expectation cannot both pass.
+function checkExpectedUpdated(txApp, record) {
+  var expected = record.get(EXPECTED_UPDATED_KEY);
+  if (expected === undefined || expected === null) {
+    return;
+  }
+  var stored = findById(txApp, 'tickets', record.id);
+  if (!stored || stored.getString('updated') !== String(expected)) {
+    throw errors.fieldFailure('description', 'validation_description_stale', DESCRIPTION_STALE);
+  }
 }
 
 // Loads the referenced project, tags, recurrence rule and parent. Rejects references that are
@@ -313,6 +344,8 @@ module.exports = {
   deleteWithSources: deleteWithSources,
   scopeOfRecord: scopeOfRecord,
   rememberActor: rememberActor,
+  rememberExpectedUpdated: rememberExpectedUpdated,
+  checkExpectedUpdated: checkExpectedUpdated,
   checkRelations: checkRelations,
   prepareCreate: prepareCreate,
   recordCreation: recordCreation,

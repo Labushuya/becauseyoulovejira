@@ -402,15 +402,27 @@ export function createTicket(
 	});
 }
 
+/** Guard of an update against overwriting a newer description (ADR-0032 section 6). */
+export interface DescriptionGuard {
+	/**
+	 * `updated` of the ticket the change is based on. The hook refuses the update with
+	 * `validation_description_stale` if the stored ticket has another; the body field
+	 * `expected_updated` is not stored.
+	 */
+	expectedUpdated?: string;
+}
+
 /** Sends only the changed fields; the answer of the server replaces the ticket. */
 export function updateTicket(
 	pb: PocketBase,
 	id: string,
 	patch: TicketPatch,
-	{ signal }: RequestOptions = {}
+	{ signal, expectedUpdated }: RequestOptions & DescriptionGuard = {}
 ) {
 	return withDataErrors(signal, async (): Promise<Ticket> => {
-		const record = await pb.collection(TICKETS).update<TicketRecord>(id, patchBody(patch), {
+		const body: Record<string, string | string[]> = patchBody(patch);
+		if (expectedUpdated !== undefined) body.expected_updated = expectedUpdated;
+		const record = await pb.collection(TICKETS).update<TicketRecord>(id, body, {
 			fields: TICKET_DETAIL_FIELDS,
 			expand: TICKET_EXPAND,
 			signal

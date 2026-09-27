@@ -5,24 +5,38 @@
 	import ErrorIcon from './ErrorIcon.svelte';
 	import Markdown from './Markdown.svelte';
 	import MarkdownEditor from './MarkdownEditor.svelte';
+	import SectionMessage from './guidance/SectionMessage.svelte';
 
 	// Description of a ticket (E2 plan, package 7), shared by the side panel and the full view
 	// (ADR-0025 section 7): sanitised Markdown with "Bearbeiten", an editor with preview, "Speichern"
 	// (Ctrl+Enter) and "Abbrechen". The draft lives in the store, so it survives the change between
 	// panel and full view; the focus moves into the editor and back to "Bearbeiten".
+	// Tasks of the description can be ticked in the view (ADR-0032 section 6). If the description
+	// changed while it was edited, saving asks inline instead of overwriting: "Überschreiben" or
+	// "Verwerfen und neu laden". Inline and not as a confirmation, because the full view is a modal
+	// and no dialog opens from a dialog (ADR-0025 section 3); the panel asks the same way.
 	let { store, ticket }: { store: TicketDetailStore; ticket: Ticket } = $props();
 
 	const uid = $props.id();
 	const titleId = `${uid}-description-title`;
 	const errorId = `${uid}-description-error`;
+	const taskErrorId = `${uid}-task-error`;
 
 	let editButton = $state<HTMLButtonElement>();
 	let editor = $state<HTMLTextAreaElement>();
+	/** Why ticking a task failed, for the ticket it happened on. */
+	let taskError = $state<{ ticketId: string; message: string } | null>(null);
 
 	const editing = $derived(store.isEditing('description'));
+	const saving = $derived(store.isSaving('description'));
 	const error = $derived(store.fieldError('description'));
+	const conflict = $derived(editing && store.descriptionConflict);
+	const shownTaskError = $derived(
+		taskError !== null && taskError.ticketId === ticket.id ? taskError.message : null
+	);
 
 	async function edit() {
+		taskError = null;
 		store.edit('description');
 		await tick();
 		editor?.focus();
@@ -36,6 +50,25 @@
 		}
 		await tick();
 		editButton?.focus();
+	}
+
+	async function overwrite() {
+		if (!(await store.overwriteDescription())) return;
+		await tick();
+		editButton?.focus();
+	}
+
+	async function discard() {
+		await store.discardDescription();
+		await tick();
+		editButton?.focus();
+	}
+
+	async function toggleTask(index: number, checked: boolean): Promise<boolean> {
+		const ticketId = ticket.id;
+		const result = await store.toggleTask(index, checked);
+		taskError = result.ok || result.message === null ? null : { ticketId, message: result.message };
+		return result.ok;
 	}
 
 	function onkeydown(event: KeyboardEvent) {
@@ -68,19 +101,50 @@
 		{#if error}
 			<p class="field-error" id={errorId}><ErrorIcon /><span>{error}</span></p>
 		{/if}
-		<div class="buttons">
-			<button
-				class="button-primary small-primary"
-				type="button"
-				disabled={store.isSaving('description')}
-				onclick={() => end(true)}
+		{#if conflict}
+			<SectionMessage
+				tone="warning"
+				title="Die Beschreibung wurde inzwischen geändert."
+				headingLevel={4}
+				live
 			>
-				{store.isSaving('description') ? 'Wird gespeichert …' : 'Speichern'}
-			</button>
-			<button class="small" type="button" onclick={() => end(false)}>Abbrechen</button>
-		</div>
+				<p>
+					„Überschreiben“ speichert deinen Text anstelle der neuen Fassung. „Verwerfen und neu
+					laden“ zeigt die neue Fassung; dein Text geht dabei verloren.
+				</p>
+				{#snippet actions()}
+					<button class="button-secondary" type="button" disabled={saving} onclick={overwrite}>
+						{saving ? 'Wird gespeichert …' : 'Überschreiben'}
+					</button>
+					<button class="button-subtle" type="button" disabled={saving} onclick={discard}>
+						Verwerfen und neu laden
+					</button>
+				{/snippet}
+			</SectionMessage>
+		{:else}
+			<div class="buttons">
+				<button
+					class="button-primary small-primary"
+					type="button"
+					disabled={saving}
+					onclick={() => end(true)}
+				>
+					{saving ? 'Wird gespeichert …' : 'Speichern'}
+				</button>
+				<button class="small" type="button" onclick={() => end(false)}>Abbrechen</button>
+			</div>
+		{/if}
 	{:else if ticket.description.trim() !== ''}
-		<Markdown source={ticket.description} />
+		<Markdown
+			source={ticket.description}
+			ontoggletask={toggleTask}
+			taskHint={saving ? 'Die Beschreibung wird gerade gespeichert.' : null}
+		/>
+		{#if shownTaskError !== null}
+			<p class="field-error" id={taskErrorId} role="alert">
+				<ErrorIcon /><span>{shownTaskError}</span>
+			</p>
+		{/if}
 	{:else}
 		<p class="muted">Keine Beschreibung.</p>
 	{/if}
@@ -102,7 +166,7 @@
 	}
 
 	h3 {
-		font-size: 0.875rem;
+		font-size: var(--font-size-body);
 		font-weight: 600;
 	}
 
@@ -114,7 +178,7 @@
 
 	.small {
 		padding: 0.125rem 0.625rem;
-		font-size: 0.8125rem;
+		font-size: var(--font-size-control);
 		background: none;
 		border: 1px solid var(--color-line);
 		border-radius: var(--radius-control);
@@ -123,11 +187,11 @@
 
 	.small-primary {
 		padding: 0.25rem 0.75rem;
-		font-size: 0.8125rem;
+		font-size: var(--font-size-control);
 	}
 
 	.muted {
-		font-size: 0.875rem;
+		font-size: var(--font-size-body);
 		color: var(--color-text-muted);
 	}
 </style>

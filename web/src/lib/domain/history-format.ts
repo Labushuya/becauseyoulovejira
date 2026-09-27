@@ -160,6 +160,36 @@ function change(label: string, before: string, after: string): string {
 	return `${label}: ${before} → ${after}`;
 }
 
+/** A line with a task marker: containers in front, the mark, the text of the task. */
+const TASK_LINE = /^([ \t>]*(?:(?:[-*+]|\d{1,9}[.)])[ \t]+[ \t>]*)*)\[([ xX])\](.*)$/;
+
+/** Longest task text a history entry names. */
+const TASK_TEXT_MAX = 80;
+
+/**
+ * "Aufgabe abgehakt: …" or "Aufgabe wieder offen: …" when a change of the description only ticks
+ * or unticks one task (ADR-0032 section 6: ticking in the view), else null. Line based on purpose:
+ * the history needs no Markdown parser, and anything else counts as an ordinary change.
+ */
+function taskToggleText(before: string, after: string): string | null {
+	const old = before.split(/\r\n|\r|\n/);
+	const next = after.split(/\r\n|\r|\n/);
+	if (old.length !== next.length) return null;
+	const changed = old.flatMap((line, index) => (line === next[index] ? [] : [index]));
+	if (changed.length !== 1) return null;
+	const index = changed[0] ?? 0;
+	const was = TASK_LINE.exec(old[index] ?? '');
+	const is = TASK_LINE.exec(next[index] ?? '');
+	if (was === null || is === null || was[1] !== is[1] || was[3] !== is[3]) return null;
+	const ticked = is[2] !== ' ';
+	if ((was[2] !== ' ') === ticked) return null;
+	// Markdown escapes of the generators ("1\.5") are shown without their backslash.
+	const task = (is[3] ?? '').trim().replace(/\\([!-/:-@[-`{-~])/g, '$1');
+	const shown = task.length > TASK_TEXT_MAX ? `${task.slice(0, TASK_TEXT_MAX - 1)}…` : task;
+	const verb = ticked ? 'Aufgabe abgehakt' : 'Aufgabe wieder offen';
+	return shown === '' ? verb : `${verb}: ${shown}`;
+}
+
 /** Text of one entry, without actor and time. */
 function describe(entry: HistoryEntry, lookups: HistoryLookups): string {
 	const { field, oldValue, newValue } = entry;
@@ -169,7 +199,7 @@ function describe(entry: HistoryEntry, lookups: HistoryLookups): string {
 		case 'title':
 			return change('Titel', orEmpty(oldValue), orEmpty(newValue));
 		case 'description':
-			return 'Beschreibung geändert';
+			return taskToggleText(oldValue, newValue) ?? 'Beschreibung geändert';
 		case 'status':
 			return change('Status', statusText(oldValue), statusText(newValue));
 		case 'priority':

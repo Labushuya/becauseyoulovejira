@@ -402,7 +402,13 @@ describe('ticket panel', () => {
 		expect(text.maxLength).toBe(100_000);
 		await fireEvent.input(text, { target: { value: '# Neu' } });
 		await fireEvent.keyDown(text, { key: 'Enter', ctrlKey: true });
-		await vi.waitFor(() => expect(data.update).toHaveBeenCalledWith(ID, { description: '# Neu' }));
+		await vi.waitFor(() =>
+			expect(data.update).toHaveBeenCalledWith(
+				ID,
+				{ description: '# Neu' },
+				{ expectedUpdated: '2026-09-02 12:30:00.000Z' }
+			)
+		);
 		await tick();
 		expect(screen.getByRole('heading', { level: 1 }).textContent).toBe('Neu');
 
@@ -417,6 +423,107 @@ describe('ticket panel', () => {
 		expect(document.activeElement).toBe(
 			screen.getByRole('button', { name: 'Bearbeiten: Beschreibung' })
 		);
+	});
+
+	it('ticks a task of the description in the view (ADR-0032 section 6)', async () => {
+		const { data } = await renderPanel(ticket({ description: '- [ ] Belege\n- [ ] Formular' }));
+
+		const task = screen.getByRole<HTMLInputElement>('checkbox', { name: 'Formular' });
+		expect(task.disabled).toBe(false);
+		await fireEvent.click(task);
+
+		await vi.waitFor(() =>
+			expect(data.update).toHaveBeenCalledWith(
+				ID,
+				{ description: '- [ ] Belege\n- [x] Formular' },
+				{ expectedUpdated: '2026-09-02 12:30:00.000Z' }
+			)
+		);
+		await vi.waitFor(() =>
+			expect(screen.getByRole<HTMLInputElement>('checkbox', { name: 'Formular' }).checked).toBe(
+				true
+			)
+		);
+	});
+
+	it('puts a task back and says why when the description changed meanwhile', async () => {
+		const { data } = await renderPanel(ticket({ description: '- [ ] Belege' }));
+		data.update.mockRejectedValueOnce(
+			new DataError('validation', {
+				status: 400,
+				fields: {
+					description: {
+						code: 'validation_description_stale',
+						message: 'Die Beschreibung wurde inzwischen geändert.'
+					}
+				}
+			})
+		);
+		data.get.mockResolvedValueOnce(
+			ticket({ description: '- [ ] Belege\n- [ ] Neu', updated: '2026-09-03 08:00:00.000Z' })
+		);
+
+		await fireEvent.click(screen.getByRole('checkbox', { name: 'Belege' }));
+
+		expect(await screen.findByRole('alert')).toHaveProperty(
+			'textContent',
+			'Die Beschreibung wurde inzwischen geändert. Bitte erneut abhaken.'
+		);
+		expect(screen.getByRole<HTMLInputElement>('checkbox', { name: 'Belege' }).checked).toBe(false);
+		expect(screen.getByRole('checkbox', { name: 'Neu' })).toBeTruthy();
+	});
+
+	it('asks inline before overwriting a description that changed while editing', async () => {
+		const { store, data } = await renderPanel();
+
+		await fireEvent.click(screen.getByRole('button', { name: 'Bearbeiten: Beschreibung' }));
+		await fireEvent.input(screen.getByLabelText('Beschreibung (Markdown)'), {
+			target: { value: 'Mein Text' }
+		});
+		store.upsert(ticket({ description: 'Anderer Text', updated: '2026-09-03 08:00:00.000Z' }));
+		await fireEvent.click(screen.getByRole('button', { name: 'Speichern' }));
+
+		const question = await screen.findByRole('heading', {
+			name: /Die Beschreibung wurde inzwischen geändert/
+		});
+		expect(question).toBeTruthy();
+		expect(screen.queryByRole('button', { name: 'Speichern' })).toBeNull();
+		expect(screen.queryByRole('dialog', { name: /geändert/ })).toBeNull();
+		expect(data.update).not.toHaveBeenCalled();
+
+		await fireEvent.click(screen.getByRole('button', { name: 'Überschreiben' }));
+
+		await vi.waitFor(() =>
+			expect(data.update).toHaveBeenCalledWith(
+				ID,
+				{ description: 'Mein Text' },
+				{ expectedUpdated: '2026-09-03 08:00:00.000Z' }
+			)
+		);
+		await vi.waitFor(() =>
+			expect(document.activeElement).toBe(
+				screen.getByRole('button', { name: 'Bearbeiten: Beschreibung' })
+			)
+		);
+	});
+
+	it('discards the draft and shows the newer description when asked to', async () => {
+		const { store, data } = await renderPanel();
+
+		await fireEvent.click(screen.getByRole('button', { name: 'Bearbeiten: Beschreibung' }));
+		await fireEvent.input(screen.getByLabelText('Beschreibung (Markdown)'), {
+			target: { value: 'Mein Text' }
+		});
+		store.upsert(ticket({ description: 'Anderer Text', updated: '2026-09-03 08:00:00.000Z' }));
+		data.get.mockResolvedValueOnce(
+			ticket({ description: 'Anderer Text', updated: '2026-09-03 08:00:00.000Z' })
+		);
+		await fireEvent.click(screen.getByRole('button', { name: 'Speichern' }));
+		await fireEvent.click(await screen.findByRole('button', { name: 'Verwerfen und neu laden' }));
+
+		await vi.waitFor(() => expect(screen.queryByLabelText('Beschreibung (Markdown)')).toBeNull());
+		expect(screen.getByText('Anderer Text')).toBeTruthy();
+		expect(data.update).not.toHaveBeenCalled();
 	});
 
 	it('closes with Escape and with × "Panel schließen", but not from a form field', async () => {

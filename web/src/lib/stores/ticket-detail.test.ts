@@ -1,13 +1,15 @@
 // Detail store with a fake data layer (E2 plan, package 7; E3 plan, T-13): saving sends only the
 // changed field, a failure keeps the draft and sets the field error, an incoming update keeps the
-// draft, a new project gives a new key.
+// draft, a new project gives a new key. The description is guarded against overwriting and its
+// tasks can be ticked (ADR-0032 section 6).
 
 import { SvelteMap } from 'svelte/reactivity';
 import { describe, expect, it, vi } from 'vitest';
-import { DataError } from '$lib/data/errors';
+import { DATA_ERROR_MESSAGES, DataError } from '$lib/data/errors';
 import type { Ticket, TicketDraft, TicketPatch, TicketSummary } from '$lib/domain/ticket';
 import {
 	INVALID_DATE_MESSAGE,
+	TASK_STALE_MESSAGE,
 	TITLE_REQUIRED_MESSAGE,
 	TicketDetailStore,
 	type TicketDetailData,
@@ -692,5 +694,214 @@ describe('TicketDetailStore: deleting', () => {
 		session.ensureValid.mockReturnValue(false);
 		expect(await store.deleteTicket()).toEqual({ ok: false, message: null });
 		expect(data.delete).not.toHaveBeenCalled();
+	});
+});
+
+/** The hook refuses a description based on an older `updated` (ADR-0032 section 6). */
+function staleError(): DataError {
+	return new DataError('validation', {
+		status: 400,
+		fields: {
+			description: {
+				code: 'validation_description_stale',
+				message: 'Die Beschreibung wurde inzwischen geändert.'
+			}
+		}
+	});
+}
+
+const TASKS = '- [ ] Milch\n- [ ] Brot';
+const FIRST = '2026-09-01 10:00:00.000Z';
+const LATER = '2026-09-05 08:00:00.000Z';
+
+describe('ticking tasks of the description (ADR-0032 section 6)', () => {
+	it('ticks a task and sends the description with expected_updated', async () => {
+		const { store, data, list } = await opened(ticket({ description: TASKS }));
+
+		expect(await store.toggleTask(1, true)).toEqual({ ok: true });
+
+		expect(data.update).toHaveBeenCalledExactlyOnceWith(
+			ID,
+			{ description: '- [ ] Milch\n- [x] Brot' },
+			{ expectedUpdated: FIRST }
+		);
+		expect(store.ticket?.description).toBe('- [ ] Milch\n- [x] Brot');
+		expect(list.upsert).toHaveBeenCalled();
+		expect(store.isSaving('description')).toBe(false);
+	});
+
+	it('sends once more on the new version when only other fields changed', async () => {
+		const { store, data } = await opened(ticket({ description: TASKS }));
+		data.update.mockRejectedValueOnce(staleError());
+		data.get.mockResolvedValueOnce(
+			ticket({ description: TASKS, status: 'waiting', updated: LATER })
+		);
+
+		expect(await store.toggleTask(0, true)).toEqual({ ok: true });
+
+		expect(data.update).toHaveBeenCalledTimes(2);
+		expect(data.update).toHaveBeenLastCalledWith(
+			ID,
+			{ description: '- [x] Milch\n- [ ] Brot' },
+			{ expectedUpdated: LATER }
+		);
+	});
+
+	it('says so when the description changed meanwhile and shows the new one', async () => {
+		const { store, data } = await opened(ticket({ description: TASKS }));
+		data.update.mockRejectedValueOnce(staleError());
+		data.get.mockResolvedValueOnce(ticket({ description: '- [ ] Käse', updated: LATER }));
+
+		expect(await store.toggleTask(1, true)).toEqual({ ok: false, message: TASK_STALE_MESSAGE });
+
+		expect(data.update).toHaveBeenCalledOnce();
+		expect(store.ticket?.description).toBe('- [ ] Käse');
+	});
+
+	it('gives up after a second refusal', async () => {
+		const { store, data } = await opened(ticket({ description: TASKS }));
+		data.update.mockRejectedValue(staleError());
+		data.get.mockResolvedValue(ticket({ description: TASKS, updated: LATER }));
+
+		expect(await store.toggleTask(0, true)).toEqual({ ok: false, message: TASK_STALE_MESSAGE });
+		expect(data.update).toHaveBeenCalledTimes(2);
+	});
+
+	it('refuses while the description is edited, and a task that does not exist', async () => {
+		const { store, data } = await opened(ticket({ description: TASKS }));
+
+		expect(await store.toggleTask(5, true)).toEqual({ ok: false, message: TASK_STALE_MESSAGE });
+		store.edit('description');
+		expect(await store.toggleTask(0, true)).toEqual({ ok: false, message: null });
+		expect(data.update).not.toHaveBeenCalled();
+	});
+
+	it('returns other failures as message and ends the session on 401', async () => {
+		const { store, data, session } = await opened(ticket({ description: TASKS }));
+		data.update.mockRejectedValueOnce(new DataError('server', { status: 500 }));
+
+		expect(await store.toggleTask(0, true)).toEqual({
+			ok: false,
+			message: DATA_ERROR_MESSAGES.server
+		});
+
+		data.update.mockRejectedValueOnce(new DataError('session', { status: 401 }));
+		expect(await store.toggleTask(0, true)).toEqual({ ok: false, message: null });
+		expect(session.logout).toHaveBeenCalled();
+	});
+});
+
+describe('saving the description without overwriting a newer one (ADR-0032 section 6)', () => {
+	it('sends the description with the updated of the version the draft started from', async () => {
+		const { store, data } = await opened();
+
+		store.edit('description');
+		store.setDraft('description', 'Neu');
+		expect(await store.save('description')).toBe(true);
+
+		expect(data.update).toHaveBeenCalledExactlyOnceWith(
+			ID,
+			{ description: 'Neu' },
+			{ expectedUpdated: FIRST }
+		);
+		expect(store.isEditing('description')).toBe(false);
+	});
+
+	it('asks without a request when a newer description arrived while editing', async () => {
+		const { store, data } = await opened();
+
+		store.edit('description');
+		store.setDraft('description', 'Mein Text');
+		store.upsert(ticket({ description: 'Anderer Text', updated: LATER }));
+		expect(await store.save('description')).toBe(false);
+
+		expect(store.descriptionConflict).toBe(true);
+		expect(store.value('description')).toBe('Mein Text');
+		expect(data.update).not.toHaveBeenCalled();
+	});
+
+	it('asks when the server knows a newer description', async () => {
+		const { store, data } = await opened();
+		data.update.mockRejectedValueOnce(staleError());
+		data.get.mockResolvedValueOnce(ticket({ description: 'Anderer Text', updated: LATER }));
+
+		store.edit('description');
+		store.setDraft('description', 'Mein Text');
+		expect(await store.save('description')).toBe(false);
+
+		expect(store.descriptionConflict).toBe(true);
+		expect(store.fieldError('description')).toBeNull();
+		expect(store.ticket?.description).toBe('Anderer Text');
+		expect(data.update).toHaveBeenCalledOnce();
+	});
+
+	it('sends once more when only other fields changed meanwhile', async () => {
+		const { store, data } = await opened();
+		data.update.mockRejectedValueOnce(staleError());
+		data.get.mockResolvedValueOnce(ticket({ status: 'waiting', updated: LATER }));
+
+		store.edit('description');
+		store.setDraft('description', 'Mein Text');
+		expect(await store.save('description')).toBe(true);
+
+		expect(store.descriptionConflict).toBe(false);
+		expect(data.update).toHaveBeenLastCalledWith(
+			ID,
+			{ description: 'Mein Text' },
+			{ expectedUpdated: LATER }
+		);
+	});
+
+	it('overwrites the newer description when asked to', async () => {
+		const { store, data } = await opened();
+		store.edit('description');
+		store.setDraft('description', 'Mein Text');
+		store.upsert(ticket({ description: 'Anderer Text', updated: LATER }));
+		await store.save('description');
+
+		expect(await store.overwriteDescription()).toBe(true);
+
+		expect(store.descriptionConflict).toBe(false);
+		expect(store.isEditing('description')).toBe(false);
+		expect(data.update).toHaveBeenCalledExactlyOnceWith(
+			ID,
+			{ description: 'Mein Text' },
+			{ expectedUpdated: LATER }
+		);
+		expect(store.ticket?.description).toBe('Mein Text');
+	});
+
+	it('discards the draft and loads the ticket again when asked to', async () => {
+		const { store, data } = await opened();
+		store.edit('description');
+		store.setDraft('description', 'Mein Text');
+		store.upsert(ticket({ description: 'Anderer Text', updated: LATER }));
+		await store.save('description');
+		data.get.mockResolvedValueOnce(ticket({ description: 'Anderer Text', updated: LATER }));
+
+		await store.discardDescription();
+
+		expect(store.descriptionConflict).toBe(false);
+		expect(store.isEditing('description')).toBe(false);
+		expect(store.ticket?.description).toBe('Anderer Text');
+		expect(data.get).toHaveBeenCalledTimes(2);
+		expect(data.update).not.toHaveBeenCalled();
+	});
+
+	it('forgets the question when editing ends or the store resets', async () => {
+		const { store } = await opened();
+		store.edit('description');
+		store.setDraft('description', 'Mein Text');
+		store.upsert(ticket({ description: 'Anderer Text', updated: LATER }));
+		await store.save('description');
+
+		store.cancel('description');
+		expect(store.descriptionConflict).toBe(false);
+
+		store.edit('description');
+		expect(store.value('description')).toBe('Anderer Text');
+		expect(await store.save('description')).toBe(true);
+		store.reset();
+		expect(store.descriptionConflict).toBe(false);
 	});
 });

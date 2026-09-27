@@ -12,7 +12,8 @@
 	// One comment (E2 plan, T-9 and T-13): author relative to the signed-in user, time in Berlin,
 	// "bearbeitet" after a change, sanitized Markdown. "Löschen" asks through the confirmation of
 	// ADR-0025 section 4; a failure shows at the comment. Only own comments offer "Bearbeiten" and
-	// "Löschen"; the API rules enforce it.
+	// "Löschen"; the API rules enforce it. Only in own comments can tasks be ticked (ADR-0032
+	// section 6); in foreign ones the checkboxes stay disabled.
 	let {
 		comment,
 		store,
@@ -127,7 +128,13 @@
 				<button class="small" type="button" onclick={() => endEdit(false)}>Abbrechen</button>
 			</div>
 		{:else}
-			<Markdown source={comment.body} />
+			<Markdown
+				source={comment.body}
+				ontoggletask={own
+					? (index, checked) => store.toggleTask(comment.id, index, checked)
+					: undefined}
+				taskHint={busy ? 'Der Kommentar wird gerade gespeichert.' : null}
+			/>
 			{#if error}
 				<p class="field-error" id={errorId}><ErrorIcon /><span>{error}</span></p>
 			{/if}
@@ -161,7 +168,7 @@
 		flex-wrap: wrap;
 		gap: 0.25rem 0.5rem;
 		align-items: baseline;
-		font-size: 0.8125rem;
+		font-size: var(--font-size-control);
 	}
 
 	.author {
@@ -191,7 +198,7 @@
 
 	.small {
 		padding: 0.0625rem 0.5rem;
-		font-size: 0.75rem;
+		font-size: var(--font-size-small);
 		background: none;
 		border: 1px solid var(--color-line);
 		border-radius: var(--radius-control);
@@ -204,6 +211,6 @@
 
 	.small-primary {
 		padding: 0.25rem 0.75rem;
-		font-size: 0.8125rem;
+		font-size: var(--font-size-control);
 	}
 </style>

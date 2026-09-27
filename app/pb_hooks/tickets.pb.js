@@ -24,6 +24,7 @@ onRecordUpdateRequest(function (e) {
   service.guardSourceChange(e.record);
   require(`${__hooks}/lib/recurrence-service.js`).guardTicketUpdate(e);
   service.rememberActor(e);
+  service.rememberExpectedUpdated(e);
   e.next();
 }, 'tickets');
 
@@ -41,10 +42,13 @@ onRecordCreate(function (e) {
 // reopening one removes an untouched follow-up (or is refused), and releasing an open instance
 // works like deleting it. The next ticket follows after the commit, so completing never fails
 // because of the generation. Before the E5 migrations lib/recurrence-service.js does nothing.
+// A change sent with `expected_updated` (ADR-0032 section 6) is refused first if the ticket
+// changed meanwhile.
 onRecordUpdate(function (e) {
   var service = require(`${__hooks}/lib/ticket-service.js`);
   var recurrence = require(`${__hooks}/lib/recurrence-service.js`);
   require(`${__hooks}/lib/transaction.js`).inTransaction(e, function (txApp) {
+    service.checkExpectedUpdated(txApp, e.record);
     var before = service.prepareUpdate(txApp, e.record);
     recurrence.prepareTicketUpdate(txApp, e.record, Date.now());
     e.next();

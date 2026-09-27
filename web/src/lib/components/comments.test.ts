@@ -111,6 +111,29 @@ describe('comment list', () => {
 		expect(within(foreign).queryByRole('button')).toBeNull();
 	});
 
+	it('lets tasks be ticked only in own comments (ADR-0032 section 6)', async () => {
+		const { data } = await renderComments([
+			comment({ body: '- [ ] Anrufen' }),
+			comment({ id: 'c2', author: OTHER, body: '- [ ] Fremd' })
+		]);
+
+		const foreign = within(commentOf(/Kommentar von Anderes Konto/)).getByRole<HTMLInputElement>(
+			'checkbox',
+			{ name: 'Fremd' }
+		);
+		expect(foreign.disabled).toBe(true);
+		const own = within(commentOf(/Kommentar von Du/)).getByRole<HTMLInputElement>('checkbox', {
+			name: 'Anrufen'
+		});
+		expect(own.disabled).toBe(false);
+
+		await fireEvent.click(own);
+
+		await vi.waitFor(() =>
+			expect(data.updateComment).toHaveBeenCalledWith('comment00000001', '- [x] Anrufen')
+		);
+	});
+
 	it('shows the empty state', async () => {
 		await renderComments([]);
 
