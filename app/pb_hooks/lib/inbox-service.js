@@ -21,11 +21,21 @@ var MESSAGES = {
   validation_inbox_transition: 'Dieser Zustandswechsel ist nicht erlaubt.',
   validation_inbox_item_handled: 'Dieser Eintrag wurde schon bearbeitet.',
   validation_inbox_ticket_required: 'Zum Zuordnen fehlt das Ticket.',
+  validation_inbox_primary_source: 'Die Hauptquelle eines Tickets lässt sich nicht lösen.',
+  validation_inbox_item_linked: 'Dieser Eintrag ist die Quelle eines Tickets und lässt sich nicht löschen.',
   validation_invalid_url: 'Nur http- und https-Adressen.',
   validation_required: 'Pflichtfeld.',
   validation_scope_mismatch: 'Verknüpfter Datensatz nicht gefunden oder in einem anderen Bereich.',
   validation_source_not_allowed: 'Diese Quelle lässt sich beim Anlegen nicht direkt setzen.'
 };
+
+// Transient record key for the acting user of a link or release, as for tickets
+// (ticket-service.js, E1 plan OF-4): PocketBase neither stores nor exports unknown keys, and a
+// client cannot set a field name with "@".
+var ACTOR_KEY = '@actor';
+
+// History field of linking and releasing a source (ADR-0031 section 2).
+var SOURCE_LINK_FIELD = 'source_link';
 
 function fail(field, code, params) {
   return errors.fieldFailure(field, code, MESSAGES[code], params);
@@ -35,6 +45,18 @@ function fail(field, code, params) {
 function findById(txApp, collection, id) {
   var found = txApp.findRecordsByFilter(collection, 'id = {:id}', '', 1, 0, { id: id });
   return found.length > 0 ? found[0] : null;
+}
+
+// Whether a ticket came from the item (tickets.source_item, the main source; ADR-0031 section 1).
+function isPrimarySource(txApp, itemId) {
+  return txApp.findRecordsByFilter('tickets', 'source_item = {:id}', '', 1, 0, { id: itemId }).length > 0;
+}
+
+// Request hook: remembers the signed-in app user for the history of a link or release.
+function rememberActor(e) {
+  if (e.auth && e.auth.collection().name === 'users') {
+    e.record.set(ACTOR_KEY, e.auth.id);
+  }
 }
 
 function applyScope(record) {
@@ -234,8 +256,10 @@ function guardClientUpdate(record) {
   }
 }
 
-// onRecordUpdate before e.next(), for client and internal saves: scope, handled_at, and a
-// converted item must point to a ticket of its scope.
+// onRecordUpdate before e.next(), for client and internal saves: scope, handled_at, a converted
+// item must point to a ticket of its scope (a missing and a foreign ID give the same message),
+// and the main source of a ticket is never released (ADR-0031 section 2). Returns the change for
+// recordLinkChange(): { kind: 'link' | 'release' | '', ticket }.
 function prepareUpdate(txApp, record) {
   var original = record.original();
   var scope = applyScope(record);
@@ -249,6 +273,10 @@ function prepareUpdate(txApp, record) {
       throw fail('ticket', 'validation_scope_mismatch');
     }
   }
+  var kind = rules.linkChange(before, after);
+  if (kind === 'release' && isPrimarySource(txApp, record.id)) {
+    throw fail('state', 'validation_inbox_primary_source');
+  }
 
   var action = rules.handledAtAction(before, after);
   if (action === 'set') {
@@ -257,6 +285,42 @@ function prepareUpdate(txApp, record) {
     record.set('handled_at', '');
   } else {
     record.set('handled_at', original.getString('handled_at'));
+  }
+  return { kind: kind, ticket: kind === 'release' ? original.getString('ticket') : record.getString('ticket') };
+}
+
+// onRecordUpdate after e.next(), in the same transaction: linking and releasing leave an entry
+// "source_link" in the history of the ticket (ADR-0031 section 2), with the acting user. Converting
+// writes none (the ticket records its creation), nor does releasing an item whose ticket is gone.
+function recordLinkChange(txApp, record, change) {
+  if (!change || change.kind === '' || change.ticket === '') {
+    return;
+  }
+  var ticket = findById(txApp, 'tickets', change.ticket);
+  if (!ticket || (change.kind === 'link' && ticket.getString('source_item') === record.id)) {
+    return;
+  }
+  var value = rules.sourceLinkValue({
+    id: record.id,
+    channel: record.getString('channel'),
+    title: record.getString('title')
+  });
+  var entry = new Record(txApp.findCollectionByNameOrId('ticket_history'));
+  entry.set('ticket', ticket.id);
+  entry.set('field', SOURCE_LINK_FIELD);
+  entry.set('old_value', change.kind === 'release' ? value : '');
+  entry.set('new_value', change.kind === 'link' ? value : '');
+  var actor = record.get(ACTOR_KEY);
+  entry.set('user', actor ? String(actor) : '');
+  txApp.save(entry);
+}
+
+// onRecordDeleteRequest (ADR-0031 section 3): the source of a ticket is never deleted through
+// the API, neither a linked item nor the main source. Works before the migration of the
+// deleteRule and for superusers too.
+function guardDelete(app, record) {
+  if (record.getString('ticket') !== '' || isPrimarySource(app, record.id)) {
+    throw fail('ticket', 'validation_inbox_item_linked');
   }
 }
 
@@ -300,8 +364,11 @@ module.exports = {
   prepareCreate: prepareCreate,
   ingest: ingest,
   lookup: lookup,
+  rememberActor: rememberActor,
   guardClientUpdate: guardClientUpdate,
   prepareUpdate: prepareUpdate,
+  recordLinkChange: recordLinkChange,
+  guardDelete: guardDelete,
   prepareConversion: prepareConversion,
   completeConversion: completeConversion
 };

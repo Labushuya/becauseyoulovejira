@@ -72,10 +72,14 @@ describe('transitionViolation', () => {
 		});
 	});
 
-	it('keeps converted items final', () => {
+	it('keeps converted items on their ticket, except for releasing them (ADR-0031)', () => {
 		const handled = { field: 'state', code: 'validation_inbox_item_handled' };
 		expect(rules.transitionViolation(at('converted', 't1'), at('new', 't1'))).toEqual(handled);
 		expect(rules.transitionViolation(at('converted', 't1'), at('discarded', 't1'))).toEqual(handled);
+		expect(rules.transitionViolation(at('converted', 't1'), at('discarded', ''))).toEqual(handled);
+		// Releasing: back to new with an empty ticket (the main source is checked by the service).
+		expect(rules.transitionViolation(at('converted', 't1'), at('new', ''))).toBe('');
+		expect(rules.transitionViolation(at('converted', ''), at('new', ''))).toBe('');
 		expect(rules.transitionViolation(at('converted', 't1'), at('converted', 't2'))).toEqual(handled);
 		expect(rules.transitionViolation(at('converted', 't1'), at('converted', ''))).toEqual(handled);
 		expect(rules.transitionViolation(at('converted', 't1'), at('converted', 't1'))).toBe('');
@@ -87,6 +91,29 @@ describe('transitionViolation', () => {
 		const transition = { field: 'ticket', code: 'validation_inbox_transition' };
 		expect(rules.transitionViolation(at('new'), at('new', 't1'))).toEqual(transition);
 		expect(rules.transitionViolation(at('new'), at('discarded', 't1'))).toEqual(transition);
+	});
+});
+
+describe('linkChange and sourceLinkValue (ADR-0031 section 2)', () => {
+	it('names linking and releasing, nothing else', () => {
+		expect(rules.linkChange('new', 'converted')).toBe('link');
+		expect(rules.linkChange('converted', 'new')).toBe('release');
+		for (const [from, to] of [
+			['new', 'new'],
+			['new', 'discarded'],
+			['discarded', 'new'],
+			['converted', 'converted'],
+			['discarded', 'converted'],
+			['', '']
+		]) {
+			expect(rules.linkChange(from, to), `${from} -> ${to}`).toBe('');
+		}
+	});
+
+	it('keeps id, channel and title of the item as JSON', () => {
+		const value = rules.sourceLinkValue({ id: 'abc', channel: 'mail', title: 'Rechnung „März“ | 2' });
+		expect(JSON.parse(value)).toEqual({ item: 'abc', channel: 'mail', title: 'Rechnung „März“ | 2' });
+		expect(JSON.parse(rules.sourceLinkValue({}))).toEqual({ item: '', channel: '', title: '' });
 	});
 });
 

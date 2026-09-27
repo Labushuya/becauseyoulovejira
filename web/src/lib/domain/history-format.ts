@@ -4,6 +4,7 @@
 // never rendered as Markdown.
 
 import { formatCalendarDate, formatBerlinDateTime } from './format';
+import { CHANNEL_LABELS, isInboxChannel } from './inbox';
 import { PRIORITY_LABELS, STATUS_LABELS, historyFieldLabel } from './labels';
 import { personLabel } from './people';
 import { isPriority, isStatus } from './status';
@@ -103,6 +104,31 @@ function areaText(value: string): string {
 	return value === '' ? 'Privat' : 'Haushalt';
 }
 
+/**
+ * The inbox item of a "source_link" entry (ADR-0031 section 2): JSON with item, channel and title
+ * as the hook wrote it, e.g. `Mail „Rechnung März“`; '' when the value is not readable.
+ */
+function sourceText(value: string): string {
+	try {
+		const parsed: unknown = JSON.parse(value);
+		if (typeof parsed !== 'object' || parsed === null) return '';
+		const { channel, title } = parsed as { channel?: unknown; title?: unknown };
+		const label = isInboxChannel(channel) ? CHANNEL_LABELS[channel] : '';
+		const name = typeof title === 'string' && title !== '' ? `„${title}“` : '';
+		return [label, name].filter((part) => part !== '').join(' ');
+	} catch {
+		return '';
+	}
+}
+
+/** Linking (new value set) or releasing (old value set) a source of the ticket. */
+function sourceLinkText(oldValue: string, newValue: string): string {
+	const linked = newValue !== '';
+	const what = sourceText(linked ? newValue : oldValue);
+	const verb = linked ? 'Quelle verknüpft' : 'Quelle gelöst';
+	return what === '' ? verb : `${verb}: ${what}`;
+}
+
 function change(label: string, before: string, after: string): string {
 	return `${label}: ${before} → ${after}`;
 }
@@ -138,6 +164,8 @@ function describe(entry: HistoryEntry, lookups: HistoryLookups): string {
 			if (oldValue === '') return 'Wiederholung eingerichtet';
 			if (newValue === '') return 'Wiederholung entfernt';
 			return 'Wiederholung geändert';
+		case 'source_link':
+			return sourceLinkText(oldValue, newValue);
 		default:
 			return `${historyFieldLabel(field)} geändert`;
 	}

@@ -104,3 +104,12 @@ Neue Felder an `tickets`:
 - `inbox_items` braucht Negativtests für die Regeln mit mehreren Nutzern und Haushalten wie `rules.test.mjs`.
 - Originaldateien vergrößern `pb_data` und die Backups. Grenze 10 MB je Datei; größere Mails kommen ohne Original (Hinweis im Eintrag).
 - `TICKET_LIST_FIELDS` und das Realtime-Abo der Tickets bekommen `source` ([E3-Plan](../plan/e3.md) §10).
+
+## Nachtrag (2026-09-27): Quellen, Lösen und Löschschutz
+
+[ADR-0031](0031-herkunft-sichern.md) ergänzt §1, §2 und §4:
+
+- Ein Ticket kann mehrere Quellen haben: alle Einträge mit `ticket = <id>`. `converted` gilt weiter für Umwandeln und Verknüpfen; die Hauptquelle folgt aus `tickets.source_item`.
+- „Umgewandelt ist endgültig“ gilt nur noch für die Hauptquelle. Ein verknüpfter Eintrag lässt sich lösen (`converted` → `new` ohne Ticket).
+- „Einem bestehenden Ticket zuordnen“ ändert das Ticket weiter nicht, schreibt aber einen Verlaufseintrag `source_link`.
+- Anders als in §2 lässt sich ein Eintrag mit Ticket oder als Hauptquelle nicht mehr löschen. `tickets.source_item` wird deshalb nicht mehr über das Löschen des Eintrags geleert.

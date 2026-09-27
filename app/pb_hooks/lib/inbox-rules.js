@@ -50,17 +50,22 @@ function isAllowedSourceUrl(value) {
 }
 
 /**
- * Checks a change of state and ticket by a client (ADR-0014 section 1). before/after:
- * { state, ticket }. Returns '' or { field, code }:
- * - converted is final: state and ticket stay as they are;
+ * Checks a change of state and ticket by a client (ADR-0014 section 1, ADR-0031 section 2).
+ * before/after: { state, ticket }. Returns '' or { field, code }:
  * - new <-> discarded, the ticket stays empty;
- * - new -> converted only together with a ticket ("assign to an existing ticket").
+ * - new -> converted only together with a ticket (linking, also "Dem Ticket zuordnen");
+ * - converted -> new only with an empty ticket (releasing; that the item is not the main source
+ *   of its ticket checks the service in the transaction);
+ * - otherwise converted stays as it is: no other ticket, no discarding.
  */
 function transitionViolation(before, after) {
   var from = text(before.state);
   var to = text(after.state);
   var ticketChanged = text(before.ticket) !== text(after.ticket);
   if (from === 'converted') {
+    if (to === 'new' && text(after.ticket) === '') {
+      return '';
+    }
     return to !== from || ticketChanged ? { field: 'state', code: HANDLED } : '';
   }
   if (to === 'converted') {
@@ -84,6 +89,30 @@ function handledAtAction(beforeState, afterState) {
   return afterState === 'new' ? 'clear' : 'set';
 }
 
+/**
+ * What a saved change of state means for the sources of a ticket (ADR-0031 section 2):
+ * 'link' (new -> converted), 'release' (converted -> new) or '' for anything else.
+ */
+function linkChange(beforeState, afterState) {
+  var from = text(beforeState);
+  var to = text(afterState);
+  if (from === 'new' && to === 'converted') {
+    return 'link';
+  }
+  if (from === 'converted' && to === 'new') {
+    return 'release';
+  }
+  return '';
+}
+
+/**
+ * Value of the history entry "source_link" (ADR-0031 section 2): the item as JSON with id,
+ * channel and title, so the history stays readable after the item is released.
+ */
+function sourceLinkValue(item) {
+  return JSON.stringify({ item: text(item.id), channel: text(item.channel), title: text(item.title) });
+}
+
 // Message of a duplicate (ADR-0014 section 3): "schon im Eingang", "schon verworfen",
 // "schon Ticket HAUS-12".
 function duplicateMessage(state, ticketKey) {
@@ -105,5 +134,7 @@ module.exports = {
   isAllowedSourceUrl: isAllowedSourceUrl,
   transitionViolation: transitionViolation,
   handledAtAction: handledAtAction,
+  linkChange: linkChange,
+  sourceLinkValue: sourceLinkValue,
   duplicateMessage: duplicateMessage
 };

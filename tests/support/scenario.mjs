@@ -93,6 +93,7 @@ export async function createScenario() {
 export const FAIL_TICKET_INSERT = '__byl_fail_ticket_insert__';
 export const FAIL_HISTORY = '__byl_fail_history__';
 export const FAIL_TICKET_LINK = '__byl_fail_ticket_link__';
+export const FAIL_SOURCE_LINK = '__byl_fail_source_link__';
 
 /**
  * Fresh app user with an own private scope, so every counter of that scope starts empty.

@@ -344,6 +344,66 @@ describe('migration rollback of the full inbox scan (ADR-0020, addendum 3)', () 
 	);
 });
 
+const DELETE_GUARD_MIGRATION = '1790201800_inbox_items_delete_guard.js';
+
+describe('migration rollback of the delete guard of sources (ADR-0031 section 3)', () => {
+	it(
+		'changes only the deleteRule of inbox_items, there and back, and keeps every row',
+		async () => {
+			const fromGuard = MIGRATION_FILES.slice(MIGRATION_FILES.indexOf(DELETE_GUARD_MIGRATION));
+			expect(fromGuard[0]).toBe(DELETE_GUARD_MIGRATION);
+			const deleteRuleOf = (dataDir) =>
+				readDataDir(dataDir).collections.find((collection) => collection.name === 'inbox_items').deleteRule;
+
+			await withTempDataDir(async ({ dataDir, args }) => {
+				await migrate(args, 'up');
+				const guarded = deleteRuleOf(dataDir);
+				await migrate(args, 'down', String(fromGuard.length));
+				const before = deleteRuleOf(dataDir);
+				expect(guarded).toBe(`${before} && ticket = ""`);
+
+				// A ticket with its main source, a linked, a new and a discarded item.
+				withDatabase(dataDir, (db) => {
+					db.prepare('INSERT INTO users (id, email, tokenKey, password, created, updated) VALUES (?, ?, ?, ?, ?, ?)').run(
+						'user00000000001',
+						'eins@example.invalid',
+						'tk1',
+						'hash',
+						STAMP,
+						STAMP
+					);
+					const item = db.prepare(
+						'INSERT INTO inbox_items (id, channel, kind, title, body, fingerprint, state, ticket, handled_at, scope, owner, created, updated) ' +
+							'VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+					);
+					item.run('item00000000001', 'eml', 'mail', 'Hauptquelle', 'Text', 'f1', 'converted', 'ticket000000001', STAMP, 'u:user00000000001', 'user00000000001', STAMP, STAMP);
+					item.run('item00000000002', 'telegram', 'message', 'Verknüpft', '', 'f2', 'converted', 'ticket000000001', STAMP, 'u:user00000000001', 'user00000000001', STAMP, STAMP);
+					item.run('item00000000003', 'manual', 'todo', 'Neu', '', 'f3', 'new', '', '', 'u:user00000000001', 'user00000000001', STAMP, STAMP);
+					item.run('item00000000004', 'link', 'link', 'Verworfen', '', 'f4', 'discarded', '', STAMP, 'u:user00000000001', 'user00000000001', STAMP, STAMP);
+					db.prepare(
+						'INSERT INTO tickets (id, number, key, title, status, priority, source, source_item, scope, owner, created, updated) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+					).run('ticket000000001', 1, 'TASK-1', 'Mit Quellen', 'open', 'medium', 'eml', 'item00000000001', 'u:user00000000001', 'user00000000001', STAMP, STAMP);
+				});
+				const rows = withDatabase(dataDir, snapshot);
+
+				const up = await migrate(args, 'up');
+				expect(appliedFiles(up, 'Applied')).toEqual(fromGuard);
+				expect(deleteRuleOf(dataDir)).toBe(guarded);
+				expect(withDatabase(dataDir, snapshot)).toEqual(rows);
+
+				const down = await migrate(args, 'down', String(fromGuard.length));
+				expect(appliedFiles(down, 'Reverted')).toEqual([...fromGuard].reverse());
+				expect(deleteRuleOf(dataDir)).toBe(before);
+				expect(withDatabase(dataDir, snapshot)).toEqual(rows);
+
+				expect(appliedFiles(await migrate(args, 'up'), 'Applied')).toEqual(fromGuard);
+				expect(deleteRuleOf(dataDir)).toBe(guarded);
+			});
+		},
+		60_000
+	);
+});
+
 const CONNECTIONS_MIGRATION = '1790201400_create_connections.js';
 const IMPORT_KEYWORDS_MIGRATION = '1790201500_users_import_keywords.js';
 const INBOX_CONNECTION_MIGRATION = '1790201410_inbox_items_connection.js';
