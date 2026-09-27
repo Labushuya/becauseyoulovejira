@@ -635,7 +635,7 @@ describe('Stichwörter (E4 plan, package 20; since EH-3 in "Bearbeiten")', () =>
 		expect(card('Telegram-Bot').getByText('6 (Einkauf, todo, aufgabe, +3)')).toBeTruthy();
 
 		await fireEvent.click(
-			scope.getByRole('checkbox', {
+			scope.getByRole('switch', {
 				name: /Auf Nachrichten ohne Stichwort antworten/
 			})
 		);
@@ -657,7 +657,7 @@ describe('Stichwörter (E4 plan, package 20; since EH-3 in "Bearbeiten")', () =>
 		renderCards(context.store);
 		await fireEvent.click(screen.getByRole('button', { name: 'Bearbeiten: Google Kalender' }));
 		expect(screen.getByRole('dialog', { name: 'Google Kalender bearbeiten' })).toBeTruthy();
-		expect(screen.queryByRole('checkbox', { name: /ohne Stichwort antworten/ })).toBeNull();
+		expect(screen.queryByRole('switch', { name: /ohne Stichwort antworten/ })).toBeNull();
 	});
 
 	it('leads from "Bearbeiten" to the setup and closes the modal first (EH-3)', async () => {
@@ -711,7 +711,7 @@ describe('Postfächer (E4 plan, package 22)', () => {
 			)
 		).toBeTruthy();
 		await fireEvent.click(
-			dialog.getByRole('checkbox', { name: 'Betreff, Absender, Kopfzeilen und Text durchsuchen' })
+			dialog.getByRole('switch', { name: 'Betreff, Absender, Kopfzeilen und Text durchsuchen' })
 		);
 		await vi.waitFor(() =>
 			expect(context.data.saveSettings).toHaveBeenLastCalledWith(

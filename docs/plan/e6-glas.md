@@ -80,7 +80,7 @@ Die Themes sind Petrol, Rubin, Smaragd und Kupfer (Nachtrag zu ADR-0027 vom 2026
 ## 6. Offene Punkte
 
 - Manuelle Browser-Prüfungen BYL-E6-102, -105, -107, -109, -111 und -113, darin die Messung nach ADR-0029 §8.
-- Schalter im Kanal-Dialog als Switch (mit der Mail-Arbeit).
+- ~~Schalter im Kanal-Dialog als Switch (mit der Mail-Arbeit).~~ Erledigt mit dem Plan [Spalten](e6-spalten.md), Paket „Switch“ (BYL-E6-151).
 - Radien in `ConnectionsSection`, `ImportKeywordsSection` und die Schriftgrößen der Liste in `no-own-font-sizes.test.ts` bei der nächsten Änderung der jeweiligen Datei auf die Tokens. Erledigt mit dem Plan [Spalten](e6-spalten.md): die vier Tabellen, `TagPicker` und `KeywordEditor` (Radien und Schriftgrößen).
 
 ## Quellen

@@ -386,13 +386,42 @@ describe('channel edit modal', () => {
 		expect(scope.getByRole('list', { name: 'Stichwörter von „Bot“' })).toBeTruthy();
 		expect(scope.getByText('BYL_TELEGRAM_TOKEN')).toBeTruthy();
 		expect(scope.getByText('BYL_TELEGRAM_ALLOWED_IDS')).toBeTruthy();
-		await fireEvent.click(scope.getByRole('checkbox', { name: /ohne Stichwort antworten/ }));
+		// A switch after Apple HIG (ADR-0029, G-5): a checkbox with role="switch", name left.
+		const reply = scope.getByRole<HTMLInputElement>('switch', { name: /ohne Stichwort antworten/ });
+		expect(reply.getAttribute('type')).toBe('checkbox');
+		expect(reply.closest('label')?.firstElementChild?.tagName).toBe('SPAN');
+		await fireEvent.click(reply);
 		expect(onreply).toHaveBeenCalledWith(false);
 		const close = scope.getAllByRole('button', { name: 'Schließen' });
 		expect(close.length).toBeGreaterThanOrEqual(2);
 		expect(scope.queryByRole('button', { name: 'Abbrechen' })).toBeNull();
 		await fireEvent.click(close[close.length - 1] as HTMLElement);
 		expect(onclose).toHaveBeenCalled();
+	});
+
+	it('shows the text search of a mailbox as a switch (ADR-0029, G-5)', async () => {
+		const onmatchbody = vi.fn();
+		render(ChannelEditModal, {
+			props: {
+				connection: connection({ type: 'mail', label: 'Web.de', matchBody: false }),
+				onkeywords: vi.fn(async () => null),
+				onreply: vi.fn(),
+				onmatchbody,
+				onsetup: vi.fn(),
+				onclose: vi.fn()
+			}
+		});
+		const dialog = within(screen.getByRole('dialog', { name: 'Web.de bearbeiten' }));
+
+		const search = dialog.getByRole<HTMLInputElement>('switch', {
+			name: 'Betreff, Absender, Kopfzeilen und Text durchsuchen'
+		});
+		expect(search.checked).toBe(false);
+		expect(dialog.queryByRole('checkbox', { name: /durchsuchen/ })).toBeNull();
+		expect(dialog.queryByRole('switch', { name: /ohne Stichwort antworten/ })).toBeNull();
+		await fireEvent.click(search);
+
+		expect(onmatchbody).toHaveBeenCalledExactlyOnceWith(true);
 	});
 });
 
