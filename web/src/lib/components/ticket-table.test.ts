@@ -359,7 +359,7 @@ describe('ticket table', () => {
 
 	it('turns the switch into the URL parameter and back', async () => {
 		await showTable(fakeData([]));
-		const toggle = screen.getByRole<HTMLInputElement>('checkbox', {
+		const toggle = screen.getByRole<HTMLInputElement>('switch', {
 			name: 'Erledigte anzeigen'
 		});
 		expect(toggle.checked).toBe(false);
@@ -373,7 +373,7 @@ describe('ticket table', () => {
 
 	it('reads the switch from the URL', async () => {
 		await showTable(fakeData([], [[]]), '/?erledigte=1');
-		const toggle = screen.getByRole<HTMLInputElement>('checkbox', {
+		const toggle = screen.getByRole<HTMLInputElement>('switch', {
 			name: 'Erledigte anzeigen'
 		});
 		expect(toggle.checked).toBe(true);
@@ -631,7 +631,7 @@ describe('ticket table: filters (E3 plan, package 10)', () => {
 		expect(screen.queryByRole('rowgroup', { name: 'Offene Tickets' })).toBeNull();
 		expect(within(doneBody()).getByText(finished.title)).toBeTruthy();
 		expect(screen.getByText('1 Ticket')).toBeTruthy();
-		const toggle = screen.getByRole('checkbox', { name: 'Erledigte anzeigen' });
+		const toggle = screen.getByRole('switch', { name: 'Erledigte anzeigen' });
 		expect(toggle).toHaveProperty('checked', true);
 		expect(toggle.getAttribute('aria-disabled')).toBe('true');
 		expect(
@@ -650,7 +650,7 @@ describe('ticket table: filters (E3 plan, package 10)', () => {
 		await showTable(fakeData([ticket()], [[]]), '/?status=open&erledigte=1');
 
 		expect(screen.queryByRole('rowgroup', { name: /^Erledigt/ })).toBeNull();
-		const toggle = screen.getByRole('checkbox', { name: 'Erledigte anzeigen' });
+		const toggle = screen.getByRole('switch', { name: 'Erledigte anzeigen' });
 		expect(toggle).toHaveProperty('checked', false);
 		expect(toggle.getAttribute('aria-disabled')).toBe('true');
 		expect(

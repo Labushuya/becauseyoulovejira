@@ -217,4 +217,18 @@ describe('base.css styles checkboxes and radios once', () => {
 		}
 		expect(base).not.toMatch(/\.switch\b/);
 	});
+
+	// Apple HIG, toggles (G-5): a switch for an emphasized single setting, checkboxes for lists
+	// and choices. The two single settings of the section bars are switches.
+	it.each([
+		[join('lib', 'components', 'TicketTable.svelte'), 'Erledigte anzeigen'],
+		[join('lib', 'components', 'ProjectsView.svelte'), 'Archivierte anzeigen']
+	])('%s shows "%s" as a switch', (path, name) => {
+		const markup = readFileSync(join(SRC_DIR, path), 'utf8');
+		const label = new RegExp(`<label class="switch"[^>]*>\\s*<input([^>]*)>\\s*${name}`).exec(
+			markup
+		);
+		expect(label?.[1], path).toMatch(/type="checkbox"/);
+		expect(label?.[1], path).toMatch(/role="switch"/);
+	});
 });

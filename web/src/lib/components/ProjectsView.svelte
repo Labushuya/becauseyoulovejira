@@ -268,7 +268,12 @@
 				/>
 			</div>
 			<label class="switch">
-				<input type="checkbox" checked={query.showArchived} onchange={toggleArchived} />
+				<input
+					type="checkbox"
+					role="switch"
+					checked={query.showArchived}
+					onchange={toggleArchived}
+				/>
 				Archivierte anzeigen
 			</label>
 			<div

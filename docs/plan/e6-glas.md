@@ -1,6 +1,6 @@
 # E6-Plan, Teil Glas: Materialien im macOS-Stil, verheiratet mit den Akzent-Themes
 
-- **Stand:** in Umsetzung (2026-09-27; G-1, G-3 und G-2 gemergt). Reihenfolge G-1, G-3, G-2, G-4, G-5, G-6, je ein PR.
+- **Stand:** in Umsetzung (2026-09-27; G-1, G-3, G-2 und G-4 gemergt). Reihenfolge G-1, G-3, G-2, G-4, G-5, G-6, je ein PR.
 - **Grundlage:**
   - [ADR-0029](../adr/0029-glas-materialien.md) (Ebenen, Tokens, Kontrast, Umschaltpunkt „undurchsichtig“, Schalter, Performance)
   - [ADR-0010](../adr/0010-layout-nach-task-board.md) §3 und §4, [ADR-0025](../adr/0025-ui-konsistenz-overlay-system.md) §2, [ADR-0027](../adr/0027-akzent-themes.md) §1 (je mit Nachtrag)
@@ -33,7 +33,7 @@ Die Themes sind Petrol, Rubin, Smaragd und Kupfer (Nachtrag zu ADR-0027 vom 2026
 | G-3 | Schalter „Transparenz“ (`byl-transparency`, Boot-Skript, Store, Switch in `base.css`, Block `data-transparency='off'`) | BYL-E6-103 bis BYL-E6-105 |
 | G-2 | Modals, Bestätigung, Seitenpanel, Flags, TagPicker-Liste, Anmeldekarte, Tour; Vollansicht opak; `--shadow-modal` | BYL-E6-106 und BYL-E6-107 |
 | G-4 | Knöpfe, `.segmented`, `.search-field`, Radien auf Tokens, `--fill-control*`, `--shadow-control`, Höhen | BYL-E6-108 und BYL-E6-109 |
-| G-5 | Switch nach HIG, baut auf den Checkboxen und Radios aus `base.css` auf (#86) | folgt |
+| G-5 | Switch nach HIG, baut auf den Checkboxen und Radios aus `base.css` auf (#86) | BYL-E6-110 und BYL-E6-111 |
 | G-6 | Einstellungs-Sidebar, Typografie, README, manuelle Fälle | folgt |
 
 ## 4. Entscheidungen
@@ -59,6 +59,9 @@ Die Themes sind Petrol, Rubin, Smaragd und Kupfer (Nachtrag zu ADR-0027 vom 2026
 | 2026-09-27 | G-4 | **`.segmented`:** Spur `--fill-control`, Einträge `--radius-item` in der Spur mit `--radius-control` (konzentrisch), gewählt als Daumen mit Akzentfläche, Rahmen `--color-brand-text` (wie der Fokusring; `--color-brand` hält auf dem Verlauf keine 3 : 1), Gewicht 600 und `--shadow-control`. Nicht gewählte Einträge in `--color-text`, weil gedämpfter Text auf der Spur über dem Verlauf unter 4,5 : 1 fällt (Rechnung in `glass-contrast.test.ts`). Eingesetzt im Bereichsumschalter und im Symbolpaar „Liste \| Kacheln“ (dort ohne `.button-icon`). Die Kachelgruppen unter „Darstellung“ bleiben Kacheln mit Beschreibung; eine Spur passt nicht zu Karten mit drei Zeilen. |
 | 2026-09-27 | G-4 | **`.search-field`:** Wrapper statt Klasse am Eingabefeld, weil die Lupe als Inline-SVG im Wrapper steht (kein Data-URI, keine Farbliterale). Füllung `--fill-control` plus Linie (auf deckendem Grund bleibt die Kante sichtbar), im Fokus `--color-surface` und der gemeinsame Fokusring statt nur einer Randfarbe. Das Filter-Popover bekommt dieselbe Lupe. |
 | 2026-09-27 | G-4 | **Radien nur als Token:** Rund 70 Literale in 35 Dateien ziehen auf `--radius-control` (0.375rem), `--radius-item` (0.25rem), `--radius-pill` (999px sowie die Zähler mit 0.625rem und der 3px-Balken des Steppers) und `--radius-surface` (0.5rem-Flächen; der Token wächst auf 0.625rem). `no-own-radii.test.ts` verbietet neue Literale. `KeywordEditor`, `ConnectionsSection` und `ImportKeywordsSection` gehören zur parallelen Mail-Arbeit und stehen auf einer Ausnahmeliste, die nur schrumpfen darf. |
+| 2026-09-27 | G-5 | **Was schon da ist:** Checkboxen und Radios zeichnet `base.css` seit #86 (inklusive `indeterminate`, `aria-disabled`, `forced-colors`, kein `accent-color` außerhalb, `no-own-controls.test.ts`), den Switch seit G-3. G-5 legt nichts doppelt an und setzt nur die HIG-Regel um. |
+| 2026-09-27 | G-5 | **Switch statt Checkbox** für die betonten Einzeleinstellungen der Abschnittsleisten: „Erledigte anzeigen“ (Aufgaben, samt gesperrtem Zustand mit `aria-disabled` und Hinweis) und „Archivierte anzeigen“ (Projekte). Checkboxen bleiben für Listen und Auswahl (Eingang, Postfach-Auswahl, Wochentage, Erledigt-Häkchen der Zeile). Die Normalgröße des Switch bleibt auch in den Leisten; eine Mini-Variante braucht es neben 24px-Zielen nicht. |
+| 2026-09-27 | G-5 | **Kanal-Dialog ausgenommen:** Die zwei Schalter in `ChannelEditModal` (Telegram-Antwort, Mail-Textsuche) wären nach HIG ebenfalls Switches. Dialog, Texte und Tests entwickelt gerade die parallele Mail-Arbeit weiter; die Umstellung folgt dort (offener Punkt, kein neues Token nötig: nur `role="switch"`). |
 
 ## 5. Status
 
@@ -67,8 +70,8 @@ Die Themes sind Petrol, Rubin, Smaragd und Kupfer (Nachtrag zu ADR-0027 vom 2026
 | G-1 | gemergt (#88) |
 | G-3 | gemergt (#90) |
 | G-2 | gemergt (#91) |
-| G-4 | in Arbeit |
-| G-5 | offen |
+| G-4 | gemergt (#93) |
+| G-5 | in Arbeit |
 | G-6 | offen |
 
 ## Quellen
