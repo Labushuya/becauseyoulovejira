@@ -14,6 +14,15 @@ html {
 	scrollbar-gutter: stable;
 }
 
+/*
+ * Headings of views, pages and dialogs (ADR-0029, G-6): slightly tighter tracking, as in the
+ * macOS system font, while Inter stays the font.
+ */
+h1,
+h2 {
+	letter-spacing: -0.01em;
+}
+
 /* Scroll lock while a modal dialog is open (ADR-0025 section 2): pure CSS, no script. */
 html:has(dialog:modal) {
 	overflow: hidden;
@@ -82,7 +91,7 @@ kbd {
 	min-width: 1.25rem;
 	padding: 0 0.3125rem;
 	font-family: var(--font-mono);
-	font-size: 0.75rem;
+	font-size: var(--font-size-small);
 	line-height: 1.25rem;
 	text-align: center;
 	color: var(--color-text);
@@ -295,7 +304,7 @@ a.button-subtle {
 	gap: 0.375rem;
 	align-items: center;
 	justify-content: center;
-	font-size: 0.875rem;
+	font-size: var(--font-size-body);
 	color: var(--color-text);
 	background: none;
 	border-radius: var(--radius-control);
@@ -368,7 +377,7 @@ a.button-subtle {
 	justify-content: center;
 	min-height: calc(var(--control-height-m) - 0.25rem);
 	padding: 0 0.625rem;
-	font-size: 0.8125rem;
+	font-size: var(--font-size-control);
 	/* --color-text, not muted: muted text misses 4.5 : 1 on the track over the gradient. */
 	color: var(--color-text);
 	text-decoration: none;
@@ -445,7 +454,7 @@ a.button-subtle {
 	flex: 1;
 	min-width: 0;
 	padding: 0.125rem 0.25rem;
-	font-size: 0.8125rem;
+	font-size: var(--font-size-control);
 	color: var(--color-text);
 	background: none;
 	border: none;
@@ -461,7 +470,7 @@ a.button-subtle {
 	gap: 0.5rem;
 	align-items: flex-start;
 	padding: 0.625rem 0.75rem;
-	font-size: 0.875rem;
+	font-size: var(--font-size-body);
 	color: var(--color-danger);
 	background: var(--color-danger-soft-bg);
 	border-left: 3px solid var(--color-danger);
@@ -500,6 +509,6 @@ a.button-subtle {
 	flex-basis: 100%;
 	gap: 0.375rem;
 	align-items: center;
-	font-size: 0.8125rem;
+	font-size: var(--font-size-control);
 	color: var(--color-danger);
 }

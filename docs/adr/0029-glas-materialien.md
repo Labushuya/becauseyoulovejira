@@ -1,6 +1,6 @@
 # ADR-0029: Glas-Materialien im macOS-Stil (löst die Glas-, Verlaufs- und Schatten-Regel aus ADR-0010 §3, ADR-0025 §2 und ADR-0027 §1 ab)
 
-- **Status:** Angenommen; Umsetzung in den Paketen G-1 bis G-6 (Reihenfolge G-1, G-3, G-2, G-4, G-5, G-6)
+- **Status:** Angenommen und umgesetzt in den Paketen G-1 bis G-6 (Reihenfolge G-1, G-3, G-2, G-4, G-5, G-6; #88, #90, #91, #93, #95 und der PR von G-6); manuelle Browser-Prüfungen und die Messung nach §8 stehen im Test-Manifest
 - **Datum:** 2026-09-27
 - **Entscheidung durch:** Nutzer („UI wie macOS, Glas-Transparenz, mit unseren Themes verheiraten“; Glas nur in der Bedienebene, Transparenz standardmäßig an mit Schalter, die Systemeinstellung gewinnt, Inter bleibt; 2026-09-27), Advisor (Ebenen, Regeln, Pakete), Executor (Werte, Kontrastrechnung, Fokusring)
 - **Ersetzt teilweise:** [ADR-0010](0010-layout-nach-task-board.md) §3 (Punkt „Keine Glas-Optik, keine Farbverläufe, keine Schlagschatten“), [ADR-0025](0025-ui-konsistenz-overlay-system.md) §2 („Kein Schatten-Token“), [ADR-0027](0027-akzent-themes.md) §1 (Aufzählung „keine Verläufe, keine Glas-Optik, keine Schatten“). Alle übrigen Regeln dieser ADRs bleiben. Die drei ADRs tragen dazu je einen Nachtrag.
@@ -107,3 +107,13 @@ Präzisiert §7 und §9, ohne sie aufzuheben:
 - Der Schalter ist der Switch „Glas-Effekt“ in der Gruppe „Transparenz“ unter „Einstellungen → Darstellung“. Der Store heißt `TransparencyStore` (`lib/transparency.svelte.ts`); er meldet zusätzlich die Systemeinstellung, damit die Seite einen Hinweis zeigen kann.
 - Der Switch wird in `base.css` über `input[type='checkbox'][role='switch']` gestaltet, nicht über eine Klasse `.switch`: Lokale Klassen dieses Namens sitzen auf Labels und würden sonst mitgestaltet. Er baut auf den gemeinsamen Checkbox-Regeln auf.
 - Einzelheiten und Gründe stehen im [Glas-Plan](../plan/e6-glas.md) §4.
+
+## Nachtrag (2026-09-27): Abschluss (G-4 bis G-6)
+
+Präzisiert §2, §9 und §10, ohne sie aufzuheben:
+
+- **Radien und Schriftgrößen:** `border-radius` nur noch als `var(--radius-*)`, `0`, `50%` oder `inherit` (`no-own-radii.test.ts`). Die Schriftgrößen `--font-size-caption|small|control|body|title` nutzen `base.css`, Einstellungsnavigation, Einstellungsseite und Abschnittsleiste. Die übrigen Dateien stehen mit ihren Zahlen auf einer Liste, die nur schrumpfen darf (`no-own-font-sizes.test.ts`).
+- **Steuerelemente:** `.segmented` und `.search-field` sind gemeinsame Klassen. Einzeleinstellungen der Leisten sind Switches, Listen und Auswahl bleiben Checkboxen. Die Schalter im Kanal-Dialog folgen mit der Mail-Arbeit.
+- **Einstellungsnavigation:** ab 64rem eine schwebende Karte aus `--material-regular`, schmaler eine Linkzeile ohne Glas.
+- **Schrift:** Inter bleibt; `--font-ui` nennt `system-ui`, `-apple-system`, `BlinkMacSystemFont`, Segoe UI nur als Rückfall. Überschriften `h1`, `h2` mit `letter-spacing: -0.01em`.
+- Die Performance-Messung aus §8 ist ein manueller Fall (BYL-E6-102). `docs/benchmarks.md` entsteht mit der ersten Messung.

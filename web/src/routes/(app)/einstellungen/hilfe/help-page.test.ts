@@ -124,6 +124,10 @@ describe('help page (EH-9)', () => {
 		const content = text(section);
 		expect(content).toMatch(/stop\.bat, dann start\.bat im Ordner app/);
 		expect(content).toMatch(/byl-mail\.log/);
+		// ADR-0029 section 8: the glass costs GPU time; the switch helps over a remote desktop.
+		expect(content).toMatch(
+			/Remote-Desktop, schalte unter Einstellungen → Darstellung den Glas-Effekt aus/
+		);
 		const admin = within(section).getByRole('link', { name: /Verwaltung/ });
 		expect(admin.getAttribute('href')).toBe('/_/');
 		expect(admin.getAttribute('rel')).toBe('external');

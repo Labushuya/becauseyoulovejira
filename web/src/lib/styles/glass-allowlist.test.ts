@@ -11,7 +11,7 @@ import { describe, expect, it } from 'vitest';
 
 const SRC_DIR = resolve(import.meta.dirname, '..', '..');
 
-/** Files of the control layer that may carry glass (G-1, G-2; grows with G-6). */
+/** Files of the control layer that may carry glass (G-1, G-2, G-6): the complete list. */
 const GLASS_FILES = [
 	'lib/components/AppHeader.svelte',
 	'lib/components/overlay/Popover.svelte',
@@ -20,11 +20,16 @@ const GLASS_FILES = [
 	'lib/components/overlay/FlagGroup.svelte',
 	'lib/components/TagPicker.svelte',
 	'lib/components/CenteredCard.svelte',
+	'lib/components/SettingsNav.svelte',
 	'lib/styles/tour.css'
 ];
 
 /** Where the regular material may stand: below it only the gradient or the tables scroll. */
-const REGULAR_FILES = ['lib/components/AppHeader.svelte', 'lib/components/overlay/Drawer.svelte'];
+const REGULAR_FILES = [
+	'lib/components/AppHeader.svelte',
+	'lib/components/overlay/Drawer.svelte',
+	'lib/components/SettingsNav.svelte'
+];
 
 /** Elements with a backdrop-filter must not hold fixed descendants of their own. */
 const NO_FIXED_FILES = ['lib/components/AppHeader.svelte', 'lib/components/overlay/Drawer.svelte'];
@@ -135,5 +140,20 @@ describe('glass rules (ADR-0029)', () => {
 			if (!NO_FIXED_FILES.includes(file)) continue;
 			expect(css, file).not.toMatch(/position:\s*fixed/);
 		}
+	});
+
+	// G-6: the settings navigation floats as glass only from 64rem; narrower it is a line of links.
+	it('makes the settings navigation a glass card from 64rem only', () => {
+		const nav = SOURCES.find((source) => source.file === 'lib/components/SettingsNav.svelte');
+		const css = nav?.css ?? '';
+		const wide = /@media \(min-width: 64rem\) \{([\s\S]*?)\n\t\}\n/.exec(css)?.[1] ?? '';
+		expect(wide).toMatch(/background:\s*var\(--material-regular\)/);
+		expect(wide).toMatch(/backdrop-filter:\s*var\(--glass-filter-regular\)/);
+		expect(wide).toMatch(/border-radius:\s*var\(--radius-overlay\)/);
+		const outside = css.replace(wide, '');
+		expect(outside).not.toMatch(/--material-|backdrop-filter/);
+		// Rows as rounded surfaces, the current one by surface and weight, no line on the left.
+		expect(css).not.toMatch(/border-left/);
+		expect(css).toMatch(/a\[aria-current='page'\] \{[^}]*font-weight:\s*600/);
 	});
 });

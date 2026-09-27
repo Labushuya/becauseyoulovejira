@@ -1,6 +1,6 @@
 # E6-Plan, Teil Glas: Materialien im macOS-Stil, verheiratet mit den Akzent-Themes
 
-- **Stand:** in Umsetzung (2026-09-27; G-1, G-3, G-2 und G-4 gemergt). Reihenfolge G-1, G-3, G-2, G-4, G-5, G-6, je ein PR.
+- **Stand:** umgesetzt (2026-09-27; G-1 bis G-6); offen sind die manuellen Browser-Prüfungen und die Punkte in §6. Reihenfolge G-1, G-3, G-2, G-4, G-5, G-6, je ein PR.
 - **Grundlage:**
   - [ADR-0029](../adr/0029-glas-materialien.md) (Ebenen, Tokens, Kontrast, Umschaltpunkt „undurchsichtig“, Schalter, Performance)
   - [ADR-0010](../adr/0010-layout-nach-task-board.md) §3 und §4, [ADR-0025](../adr/0025-ui-konsistenz-overlay-system.md) §2, [ADR-0027](../adr/0027-akzent-themes.md) §1 (je mit Nachtrag)
@@ -34,7 +34,7 @@ Die Themes sind Petrol, Rubin, Smaragd und Kupfer (Nachtrag zu ADR-0027 vom 2026
 | G-2 | Modals, Bestätigung, Seitenpanel, Flags, TagPicker-Liste, Anmeldekarte, Tour; Vollansicht opak; `--shadow-modal` | BYL-E6-106 und BYL-E6-107 |
 | G-4 | Knöpfe, `.segmented`, `.search-field`, Radien auf Tokens, `--fill-control*`, `--shadow-control`, Höhen | BYL-E6-108 und BYL-E6-109 |
 | G-5 | Switch nach HIG, baut auf den Checkboxen und Radios aus `base.css` auf (#86) | BYL-E6-110 und BYL-E6-111 |
-| G-6 | Einstellungs-Sidebar, Typografie, README, manuelle Fälle | folgt |
+| G-6 | Einstellungs-Sidebar, Typografie, README, Hilfe, manuelle Fälle | BYL-E6-112 und BYL-E6-113 |
 
 ## 4. Entscheidungen
 
@@ -62,6 +62,9 @@ Die Themes sind Petrol, Rubin, Smaragd und Kupfer (Nachtrag zu ADR-0027 vom 2026
 | 2026-09-27 | G-5 | **Was schon da ist:** Checkboxen und Radios zeichnet `base.css` seit #86 (inklusive `indeterminate`, `aria-disabled`, `forced-colors`, kein `accent-color` außerhalb, `no-own-controls.test.ts`), den Switch seit G-3. G-5 legt nichts doppelt an und setzt nur die HIG-Regel um. |
 | 2026-09-27 | G-5 | **Switch statt Checkbox** für die betonten Einzeleinstellungen der Abschnittsleisten: „Erledigte anzeigen“ (Aufgaben, samt gesperrtem Zustand mit `aria-disabled` und Hinweis) und „Archivierte anzeigen“ (Projekte). Checkboxen bleiben für Listen und Auswahl (Eingang, Postfach-Auswahl, Wochentage, Erledigt-Häkchen der Zeile). Die Normalgröße des Switch bleibt auch in den Leisten; eine Mini-Variante braucht es neben 24px-Zielen nicht. |
 | 2026-09-27 | G-5 | **Kanal-Dialog ausgenommen:** Die zwei Schalter in `ChannelEditModal` (Telegram-Antwort, Mail-Textsuche) wären nach HIG ebenfalls Switches. Dialog, Texte und Tests entwickelt gerade die parallele Mail-Arbeit weiter; die Umstellung folgt dort (offener Punkt, kein neues Token nötig: nur `role="switch"`). |
+| 2026-09-27 | G-6 | **Einstellungsnavigation:** ab 64rem eine schwebende Karte aus `--material-regular` (dahinter nur der Verlauf; die Spalte bleibt sticky, die Seite scrollt rechts), `--radius-overlay`, Linie `--color-separator`, Lichtkante und `--shadow-popover`. Zeilen als abgerundete Flächen mit Höhe m, gewählt Akzentfläche und Gewicht 600; die Linie links entfällt. Schmal bleibt es eine Linkzeile ohne Glas; die Linie unter der gewählten Seite wird `--color-brand-text` (3 : 1 auf dem Verlauf). |
+| 2026-09-27 | G-6 | **Typografie:** `--font-ui` bekommt den System-Stack nur als Rückfall (keine SF-Dateien). Die fünf Schriftgrößen-Tokens nutzen `base.css`, `SettingsNav`, die Einstellungsseite und die Abschnittsleiste. Die übrigen 288 Zahlen in 91 Dateien ziehen nicht auf einmal um: `no-own-font-sizes.test.ts` erlaubt sie nur in diesen Dateien und nur in dieser Zahl (Muster `no-own-notices.test.ts`), jede Änderung darf sie verringern. `h1`, `h2` mit `letter-spacing: -0.01em`. |
+| 2026-09-27 | G-6 | **Hilfe → Betrieb:** Zeile „Ruckeln“ mit dem Hinweis, über Remote-Desktop den Glas-Effekt abzuschalten (ADR-0029 §8). `docs/benchmarks.md` entsteht erst mit der ersten Messung (BYL-E6-102), nicht leer auf Vorrat. |
 
 ## 5. Status
 
@@ -71,8 +74,14 @@ Die Themes sind Petrol, Rubin, Smaragd und Kupfer (Nachtrag zu ADR-0027 vom 2026
 | G-3 | gemergt (#90) |
 | G-2 | gemergt (#91) |
 | G-4 | gemergt (#93) |
-| G-5 | in Arbeit |
-| G-6 | offen |
+| G-5 | gemergt (#95) |
+| G-6 | in Arbeit |
+
+## 6. Offene Punkte
+
+- Manuelle Browser-Prüfungen BYL-E6-102, -105, -107, -109, -111 und -113, darin die Messung nach ADR-0029 §8.
+- Schalter im Kanal-Dialog als Switch (mit der Mail-Arbeit).
+- Radien in `KeywordEditor`, `ConnectionsSection`, `ImportKeywordsSection` und die Schriftgrößen der Liste in `no-own-font-sizes.test.ts` bei der nächsten Änderung der jeweiligen Datei auf die Tokens.
 
 ## Quellen
 

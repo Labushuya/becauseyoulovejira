@@ -70,7 +70,8 @@ export function parseBlocks(css: string): Map<string, Map<string, string>> {
 				for (const [, name = '', value = ''] of text
 					.slice(start, index)
 					.matchAll(/([\w-]+)\s*:\s*([^;]+);/g)) {
-					declarations.set(name, value.trim());
+					// Values that Prettier wraps (the font stack) count as one line.
+					declarations.set(name, value.trim().replace(/\s+/g, ' '));
 				}
 				const context = preludes.filter((outer) => outer !== DARK_MODE_MEDIA);
 				blocks.set([...context, prelude].join(' '), declarations);

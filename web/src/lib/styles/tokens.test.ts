@@ -47,7 +47,8 @@ const ACCENT_TOKENS = [
  * in :root, never in a theme block. The font stacks belong to them as well.
  */
 const NON_COLOR_TOKENS = {
-	'--font-ui': "'Inter Variable', system-ui, sans-serif",
+	'--font-ui':
+		"'Inter Variable', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI Variable Text', 'Segoe UI', sans-serif",
 	'--font-mono': "'JetBrains Mono Variable', ui-monospace, monospace",
 	'--overlay-width-s': '25rem',
 	'--overlay-width-m': '37.5rem',
@@ -69,7 +70,12 @@ const NON_COLOR_TOKENS = {
 	'--radius-pill': '999px',
 	'--control-height-s': '1.5rem',
 	'--control-height-m': '1.75rem',
-	'--control-height-l': '2.25rem'
+	'--control-height-l': '2.25rem',
+	'--font-size-caption': '0.6875rem',
+	'--font-size-small': '0.75rem',
+	'--font-size-control': '0.8125rem',
+	'--font-size-body': '0.875rem',
+	'--font-size-title': '1.125rem'
 } as const;
 
 /** What the blocks of the switch point "opaque" set (ADR-0029 section 6). */

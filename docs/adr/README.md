@@ -34,4 +34,4 @@ Bereits verbindlich in der [Projekt-CLAUDE.md](../../CLAUDE.md) festgelegt und d
 | [0026](0026-einstellungsbereich-und-hinweis-bausteine.md) | Einstellungsbereich, Hinweis-Bausteine, Einrichtungsassistent und geführte Tour | Angenommen | 2026-09-26 |
 | [0027](0027-akzent-themes.md) | Akzent-Themes (Petrol, Rubin, Smaragd, Kupfer): genau eine Akzentfarbe je Theme | Angenommen (mit Nachträgen), §1 teilweise ersetzt durch 0029 | 2026-09-26 |
 | [0028](0028-plattform-strategie.md) | Plattform-Strategie: ein Server je Datenbestand (PC oder Raspberry Pi), Clients als Web-App, Android-APK mit Capacitor, Windows mit Tray-Option | Angenommen (Planung) | 2026-09-27 |
-| [0029](0029-glas-materialien.md) | Glas-Materialien im macOS-Stil: Glas nur in der Bedienebene, Verlauf aus der Akzentfläche, neutrale Schatten, Umschaltpunkt „undurchsichtig“ | Angenommen (Umsetzung G-1 bis G-6) | 2026-09-27 |
+| [0029](0029-glas-materialien.md) | Glas-Materialien im macOS-Stil: Glas nur in der Bedienebene, Verlauf aus der Akzentfläche, neutrale Schatten, Umschaltpunkt „undurchsichtig“ | Angenommen und umgesetzt (G-1 bis G-6, mit Nachträgen) | 2026-09-27 |
