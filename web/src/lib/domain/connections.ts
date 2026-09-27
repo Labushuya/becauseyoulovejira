@@ -218,9 +218,12 @@ export function secretStatusText(
 	};
 }
 
-/** Answer of "Jetzt abrufen" (E4 plan, package 15): the counts of the run or why it did not run. */
+/**
+ * Answer of "Jetzt abrufen" (E4 plan, package 15): the counts of the run or why it did not run.
+ * "unavailable": the mail helper that fetches a mailbox does not run (package A, item 4).
+ */
 export interface RunResult {
-	status: 'ok' | 'error' | 'running' | 'missing' | 'disabled' | 'unsupported';
+	status: 'ok' | 'error' | 'running' | 'missing' | 'disabled' | 'unsupported' | 'unavailable';
 	created: number;
 	duplicates: number;
 	updated: number;
@@ -234,19 +237,23 @@ export interface RunResult {
 	missing: string[];
 }
 
+/** Counts of a good run, e.g. "3 neu, 1 schon vorhanden". */
+export function runCounts(result: RunResult): string {
+	const parts = [`${result.created} neu`];
+	if (result.duplicates > 0) parts.push(`${result.duplicates} schon vorhanden`);
+	if (result.updated > 0) parts.push(`${result.updated} aktualisiert`);
+	if (result.skipped > 0) parts.push(`${result.skipped} übersprungen`);
+	if (result.failed > 0) parts.push(`${result.failed} mit Fehler`);
+	if (result.unmatched > 0) parts.push(`${result.unmatched} ohne Stichwort`);
+	return parts.join(', ');
+}
+
 /** Text of a run for the live region, e.g. "„Kalender“: 3 neu, 1 schon vorhanden." */
 export function runResultText(label: string, result: RunResult): string {
 	const name = `„${label}“`;
 	switch (result.status) {
-		case 'ok': {
-			const parts = [`${result.created} neu`];
-			if (result.duplicates > 0) parts.push(`${result.duplicates} schon vorhanden`);
-			if (result.updated > 0) parts.push(`${result.updated} aktualisiert`);
-			if (result.skipped > 0) parts.push(`${result.skipped} übersprungen`);
-			if (result.failed > 0) parts.push(`${result.failed} mit Fehler`);
-			if (result.unmatched > 0) parts.push(`${result.unmatched} ohne Stichwort`);
-			return `${name}: ${parts.join(', ')}.`;
-		}
+		case 'ok':
+			return `${name}: ${runCounts(result)}.`;
 		case 'error':
 			return `${name}: Abruf fehlgeschlagen. ${result.error}`;
 		case 'running':
@@ -257,5 +264,63 @@ export function runResultText(label: string, result: RunResult): string {
 			return `${name} ist pausiert.`;
 		case 'unsupported':
 			return `${name}: Diese Art ruft noch nicht ab.`;
+		case 'unavailable':
+			return `${name}: ${result.error}`;
+	}
+}
+
+/**
+ * Line "Ergebnis" of a card: the answer of "Jetzt abrufen" on this page if there is one, else what
+ * the connection knows of its last run (counts are not stored). null before the first run.
+ */
+export function lastResultText(
+	connection: Pick<Connection, 'lastRunAt' | 'lastError'>,
+	lastRun: RunResult | null
+): string | null {
+	if (lastRun !== null) {
+		switch (lastRun.status) {
+			case 'ok':
+				return runCounts(lastRun);
+			case 'error':
+				return 'fehlgeschlagen';
+			case 'running':
+				return 'ein Abruf lief schon';
+			case 'missing':
+				return 'Zugangsdaten fehlen';
+			case 'disabled':
+				return 'pausiert';
+			case 'unsupported':
+				return 'ruft nicht ab';
+			case 'unavailable':
+				return 'Hilfsprozess läuft nicht';
+		}
+	}
+	if (connection.lastRunAt === null) return null;
+	return connection.lastError === '' ? 'ohne Fehler' : 'fehlgeschlagen';
+}
+
+/** Whether the mail helper runs (GET /api/byl/mail-helper, package A item 4). */
+export interface MailHelperStatus {
+	/**
+	 * "refused": it runs, but with another token than the app; "outdated": it runs in a version
+	 * before 0.5.0 without "Jetzt abrufen" (a restart starts the new one).
+	 */
+	state: 'running' | 'stopped' | 'refused' | 'outdated';
+	version: string;
+	message: string;
+}
+
+/** Line "Hilfsprozess" of the card of a mailbox; null while the probe runs. */
+export function mailHelperText(status: MailHelperStatus | null): string {
+	if (status === null) return 'wird geprüft …';
+	switch (status.state) {
+		case 'running':
+			return status.version === '' ? 'läuft' : `läuft (byl-mail ${status.version})`;
+		case 'stopped':
+			return 'läuft nicht. Mit einer eingeschalteten Postfach-Verbindung startet start.bat ihn mit (sonst stop.bat, dann start.bat).';
+		case 'refused':
+			return 'läuft, kennt aber den Zugang der App nicht (BYL_INGEST_TOKEN). Bitte stop.bat, dann start.bat.';
+		case 'outdated':
+			return 'läuft in einer älteren Version ohne „Jetzt abrufen“. Bitte stop.bat, dann start.bat.';
 	}
 }

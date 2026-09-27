@@ -60,3 +60,14 @@ routerAdd(
   },
   $apis.requireAuth('users')
 );
+
+// Whether the mail helper runs, for the cards of mailboxes (testing feedback package A, item 4):
+// { state: "running" | "stopped" | "refused", version, message }. Logs in to no mailbox.
+routerAdd(
+  'GET',
+  '/api/byl/mail-helper',
+  function (e) {
+    return require(`${__hooks}/lib/mailbox-service.js`).helperStatus(e);
+  },
+  $apis.requireAuth('users')
+);

@@ -3,6 +3,7 @@
 // byl-mail.exe, started here in the test) on 127.0.0.1 with the ingest token, the helper reads the
 // fake IMAP server and takes chosen mails through the ingest route. Only a signed-in user who sees
 // the connection gets an answer; a stopped helper gives a hint; the mailbox stays unchanged.
+// Since package A (item 4) also "Jetzt abrufen" of a mailbox and the probe of the helper.
 
 import { randomBytes } from 'node:crypto';
 import { createServer } from 'node:http';
@@ -11,9 +12,15 @@ import PocketBase from 'pocketbase';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { startPocketBase } from '../support/pocketbase-harness.mjs';
 import { FakeImapServer, fakeMail } from '../../helpers/mail/test/fake-imap.ts';
+import { PollGate } from '../../helpers/mail/src/gate.ts';
 import { IngestClient } from '../../helpers/mail/src/ingest-client.ts';
 import { startMailboxServer } from '../../helpers/mail/src/server.ts';
-import { importFromMailbox, listMailbox } from '../../web/src/lib/data/connections.ts';
+import {
+	getMailHelperStatus,
+	importFromMailbox,
+	listMailbox,
+	runConnection
+} from '../../web/src/lib/data/connections.ts';
 
 const TOKEN = randomBytes(24).toString('base64');
 const PASSWORD = `pw-${randomBytes(8).toString('hex')}`;
@@ -57,7 +64,9 @@ async function startHelper(token = TOKEN) {
 		ingest: new IngestClient(instance.url, TOKEN),
 		env: { BYL_TEST_MAIL_PASSWORD: PASSWORD, BYL_MAIL_HELPER_PORT: String(port) },
 		log: { info: (m) => lines.push(m), warn: (m) => lines.push(m), error: (m) => lines.push(m) },
-		imapOverride: { host: '127.0.0.1', port: imap.port, secure: false }
+		imapOverride: { host: '127.0.0.1', port: imap.port, secure: false },
+		gate: new PollGate(),
+		version: '0.5.0-test'
 	});
 	expect(helper).not.toBeNull();
 }
@@ -212,6 +221,69 @@ describe('POST /api/byl/connections/{id}/mailbox/import', () => {
 		});
 		expect(tooMany.status).toBe(400);
 		expect((await importFromMailbox(owner.pb, mailbox.id, [0])).kind).toBe('failed');
+	});
+});
+
+describe('"Jetzt abrufen" of a mailbox and the probe of the helper (package A, item 4)', () => {
+	it('runs the regular fetch at once: first the cursor, then new mails with keyword', async () => {
+		mail('Todo: schon vor dem ersten Abruf');
+		const first = await runConnection(owner.pb, mailbox.id);
+		expect(first).toMatchObject({ status: 'ok', created: 0, error: '' });
+		const afterFirst = await superuser.collection('connections').getOne(mailbox.id);
+		expect(afterFirst.cursor).toMatch(/^\d+:\d+$/);
+		expect(afterFirst.last_run_at).not.toBe('');
+		expect(afterFirst.last_hint).toMatch(/Erster Abruf/);
+
+		mail('Todo: sofort abrufen');
+		mail('Nur Hallo');
+		const second = await runConnection(owner.pb, mailbox.id);
+		expect(second).toMatchObject({ status: 'ok', created: 1, unmatched: 1, error: '' });
+		const items = await owner.pb.collection('inbox_items').getFullList({
+			filter: owner.pb.filter('title = {:title}', { title: 'Todo: sofort abrufen' })
+		});
+		expect(items.map((item) => [item.channel, item.connection, item.source_meta.keyword])).toEqual([
+			['mail', mailbox.id, 'todo']
+		]);
+		expect(await runConnection(owner.pb, mailbox.id)).toMatchObject({ status: 'ok', created: 0, unmatched: 0 });
+		expect(imap.writes()).toEqual([]);
+		expect(imap.flagsUnchanged()).toBe(true);
+	});
+
+	it('probes the helper without logging in to a mailbox', async () => {
+		const logins = imap.commands.filter((command) => command.name === 'LOGIN').length;
+		expect(await getMailHelperStatus(owner.pb)).toEqual({ state: 'running', version: '0.5.0-test', message: '' });
+		expect(imap.commands.filter((command) => command.name === 'LOGIN').length).toBe(logins);
+		expect((await fetch(`${instance.url}/api/byl/mail-helper`)).status).toBe(401);
+	});
+
+	it('answers only for a visible connection and says "pausiert" for a switched-off one', async () => {
+		await expect(runConnection(other.pb, mailbox.id)).rejects.toMatchObject({ kind: 'not_found' });
+		await owner.pb.collection('connections').update(mailbox.id, { enabled: false });
+		try {
+			expect(await runConnection(owner.pb, mailbox.id)).toMatchObject({ status: 'disabled' });
+		} finally {
+			await owner.pb.collection('connections').update(mailbox.id, { enabled: true });
+		}
+	});
+
+	it('says neutrally that the helper does not run, and a helper with another token', async () => {
+		await stopHelper();
+		try {
+			const answer = await runConnection(owner.pb, mailbox.id);
+			expect(answer.status).toBe('unavailable');
+			expect(answer.error).toMatch(/^Der Mail-Hilfsprozess läuft nicht .*stop\.bat und dann start\.bat/);
+			expect(await getMailHelperStatus(owner.pb)).toMatchObject({ state: 'stopped', version: '' });
+			await startHelper('ein-anderer-token');
+			expect(await getMailHelperStatus(owner.pb)).toMatchObject({ state: 'refused' });
+			expect(await runConnection(owner.pb, mailbox.id)).toMatchObject({
+				status: 'error',
+				error: expect.stringMatching(/BYL_INGEST_TOKEN/)
+			});
+		} finally {
+			await stopHelper();
+			await startHelper();
+		}
+		expect((await getMailHelperStatus(owner.pb)).state).toBe('running');
 	});
 });
 

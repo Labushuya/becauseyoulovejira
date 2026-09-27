@@ -1,5 +1,7 @@
 // Pure rules of the mailbox selection (ADR-0016 section 6; E4 plan package 23): limits of the
 // requests, the address of the mail helper and the answers of the helper as the web app gets them.
+// Since testing feedback package A (item 4) also "Jetzt abrufen" of a mailbox (/poll of the helper)
+// and the probe whether the helper runs (/health).
 // CommonJS module, ES5 only, no dependencies (Goja runtime and Vitest).
 'use strict';
 
@@ -11,6 +13,15 @@ var PORT_ENV = 'BYL_MAIL_HELPER_PORT';
 // Seconds for one request to the helper: it logs in to the mailbox and reads up to 200 headers or
 // 50 mails (ADR-0016 section 6).
 var TIMEOUT_SECONDS = 60;
+// "Jetzt abrufen" checks up to 100 mails; the probe touches no mailbox and must answer at once.
+var RUN_TIMEOUT_SECONDS = 90;
+var HEALTH_TIMEOUT_SECONDS = 3;
+var RUN_TIMED_OUT =
+  'Der Abruf dauert länger als 90 Sekunden. Er läuft im Mail-Hilfsprozess weiter; das Ergebnis steht danach an der Karte („Aktualisieren“).';
+// A helper before 0.5.0 answers the new paths with 404 "Nicht gefunden." (unknown path).
+var OUTDATED =
+  'Der laufende Mail-Hilfsprozess ist älter als diese App und kann noch nicht sofort abrufen. Bitte stop.bat, dann start.bat ausführen; bis dahin ruft er weiter alle 5 Minuten ab.';
+var UNKNOWN_PATH = 'Nicht gefunden.';
 
 var NOT_RUNNING = 'Der Mail-Hilfsprozess läuft nicht (byl-mail.exe fehlt oder ist beendet).';
 var NOT_RUNNING_HINT =
@@ -149,6 +160,108 @@ function failure(statusCode, json) {
   return { status: 502, message: message, hint: text(body.hint, 1000) };
 }
 
+function count(value) {
+  return typeof value === 'number' && value % 1 === 0 && value >= 0 ? value : 0;
+}
+
+var SECRET_NAME = /^BYL_[A-Z0-9_]{1,60}$/;
+
+/**
+ * Result of "Jetzt abrufen" of a mailbox in the shape of channel-runner.runConnection, from the
+ * answer of askHelper: { unavailable, timedOut } or { statusCode, json } of POST /poll. Status
+ * "unavailable" means the helper does not run (a neutral hint, no error of the mailbox).
+ */
+function runResult(answer) {
+  var result = {
+    status: 'ok',
+    created: 0,
+    duplicates: 0,
+    updated: 0,
+    skipped: 0,
+    failed: 0,
+    unmatched: 0,
+    error: '',
+    missing: []
+  };
+  if (!isPlainObject(answer) || answer.unavailable) {
+    var timedOut = isPlainObject(answer) && answer.timedOut === true;
+    result.status = timedOut ? 'error' : 'unavailable';
+    result.error = timedOut ? RUN_TIMED_OUT : NOT_RUNNING + ' ' + NOT_RUNNING_HINT;
+    return result;
+  }
+  var body = isPlainObject(answer.json) ? answer.json : {};
+  if (answer.statusCode === 409) {
+    result.status = 'running';
+    return result;
+  }
+  if (answer.statusCode === 404 && body.message === UNKNOWN_PATH) {
+    result.status = 'error';
+    result.error = OUTDATED;
+    return result;
+  }
+  if (answer.statusCode === 404) {
+    result.status = 'disabled';
+    return result;
+  }
+  if (answer.statusCode === 401) {
+    result.status = 'error';
+    result.error = TOKEN_REFUSED;
+    return result;
+  }
+  if (answer.statusCode !== 200) {
+    result.status = 'error';
+    result.error = text(body.message, 1000) || 'Der Mail-Hilfsprozess antwortet mit HTTP ' + answer.statusCode + '.';
+    return result;
+  }
+  result.created = count(body.created);
+  result.duplicates = count(body.duplicates);
+  result.skipped = count(body.skipped);
+  result.failed = count(body.failed);
+  result.unmatched = count(body.unmatched);
+  if (body.status === 'ok') {
+    return result;
+  }
+  if (body.status === 'running') {
+    result.status = 'running';
+  } else if (body.status === 'gone') {
+    result.status = 'disabled';
+  } else if (body.status === 'missing') {
+    result.status = 'missing';
+    var names = isArray(body.missing) ? body.missing : [];
+    for (var i = 0; i < names.length; i++) {
+      if (typeof names[i] === 'string' && SECRET_NAME.test(names[i])) {
+        result.missing.push(names[i]);
+      }
+    }
+  } else {
+    result.status = 'error';
+    result.error = text(body.error, 1000) || 'Der Abruf ist fehlgeschlagen.';
+  }
+  return result;
+}
+
+/**
+ * Whether the mail helper runs, for the card of a mailbox: { state, version, message }. state
+ * "running", "stopped" (nothing answers), "refused" (it runs with another token) or "outdated"
+ * (it runs, but is older than 0.5.0 and knows no probe).
+ */
+function helperStatus(answer) {
+  if (!isPlainObject(answer) || answer.unavailable) {
+    return { state: 'stopped', version: '', message: NOT_RUNNING };
+  }
+  if (answer.statusCode === 401) {
+    return { state: 'refused', version: '', message: TOKEN_REFUSED };
+  }
+  var body = isPlainObject(answer.json) ? answer.json : {};
+  if (answer.statusCode === 404 && body.message === UNKNOWN_PATH) {
+    return { state: 'outdated', version: '', message: OUTDATED };
+  }
+  if (answer.statusCode !== 200 || body.ok !== true) {
+    return { state: 'stopped', version: '', message: 'Der Mail-Hilfsprozess antwortet mit HTTP ' + answer.statusCode + '.' };
+  }
+  return { state: 'running', version: text(body.version, 40), message: '' };
+}
+
 module.exports = {
   LIST_DEFAULT: LIST_DEFAULT,
   LIST_MAX: LIST_MAX,
@@ -156,6 +269,11 @@ module.exports = {
   DEFAULT_PORT: DEFAULT_PORT,
   PORT_ENV: PORT_ENV,
   TIMEOUT_SECONDS: TIMEOUT_SECONDS,
+  RUN_TIMEOUT_SECONDS: RUN_TIMEOUT_SECONDS,
+  HEALTH_TIMEOUT_SECONDS: HEALTH_TIMEOUT_SECONDS,
+  RUN_TIMED_OUT: RUN_TIMED_OUT,
+  OUTDATED: OUTDATED,
+  TOKEN_REFUSED: TOKEN_REFUSED,
   NOT_RUNNING: NOT_RUNNING,
   NOT_RUNNING_HINT: NOT_RUNNING_HINT,
   DISABLED: DISABLED,
@@ -164,5 +282,7 @@ module.exports = {
   helperUrl: helperUrl,
   listItems: listItems,
   importItems: importItems,
-  failure: failure
+  failure: failure,
+  runResult: runResult,
+  helperStatus: helperStatus
 };

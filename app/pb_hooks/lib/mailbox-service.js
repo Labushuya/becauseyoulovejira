@@ -27,13 +27,13 @@ function mailConnection(e) {
   return record;
 }
 
-// POST to the helper. { unavailable: true } when it cannot be asked (no token, invalid port,
-// nothing listens, timeout), else { statusCode, json }. "Connection: close": Go would otherwise
-// keep the connection and reuse it for the next request; after a restart of the helper (or its
-// keep-alive timeout) that connection is gone, and Go does not retry a POST, so the first request
-// would answer "Der Mail-Hilfsprozess läuft nicht". A new connection per request costs nothing on
-// 127.0.0.1.
-function askHelper(path, payload) {
+// POST (or GET without payload) to the helper. { unavailable: true } when it cannot be asked (no
+// token, invalid port, nothing listens, timeout; `timedOut` for the last), else { statusCode, json }.
+// "Connection: close": Go would otherwise keep the connection and reuse it for the next request;
+// after a restart of the helper (or its keep-alive timeout) that connection is gone, and Go does
+// not retry a POST, so the first request would answer "Der Mail-Hilfsprozess läuft nicht". A new
+// connection per request costs nothing on 127.0.0.1.
+function askHelper(path, payload, timeoutSeconds) {
   var token = secrets.read(ingestRules.TOKEN_ENV, getenv);
   var base = rules.helperUrl($os.getenv(rules.PORT_ENV));
   if (token === '' || base === '') {
@@ -43,13 +43,13 @@ function askHelper(path, payload) {
   try {
     response = $http.send({
       url: base + path,
-      method: 'POST',
-      body: JSON.stringify(payload),
+      method: payload === null ? 'GET' : 'POST',
+      body: payload === null ? '' : JSON.stringify(payload),
       headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token, Connection: 'close' },
-      timeout: rules.TIMEOUT_SECONDS
+      timeout: timeoutSeconds || rules.TIMEOUT_SECONDS
     });
   } catch (err) {
-    return { unavailable: true };
+    return { unavailable: true, timedOut: /timeout|deadline/i.test(String(err)) };
   }
   return { statusCode: response.statusCode, json: response.json };
 }
@@ -116,7 +116,25 @@ function importMails(e) {
   return e.json(200, { items: rules.importItems(answer.json, parsed.uids) });
 }
 
+/**
+ * "Jetzt abrufen" of a mail connection the request may see (the route checked that): the helper
+ * runs its regular fetch at once. Answers like channel-runner.runConnection, plus "unavailable".
+ */
+function runMail(record) {
+  if (!record.getBool('enabled')) {
+    return rules.runResult({ statusCode: 404, json: null });
+  }
+  return rules.runResult(askHelper('/poll', { connection: record.id }, rules.RUN_TIMEOUT_SECONDS));
+}
+
+/** GET /api/byl/mail-helper: whether the mail helper answers, and its version. Logs in nowhere. */
+function helperStatus(e) {
+  return e.json(200, rules.helperStatus(askHelper('/health', null, rules.HEALTH_TIMEOUT_SECONDS)));
+}
+
 module.exports = {
   list: list,
-  importMails: importMails
+  importMails: importMails,
+  runMail: runMail,
+  helperStatus: helperStatus
 };

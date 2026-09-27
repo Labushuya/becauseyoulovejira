@@ -76,9 +76,10 @@ describe('channelHealth', () => {
 			tone: 'error',
 			text: 'Letzter Fehler: Anmeldung abgelehnt. App-Passwort nötig.'
 		});
-		expect(channelHealth({ ...BASE, type: 'mail', lastError: 'x' }, SET, false).action).toBe(
-			'pick'
-		);
+		expect(channelHealth({ ...BASE, type: 'mail', lastError: 'x' }, SET, false)).toMatchObject({
+			action: 'run',
+			pick: true
+		});
 	});
 
 	it('says "Eingerichtet" otherwise, with the hint of the last run or a warning without keywords', () => {
@@ -102,7 +103,21 @@ describe('channelHealth', () => {
 			tone: 'info',
 			text: chat
 		});
-		expect(channelHealth({ ...BASE, type: 'mail' }, SET, false).action).toBe('pick');
+		expect(channelHealth({ ...BASE, type: 'mail' }, SET, false)).toMatchObject({
+			action: 'run',
+			pick: true
+		});
+	});
+
+	it('offers "Jetzt abrufen" on every set-up card and the mailbox selection only at a mailbox (package A)', () => {
+		const mail = { ...BASE, type: 'mail' as const };
+		expect(channelHealth(BASE, SET, false).pick).toBe(false);
+		expect(channelHealth(mail, SET, true)).toMatchObject({ action: 'none', pick: true });
+		expect(channelHealth({ ...mail, enabled: false }, SET, false)).toMatchObject({
+			action: 'resume',
+			pick: false
+		});
+		expect(channelHealth(mail, UNSET, false)).toMatchObject({ action: 'setup', pick: false });
 	});
 
 	it('skips the check of the variables while their state is unknown', () => {

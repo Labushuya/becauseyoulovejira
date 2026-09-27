@@ -1,5 +1,7 @@
 <script lang="ts">
+	import { tick } from 'svelte';
 	import type { Connection } from '$lib/domain/connections';
+	import { cardAnchorOf } from '$lib/domain/sync-all';
 	import { RESTART_NEEDED } from '$lib/guidance/texts';
 	import {
 		CONNECTIONS_UNAVAILABLE_MESSAGE,
@@ -49,6 +51,18 @@
 	const countLabel = $derived(
 		store.connections.length === 1 ? '1 Verbindung' : `${store.connections.length} Verbindungen`
 	);
+
+	// "Zur Karte" in the flag of "Alle Kanäle jetzt abrufen" opens this page with #verbindung-<id>:
+	// once the cards are there, that card takes the focus (and scrolls into view), once per address.
+	let focusedHash = '';
+	$effect(() => {
+		if (store.state !== 'ready' || store.connections.length === 0) return;
+		const hash = window.location.hash;
+		const anchor = cardAnchorOf(hash);
+		if (anchor === null || hash === focusedHash) return;
+		focusedHash = hash;
+		void tick().then(() => document.getElementById(anchor)?.focus());
+	});
 
 	function messageOf(connection: Connection): string | null {
 		return cardMessage !== null && cardMessage.id === connection.id ? cardMessage.text : null;
@@ -170,7 +184,8 @@
 		{:else}
 			<p class="hint">
 				Solange die App läuft, ruft Google Calendar alle 15 Minuten ab, Telegram jede Minute und ein
-				Postfach alle 5 Minuten; „Aktualisieren“ zeigt das Ergebnis.
+				Postfach alle 5 Minuten; „Aktualisieren“ zeigt das Ergebnis. „Jetzt abrufen“ holt sofort ab,
+				auch bei einem Postfach.
 			</p>
 			<ul class="grid">
 				{#each store.connections as connection (connection.id)}
@@ -179,6 +194,8 @@
 							{connection}
 							secretStatus={store.status(connection.id)}
 							running={store.isRunning(connection.id)}
+							helper={store.helper}
+							lastRun={store.lastRun(connection.id)}
 							message={messageOf(connection)}
 							onrun={() => void runNow(connection)}
 							onpick={() => (picking = connection)}

@@ -6,6 +6,7 @@
 
 import { ImapFlow } from 'imapflow';
 import { parseCommand, readConfig, TOKEN_ENV, USAGE, type HelperConfig } from './config';
+import { PollGate } from './gate';
 import { IngestClient } from './ingest-client';
 import { createLogger, errorText, type Logger } from './log';
 import { ingestDraft, keywordOf, parseMail } from './mail';
@@ -62,24 +63,30 @@ const sleep = (ms: number, signal: AbortSignal) =>
 /** Runs until `signal` aborts: one run over all connections, then the interval. */
 export async function runLoop(config: HelperConfig, log: Logger, signal: AbortSignal): Promise<void> {
 	const ingest = new IngestClient(config.appUrl, config.token);
+	// "Jetzt abrufen" of the interface and the interval share one gate (never two fetches at once).
+	const gate = new PollGate();
 	const server = await startMailboxServer({
 		token: config.token,
 		ingest,
 		env: process.env,
 		log,
-		imapOverride: config.imapOverride
+		imapOverride: config.imapOverride,
+		gate,
+		version: VERSION
 	});
 	signal.addEventListener('abort', () => server?.close(), { once: true });
 	log.info(`byl-mail ${VERSION} gestartet (PocketBase ${config.appUrl}, Abruf alle ${Math.round(config.intervalMs / 1000)} s).`);
 	while (!signal.aborted) {
 		try {
-			await pollAll({
-				ingest,
-				env: process.env,
-				log,
-				imapOverride: config.imapOverride,
-				secrets: [config.token]
-			});
+			await gate.run(() =>
+				pollAll({
+					ingest,
+					env: process.env,
+					log,
+					imapOverride: config.imapOverride,
+					secrets: [config.token]
+				})
+			);
 		} catch (error) {
 			log.error(`Unerwarteter Fehler im Abruf: ${errorText(error)}`);
 		}

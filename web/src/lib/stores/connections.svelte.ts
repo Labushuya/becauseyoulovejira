@@ -2,7 +2,8 @@
 // after every own action; the state of the variables comes from the server per connection. The
 // list has no realtime subscription (the page offers "Aktualisieren" for the result of a
 // background run); only the setup assistant watches its one connection while it is open
-// (`watch`, plan EH-5 §3.8), so the first run shows without polling.
+// (`watch`, plan EH-5 §3.8), so the first run shows without polling. With a mailbox in the list the
+// store also asks whether the mail helper runs (package A, item 4), so the card says it honestly.
 
 import type PocketBase from 'pocketbase';
 import { SvelteMap } from 'svelte/reactivity';
@@ -10,6 +11,7 @@ import {
 	createConnection,
 	deleteConnection,
 	getConnection,
+	getMailHelperStatus,
 	getSecretStatus,
 	importFromMailbox,
 	listConnections,
@@ -27,6 +29,7 @@ import {
 	type Connection,
 	type ConnectionDraft,
 	type ConnectionSettingsDraft,
+	type MailHelperStatus,
 	type RunResult,
 	type SecretStatus
 } from '$lib/domain/connections';
@@ -63,6 +66,8 @@ export interface ConnectionsData {
 	): Promise<MailboxOutcome<MailboxImportResult[]>>;
 	/** Realtime subscription on one connection (setup assistant). */
 	subscribe(id: string, onChange: (change: RecordChange<Connection>) => void): Promise<Unsubscribe>;
+	/** Whether the mail helper runs (no mailbox login). */
+	helperStatus(options: RequestOptions): Promise<MailHelperStatus>;
 }
 
 export function connectionsData(pb: PocketBase): ConnectionsData {
@@ -77,11 +82,15 @@ export function connectionsData(pb: PocketBase): ConnectionsData {
 		get: (id) => getConnection(pb, id),
 		listMailbox: (id, limit, options) => listMailbox(pb, id, limit, options),
 		importMailbox: (id, uids) => importFromMailbox(pb, id, uids),
-		subscribe: (id, onChange) => subscribeConnection(pb, id, onChange)
+		subscribe: (id, onChange) => subscribeConnection(pb, id, onChange),
+		helperStatus: (options) => getMailHelperStatus(pb, options)
 	};
 }
 
-/** Tone of the flag after "Jetzt abrufen": a failed run is an error, a hint is neutral. */
+/**
+ * Tone of the flag after "Jetzt abrufen": a failed run is an error, a hint is neutral (also a mail
+ * helper that does not run, CLAUDE.md §7).
+ */
 export function runResultTone(result: RunResult): FlagTone {
 	if (result.status === 'ok') return 'success';
 	return result.status === 'error' ? 'error' : 'info';
@@ -105,6 +114,8 @@ export class ConnectionsStore {
 	/** Answer of the last "Jetzt abrufen" per connection in this page (the assistant shows it). */
 	readonly #lastRun = new SvelteMap<string, RunResult>();
 	#controller: AbortController | null = null;
+	/** Probe of the mail helper; null while unknown or without a mailbox. */
+	#helper = $state<MailHelperStatus | null>(null);
 
 	#state = $state<LoadState>('idle');
 	#error = $state<string | null>(null);
@@ -153,7 +164,10 @@ export class ConnectionsStore {
 			for (const item of items) this.#items.set(item.id, item);
 			this.#state = 'ready';
 			this.#error = null;
-			await Promise.all(items.map((item) => this.#loadStatus(item.id, options)));
+			const probe = items.some((item) => item.type === 'mail')
+				? this.#loadHelper(options)
+				: Promise.resolve();
+			await Promise.all([...items.map((item) => this.#loadStatus(item.id, options)), probe]);
 		} catch (error) {
 			const failure = toDataError(error, controller.signal);
 			if (failure.kind === 'aborted') return;
@@ -166,6 +180,20 @@ export class ConnectionsStore {
 				failure.kind === 'not_found' ? CONNECTIONS_UNAVAILABLE_MESSAGE : failure.message;
 		} finally {
 			if (this.#controller === controller) this.#controller = null;
+		}
+	}
+
+	/** Whether the mail helper runs; null while unknown (the card says "wird geprüft …"). */
+	get helper(): MailHelperStatus | null {
+		return this.#helper;
+	}
+
+	async #loadHelper(options: RequestOptions): Promise<void> {
+		try {
+			this.#helper = await this.#data.helperStatus(options);
+		} catch {
+			// Unknown: the card keeps "wird geprüft …" instead of claiming a state.
+			this.#helper = null;
 		}
 	}
 
@@ -303,6 +331,7 @@ export class ConnectionsStore {
 	async runNow(id: string, { announce = true } = {}): Promise<ConnectionActionResult> {
 		if (this.#running.has(id)) return { ok: false, message: null, fields: {} };
 		const label = this.#items.get(id)?.label ?? 'Verbindung';
+		const mail = this.#items.get(id)?.type === 'mail';
 		this.#running.set(id, true);
 		try {
 			return await this.#act(async () => {
@@ -310,6 +339,8 @@ export class ConnectionsStore {
 				this.#lastRun.set(id, result);
 				if (announce) this.#notify(runResultText(label, result), runResultTone(result));
 				this.#items.set(id, await this.#data.get(id));
+				// The run of a mailbox tells whether the helper answers; the card follows at once.
+				if (mail) await this.#loadHelper({});
 			});
 		} finally {
 			this.#running.delete(id);
@@ -368,6 +399,7 @@ export class ConnectionsStore {
 		this.#items.clear();
 		this.#status.clear();
 		this.#lastRun.clear();
+		this.#helper = null;
 		this.#state = 'idle';
 		this.#error = null;
 	}

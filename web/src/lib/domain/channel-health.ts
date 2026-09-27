@@ -22,19 +22,40 @@ export interface ChannelHealth {
 	icon: 'refresh' | 'pause' | 'pending' | 'error' | 'check';
 	/** At most one compact hint of the card. */
 	hint: { tone: 'info' | 'warning' | 'error'; text: string } | null;
-	/** Main action of the card. */
-	action: 'run' | 'pick' | 'resume' | 'setup' | 'none';
+	/**
+	 * Main action of the card. Since package A (item 4) every set-up connection has "Jetzt abrufen",
+	 * a mailbox too (the hook asks the mail helper).
+	 */
+	action: 'run' | 'resume' | 'setup' | 'none';
+	/** A mailbox that is set up also offers "Aus dem Postfach wählen" next to the main action. */
+	pick: boolean;
 }
 
+type ConnectionFacts = Pick<
+	Connection,
+	'type' | 'enabled' | 'secretEnv' | 'allowlistEnv' | 'lastError' | 'lastHint' | 'keywords'
+>;
+
 export function channelHealth(
-	connection: Pick<
-		Connection,
-		'type' | 'enabled' | 'secretEnv' | 'allowlistEnv' | 'lastError' | 'lastHint' | 'keywords'
-	>,
+	connection: ConnectionFacts,
 	secretStatus: SecretStatus | null,
 	running: boolean
 ): ChannelHealth {
-	const regular: ChannelHealth['action'] = connection.type === 'mail' ? 'pick' : 'run';
+	const health = baseHealth(connection, secretStatus, running);
+	return {
+		...health,
+		pick:
+			connection.type === 'mail' &&
+			(health.state === 'ok' || health.state === 'error' || health.state === 'running')
+	};
+}
+
+function baseHealth(
+	connection: ConnectionFacts,
+	secretStatus: SecretStatus | null,
+	running: boolean
+): Omit<ChannelHealth, 'pick'> {
+	const regular: ChannelHealth['action'] = 'run';
 	if (running) {
 		return {
 			state: 'running',
