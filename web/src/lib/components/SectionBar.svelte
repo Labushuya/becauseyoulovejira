@@ -63,14 +63,14 @@
 	}
 
 	h2 {
-		font-size: 1.125rem;
+		font-size: var(--font-size-title);
 		font-weight: 600;
 	}
 
 	.count {
 		min-width: 1.5rem;
 		padding: 0 0.375rem;
-		font-size: 0.75rem;
+		font-size: var(--font-size-small);
 		font-weight: 600;
 		line-height: 1.25rem;
 		text-align: center;

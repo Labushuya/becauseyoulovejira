@@ -212,6 +212,13 @@
 				</dd>
 			</div>
 			<div class="row">
+				<dt>Ruckeln</dt>
+				<dd>
+					Ruckelt die Oberfläche, etwa über Remote-Desktop, schalte unter Einstellungen →
+					Darstellung den Glas-Effekt aus.
+				</dd>
+			</div>
+			<div class="row">
 				<dt>Verwaltung</dt>
 				<dd>
 					Konten, Sicherungen und Server-Einstellungen unter
