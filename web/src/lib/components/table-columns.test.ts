@@ -1,16 +1,18 @@
-// Tables without sideways scrolling (ADR-0025 section 6; plan UI-Konsistenz, package UI-6b):
-// next to the embedded side panel the view gets narrower, and a table must not be cut off at the
-// panel edge. No table has a minimum width or a horizontal scroll area; instead its frame is a
-// size container, and container queries hide columns in a fixed order. jsdom evaluates no
-// container queries, so this is a static check of the sources; the look at 1280, 1100 and
-// 900 px is a browser case (BYL-E6-028).
+// Tables without sideways scrolling (ADR-0025 section 11; ADR-0030): next to the embedded side
+// panel the view gets narrower, and a table must not be cut off at the panel edge. No table has a
+// minimum width or a horizontal scroll area. Since ADR-0030 fitColumns fits the columns into the
+// measured frame (fixed table layout with a colgroup) instead of container queries; the order in
+// which columns give way and the thresholds are unit tests (domain/columns.test.ts), the fit in a
+// component a test with a stubbed ResizeObserver. Tables that have not moved yet (packages SP-2
+// to SP-5) still hide columns through container queries of their frame, checked statically here
+// because jsdom evaluates none. The look at 1280, 1100 and 900 px is a browser case (BYL-E6-028,
+// BYL-E6-142).
 
 import { describe, expect, it } from 'vitest';
 import { MORE_COLUMNS_HINT } from '$lib/domain/labels';
 import inboxTable from './InboxTable.svelte?raw';
 import projectTable from './ProjectTable.svelte?raw';
 import recurrenceTable from './RecurrenceTable.svelte?raw';
-import ticketTable from './TicketTable.svelte?raw';
 
 const components = import.meta.glob('/src/**/*.svelte', {
 	query: '?raw',
@@ -20,6 +22,12 @@ const components = import.meta.glob('/src/**/*.svelte', {
 
 /** Components that render a table. */
 const tables = Object.entries(components).filter(([, source]) => /<table\b/.test(source));
+
+/** Tables on the computed fit of ADR-0030. */
+const FITTED = ['TicketTable.svelte'];
+
+const fitted = tables.filter(([path]) => FITTED.includes(path.split('/').pop() ?? ''));
+const legacy = tables.filter(([path]) => !FITTED.includes(path.split('/').pop() ?? ''));
 
 function styleOf(source: string): string {
 	return /<style>([\s\S]*?)<\/style>/.exec(source)?.[1] ?? '';
@@ -54,6 +62,7 @@ describe('tables without sideways scrolling', () => {
 			'RecurrenceTable.svelte',
 			'TicketTable.svelte'
 		]);
+		expect(fitted.map(([path]) => path.split('/').pop())).toEqual(FITTED);
 	});
 
 	it.each(tables)('%s has no minimum width and no horizontal scroll area', (_path, source) => {
@@ -66,7 +75,25 @@ describe('tables without sideways scrolling', () => {
 		expect(source).not.toMatch(/role="region"/);
 	});
 
-	it.each(tables)('%s hides columns through container queries of its frame', (_path, source) => {
+	it.each(fitted)('%s fits its columns with fitColumns in a fixed layout', (_path, source) => {
+		const style = styleOf(source);
+		const table = /\n\ttable\s*\{([^}]*)\}/.exec(style)?.[1];
+		expect(table).toMatch(/table-layout:\s*fixed/);
+		// One mechanism: no own container queries, no container frame.
+		expect(style).not.toMatch(/@container/);
+		expect(style).not.toMatch(/container-type/);
+		expect(style).not.toMatch(/display:\s*none/);
+		expect(source).toMatch(/fitColumns\(/);
+		expect(source).toMatch(/observeWidth\(/);
+		expect(source).toContain('<colgroup>');
+		// The caption names the panel only when a column gave way for lack of space.
+		expect(source).toMatch(
+			/\{#if fit\.autoHidden\.length > 0\}<span class="caption-more"\s*>\{MORE_COLUMNS_HINT\}/
+		);
+		expect(MORE_COLUMNS_HINT).toBe(' · Weitere Spalten im Panel');
+	});
+
+	it.each(legacy)('%s hides columns through container queries of its frame', (_path, source) => {
 		const style = styleOf(source);
 		expect(style).toMatch(/\.frame\s*\{[^}]*container-type:\s*inline-size/);
 		expect(hiddenColumns(source).length).toBeGreaterThanOrEqual(4);
@@ -78,11 +105,6 @@ describe('tables without sideways scrolling', () => {
 			)
 		);
 		expect(source).toContain('<span class="caption-more">{MORE_COLUMNS_HINT}</span>');
-		expect(MORE_COLUMNS_HINT).toBe(' · Weitere Spalten im Panel');
-	});
-
-	it('hides the ticket columns in the order Erstellt, Tags, Projekt, Fällig', () => {
-		expect(hideOrder(ticketTable)).toEqual(['created', 'tags', 'project', 'due']);
 	});
 
 	it('hides the inbox columns in the order arrival, Quelle, Art, Quelldatum', () => {

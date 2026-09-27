@@ -155,7 +155,9 @@ export class ColumnPrefsRegistry {
 	}
 }
 
-const KEY = Symbol('byl-column-prefs');
+/** Context key; exported for component tests that render a table with a registry. */
+export const COLUMN_PREFS_CONTEXT = Symbol('byl-column-prefs');
+const KEY = COLUMN_PREFS_CONTEXT;
 
 /** Puts the registry of the (app) layout into the context. */
 export function setColumnPrefsRegistry(registry: ColumnPrefsRegistry): ColumnPrefsRegistry {
