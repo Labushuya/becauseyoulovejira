@@ -183,4 +183,38 @@ describe('base.css styles checkboxes and radios once', () => {
 			expect(body, selector).not.toMatch(/#[0-9a-f]{3,8}\b|rgb\(|hsl\(/i);
 		}
 	});
+
+	it('draws the switch from the role of a checkbox, with its knob, motion and forced colors (ADR-0029)', () => {
+		const SWITCH = "input[type='checkbox'][role='switch']";
+		const rule = (selector: string) =>
+			rules(base).find(([list]) => selectors(list).includes(selector))?.[1] ?? '';
+		expect(rule(SWITCH)).toMatch(/border-radius:\s*var\(--radius-pill\)/);
+		expect(rule(`${SWITCH}::before`)).toMatch(/visibility:\s*visible/);
+		expect(rule(`${SWITCH}::before`)).toMatch(/background:\s*var\(--color-text-muted\)/);
+		expect(rule(`${SWITCH}::before`)).toMatch(/transition:\s*translate var\(--motion-fast\)/);
+		expect(rule(`${SWITCH}:checked::before`)).toMatch(/translate:/);
+		expect(rule(`${SWITCH}:checked::before`)).toMatch(/background:\s*var\(--color-on-brand\)/);
+		const reduced =
+			/@media \(prefers-reduced-motion: reduce\)\s*\{\s*input\[type='checkbox'\]\[role='switch'\]::before\s*\{([^}]*)\}/.exec(
+				base
+			)?.[1];
+		expect(reduced).toMatch(/transition:\s*none/);
+		const forced = /@media \(forced-colors: active\)\s*\{([\s\S]*?\}\s*)\}/.exec(base)?.[1] ?? '';
+		expect(forced).toContain(SWITCH);
+	});
+
+	it('gives role="switch" only to checkboxes and never names a class for it', () => {
+		const components = SOURCES.filter((path) => path.endsWith('.svelte'));
+		for (const path of components) {
+			const markup = readFileSync(join(SRC_DIR, path), 'utf8').replace(
+				/<style[^>]*>[\s\S]*?<\/style>/g,
+				''
+			);
+			for (const [tag = ''] of markup.matchAll(/<[a-zA-Z][^<>]*role=["']switch["'][^<>]*>/g)) {
+				expect(tag, path).toMatch(/^<input\b/);
+				expect(tag, path).toMatch(/type=["']checkbox["']/);
+			}
+		}
+		expect(base).not.toMatch(/\.switch\b/);
+	});
 });

@@ -12,6 +12,7 @@
 		type ThemePreference,
 		type ThemeStore
 	} from '$lib/theme.svelte';
+	import { getTransparencyStore, type TransparencyStore } from '$lib/transparency.svelte';
 	import Popover from './overlay/Popover.svelte';
 	import ThemeIcon from './ThemeIcon.svelte';
 
@@ -20,10 +21,17 @@
 	// "Dunkel", "Wie System") and the color (Petrol, Rubin, Smaragd, Kupfer, each with its
 	// swatch). A choice applies at once, stays on this device and reaches the other tabs. The page
 	// "Darstellung" of the settings uses the same stores, lists and labels, so both always agree.
+	// The switch "Transparenz" lives only on that page (ADR-0029 section 7); the menu, which is on
+	// every page, connects its store, so a change reaches the other tabs at once.
 	let {
 		store = getThemeStore(),
-		accentStore = getAccentStore()
-	}: { store?: ThemeStore; accentStore?: AccentStore } = $props();
+		accentStore = getAccentStore(),
+		transparencyStore = getTransparencyStore()
+	}: {
+		store?: ThemeStore;
+		accentStore?: AccentStore;
+		transparencyStore?: TransparencyStore;
+	} = $props();
 
 	const BUTTON_NAMES: Record<ThemePreference, string> = {
 		light: 'Hell',
@@ -33,6 +41,7 @@
 
 	$effect(() => store.connect());
 	$effect(() => accentStore.connect());
+	$effect(() => transparencyStore.connect());
 </script>
 
 {#snippet mark(checked: boolean)}

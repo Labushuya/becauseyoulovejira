@@ -99,3 +99,11 @@ Inter bleibt, der System-Stack ist nur Fallback. Die Clean-Room-Regel aus ADR-00
 - Der Fokusring wechselt von `--color-brand` auf `--color-brand-text` (CLAUDE.md §8, Tabelle).
 - Ein manueller Fall je Theme × Modus × Transparenz an und aus kommt ins Test-Manifest, dazu die Emulation der Systemeinstellungen und das Windows-Kontrastdesign.
 - `backdrop-filter` kostet GPU-Zeit; auf Rechnern ohne Beschleunigung hilft der Schalter.
+
+## Nachtrag (2026-09-27): Umsetzung des Schalters (G-3)
+
+Präzisiert §7 und §9, ohne sie aufzuheben:
+
+- Der Schalter ist der Switch „Glas-Effekt“ in der Gruppe „Transparenz“ unter „Einstellungen → Darstellung“. Der Store heißt `TransparencyStore` (`lib/transparency.svelte.ts`); er meldet zusätzlich die Systemeinstellung, damit die Seite einen Hinweis zeigen kann.
+- Der Switch wird in `base.css` über `input[type='checkbox'][role='switch']` gestaltet, nicht über eine Klasse `.switch`: Lokale Klassen dieses Namens sitzen auf Labels und würden sonst mitgestaltet. Er baut auf den gemeinsamen Checkbox-Regeln auf.
+- Einzelheiten und Gründe stehen im [Glas-Plan](../plan/e6-glas.md) §4.

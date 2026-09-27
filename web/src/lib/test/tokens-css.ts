@@ -27,9 +27,11 @@ const DARK_MODE_MEDIA = '@media (prefers-color-scheme: dark)';
 
 /**
  * The blocks of the switch point "opaque" (ADR-0029 section 6). Each one sets the materials to the
- * surface, the glass filters to none and switches the background gradient off.
+ * surface, the glass filters to none and switches the background gradient off. The first one is
+ * the switch "Transparenz" (G-3), the others follow the system and the browser.
  */
 export const OPAQUE_BLOCKS = [
+	":root[data-transparency='off']",
 	'@media (prefers-reduced-transparency: reduce) :root',
 	'@media (prefers-contrast: more) :root',
 	'@media (forced-colors: active) :root',

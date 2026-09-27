@@ -1,13 +1,15 @@
 // FOUC protection (ADR-0025 section 10, ADR-0027 section 6; plan UI-Konsistenz, package UI-2): runs
 // the inline script of app.html in jsdom with a prepared storage. It applies only valid values for
-// the mode and the accent theme, moves td-theme to byl-theme once and survives a storage that
-// throws. The keys and the allowlist must match theme.svelte.ts and accent.svelte.ts.
+// the mode, the accent theme and the transparency (ADR-0029 section 7), moves td-theme to byl-theme
+// once and survives a storage that throws. The keys and the allowlists must match theme.svelte.ts,
+// accent.svelte.ts and transparency.svelte.ts.
 
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { ACCENT_STORAGE_KEY, LEGACY_ACCENTS, STORED_ACCENTS } from './accent.svelte';
 import { LEGACY_THEME_STORAGE_KEY, THEME_STORAGE_KEY } from './theme.svelte';
+import { TRANSPARENCY_OFF, TRANSPARENCY_STORAGE_KEY } from './transparency.svelte';
 
 const APP_HTML = readFileSync(join(import.meta.dirname, '..', 'app.html'), 'utf8');
 
@@ -43,9 +45,16 @@ function bootAccent(storage: FakeStorage) {
 	return document.documentElement.getAttribute('data-accent');
 }
 
+/** Runs the script and returns the transparency attribute it set. */
+function bootTransparency(storage: FakeStorage) {
+	boot(storage);
+	return document.documentElement.getAttribute('data-transparency');
+}
+
 afterEach(() => {
 	document.documentElement.removeAttribute('data-theme');
 	document.documentElement.removeAttribute('data-accent');
+	document.documentElement.removeAttribute('data-transparency');
 });
 
 describe('theme boot script in app.html', () => {
@@ -183,5 +192,65 @@ describe('accent boot script in app.html (ADR-0027)', () => {
 		};
 
 		expect(bootAccent(storage)).toBe('smaragd');
+	});
+});
+
+describe('transparency boot script in app.html (ADR-0029 section 7)', () => {
+	it('uses the key and the only value of transparency.svelte.ts', () => {
+		const script = bootScript();
+		expect(script).toContain(
+			`localStorage.getItem('${TRANSPARENCY_STORAGE_KEY}') === '${TRANSPARENCY_OFF}'`
+		);
+		expect(script).toContain(`setAttribute('data-transparency', '${TRANSPARENCY_OFF}')`);
+	});
+
+	it('turns the glass off before the first paint when "off" is stored', () => {
+		expect(bootTransparency(storageWith({ 'byl-transparency': 'off' }))).toBe('off');
+	});
+
+	it.each(['on', 'OFF', 'false', "off' onload='x", ''])(
+		'ignores the value %j (the glass stays on)',
+		(value) => {
+			expect(bootTransparency(storageWith({ 'byl-transparency': value }))).toBeNull();
+		}
+	);
+
+	it('sets nothing without a stored choice', () => {
+		expect(bootTransparency(storageWith({}))).toBeNull();
+	});
+
+	it('sets mode, accent and transparency independently', () => {
+		const storage = storageWith({
+			'byl-theme': 'light',
+			'byl-accent': 'rubin',
+			'byl-transparency': 'off'
+		});
+
+		expect(boot(storage)).toBe('light');
+		expect(document.documentElement.getAttribute('data-accent')).toBe('rubin');
+		expect(document.documentElement.getAttribute('data-transparency')).toBe('off');
+	});
+
+	it('still applies the transparency when reading the accent fails', () => {
+		const storage = storageWith({ 'byl-transparency': 'off' });
+		const getItem = storage.getItem;
+		storage.getItem = (key) => {
+			if (key === 'byl-accent') throw new Error('SecurityError');
+			return getItem(key);
+		};
+
+		expect(bootTransparency(storage)).toBe('off');
+	});
+
+	it('keeps the glass on when the storage throws', () => {
+		const blocked = {
+			getItem: () => {
+				throw new Error('SecurityError');
+			},
+			setItem: () => undefined,
+			removeItem: () => undefined
+		};
+
+		expect(bootTransparency(blocked)).toBeNull();
 	});
 });

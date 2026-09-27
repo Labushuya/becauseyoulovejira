@@ -1,15 +1,17 @@
-// Settings "Darstellung" (plan EH-8, ADR-0027 section 6): three radios for the mode and five for the
-// accent color, each in a named group, on the same stores as the menu in the header; a choice
-// applies at once, is stored, and both controls agree in both directions and with other tabs.
+// Settings "Darstellung" (plan EH-8, ADR-0027 section 6, ADR-0029 section 7): three radios for the
+// mode and four for the accent color, each in a named group, and the switch "Glas-Effekt" in the
+// group "Transparenz", on the same stores as the menu in the header; a choice applies at once, is
+// stored, and both controls agree in both directions and with other tabs.
 
 import { fireEvent, render, screen, within } from '@testing-library/svelte';
 import { tick } from 'svelte';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { getAccentStore } from '$lib/accent.svelte';
 import ThemeMenu from '$lib/components/ThemeMenu.svelte';
 import { SETTINGS_SECTIONS } from '$lib/settings-sections';
 import { useOverlayStubs } from '$lib/test/overlay-stubs';
 import { getThemeStore } from '$lib/theme.svelte';
+import { getTransparencyStore, REDUCED_TRANSPARENCY_QUERY } from '$lib/transparency.svelte';
 import Page from './+page.svelte';
 
 useOverlayStubs();
@@ -17,9 +19,13 @@ useOverlayStubs();
 afterEach(() => {
 	getThemeStore().choose('system');
 	getAccentStore().choose('petrol');
+	getTransparencyStore().choose('on');
+	getTransparencyStore().systemReduces = false;
+	vi.unstubAllGlobals();
 	localStorage.clear();
 	document.documentElement.removeAttribute('data-theme');
 	document.documentElement.removeAttribute('data-accent');
+	document.documentElement.removeAttribute('data-transparency');
 });
 
 function radios(): HTMLInputElement[] {
@@ -158,5 +164,76 @@ describe('appearance page: color (ADR-0027)', () => {
 		window.dispatchEvent(new StorageEvent('storage', { key: 'byl-accent', newValue: 'rubin' }));
 		await tick();
 		expect(accentRadios().find((radio) => radio.checked)?.value).toBe('rubin');
+	});
+});
+
+describe('appearance page: transparency (ADR-0029 section 7)', () => {
+	function glassSwitch(): HTMLInputElement {
+		const group = screen.getByRole('group', { name: 'Transparenz' });
+		return within(group).getByRole('switch', { name: 'Glas-Effekt' }) as HTMLInputElement;
+	}
+
+	/** matchMedia that reports the system setting "reduce transparency". */
+	function systemReduces(matches: boolean) {
+		vi.stubGlobal(
+			'matchMedia',
+			vi.fn((media: string) => ({
+				matches: media === REDUCED_TRANSPARENCY_QUERY && matches,
+				media,
+				addEventListener: () => undefined,
+				removeEventListener: () => undefined
+			}))
+		);
+	}
+
+	it('offers a switch that is on by default and says what it does', () => {
+		render(Page);
+		const control = glassSwitch();
+
+		expect(control.type).toBe('checkbox');
+		expect(control.checked).toBe(true);
+		const note = document.getElementById(control.getAttribute('aria-describedby') ?? '');
+		expect(note?.textContent).toContain('Transparenz reduzieren');
+		expect(screen.queryByText(/reduziert die Transparenz bereits/)).toBeNull();
+	});
+
+	it('turns the glass off and on at once and stores only "off"', async () => {
+		render(Page);
+
+		await fireEvent.click(glassSwitch());
+		expect(glassSwitch().checked).toBe(false);
+		expect(document.documentElement.getAttribute('data-transparency')).toBe('off');
+		expect(localStorage.getItem('byl-transparency')).toBe('off');
+
+		await fireEvent.click(glassSwitch());
+		expect(glassSwitch().checked).toBe(true);
+		expect(document.documentElement.hasAttribute('data-transparency')).toBe(false);
+		expect(localStorage.getItem('byl-transparency')).toBeNull();
+	});
+
+	it('shows the stored choice', () => {
+		getTransparencyStore().choose('off');
+		render(Page);
+		expect(glassSwitch().checked).toBe(false);
+	});
+
+	it('follows a choice made in another tab, also through the menu in the header', async () => {
+		render(ThemeMenu);
+		render(Page);
+		window.dispatchEvent(new StorageEvent('storage', { key: 'byl-transparency', newValue: 'off' }));
+		await tick();
+		expect(glassSwitch().checked).toBe(false);
+		expect(document.documentElement.getAttribute('data-transparency')).toBe('off');
+	});
+
+	it('says so when the system setting already reduces transparency', async () => {
+		systemReduces(true);
+		render(Page);
+		await tick();
+
+		const hint = screen.getByText(/Die Systemeinstellung reduziert die Transparenz bereits/);
+		expect(hint.closest('[data-tone]')?.getAttribute('data-tone')).toBe('info');
+		// The switch stays usable: the choice counts again once the system setting is off.
+		expect(glassSwitch().disabled).toBe(false);
 	});
 });
