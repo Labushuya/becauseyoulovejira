@@ -32,4 +32,4 @@ Bereits verbindlich in der [Projekt-CLAUDE.md](../../CLAUDE.md) festgelegt und d
 | [0024](0024-serien-aus-kalendern.md) | Serien aus `.ics` und Google Calendar als Vorschlag für eine Regel | Angenommen (mit Nachtrag) | 2026-09-25 |
 | [0025](0025-ui-konsistenz-overlay-system.md) | UI-Konsistenz: ein Overlay-System, Theme-Umschalter und angeglichene Projekt-UI | Angenommen | 2026-09-25 |
 | [0026](0026-einstellungsbereich-und-hinweis-bausteine.md) | Einstellungsbereich, Hinweis-Bausteine, Einrichtungsassistent und geführte Tour | Angenommen | 2026-09-26 |
-| [0027](0027-akzent-themes.md) | Akzent-Themes (Petrol, Rubin, Purpur, Smaragd, Honig): genau eine Akzentfarbe je Theme | Angenommen | 2026-09-26 |
+| [0027](0027-akzent-themes.md) | Akzent-Themes (Petrol, Rubin, Smaragd, Kupfer): genau eine Akzentfarbe je Theme | Angenommen (mit Nachtrag) | 2026-09-26 |

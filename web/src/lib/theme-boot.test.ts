@@ -6,7 +6,7 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
-import { ACCENT_STORAGE_KEY, STORED_ACCENTS } from './accent.svelte';
+import { ACCENT_STORAGE_KEY, LEGACY_ACCENTS, STORED_ACCENTS } from './accent.svelte';
 import { LEGACY_THEME_STORAGE_KEY, THEME_STORAGE_KEY } from './theme.svelte';
 
 const APP_HTML = readFileSync(join(import.meta.dirname, '..', 'app.html'), 'utf8');
@@ -137,10 +137,43 @@ describe('accent boot script in app.html (ADR-0027)', () => {
 	});
 
 	it('sets mode and accent independently', () => {
-		const storage = storageWith({ 'byl-theme': 'dark', 'byl-accent': 'honig' });
+		const storage = storageWith({ 'byl-theme': 'dark', 'byl-accent': 'kupfer' });
 
 		expect(boot(storage)).toBe('dark');
-		expect(document.documentElement.getAttribute('data-accent')).toBe('honig');
+		expect(document.documentElement.getAttribute('data-accent')).toBe('kupfer');
+	});
+
+	it('turns a stored "honig" into "kupfer" once, like accent.svelte.ts (addendum 2026-09-27)', () => {
+		const storage = storageWith({ 'byl-accent': 'honig' });
+
+		expect(bootAccent(storage)).toBe('kupfer');
+		expect(storage.data.get('byl-accent')).toBe('kupfer');
+		expect(LEGACY_ACCENTS.honig).toBe('kupfer');
+	});
+
+	it('turns a stored "purpur" into Petrol and removes the key', () => {
+		const storage = storageWith({ 'byl-accent': 'purpur' });
+
+		expect(bootAccent(storage)).toBeNull();
+		expect(storage.data.has('byl-accent')).toBe(false);
+		expect(LEGACY_ACCENTS.purpur).toBe('petrol');
+	});
+
+	it('shows Kupfer for a stored "honig" even when the storage refuses the rewrite', () => {
+		const storage = storageWith({ 'byl-accent': 'honig' });
+		storage.setItem = () => {
+			throw new Error('QuotaExceededError');
+		};
+
+		expect(bootAccent(storage)).toBe('kupfer');
+	});
+
+	it('knows exactly the old values of accent.svelte.ts', () => {
+		const script = bootScript();
+		for (const legacy of Object.keys(LEGACY_ACCENTS)) {
+			expect(script).toContain(`accent === '${legacy}'`);
+		}
+		expect(script.match(/accent === '[a-z]+'/g)).toHaveLength(Object.keys(LEGACY_ACCENTS).length);
 	});
 
 	it('applies the accent even when moving td-theme fails', () => {

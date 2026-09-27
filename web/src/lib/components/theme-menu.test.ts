@@ -116,7 +116,7 @@ describe('theme menu', () => {
 });
 
 describe('theme menu: color (ADR-0027)', () => {
-	it('offers the five accent themes in a group "Farbe" after a separator', async () => {
+	it('offers the four accent themes in a group "Farbe" after a separator', async () => {
 		localStorage.setItem('byl-accent', 'smaragd');
 		show();
 		await open();
@@ -124,12 +124,10 @@ describe('theme menu: color (ADR-0027)', () => {
 		expect(entries('Farbe').map((entry) => entry.textContent?.trim())).toEqual([
 			'Petrol',
 			'Rubin',
-			'Purpur',
 			'Smaragd',
-			'Honig'
+			'Kupfer'
 		]);
 		expect(entries('Farbe').map((entry) => entry.getAttribute('aria-checked'))).toEqual([
-			'false',
 			'false',
 			'false',
 			'true',
@@ -141,7 +139,7 @@ describe('theme menu: color (ADR-0027)', () => {
 		await fireEvent.keyDown(document.activeElement as Element, { key: 'ArrowDown' });
 		expect(document.activeElement?.textContent?.trim()).toBe('Petrol');
 		await fireEvent.keyDown(document.activeElement as Element, { key: 'End' });
-		expect(document.activeElement?.textContent?.trim()).toBe('Honig');
+		expect(document.activeElement?.textContent?.trim()).toBe('Kupfer');
 	});
 
 	it('shows each theme with its swatch token, decorative only', async () => {
@@ -174,7 +172,7 @@ describe('theme menu: color (ADR-0027)', () => {
 	});
 
 	it('goes back to Petrol and removes the stored color', async () => {
-		localStorage.setItem('byl-accent', 'honig');
+		localStorage.setItem('byl-accent', 'kupfer');
 		show();
 		await open();
 
@@ -187,14 +185,14 @@ describe('theme menu: color (ADR-0027)', () => {
 	it('follows a color chosen in another tab', async () => {
 		show();
 
-		window.dispatchEvent(new StorageEvent('storage', { key: 'byl-accent', newValue: 'purpur' }));
+		window.dispatchEvent(new StorageEvent('storage', { key: 'byl-accent', newValue: 'kupfer' }));
 		await tick();
 		await open();
 
-		expect(document.documentElement.getAttribute('data-accent')).toBe('purpur');
+		expect(document.documentElement.getAttribute('data-accent')).toBe('kupfer');
 		expect(
 			screen
-				.getByRole('menuitemradio', { hidden: true, name: 'Purpur' })
+				.getByRole('menuitemradio', { hidden: true, name: 'Kupfer' })
 				.getAttribute('aria-checked')
 		).toBe('true');
 	});

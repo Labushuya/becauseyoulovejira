@@ -114,3 +114,4 @@ Die Farb- und Gestaltungsregeln aus §3 und die Clean-Room-Regel aus §4 gelten 
   - Farbe nie als einziges Merkmal
 - „Wartet“ bleibt bernsteinfarben, außer im Honig-Theme. Dort würde Bernstein den Akzent treffen, deshalb ist die Pille dort schiefergrau-blau.
 - Neue Farb-Tokens entstehen weiter nur nach §3, jetzt in den Modus-Blöcken **und** in allen Theme-Blöcken, jeweils mit Kontrastprüfung in `tokens.test.ts`.
+- Seit dem Nachtrag zu ADR-0027 vom 2026-09-27 heißen die Themes Petrol, Rubin, Smaragd und Kupfer (Purpur entfällt, Honig wird Kupfer); die schiefergrau-blaue „Wartet“-Pille gilt jetzt im Kupfer-Theme.

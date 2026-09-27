@@ -17,7 +17,7 @@
 
 	// Theme switcher in the header (ADR-0025 section 10, ADR-0027 section 6): an icon button with the
 	// current mode in its name, opening a menu with two groups of menuitemradio: the mode ("Hell",
-	// "Dunkel", "Wie System") and the color (Petrol, Rubin, Purpur, Smaragd, Honig, each with its
+	// "Dunkel", "Wie System") and the color (Petrol, Rubin, Smaragd, Kupfer, each with its
 	// swatch). A choice applies at once, stays on this device and reaches the other tabs. The page
 	// "Darstellung" of the settings uses the same stores, lists and labels, so both always agree.
 	let {

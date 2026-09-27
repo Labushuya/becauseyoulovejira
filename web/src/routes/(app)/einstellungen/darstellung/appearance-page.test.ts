@@ -94,16 +94,15 @@ describe('appearance page (EH-8)', () => {
 });
 
 describe('appearance page: color (ADR-0027)', () => {
-	it('offers the five accent themes as radios with swatch, name and description', () => {
-		getAccentStore().choose('purpur');
+	it('offers the four accent themes as radios with swatch, name and description', () => {
+		getAccentStore().choose('smaragd');
 		render(Page);
 
 		expect(accentRadios().map((radio) => [radio.value, radio.checked])).toEqual([
 			['petrol', false],
 			['rubin', false],
-			['purpur', true],
-			['smaragd', false],
-			['honig', false]
+			['smaragd', true],
+			['kupfer', false]
 		]);
 		for (const radio of accentRadios()) {
 			expect(radio.name).toBe(accentRadios()[0]?.name);
@@ -114,17 +113,19 @@ describe('appearance page: color (ADR-0027)', () => {
 			expect(swatch?.style.getPropertyValue('--swatch')).toBe(`var(--swatch-${radio.value})`);
 		}
 		expect(screen.getByRole('radio', { name: 'Smaragd' }).getAttribute('value')).toBe('smaragd');
-		expect(screen.getByRole('radio', { name: 'Honig' }).getAttribute('value')).toBe('honig');
+		expect(screen.getByRole('radio', { name: 'Kupfer' }).getAttribute('value')).toBe('kupfer');
+		expect(screen.queryByRole('radio', { name: 'Purpur' })).toBeNull();
+		expect(screen.queryByRole('radio', { name: 'Honig' })).toBeNull();
 	});
 
 	it('applies and stores a color at once and keeps the mode', async () => {
 		getThemeStore().choose('dark');
 		render(Page);
 
-		await fireEvent.click(screen.getByRole('radio', { name: 'Honig' }));
+		await fireEvent.click(screen.getByRole('radio', { name: 'Kupfer' }));
 
-		expect(document.documentElement.getAttribute('data-accent')).toBe('honig');
-		expect(localStorage.getItem('byl-accent')).toBe('honig');
+		expect(document.documentElement.getAttribute('data-accent')).toBe('kupfer');
+		expect(localStorage.getItem('byl-accent')).toBe('kupfer');
 		expect(document.documentElement.getAttribute('data-theme')).toBe('dark');
 		expect(radios().find((radio) => radio.checked)?.value).toBe('dark');
 
