@@ -101,9 +101,27 @@ describe('drafts of the helper', () => {
 		['a body that is too long', draft({ body: 'x'.repeat(100_001) })],
 		['a number as body', draft({ body: 3 })],
 		['a source_ref that is too long', draft({ source_ref: 'x'.repeat(501) })],
-		['a list as source_meta', draft({ source_meta: [] })]
+		['a list as source_meta', draft({ source_meta: [] })],
+		['an unknown reason for a missing file', draft({ source_meta: { original_omitted: 'lost', original_size: 5 } })],
+		['a missing file without size', draft({ source_meta: { original_omitted: 'too_large' } })],
+		['a size as text', draft({ source_meta: { original_omitted: 'too_large', original_size: '12' } })],
+		['a negative size', draft({ source_meta: { original_omitted: 'too_large', original_size: -1 } })],
+		['a broken size', draft({ source_meta: { original_omitted: 'too_large', original_size: 1.5 } })]
 	])('refuses %s', (name, value) => {
 		expect(rules.parseDraft(value)).toEqual({ error: expect.any(String) });
+	});
+
+	it('keeps the mark of a mail over 10 MB without its file (ADR-0031 section 4)', () => {
+		const result = rules.parseDraft(
+			draft({ source_meta: { from: 'a@example.com', original_omitted: 'too_large', original_size: 13_000_000 } })
+		);
+		expect(result.draft.meta).toEqual({
+			from: 'a@example.com',
+			original_omitted: 'too_large',
+			original_size: 13_000_000
+		});
+		// A size alone is no mark and is not kept.
+		expect(rules.parseDraft(draft({ source_meta: { original_size: 3 } })).draft.meta).toEqual({});
 	});
 
 	it('sets channel and kind to mail whatever the helper sends', () => {

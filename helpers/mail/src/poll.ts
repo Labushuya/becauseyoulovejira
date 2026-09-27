@@ -20,7 +20,6 @@ import {
 	type InboxSession
 } from './imap';
 import { errorText, redact, type Logger } from './log';
-import { MAIL_MAX_BYTES } from './mail';
 import { ConnectionGone, checkMail, emptyOutcome, type PollOutcome } from './mail-check';
 import { providerOf, type MailProvider } from './providers';
 import { MAX_CREATED_PER_RUN, newScan, runScan, scanSignature } from './scan';
@@ -78,7 +77,7 @@ function summary(outcome: PollOutcome): string {
 	const parts = [`${outcome.created} neu`];
 	if (outcome.duplicates > 0) parts.push(`${outcome.duplicates} schon vorhanden`);
 	if (outcome.unmatched > 0) parts.push(`${outcome.unmatched} ohne Stichwort`);
-	if (outcome.skipped > 0) parts.push(`${outcome.skipped} über 10 MB übersprungen`);
+	if (outcome.omitted > 0) parts.push(`davon ${outcome.omitted} über 10 MB ohne Originaldatei`);
 	if (outcome.failed > 0) parts.push(`${outcome.failed} nicht lesbar oder abgelehnt`);
 	const scan = outcome.scan;
 	if (scan !== null) parts.push(`Posteingang ${scan.done}/${scan.total} (${scan.state})`);
@@ -249,11 +248,7 @@ async function checkMails(
 	const mails = await session.listAfter(afterUid, MAX_MAILS_PER_RUN);
 	for (const mail of mails) {
 		if (outcome.created >= MAX_CREATED_PER_RUN) break;
-		if (mail.size > MAIL_MAX_BYTES) {
-			outcome.skipped += 1;
-		} else {
-			await checkMail(deps.ingest, connection, session, mail.uid, outcome);
-		}
+		await checkMail(deps.ingest, connection, session, mail.uid, outcome, mail.size);
 		outcome.cursor = `${session.uidValidity}:${mail.uid}`;
 	}
 }

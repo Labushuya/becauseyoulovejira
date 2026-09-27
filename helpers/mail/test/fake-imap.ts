@@ -1,7 +1,8 @@
 // Minimal IMAP server for the tests of the mail helper, on 127.0.0.1 without TLS: the mailbox INBOX
 // and further folders (Trash, Junk, Sent, …) that a test fills, login with user and password,
 // LIST, EXAMINE/SELECT, SEARCH, FETCH (UID, RFC822.SIZE, FLAGS, BODY[], BODY[HEADER] and
-// BODY[HEADER.FIELDS (…)], with and without PEEK) by UID and by sequence number, NOOP and LOGOUT.
+// BODY[HEADER.FIELDS (…)], with and without PEEK, also partial as BODY.PEEK[]<start.length>) by
+// UID and by sequence number, NOOP and LOGOUT.
 // It records every command (without the password), so a test can prove that the helper only reads:
 // no SELECT, STORE, COPY, MOVE, EXPUNGE, APPEND or CLOSE, no BODY[] without PEEK, and which folders
 // it opened. Commands that would change the mailbox are refused and change nothing.
@@ -197,6 +198,8 @@ export class FakeImapServer {
 	/** Answer every SEARCH for text with NO [BADCHARSET] (a server without usable search). */
 	refuseTextSearch = false;
 	readonly commands: RecordedCommand[] = [];
+	/** Partial fetches of a body (the beginning of a mail over 10 MB, ADR-0031 section 4). */
+	readonly partialFetches: { uid: number; start: number; length: number }[] = [];
 	readonly mails: FakeMail[] = [];
 	/** Further folders by name (Trash, Junk, Sent, …); the helper must never open them. */
 	readonly folders = new Map<string, FakeMail[]>();
@@ -517,18 +520,25 @@ export class FakeImapServer {
 			}
 			parts.push(`* ${index + 1} FETCH (${items.join(' ')}`);
 			for (const item of wanted) {
-				const body = /^BODY(\.PEEK)?\[(HEADER(?:\.FIELDS \(([^)]*)\))?)?\]$/.exec(item);
+				const body = /^BODY(\.PEEK)?\[(HEADER(?:\.FIELDS \(([^)]*)\))?)?\](?:<(\d+)\.(\d+)>)?$/.exec(item);
 				if (!body) continue;
 				if (body[1] === undefined && !readOnly && !mail.flags.includes('\\Seen')) mail.flags.push('\\Seen');
 				parts.push(' ');
 				const section = body[2] ?? '';
-				const value =
+				const whole =
 					body[3] !== undefined
 						? headerFieldsOf(mail.source, body[3].split(/\s+/).filter(Boolean))
 						: section === 'HEADER'
 							? headerOf(mail.source)
 							: mail.source;
-				literal(`BODY[${section}]`, value);
+				// A partial fetch <start.length> answers with the origin octet only (RFC 3501 6.4.5).
+				if (body[4] !== undefined && body[5] !== undefined) {
+					const start = Number(body[4]);
+					this.partialFetches.push({ uid: mail.uid, start, length: Number(body[5]) });
+					literal(`BODY[${section}]<${start}>`, whole.subarray(start, start + Number(body[5])));
+				} else {
+					literal(`BODY[${section}]`, whole);
+				}
 			}
 			parts.push(')\r\n');
 			for (const part of parts) send(part);

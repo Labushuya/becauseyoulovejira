@@ -14,6 +14,11 @@ var ORIGINS = ['auto', 'selected'];
 // Keys of source_meta a mail may bring (inbox-mail.ts, mailToDraft); the route adds the keyword.
 var META_KEYS = ['from', 'to', 'cc', 'attachments', 'html_only'];
 
+// A mail over 10 MB comes without its file (ADR-0031 section 4): source_meta.original_omitted
+// names the reason, original_size the size of the mail in bytes. Checked, not copied blindly.
+var OMITTED_REASONS = ['too_large'];
+var MAX_SAFE_SIZE = 9007199254740991;
+
 var ID = /^[a-z0-9]{15}$/;
 // Cursor of a mailbox: UIDVALIDITY:UID (ADR-0016 section 5), both unsigned 32-bit numbers.
 var CURSOR = /^\d{1,10}:\d{1,10}$/;
@@ -110,6 +115,19 @@ function parseDraft(value) {
     if (Object.prototype.hasOwnProperty.call(given, key)) {
       meta[key] = given[key];
     }
+  }
+  if (Object.prototype.hasOwnProperty.call(given, 'original_omitted')) {
+    var size = given.original_size;
+    if (
+      OMITTED_REASONS.indexOf(given.original_omitted) === -1 ||
+      typeof size !== 'number' ||
+      !(size >= 0 && size <= MAX_SAFE_SIZE) ||
+      Math.floor(size) !== size
+    ) {
+      return { error: 'Feld source_meta ist ungültig.' };
+    }
+    meta.original_omitted = given.original_omitted;
+    meta.original_size = size;
   }
   return {
     draft: {

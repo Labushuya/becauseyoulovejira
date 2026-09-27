@@ -10,8 +10,10 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { FakeImapServer, fakeMail } from '../test/fake-imap';
 import { ScanControl } from './gate';
 import { IngestError, type IngestApi, type MailConnection, type StatusReport } from './ingest-client';
+import PostalMime from 'postal-mime';
+import { ORIGINAL_OMITTED_NOTE } from '../../../web/src/lib/domain/inbox-mail';
 import type { Logger } from './log';
-import type { IngestDraft } from './mail';
+import { MAIL_PARTIAL_BYTES, type IngestDraft } from './mail';
 import {
 	FIRST_RUN_HINT,
 	MAX_MAILS_PER_RUN,
@@ -137,6 +139,21 @@ afterEach(async () => {
 });
 
 describe('first run (full inbox, ADR-0020 addendum 3)', () => {
+	it('takes an old mail over 10 MB of the full scan without its file (ADR-0031)', async () => {
+		mail('Hallo');
+		const big = server.add(
+			`Subject: Rechnung gross\r\nMessage-ID: <scan-big@x>\r\n\r\nSumme 12 Euro\r\n${'q'.repeat(10 * 1024 * 1024)}`
+		);
+		const box = connection();
+		ingest.connections = [box];
+		const outcome = await pollConnection(deps(), box);
+		expect(outcome).toMatchObject({ status: 'ok', created: 1, omitted: 1 });
+		expect(ingest.items[0]?.original).toBeUndefined();
+		expect(ingest.items[0]?.draft.source_meta).toMatchObject({ original_omitted: 'too_large' });
+		expect(server.partialFetches.map((fetch) => fetch.uid)).toEqual([big]);
+		expect(server.writes()).toEqual([]);
+	});
+
 	it('sets the cursor to the highest UID and takes the old mails with a keyword', async () => {
 		mail('Todo: alt');
 		mail('Hallo');
@@ -220,13 +237,57 @@ describe('later runs (P-10, ADR-0020)', () => {
 		expect(second).toMatchObject({ unmatched: 5, cursor: `1700000000:${MAX_MAILS_PER_RUN + 5}` });
 	});
 
-	it('skips mails over 10 MB and unreadable ones, and still moves on', async () => {
+	it('takes a mail over 10 MB from its beginning, without the file, and moves on (ADR-0031)', async () => {
 		const box = connection({ cursor: '1700000000:0' });
-		server.add(`Subject: Todo gross\r\nMessage-ID: <big@x>\r\n\r\n${'x'.repeat(10 * 1024 * 1024)}`);
+		const source =
+			'From: Anna Beispiel <anna@example.com>\r\nSubject: Todo gross\r\nMessage-ID: <big@x>\r\n' +
+			`Content-Type: text/plain; charset=utf-8\r\n\r\nHier der Anfang.\r\n${'x'.repeat(10 * 1024 * 1024)}`;
+		const big = server.add(source);
 		mail('Todo klein');
 		const outcome = await pollConnection(deps(), box);
-		expect(outcome).toMatchObject({ created: 1, skipped: 1, cursor: '1700000000:2' });
-		expect(lines.join('\n')).toMatch(/1 über 10 MB übersprungen/);
+		expect(outcome).toMatchObject({ created: 2, skipped: 0, omitted: 1, cursor: '1700000000:2' });
+		const large = ingest.items.find((item) => item.draft.source_ref === '<big@x>');
+		expect(large?.original).toBeUndefined();
+		expect(large?.draft).toMatchObject({
+			title: 'Todo gross',
+			source_meta: {
+				from: 'Anna Beispiel <anna@example.com>',
+				original_omitted: 'too_large',
+				original_size: Buffer.byteLength(source)
+			}
+		});
+		expect(large?.draft.body.startsWith('Hier der Anfang.')).toBe(true);
+		expect(large?.draft.body.endsWith(ORIGINAL_OMITTED_NOTE)).toBe(true);
+		expect(large?.draft.body.length).toBeLessThanOrEqual(100_000);
+		// Only its first 2 MB were fetched, read-only.
+		expect(server.partialFetches).toEqual([{ uid: big, start: 0, length: MAIL_PARTIAL_BYTES }]);
+		expect(server.writes()).toEqual([]);
+		expect(ingest.items.find((item) => item.draft.title === 'Todo klein')?.original).toBeDefined();
+		expect(lines.join('\n')).toMatch(/2 neu, davon 1 über 10 MB ohne Originaldatei/);
+	});
+
+	it('falls back to the header of a mail over 10 MB whose beginning cannot be read', async () => {
+		const box = connection({ cursor: '1700000000:0' });
+		const header = 'From: amt@example.com\r\nSubject: Todo Bescheid\r\nMessage-ID: <kopf@x>\r\n\r\n';
+		server.add(`${header}${'y'.repeat(10 * 1024 * 1024)}`);
+		const original = PostalMime.parse;
+		let calls = 0;
+		PostalMime.parse = (async (...args: Parameters<typeof PostalMime.parse>) => {
+			calls += 1;
+			if (calls === 1) throw new Error('unreadable');
+			return original(...args);
+		}) as typeof PostalMime.parse;
+		try {
+			const outcome = await pollConnection(deps(), box);
+			expect(outcome).toMatchObject({ created: 1, omitted: 1, failed: 0 });
+		} finally {
+			PostalMime.parse = original;
+		}
+		expect(ingest.items[0]?.draft).toMatchObject({
+			title: 'Todo Bescheid',
+			body: ORIGINAL_OMITTED_NOTE,
+			source_meta: { from: 'amt@example.com', original_omitted: 'too_large' }
+		});
 	});
 
 	it('scans the inbox again when UIDVALIDITY changes, without duplicates', async () => {

@@ -259,6 +259,24 @@ describe('POST /mailbox/import', () => {
 		expect(imap.flagsUnchanged()).toBe(true);
 	});
 
+	it('takes a chosen mail over 10 MB from its beginning, without the file (ADR-0031)', async () => {
+		const source =
+			'From: Bert Beispiel <bert@example.com>\r\nSubject: Fotos\r\nMessage-ID: <fotos@example.com>\r\n' +
+			`Content-Type: text/plain; charset=utf-8\r\n\r\nAnbei.\r\n${'z'.repeat(11 * 1024 * 1024)}`;
+		imap.add(source);
+		const answer = await call('/mailbox/import', { connection: ID, uids: [1] });
+		expect(answer.json).toEqual({ items: [{ uid: 1, status: 'created', message: '' }] });
+		expect(ingest.items[0]?.original).toBeUndefined();
+		expect(ingest.items[0]?.draft).toMatchObject({
+			title: 'Fotos',
+			origin: 'selected',
+			source_meta: { original_omitted: 'too_large', original_size: Buffer.byteLength(source) }
+		});
+		expect(imap.partialFetches).toEqual([{ uid: 1, start: 0, length: 2 * 1024 * 1024 }]);
+		expect(imap.writes()).toEqual([]);
+		expect(imap.flagsUnchanged()).toBe(true);
+	});
+
 	it('takes 1 to 50 valid UIDs', async () => {
 		for (const uids of [[], Array.from({ length: 51 }, (_, i) => i + 1), [0], ['1'], 'x']) {
 			expect((await call('/mailbox/import', { connection: ID, uids })).status).toBe(400);

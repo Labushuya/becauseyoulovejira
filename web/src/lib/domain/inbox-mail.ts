@@ -37,10 +37,19 @@ export interface ParsedMail {
 export const NO_SUBJECT = '(ohne Betreff)';
 
 /**
- * Largest mail taken into the inbox, as file or from the mailbox (ADR-0017 section 2; schema of
- * `original`).
+ * Largest mail taken into the inbox with its original file, as file or from the mailbox (ADR-0017
+ * section 2; schema of `original`). A larger mail comes without its file (ADR-0031 section 4).
  */
 export const MAIL_MAX_BYTES = 10 * 1024 * 1024;
+
+/**
+ * Beginning of a mail over MAIL_MAX_BYTES that is read and parsed (ADR-0031 section 4): the text
+ * of a mail comes before its attachments, so it is usually in there.
+ */
+export const MAIL_PARTIAL_BYTES = 2 * 1024 * 1024;
+
+/** Note at the end of the text of a mail stored without its file (ADR-0031 section 4). */
+export const ORIGINAL_OMITTED_NOTE = '_Originaldatei nicht gespeichert: größer als 10 MB._';
 
 /**
  * Limits of the parser (postal-mime options) against crafted mails. Shared by the SPA (mail files)
@@ -235,18 +244,30 @@ export function mailMatchTexts(
  * on attachments, the Message-ID as stable ID, the date at the sender, and sender, recipients and
  * the number of attachments in `source_meta`. "Von" and "Datum" are shown from these fields by
  * the panel and the prefill of the ticket, so the text does not repeat them.
+ *
+ * With `omittedSize` the mail was larger than MAIL_MAX_BYTES and only its beginning (or only its
+ * header) was parsed (ADR-0031 section 4): the draft comes without the file, marks it in
+ * `source_meta` (`original_omitted`, `original_size`) and ends with ORIGINAL_OMITTED_NOTE instead
+ * of counting attachments, which the cut-off mail cannot tell.
  */
-export function mailToDraft(mail: ParsedMail, channel: 'eml' | 'mail' = 'eml'): InboxDraft {
+export function mailToDraft(
+	mail: ParsedMail,
+	channel: 'eml' | 'mail' = 'eml',
+	{ omittedSize }: { omittedSize?: number } = {}
+): InboxDraft {
 	const subject = oneLine(mail.subject ?? '');
-	const attachments = mail.attachments.length;
+	const omitted = omittedSize !== undefined;
+	const attachments = omitted ? 0 : mail.attachments.length;
 	const text = mailText(mail);
-	const note =
-		attachments === 0
+	const note = omitted
+		? ORIGINAL_OMITTED_NOTE
+		: attachments === 0
 			? ''
 			: attachments === 1
 				? '_1 Anhang, nur in der Originaldatei._'
 				: `_${attachments} Anhänge, nur in der Originaldatei._`;
-	const body = [text, note].filter((part) => part !== '').join('\n\n');
+	const room = INBOX_BODY_MAX_LENGTH - (note === '' ? 0 : note.length + 2);
+	const body = [text.slice(0, room), note].filter((part) => part !== '').join('\n\n');
 	const from = mail.from === undefined ? '' : formatAddress(mail.from);
 	const to = formatAddresses(mail.to);
 	const cc = formatAddresses(mail.cc);
@@ -256,6 +277,10 @@ export function mailToDraft(mail: ParsedMail, channel: 'eml' | 'mail' = 'eml'): 
 	if (cc !== '') meta.cc = cc;
 	if (attachments > 0) meta.attachments = attachments;
 	if (oneLine(mail.text ?? '') === '' && (mail.html ?? '') !== '') meta.html_only = true;
+	if (omitted) {
+		meta.original_omitted = 'too_large';
+		meta.original_size = Math.max(0, Math.trunc(omittedSize));
+	}
 	return {
 		channel,
 		kind: 'mail',

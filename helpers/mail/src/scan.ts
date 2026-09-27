@@ -14,8 +14,9 @@
 //    used: it also searches Received, DKIM and the like, which the keywords never search, and
 //    would only load mails for nothing. If the server refuses the search (NO or BAD, for example
 //    BADCHARSET), every mail of the block is loaded and checked instead (fallback).
-// 3. Only the candidates are loaded (BODY.PEEK[], up to 10 MB) and matched exactly with the whole
-//    text (checkMail); the ingest route checks again. Server hits without a real match count as
+// 3. Only the candidates are loaded (BODY.PEEK[], up to 10 MB; of a larger mail only its first
+//    2 MB, stored without the file, ADR-0031 section 4) and matched exactly with the whole text
+//    (checkMail); the ingest route checks again. Server hits without a real match count as
 //    "ohne Stichwort".
 //
 // Duplicates are recognised by the fingerprint (Message-ID), discarded entries stay tombstones, so
@@ -35,7 +36,7 @@ import { foldKeywordText, keywordKey } from '../../../web/src/lib/domain/keyword
 import type { InboxSession } from './imap';
 import type { IngestApi, MailConnection } from './ingest-client';
 import { checkMail, type PollOutcome } from './mail-check';
-import { MAIL_MAX_BYTES, keywordOf } from './mail';
+import { keywordOf } from './mail';
 import type { ScanState } from './scan-state';
 
 /** Mails per block: one header fetch and one search per keyword each. */
@@ -223,12 +224,8 @@ export async function runScan(run: ScanRun): Promise<ScanEnd> {
 				stopAt(candidate.uid, 'running');
 				return 'deadline';
 			}
-			if (candidate.size > MAIL_MAX_BYTES) {
-				outcome.skipped += 1;
-				continue;
-			}
 			const before = outcome.created;
-			await checkMail(run.ingest, run.connection, session, candidate.uid, outcome);
+			await checkMail(run.ingest, run.connection, session, candidate.uid, outcome, candidate.size);
 			scan.created += outcome.created - before;
 		}
 		scan.below = block.at(-1) ?? 0;
