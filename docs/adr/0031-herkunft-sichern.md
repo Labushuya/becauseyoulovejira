@@ -93,7 +93,7 @@ Die reine Funktion `copyCompleteness(item)` in `web/src/lib/domain/inbox.ts` sag
 - **Abruf** mit `$http.send`, `GET`, Timeout 10 s, ohne Cookies oder Anmeldedaten, mit `Range: bytes=0-2097151`. Angenommen werden nur Status 200 und 206 mit `text/html` oder `application/xhtml+xml`. Gespeichert werden höchstens die ersten 2 MB; eine größere Seite wird gekürzt (`source_meta.page.truncated`).
 - **Speichern:**
   - Der Text der Seite wird mit `lib/html-text.js` extrahiert. Das ist eine ES5-Fassung von `htmlToText` der SPA mit Paritätstest: ohne `script`, `style`, Bilder und eingebettete Objekte, Links als „Text (Adresse)“.
-  - Er wird für Markdown maskiert und unter den Auszug in `body` gehängt, insgesamt höchstens 100.000 Zeichen. Der Auszug bleibt in `source_meta.excerpt` erhalten.
+  - Er kommt unter den Auszug in `body`, getrennt durch eine Linie (`---`), insgesamt höchstens 100.000 Zeichen. Wie der Text von HTML-Mails wird er nicht maskiert; die Anzeige ist sanitisiert (unten).
   - Die HTML-Datei liegt als `original` (`seite.html`, `protected`), dazu `source_meta.page` mit Zeitpunkt, Größe und Seitentitel.
 - **Anzeige:** Die Anzeige läuft wie jeder Kanaltext über `Markdown.svelte` ([ADR-0008](0008-markdown-rendering-und-sanitizing.md)): keine Skripte, keine Bilder, keine externen Ressourcen. Die HTML-Datei gibt es nur als Download (`download=1`), nie eingebettet.
 - **SSRF-Schutz** (`lib/url-guard.js`, rein, mit Unit-Tests):
