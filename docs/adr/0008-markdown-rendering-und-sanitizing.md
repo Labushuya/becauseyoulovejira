@@ -1,6 +1,6 @@
 # ADR-0008: Markdown-Rendering und Sanitizing
 
-- **Status:** Angenommen
+- **Status:** Angenommen; §1, §2 und §5 ergänzt durch [ADR-0032](0032-editor-tiptap-markdown.md) (Unterstreichen, Task-Listen, Allowlist), §4 ab RT-3 ersetzt durch ADR-0032 (Editor)
 - **Datum:** 2026-09-24
 - **Entscheidung durch:** Advisor
 

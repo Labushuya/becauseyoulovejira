@@ -13,7 +13,7 @@ Bereits verbindlich in der [Projekt-CLAUDE.md](../../CLAUDE.md) festgelegt und d
 | [0005](0005-zeitzone-europe-berlin.md) | Zeitzone Europe/Berlin ohne Zeitzonendatenbank der Laufzeit | Angenommen | 2026-09-24 |
 | [0006](0006-frontend-zustand-und-datenzugriff.md) | Frontend-Zustand, Datenzugriff und Standard-Sortierung | Angenommen | 2026-09-24 |
 | [0007](0007-realtime-und-sitzungspflege.md) | Realtime-Abos und Sitzungspflege im Frontend | Angenommen | 2026-09-24 |
-| [0008](0008-markdown-rendering-und-sanitizing.md) | Markdown-Rendering und Sanitizing | Angenommen | 2026-09-24 |
+| [0008](0008-markdown-rendering-und-sanitizing.md) | Markdown-Rendering und Sanitizing | Angenommen, §1, §2 und §5 ergänzt durch 0032, §4 ab RT-3 ersetzt durch 0032 | 2026-09-24 |
 | [0009](0009-fehlerfarbe.md) | Fehlerfarbe als eigenes Design-Token | Angenommen (mit Nachtrag) | 2026-09-24 |
 | [0010](0010-layout-nach-task-board.md) | Seitenaufbau nach dem Vorbild des Task-Boards, im eigenen Stack und mit eigenen Farben | Angenommen, teilweise ersetzt durch 0025 und 0029, ergänzt durch 0027 | 2026-09-25 |
 | [0011](0011-roadmap-e3-bis-e7.md) | Neue Etappen E3 bis E7 mit vorgezogenen Eingangskanälen | Angenommen | 2026-09-25 |
@@ -37,3 +37,4 @@ Bereits verbindlich in der [Projekt-CLAUDE.md](../../CLAUDE.md) festgelegt und d
 | [0029](0029-glas-materialien.md) | Glas-Materialien im macOS-Stil: Glas nur in der Bedienebene, Verlauf aus der Akzentfläche, neutrale Schatten, Umschaltpunkt „undurchsichtig“ | Angenommen und umgesetzt (G-1 bis G-6, mit Nachträgen) | 2026-09-27 |
 | [0030](0030-spalten-breiten-und-kompakte-zeilen.md) | Spaltenbreiten, Ein- und Ausblenden und kompakte Zeilen in Tabellen: berechnete Anpassung statt Container-Queries, Menü „Spalten“, Speichern pro Gerät | Angenommen und umgesetzt (SP-1 bis SP-5) | 2026-09-27 |
 | [0031](0031-herkunft-sichern.md) | Herkunft sichern: Quellen eines Tickets (`converted` für Umwandeln und Verknüpfen), Löschschutz, große Mails ohne Originaldatei, Kopie-Status und Seitenkopie mit SSRF-Schutz; Nachtrag: Umhängen, Löschen eines Tickets mit Quellen, Hervorhebung und Filter, Originaldateien bis 25 MB | Angenommen und umgesetzt (HK-1 bis HK-8) | 2026-09-27 |
+| [0032](0032-editor-tiptap-markdown.md) | Editor wie Jira: Tiptap mit Markdown als Speicherformat, Brücke über die markdown-it-Instanz der Anzeige; Unterstreichen `++`, Task-Listen, Abhaken mit Schutz vor Überschreiben | Angenommen (Spike RT-0: Weg B), Umsetzung ab RT-1 | 2026-09-28 |
