@@ -7,12 +7,10 @@ import {
 	importKeywordsValue,
 	mailKeywordTexts,
 	foldKeywordText,
-	hasKeywordSeparator,
 	keywordInputError,
 	keywordListOf,
 	matchKeyword,
 	planKeywordAdditions,
-	splitKeywordInput,
 	withSuggestions
 } from './keywords';
 
@@ -128,17 +126,7 @@ describe('keywords of the file imports (package 21)', () => {
 });
 
 describe('input of the keyword editor (package A)', () => {
-	it('splits at commas and line breaks and keeps the rest unless finished', () => {
-		expect(splitKeywordInput('todo', false)).toEqual({ parts: [], rest: 'todo' });
-		expect(splitKeywordInput('todo', true)).toEqual({ parts: ['todo'], rest: '' });
-		expect(splitKeywordInput('a, b ,, c', false)).toEqual({ parts: ['a', 'b'], rest: ' c' });
-		expect(splitKeywordInput('a\r\nb\nc,', true)).toEqual({ parts: ['a', 'b', 'c'], rest: '' });
-		expect(splitKeywordInput(' , ', true)).toEqual({ parts: [], rest: '' });
-		expect(hasKeywordSeparator('zu erledigen')).toBe(false);
-		expect(hasKeywordSeparator('a,b')).toBe(true);
-		expect(hasKeywordSeparator('a\nb')).toBe(true);
-	});
-
+	// Splitting the field moved to domain/list-input.ts (shared with the tag picker).
 	it('plans additions one after the other, also against duplicates among them', () => {
 		expect(planKeywordAdditions(['todo'], [' neu ', 'TODO', 'Neu', ''])).toEqual({
 			accepted: ['neu'],

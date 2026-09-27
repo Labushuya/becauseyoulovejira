@@ -1,8 +1,16 @@
 <script lang="ts">
+	import { tick } from 'svelte';
+	import {
+		hasListSeparator,
+		listInputAction,
+		splitAtCaret,
+		splitListInput
+	} from '$lib/domain/list-input';
 	import {
 		TAG_NAME_MAX_LENGTH,
 		findTagByName,
 		normalizeTagName,
+		planTagInput,
 		tagNameProblem,
 		tagSuggestions
 	} from '$lib/domain/tag';
@@ -18,6 +26,12 @@
 	// following scrolling and resizing, so a scrolling panel or a modal no longer cuts it off. It
 	// opens and closes by code as before; the focus stays in the input. Escape closes the list and
 	// is consumed (preventDefault), so the panel or the modal around stays open.
+	// Typing several tags (user request, plan e6-spalten "Tags"; the rules of domain/list-input.ts,
+	// shared with the keyword editor): a comma takes the text before the caret, Enter the
+	// highlighted suggestion or else the text, a pasted list with commas or line breaks becomes
+	// several tags; each existing tag is reused regardless of case. Backspace in the empty field
+	// removes the last tag and brings its name back as editable text. A polite live region says
+	// what happened.
 	let {
 		id,
 		selected,
@@ -55,6 +69,7 @@
 
 	const uid = $props.id();
 	const listboxId = `${uid}-listbox`;
+	const keysId = `${uid}-keys`;
 	const optionId = (index: number) => `${uid}-option-${index}`;
 
 	let input = $state<HTMLInputElement>();
@@ -78,9 +93,11 @@
 	const showList = $derived(expanded && options.length > 0);
 	const activeId = $derived(showList && activeIndex >= 0 ? optionId(activeIndex) : undefined);
 	const described = $derived(
-		[describedBy, error ? errorId : undefined].filter((part) => part !== undefined).join(' ') ||
-			undefined
+		[describedBy, keysId, error ? errorId : undefined]
+			.filter((part) => part !== undefined)
+			.join(' ')
 	);
+	let live = $state('');
 
 	function open(index: number) {
 		expanded = true;
@@ -121,13 +138,117 @@
 		input?.focus();
 	}
 
+	/** Says `message` in the live region, also when it is the same text as before. */
+	async function announce(message: string) {
+		live = '';
+		await tick();
+		live = message;
+	}
+
+	/**
+	 * Takes `names` as tags one after the other (existing ones regardless of case); `rest` stays
+	 * in the field. If one fails (the owner shows why), it and the names after it go back into the
+	 * field before the rest, so nothing typed is lost.
+	 */
+	async function takeNames(names: readonly string[], rest: string) {
+		if (locked) return;
+		const plan = planTagInput(
+			tags,
+			selected.map((tag) => tag.name),
+			names
+		);
+		const skippedText =
+			plan.skipped.length === 0
+				? ''
+				: plan.skipped.length === 1
+					? `„${plan.skipped[0]}“ ist schon gewählt.`
+					: `${plan.skipped.length} Tags sind schon gewählt.`;
+		const taken: string[] = [];
+		const left: string[] = [];
+		// The field shows the rest at once; what is typed during the saving stays behind it.
+		text = rest;
+		close();
+		await run(async () => {
+			for (const [index, step] of plan.steps.entries()) {
+				const ok = step.kind === 'add' ? await onadd(step.tag.id) : await oncreate(step.name);
+				if (!ok) {
+					left.push(
+						...plan.steps
+							.slice(index)
+							.map((entry) => (entry.kind === 'add' ? entry.tag.name : entry.name))
+					);
+					break;
+				}
+				taken.push(step.kind === 'add' ? step.tag.name : step.name);
+			}
+			return true;
+		});
+		if (left.length > 0) text = [...left, text].filter((part) => part.trim() !== '').join(', ');
+		input?.focus();
+		const takenText =
+			taken.length === 0
+				? ''
+				: taken.length === 1
+					? `Tag „${taken[0]}“ übernommen.`
+					: `${taken.length} Tags übernommen.`;
+		const message = [takenText, skippedText].filter((part) => part !== '').join(' ');
+		if (message !== '') await announce(message);
+	}
+
+	/** Backspace in the empty field: the last tag goes and its name comes back as text. */
+	async function takeBackLast() {
+		const last = selected.at(-1);
+		if (last === undefined || locked) return;
+		if (!(await run(() => onremove(last.id)))) return;
+		text = last.name;
+		await tick();
+		input?.setSelectionRange(last.name.length, last.name.length);
+		await announce(`„${last.name}“ zum Bearbeiten im Feld.`);
+	}
+
 	function oninput() {
+		// A separator that came another way (autocorrect, drag and drop): like a typed comma.
+		if (hasListSeparator(text)) {
+			const { parts, rest } = splitListInput(text, false);
+			void takeNames(parts, rest);
+			return;
+		}
 		// With text the first suggestion is active, so Enter takes it (list autocomplete).
 		if (normalizeTagName(text) === '') close();
 		else open(0);
 	}
 
-	function onkeydown(event: KeyboardEvent) {
+	/** A pasted list with commas or line breaks becomes several tags at once. */
+	function onpaste(event: ClipboardEvent & { currentTarget: HTMLInputElement }) {
+		const pasted = event.clipboardData?.getData('text') ?? '';
+		if (!hasListSeparator(pasted)) return;
+		event.preventDefault();
+		const target = event.currentTarget;
+		const { before, after } = splitAtCaret(text, target.selectionStart, target.selectionEnd);
+		void takeNames(splitListInput(before + pasted + after, true).parts, '');
+	}
+
+	/** Enter: the highlighted suggestion, else the typed text as a tag. */
+	function finish() {
+		const option = showList ? options[activeIndex] : undefined;
+		if (option !== undefined) void choose(option);
+		else if (normalizeTagName(text) !== '') void takeNames([text], '');
+	}
+
+	function onkeydown(event: KeyboardEvent & { currentTarget: HTMLInputElement }) {
+		// Ctrl+Enter belongs to the form around (e.g. "Anlegen"): no action, no preventDefault.
+		const action = listInputAction(event, text, selected.length > 0);
+		if (action !== null) {
+			event.preventDefault();
+			if (action === 'finish') finish();
+			else if (action === 'take-back') void takeBackLast();
+			else if (action === 'separate') {
+				const target = event.currentTarget;
+				const { before, after } = splitAtCaret(text, target.selectionStart, target.selectionEnd);
+				void takeNames(splitListInput(before, true).parts, after);
+			}
+			return;
+		}
 		switch (event.key) {
 			case 'ArrowDown':
 				event.preventDefault();
@@ -139,14 +260,6 @@
 				if (!showList) open(options.length - 1);
 				else activeIndex = (activeIndex - 1 + options.length) % options.length;
 				break;
-			case 'Enter': {
-				// Ctrl+Enter belongs to the form around (e.g. "Anlegen").
-				if (event.ctrlKey || event.metaKey) return;
-				event.preventDefault();
-				const option = showList ? options[activeIndex] : undefined;
-				if (option !== undefined) void choose(option);
-				break;
-			}
 			case 'Escape':
 				if (showList) {
 					event.preventDefault();
@@ -250,6 +363,7 @@
 			aria-describedby={described}
 			{oninput}
 			{onkeydown}
+			{onpaste}
 			{onblur}
 			onclick={() => {
 				if (!showList) open(normalizeTagName(text) === '' ? -1 : 0);
@@ -284,6 +398,11 @@
 			{/each}
 		</ul>
 	</div>
+	<p class="visually-hidden" id={keysId}>
+		Komma oder Enter übernimmt den Tag, auch aus einer eingefügten Liste. Die Rücktaste im leeren
+		Feld holt den letzten Tag zum Bearbeiten zurück.
+	</p>
+	<p class="visually-hidden" aria-live="polite">{live}</p>
 </div>
 
 <style>
@@ -305,7 +424,7 @@
 		align-items: center;
 		max-width: 100%;
 		padding: 0 0.125rem 0 0.375rem;
-		font-size: 0.75rem;
+		font-size: var(--font-size-small);
 		overflow-wrap: anywhere;
 		line-height: 1.25rem;
 		color: var(--color-text);
@@ -376,7 +495,7 @@
 
 	.option {
 		padding: 0.25rem 0.625rem;
-		font-size: 0.8125rem;
+		font-size: var(--font-size-control);
 		cursor: pointer;
 	}
 

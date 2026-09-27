@@ -16,8 +16,7 @@ const TOKENS_CSS = join('lib', 'styles', 'tokens.css');
  */
 const LEGACY_RADII = [
 	join('lib', 'components', 'ConnectionsSection.svelte'),
-	join('lib', 'components', 'ImportKeywordsSection.svelte'),
-	join('lib', 'components', 'KeywordEditor.svelte')
+	join('lib', 'components', 'ImportKeywordsSection.svelte')
 ];
 
 /** Values a radius may take besides a token: none, a circle, or what the parent has. */

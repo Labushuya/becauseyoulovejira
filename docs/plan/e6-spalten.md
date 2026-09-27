@@ -1,6 +1,6 @@
 # E6-Plan, Teil Spalten: Breiten ziehen, ein- und ausblenden, kompakte Zeilen
 
-- **Stand:** in Arbeit (2026-09-27); SP-1 bis SP-4 gemergt, SP-5 in Arbeit.
+- **Stand:** SP-1 bis SP-5 umgesetzt und gemergt (2026-09-27); die Tag-Eingabe in Arbeit, danach der Switch im Kanal-Dialog.
 - **Grundlage:**
   - [ADR-0030](../adr/0030-spalten-breiten-und-kompakte-zeilen.md) (berechnete Anpassung, Breiten und Schwellen, Griff, Menü „Spalten“, Speichern, kompakte Zeilen)
   - [ADR-0025](../adr/0025-ui-konsistenz-overlay-system.md) §5 und §11, [ADR-0010](../adr/0010-layout-nach-task-board.md) §1, [ADR-0019](../adr/0019-kanal-filter-und-gruppierung.md) §4, [ADR-0029](../adr/0029-glas-materialien.md)
@@ -56,6 +56,11 @@
 | 2026-09-27 | SP-5 | **Eingang:** Die Auswahl ist eine feste Pflichtspalte nur bei „Neu“; `ColumnFit` bekommt die Spalten dafür als Funktion. Unter dem auf 2 Zeilen begrenzten Titel bleibt der Hinweis „Mögliches Duplikat“ stehen; er ist eine Aktion und wird nicht abgeschnitten. |
 | 2026-09-27 | SP-5 | **Wiederholungen kompakt:** Rhythmus und Projekt stehen einzeilig mit Ellipse und der ganzen Angabe als `title` (vorher umbrochen). Die Aktion ist 3,5rem breit (vorher `width: 1%`). |
 | 2026-09-27 | SP-5 | `InboxTable`, `ProjectTable` und `RecurrenceTable` ziehen auf die Schriftgrößen-Tokens (23 Werte, `no-own-font-sizes.test.ts` jetzt 252). `table-columns.test.ts` prüft alle vier Tabellen auf denselben Unterbau und keine Container-Regeln mehr. Hilfe: neue Frage „Wie ändere ich Spalten und ihre Breite?“. |
+| 2026-09-27 | Tags | **Ein Modul für beide Felder:** `domain/list-input.ts` (Trennzeichen, `splitListInput`, `splitAtCaret`, `listInputAction`) statt der Hilfen in `keywords.ts`; Stichwort-Editor und `TagPicker` nutzen dieselben Regeln. Der Stichwort-Editor behält Enter auch mit Strg (er steht in keinem eigenen Formular), im `TagPicker` gehört Strg+Enter weiter dem Formular („Anlegen“). |
+| 2026-09-27 | Tags | **Enter** nimmt wie bisher den markierten Vorschlag (APG-Combobox), sonst den Text; das **Komma** nimmt immer den getippten Text. Damit Enter bei gleichem Namen nicht einen längeren Tag nimmt („Haus“ statt „Hausbau“), steht derselbe Name in jeder Schreibweise jetzt vorn in `tagSuggestions`. |
+| 2026-09-27 | Tags | **Mehrere Tags nacheinander:** `planTagInput` löst jeden Namen ohne Groß-/Kleinschreibung auf ein bestehendes Tag auf oder legt ihn an und überspringt gewählte und doppelte Namen (Ansage „… ist schon gewählt“). Die Rückrufe der Besitzer (`onadd`, `oncreate`) laufen der Reihe nach; im Panel speichert jeder Schritt sofort. Scheitert einer (der Besitzer zeigt den Grund), kommen er und die folgenden Namen zurück ins Feld. Das Feld zeigt den Rest sofort; was man während des Speicherns tippt, bleibt dahinter stehen. Die Längenprüfung bleibt beim Anlegen (`ensureTag`). |
+| 2026-09-27 | Tags | **Rücktaste:** Nur der erste Druck einer gehaltenen Taste holt zurück (`repeat`), und nur wenn das Entfernen klappt, steht der Name im Feld, die Schreibmarke am Ende. Die Tasten nennt ein verborgener Hinweis per `aria-describedby` (die Felder im Panel bleiben optisch unverändert); die Ansage steht in einer eigenen `aria-live`-Zeile. |
+| 2026-09-27 | Tags | Bei der Gelegenheit ziehen `KeywordEditor` (Radien und Schriftgrößen) und `TagPicker` (Schriftgrößen) auf die Tokens; `KeywordEditor` fällt von der Ausnahmeliste von `no-own-radii.test.ts`, beide von der Liste von `no-own-font-sizes.test.ts` (jetzt 246). |
 
 ## 4. Status
 
@@ -65,8 +70,8 @@
 | SP-2 | gemergt (#99) |
 | SP-3 | gemergt (#100) |
 | SP-4 | gemergt (#101) |
-| SP-5 | in Arbeit |
-| Tags | offen |
+| SP-5 | gemergt (#102) |
+| Tags | in Arbeit |
 | Switch | offen |
 
 ## 5. Offene Punkte

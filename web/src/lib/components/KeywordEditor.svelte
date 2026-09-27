@@ -3,11 +3,15 @@
 	import {
 		KEYWORD_MAX_LENGTH,
 		KEYWORD_SUGGESTIONS,
-		hasKeywordSeparator,
 		planKeywordAdditions,
-		splitKeywordInput,
 		withSuggestions
 	} from '$lib/domain/keywords';
+	import {
+		hasListSeparator,
+		listInputAction,
+		splitAtCaret,
+		splitListInput
+	} from '$lib/domain/list-input';
 	import ErrorIcon from './ErrorIcon.svelte';
 	import SectionMessage from './guidance/SectionMessage.svelte';
 
@@ -17,7 +21,8 @@
 	// the tone "warning" (plan EH-10): icon and hidden "Achtung:", no yellow.
 	// Input (user feedback, package A): a comma, Enter and pasting a comma-separated list take the
 	// text as keywords and empty the field; Backspace in the empty field brings the last keyword back
-	// as editable text. What happens to the field is said in a polite live region.
+	// as editable text. What happens to the field is said in a polite live region. The rules of the
+	// field are shared with the tag picker (domain/list-input.ts).
 	let {
 		keywords,
 		name,
@@ -136,19 +141,14 @@
 			field?.focus();
 			return;
 		}
-		void commit(splitKeywordInput(original, true).parts, '', original);
+		void commit(splitListInput(original, true).parts, '', original);
 	}
 
 	/** A typed comma: the text before the caret becomes keywords, the text after it stays. */
 	function commitAtCaret(target: HTMLInputElement) {
 		const original = input;
-		const start = target.selectionStart ?? original.length;
-		const end = target.selectionEnd ?? start;
-		void commit(
-			splitKeywordInput(original.slice(0, start), true).parts,
-			original.slice(end),
-			original
-		);
+		const { before, after } = splitAtCaret(original, target.selectionStart, target.selectionEnd);
+		void commit(splitListInput(before, true).parts, after, original);
 	}
 
 	/** Backspace in the empty field: the last keyword comes back as editable text. */
@@ -167,37 +167,35 @@
 	}
 
 	function onkeydown(event: KeyboardEvent & { currentTarget: HTMLInputElement }) {
-		if (event.key === 'Enter') {
-			event.preventDefault();
-			if (!saving) add();
-		} else if (event.key === ',') {
-			event.preventDefault();
-			if (!saving) commitAtCaret(event.currentTarget);
-		} else if (event.key === 'Backspace' && input === '' && keywords.length > 0) {
-			// Held down, the key repeats: only the first press takes a keyword back.
-			event.preventDefault();
-			if (!saving && !event.repeat) void takeBackLast();
-		}
+		// Enter also with Ctrl: the editor stands in no form of its own.
+		const action =
+			event.key === 'Enter' ? 'finish' : listInputAction(event, input, keywords.length > 0);
+		if (action === null) return;
+		event.preventDefault();
+		if (saving) return;
+		if (action === 'finish') add();
+		else if (action === 'separate') commitAtCaret(event.currentTarget);
+		else if (action === 'take-back') void takeBackLast();
 	}
 
 	/** A pasted list with commas or line breaks becomes keywords at once, its last part too. */
 	function onpaste(event: ClipboardEvent & { currentTarget: HTMLInputElement }) {
 		const text = event.clipboardData?.getData('text') ?? '';
-		if (!hasKeywordSeparator(text)) return;
+		if (!hasListSeparator(text)) return;
 		event.preventDefault();
 		if (saving) return;
 		const original = input;
-		const start = event.currentTarget.selectionStart ?? original.length;
-		const end = event.currentTarget.selectionEnd ?? start;
-		const combined = original.slice(0, start) + text + original.slice(end);
-		void commit(splitKeywordInput(combined, true).parts, '', original, combined);
+		const target = event.currentTarget;
+		const { before, after } = splitAtCaret(original, target.selectionStart, target.selectionEnd);
+		const combined = before + text + after;
+		void commit(splitListInput(combined, true).parts, '', original, combined);
 	}
 
 	/** A separator that came another way (autocorrect, drag and drop): like a typed comma. */
 	function oninput() {
-		if (saving || !hasKeywordSeparator(input)) return;
+		if (saving || !hasListSeparator(input)) return;
 		const original = input;
-		const { parts, rest } = splitKeywordInput(original, false);
+		const { parts, rest } = splitListInput(original, false);
 		void commit(parts, rest, original);
 	}
 </script>
@@ -291,12 +289,12 @@
 		margin: 0;
 		padding: 0.625rem 0.75rem;
 		border: 1px solid var(--color-line);
-		border-radius: 0.375rem;
+		border-radius: var(--radius-control);
 	}
 
 	legend {
 		padding: 0 0.25rem;
-		font-size: 0.8125rem;
+		font-size: var(--font-size-control);
 		font-weight: 600;
 	}
 
@@ -314,10 +312,10 @@
 		gap: 0.25rem;
 		align-items: center;
 		padding: 0.125rem 0.25rem 0.125rem 0.5rem;
-		font-size: 0.8125rem;
+		font-size: var(--font-size-control);
 		color: var(--color-brand-soft-text);
 		background: var(--color-brand-soft-bg);
-		border-radius: 999px;
+		border-radius: var(--radius-pill);
 	}
 
 	.remove {
@@ -329,7 +327,7 @@
 		color: inherit;
 		background: none;
 		border: none;
-		border-radius: 999px;
+		border-radius: var(--radius-pill);
 		cursor: pointer;
 	}
 
@@ -339,7 +337,7 @@
 	}
 
 	label {
-		font-size: 0.8125rem;
+		font-size: var(--font-size-control);
 		font-weight: 500;
 		color: var(--color-text-muted);
 	}
@@ -357,7 +355,7 @@
 		color: var(--color-text);
 		background: var(--color-surface);
 		border: 1px solid var(--color-text-muted);
-		border-radius: 0.375rem;
+		border-radius: var(--radius-control);
 	}
 
 	[aria-disabled='true'] {
@@ -366,7 +364,7 @@
 	}
 
 	.hint {
-		font-size: 0.8125rem;
+		font-size: var(--font-size-control);
 		color: var(--color-text-muted);
 	}
 </style>

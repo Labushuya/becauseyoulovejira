@@ -52,9 +52,46 @@ export function tagSuggestions<T extends TagRef>(
 	const key = tagNameKey(input);
 	const open = tags.filter((tag) => !chosen.includes(tag.id));
 	if (key === '') return open;
-	const starts = open.filter((tag) => tagNameKey(tag.name).startsWith(key));
+	// The same name in any spelling comes first, so Enter reuses it instead of a longer one.
+	const exact = open.filter((tag) => tagNameKey(tag.name) === key);
+	const starts = open.filter(
+		(tag) => tagNameKey(tag.name) !== key && tagNameKey(tag.name).startsWith(key)
+	);
 	const contains = open.filter(
 		(tag) => !tagNameKey(tag.name).startsWith(key) && tagNameKey(tag.name).includes(key)
 	);
-	return [...starts, ...contains];
+	return [...exact, ...starts, ...contains];
+}
+
+/** One step for a name typed or pasted into the tag picker. */
+export type TagInputStep<T extends TagRef> =
+	{ kind: 'add'; tag: T } | { kind: 'create'; name: string };
+
+/**
+ * Steps for names taken from the tag picker (a comma, Enter, a pasted list): an existing tag
+ * regardless of case is reused, any other name becomes a new tag (its checks are left to
+ * creating). Empty names, names already chosen and repeated names (regardless of case) are left
+ * out; the chosen and repeated ones are named in `skipped`.
+ */
+export function planTagInput<T extends TagRef>(
+	tags: readonly T[],
+	chosenNames: readonly string[],
+	names: readonly string[]
+): { steps: TagInputStep<T>[]; skipped: string[] } {
+	const seen = new Set(chosenNames.map(tagNameKey));
+	const steps: TagInputStep<T>[] = [];
+	const skipped: string[] = [];
+	for (const raw of names) {
+		const name = normalizeTagName(raw);
+		if (name === '') continue;
+		const key = tagNameKey(name);
+		if (seen.has(key)) {
+			skipped.push(name);
+			continue;
+		}
+		seen.add(key);
+		const existing = findTagByName(tags, name);
+		steps.push(existing === null ? { kind: 'create', name } : { kind: 'add', tag: existing });
+	}
+	return { steps, skipped };
 }
