@@ -4,6 +4,8 @@
 // background run); only the setup assistant watches its one connection while it is open
 // (`watch`, plan EH-5 §3.8), so the first run shows without polling. With a mailbox in the list the
 // store also asks whether the mail helper runs (package A, item 4), so the card says it honestly.
+// The page "Kanäle" watches its mailboxes the same way, so the progress of the full scan of an
+// inbox (ADR-0020, addendum 3) shows as it happens; `scan` starts or cancels it.
 
 import type PocketBase from 'pocketbase';
 import { SvelteMap } from 'svelte/reactivity';
@@ -18,6 +20,7 @@ import {
 	listMailbox,
 	runConnection,
 	saveConnectionSettings,
+	scanConnection,
 	setConnectionEnabled,
 	subscribeConnection
 } from '$lib/data/connections';
@@ -26,11 +29,13 @@ import { toDataError } from '$lib/data/errors';
 import type { RequestOptions } from '$lib/data/options';
 import {
 	runResultText,
+	scanResultText,
 	type Connection,
 	type ConnectionDraft,
 	type ConnectionSettingsDraft,
 	type MailHelperStatus,
 	type RunResult,
+	type ScanResult,
 	type SecretStatus
 } from '$lib/domain/connections';
 import {
@@ -68,6 +73,8 @@ export interface ConnectionsData {
 	subscribe(id: string, onChange: (change: RecordChange<Connection>) => void): Promise<Unsubscribe>;
 	/** Whether the mail helper runs (no mailbox login). */
 	helperStatus(options: RequestOptions): Promise<MailHelperStatus>;
+	/** Starts or cancels the full scan of the inbox of a mailbox. */
+	scan(id: string, action: 'start' | 'cancel'): Promise<ScanResult>;
 }
 
 export function connectionsData(pb: PocketBase): ConnectionsData {
@@ -83,7 +90,8 @@ export function connectionsData(pb: PocketBase): ConnectionsData {
 		listMailbox: (id, limit, options) => listMailbox(pb, id, limit, options),
 		importMailbox: (id, uids) => importFromMailbox(pb, id, uids),
 		subscribe: (id, onChange) => subscribeConnection(pb, id, onChange),
-		helperStatus: (options) => getMailHelperStatus(pb, options)
+		helperStatus: (options) => getMailHelperStatus(pb, options),
+		scan: (id, action) => scanConnection(pb, id, action)
 	};
 }
 
@@ -345,6 +353,23 @@ export class ConnectionsStore {
 		} finally {
 			this.#running.delete(id);
 		}
+	}
+
+	/**
+	 * "Posteingang neu durchsuchen" ("start") or "Abbrechen" ("cancel") of a mailbox (ADR-0020,
+	 * addendum 3). The helper scans in the background; the progress arrives with the connection
+	 * (the page watches it). The answer goes out as a flag; after "cancel" the connection is read
+	 * again, because the hook may have marked the stored scan as cancelled itself.
+	 */
+	async scan(id: string, action: 'start' | 'cancel'): Promise<ConnectionActionResult> {
+		const label = this.#items.get(id)?.label ?? 'Postfach';
+		return this.#act(async () => {
+			const result = await this.#data.scan(id, action);
+			const { text, tone } = scanResultText(label, result);
+			this.#notify(text, tone);
+			if (action === 'cancel' || result.status === 'started')
+				this.#items.set(id, await this.#data.get(id));
+		});
 	}
 
 	/**

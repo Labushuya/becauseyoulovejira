@@ -89,7 +89,8 @@ function fakes(items: Connection[], status: SecretStatus = { secret: false, allo
 			state: 'running' as const,
 			version: '0.5.0',
 			message: ''
-		}))
+		})),
+		scan: vi.fn<ConnectionsData['scan']>(async () => ({ status: 'started' as const, message: '' }))
 	} satisfies ConnectionsData;
 	const flags = new FlagStore();
 	const store = new ConnectionsStore(data, { ensureValid: () => true, logout: vi.fn() }, flags);

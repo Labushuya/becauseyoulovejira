@@ -270,6 +270,98 @@ describe('channel card', () => {
 	});
 });
 
+describe('full scan of an inbox on the card (ADR-0020, addendum 3)', () => {
+	const MAIL = {
+		type: 'mail' as const,
+		label: 'Web.de',
+		mailProvider: 'webde' as const,
+		mailUser: 'anna@web.de'
+	};
+
+	function renderScan(value: Connection) {
+		const onscan = vi.fn();
+		render(ChannelCard, {
+			props: {
+				connection: value,
+				secretStatus: { secret: true, allowlist: null },
+				running: false,
+				onrun: vi.fn(),
+				onpick: vi.fn(),
+				onedit: vi.fn(),
+				onpause: vi.fn(),
+				ondelete: vi.fn(),
+				onsetup: vi.fn(),
+				onscan
+			}
+		});
+		const card = within(screen.getByRole('article', { name: value.label }));
+		const trigger = card.getByRole('button', { name: `Weitere Aktionen für ${value.label}` });
+		const menu = within(document.getElementById(trigger.getAttribute('aria-controls') ?? '')!);
+		return { card, trigger, menu, onscan };
+	}
+
+	it('shows the progress of a running scan and cancels it', async () => {
+		const scan = {
+			state: 'running' as const,
+			done: 1200,
+			total: 4800,
+			created: 7,
+			fallback: false
+		};
+		const { card, onscan } = renderScan(connection({ ...MAIL, scan }));
+		expect(card.getByText('Posteingang')).toBeTruthy();
+		expect(card.getByText(/wird durchsucht: 1\.200\/4\.800/)).toBeTruthy();
+		const bar = document.querySelector('progress');
+		expect(bar?.getAttribute('value')).toBe('1200');
+		expect(bar?.getAttribute('max')).toBe('4800');
+		await fireEvent.click(card.getByRole('button', { name: 'Abbrechen: Durchsuchen von Web.de' }));
+		expect(onscan).toHaveBeenCalledWith('cancel');
+	});
+
+	it('says how a finished, paused or cancelled scan ended, without "Abbrechen" or a bar', () => {
+		const cases: [NonNullable<Connection['scan']>, RegExp][] = [
+			[
+				{ state: 'done', done: 4800, total: 4800, created: 12, fallback: false },
+				/durchsucht: 4\.800 Mails, 12 Einträge übernommen/
+			],
+			[
+				{ state: 'paused', done: 900, total: 4800, created: 200, fallback: false },
+				/pausiert bei 900\/4\.800, bisher 200 Einträge übernommen/
+			],
+			[
+				{ state: 'cancelled', done: 500, total: 4800, created: 1, fallback: false },
+				/abgebrochen bei 500\/4\.800/
+			]
+		];
+		for (const [scan, text] of cases) {
+			const { card } = renderScan(
+				connection({ ...MAIL, id: `conn-${scan.state}`, label: `Web.de ${scan.state}`, scan })
+			);
+			expect(card.getByText(text)).toBeTruthy();
+			expect(card.queryByRole('button', { name: /^Abbrechen/ })).toBeNull();
+		}
+		expect(document.querySelector('progress')).toBeNull();
+	});
+
+	it('offers "Posteingang neu durchsuchen" in the menu of a set-up mailbox only', async () => {
+		const { trigger, menu, onscan } = renderScan(connection({ ...MAIL, scan: null }));
+		expect(
+			menu.getAllByRole('menuitem', { hidden: true }).map((item) => item.textContent?.trim())
+		).toEqual(['Pausieren', 'Einrichtung ansehen', 'Posteingang neu durchsuchen', 'Löschen …']);
+		await fireEvent.click(trigger);
+		await fireEvent.click(
+			menu.getByRole('menuitem', { name: 'Posteingang neu durchsuchen', hidden: true })
+		);
+		expect(onscan).toHaveBeenCalledWith('start');
+		const paused = renderScan(
+			connection({ ...MAIL, id: 'conn-aus', label: 'Aus', enabled: false })
+		);
+		expect(
+			paused.menu.queryByRole('menuitem', { name: 'Posteingang neu durchsuchen', hidden: true })
+		).toBeNull();
+	});
+});
+
 describe('channel edit modal', () => {
 	it('is a modal M named after the connection with keywords, switch, variables and "Schließen"', async () => {
 		const onclose = vi.fn();

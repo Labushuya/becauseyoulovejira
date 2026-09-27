@@ -75,7 +75,8 @@ async function open(
 			state: 'running' as const,
 			version: '0.5.0',
 			message: ''
-		}))
+		})),
+		scan: vi.fn<ConnectionsData['scan']>(async () => ({ status: 'started' as const, message: '' }))
 	} satisfies ConnectionsData;
 	const store = new ConnectionsStore(
 		data,
@@ -157,17 +158,21 @@ describe('mailbox assistant (EH-7)', () => {
 				/durchsucht er den gesamten Posteingang \(nicht Papierkorb\/Spam\/Gesendet\)/
 			)
 		).toBeTruthy();
-		await vi.waitFor(() => expect(listeners.length).toBe(1));
+		// The assistant and, since the full inbox scan, the card of the mailbox on the page below it
+		// each watch the connection.
+		await vi.waitFor(() => expect(listeners.length).toBe(2));
 
-		listeners[0]?.({
-			action: 'update',
-			record: mailbox({
-				keywords: ['todo'],
-				lastRunAt: '2026-09-26 10:05:00.000Z',
-				lastHint: 'Erster Abruf',
-				updated: '2026-09-26 10:05:00.000Z'
-			})
-		});
+		for (const listener of listeners) {
+			listener({
+				action: 'update',
+				record: mailbox({
+					keywords: ['todo'],
+					lastRunAt: '2026-09-26 10:05:00.000Z',
+					lastHint: 'Erster Abruf',
+					updated: '2026-09-26 10:05:00.000Z'
+				})
+			});
+		}
 		await vi.waitFor(() => expect(within(dialog).getByText(/^Abgerufen, zuletzt/)).toBeTruthy());
 		expect(data.get).not.toHaveBeenCalled();
 		expect(data.listMailbox).not.toHaveBeenCalled();

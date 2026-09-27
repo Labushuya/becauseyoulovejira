@@ -6,11 +6,13 @@ import type PocketBase from 'pocketbase';
 import {
 	isConnectionType,
 	isMailProvider,
+	mailScanOf,
 	type Connection,
 	type ConnectionDraft,
 	type ConnectionSettingsDraft,
 	type MailHelperStatus,
 	type RunResult,
+	type ScanResult,
 	type SecretStatus
 } from '../domain/connections';
 import { keywordListOf } from '../domain/keywords';
@@ -38,6 +40,7 @@ export const CONNECTION_FIELDS = [
 	'last_error',
 	'last_hint',
 	'running_since',
+	'scan',
 	'created',
 	'updated'
 ].join(',');
@@ -54,6 +57,8 @@ export interface ConnectionRecord {
 	last_error: string;
 	last_hint: string;
 	running_since: string;
+	/** State of the full scan of a mailbox; missing before the migration 1790201700. */
+	scan?: unknown;
 	created: string;
 	updated: string;
 }
@@ -101,6 +106,7 @@ export function toConnection(record: ConnectionRecord): Connection {
 		keywords: keywordListOf(settingsRecord(record.settings).keywords),
 		replyNoMatch: settingsRecord(record.settings).reply_no_match !== false,
 		...mail,
+		scan: record.type === 'mail' ? mailScanOf(record.scan) : null,
 		runningSince: record.running_since || null,
 		created: record.created,
 		updated: record.updated
@@ -314,6 +320,40 @@ export function runConnection(
 			missing: Array.isArray(result.missing)
 				? result.missing.filter((name): name is string => typeof name === 'string')
 				: []
+		};
+	});
+}
+
+const SCAN_STATUSES = [
+	'started',
+	'running',
+	'cancelling',
+	'cancelled',
+	'idle',
+	'unavailable',
+	'disabled',
+	'error'
+] as const;
+
+/**
+ * "Posteingang neu durchsuchen" ("start") and "Abbrechen" ("cancel") of a mailbox (ADR-0020,
+ * addendum 3). The hook passes the request to the mail helper, which scans in the background;
+ * the progress arrives with the connection (realtime). An unknown answer counts as an error.
+ */
+export function scanConnection(
+	pb: PocketBase,
+	id: string,
+	action: 'start' | 'cancel',
+	{ signal }: RequestOptions = {}
+): Promise<ScanResult> {
+	return withDataErrors(signal, async () => {
+		const result = await pb.send<Record<string, unknown>>(
+			`/api/byl/connections/${encodeURIComponent(id)}/scan`,
+			{ method: 'POST', body: { action }, signal }
+		);
+		return {
+			status: SCAN_STATUSES.find((value) => value === result.status) ?? 'error',
+			message: typeof result.message === 'string' ? result.message : ''
 		};
 	});
 }
