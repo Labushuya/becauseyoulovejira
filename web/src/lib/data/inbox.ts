@@ -276,7 +276,10 @@ export function restoreItem(
 	return updateItem(pb, id, { state: 'new' satisfies InboxState }, signal);
 }
 
-/** "Dem Ticket zuordnen": the entry counts as converted into an existing ticket of its scope. */
+/**
+ * Links the entry to an existing ticket of its scope ("Dem Ticket zuordnen", "Mit Ticket
+ * verknüpfen …", "Quelle hinzufügen …"; ADR-0031 section 2): it becomes a source of the ticket.
+ */
 export function assignToTicket(
 	pb: PocketBase,
 	id: string,
@@ -284,6 +287,39 @@ export function assignToTicket(
 	{ signal }: RequestOptions = {}
 ): Promise<InboxItemSummary> {
 	return updateItem(pb, id, { state: 'converted' satisfies InboxState, ticket: ticketId }, signal);
+}
+
+/**
+ * "Lösen": a linked entry goes back to the inbox as new (ADR-0031 section 2). The hook refuses the
+ * main source of a ticket.
+ */
+export function releaseItem(
+	pb: PocketBase,
+	id: string,
+	{ signal }: RequestOptions = {}
+): Promise<InboxItemSummary> {
+	return updateItem(pb, id, { state: 'new' satisfies InboxState, ticket: '' }, signal);
+}
+
+/** Most sources shown for one ticket; more are not expected (ADR-0031 section 1). */
+export const SOURCES_LIMIT = 200;
+
+/** The sources of a ticket: every entry with `ticket = <id>`, oldest first. */
+export function listTicketSources(
+	pb: PocketBase,
+	ticketId: string,
+	{ signal }: RequestOptions = {}
+): Promise<InboxItemSummary[]> {
+	return withDataErrors(signal, async () => {
+		const result = await pb.collection(INBOX).getList<InboxRecord>(1, SOURCES_LIMIT, {
+			filter: pb.filter('ticket = {:ticket}', { ticket: ticketId }),
+			sort: 'created,id',
+			fields: INBOX_LIST_FIELDS,
+			skipTotal: true,
+			signal
+		});
+		return result.items.map(toInboxItemSummary);
+	});
 }
 
 /**

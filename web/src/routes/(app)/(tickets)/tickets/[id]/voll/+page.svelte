@@ -10,11 +10,14 @@
 	import TicketDescription from '$lib/components/TicketDescription.svelte';
 	import TicketFields from '$lib/components/TicketFields.svelte';
 	import TicketMeta from '$lib/components/TicketMeta.svelte';
+	import TicketSources from '$lib/components/TicketSources.svelte';
 	import { getCatalogStore } from '$lib/stores/catalog.svelte';
+	import { getInboxStore } from '$lib/stores/inbox.svelte';
 	import { getRecurrenceStore } from '$lib/stores/recurrence.svelte';
 	import { getTicketActivityStore } from '$lib/stores/ticket-activity.svelte';
 	import { getTicketDetailStore } from '$lib/stores/ticket-detail.svelte';
 	import { getTicketListStore } from '$lib/stores/ticket-list.svelte';
+	import { getTicketSourcesStore } from '$lib/stores/ticket-sources.svelte';
 	import { FULL_VIEW_LINK, ticketHref } from '$lib/ticket-links';
 	import { getTicketRoute } from '$lib/ticket-route';
 
@@ -28,6 +31,8 @@
 	const catalog = getCatalogStore();
 	const tickets = getTicketListStore();
 	const rules = getRecurrenceStore();
+	const sources = getTicketSourcesStore();
+	const inbox = getInboxStore();
 	const route = getTicketRoute();
 
 	const uid = $props.id();
@@ -54,6 +59,7 @@
 		{#snippet main()}
 			<EditableTitle store={detail} {headingId} />
 			<TicketDescription store={detail} {ticket} />
+			<TicketSources {ticket} store={sources} candidates={inbox.newItems} />
 			<TicketActivity store={comments} {catalog} />
 		{/snippet}
 		{#snippet side()}

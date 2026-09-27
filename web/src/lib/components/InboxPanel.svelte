@@ -16,9 +16,13 @@
 	import type { TicketSummary } from '$lib/domain/ticket';
 	import type { InboxStore } from '$lib/stores/inbox.svelte';
 	import type { RecurrenceStore } from '$lib/stores/recurrence.svelte';
+	import type { TicketSourcesStore } from '$lib/stores/ticket-sources.svelte';
+	import { COPY_LABELS, copyCompleteness, copyNote } from '$lib/domain/sources';
 	import { convertHref, ticketPath } from '$lib/ticket-links';
 	import ErrorIcon from './ErrorIcon.svelte';
+	import Lozenge from './guidance/Lozenge.svelte';
 	import SectionMessage from './guidance/SectionMessage.svelte';
+	import LinkTicketDialog from './LinkTicketDialog.svelte';
 	import Markdown from './Markdown.svelte';
 	import Drawer from './overlay/Drawer.svelte';
 
@@ -39,6 +43,7 @@
 		openTickets,
 		recurrence = null,
 		today = null,
+		sources = null,
 		onclose
 	}: {
 		id: string;
@@ -49,6 +54,8 @@
 		recurrence?: RecurrenceStore | null;
 		/** Berlin date of today, for the start of a suggested rule. */
 		today?: CalendarDate | null;
+		/** Linking to a ticket (ADR-0031); without it the panel offers no "Mit Ticket verknüpfen …". */
+		sources?: TicketSourcesStore | null;
 		/** × and Escape: back to the list with the chips of the URL. */
 		onclose: () => void;
 	} = $props();
@@ -61,6 +68,7 @@
 	let loadError = $state<string | null>(null);
 	let message = $state<string | null>(null);
 	let downloading = $state(false);
+	let linking = $state(false);
 	let heading = $state<HTMLElement>();
 
 	/** The loaded entry with the newest state of the store (realtime, own actions). */
@@ -69,6 +77,9 @@
 		const known = store.find(id);
 		return known !== null && known.updated >= loaded.updated ? { ...loaded, ...known } : loaded;
 	});
+	/** What of the source the entry holds (ADR-0031 section 5), with a hint when it is not all. */
+	const copy = $derived(item === null ? null : copyCompleteness(item));
+	const note = $derived(item === null ? null : copyNote(item));
 	const duplicates = $derived(
 		item !== null && item.state === 'new' ? store.softDuplicates(item, openTickets) : null
 	);
@@ -174,6 +185,14 @@
 			disabled={store.isPending(entry.id)}
 			onclick={() => run(() => store.discard(entry.id))}>Verwerfen</button
 		>
+		{#if sources !== null}
+			<button
+				class="button-secondary"
+				type="button"
+				disabled={store.isPending(entry.id)}
+				onclick={() => (linking = true)}>Mit Ticket verknüpfen …</button
+			>
+		{/if}
 		<a class="button-primary entry-action" href={convertHref(entry.id)}>Umwandeln</a>
 	{:else if entry.state === 'discarded'}
 		<button
@@ -216,6 +235,10 @@
 			<SectionMessage tone="info" compact>{DISCARDED_CONTENT_NOTE}</SectionMessage>
 		{/if}
 
+		{#if note !== null}
+			<SectionMessage tone="info" compact>{note}</SectionMessage>
+		{/if}
+
 		{#if duplicates !== null && (duplicates.tickets.length > 0 || duplicates.items.length > 0)}
 			<div class="duplicate" role="note">
 				<p><strong>Mögliches Duplikat.</strong> Gleicher Titel wie:</p>
@@ -247,6 +270,18 @@
 					<dd>{value}</dd>
 				</div>
 			{/each}
+			{#if copy !== null}
+				<div>
+					<dt>Kopie</dt>
+					<dd>
+						<Lozenge
+							label={COPY_LABELS[copy]}
+							icon={copy === 'complete' ? 'check' : copy === 'too_large' ? 'warning' : 'info'}
+							tone={copy === 'complete' ? 'brand' : 'neutral'}
+						/>
+					</dd>
+				</div>
+			{/if}
 			{#if item.sourceUrl !== ''}
 				<div>
 					<dt>Link</dt>
@@ -301,6 +336,14 @@
 		</section>
 	{/if}
 </Drawer>
+
+{#if linking && sources !== null && item !== null && item.state === 'new'}
+	<LinkTicketDialog
+		items={[{ id: item.id, title: item.title }]}
+		store={sources}
+		onclose={() => (linking = false)}
+	/>
+{/if}
 
 <style>
 	h2 {

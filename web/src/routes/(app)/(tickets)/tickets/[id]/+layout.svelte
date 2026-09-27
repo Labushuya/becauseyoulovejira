@@ -6,12 +6,15 @@
 	import RecurrenceSummary from '$lib/components/RecurrenceSummary.svelte';
 	import TicketActivity from '$lib/components/TicketActivity.svelte';
 	import TicketPanel from '$lib/components/TicketPanel.svelte';
+	import TicketSources from '$lib/components/TicketSources.svelte';
 	import type { Ticket } from '$lib/domain/ticket';
 	import { getCatalogStore } from '$lib/stores/catalog.svelte';
+	import { getInboxStore } from '$lib/stores/inbox.svelte';
 	import { getRecurrenceStore } from '$lib/stores/recurrence.svelte';
 	import { getTicketActivityStore } from '$lib/stores/ticket-activity.svelte';
 	import { getTicketDetailStore } from '$lib/stores/ticket-detail.svelte';
 	import { getTicketListStore } from '$lib/stores/ticket-list.svelte';
+	import { getTicketSourcesStore } from '$lib/stores/ticket-sources.svelte';
 	import { appHref, fullViewHref, listHref } from '$lib/ticket-links';
 	import { setTicketRoute } from '$lib/ticket-route';
 
@@ -26,6 +29,8 @@
 	const catalog = getCatalogStore();
 	const tickets = getTicketListStore();
 	const rules = getRecurrenceStore();
+	const sourceStore = getTicketSourcesStore();
+	const inbox = getInboxStore();
 	const id = $derived(page.params.id ?? '');
 	const back = $derived(listHref(page.url));
 	const full = $derived(fullViewHref(id, page.url));
@@ -49,10 +54,20 @@
 		if (ticket !== null) untrack(() => void tickets.markRead(ticket));
 	});
 
-	// Leaving the panel drops the ticket, its comments and all drafts.
+	// The sources of the shown ticket (ADR-0031 section 7), with its main source.
+	$effect(() => {
+		const ticket = detail.state === 'ready' ? detail.ticket : null;
+		if (ticket === null) return;
+		const ticketId = ticket.id;
+		const mainSource = ticket.sourceItem;
+		untrack(() => sourceStore.open(ticketId, mainSource));
+	});
+
+	// Leaving the panel drops the ticket, its comments, its sources and all drafts.
 	$effect(() => () => {
 		detail.reset();
 		comments.reset();
+		sourceStore.reset();
 	});
 
 	/** Set once the ticket was deleted or its drafts discarded here: leaving needs no question. */
@@ -123,6 +138,9 @@
 				tickets.upsert(changed);
 			}}
 		/>
+	{/snippet}
+	{#snippet sources(ticket: Ticket)}
+		<TicketSources {ticket} store={sourceStore} candidates={inbox.newItems} />
 	{/snippet}
 	{#snippet activity()}
 		<TicketActivity store={comments} {catalog} />

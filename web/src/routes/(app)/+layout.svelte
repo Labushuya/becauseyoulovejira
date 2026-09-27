@@ -43,6 +43,11 @@
 		ticketDetailData
 	} from '$lib/stores/ticket-detail.svelte';
 	import {
+		TicketSourcesStore,
+		setTicketSourcesStore,
+		ticketSourcesData
+	} from '$lib/stores/ticket-sources.svelte';
+	import {
 		TicketListStore,
 		readsData,
 		setTicketListStore,
@@ -87,6 +92,11 @@
 	const activity = setTicketActivityStore(
 		new TicketActivityStore(ticketActivityData(pb), auth, () => auth.userId)
 	);
+	// Sources of the open ticket and the linking of inbox entries (ADR-0031): changed entries go
+	// to the inbox at once, before their realtime event.
+	const sources = setTicketSourcesStore(
+		new TicketSourcesStore(ticketSourcesData(pb), auth, flags, (item) => inbox.upsert(item))
+	);
 	// Recurrence rules (E5 plan, T-7): all of them, for the table, the panel and the overview;
 	// results of their actions go out as flags (package 5).
 	const rules = setRecurrenceStore(new RecurrenceStore(recurrenceData(pb), auth, flags));
@@ -115,6 +125,7 @@
 	$effect(() => untrack(() => activity.connect(live)));
 	$effect(() => untrack(() => catalog.connect(live)));
 	$effect(() => untrack(() => inbox.connect(live)));
+	$effect(() => untrack(() => sources.connect(live)));
 
 	// Quick entry (E4 plan, T-11 and package 6): one key handler for the whole app. `c` and Ctrl+K
 	// open it, but not while the user types, picks a tag, searches, or a dialog or popover is open;

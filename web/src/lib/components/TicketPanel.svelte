@@ -27,7 +27,8 @@
 		onclose,
 		ondeleted,
 		activity,
-		recurrence
+		recurrence,
+		sources
 	}: {
 		store: TicketDetailStore;
 		/** Projects and tags (E3 plan, T-16). */
@@ -42,6 +43,8 @@
 		activity?: Snippet<[Ticket]>;
 		/** "Wiederholen…" or the series of the ticket (E5 plan, package 4). */
 		recurrence?: Snippet<[Ticket]>;
+		/** Section "Quellen" (ADR-0031 section 7), after source and dates. */
+		sources?: Snippet<[Ticket]>;
 	} = $props();
 
 	const uid = $props.id();
@@ -107,6 +110,7 @@
 		{@render recurrence?.(ticket)}
 		<TicketDescription {store} {ticket} />
 		<TicketMeta {ticket} />
+		{@render sources?.(ticket)}
 		{@render activity?.(ticket)}
 	{:else}
 		<p class="loading" role="status">Ticket wird geladen …</p>

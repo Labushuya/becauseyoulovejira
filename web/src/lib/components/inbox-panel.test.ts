@@ -9,7 +9,11 @@ import type { InboxItem } from '$lib/domain/inbox';
 import type { TicketSummary } from '$lib/domain/ticket';
 import { InboxStore, type InboxData } from '$lib/stores/inbox.svelte';
 import { RecurrenceStore, type RecurrenceData } from '$lib/stores/recurrence.svelte';
+import { TicketSourcesStore, type TicketSourcesData } from '$lib/stores/ticket-sources.svelte';
+import { useOverlayStubs } from '$lib/test/overlay-stubs';
 import InboxPanel from './InboxPanel.svelte';
+
+useOverlayStubs();
 
 const ID = 'item00000000001';
 
@@ -326,5 +330,98 @@ describe('inbox panel: a converted calendar series (E5 plan, package 6)', () => 
 		);
 		await screen.findByRole('heading', { name: 'Chorprobe' });
 		expect(screen.queryByText(/wiederholt sich/)).toBeNull();
+	});
+});
+
+describe('inbox panel: copy and linking (ADR-0031)', () => {
+	function sources() {
+		const data = {
+			list: vi.fn<TicketSourcesData['list']>(async () => []),
+			link: vi.fn<TicketSourcesData['link']>(async (id, ticketId) => ({
+				...entry(),
+				id,
+				state: 'converted',
+				ticketId,
+				updated: '2026-09-25 10:00:00.000Z'
+			})),
+			release: vi.fn<TicketSourcesData['release']>(),
+			search: vi.fn<TicketSourcesData['search']>(async () => [
+				{ id: 'ticket000000004', key: 'TASK-4', title: 'Zahlungen', status: 'open' }
+			]),
+			originalUrl: vi.fn<TicketSourcesData['originalUrl']>(async () => null)
+		} satisfies TicketSourcesData;
+		return {
+			data,
+			store: new TicketSourcesStore(data, { ensureValid: () => true, logout: vi.fn() })
+		};
+	}
+
+	const copyOf = () =>
+		within(screen.getByRole('complementary'))
+			.getByText('Kopie', { selector: 'dt' })
+			.nextElementSibling?.textContent?.trim();
+
+	it('shows a complete copy without a hint', async () => {
+		setup();
+		await screen.findByRole('heading', { name: 'Rechnung September' });
+		expect(copyOf()).toBe('Vollständig');
+		expect(screen.queryByText(/^Gespeichert/)).toBeNull();
+	});
+
+	it('says what is missing of a chat message, a web link and a mail over 10 MB', async () => {
+		setup(entry({ channel: 'telegram', kind: 'message', original: '', sourceUrl: '' }));
+		await screen.findByRole('heading', { name: 'Rechnung September' });
+		expect(copyOf()).toBe('Nur Text');
+		expect(screen.getByText(/^Gespeichert ist nur der Text\./)).toBeTruthy();
+		cleanup();
+
+		setup(entry({ channel: 'link', kind: 'link', original: '' }));
+		await screen.findByRole('heading', { name: 'Rechnung September' });
+		expect(copyOf()).toBe('Nur Adresse');
+		cleanup();
+
+		setup(
+			entry({
+				channel: 'mail',
+				original: '',
+				sourceMeta: {
+					from: 'x@example.com',
+					original_omitted: 'too_large',
+					original_size: 20971520
+				}
+			})
+		);
+		await screen.findByRole('heading', { name: 'Rechnung September' });
+		expect(copyOf()).toBe('Ohne Originaldatei (zu groß)');
+		expect(screen.getByText(/^Die Mail war größer als 10 MB \(20,0 MB\)\./)).toBeTruthy();
+	});
+
+	it('links a new entry to a ticket through "Mit Ticket verknüpfen …"', async () => {
+		const linking = sources();
+		setup(entry(), [], { sources: linking.store });
+		await screen.findByRole('heading', { name: 'Rechnung September' });
+		await fireEvent.click(screen.getByRole('button', { name: 'Mit Ticket verknüpfen …' }));
+		const dialog = screen.getByRole('dialog', { name: 'Mit Ticket verknüpfen' });
+		const input = within(dialog).getByRole('combobox', { name: 'Ticket' }) as HTMLInputElement;
+		input.value = 'TASK-4';
+		await fireEvent.input(input);
+		await vi.waitFor(() => expect(input.getAttribute('aria-expanded')).toBe('true'));
+		await fireEvent.keyDown(input, { key: 'Enter' });
+		await fireEvent.click(within(dialog).getByRole('button', { name: 'Verknüpfen' }));
+		await vi.waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+		expect(linking.data.link).toHaveBeenCalledWith(ID, 'ticket000000004');
+	});
+
+	it('offers no linking without the store, nor for a handled entry', async () => {
+		setup();
+		await screen.findByRole('heading', { name: 'Rechnung September' });
+		expect(screen.queryByRole('button', { name: 'Mit Ticket verknüpfen …' })).toBeNull();
+		cleanup();
+
+		setup(entry({ state: 'discarded', handledAt: '2026-09-25 09:00:00.000Z' }), [], {
+			sources: sources().store
+		});
+		await screen.findByRole('heading', { name: 'Rechnung September' });
+		expect(screen.queryByRole('button', { name: 'Mit Ticket verknüpfen …' })).toBeNull();
 	});
 });
