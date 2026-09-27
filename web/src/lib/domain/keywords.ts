@@ -231,28 +231,6 @@ export function withSuggestions(list: readonly string[]): string[] {
 	return result;
 }
 
-/** Separators of typed or pasted keywords: a comma or a line break ends a keyword. */
-const KEYWORD_SEPARATOR = /[,\r\n]/;
-
-/** Whether `text` holds a separator (comma or line break). */
-export function hasKeywordSeparator(text: string): boolean {
-	return KEYWORD_SEPARATOR.test(text);
-}
-
-/**
- * Splits the text of the input field at commas and line breaks: the finished keywords (trimmed,
- * empty ones left out) and the rest after the last separator, which stays in the field. With
- * `finish` the rest counts as finished too (Enter, pasting a list).
- */
-export function splitKeywordInput(
-	text: string,
-	finish: boolean
-): { parts: string[]; rest: string } {
-	const pieces = text.split(KEYWORD_SEPARATOR);
-	const rest = finish ? '' : (pieces.pop() ?? '');
-	return { parts: pieces.map((piece) => piece.trim()).filter((piece) => piece !== ''), rest };
-}
-
 /**
  * Which of `candidates` can be added to `list`, one after the other (a duplicate within the
  * candidates counts too): the accepted ones in order and the refused ones with their reason.

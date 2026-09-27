@@ -484,9 +484,28 @@ describe('new ticket: tags (E3 plan, T-14)', () => {
 		await fireEvent.keyDown(tagInput(), { key: 'Enter' });
 
 		await vi.waitFor(() => expect(tagInput().getAttribute('aria-invalid')).toBe('true'));
-		const error = document.getElementById(tagInput().getAttribute('aria-describedby') ?? '');
+		// After the keys of the field (comma, Enter, Backspace) the error is named last.
+		const ids = tagInput().getAttribute('aria-describedby')?.split(' ') ?? [];
+		const error = document.getElementById(ids.at(-1) ?? '');
 		expect(error?.textContent).toBe('Schon vergeben.');
 		expect(tagInput().value).toBe('Steuer');
+	});
+
+	it('takes a pasted list of tags and a comma-separated name in the form', async () => {
+		const created = { id: 'tag000000000009', name: 'Steuer', updated: '2026-09-24 10:00:00.000Z' };
+		const oncreatetag = vi.fn(async () => ({ ok: true as const, tag: created }));
+		const { rerender } = renderFormWithTags({ tags: [CALL, GARDEN], oncreatetag });
+
+		await fireEvent.paste(tagInput(), { clipboardData: { getData: () => 'GARTEN, Steuer' } });
+		await vi.waitFor(() => expect(oncreatetag).toHaveBeenCalledExactlyOnceWith('Steuer'));
+		await rerender({ tags: [CALL, GARDEN, created] });
+		// The picker takes no action while it saves (aria-busy).
+		await vi.waitFor(() => expect(tagInput().hasAttribute('aria-busy')).toBe(false));
+		await fireEvent.input(tagInput(), { target: { value: 'anrufen' } });
+		await fireEvent.keyDown(tagInput(), { key: ',' });
+
+		await vi.waitFor(() => expect(chips()).toEqual(['Garten', 'Steuer', 'anrufen']));
+		expect(tagInput().value).toBe('');
 	});
 
 	it.each([

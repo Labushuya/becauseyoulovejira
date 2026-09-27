@@ -13,7 +13,7 @@ const SRC_DIR = resolve(import.meta.dirname, '..');
 const TOKENS_CSS = join('lib', 'styles', 'tokens.css');
 
 /** Numbers left from before G-6 in all listed files together; lower it when one goes. */
-const LEGACY_COUNT = 252;
+const LEGACY_COUNT = 246;
 
 /** Files that still carry font sizes as numbers (as of G-6). */
 const LEGACY_FILES = [
@@ -40,7 +40,6 @@ const LEGACY_FILES = [
 	'lib/components/HistoryList.svelte',
 	'lib/components/ImportKeywordsSection.svelte',
 	'lib/components/InboxPanel.svelte',
-	'lib/components/KeywordEditor.svelte',
 	'lib/components/KpiTiles.svelte',
 	'lib/components/MailboxPicker.svelte',
 	'lib/components/Markdown.svelte',
@@ -59,7 +58,6 @@ const LEGACY_FILES = [
 	'lib/components/StatusPill.svelte',
 	'lib/components/SyncAllButton.svelte',
 	'lib/components/TagManager.svelte',
-	'lib/components/TagPicker.svelte',
 	'lib/components/ThemeMenu.svelte',
 	'lib/components/TicketActivity.svelte',
 	'lib/components/TicketDescription.svelte',

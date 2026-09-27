@@ -237,7 +237,13 @@ describe('tag picker', () => {
 		const { input } = renderPicker({ error: 'Schon vergeben.', describedBy: 'hint' });
 
 		expect(input.getAttribute('aria-invalid')).toBe('true');
-		expect(input.getAttribute('aria-describedby')).toBe('hint tags-error');
+		// The hint of the owner, the keys of the field, then the error.
+		const ids = input.getAttribute('aria-describedby')?.split(' ') ?? [];
+		expect(ids).toHaveLength(3);
+		expect([ids[0], ids[2]]).toEqual(['hint', 'tags-error']);
+		expect(document.getElementById(ids[1] ?? '')?.textContent).toMatch(
+			/^\s*Komma oder Enter übernimmt den Tag/
+		);
 	});
 
 	it('offers no new tag for a name that is too long or taken in another spelling', async () => {
@@ -345,5 +351,158 @@ describe('tag picker: list in the top layer (UI-9)', () => {
 		// The glass of the popovers (ADR-0029 section 1).
 		expect(source).toMatch(/\.listbox \{[^}]*background: var\(--material-thick\)/);
 		expect(source).toMatch(/\.listbox \{[^}]*backdrop-filter: var\(--glass-filter-thick\)/);
+	});
+});
+
+describe('tag input: comma, Enter, paste and Backspace (user request, plan e6-spalten)', () => {
+	function live() {
+		return document.querySelector('.tag-picker [aria-live="polite"]')?.textContent;
+	}
+
+	it('takes the typed text as a tag with a comma, empties the field and says so', async () => {
+		const { input, oncreate, onadd } = renderPicker();
+		await type(input, 'Einkauf');
+
+		const comma = await fireEvent.keyDown(input, { key: ',' });
+		await vi.waitFor(() => expect(input.value).toBe(''));
+
+		expect(comma).toBe(false);
+		expect(oncreate).toHaveBeenCalledExactlyOnceWith('Einkauf');
+		expect(onadd).not.toHaveBeenCalled();
+		await vi.waitFor(() => expect(live()).toBe('Tag „Einkauf“ übernommen.'));
+		expect(document.activeElement).toBe(input);
+	});
+
+	it('reuses an existing tag in another spelling instead of creating one', async () => {
+		const { input, oncreate, onadd } = renderPicker();
+		await type(input, ' GARTEN ');
+
+		await fireEvent.keyDown(input, { key: ',' });
+
+		await vi.waitFor(() => expect(onadd).toHaveBeenCalledExactlyOnceWith(GARDEN.id));
+		expect(oncreate).not.toHaveBeenCalled();
+	});
+
+	it('takes only the text before the caret and keeps the rest in the field', async () => {
+		const { input, oncreate } = renderPicker();
+		await type(input, 'Haus Garten');
+		input.setSelectionRange(4, 4);
+
+		await fireEvent.keyDown(input, { key: ',' });
+
+		await vi.waitFor(() => expect(oncreate).toHaveBeenCalledExactlyOnceWith('Haus'));
+		await vi.waitFor(() => expect(input.value).toBe(' Garten'));
+	});
+
+	it('takes the same name in another spelling first on Enter', async () => {
+		const { input, onadd, oncreate } = renderPicker();
+		await type(input, 'ANRUFEN');
+
+		await fireEvent.keyDown(input, { key: 'Enter' });
+
+		await vi.waitFor(() => expect(onadd).toHaveBeenCalledExactlyOnceWith(CALL.id));
+		expect(oncreate).not.toHaveBeenCalled();
+		expect(input.value).toBe('');
+	});
+
+	it('takes the text on Enter when the list of suggestions is closed', async () => {
+		const { input, oncreate } = renderPicker();
+		await type(input, 'Bank');
+		await fireEvent.keyDown(input, { key: 'Escape' });
+
+		await fireEvent.keyDown(input, { key: 'Enter' });
+
+		await vi.waitFor(() => expect(oncreate).toHaveBeenCalledExactlyOnceWith('Bank'));
+	});
+
+	it('leaves Ctrl+Enter to the form around', async () => {
+		const { input, oncreate } = renderPicker();
+		await type(input, 'Bank');
+
+		const allowed = await fireEvent.keyDown(input, { key: 'Enter', ctrlKey: true });
+
+		expect(allowed).toBe(true);
+		expect(oncreate).not.toHaveBeenCalled();
+	});
+
+	it('turns a pasted list with commas and line breaks into several tags', async () => {
+		const { input, onadd, oncreate } = renderPicker();
+
+		const allowed = await fireEvent.paste(input, {
+			clipboardData: { getData: () => 'Haus, garten\nBank' }
+		});
+
+		expect(allowed).toBe(false);
+		await vi.waitFor(() => expect(live()).toBe('3 Tags übernommen.'));
+		expect(oncreate.mock.calls).toEqual([['Haus'], ['Bank']]);
+		expect(onadd).toHaveBeenCalledExactlyOnceWith(GARDEN.id);
+		// In the order of the list: Haus, Garten, Bank.
+		expect(oncreate.mock.invocationCallOrder[0]).toBeLessThan(onadd.mock.invocationCallOrder[0]!);
+		expect(onadd.mock.invocationCallOrder[0]).toBeLessThan(oncreate.mock.invocationCallOrder[1]!);
+		expect(input.value).toBe('');
+	});
+
+	it('pastes a single name as text', async () => {
+		const { input, oncreate } = renderPicker();
+
+		const allowed = await fireEvent.paste(input, { clipboardData: { getData: () => 'Haus' } });
+
+		expect(allowed).toBe(true);
+		expect(oncreate).not.toHaveBeenCalled();
+	});
+
+	it('skips chosen and repeated names regardless of case and says so', async () => {
+		const { input, onadd, oncreate } = renderPicker({ selected: [GARDEN] });
+
+		await fireEvent.paste(input, { clipboardData: { getData: () => 'garten, Neu, NEU' } });
+
+		await vi.waitFor(() => expect(live()).toBe('Tag „Neu“ übernommen. 2 Tags sind schon gewählt.'));
+		expect(oncreate).toHaveBeenCalledExactlyOnceWith('Neu');
+		expect(onadd).not.toHaveBeenCalled();
+	});
+
+	it('keeps a failed name and the names after it in the field', async () => {
+		const oncreate = vi.fn(async (name: string) => name !== 'Bank');
+		const { input } = renderPicker({ oncreate });
+
+		await fireEvent.paste(input, { clipboardData: { getData: () => 'Haus, Bank, Auto' } });
+
+		await vi.waitFor(() => expect(input.value).toBe('Bank, Auto'));
+		expect(oncreate.mock.calls).toEqual([['Haus'], ['Bank']]);
+	});
+
+	it('brings the last tag back as editable text with Backspace in the empty field', async () => {
+		const { input, onremove } = renderPicker({ selected: [GARDEN, CALL] });
+
+		const first = await fireEvent.keyDown(input, { key: 'Backspace' });
+
+		expect(first).toBe(false);
+		await vi.waitFor(() => expect(input.value).toBe('anrufen'));
+		expect(onremove).toHaveBeenCalledExactlyOnceWith(CALL.id);
+		await vi.waitFor(() => expect(live()).toBe('„anrufen“ zum Bearbeiten im Feld.'));
+		expect(input.selectionStart).toBe('anrufen'.length);
+
+		// With text in the field Backspace deletes as usual.
+		const second = await fireEvent.keyDown(input, { key: 'Backspace' });
+		expect(second).toBe(true);
+		expect(onremove).toHaveBeenCalledOnce();
+	});
+
+	it('takes back only on the first press of a held Backspace', async () => {
+		const { input, onremove } = renderPicker({ selected: [GARDEN] });
+
+		const held = await fireEvent.keyDown(input, { key: 'Backspace', repeat: true });
+
+		expect(held).toBe(false);
+		expect(onremove).not.toHaveBeenCalled();
+	});
+
+	it('keeps the tag when removing it fails', async () => {
+		const { input } = renderPicker({ selected: [GARDEN], onremove: vi.fn(async () => false) });
+
+		await fireEvent.keyDown(input, { key: 'Backspace' });
+		await tick();
+
+		expect(input.value).toBe('');
 	});
 });

@@ -584,6 +584,29 @@ describe('ticket panel: tags (E3 plan, T-14)', () => {
 		expect(input.value).toBe('');
 	});
 
+	it('takes a pasted list of tags one after the other, regardless of case', async () => {
+		const { input, data } = await renderWithTags(ticket({ tagIds: [] }));
+
+		await fireEvent.paste(input, { clipboardData: { getData: () => 'garten, ANRUFEN' } });
+
+		await vi.waitFor(() =>
+			expect(data.update).toHaveBeenLastCalledWith(ID, { tags: [GARDEN.id, CALL.id] })
+		);
+		expect(data.update).toHaveBeenCalledWith(ID, { tags: [GARDEN.id] });
+		await vi.waitFor(() => expect(chips()).toEqual(['Garten', 'anrufen']));
+		expect(input.value).toBe('');
+	});
+
+	it('brings the last tag back as text with Backspace in the empty input', async () => {
+		const { input, data } = await renderWithTags(ticket({ tagIds: [GARDEN.id, CALL.id] }));
+
+		await fireEvent.keyDown(input, { key: 'Backspace' });
+
+		await vi.waitFor(() => expect(data.update).toHaveBeenCalledWith(ID, { tags: [GARDEN.id] }));
+		await vi.waitFor(() => expect(input.value).toBe('anrufen'));
+		expect(chips()).toEqual(['Garten']);
+	});
+
 	it('removes a tag by keyboard and puts the focus into the input', async () => {
 		const { input, data } = await renderWithTags(ticket({ tagIds: [GARDEN.id, CALL.id] }));
 
