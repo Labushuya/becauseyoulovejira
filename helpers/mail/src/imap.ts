@@ -56,6 +56,13 @@ export interface InboxSession {
 	searchAny(from: number, to: number, any: readonly SearchObject[]): Promise<number[] | null>;
 	/** The source of one mail, or null if it is gone. */
 	source(uid: number): Promise<Uint8Array | null>;
+	/**
+	 * The first `maxLength` bytes of one mail (BODY.PEEK[]<0.maxLength>), or null if it is gone:
+	 * the beginning of a mail over MAIL_MAX_BYTES (ADR-0031 section 4).
+	 */
+	partialSource(uid: number, maxLength: number): Promise<Uint8Array | null>;
+	/** The header of one mail (BODY.PEEK[HEADER]), or null if it is gone. */
+	header(uid: number): Promise<Uint8Array | null>;
 	/** Logs out; errors while closing are ignored. */
 	close(): Promise<void>;
 }
@@ -190,6 +197,15 @@ export async function openInbox(
 			async source(uid) {
 				const message = await client.fetchOne(String(uid), { uid: true, source: true }, { uid: true });
 				return message && message.source ? new Uint8Array(message.source) : null;
+			},
+			async partialSource(uid, maxLength) {
+				const query = { uid: true, source: { start: 0, maxLength } };
+				const message = await client.fetchOne(String(uid), query, { uid: true });
+				return message && message.source ? new Uint8Array(message.source) : null;
+			},
+			async header(uid) {
+				const message = await client.fetchOne(String(uid), { uid: true, headers: true }, { uid: true });
+				return message && message.headers ? new Uint8Array(message.headers) : null;
 			},
 			close
 		};

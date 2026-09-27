@@ -6,8 +6,12 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import PostalMime from 'postal-mime';
 import { describe, expect, it } from 'vitest';
+import { INBOX_BODY_MAX_LENGTH } from './inbox';
 import {
+	MAIL_MAX_BYTES,
+	MAIL_PARTIAL_BYTES,
 	NO_SUBJECT,
+	ORIGINAL_OMITTED_NOTE,
 	SOURCE_REF_MAX_LENGTH,
 	formatAddress,
 	mailDate,
@@ -103,6 +107,24 @@ describe('mailToDraft with the fixtures', () => {
 		expect(draft.title).toBe(NO_SUBJECT);
 		expect(draft.sourceDate).toBeNull();
 		expect(draft.sourceMeta).toEqual({ from: 'unbekannt@example.com' });
+	});
+
+	it('marks a mail over 10 MB without its file and keeps the note at the end (ADR-0031)', async () => {
+		const email = await PostalMime.parse(readFileSync(join(FIXTURES, 'attachments.eml')));
+		const draft = mailToDraft(email, 'mail', { omittedSize: 12_345_678.9 });
+		expect(draft.body).toBe(`Anbei die Unterlagen.\n\n${ORIGINAL_OMITTED_NOTE}`);
+		expect(draft.sourceMeta).toMatchObject({
+			original_omitted: 'too_large',
+			original_size: 12_345_678
+		});
+		expect(draft.sourceMeta).not.toHaveProperty('attachments');
+
+		const long = mailToDraft({ ...email, text: 'x'.repeat(INBOX_BODY_MAX_LENGTH + 10) }, 'mail', {
+			omittedSize: MAIL_MAX_BYTES + 1
+		});
+		expect(long.body).toHaveLength(INBOX_BODY_MAX_LENGTH);
+		expect(long.body.endsWith(ORIGINAL_OMITTED_NOTE)).toBe(true);
+		expect(MAIL_PARTIAL_BYTES).toBe(2 * 1024 * 1024);
 	});
 });
 

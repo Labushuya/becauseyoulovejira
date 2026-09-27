@@ -46,7 +46,7 @@ import {
 } from './imap';
 import { PollGate, ScanControl } from './gate';
 import { errorText, redact, type Logger } from './log';
-import { MAIL_MAX_BYTES, ingestDraft, keywordOf, parseMail } from './mail';
+import { MAIL_MAX_BYTES, ingestDraft, keywordOf, largeMailDraft, parseMail } from './mail';
 import { pollConnection, type PollDeps, type PollOptions } from './poll';
 import { providerOf } from './providers';
 import { searchCriteria, searchTerms } from './scan';
@@ -334,16 +334,22 @@ async function importOne(
 	session: InboxSession,
 	uid: number
 ): Promise<ImportResult> {
-	const source = await session.source(uid);
-	if (source === null) return { uid, status: 'failed', message: 'Die Mail ist nicht mehr im Posteingang.' };
-	if (source.length > MAIL_MAX_BYTES) return { uid, status: 'failed', message: 'Größer als 10 MB, deshalb nicht übernommen.' };
+	const gone: ImportResult = { uid, status: 'failed', message: 'Die Mail ist nicht mehr im Posteingang.' };
+	// A mail over 10 MB comes from its beginning and without its file (ADR-0031 section 4).
+	const size = (await session.headersOf([uid]))[0]?.size;
+	if (size === undefined) return gone;
+	const large = size > MAIL_MAX_BYTES;
+	const source = large ? null : await session.source(uid);
+	if (!large && source === null) return gone;
 	let draft;
 	try {
-		draft = await parseMail(source);
+		draft = source === null ? await largeMailDraft(session, uid, size) : await parseMail(source);
 	} catch {
 		return { uid, status: 'failed', message: 'Die Mail ließ sich nicht lesen.' };
 	}
-	const result = await deps.ingest.sendItem(ingestDraft(draft, connection.id, 'selected'), source);
+	if (draft === null) return gone;
+	const sent = ingestDraft(draft, connection.id, 'selected');
+	const result = await (source === null ? deps.ingest.sendItem(sent) : deps.ingest.sendItem(sent, source));
 	switch (result.status) {
 		case 'created':
 			return { uid, status: 'created', message: '' };

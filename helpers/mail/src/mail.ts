@@ -8,13 +8,14 @@ import type { InboxDraft } from '../../../web/src/lib/domain/inbox';
 import {
 	MAIL_MAX_BYTES,
 	MAIL_PARSER_OPTIONS,
+	MAIL_PARTIAL_BYTES,
 	mailMatchTexts,
 	mailToDraft,
 	type ParsedMail
 } from '../../../web/src/lib/domain/inbox-mail';
 import { mailKeywordTexts, matchKeyword } from '../../../web/src/lib/domain/keywords';
 
-export { MAIL_MAX_BYTES };
+export { MAIL_MAX_BYTES, MAIL_PARTIAL_BYTES };
 
 export type Origin = 'auto' | 'selected';
 
@@ -37,10 +38,38 @@ export interface IngestDraft {
 	match_texts: string[];
 }
 
-/** Parses the source of a mail into an inbox draft (channel "mail"); throws for unreadable mails. */
-export async function parseMail(source: Uint8Array): Promise<MailDraft> {
+/**
+ * Parses the source of a mail into an inbox draft (channel "mail"); throws for unreadable mails.
+ * With `omittedSize` the source is only the beginning or the header of a mail over MAIL_MAX_BYTES,
+ * which is stored without its file (ADR-0031 section 4).
+ */
+export async function parseMail(source: Uint8Array, omittedSize?: number): Promise<MailDraft> {
 	const mail = (await PostalMime.parse(source, MAIL_PARSER_OPTIONS)) as ParsedMail;
-	return { ...mailToDraft(mail, 'mail'), matchTexts: mailMatchTexts(mail, decodeWords) };
+	const draft = mailToDraft(mail, 'mail', omittedSize === undefined ? {} : { omittedSize });
+	return { ...draft, matchTexts: mailMatchTexts(mail, decodeWords) };
+}
+
+/**
+ * The draft of a mail over MAIL_MAX_BYTES without its file (ADR-0031 section 4): its first
+ * MAIL_PARTIAL_BYTES parsed, or only its header when that beginning cannot be read. Null when the
+ * mail is gone; throws when not even the header can be read.
+ */
+export async function largeMailDraft(
+	session: {
+		partialSource(uid: number, maxLength: number): Promise<Uint8Array | null>;
+		header(uid: number): Promise<Uint8Array | null>;
+	},
+	uid: number,
+	size: number
+): Promise<MailDraft | null> {
+	const beginning = await session.partialSource(uid, MAIL_PARTIAL_BYTES);
+	if (beginning === null) return null;
+	try {
+		return await parseMail(beginning, size);
+	} catch {
+		const header = await session.header(uid);
+		return header === null ? null : parseMail(header, size);
+	}
 }
 
 /** The sender of a draft ("Name <address>" in source_meta.from), or ''. */
