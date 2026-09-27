@@ -51,7 +51,8 @@
 		clipboardHint = null,
 		onclipboard,
 		onbulk,
-		tools
+		tools,
+		actions
 	}: {
 		store: InboxStore;
 		/** Flags of the app, for failed row actions. */
@@ -72,6 +73,8 @@
 		clipboardHint?: string | null;
 		/** Further ways into the inbox under the chips (drop zone for files, package 8). */
 		tools?: Snippet;
+		/** First actions of the section bar ("Alle Kanäle jetzt abrufen", package A item 4). */
+		actions?: Snippet;
 	} = $props();
 
 	const uid = $props.id();
@@ -229,6 +232,7 @@
 			<ViewSwitch current="inbox" inboxCount={store.newCount} {projectsNewCount} />
 		{/snippet}
 		{#snippet end()}
+			{@render actions?.()}
 			<a class="capture" href={captureHref(page.url)}>Erfassen</a>
 			{#if onclipboard}
 				<button class="capture" type="button" aria-keyshortcuts="Control+V" onclick={onclipboard}>

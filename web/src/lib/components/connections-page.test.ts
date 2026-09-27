@@ -124,7 +124,12 @@ function setup(items: Connection[] = [CAL, BOT], statuses: Record<string, Secret
 			kind: 'ok' as const,
 			value: []
 		})),
-		subscribe: vi.fn<ConnectionsData['subscribe']>(async () => async () => undefined)
+		subscribe: vi.fn<ConnectionsData['subscribe']>(async () => async () => undefined),
+		helperStatus: vi.fn<ConnectionsData['helperStatus']>(async () => ({
+			state: 'running' as const,
+			version: '0.5.0',
+			message: ''
+		}))
 	} satisfies ConnectionsData;
 	const session = { ensureValid: vi.fn(() => true), logout: vi.fn() };
 	const flags = new FlagStore();
@@ -682,13 +687,13 @@ describe('Postfächer (E4 plan, package 22)', () => {
 		}
 	});
 
-	it('shows provider and user, no "Jetzt abrufen" and the switch for the text', async () => {
+	it('shows provider and user, "Jetzt abrufen" and the switch for the text', async () => {
 		const context = setup([MAIL]);
 		await context.store.load();
 		renderCards(context.store);
 		const scope = card('Web.de');
 		expect(scope.getByText('Postfach · Web.de · anna@web.de')).toBeTruthy();
-		expect(scope.queryByRole('button', { name: /^Jetzt abrufen/ })).toBeNull();
+		expect(scope.getByRole('button', { name: 'Jetzt abrufen: Web.de' })).toBeTruthy();
 		expect(scope.getByRole('button', { name: 'Aus dem Postfach wählen: Web.de' })).toBeTruthy();
 		// The restart hint is no longer repeated at every mailbox (EH-3).
 		expect(scope.queryByText(/byl-mail\.exe ruft dieses Postfach/)).toBeNull();
@@ -924,5 +929,93 @@ describe('Aus dem Postfach wählen (E4 plan, package 23)', () => {
 		await context.store.load();
 		renderCards(context.store);
 		expect(screen.queryByRole('button', { name: /^Aus dem Postfach wählen/ })).toBeNull();
+	});
+});
+
+describe('Jetzt abrufen at a mailbox (package A, item 4)', () => {
+	const MAILBOX = connection('conn00000000005', {
+		type: 'mail',
+		label: 'Web.de',
+		secretEnv: 'BYL_WEBDE_PASSWORD',
+		mailProvider: 'webde',
+		mailUser: 'anna@web.de',
+		keywords: ['europa-go']
+	});
+	const NOT_RUNNING =
+		'Der Mail-Hilfsprozess läuft nicht (byl-mail.exe fehlt oder ist beendet). Mit einer eingeschalteten Postfach-Verbindung startet start.bat ihn mit; sonst stop.bat und dann start.bat ausführen.';
+
+	it('probes the helper only with a mailbox in the list', async () => {
+		const without = setup([CAL]);
+		await without.store.load();
+		expect(without.data.helperStatus).not.toHaveBeenCalled();
+		expect(without.store.helper).toBeNull();
+
+		const context = setup([CAL, MAILBOX]);
+		await context.store.load();
+		expect(context.data.helperStatus).toHaveBeenCalledOnce();
+		renderCards(context.store);
+		expect(card('Web.de').getByText('läuft (byl-mail 0.5.0)')).toBeTruthy();
+	});
+
+	it('runs the mailbox, shows the result on the card and probes the helper again', async () => {
+		const context = setup([MAILBOX]);
+		context.data.run.mockResolvedValueOnce({
+			status: 'ok',
+			created: 1,
+			duplicates: 0,
+			updated: 0,
+			skipped: 0,
+			failed: 0,
+			unmatched: 2,
+			error: '',
+			missing: []
+		});
+		await context.store.load();
+		renderCards(context.store);
+		await fireEvent.click(card('Web.de').getByRole('button', { name: 'Jetzt abrufen: Web.de' }));
+		expect(context.data.run).toHaveBeenCalledWith(MAILBOX.id);
+		await vi.waitFor(() =>
+			expect(latestFlag(context.flags)).toBe('„Web.de“: 1 neu, 2 ohne Stichwort.')
+		);
+		await vi.waitFor(() => expect(context.data.helperStatus).toHaveBeenCalledTimes(2));
+		expect(card('Web.de').getByText('1 neu, 2 ohne Stichwort')).toBeTruthy();
+	});
+
+	it('says neutrally when the helper does not run', async () => {
+		const context = setup([MAILBOX]);
+		context.data.helperStatus.mockResolvedValue({ state: 'stopped', version: '', message: '' });
+		context.data.run.mockResolvedValueOnce({
+			status: 'unavailable',
+			created: 0,
+			duplicates: 0,
+			updated: 0,
+			skipped: 0,
+			failed: 0,
+			unmatched: 0,
+			error: NOT_RUNNING,
+			missing: []
+		});
+		await context.store.load();
+		renderCards(context.store);
+		await fireEvent.click(card('Web.de').getByRole('button', { name: 'Jetzt abrufen: Web.de' }));
+		await vi.waitFor(() => expect(latestFlag(context.flags)).toBe(`„Web.de“: ${NOT_RUNNING}`));
+		expect(context.flags.flags[0]?.tone).toBe('info');
+		expect(card('Web.de').getByText('Hilfsprozess läuft nicht')).toBeTruthy();
+		expect(card('Web.de').getByText(/^läuft nicht\./)).toBeTruthy();
+		expect(screen.queryByRole('alert')).toBeNull();
+	});
+
+	it('focuses the card named in the address (link of the flag "Alle Kanäle jetzt abrufen")', async () => {
+		const context = setup([CAL, MAILBOX]);
+		window.history.replaceState(null, '', `#verbindung-${MAILBOX.id}`);
+		try {
+			await context.store.load();
+			renderCards(context.store);
+			await vi.waitFor(() =>
+				expect(document.activeElement).toBe(screen.getByRole('article', { name: 'Web.de' }))
+			);
+		} finally {
+			window.history.replaceState(null, '', window.location.pathname);
+		}
 	});
 });

@@ -4,24 +4,33 @@
 		CONNECTION_TYPE_LABELS,
 		MAIL_NEW_ONLY_HINT,
 		MAIL_PROVIDER_LABELS,
+		lastResultText,
+		mailHelperText,
 		type Connection,
+		type MailHelperStatus,
+		type RunResult,
 		type SecretStatus
 	} from '$lib/domain/connections';
 	import { formatBerlinDateTime } from '$lib/domain/format';
+	import { connectionAnchor } from '$lib/domain/sync-all';
 	import Lozenge from '../guidance/Lozenge.svelte';
 	import SectionMessage from '../guidance/SectionMessage.svelte';
 	import Popover from '../overlay/Popover.svelte';
 	import ChannelIcon from './ChannelIcon.svelte';
 
 	// Card of a connection (ADR-0026 section 3, plan EH-3 and §3.5): symbol, name, kind line, state
-	// as lozenge (channelHealth), at most two lines of meta, at most one compact hint and the
-	// actions. The main action follows the state ("Jetzt abrufen", "Aus dem Postfach wählen",
-	// "Fortsetzen", "Einrichtung fortsetzen"); "Bearbeiten" opens the modal of its owner, and the menu
-	// "…" holds pausing, the setup and deleting. Every action names the connection for screen readers.
+	// as lozenge (channelHealth), the meta lines, at most one compact hint and the actions. The main
+	// action follows the state ("Jetzt abrufen", "Fortsetzen", "Einrichtung fortsetzen"); a mailbox
+	// also has "Aus dem Postfach wählen" and says whether the mail helper runs (package A, item 4).
+	// "Bearbeiten" opens the modal of its owner, and the menu "…" holds pausing, the setup and
+	// deleting. Every action names the connection for screen readers. The card carries the anchor
+	// `#verbindung-<id>`, the target of the link in the flag of "Alle Kanäle jetzt abrufen".
 	let {
 		connection,
 		secretStatus,
 		running,
+		helper = null,
+		lastRun = null,
 		message = null,
 		onrun,
 		onpick,
@@ -35,6 +44,10 @@
 		secretStatus: SecretStatus | null;
 		/** "Jetzt abrufen" is running. */
 		running: boolean;
+		/** Probe of the mail helper (mailboxes only); null while unknown. */
+		helper?: MailHelperStatus | null;
+		/** Answer of the last "Jetzt abrufen" on this page, or null. */
+		lastRun?: RunResult | null;
 		/** Error of the last action of this card (inline, ADR-0009). */
 		message?: string | null;
 		onrun: () => void;
@@ -62,9 +75,10 @@
 			.filter((part): part is string => part !== null)
 			.join(' · ')
 	);
-	const lastRun = $derived(
+	const lastRunText = $derived(
 		connection.lastRunAt === null ? 'noch nie' : formatBerlinDateTime(connection.lastRunAt)
 	);
+	const result = $derived(lastResultText(connection, lastRun));
 	const lastOk = $derived(
 		connection.lastOkAt !== null && connection.lastOkAt !== connection.lastRunAt
 			? formatBerlinDateTime(connection.lastOkAt)
@@ -79,7 +93,13 @@
 	);
 </script>
 
-<article class="channel-card" aria-labelledby={headingId} data-state={health.state}>
+<article
+	class="channel-card"
+	id={connectionAnchor(connection.id)}
+	tabindex="-1"
+	aria-labelledby={headingId}
+	data-state={health.state}
+>
 	<header class="head">
 		<ChannelIcon kind={icon} />
 		<div class="names">
@@ -93,14 +113,25 @@
 		<div>
 			<dt>Letzter Abruf</dt>
 			<dd>
-				{lastRun}{#if lastOk !== null}<span class="ok">, zuletzt erfolgreich {lastOk}</span>{/if}
+				{lastRunText}{#if lastOk !== null}<span class="ok">, zuletzt erfolgreich {lastOk}</span
+					>{/if}
 			</dd>
 		</div>
+		{#if result !== null}
+			<div>
+				<dt>Ergebnis</dt>
+				<dd>{result}</dd>
+			</div>
+		{/if}
 		<div>
 			<dt>Stichwörter</dt>
 			<dd>{keywordSummary(connection.keywords)}</dd>
 		</div>
 		{#if connection.type === 'mail'}
+			<div>
+				<dt>Hilfsprozess</dt>
+				<dd>{mailHelperText(helper)}</dd>
+			</div>
 			<div>
 				<dt>Automatisch</dt>
 				<dd>{MAIL_NEW_ONLY_HINT}</dd>
@@ -116,11 +147,7 @@
 	{/if}
 
 	<footer class="actions">
-		{#if health.action === 'pick'}
-			<button class="button-secondary" type="button" onclick={onpick}>
-				Aus dem Postfach wählen<span class="visually-hidden">: {connection.label}</span>
-			</button>
-		{:else if health.action === 'resume'}
+		{#if health.action === 'resume'}
 			<button class="button-secondary" type="button" onclick={() => onpause(true)}>
 				Fortsetzen<span class="visually-hidden">: {connection.label}</span>
 			</button>
@@ -135,6 +162,11 @@
 		{:else}
 			<button class="button-secondary" type="button" aria-disabled="true" aria-busy="true">
 				Wird abgerufen …<span class="visually-hidden">: {connection.label}</span>
+			</button>
+		{/if}
+		{#if health.pick}
+			<button class="button-secondary" type="button" onclick={onpick}>
+				Aus dem Postfach wählen<span class="visually-hidden">: {connection.label}</span>
 			</button>
 		{/if}
 		<button class="button-secondary" type="button" aria-haspopup="dialog" onclick={onedit}>

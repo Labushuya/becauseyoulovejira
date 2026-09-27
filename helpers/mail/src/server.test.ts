@@ -8,6 +8,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { FakeImapServer, fakeMail } from '../test/fake-imap';
 import type { IngestApi, MailConnection, StatusReport } from './ingest-client';
 import type { IngestDraft } from './mail';
+import { PollGate } from './gate';
 import { DEFAULT_PORT, helperPort, startMailboxServer, type ServerDeps } from './server';
 
 const TOKEN = 'token-für-den-test';
@@ -26,7 +27,13 @@ class MemoryIngest implements IngestApi {
 		this.items.push({ draft, original });
 		return { status: 'created' as const, item: String(this.items.length - 1) };
 	}
-	async reportStatus(_id: string, _report: StatusReport) {}
+	reports: StatusReport[] = [];
+	/** Keeps the cursor like PocketBase, so the next fetch starts after it. */
+	async reportStatus(id: string, report: StatusReport) {
+		this.reports.push(report);
+		const connection = this.connections.find((item) => item.id === id);
+		if (connection !== undefined && report.cursor !== undefined) connection.cursor = report.cursor;
+	}
 }
 
 let imap: FakeImapServer;
@@ -253,5 +260,89 @@ describe('POST /mailbox/import', () => {
 		for (const uids of [[], Array.from({ length: 51 }, (_, i) => i + 1), [0], ['1'], 'x']) {
 			expect((await call('/mailbox/import', { connection: ID, uids })).status).toBe(400);
 		}
+	});
+});
+
+/**
+ * Replaces the server of beforeEach by one with other dependencies, on a new port: fetch may still
+ * hold a kept-alive socket to the old one.
+ */
+async function restart(extra: Partial<ServerDeps>) {
+	await new Promise<void>((resolve) => (server ? server.close(() => resolve()) : resolve()));
+	port = await freePort();
+	const env = { ...(extra.env ?? deps().env), BYL_MAIL_HELPER_PORT: String(port) };
+	server = await startMailboxServer(deps({ ...extra, env }));
+	expect(server).not.toBeNull();
+}
+
+describe('GET /health (package A)', () => {
+	it('answers version and whether a fetch runs, without touching the mailbox', async () => {
+		const gate = new PollGate();
+		await restart({ gate, version: '0.5.0' });
+		expect(await call('/health', undefined, TOKEN, 'GET')).toEqual({
+			status: 200,
+			json: { ok: true, version: '0.5.0', busy: false }
+		});
+		let release: () => void = () => undefined;
+		const running = gate.run(() => new Promise<void>((resolve) => (release = resolve)));
+		expect((await call('/health', undefined, TOKEN, 'GET')).json.busy).toBe(true);
+		release();
+		await running;
+		expect((await call('/health', undefined, null, 'GET')).status).toBe(401);
+		// The hook recognises a helper before 0.5.0 by exactly this answer to an unknown path.
+		expect(await call('/health', {})).toEqual({ status: 404, json: { message: 'Nicht gefunden.' } });
+		expect(imap.commands).toEqual([]);
+	});
+});
+
+describe('POST /poll ("Jetzt abrufen", package A)', () => {
+	it('runs the regular fetch at once: first the cursor, then new mails with keyword', async () => {
+		mail('Todo: vor der Einrichtung');
+		const first = await call('/poll', { connection: ID });
+		expect(first).toEqual({
+			status: 200,
+			json: { status: 'ok', created: 0, duplicates: 0, unmatched: 0, skipped: 0, failed: 0, error: '', missing: [] }
+		});
+		expect(ingest.connections[0]?.cursor).toMatch(/^\d+:1$/);
+
+		mail('Todo: neu');
+		mail('Hallo');
+		const second = await call('/poll', { connection: ID });
+		expect(second.json).toMatchObject({ status: 'ok', created: 1, unmatched: 1 });
+		expect(ingest.items.map((item) => [item.draft.title, item.draft.origin])).toEqual([['Todo: neu', 'auto']]);
+		expect((await call('/poll', { connection: ID })).json).toMatchObject({ status: 'ok', created: 0, unmatched: 0 });
+		expect(ingest.reports).toHaveLength(3);
+		expect(imap.writes()).toEqual([]);
+		expect(imap.flagsUnchanged()).toBe(true);
+	});
+
+	it('answers 409 "running" while another fetch holds the gate, without waiting', async () => {
+		const gate = new PollGate();
+		await restart({ gate });
+		let release: () => void = () => undefined;
+		const loop = gate.run(() => new Promise<void>((resolve) => (release = resolve)));
+		const answer = await call('/poll', { connection: ID });
+		expect(answer.status).toBe(409);
+		expect(answer.json).toMatchObject({ status: 'running', created: 0 });
+		expect(imap.commands).toEqual([]);
+		release();
+		await loop;
+		expect((await call('/poll', { connection: ID })).status).toBe(200);
+	});
+
+	it('names a missing variable, an unknown connection and a refused login without the password', async () => {
+		expect((await call('/poll', { connection: 'zyxwvutsrq54321' })).status).toBe(404);
+		expect((await call('/poll', { connection: '../etc' })).status).toBe(400);
+
+		imap.refuseLogin = true;
+		const refused = await call('/poll', { connection: ID });
+		expect(refused.json).toMatchObject({ status: 'error', error: 'Anmeldung bei Web.de abgelehnt.' });
+		expect(JSON.stringify(refused.json)).not.toContain(PASSWORD);
+
+		await restart({ env: {} });
+		expect((await call('/poll', { connection: ID })).json).toMatchObject({
+			status: 'missing',
+			missing: ['BYL_TEST_MAIL_PASSWORD']
+		});
 	});
 });

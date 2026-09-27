@@ -123,3 +123,77 @@ describe('mailbox-rules.js', () => {
 		});
 	});
 });
+
+describe('mailbox-rules.js: "Jetzt abrufen" and probe of a mailbox (package A)', () => {
+	const zero = { created: 0, duplicates: 0, updated: 0, skipped: 0, failed: 0, unmatched: 0, error: '', missing: [] };
+
+	it('passes on the counts of the helper in the shape of runConnection', () => {
+		const answer = {
+			statusCode: 200,
+			json: { status: 'ok', created: 2, duplicates: 1, unmatched: 3, skipped: 0, failed: 1, error: '', missing: [] }
+		};
+		expect(rules.runResult(answer)).toEqual({ ...zero, status: 'ok', created: 2, duplicates: 1, unmatched: 3, failed: 1 });
+		expect(rules.runResult({ statusCode: 200, json: { status: 'ok', created: -1, duplicates: 1.5, unmatched: 'x' } })).toEqual({
+			...zero,
+			status: 'ok'
+		});
+	});
+
+	it('says that the helper does not run, and a timeout apart from that', () => {
+		expect(rules.runResult({ unavailable: true })).toEqual({
+			...zero,
+			status: 'unavailable',
+			error: `${rules.NOT_RUNNING} ${rules.NOT_RUNNING_HINT}`
+		});
+		expect(rules.runResult({ unavailable: true, timedOut: true })).toEqual({ ...zero, status: 'error', error: rules.RUN_TIMED_OUT });
+		expect(rules.RUN_TIMEOUT_SECONDS).toBeGreaterThan(rules.TIMEOUT_SECONDS);
+	});
+
+	it('maps running, switched off, missing variables, errors and a wrong token', () => {
+		expect(rules.runResult({ statusCode: 409, json: { status: 'running' } }).status).toBe('running');
+		expect(rules.runResult({ statusCode: 404, json: { message: 'Keine eingeschaltete Mail-Verbindung.' } }).status).toBe(
+			'disabled'
+		);
+		// A helper before 0.5.0 knows no /poll: not "pausiert", but the restart.
+		expect(rules.runResult({ statusCode: 404, json: { message: 'Nicht gefunden.' } })).toMatchObject({
+			status: 'error',
+			error: rules.OUTDATED
+		});
+		expect(rules.OUTDATED).toMatch(/stop\.bat, dann start\.bat/);
+		expect(rules.runResult({ statusCode: 200, json: { status: 'gone' } }).status).toBe('disabled');
+		expect(rules.runResult({ statusCode: 200, json: { status: 'missing', missing: ['BYL_WEBDE_PASSWORD', 'rm -rf', 7] } })).toEqual({
+			...zero,
+			status: 'missing',
+			missing: ['BYL_WEBDE_PASSWORD']
+		});
+		expect(rules.runResult({ statusCode: 200, json: { status: 'error', error: 'Anmeldung bei Web.de abgelehnt.' } })).toEqual({
+			...zero,
+			status: 'error',
+			error: 'Anmeldung bei Web.de abgelehnt.'
+		});
+		expect(rules.runResult({ statusCode: 200, json: { status: 'seltsam' } })).toMatchObject({ status: 'error', error: 'Der Abruf ist fehlgeschlagen.' });
+		expect(rules.runResult({ statusCode: 401, json: {} })).toMatchObject({ status: 'error', error: rules.TOKEN_REFUSED });
+		expect(rules.runResult({ statusCode: 502, json: { message: 'PocketBase nicht erreichbar.' } })).toMatchObject({
+			status: 'error',
+			error: 'PocketBase nicht erreichbar.'
+		});
+		expect(rules.runResult({ statusCode: 500, json: null })).toMatchObject({ error: 'Der Mail-Hilfsprozess antwortet mit HTTP 500.' });
+	});
+
+	it('reads the probe: running with version, stopped, other token', () => {
+		expect(rules.helperStatus({ statusCode: 200, json: { ok: true, version: '0.5.0', busy: false } })).toEqual({
+			state: 'running',
+			version: '0.5.0',
+			message: ''
+		});
+		expect(rules.helperStatus({ unavailable: true })).toEqual({ state: 'stopped', version: '', message: rules.NOT_RUNNING });
+		expect(rules.helperStatus({ statusCode: 401, json: {} })).toEqual({ state: 'refused', version: '', message: rules.TOKEN_REFUSED });
+		expect(rules.helperStatus({ statusCode: 404, json: {} })).toMatchObject({ state: 'stopped' });
+		expect(rules.helperStatus({ statusCode: 404, json: { message: 'Nicht gefunden.' } })).toEqual({
+			state: 'outdated',
+			version: '',
+			message: rules.OUTDATED
+		});
+		expect(rules.HEALTH_TIMEOUT_SECONDS).toBeLessThanOrEqual(5);
+	});
+});

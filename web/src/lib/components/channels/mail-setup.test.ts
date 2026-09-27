@@ -70,7 +70,12 @@ async function open(
 		subscribe: vi.fn<ConnectionsData['subscribe']>(async (_id, onChange) => {
 			listeners.push(onChange);
 			return async () => undefined;
-		})
+		}),
+		helperStatus: vi.fn<ConnectionsData['helperStatus']>(async () => ({
+			state: 'running' as const,
+			version: '0.5.0',
+			message: ''
+		}))
 	} satisfies ConnectionsData;
 	const store = new ConnectionsStore(
 		data,

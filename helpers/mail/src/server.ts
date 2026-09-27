@@ -6,6 +6,14 @@
 //
 //   POST /mailbox/list    { connection, limit }  -> { items: [{ uid, date, from, subject, ... }] }
 //   POST /mailbox/import  { connection, uids }   -> { items: [{ uid, status, message }] }
+//
+// Since testing feedback package A (item 4) also "Jetzt abrufen" and the probe of the card:
+//
+//   POST /poll            { connection }         -> { status, created, duplicates, ..., error, missing }
+//   GET  /health                                 -> { ok: true, version, busy }
+//
+// /poll runs the regular fetch of one connection at once (same code and cursor as the interval);
+// while another fetch runs it answers 409 "running" instead of waiting. /health touches no mailbox.
 
 import { timingSafeEqual } from 'node:crypto';
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
@@ -20,8 +28,10 @@ import {
 	type ImapClientFactory,
 	type InboxSession
 } from './imap';
+import { PollGate } from './gate';
 import { errorText, redact, type Logger } from './log';
 import { MAIL_MAX_BYTES, ingestDraft, keywordOf, parseMail } from './mail';
+import { pollConnection } from './poll';
 import { providerOf } from './providers';
 
 export const DEFAULT_PORT = 8091;
@@ -39,6 +49,25 @@ export interface ServerDeps {
 	imapOverride?: ImapEndpoint | null;
 	factory?: ImapClientFactory;
 	open?: (endpoint: ImapEndpoint, credentials: Credentials) => Promise<InboxSession>;
+	/** Shared with the interval loop, so a manual fetch never runs next to a regular one. */
+	gate?: PollGate;
+	/** Version of the helper for /health. */
+	version?: string;
+}
+
+/** Answer of POST /poll ("Jetzt abrufen" of a mailbox). */
+export interface PollAnswer {
+	/** "running": another fetch holds the gate; "gone": the connection was switched off meanwhile. */
+	status: 'ok' | 'error' | 'missing' | 'running' | 'gone';
+	created: number;
+	duplicates: number;
+	unmatched: number;
+	skipped: number;
+	failed: number;
+	/** Cleaned error of the run (no secrets). */
+	error: string;
+	/** Names of the variables that are not set. */
+	missing: string[];
 }
 
 /** One mail of the list: header data only, plus the fields PocketBase needs for the duplicate key. */
@@ -254,6 +283,60 @@ async function importOne(
 	}
 }
 
+function emptyPollAnswer(status: PollAnswer['status']): PollAnswer {
+	return { status, created: 0, duplicates: 0, unmatched: 0, skipped: 0, failed: 0, error: '', missing: [] };
+}
+
+/**
+ * "Jetzt abrufen" of a mailbox: the regular fetch of one switched-on connection, at once, with the
+ * cursor PocketBase holds right now. The result is reported to PocketBase as after every run.
+ */
+export async function pollNow(deps: ServerDeps, body: Record<string, unknown>): Promise<PollAnswer> {
+	const id = body.connection;
+	if (typeof id !== 'string' || !/^[a-z0-9]{15}$/.test(id)) throw new HttpError(400, 'connection fehlt.');
+	const gate = deps.gate ?? new PollGate();
+	// The connection is read inside the gate: a fetch that just ended has saved its cursor.
+	const ran = await gate.tryRun(async () => {
+		const connection = (await deps.ingest.listConnections()).find((item) => item.id === id);
+		if (connection === undefined) return null;
+		const outcome = await pollConnection(
+			{
+				ingest: deps.ingest,
+				env: deps.env,
+				log: deps.log,
+				imapOverride: deps.imapOverride ?? null,
+				...(deps.factory === undefined ? {} : { factory: deps.factory }),
+				...(deps.open === undefined ? {} : { open: deps.open }),
+				secrets: [deps.token]
+			},
+			connection
+		);
+		return { connection, outcome };
+	});
+	if (ran === null) return emptyPollAnswer('running');
+	if (ran.value === null) throw new HttpError(404, 'Keine eingeschaltete Mail-Verbindung.');
+	const { connection, outcome } = ran.value;
+	const answer: PollAnswer = {
+		...emptyPollAnswer('ok'),
+		created: outcome.created,
+		duplicates: outcome.duplicates,
+		unmatched: outcome.unmatched,
+		skipped: outcome.skipped,
+		failed: outcome.failed
+	};
+	switch (outcome.status) {
+		case 'ok':
+			return answer;
+		case 'missing':
+			return { ...answer, status: 'missing', missing: [connection.secretEnv] };
+		case 'gone':
+			return { ...answer, status: 'gone' };
+		case 'error':
+		case 'stopped':
+			return { ...answer, status: 'error', error: outcome.error };
+	}
+}
+
 /** The HTTP server; `listen` binds it to 127.0.0.1 only. */
 export function createMailboxServer(deps: ServerDeps): Server {
 	return createServer((request, response) => {
@@ -266,14 +349,24 @@ async function handle(deps: ServerDeps, request: IncomingMessage, response: Serv
 		if (!tokenMatches(deps.token, request.headers.authorization)) {
 			throw new HttpError(401, 'Ungültiger Token.');
 		}
-		if (request.method !== 'POST' || (request.url !== '/mailbox/list' && request.url !== '/mailbox/import')) {
-			throw new HttpError(404, 'Nicht gefunden.');
-		}
-		const body = await readJson(request);
-		if (request.url === '/mailbox/list') {
-			send(response, 200, { items: await listMailbox(deps, body) });
-		} else {
-			send(response, 200, { items: await importMails(deps, body) });
+		const route = `${request.method ?? ''} ${request.url ?? ''}`;
+		switch (route) {
+			case 'GET /health':
+				send(response, 200, { ok: true, version: deps.version ?? 'dev', busy: deps.gate?.busy ?? false });
+				return;
+			case 'POST /mailbox/list':
+				send(response, 200, { items: await listMailbox(deps, await readJson(request)) });
+				return;
+			case 'POST /mailbox/import':
+				send(response, 200, { items: await importMails(deps, await readJson(request)) });
+				return;
+			case 'POST /poll': {
+				const answer = await pollNow(deps, await readJson(request));
+				send(response, answer.status === 'running' ? 409 : 200, answer);
+				return;
+			}
+			default:
+				throw new HttpError(404, 'Nicht gefunden.');
 		}
 	} catch (error) {
 		if (error instanceof HttpError) {

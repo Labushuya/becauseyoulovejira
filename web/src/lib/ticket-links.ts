@@ -13,6 +13,7 @@ import {
 	type ListQuery
 } from './domain/list-query';
 import { SETUP_PARAMS, type SetupTarget } from './domain/channel-setup';
+import { connectionAnchor } from './domain/sync-all';
 import { parseInboxQuery, serializeInboxQuery, type InboxQuery } from './domain/inbox-query';
 import {
 	PROJECT_VIEW_PARAMS,
@@ -221,6 +222,11 @@ export function channelSetupHref(target: SetupTarget | null): ResolvedPathname {
 	const params = new URLSearchParams({ [SETUP_PARAMS.kind]: target.kind });
 	if (target.connectionId !== null) params.set(SETUP_PARAMS.connection, target.connectionId);
 	return `${base}?${params.toString()}` as ResolvedPathname;
+}
+
+/** The card of a connection on the page "Kanäle" (flag of "Alle Kanäle jetzt abrufen"). */
+export function connectionCardHref(id: string): ResolvedPathname {
+	return `${resolve('/einstellungen/kanaele')}#${connectionAnchor(id)}` as ResolvedPathname;
 }
 
 /** The current path with the template `template` in `?vorlage=`; other parameters stay. */

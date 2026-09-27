@@ -5,13 +5,31 @@
 import { fireEvent, render, screen, within } from '@testing-library/svelte';
 import { describe, expect, it, vi } from 'vitest';
 import type { ResolvedPathname } from '$app/types';
-import { MAIL_NEW_ONLY_HINT, type Connection } from '$lib/domain/connections';
+import {
+	MAIL_NEW_ONLY_HINT,
+	lastResultText,
+	type Connection,
+	type MailHelperStatus,
+	type RunResult
+} from '$lib/domain/connections';
 import { useOverlayStubs } from '$lib/test/overlay-stubs';
 import ChannelCard from './ChannelCard.svelte';
 import ChannelCatalog from './ChannelCatalog.svelte';
 import ChannelEditModal from './ChannelEditModal.svelte';
 
 useOverlayStubs();
+
+const EMPTY_RUN: RunResult = {
+	status: 'ok',
+	created: 0,
+	duplicates: 0,
+	updated: 0,
+	skipped: 0,
+	failed: 0,
+	unmatched: 0,
+	error: '',
+	missing: []
+};
 
 function connection(overrides: Partial<Connection> = {}): Connection {
 	return {
@@ -113,14 +131,91 @@ describe('channel card', () => {
 		expect(onedit).toHaveBeenCalledOnce();
 	});
 
-	it('offers the mailbox selection instead of a run for mailboxes', async () => {
-		const { card, onpick } = renderCard(
+	it('offers "Jetzt abrufen" and the mailbox selection for mailboxes (package A)', async () => {
+		const { card, onpick, onrun } = renderCard(
 			connection({ type: 'mail', label: 'Gmail', mailProvider: 'gmail', mailUser: 'a@gmail.com' })
 		);
 		expect(card.getByText('Postfach · Gmail · a@gmail.com')).toBeTruthy();
-		expect(card.queryByRole('button', { name: /^Jetzt abrufen/ })).toBeNull();
+		await fireEvent.click(card.getByRole('button', { name: 'Jetzt abrufen: Gmail' }));
+		expect(onrun).toHaveBeenCalledOnce();
 		await fireEvent.click(card.getByRole('button', { name: 'Aus dem Postfach wählen: Gmail' }));
 		expect(onpick).toHaveBeenCalledOnce();
+	});
+
+	it('says honestly whether the mail helper runs (package A)', () => {
+		const mail = connection({ type: 'mail', label: 'Web.de', mailProvider: 'webde' });
+		const cases: [MailHelperStatus | null, RegExp][] = [
+			[null, /^wird geprüft …$/],
+			[{ state: 'running', version: '0.5.0', message: '' }, /^läuft \(byl-mail 0\.5\.0\)$/],
+			[
+				{ state: 'stopped', version: '', message: '' },
+				/^läuft nicht\. .*stop\.bat, dann start\.bat/
+			],
+			[{ state: 'refused', version: '', message: '' }, /BYL_INGEST_TOKEN/],
+			[
+				{ state: 'outdated', version: '', message: '' },
+				/älteren Version.*stop\.bat, dann start\.bat/
+			]
+		];
+		for (const [helper, text] of cases) {
+			const { unmount } = render(ChannelCard, {
+				props: {
+					connection: mail,
+					secretStatus: { secret: true, allowlist: null },
+					running: false,
+					helper,
+					onrun: vi.fn(),
+					onpick: vi.fn(),
+					onedit: vi.fn(),
+					onpause: vi.fn(),
+					ondelete: vi.fn(),
+					onsetup: vi.fn()
+				}
+			});
+			const row = screen.getByText('Hilfsprozess').closest('div') as HTMLElement;
+			expect(within(row).getByRole('definition').textContent?.trim()).toMatch(text);
+			unmount();
+		}
+		// Other kinds do not need the helper.
+		const { card } = renderCard(connection());
+		expect(card.queryByText('Hilfsprozess')).toBeNull();
+	});
+
+	it('shows the result of the last run: counts on this page, else with or without error (package A)', () => {
+		expect(lastResultText({ lastRunAt: null, lastError: '' }, null)).toBeNull();
+		expect(lastResultText({ lastRunAt: '2026-09-25 08:15:00.000Z', lastError: '' }, null)).toBe(
+			'ohne Fehler'
+		);
+		expect(lastResultText({ lastRunAt: '2026-09-25 08:15:00.000Z', lastError: 'x' }, null)).toBe(
+			'fehlgeschlagen'
+		);
+		const run = { ...EMPTY_RUN, status: 'ok' as const, created: 2, unmatched: 1 };
+		expect(lastResultText({ lastRunAt: null, lastError: '' }, run)).toBe('2 neu, 1 ohne Stichwort');
+		expect(
+			lastResultText({ lastRunAt: null, lastError: '' }, { ...EMPTY_RUN, status: 'unavailable' })
+		).toBe('Hilfsprozess läuft nicht');
+
+		render(ChannelCard, {
+			props: {
+				connection: connection(),
+				secretStatus: { secret: true, allowlist: null },
+				running: false,
+				lastRun: run,
+				onrun: vi.fn(),
+				onpick: vi.fn(),
+				onedit: vi.fn(),
+				onpause: vi.fn(),
+				ondelete: vi.fn(),
+				onsetup: vi.fn()
+			}
+		});
+		const card = within(screen.getByRole('article', { name: 'Kalender' }));
+		expect(card.getByText('Ergebnis')).toBeTruthy();
+		expect(card.getByText('2 neu, 1 ohne Stichwort')).toBeTruthy();
+		// The anchor of "Zur Karte" in the flag of "Alle Kanäle jetzt abrufen".
+		const article = screen.getByRole('article', { name: 'Kalender' });
+		expect(article.id).toBe('verbindung-conn00000000001');
+		expect(article.getAttribute('tabindex')).toBe('-1');
 	});
 
 	it('marks a running fetch with a busy button', () => {

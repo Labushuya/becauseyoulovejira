@@ -9,6 +9,7 @@ import {
 	type Connection,
 	type ConnectionDraft,
 	type ConnectionSettingsDraft,
+	type MailHelperStatus,
 	type RunResult,
 	type SecretStatus
 } from '../domain/connections';
@@ -246,7 +247,38 @@ export function getSecretStatus(
 	});
 }
 
-const RUN_STATUSES = ['ok', 'error', 'running', 'missing', 'disabled', 'unsupported'] as const;
+const RUN_STATUSES = [
+	'ok',
+	'error',
+	'running',
+	'missing',
+	'disabled',
+	'unsupported',
+	'unavailable'
+] as const;
+
+const HELPER_STATES = ['running', 'stopped', 'refused', 'outdated'] as const;
+
+/**
+ * Whether the mail helper runs (package A, item 4): the hook asks it on 127.0.0.1 without logging
+ * in to a mailbox. An unknown answer counts as "stopped".
+ */
+export function getMailHelperStatus(
+	pb: PocketBase,
+	{ signal }: RequestOptions = {}
+): Promise<MailHelperStatus> {
+	return withDataErrors(signal, async () => {
+		const result = await pb.send<Record<string, unknown>>('/api/byl/mail-helper', {
+			method: 'GET',
+			signal
+		});
+		return {
+			state: HELPER_STATES.find((value) => value === result.state) ?? 'stopped',
+			version: typeof result.version === 'string' ? result.version : '',
+			message: typeof result.message === 'string' ? result.message : ''
+		};
+	});
+}
 
 function count(value: unknown): number {
 	return typeof value === 'number' && Number.isInteger(value) && value >= 0 ? value : 0;

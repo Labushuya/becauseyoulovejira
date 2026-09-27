@@ -1,7 +1,10 @@
 <script lang="ts">
 	import { untrack } from 'svelte';
+	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
 	import { auth } from '$lib/auth.svelte';
+	import SyncAllButton from '$lib/components/SyncAllButton.svelte';
+	import { SyncAllStore, syncAllData } from '$lib/stores/sync-all.svelte';
 	import BulkConvertDialog from '$lib/components/BulkConvertDialog.svelte';
 	import ClipboardImport from '$lib/components/ClipboardImport.svelte';
 	import DropZone from '$lib/components/DropZone.svelte';
@@ -24,7 +27,12 @@
 		type FileImportResult,
 		type FileSelection
 	} from '$lib/stores/mail-import';
-	import { inboxItemHref, ticketPath } from '$lib/ticket-links';
+	import {
+		channelSetupHref,
+		connectionCardHref,
+		inboxItemHref,
+		ticketPath
+	} from '$lib/ticket-links';
 	import { pb } from '$lib/pocketbase';
 	import { BulkConverter, bulkConvertData } from '$lib/stores/bulk-convert.svelte';
 	import { draftsSummary, saveDrafts, type DraftsOutcome } from '$lib/stores/capture';
@@ -52,6 +60,13 @@
 	const converter = new BulkConverter(bulkConvertData(pb), auth, {
 		upsertTicket: (ticket) => tickets.upsert(ticket),
 		markConverted: (id, ticketId, at) => inbox.markConverted(id, ticketId, at)
+	});
+
+	// "Alle Kanäle jetzt abrufen" (package A, item 4): new entries arrive through the realtime
+	// subscription of the inbox store; the flag leads to the card of a connection that failed.
+	const syncAll = new SyncAllStore(syncAllData(pb), auth, flags, {
+		card: (id) => void goto(connectionCardHref(id)),
+		channels: () => void goto(channelSetupHref(null))
 	});
 
 	/** Chosen new entries (checkboxes of the table). */
@@ -223,6 +238,9 @@
 			onclipboard={fromClipboard}
 			{clipboardHint}
 		>
+			{#snippet actions()}
+				<SyncAllButton store={syncAll} />
+			{/snippet}
 			{#snippet tools()}
 				<DropZone
 					busy={importing}

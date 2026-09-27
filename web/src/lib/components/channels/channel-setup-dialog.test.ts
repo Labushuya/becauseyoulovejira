@@ -84,7 +84,12 @@ function fakes(items: Connection[], status: SecretStatus = { secret: false, allo
 		subscribe: vi.fn<ConnectionsData['subscribe']>(async (_id, onChange) => {
 			listeners.push(onChange);
 			return unsubscribe;
-		})
+		}),
+		helperStatus: vi.fn<ConnectionsData['helperStatus']>(async () => ({
+			state: 'running' as const,
+			version: '0.5.0',
+			message: ''
+		}))
 	} satisfies ConnectionsData;
 	const flags = new FlagStore();
 	const store = new ConnectionsStore(data, { ensureValid: () => true, logout: vi.fn() }, flags);

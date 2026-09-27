@@ -15,7 +15,9 @@ cronAdd('byl-telegram', '* * * * *', function () {
 });
 
 // "Jetzt abrufen": runs one connection at once with the same code as the cron job. Answers with
-// the counts or the cleaned error; a connection the request may not see answers 404.
+// the counts or the cleaned error; a connection the request may not see answers 404. A mailbox is
+// fetched by the mail helper (testing feedback package A, item 4): the hook asks it on 127.0.0.1
+// to run its regular fetch at once; "unavailable" when it does not run.
 routerAdd(
   'POST',
   '/api/byl/connections/{id}/run',
@@ -23,6 +25,9 @@ routerAdd(
     var record = require(`${__hooks}/lib/connection-service.js`).visibleConnection(e, e.request.pathValue('id'));
     if (!record) {
       throw new NotFoundError();
+    }
+    if (record.getString('type') === 'mail') {
+      return e.json(200, require(`${__hooks}/lib/mailbox-service.js`).runMail(record));
     }
     return e.json(200, require(`${__hooks}/lib/channel-runner.js`).runConnection(e.app, record));
   },
