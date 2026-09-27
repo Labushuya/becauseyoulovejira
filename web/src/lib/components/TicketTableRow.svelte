@@ -26,6 +26,7 @@
 		active = false,
 		isNew = false,
 		recurrenceText = '',
+		columns,
 		ontoggle
 	}: {
 		ticket: TicketSummary;
@@ -43,8 +44,14 @@
 		isNew?: boolean;
 		/** Rhythm of the series ("jeden Montag"), '' while unknown (E5 plan, package 4). */
 		recurrenceText?: string;
+		/** Shown columns of the table (ADR-0030); without it every column is shown. */
+		columns?: ReadonlySet<string>;
 		ontoggle: (done: boolean) => void;
 	} = $props();
+
+	function shows(id: string): boolean {
+		return columns === undefined || columns.has(id);
+	}
 
 	const done = $derived(ticket.status === 'done');
 	/** Name of the recurring symbol: "Wiederkehrend: jeden Montag", or only "wiederkehrend". */
@@ -68,13 +75,17 @@
 
 <!-- The title link is the keyboard target of the row; the click on the row is a mouse shortcut. -->
 <tr class="row" class:done class:active data-ticket-id={ticket.id} {onclick}>
-	<td class="key">
+	<td class="key" data-col="key">
 		{#if isNew}<span class="new-dot" title="Neu"><span class="visually-hidden">neu,</span></span
 			>{/if}{ticket.key}
 	</td>
-	<td class="priority"><PriorityIcon priority={ticket.priority} /></td>
-	<td class="status"><StatusPill status={ticket.status} /></td>
-	<th class="title" scope="row">
+	{#if shows('priority')}
+		<td class="priority" data-col="priority"><PriorityIcon priority={ticket.priority} /></td>
+	{/if}
+	{#if shows('status')}
+		<td class="status" data-col="status"><StatusPill status={ticket.status} /></td>
+	{/if}
+	<th class="title" scope="row" data-col="title">
 		<SourceIcon source={ticket.source} />
 		<a class="title-link" {href} aria-current={active ? 'page' : undefined}>{ticket.title}</a>
 		{#if ticket.recurring}
@@ -103,23 +114,31 @@
 			</span>
 		{/if}
 	</th>
-	<td class="project" data-col="project">
-		{#if project}
-			<span title={`${project.name} (${project.code})`}>{project.name}</span>
-		{/if}
-	</td>
-	<td class="tags" data-col="tags">
-		{#each tags as tag (tag.id)}
-			<span class="tag">{tag.name}</span>
-		{/each}
-	</td>
-	<td class="due" data-col="due"><DueLabel due={ticket.due} {today} {done} /></td>
-	<td class="created" data-col="created">
-		<time datetime={createdDate} title={formatBerlinDateTime(ticket.created)}>
-			{formatCalendarDate(createdDate)}
-		</time>
-	</td>
-	<td class="actions">
+	{#if shows('project')}
+		<td class="project" data-col="project">
+			{#if project}
+				<span title={`${project.name} (${project.code})`}>{project.name}</span>
+			{/if}
+		</td>
+	{/if}
+	{#if shows('tags')}
+		<td class="tags" data-col="tags">
+			{#each tags as tag (tag.id)}
+				<span class="tag">{tag.name}</span>
+			{/each}
+		</td>
+	{/if}
+	{#if shows('due')}
+		<td class="due" data-col="due"><DueLabel due={ticket.due} {today} {done} /></td>
+	{/if}
+	{#if shows('created')}
+		<td class="created" data-col="created">
+			<time datetime={createdDate} title={formatBerlinDateTime(ticket.created)}>
+				{formatCalendarDate(createdDate)}
+			</time>
+		</td>
+	{/if}
+	<td class="actions" data-col="actions">
 		<span class="action-group">
 			<DoneToggle key={ticket.key} {checked} {pending} onchange={ontoggle} />
 			<!-- Mouse only: the title link does the same for keyboard and screen readers. -->
@@ -158,16 +177,19 @@
 		box-shadow: inset 3px 0 0 var(--color-brand);
 	}
 
+	/* Fixed widths (ADR-0030): what does not fit is cut off inside its cell, never beside it. */
 	td,
 	th {
 		padding: 0.375rem 0.75rem;
+		overflow: hidden;
 		text-align: left;
+		text-overflow: ellipsis;
 		vertical-align: middle;
 	}
 
 	.key {
 		font-family: var(--font-mono);
-		font-size: 0.8125rem;
+		font-size: var(--font-size-control);
 		color: var(--color-text-muted);
 		white-space: nowrap;
 	}
@@ -208,17 +230,20 @@
 		color: var(--color-text-muted);
 	}
 
+	.status,
+	.due,
+	.actions {
+		white-space: nowrap;
+	}
+
 	.project {
-		max-width: 12rem;
-		overflow: hidden;
-		font-size: 0.8125rem;
+		font-size: var(--font-size-control);
 		color: var(--color-text-muted);
-		text-overflow: ellipsis;
 		white-space: nowrap;
 	}
 
 	.tags {
-		font-size: 0.75rem;
+		font-size: var(--font-size-small);
 	}
 
 	.tag {
@@ -233,7 +258,7 @@
 	}
 
 	.created {
-		font-size: 0.8125rem;
+		font-size: var(--font-size-control);
 		color: var(--color-text-muted);
 		white-space: nowrap;
 		font-variant-numeric: tabular-nums;

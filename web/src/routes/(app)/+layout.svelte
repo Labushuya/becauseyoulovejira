@@ -19,6 +19,7 @@
 		type CaptureDeps
 	} from '$lib/stores/capture';
 	import { CatalogStore, catalogData, setCatalogStore } from '$lib/stores/catalog.svelte';
+	import { ColumnPrefsRegistry, setColumnPrefsRegistry } from '$lib/stores/column-prefs.svelte';
 	import { FirstStepsStore, localStore, setFirstStepsStore } from '$lib/stores/first-steps.svelte';
 	import { FlagStore, setFlagStore } from '$lib/stores/flags.svelte';
 	import { InboxStore, inboxData, setInboxStore } from '$lib/stores/inbox.svelte';
@@ -61,6 +62,10 @@
 	// A side panel over the view (below 64rem, UI-6b) makes the header inert as well.
 	const panelShell = setPanelShell(new PanelShell());
 	$effect(() => () => flags.clear());
+	// Widths and visibility of the table columns on this device (ADR-0030 section 5); other tabs
+	// follow through the storage event, "Standard wiederherstellen" reports as a flag.
+	const columnPrefs = setColumnPrefsRegistry(new ColumnPrefsRegistry(window, flags));
+	$effect(() => untrack(() => columnPrefs.connect()));
 	// The last view outside the settings, for "Zurück zu …" there (ADR-0026 section 1, EH-1): every
 	// shown address is offered, the store keeps only views (no settings, no full view).
 	const lastView = setLastViewStore(new LastViewStore(sessionStore, () => page.url.origin));

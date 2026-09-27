@@ -153,8 +153,9 @@ afterEach(() => {
 });
 
 describe('ticket table', () => {
-	// Since UI-6b the table no longer scrolls sideways in a focusable region; it hides the columns
-	// marked with data-col through container queries of its frame (table-columns.test.ts).
+	// Since UI-6b the table no longer scrolls sideways in a focusable region; since SP-2
+	// (ADR-0030) fitColumns decides which columns give way (ticket-table-columns.test.ts). Without a
+	// measured frame, as here, every column is shown.
 	it('is a table with caption, column headers and columns that give way', async () => {
 		await showTable(fakeData([ticket()]));
 
@@ -166,7 +167,7 @@ describe('ticket table', () => {
 		const headers = within(table)
 			.getAllByRole('columnheader')
 			.map((header) => [
-				(header.querySelector('[aria-hidden="true"]') ?? header).textContent?.trim(),
+				(header.querySelector('button [aria-hidden="true"]') ?? header).textContent?.trim(),
 				header.getAttribute('scope')
 			]);
 		expect(headers).toEqual([
@@ -182,32 +183,15 @@ describe('ticket table', () => {
 		]);
 		expect(screen.queryByRole('region', { name: /^Tickets/ })).toBeNull();
 		expect(table.parentElement?.classList.contains('frame')).toBe(true);
-		// Key, priority, status, title and the actions with the check mark always stay.
+		// Every header and cell names its column; the widths stand in the colgroup.
+		const columns = ['key', 'priority', 'status', 'title', 'project', 'tags', 'due', 'created'];
 		const marks = (cells: Element[]) => cells.map((cell) => cell.getAttribute('data-col'));
-		expect(marks(within(table).getAllByRole('columnheader'))).toEqual([
-			null,
-			null,
-			null,
-			null,
-			'project',
-			'tags',
-			'due',
-			'created',
-			null
-		]);
+		expect(marks(within(table).getAllByRole('columnheader'))).toEqual([...columns, 'actions']);
 		const row = table.querySelector('tr[data-ticket-id]') as HTMLElement;
-		expect(marks([...row.children])).toEqual([
-			null,
-			null,
-			null,
-			null,
-			'project',
-			'tags',
-			'due',
-			'created',
-			null
-		]);
-		expect(table.querySelector('caption')?.textContent).toMatch(/Weitere Spalten im Panel$/);
+		expect(marks([...row.children])).toEqual([...columns, 'actions']);
+		expect(table.querySelectorAll('colgroup > col')).toHaveLength(9);
+		// Nothing gave way for lack of space, so the caption does not point to the panel.
+		expect(table.querySelector('caption')?.textContent).not.toMatch(/Weitere Spalten/);
 	});
 
 	it('shows the open tickets in the default order under "Aufgaben" with their number', async () => {

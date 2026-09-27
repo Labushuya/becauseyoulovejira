@@ -2,6 +2,7 @@
 	import { tick, type Snippet } from 'svelte';
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
+	import { TICKET_TABLE, fitColumns, type ColumnPrefs } from '$lib/domain/columns';
 	import { GROUPING_LABELS } from '$lib/domain/grouping';
 	import {
 		MORE_COLUMNS_HINT,
@@ -13,6 +14,7 @@
 	import { nextSort, sortDirection, type SortKey } from '$lib/domain/ordering';
 	import type { TicketSummary } from '$lib/domain/ticket';
 	import type { CatalogStore } from '$lib/stores/catalog.svelte';
+	import { getColumnPrefs } from '$lib/stores/column-prefs.svelte';
 	import type { TicketListStore } from '$lib/stores/ticket-list.svelte';
 	import {
 		NEW_TICKET_LINK_ID,
@@ -26,6 +28,8 @@
 	import EmptyState from './guidance/EmptyState.svelte';
 	import GroupPopover from './GroupPopover.svelte';
 	import SectionBar from './SectionBar.svelte';
+	import { chipsWidth, naturalWidth, observeWidth } from './table/measure';
+	import ResizableHeader from './table/ResizableHeader.svelte';
 	import TicketTableRow from './TicketTableRow.svelte';
 	import ViewSwitch from './ViewSwitch.svelte';
 
@@ -36,11 +40,12 @@
 	// default order, with a grouping in one tbody per group; and, in a section of their own below,
 	// the done tickets with "Weitere laden", always most recently completed first and never
 	// grouped. Sort buttons sit in the column headers (T-5). Project and tags come from the
-	// catalog. The table never scrolls sideways (package UI-6b): when its frame gets narrow (next to
-	// the panel, on a small window) container queries hide columns in a fixed order, first
-	// "Erstellt", then "Tags", then "Projekt", last "Fällig" (data-col on header and cells); key,
-	// priority, status, title and the check mark always stay. The caption then names the panel,
-	// where the hidden values stand.
+	// catalog. The table never scrolls sideways (package UI-6b): fitColumns (ADR-0030) fits the
+	// columns into the measured frame with the widths of the user; when the frame gets narrow (next
+	// to the panel, on a small window) columns give way in a fixed order, first "Erstellt", then
+	// "Tags", then "Projekt", last "Fällig"; key, title and the check mark always stay. The caption
+	// then names the panel, where the hidden values stand. A grip on the right edge of a header
+	// changes the width of its column (package SP-2).
 	let {
 		store,
 		catalog,
@@ -69,9 +74,6 @@
 		/** Below the empty state "Keine offenen Tickets", e.g. "Erste Schritte" (plan EH-12). */
 		emptyExtra?: Snippet;
 	} = $props();
-
-	/** Columns of the table (T-4); the section rows span all of them. */
-	const COLUMNS = 9;
 
 	const uid = $props.id();
 	const ids = {
@@ -110,6 +112,52 @@
 
 	let root = $state<HTMLElement>();
 	let heading = $state<HTMLElement>();
+
+	// Columns (ADR-0030): the preferences of this device, the measured width of the frame and,
+	// while a grip is dragged, the live width of its column.
+	const columns = getColumnPrefs('tickets');
+	const titleMin = TICKET_TABLE.columns.find((column) => column.flexible)?.min ?? 0;
+	let frame = $state<HTMLElement>();
+	let frameWidth = $state<number | null>(null);
+	let dragging = $state<{ id: string; width: number } | null>(null);
+	const prefs = $derived.by((): ColumnPrefs => {
+		const current = columns.prefs;
+		if (dragging === null) return current;
+		return { ...current, widths: { ...current.widths, [dragging.id]: dragging.width } };
+	});
+	const fit = $derived(fitColumns(frameWidth, TICKET_TABLE.columns, prefs));
+	const shown = $derived(new Set(fit.visible));
+	const shownColumns = $derived(TICKET_TABLE.columns.filter((column) => shown.has(column.id)));
+	/** How far a column may grow: the room of the title above its minimum. */
+	const budget = $derived(
+		fit.flexWidth === null ? Number.POSITIVE_INFINITY : Math.max(0, fit.flexWidth - titleMin)
+	);
+
+	$effect(() => {
+		const element = frame;
+		if (!element) return;
+		return observeWidth(element, (width) => (frameWidth = width));
+	});
+
+	function commitWidth(id: string, width: number) {
+		dragging = null;
+		columns.setWidth(id, width);
+	}
+
+	/** Double click on a grip: the width of the widest shown content, within max and budget. */
+	function autofit(id: string) {
+		if (!frame) return;
+		const cells = [...frame.querySelectorAll(`th[data-col="${id}"], td[data-col="${id}"]`)];
+		const natural =
+			id === 'tags'
+				? Math.max(
+						chipsWidth(cells, '.tag', 4),
+						naturalWidth(cells.filter((cell) => cell.tagName === 'TH'))
+					)
+				: naturalWidth(cells);
+		const current = fit.widths[id] ?? columns.widthOf(id);
+		columns.setWidth(id, Math.min(natural, current + budget));
+	}
 	/** Row that last had the focus, to restore it when that row moves or disappears. */
 	let lastFocus: { id: string; section: string; index: number } | null = null;
 
@@ -244,44 +292,64 @@
 			active={ticket.id === activeId}
 			isNew={store.isNew(ticket)}
 			recurrenceText={ticket.recurring ? recurrenceTextOf(ticket) : ''}
+			columns={shown}
 			ontoggle={(done) => store.setDone(ticket.id, done)}
 		/>
 	{/each}
 {/snippet}
 
-{#snippet sortable(key: SortKey, text: string, className = '')}
-	{@const sorted = query.sort?.key === key ? query.sort : null}
+<!-- Header of a shown column; `key` makes it a sort button (T-5), the grip resizes (SP-2). -->
+{#snippet header(id: string, text: string, key: SortKey | null = null)}
+	{@const column = TICKET_TABLE.columns.find((entry) => entry.id === id)}
+	{@const sorted = key !== null && query.sort?.key === key ? query.sort : null}
 	{@const direction = sorted === null ? null : sortDirection(sorted)}
-	<th
-		scope="col"
-		class={className}
-		aria-sort={direction ?? undefined}
-		data-col={key === 'project' || key === 'due' || key === 'created' ? key : undefined}
-	>
-		<button class="sort" class:sorted={sorted !== null} type="button" onclick={() => sortBy(key)}>
-			<span aria-hidden="true">{text}</span>
-			<span class="visually-hidden">
-				Nach {SORT_COLUMN_LABELS[key]} sortieren{sorted === null
-					? ''
-					: `, sortiert: ${sortOrderLabel(sorted)}`}
-			</span>
-			<svg
-				class="sort-icon"
-				data-direction={direction ?? 'none'}
-				viewBox="0 0 12 12"
-				aria-hidden="true"
-				focusable="false"
-			>
-				{#if direction === 'ascending'}
-					<path d="M6 2.5v7M3 5.5l3-3 3 3" />
-				{:else if direction === 'descending'}
-					<path d="M6 2.5v7M3 6.5l3 3 3-3" />
-				{:else}
-					<path d="M3.5 4.5L6 2l2.5 2.5M3.5 7.5L6 10l2.5-2.5" />
-				{/if}
-			</svg>
-		</button>
-	</th>
+	{#if column && shown.has(id)}
+		<ResizableHeader
+			{column}
+			width={fit.widths[id] ?? 0}
+			{budget}
+			ariaSort={direction ?? undefined}
+			onresize={(width) => (dragging = { id, width })}
+			oncommit={(width) => commitWidth(id, width)}
+			oncancel={() => (dragging = null)}
+			onautofit={() => autofit(id)}
+		>
+			{#if key !== null}
+				<button
+					class="sort"
+					class:sorted={sorted !== null}
+					type="button"
+					onclick={() => sortBy(key)}
+				>
+					<span aria-hidden="true">{text}</span>
+					<span class="visually-hidden">
+						Nach {SORT_COLUMN_LABELS[key]} sortieren{sorted === null
+							? ''
+							: `, sortiert: ${sortOrderLabel(sorted)}`}
+					</span>
+					<svg
+						class="sort-icon"
+						data-direction={direction ?? 'none'}
+						viewBox="0 0 12 12"
+						aria-hidden="true"
+						focusable="false"
+					>
+						{#if direction === 'ascending'}
+							<path d="M6 2.5v7M3 5.5l3-3 3 3" />
+						{:else if direction === 'descending'}
+							<path d="M6 2.5v7M3 6.5l3 3 3-3" />
+						{:else}
+							<path d="M3.5 4.5L6 2l2.5 2.5M3.5 7.5L6 10l2.5-2.5" />
+						{/if}
+					</svg>
+				</button>
+			{:else if id === 'actions'}
+				<span class="visually-hidden">{text}</span>
+			{:else}
+				{text}
+			{/if}
+		</ResizableHeader>
+	{/if}
 {/snippet}
 
 {#snippet failure(message: string, retryLabel: string, onretry: () => void)}
@@ -379,7 +447,7 @@
 	{/if}
 
 	{#if hasOpenRows || showDone}
-		<div class="frame">
+		<div class="frame" bind:this={frame}>
 			<table>
 				<caption id={ids.caption}>
 					Tickets<span class="caption-order">
@@ -388,19 +456,28 @@
 							: `sortiert nach ${sortLabel(query.sort)}`}{query.grouping === null
 							? ''
 							: ` · gruppiert nach ${GROUPING_LABELS[query.grouping]}`}
-					</span><span class="caption-more">{MORE_COLUMNS_HINT}</span>
+					</span>{#if fit.autoHidden.length > 0}<span class="caption-more">{MORE_COLUMNS_HINT}</span
+						>{/if}
 				</caption>
+				<colgroup>
+					{#each shownColumns as column (column.id)}
+						<col
+							data-column={column.id}
+							style:width={column.flexible ? undefined : `${fit.widths[column.id]}px`}
+						/>
+					{/each}
+				</colgroup>
 				<thead>
 					<tr>
-						{@render sortable('key', 'Key')}
-						{@render sortable('priority', 'Prio')}
-						{@render sortable('status', 'Status')}
-						{@render sortable('title', 'Titel', 'title-col')}
-						{@render sortable('project', 'Projekt')}
-						<th scope="col" data-col="tags">Tags</th>
-						{@render sortable('due', 'Fällig')}
-						{@render sortable('created', 'Erstellt')}
-						<th scope="col"><span class="visually-hidden">Aktionen</span></th>
+						{@render header('key', 'Key', 'key')}
+						{@render header('priority', 'Prio', 'priority')}
+						{@render header('status', 'Status', 'status')}
+						{@render header('title', 'Titel', 'title')}
+						{@render header('project', 'Projekt', 'project')}
+						{@render header('tags', 'Tags')}
+						{@render header('due', 'Fällig', 'due')}
+						{@render header('created', 'Erstellt', 'created')}
+						{@render header('actions', 'Aktionen')}
 					</tr>
 				</thead>
 				{#if hasOpenRows && store.groups !== null}
@@ -412,7 +489,7 @@
 							aria-labelledby={`${uid}-group-${group.key}`}
 						>
 							<tr class="section-head group-head">
-								<th scope="rowgroup" colspan={COLUMNS} id={`${uid}-group-${group.key}`}>
+								<th scope="rowgroup" colspan={fit.visible.length} id={`${uid}-group-${group.key}`}>
 									{group.label}<span class="group-count"
 										><span aria-hidden="true">{count}</span><span class="visually-hidden"
 											>, {count === 1 ? '1 Ticket' : `${count} Tickets`}</span
@@ -431,13 +508,13 @@
 				{#if showDone}
 					<tbody data-section="done" aria-labelledby={ids.done}>
 						<tr class="section-head">
-							<th scope="rowgroup" colspan={COLUMNS} id={ids.done}>
+							<th scope="rowgroup" colspan={fit.visible.length} id={ids.done}>
 								Erledigt – zuletzt erledigte zuerst
 							</th>
 						</tr>
 						{@render rows(store.done)}
 						<tr class="section-foot">
-							<td colspan={COLUMNS}>
+							<td colspan={fit.visible.length}>
 								{#if store.doneState === 'error' && store.doneError}
 									{@render failure(store.doneError, 'Erneut versuchen', () => store.reload())}
 								{:else if store.doneState === 'ready' && store.done.length === 0}
@@ -489,7 +566,7 @@
 		display: inline-flex;
 		gap: 0.375rem;
 		align-items: center;
-		font-size: 0.875rem;
+		font-size: var(--font-size-body);
 		color: var(--color-text-muted);
 		cursor: pointer;
 	}
@@ -499,63 +576,32 @@
 	}
 
 	.switch-hint {
-		font-size: 0.75rem;
+		font-size: var(--font-size-small);
 		color: var(--color-text-muted);
 	}
 
-	/* Container of the column rules; the table takes its width and never more. */
+	/* The measured frame of fitColumns (ADR-0030); the table takes its width and never more. */
 	.frame {
-		container-type: inline-size;
 		background: var(--color-surface);
 		border: 1px solid var(--color-line);
 		border-radius: var(--radius-surface);
 	}
 
+	/* Fixed layout: the widths come from the colgroup, the title takes the rest. */
 	table {
 		width: 100%;
-		font-size: 0.875rem;
+		table-layout: fixed;
+		font-size: var(--font-size-body);
 		border-collapse: collapse;
 	}
 
 	.caption-more {
-		display: none;
 		font-weight: 400;
-	}
-
-	/* Columns that give way, in this order: Erstellt, Tags, Projekt, Fällig. */
-	@container (max-width: 60rem) {
-		.caption-more {
-			display: inline;
-		}
-	}
-
-	@container (max-width: 60rem) {
-		.frame :global([data-col='created']) {
-			display: none;
-		}
-	}
-
-	@container (max-width: 52rem) {
-		.frame :global([data-col='tags']) {
-			display: none;
-		}
-	}
-
-	@container (max-width: 44rem) {
-		.frame :global([data-col='project']) {
-			display: none;
-		}
-	}
-
-	@container (max-width: 36rem) {
-		.frame :global([data-col='due']) {
-			display: none;
-		}
 	}
 
 	caption {
 		padding: 0.5rem 0.75rem;
-		font-size: 0.8125rem;
+		font-size: var(--font-size-control);
 		font-weight: 600;
 		text-align: left;
 		color: var(--color-text-muted);
@@ -566,9 +612,9 @@
 		font-weight: 400;
 	}
 
-	thead th {
+	thead :global(th) {
 		padding: 0.375rem 0.75rem;
-		font-size: 0.75rem;
+		font-size: var(--font-size-small);
 		font-weight: 600;
 		text-align: left;
 		white-space: nowrap;
@@ -578,6 +624,7 @@
 
 	.sort {
 		display: inline-flex;
+		max-width: 100%;
 		gap: 0.25rem;
 		align-items: center;
 		padding: 0;
@@ -611,13 +658,9 @@
 		color: var(--color-brand-text);
 	}
 
-	.title-col {
-		width: 100%;
-	}
-
 	.section-head th {
 		padding: 1rem 0.75rem 0.5rem;
-		font-size: 0.8125rem;
+		font-size: var(--font-size-control);
 		font-weight: 600;
 		text-align: left;
 		color: var(--color-text-muted);
@@ -634,7 +677,7 @@
 		min-width: 1.5rem;
 		margin-left: 0.5rem;
 		padding: 0 0.375rem;
-		font-size: 0.75rem;
+		font-size: var(--font-size-small);
 		line-height: 1.25rem;
 		text-align: center;
 		font-variant-numeric: tabular-nums;
@@ -694,7 +737,7 @@
 
 	.text-button {
 		padding: 0.125rem 0.5rem;
-		font-size: 0.8125rem;
+		font-size: var(--font-size-control);
 		background: none;
 		border: 1px solid currentColor;
 		border-radius: var(--radius-control);
@@ -703,7 +746,7 @@
 
 	.more {
 		padding: 0.375rem 0.75rem;
-		font-size: 0.875rem;
+		font-size: var(--font-size-body);
 		background: var(--color-surface);
 		border: 1px solid var(--color-line);
 		border-radius: var(--radius-control);
