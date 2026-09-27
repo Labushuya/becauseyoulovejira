@@ -24,13 +24,16 @@ export const COPY_LABELS: Readonly<Record<CopyCompleteness, string>> = Object.fr
 /** Channels whose item is the original itself: typed or pasted by the user. */
 const TYPED_CHANNELS: readonly InboxChannel[] = ['manual', 'quick', 'clipboard'];
 
-/** Value of `source_meta.original_omitted` for a mail over 10 MB (ADR-0031 section 4). */
+/**
+ * Value of `source_meta.original_omitted` for a mail over the limit of the original file (ADR-0031
+ * section 4; 25 MB since addendum D, 10 MB before).
+ */
 export const ORIGINAL_OMITTED_TOO_LARGE = 'too_large';
 
 /**
  * What of the source is stored: the original file (or the typed text itself), only the text (chat
  * messages, mails and events without their file), only the address (a web link without a copy of
- * the page) or a mail without its file because it was larger than 10 MB.
+ * the page) or a mail without its file because it was larger than the limit of the file.
  */
 export function copyCompleteness(
 	item: Pick<InboxItemSummary, 'channel' | 'original' | 'sourceMeta'>
@@ -58,7 +61,8 @@ export function copyNote(
 			return null;
 		case 'too_large': {
 			const size = sizeText(item.sourceMeta.original_size);
-			return `Die Mail war größer als 10 MB${size === '' ? '' : ` (${size})`}. Gespeichert sind Absender, Betreff, Datum und der Anfang des Textes, die Originaldatei nicht.`;
+			// Neutral about the limit: entries from before addendum D were cut at 10 MB, newer at 25 MB.
+			return `Die Mail war zu groß für die Originaldatei${size === '' ? '' : ` (${size})`}. Gespeichert sind Absender, Betreff, Datum und der Anfang des Textes, die Originaldatei nicht.`;
 		}
 		case 'address':
 			return 'Gespeichert sind nur Adresse, Titel und Auszug. Der Inhalt der Seite steht nur unter der Adresse.';

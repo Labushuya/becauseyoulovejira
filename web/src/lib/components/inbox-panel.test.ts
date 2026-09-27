@@ -375,7 +375,7 @@ describe('inbox panel: copy and linking (ADR-0031)', () => {
 		expect(screen.queryByText(/^Gespeichert/)).toBeNull();
 	});
 
-	it('says what is missing of a chat message, a web link and a mail over 10 MB', async () => {
+	it('says what is missing of a chat message, a web link and a mail over the limit', async () => {
 		setup(entry({ channel: 'telegram', kind: 'message', original: '', sourceUrl: '' }));
 		await screen.findByRole('heading', { name: 'Rechnung September' });
 		expect(copyOf()).toBe('Nur Text');
@@ -394,13 +394,15 @@ describe('inbox panel: copy and linking (ADR-0031)', () => {
 				sourceMeta: {
 					from: 'x@example.com',
 					original_omitted: 'too_large',
-					original_size: 20971520
+					original_size: 31457280
 				}
 			})
 		);
 		await screen.findByRole('heading', { name: 'Rechnung September' });
 		expect(copyOf()).toBe('Ohne Originaldatei (zu groß)');
-		expect(screen.getByText(/^Die Mail war größer als 10 MB \(20,0 MB\)\./)).toBeTruthy();
+		expect(
+			screen.getByText(/^Die Mail war zu groß für die Originaldatei \(30,0 MB\)\./)
+		).toBeTruthy();
 	});
 
 	it('links a new entry to a ticket through "Mit Ticket verknüpfen …"', async () => {

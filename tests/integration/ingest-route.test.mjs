@@ -281,7 +281,28 @@ describe('ingest route: items (ADR-0016 section 5, ADR-0020)', () => {
 		expect((await fetch(owner.pb.files.getURL(item, item.original))).status).not.toBe(200);
 	});
 
-	it('keeps a mail over 10 MB without file with its mark, and refuses a bad mark (ADR-0031)', async () => {
+	it('keeps the original of a mail of 24 MB and refuses one over 25 MB (ADR-0031, addendum D)', async () => {
+		const sent = draft(mailbox);
+		const head = `Subject: ${sent.title}\r\nMessage-ID: ${sent.source_ref}\r\n\r\n`;
+		const big = new Blob([head, 'x'.repeat(24 * 1024 * 1024)], { type: 'message/rfc822' });
+		const form = new FormData();
+		form.set('draft', JSON.stringify(sent));
+		form.set('original', big, 'gross.eml');
+		const answer = await call('/api/byl/ingest/items', { method: 'POST', form });
+		expect(answer.status).toBe(200);
+		const item = await owner.pb.collection('inbox_items').getOne(answer.json.item);
+		expect(item.original).toMatch(/^gross_\w+\.eml$/);
+
+		const tooBig = draft(mailbox);
+		const over = new FormData();
+		over.set('draft', JSON.stringify(tooBig));
+		over.set('original', new Blob(['y'.repeat(25 * 1024 * 1024 + 1)]), 'zu-gross.eml');
+		const refused = await call('/api/byl/ingest/items', { method: 'POST', form: over });
+		expect(refused.status).toBeGreaterThanOrEqual(400);
+		expect(refused.status).toBeLessThan(500);
+	});
+
+	it('keeps a mail over the limit without file with its mark, and refuses a bad mark (ADR-0031)', async () => {
 		const meta = { from: 'Bert <bert@example.com>', original_omitted: 'too_large', original_size: 13_000_000 };
 		const answer = await call('/api/byl/ingest/items', {
 			method: 'POST',

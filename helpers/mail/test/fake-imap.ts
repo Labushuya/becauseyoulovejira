@@ -198,7 +198,7 @@ export class FakeImapServer {
 	/** Answer every SEARCH for text with NO [BADCHARSET] (a server without usable search). */
 	refuseTextSearch = false;
 	readonly commands: RecordedCommand[] = [];
-	/** Partial fetches of a body (the beginning of a mail over 10 MB, ADR-0031 section 4). */
+	/** Partial fetches of a body (the beginning of a mail over 25 MB, ADR-0031 section 4). */
 	readonly partialFetches: { uid: number; start: number; length: number }[] = [];
 	readonly mails: FakeMail[] = [];
 	/** Further folders by name (Trash, Junk, Sent, …); the helper must never open them. */

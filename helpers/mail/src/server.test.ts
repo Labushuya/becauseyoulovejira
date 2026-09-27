@@ -259,10 +259,10 @@ describe('POST /mailbox/import', () => {
 		expect(imap.flagsUnchanged()).toBe(true);
 	});
 
-	it('takes a chosen mail over 10 MB from its beginning, without the file (ADR-0031)', async () => {
+	it('takes a chosen mail over 25 MB from its beginning, without the file (ADR-0031)', async () => {
 		const source =
 			'From: Bert Beispiel <bert@example.com>\r\nSubject: Fotos\r\nMessage-ID: <fotos@example.com>\r\n' +
-			`Content-Type: text/plain; charset=utf-8\r\n\r\nAnbei.\r\n${'z'.repeat(11 * 1024 * 1024)}`;
+			`Content-Type: text/plain; charset=utf-8\r\n\r\nAnbei.\r\n${'z'.repeat(26 * 1024 * 1024)}`;
 		imap.add(source);
 		const answer = await call('/mailbox/import', { connection: ID, uids: [1] });
 		expect(answer.json).toEqual({ items: [{ uid: 1, status: 'created', message: '' }] });

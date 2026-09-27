@@ -7,6 +7,7 @@ import PostalMime, { decodeWords } from 'postal-mime';
 import type { InboxDraft } from '../../../web/src/lib/domain/inbox';
 import {
 	MAIL_MAX_BYTES,
+	MAIL_MAX_MB,
 	MAIL_PARSER_OPTIONS,
 	MAIL_PARTIAL_BYTES,
 	mailMatchTexts,
@@ -15,7 +16,7 @@ import {
 } from '../../../web/src/lib/domain/inbox-mail';
 import { mailKeywordTexts, matchKeyword } from '../../../web/src/lib/domain/keywords';
 
-export { MAIL_MAX_BYTES, MAIL_PARTIAL_BYTES };
+export { MAIL_MAX_BYTES, MAIL_MAX_MB, MAIL_PARTIAL_BYTES };
 
 export type Origin = 'auto' | 'selected';
 

@@ -200,7 +200,7 @@ export interface InboxDraft {
 	/** UTC in PocketBase format or ISO 8601. */
 	sourceDate?: string | null;
 	sourceMeta?: Record<string, unknown>;
-	/** Original file (.eml, .ics excerpt), at most 10 MB. */
+	/** Original file (.eml, .ics excerpt), at most 25 MB (MAIL_MAX_BYTES, addendum D of ADR-0031). */
 	original?: Blob & { name?: string };
 }
 

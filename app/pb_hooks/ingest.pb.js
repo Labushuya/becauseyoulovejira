@@ -13,6 +13,8 @@ routerAdd('GET', '/api/byl/ingest/connections', function (e) {
 
 // One mail as inbox entry of the owner of its connection: JSON, or multipart with "draft" (JSON
 // text) and the original mail as "original". origin "auto" needs a keyword of the connection.
+// The body limit leaves room for an original of 25 MB (the maxSize of inbox_items.original since
+// the migration 1790202000, addendum D of ADR-0031) plus draft and multipart framing.
 routerAdd(
   'POST',
   '/api/byl/ingest/items',
@@ -21,7 +23,7 @@ routerAdd(
     service.authorize(e);
     return service.ingestItem(e);
   },
-  $apis.bodyLimit(12 * 1024 * 1024)
+  $apis.bodyLimit(27 * 1024 * 1024)
 );
 
 // Result of a run: time, cleaned error, hint and cursor of a mail connection.

@@ -64,7 +64,7 @@ describe('copyCompleteness', () => {
 		}
 	});
 
-	it('knows a mail without its file because it was larger than 10 MB', () => {
+	it('knows a mail without its file because it was too large, whatever the limit was then', () => {
 		const large = item({
 			channel: 'mail',
 			sourceMeta: { original_omitted: 'too_large', original_size: 13_000_000 }
@@ -72,11 +72,11 @@ describe('copyCompleteness', () => {
 		expect(copyCompleteness(large)).toBe('too_large');
 		expect(COPY_LABELS.too_large).toBe('Ohne Originaldatei (zu groß)');
 		expect(copyNote(large)).toBe(
-			'Die Mail war größer als 10 MB (12,4 MB). Gespeichert sind Absender, Betreff, Datum und der Anfang des Textes, die Originaldatei nicht.'
+			'Die Mail war zu groß für die Originaldatei (12,4 MB). Gespeichert sind Absender, Betreff, Datum und der Anfang des Textes, die Originaldatei nicht.'
 		);
 		expect(
 			copyNote(item({ channel: 'eml', sourceMeta: { original_omitted: 'too_large' } }))
-		).toMatch(/^Die Mail war größer als 10 MB\. /);
+		).toMatch(/^Die Mail war zu groß für die Originaldatei\. /);
 		// Any other value is no mark.
 		expect(
 			copyCompleteness(item({ channel: 'mail', sourceMeta: { original_omitted: 'yes' } }))

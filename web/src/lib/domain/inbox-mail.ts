@@ -37,10 +37,14 @@ export interface ParsedMail {
 export const NO_SUBJECT = '(ohne Betreff)';
 
 /**
- * Largest mail taken into the inbox with its original file, as file or from the mailbox (ADR-0017
- * section 2; schema of `original`). A larger mail comes without its file (ADR-0031 section 4).
+ * Largest mail taken into the inbox with its original file, in MB, as file or from the mailbox
+ * (ADR-0017 section 2; schema of `original`, migration 1790202000; 25 MB since the addendum D of
+ * ADR-0031, 10 MB before). A larger mail comes without its file (ADR-0031 section 4).
  */
-export const MAIL_MAX_BYTES = 10 * 1024 * 1024;
+export const MAIL_MAX_MB = 25;
+
+/** MAIL_MAX_MB in bytes. */
+export const MAIL_MAX_BYTES = MAIL_MAX_MB * 1024 * 1024;
 
 /**
  * Beginning of a mail over MAIL_MAX_BYTES that is read and parsed (ADR-0031 section 4): the text
@@ -49,7 +53,7 @@ export const MAIL_MAX_BYTES = 10 * 1024 * 1024;
 export const MAIL_PARTIAL_BYTES = 2 * 1024 * 1024;
 
 /** Note at the end of the text of a mail stored without its file (ADR-0031 section 4). */
-export const ORIGINAL_OMITTED_NOTE = '_Originaldatei nicht gespeichert: größer als 10 MB._';
+export const ORIGINAL_OMITTED_NOTE = `_Originaldatei nicht gespeichert: größer als ${MAIL_MAX_MB} MB._`;
 
 /**
  * Limits of the parser (postal-mime options) against crafted mails. Shared by the SPA (mail files)

@@ -37,7 +37,8 @@ describe('readMailFile', () => {
 		});
 	});
 
-	it('refuses other files and keeps the file of a mail of exactly 10 MB', async () => {
+	it('refuses other files and keeps the file of a mail of exactly 25 MB', async () => {
+		expect(EML_MAX_BYTES).toBe(25 * 1024 * 1024);
 		expect(await readMailFile(new File(['x'], 'bild.png', { type: 'image/png' }))).toEqual({
 			ok: false,
 			message: NOT_EML_MESSAGE
@@ -49,7 +50,7 @@ describe('readMailFile', () => {
 		expect(result.ok && result.draft.original).toBe(limit);
 	});
 
-	it('reads the beginning of a mail over 10 MB and keeps it without the file (ADR-0031)', async () => {
+	it('reads the beginning of a mail over 25 MB and keeps it without the file (ADR-0031)', async () => {
 		const head = [
 			'From: Anna Beispiel <anna@example.com>',
 			'Subject: Fotos vom Fest',

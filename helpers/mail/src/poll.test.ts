@@ -13,7 +13,7 @@ import { IngestError, type IngestApi, type MailConnection, type StatusReport } f
 import PostalMime from 'postal-mime';
 import { ORIGINAL_OMITTED_NOTE } from '../../../web/src/lib/domain/inbox-mail';
 import type { Logger } from './log';
-import { MAIL_PARTIAL_BYTES, type IngestDraft } from './mail';
+import { MAIL_MAX_BYTES, MAIL_PARTIAL_BYTES, type IngestDraft } from './mail';
 import {
 	FIRST_RUN_HINT,
 	MAX_MAILS_PER_RUN,
@@ -139,10 +139,10 @@ afterEach(async () => {
 });
 
 describe('first run (full inbox, ADR-0020 addendum 3)', () => {
-	it('takes an old mail over 10 MB of the full scan without its file (ADR-0031)', async () => {
+	it('takes an old mail over 25 MB of the full scan without its file (ADR-0031)', async () => {
 		mail('Hallo');
 		const big = server.add(
-			`Subject: Rechnung gross\r\nMessage-ID: <scan-big@x>\r\n\r\nSumme 12 Euro\r\n${'q'.repeat(10 * 1024 * 1024)}`
+			`Subject: Rechnung gross\r\nMessage-ID: <scan-big@x>\r\n\r\nSumme 12 Euro\r\n${'q'.repeat(MAIL_MAX_BYTES)}`
 		);
 		const box = connection();
 		ingest.connections = [box];
@@ -237,11 +237,25 @@ describe('later runs (P-10, ADR-0020)', () => {
 		expect(second).toMatchObject({ unmatched: 5, cursor: `1700000000:${MAX_MAILS_PER_RUN + 5}` });
 	});
 
-	it('takes a mail over 10 MB from its beginning, without the file, and moves on (ADR-0031)', async () => {
+	it('keeps the file of a mail of 20 MB, which was too large before 0.9.0 (ADR-0031, addendum D)', async () => {
+		const box = connection({ cursor: '1700000000:0' });
+		const source =
+			'From: Anna Beispiel <anna@example.com>\r\nSubject: Todo Fotos\r\nMessage-ID: <mittel@x>\r\n' +
+			`Content-Type: text/plain; charset=utf-8\r\n\r\nHier die Fotos.\r\n${'m'.repeat(20 * 1024 * 1024)}`;
+		server.add(source);
+		const outcome = await pollConnection(deps(), box);
+		expect(outcome).toMatchObject({ created: 1, omitted: 0 });
+		expect(Buffer.byteLength(source)).toBeLessThanOrEqual(MAIL_MAX_BYTES);
+		expect(Buffer.from(ingest.items[0]?.original ?? []).length).toBe(Buffer.byteLength(source));
+		expect(ingest.items[0]?.draft.source_meta).not.toHaveProperty('original_omitted');
+		expect(server.partialFetches).toEqual([]);
+	});
+
+	it('takes a mail over 25 MB from its beginning, without the file, and moves on (ADR-0031)', async () => {
 		const box = connection({ cursor: '1700000000:0' });
 		const source =
 			'From: Anna Beispiel <anna@example.com>\r\nSubject: Todo gross\r\nMessage-ID: <big@x>\r\n' +
-			`Content-Type: text/plain; charset=utf-8\r\n\r\nHier der Anfang.\r\n${'x'.repeat(10 * 1024 * 1024)}`;
+			`Content-Type: text/plain; charset=utf-8\r\n\r\nHier der Anfang.\r\n${'x'.repeat(MAIL_MAX_BYTES)}`;
 		const big = server.add(source);
 		mail('Todo klein');
 		const outcome = await pollConnection(deps(), box);
@@ -263,13 +277,13 @@ describe('later runs (P-10, ADR-0020)', () => {
 		expect(server.partialFetches).toEqual([{ uid: big, start: 0, length: MAIL_PARTIAL_BYTES }]);
 		expect(server.writes()).toEqual([]);
 		expect(ingest.items.find((item) => item.draft.title === 'Todo klein')?.original).toBeDefined();
-		expect(lines.join('\n')).toMatch(/2 neu, davon 1 über 10 MB ohne Originaldatei/);
+		expect(lines.join('\n')).toMatch(/2 neu, davon 1 über 25 MB ohne Originaldatei/);
 	});
 
-	it('falls back to the header of a mail over 10 MB whose beginning cannot be read', async () => {
+	it('falls back to the header of a mail over 25 MB whose beginning cannot be read', async () => {
 		const box = connection({ cursor: '1700000000:0' });
 		const header = 'From: amt@example.com\r\nSubject: Todo Bescheid\r\nMessage-ID: <kopf@x>\r\n\r\n';
-		server.add(`${header}${'y'.repeat(10 * 1024 * 1024)}`);
+		server.add(`${header}${'y'.repeat(MAIL_MAX_BYTES)}`);
 		const original = PostalMime.parse;
 		let calls = 0;
 		PostalMime.parse = (async (...args: Parameters<typeof PostalMime.parse>) => {
