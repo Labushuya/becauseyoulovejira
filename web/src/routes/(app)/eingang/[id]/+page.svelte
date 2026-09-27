@@ -5,12 +5,14 @@
 	import { getInboxStore } from '$lib/stores/inbox.svelte';
 	import { getRecurrenceStore } from '$lib/stores/recurrence.svelte';
 	import { getTicketListStore } from '$lib/stores/ticket-list.svelte';
+	import { getTicketSourcesStore } from '$lib/stores/ticket-sources.svelte';
 	import { inboxHref } from '$lib/ticket-links';
 
 	// Panel of one inbox entry (/eingang/<record id>, E4 plan T-3); a reload opens the same panel.
 	const inbox = getInboxStore();
 	const tickets = getTicketListStore();
 	const rules = getRecurrenceStore();
+	const sources = getTicketSourcesStore();
 	const id = $derived(page.params.id ?? '');
 	const back = $derived(inboxHref(page.url));
 	const title = $derived(inbox.find(id)?.title);
@@ -27,6 +29,7 @@
 		openTickets={tickets.open}
 		recurrence={rules}
 		today={tickets.today}
+		{sources}
 		onclose={() => goto(back)}
 	/>
 {/key}

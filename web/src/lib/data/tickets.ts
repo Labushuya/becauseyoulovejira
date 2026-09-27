@@ -192,6 +192,62 @@ export function searchOpenTicketIds(
 	});
 }
 
+/** A ticket as choice of the ticket search ("Mit Ticket verknüpfen …", ADR-0031 section 7). */
+export interface TicketChoice {
+	id: string;
+	key: string;
+	title: string;
+	status: Status;
+}
+
+/** Most tickets the ticket search offers at once. */
+export const TICKET_SEARCH_LIMIT = 20;
+
+/**
+ * Any visible ticket (open or done) whose key or title contains the text, or whose number is the
+ * text; `{:number}` is -1 for a text that is no number, which matches no ticket.
+ */
+const TICKET_SEARCH_FILTER = '(key ~ {:q} || title ~ {:q} || number = {:number})';
+
+/**
+ * Tickets for the ticket search by number, key or title (ADR-0031 section 7), open ones first,
+ * then the most recently changed; at most TICKET_SEARCH_LIMIT. An empty text gives none.
+ */
+export function searchTickets(
+	pb: PocketBase,
+	text: string,
+	{ signal }: RequestOptions = {}
+): Promise<TicketChoice[]> {
+	return withDataErrors(signal, async () => {
+		const search = text.trim();
+		if (search === '') return [];
+		const number = /^\d{1,9}$/.test(search) ? Number(search) : -1;
+		const result = await pb
+			.collection(TICKETS)
+			.getList<{ id: string; key: string; title: string; status: string }>(
+				1,
+				TICKET_SEARCH_LIMIT,
+				{
+					filter: pb.filter(TICKET_SEARCH_FILTER, { q: likeText(search), number }),
+					sort: '-updated,-id',
+					fields: 'id,key,title,status',
+					skipTotal: true,
+					signal
+				}
+			);
+		const choices = result.items.map((record) => ({
+			id: record.id,
+			key: record.key,
+			title: record.title,
+			status: isStatus(record.status) ? record.status : 'open'
+		}));
+		return [
+			...choices.filter((choice) => choice.status !== 'done'),
+			...choices.filter((choice) => choice.status === 'done')
+		];
+	});
+}
+
 /** Without list filters: every done ticket. */
 const NO_DONE_FILTER: DoneFilter = { query: EMPTY_LIST_QUERY, today: '' };
 
