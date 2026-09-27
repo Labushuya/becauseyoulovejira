@@ -6,7 +6,7 @@ Bereits verbindlich in der [Projekt-CLAUDE.md](../../CLAUDE.md) festgelegt und d
 
 | Nr. | Titel | Status | Datum |
 |---|---|---|---|
-| [0001](0001-betriebsmodell-lokal-mehrgeraete-spaeter.md) | Betriebsmodell: vorerst lokal und Einzelnutzer, später Mehrgeräte/Mehrnutzer über Tailscale | Angenommen | 2026-09-24 |
+| [0001](0001-betriebsmodell-lokal-mehrgeraete-spaeter.md) | Betriebsmodell: vorerst lokal und Einzelnutzer, später Mehrgeräte/Mehrnutzer über Tailscale | Angenommen, ergänzt durch 0028 | 2026-09-24 |
 | [0002](0002-erststart-und-superuser.md) | Erststart und Superuser-Anlage über den PocketBase-Installer | Angenommen | 2026-09-24 |
 | [0003](0003-pb-data-und-backups.md) | Speicherort von `pb_data` und Backup-Strategie | Angenommen | 2026-09-24 |
 | [0004](0004-teststrategie-hooks-migrationen.md) | Teststrategie für Hooks und Migrationen | Angenommen | 2026-09-24 |
@@ -33,3 +33,4 @@ Bereits verbindlich in der [Projekt-CLAUDE.md](../../CLAUDE.md) festgelegt und d
 | [0025](0025-ui-konsistenz-overlay-system.md) | UI-Konsistenz: ein Overlay-System, Theme-Umschalter und angeglichene Projekt-UI | Angenommen | 2026-09-25 |
 | [0026](0026-einstellungsbereich-und-hinweis-bausteine.md) | Einstellungsbereich, Hinweis-Bausteine, Einrichtungsassistent und geführte Tour | Angenommen | 2026-09-26 |
 | [0027](0027-akzent-themes.md) | Akzent-Themes (Petrol, Rubin, Smaragd, Kupfer): genau eine Akzentfarbe je Theme | Angenommen (mit Nachtrag) | 2026-09-26 |
+| [0028](0028-plattform-strategie.md) | Plattform-Strategie: ein Server je Datenbestand (PC oder Raspberry Pi), Clients als Web-App, Android-APK mit Capacitor, Windows mit Tray-Option | Angenommen (Planung) | 2026-09-27 |
