@@ -3,7 +3,12 @@
 // parser only decodes; nothing of the mail is rendered or loaded (no images, no links). The
 // parser is loaded on first use, so the inbox view does not carry it before a file comes in.
 
-import { MAIL_MAX_BYTES, MAIL_PARSER_OPTIONS, mailToDraft } from './domain/inbox-mail';
+import {
+	MAIL_MAX_BYTES,
+	MAIL_PARSER_OPTIONS,
+	mailMatchTexts,
+	mailToDraft
+} from './domain/inbox-mail';
 import type { InboxDraft } from './domain/inbox';
 
 /** Largest .eml file taken into the inbox (ADR-0017 section 2; schema of `original`). */
@@ -13,7 +18,12 @@ export const NOT_EML_MESSAGE = 'Keine Mail-Datei (.eml).';
 export const TOO_LARGE_MESSAGE = 'Größer als 10 MB, deshalb nicht übernommen.';
 export const UNREADABLE_MESSAGE = 'Die Datei ließ sich nicht als Mail lesen.';
 
-export type MailFileResult = { ok: true; draft: InboxDraft } | { ok: false; message: string };
+/**
+ * A read mail file: the draft and the further texts keywords search with `match_body` (headers,
+ * HTML part; mailMatchTexts), which are not stored.
+ */
+export type MailFileResult =
+	{ ok: true; draft: InboxDraft; matchTexts?: string[] } | { ok: false; message: string };
 
 /** True for a file that is meant to be a mail: `.eml` or the type `message/rfc822`. */
 export function isMailFile(file: Pick<File, 'name' | 'type'>): boolean {
@@ -28,9 +38,13 @@ export async function readMailFile(file: File): Promise<MailFileResult> {
 	if (!isMailFile(file)) return { ok: false, message: NOT_EML_MESSAGE };
 	if (file.size > EML_MAX_BYTES) return { ok: false, message: TOO_LARGE_MESSAGE };
 	try {
-		const { default: PostalMime } = await import('postal-mime');
+		const { default: PostalMime, decodeWords } = await import('postal-mime');
 		const email = await PostalMime.parse(await file.arrayBuffer(), MAIL_PARSER_OPTIONS);
-		return { ok: true, draft: { ...mailToDraft(email, 'eml'), original: file } };
+		return {
+			ok: true,
+			draft: { ...mailToDraft(email, 'eml'), original: file },
+			matchTexts: mailMatchTexts(email, decodeWords)
+		};
 	} catch {
 		return { ok: false, message: UNREADABLE_MESSAGE };
 	}

@@ -702,11 +702,11 @@ describe('Postfächer (E4 plan, package 22)', () => {
 		expect(dialog.getByText('BYL_WEBDE_PASSWORD')).toBeTruthy();
 		expect(
 			dialog.getByText(
-				/in Betreff und Absender \(Name und Adresse\), auf Wunsch auch in den ersten 500 Zeichen/
+				/in Betreff und Absender \(Name und Adresse\), auf Wunsch auch in den Kopfzeilen .* und im ganzen Text/
 			)
 		).toBeTruthy();
 		await fireEvent.click(
-			dialog.getByRole('checkbox', { name: 'Auch die ersten 500 Zeichen des Textes durchsuchen' })
+			dialog.getByRole('checkbox', { name: 'Betreff, Absender, Kopfzeilen und Text durchsuchen' })
 		);
 		await vi.waitFor(() =>
 			expect(context.data.saveSettings).toHaveBeenLastCalledWith(
@@ -715,7 +715,9 @@ describe('Postfächer (E4 plan, package 22)', () => {
 			)
 		);
 		await vi.waitFor(() =>
-			expect(latestFlag(context.flags)).toBe('„Web.de“ durchsucht auch den Anfang des Textes.')
+			expect(latestFlag(context.flags)).toBe(
+				'„Web.de“ durchsucht Betreff, Absender, Kopfzeilen und Text.'
+			)
 		);
 	});
 

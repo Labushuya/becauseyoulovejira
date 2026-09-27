@@ -3,6 +3,7 @@
 		IMPORT_KINDS,
 		IMPORT_KIND_LABELS,
 		IMPORT_SEARCH_TEXT,
+		MAIL_MATCH_BODY_LABEL,
 		type ImportKind
 	} from '$lib/domain/keywords';
 	import { RESTART_NEEDED } from '$lib/guidance/texts';
@@ -29,8 +30,8 @@
 			'eml',
 			{ keywords: store.settings.eml.keywords, matchBody },
 			matchBody
-				? 'Mail-Dateien: Auch der Textanfang wird durchsucht.'
-				: 'Mail-Dateien: Nur der Betreff wird durchsucht.'
+				? 'Mail-Dateien: Betreff, Absender, Kopfzeilen und Text werden durchsucht.'
+				: 'Mail-Dateien: Nur Betreff und Absender werden durchsucht.'
 		);
 	}
 </script>
@@ -82,7 +83,7 @@
 								checked={store.settings.eml.matchBody}
 								onchange={(event) => void setMatchBody(event.currentTarget.checked)}
 							/>
-							Auch die ersten 500 Zeichen des Textes durchsuchen
+							{MAIL_MATCH_BODY_LABEL}
 						</label>
 						{#if bodyError !== null}
 							<p class="alert-error" role="alert"><ErrorIcon /><span>{bodyError}</span></p>

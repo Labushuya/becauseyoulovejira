@@ -187,6 +187,45 @@ describe('prepareDroppedFiles', () => {
 		expect(other.selection?.entries[0]?.keyword).toBe('');
 	});
 
+	it('finds a keyword only in Cc or in the HTML part of a mail file with match_body', async () => {
+		const source = [
+			'From: Bert <bert@example.com>',
+			'To: anna@example.com',
+			'Cc: Projekt-X Team <team@example.com>',
+			'Subject: Hallo',
+			'MIME-Version: 1.0',
+			'Content-Type: multipart/alternative; boundary="b"',
+			'',
+			'--b',
+			'Content-Type: text/plain; charset=UTF-8',
+			'',
+			'Text',
+			'--b',
+			'Content-Type: text/html; charset=UTF-8',
+			'',
+			'<p>Bitte erledigen</p>',
+			'--b--',
+			''
+		].join('\r\n');
+		const file = () => new File([source], 'cc.eml', { type: 'message/rfc822' });
+		for (const [keyword, matchBody, expected] of [
+			['projekt-x', true, 'projekt-x'],
+			['erledigen', true, 'erledigen'],
+			['projekt-x', false, '']
+		] as const) {
+			const prepared = await prepareDroppedFiles(
+				[file()],
+				deps({
+					keywords: async () => ({
+						...EMPTY_IMPORT_KEYWORDS,
+						eml: { keywords: [keyword], matchBody }
+					})
+				})
+			);
+			expect(prepared.selection?.entries[0]?.keyword, keyword).toBe(expected);
+		}
+	});
+
 	it('chooses nothing without lists and names the kinds without keywords', async () => {
 		const empty = await prepareDroppedFiles(
 			[mailFile('utf8-plain.eml'), calendar()],

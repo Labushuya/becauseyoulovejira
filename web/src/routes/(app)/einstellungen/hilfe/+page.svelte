@@ -129,8 +129,8 @@
 					<li>
 						Automatisch kommen nur neue Mails, die <strong>nach dem ersten Abruf</strong> der
 						Verbindung eintreffen und ein <strong>Stichwort in Betreff oder Absender</strong> haben (auf
-						Wunsch auch in den ersten 500 Zeichen des Textes). Ältere Mails holst du an der Karte mit
-						„Aus dem Postfach wählen“.
+						Wunsch auch in Kopfzeilen und Text). Ältere Mails holst du an der Karte mit „Aus dem Postfach
+						wählen“.
 					</li>
 					<li>
 						Postfächer ruft der Hilfsprozess <code>byl-mail.exe</code> alle 5 Minuten ab. Er startet

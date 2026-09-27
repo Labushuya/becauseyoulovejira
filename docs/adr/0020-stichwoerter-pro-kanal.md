@@ -109,3 +109,15 @@ Ein reiner Algorithmus, zweimal implementiert und per Paritätstest abgeglichen:
   - Unter „Kanäle“ und im Dialog „Bearbeiten“ steht an Postfächern „Automatisch kommen nur neue Mails, die nach dem ersten Abruf dieser Verbindung eintreffen. Ältere Mails holst du über „Aus dem Postfach wählen“.“ Der Assistent sagt dasselbe im Schritt „Erster Abruf“.
   - Der Stichwort-Editor nennt „Groß-/Kleinschreibung egal“ und ein Beispiel mit Adresse.
 - `byl-mail.exe` geht auf 0.4.0. Die Ingest-Route ist abwärtsverträglich: Ein älterer Hilfsprozess sendet nur Treffer aus Betreff und Text, die weiter angenommen werden.
+
+## Nachtrag 2 (2026-09-27): Kopfzeilen und ganzer Text bei Mail
+
+**Nutzerentscheidung (2026-09-27):** Bei Mail werden durchsucht: Betreff, Absender (Name und Adresse), die Kopfzeilen To, Cc, Reply-To, Sender, List-Id und Organization und der **vollständige Text**, also Textteil, HTML-Teil als dekodierter Klartext und damit auch der Preheader eines Newsletters. Die Grenze von 500 Zeichen (§1, Nachtrag 1 (c)) entfällt.
+
+**Umsetzung:**
+- `match_body` schaltet Kopfzeilen und Text zusammen; Betreff und Absender werden immer durchsucht. Die Beschriftung heißt „Betreff, Absender, Kopfzeilen und Text durchsuchen“ (Konstante `MAIL_MATCH_BODY_LABEL`), an Postfächern und bei Mail-Dateien.
+- `keywords.js` und `keywords.ts` bekommen statt `MAIL_BODY_CHARS` (500) zwei Grenzen, gleich per Paritätstest: `MAIL_TEXT_MAX_CHARS` = 100 000 Zeichen je Textteil (so viel, wie `inbox_items.body` fasst) und `MAIL_EXTRA_TEXTS_MAX` = 12 weitere Textteile. `mailTexts(title, body, matchBody, from, extra)` bzw. `mailKeywordTexts(…, extra)` nehmen die weiteren Teile an; jeder bleibt ein eigener Teil, eine Phrase über zwei Teile greift weiter nicht.
+- Die weiteren Teile bildet `mailMatchTexts` in `domain/inbox-mail.ts`, für `.eml` (SPA) und Postfach (Hilfsprozess) dieselbe Funktion: To, Cc, Reply-To und Sender als „Name <adresse>“, der HTML-Teil als Text (nur wenn es auch einen Textteil gibt, sonst ist er schon der Text des Entwurfs), dann List-Id und Organization, dekodiert mit `decodeWords` von postal-mime. Gespeichert wird davon nichts Neues.
+- **Ingest-Route:** Der Hilfsprozess ab 0.6.0 sendet die Teile als `match_texts` (höchstens 12, je bis 100 000 Zeichen, sonst 400). Die Route prüft damit nach und speichert sie nicht. Ein älterer Hilfsprozess sendet kein `match_texts`; seine Mails werden wie bisher mit Betreff, Absender und Text geprüft.
+- **Laufzeit:** `fold` in `keywords.js` sammelt die Zeichen in einem Array statt die Zeichenkette zu verlängern; wiederholtes Anhängen an lange Texte ist in Goja langsam.
+- Was sich beim Abruf des Posteingangs ändert (ganzer Posteingang, rückwirkend), steht in Nachtrag 3.

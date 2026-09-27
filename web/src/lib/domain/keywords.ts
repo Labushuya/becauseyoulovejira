@@ -13,8 +13,16 @@
 
 export const KEYWORDS_MAX = 50;
 export const KEYWORD_MAX_LENGTH = 100;
-/** Characters of the text of a mail that are searched besides the subject (`match_body`). */
-export const MAIL_BODY_CHARS = 500;
+/**
+ * Characters searched per text part of a mail with `match_body` (the text, the HTML part as text,
+ * each header): as many as the text of an inbox entry holds. Before the decision of 2026-09-27
+ * (ADR-0020, addendum 2) only the first 500 characters of the text.
+ */
+export const MAIL_TEXT_MAX_CHARS = 100_000;
+/** Most further text parts of a mail besides subject, sender and text (headers, HTML part). */
+export const MAIL_EXTRA_TEXTS_MAX = 12;
+/** Label of the switch `match_body` at mailboxes and mail files (user decision of 2026-09-27). */
+export const MAIL_MATCH_BODY_LABEL = 'Betreff, Absender, Kopfzeilen und Text durchsuchen';
 /**
  * Whether the sender of a mail (name and address) is searched as well (user feedback, package A;
  * ADR-0020 addendum): mailbox, mailbox selection and .eml files.
@@ -281,7 +289,7 @@ export const IMPORT_KIND_LABELS: Readonly<Record<ImportKind, string>> = Object.f
 
 /** Where the keywords of a kind of file are searched (ADR-0020 section 1). */
 export const IMPORT_SEARCH_TEXT: Readonly<Record<ImportKind, string>> = Object.freeze({
-	eml: 'Gesucht wird in Betreff und Absender (Name und Adresse), auf Wunsch auch in den ersten 500 Zeichen des Textes.',
+	eml: 'Gesucht wird in Betreff und Absender (Name und Adresse), auf Wunsch auch in den Kopfzeilen (An, Cc, Antwort an, Liste, Organisation) und im ganzen Text.',
 	ics: 'Gesucht wird in Titel und Beschreibung der Termine.',
 	whatsapp: 'Gesucht wird im Text der Nachricht.'
 });
@@ -330,17 +338,25 @@ export function importKeywordsValue(settings: ImportKeywords): Record<string, un
 
 /**
  * Texts of a mail that are searched, each its own part: the subject, the sender ("Name <address>",
- * with MAIL_MATCH_FROM) and, with `matchBody`, the first MAIL_BODY_CHARS characters of the text.
- * Mirrors mailTexts of app/pb_hooks/lib/keywords.js.
+ * with MAIL_MATCH_FROM) and, with `matchBody`, the text and the `extra` parts (the headers To, Cc,
+ * Reply-To, Sender, List-Id and Organization and the HTML part as text; at most
+ * MAIL_EXTRA_TEXTS_MAX), each up to MAIL_TEXT_MAX_CHARS characters. Mirrors mailTexts of
+ * app/pb_hooks/lib/keywords.js.
  */
 export function mailKeywordTexts(
 	title: string,
 	body: string,
 	matchBody: boolean,
-	from: string
+	from: string,
+	extra: readonly string[] = []
 ): string[] {
 	const texts = [title];
 	if (MAIL_MATCH_FROM && from !== '') texts.push(from);
-	if (matchBody) texts.push(body.slice(0, MAIL_BODY_CHARS));
+	if (matchBody) {
+		texts.push(body.slice(0, MAIL_TEXT_MAX_CHARS));
+		for (const part of extra.slice(0, MAIL_EXTRA_TEXTS_MAX)) {
+			if (part !== '') texts.push(part.slice(0, MAIL_TEXT_MAX_CHARS));
+		}
+	}
 	return texts;
 }

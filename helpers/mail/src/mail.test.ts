@@ -3,9 +3,14 @@
 
 import { readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
-import PostalMime from 'postal-mime';
+import PostalMime, { decodeWords } from 'postal-mime';
 import { describe, expect, it } from 'vitest';
-import { MAIL_PARSER_OPTIONS, mailToDraft, type ParsedMail } from '../../../web/src/lib/domain/inbox-mail';
+import {
+	MAIL_PARSER_OPTIONS,
+	mailMatchTexts,
+	mailToDraft,
+	type ParsedMail
+} from '../../../web/src/lib/domain/inbox-mail';
 import { ingestDraft, keywordOf, parseMail } from './mail';
 import { fakeMail } from '../test/fake-imap';
 
@@ -16,22 +21,64 @@ describe('mail from the mailbox', () => {
 		'reads %s like the web app, only with channel "mail"',
 		async (name) => {
 			const source = readFileSync(join(FIXTURES, name));
-			const helper = await parseMail(new Uint8Array(source));
-			const web = mailToDraft((await PostalMime.parse(source, MAIL_PARSER_OPTIONS)) as ParsedMail, 'eml');
-			expect(helper).toEqual({ ...web, channel: 'mail' });
+			const { matchTexts, ...helper } = await parseMail(new Uint8Array(source));
+			const parsed = (await PostalMime.parse(source, MAIL_PARSER_OPTIONS)) as ParsedMail;
+			expect(helper).toEqual({ ...mailToDraft(parsed, 'eml'), channel: 'mail' });
+			expect(matchTexts).toEqual(mailMatchTexts(parsed, decodeWords));
 		}
 	);
 
-	it('matches keywords in the subject and, on request, in the first 500 characters', async () => {
+	it('matches keywords in the subject and, on request, in the whole text', async () => {
 		const draft = await parseMail(
 			new TextEncoder().encode(
-				fakeMail({ subject: 'Hallo', body: `${'x '.repeat(200)}Rechnung anbei`, messageId: '<a@b>' })
+				fakeMail({ subject: 'Hallo', body: `${'x '.repeat(3000)}Rechnung anbei`, messageId: '<a@b>' })
 			)
 		);
+		expect(draft.body?.indexOf('Rechnung')).toBeGreaterThan(5000);
 		expect(keywordOf(draft, ['rechnung'], false)).toBe('');
 		expect(keywordOf(draft, ['rechnung'], true)).toBe('rechnung');
 		expect(keywordOf({ title: 'TODO prüfen', body: '' }, ['pruefen', 'todo'], false)).toBe('pruefen');
-		expect(keywordOf({ title: 'x', body: `${'y'.repeat(500)} todo` }, ['todo'], true)).toBe('');
+	});
+
+	it('searches To, Cc, Reply-To, List-Id, Organization and the HTML part with match_body (full inbox)', async () => {
+		const source = [
+			'From: Bert Beispiel <bert@example.com>',
+			'To: Projekt-X Team <team@example.com>',
+			'Cc: =?UTF-8?Q?J=C3=BCrgen_Pr=C3=BCfer?= <juergen@example.com>',
+			'Reply-To: antwort@europa-go.example',
+			'List-Id: =?UTF-8?Q?Vereinsliste_M=C3=BCnchen?= <liste.example.com>',
+			'Organization: Musterverein e. V.',
+			'Subject: Rundbrief',
+			'Message-ID: <multi@example.com>',
+			'MIME-Version: 1.0',
+			'Content-Type: multipart/alternative; boundary="b"',
+			'',
+			'--b',
+			'Content-Type: text/plain; charset=UTF-8',
+			'',
+			'Nur der Textteil.',
+			'--b',
+			'Content-Type: text/html; charset=UTF-8',
+			'',
+			'<html><body><span style="display:none">Vorschau: bitte erledigen</span><p>HTML-Teil</p></body></html>',
+			'--b--',
+			''
+		].join('\r\n');
+		const draft = await parseMail(new TextEncoder().encode(source));
+		expect(draft.body).toBe('Nur der Textteil.');
+		expect(draft.matchTexts).toEqual([
+			'Projekt-X Team <team@example.com>',
+			'Jürgen Prüfer <juergen@example.com>',
+			'antwort@europa-go.example',
+			'Vorschau: bitte erledigen\nHTML-Teil',
+			'Vereinsliste München <liste.example.com>',
+			'Musterverein e. V.'
+		]);
+		for (const keyword of ['projekt-x', 'prüfer', 'europa-go', 'erledigen', 'munchen', 'musterverein']) {
+			expect(keywordOf(draft, [keyword], true), keyword).toBe(keyword);
+			expect(keywordOf(draft, [keyword], false), keyword).toBe('');
+		}
+		expect(ingestDraft(draft, 'abcdefghij12345', 'auto').match_texts).toEqual(draft.matchTexts);
 	});
 
 	it('matches keywords in the sender, name and address, without match_body (package A)', async () => {
@@ -76,7 +123,8 @@ describe('mail from the mailbox', () => {
 			body: 'Text der Mail.',
 			source_ref: '<m1@example.com>',
 			source_date: '2026-09-25 08:00:00.000Z',
-			source_meta: { from: 'Bert Beispiel <bert@example.com>', to: 'anna@web.de' }
+			source_meta: { from: 'Bert Beispiel <bert@example.com>', to: 'anna@web.de' },
+			match_texts: ['anna@web.de']
 		});
 	});
 
