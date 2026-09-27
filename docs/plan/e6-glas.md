@@ -1,11 +1,11 @@
 # E6-Plan, Teil Glas: Materialien im macOS-Stil, verheiratet mit den Akzent-Themes
 
-- **Stand:** in Umsetzung (2026-09-27; G-1 gemergt). Reihenfolge G-1, G-3, G-2, G-4, G-5, G-6, je ein PR.
+- **Stand:** in Umsetzung (2026-09-27; G-1 und G-3 gemergt). Reihenfolge G-1, G-3, G-2, G-4, G-5, G-6, je ein PR.
 - **Grundlage:**
   - [ADR-0029](../adr/0029-glas-materialien.md) (Ebenen, Tokens, Kontrast, Umschaltpunkt „undurchsichtig“, Schalter, Performance)
   - [ADR-0010](../adr/0010-layout-nach-task-board.md) §3 und §4, [ADR-0025](../adr/0025-ui-konsistenz-overlay-system.md) §2, [ADR-0027](../adr/0027-akzent-themes.md) §1 (je mit Nachtrag)
   - [CLAUDE.md](../../CLAUDE.md) §7, §8, §11, §12
-- **Einordnung:** Nutzerwunsch „UI wie macOS, Glas-Transparenz, mit unseren Themes verheiraten“. Die Manifest-IDs laufen unter E6 ab `BYL-E6-100`. Der Block ab 100 ist für das Glas reserviert, damit parallele Arbeit (Mail-Suche) die IDs ab `BYL-E6-092` ohne Kollision nutzen kann.
+- **Einordnung:** Nutzerwunsch „UI wie macOS, Glas-Transparenz, mit unseren Themes verheiraten“. Die Manifest-IDs laufen unter E6 ab `BYL-E6-100`. Der Block 100 bis 119 ist für das Glas reserviert; die parallele Mail-Arbeit zählt ab `BYL-E6-120`.
 
 ## 1. Entscheidungen des Nutzers (2026-09-27)
 
@@ -31,7 +31,7 @@ Die Themes sind Petrol, Rubin, Smaragd und Kupfer (Nachtrag zu ADR-0027 vom 2026
 |---|---|---|
 | G-1 | Fundament: ADR-0029 mit Nachträgen, CLAUDE.md §8, Tokens (Materialien, Filter, Trennlinie, Lichtkante, Popover-Schatten, `--radius-overlay`, `--radius-item`), Umschaltpunkt für Systemeinstellung, Kontrast, Forced Colors und fehlendes `backdrop-filter`, Verlauf auf `body::before`, Kopfzeile (regular) und Popover (thick) aus Glas, einheitliche Menüzeilen, Fokusring in `--color-brand-text` | BYL-E6-100 bis BYL-E6-102 |
 | G-3 | Schalter „Transparenz“ (`byl-transparency`, Boot-Skript, Store, Switch in `base.css`, Block `data-transparency='off'`) | BYL-E6-103 bis BYL-E6-105 |
-| G-2 | Modals, Bestätigung, Seitenpanel, Flags, TagPicker-Liste, Anmeldekarte, Tour; Vollansicht opak | folgt |
+| G-2 | Modals, Bestätigung, Seitenpanel, Flags, TagPicker-Liste, Anmeldekarte, Tour; Vollansicht opak; `--shadow-modal` | BYL-E6-106 und BYL-E6-107 |
 | G-4 | Knöpfe, `.segmented`, `.search-field`, Radien auf Tokens | folgt |
 | G-5 | Switch nach HIG, baut auf den Checkboxen und Radios aus `base.css` auf (#86) | folgt |
 | G-6 | Einstellungs-Sidebar, Typografie, README, manuelle Fälle | folgt |
@@ -47,17 +47,23 @@ Die Themes sind Petrol, Rubin, Smaragd und Kupfer (Nachtrag zu ADR-0027 vom 2026
 | 2026-09-27 | G-1 | Tokens entstehen mit dem Paket, das sie zuerst nutzt: `--fill-control*`, `--shadow-control`, `--shadow-modal`, `--radius-pill`, Höhen und Schriftgrößen folgen mit G-2, G-4 und G-6; `--material-thin` entfällt (keine Stelle). |
 | 2026-09-27 | G-1 | Der Verlauf liest `var(--backdrop-image, …)`: Die Fallbacks setzen `--backdrop-image: none`, dann bleibt nur `--color-bg`. `body` selbst malt keinen Hintergrund mehr. |
 | 2026-09-27 | G-3 | **Switch über die Rolle statt über eine Klasse:** `base.css` gestaltet `input[type='checkbox'][role='switch']`. Eine globale Klasse `.switch` (so die Skizze) träfe die lokalen `label.switch` in `ChannelEditModal` und `ProjectsView`. Der Switch baut auf den Checkbox-Regeln von #86 auf (Rand, Fokus, Hover, `:disabled`, `forced-colors`) und ändert nur Maße, Radius und den Knopf. Aus: Knopf links in `--color-text-muted` (Form und Farbe mit 4,5 : 1 zur Fläche); an: rechts in `--color-on-brand` auf `--color-brand`. Die Spur „aus“ bleibt `--color-surface` mit Rand; `--fill-control` kommt erst mit G-4. `--radius-pill` entsteht hier, weil der Switch es zuerst nutzt. |
-| 2026-09-27 | G-3 | **Name und Ort:** Gruppe „Transparenz“ (`fieldset`/`legend` wie „Farbschema“ und „Farbe“) mit dem Switch „Glas-Effekt“ als Zeile (Name links, Switch rechts). Die Beschreibung nennt nur Kopfzeile und Menüs; mit G-2 kommen die Dialoge dazu. |
+| 2026-09-27 | G-3 | **Name und Ort:** Gruppe „Transparenz“ (`fieldset`/`legend` wie „Farbschema“ und „Farbe“) mit dem Switch „Glas-Effekt“ als Zeile (Name links, Switch rechts). Die Beschreibung nennt nur Kopfzeile und Menüs; mit G-2 kommen Seitenpanel und Dialoge dazu (umgesetzt). |
 | 2026-09-27 | G-3 | **Systemeinstellung:** `tokens.css` folgt `prefers-reduced-transparency` selbst. Der Store meldet die Media Query nur (`systemReduces`, auch bei späteren Wechseln), damit die Seite den Hinweis zeigt; der Schalter bleibt bedienbar, die Wahl gilt wieder, sobald das System die Transparenz erlaubt. Ohne `matchMedia` gilt „nicht reduziert“. |
 | 2026-09-27 | G-3 | **Andere Tabs:** `ThemeMenu` verbindet den Store (es steht auf jeder Seite der App), die Seite „Darstellung“ zusätzlich; so wirkt der Schalter sofort in allen offenen Tabs, nicht nur auf der Einstellungsseite. |
+
+| 2026-09-27 | G-3 | Die parallele Mail-Arbeit zählt ab `BYL-E6-120` (#89); der Glas-Block reicht damit bis `BYL-E6-119`. |
+| 2026-09-27 | G-2 | **Modal:** S bis L thick über `.modal:not(.size-xl)`, die Vollansicht (XL) bleibt `--color-surface` mit `--radius-overlay` und `--shadow-modal`. So steht `backdrop-filter` nur als Glas-Token im Code, nie als `none` (Allowlist). Kopf- und Fußlinie auf Glas in `--color-separator`. |
+| 2026-09-27 | G-2 | **Seitenpanel:** eingebettet regular (dahinter nur der Seitenhintergrund, das Blur-Modell gilt), als Overlay thick über `:global([data-panel-mode='overlay'])`. Kein Schatten: Linie links und, als Overlay, das Blanket trennen genug; der Test „a line on the left and no shadow“ bleibt damit gültig. |
+| 2026-09-27 | G-2 | **Flags, TagPicker-Liste, Tour:** thick mit `--shadow-popover`; der farbige Streifen links an Flags bleibt. **Anmeldekarte:** thick mit `--shadow-modal`, sie schwebt über dem Verlauf. Der Pfeil der Tour bleibt `--color-surface` (Unterschied zur Deckkraft 0,92 kaum sichtbar). |
+| 2026-09-27 | G-2 | **Kontrast über dem Blanket:** Modals, Panel-Overlay und Tour liegen auf dem Schleier. `glass-contrast.test.ts` rechnet thick deshalb zusätzlich über jeder Palettenfarbe, abgedunkelt mit `--color-blanket`. |
 
 ## 5. Status
 
 | Paket | Stand |
 |---|---|
 | G-1 | gemergt (#88) |
-| G-3 | in Arbeit |
-| G-2 | offen |
+| G-3 | gemergt (#90) |
+| G-2 | in Arbeit |
 | G-4 | offen |
 | G-5 | offen |
 | G-6 | offen |

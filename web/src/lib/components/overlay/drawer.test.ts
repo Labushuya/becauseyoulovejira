@@ -81,12 +81,20 @@ describe('side panel', () => {
 	});
 
 	// Since UI-6b the width comes from ViewWithPanel (column or overlay) and the panel has a line on
-	// the left instead of a framed box with a radius, like the side panel of Jira.
+	// the left instead of a framed box with a radius, like the side panel of Jira. Since G-2 it is
+	// glass (ADR-0029): regular in its column, thick as the overlay, lines on glass.
 	it('uses the tokens, a line on the left and no shadow', () => {
-		expect(source).toMatch(/border-left:\s*1px solid var\(--color-line\)/);
+		expect(source).toMatch(/border-left:\s*1px solid var\(--color-separator\)/);
 		expect(source).not.toMatch(/border-radius/);
 		expect(source).toMatch(/--motion-medium/);
-		expect(source).not.toMatch(/box-shadow|gradient|backdrop-filter|danger/);
+		expect(source).not.toMatch(/box-shadow|gradient|danger|var\(--color-line\)/);
+		const embedded = /\.drawer \{([^}]*)\}/.exec(source)?.[1] ?? '';
+		expect(embedded).toMatch(/background:\s*var\(--material-regular\)/);
+		expect(embedded).toMatch(/backdrop-filter:\s*var\(--glass-filter-regular\)/);
+		const overlay =
+			/:global\(\[data-panel-mode='overlay'\]\) \.drawer \{([^}]*)\}/.exec(source)?.[1] ?? '';
+		expect(overlay).toMatch(/background:\s*var\(--material-thick\)/);
+		expect(overlay).toMatch(/backdrop-filter:\s*var\(--glass-filter-thick\)/);
 	});
 
 	it.each([

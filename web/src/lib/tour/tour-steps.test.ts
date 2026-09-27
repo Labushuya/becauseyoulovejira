@@ -70,12 +70,20 @@ describe('tour steps', () => {
 		expect(tourSource).toMatch(/import\('driver\.js'\)/);
 	});
 
-	it('styles the tour with tokens only, without shadow', () => {
+	it('styles the tour with tokens only, the popover as glass with the neutral shadow (ADR-0029)', () => {
 		const rules = code(tourCss);
-		expect(rules).not.toMatch(/box-shadow|text-shadow|filter:\s*drop-shadow/);
+		expect(rules).not.toMatch(/text-shadow|filter:\s*drop-shadow/);
+		for (const [, value = ''] of rules.matchAll(/box-shadow:\s*([^;]+);/g)) {
+			expect(value.replace(/\s+/g, ' ').trim()).toBe(
+				'inset 0 1px 0 var(--glass-edge), var(--shadow-popover)'
+			);
+		}
+		const popover = /\.driver-popover \{([^}]*)\}/.exec(rules)?.[1] ?? '';
+		expect(popover).toMatch(/background:\s*var\(--material-thick\)/);
+		expect(popover).toMatch(/backdrop-filter:\s*var\(--glass-filter-thick\)/);
+		expect(popover).toMatch(/border-radius:\s*var\(--radius-overlay\)/);
 		expect(rules).toMatch(/var\(--color-surface\)/);
 		expect(rules).toMatch(/var\(--color-line\)/);
-		expect(rules).toMatch(/var\(--radius-surface\)/);
 		expect(rules).toMatch(/@media \(prefers-reduced-motion: reduce\)/);
 		expect(rules).toMatch(/var\(--motion-medium\) var\(--motion-ease\)/);
 	});

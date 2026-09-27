@@ -11,14 +11,29 @@ import { describe, expect, it } from 'vitest';
 
 const SRC_DIR = resolve(import.meta.dirname, '..', '..');
 
-/** Files of the control layer that may carry glass (grows with G-2 and G-6). */
-const GLASS_FILES = ['lib/components/AppHeader.svelte', 'lib/components/overlay/Popover.svelte'];
+/** Files of the control layer that may carry glass (G-1, G-2; grows with G-6). */
+const GLASS_FILES = [
+	'lib/components/AppHeader.svelte',
+	'lib/components/overlay/Popover.svelte',
+	'lib/components/overlay/Modal.svelte',
+	'lib/components/overlay/Drawer.svelte',
+	'lib/components/overlay/FlagGroup.svelte',
+	'lib/components/TagPicker.svelte',
+	'lib/components/CenteredCard.svelte',
+	'lib/styles/tour.css'
+];
 
 /** Where the regular material may stand: below it only the gradient or the tables scroll. */
-const REGULAR_FILES = ['lib/components/AppHeader.svelte'];
+const REGULAR_FILES = ['lib/components/AppHeader.svelte', 'lib/components/overlay/Drawer.svelte'];
 
 /** Elements with a backdrop-filter must not hold fixed descendants of their own. */
-const NO_FIXED_FILES = ['lib/components/AppHeader.svelte'];
+const NO_FIXED_FILES = ['lib/components/AppHeader.svelte', 'lib/components/overlay/Drawer.svelte'];
+
+/** Opaque on purpose (ADR-0029 section 1): the full view and the blanket never get glass. */
+const OPAQUE_FILES = [
+	'lib/components/overlay/FullView.svelte',
+	'lib/components/ViewWithPanel.svelte'
+];
 
 /** Allowed parts of a box-shadow outside tokens.css. */
 const SHADOW_PARTS = [
@@ -60,11 +75,17 @@ function values(css: string, property: string): string[] {
 describe('glass rules (ADR-0029)', () => {
 	it('finds the stylesheets and components', () => {
 		expect(SOURCES.length).toBeGreaterThan(50);
-		for (const file of [...GLASS_FILES, ...REGULAR_FILES, ...NO_FIXED_FILES]) {
+		for (const file of [...GLASS_FILES, ...REGULAR_FILES, ...NO_FIXED_FILES, ...OPAQUE_FILES]) {
 			expect(
 				SOURCES.map((source) => source.file),
 				file
 			).toContain(file);
+		}
+	});
+
+	it('keeps the full view and the blanket of the panel opaque, without blur', () => {
+		for (const { file, css } of SOURCES.filter((source) => OPAQUE_FILES.includes(source.file))) {
+			expect(css, file).not.toMatch(/--material-|backdrop-filter|filter:\s*blur/);
 		}
 	});
 
