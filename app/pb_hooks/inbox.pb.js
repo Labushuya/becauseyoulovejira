@@ -138,3 +138,16 @@ routerAdd(
   },
   $apis.requireAuth('users')
 );
+
+// "Seiteninhalt sichern" (ADR-0031 section 6): fetches the address of a visible web link once,
+// after the SSRF guard of lib/url-guard.js, and keeps the text of the page and the HTML as
+// protected original. Answers 200 { title, size, truncated } or an error with { message }.
+routerAdd(
+  'POST',
+  '/api/byl/inbox/{id}/page',
+  function (e) {
+    var result = require(`${__hooks}/lib/page-copy-service.js`).savePage(e, e.request.pathValue('id'));
+    return e.json(result.status, result.body);
+  },
+  $apis.requireAuth('users')
+);

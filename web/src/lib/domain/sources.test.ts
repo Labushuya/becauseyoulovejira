@@ -8,6 +8,7 @@ import {
 	copyNote,
 	linkSummary,
 	orderSources,
+	pageCopyText,
 	sourceOrigin,
 	sourceWhen
 } from './sources';
@@ -110,6 +111,22 @@ describe('sourceOrigin and sourceWhen', () => {
 	it('takes the date at the sender, else the arrival', () => {
 		expect(sourceWhen(item({ sourceDate: '2026-09-24 08:30:00.000Z' }))).toBe('24.09.2026 10:30');
 		expect(sourceWhen(item())).toBe('25.09.2026 10:00');
+	});
+});
+
+describe('pageCopyText (ADR-0031 section 6)', () => {
+	it('names when the page was saved and whether it was cut', () => {
+		const page = (value: unknown) => item({ channel: 'link', sourceMeta: { page: value } });
+		expect(pageCopyText(page({ fetched_at: '2026-09-27 19:30:00.000Z', truncated: false }))).toBe(
+			'27.09.2026 21:30'
+		);
+		expect(pageCopyText(page({ fetched_at: '2026-01-05 07:00:00.000Z', truncated: true }))).toBe(
+			'05.01.2026 08:00, auf 2 MB gekürzt'
+		);
+		for (const value of [undefined, null, 'x', [], {}, { fetched_at: 'gestern' }]) {
+			expect(pageCopyText(page(value)), JSON.stringify(value)).toBe('');
+		}
+		expect(pageCopyText(item())).toBe('');
 	});
 });
 

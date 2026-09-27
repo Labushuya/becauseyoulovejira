@@ -16,7 +16,7 @@ import {
 	type InboxItemSummary,
 	type InboxState
 } from '../domain/inbox';
-import { DataError, isDataError, withDataErrors } from './errors';
+import { DATA_ERROR_MESSAGES, DataError, isDataError, toDataError, withDataErrors } from './errors';
 import { currentUserId, type RequestOptions } from './options';
 
 const INBOX = 'inbox_items';
@@ -320,6 +320,48 @@ export function listTicketSources(
 		});
 		return result.items.map(toInboxItemSummary);
 	});
+}
+
+/** Outcome of "Seiteninhalt sichern": the copy was saved, or the route refused with a reason. */
+export type PageCopyOutcome =
+	| { kind: 'saved'; title: string; size: number; truncated: boolean }
+	| { kind: 'refused'; message: string };
+
+/**
+ * "Seiteninhalt sichern" (ADR-0031 section 6): the hook fetches the address of a web link once and
+ * keeps the text of the page and the HTML. Refusals of the route (400 address not allowed, 409
+ * saved already, 415 no HTML, 502 not reachable, 503 before the inbox exists) come back as outcome
+ * with the message of the server; every other failure throws a DataError.
+ */
+export async function savePage(
+	pb: PocketBase,
+	id: string,
+	{ signal }: RequestOptions = {}
+): Promise<PageCopyOutcome> {
+	try {
+		const result = await pb.send<Record<string, unknown>>(
+			`/api/byl/inbox/${encodeURIComponent(id)}/page`,
+			{ method: 'POST', signal }
+		);
+		return {
+			kind: 'saved',
+			title: textOf(result.title),
+			size: countOf(result.size),
+			truncated: result.truncated === true
+		};
+	} catch (error) {
+		const failure =
+			typeof error === 'object' && error !== null ? (error as Record<string, unknown>) : {};
+		const status = typeof failure.status === 'number' ? failure.status : 0;
+		const response =
+			typeof failure.response === 'object' && failure.response !== null
+				? (failure.response as Record<string, unknown>)
+				: {};
+		if (!signal?.aborted && [400, 409, 415, 502, 503].includes(status)) {
+			return { kind: 'refused', message: textOf(response.message) || DATA_ERROR_MESSAGES.server };
+		}
+		throw toDataError(error, signal);
+	}
 }
 
 /**

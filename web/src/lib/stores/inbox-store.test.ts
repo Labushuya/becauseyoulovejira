@@ -83,6 +83,12 @@ function setup(options: { newItems?: InboxItemSummary[]; valid?: boolean } = {})
 			skipped: 0,
 			failed: 0,
 			itemId: ''
+		})),
+		savePage: vi.fn<InboxData['savePage']>(async () => ({
+			kind: 'saved',
+			title: 'Seite',
+			size: 10,
+			truncated: false
 		}))
 	} satisfies InboxData;
 	const session = { ensureValid: vi.fn(() => options.valid ?? true), logout: vi.fn() };
@@ -394,6 +400,37 @@ describe('updates', () => {
 });
 
 describe('actions', () => {
+	it('saves the page of a web link with a flag, and passes a refusal on (ADR-0031)', async () => {
+		const { store, data, flags, session } = setup();
+		expect(await store.savePage({ id: A.id, title: 'Artikel' })).toEqual({
+			ok: true,
+			truncated: false
+		});
+		expect(data.savePage).toHaveBeenCalledWith(A.id);
+		// The newest flag stands first.
+		expect(flags.flags[0]?.title).toBe('Seite von „Artikel“ gesichert.');
+
+		data.savePage.mockResolvedValueOnce({ kind: 'saved', title: '', size: 3, truncated: true });
+		await store.savePage({ id: A.id, title: 'Artikel' });
+		expect(flags.flags[0]?.title).toBe('Seite von „Artikel“ gesichert (auf 2 MB gekürzt).');
+
+		data.savePage.mockResolvedValueOnce({
+			kind: 'refused',
+			message: 'Die Seite ist schon gesichert.'
+		});
+		expect(await store.savePage({ id: A.id, title: 'Artikel' })).toEqual({
+			ok: false,
+			message: 'Die Seite ist schon gesichert.'
+		});
+
+		data.savePage.mockRejectedValueOnce(new DataError('session'));
+		expect(await store.savePage({ id: A.id, title: 'Artikel' })).toEqual({
+			ok: false,
+			message: null
+		});
+		expect(session.logout).toHaveBeenCalledOnce();
+	});
+
 	it('creates an entry and reports a duplicate as outcome', async () => {
 		const { store, data } = setup();
 		await store.load();

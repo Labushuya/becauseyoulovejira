@@ -17,7 +17,7 @@
 	import type { InboxStore } from '$lib/stores/inbox.svelte';
 	import type { RecurrenceStore } from '$lib/stores/recurrence.svelte';
 	import type { TicketSourcesStore } from '$lib/stores/ticket-sources.svelte';
-	import { COPY_LABELS, copyCompleteness, copyNote } from '$lib/domain/sources';
+	import { COPY_LABELS, copyCompleteness, copyNote, pageCopyText } from '$lib/domain/sources';
 	import { convertHref, ticketPath } from '$lib/ticket-links';
 	import ErrorIcon from './ErrorIcon.svelte';
 	import Lozenge from './guidance/Lozenge.svelte';
@@ -69,6 +69,7 @@
 	let message = $state<string | null>(null);
 	let downloading = $state(false);
 	let linking = $state(false);
+	let savingPage = $state(false);
 	let heading = $state<HTMLElement>();
 
 	/** The loaded entry with the newest state of the store (realtime, own actions). */
@@ -111,7 +112,8 @@
 			['Stichwort', metaText(item, 'keyword')],
 			['Quelldatum', sourceDateText(item)],
 			['Eingang', formatBerlinDateTime(item.created)],
-			['Bearbeitet', item.handledAt === null ? '' : formatBerlinDateTime(item.handledAt)]
+			['Bearbeitet', item.handledAt === null ? '' : formatBerlinDateTime(item.handledAt)],
+			['Seite gesichert', pageCopyText(item)]
 		];
 		return rows.filter(([, value]) => value !== '');
 	});
@@ -165,6 +167,27 @@
 			else message = result.message;
 		} finally {
 			downloading = false;
+		}
+	}
+
+	/** "Seiteninhalt sichern" (ADR-0031 section 6); afterwards the text is loaded again. */
+	async function savePage(entry: InboxItem) {
+		if (savingPage) return;
+		savingPage = true;
+		message = null;
+		try {
+			const result = await store.savePage(entry);
+			if (!result.ok) {
+				message = result.message;
+				return;
+			}
+			const fresh = await store.fetch(entry.id);
+			if (fresh.id === id) loaded = fresh;
+		} catch (error) {
+			const failure = toDataError(error);
+			if (failure.kind !== 'aborted') message = failure.message;
+		} finally {
+			savingPage = false;
 		}
 	}
 </script>
@@ -235,7 +258,21 @@
 			<SectionMessage tone="info" compact>{DISCARDED_CONTENT_NOTE}</SectionMessage>
 		{/if}
 
-		{#if note !== null}
+		{#if note !== null && copy === 'address'}
+			<SectionMessage tone="info">
+				{note}
+				{#snippet actions()}
+					<button
+						class="button-secondary"
+						type="button"
+						aria-busy={savingPage ? 'true' : undefined}
+						onclick={() => savePage(item)}
+					>
+						{savingPage ? 'Seite wird gesichert …' : 'Seiteninhalt sichern'}
+					</button>
+				{/snippet}
+			</SectionMessage>
+		{:else if note !== null}
 			<SectionMessage tone="info" compact>{note}</SectionMessage>
 		{/if}
 

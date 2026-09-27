@@ -67,6 +67,7 @@
 		ontemplate={(next) =>
 			goto(withTemplate(page.url, next), { replaceState: true, keepFocus: true, noScroll: true })}
 		onsave={(capture, target) => saveCapture(capture, target, deps)}
+		onsavepage={(id, title) => inbox.savePage({ id, title })}
 		onclose={() => goto(inboxHref(page.url))}
 		resultHref={(target, id) =>
 			target === 'ticket' ? ticketPath(id) : inboxItemHref(id, page.url)}

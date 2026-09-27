@@ -111,6 +111,12 @@ function setup(
 			skipped: 0,
 			failed: 0,
 			itemId: ''
+		})),
+		savePage: vi.fn<InboxData['savePage']>(async () => ({
+			kind: 'saved',
+			title: '',
+			size: 0,
+			truncated: false
 		}))
 	} satisfies InboxData;
 	const flags = new FlagStore();

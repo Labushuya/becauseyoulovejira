@@ -1,6 +1,6 @@
 # ADR-0031: Herkunft sichern: Quellen eines Tickets, Löschschutz, große Mails und Seitenkopie
 
-- **Status:** Angenommen; Umsetzung in den Paketen HK-1 bis HK-5 nach [docs/plan/herkunft.md](../plan/herkunft.md)
+- **Status:** Angenommen und umgesetzt in den Paketen HK-1 bis HK-4 nach [docs/plan/herkunft.md](../plan/herkunft.md) (#106 bis #108 und der PR von HK-4); manuelle Browser-Prüfungen stehen im Test-Manifest
 - **Datum:** 2026-09-27
 - **Entscheidung durch:** Nutzer („Herkunft sichern“ direkt nach „Spalten“, keine Checkbox „Kopie speichern“, Seitenkopie ja, „Quelle prüfen“ nein, Verknüpfen mit beliebigen Tickets, 2026-09-27), Advisor (Empfehlung zur Umsetzung), Executor (Datenmodell, Grenzen, Einzelheiten)
 - **Ergänzt:** [ADR-0014](0014-datenmodell-eingang.md) §1, §2 und §4 (Zustände, Rückverweis, „Einem bestehenden Ticket zuordnen“), [ADR-0016](0016-kanal-architektur-und-mail.md) §5 und §6 (Hilfsprozess, Postfach-Auswahl), [ADR-0017](0017-parser-ics-eml.md) (`.eml`)

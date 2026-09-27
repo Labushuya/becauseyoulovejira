@@ -4,7 +4,7 @@
 // with the template in the URL. Since UI-3 the question before discarding is the confirmation of
 // ADR-0025 section 4 instead of window.confirm.
 
-import { fireEvent, render, screen, within } from '@testing-library/svelte';
+import { cleanup, fireEvent, render, screen, within } from '@testing-library/svelte';
 import { tick } from 'svelte';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ResolvedPathname } from '$app/types';
@@ -27,7 +27,10 @@ const mocks = vi.hoisted(() => ({
 		tags: [] as unknown[],
 		ensureTag: vi.fn()
 	},
-	inbox: { create: vi.fn() },
+	inbox: {
+		create: vi.fn(),
+		savePage: vi.fn(async () => ({ ok: true as const, truncated: false }))
+	},
 	tickets: { markRead: vi.fn(async () => undefined) }
 }));
 
@@ -322,6 +325,59 @@ describe('capture form: web link and bookmarklet (E4 plan, package 7)', () => {
 		expect(onsave.mock.calls[0]?.[0]).toMatchObject({ sourceUrl: 'https://example.com/a' });
 	});
 
+	it('saves the page of a web link after the entry, on by default (ADR-0031 section 6)', async () => {
+		const onsavepage = vi.fn(async () => ({ ok: true as const, truncated: true }));
+		const { onsave } = renderForm({
+			template: 'link',
+			initial: { url: 'https://example.com/a', what: 'Artikel' },
+			onsavepage
+		});
+		const box = screen.getByRole<HTMLInputElement>('checkbox', { name: 'Seiteninhalt sichern' });
+		expect(box.checked).toBe(true);
+		expect(box.getAttribute('aria-describedby')).toBeTruthy();
+		await fireEvent.click(submitButton());
+		await vi.waitFor(() => expect(onsavepage).toHaveBeenCalledWith('item00000000001', 'Artikel'));
+		expect(onsave).toHaveBeenCalledOnce();
+		const live = (await screen.findByRole('link', { name: 'Eintrag ansehen' })).closest(
+			'[aria-live="polite"]'
+		);
+		expect(live?.textContent).toMatch(
+			/„X“ liegt im Eingang\. Seiteninhalt gesichert \(auf 2 MB gekürzt\)\./
+		);
+	});
+
+	it('keeps the entry and names why the page was not saved, or skips it when unchecked', async () => {
+		const onsavepage = vi.fn(async () => ({
+			ok: false as const,
+			message: 'Nur HTML-Seiten lassen sich sichern.'
+		}));
+		renderForm({
+			template: 'link',
+			initial: { url: 'https://example.com/a.pdf', what: 'PDF' },
+			onsavepage
+		});
+		await fireEvent.click(submitButton());
+		expect(
+			await screen.findByText(/Seiteninhalt nicht gesichert: Nur HTML-Seiten lassen sich sichern\./)
+		).toBeTruthy();
+		cleanup();
+
+		const skipped = vi.fn();
+		renderForm({
+			template: 'link',
+			initial: { url: 'https://example.com/b', what: 'Ohne' },
+			onsavepage: skipped
+		});
+		await fireEvent.click(screen.getByRole('checkbox', { name: 'Seiteninhalt sichern' }));
+		await fireEvent.click(submitButton());
+		await screen.findByRole('link', { name: 'Eintrag ansehen' });
+		expect(skipped).not.toHaveBeenCalled();
+		cleanup();
+
+		renderForm({ template: 'todo', onsavepage: skipped });
+		expect(screen.queryByRole('checkbox', { name: 'Seiteninhalt sichern' })).toBeNull();
+	});
+
 	it('refuses an address that is not http(s) with a field error', async () => {
 		const { onsave } = renderForm({ template: 'link', initial: { url: 'javascript:alert(1)' } });
 		await fireEvent.input(field(/^Titel/), { target: { value: 'X' } });
@@ -392,6 +448,10 @@ describe('capture route with the parameters of the bookmarklet', () => {
 			})
 		);
 		expect(mocks.detail.create).not.toHaveBeenCalled();
+		// "Seiteninhalt sichern" is on by default and goes to the inbox store (ADR-0031 section 6).
+		await vi.waitFor(() =>
+			expect(mocks.inbox.savePage).toHaveBeenCalledWith({ id: 'item00000000001', title: 'Artikel' })
+		);
 	});
 
 	it('explains a refused address of the page', () => {
