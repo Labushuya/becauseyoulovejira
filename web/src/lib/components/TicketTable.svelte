@@ -502,10 +502,6 @@
 		color: var(--color-text-muted);
 	}
 
-	.switch input {
-		accent-color: var(--color-brand);
-	}
-
 	/* Container of the column rules; the table takes its width and never more. */
 	.frame {
 		container-type: inline-size;

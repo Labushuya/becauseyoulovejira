@@ -286,10 +286,6 @@
 		font-weight: 600;
 	}
 
-	.choice input {
-		accent-color: var(--color-brand);
-	}
-
 	.none {
 		padding: 0.25rem 0.375rem;
 		font-size: 0.8125rem;

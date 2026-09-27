@@ -291,7 +291,8 @@
 		width: 5rem;
 	}
 
-	input:disabled {
+	/* Disabled fields; checkboxes and radios keep the look of base.css. */
+	input:not([type='radio'], [type='checkbox']):disabled {
 		color: var(--color-text-muted);
 		background: var(--color-bg);
 	}
