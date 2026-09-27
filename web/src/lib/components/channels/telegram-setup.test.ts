@@ -80,7 +80,8 @@ async function open(
 			state: 'running' as const,
 			version: '0.5.0',
 			message: ''
-		}))
+		})),
+		scan: vi.fn<ConnectionsData['scan']>(async () => ({ status: 'started' as const, message: '' }))
 	} satisfies ConnectionsData;
 	const store = new ConnectionsStore(
 		data,

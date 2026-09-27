@@ -68,6 +68,30 @@
 		return cardMessage !== null && cardMessage.id === connection.id ? cardMessage.text : null;
 	}
 
+	// The cards of mailboxes follow their connection through realtime while the page is open, so
+	// the progress of the full scan of the inbox shows as the mail helper reports it (ADR-0020,
+	// addendum 3; no polling, CLAUDE.md §7). One subscription per mailbox, ended with the page.
+	const mailIds = $derived(
+		store.connections
+			.filter((connection) => connection.type === 'mail')
+			.map((connection) => connection.id)
+			.join(',')
+	);
+	$effect(() => {
+		const ids = mailIds === '' ? [] : mailIds.split(',');
+		const stops = ids.map((id) => store.watch(id));
+		return () => {
+			for (const stop of stops) stop();
+		};
+	});
+
+	async function scan(connection: Connection, action: 'start' | 'cancel') {
+		cardMessage = null;
+		const result = await store.scan(connection.id, action);
+		if (!result.ok && result.message !== null)
+			cardMessage = { id: connection.id, text: result.message };
+	}
+
 	async function setEnabled(connection: Connection, enabled: boolean) {
 		cardMessage = null;
 		const result = await store.setEnabled(connection.id, enabled);
@@ -185,7 +209,8 @@
 			<p class="hint">
 				Solange die App läuft, ruft Google Calendar alle 15 Minuten ab, Telegram jede Minute und ein
 				Postfach alle 5 Minuten; „Aktualisieren“ zeigt das Ergebnis. „Jetzt abrufen“ holt sofort ab,
-				auch bei einem Postfach.
+				auch bei einem Postfach. Wie weit ein Posteingang durchsucht ist, zeigt seine Karte von
+				selbst.
 			</p>
 			<ul class="grid">
 				{#each store.connections as connection (connection.id)}
@@ -209,6 +234,7 @@
 								pendingDelete = connection;
 							}}
 							onsetup={() => onsetup(connection)}
+							onscan={(action) => void scan(connection, action)}
 						/>
 					</li>
 				{/each}
