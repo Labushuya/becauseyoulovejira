@@ -81,9 +81,120 @@ export interface Connection {
 	mailUser: string;
 	/** Mail: whether headers and the whole text are searched as well (ADR-0020, addendum 2). */
 	matchBody: boolean;
+	/** Mail: state of the full scan of the inbox (ADR-0020, addendum 3); null before the first. */
+	scan?: MailScan | null;
 	runningSince: string | null;
 	created: string;
 	updated: string;
+}
+
+/**
+ * State of the full scan of an inbox (connections.scan, written by the mail helper): running,
+ * paused at the limit of new entries per run, done, cancelled by the user, or interrupted by an
+ * error (it goes on with the next run).
+ */
+export interface MailScan {
+	state: 'running' | 'paused' | 'done' | 'cancelled' | 'error';
+	/** Mails checked and mails in the scan. */
+	done: number;
+	total: number;
+	/** Entries the scan created so far. */
+	created: number;
+	/** The server could not search the text; the mails were loaded instead. */
+	fallback: boolean;
+}
+
+const MAIL_SCAN_STATES: readonly MailScan['state'][] = [
+	'running',
+	'paused',
+	'done',
+	'cancelled',
+	'error'
+];
+
+function scanCount(value: unknown): number {
+	return typeof value === 'number' && Number.isInteger(value) && value >= 0 ? value : 0;
+}
+
+/** The scan state of a connection record (connections.scan), or null for none or a broken one. */
+export function mailScanOf(value: unknown): MailScan | null {
+	if (typeof value !== 'object' || value === null || Array.isArray(value)) return null;
+	const stored = value as Record<string, unknown>;
+	const state = MAIL_SCAN_STATES.find((item) => item === stored.state);
+	if (state === undefined) return null;
+	return {
+		state,
+		done: scanCount(stored.done),
+		total: scanCount(stored.total),
+		created: scanCount(stored.created),
+		fallback: stored.fallback === true
+	};
+}
+
+/** A count with a dot between thousands, as German texts write it ("4.800"). */
+export function formatCount(value: number): string {
+	return String(Math.max(0, Math.trunc(value))).replace(/\B(?=(\d{3})+(?!\d))/g, '.');
+}
+
+/** Line "Posteingang" of the card of a mailbox, e.g. "wird durchsucht: 1.200/4.800". */
+export function mailScanText(scan: MailScan): string {
+	const progress = `${formatCount(scan.done)}/${formatCount(scan.total)}`;
+	const created = `${formatCount(scan.created)} ${scan.created === 1 ? 'Eintrag' : 'Einträge'}`;
+	switch (scan.state) {
+		case 'running':
+			return `wird durchsucht: ${progress}`;
+		case 'paused':
+			return `pausiert bei ${progress}, bisher ${created} übernommen`;
+		case 'done':
+			return `durchsucht: ${formatCount(scan.total)} ${scan.total === 1 ? 'Mail' : 'Mails'}, ${created} übernommen`;
+		case 'cancelled':
+			return `abgebrochen bei ${progress}`;
+		case 'error':
+			return `unterbrochen bei ${progress}, geht beim nächsten Abruf weiter`;
+	}
+}
+
+/**
+ * Answer of "Posteingang neu durchsuchen" and "Abbrechen" (POST /api/byl/connections/{id}/scan):
+ * started, another fetch is running, cancelling or cancelled, nothing to cancel, the mail helper
+ * does not run, the connection is paused, or an error with the message.
+ */
+export interface ScanResult {
+	status:
+		| 'started'
+		| 'running'
+		| 'cancelling'
+		| 'cancelled'
+		| 'idle'
+		| 'unavailable'
+		| 'disabled'
+		| 'error';
+	message: string;
+}
+
+/** Text and tone of the flag after a scan action; only a real error is an error (ADR-0009). */
+export function scanResultText(
+	label: string,
+	result: ScanResult
+): { text: string; tone: 'success' | 'info' | 'error' } {
+	const name = `„${label}“`;
+	switch (result.status) {
+		case 'started':
+			return { text: `${name}: Der Posteingang wird durchsucht.`, tone: 'info' };
+		case 'running':
+			return { text: `${name} ruft gerade ab. Bitte gleich noch einmal versuchen.`, tone: 'info' };
+		case 'cancelling':
+		case 'cancelled':
+			return { text: `${name}: Das Durchsuchen wird abgebrochen.`, tone: 'success' };
+		case 'idle':
+			return { text: `${name}: Es wird gerade nichts durchsucht.`, tone: 'info' };
+		case 'disabled':
+			return { text: `${name} ist pausiert.`, tone: 'info' };
+		case 'unavailable':
+			return { text: `${name}: ${result.message}`, tone: 'info' };
+		case 'error':
+			return { text: `${name}: ${result.message || 'Durchsuchen fehlgeschlagen.'}`, tone: 'error' };
+	}
 }
 
 /** Whether the variables are set in the environment of the running server. */

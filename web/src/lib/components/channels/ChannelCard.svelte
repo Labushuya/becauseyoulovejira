@@ -6,6 +6,7 @@
 		MAIL_PROVIDER_LABELS,
 		lastResultText,
 		mailHelperText,
+		mailScanText,
 		type Connection,
 		type MailHelperStatus,
 		type RunResult,
@@ -25,6 +26,8 @@
 	// "Bearbeiten" opens the modal of its owner, and the menu "…" holds pausing, the setup and
 	// deleting. Every action names the connection for screen readers. The card carries the anchor
 	// `#verbindung-<id>`, the target of the link in the flag of "Alle Kanäle jetzt abrufen".
+	// A mailbox shows the full scan of its inbox (ADR-0020, addendum 3) in the line "Posteingang"
+	// with its progress, "Abbrechen" while it runs, and "Posteingang neu durchsuchen" in the menu.
 	let {
 		connection,
 		secretStatus,
@@ -37,7 +40,8 @@
 		onedit,
 		onpause,
 		ondelete,
-		onsetup
+		onsetup,
+		onscan = () => undefined
 	}: {
 		connection: Connection;
 		/** State of the variables; null while unknown. */
@@ -58,7 +62,11 @@
 		ondelete: () => void;
 		/** Shows the setup of the kind of this connection. */
 		onsetup: () => void;
+		/** Mailbox: starts the full scan of the inbox again or cancels it. */
+		onscan?: (action: 'start' | 'cancel') => void;
 	} = $props();
+
+	const scan = $derived(connection.type === 'mail' ? (connection.scan ?? null) : null);
 
 	const uid = $props.id();
 	const headingId = `${uid}-name`;
@@ -136,6 +144,17 @@
 				<dt>Automatisch</dt>
 				<dd>{MAIL_INBOX_HINT}</dd>
 			</div>
+			{#if scan !== null}
+				<div>
+					<dt>Posteingang</dt>
+					<dd>
+						{mailScanText(scan)}
+						{#if scan.state === 'running' && scan.total > 0}
+							<progress value={scan.done} max={scan.total} aria-hidden="true"></progress>
+						{/if}
+					</dd>
+				</div>
+			{/if}
 		{/if}
 	</dl>
 
@@ -162,6 +181,11 @@
 		{:else}
 			<button class="button-secondary" type="button" aria-disabled="true" aria-busy="true">
 				Wird abgerufen …<span class="visually-hidden">: {connection.label}</span>
+			</button>
+		{/if}
+		{#if scan?.state === 'running'}
+			<button class="button-secondary" type="button" onclick={() => onscan('cancel')}>
+				Abbrechen<span class="visually-hidden">: Durchsuchen von {connection.label}</span>
 			</button>
 		{/if}
 		{#if health.pick}
@@ -210,6 +234,19 @@
 					>
 						Einrichtung ansehen
 					</button>
+					{#if health.pick && connection.enabled}
+						<button
+							type="button"
+							role="menuitem"
+							tabindex="-1"
+							onclick={() => {
+								close();
+								onscan('start');
+							}}
+						>
+							Posteingang neu durchsuchen
+						</button>
+					{/if}
 					<div role="separator"></div>
 					<button
 						type="button"
@@ -286,6 +323,15 @@
 
 	.ok {
 		color: var(--color-text-muted);
+	}
+
+	/* Progress of the full scan; the text next to it says the numbers. */
+	progress {
+		display: block;
+		inline-size: 100%;
+		block-size: 0.375rem;
+		margin-top: 0.25rem;
+		accent-color: var(--color-brand);
 	}
 
 	.actions {

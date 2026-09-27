@@ -10,8 +10,12 @@ import { DataError } from '$lib/data/errors';
 import {
 	connectionDraftErrors,
 	emptyConnectionDraft,
+	formatCount,
+	mailScanOf,
+	mailScanText,
 	NO_KEYWORDS_WARNING,
 	runResultText,
+	scanResultText,
 	secretStatusText,
 	type Connection,
 	type SecretStatus
@@ -129,7 +133,8 @@ function setup(items: Connection[] = [CAL, BOT], statuses: Record<string, Secret
 			state: 'running' as const,
 			version: '0.5.0',
 			message: ''
-		}))
+		})),
+		scan: vi.fn<ConnectionsData['scan']>(async () => ({ status: 'started' as const, message: '' }))
 	} satisfies ConnectionsData;
 	const session = { ensureValid: vi.fn(() => true), logout: vi.fn() };
 	const flags = new FlagStore();
@@ -1019,5 +1024,124 @@ describe('Jetzt abrufen at a mailbox (package A, item 4)', () => {
 		} finally {
 			window.history.replaceState(null, '', window.location.pathname);
 		}
+	});
+});
+
+describe('full scan of an inbox on the page (ADR-0020, addendum 3)', () => {
+	const MAILBOX = connection('conn00000000006', {
+		type: 'mail',
+		label: 'Web.de',
+		secretEnv: 'BYL_WEBDE_PASSWORD',
+		mailProvider: 'webde',
+		mailUser: 'anna@web.de',
+		keywords: ['todo'],
+		scan: { state: 'done', done: 10, total: 10, created: 2, fallback: false }
+	});
+
+	it('reads, formats and announces the scan', () => {
+		expect(
+			mailScanOf({
+				state: 'running',
+				done: 1200,
+				total: 4800,
+				created: 3,
+				fallback: true,
+				match_body_before: false
+			})
+		).toEqual({
+			state: 'running',
+			done: 1200,
+			total: 4800,
+			created: 3,
+			fallback: true
+		});
+		expect(mailScanOf({ state: 'kaputt' })).toBeNull();
+		expect(mailScanOf({ match_body_before: false })).toBeNull();
+		expect(mailScanOf(null)).toBeNull();
+		expect(mailScanOf({ state: 'done', done: -1, total: 'x' })).toMatchObject({
+			done: 0,
+			total: 0
+		});
+		expect([0, 999, 1000, 4800, 1234567].map(formatCount)).toEqual([
+			'0',
+			'999',
+			'1.000',
+			'4.800',
+			'1.234.567'
+		]);
+		expect(mailScanText({ state: 'done', done: 1, total: 1, created: 1, fallback: false })).toBe(
+			'durchsucht: 1 Mail, 1 Eintrag übernommen'
+		);
+		expect(
+			mailScanText({ state: 'error', done: 500, total: 4800, created: 0, fallback: false })
+		).toBe('unterbrochen bei 500/4.800, geht beim nächsten Abruf weiter');
+		expect(scanResultText('Web.de', { status: 'started', message: '' })).toEqual({
+			text: '„Web.de“: Der Posteingang wird durchsucht.',
+			tone: 'info'
+		});
+		expect(scanResultText('Web.de', { status: 'error', message: 'Kaputt.' })).toEqual({
+			text: '„Web.de“: Kaputt.',
+			tone: 'error'
+		});
+		expect(scanResultText('Web.de', { status: 'unavailable', message: 'Läuft nicht.' }).tone).toBe(
+			'info'
+		);
+	});
+
+	it('starts the scan from the menu, announces it and follows the progress through realtime', async () => {
+		const context = setup([CAL, MAILBOX]);
+		const listeners: Parameters<ConnectionsData['subscribe']>[1][] = [];
+		context.data.subscribe.mockImplementation(async (_id, onChange) => {
+			listeners.push(onChange);
+			return async () => undefined;
+		});
+		await context.store.load();
+		renderCards(context.store);
+		// Only mailboxes are watched.
+		await vi.waitFor(() => expect(context.data.subscribe).toHaveBeenCalledOnce());
+		expect(context.data.subscribe.mock.calls[0]?.[0]).toBe(MAILBOX.id);
+		expect(card('Web.de').getByText('durchsucht: 10 Mails, 2 Einträge übernommen')).toBeTruthy();
+
+		await chooseFromMenu('Web.de', 'Posteingang neu durchsuchen');
+		expect(context.data.scan).toHaveBeenCalledWith(MAILBOX.id, 'start');
+		await vi.waitFor(() =>
+			expect(latestFlag(context.flags)).toBe('„Web.de“: Der Posteingang wird durchsucht.')
+		);
+
+		listeners[0]?.({
+			action: 'update',
+			record: {
+				...MAILBOX,
+				scan: { state: 'running', done: 500, total: 4800, created: 0, fallback: false },
+				updated: '2026-09-27 12:00:00.000Z'
+			}
+		});
+		await vi.waitFor(() =>
+			expect(card('Web.de').getByText('wird durchsucht: 500/4.800')).toBeTruthy()
+		);
+
+		context.data.scan.mockResolvedValueOnce({ status: 'cancelling', message: '' });
+		await fireEvent.click(
+			card('Web.de').getByRole('button', { name: 'Abbrechen: Durchsuchen von Web.de' })
+		);
+		expect(context.data.scan).toHaveBeenLastCalledWith(MAILBOX.id, 'cancel');
+		await vi.waitFor(() =>
+			expect(latestFlag(context.flags)).toBe('„Web.de“: Das Durchsuchen wird abgebrochen.')
+		);
+	});
+
+	it('shows a failed scan request as error flag, a stopped helper neutrally', async () => {
+		const context = setup([MAILBOX]);
+		await context.store.load();
+		renderCards(context.store);
+		context.data.scan.mockResolvedValueOnce({
+			status: 'unavailable',
+			message: 'Der Mail-Hilfsprozess läuft nicht.'
+		});
+		await chooseFromMenu('Web.de', 'Posteingang neu durchsuchen');
+		await vi.waitFor(() => expect(context.flags.flags[0]?.tone).toBe('info'));
+		context.data.scan.mockRejectedValueOnce(new DataError('network'));
+		await chooseFromMenu('Web.de', 'Posteingang neu durchsuchen');
+		await vi.waitFor(() => expect(card('Web.de').getByRole('alert')).toBeTruthy());
 	});
 });

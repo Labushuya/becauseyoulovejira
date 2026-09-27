@@ -19,8 +19,10 @@ import { startMailboxServer } from '../../helpers/mail/src/server.ts';
 import {
 	getMailHelperStatus,
 	importFromMailbox,
+	listConnections,
 	listMailbox,
-	runConnection
+	runConnection,
+	scanConnection
 } from '../../web/src/lib/data/connections.ts';
 
 const TOKEN = randomBytes(24).toString('base64');
@@ -316,6 +318,25 @@ describe('"Posteingang neu durchsuchen" and "Abbrechen" (full inbox)', () => {
 		});
 		expect(imap.writes()).toEqual([]);
 		expect(imap.flagsUnchanged()).toBe(true);
+		// The helper reports "done" just before it ends the run; wait until nothing runs there.
+		await vi.waitFor(async () => expect((await scanCall(owner, 'cancel')).json.status).toBe('idle'));
+	});
+
+	it('starts it through the data layer of the web app, which reads the state with the connection', async () => {
+		expect(await scanConnection(owner.pb, mailbox.id, 'start')).toEqual({ status: 'started', message: '' });
+		await vi.waitFor(async () => {
+			const listed = (await listConnections(owner.pb)).find((item) => item.id === mailbox.id);
+			expect(listed.scan).toEqual({
+				state: 'done',
+				done: imap.mails.length,
+				total: imap.mails.length,
+				created: expect.any(Number),
+				fallback: false
+			});
+		});
+		await expect(scanConnection(other.pb, mailbox.id, 'start')).rejects.toMatchObject({ kind: 'not_found' });
+		// The helper reports "done" just before it ends the run; wait until nothing runs there.
+		await vi.waitFor(async () => expect((await scanConnection(owner.pb, mailbox.id, 'cancel')).status).toBe('idle'));
 	});
 
 	it('marks a stored scan as cancelled when the helper runs none, also while it is stopped', async () => {
