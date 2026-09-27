@@ -8,7 +8,7 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { ACCENT_THEMES, STORED_ACCENTS, type AccentTheme } from '$lib/accent.svelte';
-import { contrast, deltaE2000, hslHue } from '$lib/test/color-math';
+import { contrast, deltaE2000, hexToLab, hslHue } from '$lib/test/color-math';
 
 const SOURCE = readFileSync(join(import.meta.dirname, 'tokens.css'), 'utf8');
 
@@ -347,15 +347,52 @@ describe('distance of the colors (CIEDE2000, ADR-0027 section 4)', () => {
 		});
 	});
 
-	it('moves the error color of Rubin away from ADR-0009 and keeps it in all other themes', () => {
+	it('moves the error color of Rubin and Kupfer away from ADR-0009 and keeps it in Smaragd', () => {
 		for (const mode of BASE_MODES) {
-			expect(color('rubin', mode, '--color-danger')).not.toBe(
+			for (const theme of ['rubin', 'kupfer'] as const) {
+				expect(color(theme, mode, '--color-danger'), theme).not.toBe(
+					color('petrol', mode, '--color-danger')
+				);
+			}
+			expect(color('smaragd', mode, '--color-danger')).toBe(
 				color('petrol', mode, '--color-danger')
 			);
-			for (const theme of ['purpur', 'smaragd', 'honig'] as const) {
-				expect(color(theme, mode, '--color-danger')).toBe(color('petrol', mode, '--color-danger'));
-			}
 		}
+	});
+
+	describe('addendum 2026-09-27: Rubin darker, Smaragd deep, Honig becomes Kupfer, no Purpur', () => {
+		it('has no blocks and no swatches of Purpur and Honig any more', () => {
+			expect(SOURCE.replace(/\/\*[\s\S]*?\*\//g, '')).not.toMatch(/purpur|honig/i);
+		});
+
+		it.each(BASE_MODES)('keeps the hue of Rubin and makes it darker than before (%s)', (mode) => {
+			const before = { light: '#a0174f', dark: '#ca2b70' }[mode];
+			const rubin = color('rubin', mode, '--color-brand');
+			expect(hslHue(rubin)).toBeGreaterThanOrEqual(330);
+			expect(hslHue(rubin)).toBeLessThanOrEqual(345);
+			expect(hexToLab(rubin)[0]).toBeLessThan(hexToLab(before)[0]);
+		});
+
+		it.each(BASE_MODES)('makes Smaragd clearly darker than before (%s)', (mode) => {
+			const before = { light: '#13854a', dark: '#15874a' }[mode];
+			const lightness = hexToLab(color('smaragd', mode, '--color-brand'))[0];
+			expect(lightness).toBeLessThan(hexToLab(before)[0] - (mode === 'light' ? 10 : 2));
+		});
+
+		it('makes Kupfer a copper brown on macchiato (light) and a warm copper on espresso (dark)', () => {
+			for (const mode of BASE_MODES) {
+				expect(hslHue(color('kupfer', mode, '--color-brand'))).toBeGreaterThanOrEqual(15);
+				expect(hslHue(color('kupfer', mode, '--color-brand'))).toBeLessThanOrEqual(30);
+			}
+			expect(hexToLab(color('kupfer', 'light', '--color-brand-soft-bg'))[0]).toBeGreaterThan(90);
+			expect(hexToLab(color('kupfer', 'dark', '--color-brand-soft-bg'))[0]).toBeLessThan(20);
+			// Dark text on the warm copper of the dark mode, as with the old Honig.
+			expect(hexToLab(color('kupfer', 'dark', '--color-on-brand'))[0]).toBeLessThan(15);
+			// "Wartet" stays slate, apart from the copper.
+			expect(color('kupfer', 'light', '--status-waiting-text')).not.toBe(
+				color('petrol', 'light', '--status-waiting-text')
+			);
+		});
 	});
 
 	it.each(BASE_MODES)('makes Smaragd a true green, clearly apart from Petrol (%s)', (mode) => {

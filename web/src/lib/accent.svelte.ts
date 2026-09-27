@@ -1,58 +1,63 @@
-// Accent themes (ADR-0027; CLAUDE.md section 8): Petrol (default), Rubin, Purpur, Smaragd, Honig,
-// each in light and dark, independent of the mode in theme.svelte.ts. The choice lives in
-// localStorage under ACCENT_STORAGE_KEY, only on this device: one of STORED_ACCENTS; "Petrol"
-// removes the key. tokens.css holds the colors under data-accent on the root element. The inline
-// script in app.html applies the stored choice before the first paint with the same allowlist;
-// theme-boot.test.ts keeps both in line with this module.
+// Accent themes (ADR-0027 with addendum 2026-09-27; CLAUDE.md section 8): Petrol (default), Rubin,
+// Smaragd, Kupfer, each in light and dark, independent of the mode in theme.svelte.ts. The choice
+// lives in localStorage under ACCENT_STORAGE_KEY, only on this device: one of STORED_ACCENTS;
+// "Petrol" removes the key. tokens.css holds the colors under data-accent on the root element. The
+// inline script in app.html applies the stored choice before the first paint with the same
+// allowlist and the same migration of old values; theme-boot.test.ts keeps both in line with
+// this module.
 
-export type AccentTheme = 'petrol' | 'rubin' | 'purpur' | 'smaragd' | 'honig';
+export type AccentTheme = 'petrol' | 'rubin' | 'smaragd' | 'kupfer';
 
 export const ACCENT_STORAGE_KEY = 'byl-accent';
 
 /** All themes in the order of the menu and the page "Darstellung"; Petrol is the default. */
-export const ACCENT_THEMES: readonly AccentTheme[] = [
-	'petrol',
-	'rubin',
-	'purpur',
-	'smaragd',
-	'honig'
-];
+export const ACCENT_THEMES: readonly AccentTheme[] = ['petrol', 'rubin', 'smaragd', 'kupfer'];
 
 export const DEFAULT_ACCENT: AccentTheme = 'petrol';
 
 /** Values that are stored and set as data-accent (the allowlist of app.html). */
 export const STORED_ACCENTS: readonly Exclude<AccentTheme, 'petrol'>[] = [
 	'rubin',
-	'purpur',
 	'smaragd',
-	'honig'
+	'kupfer'
 ];
+
+/**
+ * Stored values of themes that are gone (addendum 2026-09-27): Honig became Kupfer, Purpur was
+ * dropped and means Petrol again. app.html rewrites them once before the first paint.
+ */
+export const LEGACY_ACCENTS: Readonly<Record<string, AccentTheme>> = Object.freeze({
+	honig: 'kupfer',
+	purpur: 'petrol'
+});
 
 /** Names of the themes in the menu and on the page. */
 export const ACCENT_LABELS: Record<AccentTheme, string> = {
 	petrol: 'Petrol',
 	rubin: 'Rubin',
-	purpur: 'Purpur',
 	smaragd: 'Smaragd',
-	honig: 'Honig'
+	kupfer: 'Kupfer'
 };
 
 /** One line per theme for the tiles of the page "Darstellung". */
 export const ACCENT_DESCRIPTIONS: Record<AccentTheme, string> = {
 	petrol: 'Blaugrün, der Standard.',
-	rubin: 'Karminrot mit einem Hauch Magenta.',
-	purpur: 'Dunkles Violett.',
-	smaragd: 'Kräftiges Grün.',
-	honig: 'Bernstein, im Dunkeln Gold.'
+	rubin: 'Tiefes, edles Rubinrot.',
+	smaragd: 'Tiefes Smaragd- bis Flaschengrün.',
+	kupfer: 'Kupferbraun auf Macchiato, im Dunkeln auf Espresso.'
 };
 
 function isStoredAccent(value: unknown): value is Exclude<AccentTheme, 'petrol'> {
 	return (STORED_ACCENTS as readonly unknown[]).includes(value);
 }
 
-/** Only the stored themes count; everything else means Petrol. */
+/** Only the stored themes count, old values map to their successor; everything else is Petrol. */
 export function parseAccent(value: string | null | undefined): AccentTheme {
-	return isStoredAccent(value) ? value : DEFAULT_ACCENT;
+	if (isStoredAccent(value)) return value;
+	if (typeof value === 'string' && Object.hasOwn(LEGACY_ACCENTS, value)) {
+		return LEGACY_ACCENTS[value] ?? DEFAULT_ACCENT;
+	}
+	return DEFAULT_ACCENT;
 }
 
 /** The stored choice; a storage that throws (blocked, private mode) means Petrol. */

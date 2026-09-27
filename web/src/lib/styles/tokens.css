@@ -4,13 +4,14 @@
  * Structure (CLAUDE.md section 8, ADR-0027):
  * - Four mode blocks (light, dark by media query, forced light, forced dark) hold every color token
  *   with the default accent Petrol.
- * - Each further accent theme (data-accent on the root element: rubin, purpur, smaragd, honig) has
- *   the same four blocks and overrides only the accent tokens. Neutral surfaces and text stay the
+ * - Each further accent theme (data-accent on the root element: rubin, smaragd, kupfer) has the
+ *   same four blocks and overrides only the accent tokens. Neutral surfaces and text stay the
  *   same in every theme.
  * - Accent tokens: --color-brand, --color-brand-text, --color-brand-soft-bg,
  *   --color-brand-soft-text, --color-on-brand, the pills "Offen" and "In Arbeit", and the tokens a
- *   theme may adjust to stay apart from its accent: --color-danger, --color-danger-soft-bg (Rubin)
- *   and the pill "Wartet" (Honig). tokens.test.ts checks that every theme defines exactly this set.
+ *   theme may adjust to stay apart from its accent: --color-danger, --color-danger-soft-bg (Rubin,
+ *   Kupfer) and the pill "Wartet" (Kupfer). tokens.test.ts checks that every theme defines exactly
+ *   this set.
  * - The accent selectors carry one attribute more than the mode selectors, so they win in every
  *   mode regardless of order.
  */
@@ -31,10 +32,9 @@
 
 	/* Swatches of the accent themes for the choice (ADR-0027 section 6): each accent in this mode */
 	--swatch-petrol: #07838f;
-	--swatch-rubin: #a0174f;
-	--swatch-purpur: #6a2c91;
-	--swatch-smaragd: #13854a;
-	--swatch-honig: #8a5a00;
+	--swatch-rubin: #86133f;
+	--swatch-smaragd: #0a5c34;
+	--swatch-kupfer: #8a4a24;
 
 	/* Errors only (ADR-0009): text, icon, invalid field border / message background */
 	--color-danger: #a13a40;
@@ -104,10 +104,9 @@
 
 		/* Swatches of the accent themes for the choice (ADR-0027 section 6) */
 		--swatch-petrol: #07838f;
-		--swatch-rubin: #ca2b70;
-		--swatch-purpur: #9155be;
-		--swatch-smaragd: #15874a;
-		--swatch-honig: #e0a93a;
+		--swatch-rubin: #c62a66;
+		--swatch-smaragd: #167a47;
+		--swatch-kupfer: #d38b5d;
 
 		/* Errors only (ADR-0009): text, icon, invalid field border / message background */
 		--color-danger: #eaa0a0;
@@ -155,10 +154,9 @@
 
 	/* Swatches of the accent themes for the choice (ADR-0027 section 6): each accent in this mode */
 	--swatch-petrol: #07838f;
-	--swatch-rubin: #a0174f;
-	--swatch-purpur: #6a2c91;
-	--swatch-smaragd: #13854a;
-	--swatch-honig: #8a5a00;
+	--swatch-rubin: #86133f;
+	--swatch-smaragd: #0a5c34;
+	--swatch-kupfer: #8a4a24;
 
 	/* Errors only (ADR-0009): text, icon, invalid field border / message background */
 	--color-danger: #a13a40;
@@ -205,10 +203,9 @@
 
 	/* Swatches of the accent themes for the choice (ADR-0027 section 6) */
 	--swatch-petrol: #07838f;
-	--swatch-rubin: #ca2b70;
-	--swatch-purpur: #9155be;
-	--swatch-smaragd: #15874a;
-	--swatch-honig: #e0a93a;
+	--swatch-rubin: #c62a66;
+	--swatch-smaragd: #167a47;
+	--swatch-kupfer: #d38b5d;
 
 	/* Errors only (ADR-0009): text, icon, invalid field border / message background */
 	--color-danger: #eaa0a0;
@@ -240,21 +237,22 @@
 }
 
 /*
- * Rubin (ADR-0027 section 3): a carmine ruby, shifted towards magenta. In this theme the error
- * color moves towards brick red, so accent and error stay apart (Delta E 2000 at least 20).
+ * Rubin (ADR-0027 section 3, addendum 2026-09-27): a deep, noble ruby, a little darker and towards
+ * dark red (hue about 337 degrees). In this theme the error color moves towards brick red, so
+ * accent and error stay apart (Delta E 2000 at least 20).
  */
 :root[data-accent='rubin'] {
-	--color-brand: #a0174f;
-	--color-brand-text: #a0174f;
-	--color-brand-soft-bg: #fbe7ef;
-	--color-brand-soft-text: #7a1040;
+	--color-brand: #86133f;
+	--color-brand-text: #86133f;
+	--color-brand-soft-bg: #f9e5ec;
+	--color-brand-soft-text: #640e2f;
 	--color-on-brand: #ffffff;
 	--color-danger: #a7472a;
 	--color-danger-soft-bg: #f9ece6;
-	--status-open-text: #a0174f;
-	--status-open-border: #a0174f;
-	--status-in-progress-bg: #fbe7ef;
-	--status-in-progress-text: #7a1040;
+	--status-open-text: #86133f;
+	--status-open-border: #86133f;
+	--status-in-progress-bg: #f9e5ec;
+	--status-in-progress-text: #640e2f;
 	--status-waiting-bg: #fbf0dc;
 	--status-waiting-text: #7a4e08;
 	--status-waiting-border: #fbf0dc;
@@ -262,16 +260,16 @@
 
 @media (prefers-color-scheme: dark) {
 	:root[data-accent='rubin']:not([data-theme='light']) {
-		--color-brand: #ca2b70;
-		--color-brand-text: #f17eb4;
-		--color-brand-soft-bg: #3d1628;
+		--color-brand: #c62a66;
+		--color-brand-text: #ed7eb3;
+		--color-brand-soft-bg: #3a1524;
 		--color-brand-soft-text: #f8bfd8;
 		--color-on-brand: #ffffff;
 		--color-danger: #e28e78;
 		--color-danger-soft-bg: #3b2119;
-		--status-open-text: #f17eb4;
-		--status-open-border: #f17eb4;
-		--status-in-progress-bg: #3d1628;
+		--status-open-text: #ed7eb3;
+		--status-open-border: #ed7eb3;
+		--status-in-progress-bg: #3a1524;
 		--status-in-progress-text: #f8bfd8;
 		--status-waiting-bg: #3a2c12;
 		--status-waiting-text: #f2c77a;
@@ -280,126 +278,56 @@
 }
 
 :root[data-accent='rubin'][data-theme='light'] {
-	--color-brand: #a0174f;
-	--color-brand-text: #a0174f;
-	--color-brand-soft-bg: #fbe7ef;
-	--color-brand-soft-text: #7a1040;
+	--color-brand: #86133f;
+	--color-brand-text: #86133f;
+	--color-brand-soft-bg: #f9e5ec;
+	--color-brand-soft-text: #640e2f;
 	--color-on-brand: #ffffff;
 	--color-danger: #a7472a;
 	--color-danger-soft-bg: #f9ece6;
-	--status-open-text: #a0174f;
-	--status-open-border: #a0174f;
-	--status-in-progress-bg: #fbe7ef;
-	--status-in-progress-text: #7a1040;
+	--status-open-text: #86133f;
+	--status-open-border: #86133f;
+	--status-in-progress-bg: #f9e5ec;
+	--status-in-progress-text: #640e2f;
 	--status-waiting-bg: #fbf0dc;
 	--status-waiting-text: #7a4e08;
 	--status-waiting-border: #fbf0dc;
 }
 
 :root[data-accent='rubin'][data-theme='dark'] {
-	--color-brand: #ca2b70;
-	--color-brand-text: #f17eb4;
-	--color-brand-soft-bg: #3d1628;
+	--color-brand: #c62a66;
+	--color-brand-text: #ed7eb3;
+	--color-brand-soft-bg: #3a1524;
 	--color-brand-soft-text: #f8bfd8;
 	--color-on-brand: #ffffff;
 	--color-danger: #e28e78;
 	--color-danger-soft-bg: #3b2119;
-	--status-open-text: #f17eb4;
-	--status-open-border: #f17eb4;
-	--status-in-progress-bg: #3d1628;
+	--status-open-text: #ed7eb3;
+	--status-open-border: #ed7eb3;
+	--status-in-progress-bg: #3a1524;
 	--status-in-progress-text: #f8bfd8;
 	--status-waiting-bg: #3a2c12;
 	--status-waiting-text: #f2c77a;
 	--status-waiting-border: #3a2c12;
 }
 
-/* Purpur (ADR-0027 section 3): a dark purple; errors and "Wartet" as in Petrol. */
-:root[data-accent='purpur'] {
-	--color-brand: #6a2c91;
-	--color-brand-text: #6a2c91;
-	--color-brand-soft-bg: #f1e8f7;
-	--color-brand-soft-text: #4e1f6e;
-	--color-on-brand: #ffffff;
-	--color-danger: #a13a40;
-	--color-danger-soft-bg: #f8e9e9;
-	--status-open-text: #6a2c91;
-	--status-open-border: #6a2c91;
-	--status-in-progress-bg: #f1e8f7;
-	--status-in-progress-text: #4e1f6e;
-	--status-waiting-bg: #fbf0dc;
-	--status-waiting-text: #7a4e08;
-	--status-waiting-border: #fbf0dc;
-}
-
-@media (prefers-color-scheme: dark) {
-	:root[data-accent='purpur']:not([data-theme='light']) {
-		--color-brand: #9155be;
-		--color-brand-text: #c9a2ec;
-		--color-brand-soft-bg: #2c1e3d;
-		--color-brand-soft-text: #dcc4f2;
-		--color-on-brand: #ffffff;
-		--color-danger: #eaa0a0;
-		--color-danger-soft-bg: #3b1e21;
-		--status-open-text: #c9a2ec;
-		--status-open-border: #c9a2ec;
-		--status-in-progress-bg: #2c1e3d;
-		--status-in-progress-text: #dcc4f2;
-		--status-waiting-bg: #3a2c12;
-		--status-waiting-text: #f2c77a;
-		--status-waiting-border: #3a2c12;
-	}
-}
-
-:root[data-accent='purpur'][data-theme='light'] {
-	--color-brand: #6a2c91;
-	--color-brand-text: #6a2c91;
-	--color-brand-soft-bg: #f1e8f7;
-	--color-brand-soft-text: #4e1f6e;
-	--color-on-brand: #ffffff;
-	--color-danger: #a13a40;
-	--color-danger-soft-bg: #f8e9e9;
-	--status-open-text: #6a2c91;
-	--status-open-border: #6a2c91;
-	--status-in-progress-bg: #f1e8f7;
-	--status-in-progress-text: #4e1f6e;
-	--status-waiting-bg: #fbf0dc;
-	--status-waiting-text: #7a4e08;
-	--status-waiting-border: #fbf0dc;
-}
-
-:root[data-accent='purpur'][data-theme='dark'] {
-	--color-brand: #9155be;
-	--color-brand-text: #c9a2ec;
-	--color-brand-soft-bg: #2c1e3d;
-	--color-brand-soft-text: #dcc4f2;
-	--color-on-brand: #ffffff;
-	--color-danger: #eaa0a0;
-	--color-danger-soft-bg: #3b1e21;
-	--status-open-text: #c9a2ec;
-	--status-open-border: #c9a2ec;
-	--status-in-progress-bg: #2c1e3d;
-	--status-in-progress-text: #dcc4f2;
-	--status-waiting-bg: #3a2c12;
-	--status-waiting-text: #f2c77a;
-	--status-waiting-border: #3a2c12;
-}
-
 /*
- * Smaragd (ADR-0027 section 3): a true green (hue about 148 degrees), clearly apart from the blue
- * green of Petrol (about 185 degrees); errors and "Wartet" as in Petrol.
+ * Smaragd (ADR-0027 section 3, addendum 2026-09-27): a deep emerald, close to bottle green (hue
+ * about 150 degrees), clearly apart from the blue green of Petrol (about 185 degrees); errors and
+ * "Wartet" as in Petrol.
  */
 :root[data-accent='smaragd'] {
-	--color-brand: #13854a;
-	--color-brand-text: #11783e;
-	--color-brand-soft-bg: #ddf3e5;
-	--color-brand-soft-text: #0b5a31;
+	--color-brand: #0a5c34;
+	--color-brand-text: #0a5c34;
+	--color-brand-soft-bg: #dcece2;
+	--color-brand-soft-text: #063f23;
 	--color-on-brand: #ffffff;
 	--color-danger: #a13a40;
 	--color-danger-soft-bg: #f8e9e9;
-	--status-open-text: #11783e;
-	--status-open-border: #13854a;
-	--status-in-progress-bg: #ddf3e5;
-	--status-in-progress-text: #0b5a31;
+	--status-open-text: #0a5c34;
+	--status-open-border: #0a5c34;
+	--status-in-progress-bg: #dcece2;
+	--status-in-progress-text: #063f23;
 	--status-waiting-bg: #fbf0dc;
 	--status-waiting-text: #7a4e08;
 	--status-waiting-border: #fbf0dc;
@@ -407,17 +335,17 @@
 
 @media (prefers-color-scheme: dark) {
 	:root[data-accent='smaragd']:not([data-theme='light']) {
-		--color-brand: #15874a;
-		--color-brand-text: #4cc585;
-		--color-brand-soft-bg: #133a25;
-		--color-brand-soft-text: #a3e3bf;
+		--color-brand: #167a47;
+		--color-brand-text: #62c286;
+		--color-brand-soft-bg: #10301e;
+		--color-brand-soft-text: #a6dcbd;
 		--color-on-brand: #ffffff;
 		--color-danger: #eaa0a0;
 		--color-danger-soft-bg: #3b1e21;
-		--status-open-text: #4cc585;
-		--status-open-border: #4cc585;
-		--status-in-progress-bg: #133a25;
-		--status-in-progress-text: #a3e3bf;
+		--status-open-text: #62c286;
+		--status-open-border: #62c286;
+		--status-in-progress-bg: #10301e;
+		--status-in-progress-text: #a6dcbd;
 		--status-waiting-bg: #3a2c12;
 		--status-waiting-text: #f2c77a;
 		--status-waiting-border: #3a2c12;
@@ -425,109 +353,111 @@
 }
 
 :root[data-accent='smaragd'][data-theme='light'] {
-	--color-brand: #13854a;
-	--color-brand-text: #11783e;
-	--color-brand-soft-bg: #ddf3e5;
-	--color-brand-soft-text: #0b5a31;
+	--color-brand: #0a5c34;
+	--color-brand-text: #0a5c34;
+	--color-brand-soft-bg: #dcece2;
+	--color-brand-soft-text: #063f23;
 	--color-on-brand: #ffffff;
 	--color-danger: #a13a40;
 	--color-danger-soft-bg: #f8e9e9;
-	--status-open-text: #11783e;
-	--status-open-border: #13854a;
-	--status-in-progress-bg: #ddf3e5;
-	--status-in-progress-text: #0b5a31;
+	--status-open-text: #0a5c34;
+	--status-open-border: #0a5c34;
+	--status-in-progress-bg: #dcece2;
+	--status-in-progress-text: #063f23;
 	--status-waiting-bg: #fbf0dc;
 	--status-waiting-text: #7a4e08;
 	--status-waiting-border: #fbf0dc;
 }
 
 :root[data-accent='smaragd'][data-theme='dark'] {
-	--color-brand: #15874a;
-	--color-brand-text: #4cc585;
-	--color-brand-soft-bg: #133a25;
-	--color-brand-soft-text: #a3e3bf;
+	--color-brand: #167a47;
+	--color-brand-text: #62c286;
+	--color-brand-soft-bg: #10301e;
+	--color-brand-soft-text: #a6dcbd;
 	--color-on-brand: #ffffff;
 	--color-danger: #eaa0a0;
 	--color-danger-soft-bg: #3b1e21;
-	--status-open-text: #4cc585;
-	--status-open-border: #4cc585;
-	--status-in-progress-bg: #133a25;
-	--status-in-progress-text: #a3e3bf;
+	--status-open-text: #62c286;
+	--status-open-border: #62c286;
+	--status-in-progress-bg: #10301e;
+	--status-in-progress-text: #a6dcbd;
 	--status-waiting-bg: #3a2c12;
 	--status-waiting-text: #f2c77a;
 	--status-waiting-border: #3a2c12;
 }
 
 /*
- * Honig (ADR-0027 section 3): in light mode a deep amber brown for text, links and buttons, gold
- * only as a surface under dark text (yellow on white misses WCAG AA); in dark mode a warm gold
- * with dark text on it. "Wartet" turns slate here, because its amber would match the accent.
+ * Kupfer (ADR-0027, addendum 2026-09-27; replaces Honig): in light mode a deep copper brown for
+ * text, links and buttons on a milky macchiato surface; in dark mode a warm copper on espresso
+ * with dark text on it. Copper lies close to the red of ADR-0009, so the error color moves towards
+ * crimson here (Delta E 2000 at least 20), and "Wartet" turns slate, because its amber would
+ * match the accent.
  */
-:root[data-accent='honig'] {
-	--color-brand: #8a5a00;
-	--color-brand-text: #8a5a00;
-	--color-brand-soft-bg: #fbe9b5;
-	--color-brand-soft-text: #5e3e00;
+:root[data-accent='kupfer'] {
+	--color-brand: #8a4a24;
+	--color-brand-text: #8a4a24;
+	--color-brand-soft-bg: #f3e7dc;
+	--color-brand-soft-text: #5e3016;
 	--color-on-brand: #ffffff;
-	--color-danger: #a13a40;
-	--color-danger-soft-bg: #f8e9e9;
-	--status-open-text: #8a5a00;
-	--status-open-border: #8a5a00;
-	--status-in-progress-bg: #fbe9b5;
-	--status-in-progress-text: #5e3e00;
+	--color-danger: #a0334f;
+	--color-danger-soft-bg: #f9e8ec;
+	--status-open-text: #8a4a24;
+	--status-open-border: #8a4a24;
+	--status-in-progress-bg: #f3e7dc;
+	--status-in-progress-text: #5e3016;
 	--status-waiting-bg: #e8ecf4;
 	--status-waiting-text: #3c4a66;
 	--status-waiting-border: #e8ecf4;
 }
 
 @media (prefers-color-scheme: dark) {
-	:root[data-accent='honig']:not([data-theme='light']) {
-		--color-brand: #e0a93a;
-		--color-brand-text: #f0c35a;
-		--color-brand-soft-bg: #3a2e12;
-		--color-brand-soft-text: #f5d98f;
-		--color-on-brand: #1a1405;
-		--color-danger: #eaa0a0;
-		--color-danger-soft-bg: #3b1e21;
-		--status-open-text: #f0c35a;
-		--status-open-border: #f0c35a;
-		--status-in-progress-bg: #3a2e12;
-		--status-in-progress-text: #f5d98f;
+	:root[data-accent='kupfer']:not([data-theme='light']) {
+		--color-brand: #d38b5d;
+		--color-brand-text: #e6a57b;
+		--color-brand-soft-bg: #35251b;
+		--color-brand-soft-text: #f0cdb4;
+		--color-on-brand: #1c120c;
+		--color-danger: #e58fab;
+		--color-danger-soft-bg: #3b1e27;
+		--status-open-text: #e6a57b;
+		--status-open-border: #e6a57b;
+		--status-in-progress-bg: #35251b;
+		--status-in-progress-text: #f0cdb4;
 		--status-waiting-bg: #232d40;
 		--status-waiting-text: #b9c6df;
 		--status-waiting-border: #232d40;
 	}
 }
 
-:root[data-accent='honig'][data-theme='light'] {
-	--color-brand: #8a5a00;
-	--color-brand-text: #8a5a00;
-	--color-brand-soft-bg: #fbe9b5;
-	--color-brand-soft-text: #5e3e00;
+:root[data-accent='kupfer'][data-theme='light'] {
+	--color-brand: #8a4a24;
+	--color-brand-text: #8a4a24;
+	--color-brand-soft-bg: #f3e7dc;
+	--color-brand-soft-text: #5e3016;
 	--color-on-brand: #ffffff;
-	--color-danger: #a13a40;
-	--color-danger-soft-bg: #f8e9e9;
-	--status-open-text: #8a5a00;
-	--status-open-border: #8a5a00;
-	--status-in-progress-bg: #fbe9b5;
-	--status-in-progress-text: #5e3e00;
+	--color-danger: #a0334f;
+	--color-danger-soft-bg: #f9e8ec;
+	--status-open-text: #8a4a24;
+	--status-open-border: #8a4a24;
+	--status-in-progress-bg: #f3e7dc;
+	--status-in-progress-text: #5e3016;
 	--status-waiting-bg: #e8ecf4;
 	--status-waiting-text: #3c4a66;
 	--status-waiting-border: #e8ecf4;
 }
 
-:root[data-accent='honig'][data-theme='dark'] {
-	--color-brand: #e0a93a;
-	--color-brand-text: #f0c35a;
-	--color-brand-soft-bg: #3a2e12;
-	--color-brand-soft-text: #f5d98f;
-	--color-on-brand: #1a1405;
-	--color-danger: #eaa0a0;
-	--color-danger-soft-bg: #3b1e21;
-	--status-open-text: #f0c35a;
-	--status-open-border: #f0c35a;
-	--status-in-progress-bg: #3a2e12;
-	--status-in-progress-text: #f5d98f;
+:root[data-accent='kupfer'][data-theme='dark'] {
+	--color-brand: #d38b5d;
+	--color-brand-text: #e6a57b;
+	--color-brand-soft-bg: #35251b;
+	--color-brand-soft-text: #f0cdb4;
+	--color-on-brand: #1c120c;
+	--color-danger: #e58fab;
+	--color-danger-soft-bg: #3b1e27;
+	--status-open-text: #e6a57b;
+	--status-open-border: #e6a57b;
+	--status-in-progress-bg: #35251b;
+	--status-in-progress-text: #f0cdb4;
 	--status-waiting-bg: #232d40;
 	--status-waiting-text: #b9c6df;
 	--status-waiting-border: #232d40;

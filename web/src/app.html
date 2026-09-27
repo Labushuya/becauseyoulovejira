@@ -26,11 +26,20 @@
 				} catch (error) {
 					// Storage blocked: the system setting applies.
 				}
-				// Accent theme (ADR-0027 section 6; key and allowlist as in src/lib/accent.svelte.ts):
-				// only an allowed value sets data-accent, anything else keeps Petrol.
+				// Accent theme (ADR-0027 section 6; key, allowlist and old values as in
+				// src/lib/accent.svelte.ts): only an allowed value sets data-accent, anything else keeps
+				// Petrol. Since the addendum of 2026-09-27 a stored "honig" becomes "kupfer" and a stored
+				// "purpur" becomes Petrol, once, before the first paint.
 				try {
-					var accents = ['rubin', 'purpur', 'smaragd', 'honig'];
+					var accents = ['rubin', 'smaragd', 'kupfer'];
 					var accent = localStorage.getItem('byl-accent');
+					if (accent === 'honig') {
+						accent = 'kupfer';
+						document.documentElement.setAttribute('data-accent', accent);
+						localStorage.setItem('byl-accent', accent);
+					} else if (accent === 'purpur') {
+						localStorage.removeItem('byl-accent');
+					}
 					if (accents.indexOf(accent) !== -1) {
 						document.documentElement.setAttribute('data-accent', accent);
 					}

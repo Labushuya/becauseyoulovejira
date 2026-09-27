@@ -3,11 +3,13 @@
 
 import { afterEach, describe, expect, it } from 'vitest';
 import {
+	ACCENT_DESCRIPTIONS,
 	ACCENT_LABELS,
 	ACCENT_STORAGE_KEY,
 	ACCENT_THEMES,
 	AccentStore,
 	applyAccent,
+	LEGACY_ACCENTS,
 	parseAccent,
 	readAccent,
 	STORED_ACCENTS,
@@ -33,23 +35,34 @@ const throwing = {
 };
 
 describe('accent themes', () => {
-	it('offers Petrol first and four more themes with German names', () => {
-		expect(ACCENT_THEMES).toEqual(['petrol', 'rubin', 'purpur', 'smaragd', 'honig']);
+	it('offers Petrol first and three more themes with German names (addendum 2026-09-27)', () => {
+		expect(ACCENT_THEMES).toEqual(['petrol', 'rubin', 'smaragd', 'kupfer']);
 		expect(STORED_ACCENTS).toEqual(ACCENT_THEMES.slice(1));
 		expect(ACCENT_THEMES.map((accent) => ACCENT_LABELS[accent])).toEqual([
 			'Petrol',
 			'Rubin',
-			'Purpur',
 			'Smaragd',
-			'Honig'
+			'Kupfer'
 		]);
+		expect(ACCENT_DESCRIPTIONS.kupfer).toMatch(/Macchiato.*Espresso/);
+	});
+
+	it('maps the old values: Honig to Kupfer, Purpur to Petrol', () => {
+		expect(LEGACY_ACCENTS).toEqual({ honig: 'kupfer', purpur: 'petrol' });
+		localStorage.setItem('byl-accent', 'honig');
+		expect(readAccent(localStorage)).toBe('kupfer');
+		localStorage.setItem('byl-accent', 'purpur');
+		expect(readAccent(localStorage)).toBe('petrol');
+		expect(parseAccent('toString')).toBe('petrol');
+		expect(parseAccent('constructor')).toBe('petrol');
 	});
 
 	it.each([
 		['rubin', 'rubin'],
-		['purpur', 'purpur'],
 		['smaragd', 'smaragd'],
-		['honig', 'honig'],
+		['kupfer', 'kupfer'],
+		['honig', 'kupfer'],
+		['purpur', 'petrol'],
 		['petrol', 'petrol'],
 		[null, 'petrol'],
 		['Rubin', 'petrol'],
@@ -69,8 +82,8 @@ describe('accent themes', () => {
 	});
 
 	it('stores a theme and removes the key for Petrol', () => {
-		expect(writeAccent(localStorage, 'honig')).toBe(true);
-		expect(localStorage.getItem('byl-accent')).toBe('honig');
+		expect(writeAccent(localStorage, 'kupfer')).toBe(true);
+		expect(localStorage.getItem('byl-accent')).toBe('kupfer');
 		expect(writeAccent(localStorage, 'petrol')).toBe(true);
 		expect(localStorage.getItem('byl-accent')).toBeNull();
 		expect(writeAccent(throwing, 'rubin')).toBe(false);
@@ -80,8 +93,8 @@ describe('accent themes', () => {
 	it('sets data-accent only for a theme other than Petrol and leaves data-theme alone', () => {
 		const root = document.documentElement;
 		root.setAttribute('data-theme', 'dark');
-		applyAccent(root, 'purpur');
-		expect(root.getAttribute('data-accent')).toBe('purpur');
+		applyAccent(root, 'kupfer');
+		expect(root.getAttribute('data-accent')).toBe('kupfer');
 		applyAccent(root, 'petrol');
 		expect(root.hasAttribute('data-accent')).toBe(false);
 		expect(root.getAttribute('data-theme')).toBe('dark');
@@ -116,10 +129,10 @@ describe('AccentStore', () => {
 		const store = new AccentStore(blocked);
 		expect(store.accent).toBe('petrol');
 
-		store.choose('honig');
+		store.choose('kupfer');
 
-		expect(store.accent).toBe('honig');
-		expect(document.documentElement.getAttribute('data-accent')).toBe('honig');
+		expect(store.accent).toBe('kupfer');
+		expect(document.documentElement.getAttribute('data-accent')).toBe('kupfer');
 	});
 
 	it('follows a choice made in another tab and ignores other keys and invalid values', () => {
@@ -129,9 +142,14 @@ describe('AccentStore', () => {
 		window.dispatchEvent(new StorageEvent('storage', { key: 'byl-theme', newValue: 'dark' }));
 		expect(store.accent).toBe('petrol');
 
-		window.dispatchEvent(new StorageEvent('storage', { key: 'byl-accent', newValue: 'purpur' }));
-		expect(store.accent).toBe('purpur');
-		expect(document.documentElement.getAttribute('data-accent')).toBe('purpur');
+		window.dispatchEvent(new StorageEvent('storage', { key: 'byl-accent', newValue: 'smaragd' }));
+		expect(store.accent).toBe('smaragd');
+		expect(document.documentElement.getAttribute('data-accent')).toBe('smaragd');
+
+		// A tab with the old app writes "honig": this tab shows its successor Kupfer.
+		window.dispatchEvent(new StorageEvent('storage', { key: 'byl-accent', newValue: 'honig' }));
+		expect(store.accent).toBe('kupfer');
+		expect(document.documentElement.getAttribute('data-accent')).toBe('kupfer');
 
 		window.dispatchEvent(new StorageEvent('storage', { key: 'byl-accent', newValue: 'lila' }));
 		expect(store.accent).toBe('petrol');

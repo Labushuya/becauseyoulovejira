@@ -66,3 +66,14 @@ Die Werte oben gelten in allen anderen Themes unverändert. Die Regeln dieses AD
 - den Abstand zu „Wartet“ (mindestens ΔE 15)
 
 Die Kontrastwerte oben rechnet jetzt `web/src/lib/test/color-math.test.ts` nach.
+
+## Nachtrag (2026-09-27): Fehlerfarbe im Kupfer-Theme (ADR-0027, Nachtrag)
+
+Das neue Kupfer-Theme (Nachfolger von Honig) liegt wie Rubin zu nah an `#A13A40`. Deshalb rückt die Fehlerfarbe **nur im Kupfer-Theme** Richtung Karmin, entsättigt und mit Icon und Text wie überall:
+
+| Token | Hell | Dunkel |
+|---|---|---|
+| `--color-danger` | `#A0334F` | `#E58FAB` |
+| `--color-danger-soft-bg` | `#F9E8EC` | `#3B1E27` |
+
+In Petrol und Smaragd gelten die Werte oben unverändert, in Rubin die aus dem Nachtrag vom 2026-09-26.
