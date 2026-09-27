@@ -65,7 +65,8 @@ const NON_COLOR_TOKENS = {
 	'--glass-filter-regular': 'blur(24px) saturate(140%)',
 	'--glass-filter-thick': 'blur(30px) saturate(140%)',
 	'--radius-overlay': '0.75rem',
-	'--radius-item': '0.25rem'
+	'--radius-item': '0.25rem',
+	'--radius-pill': '999px'
 } as const;
 
 /** What the blocks of the switch point "opaque" set (ADR-0029 section 6). */
