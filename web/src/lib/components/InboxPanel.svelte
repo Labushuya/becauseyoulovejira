@@ -318,7 +318,7 @@
 		font-size: 0.8125rem;
 		border: 1px solid var(--color-line);
 		border-left: 3px solid var(--color-brand);
-		border-radius: 0.375rem;
+		border-radius: var(--radius-control);
 	}
 
 	.duplicate ul {
@@ -373,7 +373,7 @@
 		font-size: 0.75rem;
 		background: none;
 		border: 1px solid currentColor;
-		border-radius: 0.375rem;
+		border-radius: var(--radius-control);
 		cursor: pointer;
 	}
 </style>

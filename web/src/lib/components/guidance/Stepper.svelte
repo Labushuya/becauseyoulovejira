@@ -106,7 +106,7 @@
 		height: 3px;
 		overflow: hidden;
 		background: var(--color-line);
-		border-radius: 2px;
+		border-radius: var(--radius-pill);
 	}
 
 	.fill {

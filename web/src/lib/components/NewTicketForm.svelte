@@ -524,7 +524,7 @@
 		padding: 0.375rem 0.5rem;
 		background: var(--color-surface);
 		border: 1px solid var(--color-text-muted);
-		border-radius: 0.375rem;
+		border-radius: var(--radius-control);
 	}
 
 	input[type='text'] {
@@ -573,7 +573,7 @@
 		color: var(--color-brand-text);
 		background: none;
 		border: 1px solid var(--color-brand);
-		border-radius: 0.375rem;
+		border-radius: var(--radius-control);
 		cursor: pointer;
 	}
 </style>

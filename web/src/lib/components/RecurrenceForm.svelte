@@ -271,7 +271,7 @@
 		padding: 0.25rem 0.5rem;
 		font-size: 0.8125rem;
 		border: 1px solid var(--color-line);
-		border-radius: 0.375rem;
+		border-radius: var(--radius-control);
 	}
 
 	input:not([type='radio'], [type='checkbox']),
@@ -280,7 +280,7 @@
 		font-size: 0.875rem;
 		background: var(--color-surface);
 		border: 1px solid var(--color-line);
-		border-radius: 0.375rem;
+		border-radius: var(--radius-control);
 	}
 
 	input[type='date'] {
@@ -308,6 +308,6 @@
 		font-size: 0.8125rem;
 		background: var(--color-bg);
 		border: 1px solid var(--color-line);
-		border-radius: 0.375rem;
+		border-radius: var(--radius-control);
 	}
 </style>

@@ -487,7 +487,7 @@
 		cursor: pointer;
 		background: var(--color-surface);
 		border: 1px solid var(--color-brand);
-		border-radius: 0.375rem;
+		border-radius: var(--radius-control);
 	}
 
 	.clipboard-hint {
@@ -502,7 +502,7 @@
 		color: var(--color-brand-text);
 		background: var(--color-surface);
 		border: 1px solid var(--color-brand);
-		border-radius: 0.375rem;
+		border-radius: var(--radius-control);
 		cursor: pointer;
 	}
 
@@ -668,7 +668,7 @@
 		text-decoration: none;
 		background: none;
 		border: 1px solid var(--color-line);
-		border-radius: 0.375rem;
+		border-radius: var(--radius-control);
 		cursor: pointer;
 	}
 
@@ -688,7 +688,7 @@
 		font-size: 0.875rem;
 		background: var(--color-surface);
 		border: 1px solid var(--color-line);
-		border-radius: 0.375rem;
+		border-radius: var(--radius-control);
 		cursor: pointer;
 	}
 
@@ -721,7 +721,7 @@
 		font-size: 0.8125rem;
 		background: none;
 		border: 1px solid currentColor;
-		border-radius: 0.375rem;
+		border-radius: var(--radius-control);
 		cursor: pointer;
 	}
 </style>

@@ -112,7 +112,7 @@
 		font-weight: 600;
 		background: var(--color-surface);
 		border: 1px solid var(--color-text-muted);
-		border-radius: 0.375rem;
+		border-radius: var(--radius-control);
 	}
 
 	.edit {
@@ -121,7 +121,7 @@
 		color: var(--color-text-muted);
 		background: none;
 		border: 1px solid transparent;
-		border-radius: 0.375rem;
+		border-radius: var(--radius-control);
 		cursor: pointer;
 	}
 

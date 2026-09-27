@@ -187,7 +187,7 @@
 		font-size: 0.8125rem;
 		background: none;
 		border: 1px solid var(--color-line);
-		border-radius: 0.375rem;
+		border-radius: var(--radius-control);
 		cursor: pointer;
 	}
 

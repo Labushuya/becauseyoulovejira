@@ -96,7 +96,7 @@
 		gap: 0.125rem;
 		padding: 0.125rem;
 		border: 1px solid var(--color-line);
-		border-radius: 0.375rem;
+		border-radius: var(--radius-control);
 	}
 
 	.modes button {
@@ -104,7 +104,7 @@
 		font-size: 0.75rem;
 		background: none;
 		border: none;
-		border-radius: 0.25rem;
+		border-radius: var(--radius-item);
 		cursor: pointer;
 	}
 
@@ -123,7 +123,7 @@
 		color: inherit;
 		background: var(--color-surface);
 		border: 1px solid var(--color-text-muted);
-		border-radius: 0.375rem;
+		border-radius: var(--radius-control);
 		resize: vertical;
 	}
 
@@ -132,7 +132,7 @@
 		padding: 0.5rem 0.625rem;
 		background: var(--color-surface);
 		border: 1px solid var(--color-line);
-		border-radius: 0.375rem;
+		border-radius: var(--radius-control);
 	}
 
 	.nothing,

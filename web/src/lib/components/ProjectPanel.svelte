@@ -381,7 +381,7 @@
 		line-height: 1.25rem;
 		color: var(--color-text-muted);
 		border: 1px solid var(--color-line);
-		border-radius: 0.625rem;
+		border-radius: var(--radius-pill);
 	}
 
 	.stats {

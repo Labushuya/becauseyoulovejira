@@ -86,7 +86,7 @@
 		color: var(--color-text-muted);
 		background: var(--color-surface);
 		border: 1px solid var(--color-line);
-		border-radius: 999px;
+		border-radius: var(--radius-pill);
 		cursor: pointer;
 	}
 

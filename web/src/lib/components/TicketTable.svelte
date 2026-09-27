@@ -639,7 +639,7 @@
 		font-variant-numeric: tabular-nums;
 		color: var(--color-text-muted);
 		border: 1px solid var(--color-line);
-		border-radius: 0.625rem;
+		border-radius: var(--radius-pill);
 	}
 
 	.section-foot td {
@@ -696,7 +696,7 @@
 		font-size: 0.8125rem;
 		background: none;
 		border: 1px solid currentColor;
-		border-radius: 0.375rem;
+		border-radius: var(--radius-control);
 		cursor: pointer;
 	}
 
@@ -705,7 +705,7 @@
 		font-size: 0.875rem;
 		background: var(--color-surface);
 		border: 1px solid var(--color-line);
-		border-radius: 0.375rem;
+		border-radius: var(--radius-control);
 		cursor: pointer;
 	}
 

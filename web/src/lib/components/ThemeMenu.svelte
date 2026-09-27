@@ -158,6 +158,6 @@
 		height: 1rem;
 		background: var(--swatch);
 		border: 1px solid var(--color-line);
-		border-radius: 0.25rem;
+		border-radius: var(--radius-item);
 	}
 </style>

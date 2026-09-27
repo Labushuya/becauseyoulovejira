@@ -36,7 +36,7 @@
 		line-height: 1.25rem;
 		white-space: nowrap;
 		border: 1px solid transparent;
-		border-radius: 999px;
+		border-radius: var(--radius-pill);
 	}
 
 	.label {

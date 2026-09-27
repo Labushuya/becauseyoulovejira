@@ -184,7 +184,7 @@
 		font-variant-numeric: tabular-nums;
 		color: var(--color-brand-soft-text);
 		background: var(--color-brand-soft-bg);
-		border-radius: 0.625rem;
+		border-radius: var(--radius-pill);
 	}
 
 	.new {
@@ -206,7 +206,7 @@
 		font-size: 0.875rem;
 		background: none;
 		border: 1px solid var(--color-line);
-		border-radius: 0.375rem;
+		border-radius: var(--radius-control);
 		cursor: pointer;
 	}
 
@@ -216,7 +216,7 @@
 		font-size: 0.75rem;
 		color: var(--color-text-muted);
 		border: 1px solid var(--color-line);
-		border-radius: 0.25rem;
+		border-radius: var(--radius-item);
 	}
 
 	.after-quick {
@@ -259,7 +259,7 @@
 		padding: 0.375rem 0.75rem;
 		background: none;
 		border: 1px solid var(--color-text-muted);
-		border-radius: 0.375rem;
+		border-radius: var(--radius-control);
 		cursor: pointer;
 	}
 </style>

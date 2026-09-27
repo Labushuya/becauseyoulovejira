@@ -327,7 +327,7 @@
 		white-space: nowrap;
 		background: var(--color-brand-soft-bg);
 		border: 1px solid var(--color-brand);
-		border-radius: 999px;
+		border-radius: var(--radius-pill);
 		transform: translateX(-50%);
 	}
 
@@ -347,7 +347,7 @@
 		text-decoration: none;
 		background: var(--color-brand-soft-bg);
 		border: 1px solid var(--color-brand);
-		border-radius: 999px;
+		border-radius: var(--radius-pill);
 		cursor: grab;
 	}
 

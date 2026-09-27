@@ -310,7 +310,7 @@
 		line-height: 1.25rem;
 		color: var(--color-text);
 		border: 1px solid var(--color-line);
-		border-radius: 0.25rem;
+		border-radius: var(--radius-item);
 	}
 
 	.remove {
@@ -319,7 +319,7 @@
 		color: var(--color-text-muted);
 		background: none;
 		border: none;
-		border-radius: 0.25rem;
+		border-radius: var(--radius-item);
 		cursor: pointer;
 	}
 
@@ -337,7 +337,7 @@
 		padding: 0.25rem 0.5rem;
 		background: var(--color-surface);
 		border: 1px solid var(--color-text-muted);
-		border-radius: 0.375rem;
+		border-radius: var(--radius-control);
 	}
 
 	input[aria-busy='true'] {
