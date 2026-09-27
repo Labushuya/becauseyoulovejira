@@ -99,15 +99,17 @@ function table(id: TableId, columns: readonly ColumnSpec[]): TableSpec {
 }
 
 /**
- * "Aufgaben": Key, Prio, Status, Titel, Projekt, Tags, Fällig, Erstellt, actions. Space runs out:
- * Erstellt, Tags, Projekt, Fällig give way in this order (ADR-0025 section 11). Prio and Status
- * never give way on their own but can be switched off, as in Jira.
+ * "Aufgaben": Key, Prio, Status, Titel, Quelle, Projekt, Tags, Fällig, Erstellt, actions. Space
+ * runs out: Erstellt, Tags, Projekt, Fällig give way in this order (ADR-0025 section 11); the
+ * column "Quelle" (ADR-0019 section 4, off by default) goes before them. Prio and Status never
+ * give way on their own but can be switched off, as in Jira.
  */
 export const TICKET_TABLE: TableSpec = table('tickets', [
 	column('key', 'Key', { width: 6, min: 4, max: 8, required: true }),
 	column('priority', 'Prio', { width: 4, min: 3, max: 6 }),
 	column('status', 'Status', { width: 6.5, min: 4.5, max: 10 }),
 	flexible('title', 'Titel', 10),
+	column('source', 'Quelle', { width: 7, min: 4, max: 12, hideRank: 0, hiddenByDefault: true }),
 	column('project', 'Projekt', { width: 8, min: 4, max: 16, hideRank: 3 }),
 	column('tags', 'Tags', { width: 8, min: 4, max: 20, hideRank: 2 }),
 	column('due', 'Fällig', { width: 8, min: 5, max: 12, hideRank: 4 }),
@@ -168,6 +170,12 @@ export function isResizable(column: ColumnSpec): boolean {
 /** Columns the menu "Spalten" lists: every column that is not required. */
 export function optionalColumns(columns: readonly ColumnSpec[]): ColumnSpec[] {
 	return columns.filter((entry) => !entry.required);
+}
+
+/** A width for people: "8 rem", "8,5 rem" (half steps; a dragged width is rounded). */
+export function formatRem(px: number): string {
+	const rem = Math.round((px / REM) * 2) / 2;
+	return `${String(rem).replace('.', ',')} rem`;
 }
 
 /** `px` within the bounds of the column, in whole pixels. */

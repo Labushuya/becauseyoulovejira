@@ -1,6 +1,6 @@
 # ADR-0019: Quelle als Filter, Gruppierung und Merkmal in der Tabelle
 
-- **Status:** Angenommen
+- **Status:** Angenommen; §4 eingelöst durch [ADR-0030](0030-spalten-breiten-und-kompakte-zeilen.md), siehe Nachtrag
 - **Datum:** 2026-09-25
 - **Entscheidung durch:** Advisor
 - **Ergänzt:** [ADR-0010](0010-layout-nach-task-board.md) (Quelle als Chip-Gruppe, Spalte, Gruppierung ab E4), [ADR-0013](0013-filter-suche-sortierung-gruppierung.md) (Client und Server bei Filtern)
@@ -63,3 +63,7 @@ Der Eingang nutzt dieselben Familien als Chip-Gruppe (Parameter `quelle`) und da
 - `TICKET_LIST_FIELDS` und das Realtime-Abo der Tickets bekommen `source`.
 - Alte Adressen ohne `quelle` gelten unverändert. Ein unbekannter Wert wird ignoriert (ADR-0013 §4).
 - Die Filterleiste wird eine Chip-Gruppe breiter; auf schmalen Bildschirmen bricht sie wie bisher um.
+
+## Nachtrag (2026-09-27): Spalte „Quelle“ nach ADR-0030
+
+Die in §4 angekündigte Spalte gibt es seit Paket SP-3 ([ADR-0030](0030-spalten-breiten-und-kompakte-zeilen.md)). Sie zeigt den Namen der Quellfamilie („Manuell“, „Mail“, „Kalender“ …), ist standardmäßig aus und wird im Menü „Spalten“ eingeschaltet. Wird der Platz knapp, weicht sie als erste. Das Symbol am Titel bleibt.

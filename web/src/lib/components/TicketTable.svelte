@@ -24,6 +24,7 @@
 		withShowDone
 	} from '$lib/ticket-links';
 	import { getQuickCaptureOpener } from '$lib/quick-capture-context';
+	import ColumnsPopover from './ColumnsPopover.svelte';
 	import ErrorIcon from './ErrorIcon.svelte';
 	import EmptyState from './guidance/EmptyState.svelte';
 	import GroupPopover from './GroupPopover.svelte';
@@ -401,6 +402,11 @@
 				<span class="switch-hint" id={ids.switchHint}>{switchHint}</span>
 			{/if}
 			<GroupPopover />
+			<ColumnsPopover
+				store={columns}
+				autoHidden={fit.autoHidden}
+				always="Key, Titel und das Häkchen sind immer sichtbar."
+			/>
 		{/snippet}
 	</SectionBar>
 
@@ -473,6 +479,7 @@
 						{@render header('priority', 'Prio', 'priority')}
 						{@render header('status', 'Status', 'status')}
 						{@render header('title', 'Titel', 'title')}
+						{@render header('source', 'Quelle')}
 						{@render header('project', 'Projekt', 'project')}
 						{@render header('tags', 'Tags')}
 						{@render header('due', 'Fällig', 'due')}

@@ -17,6 +17,7 @@ import {
 	estimateTextWidth,
 	fitChips,
 	fitColumns,
+	formatRem,
 	isDefaultColumnPrefs,
 	isResizable,
 	optionalColumns,
@@ -27,7 +28,8 @@ import {
 	type TableSpec
 } from './columns';
 
-const NONE: ColumnPrefs = { widths: {}, hidden: [] };
+/** Nothing chosen for the tickets: default widths, "Quelle" off (ADR-0019 section 4). */
+const NONE: ColumnPrefs = { widths: {}, hidden: ['source'] };
 
 function spec(table: TableSpec, id: string): ColumnSpec {
 	const found = table.columns.find((entry) => entry.id === id);
@@ -79,11 +81,13 @@ describe('column specs', () => {
 		expect(optionalColumns(TICKET_TABLE.columns).map((entry) => entry.id)).toEqual([
 			'priority',
 			'status',
+			'source',
 			'project',
 			'tags',
 			'due',
 			'created'
 		]);
+		expect(defaultColumnPrefs(TICKET_TABLE.columns)).toEqual(NONE);
 		expect(isResizable(spec(TICKET_TABLE, 'key'))).toBe(true);
 		expect(isResizable(spec(TICKET_TABLE, 'title'))).toBe(false);
 		expect(isResizable(spec(TICKET_TABLE, 'actions'))).toBe(false);
@@ -91,6 +95,13 @@ describe('column specs', () => {
 		expect(spec(TICKET_TABLE, 'tags').max).toBe(20 * REM);
 		expect(spec(TICKET_TABLE, 'project').max).toBe(16 * REM);
 		expect(spec(TICKET_TABLE, 'key').max).toBe(8 * REM);
+	});
+
+	it('names widths in rem for the menu "Spalten"', () => {
+		expect(formatRem(128)).toBe('8 rem');
+		expect(formatRem(136)).toBe('8,5 rem');
+		expect(formatRem(139)).toBe('8,5 rem');
+		expect(formatRem(142)).toBe('9 rem');
 	});
 
 	it('clamps a width to the bounds of its column', () => {
@@ -159,15 +170,12 @@ describe('parseColumnPrefs and serializeColumnPrefs', () => {
 	});
 
 	it('keeps the default hidden columns when the list is missing', () => {
-		const withSource: ColumnSpec[] = [
-			...columns,
-			{ ...spec(TICKET_TABLE, 'created'), id: 'source', hiddenByDefault: true }
-		];
-		expect(defaultColumnPrefs(withSource).hidden).toEqual(['source']);
+		expect(defaultColumnPrefs(columns).hidden).toEqual(['source']);
 		const missing = JSON.stringify({ v: 1, widths: {} });
-		expect(parseColumnPrefs(missing, withSource).hidden).toEqual(['source']);
+		expect(parseColumnPrefs(missing, columns).hidden).toEqual(['source']);
+		// A stored empty list means the user switched "Quelle" on.
 		const empty = JSON.stringify({ v: 1, widths: {}, hidden: [] });
-		expect(parseColumnPrefs(empty, withSource).hidden).toEqual([]);
+		expect(parseColumnPrefs(empty, columns).hidden).toEqual([]);
 	});
 
 	it('knows the defaults', () => {
@@ -180,7 +188,9 @@ describe('parseColumnPrefs and serializeColumnPrefs', () => {
 describe('fitColumns', () => {
 	it('shows everything at the default widths without a measured frame', () => {
 		const fit = fitColumns(null, TICKET_TABLE.columns, NONE);
-		expect(fit.visible).toEqual(TICKET_TABLE.columns.map((entry) => entry.id));
+		const all = TICKET_TABLE.columns.map((entry) => entry.id);
+		expect(fit.visible).toEqual(all.filter((id) => id !== 'source'));
+		expect(fitColumns(null, TICKET_TABLE.columns, { widths: {}, hidden: [] }).visible).toEqual(all);
 		expect(fit.autoHidden).toEqual([]);
 		expect(fit.flexWidth).toBeNull();
 		expect(fit.widths.tags).toBe(8 * REM);
@@ -236,7 +246,7 @@ describe('fitColumns', () => {
 	});
 
 	it('hides earlier when the user made columns wider, and keeps their widths', () => {
-		const wide: ColumnPrefs = { widths: { tags: 320 }, hidden: [] };
+		const wide: ColumnPrefs = { widths: { tags: 320 }, hidden: ['source'] };
 		const before = threshold(TICKET_TABLE, 'created');
 		expect(threshold(TICKET_TABLE, 'created', wide)).toBeGreaterThan(before);
 		// All columns need 1160 px with the wide tags instead of 968 px.
@@ -247,7 +257,7 @@ describe('fitColumns', () => {
 	});
 
 	it('does not count columns the user switched off as hidden for space', () => {
-		const prefs: ColumnPrefs = { widths: {}, hidden: ['created', 'priority'] };
+		const prefs: ColumnPrefs = { widths: {}, hidden: ['priority', 'source', 'created'] };
 		const fit = fitColumns(2000, TICKET_TABLE.columns, prefs);
 		expect(fit.autoHidden).toEqual([]);
 		expect(fit.visible).not.toContain('created');
@@ -273,9 +283,10 @@ describe('fitColumns', () => {
 
 	it('shrinks the widths of the user towards their minimum before the title goes below its own', () => {
 		const big: ColumnPrefs = { widths: { key: 128, status: 160 }, hidden: [] };
-		// Everything that can give way is gone; key, Prio, status, actions and 10rem of title.
+		// Everything that can give way is gone ("Quelle" first, it is switched on here); key, Prio,
+		// status, actions and 10rem of title stay.
 		const fit = fitColumns(500, TICKET_TABLE.columns, big);
-		expect(fit.autoHidden).toEqual(['created', 'tags', 'project', 'due']);
+		expect(fit.autoHidden).toEqual(['source', 'created', 'tags', 'project', 'due']);
 		expect(fit.widths.key).toBeLessThan(128);
 		expect(fit.widths.status).toBeLessThan(160);
 		expect(fit.flexWidth).toBeGreaterThanOrEqual(10 * REM);

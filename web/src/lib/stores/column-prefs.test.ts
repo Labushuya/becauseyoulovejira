@@ -11,6 +11,9 @@ import {
 	type ColumnStorage
 } from './column-prefs.svelte';
 
+/** Defaults of the ticket table: nothing chosen, "Quelle" off. */
+const DEFAULTS = { widths: {}, hidden: ['source'] };
+
 type MemoryStorage = ColumnStorage & { data: Map<string, string> };
 
 function memoryStorage(initial: Record<string, string> = {}): MemoryStorage {
@@ -51,7 +54,7 @@ describe('ColumnPrefsStore', () => {
 		expect(JSON.parse(storage.data.get('byl-columns-tickets') ?? '')).toEqual({
 			v: 1,
 			widths: { tags: 200 },
-			hidden: []
+			hidden: ['source']
 		});
 	});
 
@@ -71,11 +74,11 @@ describe('ColumnPrefsStore', () => {
 		store.setVisible('created', false);
 		store.setVisible('priority', false);
 		store.setVisible('key', false);
-		expect(store.prefs.hidden).toEqual(['priority', 'created']);
+		expect(store.prefs.hidden).toEqual(['priority', 'source', 'created']);
 		expect(store.isHidden('created')).toBe(true);
 
 		store.setVisible('created', true);
-		expect(store.prefs.hidden).toEqual(['priority']);
+		expect(store.prefs.hidden).toEqual(['priority', 'source']);
 		store.setVisible('priority', true);
 		// Back at the defaults the key goes away.
 		expect(storage.data.has('byl-columns-tickets')).toBe(false);
@@ -93,12 +96,12 @@ describe('ColumnPrefsStore', () => {
 			TICKET_TABLE,
 			memoryStorage({ 'byl-columns-tickets': '{oops' })
 		);
-		expect(broken.prefs).toEqual({ widths: {}, hidden: [] });
+		expect(broken.prefs).toEqual(DEFAULTS);
 	});
 
 	it('keeps the choice for the page when the storage throws', () => {
 		const store = new ColumnPrefsStore(TICKET_TABLE, throwing);
-		expect(store.prefs).toEqual({ widths: {}, hidden: [] });
+		expect(store.prefs).toEqual(DEFAULTS);
 		expect(() => store.setWidth('tags', 200)).not.toThrow();
 		expect(store.widthOf('tags')).toBe(200);
 		expect(() => store.reset()).not.toThrow();
@@ -116,7 +119,7 @@ describe('ColumnPrefsStore', () => {
 
 		store.reset();
 
-		expect(store.prefs).toEqual({ widths: {}, hidden: [] });
+		expect(store.prefs).toEqual(DEFAULTS);
 		expect(storage.data.has('byl-columns-tickets')).toBe(false);
 		expect(storage.data.has('byl-columns-inbox')).toBe(true);
 		expect(flags.show).toHaveBeenCalledExactlyOnceWith({ tone: 'info', title: COLUMNS_RESET_FLAG });
@@ -154,7 +157,7 @@ describe('ColumnPrefsRegistry', () => {
 
 		// The other tab cleared the storage.
 		window.dispatchEvent(new StorageEvent('storage', { key: null }));
-		expect(tickets.prefs).toEqual({ widths: {}, hidden: [] });
+		expect(tickets.prefs).toEqual(DEFAULTS);
 
 		disconnect();
 		window.dispatchEvent(
