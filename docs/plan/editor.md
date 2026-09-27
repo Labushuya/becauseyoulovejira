@@ -1,6 +1,6 @@
 # E6-Plan, Teil Editor: Unterstreichen, Checklisten und ein Editor wie Jira
 
-- **Stand:** RT-0 abgeschlossen (2026-09-28, Weg B). Stufe A (RT-1, RT-2) in Arbeit, Stufe B (RT-3 bis RT-6) offen.
+- **Stand:** RT-0 gemergt (#114, 2026-09-28, Weg B). Stufe A (RT-1, RT-2) in Arbeit, Stufe B (RT-3 bis RT-6) offen.
 - **Grundlage:**
   - [ADR-0032](../adr/0032-editor-tiptap-markdown.md) (Tiptap, Markdown als Speicherformat, Brücke über die markdown-it-Instanz der Anzeige, Spike RT-0)
   - [ADR-0008](../adr/0008-markdown-rendering-und-sanitizing.md), [ADR-0006](../adr/0006-frontend-zustand-und-datenzugriff.md) §5, [ADR-0025](../adr/0025-ui-konsistenz-overlay-system.md), [ADR-0026](../adr/0026-einstellungsbereich-und-hinweis-bausteine.md), [ADR-0029](../adr/0029-glas-materialien.md), [ADR-0030](../adr/0030-spalten-breiten-und-kompakte-zeilen.md), [ADR-0031](../adr/0031-herkunft-sichern.md)
@@ -31,7 +31,7 @@
 | Paket | Inhalt | Manifest |
 |---|---|---|
 | RT-0 | Spike: Tiptap gegen den Korpus (Parität, HTML als Text, `breaks`, Normalisierung), jsdom, Größe des Chunks; Entscheidung zwischen `@tiptap/markdown` und der Brücke über `prosemirror-markdown`; ADR-0032, dieser Plan, Manifest-Einträge als „geplant“ | – |
-| RT-1 | Anzeige: `++u++` → `<u>` (`markdown-it-ins`), Task-Listen per eigenem Plugin, Sanitizer-Erweiterung mit Hook, Korpus; XSS-Tests; CLAUDE.md §3 und §7; Hilfeseite | BYL-E6-200, BYL-E6-201 (manuell) |
+| RT-1 | Anzeige: `++u++` → `<u>` (`markdown-it-ins`), Task-Listen per eigenem Plugin, Sanitizer-Erweiterung mit Hook, Korpus; XSS-Tests; CLAUDE.md §7; Hilfeseite | BYL-E6-200, BYL-E6-201 (manuell) |
 | RT-2 | Checklisten in der Ansicht abhakbar: `toggleTask`, `Markdown.svelte` mit `ontoggletask`, Store, Hook `expected_updated` mit `validation_description_stale`, Konfliktfrage beim Speichern der Beschreibung, Kommentare nur für den Autor | BYL-E6-202 bis BYL-E6-204, BYL-E6-205 (manuell) |
 | RT-3 | `RichTextEditor` für die Beschreibung (Panel und Vollansicht): Extensions, Brücke, Toolbar, Kürzel, Eingaberegeln, Quelltextmodus, `richEditable`, dynamisches Laden mit Rückfall auf die `textarea`, `prose.css` | ab BYL-E6-206 |
 | RT-4 | „/“-Menü und Link-Popover | |
@@ -150,13 +150,19 @@ Siehe ADR-0032 §1 und §2. Der Serializer normalisiert beim ersten Speichern au
 | 2026-09-28 | RT-0 | **Gemischte Listen sind nicht abbildbar** (Quelltextmodus). Eine Liste aus Aufgaben und normalen Punkten gibt es im Tiptap-Schema nicht; sie in zwei Listen zu teilen, änderte die Anzeige. Eine Erweiterung (`bulletList` mit `taskItem`) ist eine Option für RT-3. |
 | 2026-09-28 | RT-0 | **Spike-Code bleibt draußen:** Die Brücke entsteht mit RT-3 in TypeScript mit Tests; der Korpus kommt mit RT-1 und seinem ersten Test ins Repo. Im Repo gäbe es sonst Code ohne Nutzer. |
 | 2026-09-28 | RT-0 | **Stufe A laut Konzept:** RT-1 (Anzeige) und RT-2 (Abhaken mit Schutz vor Überschreiben). Toolbar und Formate im Editor gehören zu RT-3 und damit zu Stufe B. |
+| 2026-09-28 | RT-1 | **Checkbox im HTML immer deaktiviert:** Die Anzeige und der Hook von DOMPurify geben nur `<input type="checkbox" disabled>` aus. Bedienbar macht sie erst `Markdown.svelte` mit `ontoggletask` (RT-2), im DOM und nicht im HTML. So bleiben Vorschau, Eingang und fremde Kommentare ohne Zutun gesperrt. |
+| 2026-09-28 | RT-1 | **Name der Checkbox:** der Text der Aufgabe als `aria-label` (Text, Code und Umbrüche des ersten Absatzes, höchstens 200 Zeichen), sonst „Aufgabe N“. Ein `<label>` um den Inhalt ginge nur mit einem weiteren Tag und verschachtelten Links. |
+| 2026-09-28 | RT-1 | **Marker nach GFM:** `[ ]`, `[x]` oder `[X]` am Anfang des ersten Absatzes eines Punkts, danach Leerraum oder das Zeilenende. `- [ ]` allein ist eine leere Aufgabe, `- [ ]**x**`, `- \[ \]` und `- [x](url)` sind keine. Die Regel läuft vor `text_join`, damit maskierte Klammern Text bleiben. |
+| 2026-09-28 | RT-1 | **`ADD_URI_SAFE_ATTR`:** DOMPurify prüft die Werte nicht URI-sicherer Attribute gegen `ALLOWED_URI_REGEXP`; ohne die Liste verlören `type`, `aria-label`, `data-task` und `start` ihre Werte. Damit ist der alte Fehler behoben, dass `3. drei` bei 1 begann. |
+| 2026-09-28 | RT-1 | **Darstellung:** Die Checkbox steht an der Stelle des Aufzählungszeichens (`li[data-task]` ohne Listenzeichen, nur Abstände; das Aussehen kommt aus `base.css`, `no-own-controls.test.ts`). `Markdown.svelte` und die Hilfeseite ziehen dabei auf die Schriftgrößen-Tokens, soweit es welche gibt (7 Werte, `no-own-font-sizes.test.ts` jetzt 235); Überschrift 1 und 3 bis 6 behalten ihre Zahlen, weil es für 1.25rem und 1rem kein Token gibt. |
+| 2026-09-28 | RT-1 | **Typen für `markdown-it-ins`:** Das Paket bringt keine mit; eine kleine Deklaration `web/src/markdown-it-ins.d.ts` genügt. Der Korpus steht in `.prettierignore`, damit Prettier die Texte nicht umschreibt. `npm audit`: `markdown-it-ins` ohne Befund; die drei bekannten niedrigen Befunde (`cookie` über `@sveltejs/kit`) bestehen unabhängig davon. |
 
 ## 5. Status
 
 | Paket | Stand |
 |---|---|
-| RT-0 | abgeschlossen (dieser PR) |
-| RT-1 | offen |
+| RT-0 | gemergt (#114) |
+| RT-1 | in Arbeit |
 | RT-2 | offen |
 | RT-3 bis RT-7 | Stufe B, nach Freigabe |
 

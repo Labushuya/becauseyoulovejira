@@ -107,9 +107,12 @@ describe('help page (EH-9)', () => {
 			`Was bedeutet „${RESTART_NEEDED.title}“?`,
 			'Wie widerrufe ich einen Zugang?',
 			'Warum sehe ich im Admin-Bereich andere Konten?',
-			'Wie ändere ich Spalten und ihre Breite?'
+			'Wie ändere ich Spalten und ihre Breite?',
+			'Wie formatiere ich Beschreibungen und Kommentare?'
 		]);
 		expect(section.querySelectorAll('details[open]')).toHaveLength(0);
+		expect(text(section)).toContain('++unterstrichen++');
+		expect(text(section)).toContain('- [ ] offen');
 		expect(text(section)).toContain(RESTART_NEEDED.text);
 		expect(
 			within(section)

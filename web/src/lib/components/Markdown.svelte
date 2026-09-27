@@ -16,7 +16,7 @@
 <style>
 	.markdown {
 		min-width: 0;
-		font-size: 0.875rem;
+		font-size: var(--font-size-body);
 		line-height: 1.55;
 		overflow-wrap: anywhere;
 	}
@@ -39,7 +39,7 @@
 	}
 
 	.markdown :global(h2) {
-		font-size: 1.125rem;
+		font-size: var(--font-size-title);
 	}
 
 	.markdown :global(:where(h3, h4, h5, h6)) {
@@ -50,13 +50,26 @@
 		padding-left: 1.5rem;
 	}
 
+	/*
+	 * Tasks (ADR-0032): the checkbox takes the place of the bullet. base.css draws it; here it only
+	 * gets its place in the line, also in loose lists where it sits in the first paragraph.
+	 */
+	.markdown :global(li[data-task]) {
+		list-style: none;
+	}
+
+	.markdown :global(:where(li[data-task] > input, li[data-task] > p:first-child > input)) {
+		margin: 0 0.375rem 0 -1.375rem;
+		vertical-align: -0.125rem;
+	}
+
 	.markdown :global(a) {
 		color: var(--color-brand-text);
 	}
 
 	.markdown :global(code) {
 		padding: 0.0625rem 0.25rem;
-		font-size: 0.8125rem;
+		font-size: var(--font-size-control);
 		background: var(--color-bg);
 		border: 1px solid var(--color-line);
 		border-radius: var(--radius-item);

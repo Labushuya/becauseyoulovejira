@@ -210,6 +210,26 @@
 					</li>
 				</ul>
 			</details>
+			<details>
+				<summary>Wie formatiere ich Beschreibungen und Kommentare?</summary>
+				<ul>
+					<li>
+						Beschreibungen und Kommentare sind Markdown: <code>**fett**</code>,
+						<code>*kursiv*</code>, <code>~~durchgestrichen~~</code>, <code># Überschrift</code>,
+						<code>- Punkt</code>, <code>1. Punkt</code>, <code>&gt; Zitat</code> und
+						<code>`Code`</code>.
+					</li>
+					<li><code>++unterstrichen++</code> unterstreicht den Text.</li>
+					<li>
+						<code>- [ ] offen</code> und <code>- [x] erledigt</code> werden zu einer Checkliste mit Kästchen.
+						Das geht nur in Aufzählungen, nicht in nummerierten Listen.
+					</li>
+					<li>
+						HTML im Text bleibt Text, Bilder werden nicht geladen. „Vorschau“ zeigt, wie es
+						aussieht.
+					</li>
+				</ul>
+			</details>
 		</div>
 	</section>
 
@@ -273,7 +293,7 @@
 	}
 
 	h4 {
-		font-size: 0.875rem;
+		font-size: var(--font-size-body);
 		font-weight: 600;
 	}
 
@@ -281,11 +301,11 @@
 	li,
 	dd,
 	dt {
-		font-size: 0.875rem;
+		font-size: var(--font-size-body);
 	}
 
 	.note {
-		font-size: 0.8125rem;
+		font-size: var(--font-size-control);
 		color: var(--color-text-muted);
 	}
 
@@ -352,7 +372,7 @@
 	}
 
 	summary {
-		font-size: 0.875rem;
+		font-size: var(--font-size-body);
 		font-weight: 500;
 		cursor: pointer;
 	}

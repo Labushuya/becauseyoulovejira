@@ -182,7 +182,7 @@ Umsetzung in `app/pb_migrations/1790200900_api_rules.js`, Details und Befunde im
 - Inhalte aus Kanälen sind nicht vertrauenswürdig: Anzeige nur über `Markdown.svelte`, Links nur `http:`/`https:`/`mailto:`, Bilder aus Mails werden nie geladen.
 - Realtime: Subscriptions aktualisieren gezielt einzelne Datensätze; kein Polling, kein komplettes Neuladen.
 - Bereichs-Umschalter: „Privat" aktiv, „Haushalt" ausgegraut, nicht klickbar (`aria-disabled`), darin ein dezentes Etikett „Demnächst" (`Lozenge` `muted`, per `aria-describedby`), kein dritter Eintrag.
-- Markdown-Ausgabe wird sanitisiert.
+- Markdown-Ausgabe wird sanitisiert ([ADR-0008](docs/adr/0008-markdown-rendering-und-sanitizing.md)). Seit RT-1 ([ADR-0032](docs/adr/0032-editor-tiptap-markdown.md), [Plan Editor](docs/plan/editor.md)) kennt die Anzeige zwei Erweiterungen: `++Text++` wird unterstrichen (`markdown-it-ins`, MIT, Ausgabe `<u>`), und `- [ ]`/`- [x]` in Aufzählungen wird eine Checkliste (eigenes Plugin in `lib/markdown.ts`, nicht in nummerierten Listen). Die Checkbox ist deaktiviert, trägt den Text der Aufgabe als Namen, und ihr `li` hat den Index in `data-task`. DOMPurify lässt dafür nur `u`, deaktivierte Checkboxen und Ziffern in `data-task` zu (Hook in `lib/markdown.ts`). Der Testkorpus liegt unter `web/src/lib/test/markdown-corpus/`.
 
 ## 8. Design-System
 
