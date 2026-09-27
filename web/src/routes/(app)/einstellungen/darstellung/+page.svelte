@@ -114,9 +114,9 @@
 		/>
 	</label>
 	<p class="note" id={`${uid}-transparency-note`}>
-		Halbtransparente, weichgezeichnete Flächen in Kopfzeile und Menüs. Folgt immer der
-		Systemeinstellung „Transparenz reduzieren“. Ruckelt die Oberfläche, etwa über Remote-Desktop,
-		schalte den Glas-Effekt aus.
+		Halbtransparente, weichgezeichnete Flächen in Kopfzeile, Menüs, Seitenpanel und Dialogen. Folgt
+		immer der Systemeinstellung „Transparenz reduzieren“. Ruckelt die Oberfläche, etwa über
+		Remote-Desktop, schalte den Glas-Effekt aus.
 	</p>
 	{#if transparencyStore.systemReduces}
 		<SectionMessage tone="info" compact>

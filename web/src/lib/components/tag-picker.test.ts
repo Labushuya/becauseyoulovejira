@@ -340,7 +340,10 @@ describe('tag picker: list in the top layer (UI-9)', () => {
 		expect(source).toMatch(/import \{ place \} from '\$lib\/overlay\/position';/);
 		expect(source).not.toMatch(/z-index|position: absolute/);
 		expect(source).toMatch(
-			/\.listbox \{[^}]*position: fixed;[^}]*border-radius: var\(--radius-surface\)/
+			/\.listbox \{[^}]*position: fixed;[^}]*border-radius: var\(--radius-overlay\)/
 		);
+		// The glass of the popovers (ADR-0029 section 1).
+		expect(source).toMatch(/\.listbox \{[^}]*background: var\(--material-thick\)/);
+		expect(source).toMatch(/\.listbox \{[^}]*backdrop-filter: var\(--glass-filter-thick\)/);
 	});
 });

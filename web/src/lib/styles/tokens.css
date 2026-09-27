@@ -46,13 +46,14 @@
 	/*
 	 * Glass of the control layer (ADR-0029 section 2), neutral in every theme: the surface, a little
 	 * translucent (at least 0.82, glass-contrast.test.ts), lines and the light edge on glass, and the
-	 * shadow of popovers, always together with a line.
+	 * shadows of popovers and of modals (since G-2), always together with a line.
 	 */
 	--material-regular: rgb(255 255 255 / 0.82);
 	--material-thick: rgb(255 255 255 / 0.92);
 	--color-separator: rgb(23 35 38 / 0.12);
 	--glass-edge: rgb(255 255 255 / 0.55);
 	--shadow-popover: 0 0 0 0.5px rgb(0 0 0 / 0.08), 0 8px 24px rgb(0 0 0 / 0.14);
+	--shadow-modal: 0 0 0 0.5px rgb(0 0 0 / 0.08), 0 22px 60px rgb(0 0 0 / 0.22);
 
 	/* Status pill colors - light mode */
 	--status-backlog-bg: transparent;
@@ -144,6 +145,7 @@
 		--color-separator: rgb(255 255 255 / 0.1);
 		--glass-edge: rgb(255 255 255 / 0.07);
 		--shadow-popover: 0 0 0 0.5px rgb(0 0 0 / 0.55), 0 8px 24px rgb(0 0 0 / 0.45);
+		--shadow-modal: 0 0 0 0.5px rgb(0 0 0 / 0.6), 0 22px 60px rgb(0 0 0 / 0.6);
 
 		/* Status pill colors - dark mode */
 		--status-backlog-bg: transparent;
@@ -201,6 +203,7 @@
 	--color-separator: rgb(23 35 38 / 0.12);
 	--glass-edge: rgb(255 255 255 / 0.55);
 	--shadow-popover: 0 0 0 0.5px rgb(0 0 0 / 0.08), 0 8px 24px rgb(0 0 0 / 0.14);
+	--shadow-modal: 0 0 0 0.5px rgb(0 0 0 / 0.08), 0 22px 60px rgb(0 0 0 / 0.22);
 
 	/* Status pill colors - light mode */
 	--status-backlog-bg: transparent;
@@ -257,6 +260,7 @@
 	--color-separator: rgb(255 255 255 / 0.1);
 	--glass-edge: rgb(255 255 255 / 0.07);
 	--shadow-popover: 0 0 0 0.5px rgb(0 0 0 / 0.55), 0 8px 24px rgb(0 0 0 / 0.45);
+	--shadow-modal: 0 0 0 0.5px rgb(0 0 0 / 0.6), 0 22px 60px rgb(0 0 0 / 0.6);
 
 	/* Status pill colors - dark mode */
 	--status-backlog-bg: transparent;
@@ -544,6 +548,7 @@
 		--backdrop-image: none !important;
 		--color-separator: var(--color-text-muted) !important;
 		--shadow-popover: none !important;
+		--shadow-modal: none !important;
 	}
 }
 

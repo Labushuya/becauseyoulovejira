@@ -267,7 +267,7 @@ describe('modal: unsaved input', () => {
 });
 
 describe('modal source', () => {
-	it('uses the size, blanket, radius and motion tokens and no shadow (ADR-0025 section 2)', () => {
+	it('uses the size, blanket, radius and motion tokens (ADR-0025 section 2)', () => {
 		for (const token of [
 			'--overlay-width-s',
 			'--overlay-width-m',
@@ -275,11 +275,27 @@ describe('modal source', () => {
 			'--overlay-width-xl',
 			'--overlay-max-height',
 			'--color-blanket',
-			'--radius-surface',
+			'--radius-overlay',
 			'--motion-medium'
 		]) {
 			expect(source, token).toContain(`var(${token})`);
 		}
-		expect(source).not.toMatch(/box-shadow|gradient|backdrop-filter|danger/);
+		expect(source).not.toMatch(/gradient|danger/);
+	});
+
+	it('is thick glass from S to L and an opaque full view (ADR-0029 section 1)', () => {
+		const rule = (selector: string) =>
+			new RegExp(`${selector.replace(/[.()]/g, '\\$&')} \\{([^}]*)\\}`).exec(source)?.[1] ?? '';
+		const base = rule('.modal');
+		expect(base).toMatch(/background:\s*var\(--color-surface\)/);
+		expect(base).toMatch(/box-shadow:\s*var\(--shadow-modal\)/);
+		expect(base).not.toMatch(/backdrop-filter/);
+		const glass = rule('.modal:not(.size-xl)');
+		expect(glass).toMatch(/background:\s*var\(--material-thick\)/);
+		expect(glass).toMatch(/backdrop-filter:\s*var\(--glass-filter-thick\)/);
+		expect(glass).toMatch(/border-color:\s*var\(--color-separator\)/);
+		expect(glass).toMatch(/inset 0 1px 0 var\(--glass-edge\),\s*var\(--shadow-modal\)/);
+		// The blanket stays a plain veil without blur (ADR-0029 section 8).
+		expect(rule('.modal::backdrop')).not.toMatch(/filter/);
 	});
 });

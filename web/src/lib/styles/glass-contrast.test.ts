@@ -130,6 +130,24 @@ describe.each(CASES)('glass in %s (%s)', (theme, mode) => {
 		expect(failures).toEqual([]);
 	});
 
+	// Modals, the panel as overlay and the tour lie on the blanket (G-2): thick glass over every
+	// color of the palette darkened by the veil.
+	it('keeps text readable on --material-thick over the blanket', () => {
+		const { color, alpha } = material(value('--material-thick'));
+		const veil = material(value('--color-blanket'));
+		const factor = saturation(value('--glass-filter-thick'));
+		const failures: string[] = [];
+		for (const [behindName, behind] of backgrounds) {
+			const darkened = mix(veil.color, rgb(behind), veil.alpha);
+			const effective = hex(mix(color, saturate(darkened, factor), alpha));
+			for (const text of TEXT_ON_GLASS) {
+				const ratio = contrast(value(text), effective);
+				if (ratio < 4.5) failures.push(`${text} over ${behindName}: ${ratio.toFixed(2)}`);
+			}
+		}
+		expect(failures).toEqual([]);
+	});
+
 	it('keeps what stands on the page readable on the gradient (accent surface)', () => {
 		const surface = value('--color-brand-soft-bg');
 		for (const text of TEXT_ON_PAGE) {
