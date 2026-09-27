@@ -1,6 +1,6 @@
 # ADR-0001: Betriebsmodell – vorerst lokal und Einzelnutzer, später Mehrgeräte/Mehrnutzer über Tailscale
 
-- **Status:** Angenommen
+- **Status:** Angenommen (mit Nachtrag vom 2026-09-27, ergänzt durch [ADR-0028](0028-plattform-strategie.md))
 - **Datum:** 2026-09-24
 - **Entscheidung durch:** Nutzer (Betriebsmodell), Advisor (technische Voraussetzungen)
 
@@ -49,3 +49,11 @@ Das Datenmodell der [CLAUDE.md §5](../../CLAUDE.md#5-datenmodell) ist bereits d
 - Negativ: Auch im Einzelnutzerbetrieb ist ein Login nötig. Gemildert durch lange Token-Laufzeit und automatisches `authRefresh`.
 - Negativ: Die Tailscale-Etappe hängt von einem externen Dienst (Tailscale-Konto) ab. Er ist optional; lokal läuft die App ohne ihn.
 - Die Aussage „nur lokal“ in README und CLAUDE.md gilt ausdrücklich **vorerst** und verweist auf diese ADR.
+
+## Nachtrag 2026-09-27: Plattform-Strategie
+
+[ADR-0028](0028-plattform-strategie.md) ergänzt diese ADR, ohne §1 bis §4 aufzuheben:
+
+- Neben dem PC kann ein dauerhaft laufender Raspberry Pi den Server stellen, dort mit PocketBase als Container ohne veröffentlichten Port. Je Datenbestand läuft genau ein Server.
+- Neben `tailscale serve` ist HTTPS über Traefik im eigenen Netz ein zweiter Weg. Die Voraussetzungen aus §3 (Proxy-Header, Superuser nur lokal, Rate Limiter, `--origins`) gelten für beide.
+- Mehrgeräte für einen Nutzer sind Stufe S2 im [Plattform-Plan](../plan/plattformen.md); die Haushalte (§4) bleiben E7 mit eigener Freigabe.
