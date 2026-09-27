@@ -101,8 +101,12 @@
 		border-color: var(--color-brand);
 	}
 
-	/* The radio stays in the accessibility tree and takes the focus; the chip shows it. */
-	input {
+	/*
+	 * The radio stays in the accessibility tree and takes the focus; the chip shows it. The one
+	 * exception from the look of base.css (no-own-controls.test.ts): invisible over the whole chip,
+	 * with a selector that outweighs the one of base.css.
+	 */
+	.chip input {
 		position: absolute;
 		inset: 0;
 		width: 100%;

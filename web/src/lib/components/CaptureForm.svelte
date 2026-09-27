@@ -488,7 +488,7 @@
 		font-weight: 400;
 	}
 
-	.field input,
+	.field input:not([type='radio'], [type='checkbox']),
 	.field textarea,
 	.field select,
 	.form :global(select) {

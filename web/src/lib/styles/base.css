@@ -80,6 +80,109 @@ input {
 	outline-offset: 2px;
 }
 
+/*
+ * Checkboxes and radios in the style of the app (testing feedback package A, item 6), the same in
+ * every component; components set no own sizes, colors or appearance for them
+ * (no-own-controls.test.ts). The accent of the theme marks the checked state, the check and the
+ * dot stay visible without color (shape), the border of an empty control reaches 3 : 1 through
+ * --color-text-muted, and the focus ring is the one of :focus-visible above. In forced colors
+ * (Windows high contrast) the native controls of the system return.
+ */
+input[type='checkbox'],
+input[type='radio'] {
+	appearance: none;
+	display: inline-grid;
+	flex: none;
+	place-content: center;
+	width: 1rem;
+	height: 1rem;
+	margin: 0;
+	vertical-align: middle;
+	background: var(--color-surface);
+	border: 1.5px solid var(--color-text-muted);
+	border-radius: 0.25rem;
+	cursor: pointer;
+}
+
+input[type='radio'] {
+	border-radius: 50%;
+}
+
+input[type='checkbox']::before,
+input[type='radio']::before {
+	content: '';
+	visibility: hidden;
+}
+
+/* The check: a shape in the color on the accent, so it stands out in every theme. */
+input[type='checkbox']::before {
+	width: 0.625rem;
+	height: 0.625rem;
+	background: var(--color-on-brand);
+	clip-path: polygon(14% 44%, 0 65%, 50% 100%, 100% 16%, 80% 0, 43% 62%);
+}
+
+/* Indeterminate ("some chosen"): a bar instead of the check. */
+input[type='checkbox']:indeterminate::before {
+	height: 0.125rem;
+	clip-path: none;
+}
+
+input[type='radio']::before {
+	width: 0.5rem;
+	height: 0.5rem;
+	background: var(--color-brand);
+	border-radius: 50%;
+}
+
+input[type='checkbox']:checked,
+input[type='checkbox']:indeterminate {
+	background: var(--color-brand);
+	border-color: var(--color-brand);
+}
+
+input[type='radio']:checked {
+	border-color: var(--color-brand);
+}
+
+input[type='checkbox']:checked::before,
+input[type='checkbox']:indeterminate::before,
+input[type='radio']:checked::before {
+	visibility: visible;
+}
+
+input[type='checkbox']:hover:not(:disabled, [aria-disabled='true']),
+input[type='radio']:hover:not(:disabled, [aria-disabled='true']) {
+	border-color: var(--color-brand);
+}
+
+input[type='checkbox']:disabled,
+input[type='radio']:disabled,
+input[type='checkbox'][aria-disabled='true'],
+input[type='radio'][aria-disabled='true'] {
+	cursor: not-allowed;
+	opacity: 0.5;
+}
+
+/* Locked while a request runs (DoneToggle): the focus stays, the pointer says "wait". */
+input[type='checkbox'][aria-busy='true'] {
+	cursor: progress;
+}
+
+@media (forced-colors: active) {
+	input[type='checkbox'],
+	input[type='radio'] {
+		appearance: auto;
+		background: revert;
+		border: revert;
+	}
+
+	input[type='checkbox']::before,
+	input[type='radio']::before {
+		content: none;
+	}
+}
+
 /* Links that look like buttons (empty states, guides) carry no underline (plan EH-11). */
 a.button-primary,
 a.button-secondary,

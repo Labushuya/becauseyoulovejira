@@ -654,10 +654,6 @@
 		width: 1.5rem;
 	}
 
-	.select input {
-		accent-color: var(--color-brand);
-	}
-
 	.action-group {
 		display: inline-flex;
 		gap: 0.5rem;

@@ -139,14 +139,13 @@
 		cursor: pointer;
 	}
 
-	/* The radio stays visible (the chosen state never depends on colour alone). */
+	/*
+	 * The radio stays visible (the chosen state never depends on colour alone); its look comes from
+	 * base.css, here only its place in the tile.
+	 */
 	.tile input {
 		grid-row: 1;
 		grid-column: 1;
-		width: 1rem;
-		height: 1rem;
-		margin: 0;
-		accent-color: var(--color-brand);
 	}
 
 	.preview {

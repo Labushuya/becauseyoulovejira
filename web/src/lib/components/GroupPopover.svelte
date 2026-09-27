@@ -161,8 +161,4 @@
 	.choice.checked {
 		font-weight: 600;
 	}
-
-	.choice input {
-		accent-color: var(--color-brand);
-	}
 </style>

@@ -399,10 +399,6 @@
 		cursor: pointer;
 	}
 
-	.switch input {
-		accent-color: var(--color-brand);
-	}
-
 	/* Same field as the search of the filter bar in "Aufgaben". */
 	.search {
 		display: inline-flex;
@@ -431,7 +427,7 @@
 		stroke-linecap: round;
 	}
 
-	.search input {
+	.search input[type='search'] {
 		width: 12rem;
 		max-width: 100%;
 		padding: 0.1875rem 0.375rem;
