@@ -1,6 +1,6 @@
 # E6-Plan, Teil Spalten: Breiten ziehen, ein- und ausblenden, kompakte Zeilen
 
-- **Stand:** SP-1 bis SP-5 und die Tag-Eingabe umgesetzt und gemergt (2026-09-27); der Switch im Kanal-Dialog in Arbeit. Offen sind die manuellen Browser-Prüfungen.
+- **Stand:** umgesetzt (2026-09-27): SP-1 bis SP-5, die Tag-Eingabe und der Switch im Kanal-Dialog (#98 bis #104). Offen sind die manuellen Browser-Prüfungen.
 - **Grundlage:**
   - [ADR-0030](../adr/0030-spalten-breiten-und-kompakte-zeilen.md) (berechnete Anpassung, Breiten und Schwellen, Griff, Menü „Spalten“, Speichern, kompakte Zeilen)
   - [ADR-0025](../adr/0025-ui-konsistenz-overlay-system.md) §5 und §11, [ADR-0010](../adr/0010-layout-nach-task-board.md) §1, [ADR-0019](../adr/0019-kanal-filter-und-gruppierung.md) §4, [ADR-0029](../adr/0029-glas-materialien.md)
@@ -73,7 +73,7 @@
 | SP-4 | gemergt (#101) |
 | SP-5 | gemergt (#102) |
 | Tags | gemergt (#103) |
-| Switch | in Arbeit |
+| Switch | gemergt (#104) |
 
 ## 5. Offene Punkte
 
