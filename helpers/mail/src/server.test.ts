@@ -4,12 +4,13 @@
 
 import { createServer as createNetServer, type AddressInfo } from 'node:net';
 import type { Server } from 'node:http';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { FakeImapServer, fakeMail } from '../test/fake-imap';
 import type { IngestApi, MailConnection, StatusReport } from './ingest-client';
 import type { IngestDraft } from './mail';
-import { PollGate } from './gate';
-import { DEFAULT_PORT, helperPort, startMailboxServer, type ServerDeps } from './server';
+import { PollGate, ScanControl } from './gate';
+import { scanStateOf } from './scan-state';
+import { DEFAULT_PORT, POLL_SCAN_BUDGET_MS, helperPort, startMailboxServer, type ServerDeps } from './server';
 
 const TOKEN = 'token-für-den-test';
 const PASSWORD = 'geheim-1234';
@@ -33,6 +34,7 @@ class MemoryIngest implements IngestApi {
 		this.reports.push(report);
 		const connection = this.connections.find((item) => item.id === id);
 		if (connection !== undefined && report.cursor !== undefined) connection.cursor = report.cursor;
+		if (connection !== undefined && report.scan !== undefined) connection.scan = scanStateOf(report.scan);
 	}
 }
 
@@ -99,7 +101,8 @@ beforeEach(async () => {
 			secretEnv: 'BYL_TEST_MAIL_PASSWORD',
 			keywords: ['todo'],
 			matchBody: false,
-			cursor: ''
+			cursor: '',
+			scan: null
 		}
 	];
 	lines = [];
@@ -296,24 +299,42 @@ describe('GET /health (package A)', () => {
 });
 
 describe('POST /poll ("Jetzt abrufen", package A)', () => {
-	it('runs the regular fetch at once: first the cursor, then new mails with keyword', async () => {
+	it('runs the regular fetch at once: first the whole inbox, then new mails with keyword', async () => {
 		mail('Todo: vor der Einrichtung');
 		const first = await call('/poll', { connection: ID });
 		expect(first).toEqual({
 			status: 200,
-			json: { status: 'ok', created: 0, duplicates: 0, unmatched: 0, skipped: 0, failed: 0, error: '', missing: [] }
+			json: { status: 'ok', created: 1, duplicates: 0, unmatched: 0, skipped: 0, failed: 0, error: '', missing: [] }
 		});
 		expect(ingest.connections[0]?.cursor).toMatch(/^\d+:1$/);
+		expect(ingest.connections[0]?.scan).toMatchObject({ state: 'done', total: 1 });
 
 		mail('Todo: neu');
 		mail('Hallo');
 		const second = await call('/poll', { connection: ID });
 		expect(second.json).toMatchObject({ status: 'ok', created: 1, unmatched: 1 });
-		expect(ingest.items.map((item) => [item.draft.title, item.draft.origin])).toEqual([['Todo: neu', 'auto']]);
+		expect(ingest.items.map((item) => [item.draft.title, item.draft.origin])).toEqual([
+			['Todo: vor der Einrichtung', 'auto'],
+			['Todo: neu', 'auto']
+		]);
 		expect((await call('/poll', { connection: ID })).json).toMatchObject({ status: 'ok', created: 0, unmatched: 0 });
-		expect(ingest.reports).toHaveLength(3);
+		// First run: progress at the start of the scan and the result; then one report per run.
+		expect(ingest.reports).toHaveLength(4);
 		expect(imap.writes()).toEqual([]);
 		expect(imap.flagsUnchanged()).toBe(true);
+	});
+
+	it('answers within the time budget and lets a longer scan go on in the background', async () => {
+		const gate = new PollGate();
+		let calls = 0;
+		// The first call sets the deadline, every later one is past it.
+		await restart({ gate, now: () => (calls++ === 0 ? 0 : POLL_SCAN_BUDGET_MS + 1) });
+		mail('Todo: alt');
+		const answer = await call('/poll', { connection: ID });
+		expect(answer.json).toMatchObject({ status: 'ok', created: 0 });
+		await vi.waitFor(() => expect(ingest.items).toHaveLength(1));
+		await vi.waitFor(() => expect(gate.busy).toBe(false));
+		expect(ingest.connections[0]?.scan).toMatchObject({ state: 'done', created: 1 });
 	});
 
 	it('answers 409 "running" while another fetch holds the gate, without waiting', async () => {
@@ -344,5 +365,69 @@ describe('POST /poll ("Jetzt abrufen", package A)', () => {
 			status: 'missing',
 			missing: ['BYL_TEST_MAIL_PASSWORD']
 		});
+	});
+});
+
+describe('POST /scan ("Posteingang neu durchsuchen", full inbox)', () => {
+	it('scans the whole inbox again in the background and answers at once', async () => {
+		const gate = new PollGate();
+		await restart({ gate });
+		mail('Todo: alt');
+		await call('/poll', { connection: ID });
+		mail('Rechnung von früher');
+		const [box] = ingest.connections;
+		if (box === undefined) throw new Error('no connection');
+		box.keywords = ['todo', 'rechnung'];
+		// The new mail lies below the cursor, so only the scan can find it.
+		box.cursor = `${imap.uidValidity}:2`;
+		const answer = await call('/scan', { connection: ID, action: 'start' });
+		expect(answer).toEqual({ status: 202, json: { status: 'started' } });
+		await vi.waitFor(() => expect(ingest.items.map((item) => item.draft.title)).toContain('Rechnung von früher'));
+		await vi.waitFor(() => expect(gate.busy).toBe(false));
+		expect(ingest.connections[0]?.scan).toMatchObject({ state: 'done', total: 2 });
+		expect(imap.writes()).toEqual([]);
+	});
+
+	it('answers 409 "running" while the gate is held, and "idle" or "cancelling" to a cancel', async () => {
+		const gate = new PollGate();
+		const control = new ScanControl();
+		await restart({ gate, control });
+		let release: () => void = () => undefined;
+		const loop = gate.run(() => new Promise<void>((resolve) => (release = resolve)));
+		expect(await call('/scan', { connection: ID, action: 'start' })).toEqual({ status: 409, json: { status: 'running' } });
+		expect(await call('/scan', { connection: ID, action: 'cancel' })).toEqual({ status: 200, json: { status: 'idle' } });
+		control.begin(ID);
+		expect(await call('/scan', { connection: ID, action: 'cancel' })).toEqual({ status: 200, json: { status: 'cancelling' } });
+		expect(control.isCancelled(ID)).toBe(true);
+		control.end(ID);
+		release();
+		await loop;
+		expect((await call('/scan', { connection: ID, action: 'neu' })).status).toBe(400);
+		expect((await call('/scan', { connection: 'zyxwvutsrq54321', action: 'start' })).status).toBe(404);
+		expect((await call('/scan', { connection: '../etc', action: 'start' })).status).toBe(400);
+		expect(imap.commands).toEqual([]);
+	});
+});
+
+describe('preselection of the mailbox selection with match_body (full inbox)', () => {
+	it('matches headers exactly and the text through the search of the server, without loading mails', async () => {
+		const [box] = ingest.connections;
+		if (box === undefined) throw new Error('no connection');
+		box.keywords = ['projekt-x', 'rechnung'];
+		imap.add(fakeMail({ subject: 'Hallo', headers: ['Cc: Projekt-X <px@example.com>'], messageId: '<cc@example.com>' }));
+		imap.add(fakeMail({ subject: 'Hallo', body: 'Die Rechnung anbei.', messageId: '<text@example.com>' }));
+		mail('Nichts');
+		const keywordsOf = async () =>
+			((await call('/mailbox/list', { connection: ID })).json.items as Record<string, unknown>[]).map(
+				(item) => item.keyword
+			);
+		expect(await keywordsOf()).toEqual(['', '', '']);
+		box.matchBody = true;
+		expect(await keywordsOf()).toEqual(['', 'rechnung', 'projekt-x']);
+		const fetches = imap.commands.filter((command) => /FETCH/.test(command.name)).map((command) => command.args);
+		expect(fetches.join(' ')).not.toMatch(/BODY\.PEEK\[\]/);
+		imap.refuseTextSearch = true;
+		expect(await keywordsOf()).toEqual(['', '', 'projekt-x']);
+		expect(imap.writes()).toEqual([]);
 	});
 });

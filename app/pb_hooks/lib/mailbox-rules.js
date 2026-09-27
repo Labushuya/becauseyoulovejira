@@ -262,7 +262,62 @@ function helperStatus(answer) {
   return { state: 'running', version: text(body.version, 40), message: '' };
 }
 
+// "Posteingang neu durchsuchen" and "Abbrechen" (ADR-0020, addendum 3): the helper answers at
+// once and scans in the background.
+var SCAN_TIMEOUT_SECONDS = 10;
+var SCAN_ACTIONS = ['start', 'cancel'];
+var SCAN_RUNNING = 'Der Hilfsprozess ruft gerade ab. Bitte gleich noch einmal versuchen.';
+var SCAN_OUTDATED =
+  'Der laufende Mail-Hilfsprozess ist älter als diese App und kann den Posteingang noch nicht neu durchsuchen. Bitte stop.bat, dann start.bat ausführen.';
+
+/** The action of a scan request: { action } or { error }. */
+function parseScanAction(value) {
+  if (SCAN_ACTIONS.indexOf(value) === -1) {
+    return { error: 'action muss start oder cancel sein.' };
+  }
+  return { action: value };
+}
+
+/**
+ * Result of POST /scan of the helper for the web app: { status, message } with status "started",
+ * "running" (another fetch holds the helper), "cancelling", "idle" (no scan runs there),
+ * "unavailable" (the helper does not run), "disabled" or "error" with the message.
+ */
+function scanResult(answer) {
+  if (!isPlainObject(answer) || answer.unavailable) {
+    return { status: 'unavailable', message: NOT_RUNNING + ' ' + NOT_RUNNING_HINT };
+  }
+  var body = isPlainObject(answer.json) ? answer.json : {};
+  if (answer.statusCode === 202 && body.status === 'started') {
+    return { status: 'started', message: '' };
+  }
+  if (answer.statusCode === 409) {
+    return { status: 'running', message: SCAN_RUNNING };
+  }
+  if (answer.statusCode === 200 && (body.status === 'cancelling' || body.status === 'idle')) {
+    return { status: body.status, message: '' };
+  }
+  if (answer.statusCode === 404 && body.message === UNKNOWN_PATH) {
+    return { status: 'error', message: SCAN_OUTDATED };
+  }
+  if (answer.statusCode === 404) {
+    return { status: 'disabled', message: DISABLED };
+  }
+  if (answer.statusCode === 401) {
+    return { status: 'error', message: TOKEN_REFUSED };
+  }
+  return {
+    status: 'error',
+    message: text(body.message, 1000) || 'Der Mail-Hilfsprozess antwortet mit HTTP ' + answer.statusCode + '.'
+  };
+}
+
 module.exports = {
+  SCAN_TIMEOUT_SECONDS: SCAN_TIMEOUT_SECONDS,
+  SCAN_RUNNING: SCAN_RUNNING,
+  SCAN_OUTDATED: SCAN_OUTDATED,
+  parseScanAction: parseScanAction,
+  scanResult: scanResult,
   LIST_DEFAULT: LIST_DEFAULT,
   LIST_MAX: LIST_MAX,
   IMPORT_MAX: IMPORT_MAX,

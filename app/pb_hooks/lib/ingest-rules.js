@@ -146,16 +146,110 @@ function keywordDecision(origin, settings, draft, keywords, connectionRules) {
   return { accepted: origin === 'selected' || keyword !== '', keyword: keyword };
 }
 
+// State of the full scan of an inbox (connections.scan; ADR-0020, addendum 3), as byl-mail.exe
+// 0.7.0 reports it (helpers/mail/src/scan-state.ts). match_body_before is the mark of the migration
+// 1790201700 and never comes from the helper.
+var SCAN_STATES = ['running', 'paused', 'done', 'cancelled', 'error'];
+var SCAN_SIGNATURE = /^[0-9a-f]{16}$/;
+var SCAN_UID_VALIDITY = /^\d{1,10}$/;
+var UID_MAX = 4294967295;
+var COUNT_MAX = 100000000;
+
+function isCount(value, max) {
+  return typeof value === 'number' && value % 1 === 0 && value >= 0 && value <= max;
+}
+
 /**
- * Checks the status report of the helper: { error, hint, cursor } (strings; cursor optional).
- * Returns { status } with error and hint cut to 1 000 characters and cursor or undefined, or
+ * Checks the scan state of a status report. Returns { scan } with exactly the known keys, or
  * { error } with a German message.
+ */
+function parseScan(value) {
+  var invalid = { error: 'Feld scan ist ungültig.' };
+  if (!isPlainObject(value)) {
+    return invalid;
+  }
+  if (typeof value.signature !== 'string' || !SCAN_SIGNATURE.test(value.signature)) {
+    return invalid;
+  }
+  if (SCAN_STATES.indexOf(value.state) === -1) {
+    return invalid;
+  }
+  if (typeof value.uid_validity !== 'string' || !SCAN_UID_VALIDITY.test(value.uid_validity)) {
+    return invalid;
+  }
+  if (!isCount(value.until, UID_MAX) || !isCount(value.below, UID_MAX + 1)) {
+    return invalid;
+  }
+  if (!isCount(value.done, COUNT_MAX) || !isCount(value.total, COUNT_MAX) || !isCount(value.created, COUNT_MAX)) {
+    return invalid;
+  }
+  if (value.fallback !== undefined && typeof value.fallback !== 'boolean') {
+    return invalid;
+  }
+  return {
+    scan: {
+      signature: value.signature,
+      state: value.state,
+      uid_validity: value.uid_validity,
+      until: value.until,
+      below: value.below,
+      done: value.done,
+      total: value.total,
+      created: value.created,
+      fallback: value.fallback === true
+    }
+  };
+}
+
+/**
+ * The scan state to store: the reported one, keeping the mark of the migration (match_body was
+ * switched on by 1790201700, so its down migration can switch it off again).
+ */
+function mergeScan(stored, reported) {
+  var next = {};
+  for (var key in reported) {
+    if (Object.prototype.hasOwnProperty.call(reported, key)) {
+      next[key] = reported[key];
+    }
+  }
+  if (isPlainObject(stored) && stored.match_body_before === false) {
+    next.match_body_before = false;
+  }
+  return next;
+}
+
+/**
+ * The stored scan state after "Abbrechen" while the helper runs no scan of the connection (it
+ * was restarted, or it does not run): a running, paused or failed scan becomes cancelled; null
+ * when there is nothing to cancel.
+ */
+function cancelledScan(stored) {
+  if (!isPlainObject(stored) || ['running', 'paused', 'error'].indexOf(stored.state) === -1) {
+    return null;
+  }
+  // A copy with every key, the mark of the migration included.
+  var next = mergeScan(null, stored);
+  next.state = 'cancelled';
+  return next;
+}
+
+/**
+ * Checks the status report of the helper: { error, hint, cursor, scan } (strings; cursor and scan
+ * optional). Returns { status } with error and hint cut to 1 000 characters, cursor and scan or
+ * undefined, or { error } with a German message.
  */
 function parseStatus(value) {
   if (!isPlainObject(value)) {
     return { error: 'Kein gültiger Status.' };
   }
-  var status = { error: '', hint: undefined, cursor: undefined };
+  var status = { error: '', hint: undefined, cursor: undefined, scan: undefined };
+  if (value.scan !== undefined && value.scan !== null) {
+    var scan = parseScan(value.scan);
+    if (scan.error) {
+      return { error: scan.error };
+    }
+    status.scan = scan.scan;
+  }
   if (value.error !== undefined && value.error !== null) {
     if (typeof value.error !== 'string') {
       return { error: 'Feld error ist ungültig.' };
@@ -191,7 +285,8 @@ function connectionView(record, keywords, connectionRules) {
     secret_env: record.secret_env,
     keywords: connectionRules.keywordsOf(record.settings, keywords),
     match_body: mail.matchBody,
-    cursor: record.cursor
+    cursor: record.cursor,
+    scan: isPlainObject(record.scan) && record.scan.signature !== undefined ? parseScan(record.scan).scan || null : null
   };
 }
 
@@ -205,6 +300,10 @@ module.exports = {
   tokenMatches: tokenMatches,
   parseDraft: parseDraft,
   keywordDecision: keywordDecision,
+  SCAN_STATES: SCAN_STATES,
   parseStatus: parseStatus,
+  parseScan: parseScan,
+  mergeScan: mergeScan,
+  cancelledScan: cancelledScan,
   connectionView: connectionView
 };

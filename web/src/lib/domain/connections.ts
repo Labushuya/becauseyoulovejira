@@ -79,7 +79,7 @@ export interface Connection {
 	/** Mail: provider and user name of the mailbox ('' for other kinds). */
 	mailProvider: MailProvider | '';
 	mailUser: string;
-	/** Mail: whether the first 500 characters of the text are searched as well (ADR-0020). */
+	/** Mail: whether headers and the whole text are searched as well (ADR-0020, addendum 2). */
 	matchBody: boolean;
 	runningSince: string | null;
 	created: string;
@@ -106,17 +106,18 @@ export const NO_KEYWORDS_WARNING =
 	'Keine Stichwörter: Diese Verbindung übernimmt nichts automatisch.';
 
 /**
- * What a mailbox takes automatically (ADR-0016 section 5): the first run only sets the cursor, so
- * only mails that arrive after it come in; older ones only through the mailbox selection.
+ * What a mailbox takes automatically (user decision of 2026-09-27; ADR-0020, addendum 3): the whole
+ * inbox is searched, at the first run, after every change of the keywords and on request; other
+ * folders never.
  */
-export const MAIL_NEW_ONLY_HINT =
-	'Automatisch kommen nur neue Mails, die nach dem ersten Abruf dieser Verbindung eintreffen. Ältere Mails holst du über „Aus dem Postfach wählen“.';
+export const MAIL_INBOX_HINT =
+	'Der gesamte Posteingang wird durchsucht (nicht Papierkorb/Spam/Gesendet).';
 
-/** Where the keywords of a kind are searched (ADR-0020 section 1). */
+/** Where the keywords of a kind are searched (ADR-0020 section 1 and addendum 2). */
 export const KEYWORD_SEARCH_TEXT: Readonly<Record<ConnectionType, string>> = Object.freeze({
 	calendar: 'Gesucht wird in Titel und Beschreibung der Termine.',
 	telegram: 'Gesucht wird im Text der Nachricht bzw. in der Bildunterschrift.',
-	mail: 'Gesucht wird in Betreff und Absender (Name und Adresse), auf Wunsch auch in den Kopfzeilen (An, Cc, Antwort an, Liste, Organisation) und im ganzen Text.'
+	mail: 'Gesucht wird in Betreff und Absender (Name und Adresse), mit „Betreff, Absender, Kopfzeilen und Text durchsuchen“ (Standard) auch in den Kopfzeilen (An, Cc, Antwort an, Liste, Organisation) und im ganzen Text. Neue Stichwörter gelten auch für ältere Mails im Posteingang.'
 });
 
 export interface ConnectionDraft {

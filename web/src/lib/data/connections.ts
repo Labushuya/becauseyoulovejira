@@ -122,11 +122,17 @@ export function listConnections(
 	});
 }
 
+/**
+ * The settings of a new connection. A mailbox searches headers and the whole text from the start
+ * (match_body on by default, user decision of 2026-09-27).
+ */
 function settingsOf(
 	draft: Pick<ConnectionDraft, 'type' | 'allowlistEnv' | 'mailProvider' | 'mailUser'>
-): Record<string, string> {
+): Record<string, string | boolean> {
 	if (draft.type === 'telegram') return { allowed_env: draft.allowlistEnv.trim() };
-	if (draft.type === 'mail') return { provider: draft.mailProvider, user: draft.mailUser.trim() };
+	if (draft.type === 'mail') {
+		return { provider: draft.mailProvider, user: draft.mailUser.trim(), match_body: true };
+	}
 	return {};
 }
 

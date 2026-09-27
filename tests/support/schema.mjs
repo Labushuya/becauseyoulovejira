@@ -187,6 +187,7 @@ export const EXPECTED_COLLECTIONS = {
 			last_hint: text({ max: 1000 }),
 			running_since: date(),
 			scope: text({ required: true }),
+			scan: { type: 'json', required: false, maxSize: 2000 },
 			...ownership(),
 			...timestamps()
 		},

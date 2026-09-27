@@ -702,7 +702,7 @@ describe('Postfächer (E4 plan, package 22)', () => {
 		expect(dialog.getByText('BYL_WEBDE_PASSWORD')).toBeTruthy();
 		expect(
 			dialog.getByText(
-				/in Betreff und Absender \(Name und Adresse\), auf Wunsch auch in den Kopfzeilen .* und im ganzen Text/
+				/in Betreff und Absender \(Name und Adresse\), mit „Betreff, Absender, Kopfzeilen und Text durchsuchen“ \(Standard\) auch in den Kopfzeilen .* und im ganzen Text/
 			)
 		).toBeTruthy();
 		await fireEvent.click(

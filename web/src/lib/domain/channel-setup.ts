@@ -273,12 +273,12 @@ function mailTail(provider: string): readonly SetupStep[] {
 			id: 'connect',
 			label: 'Verbinden',
 			title: 'Postfach verbinden',
-			intro: `Anbieter ${provider}, deine E-Mail-Adresse und der Name der Variablen. Danach legst du die Stichwörter fest, denn nur Mails mit Stichwort in Betreff oder Absender kommen in den Eingang.`,
+			intro: `Anbieter ${provider}, deine E-Mail-Adresse und der Name der Variablen. Danach legst du die Stichwörter fest, denn nur Mails mit Stichwort kommen in den Eingang.`,
 			actions: [],
 			links: [],
 			commands: [],
 			more: [
-				'Auf Wunsch sucht die App auch in den Kopfzeilen (An, Cc, Antwort an, Liste, Organisation) und im ganzen Text; das schaltest du unter „Bearbeiten“ an der Karte ein.'
+				'Gesucht wird in Betreff, Absender, den Kopfzeilen (An, Cc, Antwort an, Liste, Organisation) und im ganzen Text. Nur Betreff und Absender stellst du unter „Bearbeiten“ an der Karte ein.'
 			],
 			checked: true
 		},
@@ -306,12 +306,12 @@ function mailTail(provider: string): readonly SetupStep[] {
 			label: 'Erster Abruf',
 			title: 'Auf den ersten Abruf warten',
 			intro:
-				'Der Hilfsprozess ruft das Postfach alle 5 Minuten ab, der erste Abruf erscheint hier von selbst. Automatisch kommen nur neue Mails, die danach eintreffen; ältere holst du über „Aus dem Postfach wählen“ an der Karte.',
+				'Der Hilfsprozess ruft das Postfach alle 5 Minuten ab, der erste Abruf erscheint hier von selbst. Dabei durchsucht er den gesamten Posteingang (nicht Papierkorb/Spam/Gesendet); die Karte zeigt den Fortschritt.',
 			actions: [],
 			links: [],
 			commands: [],
 			more: [
-				'In den Eingang kommen nur neue Mails, deren Betreff oder Absender ein Stichwort trifft (mit dem Schalter auch Kopfzeilen und Text). Mails ohne Stichwort holst du ebenfalls mit „Aus dem Postfach wählen“ an der Karte.',
+				'In den Eingang kommen alte und neue Mails des Posteingangs, in denen ein Stichwort vorkommt, höchstens 200 neue Einträge pro Abruf. Ergänzte Stichwörter gelten auch für ältere Mails. Mails ohne Stichwort holst du mit „Aus dem Postfach wählen“ an der Karte.',
 				'Der Hilfsprozess liest nur: Gelesen-Status, Markierungen und Ordner bleiben, und er verschickt nichts.'
 			],
 			checked: true

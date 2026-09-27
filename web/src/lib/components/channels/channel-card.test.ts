@@ -6,7 +6,7 @@ import { fireEvent, render, screen, within } from '@testing-library/svelte';
 import { describe, expect, it, vi } from 'vitest';
 import type { ResolvedPathname } from '$app/types';
 import {
-	MAIL_NEW_ONLY_HINT,
+	MAIL_INBOX_HINT,
 	lastResultText,
 	type Connection,
 	type MailHelperStatus,
@@ -87,16 +87,18 @@ describe('channel card', () => {
 		expect(card.getByText('25.09.2026 10:15')).toBeTruthy();
 		expect(card.getByText('2 (todo, ticket)')).toBeTruthy();
 		expect(card.queryByText(/zuletzt erfolgreich/)).toBeNull();
-		expect(card.queryByText(MAIL_NEW_ONLY_HINT)).toBeNull();
+		expect(card.queryByText(MAIL_INBOX_HINT)).toBeNull();
 	});
 
-	it('says at a mailbox that only new mails come automatically (package A)', () => {
+	it('says at a mailbox that the whole inbox is searched (full inbox)', () => {
 		const { card } = renderCard(
 			connection({ type: 'mail', label: 'Web.de', mailProvider: 'webde', mailUser: 'anna@web.de' })
 		);
 		expect(card.getByText('Automatisch')).toBeTruthy();
-		expect(card.getByText(MAIL_NEW_ONLY_HINT)).toBeTruthy();
-		expect(MAIL_NEW_ONLY_HINT).toMatch(/nur neue Mails.*ersten Abruf.*„Aus dem Postfach wählen“/);
+		expect(card.getByText(MAIL_INBOX_HINT)).toBeTruthy();
+		expect(MAIL_INBOX_HINT).toBe(
+			'Der gesamte Posteingang wird durchsucht (nicht Papierkorb/Spam/Gesendet).'
+		);
 	});
 
 	it('repeats the hint in the edit modal of a mailbox (package A)', () => {
@@ -116,7 +118,10 @@ describe('channel card', () => {
 			}
 		});
 		const dialog = within(screen.getByRole('dialog', { name: 'Web.de bearbeiten' }));
-		expect(dialog.getByText(MAIL_NEW_ONLY_HINT)).toBeTruthy();
+		expect(dialog.getByText(MAIL_INBOX_HINT)).toBeTruthy();
+		expect(
+			dialog.getByText(/Neue Stichwörter gelten auch für ältere Mails im Posteingang/)
+		).toBeTruthy();
 		expect(dialog.getByText(/Groß-\/Kleinschreibung egal/)).toBeTruthy();
 		expect(dialog.getByText(/in Betreff und Absender \(Name und Adresse\)/)).toBeTruthy();
 	});

@@ -71,3 +71,15 @@ routerAdd(
   },
   $apis.requireAuth('users')
 );
+
+// Full scan of the inbox of a mailbox (ADR-0020, addendum 3): { action: "start" | "cancel" },
+// passed on to the mail helper; answers { status, message }. A connection the request may not see
+// answers 404.
+routerAdd(
+  'POST',
+  '/api/byl/connections/{id}/scan',
+  function (e) {
+    return require(`${__hooks}/lib/mailbox-service.js`).scan(e);
+  },
+  $apis.requireAuth('users')
+);

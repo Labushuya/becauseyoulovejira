@@ -82,7 +82,8 @@ function listConnections(app) {
           label: record.getString('label'),
           secret_env: record.getString('secret_env'),
           settings: jsonOf(record, 'settings'),
-          cursor: record.getString('cursor')
+          cursor: record.getString('cursor'),
+          scan: jsonOf(record, 'scan')
         },
         keywords,
         connectionRules
@@ -192,11 +193,44 @@ function reportStatus(e, id) {
   if (status.cursor !== undefined) {
     connection.set('cursor', status.cursor);
   }
+  // Before the migration 1790201700 has run, the field does not exist yet; the scan then starts
+  // over after the next start of the app.
+  if (status.scan !== undefined && hasField(connection, 'scan')) {
+    connection.set('scan', rules.mergeScan(jsonOf(connection, 'scan'), status.scan));
+  }
   e.app.save(connection);
   return e.json(200, { status: 'ok' });
 }
 
+/** Whether the collection of `record` has the field `name` (fields added by later migrations). */
+function hasField(record, name) {
+  try {
+    return !!record.collection().fields.getByName(name);
+  } catch (err) {
+    return false;
+  }
+}
+
+/**
+ * "Abbrechen" while the helper runs no scan of the connection: marks a running, paused or failed
+ * scan as cancelled, so the helper does not continue it. True when something changed.
+ */
+function cancelStoredScan(app, connection) {
+  if (!hasField(connection, 'scan')) {
+    return false;
+  }
+  var next = rules.cancelledScan(jsonOf(connection, 'scan'));
+  if (next === null) {
+    return false;
+  }
+  connection.set('scan', next);
+  app.save(connection);
+  return true;
+}
+
 module.exports = {
+  hasField: hasField,
+  cancelStoredScan: cancelStoredScan,
   authorize: authorize,
   listConnections: listConnections,
   ingestItem: ingestItem,

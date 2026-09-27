@@ -31,7 +31,9 @@ function valuesOf(record) {
     settings: jsonOf(record, 'settings')
   };
   for (var i = 0; i < rules.SERVER_FIELDS.length; i++) {
-    values[rules.SERVER_FIELDS[i]] = record.getString(rules.SERVER_FIELDS[i]);
+    // An empty JSON field (scan) reads as "null"; a missing field (before its migration) as ''.
+    var raw = record.getString(rules.SERVER_FIELDS[i]);
+    values[rules.SERVER_FIELDS[i]] = raw === 'null' ? '' : raw;
   }
   return values;
 }
@@ -59,7 +61,8 @@ function guardUpdate(e) {
 }
 
 // onRecordCreate/onRecordUpdate before e.next(), for every save: the scope, and a changed source
-// starts over (new variable, bot, calendar or mailbox): cursor, error and hint are cleared.
+// starts over (new variable, bot, calendar or mailbox): cursor, error, hint and the full scan of
+// the inbox are cleared (the mark of the migration 1790201700 stays for its rollback).
 function prepareSave(record, isNew) {
   record.set('scope', ticketKey.scopeOf(record.getString('owner'), record.getString('household')));
   if (isNew) {
@@ -72,6 +75,20 @@ function prepareSave(record, isNew) {
     record.set('cursor', '');
     record.set('last_error', '');
     record.set('last_hint', '');
+    if (hasScanField(record)) {
+      var scan = jsonOf(record, 'scan');
+      var marked = scan !== null && typeof scan === 'object' && scan.match_body_before === false;
+      record.set('scan', marked ? { match_body_before: false } : null);
+    }
+  }
+}
+
+// Whether the connections have the field scan (migration 1790201700 has run).
+function hasScanField(record) {
+  try {
+    return !!record.collection().fields.getByName('scan');
+  } catch (err) {
+    return false;
   }
 }
 
