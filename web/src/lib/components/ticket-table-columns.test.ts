@@ -181,7 +181,7 @@ describe('columns of the ticket table (ADR-0030)', () => {
 		await fireEvent.pointerUp(grip('project'), { pointerId: 1, clientX: 150 });
 
 		expect(colWidth('project')).toBe('178px');
-		expect(stored()).toEqual({ v: 1, widths: { project: 178 }, hidden: [] });
+		expect(stored()).toEqual({ v: 1, widths: { project: 178 }, hidden: ['source'] });
 	});
 
 	it('clamps the drag to the maximum of the column and to the room of the title', async () => {
@@ -253,7 +253,11 @@ describe('columns of the ticket table (ADR-0030)', () => {
 			width = 1000;
 			await fireEvent.dblClick(grip('project'));
 			expect(colWidth('project')).toBe('256px');
-			expect(stored()).toEqual({ v: 1, widths: { created: 80, project: 256 }, hidden: [] });
+			expect(stored()).toEqual({
+				v: 1,
+				widths: { created: 80, project: 256 },
+				hidden: ['source']
+			});
 		} finally {
 			delete (Range.prototype as { getBoundingClientRect?: unknown }).getBoundingClientRect;
 		}
@@ -286,8 +290,20 @@ describe('columns of the ticket table (ADR-0030)', () => {
 		await showTable('/?gruppe=status');
 
 		expect(colWidth('project')).toBe('200px');
-		expect(headerIds()).toEqual(['key', 'status', 'title', 'project', 'tags', 'due', 'actions']);
-		expect(screen.getByRole('rowheader', { name: /^Offen/ }).getAttribute('colspan')).toBe('7');
+		// "Quelle" is not in the stored list, so the user switched it on.
+		expect(headerIds()).toEqual([
+			'key',
+			'status',
+			'title',
+			'source',
+			'project',
+			'tags',
+			'due',
+			'actions'
+		]);
+		expect(screen.getByRole('rowheader', { name: /^Offen/ }).getAttribute('colspan')).toBe('8');
+		const row = table().querySelector('tr[data-ticket-id]') as HTMLElement;
+		expect(row.querySelector('[data-col="source"]')?.textContent).toBe('Manuell');
 		// Switched off by the user, not for lack of space: no hint in the caption.
 		expect(table().querySelector('caption')?.textContent).not.toMatch(/Weitere Spalten/);
 	});

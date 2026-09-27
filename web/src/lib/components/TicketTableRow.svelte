@@ -2,7 +2,9 @@
 	import { goto } from '$app/navigation';
 	import type { ResolvedPathname } from '$app/types';
 	import type { CalendarDate } from '$lib/domain/berlin-date';
+	import { TICKET_TABLE, defaultColumnPrefs } from '$lib/domain/columns';
 	import { berlinDateOf, formatBerlinDateTime, formatCalendarDate } from '$lib/domain/format';
+	import { SOURCE_FAMILY_LABELS, sourceFamily } from '$lib/domain/source';
 	import type { ProjectRef, TagRef, TicketSummary } from '$lib/domain/ticket';
 	import DoneToggle from './DoneToggle.svelte';
 	import DueLabel from './DueLabel.svelte';
@@ -44,13 +46,15 @@
 		isNew?: boolean;
 		/** Rhythm of the series ("jeden Montag"), '' while unknown (E5 plan, package 4). */
 		recurrenceText?: string;
-		/** Shown columns of the table (ADR-0030); without it every column is shown. */
+		/** Shown columns of the table (ADR-0030); without it the columns shown by default. */
 		columns?: ReadonlySet<string>;
 		ontoggle: (done: boolean) => void;
 	} = $props();
 
+	const HIDDEN_BY_DEFAULT: readonly string[] = defaultColumnPrefs(TICKET_TABLE.columns).hidden;
+
 	function shows(id: string): boolean {
-		return columns === undefined || columns.has(id);
+		return columns === undefined ? !HIDDEN_BY_DEFAULT.includes(id) : columns.has(id);
 	}
 
 	const done = $derived(ticket.status === 'done');
@@ -114,6 +118,9 @@
 			</span>
 		{/if}
 	</th>
+	{#if shows('source')}
+		<td class="source" data-col="source">{SOURCE_FAMILY_LABELS[sourceFamily(ticket.source)]}</td>
+	{/if}
 	{#if shows('project')}
 		<td class="project" data-col="project">
 			{#if project}
@@ -236,6 +243,7 @@
 		white-space: nowrap;
 	}
 
+	.source,
 	.project {
 		font-size: var(--font-size-control);
 		color: var(--color-text-muted);
