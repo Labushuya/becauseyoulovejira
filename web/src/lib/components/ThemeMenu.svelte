@@ -78,7 +78,7 @@
 					</button>
 				{/each}
 			</div>
-			<div class="separator" role="separator"></div>
+			<div role="separator"></div>
 			<div role="group" aria-label="Farbe">
 				<span class="group-label" aria-hidden="true">Farbe</span>
 				{#each ACCENT_THEMES as accent (accent)}
@@ -120,23 +120,9 @@
 		stroke-linejoin: round;
 	}
 
+	/* Rows, hover, focus and the separator come from the menu of Popover (ADR-0029 section 5). */
 	.item {
-		display: flex;
 		gap: 0.5rem;
-		align-items: center;
-		width: 100%;
-		padding: 0.375rem 0.5rem;
-		font-size: 0.875rem;
-		text-align: left;
-		background: none;
-		border: none;
-		border-radius: var(--radius-control);
-		cursor: pointer;
-	}
-
-	.item:hover,
-	.item:focus-visible {
-		background: var(--color-bg);
 	}
 
 	/* The chosen entry: check mark and weight, never color alone (WCAG 1.4.1). */
@@ -147,12 +133,6 @@
 	.mark {
 		display: inline-flex;
 		width: 0.75rem;
-	}
-
-	.separator {
-		height: 1px;
-		margin: 0.25rem 0;
-		background: var(--color-line);
 	}
 
 	.group-label {

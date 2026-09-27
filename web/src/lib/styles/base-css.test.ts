@@ -1,7 +1,8 @@
 // Static checks of base.css for the overlay foundation (ADR-0025 section 2; plan UI-Konsistenz,
 // package UI-1): scroll lock without script, reserved scrollbar room, reduced motion for every
-// overlay, the shared buttons, and no shadows. jsdom has no layout, so the effect itself is a
-// manual case (BYL-E6-002, BYL-E6-012).
+// overlay, the shared buttons; since ADR-0029 the background gradient on a fixed layer, shadows
+// only as tokens and the focus ring in the accent as text. jsdom has no layout, so the effect
+// itself is a manual case (BYL-E6-002, BYL-E6-012, BYL-E6-102).
 
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -43,7 +44,32 @@ describe('base.css', () => {
 		expect(rule('.button-icon')).toMatch(/width:\s*2rem/);
 	});
 
-	it('uses no shadows, gradients or glass effects (ADR-0010 section 3)', () => {
-		expect(SOURCE).not.toMatch(/box-shadow|gradient|backdrop-filter/);
+	it('draws the gradient of ADR-0029 on a fixed layer, only there and only from the accent surface', () => {
+		const layer = rule('body::before');
+		expect(layer).toMatch(/position:\s*fixed/);
+		expect(layer).toMatch(/z-index:\s*-1/);
+		expect(layer).toMatch(/pointer-events:\s*none/);
+		expect(layer).toMatch(/background-color:\s*var\(--color-bg\)/);
+		// The opaque blocks of tokens.css switch it off through --backdrop-image.
+		expect(layer).toMatch(/background-image:\s*var\(\s*--backdrop-image,/);
+		const fromAccent = SOURCE.match(
+			/radial-gradient\([^()]*var\(--color-brand-soft-bg\),\s*transparent [^()]*\)/g
+		);
+		expect(fromAccent).toHaveLength(2);
+		expect(SOURCE.match(/gradient\(/g)).toHaveLength(2);
+		expect(SOURCE).not.toMatch(/background-attachment/);
+		// The page shows the background of html; body paints none, so the layer stays visible.
+		expect(rule('body')).not.toMatch(/background/);
+	});
+
+	it('uses shadows only as tokens and no glass (ADR-0029 sections 1 and 4)', () => {
+		for (const [, value = ''] of SOURCE.matchAll(/box-shadow:\s*([^;]+);/g)) {
+			expect(value.trim()).toMatch(/^var\(--shadow-(control|popover|modal)\)$/);
+		}
+		expect(SOURCE).not.toMatch(/backdrop-filter/);
+	});
+
+	it('draws the focus ring in the accent as text (ADR-0029 section 5)', () => {
+		expect(rule(':focus-visible')).toMatch(/outline:\s*2px solid var\(--color-brand-text\)/);
 	});
 });

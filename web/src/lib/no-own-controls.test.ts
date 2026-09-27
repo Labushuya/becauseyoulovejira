@@ -170,7 +170,7 @@ describe('base.css styles checkboxes and radios once', () => {
 	});
 
 	it('keeps the focus ring of :focus-visible and gives forced colors the native controls', () => {
-		expect(base).toMatch(/:focus-visible\s*\{[^}]*outline:\s*2px solid var\(--color-brand\)/);
+		expect(base).toMatch(/:focus-visible\s*\{[^}]*outline:\s*2px solid var\(--color-brand-text\)/);
 		const forced = /@media \(forced-colors: active\)\s*\{([\s\S]*?\}\s*)\}/.exec(base)?.[1] ?? '';
 		expect(forced).toMatch(/appearance:\s*auto/);
 		expect(forced).toMatch(/content:\s*none/);

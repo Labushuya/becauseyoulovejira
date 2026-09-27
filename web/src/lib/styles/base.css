@@ -44,9 +44,31 @@ html:has([data-panel-mode='overlay']) {
 	}
 }
 
+/*
+ * The page shows the background of html; body stays transparent, so the gradient below is visible.
+ */
 body {
 	color: var(--color-text);
+}
+
+/*
+ * Background with a gradient per theme (ADR-0029 section 3), without a new color: two radial
+ * gradients from the accent surface to the page background, on a fixed layer behind everything
+ * instead of background-attachment: fixed (that one repaints on every scroll step). The opaque
+ * blocks of tokens.css set --backdrop-image to none; then only --color-bg remains.
+ */
+body::before {
+	content: '';
+	position: fixed;
+	inset: 0;
+	z-index: -1;
+	pointer-events: none;
 	background-color: var(--color-bg);
+	background-image: var(
+		--backdrop-image,
+		radial-gradient(70rem 45rem at 0% 0%, var(--color-brand-soft-bg), transparent 70%),
+		radial-gradient(55rem 40rem at 100% 100%, var(--color-brand-soft-bg), transparent 70%)
+	);
 }
 
 code,
@@ -75,8 +97,12 @@ input {
 	color: inherit;
 }
 
+/*
+ * Focus ring in the accent as text (ADR-0029 section 5): it keeps at least 4.5 : 1 on surfaces,
+ * the page, the gradient and glass in every theme; --color-brand does not in dark mode.
+ */
 :focus-visible {
-	outline: 2px solid var(--color-brand);
+	outline: 2px solid var(--color-brand-text);
 	outline-offset: 2px;
 }
 

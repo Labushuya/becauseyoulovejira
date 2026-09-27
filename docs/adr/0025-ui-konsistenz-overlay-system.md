@@ -1,6 +1,6 @@
 # ADR-0025: UI-Konsistenz – ein Overlay-System, Theme-Umschalter und angeglichene Projekt-UI
 
-- **Status:** Angenommen
+- **Status:** Angenommen; §2 („Kein Schatten-Token“) teilweise ersetzt durch [ADR-0029](0029-glas-materialien.md), siehe Nachtrag 13
 - **Datum:** 2026-09-25
 - **Entscheidung durch:** Nutzer (Fragen 1 bis 4 in Abschnitt 9, 2026-09-25), Advisor (übrige Festlegungen)
 - **Ersetzt teilweise:** [ADR-0010](0010-layout-nach-task-board.md) §1 (Reihenfolge der Leisten, 5 s „Rückgängig“ in der Zeile) und §2 (Aufbau des Detail-Panels, Vollansicht)
@@ -152,6 +152,14 @@ Ergänzt Abschnitt 1, ohne ihn aufzuheben:
   - Sie ist nur manuell startbar und hat höchstens etwa 5 Schritte.
   - Sie ist mit den Tokens gestaltet und lokal gebündelt.
   - Sie ersetzt keinen der sechs Bausteine, und keine andere Stelle darf die Bibliothek nutzen.
+
+### 13. Nachtrag (2026-09-27): Glas-Materialien nach ADR-0029
+
+Ersetzt in §2 den Punkt „Kein Schatten-Token“, alles andere bleibt:
+
+- Die Overlays der Bedienebene (Popover und Menüs, Modals S bis L, Bestätigung, Seitenpanel, Flags) bekommen Glas nach [ADR-0029](0029-glas-materialien.md): `--material-thick` (eingebettetes Panel `--material-regular`), `--glass-filter-*`, Linie `--color-separator`, Radius `--radius-overlay` und die neutralen Schatten `--shadow-popover` bzw. `--shadow-modal`, immer mit Linie.
+- Die Vollansicht bleibt undurchsichtig, das Blanket bleibt ein Farbschleier ohne Blur.
+- Verhalten, Größen, Escape-Kette, Fokusführung und `prefers-reduced-motion` ändern sich nicht.
 
 ## Alternativen
 

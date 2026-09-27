@@ -183,7 +183,7 @@ Alle Farben als CSS-Custom-Properties zentral in `web/src/lib/styles/tokens.css`
 - **Akzent-Themes ([ADR-0027](docs/adr/0027-akzent-themes.md) mit Nachtrag 2026-09-27):** Petrol (Standard), Rubin, Smaragd, Kupfer, jedes hell und dunkel, unabhängig vom Modus. Purpur ist entfallen, Honig heißt jetzt Kupfer.
   - Die vier Modus-Blöcke tragen alle Tokens mit Petrol.
   - Jedes weitere Theme hat vier Blöcke mit `data-accent` am Wurzelelement. Dort stehen genau die Akzent-Tokens: `--color-brand`, `--color-brand-text`, `--color-brand-soft-bg`, `--color-brand-soft-text`, `--color-on-brand`, `--status-open-text|border`, `--status-in-progress-bg|text`, `--color-danger`, `--color-danger-soft-bg` und `--status-waiting-bg|text|border`.
-  - Neutrale Flächen, Linien, Text und der Schleier sind in allen Themes gleich.
+  - Neutrale Flächen, Linien, Text und der Schleier sind in allen Themes gleich, ebenso Materialien, Füllungen und Schatten ([ADR-0029](docs/adr/0029-glas-materialien.md)).
   - Eine neue akzentabhängige Farbe braucht ein Token in allen Themes.
   - `tokens.test.ts` prüft für 4 Themes × 4 Varianten:
     - Vollständigkeit der Tokens
@@ -197,8 +197,17 @@ Alle Farben als CSS-Custom-Properties zentral in `web/src/lib/styles/tokens.css`
   - Gespeichert wird in `localStorage` unter `byl-accent`, nur `rubin`, `smaragd` oder `kupfer`. „Petrol“ entfernt den Schlüssel und `data-accent`. Ein `storage`-Listener gleicht andere Tabs ab.
   - Das Inline-Skript in `app.html` setzt `data-accent` vor dem ersten Rendern, in einem eigenen `try` mit derselben Allowlist (`theme-boot.test.ts` gleicht Schlüssel und Liste ab). Alte Werte (`LEGACY_ACCENTS`) schreibt es einmal um: `honig` → `kupfer`, `purpur` → Petrol (Schlüssel entfernt); `parseAccent` liest sie genauso.
   - Die Farbfelder kommen aus `--swatch-<theme>` in den Modus-Blöcken. Der Test prüft, dass jedes Feld dem Akzent seines Themes gleicht.
-- **Overlay-Tokens (ADR-0025 §2):** `--color-blanket` (einzige neue Farbe, dunkler Schleier hinter Modals, in allen vier Blöcken). Nicht farbig und nur in `:root`: `--overlay-width-s|m|l|xl` (25/37.5/50/62.5rem), `--overlay-max-height` und `--overlay-max-height-xl`, `--drawer-width` (30rem), `--full-view-sidebar` (21.25rem), `--radius-control` (0.375rem), `--radius-surface` (0.5rem), `--motion-fast` (120ms), `--motion-medium` (200ms), `--motion-ease`. Neue Radien und Maße nur über diese Tokens. Tests der Overlays nutzen die gemeinsamen Stubs aus `web/src/lib/test/overlay-stubs.ts` statt eigener `showModal`-Attrappen.
-- **Keine Schatten, kein Schatten-Token, keine Glas-Optik:** Overlays trennen sich über `--color-line` und `--color-surface`. Destruktive Knöpfe sind nicht rot. Animationen nur über die Motion-Tokens; bei `prefers-reduced-motion: reduce` erscheinen Overlays ohne Bewegung.
+- **Overlay-Tokens (ADR-0025 §2):** `--color-blanket` (einzige neue Farbe, dunkler Schleier hinter Modals, in allen vier Blöcken). Nicht farbig und nur in `:root`: `--overlay-width-s|m|l|xl` (25/37.5/50/62.5rem), `--overlay-max-height` und `--overlay-max-height-xl`, `--drawer-width` (30rem), `--full-view-sidebar` (21.25rem), `--radius-control` (0.375rem), `--radius-surface` (0.5rem), `--motion-fast` (120ms), `--motion-medium` (200ms), `--motion-ease`; seit ADR-0029 dazu `--radius-overlay` (0.75rem, Overlays auf Glas), `--radius-item` (0.25rem, Menüzeile) und `--glass-filter-regular|thick`. Neue Radien und Maße nur über diese Tokens. Tests der Overlays nutzen die gemeinsamen Stubs aus `web/src/lib/test/overlay-stubs.ts` statt eigener `showModal`-Attrappen.
+- **Materialien und Tiefe ([ADR-0029](docs/adr/0029-glas-materialien.md), Pakete G-1 bis G-6 nach [docs/plan/e6-glas.md](docs/plan/e6-glas.md)):**
+  - Glas nur in der Bedienebene (Kopfzeile, Seitenpanel, Einstellungsnavigation, Popover und Menüs, Modals S bis L, Flags, Anmeldung, Tour) über `--material-regular|thick` und `--glass-filter-regular|thick`; `backdrop-filter` nur in den Dateien der Allowlist von `glass-allowlist.test.ts` und nur mit diesen Tokens. `--material-regular` nur dort, wo darunter der Verlauf oder Tabellen scrollen.
+  - Tabellen, Kacheln, Karten, Texte, Formulare, Vollansicht und Blanket bleiben undurchsichtig. Kein Glas im Glas; Kopfzeile und Seitenpanel haben keine Nachfahren mit `position: fixed`.
+  - Mindest-Deckkraft 0,82, geprüft in `glass-contrast.test.ts` für alle Themes × vier Modus-Blöcke × Materialien gegen jede Farbe der Palette.
+  - Schatten nur über `--shadow-*` (neutral, nur in den Modus-Blöcken) und immer mit Linie (`--color-separator` auf Glas); dazu nur die Lichtkante `inset 0 1px 0 var(--glass-edge)` und die Zeilenmarkierung `inset 3px 0 0 var(--color-brand)`.
+  - Der Hintergrund ist ein Verlauf aus `--color-brand-soft-bg` auf `body::before` (nur dort, `body` selbst malt keinen Hintergrund).
+  - Ein Umschaltpunkt in `tokens.css` macht alles undurchsichtig (`!important`, weil die Modus-Blöcke spezifischer sind): `prefers-reduced-transparency: reduce`, `prefers-contrast: more` (dazu Trennlinien in `--color-text-muted`, keine Schatten), `forced-colors: active` und fehlendes `backdrop-filter`; ab G-3 auch der Schalter „Transparenz“. Die Systemeinstellung gewinnt immer.
+  - Menüzeilen (Popover der Art `menu`) stylt allein `Popover.svelte`: Hover und Tastaturfokus in `--color-brand` mit `--color-on-brand`, der Fokusring bleibt zusätzlich.
+  - Destruktive Knöpfe sind nicht rot. Animationen nur über die Motion-Tokens; bei `prefers-reduced-motion: reduce` erscheinen Overlays ohne Bewegung.
+- **Fokusring:** `:focus-visible` und jeder lokale Ring zeichnen `2px solid var(--color-brand-text)` (seit ADR-0029; `--color-brand` hält im Dunkelmodus auf Glas und Verlauf keine 3 : 1).
 - **Checkboxen und Radios** (seit Testfeedback Paket A) zeichnet allein `base.css`: `appearance: none`, 1rem, Rand `--color-text-muted` (3 : 1), gewählt bzw. `indeterminate` in `--color-brand` mit Häkchen bzw. Balken in `--color-on-brand`, Radio mit Punkt, Hover-Rand in der Marke, `:disabled` und `aria-disabled` gedämpft (`aria-busy` mit Warte-Zeiger), Fokusring von `:focus-visible`, in `forced-colors` die nativen Controls. Komponenten geben ihnen höchstens einen Platz im Layout, keine Größe, Farbe, Rahmen oder `accent-color`; `no-own-controls.test.ts` prüft das statisch (einzige Ausnahme: die unsichtbaren Radios der Chips in `ChipGroup`).
 - **Gemeinsame Knopfklassen** in `base.css`: `.button-primary`, `.button-secondary`, `.button-subtle`, `.button-icon` (immer mit `aria-label`); keine lokalen Kopien in Komponenten. In engen Zeilen (Panel, 480 px) stehen Aktionen wie „Entfernen“ als `.button-icon` mit `aria-label` und `title`, nicht als Textknopf (statisch geprüft).
 - **Hinweis-Bausteine ([ADR-0026](docs/adr/0026-einstellungsbereich-und-hinweis-bausteine.md) §2, ab EH-2):** `SectionMessage` (info, success, warning, error, compact; Warnung ohne Gelb über Icon, Titel und neutrale Linie), `EmptyState` (höchstens ein Primärknopf) und `Lozenge` (nicht interaktiv, immer mit Icon; `danger` nur für echte Fehler). Keine neuen Farb- und Maß-Tokens.
@@ -210,8 +219,8 @@ Alle Farben als CSS-Custom-Properties zentral in `web/src/lib/styles/tokens.css`
 | Linien | #DDE5E6 | #26353A |
 | Text | #172326 | #E3ECEE |
 | Text gedämpft | #5B6B6F | #8DA1A6 |
-| Marke (Buttons, Icons, Fokus, Rahmen) | #07838F | #07838F |
-| Marke als kleiner Text | #0A737B | #4BB8C2 |
+| Marke (Buttons, Icons, Rahmen) | #07838F | #07838F |
+| Marke als kleiner Text und Fokusring | #0A737B | #4BB8C2 |
 | Marke Fläche / Text darauf | #DDF0F2 / #055C65 | #123A3F / #9FDCE2 |
 | Fehler (`--color-danger`) / Fehlerfläche (`--color-danger-soft-bg`) | #A13A40 / #F8E9E9 | #EAA0A0 / #3B1E21 |
 
