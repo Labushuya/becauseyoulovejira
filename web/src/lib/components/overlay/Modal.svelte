@@ -261,7 +261,26 @@
 		color: var(--color-text);
 		background: var(--color-surface);
 		border: 1px solid var(--color-line);
-		border-radius: var(--radius-surface);
+		border-radius: var(--radius-overlay);
+		box-shadow: var(--shadow-modal);
+	}
+
+	/*
+	 * Thick glass for the sizes S to L (ADR-0029 section 1): the blanket and the view shine through
+	 * softly, lines on glass in --color-separator. The full view (XL) stays an opaque surface with
+	 * the same radius and shadow, because it is a large area full of content.
+	 */
+	.modal:not(.size-xl) {
+		background: var(--material-thick);
+		backdrop-filter: var(--glass-filter-thick);
+		border-color: var(--color-separator);
+		box-shadow:
+			inset 0 1px 0 var(--glass-edge),
+			var(--shadow-modal);
+	}
+
+	.modal:not(.size-xl) :is(.head, .foot) {
+		border-color: var(--color-separator);
 	}
 
 	.size-s {

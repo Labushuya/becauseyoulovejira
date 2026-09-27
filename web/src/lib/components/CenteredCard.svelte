@@ -20,11 +20,16 @@
 		padding: 1.5rem;
 	}
 
+	/* The card floats as thick glass over the background gradient (ADR-0029 section 1). */
 	.card {
 		width: min(100%, 22rem);
 		padding: 2rem;
-		background: var(--color-surface);
-		border: 1px solid var(--color-line);
-		border-radius: 0.75rem;
+		background: var(--material-thick);
+		backdrop-filter: var(--glass-filter-thick);
+		border: 1px solid var(--color-separator);
+		border-radius: var(--radius-overlay);
+		box-shadow:
+			inset 0 1px 0 var(--glass-edge),
+			var(--shadow-modal);
 	}
 </style>

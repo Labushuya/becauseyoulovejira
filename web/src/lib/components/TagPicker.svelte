@@ -354,9 +354,14 @@
 		padding: 0.25rem 0;
 		list-style: none;
 		color: var(--color-text);
-		background: var(--color-surface);
-		border: 1px solid var(--color-line);
-		border-radius: var(--radius-surface);
+		/* Thick glass like the menus of Popover (ADR-0029 section 1). */
+		background: var(--material-thick);
+		backdrop-filter: var(--glass-filter-thick);
+		border: 1px solid var(--color-separator);
+		border-radius: var(--radius-overlay);
+		box-shadow:
+			inset 0 1px 0 var(--glass-edge),
+			var(--shadow-popover);
 	}
 
 	.listbox:popover-open {

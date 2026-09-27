@@ -135,8 +135,14 @@ describe('flag group', () => {
 		await vi.waitFor(() => expect(store.paused).toBe(false));
 	});
 
-	it('has no shadow, no red besides errors and a named ×', () => {
-		expect(source).not.toMatch(/box-shadow|gradient|backdrop-filter/);
+	it('is thick glass with the neutral shadow, no red besides errors and a named × (ADR-0029)', () => {
+		const flag = /\.flag \{([^}]*)\}/.exec(source)?.[1] ?? '';
+		expect(flag).toMatch(/background:\s*var\(--material-thick\)/);
+		expect(flag).toMatch(/backdrop-filter:\s*var\(--glass-filter-thick\)/);
+		expect(flag).toMatch(/border:\s*1px solid var\(--color-separator\)/);
+		expect(flag).toMatch(/border-left:\s*3px solid var\(--color-brand\)/);
+		expect(flag).toMatch(/inset 0 1px 0 var\(--glass-edge\),\s*var\(--shadow-popover\)/);
+		expect(source).not.toMatch(/gradient/);
 		expect(source.match(/--color-danger/g)).toHaveLength(2);
 		expect(source).toMatch(/aria-label="Benachrichtigung schließen"/);
 		expect(source).toMatch(/data-overlay/);
