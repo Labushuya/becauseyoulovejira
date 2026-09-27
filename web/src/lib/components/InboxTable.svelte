@@ -58,6 +58,7 @@
 		clipboardHint = null,
 		onclipboard,
 		onbulk,
+		onlink,
 		tools,
 		actions
 	}: {
@@ -74,6 +75,8 @@
 		projectsNewCount?: number;
 		/** "Gesammelt umwandeln" for the chosen entries. */
 		onbulk: () => void;
+		/** "Mit Ticket verknüpfen …" for the chosen entries (ADR-0031); without it there is no button. */
+		onlink?: () => void;
 		/** "Aus Zwischenablage" (E4 plan, package 6); without it there is no button. */
 		onclipboard?: () => void;
 		/** Why the clipboard could not be read, with the way through Ctrl+V; neutral, no error. */
@@ -274,6 +277,19 @@
 				>
 					Gesammelt umwandeln{chosen.length > 0 ? ` (${chosen.length})` : ''}
 				</button>
+				{#if onlink}
+					<button
+						class="bulk"
+						type="button"
+						aria-disabled={chosen.length === 0 ? 'true' : undefined}
+						aria-describedby={chosen.length === 0 ? ids.bulkHint : undefined}
+						onclick={() => {
+							if (chosen.length > 0) onlink();
+						}}
+					>
+						Mit Ticket verknüpfen …{chosen.length > 0 ? ` (${chosen.length})` : ''}
+					</button>
+				{/if}
 				{#if chosen.length === 0}
 					<span class="hint" id={ids.bulkHint}>Erst Einträge auswählen.</span>
 				{/if}

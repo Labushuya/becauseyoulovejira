@@ -132,7 +132,13 @@
 								title="Originaldatei herunterladen"
 								onclick={() => void download(item)}
 							>
-								<svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true" focusable="false">
+								<svg
+									viewBox="0 0 16 16"
+									width="16"
+									height="16"
+									aria-hidden="true"
+									focusable="false"
+								>
 									<path d="M8 2.5v8M4.5 7 8 10.5 11.5 7M3 13.5h10" />
 								</svg>
 							</button>
@@ -148,7 +154,13 @@
 									if (!store.isPending(item.id)) void release(item);
 								}}
 							>
-								<svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true" focusable="false">
+								<svg
+									viewBox="0 0 16 16"
+									width="16"
+									height="16"
+									aria-hidden="true"
+									focusable="false"
+								>
 									<path
 										d="M6.5 9.5 9.5 6.5M7 4.5l1-1a2.5 2.5 0 0 1 3.5 3.5l-1 1M9 11.5l-1 1a2.5 2.5 0 0 1-3.5-3.5l1-1M2.5 2.5l2 2M11.5 11.5l2 2"
 									/>

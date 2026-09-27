@@ -69,7 +69,12 @@ const OPEN_TICKET = {
 } as TicketSummary;
 
 function setup(
-	options: { items?: InboxItemSummary[]; query?: InboxQuery; tickets?: TicketSummary[] } = {}
+	options: {
+		items?: InboxItemSummary[];
+		query?: InboxQuery;
+		tickets?: TicketSummary[];
+		onlink?: () => void;
+	} = {}
 ) {
 	const data = {
 		listNew: vi.fn<InboxData['listNew']>(async () => options.items ?? [A, B, C]),
@@ -113,7 +118,7 @@ function setup(
 	store.activate(options.query ?? { source: null, state: 'new' });
 	const onbulk = vi.fn();
 	const view = render(InboxTable, {
-		props: { store, flags, openTickets: options.tickets ?? [], onbulk }
+		props: { store, flags, openTickets: options.tickets ?? [], onbulk, onlink: options.onlink }
 	});
 	// The flags of the app layout (ADR-0025 section 8).
 	render(FlagGroup, { props: { store: flags } });
@@ -406,6 +411,29 @@ describe('inbox table', () => {
 			screen.getByRole('checkbox', { name: 'Alle angezeigten Einträge auswählen' })
 		);
 		expect(screen.getByRole('button', { name: 'Gesammelt umwandeln' })).toBeTruthy();
+	});
+
+	it('offers "Mit Ticket verknüpfen …" for the selection (ADR-0031)', async () => {
+		const onlink = vi.fn();
+		setup({ onlink });
+		await table();
+		const link = screen.getByRole('button', { name: 'Mit Ticket verknüpfen …' });
+		expect(link.getAttribute('aria-disabled')).toBe('true');
+		expect(link.getAttribute('aria-describedby')).toBe(
+			screen.getByText('Erst Einträge auswählen.').id
+		);
+		await fireEvent.click(link);
+		expect(onlink).not.toHaveBeenCalled();
+
+		await fireEvent.click(screen.getByRole('checkbox', { name: 'Eintrag „Artikel“ auswählen' }));
+		await fireEvent.click(screen.getByRole('button', { name: 'Mit Ticket verknüpfen … (1)' }));
+		expect(onlink).toHaveBeenCalledOnce();
+	});
+
+	it('has no "Mit Ticket verknüpfen …" without its handler', async () => {
+		setup();
+		await table();
+		expect(screen.queryByRole('button', { name: /^Mit Ticket verknüpfen/ })).toBeNull();
 	});
 
 	it('shows discarded entries with "Wiederherstellen" and "Weitere laden"', async () => {

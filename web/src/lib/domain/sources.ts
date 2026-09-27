@@ -2,7 +2,13 @@
 // items with `ticket = <id>` are the sources, the main source is `tickets.source_item`; the copy
 // status says what of the original is stored with the item.
 
-import { CHANNEL_LABELS, metaText, sourceDateText, type InboxChannel, type InboxItemSummary } from './inbox';
+import {
+	CHANNEL_LABELS,
+	metaText,
+	sourceDateText,
+	type InboxChannel,
+	type InboxItemSummary
+} from './inbox';
 import { formatBerlinDateTime } from './format';
 
 /** What the copy of a source holds (ADR-0031 section 5). */
@@ -62,14 +68,9 @@ export function copyNote(
 }
 
 /** Who or where the source came from: sender, chat or address, '' without one. */
-export function sourceOrigin(
-	item: Pick<InboxItemSummary, 'sourceMeta' | 'sourceUrl'>
-): string {
+export function sourceOrigin(item: Pick<InboxItemSummary, 'sourceMeta' | 'sourceUrl'>): string {
 	return (
-		metaText(item, 'from') ||
-		metaText(item, 'sender') ||
-		metaText(item, 'chat') ||
-		item.sourceUrl
+		metaText(item, 'from') || metaText(item, 'sender') || metaText(item, 'chat') || item.sourceUrl
 	);
 }
 

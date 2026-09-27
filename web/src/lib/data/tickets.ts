@@ -204,12 +204,6 @@ export interface TicketChoice {
 export const TICKET_SEARCH_LIMIT = 20;
 
 /**
- * Any visible ticket (open or done) whose key or title contains the text, or whose number is the
- * text; `{:number}` is -1 for a text that is no number, which matches no ticket.
- */
-const TICKET_SEARCH_FILTER = '(key ~ {:q} || title ~ {:q} || number = {:number})';
-
-/**
  * Tickets for the ticket search by number, key or title (ADR-0031 section 7), open ones first,
  * then the most recently changed; at most TICKET_SEARCH_LIMIT. An empty text gives none.
  */
@@ -224,17 +218,17 @@ export function searchTickets(
 		const number = /^\d{1,9}$/.test(search) ? Number(search) : -1;
 		const result = await pb
 			.collection(TICKETS)
-			.getList<{ id: string; key: string; title: string; status: string }>(
-				1,
-				TICKET_SEARCH_LIMIT,
-				{
-					filter: pb.filter(TICKET_SEARCH_FILTER, { q: likeText(search), number }),
-					sort: '-updated,-id',
-					fields: 'id,key,title,status',
-					skipTotal: true,
-					signal
-				}
-			);
+			.getList<{ id: string; key: string; title: string; status: string }>(1, TICKET_SEARCH_LIMIT, {
+				// Any visible ticket, open or done; `{:number}` is -1 for a text that is no number.
+				filter: pb.filter('key ~ {:q} || title ~ {:q} || number = {:number}', {
+					q: likeText(search),
+					number
+				}),
+				sort: '-updated,-id',
+				fields: 'id,key,title,status',
+				skipTotal: true,
+				signal
+			});
 		const choices = result.items.map((record) => ({
 			id: record.id,
 			key: record.key,

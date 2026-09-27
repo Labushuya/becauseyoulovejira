@@ -27,8 +27,13 @@
 	const formId = `${uid}-form`;
 	const describedId = `${uid}-described`;
 
-	// The entries of the dialog as it opened; after a partial failure only the failed ones.
-	let remaining = $state(items.map(({ id, title }) => ({ id, title })));
+	/** The entries of the dialog as it opened. */
+	function initialItems() {
+		return items.map(({ id, title }) => ({ id, title }));
+	}
+
+	// After a partial failure only the failed entries remain.
+	let remaining = $state(initialItems());
 	let ticket = $state<TicketChoice | null>(null);
 	let error = $state<string | null>(null);
 	let failures = $state<{ id: string; title: string; message: string }[]>([]);

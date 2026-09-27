@@ -10,6 +10,7 @@
 	import DropZone from '$lib/components/DropZone.svelte';
 	import FileImportDialog from '$lib/components/FileImportDialog.svelte';
 	import InboxTable from '$lib/components/InboxTable.svelte';
+	import LinkTicketDialog from '$lib/components/LinkTicketDialog.svelte';
 	import ViewWithPanel from '$lib/components/ViewWithPanel.svelte';
 	import WhatsAppImport from '$lib/components/WhatsAppImport.svelte';
 	import type { InboxItemSummary } from '$lib/domain/inbox';
@@ -40,6 +41,7 @@
 	import { getFlagStore } from '$lib/stores/flags.svelte';
 	import { getInboxStore } from '$lib/stores/inbox.svelte';
 	import { getTicketListStore } from '$lib/stores/ticket-list.svelte';
+	import { getTicketSourcesStore } from '$lib/stores/ticket-sources.svelte';
 	import { readWhatsAppFile } from '$lib/whatsapp-file';
 
 	// Inbox view (E4 plan, T-3 and package 3): the table with the chips of the URL on the left, the
@@ -53,6 +55,7 @@
 	const tickets = getTicketListStore();
 	const catalog = getCatalogStore();
 	const flags = getFlagStore();
+	const sources = getTicketSourcesStore();
 	const query = $derived(parseInboxQuery(page.url.searchParams));
 	const activeId = $derived(page.params.id ?? null);
 	const withPanel = $derived(page.route.id !== '/(app)/eingang');
@@ -85,7 +88,18 @@
 	$effect(() => untrack(() => tickets.loadOpen()));
 
 	function openBulk() {
-		bulkItems = inbox.visible
+		bulkItems = chosenItems();
+	}
+
+	/** Entries of the dialog "Mit Ticket verknüpfen …" (ADR-0031), null while it is closed. */
+	let linkItems = $state<Pick<InboxItemSummary, 'id' | 'title'>[] | null>(null);
+
+	function openLink() {
+		linkItems = chosenItems();
+	}
+
+	function chosenItems(): Pick<InboxItemSummary, 'id' | 'title'>[] {
+		return inbox.visible
 			.filter((item) => item.state === 'new' && selected.includes(item.id))
 			.map(({ id, title }) => ({ id, title }));
 	}
@@ -105,7 +119,15 @@
 
 	/** Ctrl+V in the inbox view, unless the user pastes into a field or a dialog is open. */
 	function onpaste(event: ClipboardEvent) {
-		if (clipboardText !== null || bulkItems !== null || chat !== null || selection !== null) return;
+		if (
+			clipboardText !== null ||
+			bulkItems !== null ||
+			linkItems !== null ||
+			chat !== null ||
+			selection !== null
+		) {
+			return;
+		}
 		const text = pastedText(event);
 		if (text === null) return;
 		event.preventDefault();
@@ -235,6 +257,7 @@
 			projectsNewCount={tickets.newInProjects}
 			bind:selected
 			onbulk={openBulk}
+			onlink={openLink}
 			onclipboard={fromClipboard}
 			{clipboardHint}
 		>
@@ -279,6 +302,15 @@
 		keywords={importKeywords.whatsapp.keywords}
 		onsave={(drafts) => saveDrafts(drafts, (draft) => inbox.create(draft))}
 		onclose={closeChat}
+	/>
+{/if}
+
+{#if linkItems !== null}
+	<LinkTicketDialog
+		items={linkItems}
+		store={sources}
+		onlinked={(ids) => (selected = selected.filter((id) => !ids.includes(id)))}
+		onclose={() => (linkItems = null)}
 	/>
 {/if}
 

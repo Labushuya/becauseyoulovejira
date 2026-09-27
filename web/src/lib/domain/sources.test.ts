@@ -1,0 +1,129 @@
+// Sources of a ticket and the copy status (ADR-0031 sections 5 and 7).
+
+import { describe, expect, it } from 'vitest';
+import { INBOX_CHANNELS, type InboxItemSummary } from './inbox';
+import {
+	COPY_LABELS,
+	copyCompleteness,
+	copyNote,
+	linkSummary,
+	orderSources,
+	sourceOrigin,
+	sourceWhen
+} from './sources';
+
+function item(overrides: Partial<InboxItemSummary> = {}): InboxItemSummary {
+	return {
+		id: 'item00000000001',
+		channel: 'telegram',
+		kind: 'message',
+		title: 'Nachricht',
+		sourceUrl: '',
+		sourceRef: '42:7',
+		sourceDate: null,
+		sourceMeta: {},
+		original: '',
+		state: 'converted',
+		ticketId: 'ticket000000001',
+		handledAt: '2026-09-25 09:00:00.000Z',
+		created: '2026-09-25 08:00:00.000Z',
+		updated: '2026-09-25 09:00:00.000Z',
+		...overrides
+	};
+}
+
+describe('copyCompleteness', () => {
+	it('names every channel', () => {
+		const expected: Record<string, string> = {
+			manual: 'complete',
+			quick: 'complete',
+			clipboard: 'complete',
+			link: 'address',
+			eml: 'text',
+			mail: 'text',
+			ics: 'text',
+			calendar: 'text',
+			whatsapp: 'text',
+			telegram: 'text',
+			notion: 'text'
+		};
+		for (const channel of INBOX_CHANNELS) {
+			expect(copyCompleteness(item({ channel })), channel).toBe(expected[channel]);
+		}
+	});
+
+	it('is complete with the original file, for mails, events and saved pages', () => {
+		for (const channel of ['eml', 'mail', 'ics', 'calendar', 'link'] as const) {
+			expect(copyCompleteness(item({ channel, original: 'datei_abc.eml' })), channel).toBe(
+				'complete'
+			);
+		}
+	});
+
+	it('knows a mail without its file because it was larger than 10 MB', () => {
+		const large = item({
+			channel: 'mail',
+			sourceMeta: { original_omitted: 'too_large', original_size: 13_000_000 }
+		});
+		expect(copyCompleteness(large)).toBe('too_large');
+		expect(COPY_LABELS.too_large).toBe('Ohne Originaldatei (zu groß)');
+		expect(copyNote(large)).toBe(
+			'Die Mail war größer als 10 MB (12,4 MB). Gespeichert sind Absender, Betreff, Datum und der Anfang des Textes, die Originaldatei nicht.'
+		);
+		expect(
+			copyNote(item({ channel: 'eml', sourceMeta: { original_omitted: 'too_large' } }))
+		).toMatch(/^Die Mail war größer als 10 MB\. /);
+		// Any other value is no mark.
+		expect(
+			copyCompleteness(item({ channel: 'mail', sourceMeta: { original_omitted: 'yes' } }))
+		).toBe('text');
+	});
+
+	it('gives a neutral note only for copies that are not complete', () => {
+		expect(copyNote(item({ channel: 'manual' }))).toBeNull();
+		expect(copyNote(item({ channel: 'link', sourceUrl: 'https://example.com/' }))).toMatch(
+			/^Gespeichert sind nur Adresse, Titel und Auszug\./
+		);
+		expect(copyNote(item({ channel: 'whatsapp' }))).toMatch(/^Gespeichert ist nur der Text\./);
+		expect(Object.values(COPY_LABELS)).toEqual([
+			'Vollständig',
+			'Nur Text',
+			'Nur Adresse',
+			'Ohne Originaldatei (zu groß)'
+		]);
+	});
+});
+
+describe('sourceOrigin and sourceWhen', () => {
+	it('names the sender, else the chat, else the address', () => {
+		expect(sourceOrigin(item({ sourceMeta: { from: 'Anna <anna@example.com>', chat: 'x' } }))).toBe(
+			'Anna <anna@example.com>'
+		);
+		expect(sourceOrigin(item({ sourceMeta: { sender: 'Ben', chat: 'Familie' } }))).toBe('Ben');
+		expect(sourceOrigin(item({ sourceMeta: { chat: 'Familie' } }))).toBe('Familie');
+		expect(sourceOrigin(item({ sourceUrl: 'https://example.com/a' }))).toBe(
+			'https://example.com/a'
+		);
+		expect(sourceOrigin(item())).toBe('');
+	});
+
+	it('takes the date at the sender, else the arrival', () => {
+		expect(sourceWhen(item({ sourceDate: '2026-09-24 08:30:00.000Z' }))).toBe('24.09.2026 10:30');
+		expect(sourceWhen(item())).toBe('25.09.2026 10:00');
+	});
+});
+
+describe('orderSources and linkSummary', () => {
+	it('puts the main source first, then the others as they were linked', () => {
+		const a = item({ id: 'a', handledAt: '2026-09-25 10:00:00.000Z' });
+		const b = item({ id: 'b', handledAt: '2026-09-25 09:00:00.000Z' });
+		const main = item({ id: 'm', handledAt: '2026-09-26 09:00:00.000Z' });
+		expect(orderSources([a, main, b], 'm').map((entry) => entry.id)).toEqual(['m', 'b', 'a']);
+		expect(orderSources([a, b], null).map((entry) => entry.id)).toEqual(['b', 'a']);
+	});
+
+	it('counts linked entries', () => {
+		expect(linkSummary(1, 'TASK-4')).toBe('1 Eintrag mit TASK-4 verknüpft.');
+		expect(linkSummary(3, 'HAUS-2')).toBe('3 Einträge mit HAUS-2 verknüpft.');
+	});
+});

@@ -230,11 +230,12 @@ describe('app layout', () => {
 
 	it('subscribes to tickets, the catalog, the inbox, the rules and reconnections while shown and ends them when it goes away', async () => {
 		const { unmount } = await renderLayout();
-		await vi.waitFor(() => expect(mocks.subscribed).toHaveLength(11));
+		await vi.waitFor(() => expect(mocks.subscribed).toHaveLength(13));
 
 		// The list follows all tickets, the catalog all projects and tags (E3 plan, T-16), the
-		// inbox all entries (E4 plan, T-4), the rules all rules (E5 plan, T-7); list, panel,
-		// activity, catalog, inbox and rules each reconcile after a reconnect.
+		// inbox all entries (E4 plan, T-4) and so do the sources of the open ticket (ADR-0031), the
+		// rules all rules (E5 plan, T-7); list, panel, activity, catalog, inbox, sources and rules
+		// each reconcile after a reconnect.
 		expect([...mocks.subscribed].sort()).toEqual([
 			'PB_CONNECT',
 			'PB_CONNECT',
@@ -242,6 +243,8 @@ describe('app layout', () => {
 			'PB_CONNECT',
 			'PB_CONNECT',
 			'PB_CONNECT',
+			'PB_CONNECT',
+			'inbox',
 			'inbox',
 			'projects',
 			'rules',
@@ -251,7 +254,7 @@ describe('app layout', () => {
 		expect(mocks.live.tickets).toHaveBeenCalledOnce();
 		expect(mocks.live.projects).toHaveBeenCalledOnce();
 		expect(mocks.live.tags).toHaveBeenCalledOnce();
-		expect(mocks.live.inbox).toHaveBeenCalledOnce();
+		expect(mocks.live.inbox).toHaveBeenCalledTimes(2);
 		expect(mocks.live.rules).toHaveBeenCalledOnce();
 		// The catalog tries to load once when the layout is shown.
 		expect(mocks.auth.ensureValid).toHaveBeenCalled();

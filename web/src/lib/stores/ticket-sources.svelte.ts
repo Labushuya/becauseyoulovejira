@@ -10,12 +10,7 @@ import type PocketBase from 'pocketbase';
 import { createContext } from 'svelte';
 import { SvelteMap, SvelteSet } from 'svelte/reactivity';
 import { toDataError } from '$lib/data/errors';
-import {
-	assignToTicket,
-	listTicketSources,
-	originalFileUrl,
-	releaseItem
-} from '$lib/data/inbox';
+import { assignToTicket, listTicketSources, originalFileUrl, releaseItem } from '$lib/data/inbox';
 import type { RequestOptions } from '$lib/data/options';
 import { searchTickets, type TicketChoice } from '$lib/data/tickets';
 import type { InboxItemSummary } from '$lib/domain/inbox';
@@ -217,7 +212,10 @@ export class TicketSourcesStore {
 		} catch (error) {
 			const message = this.#failureMessage(error);
 			if (message !== null) {
-				this.#flags.show({ tone: 'error', title: `„${item.title}“ ließ sich nicht lösen: ${message}` });
+				this.#flags.show({
+					tone: 'error',
+					title: `„${item.title}“ ließ sich nicht lösen: ${message}`
+				});
 			}
 			return { ok: false, message };
 		} finally {

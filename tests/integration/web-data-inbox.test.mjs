@@ -15,15 +15,23 @@ import {
 	getItem,
 	importCalendarFile,
 	listHandledItems,
+	listTicketSources,
 	lookupDrafts,
 	previewCalendarFile,
 	listNewItems,
 	originalFileUrl,
+	releaseItem,
 	restoreItem
 } from '../../web/src/lib/data/inbox.ts';
 import { getImportKeywords, saveImportKeywords } from '../../web/src/lib/data/import-keywords.ts';
 import { subscribeInboxItems } from '../../web/src/lib/data/realtime.ts';
-import { createTicket, getTicket, listOpenTickets } from '../../web/src/lib/data/tickets.ts';
+import {
+	createTicket,
+	getTicket,
+	listOpenTickets,
+	searchTickets,
+	setTicketDone
+} from '../../web/src/lib/data/tickets.ts';
 import { bookmarkletValues } from '../../web/src/lib/domain/bookmarklet.ts';
 import {
 	EMPTY_CAPTURE_INPUT,
@@ -482,6 +490,59 @@ describe('tickets from the inbox', () => {
 			kind: 'validation',
 			fields: { source_item: { code: 'validation_inbox_item_handled' } }
 		});
+	});
+});
+
+describe('sources of a ticket (ADR-0031, HK-2)', () => {
+	it('lists the sources, links another entry and releases it again', async () => {
+		const main = await created(owner.client, mail());
+		const ticket = await createTicket(owner.client, ticketDraft(), {
+			origin: { sourceItem: main.id }
+		});
+		const extra = await created(owner.client, {
+			channel: 'telegram',
+			kind: 'message',
+			title: 'Chat',
+			sourceRef: `1:${uniqueSuffix()}`
+		});
+		const linked = await assignToTicket(owner.client, extra.id, ticket.id);
+		expect(linked).toMatchObject({ state: 'converted', ticketId: ticket.id });
+
+		const sources = await listTicketSources(owner.client, ticket.id);
+		expect(sources.map((item) => item.id)).toEqual([main.id, extra.id]);
+		expect(sources[0]).not.toHaveProperty('body');
+		expect(await listTicketSources(other.client, ticket.id)).toEqual([]);
+
+		const released = await releaseItem(owner.client, extra.id);
+		expect(released).toMatchObject({ state: 'new', ticketId: null, handledAt: null });
+		const left = await listTicketSources(owner.client, ticket.id);
+		expect(left.map((item) => item.id)).toEqual([main.id]);
+
+		await expect(releaseItem(owner.client, main.id)).rejects.toMatchObject({
+			kind: 'validation',
+			fields: { state: { code: 'validation_inbox_primary_source' } }
+		});
+	});
+
+	it('searches tickets by number, key and title, open ones first, done ones too', async () => {
+		const word = `Suche${uniqueSuffix()}`;
+		const open = await createTicket(owner.client, ticketDraft({ title: `${word} offen` }));
+		const done = await createTicket(owner.client, ticketDraft({ title: `${word} erledigt` }));
+		await setTicketDone(owner.client, done.id, true);
+
+		const byTitle = await searchTickets(owner.client, word.toLowerCase());
+		expect(byTitle.map((choice) => choice.id)).toEqual([open.id, done.id]);
+		expect(byTitle[0]).toEqual({ id: open.id, key: open.key, title: open.title, status: 'open' });
+		expect(byTitle[1]?.status).toBe('done');
+
+		const byKey = await searchTickets(owner.client, open.key);
+		expect(byKey.map((choice) => choice.id)).toEqual([open.id]);
+		const byNumber = await searchTickets(owner.client, open.key.split('-')[1]);
+		expect(byNumber.map((choice) => choice.id)).toContain(open.id);
+		expect(await searchTickets(owner.client, '   ')).toEqual([]);
+		// Another user finds none of them; "%" is taken literally.
+		expect(await searchTickets(other.client, word)).toEqual([]);
+		expect(await searchTickets(owner.client, `${word}%`)).toEqual([]);
 	});
 });
 

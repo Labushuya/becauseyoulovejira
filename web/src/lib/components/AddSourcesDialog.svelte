@@ -26,6 +26,7 @@
 	const uid = $props.id();
 	const formId = `${uid}-form`;
 	const searchId = `${uid}-search`;
+	const errorId = `${uid}-error`;
 
 	let query = $state('');
 	let chosen = $state<string[]>([]);
@@ -42,7 +43,9 @@
 	});
 
 	function toggle(id: string, on: boolean) {
-		chosen = on ? [...chosen.filter((entry) => entry !== id), id] : chosen.filter((entry) => entry !== id);
+		chosen = on
+			? [...chosen.filter((entry) => entry !== id), id]
+			: chosen.filter((entry) => entry !== id);
 		error = null;
 	}
 
@@ -92,7 +95,7 @@
 					bind:value={query}
 				/>
 			</span>
-			<fieldset aria-invalid={error ? 'true' : undefined}>
+			<fieldset aria-describedby={error ? errorId : undefined}>
 				<legend>Neue Einträge im Eingang</legend>
 				{#if shown.length === 0}
 					<p class="hint" role="status">Keine Treffer.</p>
@@ -121,7 +124,7 @@
 				{/if}
 			</fieldset>
 			{#if error}
-				<p class="field-error"><ErrorIcon /><span>{error}</span></p>
+				<p class="field-error" id={errorId}><ErrorIcon /><span>{error}</span></p>
 			{/if}
 			{#if failures.length > 0}
 				<div class="alert-error" role="alert">
@@ -145,9 +148,7 @@
 		</button>
 		{#if candidates.length > 0}
 			<button class="button-primary" type="submit" form={formId} aria-disabled={busy}>
-				{busy
-					? 'Wird verknüpft …'
-					: `Verknüpfen${chosen.length > 0 ? ` (${chosen.length})` : ''}`}
+				{busy ? 'Wird verknüpft …' : `Verknüpfen${chosen.length > 0 ? ` (${chosen.length})` : ''}`}
 			</button>
 		{/if}
 	{/snippet}

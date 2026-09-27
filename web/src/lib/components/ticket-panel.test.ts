@@ -81,6 +81,25 @@ vi.mock('$lib/stores/recurrence.svelte', async (importOriginal) => {
 	);
 	return { ...original, getRecurrenceStore: () => store };
 });
+// The section "Quellen" (ADR-0031) is covered in ticket-sources.test.ts; here the ticket has none.
+vi.mock('$lib/stores/ticket-sources.svelte', async (importOriginal) => {
+	const original = await importOriginal<typeof import('$lib/stores/ticket-sources.svelte')>();
+	const store = new original.TicketSourcesStore(
+		{
+			list: async () => [],
+			link: vi.fn(),
+			release: vi.fn(),
+			search: async () => [],
+			originalUrl: async () => null
+		},
+		{ ensureValid: () => true, logout: vi.fn() }
+	);
+	return { ...original, getTicketSourcesStore: () => store };
+});
+vi.mock('$lib/stores/inbox.svelte', async (importOriginal) => ({
+	...(await importOriginal<object>()),
+	getInboxStore: () => ({ newItems: [] })
+}));
 
 const ID = 'abc123def456ghi';
 const LIST = '/?erledigte=1' as ResolvedPathname;
