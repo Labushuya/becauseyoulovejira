@@ -30,7 +30,7 @@ Bereits verbindlich in der [Projekt-CLAUDE.md](../../CLAUDE.md) festgelegt und d
 | [0022](0022-erzeugung-von-instanzen.md) | Erzeugung der Tickets aus Regeln: Zeitpunkt, Cron, Nachholen beim Start, keine Duplikate | Angenommen (mit Nachtrag) | 2026-09-25 |
 | [0023](0023-lebenszyklus-von-regeln-und-instanzen.md) | Lebenszyklus von Regeln und Instanzen: Anlegen, Erledigen, Rückgängig, Pausieren, Bearbeiten, Löschen | Angenommen (mit Nachtrag) | 2026-09-25 |
 | [0024](0024-serien-aus-kalendern.md) | Serien aus `.ics` und Google Calendar als Vorschlag für eine Regel | Angenommen (mit Nachtrag) | 2026-09-25 |
-| [0025](0025-ui-konsistenz-overlay-system.md) | UI-Konsistenz: ein Overlay-System, Theme-Umschalter und angeglichene Projekt-UI | Angenommen, §2 teilweise ersetzt durch 0029 | 2026-09-25 |
+| [0025](0025-ui-konsistenz-overlay-system.md) | UI-Konsistenz: ein Overlay-System, Theme-Umschalter und angeglichene Projekt-UI | Angenommen, §2 teilweise ersetzt durch 0029, §11 präzisiert durch 0030 | 2026-09-25 |
 | [0026](0026-einstellungsbereich-und-hinweis-bausteine.md) | Einstellungsbereich, Hinweis-Bausteine, Einrichtungsassistent und geführte Tour | Angenommen | 2026-09-26 |
 | [0027](0027-akzent-themes.md) | Akzent-Themes (Petrol, Rubin, Smaragd, Kupfer): genau eine Akzentfarbe je Theme | Angenommen (mit Nachträgen), §1 teilweise ersetzt durch 0029 | 2026-09-26 |
 | [0028](0028-plattform-strategie.md) | Plattform-Strategie: ein Server je Datenbestand (PC oder Raspberry Pi), Clients als Web-App, Android-APK mit Capacitor, Windows mit Tray-Option | Angenommen (Planung) | 2026-09-27 |

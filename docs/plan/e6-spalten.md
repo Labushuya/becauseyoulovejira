@@ -1,6 +1,6 @@
 # E6-Plan, Teil Spalten: Breiten ziehen, ein- und ausblenden, kompakte Zeilen
 
-- **Stand:** in Arbeit (2026-09-27); SP-1 in Arbeit.
+- **Stand:** in Arbeit (2026-09-27); SP-1 gemergt, SP-2 in Arbeit.
 - **Grundlage:**
   - [ADR-0030](../adr/0030-spalten-breiten-und-kompakte-zeilen.md) (berechnete Anpassung, Breiten und Schwellen, Griff, Menü „Spalten“, Speichern, kompakte Zeilen)
   - [ADR-0025](../adr/0025-ui-konsistenz-overlay-system.md) §5 und §11, [ADR-0010](../adr/0010-layout-nach-task-board.md) §1, [ADR-0019](../adr/0019-kanal-filter-und-gruppierung.md) §4, [ADR-0029](../adr/0029-glas-materialien.md)
@@ -37,13 +37,19 @@
 | 2026-09-27 | SP-1 | **Nicht gemessen = nichts weicht:** Vor dem ersten Layout und in jsdom liefert der Rahmen keine Breite. `fitColumns(null, …)` zeigt dann alle eingeschalteten Spalten in ihren Breiten. So bleiben die bisherigen Komponententests gültig; das Ausweichen prüfen Unit-Tests und Tests mit gestubbtem `ResizeObserver`. |
 | 2026-09-27 | SP-1 | **Vorlieben pro Eintrag streng:** Eine andere Version, kaputtes JSON oder kein Objekt ergeben die Standardwerte; einzelne unbekannte Spalten, Pflichtspalten in `hidden` und Breiten, die keine positive endliche Zahl sind, werden übergangen, der Rest gilt. Die Standardwerte entfernen den Schlüssel (wie „Petrol“ bei `byl-accent`). |
 | 2026-09-27 | SP-1 | **Registry statt Modul-Singleton:** `ColumnPrefsRegistry` im Kontext des `(app)`-Layouts erzeugt je Tabelle einen Store und hört einmal auf `storage`. Ohne Layout (Komponententests) bekommt eine Tabelle einen eigenen Store auf dem `localStorage` des Fensters, ohne Flags und ohne Abgleich. „Standard wiederherstellen“ meldet sich über die `FlagSink` der Registry. |
+| 2026-09-27 | SP-2 | **Griff als eigener Baustein** `components/table/ResizableHeader.svelte` (das `th` mit Inhalt und Griff), damit alle vier Tabellen dieselbe Zeiger-Logik nutzen. Der Inhalt steht in `[data-column-label]`, so zählt beim Doppelklick nur er, nicht der Griff. Die Tabelle stylt ihre Köpfe deshalb über `thead :global(th)`. |
+| 2026-09-27 | SP-2 | **Ziehen:** Das Budget (Raum des Titels über seinem Minimum) wird beim `pointerdown` festgehalten; so weicht während des Ziehens keine Spalte, und die Breite springt nicht. Esc hört in der Capture-Phase am `window`, verbraucht die Taste (`preventDefault`, `stopPropagation`) und kommt so vor dem Panel. `pointercancel` bricht ab wie Esc. `setPointerCapture` fehlt in jsdom und steht in `try`. |
+| 2026-09-27 | SP-2 | **Doppelklick:** Die natürliche Breite misst ein `Range` über den Inhalt jeder Zelle (auch abgeschnittener, `nowrap`-Inhalt zählt) plus Innenabstand; bei Tags die Summe der Chips einer Zeile samt Abstand. Geklemmt auf Maximum und Budget. |
+| 2026-09-27 | SP-2 | **`data-col` an jeder Zelle** (vorher nur an den weichenden Spalten), dazu `col[data-column]` in der `colgroup`; so findet der Doppelklick alle Zellen einer Spalte. Zellen schneiden ab, statt überzulaufen (`overflow: hidden`, Ellipse); Status, Fällig und Aktionen bleiben einzeilig. |
+| 2026-09-27 | SP-2 | **`forced-colors`:** Die Linie des Griffs ist ein Rand, den das System in seiner Textfarbe zeichnet; dort ist sie immer sichtbar. Keine Systemfarbe im Code (`color-literals.test.ts`). |
+| 2026-09-27 | SP-2 | `TicketTable` und `TicketTableRow` ziehen bei der Gelegenheit auf die Schriftgrößen-Tokens (13 Werte, `no-own-font-sizes.test.ts` jetzt 275). |
 
 ## 4. Status
 
 | Paket | Stand |
 |---|---|
-| SP-1 | in Arbeit |
-| SP-2 | offen |
+| SP-1 | gemergt (#98) |
+| SP-2 | in Arbeit |
 | SP-3 | offen |
 | SP-4 | offen |
 | SP-5 | offen |

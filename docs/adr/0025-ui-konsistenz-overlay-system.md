@@ -1,6 +1,6 @@
 # ADR-0025: UI-Konsistenz – ein Overlay-System, Theme-Umschalter und angeglichene Projekt-UI
 
-- **Status:** Angenommen; §2 („Kein Schatten-Token“) teilweise ersetzt durch [ADR-0029](0029-glas-materialien.md), siehe Nachtrag 13
+- **Status:** Angenommen; §2 („Kein Schatten-Token“) teilweise ersetzt durch [ADR-0029](0029-glas-materialien.md), siehe Nachtrag 13; §11 präzisiert durch [ADR-0030](0030-spalten-breiten-und-kompakte-zeilen.md), siehe Nachtrag 14
 - **Datum:** 2026-09-25
 - **Entscheidung durch:** Nutzer (Fragen 1 bis 4 in Abschnitt 9, 2026-09-25), Advisor (übrige Festlegungen)
 - **Ersetzt teilweise:** [ADR-0010](0010-layout-nach-task-board.md) §1 (Reihenfolge der Leisten, 5 s „Rückgängig“ in der Zeile) und §2 (Aufbau des Detail-Panels, Vollansicht)
@@ -160,6 +160,10 @@ Ersetzt in §2 den Punkt „Kein Schatten-Token“, alles andere bleibt:
 - Die Overlays der Bedienebene (Popover und Menüs, Modals S bis L, Bestätigung, Seitenpanel, Flags) bekommen Glas nach [ADR-0029](0029-glas-materialien.md): `--material-thick` (eingebettetes Panel `--material-regular`), `--glass-filter-*`, Linie `--color-separator`, Radius `--radius-overlay` und die neutralen Schatten `--shadow-popover` bzw. `--shadow-modal`, immer mit Linie.
 - Die Vollansicht bleibt undurchsichtig, das Blanket bleibt ein Farbschleier ohne Blur.
 - Verhalten, Größen, Escape-Kette, Fokusführung und `prefers-reduced-motion` ändern sich nicht.
+
+### 14. Nachtrag (2026-09-27): Spalten nach ADR-0030
+
+Präzisiert Abschnitt 11, ohne ihn aufzuheben: Die Tabellen blenden Spalten nicht mehr per Container-Queries aus, sondern über die berechnete Anpassung `fitColumns` aus [ADR-0030](0030-spalten-breiten-und-kompakte-zeilen.md), weil feste Schwellen keine Breite kennen, die der Nutzer gezogen hat. „Tabellen scrollen nie seitlich“, die Reihenfolge beim Ausblenden und der Hinweis „Weitere Spalten im Panel“ bleiben; der Hinweis erscheint nur für Spalten, die wegen Platz fehlen. Umgestellt ab Paket SP-2 („Aufgaben“), die übrigen Tabellen mit SP-5.
 
 ## Alternativen
 
