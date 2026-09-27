@@ -139,6 +139,21 @@ afterEach(async () => {
 });
 
 describe('first run (full inbox, ADR-0020 addendum 3)', () => {
+	it('takes an old mail over 10 MB of the full scan without its file (ADR-0031)', async () => {
+		mail('Hallo');
+		const big = server.add(
+			`Subject: Rechnung gross\r\nMessage-ID: <scan-big@x>\r\n\r\nSumme 12 Euro\r\n${'q'.repeat(10 * 1024 * 1024)}`
+		);
+		const box = connection();
+		ingest.connections = [box];
+		const outcome = await pollConnection(deps(), box);
+		expect(outcome).toMatchObject({ status: 'ok', created: 1, omitted: 1 });
+		expect(ingest.items[0]?.original).toBeUndefined();
+		expect(ingest.items[0]?.draft.source_meta).toMatchObject({ original_omitted: 'too_large' });
+		expect(server.partialFetches.map((fetch) => fetch.uid)).toEqual([big]);
+		expect(server.writes()).toEqual([]);
+	});
+
 	it('sets the cursor to the highest UID and takes the old mails with a keyword', async () => {
 		mail('Todo: alt');
 		mail('Hallo');

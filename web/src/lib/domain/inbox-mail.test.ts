@@ -123,7 +123,7 @@ describe('mailToDraft with the fixtures', () => {
 			omittedSize: MAIL_MAX_BYTES + 1
 		});
 		expect(long.body).toHaveLength(INBOX_BODY_MAX_LENGTH);
-		expect(long.body.endsWith(ORIGINAL_OMITTED_NOTE)).toBe(true);
+		expect(long.body?.endsWith(ORIGINAL_OMITTED_NOTE)).toBe(true);
 		expect(MAIL_PARTIAL_BYTES).toBe(2 * 1024 * 1024);
 	});
 });

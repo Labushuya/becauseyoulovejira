@@ -50,6 +50,11 @@
 | 2026-09-27 | HK-2 | **Mehrere Einträge:** `LinkTicketDialog` verknüpft nacheinander (je Eintrag atomar im Hook), schließt ohne Fehler, behält sonst nur die gescheiterten Einträge mit Grund. Ein Flag für alle („2 Einträge mit TASK-4 verknüpft.“, bei Teilfehlern neutral). Die Auswahl der Tabelle verliert die verknüpften Einträge. |
 | 2026-09-27 | HK-2 | **Ort des Abschnitts:** im Panel nach Quelle und Daten, in der Vollansicht in der linken Spalte zwischen Beschreibung und Aktivität (die rechte Spalte hat nur Karten mit Feldern). Die Karte „Quelle“ bleibt, sie nennt den Kanal auch nach dem Löschen eines Tickets. |
 | 2026-09-27 | HK-2 | **Kopie-Status im Panel des Eintrags** als Zeile „Kopie“ mit Lozenge in den Kopfangaben und, wenn nicht vollständig, einer `SectionMessage` (info, compact) mit dem, was fehlt. „Mit Ticket verknüpfen …“ steht im Fuß neben „Verwerfen“ und „Umwandeln“, nur für neue Einträge. |
+| 2026-09-27 | HK-3 | **Ein Entwurf für alle Wege:** `mailToDraft(mail, channel, { omittedSize })` in `domain/inbox-mail.ts` (SPA und Hilfsprozess) setzt `original_omitted` und `original_size`, lässt die Zahl der Anhänge weg (der abgeschnittene Anfang kennt sie nicht) und hält den Hinweis `ORIGINAL_OMITTED_NOTE` am Ende, auch wenn der Text auf 100 000 Zeichen gekürzt wird. |
+| 2026-09-27 | HK-3 | **Hilfsprozess:** `InboxSession.partialSource(uid, n)` (`BODY.PEEK[]<0.n>`) und `header(uid)` (`BODY.PEEK[HEADER]`); `largeMailDraft` parst den Anfang, sonst den Kopf. `checkMail` bekommt die Größe aus `listAfter` bzw. `headersOf` und lädt große Mails nie ganz (imapflow begrenzt die Antwort ohnehin auf 10 MB plus Puffer). Die Postfach-Auswahl liest die Größe vorher mit `headersOf([uid])`. `skipped` bleibt in der Antwort von `/poll` (Hook und SPA kennen es), ist aber 0; neu zählt `omitted` die Einträge ohne Datei fürs Protokoll („davon 1 über 10 MB ohne Originaldatei“). |
+| 2026-09-27 | HK-3 | **Test-IMAP-Server** beantwortet Teilabrufe `BODY.PEEK[]<start.länge>` mit `BODY[]<start>` (RFC 3501 6.4.5) und merkt sie sich (`partialFetches`), damit Tests belegen, dass nur 2 MB gelesen werden. |
+| 2026-09-27 | HK-3 | **Ingest-Route:** nimmt `original_omitted` nur mit dem Wert `too_large` und einer ganzen, nicht negativen `original_size` an, sonst 400; eine Größe ohne Kennzeichen wird verworfen. |
+| 2026-09-27 | HK-3 | `byl-mail.exe` 0.8.0. Bis zum Neustart (`stop.bat`, dann `start.bat`) läuft der alte Hilfsprozess weiter und überspringt große Mails; die Route bleibt mit ihm verträglich. |
 
 ## 4. Status
 
@@ -57,8 +62,8 @@
 |---|---|
 | HK-0 | gemergt (#105) |
 | HK-1 | gemergt (#106) |
-| HK-2 | in Arbeit |
-| HK-3 | geplant |
+| HK-2 | gemergt (#107) |
+| HK-3 | in Arbeit |
 | HK-4 | geplant |
 
 ## 5. Offene Punkte

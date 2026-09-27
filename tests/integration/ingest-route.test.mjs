@@ -281,6 +281,24 @@ describe('ingest route: items (ADR-0016 section 5, ADR-0020)', () => {
 		expect((await fetch(owner.pb.files.getURL(item, item.original))).status).not.toBe(200);
 	});
 
+	it('keeps a mail over 10 MB without file with its mark, and refuses a bad mark (ADR-0031)', async () => {
+		const meta = { from: 'Bert <bert@example.com>', original_omitted: 'too_large', original_size: 13_000_000 };
+		const answer = await call('/api/byl/ingest/items', {
+			method: 'POST',
+			json: draft(mailbox, { source_meta: meta })
+		});
+		expect(answer.json.status).toBe('created');
+		const item = await owner.pb.collection('inbox_items').getOne(answer.json.item);
+		expect(item.original).toBe('');
+		expect(item.source_meta).toEqual({ ...meta, keyword: 'todo' });
+
+		const bad = await call('/api/byl/ingest/items', {
+			method: 'POST',
+			json: draft(mailbox, { source_meta: { original_omitted: 'too_large', original_size: 'viel' } })
+		});
+		expect(bad.status).toBe(400);
+	});
+
 	it('creates only for switched-on mail connections', async () => {
 		const off = await mail(owner, { label: 'Aus', enabled: false });
 		const calendar = await owner.pb.collection('connections').create({
