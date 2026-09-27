@@ -21,7 +21,8 @@ var MESSAGES = {
   validation_inbox_transition: 'Dieser Zustandswechsel ist nicht erlaubt.',
   validation_inbox_item_handled: 'Dieser Eintrag wurde schon bearbeitet.',
   validation_inbox_ticket_required: 'Zum Zuordnen fehlt das Ticket.',
-  validation_inbox_primary_source: 'Die Hauptquelle eines Tickets lässt sich nicht lösen.',
+  validation_inbox_primary_source:
+    'Die Hauptquelle bleibt bei dem Ticket, das aus ihr entstanden ist; sie lässt sich weder lösen noch verschieben.',
   validation_inbox_item_linked: 'Dieser Eintrag ist die Quelle eines Tickets und lässt sich nicht löschen.',
   validation_invalid_url: 'Nur http- und https-Adressen.',
   validation_required: 'Pflichtfeld.',
@@ -257,25 +258,27 @@ function guardClientUpdate(record) {
 }
 
 // onRecordUpdate before e.next(), for client and internal saves: scope, handled_at, a converted
-// item must point to a ticket of its scope (a missing and a foreign ID give the same message),
-// and the main source of a ticket is never released (ADR-0031 section 2). Returns the change for
-// recordLinkChange(): { kind: 'link' | 'release' | '', ticket }.
+// item must point to a ticket of its scope when it gets one (a missing and a foreign ID give the
+// same message), and the main source of a ticket is never released nor moved to another ticket
+// (ADR-0031 section 2 and its addendum). Returns the change for recordLinkChange():
+// { kind: 'link' | 'release' | 'move' | '', ticket, from }.
 function prepareUpdate(txApp, record) {
   var original = record.original();
   var scope = applyScope(record);
   var before = original.getString('state');
   var after = record.getString('state');
+  var ticketBefore = original.getString('ticket');
+  var ticketAfter = record.getString('ticket');
 
-  if (after === 'converted' && before !== 'converted') {
-    var ticketId = record.getString('ticket');
-    var ticket = ticketId === '' ? null : findById(txApp, 'tickets', ticketId);
+  if (after === 'converted' && (before !== 'converted' || (ticketAfter !== ticketBefore && ticketAfter !== ''))) {
+    var ticket = ticketAfter === '' ? null : findById(txApp, 'tickets', ticketAfter);
     if (!ticket || ticket.getString('scope') !== scope) {
       throw fail('ticket', 'validation_scope_mismatch');
     }
   }
-  var kind = rules.linkChange(before, after);
-  if (kind === 'release' && isPrimarySource(txApp, record.id)) {
-    throw fail('state', 'validation_inbox_primary_source');
+  var kind = rules.linkChange({ state: before, ticket: ticketBefore }, { state: after, ticket: ticketAfter });
+  if ((kind === 'release' || kind === 'move') && isPrimarySource(txApp, record.id)) {
+    throw fail(kind === 'release' ? 'state' : 'ticket', 'validation_inbox_primary_source');
   }
 
   var action = rules.handledAtAction(before, after);
@@ -286,12 +289,29 @@ function prepareUpdate(txApp, record) {
   } else {
     record.set('handled_at', original.getString('handled_at'));
   }
-  return { kind: kind, ticket: kind === 'release' ? original.getString('ticket') : record.getString('ticket') };
+  return {
+    kind: kind,
+    ticket: kind === 'release' ? ticketBefore : ticketAfter,
+    from: kind === 'move' ? ticketBefore : ''
+  };
+}
+
+function saveSourceLinkEntry(txApp, record, ticketId, oldValue, newValue) {
+  var entry = new Record(txApp.findCollectionByNameOrId('ticket_history'));
+  entry.set('ticket', ticketId);
+  entry.set('field', SOURCE_LINK_FIELD);
+  entry.set('old_value', oldValue);
+  entry.set('new_value', newValue);
+  var actor = record.get(ACTOR_KEY);
+  entry.set('user', actor ? String(actor) : '');
+  txApp.save(entry);
 }
 
 // onRecordUpdate after e.next(), in the same transaction: linking and releasing leave an entry
-// "source_link" in the history of the ticket (ADR-0031 section 2), with the acting user. Converting
-// writes none (the ticket records its creation), nor does releasing an item whose ticket is gone.
+// "source_link" in the history of the ticket (ADR-0031 section 2), with the acting user. Moving
+// leaves one in both tickets: "moved to" in the old one (old value), "moved from" in the new one
+// (new value). Converting writes none (the ticket records its creation), nor does releasing an
+// item whose ticket is gone.
 function recordLinkChange(txApp, record, change) {
   if (!change || change.kind === '' || change.ticket === '') {
     return;
@@ -300,19 +320,29 @@ function recordLinkChange(txApp, record, change) {
   if (!ticket || (change.kind === 'link' && ticket.getString('source_item') === record.id)) {
     return;
   }
-  var value = rules.sourceLinkValue({
-    id: record.id,
-    channel: record.getString('channel'),
-    title: record.getString('title')
-  });
-  var entry = new Record(txApp.findCollectionByNameOrId('ticket_history'));
-  entry.set('ticket', ticket.id);
-  entry.set('field', SOURCE_LINK_FIELD);
-  entry.set('old_value', change.kind === 'release' ? value : '');
-  entry.set('new_value', change.kind === 'link' ? value : '');
-  var actor = record.get(ACTOR_KEY);
-  entry.set('user', actor ? String(actor) : '');
-  txApp.save(entry);
+  var item = { id: record.id, channel: record.getString('channel'), title: record.getString('title') };
+  if (change.kind === 'move') {
+    var from = findById(txApp, 'tickets', change.from);
+    if (from) {
+      var movedTo = rules.sourceLinkValue(item, { direction: 'to', ticket: ticket.id, key: ticket.getString('key') });
+      saveSourceLinkEntry(txApp, record, from.id, movedTo, '');
+    }
+    var movedFrom = rules.sourceLinkValue(item, {
+      direction: 'from',
+      ticket: change.from,
+      key: from ? from.getString('key') : ''
+    });
+    saveSourceLinkEntry(txApp, record, ticket.id, '', movedFrom);
+    return;
+  }
+  var value = rules.sourceLinkValue(item);
+  saveSourceLinkEntry(
+    txApp,
+    record,
+    ticket.id,
+    change.kind === 'release' ? value : '',
+    change.kind === 'link' ? value : ''
+  );
 }
 
 // onRecordDeleteRequest (ADR-0031 section 3): the source of a ticket is never deleted through

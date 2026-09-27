@@ -56,7 +56,9 @@ function isAllowedSourceUrl(value) {
  * - new -> converted only together with a ticket (linking, also "Dem Ticket zuordnen");
  * - converted -> new only with an empty ticket (releasing; that the item is not the main source
  *   of its ticket checks the service in the transaction);
- * - otherwise converted stays as it is: no other ticket, no discarding.
+ * - converted -> converted with another, non-empty ticket (moving to another ticket, "Anderem
+ *   Ticket zuordnen …"; the main source and the scope of the ticket are checked by the service);
+ * - otherwise converted stays as it is: no empty ticket, no discarding.
  */
 function transitionViolation(before, after) {
   var from = text(before.state);
@@ -64,6 +66,9 @@ function transitionViolation(before, after) {
   var ticketChanged = text(before.ticket) !== text(after.ticket);
   if (from === 'converted') {
     if (to === 'new' && text(after.ticket) === '') {
+      return '';
+    }
+    if (to === 'converted' && ticketChanged && text(after.ticket) !== '') {
       return '';
     }
     return to !== from || ticketChanged ? { field: 'state', code: HANDLED } : '';
@@ -90,27 +95,46 @@ function handledAtAction(beforeState, afterState) {
 }
 
 /**
- * What a saved change of state means for the sources of a ticket (ADR-0031 section 2):
- * 'link' (new -> converted), 'release' (converted -> new) or '' for anything else.
+ * What a saved change of state and ticket means for the sources of a ticket (ADR-0031 section 2).
+ * before/after: { state, ticket }. Returns
+ * - 'link': new -> converted, or a converted item whose ticket was deleted gets a ticket again;
+ * - 'release': converted -> new;
+ * - 'move': a converted item changes from one ticket to another;
+ * - '' for anything else.
  */
-function linkChange(beforeState, afterState) {
-  var from = text(beforeState);
-  var to = text(afterState);
+function linkChange(before, after) {
+  var from = text(before.state);
+  var to = text(after.state);
   if (from === 'new' && to === 'converted') {
     return 'link';
   }
   if (from === 'converted' && to === 'new') {
     return 'release';
   }
+  if (from === 'converted' && to === 'converted' && text(after.ticket) !== text(before.ticket)) {
+    if (text(after.ticket) === '') {
+      return '';
+    }
+    return text(before.ticket) === '' ? 'link' : 'move';
+  }
   return '';
 }
 
 /**
  * Value of the history entry "source_link" (ADR-0031 section 2): the item as JSON with id,
- * channel and title, so the history stays readable after the item is released.
+ * channel and title, so the history stays readable after the item is released. A move names the
+ * other ticket (`moved_to` in the old ticket, `moved_from` in the new one) with ID and key at the
+ * time of the move.
  */
-function sourceLinkValue(item) {
-  return JSON.stringify({ item: text(item.id), channel: text(item.channel), title: text(item.title) });
+function sourceLinkValue(item, move) {
+  var value = { item: text(item.id), channel: text(item.channel), title: text(item.title) };
+  if (move && (move.direction === 'to' || move.direction === 'from')) {
+    value[move.direction === 'to' ? 'moved_to' : 'moved_from'] = {
+      ticket: text(move.ticket),
+      key: text(move.key)
+    };
+  }
+  return JSON.stringify(value);
 }
 
 // Message of a duplicate (ADR-0014 section 3): "schon im Eingang", "schon verworfen",

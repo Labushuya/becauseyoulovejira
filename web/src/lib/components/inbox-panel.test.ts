@@ -201,9 +201,10 @@ describe('inbox panel', () => {
 				handledAt: '2026-09-25 09:00:00.000Z'
 			})
 		);
-		expect((await screen.findByRole('link', { name: 'Ticket ansehen' })).getAttribute('href')).toBe(
+		expect((await screen.findByRole('link', { name: 'Ticket öffnen' })).getAttribute('href')).toBe(
 			'/tickets/tick00000000001'
 		);
+		expect(screen.getByText('Gehört zu einem Ticket')).toBeTruthy();
 		expect(screen.queryByRole('button', { name: 'Verwerfen' })).toBeNull();
 	});
 
@@ -219,7 +220,7 @@ describe('inbox panel', () => {
 		expect(within(note).getByText('Mögliches Duplikat.')).toBeTruthy();
 		await fireEvent.click(within(note).getByRole('button', { name: 'Dem Ticket HAUS-4 zuordnen' }));
 		await vi.waitFor(() => expect(data.assign).toHaveBeenCalledWith(ID, 'tick00000000001'));
-		expect(await screen.findByRole('link', { name: 'Ticket ansehen' })).toBeTruthy();
+		expect(await screen.findByRole('link', { name: 'Ticket öffnen' })).toBeTruthy();
 	});
 
 	it('says when the entry does not exist', async () => {
@@ -464,6 +465,113 @@ describe('inbox panel: copy and linking (ADR-0031)', () => {
 			await screen.findByText('Lokale, private und interne Adressen werden nicht abgerufen.')
 		).toBeTruthy();
 		expect(copyOf()).toBe('Nur Adresse');
+	});
+
+	const linked = (primary: boolean) =>
+		entry({
+			state: 'converted',
+			ticketId: 'ticket000000012',
+			ticket: { id: 'ticket000000012', key: 'HAUS-12', title: 'Steuer 2025', primary },
+			handledAt: '2026-09-25 09:00:00.000Z'
+		});
+
+	it('names the ticket of a linked entry at the top with its actions (ADR-0031 addendum)', async () => {
+		const linking = sources();
+		setup(linked(false), [], { sources: linking.store });
+		const section = await screen.findByRole('region', { name: 'Gehört zu HAUS-12 · Steuer 2025' });
+		expect(within(section).getByRole('link', { name: 'Ticket öffnen' }).getAttribute('href')).toBe(
+			'/tickets/ticket000000012'
+		);
+		expect(within(section).getByRole('button', { name: 'Anderem Ticket zuordnen …' })).toBeTruthy();
+		expect(within(section).getByRole('button', { name: 'Lösen' })).toBeTruthy();
+		expect(within(section).queryByText(/^Hauptquelle/)).toBeNull();
+	});
+
+	it('moves a linked entry to another ticket; the current one is not offered', async () => {
+		const linking = sources();
+		linking.data.search.mockResolvedValue([
+			{ id: 'ticket000000012', key: 'HAUS-12', title: 'Steuer 2025', status: 'open' },
+			{ id: 'ticket000000004', key: 'TASK-4', title: 'Zahlungen', status: 'open' }
+		]);
+		setup(linked(false), [], { sources: linking.store });
+		await fireEvent.click(await screen.findByRole('button', { name: 'Anderem Ticket zuordnen …' }));
+		const dialog = screen.getByRole('dialog', { name: 'Anderem Ticket zuordnen' });
+		expect(within(dialog).getByText(/gehört zu HAUS-12 und wechselt direkt/)).toBeTruthy();
+		await fireEvent.click(within(dialog).getByRole('button', { name: 'Zuordnen' }));
+		expect(within(dialog).getByText('Bitte ein Ticket wählen.')).toBeTruthy();
+		const input = within(dialog).getByRole('combobox', {
+			name: 'Neues Ticket'
+		}) as HTMLInputElement;
+		input.value = 'a';
+		await fireEvent.input(input);
+		await vi.waitFor(() => expect(input.getAttribute('aria-expanded')).toBe('true'));
+		expect(
+			within(dialog)
+				.getAllByRole('option')
+				.map((option) => option.textContent)
+		).toEqual([expect.stringContaining('TASK-4')]);
+		await fireEvent.keyDown(input, { key: 'Enter' });
+		await fireEvent.click(within(dialog).getByRole('button', { name: 'Zuordnen' }));
+		await vi.waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+		expect(linking.data.link).toHaveBeenCalledWith(ID, 'ticket000000004');
+	});
+
+	it('keeps a refused move in the dialog', async () => {
+		const linking = sources();
+		linking.data.link.mockRejectedValueOnce(
+			new DataError('validation', {
+				fields: {
+					ticket: {
+						code: 'validation_scope_mismatch',
+						message: 'Verknüpfter Datensatz nicht gefunden oder in einem anderen Bereich.'
+					}
+				}
+			})
+		);
+		setup(linked(false), [], { sources: linking.store });
+		await fireEvent.click(await screen.findByRole('button', { name: 'Anderem Ticket zuordnen …' }));
+		const dialog = screen.getByRole('dialog', { name: 'Anderem Ticket zuordnen' });
+		const input = within(dialog).getByRole('combobox', {
+			name: 'Neues Ticket'
+		}) as HTMLInputElement;
+		input.value = 'TASK';
+		await fireEvent.input(input);
+		await vi.waitFor(() => expect(input.getAttribute('aria-expanded')).toBe('true'));
+		await fireEvent.keyDown(input, { key: 'Enter' });
+		await fireEvent.click(within(dialog).getByRole('button', { name: 'Zuordnen' }));
+		expect(
+			await within(dialog).findByText(
+				'Verknüpfter Datensatz nicht gefunden oder in einem anderen Bereich.'
+			)
+		).toBeTruthy();
+	});
+
+	it('releases a linked entry from the panel', async () => {
+		const linking = sources();
+		linking.data.release.mockImplementation(async (id) => ({
+			...entry(),
+			id,
+			state: 'new',
+			ticketId: null,
+			ticket: null,
+			handledAt: null,
+			updated: '2026-09-25 10:00:00.000Z'
+		}));
+		setup(linked(false), [], { sources: linking.store });
+		await fireEvent.click(await screen.findByRole('button', { name: 'Lösen' }));
+		await vi.waitFor(() => expect(screen.queryByText(/^Gehört zu/)).toBeNull());
+		expect(linking.data.release).toHaveBeenCalledWith(ID);
+		expect(screen.getByRole('button', { name: 'Mit Ticket verknüpfen …' })).toBeTruthy();
+	});
+
+	it('keeps the main source at its ticket and says why', async () => {
+		setup(linked(true), [], { sources: sources().store });
+		const section = await screen.findByRole('region', { name: 'Gehört zu HAUS-12 · Steuer 2025' });
+		expect(
+			within(section).getByText(/^Hauptquelle: Das Ticket ist aus diesem Eintrag/)
+		).toBeTruthy();
+		expect(within(section).getByRole('link', { name: 'Ticket öffnen' })).toBeTruthy();
+		expect(within(section).queryByRole('button')).toBeNull();
 	});
 
 	it('offers no linking without the store, nor for a handled entry', async () => {

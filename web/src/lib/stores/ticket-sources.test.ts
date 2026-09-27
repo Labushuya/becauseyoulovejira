@@ -214,6 +214,38 @@ describe('TicketSourcesStore', () => {
 		});
 	});
 
+	it('moves a source to another ticket with a flag and keeps a refusal for the dialog', async () => {
+		vi.useFakeTimers();
+		const a = item('a');
+		const { store, data, flags, changed } = setup([a]);
+		store.open(TICKET, null);
+		await vi.waitFor(() => expect(store.state).toBe('ready'));
+		const result = await store.move(a, { id: 'ticket000000002', key: 'HAUS-13' });
+		expect(result.ok).toBe(true);
+		expect(data.link).toHaveBeenCalledWith('a', 'ticket000000002');
+		// The entry leaves the sources of the open ticket and goes to the inbox store.
+		expect(store.items).toEqual([]);
+		expect(changed.map((entry) => entry.ticketId)).toEqual(['ticket000000002']);
+		expect(flags.flags.at(-1)).toMatchObject({
+			tone: 'success',
+			title: '„Nachricht a“ gehört jetzt zu HAUS-13.'
+		});
+		vi.advanceTimersByTime(FLAG_DURATION_MS);
+
+		data.link.mockRejectedValueOnce(
+			new DataError('validation', {
+				fields: {
+					ticket: { code: 'validation_inbox_primary_source', message: 'Bleibt beim Ticket.' }
+				}
+			})
+		);
+		expect(await store.move(a, { id: 'ticket000000002', key: 'HAUS-13' })).toEqual({
+			ok: false,
+			message: 'Bleibt beim Ticket.'
+		});
+		expect(flags.flags).toEqual([]);
+	});
+
 	it('asks for the file with a fresh token and leads to the login after the session ended', async () => {
 		const { store, data, session } = setup();
 		expect(await store.originalUrl(item('a', { original: 'datei.eml' }))).toEqual({

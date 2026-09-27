@@ -11,7 +11,7 @@ import type { Tag } from '../domain/tag';
 import type { Comment, HistoryEntry, Ticket, TicketSummary } from '../domain/ticket';
 import { COMMENT_FIELDS, toComment, type CommentRecord } from './comments';
 import { HISTORY_FIELDS, toHistoryEntry, type HistoryRecord } from './history';
-import { INBOX_LIST_FIELDS, toInboxItemSummary, type InboxRecord } from './inbox';
+import { INBOX_EXPAND, INBOX_LIST_FIELDS, toInboxItemSummary, type InboxRecord } from './inbox';
 import { PROJECT_FIELDS, toProject, type ProjectRecord } from './projects';
 import { READ_FIELDS, toTicketRead, type TicketRead } from './reads';
 import { RULE_FIELDS, toRecurrenceRule, type RuleRecord } from './recurrence';
@@ -149,7 +149,8 @@ export function subscribeInboxItems(
 	return pb
 		.collection('inbox_items')
 		.subscribe<InboxRecord>('*', changes(toInboxItemSummary, onChange), {
-			fields: INBOX_LIST_FIELDS
+			fields: INBOX_LIST_FIELDS,
+			expand: INBOX_EXPAND
 		});
 }
 

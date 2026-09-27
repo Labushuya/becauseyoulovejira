@@ -58,6 +58,25 @@ describe('describeHistoryEntry', () => {
 		expect(text({ field: 'source_link', newValue: 'null' })).toBe('Quelle verknüpft');
 	});
 
+	it('names the other ticket of a moved source (ADR-0031 addendum)', () => {
+		const base = { item: 'item00000000001', channel: 'telegram', title: 'Termin' };
+		expect(
+			text({
+				field: 'source_link',
+				oldValue: JSON.stringify({ ...base, moved_to: { ticket: 't2', key: 'HAUS-13' } })
+			})
+		).toBe('Quelle verschoben nach HAUS-13: Telegram „Termin“');
+		expect(
+			text({
+				field: 'source_link',
+				newValue: JSON.stringify({ ...base, moved_from: { ticket: 't1', key: 'HAUS-12' } })
+			})
+		).toBe('Quelle verschoben von HAUS-12: Telegram „Termin“');
+		expect(
+			text({ field: 'source_link', newValue: JSON.stringify({ ...base, moved_from: null }) })
+		).toBe('Quelle verschoben: Telegram „Termin“');
+	});
+
 	it('shows time in Berlin, actor and id', () => {
 		expect(describeHistoryEntry(entry({}), lookups, ME)).toMatchObject({
 			id: 'hist00000000001',

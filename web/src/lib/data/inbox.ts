@@ -14,7 +14,8 @@ import {
 	type InboxDuplicate,
 	type InboxItem,
 	type InboxItemSummary,
-	type InboxState
+	type InboxState,
+	type InboxTicketRef
 } from '../domain/inbox';
 import { DATA_ERROR_MESSAGES, DataError, isDataError, toDataError, withDataErrors } from './errors';
 import { currentUserId, type RequestOptions } from './options';
@@ -39,8 +40,17 @@ export const INBOX_LIST_FIELDS = [
 	'ticket',
 	'handled_at',
 	'created',
-	'updated'
+	'updated',
+	// The ticket of a converted or linked entry (ADR-0031, addendum): key and title for the chip and
+	// the panel, source_item tells whether the entry is its main source.
+	'expand.ticket.id',
+	'expand.ticket.key',
+	'expand.ticket.title',
+	'expand.ticket.source_item'
 ].join(',');
+
+/** Expanded relation of lists, panel and realtime events (ADR-0031, addendum). */
+export const INBOX_EXPAND = 'ticket';
 
 /** Fields of the panel: the list fields plus the text. */
 export const INBOX_DETAIL_FIELDS = `${INBOX_LIST_FIELDS},body`;
@@ -62,6 +72,26 @@ export interface InboxRecord {
 	handled_at: string;
 	created: string;
 	updated: string;
+	expand?: { ticket?: InboxTicketRecord };
+}
+
+/** Expanded ticket of an entry with the fields above. */
+export interface InboxTicketRecord {
+	id: string;
+	key: string;
+	title: string;
+	source_item?: string;
+}
+
+function ticketRefOf(record: InboxRecord): InboxTicketRef | null {
+	const ticket = record.expand?.ticket;
+	if (!record.ticket || ticket === undefined || ticket.id !== record.ticket) return null;
+	return {
+		id: ticket.id,
+		key: ticket.key,
+		title: ticket.title,
+		primary: ticket.source_item === record.id
+	};
 }
 
 function metaOf(value: unknown): Readonly<Record<string, unknown>> {
@@ -87,6 +117,7 @@ export function toInboxItemSummary(record: InboxRecord): InboxItemSummary {
 		original: record.original ?? '',
 		state: record.state,
 		ticketId: record.ticket || null,
+		ticket: ticketRefOf(record),
 		handledAt: record.handled_at || null,
 		created: record.created,
 		updated: record.updated
@@ -182,6 +213,7 @@ export function listHandledItems(
 			}),
 			sort: '-handled_at,-created,-id',
 			fields: INBOX_LIST_FIELDS,
+			expand: INBOX_EXPAND,
 			signal
 		});
 		return {
@@ -197,7 +229,7 @@ export function getItem(pb: PocketBase, id: string, { signal }: RequestOptions =
 	return withDataErrors(signal, async (): Promise<InboxItem> => {
 		const record = await pb
 			.collection(INBOX)
-			.getOne<InboxRecord>(id, { fields: INBOX_DETAIL_FIELDS, signal });
+			.getOne<InboxRecord>(id, { fields: INBOX_DETAIL_FIELDS, expand: INBOX_EXPAND, signal });
 		return toInboxItem(record);
 	});
 }
@@ -253,7 +285,7 @@ function updateItem(
 	return withDataErrors(signal, async () => {
 		const record = await pb
 			.collection(INBOX)
-			.update<InboxRecord>(id, body, { fields: INBOX_LIST_FIELDS, signal });
+			.update<InboxRecord>(id, body, { fields: INBOX_LIST_FIELDS, expand: INBOX_EXPAND, signal });
 		return toInboxItemSummary(record);
 	});
 }
@@ -279,6 +311,9 @@ export function restoreItem(
 /**
  * Links the entry to an existing ticket of its scope ("Dem Ticket zuordnen", "Mit Ticket
  * verknüpfen …", "Quelle hinzufügen …"; ADR-0031 section 2): it becomes a source of the ticket.
+ * The same update moves a linked entry directly to another ticket ("Anderem Ticket zuordnen …",
+ * addendum to ADR-0031); the hook then writes the history of both tickets and refuses the main
+ * source.
  */
 export function assignToTicket(
 	pb: PocketBase,
@@ -315,6 +350,7 @@ export function listTicketSources(
 			filter: pb.filter('ticket = {:ticket}', { ticket: ticketId }),
 			sort: 'created,id',
 			fields: INBOX_LIST_FIELDS,
+			expand: INBOX_EXPAND,
 			skipTotal: true,
 			signal
 		});
