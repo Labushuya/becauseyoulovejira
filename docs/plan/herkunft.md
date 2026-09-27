@@ -1,6 +1,6 @@
 # E6-Plan, Teil Herkunft: Quellen eines Tickets, Löschschutz, große Mails und Seitenkopie
 
-- **Stand:** umgesetzt (2026-09-27): HK-0 bis HK-4 (#105 bis #109). Folgeauftrag HK-5 bis HK-8 (Nachtrag zu ADR-0031) siehe §2 und §4. Offen sind die manuellen Browser-Prüfungen.
+- **Stand:** umgesetzt (2026-09-27): HK-0 bis HK-4 (#105 bis #109). Folgeauftrag HK-5 bis HK-8 (Nachtrag zu ADR-0031) umgesetzt (#110 bis #113), siehe §2 und §4. Offen sind die manuellen Browser-Prüfungen.
 - **Grundlage:**
   - [ADR-0031](../adr/0031-herkunft-sichern.md) (Datenmodell, Verknüpfen und Lösen, Löschschutz, große Mails, Kopie-Status, Seitenkopie mit SSRF-Schutz und seinen Grenzen)
   - [ADR-0014](../adr/0014-datenmodell-eingang.md), [ADR-0016](../adr/0016-kanal-architektur-und-mail.md), [ADR-0008](../adr/0008-markdown-rendering-und-sanitizing.md), [ADR-0025](../adr/0025-ui-konsistenz-overlay-system.md), [ADR-0026](../adr/0026-einstellungsbereich-und-hinweis-bausteine.md), [ADR-0029](../adr/0029-glas-materialien.md)
@@ -101,7 +101,7 @@ Folgeauftrag (Nutzerentscheidungen vom 2026-09-27, [ADR-0031](../adr/0031-herkun
 | HK-5 | gemergt (#110) |
 | HK-6 | gemergt (#111) |
 | HK-7 | gemergt (#112) |
-| HK-8 | in Arbeit |
+| HK-8 | gemergt (#113) |
 
 ## 5. Offene Punkte
 
