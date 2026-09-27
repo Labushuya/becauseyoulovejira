@@ -43,6 +43,17 @@
 	/* Veil behind modals and the full view (ADR-0025 section 2): darkens like the text tone */
 	--color-blanket: rgb(23 35 38 / 0.45);
 
+	/*
+	 * Glass of the control layer (ADR-0029 section 2), neutral in every theme: the surface, a little
+	 * translucent (at least 0.82, glass-contrast.test.ts), lines and the light edge on glass, and the
+	 * shadow of popovers, always together with a line.
+	 */
+	--material-regular: rgb(255 255 255 / 0.82);
+	--material-thick: rgb(255 255 255 / 0.92);
+	--color-separator: rgb(23 35 38 / 0.12);
+	--glass-edge: rgb(255 255 255 / 0.55);
+	--shadow-popover: 0 0 0 0.5px rgb(0 0 0 / 0.08), 0 8px 24px rgb(0 0 0 / 0.14);
+
 	/* Status pill colors - light mode */
 	--status-backlog-bg: transparent;
 	--status-backlog-text: #5b6b6f;
@@ -70,7 +81,8 @@
 
 	/*
 	 * Sizes, radii and motion of the overlays (ADR-0025 section 2). They are the same in every
-	 * mode and live here only. No shadow token: overlays stand out by a line and the surface.
+	 * mode and live here only. Overlays stand out by a line, the surface or the glass and, since
+	 * ADR-0029, the neutral shadow tokens of the mode blocks.
 	 */
 	--overlay-width-s: 25rem;
 	--overlay-width-m: 37.5rem;
@@ -85,6 +97,16 @@
 	--motion-fast: 120ms;
 	--motion-medium: 200ms;
 	--motion-ease: cubic-bezier(0.2, 0, 0, 1);
+
+	/*
+	 * Glass (ADR-0029 sections 2 and 5): the blur of the materials, the same in every mode; no
+	 * brightness(), and saturate() stays a fixed matrix the contrast test computes. Radii of the
+	 * overlays on glass and of a highlighted menu row.
+	 */
+	--glass-filter-regular: blur(24px) saturate(140%);
+	--glass-filter-thick: blur(30px) saturate(140%);
+	--radius-overlay: 0.75rem;
+	--radius-item: 0.25rem;
 }
 
 /* Dark mode via media query */
@@ -114,6 +136,13 @@
 
 		/* Veil behind modals and the full view (ADR-0025 section 2) */
 		--color-blanket: rgb(0 0 0 / 0.6);
+
+		/* Glass of the control layer (ADR-0029 section 2) */
+		--material-regular: rgb(21 32 35 / 0.82);
+		--material-thick: rgb(21 32 35 / 0.92);
+		--color-separator: rgb(255 255 255 / 0.1);
+		--glass-edge: rgb(255 255 255 / 0.07);
+		--shadow-popover: 0 0 0 0.5px rgb(0 0 0 / 0.55), 0 8px 24px rgb(0 0 0 / 0.45);
 
 		/* Status pill colors - dark mode */
 		--status-backlog-bg: transparent;
@@ -165,6 +194,13 @@
 	/* Veil behind modals and the full view (ADR-0025 section 2) */
 	--color-blanket: rgb(23 35 38 / 0.45);
 
+	/* Glass of the control layer (ADR-0029 section 2) */
+	--material-regular: rgb(255 255 255 / 0.82);
+	--material-thick: rgb(255 255 255 / 0.92);
+	--color-separator: rgb(23 35 38 / 0.12);
+	--glass-edge: rgb(255 255 255 / 0.55);
+	--shadow-popover: 0 0 0 0.5px rgb(0 0 0 / 0.08), 0 8px 24px rgb(0 0 0 / 0.14);
+
 	/* Status pill colors - light mode */
 	--status-backlog-bg: transparent;
 	--status-backlog-text: #5b6b6f;
@@ -213,6 +249,13 @@
 
 	/* Veil behind modals and the full view (ADR-0025 section 2) */
 	--color-blanket: rgb(0 0 0 / 0.6);
+
+	/* Glass of the control layer (ADR-0029 section 2) */
+	--material-regular: rgb(21 32 35 / 0.82);
+	--material-thick: rgb(21 32 35 / 0.92);
+	--color-separator: rgb(255 255 255 / 0.1);
+	--glass-edge: rgb(255 255 255 / 0.07);
+	--shadow-popover: 0 0 0 0.5px rgb(0 0 0 / 0.55), 0 8px 24px rgb(0 0 0 / 0.45);
 
 	/* Status pill colors - dark mode */
 	--status-backlog-bg: transparent;
@@ -461,4 +504,55 @@
 	--status-waiting-bg: #232d40;
 	--status-waiting-text: #b9c6df;
 	--status-waiting-border: #232d40;
+}
+
+/*
+ * One switch point "opaque" (ADR-0029 section 6): the materials become the surface, the blur and
+ * the background gradient of base.css (body::before reads --backdrop-image) go away. The same
+ * declarations for every trigger; the components notice nothing. !important, because the dark mode
+ * blocks above carry a higher specificity than :root. The system setting always wins.
+ */
+@media (prefers-reduced-transparency: reduce) {
+	:root {
+		--material-regular: var(--color-surface) !important;
+		--material-thick: var(--color-surface) !important;
+		--glass-filter-regular: none !important;
+		--glass-filter-thick: none !important;
+		--backdrop-image: none !important;
+	}
+}
+
+/* More contrast: opaque as well, lines on glass in the muted text color and no shadows. */
+@media (prefers-contrast: more) {
+	:root {
+		--material-regular: var(--color-surface) !important;
+		--material-thick: var(--color-surface) !important;
+		--glass-filter-regular: none !important;
+		--glass-filter-thick: none !important;
+		--backdrop-image: none !important;
+		--color-separator: var(--color-text-muted) !important;
+		--shadow-popover: none !important;
+	}
+}
+
+/* Forced colors keep the alpha of backgrounds, so the surfaces must be opaque. */
+@media (forced-colors: active) {
+	:root {
+		--material-regular: var(--color-surface) !important;
+		--material-thick: var(--color-surface) !important;
+		--glass-filter-regular: none !important;
+		--glass-filter-thick: none !important;
+		--backdrop-image: none !important;
+	}
+}
+
+/* Without backdrop-filter a translucent surface would only look restless. */
+@supports not (backdrop-filter: blur(1px)) {
+	:root {
+		--material-regular: var(--color-surface) !important;
+		--material-thick: var(--color-surface) !important;
+		--glass-filter-regular: none !important;
+		--glass-filter-thick: none !important;
+		--backdrop-image: none !important;
+	}
 }

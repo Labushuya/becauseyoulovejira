@@ -189,7 +189,6 @@
 				{/snippet}
 				{#snippet children({ close })}
 					<button
-						class="item"
 						type="button"
 						role="menuitem"
 						tabindex="-1"
@@ -201,7 +200,6 @@
 						{connection.enabled ? 'Pausieren' : 'Fortsetzen'}
 					</button>
 					<button
-						class="item"
 						type="button"
 						role="menuitem"
 						tabindex="-1"
@@ -212,9 +210,8 @@
 					>
 						Einrichtung ansehen
 					</button>
-					<div class="separator" role="separator"></div>
+					<div role="separator"></div>
 					<button
-						class="item"
 						type="button"
 						role="menuitem"
 						tabindex="-1"
@@ -306,28 +303,5 @@
 
 	.more svg {
 		fill: currentColor;
-	}
-
-	.item {
-		display: flex;
-		width: 100%;
-		padding: 0.375rem 0.5rem;
-		font-size: 0.875rem;
-		text-align: left;
-		background: none;
-		border: none;
-		border-radius: var(--radius-control);
-		cursor: pointer;
-	}
-
-	.item:hover,
-	.item:focus-visible {
-		background: var(--color-bg);
-	}
-
-	.separator {
-		height: 1px;
-		margin: 0.25rem 0;
-		background: var(--color-line);
 	}
 </style>

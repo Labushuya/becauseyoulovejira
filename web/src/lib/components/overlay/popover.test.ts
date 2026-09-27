@@ -187,9 +187,29 @@ describe('popover: panel', () => {
 });
 
 describe('popover source', () => {
-	it('uses tokens, no shadow and no error color (ADR-0010 section 3)', () => {
-		expect(source).not.toMatch(/danger|box-shadow|gradient|backdrop-filter|anchor\(/);
-		expect(source).toMatch(/var\(--radius-surface\)/);
+	it('uses tokens and no error color (ADR-0010 section 3)', () => {
+		expect(source).not.toMatch(/danger|gradient|anchor\(/);
 		expect(source).toMatch(/data-overlay/);
+	});
+
+	it('is thick glass with a line, the light edge and the popover shadow (ADR-0029)', () => {
+		const style = /\.popover \{([^}]*)\}/.exec(source)?.[1] ?? '';
+		expect(style).toMatch(/background:\s*var\(--material-thick\)/);
+		expect(style).toMatch(/backdrop-filter:\s*var\(--glass-filter-thick\)/);
+		expect(style).toMatch(/border:\s*1px solid var\(--color-separator\)/);
+		expect(style).toMatch(/border-radius:\s*var\(--radius-overlay\)/);
+		expect(style).toMatch(/inset 0 1px 0 var\(--glass-edge\),\s*var\(--shadow-popover\)/);
+	});
+
+	it('styles every menu row alike: accent fill on hover and keyboard focus, no own ring removal', () => {
+		expect(source).toMatch(
+			/\.menu :global\(:is\(\[role='menuitem'\], \[role='menuitemradio'\], \[role='menuitemcheckbox'\]\)\)/
+		);
+		expect(source).toMatch(
+			/:hover,\s*:focus-visible[\s\S]*?color:\s*var\(--color-on-brand\);\s*background:\s*var\(--color-brand\)/
+		);
+		// The focus ring of base.css stays: the fill alone is not 3 : 1 against glass in dark mode.
+		expect(source).not.toMatch(/outline:\s*(none|0)/);
+		expect(source).toMatch(/\.menu :global\(\[role='separator'\]\)[^}]*var\(--color-separator\)/);
 	});
 });
