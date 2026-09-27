@@ -1,0 +1,4 @@
+- [ ] Milch 1\.5 %
+- [ ] Brot \(Vollkorn\)
+- [ ] Äpfel \*bio\*
+- [ ] C\+\+ Buch

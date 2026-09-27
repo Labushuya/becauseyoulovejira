@@ -20,6 +20,7 @@
 		"dompurify": "^3.4.16",
 		"driver.js": "~1.8.0",
 		"markdown-it": "^15.0.2",
+		"markdown-it-ins": "^4.0.0",
 		"pocketbase": "^0.28.1",
 		"postal-mime": "^3.0.0"
 	},

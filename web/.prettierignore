@@ -7,3 +7,6 @@ bun.lockb
 
 # Miscellaneous
 /static/
+
+# Test corpus of the Markdown display and editor (ADR-0032): the texts stay exactly as written
+/src/lib/test/markdown-corpus/
