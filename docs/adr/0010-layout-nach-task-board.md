@@ -1,6 +1,6 @@
 # ADR-0010: Seitenaufbau nach dem Vorbild des Task-Boards, im eigenen Stack und mit eigenen Farben
 
-- **Status:** Angenommen, teilweise ersetzt durch [ADR-0025](0025-ui-konsistenz-overlay-system.md), ergänzt durch [ADR-0027](0027-akzent-themes.md) (siehe Nachträge am Ende)
+- **Status:** Angenommen, teilweise ersetzt durch [ADR-0025](0025-ui-konsistenz-overlay-system.md) und [ADR-0029](0029-glas-materialien.md) (§3, Glas, Verläufe, Schatten), ergänzt durch [ADR-0027](0027-akzent-themes.md) (siehe Nachträge am Ende)
 - **Datum:** 2026-09-25
 - **Entscheidung durch:** Nutzer (Layout übernehmen, 2026-09-25), Advisor (Auslegung: eigene Farben, Clean-Room-Regel)
 
@@ -115,3 +115,12 @@ Die Farb- und Gestaltungsregeln aus §3 und die Clean-Room-Regel aus §4 gelten 
 - „Wartet“ bleibt bernsteinfarben, außer im Honig-Theme. Dort würde Bernstein den Akzent treffen, deshalb ist die Pille dort schiefergrau-blau.
 - Neue Farb-Tokens entstehen weiter nur nach §3, jetzt in den Modus-Blöcken **und** in allen Theme-Blöcken, jeweils mit Kontrastprüfung in `tokens.test.ts`.
 - Seit dem Nachtrag zu ADR-0027 vom 2026-09-27 heißen die Themes Petrol, Rubin, Smaragd und Kupfer (Purpur entfällt, Honig wird Kupfer); die schiefergrau-blaue „Wartet“-Pille gilt jetzt im Kupfer-Theme.
+
+## Nachtrag (2026-09-27): Glas, Verlauf und Schatten nach ADR-0029
+
+[ADR-0029](0029-glas-materialien.md) ersetzt in §3 den Punkt „Keine Glas-Optik (`backdrop-filter`), keine Farbverläufe, keine Schlagschatten als Gestaltungsmittel“:
+
+- Glas nur in der Bedienebene (Kopfzeile, Seitenpanel, Einstellungsnavigation, Popover und Menüs, Modals S bis L, Flags, Anmeldung, Tour); Tabellen, Kacheln, Karten und Texte bleiben undurchsichtig und trennen sich weiter über feine Linien.
+- Ein Verlauf nur im Hintergrund, aus der vorhandenen Akzentfläche. Schatten nur neutral über Tokens und immer mit Linie.
+- Der Fokusring ist `--color-brand-text` statt `--color-brand`.
+- Alle übrigen Punkte von §3 und die Clean-Room-Regel aus §4 gelten weiter; aus dem Task-Board wird auch für das Glas kein CSS übernommen.

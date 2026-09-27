@@ -183,6 +183,11 @@
 </div>
 
 <style>
+	/*
+	 * Thick glass of the control layer (ADR-0029 sections 1 and 2): translucent surface with blur, a
+	 * line on glass, the light edge inside at the top and the neutral popover shadow. The content is
+	 * no further glass: controls inside use surfaces or fills, never an own backdrop-filter.
+	 */
 	.popover {
 		position: fixed;
 		inset: auto;
@@ -191,9 +196,13 @@
 		padding: 0.375rem;
 		overflow: auto;
 		color: var(--color-text);
-		background: var(--color-surface);
-		border: 1px solid var(--color-line);
-		border-radius: var(--radius-surface);
+		background: var(--material-thick);
+		backdrop-filter: var(--glass-filter-thick);
+		border: 1px solid var(--color-separator);
+		border-radius: var(--radius-overlay);
+		box-shadow:
+			inset 0 1px 0 var(--glass-edge),
+			var(--shadow-popover);
 	}
 
 	.popover:popover-open {
@@ -203,6 +212,45 @@
 	.menu:popover-open {
 		display: grid;
 		gap: 0.125rem;
+	}
+
+	/*
+	 * Menu rows in the macOS style (ADR-0029 section 5), the same in every menu: hover and keyboard
+	 * focus fill the row with the accent and the color on it. The focus ring stays in addition,
+	 * because the fill does not reach 3 : 1 against glass in every dark theme. The chosen entry keeps
+	 * its check mark and weight (never color alone).
+	 */
+	.menu :global(:is([role='menuitem'], [role='menuitemradio'], [role='menuitemcheckbox'])) {
+		display: flex;
+		align-items: center;
+		width: 100%;
+		min-height: 1.5rem;
+		padding: 0.25rem 0.5rem;
+		font-size: 0.875rem;
+		color: var(--color-text);
+		text-align: left;
+		text-decoration: none;
+		background: none;
+		border: none;
+		border-radius: var(--radius-item);
+		cursor: pointer;
+	}
+
+	.menu
+		:global(
+			:is([role='menuitem'], [role='menuitemradio'], [role='menuitemcheckbox']):is(
+				:hover,
+				:focus-visible
+			)
+		) {
+		color: var(--color-on-brand);
+		background: var(--color-brand);
+	}
+
+	.menu :global([role='separator']) {
+		height: 1px;
+		margin: 0.25rem 0.5rem;
+		background: var(--color-separator);
 	}
 
 	@keyframes popover-in {

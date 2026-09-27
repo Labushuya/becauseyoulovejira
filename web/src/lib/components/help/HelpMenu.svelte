@@ -97,26 +97,10 @@
 		stroke: none;
 	}
 
+	/* Rows, hover and focus come from the menu of Popover (ADR-0029 section 5). */
 	.item {
-		display: flex;
 		gap: 1rem;
-		align-items: center;
 		justify-content: space-between;
-		width: 100%;
 		min-width: 12rem;
-		padding: 0.375rem 0.5rem;
-		font-size: 0.875rem;
-		color: var(--color-text);
-		text-align: left;
-		text-decoration: none;
-		background: none;
-		border: none;
-		border-radius: var(--radius-control);
-		cursor: pointer;
-	}
-
-	.item:hover,
-	.item:focus-visible {
-		background: var(--color-bg);
 	}
 </style>

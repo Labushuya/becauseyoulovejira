@@ -94,7 +94,7 @@
 	}
 
 	h2:focus-visible {
-		outline: 2px solid var(--color-brand);
+		outline: 2px solid var(--color-brand-text);
 		outline-offset: 2px;
 	}
 

@@ -2,46 +2,27 @@
 // defines the same color tokens and its color-scheme, every accent theme overrides exactly the
 // accent tokens in its four blocks, all text and UI pairs reach WCAG AA in every theme and mode,
 // the accents keep a measurable distance (CIEDE2000) from the error color, from Petrol and from
-// each other, and the overlay sizes, radii and motion exist once in :root.
+// each other, the overlay sizes, radii and motion exist once in :root, and the glass of ADR-0029
+// has neutral materials and shadows plus a complete switch point "opaque".
 
-import { readFileSync } from 'node:fs';
-import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { ACCENT_THEMES, STORED_ACCENTS, type AccentTheme } from '$lib/accent.svelte';
 import { contrast, deltaE2000, hexToLab, hslHue } from '$lib/test/color-math';
-
-const SOURCE = readFileSync(join(import.meta.dirname, 'tokens.css'), 'utf8');
-
-type Mode = 'light' | 'dark' | 'forced light' | 'forced dark';
-
-const MODES: readonly Mode[] = ['light', 'dark', 'forced light', 'forced dark'];
-
-const MODE_SELECTORS: Record<Mode, string> = {
-	light: ':root',
-	dark: ":root:not([data-theme='light'])",
-	'forced light': ":root[data-theme='light']",
-	'forced dark': ":root[data-theme='dark']"
-};
+import {
+	MODES,
+	MODE_SELECTORS,
+	OPAQUE_BLOCKS,
+	TOKENS_SOURCE as SOURCE,
+	accentSelector,
+	customProperties,
+	parseBlocks,
+	type Mode
+} from '$lib/test/tokens-css';
 
 /** The accent themes besides the default Petrol, as in data-accent (ADR-0027), from the store. */
 const ACCENTS = STORED_ACCENTS;
-type Accent = (typeof ACCENTS)[number];
 type Theme = AccentTheme;
 const THEMES: readonly Theme[] = ACCENT_THEMES;
-
-function accentSelector(accent: Accent, mode: Mode): string {
-	const root = `:root[data-accent='${accent}']`;
-	switch (mode) {
-		case 'light':
-			return root;
-		case 'dark':
-			return `${root}:not([data-theme='light'])`;
-		case 'forced light':
-			return `${root}[data-theme='light']`;
-		case 'forced dark':
-			return `${root}[data-theme='dark']`;
-	}
-}
 
 /** Tokens an accent theme sets, in every one of its four blocks and nothing else (ADR-0027 §2). */
 const ACCENT_TOKENS = [
@@ -61,23 +42,9 @@ const ACCENT_TOKENS = [
 	'--status-waiting-border'
 ].sort();
 
-/** Innermost rule blocks of the file, keyed by selector, with their custom properties. */
-function parseBlocks(css: string): Map<string, Map<string, string>> {
-	const withoutComments = css.replace(/\/\*[\s\S]*?\*\//g, '');
-	const blocks = new Map<string, Map<string, string>>();
-	for (const [, selector = '', body = ''] of withoutComments.matchAll(/([^{}]+)\{([^{}]*)\}/g)) {
-		const properties = new Map<string, string>();
-		for (const [, name = '', value = ''] of body.matchAll(/(--[\w-]+)\s*:\s*([^;]+);/g)) {
-			properties.set(name, value.trim());
-		}
-		blocks.set(selector.trim(), properties);
-	}
-	return blocks;
-}
-
 /**
- * Tokens that are the same in every theme (ADR-0025 section 2): defined once in :root, never in a
- * theme block. The font stacks belong to them as well.
+ * Tokens that are the same in every theme (ADR-0025 section 2, ADR-0029 section 2): defined once
+ * in :root, never in a theme block. The font stacks belong to them as well.
  */
 const NON_COLOR_TOKENS = {
 	'--font-ui': "'Inter Variable', system-ui, sans-serif",
@@ -94,7 +61,20 @@ const NON_COLOR_TOKENS = {
 	'--radius-surface': '0.5rem',
 	'--motion-fast': '120ms',
 	'--motion-medium': '200ms',
-	'--motion-ease': 'cubic-bezier(0.2, 0, 0, 1)'
+	'--motion-ease': 'cubic-bezier(0.2, 0, 0, 1)',
+	'--glass-filter-regular': 'blur(24px) saturate(140%)',
+	'--glass-filter-thick': 'blur(30px) saturate(140%)',
+	'--radius-overlay': '0.75rem',
+	'--radius-item': '0.25rem'
+} as const;
+
+/** What the blocks of the switch point "opaque" set (ADR-0029 section 6). */
+const OPAQUE_VALUES = {
+	'--material-regular': 'var(--color-surface) !important',
+	'--material-thick': 'var(--color-surface) !important',
+	'--glass-filter-regular': 'none !important',
+	'--glass-filter-thick': 'none !important',
+	'--backdrop-image': 'none !important'
 } as const;
 
 function isNonColorToken(name: string): boolean {
@@ -103,20 +83,15 @@ function isNonColorToken(name: string): boolean {
 
 /** Theme-dependent tokens of a block. */
 function colorTokens(block: Map<string, string>): Map<string, string> {
-	return new Map([...block].filter(([name]) => !isNonColorToken(name)));
+	return new Map([...customProperties(block)].filter(([name]) => !isNonColorToken(name)));
 }
 
-/** Value of the color-scheme property of each innermost block, keyed by selector. */
-function colorSchemes(css: string): Map<string, string | undefined> {
-	const withoutComments = css.replace(/\/\*[\s\S]*?\*\//g, '');
-	const schemes = new Map<string, string | undefined>();
-	for (const [, selector = '', body = ''] of withoutComments.matchAll(/([^{}]+)\{([^{}]*)\}/g)) {
-		schemes.set(selector.trim(), /(?:^|[;\s])color-scheme\s*:\s*([^;]+);/.exec(body)?.[1]?.trim());
-	}
-	return schemes;
-}
-
-const blocks = parseBlocks(SOURCE);
+const allBlocks = parseBlocks(SOURCE);
+/** Custom properties of every block, keyed by selector (with at-rule, see tokens-css.ts). */
+const blocks = new Map(
+	[...allBlocks].map(([selector, block]) => [selector, customProperties(block)])
+);
+const opaqueBlocks = new Set<string>(OPAQUE_BLOCKS);
 
 function block(selector: string): Map<string, string> {
 	const found = blocks.get(selector);
@@ -143,10 +118,11 @@ const LIGHT = MODE_SELECTORS.light;
 const DARK = MODE_SELECTORS.dark;
 
 describe('tokens.css', () => {
-	it('has the four mode blocks and four blocks per accent theme', () => {
+	it('has the four mode blocks, four blocks per accent theme and the opaque blocks', () => {
 		const expected = [
 			...MODES.map((mode) => MODE_SELECTORS[mode]),
-			...ACCENTS.flatMap((accent) => MODES.map((mode) => accentSelector(accent, mode)))
+			...ACCENTS.flatMap((accent) => MODES.map((mode) => accentSelector(accent, mode))),
+			...OPAQUE_BLOCKS
 		];
 		expect([...blocks.keys()].sort()).toEqual(expected.sort());
 	});
@@ -218,17 +194,67 @@ describe('tokens.css', () => {
 			expect(light.get(name), name).toBe(value);
 		}
 		for (const [selector, properties] of blocks) {
-			if (selector === LIGHT) continue;
+			if (selector === LIGHT || opaqueBlocks.has(selector)) continue;
 			expect([...properties.keys()].filter(isNonColorToken), selector).toEqual([]);
 		}
 	});
 
-	it('has no shadow token (ADR-0010 section 3, ADR-0025 section 2)', () => {
+	it('has neutral glass materials of at least 0.82 on the surface in every mode block (ADR-0029)', () => {
+		for (const mode of MODES) {
+			const own = block(MODE_SELECTORS[mode]);
+			const surface = own.get('--color-surface') ?? '';
+			const [r, g, b] = [1, 3, 5].map((at) => parseInt(surface.slice(at, at + 2), 16));
+			for (const name of ['--material-regular', '--material-thick']) {
+				const match = /^rgb\((\d+) (\d+) (\d+) \/ ([\d.]+)\)$/.exec(own.get(name) ?? '');
+				expect(match, `${mode} ${name}`).not.toBeNull();
+				expect(match?.slice(1, 4).map(Number), `${mode} ${name}`).toEqual([r, g, b]);
+				expect(Number(match?.[4]), `${mode} ${name}`).toBeGreaterThanOrEqual(0.82);
+			}
+		}
+	});
+
+	it('has only the neutral shadow tokens of ADR-0029, in the mode blocks', () => {
 		for (const [selector, properties] of blocks) {
-			expect(
-				[...properties.keys()].filter((name) => /shadow/.test(name)),
-				selector
-			).toEqual([]);
+			const shadows = [...properties].filter(([name]) => /shadow/.test(name));
+			for (const [name, value] of shadows) {
+				expect(name, selector).toMatch(/^--shadow-(control|popover|modal)$/);
+				if (opaqueBlocks.has(selector)) continue;
+				// Black or white only: depth, not a second color.
+				for (const [, rgb = ''] of value.matchAll(/rgb\(([\d ]+)\//g)) {
+					expect(['0 0 0', '255 255 255'], `${selector} ${name}`).toContain(rgb.trim());
+				}
+			}
+		}
+		for (const accent of ACCENTS) {
+			for (const mode of MODES) {
+				const names = [...block(accentSelector(accent, mode)).keys()];
+				expect(names.filter((name) => /shadow|material|separator|glass/.test(name))).toEqual([]);
+			}
+		}
+		expect(block(LIGHT).has('--shadow-popover')).toBe(true);
+	});
+
+	it.each(OPAQUE_BLOCKS)('makes everything opaque in %s (ADR-0029 section 6)', (selector) => {
+		const own = blocks.get(selector) ?? new Map<string, string>();
+		for (const [name, value] of Object.entries(OPAQUE_VALUES)) {
+			expect(own.get(name), name).toBe(value);
+		}
+		// Every material and filter of the file is covered.
+		const glassNames = new Set(
+			[...blocks.values()].flatMap((properties) =>
+				[...properties.keys()].filter((name) => /^--(material|glass-filter)-/.test(name))
+			)
+		);
+		for (const name of glassNames) expect(own.has(name), name).toBe(true);
+		// Nothing else besides what more contrast needs.
+		const extra = [...own.keys()].filter((name) => !Object.hasOwn(OPAQUE_VALUES, name));
+		if (selector === '@media (prefers-contrast: more) :root') {
+			expect(own.get('--color-separator')).toBe('var(--color-text-muted) !important');
+			const shadows = [...block(LIGHT).keys()].filter((name) => name.startsWith('--shadow-'));
+			for (const name of shadows) expect(own.get(name), name).toBe('none !important');
+			expect(extra.sort()).toEqual(['--color-separator', ...shadows].sort());
+		} else {
+			expect(extra).toEqual([]);
 		}
 	});
 
@@ -238,11 +264,11 @@ describe('tokens.css', () => {
 	});
 
 	it('sets color-scheme in every mode block, so native controls follow the mode', () => {
-		const schemes = colorSchemes(SOURCE);
-		expect(schemes.get(MODE_SELECTORS.light)).toBe('light');
-		expect(schemes.get(MODE_SELECTORS['forced light'])).toBe('light');
-		expect(schemes.get(MODE_SELECTORS.dark)).toBe('dark');
-		expect(schemes.get(MODE_SELECTORS['forced dark'])).toBe('dark');
+		const scheme = (selector: string) => allBlocks.get(selector)?.get('color-scheme');
+		expect(scheme(MODE_SELECTORS.light)).toBe('light');
+		expect(scheme(MODE_SELECTORS['forced light'])).toBe('light');
+		expect(scheme(MODE_SELECTORS.dark)).toBe('dark');
+		expect(scheme(MODE_SELECTORS['forced dark'])).toBe('dark');
 	});
 
 	it('has the error colors of ADR-0009 in Petrol', () => {

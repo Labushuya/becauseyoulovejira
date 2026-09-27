@@ -133,8 +133,14 @@
 		gap: 0.75rem 1.5rem;
 		align-items: center;
 		padding: 0.75rem 1.5rem;
-		background: var(--color-surface);
-		border-bottom: 1px solid var(--color-line);
+		/*
+		 * Glass of the control layer (ADR-0029): from 64rem the view scrolls below the sticky header.
+		 * No descendant with position: fixed, because backdrop-filter would become its containing
+		 * block (glass-allowlist.test.ts); popovers live in the top layer.
+		 */
+		background: var(--material-regular);
+		backdrop-filter: var(--glass-filter-regular);
+		border-bottom: 1px solid var(--color-separator);
 	}
 
 	@media (min-width: 64rem) {

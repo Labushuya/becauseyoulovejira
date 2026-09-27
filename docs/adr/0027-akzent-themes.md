@@ -1,6 +1,6 @@
 # ADR-0027: Akzent-Themes (Petrol, Rubin, Smaragd, Kupfer; ursprünglich mit Purpur und Honig)
 
-- **Status:** Angenommen; geändert durch den Nachtrag vom 2026-09-27 (Purpur entfällt, Honig wird Kupfer, Rubin und Smaragd dunkler). Die Abschnitte 1 bis 6 beschreiben den Stand vom 2026-09-26; wo der Nachtrag abweicht, gilt er.
+- **Status:** Angenommen; geändert durch den Nachtrag vom 2026-09-27 (Purpur entfällt, Honig wird Kupfer, Rubin und Smaragd dunkler). Die Abschnitte 1 bis 6 beschreiben den Stand vom 2026-09-26; wo der Nachtrag abweicht, gilt er. §1 („keine Verläufe, keine Glas-Optik, keine Schatten“) ist durch [ADR-0029](0029-glas-materialien.md) teilweise ersetzt (zweiter Nachtrag vom 2026-09-27).
 - **Datum:** 2026-09-26
 - **Entscheidung durch:** Nutzer (vier weitere Akzentfarben, Petrol bleibt Standard, 2026-09-26), Advisor (Regel „genau eine Akzentfarbe je Theme“, Anpassung von CLAUDE.md §8 und Nachtrag zu ADR-0010), Executor (Farbwerte, Lösung der Rubin-/Fehlerfarben-Frage)
 - **Ergänzt:** [ADR-0009](0009-fehlerfarbe.md) (Fehlerfarbe, siehe dort den Nachtrag), [ADR-0010](0010-layout-nach-task-board.md) §3 (siehe dort den Nachtrag), [ADR-0025](0025-ui-konsistenz-overlay-system.md) §10 (Hell/Dunkel bleibt unabhängig)
@@ -216,3 +216,11 @@ Weitere Abstände (ΔE2000): Smaragd zu Petrol 25,9 (hell) und 23,9 (dunkel), al
 
 - `tokens.css` hat drei statt vier Theme-Gruppen, die Farbfelder heißen `--swatch-petrol`, `--swatch-rubin`, `--swatch-smaragd` und `--swatch-kupfer`. `tokens.test.ts` prüft 4 Themes × 4 Varianten und zusätzlich, dass Rubin und Smaragd dunkler sind als zuvor, der Farbton von Rubin (330–345°) und Kupfer (15–30°) stimmt, Macchiato hell und Espresso dunkel ist und kein Purpur- oder Honig-Block übrig bleibt.
 - ADR-0009 (Fehlerfarbe) und ADR-0010 (§3, „Wartet“) bekommen je einen Hinweis.
+
+## Nachtrag (2026-09-27): Glas-Materialien nach ADR-0029
+
+[ADR-0029](0029-glas-materialien.md) ersetzt in §1 die Aufzählung „keine Verläufe, keine Glas-Optik, keine Schatten“. Die übrigen Regeln von §1 und die Liste der Akzent-Tokens aus §2 bleiben **unverändert**:
+
+- Materialien, Füllungen, Trennlinien und Schatten sind neutral und in allen Themes gleich; sie stehen nur in den vier Modus-Blöcken. Der Hintergrund-Verlauf nutzt die vorhandene Akzentfläche `--color-brand-soft-bg`. Es braucht **kein neues Akzent-Token**; geprüft für die vier Themes dieses Stands.
+- `glass-contrast.test.ts` rechnet alle Themes aus `ACCENT_THEMES` × vier Modus-Blöcke × zwei Materialien gegen jede Farbe der Palette als Hintergrund; alle Texte erreichen 4,5 : 1.
+- Der Fokusring wechselt auf `--color-brand-text`, weil `--color-brand` im Dunkelmodus auf Glas und auf dem Verlauf die 3 : 1 nicht sicher hält (Petrol, Rubin, Smaragd).
