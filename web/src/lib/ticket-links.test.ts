@@ -142,7 +142,7 @@ describe('inbox links (E4 plan, package 3)', () => {
 		);
 		expect(inboxItemHref('item00000000001')).toBe('/eingang/item00000000001');
 		expect(withInboxQuery(at('/eingang/x?y=1#a'), { source: 'link', state: 'converted' })).toBe(
-			'/eingang/x?y=1&quelle=link&zustand=umgewandelt#a'
+			'/eingang/x?y=1&quelle=link&zustand=verknuepft#a'
 		);
 	});
 

@@ -5,8 +5,8 @@
 		CHANNEL_LABELS,
 		DISCARDED_CONTENT_NOTE,
 		KIND_LABELS,
-		STATE_LABELS,
 		metaText,
+		stateLabel,
 		sourceDateText,
 		type InboxItem,
 		type InboxItemSummary
@@ -117,7 +117,7 @@
 		const rows: [string, string][] = [
 			['Art', KIND_LABELS[item.kind]],
 			['Quelle', CHANNEL_LABELS[item.channel]],
-			['Zustand', STATE_LABELS[item.state]],
+			['Zustand', stateLabel(item)],
 			['Von', metaText(item, 'from') || metaText(item, 'sender')],
 			['An', metaText(item, 'to')],
 			['Ort', metaText(item, 'location')],

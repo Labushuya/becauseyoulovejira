@@ -265,6 +265,8 @@
 		align-items: start;
 		padding: 0.5rem 0.625rem;
 		border: 1px solid var(--color-line);
+		/* Sources in the accent colour, like the linked rows of the inbox (ADR-0031 addendum C). */
+		border-left: 3px solid var(--color-brand);
 		border-radius: var(--radius-control);
 	}
 
@@ -286,6 +288,10 @@
 	.channel,
 	.main {
 		font-weight: 600;
+	}
+
+	.main {
+		color: var(--color-brand-text);
 	}
 
 	.title {

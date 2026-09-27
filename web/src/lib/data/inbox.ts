@@ -8,14 +8,14 @@ import {
 	isInboxChannel,
 	isInboxKind,
 	isInboxState,
-	type HandledState,
 	type InboxChannel,
 	type InboxDraft,
 	type InboxDuplicate,
 	type InboxItem,
 	type InboxItemSummary,
 	type InboxState,
-	type InboxTicketRef
+	type InboxTicketRef,
+	type ListedView
 } from '../domain/inbox';
 import { DATA_ERROR_MESSAGES, DataError, isDataError, toDataError, withDataErrors } from './errors';
 import { currentUserId, type RequestOptions } from './options';
@@ -174,24 +174,26 @@ export interface HandledItemPage {
 }
 
 /**
- * Handled entries of one state, narrowed to the channels of a source family when `{:all}` is not
- * "1" (ADR-0019 section 6). A family has at most MAX_FAMILY_CHANNELS channels; an unused
- * parameter is '' and matches nothing, because every entry has a channel.
+ * Entries of one state (or of every state when `{:every}` is "1", view "Alle"), narrowed to the
+ * channels of a source family when `{:all}` is not "1" (ADR-0019 section 6). A family has at most
+ * MAX_FAMILY_CHANNELS channels; an unused parameter is '' and matches nothing, because every entry
+ * has a channel.
  */
 const HANDLED_FILTER = [
-	'state = {:state}',
+	'({:every} = "1" || state = {:state})',
 	'({:all} = "1" || channel = {:c1} || channel = {:c2} || channel = {:c3})'
 ].join(' && ');
 
 const MAX_FAMILY_CHANNELS = 3;
 
 /**
- * One page of converted or discarded entries, most recently handled first; with `channels` only
- * those of these channels (the chip "Quelle"), filtered by the server so the pages stay full.
+ * One page of converted or discarded entries, most recently handled first, or of every entry
+ * (view "Alle", ADR-0031 addendum C), newest first; with `channels` only those of these channels
+ * (the chip "Quelle"), filtered by the server so the pages stay full.
  */
 export function listHandledItems(
 	pb: PocketBase,
-	state: HandledState,
+	state: ListedView,
 	page: number,
 	{
 		signal,
@@ -205,13 +207,14 @@ export function listHandledItems(
 		}
 		const result = await pb.collection(INBOX).getList<InboxRecord>(page, perPage, {
 			filter: pb.filter(HANDLED_FILTER, {
-				state,
+				every: state === 'all' ? '1' : '',
+				state: state === 'all' ? '' : state,
 				all: channels === null ? '1' : '',
 				c1: channels?.[0] ?? '',
 				c2: channels?.[1] ?? '',
 				c3: channels?.[2] ?? ''
 			}),
-			sort: '-handled_at,-created,-id',
+			sort: state === 'all' ? '-created,-id' : '-handled_at,-created,-id',
 			fields: INBOX_LIST_FIELDS,
 			expand: INBOX_EXPAND,
 			signal

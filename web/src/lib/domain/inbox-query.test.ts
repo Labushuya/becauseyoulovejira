@@ -12,15 +12,21 @@ describe('parseInboxQuery', () => {
 	it('reads source family and state', () => {
 		expect(parse('')).toEqual(DEFAULT_INBOX_QUERY);
 		expect(parse('quelle=mail&zustand=verworfen')).toEqual({ source: 'mail', state: 'discarded' });
-		expect(parse('quelle=kalender&zustand=umgewandelt')).toEqual({
+		expect(parse('quelle=kalender&zustand=verknuepft')).toEqual({
 			source: 'calendar',
 			state: 'converted'
 		});
 		expect(parse('quelle=manuell&zustand=neu')).toEqual({ source: 'manual', state: 'new' });
+		expect(parse('zustand=alle')).toEqual({ source: null, state: 'all' });
+	});
+
+	it('still reads the value "umgewandelt" of addresses before HK-7', () => {
+		expect(parse('zustand=umgewandelt')).toEqual({ source: null, state: 'converted' });
 	});
 
 	it('ignores unknown, empty and repeated values', () => {
 		expect(parse('quelle=fax&zustand=alt')).toEqual(DEFAULT_INBOX_QUERY);
+		expect(parse('zustand=constructor')).toEqual(DEFAULT_INBOX_QUERY);
 		expect(parse('quelle=&zustand=')).toEqual(DEFAULT_INBOX_QUERY);
 		expect(parse('quelle=mail&quelle=mail&zustand=verworfen&zustand=neu')).toEqual(
 			DEFAULT_INBOX_QUERY
@@ -34,8 +40,9 @@ describe('serializeInboxQuery', () => {
 		expect(serializeInboxQuery(DEFAULT_INBOX_QUERY)).toBe('');
 		expect(serializeInboxQuery({ source: 'chat', state: 'new' })).toBe('?quelle=chat');
 		expect(serializeInboxQuery({ source: 'link', state: 'converted' })).toBe(
-			'?quelle=link&zustand=umgewandelt'
+			'?quelle=link&zustand=verknuepft'
 		);
+		expect(serializeInboxQuery({ source: null, state: 'all' })).toBe('?zustand=alle');
 	});
 
 	it('keeps unknown parameters in front and replaces its own ones', () => {
@@ -47,7 +54,7 @@ describe('serializeInboxQuery', () => {
 
 	it('round-trips every combination', () => {
 		for (const source of [null, ...SOURCE_FAMILIES]) {
-			for (const state of ['new', 'discarded', 'converted'] as const) {
+			for (const state of ['new', 'discarded', 'converted', 'all'] as const) {
 				const query = { source, state };
 				expect(parse(serializeInboxQuery(query).slice(1))).toEqual(query);
 			}

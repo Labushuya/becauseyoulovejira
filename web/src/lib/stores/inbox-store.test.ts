@@ -273,6 +273,36 @@ describe('view (E4 plan, package 3)', () => {
 		store.upsert(discarded(B, '2026-09-25 12:00:00.000Z'));
 		expect(store.handled.map((entry) => entry.id)).toEqual([B.id, 'item00000000010']);
 	});
+
+	it('pages through every state in the view "Alle", newest first (ADR-0031 addendum C)', async () => {
+		const { store, data } = setup();
+		await store.load();
+		const linked = item('item00000000010', {
+			state: 'converted',
+			ticketId: 't',
+			handledAt: T2,
+			created: T2,
+			updated: T2
+		});
+		data.listHandled.mockResolvedValueOnce({ items: [linked, B, A], page: 1, hasMore: false });
+		store.activate({ source: null, state: 'all' });
+		await vi.waitFor(() => expect(store.handledLoad).toBe('ready'));
+		expect(store.handledState).toBe('all');
+		expect(data.listHandled).toHaveBeenLastCalledWith('all', 1, expect.anything());
+		expect(store.visible.map((entry) => entry.id)).toEqual([linked.id, B.id, A.id]);
+		// The new ones stay new (count of the switch) while they are shown here.
+		expect(store.newItems.map((entry) => entry.id)).toEqual([B.id, A.id]);
+
+		// Discarding and restoring keep the row; a newer entry comes in on top.
+		store.upsert(discarded(A, T2));
+		expect(store.visible.map((entry) => entry.id)).toEqual([linked.id, B.id, A.id]);
+		expect(store.newItems.map((entry) => entry.id)).toEqual([B.id]);
+		store.upsert({ ...A, updated: '2026-09-25 11:00:00.000Z' });
+		expect(store.newItems.map((entry) => entry.id)).toEqual([B.id, A.id]);
+		const fresh = item('item00000000011', { created: '2026-09-25 12:00:00.000Z', updated: T2 });
+		store.upsert(fresh);
+		expect(store.visible.map((entry) => entry.id)).toEqual([fresh.id, linked.id, B.id, A.id]);
+	});
 });
 
 describe('discard with "Rückgängig"', () => {

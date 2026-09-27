@@ -15,11 +15,32 @@ import {
 	presetMeta,
 	presetOf,
 	sourceDateText,
+	stateLabel,
 	ticketPrefill,
+	VIEW_LABELS,
 	type InboxItem,
 	type InboxItemSummary
 } from './inbox';
 import type { TicketSummary } from './ticket';
+
+describe('stateLabel and VIEW_LABELS (ADR-0031, addendum C)', () => {
+	it('names the main source "Umgewandelt" and every other source "Verknüpft"', () => {
+		const ticket = { id: 't', key: 'HAUS-12', title: 'Steuer', primary: true };
+		expect(stateLabel({ state: 'converted', ticket })).toBe('Umgewandelt');
+		expect(stateLabel({ state: 'converted', ticket: { ...ticket, primary: false } })).toBe(
+			'Verknüpft'
+		);
+		expect(stateLabel({ state: 'converted' })).toBe('Verknüpft');
+		expect(stateLabel({ state: 'new' })).toBe('Neu');
+		expect(stateLabel({ state: 'discarded' })).toBe('Verworfen');
+		expect(VIEW_LABELS).toEqual({
+			new: 'Neu',
+			converted: 'Verknüpft',
+			discarded: 'Verworfen',
+			all: 'Alle'
+		});
+	});
+});
 
 function item(overrides: Partial<InboxItemSummary> = {}): InboxItemSummary {
 	return {
