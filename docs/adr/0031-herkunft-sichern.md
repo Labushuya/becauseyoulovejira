@@ -119,7 +119,7 @@ Die reine Funktion `copyCompleteness(item)` in `web/src/lib/domain/inbox.ts` sag
   - darunter „Quelle hinzufügen …“: Modal M mit Suchfeld und Checkboxen über die neuen Einträge des Eingangs
   - ohne Quellen `EmptyState compact`
 - **Eingang, „Mit Ticket verknüpfen …“:** im Panel eines neuen Eintrags und in der Auswahlleiste für mehrere. Es öffnet ein Modal M mit einer Combobox (APG-Muster, Listbox im Modal, kein eigenes Popover) zur Ticketsuche nach Nummer bzw. Key oder Titel über den Server.
-- **Verlauf:** „Quelle verknüpft: Mail „…““ bzw. „Quelle gelöst: …“.
+- **Verlauf:** „Quelle verknüpft: Postfach „…““ bzw. „Quelle gelöst: …“ (Name des Kanals und Titel des Eintrags).
 - Glas nur über die Bausteine ([ADR-0029](0029-glas-materialien.md)): kein Glas im Glas, die Listbox ist undurchsichtig. Die Liste der Quellen ist keine Tabelle ([ADR-0030](0030-spalten-breiten-und-kompakte-zeilen.md) gilt nicht).
 
 ## Alternativen

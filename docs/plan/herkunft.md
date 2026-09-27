@@ -38,13 +38,19 @@
 | 2026-09-27 | HK-0 | **Verknüpfen und Lösen über die Record-API** statt einer eigenen Route: Es ist derselbe Weg wie „Dem Ticket zuordnen“, und Regeln und Realtime von `inbox_items` gelten ohne Nachbau. |
 | 2026-09-27 | HK-0 | **Seitenkopie mit `$http.send` im Hook**, wie empfohlen. Die Grenzen (keine DNS-Auflösung, Weiterleitungen nicht prüfbar, Größe erst nach dem Laden) stehen in ADR-0031 §6. Der Hilfsprozess wäre der stärkere Schutz, läuft aber nur mit einer Mail-Verbindung. |
 | 2026-09-27 | HK-0 | **„Seiteninhalt sichern“ beim Bookmarklet:** Checkbox in der Vorlage „Web-Link“, standardmäßig an („optional voreingestellt“). Ohne eigenen Speicher der Vorliebe. |
+| 2026-09-27 | HK-1 | **Wo die Prüfungen liegen:** `transitionViolation` (rein, Request-Hook) erlaubt `converted` → `new` nur ohne Ticket. Ob der Eintrag die Hauptquelle ist, prüft `prepareUpdate` im Modell-Hook innerhalb der Transaktion (`validation_inbox_primary_source` am Feld `state`). Der Verlaufseintrag entsteht nach `e.next()` in derselben Transaktion (`recordLinkChange`). |
+| 2026-09-27 | HK-1 | **Kein Verlaufseintrag beim Umwandeln:** Speichert der Ticket-Hook den Eintrag als `converted`, sieht `recordLinkChange` in der Transaktion `source_item = <Eintrag>` am neuen Ticket und schreibt nichts; „hat das Ticket angelegt“ genügt. Ebenso nichts, wenn ein Eintrag gelöst wird, dessen Ticket gelöscht ist. |
+| 2026-09-27 | HK-1 | **Urheber:** `rememberActor` im Request-Hook von `inbox_items` wie bei Tickets (`@actor`). Speichert der Server selbst (Umwandeln), gibt es keinen Eintrag. |
+| 2026-09-27 | HK-1 | **Löschschutz zweifach:** Die `deleteRule` (`… && ticket = ""`) antwortet dem Besitzer mit 404 wie bei jedem nicht sichtbaren Datensatz; der Hook `onRecordDeleteRequest` greift schon vor der Migration und für den Superuser mit 400 `validation_inbox_item_linked` und schützt zusätzlich die Hauptquelle über `tickets.source_item`. Der Test „Eintrag löschen leert `source_item`“ ist zum Test des Löschschutzes geworden. |
+| 2026-09-27 | HK-1 | **Fehlerinjektion:** eigene Markierung `__byl_fail_source_link__` im Titel des Eintrags, weil die bestehende Markierung im Ticket-Titel schon beim Anlegen des Tickets greift. |
+| 2026-09-27 | HK-1 | Der Verlauf der SPA nennt die Einträge schon jetzt („Quelle verknüpft: Postfach „…““, „Quelle gelöst: …“, `history-format.ts`), damit „Dem Ticket zuordnen“ nach HK-1 sichtbar ist. Der Abschnitt „Quellen“ folgt mit HK-2. |
 
 ## 4. Status
 
 | Paket | Stand |
 |---|---|
-| HK-0 | in Arbeit |
-| HK-1 | geplant |
+| HK-0 | gemergt (#105) |
+| HK-1 | in Arbeit |
 | HK-2 | geplant |
 | HK-3 | geplant |
 | HK-4 | geplant |

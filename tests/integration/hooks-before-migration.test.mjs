@@ -314,3 +314,62 @@ describe('E5 hooks before the E5 migrations', () => {
 		expect((await fetch(`${before.url}/api/health`)).status).toBe(200);
 	});
 });
+
+// The instance of the user after the merge of HK-1, before its next start: the old deleteRule of
+// inbox_items with the new hooks (ADR-0031 sections 2 and 3). Linking, releasing and the delete
+// guard work through the hooks alone.
+describe('HK-1 hooks before the delete guard migration', () => {
+	const DELETE_GUARD_MIGRATION = '1790201800_inbox_items_delete_guard.js';
+	let before;
+	let who;
+	let superuser;
+
+	beforeAll(async () => {
+		before = await startPocketBase({ migrationFilter: (name) => name < DELETE_GUARD_MIGRATION });
+		superuser = new PocketBase(before.url);
+		superuser.autoCancellation(false);
+		await superuser.collection('_superusers').authWithPassword(before.email, before.password);
+		const email = `user-${randomBytes(12).toString('hex')}@example.com`;
+		const password = randomBytes(24).toString('base64url');
+		const id = (await superuser.collection('users').create({ email, password, passwordConfirm: password })).id;
+		who = new PocketBase(before.url);
+		who.autoCancellation(false);
+		await who.collection('users').authWithPassword(email, password);
+		who.userId = id;
+	}, 60_000);
+
+	afterAll(async () => {
+		await before?.stop();
+	});
+
+	it('has the old deleteRule still', async () => {
+		const collection = await superuser.collections.getOne('inbox_items');
+		expect(collection.deleteRule).not.toContain('ticket = ""');
+	});
+
+	it('links and releases with history, and the hook alone refuses to delete a source', async () => {
+		const items = who.collection('inbox_items');
+		const ticket = await who.collection('tickets').create({ owner: who.userId, title: 'Ziel' });
+		const item = await items.create({ owner: who.userId, channel: 'manual', kind: 'todo', title: 'Quelle' });
+		await items.update(item.id, { state: 'converted', ticket: ticket.id });
+
+		const refused = await items.delete(item.id).then(
+			() => null,
+			(error) => error
+		);
+		expect(refused?.status).toBe(400);
+		expect(refused?.response?.data?.ticket?.code).toBe('validation_inbox_item_linked');
+
+		const main = await items.create({ owner: who.userId, channel: 'manual', kind: 'todo', title: 'Hauptquelle' });
+		await who.collection('tickets').create({ owner: who.userId, title: 'Aus Eintrag', source_item: main.id });
+		expect((await items.delete(main.id).catch((error) => error))?.status).toBe(400);
+
+		expect((await items.update(item.id, { state: 'new', ticket: '' })).state).toBe('new');
+		const history = await superuser.collection('ticket_history').getFullList({
+			filter: superuser.filter('ticket = {:id} && field = "source_link"', { id: ticket.id })
+		});
+		expect(history).toHaveLength(2);
+		await items.delete(item.id);
+		await expect(items.getOne(item.id)).rejects.toMatchObject({ status: 404 });
+	});
+});

@@ -34,3 +34,15 @@ onRecordCreate(function (e) {
   }
   e.next();
 }, 'ticket_history');
+
+// Fails the history entry of linking or releasing an inbox item whose title is the marker
+// (ADR-0031 section 2): the change of the item must be rolled back with it.
+onRecordCreate(function (e) {
+  if (
+    e.record.getString('field') === 'source_link' &&
+    (e.record.getString('new_value') + e.record.getString('old_value')).indexOf('__byl_fail_source_link__') !== -1
+  ) {
+    throw new BadRequestError('Injected source link failure.');
+  }
+  e.next();
+}, 'ticket_history');

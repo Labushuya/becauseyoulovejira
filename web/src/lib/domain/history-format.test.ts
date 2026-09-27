@@ -40,6 +40,24 @@ function text(overrides: Partial<HistoryEntry>): string {
 }
 
 describe('describeHistoryEntry', () => {
+	it('names linked and released sources with channel and title (ADR-0031)', () => {
+		const value = JSON.stringify({
+			item: 'item00000000001',
+			channel: 'mail',
+			title: 'Rechnung März'
+		});
+		expect(text({ field: 'source_link', newValue: value })).toBe(
+			'Quelle verknüpft: Postfach „Rechnung März“'
+		);
+		expect(text({ field: 'source_link', oldValue: value })).toBe(
+			'Quelle gelöst: Postfach „Rechnung März“'
+		);
+		const unknown = JSON.stringify({ item: 'x', channel: 'fax', title: '' });
+		expect(text({ field: 'source_link', newValue: unknown })).toBe('Quelle verknüpft');
+		expect(text({ field: 'source_link', oldValue: 'kein JSON' })).toBe('Quelle gelöst');
+		expect(text({ field: 'source_link', newValue: 'null' })).toBe('Quelle verknüpft');
+	});
+
 	it('shows time in Berlin, actor and id', () => {
 		expect(describeHistoryEntry(entry({}), lookups, ME)).toMatchObject({
 			id: 'hist00000000001',

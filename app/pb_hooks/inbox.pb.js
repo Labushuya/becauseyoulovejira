@@ -12,18 +12,31 @@ onRecordCreate(function (e) {
   });
 }, 'inbox_items');
 
-// Only client updates: immutable fields and allowed changes of state and ticket.
+// Only client updates: immutable fields and allowed changes of state and ticket; the acting user
+// is remembered for the history of a link or release (ADR-0031 section 2).
 onRecordUpdateRequest(function (e) {
-  require(`${__hooks}/lib/inbox-service.js`).guardClientUpdate(e.record);
+  var service = require(`${__hooks}/lib/inbox-service.js`);
+  service.guardClientUpdate(e.record);
+  service.rememberActor(e);
   e.next();
 }, 'inbox_items');
 
+// Linking an item to a ticket and releasing it write the history of the ticket in the same
+// transaction as the item (ADR-0031 section 2).
 onRecordUpdate(function (e) {
   var service = require(`${__hooks}/lib/inbox-service.js`);
   require(`${__hooks}/lib/transaction.js`).inTransaction(e, function (txApp) {
-    service.prepareUpdate(txApp, e.record);
+    var change = service.prepareUpdate(txApp, e.record);
     e.next();
+    service.recordLinkChange(txApp, e.record, change);
   });
+}, 'inbox_items');
+
+// The source of a ticket cannot be deleted (ADR-0031 section 3); the deleteRule of the migration
+// 1790201800 says the same once it has run.
+onRecordDeleteRequest(function (e) {
+  require(`${__hooks}/lib/inbox-service.js`).guardDelete(e.app, e.record);
+  e.next();
 }, 'inbox_items');
 
 // Discarded items lose their content after 30 days (OF-E4-6, E4 plan package 24); fingerprint and

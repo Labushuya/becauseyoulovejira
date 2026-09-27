@@ -289,7 +289,8 @@ export const EXPECTED_RULES = {
 	tags: OWNED_RULES,
 	recurrence_rules: OWNED_RULES,
 	tickets: OWNED_RULES,
-	inbox_items: OWNED_RULES,
+	// The source of a ticket is not deletable (ADR-0031 section 3, 1790201800).
+	inbox_items: { ...OWNED_RULES, deleteRule: `${OWNED} && ticket = ""` },
 	connections: OWNED_RULES,
 	comments: {
 		listRule: VIA_TICKET,

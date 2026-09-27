@@ -1,0 +1,216 @@
+// Sources of a ticket (ADR-0031 sections 1 to 3, package HK-1): linking an inbox item to any
+// ticket of its scope and releasing it again go through the record API; the hook writes the
+// history of the ticket in the same transaction. The main source is never released, and the
+// source of a ticket is never deleted.
+
+import { beforeAll, describe, expect, it } from 'vitest';
+import { rejectionOf, superuserClient } from '../support/api.mjs';
+import { FAIL_SOURCE_LINK, createOwner, createScenario, historyOf, uniqueSuffix } from '../support/scenario.mjs';
+
+let superuser;
+let owner;
+let other;
+
+function createItem(who, data = {}) {
+	return who.client.collection('inbox_items').create({
+		owner: who.id,
+		channel: 'telegram',
+		kind: 'message',
+		title: `Nachricht ${uniqueSuffix()}`,
+		source_ref: `42:${uniqueSuffix()}`,
+		...data
+	});
+}
+
+const itemOf = (id) => superuser.collection('inbox_items').getOne(id);
+const link = (who, itemId, ticketId) =>
+	who.client.collection('inbox_items').update(itemId, { state: 'converted', ticket: ticketId });
+const release = (who, itemId) => who.client.collection('inbox_items').update(itemId, { state: 'new', ticket: '' });
+const sourceEntries = async (ticketId) =>
+	(await historyOf(superuser, ticketId)).filter((entry) => entry.field === 'source_link');
+
+beforeAll(async () => {
+	superuser = await superuserClient();
+	owner = await createOwner(superuser);
+	other = await createOwner(superuser);
+});
+
+describe('link', () => {
+	it('links a new item to a ticket created by hand and records it in the history', async () => {
+		const ticket = await owner.ticket({ source: 'manual' });
+		const item = await createItem(owner);
+		const linked = await link(owner, item.id, ticket.id);
+		expect(linked.state).toBe('converted');
+		expect(linked.ticket).toBe(ticket.id);
+		expect(linked.handled_at).not.toBe('');
+
+		const entries = await sourceEntries(ticket.id);
+		expect(entries).toHaveLength(1);
+		expect(entries[0]).toMatchObject({ old_value: '', user: owner.id });
+		expect(JSON.parse(entries[0].new_value)).toEqual({ item: item.id, channel: 'telegram', title: item.title });
+
+		// The ticket itself does not change.
+		const after = await owner.client.collection('tickets').getOne(ticket.id);
+		expect(after.updated).toBe(ticket.updated);
+		expect(after.source_item).toBe('');
+	});
+
+	it('gives a ticket several sources', async () => {
+		const ticket = await owner.ticket();
+		const items = [await createItem(owner), await createItem(owner), await createItem(owner)];
+		for (const item of items) await link(owner, item.id, ticket.id);
+		const sources = await owner.client.collection('inbox_items').getFullList({
+			filter: owner.client.filter('ticket = {:id}', { id: ticket.id })
+		});
+		expect(sources.map((item) => item.id).sort()).toEqual(items.map((item) => item.id).sort());
+		expect(await sourceEntries(ticket.id)).toHaveLength(3);
+	});
+
+	it('writes no link entry when a ticket is created from the item', async () => {
+		const item = await createItem(owner);
+		const ticket = await owner.ticket({ source_item: item.id });
+		expect((await itemOf(item.id)).ticket).toBe(ticket.id);
+		expect((await historyOf(superuser, ticket.id)).map((entry) => entry.field)).toEqual(['created']);
+	});
+
+	it('refuses a missing and a foreign ticket with the same message and leaves the item new', async () => {
+		const item = await createItem(owner);
+		const foreign = await other.ticket();
+		for (const ticketId of [foreign.id, 'abcdefghijklmno']) {
+			expect(await rejectionOf(link(owner, item.id, ticketId))).toEqual({
+				status: 400,
+				codes: { ticket: 'validation_scope_mismatch' }
+			});
+		}
+		expect((await itemOf(item.id)).state).toBe('new');
+		expect(await sourceEntries(foreign.id)).toEqual([]);
+	});
+
+	it('keeps a linked item on its ticket: no other ticket, no discarding', async () => {
+		const [first, second] = [await owner.ticket(), await owner.ticket()];
+		const item = await createItem(owner);
+		await link(owner, item.id, first.id);
+		const items = owner.client.collection('inbox_items');
+		for (const change of [{ ticket: second.id }, { state: 'discarded', ticket: '' }, { state: 'new' }]) {
+			expect((await rejectionOf(items.update(item.id, change))).codes).toEqual({
+				state: 'validation_inbox_item_handled'
+			});
+		}
+		expect((await itemOf(item.id)).ticket).toBe(first.id);
+	});
+
+	it('leaves the item new when the history entry fails (one transaction)', async () => {
+		const ticket = await owner.ticket();
+		const item = await createItem(owner, { title: FAIL_SOURCE_LINK });
+		expect((await rejectionOf(link(owner, item.id, ticket.id))).status).toBe(400);
+		const after = await itemOf(item.id);
+		expect(after.state).toBe('new');
+		expect(after.ticket).toBe('');
+		expect(after.handled_at).toBe('');
+	});
+
+	it('links household items for every member with the member as author', async () => {
+		const s = await createScenario();
+		const item = await s.a.collection('inbox_items').create({
+			owner: s.ids.a,
+			household: s.h1.id,
+			channel: 'manual',
+			kind: 'todo',
+			title: 'Haushalt'
+		});
+		const ticket = await s.b.collection('tickets').create({ owner: s.ids.b, household: s.h1.id, title: 'Ziel' });
+		const privateTicket = await s.a.collection('tickets').create({ owner: s.ids.a, title: 'Privat' });
+		expect((await rejectionOf(link({ client: s.a }, item.id, privateTicket.id))).codes).toEqual({
+			ticket: 'validation_scope_mismatch'
+		});
+		expect((await rejectionOf(link({ client: s.c }, item.id, ticket.id))).status).toBe(404);
+		await link({ client: s.b }, item.id, ticket.id);
+		const entries = await sourceEntries(ticket.id);
+		expect(entries.map((entry) => entry.user)).toEqual([s.ids.b]);
+	});
+});
+
+describe('release', () => {
+	it('gives a linked item back to the inbox and records it in the history', async () => {
+		const ticket = await owner.ticket();
+		const item = await createItem(owner);
+		await link(owner, item.id, ticket.id);
+		const released = await release(owner, item.id);
+		expect(released.state).toBe('new');
+		expect(released.ticket).toBe('');
+		expect(released.handled_at).toBe('');
+
+		const entries = await sourceEntries(ticket.id);
+		expect(entries.map((entry) => [entry.old_value === '', entry.new_value === ''])).toEqual([
+			[true, false],
+			[false, true]
+		]);
+		expect(JSON.parse(entries[1].old_value)).toEqual({ item: item.id, channel: 'telegram', title: item.title });
+		expect(entries[1].user).toBe(owner.id);
+
+		// It can be linked again, also to another ticket.
+		const next = await owner.ticket();
+		expect((await link(owner, item.id, next.id)).ticket).toBe(next.id);
+	});
+
+	it('never releases the main source of a ticket', async () => {
+		const item = await createItem(owner);
+		const ticket = await owner.ticket({ source_item: item.id });
+		expect(await rejectionOf(release(owner, item.id))).toEqual({
+			status: 400,
+			codes: { state: 'validation_inbox_primary_source' }
+		});
+		const after = await itemOf(item.id);
+		expect(after.state).toBe('converted');
+		expect(after.ticket).toBe(ticket.id);
+	});
+
+	it('releases an item whose ticket was deleted, without a history', async () => {
+		const ticket = await owner.ticket();
+		const item = await createItem(owner);
+		await link(owner, item.id, ticket.id);
+		await owner.client.collection('tickets').delete(ticket.id);
+		expect((await itemOf(item.id)).ticket).toBe('');
+		expect((await release(owner, item.id)).state).toBe('new');
+	});
+
+	it('keeps the item linked when the history entry fails', async () => {
+		const ticket = await owner.ticket();
+		const item = await createItem(owner);
+		await link(owner, item.id, ticket.id);
+		// Editing the title of a linked item is no link change and writes no history.
+		await owner.client.collection('inbox_items').update(item.id, { title: FAIL_SOURCE_LINK });
+		expect((await rejectionOf(release(owner, item.id))).status).toBe(400);
+		const after = await itemOf(item.id);
+		expect(after.state).toBe('converted');
+		expect(after.ticket).toBe(ticket.id);
+	});
+});
+
+describe('delete guard', () => {
+	it('refuses to delete a linked item; the ticket keeps its source', async () => {
+		const ticket = await owner.ticket();
+		const item = await createItem(owner);
+		await link(owner, item.id, ticket.id);
+		expect((await rejectionOf(owner.client.collection('inbox_items').delete(item.id))).status).toBe(404);
+		expect(await rejectionOf(superuser.collection('inbox_items').delete(item.id))).toEqual({
+			status: 400,
+			codes: { ticket: 'validation_inbox_item_linked' }
+		});
+		expect((await itemOf(item.id)).ticket).toBe(ticket.id);
+	});
+
+	it('still deletes new, discarded and released items', async () => {
+		const ticket = await owner.ticket();
+		const fresh = await createItem(owner);
+		const discarded = await createItem(owner);
+		await owner.client.collection('inbox_items').update(discarded.id, { state: 'discarded' });
+		const released = await createItem(owner);
+		await link(owner, released.id, ticket.id);
+		await release(owner, released.id);
+		for (const item of [fresh, discarded, released]) {
+			await owner.client.collection('inbox_items').delete(item.id);
+			expect((await rejectionOf(itemOf(item.id))).status).toBe(404);
+		}
+	});
+});
