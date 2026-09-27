@@ -373,3 +373,42 @@ describe('HK-1 hooks before the delete guard migration', () => {
 		await expect(items.getOne(item.id)).rejects.toMatchObject({ status: 404 });
 	});
 });
+
+describe('HK-6 hooks before the migration of the orphaned sources', () => {
+	const ORPHANS_MIGRATION = '1790201900_inbox_items_orphans.js';
+	let before;
+	let who;
+
+	beforeAll(async () => {
+		before = await startPocketBase({ migrationFilter: (name) => name < ORPHANS_MIGRATION });
+		const superuser = new PocketBase(before.url);
+		superuser.autoCancellation(false);
+		await superuser.collection('_superusers').authWithPassword(before.email, before.password);
+		const email = `user-${randomBytes(12).toString('hex')}@example.com`;
+		const password = randomBytes(24).toString('base64url');
+		const id = (await superuser.collection('users').create({ email, password, passwordConfirm: password })).id;
+		who = new PocketBase(before.url);
+		who.autoCancellation(false);
+		await who.collection('users').authWithPassword(email, password);
+		who.userId = id;
+	}, 60_000);
+
+	afterAll(async () => {
+		await before?.stop();
+	});
+
+	it('gives the sources of a deleted ticket back or discards them, through both ways', async () => {
+		const items = who.collection('inbox_items');
+		const create = (title) => items.create({ owner: who.userId, channel: 'manual', kind: 'todo', title });
+		const main = await create('Hauptquelle');
+		const first = await who.collection('tickets').create({ owner: who.userId, title: 'Eins', source_item: main.id });
+		await who.collection('tickets').delete(first.id);
+		expect(await items.getOne(main.id)).toMatchObject({ state: 'new', ticket: '' });
+
+		const second = await who.collection('tickets').create({ owner: who.userId, title: 'Zwei', source_item: main.id });
+		await who.send(`/api/byl/tickets/${second.id}/delete`, { method: 'POST', body: { sources: 'discard' } });
+		const discarded = await items.getOne(main.id);
+		expect(discarded).toMatchObject({ state: 'discarded', ticket: '' });
+		expect(discarded.source_meta.ticket_deleted.key).toBe(second.key);
+	});
+});

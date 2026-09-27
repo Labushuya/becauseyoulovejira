@@ -125,6 +125,62 @@ export interface LinkOutcome {
 	failures: { id: string; title: string; message: string }[];
 }
 
+/**
+ * What happens to the sources of a ticket that is deleted (ADR-0031, addendum B). They are never
+ * deleted with it; "inbox" is the default of every way to delete.
+ */
+export type SourceHandling = 'inbox' | 'discard';
+
+export const SOURCE_HANDLINGS: readonly SourceHandling[] = Object.freeze(['inbox', 'discard']);
+
+export const SOURCE_HANDLING_LABELS: Readonly<Record<SourceHandling, string>> = Object.freeze({
+	inbox: 'Quellen zurück in den Eingang',
+	discard: 'Quellen verwerfen'
+});
+
+export const SOURCE_HANDLING_HINTS: Readonly<Record<SourceHandling, string>> = Object.freeze({
+	inbox: 'Sie stehen wieder als neu im Eingang, mit dem Hinweis auf das gelöschte Ticket.',
+	discard:
+		'Sie gelten als verworfen: Ihr Inhalt wird nach 30 Tagen gelöscht, und dieselbe Mail oder Nachricht kommt nicht noch einmal herein.'
+});
+
+/** "Zu diesem Ticket gehört 1 Quelle." / "… gehören 3 Quellen." */
+export function sourceCountText(count: number): string {
+	return count === 1
+		? 'Zu diesem Ticket gehört 1 Quelle.'
+		: `Zu diesem Ticket gehören ${count} Quellen.`;
+}
+
+/** Status message after deleting a ticket with sources: "HAUS-12 wurde gelöscht. 2 Quellen …". */
+export function deletedWithSourcesText(
+	key: string,
+	count: number,
+	handling: SourceHandling
+): string {
+	if (count === 0) return `${key} wurde gelöscht.`;
+	const sources = count === 1 ? '1 Quelle ist' : `${count} Quellen sind`;
+	return handling === 'discard'
+		? `${key} wurde gelöscht. ${sources} verworfen.`
+		: `${key} wurde gelöscht. ${sources} wieder im Eingang.`;
+}
+
+/**
+ * Hint of an entry whose ticket was deleted (source_meta.ticket_deleted of the hook or of the
+ * migration 1790201900, ADR-0031 addendum B); null while it belongs to a ticket or without one.
+ */
+export function deletedTicketNote(
+	item: Pick<InboxItemSummary, 'state' | 'sourceMeta'>
+): string | null {
+	if (item.state === 'converted') return null;
+	const note = item.sourceMeta.ticket_deleted;
+	if (typeof note !== 'object' || note === null || Array.isArray(note)) return null;
+	const { key } = note as Record<string, unknown>;
+	const ticket = typeof key === 'string' && key !== '' ? `Ticket ${key}` : 'Das Ticket';
+	return item.state === 'discarded'
+		? `${ticket} wurde gelöscht; dieser Eintrag war eine Quelle und wurde dabei verworfen.`
+		: `${ticket} wurde gelöscht; dieser Eintrag war eine Quelle und ist wieder im Eingang.`;
+}
+
 /** Text of the flag after linking: "3 Einträge mit TASK-4 verknüpft." */
 export function linkSummary(count: number, ticketKey: string): string {
 	return count === 1

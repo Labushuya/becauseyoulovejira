@@ -280,6 +280,13 @@ function prepareUpdate(txApp, record) {
   if ((kind === 'release' || kind === 'move') && isPrimarySource(txApp, record.id)) {
     throw fail(kind === 'release' ? 'state' : 'ticket', 'validation_inbox_primary_source');
   }
+  // An item that belongs to a ticket again no longer needs the note of an earlier, deleted one.
+  if (after === 'converted' && ticketAfter !== '') {
+    var cleared = rules.withoutDeletedTicket(metaOf(record));
+    if (cleared) {
+      record.set('source_meta', cleared);
+    }
+  }
 
   var action = rules.handledAtAction(before, after);
   if (action === 'set') {
@@ -388,6 +395,56 @@ function completeConversion(txApp, item, ticket) {
   txApp.save(item);
 }
 
+// Transient record key of a ticket for the handling of its sources when it is deleted ('inbox'
+// or 'discard'); set by the route "Ticket löschen mit Quellenbehandlung", missing for every other
+// way to delete, which then means 'inbox' (ADR-0031, addendum B).
+var SOURCE_HANDLING_KEY = '@source_handling';
+
+// Ticket delete, before e.next(): the IDs of its sources (items with `ticket = <id>` and the main
+// source), so they can be settled after PocketBase has cleared the relation. [] before the inbox
+// exists.
+function sourcesOfDeletedTicket(txApp, ticket) {
+  try {
+    txApp.findCollectionByNameOrId(INBOX);
+  } catch (err) {
+    return [];
+  }
+  var ids = [];
+  var linked = txApp.findRecordsByFilter(INBOX, 'ticket = {:id}', 'created', 0, 0, { id: ticket.id });
+  for (var i = 0; i < linked.length; i++) {
+    ids.push(linked[i].id);
+  }
+  var main = ticket.getString('source_item');
+  if (main !== '' && ids.indexOf(main) === -1) {
+    ids.push(main);
+  }
+  return ids;
+}
+
+/**
+ * Ticket delete, after e.next(), in the same transaction (ADR-0031, addendum B): every source of
+ * the deleted ticket that is still converted becomes new ('inbox') or discarded ('discard', a
+ * tombstone that keeps its fingerprint), without ticket and with source_meta.ticket_deleted =
+ * { key, at }. Nothing is deleted with the ticket. Returns the number of settled items.
+ */
+function settleSourcesOfDeletedTicket(txApp, ids, handling, key) {
+  var mode = rules.isSourceHandling(handling) ? handling : rules.DEFAULT_SOURCE_HANDLING;
+  var at = new Date().toISOString().replace('T', ' ');
+  var settled = 0;
+  for (var i = 0; i < ids.length; i++) {
+    var item = findById(txApp, INBOX, ids[i]);
+    if (!item || item.getString('state') !== 'converted') {
+      continue;
+    }
+    item.set('state', mode === 'discard' ? 'discarded' : 'new');
+    item.set('ticket', '');
+    item.set('source_meta', rules.deletedTicketMeta(metaOf(item), key, at));
+    txApp.save(item);
+    settled += 1;
+  }
+  return settled;
+}
+
 module.exports = {
   IMMUTABLE_FIELDS: IMMUTABLE_FIELDS,
   metaOf: metaOf,
@@ -400,5 +457,8 @@ module.exports = {
   recordLinkChange: recordLinkChange,
   guardDelete: guardDelete,
   prepareConversion: prepareConversion,
-  completeConversion: completeConversion
+  completeConversion: completeConversion,
+  SOURCE_HANDLING_KEY: SOURCE_HANDLING_KEY,
+  sourcesOfDeletedTicket: sourcesOfDeletedTicket,
+  settleSourcesOfDeletedTicket: settleSourcesOfDeletedTicket
 };

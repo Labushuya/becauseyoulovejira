@@ -34,7 +34,7 @@ Folgeauftrag (Nutzerentscheidungen vom 2026-09-27, [ADR-0031](../adr/0031-herkun
 | Paket | Inhalt | Manifest |
 |---|---|---|
 | HK-5 | Umhängen: „Anderem Ticket zuordnen …“ im Panel des Eintrags (Block „Gehört zu …“ mit „Ticket öffnen“, „Anderem Ticket zuordnen …“, „Lösen“) und in der Quellenliste; atomar im Hook mit Verlauf in beiden Tickets; Hauptquelle gesperrt mit Grund; Ticket am Eintrag per `expand` | BYL-E6-180, BYL-E6-181, BYL-E6-182 (manuell) |
-| HK-6 | Löschen eines Tickets mit Quellen: Radio in der Bestätigung („Quellen zurück in den Eingang“, „Quellen verwerfen“), atomar im Hook, eigene Route, sicherer Standard der Delete-API; Aufräumen verwaister `converted`-Einträge per Migration mit Rollback-Test | geplant ab BYL-E6-183 |
+| HK-6 | Löschen eines Tickets mit Quellen: Radio in der Bestätigung („Quellen zurück in den Eingang“, „Quellen verwerfen“), atomar im Hook, eigene Route, sicherer Standard der Delete-API; Aufräumen verwaister `converted`-Einträge per Migration `1790201900_inbox_items_orphans.js` mit Rollback-Test | BYL-E6-183, BYL-E6-184, BYL-E6-185, BYL-E6-186 (manuell) |
 | HK-7 | Hervorhebung: Rand in der Akzentfarbe und Chip „→ HAUS-12“ im Eingang, Quellen im Ticket in der Akzentfarbe, Filter „Offen“, „Verknüpft“, „Alle“ | geplant |
 | HK-8 | Originaldateien bis 25 MB: Migration mit Rollback, Konstanten in SPA, Hooks und byl-mail, Texte, Version des Hilfsprozesses, README | geplant |
 
@@ -75,6 +75,11 @@ Folgeauftrag (Nutzerentscheidungen vom 2026-09-27, [ADR-0031](../adr/0031-herkun
 | 2026-09-27 | HK-5 | **Verlauf in beiden Tickets** als `source_link` mit `moved_to` bzw. `moved_from` (`ticket`, `key` zum Zeitpunkt); Fehlerinjektion über dieselbe Markierung im Titel des Eintrags. |
 | 2026-09-27 | HK-5 | **Ticket am Eintrag per `expand=ticket`** (nur `id`, `key`, `title`, `source_item`) in Listen, Panel, Antworten auf Updates und im Realtime-Abo. `InboxItemSummary.ticket` ist optional, damit handgebaute Objekte gültig bleiben. Der Block „Gehört zu …“ und die Aktionen erscheinen erst, wenn das Ticket bekannt ist; ohne es nur „Ticket öffnen“. |
 | 2026-09-27 | HK-5 | **Ein Dialog** `MoveSourceDialog` für Panel und Quellenliste (Modal M, Ticketsuche ohne das aktuelle Ticket, Feldfehler „Bitte ein Ticket wählen.“); `TicketSourcesStore.move` zeigt den Erfolg als Flag, einen Fehler gibt er dem Dialog. Der Block „Gehört zu …“ steht schon mit HK-5 oben im Panel (Akzentfläche mit Rand), weil er die Aktionen trägt; „Ticket ansehen“ im Fuß entfällt. |
+| 2026-09-27 | HK-6 | **Quellen nach dem Löschen setzen, nicht davor:** Der Hook merkt sich die IDs vor `e.next()` und setzt die Einträge danach in derselben Transaktion. Davor wäre die Hauptquelle noch Hauptquelle, und `prepareUpdate` würde das Lösen ablehnen; danach hat PocketBase `ticket` geleert. Erfasst werden die Einträge mit `ticket = <id>` und `source_item`. |
+| 2026-09-27 | HK-6 | **Wahl über einen flüchtigen Schlüssel** `@source_handling` am Ticket, den nur die neue Route setzt (wie `@actor`); ohne ihn gilt `inbox`. So braucht kein anderer Weg (Record-API, `/_/`, Serien) eine Änderung, und keiner lässt verwaiste Einträge zurück. Die Route prüft die `deleteRule` mit `canAccessRecord` und löscht über `e.app.delete`, damit derselbe Modell-Hook läuft. |
+| 2026-09-27 | HK-6 | **Hinweis in `source_meta.ticket_deleted`** (`key`, `at`) statt eines neuen Feldes; die Bereinigung verworfener Einträge nimmt ihn nach 30 Tagen mit. Beim erneuten Verknüpfen oder Umwandeln entfernt der Hook ihn. |
+| 2026-09-27 | HK-6 | **Aufräumen per Migration** statt eines Laufs beim Start: einmalig, mit Rollback und ohne Hooks (`UPDATE` wie `1790201700`). `restore` im Hinweis hält `handled_at` und das rohe `source_meta` (`json_quote`, auch `NULL`), die Rückwärts-Migration stellt genau diese Einträge her, solange sie noch neu sind. Ergebnis der Prüfung: siehe §5. |
+| 2026-09-27 | HK-6 | **Radio in der Bestätigung:** `ConfirmDialog` bekommt das optionale Snippet `options` unter dem Text, damit das Fieldset nicht Teil der Beschreibung (`aria-describedby`) des Dialogs wird. Der erste Fokus bleibt auf „Abbrechen“. Die Zahl der Quellen kommt aus dem `TicketSourcesStore` (Panel und Vollansicht); ohne sie fragt der Dialog nicht und löscht über die Record-API (Standard: zurück in den Eingang). |
 
 ## 4. Status
 
@@ -85,11 +90,12 @@ Folgeauftrag (Nutzerentscheidungen vom 2026-09-27, [ADR-0031](../adr/0031-herkun
 | HK-2 | gemergt (#107) |
 | HK-3 | gemergt (#108) |
 | HK-4 | gemergt (#109) |
-| HK-5 | in Arbeit |
-| HK-6 | geplant |
+| HK-5 | gemergt (#110) |
+| HK-6 | in Arbeit |
 | HK-7 | geplant |
 | HK-8 | geplant |
 
 ## 5. Offene Punkte
 
-- Manuelle Browser-Prüfungen der Pakete HK-2 bis HK-5.
+- Manuelle Browser-Prüfungen der Pakete HK-2 bis HK-6.
+- **Verwaiste Einträge (HK-6):** Das Repo enthält keine Nutzerdaten, und `app\pb_data` wird nicht gelesen; wie viele Einträge die Migration beim nächsten Start des Nutzers umstellt, ist deshalb nicht bekannt. Jedes Ticket, das vor HK-6 gelöscht wurde und Quellen hatte, hat solche Einträge hinterlassen. Nach dem Neustart stehen sie als neu im Eingang mit dem Hinweis „Das Ticket wurde gelöscht; …“.

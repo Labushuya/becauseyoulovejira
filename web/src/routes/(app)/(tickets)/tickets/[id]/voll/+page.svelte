@@ -54,7 +54,11 @@
 {#if ticket}
 	<FullView title={`${ticket.key} · ${ticket.title}`} onclose={close}>
 		{#snippet actions()}
-			<TicketDelete store={detail} ondeleted={() => void route.deleted()} />
+			<TicketDelete
+				store={detail}
+				ondeleted={() => void route.deleted()}
+				sourceCount={sources.ticketId === ticket.id ? sources.items.length : 0}
+			/>
 		{/snippet}
 		{#snippet main()}
 			<EditableTitle store={detail} {headingId} />

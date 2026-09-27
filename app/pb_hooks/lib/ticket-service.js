@@ -287,8 +287,30 @@ function recordChanges(txApp, record, before) {
   }
 }
 
+/**
+ * Route "Ticket löschen mit Quellenbehandlung" (ADR-0031, addendum B): body { sources: 'inbox' |
+ * 'discard' }. A ticket the request may not delete (deleteRule) is not found; the delete runs
+ * through the model hook of tickets.pb.js, which settles the sources in the same transaction.
+ */
+function deleteWithSources(e, id) {
+  var inboxRules = require(__hooks + '/lib/inbox-rules.js');
+  var body = e.requestInfo().body || {};
+  var handling = body.sources === undefined || body.sources === null ? '' : String(body.sources);
+  if (!inboxRules.isSourceHandling(handling)) {
+    throw new BadRequestError('Unbekannte Behandlung der Quellen: erlaubt sind „inbox“ und „discard“.');
+  }
+  var collection = e.app.findCollectionByNameOrId('tickets');
+  var ticket = findById(e.app, 'tickets', id);
+  if (!ticket || !e.app.canAccessRecord(ticket, e.requestInfo(), collection.deleteRule)) {
+    throw new NotFoundError('Ticket nicht gefunden.');
+  }
+  ticket.set(inbox.SOURCE_HANDLING_KEY, handling);
+  e.app.delete(ticket);
+}
+
 module.exports = {
   ACTOR_KEY: ACTOR_KEY,
+  deleteWithSources: deleteWithSources,
   scopeOfRecord: scopeOfRecord,
   rememberActor: rememberActor,
   checkRelations: checkRelations,

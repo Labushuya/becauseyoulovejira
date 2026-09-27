@@ -7,7 +7,9 @@
 	// a footer with "Abbrechen" and a verb ("Löschen", "Verwerfen"). The focus starts on
 	// "Abbrechen"; Escape, × and a click on the veil mean "Abbrechen". While the confirmed action
 	// runs, every way is locked and the button says "Wird ausgeführt …"; a failure shows inside.
-	// No red: the text and the verb make it clear (ADR-0009).
+	// No red: the text and the verb make it clear (ADR-0009). Optional `options` (e.g. radios of
+	// "Quellen zurück in den Eingang" / "Quellen verwerfen", ADR-0031 addendum B) stand below the
+	// text, outside the description of the dialog.
 	let {
 		open,
 		title,
@@ -17,7 +19,8 @@
 		error = null,
 		onconfirm,
 		oncancel,
-		children
+		children,
+		options
 	}: {
 		open: boolean;
 		title: string;
@@ -28,6 +31,7 @@
 		onconfirm: () => void;
 		oncancel: () => void;
 		children: Snippet;
+		options?: Snippet;
 	} = $props();
 
 	const uid = $props.id();
@@ -50,6 +54,7 @@
 	<div class="text" id={textId}>
 		{@render children()}
 	</div>
+	{@render options?.()}
 	{#if error}
 		<div class="alert-error" role="alert">
 			<ErrorIcon />

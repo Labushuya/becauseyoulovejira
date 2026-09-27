@@ -127,6 +127,7 @@
 	fullViewHref={full}
 	onclose={close}
 	ondeleted={deleted}
+	sourceCount={sourceStore.ticketId === id ? sourceStore.items.length : 0}
 >
 	{#snippet recurrence(ticket: Ticket)}
 		<RecurrenceSummary

@@ -404,6 +404,81 @@ describe('migration rollback of the delete guard of sources (ADR-0031 section 3)
 	);
 });
 
+const ORPHANS_MIGRATION = '1790201900_inbox_items_orphans.js';
+
+describe('migration rollback of the orphaned sources (ADR-0031, addendum B)', () => {
+	it(
+		'gives converted items without a ticket back to the inbox, there and back, and leaves the rest',
+		async () => {
+			const fromOrphans = MIGRATION_FILES.slice(MIGRATION_FILES.indexOf(ORPHANS_MIGRATION));
+			expect(fromOrphans[0]).toBe(ORPHANS_MIGRATION);
+
+			await withTempDataDir(async ({ dataDir, args }) => {
+				await migrate(args, 'up');
+				await migrate(args, 'down', String(fromOrphans.length));
+
+				// Two orphans (one with, one without source_meta), a source with its ticket, a new and a
+				// discarded item.
+				withDatabase(dataDir, (db) => {
+					db.prepare('INSERT INTO users (id, email, tokenKey, password, created, updated) VALUES (?, ?, ?, ?, ?, ?)').run(
+						'user00000000001',
+						'eins@example.invalid',
+						'tk1',
+						'hash',
+						STAMP,
+						STAMP
+					);
+					const item = db.prepare(
+						'INSERT INTO inbox_items (id, channel, kind, title, body, fingerprint, state, ticket, handled_at, source_meta, scope, owner, created, updated) ' +
+							'VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+					);
+					const scope = 'u:user00000000001';
+					const owner = 'user00000000001';
+					item.run('item00000000001', 'eml', 'mail', 'Verwaist', 'Text', 'f1', 'converted', '', '2026-09-02 08:00:00.000Z', '{"from":"a@example.com"}', scope, owner, STAMP, STAMP);
+					item.run('item00000000002', 'telegram', 'message', 'Verwaist ohne Meta', '', 'f2', 'converted', '', '2026-09-03 08:00:00.000Z', null, scope, owner, STAMP, STAMP);
+					item.run('item00000000003', 'manual', 'todo', 'Quelle', '', 'f3', 'converted', 'ticket000000001', STAMP, '{}', scope, owner, STAMP, STAMP);
+					item.run('item00000000004', 'manual', 'todo', 'Neu', '', 'f4', 'new', '', '', null, scope, owner, STAMP, STAMP);
+					item.run('item00000000005', 'link', 'link', 'Verworfen', '', 'f5', 'discarded', '', STAMP, '{"keyword":"x"}', scope, owner, STAMP, STAMP);
+					db.prepare(
+						'INSERT INTO tickets (id, number, key, title, status, priority, source, source_item, scope, owner, created, updated) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+					).run('ticket000000001', 1, 'TASK-1', 'Mit Quelle', 'open', 'medium', 'manual', 'item00000000003', scope, owner, STAMP, STAMP);
+				});
+				const rows = withDatabase(dataDir, snapshot);
+				const byId = (snap) => Object.fromEntries(snap.inbox_items.map((row) => [row.id, row]));
+
+				const up = await migrate(args, 'up');
+				expect(appliedFiles(up, 'Applied')).toEqual(fromOrphans);
+				const after = withDatabase(dataDir, snapshot);
+				const items = byId(after);
+				for (const id of ['item00000000001', 'item00000000002']) {
+					expect(items[id]).toMatchObject({ state: 'new', ticket: '', handled_at: '', updated: STAMP });
+					const note = JSON.parse(items[id].source_meta).ticket_deleted;
+					expect(note.key).toBe('');
+					expect(note.at).toMatch(/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}/);
+				}
+				expect(JSON.parse(items.item00000000001.source_meta).from).toBe('a@example.com');
+				// Everything else is untouched, the text and the fingerprint of the orphans as well.
+				const before = byId(rows);
+				for (const id of ['item00000000003', 'item00000000004', 'item00000000005']) {
+					expect(items[id]).toEqual(before[id]);
+				}
+				expect(withoutFields(after.inbox_items, ['state', 'handled_at', 'source_meta'])).toEqual(
+					withoutFields(rows.inbox_items, ['state', 'handled_at', 'source_meta'])
+				);
+				expect(after.tickets).toEqual(rows.tickets);
+
+				const down = await migrate(args, 'down', String(fromOrphans.length));
+				expect(appliedFiles(down, 'Reverted')).toEqual([...fromOrphans].reverse());
+				expect(withDatabase(dataDir, snapshot)).toEqual(rows);
+
+				expect(appliedFiles(await migrate(args, 'up'), 'Applied')).toEqual(fromOrphans);
+				expect(byId(withDatabase(dataDir, snapshot)).item00000000002.state).toBe('new');
+			});
+		},
+		60_000
+	);
+});
+
 const CONNECTIONS_MIGRATION = '1790201400_create_connections.js';
 const IMPORT_KEYWORDS_MIGRATION = '1790201500_users_import_keywords.js';
 const INBOX_CONNECTION_MIGRATION = '1790201410_inbox_items_connection.js';
