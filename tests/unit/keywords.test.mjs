@@ -69,7 +69,8 @@ describe('keywords.js: stored lists', () => {
 
 	it('offers the suggestions of ADR-0020', () => {
 		expect(keywords.SUGGESTIONS).toEqual(['todo', 'aufgabe', 'erledigen', 'ticket', '#byl']);
-		expect(keywords.MAIL_BODY_CHARS).toBe(500);
+		expect(keywords.MAIL_TEXT_MAX_CHARS).toBe(100000);
+		expect(keywords.MAIL_EXTRA_TEXTS_MAX).toBe(12);
 	});
 });
 

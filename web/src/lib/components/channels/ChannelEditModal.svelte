@@ -5,13 +5,14 @@
 		NO_KEYWORDS_WARNING,
 		type Connection
 	} from '$lib/domain/connections';
+	import { MAIL_MATCH_BODY_LABEL } from '$lib/domain/keywords';
 	import SectionMessage from '../guidance/SectionMessage.svelte';
 	import KeywordEditor from '../KeywordEditor.svelte';
 	import Modal from '../overlay/Modal.svelte';
 
 	// "‹Name› bearbeiten" (ADR-0026 section 3, plan EH-3): a modal of size M with the keywords of the
-	// connection, its switch (Telegram: answer to messages without keyword; mailbox: search the start
-	// of the text) and the names of its variables, read only, with the way to the setup. Every change
+	// connection, its switch (Telegram: answer to messages without keyword; mailbox: search headers
+	// and the whole text) and the names of its variables, read only, with the way to the setup. Every change
 	// is saved at once, so the footer says "Schließen" (ADR-0025 section 3); results go out as flags.
 	let {
 		connection,
@@ -63,7 +64,7 @@
 					checked={connection.matchBody}
 					onchange={(event) => onmatchbody(event.currentTarget.checked)}
 				/>
-				Auch die ersten 500 Zeichen des Textes durchsuchen
+				{MAIL_MATCH_BODY_LABEL}
 			</label>
 		{/if}
 		{#if message !== null}

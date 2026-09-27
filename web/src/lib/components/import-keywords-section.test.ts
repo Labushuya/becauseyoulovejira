@@ -103,7 +103,7 @@ describe('ImportKeywordsSection', () => {
 			expect(latestFlag(flags)).toBe('Kalenderdateien (.ics): Stichwort „todo“ hinzugefügt.')
 		);
 		await fireEvent.click(
-			screen.getByLabelText('Auch die ersten 500 Zeichen des Textes durchsuchen')
+			screen.getByLabelText('Betreff, Absender, Kopfzeilen und Text durchsuchen')
 		);
 		await vi.waitFor(() =>
 			expect(data.save).toHaveBeenLastCalledWith(

@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
 	EMPTY_IMPORT_KEYWORDS,
 	KEYWORD_SUGGESTIONS,
+	MAIL_TEXT_MAX_CHARS,
 	importKeywordsOf,
 	importKeywordsValue,
 	mailKeywordTexts,
@@ -87,15 +88,21 @@ describe('keywords of the file imports (package 21)', () => {
 		});
 	});
 
-	it('searches the start of a mail text only on request', () => {
-		const body = `${'x '.repeat(260)}todo`;
-		expect(mailKeywordTexts('Betreff', body, false, '')).toEqual(['Betreff']);
+	it('searches headers and the whole text of a mail only on request', () => {
+		const body = `${'x '.repeat(3000)}todo`;
+		expect(mailKeywordTexts('Betreff', body, false, '', ['todo@example.com'])).toEqual(['Betreff']);
 		const texts = mailKeywordTexts('Betreff', body, true, '');
-		expect(texts[1]).toHaveLength(500);
-		expect(matchKeyword(['todo'], texts)).toBe('');
-		expect(matchKeyword(['todo'], mailKeywordTexts('Betreff', 'todo: zahlen', true, ''))).toBe(
-			'todo'
-		);
+		expect(texts[1]).toBe(body);
+		expect(matchKeyword(['todo'], texts)).toBe('todo');
+		expect(
+			matchKeyword(
+				['liste'],
+				mailKeywordTexts('Betreff', 'Hallo', true, '', ['Liste <l.example.com>'])
+			)
+		).toBe('liste');
+		expect(
+			mailKeywordTexts('Betreff', 'x'.repeat(MAIL_TEXT_MAX_CHARS + 10), true, '')[1]
+		).toHaveLength(MAIL_TEXT_MAX_CHARS);
 	});
 
 	it('searches the sender of a mail, name and address (package A)', () => {

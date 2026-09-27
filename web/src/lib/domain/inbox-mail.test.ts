@@ -11,9 +11,11 @@ import {
 	SOURCE_REF_MAX_LENGTH,
 	formatAddress,
 	mailDate,
+	mailMatchTexts,
 	mailText,
 	mailToDraft
 } from './inbox-mail';
+import { MAIL_EXTRA_TEXTS_MAX } from './keywords';
 
 const FIXTURES = join(import.meta.dirname, '../../../../tests/fixtures/eml');
 
@@ -151,5 +153,55 @@ describe('mail helpers', () => {
 		expect(draft.sourceRef).toHaveLength(SOURCE_REF_MAX_LENGTH);
 		expect(String(draft.sourceMeta?.to).length).toBeLessThanOrEqual(2000);
 		expect(mailToDraft({ attachments: [] }, 'mail').channel).toBe('mail');
+	});
+});
+
+describe('mailMatchTexts (full inbox, ADR-0020 addendum 2)', () => {
+	it('gives To, Cc, Reply-To, Sender, the HTML part and the named headers as separate texts', () => {
+		const texts = mailMatchTexts(
+			{
+				to: [{ name: 'Anna', address: 'anna@example.com' }],
+				cc: [{ name: '', address: 'cc@example.com' }],
+				replyTo: [{ name: 'Antwort', address: 'antwort@example.com' }],
+				sender: { name: 'Versand', address: 'versand@example.com' },
+				headers: [
+					{ key: 'subject', value: 'nicht hier' },
+					{ key: 'list-id', value: '=?UTF-8?Q?M=C3=BCnchen?= <l.example.com>' },
+					{ key: 'organization', value: '  Verein\r\n e. V. ' }
+				],
+				text: 'Text',
+				html: '<p>Vorschau &amp; HTML</p>'
+			},
+			(value) => value.replace('=?UTF-8?Q?M=C3=BCnchen?=', 'München')
+		);
+		expect(texts).toEqual([
+			'Anna <anna@example.com>',
+			'cc@example.com',
+			'Antwort <antwort@example.com>',
+			'Versand <versand@example.com>',
+			'Vorschau & HTML',
+			'München <l.example.com>',
+			'Verein e. V.'
+		]);
+	});
+
+	it('leaves out the HTML part of an HTML-only mail (it is the text already) and empty parts', () => {
+		expect(mailMatchTexts({ html: '<p>HTML</p>' })).toEqual([]);
+		expect(
+			mailMatchTexts({ text: ' ', html: '<p>HTML</p>', headers: [{ key: 'list-id', value: ' ' }] })
+		).toEqual([]);
+	});
+
+	it('keeps at most MAIL_EXTRA_TEXTS_MAX texts, the HTML part first of the headers', () => {
+		const texts = mailMatchTexts({
+			text: 'Text',
+			html: '<p>HTML</p>',
+			headers: Array.from({ length: 20 }, (_, index) => ({
+				key: 'list-id',
+				value: `liste-${index}`
+			}))
+		});
+		expect(texts).toHaveLength(MAIL_EXTRA_TEXTS_MAX);
+		expect(texts[0]).toBe('HTML');
 	});
 });
