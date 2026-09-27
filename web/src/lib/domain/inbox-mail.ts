@@ -6,6 +6,7 @@
 
 import { toPocketBaseTimestamp } from './format';
 import { INBOX_BODY_MAX_LENGTH, type InboxDraft } from './inbox';
+import { MAIL_EXTRA_TEXTS_MAX } from './keywords';
 import { fitTitle } from './templates';
 
 /** A mailbox or group as postal-mime gives it (structural copy, the domain imports no package). */
@@ -20,6 +21,10 @@ export interface ParsedMail {
 	from?: MailAddress;
 	to?: MailAddress[];
 	cc?: MailAddress[];
+	replyTo?: MailAddress[];
+	sender?: MailAddress;
+	/** Every header with its lower-case name and the raw value (encoded words not decoded). */
+	headers?: readonly { key: string; value: string }[];
 	subject?: string;
 	messageId?: string;
 	/** ISO 8601, or the original text if it could not be read. */
@@ -193,6 +198,35 @@ export function mailText(mail: Pick<ParsedMail, 'text' | 'html'>): string {
 	const plain = (mail.text ?? '').replace(/\r\n?/g, '\n').trim();
 	if (plain !== '') return plain;
 	return mail.html === undefined ? '' : htmlToText(mail.html);
+}
+
+/** Headers searched by name besides the address headers (user decision of 2026-09-27). */
+export const MAIL_MATCH_HEADERS: readonly string[] = Object.freeze(['list-id', 'organization']);
+
+/**
+ * Further texts of a mail that keywords search with `match_body` (ADR-0020, addendum 2), each its
+ * own part: To, Cc, Reply-To and Sender as "Name <address>", List-Id and Organization (encoded
+ * words decoded with `decode`, the decodeWords of postal-mime), and the HTML part as text when
+ * the mail has a plain part too (else the HTML text is the text of the draft already). The
+ * preheader of a newsletter is part of the HTML text. Empty parts are left out.
+ */
+export function mailMatchTexts(
+	mail: Pick<ParsedMail, 'to' | 'cc' | 'replyTo' | 'sender' | 'headers' | 'text' | 'html'>,
+	decode: (value: string) => string = (value) => value
+): string[] {
+	const texts = [
+		formatAddresses(mail.to),
+		formatAddresses(mail.cc),
+		formatAddresses(mail.replyTo),
+		mail.sender === undefined ? '' : formatAddress(mail.sender)
+	];
+	// The HTML text before the named headers: repeated headers must not push it past the limit.
+	if ((mail.text ?? '').trim() !== '' && (mail.html ?? '') !== '')
+		texts.push(htmlToText(mail.html ?? ''));
+	for (const header of mail.headers ?? []) {
+		if (MAIL_MATCH_HEADERS.includes(header.key)) texts.push(oneLine(decode(header.value)));
+	}
+	return texts.filter((text) => text !== '').slice(0, MAIL_EXTRA_TEXTS_MAX);
 }
 
 /**

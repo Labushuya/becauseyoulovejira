@@ -215,7 +215,8 @@ export async function prepareDroppedFiles(
 					read.draft.title,
 					read.draft.body ?? '',
 					keywords.eml.matchBody,
-					senderOf(read.draft)
+					senderOf(read.draft),
+					read.matchTexts ?? []
 				)
 			);
 			const key = `m:${fileNo}`;

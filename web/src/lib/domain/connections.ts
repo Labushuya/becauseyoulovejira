@@ -116,7 +116,7 @@ export const MAIL_NEW_ONLY_HINT =
 export const KEYWORD_SEARCH_TEXT: Readonly<Record<ConnectionType, string>> = Object.freeze({
 	calendar: 'Gesucht wird in Titel und Beschreibung der Termine.',
 	telegram: 'Gesucht wird im Text der Nachricht bzw. in der Bildunterschrift.',
-	mail: 'Gesucht wird in Betreff und Absender (Name und Adresse), auf Wunsch auch in den ersten 500 Zeichen des Textes.'
+	mail: 'Gesucht wird in Betreff und Absender (Name und Adresse), auf Wunsch auch in den Kopfzeilen (An, Cc, Antwort an, Liste, Organisation) und im ganzen Text.'
 });
 
 export interface ConnectionDraft {

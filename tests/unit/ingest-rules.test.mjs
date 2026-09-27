@@ -59,12 +59,25 @@ describe('drafts of the helper', () => {
 				source_url: '',
 				source_ref: '<a@b>',
 				source_date: '2026-09-25 10:00:00.000Z',
-				meta: { from: 'Anna <a@example.com>', attachments: 2 }
+				meta: { from: 'Anna <a@example.com>', attachments: 2 },
+				match_texts: []
 			}
 		});
 	});
 
+	it('keeps the match_texts of a helper since 0.6.0 for the keyword check', () => {
+		expect(rules.parseDraft(draft({ match_texts: ['anna@example.com', ''] })).draft.match_texts).toEqual([
+			'anna@example.com',
+			''
+		]);
+		expect(rules.parseDraft(draft({ match_texts: null })).draft.match_texts).toEqual([]);
+	});
+
 	it.each([
+		['match_texts as text', draft({ match_texts: 'todo' })],
+		['more than 12 match_texts', draft({ match_texts: Array.from({ length: 13 }, () => 'x') })],
+		['a match_text that is too long', draft({ match_texts: ['x'.repeat(100_001)] })],
+		['a number in match_texts', draft({ match_texts: [3] })],
 		['no object', null],
 		['a list', []],
 		['no connection', draft({ connection: '' })],
@@ -98,13 +111,22 @@ describe('keywords of a mail connection (ADR-0020)', () => {
 		expect(decide('auto', settings, { body: 'Rechnung anbei' })).toEqual({ accepted: false, keyword: '' });
 	});
 
-	it('searches the first 500 characters of the text only with match_body', () => {
+	it('searches the whole text and the match_texts (headers, HTML part) only with match_body', () => {
 		const withBody = { ...settings, match_body: true };
 		expect(decide('auto', withBody, { body: 'Rechnung anbei' })).toEqual({ accepted: true, keyword: 'rechnung' });
-		expect(decide('auto', withBody, { body: `${'x '.repeat(250)}Rechnung` })).toEqual({
+		expect(decide('auto', withBody, { body: `${'x '.repeat(3000)}Rechnung` })).toEqual({
+			accepted: true,
+			keyword: 'rechnung'
+		});
+		expect(decide('auto', settings, { body: `${'x '.repeat(3000)}Rechnung` })).toEqual({
 			accepted: false,
 			keyword: ''
 		});
+		const inCc = { match_texts: ['Buchhaltung Rechnungen <re@example.com>'] };
+		expect(decide('auto', withBody, inCc)).toEqual({ accepted: true, keyword: 'rechnung' });
+		expect(decide('auto', settings, inCc)).toEqual({ accepted: false, keyword: '' });
+		// A helper before 0.6.0 sends no match_texts.
+		expect(decide('auto', withBody, { match_texts: undefined })).toEqual({ accepted: false, keyword: '' });
 	});
 
 	it('searches the sender (name and address) as well, also without match_body (package A)', () => {

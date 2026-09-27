@@ -23,7 +23,11 @@ var LIMITS = {
   body: 100000,
   sourceRef: 500,
   sourceDate: 40,
-  text: 1000
+  text: 1000,
+  // match_texts: further texts of a mail for the keyword check only (headers, HTML part), as
+  // keywords.js searches them (MAIL_EXTRA_TEXTS_MAX, MAIL_TEXT_MAX_CHARS).
+  matchTexts: 12,
+  matchText: 100000
 };
 
 var UNMATCHED_MESSAGE = 'Kein Stichwort erkannt – nicht gespeichert.';
@@ -86,6 +90,19 @@ function parseDraft(value) {
   if (value.source_meta !== undefined && value.source_meta !== null && !isPlainObject(value.source_meta)) {
     return { error: 'Feld source_meta ist ungültig.' };
   }
+  var matchTexts = [];
+  if (value.match_texts !== undefined && value.match_texts !== null) {
+    var texts = value.match_texts;
+    if (Object.prototype.toString.call(texts) !== '[object Array]' || texts.length > LIMITS.matchTexts) {
+      return { error: 'Feld match_texts ist ungültig.' };
+    }
+    for (var t = 0; t < texts.length; t++) {
+      if (!isString(texts[t], LIMITS.matchText)) {
+        return { error: 'Feld match_texts ist ungültig.' };
+      }
+      matchTexts.push(texts[t]);
+    }
+  }
   var meta = {};
   var given = value.source_meta || {};
   for (var i = 0; i < META_KEYS.length; i++) {
@@ -105,22 +122,27 @@ function parseDraft(value) {
       source_url: '',
       source_ref: value.source_ref || '',
       source_date: value.source_date || '',
-      meta: meta
+      meta: meta,
+      match_texts: matchTexts
     }
   };
 }
 
 /**
  * The keyword of a mail connection that matches the draft (subject, sender from source_meta.from,
- * with match_body also the first 500 characters of the text; ADR-0020 and addendum).
- * { accepted, keyword }: "auto" needs a keyword, "selected" does not; the keyword is kept in both
- * cases.
+ * with match_body also the whole text and the match_texts of the helper: headers and HTML part;
+ * ADR-0020 and addenda). A helper before 0.6.0 sends no match_texts; its mails are checked as
+ * before. { accepted, keyword }: "auto" needs a keyword, "selected" does not; the keyword is kept
+ * in both cases.
  */
 function keywordDecision(origin, settings, draft, keywords, connectionRules) {
   var list = connectionRules.keywordsOf(settings, keywords);
   var mail = connectionRules.mailSettingsOf(settings);
   var from = draft.meta && typeof draft.meta.from === 'string' ? draft.meta.from : '';
-  var keyword = keywords.matchKeyword(list, keywords.mailTexts(draft.title, draft.body, mail.matchBody, from));
+  var keyword = keywords.matchKeyword(
+    list,
+    keywords.mailTexts(draft.title, draft.body, mail.matchBody, from, draft.match_texts)
+  );
   return { accepted: origin === 'selected' || keyword !== '', keyword: keyword };
 }
 

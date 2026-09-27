@@ -236,8 +236,8 @@
 				connection,
 				{ matchBody },
 				matchBody
-					? `„${connection.label}“ durchsucht auch den Anfang des Textes.`
-					: `„${connection.label}“ durchsucht nur den Betreff.`
+					? `„${connection.label}“ durchsucht Betreff, Absender, Kopfzeilen und Text.`
+					: `„${connection.label}“ durchsucht nur Betreff und Absender.`
 			)}
 		onsetup={() => {
 			// Read the connection before closing: the {@const} follows `editing`, which is then null.

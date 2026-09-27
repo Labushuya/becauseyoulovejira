@@ -14,8 +14,12 @@
 
 var MAX_KEYWORDS = 50;
 var MAX_LENGTH = 100;
-// Characters of the text of a mail that are searched besides the subject (settings.match_body).
-var MAIL_BODY_CHARS = 500;
+// Characters searched per text part of a mail with settings.match_body (the text, the HTML part
+// as text, each header): as many as the text of an inbox entry holds (inbox_items.body). Before
+// the decision of 2026-09-27 (ADR-0020 addendum 2) only the first 500 characters of the text.
+var MAIL_TEXT_MAX_CHARS = 100000;
+// Most further text parts of a mail besides subject, sender and text (headers, HTML part).
+var MAIL_EXTRA_TEXTS_MAX = 12;
 // Whether the sender of a mail (name and address, as source_meta.from) is searched as well
 // (user feedback, package A; ADR-0020 addendum). On for every mail: mailbox, mailbox selection and
 // .eml files.
@@ -63,7 +67,8 @@ function isCombining(code) {
  */
 function fold(value, variant) {
   var source = text(value).toLowerCase();
-  var out = '';
+  // Parts joined once at the end: repeated concatenation of long mail texts is slow in Goja.
+  var out = [];
   for (var i = 0; i < source.length; i++) {
     var ch = source.charAt(i);
     var code = source.charCodeAt(i);
@@ -72,21 +77,21 @@ function fold(value, variant) {
     }
     var umlaut = UMLAUTS[ch];
     if (umlaut) {
-      out += variant === 'ae' ? umlaut[1] : umlaut[0];
+      out.push(variant === 'ae' ? umlaut[1] : umlaut[0]);
       continue;
     }
     if (Object.prototype.hasOwnProperty.call(LETTERS, ch)) {
-      out += LETTERS[ch];
+      out.push(LETTERS[ch]);
       continue;
     }
     if ((ch === 'a' || ch === 'o' || ch === 'u') && source.charCodeAt(i + 1) === DIAERESIS) {
-      out += variant === 'ae' ? ch + 'e' : ch;
+      out.push(variant === 'ae' ? ch + 'e' : ch);
       i++;
       continue;
     }
-    out += ch;
+    out.push(ch);
   }
-  return out.replace(SPACE, ' ').replace(/^ | $/g, '');
+  return out.join('').replace(SPACE, ' ').replace(/^ | $/g, '');
 }
 
 /**
@@ -233,17 +238,25 @@ function importSettingsOf(value, kind) {
 }
 
 /**
- * Texts of a mail that are searched (ADR-0020 section 1 and addendum): the subject, the sender
- * ("Name <address>", with MAIL_MATCH_FROM) and, with `matchBody`, the first MAIL_BODY_CHARS
- * characters of the text. Each is its own part. Mirrors mailKeywordTexts of the web app.
+ * Texts of a mail that are searched (ADR-0020 section 1 and addenda): the subject, the sender
+ * ("Name <address>", with MAIL_MATCH_FROM) and, with `matchBody`, the text and the `extra` parts
+ * (the headers To, Cc, Reply-To, Sender, List-Id and Organization and the HTML part as text; at
+ * most MAIL_EXTRA_TEXTS_MAX), each up to MAIL_TEXT_MAX_CHARS characters. Each is its own part.
+ * Mirrors mailKeywordTexts of the web app.
  */
-function mailTexts(title, body, matchBody, from) {
+function mailTexts(title, body, matchBody, from, extra) {
   var texts = [text(title)];
   if (MAIL_MATCH_FROM && typeof from === 'string' && from !== '') {
     texts.push(from);
   }
   if (matchBody) {
-    texts.push(text(body).slice(0, MAIL_BODY_CHARS));
+    texts.push(text(body).slice(0, MAIL_TEXT_MAX_CHARS));
+    var more = Object.prototype.toString.call(extra) === '[object Array]' ? extra : [];
+    for (var i = 0; i < more.length && i < MAIL_EXTRA_TEXTS_MAX; i++) {
+      if (typeof more[i] === 'string' && more[i] !== '') {
+        texts.push(more[i].slice(0, MAIL_TEXT_MAX_CHARS));
+      }
+    }
   }
   return texts;
 }
@@ -269,7 +282,8 @@ function listOf(value) {
 module.exports = {
   MAX_KEYWORDS: MAX_KEYWORDS,
   MAX_LENGTH: MAX_LENGTH,
-  MAIL_BODY_CHARS: MAIL_BODY_CHARS,
+  MAIL_TEXT_MAX_CHARS: MAIL_TEXT_MAX_CHARS,
+  MAIL_EXTRA_TEXTS_MAX: MAIL_EXTRA_TEXTS_MAX,
   MAIL_MATCH_FROM: MAIL_MATCH_FROM,
   SUGGESTIONS: SUGGESTIONS,
   MESSAGE: MESSAGE,

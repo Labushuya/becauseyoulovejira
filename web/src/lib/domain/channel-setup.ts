@@ -278,7 +278,7 @@ function mailTail(provider: string): readonly SetupStep[] {
 			links: [],
 			commands: [],
 			more: [
-				'Auf Wunsch sucht die App auch in den ersten 500 Zeichen des Textes; das schaltest du unter „Bearbeiten“ an der Karte ein.'
+				'Auf Wunsch sucht die App auch in den Kopfzeilen (An, Cc, Antwort an, Liste, Organisation) und im ganzen Text; das schaltest du unter „Bearbeiten“ an der Karte ein.'
 			],
 			checked: true
 		},
@@ -311,7 +311,7 @@ function mailTail(provider: string): readonly SetupStep[] {
 			links: [],
 			commands: [],
 			more: [
-				'In den Eingang kommen nur neue Mails, deren Betreff oder Absender ein Stichwort trifft (mit dem Schalter auch der Textanfang). Mails ohne Stichwort holst du ebenfalls mit „Aus dem Postfach wählen“ an der Karte.',
+				'In den Eingang kommen nur neue Mails, deren Betreff oder Absender ein Stichwort trifft (mit dem Schalter auch Kopfzeilen und Text). Mails ohne Stichwort holst du ebenfalls mit „Aus dem Postfach wählen“ an der Karte.',
 				'Der Hilfsprozess liest nur: Gelesen-Status, Markierungen und Ordner bleiben, und er verschickt nichts.'
 			],
 			checked: true
