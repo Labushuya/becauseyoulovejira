@@ -88,7 +88,11 @@
 	const fixedValues = $derived({ variable, allowlist });
 	/** Telegram: the chat ID of the last run that is not allowed yet (plan §3.13). */
 	const chatId = $derived(connection === null ? null : chatIdFromHint(connection.lastHint));
-	/** Postfächer: the helper fetches, so the last step waits instead of "Jetzt abrufen" (EH-7). */
+	/**
+	 * Postfächer: the helper fetches every 5 minutes, so the last step waits for the first run (EH-7);
+	 * since the user's request after #84 it also offers "Jetzt abrufen", which asks the helper through
+	 * the run route to fetch at once, and "Hilfsprozess prüfen".
+	 */
 	const mailbox = $derived(kind === 'webde' || kind === 'gmail');
 
 	function session(): Storage | null {
@@ -414,6 +418,7 @@
 		{/if}
 	{:else if entry.id === 'first-run' && mailbox}
 		{#if connection !== null}
+			{@render runBlock()}
 			<div class="row">
 				<button class="button-secondary" type="button" onclick={() => void probe()}>
 					Hilfsprozess prüfen

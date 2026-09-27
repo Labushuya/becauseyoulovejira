@@ -306,7 +306,7 @@ function mailTail(provider: string): readonly SetupStep[] {
 			label: 'Erster Abruf',
 			title: 'Auf den ersten Abruf warten',
 			intro:
-				'Der Hilfsprozess ruft das Postfach alle 5 Minuten ab, der erste Abruf erscheint hier von selbst. Dabei durchsucht er den gesamten Posteingang (nicht Papierkorb/Spam/Gesendet); die Karte zeigt den Fortschritt.',
+				'Der Hilfsprozess ruft das Postfach alle 5 Minuten ab, der erste Abruf erscheint hier von selbst; „Jetzt abrufen“ startet ihn sofort. Dabei durchsucht er den gesamten Posteingang (nicht Papierkorb/Spam/Gesendet); die Karte zeigt den Fortschritt.',
 			actions: [],
 			links: [],
 			commands: [],
