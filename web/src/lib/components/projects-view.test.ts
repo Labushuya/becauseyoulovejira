@@ -20,6 +20,7 @@ import { ProjectStatsStore } from '$lib/stores/project-stats.svelte';
 import { TicketListStore, type TicketListData } from '$lib/stores/ticket-list.svelte';
 import ProjectsView from './ProjectsView.svelte';
 import { useOverlayStubs } from '$lib/test/overlay-stubs';
+import { resize, useResizeObserverStub } from '$lib/test/resize-observer-stub';
 
 const mocks = vi.hoisted(() => ({
 	goto: vi.fn(async () => undefined),
@@ -54,6 +55,7 @@ const OLD: Project = {
 const GARDEN: Tag = { id: 'tag000000000001', name: 'Garten', updated: T0 };
 
 useOverlayStubs();
+useResizeObserverStub();
 
 beforeEach(() => {
 	mocks.goto.mockClear();
@@ -476,5 +478,25 @@ describe('project view', () => {
 			noScroll: true
 		});
 		expect(document.activeElement).toBe(screen.getByRole('heading', { name: 'Projekte' }));
+	});
+
+	it('fits the columns of the list and offers "Spalten" only for the list (ADR-0030, SP-5)', async () => {
+		await show();
+		const table = screen.getByRole('table');
+		expect(screen.getByRole('button', { name: 'Spalten' })).toBeTruthy();
+
+		resize(table.parentElement as HTMLElement, 450);
+		await tick();
+
+		expect(
+			within(table)
+				.getAllByRole('columnheader')
+				.map((header) => header.getAttribute('data-col'))
+		).toEqual(['code', 'name', 'active', 'total']);
+		expect(table.querySelector('caption')?.textContent).toMatch(/Weitere Spalten im Panel$/);
+		document.body.innerHTML = '';
+
+		await show('/projekte?darstellung=kacheln');
+		expect(screen.queryByRole('button', { name: 'Spalten' })).toBeNull();
 	});
 });

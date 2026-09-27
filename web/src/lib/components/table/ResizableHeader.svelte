@@ -1,45 +1,43 @@
 <script lang="ts">
 	import type { Snippet } from 'svelte';
 	import { isResizable, type ColumnSpec } from '$lib/domain/columns';
+	import type { ColumnFit } from './column-fit.svelte';
 
 	// Column header with a grip on its right edge (ADR-0030 section 3). The grip is for pointers
 	// only (mouse, pen, touch): aria-hidden and not focusable; the keyboard changes widths in the
 	// menu "Spalten". Dragging reports the width live (clamped to the bounds of the column and to
-	// `budget`, so the title keeps its minimum), releasing commits it, Escape during the drag puts
-	// the old width back and is consumed (ADR-0025 section 1). A double click fits the width to the
-	// content. Neither sorts: the grip is not part of the sort button.
+	// the budget of the table, so the title keeps its minimum), releasing commits it, Escape during
+	// the drag puts the old width back and is consumed (ADR-0025 section 1). A double click fits
+	// the width to the content. Neither sorts: the grip is not part of the sort button.
 	let {
 		column,
-		width,
-		budget,
+		fit,
 		className = '',
 		ariaSort,
-		onresize,
-		oncommit,
-		oncancel,
 		onautofit,
 		children
 	}: {
 		column: ColumnSpec;
-		/** Current width in CSS pixels. */
-		width: number;
-		/** How many pixels the column may grow at most (the room of the title above its minimum). */
-		budget: number;
+		/** Column state of the table: width, budget, live resize, commit and cancel. */
+		fit: ColumnFit;
 		className?: string;
 		ariaSort?: 'ascending' | 'descending';
-		/** Live width while dragging. */
-		onresize: (width: number) => void;
-		/** Width at the end of the drag. */
-		oncommit: (width: number) => void;
-		/** Escape or a cancelled pointer: back to the width before the drag. */
-		oncancel: () => void;
-		/** Double click on the grip. */
-		onautofit: () => void;
+		/** Double click on the grip; without it the widest content of the column in its frame. */
+		onautofit?: () => void;
 		/** Content of the header (sort button or text). */
 		children: Snippet;
 	} = $props();
 
 	const resizable = $derived(isResizable(column));
+	const width = $derived(fit.widthOf(column.id));
+
+	function autofit() {
+		if (onautofit) onautofit();
+		else {
+			const frame = grip?.closest<HTMLElement>('table')?.parentElement;
+			if (frame) fit.autofitCells(frame, column.id);
+		}
+	}
 
 	let grip = $state<HTMLElement>();
 	let drag = $state<{ pointerId: number; startX: number; startWidth: number; max: number } | null>(
@@ -64,7 +62,7 @@
 
 	function cancel() {
 		release();
-		oncancel();
+		fit.cancel();
 	}
 
 	/** Escape during the drag: the innermost action wins, nothing behind reacts. */
@@ -79,7 +77,7 @@
 		if (event.button !== 0 || drag !== null) return;
 		event.preventDefault();
 		event.stopPropagation();
-		const max = Math.max(column.min, Math.min(column.max, width + Math.max(0, budget)));
+		const max = Math.max(column.min, Math.min(column.max, width + Math.max(0, fit.budget)));
 		drag = { pointerId: event.pointerId, startX: event.clientX, startWidth: width, max };
 		if (grip && typeof grip.setPointerCapture === 'function') {
 			try {
@@ -93,14 +91,14 @@
 
 	function onpointermove(event: PointerEvent) {
 		if (drag === null || event.pointerId !== drag.pointerId) return;
-		onresize(clamp(drag.startWidth + event.clientX - drag.startX, drag.max));
+		fit.resize(column.id, clamp(drag.startWidth + event.clientX - drag.startX, drag.max));
 	}
 
 	function onpointerup(event: PointerEvent) {
 		if (drag === null || event.pointerId !== drag.pointerId) return;
 		const next = clamp(drag.startWidth + event.clientX - drag.startX, drag.max);
 		release();
-		oncommit(next);
+		fit.commit(column.id, next);
 	}
 
 	function onpointercancel(event: PointerEvent) {
@@ -130,7 +128,7 @@
 			ondblclick={(event) => {
 				event.preventDefault();
 				event.stopPropagation();
-				onautofit();
+				autofit();
 			}}
 		></span>
 	{/if}

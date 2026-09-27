@@ -11,6 +11,9 @@
 	import type { ResolvedPathname } from '$app/types';
 	import type { CalendarDate } from '$lib/domain/berlin-date';
 	import { MORE_COLUMNS_HINT } from '$lib/domain/labels';
+	import { getColumnPrefs } from '$lib/stores/column-prefs.svelte';
+	import { ColumnFit } from './table/column-fit.svelte';
+	import ResizableHeader from './table/ResizableHeader.svelte';
 	import {
 		nextTicketDate,
 		ruleParams,
@@ -27,9 +30,11 @@
 	// as text with an icon) and the action "Pausieren" or "Fortsetzen". The store keeps the order:
 	// active rules first, then by the next ticket. The row of the rule in the panel is marked
 	// (colour plus a bar at its start, aria-current on the link). The table never scrolls sideways
-	// (package UI-6b): in a narrow frame container queries hide Projekt, Offenes Ticket, Nächstes
-	// Ticket and Rhythmus in this order; title, state and action stay, and the caption then names
-	// the panel, where the rest stands.
+	// (package UI-6b): fitColumns (ADR-0030, package SP-5) fits the columns into the measured
+	// frame; in a narrow frame Projekt, Offenes Ticket, Nächstes Ticket and Rhythmus give way in
+	// this order; title, state and action stay, and the caption then names the panel, where the
+	// rest stands. The title takes at most two lines; the view shares the column state with its
+	// menu "Spalten".
 	let {
 		rules,
 		today,
@@ -39,6 +44,7 @@
 		projectOf,
 		activeId = null,
 		busyId = null,
+		columnFit = new ColumnFit(getColumnPrefs('recurrences')),
 		ontoggle
 	}: {
 		/** Rules in the order to show. */
@@ -56,29 +62,56 @@
 		activeId?: string | null;
 		/** Rule whose "Pausieren" or "Fortsetzen" runs. */
 		busyId?: string | null;
+		/** Column state (ADR-0030), shared with the menu "Spalten" of the view. */
+		columnFit?: ColumnFit;
 		/** "Pausieren" or "Fortsetzen" of a row; the view runs it and reports a refusal as a flag. */
 		ontoggle: (rule: RecurrenceRule) => void;
 	} = $props();
 
 	const CAPTION = 'Wiederholungen · aktive zuerst, dann nach nächstem Ticket';
+	/** Titles from this length get a tooltip with the whole text (only they can be cut off). */
+	const LONG_TITLE = 60;
+
+	const shown = $derived(columnFit.shown);
+	let frame = $state<HTMLElement>();
+
+	$effect(() => {
+		const element = frame;
+		if (!element) return;
+		return columnFit.observe(element);
+	});
 
 	function rhythmOf(rule: RecurrenceRule): string {
 		return recurrenceText(ruleParams(rule)) || 'Kein Rhythmus';
 	}
 </script>
 
-<div class="frame">
+<div class="frame" bind:this={frame}>
 	<table>
-		<caption>{CAPTION}<span class="caption-more">{MORE_COLUMNS_HINT}</span></caption>
+		<caption
+			>{CAPTION}{#if columnFit.fit.autoHidden.length > 0}<span class="caption-more"
+					>{MORE_COLUMNS_HINT}</span
+				>{/if}</caption
+		>
+		<colgroup>
+			{#each columnFit.shownColumns as column (column.id)}
+				<col
+					data-column={column.id}
+					style:width={column.flexible ? undefined : `${columnFit.widthOf(column.id)}px`}
+				/>
+			{/each}
+		</colgroup>
 		<thead>
 			<tr>
-				<th scope="col" class="title-col">Titel</th>
-				<th scope="col" data-col="rhythm">Rhythmus</th>
-				<th scope="col" data-col="next">Nächstes Ticket</th>
-				<th scope="col" data-col="open">Offenes Ticket</th>
-				<th scope="col" data-col="project">Projekt</th>
-				<th scope="col">Zustand</th>
-				<th scope="col"><span class="visually-hidden">Aktionen</span></th>
+				{#each columnFit.shownColumns as column (column.id)}
+					<ResizableHeader {column} fit={columnFit}>
+						{#if column.id === 'actions'}
+							<span class="visually-hidden">{column.label}</span>
+						{:else}
+							{column.label}
+						{/if}
+					</ResizableHeader>
+				{/each}
 			</tr>
 		</thead>
 		<tbody>
@@ -91,40 +124,56 @@
 					class:paused={!rule.active}
 					data-rule-row={rule.id}
 				>
-					<th class="title" scope="row">
-						<a
-							class="title-link"
-							href={hrefOf(rule)}
-							data-rule-id={rule.id}
-							aria-current={rule.id === activeId ? 'page' : undefined}>{rule.title}</a
-						>
+					<th class="title" scope="row" data-col="title">
+						<!-- At most two lines, cut off only visually (ADR-0030 section 6). -->
+						<div class="title-clamp">
+							<a
+								class="title-link"
+								href={hrefOf(rule)}
+								data-rule-id={rule.id}
+								title={rule.title.length >= LONG_TITLE ? rule.title : undefined}
+								aria-current={rule.id === activeId ? 'page' : undefined}>{rule.title}</a
+							>
+						</div>
 					</th>
-					<td class="text" data-col="rhythm">{rhythmOf(rule)}</td>
-					<td class="date" data-col="next">{nextTicketDate(rule, today)}</td>
-					<td class="key" data-col="open">
-						{#if open === undefined}
-							<span aria-hidden="true">…</span><span class="visually-hidden">wird geladen</span>
-						{:else if open === null}
-							<span aria-hidden="true">–</span><span class="visually-hidden">keins</span>
-						{:else}
-							<a class="key-link" href={ticketHrefOf(open.id)} title={open.title}>{open.key}</a>
-						{/if}
-					</td>
-					<td class="text" data-col="project">
-						{#if project === null}
-							<span aria-hidden="true">–</span><span class="visually-hidden">kein Projekt</span>
-						{:else}
-							{project.name} <span class="code">({project.code})</span>
-						{/if}
-					</td>
-					<td class="state">
+					{#if shown.has('rhythm')}
+						<td class="text" data-col="rhythm" title={rhythmOf(rule)}>{rhythmOf(rule)}</td>
+					{/if}
+					{#if shown.has('next')}
+						<td class="date" data-col="next">{nextTicketDate(rule, today)}</td>
+					{/if}
+					{#if shown.has('open')}
+						<td class="key" data-col="open">
+							{#if open === undefined}
+								<span aria-hidden="true">…</span><span class="visually-hidden">wird geladen</span>
+							{:else if open === null}
+								<span aria-hidden="true">–</span><span class="visually-hidden">keins</span>
+							{:else}
+								<a class="key-link" href={ticketHrefOf(open.id)} title={open.title}>{open.key}</a>
+							{/if}
+						</td>
+					{/if}
+					{#if shown.has('project')}
+						<td
+							class="text"
+							data-col="project"
+							title={project === null ? undefined : `${project.name} (${project.code})`}
+						>
+							{#if project === null}
+								<span aria-hidden="true">–</span><span class="visually-hidden">kein Projekt</span>
+							{:else}
+								{project.name} <span class="code">({project.code})</span>
+							{/if}
+						</td>
+					{/if}
+					<td class="state" data-col="state">
 						<Lozenge
 							label={ruleStateLabel(rule)}
 							icon={rule.active ? 'refresh' : 'pause'}
 							tone={rule.active ? 'brand' : 'muted'}
 						/>
 					</td>
-					<td class="actions">
+					<td class="actions" data-col="actions">
 						<button
 							class="button-icon"
 							type="button"
@@ -151,77 +200,42 @@
 </div>
 
 <style>
-	/* Container of the column rules; the table takes its width and never more. */
+	/* The measured frame of fitColumns (ADR-0030); the table takes its width and never more. */
 	.frame {
-		container-type: inline-size;
 		background: var(--color-surface);
 		border: 1px solid var(--color-line);
 		border-radius: var(--radius-surface);
 	}
 
+	/* Fixed layout: the widths come from the colgroup, the title takes the rest. */
 	table {
 		width: 100%;
-		font-size: 0.875rem;
+		table-layout: fixed;
+		font-size: var(--font-size-body);
 		border-collapse: collapse;
 	}
 
 	.caption-more {
-		display: none;
 		font-weight: 400;
-	}
-
-	/* Columns that give way, in this order: Projekt, Offenes Ticket, Nächstes Ticket, Rhythmus. */
-	@container (max-width: 52rem) {
-		.caption-more {
-			display: inline;
-		}
-	}
-
-	@container (max-width: 52rem) {
-		.frame :global([data-col='project']) {
-			display: none;
-		}
-	}
-
-	@container (max-width: 44rem) {
-		.frame :global([data-col='open']) {
-			display: none;
-		}
-	}
-
-	@container (max-width: 36rem) {
-		.frame :global([data-col='next']) {
-			display: none;
-		}
-	}
-
-	@container (max-width: 28rem) {
-		.frame :global([data-col='rhythm']) {
-			display: none;
-		}
 	}
 
 	caption {
 		padding: 0.5rem 0.75rem;
-		font-size: 0.8125rem;
+		font-size: var(--font-size-control);
 		font-weight: 600;
 		text-align: left;
 		color: var(--color-text-muted);
 		border-bottom: 1px solid var(--color-line);
 	}
 
-	thead th {
+	thead :global(th) {
 		padding: 0.375rem 0.75rem;
-		font-size: 0.75rem;
+		font-size: var(--font-size-small);
 		font-weight: 600;
 		text-align: left;
 		white-space: nowrap;
 		color: var(--color-text-muted);
 		border-bottom: 1px solid var(--color-line);
-	}
-
-	.title-col {
-		width: 40%;
 	}
 
 	.row {
@@ -241,15 +255,27 @@
 		box-shadow: inset 3px 0 0 var(--color-brand);
 	}
 
+	/* Fixed widths: what does not fit is cut off inside its cell, never beside it. */
 	td,
 	.title {
 		padding: 0.375rem 0.75rem;
+		overflow: hidden;
 		text-align: left;
+		text-overflow: ellipsis;
 		vertical-align: middle;
 	}
 
 	.title {
 		font-weight: 400;
+	}
+
+	/* Two lines at most (ADR-0030 section 6); the clamp is visual only. */
+	.title-clamp {
+		display: -webkit-box;
+		overflow: hidden;
+		-webkit-box-orient: vertical;
+		-webkit-line-clamp: 2;
+		line-clamp: 2;
 	}
 
 	.title-link {
@@ -269,13 +295,14 @@
 		color: var(--color-text-muted);
 	}
 
+	/* One line with an ellipsis; the whole text is the title of the cell. */
 	.text {
-		font-size: 0.8125rem;
-		overflow-wrap: anywhere;
+		font-size: var(--font-size-control);
+		white-space: nowrap;
 	}
 
 	.date {
-		font-size: 0.8125rem;
+		font-size: var(--font-size-control);
 		white-space: nowrap;
 		font-variant-numeric: tabular-nums;
 	}
@@ -287,7 +314,7 @@
 	.key-link,
 	.code {
 		font-family: var(--font-mono);
-		font-size: 0.8125rem;
+		font-size: var(--font-size-control);
 		color: var(--color-brand-text);
 	}
 
@@ -304,7 +331,6 @@
 	}
 
 	.actions {
-		width: 1%;
 		text-align: right;
 	}
 

@@ -17,6 +17,7 @@
 		type ProjectViewQuery
 	} from '$lib/domain/project-view';
 	import type { CatalogStore } from '$lib/stores/catalog.svelte';
+	import { getColumnPrefs } from '$lib/stores/column-prefs.svelte';
 	import type { ProjectStatsStore } from '$lib/stores/project-stats.svelte';
 	import type { TicketListStore } from '$lib/stores/ticket-list.svelte';
 	import {
@@ -26,11 +27,13 @@
 		withProjectViewQuery,
 		withShowArchived
 	} from '$lib/ticket-links';
+	import ColumnsPopover from './ColumnsPopover.svelte';
 	import ErrorIcon from './ErrorIcon.svelte';
 	import EmptyState from './guidance/EmptyState.svelte';
 	import ProjectTable from './ProjectTable.svelte';
 	import ProjectTiles from './ProjectTiles.svelte';
 	import SectionBar from './SectionBar.svelte';
+	import { ColumnFit } from './table/column-fit.svelte';
 	import ViewSwitch from './ViewSwitch.svelte';
 
 	// Project view (E3 plan, T-3, T-11, T-12 and package 14; ADR-0010 section 1; ADR-0025 section
@@ -100,6 +103,9 @@
 
 	let root = $state<HTMLElement>();
 	let heading = $state<HTMLElement>();
+
+	// Columns of the list (ADR-0030), shared by the table and the menu "Spalten".
+	const columnFit = new ColumnFit(getColumnPrefs('projects'));
 
 	// Counts the done tickets of the available projects and of the one in the panel (again when the
 	// set changes); a search does not change the set, so clearing it shows the numbers at once.
@@ -309,6 +315,13 @@
 					</svg>
 				</button>
 			</div>
+			{#if layout === 'liste'}
+				<ColumnsPopover
+					store={columnFit.store}
+					autoHidden={columnFit.fit.autoHidden}
+					always="Code und Name sind immer sichtbar."
+				/>
+			{/if}
 			{@render newProjectLink(NEW_PROJECT_LINK_ID)}
 		{/snippet}
 	</SectionBar>
@@ -335,6 +348,7 @@
 					{activeId}
 					sort={query.sort}
 					searching={query.search !== null}
+					{columnFit}
 					hrefOf={(project) => projectHref(project.id, page.url)}
 					onsort={(key) => void sortBy(key)}
 				/>

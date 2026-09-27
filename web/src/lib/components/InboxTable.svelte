@@ -3,6 +3,7 @@
 	import { goto } from '$app/navigation';
 	import { resolve } from '$app/paths';
 	import { page } from '$app/state';
+	import { INBOX_TABLE } from '$lib/domain/columns';
 	import { berlinDateOf, formatBerlinDateTime, formatCalendarDate } from '$lib/domain/format';
 	import {
 		CHANNEL_LABELS,
@@ -15,6 +16,7 @@
 	import { MORE_COLUMNS_HINT } from '$lib/domain/labels';
 	import { SOURCE_FAMILY_CHIPS, SOURCE_FAMILY_LABELS, type SourceFamily } from '$lib/domain/source';
 	import type { TicketSummary } from '$lib/domain/ticket';
+	import { getColumnPrefs } from '$lib/stores/column-prefs.svelte';
 	import type { FlagSink } from '$lib/stores/flags.svelte';
 	import { INBOX_UNAVAILABLE_MESSAGE, type InboxStore } from '$lib/stores/inbox.svelte';
 	import {
@@ -25,9 +27,12 @@
 		withInboxQuery
 	} from '$lib/ticket-links';
 	import ChipGroup from './ChipGroup.svelte';
+	import ColumnsPopover from './ColumnsPopover.svelte';
 	import EmptyState from './guidance/EmptyState.svelte';
 	import SectionMessage from './guidance/SectionMessage.svelte';
 	import SectionBar from './SectionBar.svelte';
+	import { ColumnFit } from './table/column-fit.svelte';
+	import ResizableHeader from './table/ResizableHeader.svelte';
 	import ViewSwitch from './ViewSwitch.svelte';
 
 	// Inbox view (E4 plan, package 3; ADR-0014 sections 3 and 4; ADR-0019 section 6): section bar
@@ -38,9 +43,11 @@
 	// "Verwerfen" removes the row at once ("Rückgängig" stands in the flag of the store) and moves
 	// the focus to the next row; a failed row action becomes an error flag (ADR-0025 section 8).
 	// The date at the sender is only shown, never taken as due date (P-5). The table never scrolls
-	// sideways (package UI-6b): in a narrow frame container queries hide columns in a fixed order,
-	// first the arrival (or handling) date, then "Quelle", then "Art", last "Quelldatum"; selection,
-	// title and the actions always stay, and the caption then names the panel.
+	// sideways (package UI-6b): fitColumns (ADR-0030, package SP-5) fits the columns into the
+	// measured frame with the widths of the user; in a narrow frame columns give way in a fixed
+	// order, first the arrival (or handling) date, then "Quelle", then "Art", last "Quelldatum";
+	// selection, title and the actions always stay, and the caption then names the panel. Grips
+	// and the menu "Spalten" change widths and visibility; the title takes at most two lines.
 	let {
 		store,
 		flags,
@@ -84,6 +91,9 @@
 		bulkHint: `${uid}-bulk-hint`
 	};
 
+	/** Titles from this length get a tooltip with the whole text (only they can be cut off). */
+	const LONG_TITLE = 60;
+
 	const STATE_CHIPS: readonly { value: InboxState; label: string }[] = [
 		{ value: 'new', label: STATE_LABELS.new },
 		{ value: 'discarded', label: STATE_LABELS.discarded },
@@ -120,6 +130,19 @@
 
 	let root = $state<HTMLElement>();
 	let heading = $state<HTMLElement>();
+
+	// Columns (ADR-0030): the selection exists only for new entries.
+	const columnFit = new ColumnFit(getColumnPrefs('inbox'), () =>
+		showsNew ? INBOX_TABLE.columns : INBOX_TABLE.columns.filter((column) => column.id !== 'select')
+	);
+	const shown = $derived(columnFit.shown);
+	let frame = $state<HTMLElement>();
+
+	$effect(() => {
+		const element = frame;
+		if (!element) return;
+		return columnFit.observe(element);
+	});
 
 	/** Failure of a row action (discard, restore, assign) as an error flag; it stays until closed. */
 	function fail(message: string | null | undefined) {
@@ -255,6 +278,11 @@
 					<span class="hint" id={ids.bulkHint}>Erst Einträge auswählen.</span>
 				{/if}
 			{/if}
+			<ColumnsPopover
+				store={columnFit.store}
+				autoHidden={columnFit.fit.autoHidden}
+				always="Auswahl, Titel und Aktionen sind immer sichtbar."
+			/>
 		{/snippet}
 	</SectionBar>
 
@@ -350,32 +378,42 @@
 	{/if}
 
 	{#if rows.length > 0}
-		<div class="frame">
+		<div class="frame" bind:this={frame}>
 			<table>
 				<caption id={ids.caption}
-					>{caption}<span class="caption-more">{MORE_COLUMNS_HINT}</span></caption
+					>{caption}{#if columnFit.fit.autoHidden.length > 0}<span class="caption-more"
+							>{MORE_COLUMNS_HINT}</span
+						>{/if}</caption
 				>
+				<colgroup>
+					{#each columnFit.shownColumns as column (column.id)}
+						<col
+							data-column={column.id}
+							style:width={column.flexible ? undefined : `${columnFit.widthOf(column.id)}px`}
+						/>
+					{/each}
+				</colgroup>
 				<thead>
 					<tr>
-						{#if showsNew}
-							<th scope="col" class="select">
-								<input
-									type="checkbox"
-									aria-label="Alle angezeigten Einträge auswählen"
-									checked={allChosen}
-									disabled={selectable.length === 0}
-									onchange={(event) => toggleAll(event.currentTarget.checked)}
-								/>
-							</th>
-						{/if}
-						<th scope="col" data-col="kind">Art</th>
-						<th scope="col" class="title-col">Titel</th>
-						<th scope="col" data-col="source">Quelle</th>
-						<th scope="col" data-col="source-date">Quelldatum</th>
-						<th scope="col" data-col="arrival"
-							>{showsNew ? 'Eingang' : STATE_LABELS[query.state]}</th
-						>
-						<th scope="col"><span class="visually-hidden">Aktionen</span></th>
+						{#each columnFit.shownColumns as column (column.id)}
+							<ResizableHeader {column} fit={columnFit}>
+								{#if column.id === 'select'}
+									<input
+										type="checkbox"
+										aria-label="Alle angezeigten Einträge auswählen"
+										checked={allChosen}
+										disabled={selectable.length === 0}
+										onchange={(event) => toggleAll(event.currentTarget.checked)}
+									/>
+								{:else if column.id === 'arrival'}
+									{showsNew ? column.label : STATE_LABELS[query.state]}
+								{:else if column.id === 'actions'}
+									<span class="visually-hidden">{column.label}</span>
+								{:else}
+									{column.label}
+								{/if}
+							</ResizableHeader>
+						{/each}
 					</tr>
 				</thead>
 				<tbody>
@@ -384,8 +422,8 @@
 						{@const sourceDate = sourceDateOf(item)}
 						{@const arrival = showsNew ? item.created : (item.handledAt ?? item.created)}
 						<tr class="row" class:active={item.id === activeId} data-item-id={item.id}>
-							{#if showsNew}
-								<td class="select">
+							{#if shown.has('select')}
+								<td class="select" data-col="select">
 									<input
 										type="checkbox"
 										aria-label={`Eintrag „${item.title}“ auswählen`}
@@ -394,31 +432,45 @@
 									/>
 								</td>
 							{/if}
-							<td class="kind" data-col="kind">{KIND_LABELS[item.kind]}</td>
-							<th class="title" scope="row">
-								<a
-									class="title-link"
-									href={inboxItemHref(item.id, page.url)}
-									aria-current={item.id === activeId ? 'page' : undefined}>{item.title}</a
-								>
+							{#if shown.has('kind')}
+								<td class="kind" data-col="kind">{KIND_LABELS[item.kind]}</td>
+							{/if}
+							<th class="title" scope="row" data-col="title">
+								<!-- At most two lines, cut off only visually (ADR-0030 section 6). -->
+								<div class="title-clamp">
+									<a
+										class="title-link"
+										href={inboxItemHref(item.id, page.url)}
+										title={item.title.length >= LONG_TITLE ? item.title : undefined}
+										aria-current={item.id === activeId ? 'page' : undefined}>{item.title}</a
+									>
+								</div>
 								{#if item.state === 'new'}
 									{@render duplicateHint(item)}
 								{/if}
 							</th>
-							<td class="source" data-col="source">{CHANNEL_LABELS[item.channel]}</td>
-							<td class="date" data-col="source-date">
-								{#if sourceDate !== null}
-									<time datetime={sourceDate.date} title={sourceDate.title}>{sourceDate.text}</time>
-								{:else}
-									<span aria-hidden="true">–</span><span class="visually-hidden">kein Datum</span>
-								{/if}
-							</td>
-							<td class="date" data-col="arrival">
-								<time datetime={berlinDateOf(arrival)} title={formatBerlinDateTime(arrival)}>
-									{formatCalendarDate(berlinDateOf(arrival))}
-								</time>
-							</td>
-							<td class="actions">
+							{#if shown.has('source')}
+								<td class="source" data-col="source">{CHANNEL_LABELS[item.channel]}</td>
+							{/if}
+							{#if shown.has('source-date')}
+								<td class="date" data-col="source-date">
+									{#if sourceDate !== null}
+										<time datetime={sourceDate.date} title={sourceDate.title}
+											>{sourceDate.text}</time
+										>
+									{:else}
+										<span aria-hidden="true">–</span><span class="visually-hidden">kein Datum</span>
+									{/if}
+								</td>
+							{/if}
+							{#if shown.has('arrival')}
+								<td class="date" data-col="arrival">
+									<time datetime={berlinDateOf(arrival)} title={formatBerlinDateTime(arrival)}>
+										{formatCalendarDate(berlinDateOf(arrival))}
+									</time>
+								</td>
+							{/if}
+							<td class="actions" data-col="actions">
 								<span class="action-group">
 									{#if item.state === 'new'}
 										<a class="action primary" href={convertHref(item.id)}
@@ -481,7 +533,7 @@
 
 	.capture {
 		padding: 0.25rem 0.75rem;
-		font-size: 0.8125rem;
+		font-size: var(--font-size-control);
 		color: var(--color-brand-text);
 		text-decoration: none;
 		cursor: pointer;
@@ -492,13 +544,13 @@
 
 	.clipboard-hint {
 		margin-bottom: 0.75rem;
-		font-size: 0.875rem;
+		font-size: var(--font-size-body);
 		color: var(--color-text-muted);
 	}
 
 	.bulk {
 		padding: 0.25rem 0.75rem;
-		font-size: 0.8125rem;
+		font-size: var(--font-size-control);
 		color: var(--color-brand-text);
 		background: var(--color-surface);
 		border: 1px solid var(--color-brand);
@@ -513,81 +565,46 @@
 	}
 
 	.hint {
-		font-size: 0.75rem;
+		font-size: var(--font-size-small);
 		color: var(--color-text-muted);
 	}
 
-	/* Container of the column rules; the table takes its width and never more. */
+	/* The measured frame of fitColumns (ADR-0030); the table takes its width and never more. */
 	.frame {
-		container-type: inline-size;
 		background: var(--color-surface);
 		border: 1px solid var(--color-line);
 		border-radius: var(--radius-surface);
 	}
 
+	/* Fixed layout: the widths come from the colgroup, the title takes the rest. */
 	table {
 		width: 100%;
-		font-size: 0.875rem;
+		table-layout: fixed;
+		font-size: var(--font-size-body);
 		border-collapse: collapse;
 	}
 
 	.caption-more {
-		display: none;
 		font-weight: 400;
-	}
-
-	/* Columns that give way, in this order: arrival, Quelle, Art, Quelldatum. */
-	@container (max-width: 52rem) {
-		.caption-more {
-			display: inline;
-		}
-	}
-
-	@container (max-width: 52rem) {
-		.frame :global([data-col='arrival']) {
-			display: none;
-		}
-	}
-
-	@container (max-width: 46rem) {
-		.frame :global([data-col='source']) {
-			display: none;
-		}
-	}
-
-	@container (max-width: 40rem) {
-		.frame :global([data-col='kind']) {
-			display: none;
-		}
-	}
-
-	@container (max-width: 34rem) {
-		.frame :global([data-col='source-date']) {
-			display: none;
-		}
 	}
 
 	caption {
 		padding: 0.5rem 0.75rem;
-		font-size: 0.8125rem;
+		font-size: var(--font-size-control);
 		font-weight: 600;
 		text-align: left;
 		color: var(--color-text-muted);
 		border-bottom: 1px solid var(--color-line);
 	}
 
-	thead th {
+	thead :global(th) {
 		padding: 0.375rem 0.75rem;
-		font-size: 0.75rem;
+		font-size: var(--font-size-small);
 		font-weight: 600;
 		text-align: left;
 		white-space: nowrap;
 		color: var(--color-text-muted);
 		border-bottom: 1px solid var(--color-line);
-	}
-
-	.title-col {
-		width: 100%;
 	}
 
 	.row {
@@ -603,15 +620,27 @@
 		box-shadow: inset 3px 0 0 var(--color-brand);
 	}
 
+	/* Fixed widths: what does not fit is cut off inside its cell, never beside it. */
 	td,
 	.title {
 		padding: 0.375rem 0.75rem;
+		overflow: hidden;
 		text-align: left;
+		text-overflow: ellipsis;
 		vertical-align: top;
 	}
 
 	.title {
 		font-weight: 400;
+	}
+
+	/* Two lines at most (ADR-0030 section 6); the clamp is visual only. */
+	.title-clamp {
+		display: -webkit-box;
+		overflow: hidden;
+		-webkit-box-orient: vertical;
+		-webkit-line-clamp: 2;
+		line-clamp: 2;
 	}
 
 	.title-link {
@@ -630,7 +659,7 @@
 		gap: 0.25rem 0.5rem;
 		align-items: center;
 		margin-top: 0.25rem;
-		font-size: 0.75rem;
+		font-size: var(--font-size-small);
 		color: var(--color-text-muted);
 	}
 
@@ -641,17 +670,13 @@
 	.kind,
 	.source,
 	.date {
-		font-size: 0.8125rem;
+		font-size: var(--font-size-control);
 		color: var(--color-text-muted);
 		white-space: nowrap;
 	}
 
 	.date {
 		font-variant-numeric: tabular-nums;
-	}
-
-	.select {
-		width: 1.5rem;
 	}
 
 	.action-group {
@@ -663,7 +688,7 @@
 
 	.action {
 		padding: 0.125rem 0.5rem;
-		font-size: 0.8125rem;
+		font-size: var(--font-size-control);
 		color: var(--color-text);
 		text-decoration: none;
 		background: none;
@@ -685,7 +710,7 @@
 	.more {
 		margin-top: 0.75rem;
 		padding: 0.375rem 0.75rem;
-		font-size: 0.875rem;
+		font-size: var(--font-size-body);
 		background: var(--color-surface);
 		border: 1px solid var(--color-line);
 		border-radius: var(--radius-control);
@@ -718,7 +743,7 @@
 
 	.text-button {
 		padding: 0.125rem 0.5rem;
-		font-size: 0.8125rem;
+		font-size: var(--font-size-control);
 		background: none;
 		border: 1px solid currentColor;
 		border-radius: var(--radius-control);

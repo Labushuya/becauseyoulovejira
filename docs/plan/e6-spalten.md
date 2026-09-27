@@ -1,6 +1,6 @@
 # E6-Plan, Teil Spalten: Breiten ziehen, ein- und ausblenden, kompakte Zeilen
 
-- **Stand:** in Arbeit (2026-09-27); SP-1 bis SP-3 gemergt, SP-4 in Arbeit.
+- **Stand:** in Arbeit (2026-09-27); SP-1 bis SP-4 gemergt, SP-5 in Arbeit.
 - **Grundlage:**
   - [ADR-0030](../adr/0030-spalten-breiten-und-kompakte-zeilen.md) (berechnete Anpassung, Breiten und Schwellen, Griff, Menü „Spalten“, Speichern, kompakte Zeilen)
   - [ADR-0025](../adr/0025-ui-konsistenz-overlay-system.md) §5 und §11, [ADR-0010](../adr/0010-layout-nach-task-board.md) §1, [ADR-0019](../adr/0019-kanal-filter-und-gruppierung.md) §4, [ADR-0029](../adr/0029-glas-materialien.md)
@@ -51,6 +51,11 @@
 | 2026-09-27 | SP-4 | **„+N“ und Screenreader:** Nur wenn nicht alle Chips passen, sind die Chips `aria-hidden` und die ganze Liste steht als verborgener Text in der Zelle; passen alle, bleiben die Chips selbst lesbar (kein doppelter Text). „+N“ ist ein `span` mit `title`, ohne Tab-Stopp. Ein einzelner zu langer Chip schrumpft per Ellipse (`flex-shrink` nur am ersten Chip). |
 | 2026-09-27 | SP-4 | **Doppelklick auf „Tags“** rechnet jetzt mit denselben Maßen über die Tags aller angezeigten Tickets (Daten statt DOM, weil die Zeilen nur einen Teil der Chips rendern). |
 | 2026-09-27 | SP-4 | **Titel:** Eine Hülle `.title-clamp` um Symbol der Quelle, Link und Symbol „wiederkehrend“ mit `-webkit-line-clamp: 2` und `line-clamp: 2`. `title` am Link erst ab 60 Zeichen, damit kurze Titel keinen doppelten Tooltip bekommen. |
+| 2026-09-27 | SP-5 | **Ein Unterbau `ColumnFit`** (`components/table/column-fit.svelte.ts`): Vorlieben, gemessene Rahmenbreite, Breite beim Ziehen und daraus `fitColumns`, `shown`, `budget`, dazu `resize`/`commit`/`cancel`/`autofit`. Alle vier Tabellen nutzen ihn; `TicketTable` zog aus SP-2 darauf um. `ResizableHeader` bekommt den `ColumnFit` statt einzelner Rückrufe; der Doppelklick misst ohne eigenen Rückruf die Zellen der Spalte (nur „Tags“ rechnet mit den Chips). |
+| 2026-09-27 | SP-5 | **Wo der Zustand lebt:** `InboxTable` hat die Abschnittsleiste selbst und hält ihren `ColumnFit`. `ProjectTable` und `RecurrenceTable` stehen unter der Leiste ihrer Ansicht; `ProjectsView` bzw. `RecurrencesView` legen den `ColumnFit` an und reichen ihn an Tabelle und Menü. Ohne Prop (Komponententests) legt die Tabelle einen eigenen an. Das Menü steht bei Projekten nur in der Liste (nicht bei Kacheln), bei Wiederholungen nur, wenn es Regeln gibt. |
+| 2026-09-27 | SP-5 | **Eingang:** Die Auswahl ist eine feste Pflichtspalte nur bei „Neu“; `ColumnFit` bekommt die Spalten dafür als Funktion. Unter dem auf 2 Zeilen begrenzten Titel bleibt der Hinweis „Mögliches Duplikat“ stehen; er ist eine Aktion und wird nicht abgeschnitten. |
+| 2026-09-27 | SP-5 | **Wiederholungen kompakt:** Rhythmus und Projekt stehen einzeilig mit Ellipse und der ganzen Angabe als `title` (vorher umbrochen). Die Aktion ist 3,5rem breit (vorher `width: 1%`). |
+| 2026-09-27 | SP-5 | `InboxTable`, `ProjectTable` und `RecurrenceTable` ziehen auf die Schriftgrößen-Tokens (23 Werte, `no-own-font-sizes.test.ts` jetzt 252). `table-columns.test.ts` prüft alle vier Tabellen auf denselben Unterbau und keine Container-Regeln mehr. Hilfe: neue Frage „Wie ändere ich Spalten und ihre Breite?“. |
 
 ## 4. Status
 
@@ -59,8 +64,8 @@
 | SP-1 | gemergt (#98) |
 | SP-2 | gemergt (#99) |
 | SP-3 | gemergt (#100) |
-| SP-4 | in Arbeit |
-| SP-5 | offen |
+| SP-4 | gemergt (#101) |
+| SP-5 | in Arbeit |
 | Tags | offen |
 | Switch | offen |
 

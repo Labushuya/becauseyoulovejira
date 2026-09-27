@@ -13,7 +13,7 @@ const SRC_DIR = resolve(import.meta.dirname, '..');
 const TOKENS_CSS = join('lib', 'styles', 'tokens.css');
 
 /** Numbers left from before G-6 in all listed files together; lower it when one goes. */
-const LEGACY_COUNT = 275;
+const LEGACY_COUNT = 252;
 
 /** Files that still carry font sizes as numbers (as of G-6). */
 const LEGACY_FILES = [
@@ -40,7 +40,6 @@ const LEGACY_FILES = [
 	'lib/components/HistoryList.svelte',
 	'lib/components/ImportKeywordsSection.svelte',
 	'lib/components/InboxPanel.svelte',
-	'lib/components/InboxTable.svelte',
 	'lib/components/KeywordEditor.svelte',
 	'lib/components/KpiTiles.svelte',
 	'lib/components/MailboxPicker.svelte',
@@ -49,14 +48,12 @@ const LEGACY_FILES = [
 	'lib/components/NewTicketForm.svelte',
 	'lib/components/ProjectPanel.svelte',
 	'lib/components/ProjectSelect.svelte',
-	'lib/components/ProjectTable.svelte',
 	'lib/components/ProjectTiles.svelte',
 	'lib/components/ProjectsView.svelte',
 	'lib/components/QuickCapture.svelte',
 	'lib/components/RecurrenceForm.svelte',
 	'lib/components/RecurrencePanel.svelte',
 	'lib/components/RecurrenceSummary.svelte',
-	'lib/components/RecurrenceTable.svelte',
 	'lib/components/RecurrencesView.svelte',
 	'lib/components/SessionNotice.svelte',
 	'lib/components/StatusPill.svelte',
