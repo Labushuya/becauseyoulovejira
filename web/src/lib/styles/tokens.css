@@ -101,12 +101,13 @@
 	/*
 	 * Glass (ADR-0029 sections 2 and 5): the blur of the materials, the same in every mode; no
 	 * brightness(), and saturate() stays a fixed matrix the contrast test computes. Radii of the
-	 * overlays on glass and of a highlighted menu row.
+	 * overlays on glass, of a highlighted menu row and of round ends (switch, since G-3).
 	 */
 	--glass-filter-regular: blur(24px) saturate(140%);
 	--glass-filter-thick: blur(30px) saturate(140%);
 	--radius-overlay: 0.75rem;
 	--radius-item: 0.25rem;
+	--radius-pill: 999px;
 }
 
 /* Dark mode via media query */
@@ -510,8 +511,19 @@
  * One switch point "opaque" (ADR-0029 section 6): the materials become the surface, the blur and
  * the background gradient of base.css (body::before reads --backdrop-image) go away. The same
  * declarations for every trigger; the components notice nothing. !important, because the dark mode
- * blocks above carry a higher specificity than :root. The system setting always wins.
+ * blocks above carry a higher specificity than :root. The system setting always wins: the switch
+ * can only turn the glass off, never force it on.
  */
+
+/* The switch "Transparenz" under settings, "Darstellung" (ADR-0029 section 7, set by app.html). */
+:root[data-transparency='off'] {
+	--material-regular: var(--color-surface) !important;
+	--material-thick: var(--color-surface) !important;
+	--glass-filter-regular: none !important;
+	--glass-filter-thick: none !important;
+	--backdrop-image: none !important;
+}
+
 @media (prefers-reduced-transparency: reduce) {
 	:root {
 		--material-regular: var(--color-surface) !important;

@@ -5,6 +5,7 @@
 		ACCENT_THEMES,
 		getAccentStore
 	} from '$lib/accent.svelte';
+	import SectionMessage from '$lib/components/guidance/SectionMessage.svelte';
 	import ThemeIcon from '$lib/components/ThemeIcon.svelte';
 	import {
 		getThemeStore,
@@ -12,14 +13,18 @@
 		THEME_PREFERENCES,
 		type ThemePreference
 	} from '$lib/theme.svelte';
+	import { getTransparencyStore } from '$lib/transparency.svelte';
 
-	// Settings "Darstellung" (ADR-0026 section 1, plan EH-8; ADR-0027 section 6): the mode as a group
-	// of three radios and the accent color as a group of five radios, both shown as tiles, on the same
-	// stores, lists and labels as the menu in the header (ADR-0025 section 10). Both show the same
-	// choice in both directions, because they share the stores; the stores also follow other tabs.
-	// A choice applies at once and stays on this device.
+	// Settings "Darstellung" (ADR-0026 section 1, plan EH-8; ADR-0027 section 6; ADR-0029 section 7):
+	// the mode as a group of three radios and the accent color as a group of four radios, both shown
+	// as tiles, on the same stores, lists and labels as the menu in the header (ADR-0025 section 10),
+	// and the switch "Glas-Effekt" of the group "Transparenz". Menu and page show the same choice in
+	// both directions, because they share the stores; the stores also follow other tabs. A choice
+	// applies at once and stays on this device. When the system reduces transparency, the glass stays
+	// off whatever the switch says, and the page tells so.
 	const store = getThemeStore();
 	const accentStore = getAccentStore();
+	const transparencyStore = getTransparencyStore();
 	const uid = $props.id();
 
 	const DESCRIPTIONS: Record<ThemePreference, string> = {
@@ -30,6 +35,7 @@
 
 	$effect(() => store.connect());
 	$effect(() => accentStore.connect());
+	$effect(() => transparencyStore.connect());
 </script>
 
 <svelte:head>
@@ -93,6 +99,31 @@
 		Die Farbe gilt für Knöpfe, Links, Auswahl und Fokus, hell wie dunkel. Fehler bleiben rot und
 		tragen immer ein Symbol und einen Text.
 	</p>
+</fieldset>
+
+<fieldset class="themes">
+	<legend>Transparenz</legend>
+	<label class="setting">
+		<span class="setting-name">Glas-Effekt</span>
+		<input
+			type="checkbox"
+			role="switch"
+			checked={transparencyStore.transparency === 'on'}
+			aria-describedby={`${uid}-transparency-note`}
+			onchange={(event) => transparencyStore.choose(event.currentTarget.checked ? 'on' : 'off')}
+		/>
+	</label>
+	<p class="note" id={`${uid}-transparency-note`}>
+		Halbtransparente, weichgezeichnete Flächen in Kopfzeile und Menüs. Folgt immer der
+		Systemeinstellung „Transparenz reduzieren“. Ruckelt die Oberfläche, etwa über Remote-Desktop,
+		schalte den Glas-Effekt aus.
+	</p>
+	{#if transparencyStore.systemReduces}
+		<SectionMessage tone="info" compact>
+			Die Systemeinstellung reduziert die Transparenz bereits. Alles bleibt undurchsichtig, egal wie
+			der Schalter steht.
+		</SectionMessage>
+	{/if}
 </fieldset>
 
 <style>
@@ -191,6 +222,25 @@
 
 	.tile:has(input:checked) .preview {
 		color: var(--color-brand-soft-text);
+	}
+
+	/* One setting as a row: name left, switch right, like the macOS settings. */
+	.setting {
+		display: flex;
+		gap: 1rem;
+		align-items: center;
+		justify-content: space-between;
+		max-width: 25rem;
+		padding: 0.75rem 1rem;
+		background: var(--color-surface);
+		border: 1px solid var(--color-line);
+		border-radius: var(--radius-surface);
+		cursor: pointer;
+	}
+
+	.setting-name {
+		font-size: 0.9375rem;
+		font-weight: 500;
 	}
 
 	.tile:has(input:focus-visible) {

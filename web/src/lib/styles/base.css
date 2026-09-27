@@ -195,6 +195,43 @@ input[type='checkbox'][aria-busy='true'] {
 	cursor: progress;
 }
 
+/*
+ * Switch in the macOS style (ADR-0029 section 9, since G-3): a checkbox with role="switch", styled
+ * by its role, not by a class (local classes named "switch" sit on labels). Off: the track of an
+ * empty checkbox (border --color-text-muted, 3 : 1) with the knob in the muted text color on the
+ * left; on: the accent with the knob in the color on it on the right. The position of the knob
+ * tells the state without color. The knob slides with --motion-fast, not with reduced motion.
+ */
+input[type='checkbox'][role='switch'] {
+	place-content: center start;
+	width: 2rem;
+	height: 1.125rem;
+	padding: 0 0.125rem;
+	border-radius: var(--radius-pill);
+}
+
+input[type='checkbox'][role='switch']::before {
+	width: 0.75rem;
+	height: 0.75rem;
+	visibility: visible;
+	background: var(--color-text-muted);
+	border-radius: var(--radius-pill);
+	clip-path: none;
+	transition: translate var(--motion-fast) var(--motion-ease);
+}
+
+input[type='checkbox'][role='switch']:checked::before {
+	/* Inner width 2rem - 2 x 1.5px border - 2 x 0.125rem padding, minus the knob. */
+	translate: calc(1rem - 3px) 0;
+	background: var(--color-on-brand);
+}
+
+@media (prefers-reduced-motion: reduce) {
+	input[type='checkbox'][role='switch']::before {
+		transition: none;
+	}
+}
+
 @media (forced-colors: active) {
 	input[type='checkbox'],
 	input[type='radio'] {
@@ -206,6 +243,13 @@ input[type='checkbox'][aria-busy='true'] {
 	input[type='checkbox']::before,
 	input[type='radio']::before {
 		content: none;
+	}
+
+	/* The native checkbox of the system, in its own size. */
+	input[type='checkbox'][role='switch'] {
+		width: 1rem;
+		height: 1rem;
+		padding: 0;
 	}
 }
 

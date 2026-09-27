@@ -1,6 +1,6 @@
 # E6-Plan, Teil Glas: Materialien im macOS-Stil, verheiratet mit den Akzent-Themes
 
-- **Stand:** in Umsetzung (2026-09-27). Reihenfolge G-1, G-3, G-2, G-4, G-5, G-6, je ein PR.
+- **Stand:** in Umsetzung (2026-09-27; G-1 gemergt). Reihenfolge G-1, G-3, G-2, G-4, G-5, G-6, je ein PR.
 - **Grundlage:**
   - [ADR-0029](../adr/0029-glas-materialien.md) (Ebenen, Tokens, Kontrast, Umschaltpunkt „undurchsichtig“, Schalter, Performance)
   - [ADR-0010](../adr/0010-layout-nach-task-board.md) §3 und §4, [ADR-0025](../adr/0025-ui-konsistenz-overlay-system.md) §2, [ADR-0027](../adr/0027-akzent-themes.md) §1 (je mit Nachtrag)
@@ -30,7 +30,7 @@ Die Themes sind Petrol, Rubin, Smaragd und Kupfer (Nachtrag zu ADR-0027 vom 2026
 | Paket | Inhalt | Manifest |
 |---|---|---|
 | G-1 | Fundament: ADR-0029 mit Nachträgen, CLAUDE.md §8, Tokens (Materialien, Filter, Trennlinie, Lichtkante, Popover-Schatten, `--radius-overlay`, `--radius-item`), Umschaltpunkt für Systemeinstellung, Kontrast, Forced Colors und fehlendes `backdrop-filter`, Verlauf auf `body::before`, Kopfzeile (regular) und Popover (thick) aus Glas, einheitliche Menüzeilen, Fokusring in `--color-brand-text` | BYL-E6-100 bis BYL-E6-102 |
-| G-3 | Schalter „Transparenz“ (`byl-transparency`, Boot-Skript, Store, `.switch`, Block `data-transparency='off'`) | ab BYL-E6-103 |
+| G-3 | Schalter „Transparenz“ (`byl-transparency`, Boot-Skript, Store, Switch in `base.css`, Block `data-transparency='off'`) | BYL-E6-103 bis BYL-E6-105 |
 | G-2 | Modals, Bestätigung, Seitenpanel, Flags, TagPicker-Liste, Anmeldekarte, Tour; Vollansicht opak | folgt |
 | G-4 | Knöpfe, `.segmented`, `.search-field`, Radien auf Tokens | folgt |
 | G-5 | Switch nach HIG, baut auf den Checkboxen und Radios aus `base.css` auf (#86) | folgt |
@@ -46,13 +46,17 @@ Die Themes sind Petrol, Rubin, Smaragd und Kupfer (Nachtrag zu ADR-0027 vom 2026
 | 2026-09-27 | G-1 | Die Fallback-Blöcke tragen `!important`, weil die Modus-Blöcke (`:root:not([data-theme='light'])`, `:root[data-theme='dark']`) spezifischer sind als `:root` in einer Media Query. `tokens.test.ts` prüft jeden Block auf Vollständigkeit. |
 | 2026-09-27 | G-1 | Tokens entstehen mit dem Paket, das sie zuerst nutzt: `--fill-control*`, `--shadow-control`, `--shadow-modal`, `--radius-pill`, Höhen und Schriftgrößen folgen mit G-2, G-4 und G-6; `--material-thin` entfällt (keine Stelle). |
 | 2026-09-27 | G-1 | Der Verlauf liest `var(--backdrop-image, …)`: Die Fallbacks setzen `--backdrop-image: none`, dann bleibt nur `--color-bg`. `body` selbst malt keinen Hintergrund mehr. |
+| 2026-09-27 | G-3 | **Switch über die Rolle statt über eine Klasse:** `base.css` gestaltet `input[type='checkbox'][role='switch']`. Eine globale Klasse `.switch` (so die Skizze) träfe die lokalen `label.switch` in `ChannelEditModal` und `ProjectsView`. Der Switch baut auf den Checkbox-Regeln von #86 auf (Rand, Fokus, Hover, `:disabled`, `forced-colors`) und ändert nur Maße, Radius und den Knopf. Aus: Knopf links in `--color-text-muted` (Form und Farbe mit 4,5 : 1 zur Fläche); an: rechts in `--color-on-brand` auf `--color-brand`. Die Spur „aus“ bleibt `--color-surface` mit Rand; `--fill-control` kommt erst mit G-4. `--radius-pill` entsteht hier, weil der Switch es zuerst nutzt. |
+| 2026-09-27 | G-3 | **Name und Ort:** Gruppe „Transparenz“ (`fieldset`/`legend` wie „Farbschema“ und „Farbe“) mit dem Switch „Glas-Effekt“ als Zeile (Name links, Switch rechts). Die Beschreibung nennt nur Kopfzeile und Menüs; mit G-2 kommen die Dialoge dazu. |
+| 2026-09-27 | G-3 | **Systemeinstellung:** `tokens.css` folgt `prefers-reduced-transparency` selbst. Der Store meldet die Media Query nur (`systemReduces`, auch bei späteren Wechseln), damit die Seite den Hinweis zeigt; der Schalter bleibt bedienbar, die Wahl gilt wieder, sobald das System die Transparenz erlaubt. Ohne `matchMedia` gilt „nicht reduziert“. |
+| 2026-09-27 | G-3 | **Andere Tabs:** `ThemeMenu` verbindet den Store (es steht auf jeder Seite der App), die Seite „Darstellung“ zusätzlich; so wirkt der Schalter sofort in allen offenen Tabs, nicht nur auf der Einstellungsseite. |
 
 ## 5. Status
 
 | Paket | Stand |
 |---|---|
-| G-1 | in Arbeit |
-| G-3 | offen |
+| G-1 | gemergt (#88) |
+| G-3 | in Arbeit |
 | G-2 | offen |
 | G-4 | offen |
 | G-5 | offen |

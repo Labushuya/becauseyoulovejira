@@ -46,6 +46,16 @@
 				} catch (error) {
 					// Storage blocked: Petrol applies.
 				}
+				// Transparency (ADR-0029 section 7; key and value as in src/lib/transparency.svelte.ts):
+				// only a stored "off" sets data-transparency, anything else keeps the glass on. The
+				// system setting "reduce transparency" wins in tokens.css on its own.
+				try {
+					if (localStorage.getItem('byl-transparency') === 'off') {
+						document.documentElement.setAttribute('data-transparency', 'off');
+					}
+				} catch (error) {
+					// Storage blocked: the glass stays on.
+				}
 			})();
 		</script>
 		%sveltekit.head%
