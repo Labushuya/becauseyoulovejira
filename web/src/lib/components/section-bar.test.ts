@@ -29,7 +29,7 @@ describe('section bar', () => {
 	it('renders the controls of the view at the start and at the end', () => {
 		const start = createRawSnippet(() => ({ render: () => '<a href="/projekte">Projekte</a>' }));
 		const end = createRawSnippet(() => ({
-			render: () => '<label><input type="checkbox" /> Erledigte anzeigen</label>'
+			render: () => '<label><input type="checkbox" role="switch" /> Erledigte anzeigen</label>'
 		}));
 		const { container } = render(SectionBar, {
 			props: { title: 'Aufgaben', headingId: 'h1', start, end }
@@ -39,7 +39,7 @@ describe('section bar', () => {
 		expect(
 			container
 				.querySelector('.end')
-				?.contains(screen.getByRole('checkbox', { name: 'Erledigte anzeigen' }))
+				?.contains(screen.getByRole('switch', { name: 'Erledigte anzeigen' }))
 		).toBe(true);
 	});
 });

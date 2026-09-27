@@ -320,6 +320,7 @@
 			<label class="switch" class:locked={switchHint !== null}>
 				<input
 					type="checkbox"
+					role="switch"
 					checked={showDone}
 					aria-disabled={switchHint === null ? undefined : 'true'}
 					aria-describedby={switchHint === null ? undefined : ids.switchHint}

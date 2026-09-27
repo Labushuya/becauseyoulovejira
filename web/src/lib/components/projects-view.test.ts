@@ -173,7 +173,7 @@ describe('project view', () => {
 			'page'
 		);
 		expect(screen.getByRole('searchbox', { name: 'Projekte suchen' })).toBeTruthy();
-		expect(screen.getByRole('checkbox', { name: 'Archivierte anzeigen' })).toBeTruthy();
+		expect(screen.getByRole('switch', { name: 'Archivierte anzeigen' })).toBeTruthy();
 		expect(layoutButton('Liste').getAttribute('aria-pressed')).toBe('true');
 		expect(layoutButton('Kacheln').getAttribute('aria-pressed')).toBe('false');
 		expect(screen.getByRole('link', { name: 'Neues Projekt' }).getAttribute('href')).toBe(
@@ -363,7 +363,7 @@ describe('project view', () => {
 	it('shows archived projects only with the switch, which lives in the URL', async () => {
 		await show();
 
-		await fireEvent.click(screen.getByRole('checkbox', { name: 'Archivierte anzeigen' }));
+		await fireEvent.click(screen.getByRole('switch', { name: 'Archivierte anzeigen' }));
 		expect(mocks.goto).toHaveBeenCalledExactlyOnceWith('/projekte?archiviert=1', {
 			keepFocus: true,
 			noScroll: true
@@ -372,7 +372,7 @@ describe('project view', () => {
 		document.body.innerHTML = '';
 		const { countDone } = await show('/projekte?archiviert=1');
 		expect(
-			screen.getByRole<HTMLInputElement>('checkbox', { name: 'Archivierte anzeigen' }).checked
+			screen.getByRole<HTMLInputElement>('switch', { name: 'Archivierte anzeigen' }).checked
 		).toBe(true);
 		expect(rowCells('Büro')).toEqual(['BUERO', 'Büro', '0', '0', '0', 'Archiviert']);
 		expect(screen.getByText('3 Projekte')).toBeTruthy();
