@@ -3,7 +3,8 @@
 // inbox_items (ADR-0007). The same store links items to a ticket, both from the inbox ("Mit Ticket
 // verknüpfen …", one or several) and from the ticket ("Quelle hinzufügen …"), and releases them:
 // each item on its own through the record API, whose hook writes the history in the same
-// transaction. Failures stay per item; one flag sums up. Changed items also go to the inbox store
+// transaction. The same way moves a linked item to another ticket ("Anderem Ticket zuordnen …").
+// Failures stay per item; one flag sums up. Changed items also go to the inbox store
 // (`onchange`), so the inbox follows at once, before the realtime event.
 
 import type PocketBase from 'pocketbase';
@@ -195,6 +196,35 @@ export class TicketSourcesStore {
 			});
 		}
 		return outcome;
+	}
+
+	/**
+	 * "Anderem Ticket zuordnen …" (ADR-0031, addendum): a linked item changes directly to `ticket`;
+	 * the hook writes the history of both tickets in one transaction. Never the main source. The
+	 * failure message stays with the dialog; success shows a flag.
+	 */
+	async move(
+		item: Pick<InboxItemSummary, 'id' | 'title'>,
+		ticket: Pick<TicketChoice, 'id' | 'key'>
+	): Promise<SourceActionResult<InboxItemSummary>> {
+		if (this.#pending.has(item.id) || !this.#session.ensureValid()) {
+			return { ok: false, message: null };
+		}
+		this.#pending.add(item.id);
+		try {
+			const moved = await this.#data.link(item.id, ticket.id);
+			this.upsert(moved);
+			this.#onchange(moved);
+			this.#flags.show({
+				tone: 'success',
+				title: `„${item.title}“ gehört jetzt zu ${ticket.key}.`
+			});
+			return { ok: true, value: moved };
+		} catch (error) {
+			return { ok: false, message: this.#failureMessage(error) };
+		} finally {
+			this.#pending.delete(item.id);
+		}
 	}
 
 	/** "Lösen": the item goes back to the inbox as new; never the main source. */

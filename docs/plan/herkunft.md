@@ -1,6 +1,6 @@
 # E6-Plan, Teil Herkunft: Quellen eines Tickets, Löschschutz, große Mails und Seitenkopie
 
-- **Stand:** umgesetzt (2026-09-27): HK-0 bis HK-4 (#105 bis #108 und der PR von HK-4). Offen sind die manuellen Browser-Prüfungen.
+- **Stand:** umgesetzt (2026-09-27): HK-0 bis HK-4 (#105 bis #109). Folgeauftrag HK-5 bis HK-8 (Nachtrag zu ADR-0031) siehe §2 und §4. Offen sind die manuellen Browser-Prüfungen.
 - **Grundlage:**
   - [ADR-0031](../adr/0031-herkunft-sichern.md) (Datenmodell, Verknüpfen und Lösen, Löschschutz, große Mails, Kopie-Status, Seitenkopie mit SSRF-Schutz und seinen Grenzen)
   - [ADR-0014](../adr/0014-datenmodell-eingang.md), [ADR-0016](../adr/0016-kanal-architektur-und-mail.md), [ADR-0008](../adr/0008-markdown-rendering-und-sanitizing.md), [ADR-0025](../adr/0025-ui-konsistenz-overlay-system.md), [ADR-0026](../adr/0026-einstellungsbereich-und-hinweis-bausteine.md), [ADR-0029](../adr/0029-glas-materialien.md)
@@ -28,6 +28,15 @@
 | HK-2 | Oberfläche: Abschnitt „Quellen“ im Ticket (Panel und Vollansicht) mit „Quelle hinzufügen …“ und „Lösen“, „Mit Ticket verknüpfen …“ im Eingang (einzeln und für die Auswahl) mit Ticketsuche als Combobox im Modal M, Verlauf, `copyCompleteness` mit Lozenge und SectionMessage | BYL-E6-162, BYL-E6-163 (manuell) |
 | HK-3 | Große Mails: Eintrag ohne Originaldatei über automatischen Abruf, Vollsuche, Postfach-Auswahl und `.eml`; `byl-mail.exe` 0.8.0 | BYL-E6-164, BYL-E6-165, BYL-E6-166 (manuell) |
 | HK-4 | Seitenkopie für Web-Links: Route mit SSRF-Schutz, Textauszug, HTML als Original; „Seiteninhalt sichern“ im Panel und beim Erfassen per Bookmarklet | BYL-E6-167, BYL-E6-168, BYL-E6-169, BYL-E6-170 (manuell) |
+
+Folgeauftrag (Nutzerentscheidungen vom 2026-09-27, [ADR-0031](../adr/0031-herkunft-sichern.md), Nachtrag; Manifest-IDs ab `BYL-E6-180`):
+
+| Paket | Inhalt | Manifest |
+|---|---|---|
+| HK-5 | Umhängen: „Anderem Ticket zuordnen …“ im Panel des Eintrags (Block „Gehört zu …“ mit „Ticket öffnen“, „Anderem Ticket zuordnen …“, „Lösen“) und in der Quellenliste; atomar im Hook mit Verlauf in beiden Tickets; Hauptquelle gesperrt mit Grund; Ticket am Eintrag per `expand` | BYL-E6-180, BYL-E6-181, BYL-E6-182 (manuell) |
+| HK-6 | Löschen eines Tickets mit Quellen: Radio in der Bestätigung („Quellen zurück in den Eingang“, „Quellen verwerfen“), atomar im Hook, eigene Route, sicherer Standard der Delete-API; Aufräumen verwaister `converted`-Einträge per Migration mit Rollback-Test | geplant ab BYL-E6-183 |
+| HK-7 | Hervorhebung: Rand in der Akzentfarbe und Chip „→ HAUS-12“ im Eingang, Quellen im Ticket in der Akzentfarbe, Filter „Offen“, „Verknüpft“, „Alle“ | geplant |
+| HK-8 | Originaldateien bis 25 MB: Migration mit Rollback, Konstanten in SPA, Hooks und byl-mail, Texte, Version des Hilfsprozesses, README | geplant |
 
 ## 3. Entscheidungen
 
@@ -61,6 +70,11 @@
 | 2026-09-27 | HK-4 | **Text nicht maskiert:** Der Seitentext kommt wie der Text von HTML-Mails ungemaskiert in `body`; die Anzeige ist sanitisiert (ADR-0008). Maskieren hätte jede Beschreibung nach dem Umwandeln mit Backslashes gefüllt. |
 | 2026-09-27 | HK-4 | **Einmal gesichert ist gesichert:** Die Route prüft `original` vor dem Abruf und noch einmal in der Transaktion (zwei Klicks zugleich speichern nur einmal); `fetched_at` steht in PocketBase-Schreibweise, damit die SPA es wie jedes Datum liest. |
 | 2026-09-27 | HK-4 | **Fehler der Route** (400 Adresse, 409 schon gesichert, 415 kein HTML, 502 nicht erreichbar, 503 vor dem Eingang) gibt `savePage` der Datenschicht als Ergebnis mit dem Text des Servers zurück, wie die Postfach-Routen; im Panel steht er inline, beim Erfassen in der Meldung des Formulars. Nebenbei kennt `errors.ts` jetzt die Texte von `validation_inbox_primary_source` und `validation_inbox_item_linked`. |
+| 2026-09-27 | HK-5 | **Hauptquelle bleibt beim Umhängen gesperrt** (ADR-0031, Nachtrag A): Sie ist die Herkunft des Tickets (Titel, Beschreibung, `source`, Karte „Quelle“). Umhängen müsste das Ticket A im selben Schritt ändern (`source_item`), was ein Folgeticket einer Serie „berührt“ machen würde (ADR-0023 §3). Der Grund steht im Panel des Eintrags und in der Quellenliste; der Hook lehnt mit `validation_inbox_primary_source` am Feld `ticket` ab, der Text nennt Lösen und Verschieben. |
+| 2026-09-27 | HK-5 | **Umhängen ist das Verknüpfen-Update** (`state = converted`, `ticket = B`) statt einer Route: dieselben Regeln, dasselbe Realtime. `linkChange` bekommt Zustand und Ticket und nennt `move`; ein umgewandelter Eintrag ohne Ticket, der eines bekommt, ist `link` (kein „verschoben von“). |
+| 2026-09-27 | HK-5 | **Verlauf in beiden Tickets** als `source_link` mit `moved_to` bzw. `moved_from` (`ticket`, `key` zum Zeitpunkt); Fehlerinjektion über dieselbe Markierung im Titel des Eintrags. |
+| 2026-09-27 | HK-5 | **Ticket am Eintrag per `expand=ticket`** (nur `id`, `key`, `title`, `source_item`) in Listen, Panel, Antworten auf Updates und im Realtime-Abo. `InboxItemSummary.ticket` ist optional, damit handgebaute Objekte gültig bleiben. Der Block „Gehört zu …“ und die Aktionen erscheinen erst, wenn das Ticket bekannt ist; ohne es nur „Ticket öffnen“. |
+| 2026-09-27 | HK-5 | **Ein Dialog** `MoveSourceDialog` für Panel und Quellenliste (Modal M, Ticketsuche ohne das aktuelle Ticket, Feldfehler „Bitte ein Ticket wählen.“); `TicketSourcesStore.move` zeigt den Erfolg als Flag, einen Fehler gibt er dem Dialog. Der Block „Gehört zu …“ steht schon mit HK-5 oben im Panel (Akzentfläche mit Rand), weil er die Aktionen trägt; „Ticket ansehen“ im Fuß entfällt. |
 
 ## 4. Status
 
@@ -70,8 +84,12 @@
 | HK-1 | gemergt (#106) |
 | HK-2 | gemergt (#107) |
 | HK-3 | gemergt (#108) |
-| HK-4 | in Arbeit |
+| HK-4 | gemergt (#109) |
+| HK-5 | in Arbeit |
+| HK-6 | geplant |
+| HK-7 | geplant |
+| HK-8 | geplant |
 
 ## 5. Offene Punkte
 
-- Manuelle Browser-Prüfungen der Pakete HK-2 bis HK-4.
+- Manuelle Browser-Prüfungen der Pakete HK-2 bis HK-5.

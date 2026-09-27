@@ -24,6 +24,7 @@
 	import SectionMessage from './guidance/SectionMessage.svelte';
 	import LinkTicketDialog from './LinkTicketDialog.svelte';
 	import Markdown from './Markdown.svelte';
+	import MoveSourceDialog from './MoveSourceDialog.svelte';
 	import Drawer from './overlay/Drawer.svelte';
 
 	// Panel of one inbox entry (E4 plan, package 3; ADR-0019 section 5): title, the details of the
@@ -37,6 +38,9 @@
 	// "Wiederholung für TASK-12 anlegen…" while the ticket is open and in no series yet: the link
 	// hands the suggested values to the recurrence store and opens the ticket, whose panel starts
 	// "Wiederholen…" with them. A series the rules cannot express gets a neutral hint.
+	// A converted or linked entry names its ticket at the top ("Gehört zu HAUS-12 · Titel", ADR-0031
+	// addendum) with "Ticket öffnen", "Anderem Ticket zuordnen …" and "Lösen"; the main source of a
+	// ticket keeps only "Ticket öffnen" and says why it stays.
 	let {
 		id,
 		store,
@@ -69,6 +73,7 @@
 	let message = $state<string | null>(null);
 	let downloading = $state(false);
 	let linking = $state(false);
+	let moving = $state(false);
 	let savingPage = $state(false);
 	let heading = $state<HTMLElement>();
 
@@ -170,6 +175,14 @@
 		}
 	}
 
+	/** "Lösen" (ADR-0031 section 2): the entry goes back to the new ones; the store shows a flag. */
+	async function release(entry: InboxItem) {
+		if (sources === null) return;
+		message = null;
+		const result = await sources.release(entry);
+		if (result.ok) update(result.value);
+	}
+
 	/** "Seiteninhalt sichern" (ADR-0031 section 6); afterwards the text is loaded again. */
 	async function savePage(entry: InboxItem) {
 		if (savingPage) return;
@@ -224,9 +237,43 @@
 			disabled={store.isPending(entry.id)}
 			onclick={() => run(() => store.restore(entry.id))}>Wiederherstellen</button
 		>
-	{:else if entry.ticketId !== null}
-		<a class="button-secondary entry-action" href={ticketPath(entry.ticketId)}>Ticket ansehen</a>
 	{/if}
+{/snippet}
+
+{#snippet belongsTo(entry: InboxItem, ticketId: string)}
+	{@const ticket = entry.ticket?.id === ticketId ? entry.ticket : null}
+	<section class="belongs" aria-labelledby={`${uid}-belongs`}>
+		<p id={`${uid}-belongs`} class="belongs-line">
+			{#if ticket !== null}
+				Gehört zu <span class="key">{ticket.key}</span> · {ticket.title}
+			{:else}
+				Gehört zu einem Ticket
+			{/if}
+		</p>
+		{#if ticket?.primary}
+			<p class="belongs-note">
+				Hauptquelle: Das Ticket ist aus diesem Eintrag entstanden. Er bleibt deshalb bei {ticket.key}
+				und lässt sich weder lösen noch einem anderen Ticket zuordnen.
+			</p>
+		{/if}
+		<div class="belongs-actions">
+			<a class="button-secondary entry-action" href={ticketPath(ticketId)}>Ticket öffnen</a>
+			{#if sources !== null && ticket !== null && !ticket.primary}
+				<button
+					class="button-secondary"
+					type="button"
+					disabled={sources.isPending(entry.id)}
+					onclick={() => (moving = true)}>Anderem Ticket zuordnen …</button
+				>
+				<button
+					class="button-secondary"
+					type="button"
+					disabled={sources.isPending(entry.id)}
+					onclick={() => void release(entry)}>Lösen</button
+				>
+			{/if}
+		</div>
+	</section>
 {/snippet}
 
 <Drawer labelledby={headingId} closeFromFields {onclose}>
@@ -253,6 +300,10 @@
 				<p class="alert-error"><ErrorIcon /><span>{message}</span></p>
 			{/if}
 		</div>
+
+		{#if item.state === 'converted' && item.ticketId !== null}
+			{@render belongsTo(item, item.ticketId)}
+		{/if}
 
 		{#if item.state === 'discarded'}
 			<SectionMessage tone="info" compact>{DISCARDED_CONTENT_NOTE}</SectionMessage>
@@ -382,6 +433,16 @@
 	/>
 {/if}
 
+{#if moving && sources !== null && item !== null && item.ticketId !== null && item.ticket}
+	<MoveSourceDialog
+		item={{ id: item.id, title: item.title }}
+		current={{ id: item.ticketId, key: item.ticket.key }}
+		store={sources}
+		onmoved={update}
+		onclose={() => (moving = false)}
+	/>
+{/if}
+
 <style>
 	h2 {
 		font-size: 1.125rem;
@@ -399,6 +460,33 @@
 		border: 1px solid var(--color-line);
 		border-left: 3px solid var(--color-brand);
 		border-radius: var(--radius-control);
+	}
+
+	/* The ticket of a converted or linked entry, marked in the accent colour (ADR-0031 addendum). */
+	.belongs {
+		display: grid;
+		gap: 0.5rem;
+		padding: 0.625rem 0.75rem;
+		font-size: var(--font-size-control);
+		background: var(--color-brand-soft-bg);
+		color: var(--color-brand-soft-text);
+		border-left: 3px solid var(--color-brand);
+		border-radius: var(--radius-control);
+	}
+
+	.belongs-line {
+		overflow-wrap: anywhere;
+	}
+
+	.key {
+		font-family: var(--font-mono);
+		font-weight: 600;
+	}
+
+	.belongs-actions {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 0.5rem;
 	}
 
 	.duplicate ul {

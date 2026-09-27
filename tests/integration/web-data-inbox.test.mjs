@@ -507,10 +507,28 @@ describe('sources of a ticket (ADR-0031, HK-2)', () => {
 		});
 		const linked = await assignToTicket(owner.client, extra.id, ticket.id);
 		expect(linked).toMatchObject({ state: 'converted', ticketId: ticket.id });
+		const ref = { id: ticket.id, key: ticket.key, title: ticket.title };
+		expect(linked.ticket).toEqual({ ...ref, primary: false });
 
 		const sources = await listTicketSources(owner.client, ticket.id);
 		expect(sources.map((item) => item.id)).toEqual([main.id, extra.id]);
 		expect(sources[0]).not.toHaveProperty('body');
+		expect(sources.map((item) => item.ticket)).toEqual([
+			{ ...ref, primary: true },
+			{ ...ref, primary: false }
+		]);
+		expect((await getItem(owner.client, main.id)).ticket).toEqual({ ...ref, primary: true });
+
+		// Moving to another ticket (ADR-0031 addendum): the same update, the main source never.
+		const next = await createTicket(owner.client, ticketDraft());
+		const moved = await assignToTicket(owner.client, extra.id, next.id);
+		expect(moved).toMatchObject({ state: 'converted', ticketId: next.id });
+		expect(moved.ticket).toMatchObject({ id: next.id, key: next.key, primary: false });
+		await expect(assignToTicket(owner.client, main.id, next.id)).rejects.toMatchObject({
+			kind: 'validation',
+			fields: { ticket: { code: 'validation_inbox_primary_source' } }
+		});
+		await assignToTicket(owner.client, extra.id, ticket.id);
 		expect(await listTicketSources(other.client, ticket.id)).toEqual([]);
 
 		const released = await releaseItem(owner.client, extra.id);
@@ -566,6 +584,29 @@ describe('realtime', () => {
 			expect(changes[0].record).not.toHaveProperty('body');
 			expect(changes[1].record).toMatchObject({ id: item.id, state: 'discarded' });
 			expect(changes[2]).toEqual({ action: 'delete', id: item.id });
+		} finally {
+			await stop();
+		}
+	});
+
+	it('names the ticket of a linked entry in the event (ADR-0031 addendum)', async () => {
+		const ticket = await createTicket(owner.client, ticketDraft());
+		const item = await created(owner.client, mail());
+		const changes = [];
+		const stop = await subscribeInboxItems(owner.client, (change) => changes.push(change));
+		try {
+			await assignToTicket(owner.client, item.id, ticket.id);
+			const deadline = Date.now() + EVENT_TIMEOUT_MS;
+			while (changes.length === 0) {
+				if (Date.now() > deadline) throw new Error('No update event.');
+				await new Promise((resolve) => setTimeout(resolve, 50));
+			}
+			expect(changes[0].record.ticket).toEqual({
+				id: ticket.id,
+				key: ticket.key,
+				title: ticket.title,
+				primary: false
+			});
 		} finally {
 			await stop();
 		}

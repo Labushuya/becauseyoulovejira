@@ -108,24 +108,51 @@ function areaText(value: string): string {
  * The inbox item of a "source_link" entry (ADR-0031 section 2): JSON with item, channel and title
  * as the hook wrote it, e.g. `Mail „Rechnung März“`; '' when the value is not readable.
  */
-function sourceText(value: string): string {
+function sourceText(parsed: Record<string, unknown> | null): string {
+	if (parsed === null) return '';
+	const { channel, title } = parsed;
+	const label = isInboxChannel(channel) ? CHANNEL_LABELS[channel] : '';
+	const name = typeof title === 'string' && title !== '' ? `„${title}“` : '';
+	return [label, name].filter((part) => part !== '').join(' ');
+}
+
+function parseSourceValue(value: string): Record<string, unknown> | null {
 	try {
 		const parsed: unknown = JSON.parse(value);
-		if (typeof parsed !== 'object' || parsed === null) return '';
-		const { channel, title } = parsed as { channel?: unknown; title?: unknown };
-		const label = isInboxChannel(channel) ? CHANNEL_LABELS[channel] : '';
-		const name = typeof title === 'string' && title !== '' ? `„${title}“` : '';
-		return [label, name].filter((part) => part !== '').join(' ');
+		return typeof parsed === 'object' && parsed !== null && !Array.isArray(parsed)
+			? (parsed as Record<string, unknown>)
+			: null;
 	} catch {
-		return '';
+		return null;
 	}
 }
 
-/** Linking (new value set) or releasing (old value set) a source of the ticket. */
+/** Key of the other ticket of a move (`moved_to` or `moved_from`, ADR-0031 addendum), else ''. */
+function movedKey(
+	parsed: Record<string, unknown> | null,
+	field: 'moved_to' | 'moved_from'
+): string {
+	const other = parsed?.[field];
+	if (typeof other !== 'object' || other === null) return '';
+	const { key } = other as { key?: unknown };
+	return typeof key === 'string' ? key : '';
+}
+
+/**
+ * Linking (new value set) or releasing (old value set) a source of the ticket; a move to or from
+ * another ticket names it ("Quelle verschoben nach HAUS-13: …", "Quelle verschoben von HAUS-12: …").
+ */
 function sourceLinkText(oldValue: string, newValue: string): string {
 	const linked = newValue !== '';
-	const what = sourceText(linked ? newValue : oldValue);
-	const verb = linked ? 'Quelle verknüpft' : 'Quelle gelöst';
+	const parsed = parseSourceValue(linked ? newValue : oldValue);
+	const what = sourceText(parsed);
+	const moved = parsed !== null && (linked ? 'moved_from' : 'moved_to') in parsed;
+	const key = movedKey(parsed, linked ? 'moved_from' : 'moved_to');
+	let verb = linked ? 'Quelle verknüpft' : 'Quelle gelöst';
+	if (moved) {
+		const direction = linked ? 'von' : 'nach';
+		verb = key === '' ? 'Quelle verschoben' : `Quelle verschoben ${direction} ${key}`;
+	}
 	return what === '' ? verb : `${verb}: ${what}`;
 }
 

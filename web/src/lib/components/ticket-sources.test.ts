@@ -55,7 +55,7 @@ async function setup(sources: InboxItemSummary[], candidates: InboxItemSummary[]
 	const data = {
 		list: vi.fn<TicketSourcesData['list']>(async () => sources),
 		link: vi.fn<TicketSourcesData['link']>(async (id, ticketId) => ({
-			...(candidates.find((entry) => entry.id === id) as InboxItemSummary),
+			...([...candidates, ...sources].find((entry) => entry.id === id) as InboxItemSummary),
 			state: 'converted',
 			ticketId,
 			updated: '2026-09-25 11:00:00.000Z'
@@ -103,6 +103,8 @@ describe('TicketSources', () => {
 			within(main).getByRole('button', { name: 'Originaldatei von „Rechnung März“ herunterladen' })
 		).toHaveProperty('title', 'Originaldatei herunterladen');
 		expect(within(main).queryByRole('button', { name: /lösen$/ })).toBeNull();
+		expect(within(main).queryByRole('button', { name: /anderem Ticket zuordnen/ })).toBeNull();
+		expect(main.textContent).toContain('Bleibt bei diesem Ticket, weil es aus ihr entstanden ist');
 
 		const chat = rows[1] as HTMLElement;
 		expect(chat.textContent).toContain('Telegram');
@@ -127,6 +129,34 @@ describe('TicketSources', () => {
 		expect(data.release).toHaveBeenCalledWith('chat00000000001');
 		await vi.waitFor(() => expect(screen.getAllByRole('listitem')).toHaveLength(1));
 		expect(flags.flags.at(-1)?.title).toBe('„Nachricht chat00000000001“ ist wieder im Eingang.');
+	});
+
+	it('moves a linked source to another ticket (ADR-0031 addendum)', async () => {
+		const { data, flags } = await setup([MAIN, CHAT]);
+		data.search.mockResolvedValue([
+			{ id: TICKET.id, key: 'TASK-4', title: 'Dieses', status: 'open' },
+			{ id: 'ticket000000013', key: 'HAUS-13', title: 'Anderes', status: 'open' }
+		]);
+		const move = screen.getByRole('button', {
+			name: '„Nachricht chat00000000001“ anderem Ticket zuordnen …'
+		});
+		expect(move.className).toContain('button-icon');
+		expect(move.getAttribute('title')).toBe('Anderem Ticket zuordnen …');
+		await fireEvent.click(move);
+		const dialog = screen.getByRole('dialog', { name: 'Anderem Ticket zuordnen' });
+		const input = within(dialog).getByRole('combobox', {
+			name: 'Neues Ticket'
+		}) as HTMLInputElement;
+		input.value = 'a';
+		await fireEvent.input(input);
+		await vi.waitFor(() => expect(input.getAttribute('aria-expanded')).toBe('true'));
+		expect(within(dialog).getAllByRole('option')).toHaveLength(1);
+		await fireEvent.keyDown(input, { key: 'Enter' });
+		await fireEvent.click(within(dialog).getByRole('button', { name: 'Zuordnen' }));
+		await vi.waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+		expect(data.link).toHaveBeenCalledWith('chat00000000001', 'ticket000000013');
+		await vi.waitFor(() => expect(screen.getAllByRole('listitem')).toHaveLength(1));
+		expect(flags.flags.at(-1)?.title).toBe('„Nachricht chat00000000001“ gehört jetzt zu HAUS-13.');
 	});
 
 	it('downloads the original with a fresh token', async () => {

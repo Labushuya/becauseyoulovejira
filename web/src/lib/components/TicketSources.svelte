@@ -13,6 +13,7 @@
 	import { inboxItemHref } from '$lib/ticket-links';
 	import AddSourcesDialog from './AddSourcesDialog.svelte';
 	import ErrorIcon from './ErrorIcon.svelte';
+	import MoveSourceDialog from './MoveSourceDialog.svelte';
 	import EmptyState from './guidance/EmptyState.svelte';
 	import type { GuidanceIconName } from './guidance/GuidanceIcon.svelte';
 	import Lozenge from './guidance/Lozenge.svelte';
@@ -23,6 +24,8 @@
 	// source marked, and what its copy holds as lozenge. Per entry "Ansehen" (its panel in the
 	// inbox), the original file and "Lösen" (not for the main source) as named icon buttons, so the
 	// row fits the 480 px panel. "Quelle hinzufügen …" chooses new entries of the inbox.
+	// "Anderem Ticket zuordnen …" (ADR-0031 addendum) moves an entry directly to another ticket;
+	// the main source stays and says why.
 	let {
 		ticket,
 		store,
@@ -38,6 +41,8 @@
 	const headingId = `${uid}-heading`;
 
 	let adding = $state(false);
+	/** Entry of the dialog "Anderem Ticket zuordnen …", null while it is closed. */
+	let moving = $state<Pick<InboxItemSummary, 'id' | 'title'> | null>(null);
 	let message = $state<string | null>(null);
 
 	const LOZENGES: Readonly<
@@ -119,6 +124,12 @@
 							icon={LOZENGES[copy].icon}
 							tone={LOZENGES[copy].tone}
 						/>
+						{#if main}
+							<p class="origin">
+								Bleibt bei diesem Ticket, weil es aus ihr entstanden ist: kein Lösen, kein anderes
+								Ticket.
+							</p>
+						{/if}
 					</div>
 					<div class="actions">
 						<a class="view" href={inboxItemHref(item.id)} aria-label={`„${item.title}“ ansehen`}>
@@ -144,6 +155,26 @@
 							</button>
 						{/if}
 						{#if !main}
+							<button
+								class="button-icon"
+								type="button"
+								aria-label={`„${item.title}“ anderem Ticket zuordnen …`}
+								title="Anderem Ticket zuordnen …"
+								aria-disabled={store.isPending(item.id) ? 'true' : undefined}
+								onclick={() => {
+									if (!store.isPending(item.id)) moving = { id: item.id, title: item.title };
+								}}
+							>
+								<svg
+									viewBox="0 0 16 16"
+									width="16"
+									height="16"
+									aria-hidden="true"
+									focusable="false"
+								>
+									<path d="M2.5 8h10M9.5 4.5 13 8l-3.5 3.5" />
+								</svg>
+							</button>
 							<button
 								class="button-icon"
 								type="button"
@@ -173,6 +204,15 @@
 		</ul>
 	{/if}
 </section>
+
+{#if moving !== null}
+	<MoveSourceDialog
+		item={moving}
+		current={{ id: ticket.id, key: ticket.key }}
+		{store}
+		onclose={() => (moving = null)}
+	/>
+{/if}
 
 {#if adding}
 	<AddSourcesDialog

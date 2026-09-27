@@ -1,6 +1,6 @@
 # ADR-0031: Herkunft sichern: Quellen eines Tickets, Löschschutz, große Mails und Seitenkopie
 
-- **Status:** Angenommen und umgesetzt in den Paketen HK-1 bis HK-4 nach [docs/plan/herkunft.md](../plan/herkunft.md) (#106 bis #108 und der PR von HK-4); manuelle Browser-Prüfungen stehen im Test-Manifest
+- **Status:** Angenommen und umgesetzt in den Paketen HK-1 bis HK-4 nach [docs/plan/herkunft.md](../plan/herkunft.md) (#106 bis #109); Nachtrag „Folgeauftrag“ (Umhängen, Löschen mit Quellen, Hervorhebung, 25 MB) in den Paketen HK-5 bis HK-8; manuelle Browser-Prüfungen stehen im Test-Manifest
 - **Datum:** 2026-09-27
 - **Entscheidung durch:** Nutzer („Herkunft sichern“ direkt nach „Spalten“, keine Checkbox „Kopie speichern“, Seitenkopie ja, „Quelle prüfen“ nein, Verknüpfen mit beliebigen Tickets, 2026-09-27), Advisor (Empfehlung zur Umsetzung), Executor (Datenmodell, Grenzen, Einzelheiten)
 - **Ergänzt:** [ADR-0014](0014-datenmodell-eingang.md) §1, §2 und §4 (Zustände, Rückverweis, „Einem bestehenden Ticket zuordnen“), [ADR-0016](0016-kanal-architektur-und-mail.md) §5 und §6 (Hilfsprozess, Postfach-Auswahl), [ADR-0017](0017-parser-ics-eml.md) (`.eml`)
@@ -48,7 +48,7 @@ Der Nutzer will außerdem Einträge aus Kanälen mit beliebigen Tickets verknüp
 - **Verknüpfen** ist das bestehende Update `state = converted` mit `ticket = <id>` über die Record-API ([ADR-0014](0014-datenmodell-eingang.md) §4, „Einem bestehenden Ticket zuordnen“). „Dem Ticket zuordnen“ beim Duplikathinweis, „Mit Ticket verknüpfen …“ im Eingang und „Quelle hinzufügen …“ im Ticket nutzen denselben Weg.
 - **Lösen** ist das Update `state = new` mit leerem `ticket`. Nur ein verknüpfter Eintrag lässt sich lösen, nie die Hauptquelle (`validation_inbox_primary_source`, „Die Hauptquelle eines Tickets lässt sich nicht lösen.“). Der Eintrag steht danach wieder im Eingang, `handled_at` ist leer.
 - **Verboten bleibt:**
-  - `converted` → `converted` mit einem anderen Ticket (erst lösen, dann neu verknüpfen)
+  - `converted` → `converted` mit einem anderen Ticket (erst lösen, dann neu verknüpfen); aufgehoben durch den Nachtrag, Abschnitt A
   - `discarded` → `converted`
   - jeder Wechsel von `converted` nach `discarded`
 - **Atomar im Hook:** Der Modell-Hook von `inbox_items` läuft in seiner eigenen Transaktion (`inTransaction`). Darin prüft er das Ticket (fehlende und fremde ID ergeben dieselbe Meldung `validation_scope_mismatch`, wie beim Umwandeln), setzt `handled_at` und schreibt den Eintrag in `ticket_history` des Tickets. Scheitert die Historie, bleibt der Eintrag unverändert.
@@ -142,3 +142,22 @@ Die reine Funktion `copyCompleteness(item)` in `web/src/lib/domain/inbox.ts` sag
 - `byl-mail.exe` 0.8.0; der Test-IMAP-Server lernt Teilabrufe (`BODY.PEEK[]<0.n>`).
 - Neue reine Module: `lib/url-guard.js`, `lib/html-text.js` (mit Paritätstest zur SPA), `copyCompleteness` in der SPA.
 - Nach dem Update braucht die App einen Neustart (`stop.bat`, dann `start.bat`) für die Migration und den neuen Hilfsprozess. Hooks und Oberfläche wirken sofort.
+
+## Nachtrag (2026-09-27): Folgeauftrag
+
+Nutzerentscheidungen vom 2026-09-27 nach HK-4, umgesetzt in den Paketen HK-5 bis HK-8 ([Plan](../plan/herkunft.md) §2 und §3).
+
+### A. Umhängen: „Anderem Ticket zuordnen …“ (HK-5)
+
+- Ein verknüpfter Eintrag wechselt **direkt** von Ticket A zu Ticket B: dasselbe Update über die Record-API wie beim Verknüpfen (`state = converted`, `ticket = B`). Die Regel aus §2 „erst lösen, dann neu verknüpfen“ entfällt.
+- `transitionViolation` erlaubt `converted` → `converted` mit einem anderen, nicht leeren Ticket. `linkChange` nennt den Wechsel `move`; bekommt ein umgewandelter Eintrag ohne Ticket (dessen Ticket gelöscht ist) wieder eines, gilt das als `link`.
+- **Atomar im Hook:** Der Modell-Hook prüft in seiner Transaktion das Ziel (fehlend oder fremd: `validation_scope_mismatch`) und schreibt nach dem Speichern je einen Verlaufseintrag `source_link` in **beide** Tickets: in A `old_value` mit `moved_to: { ticket, key }`, in B `new_value` mit `moved_from: { ticket, key }` (Key zum Zeitpunkt des Wechsels). Scheitert einer, bleibt der Eintrag bei A. Die Tickets selbst ändern sich nicht (`updated` bleibt).
+- Verlauf: „Quelle verschoben nach HAUS-13: Telegram „…““ bzw. „Quelle verschoben von HAUS-12: …“.
+- `handled_at` bleibt beim Wechsel unverändert.
+- **Hauptquelle bleibt gesperrt.** Die Hauptquelle eines Tickets lässt sich weder lösen noch umhängen (`validation_inbox_primary_source` am Feld `ticket`, Text „Die Hauptquelle bleibt bei dem Ticket, das aus ihr entstanden ist; sie lässt sich weder lösen noch verschieben.“). Gründe:
+  - `tickets.source_item` ist die Herkunft des Tickets: Titel, Beschreibung, `tickets.source` und die Karte „Quelle“ stammen aus diesem Eintrag. Hinge er an B, zeigte A eine Herkunft, die nicht mehr stimmt, oder verlöre sie ganz.
+  - Umhängen müsste A im selben Schritt ändern (`source_item` leeren oder auf eine andere Quelle setzen). Das wäre ein Server-Update des Tickets samt Verlauf, `updated` und Realtime. Es würde ein Folgeticket einer Serie „berührt“ machen (ADR-0023 §3: unberührt heißt `updated = created`) und so das Wiedereröffnen der Vorinstanz verändern.
+  - Eine andere Quelle zur Hauptquelle zu machen, wäre eine Auswahl ohne klare Regel. Den Fall, dass die Hauptquelle „eigentlich zu B gehört“, deckt ein neues Ticket bzw. das Verknüpfen weiterer Quellen ab.
+  - Die Oberfläche zeigt den Grund dort, wo die Aktion fehlt: im Panel des Eintrags („Hauptquelle: Das Ticket ist aus diesem Eintrag entstanden. Er bleibt deshalb bei HAUS-12 …“) und in der Quellenliste des Tickets („Bleibt bei diesem Ticket, weil es aus ihr entstanden ist …“).
+- **Oberfläche:** „Anderem Ticket zuordnen …“ im Panel des Eintrags (Block „Gehört zu HAUS-12 · Titel“ oben mit „Ticket öffnen“, „Anderem Ticket zuordnen …“, „Lösen“) und je Quelle im Ticket (Symbolknopf). Beide öffnen `MoveSourceDialog` (Modal M mit der Ticketsuche; das aktuelle Ticket wird nicht angeboten). Ein Fehler bleibt im Dialog, der Erfolg geht als Flag „„…“ gehört jetzt zu HAUS-13.“.
+- **Ticket am Eintrag:** Listen, Panel und das Realtime-Abo von `inbox_items` laden das Ticket mit (`expand=ticket`, nur `id`, `key`, `title`, `source_item`). Die SPA kennt so Key, Titel und ob der Eintrag die Hauptquelle ist (`InboxItemSummary.ticket`), ohne das Ticket einzeln zu laden. Ändert sich der Key des Tickets später (Projektwechsel), zeigt der Eingang bis zum nächsten Laden bzw. Ereignis des Eintrags den alten Key.

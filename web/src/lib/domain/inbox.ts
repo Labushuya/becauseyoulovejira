@@ -135,10 +135,25 @@ export interface InboxItemSummary {
 	state: InboxState;
 	/** Ticket the entry became or was assigned to; null otherwise or after the ticket was deleted. */
 	ticketId: string | null;
+	/**
+	 * Key and title of that ticket at the time of loading, and whether the entry is its main source
+	 * (ADR-0031, addendum). The data layer always sets it (null without a visible ticket); objects
+	 * built by hand (tests, drafts) may leave it out.
+	 */
+	ticket?: InboxTicketRef | null;
 	/** Time of converting or discarding, null while new. */
 	handledAt: string | null;
 	created: string;
 	updated: string;
+}
+
+/** The ticket of a converted or linked entry. */
+export interface InboxTicketRef {
+	id: string;
+	key: string;
+	title: string;
+	/** True if the ticket came from this entry (tickets.source_item); it is never moved or released. */
+	primary: boolean;
 }
 
 /** Entry with its text (panel, prefill of the ticket). */

@@ -51,7 +51,8 @@ const FIELD_MESSAGES: Readonly<Record<string, string>> = Object.freeze({
 	validation_inbox_item_handled: 'Dieser Eintrag wurde schon bearbeitet.',
 	validation_inbox_ticket_required: 'Zum Zuordnen fehlt das Ticket.',
 	// Sources of a ticket (ADR-0031 sections 2 and 3), the same texts as the hook.
-	validation_inbox_primary_source: 'Die Hauptquelle eines Tickets lässt sich nicht lösen.',
+	validation_inbox_primary_source:
+		'Die Hauptquelle bleibt bei dem Ticket, das aus ihr entstanden ist; sie lässt sich weder lösen noch verschieben.',
 	validation_inbox_item_linked:
 		'Dieser Eintrag ist die Quelle eines Tickets und lässt sich nicht löschen.',
 	validation_invalid_url: 'Nur http- und https-Adressen.',

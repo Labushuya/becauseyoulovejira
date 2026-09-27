@@ -86,12 +86,12 @@ describe('link', () => {
 		expect(await sourceEntries(foreign.id)).toEqual([]);
 	});
 
-	it('keeps a linked item on its ticket: no other ticket, no discarding', async () => {
-		const [first, second] = [await owner.ticket(), await owner.ticket()];
+	it('keeps a linked item on a ticket: no empty ticket, no discarding', async () => {
+		const first = await owner.ticket();
 		const item = await createItem(owner);
 		await link(owner, item.id, first.id);
 		const items = owner.client.collection('inbox_items');
-		for (const change of [{ ticket: second.id }, { state: 'discarded', ticket: '' }, { state: 'new' }]) {
+		for (const change of [{ ticket: '' }, { state: 'discarded', ticket: '' }, { state: 'new' }]) {
 			expect((await rejectionOf(items.update(item.id, change))).codes).toEqual({
 				state: 'validation_inbox_item_handled'
 			});
@@ -184,6 +184,114 @@ describe('release', () => {
 		const after = await itemOf(item.id);
 		expect(after.state).toBe('converted');
 		expect(after.ticket).toBe(ticket.id);
+	});
+});
+
+describe('move (ADR-0031 addendum)', () => {
+	const move = (who, itemId, ticketId) => who.client.collection('inbox_items').update(itemId, { ticket: ticketId });
+
+	it('moves a linked item directly to another ticket with a history entry in both', async () => {
+		const [from, to] = [await owner.ticket(), await owner.ticket()];
+		const item = await createItem(owner);
+		const linked = await link(owner, item.id, from.id);
+		const moved = await move(owner, item.id, to.id);
+		expect(moved.state).toBe('converted');
+		expect(moved.ticket).toBe(to.id);
+		expect(moved.handled_at).toBe(linked.handled_at);
+
+		const [fromEntries, toEntries] = [await sourceEntries(from.id), await sourceEntries(to.id)];
+		expect(fromEntries).toHaveLength(2);
+		expect(fromEntries[1]).toMatchObject({ new_value: '', user: owner.id });
+		expect(JSON.parse(fromEntries[1].old_value)).toEqual({
+			item: item.id,
+			channel: 'telegram',
+			title: item.title,
+			moved_to: { ticket: to.id, key: to.key }
+		});
+		expect(toEntries).toHaveLength(1);
+		expect(toEntries[0]).toMatchObject({ old_value: '', user: owner.id });
+		expect(JSON.parse(toEntries[0].new_value)).toEqual({
+			item: item.id,
+			channel: 'telegram',
+			title: item.title,
+			moved_from: { ticket: from.id, key: from.key }
+		});
+
+		// The tickets themselves do not change.
+		for (const ticket of [from, to]) {
+			expect((await owner.client.collection('tickets').getOne(ticket.id)).updated).toBe(ticket.updated);
+		}
+	});
+
+	it('never moves the main source and says why', async () => {
+		const item = await createItem(owner);
+		const ticket = await owner.ticket({ source_item: item.id });
+		const other = await owner.ticket();
+		expect(await rejectionOf(move(owner, item.id, other.id))).toEqual({
+			status: 400,
+			codes: { ticket: 'validation_inbox_primary_source' }
+		});
+		expect((await itemOf(item.id)).ticket).toBe(ticket.id);
+		expect(await sourceEntries(other.id)).toEqual([]);
+	});
+
+	it('refuses a missing and a foreign ticket and keeps the item where it was', async () => {
+		const ticket = await owner.ticket();
+		const item = await createItem(owner);
+		await link(owner, item.id, ticket.id);
+		const foreign = await other.ticket();
+		for (const ticketId of [foreign.id, 'abcdefghijklmno']) {
+			expect(await rejectionOf(move(owner, item.id, ticketId))).toEqual({
+				status: 400,
+				codes: { ticket: 'validation_scope_mismatch' }
+			});
+		}
+		expect((await itemOf(item.id)).ticket).toBe(ticket.id);
+		expect(await sourceEntries(ticket.id)).toHaveLength(1);
+	});
+
+	it('rolls back the move when a history entry fails (one transaction)', async () => {
+		const [from, to] = [await owner.ticket(), await owner.ticket()];
+		const item = await createItem(owner);
+		await link(owner, item.id, from.id);
+		await owner.client.collection('inbox_items').update(item.id, { title: FAIL_SOURCE_LINK });
+		expect((await rejectionOf(move(owner, item.id, to.id))).status).toBe(400);
+		expect((await itemOf(item.id)).ticket).toBe(from.id);
+		expect(await sourceEntries(from.id)).toHaveLength(1);
+		expect(await sourceEntries(to.id)).toEqual([]);
+	});
+
+	it('moves a household item for another member of the household only within it', async () => {
+		const s = await createScenario();
+		const item = await s.a.collection('inbox_items').create({
+			owner: s.ids.a,
+			household: s.h1.id,
+			channel: 'manual',
+			kind: 'todo',
+			title: 'Haushalt'
+		});
+		const first = await s.a.collection('tickets').create({ owner: s.ids.a, household: s.h1.id, title: 'Erst' });
+		const second = await s.b.collection('tickets').create({ owner: s.ids.b, household: s.h1.id, title: 'Dann' });
+		const privateTicket = await s.b.collection('tickets').create({ owner: s.ids.b, title: 'Privat' });
+		await link({ client: s.a }, item.id, first.id);
+		expect((await rejectionOf(move({ client: s.b }, item.id, privateTicket.id))).codes).toEqual({
+			ticket: 'validation_scope_mismatch'
+		});
+		expect((await rejectionOf(move({ client: s.c }, item.id, second.id))).status).toBe(404);
+		expect((await move({ client: s.b }, item.id, second.id)).ticket).toBe(second.id);
+		expect((await sourceEntries(second.id)).map((entry) => entry.user)).toEqual([s.ids.b]);
+	});
+
+	it('links an item whose ticket was deleted to a new ticket without a "moved" entry', async () => {
+		const [gone, next] = [await owner.ticket(), await owner.ticket()];
+		const item = await createItem(owner);
+		await link(owner, item.id, gone.id);
+		await superuser.collection('tickets').delete(gone.id);
+		expect(await itemOf(item.id)).toMatchObject({ state: 'converted', ticket: '' });
+		expect((await move(owner, item.id, next.id)).ticket).toBe(next.id);
+		const entries = await sourceEntries(next.id);
+		expect(entries).toHaveLength(1);
+		expect(JSON.parse(entries[0].new_value)).not.toHaveProperty('moved_from');
 	});
 });
 

@@ -72,7 +72,7 @@ describe('transitionViolation', () => {
 		});
 	});
 
-	it('keeps converted items on their ticket, except for releasing them (ADR-0031)', () => {
+	it('keeps converted items on a ticket, except for releasing and moving them (ADR-0031)', () => {
 		const handled = { field: 'state', code: 'validation_inbox_item_handled' };
 		expect(rules.transitionViolation(at('converted', 't1'), at('new', 't1'))).toEqual(handled);
 		expect(rules.transitionViolation(at('converted', 't1'), at('discarded', 't1'))).toEqual(handled);
@@ -80,7 +80,9 @@ describe('transitionViolation', () => {
 		// Releasing: back to new with an empty ticket (the main source is checked by the service).
 		expect(rules.transitionViolation(at('converted', 't1'), at('new', ''))).toBe('');
 		expect(rules.transitionViolation(at('converted', ''), at('new', ''))).toBe('');
-		expect(rules.transitionViolation(at('converted', 't1'), at('converted', 't2'))).toEqual(handled);
+		// Moving to another ticket (addendum; main source and scope are checked by the service).
+		expect(rules.transitionViolation(at('converted', 't1'), at('converted', 't2'))).toBe('');
+		expect(rules.transitionViolation(at('converted', ''), at('converted', 't2'))).toBe('');
 		expect(rules.transitionViolation(at('converted', 't1'), at('converted', ''))).toEqual(handled);
 		expect(rules.transitionViolation(at('converted', 't1'), at('converted', 't1'))).toBe('');
 		// A converted item whose ticket was deleted keeps its empty ticket.
@@ -95,18 +97,24 @@ describe('transitionViolation', () => {
 });
 
 describe('linkChange and sourceLinkValue (ADR-0031 section 2)', () => {
-	it('names linking and releasing, nothing else', () => {
-		expect(rules.linkChange('new', 'converted')).toBe('link');
-		expect(rules.linkChange('converted', 'new')).toBe('release');
+	const at = (state, ticket = '') => ({ state, ticket });
+
+	it('names linking, releasing and moving, nothing else', () => {
+		expect(rules.linkChange(at('new'), at('converted', 't1'))).toBe('link');
+		expect(rules.linkChange(at('converted', 't1'), at('new'))).toBe('release');
+		expect(rules.linkChange(at('converted', 't1'), at('converted', 't2'))).toBe('move');
+		// A converted item whose ticket was deleted gets a ticket again: that is linking.
+		expect(rules.linkChange(at('converted'), at('converted', 't2'))).toBe('link');
 		for (const [from, to] of [
-			['new', 'new'],
-			['new', 'discarded'],
-			['discarded', 'new'],
-			['converted', 'converted'],
-			['discarded', 'converted'],
-			['', '']
+			[at('new'), at('new')],
+			[at('new'), at('discarded')],
+			[at('discarded'), at('new')],
+			[at('converted', 't1'), at('converted', 't1')],
+			[at('converted', 't1'), at('converted')],
+			[at('discarded'), at('converted', 't1')],
+			[at(''), at('')]
 		]) {
-			expect(rules.linkChange(from, to), `${from} -> ${to}`).toBe('');
+			expect(rules.linkChange(from, to), `${JSON.stringify(from)} -> ${JSON.stringify(to)}`).toBe('');
 		}
 	});
 
@@ -114,6 +122,27 @@ describe('linkChange and sourceLinkValue (ADR-0031 section 2)', () => {
 		const value = rules.sourceLinkValue({ id: 'abc', channel: 'mail', title: 'Rechnung „März“ | 2' });
 		expect(JSON.parse(value)).toEqual({ item: 'abc', channel: 'mail', title: 'Rechnung „März“ | 2' });
 		expect(JSON.parse(rules.sourceLinkValue({}))).toEqual({ item: '', channel: '', title: '' });
+	});
+
+	it('names the other ticket of a move', () => {
+		const item = { id: 'abc', channel: 'mail', title: 'Rechnung' };
+		expect(JSON.parse(rules.sourceLinkValue(item, { direction: 'to', ticket: 't2', key: 'HAUS-13' }))).toEqual({
+			item: 'abc',
+			channel: 'mail',
+			title: 'Rechnung',
+			moved_to: { ticket: 't2', key: 'HAUS-13' }
+		});
+		expect(JSON.parse(rules.sourceLinkValue(item, { direction: 'from', ticket: 't1' }))).toEqual({
+			item: 'abc',
+			channel: 'mail',
+			title: 'Rechnung',
+			moved_from: { ticket: 't1', key: '' }
+		});
+		expect(JSON.parse(rules.sourceLinkValue(item, { direction: 'sideways' }))).toEqual({
+			item: 'abc',
+			channel: 'mail',
+			title: 'Rechnung'
+		});
 	});
 });
 
