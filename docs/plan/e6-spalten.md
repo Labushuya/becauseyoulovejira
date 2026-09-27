@@ -1,6 +1,6 @@
 # E6-Plan, Teil Spalten: Breiten ziehen, ein- und ausblenden, kompakte Zeilen
 
-- **Stand:** in Arbeit (2026-09-27); SP-1 gemergt, SP-2 in Arbeit.
+- **Stand:** in Arbeit (2026-09-27); SP-1 und SP-2 gemergt, SP-3 in Arbeit.
 - **Grundlage:**
   - [ADR-0030](../adr/0030-spalten-breiten-und-kompakte-zeilen.md) (berechnete Anpassung, Breiten und Schwellen, Griff, Menü „Spalten“, Speichern, kompakte Zeilen)
   - [ADR-0025](../adr/0025-ui-konsistenz-overlay-system.md) §5 und §11, [ADR-0010](../adr/0010-layout-nach-task-board.md) §1, [ADR-0019](../adr/0019-kanal-filter-und-gruppierung.md) §4, [ADR-0029](../adr/0029-glas-materialien.md)
@@ -43,14 +43,18 @@
 | 2026-09-27 | SP-2 | **`data-col` an jeder Zelle** (vorher nur an den weichenden Spalten), dazu `col[data-column]` in der `colgroup`; so findet der Doppelklick alle Zellen einer Spalte. Zellen schneiden ab, statt überzulaufen (`overflow: hidden`, Ellipse); Status, Fällig und Aktionen bleiben einzeilig. |
 | 2026-09-27 | SP-2 | **`forced-colors`:** Die Linie des Griffs ist ein Rand, den das System in seiner Textfarbe zeichnet; dort ist sie immer sichtbar. Keine Systemfarbe im Code (`color-literals.test.ts`). |
 | 2026-09-27 | SP-2 | `TicketTable` und `TicketTableRow` ziehen bei der Gelegenheit auf die Schriftgrößen-Tokens (13 Werte, `no-own-font-sizes.test.ts` jetzt 275). |
+| 2026-09-27 | SP-3 | **Spalte „Quelle“** zwischen Titel und Projekt, 7rem, standardmäßig aus (`hiddenByDefault`) und als erste weichend (Rang 0), mit dem Namen der Quellfamilie als Text; das Symbol am Titel bleibt. Die gespeicherte Liste `hidden` enthält deshalb im Standard `source`; eine leere Liste heißt „Quelle eingeschaltet“. Nachtrag in ADR-0019. |
+| 2026-09-27 | SP-3 | **Menü:** `ColumnsPopover` bekommt den Store und die gerade wegen Platz fehlenden Spalten. Die Ansage („Projekt: 9 rem“, „Erstellt ausgeblendet.“) steht in einer eigenen `aria-live`-Zeile im Popover; so hört man sie auch, wenn die Tabelle umbricht. „schmaler“ und „breiter“ sind an der Grenze `aria-disabled` (fokussierbar, ohne Wirkung) und klemmen nur auf Minimum und Maximum der Spalte: Passt die breitere Spalte nicht mehr, weichen andere, und das Menü sagt „wegen Platz ausgeblendet“. |
+| 2026-09-27 | SP-3 | **„Standard wiederherstellen“** ist `aria-disabled`, solange die Tabelle schon im Standard ist, damit kein Flag „Spalten zurückgesetzt“ für nichts kommt. Der Knopf bleibt fokussierbar, der Fokus bleibt nach dem Zurücksetzen auf ihm. |
+| 2026-09-27 | SP-3 | Die Breite steht als „8 rem“ bzw. „8,5 rem“ (halbe Schritte, `formatRem`); eine gezogene Breite wird dafür gerundet, gespeichert bleibt der Pixelwert. |
 
 ## 4. Status
 
 | Paket | Stand |
 |---|---|
 | SP-1 | gemergt (#98) |
-| SP-2 | in Arbeit |
-| SP-3 | offen |
+| SP-2 | gemergt (#99) |
+| SP-3 | in Arbeit |
 | SP-4 | offen |
 | SP-5 | offen |
 | Tags | offen |
