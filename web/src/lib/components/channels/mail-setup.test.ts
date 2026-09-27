@@ -151,7 +151,9 @@ describe('mailbox assistant (EH-7)', () => {
 		expect(
 			within(dialog).getByText('Warte auf den ersten Abruf (spätestens 5 Minuten) …')
 		).toBeTruthy();
-		expect(within(dialog).queryByRole('button', { name: 'Jetzt abrufen' })).toBeNull();
+		// Since the user's request after #84 the step offers "Jetzt abrufen" besides waiting.
+		expect(within(dialog).getByRole('button', { name: 'Jetzt abrufen' })).toBeTruthy();
+		expect(within(dialog).getByText(/„Jetzt abrufen“ startet ihn sofort/)).toBeTruthy();
 		// Full inbox: the step says that the whole inbox is searched, and nothing else.
 		expect(
 			within(dialog).getByText(
@@ -176,6 +178,64 @@ describe('mailbox assistant (EH-7)', () => {
 		await vi.waitFor(() => expect(within(dialog).getByText(/^Abgerufen, zuletzt/)).toBeTruthy());
 		expect(data.get).not.toHaveBeenCalled();
 		expect(data.listMailbox).not.toHaveBeenCalled();
+	});
+
+	it('fetches the mailbox at once with "Jetzt abrufen" and shows the answer in the step', async () => {
+		const { data } = await open([mailbox({ keywords: ['todo'] })], {
+			kind: 'webde',
+			connectionId: ID
+		});
+		const dialog = screen.getByRole('dialog', { name: 'Web.de einrichten' });
+		data.run.mockResolvedValueOnce({
+			status: 'ok',
+			created: 2,
+			duplicates: 0,
+			updated: 0,
+			skipped: 0,
+			failed: 0,
+			unmatched: 5,
+			error: '',
+			missing: []
+		});
+		data.get.mockResolvedValueOnce(
+			mailbox({ keywords: ['todo'], lastRunAt: '2026-09-26 10:05:00.000Z' })
+		);
+
+		await fireEvent.click(within(dialog).getByRole('button', { name: 'Jetzt abrufen' }));
+
+		await vi.waitFor(() => expect(data.run).toHaveBeenCalledWith(ID));
+		await vi.waitFor(() =>
+			expect(within(dialog).getByRole('heading', { name: /Abgerufen$/ })).toBeTruthy()
+		);
+		// The answer stays in the step, no extra flag, and the helper is asked only by the run.
+		expect(data.listMailbox).not.toHaveBeenCalled();
+	});
+
+	it('says in the step when the helper does not answer "Jetzt abrufen"', async () => {
+		const { data } = await open([mailbox({ keywords: ['todo'] })], {
+			kind: 'webde',
+			connectionId: ID
+		});
+		const dialog = screen.getByRole('dialog', { name: 'Web.de einrichten' });
+		data.run.mockResolvedValueOnce({
+			status: 'unavailable',
+			created: 0,
+			duplicates: 0,
+			updated: 0,
+			skipped: 0,
+			failed: 0,
+			unmatched: 0,
+			error: 'Der Mail-Hilfsprozess läuft nicht.',
+			missing: []
+		});
+
+		await fireEvent.click(within(dialog).getByRole('button', { name: 'Jetzt abrufen' }));
+
+		await vi.waitFor(() =>
+			expect(
+				within(dialog).getByText(/„Web\.de“: Der Mail-Hilfsprozess läuft nicht\./)
+			).toBeTruthy()
+		);
 	});
 
 	it('checks the helper only on a click and says whether it runs', async () => {
