@@ -74,17 +74,19 @@ function setup(
 		query?: InboxQuery;
 		tickets?: TicketSummary[];
 		onlink?: () => void;
+		/** Entries of the paged views instead of the one default entry. */
+		handled?: InboxItemSummary[];
 	} = {}
 ) {
 	const data = {
 		listNew: vi.fn<InboxData['listNew']>(async () => options.items ?? [A, B, C]),
 		listHandled: vi.fn<InboxData['listHandled']>(async (state, page) => ({
-			items: [
+			items: options.handled ?? [
 				item('item00000000009', {
 					title: 'Alt',
-					state,
+					state: state === 'all' ? 'converted' : state,
 					handledAt: '2026-09-20 10:00:00.000Z',
-					ticketId: state === 'converted' ? 'tick00000000009' : null
+					ticketId: state === 'discarded' ? null : 'tick00000000009'
 				})
 			],
 			page,
@@ -203,7 +205,7 @@ describe('inbox table', () => {
 		).toBe('/eingang/item00000000002');
 	});
 
-	it('writes the chips to the URL; "Zustand" has no "Alle"', async () => {
+	it('writes the chips to the URL; "Zustand" offers "Verknüpft" and "Alle"', async () => {
 		setup();
 		await table();
 		const sourceChips = within(screen.getByRole('group', { name: 'Quelle' }));
@@ -215,9 +217,20 @@ describe('inbox table', () => {
 		const stateChips = within(screen.getByRole('group', { name: 'Zustand' }));
 		expect(
 			stateChips.getAllByRole('radio').map((radio) => radio.closest('label')?.textContent?.trim())
-		).toEqual(['Neu', 'Verworfen', 'Umgewandelt']);
+		).toEqual(['Neu', 'Verknüpft', 'Verworfen', 'Alle']);
+		expect((stateChips.getByRole('radio', { name: 'Neu' }) as HTMLInputElement).checked).toBe(true);
 		await fireEvent.click(stateChips.getByRole('radio', { name: 'Verworfen' }));
 		expect(mocks.goto).toHaveBeenLastCalledWith('/eingang?zustand=verworfen', {
+			keepFocus: true,
+			noScroll: true
+		});
+		await fireEvent.click(stateChips.getByRole('radio', { name: 'Verknüpft' }));
+		expect(mocks.goto).toHaveBeenLastCalledWith('/eingang?zustand=verknuepft', {
+			keepFocus: true,
+			noScroll: true
+		});
+		await fireEvent.click(stateChips.getByRole('radio', { name: 'Alle' }));
+		expect(mocks.goto).toHaveBeenLastCalledWith('/eingang?zustand=alle', {
 			keepFocus: true,
 			noScroll: true
 		});
@@ -314,7 +327,8 @@ describe('inbox table', () => {
 
 	it.each([
 		['discarded', 'Keine verworfenen Einträge'],
-		['converted', 'Keine umgewandelten Einträge']
+		['converted', 'Keine verknüpften Einträge'],
+		['all', 'Noch keine Einträge']
 	] as const)('shows the empty state for %s entries without an action', async (state, title) => {
 		const { data, store } = setup({ query: { source: null, state } });
 		data.listHandled.mockResolvedValue({ items: [], page: 1, hasMore: false });
@@ -459,9 +473,55 @@ describe('inbox table', () => {
 	it('links converted entries to their ticket', async () => {
 		setup({ query: { source: null, state: 'converted' } });
 		const view = await table();
+		expect(screen.getByRole('table').querySelector('caption')?.textContent).toBe(
+			'Eingang · verknüpft, zuletzt verknüpfte zuerst'
+		);
+		// Without the expanded ticket the row keeps the plain link.
 		expect(view.getByRole('link', { name: 'Ticket ansehen: „Alt“' }).getAttribute('href')).toBe(
 			'/tickets/tick00000000009'
 		);
+	});
+
+	it('marks linked entries in the accent colour with the chip "→ HAUS-9" (ADR-0031)', async () => {
+		setup({
+			query: { source: null, state: 'converted' },
+			handled: [
+				item('item00000000009', {
+					title: 'Alt',
+					state: 'converted',
+					handledAt: '2026-09-20 10:00:00.000Z',
+					ticketId: 'tick00000000009',
+					ticket: { id: 'tick00000000009', key: 'HAUS-9', title: 'Steuer', primary: false }
+				})
+			]
+		});
+		const view = await table();
+		const chip = await view.findByRole('link', { name: 'Ticket HAUS-9 öffnen: „Alt“' });
+		expect(chip.getAttribute('href')).toBe('/tickets/tick00000000009');
+		expect(chip.textContent?.replace(/\s+/g, ' ').trim()).toBe('→ HAUS-9');
+		expect(chip.getAttribute('title')).toBe('HAUS-9 · Steuer');
+		expect(chip.className).toContain('ticket-chip');
+		expect(chip.closest('tr')?.classList.contains('linked')).toBe(true);
+		expect(view.queryByRole('link', { name: /^Ticket ansehen/ })).toBeNull();
+	});
+
+	it('shows every entry in the view "Alle", newest first, and new ones stay in it', async () => {
+		const { data, store: inbox } = setup({ query: { source: null, state: 'all' } });
+		const view = await table();
+		expect(data.listHandled).toHaveBeenLastCalledWith('all', 1, expect.anything());
+		expect(screen.getByRole('table').querySelector('caption')?.textContent).toBe(
+			'Eingang · alle, neueste zuerst'
+		);
+		expect(view.getByRole('columnheader', { name: 'Eingang' })).toBeTruthy();
+		// A new entry arriving by realtime joins the view; it has no selection here.
+		inbox.upsert(item('item00000000008', { title: 'Frisch', created: '2026-09-26 08:00:00.000Z' }));
+		await tick();
+		const rows = view.getAllByRole('row').slice(1);
+		expect(rows.map((row) => row.getAttribute('data-item-id'))).toEqual([
+			'item00000000008',
+			'item00000000009'
+		]);
+		expect(view.queryByRole('checkbox')).toBeNull();
 	});
 
 	it('uses no error colour outside of real failures', () => {

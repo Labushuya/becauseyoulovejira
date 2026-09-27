@@ -49,7 +49,7 @@ Das Detail-Panel zeigt unter den Eigenschaften „Quelle: Mail (Web.de)“ mit d
 
 ### 6. Eingangsansicht
 
-Der Eingang nutzt dieselben Familien als Chip-Gruppe (Parameter `quelle`) und dazu „Zustand“ (`neu` als Standard, `verworfen`, `umgewandelt`), mit derselben Mechanik aus `list-query.ts`. Einträge sind im Client vollständig geladen, solange es nur die neuen sind; Verworfene und Umgewandelte kommen seitenweise vom Server (Muster der erledigten Tickets, ADR-0013 §3).
+Der Eingang nutzt dieselben Familien als Chip-Gruppe (Parameter `quelle`) und dazu „Zustand“ (`neu` als Standard, `verworfen`, `umgewandelt`; seit dem Nachtrag C zu [ADR-0031](0031-herkunft-sichern.md) „Verknüpft“ als `verknuepft`, `umgewandelt` wird weiter gelesen, und „Alle“ als `alle`), mit derselben Mechanik aus `list-query.ts`. Einträge sind im Client vollständig geladen, solange es nur die neuen sind; Verworfene und Umgewandelte kommen seitenweise vom Server (Muster der erledigten Tickets, ADR-0013 §3).
 
 ## Alternativen
 

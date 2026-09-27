@@ -32,12 +32,12 @@ import {
 	compareHandled,
 	compareNewest,
 	findSoftDuplicates,
-	type HandledState,
 	type InboxChannel,
 	type InboxDraft,
 	type InboxDuplicate,
 	type InboxItem,
 	type InboxItemSummary,
+	type ListedView,
 	type SoftDuplicates
 } from '$lib/domain/inbox';
 import { DEFAULT_INBOX_QUERY, type InboxQuery } from '$lib/domain/inbox-query';
@@ -58,7 +58,7 @@ export const INBOX_UNAVAILABLE_MESSAGE = restartNeeded('Der Eingang ist');
 export interface InboxData {
 	listNew(options: RequestOptions): Promise<InboxItemSummary[]>;
 	listHandled(
-		state: HandledState,
+		state: ListedView,
 		page: number,
 		options: RequestOptions & { channels: readonly InboxChannel[] | null }
 	): Promise<HandledItemPage>;
@@ -142,7 +142,9 @@ export class InboxStore {
 	#loadingMoreHandled = $state(false);
 
 	#newList = $derived([...this.#new.values()].sort(compareNewest));
-	#handledList = $derived([...this.#handled.values()].sort(compareHandled));
+	#handledList = $derived(
+		[...this.#handled.values()].sort(this.#query.state === 'all' ? compareNewest : compareHandled)
+	);
 	#visible = $derived.by(() => {
 		const query = this.#query;
 		if (query.state !== 'new') return this.#handledList;
@@ -184,13 +186,16 @@ export class InboxStore {
 		return this.#error;
 	}
 
-	/** Loaded handled entries of the shown state, most recently handled first. */
+	/**
+	 * Loaded entries of the shown paged view: most recently handled first, or newest first in the
+	 * view "Alle".
+	 */
 	get handled(): readonly InboxItemSummary[] {
 		return this.#handledList;
 	}
 
-	/** Handled state shown, null while the new entries are shown. */
-	get handledState(): HandledState | null {
+	/** Paged view shown (a handled state or "all"), null while the new entries are shown. */
+	get handledState(): ListedView | null {
 		return this.#query.state === 'new' ? null : this.#query.state;
 	}
 
@@ -288,11 +293,11 @@ export class InboxStore {
 		if (item.state === 'new') {
 			// Back in the inbox by another way: "Rückgängig" has nothing left to do.
 			this.#dropUndo(item.id);
-			this.#handled.delete(item.id);
 			this.#new.set(item.id, item);
-			return;
+		} else {
+			this.#new.delete(item.id);
 		}
-		this.#new.delete(item.id);
+		// The view "Alle" pages through every state, new entries included.
 		if (this.#belongsToHandled(item)) this.#handled.set(item.id, item);
 		else this.#handled.delete(item.id);
 	}
@@ -634,20 +639,28 @@ export class InboxStore {
 			if (touched.has(item.id) || this.#deleted.has(item.id)) continue;
 			const existing = this.find(item.id);
 			if (existing !== null && existing.updated > item.updated) continue;
-			if (map === this.#new) this.#handled.delete(item.id);
-			else this.#new.delete(item.id);
+			if (map === this.#new) {
+				if (this.#query.state !== 'all') this.#handled.delete(item.id);
+			} else if (item.state !== 'new') {
+				this.#new.delete(item.id);
+			}
 			map.set(item.id, item);
 		}
 	}
 
-	/** A handled entry joins the loaded ones only where the loaded pages cover it. */
+	/**
+	 * An entry joins the loaded ones of the paged view (its state, or any state in "Alle") only
+	 * where the loaded pages cover it.
+	 */
 	#belongsToHandled(item: InboxItemSummary): boolean {
 		const query = this.#query;
-		if (query.state !== item.state || this.#handledLoad !== 'ready') return false;
+		if (query.state === 'new' || this.#handledLoad !== 'ready') return false;
+		if (query.state !== 'all' && query.state !== item.state) return false;
 		if (query.source !== null && sourceFamily(item.channel) !== query.source) return false;
 		if (this.#handled.has(item.id) || !this.#handledHasMore) return true;
 		const last = this.#handledList.at(-1);
-		return last === undefined || compareHandled(item, last) < 0;
+		const compare = query.state === 'all' ? compareNewest : compareHandled;
+		return last === undefined || compare(item, last) < 0;
 	}
 
 	async #loadNew(): Promise<void> {
@@ -701,7 +714,7 @@ export class InboxStore {
 				if (this.#deleted.has(item.id)) continue;
 				const existing = this.find(item.id);
 				if (existing !== null && existing.updated > item.updated) continue;
-				this.#new.delete(item.id);
+				if (item.state !== 'new') this.#new.delete(item.id);
 				this.#handled.set(item.id, item);
 			}
 			this.#handledPage = result.page;

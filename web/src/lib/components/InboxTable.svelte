@@ -8,9 +8,9 @@
 	import {
 		CHANNEL_LABELS,
 		KIND_LABELS,
-		STATE_LABELS,
+		VIEW_LABELS,
 		type InboxItemSummary,
-		type InboxState
+		type InboxView
 	} from '$lib/domain/inbox';
 	import { type InboxQuery } from '$lib/domain/inbox-query';
 	import { MORE_COLUMNS_HINT } from '$lib/domain/labels';
@@ -48,6 +48,9 @@
 	// order, first the arrival (or handling) date, then "Quelle", then "Art", last "Quelldatum";
 	// selection, title and the actions always stay, and the caption then names the panel. Grips
 	// and the menu "Spalten" change widths and visibility; the title takes at most two lines.
+	// Linked entries (ADR-0031, addendum C) carry the row mark in the accent colour and the chip
+	// "→ HAUS-12", a link to their ticket; the chip "Zustand" offers "Neu" (default), "Verknüpft",
+	// "Verworfen" and "Alle".
 	let {
 		store,
 		flags,
@@ -97,10 +100,11 @@
 	/** Titles from this length get a tooltip with the whole text (only they can be cut off). */
 	const LONG_TITLE = 60;
 
-	const STATE_CHIPS: readonly { value: InboxState; label: string }[] = [
-		{ value: 'new', label: STATE_LABELS.new },
-		{ value: 'discarded', label: STATE_LABELS.discarded },
-		{ value: 'converted', label: STATE_LABELS.converted }
+	const STATE_CHIPS: readonly { value: InboxView; label: string }[] = [
+		{ value: 'new', label: VIEW_LABELS.new },
+		{ value: 'converted', label: VIEW_LABELS.converted },
+		{ value: 'discarded', label: VIEW_LABELS.discarded },
+		{ value: 'all', label: VIEW_LABELS.all }
 	];
 	const SOURCE_CHIPS = SOURCE_FAMILY_CHIPS.map((family) => ({
 		value: family,
@@ -109,6 +113,8 @@
 
 	const query = $derived(store.query);
 	const showsNew = $derived(query.state === 'new');
+	/** New entries and the view "Alle" are ordered by arrival, the others by their handling. */
+	const byArrival = $derived(query.state === 'new' || query.state === 'all');
 	const rows = $derived(store.visible);
 	/** Chosen entries that are shown and still new (a converted or discarded one drops out). */
 	const chosen = $derived(
@@ -126,9 +132,11 @@
 	const caption = $derived(
 		showsNew
 			? 'Eingang · neu, neueste zuerst'
-			: query.state === 'discarded'
-				? 'Eingang · verworfen, zuletzt verworfene zuerst'
-				: 'Eingang · umgewandelt, zuletzt umgewandelte zuerst'
+			: query.state === 'all'
+				? 'Eingang · alle, neueste zuerst'
+				: query.state === 'discarded'
+					? 'Eingang · verworfen, zuletzt verworfene zuerst'
+					: 'Eingang · verknüpft, zuletzt verknüpfte zuerst'
 	);
 
 	let root = $state<HTMLElement>();
@@ -316,7 +324,7 @@
 			options={STATE_CHIPS}
 			value={query.state}
 			all={null}
-			onchange={(value: InboxState | null) => navigate({ ...query, state: value ?? 'new' })}
+			onchange={(value: InboxView | null) => navigate({ ...query, state: value ?? 'new' })}
 		/>
 	</div>
 
@@ -381,12 +389,19 @@
 				title="Keine verworfenen Einträge"
 				description="Verworfenes bleibt hier; der Inhalt wird nach 30 Tagen geleert."
 			/>
+		{:else if query.state === 'all'}
+			<EmptyState
+				size="narrow"
+				icon="inbox"
+				title="Noch keine Einträge"
+				description="Hier stehen neue, verknüpfte und verworfene Einträge zusammen."
+			/>
 		{:else}
 			<EmptyState
 				size="narrow"
 				icon="inbox"
-				title="Keine umgewandelten Einträge"
-				description="Was du in ein Ticket umwandelst, steht danach hier mit einem Link zum Ticket."
+				title="Keine verknüpften Einträge"
+				description="Was du in ein Ticket umwandelst oder mit einem Ticket verknüpfst, steht danach hier mit einem Link zum Ticket."
 			/>
 		{/if}
 	{:else if !ready}
@@ -422,7 +437,7 @@
 										onchange={(event) => toggleAll(event.currentTarget.checked)}
 									/>
 								{:else if column.id === 'arrival'}
-									{showsNew ? column.label : STATE_LABELS[query.state]}
+									{byArrival ? column.label : VIEW_LABELS[query.state]}
 								{:else if column.id === 'actions'}
 									<span class="visually-hidden">{column.label}</span>
 								{:else}
@@ -436,8 +451,15 @@
 					{#each rows as item (item.id)}
 						{@const pending = store.isPending(item.id)}
 						{@const sourceDate = sourceDateOf(item)}
-						{@const arrival = showsNew ? item.created : (item.handledAt ?? item.created)}
-						<tr class="row" class:active={item.id === activeId} data-item-id={item.id}>
+						{@const arrival = byArrival ? item.created : (item.handledAt ?? item.created)}
+						{@const linkedTicket =
+							item.state === 'converted' && item.ticket?.id === item.ticketId ? item.ticket : null}
+						<tr
+							class="row"
+							class:active={item.id === activeId}
+							class:linked={item.state === 'converted' && item.ticketId !== null}
+							data-item-id={item.id}
+						>
 							{#if shown.has('select')}
 								<td class="select" data-col="select">
 									<input
@@ -509,6 +531,14 @@
 										>
 											Wiederherstellen<span class="visually-hidden">: „{item.title}“</span>
 										</button>
+									{:else if linkedTicket !== null}
+										<a
+											class="ticket-chip"
+											href={ticketPath(linkedTicket.id)}
+											title={`${linkedTicket.key} · ${linkedTicket.title}`}
+											aria-label={`Ticket ${linkedTicket.key} öffnen: „${item.title}“`}
+											>→ <span class="ticket-key">{linkedTicket.key}</span></a
+										>
 									{:else if item.ticketId !== null}
 										<a class="action" href={ticketPath(item.ticketId)}
 											>Ticket ansehen<span class="visually-hidden">: „{item.title}“</span></a
@@ -631,9 +661,36 @@
 		background: var(--color-brand-soft-bg);
 	}
 
-	/* Second, non-colour mark of the open row: a bar at its start. */
-	.row.active > :first-child {
+	/* Second, non-colour mark of the open row: a bar at its start. A linked entry (ADR-0031,
+	   addendum C) carries the same bar in the accent colour; its chip names the ticket. */
+	.row.active > :first-child,
+	.row.linked > :first-child {
 		box-shadow: inset 3px 0 0 var(--color-brand);
+	}
+
+	/* "→ HAUS-12": the ticket of a linked entry as a chip in the accent colour, a link to it. */
+	.ticket-chip {
+		display: inline-flex;
+		align-items: center;
+		max-width: 100%;
+		padding: 0.0625rem 0.5rem;
+		overflow: hidden;
+		font-size: var(--font-size-control);
+		color: var(--color-brand-soft-text);
+		white-space: nowrap;
+		text-decoration: none;
+		text-overflow: ellipsis;
+		background: var(--color-brand-soft-bg);
+		border-radius: var(--radius-pill);
+	}
+
+	.ticket-chip:hover {
+		text-decoration: underline;
+	}
+
+	.ticket-key {
+		font-family: var(--font-mono);
+		font-weight: 600;
 	}
 
 	/* Fixed widths: what does not fit is cut off inside its cell, never beside it. */

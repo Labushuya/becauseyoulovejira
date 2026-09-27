@@ -41,6 +41,24 @@ export type InboxState = (typeof INBOX_STATES)[number];
 /** States of the entries that were decided on; they are loaded page by page (T-4). */
 export type HandledState = Exclude<InboxState, 'new'>;
 
+/**
+ * Views of the inbox (chip "Zustand", ADR-0031 addendum C): one state, or every entry. The new
+ * entries are the default view.
+ */
+export const INBOX_VIEWS = ['new', 'converted', 'discarded', 'all'] as const;
+export type InboxView = (typeof INBOX_VIEWS)[number];
+
+/** Views loaded page by page from the server: every view except the new entries. */
+export type ListedView = Exclude<InboxView, 'new'>;
+
+/** Labels of the views: converted entries are shown as linked to their ticket. */
+export const VIEW_LABELS: Readonly<Record<InboxView, string>> = Object.freeze({
+	new: 'Neu',
+	converted: 'Verknüpft',
+	discarded: 'Verworfen',
+	all: 'Alle'
+});
+
 /** Length limits of the schema (1790201200_create_inbox_items.js). */
 export const INBOX_TITLE_MAX_LENGTH = 200;
 export const INBOX_BODY_MAX_LENGTH = 100_000;
@@ -103,6 +121,15 @@ export const STATE_LABELS: Readonly<Record<InboxState, string>> = Object.freeze(
 	converted: 'Umgewandelt',
 	discarded: 'Verworfen'
 });
+
+/**
+ * State of one entry in words: a converted entry is "Umgewandelt" if its ticket came from it (main
+ * source), otherwise "Verknüpft" (ADR-0031, addendum C).
+ */
+export function stateLabel(item: Pick<InboxItemSummary, 'state' | 'ticket'>): string {
+	if (item.state !== 'converted') return STATE_LABELS[item.state];
+	return item.ticket?.primary === true ? STATE_LABELS.converted : VIEW_LABELS.converted;
+}
 
 export function isInboxChannel(value: unknown): value is InboxChannel {
 	return typeof value === 'string' && (INBOX_CHANNELS as readonly string[]).includes(value);

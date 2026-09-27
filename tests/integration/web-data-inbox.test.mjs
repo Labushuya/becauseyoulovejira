@@ -233,6 +233,12 @@ describe('actions', () => {
 		expect(restored).toMatchObject({ state: 'new', handledAt: null });
 		expect((await listNewItems(fresh.client)).map((item) => item.id)).toEqual([items[0].id]);
 		expect((await listHandledItems(fresh.client, 'converted', 1)).items).toEqual([]);
+
+		// View "Alle" (ADR-0031, addendum C): every state, newest first, with the source filter.
+		const every = await listHandledItems(fresh.client, 'all', 1);
+		expect(every.items.map((item) => item.id)).toEqual([...items].reverse().map((item) => item.id));
+		expect(every.items.map((item) => item.state)).toEqual(['discarded', 'discarded', 'new']);
+		expect((await listHandledItems(fresh.client, 'all', 1, { channels: ['link'] })).items).toEqual([]);
 	});
 
 	it('narrows handled entries to the channels of a source family on the server', async () => {
