@@ -1,6 +1,6 @@
 # E6-Plan, Teil Spalten: Breiten ziehen, ein- und ausblenden, kompakte Zeilen
 
-- **Stand:** SP-1 bis SP-5 umgesetzt und gemergt (2026-09-27); die Tag-Eingabe in Arbeit, danach der Switch im Kanal-Dialog.
+- **Stand:** SP-1 bis SP-5 und die Tag-Eingabe umgesetzt und gemergt (2026-09-27); der Switch im Kanal-Dialog in Arbeit. Offen sind die manuellen Browser-Prüfungen.
 - **Grundlage:**
   - [ADR-0030](../adr/0030-spalten-breiten-und-kompakte-zeilen.md) (berechnete Anpassung, Breiten und Schwellen, Griff, Menü „Spalten“, Speichern, kompakte Zeilen)
   - [ADR-0025](../adr/0025-ui-konsistenz-overlay-system.md) §5 und §11, [ADR-0010](../adr/0010-layout-nach-task-board.md) §1, [ADR-0019](../adr/0019-kanal-filter-und-gruppierung.md) §4, [ADR-0029](../adr/0029-glas-materialien.md)
@@ -61,6 +61,7 @@
 | 2026-09-27 | Tags | **Mehrere Tags nacheinander:** `planTagInput` löst jeden Namen ohne Groß-/Kleinschreibung auf ein bestehendes Tag auf oder legt ihn an und überspringt gewählte und doppelte Namen (Ansage „… ist schon gewählt“). Die Rückrufe der Besitzer (`onadd`, `oncreate`) laufen der Reihe nach; im Panel speichert jeder Schritt sofort. Scheitert einer (der Besitzer zeigt den Grund), kommen er und die folgenden Namen zurück ins Feld. Das Feld zeigt den Rest sofort; was man während des Speicherns tippt, bleibt dahinter stehen. Die Längenprüfung bleibt beim Anlegen (`ensureTag`). |
 | 2026-09-27 | Tags | **Rücktaste:** Nur der erste Druck einer gehaltenen Taste holt zurück (`repeat`), und nur wenn das Entfernen klappt, steht der Name im Feld, die Schreibmarke am Ende. Die Tasten nennt ein verborgener Hinweis per `aria-describedby` (die Felder im Panel bleiben optisch unverändert); die Ansage steht in einer eigenen `aria-live`-Zeile. |
 | 2026-09-27 | Tags | Bei der Gelegenheit ziehen `KeywordEditor` (Radien und Schriftgrößen) und `TagPicker` (Schriftgrößen) auf die Tokens; `KeywordEditor` fällt von der Ausnahmeliste von `no-own-radii.test.ts`, beide von der Liste von `no-own-font-sizes.test.ts` (jetzt 246). |
+| 2026-09-27 | Switch | **Kanal-Dialog:** Die zwei Schalter in `ChannelEditModal` (Telegram „Auf Nachrichten ohne Stichwort antworten“, Postfach „Betreff, Absender, Kopfzeilen und Text durchsuchen“) werden `role="switch"` nach ADR-0029 und G-5, als Zeile mit dem Namen links und dem Switch rechts wie „Glas-Effekt“ unter „Darstellung“. Kein neues Token; Name, Werte und Rückrufe bleiben. Die Schriftgrößen des Dialogs ziehen auf die Tokens (242). Damit ist der offene Punkt aus dem Glas-Plan §6 erledigt. |
 
 ## 4. Status
 
@@ -71,8 +72,8 @@
 | SP-3 | gemergt (#100) |
 | SP-4 | gemergt (#101) |
 | SP-5 | gemergt (#102) |
-| Tags | in Arbeit |
-| Switch | offen |
+| Tags | gemergt (#103) |
+| Switch | in Arbeit |
 
 ## 5. Offene Punkte
 

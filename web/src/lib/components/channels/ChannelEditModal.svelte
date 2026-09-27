@@ -14,6 +14,8 @@
 	// connection, its switch (Telegram: answer to messages without keyword; mailbox: search headers
 	// and the whole text) and the names of its variables, read only, with the way to the setup. Every change
 	// is saved at once, so the footer says "Schließen" (ADR-0025 section 3); results go out as flags.
+	// The switches are switches after Apple HIG (ADR-0029, G-5): a single emphasised setting, a row
+	// with the name left and the switch right, drawn by base.css through role="switch".
 	let {
 		connection,
 		message = null,
@@ -47,24 +49,28 @@
 			onsave={onkeywords}
 		/>
 		{#if connection.type === 'telegram'}
-			<label class="switch">
+			<label class="setting">
+				<span>
+					Auf Nachrichten ohne Stichwort antworten („Kein Stichwort erkannt – nicht gespeichert“)
+				</span>
 				<input
 					type="checkbox"
+					role="switch"
 					checked={connection.replyNoMatch}
 					onchange={(event) => onreply(event.currentTarget.checked)}
 				/>
-				Auf Nachrichten ohne Stichwort antworten („Kein Stichwort erkannt – nicht gespeichert“)
 			</label>
 		{/if}
 		{#if connection.type === 'mail'}
 			<SectionMessage tone="info" compact>{MAIL_INBOX_HINT}</SectionMessage>
-			<label class="switch">
+			<label class="setting">
+				<span>{MAIL_MATCH_BODY_LABEL}</span>
 				<input
 					type="checkbox"
+					role="switch"
 					checked={connection.matchBody}
 					onchange={(event) => onmatchbody(event.currentTarget.checked)}
 				/>
-				{MAIL_MATCH_BODY_LABEL}
 			</label>
 		{/if}
 		{#if message !== null}
@@ -102,12 +108,18 @@
 		gap: 1rem;
 	}
 
-	.switch {
+	/* A setting row: the name left, the switch right (like "Glas-Effekt" under "Darstellung"). */
+	.setting {
 		display: flex;
-		gap: 0.375rem;
-		align-items: baseline;
-		font-size: 0.875rem;
+		gap: 1rem;
+		align-items: center;
+		justify-content: space-between;
+		font-size: var(--font-size-body);
 		cursor: pointer;
+	}
+
+	.setting input {
+		flex: none;
 	}
 
 	.variables {
@@ -118,14 +130,14 @@
 	}
 
 	h3 {
-		font-size: 0.875rem;
+		font-size: var(--font-size-body);
 		font-weight: 600;
 	}
 
 	dl {
 		display: grid;
 		gap: 0.25rem;
-		font-size: 0.8125rem;
+		font-size: var(--font-size-control);
 	}
 
 	dl div {
@@ -143,7 +155,7 @@
 	}
 
 	.hint {
-		font-size: 0.8125rem;
+		font-size: var(--font-size-control);
 		color: var(--color-text-muted);
 	}
 

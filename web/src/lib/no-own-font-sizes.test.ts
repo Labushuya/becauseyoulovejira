@@ -13,7 +13,7 @@ const SRC_DIR = resolve(import.meta.dirname, '..');
 const TOKENS_CSS = join('lib', 'styles', 'tokens.css');
 
 /** Numbers left from before G-6 in all listed files together; lower it when one goes. */
-const LEGACY_COUNT = 246;
+const LEGACY_COUNT = 242;
 
 /** Files that still carry font sizes as numbers (as of G-6). */
 const LEGACY_FILES = [
@@ -69,7 +69,6 @@ const LEGACY_FILES = [
 	'lib/components/channels/BookmarkletCard.svelte',
 	'lib/components/channels/ChannelCard.svelte',
 	'lib/components/channels/ChannelCatalog.svelte',
-	'lib/components/channels/ChannelEditModal.svelte',
 	'lib/components/channels/ChannelSetup.svelte',
 	'lib/components/channels/ChannelsIntro.svelte',
 	'lib/components/channels/FileImportGuides.svelte',
