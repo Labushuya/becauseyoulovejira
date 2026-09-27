@@ -58,7 +58,7 @@ const NON_COLOR_TOKENS = {
 	'--drawer-width': '30rem',
 	'--full-view-sidebar': '21.25rem',
 	'--radius-control': '0.375rem',
-	'--radius-surface': '0.5rem',
+	'--radius-surface': '0.625rem',
 	'--motion-fast': '120ms',
 	'--motion-medium': '200ms',
 	'--motion-ease': 'cubic-bezier(0.2, 0, 0, 1)',
@@ -66,7 +66,10 @@ const NON_COLOR_TOKENS = {
 	'--glass-filter-thick': 'blur(30px) saturate(140%)',
 	'--radius-overlay': '0.75rem',
 	'--radius-item': '0.25rem',
-	'--radius-pill': '999px'
+	'--radius-pill': '999px',
+	'--control-height-s': '1.5rem',
+	'--control-height-m': '1.75rem',
+	'--control-height-l': '2.25rem'
 } as const;
 
 /** What the blocks of the switch point "opaque" set (ADR-0029 section 6). */

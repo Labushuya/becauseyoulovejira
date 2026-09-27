@@ -3,10 +3,14 @@
 // aria-current on the current view, the list state kept while the list is shown. Page state is
 // mocked.
 
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { render, screen, within } from '@testing-library/svelte';
 import { describe, expect, it, vi } from 'vitest';
 import ViewSwitch from './ViewSwitch.svelte';
 import source from './ViewSwitch.svelte?raw';
+
+const base = readFileSync(join(import.meta.dirname, '..', 'styles', 'base.css'), 'utf8');
 
 const mocks = vi.hoisted(() => ({ page: { url: new URL('http://localhost:3000/') } }));
 
@@ -112,10 +116,19 @@ describe('view switch', () => {
 		expect(inbox.dataset.tour).toBe('inbox');
 	});
 
-	it('marks the current view by weight and a line besides its colour (ADR-0010 section 3)', () => {
-		const rule = /a\[aria-current='page'\]\s*\{([^}]*)\}/.exec(source)?.[1] ?? '';
+	// Since G-4 the switch is the segmented control of base.css (ADR-0029 section 9): the current
+	// view is the raised thumb with weight and a frame besides its colour (ADR-0010 section 3).
+	it('marks the current view by weight and a frame besides its colour (segmented control)', () => {
+		expect(source).toMatch(/<nav class="view-switch segmented" aria-label="Ansicht">/);
+		const rule =
+			/\.segmented > :is\(\[aria-current='page'\], \[aria-pressed='true'\]\) \{([^}]*)\}/.exec(
+				base
+			)?.[1] ?? '';
 		expect(rule).toMatch(/font-weight:\s*600/);
-		expect(rule).toMatch(/border-bottom-color:\s*var\(--color-brand\)/);
+		expect(rule).toMatch(/border-color:\s*var\(--color-brand-text\)/);
+		expect(rule).toMatch(/background:\s*var\(--color-brand-soft-bg\)/);
 		expect(source).not.toMatch(/danger/);
+		// No local copy of the entries: only counts and icons are styled here.
+		expect(source).not.toMatch(/\n\ta \{|aria-current='page'\]/);
 	});
 });

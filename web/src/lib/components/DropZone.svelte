@@ -136,7 +136,7 @@
 		font-size: 0.875rem;
 		color: var(--color-text-muted);
 		border: 1px dashed var(--color-line);
-		border-radius: 0.5rem;
+		border-radius: var(--radius-surface);
 	}
 
 	.drop-zone.active {
@@ -151,7 +151,7 @@
 		color: var(--color-brand-text);
 		background: var(--color-surface);
 		border: 1px solid var(--color-brand);
-		border-radius: 0.375rem;
+		border-radius: var(--radius-control);
 		cursor: pointer;
 	}
 

@@ -7,7 +7,8 @@
 	// plan, T-3 and package 14; E4 plan, package 3; E5 plan, T-6 and package 5; ADR-0010 section
 	// 5): a navigation with one link per view,
 	// because each has its own address. The current one carries aria-current="page" and is marked
-	// by weight and a line besides its colour. "Aufgaben" keeps the list state of the URL while the
+	// as the thumb of the segmented control of base.css (ADR-0029 section 9): weight, frame and
+	// shadow besides its colour. "Aufgaben" keeps the list state of the URL while the
 	// list is shown, "Eingang" its chips while the inbox is shown. The number of new inbox entries
 	// stands next to "Eingang" (ADR-0015 section 5), as text for screen readers too. In the settings
 	// (ADR-0026 section 1) no view is current: current is null, and all links lead to the plain views.
@@ -27,7 +28,7 @@
 	const inboxLink = $derived(current === 'inbox' ? inboxHref(page.url) : inboxHref());
 </script>
 
-<nav class="view-switch" aria-label="Ansicht">
+<nav class="view-switch segmented" aria-label="Ansicht">
 	<a href={tasksHref} aria-current={current === 'tasks' ? 'page' : undefined}>
 		<svg viewBox="0 0 16 16" aria-hidden="true" focusable="false">
 			<path d="M3 4h10M3 8h10M3 12h6" />
@@ -70,47 +71,10 @@
 </nav>
 
 <style>
-	/* Four entries: on a narrow window the switch wraps instead of running over the edge. */
-	.view-switch {
-		display: inline-flex;
-		flex-wrap: wrap;
-		max-width: 100%;
-		overflow: hidden;
-		border: 1px solid var(--color-line);
-		border-radius: 0.375rem;
-	}
-
-	a {
-		display: inline-flex;
-		gap: 0.375rem;
-		align-items: center;
-		padding: 0.25rem 0.75rem;
-		font-size: 0.8125rem;
-		color: var(--color-text-muted);
-		text-decoration: none;
-		background: var(--color-surface);
-		border-bottom: 2px solid transparent;
-	}
-
-	a + a {
-		border-left: 1px solid var(--color-line);
-	}
-
-	a:hover {
-		color: var(--color-text);
-	}
-
-	a:focus-visible {
-		outline-offset: -2px;
-	}
-
-	a[aria-current='page'] {
-		font-weight: 600;
-		color: var(--color-brand-soft-text);
-		background: var(--color-brand-soft-bg);
-		border-bottom-color: var(--color-brand);
-	}
-
+	/*
+	 * Track, entries, thumb, hover, focus and wrapping on narrow windows come from .segmented in
+	 * base.css; here only the counts and the icons.
+	 */
 	.count {
 		min-width: 1.25rem;
 		padding: 0 0.3125rem;
@@ -122,7 +86,7 @@
 		color: var(--color-brand-soft-text);
 		background: var(--color-brand-soft-bg);
 		border: 1px solid var(--color-brand);
-		border-radius: 0.5625rem;
+		border-radius: var(--radius-pill);
 	}
 
 	svg {

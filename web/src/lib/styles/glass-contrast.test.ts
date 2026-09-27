@@ -148,6 +148,25 @@ describe.each(CASES)('glass in %s (%s)', (theme, mode) => {
 		expect(failures).toEqual([]);
 	});
 
+	// Tracks, search fields and hover fills (G-4) lie on the page, the gradient or a surface. Text
+	// on them is --color-text (4.5 : 1); the muted color only draws icons such as the magnifier
+	// (3 : 1). Muted text would miss 4.5 : 1 over the accent surface of the gradient.
+	it.each(['--fill-control', '--fill-control-hover'])(
+		'keeps text readable and icons visible on %s over page, gradient and surface',
+		(fill) => {
+			const { color, alpha } = material(value(fill));
+			const failures: string[] = [];
+			for (const ground of ['--color-bg', '--color-brand-soft-bg', '--color-surface']) {
+				const effective = hex(mix(color, rgb(value(ground)), alpha));
+				const text = contrast(value('--color-text'), effective);
+				if (text < 4.5) failures.push(`text on ${fill} over ${ground}: ${text.toFixed(2)}`);
+				const icon = contrast(value('--color-text-muted'), effective);
+				if (icon < 3) failures.push(`icon on ${fill} over ${ground}: ${icon.toFixed(2)}`);
+			}
+			expect(failures).toEqual([]);
+		}
+	);
+
 	it('keeps what stands on the page readable on the gradient (accent surface)', () => {
 		const surface = value('--color-brand-soft-bg');
 		for (const text of TEXT_ON_PAGE) {

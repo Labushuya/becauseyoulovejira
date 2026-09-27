@@ -229,7 +229,7 @@
 		color: var(--color-text-muted);
 		white-space: nowrap;
 		border: 1px solid var(--color-line);
-		border-radius: 0.25rem;
+		border-radius: var(--radius-item);
 	}
 
 	.created {

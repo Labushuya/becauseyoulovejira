@@ -265,7 +265,7 @@
 		font-variant-numeric: tabular-nums;
 		color: var(--color-text-muted);
 		border: 1px solid var(--color-line);
-		border-radius: 0.625rem;
+		border-radius: var(--radius-pill);
 	}
 
 	.tag-list {
@@ -273,7 +273,7 @@
 		list-style: none;
 		background: var(--color-surface);
 		border: 1px solid var(--color-line);
-		border-radius: 0.5rem;
+		border-radius: var(--radius-surface);
 	}
 
 	li {
@@ -310,7 +310,7 @@
 		font-size: 0.875rem;
 		background: var(--color-surface);
 		border: 1px solid var(--color-line);
-		border-radius: 0.375rem;
+		border-radius: var(--radius-control);
 	}
 
 	.small {
@@ -318,7 +318,7 @@
 		font-size: 0.8125rem;
 		background: none;
 		border: 1px solid var(--color-line);
-		border-radius: 0.375rem;
+		border-radius: var(--radius-control);
 		cursor: pointer;
 	}
 

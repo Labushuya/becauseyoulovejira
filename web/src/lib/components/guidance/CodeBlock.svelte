@@ -163,6 +163,6 @@
 		color: var(--color-brand-soft-text);
 		background: var(--color-brand-soft-bg);
 		border: 1px dashed var(--color-brand);
-		border-radius: 0.25rem;
+		border-radius: var(--radius-item);
 	}
 </style>

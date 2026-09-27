@@ -1,6 +1,6 @@
 # E6-Plan, Teil Glas: Materialien im macOS-Stil, verheiratet mit den Akzent-Themes
 
-- **Stand:** in Umsetzung (2026-09-27; G-1 und G-3 gemergt). Reihenfolge G-1, G-3, G-2, G-4, G-5, G-6, je ein PR.
+- **Stand:** in Umsetzung (2026-09-27; G-1, G-3 und G-2 gemergt). Reihenfolge G-1, G-3, G-2, G-4, G-5, G-6, je ein PR.
 - **Grundlage:**
   - [ADR-0029](../adr/0029-glas-materialien.md) (Ebenen, Tokens, Kontrast, Umschaltpunkt „undurchsichtig“, Schalter, Performance)
   - [ADR-0010](../adr/0010-layout-nach-task-board.md) §3 und §4, [ADR-0025](../adr/0025-ui-konsistenz-overlay-system.md) §2, [ADR-0027](../adr/0027-akzent-themes.md) §1 (je mit Nachtrag)
@@ -32,7 +32,7 @@ Die Themes sind Petrol, Rubin, Smaragd und Kupfer (Nachtrag zu ADR-0027 vom 2026
 | G-1 | Fundament: ADR-0029 mit Nachträgen, CLAUDE.md §8, Tokens (Materialien, Filter, Trennlinie, Lichtkante, Popover-Schatten, `--radius-overlay`, `--radius-item`), Umschaltpunkt für Systemeinstellung, Kontrast, Forced Colors und fehlendes `backdrop-filter`, Verlauf auf `body::before`, Kopfzeile (regular) und Popover (thick) aus Glas, einheitliche Menüzeilen, Fokusring in `--color-brand-text` | BYL-E6-100 bis BYL-E6-102 |
 | G-3 | Schalter „Transparenz“ (`byl-transparency`, Boot-Skript, Store, Switch in `base.css`, Block `data-transparency='off'`) | BYL-E6-103 bis BYL-E6-105 |
 | G-2 | Modals, Bestätigung, Seitenpanel, Flags, TagPicker-Liste, Anmeldekarte, Tour; Vollansicht opak; `--shadow-modal` | BYL-E6-106 und BYL-E6-107 |
-| G-4 | Knöpfe, `.segmented`, `.search-field`, Radien auf Tokens | folgt |
+| G-4 | Knöpfe, `.segmented`, `.search-field`, Radien auf Tokens, `--fill-control*`, `--shadow-control`, Höhen | BYL-E6-108 und BYL-E6-109 |
 | G-5 | Switch nach HIG, baut auf den Checkboxen und Radios aus `base.css` auf (#86) | folgt |
 | G-6 | Einstellungs-Sidebar, Typografie, README, manuelle Fälle | folgt |
 
@@ -50,12 +50,15 @@ Die Themes sind Petrol, Rubin, Smaragd und Kupfer (Nachtrag zu ADR-0027 vom 2026
 | 2026-09-27 | G-3 | **Name und Ort:** Gruppe „Transparenz“ (`fieldset`/`legend` wie „Farbschema“ und „Farbe“) mit dem Switch „Glas-Effekt“ als Zeile (Name links, Switch rechts). Die Beschreibung nennt nur Kopfzeile und Menüs; mit G-2 kommen Seitenpanel und Dialoge dazu (umgesetzt). |
 | 2026-09-27 | G-3 | **Systemeinstellung:** `tokens.css` folgt `prefers-reduced-transparency` selbst. Der Store meldet die Media Query nur (`systemReduces`, auch bei späteren Wechseln), damit die Seite den Hinweis zeigt; der Schalter bleibt bedienbar, die Wahl gilt wieder, sobald das System die Transparenz erlaubt. Ohne `matchMedia` gilt „nicht reduziert“. |
 | 2026-09-27 | G-3 | **Andere Tabs:** `ThemeMenu` verbindet den Store (es steht auf jeder Seite der App), die Seite „Darstellung“ zusätzlich; so wirkt der Schalter sofort in allen offenen Tabs, nicht nur auf der Einstellungsseite. |
-
 | 2026-09-27 | G-3 | Die parallele Mail-Arbeit zählt ab `BYL-E6-120` (#89); der Glas-Block reicht damit bis `BYL-E6-119`. |
 | 2026-09-27 | G-2 | **Modal:** S bis L thick über `.modal:not(.size-xl)`, die Vollansicht (XL) bleibt `--color-surface` mit `--radius-overlay` und `--shadow-modal`. So steht `backdrop-filter` nur als Glas-Token im Code, nie als `none` (Allowlist). Kopf- und Fußlinie auf Glas in `--color-separator`. |
 | 2026-09-27 | G-2 | **Seitenpanel:** eingebettet regular (dahinter nur der Seitenhintergrund, das Blur-Modell gilt), als Overlay thick über `:global([data-panel-mode='overlay'])`. Kein Schatten: Linie links und, als Overlay, das Blanket trennen genug; der Test „a line on the left and no shadow“ bleibt damit gültig. |
 | 2026-09-27 | G-2 | **Flags, TagPicker-Liste, Tour:** thick mit `--shadow-popover`; der farbige Streifen links an Flags bleibt. **Anmeldekarte:** thick mit `--shadow-modal`, sie schwebt über dem Verlauf. Der Pfeil der Tour bleibt `--color-surface` (Unterschied zur Deckkraft 0,92 kaum sichtbar). |
 | 2026-09-27 | G-2 | **Kontrast über dem Blanket:** Modals, Panel-Overlay und Tour liegen auf dem Schleier. `glass-contrast.test.ts` rechnet thick deshalb zusätzlich über jeder Palettenfarbe, abgedunkelt mit `--color-blanket`. |
+| 2026-09-27 | G-4 | **Knöpfe:** Primär- und Sekundärknopf mit `--shadow-control`, der Sekundärknopf erhaben auf `--color-surface` mit Linie und Mindesthöhe m; `.button-subtle` und `.button-icon` zeigen beim Hover `--fill-control-hover` statt einer Linie. Die Maße des Primärknopfs (Innenabstand) und von `.button-icon` (2rem, Zielgröße) bleiben, damit sich Formulare und Tabellenzeilen nicht verschieben. |
+| 2026-09-27 | G-4 | **`.segmented`:** Spur `--fill-control`, Einträge `--radius-item` in der Spur mit `--radius-control` (konzentrisch), gewählt als Daumen mit Akzentfläche, Rahmen `--color-brand-text` (wie der Fokusring; `--color-brand` hält auf dem Verlauf keine 3 : 1), Gewicht 600 und `--shadow-control`. Nicht gewählte Einträge in `--color-text`, weil gedämpfter Text auf der Spur über dem Verlauf unter 4,5 : 1 fällt (Rechnung in `glass-contrast.test.ts`). Eingesetzt im Bereichsumschalter und im Symbolpaar „Liste \| Kacheln“ (dort ohne `.button-icon`). Die Kachelgruppen unter „Darstellung“ bleiben Kacheln mit Beschreibung; eine Spur passt nicht zu Karten mit drei Zeilen. |
+| 2026-09-27 | G-4 | **`.search-field`:** Wrapper statt Klasse am Eingabefeld, weil die Lupe als Inline-SVG im Wrapper steht (kein Data-URI, keine Farbliterale). Füllung `--fill-control` plus Linie (auf deckendem Grund bleibt die Kante sichtbar), im Fokus `--color-surface` und der gemeinsame Fokusring statt nur einer Randfarbe. Das Filter-Popover bekommt dieselbe Lupe. |
+| 2026-09-27 | G-4 | **Radien nur als Token:** Rund 70 Literale in 35 Dateien ziehen auf `--radius-control` (0.375rem), `--radius-item` (0.25rem), `--radius-pill` (999px sowie die Zähler mit 0.625rem und der 3px-Balken des Steppers) und `--radius-surface` (0.5rem-Flächen; der Token wächst auf 0.625rem). `no-own-radii.test.ts` verbietet neue Literale. `KeywordEditor`, `ConnectionsSection` und `ImportKeywordsSection` gehören zur parallelen Mail-Arbeit und stehen auf einer Ausnahmeliste, die nur schrumpfen darf. |
 
 ## 5. Status
 
@@ -63,8 +66,8 @@ Die Themes sind Petrol, Rubin, Smaragd und Kupfer (Nachtrag zu ADR-0027 vom 2026
 |---|---|
 | G-1 | gemergt (#88) |
 | G-3 | gemergt (#90) |
-| G-2 | in Arbeit |
-| G-4 | offen |
+| G-2 | gemergt (#91) |
+| G-4 | in Arbeit |
 | G-5 | offen |
 | G-6 | offen |
 

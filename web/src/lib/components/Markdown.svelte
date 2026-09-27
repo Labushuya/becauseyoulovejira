@@ -59,7 +59,7 @@
 		font-size: 0.8125rem;
 		background: var(--color-bg);
 		border: 1px solid var(--color-line);
-		border-radius: 0.25rem;
+		border-radius: var(--radius-item);
 	}
 
 	.markdown :global(pre) {
@@ -68,7 +68,7 @@
 		overflow-x: auto;
 		background: var(--color-bg);
 		border: 1px solid var(--color-line);
-		border-radius: 0.375rem;
+		border-radius: var(--radius-control);
 	}
 
 	.markdown :global(pre code) {

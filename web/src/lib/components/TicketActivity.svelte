@@ -129,7 +129,7 @@
 		font-size: 0.75rem;
 		color: var(--color-brand-soft-text);
 		background: var(--color-brand-soft-bg);
-		border-radius: 0.625rem;
+		border-radius: var(--radius-pill);
 	}
 
 	.panel:focus {

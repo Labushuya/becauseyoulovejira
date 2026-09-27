@@ -127,7 +127,7 @@
 		overflow-wrap: anywhere;
 		background: var(--color-bg);
 		border: 1px solid var(--color-line);
-		border-radius: 0.25rem;
+		border-radius: var(--radius-item);
 	}
 
 	.muted {
@@ -154,7 +154,7 @@
 		font-size: 0.8125rem;
 		background: none;
 		border: 1px solid currentColor;
-		border-radius: 0.375rem;
+		border-radius: var(--radius-control);
 		cursor: pointer;
 	}
 

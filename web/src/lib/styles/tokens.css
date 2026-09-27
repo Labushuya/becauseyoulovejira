@@ -54,6 +54,10 @@
 	--glass-edge: rgb(255 255 255 / 0.55);
 	--shadow-popover: 0 0 0 0.5px rgb(0 0 0 / 0.08), 0 8px 24px rgb(0 0 0 / 0.14);
 	--shadow-modal: 0 0 0 0.5px rgb(0 0 0 / 0.08), 0 22px 60px rgb(0 0 0 / 0.22);
+	/* Controls in the macOS style (ADR-0029 section 9, since G-4): fills of tracks and fields */
+	--fill-control: rgb(23 35 38 / 0.06);
+	--fill-control-hover: rgb(23 35 38 / 0.1);
+	--shadow-control: 0 0.5px 1px rgb(0 0 0 / 0.14);
 
 	/* Status pill colors - light mode */
 	--status-backlog-bg: transparent;
@@ -94,7 +98,7 @@
 	--drawer-width: 30rem;
 	--full-view-sidebar: 21.25rem;
 	--radius-control: 0.375rem;
-	--radius-surface: 0.5rem;
+	--radius-surface: 0.625rem;
 	--motion-fast: 120ms;
 	--motion-medium: 200ms;
 	--motion-ease: cubic-bezier(0.2, 0, 0, 1);
@@ -109,6 +113,15 @@
 	--radius-overlay: 0.75rem;
 	--radius-item: 0.25rem;
 	--radius-pill: 999px;
+
+	/*
+	 * Heights of the controls in the macOS style (ADR-0029 section 9, since G-4): s for menu rows
+	 * and small buttons (24px, WCAG 2.5.8), m for buttons, segments and search fields, l for the
+	 * primary button in forms and empty states.
+	 */
+	--control-height-s: 1.5rem;
+	--control-height-m: 1.75rem;
+	--control-height-l: 2.25rem;
 }
 
 /* Dark mode via media query */
@@ -146,6 +159,10 @@
 		--glass-edge: rgb(255 255 255 / 0.07);
 		--shadow-popover: 0 0 0 0.5px rgb(0 0 0 / 0.55), 0 8px 24px rgb(0 0 0 / 0.45);
 		--shadow-modal: 0 0 0 0.5px rgb(0 0 0 / 0.6), 0 22px 60px rgb(0 0 0 / 0.6);
+		/* Controls in the macOS style (ADR-0029 section 9) */
+		--fill-control: rgb(227 236 238 / 0.08);
+		--fill-control-hover: rgb(227 236 238 / 0.13);
+		--shadow-control: 0 0.5px 1px rgb(0 0 0 / 0.45);
 
 		/* Status pill colors - dark mode */
 		--status-backlog-bg: transparent;
@@ -204,6 +221,10 @@
 	--glass-edge: rgb(255 255 255 / 0.55);
 	--shadow-popover: 0 0 0 0.5px rgb(0 0 0 / 0.08), 0 8px 24px rgb(0 0 0 / 0.14);
 	--shadow-modal: 0 0 0 0.5px rgb(0 0 0 / 0.08), 0 22px 60px rgb(0 0 0 / 0.22);
+	/* Controls in the macOS style (ADR-0029 section 9, since G-4): fills of tracks and fields */
+	--fill-control: rgb(23 35 38 / 0.06);
+	--fill-control-hover: rgb(23 35 38 / 0.1);
+	--shadow-control: 0 0.5px 1px rgb(0 0 0 / 0.14);
 
 	/* Status pill colors - light mode */
 	--status-backlog-bg: transparent;
@@ -261,6 +282,10 @@
 	--glass-edge: rgb(255 255 255 / 0.07);
 	--shadow-popover: 0 0 0 0.5px rgb(0 0 0 / 0.55), 0 8px 24px rgb(0 0 0 / 0.45);
 	--shadow-modal: 0 0 0 0.5px rgb(0 0 0 / 0.6), 0 22px 60px rgb(0 0 0 / 0.6);
+	/* Controls in the macOS style (ADR-0029 section 9) */
+	--fill-control: rgb(227 236 238 / 0.08);
+	--fill-control-hover: rgb(227 236 238 / 0.13);
+	--shadow-control: 0 0.5px 1px rgb(0 0 0 / 0.45);
 
 	/* Status pill colors - dark mode */
 	--status-backlog-bg: transparent;
@@ -549,6 +574,7 @@
 		--color-separator: var(--color-text-muted) !important;
 		--shadow-popover: none !important;
 		--shadow-modal: none !important;
+		--shadow-control: none !important;
 	}
 }
 

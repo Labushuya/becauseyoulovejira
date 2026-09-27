@@ -134,17 +134,22 @@
 			<fieldset>
 				<legend id={legendId}>{legend}</legend>
 				{#if searchable}
-					<input
-						class="search"
-						type="search"
-						autocomplete="off"
-						spellcheck="false"
-						aria-label={`${legend} suchen`}
-						placeholder="Suchen"
-						bind:this={search}
-						bind:value={query}
-						onkeydown={(event) => onsearchkeydown(event, close)}
-					/>
+					<span class="search-field search">
+						<svg viewBox="0 0 16 16" aria-hidden="true" focusable="false">
+							<circle cx="7" cy="7" r="4.25" />
+							<path d="M10.25 10.25L13.5 13.5" />
+						</svg>
+						<input
+							type="search"
+							autocomplete="off"
+							spellcheck="false"
+							aria-label={`${legend} suchen`}
+							placeholder="Suchen"
+							bind:this={search}
+							bind:value={query}
+							onkeydown={(event) => onsearchkeydown(event, close)}
+						/>
+					</span>
 				{/if}
 				{@render choice({ value: ALL, label: allLabel }, 0)}
 				{#each plain as option, index (option.value)}
@@ -246,13 +251,10 @@
 		border-top: 1px solid var(--color-line);
 	}
 
+	/* The search field of base.css (ADR-0029 section 9), full width above the choices. */
 	.search {
+		display: flex;
 		margin: 0 0 0.375rem;
-		padding: 0.25rem 0.5rem;
-		font-size: 0.8125rem;
-		background: var(--color-surface);
-		border: 1px solid var(--color-line);
-		border-radius: var(--radius-control);
 	}
 
 	.choice {

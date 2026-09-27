@@ -246,7 +246,7 @@
 			<ViewSwitch current="projects" {inboxCount} projectsNewCount={tickets.newInProjects} />
 		{/snippet}
 		{#snippet end()}
-			<div class="search">
+			<div class="search-field">
 				<label for={ids.search}>
 					<svg viewBox="0 0 16 16" aria-hidden="true" focusable="false">
 						<circle cx="7" cy="7" r="4.25" />
@@ -272,13 +272,12 @@
 				Archivierte anzeigen
 			</label>
 			<div
-				class="layout-switch"
+				class="layout-switch segmented"
 				role="group"
 				aria-label="Darstellung der Projekte"
 				data-tour="project-layout"
 			>
 				<button
-					class="button-icon"
 					type="button"
 					aria-label="Liste"
 					title="Liste"
@@ -291,7 +290,6 @@
 					</svg>
 				</button>
 				<button
-					class="button-icon"
 					type="button"
 					aria-label="Kacheln"
 					title="Kacheln"
@@ -399,52 +397,13 @@
 		cursor: pointer;
 	}
 
-	/* Same field as the search of the filter bar in "Aufgaben". */
-	.search {
-		display: inline-flex;
-		align-items: center;
-		padding: 0 0.375rem;
-		color: var(--color-text-muted);
-		background: var(--color-surface);
-		border: 1px solid var(--color-line);
-		border-radius: var(--radius-control);
-	}
-
-	.search:focus-within {
-		border-color: var(--color-brand);
-	}
-
-	.search label {
-		display: inline-flex;
-	}
-
-	.search svg {
-		width: 0.875rem;
-		height: 0.875rem;
-		fill: none;
-		stroke: currentColor;
-		stroke-width: 1.5;
-		stroke-linecap: round;
-	}
-
-	.search input[type='search'] {
+	/* The search field of base.css, like in the filter bar of "Aufgaben"; here only its width. */
+	.search-field input[type='search'] {
 		width: 12rem;
 		max-width: 100%;
-		padding: 0.1875rem 0.375rem;
-		font-size: 0.8125rem;
-		background: none;
-		border: none;
 	}
 
-	.search input:focus-visible {
-		outline: none;
-	}
-
-	.layout-switch {
-		display: inline-flex;
-		gap: 0.125rem;
-	}
-
+	/* Track, thumb and hover come from .segmented in base.css; here only the icons. */
 	.layout-switch svg {
 		width: 1rem;
 		height: 1rem;
@@ -457,13 +416,6 @@
 
 	.layout-switch .dot {
 		stroke-width: 2.25;
-	}
-
-	/* The pressed layout button: surface and frame in the brand colour, not colour alone. */
-	.layout-switch [aria-pressed='true'] {
-		color: var(--color-brand-soft-text);
-		background: var(--color-brand-soft-bg);
-		border-color: var(--color-brand);
 	}
 
 	.new {
@@ -505,7 +457,7 @@
 		font-size: 0.8125rem;
 		background: none;
 		border: 1px solid currentColor;
-		border-radius: 0.375rem;
+		border-radius: var(--radius-control);
 		cursor: pointer;
 	}
 </style>

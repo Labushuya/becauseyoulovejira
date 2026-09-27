@@ -167,7 +167,7 @@
 	/>
 
 	<div class="selects">
-		<div class="search">
+		<div class="search-field">
 			<label for={ids.search}>
 				<svg viewBox="0 0 16 16" aria-hidden="true" focusable="false">
 					<circle cx="7" cy="7" r="4.25" />
@@ -250,7 +250,7 @@
 		padding: 0.625rem 0.75rem;
 		background: var(--color-surface);
 		border: 1px solid var(--color-line);
-		border-radius: 0.375rem;
+		border-radius: var(--radius-control);
 	}
 
 	.selects {
@@ -260,47 +260,13 @@
 		align-items: center;
 	}
 
-	.search {
-		display: inline-flex;
-		align-items: center;
-		padding: 0 0.375rem;
-		color: var(--color-text-muted);
-		background: var(--color-surface);
-		border: 1px solid var(--color-line);
-		border-radius: 0.375rem;
-	}
-
-	.search:focus-within {
-		border-color: var(--color-brand);
-	}
-
-	.search label {
-		display: inline-flex;
-	}
-
-	.search svg {
-		width: 0.875rem;
-		height: 0.875rem;
-		fill: none;
-		stroke: currentColor;
-		stroke-width: 1.5;
-		stroke-linecap: round;
-	}
-
-	.search input {
+	/* The search field of base.css (ADR-0029 section 9); here only its width and the busy pointer. */
+	.search-field input[type='search'] {
 		width: 16rem;
 		max-width: 100%;
-		padding: 0.1875rem 0.375rem;
-		font-size: 0.8125rem;
-		background: none;
-		border: none;
 	}
 
-	.search input:focus-visible {
-		outline: none;
-	}
-
-	.search input[aria-busy='true'] {
+	.search-field input[aria-busy='true'] {
 		cursor: progress;
 	}
 
@@ -318,7 +284,7 @@
 		font-size: 0.8125rem;
 		background: none;
 		border: 1px solid currentColor;
-		border-radius: 0.375rem;
+		border-radius: var(--radius-control);
 		cursor: pointer;
 	}
 
@@ -331,7 +297,7 @@
 		color: var(--color-text);
 		background: none;
 		border: 1px solid var(--color-line);
-		border-radius: 0.375rem;
+		border-radius: var(--radius-control);
 		cursor: pointer;
 	}
 
