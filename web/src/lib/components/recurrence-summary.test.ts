@@ -3,7 +3,7 @@ import { tick } from 'svelte';
 import { describe, expect, it, vi } from 'vitest';
 import { DataError } from '$lib/data/errors';
 import { defaultFormValues, type RecurrenceRule } from '$lib/domain/recurrence-rule';
-import type { Ticket } from '$lib/domain/ticket';
+import type { HistoryEntry, Ticket } from '$lib/domain/ticket';
 import type { FlagSink } from '$lib/stores/flags.svelte';
 import { REPEAT_FAILED, RecurrenceStore, type RecurrenceData } from '$lib/stores/recurrence.svelte';
 import RecurrenceSummary from './RecurrenceSummary.svelte';
@@ -71,7 +71,9 @@ async function setup(
 	rules: RecurrenceRule[] | null = [],
 	data: Partial<RecurrenceData> = {},
 	/** Runs on the store before the panel opens (an offer of package 6). */
-	before: (store: RecurrenceStore) => void = () => undefined
+	before: (store: RecurrenceStore) => void = () => undefined,
+	/** History of the ticket as the panel loaded it (ADR-0022 addendum 4). */
+	history: HistoryEntry[] = []
 ) {
 	const fake: RecurrenceData = {
 		listRules: vi.fn(async () => rules),
@@ -98,7 +100,7 @@ async function setup(
 	await store.load();
 	before(store);
 	const onticket = vi.fn();
-	render(RecurrenceSummary, { props: { ticket: item, store, today: TODAY, onticket } });
+	render(RecurrenceSummary, { props: { ticket: item, store, today: TODAY, history, onticket } });
 	return { fake, store, onticket, flagTitles };
 }
 
@@ -199,6 +201,29 @@ describe('RecurrenceSummary', () => {
 		expect(hint.closest('.alert-error')).toBeNull();
 		expect(hint.getAttribute('role')).toBeNull();
 		expect(screen.getByText('Pausiert')).toBeTruthy();
+	});
+
+	it('names the missed dates a catch-up ticket stands for, neutrally (ADR-0022 addendum 4)', async () => {
+		const note: HistoryEntry = {
+			id: 'hist00000000001',
+			ticket: 'ticket000000001',
+			field: 'recurrence_skipped',
+			oldValue: 'rule00000000001',
+			newValue: JSON.stringify({ count: 2, dates: ['2026-10-12', '2026-10-19'], more: false }),
+			user: '',
+			created: '2026-10-27 10:00:00.000Z'
+		};
+		await setup(
+			ticket({ recurring: true, recurrenceId: 'rule00000000001' }),
+			[rule()],
+			{},
+			() => undefined,
+			[note, { ...note, id: 'hist00000000002', ticket: 'ticket000000002' }]
+		);
+		const text = screen.getByText(/2 Termine übersprungen \(12\.10\., 19\.10\.\)/);
+		expect(text.textContent).toContain('dieses Ticket steht für sie mit.');
+		expect(text.closest('.alert-error')).toBeNull();
+		expect(screen.getAllByText(/Termine übersprungen/)).toHaveLength(1);
 	});
 
 	it('shows a refused resume as an error with its reason', async () => {

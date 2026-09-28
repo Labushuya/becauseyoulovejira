@@ -1027,3 +1027,57 @@ describe('completing with open blocking sub-tasks (ADR-0033 section 2)', () => {
 		expect(store.completionQuestion).toBeNull();
 	});
 });
+
+describe('TicketDetailStore: refused reopening of a series (ADR-0023 addendum 4)', () => {
+	const MESSAGE =
+		'Von dieser Serie ist schon HAUS-14 offen, und dieses Ticket ist nicht das zuletzt erledigte. Du kannst es als normales Ticket wieder öffnen (aus der Serie lösen).';
+	const refusal = (code: string) =>
+		new DataError('validation', {
+			status: 400,
+			fields: { status: { code, message: MESSAGE, params: { key: 'HAUS-14' } } }
+		});
+
+	it('explains the refusal inline and reopens as a normal ticket on request', async () => {
+		const { store, data, list } = await opened(ticket({ status: 'done' }));
+		data.update.mockRejectedValueOnce(refusal('validation_recurrence_reopen_older'));
+
+		await store.choose('status', 'in_progress');
+		expect(store.reopenQuestion).toEqual({ status: 'in_progress', message: MESSAGE });
+		expect(store.fieldError('status')).toBeNull();
+		expect(store.value('status')).toBe('done');
+
+		expect(await store.reopenDetached()).toBe(true);
+		expect(data.update).toHaveBeenLastCalledWith(ID, {
+			status: 'in_progress',
+			detachSeries: true
+		});
+		expect(store.reopenQuestion).toBeNull();
+		expect(list.announce).toHaveBeenCalledWith(expect.stringMatching(/als normales Ticket/));
+	});
+
+	it('also for an edited follow-up; "Abbrechen", another status or ticket end the question', async () => {
+		const { store, data } = await opened(ticket({ status: 'done' }));
+		data.update.mockRejectedValueOnce(refusal('validation_recurrence_open_instance'));
+		await store.choose('status', 'open');
+		expect(store.reopenQuestion?.status).toBe('open');
+
+		store.cancelReopen();
+		expect(store.reopenQuestion).toBeNull();
+
+		data.update.mockRejectedValueOnce(refusal('validation_recurrence_open_instance'));
+		await store.choose('status', 'open');
+		store.reset();
+		expect(store.reopenQuestion).toBeNull();
+	});
+
+	it('shows a failure of the way out at the field', async () => {
+		const { store, data } = await opened(ticket({ status: 'done' }));
+		data.update.mockRejectedValueOnce(refusal('validation_recurrence_reopen_older'));
+		await store.choose('status', 'open');
+		data.update.mockRejectedValueOnce(new DataError('network'));
+
+		expect(await store.reopenDetached()).toBe(false);
+		expect(store.reopenQuestion).toBeNull();
+		expect(store.fieldError('status')).toMatch(/Server nicht erreichbar/);
+	});
+});

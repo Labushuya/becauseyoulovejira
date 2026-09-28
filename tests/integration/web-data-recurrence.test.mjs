@@ -26,7 +26,11 @@ import {
   setRuleActive,
   updateRule,
 } from "../../web/src/lib/data/recurrence.ts";
-import { createTicket, getTicket } from "../../web/src/lib/data/tickets.ts";
+import {
+  createTicket,
+  getTicket,
+  updateTicket,
+} from "../../web/src/lib/data/tickets.ts";
 
 async function dataErrorOf(promise) {
   try {
@@ -127,6 +131,23 @@ describe("web data layer: recurrence rules", () => {
       recurring: false,
       recurrenceId: null,
     });
+  });
+
+  // ADR-0023 addendum 4: the way out of a refused reopening sends status and recurrence "".
+  it("reopens a done instance as a normal ticket in one request", async () => {
+    const owner = await createOwner(superuser);
+    const ticket = await owner.ticket({ due: "2031-01-06" });
+    const rule = await createRule(owner.client, draft({ title: ticket.title }), ticket.id);
+    await updateTicket(owner.client, ticket.id, { status: "done" });
+
+    const reopened = await updateTicket(owner.client, ticket.id, {
+      status: "open",
+      detachSeries: true,
+    });
+    expect(reopened).toMatchObject({ status: "open", recurring: false, recurrenceId: null });
+    expect((await listRules(owner.client)).find((item) => item.id === rule.id)?.nextDue).toBe(
+      rule.nextDue,
+    );
   });
 
   it("reports field errors with the codes and texts of the hook", async () => {

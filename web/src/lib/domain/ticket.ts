@@ -135,9 +135,11 @@ export const QUICK_ORIGIN: TicketOrigin = Object.freeze({ source: 'quick' });
 
 /**
  * Changed fields of an update; only these are sent (ADR-0006 section 5). `blocksParent` is the
- * switch "Blockiert das übergeordnete Ticket" of a sub-task (ADR-0033).
+ * switch "Blockiert das übergeordnete Ticket" of a sub-task (ADR-0033). `detachSeries` releases the
+ * ticket from its series in the same request (ADR-0023 section 6), e.g. to reopen an older
+ * instance as a normal ticket (addendum 4).
  */
-export type TicketPatch = Partial<TicketDraft> & { blocksParent?: boolean };
+export type TicketPatch = Partial<TicketDraft> & { blocksParent?: boolean; detachSeries?: boolean };
 
 export interface Comment {
 	id: string;

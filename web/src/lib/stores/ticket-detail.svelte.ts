@@ -36,6 +36,7 @@ import { hold, type LiveSource } from './realtime';
 import {
 	completedChildren,
 	openChildrenOf,
+	reopenRefusalOf,
 	type CompletedChild,
 	type SessionGuard
 } from './ticket-list.svelte';
@@ -142,6 +143,12 @@ export interface DetailCompletionQuestion {
 	keys: readonly string[];
 }
 
+/** A refused reopening (ADR-0023 addendum 4): the chosen status and why it was refused. */
+export interface DetailReopenQuestion {
+	status: Status;
+	message: string;
+}
+
 export function ticketDetailData(pb: PocketBase): TicketDetailData {
 	return {
 		get: (id, options) => getTicket(pb, id, options),
@@ -205,6 +212,8 @@ export class TicketDetailStore {
 	#conflict = $state(false);
 	/** Question before completing with open blocking sub-tasks, for the ticket it came from. */
 	#completion = $state<(DetailCompletionQuestion & { ticketId: string }) | null>(null);
+	/** A refused reopening of an instance, for the ticket it came from (ADR-0023 addendum 4). */
+	#reopen = $state<(DetailReopenQuestion & { ticketId: string }) | null>(null);
 
 	#id = $state<string | null>(null);
 	#own = $state.raw<Ticket | null>(null);
@@ -325,6 +334,56 @@ export class TicketDetailStore {
 	/** "Abbrechen" of the question: the status stays. */
 	cancelCompletion(): void {
 		this.#completion = null;
+	}
+
+	/**
+	 * The refused reopening of an instance (ADR-0023 section 3 and addendum 4): another ticket of the
+	 * series is open. The panel explains it inline and offers to reopen the ticket as a normal one;
+	 * null without one. It belongs to the ticket it came from.
+	 */
+	get reopenQuestion(): DetailReopenQuestion | null {
+		const question = this.#reopen;
+		if (question === null || question.ticketId !== this.#id) return null;
+		return { status: question.status, message: question.message };
+	}
+
+	/**
+	 * "Als normales Ticket wieder öffnen (aus der Serie lösen)": the chosen status and leaving the
+	 * series in one request. A failure stands at the field "status" and ends the question.
+	 */
+	async reopenDetached(): Promise<boolean> {
+		const ticket = this.#ticket;
+		const question = this.reopenQuestion;
+		if (ticket === null || question === null) return false;
+		if (this.#saving.has('status') || !this.#session.ensureValid()) return false;
+		this.#saving.add('status');
+		this.#fieldErrors.delete('status');
+		try {
+			const saved = await this.#data.update(ticket.id, {
+				status: question.status,
+				detachSeries: true
+			});
+			this.#reopen = null;
+			this.#list.upsert(saved);
+			this.#list.announce(`${saved.key} ist wieder offen, als normales Ticket.`);
+			if (saved.id === this.#id) this.upsert(saved);
+			return true;
+		} catch (error) {
+			const failure = toDataError(error);
+			if (failure.kind === 'session') this.#session.logout();
+			else if (failure.kind !== 'aborted' && ticket.id === this.#id) {
+				this.#reopen = null;
+				this.#fieldErrors.set('status', failure.fields.status?.message ?? failure.message);
+			}
+			return false;
+		} finally {
+			this.#saving.delete('status');
+		}
+	}
+
+	/** "Abbrechen" of the refused reopening: the ticket stays done. */
+	cancelReopen(): void {
+		this.#reopen = null;
 	}
 
 	#blockingOf(id: string): TicketSummary[] {
@@ -573,6 +632,7 @@ export class TicketDetailStore {
 		if (!this.#session.ensureValid()) return false;
 		this.#saving.add(field);
 		this.#fieldErrors.delete(field);
+		if (field === 'status') this.#reopen = null;
 		let stale = false;
 		try {
 			const saved =
@@ -594,10 +654,13 @@ export class TicketDetailStore {
 		} catch (error) {
 			const failure = toDataError(error);
 			const open = completing ? openChildrenOf(failure) : null;
+			const refusal = field === 'status' ? reopenRefusalOf(failure) : null;
 			if (failure.kind === 'session') this.#session.logout();
 			else if (base !== null && isStale(failure)) stale = ticket.id === this.#id;
 			else if (open !== null) this.#askCompletion(ticket.id, open.count, open.keys);
-			else if (failure.kind !== 'aborted' && ticket.id === this.#id) {
+			else if (refusal !== null && ticket.id === this.#id && isStatus(next)) {
+				this.#reopen = { ticketId: ticket.id, status: next, message: refusal };
+			} else if (failure.kind !== 'aborted' && ticket.id === this.#id) {
 				this.#fieldErrors.set(field, failure.fields[field]?.message ?? failure.message);
 			}
 			if (!stale) return false;
@@ -783,6 +846,7 @@ export class TicketDetailStore {
 		this.#descriptionBase = null;
 		this.#conflict = false;
 		this.#completion = null;
+		this.#reopen = null;
 		this.#tagInput = '';
 		this.#id = null;
 		this.#own = null;

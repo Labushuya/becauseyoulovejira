@@ -37,6 +37,7 @@ import {
 	type ListQuery
 } from '$lib/domain/list-query';
 import { columnOrder, ticketOrder, type ResolveProject } from '$lib/domain/ordering';
+import { REOPEN_DETACHED_LABEL, REOPEN_REFUSALS } from '$lib/domain/recurrence-rule';
 import type { Status } from '$lib/domain/status';
 import {
 	compareSubtasks,
@@ -49,6 +50,7 @@ import {
 import {
 	DEFAULT_PRIORITY,
 	DEFAULT_STATUS,
+	REOPEN_STATUS,
 	type TicketDraft,
 	type TicketPatch,
 	type TicketSummary
@@ -184,6 +186,15 @@ export function openChildrenOf(error: unknown): { count: number; keys: string[] 
 		? raw.filter((key): key is string => typeof key === 'string')
 		: [];
 	return { count, keys };
+}
+
+/**
+ * Text of a refused reopening of an instance (ADR-0023 section 3 and addendum 4): another ticket of
+ * the series is open, and the ticket may come back as a normal one. Null for another error.
+ */
+export function reopenRefusalOf(error: unknown): string | null {
+	const status = toDataError(error).fields.status;
+	return status !== undefined && REOPEN_REFUSALS.includes(status.code) ? status.message : null;
 }
 
 /**
@@ -874,7 +885,12 @@ export class TicketListStore {
 		} catch (error) {
 			const open = done ? openChildrenOf(error) : null;
 			if (open !== null) this.#askCompletion(ticket, open.count, open.keys);
-			else this.#fail(error, `${ticket.key} konnte nicht geändert werden.`);
+			else
+				this.#fail(
+					error,
+					`${ticket.key} konnte nicht geändert werden.`,
+					done ? undefined : { id, status: REOPEN_STATUS }
+				);
 		} finally {
 			this.#pending.delete(id);
 		}
@@ -902,7 +918,12 @@ export class TicketListStore {
 		} catch (error) {
 			const failure = toDataError(error);
 			const field = Object.values(failure.fields)[0];
-			if (field !== undefined && failure.kind === 'validation') {
+			if (patch.status !== undefined && reopenRefusalOf(error) !== null) {
+				this.#fail(error, `${ticket.key} konnte nicht geändert werden.`, {
+					id,
+					status: patch.status
+				});
+			} else if (field !== undefined && failure.kind === 'validation') {
 				this.#flags.show({
 					tone: 'error',
 					title: `${ticket.key} konnte nicht geändert werden. ${field.message}`
@@ -932,7 +953,10 @@ export class TicketListStore {
 			saved = await this.#data.update(id, { status: undoable.previousStatus });
 			this.upsert(saved);
 		} catch (error) {
-			this.#fail(error, `${undoable.key} konnte nicht zurückgesetzt werden.`);
+			this.#fail(error, `${undoable.key} konnte nicht zurückgesetzt werden.`, {
+				id,
+				status: undoable.previousStatus
+			});
 			return;
 		} finally {
 			this.#pending.delete(id);
@@ -1433,16 +1457,50 @@ export class TicketListStore {
 		return failure.message;
 	}
 
-	/** A failed check mark or "Rückgängig" as an error flag; it stays until it is closed. */
-	#fail(error: unknown, prefix: string): void {
-		// Reopening an instance whose follow-up was already edited (ADR-0023 section 3): the
-		// refusal names that ticket and what to do.
-		const status = toDataError(error).fields.status;
-		const message =
-			status?.code === 'validation_recurrence_open_instance'
-				? status.message
-				: this.#failureMessage(error);
-		if (message !== null) this.#flags.show({ tone: 'error', title: `${prefix} ${message}` });
+	/**
+	 * A failed check mark or "Rückgängig" as an error flag; it stays until it is closed. A refused
+	 * reopening of an instance (ADR-0023 section 3 and addendum 4) names the open ticket of the
+	 * series, and with `reopen` the flag offers to reopen the ticket as a normal one instead.
+	 */
+	#fail(error: unknown, prefix: string, reopen?: { id: string; status: Status }): void {
+		const refusal = reopenRefusalOf(error);
+		const message = refusal ?? this.#failureMessage(error);
+		if (message === null) return;
+		this.#flags.show({
+			tone: 'error',
+			title: `${prefix} ${message}`,
+			...(refusal !== null &&
+				reopen !== undefined && {
+					action: {
+						label: REOPEN_DETACHED_LABEL,
+						run: () => void this.reopenDetached(reopen.id, reopen.status)
+					}
+				})
+		});
+	}
+
+	/**
+	 * "Als normales Ticket wieder öffnen (aus der Serie lösen)" after a refused reopening: the status
+	 * and leaving the series in one request (ADR-0023 addendum 4). Resolves to true when saved.
+	 */
+	async reopenDetached(id: string, status: Status): Promise<boolean> {
+		const ticket = this.find(id);
+		if (ticket === null || this.#pending.has(id) || !this.#session.ensureValid()) return false;
+		this.#pending.set(id, false);
+		try {
+			const saved = await this.#data.update(id, { status, detachSeries: true });
+			this.upsert(saved);
+			this.#flags.show({
+				tone: 'success',
+				title: `${saved.key} ist wieder offen, als normales Ticket.`
+			});
+			return true;
+		} catch (error) {
+			this.#fail(error, `${ticket.key} konnte nicht geändert werden.`);
+			return false;
+		} finally {
+			this.#pending.delete(id);
+		}
 	}
 }
 

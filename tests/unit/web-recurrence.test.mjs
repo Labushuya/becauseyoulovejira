@@ -10,7 +10,10 @@ import * as web from '../../web/src/lib/domain/recurrence.ts';
 import {
 	EACH_MAX_PER_RUN,
 	RECURRENCE_MESSAGES,
-	openInstanceMessage
+	SKIPPED_FIELD,
+	openInstanceMessage,
+	parseSkipped,
+	reopenOlderMessage
 } from '../../web/src/lib/domain/recurrence-rule.ts';
 
 const hook = loadHookLib('recurrence.js');
@@ -135,6 +138,14 @@ describe('recurrence: web app against the hooks', () => {
 		);
 		expect({ ...RECURRENCE_MESSAGES }).toEqual(hookRecurrence);
 		expect(openInstanceMessage('HAUS-12')).toBe(hookRules.openInstanceMessage('HAUS-12'));
+		expect(reopenOlderMessage('HAUS-12')).toBe(hookRules.reopenOlderMessage('HAUS-12'));
+	});
+
+	it('reads the note about missed dates the way the hook writes it (ADR-0022 addendum 4)', () => {
+		expect(SKIPPED_FIELD).toBe(hookRules.SKIPPED_FIELD);
+		const rule = hook.normalize({ mode: 'calendar', freq: 'weekly', weekdays: ['MO'], anchor: '2026-10-05' });
+		const value = JSON.stringify(hookRules.skippedDates(rule, '2026-10-12', '2026-10-26', hook));
+		expect(parseSkipped(value)).toEqual({ count: 2, dates: ['2026-10-12', '2026-10-19'], more: false });
 	});
 
 	it('names the same limit per run for "Jeden Termin einzeln anlegen" as the hook (plan OR-5)', () => {

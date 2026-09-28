@@ -813,6 +813,46 @@ describe('check mark', () => {
 		]);
 	});
 
+	it('offers to reopen an older instance as a normal ticket when the series refuses (ADR-0023 addendum 4)', async () => {
+		const closed = done();
+		const data = fakeData([], [[closed]]);
+		const message =
+			'Von dieser Serie ist schon HAUS-14 offen, und dieses Ticket ist nicht das zuletzt erledigte. Du kannst es als normales Ticket wieder öffnen (aus der Serie lösen).';
+		vi.mocked(data.setDone).mockRejectedValueOnce(
+			new DataError('validation', {
+				status: 400,
+				fields: {
+					status: {
+						code: 'validation_recurrence_reopen_older',
+						message,
+						params: { key: 'HAUS-14' }
+					}
+				}
+			})
+		);
+		const { flags, store } = withFlags(data);
+		store.activate(withDone(true));
+		await settle();
+
+		await store.setDone(closed.id, false);
+		const [refusal] = flags.flags;
+		expect(refusal).toMatchObject({
+			tone: 'error',
+			title: `${closed.key} konnte nicht geändert werden. ${message}`
+		});
+		expect(refusal?.action?.label).toBe('Als normales Ticket wieder öffnen (aus der Serie lösen)');
+
+		refusal?.action?.run();
+		await vi.waitFor(() =>
+			expect(data.update).toHaveBeenCalledWith(closed.id, { status: 'open', detachSeries: true })
+		);
+		await vi.waitFor(() =>
+			expect(flags.flags.map((flag) => flag.title)).toContain(
+				`${closed.key} ist wieder offen, als normales Ticket.`
+			)
+		);
+	});
+
 	it('springs back with an error flag when the request fails', async () => {
 		const item = ticket();
 		const data = fakeData([item]);

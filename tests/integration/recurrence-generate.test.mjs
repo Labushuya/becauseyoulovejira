@@ -467,6 +467,67 @@ describe('completing, reopening and releasing instances (ADR-0023 sections 2, 3 
 		}
 	});
 
+	// Recommendation 1 of the plan "Wiederholungen verständlich machen" (ADR-0023 addendum 4).
+	it('never removes the follow-up for an older instance; that one reopens as a normal ticket', async () => {
+		const rule = await createRule({ freq: 'daily', anchor: '2040-01-01', lead_days: 0 });
+		await run('2040-01-01T10:00:00Z');
+		const [first] = await openOf(rule.id);
+		await tickets().update(first.id, { status: 'done' });
+		await run('2040-01-02T10:00:00Z');
+		const [second] = await openOf(rule.id);
+		await tickets().update(second.id, { status: 'done' });
+		await run('2040-01-03T10:00:00Z');
+		const [third] = await openOf(rule.id);
+		expect(third.updated).toBe(third.created);
+
+		let error;
+		try {
+			await tickets().update(first.id, { status: 'open' });
+		} catch (caught) {
+			error = caught;
+		}
+		expect(error?.status).toBe(400);
+		expect(error.response.data.status).toMatchObject({
+			code: 'validation_recurrence_reopen_older',
+			message: `Von dieser Serie ist schon ${third.key} offen, und dieses Ticket ist nicht das zuletzt erledigte. Du kannst es als normales Ticket wieder öffnen (aus der Serie lösen).`,
+			params: { key: third.key, ticket: third.id }
+		});
+		expect((await openOf(rule.id)).map((ticket) => ticket.id)).toEqual([third.id]);
+		expect(dateOf((await ruleOf(rule.id)).next_due)).toBe('2040-01-04');
+
+		// The alternative: reopened and released from the series in one request.
+		const plain = await tickets().update(first.id, { status: 'open', recurrence: '' });
+		expect(plain).toMatchObject({ status: 'open', recurrence: '' });
+		expect((await openOf(rule.id)).map((ticket) => ticket.id)).toEqual([third.id]);
+		expect(dateOf((await ruleOf(rule.id)).next_due)).toBe('2040-01-04');
+
+		// The direct predecessor still takes its untouched follow-up back.
+		await tickets().update(second.id, { status: 'in_progress' });
+		expect((await openOf(rule.id)).map((ticket) => ticket.id)).toEqual([second.id]);
+		expect(dateOf((await ruleOf(rule.id)).next_due)).toBe('2040-01-03');
+	});
+
+	// Recommendation 3 (ADR-0022 addendum 4): the catch-up ticket says which dates it stands for.
+	it('notes the missed dates in the history of the catch-up ticket', async () => {
+		const rule = await createRule({ freq: 'daily', anchor: '2042-03-01', lead_days: 0 });
+		await run('2042-03-01T10:00:00Z');
+		const [first] = await openOf(rule.id);
+		expect((await historyOf(first.id)).map((entry) => entry.field)).toEqual(['created']);
+		await tickets().update(first.id, { status: 'done' });
+
+		await run('2042-03-05T10:00:00Z');
+		const [caught] = await openOf(rule.id);
+		expect(dateOf(caught.due)).toBe('2042-03-05');
+		const note = (await historyOf(caught.id)).find((entry) => entry.field === 'recurrence_skipped');
+		expect(note).toMatchObject({ user: '', old_value: rule.id });
+		expect(JSON.parse(note.new_value)).toEqual({
+			count: 3,
+			dates: ['2042-03-02', '2042-03-03', '2042-03-04'],
+			more: false
+		});
+		expect(caught.updated).toBe(caught.created);
+	});
+
 	it('allows reopening without a follow-up; an after-completion rule waits for it again', async () => {
 		const rule = await createRule({ mode: 'after_completion', freq: 'daily', interval: 10, lead_days: 3, anchor: today() });
 		const [first] = await instancesOf(rule.id);

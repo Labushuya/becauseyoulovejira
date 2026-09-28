@@ -6,10 +6,13 @@
 		formValuesOf,
 		joinedSeries,
 		nextTicketText,
+		parseSkipped,
 		ruleText,
+		skippedText,
+		SKIPPED_FIELD,
 		type RecurrenceFormValues
 	} from '$lib/domain/recurrence-rule';
-	import type { Ticket } from '$lib/domain/ticket';
+	import type { HistoryEntry, Ticket } from '$lib/domain/ticket';
 	import type { EditResult } from '$lib/stores/catalog-editor';
 	import { RECURRENCE_UNAVAILABLE, type RecurrenceStore } from '$lib/stores/recurrence.svelte';
 	import ErrorIcon from './ErrorIcon.svelte';
@@ -27,11 +30,17 @@
 		ticket,
 		store,
 		today,
+		history = [],
 		onticket
 	}: {
 		ticket: Ticket;
 		store: RecurrenceStore;
 		today: CalendarDate;
+		/**
+		 * History of the ticket as the panel loaded it; a catch-up ticket finds its note about the
+		 * missed dates there (ADR-0022 addendum 4).
+		 */
+		history?: readonly HistoryEntry[];
 		/** The ticket after joining or leaving its series, for panel and list. */
 		onticket: (ticket: Ticket) => void;
 	} = $props();
@@ -39,6 +48,10 @@
 	const uid = $props.id();
 	const rule = $derived(store.ruleById(ticket.recurrenceId));
 	const text = $derived(rule === null ? '' : ruleText(rule));
+	const skipped = $derived.by(() => {
+		const entry = history.find((item) => item.ticket === ticket.id && item.field === SKIPPED_FIELD);
+		return entry === undefined ? null : parseSkipped(entry.newValue);
+	});
 
 	const initialOffer = untrack(() =>
 		ticket.recurring || ticket.status === 'done' ? null : store.takeOffer(ticket.id)
@@ -105,6 +118,11 @@
 				{/if}
 			{/if}
 		</p>
+		{#if skipped !== null}
+			<SectionMessage tone="info" compact>
+				{skippedText(skipped, today)}; dieses Ticket steht für sie mit.
+			</SectionMessage>
+		{/if}
 		{#if rule !== null && rule.lastHint !== ''}
 			<SectionMessage tone="info" compact>{rule.lastHint}</SectionMessage>
 		{/if}
