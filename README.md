@@ -164,6 +164,8 @@ Grenzen der Erkennung: `start.bat` meldet eine offene Einrichtung nur, wenn der 
 
 `start.bat` startet nach PocketBase auch `app\byl-mail.exe`, wenn die Datei da ist und es mindestens eine eingeschaltete Postfach-Verbindung gibt (auch wenn die App schon läuft und nur der Hilfsprozess fehlt). Beim ersten Mal legt es dafür die Benutzervariable `BYL_INGEST_TOKEN` an (24 Zufallsbytes), die nur PocketBase und der Hilfsprozess kennen. Das Protokoll des Hilfsprozesses steht in `app\logs\byl-mail.log`.
 
+**Schon offen?** Ein offener Tab der App zeigt einen Hinweis, wenn die App erneut geöffnet wird („Du hast becauseyoulovejira erneut geöffnet.“), und sein Titel blinkt, solange er im Hintergrund liegt. Öffnest du die App in einem zweiten Tab desselben Browsers von außen (Lesezeichen, getippte Adresse), bietet dieser an, sich nach 5 Sekunden zu schließen; „Hier weiterarbeiten“ behält ihn für die Sitzung. Tabs aus einem Link der App (Mittelklick) und Neuladen bleiben unberührt ([ADR-0035](docs/adr/0035-start-einstieg-und-offene-tabs.md)).
+
 Die Skripte sind dünne Hüllen um `app\byl-control.ps1` und rufen es mit `powershell -NoProfile -ExecutionPolicy Bypass` auf; eine gesperrte Skriptausführung stört also nicht.
 
 `stop.bat` beendet den Server hart (wie ein Absturz). Für die Daten ist das unkritisch: SQLite (WAL-Modus) behält jede abgeschlossene Änderung, eine gerade laufende wird beim nächsten Start zurückgerollt. Nur während eines laufenden Backups solltest du nicht stoppen, sonst bleibt ein unvollständiges ZIP zurück.

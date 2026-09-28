@@ -1,6 +1,6 @@
 # E6-Plan, Teil Start und Fenster: Einstieg per Datei, kein zweiter Tab, installierbare Web-App
 
-- **Stand:** in Arbeit (2026-09-28): SF-1 (#137, Routen), SF-2 (Landing per Datei) in Umsetzung.
+- **Stand:** in Arbeit (2026-09-28): SF-1 (#137, Routen), SF-2 (#138, Landing per Datei), SF-3 (Hinweis im Tab, zweiter Tab) in Umsetzung.
 - **Grundlage:**
   - [ADR-0035](../adr/0035-start-einstieg-und-offene-tabs.md) (Entscheidungen, Routen, Sicherheit, Alternativen)
   - [ADR-0002](../adr/0002-erststart-und-superuser.md) §6, [ADR-0007](../adr/0007-realtime-und-sitzungspflege.md), [ADR-0025](../adr/0025-ui-konsistenz-overlay-system.md), [ADR-0026](../adr/0026-einstellungsbereich-und-hinweis-bausteine.md), [ADR-0028](../adr/0028-plattform-strategie.md) §6
@@ -47,3 +47,8 @@
 | 2026-09-28 | SF-2 | **Keine animierten Punkte:** Statt „Prüfe automatisch …“ mit Animation steht „Zuletzt geprüft: hh:mm:ss“ außerhalb der Live-Region. Die Live-Region ändert sich nur beim Wechsel der Phase, also einmal je Countdown; die Sekunden stehen nur im Knopf („Jetzt öffnen (4 s)“). Damit entfällt auch der Sonderfall für `prefers-reduced-motion`. |
 | 2026-09-28 | SF-2 | **Auch das Schließen lässt sich anhalten:** Neben „Jetzt schließen“ und „Trotzdem hier öffnen“ hält „Abbrechen“ den Countdown des Schließens an (WCAG 2.2.1), wie beim Öffnen. |
 | 2026-09-28 | SF-2 | **Jede Antwort außer einem Ack heißt „kein Tab“:** 404 (Server vor dem Neustart ohne Route), 429, CORS-Fehler, eine ungültige Nonce oder kein Ack binnen 2 s führen zum Öffnen der App (Fail-open). Über `http:` geladen geht die Seite sofort auf `/`. |
+| 2026-09-28 | SF-3 | **Ack ohne Warten:** Der Tab schickt das Ack zuerst ab und zeigt den Hinweis sofort, ohne auf die Antwort zu warten; ein gescheitertes Ack ändert am Hinweis nichts (für `start.bat` gilt dann Fail-open). |
+| 2026-09-28 | SF-3 | **Ein Flag statt eines Stapels:** Eine weitere Nachricht ersetzt das Flag „erneut geöffnet“. „Beendet“ bleibt ohne Zeitablauf stehen (`duration: null`), bis das SDK neu verbunden hat (`PB_CONNECT` mit neuer Client-ID) oder eine Nachricht `start` kommt; es ist neutral (Info), weil nichts schiefging. |
+| 2026-09-28 | SF-3 | **Kanal im Wurzel-Layout, Hinweis im App-Layout:** `TabPresence` und `TitleBlinker` entstehen im Wurzel-Layout und gehen per Kontext (`getTabContext`, ohne Wurzel `null`) an das `(app)`-Layout. Der zuletzt angemeldete Empfänger von `attention` gewinnt: im App-Layout der `AttentionStore` (Flag und Blinken), sonst (Anmeldung) nur das Blinken. |
+| 2026-09-28 | SF-3 | **Ein prüfender Tab antwortet nicht:** Solange ein neuer Tab selbst fragt, antwortet er nicht mit `here`; erst wenn er bleibt (kein anderer Tab oder „Hier weiterarbeiten“). So schließen sich zwei gleichzeitig geöffnete Tabs nicht gegenseitig. |
+| 2026-09-28 | SF-3 | **Esc, × und Schleier behalten den Tab:** Das Modal hat keine ungespeicherten Eingaben; jeder Schließweg des Bausteins bedeutet „Hier weiterarbeiten“ und hält den Countdown an (WCAG 2.2.1). Der Tab der installierten App (`display-mode: standalone`) fragt nie, `focus-existing` regelt ihn (SF-5). |
