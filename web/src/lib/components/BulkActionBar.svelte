@@ -249,11 +249,9 @@
 				error={null}
 				errorId={`${ids.project}-error`}
 				hintId={ids.projectHint}
+				hint="Ein anderes Projekt gibt jedem Ticket einen neuen Key; der alte steht im Verlauf."
 				onchoose={(value) => (project = value)}
 			/>
-			<p class="hint" id={ids.projectHint}>
-				Ein anderes Projekt gibt jedem Ticket einen neuen Key; der alte steht im Verlauf.
-			</p>
 		</div>
 		{#snippet footer({ close })}
 			<button class="button-secondary" type="button" onclick={close}>Abbrechen</button>
@@ -339,11 +337,6 @@
 	.field label {
 		font-size: var(--font-size-control);
 		font-weight: 500;
-		color: var(--color-text-muted);
-	}
-
-	.hint {
-		font-size: var(--font-size-control);
 		color: var(--color-text-muted);
 	}
 

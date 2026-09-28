@@ -16,7 +16,7 @@ const GARDEN: ProjectRef = {
 };
 const CAR: ProjectRef = { id: 'proj00000000002', name: 'Auto', code: 'AUTO', archived: false };
 
-function show(props: Partial<{ value: string; current: ProjectRef | null }> = {}) {
+function show(props: Partial<{ value: string; current: ProjectRef | null; hint: string }> = {}) {
 	const onchoose = vi.fn();
 	render(ProjectSelect, {
 		props: {
@@ -73,5 +73,26 @@ describe('project select with sub projects (ADR-0034)', () => {
 	it('has no title while no project is chosen', () => {
 		const { select } = show();
 		expect(select.hasAttribute('title')).toBe(false);
+	});
+});
+
+// A caller with its own words passes them as `hint`; a second hint of its own with `hintId` would
+// double the ID, and `aria-describedby` would name only one of the two.
+describe('hint of the project select', () => {
+	it('renders one hint with the given text and points aria-describedby at it', () => {
+		const { select } = show({ hint: 'Der alte Key bleibt im Verlauf.' });
+		expect(document.querySelectorAll('#project-hint')).toHaveLength(1);
+		expect(select.getAttribute('aria-describedby')).toBe('project-hint');
+		expect(document.getElementById('project-hint')?.textContent).toBe(
+			'Der alte Key bleibt im Verlauf.'
+		);
+		expect(screen.queryByText('Beim Wechsel bekommt das Ticket einen neuen Key.')).toBeNull();
+	});
+
+	it('says by default that a change gives the ticket a new key', () => {
+		show();
+		expect(document.getElementById('project-hint')?.textContent).toBe(
+			'Beim Wechsel bekommt das Ticket einen neuen Key.'
+		);
 	});
 });
