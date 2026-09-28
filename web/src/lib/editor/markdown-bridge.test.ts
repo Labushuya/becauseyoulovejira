@@ -62,7 +62,9 @@ describe('markdown bridge: corpus', () => {
 			expect(canonicalHtml(renderMarkdown(once))).toBe(canonicalHtml(renderMarkdown(markdown)));
 			expect(roundTrip(once)).toBe(once);
 			expect(checkEditable(markdown).editable).toBe(true);
-		}
+		},
+		// The long page text takes seconds in jsdom (DOMPurify and the parity), more on CI.
+		30_000
 	);
 
 	it.each(Object.entries(NOT_EDITABLE))('%s is not editable (%s)', (name, reason) => {
