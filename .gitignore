@@ -9,6 +9,9 @@ helpers/mail/dist/
 app/erweiterung-whatsapp-web/
 app/*pb_data*/
 app/pb_public/
+# Operation (ADR-0039): state of the running instance, address for the landing page, local port
+app/run/
+app/byl-config.json
 *.log
 .env
 .env.*

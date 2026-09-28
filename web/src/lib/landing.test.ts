@@ -50,7 +50,8 @@ function script(): string {
 	return match[1];
 }
 
-function start(handler: Handler, protocol = 'file:') {
+/** `appUrl`: what run/app-adresse.js of byl-control.ps1 set (ADR-0039 section 2), if anything. */
+function start(handler: Handler, protocol = 'file:', appUrl?: unknown) {
 	const body = /<body>([\s\S]*)<\/body>/.exec(HTML)?.[1] ?? '';
 	document.body.innerHTML = body;
 	const fetch = vi.fn((url: string, init: RequestInit = {}) => handler(url, init));
@@ -62,7 +63,8 @@ function start(handler: Handler, protocol = 'file:') {
 		AbortController,
 		close: vi.fn(),
 		closed: false,
-		BylLanding: undefined as Landing | undefined
+		BylLanding: undefined as Landing | undefined,
+		BYL_APP_URL: appUrl
 	};
 	new Function('window', 'document', script())(win, document);
 	return win;
@@ -299,6 +301,38 @@ describe('landing page: an app tab is open already', () => {
 	});
 });
 
+describe('landing page: address of the app (ADR-0039 section 2)', () => {
+	it('uses the port that byl-control.ps1 wrote into run/app-adresse.js', async () => {
+		const other = 'http://127.0.0.1:8091/';
+		const win = start(
+			(url) => (url === `${other}api/health` ? reply(200) : reply(404)),
+			'file:',
+			other
+		);
+		await flush();
+		expect(win.fetch.mock.calls[0]?.[0]).toBe(`${other}api/health`);
+		expect(
+			win.fetch.mock.calls.some(([url]) => url === `${other}api/byl/attention?reason=datei`)
+		).toBe(true);
+		expect(win.location.replace).toHaveBeenCalledExactlyOnceWith(other);
+		expect(byId('byl-open').getAttribute('href')).toBe(other);
+	});
+
+	it.each([
+		['missing', undefined],
+		['another host', 'http://evil.example/'],
+		['https', 'https://127.0.0.1:8091/'],
+		['a path', 'http://127.0.0.1:8091/api/'],
+		['no string', 8091]
+	])('keeps the standard address when the value is %s', async (_name, value) => {
+		const win = start(server(), 'file:', value);
+		await flush();
+		expect(win.fetch.mock.calls[0]?.[0]).toBe(HEALTH);
+		expect(win.location.replace).toHaveBeenCalledExactlyOnceWith(APP_URL);
+		expect(byId('byl-open').getAttribute('href')).toBe(APP_URL);
+	});
+});
+
 describe('landing page: state machine and other ways in', () => {
 	it('goes to the root of the server when loaded over http', () => {
 		const win = start(server(), 'http:');
@@ -326,7 +360,10 @@ describe('landing page: state machine and other ways in', () => {
 
 describe('landing page: static rules', () => {
 	it('loads nothing from outside and names only the app address', () => {
-		expect(HTML).not.toMatch(/<script\b[^>]*\bsrc=/i);
+		// The only script file is the address next to it (run\app-adresse.js, ADR-0039 section 2).
+		expect([...HTML.matchAll(/<script\b[^>]*\bsrc="([^"]*)"/gi)].map((match) => match[1])).toEqual([
+			'run/app-adresse.js'
+		]);
 		expect(HTML).not.toMatch(/<link\b/i);
 		expect(HTML).not.toMatch(/@import|url\(/i);
 		const addresses = [...HTML.matchAll(/https?:\/\/[^\s'"<)]+/g)].map((match) => match[0]);

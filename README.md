@@ -90,14 +90,16 @@ becauseyoulovejira/
     pb_public/            Frontend-Build (gitignored)
     pb_data/              Daten und Backups (gitignored, niemals committen)
     logs/                 Server-Ausgabe des letzten Starts (gitignored)
+    run/                  Zustand der laufenden Instanz und Adresse für die Landing-Seite (gitignored)
+    byl-config.json       Nur wenn der Port geändert wurde: {"port": …} (gitignored)
     start.bat             Starten (öffnet den Browser)
     start-hidden.vbs      Starten ohne Fenster (Ziel der Autostart-Verknüpfung)
     becauseyoulovejira.html  Einstieg per Doppelklick (prüft den Server, öffnet die App)
-    stop.bat              Beenden (nur die eigene Instanz)
+    stop.bat              Beenden, geordnet (nur die eigene Instanz)
     admin-zuruecksetzen.bat  Admin-Konto anlegen oder Admin-Passwort neu setzen (Notfall)
     autostart-an.bat      Autostart einrichten
     autostart-aus.bat     Autostart entfernen
-    byl-control.ps1       Logik hinter den Skripten (byl-functions.ps1: testbare Funktionen)
+    byl-control.ps1       Steuerskript mit allen Befehlen (byl-functions.ps1: testbare Funktionen)
     erweiterung-whatsapp-web/  Browser-Erweiterung für WhatsApp Web zum entpackten Laden (gitignored)
   web/                    SvelteKit-Quellcode (Build → ../app/pb_public), Tests unter src/**/*.test.ts
   helpers/mail/           Mail-Hilfsprozess in TypeScript (Build → ../../app/byl-mail.exe), Tests unter src/*.test.ts
@@ -158,9 +160,9 @@ Grenzen der Erkennung: `start.bat` meldet eine offene Einrichtung nur, wenn der 
 
 | Skript | Verhalten |
 |---|---|
-| `app\start.bat` | Startet PocketBase ohne sichtbares Fenster mit den Daten in `app\pb_data`, wartet, bis `/api/health` antwortet (höchstens 30 s), und öffnet dann genau einmal `http://127.0.0.1:8090/`. Ist die App schon in einem Tab offen, öffnet es **keinen** zweiten: Der offene Tab zeigt einen Hinweis, und das Fenster meldet „bereits in einem Browser-Tab offen“. Nach `stop.bat`, dann `start.bat` wartet es dafür bis zu 3 Sekunden, bis sich offene Tabs neu verbunden haben. Bleibt die Antwort aus, öffnet es den Tab wie früher. Läuft die App schon, öffnet es nur den Browser (bzw. nichts, wenn sie schon offen ist). Ist dort die Einrichtung noch offen, öffnet es stattdessen den Einrichtungslink (siehe oben). Ist Port 8090 von einem anderen Programm belegt, bricht es mit einer Meldung ab. Bei Fehlern und Einrichtungshinweisen bleibt das Fenster offen, bis eine Taste gedrückt wird. Bei einem normalen Start schließt es sich von selbst. Details stehen in `app\logs\`. |
+| `app\start.bat` | Startet PocketBase ohne sichtbares Fenster mit den Daten in `app\pb_data`, wartet, bis `/api/health` antwortet (höchstens 30 s, mit Sekundenanzeige), meldet „becauseyoulovejira läuft: http://127.0.0.1:8090/ (PID …)“ und öffnet dann genau einmal die App. Ist die App schon in einem Tab offen, öffnet es **keinen** zweiten: Der offene Tab zeigt einen Hinweis, und das Fenster meldet „bereits in einem Browser-Tab offen“. Nach einem Neustart wartet es dafür bis zu 3 Sekunden, bis sich offene Tabs neu verbunden haben. Bleibt die Antwort aus, öffnet es den Tab wie früher. Läuft die App schon, startet es **nichts doppelt** und öffnet nur den Browser (bzw. nichts, wenn sie schon offen ist). Ist dort die Einrichtung noch offen, öffnet es stattdessen den Einrichtungslink (siehe oben). Läuft sie, antwortet aber nicht, meldet es das und nennt den Befehl zum Neustart. Ist der Port von einem anderen Programm belegt, bricht es ab und nennt Programm, PID, Pfad und einen freien Port zum Umstellen (siehe [Port ändern](#port-ändern)); das andere Programm bleibt unberührt. Bei Fehlern und Einrichtungshinweisen bleibt das Fenster offen, bis eine Taste gedrückt wird. Bei einem normalen Start schließt es sich von selbst. Details stehen in `app\logs\`. |
 | `app\becauseyoulovejira.html` | Einstieg per Doppelklick ([ADR-0035](docs/adr/0035-start-einstieg-und-offene-tabs.md)). Die Seite prüft, ob die App läuft. Läuft sie, öffnet sie die App im selben Tab bzw. sagt, dass sie schon in einem anderen Tab offen ist, und schließt sich nach 5 Sekunden. Läuft sie noch nicht, erklärt sie „start.bat ausführen“, prüft jede Sekunde und öffnet die App nach dem Start mit 5 Sekunden Countdown („Jetzt öffnen“, „Abbrechen“). Der Link „App öffnen“ ist immer da. Wer versehentlich `app\pb_public\index.html` öffnet, landet ebenfalls hier. |
-| `app\stop.bat` | Beendet nur die eigene Instanz (`pocketbase.exe` aus diesem Ordner, gestartet mit `serve` auf `127.0.0.1:8090` und `app\pb_data`) und den eigenen Mail-Hilfsprozess (`byl-mail.exe` aus diesem Ordner mit `run --url=http://127.0.0.1:8090`). Andere Prozesse, etwa Testinstanzen, bleiben unberührt. Offene Tabs zeigen vorher „becauseyoulovejira wurde beendet (stop.bat)“ statt Fehlermeldungen; nach `start.bat` verschwindet der Hinweis von selbst. Die Erfolgsmeldung bleibt 5 Sekunden stehen (eine Taste schließt sofort), eine Fehlermeldung bis zu einem Tastendruck. |
+| `app\stop.bat` | Beendet **geordnet** nur die eigene Instanz: erst den eigenen Mail-Hilfsprozess (`byl-mail.exe` aus diesem Ordner), dann PocketBase (`pocketbase.exe` aus diesem Ordner mit `serve` und `app\pb_data`). Maßgeblich ist der Programmpfad in diesem Ordner, nie der Name; andere Prozesse, eine Kopie der App in einem anderen Ordner oder Testinstanzen bleiben unberührt. Offene Tabs zeigen vorher „becauseyoulovejira wurde beendet (stop.bat)“ statt Fehlermeldungen; nach `start.bat` verschwindet der Hinweis von selbst. Läuft nichts, meldet es „läuft nicht“. Die Erfolgsmeldung bleibt 5 Sekunden stehen (eine Taste schließt sofort), eine Fehlermeldung bis zu einem Tastendruck. |
 | `app\admin-zuruecksetzen.bat` | Legt ein Admin-Konto an oder setzt das Admin-Passwort neu, ohne Daten zu löschen. Siehe [Konten verwalten](#konten-verwalten). |
 | `app\autostart-an.bat` / `app\autostart-aus.bat` | Legt die Verknüpfung `becauseyoulovejira.lnk` im Windows-Autostart-Ordner an bzw. entfernt sie. Sie startet `start-hidden.vbs`: Die App startet bei der Anmeldung still im Hintergrund, **ohne** Browser. Hinweise (Erststart) und Fehler erscheinen dann als Meldungsfenster. Nach dem Verschieben von `app\` einfach `autostart-an.bat` erneut ausführen. |
 
@@ -168,11 +170,35 @@ Grenzen der Erkennung: `start.bat` meldet eine offene Einrichtung nur, wenn der 
 
 **Schon offen?** Ein offener Tab der App zeigt einen Hinweis, wenn die App erneut geöffnet wird („Du hast becauseyoulovejira erneut geöffnet.“), und sein Titel blinkt, solange er im Hintergrund liegt. Öffnest du die App in einem zweiten Tab desselben Browsers von außen (Lesezeichen, getippte Adresse), bietet dieser an, sich nach 5 Sekunden zu schließen; „Hier weiterarbeiten“ behält ihn für die Sitzung. Tabs aus einem Link der App (Mittelklick) und Neuladen bleiben unberührt ([ADR-0035](docs/adr/0035-start-einstieg-und-offene-tabs.md)). Wer möchte, schaltet unter **Einstellungen → Darstellung → Hinweise** die „Windows-Benachrichtigung“ ein (standardmäßig aus; der Browser fragt dabei einmal nach der Erlaubnis): Dann meldet sich ein Tab im Hintergrund zusätzlich über Windows, und ein Klick auf die Meldung holt ihn nach vorn.
 
-Die Skripte sind dünne Hüllen um `app\byl-control.ps1` und rufen es mit `powershell -NoProfile -ExecutionPolicy Bypass` auf; eine gesperrte Skriptausführung stört also nicht.
+Die Skripte sind dünne Hüllen um das Steuerskript `app\byl-control.ps1` und rufen es mit `powershell -NoProfile -ExecutionPolicy Bypass` auf; eine gesperrte Skriptausführung stört also nicht. In PowerShell geht es auch direkt ([ADR-0039](docs/adr/0039-betriebsskripte.md)):
 
-`stop.bat` beendet den Server hart (wie ein Absturz). Für die Daten ist das unkritisch: SQLite (WAL-Modus) behält jede abgeschlossene Änderung, eine gerade laufende wird beim nächsten Start zurückgerollt. Nur während eines laufenden Backups solltest du nicht stoppen, sonst bleibt ein unvollständiges ZIP zurück.
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File app\byl-control.ps1 help
+```
 
-**Bindung:** `127.0.0.1:8090` (nur lokal, nicht im Netz erreichbar – vorerst; Mehrgerätezugriff über Tailscale ist geplant, siehe [ADR-0001](docs/adr/0001-betriebsmodell-lokal-mehrgeraete-spaeter.md))
+| Befehl | Wirkung |
+|---|---|
+| `start` | wie `start.bat`; `-NoBrowser` ohne Browser, `-Force` startet eine App neu, die nicht antwortet |
+| `stop` | wie `stop.bat` |
+| `restart` | beenden und neu starten |
+| `port` bzw. `port <Zahl>` | Port anzeigen bzw. umstellen |
+| `autostart-on`, `autostart-off`, `reset-admin` | wie die gleichnamigen `.bat`-Dateien |
+
+Exit-Codes: 0 erledigt, 1 Fehler, 2 Einrichtung offen, 4 Port belegt, 5 App antwortet nicht.
+
+**Geordnetes Beenden:** `stop.bat` schickt PocketBase und dem Mail-Hilfsprozess ein Konsolensignal (Ctrl+Break). PocketBase schließt dann die Datenbank sauber, SQLite überträgt dabei das Write-Ahead-Log (`pb_data\data.db-wal` verschwindet). Erst wenn ein Prozess nach 15 Sekunden noch läuft, beendet `stop.bat` ihn hart und warnt davor. Auch das ist für die Daten unkritisch: SQLite (WAL-Modus) behält jede abgeschlossene Änderung, eine gerade laufende wird beim nächsten Start zurückgerollt. Nur während eines laufenden Backups solltest du nicht stoppen, sonst bleibt ein unvollständiges ZIP zurück.
+
+#### Port ändern
+
+Standard ist `http://127.0.0.1:8090/`. Ist Port 8090 belegt, nennt `start.bat` einen freien Port und den Befehl, etwa:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File app\byl-control.ps1 port 8091
+```
+
+Der Port steht dann in `app\byl-config.json` (die einzige Stelle, wandert bei einer Ordnerkopie mit). Läuft die App gerade, gilt er nach `stop.bat` und `start.bat`. Die Landing-Seite `becauseyoulovejira.html`, der Mail-Hilfsprozess und die Anleitungen in der App folgen von selbst. Anpassen musst du: Lesezeichen, die installierte App (unter der neuen Adresse neu installieren), die App-Adresse in der Browser-Erweiterung für WhatsApp Web, und unter der neuen Adresse einmal neu anmelden (die Anmeldung gilt je Adresse). `port 8090` stellt zurück. Die App weicht nie selbst auf einen anderen Port aus.
+
+**Bindung:** nur `127.0.0.1` (nicht im Netz erreichbar – vorerst; Mehrgerätezugriff über Tailscale ist geplant, siehe [ADR-0001](docs/adr/0001-betriebsmodell-lokal-mehrgeraete-spaeter.md))
 
 ### Als App installieren
 
@@ -623,7 +649,7 @@ npm run test:web           # Frontend: Unit- und Komponententests (jsdom)
 
 `npm test` im Root führt erst die Root-Tests (Unit und Integration) und danach die web-Tests aus. **Vorher muss der Frontend-Build existieren** (`npm run build` nach `app/pb_public`), sonst schlägt der SPA-Fallback-Test mit einem Hinweis fehl. Die Integrationstests brauchen außerdem `app/pocketbase.exe` (Quickstart, Schritt 1). Die Start-Skripte selbst werden von den Tests nie ausgeführt; die Tests der Start-Logik rufen nur die Funktionen in Windows PowerShell auf (`-NoProfile -ExecutionPolicy Bypass`).
 
-Pro Lauf startet ein Vitest-`globalSetup` eine eigene PocketBase-Instanz in einem frischen Temp-Ordner (`%TEMP%\byl-test-*`), mit zufälligem Superuser und auf einem freien Port (nie 8090). Danach beendet es die Instanz und löscht den Ordner, auch bei fehlschlagenden Tests oder Strg+C. Eine laufende Produktivinstanz und `app/pb_data` bleiben unberührt. Der SPA-Fallback-Test startet nach demselben Muster eine zweite Instanz mit dem Frontend-Build als `publicDir`. Details: [ADR-0004](docs/adr/0004-teststrategie-hooks-migrationen.md).
+Pro Lauf startet ein Vitest-`globalSetup` eine eigene PocketBase-Instanz in einem frischen Temp-Ordner (`%TEMP%\byl-test-*`), mit zufälligem Superuser und auf einem freien Port (nie 8090). Danach beendet es die Instanz und löscht den Ordner, auch bei fehlschlagenden Tests oder Strg+C. Eine laufende Produktivinstanz und `app/pb_data` bleiben unberührt. Der SPA-Fallback-Test startet nach demselben Muster eine zweite Instanz mit dem Frontend-Build als `publicDir`. Das Steuerskript `byl-control.ps1` läuft nur unter Windows und nur gegen zwei Wegwerf-Kopien der Laufzeitteile von `app\` unter `.tmp\byl-ctl-*` (je mit Superuser, eigenem Datenordner und Zufallsport, ohne Browser), nie gegen `app\` selbst ([ADR-0039](docs/adr/0039-betriebsskripte.md)). Details: [ADR-0004](docs/adr/0004-teststrategie-hooks-migrationen.md).
 
 Für den Vite-Dev-Server (`npm --prefix web run dev`) leitet `web/vite.config.ts` die Pfade `/api` und `/_/` an die laufende Instanz auf `127.0.0.1:8090` weiter; im Betrieb liefert PocketBase die App selbst aus (gleiche Origin).
 

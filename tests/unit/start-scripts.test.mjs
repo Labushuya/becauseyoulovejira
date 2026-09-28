@@ -1,6 +1,7 @@
-// Static checks of the start, stop and autostart scripts in app/ (E1 plan, package 8). The
-// scripts are never executed by agents or tests (CLAUDE.md section 11.3); the logic behind them
-// is covered by start-logic.test.mjs.
+// Static checks of the operation scripts in app/ (E1 plan package 8, ADR-0039). The logic behind
+// them is covered by start-logic.test.mjs and control-logic.test.mjs; the scripts themselves run
+// only against disposable copies in tests/integration/control-script.test.mjs (CLAUDE.md
+// section 11.3).
 
 import { readdirSync, readFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
@@ -13,11 +14,11 @@ const APP_DIR = join(ROOT_DIR, 'app');
 const SCRIPTS_DIR = join(ROOT_DIR, 'scripts');
 
 const WRAPPERS = {
-	'start.bat': 'Start',
-	'stop.bat': 'Stop',
-	'autostart-an.bat': 'AutostartOn',
-	'autostart-aus.bat': 'AutostartOff',
-	'admin-zuruecksetzen.bat': 'ResetAdmin'
+	'start.bat': 'start',
+	'stop.bat': 'stop',
+	'autostart-an.bat': 'autostart-on',
+	'autostart-aus.bat': 'autostart-off',
+	'admin-zuruecksetzen.bat': 'reset-admin'
 };
 const APP_SCRIPTS = [...Object.keys(WRAPPERS), 'start-hidden.vbs', 'byl-control.ps1', 'byl-functions.ps1'];
 const POWERSHELL_FILES = [
@@ -42,15 +43,24 @@ function functionBody(source, name) {
 	return source.slice(start, next < 0 ? undefined : next);
 }
 
+/** One branch of the switch in Invoke-Start, e.g. 'Open'. */
+function startBranch(name) {
+	const body = functionBody(control(), 'Invoke-Start');
+	const start = body.indexOf(`        '${name}' {`);
+	if (start < 0) throw new Error(`branch ${name} not found`);
+	const next = body.indexOf("\r\n        '", start + 1);
+	return body.slice(start, next < 0 ? body.lastIndexOf('return Start-Server') : next);
+}
+
 describe('wrappers', () => {
 	it.each(Object.entries(WRAPPERS))(
-		'%s calls byl-control.ps1 -Action %s with -NoProfile -ExecutionPolicy Bypass',
-		(name, action) => {
+		'%s calls byl-control.ps1 %s with -NoProfile -ExecutionPolicy Bypass',
+		(name, command) => {
 			const lines = read(name)
 				.split(/\r\n/)
 				.filter((line) => /powershell/i.test(line) && !/^\s*rem\b/i.test(line));
 			expect(lines).toEqual([
-				`"%SystemRoot%\\System32\\WindowsPowerShell\\v1.0\\powershell.exe" -NoProfile -ExecutionPolicy Bypass -File "%~dp0byl-control.ps1" -Action ${action}`
+				`"%SystemRoot%\\System32\\WindowsPowerShell\\v1.0\\powershell.exe" -NoProfile -ExecutionPolicy Bypass -File "%~dp0byl-control.ps1" ${command}`
 			]);
 		}
 	);
@@ -60,8 +70,14 @@ describe('wrappers', () => {
 		expect(source).toContain('WScript.ScriptFullName');
 		expect(source).toContain('"byl-control.ps1"');
 		expect(source).toMatch(/" -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File "/);
-		expect(source).toContain('" -Action Start -Hidden"');
+		expect(source).toContain('" start -Hidden"');
 		expect(source).toMatch(/shell\.Run\(command, 0, True\)/);
+	});
+
+	it('every command of a wrapper is a command of byl-control.ps1', () => {
+		const set = control().match(/\[ValidateSet\(([^)]*)\)\]\r\n\s*\[string\]\$Command = 'help'/)[1];
+		const commands = [...set.matchAll(/'([a-z-]+)'/g)].map((match) => match[1]);
+		for (const command of [...Object.values(WRAPPERS), 'restart', 'port', 'help']) expect(commands).toContain(command);
 	});
 
 	it.each(APP_SCRIPTS)('%s has CRLF line endings', (name) => {
@@ -112,6 +128,57 @@ describe('wrappers', () => {
 	});
 });
 
+describe('address and port (ADR-0039 section 2)', () => {
+	it('keeps 8090 as the standard and builds every address from one port on 127.0.0.1', () => {
+		expect(functions()).toContain('$BylDefaultPort = 8090');
+		const set = functionBody(functions(), 'Set-BylAddress');
+		for (const line of [
+			'$script:BylAppUrl = "http://127.0.0.1:$Port/"',
+			'$script:BylHealthUrl = "http://127.0.0.1:$Port/api/health"',
+			'$script:BylPresenceUrl = "http://127.0.0.1:$Port/api/byl/presence"',
+			'$script:BylAttentionUrl = "http://127.0.0.1:$Port/api/byl/attention"',
+			'$script:BylMailHelperUrl = "http://127.0.0.1:$Port"'
+		]) {
+			expect(set).toContain(line);
+		}
+		expect(functions()).toContain('Set-BylAddress -Port $BylDefaultPort');
+		// Nowhere else a fixed address.
+		const rest = functions().replace(set, '');
+		expect(rest).not.toMatch(/127\.0\.0\.1:8090/);
+		expect(control()).not.toMatch(/127\.0\.0\.1:8090|:8090\b/);
+	});
+
+	it('reads the port from byl-config.json only and binds only to the loopback address', () => {
+		expect(functions()).toContain("$BylConfigName = 'byl-config.json'");
+		expect(functionBody(functions(), 'Get-ServerArgumentString')).toContain("'serve --http=127.0.0.1:{0} ");
+		const main = control().slice(control().lastIndexOf('try {'));
+		expect(main).toContain('$config = Get-Config');
+		expect(main).toContain('Set-BylAddress -Port $config.Port');
+		expect(control()).not.toMatch(/BYL_PORT/);
+	});
+
+	it('refuses a broken byl-config.json before a start instead of using another port', () => {
+		const start = functionBody(control(), 'Invoke-Start');
+		expect(start.indexOf('$Config.Problem')).toBeLessThan(start.indexOf('Get-Look'));
+		expect(functionBody(control(), 'Invoke-Restart').indexOf('$Config.Problem')).toBeGreaterThan(-1);
+	});
+
+	it('names the program on a busy port and suggests a free port with the command to switch', () => {
+		const text = functionBody(control(), 'Get-PortBusyText');
+		expect(text).toContain('$PortState.ExecutablePath');
+		expect(text).toContain('Find-NextFreePort -Start $Port -IsFree { param($Candidate) Test-PortFree -Port $Candidate }');
+		expect(text).toContain('$ControlCall port $next');
+		expect(text).not.toMatch(/Stop-Process|Kill\(/);
+	});
+
+	it('writes the address of the landing page at start, stop and port', () => {
+		expect(functionBody(control(), 'Start-Server')).toContain('Update-AddressFile -Port $Port');
+		expect(functionBody(control(), 'Invoke-StopCore').match(/Update-AddressFile -Port \$Config\.Port/g)).toHaveLength(2);
+		expect(functionBody(control(), 'Invoke-Port')).toContain('Update-AddressFile -Port $port');
+		expect(functionBody(functions(), 'ConvertTo-AddressScript')).toContain("window.BYL_APP_URL = 'http://127.0.0.1:$Port/';");
+	});
+});
+
 describe('start', () => {
 	it('has no fixed waiting time (only stop.bat keeps its message readable)', () => {
 		for (const name of APP_SCRIPTS) {
@@ -123,31 +190,50 @@ describe('start', () => {
 		}
 	});
 
-	it('polls /api/health with a timeout', () => {
-		expect(functions()).toContain("'http://127.0.0.1:8090/api/health'");
+	it('polls /api/health with a timeout and shows the progress', () => {
 		expect(functionBody(functions(), 'Wait-ServerReady')).toMatch(/Test-Health/);
-		expect(functionBody(control(), 'Invoke-Start')).toMatch(
-			/Wait-ServerReady -Process \$server -TimeoutSeconds \$HealthTimeoutSeconds/
+		expect(functionBody(functions(), 'Wait-ServerReady')).toMatch(/& \$Progress \$elapsed/);
+		expect(functionBody(control(), 'Wait-Ready')).toMatch(
+			/Wait-ServerReady -Process \$Server -TimeoutSeconds \$HealthTimeoutSeconds -Progress/
 		);
+		expect(functionBody(control(), 'Start-Server')).toContain('$state = Wait-Ready -Server $server');
 		expect(control()).toMatch(/\$HealthTimeoutSeconds = 30\b/);
 	});
 
-	it('checks the port before starting and aborts for a foreign owner', () => {
-		const body = functionBody(control(), 'Invoke-Start');
-		expect(body.indexOf('Resolve-PortState')).toBeLessThan(body.indexOf('Start-Process -FilePath $exe'));
-		expect(body).toMatch(/'Foreign'\)[\s\S]*?return 1/);
+	it('looks at the own instance and the port before starting and aborts for a foreign owner', () => {
+		const start = functionBody(control(), 'Invoke-Start');
+		expect(start.indexOf('Get-Look')).toBeLessThan(start.indexOf('Start-Server'));
+		expect(start).toContain('Resolve-StartAction -ServerState $look.ServerState -PortState $look.PortState.State -Force $Force.IsPresent');
+		expect(startBranch('PortBusy')).toMatch(/return \$BylExitPortBusy/);
+		expect(startBranch('PortBusy')).not.toMatch(/Stop-|Invoke-StopCore/);
+		const look = functionBody(control(), 'Get-Look');
+		expect(look).toContain('Select-AppProcess -Process $processes -AppDir $AppDir');
+		expect(look).toContain('Resolve-PortState -Listener (Get-ListenerSnapshot -Port $Port) -Process $processes -AppDir $AppDir -Port $Port');
+		expect(look).toContain('Resolve-StateMatch -State $state -Own $own');
 		expect(functions()).toMatch(/Get-NetTCPConnection -State Listen/);
 		expect(functions()).toMatch(/Get-CimInstance -ClassName Win32_Process/);
 	});
 
-	it('starts the server with the arguments from Get-ServerArgumentString', () => {
-		expect(functionBody(control(), 'Invoke-Start')).toMatch(
-			/Start-Process -FilePath \$exe -ArgumentList \(Get-ServerArgumentString -AppDir \$AppDir\)/
+	it('starts nothing twice: a running instance only opens the browser, an unhealthy one needs -Force', () => {
+		expect(startBranch('Open')).not.toMatch(/Start-Server|Start-Process -FilePath \$exe/);
+		expect(startBranch('Unhealthy')).toMatch(/return \$BylExitUnhealthy/);
+		expect(startBranch('Unhealthy')).not.toMatch(/Invoke-StopCore|Start-Server/);
+		expect(startBranch('Restart')).toMatch(/Invoke-StopCore -Config \$Config[\s\S]*Start-Server -Port \$Config\.Port/);
+	});
+
+	it('starts the server with the arguments from Get-ServerArgumentString and writes the state file', () => {
+		const start = functionBody(control(), 'Start-Server');
+		expect(start).toMatch(
+			/Start-Process -FilePath \$exe -ArgumentList \(Get-ServerArgumentString -AppDir \$AppDir -Port \$Port\)/
 		);
+		expect(start.indexOf('ConvertTo-BylStateText -ProcessId $server.Id -Port $Port')).toBeGreaterThan(
+			start.indexOf('Start-Process -FilePath $exe')
+		);
+		expect(start.indexOf('ConvertTo-BylStateText')).toBeLessThan(start.indexOf('Wait-Ready'));
 	});
 
 	it('hands the BYL_* variables of the user scope to the server without printing them', () => {
-		const start = functionBody(control(), 'Invoke-Start');
+		const start = functionBody(control(), 'Start-Server');
 		expect(start.indexOf('Sync-BylEnvironment')).toBeGreaterThan(-1);
 		expect(start.indexOf('Sync-BylEnvironment')).toBeLessThan(start.indexOf('Start-Process -FilePath $exe'));
 		const sync = functionBody(control(), 'Sync-BylEnvironment');
@@ -157,13 +243,15 @@ describe('start', () => {
 	});
 
 	it('starts the mail helper after PocketBase, also when the app runs already (package 11)', () => {
-		const start = functionBody(control(), 'Invoke-Start');
-		expect(start.match(/Start-MailHelper/g)).toHaveLength(2);
-		expect(start.indexOf('Start-MailHelper')).toBeLessThan(start.indexOf("Write-Status 'becauseyoulovejira läuft.'"));
-		expect(start.lastIndexOf('Start-MailHelper')).toBeGreaterThan(start.indexOf("Write-Status 'becauseyoulovejira läuft.'"));
+		const complete = functionBody(control(), 'Complete-Start');
+		expect(complete.indexOf('Start-MailHelper')).toBeGreaterThan(-1);
+		expect(complete.indexOf('Start-MailHelper')).toBeLessThan(complete.indexOf('Open-Browser'));
+		expect(startBranch('Open')).toContain('Start-MailHelper');
+		const start = functionBody(control(), 'Start-Server');
 		// Not in the first-run branch: before the setup there is no connection.
-		const firstRun = start.slice(start.indexOf('if (Wait-FirstRunSignal'), start.indexOf("Write-Status 'becauseyoulovejira läuft.'"));
+		const firstRun = start.slice(start.indexOf('if (Wait-FirstRunSignal'), start.indexOf('Complete-Start'));
 		expect(firstRun).not.toMatch(/Start-MailHelper/);
+		expect(start.indexOf('Complete-Start -ProcessId $server.Id -ColdStart $true')).toBeGreaterThan(start.indexOf('Wait-FirstRunSignal'));
 		const helper = functionBody(control(), 'Start-MailHelper');
 		expect(helper.indexOf('Initialize-IngestToken')).toBeLessThan(helper.indexOf('Sync-BylEnvironment'));
 		expect(helper.indexOf('Sync-BylEnvironment')).toBeLessThan(helper.indexOf('Start-Process'));
@@ -179,7 +267,7 @@ describe('start', () => {
 	});
 
 	it('creates the ingest token before handing on the variables and never prints it', () => {
-		const start = functionBody(control(), 'Invoke-Start');
+		const start = functionBody(control(), 'Start-Server');
 		expect(start.indexOf('Initialize-IngestToken')).toBeGreaterThan(-1);
 		expect(start.indexOf('Initialize-IngestToken')).toBeLessThan(start.indexOf('Sync-BylEnvironment'));
 		const init = functionBody(control(), 'Initialize-IngestToken');
@@ -191,13 +279,13 @@ describe('start', () => {
 	});
 
 	it('has a first-run branch that opens no second tab', () => {
-		const body = functionBody(control(), 'Invoke-Start');
+		const body = functionBody(control(), 'Start-Server');
 		const firstRun = body.slice(body.indexOf('if (Wait-FirstRunSignal'));
-		const branch = firstRun.slice(0, firstRun.indexOf('return 2') + 'return 2'.length);
+		const branch = firstRun.slice(0, firstRun.indexOf('return $BylExitSetupPending') + 'return $BylExitSetupPending'.length);
 		expect(branch).toContain('$FirstRunHint');
 		expect(branch).not.toContain('Open-App');
 		expect(branch).not.toContain('Open-Browser');
-		expect(body.indexOf('if (Wait-FirstRunSignal')).toBeLessThan(body.lastIndexOf('Open-Browser'));
+		expect(branch).not.toContain('Complete-Start');
 		// The link is shown, never opened a second time (PocketBase opened it already).
 		expect(branch).toContain(
 			'Wait-InstallerLink -ReadLog { Read-ServerLog } -ProcessStartUtc (Get-ProcessStartUtc -Process $server)'
@@ -206,13 +294,12 @@ describe('start', () => {
 	});
 
 	it('opens a still working installer link of the running instance once and pauses', () => {
-		const body = functionBody(control(), 'Invoke-Start');
-		const running = body.slice(body.indexOf("if ($port.State -eq 'App')"));
-		const branch = running.slice(0, running.indexOf('return 2') + 'return 2'.length);
-		expect(branch).toContain('$link = Get-PendingInstallerLink -ProcessId $port.ProcessId');
+		const running = startBranch('Open');
+		const branch = running.slice(running.indexOf('$link = '), running.indexOf('return $BylExitSetupPending') + 'return $BylExitSetupPending'.length);
+		expect(branch).toContain('$link = Get-PendingInstallerLink -ProcessId $processId');
 		expect(branch).toContain('$PendingSetupHint');
 		expect(branch.match(/Start-Process/g)).toHaveLength(1);
-		expect(branch).toMatch(/Start-Process -FilePath \$link\.Url\r\n\s*return 2$/);
+		expect(branch).toMatch(/Start-Process -FilePath \$link\.Url\r\n\s*return \$BylExitSetupPending$/);
 		expect(branch).not.toContain('Open-App');
 
 		const pending = functionBody(control(), 'Get-PendingInstallerLink');
@@ -224,7 +311,7 @@ describe('start', () => {
 		expect(hint).toContain('$MissedLinkHint');
 	});
 
-	it('only opens links it rebuilt on the fixed binding', () => {
+	it('only opens links it rebuilt on the address of the app', () => {
 		const body = functionBody(functions(), 'Get-InstallerLink');
 		expect(body).toContain('Url        = "$($BylAppUrl)_/#/pbinstall/$token"');
 		expect(body).toContain(String.raw`'/_/#/pbinstall/([A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+)'`);
@@ -234,10 +321,11 @@ describe('start', () => {
 		const hint = control().match(/\$FirstRunHint = @"\r\n([\s\S]*?)\r\n"@/)[1];
 		expect(hint).toContain('Erster Start');
 		expect(hint).toContain('Admin-Konto');
-		expect(hint).toContain('_/)');
+		expect(hint).toContain('({0}_/)');
 		expect(hint).toContain('„users“');
 		expect(hint).toContain('30 Minuten');
 		expect(hint).toContain('$MissedLinkHint');
+		expect(functionBody(control(), 'Start-Server')).toContain('Show-Message (($FirstRunHint -f $BylAppUrl) + $where)');
 		expect(control()).toContain(
 			"$MissedLinkHint = 'Link verpasst oder abgelaufen? admin-zuruecksetzen.bat legt ein Admin-Konto an, ohne Daten zu löschen.'"
 		);
@@ -269,15 +357,14 @@ describe('open tabs before opening the browser (ADR-0035, SF-4)', () => {
 	});
 
 	it('asks without waiting when the app runs already and with the wait of a cold start after it started', () => {
-		const start = functionBody(control(), 'Invoke-Start');
-		const calls = [...start.matchAll(/^.*Open-Browser.*$/gm)].map((match) => match[0].trim());
+		const calls = [...control().matchAll(/^.*Open-Browser -ColdStart.*$/gm)].map((match) => match[0].trim());
 		expect(calls).toEqual([
-			'if (-not $Hidden) { Open-Browser -ColdStart $false }',
-			'if (-not $Hidden) { Open-Browser -ColdStart $true }'
+			'if (-not $Hidden -and -not $NoBrowser) { Open-Browser -ColdStart $ColdStart }',
+			'if (-not $Hidden -and -not $NoBrowser) { Open-Browser -ColdStart $false }'
 		]);
-		const running = start.slice(start.indexOf("if ($port.State -eq 'App')"), start.indexOf('$databaseExisted'));
-		expect(running).toContain('Open-Browser -ColdStart $false');
-		expect(start.indexOf('Open-Browser -ColdStart $true')).toBeGreaterThan(start.indexOf('Wait-ServerReady'));
+		expect(startBranch('Open')).toContain('Open-Browser -ColdStart $false');
+		const start = functionBody(control(), 'Start-Server');
+		expect(start.indexOf('Complete-Start -ProcessId $server.Id -ColdStart $true')).toBeGreaterThan(start.indexOf('Wait-Ready'));
 	});
 
 	it('asks the server without proxy, without Origin and with a timeout', () => {
@@ -288,8 +375,6 @@ describe('open tabs before opening the browser (ADR-0035, SF-4)', () => {
 		for (const source of [control(), functions()]) {
 			expect(source).not.toMatch(/Headers\.Add\(\s*'Origin'|Sec-Fetch/i);
 		}
-		expect(functions()).toContain("$BylPresenceUrl = 'http://127.0.0.1:8090/api/byl/presence'");
-		expect(functions()).toContain("$BylAttentionUrl = 'http://127.0.0.1:8090/api/byl/attention'");
 		for (const name of ['Get-Presence', 'Send-Attention', 'Get-AttentionAcked']) {
 			const body = functionBody(control(), name);
 			expect(body, name).toMatch(/try \{[\s\S]*Invoke-LocalRequest[\s\S]*\}\s*catch \{/);
@@ -318,9 +403,9 @@ describe('open tabs before opening the browser (ADR-0035, SF-4)', () => {
 		expect(find).not.toMatch(/Start-Process|Remove-Item|Set-Content|\.Save\(/);
 	});
 
-	it('stop.bat tells the open tabs before it stops, without waiting and without failing', () => {
-		const stop = functionBody(control(), 'Invoke-Stop');
-		expect(stop).toContain('if ($own.Count -gt 0) { Send-StopNotice }');
+	it('stop tells the open tabs before it stops, without waiting and without failing', () => {
+		const stop = functionBody(control(), 'Invoke-StopCore');
+		expect(stop).toMatch(/if \(\$own\.Count -gt 0\) \{\s*Set-BylAddress -Port \$ports\[0\]\s*Send-StopNotice\s*\}/);
 		expect(stop.indexOf('Send-StopNotice')).toBeLessThan(stop.indexOf('Stop-OwnProcess'));
 		const notice = functionBody(control(), 'Send-StopNotice');
 		expect(notice).toMatch(/try \{[\s\S]*Get-AttentionSendUrl -Reason 'stop'[\s\S]*\}\s*catch \{/);
@@ -339,23 +424,48 @@ describe('stop', () => {
 	});
 
 	it('stops only processes chosen by Select-AppProcess, by process id', () => {
-		const body = functionBody(control(), 'Invoke-Stop');
+		const body = functionBody(control(), 'Invoke-StopCore');
 		expect(body).toMatch(/\$snapshot = Get-ProcessSnapshot/);
 		expect(body).toMatch(/Select-AppProcess -Process \$snapshot -AppDir \$AppDir/);
 		expect(body).toMatch(/Stop-OwnProcess -Candidates \$own -Name 'PocketBase'/);
 		const stop = functionBody(control(), 'Stop-OwnProcess');
-		expect(stop).toMatch(/Stop-Process -Id \$processId -Force/);
+		expect(stop).toMatch(/-Kill \{ param\(\$id\) Stop-Process -Id \$id -Force \}/);
 		expect(stop).toMatch(/Stop-SelectedProcess -Candidates \$Candidates -Select \$Select -Name \$Name/);
 		expect(stop).toMatch(/-Filter "ProcessId = \$\(\[int\]\$processId\)"/);
 		const selected = functionBody(functions(), 'Stop-SelectedProcess');
 		expect(selected).toMatch(/if \(@\(& \$Select @\(& \$GetCurrent \$processId\)\)\.Count -eq 0\) \{ continue \}/);
-		for (const source of [body, stop, selected]) {
+		for (const source of [control(), functions()]) {
 			expect(source).not.toMatch(/Stop-Process\s+-Name|Get-Process\s+-Name|\|\s*Stop-Process/i);
 		}
 	});
 
+	it('ends in order first (console break, waiting) and hard only after that, with a warning', () => {
+		const stop = functionBody(control(), 'Stop-OwnProcess');
+		expect(stop).toContain('Stop-Gracefully -ProcessId $processId -GraceMilliseconds ($StopGraceSeconds * 1000)');
+		expect(stop).toContain('-SendBreak { param($id) (Send-ConsoleBreak -ProcessId $id) -eq 0 }');
+		expect(stop).toContain("if ($result -eq 'Forced') { $Forced.Add(\"$Name (PID $processId)\") }");
+		expect(control()).toMatch(/\$StopGraceSeconds = 15\b/);
+		expect(functionBody(control(), 'Invoke-StopCore')).toContain('Warnung: Nicht rechtzeitig geordnet beendet, daher hart beendet: ');
+		const send = functionBody(control(), 'Send-ConsoleBreak');
+		expect(send).toContain('Get-ConsoleBreakCommand -ProcessId $ProcessId');
+		expect(send).toContain('$startInfo.CreateNoWindow = $true');
+		expect(send).toContain('$startInfo.UseShellExecute = $false');
+		// The child sends CTRL_BREAK_EVENT only to a console of the target alone, and survives it.
+		const source = functions().match(/\$BylConsoleBreakSource = @'\r\n([\s\S]*?)\r\n'@/)[1];
+		expect(source).toContain('GenerateConsoleCtrlEvent(1, 0)');
+		expect(source).toContain('if (ids[i] != processId && ids[i] != self) return 3;');
+		expect(source.indexOf('AttachConsole(processId)')).toBeLessThan(source.indexOf('SetConsoleCtrlHandler(Ignore, true)'));
+	});
+
+	it('waits for the port and removes the state file', () => {
+		const body = functionBody(control(), 'Invoke-StopCore');
+		expect(body.indexOf('Wait-PortFree -Port $port')).toBeGreaterThan(body.indexOf("-Name 'PocketBase'"));
+		expect(body.lastIndexOf('Remove-StateFile')).toBeGreaterThan(body.indexOf('Wait-PortFree'));
+		expect(control()).toMatch(/\$PortFreeTimeoutSeconds = 10\b/);
+	});
+
 	it('collects the failures as single strings, never as a nested array ("System.String[]")', () => {
-		const body = functionBody(control(), 'Invoke-Stop');
+		const body = functionBody(control(), 'Invoke-StopCore');
 		const stop = functionBody(control(), 'Stop-OwnProcess');
 		const selected = functionBody(functions(), 'Stop-SelectedProcess');
 		for (const source of [body, stop, selected]) {
@@ -366,12 +476,12 @@ describe('stop', () => {
 		expect(body.match(/\{ \$failed\.Add\(\[string\]\$line\) \}/g)).toHaveLength(2);
 	});
 
-	it('stops the own mail helper before PocketBase (E4 plan, package 11)', () => {
-		const body = functionBody(control(), 'Invoke-Stop');
-		expect(body).toMatch(/Select-MailHelperProcess -Process \$snapshot -AppDir \$AppDir/);
+	it('stops the own mail helper before PocketBase, for every address of the own instance (package 11)', () => {
+		const body = functionBody(control(), 'Invoke-StopCore');
+		expect(body).toMatch(/Select-MailHelperProcess -Process \$snapshot -AppDir \$AppDir -Url \$urls/);
 		expect(body.indexOf("-Name 'byl-mail.exe'")).toBeGreaterThan(-1);
 		expect(body.indexOf("-Name 'byl-mail.exe'")).toBeLessThan(body.indexOf("-Name 'PocketBase'"));
-		expect(body).toMatch(/Select-MailHelperProcess -Process \$Process -AppDir \$AppDir/);
+		expect(body).toMatch(/Select-MailHelperProcess -Process \$Process -AppDir \$AppDir -Url \$urls/);
 	});
 });
 
