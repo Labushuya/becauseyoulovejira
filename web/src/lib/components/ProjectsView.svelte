@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { tick, untrack } from 'svelte';
+	import { SvelteSet } from 'svelte/reactivity';
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
 	import type { Project } from '$lib/domain/project';
@@ -9,8 +10,10 @@
 		filterProjects,
 		nextProjectSort,
 		parseProjectViewQuery,
+		projectRows,
+		readCollapsedProjects,
 		readStoredProjectLayout,
-		sortProjects,
+		writeCollapsedProjects,
 		writeStoredProjectLayout,
 		type ProjectLayout,
 		type ProjectSortKey,
@@ -47,7 +50,9 @@
 	// returns the focus to the link of its project, or to the heading if it is gone; closing "Neues
 	// Projekt" without a project returns it to "Neues Projekt". The tags live in the settings
 	// (/einstellungen/tags). "aktiv" comes from the list store, "gesamt" adds the done tickets the
-	// server counts.
+	// server counts. Sub projects (ADR-0034, UP-3) stand as a tree below their parent in list and
+	// tiles; folding is kept per tab in sessionStorage, and a search shows a matching sub project
+	// with its parent as context.
 	let {
 		catalog,
 		tickets,
@@ -92,14 +97,41 @@
 	/** Projects of the switch "Archivierte anzeigen", before the search. */
 	const available = $derived(query.showArchived ? catalog.projects : catalog.activeProjects);
 	const newOf = (project: Project) => tickets.newInProject(project.id);
-	const shown = $derived(
-		sortProjects(filterProjects(available, query.search), query.sort, {
-			active: activeOf,
-			total: totalOf,
-			fresh: newOf
-		})
+
+	function sessionStore(): Storage | null {
+		try {
+			return window.sessionStorage;
+		} catch {
+			return null;
+		}
+	}
+
+	/** Parents whose sub projects are folded away (ADR-0034); per tab, default open. */
+	const collapsed = new SvelteSet<string>(readCollapsedProjects(sessionStore()));
+	/** The projects as a tree (ADR-0034): searched, sorted, folded; list and tiles show the same. */
+	const rows = $derived(
+		projectRows(
+			available,
+			query.search,
+			query.sort,
+			{
+				active: (project) => activeOf(project),
+				total: (project) => totalOf(project),
+				fresh: newOf
+			},
+			collapsed
+		)
 	);
-	const countLabel = $derived(shown.length === 1 ? '1 Projekt' : `${shown.length} Projekte`);
+	/** Projects that match the search; parents shown only as context do not count. */
+	const matchCount = $derived(filterProjects(available, query.search).length);
+	const countLabel = $derived(matchCount === 1 ? '1 Projekt' : `${matchCount} Projekte`);
+
+	/** Folds or unfolds the sub projects of a parent; the button keeps the focus. */
+	function toggleFolded(project: Project) {
+		if (collapsed.has(project.id)) collapsed.delete(project.id);
+		else collapsed.add(project.id);
+		writeCollapsedProjects(sessionStore(), [...collapsed]);
+	}
 
 	let root = $state<HTMLElement>();
 	let heading = $state<HTMLElement>();
@@ -244,7 +276,7 @@
 	<SectionBar
 		title="Projekte"
 		headingId={ids.heading}
-		count={catalog.state === 'ready' ? shown.length : null}
+		count={catalog.state === 'ready' ? matchCount : null}
 		{countLabel}
 		bind:heading
 	>
@@ -338,10 +370,10 @@
 			{@render failure(stats.error, () => stats.reload())}
 		{/if}
 
-		{#if shown.length > 0}
+		{#if rows.length > 0}
 			{#if layout === 'liste'}
 				<ProjectTable
-					projects={shown}
+					{rows}
 					{activeOf}
 					{totalOf}
 					{newOf}
@@ -351,15 +383,17 @@
 					{columnFit}
 					hrefOf={(project) => projectHref(project.id, page.url)}
 					onsort={(key) => void sortBy(key)}
+					ontoggle={toggleFolded}
 				/>
 			{:else}
 				<ProjectTiles
-					projects={shown}
+					{rows}
 					{activeOf}
 					{totalOf}
 					{activeId}
 					{newOf}
 					hrefOf={(project) => projectHref(project.id, page.url)}
+					ontoggle={toggleFolded}
 				/>
 			{/if}
 		{:else if catalog.projects.length === 0}
@@ -411,7 +445,7 @@
 		display: inline-flex;
 		gap: 0.375rem;
 		align-items: center;
-		font-size: 0.875rem;
+		font-size: var(--font-size-body);
 		color: var(--color-text-muted);
 		cursor: pointer;
 	}
@@ -439,7 +473,7 @@
 
 	.new {
 		padding: 0.375rem 0.875rem;
-		font-size: 0.875rem;
+		font-size: var(--font-size-body);
 		text-decoration: none;
 	}
 
@@ -473,7 +507,7 @@
 
 	.text-button {
 		padding: 0.125rem 0.5rem;
-		font-size: 0.8125rem;
+		font-size: var(--font-size-control);
 		background: none;
 		border: 1px solid currentColor;
 		border-radius: var(--radius-control);

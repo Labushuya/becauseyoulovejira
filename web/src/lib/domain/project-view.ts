@@ -2,7 +2,9 @@
 // "Kacheln" the second one), column sort, search by name or code and the switch "Archivierte
 // anzeigen". Pure: the only module that reads and writes these parameters; invalid values count as
 // not set, other parameters stay untouched. The chosen layout is also kept in localStorage
-// (`byl-projects-view`), so it holds on the next visit; the URL wins when it names one.
+// (`byl-projects-view`), so it holds on the next visit; the URL wins when it names one. Sub projects
+// (ADR-0034) stand as a tree below their parent (`projectRows`); which parents are folded is kept
+// per tab in sessionStorage (`byl-projects-collapsed`), not in the URL.
 
 import type { Project } from './project';
 import { compareTitles } from './ordering';
@@ -243,6 +245,99 @@ export function sortProjects(
 		if (left === right) return byName(a, b);
 		return ascending ? left - right : right - left;
 	});
+}
+
+/** Key of the folded parents in sessionStorage (ADR-0034 section 6); only this tab, default open. */
+export const PROJECT_COLLAPSED_STORAGE_KEY = 'byl-projects-collapsed';
+
+/** One row of the project list or one tile, in tree order (ADR-0034 section 6). */
+export interface ProjectRow {
+	project: Project;
+	/** 1 for a sub project below its parent, 0 otherwise. */
+	depth: 0 | 1;
+	/** The parent does not match the search and stands only as context of a sub project. */
+	context: boolean;
+	/** Sub projects shown below a parent (0 for every other row). */
+	childCount: number;
+	/** The sub projects of this parent are folded away. */
+	collapsed: boolean;
+}
+
+/**
+ * Rows of the project view as a tree (ADR-0034 section 6): the top-level projects in the chosen
+ * order, each followed by its sub projects in the same order. With a search, a matching sub
+ * project brings its parent along as context, and folding does not apply, so every match shows.
+ * A sub project whose parent is not available (e.g. the switch hides it) stands like a top-level
+ * project.
+ */
+export function projectRows(
+	available: readonly Project[],
+	search: string | null,
+	sort: ProjectSort | null,
+	numbers: ProjectNumbers,
+	collapsed: ReadonlySet<string>
+): ProjectRow[] {
+	const ids = new Set(available.map((project) => project.id));
+	const matches = new Set(filterProjects(available, search).map((project) => project.id));
+	const searching = (search?.trim() ?? '') !== '';
+	const roots: Project[] = [];
+	const children = new Map<string, Project[]>();
+	for (const project of available) {
+		const parentId = project.parentId ?? null;
+		if (parentId === null || parentId === project.id || !ids.has(parentId)) {
+			roots.push(project);
+		} else if (matches.has(project.id)) {
+			const list = children.get(parentId);
+			if (list === undefined) children.set(parentId, [project]);
+			else list.push(project);
+		}
+	}
+	const rows: ProjectRow[] = [];
+	for (const root of sortProjects(roots, sort, numbers)) {
+		const shownChildren = sortProjects(children.get(root.id) ?? [], sort, numbers);
+		const hit = matches.has(root.id);
+		if (!hit && shownChildren.length === 0) continue;
+		const folded = !searching && shownChildren.length > 0 && collapsed.has(root.id);
+		rows.push({
+			project: root,
+			depth: 0,
+			context: !hit,
+			childCount: shownChildren.length,
+			collapsed: folded
+		});
+		if (folded) continue;
+		for (const child of shownChildren) {
+			rows.push({ project: child, depth: 1, context: false, childCount: 0, collapsed: false });
+		}
+	}
+	return rows;
+}
+
+const RECORD_ID = /^[a-z0-9]{15}$/;
+
+/** The folded parents of this tab; empty without a valid entry or with a blocked storage. */
+export function readCollapsedProjects(storage: Pick<Storage, 'getItem'> | null): string[] {
+	try {
+		const value: unknown = JSON.parse(storage?.getItem(PROJECT_COLLAPSED_STORAGE_KEY) ?? '[]');
+		return Array.isArray(value)
+			? value.filter((id): id is string => typeof id === 'string' && RECORD_ID.test(id))
+			: [];
+	} catch {
+		return [];
+	}
+}
+
+/** Remembers the folded parents; none removes the key. A blocked storage only loses the memory. */
+export function writeCollapsedProjects(
+	storage: Pick<Storage, 'setItem' | 'removeItem'> | null,
+	ids: readonly string[]
+): void {
+	try {
+		if (ids.length === 0) storage?.removeItem(PROJECT_COLLAPSED_STORAGE_KEY);
+		else storage?.setItem(PROJECT_COLLAPSED_STORAGE_KEY, JSON.stringify([...ids].sort()));
+	} catch {
+		// Folding still holds for this page.
+	}
 }
 
 /** The remembered layout; null without one, with an unknown value or a blocked storage. */
