@@ -9,6 +9,7 @@ import { request } from 'node:http';
 import PocketBase from 'pocketbase';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { startPocketBase } from '../support/pocketbase-harness.mjs';
+import { ackAttention, subscribeAttention } from '../../web/src/lib/data/attention.ts';
 
 const TOPIC = 'byl/attention';
 const GAP_MS = 2100;
@@ -237,6 +238,24 @@ describe('presence and attention (ADR-0035, SF-1)', () => {
 
 	it('forgets a tab that unsubscribed', async () => {
 		await second.realtime.unsubscribe(TOPIC);
+		expect((await call('/api/byl/presence')).body.tabs).toBe(1);
+	});
+
+	it('works with the data layer of the SPA (SF-3)', async () => {
+		const pb = await user();
+		const messages = [];
+		const stop = await subscribeAttention(pb, (message) => messages.push(message));
+		expect((await call('/api/byl/presence')).body.tabs).toBe(2);
+
+		const response = await sendAttention('datei');
+		const { nonce } = response.body;
+		await until(() => messages.length === 1);
+		expect(messages[0]).toEqual({ nonce, reason: 'datei' });
+
+		await ackAttention(pb, nonce);
+		expect((await call(`/api/byl/attention/${nonce}`)).body).toEqual({ acked: true });
+		await expect(ackAttention(pb, '../x')).rejects.toThrow('Invalid nonce');
+		await stop();
 		expect((await call('/api/byl/presence')).body.tabs).toBe(1);
 	});
 });
