@@ -886,6 +886,8 @@ describe('ticket route: sub-tasks (ADR-0033)', () => {
 		const section = within(panel).getByRole('region', { name: 'Unteraufgaben' });
 		expect(within(section).getByRole('button', { name: 'Unteraufgabe hinzufügen' })).toBeTruthy();
 		expect(within(panel).queryByRole('navigation', { name: 'Pfad des Tickets' })).toBeNull();
+		const row = within(panel).getByRole('group', { name: 'Übergeordnet' });
+		expect(within(row).getByRole('button', { name: 'Festlegen …' })).toBeTruthy();
 	});
 
 	it('shows the path of a sub-task with a link to its parent and no section', async () => {
@@ -902,6 +904,11 @@ describe('ticket route: sub-tasks (ADR-0033)', () => {
 		expect(link.getAttribute('title')).toBe('Umzug');
 		expect(within(path).getByText('TASK-3').getAttribute('aria-current')).toBe('page');
 		expect(screen.queryByRole('region', { name: 'Unteraufgaben' })).toBeNull();
+		const row = screen.getByRole('group', { name: 'Übergeordnet' });
+		expect(within(row).getByRole('link', { name: 'HAUS-12' })).toBeTruthy();
+		expect(
+			within(row).getByRole('switch', { name: 'Blockiert das übergeordnete Ticket' })
+		).toBeTruthy();
 	});
 
 	it('shows the path and the section in the full view as well, linking to full views', async () => {
@@ -1331,15 +1338,39 @@ describe('ticket route: full view (ADR-0025 section 7, UI-7)', () => {
 		expect(cancel).toHaveBeenCalledOnce();
 	});
 
-	it('deletes from the full view and goes back to the list', async () => {
+	it('deletes from the full view inline, without a dialog over it, and goes back to the list', async () => {
 		const { dialog, data } = await renderFullView();
 		data.delete.mockResolvedValueOnce(undefined);
 		const trigger = within(dialog).getByRole('button', { name: 'Löschen …' });
 		trigger.focus();
 		await fireEvent.click(trigger);
-		const question = await screen.findByRole('dialog', { name: 'TASK-3 endgültig löschen?' });
-		await fireEvent.click(within(question).getByRole('button', { name: 'Endgültig löschen' }));
+
+		expect(trigger.getAttribute('aria-expanded')).toBe('true');
+		expect(trigger.getAttribute('aria-haspopup')).toBeNull();
+		expect(screen.getAllByRole('dialog')).toHaveLength(1);
+		const question = within(dialog).getByRole('heading', { name: /TASK-3 endgültig löschen\?/ });
+		expect(question).toBeTruthy();
+		expect(document.activeElement).toBe(within(dialog).getByRole('button', { name: 'Abbrechen' }));
+
+		await fireEvent.click(within(dialog).getByRole('button', { name: 'Endgültig löschen' }));
 		await vi.waitFor(() => expect(data.delete).toHaveBeenCalledWith(ID));
 		await vi.waitFor(() => expect(mocks.goto).toHaveBeenCalledWith('/?erledigte=1'));
+	});
+
+	it('cancels the inline question with Escape, keeps the full view and returns the focus', async () => {
+		const { dialog, data } = await renderFullView();
+		const trigger = within(dialog).getByRole('button', { name: 'Löschen …' });
+		await fireEvent.click(trigger);
+		const cancel = within(dialog).getByRole('button', { name: 'Abbrechen' });
+
+		await fireEvent.keyDown(cancel, { key: 'Escape' });
+		await tick();
+
+		expect(within(dialog).queryByRole('button', { name: 'Endgültig löschen' })).toBeNull();
+		expect(document.activeElement).toBe(trigger);
+		expect(trigger.getAttribute('aria-expanded')).toBe('false');
+		expect(screen.getByRole('dialog')).toBe(dialog);
+		expect(data.delete).not.toHaveBeenCalled();
+		expect(mocks.goto).not.toHaveBeenCalled();
 	});
 });

@@ -1,4 +1,5 @@
 <script lang="ts">
+	import type { Snippet } from 'svelte';
 	import type { Ticket } from '$lib/domain/ticket';
 	import type { CatalogStore } from '$lib/stores/catalog.svelte';
 	import type { TicketDetailStore } from '$lib/stores/ticket-detail.svelte';
@@ -12,18 +13,22 @@
 	// Fields of a ticket (E2 plan, package 7; E3 plan, T-13 and T-14), shared by the side panel and
 	// the full view (ADR-0025 section 7): status, priority, due date, project and tags, each saving
 	// at once, with the field errors of the server at their field. Project and tags come from the
-	// catalog; a new tag is taken from the catalog, which reuses an existing name.
+	// catalog; a new tag is taken from the catalog, which reuses an existing name. The row
+	// "Übergeordnet" of sub-tasks (ADR-0033) comes in through `parentRow` as two cells of the grid.
 	let {
 		store,
 		catalog,
 		ticket,
-		recurrenceShown = false
+		recurrenceShown = false,
+		parentRow
 	}: {
 		store: TicketDetailStore;
 		catalog: CatalogStore;
 		ticket: Ticket;
 		/** The recurrence of the ticket is shown elsewhere; otherwise a plain line says so. */
 		recurrenceShown?: boolean;
+		/** Row "Übergeordnet" (TicketParentField) after the tags. */
+		parentRow?: Snippet;
 	} = $props();
 
 	const uid = $props.id();
@@ -138,6 +143,7 @@
 		/>
 		{@render fieldError('tags')}
 	</div>
+	{@render parentRow?.()}
 	{#if ticket.recurring && !recurrenceShown}
 		<span class="term">Wiederholung</span>
 		<span class="detail">wiederkehrend</span>
@@ -150,7 +156,7 @@
 		grid-template-columns: 7rem minmax(0, 1fr);
 		gap: 0.625rem 1rem;
 		align-items: baseline;
-		font-size: 0.875rem;
+		font-size: var(--font-size-body);
 	}
 
 	.fields label,

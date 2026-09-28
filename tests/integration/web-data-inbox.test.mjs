@@ -556,8 +556,17 @@ describe('sources of a ticket (ADR-0031, HK-2)', () => {
 
 		const byTitle = await searchTickets(owner.client, word.toLowerCase());
 		expect(byTitle.map((choice) => choice.id)).toEqual([open.id, done.id]);
-		expect(byTitle[0]).toEqual({ id: open.id, key: open.key, title: open.title, status: 'open' });
+		expect(byTitle[0]).toEqual({
+			id: open.id,
+			key: open.key,
+			title: open.title,
+			status: 'open',
+			parentId: null
+		});
 		expect(byTitle[1]?.status).toBe('done');
+		// A sub-task names its parent, so it is not offered as a parent (ADR-0033).
+		const child = await createTicket(owner.client, ticketDraft({ title: `${word} Teil`, parent: open.id }));
+		expect((await searchTickets(owner.client, child.key))[0]?.parentId).toBe(open.id);
 
 		const byKey = await searchTickets(owner.client, open.key);
 		expect(byKey.map((choice) => choice.id)).toEqual([open.id]);

@@ -1,6 +1,6 @@
 # E6-Plan, Teil Unteraufgaben: Liste, Fortschritt, Einrücken und „blockiert das übergeordnete Ticket“
 
-- **Stand:** in Arbeit (2026-09-28): UA-0 (#117), UA-1 (#118, Sperre beim Erledigen im Hook) und UA-2 (Abschnitt „Unteraufgaben“, Pfad) umgesetzt, UA-3 bis UA-5 geplant.
+- **Stand:** in Arbeit (2026-09-28): UA-0 (#117), UA-1 (#118, Sperre beim Erledigen im Hook), UA-2 (#119, Abschnitt „Unteraufgaben“, Pfad) und UA-3 (übergeordnetes Ticket, Switch, Löschen inline) umgesetzt, UA-4 und UA-5 geplant.
 - **Grundlage:**
   - [ADR-0033](../adr/0033-unteraufgaben.md) (Umfang, Sperre beim Erledigen, Wiederholungen, Oberfläche, Tabelle)
   - [ADR-0012](../adr/0012-plain-ticketing.md) und [ADR-0011](../adr/0011-roadmap-e3-bis-e7.md) mit den Nachträgen vom 2026-09-28
@@ -53,6 +53,11 @@
 | 2026-09-28 | UA-2 | **Hinzufügen inline:** Enter legt an, leert das Feld und lässt den Fokus darin; was während des Speicherns getippt wird, bleibt stehen. Esc schließt das Feld, verbraucht die Taste (Panel und Vollansicht bleiben offen) und gibt den Fokus an „Unteraufgabe hinzufügen“. Ein Erfolg steht in einer höflichen Live-Zeile des Abschnitts („TASK-16 angelegt.“), nicht als Flag, damit mehrere Unteraufgaben hintereinander nicht drei Flags stapeln. Ein halb getippter Titel fragt beim Verlassen nicht nach (anders als Beschreibung und Tag-Feld); er ist kurz und sofort wieder getippt. |
 | 2026-09-28 | UA-2 | **Ort:** im Panel nach der Beschreibung, in der Vollansicht in der linken Spalte zwischen Beschreibung und Quellen (wie Jira). Links führen im Panel aufs Panel, in der Vollansicht auf die Vollansicht der Unteraufgabe bzw. des übergeordneten Tickets. Der Pfad nutzt `Breadcrumbs` mit eigenem Namen „Pfad des Tickets“, Keys in Mono und dem Titel des übergeordneten Tickets als Tooltip. Nur Tickets ohne eigenes übergeordnetes Ticket haben den Abschnitt. |
 | 2026-09-28 | UA-2 | `TicketPanel` und `Breadcrumbs` ziehen auf die Schriftgrößen-Tokens und fallen von der Liste (`no-own-font-sizes.test.ts` jetzt 223). Der Fortschrittsbalken nutzt `--color-line` als Spur und `--color-brand` als Füllung, `--radius-pill`; der Text daneben ist die Information, der Balken ist `aria-hidden`. |
+| 2026-09-28 | UA-3 | **Zeile „Übergeordnet“** (`TicketParentField`) als zwei Zellen im Raster von `TicketFields`, hereingereicht per Snippet `parentRow` (Panel über `TicketPanel.parentField`, Vollansicht in der Karte „Details“). Eine Unteraufgabe zeigt Key (Link), Titel, „Ändern“ und „Lösen“ als Symbolknöpfe (enge Zeile, CLAUDE.md §8) und den Switch; ein Ticket ohne übergeordnetes „Keins“ mit „Festlegen …“, ein Ticket mit Unteraufgaben „Keins – hat selbst Unteraufgaben“ ohne Knopf. Lösen fragt nicht nach (umkehrbar), das Ergebnis meldet ein Flag der Liste. |
+| 2026-09-28 | UA-3 | **Auswahl inline mit `TicketCombobox`** in Panel und Vollansicht. Die Suche filtert in der SPA das Ticket selbst, das bisherige übergeordnete und alle Unteraufgaben heraus (`TicketChoice.parentId`, dafür liefert `searchTickets` jetzt `parent`); den Scope begrenzt schon die Sichtbarkeit, alles Übrige prüft der Hook, und seine Ablehnung steht am Feld. Esc gehört zuerst der Combobox (Liste, dann Text), danach beendet es die Wahl und wird verbraucht, damit Panel bzw. Vollansicht offen bleiben (Escape-Kette „Feld im Bearbeitungsmodus“). |
+| 2026-09-28 | UA-3 | **Speichern im `TicketDetailStore`:** `setParent` und `setBlocksParent` über einen gemeinsamen `#saveField` mit eigenem Speicherzustand und Fehler je Feld (`parent`, `blocksParent`); der Patch kennt `parent` und `blocksParent` (Body `blocks_parent`). Der Switch springt bei einem Fehler zurück. |
+| 2026-09-28 | UA-3 | **Löschen:** Der Text der Bestätigung liegt in `TicketDeleteText` (Kommentare und Verlauf, Regel läuft weiter, „N Unteraufgaben bleiben erhalten und sind danach keine Unteraufgaben mehr.“, Quellen), die Radios der Quellen in `SourceHandlingChoice`. Das Panel fragt wie bisher mit `ConfirmDialog`. **Die Vollansicht fragt inline** (`TicketDeleteQuestion`, `SectionMessage` warning oben in der linken Spalte, Fokus auf „Abbrechen“, Esc bricht ab und wird verbraucht, der Fokus kehrt zu „Löschen …“ zurück, das dort `aria-expanded` trägt). Damit ist der offene Punkt aus dem Plan Editor §6 erledigt. Die Frage gilt nur für das Ticket, für das sie geöffnet wurde. |
+| 2026-09-28 | UA-3 | `TicketFields` zieht auf die Schriftgrößen-Tokens und fällt von der Liste (`no-own-font-sizes.test.ts` jetzt 222). |
 
 ## 4. Status
 
@@ -60,8 +65,9 @@
 |---|---|
 | UA-0 | gemergt (#117) |
 | UA-1 | gemergt (#118) |
-| UA-2 | PR offen |
-| UA-3 bis UA-5 | geplant |
+| UA-2 | gemergt (#119) |
+| UA-3 | PR offen |
+| UA-4 und UA-5 | geplant |
 
 ## 5. Offene Punkte
 

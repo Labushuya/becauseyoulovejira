@@ -36,8 +36,11 @@ import type { SessionGuard } from './ticket-list.svelte';
 /** Fields editable in the panel (E2 plan, section 2; E3 plan, T-13). */
 export type EditableField = 'title' | 'description' | 'status' | 'priority' | 'due' | 'project';
 
-/** Fields with their own saving state and error: the editable ones plus the tags (T-14). */
-export type FieldKey = EditableField | 'tags';
+/**
+ * Fields with their own saving state and error: the editable ones plus the tags (T-14), the parent
+ * and the switch "Blockiert das übergeordnete Ticket" of a sub-task (ADR-0033).
+ */
+export type FieldKey = EditableField | 'tags' | 'parent' | 'blocksParent';
 
 /** Fields that save at once when chosen (T-7, T-13). */
 export type ChoiceField = 'status' | 'priority' | 'project';
@@ -283,6 +286,60 @@ export class TicketDetailStore {
 			ticket,
 			ticket.tagIds.filter((tagId) => tagId !== id)
 		);
+	}
+
+	/**
+	 * Makes the shown ticket a sub-task of `parent`, or releases it with null (ADR-0033 section 4).
+	 * The hook checks level and scope; a refusal stands at the field `parent`. The list announces
+	 * the result as a flag.
+	 */
+	async setParent(parent: { id: string; key: string } | null): Promise<boolean> {
+		const ticket = this.#ticket;
+		if (ticket === null) return false;
+		const before = ticket.parentId ?? null;
+		if ((parent?.id ?? null) === before) return true;
+		const saved = await this.#saveField(ticket, 'parent', { parent: parent?.id ?? null });
+		if (saved === null) return false;
+		this.#list.announce(
+			parent === null
+				? `${saved.key} ist keine Unteraufgabe mehr.`
+				: `${saved.key} ist jetzt eine Unteraufgabe von ${parent.key}.`
+		);
+		return true;
+	}
+
+	/** Switch "Blockiert das übergeordnete Ticket" of a sub-task (ADR-0033 section 2). */
+	async setBlocksParent(blocks: boolean): Promise<boolean> {
+		const ticket = this.#ticket;
+		if (ticket === null) return false;
+		if ((ticket.blocksParent ?? true) === blocks) return true;
+		return (await this.#saveField(ticket, 'blocksParent', { blocksParent: blocks })) !== null;
+	}
+
+	/**
+	 * Saves a patch that belongs to one field with its own saving state and error. One save per
+	 * field at a time. Returns the saved ticket, or null after a failure (shown at the field).
+	 */
+	async #saveField(ticket: Ticket, field: FieldKey, patch: TicketPatch): Promise<Ticket | null> {
+		if (this.#saving.has(field) || !this.#session.ensureValid()) return null;
+		this.#saving.add(field);
+		this.#fieldErrors.delete(field);
+		try {
+			const saved = await this.#data.update(ticket.id, patch);
+			this.#list.upsert(saved);
+			if (saved.id === this.#id) this.upsert(saved);
+			return saved;
+		} catch (error) {
+			const failure = toDataError(error);
+			if (failure.kind === 'session') this.#session.logout();
+			else if (failure.kind !== 'aborted' && ticket.id === this.#id) {
+				const key = field === 'blocksParent' ? 'blocks_parent' : field;
+				this.#fieldErrors.set(field, failure.fields[key]?.message ?? failure.message);
+			}
+			return null;
+		} finally {
+			this.#saving.delete(field);
+		}
 	}
 
 	/**

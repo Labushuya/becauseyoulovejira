@@ -48,7 +48,7 @@ function ticket(overrides: Partial<Ticket> = {}): Ticket {
 	};
 }
 
-async function renderPanel(overrides: Partial<Ticket> = {}, sourceCount = 0) {
+async function renderPanel(overrides: Partial<Ticket> = {}, sourceCount = 0, subtaskCount = 0) {
 	const data = {
 		get: vi.fn(async () => ticket(overrides)),
 		update: vi.fn(),
@@ -72,7 +72,7 @@ async function renderPanel(overrides: Partial<Ticket> = {}, sourceCount = 0) {
 		{ ensureValid: () => true, logout: vi.fn() }
 	);
 	render(TicketPanel, {
-		props: { store, catalog, listHref: LIST, onclose, ondeleted, sourceCount }
+		props: { store, catalog, listHref: LIST, onclose, ondeleted, sourceCount, subtaskCount }
 	});
 	await vi.waitFor(() => expect(store.state).toBe('ready'));
 	await tick();
@@ -114,6 +114,16 @@ describe('deleting a ticket', () => {
 		const text = document.getElementById(dialog.getAttribute('aria-describedby') ?? '');
 		expect(text?.textContent?.replace(/\s+/g, ' ').trim()).toBe(
 			'Dabei werden auch alle Kommentare und der gesamte Verlauf dieses Tickets gelöscht. Das lässt sich nicht rückgängig machen. Die Regel läuft weiter.'
+		);
+	});
+
+	it('says that the sub-tasks stay (ADR-0033)', async () => {
+		await renderPanel({}, 0, 3);
+		const dialog = await openDialog();
+		const text = document.getElementById(dialog.getAttribute('aria-describedby') ?? '');
+
+		expect(text?.textContent?.replace(/\s+/g, ' ')).toContain(
+			'3 Unteraufgaben bleiben erhalten und sind danach keine Unteraufgaben mehr.'
 		);
 	});
 
