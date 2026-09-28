@@ -61,6 +61,17 @@ describe('CI workflow and ruleset for main', () => {
 		const { parameters } = rule('pull_request');
 		expect(parameters.allowed_merge_methods).toEqual(['squash']);
 		expect(parameters.required_approving_review_count).toBe(0);
+		expect(parameters.required_reviewers).toEqual([]);
+	});
+
+	it('requires the Windows and the Linux job (AR-3)', () => {
+		expect(requiredChecks().map((check) => check.context)).toEqual([
+			'Check, lint, build and test',
+			'Linux build and test'
+		]);
+		const byName = new Map(jobs().map((job) => [job.name, job]));
+		expect(byName.get('Check, lint, build and test')?.['runs-on']).toBe('windows-latest');
+		expect(byName.get('Linux build and test')?.['runs-on']).toBe('ubuntu-latest');
 	});
 
 	it('requires only checks that are jobs of the CI workflow from GitHub Actions', () => {
