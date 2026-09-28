@@ -275,18 +275,21 @@ describe('web data layer: tickets', () => {
 		expect(error.fields.title.code).toBe('validation_required');
 	});
 
-	it('deletes a ticket together with its comments and history', async () => {
+	it('moves a ticket to the trash, and deleting it for good takes its comments and history', async () => {
 		const ticket = await createTicket(a.client, draft());
 		await updateTicket(a.client, ticket.id, { title: 'geändert' });
 		await a.client.collection('comments').create({ ticket: ticket.id, author: a.id, body: 'x' });
 		expect((await historyOf(superuser, ticket.id)).length).toBe(2);
 
 		await deleteTicket(a.client, ticket.id);
-
+		expect((await dataErrorOf(getTicket(a.client, ticket.id))).kind).toBe('not_found');
 		const filter = superuser.filter('ticket = {:id}', { id: ticket.id });
+		expect((await a.client.collection('comments').getFullList({ filter }))).toEqual([]);
+		expect((await superuser.collection('comments').getFullList({ filter })).length).toBe(1);
+
+		await a.client.send(`/api/byl/trash/${ticket.id}/purge`, { method: 'POST' });
 		expect(await superuser.collection('comments').getFullList({ filter })).toEqual([]);
 		expect(await superuser.collection('ticket_history').getFullList({ filter })).toEqual([]);
-		expect((await dataErrorOf(getTicket(a.client, ticket.id))).kind).toBe('not_found');
 	});
 
 	it('reports tickets of other users as not found', async () => {

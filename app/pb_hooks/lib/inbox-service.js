@@ -9,6 +9,8 @@ var errors = require(__hooks + '/lib/errors.js');
 var source = require(__hooks + '/lib/source.js');
 var rules = require(__hooks + '/lib/inbox-rules.js');
 var fingerprints = require(__hooks + '/lib/inbox-fingerprint.js');
+var trashRules = require(__hooks + '/lib/trash-rules.js');
+var cleanup = require(__hooks + '/lib/inbox-cleanup.js');
 
 var INBOX = 'inbox_items';
 
@@ -37,6 +39,17 @@ var ACTOR_KEY = '@actor';
 
 // History field of linking and releasing a source (ADR-0031 section 2).
 var SOURCE_LINK_FIELD = 'source_link';
+
+// Transient record key of an item the trash gives back to the inbox or links again (ADR-0037):
+// such a change writes no "source_link" entry, the ticket records "trash" instead.
+var SILENT_KEY = '@trash_silent';
+
+// The ticket of an item as a duplicate or a lookup names it: a ticket in the trash counts as
+// none (ADR-0037 §3), so no message names a key that cannot be opened.
+function visibleTicket(txApp, ticketId) {
+  var ticket = ticketId === '' ? null : findById(txApp, 'tickets', ticketId);
+  return ticket && !trashRules.isTrashed(ticket.getString('deleted_at')) ? ticket : null;
+}
 
 function fail(field, code, params) {
   return errors.fieldFailure(field, code, MESSAGES[code], params);
@@ -88,8 +101,7 @@ function assertNoDuplicate(txApp, scope, fingerprint) {
     return;
   }
   var state = existing.getString('state');
-  var ticketId = existing.getString('ticket');
-  var ticket = ticketId === '' ? null : findById(txApp, 'tickets', ticketId);
+  var ticket = visibleTicket(txApp, existing.getString('ticket'));
   var key = ticket ? ticket.getString('key') : '';
   throw errors.fieldFailure('fingerprint', 'validation_inbox_duplicate', rules.duplicateMessage(state, key), {
     state: state,
@@ -231,8 +243,7 @@ function lookup(app, owner, draft) {
     return null;
   }
   var state = existing.getString('state');
-  var ticketId = existing.getString('ticket');
-  var ticket = ticketId === '' ? null : findById(app, 'tickets', ticketId);
+  var ticket = visibleTicket(app, existing.getString('ticket'));
   var key = ticket ? ticket.getString('key') : '';
   return { state: state, item: existing.id, ticketKey: key, message: rules.duplicateMessage(state, key) };
 }
@@ -258,8 +269,8 @@ function guardClientUpdate(record) {
 }
 
 // onRecordUpdate before e.next(), for client and internal saves: scope, handled_at, a converted
-// item must point to a ticket of its scope when it gets one (a missing and a foreign ID give the
-// same message), and the main source of a ticket is never released nor moved to another ticket
+// item must point to a ticket of its scope when it gets one (a missing, a foreign ID and a ticket
+// in the trash give the same message), and the main source of a ticket is never released nor moved to another ticket
 // (ADR-0031 section 2 and its addendum). Returns the change for recordLinkChange():
 // { kind: 'link' | 'release' | 'move' | '', ticket, from }.
 function prepareUpdate(txApp, record) {
@@ -271,7 +282,7 @@ function prepareUpdate(txApp, record) {
   var ticketAfter = record.getString('ticket');
 
   if (after === 'converted' && (before !== 'converted' || (ticketAfter !== ticketBefore && ticketAfter !== ''))) {
-    var ticket = ticketAfter === '' ? null : findById(txApp, 'tickets', ticketAfter);
+    var ticket = visibleTicket(txApp, ticketAfter);
     if (!ticket || ticket.getString('scope') !== scope) {
       throw fail('ticket', 'validation_scope_mismatch');
     }
@@ -318,9 +329,9 @@ function saveSourceLinkEntry(txApp, record, ticketId, oldValue, newValue) {
 // "source_link" in the history of the ticket (ADR-0031 section 2), with the acting user. Moving
 // leaves one in both tickets: "moved to" in the old one (old value), "moved from" in the new one
 // (new value). Converting writes none (the ticket records its creation), nor does releasing an
-// item whose ticket is gone.
+// item whose ticket is gone, nor a change of the trash (SILENT_KEY).
 function recordLinkChange(txApp, record, change) {
-  if (!change || change.kind === '' || change.ticket === '') {
+  if (!change || change.kind === '' || change.ticket === '' || record.get(SILENT_KEY)) {
     return;
   }
   var ticket = findById(txApp, 'tickets', change.ticket);
@@ -426,8 +437,12 @@ function sourcesOfDeletedTicket(txApp, ticket) {
  * the deleted ticket that is still converted becomes new ('inbox') or discarded ('discard', a
  * tombstone that keeps its fingerprint), without ticket and with source_meta.ticket_deleted =
  * { key, at }. Nothing is deleted with the ticket. Returns the number of settled items.
+ * `options` (trash, ADR-0037): `ticket` also notes the ID of the ticket in the trash, `silent`
+ * writes no history entry, `purge` (a ticket deleted for good from the trash) removes text and
+ * original file of a discarded source at once, like the cleanup after 30 days.
  */
-function settleSourcesOfDeletedTicket(txApp, ids, handling, key) {
+function settleSourcesOfDeletedTicket(txApp, ids, handling, key, options) {
+  var opts = options || {};
   var mode = rules.isSourceHandling(handling) ? handling : rules.DEFAULT_SOURCE_HANDLING;
   var at = new Date().toISOString().replace('T', ' ');
   var settled = 0;
@@ -438,11 +453,36 @@ function settleSourcesOfDeletedTicket(txApp, ids, handling, key) {
     }
     item.set('state', mode === 'discard' ? 'discarded' : 'new');
     item.set('ticket', '');
-    item.set('source_meta', rules.deletedTicketMeta(metaOf(item), key, at));
+    item.set('source_meta', rules.deletedTicketMeta(metaOf(item), key, at, opts.ticket));
+    if (mode === 'discard' && opts.purge) {
+      purgeContent(item);
+    }
+    if (opts.silent) {
+      item.set(SILENT_KEY, true);
+    }
     txApp.save(item);
     settled += 1;
   }
   return settled;
+}
+
+// Text, details and original file of a discarded source go at once (ADR-0037 §6); PocketBase
+// deletes the removed file after the save.
+function purgeContent(item) {
+  var values = cleanup.purgedValues(
+    { title: item.getString('title'), body: item.getString('body'), meta: metaOf(item), original: item.getString('original') },
+    rules,
+    cleanup.TRASH_PURGED_BODY
+  );
+  if (values === null) {
+    return;
+  }
+  item.set('title', values.title);
+  item.set('body', values.body);
+  item.set('source_meta', values.meta);
+  if (values.clearOriginal) {
+    item.set('original', '');
+  }
 }
 
 module.exports = {
@@ -459,6 +499,8 @@ module.exports = {
   prepareConversion: prepareConversion,
   completeConversion: completeConversion,
   SOURCE_HANDLING_KEY: SOURCE_HANDLING_KEY,
+  SILENT_KEY: SILENT_KEY,
+  findById: findById,
   sourcesOfDeletedTicket: sourcesOfDeletedTicket,
   settleSourcesOfDeletedTicket: settleSourcesOfDeletedTicket
 };

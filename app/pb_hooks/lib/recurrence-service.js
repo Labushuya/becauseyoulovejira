@@ -17,6 +17,7 @@ var berlinTime = require(__hooks + '/lib/berlin-time.js');
 var ticketKey = require(__hooks + '/lib/ticket-key.js');
 var ticketService = require(__hooks + '/lib/ticket-service.js');
 var errors = require(__hooks + '/lib/errors.js');
+var trashRules = require(__hooks + '/lib/trash-rules.js');
 
 var RULES = 'recurrence_rules';
 var TICKETS = 'tickets';
@@ -249,6 +250,10 @@ function prepareCreate(txApp, record, nowMs) {
   var ticket = null;
   if (ticketId !== '') {
     ticket = findById(txApp, TICKETS, ticketId);
+    // A ticket in the trash reads like a missing one (ADR-0037 §3).
+    if (ticket && trashRules.isTrashed(ticket.getString('deleted_at'))) {
+      ticket = null;
+    }
     var code = rules.ticketViolation(
       ticket === null
         ? null
@@ -574,6 +579,12 @@ function runStartup(app, nowMs) {
     require(__hooks + '/lib/inbox-cleanup-service.js').run(app, nowMs);
   } catch (err) {
     app.logger().error('Eingang: Bereinigung beim Start gescheitert', 'error', errorText(err));
+  }
+  // The trash as well (ADR-0037 §8): tickets whose retention ran out while the app was off.
+  try {
+    require(__hooks + '/lib/trash-service.js').purgeDue(app, nowMs);
+  } catch (err) {
+    app.logger().error('Papierkorb: Aufräumen beim Start gescheitert', 'error', errorText(err));
   }
 }
 

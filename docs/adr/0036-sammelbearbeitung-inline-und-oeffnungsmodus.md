@@ -99,3 +99,7 @@
 - Die Tests einzelner Komponenten laufen ohne Kontext weiter mit dem Panel; die Route des Tickets und die Tabelle haben eigene Fälle mit einem Store (BYL-E6-320).
 - Sammelaktionen brauchen keine Änderung an Hooks und keine Migration; jede Regel der Einzeländerung gilt, belegt gegen PocketBase in `tests/integration/web-data-bulk.test.mjs`. Die Glas-Allowlist hat eine zehnte Datei (`BulkActionBar.svelte`).
 - Hinweise für den Papierkorb: siehe [Plan](../plan/bulk-inline-ansicht.md) §6.
+
+## Nachtrag (2026-09-28, Papierkorb, ADR-0037)
+
+- „Löschen“ je Ticket über die Route „Ticket löschen mit Quellenbehandlung“ verschiebt seit PB-1 in den Papierkorb; die Antwort `{ id, updated, tickets }` trägt die Grundlage für „Rückgängig“. §4 „‚Löschen‘ bietet keins“ entfällt mit PB-2: „Rückgängig“ ist dann das Wiederherstellen je Ticket mit `expected_updated` (derselbe Maßstab wie nach Feldänderungen), Konflikte stehen je Ticket im Ergebnis.

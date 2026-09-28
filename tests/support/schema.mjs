@@ -140,7 +140,11 @@ export const EXPECTED_COLLECTIONS = {
 			source: select(CHANNELS, false),
 			source_item: relation('inbox_items'),
 			// Date of the series with "Jeden Termin einzeln anlegen" (plan OR-5, migration 1790202200).
-			occurrence: date()
+			occurrence: date(),
+			// Trash (ADR-0037, migration 1790202300); only the server writes them.
+			deleted_at: date(),
+			deleted_by: relation('users'),
+			trash: { type: 'json', required: false, maxSize: 20000 }
 		},
 		indexes: [
 			'CREATE UNIQUE INDEX idx_tickets_scope_key ON tickets (scope, key)',
@@ -152,8 +156,9 @@ export const EXPECTED_COLLECTIONS = {
 			'CREATE INDEX idx_tickets_source_item ON tickets (source_item)',
 			// At most one open instance per rule and date of the series (ADR-0022 section 1 and addendum
 			// 2; migration 1790201610, since 1790202200 with occurrence, which is empty for one open
-			// instance per rule).
-			"CREATE UNIQUE INDEX idx_tickets_open_occurrence ON tickets (recurrence, occurrence) WHERE recurrence != '' AND status != 'done'"
+			// instance per rule; since 1790202300 without the tickets in the trash, ADR-0037).
+			"CREATE UNIQUE INDEX idx_tickets_open_occurrence ON tickets (recurrence, occurrence) WHERE recurrence != '' AND status != 'done' AND deleted_at = ''",
+			'CREATE INDEX idx_tickets_deleted_at ON tickets (deleted_at)'
 		]
 	},
 	inbox_items: {
@@ -283,6 +288,11 @@ const OWNED_RULES = {
 	updateRule: `${OWNED} && @request.body.owner:changed = false && ${BODY_HOUSEHOLD_ALLOWED}`,
 	deleteRule: OWNED
 };
+// The trash is hidden from every rule that reads tickets (ADR-0037, migration 1790202300).
+const LIVE = ' && deleted_at = ""';
+const LIVE_TICKET = ' && ticket.deleted_at = ""';
+const LIVE_ITEM = ' && (ticket = "" || ticket.deleted_at = "")';
+const LIVE_DEPENDENCY = ' && blocker.deleted_at = "" && blocked.deleted_at = ""';
 const READ_ONLY = { createRule: null, updateRule: null, deleteRule: null };
 const HOUSEHOLD_MEMBER =
 	`${AUTH} && @collection.household_members.household ?= id && ` +
@@ -298,30 +308,42 @@ export const EXPECTED_RULES = {
 	projects: OWNED_RULES,
 	tags: OWNED_RULES,
 	recurrence_rules: OWNED_RULES,
-	tickets: OWNED_RULES,
+	tickets: {
+		...OWNED_RULES,
+		listRule: OWNED + LIVE,
+		viewRule: OWNED + LIVE,
+		updateRule: OWNED_RULES.updateRule + LIVE,
+		deleteRule: OWNED + LIVE
+	},
 	// The source of a ticket is not deletable (ADR-0031 section 3, 1790201800).
-	inbox_items: { ...OWNED_RULES, deleteRule: `${OWNED} && ticket = ""` },
+	inbox_items: {
+		...OWNED_RULES,
+		listRule: OWNED + LIVE_ITEM,
+		viewRule: OWNED + LIVE_ITEM,
+		updateRule: OWNED_RULES.updateRule + LIVE_ITEM,
+		deleteRule: `${OWNED} && ticket = ""`
+	},
 	connections: OWNED_RULES,
 	comments: {
-		listRule: VIA_TICKET,
-		viewRule: VIA_TICKET,
-		createRule: `${VIA_TICKET} && @request.body.author = @request.auth.id`,
+		listRule: VIA_TICKET + LIVE_TICKET,
+		viewRule: VIA_TICKET + LIVE_TICKET,
+		createRule: `${VIA_TICKET} && @request.body.author = @request.auth.id${LIVE_TICKET}`,
 		updateRule:
 			`${VIA_TICKET} && author = @request.auth.id && ` +
-			'@request.body.author:changed = false && @request.body.ticket:changed = false',
-		deleteRule: `${VIA_TICKET} && author = @request.auth.id`
+			`@request.body.author:changed = false && @request.body.ticket:changed = false${LIVE_TICKET}`,
+		deleteRule: `${VIA_TICKET} && author = @request.auth.id${LIVE_TICKET}`
 	},
-	ticket_history: { listRule: VIA_TICKET, viewRule: VIA_TICKET, ...READ_ONLY },
-	dependencies: { listRule: OWNED, viewRule: OWNED, ...READ_ONLY },
+	ticket_history: { listRule: VIA_TICKET + LIVE_TICKET, viewRule: VIA_TICKET + LIVE_TICKET, ...READ_ONLY },
+	dependencies: { listRule: OWNED + LIVE_DEPENDENCY, viewRule: OWNED + LIVE_DEPENDENCY, ...READ_ONLY },
 	ticket_counters: { listRule: null, viewRule: null, ...READ_ONLY },
 	ticket_reads: {
-		listRule: `${AUTH} && user = @request.auth.id`,
-		viewRule: `${AUTH} && user = @request.auth.id`,
+		listRule: `${AUTH} && user = @request.auth.id${LIVE_TICKET}`,
+		viewRule: `${AUTH} && user = @request.auth.id${LIVE_TICKET}`,
 		createRule:
 			`${AUTH} && @request.body.user = @request.auth.id && ` +
 			'(ticket.owner = @request.auth.id || (ticket.household != "" && ' +
 			'@collection.household_members.household ?= ticket.household && ' +
-			'@collection.household_members.user ?= @request.auth.id))',
+			`@collection.household_members.user ?= @request.auth.id))${LIVE_TICKET}`,
 		updateRule: null,
 		deleteRule: `${AUTH} && user = @request.auth.id`
 	}

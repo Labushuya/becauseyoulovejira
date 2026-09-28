@@ -138,7 +138,9 @@ export function ticketDetailData(pb: PocketBase): TicketDetailData {
 		get: (id, options) => getTicket(pb, id, options),
 		update: (id, patch, options) => updateTicket(pb, id, patch, options),
 		create: (draft, origin) => createTicket(pb, draft, { origin }),
-		delete: (id, sources) => deleteTicket(pb, id, sources === undefined ? {} : { sources })
+		delete: async (id, sources) => {
+			await deleteTicket(pb, id, sources === undefined ? {} : { sources });
+		}
 	};
 }
 

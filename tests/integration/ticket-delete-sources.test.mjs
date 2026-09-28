@@ -1,7 +1,9 @@
-// Deleting a ticket with sources (ADR-0031, addendum B, package HK-6): the sources are never
-// deleted and never left as converted items without a ticket. Every way to delete gives them back
-// to the inbox; the route "Ticket löschen mit Quellenbehandlung" can discard them instead, as a
-// tombstone that keeps the fingerprint. Both run atomically in the delete hook.
+// Deleting a ticket with sources (ADR-0031, addendum B, package HK-6; since the trash ADR-0037):
+// the sources are never deleted and never left as converted items without a ticket. Every way to
+// delete moves the ticket to the trash and gives the sources back to the inbox; the route "Ticket
+// löschen mit Quellenbehandlung" can keep them with the ticket instead ("Quellen verwerfen"),
+// hidden until it is restored or deleted for good, when they become tombstones that keep the
+// fingerprint. Everything runs atomically.
 
 import { beforeAll, describe, expect, it } from 'vitest';
 import { createClient, rejectionOf, statusOf, superuserClient } from '../support/api.mjs';
@@ -28,6 +30,8 @@ const link = (who, itemId, ticketId) =>
 	who.client.collection('inbox_items').update(itemId, { state: 'converted', ticket: ticketId });
 const deleteWith = (client, ticketId, sources) =>
 	client.send(`/api/byl/tickets/${ticketId}/delete`, { method: 'POST', body: { sources } });
+const purge = (client, ticketId) => client.send(`/api/byl/trash/${ticketId}/purge`, { method: 'POST' });
+const inTrash = async (ticketId) => (await superuser.collection('tickets').getOne(ticketId)).deleted_at !== '';
 
 /** A ticket made from one item with a second item linked to it. */
 async function ticketWithSources(who = owner) {
@@ -48,10 +52,12 @@ describe('delete through the record API (safe default)', () => {
 	it('gives every source back to the inbox with a note of the deleted ticket', async () => {
 		const { ticket, main, linked } = await ticketWithSources();
 		await owner.client.collection('tickets').delete(ticket.id);
+		expect(await inTrash(ticket.id)).toBe(true);
 		for (const before of [main, linked]) {
 			const after = await itemOf(before.id);
 			expect(after).toMatchObject({ state: 'new', ticket: '', handled_at: '', fingerprint: before.fingerprint });
 			expect(after.source_meta.ticket_deleted.key).toBe(ticket.key);
+			expect(after.source_meta.ticket_deleted.ticket).toBe(ticket.id);
 			expect(after.source_meta.ticket_deleted.at).toMatch(/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}/);
 		}
 		// Still a duplicate: the same message is not taken in a second time.
@@ -62,13 +68,15 @@ describe('delete through the record API (safe default)', () => {
 	it('does the same for a superuser in the admin UI', async () => {
 		const { ticket, linked } = await ticketWithSources();
 		await superuser.collection('tickets').delete(ticket.id);
+		expect(await inTrash(ticket.id)).toBe(true);
 		expect(await itemOf(linked.id)).toMatchObject({ state: 'new', ticket: '' });
 	});
 
-	it('deletes a ticket without sources as before', async () => {
+	it('moves a ticket without sources to the trash', async () => {
 		const ticket = await owner.ticket();
 		await owner.client.collection('tickets').delete(ticket.id);
-		expect(await statusOf(superuser.collection('tickets').getOne(ticket.id))).toBe(404);
+		expect(await statusOf(owner.client.collection('tickets').getOne(ticket.id))).toBe(404);
+		expect(await inTrash(ticket.id)).toBe(true);
 	});
 
 	it('keeps the other keys of source_meta and forgets the note once the entry is linked again', async () => {
@@ -86,21 +94,26 @@ describe('delete through the record API (safe default)', () => {
 describe('route "Ticket löschen mit Quellenbehandlung"', () => {
 	it('gives the sources back to the inbox with "inbox"', async () => {
 		const { ticket, main, linked } = await ticketWithSources();
-		expect(await deleteWith(owner.client, ticket.id, 'inbox')).toBeDefined();
-		expect(await statusOf(superuser.collection('tickets').getOne(ticket.id))).toBe(404);
+		const moved = await deleteWith(owner.client, ticket.id, 'inbox');
+		expect(moved).toMatchObject({ id: ticket.id, tickets: [{ id: ticket.id, key: ticket.key }] });
+		expect(await inTrash(ticket.id)).toBe(true);
 		for (const item of [main, linked]) {
 			expect(await itemOf(item.id)).toMatchObject({ state: 'new', ticket: '', handled_at: '' });
 		}
 	});
 
-	it('discards the sources with "discard": a tombstone that keeps the fingerprint', async () => {
+	it('keeps the sources with "discard" until the ticket is deleted for good: a tombstone that keeps the fingerprint', async () => {
 		const { ticket, main, linked } = await ticketWithSources();
 		await deleteWith(owner.client, ticket.id, 'discard');
 		for (const before of [main, linked]) {
+			expect(await itemOf(before.id)).toMatchObject({ state: 'converted', ticket: ticket.id });
+			expect(await statusOf(owner.client.collection('inbox_items').getOne(before.id))).toBe(404);
+		}
+		await purge(owner.client, ticket.id);
+		for (const before of [main, linked]) {
 			const after = await itemOf(before.id);
-			expect(after).toMatchObject({ state: 'discarded', ticket: '', fingerprint: before.fingerprint });
+			expect(after).toMatchObject({ state: 'discarded', ticket: '', fingerprint: before.fingerprint, original: '' });
 			expect(after.handled_at).not.toBe('');
-			expect(after.source_meta.ticket_deleted.key).toBe(ticket.key);
 		}
 		const again = await rejectionOf(createItem(owner, { source_ref: linked.source_ref, title: linked.title }));
 		expect(again.codes).toEqual({ fingerprint: 'validation_inbox_duplicate' });
@@ -111,8 +124,9 @@ describe('route "Ticket löschen mit Quellenbehandlung"', () => {
 
 	it('goes through the data layer of the SPA, with and without a choice', async () => {
 		const first = await ticketWithSources();
-		await deleteTicket(owner.client, first.ticket.id, { sources: 'discard' });
-		expect((await itemOf(first.linked.id)).state).toBe('discarded');
+		const moved = await deleteTicket(owner.client, first.ticket.id, { sources: 'discard' });
+		expect(moved).toMatchObject({ id: first.ticket.id });
+		expect(await itemOf(first.linked.id)).toMatchObject({ state: 'converted', ticket: first.ticket.id });
 		const second = await ticketWithSources();
 		await deleteTicket(owner.client, second.ticket.id);
 		expect((await itemOf(second.linked.id)).state).toBe('new');
@@ -126,7 +140,7 @@ describe('route "Ticket löschen mit Quellenbehandlung"', () => {
 		for (const sources of ['delete', '', undefined]) {
 			expect((await rejectionOf(deleteWith(owner.client, ticket.id, sources))).status).toBe(400);
 		}
-		expect((await superuser.collection('tickets').getOne(ticket.id)).id).toBe(ticket.id);
+		expect(await inTrash(ticket.id)).toBe(false);
 		expect(await itemOf(linked.id)).toMatchObject({ state: 'converted', ticket: ticket.id });
 	});
 
@@ -135,7 +149,7 @@ describe('route "Ticket löschen mit Quellenbehandlung"', () => {
 		expect((await rejectionOf(deleteWith(owner.client, ticket.id, 'inbox'))).status).toBe(404);
 		expect((await rejectionOf(deleteWith(owner.client, 'abcdefghijklmno', 'inbox'))).status).toBe(404);
 		expect((await rejectionOf(deleteWith(createClient(), ticket.id, 'inbox'))).status).toBe(401);
-		expect((await superuser.collection('tickets').getOne(ticket.id)).id).toBe(ticket.id);
+		expect(await inTrash(ticket.id)).toBe(false);
 	});
 
 	it('lets every member of the household delete a household ticket with its sources', async () => {
@@ -152,6 +166,8 @@ describe('route "Ticket löschen mit Quellenbehandlung"', () => {
 			.create({ owner: s.ids.a, household: s.h1.id, title: 'Aus Eintrag', source_item: item.id });
 		expect((await rejectionOf(deleteWith(s.c, ticket.id, 'discard'))).status).toBe(404);
 		await deleteWith(s.b, ticket.id, 'discard');
+		expect(await statusOf(s.a.collection('inbox_items').getOne(item.id))).toBe(404);
+		await purge(s.a, ticket.id);
 		expect((await s.a.collection('inbox_items').getOne(item.id)).state).toBe('discarded');
 	});
 
@@ -162,7 +178,8 @@ describe('route "Ticket löschen mit Quellenbehandlung"', () => {
 		await link(owner, failing.id, ticket.id);
 		expect((await rejectionOf(deleteWith(owner.client, ticket.id, 'inbox'))).status).toBe(400);
 		expect((await rejectionOf(owner.client.collection('tickets').delete(ticket.id))).status).toBe(400);
-		expect((await superuser.collection('tickets').getOne(ticket.id)).source_item).toBe(main.id);
+		const kept = await superuser.collection('tickets').getOne(ticket.id);
+		expect(kept).toMatchObject({ source_item: main.id, deleted_at: '' });
 		for (const id of [main.id, failing.id]) {
 			expect(await itemOf(id)).toMatchObject({ state: 'converted', ticket: ticket.id });
 		}
