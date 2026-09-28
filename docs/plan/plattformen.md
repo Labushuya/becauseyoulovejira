@@ -1,6 +1,8 @@
 # Plan: Plattformen (Windows, Raspberry Pi, Android, Browser, später iOS und macOS)
 
-- **Stand:** S1 erledigt (mit SF-5), S0 umgesetzt (2026-09-28, Pakete S0-1 bis S0-3, siehe §3 „S0“; SemVer und Releases zurückgestellt, manuelle Prüfungen offen); übrige Stufen geplant. Umgesetzt wird Stufe für Stufe, jede als eigener PR bzw. eigene PR-Folge.
+> **Zurückgestellt auf Nutzerentscheidung (2026-09-28) – nicht ohne ausdrückliche Freigabe beginnen.** Das betrifft den gesamten weiteren Plattform-Ausbau (S3 Raspberry Pi mit Docker und Traefik, S2 Mehrgeräte mit Tailscale, S2b Android-APK mit Capacitor, S4 Tray und Installer, S5 iOS und macOS, S6 Push und Erinnerungen) und SemVer mit der Release-Automatisierung (release-please und sein Token). Der Nutzer entscheidet selbst, wann die aktuelle Version dafür bereit ist. Bis dahin wird nichts davon umgesetzt, auch keine Spikes aus §4; die Stufen unten bleiben als Planung stehen.
+
+- **Stand:** S1 erledigt (mit SF-5), S0 umgesetzt (2026-09-28, Pakete S0-1 bis S0-3, siehe §3 „S0“; SemVer und Releases zurückgestellt, manuelle Prüfungen offen); alle übrigen Stufen zurückgestellt (siehe oben). Nach der Freigabe wird Stufe für Stufe umgesetzt, jede als eigener PR bzw. eigene PR-Folge.
 - **Grundlage:**
   - [ADR-0028](../adr/0028-plattform-strategie.md) (Entscheidungen, Alternativen, Flutter-Abweichung)
   - [ADR-0001](../adr/0001-betriebsmodell-lokal-mehrgeraete-spaeter.md) (Mehrgeräte, HTTPS, Proxy-Header, Admin-UI nur lokal), [ADR-0002](../adr/0002-erststart-und-superuser.md) (Erststart), [ADR-0003](../adr/0003-pb-data-und-backups.md) (Backups), [ADR-0016](../adr/0016-kanal-architektur-und-mail.md) (Hilfsprozess), [ADR-0018](../adr/0018-secrets.md) (Secrets)
@@ -35,6 +37,8 @@ Die Bewertung vom 2026-09-27 hatte S0 bis S5 mit S2b und S4 als Optionen. Nach d
 **Reihenfolge:** S0 → S1 → S3 → S2 → S2b → S4; S6 und S5 später. Summe S0 bis S4: etwa 26–37 Tage.
 
 ## 3. Stufen im Einzelnen
+
+> **Zurückgestellt auf Nutzerentscheidung (2026-09-28) – nicht ohne ausdrückliche Freigabe beginnen.** Gilt für S3, S2, S2b, S4, S5, S6 und das Paket „SemVer und Releases“ aus S0. Umgesetzt sind nur S1 und S0 ohne SemVer.
 
 ### S0: Grundlagen
 
@@ -122,6 +126,8 @@ Die Bewertung vom 2026-09-27 hatte S0 bis S5 mit S2b und S4 als Optionen. Nach d
 
 ## 4. Offene Prüfpunkte (Spikes, keine Nutzerentscheidung)
 
+> **Zurückgestellt auf Nutzerentscheidung (2026-09-28) – nicht ohne ausdrückliche Freigabe beginnen.** Die offenen Spikes gehören zu den zurückgestellten Stufen und laufen erst mit deren Freigabe.
+
 | Stufe | Frage |
 |---|---|
 | S1 | ~~Welchen MIME-Typ liefert PocketBase 0.40.4 für `.webmanifest`?~~ Beantwortet (SF-5, 2026-09-28): `text/plain; charset=utf-8` auf dem Entwicklungsrechner (Go liest unbekannte Endungen unter Windows aus der Registry, sonst Sniffing); `.json` kommt immer als `application/json`, `.js` als `text/javascript`. Deshalb `manifest.json` (`tests/integration/web-app.test.mjs`). |
@@ -143,3 +149,4 @@ Die Bewertung vom 2026-09-27 hatte S0 bis S5 mit S2b und S4 als Optionen. Nach d
 | 2026-09-28 | S1 | Mit dem Paket „Start und Fenster“ zusammengeführt (Nutzerentscheidung: installierbare Web-App mit `focus-existing`, `start.bat` bevorzugt die installierte App); Umsetzung als SF-5 nach [ADR-0035](../adr/0035-start-einstieg-und-offene-tabs.md) vor S0. |
 | 2026-09-28 | S0 | Umgesetzt in S0-1 (#157), S0-2 (#159) und S0-3 (#160); Abweichungen in §3 „S0“: Erkennung des Server-Systems statt Variable im Start, Hinweis statt vollständiger Anleitungen je System bis S3, SemVer und Releases zurückgestellt (Nutzerentscheidung zum Token nötig). |
 | 2026-09-28 | S0 | Der Linux-Job ist kein Pflicht-Check. Empfehlung: nach einigen grünen Läufen in das Ruleset aufnehmen (im selben PR wie die Änderung von `.github/rulesets/main.json`, CLAUDE.md §12); er ist mit gut 5 Minuten kürzer als der Windows-Job. |
+| 2026-09-28 | alle | **Nutzerentscheidung:** Der gesamte weitere Plattform-Ausbau (S2 bis S6) und SemVer mit Release-Automatisierung (release-please-Token) sind zurückgestellt, bis der Nutzer entscheidet, dass die aktuelle Version dafür bereit ist. Nicht ohne ausdrückliche Freigabe beginnen. |

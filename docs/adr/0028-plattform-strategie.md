@@ -1,6 +1,6 @@
 # ADR-0028: Plattform-Strategie – ein Server je Datenbestand (PC oder Raspberry Pi), Clients als Web-App, Android-APK mit Capacitor, Windows mit Tray-Option
 
-- **Status:** Angenommen (nur Planung; umgesetzt wird stufenweise nach [docs/plan/plattformen.md](../plan/plattformen.md))
+- **Status:** Angenommen (nur Planung; umgesetzt wird stufenweise nach [docs/plan/plattformen.md](../plan/plattformen.md)); weiterer Ausbau zurückgestellt auf Nutzerentscheidung (2026-09-28), siehe Nachtrag unten
 - **Datum:** 2026-09-27
 - **Entscheidung durch:** Nutzer (Server-Orte, echte APK mit Updater als Sideload, Verbreitung, Push zurückgestellt, Windows mit Web-App und Tray-Option; 2026-09-27), Advisor (Architektur, Stufen, Abweichung vom Flutter-Grundsatz)
 - **Ergänzt:** [ADR-0001](0001-betriebsmodell-lokal-mehrgeraete-spaeter.md) (Mehrgeräte: zweiter Weg über Traefik neben Tailscale), [ADR-0018](0018-secrets.md) (Quelle der `BYL_*`-Variablen im Container; Nachtrag folgt mit Stufe S3)
@@ -132,3 +132,12 @@ Umgesetzt in drei Paketen nach [docs/plan/plattformen.md](../plan/plattformen.md
 - **S0-2, Server-System:** `GET /api/byl/host` für angemeldete Nutzer liefert `windows`, `linux` oder `container`. Abweichend von §10 setzt der Start keine Variable: Der Hook erkennt Windows und Linux am Namen der laufenden Datei, `BYL_HOST_PLATFORM` übersteuert (das Image von S3 setzt `container`). So bleiben `start.bat` und `byl-control.ps1` unverändert.
 - **S0-3, Anleitungen:** Die Oberfläche bleibt bei den Windows-Anleitungen und zeigt auf einem anderen Server-System darüber einen Hinweis (Kanäle, Einrichtungsassistent, Hilfe „Kanäle und Zugangsdaten“ und „Betrieb“): wohin die `BYL_`-Variablen gehören und wie der Server neu startet. Vollständige Anleitungen je System (Befehle für die Umgebungsdatei, Texte der Hooks wie „stop.bat, dann start.bat“) folgen mit S3, wenn Dienst, Umgebungsdatei und Compose-Beispiel feststehen; vorher würden sie Pfade und Befehle raten. Korrektur zu §10 bzw. zum Plan: Für neue Werte der Umgebungsdatei reicht `docker compose restart` nicht, der Container muss neu erstellt werden (`docker compose up -d`).
 - **SemVer und Releases** (§9) sind zurückgestellt: `release-please` öffnet Release-PRs mit dem `GITHUB_TOKEN`, die keinen Workflow auslösen; der Pflicht-Check käme nie, und das Ruleset ohne Ausnahmen ließe sie nicht zu. Der Weg (Token bzw. GitHub-App als Secret oder manueller Tag per `workflow_dispatch`) braucht eine Nutzerentscheidung und folgt als eigenes Paket vor S3.
+
+## Nachtrag (2026-09-28): Weiterer Ausbau zurückgestellt
+
+**Zurückgestellt auf Nutzerentscheidung (2026-09-28) – nicht ohne ausdrückliche Freigabe beginnen.**
+
+- Der Nutzer hat den gesamten weiteren Plattform-Ausbau zurückgestellt: S3 (Raspberry Pi mit Docker und Traefik), S2 (Mehrgeräte, Tailscale), S2b (Android-APK mit Capacitor), S4 (Tray und Installer), S5 (iOS und macOS) und S6 (Push und Erinnerungen).
+- Ebenso SemVer und die Release-Automatisierung aus §9 (release-please mit eigenem Token bzw. GitHub-App); `package.json` bleibt auf `0.0.1`, es gibt keine Tags und keine GitHub Releases.
+- Der Nutzer entscheidet selbst, wann die aktuelle Version dafür bereit ist. Bis dahin wird nichts davon umgesetzt, auch keine Spikes. Die Entscheidungen oben bleiben als Planung gültig.
+- Umgesetzt bleiben S1 (installierbare Web-App, [ADR-0035](0035-start-einstieg-und-offene-tabs.md) §8) und S0 ohne SemVer (plattformneutrale Skripte, Linux-CI, Server-System für die Anleitungen).
