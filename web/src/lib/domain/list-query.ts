@@ -10,8 +10,15 @@ import { PRIORITIES, STATUSES, type Priority, type Status } from './status';
 export const DUE_FILTERS = ['overdue', 'today', 'soon', 'none'] as const;
 export type DueFilter = (typeof DUE_FILTERS)[number];
 
+/**
+ * Filter "Wiederkehrend" (plan OR-2): only tickets of a series (`recurrence` set) or only the
+ * others; null shows both.
+ */
+export const RECURRING_FILTERS = ['recurring', 'once'] as const;
+export type RecurringFilter = (typeof RECURRING_FILTERS)[number];
+
 /** Groupings of the table (T-7); domain/grouping.ts groups by them. */
-export const GROUPINGS = ['status', 'priority', 'project', 'due', 'source'] as const;
+export const GROUPINGS = ['status', 'priority', 'project', 'due', 'source', 'recurrence'] as const;
 export type Grouping = (typeof GROUPINGS)[number];
 
 /** Value of the project filter for tickets without a project. */
@@ -36,6 +43,8 @@ export interface ListQuery {
 	due: DueFilter | null;
 	/** Source family (ADR-0019 section 2); tickets without a source count as "manual". */
 	source: SourceFamily | null;
+	/** Tickets of a series or single ones (plan OR-2); null: both. */
+	recurring: RecurringFilter | null;
 	/** Project record ID or NO_PROJECT. */
 	project: string | null;
 	/**
@@ -60,6 +69,7 @@ export const FILTER_KEYS = [
 	'priority',
 	'due',
 	'source',
+	'recurring',
 	'project',
 	'tag',
 	'search'
@@ -71,6 +81,7 @@ export const EMPTY_LIST_QUERY: Readonly<ListQuery> = Object.freeze({
 	priority: null,
 	due: null,
 	source: null,
+	recurring: null,
 	project: null,
 	subProjects: true,
 	tag: null,
@@ -86,6 +97,7 @@ export const LIST_PARAMS = Object.freeze({
 	priority: 'prio',
 	due: 'faellig',
 	source: 'quelle',
+	recurring: 'wiederholung',
 	project: 'projekt',
 	subProjects: 'unterprojekte',
 	tag: 'tag',
@@ -115,12 +127,18 @@ const SORT_VALUES: Readonly<Record<SortKey, string>> = Object.freeze({
 	created: 'erstellt'
 });
 
+const RECURRING_VALUES: Readonly<Record<RecurringFilter, string>> = Object.freeze({
+	recurring: 'wiederkehrend',
+	once: 'einmalig'
+});
+
 const GROUPING_VALUES: Readonly<Record<Grouping, string>> = Object.freeze({
 	status: 'status',
 	priority: 'prio',
 	project: 'projekt',
 	due: 'faellig',
-	source: 'quelle'
+	source: 'quelle',
+	recurrence: 'wiederholung'
 });
 
 /** Prefix of a sort value for the opposite of the natural direction. */
@@ -170,6 +188,7 @@ export function parseListQuery(params: URLSearchParams): ListQuery {
 		priority: oneOf(PRIORITIES, single(params, LIST_PARAMS.priority)),
 		due: keyOf(DUE_FILTERS, DUE_VALUES, single(params, LIST_PARAMS.due)),
 		source: keyOf(SOURCE_FAMILIES, SOURCE_FAMILY_VALUES, single(params, LIST_PARAMS.source)),
+		recurring: keyOf(RECURRING_FILTERS, RECURRING_VALUES, single(params, LIST_PARAMS.recurring)),
 		project: project === NO_PROJECT ? NO_PROJECT : parseRecordId(project),
 		subProjects: single(params, LIST_PARAMS.subProjects) !== '0',
 		tag: parseRecordId(single(params, LIST_PARAMS.tag)),
@@ -188,6 +207,7 @@ function queryEntries(query: ListQuery): [string, string][] {
 		[LIST_PARAMS.priority, query.priority],
 		[LIST_PARAMS.due, query.due === null ? null : DUE_VALUES[query.due]],
 		[LIST_PARAMS.source, query.source === null ? null : SOURCE_FAMILY_VALUES[query.source]],
+		[LIST_PARAMS.recurring, query.recurring === null ? null : RECURRING_VALUES[query.recurring]],
 		[LIST_PARAMS.project, query.project],
 		// Only the exception is written, and only where it means something: with a project.
 		[
@@ -242,6 +262,7 @@ export function resetFilters(query: ListQuery): ListQuery {
 		priority: null,
 		due: null,
 		source: null,
+		recurring: null,
 		project: null,
 		subProjects: true,
 		tag: null,

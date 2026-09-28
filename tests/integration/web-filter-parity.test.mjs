@@ -266,6 +266,78 @@ describe('web filter parity: server expression and matchesFilter', () => {
 	});
 });
 
+describe('web filter parity with recurring tickets (plan OR-2)', () => {
+	let owner;
+	let tickets;
+
+	beforeAll(async () => {
+		const superuser = await superuserClient();
+		owner = await createOwner(superuser);
+		const rules = owner.client.collection('recurrence_rules');
+		const repeat = (ticket) =>
+			rules.create({ owner: owner.id, title: ticket.title, mode: 'calendar', freq: 'weekly', ticket: ticket.id });
+		const created = [];
+		// Far in the future, so completing an instance creates no follow-up with the real clock.
+		for (const [index, priority] of ['low', 'high', 'low', 'high', 'urgent', 'medium'].entries()) {
+			created.push(
+				await owner.ticket({
+					priority,
+					due: index % 3 === 2 ? '' : '2031-01-06 00:00:00.000Z',
+					title: `Wiederholung ${index % 2 === 0 ? 'Miete' : 'Garten'} ${uniqueSuffix()}`
+				})
+			);
+		}
+		// Two instances of a series, one released from its series again, three single ones.
+		await repeat(created[0]);
+		await repeat(created[1]);
+		await repeat(created[2]);
+		await owner.client.collection('tickets').update(created[2].id, { recurrence: '' });
+		for (const ticket of created) {
+			await owner.client.collection('tickets').update(ticket.id, { status: 'done' });
+		}
+		await owner.ticket({ status: 'open', priority: 'low' });
+		const done = await listDoneTickets(owner.client, 1, { perPage: 500 });
+		tickets = [...(await listOpenTickets(owner.client)), ...done.items];
+		expect(done.items.filter((ticket) => ticket.recurring)).toHaveLength(2);
+	});
+
+	async function serverIds(query) {
+		const page = await listDoneTickets(owner.client, 1, { perPage: 500, filter: { query, today: TODAY } });
+		return page.items.map((ticket) => ticket.id).sort();
+	}
+
+	function clientIds(query) {
+		const search = activeSearch(query);
+		return tickets
+			.filter((ticket) => ticket.status === 'done' && matchesFilter(ticket, query, TODAY))
+			.filter((ticket) => search === null || ticket.title.toLowerCase().includes(search.toLowerCase()))
+			.map((ticket) => ticket.id)
+			.sort();
+	}
+
+	it('agrees for "nur wiederkehrende" and "nur einmalige", alone and with other filters', async () => {
+		const cases = [
+			{},
+			{ recurring: 'recurring' },
+			{ recurring: 'once' },
+			{ recurring: 'recurring', priority: 'high' },
+			{ recurring: 'once', priority: 'low' },
+			{ recurring: 'once', due: 'none' },
+			{ recurring: 'recurring', due: 'none' },
+			{ recurring: 'recurring', search: 'Miete' },
+			{ recurring: 'once', project: NO_PROJECT, status: 'done' },
+			{ recurring: 'recurring', grouping: 'recurrence', showDone: true }
+		];
+		for (const overrides of cases) {
+			const query = { ...EMPTY_LIST_QUERY, ...overrides };
+			expect(await serverIds(query), JSON.stringify(overrides)).toEqual(clientIds(query));
+		}
+		expect(await serverIds({ ...EMPTY_LIST_QUERY, recurring: 'recurring' })).toHaveLength(2);
+		// The released ticket counts as single again.
+		expect(await serverIds({ ...EMPTY_LIST_QUERY, recurring: 'once' })).toHaveLength(4);
+	});
+});
+
 describe('web filter parity with sub projects (ADR-0034)', () => {
 	let owner;
 	/** Haus with Garten and the archived Dach, Keller without sub projects. */

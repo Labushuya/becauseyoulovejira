@@ -318,7 +318,8 @@ const NO_DONE_FILTER: DoneFilter = { query: EMPTY_LIST_QUERY, today: '' };
  * parameter selects it, so every value reaches the server as a parameter of pb.filter(). The
  * rules are those of the client: a done ticket is never overdue, "Bald" is tomorrow up to
  * today + SOON_DAYS, project and tag compare the stored relations. The search (ADR-0013 section
- * 2) is part of the expression, because the list does not load the description.
+ * 2) is part of the expression, because the list does not load the description. "Wiederkehrend"
+ * (plan OR-2) compares `recurrence`: a ticket of a series has it set.
  * tests/integration/web-filter-parity.test.mjs keeps both forms equal.
  */
 const DONE_FILTER = [
@@ -332,7 +333,9 @@ const DONE_FILTER = [
 	'({:due} != "none" || due = "")',
 	'({:project} = "" || {:project} = {:noProject} || project = {:project})',
 	'({:project} != {:noProject} || project = "")',
-	'({:tag} = "" || tags.id ?= {:tag})'
+	'({:tag} = "" || tags.id ?= {:tag})',
+	'({:recurring} != "recurring" || recurrence != "")',
+	'({:recurring} != "once" || recurrence = "")'
 ].join(' && ');
 
 /**
@@ -418,6 +421,7 @@ function doneFilterParams(done: DoneFilter): Record<string, string> {
 		project: family ? '' : (query.project ?? ''),
 		noProject: NO_PROJECT,
 		tag: query.tag ?? '',
+		recurring: query.recurring ?? '',
 		...(query.source === null ? {} : sourceParams(query.source)),
 		...(family ? { family: query.project ?? '' } : {})
 	};

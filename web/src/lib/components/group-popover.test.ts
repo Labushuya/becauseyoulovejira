@@ -53,7 +53,7 @@ describe('group popover', () => {
 		expect(field().tagName).toBe('FIELDSET');
 	});
 
-	it('offers "Keine" and the five groupings as radios, the current one checked', () => {
+	it('offers "Keine" and the six groupings as radios, the current one checked', () => {
 		show('/?gruppe=projekt');
 
 		expect(
@@ -66,7 +66,8 @@ describe('group popover', () => {
 			'Nach Priorität',
 			'Nach Projekt',
 			'Nach Fälligkeit',
-			'Nach Quelle'
+			'Nach Quelle',
+			'Nach Wiederholung'
 		]);
 		expect(choice('Nach Projekt').checked).toBe(true);
 		expect(choice('Keine').checked).toBe(false);
@@ -78,7 +79,8 @@ describe('group popover', () => {
 		['/?gruppe=prio', 'Gruppiert: Priorität'],
 		['/?gruppe=projekt', 'Gruppiert: Projekt'],
 		['/?gruppe=faellig', 'Gruppiert: Fälligkeit'],
-		['/?gruppe=quelle', 'Gruppiert: Quelle']
+		['/?gruppe=quelle', 'Gruppiert: Quelle'],
+		['/?gruppe=wiederholung', 'Gruppiert: Wiederholung']
 	])('names the active grouping on the button (%s)', (path, label) => {
 		show(path);
 

@@ -5,7 +5,7 @@
 import type { CalendarDate } from './berlin-date';
 import { dueBucket, type DueBucket } from './filter';
 import { PRIORITY_LABELS, STATUS_LABELS } from './labels';
-import { NO_PROJECT, type Grouping } from './list-query';
+import { NO_PROJECT, RECURRING_FILTERS, type Grouping, type RecurringFilter } from './list-query';
 import { compareProjectPaths, type ResolveProject } from './ordering';
 import { projectPath } from './project-tree';
 import { SOURCE_FAMILIES, SOURCE_FAMILY_LABELS, sourceFamily, type SourceFamily } from './source';
@@ -21,7 +21,14 @@ export const GROUPING_LABELS: Readonly<Record<Grouping, string>> = Object.freeze
 	priority: 'Priorität',
 	project: 'Projekt',
 	due: 'Fälligkeit',
-	source: 'Quelle'
+	source: 'Quelle',
+	recurrence: 'Wiederholung'
+});
+
+/** Groups of "Nach Wiederholung" (plan OR-2): the tickets of a series first. */
+export const RECURRENCE_GROUP_LABELS: Readonly<Record<RecurringFilter, string>> = Object.freeze({
+	recurring: 'Wiederkehrend',
+	once: 'Einmalig'
 });
 
 /** Group of tickets without a project; always last. */
@@ -51,7 +58,7 @@ export interface TicketGroup<T> {
 
 export type GroupableTicket = Pick<
 	TicketSummary,
-	'status' | 'priority' | 'due' | 'project' | 'source'
+	'status' | 'priority' | 'due' | 'project' | 'source' | 'recurring'
 >;
 
 /** Tickets per key in the input order. */
@@ -101,8 +108,8 @@ function projectGroups<T>(
 /**
  * Splits already sorted tickets into groups (T-7): status in the order of work, priority urgent
  * first, project by name with "Ohne Projekt" last, due date overdue · today · next 7 days ·
- * later · without date, source in the order of the families (ADR-0019 section 3). `today` is the
- * Berlin calendar date.
+ * later · without date, source in the order of the families (ADR-0019 section 3), recurrence
+ * "Wiederkehrend" before "Einmalig" (plan OR-2). `today` is the Berlin calendar date.
  */
 export function groupTickets<T extends GroupableTicket>(
 	tickets: readonly T[],
@@ -136,6 +143,12 @@ export function groupTickets<T extends GroupableTicket>(
 				collect(tickets, (ticket) => sourceFamily(ticket.source)),
 				SOURCE_FAMILIES,
 				(key) => SOURCE_FAMILY_LABELS[key as SourceFamily]
+			);
+		case 'recurrence':
+			return inOrder(
+				collect(tickets, (ticket): RecurringFilter => (ticket.recurring ? 'recurring' : 'once')),
+				RECURRING_FILTERS,
+				(key) => RECURRENCE_GROUP_LABELS[key as RecurringFilter]
 			);
 	}
 }

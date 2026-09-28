@@ -6,6 +6,7 @@
 	import {
 		DUE_FILTERS,
 		NO_PROJECT,
+		RECURRING_FILTERS,
 		SEARCH_MAX_LENGTH,
 		SEARCH_MIN_LENGTH,
 		hasFilters,
@@ -14,7 +15,8 @@
 		withFilter,
 		type DueFilter,
 		type FilterKey,
-		type ListQuery
+		type ListQuery,
+		type RecurringFilter
 	} from '$lib/domain/list-query';
 	import { SOURCE_FAMILY_CHIPS, SOURCE_FAMILY_LABELS, type SourceFamily } from '$lib/domain/source';
 	import { PRIORITIES, STATUSES, type Priority, type Status } from '$lib/domain/status';
@@ -25,7 +27,8 @@
 	import FilterPopover from './FilterPopover.svelte';
 
 	// Filter bar (E3 plan, T-6, T-15 and packages 10 and 11; ADR-0010 section 1): chip groups for
-	// status, priority, due date and source (E4 package 9, ADR-0019 section 2), the search, the
+	// status, priority, due date, source (E4 package 9, ADR-0019 section 2) and "Wiederkehrend"
+	// (plan OR-2: only tickets of a series or only single ones), the search, the
 	// choices "Projekt" and "Tag" as popovers of the overlay system (ADR-0025 section 5, package
 	// UI-9, instead of native selects), and "Zurücksetzen".
 	// The state lives only in the URL (ADR-0013 section 4): every change navigates with a history
@@ -74,6 +77,14 @@
 	const sourceOptions = SOURCE_FAMILY_CHIPS.map((value) => ({
 		value,
 		label: SOURCE_FAMILY_LABELS[value]
+	}));
+	const RECURRING_LABELS: Readonly<Record<RecurringFilter, string>> = {
+		recurring: 'Nur wiederkehrende',
+		once: 'Nur einmalige'
+	};
+	const recurringOptions = RECURRING_FILTERS.map((value) => ({
+		value,
+		label: RECURRING_LABELS[value]
 	}));
 
 	const query = $derived(parseListQuery(page.url.searchParams));
@@ -191,6 +202,13 @@
 		options={sourceOptions}
 		value={query.source}
 		onchange={(value: SourceFamily | null) => setFilter('source', value)}
+	/>
+	<ChipGroup
+		legend="Wiederkehrend"
+		name={`${uid}-recurring`}
+		options={recurringOptions}
+		value={query.recurring}
+		onchange={(value: RecurringFilter | null) => setFilter('recurring', value)}
 	/>
 
 	<div class="selects">

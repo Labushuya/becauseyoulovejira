@@ -98,6 +98,7 @@ describe('parseListQuery', () => {
 			priority: 'high',
 			due: 'soon',
 			source: 'chat',
+			recurring: null,
 			project: PROJECT_ID,
 			subProjects: false,
 			tag: TAG_ID,
@@ -162,18 +163,20 @@ describe('serializeListQuery', () => {
 			tag: TAG_ID,
 			subProjects: true,
 			project: NO_PROJECT,
+			recurring: 'once',
 			source: 'calendar',
 			due: 'overdue',
 			priority: 'urgent',
 			status: 'backlog'
 		};
 		expect(serializeListQuery(full)).toBe(
-			`?status=backlog&prio=urgent&faellig=ueberfaellig&quelle=kalender&projekt=ohne&tag=${TAG_ID}` +
-				'&q=%C3%96l+wechseln&sort=erstellt&gruppe=faellig&erledigte=1'
+			'?status=backlog&prio=urgent&faellig=ueberfaellig&quelle=kalender&wiederholung=einmalig' +
+				`&projekt=ohne&tag=${TAG_ID}&q=%C3%96l+wechseln&sort=erstellt&gruppe=faellig&erledigte=1`
 		);
 		expect(serializeListQuery({ ...full, project: PROJECT_ID, subProjects: false })).toBe(
-			`?status=backlog&prio=urgent&faellig=ueberfaellig&quelle=kalender&projekt=${PROJECT_ID}` +
-				`&unterprojekte=0&tag=${TAG_ID}&q=%C3%96l+wechseln&sort=erstellt&gruppe=faellig&erledigte=1`
+			'?status=backlog&prio=urgent&faellig=ueberfaellig&quelle=kalender&wiederholung=einmalig' +
+				`&projekt=${PROJECT_ID}&unterprojekte=0&tag=${TAG_ID}&q=%C3%96l+wechseln&sort=erstellt` +
+				'&gruppe=faellig&erledigte=1'
 		);
 	});
 
@@ -249,6 +252,7 @@ describe('withFilter, resetFilters, hasFilters', () => {
 		priority: 'high',
 		due: 'today',
 		source: 'link',
+		recurring: 'recurring',
 		project: PROJECT_ID,
 		subProjects: false,
 		tag: TAG_ID,
@@ -322,7 +326,7 @@ describe('list query: source (E4 plan, package 9; ADR-0019)', () => {
 		expect(serializeListQuery(read(old))).toBe(`?${old}`);
 	});
 
-	it('counts the source as filter that "Zurücksetzen" clears', () => {
+	it('counts the source as a filter that "Zurücksetzen" clears', () => {
 		const withSource = {
 			...EMPTY_LIST_QUERY,
 			source: 'mail' as const,
@@ -330,5 +334,40 @@ describe('list query: source (E4 plan, package 9; ADR-0019)', () => {
 		};
 		expect(hasFilters(withSource)).toBe(true);
 		expect(resetFilters(withSource)).toEqual({ ...EMPTY_LIST_QUERY, grouping: 'source' });
+	});
+});
+
+describe('list query: recurring (plan OR-2)', () => {
+	const read = (search: string) => parseListQuery(new URLSearchParams(search));
+
+	it('reads "wiederholung" and ignores unknown, empty or repeated values', () => {
+		expect(read('wiederholung=wiederkehrend').recurring).toBe('recurring');
+		expect(read('wiederholung=einmalig').recurring).toBe('once');
+		expect(read('wiederholung=ja').recurring).toBeNull();
+		expect(read('wiederholung=').recurring).toBeNull();
+		expect(read('wiederholung=einmalig&wiederholung=einmalig').recurring).toBeNull();
+		expect(read('gruppe=wiederholung').grouping).toBe('recurrence');
+	});
+
+	it('writes the filter after the source and before the project', () => {
+		expect(
+			serializeListQuery(
+				query({
+					source: 'mail',
+					recurring: 'recurring',
+					project: NO_PROJECT,
+					grouping: 'recurrence'
+				})
+			)
+		).toBe('?quelle=mail&wiederholung=wiederkehrend&projekt=ohne&gruppe=wiederholung');
+		expect(normalize('gruppe=wiederholung&wiederholung=einmalig')).toBe(
+			'?wiederholung=einmalig&gruppe=wiederholung'
+		);
+	});
+
+	it('counts as a filter that "Zurücksetzen" clears; the grouping stays', () => {
+		const recurring = query({ recurring: 'once', grouping: 'recurrence' });
+		expect(hasFilters(recurring)).toBe(true);
+		expect(resetFilters(recurring)).toEqual(query({ grouping: 'recurrence' }));
 	});
 });

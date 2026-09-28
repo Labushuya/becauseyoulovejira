@@ -4,6 +4,7 @@
 // relations (projectId, tagIds), the same fields the server expression of the done tickets uses.
 // The source compares the family of `source` (ADR-0019 section 2); no source counts as "manual".
 // A project takes its sub projects in (ADR-0034 section 6) unless the query switches them off.
+// "Wiederkehrend" (plan OR-2) compares `recurring`, i.e. `recurrence != ""` on the server.
 
 import { addDays, type CalendarDate } from './berlin-date';
 import { NO_PROJECT, type ListQuery } from './list-query';
@@ -26,8 +27,13 @@ export function dueBucket(due: CalendarDate | null, today: CalendarDate): DueBuc
 
 export type FilterableTicket = Pick<
 	TicketSummary,
-	'status' | 'priority' | 'due' | 'projectId' | 'tagIds' | 'source'
+	'status' | 'priority' | 'due' | 'projectId' | 'tagIds' | 'source' | 'recurring'
 >;
+
+function matchesRecurring(ticket: FilterableTicket, filter: ListQuery['recurring']): boolean {
+	if (filter === null) return true;
+	return filter === 'recurring' ? ticket.recurring : !ticket.recurring;
+}
 
 function matchesDue(ticket: FilterableTicket, filter: ListQuery['due'], today: CalendarDate) {
 	if (filter === null) return true;
@@ -77,6 +83,7 @@ export function matchesFilter(
 		(query.priority === null || ticket.priority === query.priority) &&
 		matchesDue(ticket, query.due, today) &&
 		(query.source === null || sourceFamily(ticket.source) === query.source) &&
+		matchesRecurring(ticket, query.recurring) &&
 		matchesProject(ticket, query, subProjectsOf) &&
 		(query.tag === null || ticket.tagIds.includes(query.tag))
 	);
