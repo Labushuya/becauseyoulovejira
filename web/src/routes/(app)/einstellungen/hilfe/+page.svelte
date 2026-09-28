@@ -1,6 +1,8 @@
 <script lang="ts">
 	import { resolve } from '$app/paths';
+	import { page } from '$app/state';
 	import CodeBlock from '$lib/components/guidance/CodeBlock.svelte';
+	import { KEY_PLACEHOLDER, ingestExamples } from '$lib/domain/inbox-keys';
 	import HostPlatformNote from '$lib/components/guidance/HostPlatformNote.svelte';
 	import RecurrenceHelp from '$lib/components/help/RecurrenceHelp.svelte';
 	import ShortcutList from '$lib/components/help/ShortcutList.svelte';
@@ -17,6 +19,10 @@
 	// anchors of helpHref(), used by the shortcuts modal, the quick entry and "Kanäle". The section
 	// "Wiederholungen" (plan "Wiederholungen verständlich machen") explains rules with examples the
 	// engine computes; the form, the overview and the rule panel link to it.
+
+	// Examples of the own inbox (ADR-0038) with the address of this app and the key as placeholder.
+	const examples = $derived(ingestExamples(page.url.origin));
+	const EXAMPLE_PLACEHOLDERS = { [KEY_PLACEHOLDER]: { label: 'Zugangsschlüssel', secret: false } };
 
 	const priorityWords = Object.keys(PRIORITY_WORDS).map((word) => `!${word}`);
 	const priorityNumbers = Object.keys(PRIORITY_NUMBERS).map((number) => `!${number}`);
@@ -128,6 +134,105 @@
 			Systemsteuerung die Variable löschen oder
 			<code>reg delete HKCU\Environment /v NAME /f</code>, dann neu starten. Auf einem anderen
 			Rechner musst du die Variablen neu anlegen.
+		</p>
+	</section>
+
+	<section id="eigener-eingang" aria-labelledby="eigener-eingang-title">
+		<h3 id="eigener-eingang-title">Eigener Eingang (API)</h3>
+		<p>
+			Eigene Skripte und die Erweiterung für WhatsApp Web legen Einträge über eine einfache Adresse
+			in deinen Eingang. Dafür erzeugst du unter
+			<a href={resolve('/einstellungen/kanaele')}>Kanäle</a> auf der Karte „Eigener Eingang (API)“ einen
+			Zugangsschlüssel. Er wird genau einmal angezeigt; kopiere ihn dann. Ein Schlüssel kann nur Einträge
+			in deinen Eingang legen, nichts lesen, ändern oder löschen, und du kannst ihn jederzeit widerrufen.
+		</p>
+		<p>
+			Die Adresse ist nur auf diesem Rechner erreichbar (<code>127.0.0.1</code>), nicht aus dem Netz
+			oder dem Internet. Anfragen aus Webseiten lehnt die App ab.
+		</p>
+		<h4>Beispiel für PowerShell</h4>
+		<CodeBlock
+			code={examples.powershell}
+			label="Beispiel für PowerShell"
+			placeholders={EXAMPLE_PLACEHOLDERS}
+			wrap
+		/>
+		<h4>Beispiel für die Eingabeaufforderung (curl)</h4>
+		<CodeBlock
+			code={examples.curl}
+			label="Beispiel für die Eingabeaufforderung"
+			placeholders={EXAMPLE_PLACEHOLDERS}
+			wrap
+		/>
+		<h4>Felder</h4>
+		<dl class="tokens">
+			<div class="row">
+				<dt><code>mode</code> (Pflicht)</dt>
+				<dd>
+					<code>manual</code>: kommt immer an. <code>auto</code>: kommt nur an, wenn ein Stichwort
+					des Kanals in Titel oder Text steht (Groß- und Kleinschreibung egal); sonst antwortet die
+					App mit „gefiltert“ und speichert nichts.
+				</dd>
+			</div>
+			<div class="row">
+				<dt><code>text</code> (Pflicht)</dt>
+				<dd>Reiner Text, höchstens 100.000 Zeichen.</dd>
+			</div>
+			<div class="row">
+				<dt><code>external_id</code> (Pflicht)</dt>
+				<dd>
+					Deine eigene Kennung des Eintrags (höchstens 200 Zeichen). Dieselbe Kennung kommt nur
+					einmal an, auch wenn du den Eintrag verworfen hast.
+				</dd>
+			</div>
+			<div class="row">
+				<dt><code>title</code></dt>
+				<dd>Titel; ohne ihn gilt die erste Zeile des Textes.</dd>
+			</div>
+			<div class="row">
+				<dt><code>channel</code></dt>
+				<dd>
+					<code>api</code> (Standard) oder <code>whatsapp-web</code>; jeder Kanal hat eigene
+					Stichwörter.
+				</dd>
+			</div>
+			<div class="row">
+				<dt><code>url</code>, <code>sender</code>, <code>chat</code></dt>
+				<dd>Adresse (nur http und https), Absender und Chat, jeweils optional.</dd>
+			</div>
+			<div class="row">
+				<dt><code>sent_at</code></dt>
+				<dd>
+					Zeitpunkt nach ISO 8601 mit Zeitzone, etwa <code>2026-09-28T14:30:00+02:00</code>; wird
+					zum Quelldatum, nie zur Fälligkeit.
+				</dd>
+			</div>
+		</dl>
+		<h4>Antworten</h4>
+		<dl class="tokens">
+			<div class="row">
+				<dt>201 <code>created</code></dt>
+				<dd>Angelegt.</dd>
+			</div>
+			<div class="row">
+				<dt>200 <code>duplicate</code></dt>
+				<dd>Schon im Eingang (auch verworfen oder umgewandelt); nichts Neues.</dd>
+			</div>
+			<div class="row">
+				<dt>422 <code>filtered</code></dt>
+				<dd>Kein Stichwort bei <code>mode: auto</code>; nicht gespeichert.</dd>
+			</div>
+			<div class="row">
+				<dt>400, 401, 403, 429</dt>
+				<dd>
+					Ungültige Felder (mit Grund), fehlender oder widerrufener Schlüssel, Anfrage aus einer
+					Webseite, mehr als 60 Anfragen je Minute und Schlüssel.
+				</dd>
+			</div>
+		</dl>
+		<p class="note">
+			Mit <code>GET</code> auf dieselbe Adresse und dem Schlüssel prüfst du die Verbindung: Die App nennt
+			den Namen des Schlüssels.
 		</p>
 	</section>
 

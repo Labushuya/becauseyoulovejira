@@ -30,9 +30,18 @@ var MESSAGE = 'Stichwörter: höchstens 50, je 1 bis 100 Zeichen, ohne Zeilenumb
 
 // Kinds of file imports with their own list (users.import_keywords, ADR-0020 section 3) and the
 // keys each may have; only mail files search the start of the text on request.
+// The own inbox (ADR-0038) keeps the lists of its channels in the same field: "api" and
+// "whatsapp-web" take an entry of the mode "auto" only with one of their keywords.
 var IMPORT_KINDS = ['eml', 'ics', 'whatsapp'];
-var IMPORT_KEYS = { eml: ['keywords', 'match_body'], ics: ['keywords'], whatsapp: ['keywords'] };
-var IMPORT_MESSAGE = 'Unbekannte Einstellung der Datei-Importe.';
+var CHANNEL_KINDS = ['api', 'whatsapp-web'];
+var IMPORT_KEYS = {
+  eml: ['keywords', 'match_body'],
+  ics: ['keywords'],
+  whatsapp: ['keywords'],
+  api: ['keywords'],
+  'whatsapp-web': ['keywords']
+};
+var IMPORT_MESSAGE = 'Unbekannte Einstellung der Stichwörter.';
 
 // Umlauts: [fold "a", fold "ae"]; after toLowerCase.
 var UMLAUTS = { 'ä': ['a', 'ae'], 'ö': ['o', 'oe'], 'ü': ['u', 'ue'] };
@@ -197,8 +206,8 @@ function isPlainObject(value) {
 
 /**
  * Checks users.import_keywords (parsed JSON; null, undefined and '' count as not set): only the
- * kinds of IMPORT_KINDS with their keys, valid lists and a boolean match_body. Returns '' or the
- * message.
+ * kinds of IMPORT_KINDS and CHANNEL_KINDS with their keys, valid lists and a boolean match_body.
+ * Returns '' or the message.
  */
 function importSettingsViolation(value) {
   if (value === undefined || value === null || value === '') {
@@ -288,6 +297,7 @@ module.exports = {
   SUGGESTIONS: SUGGESTIONS,
   MESSAGE: MESSAGE,
   IMPORT_KINDS: IMPORT_KINDS,
+  CHANNEL_KINDS: CHANNEL_KINDS,
   IMPORT_MESSAGE: IMPORT_MESSAGE,
   importSettingsViolation: importSettingsViolation,
   importSettingsOf: importSettingsOf,

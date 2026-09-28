@@ -72,17 +72,22 @@ describe('keywords of the file imports (package 21)', () => {
 		const settings = importKeywordsOf({
 			eml: { keywords: ['rechnung', 3], match_body: true },
 			ics: { keywords: 'todo', match_body: true },
+			'whatsapp-web': { keywords: ['#byl'], match_body: true },
 			other: {}
 		});
 		expect(settings).toEqual({
 			eml: { keywords: ['rechnung'], matchBody: true },
 			ics: { keywords: [], matchBody: false },
-			whatsapp: { keywords: [], matchBody: false }
+			whatsapp: { keywords: [], matchBody: false },
+			api: { keywords: [], matchBody: false },
+			'whatsapp-web': { keywords: ['#byl'], matchBody: false }
 		});
 		expect(importKeywordsValue(settings)).toEqual({
 			eml: { keywords: ['rechnung'], match_body: true },
 			ics: { keywords: [] },
-			whatsapp: { keywords: [] }
+			whatsapp: { keywords: [] },
+			api: { keywords: [] },
+			'whatsapp-web': { keywords: ['#byl'] }
 		});
 	});
 

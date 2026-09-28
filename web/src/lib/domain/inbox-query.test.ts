@@ -75,17 +75,19 @@ describe('source families', () => {
 			'calendar',
 			'chat',
 			'chat',
-			'notion'
+			'notion',
+			'manual',
+			'chat'
 		]);
 		expect(sourceFamily(null)).toBe('manual');
 	});
 
-	it('lists the channels of a family, at most three for the server filter', () => {
-		expect(channelsOf('manual')).toEqual(['manual', 'quick', 'clipboard']);
+	it('lists the channels of a family, at most four for the server filter', () => {
+		expect(channelsOf('manual')).toEqual(['manual', 'quick', 'clipboard', 'api']);
 		expect(channelsOf('mail')).toEqual(['eml', 'mail']);
 		for (const family of SOURCE_FAMILIES) {
 			expect(channelsOf(family).length).toBeGreaterThan(0);
-			expect(channelsOf(family).length).toBeLessThanOrEqual(3);
+			expect(channelsOf(family).length).toBeLessThanOrEqual(4);
 		}
 	});
 

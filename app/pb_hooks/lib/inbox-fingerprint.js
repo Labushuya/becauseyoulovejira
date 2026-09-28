@@ -11,6 +11,7 @@
 var MAIL_CHANNELS = ['eml', 'mail'];
 var EVENT_CHANNELS = ['ics', 'calendar'];
 var MANUAL_CHANNELS = ['manual', 'quick', 'clipboard'];
+var OWN_CHANNELS = ['api', 'whatsapp-web'];
 
 var DEFAULT_PORTS = { http: ':80', https: ':443' };
 
@@ -143,6 +144,14 @@ function fingerprintKey(item, newId) {
       return { key: '', missing: 'source_ref' };
     }
     return { key: join(['notion', ref]) };
+  }
+  // The own inbox (ADR-0038): the caller names the entry with external_id (source_ref); the same
+  // ID of the same channel is the same entry, also after it was discarded (tombstone).
+  if (contains(OWN_CHANNELS, channel)) {
+    if (ref === '') {
+      return { key: '', missing: 'source_ref' };
+    }
+    return { key: join([channel, ref]) };
   }
   if (contains(MANUAL_CHANNELS, channel)) {
     return { key: join(['manual', text(newId)]) };

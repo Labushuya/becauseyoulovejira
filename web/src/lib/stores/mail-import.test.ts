@@ -32,6 +32,7 @@ const calendar = (name = 'kalender.ics', size = 10) =>
 	new File([new Uint8Array(size)], name, { type: 'text/calendar' });
 
 const KEYWORDS: ImportKeywords = {
+	...EMPTY_IMPORT_KEYWORDS,
 	eml: { keywords: ['grüße'], matchBody: false },
 	ics: { keywords: ['todo'], matchBody: false },
 	whatsapp: { keywords: ['milch'], matchBody: false }

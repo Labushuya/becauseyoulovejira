@@ -1,10 +1,12 @@
 // Value lists of the inbox and of the ticket source (ADR-0014, ADR-0019).
 // Pure CommonJS module, ES5 only, no dependencies (Goja runtime and Vitest).
 // The lists are written out literally in the migrations 1790201200_create_inbox_items.js and
-// 1790201210_tickets_source.js; tests/unit/source.test.mjs keeps them equal.
+// 1790201210_tickets_source.js (since 1790202400_inbox_keys.js with "api" and "whatsapp-web");
+// tests/unit/source.test.mjs keeps them equal.
 'use strict';
 
 // Ways into the inbox (inbox_items.channel) and at the same time the values of tickets.source.
+// "api" and "whatsapp-web" come through the own inbox with an access key (ADR-0038).
 var CHANNELS = Object.freeze([
   'manual',
   'quick',
@@ -16,7 +18,9 @@ var CHANNELS = Object.freeze([
   'calendar',
   'whatsapp',
   'telegram',
-  'notion'
+  'notion',
+  'api',
+  'whatsapp-web'
 ]);
 
 // Kind of object; steers only presets and the symbol in the inbox, never a ticket type

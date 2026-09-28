@@ -134,6 +134,21 @@ describe('manual channels', () => {
 	});
 });
 
+describe('own inbox (api, whatsapp-web; ADR-0038)', () => {
+	it('uses the channel and external_id, nothing else', () => {
+		const item = { channel: 'api', source_ref: 'x-1', title: 'Milch', body: 'a', source_date: '2026-09-25 08:00:00.000Z' };
+		expect(keyOf(item)).toBe('api|x-1');
+		expect(keyOf({ ...item, title: 'Brot', body: 'b', source_date: '' })).toBe('api|x-1');
+		expect(keyOf({ ...item, channel: 'whatsapp-web' })).toBe('whatsapp-web|x-1');
+		expect(keyOf({ ...item, source_ref: ' x-1 ' })).toBe('api|x-1');
+	});
+
+	it('needs external_id', () => {
+		expect(fp.fingerprintKey({ channel: 'api', source_ref: ' ' }, 'r')).toEqual({ key: '', missing: 'source_ref' });
+		expect(fp.fingerprintKey({ channel: 'whatsapp-web' }, 'r')).toEqual({ key: '', missing: 'source_ref' });
+	});
+});
+
 describe('escaping and hashing', () => {
 	it('keeps part lists with "|" apart', () => {
 		const a = keyOf({ channel: 'ics', source_ref: 'a|b', meta: { recurrence_id: 'c' } });

@@ -67,6 +67,11 @@ function channelDraft(channel) {
 			};
 		case 'notion':
 			return { ...draft, sourceRef: `page-${suffix}` };
+		// The own inbox (ADR-0038): the external_id of the caller.
+		case 'api':
+			return { ...draft, sourceRef: `skript-${suffix}` };
+		case 'whatsapp-web':
+			return { ...draft, kind: 'message', sourceRef: `wa:${suffix}` };
 		default:
 			return draft;
 	}
@@ -252,9 +257,10 @@ describe('web filter parity: server expression and matchesFilter', () => {
 			await expectParity({ source, due: 'none', project: NO_PROJECT });
 			await expectParity({ source, search: 'Quelle' });
 		}
-		// "Manuell" includes the tickets from before E4 (no source).
+		// "Manuell" includes the tickets from before E4 (no source) and, since the own inbox
+		// (ADR-0038), the channel "api": four channels with two tickets each.
 		const manual = await serverIds({ ...EMPTY_LIST_QUERY, source: 'manual' });
-		expect(manual.length).toBe(PRIORITIES.length * DUE_OFFSETS.length * 3 + 3 * 2 + 2);
+		expect(manual.length).toBe(PRIORITIES.length * DUE_OFFSETS.length * 3 + 4 * 2 + 2);
 	});
 
 	it('ignores sort, grouping and the switch', async () => {

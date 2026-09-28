@@ -1,6 +1,7 @@
 // Keywords of the file imports on the page "Kanäle" (E4 plan, package 21; ADR-0020 section 3;
-// ADR-0006). Loaded when the page opens; every change saves all lists of the user at once. Before
-// the migration 1790201500 the server does not know the field and the page says so.
+// ADR-0006) and, since the own inbox (ADR-0038), of its channels. Loaded when the page opens;
+// every change saves all lists of the user at once. Before the migration 1790201500 the server
+// does not know the field and the page says so.
 
 import type PocketBase from 'pocketbase';
 import { getImportKeywords, saveImportKeywords } from '$lib/data/import-keywords';
@@ -10,7 +11,7 @@ import {
 	EMPTY_IMPORT_KEYWORDS,
 	type ImportKeywordList,
 	type ImportKeywords,
-	type ImportKind
+	type KeywordListKind
 } from '$lib/domain/keywords';
 import { SILENT_FLAGS, type FlagSink } from './flags.svelte';
 import type { SessionGuard } from './ticket-list.svelte';
@@ -96,7 +97,7 @@ export class ImportKeywordsStore {
 	 * list. `announcement` is the text of the success flag.
 	 */
 	async save(
-		kind: ImportKind,
+		kind: KeywordListKind,
 		list: ImportKeywordList,
 		announcement: string
 	): Promise<string | null> {

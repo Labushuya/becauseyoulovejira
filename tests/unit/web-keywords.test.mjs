@@ -127,17 +127,20 @@ describe('keywords: web app against the hooks', () => {
 		}
 	});
 
-	it('stores the lists of the file imports in the shape the hook accepts (package 21)', () => {
+	it('stores the lists of the file imports and the own inbox in the shape the hook accepts (package 21, ADR-0038)', () => {
 		expect([...web.IMPORT_KINDS]).toEqual(hook.IMPORT_KINDS);
+		expect([...web.CHANNEL_KINDS]).toEqual(hook.CHANNEL_KINDS);
 		const settings = {
 			eml: { keywords: ['rechnung'], matchBody: true },
 			ics: { keywords: ['todo', '#byl'], matchBody: false },
-			whatsapp: { keywords: [], matchBody: false }
+			whatsapp: { keywords: [], matchBody: false },
+			api: { keywords: ['todo'], matchBody: false },
+			'whatsapp-web': { keywords: ['#byl', 'Einkauf'], matchBody: false }
 		};
 		const value = web.importKeywordsValue(settings);
 		expect(hook.importSettingsViolation(value)).toBe('');
 		expect(web.importKeywordsOf(value)).toEqual(settings);
-		for (const kind of web.IMPORT_KINDS) {
+		for (const kind of web.KEYWORD_LIST_KINDS) {
 			expect(hook.importSettingsOf(value, kind)).toEqual(web.importKeywordsOf(value)[kind]);
 		}
 	});

@@ -11,6 +11,7 @@ import {
 	withTempDataDir
 } from '../support/pocketbase-harness.mjs';
 import {
+	CHANNELS,
 	DEFAULT_BACKUPS,
 	DEFAULT_USERS_RULES,
 	EXPECTED_BACKUPS,
@@ -524,7 +525,7 @@ describe('migration rollback of the 25 MB originals (ADR-0031, addendum D)', () 
 				// fields and index of "Jeden Termin einzeln anlegen", plan OR-5; the trash, ADR-0037) are
 				// left out.
 				const others = (dataDir) =>
-					withoutTimestamps(readDataDir(dataDir).collections).map((collection) => {
+					withoutLaterCollections(withoutTimestamps(readDataDir(dataDir).collections)).map((collection) => {
 						if (collection.name === 'inbox_items') {
 							const plain = withoutLaterSchema(collection);
 							return { ...plain, fields: plain.fields.filter((field) => field.name !== 'original') };
@@ -610,7 +611,7 @@ describe('migration rollback of the sub projects (ADR-0034)', () => {
 				// The later migrations of "Jeden Termin einzeln anlegen" (plan OR-5) and of the trash
 				// (ADR-0037) run along; their fields, indexes and rule conditions are left out.
 				const others = (dir) =>
-					withoutTimestamps(readDataDir(dir).collections)
+					withoutLaterCollections(withoutTimestamps(readDataDir(dir).collections))
 						.filter((collection) => collection.name !== 'projects')
 						.map(withoutLaterSchema);
 				const otherCollections = others(dataDir);
@@ -754,16 +755,41 @@ function withoutTrashRules(collection) {
 	return { ...collection, ...rules };
 }
 
+// The own inbox (ADR-0038, 1790202400): a new collection and two new values of
+// inbox_items.channel and tickets.source.
+const OWN_INBOX_COLLECTION = 'inbox_keys';
+const OWN_INBOX_CHANNELS = ['api', 'whatsapp-web'];
+const CHANNELS_BEFORE_OWN_INBOX = CHANNELS.filter((channel) => !OWN_INBOX_CHANNELS.includes(channel));
+
+/** The collections without those that later migrations create (inbox_keys, 1790202400). */
+function withoutLaterCollections(collections) {
+	return collections.filter((collection) => collection.name !== OWN_INBOX_COLLECTION);
+}
+
+/** A collection without the channels of the own inbox (1790202400). */
+function withoutOwnInboxChannels(collection) {
+	if (collection.name !== 'inbox_items' && collection.name !== 'tickets') return collection;
+	return {
+		...collection,
+		fields: collection.fields.map((field) =>
+			field.name === 'channel' || field.name === 'source'
+				? { ...field, values: field.values.filter((value) => !OWN_INBOX_CHANNELS.includes(value)) }
+				: field
+		)
+	};
+}
+
 /**
  * A collection without the fields, indexes and rule conditions of the migrations 1790202200
- * (plan OR-5) and 1790202300 (trash, ADR-0037).
+ * (plan OR-5), 1790202300 (trash, ADR-0037) and without the channels of 1790202400 (own inbox,
+ * ADR-0038; its collection leaves with `withoutLaterCollections`).
  */
 function withoutLaterSchema(collection) {
-	const plain = withoutTrashRules(collection);
+	const plain = withoutOwnInboxChannels(withoutTrashRules(collection));
 	if (collection.name === 'tickets') {
 		return {
 			...plain,
-			fields: collection.fields.filter((field) => !LATER_TICKET_FIELDS.includes(field.name)),
+			fields: plain.fields.filter((field) => !LATER_TICKET_FIELDS.includes(field.name)),
 			indexes: collection.indexes.filter((index) => !OPEN_INSTANCE_INDEX.test(index) && !TRASH_INDEX.test(index))
 		};
 	}
@@ -902,6 +928,7 @@ describe('migration rollback of E5 (package 2)', () => {
 
 const EACH_MIGRATION = '1790202200_recurrence_each_occurrence.js';
 const TRASH_MIGRATION = '1790202300_tickets_trash.js';
+const OWN_INBOX_MIGRATION = '1790202400_inbox_keys.js';
 
 describe('migration rollback of "Jeden Termin einzeln anlegen" (plan OR-5)', () => {
 	const ticketsOf = (dataDir) =>
@@ -947,9 +974,9 @@ describe('migration rollback of "Jeden Termin einzeln anlegen" (plan OR-5)', () 
 		'adds the switch, the date of the series and the new index without changing a row, and back',
 		async () => {
 			// The trash (ADR-0037, 1790202300) follows and runs along; it adds deleted_at = '' to the
-			// condition of the index.
+			// condition of the index. The own inbox (ADR-0038, 1790202400) runs along as well.
 			const fromEach = MIGRATION_FILES.slice(MIGRATION_FILES.indexOf(EACH_MIGRATION));
-			expect(fromEach).toEqual([EACH_MIGRATION, TRASH_MIGRATION]);
+			expect(fromEach).toEqual([EACH_MIGRATION, TRASH_MIGRATION, OWN_INBOX_MIGRATION]);
 
 			await withTempDataDir(async ({ dataDir, args }) => {
 				await migrate(args, 'up');
@@ -960,7 +987,7 @@ describe('migration rollback of "Jeden Termin einzeln anlegen" (plan OR-5)', () 
 				withDatabase(dataDir, insertData);
 				const before = withDatabase(dataDir, snapshot);
 				const otherCollections = (dir) =>
-					withoutTimestamps(readDataDir(dir).collections).map(withoutLaterSchema);
+					withoutLaterCollections(withoutTimestamps(readDataDir(dir).collections)).map(withoutLaterSchema);
 				const schemaBefore = otherCollections(dataDir);
 
 				const up = await migrate(args, 'up');
@@ -1079,8 +1106,9 @@ describe('migration rollback of the trash (ADR-0037)', () => {
 	it(
 		'adds the fields, the index condition and the rule conditions without changing a row, and deletes the trash on the way back',
 		async () => {
+			// The own inbox (ADR-0038, 1790202400) follows and runs along; it changes no row here.
 			const fromTrash = MIGRATION_FILES.slice(MIGRATION_FILES.indexOf(TRASH_MIGRATION));
-			expect(fromTrash).toEqual([TRASH_MIGRATION]);
+			expect(fromTrash).toEqual([TRASH_MIGRATION, OWN_INBOX_MIGRATION]);
 
 			await withTempDataDir(async ({ dataDir, args }) => {
 				await migrate(args, 'up');
@@ -1113,7 +1141,7 @@ describe('migration rollback of the trash (ADR-0037)', () => {
 				});
 
 				const down = await migrate(args, 'down', String(fromTrash.length));
-				expect(appliedFiles(down, 'Reverted')).toEqual(fromTrash);
+				expect(appliedFiles(down, 'Reverted')).toEqual([...fromTrash].reverse());
 				expect(openIndexes(dataDir)).toEqual(indexesBefore);
 				expect(ruleSet(dataDir)).toEqual(rulesBefore);
 				const reverted = withDatabase(dataDir, snapshot);
@@ -1131,6 +1159,105 @@ describe('migration rollback of the trash (ADR-0037)', () => {
 				});
 
 				expect(appliedFiles(await migrate(args, 'up'), 'Applied')).toEqual(fromTrash);
+				assertSchema(readDataDir(dataDir).collections);
+			});
+		},
+		60_000
+	);
+});
+
+describe('migration rollback of the own inbox (ADR-0038)', () => {
+	const OWNER = 'user00000000001';
+	const SCOPE = 'u:user00000000001';
+	const collectionOf = (dataDir, name) => readDataDir(dataDir).collections.find((collection) => collection.name === name);
+	const channelValues = (dataDir) => ({
+		inbox_items: collectionOf(dataDir, 'inbox_items').fields.find((field) => field.name === 'channel').values,
+		tickets: collectionOf(dataDir, 'tickets').fields.find((field) => field.name === 'source').values
+	});
+	const OLD_VALUES = CHANNELS_BEFORE_OWN_INBOX;
+
+	/** A user with keyword lists of the file imports, an entry and a ticket, as before the own inbox. */
+	function insertData(db) {
+		const user = db.prepare(
+			'INSERT INTO users (id, email, tokenKey, password, import_keywords, created, updated) VALUES (?, ?, ?, ?, ?, ?, ?)'
+		);
+		user.run(OWNER, 'eins@example.invalid', 'tk1', 'hash', '{"eml":{"keywords":["todo"],"match_body":true}}', STAMP, STAMP);
+		user.run('user00000000002', 'zwei@example.invalid', 'tk2', 'hash', null, STAMP, STAMP);
+		db.prepare(
+			'INSERT INTO inbox_items (id, channel, kind, title, body, fingerprint, state, scope, owner, created, updated) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+		).run('item00000000001', 'whatsapp', 'message', 'Export', 'Text', 'f1', 'new', SCOPE, OWNER, STAMP, STAMP);
+		db.prepare(
+			'INSERT INTO tickets (id, number, key, title, status, priority, source, scope, owner, created, updated) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+		).run('ticket000000001', 1, 'TASK-1', 'Alt', 'open', 'medium', 'telegram', SCOPE, OWNER, STAMP, STAMP);
+	}
+
+	it(
+		'adds the keys and the two channels without changing a row, and keeps the content of new entries on the way back',
+		async () => {
+			const fromOwn = MIGRATION_FILES.slice(MIGRATION_FILES.indexOf(OWN_INBOX_MIGRATION));
+			expect(fromOwn).toEqual([OWN_INBOX_MIGRATION]);
+
+			await withTempDataDir(async ({ dataDir, args }) => {
+				await migrate(args, 'up');
+				await migrate(args, 'down', String(fromOwn.length));
+				expect(collectionOf(dataDir, 'inbox_keys')).toBeUndefined();
+				expect(channelValues(dataDir)).toEqual({ inbox_items: OLD_VALUES, tickets: OLD_VALUES });
+				withDatabase(dataDir, insertData);
+				const before = withDatabase(dataDir, snapshot);
+				const schemaBefore = withoutTimestamps(readDataDir(dataDir).collections);
+
+				const up = await migrate(args, 'up');
+				expect(appliedFiles(up, 'Applied')).toEqual(fromOwn);
+				assertSchema(readDataDir(dataDir).collections);
+				expect(channelValues(dataDir)).toEqual({
+					inbox_items: [...OLD_VALUES, 'api', 'whatsapp-web'],
+					tickets: [...OLD_VALUES, 'api', 'whatsapp-web']
+				});
+				expect(withDatabase(dataDir, snapshot)).toEqual(before);
+				expect(
+					withoutLaterCollections(withoutTimestamps(readDataDir(dataDir).collections)).map(withoutOwnInboxChannels)
+				).toEqual(schemaBefore);
+
+				// Entries, a ticket, keyword lists and a key of the own inbox, then back.
+				withDatabase(dataDir, (db) => {
+					const item = db.prepare(
+						'INSERT INTO inbox_items (id, channel, kind, title, body, source_ref, fingerprint, state, scope, owner, created, updated) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+					);
+					item.run('item00000000002', 'whatsapp-web', 'message', 'Aus WhatsApp Web', 'Text', 'wa:1', 'f2', 'new', SCOPE, OWNER, STAMP, STAMP);
+					item.run('item00000000003', 'api', 'todo', 'Aus der API', 'Text', 'x-1', 'f3', 'converted', SCOPE, OWNER, STAMP, STAMP);
+					db.prepare(
+						'INSERT INTO tickets (id, number, key, title, status, priority, source, source_item, scope, owner, created, updated) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+					).run('ticket000000002', 2, 'TASK-2', 'Neu', 'open', 'medium', 'api', 'item00000000003', SCOPE, OWNER, STAMP, STAMP);
+					db.prepare('UPDATE inbox_items SET ticket = ? WHERE id = ?').run('ticket000000002', 'item00000000003');
+					db.prepare('UPDATE users SET import_keywords = ? WHERE id = ?').run(
+						'{"eml":{"keywords":["todo"],"match_body":true},"api":{"keywords":["todo"]},"whatsapp-web":{"keywords":["#byl"]}}',
+						OWNER
+					);
+					db.prepare(
+						'INSERT INTO inbox_keys (id, name, token_hash, token_hint, owner, created, updated) VALUES (?, ?, ?, ?, ?, ?, ?)'
+					).run('key000000000001', 'Rechner', 'a'.repeat(64), 'byl_AbCd', OWNER, STAMP, STAMP);
+				});
+				const withNew = withDatabase(dataDir, snapshot);
+
+				const down = await migrate(args, 'down', String(fromOwn.length));
+				expect(appliedFiles(down, 'Reverted')).toEqual(fromOwn);
+				expect(collectionOf(dataDir, 'inbox_keys')).toBeUndefined();
+				expect(channelValues(dataDir)).toEqual({ inbox_items: OLD_VALUES, tickets: OLD_VALUES });
+				expect(withoutTimestamps(readDataDir(dataDir).collections)).toEqual(schemaBefore);
+				const reverted = withDatabase(dataDir, snapshot);
+				const items = Object.fromEntries(reverted.inbox_items.map((row) => [row.id, row]));
+				const itemsBefore = Object.fromEntries(withNew.inbox_items.map((row) => [row.id, row]));
+				expect(items.item00000000001).toEqual(itemsBefore.item00000000001);
+				expect(items.item00000000002).toEqual({ ...itemsBefore.item00000000002, channel: 'whatsapp' });
+				expect(items.item00000000003).toEqual({ ...itemsBefore.item00000000003, channel: 'manual' });
+				const tickets = Object.fromEntries(reverted.tickets.map((row) => [row.id, row]));
+				expect(tickets.ticket000000001).toEqual(before.tickets[0]);
+				expect(tickets.ticket000000002.source).toBe('manual');
+				const users = Object.fromEntries(reverted.users.map((row) => [row.id, row]));
+				expect(JSON.parse(users[OWNER].import_keywords)).toEqual({ eml: { keywords: ['todo'], match_body: true } });
+				expect(users.user00000000002).toEqual(before.users[1]);
+
+				expect(appliedFiles(await migrate(args, 'up'), 'Applied')).toEqual(fromOwn);
 				assertSchema(readDataDir(dataDir).collections);
 			});
 		},

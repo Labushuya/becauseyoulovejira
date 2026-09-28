@@ -52,7 +52,9 @@ describe('ImportKeywordsStore', () => {
 		expect(data.save).toHaveBeenCalledWith({
 			eml: { keywords: ['rechnung'], matchBody: true },
 			ics: { keywords: ['termin'], matchBody: false },
-			whatsapp: { keywords: [], matchBody: false }
+			whatsapp: { keywords: [], matchBody: false },
+			api: { keywords: [], matchBody: false },
+			'whatsapp-web': { keywords: [], matchBody: false }
 		});
 		expect(latestFlag(flags)).toBe('Gespeichert.');
 		data.save.mockRejectedValueOnce(
