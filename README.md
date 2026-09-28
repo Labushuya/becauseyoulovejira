@@ -172,6 +172,19 @@ Die Skripte sind dünne Hüllen um `app\byl-control.ps1` und rufen es mit `power
 
 **Bindung:** `127.0.0.1:8090` (nur lokal, nicht im Netz erreichbar – vorerst; Mehrgerätezugriff über Tailscale ist geplant, siehe [ADR-0001](docs/adr/0001-betriebsmodell-lokal-mehrgeraete-spaeter.md))
 
+### Als App installieren
+
+becauseyoulovejira lässt sich in **Chrome** und **Edge** als App installieren ([ADR-0035](docs/adr/0035-start-einstieg-und-offene-tabs.md) §8). Sie läuft dann in einem eigenen Fenster mit eigenem Symbol in Startmenü und Taskleiste, und ein erneuter Start holt **dasselbe Fenster** nach vorn, statt ein neues zu öffnen.
+
+1. Die App läuft (`app\start.bat`) und ist in Chrome oder Edge unter `http://127.0.0.1:8090/` geöffnet.
+2. **Chrome:** Menü „⋮“ → „Streamen, speichern und teilen“ → „Seite als App installieren …“ (oder das Symbol „Installieren“ rechts in der Adresszeile). **Edge:** Menü „…“ → „Apps“ → „Diese Website als App installieren“.
+3. Namen „becauseyoulovejira“ bestätigen. Die App steht danach im Startmenü; über das Kontextmenü des Symbols lässt sie sich an die Taskleiste anheften.
+
+- **`start.bat` bevorzugt die installierte App:** Findet es im Startmenü die Verknüpfung der installierten App, startet es diese. Der Browser holt ein offenes App-Fenster nach vorn (`launch_handler` „focus-existing“) oder öffnet eins. Ohne Installation bleibt alles wie oben beschrieben.
+- **Ohne Server** zeigt das App-Fenster „becauseyoulovejira läuft gerade nicht“ und lädt von selbst neu, sobald die App wieder läuft. Mehr speichert die App nicht: Es gibt keinen Offline-Modus und nie veraltete Daten.
+- **Deinstallieren:** im App-Fenster Menü „⋮“ bzw. „…“ → „becauseyoulovejira deinstallieren“, oder in Windows unter „Apps“. Daten und Anmeldung liegen weiter beim Server bzw. im Browser.
+- **Grenzen:** Firefox installiert Web-Apps unter Windows nicht. Die installierte App gehört zum Browserprofil, in dem sie installiert wurde. `http://127.0.0.1:8090` und eine spätere HTTPS-Adresse (Mehrgeräte) sind getrennte Apps mit getrennter Anmeldung.
+
 ### Konten verwalten
 
 Es gibt zwei Arten von Konten:

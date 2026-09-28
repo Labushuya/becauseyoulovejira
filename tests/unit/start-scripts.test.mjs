@@ -305,6 +305,19 @@ describe('open tabs before opening the browser (ADR-0035, SF-4)', () => {
 		expect(functions()).toContain('$BylLandingWindowMs = 10000');
 	});
 
+	it('prefers the installed web app and falls back to the question and the tab (SF-5)', () => {
+		const open = functionBody(control(), 'Open-Browser');
+		expect(open.indexOf('Find-PwaShortcut')).toBeGreaterThan(-1);
+		expect(open.indexOf('Find-PwaShortcut')).toBeLessThan(open.indexOf('Resolve-BrowserAction'));
+		expect(open).toMatch(/try \{\s*Start-Process -FilePath \$shortcut\s*Write-Status [^\n]*\s*return\s*\}\s*catch \{/);
+		const find = functionBody(control(), 'Find-PwaShortcut');
+		expect(find).toMatch(/^function Find-PwaShortcut \{[\s\S]*?try \{[\s\S]*\}\s*catch \{\s*return \$null\s*\}\s*\}\s*$/);
+		expect(find).toContain("[Environment]::GetFolderPath('Programs')");
+		expect(find).toContain("-Filter 'becauseyoulovejira*.lnk' -Recurse");
+		expect(find).toContain('Select-PwaShortcut -Shortcuts @($shortcuts)');
+		expect(find).not.toMatch(/Start-Process|Remove-Item|Set-Content|\.Save\(/);
+	});
+
 	it('stop.bat tells the open tabs before it stops, without waiting and without failing', () => {
 		const stop = functionBody(control(), 'Invoke-Stop');
 		expect(stop).toContain('if ($own.Count -gt 0) { Send-StopNotice }');

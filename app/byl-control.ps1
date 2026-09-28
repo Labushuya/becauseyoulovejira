@@ -128,12 +128,45 @@ function Get-AttentionAcked {
     }
 }
 
+function Find-PwaShortcut {
+    # Start menu shortcut of the installed web app (Chrome: "Chrome-Apps", Edge: directly in
+    # Programs), chosen by Select-PwaShortcut; $null if there is none or anything fails.
+    try {
+        $programs = [Environment]::GetFolderPath('Programs')
+        if ([string]::IsNullOrEmpty($programs)) { return $null }
+        $files = @(Get-ChildItem -LiteralPath $programs -Filter 'becauseyoulovejira*.lnk' -Recurse -File -ErrorAction SilentlyContinue)
+        if ($files.Count -eq 0) { return $null }
+        $shell = New-Object -ComObject WScript.Shell
+        $shortcuts = foreach ($file in $files) {
+            $link = $shell.CreateShortcut($file.FullName)
+            [pscustomobject]@{ Path = $file.FullName; Name = $file.BaseName; TargetPath = $link.TargetPath; Arguments = $link.Arguments }
+        }
+        return Select-PwaShortcut -Shortcuts @($shortcuts)
+    }
+    catch {
+        return $null
+    }
+}
+
 function Open-Browser {
-    # Opens the app in the browser unless it is open already (ADR-0035 section 7): an awake tab
-    # confirms the message and shows a hint, a landing page (file://) opens the app itself. After
-    # a cold start the tabs get up to 3 s to reconnect. Every doubt opens the tab (fail-open).
+    # Opens the app unless it is open already (ADR-0035 sections 7 and 8). An installed web app
+    # comes first: its shortcut makes the browser focus the open app window (launch_handler
+    # focus-existing) or open it. Otherwise an awake tab confirms the message and shows a hint, a
+    # landing page (file://) opens the app itself, and after a cold start the tabs get up to 3 s
+    # to reconnect. Every doubt opens the tab (fail-open).
     param([Parameter(Mandatory = $true)][bool]$ColdStart)
 
+    $shortcut = Find-PwaShortcut
+    if ($null -ne $shortcut) {
+        try {
+            Start-Process -FilePath $shortcut
+            Write-Status 'Öffne die installierte App becauseyoulovejira ...'
+            return
+        }
+        catch {
+            Write-Status 'Die installierte App ließ sich nicht starten; öffne den Browser.'
+        }
+    }
     $action = Resolve-BrowserAction -ColdStart $ColdStart -GetPresence { Get-Presence } `
         -SendAttention { Send-Attention -Reason 'start' } -GetAcked { param($Nonce) Get-AttentionAcked -Nonce $Nonce }
     if ($action -eq 'Skip') {
