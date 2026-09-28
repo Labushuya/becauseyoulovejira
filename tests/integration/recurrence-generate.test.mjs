@@ -318,6 +318,18 @@ describe('failures (ADR-0022 section 2, ADR-0023 section 8)', () => {
 		expect(await ruleOf(rule.id)).toMatchObject({ active: false, last_hint: 'Projekt archiviert – Regel pausiert.' });
 	});
 
+	it('pauses a rule of a sub project once its parent is archived (ADR-0034)', async () => {
+		const projects = owner.pb.collection('projects');
+		const parent = await projects.create({ owner: owner.id, name: 'Haus', code: 'HAUSUP' });
+		const child = await projects.create({ owner: owner.id, name: 'Garten', code: 'GARTUP', parent: parent.id });
+		const rule = await createRule({ project: child.id, anchor: '2036-06-01' });
+		await projects.update(parent.id, { archived: true });
+		const result = await run('2036-06-01T12:00:00Z');
+		expect(result.paused).toBe(1);
+		expect(await instancesOf(rule.id)).toEqual([]);
+		expect(await ruleOf(rule.id)).toMatchObject({ active: false, last_hint: 'Projekt archiviert – Regel pausiert.' });
+	});
+
 	it('rolls a failed ticket back completely and keeps the other rules running', async () => {
 		const counterKey = `u:${owner.id}:TASK`;
 		const counter = async () => {

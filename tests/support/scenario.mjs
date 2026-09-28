@@ -96,6 +96,7 @@ export const FAIL_TICKET_LINK = '__byl_fail_ticket_link__';
 export const FAIL_SOURCE_LINK = '__byl_fail_source_link__';
 export const FAIL_SOURCE_SETTLE = '__byl_fail_source_settle__';
 export const FAIL_CHILD_DONE = '__byl_fail_child_done__';
+export const FAIL_PROJECT_ARCHIVE = '__byl_fail_project_archive__';
 
 /**
  * Fresh app user with an own private scope, so every counter of that scope starts empty.

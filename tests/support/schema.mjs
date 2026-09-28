@@ -69,11 +69,14 @@ export const EXPECTED_COLLECTIONS = {
 			archived: bool(),
 			...ownership(),
 			scope: text({ required: true }),
-			...timestamps()
+			...timestamps(),
+			// Sub projects (ADR-0034, migration 1790202100): one level, checked by the hook.
+			parent: relation('projects')
 		},
 		indexes: [
 			'CREATE UNIQUE INDEX idx_projects_scope_code ON projects (scope, code)',
-			'CREATE INDEX idx_projects_owner ON projects (owner)'
+			'CREATE INDEX idx_projects_owner ON projects (owner)',
+			'CREATE INDEX idx_projects_parent ON projects (parent)'
 		]
 	},
 	tags: {

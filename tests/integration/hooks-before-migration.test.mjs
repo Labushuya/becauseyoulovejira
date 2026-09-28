@@ -413,6 +413,55 @@ describe('HK-6 hooks before the migration of the orphaned sources', () => {
 	});
 });
 
+describe('UP-1 hooks before the migration of the sub projects (ADR-0034)', () => {
+	const PARENT_MIGRATION = '1790202100_projects_parent.js';
+	let before;
+	let who;
+
+	beforeAll(async () => {
+		before = await startPocketBase({ migrationFilter: (name) => name < PARENT_MIGRATION });
+		const superuser = new PocketBase(before.url);
+		superuser.autoCancellation(false);
+		await superuser.collection('_superusers').authWithPassword(before.email, before.password);
+		const email = `user-${randomBytes(12).toString('hex')}@example.com`;
+		const password = randomBytes(24).toString('base64url');
+		const id = (await superuser.collection('users').create({ email, password, passwordConfirm: password })).id;
+		who = new PocketBase(before.url);
+		who.autoCancellation(false);
+		await who.collection('users').authWithPassword(email, password);
+		who.userId = id;
+	}, 60_000);
+
+	afterAll(async () => {
+		await before?.stop();
+	});
+
+	it('creates, archives, restores and deletes projects as before; parent is ignored', async () => {
+		const projects = who.collection('projects');
+		const house = await projects.create({ owner: who.userId, name: 'Haus', code: 'HAUS' });
+		const garden = await projects.create({ owner: who.userId, name: 'Garten', code: 'GART', parent: house.id });
+		expect(house.parent).toBeUndefined();
+		expect(garden.parent).toBeUndefined();
+
+		// No cascade and no guard without the field.
+		await projects.update(house.id, { archived: true });
+		expect((await projects.getOne(garden.id)).archived).toBe(false);
+		expect((await projects.update(house.id, { archived: false })).archived).toBe(false);
+
+		const ticket = await who.collection('tickets').create({ owner: who.userId, title: 'Beet', project: garden.id });
+		expect(ticket.key).toBe('GART-1');
+		await expect(projects.delete(garden.id)).rejects.toMatchObject({ status: 400 });
+		await projects.delete(house.id);
+		await expect(projects.getOne(house.id)).rejects.toMatchObject({ status: 404 });
+	});
+
+	it('answers a filter on the missing field with 400, so the SPA must not send it before the restart', async () => {
+		await expect(
+			who.collection('tickets').getList(1, 1, { filter: who.filter('project.parent = {:id}', { id: 'abcdefghijklmno' }) })
+		).rejects.toMatchObject({ status: 400 });
+	});
+});
+
 describe('HK-8 hooks before the migration of the 25 MB originals', () => {
 	const SIZE_MIGRATION = '1790202000_inbox_items_original_size.js';
 	let before;
