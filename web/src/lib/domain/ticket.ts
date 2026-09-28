@@ -10,12 +10,24 @@ export const TITLE_MAX_LENGTH = 200;
 export const DESCRIPTION_MAX_LENGTH = 100_000;
 export const COMMENT_MAX_LENGTH = 20_000;
 
+/** Parent project of a sub project (ADR-0034), as the catalog resolves it. */
+export interface ProjectParentRef {
+	id: string;
+	name: string;
+	code: string;
+}
+
 /** Project as shown next to a ticket (expanded relation). */
 export interface ProjectRef {
 	id: string;
 	name: string;
 	code: string;
 	archived: boolean;
+	/**
+	 * Parent project of a sub project (ADR-0034), resolved by the catalog; absent or null for a
+	 * top-level project and for the expanded relation of a ticket.
+	 */
+	parent?: ProjectParentRef | null;
 }
 
 /** Tag as shown next to a ticket (expanded relation). */

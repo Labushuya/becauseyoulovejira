@@ -273,13 +273,16 @@ describe('web data layer: realtime', () => {
 		await delay(QUIET_PERIOD_MS);
 
 		expect(created.record).toEqual(project);
+		// Since ADR-0034 with the stored parent (null for a top-level project).
 		expect(Object.keys(created.record).sort()).toEqual([
 			'archived',
 			'code',
 			'id',
 			'name',
+			'parentId',
 			'updated'
 		]);
+		expect(created.record.parentId).toBeNull();
 		expect(renamed.record).toMatchObject({ id: project.id, name: 'Dachboden', code });
 		expect(archived.record.updated >= renamed.record.updated).toBe(true);
 		expect(other.changes.filter((change) => idOf(change) === project.id)).toEqual([]);

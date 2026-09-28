@@ -6,6 +6,7 @@ import { randomBytes } from 'node:crypto';
 import PocketBase from 'pocketbase';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { startPocketBase } from '../support/pocketbase-harness.mjs';
+import { createProject, listProjects, updateProject } from '../../web/src/lib/data/projects.ts';
 import { listRules } from '../../web/src/lib/data/recurrence.ts';
 import { unreadSinceOf } from '../../web/src/lib/domain/unread.ts';
 
@@ -453,6 +454,15 @@ describe('UP-1 hooks before the migration of the sub projects (ADR-0034)', () =>
 		await expect(projects.delete(garden.id)).rejects.toMatchObject({ status: 400 });
 		await projects.delete(house.id);
 		await expect(projects.getOne(house.id)).rejects.toMatchObject({ status: 404 });
+	});
+
+	it('lets the SPA read and write projects; it learns that sub projects wait for the restart (UP-2)', async () => {
+		const created = await createProject(who, { name: 'Keller', code: 'KELL' });
+		expect(created).toMatchObject({ name: 'Keller', parentId: null, withoutParentField: true });
+		const listed = await listProjects(who);
+		expect(listed.find((project) => project.id === created.id)).toEqual(created);
+		// A draft without parentId sends no parent at all.
+		expect((await updateProject(who, created.id, { name: 'Kellerraum' })).name).toBe('Kellerraum');
 	});
 
 	it('answers a filter on the missing field with 400, so the SPA must not send it before the restart', async () => {

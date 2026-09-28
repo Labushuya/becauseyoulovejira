@@ -16,21 +16,40 @@ export interface ProjectRecord {
 	name: string;
 	code: string;
 	archived: boolean;
+	/** Parent project (ADR-0034); absent while the server lacks the field (before the restart). */
+	parent?: string;
 	updated?: string;
 }
 
-/** Fields of the catalog (T-16), with `updated` for the order of events. */
-export const PROJECT_FIELDS = 'id,name,code,archived,updated';
+/**
+ * Fields of the catalog (T-16), with `updated` for the order of events and `parent` (ADR-0034).
+ * A server without `parent` simply leaves it out of the answer.
+ */
+export const PROJECT_FIELDS = 'id,name,code,archived,parent,updated';
 
 /** Project as referenced by a ticket (expanded relation). */
 export function toProjectRef(record: ProjectRecord): ProjectRef {
 	return { id: record.id, name: record.name, code: record.code, archived: record.archived };
 }
 
-/** Project of the catalog; throws without `updated` (then the fields were wrong). */
+/**
+ * Project of the catalog; throws without `updated` (then the fields were wrong). Without the
+ * field `parent` the server has not run the migration of ADR-0034 yet (`withoutParentField`).
+ */
 export function toProject(record: ProjectRecord): Project {
 	if (typeof record.updated !== 'string') throw new RangeError('Project without updated');
-	return { ...toProjectRef(record), updated: record.updated };
+	const project: Project = {
+		...toProjectRef(record),
+		updated: record.updated,
+		parentId: record.parent ? record.parent : null
+	};
+	if (record.parent === undefined) project.withoutParentField = true;
+	return project;
+}
+
+/** Body field of the parent: '' for none; nothing when the draft leaves the parent as it is. */
+function parentBody(parentId: string | null | undefined): { parent?: string } {
+	return parentId === undefined ? {} : { parent: parentId ?? '' };
 }
 
 /** Projects visible to the signed-in user, archived ones included, sorted by code. */
@@ -43,7 +62,10 @@ export function listProjects(pb: PocketBase, { signal }: RequestOptions = {}): P
 	});
 }
 
-/** Creates a private project of the signed-in user; `household` stays empty (E7). */
+/**
+ * Creates a private project of the signed-in user; `household` stays empty (E7). With `parentId`
+ * it becomes a sub project (ADR-0034); the hook checks the parent.
+ */
 export function createProject(
 	pb: PocketBase,
 	draft: ProjectDraft,
@@ -55,14 +77,17 @@ export function createProject(
 		const record = await pb
 			.collection(PROJECTS)
 			.create<ProjectRecord>(
-				{ owner, name: draft.name, code: draft.code },
+				{ owner, name: draft.name, code: draft.code, ...parentBody(draft.parentId) },
 				{ fields: PROJECT_FIELDS, signal }
 			);
 		return toProject(record);
 	});
 }
 
-/** Sends only the given fields (name, code); the hook keeps the code of a project in use. */
+/**
+ * Sends only the given fields (name, code, parent); the hook keeps the code of a project in use
+ * and checks the parent (ADR-0034). `parentId: null` releases a sub project.
+ */
 export function updateProject(
 	pb: PocketBase,
 	id: string,
@@ -70,7 +95,7 @@ export function updateProject(
 	{ signal }: RequestOptions = {}
 ): Promise<Project> {
 	return withDataErrors(signal, async () => {
-		const body: Record<string, string> = {};
+		const body: Record<string, string> = { ...parentBody(patch.parentId) };
 		if (patch.name !== undefined) body.name = patch.name;
 		if (patch.code !== undefined) body.code = patch.code;
 		const record = await pb

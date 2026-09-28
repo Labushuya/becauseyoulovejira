@@ -141,6 +141,41 @@ describe('web data layer: projects', () => {
 		expect((await listProjects(owner.client)).map((p) => p.id)).toEqual([used.id]);
 	});
 
+	it('creates, moves and releases sub projects with the parent (ADR-0034)', async () => {
+		const owner = await createOwner(superuser);
+		const house = await createProject(owner.client, { name: 'Haus', code: uniqueCode() });
+		expect(house).toMatchObject({ parentId: null });
+		expect(house.withoutParentField).toBeUndefined();
+
+		const garden = await createProject(owner.client, {
+			name: 'Garten',
+			code: uniqueCode(),
+			parentId: house.id
+		});
+		expect(garden.parentId).toBe(house.id);
+		expect((await listProjects(owner.client)).find((p) => p.id === garden.id)).toEqual(garden);
+
+		// A rename leaves the parent as it is; null releases the sub project.
+		expect((await updateProject(owner.client, garden.id, { name: 'Beete' })).parentId).toBe(house.id);
+		expect((await updateProject(owner.client, garden.id, { parentId: null })).parentId).toBeNull();
+		expect((await updateProject(owner.client, garden.id, { parentId: house.id })).parentId).toBe(house.id);
+
+		// The hook refuses a second level with the text of the SPA at the field parent.
+		const nested = await dataErrorOf(
+			createProject(owner.client, { name: 'Beet', code: uniqueCode(), parentId: garden.id })
+		);
+		expect(nested.fields.parent).toEqual({
+			code: 'validation_project_parent_nested',
+			message: 'Das gewählte Projekt ist selbst ein Unterprojekt. Es gibt nur eine Ebene.'
+		});
+		const removal = await dataErrorOf(deleteProject(owner.client, house.id));
+		expect(removal.fields.id?.code).toBe('validation_project_has_children');
+
+		// Archiving the parent archives the sub project; the catalog reads both.
+		await setProjectArchived(owner.client, house.id, true);
+		expect((await listProjects(owner.client)).find((p) => p.id === garden.id)?.archived).toBe(true);
+	});
+
 	it('counts only the done tickets of the project', async () => {
 		const owner = await createOwner(superuser);
 		const project = await createProject(owner.client, { name: 'Zählen', code: uniqueCode() });

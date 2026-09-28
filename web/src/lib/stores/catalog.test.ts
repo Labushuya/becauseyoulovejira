@@ -388,6 +388,74 @@ describe('CatalogStore: tag for a typed name (E3 plan, T-14 and package 8)', () 
 	});
 });
 
+describe('CatalogStore: sub projects (ADR-0034)', () => {
+	const GARDEN_PROJECT = project({
+		id: 'proj00000000011',
+		name: 'Garten',
+		code: 'GART',
+		parentId: HOUSE.id
+	});
+	const ROOF = project({
+		id: 'proj00000000012',
+		name: 'Dach',
+		code: 'DACH',
+		parentId: HOUSE.id,
+		archived: true
+	});
+
+	it('resolves the parent of a sub project and orders the choosable ones as a tree', async () => {
+		const { store } = setup([HOUSE, CAR, OLD, GARDEN_PROJECT, ROOF]);
+		await store.load();
+
+		expect(ids(store.projects)).toEqual([CAR.id, OLD.id, ROOF.id, GARDEN_PROJECT.id, HOUSE.id]);
+		expect(ids(store.activeProjects)).toEqual([CAR.id, HOUSE.id, GARDEN_PROJECT.id]);
+		expect(store.projectById(GARDEN_PROJECT.id)?.parent).toEqual({
+			id: HOUSE.id,
+			name: 'Haus',
+			code: 'HAUS'
+		});
+		expect(store.projectById(HOUSE.id)).toBe(HOUSE);
+		expect(ids(store.subProjectsOf(HOUSE.id))).toEqual([ROOF.id, GARDEN_PROJECT.id]);
+		expect(store.subProjectsOf(CAR.id)).toEqual([]);
+		// A ticket in the sub project resolves the path through the catalog.
+		expect(
+			store.projectOf({ projectId: GARDEN_PROJECT.id, project: { ...GARDEN_PROJECT } })?.parent
+				?.name
+		).toBe('Haus');
+	});
+
+	it('follows a renamed parent and a moved sub project live', async () => {
+		const { store } = setup([HOUSE, CAR, GARDEN_PROJECT]);
+		const live = new FakeLive();
+		cleanups.push(store.connect(live.source));
+		await store.load();
+		await flush();
+
+		live.project({ action: 'update', record: { ...HOUSE, name: 'Wohnung', updated: T1 } });
+		expect(store.projectById(GARDEN_PROJECT.id)?.parent?.name).toBe('Wohnung');
+
+		live.project({
+			action: 'update',
+			record: { ...GARDEN_PROJECT, parentId: CAR.id, updated: T1 }
+		});
+		expect(store.projectById(GARDEN_PROJECT.id)?.parent?.id).toBe(CAR.id);
+		expect(ids(store.activeProjects)).toEqual([CAR.id, GARDEN_PROJECT.id, HOUSE.id]);
+
+		live.project({ action: 'delete', id: CAR.id });
+		expect(store.projectById(GARDEN_PROJECT.id)?.parent).toBeUndefined();
+	});
+
+	it('says whether the server knows sub projects yet (before the restart it does not)', async () => {
+		const ready = setup([HOUSE, GARDEN_PROJECT]);
+		await ready.store.load();
+		expect(ready.store.hierarchyReady).toBe(true);
+
+		const before = setup([{ ...HOUSE, parentId: null, withoutParentField: true }, CAR]);
+		await before.store.load();
+		expect(before.store.hierarchyReady).toBe(false);
+	});
+});
+
 describe('CatalogStore: realtime', () => {
 	it('follows create, rename, archive and delete events of projects and tags', async () => {
 		const { store } = setup();

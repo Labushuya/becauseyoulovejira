@@ -7,6 +7,16 @@ import type { ProjectRef, TicketSummary } from './ticket';
 export interface Project extends ProjectRef {
 	/** UTC timestamp of PocketBase; sorts as text. */
 	updated: string;
+	/**
+	 * Stored parent project (ADR-0034), null for a top-level project. The data layer always sets
+	 * it; objects built by hand (tests) may leave it out.
+	 */
+	parentId?: string | null;
+	/**
+	 * The server does not know `projects.parent` yet: the app runs the new hooks, but the migration
+	 * waits for the next start (ADR-0034 section 5). Only the data layer sets it.
+	 */
+	withoutParentField?: boolean;
 }
 
 /** Key prefix of tickets without a project; not allowed as project code (E1 plan, OF-14). */
@@ -26,6 +36,11 @@ const SINGLE_WORD_CODE_LENGTH = 4;
 export interface ProjectDraft {
 	name: string;
 	code: string;
+	/**
+	 * Parent project (ADR-0034): an ID, null for none, absent to leave it as it is (and to send
+	 * nothing before the migration).
+	 */
+	parentId?: string | null;
 }
 
 export type ProjectPatch = Partial<ProjectDraft>;
