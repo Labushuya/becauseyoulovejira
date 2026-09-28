@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { resolve } from '$app/paths';
 	import CodeBlock from '$lib/components/guidance/CodeBlock.svelte';
+	import RecurrenceHelp from '$lib/components/help/RecurrenceHelp.svelte';
 	import ShortcutList from '$lib/components/help/ShortcutList.svelte';
 	import { PRIORITY_NUMBERS, PRIORITY_WORDS } from '$lib/domain/quick-syntax';
 	import { RESTART_NEEDED } from '$lib/guidance/texts';
@@ -12,7 +13,9 @@
 	// the explanation on "Kanäle"), frequent questions as <details> and the operation of the app.
 	// Shortcuts and tokens are description lists, not tables: no data list with a panel, and nothing
 	// scrolls sideways (table-columns.test.ts stays for the real tables). The section IDs are the
-	// anchors of helpHref(), used by the shortcuts modal, the quick entry and "Kanäle".
+	// anchors of helpHref(), used by the shortcuts modal, the quick entry and "Kanäle". The section
+	// "Wiederholungen" (plan "Wiederholungen verständlich machen") explains rules with examples the
+	// engine computes; the form, the overview and the rule panel link to it.
 
 	const priorityWords = Object.keys(PRIORITY_WORDS).map((word) => `!${word}`);
 	const priorityNumbers = Object.keys(PRIORITY_NUMBERS).map((number) => `!${number}`);
@@ -84,6 +87,11 @@
 				<dd>Ticket anlegen bzw. die Zeile in den Eingang legen.</dd>
 			</div>
 		</dl>
+	</section>
+
+	<section id="wiederholungen" aria-labelledby="wiederholungen-title">
+		<h3 id="wiederholungen-title">Wiederholungen</h3>
+		<RecurrenceHelp />
 	</section>
 
 	<section id="zugangsdaten" aria-labelledby="zugangsdaten-title">

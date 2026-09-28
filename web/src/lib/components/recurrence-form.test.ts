@@ -101,6 +101,41 @@ describe('RecurrenceForm', () => {
 		expect(rows()).toEqual(['erscheint heute → fällig Mo 28.09.']);
 	});
 
+	// Plan "Wiederholungen verständlich machen", part A: short hints and "So funktioniert’s".
+	it('explains the kind at the field and in "So funktioniert’s" with the dates of these settings', async () => {
+		render(RecurrenceFormHarness, {
+			props: { initial: values({ anchor: '2026-10-05', weekdays: ['MO'] }), today: TODAY }
+		});
+		const kind = screen.getByRole('group', { name: 'Art der Wiederholung' });
+		const hint = () =>
+			document.getElementById(kind.getAttribute('aria-describedby') ?? '')?.textContent?.trim();
+		expect(hint()).toBe(
+			'Feste Kalendertage: Früher oder später erledigen ändert die Termine nicht.'
+		);
+
+		const details = document.querySelector<HTMLDetailsElement>('details.how');
+		expect(details?.open).toBe(false);
+		expect(details?.querySelector('summary')?.textContent?.trim()).toBe('So funktioniert’s');
+		const how = () => (details?.textContent ?? '').replace(/\s+/g, ' ');
+		expect(how()).toContain('Fester Rhythmus heißt: An festen Kalendertagen ist es dran.');
+		expect(how()).toContain('Solange ein Ticket der Serie offen ist, entsteht kein weiteres.');
+		expect(how()).toContain(
+			'Mit diesen Einstellungen: Das Ticket für Mo 05.10. erscheint am Fr 02.10. Das nächste ist Mo 12.10. fällig'
+		);
+		const more = within(details as HTMLElement).getByRole('link', {
+			name: 'Mehr Beispiele in der Hilfe (neuer Tab)'
+		});
+		expect(more.getAttribute('href')).toBe('/einstellungen/hilfe#wiederholungen');
+		expect(more.getAttribute('target')).toBe('_blank');
+
+		await fireEvent.click(screen.getByRole('radio', { name: 'Nach Erledigung' }));
+		expect(hint()).toBe(
+			'Abstand ab dem Erledigen: Früher oder später erledigen verschiebt den nächsten Termin mit.'
+		);
+		expect(how()).toContain('Nach Erledigung heißt: Der nächste Termin zählt ab dem Tag');
+		expect(how()).toContain('Erledigst du es heute (Fr 25.09.)');
+	});
+
 	it('marks fields with an error and names it', () => {
 		render(RecurrenceForm, {
 			props: {

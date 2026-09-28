@@ -11,6 +11,7 @@
 	import { RECURRENCE_UNAVAILABLE, type RecurrenceStore } from '$lib/stores/recurrence.svelte';
 	import type { TicketListStore } from '$lib/stores/ticket-list.svelte';
 	import { NEW_RULE_LINK_ID, newRecurrenceHref, recurrenceHref } from '$lib/ticket-links';
+	import { helpHref } from '$lib/settings-sections';
 	import ColumnsPopover from './ColumnsPopover.svelte';
 	import EmptyState from './guidance/EmptyState.svelte';
 	import SectionMessage from './guidance/SectionMessage.svelte';
@@ -184,6 +185,10 @@
 					Neue Regel
 				</a>
 			{/if}
+			{#if store.state !== 'unavailable'}
+				<!-- The help with the examples (plan "Wiederholungen verständlich machen"). -->
+				<a class="button-subtle help-link" href={helpHref('wiederholungen')}>So funktioniert’s</a>
+			{/if}
 			{#if store.state === 'ready' && rules.length > 0}
 				<ColumnsPopover
 					store={columnFit.store}
@@ -215,6 +220,11 @@
 		>
 			{#snippet primary()}
 				<a class="button-primary" href={newRecurrenceHref()}>Regel anlegen</a>
+			{/snippet}
+			{#snippet secondary()}
+				<a class="button-subtle" href={helpHref('wiederholungen')}
+					>So funktionieren Wiederholungen</a
+				>
 			{/snippet}
 		</EmptyState>
 	{:else}
@@ -253,6 +263,10 @@
 	.new {
 		padding: 0.375rem 0.875rem;
 		font-size: 0.875rem;
+		text-decoration: none;
+	}
+
+	.help-link {
 		text-decoration: none;
 	}
 

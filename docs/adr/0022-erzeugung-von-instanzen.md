@@ -9,7 +9,7 @@
 
 CLAUDE.md §6 legt fest:
 
-- Pro Regel gibt es höchstens eine offene Instanz (Status ≠ `done`), und die Erzeugung ist idempotent.
+- Pro Regel gibt es höchstens eine offene Instanz (Status ≠ `done`), und die Erzeugung ist idempotent. *(Heute: nur ohne „Jeden Termin einzeln anlegen“, siehe Nachtrag 2.)*
 - Auslöser sind das Erledigen der aktuellen Instanz (Hook), ein Cron-Hook für Kalenderregeln und das Nachholen beim Serverstart.
 - Verpasste Termine ergeben genau **eine** Instanz mit dem jüngsten fälligen Termin, keine Stapel.
 
@@ -25,12 +25,12 @@ Randbedingungen:
 ### 1. Zustand der Regel
 
 - `next_due` ist die Fälligkeit des **nächsten noch nicht erzeugten** Tickets.
-  - Bei `calendar` ist das Feld bei einer aktiven Regel immer gesetzt. Das zeigt die Oberfläche als „Nächstes Ticket am …“.
+  - Bei `calendar` ist das Feld bei einer aktiven Regel immer gesetzt. Das zeigt die Oberfläche als „Nächstes Ticket am …“ *(heute „fällig …, erscheint am …“, siehe Nachtrag 6)*.
   - Bei `after_completion` ist es leer, solange eine offene Instanz existiert, denn der Termin hängt vom Erledigen ab.
 - **Offene Instanz:** ein Ticket mit `recurrence = <Regel>` und `status != done`.
-- **Invariante:** Pro Regel gibt es höchstens eine offene Instanz.
+- **Invariante:** Pro Regel gibt es höchstens eine offene Instanz. *(Heute: ohne Schalter; mit „Jeden Termin einzeln anlegen“ eine je Termin, siehe Nachtrag 2.)*
   - Der Erzeugungsdienst prüft das in seiner Transaktion.
-  - Als Sicherheitsnetz dient ein eindeutiger Teilindex `CREATE UNIQUE INDEX idx_tickets_open_recurrence ON tickets (recurrence) WHERE recurrence != '' AND status != 'done'` (Migration `1790201510_tickets_open_recurrence.js`).
+  - Als Sicherheitsnetz dient ein eindeutiger Teilindex `CREATE UNIQUE INDEX idx_tickets_open_recurrence ON tickets (recurrence) WHERE recurrence != '' AND status != 'done'` (Migration `1790201510_tickets_open_recurrence.js`). *(Tatsächlich `1790201610_tickets_open_recurrence.js`, erster Nachtrag; seit Nachtrag 2 `idx_tickets_open_occurrence` über `(recurrence, occurrence)`, seit Nachtrag 3 mit `deleted_at = ''`.)*
   - Nimmt PocketBase den Teilindex nicht an, bleibt die Prüfung im Dienst allein. Paket 2 klärt das per Migrationstest und hält das Ergebnis im Plan fest.
 
 ### 2. Der Erzeugungsdienst `app/pb_hooks/lib/recurrence-service.js`
@@ -73,9 +73,9 @@ Liegen zwischen `next_due` und heute weitere Vorkommen, entsteht **ein** Ticket 
 
 | Auslöser | Wo | Was |
 |---|---|---|
-| Erledigen | `tickets.pb.js`: `onRecordUpdate` (in der Transaktion der Änderung) und `onRecordAfterUpdateSuccess` | Wechselt eine Instanz nach `done`, setzt der Update-Hook in derselben Transaktion bei `after_completion` `next_due = afterCompletion(rule, berlinDate(completed_at))`. Nach dem Commit ruft der After-Success-Hook `materialize` für die Regel auf. Das Erledigen scheitert nie an der Erzeugung: Schlägt sie fehl, holt der nächste Cron-Lauf sie nach. |
-| Cron | `recurrence.pb.js`: `cronAdd('byl-recurrence', '7 * * * *', …)` | stündlich in UTC `runDue($app, Date.now())`. Stündlich statt täglich, weil ein Berliner Tageswechsel je nach Sommerzeit auf 22:00 oder 23:00 UTC fällt ([ADR-0005](0005-zeitzone-europe-berlin.md) §5). Ein Ticket mit Vorlauf 0 erscheint so spätestens gut eine Stunde nach Berliner Mitternacht. |
-| Start | `recurrence.pb.js`: Handler nach `e.next()` im ersten Start-Hook, in dem das migrierte Schema sichtbar ist (`onBootstrap` oder `onServe`; Paket 3 prüft die Reihenfolge von Migrationen und Hooks in 0.40.4 per Integrationstest) | `runDue` und `inbox-cleanup-service.run` nacheinander, jeweils in `try/catch` mit Log. Der Handler wirft nie, damit ein Fehler den Serverstart nicht verhindert. So läuft auch die Bereinigung verworfener Einträge nach, wenn die App um 11:30 UTC aus war. |
+| Erledigen | `tickets.pb.js`: `onRecordUpdate` (in der Transaktion der Änderung) und `onRecordAfterUpdateSuccess` | Wechselt eine Instanz nach `done`, setzt der Update-Hook in derselben Transaktion bei `after_completion` `next_due = afterCompletion(rule, berlinDate(completed_at))` *(umgesetzt mit dem Berliner „heute“ zum Zeitpunkt des Erledigens, siehe Nachtrag 7)*. Nach dem Commit ruft der After-Success-Hook `materialize` für die Regel auf. Das Erledigen scheitert nie an der Erzeugung: Schlägt sie fehl, holt der nächste Cron-Lauf sie nach. |
+| Cron | `recurrence.pb.js`: `cronAdd('byl-recurrence', '7 * * * *', …)` | stündlich in UTC `runDue($app, Date.now())`. Stündlich statt täglich, weil ein Berliner Tageswechsel je nach Sommerzeit auf 22:00 oder 23:00 UTC fällt ([ADR-0005](0005-zeitzone-europe-berlin.md) §5). Ein Ticket mit Vorlauf 0 erscheint so spätestens gut eine Stunde nach Berliner Mitternacht. *(Genauer: jeder Lauf um xx:07 Berliner Zeit, der erste eines Tages gegen 00:07, siehe Nachtrag 7.)* |
+| Start | `recurrence.pb.js`: Handler nach `e.next()` im ersten Start-Hook, in dem das migrierte Schema sichtbar ist (`onBootstrap` oder `onServe`; Paket 3 prüft die Reihenfolge von Migrationen und Hooks in 0.40.4 per Integrationstest) *(es gibt kein `onServe`; umgesetzt nach `e.next()` von `onBootstrap`, erster Nachtrag)* | `runDue` und `inbox-cleanup-service.run` nacheinander, jeweils in `try/catch` mit Log. Der Handler wirft nie, damit ein Fehler den Serverstart nicht verhindert. So läuft auch die Bereinigung verworfener Einträge nach, wenn die App um 11:30 UTC aus war. |
 | „Jetzt erzeugen“ | keiner | Nicht vorgesehen. Die Übersicht zeigt „Nächstes Ticket am …“, und das reicht. |
 
 Vor der Migration von E5 tun alle drei nichts: Fehlt `freq` in `recurrence_rules`, beenden sich Dienst und Hooks sofort.
@@ -88,7 +88,7 @@ Vor der Migration von E5 tun alle drei nichts: Fehlt `freq` in `recurrence_rules
 
 ### 6. Zeitzone
 
-„Heute“ kommt immer aus `berlin-time.js` (`berlinToday`). Das Erledigungsdatum ist das Berliner Datum von `completed_at`: Wer am 01.03. um 00:30 Berliner Zeit erledigt, erledigt am 01.03., auch wenn UTC noch der 28.02. ist. Tests prüfen das an beiden Umstellungstagen.
+„Heute“ kommt immer aus `berlin-time.js` (`berlinToday`). Das Erledigungsdatum ist das Berliner Datum von `completed_at`: Wer am 01.03. um 00:30 Berliner Zeit erledigt, erledigt am 01.03., auch wenn UTC noch der 28.02. ist. Tests prüfen das an beiden Umstellungstagen. *(Der Hook nimmt dafür das Berliner „heute“ im Moment des Erledigens, siehe Nachtrag 7.)*
 
 ## Alternativen
 
@@ -136,7 +136,7 @@ Nutzerentscheidung vom 2026-09-28, eine bewusste Änderung der Regel „höchste
 ## Nachtrag 3 (2026-09-28, Papierkorb, ADR-0037): Index ohne Tickets im Papierkorb
 
 - Migration `1790202300_tickets_trash.js` ergänzt den Teilindex um den Papierkorb: `UNIQUE (recurrence, occurrence) WHERE recurrence != '' AND status != 'done' AND deleted_at = ''`. Das Verschieben leert `recurrence` und `occurrence` ohnehin (Schnappschuss im Ticket); die Bedingung hält den Index für jede Zeile richtig, auch wenn eine Zeile im Papierkorb eine Regel trägt.
-- Die Erzeugung braucht keine Änderung: Eine Instanz im Papierkorb hat keine Regel mehr, zählt also für „offene Instanz“ und „Termin hat ein Ticket“ nicht. Wie nach dem Hartlöschen entsteht die nächste Instanz zum nächsten Termin (ADR-0023 §6), nie sofort.
+- Die Erzeugung braucht keine Änderung: Eine Instanz im Papierkorb hat keine Regel mehr, zählt also für „offene Instanz“ und „Termin hat ein Ticket“ nicht. Wie nach dem Hartlöschen entsteht die nächste Instanz zum nächsten Termin (ADR-0023 §6), nie sofort. *(Genauer: nicht im selben Schritt; liegt der nächste Termin schon im Vorlauf, entsteht er beim nächsten stündlichen Lauf, siehe Nachtrag 7.)*
 - Der Rückweg stellt den Index von Nachtrag 2 wieder her.
 
 ## Nachtrag 4 (2026-09-28, Plan „Wiederholungen verständlich machen“, WK-1): Zusammengefasste Termine sichtbar
@@ -173,3 +173,14 @@ Nutzerentscheidung vom 2026-09-28 (Empfehlung 2 und Vorschau). §1 sagte „Näc
 - **Wo:** Zeile „Wiederholt sich“ am Ticket, Regel-Panel und Übersicht (Datum, darunter „erscheint 09.10.“ bzw. „nach HAUS-12“, der ganze Satz als `title`).
 - **Vorschau** im Formular: jede Zeile „erscheint Fr 02.10. → fällig Mo 05.10.“ (Wochentag und Datum; „erscheint heute“, „erscheint sofort“), damit der Vorlauf sichtbar wird; nach Erledigung eine Zeile für „Wird das Ticket heute erledigt“.
 - **„Beginnt am“ in der Vergangenheit** bei einem Ticket ohne Fälligkeit (auch „Neues Ticket“, Empfehlung 4): Warnung ohne Rot „„Beginnt am“ liegt in der Vergangenheit: Das Ticket bekommt den ersten Termin 07.09.2026 und ist damit schon überfällig.“
+
+## Nachtrag 7 (2026-09-28, Plan „Wiederholungen verständlich machen“, WK-4): Richtigstellungen und Beispiele aus der Rechenlogik
+
+Empfehlung 8 (Doku) und Teil A der Spec. Der Text oben bleibt; die markierten Stellen verweisen hierher.
+
+- **„Nie sofort“ (Nachtrag 3, ADR-0023 §6, CLAUDE.md §6) heißt „nicht im selben Schritt“:** Löschen oder Lösen einer offenen Instanz setzt nur `next_due`; es gibt kein `materialize` danach. Liegt der nächste Termin schon im Vorlauf (etwa „nach Erledigung“ alle 2 Tage mit Vorlauf 3, oder ein fester Termin, dessen Vorlauf schon begonnen hat), entsteht sein Ticket beim nächsten stündlichen Lauf bzw. beim nächsten Start, also spätestens gut eine Stunde später.
+- **Zeitpunkt des Crons (§4):** `7 * * * *` in UTC ist wegen der vollen Stunden des Versatzes auch in Berliner Zeit jede Stunde um xx:07; der erste Lauf eines Berliner Tages ist gegen 00:07. Mit Vorlauf 0 erscheint ein Ticket also kurz nach Mitternacht, wenn die App läuft.
+- **Erledigungsdatum (§4, §6):** Der Update-Hook rechnet `next_due` nicht aus einem gelesenen `completed_at`, sondern mit `berlinToday(now)` im Moment des Erledigens (`prepareTicketUpdate`). Das ist dasselbe Datum, weil `completed_at` in derselben Anfrage gesetzt wird, und hält die Berliner Tagesgrenze ein.
+- **Veraltete Haupttexte:** Migrationsnamen (`1790201510` → `1790201610`, ADR-0021 `1790201500` → `1790201600`), `onServe` (gibt es nicht, `onBootstrap`), „höchstens eine offene Instanz“ (nur ohne Schalter, Nachtrag 2), „Rückgängig“ 5 s (seit UI-5 8 s, ADR-0023) tragen jetzt einen Verweis auf ihren Nachtrag.
+- **Beispiele in der Hilfe und im Formular** (Hilfe „Wiederholungen“, „So funktioniert’s“) sind nicht hart kodiert: `domain/recurrence-examples.ts` spielt die Szenarien Tag für Tag mit den Entscheidungen der Erzeugung (`domain/recurrence-generation.ts`, Spiegel von `generation`, `generationEach`, `backlogDecision`, `nextDueOnCompletion`, `skippedDates` aus `lib/recurrence-rules.js`) und den Daten aus `recurrence.ts`, ab dem festen Montag 05.10.2026 (die Jahreszahl zeigt die Hilfe nicht). `tests/unit/recurrence-examples.test.mjs` spielt dieselben Szenarien mit den Funktionen des Hooks, verlangt dasselbe Ergebnis, prüft die Erzählung der Spec (Nachholen, nach Erledigung mit Vorlauf ≥ Abstand und wanderndem Monatstag, Schalter mit 20er-Stapel und Entscheidung, 31., 29.02., Mo+Fr alle 2 Wochen ab Mittwoch) und vergleicht den Spiegel mit 600 Zufallsregeln.
+- **Abweichung von der Spec:** „Zu spät (Mi 07.10.)“ zeigt mit Vorlauf 3 keine Verzögerung: Das nächste Ticket erscheint ohnehin erst am Fr 09.10. Die Hilfe sagt das („Etwas später erledigt (Mi 07.10.): … wie geplant am Fr 09.10.“) und zeigt die Verzögerung mit Sa 10.10., wo das Ticket für Mo 12.10. erst beim Erledigen erscheint. Beim dreiwöchigen Liegenlassen erledigt das Beispiel auch das nachgeholte Ticket am selben Tag, sonst hielte es das nächste zurück.

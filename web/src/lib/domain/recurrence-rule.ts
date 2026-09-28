@@ -424,6 +424,10 @@ export function skippedText(skipped: SkippedDates, today?: CalendarDate): string
  */
 export const EACH_MAX_PER_RUN = 20;
 
+/** Hint after a full batch without a choice; the same text as EACH_LIMIT_HINT of the hook. */
+export const EACH_LIMIT_HINT =
+	'Viele Termine auf einmal: 20 Tickets angelegt, die übrigen folgen beim nächsten Lauf (stündlich).';
+
 /** Refusal of reopening with the key of the open ticket (ADR-0023 section 3). */
 export function openInstanceMessage(key: string): string {
 	return `Von dieser Serie ist schon ${key} offen. Erledige es zuerst oder löse ein Ticket aus der Serie.`;

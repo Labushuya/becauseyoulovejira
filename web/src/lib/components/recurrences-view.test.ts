@@ -157,6 +157,13 @@ describe('RecurrencesView', () => {
 		expect(
 			screen.getByText('Lege eine an oder wähle an einem Ticket „Wiederholen…“.')
 		).toBeTruthy();
+		// Plan "Wiederholungen verständlich machen": the help with the examples, also when empty.
+		expect(
+			screen.getByRole('link', { name: 'So funktionieren Wiederholungen' }).getAttribute('href')
+		).toBe('/einstellungen/hilfe#wiederholungen');
+		expect(screen.getByRole('link', { name: 'So funktioniert’s' }).getAttribute('href')).toBe(
+			'/einstellungen/hilfe#wiederholungen'
+		);
 		expect(screen.getByRole('link', { name: 'Regel anlegen' }).getAttribute('href')).toBe(
 			'/wiederholungen/neu'
 		);

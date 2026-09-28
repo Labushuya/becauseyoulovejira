@@ -335,6 +335,13 @@ describe('RecurrencePanel: a rule', () => {
 		expect(props.onclose).not.toHaveBeenCalled();
 	});
 
+	it('links to the help with the examples in a new tab', () => {
+		show(rule());
+		const link = screen.getByRole('link', { name: 'So funktionieren Wiederholungen (neuer Tab)' });
+		expect(link.getAttribute('href')).toBe('/einstellungen/hilfe#wiederholungen');
+		expect(link.getAttribute('target')).toBe('_blank');
+	});
+
 	it('is built on the side panel and uses no own hints or dialogs', () => {
 		expect(source).toMatch(/import Drawer from '\.\/overlay\/Drawer\.svelte';/);
 		expect(source).toMatch(/import ConfirmDialog from '\.\/overlay\/ConfirmDialog\.svelte';/);
