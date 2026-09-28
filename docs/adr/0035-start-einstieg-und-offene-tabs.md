@@ -1,6 +1,6 @@
 # ADR-0035: Start, Einstieg per Datei und Wiederverwenden offener Tabs, mit installierbarer Web-App
 
-- **Status:** Angenommen; Umsetzung in den Paketen SF-1 bis SF-6 nach [docs/plan/start-fenster.md](../plan/start-fenster.md)
+- **Status:** Angenommen und umgesetzt in den Paketen SF-1 bis SF-6 nach [docs/plan/start-fenster.md](../plan/start-fenster.md) (#137 bis #142); manuelle Browser-Prüfungen stehen im Test-Manifest
 - **Datum:** 2026-09-28
 - **Entscheidung durch:** Nutzer (Datei-Aufruf mit Serverprüfung und Countdown, kein zweiter Tab durch `start.bat`, Selbstschließen doppelter Tabs mit „Hier weiterarbeiten“, Windows-Benachrichtigung als Opt-in, installierbare Web-App mit `focus-existing`, Fail-open, kein Win32-Fensterfokus; 2026-09-28), Advisor (Konzept „Start, Landing per `file://` und Wiederverwenden des Browser-Tabs“), Executor (Routen, Sicherheitsregeln, Einzelheiten)
 - **Ergänzt:** [ADR-0002](0002-erststart-und-superuser.md) §6 (neue Routen, aber keine Setup-Route), [ADR-0007](0007-realtime-und-sitzungspflege.md) (eigenes Realtime-Thema `byl/attention`)

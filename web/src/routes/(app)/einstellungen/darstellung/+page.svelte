@@ -13,6 +13,7 @@
 		THEME_PREFERENCES,
 		type ThemePreference
 	} from '$lib/theme.svelte';
+	import { getNotifyStore } from '$lib/attention-notify.svelte';
 	import { getTransparencyStore } from '$lib/transparency.svelte';
 
 	// Settings "Darstellung" (ADR-0026 section 1, plan EH-8; ADR-0027 section 6; ADR-0029 section 7):
@@ -25,7 +26,19 @@
 	const store = getThemeStore();
 	const accentStore = getAccentStore();
 	const transparencyStore = getTransparencyStore();
+	// Group "Hinweise" (ADR-0035 section 5, SF-6): the Windows notification is an opt-in; the
+	// browser asks for the permission only when the switch is turned on.
+	const notifyStore = getNotifyStore();
 	const uid = $props.id();
+
+	async function toggleNotify(event: Event & { currentTarget: HTMLInputElement }) {
+		const control = event.currentTarget;
+		if (control.checked) {
+			control.checked = await notifyStore.enable();
+		} else {
+			notifyStore.disable();
+		}
+	}
 
 	const DESCRIPTIONS: Record<ThemePreference, string> = {
 		light: 'Helle Flächen, dunkle Schrift.',
@@ -36,6 +49,7 @@
 	$effect(() => store.connect());
 	$effect(() => accentStore.connect());
 	$effect(() => transparencyStore.connect());
+	$effect(() => notifyStore.connect());
 </script>
 
 <svelte:head>
@@ -122,6 +136,40 @@
 		<SectionMessage tone="info" compact>
 			Die Systemeinstellung reduziert die Transparenz bereits. Alles bleibt undurchsichtig, egal wie
 			der Schalter steht.
+		</SectionMessage>
+	{/if}
+</fieldset>
+
+<fieldset class="themes">
+	<legend>Hinweise</legend>
+	<label class="setting">
+		<span class="setting-name">Windows-Benachrichtigung</span>
+		<input
+			type="checkbox"
+			role="switch"
+			checked={notifyStore.active}
+			disabled={!notifyStore.supported}
+			aria-busy={notifyStore.busy}
+			aria-describedby={`${uid}-notify-note`}
+			onchange={toggleNotify}
+		/>
+	</label>
+	<p class="note" id={`${uid}-notify-note`}>
+		Öffnest du becauseyoulovejira erneut (start.bat oder die Datei), obwohl die App schon in einem
+		Tab im Hintergrund offen ist, meldet sich dieser Tab zusätzlich mit einer Benachrichtigung von
+		Windows. Ein Klick darauf holt den Tab nach vorn. Beim Einschalten fragt der Browser einmal nach
+		der Erlaubnis. Gilt nur in diesem Browser auf diesem Gerät.
+	</p>
+	{#if !notifyStore.supported}
+		<SectionMessage tone="info" compact>
+			Dieser Browser kann keine Benachrichtigungen zeigen. Der Hinweis im Tab und der blinkende
+			Titel bleiben.
+		</SectionMessage>
+	{:else if notifyStore.permission === 'denied'}
+		<SectionMessage tone="info" compact>
+			Benachrichtigungen sind für diese Seite im Browser blockiert. Erlaube sie in den
+			Website-Einstellungen des Browsers (Symbol links in der Adresszeile) und schalte dann erneut
+			ein.
 		</SectionMessage>
 	{/if}
 </fieldset>
