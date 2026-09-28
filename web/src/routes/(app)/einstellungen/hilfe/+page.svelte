@@ -239,7 +239,17 @@
 				<summary>Wie formatiere ich Beschreibungen und Kommentare?</summary>
 				<ul>
 					<li>
-						Beschreibungen und Kommentare sind Markdown: <code>**fett**</code>,
+						Die Beschreibung bearbeitest du im Editor wie in Jira: Formatierungsleiste, Tastenkürzel
+						(unter „Tastaturkürzel“, Abschnitt „Editor“) oder Markdown beim Tippen, etwa
+						<code>## </code> für eine Überschrift oder <code>[ ] </code> für eine Checkliste. Mit
+						<kbd>Alt</kbd>+<kbd>F10</kbd> kommst du in die Leiste, mit <kbd>Esc</kbd> zurück in den Text.
+					</li>
+					<li>
+						„Markdown“ in der Leiste zeigt den Text als Markdown. Texte mit Tabellen oder Listen aus
+						Aufgaben und normalen Punkten öffnen gleich dort, damit nichts verloren geht.
+					</li>
+					<li>
+						Gespeichert wird immer Markdown: <code>**fett**</code>,
 						<code>*kursiv*</code>, <code>~~durchgestrichen~~</code>, <code># Überschrift</code>,
 						<code>- Punkt</code>, <code>1. Punkt</code>, <code>&gt; Zitat</code> und
 						<code>`Code`</code>.

@@ -1,6 +1,6 @@
 # E6-Plan, Teil Editor: Unterstreichen, Checklisten und ein Editor wie Jira
 
-- **Stand:** Stufe A umgesetzt (2026-09-28): RT-0 (#114, Weg B), RT-1 (#115), RT-2 (#116). Offen sind die manuellen Browser-Prüfungen und Stufe B (RT-3 bis RT-6).
+- **Stand:** Stufe A umgesetzt (2026-09-28): RT-0 (#114, Weg B), RT-1 (#115), RT-2 (#116). Stufe B freigegeben und begonnen (Auftrag vom 2026-09-28): RT-3 umgesetzt, RT-4 bis RT-6 folgen. Offen sind außerdem die manuellen Browser-Prüfungen.
 - **Grundlage:**
   - [ADR-0032](../adr/0032-editor-tiptap-markdown.md) (Tiptap, Markdown als Speicherformat, Brücke über die markdown-it-Instanz der Anzeige, Spike RT-0)
   - [ADR-0008](../adr/0008-markdown-rendering-und-sanitizing.md), [ADR-0006](../adr/0006-frontend-zustand-und-datenzugriff.md) §5, [ADR-0025](../adr/0025-ui-konsistenz-overlay-system.md), [ADR-0026](../adr/0026-einstellungsbereich-und-hinweis-bausteine.md), [ADR-0029](../adr/0029-glas-materialien.md), [ADR-0030](../adr/0030-spalten-breiten-und-kompakte-zeilen.md), [ADR-0031](../adr/0031-herkunft-sichern.md)
@@ -33,7 +33,7 @@
 | RT-0 | Spike: Tiptap gegen den Korpus (Parität, HTML als Text, `breaks`, Normalisierung), jsdom, Größe des Chunks; Entscheidung zwischen `@tiptap/markdown` und der Brücke über `prosemirror-markdown`; ADR-0032, dieser Plan, Manifest-Einträge als „geplant“ | – |
 | RT-1 | Anzeige: `++u++` → `<u>` (`markdown-it-ins`), Task-Listen per eigenem Plugin, Sanitizer-Erweiterung mit Hook, Korpus; XSS-Tests; CLAUDE.md §7; Hilfeseite | BYL-E6-200, BYL-E6-201 (manuell) |
 | RT-2 | Checklisten in der Ansicht abhakbar: `toggleTask`, `Markdown.svelte` mit `ontoggletask`, Store, Hook `expected_updated` mit `validation_description_stale`, Konfliktfrage beim Speichern der Beschreibung, Kommentare nur für den Autor | BYL-E6-202 bis BYL-E6-204, BYL-E6-205 (manuell) |
-| RT-3 | `RichTextEditor` für die Beschreibung (Panel und Vollansicht): Extensions, Brücke, Toolbar, Kürzel, Eingaberegeln, Quelltextmodus, `richEditable`, dynamisches Laden mit Rückfall auf die `textarea`, `prose.css` | ab BYL-E6-206 |
+| RT-3 | `RichTextEditor` für die Beschreibung (Panel und Vollansicht): Extensions, Brücke, Toolbar, Kürzel, Eingaberegeln, Quelltextmodus, `richEditable`, dynamisches Laden mit Rückfall auf die `textarea`, `prose.css` | BYL-E6-241, BYL-E6-242 (manuell) |
 | RT-4 | „/“-Menü und Link-Popover | |
 | RT-5 | Einfügen aus Word und HTML (`paste.ts` mit Fixtures) | |
 | RT-6 | Kommentare (kompakt), `NewTicketForm`, `RecurrencePanel`; Kürzel in `shortcuts.ts`, Hilfeseite, README | |
@@ -165,6 +165,17 @@ Siehe ADR-0032 §1 und §2. Der Serializer normalisiert beim ersten Speichern au
 | 2026-09-28 | RT-2 | **Kommentare ohne `expected_updated`:** Nur der Autor darf einen Kommentar ändern; ein Konflikt entsteht höchstens zwischen zwei eigenen Tabs. Eine Prüfung bräuchte einen neuen Hook für `comments` und wäre mehr als das Paket. |
 | 2026-09-28 | RT-2 | **Verlauf:** Ändert eine Beschreibung nur das Zeichen einer Aufgabe, heißt der Eintrag „Aufgabe abgehakt: …“ bzw. „Aufgabe wieder offen: …“ (zeilenbasiert in `history-format.ts`, ohne Parser; Maskierungen der Vorlagen ohne Backslash, höchstens 80 Zeichen). Alt und Neu bleiben aufklappbar. |
 | 2026-09-28 | RT-2 | `TicketDescription` und `CommentItem` ziehen auf die Schriftgrößen-Tokens und fallen von der Liste (`no-own-font-sizes.test.ts` jetzt 228). Die Hilfe erklärt das Abhaken. |
+| 2026-09-28 | Stufe B | **Manifest-IDs ab `BYL-E6-240`:** 206 bis 219 blieben ungenutzt, die Unteraufgaben belegen 220 bis 229. BYL-E6-240 ist die Verwerfen-Frage der Vollansicht (offener Punkt der Unteraufgaben), RT-3 hat 241 und 242. |
+| 2026-09-28 | RT-3 | **Abhängigkeiten:** `@tiptap/core`, `@tiptap/pm`, `@tiptap/starter-kit`, `@tiptap/extension-list`, `@tiptap/extensions`, `@tiptap/extension-underline` (alle 3.31.3, MIT) und `prosemirror-markdown` 1.13.8 (MIT). `overrides` hebt markdown-it von `prosemirror-markdown` auf `$markdown-it`; `package-lock.json` hat danach genau ein markdown-it (`editor-lazy.test.ts`). `npm audit`: nur die drei bekannten niedrigen Befunde über `cookie` (`@sveltejs/kit`), keiner aus dem Editor. |
+| 2026-09-28 | RT-3 | **Prüfung vor dem Öffnen über die Anzeige** statt nur über Tokens (ADR-0032, Nachtrag RT-3): `richEditable` vergleicht die Anzeige vor und nach einer Rundreise mit `sameDisplay`. Kostet beim Öffnen zwei Renderings, schützt aber jeden einzelnen Text, nicht nur den Korpus. |
+| 2026-09-28 | RT-3 | **Serializer:** mehrere Umbrüche als `\` am Zeilenende, Umbruch in einer Überschrift als Leerzeichen, zusätzliche Maskierung am Zeilenanfang (`+`, `1.`, `1)`, `=`, `|`, `:-`, führende Leerzeichen weg), abwechselnde Zeichen für Listen direkt hintereinander. Eine nackte Adresse, die im Editor Text blieb, verlinkt die Anzeige trotzdem (linkify); das ist die einzige bekannte Abweichung und nur optisch. |
+| 2026-09-28 | RT-3 | **Schreiben nur bei Änderung:** `onUpdate` von Tiptap (nur bei geändertem Dokument) schreibt den Entwurf; große Dokumente (über 20 000 Positionen) nach 250 ms, spätestens beim Verlassen des Feldes, bei „Speichern“ (`flush`) und Strg+Enter. Unverändert geöffnet und gespeichert schreibt nichts (Test im Panel). |
+| 2026-09-28 | RT-3 | **Quelltextmodus:** „Markdown“ rechts in der Leiste (`aria-pressed`) zeigt den bisherigen `MarkdownEditor` samt „Vorschau“; zurück geht es nur, wenn `richEditable` den Text annimmt, sonst bleibt der Hinweis. Erzwungener Quelltextmodus nennt den Fund („Gefunden: eine Tabelle.“). Scheitert das Laden des Chunks, übernimmt die `textarea` mit dem Hinweis „Der Editor konnte nicht geladen werden …“, „Markdown“ ist dann gesperrt. |
+| 2026-09-28 | RT-3 | **Leiste:** WAI-ARIA-Toolbar mit Roving-Tabindex über alle Knöpfe der Leiste (auch die Auslöser der Popover-Menüs), Pfeiltasten, Pos1/Ende, Esc zurück in den Text, Alt+F10 aus dem Text. Textstil (Normaler Text, Überschrift 1 bis 3) und „Weitere Formatierungen“ (Inline-Code, Formatierung entfernen) sind Popover-Menüs. Unter 560 px (Panel) wandern Listen und Blöcke in das Menü „Listen und Blöcke“ (`menuitemcheckbox`). Nach einem Befehl geht der Fokus zurück in den Text. Link kommt mit RT-4. In einem Codeblock sind die Marken `aria-disabled`. |
+| 2026-09-28 | RT-3 | **Kürzel schon in `shortcuts.ts`:** Die Leiste braucht Namen, Titel und `aria-keyshortcuts` aus einer Quelle; deshalb hat die Liste schon mit RT-3 den Abschnitt „Editor“ (`ariaKeyShortcuts` bildet die WAI-ARIA-Namen). Die Hilfeseite zeigt ihn automatisch, das Modal „Tastaturkürzel“ zeigt weiter nur „Überall“ und „Liste“. Jeder Eintrag des Editors wird im Test auf dem Editor gedrückt. |
+| 2026-09-28 | RT-3 | **Esc im ganzen Editor verbraucht** (Text, Leiste, Quelltextmodus), Menüs verbrauchen ihres vorher selbst. So schließt Esc weder Panel noch Vollansicht, solange ein Feld bearbeitet wird (Escape-Kette). |
+| 2026-09-28 | RT-3 | **CSS:** Tiptap injiziert sein CSS nicht (`injectCSS: false`, sonst schwarzer Gap-Cursor ohne Token); die nötigen Regeln stehen in `RichTextEditor.svelte`. Anzeige und Editor teilen `lib/styles/prose.css` (global im Wurzel-Layout); die zwei Überschriftgrößen von `Markdown.svelte` sind dorthin gewandert (`no-own-font-sizes.test.ts`: `prose.css` statt `Markdown.svelte`, Zahl unverändert). Fläche undurchsichtig mit dem Rahmen der `textarea`, Fokusring um Leiste und Text, Leiste ohne Glas. In `forced-colors` tragen gedrückte Knöpfe einen Rahmen. |
+| 2026-09-28 | RT-3 | **Größe:** Editor-Chunk 124,9 KB gz (396 KB minifiziert), nur per `import()` aus `RichTextEditor` geladen; `RichTextEditor` und die Leiste liegen im Chunk der Ticket-Ansicht. |
 
 ## 5. Status
 
@@ -173,14 +184,16 @@ Siehe ADR-0032 §1 und §2. Der Serializer normalisiert beim ersten Speichern au
 | RT-0 | gemergt (#114) |
 | RT-1 | gemergt (#115) |
 | RT-2 | gemergt (#116) |
-| RT-3 bis RT-7 | Stufe B, nach Freigabe |
+| RT-3 | umgesetzt (PR „feat: edit the description in a WYSIWYG editor“) |
+| RT-4 bis RT-6 | Stufe B, freigegeben, folgen |
+| RT-7 | optional, nicht beauftragt |
 
 ## 6. Offene Punkte
 
-- Manuelle Browser-Prüfungen der Pakete (BYL-E6-201, BYL-E6-205).
+- Manuelle Browser-Prüfungen der Pakete (BYL-E6-201, BYL-E6-205, BYL-E6-242).
 - ~~„Löschen …“ in der Vollansicht legt seine Bestätigung über das XL-Modal (seit HK-6 mit Radios über `ConfirmDialog.options`).~~ Erledigt mit UA-3 ([Plan Unteraufgaben](unteraufgaben.md) §3): Die Vollansicht fragt inline (`TicketDeleteQuestion`).
 - **Hinweise für die Unterprojekte:** Der Plan ändert weder Datenmodell noch Filter; Beschreibungen von Unterprojekt-Tickets nutzen dieselbe Anzeige. `expected_updated` gilt für jedes Ticket-Update und stört ein späteres Umhängen in ein Unterprojekt nicht, solange es ohne das Feld gesendet wird.
-- **Hinweise für Stufe B:**
+- **Hinweise für Stufe B** (umgesetzt mit RT-3, bis auf die Attrappe für `ClipboardEvent`, die RT-5 braucht):
   - `prosemirror-markdown` 1.13.8 verlangt `markdown-it` ^14; per `overrides` auf die Version der Anzeige heben, sonst liegen zwei Parser im Bundle.
   - Die Brücke braucht für `bulletList`, `orderedList` und `taskList` Attribute ohne Darstellung (`tight`, Aufzählungszeichen, Trennzeichen). Sonst ändern sich lockere Listen und zwei aufeinanderfolgende Listen verschmelzen.
   - Den harten Umbruch als `\n` schreiben (nicht `\\\n`) und den Text danach wie einen Zeilenanfang maskieren; `=`-Zeilen (Setext) und Tabellen-Trennzeilen am Zeilenanfang zusätzlich maskieren.

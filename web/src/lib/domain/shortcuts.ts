@@ -4,13 +4,14 @@
 // shortcuts.test.ts checks the global entries against them.
 
 /** Where a shortcut works, in the order of the help. */
-export type ShortcutContext = 'everywhere' | 'list' | 'panel' | 'dialogs';
+export type ShortcutContext = 'everywhere' | 'list' | 'panel' | 'dialogs' | 'editor';
 
 export const SHORTCUT_CONTEXTS: readonly { id: ShortcutContext; label: string }[] = [
 	{ id: 'everywhere', label: 'Überall' },
 	{ id: 'list', label: 'Liste' },
 	{ id: 'panel', label: 'Panel' },
-	{ id: 'dialogs', label: 'Dialoge' }
+	{ id: 'dialogs', label: 'Dialoge' },
+	{ id: 'editor', label: 'Editor' }
 ];
 
 /**
@@ -127,6 +128,89 @@ export const SHORTCUTS: readonly Shortcut[] = [
 		context: 'dialogs',
 		keys: [['Alt', 'Enter']],
 		action: 'In der Erfassung: in den Eingang legen'
+	},
+	// The editor (ADR-0032, plan editor section 3.2): the keys of Tiptap, like in Jira. The
+	// toolbar takes names and aria-keyshortcuts from here; editor tests press every one of them.
+	{ id: 'editor-bold', context: 'editor', keys: [['Strg', 'B']], action: 'Fett' },
+	{ id: 'editor-italic', context: 'editor', keys: [['Strg', 'I']], action: 'Kursiv' },
+	{ id: 'editor-underline', context: 'editor', keys: [['Strg', 'U']], action: 'Unterstrichen' },
+	{
+		id: 'editor-strike',
+		context: 'editor',
+		keys: [['Strg', 'Umschalt', 'S']],
+		action: 'Durchgestrichen'
+	},
+	{ id: 'editor-code', context: 'editor', keys: [['Strg', 'E']], action: 'Inline-Code' },
+	{
+		id: 'editor-paragraph',
+		context: 'editor',
+		keys: [['Strg', 'Alt', '0']],
+		action: 'Normaler Text'
+	},
+	{
+		id: 'editor-heading-1',
+		context: 'editor',
+		keys: [['Strg', 'Alt', '1']],
+		action: 'Überschrift 1'
+	},
+	{
+		id: 'editor-heading-2',
+		context: 'editor',
+		keys: [['Strg', 'Alt', '2']],
+		action: 'Überschrift 2'
+	},
+	{
+		id: 'editor-heading-3',
+		context: 'editor',
+		keys: [['Strg', 'Alt', '3']],
+		action: 'Überschrift 3'
+	},
+	{
+		id: 'editor-bullet-list',
+		context: 'editor',
+		keys: [['Strg', 'Umschalt', '8']],
+		action: 'Aufzählung'
+	},
+	{
+		id: 'editor-ordered-list',
+		context: 'editor',
+		keys: [['Strg', 'Umschalt', '7']],
+		action: 'Nummerierte Liste'
+	},
+	{
+		id: 'editor-task-list',
+		context: 'editor',
+		keys: [['Strg', 'Umschalt', '9']],
+		action: 'Checkliste'
+	},
+	{ id: 'editor-quote', context: 'editor', keys: [['Strg', 'Umschalt', 'B']], action: 'Zitat' },
+	{ id: 'editor-code-block', context: 'editor', keys: [['Strg', 'Alt', 'C']], action: 'Codeblock' },
+	{
+		id: 'editor-indent',
+		context: 'editor',
+		keys: [['Tab'], ['Umschalt', 'Tab']],
+		action: 'In Listen ein- bzw. ausrücken; sonst zum nächsten bzw. vorigen Bedienelement'
+	},
+	{
+		id: 'editor-toolbar',
+		context: 'editor',
+		keys: [['Alt', 'F10']],
+		action: 'Zur Formatierungsleiste; Esc führt zurück in den Text'
+	},
+	{
+		id: 'editor-plain-paste',
+		context: 'editor',
+		keys: [['Strg', 'Umschalt', 'V']],
+		action: 'Als reinen Text einfügen'
+	},
+	{
+		id: 'editor-undo',
+		context: 'editor',
+		keys: [
+			['Strg', 'Z'],
+			['Strg', 'Y']
+		],
+		action: 'Rückgängig bzw. wiederholen'
 	}
 ];
 
@@ -145,4 +229,22 @@ export function shortcutById(id: string): Shortcut {
 /** Plain text of the keys, e.g. "c oder Strg+K", for names and tests. */
 export function keysText(shortcut: Pick<Shortcut, 'keys'>): string {
 	return shortcut.keys.map((combination) => combination.join('+')).join(' oder ');
+}
+
+/** WAI-ARIA names of the German key names that differ. */
+const ARIA_KEYS: Readonly<Record<string, string>> = {
+	Strg: 'Control',
+	Umschalt: 'Shift',
+	Esc: 'Escape'
+};
+
+/** aria-keyshortcuts of a shortcut, e.g. "Control+Shift+S" (WAI-ARIA key names). */
+export function ariaKeyShortcuts(shortcut: Pick<Shortcut, 'keys'>): string {
+	return shortcut.keys
+		.map((combination) =>
+			combination
+				.map((name) => ARIA_KEYS[name] ?? (name.length === 1 ? name.toUpperCase() : name))
+				.join('+')
+		)
+		.join(' ');
 }

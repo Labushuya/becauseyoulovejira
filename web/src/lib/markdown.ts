@@ -111,6 +111,15 @@ parser.renderer.rules.task_checkbox = (tokens, idx) => {
 	return `<input type="checkbox" disabled${checked ? ' checked' : ''} aria-label="${name}">`;
 };
 
+/**
+ * The tokens of a Markdown text from the parser of the display (ADR-0032 section 2): the editor
+ * reads Markdown through them, so what the display shows as text stays text in the editor. Each
+ * call returns fresh tokens the caller may change.
+ */
+export function markdownTokens(source: string): Token[] {
+	return parser.parse(source, {});
+}
+
 /** The tasks of a Markdown text in document order, as the display numbers them. */
 function tasksOf(source: string): TaskMeta[] {
 	return parser

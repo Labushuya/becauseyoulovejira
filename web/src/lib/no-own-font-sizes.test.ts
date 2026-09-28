@@ -40,7 +40,6 @@ const LEGACY_FILES = [
 	'lib/components/InboxPanel.svelte',
 	'lib/components/KpiTiles.svelte',
 	'lib/components/MailboxPicker.svelte',
-	'lib/components/Markdown.svelte',
 	'lib/components/MarkdownEditor.svelte',
 	'lib/components/NewTicketForm.svelte',
 	'lib/components/ProjectPanel.svelte',
@@ -84,6 +83,8 @@ const LEGACY_FILES = [
 	'lib/components/overlay/FullView.svelte',
 	'lib/components/overlay/Modal.svelte',
 	'lib/components/overlay/Popover.svelte',
+	// The two heading sizes of Markdown.svelte moved here with the editor (RT-3), no new number.
+	'lib/styles/prose.css',
 	'lib/styles/tour.css',
 	'routes/(app)/(tickets)/tickets/neu/+page.svelte',
 	'routes/(app)/einstellungen/darstellung/+page.svelte',
