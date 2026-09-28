@@ -309,6 +309,19 @@ export function sourceDateText(item: Pick<InboxItemSummary, 'sourceDate' | 'sour
 		: formatBerlinDateTime(item.sourceDate);
 }
 
+/**
+ * Date of an appointment as due date (plan BI-2, ADR-0036 §5): only an entry of the kind `event`
+ * (calendar entries from `.ics` files and Google Calendar) has one; its Berlin calendar date of the
+ * start, also for all-day events, whose start is the beginning of their day. Other kinds have a
+ * date at the sender (sent, received), not an appointment: null. Never used without the user
+ * asking for it (P-5).
+ */
+export function eventDueDate(
+	item: Pick<InboxItemSummary, 'kind' | 'sourceDate'>
+): CalendarDate | null {
+	return item.kind === 'event' && item.sourceDate !== null ? berlinDateOf(item.sourceDate) : null;
+}
+
 /** Markdown characters of a value from a source, escaped so they show as typed. */
 export function escapeMarkdown(value: string): string {
 	return value.replace(/[\\`*_{}[\]()#+\-.!|<>~]/g, (character) => `\\${character}`);

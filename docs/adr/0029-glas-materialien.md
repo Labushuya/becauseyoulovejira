@@ -117,3 +117,7 @@ Präzisiert §2, §9 und §10, ohne sie aufzuheben:
 - **Einstellungsnavigation:** ab 64rem eine schwebende Karte aus `--material-regular`, schmaler eine Linkzeile ohne Glas.
 - **Schrift:** Inter bleibt; `--font-ui` nennt `system-ui`, `-apple-system`, `BlinkMacSystemFont`, Segoe UI nur als Rückfall. Überschriften `h1`, `h2` mit `letter-spacing: -0.01em`.
 - Die Performance-Messung aus §8 ist ein manueller Fall (BYL-E6-102). `docs/benchmarks.md` entsteht mit der ersten Messung.
+
+## Nachtrag (2026-09-28): Sammel-Aktionsleiste (ADR-0036)
+
+Ergänzt §1 um einen Baustein der Bedienebene: Die Leiste der Sammelaktionen über der Tabelle „Aufgaben“ (`BulkActionBar.svelte`, [ADR-0036](0036-sammelbearbeitung-inline-und-oeffnungsmodus.md) §3) ist Glas mit `--material-thick`, `--glass-filter-thick`, Linie `--color-separator`, `--radius-overlay` und `--shadow-popover`. Sie steht `sticky` (nicht `fixed`) über der Tabelle, die darunter scrollt; darum thick. Sie ist die zehnte Datei der Allowlist von `glass-allowlist.test.ts`. Die Ergebnisliste darin ist Text auf dem Material, Fehler mit Icon und Text (ADR-0009).

@@ -22,6 +22,8 @@ const GLASS_FILES = [
 	'lib/components/SuggestionList.svelte',
 	'lib/components/CenteredCard.svelte',
 	'lib/components/SettingsNav.svelte',
+	// The bar of the bulk actions above the ticket table (plan BI-2, ADR-0036 §3), thick material.
+	'lib/components/BulkActionBar.svelte',
 	'lib/styles/tour.css'
 ];
 

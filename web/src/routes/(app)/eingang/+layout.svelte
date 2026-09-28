@@ -74,7 +74,9 @@
 	/** Chosen new entries (checkboxes of the table). */
 	let selected = $state<string[]>([]);
 	/** Entries of the open dialog, null while it is closed. */
-	let bulkItems = $state<Pick<InboxItemSummary, 'id' | 'title'>[] | null>(null);
+	let bulkItems = $state<Pick<InboxItemSummary, 'id' | 'title' | 'kind' | 'sourceDate'>[] | null>(
+		null
+	);
 
 	// Follows the chips of the URL (reload, back and forward included). untrack: only the URL
 	// triggers it, not the store state that activate() reads.
@@ -97,10 +99,10 @@
 		linkItems = chosenItems();
 	}
 
-	function chosenItems(): Pick<InboxItemSummary, 'id' | 'title'>[] {
+	function chosenItems(): Pick<InboxItemSummary, 'id' | 'title' | 'kind' | 'sourceDate'>[] {
 		return inbox.visible
 			.filter((item) => item.state === 'new' && selected.includes(item.id))
-			.map(({ id, title }) => ({ id, title }));
+			.map(({ id, title, kind, sourceDate }) => ({ id, title, kind, sourceDate }));
 	}
 
 	/** Text for the dialog "Aus der Zwischenablage", null while it is closed. */

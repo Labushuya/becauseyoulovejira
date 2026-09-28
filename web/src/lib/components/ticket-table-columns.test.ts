@@ -119,6 +119,7 @@ describe('columns of the ticket table (ADR-0030)', () => {
 		await showTable();
 
 		expect(headerIds()).toEqual([
+			'select',
 			'key',
 			'priority',
 			'status',
@@ -143,6 +144,7 @@ describe('columns of the ticket table (ADR-0030)', () => {
 		await vi.advanceTimersByTimeAsync(0);
 
 		expect(headerIds()).toEqual([
+			'select',
 			'key',
 			'priority',
 			'status',
@@ -151,9 +153,10 @@ describe('columns of the ticket table (ADR-0030)', () => {
 			'due',
 			'actions'
 		]);
-		expect(table().querySelectorAll('col')).toHaveLength(7);
+		expect(table().querySelectorAll('col')).toHaveLength(8);
 		const row = table().querySelector('tr[data-ticket-id]') as HTMLElement;
 		expect([...row.children].map((cell) => cell.getAttribute('data-col'))).toEqual([
+			'select',
 			'key',
 			'priority',
 			'status',
@@ -163,14 +166,14 @@ describe('columns of the ticket table (ADR-0030)', () => {
 			'actions'
 		]);
 		const head = screen.getByRole('rowheader', { name: /^Offen/ });
-		expect(head.getAttribute('colspan')).toBe('7');
+		expect(head.getAttribute('colspan')).toBe('8');
 		expect(table().querySelector('caption')?.textContent).toMatch(/Weitere Spalten im Panel$/);
 
 		resize(frame(), 1400);
 		await vi.advanceTimersByTimeAsync(0);
 
-		expect(headerIds()).toHaveLength(9);
-		expect(head.getAttribute('colspan')).toBe('9');
+		expect(headerIds()).toHaveLength(10);
+		expect(head.getAttribute('colspan')).toBe('10');
 		expect(table().querySelector('caption')?.textContent).not.toMatch(/Weitere Spalten/);
 	});
 
@@ -194,8 +197,8 @@ describe('columns of the ticket table (ADR-0030)', () => {
 
 	it('clamps the drag to the maximum of the column and to the room of the title', async () => {
 		await showTable();
-		// All columns need 968 px; at 1000 px the title has 32 px above its minimum.
-		resize(frame(), 1000);
+		// All columns need 1008 px (with the selection); at 1040 px the title has 32 px above its minimum.
+		resize(frame(), 1040);
 		await vi.advanceTimersByTimeAsync(0);
 
 		await fireEvent.pointerDown(grip('project'), { button: 0, pointerId: 1, clientX: 100 });
@@ -319,6 +322,7 @@ describe('columns of the ticket table (ADR-0030)', () => {
 		expect(colWidth('project')).toBe('200px');
 		// "Quelle" is not in the stored list, so the user switched it on.
 		expect(headerIds()).toEqual([
+			'select',
 			'key',
 			'status',
 			'title',
@@ -328,7 +332,7 @@ describe('columns of the ticket table (ADR-0030)', () => {
 			'due',
 			'actions'
 		]);
-		expect(screen.getByRole('rowheader', { name: /^Offen/ }).getAttribute('colspan')).toBe('8');
+		expect(screen.getByRole('rowheader', { name: /^Offen/ }).getAttribute('colspan')).toBe('9');
 		const row = table().querySelector('tr[data-ticket-id]') as HTMLElement;
 		expect(row.querySelector('[data-col="source"]')?.textContent).toBe('Manuell');
 		// Switched off by the user, not for lack of space: no hint in the caption.

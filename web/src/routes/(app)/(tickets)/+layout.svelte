@@ -7,6 +7,7 @@
 	import TicketTable from '$lib/components/TicketTable.svelte';
 	import ViewWithPanel from '$lib/components/ViewWithPanel.svelte';
 	import { parseListQuery } from '$lib/domain/list-query';
+	import { findBulkEditStore } from '$lib/stores/bulk-edit.svelte';
 	import { getCatalogStore } from '$lib/stores/catalog.svelte';
 	import { findFirstStepsStore } from '$lib/stores/first-steps.svelte';
 	import { getInboxStore } from '$lib/stores/inbox.svelte';
@@ -25,6 +26,8 @@
 	const catalog = getCatalogStore();
 	const inbox = getInboxStore();
 	const rules = getRecurrenceStore();
+	// Bulk actions on the chosen rows (plan BI-2); only inside the (app) layout.
+	const bulk = findBulkEditStore() ?? undefined;
 	// "Erste Schritte" below the empty state (plan EH-12); only inside the (app) layout.
 	const firstSteps = findFirstStepsStore();
 	// The tour of the (app) layout (EH-13); with it "Erste Schritte" offers "Kurze Einführung".
@@ -68,6 +71,7 @@
 			{activeId}
 			{creating}
 			inboxCount={inbox.newCount}
+			{bulk}
 			recurrenceTextOf={(ticket) => rules.textOf(ticket.recurrenceId)}
 		>
 			{#snippet tools()}

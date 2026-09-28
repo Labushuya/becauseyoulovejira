@@ -168,7 +168,7 @@ describe('menu "Spalten" (ADR-0030)', () => {
 			['Unteraufgaben einrücken', true]
 		]);
 		expect(within(menu).getByRole('group', { hidden: true, name: 'Darstellung' })).toBeTruthy();
-		expect(menu.textContent).toContain('Key, Titel und das Häkchen sind immer sichtbar.');
+		expect(menu.textContent).toContain('Auswahl, Key, Titel und das Häkchen sind immer sichtbar.');
 		// The focus goes to the first checked checkbox.
 		expect(document.activeElement).toBe(checkbox(menu, 'Prio'));
 	});
@@ -181,7 +181,7 @@ describe('menu "Spalten" (ADR-0030)', () => {
 
 		expect(headerIds()).not.toContain('created');
 		expect(table().querySelector('td[data-col="created"]')).toBeNull();
-		expect(screen.getByRole('rowheader', { name: /^Offen/ }).getAttribute('colspan')).toBe('8');
+		expect(screen.getByRole('rowheader', { name: /^Offen/ }).getAttribute('colspan')).toBe('9');
 		expect(JSON.parse(localStorage.getItem('byl-columns-tickets') ?? '')).toEqual({
 			v: 1,
 			widths: {},
@@ -202,6 +202,7 @@ describe('menu "Spalten" (ADR-0030)', () => {
 		await fireEvent.click(checkbox(menu, 'Quelle'));
 
 		expect(headerIds()).toEqual([
+			'select',
 			'key',
 			'priority',
 			'status',

@@ -58,6 +58,7 @@
 		ticketListData
 	} from '$lib/stores/ticket-list.svelte';
 	import { TicketOpenModeStore, setTicketOpenMode } from '$lib/stores/open-mode.svelte';
+	import { BulkEditStore, bulkEditData, setBulkEditStore } from '$lib/stores/bulk-edit.svelte';
 	import { inboxItemHref } from '$lib/ticket-links';
 
 	// Shell of every signed-in page (E2 plan, T-4). The root layout renders it only with a
@@ -97,6 +98,9 @@
 		})
 	);
 	const detail = setTicketDetailStore(new TicketDetailStore(ticketDetailData(pb), auth, tickets));
+	// Bulk actions on the chosen rows of the table (plan BI-2, ADR-0036 §3): one request per ticket
+	// through the Record API, results and "Rückgängig" as flags.
+	setBulkEditStore(new BulkEditStore(bulkEditData(pb), auth, tickets, flags));
 	// The inbox (E4 plan, T-4): new entries in full, for the view and the count at the switch.
 	const inbox = setInboxStore(new InboxStore(inboxData(pb), auth, flags));
 	const activity = setTicketActivityStore(

@@ -23,7 +23,9 @@
 	// the default values status, priority, project and tags for every chosen entry. Title and
 	// description come from each entry. The entries are converted one after the other; a progress
 	// bar and a live region follow, failures are listed per entry with their reason, and entries
-	// that succeeded stay converted. No due date: the date at the sender never becomes one (P-5).
+	// that succeeded stay converted. No due date by itself: the date at the sender never becomes one
+	// (P-5); among chosen events the checkbox "Datum des Termins als Fälligkeit" (off at first, plan
+	// BI-2) gives each event the date of its start.
 	// On the modal building block (ADR-0025 section 3, size M): while the run goes on nothing
 	// closes, and Escape keeps its own rule "Nach diesem Eintrag anhalten" (plan UI-4).
 	let {
@@ -35,7 +37,8 @@
 		onclose
 	}: {
 		/** Chosen new entries, in the order of the table. */
-		items: readonly Pick<InboxItemSummary, 'id' | 'title'>[];
+		items: readonly (Pick<InboxItemSummary, 'id' | 'title'> &
+			Partial<Pick<InboxItemSummary, 'kind' | 'sourceDate'>>)[];
 		converter: BulkConverter;
 		/** Projects that can be chosen (the active ones). */
 		projects?: readonly ProjectRef[];
@@ -57,7 +60,9 @@
 		project: `${uid}-project`,
 		projectHint: `${uid}-project-hint`,
 		tags: `${uid}-tags`,
-		tagsError: `${uid}-tags-error`
+		tagsError: `${uid}-tags-error`,
+		eventDue: `${uid}-event-due`,
+		eventDueHint: `${uid}-event-due-hint`
 	};
 
 	let status = $state<Status>(DEFAULT_STATUS);
@@ -66,12 +71,17 @@
 	let tagIds = $state<string[]>([]);
 	let tagText = $state('');
 	let tagError = $state<string | null>(null);
+	let dueFromEvent = $state(false);
 	/** The run has started; the form gives way to progress and results. */
 	let started = $state(false);
 
 	let closeButton = $state<HTMLButtonElement>();
 
 	const count = $derived(items.length);
+	/** Chosen events with a date (plan BI-2); only then the checkbox appears. */
+	const events = $derived(
+		items.filter((item) => item.kind === 'event' && typeof item.sourceDate === 'string').length
+	);
 	const heading = $derived(count === 1 ? '1 Eintrag umwandeln' : `${count} Einträge umwandeln`);
 	const chosenTags = $derived(
 		tagIds.flatMap((tagId) => {
@@ -101,7 +111,8 @@
 			status,
 			priority,
 			project: project === '' ? null : project,
-			tags: tagIds
+			tags: tagIds,
+			dueFromEvent: events > 0 && dueFromEvent
 		});
 		await tick();
 		closeButton?.focus();
@@ -135,8 +146,24 @@
 		<form id={ids.form} class="form" onsubmit={start}>
 			<p class="hint">
 				Titel und Text kommen aus dem jeweiligen Eintrag. Diese Werte gelten für alle; eine
-				Fälligkeit wird nicht gesetzt.
+				Fälligkeit wird nur auf Wunsch gesetzt.
 			</p>
+			{#if events > 0}
+				<div class="check">
+					<input
+						id={ids.eventDue}
+						type="checkbox"
+						bind:checked={dueFromEvent}
+						aria-describedby={ids.eventDueHint}
+					/>
+					<label for={ids.eventDue}>Datum des Termins als Fälligkeit</label>
+					<p class="hint" id={ids.eventDueHint}>
+						{events === 1
+							? 'Gilt für 1 Termin; andere Einträge bleiben ohne Fälligkeit.'
+							: `Gilt für ${events} Termine; andere Einträge bleiben ohne Fälligkeit.`}
+					</p>
+				</div>
+			{/if}
 			<div class="row">
 				<div class="field">
 					<label for={ids.status}>Status</label>
@@ -249,7 +276,7 @@
 <style>
 	h3 {
 		margin-bottom: 0.25rem;
-		font-size: 0.875rem;
+		font-size: var(--font-size-body);
 		font-weight: 600;
 	}
 
@@ -271,7 +298,7 @@
 	}
 
 	label {
-		font-size: 0.8125rem;
+		font-size: var(--font-size-control);
 		font-weight: 500;
 		color: var(--color-text-muted);
 	}
@@ -284,8 +311,26 @@
 	}
 
 	.hint {
-		font-size: 0.8125rem;
+		font-size: var(--font-size-control);
 		color: var(--color-text-muted);
+	}
+
+	/* "Datum des Termins als Fälligkeit": box and name in one line, the hint below the name. */
+	.check {
+		display: grid;
+		grid-template-columns: auto minmax(0, 1fr);
+		gap: 0.25rem 0.5rem;
+		align-items: center;
+	}
+
+	.check label {
+		font-size: var(--font-size-body);
+		font-weight: 400;
+		color: var(--color-text);
+	}
+
+	.check .hint {
+		grid-column: 2;
 	}
 
 	.progress {
@@ -306,7 +351,7 @@
 	.created ul {
 		display: grid;
 		gap: 0.25rem;
-		font-size: 0.8125rem;
+		font-size: var(--font-size-control);
 	}
 
 	.failures li {
@@ -316,7 +361,7 @@
 	}
 
 	.created {
-		font-size: 0.8125rem;
+		font-size: var(--font-size-control);
 	}
 
 	.created a {

@@ -148,7 +148,7 @@ describe('column sort (E3 plan, package 9)', () => {
 		const table = screen.getByRole('table');
 		const plain = within(table)
 			.getAllByRole('columnheader')
-			.filter((th) => th.querySelector('button') === null)
+			.filter((th) => th.querySelector('button') === null && th.dataset.col !== 'select')
 			.map((th) => th.textContent?.trim());
 		expect(plain).toEqual(['Tags', 'Aktionen']);
 		expect(table.querySelector('caption')?.textContent).toMatch(/Standard-Reihenfolge/);

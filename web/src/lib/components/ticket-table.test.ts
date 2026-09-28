@@ -173,6 +173,7 @@ describe('ticket table', () => {
 				header.getAttribute('scope')
 			]);
 		expect(headers).toEqual([
+			['', 'col'],
 			['Key', 'col'],
 			['Prio', 'col'],
 			['Status', 'col'],
@@ -186,12 +187,22 @@ describe('ticket table', () => {
 		expect(screen.queryByRole('region', { name: /^Tickets/ })).toBeNull();
 		expect(table.parentElement?.classList.contains('frame')).toBe(true);
 		// Every header and cell names its column; the widths stand in the colgroup.
-		const columns = ['key', 'priority', 'status', 'title', 'project', 'tags', 'due', 'created'];
+		const columns = [
+			'select',
+			'key',
+			'priority',
+			'status',
+			'title',
+			'project',
+			'tags',
+			'due',
+			'created'
+		];
 		const marks = (cells: Element[]) => cells.map((cell) => cell.getAttribute('data-col'));
 		expect(marks(within(table).getAllByRole('columnheader'))).toEqual([...columns, 'actions']);
 		const row = table.querySelector('tr[data-ticket-id]') as HTMLElement;
 		expect(marks([...row.children])).toEqual([...columns, 'actions']);
-		expect(table.querySelectorAll('colgroup > col')).toHaveLength(9);
+		expect(table.querySelectorAll('colgroup > col')).toHaveLength(10);
 		// Nothing gave way for lack of space, so the caption does not point to the panel.
 		expect(table.querySelector('caption')?.textContent).not.toMatch(/Weitere Spalten/);
 	});
@@ -710,7 +721,7 @@ describe('ticket table: grouping (E3 plan, package 13)', () => {
 		expect(screen.getByRole('rowgroup', { name: 'Wartet, 1 Ticket' })).toBe(bodies[1]);
 		const head = within(bodies[0]!).getByRole('rowheader', { name: 'Offen, 2 Tickets' });
 		expect(head.getAttribute('scope')).toBe('rowgroup');
-		expect(head.getAttribute('colspan')).toBe('9');
+		expect(head.getAttribute('colspan')).toBe('10');
 		expect(groupTitles(bodies[0]!)).toEqual(['Offen zwei', 'Offen eins']);
 		expect(screen.getByText('3 Tickets')).toBeTruthy();
 		expect(document.querySelector('caption')?.textContent).toMatch(
@@ -840,7 +851,7 @@ describe('ticket table: two levels of groups (plan OR-3)', () => {
 		expect(waiting).toBe(bodies()[2]);
 		const head = within(bodies()[1]!).getByRole('rowheader', { name: 'Offen, 2 Tickets' });
 		expect(head.getAttribute('scope')).toBe('rowgroup');
-		expect(head.getAttribute('colspan')).toBe('9');
+		expect(head.getAttribute('colspan')).toBe('10');
 		expect(head.closest('tr')?.classList.contains('level-2')).toBe(true);
 		expect(document.querySelector('caption')?.textContent).toMatch(
 			'gruppiert nach Projekt, dann nach Status'

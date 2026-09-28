@@ -1,6 +1,6 @@
 # E6-Plan, Teil „Bulk, Inline und Ansicht“: Öffnungsmodus, Sammelaktionen, Bearbeiten in Zellen
 
-- **Stand:** BI-1 umgesetzt (Öffnungsmodus). BI-2 und BI-3 folgen.
+- **Stand:** BI-1 umgesetzt (#148, Öffnungsmodus), BI-2 umgesetzt (Auswahl und Sammelaktionen). BI-3 folgt.
 - **Grundlage:**
   - Arbeitspaket „Bulk & Inline & Ansicht“ (2026-09-28): Öffnungsmodus wie Jira, Auswahlspalte mit Sammelaktionen und Rückgängig, Inline-Bearbeitung in Zellen.
   - [ADR-0036](../adr/0036-sammelbearbeitung-inline-und-oeffnungsmodus.md) (neu), [ADR-0025](../adr/0025-ui-konsistenz-overlay-system.md) (Overlays, Nachtrag 15), [ADR-0026](../adr/0026-einstellungsbereich-und-hinweis-bausteine.md) (Hinweise), [ADR-0009](../adr/0009-fehlerfarbe.md) (Rot nur für echte Fehler), [ADR-0029](../adr/0029-glas-materialien.md) (Glas nur in der Bedienebene), [ADR-0030](../adr/0030-spalten-breiten-und-kompakte-zeilen.md) (Spalten), [ADR-0031](../adr/0031-herkunft-sichern.md) Nachtrag B (Löschen mit Quellen), [ADR-0033](../adr/0033-unteraufgaben.md) (Unteraufgaben), [ADR-0021](../adr/0021-regelmodell-wiederkehrende-aufgaben.md) bis [ADR-0024](../adr/0024-serien-aus-kalendern.md) (Wiederholungen)
@@ -19,7 +19,7 @@
 | Paket | Inhalt | Manifest |
 |---|---|---|
 | BI-1 | Öffnungsmodus „Seitenpanel“/„Vollansicht“ pro Gerät, „Im Seitenpanel öffnen“ in der Vollansicht, Vollansicht ersetzt das Panel, alle Ticket-Links im gemerkten Modus | BYL-E6-320, BYL-E6-321 (manuell) |
-| BI-2 | Auswahlspalte, Sammel-Aktionsleiste (Fälligkeit, Priorität, Status, Projekt, Tags, Erledigen, Löschen) mit Fortschritt, Ergebnis und Rückgängig; „Datum des Termins als Fälligkeit“ beim Umwandeln | ab BYL-E6-322 |
+| BI-2 | Auswahlspalte, Sammel-Aktionsleiste (Fälligkeit, Priorität, Status, Projekt, Tags, Erledigen, Löschen) mit Fortschritt, Ergebnis und Rückgängig; „Datum des Termins als Fälligkeit“ beim Umwandeln | BYL-E6-322 bis BYL-E6-324, BYL-E6-325 (manuell) |
 | BI-3 | Bearbeiten in Zellen (Priorität, Status, Fälligkeit, Projekt, Tags) über kleine Popover | folgt |
 
 ## 3. Entscheidungen
@@ -32,16 +32,31 @@
 | 2026-09-28 | BI-1 | **Nie beide:** Die Route entscheidet. `(tickets)/+layout.svelte` gibt `ViewWithPanel` auf `/voll` kein Panel, `tickets/[id]/+layout.svelte` rendert `TicketPanel` dort nicht. `ViewWithPanel` rendert den Inhalt ohne Panel mit `display: contents` statt `display: none`, weil das Modal der Vollansicht sonst nicht erschiene. |
 | 2026-09-28 | BI-1 | **Schließen:** × der Vollansicht führt zur Liste (`listHref`) und fokussiert den Titel-Link der Zeile; ohne Zeile regelt `TicketTable` den Fokus wie beim Schließen des Panels. |
 | 2026-09-28 | BI-1 | **Ungespeichertes:** Der Wechsel zwischen Panel und Vollansicht desselben Tickets fragt nicht, weil die Entwürfe in den Stores liegen und das Layout beide Routen teilt (`TICKET_ROUTES`); die bestehende Inline-Frage gilt beim Verlassen des Tickets aus der Vollansicht. Eine Frage beim Moduswechsel wäre ohne Verlust und daher nur Reibung. |
+| 2026-09-28 | BI-2 | **Architektur:** clientgesteuerte Einzelaufrufe über die Record-API bzw. die Löschroute, höchstens 4 zugleich, statt eines Bulk-Endpunkts. Die Wächter der Einzelpfade hängen an den Request-Hooks (`onRecordUpdateRequest`: Nutzer im Verlauf, `expected_updated`, `force`/`complete_children`, `recurrence`, `source`) und an der `updateRule`; eine Hook-Route mit `$app.save()` liefe an ihnen vorbei. Teil-Erfolg, Fehler je Ticket und Fortschritt ergeben sich so ohne eigene Mechanik (ADR-0036 §3, Alternativen). |
+| 2026-09-28 | BI-2 | **Auswahl:** eigene Pflichtspalte `select` (2,5rem) vorn statt eines Kästchens in der Key-Zelle, damit Auswahl und „erledigt“ an getrennten Orten mit getrennten Namen stehen; die ganze Zelle ist das `label`, die Zeile ignoriert Klicks darin. Umschalt wird beim Drücken des Zeigers bzw. der Taste in der Zelle gemerkt (der Klick über das `label` trägt die Taste nicht verlässlich). Kopf-Checkbox über alle gefilterten Tickets, auch in zugeklappten Gruppen; keine Gruppenkopf-Auswahl (ADR-0036 §2). |
+| 2026-09-28 | BI-2 | **Leiste:** eigener Baustein `BulkActionBar` auf Glas (thick, `sticky` über der Tabelle, unter der festen Kopfzeile ab 64rem), zehnte Datei der Glas-Allowlist (ADR-0029 Nachtrag). Priorität und Status als Menüs (sofort), der Rest in Modals S/M bzw. `ConfirmDialog`; kein Dialog aus einem Dialog. |
+| 2026-09-28 | BI-2 | **Erledigen:** Unteraufgaben zuerst, dann die übrigen; Frage mit der Checkbox „Unteraufgaben mit erledigen“ (an) nur, wenn ein gewähltes Ticket offene blockierende Unteraufgaben hat, die nicht selbst gewählt sind. Ohne sie lehnt der Hook ab, das Ticket steht mit den Keys im Ergebnis. `force` nur einzeln. |
+| 2026-09-28 | BI-2 | **Rückgängig:** je Ticket die geänderten Felder mit den Werten von vorher, mit `expected_updated` (der Hook prüft `updated` für jedes Feld, ADR-0032 §6); nach „Erledigen“ Wiedereröffnen mit dem Status von vorher und die mit erledigten Unteraufgaben. Konflikte einer Serie meldet der Hook (`reopenConflicts`). Kein Rückgängig nach „Löschen“ (Papierkorb). |
+| 2026-09-28 | BI-2 | **„Datum der Quelle“:** nur Hauptquellen der Art `event` mit `source_date` (Kalendertermine aus `.ics` und Google Calendar), Berliner Datum des Beginns; eine Anfrage `kind = event && ticket.source_item = id` statt einer je Ticket. Mail, Nachricht, Chat und Link liefern kein Termindatum. „Gesammelt umwandeln“ bekommt die Checkbox „Datum des Termins als Fälligkeit“ (aus); einzeln gibt es seit E4 „Als Fälligkeit übernehmen“. |
+| 2026-09-28 | BI-2 | **Zahl der Quellen beim Löschen:** eine Anfrage über alle verknüpften Einträge (nur `ticket`), gezählt im Client, weil die statische Regel der Datenschicht nur Filter aus Konstanten erlaubt und eine Liste von IDs keine Konstante ist. |
+| 2026-09-28 | BI-2 | `BulkConvertDialog` zieht auf die Schriftgrößen-Tokens und fällt von der Liste (`no-own-font-sizes.test.ts` jetzt 172). |
 | 2026-09-28 | BI-1 | **Links:** `ticketLinks()` liefert `href(id, url)` (mit Listen-Query) und `path(id)` (ohne, für Eingang, Wiederholungen, Ergebnisse) im gemerkten Modus; ohne Kontext das Panel. In der Vollansicht bleiben Pfad und Unteraufgaben Links auf Vollansichten; nach „Neues Ticket“ bleibt das neue Ticket im Panel, in dem das Formular stand. |
 
 ## 4. Status
 
 | Paket | Stand |
 |---|---|
-| BI-1 | umgesetzt |
-| BI-2 | offen |
+| BI-1 | gemergt (#148) |
+| BI-2 | umgesetzt |
 | BI-3 | offen |
 
 ## 5. Offene Punkte
 
-- Manuelle Browser-Prüfungen (BYL-E6-321).
+- Manuelle Browser-Prüfungen (BYL-E6-321, BYL-E6-325).
+- Auswahl über Gruppenköpfe ist zurückgestellt (ADR-0036, Alternativen); nachrüstbar, falls der Alltag sie braucht.
+
+## 6. Hinweise für den Papierkorb (ADR-0037)
+
+- **Sammel-Löschen** läuft je Ticket über die Route „Ticket löschen mit Quellenbehandlung“; ein Papierkorb muss dort ansetzen (nicht im Store), damit Einzel- und Sammel-Löschen gleich bleiben. Mit ihm kann „Löschen“ ein „Rückgängig“ im Flag bekommen (heute ausdrücklich keins, der Dialog sagt „nicht rückgängig“).
+- **Rückgängig nach Projektwechsel** vergibt einen weiteren Key; ein wiederhergestelltes Ticket behält dagegen seinen Key (Nummernkreise, siehe [Offene Reste](offene-reste.md) §6).
+- **`expected_updated`** schützt „Rückgängig“ vor dem Überschreiben; ein Wiederherstellen aus dem Papierkorb sollte denselben Maßstab anlegen (nichts still überschreiben).
