@@ -69,26 +69,26 @@
 	</svelte:element>
 	<ol class="timeline">
 		<li>
-			Das Ticket für {day(fixed.first.due)} erscheint am {day(fixed.first.appeared)}.
+			Das Ticket für {day(fixed.first.due)} erscheint am {day(fixed.first.appeared)}
 		</li>
 		<li>
 			Erledigt am {day(fixed.onTime.done)}: Das nächste ist {day(fixed.onTime.next.due)} fällig und erscheint
-			am {day(fixed.onTime.next.appeared)}.
+			am {day(fixed.onTime.next.appeared)}
 		</li>
 		<li>
 			Zu früh erledigt ({day(fixed.early.done)}): Nichts ändert sich, das Ticket für {day(
 				fixed.early.next.due
-			)} erscheint trotzdem am {day(fixed.early.next.appeared)}.
+			)} erscheint trotzdem am {day(fixed.early.next.appeared)}
 		</li>
 		<li>
 			Etwas später erledigt ({day(fixed.lateWithinLead.done)}): Auch dann erscheint das nächste wie
-			geplant am {day(fixed.lateWithinLead.next.appeared)}.
+			geplant am {day(fixed.lateWithinLead.next.appeared)}
 		</li>
 		<li>
 			Erst am {day(fixed.late.done)} erledigt: Solange das Ticket offen war, entstand kein neues. Das
 			Ticket für {day(fixed.late.next.due)} erscheint erst jetzt, am {day(
 				fixed.late.next.appeared
-			)}; fällig bleibt {day(fixed.late.next.due)}.
+			)}; fällig bleibt {day(fixed.late.next.due)}
 		</li>
 		<li>
 			Drei Wochen liegen gelassen, erledigt am {day(fixed.leftLong.done)}: Die verpassten Montage
@@ -96,7 +96,7 @@
 			{overdue === 1 ? '1 Tag' : `${overdue} Tage`} überfällig); {joinWords(skippedFixed)} gelten als
 			übersprungen, das Ticket sagt es. Danach geht es normal weiter: Das Ticket für {day(
 				fixed.leftLong.after.due
-			)} erscheint am {day(fixed.leftLong.after.appeared)}.
+			)} erscheint am {day(fixed.leftLong.after.appeared)}
 		</li>
 		<li>
 			Mit Vorlauf 0 erscheint das Ticket am Montag selbst ({day(fixed.leadZero.appeared)}).
@@ -109,13 +109,13 @@
 	<ol class="timeline">
 		<li>
 			Erledigt am {day(completion.onTime.done)}: Das nächste ist {day(completion.onTime.next.due)} fällig
-			und erscheint am {day(completion.onTime.next.appeared)}.
+			und erscheint am {day(completion.onTime.next.appeared)}
 		</li>
 		<li>
-			Früher erledigt ({day(completion.early.done)}): fällig {day(completion.early.next.due)}.
+			Früher erledigt ({day(completion.early.done)}): fällig {day(completion.early.next.due)}
 		</li>
 		<li>
-			Später erledigt ({day(completion.late.done)}): fällig {day(completion.late.next.due)}.
+			Später erledigt ({day(completion.late.done)}): fällig {day(completion.late.next.due)}
 			Verpasste Termine gibt es hier nicht.
 		</li>
 		<li>
@@ -125,9 +125,9 @@
 			)} und ist {day(completion.leadOverInterval.next.due)} fällig.
 		</li>
 		<li>
-			Monatlich, immer am Fälligkeitstag erledigt: {completion.monthly.map(plain).join(' → ')}. Der
-			Tag wandert, weil jedes Mal ab dem Erledigen gerechnet wird. Für „immer am Monatsletzten“ nimm
-			den festen Rhythmus mit „Letzter Tag“.
+			Monatlich, immer am Fälligkeitstag erledigt: {completion.monthly.map(plain).join(' → ')} Der Tag
+			wandert, weil jedes Mal ab dem Erledigen gerechnet wird. Für „immer am Monatsletzten“ nimm den festen
+			Rhythmus mit „Letzter Tag“.
 		</li>
 	</ol>
 
@@ -164,18 +164,18 @@
 		<li>
 			Monatlich am 31.: {calendar.day31.map(plain).join(', ')}, im Schaltjahr {plain(
 				calendar.day31Leap
-			)}. In kürzeren Monaten gilt der letzte Tag, danach wieder der 31.; der Tag wandert nicht.
-			„Letzter Tag“ gibt es als eigene Wahl.
+			)} In kürzeren Monaten gilt der letzte Tag, danach wieder der 31.; der Tag wandert nicht. „Letzter
+			Tag“ gibt es als eigene Wahl.
 		</li>
 		<li>
 			Jährlich am 29.02.: in Schaltjahren am {plain(calendar.feb29[0] ?? '')}, sonst am {plain(
 				calendar.feb29[1] ?? ''
-			)}.
+			)}
 		</li>
 		<li>
 			Alle 2 Wochen am Montag und Freitag, Beginn {day(calendar.monFriStart)}: {calendar.monFri
 				.map(day)
-				.join(', ')}. Gezählt wird ab der Woche des Beginns.
+				.join(', ')} Gezählt wird ab der Woche des Beginns.
 		</li>
 	</ul>
 

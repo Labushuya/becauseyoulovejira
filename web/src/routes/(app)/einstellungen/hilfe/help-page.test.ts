@@ -207,6 +207,8 @@ describe('help page (EH-9)', () => {
 			expect(content, phrase).toContain(phrase);
 		}
 		expect(content).not.toMatch(/20(2[6-9])/);
+		// A date at the end of a sentence carries one full stop, not two.
+		expect(content).not.toMatch(/\d\.\./);
 		expect(section.querySelectorAll('table')).toHaveLength(0);
 		expect(section.querySelectorAll('ol')).toHaveLength(3);
 	});
