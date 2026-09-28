@@ -225,6 +225,12 @@
 						Das geht nur in Aufzählungen, nicht in nummerierten Listen.
 					</li>
 					<li>
+						Die Kästchen der Beschreibung und deiner eigenen Kommentare hakst du direkt in der
+						Ansicht ab, ohne „Bearbeiten“. Hat jemand die Beschreibung inzwischen geändert, wird
+						nichts überschrieben: Du bekommst einen Hinweis und hakst in der neuen Fassung erneut
+						ab.
+					</li>
+					<li>
 						HTML im Text bleibt Text, Bilder werden nicht geladen. „Vorschau“ zeigt, wie es
 						aussieht.
 					</li>

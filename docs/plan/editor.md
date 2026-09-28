@@ -1,6 +1,6 @@
 # E6-Plan, Teil Editor: Unterstreichen, Checklisten und ein Editor wie Jira
 
-- **Stand:** RT-0 gemergt (#114, 2026-09-28, Weg B). Stufe A (RT-1, RT-2) in Arbeit, Stufe B (RT-3 bis RT-6) offen.
+- **Stand:** RT-0 gemergt (#114, 2026-09-28, Weg B), RT-1 gemergt (#115), RT-2 in Arbeit. Stufe B (RT-3 bis RT-6) offen.
 - **Grundlage:**
   - [ADR-0032](../adr/0032-editor-tiptap-markdown.md) (Tiptap, Markdown als Speicherformat, Brücke über die markdown-it-Instanz der Anzeige, Spike RT-0)
   - [ADR-0008](../adr/0008-markdown-rendering-und-sanitizing.md), [ADR-0006](../adr/0006-frontend-zustand-und-datenzugriff.md) §5, [ADR-0025](../adr/0025-ui-konsistenz-overlay-system.md), [ADR-0026](../adr/0026-einstellungsbereich-und-hinweis-bausteine.md), [ADR-0029](../adr/0029-glas-materialien.md), [ADR-0030](../adr/0030-spalten-breiten-und-kompakte-zeilen.md), [ADR-0031](../adr/0031-herkunft-sichern.md)
@@ -156,21 +156,34 @@ Siehe ADR-0032 §1 und §2. Der Serializer normalisiert beim ersten Speichern au
 | 2026-09-28 | RT-1 | **`ADD_URI_SAFE_ATTR`:** DOMPurify prüft die Werte nicht URI-sicherer Attribute gegen `ALLOWED_URI_REGEXP`; ohne die Liste verlören `type`, `aria-label`, `data-task` und `start` ihre Werte. Damit ist der alte Fehler behoben, dass `3. drei` bei 1 begann. |
 | 2026-09-28 | RT-1 | **Darstellung:** Die Checkbox steht an der Stelle des Aufzählungszeichens (`li[data-task]` ohne Listenzeichen, nur Abstände; das Aussehen kommt aus `base.css`, `no-own-controls.test.ts`). `Markdown.svelte` und die Hilfeseite ziehen dabei auf die Schriftgrößen-Tokens, soweit es welche gibt (7 Werte, `no-own-font-sizes.test.ts` jetzt 235); Überschrift 1 und 3 bis 6 behalten ihre Zahlen, weil es für 1.25rem und 1rem kein Token gibt. |
 | 2026-09-28 | RT-1 | **Typen für `markdown-it-ins`:** Das Paket bringt keine mit; eine kleine Deklaration `web/src/markdown-it-ins.d.ts` genügt. Der Korpus steht in `.prettierignore`, damit Prettier die Texte nicht umschreibt. `npm audit`: `markdown-it-ins` ohne Befund; die drei bekannten niedrigen Befunde (`cookie` über `@sveltejs/kit`) bestehen unabhängig davon. |
+| 2026-09-28 | RT-2 | **`toggleTask` mit dem Parser der Anzeige:** Die Aufgabe wird über ihren Index gefunden, ihre Zeile über `map` des ersten Absatzes, und in der Zeile nur das Zeichen hinter den Containern (Einrückung, `>`, Listenzeichen). Danach wird neu geparst und geprüft; passt es nicht, ändert sich nichts. Liegt in `lib/markdown.ts` statt in `domain/`, weil `domain/` keine Pakete importieren darf (`purity.test.ts`). |
+| 2026-09-28 | RT-2 | **Bedienbar im DOM, nicht im HTML:** `Markdown.svelte` schaltet die Checkboxen nach jedem Rendern mit `ontoggletask` frei (`$effect`), ein `change`-Handler am Container nimmt sie, gesperrt wird wie beim Häkchen der Zeile mit `aria-disabled` statt `disabled`, damit der Fokus bleibt. Ein gesperrter Klick wird zurückgesetzt. `taskHint` beschreibt per `aria-describedby`, warum gesperrt ist. |
+| 2026-09-28 | RT-2 | **`updated` statt Text vergleichen, mit einem Wiederholversuch:** Der Hook vergleicht `updated` (kein Hash über 100 000 Zeichen im Body). Weil so auch fremde Felder (Status über das Häkchen der Liste, Tags im selben Panel) die Beschreibung „veralten“ lassen, lädt die SPA nach der Ablehnung neu und sendet einmal erneut, wenn die Beschreibung gleich geblieben ist. Beim Speichern gilt als Basis die Beschreibung beim Beginn der Bearbeitung. |
+| 2026-09-28 | RT-2 | **Neu gelesen in der Transaktion:** `checkExpectedUpdated` liest das Ticket im `txApp` statt `record.original()` zu nehmen. Zwei gleichzeitige Anfragen mit derselben Erwartung kommen so nicht beide durch (Integrationstest). |
+| 2026-09-28 | RT-2 | **Kein Dialog aus einem Dialog:** Die Konfliktfrage steht als `SectionMessage` (warning, `live`) mit „Überschreiben“ und „Verwerfen und neu laden“ an der Stelle von „Speichern“ und „Abbrechen“, in Panel und Vollansicht gleich. `ConfirmDialog.options` wird nicht gebraucht. Dabei fiel auf, dass „Löschen …“ in der Vollansicht seine Bestätigung schon heute über das XL-Modal legt (offener Punkt). |
+| 2026-09-28 | RT-2 | **Meldung beim Abhaken inline statt als Flag:** `TicketDescription` hat keinen Zugriff auf die Flags und ist ein Abschnitt mit festem Platz; „Feld- und Formularfehler bleiben inline“ (CLAUDE.md §7). Die Meldung steht unter der Beschreibung (`role="alert"`) und gilt nur für das Ticket, auf dem sie entstand. |
+| 2026-09-28 | RT-2 | **Kommentare ohne `expected_updated`:** Nur der Autor darf einen Kommentar ändern; ein Konflikt entsteht höchstens zwischen zwei eigenen Tabs. Eine Prüfung bräuchte einen neuen Hook für `comments` und wäre mehr als das Paket. |
+| 2026-09-28 | RT-2 | **Verlauf:** Ändert eine Beschreibung nur das Zeichen einer Aufgabe, heißt der Eintrag „Aufgabe abgehakt: …“ bzw. „Aufgabe wieder offen: …“ (zeilenbasiert in `history-format.ts`, ohne Parser; Maskierungen der Vorlagen ohne Backslash, höchstens 80 Zeichen). Alt und Neu bleiben aufklappbar. |
+| 2026-09-28 | RT-2 | `TicketDescription` und `CommentItem` ziehen auf die Schriftgrößen-Tokens und fallen von der Liste (`no-own-font-sizes.test.ts` jetzt 228). Die Hilfe erklärt das Abhaken. |
 
 ## 5. Status
 
 | Paket | Stand |
 |---|---|
 | RT-0 | gemergt (#114) |
-| RT-1 | in Arbeit |
-| RT-2 | offen |
+| RT-1 | gemergt (#115) |
+| RT-2 | in Arbeit |
 | RT-3 bis RT-7 | Stufe B, nach Freigabe |
 
 ## 6. Offene Punkte
 
-- Manuelle Browser-Prüfungen der Pakete.
+- Manuelle Browser-Prüfungen der Pakete (BYL-E6-201, BYL-E6-205).
+- „Löschen …“ in der Vollansicht legt seine Bestätigung über das XL-Modal (seit HK-6 mit Radios über `ConfirmDialog.options`). Das widerspricht ADR-0025 §3 („kein Dialog aus einem Dialog“) und sollte eine Inline-Frage wie hier werden; das ist nicht Teil des Editors.
+- **Hinweise für die Unterprojekte:** Der Plan ändert weder Datenmodell noch Filter; Beschreibungen von Unterprojekt-Tickets nutzen dieselbe Anzeige. `expected_updated` gilt für jedes Ticket-Update und stört ein späteres Umhängen in ein Unterprojekt nicht, solange es ohne das Feld gesendet wird.
 - **Hinweise für Stufe B:**
   - `prosemirror-markdown` 1.13.8 verlangt `markdown-it` ^14; per `overrides` auf die Version der Anzeige heben, sonst liegen zwei Parser im Bundle.
   - Die Brücke braucht für `bulletList`, `orderedList` und `taskList` Attribute ohne Darstellung (`tight`, Aufzählungszeichen, Trennzeichen). Sonst ändern sich lockere Listen und zwei aufeinanderfolgende Listen verschmelzen.
   - Den harten Umbruch als `\n` schreiben (nicht `\\\n`) und den Text danach wie einen Zeilenanfang maskieren; `=`-Zeilen (Setext) und Tabellen-Trennzeilen am Zeilenanfang zusätzlich maskieren.
   - Tests brauchen eine Attrappe für `ClipboardEvent`.
+  - Der `RichTextEditor` schreibt über `store.setDraft` und `store.save` wie heute die `textarea`; `expected_updated` und die Konfliktfrage gelten damit ohne Zusatz. Checkboxen im Editor ändern den Entwurf, nicht die Ansicht.
+  - Der Korpus und `toggleTask` sind die Grundlage des Paritätstests; die Indizes von `data-task` müssen mit den `taskItem` der Brücke übereinstimmen (nur Aufzählungen, Dokumentreihenfolge).

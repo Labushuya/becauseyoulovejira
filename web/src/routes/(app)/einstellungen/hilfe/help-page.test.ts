@@ -113,6 +113,7 @@ describe('help page (EH-9)', () => {
 		expect(section.querySelectorAll('details[open]')).toHaveLength(0);
 		expect(text(section)).toContain('++unterstrichen++');
 		expect(text(section)).toContain('- [ ] offen');
+		expect(text(section)).toContain('direkt in der Ansicht ab');
 		expect(text(section)).toContain(RESTART_NEEDED.text);
 		expect(
 			within(section)
