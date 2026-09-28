@@ -249,7 +249,7 @@
 		width: 100%;
 		min-height: 1.5rem;
 		padding: 0.25rem 0.5rem;
-		font-size: 0.875rem;
+		font-size: var(--font-size-body);
 		color: var(--color-text);
 		text-align: left;
 		text-decoration: none;

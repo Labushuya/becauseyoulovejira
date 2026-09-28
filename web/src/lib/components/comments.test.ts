@@ -9,10 +9,13 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { DataError } from '$lib/data/errors';
 import { COMMENT_MAX_LENGTH, type Comment } from '$lib/domain/ticket';
 import { TicketActivityStore, type TicketActivityData } from '$lib/stores/ticket-activity.svelte';
+import type { Editor } from '@tiptap/core';
 import { useOverlayStubs } from '$lib/test/overlay-stubs';
+import { typeText, useProseMirrorStubs } from '$lib/test/prosemirror-stubs';
 import CommentList from './CommentList.svelte';
 
 useOverlayStubs();
+useProseMirrorStubs();
 
 /** The open question "Kommentar löschen?". */
 async function deleteQuestion() {
@@ -66,9 +69,30 @@ async function renderComments(initial: Comment[] = [comment()]) {
 	return { ...result, store, data, ondeleted };
 }
 
-function newCommentField() {
-	return screen.getByLabelText<HTMLTextAreaElement>('Neuer Kommentar (Markdown)');
+/** Opens the editor of a new comment (RT-6: behind "Kommentar hinzufügen …") and returns it. */
+async function openNewComment(): Promise<HTMLElement> {
+	await fireEvent.click(screen.getByRole('button', { name: 'Kommentar hinzufügen …' }));
+	return screen.findByRole('textbox', { name: 'Neuer Kommentar' }, { timeout: 5000 });
 }
+
+/** A comment editor in its source mode ("Markdown"), for typing with fireEvent.input. */
+async function sourceOf(label: string): Promise<HTMLTextAreaElement> {
+	await fireEvent.click(screen.getByRole('button', { name: 'Markdown' }));
+	return screen.findByLabelText<HTMLTextAreaElement>(`${label} (Markdown)`);
+}
+
+/** The new comment as Markdown. */
+async function newCommentField(): Promise<HTMLTextAreaElement> {
+	await openNewComment();
+	return sourceOf('Neuer Kommentar');
+}
+
+/** The editor of a comment being edited, once it has loaded. */
+function editEditor(): Promise<HTMLElement> {
+	return screen.findByRole('textbox', { name: 'Kommentar bearbeiten' }, { timeout: 5000 });
+}
+
+const tiptap = (element: HTMLElement) => (element as HTMLElement & { editor: Editor }).editor;
 
 function commentOf(name: RegExp) {
 	return screen.getByRole('article', { name });
@@ -169,8 +193,22 @@ describe('comment list', () => {
 });
 
 describe('new comment', () => {
+	it('opens the editor only on "Kommentar hinzufügen …" and puts the focus into it', async () => {
+		await renderComments();
+		expect(screen.queryByRole('button', { name: 'Kommentieren' })).toBeNull();
+		expect(screen.queryByRole('textbox', { name: 'Neuer Kommentar' })).toBeNull();
+
+		const field = await openNewComment();
+
+		await vi.waitFor(() => expect(document.activeElement).toBe(field));
+		expect(field.getAttribute('aria-multiline')).toBe('true');
+		// Compact: no text style menu in comments.
+		expect(screen.queryByRole('button', { name: /^Textstil/ })).toBeNull();
+	});
+
 	it('is locked without text and explains why', async () => {
 		const { data } = await renderComments();
+		const field = await openNewComment();
 		const send = screen.getByRole('button', { name: 'Kommentieren' });
 
 		expect(send.getAttribute('aria-disabled')).toBe('true');
@@ -179,25 +217,45 @@ describe('new comment', () => {
 		);
 		await fireEvent.click(send);
 		expect(data.createComment).not.toHaveBeenCalled();
-		expect(document.activeElement).toBe(newCommentField());
+		await vi.waitFor(() => expect(document.activeElement).toBe(field));
 	});
 
-	it('sends with the button and empties the field', async () => {
+	it('sends with the button, closes the field and returns the focus', async () => {
 		const { data } = await renderComments();
-		await fireEvent.input(newCommentField(), { target: { value: 'Neu hier' } });
+		await fireEvent.input(await newCommentField(), { target: { value: 'Neu hier' } });
 
 		await fireEvent.click(screen.getByRole('button', { name: 'Kommentieren' }));
 
 		await vi.waitFor(() => expect(data.createComment).toHaveBeenCalledWith(TICKET, 'Neu hier'));
-		await vi.waitFor(() => expect(newCommentField().value).toBe(''));
+		await vi.waitFor(() =>
+			expect(document.activeElement).toBe(
+				screen.getByRole('button', { name: 'Kommentar hinzufügen …' })
+			)
+		);
+		expect(screen.queryByLabelText('Neuer Kommentar (Markdown)')).toBeNull();
 		expect(screen.getByText('Neu hier')).toBeTruthy();
 	});
 
-	it('sends with Strg+Enter', async () => {
+	it('sends with Strg+Enter from the editor, formatted as Markdown', async () => {
 		const { data } = await renderComments();
-		await fireEvent.input(newCommentField(), { target: { value: 'Per Tastatur' } });
+		const field = await openNewComment();
+		const editor = tiptap(field);
+		editor.commands.focus('end');
+		typeText(editor.view, 'Per **Tastatur** gesendet');
 
-		await fireEvent.keyDown(newCommentField(), { key: 'Enter', ctrlKey: true });
+		await fireEvent.keyDown(field, { key: 'Enter', ctrlKey: true });
+
+		await vi.waitFor(() =>
+			expect(data.createComment).toHaveBeenCalledWith(TICKET, 'Per **Tastatur** gesendet')
+		);
+	});
+
+	it('sends with Strg+Enter from the source mode', async () => {
+		const { data } = await renderComments();
+		const field = await newCommentField();
+		await fireEvent.input(field, { target: { value: 'Per Tastatur' } });
+
+		await fireEvent.keyDown(field, { key: 'Enter', ctrlKey: true });
 
 		await vi.waitFor(() => expect(data.createComment).toHaveBeenCalledWith(TICKET, 'Per Tastatur'));
 	});
@@ -205,24 +263,24 @@ describe('new comment', () => {
 	it('keeps the text and shows a field error on failure', async () => {
 		const { data } = await renderComments();
 		data.createComment.mockRejectedValueOnce(new DataError('network'));
-		await fireEvent.input(newCommentField(), { target: { value: 'Bleibt stehen' } });
+		const field = await newCommentField();
+		await fireEvent.input(field, { target: { value: 'Bleibt stehen' } });
 
 		await fireEvent.click(screen.getByRole('button', { name: 'Kommentieren' }));
 
 		const error = await screen.findByText(/Server nicht erreichbar/);
 		expect(error.closest('.field-error')).not.toBeNull();
-		expect(newCommentField().value).toBe('Bleibt stehen');
-		expect(newCommentField().getAttribute('aria-invalid')).toBe('true');
-		expect(newCommentField().getAttribute('aria-describedby')).toContain(
-			error.closest('.field-error')?.id
-		);
+		const kept = screen.getByLabelText<HTMLTextAreaElement>('Neuer Kommentar (Markdown)');
+		expect(kept.value).toBe('Bleibt stehen');
+		expect(kept.getAttribute('aria-invalid')).toBe('true');
+		expect(kept.getAttribute('aria-describedby')).toContain(error.closest('.field-error')?.id);
 	});
 
 	it('limits the text to 20 000 characters', async () => {
 		await renderComments();
 
 		expect(COMMENT_MAX_LENGTH).toBe(20_000);
-		expect(newCommentField().maxLength).toBe(20_000);
+		expect((await newCommentField()).maxLength).toBe(20_000);
 	});
 });
 
@@ -230,8 +288,10 @@ describe('editing and deleting', () => {
 	it('edits an own comment and returns the focus to "Bearbeiten"', async () => {
 		const { data } = await renderComments();
 		await fireEvent.click(screen.getByRole('button', { name: /^Bearbeiten: / }));
-		const field = screen.getByLabelText<HTMLTextAreaElement>('Kommentar bearbeiten (Markdown)');
-		expect(document.activeElement).toBe(field);
+		const content = await editEditor();
+		await vi.waitFor(() => expect(document.activeElement).toBe(content));
+		expect(tiptap(content).getHTML()).toBe('<p>Mein <strong>fetter</strong> Kommentar</p>');
+		const field = await sourceOf('Kommentar bearbeiten');
 		expect(field.value).toBe('Mein **fetter** Kommentar');
 
 		await fireEvent.input(field, { target: { value: 'Geändert' } });
@@ -245,23 +305,29 @@ describe('editing and deleting', () => {
 		expect(document.activeElement).toBe(screen.getByRole('button', { name: /^Bearbeiten: / }));
 	});
 
-	it('saves an edit with Strg+Enter', async () => {
+	it('saves an edit with Strg+Enter in the editor', async () => {
 		const { data } = await renderComments();
 		await fireEvent.click(screen.getByRole('button', { name: /^Bearbeiten: / }));
-		const field = screen.getByLabelText<HTMLTextAreaElement>('Kommentar bearbeiten (Markdown)');
-		await fireEvent.input(field, { target: { value: 'Tastatur' } });
+		const content = await editEditor();
+		const editor = tiptap(content);
+		editor.commands.focus('end');
+		typeText(editor.view, ' neu');
 
-		await fireEvent.keyDown(field, { key: 'Enter', ctrlKey: true });
+		await fireEvent.keyDown(content, { key: 'Enter', ctrlKey: true });
 
 		await vi.waitFor(() =>
-			expect(data.updateComment).toHaveBeenCalledWith('comment00000001', 'Tastatur')
+			expect(data.updateComment).toHaveBeenCalledWith(
+				'comment00000001',
+				'Mein **fetter** Kommentar neu'
+			)
 		);
 	});
 
 	it('cancels an edit without a request', async () => {
 		const { data } = await renderComments();
 		await fireEvent.click(screen.getByRole('button', { name: /^Bearbeiten: / }));
-		await fireEvent.input(screen.getByLabelText('Kommentar bearbeiten (Markdown)'), {
+		await editEditor();
+		await fireEvent.input(await sourceOf('Kommentar bearbeiten'), {
 			target: { value: 'Verworfen' }
 		});
 
