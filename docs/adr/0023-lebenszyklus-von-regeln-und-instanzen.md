@@ -47,7 +47,7 @@ Verlässt eine Instanz `done` (Häkchen „Rückgängig“ oder Statuswechsel im
   - Dann löscht der Hook das Folgeticket und stellt `next_due` wieder her: bei `calendar` auf die Fälligkeit des gelöschten Tickets, bei `after_completion` auf leer.
   - Die Regel für gelöschte Instanzen aus §6 greift dabei nicht, denn der Hook setzt `next_due` nach dem Löschen ausdrücklich.
   - Der Fall ist das versehentliche Häkchen, und die Serie steht danach genau wie vorher. *(Nur für die zuletzt erledigte Instanz; eine ältere lehnt der Hook ab, siehe Nachtrag 4.)*
-- **Folgeticket schon bearbeitet:** Das Wiedereröffnen wird mit dem Feldfehler `validation_recurrence_open_instance` abgelehnt. Die Meldung lautet: „Von dieser Serie ist schon HAUS-12 offen. Erledige es zuerst oder löse ein Ticket aus der Serie.“ Das ist ein echter, abgelehnter Wunsch, also Fehlerfarbe nach [ADR-0009](0009-fehlerfarbe.md). Die Invariante bleibt hart.
+- **Folgeticket schon bearbeitet:** Das Wiedereröffnen wird mit dem Feldfehler `validation_recurrence_open_instance` abgelehnt. Die Meldung lautet: „Von dieser Serie ist schon HAUS-12 offen. Erledige es zuerst oder löse ein Ticket aus der Serie.“ Das ist ein echter, abgelehnter Wunsch, also Fehlerfarbe nach [ADR-0009](0009-fehlerfarbe.md). Die Invariante bleibt hart. *(Seit Nachtrag 4 steht die Ablehnung im Panel als Warnung mit dem Ausweg „Als normales Ticket wieder öffnen (aus der Serie lösen)“, weil sie eine Wahl anbietet; in der Tabelle bleibt sie ein Fehler-Flag mit dieser Aktion.)*
 - **Kein Folgeticket vorhanden** (Vorlauf noch nicht erreicht): Das Wiedereröffnen ist erlaubt.
   - Bei `after_completion` wird `next_due` geleert, denn die Instanz ist wieder offen.
   - Bei `calendar` bleibt `next_due`.
