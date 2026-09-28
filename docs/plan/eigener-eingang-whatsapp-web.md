@@ -85,3 +85,8 @@
 - Fehlgeschlagene Anmeldungen werden nicht gebremst: Ein Schlüssel hat rund 238 Bit, Raten ist aussichtslos.
 - Die Selektoren sind nach eigenem Wissen über den Aufbau von WhatsApp Web gebaut und nur mit eigenen Nachbauten getestet (kein Aufruf der echten Seite). Ob sie zur aktuellen Seite passen, zeigt erst der manuelle Test; sonst meldet die Erweiterung „Seitenstruktur nicht erkannt“ und `src/selectors.ts` braucht eine Anpassung.
 - Automatisch erfasst werden nur Nachrichten des gerade geöffneten Chats und nur bei offenem Tab (WhatsApp Web zeigt nur diesen Chat an).
+
+## 7. Verworfene Alternativen (Nutzerentscheidung 2026-09-29)
+
+- **WhatsApp Desktop (Windows) anbinden – verworfen:** Mitlesen der Windows-Benachrichtigungen von WhatsApp Desktop per Hilfsprogramm (`UserNotificationListener` bzw. lokale Benachrichtigungsdatenbank), UI-Automation der Desktop-App und Auslesen ihrer (verschlüsselten) lokalen Datenbank. Begründung: Nutzerentscheidung. Nachtrag in [ADR-0038](../adr/0038-eigener-eingang-und-whatsapp-web.md).
+- **Alternativen, die bleiben:** die Erweiterung für WhatsApp Web (EI-2, EI-3) und der Chat-Export; künftig „Teilen mit“ aus der Android-APK über denselben Eingang (`POST /api/byl/inbox/ingest`, `mode: manual`), festgehalten als Anforderung für S2b in [docs/plan/plattformen.md](plattformen.md) und [ADR-0028](../adr/0028-plattform-strategie.md). Der Plattform-Ausbau bleibt zurückgestellt.
