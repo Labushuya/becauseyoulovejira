@@ -1,17 +1,275 @@
-# Functions for byl-control.ps1: start, stop and autostart of becauseyoulovejira (E1 plan, package 8).
+# Functions for byl-control.ps1: start, stop, restart, status and autostart of becauseyoulovejira
+# (E1 plan package 8, ADR-0039).
 #
 # Dot-sourced by byl-control.ps1 and by the tests; loading the file has no side effects. The
-# selection and detection logic is pure (every input is a parameter), so the tests check it with
-# fake processes, sockets and log texts and never run the start or stop scripts themselves.
+# selection and decision logic is pure (every input is a parameter), so the tests check it with
+# fake processes, sockets, files and log texts. The file stays ASCII: German texts for the user
+# live in byl-control.ps1 (UTF-8 with BOM).
 
-# The only binding of the app (CLAUDE.md section 3).
-$BylHttpAddress = '127.0.0.1:8090'
-$BylPort = 8090
-$BylAppUrl = 'http://127.0.0.1:8090/'
-$BylHealthUrl = 'http://127.0.0.1:8090/api/health'
+# --- Address and port (ADR-0039 section 2) ----------------------------------------------------
+
+# Standard port of the app. The only place to change it is byl-config.json in the app folder
+# ({"port": <number>}, written by "byl-control.ps1 port <number>"); the app always binds to the
+# loopback address 127.0.0.1 (CLAUDE.md section 3).
+$BylDefaultPort = 8090
+$BylPortMin = 1024
+$BylPortMax = 65535
+$BylConfigName = 'byl-config.json'
 # PocketBase prints the installer link (/_/#/pbinstall/<token>) while no superuser exists.
 $BylInstallerMarker = 'pbinstal'
 $BylShortcutName = 'becauseyoulovejira.lnk'
+
+function Set-BylAddress {
+    # Points every address of this file at http://127.0.0.1:<Port>. Called once at load time with
+    # the standard port, and by byl-control.ps1 with the configured port or the port of the running
+    # instance.
+    param([Parameter(Mandatory = $true)][ValidateRange(1, 65535)][int]$Port)
+
+    $script:BylPort = $Port
+    $script:BylAppUrl = "http://127.0.0.1:$Port/"
+    $script:BylHealthUrl = "http://127.0.0.1:$Port/api/health"
+    $script:BylPresenceUrl = "http://127.0.0.1:$Port/api/byl/presence"
+    $script:BylAttentionUrl = "http://127.0.0.1:$Port/api/byl/attention"
+    # The mail helper talks to the app's own PocketBase only.
+    $script:BylMailHelperUrl = "http://127.0.0.1:$Port"
+}
+
+Set-BylAddress -Port $BylDefaultPort
+
+function Test-PortNumber {
+    # True for a whole number in the allowed range (no system ports below 1024).
+    param([AllowNull()][object]$Value)
+
+    return ($Value -is [int] -or $Value -is [long]) -and $Value -ge $BylPortMin -and $Value -le $BylPortMax
+}
+
+function ConvertTo-PortNumber {
+    # Port from user input ("8091"); $null for anything but digits in the allowed range.
+    param([AllowNull()][AllowEmptyString()][string]$Text)
+
+    if ([string]::IsNullOrWhiteSpace($Text) -or $Text.Trim() -notmatch '^\d{1,5}$') { return $null }
+    $port = [int]$Text.Trim()
+    if (-not (Test-PortNumber $port)) { return $null }
+    return $port
+}
+
+function Get-BylConfigPath {
+    param([Parameter(Mandatory = $true)][string]$AppDir)
+
+    return [System.IO.Path]::Combine($AppDir, $BylConfigName)
+}
+
+function ConvertFrom-BylConfig {
+    # Settings from the text of byl-config.json. No text (no file) or no "port" means the standard
+    # port. Returns Port and Problem: $null, 'Json' (not a JSON object) or 'Port' (not a number in
+    # the allowed range); with a problem Port is the standard port and the caller refuses to start,
+    # so a typing error never moves the app to an address nobody expects.
+    param([AllowNull()][AllowEmptyString()][string]$Text)
+
+    $standard = [pscustomobject]@{ Port = $BylDefaultPort; Problem = $null }
+    if ([string]::IsNullOrWhiteSpace($Text)) { return $standard }
+    try {
+        $value = $Text | ConvertFrom-Json
+    }
+    catch {
+        return [pscustomobject]@{ Port = $BylDefaultPort; Problem = 'Json' }
+    }
+    # The full type name: "-is [pscustomobject]" is true for every wrapped object, arrays included.
+    if ($null -eq $value -or $value -isnot [System.Management.Automation.PSCustomObject]) {
+        return [pscustomobject]@{ Port = $BylDefaultPort; Problem = 'Json' }
+    }
+    $port = $value.PSObject.Properties['port']
+    if ($null -eq $port) { return $standard }
+    if (-not (Test-PortNumber $port.Value)) {
+        return [pscustomobject]@{ Port = $BylDefaultPort; Problem = 'Port' }
+    }
+    return [pscustomobject]@{ Port = [int]$port.Value; Problem = $null }
+}
+
+function ConvertTo-BylConfigText {
+    # Text of byl-config.json for $Port.
+    param([Parameter(Mandatory = $true)][int]$Port)
+
+    return "{`r`n  `"port`": $Port`r`n}`r`n"
+}
+
+function Find-NextFreePort {
+    # The next port after $Start that $IsFree accepts (param($Port) -> $true if nothing listens),
+    # at most $Attempts ports; skips $Skip (8099 is kept for spikes, CLAUDE.md section 11). $null if
+    # none is found.
+    param(
+        [Parameter(Mandatory = $true)][int]$Start,
+        [Parameter(Mandatory = $true)][scriptblock]$IsFree,
+        [int]$Attempts = 50,
+        [int[]]$Skip = @(8099)
+    )
+
+    $port = $Start
+    for ($tried = 0; $tried -lt $Attempts; $tried++) {
+        $port++
+        if ($port -gt $BylPortMax) { return $null }
+        if ($Skip -contains $port) { continue }
+        if (& $IsFree $port) { return $port }
+    }
+    return $null
+}
+
+# --- Runtime files (ADR-0039 section 3) --------------------------------------------------------
+
+function Get-BylRunPath {
+    # Folder run\ in the app folder (gitignored): the state file of the running instance and the
+    # address for the landing page becauseyoulovejira.html.
+    param([Parameter(Mandatory = $true)][string]$AppDir)
+
+    $runDir = [System.IO.Path]::Combine($AppDir, 'run')
+    return [pscustomobject]@{
+        Directory = $runDir
+        State     = [System.IO.Path]::Combine($runDir, 'byl.state.json')
+        Address   = [System.IO.Path]::Combine($runDir, 'app-adresse.js')
+    }
+}
+
+function ConvertTo-AddressScript {
+    # run\app-adresse.js: the landing page (file://) loads it as a classic script, because a page
+    # under file:// may not read other files; without it the page uses the standard port.
+    param([Parameter(Mandatory = $true)][int]$Port)
+
+    return "// Written by byl-control.ps1: the address of the app for becauseyoulovejira.html.`r`n" +
+        "window.BYL_APP_URL = 'http://127.0.0.1:$Port/';`r`n"
+}
+
+function ConvertTo-BylStateText {
+    # Text of the state file. Holds no secrets: process id, port and times.
+    param(
+        [Parameter(Mandatory = $true)][int]$ProcessId,
+        [Parameter(Mandatory = $true)][int]$Port,
+        [Parameter(Mandatory = $true)][DateTime]$ProcessStartUtc,
+        [Parameter(Mandatory = $true)][DateTime]$StartedUtc
+    )
+
+    $state = [ordered]@{
+        schema          = 1
+        pid             = $ProcessId
+        port            = $Port
+        processStartUtc = $ProcessStartUtc.ToUniversalTime().ToString('o')
+        startedUtc      = $StartedUtc.ToUniversalTime().ToString('o')
+    }
+    return ($state | ConvertTo-Json -Depth 4)
+}
+
+function ConvertFrom-BylState {
+    # The state file as object (ProcessId, Port, ProcessStartUtc, StartedUtc); $null if the text is
+    # no valid state.
+    param([AllowNull()][AllowEmptyString()][string]$Text)
+
+    if ([string]::IsNullOrWhiteSpace($Text)) { return $null }
+    try {
+        $value = $Text | ConvertFrom-Json
+    }
+    catch {
+        return $null
+    }
+    if ($null -eq $value -or $value -isnot [System.Management.Automation.PSCustomObject]) { return $null }
+    $get = {
+        param($Name)
+        $property = $value.PSObject.Properties[$Name]
+        if ($null -eq $property) { $null } else { $property.Value }
+    }
+    $processId = & $get 'pid'
+    $port = & $get 'port'
+    if (-not (Test-WholeNumber $processId) -or $processId -eq 0) { return $null }
+    if (-not (Test-WholeNumber $port) -or $port -lt 1 -or $port -gt 65535) { return $null }
+    $times = @{}
+    foreach ($name in @('processStartUtc', 'startedUtc')) {
+        $raw = & $get $name
+        if ($raw -is [DateTime]) {
+            $times[$name] = $raw.ToUniversalTime()
+            continue
+        }
+        $parsed = [DateTime]::MinValue
+        if ($raw -isnot [string] -or -not [DateTime]::TryParse($raw, [Globalization.CultureInfo]::InvariantCulture,
+                [Globalization.DateTimeStyles]::RoundtripKind, [ref]$parsed)) { return $null }
+        $times[$name] = $parsed.ToUniversalTime()
+    }
+    return [pscustomobject]@{
+        ProcessId       = [int]$processId
+        Port            = [int]$port
+        ProcessStartUtc = $times['processStartUtc']
+        StartedUtc      = $times['startedUtc']
+    }
+}
+
+function Resolve-StateMatch {
+    # Whether the state file describes one of the own running instances $Own (process objects with
+    # ProcessId and CreationDate): 'Match' for the same process id and a process start within
+    # $ToleranceSeconds of the saved one, 'Stale' otherwise (the process ended, or Windows reused its
+    # id), 'None' without a state. The caller removes a stale file.
+    param(
+        [AllowNull()][object]$State,
+        [AllowNull()][AllowEmptyCollection()][object[]]$Own,
+        [int]$ToleranceSeconds = 2
+    )
+
+    if ($null -eq $State) { return 'None' }
+    foreach ($process in @($Own)) {
+        if ($null -eq $process -or [int]$process.ProcessId -ne $State.ProcessId) { continue }
+        if ($null -eq $process.CreationDate) { return 'Stale' }
+        $difference = ([DateTime]$process.CreationDate).ToUniversalTime() - $State.ProcessStartUtc
+        if ([Math]::Abs($difference.TotalSeconds) -le $ToleranceSeconds) { return 'Match' }
+        return 'Stale'
+    }
+    return 'Stale'
+}
+
+# --- Decisions of the commands (ADR-0039 section 4) ---------------------------------------------
+
+# Exit codes of byl-control.ps1 (documented in its help and in ADR-0039).
+$BylExitOk = 0
+$BylExitError = 1
+$BylExitSetupPending = 2
+$BylExitPortBusy = 4
+$BylExitUnhealthy = 5
+
+function Resolve-ServerState {
+    # State of the own instance from the facts of one look:
+    #   Stopped   - no own process,
+    #   Running   - own process and /api/health answers,
+    #   Starting  - own process without an answer, younger than $StartGraceSeconds,
+    #   Unhealthy - own process without an answer for longer.
+    param(
+        [Parameter(Mandatory = $true)][bool]$ProcessFound,
+        [Parameter(Mandatory = $true)][bool]$Healthy,
+        [double]$AgeSeconds = [double]::MaxValue,
+        [int]$StartGraceSeconds = 30
+    )
+
+    if (-not $ProcessFound) { return 'Stopped' }
+    if ($Healthy) { return 'Running' }
+    if ($AgeSeconds -lt $StartGraceSeconds) { return 'Starting' }
+    return 'Unhealthy'
+}
+
+function Resolve-StartAction {
+    # What "start" does: Open (runs: only open the browser), Wait (starts right now), Unhealthy
+    # (runs without answering: report, restart only with -Force), Restart (-Force), PortBusy (a
+    # foreign program listens on the port: report, never stop it) or Start.
+    param(
+        [Parameter(Mandatory = $true)][ValidateSet('Stopped', 'Running', 'Starting', 'Unhealthy')][string]$ServerState,
+        [Parameter(Mandatory = $true)][ValidateSet('Free', 'App', 'Foreign')][string]$PortState,
+        [bool]$Force = $false
+    )
+
+    if ($ServerState -eq 'Running') { return 'Open' }
+    if ($ServerState -eq 'Starting') { return 'Wait' }
+    if ($ServerState -eq 'Unhealthy') {
+        if ($Force) { return 'Restart' }
+        return 'Unhealthy'
+    }
+    if ($PortState -eq 'Foreign') { return 'PortBusy' }
+    return 'Start'
+}
+
+# --- Processes ---------------------------------------------------------------------------------
 
 function Split-CommandLine {
     # Splits a Windows command line into arguments: whitespace separates, double quotes group and
@@ -78,14 +336,58 @@ function Test-SamePath {
     return [string]::Equals($actualFull, $expectedFull, [System.StringComparison]::OrdinalIgnoreCase)
 }
 
+function Test-FileInFolder {
+    # True if $Path is a fully qualified path of a file directly in $Folder (Test-SamePath rules).
+    param([AllowNull()][AllowEmptyString()][string]$Path, [Parameter(Mandatory = $true)][string]$Folder)
+
+    if ([string]::IsNullOrWhiteSpace($Path) -or $Path -notmatch '^(?:[A-Za-z]:[\\/]|[\\/]{2}[^\\/])') { return $false }
+    try {
+        $parent = [System.IO.Path]::GetDirectoryName([System.IO.Path]::GetFullPath($Path).TrimEnd('\'))
+    }
+    catch {
+        return $false
+    }
+    if ([string]::IsNullOrEmpty($parent)) { return $false }
+    return Test-SamePath -Path $parent -Expected $Folder
+}
+
+function Get-HttpPort {
+    # Port of a --http value "127.0.0.1:<port>"; $null for any other host (0.0.0.0, a name, IPv6)
+    # or form.
+    param([AllowNull()][AllowEmptyString()][string]$Value)
+
+    if ([string]::IsNullOrEmpty($Value) -or $Value -cnotmatch '^127\.0\.0\.1:(\d{1,5})$') { return $null }
+    $port = [int]$Matches[1]
+    if ($port -lt 1 -or $port -gt 65535) { return $null }
+    return $port
+}
+
+function Get-ProcessArgument {
+    # Arguments of a process object shaped like Win32_Process, without the program itself.
+    param([AllowNull()][object]$Process)
+
+    if ($null -eq $Process) { return , @() }
+    # Assign first: Split-CommandLine emits the whole array as ONE pipeline object.
+    $allArguments = Split-CommandLine -CommandLine $Process.CommandLine
+    return , @($allArguments | Select-Object -Skip 1)
+}
+
+function Get-ServerProcessPort {
+    # Port of a PocketBase server process from its --http flag; $null if it is not 127.0.0.1:<port>.
+    param([AllowNull()][object]$Process)
+
+    return Get-HttpPort -Value (Get-FlagValue -Arguments (Get-ProcessArgument -Process $Process) -Name 'http')
+}
+
 function Select-AppProcess {
     # Returns the app's own PocketBase instance(s) from process objects shaped like Win32_Process
     # (ProcessId, ExecutablePath, CommandLine). A process qualifies only if ALL of this holds:
-    #   ExecutablePath = <AppDir>\pocketbase.exe, argument "serve", --http=127.0.0.1:8090 and
+    #   ExecutablePath = <AppDir>\pocketbase.exe, argument "serve", --http=127.0.0.1:<any port> and
     #   --dir=<AppDir>\pb_data.
-    # Test instances of the harness (same exe, --dir in the temp folder, random port), one-shot
-    # commands (superuser, migrate) and foreign processes never qualify. Processes whose
-    # command line is unreadable (other users) never qualify either.
+    # The program path in this folder is the safety rule of stop (ADR-0039 section 4): a copy of the
+    # app in another folder never qualifies, whatever its port. Test instances of the harness (same
+    # exe, --dir in the temp folder), one-shot commands (superuser, migrate), servers bound to other
+    # addresses and processes whose command line is unreadable (other users) never qualify either.
     param([AllowNull()][object[]]$Process, [Parameter(Mandatory = $true)][string]$AppDir)
 
     $exePath = [System.IO.Path]::Combine($AppDir, 'pocketbase.exe')
@@ -93,11 +395,9 @@ function Select-AppProcess {
     foreach ($candidate in @($Process)) {
         if ($null -eq $candidate) { continue }
         if (-not (Test-SamePath -Path $candidate.ExecutablePath -Expected $exePath)) { continue }
-        # Assign first: Split-CommandLine emits the whole array as ONE pipeline object.
-        $allArguments = Split-CommandLine -CommandLine $candidate.CommandLine
-        $arguments = @($allArguments | Select-Object -Skip 1)
+        $arguments = Get-ProcessArgument -Process $candidate
         if ($arguments -cnotcontains 'serve') { continue }
-        if ((Get-FlagValue -Arguments $arguments -Name 'http') -cne $BylHttpAddress) { continue }
+        if ($null -eq (Get-HttpPort -Value (Get-FlagValue -Arguments $arguments -Name 'http'))) { continue }
         if (-not (Test-SamePath -Path (Get-FlagValue -Arguments $arguments -Name 'dir') -Expected $dataDir)) { continue }
         $candidate
     }
@@ -105,34 +405,41 @@ function Select-AppProcess {
 
 function Resolve-PortState {
     # Classifies LISTEN sockets shaped like Get-NetTCPConnection (LocalAddress, LocalPort,
-    # OwningProcess) for http://127.0.0.1:8090:
-    #   App     - the own instance (Select-AppProcess) listens on 127.0.0.1:8090,
+    # OwningProcess) for http://127.0.0.1:<Port>:
+    #   App     - the own instance (Select-AppProcess) listens on 127.0.0.1:<Port>,
     #   Foreign - another process listens on 127.0.0.1, 0.0.0.0 or :: (the wildcards accept
-    #             127.0.0.1 as well), ProcessId/ProcessName name the owner,
+    #             127.0.0.1 as well); ProcessId, ProcessName and ExecutablePath name the owner,
     #   Free    - nothing relevant listens (a socket on ::1 or another address does not collide).
     param(
         [AllowNull()][object[]]$Listener,
         [AllowNull()][object[]]$Process,
-        [Parameter(Mandatory = $true)][string]$AppDir
+        [Parameter(Mandatory = $true)][string]$AppDir,
+        [int]$Port = $BylPort
     )
 
     $relevant = @(@($Listener) | Where-Object {
-            $null -ne $_ -and [int]$_.LocalPort -eq $BylPort -and @('127.0.0.1', '0.0.0.0', '::') -contains [string]$_.LocalAddress
+            $null -ne $_ -and [int]$_.LocalPort -eq $Port -and @('127.0.0.1', '0.0.0.0', '::') -contains [string]$_.LocalAddress
         })
     if ($relevant.Count -eq 0) {
-        return [pscustomobject]@{ State = 'Free'; ProcessId = $null; ProcessName = $null }
+        return [pscustomobject]@{ State = 'Free'; ProcessId = $null; ProcessName = $null; ExecutablePath = $null }
     }
     $ownIds = @(Select-AppProcess -Process $Process -AppDir $AppDir | ForEach-Object { [int]$_.ProcessId })
     $own = @($relevant | Where-Object { [string]$_.LocalAddress -eq '127.0.0.1' -and $ownIds -contains [int]$_.OwningProcess })
     if ($own.Count -gt 0) {
-        return [pscustomobject]@{ State = 'App'; ProcessId = [int]$own[0].OwningProcess; ProcessName = 'pocketbase.exe' }
+        return [pscustomobject]@{
+            State          = 'App'
+            ProcessId      = [int]$own[0].OwningProcess
+            ProcessName    = 'pocketbase.exe'
+            ExecutablePath = [System.IO.Path]::Combine($AppDir, 'pocketbase.exe')
+        }
     }
     $foreign = @($relevant | Where-Object { $ownIds -notcontains [int]$_.OwningProcess })
     if ($foreign.Count -eq 0) { $foreign = $relevant }
     $ownerId = [int]$foreign[0].OwningProcess
     $owner = @(@($Process) | Where-Object { $null -ne $_ -and [int]$_.ProcessId -eq $ownerId })
     $ownerName = if ($owner.Count -gt 0 -and $owner[0].Name) { [string]$owner[0].Name } else { 'unbekanntes Programm' }
-    return [pscustomobject]@{ State = 'Foreign'; ProcessId = $ownerId; ProcessName = $ownerName }
+    $ownerPath = if ($owner.Count -gt 0 -and $owner[0].ExecutablePath) { [string]$owner[0].ExecutablePath } else { $null }
+    return [pscustomobject]@{ State = 'Foreign'; ProcessId = $ownerId; ProcessName = $ownerName; ExecutablePath = $ownerPath }
 }
 
 function Test-FirstRun {
@@ -168,6 +475,8 @@ function Wait-FirstRunSignal {
     }
 }
 
+# --- Server start --------------------------------------------------------------------------------
+
 function Get-ServerLogPath {
     # Output of the server process (overwritten at every start; *.log is gitignored). Standard
     # output and error need separate files (Start-Process cannot redirect both into one).
@@ -182,14 +491,14 @@ function Get-ServerLogPath {
 }
 
 function Get-ServerArgumentString {
-    # Arguments for pocketbase.exe (CLAUDE.md sections 3 and 9): only 127.0.0.1:8090, data, hooks,
-    # migrations and web build from the app folder, --automigrate=false, never --dev. Paths are
-    # quoted (spaces, #); Windows paths cannot contain double quotes.
-    param([Parameter(Mandatory = $true)][string]$AppDir)
+    # Arguments for pocketbase.exe (CLAUDE.md sections 3 and 9): only 127.0.0.1:<Port>, data,
+    # hooks, migrations and web build from the app folder, --automigrate=false, never --dev. Paths
+    # are quoted (spaces, #); Windows paths cannot contain double quotes.
+    param([Parameter(Mandatory = $true)][string]$AppDir, [int]$Port = $BylPort)
 
     $folder = { param([string]$Name) [System.IO.Path]::Combine($AppDir, $Name) }
-    return ('serve --http={0} --dir="{1}" --hooksDir="{2}" --migrationsDir="{3}" --publicDir="{4}" --automigrate=false --indexFallback=true' -f
-        $BylHttpAddress, (& $folder 'pb_data'), (& $folder 'pb_hooks'), (& $folder 'pb_migrations'), (& $folder 'pb_public'))
+    return ('serve --http=127.0.0.1:{0} --dir="{1}" --hooksDir="{2}" --migrationsDir="{3}" --publicDir="{4}" --automigrate=false --indexFallback=true' -f
+        $Port, (& $folder 'pb_data'), (& $folder 'pb_hooks'), (& $folder 'pb_migrations'), (& $folder 'pb_public'))
 }
 
 function Get-AutostartShortcut {
@@ -230,14 +539,18 @@ function Test-Health {
 function Wait-ServerReady {
     # Polls /api/health until it answers 200 (no fixed waiting time). Returns 'Ready', 'Exited'
     # (the process ended first) or 'Timeout'. $Process needs HasExited (System.Diagnostics.Process).
+    # $Progress param($Seconds) is called about once a second while waiting.
     param(
         [Parameter(Mandatory = $true)][object]$Process,
         [string]$Url = $BylHealthUrl,
         [int]$TimeoutSeconds = 30,
-        [int]$RequestTimeoutMilliseconds = 2000
+        [int]$RequestTimeoutMilliseconds = 2000,
+        [scriptblock]$Progress = { param($Seconds) $null = $Seconds }
     )
 
-    $deadline = [DateTime]::UtcNow.AddSeconds($TimeoutSeconds)
+    $started = [DateTime]::UtcNow
+    $deadline = $started.AddSeconds($TimeoutSeconds)
+    $reported = 0
     while ($true) {
         if ($Process.HasExited) { return 'Exited' }
         if (Test-Health -Url $Url -TimeoutMilliseconds $RequestTimeoutMilliseconds) {
@@ -245,6 +558,11 @@ function Wait-ServerReady {
             return 'Ready'
         }
         if ([DateTime]::UtcNow -ge $deadline) { return 'Timeout' }
+        $elapsed = [int][Math]::Floor(([DateTime]::UtcNow - $started).TotalSeconds)
+        if ($elapsed -gt $reported) {
+            $reported = $elapsed
+            & $Progress $elapsed
+        }
         Start-Sleep -Milliseconds 250
     }
 }
@@ -265,14 +583,142 @@ function Read-SharedText {
 }
 
 function Get-ProcessSnapshot {
-    # All processes with the fields Select-AppProcess and Resolve-PortState need (CIM instead of
-    # the deprecated WMI command-line tool).
-    return @(Get-CimInstance -ClassName Win32_Process -Property ProcessId, Name, ExecutablePath, CommandLine)
+    # All processes with the fields Select-AppProcess, Resolve-PortState and Resolve-StateMatch need
+    # (CIM instead of the deprecated WMI command-line tool).
+    return @(Get-CimInstance -ClassName Win32_Process -Property ProcessId, Name, ExecutablePath, CommandLine, CreationDate)
 }
 
 function Get-ListenerSnapshot {
-    # LISTEN sockets on port 8090 (empty if there are none).
-    return @(Get-NetTCPConnection -State Listen -LocalPort $BylPort -ErrorAction SilentlyContinue)
+    # LISTEN sockets on $Port (empty if there are none).
+    param([int]$Port = $BylPort)
+
+    return @(Get-NetTCPConnection -State Listen -LocalPort $Port -ErrorAction SilentlyContinue)
+}
+
+# --- Orderly stop (ADR-0039 section 4) -----------------------------------------------------------
+
+# Console control in a child process: it leaves its own (hidden) console, attaches to the console
+# of the target and sends CTRL_BREAK_EVENT there. PocketBase (Go) turns it into os.Interrupt and
+# shuts down in order (OnTerminate, database closed, WAL checkpointed); byl-mail.exe ends its loop
+# on SIGBREAK. CTRL_C_EVENT is not used: a process can inherit the flag that ignores it. The child
+# sends nothing if other processes share the console (a server started by hand in a terminal), so
+# no other program ever gets the signal.
+# Exit codes: 0 sent, 2 no console to attach, 3 console shared, 4 sending failed.
+$BylConsoleBreakSource = @'
+using System;
+using System.Runtime.InteropServices;
+public static class BylConsoleBreak {
+    public delegate bool Handler(uint controlType);
+    [DllImport("kernel32.dll", SetLastError = true)] static extern bool AttachConsole(uint processId);
+    [DllImport("kernel32.dll", SetLastError = true)] static extern bool FreeConsole();
+    [DllImport("kernel32.dll", SetLastError = true)] static extern bool SetConsoleCtrlHandler(Handler handler, bool add);
+    [DllImport("kernel32.dll", SetLastError = true)] static extern bool GenerateConsoleCtrlEvent(uint controlEvent, uint processGroupId);
+    [DllImport("kernel32.dll", SetLastError = true)] static extern uint GetConsoleProcessList(uint[] processIds, uint count);
+    static readonly Handler Ignore = delegate (uint controlType) { return true; };
+    public static int Send(uint processId) {
+        FreeConsole();
+        if (!AttachConsole(processId)) return 2;
+        // Registered after attaching (a new console resets the handling of this process): the
+        // break goes to every process of the console, this one included, and must not end it.
+        SetConsoleCtrlHandler(null, true);
+        SetConsoleCtrlHandler(Ignore, true);
+        try {
+            uint self = (uint)System.Diagnostics.Process.GetCurrentProcess().Id;
+            uint[] ids = new uint[16];
+            uint count = GetConsoleProcessList(ids, (uint)ids.Length);
+            if (count == 0 || count > ids.Length) return 3;
+            for (int i = 0; i < count; i++) {
+                if (ids[i] != processId && ids[i] != self) return 3;
+            }
+            if (!GenerateConsoleCtrlEvent(1, 0)) return 4;
+            System.Threading.Thread.Sleep(200);
+            return 0;
+        }
+        finally {
+            FreeConsole();
+        }
+    }
+}
+'@
+
+function Get-ConsoleBreakCommand {
+    # -EncodedCommand for powershell.exe that sends the console break to $ProcessId.
+    param([Parameter(Mandatory = $true)][ValidateRange(1, [int]::MaxValue)][int]$ProcessId)
+
+    $script = "Add-Type -TypeDefinition @'`r`n$BylConsoleBreakSource`r`n'@`r`nexit ([BylConsoleBreak]::Send([uint32]$ProcessId))"
+    return [Convert]::ToBase64String([System.Text.Encoding]::Unicode.GetBytes($script))
+}
+
+function Stop-Gracefully {
+    # Ends one process in order: the console break ($SendBreak param($ProcessId) -> $true if it
+    # went out), then up to $GraceMilliseconds for the process to end ($WaitExit param($ProcessId,
+    # $Milliseconds) -> $true if it ended), and only then hard ($Kill param($ProcessId), may throw),
+    # followed by up to 10 s of waiting. Returns 'Graceful', 'Forced' or 'Running' (still there).
+    param(
+        [Parameter(Mandatory = $true)][int]$ProcessId,
+        [Parameter(Mandatory = $true)][scriptblock]$SendBreak,
+        [Parameter(Mandatory = $true)][scriptblock]$WaitExit,
+        [Parameter(Mandatory = $true)][scriptblock]$Kill,
+        [int]$GraceMilliseconds = 15000
+    )
+
+    $sent = $false
+    try {
+        $sent = [bool](& $SendBreak $ProcessId)
+    }
+    catch {
+        $sent = $false
+    }
+    if ($sent -and (& $WaitExit $ProcessId $GraceMilliseconds)) { return 'Graceful' }
+    try {
+        & $Kill $ProcessId
+    }
+    catch {
+        $null = $_
+    }
+    if (& $WaitExit $ProcessId 10000) { return 'Forced' }
+    return 'Running'
+}
+
+function Stop-SelectedProcess {
+    # Stops the processes of $Candidates by process id (stop), each only if $Select still chooses
+    # the process right before (the PID could have been reused since the snapshot).
+    # The operations are parameters, so the tests run this with fake processes:
+    #   $GetCurrent  param($ProcessId) -> process objects shaped like Win32_Process (none if gone),
+    #   $StopProcess param($ProcessId) -> ends the process and waits for it; may throw,
+    #   $Report      param($Text)      -> progress line ("Beende ..."),
+    #   $StillRunningText              -> reason if the process runs on without an error (the text
+    #                                     comes from byl-control.ps1: this file stays ASCII).
+    # A process counts as failed only if $Select still chooses it afterwards: a stop that throws
+    # because the process ended on its own is no failure, and a foreign process that reused the PID
+    # is not "still running". Emits one readable line per failure, each as its own string (never a
+    # nested array, which turned into "System.String[]" in the message of stop.bat).
+    param(
+        [AllowNull()][AllowEmptyCollection()][object[]]$Candidates,
+        [Parameter(Mandatory = $true)][scriptblock]$Select,
+        [Parameter(Mandatory = $true)][string]$Name,
+        [Parameter(Mandatory = $true)][scriptblock]$GetCurrent,
+        [Parameter(Mandatory = $true)][scriptblock]$StopProcess,
+        [Parameter(Mandatory = $true)][string]$StillRunningText,
+        [scriptblock]$Report = { param($Text) $null = $Text }
+    )
+
+    foreach ($candidate in @($Candidates)) {
+        if ($null -eq $candidate) { continue }
+        $processId = [int]$candidate.ProcessId
+        if (@(& $Select @(& $GetCurrent $processId)).Count -eq 0) { continue }
+        & $Report "Beende $Name (PID $processId) ..."
+        $problem = $null
+        try {
+            & $StopProcess $processId
+        }
+        catch {
+            $problem = $_.Exception.Message
+        }
+        if (@(& $Select @(& $GetCurrent $processId)).Count -eq 0) { continue }
+        if ([string]::IsNullOrWhiteSpace($problem)) { $problem = $StillRunningText }
+        [string]"$Name (PID $processId): $problem"
+    }
 }
 
 # --- Missed first-run installer (E1.1) --------------------------------------------------------
@@ -297,10 +743,10 @@ function ConvertFrom-Base64Url {
 
 function Get-InstallerLink {
     # Installer link of the running server, read from its log text. Only the token is taken from
-    # the log (pattern /_/#/pbinstall/<jwt>); the URL is rebuilt on the fixed binding, so nothing
-    # but the local admin UI is ever opened. Returns Url, Token and ExpiresUtc of the LAST link, or
-    # $null if there is none, if it was issued before $ProcessStartUtc (a log of an older run) or
-    # if it has expired at $NowUtc. The token is a JWT without "iat"; issue time = exp - 30 min.
+    # the log (pattern /_/#/pbinstall/<jwt>); the URL is rebuilt on the app's own address, so
+    # nothing but the local admin UI is ever opened. Returns Url, Token and ExpiresUtc of the LAST
+    # link, or $null if there is none, if it was issued before $ProcessStartUtc (a log of an older
+    # run) or if it has expired at $NowUtc. The token is a JWT without "iat"; issue time = exp - 30 min.
     param(
         [AllowNull()][AllowEmptyString()][string]$LogText,
         [Parameter(Mandatory = $true)][DateTime]$ProcessStartUtc,
@@ -513,7 +959,7 @@ function Invoke-AdminUpsert {
 $BylSecretNamePattern = '^BYL_[A-Z0-9_]{1,60}$'
 
 function Get-BylEnvironmentChange {
-    # Which BYL_* variables start.bat hands to PocketBase (ADR-0018 section 6): every valid name of
+    # Which BYL_* variables the start hands to PocketBase (ADR-0018 section 6): every valid name of
     # the user scope (its value is read fresh from there), and the removal of valid names this
     # process still has from its own start although they are gone from the user and the machine
     # scope. Only names go in and out; values are never printed.
@@ -564,9 +1010,6 @@ function New-IngestTokenValue {
 
 # --- Mail helper byl-mail.exe (ADR-0016 section 5, E4 plan package 11) -------------------------
 
-# The helper talks to the app's own PocketBase only.
-$BylMailHelperUrl = 'http://127.0.0.1:8090'
-
 function Get-MailHelperArgumentString {
     # Arguments for byl-mail.exe: fetch the mailboxes of the app's own PocketBase.
     return "run --url=$BylMailHelperUrl"
@@ -586,67 +1029,31 @@ function Get-MailHelperLogPath {
 }
 
 function Select-MailHelperProcess {
-    # Returns the app's own mail helper(s) from process objects shaped like Win32_Process, by the same
-    # rules as Select-AppProcess: ExecutablePath = <AppDir>\byl-mail.exe, argument "run" and
-    # --url=http://127.0.0.1:8090. Helpers of the tests (other folder or port), one-shot calls
+    # Returns the app's own mail helper(s) from process objects shaped like Win32_Process, by the
+    # same safety rule as Select-AppProcess: the program is byl-mail.exe directly in the app folder
+    # (or byl-mail.exe.old-<time>: scripts\build-mail-helper.ps1 renames a running helper, and
+    # Windows then reports the new name), the first argument is "run" and --url is one of $Url (the
+    # addresses of the own instance). Helpers of the tests (other folder or port), one-shot calls
     # (--version, --self-test) and processes with an unreadable command line never qualify.
-    param([AllowNull()][object[]]$Process, [Parameter(Mandatory = $true)][string]$AppDir)
+    param(
+        [AllowNull()][object[]]$Process,
+        [Parameter(Mandatory = $true)][string]$AppDir,
+        [string[]]$Url = @($BylMailHelperUrl)
+    )
 
-    $exePath = [System.IO.Path]::Combine($AppDir, $BylMailHelperName)
     foreach ($candidate in @($Process)) {
         if ($null -eq $candidate) { continue }
-        if (-not (Test-SamePath -Path $candidate.ExecutablePath -Expected $exePath)) { continue }
-        $allArguments = Split-CommandLine -CommandLine $candidate.CommandLine
-        $arguments = @($allArguments | Select-Object -Skip 1)
+        if (-not (Test-FileInFolder -Path $candidate.ExecutablePath -Folder $AppDir)) { continue }
+        if ([System.IO.Path]::GetFileName([string]$candidate.ExecutablePath) -notmatch '^byl-mail\.exe(\.old-\d{14})?$') { continue }
+        $arguments = Get-ProcessArgument -Process $candidate
         if ($arguments.Count -eq 0 -or $arguments[0] -cne 'run') { continue }
-        if ((Get-FlagValue -Arguments $arguments -Name 'url') -cne $BylMailHelperUrl) { continue }
+        if ($Url -cnotcontains (Get-FlagValue -Arguments $arguments -Name 'url')) { continue }
         $candidate
     }
 }
 
-function Stop-SelectedProcess {
-    # Stops the processes of $Candidates by process id (stop.bat), each only if $Select still
-    # chooses the process right before (the PID could have been reused since the snapshot).
-    # The operations are parameters, so the tests run this with fake processes:
-    #   $GetCurrent  param($ProcessId) -> process objects shaped like Win32_Process (none if gone),
-    #   $StopProcess param($ProcessId) -> ends the process and waits for it; may throw,
-    #   $Report      param($Text)      -> progress line ("Beende ..."),
-    #   $StillRunningText              -> reason if the process runs on without an error (the text
-    #                                     comes from byl-control.ps1: this file stays ASCII).
-    # A process counts as failed only if $Select still chooses it afterwards: a stop that throws
-    # because the process ended on its own is no failure, and a foreign process that reused the PID
-    # is not "still running". Emits one readable line per failure, each as its own string (never a
-    # nested array, which turned into "System.String[]" in the message of stop.bat).
-    param(
-        [AllowNull()][AllowEmptyCollection()][object[]]$Candidates,
-        [Parameter(Mandatory = $true)][scriptblock]$Select,
-        [Parameter(Mandatory = $true)][string]$Name,
-        [Parameter(Mandatory = $true)][scriptblock]$GetCurrent,
-        [Parameter(Mandatory = $true)][scriptblock]$StopProcess,
-        [Parameter(Mandatory = $true)][string]$StillRunningText,
-        [scriptblock]$Report = { param($Text) $null = $Text }
-    )
-
-    foreach ($candidate in @($Candidates)) {
-        if ($null -eq $candidate) { continue }
-        $processId = [int]$candidate.ProcessId
-        if (@(& $Select @(& $GetCurrent $processId)).Count -eq 0) { continue }
-        & $Report "Beende $Name (PID $processId) ..."
-        $problem = $null
-        try {
-            & $StopProcess $processId
-        }
-        catch {
-            $problem = $_.Exception.Message
-        }
-        if (@(& $Select @(& $GetCurrent $processId)).Count -eq 0) { continue }
-        if ([string]::IsNullOrWhiteSpace($problem)) { $problem = $StillRunningText }
-        [string]"$Name (PID $processId): $problem"
-    }
-}
-
 function Get-MailHelperDecision {
-    # Whether start.bat starts byl-mail.exe (E4 plan package 11): only if the file is in the app
+    # Whether the start runs byl-mail.exe (E4 plan package 11): only if the file is in the app
     # folder, the ingest token is set, no own helper runs yet and PocketBase lists at least one
     # switched-on mail connection. $MailConnectionCount is the number PocketBase reported, -1 if it
     # could not be asked (the helper is started anyway and asks again every five minutes) and -2 if
@@ -686,15 +1093,13 @@ function ConvertFrom-MailConnectionAnswer {
 
 # --- Open app tabs before opening the browser (ADR-0035 sections 3, 4 and 7, plan start-fenster SF-4)
 
-$BylPresenceUrl = 'http://127.0.0.1:8090/api/byl/presence'
-$BylAttentionUrl = 'http://127.0.0.1:8090/api/byl/attention'
 $BylAttentionReasons = @('start', 'datei', 'stop')
 # A landing page (file://) that reported within this window opens the app itself.
 $BylLandingWindowMs = 10000
-# After "stop.bat, then start.bat" the open tabs reconnect on their own (SDK steps of 0.2 to 2 s),
-# so a cold start waits this long for them before it opens a tab.
+# After a restart the open tabs reconnect on their own (SDK steps of 0.2 to 2 s), so a cold start
+# waits this long for them before it opens a tab.
 $BylColdStartWaitMs = 3000
-# How long start.bat waits for a tab to confirm the message, and the step of all waits.
+# How long the start waits for a tab to confirm the message, and the step of all waits.
 $BylAckWaitMs = 2000
 $BylPresencePollMs = 250
 $BylRequestTimeoutMs = 1500
@@ -812,7 +1217,7 @@ function Get-AttentionSendUrl {
 }
 
 function Get-BrowserStep {
-    # What start.bat does next with an answer of the presence route:
+    # What the start does next with an answer of the presence route:
     #   Open      - no usable answer, or the time is up without an open tab (fail-open),
     #   Skip      - a landing page reported within LandingWindowMs (it opens the app itself),
     #   Attention - app tabs are open: send them the message and wait for a confirmation,
@@ -860,23 +1265,24 @@ function Select-PwaShortcut {
     # The Start menu shortcut of the installed web app (ADR-0035 section 8), from objects with Path,
     # Name (file name without .lnk), TargetPath and Arguments. Chrome and Edge create it with the
     # name of the manifest, the target chrome_proxy.exe or msedge_proxy.exe and --app-id=<32 letters
-    # a-p>; an --app-url, if present, must be the app on 127.0.0.1:8090. Returns the Path of the
-    # first match (sorted by path) or $null.
-    param([AllowNull()][AllowEmptyCollection()][object[]]$Shortcuts)
+    # a-p>; an --app-url, if present, must be the app on its current address (port $Port). Returns
+    # the Path of the first match (sorted by path) or $null.
+    param([AllowNull()][AllowEmptyCollection()][object[]]$Shortcuts, [int]$Port = $BylPort)
 
+    $appUrl = '(^|\s)"?--app-url=http://127\.0\.0\.1:' + $Port + '/?(\s|"|$)'
     $matching = @(@($Shortcuts) | Where-Object {
             $null -ne $_ -and
             [string]::Equals([string]$_.Name, 'becauseyoulovejira', [System.StringComparison]::OrdinalIgnoreCase) -and
             @('chrome_proxy.exe', 'msedge_proxy.exe') -contains ([System.IO.Path]::GetFileName([string]$_.TargetPath)).ToLowerInvariant() -and
             [string]$_.Arguments -cmatch '(^|\s)--app-id=[a-p]{32}(\s|$)' -and
-            ([string]$_.Arguments -notmatch '--app-url=' -or [string]$_.Arguments -match '(^|\s)"?--app-url=http://127\.0\.0\.1:8090/?(\s|"|$)')
+            ([string]$_.Arguments -notmatch '--app-url=' -or [string]$_.Arguments -match $appUrl)
         } | Sort-Object -Property Path)
     if ($matching.Count -eq 0) { return $null }
     return [string]$matching[0].Path
 }
 
 function Resolve-BrowserAction {
-    # Whether start.bat opens a browser tab ('Open') or leaves it to an open tab or the landing
+    # Whether the start opens a browser tab ('Open') or leaves it to an open tab or the landing
     # page ('Skip'). The requests are parameters, so the tests run this with fakes:
     #   $GetPresence   -> result of ConvertFrom-PresenceAnswer ($null on any failure),
     #   $SendAttention -> result of ConvertFrom-AttentionAnswer ($null on any failure),

@@ -7,11 +7,14 @@
 		<title>becauseyoulovejira</title>
 		<!--
 			Entry per double click next to start.bat (ADR-0035 section 1; plan start-fenster, SF-2).
-			Self-contained: no external script, style or font, and only system colors, so light,
-			dark and forced colors work without copying tokens.css. It checks whether the app runs
-			on http://127.0.0.1:8090/, asks the server whether an app tab is open already and opens
-			the app in this tab otherwise. The link "App öffnen" always works, also without script.
+			Self-contained: nothing from outside, only system colors, so light, dark and forced
+			colors work without copying tokens.css. The one script it loads is run/app-adresse.js
+			from this folder: byl-control.ps1 writes the address of the app there (ADR-0039 section
+			2); without it the page uses the standard address http://127.0.0.1:8090/. It checks
+			whether the app runs, asks the server whether an app tab is open already and opens the
+			app in this tab otherwise. The link "App öffnen" always works, also without script.
 		-->
+		<script src="run/app-adresse.js"></script>
 		<style>
 			:root {
 				color-scheme: light dark;
@@ -102,7 +105,12 @@
 			(function (win, doc) {
 				'use strict';
 
-				var APP_URL = 'http://127.0.0.1:8090/';
+				// Written by byl-control.ps1 into run/app-adresse.js (loaded above); only an address on
+				// 127.0.0.1 counts, anything else means the standard address.
+				var DEFAULT_URL = 'http://127.0.0.1:8090/';
+				var APP_URL = /^http:\/\/127\.0\.0\.1:\d{1,5}\/$/.test(String(win.BYL_APP_URL))
+					? String(win.BYL_APP_URL)
+					: DEFAULT_URL;
 				var HEALTH_URL = APP_URL + 'api/health';
 				var ATTENTION_URL = APP_URL + 'api/byl/attention';
 				var COUNTDOWN_S = 5;
@@ -173,6 +181,7 @@
 				var title = element('byl-title');
 				var status = element('byl-status');
 				var checked = element('byl-checked');
+				element('byl-open').setAttribute('href', APP_URL);
 				var buttons = {
 					now: element('byl-now'),
 					close: element('byl-close'),

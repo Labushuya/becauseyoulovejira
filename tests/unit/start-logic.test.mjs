@@ -1,6 +1,7 @@
-// Selection and detection logic of start.bat / stop.bat (E1 plan, package 8), tested with fake
-// processes, sockets and log texts. The start and stop scripts themselves are never executed
-// (CLAUDE.md section 11.3); only the side-effect-free functions of app/byl-functions.ps1 run.
+// Selection and detection logic of start and stop (E1 plan package 8, ADR-0039), tested with fake
+// processes, sockets and log texts; only the side-effect-free functions of app/byl-functions.ps1
+// run here. The scripts themselves run only against disposable copies
+// (tests/integration/control-script.test.mjs, CLAUDE.md section 11.3).
 
 import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -26,6 +27,8 @@ const PROCESSES = {
 		ExecutablePath: 'c:\\program files\\BYL #1\\app\\pocketbase.exe',
 		CommandLine: '"c:\\program files\\BYL #1\\app\\pocketbase.exe" serve "--dir=c:/program files/byl #1/app/pb_data/" --http=127.0.0.1:8090'
 	},
+	// The own instance after "port 8091" (ADR-0039): still the program and data of this folder.
+	ownOtherPort: { ProcessId: 102, Name: 'pocketbase.exe', ExecutablePath: EXE, CommandLine: `"${EXE}" serve --http=127.0.0.1:8091 ${appArgs}` },
 	harness: {
 		ProcessId: 200,
 		Name: 'pocketbase.exe',
@@ -87,7 +90,26 @@ const HELPERS = {
 	selfTest: { ProcessId: 605, Name: 'byl-mail.exe', ExecutablePath: HELPER, CommandLine: `"${HELPER}" --self-test run` },
 	noUrl: { ProcessId: 606, Name: 'byl-mail.exe', ExecutablePath: HELPER, CommandLine: `"${HELPER}" run` },
 	pocketbase: PROCESSES.own,
-	unreadable: { ProcessId: 607, Name: 'byl-mail.exe', ExecutablePath: null, CommandLine: null }
+	unreadable: { ProcessId: 607, Name: 'byl-mail.exe', ExecutablePath: null, CommandLine: null },
+	// scripts\build-mail-helper.ps1 renamed the running helper; Windows reports the new name.
+	renamed: {
+		ProcessId: 608,
+		Name: 'byl-mail.exe.old-20260928153413',
+		ExecutablePath: `${HELPER}.old-20260928153413`,
+		CommandLine: `"${HELPER}" run --url=http://127.0.0.1:8090`
+	},
+	subfolder: {
+		ProcessId: 609,
+		Name: 'byl-mail.exe',
+		ExecutablePath: `${APP}\\sub\\byl-mail.exe`,
+		CommandLine: `"${APP}\\sub\\byl-mail.exe" run --url=http://127.0.0.1:8090`
+	},
+	otherName: {
+		ProcessId: 610,
+		Name: 'byl-mail.exe.bak',
+		ExecutablePath: `${HELPER}.bak`,
+		CommandLine: `"${HELPER}.bak" run --url=http://127.0.0.1:8090`
+	}
 };
 
 const listener = (address, port, owner) => ({ LocalAddress: address, LocalPort: port, OwningProcess: owner });
@@ -100,7 +122,9 @@ const PORT_CASES = {
 	foreignNode: [listener('127.0.0.1', 8090, 400)],
 	harnessOn8090: [listener('127.0.0.1', 8090, 201)],
 	wildcard: [listener('0.0.0.0', 8090, 400)],
-	unknownOwner: [listener('127.0.0.1', 8090, 999)]
+	unknownOwner: [listener('127.0.0.1', 8090, 999)],
+	// The own instance on 8091 does not hold 8090.
+	ownOnOtherPort: [listener('127.0.0.1', 8091, 102)]
 };
 
 // Installer links (E1.1): fake JWTs, only the "exp" claim matters. Times in Unix seconds.
@@ -161,6 +185,8 @@ foreach ($entry in $in.ports.PSObject.Properties) {
     $ports[$entry.Name] = Resolve-PortState -Listener @($entry.Value) -Process $all -AppDir $in.appDir
 }
 $result.ports = $ports
+$result.port8091 = Resolve-PortState -Listener @($in.ports.ownOnOtherPort) -Process $all -AppDir $in.appDir -Port 8091
+$result.processPorts = @($all | ForEach-Object { Get-ServerProcessPort -Process $_ })
 
 $result.firstRun = @{
     installerLinkDbExists = Test-FirstRun -LogText 'Launch the URL: http://127.0.0.1:8090/_/#/pbinstall/abc' -DatabaseExisted $true
@@ -218,6 +244,7 @@ $result.waitInstaller = @{
 
 $result.serverArgs = Get-ServerArgumentString -AppDir $in.appDir
 $result.serverArgsSplit = Split-CommandLine -CommandLine ('pocketbase.exe ' + $result.serverArgs)
+$result.serverArgs8091 = Split-CommandLine -CommandLine ('pocketbase.exe ' + (Get-ServerArgumentString -AppDir $in.appDir -Port 8091))
 $result.shortcut = Get-AutostartShortcut -AppDir ($in.appDir + '\') -StartupDir 'C:\Users\me\Start Menu\Startup' -SystemDir 'C:\Windows\system32'
 $result.logPath = Get-ServerLogPath -AppDir $in.appDir
 $result.split = Split-CommandLine -CommandLine '"C:\a b\x.exe"  serve --dir="C:\a b\#c" plain'
@@ -257,6 +284,7 @@ foreach ($case in $in.answers) {
 }
 $result.mailHelper = @{
     selectAll = @(Select-MailHelperProcess -Process $helpers -AppDir $in.appDir | ForEach-Object { [int]$_.ProcessId })
+    selectUrls = @(Select-MailHelperProcess -Process $helpers -AppDir $in.appDir -Url @('http://127.0.0.1:8090', 'http://127.0.0.1:53211') | ForEach-Object { [int]$_.ProcessId })
     single = $helperSingle
     arguments = Get-MailHelperArgumentString
     argumentsSplit = Split-CommandLine -CommandLine ('byl-mail.exe ' + (Get-MailHelperArgumentString))
@@ -308,12 +336,13 @@ beforeAll(() => {
 
 describe('Select-AppProcess (stop.bat and the start check)', () => {
 	it('selects only the own instance from a mixed process list', () => {
-		expect(result.selectAll).toEqual([100, 101]);
+		expect(result.selectAll).toEqual([100, 101, 102]);
 	});
 
 	it.each([
 		['own', 1],
 		['ownOtherSpelling', 1],
+		['ownOtherPort', 1],
 		['harness', 0],
 		['harnessOn8090', 0],
 		['migrate', 0],
@@ -346,9 +375,20 @@ describe('Resolve-PortState (no second server, clear error for a foreign port ow
 		expect(result.ports[name].ProcessId).toBe(processId);
 	});
 
-	it('names the foreign owner', () => {
+	it('names the foreign owner and its program', () => {
 		expect(result.ports.foreignNode.ProcessName).toBe('node.exe');
+		expect(result.ports.foreignNode.ExecutablePath).toBe('C:\\Program Files\\nodejs\\node.exe');
 		expect(result.ports.unknownOwner.ProcessName).toBe('unbekanntes Programm');
+		expect(result.ports.unknownOwner.ExecutablePath).toBeNull();
+	});
+
+	it('checks the configured port, and the own instance on another port leaves 8090 free', () => {
+		expect(result.ports.ownOnOtherPort.State).toBe('Free');
+		expect(result.port8091).toMatchObject({ State: 'App', ProcessId: 102, ExecutablePath: EXE });
+	});
+
+	it('reads the port of a server from its --http flag (127.0.0.1 only)', () => {
+		expect(result.processPorts).toEqual([8090, 8090, 8091, 53211, 8090, null, 8090, null, 8090, 8090, null]);
 	});
 });
 
@@ -394,6 +434,7 @@ describe('server arguments and autostart shortcut', () => {
 			'--indexFallback=true'
 		]);
 		expect(result.serverArgs).not.toMatch(/--dev\b/);
+		expect(result.serverArgs8091[2]).toBe('--http=127.0.0.1:8091');
 	});
 
 	it('points the shortcut at start-hidden.vbs via wscript.exe', () => {
@@ -443,7 +484,7 @@ describe('ingest token of the mail helper (ADR-0018 section 8)', () => {
 
 describe('mail helper byl-mail.exe (E4 plan, package 11)', () => {
 	it('selects only the own helper, like the own PocketBase', () => {
-		expect(result.mailHelper.selectAll).toEqual([600, 601]);
+		expect(result.mailHelper.selectAll).toEqual([600, 601, 608]);
 		expect(result.mailHelper.single).toEqual({
 			own: 1,
 			ownOtherSpelling: 1,
@@ -453,8 +494,15 @@ describe('mail helper byl-mail.exe (E4 plan, package 11)', () => {
 			selfTest: 0,
 			noUrl: 0,
 			pocketbase: 0,
-			unreadable: 0
+			unreadable: 0,
+			renamed: 1,
+			subfolder: 0,
+			otherName: 0
 		});
+	});
+
+	it('accepts every address of the own instance (port changed since the start)', () => {
+		expect(result.mailHelper.selectUrls).toEqual([600, 601, 603, 608]);
 	});
 
 	it('starts the helper for the own PocketBase and logs into app\\logs', () => {
