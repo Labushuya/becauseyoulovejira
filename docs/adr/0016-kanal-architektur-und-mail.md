@@ -68,6 +68,8 @@ Alle drei Arten erzeugen Einträge über **denselben** Dienst `app/pb_hooks/lib/
 
 Nur der offizielle Chat-Export (`.txt` bzw. `.zip` mit `_chat.txt`) als Datei-Import im Browser, mit Auswahlansicht. Die WhatsApp Cloud API (Webhooks, lokal nicht erreichbar) und inoffizielle Bibliotheken (Sperrrisiko für das Konto) sind abgelehnt. Ein Share Target kommt frühestens mit E7 (PWA, HTTPS über Tailscale).
 
+**Nachtrag (Nutzerentscheidung 2026-09-28, [ADR-0038](0038-eigener-eingang-und-whatsapp-web.md)): WhatsApp Web über eine Browser-Erweiterung.** Neben dem Export gibt es die Erweiterung „becauseyoulovejira für WhatsApp Web“ (Manifest V3, Edge und Chrome, entpackt aus `app/erweiterung-whatsapp-web` geladen). Sie liest nur die Ansicht im offenen WhatsApp-Web-Tab und schickt Text einzelner Nachrichten („In den Eingang“) oder, mit eingeschaltetem Schalter, neue Nachrichten mit Stichwort über den eigenen Eingang mit Zugangsschlüssel an die App (Kanal `whatsapp-web`, Familie „Chat“). Die Ablehnung inoffizieller Protokoll-Bibliotheken (Baileys, whatsapp-web.js als verknüpftes Gerät) bleibt: Die Erweiterung meldet sich nicht bei WhatsApp an, sendet, klickt und ändert nichts, und es gibt keinen Server im Internet. Grenzen: nur bei offenem Tab, automatisch nur im geöffneten Chat, nach Änderungen der Seite von WhatsApp kann sie eine Anpassung brauchen (sie meldet „Seitenstruktur nicht erkannt“).
+
 ### 4. Mail: Optionen und Entscheidung
 
 | Option | Portabilität | Sicherheit | Aufwand und Wartung |

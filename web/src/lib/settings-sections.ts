@@ -46,6 +46,8 @@ export const HELP_SECTIONS = [
 	{ id: 'zugangsdaten', label: 'Kanäle und Zugangsdaten' },
 	// Own inbox (ADR-0038): linked from its card on "Kanäle".
 	{ id: 'eigener-eingang', label: 'Eigener Eingang (API)' },
+	// WhatsApp Web (ADR-0038 §4): linked from its card and its assistant.
+	{ id: 'whatsapp-web', label: 'WhatsApp Web' },
 	{ id: 'fragen', label: 'Häufige Fragen' },
 	{ id: 'betrieb', label: 'Betrieb' }
 ] as const;

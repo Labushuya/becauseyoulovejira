@@ -1,6 +1,6 @@
 # Plan „Eigener Eingang und WhatsApp Web“: API mit Zugangsschlüssel und Browser-Erweiterung
 
-- **Stand:** EI-1 umgesetzt (2026-09-28, #166; Neustart nötig), EI-2 umgesetzt (Erweiterung, kein Neustart der App). EI-3 folgt.
+- **Stand:** umgesetzt (2026-09-28): EI-1 (#166; Neustart nötig), EI-2 (#167, Erweiterung), EI-3 (Karte, Assistent, Hilfe; Neustart für die Route des Ordners). Offen sind die manuellen Browser-Prüfungen BYL-E6-425 und BYL-E6-433 bis BYL-E6-438.
 - **Grundlage:**
   - Auftrag „Eigener Eingang (API mit Zugangsschlüssel)“ und „WhatsApp-Web-Browser-Erweiterung“ (2026-09-28) mit den Produktentscheidungen des Advisors (unten §1); vom Nutzer freigegebene Variante: Erweiterung, die im offenen Tab nur liest.
   - [ADR-0038](../adr/0038-eigener-eingang-und-whatsapp-web.md) (neu), [ADR-0016](../adr/0016-kanal-architektur-und-mail.md) §3 mit Nachtrag, [ADR-0020](../adr/0020-stichwoerter-pro-kanal.md), [ADR-0014](../adr/0014-datenmodell-eingang.md), [ADR-0031](../adr/0031-herkunft-sichern.md), [ADR-0026](../adr/0026-einstellungsbereich-und-hinweis-bausteine.md), [ADR-0025](../adr/0025-ui-konsistenz-overlay-system.md), [ADR-0009](../adr/0009-fehlerfarbe.md), [ADR-0029](../adr/0029-glas-materialien.md), [ADR-0037](../adr/0037-papierkorb.md)
@@ -24,7 +24,7 @@
 |---|---|---|
 | EI-1 | Migration (`inbox_keys`, Kanäle `api` und `whatsapp-web`), Routen und Regeln des Eingangs, Stichwörter der Kanäle, Karte „Eigener Eingang (API)“ mit Schlüsselverwaltung, Hilfe mit Beispielen, Tests, ADR, Plan | BYL-E6-420 bis BYL-E6-424, BYL-E6-425 (manuell) |
 | EI-2 | Erweiterung in `extensions/whatsapp-web/` (TypeScript, esbuild), Build-Ordner `app/erweiterung-whatsapp-web/`, Lint und Tests in beiden CI-Jobs, Fixtures | BYL-E6-426 bis BYL-E6-429 |
-| EI-3 | Karte und Assistent „WhatsApp Web“, Hilfe, Nachtrag ADR-0016, README, CLAUDE.md, manuelle Browser-Fälle | ab BYL-E6-430 |
+| EI-3 | Karte, Katalog-Kachel und Assistent „WhatsApp Web“, Route des Build-Ordners, Hilfe, Nachtrag ADR-0016, README, CLAUDE.md, manuelle Browser-Fälle | BYL-E6-430 bis BYL-E6-432, BYL-E6-433 bis BYL-E6-438 (manuell) |
 
 ## 3. EI-1 im Detail
 
@@ -72,7 +72,14 @@
 - **Rückmeldung** im eigenen Element (Knopftext und `role="status"`), keine Meldung außerhalb der Nachricht; Tasten- und Mausereignisse des eigenen Elements erreichen WhatsApp nicht.
 - **Keine Minifizierung**, damit der Nutzer den geladenen Code lesen kann; kein Store, kein Paket, kein Update-Mechanismus.
 
-## 5. Grenzen und offene Punkte
+## 5. EI-3 im Detail
+
+- **Karte** `WhatsAppWebCard` im Bereich „Selbst hereinbringen“ (neben „Eigener Eingang (API)“): was die Erweiterung tut und nicht tut, Stichwörter für „Automatisch“, „Einrichten“ (Link auf `?einrichten=whatsapp-web`), „Stichwörter …“ (`ChannelKeywordsModal`), „So geht’s“ (`helpHref('whatsapp-web')`). Dazu eine Kachel im Katalog „Kanal hinzufügen“ mit dem Etikett „Erweiterung“.
+- **Assistent** `WhatsAppWebSetup` (Modal L, Stepper, fünf Schritte, Regeln rein in `domain/whatsapp-web.ts`): 1 Schlüssel (`InboxKeyCreateForm` mit Namen „WhatsApp Web“, der Schlüssel über `bind:created` im Assistenten), 2 Erweiterung laden (Tabs Edge/Chrome mit den Klickwegen, `CodeBlock` mit dem Ordner, Warnung ohne Build, Hinweis „Neu laden“ nach Updates), 3 Schlüssel eintragen (App-Adresse und der Schlüssel aus Schritt 1), 4 Testen (`SetupCheck` über „zuletzt benutzt“, „Prüfen“ lädt die Schlüssel neu), 5 Stichwörter (`KeywordEditor` für `whatsapp-web`, ehrlicher Hinweis). Der Assistent öffnet beim ersten Schritt, den die App nicht als erledigt sieht; „Laden“ und „Eintragen“ gelten erst mit dem Test als erledigt.
+- **Route** `GET /api/byl/whatsapp-web/extension` für den Ordner des Builds (ADR-0038 §4); `SETUP_KINDS` kennt `whatsapp-web` (wie `proton` ohne Verbindung, `GUIDE_KINDS`).
+- **Hilfe** „WhatsApp Web“ (`#whatsapp-web`): Einrichtung, Benutzung, Grenzen.
+
+## 6. Grenzen und offene Punkte
 
 - Das Rate-Limit liegt im Speicher und beginnt nach einem Neustart neu; mehr braucht ein Server auf `127.0.0.1` nicht.
 - Fehlgeschlagene Anmeldungen werden nicht gebremst: Ein Schlüssel hat rund 238 Bit, Raten ist aussichtslos.

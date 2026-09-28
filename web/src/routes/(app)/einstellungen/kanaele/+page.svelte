@@ -5,6 +5,7 @@
 	import { page } from '$app/state';
 	import { auth } from '$lib/auth.svelte';
 	import ChannelsView from '$lib/components/ChannelsView.svelte';
+	import { fetchExtensionInfo, type ExtensionInfo } from '$lib/data/extension';
 	import { setupTargetOf, type SetupTarget } from '$lib/domain/channel-setup';
 	import { pb } from '$lib/pocketbase';
 	import { ConnectionsStore, connectionsData } from '$lib/stores/connections.svelte';
@@ -28,6 +29,8 @@
 	const importKeywords = new ImportKeywordsStore(importKeywordsData(pb), auth, flags);
 	// Access keys of the own inbox (ADR-0038), with its keywords in importKeywords.
 	const inboxKeys = new InboxKeysStore(inboxKeysData(pb), auth, flags);
+	// Folder of the built extension for WhatsApp Web, for its assistant (ADR-0038 §4).
+	let extension = $state<ExtensionInfo | null>(null);
 	const setup = $derived(setupTargetOf(page.url.searchParams));
 
 	function changeSetup(next: SetupTarget | null) {
@@ -40,7 +43,12 @@
 			void importKeywords.load();
 			void inboxKeys.load();
 		});
+		const controller = new AbortController();
+		void fetchExtensionInfo(pb, { signal: controller.signal }).then((info) => {
+			if (!controller.signal.aborted) extension = info;
+		});
 		return () => {
+			controller.abort();
 			connections.reset();
 			importKeywords.reset();
 			inboxKeys.reset();
@@ -64,6 +72,7 @@
 	{connections}
 	{importKeywords}
 	{inboxKeys}
+	{extension}
 	{setup}
 	onsetupchange={changeSetup}
 />

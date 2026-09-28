@@ -1,7 +1,7 @@
-// Settings "Hilfe" (plan EH-9, §3.10): jump links to seven sections, the shortcuts of every context
+// Settings "Hilfe" (plan EH-9, §3.10): jump links to eight sections, the shortcuts of every context
 // from the one source, the short syntax with its tokens, the access data moved here from "Kanäle",
-// the own inbox with examples (ADR-0038), the frequent questions as <details> and the operation of
-// the app. No table (description lists).
+// the own inbox with examples and WhatsApp Web (ADR-0038), the frequent questions as <details> and
+// the operation of the app. No table (description lists).
 
 import { render, screen, within } from '@testing-library/svelte';
 import { describe, expect, it } from 'vitest';
@@ -26,7 +26,7 @@ describe('help page (EH-9)', () => {
 		}
 	});
 
-	it('jumps to seven sections that exist on the page', () => {
+	it('jumps to eight sections that exist on the page', () => {
 		const { container } = render(Page);
 
 		const jump = within(screen.getByRole('navigation', { name: 'Auf dieser Seite' }));
@@ -37,6 +37,7 @@ describe('help page (EH-9)', () => {
 			'Wiederholungen',
 			'Kanäle und Zugangsdaten',
 			'Eigener Eingang (API)',
+			'WhatsApp Web',
 			'Häufige Fragen',
 			'Betrieb'
 		]);
@@ -233,5 +234,29 @@ describe('help page (EH-9)', () => {
 			expect(within(section).getAllByText(field).length, field).toBeGreaterThan(0);
 		}
 		expect(section.querySelectorAll('table')).toHaveLength(0);
+	});
+
+	it('explains WhatsApp Web honestly: unofficial, reads only, open tab, may need an update (ADR-0038)', () => {
+		render(Page);
+		const section = screen.getByRole('region', { name: 'WhatsApp Web' });
+		const content = text(section);
+		for (const phrase of [
+			'app\\erweiterung-whatsapp-web',
+			'In den Eingang',
+			'Automatisch (nur mit Stichwort)',
+			'ist aus, bis du ihn einschaltest',
+			'inoffiziell und nicht von WhatsApp',
+			'sie sendet nie etwas, klickt nichts und ändert keine Nachricht',
+			'solange der WhatsApp-Web-Tab offen ist',
+			'Seitenstruktur nicht erkannt – Erweiterung braucht ein Update',
+			'Telefonnummern nicht'
+		]) {
+			expect(content, phrase).toContain(phrase);
+		}
+		expect(
+			within(section)
+				.getByRole('link', { name: 'Kanäle → WhatsApp Web → Einrichten' })
+				.getAttribute('href')
+		).toBe('/einstellungen/kanaele?einrichten=whatsapp-web');
 	});
 });
