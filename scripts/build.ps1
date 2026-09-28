@@ -51,7 +51,14 @@ try {
 		if ($LASTEXITCODE -ne 0) { exit 1 }
 	}
 
-	# Run check (web app and mail helper)
+	# Install the dependencies of the browser extension for WhatsApp Web if missing (ADR-0038)
+	if (-not (Test-Path 'extensions/whatsapp-web/node_modules')) {
+		Write-Host "Installing extension dependencies..."
+		npm --prefix extensions/whatsapp-web ci
+		if ($LASTEXITCODE -ne 0) { exit 1 }
+	}
+
+	# Run check (web app, mail helper and extension)
 	Write-Host "Running check..."
 	npm run check
 	if ($LASTEXITCODE -ne 0) { exit 1 }
@@ -61,7 +68,8 @@ try {
 	npm run lint
 	if ($LASTEXITCODE -ne 0) { exit 1 }
 
-	# Run build (before the tests: the SPA fallback test serves app/pb_public)
+	# Run build (before the tests: the SPA fallback test serves app/pb_public); the extension goes
+	# to app/erweiterung-whatsapp-web
 	Write-Host "Running build..."
 	npm run build
 	if ($LASTEXITCODE -ne 0) { exit 1 }
@@ -71,7 +79,7 @@ try {
 	& powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot 'build-mail-helper.ps1')
 	if ($LASTEXITCODE -ne 0) { exit 1 }
 
-	# Run tests (root unit, helper and integration tests, then the web tests)
+	# Run tests (root unit, helper and integration tests, then the web and extension tests)
 	Write-Host "Running tests..."
 	npm test
 	if ($LASTEXITCODE -ne 0) { exit 1 }

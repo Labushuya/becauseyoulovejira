@@ -1,0 +1,9 @@
+{
+	// The tests and their helpers, which read the fixtures with Node.
+	"extends": "./tsconfig.json",
+	"compilerOptions": {
+		"types": ["node"]
+	},
+	"include": ["src/**/*.ts"],
+	"exclude": []
+}

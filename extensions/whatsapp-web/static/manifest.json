@@ -1,0 +1,39 @@
+{
+	"manifest_version": 3,
+	"name": "becauseyoulovejira für WhatsApp Web",
+	"short_name": "byl WhatsApp Web",
+	"description": "Liest im offenen WhatsApp-Web-Tab und legt gewählte Nachrichten in den Eingang deiner lokalen becauseyoulovejira-App. Sendet nie etwas in WhatsApp.",
+	"version": "0.0.0",
+	"minimum_chrome_version": "116",
+	"permissions": ["storage"],
+	"host_permissions": ["https://web.whatsapp.com/*", "http://127.0.0.1/*", "http://localhost/*"],
+	"background": {
+		"service_worker": "background.js"
+	},
+	"content_scripts": [
+		{
+			"matches": ["https://web.whatsapp.com/*"],
+			"js": ["content.js"],
+			"css": ["content.css"],
+			"run_at": "document_idle",
+			"all_frames": false
+		}
+	],
+	"action": {
+		"default_title": "becauseyoulovejira für WhatsApp Web",
+		"default_popup": "options.html",
+		"default_icon": {
+			"128": "icons/icon.png"
+		}
+	},
+	"options_ui": {
+		"page": "options.html",
+		"open_in_tab": true
+	},
+	"icons": {
+		"128": "icons/icon.png"
+	},
+	"content_security_policy": {
+		"extension_pages": "script-src 'self'; object-src 'self'"
+	}
+}

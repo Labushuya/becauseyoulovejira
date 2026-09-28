@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="de">
+	<head>
+		<meta charset="utf-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		<title>becauseyoulovejira für WhatsApp Web</title>
+		<link rel="stylesheet" href="options.css" />
+	</head>
+	<body>
+		<main>
+			<h1>becauseyoulovejira für WhatsApp Web</h1>
+			<p class="intro">
+				Liest nur, was du im offenen WhatsApp-Web-Tab siehst, und legt Nachrichten in den Eingang
+				deiner App auf diesem Rechner. Sendet nie etwas in WhatsApp.
+			</p>
+
+			<section aria-labelledby="status-title">
+				<h2 id="status-title">Status</h2>
+				<ul class="status">
+					<li><span class="label">WhatsApp Web:</span> <span id="page-status">…</span></li>
+					<li>
+						<span class="label">App:</span>
+						<span id="app-status" role="status">Noch nicht geprüft.</span>
+					</li>
+				</ul>
+			</section>
+
+			<form id="connection" novalidate>
+				<h2>Verbindung zur App</h2>
+				<div class="field">
+					<label for="app-url">App-Adresse</label>
+					<input
+						id="app-url"
+						type="url"
+						autocomplete="off"
+						spellcheck="false"
+						aria-describedby="app-url-hint"
+					/>
+					<p id="app-url-hint" class="hint">
+						Nur auf diesem Rechner, Standard http://127.0.0.1:8090.
+					</p>
+					<p id="app-url-error" class="error" hidden></p>
+				</div>
+				<div class="field">
+					<label for="token">Zugangsschlüssel</label>
+					<input
+						id="token"
+						type="password"
+						autocomplete="off"
+						spellcheck="false"
+						aria-describedby="token-hint"
+					/>
+					<p id="token-hint" class="hint">
+						Aus der App: Einstellungen → Kanäle → WhatsApp Web. Leer lassen, um den gespeicherten zu
+						behalten.
+					</p>
+					<p id="token-error" class="error" hidden></p>
+				</div>
+				<div class="actions">
+					<button type="submit" class="primary">Speichern</button>
+					<button type="button" id="test">Verbindung testen</button>
+					<button type="button" id="forget">Schlüssel entfernen</button>
+				</div>
+				<p id="saved" class="hint" role="status"></p>
+			</form>
+
+			<section aria-labelledby="auto-title">
+				<h2 id="auto-title">Automatisch</h2>
+				<label class="switch">
+					<span>Automatisch (nur mit Stichwort)</span>
+					<input id="auto" type="checkbox" role="switch" aria-describedby="auto-hint" />
+				</label>
+				<p id="auto-hint" class="hint">
+					Neue Nachrichten im geöffneten Chat gehen an die App; übernommen wird nur, was ein
+					Stichwort für WhatsApp Web enthält. Nachrichten von vor dem Einschalten nie, und nur
+					solange der Tab offen ist.
+				</p>
+				<div class="field">
+					<label for="chats">Nur diese Chats (optional, ein Name je Zeile)</label>
+					<textarea id="chats" rows="4" spellcheck="false"></textarea>
+				</div>
+				<p id="auto-saved" class="hint" role="status"></p>
+			</section>
+		</main>
+		<script src="options.js"></script>
+	</body>
+</html>

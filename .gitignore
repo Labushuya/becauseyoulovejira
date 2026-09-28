@@ -5,6 +5,8 @@ app/pocketbase.exe
 app/byl-mail.exe
 app/byl-mail.exe.old-*
 helpers/mail/dist/
+# Build of the browser extension for WhatsApp Web (ADR-0038), loaded unpacked from here
+app/erweiterung-whatsapp-web/
 app/*pb_data*/
 app/pb_public/
 *.log
