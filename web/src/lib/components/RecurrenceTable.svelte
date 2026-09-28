@@ -9,6 +9,8 @@
 	import {
 		isWaiting,
 		nextTicketDate,
+		nextTicketNote,
+		nextTicketText,
 		ruleParams,
 		ruleStateLabel,
 		type OpenInstance,
@@ -20,9 +22,11 @@
 
 	// Overview "Wiederholungen" (E5 plan, package 5), a table like "Aufgaben", "Eingang" and
 	// "Projekte": Titel (link to the rule panel, like the title of a ticket), Rhythmus, Nächstes
-	// Ticket, Offene Tickets (every key with a link to its panel, the number in front when there are
-	// several; plan "Wiederholungen verständlich machen", recommendation 7), Projekt, Zustand
-	// ("Aktiv", "Pausiert" or "Entscheidung nötig" as text with an icon) and the action "Pausieren"
+	// Ticket (the due date and, below it, when it appears or which open ticket it waits for, the whole
+	// sentence as title; recommendation 2), Offene Tickets (every key with a link to its panel, the
+	// number in front when there are several; plan "Wiederholungen verständlich machen",
+	// recommendation 7), Projekt, Zustand ("Aktiv", "Pausiert" or "Wartet" as text with an icon)
+	// and the action "Pausieren"
 	// or "Fortsetzen". The store keeps the order:
 	// active rules first, then by the next ticket. The row of the rule in the panel is marked
 	// (colour plus a bar at its start, aria-current on the link). The table never scrolls sideways
@@ -137,7 +141,12 @@
 						<td class="text" data-col="rhythm" title={rhythmOf(rule)}>{rhythmOf(rule)}</td>
 					{/if}
 					{#if shown.has('next')}
-						<td class="date" data-col="next">{nextTicketDate(rule, today)}</td>
+						{@const keys = (open ?? []).map((ticket) => ticket.key)}
+						{@const note = nextTicketNote(rule, today, keys)}
+						<td class="date" data-col="next" title={nextTicketText(rule, today, keys)}>
+							{nextTicketDate(rule, today, keys)}
+							{#if note !== ''}<span class="note">{note}</span>{/if}
+						</td>
 					{/if}
 					{#if shown.has('open')}
 						<td
@@ -324,6 +333,15 @@
 		font-size: var(--font-size-control);
 		white-space: nowrap;
 		font-variant-numeric: tabular-nums;
+	}
+
+	/* Second line of "Nächstes Ticket": when it appears or what it waits for (recommendation 2). */
+	.date .note {
+		display: block;
+		overflow: hidden;
+		font-size: var(--font-size-small);
+		text-overflow: ellipsis;
+		color: var(--color-text-muted);
 	}
 
 	.key {

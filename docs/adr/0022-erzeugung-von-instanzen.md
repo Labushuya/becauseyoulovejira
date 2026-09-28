@@ -162,3 +162,14 @@ Nutzerentscheidung vom 2026-09-28 (Empfehlungen 5, 6 und 7). Nachtrag 2 gilt wei
 - **Schalter aus bei mehreren offenen Tickets (Empfehlung 6):** Ohne Schalter erzeugt die Regel nichts, solange eines offen ist. Regel-Panel und „Wiederholt sich“ sagen dann „Die Serie geht weiter, sobald alle 3 offenen Tickets erledigt sind (HAUS-1, HAUS-2, HAUS-3).“, das Formular dasselbe beim Ausschalten.
 - **Alle offenen Tickets (Empfehlung 7):** Übersicht (Spalte „Offene Tickets“ mit Zahl und allen Keys als Links) und Regel-Panel nennen jedes offene Ticket einer Regel, nicht nur eines.
 - Belegt in `recurrence-generate.test.mjs` (Warten bei 25 verpassten Tagen, Stapel nach „Alle nachholen“, bis 20 ohne Frage, beide Entscheidungen über die Record-API samt Anlegen mit `backlog`, Ablehnung anderer Werte) und `recurrence-rules.test.mjs` (Entscheidungen, Zufallsregeln mit „Alle nachholen“ gegen die tageweise Referenz).
+
+## Nachtrag 6 (2026-09-28, Plan „Wiederholungen verständlich machen“, WK-3): „Nächstes Ticket“ mit Erscheinen und Vorschau
+
+Nutzerentscheidung vom 2026-09-28 (Empfehlung 2 und Vorschau). §1 sagte „Nächstes Ticket am …“; die Oberfläche nennt jetzt, was der Server tun wird (`nextTicketOf` in `domain/recurrence-rule.ts`, nur mit `recurrence.ts`):
+
+- **Fälligkeit:** `next_due`; ohne Schalter mit verpassten Terminen der jüngste davon bis heute (`catchUp`, §3), denn so fällig wäre ein heute entstehendes Ticket.
+- **Erscheinen:** Fälligkeit minus Vorlauf („erscheint am 09.10.“), heute oder früher „erscheint in Kürze“ (der nächste stündliche Lauf).
+- **Offene Tickets:** Ohne Schalter hält jedes offene Ticket der Serie das nächste zurück: „(sobald HAUS-12 erledigt ist)“, bei erreichtem Erscheinen „erscheint, sobald HAUS-12 erledigt ist“; nach Erledigung ohne Datum „nach dem Erledigen von HAUS-12“. Mit Schalter zählen offene Tickets nicht.
+- **Wo:** Zeile „Wiederholt sich“ am Ticket, Regel-Panel und Übersicht (Datum, darunter „erscheint 09.10.“ bzw. „nach HAUS-12“, der ganze Satz als `title`).
+- **Vorschau** im Formular: jede Zeile „erscheint Fr 02.10. → fällig Mo 05.10.“ (Wochentag und Datum; „erscheint heute“, „erscheint sofort“), damit der Vorlauf sichtbar wird; nach Erledigung eine Zeile für „Wird das Ticket heute erledigt“.
+- **„Beginnt am“ in der Vergangenheit** bei einem Ticket ohne Fälligkeit (auch „Neues Ticket“, Empfehlung 4): Warnung ohne Rot „„Beginnt am“ liegt in der Vergangenheit: Das Ticket bekommt den ersten Termin 07.09.2026 und ist damit schon überfällig.“

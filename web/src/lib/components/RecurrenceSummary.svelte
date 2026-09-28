@@ -118,7 +118,13 @@
 			<span>Wiederholt sich{text === '' ? '' : `: ${text}`}</span>
 			{#if rule !== null}
 				<span aria-hidden="true">·</span>
-				<span>{nextTicketText(rule, today)}</span>
+				<span
+					>{nextTicketText(
+						rule,
+						today,
+						openTickets.map((open) => open.key)
+					)}</span
+				>
 				{#if rule.eachOccurrence === true}
 					<span aria-hidden="true">·</span>
 					<span>jeder Termin einzeln</span>

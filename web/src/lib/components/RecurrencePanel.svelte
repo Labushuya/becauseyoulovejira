@@ -391,7 +391,13 @@
 					tone={waiting ? 'neutral' : current.active ? 'brand' : 'muted'}
 				/>
 				{#if current.active}
-					<span class="next">{nextTicketText(current, today)}</span>
+					<span class="next"
+						>{nextTicketText(
+							current,
+							today,
+							openTickets.map((open) => open.key)
+						)}</span
+					>
 				{/if}
 			</div>
 			<!-- All open tickets of the rule, not only one (recommendation 7). -->

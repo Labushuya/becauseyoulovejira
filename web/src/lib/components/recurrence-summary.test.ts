@@ -190,7 +190,7 @@ describe('RecurrenceSummary', () => {
 			[rule()]
 		);
 		expect(screen.getByText('Wiederholt sich: jeden Montag')).toBeTruthy();
-		expect(screen.getByText('Nächstes Ticket am 28.09.')).toBeTruthy();
+		expect(screen.getByText('Nächstes Ticket fällig 28.09., erscheint in Kürze')).toBeTruthy();
 
 		await fireEvent.click(screen.getByRole('button', { name: 'Pausieren' }));
 		await vi.waitFor(() => expect(screen.getByText('Pausiert')).toBeTruthy());

@@ -119,9 +119,10 @@ describe('RecurrenceTable', () => {
 			within(row)
 				.getAllByRole('cell')
 				.map((cell) => cell.textContent?.replace(/\s+/g, ' ').trim());
+		// Below the due date: when the ticket appears, or the open ticket it waits for.
 		expect(cells(weekly)).toEqual([
 			'Jeden Montag',
-			'28.09.',
+			'28.09. nach TASK-7',
 			'TASK-7',
 			'–kein Projekt',
 			'Aktiv',
@@ -143,6 +144,9 @@ describe('RecurrenceTable', () => {
 			'Pausiert',
 			''
 		]);
+		expect(weekly.querySelector("td[data-col='next']")?.getAttribute('title')).toBe(
+			'Nächstes Ticket fällig 28.09., erscheint, sobald TASK-7 erledigt ist'
+		);
 	});
 
 	it('links the title to the rule panel and the key to the ticket panel', () => {

@@ -10,6 +10,8 @@ import {
 	RECURRENCE_CODES,
 	after,
 	afterCompletion,
+	catchUp,
+	createOn,
 	onOrAfter,
 	upcoming,
 	validRule,
@@ -21,7 +23,7 @@ import {
 	type Weekday
 } from './recurrence';
 import { formatCalendarDate } from './format';
-import { recurrenceTextInSentence, shortDate } from './recurrence-text';
+import { dayLabel, joinWords, recurrenceTextInSentence, shortDate } from './recurrence-text';
 import type { Priority } from './status';
 
 /** A rule as the data layer maps it (ADR-0021 section 1). */
@@ -80,20 +82,114 @@ export function ruleText(rule: RecurrenceRule): string {
 	return recurrenceTextInSentence(ruleParams(rule));
 }
 
-/** "Nächstes Ticket am 28.09.", "Nächstes Ticket nach dem Erledigen", "Pausiert". */
-export function nextTicketText(rule: RecurrenceRule, today: CalendarDate): string {
-	if (!rule.active) return 'Pausiert';
-	if (rule.nextDue !== null) return `Nächstes Ticket am ${shortDate(rule.nextDue, today)}`;
-	return 'Nächstes Ticket nach dem Erledigen';
+/**
+ * The next ticket of a rule as the server will make it (plan "Wiederholungen verständlich machen",
+ * recommendation 2):
+ *   due        its due date; for a fixed rhythm with missed dates the latest of them up to today,
+ *              which is what a ticket made today gets (ADR-0022 section 3); null while an
+ *              after-completion rule waits for the completion of its open ticket
+ *   appears    the day from which it is made (due minus the lead time), which may be today or
+ *              earlier ("in Kürze")
+ *   blockedBy  keys of the open tickets it waits for: without "Jeden Termin einzeln anlegen" a rule
+ *              makes nothing while one of its tickets is open
+ */
+export interface NextTicket {
+	state: 'paused' | 'waiting' | 'after_completion' | 'scheduled';
+	due: CalendarDate | null;
+	appears: CalendarDate | null;
+	blockedBy: string[];
+}
+
+export function nextTicketOf(
+	rule: RecurrenceRule,
+	today: CalendarDate,
+	openKeys: readonly string[] = []
+): NextTicket {
+	const blockedBy = rule.eachOccurrence === true ? [] : [...openKeys];
+	if (!rule.active) return { state: 'paused', due: rule.nextDue, appears: null, blockedBy: [] };
+	if (isWaiting(rule)) return { state: 'waiting', due: rule.nextDue, appears: null, blockedBy: [] };
+	const params = ruleParams(rule);
+	const valid = validRule(params);
+	if (rule.nextDue === null || valid === null) {
+		return { state: 'after_completion', due: null, appears: null, blockedBy };
+	}
+	const due =
+		valid.mode === 'calendar' && rule.eachOccurrence !== true && rule.nextDue < today
+			? catchUp(valid, rule.nextDue, today)
+			: rule.nextDue;
+	return { state: 'scheduled', due, appears: createOn(due, valid.lead_days), blockedBy };
+}
+
+/** "HAUS-12 erledigt ist" or "HAUS-12 und HAUS-14 erledigt sind". */
+function doneClause(keys: readonly string[]): string {
+	return keys.length === 1 ? `${keys[0]} erledigt ist` : `${joinWords(keys)} erledigt sind`;
+}
+
+/**
+ * The line "Nächstes Ticket …" of panel and ticket: "Nächstes Ticket fällig 12.10., erscheint am
+ * 09.10.", with " (sobald HAUS-12 erledigt ist)" while an open ticket holds it back, "Nächstes
+ * Ticket nach dem Erledigen von HAUS-12" after completion, "Pausiert" and, for a large backlog,
+ * "Nächstes Ticket wartet auf deine Entscheidung".
+ */
+export function nextTicketText(
+	rule: RecurrenceRule,
+	today: CalendarDate,
+	openKeys: readonly string[] = []
+): string {
+	const next = nextTicketOf(rule, today, openKeys);
+	if (next.state === 'paused') return 'Pausiert';
+	if (next.state === 'waiting') return 'Nächstes Ticket wartet auf deine Entscheidung';
+	if (next.state === 'after_completion' || next.due === null || next.appears === null) {
+		return next.blockedBy.length === 0
+			? 'Nächstes Ticket nach dem Erledigen'
+			: `Nächstes Ticket nach dem Erledigen von ${joinWords(next.blockedBy)}`;
+	}
+	const due = `Nächstes Ticket fällig ${shortDate(next.due, today)}`;
+	const blocked = next.blockedBy.length > 0;
+	if (next.appears <= today) {
+		return blocked
+			? `${due}, erscheint, sobald ${doneClause(next.blockedBy)}`
+			: `${due}, erscheint in Kürze`;
+	}
+	const appears = `${due}, erscheint am ${shortDate(next.appears, today)}`;
+	return blocked ? `${appears} (sobald ${doneClause(next.blockedBy)})` : appears;
 }
 
 /**
  * Column "Nächstes Ticket" of the overview (E5 plan, package 5): the due date of the next ticket
  * ("28.09."), or "nach dem Erledigen" while an after-completion rule waits for its instance. A
  * paused rule keeps its date for display (ADR-0023 section 4); the column "Zustand" says it pauses.
+ * The second line (`nextTicketNote`) says when it appears; the whole sentence is its title.
  */
-export function nextTicketDate(rule: RecurrenceRule, today: CalendarDate): string {
-	return rule.nextDue === null ? 'nach dem Erledigen' : shortDate(rule.nextDue, today);
+export function nextTicketDate(
+	rule: RecurrenceRule,
+	today: CalendarDate,
+	openKeys: readonly string[] = []
+): string {
+	const next = nextTicketOf(rule, today, openKeys);
+	return next.due === null || next.state === 'after_completion'
+		? 'nach dem Erledigen'
+		: shortDate(next.due, today);
+}
+
+/** Second line of the column: "erscheint 09.10.", "erscheint in Kürze", "nach HAUS-12", or ''. */
+export function nextTicketNote(
+	rule: RecurrenceRule,
+	today: CalendarDate,
+	openKeys: readonly string[] = []
+): string {
+	const next = nextTicketOf(rule, today, openKeys);
+	if (next.state === 'paused' || next.state === 'waiting') return '';
+	if (next.state === 'after_completion') {
+		return next.blockedBy.length === 0
+			? ''
+			: `von ${next.blockedBy[0]}${next.blockedBy.length > 1 ? ' …' : ''}`;
+	}
+	if (next.blockedBy.length > 0) {
+		return `nach ${next.blockedBy[0]}${next.blockedBy.length > 1 ? ' …' : ''}`;
+	}
+	if (next.appears === null || next.appears <= today) return 'erscheint in Kürze';
+	return `erscheint ${shortDate(next.appears, today)}`;
 }
 
 export type RuleState = 'Aktiv' | 'Pausiert' | 'Wartet';
@@ -543,17 +639,27 @@ export function formErrors(
 	return errors;
 }
 
+/** A row of the preview: the due date and the day from which its ticket is made. */
+export interface PreviewRow {
+	due: CalendarDate;
+	appears: CalendarDate;
+}
+
 export interface RecurrencePreview {
 	/** The next dates of a fixed rhythm, or the date after completing today. */
 	dates: CalendarDate[];
+	/** The same dates with the day each ticket appears (due minus the lead time). */
+	rows: PreviewRow[];
 	/** Due date a ticket without one gets with a fixed rhythm (ADR-0023 section 1), else null. */
 	firstDue: CalendarDate | null;
 }
 
 /**
  * Preview of the form: for a fixed rhythm the next three dates from the start (not before
- * today), after completion the date that follows a completion today. Empty while the values are
- * invalid. `withoutDue`: the ticket has no due date yet and gets the first occurrence.
+ * today), after completion the date that follows a completion today; each with the day its
+ * ticket appears (plan "Wiederholungen verständlich machen": "erscheint … → fällig …"). Empty
+ * while the values are invalid. `withoutDue`: the ticket has no due date yet and gets the first
+ * occurrence.
  */
 export function formPreview(
 	values: RecurrenceFormValues,
@@ -562,15 +668,30 @@ export function formPreview(
 ): RecurrencePreview {
 	const rule = validRule(formParams(values));
 	const invalid = rule === null || Object.keys(formErrors(values)).length > 0;
-	if (invalid || !isCalendarDate(rule.anchor)) return { dates: [], firstDue: null };
+	if (invalid || !isCalendarDate(rule.anchor)) return { dates: [], rows: [], firstDue: null };
+	const rowsOf = (dates: CalendarDate[]) =>
+		dates.map((due) => ({ due, appears: createOn(due, rule.lead_days) }));
 	if (rule.mode === 'after_completion') {
-		return { dates: [afterCompletion(rule, today)], firstDue: null };
+		const dates = [afterCompletion(rule, today)];
+		return { dates, rows: rowsOf(dates), firstDue: null };
 	}
 	const from = rule.anchor > today ? rule.anchor : today;
+	const dates = upcoming(rule, from, 3);
 	return {
-		dates: upcoming(rule, from, 3),
+		dates,
+		rows: rowsOf(dates),
 		firstDue: withoutDue ? onOrAfter(rule, rule.anchor) : null
 	};
+}
+
+/**
+ * "erscheint heute", "erscheint sofort" (the day lies before today) or "erscheint Fr 02.10.":
+ * when the ticket of a date appears, for the preview and the examples.
+ */
+export function appearsText(appears: CalendarDate, today: CalendarDate): string {
+	if (appears < today) return 'erscheint sofort';
+	if (appears === today) return 'erscheint heute';
+	return `erscheint ${dayLabel(appears, today)}`;
 }
 
 /**

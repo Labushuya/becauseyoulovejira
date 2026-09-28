@@ -41,13 +41,15 @@ describe('RecurrenceDialog', () => {
 		renderDialog();
 		await tick();
 		expect(document.activeElement).toBe(screen.getByRole('radio', { name: 'Fester Rhythmus' }));
-		expect(screen.getByText('Nächste Termine: 28.09.2026, 05.10.2026, 12.10.2026')).toBeTruthy();
+		const dues = () =>
+			[...document.querySelectorAll<HTMLElement>('.preview li')].map((row) => row.dataset.due);
+		expect(dues()).toEqual(['2026-09-28', '2026-10-05', '2026-10-12']);
 
 		await fireEvent.click(screen.getByRole('checkbox', { name: 'Donnerstag' }));
-		expect(screen.getByText('Nächste Termine: 28.09.2026, 01.10.2026, 05.10.2026')).toBeTruthy();
+		expect(dues()).toEqual(['2026-09-28', '2026-10-01', '2026-10-05']);
 
 		await fireEvent.input(screen.getByLabelText('Alle'), { target: { value: '2' } });
-		expect(screen.getByText('Nächste Termine: 28.09.2026, 01.10.2026, 12.10.2026')).toBeTruthy();
+		expect(dues()).toEqual(['2026-09-28', '2026-10-01', '2026-10-12']);
 
 		await fireEvent.change(screen.getByLabelText('Einheit'), { target: { value: 'monthly' } });
 		expect(screen.queryByRole('group', { name: 'Wochentage' })).toBeNull();

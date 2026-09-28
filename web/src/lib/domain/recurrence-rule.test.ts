@@ -8,6 +8,9 @@ import {
 	nextTicketDate,
 	nextTicketText,
 	openInstanceMessage,
+	appearsText,
+	nextTicketNote,
+	nextTicketOf,
 	backlogOf,
 	backlogText,
 	CATCH_UP_ASK_HINT,
@@ -72,15 +75,51 @@ describe('rules', () => {
 		expect(ruleText(rule({ mode: '', freq: '' }))).toBe('');
 	});
 
-	it('names the next ticket, the wait for the completion or the pause', () => {
-		expect(nextTicketText(rule(), TODAY)).toBe('Nächstes Ticket am 30.09.');
-		expect(nextTicketText(rule({ nextDue: '2027-01-31' }), TODAY)).toBe(
-			'Nächstes Ticket am 31.01.2027'
+	// Recommendation 2 of the plan "Wiederholungen verständlich machen".
+	it('names due date and appearance of the next ticket, what it waits for, or the pause', () => {
+		// Lead time 5: the ticket for 30.09. appears today.
+		expect(nextTicketText(rule(), TODAY)).toBe('Nächstes Ticket fällig 30.09., erscheint in Kürze');
+		expect(nextTicketText(rule({ nextDue: '2026-10-31' }), TODAY)).toBe(
+			'Nächstes Ticket fällig 31.10., erscheint am 26.10.'
 		);
+		expect(nextTicketText(rule({ nextDue: '2027-01-31' }), TODAY)).toBe(
+			'Nächstes Ticket fällig 31.01.2027, erscheint am 26.01.2027'
+		);
+		// Without the switch an open ticket holds it back.
+		expect(nextTicketText(rule({ nextDue: '2026-10-31' }), TODAY, ['HAUS-12'])).toBe(
+			'Nächstes Ticket fällig 31.10., erscheint am 26.10. (sobald HAUS-12 erledigt ist)'
+		);
+		expect(nextTicketText(rule(), TODAY, ['HAUS-12', 'HAUS-14'])).toBe(
+			'Nächstes Ticket fällig 30.09., erscheint, sobald HAUS-12 und HAUS-14 erledigt sind'
+		);
+		// With it, open tickets do not matter.
+		expect(
+			nextTicketText(rule({ nextDue: '2026-10-31', eachOccurrence: true }), TODAY, ['HAUS-12'])
+		).toBe('Nächstes Ticket fällig 31.10., erscheint am 26.10.');
+		// Missed dates: the ticket made today gets the latest of them (ADR-0022 section 3).
+		expect(nextTicketText(rule({ nextDue: '2026-07-31' }), TODAY, ['HAUS-12'])).toBe(
+			'Nächstes Ticket fällig 31.08., erscheint, sobald HAUS-12 erledigt ist'
+		);
+		expect(
+			nextTicketText(
+				rule({ mode: 'after_completion', freq: 'daily', monthDay: null, nextDue: null }),
+				TODAY,
+				['HAUS-12']
+			)
+		).toBe('Nächstes Ticket nach dem Erledigen von HAUS-12');
 		expect(nextTicketText(rule({ mode: 'after_completion', nextDue: null }), TODAY)).toBe(
 			'Nächstes Ticket nach dem Erledigen'
 		);
 		expect(nextTicketText(rule({ active: false }), TODAY)).toBe('Pausiert');
+		expect(nextTicketText(rule({ eachOccurrence: true, lastHint: CATCH_UP_ASK_HINT }), TODAY)).toBe(
+			'Nächstes Ticket wartet auf deine Entscheidung'
+		);
+		expect(nextTicketOf(rule({ nextDue: '2026-10-31' }), TODAY, ['HAUS-12'])).toEqual({
+			state: 'scheduled',
+			due: '2026-10-31',
+			appears: '2026-10-26',
+			blockedBy: ['HAUS-12']
+		});
 	});
 
 	it('names the open ticket when reopening is refused', () => {
@@ -180,6 +219,11 @@ describe('the form', () => {
 		const values = defaultFormValues('2026-09-28', TODAY);
 		expect(formPreview(values, TODAY)).toEqual({
 			dates: ['2026-09-28', '2026-10-05', '2026-10-12'],
+			rows: [
+				{ due: '2026-09-28', appears: '2026-09-25' },
+				{ due: '2026-10-05', appears: '2026-10-02' },
+				{ due: '2026-10-12', appears: '2026-10-09' }
+			],
 			firstDue: null
 		});
 		// A start in the past: the dates from today on.
@@ -188,10 +232,18 @@ describe('the form', () => {
 			formPreview({ ...values, mode: 'after_completion', freq: 'daily', interval: '3' }, TODAY)
 		).toEqual({
 			dates: ['2026-09-28'],
+			rows: [{ due: '2026-09-28', appears: '2026-09-25' }],
 			firstDue: null
 		});
 		expect(formPreview(defaultFormValues(null, TODAY), TODAY, true).firstDue).toBe(TODAY);
-		expect(formPreview({ ...values, weekdays: [] }, TODAY)).toEqual({ dates: [], firstDue: null });
+		expect(formPreview({ ...values, weekdays: [] }, TODAY)).toEqual({
+			dates: [],
+			rows: [],
+			firstDue: null
+		});
+		expect(appearsText('2026-09-24', TODAY)).toBe('erscheint sofort');
+		expect(appearsText(TODAY, TODAY)).toBe('erscheint heute');
+		expect(appearsText('2026-10-02', TODAY)).toBe('erscheint Fr 02.10.');
 	});
 });
 
@@ -204,6 +256,14 @@ describe('overview and rule panel (package 5)', () => {
 		);
 		// A paused rule keeps its date for display (ADR-0023 section 4).
 		expect(nextTicketDate(rule({ active: false, nextDue: '2026-10-01' }), TODAY)).toBe('01.10.');
+		// The second line: when it appears, or what it waits for (recommendation 2).
+		expect(nextTicketNote(rule({ nextDue: '2026-10-31' }), TODAY)).toBe('erscheint 26.10.');
+		expect(nextTicketNote(rule(), TODAY)).toBe('erscheint in Kürze');
+		expect(nextTicketNote(rule(), TODAY, ['HAUS-12', 'HAUS-14'])).toBe('nach HAUS-12 …');
+		expect(
+			nextTicketNote(rule({ mode: 'after_completion', nextDue: null }), TODAY, ['HAUS-12'])
+		).toBe('von HAUS-12');
+		expect(nextTicketNote(rule({ active: false }), TODAY)).toBe('');
 	});
 
 	it('names the state as text', () => {
