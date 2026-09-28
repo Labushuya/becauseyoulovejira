@@ -5,10 +5,16 @@ import { addDays } from './berlin-date';
 import { matchesFilter } from './filter';
 import {
 	DUE_GROUP_LABELS,
+	GROUP_COLLAPSED_MAX,
+	GROUP_COLLAPSED_STORAGE_KEY,
 	GROUPING_LABELS,
 	GROUPINGS,
 	NO_PROJECT_LABEL,
+	groupTicketLevels,
 	groupTickets,
+	readCollapsedGroups,
+	writeCollapsedGroups,
+	type GroupNode,
 	type Grouping
 } from './grouping';
 import { EMPTY_LIST_QUERY, NO_PROJECT, type ListQuery } from './list-query';
@@ -319,5 +325,153 @@ describe('groupTickets: recurrence (plan OR-2)', () => {
 		expect(shape(groupTickets([row('a'), row('b')], 'recurrence', TODAY))).toEqual([
 			['once', 'Einmalig', ['a', 'b']]
 		]);
+	});
+});
+
+describe('groupTicketLevels (plan OR-3)', () => {
+	/** Keys, paths and ticket IDs per level. */
+	function levels(groups: GroupNode<TicketSummary>[]): unknown[] {
+		return groups.map((group) => [
+			group.path,
+			group.label,
+			group.subgroups === null
+				? group.tickets.map((ticket) => ticket.id)
+				: group.subgroups.map((sub) => [
+						sub.path,
+						sub.label,
+						sub.tickets.map((ticket) => ticket.id)
+					])
+		]);
+	}
+
+	it('splits project groups by status, both in the order of the domain, without empty groups', () => {
+		const tickets = [
+			row('h-wait', { project: HOUSE, status: 'waiting' }),
+			row('none-open'),
+			row('h-open', { project: HOUSE }),
+			row('c-open', { project: CAR }),
+			row('h-open2', { project: HOUSE })
+		];
+		expect(levels(groupTicketLevels(tickets, 'project', 'status', TODAY))).toEqual([
+			[`project:${CAR.id}`, 'Auto', [[`project:${CAR.id}/status:open`, 'Offen', ['c-open']]]],
+			[
+				`project:${HOUSE.id}`,
+				'Haus',
+				[
+					[`project:${HOUSE.id}/status:open`, 'Offen', ['h-open', 'h-open2']],
+					[`project:${HOUSE.id}/status:waiting`, 'Wartet', ['h-wait']]
+				]
+			],
+			['project:ohne', NO_PROJECT_LABEL, [['project:ohne/status:open', 'Offen', ['none-open']]]]
+		]);
+	});
+
+	it('splits due groups by priority and keeps the sort within each leaf', () => {
+		const tickets = [
+			row('a', { due: TODAY, priority: 'low' }),
+			row('b', { due: TODAY, priority: 'urgent' }),
+			row('c', { priority: 'low' }),
+			row('d', { due: TODAY, priority: 'low' })
+		];
+		expect(levels(groupTicketLevels(tickets, 'due', 'priority', TODAY))).toEqual([
+			[
+				'due:today',
+				'Heute',
+				[
+					['due:today/priority:urgent', 'Dringend', ['b']],
+					['due:today/priority:low', 'Niedrig', ['a', 'd']]
+				]
+			],
+			['due:none', 'Ohne Datum', [['due:none/priority:low', 'Niedrig', ['c']]]]
+		]);
+	});
+
+	it('has one level without a second grouping or with the same one twice', () => {
+		const tickets = [row('a', { status: 'waiting' }), row('b')];
+		for (const second of [null, 'status'] as const) {
+			const groups = groupTicketLevels(tickets, 'status', second, TODAY);
+			expect(levels(groups)).toEqual([
+				['status:open', 'Offen', ['b']],
+				['status:waiting', 'Wartet', ['a']]
+			]);
+			expect(shape(groups)).toEqual(shape(groupTickets(tickets, 'status', TODAY)));
+		}
+	});
+
+	it.each(GROUPINGS.flatMap((first) => GROUPINGS.map((second) => [first, second] as const)))(
+		'%s and %s keep every ticket exactly once, with unique paths',
+		(first, second) => {
+			const tickets = mixedSet(90);
+			const groups = groupTicketLevels(tickets, first, second, TODAY);
+			const leaves = groups.flatMap((group) => group.subgroups ?? [group]);
+			const ids = leaves.flatMap((leaf) => leaf.tickets.map((ticket) => ticket.id));
+			expect([...ids].sort()).toEqual(tickets.map((ticket) => ticket.id).sort());
+			const paths = [...groups, ...leaves].map((group) => group.path);
+			expect(new Set(paths).size).toBe(new Set([...groups, ...leaves]).size);
+			expect(leaves.every((leaf) => leaf.tickets.length > 0)).toBe(true);
+		}
+	);
+});
+
+describe('folded groups in sessionStorage (plan OR-3)', () => {
+	function memory(initial: string | null = null) {
+		const values = new Map<string, string>();
+		if (initial !== null) values.set(GROUP_COLLAPSED_STORAGE_KEY, initial);
+		return {
+			values,
+			getItem: (key: string) => values.get(key) ?? null,
+			setItem: (key: string, value: string) => void values.set(key, value),
+			removeItem: (key: string) => void values.delete(key)
+		};
+	}
+
+	it('reads valid paths and drops everything else', () => {
+		const stored = JSON.stringify([
+			'status:open',
+			`project:${HOUSE.id}/status:in_progress`,
+			'status:open/priority:high/due:today',
+			'Status:open',
+			'status:',
+			42,
+			'status:open;x'
+		]);
+		expect(readCollapsedGroups(memory(stored))).toEqual([
+			'status:open',
+			`project:${HOUSE.id}/status:in_progress`
+		]);
+		expect(readCollapsedGroups(memory('{"a":1}'))).toEqual([]);
+		expect(readCollapsedGroups(memory('kaputt'))).toEqual([]);
+		expect(readCollapsedGroups(null)).toEqual([]);
+	});
+
+	it('writes the paths, removes the key when none is folded and keeps the newest at most', () => {
+		const storage = memory();
+		writeCollapsedGroups(storage, ['due:today', 'due:today/priority:high']);
+		expect(storage.values.get(GROUP_COLLAPSED_STORAGE_KEY)).toBe(
+			'["due:today","due:today/priority:high"]'
+		);
+		writeCollapsedGroups(storage, []);
+		expect(storage.values.has(GROUP_COLLAPSED_STORAGE_KEY)).toBe(false);
+		const many = Array.from({ length: GROUP_COLLAPSED_MAX + 5 }, (_, index) => `status:s${index}`);
+		writeCollapsedGroups(storage, many);
+		const kept = readCollapsedGroups(storage);
+		expect(kept).toHaveLength(GROUP_COLLAPSED_MAX);
+		expect(kept.at(-1)).toBe(`status:s${GROUP_COLLAPSED_MAX + 4}`);
+	});
+
+	it('loses only the memory when the storage is blocked', () => {
+		const blocked = {
+			getItem: () => {
+				throw new Error('blocked');
+			},
+			setItem: () => {
+				throw new Error('blocked');
+			},
+			removeItem: () => {
+				throw new Error('blocked');
+			}
+		};
+		expect(readCollapsedGroups(blocked)).toEqual([]);
+		expect(() => writeCollapsedGroups(blocked, ['status:open'])).not.toThrow();
 	});
 });

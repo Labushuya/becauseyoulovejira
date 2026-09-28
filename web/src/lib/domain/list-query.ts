@@ -59,6 +59,11 @@ export interface ListQuery {
 	/** Column sort; null: default order. */
 	sort: SortSpec | null;
 	grouping: Grouping | null;
+	/**
+	 * Second level of the grouping (plan OR-3, ADR-0013 addendum B): only with a first level and
+	 * never the same as it; null for one level.
+	 */
+	subGrouping: Grouping | null;
 	/** Switch "Erledigte anzeigen" (since E2). */
 	showDone: boolean;
 }
@@ -88,6 +93,7 @@ export const EMPTY_LIST_QUERY: Readonly<ListQuery> = Object.freeze({
 	search: null,
 	sort: null,
 	grouping: null,
+	subGrouping: null,
 	showDone: false
 });
 
@@ -104,6 +110,7 @@ export const LIST_PARAMS = Object.freeze({
 	search: 'q',
 	sort: 'sort',
 	grouping: 'gruppe',
+	subGrouping: 'untergruppe',
 	showDone: 'erledigte'
 } as const);
 
@@ -183,6 +190,7 @@ function parseRecordId(value: string | null): string | null {
 /** Reads the list state from URL parameters; every input gives a valid query. */
 export function parseListQuery(params: URLSearchParams): ListQuery {
 	const project = single(params, LIST_PARAMS.project);
+	const grouping = keyOf(GROUPINGS, GROUPING_VALUES, single(params, LIST_PARAMS.grouping));
 	return {
 		status: oneOf(STATUSES, single(params, LIST_PARAMS.status)),
 		priority: oneOf(PRIORITIES, single(params, LIST_PARAMS.priority)),
@@ -194,9 +202,29 @@ export function parseListQuery(params: URLSearchParams): ListQuery {
 		tag: parseRecordId(single(params, LIST_PARAMS.tag)),
 		search: parseSearch(single(params, LIST_PARAMS.search)),
 		sort: parseSort(single(params, LIST_PARAMS.sort)),
-		grouping: keyOf(GROUPINGS, GROUPING_VALUES, single(params, LIST_PARAMS.grouping)),
+		grouping,
+		subGrouping: secondLevel(
+			grouping,
+			keyOf(GROUPINGS, GROUPING_VALUES, single(params, LIST_PARAMS.subGrouping))
+		),
 		showDone: single(params, LIST_PARAMS.showDone) === '1'
 	};
+}
+
+/**
+ * The second level of the grouping as it applies (plan OR-3): only below a first level and
+ * different from it, otherwise null.
+ */
+export function secondLevel(
+	grouping: Grouping | null,
+	subGrouping: Grouping | null
+): Grouping | null {
+	return grouping === null || subGrouping === grouping ? null : subGrouping;
+}
+
+function subGroupingValue(query: Pick<ListQuery, 'grouping' | 'subGrouping'>): string | null {
+	const second = secondLevel(query.grouping, query.subGrouping);
+	return second === null ? null : GROUPING_VALUES[second];
 }
 
 /** URL values of a query in the fixed parameter order; unset parts are left out. */
@@ -223,6 +251,7 @@ function queryEntries(query: ListQuery): [string, string][] {
 				: `${query.sort.reversed ? REVERSED_PREFIX : ''}${SORT_VALUES[query.sort.key]}`
 		],
 		[LIST_PARAMS.grouping, query.grouping === null ? null : GROUPING_VALUES[query.grouping]],
+		[LIST_PARAMS.subGrouping, subGroupingValue(query)],
 		[LIST_PARAMS.showDone, query.showDone ? '1' : null]
 	];
 	return entries.filter((entry): entry is [string, string] => entry[1] !== null);

@@ -11,6 +11,7 @@ import {
 	hasFilters,
 	parseListQuery,
 	resetFilters,
+	secondLevel,
 	serializeListQuery,
 	withFilter,
 	type ListQuery
@@ -105,6 +106,7 @@ describe('parseListQuery', () => {
 			search: 'Auto',
 			sort: { key: 'due', reversed: true },
 			grouping: 'project',
+			subGrouping: null,
 			showDone: true
 		});
 	});
@@ -157,6 +159,7 @@ describe('serializeListQuery', () => {
 	it('writes the parameters in a fixed order', () => {
 		const full: ListQuery = {
 			showDone: true,
+			subGrouping: 'priority',
 			grouping: 'due',
 			sort: { key: 'created', reversed: false },
 			search: 'Öl wechseln',
@@ -171,12 +174,13 @@ describe('serializeListQuery', () => {
 		};
 		expect(serializeListQuery(full)).toBe(
 			'?status=backlog&prio=urgent&faellig=ueberfaellig&quelle=kalender&wiederholung=einmalig' +
-				`&projekt=ohne&tag=${TAG_ID}&q=%C3%96l+wechseln&sort=erstellt&gruppe=faellig&erledigte=1`
+				`&projekt=ohne&tag=${TAG_ID}&q=%C3%96l+wechseln&sort=erstellt&gruppe=faellig` +
+				'&untergruppe=prio&erledigte=1'
 		);
 		expect(serializeListQuery({ ...full, project: PROJECT_ID, subProjects: false })).toBe(
 			'?status=backlog&prio=urgent&faellig=ueberfaellig&quelle=kalender&wiederholung=einmalig' +
 				`&projekt=${PROJECT_ID}&unterprojekte=0&tag=${TAG_ID}&q=%C3%96l+wechseln&sort=erstellt` +
-				'&gruppe=faellig&erledigte=1'
+				'&gruppe=faellig&untergruppe=prio&erledigte=1'
 		);
 	});
 
@@ -259,6 +263,7 @@ describe('withFilter, resetFilters, hasFilters', () => {
 		search: 'Auto',
 		sort: { key: 'title', reversed: false },
 		grouping: 'priority',
+		subGrouping: 'project',
 		showDone: true
 	};
 
@@ -277,7 +282,12 @@ describe('withFilter, resetFilters, hasFilters', () => {
 
 	it('resets filters and search, keeps sort, grouping and the switch', () => {
 		expect(resetFilters(full)).toEqual(
-			query({ sort: { key: 'title', reversed: false }, grouping: 'priority', showDone: true })
+			query({
+				sort: { key: 'title', reversed: false },
+				grouping: 'priority',
+				subGrouping: 'project',
+				showDone: true
+			})
 		);
 	});
 
@@ -369,5 +379,53 @@ describe('list query: recurring (plan OR-2)', () => {
 		const recurring = query({ recurring: 'once', grouping: 'recurrence' });
 		expect(hasFilters(recurring)).toBe(true);
 		expect(resetFilters(recurring)).toEqual(query({ grouping: 'recurrence' }));
+	});
+});
+
+describe('list query: two levels of grouping (plan OR-3)', () => {
+	const read = (search: string) => parseListQuery(new URLSearchParams(search));
+
+	it('reads "untergruppe" only below "gruppe" and never the same as it', () => {
+		expect(read('gruppe=projekt&untergruppe=status')).toMatchObject({
+			grouping: 'project',
+			subGrouping: 'status'
+		});
+		expect(read('gruppe=faellig&untergruppe=prio').subGrouping).toBe('priority');
+		expect(read('gruppe=faellig&untergruppe=wiederholung').subGrouping).toBe('recurrence');
+		expect(read('untergruppe=status').subGrouping).toBeNull();
+		expect(read('gruppe=status&untergruppe=status').subGrouping).toBeNull();
+		expect(read('gruppe=status&untergruppe=tag').subGrouping).toBeNull();
+		expect(read('gruppe=status&untergruppe=prio&untergruppe=prio').subGrouping).toBeNull();
+		expect(read('gruppe=tag&untergruppe=prio')).toMatchObject({
+			grouping: null,
+			subGrouping: null
+		});
+	});
+
+	it('writes "untergruppe" right after "gruppe", and only where it applies', () => {
+		expect(serializeListQuery(query({ grouping: 'project', subGrouping: 'status' }))).toBe(
+			'?gruppe=projekt&untergruppe=status'
+		);
+		expect(serializeListQuery(query({ subGrouping: 'status' }))).toBe('');
+		expect(serializeListQuery(query({ grouping: 'status', subGrouping: 'status' }))).toBe(
+			'?gruppe=status'
+		);
+		expect(normalize('untergruppe=prio&erledigte=1&gruppe=faellig')).toBe(
+			'?gruppe=faellig&untergruppe=prio&erledigte=1'
+		);
+		expect(normalize('untergruppe=prio')).toBe('');
+	});
+
+	it('knows the second level as it applies', () => {
+		expect(secondLevel('project', 'status')).toBe('status');
+		expect(secondLevel('project', 'project')).toBeNull();
+		expect(secondLevel(null, 'status')).toBeNull();
+		expect(secondLevel('due', null)).toBeNull();
+	});
+
+	it('keeps both levels on "Zurücksetzen" and counts them as no filter', () => {
+		const grouped = query({ grouping: 'due', subGrouping: 'priority', priority: 'high' });
+		expect(resetFilters(grouped)).toEqual(query({ grouping: 'due', subGrouping: 'priority' }));
+		expect(hasFilters(query({ grouping: 'due', subGrouping: 'priority' }))).toBe(false);
 	});
 });

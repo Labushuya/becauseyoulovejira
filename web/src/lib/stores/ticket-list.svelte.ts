@@ -27,7 +27,7 @@ import {
 } from '$lib/data/tickets';
 import { berlinToday, msUntilNextBerlinMidnight, type CalendarDate } from '$lib/domain/berlin-date';
 import { NO_SUB_PROJECTS, matchesFilter, type SubProjectsOf } from '$lib/domain/filter';
-import { groupTickets, type TicketGroup } from '$lib/domain/grouping';
+import { groupTicketLevels, type GroupNode } from '$lib/domain/grouping';
 import { countKpis, type Kpis } from '$lib/domain/kpis';
 import {
 	EMPTY_LIST_QUERY,
@@ -329,10 +329,16 @@ export class TicketListStore {
 			)
 			.sort(order);
 	});
-	#groupList = $derived.by((): TicketGroup<TicketSummary>[] | null => {
-		const grouping = this.#query.grouping;
+	#groupList = $derived.by((): GroupNode<TicketSummary>[] | null => {
+		const { grouping, subGrouping } = this.#query;
 		if (grouping === null) return null;
-		return groupTickets(this.#visibleList, grouping, this.#today, this.#projectOf);
+		return groupTicketLevels(
+			this.#visibleList,
+			grouping,
+			subGrouping,
+			this.#today,
+			this.#projectOf
+		);
 	});
 	#doneList = $derived.by(() => {
 		const query = this.#query;
@@ -462,8 +468,9 @@ export class TicketListStore {
 	/**
 	 * The visible rows in groups (E3 plan, T-7 and package 13), null without a grouping. Groups
 	 * follow the order of the domain, empty ones are left out, and each keeps the column sort.
+	 * With a second level (plan OR-3) every group has its subgroups.
 	 */
-	get groups(): readonly TicketGroup<TicketSummary>[] | null {
+	get groups(): readonly GroupNode<TicketSummary>[] | null {
 		return this.#groupList;
 	}
 

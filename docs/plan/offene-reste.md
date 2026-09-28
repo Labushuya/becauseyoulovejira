@@ -39,14 +39,20 @@
 | 2026-09-28 | OR-2 | **Chip-Gruppe statt Popover:** drei Werte passen als Chips in die Leiste wie „Fällig“ und „Quelle“ (Legende „Wiederkehrend“, Chips „Alle“, „Nur wiederkehrende“, „Nur einmalige“). |
 | 2026-09-28 | OR-2 | **Server:** zwei feste Bedingungen im Ausdruck der erledigten Tickets (`recurrence != ""` bzw. `= ""`), jeweils nur aktiv, wenn der Parameter sie wählt. `tickets.recurrence` gibt es seit E1, eine Weiche für ein älteres Schema ist nicht nötig. Ein aus der Serie gelöstes Ticket hat `recurrence` leer und zählt als einmalig; so lautet auch die Regel im Client (`recurring`). |
 | 2026-09-28 | OR-2 | **Gruppe „Nach Wiederholung“:** „Wiederkehrend“ vor „Einmalig“, weil die Serien der seltenere, gesuchte Teil sind. Nachtrag A in ADR-0013. |
+| 2026-09-28 | OR-3 | **URL:** zweiter Parameter `untergruppe` statt einer Liste in `gruppe`: Alte Adressen bleiben gültig, `URLSearchParams` schreibt kein `%2C`, und `secondLevel` kann die Regel „nur unter einer ersten Ebene und nie gleich ihr“ beim Lesen und Schreiben an einer Stelle prüfen. Ungültiges zählt wie überall als nicht gesetzt. |
+| 2026-09-28 | OR-3 | **Popover:** zweite Fieldset „Danach gruppieren“ unter der ersten (eigene Radiogruppe, damit die Pfeiltasten in jeder Ebene bleiben), ohne die gewählte erste Ebene, ohne erste Ebene gesperrt (`disabled`) mit Hinweis. Wird die zweite Ebene zur ersten, entfällt sie; „Keine“ in der ersten leert beide. Der Knopf nennt „Gruppiert: Projekt › Status“. |
+| 2026-09-28 | OR-3 | **Tabelle:** HTML kennt keine verschachtelten `tbody`; deshalb bekommt eine erste Ebene mit zweiter einen eigenen `tbody` nur mit ihrem Kopf, jedes Blatt einen eigenen, benannt über `aria-labelledby` beider Köpfe. So bleiben Fokus-Rückgabe (`tbody[data-section="open"]`), Tests auf `data-group` und die Zeilenmarkierung unverändert. |
+| 2026-09-28 | OR-3 | **Aufklappen:** Jeder Gruppenkopf ist ein Disclosure-Knopf mit `aria-expanded`, der Bezeichnung und Zahl enthält (sein Name ist der alte Name des Kopfes, „Offen, 2 Tickets“), auch bei einer Ebene. Gemerkt wird je Tab in `sessionStorage` `byl-groups-collapsed` über den Pfad der Gruppe (`project:<id>/status:open`), wie `byl-projects-collapsed`; höchstens 200 Pfade, streng gelesen. Nicht in der URL, weil Zuklappen eine flüchtige Sicht ist und Adressen sonst mit jeder Gruppe wachsen. |
+| 2026-09-28 | OR-3 | **Zahl:** Jeder Kopf zählt die offenen Tickets seiner Gruppe wie bisher; die erste Ebene zählt alle ihrer Blätter. |
+| 2026-09-28 | OR-3 | `GroupPopover` zieht auf die Schriftgrößen-Tokens und fällt von der Liste (`no-own-font-sizes.test.ts` jetzt 178). |
 
 ## 4. Status
 
 | Paket | Stand |
 |---|---|
 | OR-1 | gemergt (#143) |
-| OR-2 | in Arbeit |
-| OR-3 | geplant |
+| OR-2 | gemergt (#144) |
+| OR-3 | in Arbeit |
 | OR-4 | geplant |
 | OR-5 | geplant |
 

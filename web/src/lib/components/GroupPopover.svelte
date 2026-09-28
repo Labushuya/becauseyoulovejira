@@ -2,7 +2,7 @@
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
 	import { GROUPINGS, GROUPING_LABELS, type Grouping } from '$lib/domain/grouping';
-	import { parseListQuery } from '$lib/domain/list-query';
+	import { parseListQuery, type ListQuery } from '$lib/domain/list-query';
 	import { withListQuery } from '$lib/ticket-links';
 	import Popover from './overlay/Popover.svelte';
 
@@ -12,29 +12,69 @@
 	// parameter `gruppe`). A pointer click or Enter closes the popover; the arrow keys apply the
 	// grouping at once and leave it open, so the keyboard can move through the choices. On opening
 	// the focus goes to the chosen grouping.
+	// Two levels (plan OR-3, ADR-0013 addendum B): a second fieldset "Danach gruppieren" below the
+	// first (`untergruppe`), with "Keine" and every grouping except the first level. It is locked
+	// (disabled) with a hint while there is no first level; choosing the second level as first
+	// clears the second.
 	const uid = $props.id();
 	const legendId = `${uid}-legend`;
+	const secondHintId = `${uid}-second-hint`;
 
 	const NONE = '';
-	const choices: readonly { value: Grouping | typeof NONE; label: string }[] = [
+	type Choice = { value: Grouping | typeof NONE; label: string };
+	const choices: readonly Choice[] = [
 		{ value: NONE, label: 'Keine' },
 		...GROUPINGS.map((value) => ({ value, label: `Nach ${GROUPING_LABELS[value]}` }))
 	];
 
-	const grouping = $derived(parseListQuery(page.url.searchParams).grouping);
+	const query = $derived(parseListQuery(page.url.searchParams));
+	const grouping = $derived(query.grouping);
+	const subGrouping = $derived(query.subGrouping);
+	/** The second level offers every grouping except the first. */
+	const secondChoices = $derived(choices.filter((choice) => choice.value !== grouping));
 	const buttonLabel = $derived(
-		grouping === null ? 'Gruppieren' : `Gruppiert: ${GROUPING_LABELS[grouping]}`
+		grouping === null
+			? 'Gruppieren'
+			: `Gruppiert: ${GROUPING_LABELS[grouping]}${
+					subGrouping === null ? '' : ` › ${GROUPING_LABELS[subGrouping]}`
+				}`
 	);
 
-	async function choose(event: Event & { currentTarget: HTMLInputElement }) {
+	function valueOf(event: Event & { currentTarget: HTMLInputElement }): Grouping | null {
 		const value = event.currentTarget.value;
-		const next = value === NONE ? null : (value as Grouping);
+		return value === NONE ? null : (value as Grouping);
+	}
+
+	async function navigate(next: ListQuery) {
+		await goto(withListQuery(page.url, next), { keepFocus: true, noScroll: true });
+	}
+
+	async function chooseFirst(event: Event & { currentTarget: HTMLInputElement }) {
+		const next = valueOf(event);
 		const current = parseListQuery(page.url.searchParams);
 		if (current.grouping === next) return;
-		await goto(withListQuery(page.url, { ...current, grouping: next }), {
-			keepFocus: true,
-			noScroll: true
-		});
+		// The second level stays unless it is the new first one (or there is none).
+		const second = next === null || current.subGrouping === next ? null : current.subGrouping;
+		await navigate({ ...current, grouping: next, subGrouping: second });
+	}
+
+	async function chooseSecond(event: Event & { currentTarget: HTMLInputElement }) {
+		const next = valueOf(event);
+		const current = parseListQuery(page.url.searchParams);
+		if (current.grouping === null || current.subGrouping === next) return;
+		await navigate({ ...current, subGrouping: next });
+	}
+
+	/** A pointer click (detail > 0) closes; a click the arrow keys cause does not. */
+	function closeOnClick(event: MouseEvent, close: () => void) {
+		if (event.detail > 0) close();
+	}
+
+	function closeOnEnter(event: KeyboardEvent, close: () => void) {
+		if (event.key === 'Enter') {
+			event.preventDefault();
+			close();
+		}
 	}
 </script>
 
@@ -62,21 +102,38 @@
 							name={`${uid}-grouping`}
 							value={choice.value}
 							{checked}
-							onchange={choose}
-							onclick={(event) => {
-								// A pointer click (detail > 0) closes; a click the arrow keys cause does not.
-								if (event.detail > 0) close();
-							}}
-							onkeydown={(event) => {
-								if (event.key === 'Enter') {
-									event.preventDefault();
-									close();
-								}
-							}}
+							onchange={chooseFirst}
+							onclick={(event) => closeOnClick(event, close)}
+							onkeydown={(event) => closeOnEnter(event, close)}
 						/>
 						{choice.label}
 					</label>
 				{/each}
+			</fieldset>
+			<fieldset
+				class="second"
+				disabled={grouping === null}
+				aria-describedby={grouping === null ? secondHintId : undefined}
+			>
+				<legend>Danach gruppieren</legend>
+				{#each secondChoices as choice, index (choice.value)}
+					{@const checked = (subGrouping ?? NONE) === choice.value}
+					<label class="choice" class:checked class:after-none={index === 1}>
+						<input
+							type="radio"
+							name={`${uid}-sub-grouping`}
+							value={choice.value}
+							{checked}
+							onchange={chooseSecond}
+							onclick={(event) => closeOnClick(event, close)}
+							onkeydown={(event) => closeOnEnter(event, close)}
+						/>
+						{choice.label}
+					</label>
+				{/each}
+				{#if grouping === null}
+					<p class="hint" id={secondHintId}>Erst eine erste Ebene wählen.</p>
+				{/if}
 			</fieldset>
 		{/snippet}
 	</Popover>
@@ -92,7 +149,7 @@
 		gap: 0.375rem;
 		align-items: center;
 		padding: 0.25rem 0.625rem;
-		font-size: 0.8125rem;
+		font-size: var(--font-size-control);
 		color: var(--color-text-muted);
 		background: var(--color-surface);
 		border: 1px solid var(--color-line);
@@ -128,9 +185,20 @@
 		border: none;
 	}
 
+	.second {
+		margin-top: 0.5rem;
+		padding-top: 0.5rem;
+		border-top: 1px solid var(--color-line);
+	}
+
+	.second:disabled .choice {
+		color: var(--color-text-muted);
+		cursor: not-allowed;
+	}
+
 	legend {
 		padding: 0 0.375rem 0.25rem;
-		font-size: 0.75rem;
+		font-size: var(--font-size-small);
 		font-weight: 600;
 		color: var(--color-text-muted);
 	}
@@ -140,7 +208,7 @@
 		gap: 0.5rem;
 		align-items: center;
 		padding: 0.25rem 0.375rem;
-		font-size: 0.875rem;
+		font-size: var(--font-size-body);
 		border-radius: var(--radius-control);
 		cursor: pointer;
 	}
@@ -160,5 +228,11 @@
 	/* The chosen grouping: the radio and the weight, never color alone (WCAG 1.4.1). */
 	.choice.checked {
 		font-weight: 600;
+	}
+
+	.hint {
+		padding: 0.25rem 0.375rem 0;
+		font-size: var(--font-size-small);
+		color: var(--color-text-muted);
 	}
 </style>

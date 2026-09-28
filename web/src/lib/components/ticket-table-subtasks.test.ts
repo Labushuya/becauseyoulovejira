@@ -3,7 +3,7 @@
 // place with the path hint, the switch "Unteraufgaben einrücken" and the column "Übergeordnet".
 // List store and catalog run for real on fake data layers.
 
-import { render, screen } from '@testing-library/svelte';
+import { cleanup, render, screen } from '@testing-library/svelte';
 import { tick } from 'svelte';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { DoneTicketPage } from '$lib/data/tickets';
@@ -155,6 +155,28 @@ describe('sub-tasks in the ticket table', () => {
 		expect(rowOf('HAUS-14').querySelector('.path')?.textContent).toBe('HAUS-12 ›');
 		// The group counts every ticket on its own.
 		expect(open?.querySelector('.group-count')?.textContent).toContain('3');
+	});
+
+	it('nests only within the same leaf group of two levels (plan OR-3)', async () => {
+		// One level "Nach Wiederholung": all tickets are single, parent and sub-tasks share the group.
+		await showTable('/?gruppe=wiederholung');
+		expect(rowOf('HAUS-13').classList.contains('nested')).toBe(true);
+		expect(keys()).toEqual(['TASK-1', 'HAUS-12', 'HAUS-13', 'HAUS-14']);
+		cleanup();
+
+		// A second level by status puts the parent (in progress) into another leaf than its
+		// sub-tasks (open): no indent, the path stands instead.
+		await showTable('/?gruppe=wiederholung&untergruppe=status');
+		const leaf = (group: string) =>
+			[
+				...(document
+					.querySelector(`tbody[data-group="${group}"]`)
+					?.querySelectorAll<HTMLElement>('tr[data-ticket-id]') ?? [])
+			].map((row) => row.querySelector('[data-col="key"]')?.textContent?.trim());
+		expect(leaf('once/in_progress')).toEqual(['HAUS-12']);
+		expect(leaf('once/open')).toEqual(['HAUS-13', 'TASK-1', 'HAUS-14']);
+		expect(rows().some((row) => row.classList.contains('nested'))).toBe(false);
+		expect(rowOf('HAUS-14').querySelector('.path')?.textContent).toBe('HAUS-12 ›');
 	});
 
 	it('shows the parent in the column "Übergeordnet" when it is switched on', async () => {

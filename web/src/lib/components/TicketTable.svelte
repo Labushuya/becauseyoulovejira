@@ -1,10 +1,16 @@
 <script lang="ts">
 	import { tick, type Snippet } from 'svelte';
+	import { SvelteSet } from 'svelte/reactivity';
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
 	import { NEST_SUBTASKS, TICKET_TABLE } from '$lib/domain/columns';
 	import { arrangeRows } from '$lib/domain/subtasks';
-	import { GROUPING_LABELS } from '$lib/domain/grouping';
+	import {
+		GROUPING_LABELS,
+		readCollapsedGroups,
+		writeCollapsedGroups,
+		type GroupNode
+	} from '$lib/domain/grouping';
 	import {
 		MORE_COLUMNS_HINT,
 		SORT_COLUMN_LABELS,
@@ -51,6 +57,11 @@
 	// "Tags", then "Projekt", last "Fällig"; key, title and the check mark always stay. The caption
 	// then names the panel, where the hidden values stand. A grip on the right edge of a header
 	// changes the width of its column (package SP-2).
+	// Groups on two levels (plan OR-3, ADR-0013 addendum B): a first level has a tbody with its
+	// head only, each group of the second level a tbody of its own, named by both heads. Every
+	// head is a disclosure button (aria-expanded) with the label and the number of open tickets;
+	// folded groups are kept per tab in sessionStorage. Sub-tasks follow their parent only within
+	// the same leaf group (arrangeRows per leaf, ADR-0033 section 5).
 	let {
 		store,
 		catalog,
@@ -158,6 +169,29 @@
 		if (!frame) return;
 		const head = cellsOf(frame, 'tags').filter((cell) => cell.tagName === 'TH');
 		columnFit.autofit('tags', Math.max(tagsNaturalWidth(), naturalWidth(head)));
+	}
+
+	function sessionStore(): Storage | null {
+		try {
+			return window.sessionStorage;
+		} catch {
+			return null;
+		}
+	}
+
+	/** Folded groups of this tab by their path (plan OR-3); default open. */
+	const collapsed = new SvelteSet<string>(readCollapsedGroups(sessionStore()));
+
+	/** Folds or unfolds a group; the button keeps the focus. */
+	function toggleGroup(path: string) {
+		if (collapsed.has(path)) collapsed.delete(path);
+		else collapsed.add(path);
+		writeCollapsedGroups(sessionStore(), [...collapsed]);
+	}
+
+	/** Open tickets of a group (a just checked row still stands in it but does not count). */
+	function openCount(group: GroupNode<TicketSummary>): number {
+		return group.tickets.filter((ticket) => ticket.status !== 'done').length;
 	}
 
 	/** Row that last had the focus, to restore it when that row moves or disappears. */
@@ -306,6 +340,32 @@
 			ontoggle={(done) => store.setDone(ticket.id, done)}
 		/>
 	{/each}
+{/snippet}
+
+<!-- Head of a group: a disclosure button with the label and the number (plan OR-3). -->
+{#snippet groupHead(group: GroupNode<TicketSummary>, id: string, level: 1 | 2)}
+	{@const count = openCount(group)}
+	{@const folded = collapsed.has(group.path)}
+	<tr class="section-head group-head" class:level-2={level === 2}>
+		<th scope="rowgroup" colspan={fit.visible.length} {id}>
+			<button
+				class="group-toggle"
+				type="button"
+				aria-expanded={!folded}
+				title={folded ? 'Gruppe aufklappen' : 'Gruppe zuklappen'}
+				onclick={() => toggleGroup(group.path)}
+			>
+				<svg class="fold" viewBox="0 0 12 12" aria-hidden="true" focusable="false">
+					<path d={folded ? 'M4.5 3l3 3-3 3' : 'M3 4.5l3 3 3-3'} />
+				</svg>
+				{group.label}<span class="group-count"
+					><span aria-hidden="true">{count}</span><span class="visually-hidden"
+						>, {count === 1 ? '1 Ticket' : `${count} Tickets`}</span
+					></span
+				>
+			</button>
+		</th>
+	</tr>
 {/snippet}
 
 <!-- Header of a shown column; `key` makes it a sort button (T-5), the grip resizes (SP-2). -->
@@ -466,7 +526,11 @@
 							? 'Standard-Reihenfolge'
 							: `sortiert nach ${sortLabel(query.sort)}`}{query.grouping === null
 							? ''
-							: ` · gruppiert nach ${GROUPING_LABELS[query.grouping]}`}
+							: ` · gruppiert nach ${GROUPING_LABELS[query.grouping]}${
+									query.subGrouping === null
+										? ''
+										: `, dann nach ${GROUPING_LABELS[query.subGrouping]}`
+								}`}
 					</span>{#if fit.autoHidden.length > 0}<span class="caption-more">{MORE_COLUMNS_HINT}</span
 						>{/if}
 				</caption>
@@ -494,24 +558,42 @@
 					</tr>
 				</thead>
 				{#if hasOpenRows && store.groups !== null}
-					{#each store.groups as group (group.key)}
-						{@const count = group.tickets.filter((ticket) => ticket.status !== 'done').length}
-						<tbody
-							data-section="open"
-							data-group={group.key}
-							aria-labelledby={`${uid}-group-${group.key}`}
-						>
-							<tr class="section-head group-head">
-								<th scope="rowgroup" colspan={fit.visible.length} id={`${uid}-group-${group.key}`}>
-									{group.label}<span class="group-count"
-										><span aria-hidden="true">{count}</span><span class="visually-hidden"
-											>, {count === 1 ? '1 Ticket' : `${count} Tickets`}</span
-										></span
+					{#each store.groups as group (group.path)}
+						{@const headId = `${uid}-group-${group.key}`}
+						{@const folded = collapsed.has(group.path)}
+						{#if group.subgroups === null}
+							<tbody data-section="open" data-group={group.key} aria-labelledby={headId}>
+								{@render groupHead(group, headId, 1)}
+								{#if !folded}
+									{@render rows(group.tickets)}
+								{/if}
+							</tbody>
+						{:else}
+							<tbody
+								data-section="open"
+								data-group={group.key}
+								data-level="1"
+								aria-labelledby={headId}
+							>
+								{@render groupHead(group, headId, 1)}
+							</tbody>
+							{#if !folded}
+								{#each group.subgroups as sub (sub.path)}
+									{@const subId = `${uid}-group-${group.key}-${sub.key}`}
+									<tbody
+										data-section="open"
+										data-group={`${group.key}/${sub.key}`}
+										data-level="2"
+										aria-labelledby={`${headId} ${subId}`}
 									>
-								</th>
-							</tr>
-							{@render rows(group.tickets)}
-						</tbody>
+										{@render groupHead(sub, subId, 2)}
+										{#if !collapsed.has(sub.path)}
+											{@render rows(sub.tickets)}
+										{/if}
+									</tbody>
+								{/each}
+							{/if}
+						{/if}
 					{/each}
 				{:else if hasOpenRows}
 					<tbody data-section="open" aria-label="Offene Tickets">
@@ -696,6 +778,44 @@
 	.group-head th {
 		padding-top: 0.75rem;
 		color: var(--color-text);
+	}
+
+	/* The second level is indented below its first level (plan OR-3). */
+	.group-head.level-2 th {
+		padding-top: 0.5rem;
+		padding-left: 2rem;
+		font-weight: 500;
+	}
+
+	.group-toggle {
+		display: inline-flex;
+		gap: 0.375rem;
+		align-items: center;
+		max-width: 100%;
+		padding: 0.125rem 0.25rem;
+		margin-left: -0.25rem;
+		font: inherit;
+		color: inherit;
+		text-align: left;
+		background: none;
+		border: none;
+		border-radius: var(--radius-control);
+		cursor: pointer;
+	}
+
+	.group-toggle:hover {
+		background: var(--fill-control-hover);
+	}
+
+	.fold {
+		flex: none;
+		width: 0.75rem;
+		height: 0.75rem;
+		fill: none;
+		stroke: currentColor;
+		stroke-width: 1.5;
+		stroke-linecap: round;
+		stroke-linejoin: round;
 	}
 
 	.group-count {
