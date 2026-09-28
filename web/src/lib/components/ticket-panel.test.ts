@@ -1338,6 +1338,93 @@ describe('ticket route: full view (ADR-0025 section 7, UI-7)', () => {
 		expect(cancel).toHaveBeenCalledOnce();
 	});
 
+	describe('unsaved text when a link leaves the ticket', () => {
+		const OTHER = 'zzz999zzz999zzz';
+
+		/** Guard call for the full view of another ticket; returns its cancel spy. */
+		function leave(guard: Guard | undefined) {
+			if (guard === undefined) throw new Error('No navigation guard registered');
+			const cancel = vi.fn();
+			guard({
+				type: 'link',
+				from: null,
+				cancel,
+				to: {
+					url: new URL(`/tickets/${OTHER}/voll?erledigte=1`, 'http://localhost:3000'),
+					route: { id: '/(app)/(tickets)/tickets/[id]/voll' },
+					params: { id: OTHER }
+				}
+			} as unknown as BeforeNavigate);
+			return cancel;
+		}
+
+		async function withDraft() {
+			const view = await renderFullView();
+			view.store.edit('description');
+			view.store.setDraft('description', 'Halber Text');
+			await tick();
+			return view;
+		}
+
+		const question = () => screen.queryByRole('group', { name: 'Änderungen verwerfen?' });
+
+		it('asks inline in the full view, without a dialog over it', async () => {
+			const { dialog, guard } = await withDraft();
+			const origin = within(dialog).getByRole('button', { name: 'Löschen …' });
+			origin.focus();
+
+			const cancel = leave(guard);
+			await tick();
+
+			expect(cancel).toHaveBeenCalledOnce();
+			expect(screen.getAllByRole('dialog')).toHaveLength(1);
+			const group = question();
+			if (group === null) throw new Error('No inline question');
+			expect(dialog.contains(group)).toBe(true);
+			expect(within(group).getByRole('heading', { name: /Änderungen verwerfen\?/ })).toBeTruthy();
+			expect(within(group).getByText('Der nicht gespeicherte Text geht verloren.')).toBeTruthy();
+			const stay = within(group).getByRole('button', { name: 'Weiter bearbeiten' });
+			expect(document.activeElement).toBe(stay);
+
+			await fireEvent.click(stay);
+			await tick();
+
+			expect(question()).toBeNull();
+			expect(document.activeElement).toBe(origin);
+			expect(mocks.goto).not.toHaveBeenCalled();
+		});
+
+		it('goes on after "Verwerfen" without asking again', async () => {
+			const { guard } = await withDraft();
+			leave(guard);
+			await tick();
+			const group = question();
+			if (group === null) throw new Error('No inline question');
+
+			await fireEvent.click(within(group).getByRole('button', { name: 'Verwerfen' }));
+
+			expect(mocks.goto).toHaveBeenCalledExactlyOnceWith(`/tickets/${OTHER}/voll?erledigte=1`);
+			expect(leave(guard)).not.toHaveBeenCalled();
+		});
+
+		it('stays with Escape, consumed so that the full view stays open', async () => {
+			const { dialog, guard } = await withDraft();
+			leave(guard);
+			await tick();
+			const group = question();
+			if (group === null) throw new Error('No inline question');
+
+			await fireEvent.keyDown(within(group).getByRole('button', { name: 'Weiter bearbeiten' }), {
+				key: 'Escape'
+			});
+			await tick();
+
+			expect(question()).toBeNull();
+			expect(dialog.open).toBe(true);
+			expect(mocks.goto).not.toHaveBeenCalled();
+		});
+	});
+
 	it('deletes from the full view inline, without a dialog over it, and goes back to the list', async () => {
 		const { dialog, data } = await renderFullView();
 		data.delete.mockResolvedValueOnce(undefined);
