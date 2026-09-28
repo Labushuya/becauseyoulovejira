@@ -6,12 +6,15 @@
 
 import { randomBytes } from 'node:crypto';
 import { request } from 'node:http';
+import { fileURLToPath } from 'node:url';
 import PocketBase from 'pocketbase';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { startPocketBase } from '../support/pocketbase-harness.mjs';
+import { runPowerShellJson } from '../support/powershell.mjs';
 import { ackAttention, subscribeAttention } from '../../web/src/lib/data/attention.ts';
 
 const TOPIC = 'byl/attention';
+const FUNCTIONS_FILE = fileURLToPath(new URL('../../app/byl-functions.ps1', import.meta.url));
 const GAP_MS = 2100;
 const EVENT_TIMEOUT_MS = 5_000;
 const QUIET_PERIOD_MS = 400;
@@ -240,6 +243,35 @@ describe('presence and attention (ADR-0035, SF-1)', () => {
 		await second.realtime.unsubscribe(TOPIC);
 		expect((await call('/api/byl/presence')).body.tabs).toBe(1);
 	});
+
+	it('answers the requests of byl-control.ps1 like any script (SF-4)', async () => {
+		await nextSlot();
+		const answers = runPowerShellJson(
+			String.raw`
+. $env:BYL_FUNCTIONS
+$base = $env:BYL_TEST_INPUT | ConvertFrom-Json
+$presence = Invoke-LocalRequest -Url "$base/api/byl/presence"
+$sent = Invoke-LocalRequest -Method POST -Url "$base/api/byl/attention?reason=start"
+$message = ConvertFrom-AttentionAnswer -StatusCode $sent.StatusCode -Body $sent.Body
+$state = Invoke-LocalRequest -Url "$base/api/byl/attention/$($message.Nonce)"
+$gone = Invoke-LocalRequest -Url 'http://127.0.0.1:9/api/byl/presence' -TimeoutMilliseconds 1000
+@{
+    presence = ConvertFrom-PresenceAnswer -StatusCode $presence.StatusCode -Body $presence.Body
+    message = $message
+    acked = ConvertFrom-AttentionState -StatusCode $state.StatusCode -Body $state.Body
+    gone = $null -eq $gone
+} | ConvertTo-Json -Depth 4 -Compress`,
+			instance.url,
+			{ BYL_FUNCTIONS: FUNCTIONS_FILE }
+		);
+		lastMessageAt = Date.now();
+		expect(answers.presence).toEqual({ Tabs: 1, LandingAgoMs: expect.any(Number) });
+		expect(answers.message.Nonce).toMatch(/^[A-Za-z0-9]{24}$/);
+		expect(answers.message.Notified).toBe(1);
+		expect(answers.acked).toBe(false);
+		expect(answers.gone).toBe(true);
+		await until(() => firstMessages.at(-1)?.nonce === answers.message.Nonce);
+	}, 60_000);
 
 	it('works with the data layer of the SPA (SF-3)', async () => {
 		const pb = await user();

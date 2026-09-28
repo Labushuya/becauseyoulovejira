@@ -88,6 +88,73 @@ function Open-App {
     Start-Process -FilePath $BylAppUrl
 }
 
+function Get-Presence {
+    # Open app tabs and a landing page lately (ADR-0035 section 4); $null on any failure.
+    try {
+        $answer = Invoke-LocalRequest -Url $BylPresenceUrl
+        if ($null -eq $answer) { return $null }
+        return ConvertFrom-PresenceAnswer -StatusCode $answer.StatusCode -Body $answer.Body
+    }
+    catch {
+        return $null
+    }
+}
+
+function Send-Attention {
+    # Message to the open app tabs; the answer of the route or $null on any failure.
+    param([Parameter(Mandatory = $true)][string]$Reason)
+
+    try {
+        $answer = Invoke-LocalRequest -Method POST -Url (Get-AttentionSendUrl -Reason $Reason)
+        if ($null -eq $answer) { return $null }
+        return ConvertFrom-AttentionAnswer -StatusCode $answer.StatusCode -Body $answer.Body
+    }
+    catch {
+        return $null
+    }
+}
+
+function Get-AttentionAcked {
+    # Whether a tab confirmed the message $Nonce; $false on any failure.
+    param([Parameter(Mandatory = $true)][string]$Nonce)
+
+    try {
+        $answer = Invoke-LocalRequest -Url (Get-AttentionUrl -Nonce $Nonce)
+        if ($null -eq $answer) { return $false }
+        return ConvertFrom-AttentionState -StatusCode $answer.StatusCode -Body $answer.Body
+    }
+    catch {
+        return $false
+    }
+}
+
+function Open-Browser {
+    # Opens the app in the browser unless it is open already (ADR-0035 section 7): an awake tab
+    # confirms the message and shows a hint, a landing page (file://) opens the app itself. After
+    # a cold start the tabs get up to 3 s to reconnect. Every doubt opens the tab (fail-open).
+    param([Parameter(Mandatory = $true)][bool]$ColdStart)
+
+    $action = Resolve-BrowserAction -ColdStart $ColdStart -GetPresence { Get-Presence } `
+        -SendAttention { Send-Attention -Reason 'start' } -GetAcked { param($Nonce) Get-AttentionAcked -Nonce $Nonce }
+    if ($action -eq 'Skip') {
+        Write-Status 'becauseyoulovejira ist bereits in einem Browser-Tab offen; dort erscheint ein Hinweis.'
+        return
+    }
+    Write-Status "Öffne $BylAppUrl ..."
+    Open-App
+}
+
+function Send-StopNotice {
+    # Tells the open tabs that the app ends (stop.bat), without waiting for them; the stop never
+    # depends on it.
+    try {
+        [void](Invoke-LocalRequest -Method POST -Url (Get-AttentionSendUrl -Reason 'stop') -TimeoutMilliseconds 1000)
+    }
+    catch {
+        $null = $_
+    }
+}
+
 function Get-ProcessStartUtc {
     # Start time of the server process; if it cannot be read, a time that makes the "issued by
     # this run" check of Get-InstallerLink accept any link that has not expired yet.
@@ -237,10 +304,7 @@ function Invoke-Start {
             return 2
         }
         Start-MailHelper
-        if (-not $Hidden) {
-            Write-Status "Öffne $BylAppUrl ..."
-            Open-App
-        }
+        if (-not $Hidden) { Open-Browser -ColdStart $false }
         return 0
     }
 
@@ -302,10 +366,7 @@ function Invoke-Start {
 
     Write-Status 'becauseyoulovejira läuft.'
     Start-MailHelper
-    if (-not $Hidden) {
-        Write-Status "Öffne $BylAppUrl ..."
-        Open-App
-    }
+    if (-not $Hidden) { Open-Browser -ColdStart $true }
     return 0
 }
 
@@ -344,6 +405,8 @@ function Invoke-Stop {
         Show-Message 'becauseyoulovejira läuft nicht.'
         return 0
     }
+    # The open tabs show "wurde beendet" instead of errors (ADR-0035 section 7); never waits.
+    if ($own.Count -gt 0) { Send-StopNotice }
     # Collected as single strings (Stop-SelectedProcess emits one per failure); empty means done.
     $failed = New-Object System.Collections.Generic.List[string]
     foreach ($line in @(Stop-OwnProcess -Candidates $helpers -Name 'byl-mail.exe' -Select {

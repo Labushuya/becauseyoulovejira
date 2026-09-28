@@ -196,7 +196,8 @@ describe('start', () => {
 		const branch = firstRun.slice(0, firstRun.indexOf('return 2') + 'return 2'.length);
 		expect(branch).toContain('$FirstRunHint');
 		expect(branch).not.toContain('Open-App');
-		expect(body.indexOf('if (Wait-FirstRunSignal')).toBeLessThan(body.lastIndexOf('Open-App'));
+		expect(branch).not.toContain('Open-Browser');
+		expect(body.indexOf('if (Wait-FirstRunSignal')).toBeLessThan(body.lastIndexOf('Open-Browser'));
 		// The link is shown, never opened a second time (PocketBase opened it already).
 		expect(branch).toContain(
 			'Wait-InstallerLink -ReadLog { Read-ServerLog } -ProcessStartUtc (Get-ProcessStartUtc -Process $server)'
@@ -247,6 +248,71 @@ describe('start', () => {
 
 	it('start.bat pauses on errors and on the first-run hint only', () => {
 		expect(read('start.bat')).toMatch(/if not "%BYL_EXIT%"=="0" pause/);
+	});
+});
+
+describe('open tabs before opening the browser (ADR-0035, SF-4)', () => {
+	it('opens the browser only through Open-Browser, after Resolve-BrowserAction', () => {
+		const source = control();
+		const openApp = functionBody(source, 'Open-App');
+		const rest = source.replace(openApp, '');
+		expect(rest.match(/\bOpen-App\b/g)).toHaveLength(1);
+		const open = functionBody(source, 'Open-Browser');
+		expect(open).toContain('Open-App');
+		expect(open.indexOf('Resolve-BrowserAction')).toBeGreaterThan(-1);
+		expect(open.indexOf('Resolve-BrowserAction')).toBeLessThan(open.indexOf('Open-App'));
+		expect(open).toMatch(/if \(\$action -eq 'Skip'\) \{[\s\S]*?return\s*\}/);
+		expect(open).toContain(
+			"Write-Status 'becauseyoulovejira ist bereits in einem Browser-Tab offen; dort erscheint ein Hinweis.'"
+		);
+		expect(open).toContain("Send-Attention -Reason 'start'");
+	});
+
+	it('asks without waiting when the app runs already and with the wait of a cold start after it started', () => {
+		const start = functionBody(control(), 'Invoke-Start');
+		const calls = [...start.matchAll(/^.*Open-Browser.*$/gm)].map((match) => match[0].trim());
+		expect(calls).toEqual([
+			'if (-not $Hidden) { Open-Browser -ColdStart $false }',
+			'if (-not $Hidden) { Open-Browser -ColdStart $true }'
+		]);
+		const running = start.slice(start.indexOf("if ($port.State -eq 'App')"), start.indexOf('$databaseExisted'));
+		expect(running).toContain('Open-Browser -ColdStart $false');
+		expect(start.indexOf('Open-Browser -ColdStart $true')).toBeGreaterThan(start.indexOf('Wait-ServerReady'));
+	});
+
+	it('asks the server without proxy, without Origin and with a timeout', () => {
+		const request = functionBody(functions(), 'Invoke-LocalRequest');
+		expect(request).toMatch(/\$request\.Proxy = \$null/);
+		expect(request).toMatch(/\$request\.KeepAlive = \$false/);
+		expect(request).toMatch(/\$request\.Timeout = \$TimeoutMilliseconds/);
+		for (const source of [control(), functions()]) {
+			expect(source).not.toMatch(/Headers\.Add\(\s*'Origin'|Sec-Fetch/i);
+		}
+		expect(functions()).toContain("$BylPresenceUrl = 'http://127.0.0.1:8090/api/byl/presence'");
+		expect(functions()).toContain("$BylAttentionUrl = 'http://127.0.0.1:8090/api/byl/attention'");
+		for (const name of ['Get-Presence', 'Send-Attention', 'Get-AttentionAcked']) {
+			const body = functionBody(control(), name);
+			expect(body, name).toMatch(/try \{[\s\S]*Invoke-LocalRequest[\s\S]*\}\s*catch \{/);
+			expect(body, name).not.toMatch(/Write-|Show-Message/);
+		}
+	});
+
+	it('never fails the start because of the question (fail-open)', () => {
+		const resolve = functionBody(functions(), 'Resolve-BrowserAction');
+		expect(resolve).toMatch(/try \{[\s\S]*\}\s*catch \{\s*return 'Open'\s*\}\s*\}\s*$/);
+		expect(functions()).toContain('$BylColdStartWaitMs = 3000');
+		expect(functions()).toContain('$BylAckWaitMs = 2000');
+		expect(functions()).toContain('$BylLandingWindowMs = 10000');
+	});
+
+	it('stop.bat tells the open tabs before it stops, without waiting and without failing', () => {
+		const stop = functionBody(control(), 'Invoke-Stop');
+		expect(stop).toContain('if ($own.Count -gt 0) { Send-StopNotice }');
+		expect(stop.indexOf('Send-StopNotice')).toBeLessThan(stop.indexOf('Stop-OwnProcess'));
+		const notice = functionBody(control(), 'Send-StopNotice');
+		expect(notice).toMatch(/try \{[\s\S]*Get-AttentionSendUrl -Reason 'stop'[\s\S]*\}\s*catch \{/);
+		expect(notice).toContain('-TimeoutMilliseconds 1000');
+		expect(notice).not.toMatch(/Get-AttentionAcked|Wait-AttentionAck|Write-|Show-Message|return 1/);
 	});
 });
 

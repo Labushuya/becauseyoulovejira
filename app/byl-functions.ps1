@@ -683,3 +683,219 @@ function ConvertFrom-MailConnectionAnswer {
     if ($null -eq $answer -or $null -eq $answer.PSObject.Properties['items']) { return -1 }
     return @($answer.items).Count
 }
+
+# --- Open app tabs before opening the browser (ADR-0035 sections 3, 4 and 7, plan start-fenster SF-4)
+
+$BylPresenceUrl = 'http://127.0.0.1:8090/api/byl/presence'
+$BylAttentionUrl = 'http://127.0.0.1:8090/api/byl/attention'
+$BylAttentionReasons = @('start', 'datei', 'stop')
+# A landing page (file://) that reported within this window opens the app itself.
+$BylLandingWindowMs = 10000
+# After "stop.bat, then start.bat" the open tabs reconnect on their own (SDK steps of 0.2 to 2 s),
+# so a cold start waits this long for them before it opens a tab.
+$BylColdStartWaitMs = 3000
+# How long start.bat waits for a tab to confirm the message, and the step of all waits.
+$BylAckWaitMs = 2000
+$BylPresencePollMs = 250
+$BylRequestTimeoutMs = 1500
+
+function Test-WholeNumber {
+    # True for a whole number >= 0 as ConvertFrom-Json returns it (never a string or a boolean).
+    param([AllowNull()][object]$Value)
+
+    return ($Value -is [int] -or $Value -is [long]) -and $Value -ge 0
+}
+
+function Invoke-LocalRequest {
+    # One request to the app on 127.0.0.1 without proxy and without Origin (the routes of
+    # ADR-0035 answer scripts only). Returns StatusCode and Body, also for error statuses; $null
+    # if there is no answer at all (not running, timeout). A POST sends an empty body.
+    param(
+        [Parameter(Mandatory = $true)][string]$Url,
+        [ValidateSet('GET', 'POST')][string]$Method = 'GET',
+        [int]$TimeoutMilliseconds = $BylRequestTimeoutMs
+    )
+
+    $request = [System.Net.WebRequest]::Create($Url)
+    $request.Proxy = $null
+    $request.Timeout = $TimeoutMilliseconds
+    $request.KeepAlive = $false
+    $request.Method = $Method
+    if ($Method -eq 'POST') { $request.ContentLength = 0 }
+    try {
+        $response = $request.GetResponse()
+    }
+    catch [System.Net.WebException] {
+        $response = $_.Exception.Response
+        if ($null -eq $response) { return $null }
+    }
+    try {
+        $reader = New-Object System.IO.StreamReader($response.GetResponseStream(), [System.Text.Encoding]::UTF8)
+        return [pscustomobject]@{ StatusCode = [int]$response.StatusCode; Body = $reader.ReadToEnd() }
+    }
+    finally {
+        $response.Close()
+    }
+}
+
+function ConvertFrom-PresenceAnswer {
+    # Tabs and LandingAgoMs ($null: no landing page lately) of GET /api/byl/presence; $null for
+    # anything else (403, 404 before the restart, broken JSON, wrong types).
+    param([int]$StatusCode, [AllowNull()][AllowEmptyString()][string]$Body)
+
+    if ($StatusCode -ne 200) { return $null }
+    try {
+        $answer = $Body | ConvertFrom-Json
+    }
+    catch {
+        return $null
+    }
+    if ($null -eq $answer -or $answer -isnot [pscustomobject]) { return $null }
+    $tabs = $answer.PSObject.Properties['tabs']
+    $landing = $answer.PSObject.Properties['landingAgoMs']
+    if ($null -eq $tabs -or $null -eq $landing -or -not (Test-WholeNumber $tabs.Value)) { return $null }
+    if ($null -ne $landing.Value -and -not (Test-WholeNumber $landing.Value)) { return $null }
+    $landingAgo = if ($null -eq $landing.Value) { $null } else { [long]$landing.Value }
+    return [pscustomobject]@{ Tabs = [int]$tabs.Value; LandingAgoMs = $landingAgo }
+}
+
+function ConvertFrom-AttentionAnswer {
+    # Nonce and Notified of POST /api/byl/attention; $null for anything else (429, 403, broken
+    # JSON). The nonce is checked before it ever goes into a URL.
+    param([int]$StatusCode, [AllowNull()][AllowEmptyString()][string]$Body)
+
+    if ($StatusCode -ne 200) { return $null }
+    try {
+        $answer = $Body | ConvertFrom-Json
+    }
+    catch {
+        return $null
+    }
+    if ($null -eq $answer -or $answer -isnot [pscustomobject]) { return $null }
+    $nonce = $answer.PSObject.Properties['nonce']
+    $notified = $answer.PSObject.Properties['notified']
+    if ($null -eq $nonce -or $nonce.Value -isnot [string] -or $nonce.Value -cnotmatch '^[A-Za-z0-9]{24}$') { return $null }
+    if ($null -eq $notified -or -not (Test-WholeNumber $notified.Value)) { return $null }
+    return [pscustomobject]@{ Nonce = [string]$nonce.Value; Notified = [int]$notified.Value }
+}
+
+function ConvertFrom-AttentionState {
+    # True only if GET /api/byl/attention/{nonce} says that a tab confirmed.
+    param([int]$StatusCode, [AllowNull()][AllowEmptyString()][string]$Body)
+
+    if ($StatusCode -ne 200) { return $false }
+    try {
+        $answer = $Body | ConvertFrom-Json
+    }
+    catch {
+        return $false
+    }
+    if ($null -eq $answer -or $answer -isnot [pscustomobject]) { return $false }
+    $acked = $answer.PSObject.Properties['acked']
+    return $null -ne $acked -and $acked.Value -is [bool] -and $acked.Value
+}
+
+function Get-AttentionUrl {
+    # URL of the state of one message; throws for anything but a nonce of the server.
+    param([AllowNull()][AllowEmptyString()][string]$Nonce)
+
+    if ([string]::IsNullOrEmpty($Nonce) -or $Nonce -cnotmatch '^[A-Za-z0-9]{24}$') { throw 'Invalid nonce.' }
+    return "$BylAttentionUrl/$Nonce"
+}
+
+function Get-AttentionSendUrl {
+    # URL that sends a message with one of the known reasons; throws for any other.
+    param([AllowNull()][AllowEmptyString()][string]$Reason)
+
+    if ($BylAttentionReasons -cnotcontains $Reason) { throw 'Unknown reason.' }
+    return "$($BylAttentionUrl)?reason=$Reason"
+}
+
+function Get-BrowserStep {
+    # What start.bat does next with an answer of the presence route:
+    #   Open      - no usable answer, or the time is up without an open tab (fail-open),
+    #   Skip      - a landing page reported within LandingWindowMs (it opens the app itself),
+    #   Attention - app tabs are open: send them the message and wait for a confirmation,
+    #   Wait      - no tab yet, but a cold start still gives them time to reconnect.
+    param(
+        [AllowNull()][object]$Presence,
+        [Parameter(Mandatory = $true)][double]$NowMs,
+        [Parameter(Mandatory = $true)][double]$DeadlineMs,
+        [int]$LandingWindowMs = $BylLandingWindowMs
+    )
+
+    if ($null -eq $Presence) { return 'Open' }
+    if ($null -ne $Presence.LandingAgoMs -and $Presence.LandingAgoMs -lt $LandingWindowMs) { return 'Skip' }
+    if ($Presence.Tabs -gt 0) { return 'Attention' }
+    if ($NowMs -lt $DeadlineMs) { return 'Wait' }
+    return 'Open'
+}
+
+function Wait-AttentionAck {
+    # Asks $Poll (returns $true once a tab confirmed) every $IntervalMs until $TimeoutMs passed.
+    # A $Poll that throws ends the wait with $false (fail-open), like the time running out.
+    param(
+        [Parameter(Mandatory = $true)][int]$TimeoutMs,
+        [Parameter(Mandatory = $true)][int]$IntervalMs,
+        [Parameter(Mandatory = $true)][scriptblock]$Poll,
+        [scriptblock]$Now = { [DateTime]::UtcNow },
+        [scriptblock]$Sleep = { param($Milliseconds) Start-Sleep -Milliseconds $Milliseconds }
+    )
+
+    $deadline = (& $Now).AddMilliseconds($TimeoutMs)
+    while ($true) {
+        try {
+            $answer = & $Poll
+        }
+        catch {
+            return $false
+        }
+        if ($answer -is [bool] -and $answer) { return $true }
+        if ((& $Now) -ge $deadline) { return $false }
+        & $Sleep $IntervalMs
+    }
+}
+
+function Resolve-BrowserAction {
+    # Whether start.bat opens a browser tab ('Open') or leaves it to an open tab or the landing
+    # page ('Skip'). The requests are parameters, so the tests run this with fakes:
+    #   $GetPresence   -> result of ConvertFrom-PresenceAnswer ($null on any failure),
+    #   $SendAttention -> result of ConvertFrom-AttentionAnswer ($null on any failure),
+    #   $GetAcked      param($Nonce) -> $true once a tab confirmed.
+    # $ColdStart: the server was just started, the tabs get $ColdStartWaitMs to reconnect. Any
+    # error means 'Open': better a second tab than none.
+    param(
+        [Parameter(Mandatory = $true)][bool]$ColdStart,
+        [Parameter(Mandatory = $true)][scriptblock]$GetPresence,
+        [Parameter(Mandatory = $true)][scriptblock]$SendAttention,
+        [Parameter(Mandatory = $true)][scriptblock]$GetAcked,
+        [scriptblock]$Now = { [DateTime]::UtcNow },
+        [scriptblock]$Sleep = { param($Milliseconds) Start-Sleep -Milliseconds $Milliseconds },
+        [int]$ColdStartWaitMs = $BylColdStartWaitMs,
+        [int]$AckWaitMs = $BylAckWaitMs,
+        [int]$PollMs = $BylPresencePollMs
+    )
+
+    try {
+        $started = & $Now
+        $deadlineMs = if ($ColdStart) { $ColdStartWaitMs } else { 0 }
+        while ($true) {
+            $elapsedMs = ((& $Now) - $started).TotalMilliseconds
+            $step = Get-BrowserStep -Presence (& $GetPresence) -NowMs $elapsedMs -DeadlineMs $deadlineMs
+            if ($step -eq 'Open' -or $step -eq 'Skip') { return $step }
+            if ($step -eq 'Wait') {
+                & $Sleep $PollMs
+                continue
+            }
+            $sent = & $SendAttention
+            if ($null -eq $sent -or $sent.Notified -lt 1) { return 'Open' }
+            $nonce = $sent.Nonce
+            $acked = Wait-AttentionAck -TimeoutMs $AckWaitMs -IntervalMs $PollMs -Now $Now -Sleep $Sleep -Poll { & $GetAcked $nonce }
+            if ($acked) { return 'Skip' }
+            return 'Open'
+        }
+    }
+    catch {
+        return 'Open'
+    }
+}
