@@ -8,6 +8,8 @@
 	// chosen otherwise (T-11). The hint says that a change gives the ticket a new key.
 	// Sub projects (ADR-0034, UP-5): the options come in tree order (the catalog delivers them so),
 	// a sub project as "Haus › Garten (GART)", which every reader understands without indentation.
+	// The select never grows beyond its container (base.css): a long label ends in an ellipsis, and
+	// the title shows the whole label of the chosen project (docs/plan/layout-ueberlauf.md).
 	let {
 		id,
 		value,
@@ -41,10 +43,22 @@
 		current !== null && !projects.some((project) => project.id === current.id) ? current : null
 	);
 	const describedBy = $derived(error ? `${hintId} ${errorId}` : hintId);
+
+	function extraLabel(project: ProjectRef): string {
+		return `${projectPath(project)} (${project.code}${project.archived ? ', archiviert' : ''})`;
+	}
+
+	/** Whole label of the chosen project, as title of the select; none for "Kein Projekt". */
+	const chosenLabel = $derived.by(() => {
+		if (extra !== null && extra.id === value) return extraLabel(extra);
+		const chosen = projects.find((project) => project.id === value);
+		return chosen ? projectChoiceLabel(chosen) : undefined;
+	});
 </script>
 
 <select
 	{id}
+	title={chosenLabel}
 	aria-busy={busy ? 'true' : undefined}
 	aria-invalid={error ? 'true' : undefined}
 	aria-describedby={describedBy}
@@ -59,7 +73,7 @@
 	{/each}
 	{#if extra}
 		<option value={extra.id} selected={value === extra.id}>
-			{projectPath(extra)} ({extra.code}{extra.archived ? ', archiviert' : ''})
+			{extraLabel(extra)}
 		</option>
 	{/if}
 </select>

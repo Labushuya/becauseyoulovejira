@@ -143,7 +143,7 @@
 		<div class="filters">
 			<div class="field">
 				<label for={ids.sender}>Absender</label>
-				<select id={ids.sender} bind:value={sender}>
+				<select id={ids.sender} title={sender || undefined} bind:value={sender}>
 					<option value="">Alle</option>
 					{#each senders as name (name)}
 						<option value={name}>{name}</option>

@@ -154,6 +154,14 @@
 			? parent
 			: null
 	);
+	/** Whole label of the chosen parent as title; the select may end it in an ellipsis. */
+	const parentLabel = $derived.by(() => {
+		if (extraParent !== null) {
+			return `${extraParent.name} (${extraParent.code}${extraParent.archived ? ', archiviert' : ''})`;
+		}
+		const chosen = parentChoices.find((choice) => choice.id === parentValue);
+		return chosen ? projectChoiceLabel(chosen) : undefined;
+	});
 	const activeSubProjects = $derived(subProjects.filter((sub) => !sub.archived));
 	/** A sub project below an archived parent comes back only together with it. */
 	const restoreNeedsParent = $derived(project?.archived === true && parent?.archived === true);
@@ -434,6 +442,7 @@
 				<label for={ids.parent}>Oberprojekt</label>
 				<select
 					id={ids.parent}
+					title={parentLabel}
 					bind:this={parentSelect}
 					disabled={parentLocked}
 					aria-invalid={fieldErrors.parent ? 'true' : undefined}
@@ -449,9 +458,7 @@
 						</option>
 					{/each}
 					{#if extraParent}
-						<option value={extraParent.id} selected>
-							{extraParent.name} ({extraParent.code}{extraParent.archived ? ', archiviert' : ''})
-						</option>
+						<option value={extraParent.id} selected>{parentLabel}</option>
 					{/if}
 				</select>
 				{#if fieldErrors.parent}

@@ -216,7 +216,13 @@
 		inset: auto;
 		margin: 0;
 		min-width: 11rem;
+		/*
+		 * Long entries ("Haus › Garten (GART)") wrap instead of leaving the viewport (VIEWPORT_MARGIN),
+		 * even in a table cell with white-space: nowrap, where the popovers of the cells live.
+		 */
+		max-width: calc(100vw - 1rem);
 		padding: 0.375rem;
+		white-space: normal;
 		overflow: auto;
 		color: var(--color-text);
 		background: var(--material-thick);

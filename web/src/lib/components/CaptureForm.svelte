@@ -112,6 +112,11 @@
 
 	const fields = $derived(TEMPLATE_FIELDS[template]);
 	const templateTag = $derived(TEMPLATE_TAGS[template]);
+	/** Whole label of the chosen project as title; the select may end it in an ellipsis. */
+	const chosenProjectLabel = $derived.by(() => {
+		const chosen = projects.find((project) => project.id === input.project);
+		return chosen ? projectChoiceLabel(chosen) : undefined;
+	});
 	const chosenTags = $derived(
 		input.tagIds.flatMap((id) => tags.filter((tag) => tag.id === id).slice(0, 1))
 	);
@@ -378,6 +383,7 @@
 					{@render label(field, text, required)}
 					<select
 						id={fieldId(field)}
+						title={chosenProjectLabel}
 						data-capture-field
 						required={required || undefined}
 						aria-required={required ? 'true' : undefined}

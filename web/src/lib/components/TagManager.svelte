@@ -305,7 +305,7 @@
 
 	.rename input {
 		flex: 1;
-		min-width: 10rem;
+		min-width: min(10rem, 100%);
 		padding: 0.25rem 0.5rem;
 		font-size: 0.875rem;
 		background: var(--color-surface);
