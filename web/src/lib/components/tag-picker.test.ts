@@ -12,6 +12,7 @@ import type { TagRef } from '$lib/domain/ticket';
 import { useOverlayStubs } from '$lib/test/overlay-stubs';
 import TagPickerModalHarness from '$lib/test/TagPickerModalHarness.svelte';
 import TagPicker from './TagPicker.svelte';
+import listSource from './SuggestionList.svelte?raw';
 import source from './TagPicker.svelte?raw';
 
 const GARDEN: TagRef = { id: 'tag000000000001', name: 'Garten' };
@@ -343,14 +344,18 @@ describe('tag picker: list in the top layer (UI-9)', () => {
 	});
 
 	it('uses the popover surface and no own positioning in the flow', () => {
-		expect(source).toMatch(/import \{ place \} from '\$lib\/overlay\/position';/);
-		expect(source).not.toMatch(/z-index|position: absolute/);
-		expect(source).toMatch(
-			/\.listbox \{[^}]*position: fixed;[^}]*border-radius: var\(--radius-overlay\)/
+		// Since RT-4 the list is SuggestionList, shared with the "/" menu of the editor.
+		expect(source).toMatch(/import SuggestionList from '\.\/SuggestionList\.svelte';/);
+		expect(source).not.toMatch(/z-index|position: absolute|backdrop-filter/);
+		expect(listSource).toMatch(/import \{ place, type Rect \} from '\$lib\/overlay\/position';/);
+		expect(listSource).toMatch(
+			/\.suggestion-list \{[^}]*position: fixed;[^}]*border-radius: var\(--radius-overlay\)/
 		);
 		// The glass of the popovers (ADR-0029 section 1).
-		expect(source).toMatch(/\.listbox \{[^}]*background: var\(--material-thick\)/);
-		expect(source).toMatch(/\.listbox \{[^}]*backdrop-filter: var\(--glass-filter-thick\)/);
+		expect(listSource).toMatch(/\.suggestion-list \{[^}]*background: var\(--material-thick\)/);
+		expect(listSource).toMatch(
+			/\.suggestion-list \{[^}]*backdrop-filter: var\(--glass-filter-thick\)/
+		);
 	});
 });
 

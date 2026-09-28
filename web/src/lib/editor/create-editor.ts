@@ -3,7 +3,15 @@
 // the first "Bearbeiten" (RichTextEditor.svelte imports it with import(); editor-lazy.test.ts).
 // Tiptap is headless: toolbar, menus and texts are ours.
 
-import { Editor, Extension, getSchema, markInputRule, type AnyExtension } from '@tiptap/core';
+import {
+	Editor,
+	Extension,
+	getMarkRange,
+	getSchema,
+	markInputRule,
+	type AnyExtension,
+	type Range
+} from '@tiptap/core';
 import { BulletList, OrderedList, TaskItem, TaskList } from '@tiptap/extension-list';
 import { Placeholder } from '@tiptap/extensions';
 import StarterKit from '@tiptap/starter-kit';
@@ -11,6 +19,9 @@ import { Underline } from '@tiptap/extension-underline';
 import type { Node } from '@tiptap/pm/model';
 import { createMarkdownBridge, type MarkdownBridge } from './markdown-bridge';
 import { richEditable, type EditableCheck } from './rich-editable';
+import { closeSlash, slashExtension, type SlashCallbacks } from './slash';
+
+export { filterSlashItems, type SlashItem, type SlashState } from './slash';
 
 /** What the toolbar shows as pressed or chosen. */
 export interface ToolbarState {
@@ -147,10 +158,30 @@ export interface RichEditorOptions {
 	onSubmit?: () => void;
 	/** Alt+F10: to the toolbar. */
 	onToolbar: () => void;
+	/** Ctrl+K and "Link" in the "/" menu: open the link popover (RT-4). */
+	onLink?: () => void;
+	/** The "/" menu (RT-4). */
+	onSlash?: SlashCallbacks;
+}
+
+/** The link at the selection: its address (null without link) and the text the popover shows. */
+export interface LinkState {
+	href: string | null;
+	text: string;
 }
 
 export interface RichEditor {
 	run(command: EditorCommand): void;
+	/** Inserts the block of an entry of the "/" menu in place of "/" and its query. */
+	runSlash(id: string, range: Range): void;
+	/** Closes the "/" menu without inserting. */
+	closeSlash(): void;
+	/** The link at the selection, for the popover. */
+	link(): LinkState;
+	/** Sets a link on the selection (or the link there); a text replaces the linked words. */
+	setLink(href: string, text: string): void;
+	/** Removes the link at the selection. */
+	unsetLink(): void;
 	/** Replaces the document without counting as a change. */
 	setDoc(doc: Node): void;
 	setAttributes(attributes: Record<string, string>): void;
@@ -223,6 +254,11 @@ export function createRichEditor(options: RichEditorOptions): RichEditor {
 				'Alt-F10': () => {
 					options.onToolbar();
 					return true;
+				},
+				'Mod-k': () => {
+					if (options.onLink === undefined) return false;
+					options.onLink();
+					return true;
 				}
 			};
 		}
@@ -233,7 +269,8 @@ export function createRichEditor(options: RichEditorOptions): RichEditor {
 		extensions: [
 			...schemaExtensions(),
 			Placeholder.configure({ placeholder: options.placeholder ?? '' }),
-			keys
+			keys,
+			...(options.onSlash ? [slashExtension(options.onSlash)] : [])
 		],
 		content: options.doc.toJSON(),
 		// The CSS ProseMirror needs stands in RichTextEditor.svelte with the tokens.
@@ -271,6 +308,54 @@ export function createRichEditor(options: RichEditorOptions): RichEditor {
 		editor,
 		run(command) {
 			COMMANDS[command](editor.chain().focus()).run();
+		},
+		runSlash(id, range) {
+			const chain = editor.chain().focus().deleteRange(range);
+			if (id === 'link') {
+				chain.run();
+				options.onLink?.();
+				return;
+			}
+			const command = COMMANDS[id as EditorCommand];
+			if (command === undefined) return;
+			command(chain).run();
+		},
+		closeSlash() {
+			closeSlash(editor);
+		},
+		link() {
+			const { state } = editor;
+			const { from, to, empty, $from } = state.selection;
+			const href = (editor.getAttributes('link').href as string | undefined) ?? null;
+			const type = state.schema.marks.link;
+			const range = href !== null && empty && type ? getMarkRange($from, type) : undefined;
+			const text = range
+				? state.doc.textBetween(range.from, range.to, ' ')
+				: state.doc.textBetween(from, to, ' ');
+			return { href, text };
+		},
+		setLink(href, text) {
+			const { state } = editor;
+			const type = state.schema.marks.link;
+			let { from, to } = state.selection;
+			if (from === to && type && editor.isActive('link')) {
+				const range = getMarkRange(state.selection.$from, type);
+				if (range) ({ from, to } = range);
+			}
+			const current = state.doc.textBetween(from, to, ' ');
+			const given = text.trim();
+			const wanted = given === '' ? (from === to ? href : current) : given;
+			const chain = editor.chain().focus().setTextSelection({ from, to });
+			if (wanted !== current) {
+				chain
+					.insertContent({ type: 'text', text: wanted, marks: [{ type: 'link', attrs: { href } }] })
+					.run();
+				return;
+			}
+			chain.setLink({ href }).run();
+		},
+		unsetLink() {
+			editor.chain().focus().extendMarkRange('link').unsetLink().run();
 		},
 		setDoc(doc) {
 			if (pending !== null) clearTimeout(pending);

@@ -1,6 +1,6 @@
 # ADR-0032: Editor wie Jira: Tiptap mit Markdown als Speicherformat, Brücke über die markdown-it-Instanz der Anzeige
 
-- **Status:** Angenommen. Spike RT-0 abgeschlossen (Weg B, siehe §2, #114); Stufe A umgesetzt: RT-1 (Anzeige, #115) und RT-2 (Abhaken, Schutz vor Überschreiben, #116) nach [docs/plan/editor.md](../plan/editor.md); Stufe B: RT-3 (Editor für die Beschreibung, Nachtrag RT-3 unten) umgesetzt, RT-4 bis RT-6 folgen
+- **Status:** Angenommen. Spike RT-0 abgeschlossen (Weg B, siehe §2, #114); Stufe A umgesetzt: RT-1 (Anzeige, #115) und RT-2 (Abhaken, Schutz vor Überschreiben, #116) nach [docs/plan/editor.md](../plan/editor.md); Stufe B: RT-3 (Editor für die Beschreibung, Nachtrag RT-3 unten, #125) und RT-4 („/“-Menü mit eigenem Plugin statt `@tiptap/suggestion`, Link-Popover) umgesetzt, RT-5 und RT-6 folgen
 - **Datum:** 2026-09-28
 - **Entscheidung durch:** Nutzer (Tiptap als neue Abhängigkeit mit RT-0 als Abbruchpunkt, Markdown bleibt Speicherformat, `++Text++` für Unterstreichen, GFM-Task-Listen, Umfang wie Jira, 2026-09-28), Advisor (Konzept), Executor (Spike, Weg, Einzelheiten)
 - **Ergänzt:** [ADR-0008](0008-markdown-rendering-und-sanitizing.md) §1, §2 und §5 (Parser-Erweiterungen, Allowlist, Abhängigkeiten); **ersetzt ab RT-3** ADR-0008 §4 (Bearbeiten nur als `textarea`)

@@ -245,6 +245,14 @@
 						<kbd>Alt</kbd>+<kbd>F10</kbd> kommst du in die Leiste, mit <kbd>Esc</kbd> zurück in den Text.
 					</li>
 					<li>
+						<kbd>/</kbd> am Zeilenanfang oder nach einem Leerzeichen öffnet ein Menü für Überschriften,
+						Listen, Blöcke und Link; weitertippen filtert.
+					</li>
+					<li>
+						<kbd>Strg</kbd>+<kbd>K</kbd> fügt einen Link ein oder bearbeitet ihn (nur http, https und
+						mailto).
+					</li>
+					<li>
 						„Markdown“ in der Leiste zeigt den Text als Markdown. Texte mit Tabellen oder Listen aus
 						Aufgaben und normalen Punkten öffnen gleich dort, damit nichts verloren geht.
 					</li>
