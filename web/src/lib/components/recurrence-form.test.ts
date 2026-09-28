@@ -1,6 +1,7 @@
-import { render, screen, within } from '@testing-library/svelte';
+import { fireEvent, render, screen, within } from '@testing-library/svelte';
 import { describe, expect, it } from 'vitest';
 import { defaultFormValues, type RecurrenceFormValues } from '$lib/domain/recurrence-rule';
+import RecurrenceFormHarness from '$lib/test/RecurrenceFormHarness.svelte';
 import RecurrenceForm from './RecurrenceForm.svelte';
 
 // Fields of a rhythm (E5 plan, package 4): groups and labels, the fields per kind and rhythm,
@@ -105,5 +106,63 @@ describe('RecurrenceForm', () => {
 				'Das Ticket hat noch keine Fälligkeit und bekommt den ersten Termin: 25.09.2026.'
 			)
 		).toBeTruthy();
+	});
+});
+
+// Preview "Nächste Termine" with several weekdays (plan OR-1): the form owns no values, so the
+// harness binds them like the dialog and the panels, and every click changes the preview at once.
+describe('RecurrenceForm: preview with several weekdays (OR-1)', () => {
+	const preview = () => document.querySelector('.preview')?.textContent?.trim();
+
+	function start(overrides: Partial<RecurrenceFormValues> = {}) {
+		return render(RecurrenceFormHarness, { props: { initial: values(overrides), today: TODAY } });
+	}
+
+	it('follows each weekday that is checked or unchecked, across the turn of the month', async () => {
+		const { component } = start();
+		expect(preview()).toBe('Nächste Termine: 28.09.2026, 05.10.2026, 12.10.2026');
+		const days = screen.getByRole('group', { name: 'Wochentage' });
+
+		await fireEvent.click(within(days).getByRole('checkbox', { name: 'Freitag' }));
+		await fireEvent.click(within(days).getByRole('checkbox', { name: 'Mittwoch' }));
+		expect(preview()).toBe('Nächste Termine: 28.09.2026, 30.09.2026, 02.10.2026');
+		// The days stay in week order, whatever the order of the clicks.
+		expect(component.current().weekdays).toEqual(['MO', 'WE', 'FR']);
+
+		await fireEvent.click(within(days).getByRole('checkbox', { name: 'Montag' }));
+		expect(preview()).toBe('Nächste Termine: 30.09.2026, 02.10.2026, 07.10.2026');
+		expect(preview()).toBe(document.querySelector('[aria-live="polite"]')?.textContent?.trim());
+	});
+
+	it('skips the odd week with an interval of 2 and three days', async () => {
+		start({ anchor: '2026-09-23', weekdays: ['MO', 'WE', 'FR'] });
+		// From today (Friday 25.09.): the anchor week has Wednesday and Friday, the next week none.
+		expect(preview()).toBe('Nächste Termine: 25.09.2026, 28.09.2026, 30.09.2026');
+		await fireEvent.input(screen.getByLabelText('Alle'), { target: { value: '2' } });
+		expect(preview()).toBe('Nächste Termine: 25.09.2026, 05.10.2026, 07.10.2026');
+	});
+
+	it('starts with the first chosen day after an anchor in the middle of the week', async () => {
+		start({ anchor: '2026-10-01', weekdays: ['MO', 'WE', 'FR'] });
+		// Thursday 01.10.: the Wednesday before does not count, Friday is first.
+		expect(preview()).toBe('Nächste Termine: 02.10.2026, 05.10.2026, 07.10.2026');
+	});
+
+	it('runs across the turn of the year', async () => {
+		start({ anchor: '2026-12-30', weekdays: ['MO', 'WE', 'FR'] });
+		expect(preview()).toBe('Nächste Termine: 30.12.2026, 01.01.2027, 04.01.2027');
+	});
+
+	it('asks for a weekday when the last one is unchecked', async () => {
+		start({ weekdays: ['WE'] });
+		await fireEvent.click(screen.getByRole('checkbox', { name: 'Mittwoch' }));
+		expect(preview()).toBe('Nächste Termine erscheinen, sobald alle Angaben stimmen.');
+	});
+
+	it('ignores the weekdays after completion', async () => {
+		start({ weekdays: ['MO', 'WE', 'FR'] });
+		await fireEvent.click(screen.getByRole('radio', { name: 'Nach Erledigung' }));
+		expect(screen.queryByRole('group', { name: 'Wochentage' })).toBeNull();
+		expect(preview()).toBe('Wird das Ticket heute erledigt, ist das nächste am 02.10.2026 fällig.');
 	});
 });

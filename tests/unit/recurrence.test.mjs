@@ -6,13 +6,13 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { loadHookLib } from '../support/hook-lib.mjs';
+import { WEEKDAYS, dateOf, dayNumber, isOccurrence } from '../support/recurrence-reference.mjs';
 
 const recurrence = loadHookLib('recurrence.js');
 const berlin = loadHookLib('berlin-time.js');
 const { cases } = JSON.parse(readFileSync(new URL('../fixtures/recurrence/cases.json', import.meta.url), 'utf8'));
 
-const DAY_MS = 24 * 60 * 60 * 1000;
-const WEEKDAYS = ['MO', 'TU', 'WE', 'TH', 'FR', 'SA', 'SU'];
+const lastDayOfMonth = (year, month) => new Date(Date.UTC(year, month + 1, 0)).getUTCDate();
 
 function call(fn, rule, args) {
 	if (fn === 'createOn') return recurrence.createOn(...args);
@@ -20,43 +20,8 @@ function call(fn, rule, args) {
 }
 
 // --- Reference: the definition of ADR-0021 section 2, checked day by day -----------------------
-
-const dayNumber = (date) => Date.parse(`${date}T00:00:00Z`) / DAY_MS;
-const dateOf = (day) => new Date(day * DAY_MS).toISOString().slice(0, 10);
-const weekdayIndex = (day) => (new Date(day * DAY_MS).getUTCDay() + 6) % 7;
-const lastDayOfMonth = (year, month) => new Date(Date.UTC(year, month + 1, 0)).getUTCDate();
-
-function isOccurrence(rule, day) {
-	const anchor = dayNumber(rule.anchor);
-	if (day < anchor) return false;
-	const date = new Date(day * DAY_MS);
-	const anchorDate = new Date(anchor * DAY_MS);
-	const step = rule.interval;
-	switch (rule.freq) {
-		case 'daily':
-			return (day - anchor) % step === 0;
-		case 'weekly': {
-			const weeks = (day - weekdayIndex(day) - (anchor - weekdayIndex(anchor))) / 7;
-			return weeks % step === 0 && rule.weekdays.includes(WEEKDAYS[weekdayIndex(day)]);
-		}
-		case 'monthly': {
-			const months =
-				(date.getUTCFullYear() - anchorDate.getUTCFullYear()) * 12 + date.getUTCMonth() - anchorDate.getUTCMonth();
-			const last = lastDayOfMonth(date.getUTCFullYear(), date.getUTCMonth());
-			const target = rule.month_day === -1 ? last : Math.min(rule.month_day, last);
-			return months % step === 0 && date.getUTCDate() === target;
-		}
-		default: {
-			const years = date.getUTCFullYear() - anchorDate.getUTCFullYear();
-			const last = lastDayOfMonth(date.getUTCFullYear(), anchorDate.getUTCMonth());
-			return (
-				years % step === 0 &&
-				date.getUTCMonth() === anchorDate.getUTCMonth() &&
-				date.getUTCDate() === Math.min(anchorDate.getUTCDate(), last)
-			);
-		}
-	}
-}
+// The day-by-day definition lives in tests/support/recurrence-reference.mjs (plan OR-1); the
+// comparison of both modules with all their functions is tests/unit/recurrence-reference.test.mjs.
 
 function random(seed) {
 	let state = seed;
