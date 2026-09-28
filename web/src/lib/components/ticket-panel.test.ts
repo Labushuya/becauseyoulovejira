@@ -43,7 +43,20 @@ const mocks = vi.hoisted(() => ({
 	detail: null as unknown,
 	activity: null as unknown,
 	catalog: null as unknown,
-	tickets: { markRead: vi.fn(async () => undefined), today: '2026-09-25', upsert: vi.fn() }
+	// The section "Unteraufgaben" (ADR-0033) is covered in ticket-subtasks.test.ts; here the ticket
+	// has none.
+	tickets: {
+		markRead: vi.fn(async () => undefined),
+		today: '2026-09-25',
+		upsert: vi.fn(),
+		find: () => null,
+		subtasksOf: () => [],
+		progressOf: () => ({ done: 0, total: 0 }),
+		isChecked: () => false,
+		isPending: () => false,
+		setDone: vi.fn(async () => undefined),
+		addSubtask: vi.fn(async () => ({ ok: false as const, message: null }))
+	}
 }));
 
 vi.mock('$app/navigation', () => ({ goto: mocks.goto, beforeNavigate: mocks.beforeNavigate }));
@@ -855,6 +868,62 @@ describe('ticket route', () => {
 		unmount();
 		expect(store.state).toBe('idle');
 		expect(activity.ticketId).toBeNull();
+	});
+});
+
+describe('ticket route: sub-tasks (ADR-0033)', () => {
+	const PARENT = { id: 'parent000000001', key: 'HAUS-12', title: 'Umzug' };
+
+	it('shows the section "Unteraufgaben" for a top-level ticket after the description', async () => {
+		const context = createStore();
+		mocks.detail = context.store;
+		mocks.catalog = catalogOf();
+		mocks.activity = activityStore();
+		renderTicketRoute();
+		await vi.waitFor(() => expect(context.store.state).toBe('ready'));
+
+		const panel = screen.getByRole('complementary');
+		const section = within(panel).getByRole('region', { name: 'Unteraufgaben' });
+		expect(within(section).getByRole('button', { name: 'Unteraufgabe hinzufügen' })).toBeTruthy();
+		expect(within(panel).queryByRole('navigation', { name: 'Pfad des Tickets' })).toBeNull();
+	});
+
+	it('shows the path of a sub-task with a link to its parent and no section', async () => {
+		const context = createStore(ticket({ parentId: PARENT.id, parentRef: PARENT }));
+		mocks.detail = context.store;
+		mocks.catalog = catalogOf();
+		mocks.activity = activityStore();
+		renderTicketRoute();
+		await vi.waitFor(() => expect(context.store.state).toBe('ready'));
+
+		const path = screen.getByRole('navigation', { name: 'Pfad des Tickets' });
+		const link = within(path).getByRole('link', { name: 'HAUS-12' });
+		expect(link.getAttribute('href')).toBe(`/tickets/${PARENT.id}?erledigte=1`);
+		expect(link.getAttribute('title')).toBe('Umzug');
+		expect(within(path).getByText('TASK-3').getAttribute('aria-current')).toBe('page');
+		expect(screen.queryByRole('region', { name: 'Unteraufgaben' })).toBeNull();
+	});
+
+	it('shows the path and the section in the full view as well, linking to full views', async () => {
+		const context = createStore(ticket({ parentId: PARENT.id, parentRef: PARENT }));
+		mocks.detail = context.store;
+		mocks.catalog = catalogOf();
+		mocks.activity = activityStore();
+		render(FullViewRouteHarness);
+		await vi.waitFor(() => expect(context.store.state).toBe('ready'));
+
+		const dialog = await screen.findByRole('dialog');
+		const path = within(dialog).getByRole('navigation', { name: 'Pfad des Tickets' });
+		expect(within(path).getByRole('link', { name: 'HAUS-12' }).getAttribute('href')).toBe(
+			`/tickets/${PARENT.id}/voll?erledigte=1`
+		);
+
+		context.store.upsert({
+			...ticket({ parentId: null, parentRef: null }),
+			updated: '2026-09-24 10:00:00.000Z'
+		});
+		await tick();
+		expect(within(dialog).getByRole('region', { name: 'Unteraufgaben' })).toBeTruthy();
 	});
 });
 

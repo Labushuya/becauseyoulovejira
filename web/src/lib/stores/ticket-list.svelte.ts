@@ -15,8 +15,10 @@ import { toDataError } from '$lib/data/errors';
 import type { RequestOptions } from '$lib/data/options';
 import { listReads, markAllRead, markRead, type TicketRead } from '$lib/data/reads';
 import {
+	createTicket,
 	listDoneTickets,
 	listOpenTickets,
+	listSubtaskTickets,
 	searchOpenTicketIds,
 	setTicketDone,
 	updateTicket,
@@ -35,7 +37,14 @@ import {
 } from '$lib/domain/list-query';
 import { columnOrder, ticketOrder, type ResolveProject } from '$lib/domain/ordering';
 import type { Status } from '$lib/domain/status';
-import type { TicketPatch, TicketSummary } from '$lib/domain/ticket';
+import { compareSubtasks, subtaskProgress, type SubtaskProgress } from '$lib/domain/subtasks';
+import {
+	DEFAULT_PRIORITY,
+	DEFAULT_STATUS,
+	type TicketDraft,
+	type TicketPatch,
+	type TicketSummary
+} from '$lib/domain/ticket';
 import { countNew, isNew, unreadSinceOf } from '$lib/domain/unread';
 import { SILENT_FLAGS, type FlagSink } from './flags.svelte';
 import { hold, type LiveSource } from './realtime';
@@ -55,6 +64,13 @@ export type LoadState = 'idle' | 'loading' | 'ready' | 'error';
 /** Data access of the list; tests pass a fake, the app binds the data layer to its client. */
 export interface TicketListData {
 	listOpen(options: RequestOptions): Promise<TicketSummary[]>;
+	/**
+	 * All sub-tasks, open and done (ADR-0033); without it the store knows only the sub-tasks that
+	 * reach it as answers or events.
+	 */
+	listSubtasks?(options: RequestOptions): Promise<TicketSummary[]>;
+	/** Creates a ticket ("Unteraufgabe hinzufügen", ADR-0033 section 4). */
+	create?(draft: TicketDraft): Promise<TicketSummary>;
 	/** One page of done tickets narrowed by `filter` (the list filters at the Berlin date). */
 	listDone(page: number, options: RequestOptions & { filter: DoneFilter }): Promise<DoneTicketPage>;
 	/** IDs of the open tickets whose title, description or key contain the search text. */
@@ -73,6 +89,8 @@ export interface SessionGuard {
 export function ticketListData(pb: PocketBase): TicketListData {
 	return {
 		listOpen: (options) => listOpenTickets(pb, options),
+		listSubtasks: (options) => listSubtaskTickets(pb, options),
+		create: (draft) => createTicket(pb, draft),
 		listDone: (page, options) => listDoneTickets(pb, page, options),
 		searchOpen: (search, options) => searchOpenTicketIds(pb, search, options),
 		setDone: (id, done) => setTicketDone(pb, id, done),
@@ -99,6 +117,10 @@ export function readsData(pb: PocketBase): ReadsData {
 		markAllRead: () => markAllRead(pb)
 	};
 }
+
+/** Outcome of "Unteraufgabe hinzufügen"; a failure carries a message unless nothing is to be shown. */
+export type SubtaskResult =
+	{ ok: true; ticket: TicketSummary } | { ok: false; message: string | null };
 
 /** Key of a read row that is known only from the answer "already read" (no row ID). */
 const LOCAL_READ = 'local:';
@@ -168,6 +190,11 @@ export class TicketListStore {
 
 	readonly #open = new SvelteMap<string, TicketSummary>();
 	readonly #done = new SvelteMap<string, TicketSummary>();
+	/**
+	 * Every sub-task, open and done (ADR-0033), for the section "Unteraufgaben" and the progress of
+	 * the parents. Open ones stand in #open as well.
+	 */
+	readonly #subtasks = new SvelteMap<string, TicketSummary>();
 	/** Just checked tickets whose flag still offers "Rückgängig", keyed by ticket ID. */
 	readonly #undoable = new SvelteMap<string, Undoable>();
 	readonly #flags: FlagSink;
@@ -248,6 +275,17 @@ export class TicketListStore {
 			.sort(compareDone);
 	});
 	#kpis = $derived(countKpis(this.#open.values(), this.#today));
+	/** Sub-tasks per parent in the order of the section: open ones first, then by creation. */
+	#subtasksByParent = $derived.by(() => {
+		const byParent: Record<string, TicketSummary[]> = {};
+		for (const ticket of this.#subtasks.values()) {
+			const parentId = ticket.parentId;
+			if (!parentId) continue;
+			(byParent[parentId] ??= []).push(ticket);
+		}
+		for (const children of Object.values(byParent)) children.sort(compareSubtasks);
+		return byParent;
+	});
 
 	readonly #reads: ReadsData | null;
 	/** Own read rows: row ID (or LOCAL_READ + ticket ID) to ticket ID. */
@@ -459,9 +497,57 @@ export class TicketListStore {
 		return this.#announcement;
 	}
 
-	/** Ticket from the list, null if it is not loaded. */
+	/** Ticket from the list (or a loaded sub-task), null if it is not loaded. */
 	find(id: string): TicketSummary | null {
-		return this.#open.get(id) ?? this.#done.get(id) ?? null;
+		return this.#open.get(id) ?? this.#done.get(id) ?? this.#subtasks.get(id) ?? null;
+	}
+
+	/** Sub-tasks of a ticket, open ones first, then by creation (ADR-0033 section 4). */
+	subtasksOf(parentId: string): readonly TicketSummary[] {
+		return Object.hasOwn(this.#subtasksByParent, parentId)
+			? (this.#subtasksByParent[parentId] ?? [])
+			: [];
+	}
+
+	/** Done and all sub-tasks of a ticket; total 0 without sub-tasks. */
+	progressOf(parentId: string): SubtaskProgress {
+		return subtaskProgress(this.subtasksOf(parentId));
+	}
+
+	/**
+	 * "Unteraufgabe hinzufügen" (ADR-0033 section 4): a sub-task of `parent` with the title, in the
+	 * project and with the tags of the parent, status and priority by default. It joins the list at
+	 * once and counts as read, like every ticket created one by one (ADR-0015 section 3). A failure
+	 * comes back with the message of the field that failed.
+	 */
+	async addSubtask(parent: TicketSummary, title: string): Promise<SubtaskResult> {
+		const text = title.trim();
+		if (text === '' || this.#data.create === undefined || !this.#session.ensureValid()) {
+			return { ok: false, message: null };
+		}
+		try {
+			const ticket = await this.#data.create({
+				title: text,
+				description: '',
+				status: DEFAULT_STATUS,
+				priority: DEFAULT_PRIORITY,
+				due: null,
+				project: parent.projectId,
+				tags: [...parent.tagIds],
+				parent: parent.id
+			});
+			this.upsert(ticket);
+			void this.markRead(ticket);
+			return { ok: true, ticket };
+		} catch (error) {
+			const failure = toDataError(error);
+			if (failure.kind === 'session') this.#session.logout();
+			if (failure.kind === 'session' || failure.kind === 'aborted') {
+				return { ok: false, message: null };
+			}
+			const field = Object.values(failure.fields)[0];
+			return { ok: false, message: field?.message ?? failure.message };
+		}
 	}
 
 	/** State the check mark shows: the requested one while a request runs. */
@@ -546,6 +632,9 @@ export class TicketListStore {
 		this.#touched?.add(ticket.id);
 		const existing = this.find(ticket.id);
 		if (existing !== null && existing.updated > ticket.updated) return;
+		// Sub-tasks, open or done; a ticket released from its parent leaves them (ADR-0033).
+		if (ticket.parentId) this.#subtasks.set(ticket.id, ticket);
+		else this.#subtasks.delete(ticket.id);
 		if (ticket.status !== 'done') {
 			// Open again by another way: "Rückgängig" has nothing left to do.
 			this.#dropUndo(ticket.id);
@@ -563,6 +652,7 @@ export class TicketListStore {
 		this.#deleted.add(id);
 		this.#open.delete(id);
 		this.#done.delete(id);
+		this.#subtasks.delete(id);
 		this.#dropUndo(id);
 		this.#pending.delete(id);
 	}
@@ -708,7 +798,10 @@ export class TicketListStore {
 		const doneKey = this.#doneKey;
 		const filter = this.#doneFilter();
 		try {
-			const open = await this.#data.listOpen(options);
+			const [open, subtasks] = await Promise.all([
+				this.#data.listOpen(options),
+				this.#data.listSubtasks?.(options) ?? null
+			]);
 			const pages: DoneTicketPage[] = [];
 			for (let page = 1; page <= doneLoaded; page += 1) {
 				pages.push(await this.#data.listDone(page, { ...options, filter }));
@@ -716,6 +809,7 @@ export class TicketListStore {
 			if (controller.signal.aborted) return;
 			this.#touched = null;
 			this.#mergeOpen(open, touched);
+			if (subtasks !== null) this.#mergeSubtasks(subtasks, touched);
 			// The done pages only count if the section still shows the same filters and pages.
 			const sameDone = this.#donePage === doneLoaded && this.#doneKey === doneKey;
 			if (doneLoaded > 0 && this.#showDone && sameDone) this.#mergeDone(pages, touched);
@@ -744,6 +838,7 @@ export class TicketListStore {
 		for (const id of [...this.#undoable.keys()]) this.#dropUndo(id);
 		this.#open.clear();
 		this.#done.clear();
+		this.#subtasks.clear();
 		this.#pending.clear();
 		this.#donePage = 0;
 		this.#doneKey = null;
@@ -810,13 +905,19 @@ export class TicketListStore {
 		this.#openState = 'loading';
 		this.#openError = null;
 		try {
-			const tickets = await this.#data.listOpen({ signal: controller.signal });
+			const options = { signal: controller.signal };
+			const [tickets, subtasks] = await Promise.all([
+				this.#data.listOpen(options),
+				this.#data.listSubtasks?.(options) ?? []
+			]);
 			if (controller.signal.aborted) return;
 			this.#open.clear();
 			// A just checked ticket may still be open in an answer that started before the check.
 			for (const ticket of tickets) {
 				if (!this.#undoable.has(ticket.id)) this.#open.set(ticket.id, ticket);
 			}
+			this.#subtasks.clear();
+			for (const ticket of subtasks) this.#subtasks.set(ticket.id, ticket);
 			this.#openState = 'ready';
 			void this.#loadReads();
 		} catch (error) {
@@ -880,6 +981,24 @@ export class TicketListStore {
 		// A just checked ticket may still be open in a snapshot that started before the check.
 		for (const ticket of open) {
 			if (!this.#undoable.has(ticket.id)) this.upsert(ticket);
+		}
+	}
+
+	/**
+	 * Sub-tasks of a reconciliation (ADR-0033): gone ones leave unless changed meanwhile; the others
+	 * replace older versions. A done one only updates the index, the list keeps its done pages.
+	 */
+	#mergeSubtasks(subtasks: readonly TicketSummary[], touched: ReadonlySet<string>): void {
+		const ids = new SvelteSet(subtasks.map((ticket) => ticket.id));
+		for (const id of [...this.#subtasks.keys()]) {
+			if (!ids.has(id) && !touched.has(id)) this.#subtasks.delete(id);
+		}
+		for (const ticket of subtasks) {
+			if (this.#deleted.has(ticket.id) || touched.has(ticket.id)) continue;
+			const existing = this.#subtasks.get(ticket.id);
+			if (existing === undefined || existing.updated <= ticket.updated) {
+				this.#subtasks.set(ticket.id, ticket);
+			}
 		}
 	}
 

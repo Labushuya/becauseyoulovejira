@@ -15,6 +15,7 @@ import {
 	REOPEN_STATUS,
 	fromDueInput,
 	toDueInput,
+	type ParentRef,
 	type Ticket,
 	type TicketDraft,
 	type TicketOrigin,
@@ -32,8 +33,11 @@ const TICKETS = 'tickets';
 /** Done tickets per page (ADR-0006 section 3). */
 export const DONE_PAGE_SIZE = 50;
 
-/** Expanded relations of list and detail; also used by the realtime subscription (ADR-0007). */
-export const TICKET_EXPAND = 'project,tags';
+/**
+ * Expanded relations of list and detail; also used by the realtime subscription (ADR-0007). The
+ * parent of a sub-task (ADR-0033) comes with key and title for its path.
+ */
+export const TICKET_EXPAND = 'project,tags,parent';
 
 /** Fields of the list, without the description (E2 plan, package 4). */
 export const TICKET_LIST_FIELDS = [
@@ -46,6 +50,9 @@ export const TICKET_LIST_FIELDS = [
 	'project',
 	'tags',
 	'recurrence',
+	// Sub-tasks (ADR-0033): the parent and whether the sub-task blocks completing it.
+	'parent',
+	'blocks_parent',
 	// Way the ticket came in (ADR-0014 section 2); unknown to the server before the migration.
 	'source',
 	'completed_at',
@@ -56,7 +63,10 @@ export const TICKET_LIST_FIELDS = [
 	'expand.project.code',
 	'expand.project.archived',
 	'expand.tags.id',
-	'expand.tags.name'
+	'expand.tags.name',
+	'expand.parent.id',
+	'expand.parent.key',
+	'expand.parent.title'
 ].join(',');
 
 /** Fields of the detail panel: the list fields plus the description and the inbox entry. */
@@ -74,13 +84,16 @@ export interface TicketRecord {
 	project: string;
 	tags: string[];
 	recurrence: string;
+	/** Parent of a sub-task, '' for a top-level ticket (ADR-0033). */
+	parent?: string;
+	blocks_parent?: boolean;
 	/** Missing before the migration 1790201210 (the server leaves unknown fields out). */
 	source?: string;
 	source_item?: string;
 	completed_at: string;
 	created: string;
 	updated: string;
-	expand?: { project?: ProjectRecord; tags?: TagRecord[] };
+	expand?: { project?: ProjectRecord; tags?: TagRecord[]; parent?: ParentRef };
 }
 
 /** Maps a record of the list fields (API response or realtime event) to the domain type. */
@@ -100,6 +113,16 @@ export function toTicketSummary(record: TicketRecord): TicketSummary {
 		tags: (record.expand?.tags ?? []).map(toTagRef),
 		recurring: record.recurrence !== '',
 		recurrenceId: record.recurrence || null,
+		parentId: record.parent || null,
+		// The schema default is true (set by the create hook), so a missing value blocks.
+		blocksParent: record.blocks_parent ?? true,
+		parentRef: record.expand?.parent
+			? {
+					id: record.expand.parent.id,
+					key: record.expand.parent.key,
+					title: record.expand.parent.title
+				}
+			: null,
 		source: isInboxChannel(record.source) ? record.source : null,
 		completedAt: record.completed_at || null,
 		created: record.created,
@@ -131,6 +154,8 @@ function patchBody(patch: TicketPatch): Record<string, string | string[]> {
 	if (patch.project !== undefined) body.project = patch.project ?? '';
 	// The whole list: PocketBase replaces the relation, the history hook records the difference.
 	if (patch.tags !== undefined) body.tags = [...patch.tags];
+	// '' releases a sub-task from its parent (ADR-0033).
+	if (patch.parent !== undefined) body.parent = patch.parent ?? '';
 	return body;
 }
 
@@ -143,6 +168,26 @@ export function listOpenTickets(
 		const records = await pb.collection(TICKETS).getFullList<TicketRecord>({
 			batch: 500,
 			filter: pb.filter('status != {:done}', { done: 'done' satisfies Status }),
+			fields: TICKET_LIST_FIELDS,
+			expand: TICKET_EXPAND,
+			signal
+		});
+		return records.map(toTicketSummary);
+	});
+}
+
+/**
+ * All sub-tasks, open and done, unsorted (ADR-0033): the progress of every parent and the section
+ * "Unteraufgaben" come from them without a request per ticket.
+ */
+export function listSubtaskTickets(
+	pb: PocketBase,
+	{ signal }: RequestOptions = {}
+): Promise<TicketSummary[]> {
+	return withDataErrors(signal, async () => {
+		const records = await pb.collection(TICKETS).getFullList<TicketRecord>({
+			batch: 500,
+			filter: pb.filter('parent != {:none}', { none: '' }),
 			fields: TICKET_LIST_FIELDS,
 			expand: TICKET_EXPAND,
 			signal
@@ -394,7 +439,9 @@ export function createTicket(
 				priority: draft.priority,
 				due: dueBody(draft.due),
 				project: draft.project ?? '',
-				tags: [...(draft.tags ?? [])]
+				tags: [...(draft.tags ?? [])],
+				// A sub-task (ADR-0033); the hook checks level and scope of the parent.
+				...(draft.parent ? { parent: draft.parent } : {})
 			},
 			{ fields: TICKET_DETAIL_FIELDS, expand: TICKET_EXPAND, signal }
 		);

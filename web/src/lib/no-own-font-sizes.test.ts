@@ -13,13 +13,12 @@ const SRC_DIR = resolve(import.meta.dirname, '..');
 const TOKENS_CSS = join('lib', 'styles', 'tokens.css');
 
 /** Numbers left from before G-6 in all listed files together; lower it when one goes. */
-const LEGACY_COUNT = 228;
+const LEGACY_COUNT = 223;
 
 /** Files that still carry font sizes as numbers (as of G-6). */
 const LEGACY_FILES = [
 	'lib/components/AppHeader.svelte',
 	'lib/components/AreaSwitch.svelte',
-	'lib/components/Breadcrumbs.svelte',
 	'lib/components/BulkConvertDialog.svelte',
 	'lib/components/CaptureForm.svelte',
 	'lib/components/ChannelsView.svelte',
@@ -61,7 +60,6 @@ const LEGACY_FILES = [
 	'lib/components/TicketActivity.svelte',
 	'lib/components/TicketFields.svelte',
 	'lib/components/TicketMeta.svelte',
-	'lib/components/TicketPanel.svelte',
 	'lib/components/ViewSwitch.svelte',
 	'lib/components/WhatsAppImport.svelte',
 	'lib/components/channels/BookmarkletCard.svelte',

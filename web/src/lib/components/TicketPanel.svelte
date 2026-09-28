@@ -1,9 +1,10 @@
 <script lang="ts">
 	import type { Snippet } from 'svelte';
 	import type { ResolvedPathname } from '$app/types';
-	import type { Ticket } from '$lib/domain/ticket';
+	import type { ParentRef, Ticket } from '$lib/domain/ticket';
 	import type { CatalogStore } from '$lib/stores/catalog.svelte';
 	import type { TicketDetailStore } from '$lib/stores/ticket-detail.svelte';
+	import Breadcrumbs from './Breadcrumbs.svelte';
 	import Drawer from './overlay/Drawer.svelte';
 	import EditableTitle from './EditableTitle.svelte';
 	import ErrorIcon from './ErrorIcon.svelte';
@@ -18,7 +19,9 @@
 	// TicketDescription, TicketMeta, TicketDelete) are the same as in the full view, which only
 	// arranges them differently (section 7). Escape closes the panel unless a form field has the
 	// focus (the rule is the Drawer's). Comments and history (E2 plan, packages 9 and 10) come in
-	// through `activity`, the series (E5 plan, package 4) through `recurrence`.
+	// through `activity`, the series (E5 plan, package 4) through `recurrence`, the section
+	// "Unteraufgaben" (ADR-0033) through `subtasks`. A sub-task shows its path "HAUS-12 › HAUS-15"
+	// with a link to the parent in the header instead of the key alone.
 	let {
 		store,
 		catalog,
@@ -29,7 +32,10 @@
 		activity,
 		recurrence,
 		sources,
-		sourceCount = 0
+		subtasks,
+		sourceCount = 0,
+		parent = null,
+		parentHref = null
 	}: {
 		store: TicketDetailStore;
 		/** Projects and tags (E3 plan, T-16). */
@@ -48,6 +54,12 @@
 		sources?: Snippet<[Ticket]>;
 		/** Number of sources, for the question of "Löschen …" (ADR-0031, addendum B). */
 		sourceCount?: number;
+		/** Section "Unteraufgaben" (ADR-0033 section 4), after the description. */
+		subtasks?: Snippet<[Ticket]>;
+		/** The ticket this one is a sub-task of, null for a top-level ticket. */
+		parent?: ParentRef | null;
+		/** Address of the panel of that parent. */
+		parentHref?: ResolvedPathname | null;
 	} = $props();
 
 	const uid = $props.id();
@@ -76,7 +88,18 @@
 	fullViewHref={store.state === 'ready' ? fullViewHref : null}
 >
 	{#snippet context()}
-		<span class="key">{ticket?.key ?? ''}</span>
+		{#if store.state === 'ready' && ticket && parent}
+			<Breadcrumbs
+				label="Pfad des Tickets"
+				mono
+				items={[
+					{ label: parent.key, href: parentHref ?? undefined, title: parent.title },
+					{ label: ticket.key }
+				]}
+			/>
+		{:else}
+			<span class="key">{ticket?.key ?? ''}</span>
+		{/if}
 	{/snippet}
 	{#snippet actions()}
 		{#if store.state === 'ready' && ticket}
@@ -112,6 +135,7 @@
 		<TicketFields {store} {catalog} {ticket} recurrenceShown={recurrence !== undefined} />
 		{@render recurrence?.(ticket)}
 		<TicketDescription {store} {ticket} />
+		{@render subtasks?.(ticket)}
 		<TicketMeta {ticket} />
 		{@render sources?.(ticket)}
 		{@render activity?.(ticket)}
@@ -123,7 +147,7 @@
 <style>
 	.key {
 		font-family: var(--font-mono);
-		font-size: 0.8125rem;
+		font-size: var(--font-size-control);
 		color: var(--color-text-muted);
 	}
 
@@ -133,7 +157,7 @@
 	}
 
 	.message h2 {
-		font-size: 1.125rem;
+		font-size: var(--font-size-title);
 		font-weight: 600;
 	}
 
@@ -143,7 +167,7 @@
 
 	.small {
 		padding: 0.125rem 0.625rem;
-		font-size: 0.8125rem;
+		font-size: var(--font-size-control);
 		background: none;
 		border: 1px solid var(--color-line);
 		border-radius: var(--radius-control);
@@ -151,7 +175,7 @@
 	}
 
 	.loading {
-		font-size: 0.875rem;
+		font-size: var(--font-size-body);
 		color: var(--color-text-muted);
 	}
 

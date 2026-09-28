@@ -6,7 +6,7 @@ import { DataError } from '$lib/data/errors';
 import type { DoneFilter, DoneTicketPage } from '$lib/data/tickets';
 import type { RequestOptions } from '$lib/data/options';
 import { EMPTY_LIST_QUERY, NO_PROJECT, type ListQuery } from '$lib/domain/list-query';
-import type { TicketPatch, TicketSummary } from '$lib/domain/ticket';
+import type { TicketDraft, TicketPatch, TicketSummary } from '$lib/domain/ticket';
 import { FLAG_DURATION_MS, FlagStore } from './flags.svelte';
 import type { LiveSource, RecordChange, Unsubscribe } from './realtime';
 import { SEARCH_DEBOUNCE_MS, TicketListStore, type TicketListData } from './ticket-list.svelte';
@@ -1125,5 +1125,165 @@ describe('search (E3 plan, package 11)', () => {
 		expect(store.search).toBeNull();
 		expect(store.searchBusy).toBe(false);
 		expect(store.searchError).toBeNull();
+	});
+});
+
+describe('sub-tasks (ADR-0033)', () => {
+	const PARENT_ID = 'parent000000001';
+
+	function family() {
+		const parent = ticket({
+			id: PARENT_ID,
+			projectId: 'proj00000000001',
+			tagIds: ['tag000000000001']
+		});
+		const later = ticket({ parentId: PARENT_ID, created: '2026-09-03 10:00:00.000Z' });
+		const doneOne = done({ parentId: PARENT_ID, created: '2026-09-01 10:00:00.000Z' });
+		const earlier = ticket({ parentId: PARENT_ID, created: '2026-09-02 10:00:00.000Z' });
+		const foreign = ticket({ parentId: 'other0000000001' });
+		return { parent, later, doneOne, earlier, foreign };
+	}
+
+	async function loaded() {
+		const f = family();
+		const data = {
+			...fakeData([f.parent, f.later, f.earlier, f.foreign]),
+			listSubtasks: vi.fn(async () => [f.later, f.doneOne, f.earlier, f.foreign]),
+			create: vi.fn(async (draft: TicketDraft): Promise<TicketSummary> =>
+				ticket({
+					title: draft.title,
+					projectId: draft.project,
+					tagIds: draft.tags,
+					parentId: draft.parent ?? null,
+					created: '2026-09-24 10:00:00.000Z'
+				})
+			)
+		} satisfies TicketListData;
+		const guard = session();
+		const store = new TicketListStore(data, guard);
+		store.activate(EMPTY_LIST_QUERY);
+		await settle();
+		return { ...f, data, store, guard };
+	}
+
+	const idsOf = (list: readonly TicketSummary[]) => list.map((entry) => entry.id);
+
+	it('loads every sub-task with the open tickets and lists them per parent, open ones first', async () => {
+		const { store, data, parent, later, doneOne, earlier } = await loaded();
+
+		expect(data.listSubtasks).toHaveBeenCalledOnce();
+		expect(idsOf(store.subtasksOf(PARENT_ID))).toEqual([earlier.id, later.id, doneOne.id]);
+		expect(store.progressOf(PARENT_ID)).toEqual({ done: 1, total: 3 });
+		expect(store.progressOf(later.id)).toEqual({ done: 0, total: 0 });
+		expect(store.subtasksOf(parent.id)).toHaveLength(3);
+		// The done one is known for the section, but the list does not show it.
+		expect(store.find(doneOne.id)).toEqual(doneOne);
+		expect(idsOf(store.open)).not.toContain(doneOne.id);
+		expect(store.openCount).toBe(4);
+	});
+
+	it('follows answers and events: moving, releasing and deleting a sub-task', async () => {
+		const { store, later, earlier, foreign } = await loaded();
+
+		store.upsert({ ...later, parentId: foreign.parentId, updated: '2026-09-24 10:00:00.000Z' });
+		expect(store.progressOf(PARENT_ID)).toEqual({ done: 1, total: 2 });
+		expect(idsOf(store.subtasksOf('other0000000001'))).toContain(later.id);
+
+		store.upsert({ ...earlier, parentId: null, updated: '2026-09-24 10:00:00.000Z' });
+		expect(store.progressOf(PARENT_ID)).toEqual({ done: 1, total: 1 });
+		expect(store.find(earlier.id)?.parentId).toBeNull();
+
+		store.remove(foreign.id);
+		expect(idsOf(store.subtasksOf('other0000000001'))).toEqual([later.id]);
+	});
+
+	it('ignores an older version of a sub-task', async () => {
+		const { store, earlier } = await loaded();
+		store.upsert({ ...earlier, title: 'Neu', updated: '2026-09-24 10:00:00.000Z' });
+
+		store.upsert({ ...earlier, title: 'Alt', parentId: null });
+
+		expect(store.subtasksOf(PARENT_ID).find((entry) => entry.id === earlier.id)?.title).toBe('Neu');
+	});
+
+	it('reconciles the sub-tasks after a reconnection', async () => {
+		const { store, data, later, doneOne } = await loaded();
+		const renamed = { ...later, title: 'Umbenannt', updated: '2026-09-24 10:00:00.000Z' };
+		data.listSubtasks.mockResolvedValueOnce([renamed, doneOne]);
+
+		await store.reconcile();
+
+		expect(idsOf(store.subtasksOf(PARENT_ID))).toEqual([later.id, doneOne.id]);
+		expect(store.subtasksOf(PARENT_ID)[0]?.title).toBe('Umbenannt');
+	});
+
+	it('reopens a done sub-task the list does not show and offers "Rückgängig" when checking one', async () => {
+		const { store, data, doneOne, earlier } = await loaded();
+		data.setDone.mockImplementation(async (id: string, isDone: boolean) => ({
+			...(id === doneOne.id ? doneOne : earlier),
+			status: isDone ? 'done' : 'open',
+			completedAt: isDone ? '2026-09-24 10:00:00.000Z' : null,
+			updated: '2026-09-24 10:00:00.000Z'
+		}));
+
+		await store.setDone(doneOne.id, false);
+		expect(store.progressOf(PARENT_ID)).toEqual({ done: 0, total: 3 });
+		expect(idsOf(store.open)).toContain(doneOne.id);
+
+		await store.setDone(earlier.id, true);
+		expect(store.progressOf(PARENT_ID)).toEqual({ done: 1, total: 3 });
+		expect(store.canUndo(earlier.id)).toBe(true);
+	});
+
+	it('adds a sub-task in the project and with the tags of the parent', async () => {
+		const { store, data, parent } = await loaded();
+
+		const result = await store.addSubtask(parent, '  Kartons packen  ');
+
+		expect(data.create).toHaveBeenCalledWith({
+			title: 'Kartons packen',
+			description: '',
+			status: 'open',
+			priority: 'medium',
+			due: null,
+			project: 'proj00000000001',
+			tags: ['tag000000000001'],
+			parent: PARENT_ID
+		});
+		expect(result.ok).toBe(true);
+		const created = result.ok ? result.ticket : null;
+		expect(store.subtasksOf(PARENT_ID).map((entry) => entry.title)).toContain('Kartons packen');
+		expect(idsOf(store.open)).toContain(created?.id);
+	});
+
+	it('gives back the message of the refused field; an empty title sends nothing', async () => {
+		const { store, data, parent, guard } = await loaded();
+		data.create.mockRejectedValueOnce(
+			new DataError('validation', {
+				status: 400,
+				fields: {
+					project: { code: 'validation_project_archived', message: 'Das Projekt ist archiviert.' }
+				}
+			})
+		);
+
+		expect(await store.addSubtask(parent, 'Kartons')).toEqual({
+			ok: false,
+			message: 'Das Projekt ist archiviert.'
+		});
+		expect(await store.addSubtask(parent, '   ')).toEqual({ ok: false, message: null });
+		expect(data.create).toHaveBeenCalledOnce();
+
+		data.create.mockRejectedValueOnce(new DataError('session'));
+		expect(await store.addSubtask(parent, 'Kartons')).toEqual({ ok: false, message: null });
+		expect(guard.logout).toHaveBeenCalled();
+	});
+
+	it('forgets the sub-tasks on reset', async () => {
+		const { store } = await loaded();
+
+		store.reset();
+
+		expect(store.subtasksOf(PARENT_ID)).toEqual([]);
 	});
 });
