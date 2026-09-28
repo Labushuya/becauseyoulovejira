@@ -769,6 +769,101 @@ describe('ticket table: grouping (E3 plan, package 13)', () => {
 	});
 });
 
+describe('ticket table: two levels of groups (plan OR-3)', () => {
+	afterEach(() => {
+		sessionStorage.clear();
+	});
+
+	const bodies = () => [...document.querySelectorAll<HTMLElement>('tbody[data-group]')];
+	const titlesOf = (body: HTMLElement | undefined) =>
+		[...(body?.querySelectorAll<HTMLElement>('tr[data-ticket-id]') ?? [])].map(
+			(row) => titleLink(row).textContent ?? ''
+		);
+
+	function items() {
+		return [
+			ticket({ title: 'Haus offen', projectId: HOUSE.id, project: HOUSE }),
+			ticket({ title: 'Haus wartet', status: 'waiting', projectId: HOUSE.id, project: HOUSE }),
+			ticket({ title: 'Haus offen zwei', projectId: HOUSE.id, project: HOUSE, priority: 'high' }),
+			ticket({ title: 'Ohne Projekt' })
+		];
+	}
+
+	const showTwoLevels = () =>
+		showTable(fakeData(items()), '/?gruppe=projekt&untergruppe=status', { projects: [HOUSE] });
+
+	it('nests the second level below the first, each with a head, a number and a name', async () => {
+		await showTwoLevels();
+		await vi.advanceTimersByTimeAsync(0);
+
+		expect(bodies().map((body) => [body.dataset.group, body.dataset.level])).toEqual([
+			[HOUSE.id, '1'],
+			[`${HOUSE.id}/open`, '2'],
+			[`${HOUSE.id}/waiting`, '2'],
+			['ohne', '1'],
+			['ohne/open', '2']
+		]);
+		// The first level has its head only; the rows stand in the leaves.
+		expect(titlesOf(bodies()[0])).toEqual([]);
+		expect(titlesOf(bodies()[1])).toEqual(['Haus offen zwei', 'Haus offen']);
+		expect(screen.getByRole('rowgroup', { name: 'Haushalt, 3 Tickets' })).toBe(bodies()[0]);
+		const waiting = screen.getByRole('rowgroup', { name: 'Haushalt, 3 Tickets Wartet, 1 Ticket' });
+		expect(waiting).toBe(bodies()[2]);
+		const head = within(bodies()[1]!).getByRole('rowheader', { name: 'Offen, 2 Tickets' });
+		expect(head.getAttribute('scope')).toBe('rowgroup');
+		expect(head.getAttribute('colspan')).toBe('9');
+		expect(head.closest('tr')?.classList.contains('level-2')).toBe(true);
+		expect(document.querySelector('caption')?.textContent).toMatch(
+			'gruppiert nach Projekt, dann nach Status'
+		);
+	});
+
+	it('folds a first level with its button, keeps the number and remembers it for the tab', async () => {
+		await showTwoLevels();
+		await vi.advanceTimersByTimeAsync(0);
+		const house = screen.getByRole('button', { name: 'Haushalt, 3 Tickets' });
+		expect(house.getAttribute('aria-expanded')).toBe('true');
+
+		await fireEvent.click(house);
+		expect(house.getAttribute('aria-expanded')).toBe('false');
+		expect(bodies().map((body) => body.dataset.group)).toEqual([HOUSE.id, 'ohne', 'ohne/open']);
+		expect(screen.getByRole('button', { name: 'Haushalt, 3 Tickets' })).toBe(house);
+		expect(house.isConnected).toBe(true);
+		expect(JSON.parse(sessionStorage.getItem('byl-groups-collapsed') ?? '[]')).toEqual([
+			`project:${HOUSE.id}`
+		]);
+
+		await fireEvent.click(house);
+		expect(bodies()).toHaveLength(5);
+		expect(sessionStorage.getItem('byl-groups-collapsed')).toBeNull();
+	});
+
+	it('folds a leaf alone and shows it folded after a reload of the table', async () => {
+		sessionStorage.setItem(
+			'byl-groups-collapsed',
+			JSON.stringify([`project:${HOUSE.id}/status:open`])
+		);
+		await showTwoLevels();
+		await vi.advanceTimersByTimeAsync(0);
+
+		const open = within(bodies()[1]!).getByRole('button', { name: 'Offen, 2 Tickets' });
+		expect(open.getAttribute('aria-expanded')).toBe('false');
+		expect(titlesOf(bodies()[1])).toEqual([]);
+		expect(titlesOf(bodies()[2])).toEqual(['Haus wartet']);
+		// The same key of another first level stays open.
+		expect(titlesOf(bodies()[4])).toEqual(['Ohne Projekt']);
+	});
+
+	it('folds a group of one level as well', async () => {
+		await showTable(fakeData(items()), '/?gruppe=status');
+		const open = screen.getByRole('button', { name: 'Offen, 3 Tickets' });
+		await fireEvent.click(open);
+		expect(titlesOf(bodies()[0])).toEqual([]);
+		expect(titlesOf(bodies()[1])).toEqual(['Haus wartet']);
+		expect(screen.getByRole('rowgroup', { name: 'Offen, 3 Tickets' })).toBe(bodies()[0]);
+	});
+});
+
 describe('ticket table: new (E4 plan, package 4)', () => {
 	async function showWithReads() {
 		const fresh = ticket({ title: 'Neu aus dem Eingang', created: '2026-09-25 10:00:00.000Z' });

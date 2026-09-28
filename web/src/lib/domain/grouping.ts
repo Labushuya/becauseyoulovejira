@@ -1,6 +1,7 @@
 // Grouping of the open tickets (E3 plan, T-7; ADR-0013 section 1). Pure. Groups follow the
 // order of the domain, not the alphabet; empty groups do not appear. Within a group the tickets
-// keep the order they come in (the current sort).
+// keep the order they come in (the current sort). Since plan OR-3 on up to two levels, with the
+// folded groups of a tab in sessionStorage.
 
 import type { CalendarDate } from './berlin-date';
 import { dueBucket, type DueBucket } from './filter';
@@ -150,5 +151,84 @@ export function groupTickets<T extends GroupableTicket>(
 				RECURRING_FILTERS,
 				(key) => RECURRENCE_GROUP_LABELS[key as RecurringFilter]
 			);
+	}
+}
+
+// --- Two levels (plan OR-3, ADR-0013 addendum B) -----------------------------------------------
+
+/** A group of the table with its second level. */
+export interface GroupNode<T> extends TicketGroup<T> {
+	/**
+	 * Key for folding, unique in the table and stable across reloads: "status:open", below a first
+	 * level "project:p00000000000001/status:open".
+	 */
+	path: string;
+	/** Groups of the second level in their order, null with one level. */
+	subgroups: GroupNode<T>[] | null;
+}
+
+/**
+ * Groups on one or two levels (plan OR-3): the first level as `groupTickets` does it, each group
+ * split again by the second level (same order rules, empty groups left out). With `subGrouping`
+ * null or equal to the first level there is one level. The tickets keep their order (the sort).
+ */
+export function groupTicketLevels<T extends GroupableTicket>(
+	tickets: readonly T[],
+	grouping: Grouping,
+	subGrouping: Grouping | null,
+	today: CalendarDate,
+	resolveProject: ResolveProject<T> = (ticket) => ticket.project
+): GroupNode<T>[] {
+	const second = subGrouping === grouping ? null : subGrouping;
+	return groupTickets(tickets, grouping, today, resolveProject).map((group) => {
+		const path = `${grouping}:${group.key}`;
+		return {
+			...group,
+			path,
+			subgroups:
+				second === null
+					? null
+					: groupTickets(group.tickets, second, today, resolveProject).map((sub) => ({
+							...sub,
+							path: `${path}/${second}:${sub.key}`,
+							subgroups: null
+						}))
+		};
+	});
+}
+
+/** Folded groups per tab in sessionStorage (plan OR-3), default open; like the projects. */
+export const GROUP_COLLAPSED_STORAGE_KEY = 'byl-groups-collapsed';
+
+/** At most so many folded groups are kept; older entries of a long session fall away. */
+export const GROUP_COLLAPSED_MAX = 200;
+
+const GROUP_PATH = /^[a-z]+:[a-z0-9_]{1,32}(?:\/[a-z]+:[a-z0-9_]{1,32})?$/;
+
+/** The folded groups of this tab; empty without a valid entry or with a blocked storage. */
+export function readCollapsedGroups(storage: Pick<Storage, 'getItem'> | null): string[] {
+	try {
+		const value: unknown = JSON.parse(storage?.getItem(GROUP_COLLAPSED_STORAGE_KEY) ?? '[]');
+		return Array.isArray(value)
+			? value
+					.filter((path): path is string => typeof path === 'string' && GROUP_PATH.test(path))
+					.slice(-GROUP_COLLAPSED_MAX)
+			: [];
+	} catch {
+		return [];
+	}
+}
+
+/** Remembers the folded groups in their order; none removes the key. */
+export function writeCollapsedGroups(
+	storage: Pick<Storage, 'setItem' | 'removeItem'> | null,
+	paths: readonly string[]
+): void {
+	try {
+		const kept = paths.filter((path) => GROUP_PATH.test(path)).slice(-GROUP_COLLAPSED_MAX);
+		if (kept.length === 0) storage?.removeItem(GROUP_COLLAPSED_STORAGE_KEY);
+		else storage?.setItem(GROUP_COLLAPSED_STORAGE_KEY, JSON.stringify(kept));
+	} catch {
+		// Folding still holds for this page.
 	}
 }

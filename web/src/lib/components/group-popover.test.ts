@@ -156,3 +156,79 @@ describe('group popover', () => {
 		expect(source).not.toMatch(/anchor-name|position-anchor|popover="auto"/);
 	});
 });
+
+describe('group popover: second level (plan OR-3)', () => {
+	const NAVIGATION = { keepFocus: true, noScroll: true };
+
+	function second() {
+		return screen.getByRole('group', { hidden: true, name: 'Danach gruppieren' });
+	}
+
+	function secondChoice(name: string) {
+		return within(second()).getByRole<HTMLInputElement>('radio', { hidden: true, name });
+	}
+
+	it('locks the second level with a hint while there is no first one', () => {
+		show();
+		const fieldset = second() as HTMLFieldSetElement;
+		expect(fieldset.disabled).toBe(true);
+		const hint = document.getElementById(String(fieldset.getAttribute('aria-describedby')));
+		expect(hint?.textContent).toBe('Erst eine erste Ebene wählen.');
+		// The first level keeps its seven choices; the second is a fieldset of its own.
+		expect(within(field()).getAllByRole('radio', { hidden: true })).toHaveLength(7);
+	});
+
+	it('offers "Keine" and every grouping except the first level', () => {
+		show('/?gruppe=projekt');
+		expect((second() as HTMLFieldSetElement).disabled).toBe(false);
+		expect(
+			within(second())
+				.getAllByRole('radio', { hidden: true })
+				.map((radio) => radio.closest('label')?.textContent?.trim())
+		).toEqual([
+			'Keine',
+			'Nach Status',
+			'Nach Priorität',
+			'Nach Fälligkeit',
+			'Nach Quelle',
+			'Nach Wiederholung'
+		]);
+		expect(secondChoice('Keine').checked).toBe(true);
+	});
+
+	it('sets "untergruppe" and names both levels on the button', async () => {
+		show('/?status=open&gruppe=projekt');
+		await fireEvent.click(secondChoice('Nach Status'));
+		expect(mocks.goto).toHaveBeenCalledExactlyOnceWith(
+			'/?status=open&gruppe=projekt&untergruppe=status',
+			{ keepFocus: true, noScroll: true }
+		);
+
+		document.body.innerHTML = '';
+		show('/?gruppe=faellig&untergruppe=prio');
+		const button = screen.getByRole('button', { name: 'Gruppiert: Fälligkeit › Priorität' });
+		expect(button.classList.contains('active')).toBe(true);
+		expect(secondChoice('Nach Priorität').checked).toBe(true);
+	});
+
+	it('clears the second level with "Keine", with the first "Keine" and when it becomes the first', async () => {
+		show('/?gruppe=projekt&untergruppe=status');
+		await fireEvent.click(secondChoice('Keine'));
+		expect(mocks.goto).toHaveBeenLastCalledWith('/?gruppe=projekt', NAVIGATION);
+
+		await fireEvent.click(choice('Nach Status'));
+		expect(mocks.goto).toHaveBeenLastCalledWith('/?gruppe=status', NAVIGATION);
+
+		await fireEvent.click(choice('Nach Priorität'));
+		expect(mocks.goto).toHaveBeenLastCalledWith('/?gruppe=prio&untergruppe=status', NAVIGATION);
+
+		await fireEvent.click(choice('Keine'));
+		expect(mocks.goto).toHaveBeenLastCalledWith('/', NAVIGATION);
+	});
+
+	it('does not navigate for the current second level', async () => {
+		show('/?gruppe=projekt&untergruppe=status');
+		await fireEvent.click(secondChoice('Nach Status'));
+		expect(mocks.goto).not.toHaveBeenCalled();
+	});
+});
