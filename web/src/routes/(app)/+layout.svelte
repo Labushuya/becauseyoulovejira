@@ -4,6 +4,7 @@
 	import { page } from '$app/state';
 	import { auth } from '$lib/auth.svelte';
 	import AppHeader from '$lib/components/AppHeader.svelte';
+	import LiveUpdateNotice from '$lib/components/LiveUpdateNotice.svelte';
 	import ShortcutsModal from '$lib/components/help/ShortcutsModal.svelte';
 	import FlagGroup from '$lib/components/overlay/FlagGroup.svelte';
 	import QuickCapture from '$lib/components/QuickCapture.svelte';
@@ -282,6 +283,8 @@
 	ontour={() => void startGuidedTour()}
 />
 <main class="content">
+	<!-- A failed realtime subscription is tried again; meanwhile a hint says so (ADR-0011 E6). -->
+	<LiveUpdateNotice />
 	{@render children()}
 </main>
 <FlagGroup store={flags} />

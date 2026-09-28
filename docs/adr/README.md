@@ -12,7 +12,7 @@ Bereits verbindlich in der [Projekt-CLAUDE.md](../../CLAUDE.md) festgelegt und d
 | [0004](0004-teststrategie-hooks-migrationen.md) | Teststrategie für Hooks und Migrationen | Angenommen | 2026-09-24 |
 | [0005](0005-zeitzone-europe-berlin.md) | Zeitzone Europe/Berlin ohne Zeitzonendatenbank der Laufzeit | Angenommen | 2026-09-24 |
 | [0006](0006-frontend-zustand-und-datenzugriff.md) | Frontend-Zustand, Datenzugriff und Standard-Sortierung | Angenommen | 2026-09-24 |
-| [0007](0007-realtime-und-sitzungspflege.md) | Realtime-Abos und Sitzungspflege im Frontend | Angenommen | 2026-09-24 |
+| [0007](0007-realtime-und-sitzungspflege.md) | Realtime-Abos und Sitzungspflege im Frontend | Angenommen (mit Nachtrag: erneuter Versuch gescheiterter Abos, AR-2) | 2026-09-24 |
 | [0008](0008-markdown-rendering-und-sanitizing.md) | Markdown-Rendering und Sanitizing | Angenommen, §1, §2 und §5 ergänzt durch 0032, §4 ab RT-3 ersetzt durch 0032 | 2026-09-24 |
 | [0009](0009-fehlerfarbe.md) | Fehlerfarbe als eigenes Design-Token | Angenommen (mit Nachtrag) | 2026-09-24 |
 | [0010](0010-layout-nach-task-board.md) | Seitenaufbau nach dem Vorbild des Task-Boards, im eigenen Stack und mit eigenen Farben | Angenommen, teilweise ersetzt durch 0025 und 0029, ergänzt durch 0027 | 2026-09-25 |

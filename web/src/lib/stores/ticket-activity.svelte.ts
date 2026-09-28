@@ -168,13 +168,17 @@ export class TicketActivityStore {
 
 	/**
 	 * Follows comments and history of the open ticket live (ADR-0007 section 2); after a
-	 * reconnection both are loaded again without a loading state (section 3). Returns the
-	 * cleanup, which ends every subscription.
+	 * reconnection both are loaded again without a loading state (section 3), as after a
+	 * subscription that came only after failed attempts. Returns the cleanup, which ends every
+	 * subscription.
 	 */
 	connect(live: LiveSource): () => void {
 		this.#live = live;
 		if (this.#ticketId !== null) this.#follow(this.#ticketId);
-		const stopReconnect = hold(live.reconnected(() => void this.#refresh()));
+		const refresh = () => void this.#refresh();
+		const stopReconnect = hold((guard) => live.reconnected(guard(refresh)), {
+			recovered: refresh
+		});
 		return () => {
 			stopReconnect();
 			this.#stopFollowing?.();
@@ -390,18 +394,30 @@ export class TicketActivityStore {
 	#follow(ticketId: string): void {
 		this.#stopFollowing?.();
 		this.#stopFollowing = null;
-		if (this.#live === null) return;
+		const live = this.#live;
+		if (live === null) return;
+		const refresh = () => void this.#refresh();
 		const stops = [
 			hold(
-				this.#live.comments(ticketId, (change) => {
-					if (change.action === 'delete') this.removeComment(change.id);
-					else this.upsertComment(change.record);
-				})
+				(guard) =>
+					live.comments(
+						ticketId,
+						guard((change) => {
+							if (change.action === 'delete') this.removeComment(change.id);
+							else this.upsertComment(change.record);
+						})
+					),
+				{ recovered: refresh }
 			),
 			hold(
-				this.#live.history(ticketId, (change) => {
-					if (change.action === 'create') this.upsertHistory(change.record);
-				})
+				(guard) =>
+					live.history(
+						ticketId,
+						guard((change) => {
+							if (change.action === 'create') this.upsertHistory(change.record);
+						})
+					),
+				{ recovered: refresh }
 			)
 		];
 		this.#stopFollowing = () => {

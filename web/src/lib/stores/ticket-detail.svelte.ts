@@ -499,13 +499,17 @@ export class TicketDetailStore {
 
 	/**
 	 * Follows the shown ticket live (ADR-0007 sections 2 and 3). A later `open` subscribes to its
-	 * ticket; after a reconnection the ticket is loaded again without a loading state. Returns the
-	 * cleanup, which ends every subscription.
+	 * ticket; after a reconnection, or a subscription that came only after failed attempts, the
+	 * ticket is loaded again without a loading state. Returns the cleanup, which ends every
+	 * subscription.
 	 */
 	connect(live: LiveSource): () => void {
 		this.#live = live;
 		if (this.#id !== null) this.#follow(this.#id);
-		const stopReconnect = hold(live.reconnected(() => void this.#refresh()));
+		const refresh = () => void this.#refresh();
+		const stopReconnect = hold((guard) => live.reconnected(guard(refresh)), {
+			recovered: refresh
+		});
 		return () => {
 			stopReconnect();
 			this.#stopTicket?.();
@@ -884,12 +888,18 @@ export class TicketDetailStore {
 	#follow(id: string): void {
 		this.#stopTicket?.();
 		this.#stopTicket = null;
-		if (this.#live === null) return;
+		const live = this.#live;
+		if (live === null) return;
 		this.#stopTicket = hold(
-			this.#live.ticket(id, (change) => {
-				if (change.action !== 'delete') this.upsert(change.record);
-				else if (change.id === this.#id && change.id !== this.#deletingId) this.#gone();
-			})
+			(guard) =>
+				live.ticket(
+					id,
+					guard((change) => {
+						if (change.action !== 'delete') this.upsert(change.record);
+						else if (change.id === this.#id && change.id !== this.#deletingId) this.#gone();
+					})
+				),
+			{ recovered: () => void this.#refresh() }
 		);
 	}
 

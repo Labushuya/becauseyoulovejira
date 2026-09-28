@@ -46,3 +46,12 @@ export const DUPLICATE_TAB = {
 	keep: 'Hier weiterarbeiten',
 	close: 'Tab schließen'
 } as const;
+
+/**
+ * Hint while a realtime subscription failed and is tried again (ADR-0011 E6, E2 plan §8): a
+ * warning, not an error, because the data stays usable; "Neu laden" loads the page again.
+ */
+export const LIVE_INTERRUPTED = {
+	text: 'Live-Aktualisierung unterbrochen – wird erneut versucht.',
+	reload: 'Neu laden'
+} as const;

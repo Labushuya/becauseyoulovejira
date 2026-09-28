@@ -489,18 +489,24 @@ export class InboxStore {
 	}
 
 	/**
-	 * Keeps the inbox live (ADR-0007 sections 2 and 3). Returns the cleanup, which ends the
-	 * subscriptions and a running reconciliation.
+	 * Keeps the inbox live (ADR-0007 sections 2 and 3); a subscription that came only after failed
+	 * attempts reconciles like a reconnection. Returns the cleanup, which ends the subscriptions
+	 * and a running reconciliation.
 	 */
 	connect(live: LiveSource): () => void {
+		const reconcile = () => void this.reconcile();
 		const stops = [
 			hold(
-				live.inbox((change) => {
-					if (change.action === 'delete') this.remove(change.id);
-					else this.upsert(change.record);
-				})
+				(guard) =>
+					live.inbox(
+						guard((change) => {
+							if (change.action === 'delete') this.remove(change.id);
+							else this.upsert(change.record);
+						})
+					),
+				{ recovered: reconcile }
 			),
-			hold(live.reconnected(() => void this.reconcile()))
+			hold((guard) => live.reconnected(guard(reconcile)), { recovered: reconcile })
 		];
 		return () => {
 			for (const stop of stops) stop();

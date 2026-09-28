@@ -126,22 +126,26 @@ export class TicketSourcesStore {
 
 	/**
 	 * Follows the inbox live (ADR-0007): an item that points to the open ticket joins its sources,
-	 * one that no longer does leaves them. After a reconnection the sources are loaded again
-	 * without a loading state. Returns the cleanup.
+	 * one that no longer does leaves them. After a reconnection, or a subscription that came only
+	 * after failed attempts, the sources are loaded again without a loading state. Returns the
+	 * cleanup.
 	 */
 	connect(live: LiveSource): () => void {
+		const refresh = () => {
+			if (this.#ticketId !== null) void this.#load(this.#ticketId, true);
+		};
 		const stops = [
 			hold(
-				live.inbox((change) => {
-					if (change.action === 'delete') this.#items.delete(change.id);
-					else this.upsert(change.record);
-				})
+				(guard) =>
+					live.inbox(
+						guard((change) => {
+							if (change.action === 'delete') this.#items.delete(change.id);
+							else this.upsert(change.record);
+						})
+					),
+				{ recovered: refresh }
 			),
-			hold(
-				live.reconnected(() => {
-					if (this.#ticketId !== null) void this.#load(this.#ticketId, true);
-				})
-			)
+			hold((guard) => live.reconnected(guard(refresh)), { recovered: refresh })
 		];
 		return () => {
 			for (const stop of stops) stop();
