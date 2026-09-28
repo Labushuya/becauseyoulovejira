@@ -5,11 +5,11 @@
 	import SourceHandlingChoice from './SourceHandlingChoice.svelte';
 	import TicketDeleteText from './TicketDeleteText.svelte';
 
-	// "Löschen …" of a ticket (E2 plan, package 11). In the side panel the confirmation asks before
-	// deleting for good and returns the focus itself; a failure stays in the dialog, after deleting
-	// the owner closes the view. A ticket with sources (ADR-0031, addendum B) names their number and
-	// asks what happens to them: back to the inbox (chosen at first) or discarded; sub-tasks stay
-	// (ADR-0033 section 4). The full view is a modal and opens no dialog (ADR-0025 section 3): with
+	// "Löschen …" of a ticket (E2 plan, package 11; ADR-0037). In the side panel the confirmation
+	// asks before moving the ticket to the trash and returns the focus itself; a failure stays in
+	// the dialog, afterwards the owner closes the view and a flag offers "Rückgängig". A ticket with
+	// sources (ADR-0031, addendum B) names their number and asks what happens to them: back to the
+	// inbox (chosen at first) or along with the ticket; sub-tasks go along (ADR-0033, addendum). The full view is a modal and opens no dialog (ADR-0025 section 3): with
 	// `inline` the button only asks the owner to show TicketDeleteQuestion in its content.
 	let {
 		store,
@@ -92,8 +92,8 @@
 {#if ticket && !inline}
 	<ConfirmDialog
 		open={confirming}
-		title={`${ticket.key} endgültig löschen?`}
-		confirmLabel="Endgültig löschen"
+		title={`${ticket.key} in den Papierkorb verschieben?`}
+		confirmLabel="In den Papierkorb"
 		busy={deleting}
 		{error}
 		onconfirm={remove}

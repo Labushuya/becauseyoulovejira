@@ -59,6 +59,7 @@
 	} from '$lib/stores/ticket-list.svelte';
 	import { TicketOpenModeStore, setTicketOpenMode } from '$lib/stores/open-mode.svelte';
 	import { BulkEditStore, bulkEditData, setBulkEditStore } from '$lib/stores/bulk-edit.svelte';
+	import { TrashStore, setTrashStore, trashData, trashLive } from '$lib/stores/trash.svelte';
 	import { inboxItemHref } from '$lib/ticket-links';
 
 	// Shell of every signed-in page (E2 plan, T-4). The root layout renders it only with a
@@ -97,7 +98,20 @@
 			flags
 		})
 	);
-	const detail = setTicketDetailStore(new TicketDetailStore(ticketDetailData(pb), auth, tickets));
+	// Trash (ADR-0037): its count for the navigation, the view "Papierkorb" and "Rückgängig" after
+	// deleting a ticket; it reads the list again whenever the server reports a change.
+	const trash = setTrashStore(
+		new TrashStore(
+			trashData(pb, () => auth.userId),
+			auth,
+			flags
+		)
+	);
+	$effect(() => untrack(() => trash.start()));
+	$effect(() => untrack(() => trash.connect(trashLive(pb))));
+	const detail = setTicketDetailStore(
+		new TicketDetailStore(ticketDetailData(pb), auth, tickets, trash)
+	);
 	// Bulk actions on the chosen rows of the table (plan BI-2, ADR-0036 §3): one request per ticket
 	// through the Record API, results and "Rückgängig" as flags.
 	setBulkEditStore(new BulkEditStore(bulkEditData(pb), auth, tickets, flags));

@@ -77,7 +77,8 @@ async function showTable(open: TicketSummary[], bulkData: Partial<BulkEditData> 
 	);
 	const bulkDataFull: BulkEditData = {
 		update,
-		delete: vi.fn(async () => undefined),
+		delete: vi.fn(async () => null),
+		restore: vi.fn(async () => undefined),
 		sourceDates: vi.fn(async () => new Map()),
 		sourceCount: vi.fn(async () => 0),
 		...bulkData
@@ -276,16 +277,19 @@ describe('bar of the bulk actions (plan BI-2)', () => {
 		]);
 	});
 
-	it('deletes after a question that cannot be undone, with the choice for the sources', async () => {
+	it('moves to the trash after a question naming it, with the choice for the sources (ADR-0037)', async () => {
 		const { run } = await showTable([ticket(1), ticket(2)], { sourceCount: vi.fn(async () => 2) });
 		await fireEvent.click(headBox());
 		await fireEvent.click(screen.getByRole('button', { name: 'Löschen …' }));
 
-		const dialog = screen.getByRole('dialog', { name: '2 Tickets endgültig löschen?' });
-		expect(within(dialog).getByText(/nicht rückgängig/)).toBeTruthy();
+		const dialog = screen.getByRole('dialog', { name: '2 Tickets in den Papierkorb verschieben?' });
+		expect(
+			within(dialog).getByText(/in den Papierkorb und lassen sich dort wiederherstellen/)
+		).toBeTruthy();
+		expect(within(dialog).queryByText(/nicht rückgängig/)).toBeNull();
 		await vi.waitFor(() => expect(within(dialog).getByText(/gehören 2 Quellen/)).toBeTruthy());
 		await fireEvent.click(within(dialog).getByRole('radio', { name: /Quellen verwerfen/ }));
-		await fireEvent.click(within(dialog).getByRole('button', { name: 'Endgültig löschen' }));
+		await fireEvent.click(within(dialog).getByRole('button', { name: 'In den Papierkorb' }));
 
 		expect(run).toHaveBeenCalledWith({ kind: 'delete', sources: 'discard' }, expect.any(Array));
 	});

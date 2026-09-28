@@ -1,6 +1,6 @@
 # E6-Plan, Teil „Papierkorb“ (Offene Reste B): weiches Löschen, Wiederherstellen, Aufbewahrung
 
-- **Stand:** PB-1 (Datenmodell, Migration, Hooks, Lesepfade, Aufbewahrung) umgesetzt; PB-2 (Oberfläche) folgt.
+- **Stand:** umgesetzt (2026-09-28): PB-1 (#151, Datenmodell, Migration, Hooks, Lesepfade, Aufbewahrung; Neustart nötig), PB-2 (Oberfläche). Offen ist die manuelle Browser-Prüfung (BYL-E6-338).
 - **Grundlage:**
   - Auftrag „Papierkorb“ (Offene Reste B, 2026-09-28) mit den Produktentscheidungen des Advisors (unten §1).
   - [ADR-0037](../adr/0037-papierkorb.md) (neu), [ADR-0031](../adr/0031-herkunft-sichern.md) Nachtrag B (Quellen beim Löschen), [ADR-0021](../adr/0021-regelmodell-wiederkehrende-aufgaben.md) bis [ADR-0024](../adr/0024-serien-aus-kalendern.md) mit Nachträgen 2 (Index `(recurrence, occurrence)`, `reopenConflicts`, `next_due` nie zurück), [ADR-0033](../adr/0033-unteraufgaben.md) (eine Ebene), [ADR-0034](../adr/0034-unterprojekte.md) (Zählungen), [ADR-0036](../adr/0036-sammelbearbeitung-inline-und-oeffnungsmodus.md) (Sammelaktionen, Rückgängig mit `expected_updated`), [ADR-0013](../adr/0013-filter-suche-sortierung-gruppierung.md), [ADR-0025](../adr/0025-ui-konsistenz-overlay-system.md), [ADR-0026](../adr/0026-einstellungsbereich-und-hinweis-bausteine.md), [ADR-0009](../adr/0009-fehlerfarbe.md), [ADR-0029](../adr/0029-glas-materialien.md)
@@ -26,7 +26,7 @@
 | Paket | Inhalt | Manifest |
 |---|---|---|
 | PB-1 | Migration (Felder, Index, Regeln, Einstellung), Hook-Logik Verschieben / Wiederherstellen / endgültig löschen, Routen des Papierkorbs, Cron und Start, Inventur und Absicherung aller Lesepfade, Tests | BYL-E6-330 bis BYL-E6-333 |
-| PB-2 | Seite „Papierkorb“ mit Navigation und Anzahl, Löschdialog-Texte, „Rückgängig“ einzeln und gesammelt, Hinweis bei Links auf Tickets im Papierkorb, Einstellung der Aufbewahrung, Tests, Manifest | ab BYL-E6-334 |
+| PB-2 | Seite „Papierkorb“ mit Navigation und Anzahl, Löschdialog-Texte, „Rückgängig“ einzeln und gesammelt, Hinweis bei Links auf Tickets im Papierkorb, Einstellung der Aufbewahrung, Tests, Manifest | BYL-E6-334 bis BYL-E6-337, BYL-E6-338 (manuell) |
 
 ## 3. Inventur der Lesepfade (PB-1)
 
@@ -91,15 +91,25 @@ Grundsatz: Die API-Regeln verbergen jedes Ticket mit `deleted_at` (Migration `17
 | 2026-09-28 | PB-1 | **Aufbewahrung:** `users.trash_retention` (`7`, `30`, `90`, `never`, leer = 30) pro Konto; bei Haushalts-Tickets gilt das Konto des Besitzers. Frist in Berliner Kalendertagen: gelöscht am 1. Oktober mit 30 Tagen geht am 31. Oktober (die Liste zeigt am Löschtag „30“, am Tag der Frist „0“). Cron `byl-trash-purge` täglich 11:45 UTC nach der Bereinigung des Eingangs, dazu beim Start; je Gruppe eine Transaktion, Fehler geloggt, Anzahl im Log, idempotent. |
 | 2026-09-28 | PB-1 | **Rückweg der Migration:** Tickets im Papierkorb werden endgültig gelöscht, Unteraufgaben zuerst, über `app.delete` (Kommentare, Verlauf, Lesezeilen gehen mit); ihre verworfenen Quellen werden vorher per `UPDATE` zu Tombstones mit `ticket_deleted` (Semantik vor dem Papierkorb). Das hängt nicht an den Hooks, weil `migrate down` mit und ohne sie laufen kann. Anzahl im Log; Regeln per Entfernen der angehängten Bedingung, Index wie vorher. |
 | 2026-09-28 | PB-1 | **Vor dem Neustart** (`trashReady` falsch): Beide Löschwege löschen wie bisher hart und behandeln die Quellen wie in HK-6, die Route antwortet 204, die Routen des Papierkorbs 503 mit dem Neustart-Hinweis, gesendete Felder ignoriert PocketBase. |
+| 2026-09-28 | PB-2 | **Navigation:** dezenter Link „Papierkorb“ mit Zahl nach dem Umschalter statt eines fünften Segments (die Arbeitsansichten bleiben unter sich; der Umschalter bricht sonst noch früher um). Die Zahl liest `ViewSwitch` aus dem `TrashStore` des Layouts; ohne ihn (Tests einzelner Komponenten) fehlt sie. |
+| 2026-09-28 | PB-2 | **Store:** `TrashStore` im `(app)`-Layout, lädt beim Start und neu bei `byl/trash` und nach dem Neuverbinden (Listen des Papierkorbs sind klein, ein Neuladen ist einfacher als Einzelereignisse). Rückgängig nach einem Einzel-Löschen über `TrashStore.offerUndo` (der `TicketDetailStore` bekommt ihn als `TrashUndo`), nach Sammel-Löschen im `BulkEditStore` (derselbe Eintrag „Rückgängig“ wie nach Feldänderungen, mit `restore` statt `update`). Der Panel-Weg nutzt jetzt immer die Route mit Quellenbehandlung (`inbox` als Standard), damit er die Grundlage für „Rückgängig“ bekommt. |
+| 2026-09-28 | PB-2 | **Gemeinsame Leiste:** Das Glas der Sammel-Aktionsleiste zieht in den Baustein `SelectionBar`; `BulkActionBar` und `TrashView` setzen nur ihre Knöpfe hinein (Allowlist: `SelectionBar` statt `BulkActionBar`, ADR-0029 Nachtrag). So nutzt der Papierkorb dieselbe Leiste, wie der Auftrag verlangt, ohne eine elfte Glas-Datei. |
+| 2026-09-28 | PB-2 | **Wahl beim Wiederherstellen inline:** `TrashNeedQuestion` unter der Zeile bzw. in der Vorschau (Warnung ohne Rot), kein Dialog (die Vorschau ist ein Panel, und die Wahl gehört zur Zeile). Der Store merkt schon getroffene Wahlen je Ticket, falls nach dem Zielprojekt noch die Serie fragt. |
+| 2026-09-28 | PB-2 | **Einstellung unter „Tickets“:** neue Seite „Einstellungen → Tickets“ nach „Tags“ statt unter „Darstellung“, weil die Aufbewahrung am Konto auf dem Server gilt (der Cron braucht sie ohne offenen Tab), „Darstellung“ dagegen nur im Browser. |
+| 2026-09-28 | PB-2 | **Hinweis „liegt im Papierkorb“:** `TrashNotice` im Panel bei „nicht gefunden“ und „an anderer Stelle gelöscht“ und im Panel eines Eingangseintrags mit `ticket_deleted.ticket`. Er fragt erst die geladene Liste, dann (für Unteraufgaben einer Gruppe) die Vorschau-Route. Verweise im Verlauf und im Markdown-Text kennen keine Ticket-Links nach Key; dort gibt es nichts umzuleiten. |
+| 2026-09-28 | PB-2 | **Texte:** Löschfragen „… in den Papierkorb verschieben?“ mit „In den Papierkorb“ und der Aufbewahrung; „nicht rückgängig“ nur noch beim endgültigen Löschen. `remainingSubtasksText` („bleiben erhalten“) entfällt, weil Unteraufgaben jetzt mitgehen (`subtasksAlongText`). |
 
 ## 5. Status
 
 | Paket | Stand |
 |---|---|
-| PB-1 | umgesetzt |
-| PB-2 | geplant |
+| PB-1 | gemergt (#151; Migration, Neustart nötig) |
+| PB-2 | umgesetzt |
 
 ## 6. Offene Punkte und Folgeschritte
+
+- Manuelle Browser-Prüfung (BYL-E6-338).
+- Nach einem Wiederherstellen kommen Lesezeilen („neu“) erst mit dem nächsten Laden der Liste zurück; ein zurückgeholtes Ticket kann bis dahin als „neu“ gelten.
 
 - **Projekt-Papierkorb:** Projekte werden weiter sofort gelöscht (nur ohne Tickets und Unterprojekte). Ein Papierkorb für Projekte wäre ein eigener Schritt; Tickets im Papierkorb eines gelöschten Projekts verlangen beim Wiederherstellen schon heute ein Zielprojekt.
 - **Plattformen (S0, [ADR-0028](../adr/0028-plattform-strategie.md)):** Die Routen des Papierkorbs sind reine HTTP-JSON-Wege mit der Sitzung; ein nativer Client braucht nur sie und das Thema `byl/trash`.

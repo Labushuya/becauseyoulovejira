@@ -49,7 +49,9 @@ const mocks = vi.hoisted(() => {
 			// Recurrence rules have their own small live source (E5 plan, package 4).
 			rules: vi.fn(subscribe('rules')),
 			// Messages of start.bat, the landing page and stop.bat (ADR-0035 section 5).
-			attention: vi.fn(subscribe('byl/attention'))
+			attention: vi.fn(subscribe('byl/attention')),
+			// Changes of the trash (ADR-0037).
+			trash: vi.fn(subscribe('byl/trash'))
 		},
 		goto: vi.fn(async () => {
 			calls.push('goto');
@@ -147,6 +149,28 @@ vi.mock('$lib/stores/recurrence.svelte', async (importOriginal) => ({
 		}
 	}),
 	recurrenceLive: () => ({ rules: mocks.live.rules, reconnected: mocks.live.reconnected })
+}));
+vi.mock('$lib/stores/trash.svelte', async (importOriginal) => ({
+	...(await importOriginal<object>()),
+	trashData: () => ({
+		list: async () => ({ items: [], retention: '30' }),
+		preview: async () => {
+			throw new Error('not used');
+		},
+		restore: async () => {
+			throw new Error('not used');
+		},
+		purge: async () => {
+			throw new Error('not used');
+		},
+		purgeAll: async () => {
+			throw new Error('not used');
+		},
+		saveRetention: async () => {
+			throw new Error('not used');
+		}
+	}),
+	trashLive: () => ({ changes: mocks.live.trash, reconnected: mocks.live.reconnected })
 }));
 vi.mock('$lib/stores/attention.svelte', async (importOriginal) => ({
 	...(await importOriginal<object>()),
@@ -246,13 +270,14 @@ describe('app layout', () => {
 
 	it('subscribes to tickets, the catalog, the inbox, the rules, the attention messages and reconnections while shown and ends them when it goes away', async () => {
 		const { unmount } = await renderLayout();
-		await vi.waitFor(() => expect(mocks.subscribed).toHaveLength(15));
+		await vi.waitFor(() => expect(mocks.subscribed).toHaveLength(17));
 
 		// The list follows all tickets, the catalog all projects and tags (E3 plan, T-16), the
 		// inbox all entries (E4 plan, T-4) and so do the sources of the open ticket (ADR-0031), the
 		// rules all rules (E5 plan, T-7); list, panel, activity, catalog, inbox, sources and rules
 		// each reconcile after a reconnect. The hint of start.bat listens on byl/attention and drops
-		// the flag "beendet" after a reconnect (ADR-0035 section 5).
+		// the flag "beendet" after a reconnect (ADR-0035 section 5). The trash reads its list again
+		// on byl/trash and after a reconnect (ADR-0037).
 		expect([...mocks.subscribed].sort()).toEqual([
 			'PB_CONNECT',
 			'PB_CONNECT',
@@ -262,7 +287,9 @@ describe('app layout', () => {
 			'PB_CONNECT',
 			'PB_CONNECT',
 			'PB_CONNECT',
+			'PB_CONNECT',
 			'byl/attention',
+			'byl/trash',
 			'inbox',
 			'inbox',
 			'projects',
@@ -275,6 +302,7 @@ describe('app layout', () => {
 		expect(mocks.live.tags).toHaveBeenCalledOnce();
 		expect(mocks.live.inbox).toHaveBeenCalledTimes(2);
 		expect(mocks.live.rules).toHaveBeenCalledOnce();
+		expect(mocks.live.trash).toHaveBeenCalledOnce();
 		// The catalog tries to load once when the layout is shown.
 		expect(mocks.auth.ensureValid).toHaveBeenCalled();
 

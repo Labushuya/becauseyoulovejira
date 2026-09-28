@@ -99,7 +99,7 @@ function setup(initial: Ticket = ticket()) {
 			created: '2026-09-24 10:00:00.000Z',
 			updated: '2026-09-24 10:00:00.000Z'
 		})),
-		delete: vi.fn(async (): Promise<void> => undefined)
+		delete: vi.fn<TicketDetailData['delete']>(async () => null)
 	} satisfies TicketDetailData;
 	// Reactive like the real list store, whose newer versions the panel follows.
 	const listTickets = new SvelteMap<string, TicketSummary>();
@@ -645,14 +645,40 @@ describe('tags (E3 plan, T-14)', () => {
 });
 
 describe('TicketDetailStore: deleting', () => {
-	it('deletes the ticket, removes it from the list and announces it', async () => {
+	it('deletes the ticket, removes it from the list and announces it (before the trash)', async () => {
 		const { store, data, list } = await opened();
 
 		expect(await store.deleteTicket()).toEqual({ ok: true, key: 'TASK-3' });
 
-		expect(data.delete).toHaveBeenCalledExactlyOnceWith(ID);
+		expect(data.delete).toHaveBeenCalledExactlyOnceWith(ID, 'inbox');
 		expect(list.remove).toHaveBeenCalledWith(ID);
 		expect(list.announce).toHaveBeenCalledWith('TASK-3 wurde gelöscht.');
+	});
+
+	it('offers "Rückgängig" through the trash when the server moved the ticket (ADR-0037)', async () => {
+		const { data, list } = await opened();
+		const move = { id: ID, updated: '2026-09-28 10:00:00.000Z', tickets: [] };
+		data.delete.mockResolvedValueOnce(move);
+		const trash = { offerUndo: vi.fn() };
+		const withTrash = new TicketDetailStore(
+			data,
+			{ ensureValid: () => true, logout: vi.fn() },
+			list,
+			trash
+		);
+		withTrash.open(ID);
+		await vi.waitFor(() => expect(withTrash.state).toBe('ready'));
+
+		expect(await withTrash.deleteTicket({ count: 2, handling: 'discard' })).toEqual({
+			ok: true,
+			key: 'TASK-3'
+		});
+		expect(data.delete).toHaveBeenLastCalledWith(ID, 'discard');
+		expect(trash.offerUndo).toHaveBeenCalledExactlyOnceWith(
+			move,
+			'TASK-3 in den Papierkorb verschoben. 2 Quellen bleiben beim Ticket.'
+		);
+		expect(list.announce).not.toHaveBeenCalled();
 	});
 
 	it('treats a ticket that is already gone as deleted', async () => {

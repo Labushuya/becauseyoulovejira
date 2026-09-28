@@ -18,7 +18,8 @@
 		| 'search'
 		| 'tags'
 		| 'comments'
-		| 'recurrence';
+		| 'recurrence'
+		| 'trash';
 </script>
 
 <script lang="ts">
@@ -84,6 +85,8 @@
 	{:else if name === 'recurrence'}
 		<path d="M13 6.5A5.25 5.25 0 0 0 3.6 4.4M3 9.5a5.25 5.25 0 0 0 9.4 2.1" />
 		<path d="M3.25 1.75v3h3M12.75 14.25v-3h-3" />
+	{:else if name === 'trash'}
+		<path d="M3 4.5h10M6.5 4.5V3h3v1.5M4.5 4.5l.75 9h5.5l.75-9M7 7v4M9 7v4" />
 	{/if}
 </svg>
 

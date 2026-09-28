@@ -152,11 +152,25 @@ describe('deleting a ticket with sources (ADR-0031, addendum B)', () => {
 	it('counts the sources and names what happened to them', () => {
 		expect(sourceCountText(1)).toBe('Zu diesem Ticket gehört 1 Quelle.');
 		expect(sourceCountText(3)).toBe('Zu diesem Ticket gehören 3 Quellen.');
-		expect(deletedWithSourcesText('HAUS-12', 0, 'inbox')).toBe('HAUS-12 wurde gelöscht.');
+		// Into the trash (ADR-0037): discarded sources stay with the ticket.
+		expect(deletedWithSourcesText('HAUS-12', 0, 'inbox')).toBe(
+			'HAUS-12 in den Papierkorb verschoben.'
+		);
 		expect(deletedWithSourcesText('HAUS-12', 1, 'inbox')).toBe(
-			'HAUS-12 wurde gelöscht. 1 Quelle ist wieder im Eingang.'
+			'HAUS-12 in den Papierkorb verschoben. 1 Quelle ist wieder im Eingang.'
 		);
 		expect(deletedWithSourcesText('HAUS-12', 2, 'discard')).toBe(
+			'HAUS-12 in den Papierkorb verschoben. 2 Quellen bleiben beim Ticket.'
+		);
+		expect(deletedWithSourcesText('HAUS-12', 1, 'discard')).toBe(
+			'HAUS-12 in den Papierkorb verschoben. 1 Quelle bleibt beim Ticket.'
+		);
+		// Before the migration of the trash the server deletes for good, as in HK-6.
+		expect(deletedWithSourcesText('HAUS-12', 0, 'inbox', false)).toBe('HAUS-12 wurde gelöscht.');
+		expect(deletedWithSourcesText('HAUS-12', 1, 'inbox', false)).toBe(
+			'HAUS-12 wurde gelöscht. 1 Quelle ist wieder im Eingang.'
+		);
+		expect(deletedWithSourcesText('HAUS-12', 2, 'discard', false)).toBe(
 			'HAUS-12 wurde gelöscht. 2 Quellen sind verworfen.'
 		);
 	});

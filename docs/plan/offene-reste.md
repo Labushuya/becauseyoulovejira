@@ -74,6 +74,8 @@
 
 ## 6. Hinweise für den Papierkorb (nächster Auftrag)
 
+Umgesetzt mit [ADR-0037](../adr/0037-papierkorb.md) nach dem [Plan Papierkorb](papierkorb.md) (Teil B); die Punkte unten sind dort entschieden.
+
 - **Wiederherstellen einer Instanz:** Der eindeutige Index ist seit OR-5 `(recurrence, occurrence)` für offene Tickets. Eine gelöschte offene Instanz ohne Schalter (`occurrence` leer) kollidiert beim Wiederherstellen mit einer inzwischen entstandenen offenen Instanz derselben Regel; mit Schalter nur mit einem offenen Ticket desselben Termins. Die Prüfung gehört wie `reopenConflicts` in die Transaktion (Konflikt: als normales Ticket ohne Serie wiederherstellen oder ablehnen, nie still verdoppeln). `occurrence` muss mit dem Ticket gesichert und zurückgeschrieben werden.
 - **`next_due` beim Löschen:** Löschen einer offenen Instanz überspringt bei `calendar` den Termin (ADR-0023 §6), bei `after_completion` setzt es `next_due` auf heute + Intervall. Wiederherstellen darf `next_due` nicht zurückdrehen (mit Schalter entstünden sonst Termine doppelt, siehe ADR-0023 Nachtrag 2).
 - **ADR-0031 Nachtrag B:** Beim Löschen eines Tickets gehen seine Quellen heute in den Eingang zurück (`new`, `source_meta.ticket_deleted`) oder werden verworfen. Ein Papierkorb muss entscheiden, ob Wiederherstellen die Quellen wieder verknüpft (Hauptquelle `source_item` bleibt am Ticket, der Eintrag steht dann aber als `new` im Eingang oder ist inzwischen umgewandelt oder verworfen) und wie `ticket_deleted` wieder entfernt wird; der Löschschutz der Quellen (`validation_inbox_item_linked`, deleteRule `ticket = ""`) gilt weiter.

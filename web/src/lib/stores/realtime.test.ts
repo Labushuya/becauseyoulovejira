@@ -389,7 +389,7 @@ describe('detail store live', () => {
 			get: vi.fn<TicketDetailData['get']>(async () => current),
 			update: vi.fn(),
 			create: vi.fn(),
-			delete: vi.fn(async (): Promise<void> => undefined)
+			delete: vi.fn<TicketDetailData['delete']>(async () => null)
 		} satisfies TicketDetailData;
 		const listTickets = new SvelteMap<string, TicketSummary>();
 		const list = {
@@ -461,6 +461,7 @@ describe('detail store live', () => {
 		const { store, data, live } = await opened();
 		data.delete.mockImplementationOnce(async () => {
 			live.emit('ticket', ID, { action: 'delete', id: ID });
+			return null;
 		});
 
 		expect((await store.deleteTicket()).ok).toBe(true);

@@ -1,6 +1,6 @@
 # ADR-0037: Papierkorb für Tickets: weiches Löschen, Unsichtbarkeit über die API-Regeln, Wiederherstellen und Aufbewahrung
 
-- **Status:** Angenommen; §1 bis §8 serverseitig umgesetzt in PB-1, die Oberfläche (§9) folgt mit PB-2 nach [docs/plan/papierkorb.md](../plan/papierkorb.md)
+- **Status:** Angenommen und umgesetzt: §1 bis §8 serverseitig in PB-1 (#151), die Oberfläche (§9) in PB-2, nach [docs/plan/papierkorb.md](../plan/papierkorb.md); manuelle Browser-Prüfungen stehen im Test-Manifest
 - **Datum:** 2026-09-28
 - **Entscheidung durch:** Nutzer (Auftrag „Offene Reste“, Teil B: Papierkorb), Advisor (Produktentscheidungen: Umfang, Gruppen, Quellen, Keys, Rückgängig, Aufbewahrung 7/30/90/nie, Rückweg), Executor (Architektur und Einzelheiten)
 - **Ändert:** [ADR-0031](0031-herkunft-sichern.md) Nachtrag B (Quellen beim Löschen), [ADR-0023](0023-lebenszyklus-von-regeln-und-instanzen.md) §6 und [ADR-0022](0022-erzeugung-von-instanzen.md) §5 (Index), [ADR-0033](0033-unteraufgaben.md) (Löschen mit Unteraufgaben), [ADR-0036](0036-sammelbearbeitung-inline-und-oeffnungsmodus.md) §4 (Rückgängig nach „Löschen“); jeweils mit Nachtrag
@@ -66,9 +66,14 @@
 
 ### 9. Oberfläche (PB-2)
 
-- Seite `/papierkorb` mit dezentem Eintrag und Anzahl in der Navigation; Tabelle mit Key, Titel, Projekt, gelöscht am, von, „wird endgültig gelöscht in N Tagen“; Auswahl und Aktionsleiste wie ADR-0036; Wiederherstellen, Endgültig löschen, „Papierkorb leeren“; leerer Zustand; Vorschau nur lesend.
-- Löschdialog nennt den Papierkorb statt „nicht rückgängig“; nach Einzel- und Sammel-Löschen ein Flag „In den Papierkorb verschoben“ mit „Rückgängig“.
-- Einstellung der Aufbewahrung; Links auf Tickets im Papierkorb zeigen neutral „liegt im Papierkorb“ mit Link dorthin.
+- **Navigation:** Nach dem Umschalter „Aufgaben | Projekte | Eingang | Wiederholungen“ steht der dezente Link „Papierkorb“ mit der Zahl der Tickets darin, kein fünftes Segment: Der Papierkorb ist keine Arbeitsansicht und soll nicht mit ihnen konkurrieren.
+- **Seite `/papierkorb`** (`TrashView`, `TrashTable`, Store `TrashStore` im `(app)`-Layout): Aufbewahrung mit „Aufbewahrung ändern“, „Papierkorb leeren …“, Tabelle mit Auswahl, Key, Titel (Link auf die Vorschau, „mit N Unteraufgaben“), Projekt aus dem Schnappschuss („gelöscht oder geändert“), Gelöscht am, Von, „Endgültig gelöscht in N Tagen / heute / nie“ und den Aktionen „Wiederherstellen“ und „Endgültig löschen …“. Auswahl wie ADR-0036 §2 (`domain/selection.ts`), gewählte Zeilen bekommen die gemeinsame Glas-Leiste `SelectionBar` (ADR-0029, Nachtrag) mit denselben zwei Aktionen, je Ticket eine Anfrage, höchstens vier zugleich. Leer: `EmptyState`. Vor dem Neustart der Neustart-Hinweis.
+- **Endgültig löschen und Leeren** fragen per `ConfirmDialog` und sagen „Das lässt sich nicht rückgängig machen.“; der Knopf ist wie jede destruktive Bestätigung des Projekts nicht rot (ADR-0009, CLAUDE.md §8).
+- **Wahl beim Wiederherstellen** inline (kein Dialog, auch aus der Vorschau): Zielprojekt oder „Als normales Ticket wiederherstellen (aus Serie lösen)“; getroffene Wahlen gehen mit, falls danach die nächste nötig ist.
+- **Vorschau `/papierkorb/<id>`:** nur lesend (Felder, Beschreibung als sanitisiertes Markdown ohne Abhaken, Unteraufgaben, Quellen, gelöscht am und von); „Wiederherstellen“ führt zum Ticket. Eine Unteraufgabe einer Gruppe hat keine Aktionen, nur den Weg zu ihrem übergeordneten Ticket.
+- **Löschdialoge** (Panel, Vollansicht inline, Sammel-Leiste): „… in den Papierkorb verschieben?“ mit „In den Papierkorb“, Aufbewahrung und mitgehenden Unteraufgaben statt „nicht rückgängig“; danach ein Flag „… in den Papierkorb verschoben.“ mit „Rückgängig“ (Wiederherstellen mit `expected_updated`).
+- **Links auf Tickets im Papierkorb** (Panel eines nicht sichtbaren oder anderswo gelöschten Tickets, Hinweis eines Eintrags im Eingang) zeigen neutral „Dieses Ticket liegt im Papierkorb“ mit „Im Papierkorb ansehen“ (`TrashNotice`).
+- **Einstellung:** neue Seite „Einstellungen → Tickets“ mit der Radiogruppe „Papierkorb“ (7, 30, 90 Tage, „Nie automatisch“). Nicht unter „Darstellung“: Die Aufbewahrung gilt am Konto auf dem Server, „Darstellung“ nur in diesem Browser.
 
 ## Alternativen
 

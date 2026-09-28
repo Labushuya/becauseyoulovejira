@@ -5,6 +5,7 @@
 import { PROJECT_PARENT_MESSAGES } from '../domain/project-tree';
 import { RECURRENCE_MESSAGES, openInstanceMessage } from '../domain/recurrence-rule';
 import { SUBTASK_MESSAGES, openChildrenMessage } from '../domain/subtasks';
+import { TRASH_MESSAGES } from '../domain/trash';
 
 export type DataErrorKind =
 	'aborted' | 'network' | 'not_found' | 'forbidden' | 'validation' | 'session' | 'server';
@@ -75,7 +76,9 @@ const FIELD_MESSAGES: Readonly<Record<string, string>> = Object.freeze({
 	// Sub-tasks (ADR-0033), the same texts as the hook.
 	...SUBTASK_MESSAGES,
 	// Sub projects (ADR-0034), the same texts as the hook.
-	...PROJECT_PARENT_MESSAGES
+	...PROJECT_PARENT_MESSAGES,
+	// Trash (ADR-0037), the same texts as the hook.
+	...TRASH_MESSAGES
 });
 
 /** Texts that depend on the field as well, keyed by `<field>:<code>`; they win over the above. */

@@ -9,7 +9,8 @@ import type PocketBase from 'pocketbase';
 import { createContext } from 'svelte';
 import { toDataError } from '$lib/data/errors';
 import { countTicketSources, listSourceEventDates } from '$lib/data/bulk';
-import { deleteTicket, updateTicket } from '$lib/data/tickets';
+import { deleteTicket, updateTicket, type TrashMove } from '$lib/data/tickets';
+import { restoreFromTrash } from '$lib/data/trash';
 import {
 	BULK_CONCURRENCY,
 	NO_SOURCE_DATES,
@@ -43,7 +44,10 @@ export interface BulkEditData {
 		patch: TicketPatch,
 		options?: { completion?: CompletionChoice; expectedUpdated?: string }
 	): Promise<TicketSummary>;
-	delete(id: string, sources: SourceHandling): Promise<void>;
+	/** Moves the ticket to the trash (ADR-0037); the move for "Rückgängig", null before it. */
+	delete(id: string, sources: SourceHandling): Promise<TrashMove | null>;
+	/** "Rückgängig" of a move: restores the ticket unless it changed since `expectedUpdated`. */
+	restore(id: string, expectedUpdated: string): Promise<void>;
 	/** Dates of the events the tickets were converted from, by ticket ID. */
 	sourceDates(): Promise<Map<string, CalendarDate>>;
 	/** Number of sources of the tickets, for the question of "Löschen …". */
@@ -53,8 +57,9 @@ export interface BulkEditData {
 export function bulkEditData(pb: PocketBase): BulkEditData {
 	return {
 		update: (id, patch, options) => updateTicket(pb, id, patch, options),
-		delete: async (id, sources) => {
-			await deleteTicket(pb, id, { sources });
+		delete: (id, sources) => deleteTicket(pb, id, { sources }),
+		restore: async (id, expectedUpdated) => {
+			await restoreFromTrash(pb, id, { expectedUpdated });
 		},
 		sourceDates: () => listSourceEventDates(pb),
 		sourceCount: (ticketIds) => countTicketSources(pb, ticketIds)
@@ -97,7 +102,8 @@ export interface BulkProgress {
 interface UndoEntry {
 	id: string;
 	key: string;
-	patch: TicketPatch;
+	/** Fields to write back; null: the ticket went to the trash and is restored from there. */
+	patch: TicketPatch | null;
 	/** `updated` after the change: a ticket changed since is not overwritten. */
 	updated: string;
 	/** Sub-tasks completed along (ADR-0033 section 2), restored after the ticket. */
@@ -240,10 +246,17 @@ export class BulkEditStore {
 		this.#progress = { label: 'Rückgängig', total: undo.entries.length, done: 0 };
 		const failures: BulkProblem[] = [];
 		let changed = 0;
+		const restoring = undo.entries.every((entry) => entry.patch === null);
 		try {
 			await inPool(undo.entries, BULK_CONCURRENCY, async (entry) => {
 				try {
 					if (this.#stopped) return;
+					if (entry.patch === null) {
+						// Back from the trash (ADR-0037 §7); the ticket returns to the list by realtime.
+						await this.#data.restore(entry.id, entry.updated);
+						changed += 1;
+						return;
+					}
 					const saved = await this.#data.update(entry.id, entry.patch, {
 						expectedUpdated: entry.updated
 					});
@@ -269,7 +282,7 @@ export class BulkEditStore {
 		}
 		return this.#finish(
 			{ changed, skipped: 0, unchanged: 0, failed: failures.length },
-			'zurückgesetzt',
+			restoring ? 'wiederhergestellt' : 'zurückgesetzt',
 			failures,
 			[]
 		);
@@ -393,30 +406,59 @@ export class BulkEditStore {
 		return this.#finish(counts, 'erledigt', failures, [], entries);
 	}
 
-	/** "Löschen" (ADR-0031, addendum B): the sources as chosen; cannot be undone. */
+	/**
+	 * "Löschen" (ADR-0031, addendum B; ADR-0037): each ticket moves to the trash with its sub-tasks,
+	 * the sources as chosen. "Rückgängig" restores them from the trash with expected_updated.
+	 * Parents go first, so their chosen sub-tasks move along as their group (one entry to undo); a
+	 * sub-task found in the trash already (404) counts as moved.
+	 */
 	async #delete(
 		tickets: readonly TicketSummary[],
 		sources: SourceHandling
 	): Promise<BulkResult | null> {
 		const failures: BulkProblem[] = [];
+		const entries: UndoEntry[] = [];
 		let deleted = 0;
-		await inPool(tickets, BULK_CONCURRENCY, async (ticket) => {
-			try {
-				if (this.#stopped) return;
-				await this.#data.delete(ticket.id, sources);
-				this.#list.remove(ticket.id);
-				deleted += 1;
-			} catch (error) {
-				this.#note(failures, ticket, error);
-			} finally {
-				this.#step();
-			}
-		});
+		const chosen = tickets.map((ticket) => ticket.id);
+		const alongWithParent = (ticket: TicketSummary) =>
+			!!ticket.parentId && chosen.includes(ticket.parentId);
+		const phases = [
+			tickets.filter((ticket) => !alongWithParent(ticket)),
+			tickets.filter(alongWithParent)
+		];
+		for (const phase of phases)
+			await inPool(phase, BULK_CONCURRENCY, async (ticket) => {
+				try {
+					if (this.#stopped) return;
+					const move = await this.#data.delete(ticket.id, sources);
+					this.#list.remove(ticket.id);
+					deleted += 1;
+					if (move !== null) {
+						entries.push({
+							id: move.id,
+							key: ticket.key,
+							patch: null,
+							updated: move.updated,
+							children: []
+						});
+					}
+				} catch (error) {
+					if (toDataError(error).kind === 'not_found') {
+						this.#list.remove(ticket.id);
+						deleted += 1;
+						return;
+					}
+					this.#note(failures, ticket, error);
+				} finally {
+					this.#step();
+				}
+			});
 		return this.#finish(
 			{ changed: deleted, skipped: 0, unchanged: 0, failed: failures.length },
-			'gelöscht',
+			entries.length > 0 ? 'in den Papierkorb verschoben' : 'gelöscht',
 			failures,
-			[]
+			[],
+			entries
 		);
 	}
 

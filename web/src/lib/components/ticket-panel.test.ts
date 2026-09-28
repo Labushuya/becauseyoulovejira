@@ -1628,7 +1628,7 @@ describe('ticket route: full view (ADR-0025 section 7, UI-7)', () => {
 
 	it('deletes from the full view inline, without a dialog over it, and goes back to the list', async () => {
 		const { dialog, data } = await renderFullView();
-		data.delete.mockResolvedValueOnce(undefined);
+		data.delete.mockResolvedValueOnce(null);
 		const trigger = within(dialog).getByRole('button', { name: 'Löschen …' });
 		trigger.focus();
 		await fireEvent.click(trigger);
@@ -1636,12 +1636,14 @@ describe('ticket route: full view (ADR-0025 section 7, UI-7)', () => {
 		expect(trigger.getAttribute('aria-expanded')).toBe('true');
 		expect(trigger.getAttribute('aria-haspopup')).toBeNull();
 		expect(screen.getAllByRole('dialog')).toHaveLength(1);
-		const question = within(dialog).getByRole('heading', { name: /TASK-3 endgültig löschen\?/ });
+		const question = within(dialog).getByRole('heading', {
+			name: /TASK-3 in den Papierkorb verschieben\?/
+		});
 		expect(question).toBeTruthy();
 		expect(document.activeElement).toBe(within(dialog).getByRole('button', { name: 'Abbrechen' }));
 
-		await fireEvent.click(within(dialog).getByRole('button', { name: 'Endgültig löschen' }));
-		await vi.waitFor(() => expect(data.delete).toHaveBeenCalledWith(ID));
+		await fireEvent.click(within(dialog).getByRole('button', { name: 'In den Papierkorb' }));
+		await vi.waitFor(() => expect(data.delete).toHaveBeenCalledWith(ID, 'inbox'));
 		await vi.waitFor(() => expect(mocks.goto).toHaveBeenCalledWith('/?erledigte=1'));
 	});
 
@@ -1654,7 +1656,7 @@ describe('ticket route: full view (ADR-0025 section 7, UI-7)', () => {
 		await fireEvent.keyDown(cancel, { key: 'Escape' });
 		await tick();
 
-		expect(within(dialog).queryByRole('button', { name: 'Endgültig löschen' })).toBeNull();
+		expect(within(dialog).queryByRole('button', { name: 'In den Papierkorb' })).toBeNull();
 		expect(document.activeElement).toBe(trigger);
 		expect(trigger.getAttribute('aria-expanded')).toBe('false');
 		expect(screen.getByRole('dialog')).toBe(dialog);

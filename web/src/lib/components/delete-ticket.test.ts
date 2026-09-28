@@ -1,8 +1,9 @@
-// Component tests for deleting a ticket (E2 plan, package 11; T-12, P-4): the dialog names the
-// key and warns about comments and history, starts on "Abbrechen", Escape and "Abbrechen" keep
-// the ticket (and the panel), confirming deletes exactly once, a failure shows in the dialog.
-// Since UI-3 the dialog is the confirmation of ADR-0025 section 4; jsdom has no showModal(), the
-// shared stubs stand in.
+// Component tests for deleting a ticket (E2 plan, package 11; T-12, P-4; since ADR-0037 into the
+// trash): the dialog names the key and says that the ticket goes into the trash with comments and
+// history, starts on "Abbrechen", Escape and "Abbrechen" keep the ticket (and the panel),
+// confirming moves it exactly once and offers "Rückgängig", a failure shows in the dialog. Since
+// UI-3 the dialog is the confirmation of ADR-0025 section 4; jsdom has no showModal(), the shared
+// stubs stand in.
 
 import { fireEvent, render, screen, within } from '@testing-library/svelte';
 import { tick } from 'svelte';
@@ -10,18 +11,25 @@ import { SvelteMap } from 'svelte/reactivity';
 import { describe, expect, it, vi } from 'vitest';
 import type { ResolvedPathname } from '$app/types';
 import { DataError } from '$lib/data/errors';
+import type { TrashMove } from '$lib/data/tickets';
 import type { Ticket, TicketSummary } from '$lib/domain/ticket';
 import { CatalogStore } from '$lib/stores/catalog.svelte';
 import {
 	TicketDetailStore,
 	type TicketDetailData,
-	type TicketListSync
+	type TicketListSync,
+	type TrashUndo
 } from '$lib/stores/ticket-detail.svelte';
 import { useOverlayStubs } from '$lib/test/overlay-stubs';
 import TicketPanel from './TicketPanel.svelte';
 
 const ID = 'abc123def456ghi';
 const LIST = '/' as ResolvedPathname;
+const MOVE: TrashMove = {
+	id: ID,
+	updated: '2026-09-28 10:00:00.000Z',
+	tickets: [{ id: ID, key: 'TASK-12', updated: '2026-09-28 10:00:00.000Z' }]
+};
 
 useOverlayStubs();
 
@@ -53,7 +61,7 @@ async function renderPanel(overrides: Partial<Ticket> = {}, sourceCount = 0, sub
 		get: vi.fn(async () => ticket(overrides)),
 		update: vi.fn(),
 		create: vi.fn(),
-		delete: vi.fn<TicketDetailData['delete']>(async () => undefined)
+		delete: vi.fn<TicketDetailData['delete']>(async () => MOVE)
 	} satisfies TicketDetailData;
 	const listTickets = new SvelteMap<string, TicketSummary>([[ID, ticket()]]);
 	const list = {
@@ -63,7 +71,13 @@ async function renderPanel(overrides: Partial<Ticket> = {}, sourceCount = 0, sub
 		remove: vi.fn((id: string) => listTickets.delete(id)),
 		announce: vi.fn()
 	} satisfies TicketListSync;
-	const store = new TicketDetailStore(data, { ensureValid: () => true, logout: vi.fn() }, list);
+	const trash = { offerUndo: vi.fn() } satisfies TrashUndo;
+	const store = new TicketDetailStore(
+		data,
+		{ ensureValid: () => true, logout: vi.fn() },
+		list,
+		trash
+	);
 	const onclose = vi.fn();
 	const ondeleted = vi.fn();
 	store.open(ID);
@@ -76,7 +90,7 @@ async function renderPanel(overrides: Partial<Ticket> = {}, sourceCount = 0, sub
 	});
 	await vi.waitFor(() => expect(store.state).toBe('ready'));
 	await tick();
-	return { store, data, list, onclose, ondeleted };
+	return { store, data, list, trash, onclose, ondeleted };
 }
 
 function deleteButton() {
@@ -89,49 +103,47 @@ async function openDialog() {
 	await fireEvent.click(deleteButton());
 	await tick();
 	await tick();
-	return screen.getByRole('dialog', { name: 'TASK-12 endgültig löschen?' });
+	return screen.getByRole('dialog', { name: 'TASK-12 in den Papierkorb verschieben?' });
+}
+
+function textOf(dialog: HTMLElement): string {
+	const text = document.getElementById(dialog.getAttribute('aria-describedby') ?? '');
+	return text?.textContent?.replace(/\s+/g, ' ').trim() ?? '';
 }
 
 describe('deleting a ticket', () => {
-	it('asks with the key and warns that comments and history go as well', async () => {
+	it('asks with the key and says that the ticket goes into the trash (ADR-0037)', async () => {
 		await renderPanel();
 		expect(deleteButton().getAttribute('aria-haspopup')).toBe('dialog');
 
 		const dialog = await openDialog();
 
 		expect((dialog as HTMLDialogElement).open).toBe(true);
-		const text = document.getElementById(dialog.getAttribute('aria-describedby') ?? '');
-		expect(text?.textContent?.replace(/\s+/g, ' ').trim()).toBe(
-			'Dabei werden auch alle Kommentare und der gesamte Verlauf dieses Tickets gelöscht. Das lässt sich nicht rückgängig machen.'
+		expect(textOf(dialog)).toBe(
+			'Das Ticket kommt mit Kommentaren und Verlauf in den Papierkorb und lässt sich dort wiederherstellen.'
 		);
-		expect(within(dialog).getByRole('button', { name: 'Endgültig löschen' })).toBeTruthy();
+		expect(textOf(dialog)).not.toMatch(/nicht rückgängig/);
+		expect(within(dialog).getByRole('button', { name: 'In den Papierkorb' })).toBeTruthy();
 		expect(document.activeElement).toBe(within(dialog).getByRole('button', { name: 'Abbrechen' }));
 	});
 
 	it('says that the rule goes on when the open instance of a series is deleted (E5)', async () => {
 		await renderPanel({ recurring: true, recurrenceId: 'rule00000000001' });
 		const dialog = await openDialog();
-		const text = document.getElementById(dialog.getAttribute('aria-describedby') ?? '');
-		expect(text?.textContent?.replace(/\s+/g, ' ').trim()).toBe(
-			'Dabei werden auch alle Kommentare und der gesamte Verlauf dieses Tickets gelöscht. Das lässt sich nicht rückgängig machen. Die Regel läuft weiter.'
-		);
+		expect(textOf(dialog)).toMatch(/wiederherstellen\. Die Regel läuft weiter\.$/);
 	});
 
-	it('says that the sub-tasks stay (ADR-0033)', async () => {
+	it('says that the sub-tasks go along (ADR-0033, addendum)', async () => {
 		await renderPanel({}, 0, 3);
 		const dialog = await openDialog();
-		const text = document.getElementById(dialog.getAttribute('aria-describedby') ?? '');
-
-		expect(text?.textContent?.replace(/\s+/g, ' ')).toContain(
-			'3 Unteraufgaben bleiben erhalten und sind danach keine Unteraufgaben mehr.'
-		);
+		expect(textOf(dialog)).toContain('3 Unteraufgaben kommen mit in den Papierkorb.');
 	});
 
-	it('does not use the error color for "Endgültig löschen"', async () => {
+	it('does not use the error color for "In den Papierkorb"', async () => {
 		await renderPanel();
 		const dialog = await openDialog();
 
-		const confirm = within(dialog).getByRole('button', { name: 'Endgültig löschen' });
+		const confirm = within(dialog).getByRole('button', { name: 'In den Papierkorb' });
 		expect(confirm.className).toContain('button-primary');
 		expect(dialog.querySelector('.alert-error')).toBeNull();
 	});
@@ -165,12 +177,14 @@ describe('deleting a ticket', () => {
 		expect(data.delete).not.toHaveBeenCalled();
 	});
 
-	it('deletes exactly once on confirmation and hands over to the owner', async () => {
-		const { data, list, ondeleted } = await renderPanel();
+	it('moves it exactly once on confirmation, hands over and offers "Rückgängig"', async () => {
+		const { data, list, trash, ondeleted } = await renderPanel();
 		let finish!: () => void;
-		data.delete.mockReturnValueOnce(new Promise<void>((resolve) => (finish = resolve)));
+		data.delete.mockReturnValueOnce(
+			new Promise<TrashMove | null>((resolve) => (finish = () => resolve(MOVE)))
+		);
 		const dialog = await openDialog();
-		const confirm = within(dialog).getByRole('button', { name: 'Endgültig löschen' });
+		const confirm = within(dialog).getByRole('button', { name: 'In den Papierkorb' });
 
 		await fireEvent.click(confirm);
 		await fireEvent.click(within(dialog).getByRole('button', { name: 'Wird ausgeführt …' }));
@@ -178,10 +192,23 @@ describe('deleting a ticket', () => {
 		finish();
 
 		await vi.waitFor(() => expect(ondeleted).toHaveBeenCalledOnce());
-		expect(data.delete).toHaveBeenCalledExactlyOnceWith(ID);
+		expect(data.delete).toHaveBeenCalledExactlyOnceWith(ID, 'inbox');
 		expect(list.remove).toHaveBeenCalledWith(ID);
-		expect(list.announce).toHaveBeenCalledWith('TASK-12 wurde gelöscht.');
+		expect(trash.offerUndo).toHaveBeenCalledExactlyOnceWith(
+			MOVE,
+			'TASK-12 in den Papierkorb verschoben.'
+		);
+		expect(list.announce).not.toHaveBeenCalled();
 		expect((dialog as HTMLDialogElement).open).toBe(false);
+	});
+
+	it('announces a delete for good before the migration of the trash (no move)', async () => {
+		const { data, list, trash } = await renderPanel();
+		data.delete.mockResolvedValueOnce(null);
+		const dialog = await openDialog();
+		await fireEvent.click(within(dialog).getByRole('button', { name: 'In den Papierkorb' }));
+		await vi.waitFor(() => expect(list.announce).toHaveBeenCalledWith('TASK-12 wurde gelöscht.'));
+		expect(trash.offerUndo).not.toHaveBeenCalled();
 	});
 
 	it('asks nothing about sources for a ticket without them', async () => {
@@ -192,13 +219,9 @@ describe('deleting a ticket', () => {
 	});
 
 	it('names the sources and gives them back to the inbox unless asked otherwise (ADR-0031)', async () => {
-		const { data, list, ondeleted } = await renderPanel({}, 2);
+		const { data, trash, ondeleted } = await renderPanel({}, 2);
 		const dialog = await openDialog();
-		expect(
-			within(dialog).getByText(
-				/Zu diesem Ticket gehören 2 Quellen\. Sie werden nicht mitgelöscht\./
-			)
-		).toBeTruthy();
+		expect(within(dialog).getByText(/Zu diesem Ticket gehören 2 Quellen\./)).toBeTruthy();
 		const group = within(dialog).getByRole('group', { name: 'Quellen' });
 		const back = within(group).getByRole('radio', { name: /Quellen zurück in den Eingang/ });
 		const discard = within(group).getByRole('radio', { name: /Quellen verwerfen/ });
@@ -206,21 +229,25 @@ describe('deleting a ticket', () => {
 		expect((discard as HTMLInputElement).checked).toBe(false);
 		expect(discard.getAttribute('aria-describedby')).toBeTruthy();
 
-		await fireEvent.click(within(dialog).getByRole('button', { name: 'Endgültig löschen' }));
+		await fireEvent.click(within(dialog).getByRole('button', { name: 'In den Papierkorb' }));
 		await vi.waitFor(() => expect(ondeleted).toHaveBeenCalledOnce());
 		expect(data.delete).toHaveBeenCalledExactlyOnceWith(ID, 'inbox');
-		expect(list.announce).toHaveBeenCalledWith(
-			'TASK-12 wurde gelöscht. 2 Quellen sind wieder im Eingang.'
+		expect(trash.offerUndo).toHaveBeenCalledWith(
+			MOVE,
+			'TASK-12 in den Papierkorb verschoben. 2 Quellen sind wieder im Eingang.'
 		);
 	});
 
-	it('discards the sources when chosen', async () => {
-		const { data, list } = await renderPanel({}, 1);
+	it('keeps the sources with the ticket when chosen', async () => {
+		const { data, trash } = await renderPanel({}, 1);
 		const dialog = await openDialog();
 		await fireEvent.click(within(dialog).getByRole('radio', { name: /Quellen verwerfen/ }));
-		await fireEvent.click(within(dialog).getByRole('button', { name: 'Endgültig löschen' }));
+		await fireEvent.click(within(dialog).getByRole('button', { name: 'In den Papierkorb' }));
 		await vi.waitFor(() => expect(data.delete).toHaveBeenCalledExactlyOnceWith(ID, 'discard'));
-		expect(list.announce).toHaveBeenCalledWith('TASK-12 wurde gelöscht. 1 Quelle ist verworfen.');
+		expect(trash.offerUndo).toHaveBeenCalledWith(
+			MOVE,
+			'TASK-12 in den Papierkorb verschoben. 1 Quelle bleibt beim Ticket.'
+		);
 	});
 
 	it('shows a failure inside the dialog and keeps the ticket', async () => {
@@ -228,7 +255,7 @@ describe('deleting a ticket', () => {
 		data.delete.mockRejectedValueOnce(new DataError('server', { status: 500 }));
 		const dialog = await openDialog();
 
-		await fireEvent.click(within(dialog).getByRole('button', { name: 'Endgültig löschen' }));
+		await fireEvent.click(within(dialog).getByRole('button', { name: 'In den Papierkorb' }));
 
 		const alert = await within(dialog).findByRole('alert');
 		expect(alert.className).toContain('alert-error');
