@@ -3,6 +3,7 @@
 // root integration tests and the web app each load their own copy of the SDK.
 
 import { RECURRENCE_MESSAGES, openInstanceMessage } from '../domain/recurrence-rule';
+import { SUBTASK_MESSAGES, openChildrenMessage } from '../domain/subtasks';
 
 export type DataErrorKind =
 	'aborted' | 'network' | 'not_found' | 'forbidden' | 'validation' | 'session' | 'server';
@@ -69,7 +70,9 @@ const FIELD_MESSAGES: Readonly<Record<string, string>> = Object.freeze({
 	validation_connection_settings: 'Unbekannte Einstellung.',
 	validation_keywords: 'Stichwörter: höchstens 50, je 1 bis 100 Zeichen, ohne Zeilenumbruch.',
 	// Recurrence rules (ADR-0021 to ADR-0023; E5 plan, package 4), the same texts as the hook.
-	...RECURRENCE_MESSAGES
+	...RECURRENCE_MESSAGES,
+	// Sub-tasks (ADR-0033), the same texts as the hook.
+	...SUBTASK_MESSAGES
 });
 
 /** Texts that depend on the field as well, keyed by `<field>:<code>`; they win over the above. */
@@ -132,11 +135,14 @@ function fieldErrorsOf(response: unknown): Record<string, FieldError> {
 	for (const [field, detail] of Object.entries(data)) {
 		const code = isRecord(detail) && typeof detail.code === 'string' ? detail.code : '';
 		const params = isRecord(detail) && isRecord(detail.params) ? { ...detail.params } : undefined;
-		// Reopening with an edited follow-up names that ticket (ADR-0023 section 3).
+		// Reopening with an edited follow-up names that ticket (ADR-0023 section 3); completing with
+		// open blocking sub-tasks names their number (ADR-0033 section 2).
 		const message =
 			code === 'validation_recurrence_open_instance' && typeof params?.key === 'string'
 				? openInstanceMessage(params.key)
-				: fieldMessage(field, code);
+				: code === 'validation_parent_open_children' && typeof params?.count === 'number'
+					? openChildrenMessage(params.count)
+					: fieldMessage(field, code);
 		fields[field] = { code, message, ...(params && { params }) };
 	}
 	return fields;

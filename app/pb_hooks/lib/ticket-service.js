@@ -22,15 +22,21 @@ var EXPECTED_UPDATED_KEY = '@expected_updated';
 
 var DESCRIPTION_STALE = 'Die Beschreibung wurde inzwischen geändert.';
 
+// Transient record keys of a completion with open blocking sub-tickets (ADR-0033 section 2), from
+// the body fields `force` and `complete_children`. Like `expected_updated` they are no fields of
+// the collection and are never stored.
+var FORCE_DONE_KEY = '@force_done';
+var COMPLETE_CHILDREN_KEY = '@complete_children';
+
+// At most this many keys of blocking sub-tickets go to the client with the refusal.
+var OPEN_CHILDREN_KEYS_MAX = 5;
+
 var SCOPE_MISMATCH = 'Verknüpfter Datensatz nicht gefunden oder in einem anderen Bereich.';
 
 var PROJECT_ARCHIVED = 'Das Projekt ist archiviert.';
 
-var PARENT_MESSAGES = {
-  validation_parent_self: 'Ein Ticket kann nicht sein eigenes Eltern-Ticket sein.',
-  validation_parent_nested: 'Das Eltern-Ticket ist selbst ein Unter-Ticket (nur eine Ebene erlaubt).',
-  validation_parent_has_children: 'Ein Ticket mit Unter-Tickets kann kein Eltern-Ticket bekommen.'
-};
+// Texts of the parent guard and the completion guard (ADR-0033), shared with the SPA.
+var SUBTASK_MESSAGES = rules.SUBTASK_MESSAGES;
 
 function scopeOfRecord(record) {
   return ticketKey.scopeOf(record.getString('owner'), record.getString('household'));
@@ -86,6 +92,82 @@ function checkExpectedUpdated(txApp, record) {
   }
 }
 
+// onRecordUpdateRequest: remembers the body fields `force` and `complete_children` of a
+// completion (ADR-0033 section 2), if the client sent them.
+function rememberCompletion(e) {
+  var body = e.requestInfo().body;
+  if (rules.isTrueFlag(body['force'])) {
+    e.record.set(FORCE_DONE_KEY, true);
+  }
+  if (rules.isTrueFlag(body['complete_children'])) {
+    e.record.set(COMPLETE_CHILDREN_KEY, true);
+  }
+}
+
+// Sub-tickets that block the ticket and are not done, oldest first.
+function openBlockingChildren(txApp, record) {
+  if (record.id === '') {
+    return [];
+  }
+  return txApp.findRecordsByFilter(
+    'tickets',
+    "parent = {:id} && blocks_parent = true && status != 'done'",
+    'created,id',
+    0,
+    0,
+    { id: record.id }
+  );
+}
+
+/**
+ * onRecordUpdate before e.next(), inside the transaction (ADR-0033 section 2): a ticket that
+ * becomes done while sub-tickets with blocks_parent are open is refused, unless the client sent
+ * `force` (the sub-tickets stay open) or `complete_children`. Returns the sub-tickets to complete
+ * after the save ([] for none).
+ */
+function prepareCompletion(txApp, record) {
+  var wasDone = record.original().getString('status') === 'done';
+  var isDone = record.getString('status') === 'done';
+  if (wasDone || !isDone) {
+    return [];
+  }
+  var children = openBlockingChildren(txApp, record);
+  var decision = rules.completionDecision({
+    wasDone: wasDone,
+    isDone: isDone,
+    openBlocking: children.length,
+    force: !!record.get(FORCE_DONE_KEY),
+    completeChildren: !!record.get(COMPLETE_CHILDREN_KEY)
+  });
+  if (decision === 'refuse') {
+    var keys = [];
+    for (var i = 0; i < children.length && i < OPEN_CHILDREN_KEYS_MAX; i++) {
+      keys.push(children[i].getString('key'));
+    }
+    var code = 'validation_parent_open_children';
+    throw errors.fieldFailure('status', code, SUBTASK_MESSAGES[code], {
+      count: children.length,
+      keys: keys
+    });
+  }
+  return decision === 'complete_children' ? children : [];
+}
+
+// onRecordUpdate after e.next(), in the same transaction: completes the blocking sub-tickets. Each
+// save runs the ticket hooks of the sub-ticket (completed_at, history with the acting user, and for
+// an instance of a series the next date; its follow-up comes after the commit, ADR-0022 section 4).
+function completeChildren(txApp, record, children) {
+  var actor = actorOf(record);
+  for (var i = 0; i < children.length; i++) {
+    var child = children[i];
+    child.set('status', 'done');
+    if (actor !== '') {
+      child.set(ACTOR_KEY, actor);
+    }
+    txApp.save(child);
+  }
+}
+
 // Loads the referenced project, tags, recurrence rule and parent. Rejects references that are
 // missing or belong to another scope (OF-3 c), parents that break the one-level rule and a newly
 // assigned archived project (E3 plan, T-11). `previousProject` is the stored project id before
@@ -126,7 +208,7 @@ function checkRelations(txApp, record, scope, previousProject) {
       hasChildren: hasChildren(txApp, record)
     });
     if (parentCode !== '') {
-      fields.parent = { code: parentCode, message: PARENT_MESSAGES[parentCode] };
+      fields.parent = { code: parentCode, message: SUBTASK_MESSAGES[parentCode] };
     } else {
       related.push({ field: 'parent', scope: parent ? parent.getString('scope') : null });
     }
@@ -289,7 +371,7 @@ function prepareUpdate(txApp, record) {
     throw errors.fieldFailure(
       'household',
       'validation_ticket_has_children',
-      'Ein Ticket mit Unter-Tickets kann den Bereich nicht wechseln.'
+      SUBTASK_MESSAGES.validation_ticket_has_children
     );
   }
   checkDue(record);
@@ -346,6 +428,9 @@ module.exports = {
   rememberActor: rememberActor,
   rememberExpectedUpdated: rememberExpectedUpdated,
   checkExpectedUpdated: checkExpectedUpdated,
+  rememberCompletion: rememberCompletion,
+  prepareCompletion: prepareCompletion,
+  completeChildren: completeChildren,
   checkRelations: checkRelations,
   prepareCreate: prepareCreate,
   recordCreation: recordCreation,
