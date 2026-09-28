@@ -1,6 +1,6 @@
 # E6-Plan, Teil Unterprojekte: eine Ebene, eigener Code, Baum in Liste und Kacheln, Filter mit Unterprojekten
 
-- **Stand:** in Umsetzung (2026-09-28): UP-1 (#130, Datenmodell, Hook, Spike), UP-2 (#131, Katalog und Datenschicht), UP-3 (#132, Liste und Kacheln als Baum), UP-4 (#133, Projekt-Panel), UP-5 (Auswahl, Filter, Tabelle, Brotkrumen).
+- **Stand:** umgesetzt (2026-09-28): UP-1 (#130, Datenmodell, Hook, Spike), UP-2 (#131, Katalog und Datenschicht), UP-3 (#132, Liste und Kacheln als Baum), UP-4 (#133, Projekt-Panel), UP-5 (#134, Auswahl, Filter, Tabelle, Brotkrumen) und UP-6 (Zahlen, Hilfe, README). Offen sind die manuellen Browser-Prüfungen.
 - **Grundlage:**
   - [ADR-0034](../adr/0034-unterprojekte.md) (Datenmodell, Prüfregeln, Archiv-Kaskade, Spike, Oberfläche, Grenze zum Epic)
   - [ADR-0012](../adr/0012-plain-ticketing.md) mit dem Nachtrag „Unterprojekte als Gliederung, keine Epics“
@@ -69,6 +69,9 @@
 | 2026-09-28 | UP-5 | **Brotkrumen im Ticket:** Ein Ticket in einem Unterprojekt beginnt den Pfad im Kopf des Panels und über dem Titel der Vollansicht mit „Haus › Garten“ (Links auf die nach dem Projekt gefilterte Liste, „Haus“ mit Unterprojekten), danach gegebenenfalls das übergeordnete Ticket und der Key (`ticketPathSteps`). `Breadcrumbs` kennt dafür `mono` je Schritt (Keys in Mono, Namen nicht). Tickets in obersten Projekten zeigen wie bisher nur den Key. |
 | 2026-09-28 | UP-5 | **Statische Prüfung der Filterausdrücke erweitert** (`data-layer.test.ts`): Neben dem einen Ternär ist jetzt auch eine Liste aus Konstanten erlaubt, die Bedingungen um weitere Konstanten ergänzen (`const parts = [DONE_FILTER]; if (…) parts.push(…)`). Werte gelangen weiter nur als Parameter von `pb.filter()` zum Server; die Konstante `DONE_FAMILY_FILTER` ist wie alle anderen reiner Text. |
 | 2026-09-28 | UP-5 | `FilterBar`, `FilterPopover`, `ProjectSelect` und `CaptureForm` ziehen auf die Schriftgrößen-Tokens und fallen von der Liste (`no-own-font-sizes.test.ts` jetzt 181). |
+| 2026-09-28 | UP-6 | **Zahlen im Client aggregiert** (`aggregateCounts`): „aktiv“, „gesamt“ und „neu“ eines Oberprojekts sind die Summe aus den eigenen und denen aller Unterprojekte, auch der archivierten, denn der Filter „Haus“ zeigt deren Tickets ebenfalls. Unbekannt bleibt eine Zahl („–“), solange ein Teil fehlt. Keine neue Serveranfrage: Der `ProjectStatsStore` zählt die erledigten Tickets der Unterprojekte mit, auch wenn sie ausgeblendet sind. Die Sortierung nach Zahlen nimmt die aggregierten Werte. |
+| 2026-09-28 | UP-6 | **„inkl. Unterprojekte“** als `title` und für Screenreader an den Zahlen eines Oberprojekts in Liste, Kacheln und Panel; das Panel nennt darunter „davon direkt in Haus: 1 aktiv · 1 gesamt“ (`ProjectRoute.directOf`). Ob der Code fest ist, entscheiden die eigenen Tickets des Projekts, nicht die aggregierten. |
+| 2026-09-28 | UP-6 | Hilfeseite: Frage „Wie gliedere ich ein Projekt in Unterprojekte?“; README: Abschnitt „Unterprojekte“, Projekte, Roadmap. Die Spalte „Projekt“ der Wiederholungen zeigt wie die Aufgaben den Pfad („Haus › Garten (GART)“). |
 | 2026-09-28 | UP-1 | **Gruppieren nach Projekt bleibt flach:** eine Gruppe je konkretem Projekt mit dem Pfad als Titel („Haus › Garten“), in Baum-Reihenfolge (Oberprojekt, dann seine Unterprojekte). Verworfen: eine Gruppe je Oberprojekt mit Unterprojekten darin. Die Tabelle kennt nur eine Gruppenebene; verschachtelte Gruppen bräuchten zweite Köpfe, eigene Zähler und Auf- und Zuklappen in der Tabelle. Flach mit Pfad zeigt, wohin jedes Ticket gehört (Key und Gruppe passen zusammen), zählt je Projekt, und die Baum-Reihenfolge hält die Unterprojekte trotzdem beim Oberprojekt. Wer alles unter „Haus“ sehen will, filtert nach „Haus“ (mit Unterprojekten). |
 
 ## 4. Status
@@ -79,11 +82,12 @@
 | UP-2 | gemergt (#131) |
 | UP-3 | gemergt (#132) |
 | UP-4 | gemergt (#133) |
-| UP-5 | umgesetzt (Auswahl, Filter, Tabelle, Brotkrumen) |
-| UP-6 | geplant |
+| UP-5 | gemergt (#134) |
+| UP-6 | umgesetzt (Zahlen, Hilfe, README, Abschluss) |
 
 ## 5. Offene Punkte
 
-- Manuelle Browser-Prüfungen der Pakete.
+- Manuelle Browser-Prüfungen der Pakete (BYL-E6-264, BYL-E6-266, BYL-E6-268, BYL-E6-270), darunter zwei Tabs beim Archivieren und der Stand vor und nach dem Neustart.
+- **Zurückgestellt:** beliebige Tiefe (neue ADR nötig) und ein Bereichswechsel mit Kaskade (E7).
 - Nach dem Merge von UP-1 braucht die App einen Neustart (stop.bat, dann start.bat), damit die Migration läuft.
 - ~~Die Reihenfolge der Datensätze in der Tabelle nach „Projekt“ und die Gruppen folgen mit UP-5; bis dahin zeigen sie den Namen des Unterprojekts ohne Pfad.~~ Erledigt mit UP-5.

@@ -80,9 +80,9 @@ vi.mock('$lib/stores/realtime', async (importOriginal) => ({
 
 useOverlayStubs();
 
-function openTicket(projectId: string): TicketSummary {
+function openTicket(projectId: string, id = 't00000000000001'): TicketSummary {
 	return {
-		id: 't00000000000001',
+		id,
 		key: 'HAUS-1',
 		title: 'Dach',
 		status: 'open',
@@ -100,7 +100,14 @@ function openTicket(projectId: string): TicketSummary {
 	};
 }
 
-async function show(path: string, child: 'neu' | 'project' | null = null) {
+async function show(
+	path: string,
+	child: 'neu' | 'project' | null = null,
+	{
+		projects = [HOUSE, EMPTY],
+		open = [openTicket(HOUSE.id)]
+	}: { projects?: Project[]; open?: TicketSummary[] } = {}
+) {
 	const url = new URL(path, 'http://localhost:3000');
 	mocks.page.url = url;
 	const id = /^\/projekte\/([a-z0-9]{15})$/.exec(url.pathname)?.[1];
@@ -115,13 +122,13 @@ async function show(path: string, child: 'neu' | 'project' | null = null) {
 	};
 	const session = { ensureValid: () => true, logout: vi.fn() };
 	const catalog = new CatalogStore(
-		{ listProjects: async () => [HOUSE, EMPTY], listTags: async () => [], createTag: vi.fn() },
+		{ listProjects: async () => projects, listTags: async () => [], createTag: vi.fn() },
 		session
 	);
 	await catalog.load();
 	const tickets = new TicketListStore(
 		{
-			listOpen: async () => [openTicket(HOUSE.id)],
+			listOpen: async () => open,
 			listDone: async (page: number) => ({ items: [], page, hasMore: false }),
 			searchOpen: vi.fn(async (): Promise<string[]> => []),
 			setDone: vi.fn(),
@@ -281,5 +288,98 @@ describe('project view route', () => {
 		const panel = screen.getByRole('complementary', { name: 'Projekt nicht gefunden' });
 		await fireEvent.click(within(panel).getByRole('button', { name: 'Panel schließen' }));
 		expect(mocks.goto).toHaveBeenCalledExactlyOnceWith('/projekte');
+	});
+});
+
+describe('project view route: sub projects (ADR-0034)', () => {
+	const GARDEN: Project = {
+		id: 'proj00000000011',
+		name: 'Garten',
+		code: 'GART',
+		archived: false,
+		updated: T0,
+		parentId: HOUSE.id
+	};
+	const tree = {
+		projects: [HOUSE, EMPTY, GARDEN],
+		open: [
+			openTicket(HOUSE.id),
+			openTicket(GARDEN.id, 't00000000000002'),
+			openTicket(GARDEN.id, 't00000000000003')
+		]
+	};
+
+	it('counts a parent with its sub projects and names its own tickets as "davon direkt" (UP-6)', async () => {
+		await show('/projekte/proj00000000001', 'project', tree);
+
+		const panel = screen.getByRole('complementary', { name: 'Haus' });
+		await vi.waitFor(() =>
+			expect(panel.querySelector('.stats')?.textContent?.replace(/\s+/g, ' ').trim()).toBe(
+				'3 aktiv · 3 gesamt , inkl. Unterprojekte'
+			)
+		);
+		expect(panel.querySelector('.stats')?.getAttribute('title')).toBe('inkl. Unterprojekte');
+		expect(panel.querySelector('.direct')?.textContent?.replace(/\s+/g, ' ').trim()).toBe(
+			'davon direkt in Haus: 1 aktiv · 1 gesamt'
+		);
+		// The code stays fixed because of the own ticket; deleting waits for the sub project.
+		expect(screen.getByRole<HTMLInputElement>('textbox', { name: 'Code' }).readOnly).toBe(true);
+		expect(screen.queryByRole('button', { name: 'Löschen …' })).toBeNull();
+
+		// The list counts the same: the row of Haus with 3, Garten with 2.
+		const row = (name: string) =>
+			[
+				...(within(screen.getByRole('table')).getByRole('link', { name }).closest('tr')?.children ??
+					[])
+			].map((cell) => cell.textContent?.replace(/\s+/g, ' ').trim() ?? '');
+		await vi.waitFor(() =>
+			expect(row('Haus').slice(2, 4)).toEqual(['3, inkl. Unterprojekte', '3, inkl. Unterprojekte'])
+		);
+		expect(row('Garten').slice(2, 4)).toEqual(['2', '2']);
+	});
+
+	it('offers "Unterprojekt anlegen" and creates the sub project with its parent', async () => {
+		await show('/projekte/proj00000000001', 'project', tree);
+		expect(screen.getByRole('link', { name: 'Unterprojekt anlegen' }).getAttribute('href')).toBe(
+			'/projekte/neu?oberprojekt=proj00000000001'
+		);
+
+		document.body.innerHTML = '';
+		const { editorData } = await show('/projekte/neu?oberprojekt=proj00000000001', 'neu', tree);
+		expect(screen.getByRole<HTMLSelectElement>('combobox', { name: 'Oberprojekt' }).value).toBe(
+			HOUSE.id
+		);
+		await fireEvent.input(screen.getByRole('textbox', { name: 'Name' }), {
+			target: { value: 'Keller' }
+		});
+		await fireEvent.click(screen.getByRole('button', { name: 'Anlegen' }));
+		await vi.waitFor(() =>
+			expect(editorData.createProject).toHaveBeenCalledExactlyOnceWith({
+				name: 'Keller',
+				code: 'KELL',
+				parentId: HOUSE.id
+			})
+		);
+	});
+
+	it('brings a sub project back with its archived parent, the parent first', async () => {
+		const archived = {
+			projects: [{ ...HOUSE, archived: true }, EMPTY, { ...GARDEN, archived: true }],
+			open: []
+		};
+		const { editorData, flags } = await show(
+			'/projekte/proj00000000011?archiviert=1',
+			'project',
+			archived
+		);
+
+		await fireEvent.click(screen.getByRole('button', { name: 'Mit Oberprojekt zurückholen' }));
+		await vi.waitFor(() =>
+			expect(flagTitles(flags)).toEqual(['Projekt „Garten“ mit „Haus“ aus dem Archiv geholt.'])
+		);
+		expect(editorData.setProjectArchived.mock.calls).toEqual([
+			[HOUSE.id, false],
+			[GARDEN.id, false]
+		]);
 	});
 });

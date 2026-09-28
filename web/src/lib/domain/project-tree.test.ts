@@ -3,6 +3,7 @@
 
 import { describe, expect, it } from 'vitest';
 import {
+	aggregateCounts,
 	compareProjectPaths,
 	parentChoices,
 	projectChoiceLabel,
@@ -141,6 +142,28 @@ describe('compareProjectPaths', () => {
 			second.id,
 			childOfSecond.id
 		]);
+	});
+});
+
+describe('aggregateCounts (UP-6)', () => {
+	it('adds the numbers of the sub projects to those of the parent', () => {
+		expect(
+			aggregateCounts({ active: 3, total: 5, fresh: 1 }, [
+				{ active: 2, total: 4, fresh: 0 },
+				{ active: 0, total: 7, fresh: 2 }
+			])
+		).toEqual({ active: 5, total: 16, fresh: 3 });
+		expect(aggregateCounts({ active: 1, total: 1, fresh: 0 }, [])).toEqual({
+			active: 1,
+			total: 1,
+			fresh: 0
+		});
+	});
+
+	it('keeps a number unknown while one part is unknown', () => {
+		expect(
+			aggregateCounts({ active: 3, total: null, fresh: 0 }, [{ active: null, total: 4, fresh: 1 }])
+		).toEqual({ active: null, total: null, fresh: 1 });
 	});
 });
 

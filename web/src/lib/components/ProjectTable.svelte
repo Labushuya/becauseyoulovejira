@@ -40,7 +40,8 @@
 		searching = false,
 		columnFit = new ColumnFit(getColumnPrefs('projects')),
 		onsort,
-		ontoggle = () => undefined
+		ontoggle = () => undefined,
+		aggregatedOf = () => false
 	}: {
 		/** Rows in the order to show (filtered, sorted and folded by the view). */
 		rows: readonly ProjectRow[];
@@ -64,6 +65,8 @@
 		onsort: (key: ProjectSortKey) => void;
 		/** Folds or unfolds the sub projects of a parent. */
 		ontoggle?: (project: Project) => void;
+		/** The numbers of the project include its sub projects (ADR-0034, UP-6). */
+		aggregatedOf?: (project: Project) => boolean;
 	} = $props();
 
 	const shown = $derived(columnFit.shown);
@@ -86,6 +89,9 @@
 	function number(value: number | null): string {
 		return value === null ? '–' : String(value);
 	}
+
+	/** Note of the numbers of a parent (ADR-0034, UP-6), as title and for screen readers. */
+	const INCLUDING_SUB_PROJECTS = 'inkl. Unterprojekte';
 </script>
 
 <div class="frame" bind:this={frame}>
@@ -147,6 +153,7 @@
 			{#each rows as row (row.project.id)}
 				{@const project = row.project}
 				{@const fresh = newOf(project)}
+				{@const aggregated = aggregatedOf(project)}
 				<tr
 					class="row"
 					class:active={project.id === activeId}
@@ -187,13 +194,34 @@
 						</span>
 					</th>
 					{#if shown.has('active')}
-						<td class="number" data-col="active">{number(activeOf(project))}</td>
+						<td
+							class="number"
+							data-col="active"
+							title={aggregated ? INCLUDING_SUB_PROJECTS : undefined}
+							>{number(activeOf(project))}{#if aggregated}<span class="visually-hidden"
+									>, {INCLUDING_SUB_PROJECTS}</span
+								>{/if}</td
+						>
 					{/if}
 					{#if shown.has('total')}
-						<td class="number" data-col="total">{number(totalOf(project))}</td>
+						<td
+							class="number"
+							data-col="total"
+							title={aggregated ? INCLUDING_SUB_PROJECTS : undefined}
+							>{number(totalOf(project))}{#if aggregated}<span class="visually-hidden"
+									>, {INCLUDING_SUB_PROJECTS}</span
+								>{/if}</td
+						>
 					{/if}
 					{#if shown.has('new')}
-						<td class="number" class:fresh={fresh > 0} data-col="new">{fresh}</td>
+						<td
+							class="number"
+							class:fresh={fresh > 0}
+							data-col="new"
+							title={aggregated ? INCLUDING_SUB_PROJECTS : undefined}
+							>{fresh}{#if aggregated}<span class="visually-hidden">, {INCLUDING_SUB_PROJECTS}</span
+								>{/if}</td
+						>
 					{/if}
 					{#if shown.has('archived')}
 						<td class="state" data-col="archived">

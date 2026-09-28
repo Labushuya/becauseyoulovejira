@@ -87,6 +87,7 @@
 			total={route.totalOf(current)}
 			fresh={route.newOf(current)}
 			ticketsHref={projectTicketsHref(current.id)}
+			direct={route.directOf(current)}
 			{parent}
 			parentChoices={choices}
 			{subProjects}

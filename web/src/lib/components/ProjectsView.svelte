@@ -59,6 +59,8 @@
 		stats,
 		activeOf,
 		totalOf,
+		newOf = (project: Project) => tickets.newInProject(project.id),
+		aggregatedOf = () => false,
 		activeId = null,
 		creating = false,
 		inboxCount = null
@@ -70,6 +72,10 @@
 		activeOf: (project: Project) => number | null;
 		/** Active plus done tickets; null while not counted. */
 		totalOf: (project: Project) => number | null;
+		/** New tickets of a project for the signed-in user. */
+		newOf?: (project: Project) => number;
+		/** The numbers of the project include its sub projects (ADR-0034); said to screen readers. */
+		aggregatedOf?: (project: Project) => boolean;
 		/** Project shown in the panel; its row or tile is marked as current. */
 		activeId?: string | null;
 		/** The panel "Neues Projekt" is open. */
@@ -96,8 +102,6 @@
 	const layout = $derived(effectiveProjectLayout(query, stored));
 	/** Projects of the switch "Archivierte anzeigen", before the search. */
 	const available = $derived(query.showArchived ? catalog.projects : catalog.activeProjects);
-	const newOf = (project: Project) => tickets.newInProject(project.id);
-
 	function sessionStore(): Storage | null {
 		try {
 			return window.sessionStorage;
@@ -117,7 +121,7 @@
 			{
 				active: (project) => activeOf(project),
 				total: (project) => totalOf(project),
-				fresh: newOf
+				fresh: (project) => newOf(project)
 			},
 			collapsed
 		)
@@ -141,9 +145,16 @@
 
 	// Counts the done tickets of the available projects and of the one in the panel (again when the
 	// set changes); a search does not change the set, so clearing it shows the numbers at once.
+	// The numbers of a parent include its sub projects (ADR-0034), archived ones too: they are
+	// counted as well.
 	$effect(() => {
 		const projectIds = available.map((project) => project.id);
 		if (activeId !== null && !projectIds.includes(activeId)) projectIds.push(activeId);
+		for (const id of [...projectIds]) {
+			for (const sub of catalog.subProjectsOf(id)) {
+				if (!projectIds.includes(sub.id)) projectIds.push(sub.id);
+			}
+		}
 		untrack(() => stats.track(projectIds));
 	});
 
@@ -377,6 +388,7 @@
 					{activeOf}
 					{totalOf}
 					{newOf}
+					{aggregatedOf}
 					{activeId}
 					sort={query.sort}
 					searching={query.search !== null}
@@ -392,6 +404,7 @@
 					{totalOf}
 					{activeId}
 					{newOf}
+					{aggregatedOf}
 					hrefOf={(project) => projectHref(project.id, page.url)}
 					ontoggle={toggleFolded}
 				/>
