@@ -35,7 +35,8 @@
 	const columns = $derived(optionalColumns(store.table.columns));
 	const custom = $derived(
 		columns.some((column) => store.isHidden(column.id) !== column.hiddenByDefault) ||
-			Object.keys(store.prefs.widths).length > 0
+			Object.keys(store.prefs.widths).length > 0 ||
+			Object.keys(store.prefs.options ?? {}).length > 0
 	);
 
 	let live = $state('');
@@ -59,6 +60,11 @@
 		if (target > column.max && before >= column.max) return;
 		const width = store.setWidth(column.id, target);
 		void announce(`${column.label}: ${formatRem(width)}`);
+	}
+
+	function toggleOption(id: string, label: string, value: boolean) {
+		store.setOption(id, value);
+		void announce(`${label} ${value ? 'an' : 'aus'}.`);
 	}
 
 	function reset() {
@@ -128,6 +134,25 @@
 				</div>
 			{/each}
 		</fieldset>
+		{#if store.table.options.length > 0}
+			<!-- Switches of the table beside its columns (ADR-0033 section 5). -->
+			<fieldset class="options">
+				<legend>Darstellung</legend>
+				{#each store.table.options as option (option.id)}
+					<div class="row">
+						<label class="choice">
+							<input
+								type="checkbox"
+								checked={store.option(option.id)}
+								onchange={(event) =>
+									toggleOption(option.id, option.label, event.currentTarget.checked)}
+							/>
+							<span class="name">{option.label}</span>
+						</label>
+					</div>
+				{/each}
+			</fieldset>
+		{/if}
 		<p class="note">{always}</p>
 		<p class="visually-hidden" aria-live="polite">{live}</p>
 		<div class="foot">
@@ -182,6 +207,12 @@
 		gap: 0.125rem;
 		min-width: 17rem;
 		border: none;
+	}
+
+	.options {
+		margin-top: 0.5rem;
+		padding-top: 0.375rem;
+		border-top: 1px solid var(--color-separator);
 	}
 
 	legend {

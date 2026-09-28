@@ -29,7 +29,8 @@
 	import type { CalendarDate } from '$lib/domain/berlin-date';
 	import { berlinDateOf, formatBerlinDateTime, formatCalendarDate } from '$lib/domain/format';
 	import { SOURCE_FAMILY_LABELS, sourceFamily } from '$lib/domain/source';
-	import type { ProjectRef, TagRef, TicketSummary } from '$lib/domain/ticket';
+	import { progressLabel, type SubtaskProgress } from '$lib/domain/subtasks';
+	import type { ParentRef, ProjectRef, TagRef, TicketSummary } from '$lib/domain/ticket';
 	import DoneToggle from './DoneToggle.svelte';
 	import DueLabel from './DueLabel.svelte';
 	import PriorityIcon from './PriorityIcon.svelte';
@@ -42,9 +43,14 @@
 	// The title is the link to the detail panel and the keyboard target; a mouse click anywhere else
 	// in the row outside of controls follows the same link. Compact (ADR-0030 section 6, SP-4): the
 	// title takes at most two lines, the tags one line with "+N" for the rest, so a row is never
-	// higher than two lines of title.
+	// higher than two lines of title. Sub-tasks (ADR-0033 section 5): a parent carries the chip
+	// "2/5" at its title; a sub-task is indented below its parent or, standing alone, shows the path
+	// hint "HAUS-12 ›"; screen readers hear "Unteraufgabe von HAUS-12" either way.
 	let {
 		ticket,
+		nested = false,
+		parent = null,
+		progress = null,
 		project,
 		tags,
 		href,
@@ -60,6 +66,12 @@
 		ontoggle
 	}: {
 		ticket: TicketSummary;
+		/** Indented directly below its parent (ADR-0033 section 5). */
+		nested?: boolean;
+		/** The parent of a sub-task, null for a top-level ticket. */
+		parent?: ParentRef | null;
+		/** Progress of the sub-tasks of this ticket; null or total 0 without a chip. */
+		progress?: SubtaskProgress | null;
 		/** Project resolved through the catalog (T-16). */
 		project: ProjectRef | null;
 		/** Tags resolved through the catalog. */
@@ -117,7 +129,7 @@
 </script>
 
 <!-- The title link is the keyboard target of the row; the click on the row is a mouse shortcut. -->
-<tr class="row" class:done class:active data-ticket-id={ticket.id} {onclick}>
+<tr class="row" class:done class:active class:nested data-ticket-id={ticket.id} {onclick}>
 	<td class="key" data-col="key">
 		{#if isNew}<span class="new-dot" title="Neu"><span class="visually-hidden">neu,</span></span
 			>{/if}{ticket.key}
@@ -131,6 +143,26 @@
 	<th class="title" scope="row" data-col="title">
 		<!-- At most two lines, cut off only visually; screen readers read the whole title. -->
 		<div class="title-clamp">
+			{#if parent}
+				<span class="visually-hidden">Unteraufgabe von {parent.key}:</span>
+				{#if nested}
+					<!-- Indented below its parent: a corner instead of the path. -->
+					<svg
+						class="nest-icon"
+						viewBox="0 0 16 16"
+						width="12"
+						height="12"
+						aria-hidden="true"
+						focusable="false"
+					>
+						<path d="M4 2.5v6.5h8.5M10 6.5l2.5 2.5L10 11.5" />
+					</svg>
+				{:else}
+					<span class="path" aria-hidden="true" title={parent.title || undefined}
+						>{parent.key} ›</span
+					>
+				{/if}
+			{/if}
 			<SourceIcon source={ticket.source} />
 			<a
 				class="title-link"
@@ -163,8 +195,21 @@
 					<span class="visually-hidden">{recurringLabel}</span>
 				</span>
 			{/if}
+			{#if progress && progress.total > 0}
+				<span class="progress-chip" title={progressLabel(progress)}>
+					<span aria-hidden="true">{progress.done}/{progress.total}</span>
+					<span class="visually-hidden">, {progressLabel(progress)}</span>
+				</span>
+			{/if}
 		</div>
 	</th>
+	{#if shows('parent')}
+		<td class="parent" data-col="parent">
+			{#if parent}
+				<span title={parent.title || undefined}>{parent.key}</span>
+			{/if}
+		</td>
+	{/if}
 	{#if shows('source')}
 		<td class="source" data-col="source">{SOURCE_FAMILY_LABELS[sourceFamily(ticket.source)]}</td>
 	{/if}
@@ -297,6 +342,51 @@
 		margin-left: 0.375rem;
 		vertical-align: middle;
 		color: var(--color-text-muted);
+	}
+
+	/* Sub-tasks (ADR-0033 section 5): indented below the parent, or the parent's key as path. */
+	.nested .title {
+		padding-left: 2rem;
+	}
+
+	.nest-icon {
+		margin-right: 0.25rem;
+		vertical-align: middle;
+		color: var(--color-text-muted);
+		fill: none;
+		stroke: currentColor;
+		stroke-width: 1.5;
+		stroke-linecap: round;
+		stroke-linejoin: round;
+	}
+
+	.path {
+		margin-right: 0.25rem;
+		font-family: var(--font-mono);
+		font-size: var(--font-size-small);
+		color: var(--color-text-muted);
+		white-space: nowrap;
+	}
+
+	/* Progress of the sub-tasks of a parent: "2/5". */
+	.progress-chip {
+		display: inline-block;
+		margin-left: 0.375rem;
+		padding: 0 0.375rem;
+		font-size: var(--font-size-small);
+		line-height: 1.125rem;
+		font-variant-numeric: tabular-nums;
+		vertical-align: middle;
+		color: var(--color-text-muted);
+		border: 1px solid var(--color-line);
+		border-radius: var(--radius-pill);
+	}
+
+	.parent {
+		font-family: var(--font-mono);
+		font-size: var(--font-size-control);
+		color: var(--color-text-muted);
+		white-space: nowrap;
 	}
 
 	.status,

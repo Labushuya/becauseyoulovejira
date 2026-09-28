@@ -1,6 +1,6 @@
 # ADR-0030: Spaltenbreiten, Ein- und Ausblenden und kompakte Zeilen in Tabellen
 
-- **Status:** Angenommen und umgesetzt in den Paketen SP-1 bis SP-5 nach [docs/plan/e6-spalten.md](../plan/e6-spalten.md) (#98 bis #101 und der PR von SP-5); manuelle Browser-Prüfungen stehen im Test-Manifest
+- **Status:** Angenommen und umgesetzt in den Paketen SP-1 bis SP-5 nach [docs/plan/e6-spalten.md](../plan/e6-spalten.md) (#98 bis #101 und der PR von SP-5); manuelle Browser-Prüfungen stehen im Test-Manifest; Nachtrag 2026-09-28 (Spalte „Übergeordnet“ und Schalter der Tabelle, [ADR-0033](0033-unteraufgaben.md))
 - **Datum:** 2026-09-27
 - **Entscheidung durch:** Nutzer (Wunsch „Spalten ziehen, ein- und ausblenden, kompakte Zeilen wie in Jira“, Reihenfolge „Spalten zuerst“), Advisor (Konzept „Spalten“), Executor (Breiten, Schwellen, Einzelheiten)
 - **Präzisiert:** [ADR-0025](0025-ui-konsistenz-overlay-system.md) §11 (Ausblenden per Container-Queries) und [ADR-0010](0010-layout-nach-task-board.md) §1 (Popover „Spalten“ ab E6). „Tabellen scrollen nie seitlich“ und die Reihenfolge beim Ausblenden bleiben.
@@ -100,3 +100,11 @@ Breiten sind CSS-Pixel der ganzen Spalte samt Innenabstand (Angaben hier in rem 
 - Etwa 250 Zeilen reiner Code mehr, keine neue Abhängigkeit, keine neuen Tokens.
 - Die Einstellungen gelten pro Gerät.
 - CLAUDE.md §7 beschreibt ab SP-2 den neuen Unterbau. Bis ein Paket gemergt ist, gilt für seine Tabelle die bisherige Beschreibung.
+
+## Nachtrag (2026-09-28): Spalte „Übergeordnet“ und Schalter der Tabelle (ADR-0033)
+
+Der Text oben bleibt unverändert. Mit den Unteraufgaben ([ADR-0033](0033-unteraufgaben.md) §5, Paket UA-5) gilt zusätzlich:
+
+- **Spalte „Übergeordnet“** in „Aufgaben“ zwischen Titel und Quelle: 7rem (5 bis 10), standardmäßig aus, Rang 0 wie „Quelle“ (beide weichen vor „Erstellt“; bei gleichem Rang zuerst die weiter links). Die gespeicherte Liste `hidden` enthält im Standard `parent` und `source`. Die Schwellen der übrigen Spalten ändern sich nicht, weil die Spalte im Standard aus ist.
+- **Spalten, die später dazukommen** (`ColumnSpec.optIn`, bisher nur „Übergeordnet“): Eine vorher gespeicherte Liste `hidden` nennt sie nicht und würde sie sonst einschalten. Sie gelten deshalb nur als eingeblendet, wenn die gespeicherten Vorlieben sie unter `shown` nennen; `serializeColumnPrefs` schreibt `shown` für eingeblendete `optIn`-Spalten. Die Bedeutung von `hidden` für die übrigen Spalten bleibt.
+- **Schalter einer Tabelle:** `TableSpec.options` nennt Schalter neben den Spalten, für „Aufgaben“ nur „Unteraufgaben einrücken“ (`nest`, Standard an). Das Menü „Spalten“ zeigt sie in einer eigenen Gruppe „Darstellung“ als Checkbox. Gespeichert wird im selben Schlüssel unter `options`, nur ein Wert, der vom Standard abweicht (`{ "v": 1, …, "options": { "nest": false } }`); `parseColumnPrefs` liest nur bekannte Namen mit einem Wahrheitswert. „Standard wiederherstellen“ setzt die Schalter mit zurück. Die Version bleibt 1, weil ältere Werte ohne `options` gültig bleiben.

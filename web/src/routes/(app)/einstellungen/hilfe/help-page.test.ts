@@ -108,9 +108,13 @@ describe('help page (EH-9)', () => {
 			'Wie widerrufe ich einen Zugang?',
 			'Warum sehe ich im Admin-Bereich andere Konten?',
 			'Wie ändere ich Spalten und ihre Breite?',
+			'Wie arbeite ich mit Unteraufgaben?',
 			'Wie formatiere ich Beschreibungen und Kommentare?'
 		]);
 		expect(section.querySelectorAll('details[open]')).toHaveLength(0);
+		// Sub-tasks (ADR-0033): adding, the question before completing, nesting, deleting.
+		expect(text(section)).toContain('„Unteraufgaben mit erledigen“ oder „Trotzdem erledigen“');
+		expect(text(section)).toContain('„HAUS-12 ›“');
 		expect(text(section)).toContain('++unterstrichen++');
 		expect(text(section)).toContain('- [ ] offen');
 		expect(text(section)).toContain('direkt in der Ansicht ab');

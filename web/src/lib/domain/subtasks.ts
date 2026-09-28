@@ -126,6 +126,47 @@ export function progressPercent({ done, total }: SubtaskProgress): number {
 	return total === 0 ? 0 : Math.round((done / total) * 100);
 }
 
+/** A row of the ticket table (ADR-0033 section 5). */
+export interface TicketRow<T> {
+	ticket: T;
+	/** Indented directly below its parent. */
+	nested: boolean;
+	/** The parent of a sub-task (for the path hint and the column "Übergeordnet"), else null. */
+	parent: ParentRef | null;
+}
+
+/**
+ * Order of the rows of one section of the table (a group, the open or the done tickets), given in
+ * the order of the sort (ADR-0033 section 5): with `nest` a sub-task follows its parent directly
+ * when both are in `tickets`, and sub-tasks of one parent keep their order among each other.
+ * Otherwise, and without `nest`, every ticket stays at its place; a sub-task then carries its
+ * parent for the path hint. Filters, search and counts are the caller's, per ticket.
+ */
+export function arrangeRows<T extends TicketSummary>(
+	tickets: readonly T[],
+	nest: boolean,
+	find: (id: string) => Pick<TicketSummary, 'id' | 'key' | 'title'> | null
+): TicketRow<T>[] {
+	const shown = new Set(tickets.map((ticket) => ticket.id));
+	const follows = (ticket: T) => nest && !!ticket.parentId && shown.has(ticket.parentId);
+	const children = new Map<string, T[]>();
+	for (const ticket of tickets) {
+		if (!follows(ticket) || !ticket.parentId) continue;
+		const list = children.get(ticket.parentId);
+		if (list === undefined) children.set(ticket.parentId, [ticket]);
+		else list.push(ticket);
+	}
+	const rows: TicketRow<T>[] = [];
+	for (const ticket of tickets) {
+		if (follows(ticket)) continue;
+		rows.push({ ticket, nested: false, parent: parentOf(ticket, find) });
+		for (const child of children.get(ticket.id) ?? []) {
+			rows.push({ ticket: child, nested: true, parent: parentOf(child, find) });
+		}
+	}
+	return rows;
+}
+
 /**
  * The parent of a sub-task for its path: the list's own version of the parent if it has one (a new
  * key after a project change shows at once), else the expanded one; null for a top-level ticket.

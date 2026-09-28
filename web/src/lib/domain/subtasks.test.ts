@@ -3,9 +3,11 @@
 // tests/unit/web-subtasks.test.mjs.
 
 import { describe, expect, it } from 'vitest';
+import type { TicketSummary } from './ticket';
 import {
 	COMPLETION_CHOICES,
 	COMPLETION_LABELS,
+	arrangeRows,
 	compareSubtasks,
 	completionHint,
 	keysText,
@@ -122,6 +124,48 @@ describe('question before completing (ADR-0033 section 2)', () => {
 		];
 
 		expect(openBlocking(list).map((entry) => entry.id)).toEqual(['a', 'd']);
+	});
+});
+
+describe('arrangeRows (ADR-0033 section 5)', () => {
+	const row = (id: string, parentId: string | null = null) =>
+		({ id, key: id.toUpperCase(), title: `Titel ${id}`, parentId }) as TicketSummary;
+	const find = (id: string) => ({ id, key: id.toUpperCase(), title: `Titel ${id}` });
+	const shape = (rows: ReturnType<typeof arrangeRows<TicketSummary>>) =>
+		rows.map((entry) => {
+			const indent = entry.nested ? '  ' : '';
+			return `${indent}${entry.ticket.id}${entry.parent ? `<${entry.parent.key}` : ''}`;
+		});
+
+	it('puts sub-tasks directly below their parent when both are shown, in the sorted order', () => {
+		const list = [row('a1', 'p'), row('x'), row('p'), row('a2', 'p'), row('q'), row('b', 'q')];
+
+		expect(shape(arrangeRows(list, true, find))).toEqual([
+			'x',
+			'p',
+			'  a1<P',
+			'  a2<P',
+			'q',
+			'  b<Q'
+		]);
+	});
+
+	it('keeps a sub-task at its place with its parent for the path when the parent is not shown', () => {
+		const list = [row('a1', 'p'), row('x'), row('b', 'q'), row('q')];
+
+		expect(shape(arrangeRows(list, true, find))).toEqual(['a1<P', 'x', 'q', '  b<Q']);
+	});
+
+	it('keeps every ticket at its place without nesting', () => {
+		const list = [row('a1', 'p'), row('p'), row('x')];
+
+		expect(shape(arrangeRows(list, false, find))).toEqual(['a1<P', 'p', 'x']);
+	});
+
+	it('changes nothing for a list without sub-tasks and knows an unknown parent by its ID', () => {
+		expect(shape(arrangeRows([row('x'), row('y')], true, find))).toEqual(['x', 'y']);
+		const rows = arrangeRows([row('a', 'gone')], true, () => null);
+		expect(rows[0]?.parent).toEqual({ id: 'gone', key: '…', title: '' });
 	});
 });
 

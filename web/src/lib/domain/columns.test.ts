@@ -6,11 +6,13 @@ import { describe, expect, it } from 'vitest';
 import {
 	COLUMN_PREFS_VERSION,
 	INBOX_TABLE,
+	NEST_SUBTASKS,
 	PROJECT_TABLE,
 	RECURRENCE_TABLE,
 	REM,
 	TABLES,
 	TICKET_TABLE,
+	changedOptions,
 	clampWidth,
 	columnWidth,
 	defaultColumnPrefs,
@@ -20,16 +22,21 @@ import {
 	formatRem,
 	isDefaultColumnPrefs,
 	isResizable,
+	optionValue,
 	optionalColumns,
 	parseColumnPrefs,
 	serializeColumnPrefs,
 	type ColumnPrefs,
 	type ColumnSpec,
+	type TableOption,
 	type TableSpec
 } from './columns';
 
-/** Nothing chosen for the tickets: default widths, "Quelle" off (ADR-0019 section 4). */
-const NONE: ColumnPrefs = { widths: {}, hidden: ['source'] };
+/**
+ * Nothing chosen for the tickets: default widths, "Übergeordnet" (ADR-0033 section 5) and "Quelle"
+ * (ADR-0019 section 4) off.
+ */
+const NONE: ColumnPrefs = { widths: {}, hidden: ['parent', 'source'] };
 
 function spec(table: TableSpec, id: string): ColumnSpec {
 	const found = table.columns.find((entry) => entry.id === id);
@@ -81,6 +88,7 @@ describe('column specs', () => {
 		expect(optionalColumns(TICKET_TABLE.columns).map((entry) => entry.id)).toEqual([
 			'priority',
 			'status',
+			'parent',
 			'source',
 			'project',
 			'tags',
@@ -119,11 +127,12 @@ describe('parseColumnPrefs and serializeColumnPrefs', () => {
 
 	it('reads what it wrote', () => {
 		const prefs: ColumnPrefs = { widths: { project: 160, key: 112 }, hidden: ['created'] };
-		const raw = serializeColumnPrefs(prefs);
+		const raw = serializeColumnPrefs(prefs, columns);
 		expect(JSON.parse(raw)).toEqual({
 			v: 1,
 			widths: { project: 160, key: 112 },
-			hidden: ['created']
+			hidden: ['created'],
+			shown: ['parent']
 		});
 		expect(parseColumnPrefs(raw, columns)).toEqual({
 			widths: { key: 112, project: 160 },
@@ -161,7 +170,7 @@ describe('parseColumnPrefs and serializeColumnPrefs', () => {
 		});
 		expect(parseColumnPrefs(raw, columns)).toEqual({
 			widths: { key: spec(TICKET_TABLE, 'key').max },
-			hidden: ['tags']
+			hidden: ['parent', 'tags']
 		});
 		// JSON has no NaN: a text with NaN is broken JSON and means the defaults.
 		expect(parseColumnPrefs(`{"v":1,"widths":{"tags":NaN}}`, columns)).toEqual(
@@ -170,12 +179,19 @@ describe('parseColumnPrefs and serializeColumnPrefs', () => {
 	});
 
 	it('keeps the default hidden columns when the list is missing', () => {
-		expect(defaultColumnPrefs(columns).hidden).toEqual(['source']);
+		expect(defaultColumnPrefs(columns).hidden).toEqual(['parent', 'source']);
 		const missing = JSON.stringify({ v: 1, widths: {} });
-		expect(parseColumnPrefs(missing, columns).hidden).toEqual(['source']);
-		// A stored empty list means the user switched "Quelle" on.
+		expect(parseColumnPrefs(missing, columns).hidden).toEqual(['parent', 'source']);
+		// A stored empty list means the user switched "Quelle" on; "Übergeordnet" came later and is
+		// on only when `shown` names it (ADR-0033), so older lists do not switch it on.
 		const empty = JSON.stringify({ v: 1, widths: {}, hidden: [] });
-		expect(parseColumnPrefs(empty, columns).hidden).toEqual([]);
+		expect(parseColumnPrefs(empty, columns).hidden).toEqual(['parent']);
+		const both = JSON.stringify({ v: 1, widths: {}, hidden: [], shown: ['parent', 'x', 3] });
+		expect(parseColumnPrefs(both, columns).hidden).toEqual([]);
+		expect(JSON.parse(serializeColumnPrefs({ widths: {}, hidden: [] }, columns)).shown).toEqual([
+			'parent'
+		]);
+		expect(JSON.parse(serializeColumnPrefs(NONE, columns))).not.toHaveProperty('shown');
 	});
 
 	it('knows the defaults', () => {
@@ -185,11 +201,66 @@ describe('parseColumnPrefs and serializeColumnPrefs', () => {
 	});
 });
 
+describe('switches of a table (ADR-0033 section 5)', () => {
+	const { columns, options } = TICKET_TABLE;
+	const nest = options[0] as TableOption;
+
+	it('has "Unteraufgaben einrücken", on by default, for the tickets only', () => {
+		expect(options).toEqual([
+			{ id: NEST_SUBTASKS, label: 'Unteraufgaben einrücken', default: true }
+		]);
+		for (const table of [INBOX_TABLE, PROJECT_TABLE, RECURRENCE_TABLE]) {
+			expect(table.options).toEqual([]);
+		}
+		expect(optionValue(defaultColumnPrefs(columns), nest)).toBe(true);
+	});
+
+	it('stores only a switch that differs from its default and reads it back', () => {
+		const prefs: ColumnPrefs = {
+			widths: {},
+			hidden: ['parent', 'source'],
+			options: { nest: false }
+		};
+		const raw = serializeColumnPrefs(prefs);
+
+		expect(JSON.parse(raw)).toEqual({
+			v: 1,
+			widths: {},
+			hidden: ['parent', 'source'],
+			options: { nest: false }
+		});
+		expect(parseColumnPrefs(raw, columns, options)).toEqual(prefs);
+		expect(optionValue(parseColumnPrefs(raw, columns, options), nest)).toBe(false);
+		expect(isDefaultColumnPrefs(prefs, columns)).toBe(false);
+		expect(JSON.parse(serializeColumnPrefs(NONE))).not.toHaveProperty('options');
+	});
+
+	it('drops unknown switches, wrong types and values equal to the default', () => {
+		const raw = JSON.stringify({
+			v: 1,
+			widths: {},
+			hidden: ['source'],
+			options: { nest: true, unknown: false, other: 'false' }
+		});
+		expect(parseColumnPrefs(raw, columns, options)).toEqual({
+			widths: {},
+			hidden: ['parent', 'source']
+		});
+		const wrong = JSON.stringify({ v: 1, widths: {}, hidden: [], options: { nest: 'false' } });
+		expect(parseColumnPrefs(wrong, columns, options)).toEqual({ widths: {}, hidden: ['parent'] });
+		expect(changedOptions({ nest: false }, options)).toEqual({ nest: false });
+		expect(changedOptions({ nest: true }, options)).toBeUndefined();
+		// Without the switches of the table nothing is read.
+		const off = JSON.stringify({ v: 1, widths: {}, hidden: [], options: { nest: false } });
+		expect(parseColumnPrefs(off, columns)).toEqual({ widths: {}, hidden: ['parent'] });
+	});
+});
+
 describe('fitColumns', () => {
 	it('shows everything at the default widths without a measured frame', () => {
 		const fit = fitColumns(null, TICKET_TABLE.columns, NONE);
 		const all = TICKET_TABLE.columns.map((entry) => entry.id);
-		expect(fit.visible).toEqual(all.filter((id) => id !== 'source'));
+		expect(fit.visible).toEqual(all.filter((id) => id !== 'source' && id !== 'parent'));
 		expect(fitColumns(null, TICKET_TABLE.columns, { widths: {}, hidden: [] }).visible).toEqual(all);
 		expect(fit.autoHidden).toEqual([]);
 		expect(fit.flexWidth).toBeNull();
@@ -246,7 +317,7 @@ describe('fitColumns', () => {
 	});
 
 	it('hides earlier when the user made columns wider, and keeps their widths', () => {
-		const wide: ColumnPrefs = { widths: { tags: 320 }, hidden: ['source'] };
+		const wide: ColumnPrefs = { widths: { tags: 320 }, hidden: ['parent', 'source'] };
 		const before = threshold(TICKET_TABLE, 'created');
 		expect(threshold(TICKET_TABLE, 'created', wide)).toBeGreaterThan(before);
 		// All columns need 1160 px with the wide tags instead of 968 px.
@@ -283,10 +354,10 @@ describe('fitColumns', () => {
 
 	it('shrinks the widths of the user towards their minimum before the title goes below its own', () => {
 		const big: ColumnPrefs = { widths: { key: 128, status: 160 }, hidden: [] };
-		// Everything that can give way is gone ("Quelle" first, it is switched on here); key, Prio,
-		// status, actions and 10rem of title stay.
+		// Everything that can give way is gone ("Übergeordnet" and "Quelle" first, they are switched on
+		// here); key, Prio, status, actions and 10rem of title stay.
 		const fit = fitColumns(500, TICKET_TABLE.columns, big);
-		expect(fit.autoHidden).toEqual(['source', 'created', 'tags', 'project', 'due']);
+		expect(fit.autoHidden).toEqual(['parent', 'source', 'created', 'tags', 'project', 'due']);
 		expect(fit.widths.key).toBeLessThan(128);
 		expect(fit.widths.status).toBeLessThan(160);
 		expect(fit.flexWidth).toBeGreaterThanOrEqual(10 * REM);
