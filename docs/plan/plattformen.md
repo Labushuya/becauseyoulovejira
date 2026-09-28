@@ -47,7 +47,7 @@ Die Bewertung vom 2026-09-27 hatte S0 bis S5 mit S2b und S4 als Optionen. Nach d
 
 ### S1: Installierte Web-App (Windows und Browser)
 
-> **Zusammengeführt** (2026-09-28) mit dem Paket „Start und Fenster“: umgesetzt als Paket SF-5 nach [ADR-0035](../adr/0035-start-einstieg-und-offene-tabs.md) §8 und [docs/plan/start-fenster.md](start-fenster.md). Abweichungen und der Stand stehen dort.
+> **Erledigt, zusammengeführt** (2026-09-28) mit dem Paket „Start und Fenster“: umgesetzt als Paket SF-5 nach [ADR-0035](../adr/0035-start-einstieg-und-offene-tabs.md) §8 und [docs/plan/start-fenster.md](start-fenster.md) (`manifest.json`, Icons aus `favicon.svg`, Service Worker von SvelteKit mit Hinweisseite `offline.html`, `launch_handler` `focus-existing`, `start.bat` startet bevorzugt die installierte App). Der Prüfpunkt zum MIME-Typ ist beantwortet (§4). Abweichungen und manuelle Prüfungen stehen dort.
 
 - `web/static/manifest.json` (MIME-Typ von PocketBase im Test prüfen; `.webmanifest` nur, wenn korrekt ausgeliefert): `id`, `start_url` und `scope` `/`, `display: standalone`, Farben aus dem Design-System, Icons 192, 512 und 512 maskable aus dem vorhandenen Logo, `launch_handler` mit `focus-existing`.
 - `sw.js` minimal: kein Caching von `/api/` und `/_/`, keine Offline-Daten; bei Navigation ohne Server eine vorab gecachte Seite „Server nicht erreichbar“. Versionskennung aus dem Build.
@@ -104,7 +104,7 @@ Die Bewertung vom 2026-09-27 hatte S0 bis S5 mit S2b und S4 als Optionen. Nach d
 
 | Stufe | Frage |
 |---|---|
-| S1 | Welchen MIME-Typ liefert PocketBase 0.40.4 für `.webmanifest`? |
+| S1 | ~~Welchen MIME-Typ liefert PocketBase 0.40.4 für `.webmanifest`?~~ Beantwortet (SF-5, 2026-09-28): `text/plain; charset=utf-8` auf dem Entwicklungsrechner (Go liest unbekannte Endungen unter Windows aus der Registry, sonst Sniffing); `.json` kommt immer als `application/json`, `.js` als `text/javascript`. Deshalb `manifest.json` (`tests/integration/web-app.test.mjs`). |
 | S3 | Läuft der Pi mit 64 oder 32 Bit? Gibt es für Node 24 auf `armv7` offizielle Builds für die SEA? |
 | S3 | Wie stellt das vorhandene Traefik Zertifikate aus (DNS-01, eigene CA)? |
 | S2 | Setzt `tailscale serve` `X-Forwarded-For`? |

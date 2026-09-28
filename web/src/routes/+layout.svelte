@@ -14,6 +14,7 @@
 	import DuplicateTabNotice from '$lib/components/DuplicateTabNotice.svelte';
 	import SessionNotice from '$lib/components/SessionNotice.svelte';
 	import { guardTarget } from '$lib/guard';
+	import { consumeLaunches } from '$lib/launch-queue';
 	import {
 		TAB_CHANNEL,
 		TabPresence,
@@ -22,9 +23,25 @@
 		setTabContext,
 		shouldCheckForDuplicate
 	} from '$lib/tab-presence';
+	import { watchThemeColor } from '$lib/theme-color';
 	import { TitleBlinker } from '$lib/title-blink';
 
 	let { children } = $props();
+
+	// Installed web app (ADR-0035 section 8): the title bar follows the shown mode, and a launch of
+	// another page of the app (focus-existing) opens it in this window.
+	$effect(() => untrack(() => watchThemeColor(window, document)));
+	$effect(() =>
+		untrack(() => {
+			consumeLaunches(
+				window,
+				(path) => {
+					void goto(path);
+				},
+				() => page.url
+			);
+		})
+	);
 
 	// Second tab of the same browser and the blinking title (ADR-0035 sections 5 and 6), here so
 	// they work on every page, the login included. The app layout shows the hint of another tab as

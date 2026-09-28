@@ -856,6 +856,25 @@ function Wait-AttentionAck {
     }
 }
 
+function Select-PwaShortcut {
+    # The Start menu shortcut of the installed web app (ADR-0035 section 8), from objects with Path,
+    # Name (file name without .lnk), TargetPath and Arguments. Chrome and Edge create it with the
+    # name of the manifest, the target chrome_proxy.exe or msedge_proxy.exe and --app-id=<32 letters
+    # a-p>; an --app-url, if present, must be the app on 127.0.0.1:8090. Returns the Path of the
+    # first match (sorted by path) or $null.
+    param([AllowNull()][AllowEmptyCollection()][object[]]$Shortcuts)
+
+    $matching = @(@($Shortcuts) | Where-Object {
+            $null -ne $_ -and
+            [string]::Equals([string]$_.Name, 'becauseyoulovejira', [System.StringComparison]::OrdinalIgnoreCase) -and
+            @('chrome_proxy.exe', 'msedge_proxy.exe') -contains ([System.IO.Path]::GetFileName([string]$_.TargetPath)).ToLowerInvariant() -and
+            [string]$_.Arguments -cmatch '(^|\s)--app-id=[a-p]{32}(\s|$)' -and
+            ([string]$_.Arguments -notmatch '--app-url=' -or [string]$_.Arguments -match '(^|\s)"?--app-url=http://127\.0\.0\.1:8090/?(\s|"|$)')
+        } | Sort-Object -Property Path)
+    if ($matching.Count -eq 0) { return $null }
+    return [string]$matching[0].Path
+}
+
 function Resolve-BrowserAction {
     # Whether start.bat opens a browser tab ('Open') or leaves it to an open tab or the landing
     # page ('Skip'). The requests are parameters, so the tests run this with fakes:

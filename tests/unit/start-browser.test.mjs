@@ -107,8 +107,29 @@ foreach ($case in $in.resolve) {
 }
 $result.resolve = $resolve
 
+$shortcuts = @{}
+foreach ($case in $in.shortcuts) { $shortcuts[$case.name] = Select-PwaShortcut -Shortcuts @($case.items) }
+$shortcuts['(none)'] = Select-PwaShortcut -Shortcuts $null
+$result.shortcuts = $shortcuts
+
 $result | ConvertTo-Json -Depth 6 -Compress
 `;
+
+// Shortcuts of an installed web app (SF-5) as Chrome and Edge create them in the Start menu.
+const APP_ID = 'abcdefghijklmnopabcdefghijklmnop';
+const PROGRAMS = 'C:\\Users\\anna\\AppData\\Roaming\\Microsoft\\Windows\\Start Menu\\Programs';
+const link = (fields) => ({
+	Path: `${PROGRAMS}\\Chrome-Apps\\becauseyoulovejira.lnk`,
+	Name: 'becauseyoulovejira',
+	TargetPath: 'C:\\Program Files\\Google\\Chrome\\Application\\chrome_proxy.exe',
+	Arguments: `--profile-directory=Default --app-id=${APP_ID}`,
+	...fields
+});
+const EDGE = link({
+	Path: `${PROGRAMS}\\becauseyoulovejira.lnk`,
+	TargetPath: 'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge_proxy.exe',
+	Arguments: `--profile-directory=Default --app-id=${APP_ID} "--app-url=http://127.0.0.1:8090/"`
+});
 
 const tabs = (count, landing = null) => ({ tabs: count, landing });
 /** Every field set, because the script runs with Set-StrictMode like byl-control.ps1. */
@@ -184,7 +205,20 @@ beforeAll(() => {
 					ackAfter: 1
 				},
 				{ name: 'presenceThrows', cold: true, presence: [tabs(1)], presenceThrows: true }
-			].map(resolveCase)
+			].map(resolveCase),
+			shortcuts: [
+				{ name: 'chrome', items: [link({})] },
+				{ name: 'edge', items: [EDGE] },
+				{ name: 'bothSorted', items: [link({}), EDGE] },
+				{ name: 'otherName', items: [link({ Name: 'Andere App' })] },
+				{ name: 'upperName', items: [link({ Name: 'BecauseYouLoveJira' })] },
+				{ name: 'browserItself', items: [link({ TargetPath: 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe' })] },
+				{ name: 'noAppId', items: [link({ Arguments: '--profile-directory=Default' })] },
+				{ name: 'badAppId', items: [link({ Arguments: '--app-id=ABCDEFGHIJKLMNOPABCDEFGHIJKLMNOP' })] },
+				{ name: 'shortAppId', items: [link({ Arguments: '--app-id=abcdef' })] },
+				{ name: 'otherAppUrl', items: [link({ Arguments: `--app-id=${APP_ID} --app-url=https://example.com/` })] },
+				{ name: 'mixed', items: [link({ Name: 'Andere App' }), null, EDGE] }
+			]
 		},
 		{ BYL_FUNCTIONS: FUNCTIONS_FILE }
 	);
@@ -318,4 +352,22 @@ describe('Resolve-BrowserAction (fail-open)', () => {
 	it('opens the tab when the question itself fails', () => {
 		expect(result.resolve.presenceThrows.action).toBe('Open');
 	});
+});
+
+describe('Select-PwaShortcut (installed web app, SF-5)', () => {
+	it('finds the shortcut of Chrome and of Edge, the first by path when both exist', () => {
+		expect(result.shortcuts.chrome).toBe(`${PROGRAMS}\\Chrome-Apps\\becauseyoulovejira.lnk`);
+		expect(result.shortcuts.edge).toBe(`${PROGRAMS}\\becauseyoulovejira.lnk`);
+		// Sorted by path without regard to case: "becauseyoulovejira.lnk" before "Chrome-Apps\…".
+		expect(result.shortcuts.bothSorted).toBe(`${PROGRAMS}\\becauseyoulovejira.lnk`);
+		expect(result.shortcuts.upperName).toBe(`${PROGRAMS}\\Chrome-Apps\\becauseyoulovejira.lnk`);
+		expect(result.shortcuts.mixed).toBe(`${PROGRAMS}\\becauseyoulovejira.lnk`);
+	});
+
+	it.each(['otherName', 'browserItself', 'noAppId', 'badAppId', 'shortAppId', 'otherAppUrl', '(none)'])(
+		'ignores %s',
+		(name) => {
+			expect(result.shortcuts[name]).toBeNull();
+		}
+	);
 });
