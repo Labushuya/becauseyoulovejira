@@ -1,6 +1,6 @@
 # E6-Plan, Teil Start und Fenster: Einstieg per Datei, kein zweiter Tab, installierbare Web-App
 
-- **Stand:** in Arbeit (2026-09-28): SF-1 (#137, Routen), SF-2 (#138, Landing per Datei), SF-3 (Hinweis im Tab, zweiter Tab) in Umsetzung.
+- **Stand:** in Arbeit (2026-09-28): SF-1 (#137, Routen), SF-2 (#138, Landing per Datei), SF-3 (#139, Hinweis im Tab, zweiter Tab), SF-4 (`start.bat` und `stop.bat`) in Umsetzung.
 - **Grundlage:**
   - [ADR-0035](../adr/0035-start-einstieg-und-offene-tabs.md) (Entscheidungen, Routen, Sicherheit, Alternativen)
   - [ADR-0002](../adr/0002-erststart-und-superuser.md) §6, [ADR-0007](../adr/0007-realtime-und-sitzungspflege.md), [ADR-0025](../adr/0025-ui-konsistenz-overlay-system.md), [ADR-0026](../adr/0026-einstellungsbereich-und-hinweis-bausteine.md), [ADR-0028](../adr/0028-plattform-strategie.md) §6
@@ -52,3 +52,8 @@
 | 2026-09-28 | SF-3 | **Kanal im Wurzel-Layout, Hinweis im App-Layout:** `TabPresence` und `TitleBlinker` entstehen im Wurzel-Layout und gehen per Kontext (`getTabContext`, ohne Wurzel `null`) an das `(app)`-Layout. Der zuletzt angemeldete Empfänger von `attention` gewinnt: im App-Layout der `AttentionStore` (Flag und Blinken), sonst (Anmeldung) nur das Blinken. |
 | 2026-09-28 | SF-3 | **Ein prüfender Tab antwortet nicht:** Solange ein neuer Tab selbst fragt, antwortet er nicht mit `here`; erst wenn er bleibt (kein anderer Tab oder „Hier weiterarbeiten“). So schließen sich zwei gleichzeitig geöffnete Tabs nicht gegenseitig. |
 | 2026-09-28 | SF-3 | **Esc, × und Schleier behalten den Tab:** Das Modal hat keine ungespeicherten Eingaben; jeder Schließweg des Bausteins bedeutet „Hier weiterarbeiten“ und hält den Countdown an (WCAG 2.2.1). Der Tab der installierten App (`display-mode: standalone`) fragt nie, `focus-existing` regelt ihn (SF-5). |
+| 2026-09-28 | SF-4 | **Ganze Entscheidung als reine Funktion:** `Resolve-BrowserAction` in `byl-functions.ps1` bekommt die drei Anfragen, Uhr und Warten als Skriptblöcke; `byl-control.ps1` reicht nur die echten Anfragen (`Get-Presence`, `Send-Attention`, `Get-AttentionAcked` über `Invoke-LocalRequest`) hinein. So prüfen die Tests alle Wege samt Frist und Takt mit falscher Uhr, ohne je zu warten; `byl-functions.ps1` bleibt ASCII. |
+| 2026-09-28 | SF-4 | **Takt 250 ms, Timeout je Anfrage 1,5 s:** Beim Kaltstart fragt `start.bat` im Takt von 250 ms bis zu 3 s nach Präsenz, danach wartet es im selben Takt bis zu 2 s auf ein Ack. Ohne Kaltstart gibt es genau eine Frage. `Start-Sleep -Milliseconds` ist keine feste Wartezeit im Sinne von `start-scripts.test.mjs`. |
+| 2026-09-28 | SF-4 | **Kein benachrichtigter Tab heißt öffnen:** Meldet der Server `notified: 0` (Tab gerade weg) oder 429, öffnet `start.bat` sofort, ohne auf ein Ack zu warten. |
+| 2026-09-28 | SF-4 | **Stopp-Meldung nur mit eigener Instanz:** `stop.bat` sendet `stop` nur, wenn es eine eigene PocketBase gefunden hat, vor dem Beenden des Mail-Hilfsprozesses, mit 1 s Timeout, ohne Ack und ohne Ausgabe. Scheitert sie, läuft der Stopp unverändert. |
+| 2026-09-28 | SF-4 | **Invoke-LocalRequest im Integrationstest:** Die Funktion läuft einmal gegen die Wegwerf-Instanz (Presence, Attention, Zustand, nicht erreichbarer Port). Das prüft, dass .NET ohne `Origin` und `Sec-Fetch` fragt und die Routen sie als Skript sehen; die Start- und Stopp-Skripte selbst laufen weiterhin nie. |
