@@ -117,6 +117,37 @@ describe('toDataError', () => {
 		expect(error.fields.ticket?.message).toBe('Das Ticket gehört schon zu einer Serie.');
 	});
 
+	it('has the texts of the sub-task codes and names the open ones (ADR-0033)', () => {
+		const error = toDataError(
+			responseError(400, {
+				status: {
+					code: 'validation_parent_open_children',
+					message: 'x',
+					params: { count: 3, keys: ['HAUS-13', 'HAUS-14', 'HAUS-15'] }
+				},
+				parent: { code: 'validation_parent_nested', message: 'x' },
+				household: { code: 'validation_ticket_has_children', message: 'x' }
+			})
+		);
+
+		expect(error.fields.status).toEqual({
+			code: 'validation_parent_open_children',
+			message: '3 Unteraufgaben sind noch offen.',
+			params: { count: 3, keys: ['HAUS-13', 'HAUS-14', 'HAUS-15'] }
+		});
+		expect(error.fields.parent?.message).toBe(
+			'Das gewählte Ticket ist selbst eine Unteraufgabe (nur eine Ebene).'
+		);
+		expect(error.fields.household?.message).toBe(
+			'Ein Ticket mit Unteraufgaben kann den Bereich nicht wechseln.'
+		);
+		expect(
+			toDataError(
+				responseError(400, { status: { code: 'validation_parent_open_children', message: 'x' } })
+			).fields.status?.message
+		).toBe('Offene Unteraufgaben blockieren das Erledigen.');
+	});
+
 	it('has German texts for the project and tag codes, some per field (E3 plan, package 3)', () => {
 		const error = toDataError(
 			responseError(400, {

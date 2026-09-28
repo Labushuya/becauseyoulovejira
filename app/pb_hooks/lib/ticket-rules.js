@@ -100,6 +100,40 @@ function archivedProjectViolation(input) {
   return 'validation_project_archived';
 }
 
+// Texts of the codes of sub-tickets (ADR-0033); web/src/lib/domain/subtasks.ts has the same ones
+// (tests/unit/web-subtasks.test.mjs).
+var SUBTASK_MESSAGES = Object.freeze({
+  validation_parent_self: 'Ein Ticket kann nicht sein eigenes übergeordnetes Ticket sein.',
+  validation_parent_nested: 'Das gewählte Ticket ist selbst eine Unteraufgabe (nur eine Ebene).',
+  validation_parent_has_children: 'Ein Ticket mit Unteraufgaben kann keine Unteraufgabe werden.',
+  validation_ticket_has_children: 'Ein Ticket mit Unteraufgaben kann den Bereich nicht wechseln.',
+  validation_parent_open_children: 'Offene Unteraufgaben blockieren das Erledigen.'
+});
+
+// Body fields of a completion (ADR-0033 section 2) are flags: JSON true, or "true" from a form.
+function isTrueFlag(value) {
+  return value === true || value === 'true';
+}
+
+// Completing a ticket whose open sub-tickets block it (ADR-0033 section 2). `input`:
+//   wasDone           the stored status was done
+//   isDone            the status after the write is done
+//   openBlocking      number of sub-tickets with blocks_parent that are not done
+//   force             the client sent `force: true`
+//   completeChildren  the client sent `complete_children: true`
+// Returns 'none' (no completion or nothing blocks), 'refuse', 'force' (done, the sub-tickets stay
+// open) or 'complete_children' (done together with the blocking sub-tickets). complete_children
+// wins over force, because it is the stronger request.
+function completionDecision(input) {
+  if (input.wasDone || !input.isDone || input.openBlocking === 0) {
+    return 'none';
+  }
+  if (input.completeChildren) {
+    return 'complete_children';
+  }
+  return input.force ? 'force' : 'refuse';
+}
+
 module.exports = {
   DEFAULT_STATUS: DEFAULT_STATUS,
   DEFAULT_PRIORITY: DEFAULT_PRIORITY,
@@ -110,5 +144,8 @@ module.exports = {
   completedAtAction: completedAtAction,
   isCalendarDate: isCalendarDate,
   parentViolation: parentViolation,
-  archivedProjectViolation: archivedProjectViolation
+  archivedProjectViolation: archivedProjectViolation,
+  SUBTASK_MESSAGES: SUBTASK_MESSAGES,
+  isTrueFlag: isTrueFlag,
+  completionDecision: completionDecision
 };

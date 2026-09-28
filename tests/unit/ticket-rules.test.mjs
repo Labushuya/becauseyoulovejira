@@ -168,3 +168,30 @@ describe('archivedProjectViolation (E3 plan, T-11)', () => {
 		expect(rules.archivedProjectViolation(input)).toBe(expected);
 	});
 });
+
+describe('completionDecision (ADR-0033 section 2)', () => {
+	const blocked = { wasDone: false, isDone: true, openBlocking: 2, force: false, completeChildren: false };
+
+	it.each([
+		['refuses a completion with open blocking sub-tickets', blocked, 'refuse'],
+		['completes anyway with force', { ...blocked, force: true }, 'force'],
+		['completes the sub-tickets with complete_children', { ...blocked, completeChildren: true }, 'complete_children'],
+		['prefers complete_children over force', { ...blocked, force: true, completeChildren: true }, 'complete_children'],
+		['has nothing to do without blocking sub-tickets', { ...blocked, openBlocking: 0 }, 'none'],
+		['has nothing to do when the ticket stays open', { ...blocked, isDone: false }, 'none'],
+		['has nothing to do when the ticket was done already', { ...blocked, wasDone: true }, 'none'],
+		['ignores the flags without blocking sub-tickets', { ...blocked, openBlocking: 0, force: true }, 'none']
+	])('%s', (_name, input, expected) => {
+		expect(rules.completionDecision(input)).toBe(expected);
+	});
+});
+
+describe('isTrueFlag', () => {
+	it('takes JSON true and the text "true" only', () => {
+		expect(rules.isTrueFlag(true)).toBe(true);
+		expect(rules.isTrueFlag('true')).toBe(true);
+		for (const value of [false, 'false', 1, '1', 'yes', '', null, undefined, {}]) {
+			expect(rules.isTrueFlag(value), String(value)).toBe(false);
+		}
+	});
+});

@@ -22,6 +22,19 @@ onRecordUpdateExecute(function (e) {
   e.next();
 }, 'tickets');
 
+// Fails completing a sub-ticket with the marker title (ADR-0033 section 2): "Unteraufgaben mit
+// erledigen" completes it in the transaction of its parent, so the parent must stay open.
+onRecordUpdateExecute(function (e) {
+  if (
+    e.record.getString('title') === '__byl_fail_child_done__' &&
+    e.record.original().getString('status') !== 'done' &&
+    e.record.getString('status') === 'done'
+  ) {
+    throw new BadRequestError('Injected sub-ticket completion failure.');
+  }
+  e.next();
+}, 'tickets');
+
 // Fails the history entry of a ticket whose (new) title is the marker. The history is written
 // in the transaction of the ticket hook, so the lookup sees the uncommitted ticket; the ticket
 // change and its key must be rolled back with it.

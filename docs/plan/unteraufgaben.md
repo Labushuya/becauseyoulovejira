@@ -1,6 +1,6 @@
 # E6-Plan, Teil Unteraufgaben: Liste, Fortschritt, Einrücken und „blockiert das übergeordnete Ticket“
 
-- **Stand:** geplant (2026-09-28): UA-0 (dieser Plan, ADR-0033, Nachträge in ADR-0011 und ADR-0012, Manifest-Einträge als „geplant“).
+- **Stand:** in Arbeit (2026-09-28): UA-0 (#117) und UA-1 (Sperre beim Erledigen im Hook) umgesetzt, UA-2 bis UA-5 geplant.
 - **Grundlage:**
   - [ADR-0033](../adr/0033-unteraufgaben.md) (Umfang, Sperre beim Erledigen, Wiederholungen, Oberfläche, Tabelle)
   - [ADR-0012](../adr/0012-plain-ticketing.md) und [ADR-0011](../adr/0011-roadmap-e3-bis-e7.md) mit den Nachträgen vom 2026-09-28
@@ -43,13 +43,18 @@
 | 2026-09-28 | UA-0 | **Einrücken:** Unteraufgaben folgen ihrem übergeordneten Ticket nur, wenn beide im selben Abschnitt sichtbar sind; sonst stehen sie einzeln mit Pfad-Hinweis. Filter, Suche und Zahlen gelten je Ticket (ADR-0033 §5). |
 | 2026-09-28 | UA-0 | **Auswahl des übergeordneten Tickets inline** in Panel und Vollansicht statt im Modal (ADR-0025 §3). |
 | 2026-09-28 | UA-0 | **Kurzsyntax `^HAUS-12` zurückgestellt** (§6): Der Key müsste gegen die Tickets aufgelöst werden, und mit `@CODE` wäre offen, welches Projekt gilt. |
+| 2026-09-28 | UA-1 | **Ablauf im Update-Hook:** `rememberCompletion` (Request-Hook) merkt sich `force` und `complete_children` als flüchtige Schlüssel (`@force_done`, `@complete_children`, wie `expected_updated`). In der Transaktion prüft `prepareCompletion` nach `prepareUpdate` und vor der Wiederholung; nach `e.next()` und dem Verlauf des Tickets erledigt `completeChildren` die Unteraufgaben per `txApp.save`, sodass deren eigene Hooks laufen (`completed_at`, Verlauf mit dem Urheber aus `@actor`, Folgetermin einer Serie). |
+| 2026-09-28 | UA-1 | **Werte der Felder:** `true` oder der Text `"true"` (`isTrueFlag`), alles andere zählt als nicht gesendet. Sendet ein Client beide, gilt `complete_children` (die stärkere Bitte). Die Ablehnung trägt `params` `{ count, keys }` mit höchstens fünf Keys, damit die SPA ohne weitere Anfrage fragen kann. |
+| 2026-09-28 | UA-1 | **Texte im reinen Modul:** Die Meldungen der Codes (`validation_parent_*`, `validation_ticket_has_children`, `validation_parent_open_children`) liegen jetzt als `SUBTASK_MESSAGES` in `lib/ticket-rules.js`, mit dem Wortlaut der Oberfläche („übergeordnetes Ticket“, „Unteraufgabe“ statt „Eltern-Ticket“, „Unter-Ticket“), und gleich in `domain/subtasks.ts` (Paritätstest `web-subtasks.test.mjs`). `data/errors.ts` nennt bei `validation_parent_open_children` die Zahl („3 Unteraufgaben sind noch offen.“). |
+| 2026-09-28 | UA-1 | **Fehlerinjektion** `__byl_fail_child_done__` (Titel einer Unteraufgabe): Ihr Erledigen scheitert, und der Test belegt, dass übergeordnetes Ticket und übrige Unteraufgaben offen bleiben. |
 
 ## 4. Status
 
 | Paket | Stand |
 |---|---|
-| UA-0 | in Arbeit |
-| UA-1 bis UA-5 | geplant |
+| UA-0 | gemergt (#117) |
+| UA-1 | PR offen |
+| UA-2 bis UA-5 | geplant |
 
 ## 5. Offene Punkte
 
