@@ -13,9 +13,11 @@ import { constants, tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { setTimeout as delay } from 'node:timers/promises';
+import { executableName } from '../../scripts/platform.mjs';
 
 const ROOT_DIR = resolve(fileURLToPath(new URL('../..', import.meta.url)));
-export const POCKETBASE_EXE = join(ROOT_DIR, 'app', 'pocketbase.exe');
+// app/pocketbase.exe on Windows, app/pocketbase on Linux (ADR-0028, plan plattformen S0).
+export const POCKETBASE_EXE = join(ROOT_DIR, 'app', executableName('pocketbase'));
 const APP_HOOKS_DIR = join(ROOT_DIR, 'app', 'pb_hooks');
 export const APP_MIGRATIONS_DIR = join(ROOT_DIR, 'app', 'pb_migrations');
 // Test-only hooks (OF-15), copied on top of app/pb_hooks when the folder exists.
@@ -211,7 +213,7 @@ export function runPocketBase(args, options = {}) {
 
 function assertExecutable() {
 	if (!existsSync(POCKETBASE_EXE)) {
-		throw new Error('app/pocketbase.exe is missing. Run .\\scripts\\fetch-pocketbase.ps1 first.');
+		throw new Error(`${POCKETBASE_EXE} is missing. Run "node scripts/fetch-pocketbase.mjs" first.`);
 	}
 }
 
@@ -345,7 +347,19 @@ function isAlive(pid) {
 	}
 }
 
-function taskkill(pid) {
+/**
+ * Ends the process hard: on Windows with its tree via taskkill, elsewhere with SIGKILL (PocketBase
+ * starts no child processes there).
+ */
+function forceKill(pid) {
+	if (process.platform !== 'win32') {
+		try {
+			process.kill(pid, 'SIGKILL');
+		} catch {
+			// Already gone; the callers check whether the process still lives.
+		}
+		return;
+	}
 	spawnSync(TASKKILL_EXE, ['/PID', String(pid), '/T', '/F'], {
 		windowsHide: true,
 		stdio: 'ignore'
@@ -357,11 +371,11 @@ async function killProcessTree(child) {
 	const exited = new Promise((resolvePromise) => child.once('exit', () => resolvePromise(true)));
 	for (let attempt = 1; attempt <= KILL_ATTEMPTS; attempt += 1) {
 		if (hasExited(child)) return;
-		taskkill(child.pid);
+		forceKill(child.pid);
 		const done = await Promise.race([exited, delay(KILL_WAIT_MS, false)]);
 		if (done) return;
 	}
-	throw new Error(`PocketBase process ${child.pid} did not exit after taskkill.`);
+	throw new Error(`PocketBase process ${child.pid} did not exit after ${KILL_ATTEMPTS} kill attempts.`);
 }
 
 async function stop(state, guard) {
@@ -397,7 +411,7 @@ function stopSync(state) {
 	const pid = state.child?.pid;
 	if (pid !== undefined) {
 		for (let attempt = 1; attempt <= KILL_ATTEMPTS && isAlive(pid); attempt += 1) {
-			taskkill(pid);
+			forceKill(pid);
 			const deadline = Date.now() + KILL_WAIT_MS;
 			while (isAlive(pid) && Date.now() < deadline) sleepSync(50);
 		}

@@ -1,6 +1,6 @@
 # Plan: Plattformen (Windows, Raspberry Pi, Android, Browser, später iOS und macOS)
 
-- **Stand:** geplant (2026-09-27). Nur Doku; umgesetzt wird Stufe für Stufe, jede als eigener PR bzw. eigene PR-Folge.
+- **Stand:** S1 erledigt (mit SF-5), S0 in Arbeit (2026-09-28, Pakete S0-1 bis S0-3, siehe §3 „S0“); übrige Stufen geplant. Umgesetzt wird Stufe für Stufe, jede als eigener PR bzw. eigene PR-Folge.
 - **Grundlage:**
   - [ADR-0028](../adr/0028-plattform-strategie.md) (Entscheidungen, Alternativen, Flutter-Abweichung)
   - [ADR-0001](../adr/0001-betriebsmodell-lokal-mehrgeraete-spaeter.md) (Mehrgeräte, HTTPS, Proxy-Header, Admin-UI nur lokal), [ADR-0002](../adr/0002-erststart-und-superuser.md) (Erststart), [ADR-0003](../adr/0003-pb-data-und-backups.md) (Backups), [ADR-0016](../adr/0016-kanal-architektur-und-mail.md) (Hilfsprozess), [ADR-0018](../adr/0018-secrets.md) (Secrets)
@@ -45,6 +45,22 @@ Die Bewertung vom 2026-09-27 hatte S0 bis S5 mit S2b und S4 als Optionen. Nach d
 - **SemVer und Releases:** `release-please` (Conventional Commits → Version, CHANGELOG, Tag `vMAJOR.MINOR.PATCH`, GitHub Release). Start bei `0.1.0`. Ein Release-Workflow hängt an das Release das Windows-Paket (`app/` ohne `pb_data`, `pb_public` gebaut, `pocketbase.exe` und `byl-mail.exe` mit Prüfsummen). `GITHUB_TOKEN` mit den engsten nötigen Rechten.
 - **Tests:** Plattform-Hinweis (Route, Texte je Plattform), Binary-Namen, Release-Inhalt ohne `pb_data` und ohne Secrets.
 
+#### Umsetzung von S0 (2026-09-28, Manifest-IDs ab BYL-E6-360)
+
+| Paket | Inhalt | Stand |
+|---|---|---|
+| S0-1 | `scripts/platform.mjs` (`executableName`), `scripts/fetch-pocketbase.mjs` (Tabelle Plattform → Archiv → SHA256 für `windows_amd64`, `linux_amd64`, `linux_arm64`, `linux_armv7`, ZIP-Lesen mit `node:zlib`, kein unzip nötig), `fetch-pocketbase.ps1` als Windows-Hülle, Harness und Mail-Hilfsprozess mit Binary-Namen je Plattform (Beenden unter Linux per `SIGKILL`), Windows-only-Tests ausgenommen, CI-Job „Linux build and test“ | in Arbeit |
+| S0-2 | Plattform-Hinweis des Servers: `BYL_HOST_PLATFORM` bzw. Erkennung, Route für angemeldete Nutzer | geplant |
+| S0-3 | Anleitungen der Oberfläche nach dem Server-System, Doku (ADR-0028-Nachtrag, README, CLAUDE.md) | geplant |
+
+**Abweichungen und Entscheidungen zu S0:**
+
+- **`build.ps1` bleibt Windows-Hülle, kein `build.mjs`:** Der Linux-Job ruft dieselben npm-Skripte als eigene Schritte auf (check, lint, build, `node helpers/mail/build.mjs`, test). Ein zweites Build-Skript in Node brächte nur eine weitere Kopie der Reihenfolge.
+- **`.gitattributes`:** `* text=auto eol=lf` deckt `*.sh` schon ab, `*.bat`, `*.cmd`, `*.vbs` und `*.ps1` stehen auf CRLF. Keine Änderung nötig.
+- **Mail-Hilfsprozess unter Linux:** `helpers/mail/build.mjs` schreibt dort `dist/byl-mail` (ohne `.exe`), damit der Linux-Job die Prozesstests des Hilfsprozesses fährt. Ein Linux-Build für den Betrieb (`app/byl-mail`, `arm64`) bleibt Teil von S3.
+- **Windows-only-Tests:** `admin-reset-logic`, `start-browser`, `start-logic` (Unit) und `admin-reset`, `backup-restore` (README-Weg mit `Expand-Archive`), `installer-check` (Integration) stehen in `WINDOWS_ONLY` von `vitest.config.mjs`; einzelne Fälle (Parser-Prüfung der `.ps1`, Anfrage aus `byl-control.ps1`) tragen `skipIf`. Die statischen Prüfungen der Start-Skripte (CRLF, BOM, keine absoluten Pfade) laufen auch unter Linux.
+- **SemVer und Releases zurückgestellt (eigenes Paket vor S3):** `release-please` öffnet seine Release-PRs mit dem `GITHUB_TOKEN`. Solche PRs lösen keine Workflows aus, der Pflicht-Check „Check, lint, build and test“ käme nie, und das Ruleset ohne Ausnahmen ließe den Release-PR nicht zu. Nötig ist dafür eine Nutzerentscheidung: ein fein granulares Token bzw. eine GitHub-App als Secret für release-please oder ein manueller Weg (Version per normalem PR, Tag und Release per `workflow_dispatch`). Der erste Verbraucher von Releases ist S3; bis dahin bleibt `package.json` auf `0.0.1`.
+
 ### S1: Installierte Web-App (Windows und Browser)
 
 > **Erledigt, zusammengeführt** (2026-09-28) mit dem Paket „Start und Fenster“: umgesetzt als Paket SF-5 nach [ADR-0035](../adr/0035-start-einstieg-und-offene-tabs.md) §8 und [docs/plan/start-fenster.md](start-fenster.md) (`manifest.json`, Icons aus `favicon.svg`, Service Worker von SvelteKit mit Hinweisseite `offline.html`, `launch_handler` `focus-existing`, `start.bat` startet bevorzugt die installierte App). Der Prüfpunkt zum MIME-Typ ist beantwortet (§4). Abweichungen und manuelle Prüfungen stehen dort.
@@ -69,6 +85,7 @@ Die Bewertung vom 2026-09-27 hatte S0 bis S5 mit S2b und S4 als Optionen. Nach d
 ### S2: Mehrgeräte (ein Nutzer, mehrere Geräte)
 
 - HTTPS über Traefik auf dem Pi (Name über Pi-hole, Zertifikat per DNS-01 oder eigene CA) bzw. `tailscale serve` für den Zugriff von unterwegs.
+- **Vorbedingung, vor S2 prüfen:** `X-Forwarded-For` bzw. die echte Client-IP hinter `tailscale serve`. Kommt der Header nicht an, sehen alle Anfragen wie `127.0.0.1` aus; lässt er sich vom Client setzen, ist jede Adresse fälschbar. Auswirkungen: Die Rate Limits greifen für alle Geräte gemeinsam bzw. lassen sich umgehen, die Logs zeigen keine echten Adressen, und alles, was Loopback als vertrauenswürdig behandelt (Präsenz- und Hinweis-Routen per `e.remoteIP()`, Admin-UI „nur lokal“), wäre von jedem Gerät im Tailnet erreichbar. Für den SSRF-Guard der Seitenkopie (`lib/url-guard.js`) ist zu prüfen, dass der Server hinter dem Proxy weiterhin keine Ziele im eigenen Netz abruft (Tailnet-Adressen `100.64.0.0/10` sind schon als privat gesperrt, `*.ts.net`-Namen nicht). Erst mit dem Ergebnis werden `trustedProxy.headers` und die Loopback-Prüfungen für S2 festgelegt.
 - PocketBase-Settings nach ADR-0001 §3: `trustedProxy.headers`, Rate Limiter, `--origins`, Admin-UI nur aus dem eigenen Netz. Spike: Kommt bei `tailscale serve` `X-Forwarded-For` an?
 - Teilen-Ziel der Web-App auf Android: `share_target` mit GET für Text und Links auf `/eingang/neu`, POST für Dateien über den Service Worker in die vorhandenen Datei-Importe. Spike: Erzeugt Chrome für die private Adresse ein WebAPK? Scheitert er, deckt S2b das Teilen ab.
 - **Tests:** Negativtests für Origins und Admin-UI hinter dem Proxy, Share-Target-Parser, SW-Übergabe der Dateien.

@@ -1,5 +1,6 @@
 // byl-mail.exe as process (ADR-0016 sections 4 and 5; E4 plan package 11): the executable built by
-// scripts/build-mail-helper.ps1 runs without Node (PATH only with the Windows folders), answers
+// scripts/build-mail-helper.ps1 (on Linux helpers/mail/build.mjs, then without ".exe"; ADR-0028,
+// plan plattformen S0) runs without Node (PATH only with the system folders), answers
 // --version and --self-test without network, and fetches through a disposable PocketBase from the
 // fake IMAP server. It survives an unreachable PocketBase and an outage of the mailbox, and after a
 // hard stop and a new start it continues at the saved cursor without duplicates. Its log holds
@@ -16,9 +17,10 @@ import PocketBase from 'pocketbase';
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 import { startPocketBase } from '../support/pocketbase-harness.mjs';
 import { FakeImapServer, fakeMail } from '../../helpers/mail/test/fake-imap.ts';
+import { executableName } from '../../scripts/platform.mjs';
 
 const ROOT_DIR = resolve(fileURLToPath(new URL('../..', import.meta.url)));
-const HELPER = join(ROOT_DIR, 'helpers', 'mail', 'dist', 'byl-mail.exe');
+const HELPER = join(ROOT_DIR, 'helpers', 'mail', 'dist', executableName('byl-mail'));
 const SYSTEM_ROOT = process.env.SystemRoot ?? 'C:\\Windows';
 
 const TOKEN = randomBytes(24).toString('base64');
@@ -40,8 +42,11 @@ async function freePort() {
 	return port;
 }
 
-/** An environment without Node: only the Windows folders in PATH, plus `extra`. */
+/** An environment without Node: only the system folders in PATH, plus `extra`. */
 function environment(extra = {}) {
+	if (process.platform !== 'win32') {
+		return { PATH: '/usr/bin:/bin', TMPDIR: process.env.TMPDIR ?? '/tmp', ...extra };
+	}
 	return {
 		SystemRoot: SYSTEM_ROOT,
 		PATH: `${SYSTEM_ROOT}\\System32;${SYSTEM_ROOT}`,
@@ -106,7 +111,9 @@ const connection = (box) => owner.pb.collection('connections').getOne(box.id);
 
 beforeAll(async () => {
 	if (!existsSync(HELPER)) {
-		throw new Error(`${HELPER} is missing. Run scripts\\build-mail-helper.ps1 (scripts\\build.ps1 does it before the tests).`);
+		throw new Error(
+			`${HELPER} is missing. Run scripts\\build-mail-helper.ps1 (scripts\\build.ps1 does it before the tests), on Linux "node helpers/mail/build.mjs".`
+		);
 	}
 	instance = await startPocketBase({ env: { BYL_INGEST_TOKEN: TOKEN, BYL_TEST_MAIL_PASSWORD: PASSWORD } });
 	superuser = new PocketBase(instance.url);

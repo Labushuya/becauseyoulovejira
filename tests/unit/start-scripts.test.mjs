@@ -416,7 +416,8 @@ describe('admin reset', () => {
 	});
 });
 
-describe('PowerShell syntax', () => {
+// The parser of Windows PowerShell 5.1 is the reference; other systems skip it (plan plattformen S0).
+describe.skipIf(process.platform !== 'win32')('PowerShell syntax', () => {
 	let errors;
 
 	beforeAll(() => {

@@ -83,7 +83,7 @@ flowchart LR
 ```
 becauseyoulovejira/
   app/                    Portabler Laufzeitordner (wird kopiert/gesichert)
-    pocketbase.exe        Binary (gitignored, via scripts/fetch-pocketbase.ps1)
+    pocketbase.exe        Binary (gitignored, via scripts/fetch-pocketbase.mjs; unter Linux app/pocketbase)
     byl-mail.exe          Mail-Hilfsprozess (gitignored, via scripts/build-mail-helper.ps1)
     pb_hooks/             *.pb.js Hooks, lib/*.js reine CommonJS-Module
     pb_migrations/        Handgeschriebene JS-Migrationen
@@ -100,7 +100,7 @@ becauseyoulovejira/
     byl-control.ps1       Logik hinter den Skripten (byl-functions.ps1: testbare Funktionen)
   web/                    SvelteKit-Quellcode (Build → ../app/pb_public), Tests unter src/**/*.test.ts
   helpers/mail/           Mail-Hilfsprozess in TypeScript (Build → ../../app/byl-mail.exe), Tests unter src/*.test.ts
-  scripts/                Build-/Setup-Skripte (PowerShell)
+  scripts/                Build-/Setup-Skripte (PowerShell unter Windows; PocketBase-Abruf und Binary-Namen in Node)
   tests/                  Vitest-Tests (Hooks, Regeln, Login- und SPA-Integration)
   docs/                   ADRs, Etappenpläne, Test-Manifest, README-Assets
   .github/                CI-Workflow, Dependabot, Issue- und PR-Vorlagen, Sicherheitsrichtlinie
@@ -126,7 +126,7 @@ powershell -ExecutionPolicy Bypass -File scripts\build.ps1
 .\app\start.bat
 ```
 
-`build.ps1` erwartet `node` (≥ 24) und `npm` im `PATH` und bricht sonst mit einem Hinweis ab. Beim allerersten Start legst du ein Admin- und ein App-Konto an, siehe [Erster Start](#erster-start). Danach ist `app\` eigenständig: Der Ordner lässt sich auf einen anderen Windows-Rechner kopieren und dort ohne Node.js starten.
+`fetch-pocketbase.ps1` ruft `node scripts/fetch-pocketbase.mjs` auf; das Skript kennt die SHA256 der Archive für Windows und Linux (`amd64`, `arm64`, `armv7`) und lädt unter Linux `app/pocketbase` (ohne `.exe`). `build.ps1` erwartet `node` (≥ 24) und `npm` im `PATH` und bricht sonst mit einem Hinweis ab. Beim allerersten Start legst du ein Admin- und ein App-Konto an, siehe [Erster Start](#erster-start). Danach ist `app\` eigenständig: Der Ordner lässt sich auf einen anderen Windows-Rechner kopieren und dort ohne Node.js starten.
 
 ---
 
@@ -574,7 +574,7 @@ powershell -ExecutionPolicy Bypass -File scripts\build-mail-helper.ps1   # app\b
 npm test        # Vitest: Unit-, Hilfsprozess- und Integrationstests, danach die web-Tests
 ```
 
-Die CI ([`.github/workflows/ci.yml`](.github/workflows/ci.yml)) läuft bei jedem Pull Request auf `main`, einmal wöchentlich auf `main` und auf Wunsch per „Run workflow“, jeweils auf einem Windows-Runner: Node.js 24, `scripts\fetch-pocketbase.ps1`, dann `scripts\build.ps1`. Ein neuer Push in denselben PR bricht den laufenden Durchgang ab. PRs, die nur Markdown-Dateien oder Dateien unter `docs/` ändern (außer `docs/test-manifest.html`, das ein Test liest), überspringen den Build; der Pflicht-Check gilt dann als bestanden. Dependabot hält npm-Pakete und Actions aktuell; Major-Sprünge von `typescript` und `@types/node` schlägt er nicht vor, sie werden bewusst separat geprüft.
+Die CI ([`.github/workflows/ci.yml`](.github/workflows/ci.yml)) läuft bei jedem Pull Request auf `main`, einmal wöchentlich auf `main` und auf Wunsch per „Run workflow“, jeweils mit zwei Jobs. Der Pflicht-Check „Check, lint, build and test“ läuft auf einem Windows-Runner: Node.js 24, `scripts\fetch-pocketbase.ps1`, dann `scripts\build.ps1`. Der Job „Linux build and test“ macht dasselbe auf `ubuntu-latest` mit dem Linux-Binary von PocketBase (`node scripts/fetch-pocketbase.mjs`, dann check, lint, Build, `node helpers/mail/build.mjs` und `npm test`); die Tests der Windows-Betriebsschicht (Windows PowerShell, `byl-functions.ps1`) laufen nur unter Windows ([Plan Plattformen](docs/plan/plattformen.md), Stufe S0). Ein neuer Push in denselben PR bricht den laufenden Durchgang ab. PRs, die nur Markdown-Dateien oder Dateien unter `docs/` ändern (außer `docs/test-manifest.html`, das ein Test liest), überspringen beide Jobs; der Pflicht-Check gilt dann als bestanden. Dependabot hält npm-Pakete und Actions aktuell; Major-Sprünge von `typescript` und `@types/node` schlägt er nicht vor, sie werden bewusst separat geprüft.
 
 ### Tests
 
