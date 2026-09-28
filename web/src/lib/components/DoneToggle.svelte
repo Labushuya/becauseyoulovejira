@@ -2,7 +2,9 @@
 	// Check mark "erledigt" of a row (E2 plan, P-3 and T-6). A control of its own next to the row
 	// link, so it never opens the panel. While a request runs it is locked with aria-disabled
 	// instead of disabled, so the keyboard focus stays on it. Its look comes from base.css like every
-	// checkbox of the app (package A, item 6).
+	// checkbox of the app (package A, item 6). The store decides what it shows: after a click it
+	// shows `checked` again, which is the requested state while the request runs, or the old one
+	// when a question comes first (open blocking sub-tasks, ADR-0033 section 2).
 	let {
 		key,
 		checked,
@@ -14,6 +16,12 @@
 	function onclick(event: MouseEvent) {
 		if (pending) event.preventDefault();
 	}
+
+	function changed(event: Event & { currentTarget: HTMLInputElement }) {
+		const input = event.currentTarget;
+		onchange(input.checked);
+		input.checked = checked;
+	}
 </script>
 
 <input
@@ -24,5 +32,5 @@
 	aria-busy={pending ? 'true' : undefined}
 	{checked}
 	{onclick}
-	onchange={(event) => onchange(event.currentTarget.checked)}
+	onchange={changed}
 />

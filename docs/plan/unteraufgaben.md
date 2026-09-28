@@ -1,6 +1,6 @@
 # E6-Plan, Teil Unteraufgaben: Liste, Fortschritt, Einrücken und „blockiert das übergeordnete Ticket“
 
-- **Stand:** in Arbeit (2026-09-28): UA-0 (#117), UA-1 (#118, Sperre beim Erledigen im Hook), UA-2 (#119, Abschnitt „Unteraufgaben“, Pfad) und UA-3 (übergeordnetes Ticket, Switch, Löschen inline) umgesetzt, UA-4 und UA-5 geplant.
+- **Stand:** in Arbeit (2026-09-28): UA-0 (#117), UA-1 (#118, Sperre beim Erledigen im Hook), UA-2 (#119, Abschnitt „Unteraufgaben“, Pfad), UA-3 (#120, übergeordnetes Ticket, Switch, Löschen inline) und UA-4 (Frage beim Erledigen) umgesetzt, UA-5 geplant.
 - **Grundlage:**
   - [ADR-0033](../adr/0033-unteraufgaben.md) (Umfang, Sperre beim Erledigen, Wiederholungen, Oberfläche, Tabelle)
   - [ADR-0012](../adr/0012-plain-ticketing.md) und [ADR-0011](../adr/0011-roadmap-e3-bis-e7.md) mit den Nachträgen vom 2026-09-28
@@ -58,6 +58,11 @@
 | 2026-09-28 | UA-3 | **Speichern im `TicketDetailStore`:** `setParent` und `setBlocksParent` über einen gemeinsamen `#saveField` mit eigenem Speicherzustand und Fehler je Feld (`parent`, `blocksParent`); der Patch kennt `parent` und `blocksParent` (Body `blocks_parent`). Der Switch springt bei einem Fehler zurück. |
 | 2026-09-28 | UA-3 | **Löschen:** Der Text der Bestätigung liegt in `TicketDeleteText` (Kommentare und Verlauf, Regel läuft weiter, „N Unteraufgaben bleiben erhalten und sind danach keine Unteraufgaben mehr.“, Quellen), die Radios der Quellen in `SourceHandlingChoice`. Das Panel fragt wie bisher mit `ConfirmDialog`. **Die Vollansicht fragt inline** (`TicketDeleteQuestion`, `SectionMessage` warning oben in der linken Spalte, Fokus auf „Abbrechen“, Esc bricht ab und wird verbraucht, der Fokus kehrt zu „Löschen …“ zurück, das dort `aria-expanded` trägt). Damit ist der offene Punkt aus dem Plan Editor §6 erledigt. Die Frage gilt nur für das Ticket, für das sie geöffnet wurde. |
 | 2026-09-28 | UA-3 | `TicketFields` zieht auf die Schriftgrößen-Tokens und fällt von der Liste (`no-own-font-sizes.test.ts` jetzt 222). |
+| 2026-09-28 | UA-4 | **Erst fragen, dann senden:** Häkchen (`TicketListStore.setDone`) und Status (`TicketDetailStore`) prüfen die offenen blockierenden Unteraufgaben aus dem Index (`openBlocking`: nicht erledigt und `blocksParent` nicht `false`) und senden dann nichts, sondern öffnen die Frage. Lehnt der Hook trotzdem ab (ein anderer Tab hat eine Unteraufgabe wieder geöffnet), öffnet `openChildrenOf` dieselbe Frage mit Zahl und Keys aus `params`. So gilt die Regel auch ohne vollständigen Index. |
+| 2026-09-28 | UA-4 | **Zwei Formen, dieselbe Wahl:** Beim Häkchen der Tabelle die Bestätigung (`CompletionDialog` auf `ConfirmDialog` mit `options`), Titel „HAUS-12 erledigen?“, Text „N Unteraufgaben sind noch offen – trotzdem erledigen?“, Verb „Erledigen“. Beim Status in Panel und Vollansicht **inline** unter dem Status (`TicketCompletionQuestion`, `SectionMessage` warning mit der Frage als Titel), weil aus der Vollansicht kein Dialog aufgeht und beide Orte gleich sein sollen. Beide nutzen `CompletionChoiceField`: Radios „Unteraufgaben mit erledigen“ (vorausgewählt, der häufige Fall: Man hakt das übergeordnete Ticket ab, weil alles erledigt ist) und „Trotzdem erledigen“, je mit einem Hinweis, der die Keys nennt. Erster Fokus auf „Abbrechen“ wie bei jeder Bestätigung. |
+| 2026-09-28 | UA-4 | **Was das Steuerelement zeigt:** Häkchen (`DoneToggle`) und Status (`StatusSelect`) zeigen nach einer Eingabe wieder den Wert des Stores. Das ist während der Anfrage der gewählte Wert und vor der Frage der alte, damit das Häkchen nicht abgehakt aussieht, solange noch gefragt wird. |
+| 2026-09-28 | UA-4 | **„Rückgängig“ mit Unteraufgaben:** `completed` merkt sich die mit erledigten Unteraufgaben samt vorigem Status (`completedChildren`). „Rückgängig“ stellt erst das übergeordnete Ticket zurück, dann jede Unteraufgabe einzeln (kein Hook-Weg für mehrere zugleich nötig, denn Wiederöffnen sperrt nichts). Das Flag nennt „HAUS-12 und 2 Unteraufgaben sind wieder offen.“, eine gescheiterte nennt ein Fehler-Flag. „Trotzdem erledigen“ merkt sich keine Unteraufgaben. |
+| 2026-09-28 | UA-4 | **Datenschicht:** `updateTicket` und `setTicketDone` nehmen `completion` (`complete_children` oder `force`) und senden es als Body-Feld `true`; `TicketDetailData.update` bekommt dafür `UpdateOptions` statt nur `DescriptionGuard`. |
 
 ## 4. Status
 
@@ -66,8 +71,9 @@
 | UA-0 | gemergt (#117) |
 | UA-1 | gemergt (#118) |
 | UA-2 | gemergt (#119) |
-| UA-3 | PR offen |
-| UA-4 und UA-5 | geplant |
+| UA-3 | gemergt (#120) |
+| UA-4 | PR offen |
+| UA-5 | geplant |
 
 ## 5. Offene Punkte
 

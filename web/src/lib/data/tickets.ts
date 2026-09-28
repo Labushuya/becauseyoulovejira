@@ -9,6 +9,7 @@ import { EMPTY_LIST_QUERY, NO_PROJECT, activeSearch, type ListQuery } from '../d
 import { SOON_DAYS } from '../domain/ordering';
 import { channelsOf, type SourceFamily } from '../domain/source';
 import type { SourceHandling } from '../domain/sources';
+import type { CompletionChoice } from '../domain/subtasks';
 import { isPriority, isStatus, type Status } from '../domain/status';
 import {
 	MANUAL_ORIGIN,
@@ -473,16 +474,29 @@ export interface DescriptionGuard {
 	expectedUpdated?: string;
 }
 
+/**
+ * Completing a ticket with open sub-tasks that block it (ADR-0033 section 2): `force` completes it
+ * anyway, `complete_children` completes those sub-tasks with it, atomically in the hook. Neither
+ * body field is stored.
+ */
+export interface CompletionOptions {
+	completion?: CompletionChoice;
+}
+
+/** Options of an update besides the request options. */
+export type UpdateOptions = DescriptionGuard & CompletionOptions;
+
 /** Sends only the changed fields; the answer of the server replaces the ticket. */
 export function updateTicket(
 	pb: PocketBase,
 	id: string,
 	patch: TicketPatch,
-	{ signal, expectedUpdated }: RequestOptions & DescriptionGuard = {}
+	{ signal, expectedUpdated, completion }: RequestOptions & UpdateOptions = {}
 ) {
 	return withDataErrors(signal, async (): Promise<Ticket> => {
 		const body = patchBody(patch);
 		if (expectedUpdated !== undefined) body.expected_updated = expectedUpdated;
+		if (completion !== undefined) body[completion] = true;
 		const record = await pb.collection(TICKETS).update<TicketRecord>(id, body, {
 			fields: TICKET_DETAIL_FIELDS,
 			expand: TICKET_EXPAND,
@@ -494,13 +508,14 @@ export function updateTicket(
 
 /**
  * Check mark of the list (E2 plan, T-6): done sets the status "done", removing it sets
- * REOPEN_STATUS (OF-E2-3). The hook sets or clears `completed_at`.
+ * REOPEN_STATUS (OF-E2-3). The hook sets or clears `completed_at`. `completion` answers the
+ * question about open blocking sub-tasks (ADR-0033 section 2).
  */
 export function setTicketDone(
 	pb: PocketBase,
 	id: string,
 	done: boolean,
-	options: RequestOptions = {}
+	options: RequestOptions & CompletionOptions = {}
 ): Promise<Ticket> {
 	return updateTicket(pb, id, { status: done ? 'done' : REOPEN_STATUS }, options);
 }

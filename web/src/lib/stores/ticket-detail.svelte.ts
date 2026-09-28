@@ -17,12 +17,13 @@ import {
 	deleteTicket,
 	getTicket,
 	updateTicket,
-	type DescriptionGuard
+	type UpdateOptions
 } from '$lib/data/tickets';
 import { toggleTask } from '$lib/markdown';
 import { deletedWithSourcesText, type SourceHandling } from '$lib/domain/sources';
 import { isCalendarDate } from '$lib/domain/berlin-date';
 import { isPriority, isStatus, type Status } from '$lib/domain/status';
+import { openBlocking, type CompletionChoice } from '$lib/domain/subtasks';
 import type {
 	Ticket,
 	TicketDraft,
@@ -31,7 +32,12 @@ import type {
 	TicketSummary
 } from '$lib/domain/ticket';
 import { hold, type LiveSource } from './realtime';
-import type { SessionGuard } from './ticket-list.svelte';
+import {
+	completedChildren,
+	openChildrenOf,
+	type CompletedChild,
+	type SessionGuard
+} from './ticket-list.svelte';
 
 /** Fields editable in the panel (E2 plan, section 2; E3 plan, T-13). */
 export type EditableField = 'title' | 'description' | 'status' | 'priority' | 'due' | 'project';
@@ -71,7 +77,7 @@ function isStale(failure: DataError): boolean {
 
 export interface TicketDetailData {
 	get(id: string, options: RequestOptions): Promise<Ticket>;
-	update(id: string, patch: TicketPatch, guard?: DescriptionGuard): Promise<Ticket>;
+	update(id: string, patch: TicketPatch, options?: UpdateOptions): Promise<Ticket>;
 	create(draft: TicketDraft, origin?: TicketOrigin): Promise<Ticket>;
 	/** With `sources` the route settles the sources as chosen; without, they go to the inbox. */
 	delete(id: string, sources?: SourceHandling): Promise<void>;
@@ -108,16 +114,29 @@ const DRAFT_FIELDS: readonly (keyof TicketDraft)[] = [
 export interface TicketListSync {
 	find(id: string): TicketSummary | null;
 	upsert(ticket: TicketSummary): void;
-	completed(ticket: TicketSummary, previousStatus: Status): void;
+	/** `children`: sub-tasks completed along, restored by "Rückgängig" (ADR-0033 section 2). */
+	completed(
+		ticket: TicketSummary,
+		previousStatus: Status,
+		children?: readonly CompletedChild[]
+	): void;
 	remove(id: string): void;
 	/** Polite status message of the list (aria-live), which stays when the panel closes. */
 	announce(message: string): void;
+	/** Sub-tasks of a ticket (ADR-0033); without it the panel knows none before the server says. */
+	subtasksOf?(parentId: string): readonly TicketSummary[];
+}
+
+/** Question before completing the shown ticket with open blocking sub-tasks (ADR-0033). */
+export interface DetailCompletionQuestion {
+	count: number;
+	keys: readonly string[];
 }
 
 export function ticketDetailData(pb: PocketBase): TicketDetailData {
 	return {
 		get: (id, options) => getTicket(pb, id, options),
-		update: (id, patch, guard) => updateTicket(pb, id, patch, guard),
+		update: (id, patch, options) => updateTicket(pb, id, patch, options),
 		create: (draft, origin) => createTicket(pb, draft, { origin }),
 		delete: (id, sources) => deleteTicket(pb, id, sources === undefined ? {} : { sources })
 	};
@@ -174,6 +193,8 @@ export class TicketDetailStore {
 	#descriptionBase: string | null = null;
 	/** The description changed while it was being edited: "Überschreiben" or "Verwerfen". */
 	#conflict = $state(false);
+	/** Question before completing with open blocking sub-tasks, for the ticket it came from. */
+	#completion = $state<(DetailCompletionQuestion & { ticketId: string }) | null>(null);
 
 	#id = $state<string | null>(null);
 	#own = $state.raw<Ticket | null>(null);
@@ -238,6 +259,65 @@ export class TicketDetailStore {
 	 */
 	get descriptionConflict(): boolean {
 		return this.#conflict;
+	}
+
+	/**
+	 * The question "N Unteraufgaben sind noch offen – trotzdem erledigen?" of the status select
+	 * (ADR-0033 section 2), null without one. It belongs to the ticket it came from.
+	 */
+	get completionQuestion(): DetailCompletionQuestion | null {
+		return this.#question;
+	}
+
+	#question = $derived.by((): DetailCompletionQuestion | null => {
+		const question = this.#completion;
+		if (question === null || question.ticketId !== this.#id) return null;
+		return { count: question.count, keys: question.keys };
+	});
+
+	/**
+	 * Answers the question: completes the shown ticket anyway (`force`) or with its blocking
+	 * sub-tasks (`complete_children`). The list shows the flag with "Rückgängig", which restores the
+	 * sub-tasks as well. A failure stands at the field "status" and ends the question.
+	 */
+	async confirmCompletion(choice: CompletionChoice): Promise<boolean> {
+		const ticket = this.#ticket;
+		if (ticket === null || this.completionQuestion === null) return false;
+		if (this.#saving.has('status') || !this.#session.ensureValid()) return false;
+		const children = completedChildren(this.#blockingOf(ticket.id), choice);
+		this.#saving.add('status');
+		this.#fieldErrors.delete('status');
+		try {
+			const saved = await this.#data.update(ticket.id, { status: 'done' }, { completion: choice });
+			this.#completion = null;
+			this.#list.completed(saved, ticket.status, children);
+			if (saved.id === this.#id) this.upsert(saved);
+			return true;
+		} catch (error) {
+			const failure = toDataError(error);
+			if (failure.kind === 'session') this.#session.logout();
+			else if (failure.kind !== 'aborted' && ticket.id === this.#id) {
+				this.#completion = null;
+				this.#fieldErrors.set('status', failure.fields.status?.message ?? failure.message);
+			}
+			return false;
+		} finally {
+			this.#saving.delete('status');
+		}
+	}
+
+	/** "Abbrechen" of the question: the status stays. */
+	cancelCompletion(): void {
+		this.#completion = null;
+	}
+
+	#blockingOf(id: string): TicketSummary[] {
+		return openBlocking(this.#list.subtasksOf?.(id) ?? []);
+	}
+
+	#askCompletion(ticketId: string, count: number, keys: readonly string[]): void {
+		this.#completion = { ticketId, count, keys: [...keys] };
+		this.#fieldErrors.delete('status');
 	}
 
 	/** True while any field has an unsaved draft. */
@@ -462,6 +542,18 @@ export class TicketDetailStore {
 			this.#conflict = true;
 			return false;
 		}
+		// Open blocking sub-tasks: ask first instead of sending (ADR-0033 section 2).
+		const completing = field === 'status' && next === 'done' && ticket.status !== 'done';
+		const blocking = completing ? this.#blockingOf(ticket.id) : [];
+		if (blocking.length > 0) {
+			this.#askCompletion(
+				ticket.id,
+				blocking.length,
+				blocking.map((child) => child.key)
+			);
+			this.cancel(field);
+			return false;
+		}
 		if (!this.#session.ensureValid()) return false;
 		this.#saving.add(field);
 		this.#fieldErrors.delete(field);
@@ -485,8 +577,10 @@ export class TicketDetailStore {
 			return true;
 		} catch (error) {
 			const failure = toDataError(error);
+			const open = completing ? openChildrenOf(failure) : null;
 			if (failure.kind === 'session') this.#session.logout();
 			else if (base !== null && isStale(failure)) stale = ticket.id === this.#id;
+			else if (open !== null) this.#askCompletion(ticket.id, open.count, open.keys);
 			else if (failure.kind !== 'aborted' && ticket.id === this.#id) {
 				this.#fieldErrors.set(field, failure.fields[field]?.message ?? failure.message);
 			}
@@ -667,6 +761,7 @@ export class TicketDetailStore {
 		this.#fieldErrors.clear();
 		this.#descriptionBase = null;
 		this.#conflict = false;
+		this.#completion = null;
 		this.#tagInput = '';
 		this.#id = null;
 		this.#own = null;

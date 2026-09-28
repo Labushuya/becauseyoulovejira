@@ -25,6 +25,58 @@ export function openChildrenMessage(count: number): string {
 	return `${subtaskCountText(count)} ${count === 1 ? 'ist' : 'sind'} noch offen.`;
 }
 
+/**
+ * Answer to "N Unteraufgaben sind noch offen – trotzdem erledigen?" (ADR-0033 section 2):
+ * complete the blocking sub-tasks with the ticket, or complete it anyway. The values are the body
+ * fields the hook reads.
+ */
+export type CompletionChoice = 'complete_children' | 'force';
+
+/** The choices in the order of the question; the first one is chosen at first. */
+export const COMPLETION_CHOICES: readonly CompletionChoice[] = Object.freeze([
+	'complete_children',
+	'force'
+]);
+
+export const COMPLETION_LABELS: Readonly<Record<CompletionChoice, string>> = Object.freeze({
+	complete_children: 'Unteraufgaben mit erledigen',
+	force: 'Trotzdem erledigen'
+});
+
+/** Question before completing a ticket with open blocking sub-tasks. */
+export function openChildrenQuestion(count: number): string {
+	return `${subtaskCountText(count)} ${count === 1 ? 'ist' : 'sind'} noch offen – trotzdem erledigen?`;
+}
+
+/** "HAUS-13", "HAUS-13 und HAUS-14", "HAUS-13, HAUS-14 und 2 weitere" (at most three keys). */
+export function keysText(keys: readonly string[], count = keys.length): string {
+	const shown = keys.slice(0, 3);
+	const rest = count - shown.length;
+	if (rest > 0) return `${shown.join(', ')} und ${rest === 1 ? '1 weitere' : `${rest} weitere`}`;
+	if (shown.length <= 1) return shown.join('');
+	return `${shown.slice(0, -1).join(', ')} und ${shown.at(-1) ?? ''}`;
+}
+
+/** What a choice does, named with the keys of the sub-tasks. */
+export function completionHint(
+	choice: CompletionChoice,
+	keys: readonly string[],
+	count: number
+): string {
+	const one = count === 1;
+	if (choice === 'force') {
+		return one ? 'Die Unteraufgabe bleibt offen.' : 'Die Unteraufgaben bleiben offen.';
+	}
+	return `${keysText(keys, count)} ${one ? 'wird' : 'werden'} ebenfalls erledigt.`;
+}
+
+/** Open sub-tasks that block completing their parent (`blocks_parent`, true unless switched off). */
+export function openBlocking<T extends Pick<TicketSummary, 'status' | 'blocksParent'>>(
+	subtasks: readonly T[]
+): T[] {
+	return subtasks.filter((entry) => entry.status !== 'done' && entry.blocksParent !== false);
+}
+
 /** Question before deleting a parent: "3 Unteraufgaben bleiben erhalten …" (ADR-0033 section 4). */
 export function remainingSubtasksText(count: number): string {
 	return count === 1

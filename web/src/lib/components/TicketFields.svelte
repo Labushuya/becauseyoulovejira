@@ -1,5 +1,5 @@
 <script lang="ts">
-	import type { Snippet } from 'svelte';
+	import { tick, type Snippet } from 'svelte';
 	import type { Ticket } from '$lib/domain/ticket';
 	import type { CatalogStore } from '$lib/stores/catalog.svelte';
 	import type { TicketDetailStore } from '$lib/stores/ticket-detail.svelte';
@@ -9,6 +9,8 @@
 	import ProjectSelect from './ProjectSelect.svelte';
 	import StatusSelect from './StatusSelect.svelte';
 	import TagPicker from './TagPicker.svelte';
+	import TicketCompletionQuestion from './TicketCompletionQuestion.svelte';
+	import type { CompletionChoice } from '$lib/domain/subtasks';
 
 	// Fields of a ticket (E2 plan, package 7; E3 plan, T-13 and T-14), shared by the side panel and
 	// the full view (ADR-0025 section 7): status, priority, due date, project and tags, each saving
@@ -53,6 +55,14 @@
 		}
 		return store.addTag(result.tag.id);
 	}
+
+	/** After the question about open sub-tasks the focus goes back to the status (ADR-0033). */
+	async function endCompletion(choice: CompletionChoice | null) {
+		if (choice === null) store.cancelCompletion();
+		else await store.confirmCompletion(choice);
+		await tick();
+		document.getElementById(ids.status)?.focus();
+	}
 </script>
 
 {#snippet fieldError(field: 'status' | 'priority' | 'due' | 'project' | 'tags')}
@@ -74,6 +84,14 @@
 			onchoose={(value) => store.choose('status', value)}
 		/>
 		{@render fieldError('status')}
+		{#if store.completionQuestion}
+			<TicketCompletionQuestion
+				question={store.completionQuestion}
+				busy={store.isSaving('status')}
+				onconfirm={(choice) => void endCompletion(choice)}
+				oncancel={() => void endCompletion(null)}
+			/>
+		{/if}
 	</div>
 
 	<label for={ids.priority}>Priorität</label>

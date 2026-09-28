@@ -37,7 +37,14 @@ import {
 } from '$lib/domain/list-query';
 import { columnOrder, ticketOrder, type ResolveProject } from '$lib/domain/ordering';
 import type { Status } from '$lib/domain/status';
-import { compareSubtasks, subtaskProgress, type SubtaskProgress } from '$lib/domain/subtasks';
+import {
+	compareSubtasks,
+	openBlocking,
+	subtaskCountText,
+	subtaskProgress,
+	type CompletionChoice,
+	type SubtaskProgress
+} from '$lib/domain/subtasks';
 import {
 	DEFAULT_PRIORITY,
 	DEFAULT_STATUS,
@@ -75,7 +82,8 @@ export interface TicketListData {
 	listDone(page: number, options: RequestOptions & { filter: DoneFilter }): Promise<DoneTicketPage>;
 	/** IDs of the open tickets whose title, description or key contain the search text. */
 	searchOpen(search: string, options: RequestOptions): Promise<string[]>;
-	setDone(id: string, done: boolean): Promise<TicketSummary>;
+	/** `completion` answers the question about open blocking sub-tasks (ADR-0033 section 2). */
+	setDone(id: string, done: boolean, completion?: CompletionChoice): Promise<TicketSummary>;
 	update(id: string, patch: TicketPatch): Promise<TicketSummary>;
 }
 
@@ -93,7 +101,7 @@ export function ticketListData(pb: PocketBase): TicketListData {
 		create: (draft) => createTicket(pb, draft),
 		listDone: (page, options) => listDoneTickets(pb, page, options),
 		searchOpen: (search, options) => searchOpenTicketIds(pb, search, options),
-		setDone: (id, done) => setTicketDone(pb, id, done),
+		setDone: (id, done, completion) => setTicketDone(pb, id, done, { completion }),
 		update: (id, patch) => updateTicket(pb, id, patch)
 	};
 }
@@ -125,12 +133,56 @@ export type SubtaskResult =
 /** Key of a read row that is known only from the answer "already read" (no row ID). */
 const LOCAL_READ = 'local:';
 
+/** A sub-task completed together with its parent, and its status before (ADR-0033 section 2). */
+export interface CompletedChild {
+	id: string;
+	key: string;
+	previousStatus: Status;
+}
+
 /** A just checked ticket whose flag offers "Rückgängig" (ADR-0025 section 8). */
 interface Undoable {
 	key: string;
 	/** Status before "done", restored by "Rückgängig" (OF-E2-3). */
 	previousStatus: Status;
+	/** Sub-tasks completed with it; "Rückgängig" restores them as well. */
+	children: readonly CompletedChild[];
 	flagId: string;
+}
+
+/**
+ * Question before completing a ticket whose open sub-tasks block it (ADR-0033 section 2): "N
+ * Unteraufgaben sind noch offen – trotzdem erledigen?".
+ */
+export interface CompletionQuestion {
+	id: string;
+	key: string;
+	/** Number of open blocking sub-tasks and (some of) their keys. */
+	count: number;
+	keys: readonly string[];
+	/** Status of the ticket before "done", for "Rückgängig". */
+	previousStatus: Status;
+}
+
+/** The sub-tasks a completion takes along, with their status before. */
+export function completedChildren(
+	blocking: readonly TicketSummary[],
+	choice: CompletionChoice
+): CompletedChild[] {
+	if (choice !== 'complete_children') return [];
+	return blocking.map((child) => ({ id: child.id, key: child.key, previousStatus: child.status }));
+}
+
+/** Count and keys of open blocking sub-tasks in a refusal of the hook, null for another error. */
+export function openChildrenOf(error: unknown): { count: number; keys: string[] } | null {
+	const status = toDataError(error).fields.status;
+	if (status?.code !== 'validation_parent_open_children') return null;
+	const count = typeof status.params?.count === 'number' ? status.params.count : 1;
+	const raw = status.params?.keys;
+	const keys = Array.isArray(raw)
+		? raw.filter((key): key is string => typeof key === 'string')
+		: [];
+	return { count, keys };
 }
 
 /**
@@ -200,6 +252,10 @@ export class TicketListStore {
 	readonly #flags: FlagSink;
 	/** Target state of running check mark requests, keyed by ticket ID. */
 	readonly #pending = new SvelteMap<string, boolean>();
+	/** Question before completing a ticket with open blocking sub-tasks (ADR-0033 section 2). */
+	#completion = $state<CompletionQuestion | null>(null);
+	#completing = $state(false);
+	#completionError = $state<string | null>(null);
 	/**
 	 * IDs of deleted tickets: a late event or answer must not bring them back. Record IDs are
 	 * never reused, so the set only grows until the store is reset.
@@ -514,6 +570,70 @@ export class TicketListStore {
 		return subtaskProgress(this.subtasksOf(parentId));
 	}
 
+	/** Open sub-tasks that block completing the ticket (ADR-0033 section 2). */
+	openBlockingOf(parentId: string): TicketSummary[] {
+		return openBlocking(this.subtasksOf(parentId));
+	}
+
+	/** The question before completing a ticket with open blocking sub-tasks, null without one. */
+	get completion(): CompletionQuestion | null {
+		return this.#completion;
+	}
+
+	/** True while the answer to the question is being saved. */
+	get completing(): boolean {
+		return this.#completing;
+	}
+
+	/** Why the answer could not be saved; it stays in the question. */
+	get completionError(): string | null {
+		return this.#completionError;
+	}
+
+	/**
+	 * Answers the question (ADR-0033 section 2): completes the ticket anyway (`force`) or with its
+	 * blocking sub-tasks (`complete_children`, atomically in the hook). The flag offers
+	 * "Rückgängig" for both, which also reopens the sub-tasks completed along.
+	 */
+	async confirmCompletion(choice: CompletionChoice): Promise<void> {
+		const question = this.#completion;
+		if (question === null || this.#completing || !this.#session.ensureValid()) return;
+		const children = completedChildren(this.openBlockingOf(question.id), choice);
+		this.#completing = true;
+		this.#completionError = null;
+		this.#pending.set(question.id, true);
+		try {
+			const saved = await this.#data.setDone(question.id, true, choice);
+			this.#completion = null;
+			this.completed(saved, question.previousStatus, children);
+		} catch (error) {
+			const message = this.#failureMessage(error);
+			if (message !== null) this.#completionError = message;
+		} finally {
+			this.#completing = false;
+			this.#pending.delete(question.id);
+		}
+	}
+
+	/** "Abbrechen" of the question: the ticket stays as it is. */
+	cancelCompletion(): void {
+		if (this.#completing) return;
+		this.#completion = null;
+		this.#completionError = null;
+	}
+
+	/** Opens the question for a ticket; `count` and `keys` of the store or of the hook. */
+	#askCompletion(ticket: TicketSummary, count: number, keys: readonly string[]): void {
+		this.#completion = {
+			id: ticket.id,
+			key: ticket.key,
+			count,
+			keys: [...keys],
+			previousStatus: ticket.status
+		};
+		this.#completionError = null;
+	}
+
 	/**
 	 * "Unteraufgabe hinzufügen" (ADR-0033 section 4): a sub-task of `parent` with the title, in the
 	 * project and with the tags of the parent, status and priority by default. It joins the list at
@@ -660,9 +780,15 @@ export class TicketListStore {
 	/**
 	 * A ticket was just completed with the given previous status (check mark, or the status
 	 * select of the panel): the row leaves the open list at once, and a flag offers "Rückgängig"
-	 * for FLAG_DURATION_MS (paused while the user points at it, ADR-0025 section 8).
+	 * for FLAG_DURATION_MS (paused while the user points at it, ADR-0025 section 8). `children` are
+	 * the sub-tasks completed along (ADR-0033 section 2); the flag names them, and "Rückgängig"
+	 * reopens them as well.
 	 */
-	completed(ticket: TicketSummary, previousStatus: Status): void {
+	completed(
+		ticket: TicketSummary,
+		previousStatus: Status,
+		children: readonly CompletedChild[] = []
+	): void {
 		if (ticket.status !== 'done' || previousStatus === 'done') {
 			this.upsert(ticket);
 			return;
@@ -674,23 +800,38 @@ export class TicketListStore {
 		const id = ticket.id;
 		const flagId = this.#flags.show({
 			tone: 'success',
-			title: `${ticket.key} erledigt.`,
+			title:
+				children.length === 0
+					? `${ticket.key} erledigt.`
+					: `${ticket.key} und ${subtaskCountText(children.length)} erledigt.`,
 			action: { label: 'Rückgängig', run: () => void this.undo(id) },
 			onclose: () => {
 				if (this.#undoable.get(id)?.flagId === flagId) this.#undoable.delete(id);
 			}
 		});
-		this.#undoable.set(id, { key: ticket.key, previousStatus, flagId });
+		this.#undoable.set(id, { key: ticket.key, previousStatus, children, flagId });
 	}
 
 	/**
 	 * Check mark (E2 plan, T-6): checking sets "done", unchecking sets REOPEN_STATUS. The check
 	 * mark shows the new state at once, is locked during the request and springs back on failure.
+	 * A ticket with open blocking sub-tasks is not sent at once: the question "N Unteraufgaben sind
+	 * noch offen – trotzdem erledigen?" comes first (ADR-0033 section 2), also when the hook
+	 * refuses because another tab reopened a sub-task meanwhile.
 	 */
 	async setDone(id: string, done: boolean): Promise<void> {
 		const ticket = this.find(id);
 		if (ticket === null || this.#pending.has(id) || (ticket.status === 'done') === done) return;
 		if (!this.#session.ensureValid()) return;
+		const blocking = done ? this.openBlockingOf(id) : [];
+		if (blocking.length > 0) {
+			this.#askCompletion(
+				ticket,
+				blocking.length,
+				blocking.map((child) => child.key)
+			);
+			return;
+		}
 		this.#pending.set(id, done);
 		try {
 			const saved = await this.#data.setDone(id, done);
@@ -701,27 +842,56 @@ export class TicketListStore {
 				this.#flags.show({ tone: 'success', title: `${saved.key} wieder offen.` });
 			}
 		} catch (error) {
-			this.#fail(error, `${ticket.key} konnte nicht geändert werden.`);
+			const open = done ? openChildrenOf(error) : null;
+			if (open !== null) this.#askCompletion(ticket, open.count, open.keys);
+			else this.#fail(error, `${ticket.key} konnte nicht geändert werden.`);
 		} finally {
 			this.#pending.delete(id);
 		}
 	}
 
-	/** "Rückgängig" of the flag after checking: restores the exact previous status (OF-E2-3). */
+	/**
+	 * "Rückgängig" of the flag after checking: restores the exact previous status (OF-E2-3), then
+	 * that of every sub-task completed along (ADR-0033 section 2), one after another. A sub-task that
+	 * fails is named in an error flag; the others are restored.
+	 */
 	async undo(id: string): Promise<void> {
 		const undoable = this.#undoable.get(id);
 		if (undoable === undefined || this.#pending.has(id)) return;
 		if (!this.#session.ensureValid()) return;
 		this.#undoable.delete(id);
 		this.#pending.set(id, false);
+		let saved: TicketSummary;
 		try {
-			const saved = await this.#data.update(id, { status: undoable.previousStatus });
+			saved = await this.#data.update(id, { status: undoable.previousStatus });
 			this.upsert(saved);
-			this.#flags.show({ tone: 'success', title: `${saved.key} ist wieder offen.` });
 		} catch (error) {
 			this.#fail(error, `${undoable.key} konnte nicht zurückgesetzt werden.`);
+			return;
 		} finally {
 			this.#pending.delete(id);
+		}
+		const failed: string[] = [];
+		for (const child of undoable.children) {
+			try {
+				this.upsert(await this.#data.update(child.id, { status: child.previousStatus }));
+			} catch (error) {
+				if (this.#failureMessage(error) !== null) failed.push(child.key);
+			}
+		}
+		const restored = undoable.children.length - failed.length;
+		this.#flags.show({
+			tone: 'success',
+			title:
+				restored === 0
+					? `${saved.key} ist wieder offen.`
+					: `${saved.key} und ${subtaskCountText(restored)} sind wieder offen.`
+		});
+		if (failed.length > 0) {
+			this.#flags.show({
+				tone: 'error',
+				title: `${failed.join(', ')} ${failed.length === 1 ? 'konnte' : 'konnten'} nicht zurückgesetzt werden.`
+			});
 		}
 	}
 
@@ -833,6 +1003,8 @@ export class TicketListStore {
 		this.#openController = null;
 		this.#doneController = null;
 		this.#reconcileController = null;
+		this.#completion = null;
+		this.#completionError = null;
 		this.#touched = null;
 		this.#deleted.clear();
 		for (const id of [...this.#undoable.keys()]) this.#dropUndo(id);
