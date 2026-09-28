@@ -8,7 +8,10 @@ import { expect } from 'vitest';
 const STATUSES = ['backlog', 'open', 'in_progress', 'waiting', 'done'];
 const PRIORITIES = ['low', 'medium', 'high', 'urgent'];
 const WEEKDAYS = ['MO', 'TU', 'WE', 'TH', 'FR', 'SA', 'SU'];
-/** Ways into the inbox and values of tickets.source (ADR-0014), written out literally. */
+/**
+ * Ways into the inbox and values of tickets.source (ADR-0014), written out literally; "api" and
+ * "whatsapp-web" since the own inbox (ADR-0038, migration 1790202400).
+ */
 export const CHANNELS = [
 	'manual',
 	'quick',
@@ -20,7 +23,9 @@ export const CHANNELS = [
 	'calendar',
 	'whatsapp',
 	'telegram',
-	'notion'
+	'notion',
+	'api',
+	'whatsapp-web'
 ];
 export const INBOX_KINDS = ['todo', 'task', 'project_task', 'mail', 'event', 'message', 'link'];
 export const INBOX_STATES = ['new', 'converted', 'discarded'];
@@ -261,6 +266,21 @@ export const EXPECTED_COLLECTIONS = {
 			value: number({ min: 0, max: null })
 		},
 		indexes: ['CREATE UNIQUE INDEX idx_ticket_counters_key ON ticket_counters (key)']
+	},
+	// Access keys of the own inbox (ADR-0038, migration 1790202400); the hash is hidden.
+	inbox_keys: {
+		fields: {
+			name: text({ required: true, max: 60 }),
+			token_hash: text({ required: true, max: 64, pattern: '^[0-9a-f]{64}$', hidden: true }),
+			token_hint: text({ required: true, max: 20 }),
+			last_used_at: date(),
+			owner: relation('users', { required: true, cascadeDelete: true }),
+			...timestamps()
+		},
+		indexes: [
+			'CREATE UNIQUE INDEX idx_inbox_keys_token_hash ON inbox_keys (token_hash)',
+			'CREATE INDEX idx_inbox_keys_owner ON inbox_keys (owner)'
+		]
 	}
 };
 
@@ -346,6 +366,14 @@ export const EXPECTED_RULES = {
 			`@collection.household_members.user ?= @request.auth.id))${LIVE_TICKET}`,
 		updateRule: null,
 		deleteRule: `${AUTH} && user = @request.auth.id`
+	},
+	// Only the owner lists and revokes; keys are created by the route, never changed.
+	inbox_keys: {
+		listRule: `${AUTH} && owner = @request.auth.id`,
+		viewRule: `${AUTH} && owner = @request.auth.id`,
+		createRule: null,
+		updateRule: null,
+		deleteRule: `${AUTH} && owner = @request.auth.id`
 	}
 };
 

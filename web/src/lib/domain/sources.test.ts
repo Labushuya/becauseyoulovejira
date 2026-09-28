@@ -49,7 +49,9 @@ describe('copyCompleteness', () => {
 			calendar: 'text',
 			whatsapp: 'text',
 			telegram: 'text',
-			notion: 'text'
+			notion: 'text',
+			api: 'text',
+			'whatsapp-web': 'text'
 		};
 		for (const channel of INBOX_CHANNELS) {
 			expect(copyCompleteness(item({ channel })), channel).toBe(expected[channel]);

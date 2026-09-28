@@ -11,6 +11,7 @@
 	import { findFirstStepsStore } from '$lib/stores/first-steps.svelte';
 	import { getFlagStore } from '$lib/stores/flags.svelte';
 	import { ImportKeywordsStore, importKeywordsData } from '$lib/stores/import-keywords.svelte';
+	import { InboxKeysStore, inboxKeysData } from '$lib/stores/inbox-keys.svelte';
 	import { channelSetupHref } from '$lib/ticket-links';
 
 	// Settings of the channels (E4 plan, T-3): bookmarklet (package 7) and connections (package 10).
@@ -25,6 +26,8 @@
 	const flags = getFlagStore();
 	const connections = new ConnectionsStore(connectionsData(pb), auth, flags);
 	const importKeywords = new ImportKeywordsStore(importKeywordsData(pb), auth, flags);
+	// Access keys of the own inbox (ADR-0038), with its keywords in importKeywords.
+	const inboxKeys = new InboxKeysStore(inboxKeysData(pb), auth, flags);
 	const setup = $derived(setupTargetOf(page.url.searchParams));
 
 	function changeSetup(next: SetupTarget | null) {
@@ -35,10 +38,12 @@
 		untrack(() => {
 			void connections.load();
 			void importKeywords.load();
+			void inboxKeys.load();
 		});
 		return () => {
 			connections.reset();
 			importKeywords.reset();
+			inboxKeys.reset();
 		};
 	});
 
@@ -54,4 +59,11 @@
 	<title>Kanäle · Einstellungen · becauseyoulovejira</title>
 </svelte:head>
 
-<ChannelsView {captureUrl} {connections} {importKeywords} {setup} onsetupchange={changeSetup} />
+<ChannelsView
+	{captureUrl}
+	{connections}
+	{importKeywords}
+	{inboxKeys}
+	{setup}
+	onsetupchange={changeSetup}
+/>

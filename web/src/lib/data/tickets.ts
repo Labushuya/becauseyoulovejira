@@ -349,10 +349,11 @@ const DONE_FILTER = [
  * keep working until the next start.
  */
 const DONE_SOURCE_FILTER = [
-	'(source = {:s1} || source = {:s2} || source = {:s3} || ({:withEmpty} = "1" && source = ""))'
+	'(source = {:s1} || source = {:s2} || source = {:s3} || source = {:s4} || ({:withEmpty} = "1" && source = ""))'
 ].join(' && ');
 
-const MAX_FAMILY_CHANNELS = 3;
+// Four since the own inbox (ADR-0038): "Manuell" holds manual, quick, clipboard and api.
+const MAX_FAMILY_CHANNELS = 4;
 
 function sourceParams(family: SourceFamily): Record<string, string> {
 	const channels = channelsOf(family);
@@ -364,6 +365,7 @@ function sourceParams(family: SourceFamily): Record<string, string> {
 		s1: first,
 		s2: channels[1] ?? first,
 		s3: channels[2] ?? first,
+		s4: channels[3] ?? first,
 		withEmpty: family === 'manual' ? '1' : ''
 	};
 }

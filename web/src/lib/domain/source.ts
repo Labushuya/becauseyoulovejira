@@ -48,7 +48,10 @@ const FAMILY_OF: Readonly<Record<InboxChannel, SourceFamily>> = Object.freeze({
 	calendar: 'calendar',
 	whatsapp: 'chat',
 	telegram: 'chat',
-	notion: 'notion'
+	notion: 'notion',
+	// The own inbox (ADR-0038): own scripts bring in by hand, the extension brings chats.
+	api: 'manual',
+	'whatsapp-web': 'chat'
 });
 
 /**

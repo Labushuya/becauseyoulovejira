@@ -82,7 +82,8 @@ describe('keywords.js: lists of the file imports (package 21)', () => {
 			'',
 			{},
 			{ eml: { keywords: ['rechnung'], match_body: true } },
-			{ ics: { keywords: [] }, whatsapp: { keywords: ['milch'] } }
+			{ ics: { keywords: [] }, whatsapp: { keywords: ['milch'] } },
+			{ api: { keywords: ['todo'] }, 'whatsapp-web': { keywords: ['#byl'] } }
 		]) {
 			expect(keywords.importSettingsViolation(value), JSON.stringify(value)).toBe('');
 		}
@@ -96,7 +97,9 @@ describe('keywords.js: lists of the file imports (package 21)', () => {
 			{ eml: [] },
 			{ ics: { keywords: [], match_body: true } },
 			{ eml: { keywords: [], match_body: 'ja' } },
-			{ whatsapp: { keywords: [], extra: 1 } }
+			{ whatsapp: { keywords: [], extra: 1 } },
+			{ api: { keywords: [], match_body: true } },
+			{ whatsapp_web: { keywords: [] } }
 		]) {
 			expect(keywords.importSettingsViolation(value), JSON.stringify(value)).toBe(keywords.IMPORT_MESSAGE);
 		}
@@ -114,5 +117,10 @@ describe('keywords.js: lists of the file imports (package 21)', () => {
 		});
 		expect(keywords.importSettingsOf(null, 'whatsapp')).toEqual({ keywords: [], matchBody: false });
 		expect(keywords.IMPORT_KINDS).toEqual(['eml', 'ics', 'whatsapp']);
+		expect(keywords.CHANNEL_KINDS).toEqual(['api', 'whatsapp-web']);
+		expect(keywords.importSettingsOf({ 'whatsapp-web': { keywords: ['#byl'] } }, 'whatsapp-web')).toEqual({
+			keywords: ['#byl'],
+			matchBody: false
+		});
 	});
 });

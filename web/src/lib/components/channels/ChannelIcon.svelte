@@ -1,13 +1,14 @@
 <script lang="ts" module>
 	/** Kinds of channel symbols (ADR-0026 section 3): own drawings, no brand logos. */
 	export type ChannelIconKind =
-		'calendar' | 'telegram' | 'mail' | 'proton' | 'files' | 'bookmarklet';
+		'calendar' | 'telegram' | 'mail' | 'proton' | 'files' | 'bookmarklet' | 'api';
 </script>
 
 <script lang="ts">
 	// Symbol of a channel in a tinted tile (Clean-Room, plan §3.12): a calendar sheet, a paper plane,
-	// an envelope with "@", an envelope with a lock for Proton, a file and a bookmark. No logos of
-	// Google, Telegram, Web.de or Proton. Decorative: the name of the channel stands next to it.
+	// an envelope with "@", an envelope with a lock for Proton, a file, a bookmark and a key with
+	// code brackets for the own inbox (ADR-0038). No logos of Google, Telegram, Web.de or Proton.
+	// Decorative: the name of the channel stands next to it.
 	let { kind }: { kind: ChannelIconKind } = $props();
 </script>
 
@@ -26,6 +27,9 @@
 			<path d="M11 10.25h3.25v3.5H11zM11.75 10.25v-1a.87.87 0 0 1 1.75 0v1" />
 		{:else if kind === 'files'}
 			<path d="M4 1.75h5l3 3v9.5H4zM9 1.75v3h3M6 8.5h4M6 11h4" />
+		{:else if kind === 'api'}
+			<path d="M4.5 4L1.75 8l2.75 4M11.5 4l2.75 4-2.75 4" />
+			<path d="M6.25 8a1.25 1.25 0 1 0 2.5 0 1.25 1.25 0 0 0-2.5 0zM8.75 8h2.5M10.25 8v1.5" />
 		{:else}
 			<path d="M4 2h8v12l-4-3-4 3z" />
 			<path d="M8 5v3.5M6.5 7l1.5 1.5L9.5 7" />

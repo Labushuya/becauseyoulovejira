@@ -394,14 +394,19 @@ describe('selection of dropped files (E4 plan, package 21)', () => {
 		expect(await getImportKeywords(fresh.client)).toEqual({
 			eml: { keywords: [], matchBody: false },
 			ics: { keywords: [], matchBody: false },
-			whatsapp: { keywords: [], matchBody: false }
+			whatsapp: { keywords: [], matchBody: false },
+			api: { keywords: [], matchBody: false },
+			'whatsapp-web': { keywords: [], matchBody: false }
 		});
 		const saved = await saveImportKeywords(fresh.client, {
 			eml: { keywords: ['rechnung'], matchBody: true },
 			ics: { keywords: ['quartal'], matchBody: false },
-			whatsapp: { keywords: ['milch'], matchBody: false }
+			whatsapp: { keywords: ['milch'], matchBody: false },
+			api: { keywords: ['todo'], matchBody: false },
+			'whatsapp-web': { keywords: ['#byl'], matchBody: false }
 		});
 		expect(saved.ics.keywords).toEqual(['quartal']);
+		expect(saved['whatsapp-web'].keywords).toEqual(['#byl']);
 		expect(await getImportKeywords(fresh.client)).toEqual(saved);
 		await expect(
 			saveImportKeywords(fresh.client, { ...saved, ics: { keywords: ['x'.repeat(101)], matchBody: false } })

@@ -6,6 +6,7 @@ import { randomBytes } from 'node:crypto';
 import PocketBase from 'pocketbase';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { startPocketBase } from '../support/pocketbase-harness.mjs';
+import { createInboxKey, listInboxKeys } from '../../web/src/lib/data/inbox-keys.ts';
 import { createProject, listProjects, updateProject } from '../../web/src/lib/data/projects.ts';
 import { eachOccurrenceReady, listRules } from '../../web/src/lib/data/recurrence.ts';
 import { deleteTicket } from '../../web/src/lib/data/tickets.ts';
@@ -649,5 +650,41 @@ describe('PB-1 hooks before the migration of the trash (ADR-0037)', () => {
 		expect(ticket.deleted_at).toBeUndefined();
 		const user = await who.collection('users').update(who.userId, { trash_retention: '7' });
 		expect(user.trash_retention).toBeUndefined();
+	});
+});
+
+describe('EI-1 hooks before the migration of the own inbox (ADR-0038)', () => {
+	const OWN_INBOX_MIGRATION = '1790202400_inbox_keys.js';
+	let before;
+	let who;
+
+	beforeAll(async () => {
+		before = await startPocketBase({ migrationFilter: (name) => name < OWN_INBOX_MIGRATION });
+		const superuser = new PocketBase(before.url);
+		superuser.autoCancellation(false);
+		await superuser.collection('_superusers').authWithPassword(before.email, before.password);
+		const email = `user-${randomBytes(12).toString('hex')}@example.com`;
+		const password = randomBytes(24).toString('base64url');
+		const id = (await superuser.collection('users').create({ email, password, passwordConfirm: password })).id;
+		who = new PocketBase(before.url);
+		who.autoCancellation(false);
+		await who.collection('users').authWithPassword(email, password);
+		who.userId = id;
+	}, 60_000);
+
+	afterAll(async () => {
+		await before?.stop();
+	});
+
+	it('answers the routes with the restart hint, lists no keys and keeps the keywords of the file imports', async () => {
+		await expect(createInboxKey(who, 'Rechner')).rejects.toMatchObject({ status: 503 });
+		expect(await listInboxKeys(who)).toBeNull();
+		const token = `byl_${'a'.repeat(40)}`;
+		const ping = await fetch(`${before.url}/api/byl/inbox/ingest`, { headers: { Authorization: `Bearer ${token}` } });
+		expect(ping.status).toBe(503);
+		const user = await who.collection('users').update(who.userId, {
+			import_keywords: { eml: { keywords: ['todo'] }, api: { keywords: ['todo'] } }
+		});
+		expect(user.import_keywords).toEqual({ eml: { keywords: ['todo'] }, api: { keywords: ['todo'] } });
 	});
 });

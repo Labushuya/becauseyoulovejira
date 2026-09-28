@@ -5,12 +5,14 @@
 	import { IMPORT_KINDS, type ImportKind } from '$lib/domain/keywords';
 	import type { ConnectionsStore } from '$lib/stores/connections.svelte';
 	import type { ImportKeywordsStore } from '$lib/stores/import-keywords.svelte';
+	import type { InboxKeysStore } from '$lib/stores/inbox-keys.svelte';
 	import { channelSetupHref } from '$lib/ticket-links';
 	import BookmarkletCard from './channels/BookmarkletCard.svelte';
 	import ChannelCatalog from './channels/ChannelCatalog.svelte';
 	import ChannelIcon from './channels/ChannelIcon.svelte';
 	import ChannelSetup from './channels/ChannelSetup.svelte';
 	import ChannelsIntro from './channels/ChannelsIntro.svelte';
+	import OwnInboxCard from './channels/OwnInboxCard.svelte';
 	import ProtonGuide from './channels/ProtonGuide.svelte';
 	import ConnectionsSection from './ConnectionsSection.svelte';
 
@@ -25,14 +27,20 @@
 		captureUrl,
 		connections,
 		importKeywords = null,
+		inboxKeys = null,
 		setup = null,
 		onsetupchange
 	}: {
 		/** Absolute address of the capture form, e.g. http://127.0.0.1:8090/eingang/neu. */
 		captureUrl: string;
 		connections: ConnectionsStore;
-		/** Keywords of the file imports, for the numbers on the files card. */
+		/**
+		 * Keywords of the file imports, for the numbers on the files card, and of the channels of the
+		 * own inbox (ADR-0038).
+		 */
 		importKeywords?: ImportKeywordsStore | null;
+		/** Access keys of the own inbox (ADR-0038); without them the card is not shown. */
+		inboxKeys?: InboxKeysStore | null;
 		/** Assistant in the address, null without one. */
 		setup?: SetupTarget | null;
 		/** Opens, moves or closes the assistant (the owner changes the address). */
@@ -98,6 +106,10 @@
 					<a href={resolve('/eingang')}>Zum Eingang</a>
 				</p>
 			</section>
+
+			{#if inboxKeys !== null}
+				<OwnInboxCard store={inboxKeys} {importKeywords} />
+			{/if}
 		</div>
 	</section>
 

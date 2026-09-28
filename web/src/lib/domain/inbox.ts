@@ -7,7 +7,10 @@ import { berlinDateOf, formatBerlinDateTime, formatCalendarDate } from './format
 import { isPriority, type Priority } from './status';
 import { DESCRIPTION_MAX_LENGTH, TITLE_MAX_LENGTH, type TicketSummary } from './ticket';
 
-/** Ways into the inbox; also the values of `tickets.source`. */
+/**
+ * Ways into the inbox; also the values of `tickets.source`. "api" and "whatsapp-web" come through
+ * the own inbox with an access key (ADR-0038).
+ */
 export const INBOX_CHANNELS = [
 	'manual',
 	'quick',
@@ -19,7 +22,9 @@ export const INBOX_CHANNELS = [
 	'calendar',
 	'whatsapp',
 	'telegram',
-	'notion'
+	'notion',
+	'api',
+	'whatsapp-web'
 ] as const;
 export type InboxChannel = (typeof INBOX_CHANNELS)[number];
 
@@ -103,7 +108,9 @@ export const CHANNEL_LABELS: Readonly<Record<InboxChannel, string>> = Object.fre
 	calendar: 'Google Calendar',
 	whatsapp: 'WhatsApp',
 	telegram: 'Telegram',
-	notion: 'Notion'
+	notion: 'Notion',
+	api: 'Eigener Eingang (API)',
+	'whatsapp-web': 'WhatsApp Web'
 });
 
 export const KIND_LABELS: Readonly<Record<InboxKind, string>> = Object.freeze({

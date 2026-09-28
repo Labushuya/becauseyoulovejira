@@ -1,6 +1,7 @@
-// Settings "Hilfe" (plan EH-9, §3.10): jump links to six sections, the shortcuts of every context
+// Settings "Hilfe" (plan EH-9, §3.10): jump links to seven sections, the shortcuts of every context
 // from the one source, the short syntax with its tokens, the access data moved here from "Kanäle",
-// the frequent questions as <details> and the operation of the app. No table (description lists).
+// the own inbox with examples (ADR-0038), the frequent questions as <details> and the operation of
+// the app. No table (description lists).
 
 import { render, screen, within } from '@testing-library/svelte';
 import { describe, expect, it } from 'vitest';
@@ -25,7 +26,7 @@ describe('help page (EH-9)', () => {
 		}
 	});
 
-	it('jumps to six sections that exist on the page', () => {
+	it('jumps to seven sections that exist on the page', () => {
 		const { container } = render(Page);
 
 		const jump = within(screen.getByRole('navigation', { name: 'Auf dieser Seite' }));
@@ -35,6 +36,7 @@ describe('help page (EH-9)', () => {
 			'Kurzsyntax',
 			'Wiederholungen',
 			'Kanäle und Zugangsdaten',
+			'Eigener Eingang (API)',
 			'Häufige Fragen',
 			'Betrieb'
 		]);
@@ -211,5 +213,25 @@ describe('help page (EH-9)', () => {
 		expect(content).not.toMatch(/\d\.\./);
 		expect(section.querySelectorAll('table')).toHaveLength(0);
 		expect(section.querySelectorAll('ol')).toHaveLength(3);
+	});
+
+	it('explains the own inbox with examples for PowerShell and curl, the key as placeholder (ADR-0038)', () => {
+		render(Page);
+		const section = screen.getByRole('region', { name: 'Eigener Eingang (API)' });
+		const content = text(section);
+		expect(content).toContain('nur auf diesem Rechner erreichbar (127.0.0.1)');
+		expect(content).toContain('Anfragen aus Webseiten lehnt die App ab');
+		const powershell = within(section).getByRole('region', { name: 'Beispiel für PowerShell' });
+		expect(text(powershell)).toContain('Invoke-RestMethod -Method Post');
+		expect(text(powershell)).toContain('/api/byl/inbox/ingest');
+		expect(text(powershell)).toContain('Bearer Platzhalter: ‹Zugangsschlüssel›');
+		const curl = within(section).getByRole('region', {
+			name: 'Beispiel für die Eingabeaufforderung'
+		});
+		expect(text(curl)).toContain('curl -X POST');
+		for (const field of ['mode', 'text', 'external_id', 'title', 'channel', 'sent_at']) {
+			expect(within(section).getAllByText(field).length, field).toBeGreaterThan(0);
+		}
+		expect(section.querySelectorAll('table')).toHaveLength(0);
 	});
 });

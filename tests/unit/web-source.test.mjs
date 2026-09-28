@@ -1,7 +1,7 @@
 // The source families of the web app (web/src/lib/domain/source.ts, ADR-0019 section 1) against
 // the value list of the hooks (app/pb_hooks/lib/source.js): every channel the server knows has
-// exactly one family, and every family fits the filter of the done tickets (at most three
-// channels, web/src/lib/data/tickets.ts).
+// exactly one family, and every family fits the filter of the done tickets (at most four
+// channels since the own inbox, ADR-0038; web/src/lib/data/tickets.ts).
 
 import { describe, expect, it } from 'vitest';
 import { loadHookLib } from '../support/hook-lib.mjs';
@@ -29,10 +29,10 @@ describe('web source families and lib/source.js', () => {
 		expect(sourceFamily(null)).toBe('manual');
 	});
 
-	it('fit the filter of the done tickets with at most three channels per family', () => {
+	it('fit the filter of the done tickets with at most four channels per family', () => {
 		for (const family of SOURCE_FAMILIES) {
 			expect(channelsOf(family).length, family).toBeGreaterThan(0);
-			expect(channelsOf(family).length, family).toBeLessThanOrEqual(3);
+			expect(channelsOf(family).length, family).toBeLessThanOrEqual(4);
 		}
 	});
 });

@@ -18,11 +18,11 @@ describe('source families', () => {
 		expect(
 			Object.fromEntries(SOURCE_FAMILIES.map((family) => [family, channelsOf(family)]))
 		).toEqual({
-			manual: ['manual', 'quick', 'clipboard'],
+			manual: ['manual', 'quick', 'clipboard', 'api'],
 			link: ['link'],
 			mail: ['eml', 'mail'],
 			calendar: ['ics', 'calendar'],
-			chat: ['whatsapp', 'telegram'],
+			chat: ['whatsapp', 'telegram', 'whatsapp-web'],
 			notion: ['notion']
 		});
 		expect(SOURCE_FAMILIES.flatMap(channelsOf).sort()).toEqual([...INBOX_CHANNELS].sort());

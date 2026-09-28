@@ -44,6 +44,8 @@ export const HELP_SECTIONS = [
 	// Plan "Wiederholungen verständlich machen": linked from the form, the overview and the rule.
 	{ id: 'wiederholungen', label: 'Wiederholungen' },
 	{ id: 'zugangsdaten', label: 'Kanäle und Zugangsdaten' },
+	// Own inbox (ADR-0038): linked from its card on "Kanäle".
+	{ id: 'eigener-eingang', label: 'Eigener Eingang (API)' },
 	{ id: 'fragen', label: 'Häufige Fragen' },
 	{ id: 'betrieb', label: 'Betrieb' }
 ] as const;

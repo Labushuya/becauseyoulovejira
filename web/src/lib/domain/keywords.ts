@@ -272,18 +272,43 @@ export const IMPORT_SEARCH_TEXT: Readonly<Record<ImportKind, string>> = Object.f
 	whatsapp: 'Gesucht wird im Text der Nachricht.'
 });
 
+/**
+ * Channels of the own inbox (ADR-0038) with their own list in the same field: an entry of the mode
+ * "auto" is taken only with one of their keywords.
+ */
+export const CHANNEL_KINDS = ['api', 'whatsapp-web'] as const;
+export type ChannelKind = (typeof CHANNEL_KINDS)[number];
+
+/** Every list of users.import_keywords: the file imports and the channels of the own inbox. */
+export const KEYWORD_LIST_KINDS = [...IMPORT_KINDS, ...CHANNEL_KINDS] as const;
+export type KeywordListKind = (typeof KEYWORD_LIST_KINDS)[number];
+
+export const CHANNEL_KIND_LABELS: Readonly<Record<ChannelKind, string>> = Object.freeze({
+	api: 'Eigener Eingang (API)',
+	'whatsapp-web': 'WhatsApp Web'
+});
+
+/** Where the keywords of a channel of the own inbox are searched. */
+export const CHANNEL_SEARCH_TEXT: Readonly<Record<ChannelKind, string>> = Object.freeze({
+	api: 'Gesucht wird in Titel und Text eines Eintrags mit „mode: auto“. Einträge mit „mode: manual“ kommen immer an.',
+	'whatsapp-web':
+		'Gesucht wird im Text der Nachricht, wenn die Erweiterung automatisch sendet. „In den Eingang“ kommt immer an.'
+});
+
 /** Keywords of one kind of file import; only mail files search the start of the text. */
 export interface ImportKeywordList {
 	keywords: string[];
 	matchBody: boolean;
 }
 
-export type ImportKeywords = Readonly<Record<ImportKind, ImportKeywordList>>;
+export type ImportKeywords = Readonly<Record<KeywordListKind, ImportKeywordList>>;
 
 export const EMPTY_IMPORT_KEYWORDS: ImportKeywords = Object.freeze({
 	eml: { keywords: [], matchBody: false },
 	ics: { keywords: [], matchBody: false },
-	whatsapp: { keywords: [], matchBody: false }
+	whatsapp: { keywords: [], matchBody: false },
+	api: { keywords: [], matchBody: false },
+	'whatsapp-web': { keywords: [], matchBody: false }
 });
 
 function objectOf(value: unknown): Record<string, unknown> {
@@ -295,14 +320,20 @@ function objectOf(value: unknown): Record<string, unknown> {
 /** The stored value of users.import_keywords as settings; missing or bad parts count as empty. */
 export function importKeywordsOf(value: unknown): ImportKeywords {
 	const stored = objectOf(value);
-	const entry = (kind: ImportKind): ImportKeywordList => {
+	const entry = (kind: KeywordListKind): ImportKeywordList => {
 		const part = objectOf(stored[kind]);
 		return {
 			keywords: keywordListOf(part.keywords),
 			matchBody: kind === 'eml' && part.match_body === true
 		};
 	};
-	return { eml: entry('eml'), ics: entry('ics'), whatsapp: entry('whatsapp') };
+	return {
+		eml: entry('eml'),
+		ics: entry('ics'),
+		whatsapp: entry('whatsapp'),
+		api: entry('api'),
+		'whatsapp-web': entry('whatsapp-web')
+	};
 }
 
 /** The settings as the server stores them (the shape keywords.js checks). */
@@ -310,7 +341,9 @@ export function importKeywordsValue(settings: ImportKeywords): Record<string, un
 	return {
 		eml: { keywords: settings.eml.keywords, match_body: settings.eml.matchBody },
 		ics: { keywords: settings.ics.keywords },
-		whatsapp: { keywords: settings.whatsapp.keywords }
+		whatsapp: { keywords: settings.whatsapp.keywords },
+		api: { keywords: settings.api.keywords },
+		'whatsapp-web': { keywords: settings['whatsapp-web'].keywords }
 	};
 }
 
