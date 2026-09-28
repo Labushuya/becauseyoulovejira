@@ -86,3 +86,15 @@
 - Neue Collection, zwei neue Kanalwerte, eine Migration mit Rückweg; nach dem Update ist ein Neustart nötig (stop.bat, dann start.bat).
 - Die Erweiterung hängt an der Seitenstruktur von WhatsApp Web; nach Updates von WhatsApp kann sie eine Anpassung der Selektoren brauchen. Sie meldet das selbst.
 - CLAUDE.md §5 (Datenmodell, API-Regeln), §10 (Kanäle) und die README führen den Eingang und die Erweiterung.
+
+## Nachtrag (2026-09-29, Nutzerentscheidung): Verworfene Alternativen für WhatsApp Desktop unter Windows
+
+Geprüft und vom Nutzer verworfen wurde, WhatsApp Desktop (Windows) anzubinden. Es wird nicht umgesetzt.
+
+| Alternative | Bewertung |
+|---|---|
+| **Windows-Benachrichtigungen von WhatsApp Desktop mitlesen** (Hilfsprogramm mit `UserNotificationListener` bzw. Auslesen der lokalen Benachrichtigungsdatenbank von Windows) | Verworfen (Nutzerentscheidung 2026-09-29). |
+| **UI-Automation der Desktop-App** (Fenster auslesen bzw. bedienen) | Verworfen (Nutzerentscheidung 2026-09-29). |
+| **Lokale Datenbank von WhatsApp Desktop auslesen** (verschlüsselt) | Verworfen (Nutzerentscheidung 2026-09-29). |
+
+- **Begründung:** Nutzerentscheidung. Für WhatsApp bleiben die Erweiterung für WhatsApp Web (§3) und der Chat-Export; künftig kommt „Teilen mit“ aus der Android-APK dazu (Anforderung im Nachtrag vom 2026-09-29 zu [ADR-0028](0028-plattform-strategie.md), dieselbe Route `POST /api/byl/inbox/ingest` mit `mode: manual`; der Plattform-Ausbau bleibt zurückgestellt).

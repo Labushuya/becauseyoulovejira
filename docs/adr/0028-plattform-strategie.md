@@ -141,3 +141,12 @@ Umgesetzt in drei Paketen nach [docs/plan/plattformen.md](../plan/plattformen.md
 - Ebenso SemVer und die Release-Automatisierung aus §9 (release-please mit eigenem Token bzw. GitHub-App); `package.json` bleibt auf `0.0.1`, es gibt keine Tags und keine GitHub Releases.
 - Der Nutzer entscheidet selbst, wann die aktuelle Version dafür bereit ist. Bis dahin wird nichts davon umgesetzt, auch keine Spikes. Die Entscheidungen oben bleiben als Planung gültig.
 - Umgesetzt bleiben S1 (installierbare Web-App, [ADR-0035](0035-start-einstieg-und-offene-tabs.md) §8) und S0 ohne SemVer (plattformneutrale Skripte, Linux-CI, Server-System für die Anleitungen).
+
+## Nachtrag (2026-09-29, Nutzerentscheidung): „Teilen mit“ in der Android-APK
+
+Der Plattform-Ausbau bleibt **zurückgestellt auf Nutzerentscheidung** (Nachtrag vom 2026-09-28); dieser Nachtrag legt nur eine Anforderung für S2b fest, umgesetzt wird nichts.
+
+- **Anforderung:** Die APK (§4) bekommt eine native Integration in das Android-Menü „Teilen mit“ bzw. „Teilen an“: Intent-Filter für `ACTION_SEND` und `ACTION_SEND_MULTIPLE`, mindestens `text/plain` mit Text und Links. Bilder und Dateien sind eine spätere Option und werden erst geprüft, wenn Text und Links laufen.
+- **Server-Logik:** Geteilte Inhalte (etwa aus WhatsApp, dem Browser oder einer Mail-App) werden Eingangseinträge über den eigenen Eingang aus [ADR-0038](0038-eigener-eingang-und-whatsapp-web.md) §1: `POST /api/byl/inbox/ingest` mit Zugangsschlüssel, `mode: manual`, Deduplizierung über den Fingerprint samt Tombstones. Es entsteht kein zweiter Weg in den Eingang.
+- **Beim Umsetzen festzulegen:** Kanalwert (eigener Wert mit Migration oder `api`), Bildung von `external_id`, Ablage des Schlüssels in der Hülle (Android-Keystore) und dass die Anfrage aus der nativen Schicht ohne `Origin` kommt (ADR-0038 §2 lässt Webseiten-Origins nicht zu). Einzelheiten in [docs/plan/plattformen.md](../plan/plattformen.md) §3 „S2b“.
+- **Verhältnis zu §4 und S2:** §4 nannte das Teilen-Menü schon als Einsatzzweck der APK; es ist jetzt verbindlich. Das Teilen-Ziel der Web-App (`share_target`, S2) bleibt als Vorstufe bzw. Alternative.
