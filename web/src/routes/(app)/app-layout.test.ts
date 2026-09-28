@@ -47,7 +47,9 @@ const mocks = vi.hoisted(() => {
 			reads: vi.fn(subscribe('reads')),
 			reconnected: vi.fn(subscribe('PB_CONNECT')),
 			// Recurrence rules have their own small live source (E5 plan, package 4).
-			rules: vi.fn(subscribe('rules'))
+			rules: vi.fn(subscribe('rules')),
+			// Messages of start.bat, the landing page and stop.bat (ADR-0035 section 5).
+			attention: vi.fn(subscribe('byl/attention'))
 		},
 		goto: vi.fn(async () => {
 			calls.push('goto');
@@ -146,6 +148,20 @@ vi.mock('$lib/stores/recurrence.svelte', async (importOriginal) => ({
 	}),
 	recurrenceLive: () => ({ rules: mocks.live.rules, reconnected: mocks.live.reconnected })
 }));
+vi.mock('$lib/stores/attention.svelte', async (importOriginal) => ({
+	...(await importOriginal<object>()),
+	attentionSource: () => ({
+		attention: mocks.live.attention,
+		reconnected: mocks.live.reconnected
+	})
+}));
+const attentionMocks = vi.hoisted(() => ({
+	ack: vi.fn<(pb: unknown, nonce: string) => Promise<void>>(async () => undefined)
+}));
+vi.mock('$lib/data/attention', async (importOriginal) => ({
+	...(await importOriginal<object>()),
+	ackAttention: attentionMocks.ack
+}));
 vi.mock('$lib/stores/catalog.svelte', async (importOriginal) => ({
 	...(await importOriginal<object>()),
 	catalogData: () => ({
@@ -228,14 +244,15 @@ describe('app layout', () => {
 		expect(mocks.auth.keepAlive).toHaveBeenCalledOnce();
 	});
 
-	it('subscribes to tickets, the catalog, the inbox, the rules and reconnections while shown and ends them when it goes away', async () => {
+	it('subscribes to tickets, the catalog, the inbox, the rules, the attention messages and reconnections while shown and ends them when it goes away', async () => {
 		const { unmount } = await renderLayout();
-		await vi.waitFor(() => expect(mocks.subscribed).toHaveLength(13));
+		await vi.waitFor(() => expect(mocks.subscribed).toHaveLength(15));
 
 		// The list follows all tickets, the catalog all projects and tags (E3 plan, T-16), the
 		// inbox all entries (E4 plan, T-4) and so do the sources of the open ticket (ADR-0031), the
 		// rules all rules (E5 plan, T-7); list, panel, activity, catalog, inbox, sources and rules
-		// each reconcile after a reconnect.
+		// each reconcile after a reconnect. The hint of start.bat listens on byl/attention and drops
+		// the flag "beendet" after a reconnect (ADR-0035 section 5).
 		expect([...mocks.subscribed].sort()).toEqual([
 			'PB_CONNECT',
 			'PB_CONNECT',
@@ -244,6 +261,8 @@ describe('app layout', () => {
 			'PB_CONNECT',
 			'PB_CONNECT',
 			'PB_CONNECT',
+			'PB_CONNECT',
+			'byl/attention',
 			'inbox',
 			'inbox',
 			'projects',
@@ -598,5 +617,34 @@ describe('app layout: guided tour (EH-13)', () => {
 		expect(typeof deps.reducedMotion()).toBe('boolean');
 		expect(JSON.parse(localStorage.getItem('byl-first-steps') ?? '{}').reached).toContain('tour');
 		localStorage.clear();
+	});
+});
+
+describe('app layout: opened again (ADR-0035 section 5)', () => {
+	const NONCE = 'Ab3dEf6hIj9kLm2nOp5qRs8t';
+
+	it('confirms a message of start.bat and shows the flag', async () => {
+		attentionMocks.ack.mockClear();
+		await renderLayout();
+		await vi.waitFor(() => expect(mocks.subscribed).toContain('byl/attention'));
+
+		mocks.handlers['byl/attention']?.({ nonce: NONCE, reason: 'start' });
+		await tick();
+
+		expect(attentionMocks.ack).toHaveBeenCalledOnce();
+		expect(attentionMocks.ack.mock.calls[0]?.[1]).toBe(NONCE);
+		expect(screen.getByText('Du hast becauseyoulovejira erneut geöffnet.')).toBeTruthy();
+	});
+
+	it('says "beendet" for stop.bat without a confirmation', async () => {
+		attentionMocks.ack.mockClear();
+		await renderLayout();
+		await vi.waitFor(() => expect(mocks.subscribed).toContain('byl/attention'));
+
+		mocks.handlers['byl/attention']?.({ nonce: NONCE, reason: 'stop' });
+		await tick();
+
+		expect(attentionMocks.ack).not.toHaveBeenCalled();
+		expect(screen.getByText('becauseyoulovejira wurde beendet (stop.bat).')).toBeTruthy();
 	});
 });

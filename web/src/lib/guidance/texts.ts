@@ -15,3 +15,28 @@ export const RESTART_NEEDED = {
 export function restartNeeded(subject: string): string {
 	return `${subject} nach dem nächsten Neustart verfügbar. ${RESTART_NEEDED.text}`;
 }
+
+/** Flag in an open tab when start.bat or the landing page opened the app again (ADR-0035 §5). */
+export const APP_OPENED_AGAIN = {
+	title: 'Du hast becauseyoulovejira erneut geöffnet.',
+	description: 'Die App ist hier schon offen.'
+} as const;
+
+/** Neutral flag in the open tabs when stop.bat ends the app (ADR-0035 §5); not an error. */
+export const APP_STOPPED = {
+	title: 'becauseyoulovejira wurde beendet (stop.bat).',
+	description: 'Zum Weiterarbeiten start.bat ausführen.'
+} as const;
+
+/** Title a hidden tab alternates with while it asks for attention. */
+export const ATTENTION_TITLE = '● Hier ist becauseyoulovejira';
+
+/** Modal of a second tab of the same browser (ADR-0035 §6). */
+export const DUPLICATE_TAB = {
+	title: 'Die App ist schon offen',
+	text: 'becauseyoulovejira ist in einem anderen Tab dieses Browsers geöffnet. Dort erscheint ein Hinweis.',
+	closing: (seconds: number) => `Dieser Tab schließt sich in ${seconds} s.`,
+	closeFailed: 'Du kannst diesen Tab jetzt schließen.',
+	keep: 'Hier weiterarbeiten',
+	close: 'Tab schließen'
+} as const;

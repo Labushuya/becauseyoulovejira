@@ -21,7 +21,10 @@
 	import { CatalogStore, catalogData, setCatalogStore } from '$lib/stores/catalog.svelte';
 	import { ColumnPrefsRegistry, setColumnPrefsRegistry } from '$lib/stores/column-prefs.svelte';
 	import { FirstStepsStore, localStore, setFirstStepsStore } from '$lib/stores/first-steps.svelte';
+	import { ackAttention } from '$lib/data/attention';
+	import { AttentionStore, attentionSource } from '$lib/stores/attention.svelte';
 	import { FlagStore, setFlagStore } from '$lib/stores/flags.svelte';
+	import { getTabContext } from '$lib/tab-presence';
 	import { InboxStore, inboxData, setInboxStore } from '$lib/stores/inbox.svelte';
 	import { LastViewStore, sessionStore, setLastViewStore } from '$lib/stores/last-view.svelte';
 	import { liveSource } from '$lib/stores/realtime';
@@ -128,6 +131,18 @@
 	$effect(() => untrack(() => catalog.connect(live)));
 	$effect(() => untrack(() => inbox.connect(live)));
 	$effect(() => untrack(() => sources.connect(live)));
+
+	// Opened again (ADR-0035 section 5): start.bat, the landing page or stop.bat send a message on
+	// byl/attention; this tab confirms it and shows a flag, the title blinks while it is hidden. A
+	// second tab of this browser asks over the BroadcastChannel of the root layout.
+	const tabContext = getTabContext();
+	const attention = new AttentionStore({
+		ack: (nonce) => ackAttention(pb, nonce),
+		flags,
+		blink: () => tabContext?.blinker.start()
+	});
+	$effect(() => untrack(() => attention.connect(attentionSource(pb))));
+	$effect(() => untrack(() => tabContext?.tabs.onAttention(() => attention.show('start'))));
 
 	// Quick entry (E4 plan, T-11 and package 6): one key handler for the whole app. `c` and Ctrl+K
 	// open it, but not while the user types, picks a tag, searches, or a dialog or popover is open;
