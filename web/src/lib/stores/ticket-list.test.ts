@@ -458,6 +458,31 @@ describe('filters (E3 plan, package 10)', () => {
 		stop();
 	});
 
+	it('filters by "Wiederkehrend" and loads the done tickets with it (plan OR-2)', async () => {
+		const series = ticket({ recurring: true, recurrenceId: 'rule00000000001' });
+		const single = ticket();
+		const data = fakeData([series, single], [[done({ recurring: true })]]);
+		const store = new TicketListStore(data, session());
+		store.activate(query({ showDone: true }));
+		await settle();
+
+		const recurring = query({ showDone: true, recurring: 'recurring' });
+		store.activate(recurring);
+		expect(store.visible.map((entry) => entry.id)).toEqual([series.id]);
+		expect(store.announcement).toBe('1 Ticket.');
+		await settle();
+		expect(data.listDone).toHaveBeenLastCalledWith(
+			1,
+			expect.objectContaining({ filter: { query: recurring, today: '2026-09-24' } })
+		);
+
+		store.activate(query({ showDone: true, recurring: 'once' }));
+		expect(store.visible.map((entry) => entry.id)).toEqual([single.id]);
+		// A done ticket of a series arriving by realtime stays out of "nur einmalige".
+		store.upsert(done({ recurring: true, completedAt: '2026-09-24 09:00:00.000Z' }));
+		expect(store.done.every((entry) => !entry.recurring)).toBe(true);
+	});
+
 	it('reconciles the done tickets with the current filters', async () => {
 		const data = fakeData([], [[done({ priority: 'high' })]]);
 		const store = new TicketListStore(data, session());

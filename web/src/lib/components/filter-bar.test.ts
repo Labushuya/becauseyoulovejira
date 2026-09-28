@@ -325,7 +325,8 @@ describe('filter bar', () => {
 		const names = new Set(
 			(screen.getAllByRole('radio') as HTMLInputElement[]).map((radio) => radio.name)
 		);
-		expect(names.size).toBe(4);
+		// Status, Priorität, Fällig, Quelle and Wiederkehrend (plan OR-2).
+		expect(names.size).toBe(5);
 	});
 });
 
@@ -532,5 +533,45 @@ describe('filter bar: source (E4 plan, package 9; ADR-0019 section 2)', () => {
 		);
 		await fireEvent.click(screen.getByRole('button', { name: 'Zurücksetzen' }));
 		expect(lastTarget()).toBe('/?gruppe=quelle');
+	});
+});
+
+describe('filter bar: recurring (plan OR-2)', () => {
+	it('offers "Wiederkehrend" after "Quelle" with "Alle", "Nur wiederkehrende", "Nur einmalige"', async () => {
+		await showBar();
+		const legends = screen
+			.getAllByRole('group')
+			.map((entry) => entry.querySelector('legend')?.textContent);
+		expect(legends.indexOf('Wiederkehrend')).toBe(legends.indexOf('Quelle') + 1);
+		expect(
+			within(group('Wiederkehrend'))
+				.getAllByRole('radio')
+				.map((radio) => radio.parentElement?.textContent?.trim())
+		).toEqual(['Alle', 'Nur wiederkehrende', 'Nur einmalige']);
+		expect(within(group('Wiederkehrend')).getByRole('radio', { name: 'Alle' })).toHaveProperty(
+			'checked',
+			true
+		);
+	});
+
+	it.each([
+		['Nur wiederkehrende', '/?status=open&wiederholung=wiederkehrend&gruppe=projekt'],
+		['Nur einmalige', '/?status=open&wiederholung=einmalig&gruppe=projekt']
+	])('chip %s sets the URL and keeps the rest', async (chip, target) => {
+		await showBar('/?status=open&gruppe=projekt');
+		await fireEvent.click(within(group('Wiederkehrend')).getByRole('radio', { name: chip }));
+		expect(lastTarget()).toBe(target);
+	});
+
+	it('shows the chosen chip, "Alle" removes it, and "Zurücksetzen" clears it', async () => {
+		await showBar('/?wiederholung=einmalig&gruppe=wiederholung');
+		const recurring = within(group('Wiederkehrend'));
+		expect(recurring.getByRole('radio', { name: 'Nur einmalige' })).toHaveProperty('checked', true);
+
+		await fireEvent.click(recurring.getByRole('radio', { name: 'Alle' }));
+		expect(lastTarget()).toBe('/?gruppe=wiederholung');
+
+		await fireEvent.click(screen.getByRole('button', { name: 'Zurücksetzen' }));
+		expect(lastTarget()).toBe('/?gruppe=wiederholung');
 	});
 });

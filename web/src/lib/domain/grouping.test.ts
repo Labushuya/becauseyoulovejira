@@ -196,7 +196,8 @@ describe('groupTickets', () => {
 			priority: 'Priorität',
 			project: 'Projekt',
 			due: 'Fälligkeit',
-			source: 'Quelle'
+			source: 'Quelle',
+			recurrence: 'Wiederholung'
 		});
 	});
 
@@ -224,6 +225,7 @@ function mixedSet(count: number): TicketSummary[] {
 			status: open[index % open.length],
 			priority: PRIORITIES[(index * 3) % PRIORITIES.length],
 			due: offset === null ? null : addDays(TODAY, offset),
+			recurring: index % 3 === 0,
 			project,
 			tags: index % 4 === 0 ? [{ id: 't00000000000001', name: 'Einkauf' }] : [],
 			created: '2026-0' + (1 + (index % 9)) + '-01 08:00:00.000Z'
@@ -238,7 +240,8 @@ describe('filter, sort and grouping with 2 000 tickets (T-19)', () => {
 		{ ...EMPTY_LIST_QUERY, status: 'in_progress' },
 		{ ...EMPTY_LIST_QUERY, due: 'soon', priority: 'urgent' },
 		{ ...EMPTY_LIST_QUERY, project: HOUSE.id, tag: 't00000000000001' },
-		{ ...EMPTY_LIST_QUERY, project: NO_PROJECT, due: 'overdue' }
+		{ ...EMPTY_LIST_QUERY, project: NO_PROJECT, due: 'overdue' },
+		{ ...EMPTY_LIST_QUERY, recurring: 'recurring', priority: 'high' }
 	];
 	const groupings: (Grouping | null)[] = [null, ...GROUPINGS];
 
@@ -294,6 +297,27 @@ describe('groupTickets: source (E4 plan, package 9; ADR-0019 section 3)', () => 
 		expect(shape(groupTickets(tickets, 'source', TODAY))).toEqual([
 			['manual', 'Manuell', ['a', 'b']],
 			['notion', 'Notion', ['n']]
+		]);
+	});
+});
+
+describe('groupTickets: recurrence (plan OR-2)', () => {
+	it('puts the tickets of a series before the single ones, in the order of the input', () => {
+		const tickets = [
+			row('a'),
+			row('s1', { recurring: true }),
+			row('b'),
+			row('s2', { recurring: true, recurrenceId: 'r00000000000001' })
+		];
+		expect(shape(groupTickets(tickets, 'recurrence', TODAY))).toEqual([
+			['recurring', 'Wiederkehrend', ['s1', 's2']],
+			['once', 'Einmalig', ['a', 'b']]
+		]);
+	});
+
+	it('leaves out an empty group', () => {
+		expect(shape(groupTickets([row('a'), row('b')], 'recurrence', TODAY))).toEqual([
+			['once', 'Einmalig', ['a', 'b']]
 		]);
 	});
 });

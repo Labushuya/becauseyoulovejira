@@ -80,3 +80,11 @@ Begründung: Die Menge ist schon vollständig geladen (Größenordnung Hunderte)
 - Negativ: Für erledigte Tickets gibt es zwei Formen desselben Filters (Prädikat und Serverausdruck). Der Paritätstest hält sie gleich.
 - Negativ: Erledigte Tickets lassen sich nicht per Spaltenkopf sortieren. Das steht sichtbar im Abschnittskopf.
 - Negativ: Die Suche unterscheidet Umlaute nach Groß- und Kleinschreibung (SQLite `LIKE`).
+
+## Nachtrag A (2026-09-28, Plan „Offene Reste“, OR-2): Filter und Gruppe „wiederkehrend“
+
+Nutzerentscheidung vom 2026-09-28. Der Text oben bleibt; dieser Nachtrag ergänzt §3 und §4.
+
+- **Filter „Wiederkehrend“:** Chip-Gruppe nach „Quelle“ mit „Alle“, „Nur wiederkehrende“ und „Nur einmalige“. URL-Parameter `wiederholung` mit den Werten `wiederkehrend` und `einmalig` (Standard: fehlt = alle), in der festen Reihenfolge nach `quelle` und vor `projekt`. Er gehört zu den Filtern, die „Zurücksetzen“ leert, und zum Schlüssel des Abschnitts „Erledigt“.
+- **Client und Server:** `matchesFilter` vergleicht `TicketSummary.recurring`; der Serverausdruck der erledigten Tickets bekommt die Bedingungen `({:recurring} != "recurring" || recurrence != "")` und `({:recurring} != "once" || recurrence = "")`. Das Feld `tickets.recurrence` gibt es seit E1, der Ausdruck braucht also keine Weiche für ein älteres Schema. Der Paritätstest (`web-filter-parity.test.mjs`) hat dafür erledigte Instanzen zweier Serien, ein aus der Serie gelöstes Ticket (zählt als einmalig) und einmalige Tickets, allein und mit Priorität, Fälligkeit, Projekt und Suche.
+- **Gruppe „Nach Wiederholung“:** `gruppe=wiederholung`, Gruppen „Wiederkehrend“ vor „Einmalig“, leere Gruppen fehlen wie überall.

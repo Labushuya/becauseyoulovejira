@@ -21,6 +21,7 @@ function ticket(overrides: Partial<FilterableTicket> = {}): FilterableTicket {
 		projectId: null,
 		tagIds: [],
 		source: null,
+		recurring: false,
 		...overrides
 	};
 }
@@ -235,5 +236,32 @@ describe('matchesFilter: source (E4 plan, package 9; ADR-0019 section 2)', () =>
 		const mail = ticket({ source: 'eml', priority: 'high' });
 		expect(matchesFilter(mail, query({ source: 'mail', priority: 'high' }), TODAY)).toBe(true);
 		expect(matchesFilter(mail, query({ source: 'mail', priority: 'low' }), TODAY)).toBe(false);
+	});
+});
+
+describe('matchesFilter: recurring (plan OR-2)', () => {
+	it('takes only tickets of a series or only single ones, both without the filter', () => {
+		const series = ticket({ recurring: true });
+		const single = ticket({ recurring: false });
+		expect(matchesFilter(series, query({ recurring: 'recurring' }), TODAY)).toBe(true);
+		expect(matchesFilter(single, query({ recurring: 'recurring' }), TODAY)).toBe(false);
+		expect(matchesFilter(series, query({ recurring: 'once' }), TODAY)).toBe(false);
+		expect(matchesFilter(single, query({ recurring: 'once' }), TODAY)).toBe(true);
+		expect(matchesFilter(series, query({ recurring: null }), TODAY)).toBe(true);
+		expect(matchesFilter(single, query({ recurring: null }), TODAY)).toBe(true);
+	});
+
+	it('combines with the other filters, also for done tickets', () => {
+		const done = ticket({ recurring: true, status: 'done', priority: 'high' });
+		expect(
+			matchesFilter(
+				done,
+				query({ recurring: 'recurring', status: 'done', priority: 'high' }),
+				TODAY
+			)
+		).toBe(true);
+		expect(matchesFilter(done, query({ recurring: 'recurring', priority: 'low' }), TODAY)).toBe(
+			false
+		);
 	});
 });

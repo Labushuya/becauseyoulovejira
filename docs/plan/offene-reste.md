@@ -35,13 +35,17 @@
 | 2026-09-28 | OR-1 | **Falltabelle:** 33 neue Fälle, die meisten mit Mo/Mi/Fr, dazu Vorlauf 0, 1, 3 und 5, „nach Erledigung“ über die Zeitumstellungen, ein doppelter Wochentag und die Normalisierung der Reihenfolge. Sommerzeit betrifft reine Kalenderdaten nicht; die Fälle belegen, dass Wochen über die Umstellungssonntage richtig zählen. Das Berliner „heute“ an den Umstellungstagen prüft weiter `recurrence.test.mjs` über `berlin-time.js`. |
 | 2026-09-28 | OR-1 | **Integrationstest** in `recurrence-generate.test.mjs` mit der Test-Uhr: Eine Regel Mo/Mi/Fr erzeugt mit offener Instanz nichts, danach nur den jüngsten verpassten Termin; mit Vorlauf 2 erscheint der nächste Tag erst nach dem Erledigen. Der zweite Modus („jeden Termin einzeln“) folgt mit OR-5 im selben Block. |
 | 2026-09-28 | OR-1 | **Vorschau im Komponententest** über `RecurrenceFormHarness` (bindet die Werte wie Dialog und Panels), weil `RecurrenceForm` keine eigenen Werte hält. |
+| 2026-09-28 | OR-2 | **URL:** `wiederholung=wiederkehrend|einmalig` (Standard: fehlt = alle), Reihenfolge nach `quelle` und vor `projekt`; die Gruppe heißt `gruppe=wiederholung`. Ein eigener Parameter statt `wiederkehrend=ja|nein`, weil derselbe Begriff „Wiederholung“ dann Filter und Gruppe benennt und die Werte ohne Übersetzung lesbar sind. Der Filter ist ein Eintrag in `FILTER_KEYS`: „Zurücksetzen“, `hasFilters`, der Schlüssel des Abschnitts „Erledigt“ und die Ansage nach einem Filterwechsel folgen damit ohne eigenen Code. |
+| 2026-09-28 | OR-2 | **Chip-Gruppe statt Popover:** drei Werte passen als Chips in die Leiste wie „Fällig“ und „Quelle“ (Legende „Wiederkehrend“, Chips „Alle“, „Nur wiederkehrende“, „Nur einmalige“). |
+| 2026-09-28 | OR-2 | **Server:** zwei feste Bedingungen im Ausdruck der erledigten Tickets (`recurrence != ""` bzw. `= ""`), jeweils nur aktiv, wenn der Parameter sie wählt. `tickets.recurrence` gibt es seit E1, eine Weiche für ein älteres Schema ist nicht nötig. Ein aus der Serie gelöstes Ticket hat `recurrence` leer und zählt als einmalig; so lautet auch die Regel im Client (`recurring`). |
+| 2026-09-28 | OR-2 | **Gruppe „Nach Wiederholung“:** „Wiederkehrend“ vor „Einmalig“, weil die Serien der seltenere, gesuchte Teil sind. Nachtrag A in ADR-0013. |
 
 ## 4. Status
 
 | Paket | Stand |
 |---|---|
-| OR-1 | in Arbeit |
-| OR-2 | geplant |
+| OR-1 | gemergt (#143) |
+| OR-2 | in Arbeit |
 | OR-3 | geplant |
 | OR-4 | geplant |
 | OR-5 | geplant |
