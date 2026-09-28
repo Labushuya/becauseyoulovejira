@@ -1,6 +1,6 @@
 # E6-Plan, Teil Unterprojekte: eine Ebene, eigener Code, Baum in Liste und Kacheln, Filter mit Unterprojekten
 
-- **Stand:** in Umsetzung (2026-09-28): UP-1 (#130, Datenmodell, Hook, Spike), UP-2 (Katalog und Datenschicht).
+- **Stand:** in Umsetzung (2026-09-28): UP-1 (#130, Datenmodell, Hook, Spike), UP-2 (#131, Katalog und Datenschicht), UP-3 (Liste und Kacheln als Baum).
 - **Grundlage:**
   - [ADR-0034](../adr/0034-unterprojekte.md) (Datenmodell, Prüfregeln, Archiv-Kaskade, Spike, Oberfläche, Grenze zum Epic)
   - [ADR-0012](../adr/0012-plain-ticketing.md) mit dem Nachtrag „Unterprojekte als Gliederung, keine Epics“
@@ -48,6 +48,12 @@
 | 2026-09-28 | UP-2 | **`activeProjects` in Baum-Reihenfolge** (nach Name, jedes oberste Projekt gefolgt von seinen Unterprojekten): Alle Auswahllisten (Ticket, Regel, Erfassen, Sammelumwandeln) lesen daraus; ohne Unterprojekte bleibt die Reihenfolge nach Name. |
 | 2026-09-28 | UP-2 | **Vor dem Neustart erkennbar:** `fields` enthält `parent`; ein Server ohne das Feld lässt es in der Antwort weg (Integrationstest gegen die Instanz vor der Migration). `toProject` markiert das Projekt dann mit `withoutParentField`, und `CatalogStore.hierarchyReady` ist falsch. Anlegen und Ändern senden `parent` nur, wenn der Entwurf `parentId` nennt, also nie vor dem Neustart. |
 | 2026-09-28 | UP-2 | **Texte der Codes** als `PROJECT_PARENT_MESSAGES` in `domain/project-tree.ts`, gleich dem Hook (`tests/unit/web-project-tree.test.mjs`), und in `data/errors.ts` eingebunden; eine Ablehnung steht damit mit dem Wortlaut des Hooks am Feld `parent`. |
+| 2026-09-28 | UP-3 | **Baum als reine Funktion** `projectRows(available, search, sort, numbers, collapsed)` in `domain/project-view.ts`: oberste Projekte in der gewählten Sortierung, darunter ihre Unterprojekte in derselben Sortierung. Liste und Kacheln zeigen dieselben Zeilen. Ohne verfügbares Oberprojekt (etwa bei ausgeblendeten Archivierten) steht ein Unterprojekt wie ein oberstes. |
+| 2026-09-28 | UP-3 | **Suche mit Kontext:** Ein passendes Unterprojekt bringt sein Oberprojekt mit, gedämpft und mit „(passt nicht zur Suche, Kontext)“ für Screenreader. Ein passendes Oberprojekt zeigt nur die Unterprojekte, die selbst passen. Solange gesucht wird, gilt das Zuklappen nicht, damit jeder Treffer sichtbar ist. Die Zahl der Abschnittsleiste zählt die Treffer, nicht die Kontextzeilen. |
+| 2026-09-28 | UP-3 | **Zuklappen je Tab** in `sessionStorage` `byl-projects-collapsed` (Liste der zugeklappten Oberprojekte, Standard aufgeklappt), nicht in der URL: Es ist ein flüchtiger Ansichtszustand wie offene Details, kein teilbarer Filter. Ein gesperrter Speicher verliert nur das Merken. |
+| 2026-09-28 | UP-3 | **Knopf als Disclosure:** In der Liste ein Symbolknopf in der Namenszelle mit festem Namen „Unterprojekte von Haus“ und `aria-expanded` (kein wechselndes „ausblenden/einblenden“ im Namen, nur im `title`); in den Kacheln ein Textknopf „3 Unterprojekte“ unter der Kachel des Oberprojekts (Name „3 Unterprojekte von Haus“). Der Fokus bleibt beim Klappen auf dem Knopf. Kein `treegrid`. |
+| 2026-09-28 | UP-3 | **Tabellenregeln aus ADR-0030 bleiben:** Die Einrückung (1,75rem) und der Knopf liegen in der flexiblen Namenszelle; `PROJECT_TABLE` in `domain/columns.ts` ändert sich nicht (Spalten, Breiten, Reihenfolge beim Ausweichen), die Tabelle scrollt nie seitlich. Unterprojekte tragen für Screenreader „Unterprojekt von Haus,“ vor dem Link, der Name des Links bleibt der Projektname. |
+| 2026-09-28 | UP-3 | **Kacheln:** Ein Oberprojekt mit Unterprojekten bekommt eine eigene Zeile des Rasters (Kachel, Knopf, darunter ein eingerücktes Raster mit Linie links); Unterprojekt-Kacheln tragen die Überzeile „in Haus“. `ProjectTiles` und `ProjectsView` ziehen auf die Schriftgrößen-Tokens und fallen von der Liste (`no-own-font-sizes.test.ts` jetzt 202). |
 | 2026-09-28 | UP-1 | **Gruppieren nach Projekt bleibt flach:** eine Gruppe je konkretem Projekt mit dem Pfad als Titel („Haus › Garten“), in Baum-Reihenfolge (Oberprojekt, dann seine Unterprojekte). Verworfen: eine Gruppe je Oberprojekt mit Unterprojekten darin. Die Tabelle kennt nur eine Gruppenebene; verschachtelte Gruppen bräuchten zweite Köpfe, eigene Zähler und Auf- und Zuklappen in der Tabelle. Flach mit Pfad zeigt, wohin jedes Ticket gehört (Key und Gruppe passen zusammen), zählt je Projekt, und die Baum-Reihenfolge hält die Unterprojekte trotzdem beim Oberprojekt. Wer alles unter „Haus“ sehen will, filtert nach „Haus“ (mit Unterprojekten). |
 
 ## 4. Status
@@ -55,8 +61,8 @@
 | Paket | Stand |
 |---|---|
 | UP-1 | gemergt (#130) |
-| UP-2 | umgesetzt (Katalog und Datenschicht) |
-| UP-3 | geplant |
+| UP-2 | gemergt (#131) |
+| UP-3 | umgesetzt (Liste und Kacheln als Baum) |
 | UP-4 | geplant |
 | UP-5 | geplant |
 | UP-6 | geplant |

@@ -6,6 +6,7 @@
 		PROJECT_COLUMN_LABELS,
 		projectSortDirection,
 		projectSortOrderLabel,
+		type ProjectRow,
 		type ProjectSort,
 		type ProjectSortKey
 	} from '$lib/domain/project-view';
@@ -22,8 +23,14 @@
 	// measured frame; in a narrow frame columns give way in a fixed order, first "archiviert", then
 	// "neu", then "gesamt", last "aktiv"; code and name always stay, and the caption then names the
 	// panel, where the numbers stand. The view shares the column state with its menu "Spalten".
+	// Sub projects (ADR-0034, UP-3): the rows come as a tree ("Tabelle mit aufklappbaren Zeilen", no
+	// treegrid). A parent carries a disclosure button "Unterprojekte von Haus" (name fixed,
+	// aria-expanded says the state) in the name cell;
+	// a sub project is indented inside the name cell, so the columns and their widths stay as
+	// ADR-0030 says, and it says "Unterprojekt von Haus," to screen readers. A parent that only
+	// stands as context of a search match is dimmed and says so.
 	let {
-		projects,
+		rows,
 		activeOf,
 		totalOf,
 		newOf,
@@ -32,10 +39,11 @@
 		sort = null,
 		searching = false,
 		columnFit = new ColumnFit(getColumnPrefs('projects')),
-		onsort
+		onsort,
+		ontoggle = () => undefined
 	}: {
-		/** Projects in the order to show (filtered and sorted by the view). */
-		projects: readonly Project[];
+		/** Rows in the order to show (filtered, sorted and folded by the view). */
+		rows: readonly ProjectRow[];
 		/** Tickets of the project that are not done; null while not loaded. */
 		activeOf: (project: Project) => number | null;
 		/** Active plus done tickets; null while not counted. */
@@ -54,6 +62,8 @@
 		columnFit?: ColumnFit;
 		/** Click on a column header; the view navigates. */
 		onsort: (key: ProjectSortKey) => void;
+		/** Folds or unfolds the sub projects of a parent. */
+		ontoggle?: (project: Project) => void;
 	} = $props();
 
 	const shown = $derived(columnFit.shown);
@@ -134,22 +144,47 @@
 			</tr>
 		</thead>
 		<tbody>
-			{#each projects as project (project.id)}
+			{#each rows as row (row.project.id)}
+				{@const project = row.project}
 				{@const fresh = newOf(project)}
 				<tr
 					class="row"
 					class:active={project.id === activeId}
 					class:archived={project.archived}
+					class:context={row.context}
+					class:child={row.depth === 1}
 					data-project-row={project.id}
 				>
 					<td class="code" data-col="code">{project.code}</td>
 					<th class="name" scope="row" data-col="name">
-						<a
-							class="title-link"
-							href={hrefOf(project)}
-							data-project-id={project.id}
-							aria-current={project.id === activeId ? 'page' : undefined}>{project.name}</a
-						>
+						<span class="name-cell">
+							{#if row.childCount > 0}
+								<button
+									class="button-icon fold"
+									type="button"
+									aria-expanded={!row.collapsed}
+									aria-label={`Unterprojekte von ${project.name}`}
+									title={row.collapsed ? 'Unterprojekte einblenden' : 'Unterprojekte ausblenden'}
+									onclick={() => ontoggle(project)}
+								>
+									<svg viewBox="0 0 12 12" aria-hidden="true" focusable="false">
+										<path d={row.collapsed ? 'M4.5 3l3 3-3 3' : 'M3 4.5l3 3 3-3'} />
+									</svg>
+								</button>
+							{/if}
+							{#if row.depth === 1 && project.parent}
+								<span class="visually-hidden">Unterprojekt von {project.parent.name},</span>
+							{/if}
+							<a
+								class="title-link"
+								href={hrefOf(project)}
+								data-project-id={project.id}
+								aria-current={project.id === activeId ? 'page' : undefined}>{project.name}</a
+							>
+							{#if row.context}
+								<span class="visually-hidden">(passt nicht zur Suche, Kontext)</span>
+							{/if}
+						</span>
 					</th>
 					{#if shown.has('active')}
 						<td class="number" data-col="active">{number(activeOf(project))}</td>
@@ -288,7 +323,38 @@
 		font-weight: 400;
 	}
 
+	/* The tree lives inside the name cell (ADR-0034): button, indentation and link. */
+	.name-cell {
+		display: flex;
+		gap: 0.25rem;
+		align-items: flex-start;
+		min-width: 0;
+	}
+
+	.child .name-cell {
+		padding-left: 1.75rem;
+	}
+
+	/* A smaller icon button than the default, so the row keeps its height. */
+	.fold {
+		flex: none;
+		width: 1.5rem;
+		height: 1.5rem;
+		margin: -0.125rem 0;
+	}
+
+	.fold svg {
+		width: 0.75rem;
+		height: 0.75rem;
+		fill: none;
+		stroke: currentColor;
+		stroke-width: 1.5;
+		stroke-linecap: round;
+		stroke-linejoin: round;
+	}
+
 	.title-link {
+		min-width: 0;
 		color: inherit;
 		text-decoration: none;
 		overflow-wrap: anywhere;
@@ -299,6 +365,7 @@
 	}
 
 	.archived .title-link,
+	.context .title-link,
 	.state {
 		color: var(--color-text-muted);
 	}

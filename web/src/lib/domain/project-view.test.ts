@@ -10,15 +10,20 @@ import {
 	effectiveProjectLayout,
 	filterProjects,
 	nextProjectSort,
+	PROJECT_COLLAPSED_STORAGE_KEY,
 	parseProjectViewQuery,
+	projectRows,
 	projectSortDirection,
 	projectSortOrderLabel,
+	readCollapsedProjects,
 	readStoredProjectLayout,
 	replaceProjectViewQuery,
 	serializeProjectViewQuery,
 	sortProjects,
+	writeCollapsedProjects,
 	writeStoredProjectLayout,
-	type ProjectNumbers
+	type ProjectNumbers,
+	type ProjectRow
 } from './project-view';
 
 const T0 = '2026-09-24 08:00:00.000Z';
@@ -183,5 +188,100 @@ describe('remembered layout', () => {
 		expect(effectiveProjectLayout({ layout: 'liste' }, 'kacheln')).toBe('liste');
 		expect(effectiveProjectLayout({ layout: null }, 'kacheln')).toBe('kacheln');
 		expect(effectiveProjectLayout({ layout: null }, null)).toBe('liste');
+	});
+});
+
+describe('tree of the project view (ADR-0034)', () => {
+	const home = project('home00000000001', 'Haus', 'HAUS');
+	const yard = { ...project('yard00000000001', 'Garten', 'GART'), parentId: home.id };
+	const roof = { ...project('roof00000000001', 'Dach', 'DACH'), parentId: home.id };
+	const car = project('car000000000001', 'Auto', 'AUTO');
+	// By name, as the catalog delivers them.
+	const all = [car, roof, yard, home];
+	const counts: Record<string, number> = { [car.id]: 1, [home.id]: 2, [roof.id]: 9, [yard.id]: 0 };
+	const numbers: ProjectNumbers = {
+		active: (entry) => counts[entry.id] ?? 0,
+		total: (entry) => counts[entry.id] ?? 0,
+		fresh: () => 0
+	};
+	const shape = (rows: ProjectRow[]) =>
+		rows.map(
+			(row) =>
+				`${'  '.repeat(row.depth)}${row.project.name}${row.context ? ' (Kontext)' : ''}${
+					row.childCount > 0 ? ` [${row.childCount}${row.collapsed ? ', zu' : ''}]` : ''
+				}`
+		);
+
+	it('puts the sub projects below their parent, both in the chosen order', () => {
+		expect(shape(projectRows(all, null, null, numbers, new Set()))).toEqual([
+			'Auto',
+			'Haus [2]',
+			'  Dach',
+			'  Garten'
+		]);
+		// Most active first: the parents are sorted, then the sub projects within their parent.
+		expect(
+			shape(projectRows(all, null, { key: 'active', reversed: false }, numbers, new Set()))
+		).toEqual(['Haus [2]', '  Dach', '  Garten', 'Auto']);
+	});
+
+	it('folds the sub projects of a parent away', () => {
+		expect(shape(projectRows(all, null, null, numbers, new Set([home.id])))).toEqual([
+			'Auto',
+			'Haus [2, zu]'
+		]);
+	});
+
+	it('shows a matching sub project with its parent as context and ignores folding while searching', () => {
+		expect(shape(projectRows(all, 'gart', null, numbers, new Set([home.id])))).toEqual([
+			'Haus (Kontext) [1]',
+			'  Garten'
+		]);
+		// A matching parent shows without its sub projects that do not match.
+		expect(shape(projectRows(all, 'haus', null, numbers, new Set()))).toEqual(['Haus']);
+		expect(projectRows(all, 'xyz', null, numbers, new Set())).toEqual([]);
+	});
+
+	it('shows a sub project whose parent is not available like a top-level project', () => {
+		expect(shape(projectRows([car, yard], null, null, numbers, new Set()))).toEqual([
+			'Auto',
+			'Garten'
+		]);
+	});
+
+	it('keeps the folded parents per tab, and survives a blocked storage', () => {
+		const values = new Map<string, string>();
+		const storage = {
+			getItem: (key: string) => values.get(key) ?? null,
+			setItem: (key: string, value: string) => void values.set(key, value),
+			removeItem: (key: string) => void values.delete(key)
+		};
+		expect(readCollapsedProjects(storage)).toEqual([]);
+		writeCollapsedProjects(storage, ['yard00000000001', 'home00000000001']);
+		expect(values.get(PROJECT_COLLAPSED_STORAGE_KEY)).toBe('["home00000000001","yard00000000001"]');
+		expect(readCollapsedProjects(storage)).toEqual(['home00000000001', 'yard00000000001']);
+		writeCollapsedProjects(storage, []);
+		expect(values.has(PROJECT_COLLAPSED_STORAGE_KEY)).toBe(false);
+		values.set(PROJECT_COLLAPSED_STORAGE_KEY, '{"x":1}');
+		expect(readCollapsedProjects(storage)).toEqual([]);
+		values.set(PROJECT_COLLAPSED_STORAGE_KEY, '["kurz", 5, "home00000000001"]');
+		expect(readCollapsedProjects(storage)).toEqual(['home00000000001']);
+		values.set(PROJECT_COLLAPSED_STORAGE_KEY, 'kaputt');
+		expect(readCollapsedProjects(storage)).toEqual([]);
+
+		const blocked = {
+			getItem: () => {
+				throw new Error('blocked');
+			},
+			setItem: () => {
+				throw new Error('full');
+			},
+			removeItem: () => {
+				throw new Error('blocked');
+			}
+		};
+		expect(readCollapsedProjects(blocked)).toEqual([]);
+		expect(() => writeCollapsedProjects(blocked, ['home00000000001'])).not.toThrow();
+		expect(readCollapsedProjects(null)).toEqual([]);
 	});
 });

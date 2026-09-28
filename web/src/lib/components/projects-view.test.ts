@@ -500,3 +500,78 @@ describe('project view', () => {
 		expect(screen.queryByRole('button', { name: 'Spalten' })).toBeNull();
 	});
 });
+
+describe('project view: sub projects as a tree (ADR-0034, UP-3)', () => {
+	const GARDEN_PROJECT: Project = {
+		id: 'proj00000000011',
+		name: 'Garten',
+		code: 'GART',
+		archived: false,
+		updated: T0,
+		parentId: HOUSE.id
+	};
+	const ROOF: Project = {
+		id: 'proj00000000012',
+		name: 'Dach',
+		code: 'DACH',
+		archived: true,
+		updated: T0,
+		parentId: HOUSE.id
+	};
+	const tree = { projects: [HOUSE, CAR, OLD, GARDEN_PROJECT, ROOF] };
+
+	beforeEach(() => sessionStorage.clear());
+
+	it('shows the sub projects indented below their parent, with a fold button', async () => {
+		await show('/projekte', tree);
+
+		expect(listNames()).toEqual(['Auto', 'Haus', 'Garten']);
+		const fold = screen.getByRole('button', { name: 'Unterprojekte von Haus' });
+		expect(fold.getAttribute('aria-expanded')).toBe('true');
+		expect(fold.closest('th')?.textContent).toContain('Haus');
+		const garden = screen.getByRole('link', { name: 'Garten' }).closest('tr') as HTMLElement;
+		expect(garden.classList.contains('child')).toBe(true);
+		expect(within(garden).getByText('Unterprojekt von Haus,')).toBeTruthy();
+		expect(rowCells('Garten')[0]).toBe('GART');
+		// The count names the projects shown, the switch keeps "Dach" (archived) away.
+		expect(screen.getByText('3 Projekte')).toBeTruthy();
+
+		document.body.innerHTML = '';
+		await show('/projekte?archiviert=1', tree);
+		expect(listNames()).toEqual(['Auto', 'Büro', 'Haus', 'Dach', 'Garten']);
+	});
+
+	it('folds and unfolds the sub projects, keeps the focus and remembers it in the tab', async () => {
+		await show('/projekte', tree);
+		const fold = screen.getByRole('button', { name: 'Unterprojekte von Haus' });
+		fold.focus();
+
+		await fireEvent.click(fold);
+		expect(fold.getAttribute('aria-expanded')).toBe('false');
+		expect(listNames()).toEqual(['Auto', 'Haus']);
+		expect(document.activeElement).toBe(fold);
+		expect(sessionStorage.getItem('byl-projects-collapsed')).toBe(`["${HOUSE.id}"]`);
+		expect(mocks.goto).not.toHaveBeenCalled();
+
+		// A new view in the same tab starts folded; the tiles fold the same way.
+		document.body.innerHTML = '';
+		await show('/projekte?darstellung=kacheln', tree);
+		const tileFold = screen.getByRole('button', { name: '1 Unterprojekt von Haus' });
+		expect(tileFold.getAttribute('aria-expanded')).toBe('false');
+		expect(screen.queryByRole('link', { name: /Garten/ })).toBeNull();
+		await fireEvent.click(tileFold);
+		expect(screen.getByRole('link', { name: /Garten/ }).textContent).toMatch(/in Haus/);
+		expect(sessionStorage.getItem('byl-projects-collapsed')).toBeNull();
+	});
+
+	it('shows a matching sub project with its parent as context, also when folded', async () => {
+		sessionStorage.setItem('byl-projects-collapsed', JSON.stringify([HOUSE.id]));
+		await show('/projekte?q=gart', tree);
+
+		expect(listNames()).toEqual(['Haus', 'Garten']);
+		const parent = screen.getByRole('link', { name: 'Haus' }).closest('tr') as HTMLElement;
+		expect(parent.classList.contains('context')).toBe(true);
+		expect(within(parent).getByText('(passt nicht zur Suche, Kontext)')).toBeTruthy();
+		expect(screen.getByText('1 Projekt')).toBeTruthy();
+	});
+});
