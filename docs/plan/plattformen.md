@@ -47,6 +47,8 @@ Die Bewertung vom 2026-09-27 hatte S0 bis S5 mit S2b und S4 als Optionen. Nach d
 
 ### S1: Installierte Web-App (Windows und Browser)
 
+> **Zusammengeführt** (2026-09-28) mit dem Paket „Start und Fenster“: umgesetzt als Paket SF-5 nach [ADR-0035](../adr/0035-start-einstieg-und-offene-tabs.md) §8 und [docs/plan/start-fenster.md](start-fenster.md). Abweichungen und der Stand stehen dort.
+
 - `web/static/manifest.json` (MIME-Typ von PocketBase im Test prüfen; `.webmanifest` nur, wenn korrekt ausgeliefert): `id`, `start_url` und `scope` `/`, `display: standalone`, Farben aus dem Design-System, Icons 192, 512 und 512 maskable aus dem vorhandenen Logo, `launch_handler` mit `focus-existing`.
 - `sw.js` minimal: kein Caching von `/api/` und `/_/`, keine Offline-Daten; bei Navigation ohne Server eine vorab gecachte Seite „Server nicht erreichbar“. Versionskennung aus dem Build.
 - README „Als App installieren“ (Chrome, Edge; Firefox-Web-Apps unter Windows mit Einschränkungen). Hinweis: `http://127.0.0.1:8090` und eine HTTPS-Adresse sind verschiedene Origins mit getrennter Anmeldung und Darstellung.
@@ -118,3 +120,4 @@ Die Bewertung vom 2026-09-27 hatte S0 bis S5 mit S2b und S4 als Optionen. Nach d
 | 2026-09-27 | S2b | Die APK hat keine feste Server-Adresse, sondern eine lokale Startseite zur Eingabe (P-3: jeder mit eigenem Server). |
 | 2026-09-27 | S4 | Tray-Hülle und Installer behalten den portablen Ordner mit den Daten darin (CLAUDE.md §1). |
 | 2026-09-27 | S0 | `release-please` für SemVer, CHANGELOG und Tags; Start bei `0.1.0`. |
+| 2026-09-28 | S1 | Mit dem Paket „Start und Fenster“ zusammengeführt (Nutzerentscheidung: installierbare Web-App mit `focus-existing`, `start.bat` bevorzugt die installierte App); Umsetzung als SF-5 nach [ADR-0035](../adr/0035-start-einstieg-und-offene-tabs.md) vor S0. |

@@ -77,3 +77,7 @@ Umsetzung abweichend von Punkt 5 und den Konsequenzen oben: Beim Erststart öffn
   - Die Login-Seite verweist Endnutzer nicht mehr auf `/_/`. Ohne Admin-Konto führte das in eine Sackgasse. Sie zeigt jetzt „Kein Zugang oder Passwort vergessen? Wende dich an die Person, die becauseyoulovejira eingerichtet hat.“ Darunter steht ein klar markierter Link „Verwaltung (nur Admin)“.
   - Der Erststart-Hinweis und die README nennen das Notfallskript für den Fall „Link verpasst oder abgelaufen“.
 - Mail-basierte Abläufe werden serverseitig abgewiesen, solange kein Mailer eingerichtet ist: `request-password-reset`, `request-verification`, `request-email-change` und `request-otp` bekommen einheitlich 400 mit Verweis auf README und Notfallskript. Login-Warnmails (`authAlert`) sind abgeschaltet. Details im [E1-Plan](../plan/e1.md), Abschnitt „E1.1 Nachbesserung“.
+
+## Nachtrag (2026-09-28): Routen für Präsenz und Hinweis
+
+[ADR-0035](0035-start-einstieg-und-offene-tabs.md) §4 fügt Routen ohne Anmeldung hinzu (`/api/byl/presence`, `/api/byl/attention`), damit `start.bat` und die Landing-Seite keinen zweiten Tab öffnen. Punkt 6 gilt weiter: Die Routen verraten nichts über Konten, schreiben keine Collection und sind nur für Skripte bzw. `file://` auf diesem Rechner offen. Sie sind keine Setup-Route.
