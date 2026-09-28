@@ -98,3 +98,12 @@ Der Text oben bleibt unverändert. Wo die Umsetzung abweicht oder genauer ist, g
 - **§1, Fehler im zweiten Schritt:** Der `RecurrenceStore` legt ein Angebot für das Ticket ab (`offerRepeat` mit Grund). Das Ticket-Panel holt es einmal ab (`takeOffer`), zeigt den Grund als Fehler und öffnet „Wiederholen…“ mit denselben Werten.
 - **§1, Panel des Eintrags:** „Wiederholung für TASK-12 anlegen…“ ist ein Link aufs Ticket. Er erscheint nur, solange das Ticket offen und in keiner Serie ist. Ein einfacher Klick übergibt die Werte über `offerRepeat`, und das Ticket-Panel öffnet „Wiederholen…“ sofort vorbefüllt. Ein Klick in einen neuen Tab übergibt nichts. Vor der E5-Migration zeigen Formular und Panel keinen Kasten.
 - **Server:** Das zweistufige Anlegen erzeugt kein Ticket auf einem neuen Weg, auch nicht, wenn der erste Termin im Vorlauf liegt (`web-data-recurrence.test.mjs`).
+
+## Nachtrag 2 (2026-09-28, Plan „Offene Reste“, OR-4)
+
+Nutzerentscheidung vom 2026-09-28: Jedes neue Ticket kann gleich beim Anlegen wiederholt werden, nicht nur ein Serientermin. Der Text oben und der erste Nachtrag bleiben; für die Oberfläche gilt jetzt:
+
+- „Neues Ticket“ hat nach der Fälligkeit den zugeklappten Abschnitt „Wiederholen“, dessen Überschrift ein Disclosure-Knopf (`aria-expanded`) ist. Er ersetzt die Überschrift „Wiederholung“ und den Symbolknopf „Wiederholung entfernen“: Zuklappen nimmt die Regel heraus, behält aber die Werte im Formular.
+- „Als Wiederholung übernehmen“ öffnet denselben Abschnitt mit den vorgeschlagenen Werten, der Fokus steht auf dem Disclosure-Knopf.
+- Ohne Vorschlag belegt er sich wie „Wiederholen…“ vor (wöchentlich am Wochentag der Fälligkeit bzw. von heute, Beginn dort, Vorlauf 3); solange niemand etwas ändert, folgen die Vorgaben einer neuen Fälligkeit.
+- Der Weg zum Server bleibt der zweistufige aus diesem ADR (erst das Ticket, dann die Regel mit `ticket`), mit demselben Angebot „Wiederholen…“, wenn die Regel scheitert. Vor der E5-Migration fehlt der Abschnitt.

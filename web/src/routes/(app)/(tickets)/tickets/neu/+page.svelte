@@ -29,9 +29,10 @@
 	// ID and is ignored by the form). New tags come from the catalog, which reuses existing names.
 	// With ?aus=<inbox entry> (E4 plan, T-3 and T-5) the form comes filled from the entry, the
 	// server converts the entry together with the ticket, and "Abbrechen" returns to the entry.
-	// A calendar series may bring a rule (E5 plan, package 6; ADR-0024 section 1): after the ticket
-	// the rule is created with it as its instance; if that fails, the ticket stays and its panel
-	// offers "Wiederholen…" with the same values.
+	// A calendar series may bring a rule (E5 plan, package 6; ADR-0024 section 1), and since plan
+	// OR-4 every new ticket can repeat from the start (section "Wiederholen", once the rules are
+	// available): after the ticket the rule is created with it as its instance; if that fails, the
+	// ticket stays and its panel offers "Wiederholen…" with the same values.
 	const detail = getTicketDetailStore();
 	const rules = getRecurrenceStore();
 	const catalog = getCatalogStore();
@@ -104,6 +105,8 @@
 		projects={catalog.activeProjects}
 		initialProject={filteredProject}
 		tags={catalog.tags}
+		repeat={rules.state !== 'unavailable'}
+		today={tickets.today}
 		oncreatetag={(name) => catalog.ensureTag(name)}
 		oncreate={create}
 		oncreated={(id) => goto(ticketHref(id, page.url), { replaceState: true })}
@@ -117,6 +120,7 @@
 			prefill={ticketPrefill(source.item)}
 			sourceLabel={CHANNEL_LABELS[source.item.channel]}
 			suggestion={rules.state === 'unavailable' ? null : itemSuggestion(source.item, tickets.today)}
+			repeat={rules.state !== 'unavailable'}
 			today={tickets.today}
 			oncreatetag={(name) => catalog.ensureTag(name)}
 			oncreate={create}

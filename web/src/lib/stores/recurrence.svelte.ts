@@ -235,7 +235,8 @@ export class RecurrenceStore {
 
 	/**
 	 * Second step of converting a calendar series with "Als Wiederholung übernehmen" (ADR-0024
-	 * section 1): the ticket exists already and becomes the current instance of the new rule. If
+	 * section 1) and of "Neues Ticket" with the section "Wiederholen" (plan OR-4): the ticket
+	 * exists already and becomes the current instance of the new rule. If
 	 * the rule fails, the ticket stays, and its panel offers "Wiederholen…" with the same values
 	 * and the reason. The rule, or null if it failed.
 	 */

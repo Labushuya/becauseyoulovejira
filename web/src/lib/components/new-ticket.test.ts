@@ -775,12 +775,14 @@ describe('new ticket from a calendar series (E5 plan, package 6; ADR-0024 sectio
 	}
 
 	const takeOver = () => screen.findByRole('button', { name: 'Als Wiederholung übernehmen' });
+	const disclosure = () => screen.getByRole('button', { name: 'Wiederholen' });
 
 	it('shows the rhythm and creates no rule and no due date without the click (P-5)', async () => {
 		openFor(event({ rrule: 'FREQ=WEEKLY;BYDAY=MO' }));
 		expect(await takeOver()).toBeTruthy();
 		expect(screen.getByText(/Dieser Termin wiederholt sich: jeden Montag\./)).toBeTruthy();
-		expect(screen.queryByRole('region', { name: 'Wiederholung' })).toBeNull();
+		expect(disclosure().getAttribute('aria-expanded')).toBe('false');
+		expect(screen.queryByLabelText('Beginnt am')).toBeNull();
 		await fireEvent.click(createButton());
 
 		await vi.waitFor(() => expect(mocks.goto).toHaveBeenCalled());
@@ -790,15 +792,12 @@ describe('new ticket from a calendar series (E5 plan, package 6; ADR-0024 sectio
 		expect(mocks.rules.repeatCreated).not.toHaveBeenCalled();
 	});
 
-	it('opens the section with the suggested values, closes it with the icon button and creates both', async () => {
+	it('opens the section with the suggested values, folds it again and creates both', async () => {
 		openFor(event({ rrule: 'FREQ=WEEKLY;BYDAY=MO' }));
 		await fireEvent.click(await takeOver());
-		const section = screen.getByRole('region', { name: 'Wiederholung' });
-		await vi.waitFor(() =>
-			expect(document.activeElement).toBe(
-				within(section).getByRole('heading', { name: 'Wiederholung' })
-			)
-		);
+		const section = screen.getByRole('region', { name: 'Wiederholen' });
+		await vi.waitFor(() => expect(document.activeElement).toBe(disclosure()));
+		expect(disclosure().getAttribute('aria-expanded')).toBe('true');
 		expect(
 			within(section).getByRole<HTMLInputElement>('checkbox', { name: 'Montag' }).checked
 		).toBe(true);
@@ -807,13 +806,11 @@ describe('new ticket from a calendar series (E5 plan, package 6; ADR-0024 sectio
 		expect(within(section).getByText(/bekommt den ersten Termin: 05\.10\.2026/)).toBeTruthy();
 		expect(screen.queryByRole('button', { name: 'Als Wiederholung übernehmen' })).toBeNull();
 
-		await fireEvent.click(within(section).getByRole('button', { name: 'Wiederholung entfernen' }));
-		expect(screen.queryByRole('region', { name: 'Wiederholung' })).toBeNull();
-		await vi.waitFor(() =>
-			expect(document.activeElement).toBe(
-				screen.getByRole('button', { name: 'Als Wiederholung übernehmen' })
-			)
-		);
+		// Folding creates no rule; the button of the suggestion comes back.
+		await fireEvent.click(disclosure());
+		expect(disclosure().getAttribute('aria-expanded')).toBe('false');
+		expect(within(section).queryByLabelText('Beginnt am')).toBeNull();
+		expect(await takeOver()).toBeTruthy();
 
 		await fireEvent.click(await takeOver());
 		await fireEvent.click(createButton());
@@ -853,7 +850,7 @@ describe('new ticket from a calendar series (E5 plan, package 6; ADR-0024 sectio
 	it('checks the section before creating anything', async () => {
 		openFor(event({ rrule: 'FREQ=WEEKLY;BYDAY=MO' }));
 		await fireEvent.click(await takeOver());
-		const section = screen.getByRole('region', { name: 'Wiederholung' });
+		const section = screen.getByRole('region', { name: 'Wiederholen' });
 		await fireEvent.click(within(section).getByRole('checkbox', { name: 'Montag' }));
 		await fireEvent.click(createButton());
 		await vi.waitFor(() =>
@@ -882,5 +879,142 @@ describe('new ticket from a calendar series (E5 plan, package 6; ADR-0024 sectio
 		openFor(event({ rrule: 'FREQ=WEEKLY;BYDAY=MO' }), 'unavailable');
 		await vi.waitFor(() => expect(titleField().value).toBe('Chorprobe'));
 		expect(screen.queryByText(/wiederholt sich/)).toBeNull();
+		// Before the migration there is no section "Wiederholen" either.
+		expect(screen.queryByRole('button', { name: 'Wiederholen' })).toBeNull();
+	});
+});
+
+// "Neues Ticket" with the section "Wiederholen" (plan OR-4): folded by default, opened with the
+// defaults of the due date or of today and the preview; only an open section creates the rule,
+// after the ticket (the two steps of ADR-0024); a failed rule keeps the ticket.
+describe('new ticket: repeat right away (plan OR-4)', () => {
+	const RULE = { id: 'rule00000000010' };
+
+	async function openPlain(state = 'ready') {
+		mocks.page.url = new URL('http://localhost:3000/tickets/neu');
+		mocks.detail.create.mockReset();
+		mocks.detail.create.mockResolvedValue({ ok: true, ticket: CREATED });
+		mocks.detail.upsert.mockReset();
+		mocks.tickets.upsert.mockReset();
+		mocks.goto.mockClear();
+		mocks.rules.state = state;
+		mocks.rules.repeatCreated.mockReset();
+		mocks.rules.repeatCreated.mockResolvedValue(RULE);
+		const { release } = catalog();
+		release();
+		render(NewTicketPage);
+		await vi.waitFor(() => expect(screen.getByLabelText('Titel')).toBeTruthy());
+	}
+
+	const disclosure = () => screen.getByRole('button', { name: 'Wiederholen' });
+	const section = () => screen.getByRole('region', { name: 'Wiederholen' });
+
+	it('offers the folded section and creates no rule without opening it', async () => {
+		await openPlain();
+		expect(disclosure().getAttribute('aria-expanded')).toBe('false');
+		const controlled = document.getElementById(String(disclosure().getAttribute('aria-controls')));
+		expect(controlled?.hidden).toBe(true);
+		await fireEvent.input(titleField(), { target: { value: 'Blumen gießen' } });
+		await fireEvent.click(createButton());
+		await vi.waitFor(() => expect(mocks.detail.create).toHaveBeenCalledOnce());
+		await vi.waitFor(() => expect(mocks.goto).toHaveBeenCalled());
+		expect(mocks.rules.repeatCreated).not.toHaveBeenCalled();
+	});
+
+	it('opens with the weekday of the due date, follows a new due date and shows the preview', async () => {
+		await openPlain();
+		const due = screen.getByLabelText<HTMLInputElement>('Fälligkeit');
+		await fireEvent.input(due, { target: { value: '2026-09-28' } });
+		await fireEvent.change(due);
+		await fireEvent.click(disclosure());
+		expect(disclosure().getAttribute('aria-expanded')).toBe('true');
+		const form = within(section());
+		expect(form.getByRole<HTMLInputElement>('checkbox', { name: 'Montag' }).checked).toBe(true);
+		expect(form.getByLabelText<HTMLInputElement>('Beginnt am').value).toBe('2026-09-28');
+		expect(form.getByText('Nächste Termine: 28.09.2026, 05.10.2026, 12.10.2026')).toBeTruthy();
+
+		// Untouched defaults move with the due date (Wednesday), chosen values stay.
+		await fireEvent.input(due, { target: { value: '2026-09-30' } });
+		await fireEvent.change(due);
+		expect(form.getByRole<HTMLInputElement>('checkbox', { name: 'Mittwoch' }).checked).toBe(true);
+		expect(form.getByLabelText<HTMLInputElement>('Beginnt am').value).toBe('2026-09-30');
+		await fireEvent.click(form.getByRole('checkbox', { name: 'Freitag' }));
+		await fireEvent.input(due, { target: { value: '2026-10-05' } });
+		await fireEvent.change(due);
+		expect(form.getByLabelText<HTMLInputElement>('Beginnt am').value).toBe('2026-09-30');
+		expect(form.getByText('Nächste Termine: 30.09.2026, 02.10.2026, 07.10.2026')).toBeTruthy();
+	});
+
+	it('creates the ticket, then the rule with it, and shows it in its series at once', async () => {
+		await openPlain();
+		await fireEvent.input(titleField(), { target: { value: 'Müll rausbringen' } });
+		await fireEvent.click(disclosure());
+		// Without a due date: today (Friday 25.09.) and the first date the ticket gets.
+		expect(within(section()).getByText(/bekommt den ersten Termin: 25\.09\.2026/)).toBeTruthy();
+		await fireEvent.click(createButton());
+
+		await vi.waitFor(() => expect(mocks.rules.repeatCreated).toHaveBeenCalledOnce());
+		expect(mocks.detail.create.mock.invocationCallOrder[0]).toBeLessThan(
+			mocks.rules.repeatCreated.mock.invocationCallOrder[0] ?? 0
+		);
+		expect(mocks.rules.repeatCreated).toHaveBeenCalledWith(
+			CREATED,
+			expect.objectContaining({
+				mode: 'calendar',
+				freq: 'weekly',
+				weekdays: ['FR'],
+				anchor: '2026-09-25'
+			})
+		);
+		const joined = { ...CREATED, recurring: true, recurrenceId: RULE.id, due: '2026-09-25' };
+		expect(mocks.detail.upsert).toHaveBeenCalledWith(joined);
+		expect(mocks.tickets.upsert).toHaveBeenCalledWith(joined);
+		await vi.waitFor(() =>
+			expect(mocks.goto).toHaveBeenCalledWith('/tickets/new000000000000', { replaceState: true })
+		);
+	});
+
+	it('keeps the ticket and opens it when the rule fails (the panel offers "Wiederholen…")', async () => {
+		await openPlain();
+		mocks.rules.repeatCreated.mockResolvedValueOnce(null);
+		await fireEvent.input(titleField(), { target: { value: 'Blumen' } });
+		await fireEvent.click(disclosure());
+		await fireEvent.click(createButton());
+		await vi.waitFor(() =>
+			expect(mocks.goto).toHaveBeenCalledWith('/tickets/new000000000000', { replaceState: true })
+		);
+		expect(mocks.detail.create).toHaveBeenCalledOnce();
+		expect(mocks.detail.upsert).not.toHaveBeenCalled();
+	});
+
+	it('creates no rule once the section is folded again, and asks before discarding it', async () => {
+		await openPlain();
+		await fireEvent.click(disclosure());
+		// Only the open section counts as an entry.
+		await fireEvent.click(screen.getByRole('button', { name: 'Abbrechen' }));
+		expect(await discardQuestion()).not.toBeNull();
+		await answer('Weiter bearbeiten');
+		await fireEvent.click(disclosure());
+		await fireEvent.click(screen.getByRole('button', { name: 'Abbrechen' }));
+		expect(await discardQuestion()).toBeNull();
+	});
+
+	it('checks an open section before creating anything', async () => {
+		await openPlain();
+		await fireEvent.input(titleField(), { target: { value: 'Blumen' } });
+		await fireEvent.click(disclosure());
+		await fireEvent.input(within(section()).getByLabelText('Vorlauf (Tage)'), {
+			target: { value: '31' }
+		});
+		await fireEvent.click(createButton());
+		await vi.waitFor(() =>
+			expect(document.activeElement).toBe(within(section()).getByLabelText('Vorlauf (Tage)'))
+		);
+		expect(mocks.detail.create).not.toHaveBeenCalled();
+	});
+
+	it('offers no section before the migration of E5', async () => {
+		await openPlain('unavailable');
+		expect(screen.queryByRole('button', { name: 'Wiederholen' })).toBeNull();
 	});
 });

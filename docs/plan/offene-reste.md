@@ -45,6 +45,10 @@
 | 2026-09-28 | OR-3 | **Aufklappen:** Jeder Gruppenkopf ist ein Disclosure-Knopf mit `aria-expanded`, der Bezeichnung und Zahl enthält (sein Name ist der alte Name des Kopfes, „Offen, 2 Tickets“), auch bei einer Ebene. Gemerkt wird je Tab in `sessionStorage` `byl-groups-collapsed` über den Pfad der Gruppe (`project:<id>/status:open`), wie `byl-projects-collapsed`; höchstens 200 Pfade, streng gelesen. Nicht in der URL, weil Zuklappen eine flüchtige Sicht ist und Adressen sonst mit jeder Gruppe wachsen. |
 | 2026-09-28 | OR-3 | **Zahl:** Jeder Kopf zählt die offenen Tickets seiner Gruppe wie bisher; die erste Ebene zählt alle ihrer Blätter. |
 | 2026-09-28 | OR-3 | `GroupPopover` zieht auf die Schriftgrößen-Tokens und fällt von der Liste (`no-own-font-sizes.test.ts` jetzt 178). |
+| 2026-09-28 | OR-4 | **Ein Abschnitt für beide Wege:** Der Abschnitt „Wiederholen“ ersetzt den bisherigen Abschnitt „Wiederholung“ der Kalenderserien. Seine Überschrift ist ein Disclosure-Knopf (`aria-expanded`, `aria-controls`); Zuklappen ersetzt „Wiederholung entfernen“ und behält die Werte, nur ein offener Abschnitt legt eine Regel an. „Als Wiederholung übernehmen“ öffnet denselben Abschnitt mit den Werten der Serie. Nachtrag 2 in ADR-0024. |
+| 2026-09-28 | OR-4 | **Vorgaben:** wie „Wiederholen…“ (`defaultFormValues`): wöchentlich am Wochentag der Fälligkeit bzw. von heute, Beginn dort, Vorlauf 3. Solange die Werte unverändert die Vorgaben sind, folgen sie einer geänderten Fälligkeit (Ereignis `change` des Datumsfelds); was der Nutzer gewählt hat, bleibt. |
+| 2026-09-28 | OR-4 | **Zwei Schritte ohne neuen Server-Weg:** Die Route legt wie bei Kalenderserien erst das Ticket an und ruft dann `RecurrenceStore.repeatCreated` auf; das Ticket wird die erste Instanz, Panel und Liste zeigen es über `joinedSeries` sofort in der Serie. Scheitert die Regel, bleibt das Ticket, und `offerRepeat` bietet im Panel „Wiederholen…“ mit dem Grund an. Keine Änderung an Hooks. |
+| 2026-09-28 | OR-4 | **Nur mit Regeln:** Der Abschnitt erscheint mit `repeat` (Route: `RecurrenceStore.state !== 'unavailable'`) oder mit einem Vorschlag, vor der E5-Migration also nicht. `NewTicketForm` zieht auf die Schriftgrößen-Tokens (`no-own-font-sizes.test.ts` jetzt 177). |
 
 ## 4. Status
 
@@ -52,8 +56,8 @@
 |---|---|
 | OR-1 | gemergt (#143) |
 | OR-2 | gemergt (#144) |
-| OR-3 | in Arbeit |
-| OR-4 | geplant |
+| OR-3 | gemergt (#145) |
+| OR-4 | in Arbeit |
 | OR-5 | geplant |
 
 ## 5. Offene Punkte
