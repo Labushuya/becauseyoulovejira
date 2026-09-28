@@ -10,6 +10,7 @@
 	import StatusSelect from './StatusSelect.svelte';
 	import TagPicker from './TagPicker.svelte';
 	import TicketCompletionQuestion from './TicketCompletionQuestion.svelte';
+	import TicketReopenQuestion from './TicketReopenQuestion.svelte';
 	import type { CompletionChoice } from '$lib/domain/subtasks';
 
 	// Fields of a ticket (E2 plan, package 7; E3 plan, T-13 and T-14), shared by the side panel and
@@ -63,6 +64,14 @@
 		await tick();
 		document.getElementById(ids.status)?.focus();
 	}
+
+	/** After a refused reopening (ADR-0023 addendum 4) the focus goes back to the status. */
+	async function endReopen(detach: boolean) {
+		if (detach) await store.reopenDetached();
+		else store.cancelReopen();
+		await tick();
+		document.getElementById(ids.status)?.focus();
+	}
 </script>
 
 {#snippet fieldError(field: 'status' | 'priority' | 'due' | 'project' | 'tags')}
@@ -90,6 +99,14 @@
 				busy={store.isSaving('status')}
 				onconfirm={(choice) => void endCompletion(choice)}
 				oncancel={() => void endCompletion(null)}
+			/>
+		{/if}
+		{#if store.reopenQuestion}
+			<TicketReopenQuestion
+				question={store.reopenQuestion}
+				busy={store.isSaving('status')}
+				onconfirm={() => void endReopen(true)}
+				oncancel={() => void endReopen(false)}
 			/>
 		{/if}
 	</div>

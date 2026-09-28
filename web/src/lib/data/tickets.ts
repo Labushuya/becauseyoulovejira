@@ -161,6 +161,8 @@ function patchBody(patch: TicketPatch): PatchBody {
 	// '' releases a sub-task from its parent (ADR-0033).
 	if (patch.parent !== undefined) body.parent = patch.parent ?? '';
 	if (patch.blocksParent !== undefined) body.blocks_parent = patch.blocksParent;
+	// The only change a client may make to the series: leaving it (ADR-0023 section 1).
+	if (patch.detachSeries === true) body.recurrence = '';
 	return body;
 }
 

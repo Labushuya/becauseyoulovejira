@@ -434,6 +434,22 @@ function newInstance(txApp, rule, due, occurrence) {
   return ticket;
 }
 
+// Missed dates of a fixed rhythm made into one ticket (ADR-0022 section 3, addendum 4): the new
+// ticket gets a neutral history entry naming how many dates it stands for and which, in the
+// transaction of its creation, without a user (like its "created" entry). Nothing without a gap.
+function noteSkipped(txApp, rule, state, due, ticketId) {
+  var skipped = rules.skippedDates(state, state.next_due, due, recurrence);
+  if (skipped === null) {
+    return;
+  }
+  var ticket = findById(txApp, TICKETS, ticketId);
+  ticketService.saveHistoryEntry(txApp, ticket, {
+    field: rules.SKIPPED_FIELD,
+    old_value: rule.id,
+    new_value: JSON.stringify(skipped)
+  });
+}
+
 // Writes the hint of a failed generation in an own transaction; the rule stays active and the
 // next run tries again (ADR-0022 section 2).
 function recordFailure(app, ruleId, err) {
@@ -500,6 +516,9 @@ function materialize(app, ruleId, nowMs) {
         if (!each || !hasOpenOccurrence(txApp, rule.id, dues[i])) {
           created.push(newInstance(txApp, rule, dues[i], each).id);
         }
+      }
+      if (!each && created.length > 0) {
+        noteSkipped(txApp, rule, state, plan.due, created[0]);
       }
       rule.set('next_due', rules.storedDateOf(plan.nextDue));
       rule.set('last_generated_at', berlinTime.toPocketBaseDate(nowMs));
@@ -631,8 +650,14 @@ function prepareTicketUpdate(txApp, record, nowMs) {
 // Reopening an instance (ADR-0023 section 3, addendum OR-5). The open instances that stand
 // against it follow the unique index: with one open instance per rule every other one, with
 // "Jeden Termin einzeln anlegen" only one of the same date (normally none, so reopening just
-// works and next_due stays). A single conflicting follow-up is removed if it is untouched,
-// otherwise, and with several, the reopening is refused with the newest key.
+// works and next_due stays). A single conflicting follow-up is removed only if it is untouched
+// and the reopened ticket is its direct predecessor, the instance completed last (addendum 4:
+// reopening an older one never removes the current follow-up silently). Otherwise, and with
+// several, the reopening is refused with the newest key; the client may then reopen the ticket
+// as a normal one by clearing `recurrence` in the same request (DETACH_KEY, no conflict then).
+// The untouched follow-up is removed for good, not moved to the trash: it was made by the server
+// moments ago, has no content of the user, and restoring it would only conflict (ADR-0023
+// addendum 3).
 function reopen(txApp, record, rule) {
   var others = txApp.findRecordsByFilter(
     TICKETS,
@@ -656,6 +681,7 @@ function reopen(txApp, record, rule) {
     return;
   }
   var followUp = conflicts[0].ticket;
+  var completedAt = record.original().getString('completed_at');
   var comments = txApp.findRecordsByFilter('comments', 'ticket = {:id}', '', 1, 0, { id: followUp.id });
   var untouched = rules.isUntouched(
     {
@@ -663,14 +689,22 @@ function reopen(txApp, record, rule) {
       updated: followUp.getString('updated'),
       comments: comments.length
     },
-    record.original().getString('completed_at')
+    completedAt
   );
-  if (!untouched || conflicts.length > 1) {
+  var outcome = rules.reopenOutcome({
+    conflicts: conflicts.length,
+    untouched: untouched,
+    direct: each || rules.isDirectPredecessor(completedAt, latestOtherCompletion(txApp, rule.id, record.id))
+  });
+  if (outcome !== 'remove') {
     var key = followUp.getString('key');
-    throw errors.fieldFailure('status', 'validation_recurrence_open_instance', rules.openInstanceMessage(key), {
-      key: key,
-      ticket: followUp.id
-    });
+    var older = outcome === 'refuse_older';
+    throw errors.fieldFailure(
+      'status',
+      older ? 'validation_recurrence_reopen_older' : 'validation_recurrence_open_instance',
+      older ? rules.reopenOlderMessage(key) : rules.openInstanceMessage(key),
+      { key: key, ticket: followUp.id }
+    );
   }
   var removedDue = rules.calendarDateOf(followUp.getString('due'));
   followUp.set(UNDO_KEY, true);
@@ -680,6 +714,20 @@ function reopen(txApp, record, rule) {
   if (!each) {
     setNextDue(txApp, rule, rules.nextDueOnReopen(state, true, removedDue));
   }
+}
+
+// completed_at of the newest other done instance of a rule ('' without one). Instances in the
+// trash or released from the series have no rule any more and do not count.
+function latestOtherCompletion(txApp, ruleId, ticketId) {
+  var found = txApp.findRecordsByFilter(
+    TICKETS,
+    "recurrence = {:rule} && status = 'done' && id != {:id}",
+    '-completed_at',
+    1,
+    0,
+    { rule: ruleId, id: ticketId }
+  );
+  return found.length > 0 ? found[0].getString('completed_at') : '';
 }
 
 function release(txApp, ruleId, today) {

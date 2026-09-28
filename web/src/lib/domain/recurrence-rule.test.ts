@@ -8,10 +8,15 @@ import {
 	nextTicketDate,
 	nextTicketText,
 	openInstanceMessage,
+	parseSkipped,
+	REOPEN_DETACHED_LABEL,
+	REOPEN_REFUSALS,
+	reopenOlderMessage,
 	ruleParams,
 	ruleStateLabel,
 	ruleText,
 	sameRhythm,
+	skippedText,
 	type RecurrenceRule
 } from './recurrence-rule';
 
@@ -210,5 +215,53 @@ describe('overview and rule panel (package 5)', () => {
 		expect(sameRhythm(weekly, { ...weekly, mode: 'after_completion' })).toBe(false);
 		expect(sameRhythm(weekly, { ...weekly, interval: 'x' })).toBe(false);
 		expect(sameRhythm({ ...weekly, interval: 'x' }, { ...weekly, interval: 'y' })).toBe(true);
+	});
+});
+
+describe('missed dates made into one ticket (ADR-0022 addendum 4)', () => {
+	it('reads only a well-formed note', () => {
+		expect(parseSkipped('{"count":2,"dates":["2026-10-12","2026-10-19"],"more":false}')).toEqual({
+			count: 2,
+			dates: ['2026-10-12', '2026-10-19'],
+			more: false
+		});
+		for (const value of [
+			'',
+			'x',
+			'[]',
+			'{"count":0,"dates":[]}',
+			'{"count":2,"dates":["12.10."]}'
+		]) {
+			expect(parseSkipped(value), value).toBeNull();
+		}
+	});
+
+	it('names count and dates, with "…" for more than listed', () => {
+		const dates = ['2026-10-01', '2026-10-02', '2026-10-03', '2026-10-04', '2026-10-05'];
+		expect(skippedText({ count: 1, dates: ['2026-10-12'], more: false }, TODAY)).toBe(
+			'1 Termin übersprungen (12.10.)'
+		);
+		expect(skippedText({ count: 7, dates, more: false }, TODAY)).toBe(
+			'7 Termine übersprungen (01.10., 02.10., 03.10., 04.10., 05.10. …)'
+		);
+		expect(skippedText({ count: 1000, dates, more: true }, TODAY)).toBe(
+			'Mehr als 1000 Termine übersprungen (01.10., 02.10., 03.10., 04.10., 05.10. …)'
+		);
+		expect(skippedText({ count: 2, dates: ['2025-12-29', '2026-01-05'], more: false })).toBe(
+			'2 Termine übersprungen (29.12.2025, 05.01.2026)'
+		);
+	});
+});
+
+describe('refused reopening (ADR-0023 addendum 4)', () => {
+	it('names the open ticket and the way out', () => {
+		expect(reopenOlderMessage('HAUS-12')).toBe(
+			'Von dieser Serie ist schon HAUS-12 offen, und dieses Ticket ist nicht das zuletzt erledigte. Du kannst es als normales Ticket wieder öffnen (aus der Serie lösen).'
+		);
+		expect(REOPEN_REFUSALS).toEqual([
+			'validation_recurrence_open_instance',
+			'validation_recurrence_reopen_older'
+		]);
+		expect(REOPEN_DETACHED_LABEL).toBe('Als normales Ticket wieder öffnen (aus der Serie lösen)');
 	});
 });

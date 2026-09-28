@@ -138,3 +138,12 @@ Nutzerentscheidung vom 2026-09-28, eine bewusste Änderung der Regel „höchste
 - Migration `1790202300_tickets_trash.js` ergänzt den Teilindex um den Papierkorb: `UNIQUE (recurrence, occurrence) WHERE recurrence != '' AND status != 'done' AND deleted_at = ''`. Das Verschieben leert `recurrence` und `occurrence` ohnehin (Schnappschuss im Ticket); die Bedingung hält den Index für jede Zeile richtig, auch wenn eine Zeile im Papierkorb eine Regel trägt.
 - Die Erzeugung braucht keine Änderung: Eine Instanz im Papierkorb hat keine Regel mehr, zählt also für „offene Instanz“ und „Termin hat ein Ticket“ nicht. Wie nach dem Hartlöschen entsteht die nächste Instanz zum nächsten Termin (ADR-0023 §6), nie sofort.
 - Der Rückweg stellt den Index von Nachtrag 2 wieder her.
+
+## Nachtrag 4 (2026-09-28, Plan „Wiederholungen verständlich machen“, WK-1): Zusammengefasste Termine sichtbar
+
+Nutzerentscheidung vom 2026-09-28 (Empfehlung 3). §3 bleibt: Ohne Schalter entsteht nach verpassten Terminen genau ein Ticket mit dem jüngsten. Neu ist, dass es das sagt.
+
+- **Verlaufseintrag statt Feld:** Liegt zwischen dem gespeicherten `next_due` und der Fälligkeit des neuen Tickets mindestens ein weiterer Termin, schreibt `materialize` in derselben Transaktion am neuen Ticket einen Eintrag `ticket_history` mit `field = recurrence_skipped`, ohne Nutzer, `old_value` = Regel und `new_value` = JSON `{ count, dates, more }`: die übersprungenen Termine ab `next_due` bis vor die Fälligkeit, höchstens 5 Daten (älteste zuerst), gezählt bis 1 000 (`more`, wenn es mehr sind). Die Schleife läuft über Termine der Serie und ist begrenzt (`skippedDates` in `lib/recurrence-rules.js`). `ticket_history.field` ist freier Text, eine Migration ist nicht nötig; der Eintrag ändert `updated` des Tickets nicht, es bleibt „unberührt“ (ADR-0023 §3).
+- **Anzeige:** Der Verlauf nennt „2 Termine übersprungen (12.10.2026, 19.10.2026), zusammengefasst in diesem Ticket“ mit „Wiederholung“ als Urheber; die Zeile „Wiederholt sich“ im Ticket zeigt denselben Hinweis neutral (`SectionMessage` info) aus dem geladenen Verlauf. Hook und SPA lesen dasselbe Format (Paritätstest in `web-recurrence.test.mjs`).
+- Nicht betroffen: „nach Erledigung“ (keine verpassten Termine) und „Jeden Termin einzeln anlegen“ (jeder Termin bekommt sein Ticket).
+- Belegt in `recurrence-generate.test.mjs` (drei verpasste Tage, Eintrag ohne Nutzer, Ticket unberührt) und `recurrence-rules.test.mjs` (Beispiel „jeden Montag“, drei Wochen liegen gelassen: Ticket für den 26.10., übersprungen 12.10. und 19.10.; Obergrenzen).

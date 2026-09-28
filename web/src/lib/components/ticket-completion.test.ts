@@ -7,6 +7,7 @@ import { fireEvent, render, screen, within } from '@testing-library/svelte';
 import { tick } from 'svelte';
 import { SvelteMap } from 'svelte/reactivity';
 import { describe, expect, it, vi } from 'vitest';
+import { DataError } from '$lib/data/errors';
 import type { DoneTicketPage } from '$lib/data/tickets';
 import type { Ticket, TicketPatch, TicketSummary } from '$lib/domain/ticket';
 import { CatalogStore } from '$lib/stores/catalog.svelte';
@@ -228,6 +229,47 @@ describe('status "Erledigt" of a ticket with open blocking sub-tasks', () => {
 		);
 		await vi.waitFor(() => expect(document.activeElement).toBe(select));
 		expect(screen.queryByRole('button', { name: 'Erledigen' })).toBeNull();
+	});
+
+	it('explains a refused reopening of a series inline and reopens it as a normal ticket (ADR-0023 addendum 4)', async () => {
+		const { store, data } = await showFields();
+		const message =
+			'Von dieser Serie ist schon HAUS-20 offen, und dieses Ticket ist nicht das zuletzt erledigte. Du kannst es als normales Ticket wieder öffnen (aus der Serie lösen).';
+		data.update.mockRejectedValueOnce(
+			new DataError('validation', {
+				status: 400,
+				fields: {
+					status: {
+						code: 'validation_recurrence_reopen_older',
+						message,
+						params: { key: 'HAUS-20' }
+					}
+				}
+			})
+		);
+		const select = screen.getByLabelText('Status') as HTMLSelectElement;
+		await fireEvent.change(select, { target: { value: 'open' } });
+		await tick();
+
+		expect(screen.queryByRole('dialog')).toBeNull();
+		expect(screen.getByRole('heading', { name: /Nicht wieder in die Serie/ })).toBeTruthy();
+		expect(screen.getByText(message)).toBeTruthy();
+		expect(select.value).toBe('in_progress');
+		expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Abbrechen' }));
+
+		await fireEvent.click(
+			screen.getByRole('button', {
+				name: 'Als normales Ticket wieder öffnen (aus der Serie lösen)'
+			})
+		);
+		await vi.waitFor(() =>
+			expect(data.update).toHaveBeenLastCalledWith(PARENT_ID, {
+				status: 'open',
+				detachSeries: true
+			})
+		);
+		await vi.waitFor(() => expect(store.reopenQuestion).toBeNull());
+		await vi.waitFor(() => expect(document.activeElement).toBe(select));
 	});
 
 	it('cancels with Escape, consumes it and returns the focus to the status', async () => {

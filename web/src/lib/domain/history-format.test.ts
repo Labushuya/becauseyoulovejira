@@ -111,6 +111,22 @@ describe('describeHistoryEntry', () => {
 		expect(describeHistoryEntry({ ...generated, oldValue: '' }, lookups, ME).actor).toBe('System');
 	});
 
+	it('names the missed dates a catch-up ticket stands for (ADR-0022 addendum 4)', () => {
+		const note = entry({
+			field: 'recurrence_skipped',
+			oldValue: 'rule00000000001',
+			newValue: JSON.stringify({ count: 2, dates: ['2026-10-12', '2026-10-19'], more: false }),
+			user: ''
+		});
+		expect(describeHistoryEntry(note, lookups, ME)).toMatchObject({
+			actor: RECURRENCE_ACTOR,
+			text: '2 Termine übersprungen (12.10.2026, 19.10.2026), zusammengefasst in diesem Ticket'
+		});
+		expect(describeHistoryEntry({ ...note, newValue: 'kaputt' }, lookups, ME).text).toBe(
+			'Verpasste Termine zusammengefasst'
+		);
+	});
+
 	it.each<[string, Partial<HistoryEntry>, string]>([
 		['creation', { field: 'created', newValue: 'TASK-12' }, 'hat das Ticket angelegt (TASK-12)'],
 		['creation without key', { field: 'created' }, 'hat das Ticket angelegt'],

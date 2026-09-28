@@ -7,6 +7,7 @@ import { formatCalendarDate, formatBerlinDateTime } from './format';
 import { CHANNEL_LABELS, isInboxChannel } from './inbox';
 import { PRIORITY_LABELS, STATUS_LABELS, historyFieldLabel } from './labels';
 import { personLabel } from './people';
+import { SKIPPED_FIELD, parseSkipped, skippedText } from './recurrence-rule';
 import { isPriority, isStatus } from './status';
 import { toDueInput, type HistoryEntry, type ProjectRef, type TagRef } from './ticket';
 
@@ -223,6 +224,13 @@ function describe(entry: HistoryEntry, lookups: HistoryLookups): string {
 			return 'Wiederholung geändert';
 		case 'source_link':
 			return sourceLinkText(oldValue, newValue);
+		case SKIPPED_FIELD: {
+			// ADR-0022 addendum 4: a catch-up ticket names the missed dates it stands for.
+			const skipped = parseSkipped(newValue);
+			return skipped === null
+				? 'Verpasste Termine zusammengefasst'
+				: `${skippedText(skipped)}, zusammengefasst in diesem Ticket`;
+		}
 		default:
 			return `${historyFieldLabel(field)} geändert`;
 	}
@@ -236,7 +244,11 @@ export const RECURRENCE_ACTOR = 'Wiederholung';
  * hook writes it so since E5, package 3).
  */
 function createdByRule(entry: HistoryEntry): boolean {
-	return entry.field === 'created' && entry.user === '' && entry.oldValue !== '';
+	return (
+		(entry.field === 'created' || entry.field === SKIPPED_FIELD) &&
+		entry.user === '' &&
+		entry.oldValue !== ''
+	);
 }
 
 /** Readable form of a history entry for the signed-in user `selfId`. */

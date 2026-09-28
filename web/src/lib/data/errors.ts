@@ -3,7 +3,11 @@
 // root integration tests and the web app each load their own copy of the SDK.
 
 import { PROJECT_PARENT_MESSAGES } from '../domain/project-tree';
-import { RECURRENCE_MESSAGES, openInstanceMessage } from '../domain/recurrence-rule';
+import {
+	RECURRENCE_MESSAGES,
+	openInstanceMessage,
+	reopenOlderMessage
+} from '../domain/recurrence-rule';
 import { SUBTASK_MESSAGES, openChildrenMessage } from '../domain/subtasks';
 import { TRASH_MESSAGES } from '../domain/trash';
 
@@ -141,14 +145,18 @@ function fieldErrorsOf(response: unknown): Record<string, FieldError> {
 	for (const [field, detail] of Object.entries(data)) {
 		const code = isRecord(detail) && typeof detail.code === 'string' ? detail.code : '';
 		const params = isRecord(detail) && isRecord(detail.params) ? { ...detail.params } : undefined;
-		// Reopening with an edited follow-up names that ticket (ADR-0023 section 3); completing with
-		// open blocking sub-tasks names their number (ADR-0033 section 2).
+		// Reopening with an edited follow-up or an older instance names the open ticket (ADR-0023
+		// section 3 and addendum 4); completing with open blocking sub-tasks names their number
+		// (ADR-0033 section 2).
+		const key = typeof params?.key === 'string' ? params.key : null;
 		const message =
-			code === 'validation_recurrence_open_instance' && typeof params?.key === 'string'
-				? openInstanceMessage(params.key)
-				: code === 'validation_parent_open_children' && typeof params?.count === 'number'
-					? openChildrenMessage(params.count)
-					: fieldMessage(field, code);
+			code === 'validation_recurrence_open_instance' && key !== null
+				? openInstanceMessage(key)
+				: code === 'validation_recurrence_reopen_older' && key !== null
+					? reopenOlderMessage(key)
+					: code === 'validation_parent_open_children' && typeof params?.count === 'number'
+						? openChildrenMessage(params.count)
+						: fieldMessage(field, code);
 		fields[field] = { code, message, ...(params && { params }) };
 	}
 	return fields;

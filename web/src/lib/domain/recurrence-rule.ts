@@ -19,6 +19,7 @@ import {
 	type RecurrenceParams,
 	type Weekday
 } from './recurrence';
+import { formatCalendarDate } from './format';
 import { recurrenceTextInSentence, shortDate } from './recurrence-text';
 import type { Priority } from './status';
 
@@ -121,8 +122,78 @@ export const RECURRENCE_MESSAGES: Readonly<Record<string, string>> = Object.free
 	validation_recurrence_open_instance:
 		'Von dieser Serie ist schon ein anderes Ticket offen. Erledige es zuerst oder löse ein Ticket aus der Serie.',
 	validation_recurrence_each_mode:
-		'„Jeden Termin einzeln anlegen“ gibt es nur bei einem festen Rhythmus.'
+		'„Jeden Termin einzeln anlegen“ gibt es nur bei einem festen Rhythmus.',
+	validation_recurrence_reopen_older:
+		'Von dieser Serie ist schon ein anderes Ticket offen, und dieses Ticket ist nicht das zuletzt erledigte. Du kannst es als normales Ticket wieder öffnen (aus der Serie lösen).'
 });
+
+/**
+ * Codes of a refused reopening (ADR-0023 section 3 and addendum 4): another ticket of the series is
+ * open. Both offer to reopen the ticket as a normal one ("aus der Serie lösen").
+ */
+export const REOPEN_REFUSALS: readonly string[] = Object.freeze([
+	'validation_recurrence_open_instance',
+	'validation_recurrence_reopen_older'
+]);
+
+/** Label of the way out of a refused reopening. */
+export const REOPEN_DETACHED_LABEL = 'Als normales Ticket wieder öffnen (aus der Serie lösen)';
+
+/** Refusal of reopening an older instance (ADR-0023 addendum 4), with the key of the open one. */
+export function reopenOlderMessage(key: string): string {
+	return `Von dieser Serie ist schon ${key} offen, und dieses Ticket ist nicht das zuletzt erledigte. Du kannst es als normales Ticket wieder öffnen (aus der Serie lösen).`;
+}
+
+// --- Missed dates made into one ticket (ADR-0022 addendum 4) ------------------------------------
+
+/** History field of the note; the same as SKIPPED_FIELD of the hook. */
+export const SKIPPED_FIELD = 'recurrence_skipped';
+
+/** The dates a catch-up ticket stands for besides its own, as the hook writes them. */
+export interface SkippedDates {
+	count: number;
+	/** The oldest of them, at most five. */
+	dates: CalendarDate[];
+	/** The count stopped at the cap of the hook: there were more. */
+	more: boolean;
+}
+
+/** Reads the value of a history entry SKIPPED_FIELD; null for anything else. */
+export function parseSkipped(value: string): SkippedDates | null {
+	let parsed: unknown;
+	try {
+		parsed = JSON.parse(value);
+	} catch {
+		return null;
+	}
+	if (typeof parsed !== 'object' || parsed === null) return null;
+	const { count, dates, more } = parsed as Record<string, unknown>;
+	if (typeof count !== 'number' || !Number.isInteger(count) || count < 1) return null;
+	if (
+		!Array.isArray(dates) ||
+		!dates.every((date) => typeof date === 'string' && isCalendarDate(date))
+	)
+		return null;
+	return { count, dates: [...(dates as CalendarDate[])], more: more === true };
+}
+
+/**
+ * "2 Termine übersprungen (12.10., 19.10.)": neutral note of a ticket that stands for missed dates.
+ * More dates than listed end with "…"; `more` says the count is a lower bound. Without `today`
+ * (the history) the dates carry their year.
+ */
+export function skippedText(skipped: SkippedDates, today?: CalendarDate): string {
+	const amount = skipped.more
+		? `Mehr als ${skipped.count} Termine`
+		: skipped.count === 1
+			? '1 Termin'
+			: `${skipped.count} Termine`;
+	const listed = skipped.dates
+		.map((date) => (today === undefined ? formatCalendarDate(date) : shortDate(date, today)))
+		.join(', ');
+	const rest = skipped.more || skipped.count > skipped.dates.length ? ' …' : '';
+	return `${amount} übersprungen (${listed}${rest})`;
+}
 
 /**
  * At most so many tickets per rule and run with "Jeden Termin einzeln anlegen" (plan OR-5); the

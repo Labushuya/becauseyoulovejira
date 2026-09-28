@@ -197,6 +197,7 @@
 				{ticket}
 				store={rules}
 				today={tickets.today}
+				history={comments.history}
 				onticket={(changed) => {
 					detail.upsert(changed);
 					tickets.upsert(changed);

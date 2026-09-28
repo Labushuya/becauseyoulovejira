@@ -31,6 +31,8 @@ var MESSAGES = {
   validation_recurrence_open_instance:
     'Von dieser Serie ist schon ein anderes Ticket offen. Erledige es zuerst oder löse ein Ticket aus der Serie.',
   validation_recurrence_each_mode: '„Jeden Termin einzeln anlegen“ gibt es nur bei einem festen Rhythmus.',
+  validation_recurrence_reopen_older:
+    'Von dieser Serie ist schon ein anderes Ticket offen, und dieses Ticket ist nicht das zuletzt erledigte. Du kannst es als normales Ticket wieder öffnen (aus der Serie lösen).',
   validation_project_archived: 'Das Projekt ist archiviert. Wähle ein anderes oder kein Projekt, um die Regel fortzusetzen.'
 };
 
@@ -337,6 +339,77 @@ function openInstanceMessage(key) {
   return OPEN_INSTANCE_MESSAGE.replace('{key}', key);
 }
 
+// Reopening a done instance that is not the one completed last (plan "Wiederholungen
+// verständlich machen", recommendation 1): the open follow-up came from a later completion, so it
+// is never removed silently; the ticket may come back as a normal ticket instead.
+var REOPEN_OLDER_MESSAGE =
+  'Von dieser Serie ist schon {key} offen, und dieses Ticket ist nicht das zuletzt erledigte. ' +
+  'Du kannst es als normales Ticket wieder öffnen (aus der Serie lösen).';
+
+function reopenOlderMessage(key) {
+  return REOPEN_OLDER_MESSAGE.replace('{key}', key);
+}
+
+/**
+ * What reopening a done instance does (ADR-0023 section 3 with addenda 2 and 4). `input`:
+ *   conflicts  number of open instances that stand against it (reopenConflicts)
+ *   untouched  whether the newest of them is untouched (isUntouched)
+ *   direct     whether the reopened ticket is the instance completed last, i.e. the one whose
+ *              completion made the open follow-up (always true with "Jeden Termin einzeln
+ *              anlegen", which keeps its behaviour)
+ * Returns 'free' (nothing stands against it), 'remove' (the untouched follow-up of the direct
+ * predecessor goes), 'refuse_older' (an older instance: the follow-up stays, whatever its state)
+ * or 'refuse_open' (the follow-up was edited, or several are open).
+ */
+function reopenOutcome(input) {
+  if (input.conflicts === 0) {
+    return 'free';
+  }
+  if (!input.direct) {
+    return 'refuse_older';
+  }
+  return input.conflicts === 1 && input.untouched ? 'remove' : 'refuse_open';
+}
+
+// Whether the reopened instance is the one completed last (stored timestamps sort like the time):
+// `latestOther` is completed_at of the newest other done instance of the rule ('' without one).
+function isDirectPredecessor(completedAt, latestOther) {
+  return isEmpty(latestOther) || latestOther <= completedAt;
+}
+
+// --- Missed dates made into one ticket (recommendation 3) -----------------------------------
+
+// History field of the note on a ticket that stands for several missed dates; old value the rule,
+// new value the JSON of skippedDates(). No schema field: ticket_history.field is free text.
+var SKIPPED_FIELD = 'recurrence_skipped';
+// Dates listed in the note at most; the count stays exact up to SKIPPED_COUNT_MAX.
+var SKIPPED_DATES_MAX = 5;
+var SKIPPED_COUNT_MAX = 1000;
+
+/**
+ * The dates of a calendar rule that one catch-up ticket stands for besides its own (ADR-0022
+ * section 3): every occurrence from `pendingDue` (the stored next_due) up to, not including, `due`.
+ * Returns null when nothing was skipped, else { count, dates, more }: at most SKIPPED_DATES_MAX
+ * dates, oldest first, `more` when the count stopped at SKIPPED_COUNT_MAX. The loop runs over
+ * dates of the series and is capped, never over days.
+ */
+function skippedDates(rule, pendingDue, due, recurrence) {
+  if (rule.mode !== 'calendar' || isEmpty(pendingDue) || !(pendingDue < due)) {
+    return null;
+  }
+  var dates = [];
+  var count = 0;
+  var date = pendingDue;
+  while (date < due && count < SKIPPED_COUNT_MAX) {
+    if (dates.length < SKIPPED_DATES_MAX) {
+      dates.push(date);
+    }
+    count += 1;
+    date = recurrence.after(rule, date);
+  }
+  return { count: count, dates: dates, more: date < due };
+}
+
 var ARCHIVED_HINT = 'Projekt archiviert – Regel pausiert.';
 var FAILED_HINT = 'Ticket nicht erzeugt: ';
 var HINT_MAX_LENGTH = 500;
@@ -377,6 +450,13 @@ module.exports = {
   isUntouched: isUntouched,
   nextDueOnReopen: nextDueOnReopen,
   openInstanceMessage: openInstanceMessage,
+  reopenOlderMessage: reopenOlderMessage,
+  reopenOutcome: reopenOutcome,
+  isDirectPredecessor: isDirectPredecessor,
+  SKIPPED_FIELD: SKIPPED_FIELD,
+  SKIPPED_DATES_MAX: SKIPPED_DATES_MAX,
+  SKIPPED_COUNT_MAX: SKIPPED_COUNT_MAX,
+  skippedDates: skippedDates,
   failureHint: failureHint,
   isOpenInstanceConflict: isOpenInstanceConflict,
   RHYTHM_FIELDS: RHYTHM_FIELDS,

@@ -385,6 +385,61 @@ describe('reopening an instance (ADR-0023 section 3; package 3)', () => {
 		expect(rules.openInstanceMessage('HAUS-12')).toBe(
 			'Von dieser Serie ist schon HAUS-12 offen. Erledige es zuerst oder löse ein Ticket aus der Serie.'
 		);
+		expect(rules.reopenOlderMessage('HAUS-12')).toBe(
+			'Von dieser Serie ist schon HAUS-12 offen, und dieses Ticket ist nicht das zuletzt erledigte. Du kannst es als normales Ticket wieder öffnen (aus der Serie lösen).'
+		);
+	});
+
+	// Recommendation 1 of the plan "Wiederholungen verständlich machen" (ADR-0023 addendum 4).
+	it('removes the follow-up only for the direct predecessor, never for an older instance', () => {
+		expect(rules.reopenOutcome({ conflicts: 0, untouched: false, direct: false })).toBe('free');
+		expect(rules.reopenOutcome({ conflicts: 1, untouched: true, direct: true })).toBe('remove');
+		expect(rules.reopenOutcome({ conflicts: 1, untouched: true, direct: false })).toBe('refuse_older');
+		expect(rules.reopenOutcome({ conflicts: 1, untouched: false, direct: false })).toBe('refuse_older');
+		expect(rules.reopenOutcome({ conflicts: 1, untouched: false, direct: true })).toBe('refuse_open');
+		expect(rules.reopenOutcome({ conflicts: 2, untouched: true, direct: true })).toBe('refuse_open');
+	});
+
+	it('knows the direct predecessor by the latest completion', () => {
+		expect(rules.isDirectPredecessor(completedAt, '')).toBe(true);
+		expect(rules.isDirectPredecessor(completedAt, '2026-09-18 10:00:00.000Z')).toBe(true);
+		expect(rules.isDirectPredecessor(completedAt, completedAt)).toBe(true);
+		expect(rules.isDirectPredecessor(completedAt, '2026-09-25 10:00:00.001Z')).toBe(false);
+	});
+});
+
+describe('missed dates made into one ticket (ADR-0022 addendum 4)', () => {
+	it('names the skipped dates of a catch-up, without the date of the ticket itself', () => {
+		// Every Monday: left from 12.10. until Tuesday 27.10., the ticket is due on 26.10.
+		const rule = weekly({ anchor: '2026-10-05' });
+		const due = rules.generation({ rule: { ...rule, active: true, next_due: '2026-10-12' }, hasOpenInstance: false, today: '2026-10-27' }, recurrence).due;
+		expect(due).toBe('2026-10-26');
+		expect(rules.skippedDates(rule, '2026-10-12', due, recurrence)).toEqual({
+			count: 2,
+			dates: ['2026-10-12', '2026-10-19'],
+			more: false
+		});
+		expect(reference.catchUp(rule, '2026-10-12', '2026-10-27')).toBe('2026-10-26');
+	});
+
+	it('is empty without a gap and for after completion', () => {
+		expect(rules.skippedDates(weekly(), '2026-10-12', '2026-10-12', recurrence)).toBeNull();
+		expect(rules.skippedDates(weekly(), '', '2026-10-12', recurrence)).toBeNull();
+		expect(rules.skippedDates(completion(), '2026-10-01', '2026-10-12', recurrence)).toBeNull();
+	});
+
+	it('lists at most five dates and stops counting at the cap', () => {
+		const daily = recurrence.normalize({ mode: 'calendar', freq: 'daily', anchor: '2020-01-01' });
+		const week = rules.skippedDates(daily, '2026-10-01', '2026-10-08', recurrence);
+		expect(week).toEqual({
+			count: 7,
+			dates: ['2026-10-01', '2026-10-02', '2026-10-03', '2026-10-04', '2026-10-05'],
+			more: false
+		});
+		const years = rules.skippedDates(daily, '2020-01-01', '2026-10-08', recurrence);
+		expect(years.count).toBe(rules.SKIPPED_COUNT_MAX);
+		expect(years.more).toBe(true);
+		expect(years.dates).toHaveLength(rules.SKIPPED_DATES_MAX);
 	});
 });
 
