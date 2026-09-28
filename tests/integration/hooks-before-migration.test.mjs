@@ -8,6 +8,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { startPocketBase } from '../support/pocketbase-harness.mjs';
 import { createProject, listProjects, updateProject } from '../../web/src/lib/data/projects.ts';
 import { eachOccurrenceReady, listRules } from '../../web/src/lib/data/recurrence.ts';
+import { deleteTicket } from '../../web/src/lib/data/tickets.ts';
 import { unreadSinceOf } from '../../web/src/lib/domain/unread.ts';
 
 // First migration of E4; the instance runs only the migrations before it.
@@ -598,5 +599,55 @@ describe('OR-5 hooks before the migration of "Jeden Termin einzeln anlegen"', ()
 		expect(rules?.length).toBeGreaterThan(0);
 		expect(rules?.every((rule) => rule.eachOccurrence === false)).toBe(true);
 		expect(await eachOccurrenceReady(who)).toBe(false);
+	});
+});
+
+describe('PB-1 hooks before the migration of the trash (ADR-0037)', () => {
+	const TRASH_MIGRATION = '1790202300_tickets_trash.js';
+	let before;
+	let who;
+	let superuser;
+
+	beforeAll(async () => {
+		before = await startPocketBase({ migrationFilter: (name) => name < TRASH_MIGRATION });
+		superuser = new PocketBase(before.url);
+		superuser.autoCancellation(false);
+		await superuser.collection('_superusers').authWithPassword(before.email, before.password);
+		const email = `user-${randomBytes(12).toString('hex')}@example.com`;
+		const password = randomBytes(24).toString('base64url');
+		const id = (await superuser.collection('users').create({ email, password, passwordConfirm: password })).id;
+		who = new PocketBase(before.url);
+		who.autoCancellation(false);
+		await who.collection('users').authWithPassword(email, password);
+		who.userId = id;
+	}, 60_000);
+
+	afterAll(async () => {
+		await before?.stop();
+	});
+
+	it('deletes tickets for good through both ways as before, with the sources settled', async () => {
+		const items = who.collection('inbox_items');
+		const main = await items.create({ owner: who.userId, channel: 'manual', kind: 'todo', title: 'Quelle' });
+		const first = await who.collection('tickets').create({ owner: who.userId, title: 'Eins', source_item: main.id });
+		const child = await who.collection('tickets').create({ owner: who.userId, title: 'Kind', parent: first.id });
+		await who.collection('tickets').delete(first.id);
+		await expect(superuser.collection('tickets').getOne(first.id)).rejects.toMatchObject({ status: 404 });
+		expect((await who.collection('tickets').getOne(child.id)).parent).toBe('');
+		expect(await items.getOne(main.id)).toMatchObject({ state: 'new', ticket: '' });
+
+		const second = await who.collection('tickets').create({ owner: who.userId, title: 'Zwei', source_item: main.id });
+		const answer = await deleteTicket(who, second.id, { sources: 'discard' });
+		expect(answer).toBeNull();
+		await expect(superuser.collection('tickets').getOne(second.id)).rejects.toMatchObject({ status: 404 });
+		expect((await items.getOne(main.id)).state).toBe('discarded');
+	});
+
+	it('answers the routes of the trash with the restart hint and ignores its fields', async () => {
+		await expect(who.send('/api/byl/trash', { method: 'GET' })).rejects.toMatchObject({ status: 503 });
+		const ticket = await who.collection('tickets').create({ owner: who.userId, title: 'Feld', deleted_at: '2037-01-01 00:00:00.000Z' });
+		expect(ticket.deleted_at).toBeUndefined();
+		const user = await who.collection('users').update(who.userId, { trash_retention: '7' });
+		expect(user.trash_retention).toBeUndefined();
 	});
 });

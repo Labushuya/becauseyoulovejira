@@ -153,9 +153,11 @@ var TICKET_DELETED = 'ticket_deleted';
 
 /**
  * source_meta of an item whose ticket was deleted: a copy of `meta` with ticket_deleted = { key,
- * at } (key of the ticket, time in PocketBase format). Other keys stay.
+ * at } (key of the ticket, time in PocketBase format). Other keys stay. Since the trash
+ * (ADR-0037) `ticketId` adds `ticket`, the ID of the ticket in the trash, so the SPA can point
+ * there and a restore finds the item again.
  */
-function deletedTicketMeta(meta, key, at) {
+function deletedTicketMeta(meta, key, at, ticketId) {
   var copy = {};
   var source = meta && typeof meta === 'object' ? meta : {};
   for (var name in source) {
@@ -164,6 +166,9 @@ function deletedTicketMeta(meta, key, at) {
     }
   }
   copy[TICKET_DELETED] = { key: text(key), at: text(at) };
+  if (text(ticketId) !== '') {
+    copy[TICKET_DELETED].ticket = text(ticketId);
+  }
   return copy;
 }
 

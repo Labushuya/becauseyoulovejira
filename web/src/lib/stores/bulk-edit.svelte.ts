@@ -53,7 +53,9 @@ export interface BulkEditData {
 export function bulkEditData(pb: PocketBase): BulkEditData {
 	return {
 		update: (id, patch, options) => updateTicket(pb, id, patch, options),
-		delete: (id, sources) => deleteTicket(pb, id, { sources }),
+		delete: async (id, sources) => {
+			await deleteTicket(pb, id, { sources });
+		},
 		sourceDates: () => listSourceEventDates(pb),
 		sourceCount: (ticketIds) => countTicketSources(pb, ticketIds)
 	};

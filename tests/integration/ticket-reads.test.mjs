@@ -70,7 +70,11 @@ describe('ticket_reads rules', () => {
 			.collection('tickets')
 			.create(ownedPayload('tickets', s.ids.a));
 		const row = await read(s.a, s.ids.a, ticket.id);
+		// In the trash (ADR-0037) the row stays, hidden; deleting for good takes it along.
 		await s.a.collection('tickets').delete(ticket.id);
+		expect(await statusOf(readsOf(s.a).getOne(row.id))).toBe(404);
+		expect((await s.superuser.collection('ticket_reads').getOne(row.id)).id).toBe(row.id);
+		await s.a.send(`/api/byl/trash/${ticket.id}/purge`, { method: 'POST' });
 		expect(await statusOf(s.superuser.collection('ticket_reads').getOne(row.id))).toBe(404);
 	});
 

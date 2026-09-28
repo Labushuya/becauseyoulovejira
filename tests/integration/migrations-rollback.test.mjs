@@ -142,15 +142,18 @@ describe('migration rollback', () => {
 				const up = await migrate(args, 'up');
 				expect(appliedFiles(up, 'Applied')).toEqual(e4);
 				const migrated = withDatabase(dataDir, snapshot);
-				// occurrence comes with a later migration (plan OR-5) that `up` runs along.
-				expect(migrated.tickets.map(({ source, source_item, occurrence, ...rest }) => rest)).toEqual(before.tickets);
+				// occurrence and the fields of the trash come with later migrations (plan OR-5, ADR-0037)
+				// that `up` runs along.
+				expect(
+					migrated.tickets.map(({ source, source_item, occurrence, deleted_at, deleted_by, trash, ...rest }) => rest)
+				).toEqual(before.tickets);
 				expect(migrated.tickets.map(({ source, source_item }) => ({ source, source_item }))).toEqual([
 					{ source: '', source_item: '' },
 					{ source: '', source_item: '' }
 				]);
 				// The base line of "new" (ADR-0015) is the only value an existing row gets; the keyword
 				// lists of the file imports (package 21) stay empty.
-				expect(migrated.users.map(({ unread_since, import_keywords, ...rest }) => rest)).toEqual(before.users);
+				expect(migrated.users.map(({ unread_since, import_keywords, trash_retention, ...rest }) => rest)).toEqual(before.users);
 				expect(migrated.users.map((user) => user.import_keywords)).toEqual([null]);
 				for (const user of migrated.users) {
 					expect(user.unread_since).toMatch(/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\.\d{3}Z$/);
@@ -233,7 +236,7 @@ describe('migration rollback', () => {
 				const up = await migrate(args, 'up');
 				expect(appliedFiles(up, 'Applied')).toEqual(fromKeywords);
 				const migrated = withDatabase(dataDir, snapshot);
-				expect(migrated.users.map(({ import_keywords, ...rest }) => rest)).toEqual(before.users);
+				expect(migrated.users.map(({ import_keywords, trash_retention, ...rest }) => rest)).toEqual(before.users);
 				expect(migrated.users.map((user) => user.import_keywords)).toEqual([null, null]);
 
 				// Lists for one user, then back down: the other columns stay as they were.
@@ -390,7 +393,7 @@ describe('migration rollback of the delete guard of sources (ADR-0031 section 3)
 				const up = await migrate(args, 'up');
 				expect(appliedFiles(up, 'Applied')).toEqual(fromGuard);
 				expect(deleteRuleOf(dataDir)).toBe(guarded);
-				expect(withoutEach(withDatabase(dataDir, snapshot))).toEqual(rows);
+				expect(withoutLater(withDatabase(dataDir, snapshot))).toEqual(rows);
 
 				const down = await migrate(args, 'down', String(fromGuard.length));
 				expect(appliedFiles(down, 'Reverted')).toEqual([...fromGuard].reverse());
@@ -466,7 +469,7 @@ describe('migration rollback of the orphaned sources (ADR-0031, addendum B)', ()
 				expect(withoutFields(after.inbox_items, ['state', 'handled_at', 'source_meta'])).toEqual(
 					withoutFields(rows.inbox_items, ['state', 'handled_at', 'source_meta'])
 				);
-				expect(withoutFields(after.tickets, EACH_TICKET_FIELDS)).toEqual(rows.tickets);
+				expect(withoutFields(after.tickets, LATER_TICKET_FIELDS)).toEqual(rows.tickets);
 
 				const down = await migrate(args, 'down', String(fromOrphans.length));
 				expect(appliedFiles(down, 'Reverted')).toEqual([...fromOrphans].reverse());
@@ -518,11 +521,13 @@ describe('migration rollback of the 25 MB originals (ADR-0031, addendum D)', () 
 				});
 				const rows = withDatabase(dataDir, snapshot);
 				// `up` also runs the later migrations; their changes (projects.parent, ADR-0034; the
-				// fields and index of "Jeden Termin einzeln anlegen", plan OR-5) are left out.
+				// fields and index of "Jeden Termin einzeln anlegen", plan OR-5; the trash, ADR-0037) are
+				// left out.
 				const others = (dataDir) =>
 					withoutTimestamps(readDataDir(dataDir).collections).map((collection) => {
 						if (collection.name === 'inbox_items') {
-							return { ...collection, fields: collection.fields.filter((field) => field.name !== 'original') };
+							const plain = withoutLaterSchema(collection);
+							return { ...plain, fields: plain.fields.filter((field) => field.name !== 'original') };
 						}
 						if (collection.name === 'projects') {
 							return {
@@ -531,7 +536,7 @@ describe('migration rollback of the 25 MB originals (ADR-0031, addendum D)', () 
 								indexes: collection.indexes.filter((index) => !/idx_projects_parent/.test(index))
 							};
 						}
-						return withoutEachSchema(collection);
+						return withoutLaterSchema(collection);
 					});
 				const before = others(dataDir);
 
@@ -539,7 +544,7 @@ describe('migration rollback of the 25 MB originals (ADR-0031, addendum D)', () 
 				expect(appliedFiles(up, 'Applied')).toEqual(fromSize);
 				expect(originalOf(dataDir)).toMatchObject({ maxSize: 25 * 1024 * 1024, maxSelect: 1, protected: true });
 				expect(others(dataDir)).toEqual(before);
-				expect(withoutEach(withDatabase(dataDir, snapshot))).toEqual(rows);
+				expect(withoutLater(withDatabase(dataDir, snapshot))).toEqual(rows);
 
 				const down = await migrate(args, 'down', String(fromSize.length));
 				expect(appliedFiles(down, 'Reverted')).toEqual([...fromSize].reverse());
@@ -602,12 +607,12 @@ describe('migration rollback of the sub projects (ADR-0034)', () => {
 					tickets: snapshot(db).tickets,
 					counters: counterRows(db)
 				}));
-				// The later migration of "Jeden Termin einzeln anlegen" (plan OR-5) runs along; its fields
-				// and index are left out.
+				// The later migrations of "Jeden Termin einzeln anlegen" (plan OR-5) and of the trash
+				// (ADR-0037) run along; their fields, indexes and rule conditions are left out.
 				const others = (dir) =>
 					withoutTimestamps(readDataDir(dir).collections)
 						.filter((collection) => collection.name !== 'projects')
-						.map(withoutEachSchema);
+						.map(withoutLaterSchema);
 				const otherCollections = others(dataDir);
 
 				const up = await migrate(args, 'up');
@@ -626,7 +631,7 @@ describe('migration rollback of the sub projects (ADR-0034)', () => {
 				withDatabase(dataDir, (db) => {
 					// Existing projects stay top-level; nothing else changes.
 					expect(projectRows(db)).toEqual(before.projects.map((row) => ({ ...row, parent: '' })));
-					expect(withoutFields(snapshot(db).tickets, EACH_TICKET_FIELDS)).toEqual(before.tickets);
+					expect(withoutFields(snapshot(db).tickets, LATER_TICKET_FIELDS)).toEqual(before.tickets);
 					expect(counterRows(db)).toEqual(before.counters);
 					// The hierarchy that is lost on the way back.
 					db.prepare('UPDATE projects SET parent = ? WHERE id = ?').run('project00000001', 'project00000002');
@@ -690,6 +695,18 @@ const E5_FIRST_MIGRATION = '1790201600_recurrence_rule_params.js';
 // run along with; the rows of before E5 do not have them.
 const EACH_RULE_FIELDS = ['each_occurrence'];
 const EACH_TICKET_FIELDS = ['occurrence'];
+// Fields of the later migration of the trash (ADR-0037, 1790202300), which every earlier test runs
+// along as well.
+const TRASH_TICKET_FIELDS = ['deleted_at', 'deleted_by', 'trash'];
+const TRASH_USER_FIELDS = ['trash_retention'];
+const LATER_TICKET_FIELDS = [...EACH_TICKET_FIELDS, ...TRASH_TICKET_FIELDS];
+// Conditions the trash appends to the API rules (1790202300).
+const TRASH_RULE_SUFFIXES = [
+	' && deleted_at = ""',
+	' && ticket.deleted_at = ""',
+	' && (ticket = "" || ticket.deleted_at = "")',
+	' && blocker.deleted_at = "" && blocked.deleted_at = ""'
+];
 const E5_RULE_FIELDS = [
 	'freq',
 	'interval',
@@ -709,31 +726,54 @@ function withoutFields(rows, fields) {
 
 /**
  * A snapshot without the columns of "Jeden Termin einzeln anlegen" (plan OR-5, migration
- * 1790202200): the tests of earlier migrations run it along with `up`.
+ * 1790202200) and of the trash (ADR-0037, 1790202300): the tests of earlier migrations run them
+ * along with `up`.
  */
-function withoutEach(snap) {
+function withoutLater(snap) {
 	return {
 		...snap,
-		tickets: snap.tickets === null ? null : withoutFields(snap.tickets, EACH_TICKET_FIELDS),
+		users: snap.users === null ? null : withoutFields(snap.users, TRASH_USER_FIELDS),
+		tickets: snap.tickets === null ? null : withoutFields(snap.tickets, LATER_TICKET_FIELDS),
 		recurrence_rules: snap.recurrence_rules === null ? null : withoutFields(snap.recurrence_rules, EACH_RULE_FIELDS)
 	};
 }
 
 const OPEN_INSTANCE_INDEX = /idx_tickets_open_(recurrence|occurrence)/;
+const TRASH_INDEX = /idx_tickets_deleted_at/;
 
-/** A collection without the fields and the index of migration 1790202200 (plan OR-5). */
-function withoutEachSchema(collection) {
+/** The API rules of a collection without the conditions of the trash (1790202300). */
+function withoutTrashRules(collection) {
+	const rules = {};
+	for (const rule of RULE_NAMES) {
+		let value = collection[rule];
+		if (typeof value === 'string') {
+			for (const suffix of TRASH_RULE_SUFFIXES) value = value.replace(suffix, '');
+		}
+		rules[rule] = value;
+	}
+	return { ...collection, ...rules };
+}
+
+/**
+ * A collection without the fields, indexes and rule conditions of the migrations 1790202200
+ * (plan OR-5) and 1790202300 (trash, ADR-0037).
+ */
+function withoutLaterSchema(collection) {
+	const plain = withoutTrashRules(collection);
 	if (collection.name === 'tickets') {
 		return {
-			...collection,
-			fields: collection.fields.filter((field) => !EACH_TICKET_FIELDS.includes(field.name)),
-			indexes: collection.indexes.filter((index) => !OPEN_INSTANCE_INDEX.test(index))
+			...plain,
+			fields: collection.fields.filter((field) => !LATER_TICKET_FIELDS.includes(field.name)),
+			indexes: collection.indexes.filter((index) => !OPEN_INSTANCE_INDEX.test(index) && !TRASH_INDEX.test(index))
 		};
 	}
 	if (collection.name === 'recurrence_rules') {
-		return { ...collection, fields: collection.fields.filter((field) => !EACH_RULE_FIELDS.includes(field.name)) };
+		return { ...plain, fields: collection.fields.filter((field) => !EACH_RULE_FIELDS.includes(field.name)) };
 	}
-	return collection;
+	if (collection.name === 'users') {
+		return { ...plain, fields: collection.fields.filter((field) => !TRASH_USER_FIELDS.includes(field.name)) };
+	}
+	return plain;
 }
 
 /** Data as it exists before E5: users, rules with the base fields only, tickets with and without a rule. */
@@ -780,9 +820,9 @@ describe('migration rollback of E5 (package 2)', () => {
 				const up = await migrate(args, 'up');
 				expect(appliedFiles(up, 'Applied')).toEqual(e5);
 				const migrated = withDatabase(dataDir, snapshot);
-				expect(withoutFields(migrated.tickets, EACH_TICKET_FIELDS)).toEqual(before.tickets);
-				expect(migrated.tickets.every((ticket) => ticket.occurrence === '')).toBe(true);
-				expect(migrated.users).toEqual(before.users);
+				expect(withoutFields(migrated.tickets, LATER_TICKET_FIELDS)).toEqual(before.tickets);
+				expect(migrated.tickets.every((ticket) => ticket.occurrence === '' && ticket.deleted_at === '')).toBe(true);
+				expect(withoutFields(migrated.users, TRASH_USER_FIELDS)).toEqual(before.users);
 				// The base fields stay, except that a rule without a rhythm is paused.
 				expect(withoutFields(migrated.recurrence_rules, [...E5_RULE_FIELDS, 'active'])).toEqual(
 					withoutFields(before.recurrence_rules, ['active'])
@@ -851,7 +891,7 @@ describe('migration rollback of E5 (package 2)', () => {
 				expect(byId.ticket000000009.recurrence).toBe('rule00000000001');
 				expect(byId.ticket000000001.recurrence).toBe('rule00000000001');
 				expect(byId.ticket000000002.recurrence).toBe('rule00000000001');
-				expect(withoutFields(migrated.tickets, ['recurrence', ...EACH_TICKET_FIELDS])).toEqual(
+				expect(withoutFields(migrated.tickets, ['recurrence', ...LATER_TICKET_FIELDS])).toEqual(
 					withoutFields(before.tickets, ['recurrence'])
 				);
 			});
@@ -861,6 +901,7 @@ describe('migration rollback of E5 (package 2)', () => {
 });
 
 const EACH_MIGRATION = '1790202200_recurrence_each_occurrence.js';
+const TRASH_MIGRATION = '1790202300_tickets_trash.js';
 
 describe('migration rollback of "Jeden Termin einzeln anlegen" (plan OR-5)', () => {
 	const ticketsOf = (dataDir) =>
@@ -905,8 +946,10 @@ describe('migration rollback of "Jeden Termin einzeln anlegen" (plan OR-5)', () 
 	it(
 		'adds the switch, the date of the series and the new index without changing a row, and back',
 		async () => {
+			// The trash (ADR-0037, 1790202300) follows and runs along; it adds deleted_at = '' to the
+			// condition of the index.
 			const fromEach = MIGRATION_FILES.slice(MIGRATION_FILES.indexOf(EACH_MIGRATION));
-			expect(fromEach).toEqual([EACH_MIGRATION]);
+			expect(fromEach).toEqual([EACH_MIGRATION, TRASH_MIGRATION]);
 
 			await withTempDataDir(async ({ dataDir, args }) => {
 				await migrate(args, 'up');
@@ -917,7 +960,7 @@ describe('migration rollback of "Jeden Termin einzeln anlegen" (plan OR-5)', () 
 				withDatabase(dataDir, insertData);
 				const before = withDatabase(dataDir, snapshot);
 				const otherCollections = (dir) =>
-					withoutTimestamps(readDataDir(dir).collections).map(withoutEachSchema);
+					withoutTimestamps(readDataDir(dir).collections).map(withoutLaterSchema);
 				const schemaBefore = otherCollections(dataDir);
 
 				const up = await migrate(args, 'up');
@@ -931,13 +974,13 @@ describe('migration rollback of "Jeden Termin einzeln anlegen" (plan OR-5)', () 
 					required: false
 				});
 				expect(openIndexes(dataDir)).toEqual([
-					"CREATE UNIQUE INDEX `idx_tickets_open_occurrence` ON `tickets` (recurrence, occurrence) WHERE recurrence != '' AND status != 'done'"
+					"CREATE UNIQUE INDEX `idx_tickets_open_occurrence` ON `tickets` (recurrence, occurrence) WHERE recurrence != '' AND status != 'done' AND deleted_at = ''"
 				]);
 				assertSchema(readDataDir(dataDir).collections);
 				expect(otherCollections(dataDir)).toEqual(schemaBefore);
 				const migrated = withDatabase(dataDir, snapshot);
 				// No row changes: every ticket has an empty date of the series, every rule the old behaviour.
-				expect(withoutEach(migrated)).toEqual(before);
+				expect(withoutLater(migrated)).toEqual(before);
 				expect(migrated.tickets.map((ticket) => ticket.occurrence)).toEqual(['', '', '']);
 				expect(migrated.recurrence_rules.map((rule) => rule.each_occurrence)).toEqual([0]);
 
@@ -956,7 +999,7 @@ describe('migration rollback of "Jeden Termin einzeln anlegen" (plan OR-5)', () 
 				// Back: the newest open ticket of the rule stays in the series, the older open ones become
 				// normal tickets; the done one and the ticket without a series stay as they are.
 				const down = await migrate(args, 'down', String(fromEach.length));
-				expect(appliedFiles(down, 'Reverted')).toEqual(fromEach);
+				expect(appliedFiles(down, 'Reverted')).toEqual([...fromEach].reverse());
 				expect(openIndexes(dataDir)).toEqual([
 					"CREATE UNIQUE INDEX `idx_tickets_open_recurrence` ON `tickets` (recurrence) WHERE recurrence != '' AND status != 'done'"
 				]);
@@ -984,6 +1027,110 @@ describe('migration rollback of "Jeden Termin einzeln anlegen" (plan OR-5)', () 
 				});
 
 				expect(appliedFiles(await migrate(args, 'up'), 'Applied')).toEqual(fromEach);
+				assertSchema(readDataDir(dataDir).collections);
+			});
+		},
+		60_000
+	);
+});
+
+describe('migration rollback of the trash (ADR-0037)', () => {
+	const OWNER = 'user00000000001';
+	const SCOPE = 'u:user00000000001';
+	const collectionOf = (dataDir, name) => readDataDir(dataDir).collections.find((collection) => collection.name === name);
+	const ruleSet = (dataDir) =>
+		Object.fromEntries(
+			['tickets', 'comments', 'ticket_history', 'ticket_reads', 'dependencies', 'inbox_items'].map((name) => {
+				const collection = collectionOf(dataDir, name);
+				return [name, Object.fromEntries(RULE_NAMES.map((rule) => [rule, collection[rule]]))];
+			})
+		);
+	const openIndexes = (dataDir) => collectionOf(dataDir, 'tickets').indexes.filter((index) => OPEN_INSTANCE_INDEX.test(index));
+	const rowsOf = (db, table) => db.prepare(`SELECT * FROM ${table} ORDER BY id`).all();
+
+	/** A ticket in a series with a comment and a history entry, and a second ticket, as before the trash. */
+	function insertData(db) {
+		db.prepare('INSERT INTO users (id, email, tokenKey, password, created, updated) VALUES (?, ?, ?, ?, ?, ?)').run(OWNER, 'eins@example.invalid', 'tk1', 'hash', STAMP, STAMP);
+		const ticket = db.prepare(
+			'INSERT INTO tickets (id, number, key, title, status, priority, parent, source, source_item, scope, owner, created, updated) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+		);
+		ticket.run('ticket000000001', 1, 'TASK-1', 'Eltern', 'open', 'medium', '', 'telegram', 'item00000000001', SCOPE, OWNER, STAMP, STAMP);
+		ticket.run('ticket000000002', 2, 'TASK-2', 'Kind', 'open', 'low', 'ticket000000001', '', '', SCOPE, OWNER, STAMP, STAMP);
+		ticket.run('ticket000000003', 3, 'TASK-3', 'Bleibt', 'waiting', 'high', '', '', '', SCOPE, OWNER, STAMP, STAMP);
+		const item = db.prepare(
+			'INSERT INTO inbox_items (id, channel, kind, title, body, fingerprint, state, ticket, handled_at, source_meta, scope, owner, created, updated) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+		);
+		item.run('item00000000001', 'telegram', 'message', 'Verworfen mit dem Ticket', 'Text', 'f1', 'converted', 'ticket000000001', STAMP, '{"chat":"Familie"}', SCOPE, OWNER, STAMP, STAMP);
+		item.run('item00000000002', 'manual', 'todo', 'Schon im Eingang', '', 'f2', 'new', '', '', '{"ticket_deleted":{"key":"TASK-1","at":"x","ticket":"ticket000000001"}}', SCOPE, OWNER, STAMP, STAMP);
+		const comment = db.prepare('INSERT INTO comments (id, ticket, author, body, created, updated) VALUES (?, ?, ?, ?, ?, ?)');
+		comment.run('comment00000001', 'ticket000000001', OWNER, 'Weg', STAMP, STAMP);
+		comment.run('comment00000003', 'ticket000000003', OWNER, 'Bleibt', STAMP, STAMP);
+		db.prepare('INSERT INTO ticket_history (id, ticket, field, old_value, new_value, user, created) VALUES (?, ?, ?, ?, ?, ?, ?)').run(
+			'history00000001',
+			'ticket000000001',
+			'created',
+			'',
+			'TASK-1',
+			'',
+			STAMP
+		);
+	}
+
+	it(
+		'adds the fields, the index condition and the rule conditions without changing a row, and deletes the trash on the way back',
+		async () => {
+			const fromTrash = MIGRATION_FILES.slice(MIGRATION_FILES.indexOf(TRASH_MIGRATION));
+			expect(fromTrash).toEqual([TRASH_MIGRATION]);
+
+			await withTempDataDir(async ({ dataDir, args }) => {
+				await migrate(args, 'up');
+				await migrate(args, 'down', String(fromTrash.length));
+				const rulesBefore = ruleSet(dataDir);
+				const indexesBefore = openIndexes(dataDir);
+				expect(indexesBefore).toEqual([
+					"CREATE UNIQUE INDEX `idx_tickets_open_occurrence` ON `tickets` (recurrence, occurrence) WHERE recurrence != '' AND status != 'done'"
+				]);
+				withDatabase(dataDir, insertData);
+				const before = withDatabase(dataDir, snapshot);
+
+				const up = await migrate(args, 'up');
+				expect(appliedFiles(up, 'Applied')).toEqual(fromTrash);
+				assertSchema(readDataDir(dataDir).collections);
+				const migrated = withDatabase(dataDir, snapshot);
+				expect(withoutFields(migrated.tickets, TRASH_TICKET_FIELDS)).toEqual(before.tickets);
+				expect(migrated.tickets.map(({ deleted_at, deleted_by }) => deleted_at + deleted_by)).toEqual(['', '', '']);
+				expect(withoutFields(migrated.users, TRASH_USER_FIELDS)).toEqual(before.users);
+				expect(migrated.inbox_items).toEqual(before.inbox_items);
+				for (const [name, rules] of Object.entries(ruleSet(dataDir))) {
+					expect(withoutTrashRules({ ...rules }), name).toEqual(rulesBefore[name]);
+				}
+
+				// The parent with its sub-ticket in the trash, its source kept with it ("Quellen verwerfen").
+				withDatabase(dataDir, (db) => {
+					const trash = db.prepare('UPDATE tickets SET deleted_at = ?, deleted_by = ?, trash = ? WHERE id = ?');
+					trash.run('2026-09-20 10:00:00.000Z', OWNER, '{"sources":{"handling":"discard","items":["item00000000001"]}}', 'ticket000000001');
+					trash.run('2026-09-20 10:00:00.000Z', OWNER, '{}', 'ticket000000002');
+				});
+
+				const down = await migrate(args, 'down', String(fromTrash.length));
+				expect(appliedFiles(down, 'Reverted')).toEqual(fromTrash);
+				expect(openIndexes(dataDir)).toEqual(indexesBefore);
+				expect(ruleSet(dataDir)).toEqual(rulesBefore);
+				const reverted = withDatabase(dataDir, snapshot);
+				// Deleted for good, as a delete did before the trash; the ticket outside stays as it was.
+				expect(reverted.tickets).toEqual([before.tickets[2]]);
+				expect(reverted.users).toEqual(before.users);
+				const items = Object.fromEntries(reverted.inbox_items.map((row) => [row.id, row]));
+				expect(items.item00000000001).toMatchObject({ state: 'discarded', ticket: '', fingerprint: 'f1', body: 'Text' });
+				expect(items.item00000000001.handled_at).not.toBe(STAMP);
+				expect(JSON.parse(items.item00000000001.source_meta)).toMatchObject({ chat: 'Familie', ticket_deleted: { key: 'TASK-1' } });
+				expect(items.item00000000002).toEqual(before.inbox_items[1]);
+				withDatabase(dataDir, (db) => {
+					expect(rowsOf(db, 'comments').map((row) => row.id)).toEqual(['comment00000003']);
+					expect(rowsOf(db, 'ticket_history')).toEqual([]);
+				});
+
+				expect(appliedFiles(await migrate(args, 'up'), 'Applied')).toEqual(fromTrash);
 				assertSchema(readDataDir(dataDir).collections);
 			});
 		},

@@ -3,7 +3,7 @@
 // ticket-keys.test.mjs.
 
 import { beforeAll, describe, expect, it } from 'vitest';
-import { rejectionOf } from '../support/api.mjs';
+import { rejectionOf, statusOf } from '../support/api.mjs';
 import { createOwner, createScenario, historyOf } from '../support/scenario.mjs';
 
 let s;
@@ -91,16 +91,21 @@ describe('parent', () => {
 		expect((await tickets.update(parent.id, { household: s.h1.id })).household).toBe(s.h1.id);
 	});
 
-	it('clears the parent of sub-tickets when the parent is deleted', async () => {
+	it('takes the sub-tickets along to the trash; one deleted on its own leaves its parent', async () => {
 		const owner = await createOwner(s.superuser);
 		const tickets = owner.client.collection('tickets');
 		const parent = await owner.ticket();
 		const child = await owner.ticket({ parent: parent.id });
+		const single = await owner.ticket({ parent: parent.id });
+		// A sub-ticket deleted on its own leaves its parent (ADR-0037 §4) ...
+		await tickets.delete(single.id);
+		expect(await s.superuser.collection('tickets').getOne(single.id)).toMatchObject({ parent: '', trash: { parent: parent.id } });
+		// ... the parent takes the others along as its group, and deleting for good takes them too.
 		await tickets.delete(parent.id);
-
-		expect((await tickets.getOne(child.id)).parent).toBe('');
-		const entry = (await historyOf(s.superuser, child.id)).find((item) => item.field === 'parent');
-		expect(entry).toMatchObject({ old_value: parent.id, new_value: '', user: '' });
+		expect((await s.superuser.collection('tickets').getOne(child.id)).parent).toBe(parent.id);
+		await owner.client.send(`/api/byl/trash/${parent.id}/purge`, { method: 'POST' });
+		expect(await statusOf(s.superuser.collection('tickets').getOne(child.id))).toBe(404);
+		expect((await s.superuser.collection('tickets').getOne(single.id)).id).toBe(single.id);
 	});
 });
 

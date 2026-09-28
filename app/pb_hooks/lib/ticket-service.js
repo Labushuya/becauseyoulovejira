@@ -9,6 +9,7 @@ var rules = require(__hooks + '/lib/ticket-rules.js');
 var history = require(__hooks + '/lib/history.js');
 var errors = require(__hooks + '/lib/errors.js');
 var inbox = require(__hooks + '/lib/inbox-service.js');
+var trashRules = require(__hooks + '/lib/trash-rules.js');
 
 // Transient record key for the acting user (E1 plan OF-4, variant A). Field names cannot contain
 // "@", PocketBase neither stores nor exports unknown keys, and the Record API does not load
@@ -200,6 +201,10 @@ function checkRelations(txApp, record, scope, previousProject) {
   var parentId = record.getString('parent');
   if (parentId !== '') {
     var parent = parentId === record.id ? null : findById(txApp, 'tickets', parentId);
+    // A parent in the trash reads like a missing one (ADR-0037 §3).
+    if (parent && trashRules.isTrashed(parent.getString('deleted_at'))) {
+      parent = null;
+    }
     var parentCode = rules.parentViolation({
       id: record.id,
       parent: parentId,
@@ -402,11 +407,15 @@ function recordChanges(txApp, record, before) {
 
 /**
  * Route "Ticket löschen mit Quellenbehandlung" (ADR-0031, addendum B): body { sources: 'inbox' |
- * 'discard' }. A ticket the request may not delete (deleteRule) is not found; the delete runs
- * through the model hook of tickets.pb.js, which settles the sources in the same transaction.
+ * 'discard' }. A ticket the request may not delete (deleteRule, which hides the trash) is not
+ * found. Since the trash (ADR-0037) the ticket and its sub-tickets move to the trash
+ * (lib/trash-service.js) and the answer is { id, updated, tickets } for "Rückgängig"; before the
+ * migration of the trash the delete runs through the model hook of tickets.pb.js as before,
+ * which settles the sources in the same transaction, and the answer is null.
  */
 function deleteWithSources(e, id) {
   var inboxRules = require(__hooks + '/lib/inbox-rules.js');
+  var trash = require(__hooks + '/lib/trash-service.js');
   var body = e.requestInfo().body || {};
   var handling = body.sources === undefined || body.sources === null ? '' : String(body.sources);
   if (!inboxRules.isSourceHandling(handling)) {
@@ -417,13 +426,20 @@ function deleteWithSources(e, id) {
   if (!ticket || !e.app.canAccessRecord(ticket, e.requestInfo(), collection.deleteRule)) {
     throw new NotFoundError('Ticket nicht gefunden.');
   }
+  if (trash.trashReady(e.app)) {
+    return trash.moveToTrash(e.app, ticket.id, handling, trash.actorOf(e));
+  }
   ticket.set(inbox.SOURCE_HANDLING_KEY, handling);
   e.app.delete(ticket);
+  return null;
 }
 
 module.exports = {
   ACTOR_KEY: ACTOR_KEY,
   deleteWithSources: deleteWithSources,
+  assignKey: assignKey,
+  historyValues: historyValues,
+  saveHistoryEntry: saveHistoryEntry,
   scopeOfRecord: scopeOfRecord,
   rememberActor: rememberActor,
   rememberExpectedUpdated: rememberExpectedUpdated,

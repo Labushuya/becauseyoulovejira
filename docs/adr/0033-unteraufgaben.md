@@ -81,3 +81,9 @@ Es gibt keine Oberfläche, und `blocks_parent` hat keine Wirkung. Der Nutzer hat
 - Positiv: Keine Migration und kein Neustart. Die Sperre gilt auch für andere Clients und ist atomar. Einrücken, Filter und Sortierung widersprechen sich nicht.
 - Negativ: Die SPA lädt zusätzlich alle Unteraufgaben (auch erledigte) mit den Listenfeldern, damit Fortschritt und Liste ohne weitere Anfragen stimmen. Bei privaten Datenmengen ist das klein.
 - CLAUDE.md §5, §7 und §10 sind nachgezogen (Stufe 2 → umgesetzt; Freigabe des Nutzers vom 2026-09-28).
+
+## Nachtrag (2026-09-28, Papierkorb, ADR-0037): Löschen mit Unteraufgaben
+
+- Das Löschen eines übergeordneten Tickets leert `parent` der Unteraufgaben nicht mehr: Sie gehen als **Gruppe** mit in den Papierkorb (auch erledigte), behalten `parent` auf das Ticket im Papierkorb und kommen nur gemeinsam zurück bzw. gehen gemeinsam endgültig.
+- Eine **einzeln** gelöschte Unteraufgabe verlässt ihr übergeordnetes Ticket (`parent` leer, im Schnappschuss): Sie zählt nicht mehr im Fortschritt und blockiert das Erledigen nicht (§2). Beim Wiederherstellen kommt sie zurück, wenn das übergeordnete Ticket lebt, im Bereich liegt und selbst keine Unteraufgabe ist, sonst als eigenständiges Ticket (im Ergebnis genannt).
+- Ein Ticket im Papierkorb ist kein möglicher übergeordneter Eintrag (`validation_scope_mismatch` wie ein fehlendes).

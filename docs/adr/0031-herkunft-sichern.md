@@ -193,3 +193,12 @@ Nutzerentscheidungen vom 2026-09-27 nach HK-4, umgesetzt in den Paketen HK-5 bis
 - **Texte:** Der Hinweis im Panel nennt die Grenze nicht mehr („Die Mail war zu groß für die Originaldatei (12,4 MB).“), weil ältere Einträge noch an 10 MB gescheitert sind. Die Ablage nennt „.eml; über 25 MB ohne Originaldatei“ statt „höchstens 10 MB“.
 - **Übergang:** Hooks und SPA wirken nach F5, das Schema erst nach dem Neustart (`stop.bat`, dann `start.bat`), der auch `byl-mail.exe` 0.9.0 startet. Bis dahin lehnt der Server eine `.eml`-Datei zwischen 10 und 25 MB mit dem Feldfehler der Datei ab, und der alte Hilfsprozess arbeitet mit 10 MB.
 - **Kosten:** Größere Dateien vergrößern `pb_data` und jedes Backup (zwölf aufbewahrte). Die README weist darauf hin.
+
+## Nachtrag E (2026-09-28, Papierkorb, ADR-0037): Quellen eines Tickets im Papierkorb
+
+Nachtrag B gilt weiter für das endgültige Löschen. Das normale Löschen verschiebt ein Ticket seit PB-1 in den Papierkorb ([ADR-0037](0037-papierkorb.md) §6):
+
+- **„Quellen zurück in den Eingang“** (Standard jedes Wegs): sofort `new` ohne Ticket wie bisher; `source_meta.ticket_deleted` trägt zusätzlich `ticket`, die ID des Tickets im Papierkorb. Der Verlauf des Tickets bekommt dafür keine Zeile „Quelle gelöst“. Die Hauptquelle wird am Ticket geleert (Schnappschuss), damit sie im Eingang frei ist.
+- **„Quellen verwerfen“:** Die Quellen bleiben gebunden (`converted`) am Ticket im Papierkorb; die Regeln von `inbox_items` (`ticket = "" || ticket.deleted_at = ""`) verbergen sie im Eingang, in „Quellen“, im Chip und beim Download. Sie kommen beim Wiederherstellen mit zurück und werden erst beim endgültigen Löschen verworfen, dann sofort als geleerter Tombstone („Das Ticket wurde endgültig gelöscht.“, ohne Originaldatei, Fingerprint bleibt).
+- **Wiederherstellen** verknüpft zurückgegebene Quellen nur, solange sie `new` ohne Ticket sind; sonst nennt das Ergebnis sie mit Grund. Der Löschschutz (§3, deleteRule `ticket = ""`, `validation_inbox_item_linked`) gilt unverändert, auch für Quellen im Papierkorb.
+- Ein Duplikat, dessen Ticket im Papierkorb liegt, meldet „Schon umgewandelt.“ ohne Key; ein Ticket im Papierkorb ist kein Ziel für Verknüpfen oder Umhängen.

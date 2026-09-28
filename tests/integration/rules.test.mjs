@@ -138,7 +138,13 @@ describe.each(OWNED_COLLECTIONS)('%s', (collection) => {
 		const record = await create(s.a, s.ids.a);
 		expect(await statusOf(s.a.collection(collection).update(record.id, {}))).toBe(200);
 		expect(await statusOf(s.a.collection(collection).delete(record.id))).toBe(200);
-		expect(await statusOf(s.superuser.collection(collection).getOne(record.id))).toBe(404);
+		if (collection === 'tickets') {
+			// Deleting moves a ticket to the trash (ADR-0037): hidden for everyone, kept for the trash.
+			expect(await statusOf(s.a.collection(collection).getOne(record.id))).toBe(404);
+			expect((await s.superuser.collection(collection).getOne(record.id)).deleted_at).not.toBe('');
+		} else {
+			expect(await statusOf(s.superuser.collection(collection).getOne(record.id))).toBe(404);
+		}
 	});
 });
 

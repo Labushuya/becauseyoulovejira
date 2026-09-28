@@ -132,3 +132,9 @@ Nutzerentscheidung vom 2026-09-28, eine bewusste Änderung der Regel „höchste
 - **Rückweg der Migration:** Der alte Index erlaubt eine offene Instanz je Regel. Hat eine Regel bis dahin mehrere, bleibt das jüngste offene Ticket (nach `created`, dann `id`) in der Serie, die älteren offenen werden normale Tickets (nur die Spalte `recurrence`, wie 1790201610; `updated` und Verlauf bleiben), die Zahl steht im Log. Danach entfallen Index, beide Felder, und der alte Index kommt zurück. Belegt mit Daten in `migrations-rollback.test.mjs`.
 - **Vor der Migration** (Instanz noch ohne Neustart): Die Hooks prüfen `eachReady` (beide Felder da) und verhalten sich wie vorher; ein gesendetes `each_occurrence` ignoriert PocketBase. Die SPA fragt das über einen Filter auf `each_occurrence` ab (400 vor der Migration) und zeigt den Schalter erst danach (`hooks-before-migration.test.mjs`).
 - **Zeitstempel:** Auch mehrere Tickets eines Laufs bekommen je einen gemeinsamen Wert in `created` und `updated` (`newInstance`, Nachtrag oben).
+
+## Nachtrag 3 (2026-09-28, Papierkorb, ADR-0037): Index ohne Tickets im Papierkorb
+
+- Migration `1790202300_tickets_trash.js` ergänzt den Teilindex um den Papierkorb: `UNIQUE (recurrence, occurrence) WHERE recurrence != '' AND status != 'done' AND deleted_at = ''`. Das Verschieben leert `recurrence` und `occurrence` ohnehin (Schnappschuss im Ticket); die Bedingung hält den Index für jede Zeile richtig, auch wenn eine Zeile im Papierkorb eine Regel trägt.
+- Die Erzeugung braucht keine Änderung: Eine Instanz im Papierkorb hat keine Regel mehr, zählt also für „offene Instanz“ und „Termin hat ein Ticket“ nicht. Wie nach dem Hartlöschen entsteht die nächste Instanz zum nächsten Termin (ADR-0023 §6), nie sofort.
+- Der Rückweg stellt den Index von Nachtrag 2 wieder her.

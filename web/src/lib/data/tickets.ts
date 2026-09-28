@@ -561,26 +561,54 @@ export function setTicketDone(
 	return updateTicket(pb, id, { status: done ? 'done' : REOPEN_STATUS }, options);
 }
 
+/** Answer of moving a ticket to the trash (ADR-0037 §7): `updated` is the base of "Rückgängig". */
+export interface TrashMove {
+	id: string;
+	updated: string;
+	tickets: { id: string; key: string; updated: string }[];
+}
+
+function toTrashMove(value: unknown): TrashMove | null {
+	if (typeof value !== 'object' || value === null) return null;
+	const { id, updated, tickets } = value as Record<string, unknown>;
+	if (typeof id !== 'string' || typeof updated !== 'string' || !Array.isArray(tickets)) return null;
+	const list: TrashMove['tickets'] = [];
+	for (const entry of tickets as unknown[]) {
+		if (typeof entry !== 'object' || entry === null) return null;
+		const { id: ticketId, key, updated: ticketUpdated } = entry as Record<string, unknown>;
+		if (
+			typeof ticketId !== 'string' ||
+			typeof key !== 'string' ||
+			typeof ticketUpdated !== 'string'
+		)
+			return null;
+		list.push({ id: ticketId, key, updated: ticketUpdated });
+	}
+	return { id, updated, tickets: list };
+}
+
 /**
- * Deletes the ticket; PocketBase deletes its comments and history in the same transaction. Its
- * sources are never deleted (ADR-0031, addendum B): without `sources` the hook gives them back to
- * the inbox; with it the route "Ticket löschen mit Quellenbehandlung" settles them as chosen
- * ('inbox' or 'discard'), in the same transaction.
+ * Deletes the ticket: since the trash (ADR-0037) it moves there with its sub-tasks. Its sources
+ * are never deleted (ADR-0031, addendum B): without `sources` the hook gives them back to the
+ * inbox; with it the route "Ticket löschen mit Quellenbehandlung" settles them as chosen ('inbox'
+ * or 'discard'), in the same transaction, and answers the move for "Rückgängig" (null before the
+ * migration of the trash and without `sources`).
  */
 export function deleteTicket(
 	pb: PocketBase,
 	id: string,
 	{ signal, sources }: RequestOptions & { sources?: SourceHandling } = {}
-): Promise<void> {
+): Promise<TrashMove | null> {
 	return withDataErrors(signal, async () => {
 		if (sources === undefined) {
 			await pb.collection(TICKETS).delete(id, { signal });
-			return;
+			return null;
 		}
-		await pb.send(`/api/byl/tickets/${encodeURIComponent(id)}/delete`, {
+		const answer: unknown = await pb.send(`/api/byl/tickets/${encodeURIComponent(id)}/delete`, {
 			method: 'POST',
 			body: { sources },
 			signal
 		});
+		return toTrashMove(answer);
 	});
 }

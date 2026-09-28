@@ -120,3 +120,10 @@ Mit dem Schalter aus [ADR-0022](0022-erzeugung-von-instanzen.md) Nachtrag 2 darf
 - **Steht genau ein Ticket entgegen,** gilt §3 wie bisher: unberührt (nicht vor dem `completed_at` entstanden, `updated = created`, ohne Kommentare) wird es gelöscht, sonst lehnt der Hook mit `validation_recurrence_open_instance` und dem Key ab. Mit Schalter bleibt `next_due` dabei stehen, weil ein Zurücksetzen Termine erneut erzeugen könnte, deren (erledigte) Tickets es schon gibt. Das betrifft nur Folgetickets von vor dem Einschalten (beide ohne `occurrence`).
 - **Stehen mehrere entgegen** (Schalter nach mehreren offenen Tickets wieder aus), lehnt der Hook mit dem Key des jüngsten ab; die Regel „eine offene Instanz“ würde sonst gebrochen. Bis alle erledigt sind, erzeugt die Regel ohne Schalter nichts.
 - Belegt in `recurrence-generate.test.mjs` (frei wiedereröffnen mit mehreren offenen Tickets, Folgeticket von vor dem Einschalten unberührt bzw. bearbeitet, Ablehnung nach dem Ausschalten) und `recurrence-rules.test.mjs`.
+
+## Nachtrag 3 (2026-09-28, Papierkorb, ADR-0037): Instanzen im Papierkorb
+
+- **§6 Löschen:** Löschen verschiebt eine Instanz in den Papierkorb und wirkt auf die Regel genau wie bisher (fester Rhythmus überspringt den Termin, „nach Erledigung“ wartet ab heute). Die Instanz verliert `recurrence` und `occurrence`; der Schnappschuss hält beide.
+- **Wiederherstellen** prüft in der Transaktion wie §3 mit `reopenConflicts` gegen die lebenden offenen Tickets der Serie (Nachtrag 2: ohne Schalter jede offene Instanz, mit Schalter nur eine desselben Termins). Anders als beim Wiedereröffnen wird dabei nie ein Folgeticket gelöscht: Ein Konflikt ergibt `validation_trash_series_conflict` mit Key, und die Oberfläche bietet „Als normales Ticket wiederherstellen (aus Serie lösen)“ (`detach_series`). Eine erledigte Instanz kehrt ohne Prüfung zurück. `next_due` bleibt in jedem Fall stehen.
+- Existiert die Regel nicht mehr (§7), kommt das Ticket als normales Ticket zurück.
+- Das Wiedereröffnen einer Instanz entfernt ein unberührtes Folgeticket weiter endgültig, nicht über den Papierkorb (es war nie bearbeitet).
