@@ -21,6 +21,7 @@
 	import { CatalogStore, catalogData, setCatalogStore } from '$lib/stores/catalog.svelte';
 	import { ColumnPrefsRegistry, setColumnPrefsRegistry } from '$lib/stores/column-prefs.svelte';
 	import { FirstStepsStore, localStore, setFirstStepsStore } from '$lib/stores/first-steps.svelte';
+	import { getNotifyStore } from '$lib/attention-notify.svelte';
 	import { ackAttention } from '$lib/data/attention';
 	import { AttentionStore, attentionSource } from '$lib/stores/attention.svelte';
 	import { FlagStore, setFlagStore } from '$lib/stores/flags.svelte';
@@ -136,11 +137,15 @@
 	// byl/attention; this tab confirms it and shows a flag, the title blinks while it is hidden. A
 	// second tab of this browser asks over the BroadcastChannel of the root layout.
 	const tabContext = getTabContext();
+	// The Windows notification is an opt-in of "Einstellungen → Darstellung" (SF-6).
+	const notifyStore = getNotifyStore();
 	const attention = new AttentionStore({
 		ack: (nonce) => ackAttention(pb, nonce),
 		flags,
-		blink: () => tabContext?.blinker.start()
+		blink: () => tabContext?.blinker.start(),
+		notify: () => void notifyStore.notify()
 	});
+	$effect(() => untrack(() => notifyStore.connect()));
 	$effect(() => untrack(() => attention.connect(attentionSource(pb))));
 	$effect(() => untrack(() => tabContext?.tabs.onAttention(() => attention.show('start'))));
 

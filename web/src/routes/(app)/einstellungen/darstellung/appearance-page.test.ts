@@ -1,12 +1,14 @@
 // Settings "Darstellung" (plan EH-8, ADR-0027 section 6, ADR-0029 section 7): three radios for the
 // mode and four for the accent color, each in a named group, and the switch "Glas-Effekt" in the
 // group "Transparenz", on the same stores as the menu in the header; a choice applies at once, is
-// stored, and both controls agree in both directions and with other tabs.
+// stored, and both controls agree in both directions and with other tabs. Since SF-6 the switch
+// "Windows-Benachrichtigung" of the group "Hinweise" (ADR-0035 section 5).
 
 import { fireEvent, render, screen, within } from '@testing-library/svelte';
 import { tick } from 'svelte';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { getAccentStore } from '$lib/accent.svelte';
+import { getNotifyStore } from '$lib/attention-notify.svelte';
 import ThemeMenu from '$lib/components/ThemeMenu.svelte';
 import { SETTINGS_SECTIONS } from '$lib/settings-sections';
 import { useOverlayStubs } from '$lib/test/overlay-stubs';
@@ -235,5 +237,73 @@ describe('appearance page: transparency (ADR-0029 section 7)', () => {
 		expect(hint.closest('[data-tone]')?.getAttribute('data-tone')).toBe('info');
 		// The switch stays usable: the choice counts again once the system setting is off.
 		expect(glassSwitch().disabled).toBe(false);
+	});
+});
+
+describe('appearance page: Windows notification (ADR-0035, SF-6)', () => {
+	function notifySwitch(): HTMLInputElement {
+		const group = screen.getByRole('group', { name: 'Hinweise' });
+		return within(group).getByRole('switch', {
+			name: 'Windows-Benachrichtigung'
+		}) as HTMLInputElement;
+	}
+
+	/** Notification API whose request answers `answer`. */
+	function browserAnswers(answer: NotificationPermission) {
+		const request = vi.fn(async () => {
+			FakeNotification.permission = answer;
+			return answer;
+		});
+		class FakeNotification {
+			static permission: NotificationPermission = 'default';
+			static requestPermission = request;
+		}
+		vi.stubGlobal('Notification', FakeNotification);
+		return request;
+	}
+
+	afterEach(() => {
+		getNotifyStore().disable();
+	});
+
+	it('is off by default, says what it does and asks for the permission only on a click', async () => {
+		const request = browserAnswers('granted');
+		render(Page);
+		const control = notifySwitch();
+
+		expect(control.checked).toBe(false);
+		expect(request).not.toHaveBeenCalled();
+		const note = document.getElementById(control.getAttribute('aria-describedby') ?? '');
+		expect(note?.textContent).toMatch(/Ein Klick darauf holt den Tab nach vorn/);
+
+		await fireEvent.click(control);
+		await vi.waitFor(() => expect(notifySwitch().checked).toBe(true));
+		expect(request).toHaveBeenCalledOnce();
+		expect(localStorage.getItem('byl-attention-notify')).toBe('on');
+
+		await fireEvent.click(notifySwitch());
+		expect(notifySwitch().checked).toBe(false);
+		expect(localStorage.getItem('byl-attention-notify')).toBeNull();
+	});
+
+	it('stays off and says how to allow it when the browser blocks it', async () => {
+		browserAnswers('denied');
+		render(Page);
+
+		await fireEvent.click(notifySwitch());
+		await vi.waitFor(() =>
+			expect(
+				screen.getByText(/Benachrichtigungen sind für diese Seite im Browser blockiert/)
+			).toBeTruthy()
+		);
+		expect(notifySwitch().checked).toBe(false);
+		expect(localStorage.getItem('byl-attention-notify')).toBeNull();
+	});
+
+	it('is disabled in a browser without notifications', () => {
+		vi.stubGlobal('Notification', undefined);
+		render(Page);
+		expect(notifySwitch().disabled).toBe(true);
+		expect(screen.getByText(/Dieser Browser kann keine Benachrichtigungen zeigen/)).toBeTruthy();
 	});
 });

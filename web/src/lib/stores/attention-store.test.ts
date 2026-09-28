@@ -106,6 +106,22 @@ describe('AttentionStore', () => {
 		expect(shown.size).toBe(2);
 	});
 
+	it('asks for the Windows notification with the flag, not for "beendet" (SF-6)', () => {
+		const notify = vi.fn();
+		const flags: FlagSink = { show: vi.fn(() => 'flag-1'), dismiss: vi.fn() };
+		const withNotify = new AttentionStore({
+			ack: async () => undefined,
+			flags,
+			blink: vi.fn(),
+			notify
+		});
+		withNotify.receive(message('stop'));
+		expect(notify).not.toHaveBeenCalled();
+		withNotify.receive(message('start'));
+		withNotify.show('datei');
+		expect(notify).toHaveBeenCalledTimes(2);
+	});
+
 	it('shows the hint of another tab without ack', () => {
 		const { store, ack, shown } = setup();
 		store.show('start');

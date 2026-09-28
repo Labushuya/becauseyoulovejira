@@ -28,6 +28,12 @@ export const APP_STOPPED = {
 	description: 'Zum Weiterarbeiten start.bat ausführen.'
 } as const;
 
+/** Windows notification of a hidden tab (opt-in, ADR-0035 §5); a click brings the tab forward. */
+export const APP_OPENED_NOTIFICATION = {
+	title: 'becauseyoulovejira ist schon offen',
+	body: 'Klicken, um dorthin zu wechseln.'
+} as const;
+
 /** Title a hidden tab alternates with while it asks for attention. */
 export const ATTENTION_TITLE = '● Hier ist becauseyoulovejira';
 

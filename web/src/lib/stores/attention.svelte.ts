@@ -33,6 +33,8 @@ export interface AttentionDeps {
 	flags: FlagSink;
 	/** Blinks the title while the tab is hidden (TitleBlinker). */
 	blink(): void;
+	/** Windows notification if the user switched it on (NotifyStore, SF-6). */
+	notify?(): void;
 }
 
 export class AttentionStore {
@@ -81,6 +83,7 @@ export class AttentionStore {
 		});
 		this.#againFlag = id;
 		this.#deps.blink();
+		this.#deps.notify?.();
 	}
 
 	/** The connection is back after an interruption: the app runs again. */
