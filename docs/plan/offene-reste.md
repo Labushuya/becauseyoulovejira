@@ -1,6 +1,6 @@
 # E6-Plan, Teil Offene Reste A: „wiederkehrend“ filtern und gruppieren, Wiederholen beim Anlegen, jeden Termin einzeln, zwei Ebenen, mehrere Wochentage
 
-- **Stand:** umgesetzt (2026-09-28): OR-1 (#143, Tests mehrere Wochentage), OR-2 (#144, Filter und Gruppe „wiederkehrend“), OR-3 (#145, zwei Ebenen), OR-4 (#146, Wiederholen beim Anlegen), OR-5 (jeden Termin einzeln, mit Migration). Offen sind die manuellen Browser-Prüfungen (BYL-E6-302, -304, -306, -309).
+- **Stand:** umgesetzt (2026-09-28): OR-1 (#143, Tests mehrere Wochentage), OR-2 (#144, Filter und Gruppe „wiederkehrend“), OR-3 (#145, zwei Ebenen), OR-4 (#146, Wiederholen beim Anlegen), OR-5 (#147, jeden Termin einzeln, mit Migration: Neustart nötig). Offen sind die manuellen Browser-Prüfungen (BYL-E6-302, -304, -306, -309).
 - **Grundlage:**
   - Nutzerentscheidungen vom 2026-09-28 (Auftrag „Offene Reste“, Teil A); der Papierkorb ist ein eigener Auftrag danach.
   - [ADR-0013](../adr/0013-filter-suche-sortierung-gruppierung.md) (Filter, Gruppen, Paritätstest), [ADR-0021](../adr/0021-regelmodell-wiederkehrende-aufgaben.md) bis [ADR-0024](../adr/0024-serien-aus-kalendern.md) (Wiederholungen), [ADR-0030](../adr/0030-spalten-breiten-und-kompakte-zeilen.md) (Spalten), [ADR-0033](../adr/0033-unteraufgaben.md) (eingerückte Unteraufgaben), [ADR-0034](../adr/0034-unterprojekte.md) (Projektpfad in Gruppen), [ADR-0035](../adr/0035-start-einstieg-und-offene-tabs.md)
@@ -65,7 +65,7 @@
 | OR-2 | gemergt (#144) |
 | OR-3 | gemergt (#145) |
 | OR-4 | gemergt (#146) |
-| OR-5 | in Arbeit (Migration: Neustart nötig) |
+| OR-5 | gemergt (#147; Migration, Neustart nötig) |
 
 ## 5. Offene Punkte
 
