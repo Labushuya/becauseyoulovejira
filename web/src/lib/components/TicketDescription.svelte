@@ -4,13 +4,16 @@
 	import type { TicketDetailStore } from '$lib/stores/ticket-detail.svelte';
 	import ErrorIcon from './ErrorIcon.svelte';
 	import Markdown from './Markdown.svelte';
-	import MarkdownEditor from './MarkdownEditor.svelte';
+	import RichTextEditor from './RichTextEditor.svelte';
 	import SectionMessage from './guidance/SectionMessage.svelte';
 
 	// Description of a ticket (E2 plan, package 7), shared by the side panel and the full view
-	// (ADR-0025 section 7): sanitised Markdown with "Bearbeiten", an editor with preview, "Speichern"
-	// (Ctrl+Enter) and "Abbrechen". The draft lives in the store, so it survives the change between
-	// panel and full view; the focus moves into the editor and back to "Bearbeiten".
+	// (ADR-0025 section 7): sanitised Markdown with "Bearbeiten", the editor (since RT-3 the
+	// WYSIWYG editor of ADR-0032 with "Markdown" as source mode), "Speichern" (Ctrl+Enter) and
+	// "Abbrechen". The editor writes the draft only when the text changes, through the store, so
+	// expected_updated and the question below apply as before. The draft lives in the store, so it
+	// survives the change between panel and full view; the focus moves into the editor and back to
+	// "Bearbeiten".
 	// Tasks of the description can be ticked in the view (ADR-0032 section 6). If the description
 	// changed while it was edited, saving asks inline instead of overwriting: "Überschreiben" or
 	// "Verwerfen und neu laden". Inline and not as a confirmation, because the full view is a modal
@@ -23,7 +26,7 @@
 	const taskErrorId = `${uid}-task-error`;
 
 	let editButton = $state<HTMLButtonElement>();
-	let editor = $state<HTMLTextAreaElement>();
+	let editor = $state<ReturnType<typeof RichTextEditor>>();
 	/** Why ticking a task failed, for the ticket it happened on. */
 	let taskError = $state<{ ticketId: string; message: string } | null>(null);
 
@@ -44,6 +47,7 @@
 
 	async function end(save: boolean) {
 		if (save) {
+			editor?.flush();
 			if (!(await store.save('description'))) return;
 		} else {
 			store.cancel('description');
@@ -70,13 +74,6 @@
 		taskError = result.ok || result.message === null ? null : { ticketId, message: result.message };
 		return result.ok;
 	}
-
-	function onkeydown(event: KeyboardEvent) {
-		if (event.key === 'Enter' && (event.ctrlKey || event.metaKey)) {
-			event.preventDefault();
-			void end(true);
-		}
-	}
 </script>
 
 <section class="description" aria-labelledby={titleId}>
@@ -89,14 +86,15 @@
 		{/if}
 	</div>
 	{#if editing}
-		<MarkdownEditor
-			label="Beschreibung (Markdown)"
+		<RichTextEditor
+			bind:this={editor}
+			label="Beschreibung"
 			maxlength={DESCRIPTION_MAX_LENGTH}
+			placeholder="Beschreibung eingeben …"
 			bind:value={() => store.value('description'), (value) => store.setDraft('description', value)}
-			bind:textarea={editor}
-			aria-invalid={error ? 'true' : undefined}
-			aria-describedby={error ? errorId : undefined}
-			{onkeydown}
+			invalid={error !== null}
+			describedby={error ? errorId : undefined}
+			onsubmit={() => void end(true)}
 		/>
 		{#if error}
 			<p class="field-error" id={errorId}><ErrorIcon /><span>{error}</span></p>

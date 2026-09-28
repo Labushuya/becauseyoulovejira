@@ -53,9 +53,10 @@ describe('help page (EH-9)', () => {
 			within(section)
 				.getAllByRole('heading', { level: 4 })
 				.map((heading) => heading.textContent?.trim())
-		).toEqual(['Überall', 'Liste', 'Panel', 'Dialoge']);
+		).toEqual(['Überall', 'Liste', 'Panel', 'Dialoge', 'Editor']);
 		expect(text(section)).toMatch(/Schnellerfassung öffnen/);
 		expect(text(section)).toMatch(/Kommentare“ und „Verlauf/);
+		expect(text(section)).toMatch(/Zur Formatierungsleiste/);
 	});
 
 	it('explains the short syntax with an example and its tokens', () => {
@@ -117,6 +118,9 @@ describe('help page (EH-9)', () => {
 		expect(text(section)).toContain('„HAUS-12 ›“');
 		expect(text(section)).toContain('++unterstrichen++');
 		expect(text(section)).toContain('- [ ] offen');
+		// The editor (RT-3): toolbar, keys, source mode.
+		expect(text(section)).toContain('Formatierungsleiste');
+		expect(text(section)).toContain('„Markdown“ in der Leiste');
 		expect(text(section)).toContain('direkt in der Ansicht ab');
 		expect(text(section)).toContain(RESTART_NEEDED.text);
 		expect(

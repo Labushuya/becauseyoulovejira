@@ -135,9 +135,9 @@ describe('shortcut list (EH-9)', () => {
 		const headings = screen
 			.getAllByRole('heading', { level: 3 })
 			.map((heading) => heading.textContent?.trim());
-		expect(headings).toEqual(['Überall', 'Liste', 'Panel', 'Dialoge']);
+		expect(headings).toEqual(['Überall', 'Liste', 'Panel', 'Dialoge', 'Editor']);
 		expect(container.querySelectorAll('table')).toHaveLength(0);
-		expect(container.querySelectorAll('dl')).toHaveLength(4);
+		expect(container.querySelectorAll('dl')).toHaveLength(5);
 		expect(container.querySelectorAll('dd')).toHaveLength(SHORTCUTS.length);
 		const quick = SHORTCUTS[0];
 		expect(quick && keysText(quick)).toBe('c oder Strg+K');

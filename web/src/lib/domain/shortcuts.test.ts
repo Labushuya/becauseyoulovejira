@@ -11,6 +11,7 @@ import {
 	QUICK_CAPTURE_KEYSHORTCUTS,
 	SHORTCUTS,
 	SHORTCUT_CONTEXTS,
+	ariaKeyShortcuts,
 	keysText,
 	shortcutById,
 	shortcutsOf
@@ -68,7 +69,8 @@ describe('shortcuts', () => {
 			'Überall',
 			'Liste',
 			'Panel',
-			'Dialoge'
+			'Dialoge',
+			'Editor'
 		]);
 		for (const context of SHORTCUT_CONTEXTS) {
 			expect(shortcutsOf(context.id).length).toBeGreaterThan(0);
@@ -98,6 +100,31 @@ describe('shortcuts', () => {
 		expect(appHeader).toContain('aria-keyshortcuts={QUICK_CAPTURE_KEYSHORTCUTS}');
 		expect(helpMenu).toContain('aria-keyshortcuts={HELP_KEYSHORTCUTS}');
 		expect(appHeader).not.toMatch(/aria-keyshortcuts="/);
+	});
+
+	it('gives the editor entries WAI-ARIA names for aria-keyshortcuts', () => {
+		for (const shortcut of shortcutsOf('editor')) {
+			expect(ariaKeyShortcuts(shortcut)).toBe(
+				shortcut.keys
+					.map((combination) =>
+						combination
+							.map((name) =>
+								name === 'Strg'
+									? 'Control'
+									: name === 'Umschalt'
+										? 'Shift'
+										: name.length === 1
+											? name.toUpperCase()
+											: name
+							)
+							.join('+')
+					)
+					.join(' ')
+			);
+		}
+		expect(ariaKeyShortcuts(shortcutById('editor-strike'))).toBe('Control+Shift+S');
+		expect(ariaKeyShortcuts(shortcutById('editor-toolbar'))).toBe('Alt+F10');
+		expect(ariaKeyShortcuts(shortcutById('quick-capture'))).toBe(QUICK_CAPTURE_KEYSHORTCUTS);
 	});
 
 	it('throws for an unknown id', () => {

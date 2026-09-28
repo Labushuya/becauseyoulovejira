@@ -20,12 +20,27 @@ import {
 	type TicketDetailData,
 	type TicketListSync
 } from '$lib/stores/ticket-detail.svelte';
+import type { Editor } from '@tiptap/core';
 import FullViewRouteHarness from '$lib/test/FullViewRouteHarness.svelte';
 import { useOverlayStubs } from '$lib/test/overlay-stubs';
+import { typeText, useProseMirrorStubs } from '$lib/test/prosemirror-stubs';
 import TicketPanel from './TicketPanel.svelte';
 import TicketLayout from '../../routes/(app)/(tickets)/tickets/[id]/+layout.svelte';
 
 useOverlayStubs();
+useProseMirrorStubs();
+
+/** The editable element of the description editor once it has loaded (RT-3). */
+function descriptionEditor(): Promise<HTMLElement> {
+	return screen.findByRole('textbox', { name: 'Beschreibung' }, { timeout: 5000 });
+}
+
+/** The description as Markdown: the editor loads, then "Markdown" switches to the textarea. */
+async function descriptionSource(): Promise<HTMLTextAreaElement> {
+	await descriptionEditor();
+	await fireEvent.click(screen.getByRole('button', { name: 'Markdown' }));
+	return screen.findByLabelText<HTMLTextAreaElement>('Beschreibung (Markdown)');
+}
 
 /** The route of a ticket (UI-7: its +layout.svelte) with the panel alone as child page. */
 const renderTicketRoute = () =>
@@ -405,11 +420,42 @@ describe('ticket panel', () => {
 		expect(data.update).not.toHaveBeenCalled();
 	});
 
-	it('edits the description with preview, saves with Ctrl+Enter and cancels', async () => {
+	it('edits the description in the editor and saves only a changed text (RT-3)', async () => {
 		const { data } = await renderPanel();
 
 		await fireEvent.click(screen.getByRole('button', { name: 'Bearbeiten: Beschreibung' }));
-		const text = screen.getByLabelText<HTMLTextAreaElement>('Beschreibung (Markdown)');
+		const content = await descriptionEditor();
+		await vi.waitFor(() => expect(document.activeElement).toBe(content));
+		const editor = (content as HTMLElement & { editor: Editor }).editor;
+		expect(editor.getHTML()).toBe('<p><strong>Belege</strong> sammeln</p>');
+
+		// Opened and saved unchanged: no request, the editor closes.
+		await fireEvent.click(screen.getByRole('button', { name: 'Speichern' }));
+		await vi.waitFor(() =>
+			expect(screen.queryByRole('textbox', { name: 'Beschreibung' })).toBeNull()
+		);
+		expect(data.update).not.toHaveBeenCalled();
+
+		await fireEvent.click(screen.getByRole('button', { name: 'Bearbeiten: Beschreibung' }));
+		const again = await descriptionEditor();
+		const next = (again as HTMLElement & { editor: Editor }).editor;
+		next.commands.focus('end');
+		typeText(next.view, ' heute');
+		await fireEvent.keyDown(again, { key: 'Enter', ctrlKey: true });
+		await vi.waitFor(() =>
+			expect(data.update).toHaveBeenCalledWith(
+				ID,
+				{ description: '**Belege** sammeln heute' },
+				{ expectedUpdated: '2026-09-02 12:30:00.000Z' }
+			)
+		);
+	});
+
+	it('edits the description as Markdown, saves with Ctrl+Enter and cancels', async () => {
+		const { data } = await renderPanel();
+
+		await fireEvent.click(screen.getByRole('button', { name: 'Bearbeiten: Beschreibung' }));
+		const text = await descriptionSource();
 		expect(document.activeElement).toBe(text);
 		expect(text.value).toBe('**Belege** sammeln');
 		expect(text.maxLength).toBe(100_000);
@@ -426,7 +472,7 @@ describe('ticket panel', () => {
 		expect(screen.getByRole('heading', { level: 1 }).textContent).toBe('Neu');
 
 		await fireEvent.click(screen.getByRole('button', { name: 'Bearbeiten: Beschreibung' }));
-		await fireEvent.input(screen.getByLabelText('Beschreibung (Markdown)'), {
+		await fireEvent.input(await descriptionSource(), {
 			target: { value: 'verworfen' }
 		});
 		await fireEvent.click(screen.getByRole('button', { name: 'Abbrechen' }));
@@ -490,7 +536,7 @@ describe('ticket panel', () => {
 		const { store, data } = await renderPanel();
 
 		await fireEvent.click(screen.getByRole('button', { name: 'Bearbeiten: Beschreibung' }));
-		await fireEvent.input(screen.getByLabelText('Beschreibung (Markdown)'), {
+		await fireEvent.input(await descriptionSource(), {
 			target: { value: 'Mein Text' }
 		});
 		store.upsert(ticket({ description: 'Anderer Text', updated: '2026-09-03 08:00:00.000Z' }));
@@ -524,7 +570,7 @@ describe('ticket panel', () => {
 		const { store, data } = await renderPanel();
 
 		await fireEvent.click(screen.getByRole('button', { name: 'Bearbeiten: Beschreibung' }));
-		await fireEvent.input(screen.getByLabelText('Beschreibung (Markdown)'), {
+		await fireEvent.input(await descriptionSource(), {
 			target: { value: 'Mein Text' }
 		});
 		store.upsert(ticket({ description: 'Anderer Text', updated: '2026-09-03 08:00:00.000Z' }));

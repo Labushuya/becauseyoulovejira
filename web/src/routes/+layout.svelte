@@ -3,6 +3,7 @@
 	import '@fontsource-variable/jetbrains-mono';
 	import '$lib/styles/tokens.css';
 	import '$lib/styles/base.css';
+	import '$lib/styles/prose.css';
 
 	import { untrack } from 'svelte';
 	import { goto } from '$app/navigation';

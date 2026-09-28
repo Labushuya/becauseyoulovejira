@@ -1,6 +1,6 @@
 # ADR-0032: Editor wie Jira: Tiptap mit Markdown als Speicherformat, Brücke über die markdown-it-Instanz der Anzeige
 
-- **Status:** Angenommen. Spike RT-0 abgeschlossen (Weg B, siehe §2, #114); Stufe A umgesetzt: RT-1 (Anzeige, #115) und RT-2 (Abhaken, Schutz vor Überschreiben, #116) nach [docs/plan/editor.md](../plan/editor.md); der Editor selbst folgt mit Stufe B (RT-3 bis RT-6)
+- **Status:** Angenommen. Spike RT-0 abgeschlossen (Weg B, siehe §2, #114); Stufe A umgesetzt: RT-1 (Anzeige, #115) und RT-2 (Abhaken, Schutz vor Überschreiben, #116) nach [docs/plan/editor.md](../plan/editor.md); Stufe B: RT-3 (Editor für die Beschreibung, Nachtrag RT-3 unten) umgesetzt, RT-4 bis RT-6 folgen
 - **Datum:** 2026-09-28
 - **Entscheidung durch:** Nutzer (Tiptap als neue Abhängigkeit mit RT-0 als Abbruchpunkt, Markdown bleibt Speicherformat, `++Text++` für Unterstreichen, GFM-Task-Listen, Umfang wie Jira, 2026-09-28), Advisor (Konzept), Executor (Spike, Weg, Einzelheiten)
 - **Ergänzt:** [ADR-0008](0008-markdown-rendering-und-sanitizing.md) §1, §2 und §5 (Parser-Erweiterungen, Allowlist, Abhängigkeiten); **ersetzt ab RT-3** ADR-0008 §4 (Bearbeiten nur als `textarea`)
@@ -109,6 +109,17 @@ Geprüft wurde `renderMarkdown(serialize(parse(md)))` ≡ `renderMarkdown(md)` (
 **Abbruchkriterium:** Weg A besteht die Parität nicht, und per Konfiguration ließe sie sich nur über eigene Tokenizer für HTML, Tilde, `++`, Maskierung und Listen in marked herstellen, also über einen zweiten Nachbau von markdown-it. Damit greift der im Konzept vorgesehene Rückfall. Weg B besteht die Parität und hält den Editor bei Tiptap. Tiptap als Ganzes bleibt tragfähig; ein Abbruch des Editors ist nicht nötig.
 
 Der Spike-Code liegt nicht im Repo. Die Brücke entsteht mit RT-3 neu in TypeScript unter `web/src/lib/editor/`, der Korpus kommt mit RT-1 nach `web/src/lib/test/markdown-corpus/`.
+
+## Nachtrag RT-3 (2026-09-28): Brücke und Prüfung vor dem Öffnen
+
+- **Prüfung über die Anzeige:** `richEditable` lehnt nicht nur Tabellen, gemischte Listen und unbekannte Tokens ab. Es schickt den Text einmal durch die Brücke und vergleicht die Anzeige vorher und nachher (`lib/editor/parity.ts`: gleiche Blöcke, gleicher Text mit gleichen Marken, Leerraum zwischen Tags und die Reihenfolge verschachtelter Marken zählen nicht). Weicht sie ab, öffnet der Quelltextmodus. So garantiert nicht nur der Korpus, sondern jeder einzelne Text, dass Bearbeiten nichts anders zeigt.
+- **Serializer über den Spike hinaus:**
+  - mehrere Umbrüche hintereinander als `\` am Zeilenende (eine Leerzeile würde den Absatz beenden); Umbrüche am Blockende fallen weg; in einer Überschrift wird ein Umbruch ein Leerzeichen
+  - am Zeilenanfang zusätzlich `+` und `1.` ohne Text, `1)`, `=`, `|` und `:-` maskiert; führende Leerzeichen fallen weg (die Anzeige ignoriert sie, vier davon würden Code)
+  - zwei Listen direkt hintereinander bekommen verschiedene Zeichen (`-`/`*`, `.`/`)`), sonst verschmölzen sie; das gilt auch für Aufzählung und Checkliste
+- **Schreiben:** Der Editor schreibt Markdown nur bei einer Änderung des Dokuments, bis 20 000 Positionen sofort, darüber nach 250 ms und spätestens beim Verlassen, Speichern oder Strg+Enter.
+- **Größe:** Der Chunk hat 124,9 KB gz (396 KB minifiziert). markdown-it liegt nur einmal im Bundle (`overrides` in `web/package.json`, geprüft in `editor-lazy.test.ts` über `package-lock.json`).
+- `@tiptap/extension-underline` ist eine direkte Abhängigkeit, weil der Editor ihm die Eingaberegel `++x++` gibt.
 
 ## Alternativen
 
