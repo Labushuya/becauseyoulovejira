@@ -1,6 +1,6 @@
 # E6-Plan, Teil Unterprojekte: eine Ebene, eigener Code, Baum in Liste und Kacheln, Filter mit Unterprojekten
 
-- **Stand:** umgesetzt (2026-09-28): UP-1 (#130, Datenmodell, Hook, Spike), UP-2 (#131, Katalog und Datenschicht), UP-3 (#132, Liste und Kacheln als Baum), UP-4 (#133, Projekt-Panel), UP-5 (#134, Auswahl, Filter, Tabelle, Brotkrumen) und UP-6 (Zahlen, Hilfe, README). Offen sind die manuellen Browser-Prüfungen.
+- **Stand:** umgesetzt (2026-09-28): UP-1 (#130, Datenmodell, Hook, Spike), UP-2 (#131, Katalog und Datenschicht), UP-3 (#132, Liste und Kacheln als Baum), UP-4 (#133, Projekt-Panel), UP-5 (#134, Auswahl, Filter, Tabelle, Brotkrumen) und UP-6 (#135, Zahlen, Hilfe, README). Offen sind die manuellen Browser-Prüfungen.
 - **Grundlage:**
   - [ADR-0034](../adr/0034-unterprojekte.md) (Datenmodell, Prüfregeln, Archiv-Kaskade, Spike, Oberfläche, Grenze zum Epic)
   - [ADR-0012](../adr/0012-plain-ticketing.md) mit dem Nachtrag „Unterprojekte als Gliederung, keine Epics“
@@ -83,7 +83,7 @@
 | UP-3 | gemergt (#132) |
 | UP-4 | gemergt (#133) |
 | UP-5 | gemergt (#134) |
-| UP-6 | umgesetzt (Zahlen, Hilfe, README, Abschluss) |
+| UP-6 | gemergt (#135) |
 
 ## 5. Offene Punkte
 
