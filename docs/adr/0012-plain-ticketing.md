@@ -1,6 +1,6 @@
 # ADR-0012: Plain Ticketing ohne Ticket-Typen, Epics, Sprints und Story Points
 
-- **Status:** Angenommen
+- **Status:** Angenommen (mit Nachtrag 2026-09-28: Unteraufgaben freigegeben, [ADR-0033](0033-unteraufgaben.md))
 - **Datum:** 2026-09-25
 - **Entscheidung durch:** Nutzer (2026-09-25)
 
@@ -33,3 +33,12 @@ becauseyoulovejira soll wie Jira aussehen und sich wie Jira anfühlen: Keys wie 
 - Anlage- und Panel-Formulare bleiben kurz: Titel, Status, Priorität, Fälligkeit, Projekt, Tags, Beschreibung.
 - Filter, Sortierung und Gruppierung in E3 kennen nur Status, Priorität, Fälligkeit, Projekt, Tag, Erstellt und ab E4 Quelle bzw. Kanal.
 - CLAUDE.md §10 nennt Ticket-Typen und Story Points ausdrücklich unter „Nicht umsetzen“.
+
+## Nachtrag (2026-09-28): Unteraufgaben freigegeben
+
+Der Text oben bleibt unverändert. Der Nutzer hat am 2026-09-28 ausdrücklich angewiesen, die Sub-Tickets jetzt umzusetzen (CLAUDE.md §10, „nur auf ausdrückliche Anweisung“). Sie heißen in der Oberfläche **Unteraufgaben**.
+
+- Die Festlegung „keine Epics, höchstens eine Ebene, ohne eigenen Typ“ bleibt. Eine Unteraufgabe ist ein normales Ticket mit `parent`.
+- Umfang, Regeln und die Wirkung von `blocks_parent` stehen in [ADR-0033](0033-unteraufgaben.md), die Pakete im [Plan Unteraufgaben](../plan/unteraufgaben.md).
+- Das Datenmodell ändert sich nicht; es gibt weiter kein Feld `type`.
+- Die Konsequenz „Anlage- und Panel-Formulare bleiben kurz“ gilt weiter: Das Panel bekommt den Abschnitt „Unteraufgaben“ und die Zeile „Übergeordnet“, aber kein neues Pflichtfeld.

@@ -1,6 +1,6 @@
 # ADR-0011: Neue Etappen E3 bis E7 mit vorgezogenen Eingangskanälen
 
-- **Status:** Angenommen
+- **Status:** Angenommen (mit Nachtrag 2026-09-28: Unteraufgaben aus Stufe 2 freigegeben, [ADR-0033](0033-unteraufgaben.md))
 - **Datum:** 2026-09-25
 - **Entscheidung durch:** Nutzer (Etappen, Reihenfolge der Kanäle, Papierkorb, 2026-09-25), Advisor (Zuordnung der übrigen Themen)
 
@@ -64,3 +64,10 @@ Code-Kommentare mit alten Etappennummern werden angepasst, sobald die Datei ohne
 - E3 wird größer als bisher geplant (Layout-Umbau). Der E3-Plan zerlegt die Etappe deshalb in kleine, einzeln testbare Pakete.
 - Die Quelle bzw. der Kanal eines Tickets ist ein neues Datenmerkmal. Es kommt in E4 als additive Migration, ohne Datenmigration ([ADR-0001](0001-betriebsmodell-lokal-mehrgeraete-spaeter.md)).
 - Die Planung von E4 beginnt erst, wenn die Prüfung der externen Dienste vorliegt. Sie entscheidet nur über deren Status, nicht über die vier lokalen Kanäle.
+
+## Nachtrag (2026-09-28): Unteraufgaben aus Stufe 2 freigegeben
+
+Der Text oben bleibt unverändert. Aus der Stufe 2 („Sub-Tickets, Abhängigkeiten, Board, Benachrichtigungen, Anhänge“, §1) hat der Nutzer am 2026-09-28 die **Sub-Tickets** ausdrücklich freigegeben. Sie werden als „Unteraufgaben“ in E6 umgesetzt, nach „Editor Stufe A“ und vor „Editor Stufe B“ (Reihenfolge aus dem [Plan Editor](../plan/editor.md)).
+
+- Umfang und Regeln: [ADR-0033](0033-unteraufgaben.md); Pakete UA-0 bis UA-5 und Manifest-IDs ab `BYL-E6-220`: [Plan Unteraufgaben](../plan/unteraufgaben.md).
+- Abhängigkeiten mit Entsperr-Automation, Board, Benachrichtigungen und Anhänge bleiben Stufe 2 und kommen weiter nur auf ausdrückliche Anweisung.
