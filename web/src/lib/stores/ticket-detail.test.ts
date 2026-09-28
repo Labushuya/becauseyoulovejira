@@ -905,3 +905,99 @@ describe('saving the description without overwriting a newer one (ADR-0032 secti
 		expect(store.descriptionConflict).toBe(false);
 	});
 });
+
+describe('completing with open blocking sub-tasks (ADR-0033 section 2)', () => {
+	const child = (key: string, overrides: Partial<TicketSummary> = {}): TicketSummary => ({
+		...ticket({ id: `sub-${key}`, key, parentId: ID }),
+		status: 'open',
+		...overrides
+	});
+
+	async function withSubtasks(subtasks: TicketSummary[]) {
+		const context = await opened();
+		Object.assign(context.list, { subtasksOf: () => subtasks });
+		return context;
+	}
+
+	it('asks instead of saving the status "Erledigt" and keeps the status', async () => {
+		const { store, data } = await withSubtasks([
+			child('HAUS-13'),
+			child('HAUS-14', { blocksParent: false }),
+			child('HAUS-15', { status: 'done' })
+		]);
+
+		await store.choose('status', 'done');
+
+		expect(data.update).not.toHaveBeenCalled();
+		expect(store.completionQuestion).toEqual({ count: 1, keys: ['HAUS-13'] });
+		expect(store.value('status')).toBe('in_progress');
+		expect(store.fieldError('status')).toBeNull();
+
+		store.cancelCompletion();
+		expect(store.completionQuestion).toBeNull();
+	});
+
+	it('saves the answer with the choice and hands the sub-tasks to the list for "Rückgängig"', async () => {
+		const { store, data, list } = await withSubtasks([child('HAUS-13', { status: 'waiting' })]);
+		await store.choose('status', 'done');
+
+		expect(await store.confirmCompletion('complete_children')).toBe(true);
+
+		expect(data.update).toHaveBeenCalledWith(
+			ID,
+			{ status: 'done' },
+			{ completion: 'complete_children' }
+		);
+		expect(list.completed).toHaveBeenCalledWith(
+			expect.objectContaining({ status: 'done' }),
+			'in_progress',
+			[{ id: 'sub-HAUS-13', key: 'HAUS-13', previousStatus: 'waiting' }]
+		);
+		expect(store.completionQuestion).toBeNull();
+		expect(store.ticket?.status).toBe('done');
+	});
+
+	it('completes anyway without handing sub-tasks to the list', async () => {
+		const { store, data, list } = await withSubtasks([child('HAUS-13')]);
+		await store.choose('status', 'done');
+
+		await store.confirmCompletion('force');
+
+		expect(data.update).toHaveBeenCalledWith(ID, { status: 'done' }, { completion: 'force' });
+		expect(list.completed).toHaveBeenCalledWith(expect.anything(), 'in_progress', []);
+	});
+
+	it('asks when the hook refuses, and shows another failure at the field', async () => {
+		const { store, data } = await opened();
+		data.update.mockRejectedValueOnce(
+			new DataError('validation', {
+				status: 400,
+				fields: {
+					status: {
+						code: 'validation_parent_open_children',
+						message: '2 Unteraufgaben sind noch offen.',
+						params: { count: 2, keys: ['HAUS-20', 'HAUS-21'] }
+					}
+				}
+			})
+		);
+
+		await store.choose('status', 'done');
+		expect(store.completionQuestion).toEqual({ count: 2, keys: ['HAUS-20', 'HAUS-21'] });
+		expect(store.fieldError('status')).toBeNull();
+
+		data.update.mockRejectedValueOnce(new DataError('network'));
+		expect(await store.confirmCompletion('force')).toBe(false);
+		expect(store.completionQuestion).toBeNull();
+		expect(store.fieldError('status')).toMatch(/Server nicht erreichbar/);
+	});
+
+	it('forgets the question with another ticket', async () => {
+		const { store } = await withSubtasks([child('HAUS-13')]);
+		await store.choose('status', 'done');
+
+		store.reset();
+
+		expect(store.completionQuestion).toBeNull();
+	});
+});

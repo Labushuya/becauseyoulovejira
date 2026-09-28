@@ -145,6 +145,31 @@ describe('web data layer: tickets', () => {
 		expect(again.parentRef).toMatchObject({ id: parent.id, key: parent.key });
 	});
 
+	it('answers the question about open sub-tasks with complete_children or force (ADR-0033)', async () => {
+		const owner = await createOwner(superuser);
+		const parent = await createTicket(owner.client, draft());
+		const child = await createTicket(owner.client, draft({ parent: parent.id }));
+
+		const refused = await dataErrorOf(setTicketDone(owner.client, parent.id, true));
+		expect(refused.fields.status).toMatchObject({
+			code: 'validation_parent_open_children',
+			message: '1 Unteraufgabe ist noch offen.',
+			params: { count: 1, keys: [child.key] }
+		});
+
+		const done = await setTicketDone(owner.client, parent.id, true, {
+			completion: 'complete_children'
+		});
+		expect(done.status).toBe('done');
+		expect((await getTicket(owner.client, child.id)).status).toBe('done');
+
+		const other = await createTicket(owner.client, draft());
+		const open = await createTicket(owner.client, draft({ parent: other.id }));
+		const forced = await updateTicket(owner.client, other.id, { status: 'done' }, { completion: 'force' });
+		expect(forced.status).toBe('done');
+		expect((await getTicket(owner.client, open.id)).status).toBe('open');
+	});
+
 	it('returns list entries without the description', async () => {
 		const created = await createTicket(a.client, draft({ description: 'nur im Detail' }));
 

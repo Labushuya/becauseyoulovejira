@@ -1287,3 +1287,151 @@ describe('sub-tasks (ADR-0033)', () => {
 		expect(store.subtasksOf(PARENT_ID)).toEqual([]);
 	});
 });
+
+describe('completing a ticket with open blocking sub-tasks (ADR-0033 section 2)', () => {
+	const PARENT_ID = 'parent000000001';
+	const openChildrenError = (count: number, keys: string[]) =>
+		new DataError('validation', {
+			status: 400,
+			fields: {
+				status: {
+					code: 'validation_parent_open_children',
+					message: 'Offene Unteraufgaben blockieren das Erledigen.',
+					params: { count, keys }
+				}
+			}
+		});
+
+	async function started(subtasks: TicketSummary[]) {
+		const parent = ticket({ id: PARENT_ID, key: 'HAUS-12', status: 'in_progress' });
+		const all = [parent, ...subtasks];
+		let clock = 0;
+		const data = {
+			...fakeData(all.filter((entry) => entry.status !== 'done')),
+			listSubtasks: vi.fn(async () => subtasks),
+			setDone: vi.fn(async (id: string, isDone: boolean): Promise<TicketSummary> => {
+				clock += 1;
+				const current = all.find((entry) => entry.id === id) ?? parent;
+				return {
+					...current,
+					status: isDone ? 'done' : 'open',
+					completedAt: isDone ? '2026-09-24 10:00:00.000Z' : null,
+					updated: `2026-09-24 10:00:0${clock}.000Z`
+				};
+			}),
+			update: vi.fn(async (id: string, patch: TicketPatch): Promise<TicketSummary> => {
+				clock += 1;
+				const current = all.find((entry) => entry.id === id) ?? parent;
+				return {
+					...current,
+					...patch,
+					updated: `2026-09-24 10:00:0${clock}.000Z`
+				} as TicketSummary;
+			})
+		} satisfies TicketListData;
+		const flags = new FlagStore();
+		const store = new TicketListStore(data, session(), { flags });
+		store.activate(EMPTY_LIST_QUERY);
+		await settle();
+		return { store, data, flags, parent };
+	}
+
+	it('asks before sending when blocking sub-tasks are open, and not for others', async () => {
+		const blocking = ticket({ parentId: PARENT_ID, key: 'HAUS-13' });
+		const loose = ticket({ parentId: PARENT_ID, key: 'HAUS-14', blocksParent: false });
+		const closed = done({ parentId: PARENT_ID, key: 'HAUS-15' });
+		const { store, data } = await started([blocking, loose, closed]);
+
+		await store.setDone(PARENT_ID, true);
+
+		expect(data.setDone).not.toHaveBeenCalled();
+		expect(store.completion).toEqual({
+			id: PARENT_ID,
+			key: 'HAUS-12',
+			count: 1,
+			keys: ['HAUS-13'],
+			previousStatus: 'in_progress'
+		});
+		expect(store.isChecked(store.find(PARENT_ID) as TicketSummary)).toBe(false);
+
+		store.cancelCompletion();
+		expect(store.completion).toBeNull();
+		expect(data.setDone).not.toHaveBeenCalled();
+	});
+
+	it('completes the sub-tasks along and restores all of them with "Rückgängig"', async () => {
+		const first = ticket({ parentId: PARENT_ID, key: 'HAUS-13', status: 'waiting' });
+		const second = ticket({ parentId: PARENT_ID, key: 'HAUS-14' });
+		const { store, data, flags } = await started([first, second]);
+		await store.setDone(PARENT_ID, true);
+
+		await store.confirmCompletion('complete_children');
+
+		expect(data.setDone).toHaveBeenCalledWith(PARENT_ID, true, 'complete_children');
+		expect(store.completion).toBeNull();
+		expect(flags.flags.map((flag) => [flag.title, flag.action?.label])).toEqual([
+			['HAUS-12 und 2 Unteraufgaben erledigt.', 'Rückgängig']
+		]);
+
+		flags.act(flags.flags[0]?.id ?? '');
+		await settle();
+
+		expect(data.update.mock.calls).toEqual([
+			[PARENT_ID, { status: 'in_progress' }],
+			[first.id, { status: 'waiting' }],
+			[second.id, { status: 'open' }]
+		]);
+		expect(flags.flags.map((flag) => flag.title)).toEqual([
+			'HAUS-12 und 2 Unteraufgaben sind wieder offen.'
+		]);
+	});
+
+	it('completes it anyway with "Trotzdem erledigen"; "Rückgängig" reopens only the ticket', async () => {
+		const child = ticket({ parentId: PARENT_ID, key: 'HAUS-13' });
+		const { store, data, flags } = await started([child]);
+		await store.setDone(PARENT_ID, true);
+
+		await store.confirmCompletion('force');
+
+		expect(data.setDone).toHaveBeenCalledWith(PARENT_ID, true, 'force');
+		expect(flags.flags.map((flag) => flag.title)).toEqual(['HAUS-12 erledigt.']);
+		flags.act(flags.flags[0]?.id ?? '');
+		await settle();
+		expect(data.update.mock.calls).toEqual([[PARENT_ID, { status: 'in_progress' }]]);
+	});
+
+	it('asks when the hook refuses a completion the list did not expect', async () => {
+		const { store, data } = await started([]);
+		data.setDone.mockRejectedValueOnce(openChildrenError(2, ['HAUS-20', 'HAUS-21']));
+
+		await store.setDone(PARENT_ID, true);
+
+		expect(store.completion).toMatchObject({ count: 2, keys: ['HAUS-20', 'HAUS-21'] });
+		expect(store.isPending(PARENT_ID)).toBe(false);
+	});
+
+	it('keeps a failure in the question and names the restore that failed', async () => {
+		const child = ticket({ parentId: PARENT_ID, key: 'HAUS-13' });
+		const { store, data, flags } = await started([child]);
+		await store.setDone(PARENT_ID, true);
+		data.setDone.mockRejectedValueOnce(new DataError('network'));
+
+		await store.confirmCompletion('complete_children');
+		expect(store.completion).not.toBeNull();
+		expect(store.completionError).toMatch(/Server nicht erreichbar/);
+
+		await store.confirmCompletion('complete_children');
+		expect(store.completion).toBeNull();
+		data.update.mockImplementationOnce(async () =>
+			ticket({ id: PARENT_ID, key: 'HAUS-12', updated: '2026-09-24 11:00:00.000Z' })
+		);
+		data.update.mockRejectedValueOnce(new DataError('network'));
+		flags.act(flags.flags[0]?.id ?? '');
+		await settle();
+
+		expect(flags.flags.map((flag) => [flag.tone, flag.title])).toEqual([
+			['error', 'HAUS-13 konnte nicht zurückgesetzt werden.'],
+			['success', 'HAUS-12 ist wieder offen.']
+		]);
+	});
+});

@@ -25,6 +25,7 @@
 	} from '$lib/ticket-links';
 	import { getQuickCaptureOpener } from '$lib/quick-capture-context';
 	import ColumnsPopover from './ColumnsPopover.svelte';
+	import CompletionDialog from './CompletionDialog.svelte';
 	import ErrorIcon from './ErrorIcon.svelte';
 	import EmptyState from './guidance/EmptyState.svelte';
 	import GroupPopover from './GroupPopover.svelte';
@@ -554,6 +555,19 @@
 		</div>
 	{/if}
 </section>
+
+<!-- The check mark of a ticket with open blocking sub-tasks asks first (ADR-0033 section 2). -->
+{#if store.completion}
+	{#key store.completion.id}
+		<CompletionDialog
+			question={store.completion}
+			busy={store.completing}
+			error={store.completionError}
+			onconfirm={(choice) => void store.confirmCompletion(choice)}
+			oncancel={() => store.cancelCompletion()}
+		/>
+	{/key}
+{/if}
 
 <style>
 	.ticket-table {
