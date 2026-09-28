@@ -21,6 +21,8 @@
 	import { CatalogStore, catalogData, setCatalogStore } from '$lib/stores/catalog.svelte';
 	import { ColumnPrefsRegistry, setColumnPrefsRegistry } from '$lib/stores/column-prefs.svelte';
 	import { FirstStepsStore, localStore, setFirstStepsStore } from '$lib/stores/first-steps.svelte';
+	import { fetchHostPlatform } from '$lib/data/host';
+	import { HostStore, setHostStore } from '$lib/stores/host.svelte';
 	import { getNotifyStore } from '$lib/attention-notify.svelte';
 	import { ackAttention } from '$lib/data/attention';
 	import { AttentionStore, attentionSource } from '$lib/stores/attention.svelte';
@@ -210,6 +212,16 @@
 	});
 	$effect(() => {
 		if (catalog.projects.length > 0) untrack(() => firstSteps.reach('project'));
+	});
+
+	// Operating system of the server (plan plattformen S0-3): the guides show a note above setx,
+	// start.bat and stop.bat when the server does not run on Windows. Loaded once per sign-in.
+	const host = setHostStore(new HostStore((signal) => fetchHostPlatform(pb, { signal })));
+	$effect(() => {
+		if (auth.userId === null) return;
+		const controller = new AbortController();
+		untrack(() => void host.load(controller.signal));
+		return () => controller.abort();
 	});
 
 	// Guided tour (plan EH-13, ADR-0026 section 8): only on a click in the help menu or in "Erste

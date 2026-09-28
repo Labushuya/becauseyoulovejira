@@ -8,6 +8,7 @@ import PocketBase from 'pocketbase';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { createAppUser, createClient, statusOf, superuserClient, userClient } from '../support/api.mjs';
 import { startPocketBase } from '../support/pocketbase-harness.mjs';
+import { fetchHostPlatform } from '../../web/src/lib/data/host.ts';
 
 const ROUTE = '/api/byl/host';
 const THIS_MACHINE = process.platform === 'win32' ? 'windows' : 'linux';
@@ -28,6 +29,11 @@ describe('GET /api/byl/host', () => {
 	it('refuses guests and superusers', async () => {
 		expect(await statusOf(createClient().send(ROUTE, { method: 'GET' }))).toBe(401);
 		expect(await statusOf(superuser.send(ROUTE, { method: 'GET' }))).toBe(403);
+	});
+
+	it('reaches the SPA through the data layer, which falls back to Windows without a session (S0-3)', async () => {
+		expect(await fetchHostPlatform(user)).toBe(THIS_MACHINE);
+		expect(await fetchHostPlatform(createClient())).toBe('windows');
 	});
 });
 

@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { helpHref } from '$lib/settings-sections';
 	import GuidanceIcon from '../guidance/GuidanceIcon.svelte';
+	import HostPlatformNote from '../guidance/HostPlatformNote.svelte';
 
 	// Explanation at the top of "Kanäle" (ADR-0026 section 3, plan §3.4): the two ways into the inbox
 	// side by side, with own texts after the pattern of the task board, and below one sentence on the
@@ -37,6 +38,8 @@
 		Zugangsdaten stehen nur als Windows-Variable in deinem Konto, nie in der App.
 		<a href={helpHref('zugangsdaten')}>Wie funktionieren die Zugangsdaten?</a>
 	</p>
+	<!-- Only on a server that does not run on Windows (plan plattformen S0-3). -->
+	<HostPlatformNote />
 </div>
 
 <style>

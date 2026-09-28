@@ -254,6 +254,7 @@ Google Calendar und Telegram holt die App selbst ab, Postfächer der Mail-Hilfsp
 - **Ändern oder entfernen:** `setx` mit neuem Wert bzw. die Variable in der Systemsteuerung löschen (oder `reg delete HKCU\Environment /v NAME /f`), dann neu starten.
 - **Umzug:** Auf einem anderen Rechner fehlen die Variablen; lege sie dort neu an.
 - **In der App:** Dieselbe Erklärung steht unter **Einstellungen → Hilfe → Kanäle und Zugangsdaten**; die Seite **Kanäle** verlinkt sie mit „Wie funktionieren die Zugangsdaten?“.
+- **Server nicht unter Windows:** Die App fragt den Server nach seinem System (`GET /api/byl/host`). Läuft er unter Linux oder in einem Container, steht über den Windows-Anleitungen ein Hinweis: dieselben `BYL_*`-Variablen gehören dann in die Umgebung des Server-Prozesses bzw. in die Umgebungsdatei des Containers, danach den Server neu starten bzw. den Container neu erstellen. Übersteuern lässt sich die Erkennung mit `BYL_HOST_PLATFORM` (`windows`, `linux`, `container`). Anleitungen mit Befehlen für Linux folgen mit dem Server auf dem Raspberry Pi ([Plan Plattformen](docs/plan/plattformen.md), Stufe S3).
 - Fehlermeldungen einer Verbindung zeigen nie den Wert. Adressen werden auf Schema und Rechner gekürzt, Tokens durch `***` ersetzt.
 
 **Stichwörter** ([ADR-0020](docs/adr/0020-stichwoerter-pro-kanal.md)): Jede Verbindung hat eine eigene Liste. Automatisch kommt nur in den Eingang, was ein Stichwort trifft; ohne Stichwörter übernimmt eine Verbindung nichts und zeigt eine Warnung.
