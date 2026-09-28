@@ -1,6 +1,6 @@
 # ADR-0034: Unterprojekte als Gliederung der Projekte: eine Ebene, eigener Code, Archiv-Kaskade, keine Epics
 
-- **Status:** Angenommen und umgesetzt in den Paketen UP-1 bis UP-6 nach [docs/plan/unterprojekte.md](../plan/unterprojekte.md) (#130 bis #134 und der PR von UP-6); manuelle Browser-Prüfungen stehen im Test-Manifest
+- **Status:** Angenommen und umgesetzt in den Paketen UP-1 bis UP-6 nach [docs/plan/unterprojekte.md](../plan/unterprojekte.md) (#130 bis #135); manuelle Browser-Prüfungen stehen im Test-Manifest
 - **Datum:** 2026-09-28
 - **Entscheidung durch:** Nutzer (Freigabe der Unterprojekte mit einer Ebene, eigenem Code, Brotkrumen, Filter mit Unterprojekten, aggregierten Zahlen, Archiv-Kaskade und Löschsperre am 2026-09-28), Advisor (Konzept „Unterprojekte“), Executor (Prüfregeln, Spike, Einzelheiten)
 - **Präzisiert:** [ADR-0012](0012-plain-ticketing.md) (Nachtrag, der Text bleibt), [ADR-0013](0013-filter-suche-sortierung-gruppierung.md) §3 und §4 (Filter „Projekt“ mit Unterprojekten, Parameter `unterprojekte`)
