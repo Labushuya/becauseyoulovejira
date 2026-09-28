@@ -9,6 +9,7 @@
 	import TicketParentField from '$lib/components/TicketParentField.svelte';
 	import TicketSources from '$lib/components/TicketSources.svelte';
 	import TicketSubtasks from '$lib/components/TicketSubtasks.svelte';
+	import { openInstancesOf } from '$lib/domain/recurrence-rule';
 	import { parentOf } from '$lib/domain/subtasks';
 	import type { Ticket } from '$lib/domain/ticket';
 	import { getCatalogStore } from '$lib/stores/catalog.svelte';
@@ -198,6 +199,7 @@
 				store={rules}
 				today={tickets.today}
 				history={comments.history}
+				openTickets={ticket.recurrenceId ? openInstancesOf(tickets.open, ticket.recurrenceId) : []}
 				onticket={(changed) => {
 					detail.upsert(changed);
 					tickets.upsert(changed);

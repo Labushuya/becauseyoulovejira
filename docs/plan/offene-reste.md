@@ -70,7 +70,7 @@
 ## 5. Offene Punkte
 
 - Manuelle Browser-Prüfungen der Pakete (BYL-E6-302, BYL-E6-304, BYL-E6-306, BYL-E6-309).
-- Die Tabelle „Wiederholungen“ und das Regel-Panel nennen bei mehreren offenen Tickets einer Regel nur eines (das erste der Liste); eine Zahl „+2“ wäre ein kleiner Nachtrag, falls der Alltag sie braucht.
+- ~~Die Tabelle „Wiederholungen“ und das Regel-Panel nennen bei mehreren offenen Tickets einer Regel nur eines (das erste der Liste); eine Zahl „+2“ wäre ein kleiner Nachtrag, falls der Alltag sie braucht.~~ Erledigt mit WK-2 im Plan [Wiederholungen verständlich machen](wiederholungen-klarheit.md): Tabelle und Panel nennen alle offenen Tickets mit Zahl und Links.
 
 ## 6. Hinweise für den Papierkorb (nächster Auftrag)
 

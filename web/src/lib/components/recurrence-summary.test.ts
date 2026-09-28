@@ -2,7 +2,12 @@ import { fireEvent, render, screen, within } from '@testing-library/svelte';
 import { tick } from 'svelte';
 import { describe, expect, it, vi } from 'vitest';
 import { DataError } from '$lib/data/errors';
-import { defaultFormValues, type RecurrenceRule } from '$lib/domain/recurrence-rule';
+import {
+	CATCH_UP_ASK_HINT,
+	defaultFormValues,
+	type OpenInstance,
+	type RecurrenceRule
+} from '$lib/domain/recurrence-rule';
 import type { HistoryEntry, Ticket } from '$lib/domain/ticket';
 import type { FlagSink } from '$lib/stores/flags.svelte';
 import { REPEAT_FAILED, RecurrenceStore, type RecurrenceData } from '$lib/stores/recurrence.svelte';
@@ -73,7 +78,9 @@ async function setup(
 	/** Runs on the store before the panel opens (an offer of package 6). */
 	before: (store: RecurrenceStore) => void = () => undefined,
 	/** History of the ticket as the panel loaded it (ADR-0022 addendum 4). */
-	history: HistoryEntry[] = []
+	history: HistoryEntry[] = [],
+	/** Open tickets of the series (recommendation 6). */
+	openTickets: OpenInstance[] = []
 ) {
 	const fake: RecurrenceData = {
 		listRules: vi.fn(async () => rules),
@@ -100,7 +107,9 @@ async function setup(
 	await store.load();
 	before(store);
 	const onticket = vi.fn();
-	render(RecurrenceSummary, { props: { ticket: item, store, today: TODAY, history, onticket } });
+	render(RecurrenceSummary, {
+		props: { ticket: item, store, today: TODAY, history, openTickets, onticket }
+	});
 	return { fake, store, onticket, flagTitles };
 }
 
@@ -224,6 +233,51 @@ describe('RecurrenceSummary', () => {
 		expect(text.textContent).toContain('dieses Ticket steht für sie mit.');
 		expect(text.closest('.alert-error')).toBeNull();
 		expect(screen.getAllByText(/Termine übersprungen/)).toHaveLength(1);
+	});
+
+	// Recommendations 5 and 6 (ADR-0022 addendum 5).
+	it('asks about a large backlog and sends the choice', async () => {
+		const waiting = rule({
+			freq: 'daily',
+			weekdays: [],
+			nextDue: '2026-09-01',
+			eachOccurrence: true,
+			lastHint: CATCH_UP_ASK_HINT
+		});
+		const updateRule = vi.fn(async () => ({ ...waiting, lastHint: '', nextDue: TODAY }));
+		const { flagTitles } = await setup(
+			ticket({ recurring: true, recurrenceId: 'rule00000000001' }),
+			[waiting],
+			{ updateRule },
+			() => undefined,
+			[]
+		);
+		expect(screen.getByRole('heading', { name: /Wartet auf deine Entscheidung/ })).toBeTruthy();
+		await fireEvent.click(screen.getByRole('button', { name: 'Nur ab heute' }));
+		await vi.waitFor(() =>
+			expect(updateRule).toHaveBeenCalledWith('rule00000000001', { backlog: 'today' })
+		);
+		// The series starts on 07.09.: 18 dates up to 24.09.
+		expect(flagTitles.at(-1)).toMatch(/^18 Termine \(07\.09\. bis 24\.09\.\) übersprungen\./);
+	});
+
+	it('says the series goes on once all open tickets are done', async () => {
+		await setup(
+			ticket({ recurring: true, recurrenceId: 'rule00000000001' }),
+			[rule()],
+			{},
+			() => undefined,
+			[],
+			[
+				{ id: 'ticket000000001', key: 'TASK-3', title: 'Müll' },
+				{ id: 'ticket000000002', key: 'TASK-4', title: 'Müll' }
+			]
+		);
+		expect(
+			screen.getByText(
+				'Die Serie geht weiter, sobald alle 2 offenen Tickets erledigt sind (TASK-3, TASK-4).'
+			)
+		).toBeTruthy();
 	});
 
 	it('shows a refused resume as an error with its reason', async () => {

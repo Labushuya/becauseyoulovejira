@@ -468,6 +468,7 @@
 							{today}
 							withoutDue={due === ''}
 							{eachAvailable}
+							context={{ kind: 'ticket', due: dueOrNull(due) }}
 						/>
 					{/if}
 				</div>

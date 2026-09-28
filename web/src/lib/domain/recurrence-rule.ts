@@ -8,6 +8,7 @@ import {
 	DEFAULT_LEAD_DAYS,
 	LAST_DAY,
 	RECURRENCE_CODES,
+	after,
 	afterCompletion,
 	onOrAfter,
 	upcoming,
@@ -95,9 +96,19 @@ export function nextTicketDate(rule: RecurrenceRule, today: CalendarDate): strin
 	return rule.nextDue === null ? 'nach dem Erledigen' : shortDate(rule.nextDue, today);
 }
 
-/** "Aktiv" or "Pausiert", as text next to its icon (no state by colour alone). */
-export function ruleStateLabel(rule: Pick<RecurrenceRule, 'active'>): 'Aktiv' | 'Pausiert' {
-	return rule.active ? 'Aktiv' : 'Pausiert';
+export type RuleState = 'Aktiv' | 'Pausiert' | 'Wartet';
+
+/**
+ * "Aktiv", "Pausiert" or, while a large backlog waits for the choice of the user (ADR-0022
+ * addendum 5), "Wartet" (short, it fits the column "Zustand"; the panel says what on); as text
+ * next to its icon (no state by colour alone).
+ */
+export function ruleStateLabel(
+	rule: Pick<RecurrenceRule, 'active'> &
+		Partial<Pick<RecurrenceRule, 'lastHint' | 'eachOccurrence'>>
+): RuleState {
+	if (!rule.active) return 'Pausiert';
+	return isWaiting(rule) ? 'Wartet' : 'Aktiv';
 }
 
 /** German texts of the codes; the same as the hook sends (tests/unit/web-recurrence.test.mjs). */
@@ -123,6 +134,7 @@ export const RECURRENCE_MESSAGES: Readonly<Record<string, string>> = Object.free
 		'Von dieser Serie ist schon ein anderes Ticket offen. Erledige es zuerst oder löse ein Ticket aus der Serie.',
 	validation_recurrence_each_mode:
 		'„Jeden Termin einzeln anlegen“ gibt es nur bei einem festen Rhythmus.',
+	validation_recurrence_backlog: 'Bitte „Alle nachholen“ oder „Nur ab heute“ wählen.',
 	validation_recurrence_reopen_older:
 		'Von dieser Serie ist schon ein anderes Ticket offen, und dieses Ticket ist nicht das zuletzt erledigte. Du kannst es als normales Ticket wieder öffnen (aus der Serie lösen).'
 });
@@ -135,6 +147,121 @@ export const REOPEN_REFUSALS: readonly string[] = Object.freeze([
 	'validation_recurrence_open_instance',
 	'validation_recurrence_reopen_older'
 ]);
+
+// --- A large backlog with "Jeden Termin einzeln anlegen" (ADR-0022 addendum 5) -----------------
+
+/** Hints of the server; the same texts as CATCH_UP_ASK_HINT and CATCH_UP_ALL_HINT of the hook. */
+export const CATCH_UP_ASK_HINT =
+	'Viele verpasste Termine: Die Regel wartet auf deine Entscheidung, ob sie alle nachholt oder erst ab heute weitermacht.';
+export const CATCH_UP_ALL_HINT =
+	'Die verpassten Termine werden nachgeholt, höchstens 20 je Lauf (stündlich).';
+
+/** The choice about a backlog, sent as the body field `backlog`. */
+export type BacklogChoice = 'all' | 'today';
+
+/** Missed dates before today without a ticket, from a start on. */
+export interface Backlog {
+	count: number;
+	first: CalendarDate;
+	last: CalendarDate;
+	/** The count stopped at BACKLOG_COUNT_MAX: there are more. */
+	more: boolean;
+}
+
+/** Dates counted at most for a backlog; the loop runs over dates of the series. */
+export const BACKLOG_COUNT_MAX = 10000;
+
+/**
+ * The dates of a fixed rhythm from `from` on (inclusive) that lie before `today`, or null without
+ * any (or for a rule that is not a valid fixed rhythm).
+ */
+export function backlogOf(
+	params: RecurrenceParams,
+	from: CalendarDate | null,
+	today: CalendarDate
+): Backlog | null {
+	const rule = validRule(params);
+	if (rule === null || rule.mode !== 'calendar' || from === null || !(from < today)) return null;
+	let count = 0;
+	let last = from;
+	let date = onOrAfter(rule, from);
+	while (date < today && count < BACKLOG_COUNT_MAX) {
+		count += 1;
+		last = date;
+		date = after(rule, date);
+	}
+	if (count === 0) return null;
+	return { count, first: onOrAfter(rule, from), last, more: date < today };
+}
+
+/** Whether a rule waits for the choice about a large backlog (the hint of its last run). */
+export function isWaiting(
+	rule: Pick<RecurrenceRule, 'active'> &
+		Partial<Pick<RecurrenceRule, 'lastHint' | 'eachOccurrence'>>
+): boolean {
+	return rule.active && rule.eachOccurrence === true && rule.lastHint === CATCH_UP_ASK_HINT;
+}
+
+/** The backlog of a rule from its next ticket on, or null. */
+export function ruleBacklog(rule: RecurrenceRule, today: CalendarDate): Backlog | null {
+	return backlogOf(ruleParams(rule), rule.nextDue, today);
+}
+
+/** "25 Termine (01.09. bis 25.09.)" or "1 Termin (12.10.)"; "mehr als" when the count stopped. */
+export function backlogText(backlog: Backlog, today: CalendarDate): string {
+	const amount = backlog.more
+		? `Mehr als ${backlog.count} Termine`
+		: backlog.count === 1
+			? '1 Termin'
+			: `${backlog.count} Termine`;
+	const first = shortDate(backlog.first, today);
+	const range = backlog.count === 1 ? first : `${first} bis ${shortDate(backlog.last, today)}`;
+	return `${amount} (${range})`;
+}
+
+/** Label of the button "Alle 25 nachholen". */
+export function catchUpAllLabel(backlog: Backlog): string {
+	return backlog.more ? 'Alle nachholen' : `Alle ${backlog.count} nachholen`;
+}
+
+/** Label of the button "Nur ab heute". */
+export const CATCH_UP_TODAY_LABEL = 'Nur ab heute';
+
+/**
+ * "Die Serie geht weiter, sobald alle 3 offenen Tickets erledigt sind (HAUS-1, HAUS-2, HAUS-3)."
+ * (ADR-0022 addendum 5, recommendation 6): without "Jeden Termin einzeln anlegen" a rule makes
+ * nothing while one of its tickets is open.
+ */
+export function openBlockText(keys: readonly string[]): string {
+	return `Die Serie geht weiter, sobald alle ${keys.length} offenen Tickets erledigt sind (${keys.join(', ')}).`;
+}
+
+/** An open ticket of a rule as overview, panel and form show it. */
+export interface OpenInstance {
+	id: string;
+	key: string;
+	title: string;
+}
+
+/**
+ * The open tickets of a rule among the open tickets of the list, oldest first (recommendation 7:
+ * all of them, not only one).
+ */
+export function openInstancesOf(
+	open: readonly {
+		id: string;
+		key: string;
+		title: string;
+		recurrenceId?: string | null;
+		created: string;
+	}[],
+	ruleId: string
+): OpenInstance[] {
+	return open
+		.filter((ticket) => ticket.recurrenceId === ruleId)
+		.sort((a, b) => (a.created < b.created ? -1 : a.created > b.created ? 1 : a.id < b.id ? -1 : 1))
+		.map((ticket) => ({ id: ticket.id, key: ticket.key, title: ticket.title }));
+}
 
 /** Label of the way out of a refused reopening. */
 export const REOPEN_DETACHED_LABEL = 'Als normales Ticket wieder öffnen (aus der Serie lösen)';
@@ -224,6 +351,11 @@ export interface RecurrenceFormValues {
 	 * values built by hand stay valid (absent counts as off).
 	 */
 	eachOccurrence?: boolean;
+	/**
+	 * Answer to the question about a large backlog when the switch goes on (ADR-0022 addendum 5);
+	 * absent: no answer, the rule then waits for it at the overview.
+	 */
+	backlog?: BacklogChoice;
 }
 
 export type RecurrenceFormField =
@@ -311,8 +443,10 @@ export function formParams(values: RecurrenceFormValues): {
 	anchor: string;
 	lead_days: number;
 	each_occurrence: boolean;
+	backlog?: BacklogChoice;
 } {
 	const calendar = values.mode === 'calendar';
+	const each = calendar && values.eachOccurrence === true;
 	return {
 		mode: values.mode,
 		freq: values.freq,
@@ -326,8 +460,43 @@ export function formParams(values: RecurrenceFormValues): {
 				: 0,
 		anchor: values.anchor,
 		lead_days: wholeNumber(values.leadDays),
-		each_occurrence: calendar && values.eachOccurrence === true
+		each_occurrence: each,
+		// The answer to the question about a backlog, only with the switch (ADR-0022 addendum 5).
+		...(each && values.backlog !== undefined && { backlog: values.backlog })
 	};
+}
+
+/** Where the form is used: its first date and next_due follow from it (backlog question). */
+export type RecurrenceFormContext =
+	| { kind: 'ticket'; due: CalendarDate | null }
+	| { kind: 'rule'; nextDue: CalendarDate | null; each: boolean };
+
+/**
+ * The backlog the form asks about when "Jeden Termin einzeln anlegen" goes on (ADR-0022 addendum
+ * 5): more than EACH_MAX_PER_RUN dates before today that the rule would make at once. For a
+ * ticket the series starts after its due date (or its first date without one, ADR-0023 section
+ * 1); for an existing rule without the switch at its next ticket. Null otherwise.
+ */
+export function formBacklog(
+	values: RecurrenceFormValues,
+	today: CalendarDate,
+	context: RecurrenceFormContext | undefined
+): Backlog | null {
+	if (context === undefined || values.mode !== 'calendar' || values.eachOccurrence !== true) {
+		return null;
+	}
+	if (Object.keys(formErrors(values)).length > 0) return null;
+	const params = formParams(values);
+	let from: CalendarDate | null;
+	if (context.kind === 'rule') {
+		if (context.each) return null;
+		from = context.nextDue;
+	} else {
+		if (context.due !== null && !isCalendarDate(context.due)) return null;
+		from = after(params, context.due ?? onOrAfter(params, params.anchor));
+	}
+	const backlog = backlogOf(params, from, today);
+	return backlog !== null && (backlog.more || backlog.count > EACH_MAX_PER_RUN) ? backlog : null;
 }
 
 /**

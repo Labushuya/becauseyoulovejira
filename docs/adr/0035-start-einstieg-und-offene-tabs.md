@@ -114,3 +114,8 @@
 - Negativ: Vier neue Routen und ein Realtime-Thema. Sie sind klein, zustandsarm und per Test abgesichert.
 - Negativ: Beim Kaltstart ohne offenen Tab öffnet sich der Browser bis zu 3 s später als bisher.
 - **Nur im Browser prüfbar** (Test-Manifest, manuell): Landing in Chrome, Edge und Firefox; die Abfrage „Local Network Access“ unter `file://`; ein Hintergrund-Tab nach 10 Minuten; „`stop.bat`, dann `start.bat`“ mit offenem Tab; zwei Browser gleichzeitig; Installation, `focus-existing` und das Starten über die Verknüpfung; Benachrichtigung und ihr Klick.
+
+## Nachtrag (2026-09-28, Plan „Wiederholungen verständlich machen“, WK-2): Hinweise beim Start und beim erneuten Öffnen
+
+- §5 bekommt einen Anschluss für weitere Hinweise: `AttentionDeps.opened` läuft nach dem Flag „Du hast becauseyoulovejira erneut geöffnet.“ (bei `start` und `datei`, auch über den BroadcastChannel aus §6, nie bei `stop`).
+- Einziger Nutzer ist bisher der Hinweis auf Wiederholungen, die auf eine Entscheidung über einen großen Rückstand warten ([ADR-0022](0022-erzeugung-von-instanzen.md) Nachtrag 5): das Info-Flag „1 Wiederholung wartet auf deine Entscheidung.“ mit „Ansehen“ (Regel-Panel, bei mehreren die Übersicht). Es erscheint außerdem einmal, sobald das `(app)`-Layout die Regeln geladen hat (Start der App bzw. des Tabs); ein neueres ersetzt das ältere. Ohne wartende Regel erscheint nichts.

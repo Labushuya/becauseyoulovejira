@@ -183,14 +183,16 @@ export const PROJECT_TABLE: TableSpec = table('projects', [
 ]);
 
 /**
- * "Wiederholungen": Titel, Rhythmus, Nächstes Ticket, Offenes Ticket, Projekt, Zustand, action.
- * Projekt gives way first, then Offenes Ticket, Nächstes Ticket and Rhythmus.
+ * "Wiederholungen": Titel, Rhythmus, Nächstes Ticket, Offene Tickets, Projekt, Zustand, action.
+ * Projekt gives way first, then Offene Tickets, Nächstes Ticket and Rhythmus. "Offene Tickets"
+ * may hold several keys and grows further (plan "Wiederholungen verständlich machen",
+ * recommendation 7).
  */
 export const RECURRENCE_TABLE: TableSpec = table('recurrences', [
 	flexible('title', 'Titel', 10),
 	column('rhythm', 'Rhythmus', { width: 10, min: 6, max: 20, hideRank: 4 }),
 	column('next', 'Nächstes Ticket', { width: 7, min: 5.5, max: 10, hideRank: 3 }),
-	column('open', 'Offenes Ticket', { width: 7, min: 5, max: 10, hideRank: 2 }),
+	column('open', 'Offene Tickets', { width: 7, min: 5, max: 16, hideRank: 2 }),
 	column('project', 'Projekt', { width: 9, min: 5, max: 16, hideRank: 1 }),
 	column('state', 'Zustand', { width: 7, min: 6, max: 9, required: true }),
 	fixed('actions', 'Aktionen', 3.5)

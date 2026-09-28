@@ -8,8 +8,11 @@ import { describe, expect, it } from 'vitest';
 import { loadHookLib } from '../support/hook-lib.mjs';
 import * as web from '../../web/src/lib/domain/recurrence.ts';
 import {
+	CATCH_UP_ALL_HINT,
+	CATCH_UP_ASK_HINT,
 	EACH_MAX_PER_RUN,
 	RECURRENCE_MESSAGES,
+	backlogOf,
 	SKIPPED_FIELD,
 	openInstanceMessage,
 	parseSkipped,
@@ -139,6 +142,17 @@ describe('recurrence: web app against the hooks', () => {
 		expect({ ...RECURRENCE_MESSAGES }).toEqual(hookRecurrence);
 		expect(openInstanceMessage('HAUS-12')).toBe(hookRules.openInstanceMessage('HAUS-12'));
 		expect(reopenOlderMessage('HAUS-12')).toBe(hookRules.reopenOlderMessage('HAUS-12'));
+	});
+
+	it('knows the hints and the backlog of a waiting rule like the hook (ADR-0022 addendum 5)', () => {
+		expect(CATCH_UP_ASK_HINT).toBe(hookRules.CATCH_UP_ASK_HINT);
+		expect(CATCH_UP_ALL_HINT).toBe(hookRules.CATCH_UP_ALL_HINT);
+		const params = { mode: 'calendar', freq: 'weekly', weekdays: ['MO', 'FR'], interval: 2, anchor: '2026-09-30', lead_days: 3 };
+		for (const [from, today] of [['2026-10-02', '2027-03-01'], ['2026-10-12', '2026-10-12'], ['2026-10-02', '2026-10-03']]) {
+			const rule = { ...hook.normalize(params), next_due: from };
+			const count = hookRules.backlogCount(rule, today, 10000, hook);
+			expect(backlogOf(params, from, today)?.count ?? 0, `${from} ${today}`).toBe(count);
+		}
 	});
 
 	it('reads the note about missed dates the way the hook writes it (ADR-0022 addendum 4)', () => {

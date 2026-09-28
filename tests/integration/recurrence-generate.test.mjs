@@ -259,25 +259,89 @@ describe('"Jeden Termin einzeln anlegen" (plan OR-5, ADR-0022 addendum 2)', () =
 		expect(all.every((ticket) => ticket.updated === ticket.created)).toBe(true);
 	});
 
-	it('catches up one ticket per missed date after a gap, at most 20 per run, with a hint', async () => {
+	// Recommendation 5 of the plan "Wiederholungen verständlich machen" (ADR-0022 addendum 5).
+	it('waits for a decision after more than 20 missed dates, then catches up 20 per run', async () => {
 		const rule = await createRule({ freq: 'daily', anchor: '2038-01-01', lead_days: 0, each_occurrence: true });
 		const first = await run('2038-01-26T10:00:00Z');
-		expect(first).toMatchObject({ created: 1, tickets: 20 });
+		expect(first).toMatchObject({ created: 0, tickets: 0, waiting: 1 });
 		let stored = await ruleOf(rule.id);
-		expect(dateOf(stored.next_due)).toBe('2038-01-21');
 		expect(stored.last_hint).toBe(
-			'Viele Termine auf einmal: 20 Tickets angelegt, die übrigen folgen beim nächsten Lauf (stündlich).'
+			'Viele verpasste Termine: Die Regel wartet auf deine Entscheidung, ob sie alle nachholt oder erst ab heute weitermacht.'
 		);
+		expect(dateOf(stored.next_due)).toBe('2038-01-01');
+		expect(await openOf(rule.id)).toEqual([]);
+		expect((await run('2038-01-26T11:07:00Z')).tickets).toBe(0);
+
+		// "Alle nachholen" under the clock of the test (the route of the client uses the real one).
+		await superuser.collection('recurrence_rules').update(rule.id, {
+			last_hint: 'Die verpassten Termine werden nachgeholt, höchstens 20 je Lauf (stündlich).'
+		});
+		expect((await run('2038-01-26T12:07:00Z')).tickets).toBe(20);
+		stored = await ruleOf(rule.id);
+		expect(dateOf(stored.next_due)).toBe('2038-01-21');
+		expect(stored.last_hint).toBe('Die verpassten Termine werden nachgeholt, höchstens 20 je Lauf (stündlich).');
 		expect(dues(await openOf(rule.id))[19]).toBe('2038-01-20');
 
 		// The next run brings the rest and clears the hint.
-		expect((await run('2038-01-26T11:07:00Z')).tickets).toBe(6);
+		expect((await run('2038-01-26T13:07:00Z')).tickets).toBe(6);
 		stored = await ruleOf(rule.id);
 		expect(dateOf(stored.next_due)).toBe('2038-01-27');
 		expect(stored.last_hint).toBe('');
 		const open = await openOf(rule.id);
 		expect(open).toHaveLength(26);
 		expect(dues(open)[25]).toBe('2038-01-26');
+	});
+
+	it('makes up to 20 missed dates at once, without asking', async () => {
+		const rule = await createRule({ freq: 'daily', anchor: '2038-03-01', lead_days: 0, each_occurrence: true });
+		expect(await run('2038-03-21T10:00:00Z')).toMatchObject({ tickets: 20, waiting: 0 });
+		expect((await ruleOf(rule.id)).last_hint).toBe(
+			'Viele Termine auf einmal: 20 Tickets angelegt, die übrigen folgen beim nächsten Lauf (stündlich).'
+		);
+		expect((await run('2038-03-21T11:07:00Z')).tickets).toBe(1);
+	});
+
+	it('asks with a start in the past and applies "Alle nachholen" or "Nur ab heute" of the client', async () => {
+		const start = addDays(today(), -30);
+		const setup = async () => {
+			const ticket = await tickets().create({ owner: owner.id, title: `Täglich ${unique()}` });
+			const rule = await createRule({ anchor: start, ticket: ticket.id, each_occurrence: true });
+			return { ticket, rule };
+		};
+		const waiting = await setup();
+		expect(dateOf((await tickets().getOne(waiting.ticket.id)).due)).toBe(start);
+		let stored = await ruleOf(waiting.rule.id);
+		expect(stored.last_hint).toMatch(/^Viele verpasste Termine/);
+		expect(await openOf(waiting.rule.id)).toHaveLength(1);
+
+		// "Alle nachholen": 20 at once, the other 9 with the next run.
+		await rules().update(waiting.rule.id, { backlog: 'all' });
+		expect(await openOf(waiting.rule.id)).toHaveLength(21);
+		expect((await ruleOf(waiting.rule.id)).last_hint).toMatch(/^Die verpassten Termine werden nachgeholt/);
+		expect((await run(new Date().toISOString())).tickets).toBe(10);
+		expect(await openOf(waiting.rule.id)).toHaveLength(31);
+		stored = await ruleOf(waiting.rule.id);
+		expect(stored.last_hint).toBe('');
+		expect(dateOf(stored.next_due)).toBe(addDays(today(), 1));
+
+		// "Nur ab heute": the dates before today are skipped, today's ticket comes at once.
+		const skipping = await setup();
+		await rules().update(skipping.rule.id, { backlog: 'today' });
+		expect(dues(await openOf(skipping.rule.id))).toEqual([start, today()].sort());
+		stored = await ruleOf(skipping.rule.id);
+		expect(stored.last_hint).toBe('');
+		expect(dateOf(stored.next_due)).toBe(addDays(today(), 1));
+
+		// The choice can come with the rule already, and only these two values count.
+		const ticket = await tickets().create({ owner: owner.id, title: `Täglich ${unique()}` });
+		const direct = await createRule({ anchor: start, ticket: ticket.id, each_occurrence: true, backlog: 'all' });
+		expect(await openOf(direct.id)).toHaveLength(21);
+		const error = await refusal(rules().update(direct.id, { backlog: 'später' }));
+		expect(error.status).toBe(400);
+		expect(error.response.data.backlog).toMatchObject({
+			code: 'validation_recurrence_backlog',
+			message: 'Bitte „Alle nachholen“ oder „Nur ab heute“ wählen.'
+		});
 	});
 
 	it('reopens a ticket freely: the other open tickets stay and nothing is removed', async () => {

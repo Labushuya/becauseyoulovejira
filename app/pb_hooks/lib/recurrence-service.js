@@ -28,6 +28,9 @@ var TICKETS = 'tickets';
 // values of next_due, last_generated_at, last_hint and active the model hook keeps.
 var TICKET_KEY = '@recurrence_ticket';
 var SYSTEM_KEY = '@recurrence_system';
+// BACKLOG_KEY carries the body field `backlog` ('all' | 'today', no schema field): the choice of
+// the user about a backlog of "Jeden Termin einzeln anlegen" (ADR-0022 addendum 5).
+var BACKLOG_KEY = '@recurrence_backlog';
 // On tickets: COMPLETED_KEY carries the rule of an instance that was just completed to the
 // after-success hook; DETACH_KEY marks a client request that clears `recurrence`; UNDO_KEY marks
 // the untouched follow-up that reopening an instance removes (no release logic for it).
@@ -148,6 +151,7 @@ function prepareCreateRequest(e) {
     e.record.set(TICKET_KEY, ticket);
   }
   checkAnchorBody(e);
+  checkBacklogBody(e);
   ticketService.rememberActor(e);
 }
 
@@ -159,7 +163,35 @@ function prepareUpdateRequest(e) {
     return;
   }
   checkAnchorBody(e);
+  checkBacklogBody(e);
   ticketService.rememberActor(e);
+}
+
+// The body field `backlog` (ADR-0022 addendum 5): 'all' or 'today', anything else is refused; an
+// empty value means no choice.
+function checkBacklogBody(e) {
+  var choice = e.requestInfo().body['backlog'];
+  if (choice === undefined || choice === null || choice === '') {
+    return;
+  }
+  if (rules.BACKLOG_CHOICES.indexOf(choice) === -1) {
+    throw fail('backlog', 'validation_recurrence_backlog');
+  }
+  e.record.set(BACKLOG_KEY, choice);
+}
+
+// Applies the choice about a backlog to a rule with "Jeden Termin einzeln anlegen" (ADR-0022
+// addendum 5) before it is saved; without the switch, or without a choice, nothing changes.
+function applyBacklogChoice(record, values, nextDue, today) {
+  var choice = record.get(BACKLOG_KEY);
+  if (!choice || !eachOf(record) || values.mode !== 'calendar') {
+    return;
+  }
+  var rule = recurrence.normalize(values);
+  rule.next_due = nextDue;
+  var decided = rules.backlogDecision({ rule: rule, choice: String(choice), today: today }, recurrence);
+  record.set('next_due', rules.storedDateOf(decided.nextDue));
+  record.set('last_hint', decided.hint);
 }
 
 function checkAnchorBody(e) {
@@ -284,6 +316,7 @@ function prepareCreate(txApp, record, nowMs) {
     recurrence
   );
   record.set('next_due', rules.storedDateOf(dates.nextDue));
+  applyBacklogChoice(record, values, dates.nextDue, today);
   return { ticket: ticket, ticketDue: dates.ticketDue };
 }
 
@@ -357,6 +390,7 @@ function prepareUpdate(txApp, record, nowMs) {
   if (rules.clearsHint(before, after)) {
     record.set('last_hint', '');
   }
+  applyBacklogChoice(record, values, next, today);
 }
 
 // --- Generation (ADR-0022; E5 plan package 3) -------------------------------------------------
@@ -472,9 +506,11 @@ function recordFailure(app, ruleId, err) {
  * nothing for an inactive rule, without next_due, with an open instance or before the lead time.
  * With "Jeden Termin einzeln anlegen" (plan OR-5) it creates one ticket per date whose lead time
  * is reached instead, open instances or not, at most EACH_MAX_PER_RUN per run with a neutral hint
- * when more are waiting. An archived project pauses the rule with a neutral hint. Never throws:
- * another error becomes a hint at the rule and a log line. Returns { status: 'created' | 'paused'
- * | 'skipped' | 'failed' | 'unavailable', ticket, count }: the first new ticket and how many.
+ * when more are waiting; with more than that many dates before today it makes nothing and waits
+ * for the choice of the user (ADR-0022 addendum 5, status 'waiting'). An archived project pauses
+ * the rule with a neutral hint. Never throws: another error becomes a hint at the rule and a log
+ * line. Returns { status: 'created' | 'paused' | 'waiting' | 'skipped' | 'failed' | 'unavailable',
+ * ticket, count }: the first new ticket and how many.
  */
 function materialize(app, ruleId, nowMs) {
   var result = { status: 'skipped', ticket: '', count: 0 };
@@ -492,12 +528,21 @@ function materialize(app, ruleId, nowMs) {
       var state = ruleState(rule);
       var each = state.each && eachReady(txApp);
       var plan = each
-        ? rules.generationEach({ rule: state, today: today }, recurrence)
+        ? rules.generationEach({ rule: state, today: today, hint: rule.getString('last_hint') }, recurrence)
         : rules.generation(
             { rule: state, hasOpenInstance: openInstance(txApp, rule.id) !== null, today: today },
             recurrence
           );
       if (plan === null) {
+        return;
+      }
+      // A large backlog waits for the choice of the user (ADR-0022 addendum 5); nothing is made.
+      if (plan.ask) {
+        if (rule.getString('last_hint') !== rules.CATCH_UP_ASK_HINT) {
+          rule.set('last_hint', rules.CATCH_UP_ASK_HINT);
+          saveSystem(txApp, rule);
+        }
+        result.status = 'waiting';
         return;
       }
       var projectId = rule.getString('project');
@@ -522,7 +567,7 @@ function materialize(app, ruleId, nowMs) {
       }
       rule.set('next_due', rules.storedDateOf(plan.nextDue));
       rule.set('last_generated_at', berlinTime.toPocketBaseDate(nowMs));
-      rule.set('last_hint', each && plan.limited ? rules.EACH_LIMIT_HINT : '');
+      rule.set('last_hint', each ? plan.hint : '');
       saveSystem(txApp, rule);
       result.status = created.length > 0 ? 'created' : 'skipped';
       result.ticket = created.length > 0 ? created[0] : '';
@@ -545,7 +590,7 @@ function materialize(app, ruleId, nowMs) {
  * the rules that created, `tickets` the new tickets (several per rule with "Jeden Termin einzeln").
  */
 function runDue(app, nowMs) {
-  var counts = { checked: 0, created: 0, paused: 0, failed: 0, unavailable: false, tickets: 0 };
+  var counts = { checked: 0, created: 0, paused: 0, failed: 0, waiting: 0, unavailable: false, tickets: 0 };
   if (!schemaReady(app)) {
     counts.unavailable = true;
     return counts;
@@ -562,7 +607,7 @@ function runDue(app, nowMs) {
   for (var i = 0; i < due.length; i++) {
     counts.checked += 1;
     var run = materialize(app, due[i].id, nowMs);
-    if (run.status === 'created' || run.status === 'paused' || run.status === 'failed') {
+    if (run.status === 'created' || run.status === 'paused' || run.status === 'failed' || run.status === 'waiting') {
       counts[run.status] += 1;
     }
     counts.tickets += run.count;

@@ -1,6 +1,6 @@
 # E6-Plan „Wiederholungen verständlich machen“: Erklärung in der App und acht Empfehlungen
 
-- **Stand:** in Arbeit (2026-09-28). WK-1 umgesetzt.
+- **Stand:** in Arbeit (2026-09-28). WK-1 gemergt (#153), WK-2 umgesetzt.
 - **Grundlage:**
   - Vom Nutzer freigegebene Spec vom 2026-09-28: Teil A (Erklärung in der App: „So funktioniert’s“ im Formular mit Live-Beispielsatz, Vorschau „erscheint → fällig“, Kurz-Hinweise, Hilfeseite „Wiederholungen“, Beispiele aus der echten Rechenlogik mit Tests) und Teil B (Empfehlungen 1 bis 8).
   - [ADR-0021](../adr/0021-regelmodell-wiederkehrende-aufgaben.md) bis [ADR-0024](../adr/0024-serien-aus-kalendern.md) mit allen Nachträgen, [ADR-0013](../adr/0013-filter-suche-sortierung-gruppierung.md), [ADR-0025](../adr/0025-ui-konsistenz-overlay-system.md), [ADR-0026](../adr/0026-einstellungsbereich-und-hinweis-bausteine.md), [ADR-0009](../adr/0009-fehlerfarbe.md), [ADR-0029](../adr/0029-glas-materialien.md), [ADR-0030](../adr/0030-spalten-breiten-und-kompakte-zeilen.md), [ADR-0035](../adr/0035-start-einstieg-und-offene-tabs.md), [ADR-0036](../adr/0036-sammelbearbeitung-inline-und-oeffnungsmodus.md), [ADR-0037](../adr/0037-papierkorb.md)
@@ -20,8 +20,8 @@
 | Paket | Inhalt | Manifest |
 |---|---|---|
 | WK-1 | Empfehlung 1 (Wiedereröffnen nur beim direkten Vorgänger mit Entfernen des Folgetickets, sonst Ablehnung mit „Als normales Ticket wieder öffnen (aus der Serie lösen)“) und Empfehlung 3 (zusammengefasste verpasste Termine als Verlaufseintrag und Hinweis im Ticket) | BYL-E6-340 bis BYL-E6-342 |
-| WK-2 | Empfehlung 5 (Schalter mit mehr als 20 verpassten Terminen: „wartet auf Entscheidung“, Migration) und Empfehlung 6 (Schalter aus bei mehreren offenen Tickets) | ab BYL-E6-343 |
-| WK-3 | Empfehlungen 2, 4 und 7 sowie die Vorschau „erscheint → fällig“ | folgt |
+| WK-2 | Empfehlung 5 (Schalter mit mehr als 20 verpassten Terminen: „wartet auf Entscheidung“, ohne Migration), Empfehlung 6 (Schalter aus bei mehreren offenen Tickets) und Empfehlung 7 (alle offenen Tickets in Übersicht und Panel; zog aus WK-3 vor, weil dieselben Stellen die offenen Tickets für Empfehlung 6 brauchen) | BYL-E6-343 bis BYL-E6-346 |
+| WK-3 | Empfehlungen 2 und 4 sowie die Vorschau „erscheint → fällig“ | folgt |
 | WK-4 | Teil A: „So funktioniert’s“ mit Live-Satz, Kurz-Hinweise, Hilfeseite „Wiederholungen“ mit Beispielen aus der Engine und Tests; Empfehlung 8 (Doku) | folgt |
 
 ## 3. Entscheidungen
@@ -33,13 +33,21 @@
 | 2026-09-28 | WK-1 | **Oberfläche:** Im Panel und in der Vollansicht steht die Ablehnung inline unter dem Status (`TicketReopenQuestion`, `SectionMessage` Warnung ohne Rot, Titel „Nicht wieder in die Serie“, Fokus auf „Abbrechen“, Esc bricht ab) wie die Frage nach Unteraufgaben; kein Dialog, weil aus der Vollansicht keiner aufgeht. In der Tabelle (Häkchen, „Rückgängig“, Status-Zelle) bleibt es ein Fehler-Flag mit dem Grund, jetzt mit der Aktion „Als normales Ticket wieder öffnen (aus der Serie lösen)“. |
 | 2026-09-28 | WK-1 | **Endgültiges Entfernen bleibt:** Das unberührte Folgeticket des direkten Vorgängers wird weiter endgültig entfernt, nicht in den Papierkorb gelegt: Der Server hat es eben erst angelegt, es trägt nichts vom Nutzer, und ein Wiederherstellen würde nur mit der wieder offenen Instanz kollidieren (ADR-0023 Nachtrag 3). Das Versehen „Häkchen zu früh“ bleibt so folgenlos. |
 | 2026-09-28 | WK-1 | **Verpasste Termine sichtbar ohne neues Feld:** Fasst die Erzeugung ohne Schalter verpasste Termine zusammen, schreibt der Dienst in derselben Transaktion einen Verlaufseintrag `recurrence_skipped` am neuen Ticket (ohne Nutzer, `old_value` die Regel, `new_value` JSON `{ count, dates, more }` mit höchstens 5 Daten, Zählung bis 1 000). `ticket_history.field` ist freier Text, eine Migration ist nicht nötig. Der Verlauf nennt „2 Termine übersprungen (12.10.2026, 19.10.2026), zusammengefasst in diesem Ticket“ mit „Wiederholung“ als Urheber, die Zeile „Wiederholt sich“ zeigt denselben Hinweis neutral („… ; dieses Ticket steht für sie mit.“) aus dem ohnehin geladenen Verlauf. Das Folgeticket bleibt „unberührt“ (`updated = created`). |
+| 2026-09-28 | WK-2 | **Rückstand = Termine vor heute:** Gezählt werden die Termine ab `next_due`, die vor heute liegen und kein Ticket haben. Termine ab heute im Vorlauf gehören nicht dazu; sonst würde schon eine neue tägliche Regel mit Vorlauf 30 (31 Termine im Fenster) fragen. Bis 20 bleibt alles automatisch. |
+| 2026-09-28 | WK-2 | **Ohne Migration:** Der Zustand „wartet“ bzw. „holt nach“ steht im `last_hint` des letzten Laufs (`CATCH_UP_ASK_HINT`, `CATCH_UP_ALL_HINT`, Texte im Hook und in der SPA mit Paritätstest), die Entscheidung kommt als Body-Feld `backlog` wie `ticket` beim Anlegen. Geprüft und verworfen: ein Feld `catch_up` (select) mit Migration. Es wäre ausdrücklicher, bräuchte aber einen Neustart beim Nutzer und zöge alle Rückweg-Tests älterer Migrationen nach; der Hinweis ist ohnehin „das Ergebnis des letzten Laufs“ (ADR-0021 §1), und `clearsHint` setzt ihn an denselben Stellen zurück, an denen eine neue Entscheidung nötig wird. |
+| 2026-09-28 | WK-2 | **Stapel nur nach Entscheidung ungefragt:** `CATCH_UP_ALL_HINT` bleibt stehen, bis der letzte Stapel angelegt ist. Der alte Hinweis `EACH_LIMIT_HINT` (voller Stapel ohne Entscheidung, etwa 31 Termine im Vorlauf) lässt den nächsten Lauf den Rückstand neu prüfen; so kann ein späterer langer Ausfall nie unbemerkt nachholen. |
+| 2026-09-28 | WK-2 | **„Nur ab heute“** setzt `next_due` auf `onOrAfter(heute)`, nie zurück, und leert den Hinweis; der Lauf direkt danach legt die Termine ab heute im Vorlauf an. Die übersprungenen Termine nennt die Frage vorher („24 Termine (01.09. bis 24.09.)“) und das Erfolgs-Flag danach („… übersprungen. Weiter am 25.09.“). Kein Verlaufseintrag: Es gibt kein Ticket, an dem er stünde. |
+| 2026-09-28 | WK-2 | **Frage im Formular ohne Vorauswahl:** Beim Einschalten mit mehr als 20 Terminen vor heute (Ticket ohne Fälligkeit mit altem „Beginnt am“, Ticket mit alter Fälligkeit, bestehende Regel mit altem `next_due`) stehen „Alle N nachholen“ und „Nur ab heute“ als Radiogruppe in einer Warnung; ohne Wahl wartet die Regel an der Übersicht. Eine Vorauswahl hätte den Nutzer still für eine Seite entschieden. Neue Regeln ohne Ticket haben nie einen Rückstand (erster Termin ab heute). |
+| 2026-09-28 | WK-2 | **Zustand „Wartet“** in der Spalte „Zustand“ (Lozenge neutral mit Warn-Icon, `title` mit dem Weg), weil „Wartet auf Entscheidung“ die Spalte (7rem) sprengen würde; Panel und Frage sagen es ausgeschrieben. |
+| 2026-09-28 | WK-2 | **Start- und Aufmerksamkeitsanzeige:** `AttentionDeps.opened` (ADR-0035 Nachtrag) ruft nach dem Flag „erneut geöffnet“ `RecurrenceStore.announceWaiting`; das `(app)`-Layout ruft es außerdem einmal nach dem Laden der Regeln. Ein Flag für alle wartenden Regeln mit „Ansehen“ (eine Regel: ihr Panel, mehrere: Übersicht). |
+| 2026-09-28 | WK-2 | **Alle offenen Tickets:** `openInstancesOf` (rein) liefert die offenen Tickets einer Regel aus der Liste der offenen Tickets, älteste zuerst. Die Spalte heißt jetzt „Offene Tickets“ (max. 16rem), zeigt bei mehreren „3 offene Tickets: HAUS-1, HAUS-2, HAUS-3“ (Zahl sichtbar, Wort für Screenreader) mit allen Keys als Links und der Liste als `title`. Das Regel-Panel listet sie mit Titeln, die Löschfrage nennt alle. |
 
 ## 4. Status
 
 | Paket | Stand |
 |---|---|
-| WK-1 | in Arbeit |
-| WK-2 | geplant |
+| WK-1 | gemergt (#153) |
+| WK-2 | umgesetzt |
 | WK-3 | geplant |
 | WK-4 | geplant |
 

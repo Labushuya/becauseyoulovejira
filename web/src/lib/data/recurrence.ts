@@ -114,6 +114,11 @@ export interface RuleDraft {
 	lead_days: number;
 	/** "Jeden Termin einzeln anlegen" (plan OR-5); a server before its migration ignores it. */
 	each_occurrence?: boolean;
+	/**
+	 * Choice about a large backlog of that switch (ADR-0022 addendum 5), no schema field: "all"
+	 * catches up in batches, "today" goes on from today.
+	 */
+	backlog?: 'all' | 'today';
 }
 
 function draftBody(draft: Partial<RuleDraft>): Record<string, unknown> {

@@ -8,6 +8,14 @@ import {
 	nextTicketDate,
 	nextTicketText,
 	openInstanceMessage,
+	backlogOf,
+	backlogText,
+	CATCH_UP_ASK_HINT,
+	catchUpAllLabel,
+	formBacklog,
+	isWaiting,
+	openBlockText,
+	openInstancesOf,
 	parseSkipped,
 	REOPEN_DETACHED_LABEL,
 	REOPEN_REFUSALS,
@@ -263,5 +271,138 @@ describe('refused reopening (ADR-0023 addendum 4)', () => {
 			'validation_recurrence_reopen_older'
 		]);
 		expect(REOPEN_DETACHED_LABEL).toBe('Als normales Ticket wieder öffnen (aus der Serie lösen)');
+	});
+});
+
+describe('a large backlog (ADR-0022 addendum 5)', () => {
+	const daily = rule({ freq: 'daily', monthDay: null, anchor: '2026-08-01' });
+
+	it('counts the missed dates of a fixed rhythm before today', () => {
+		expect(backlogOf(ruleParams(daily), '2026-09-01', TODAY)).toEqual({
+			count: 24,
+			first: '2026-09-01',
+			last: '2026-09-24',
+			more: false
+		});
+		expect(backlogOf(ruleParams(daily), TODAY, TODAY)).toBeNull();
+		expect(backlogOf(ruleParams(daily), null, TODAY)).toBeNull();
+		// Every Monday: 07.09., 14.09. and 21.09. before Friday 25.09.
+		const monday = rule({ freq: 'weekly', weekdays: ['MO'], monthDay: null, anchor: '2026-09-07' });
+		expect(backlogOf(ruleParams(monday), '2026-09-03', TODAY)).toEqual({
+			count: 3,
+			first: '2026-09-07',
+			last: '2026-09-21',
+			more: false
+		});
+		expect(
+			backlogOf(
+				ruleParams(rule({ mode: 'after_completion', freq: 'daily', monthDay: null })),
+				'2026-09-01',
+				TODAY
+			)
+		).toBeNull();
+		const years = backlogOf(
+			ruleParams(rule({ freq: 'daily', monthDay: null, anchor: '1990-01-01' })),
+			'1990-01-01',
+			TODAY
+		);
+		expect(years).toMatchObject({ count: 10000, more: true });
+		expect(catchUpAllLabel(years!)).toBe('Alle nachholen');
+	});
+
+	it('names the backlog and the buttons', () => {
+		const backlog = backlogOf(ruleParams(daily), '2026-09-01', TODAY)!;
+		expect(backlogText(backlog, TODAY)).toBe('24 Termine (01.09. bis 24.09.)');
+		expect(
+			backlogText({ count: 1, first: '2026-09-21', last: '2026-09-21', more: false }, TODAY)
+		).toBe('1 Termin (21.09.)');
+		expect(catchUpAllLabel(backlog)).toBe('Alle 24 nachholen');
+	});
+
+	it('knows a rule that waits, only with the switch and while active', () => {
+		const waiting = rule({ eachOccurrence: true, lastHint: CATCH_UP_ASK_HINT });
+		expect(isWaiting(waiting)).toBe(true);
+		expect(ruleStateLabel(waiting)).toBe('Wartet');
+		expect(isWaiting({ ...waiting, eachOccurrence: false })).toBe(false);
+		expect(isWaiting({ ...waiting, active: false })).toBe(false);
+		expect(ruleStateLabel({ ...waiting, active: false })).toBe('Pausiert');
+		expect(isWaiting({ ...waiting, lastHint: 'Anderes' })).toBe(false);
+	});
+
+	it('asks in the form only when the switch goes on with more than 20 missed dates', () => {
+		const values = {
+			...defaultFormValues('2026-08-01', TODAY),
+			freq: 'daily' as const,
+			eachOccurrence: true
+		};
+		// A ticket without due date gets 01.08.; the series goes on on 02.08.: 54 dates.
+		expect(formBacklog(values, TODAY, { kind: 'ticket', due: null })).toMatchObject({
+			count: 54,
+			first: '2026-08-02'
+		});
+		// With a due date, after it: from 05.09. on, 20 dates, not more than the limit.
+		expect(formBacklog(values, TODAY, { kind: 'ticket', due: '2026-09-04' })).toBeNull();
+		expect(formBacklog(values, TODAY, { kind: 'ticket', due: '2026-09-03' })).toMatchObject({
+			count: 21
+		});
+		expect(formBacklog(values, TODAY, { kind: 'ticket', due: 'kaputt' })).toBeNull();
+		// A rule: from its next ticket, only when the switch goes on.
+		expect(
+			formBacklog(values, TODAY, { kind: 'rule', nextDue: '2026-08-15', each: false })
+		).toMatchObject({ count: 41 });
+		expect(
+			formBacklog(values, TODAY, { kind: 'rule', nextDue: '2026-08-15', each: true })
+		).toBeNull();
+		expect(
+			formBacklog({ ...values, eachOccurrence: false }, TODAY, { kind: 'ticket', due: null })
+		).toBeNull();
+		expect(formBacklog(values, TODAY, undefined)).toBeNull();
+		// The answer goes along only with the switch.
+		expect(formParams({ ...values, backlog: 'today' }).backlog).toBe('today');
+		expect(formParams({ ...values, eachOccurrence: false, backlog: 'today' })).not.toHaveProperty(
+			'backlog'
+		);
+	});
+});
+
+describe('open tickets of a rule (recommendations 6 and 7)', () => {
+	it('lists all of them, oldest first, and says the series waits for them', () => {
+		const open = [
+			{
+				id: 't3',
+				key: 'TASK-3',
+				title: 'C',
+				recurrenceId: 'r1',
+				created: '2026-09-03 10:00:00.000Z'
+			},
+			{
+				id: 't1',
+				key: 'TASK-1',
+				title: 'A',
+				recurrenceId: 'r1',
+				created: '2026-09-01 10:00:00.000Z'
+			},
+			{
+				id: 't9',
+				key: 'TASK-9',
+				title: 'X',
+				recurrenceId: 'r2',
+				created: '2026-09-02 10:00:00.000Z'
+			},
+			{
+				id: 't5',
+				key: 'TASK-5',
+				title: 'E',
+				recurrenceId: null,
+				created: '2026-09-02 10:00:00.000Z'
+			}
+		];
+		expect(openInstancesOf(open, 'r1')).toEqual([
+			{ id: 't1', key: 'TASK-1', title: 'A' },
+			{ id: 't3', key: 'TASK-3', title: 'C' }
+		]);
+		expect(openBlockText(['TASK-1', 'TASK-3'])).toBe(
+			'Die Serie geht weiter, sobald alle 2 offenen Tickets erledigt sind (TASK-1, TASK-3).'
+		);
 	});
 });

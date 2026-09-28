@@ -4,8 +4,7 @@
 	import SectionMessage from '$lib/components/guidance/SectionMessage.svelte';
 	import Drawer from '$lib/components/overlay/Drawer.svelte';
 	import RecurrencePanel from '$lib/components/RecurrencePanel.svelte';
-	import type { OpenInstance } from '$lib/components/RecurrenceTable.svelte';
-	import type { RecurrenceRule } from '$lib/domain/recurrence-rule';
+	import { openInstancesOf, type RecurrenceRule } from '$lib/domain/recurrence-rule';
 	import { getCatalogStore } from '$lib/stores/catalog.svelte';
 	import { RECURRENCE_UNAVAILABLE, getRecurrenceStore } from '$lib/stores/recurrence.svelte';
 	import { getTicketListStore } from '$lib/stores/ticket-list.svelte';
@@ -28,10 +27,8 @@
 	/** The rule being deleted, until the navigation back to the overview. */
 	let removing = $state<RecurrenceRule | null>(null);
 	const rule = $derived(store.ruleById(id) ?? (removing?.id === id ? removing : null));
-	const openTicket = $derived.by((): OpenInstance | null => {
-		const ticket = tickets.open.find((entry) => entry.recurrenceId === id);
-		return ticket === undefined ? null : { id: ticket.id, key: ticket.key, title: ticket.title };
-	});
+	// All open tickets of the rule (plan "Wiederholungen verständlich machen", recommendation 7).
+	const openTickets = $derived(openInstancesOf(tickets.open, id));
 
 	async function remove(current: RecurrenceRule) {
 		removing = current;
@@ -55,11 +52,12 @@
 			projects={catalog.activeProjects}
 			tags={catalog.tags}
 			projectById={(projectId) => catalog.projectById(projectId)}
-			{openTicket}
+			{openTickets}
 			ticketHrefOf={links.path}
 			oncreatetag={(name) => catalog.ensureTag(name)}
 			onsave={(patch) => store.update(current.id, patch)}
 			ontoggle={(active) => store.setActive(current.id, active)}
+			ondecide={(choice) => store.decideBacklog(current.id, choice, tickets.today)}
 			ondelete={() => remove(current)}
 			ondeleted={() => goto(recurrencesHref())}
 			onclose={() => goto(recurrencesHref())}
