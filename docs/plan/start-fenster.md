@@ -1,6 +1,6 @@
 # E6-Plan, Teil Start und Fenster: Einstieg per Datei, kein zweiter Tab, installierbare Web-App
 
-- **Stand:** in Arbeit (2026-09-28): SF-1 (Routen) in Umsetzung.
+- **Stand:** in Arbeit (2026-09-28): SF-1 (#137, Routen), SF-2 (Landing per Datei) in Umsetzung.
 - **Grundlage:**
   - [ADR-0035](../adr/0035-start-einstieg-und-offene-tabs.md) (Entscheidungen, Routen, Sicherheit, Alternativen)
   - [ADR-0002](../adr/0002-erststart-und-superuser.md) §6, [ADR-0007](../adr/0007-realtime-und-sitzungspflege.md), [ADR-0025](../adr/0025-ui-konsistenz-overlay-system.md), [ADR-0026](../adr/0026-einstellungsbereich-und-hinweis-bausteine.md), [ADR-0028](../adr/0028-plattform-strategie.md) §6
@@ -43,3 +43,7 @@
 | 2026-09-28 | SF-1 | **Nur App-Nutzer zählen:** Gäste mit Abo (jede Seite kann eine SSE-Verbindung öffnen und das Thema abonnieren) und Superuser zählen nicht als Tab und bekommen keine Nachricht. So kann eine fremde Seite `start.bat` nicht vorgaukeln, ein Tab sei offen. |
 | 2026-09-28 | SF-1 | **Werte im Store als Text bzw. Zahl:** `$app.store()` teilt Werte zwischen den JS-Laufzeiten des Servers; Objekte würden als Go-Map geteilt. Einträge sind deshalb JSON-Text, Zeiten Zahlen. Die Rate-Grenze setzt der Store atomar (`setFunc`). |
 | 2026-09-28 | SF-1 | **Landing gesehen auch bei 429:** Eine Anfrage mit `Origin: null` setzt den Zeitstempel vor der Rate-Grenze, damit `start.bat` die Landing-Seite auch dann sieht, wenn gerade eine andere Nachricht hinausging. |
+| 2026-09-28 | SF-2 | **Zustandsmaschine rein im Skript:** `next(state, event)` mit den Phasen `checking`, `down`, `asking`, `countdown`, `cancelled`, `opening`, `elsewhere`, `kept`, `closing`, `closed`, erreichbar über `window.BylLanding`. Der Test führt das Inline-Skript mit falschem Fenster aus; es gibt keine zweite Kopie der Logik. |
+| 2026-09-28 | SF-2 | **Keine animierten Punkte:** Statt „Prüfe automatisch …“ mit Animation steht „Zuletzt geprüft: hh:mm:ss“ außerhalb der Live-Region. Die Live-Region ändert sich nur beim Wechsel der Phase, also einmal je Countdown; die Sekunden stehen nur im Knopf („Jetzt öffnen (4 s)“). Damit entfällt auch der Sonderfall für `prefers-reduced-motion`. |
+| 2026-09-28 | SF-2 | **Auch das Schließen lässt sich anhalten:** Neben „Jetzt schließen“ und „Trotzdem hier öffnen“ hält „Abbrechen“ den Countdown des Schließens an (WCAG 2.2.1), wie beim Öffnen. |
+| 2026-09-28 | SF-2 | **Jede Antwort außer einem Ack heißt „kein Tab“:** 404 (Server vor dem Neustart ohne Route), 429, CORS-Fehler, eine ungültige Nonce oder kein Ack binnen 2 s führen zum Öffnen der App (Fail-open). Über `http:` geladen geht die Seite sofort auf `/`. |

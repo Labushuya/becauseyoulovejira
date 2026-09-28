@@ -9,6 +9,13 @@
 			// only "light" and "dark" set data-theme, anything else keeps the system setting. The
 			// value of the old key td-theme moves over once. Without storage the system setting applies.
 			(function () {
+				// Opened as a file (file://, e.g. pb_public\index.html): the modules under _app cannot
+				// load there and the page would stay empty. The landing page next to start.bat checks
+				// the server and opens the app instead (ADR-0035 section 1); nothing else runs here.
+				if (location.protocol === 'file:') {
+					location.replace(new URL('../becauseyoulovejira.html', location.href).href);
+					return;
+				}
 				try {
 					var key = 'byl-theme';
 					var value = localStorage.getItem(key);

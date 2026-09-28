@@ -17,7 +17,7 @@ becauseyoulovejira/
     pb_migrations/     handgeschriebene JS-Migrationen
     pb_public/         Frontend-Build (gitignored)
     pb_data/           Daten (gitignored, niemals committen)
-    start.bat, start-hidden.vbs, autostart-an.bat, autostart-aus.bat
+    start.bat, start-hidden.vbs, autostart-an.bat, autostart-aus.bat, becauseyoulovejira.html
   web/                 SvelteKit-Quellcode, Build nach ../app/pb_public
   helpers/mail/        Mail-Hilfsprozess (TypeScript strict, eigenes package.json), Build nach ../../app/byl-mail.exe
   scripts/             Build-/Setup-Skripte (PowerShell)
@@ -271,6 +271,7 @@ Erledigte Tickets treten in der Liste optisch zurück. Schriften: Inter für die
 ## 9. Betrieb unter Windows
 
 - `start.bat`: startet PocketBase ohne sichtbares Konsolenfenster (kein Doppelstart), wartet auf `/api/health`, öffnet den Standardbrowser auf `http://127.0.0.1:8090`. Alle Pfade relativ (`%~dp0`).
+- `becauseyoulovejira.html` (seit SF-2, [ADR-0035](docs/adr/0035-start-einstieg-und-offene-tabs.md) §1): Einstieg per Doppelklick, in sich geschlossen (nur Systemfarben, nichts von außen). Unter `file://` prüft sie `/api/health` (jede Sekunde, verborgen alle 5 s, Rückfall `no-cors`), meldet sich über `POST /api/byl/attention?reason=datei` und öffnet die App sofort, nach 5 s Countdown (Server kam später) oder schließt sich nach 5 s, wenn ein Tab bestätigt; „App öffnen“ ist immer da. `app.html` leitet `file:` als erste Anweisung relativ dorthin um (`file-boot.test.ts`, `landing.test.ts`).
 - `autostart-an.bat` / `autostart-aus.bat`: Verknüpfung im Windows-Autostart-Ordner anlegen bzw. entfernen.
 - `byl-mail.exe`: `start.bat` startet ihn nach PocketBase, wenn die Datei da ist, `BYL_INGEST_TOKEN` gesetzt ist (legt `start.bat` beim ersten Mal an) und PocketBase eine eingeschaltete Mail-Verbindung meldet; `stop.bat` beendet ihn gezielt (Pfad plus Kommandozeile `run --url=http://127.0.0.1:8090`, wie bei `pocketbase.exe`). Protokoll in `app/logs/byl-mail.log`.
 - Backups über die eingebaute PocketBase-Backup-Funktion (Anleitung in der README).
