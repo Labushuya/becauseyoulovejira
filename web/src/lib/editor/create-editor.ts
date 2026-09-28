@@ -16,8 +16,9 @@ import { BulletList, OrderedList, TaskItem, TaskList } from '@tiptap/extension-l
 import { Placeholder } from '@tiptap/extensions';
 import StarterKit from '@tiptap/starter-kit';
 import { Underline } from '@tiptap/extension-underline';
-import type { Node } from '@tiptap/pm/model';
+import { Slice, type Node } from '@tiptap/pm/model';
 import { createMarkdownBridge, type MarkdownBridge } from './markdown-bridge';
+import { looksLikeMarkdown, transformPastedHTML } from './paste';
 import { richEditable, type EditableCheck } from './rich-editable';
 import { closeSlash, slashExtension, type SlashCallbacks } from './slash';
 
@@ -264,6 +265,26 @@ export function createRichEditor(options: RichEditorOptions): RichEditor {
 		}
 	});
 
+	// Pasting (RT-5): HTML is cleaned first; plain text that looks like Markdown is read through the
+	// bridge, unless it is pasted as plain text (Ctrl+Shift+V) or the bridge cannot hold it.
+	const readMarkdown = (text: string, plain: boolean): Slice | undefined => {
+		if (plain || !looksLikeMarkdown(text)) return undefined;
+		try {
+			// The bridge builds in the shared schema; every editor has its own instance of it.
+			const doc = editor.schema.nodeFromJSON(bridge.parse(text).toJSON());
+			return Slice.maxOpen(doc.content);
+		} catch {
+			return undefined;
+		}
+	};
+	const pasteProps = {
+		transformPastedHTML: (html: string) => transformPastedHTML(html),
+		// Without a result ProseMirror pastes the text as plain paragraphs (someProp takes the first
+		// truthy answer), so the type of the prop is met on purpose only by the Markdown case.
+		clipboardTextParser: (text: string, _context: unknown, plain: boolean) =>
+			readMarkdown(text, plain) as Slice
+	};
+
 	const editor = new Editor({
 		element: options.element,
 		extensions: [
@@ -275,7 +296,10 @@ export function createRichEditor(options: RichEditorOptions): RichEditor {
 		content: options.doc.toJSON(),
 		// The CSS ProseMirror needs stands in RichTextEditor.svelte with the tokens.
 		injectCSS: false,
-		editorProps: { attributes: options.attributes },
+		// Markdown in pasted text is read by clipboardTextParser; the paste rules of Tiptap would
+		// also format text pasted as plain text (Ctrl+Shift+V).
+		enablePasteRules: false,
+		editorProps: { attributes: options.attributes, ...pasteProps },
 		onUpdate: () => {
 			if (editor.state.doc.content.size <= SYNC_LIMIT) {
 				write();
@@ -363,7 +387,7 @@ export function createRichEditor(options: RichEditorOptions): RichEditor {
 			editor.commands.setContent(doc.toJSON(), { emitUpdate: false });
 		},
 		setAttributes(attributes) {
-			editor.setOptions({ editorProps: { attributes } });
+			editor.setOptions({ editorProps: { attributes, ...pasteProps } });
 		},
 		flush,
 		focus() {

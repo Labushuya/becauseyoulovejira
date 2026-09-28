@@ -122,6 +122,7 @@ describe('help page (EH-9)', () => {
 		expect(text(section)).toContain('Formatierungsleiste');
 		expect(text(section)).toContain('„Markdown“ in der Leiste');
 		expect(text(section)).toContain('öffnet ein Menü für Überschriften');
+		expect(text(section)).toContain('Aus Word, Google Docs oder einer Webseite');
 		expect(text(section)).toContain('direkt in der Ansicht ab');
 		expect(text(section)).toContain(RESTART_NEEDED.text);
 		expect(
