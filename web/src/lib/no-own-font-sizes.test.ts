@@ -13,14 +13,13 @@ const SRC_DIR = resolve(import.meta.dirname, '..');
 const TOKENS_CSS = join('lib', 'styles', 'tokens.css');
 
 /** Numbers left from before G-6 in all listed files together; lower it when one goes. */
-const LEGACY_COUNT = 193;
+const LEGACY_COUNT = 181;
 
 /** Files that still carry font sizes as numbers (as of G-6). */
 const LEGACY_FILES = [
 	'lib/components/AppHeader.svelte',
 	'lib/components/AreaSwitch.svelte',
 	'lib/components/BulkConvertDialog.svelte',
-	'lib/components/CaptureForm.svelte',
 	'lib/components/ChannelsView.svelte',
 	'lib/components/ChipGroup.svelte',
 	'lib/components/ClipboardImport.svelte',
@@ -30,8 +29,6 @@ const LEGACY_FILES = [
 	'lib/components/DueLabel.svelte',
 	'lib/components/EditableTitle.svelte',
 	'lib/components/FileImportDialog.svelte',
-	'lib/components/FilterBar.svelte',
-	'lib/components/FilterPopover.svelte',
 	'lib/components/FirstSteps.svelte',
 	'lib/components/GroupPopover.svelte',
 	'lib/components/HistoryList.svelte',
@@ -41,7 +38,6 @@ const LEGACY_FILES = [
 	'lib/components/MailboxPicker.svelte',
 	'lib/components/MarkdownEditor.svelte',
 	'lib/components/NewTicketForm.svelte',
-	'lib/components/ProjectSelect.svelte',
 	'lib/components/QuickCapture.svelte',
 	'lib/components/RecurrenceForm.svelte',
 	'lib/components/RecurrenceSummary.svelte',

@@ -153,6 +153,48 @@ export type SortableTicket = Pick<
 /** Project shown for a ticket; the catalog resolves it, the expanded relation is the fallback. */
 export type ResolveProject<T> = (ticket: T) => ProjectRef | null;
 
+type PathProject = Pick<ProjectRef, 'id' | 'name' | 'code' | 'parent'>;
+
+function compareIds(a: string, b: string): number {
+	if (a === b) return 0;
+	return a < b ? -1 : 1;
+}
+
+/**
+ * Order of projects along the tree (ADR-0034; column sort "Projekt", groups "Nach Projekt"): by
+ * the name of the top-level project first, so sub projects stand with their parent, then the
+ * parent before its sub projects, then by the own name. Codes and IDs break ties, so equal names
+ * keep a fixed order. Without sub projects this is the order by name, code and ID.
+ */
+export function compareProjectPaths(a: PathProject, b: PathProject): number {
+	const topA = a.parent ?? a;
+	const topB = b.parent ?? b;
+	const top =
+		compareTitles(topA.name, topB.name) ||
+		compareTitles(topA.code, topB.code) ||
+		compareIds(topA.id, topB.id);
+	if (top !== 0) return top;
+	const depth = (a.parent ? 1 : 0) - (b.parent ? 1 : 0);
+	if (depth !== 0) return depth;
+	return compareTitles(a.name, b.name) || compareTitles(a.code, b.code) || compareIds(a.id, b.id);
+}
+
+/**
+ * Names along the path only (column sort "Projekt", ADR-0034): the top-level name, the parent
+ * before its sub projects, then the own name. Equal names tie, so the default order decides, as
+ * before sub projects.
+ */
+function comparePathNames(
+	a: Pick<ProjectRef, 'name' | 'parent'>,
+	b: Pick<ProjectRef, 'name' | 'parent'>
+): number {
+	const top = compareTitles((a.parent ?? a).name, (b.parent ?? b).name);
+	if (top !== 0) return top;
+	const depth = (a.parent ? 1 : 0) - (b.parent ? 1 : 0);
+	if (depth !== 0) return depth;
+	return a.parent ? compareTitles(a.name, b.name) : 0;
+}
+
 const KEY_PATTERN = /^([A-Z]+)-(\d+)$/;
 
 /** Key order (T-5): code as text (TASK like any code), then the number as a number. */
@@ -186,9 +228,13 @@ function column<T extends SortableTicket>(
 		case 'title':
 			return { compare: (a, b) => compareTitles(a.title, b.title) };
 		case 'project':
+			// Along the path "Haus › Garten" (ADR-0034), so sub projects stand with their parent.
 			return {
-				compare: (a, b) =>
-					compareTitles(resolveProject(a)?.name ?? '', resolveProject(b)?.name ?? ''),
+				compare: (a, b) => {
+					const left = resolveProject(a);
+					const right = resolveProject(b);
+					return left === null || right === null ? 0 : comparePathNames(left, right);
+				},
 				isEmpty: (ticket) => resolveProject(ticket) === null
 			};
 		case 'due':

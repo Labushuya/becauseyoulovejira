@@ -212,6 +212,12 @@ export interface DoneFilter {
 	query: ListQuery;
 	/** Berlin calendar date the due filters refer to. */
 	today: CalendarDate;
+	/**
+	 * The chosen project has sub projects and the query takes them in (ADR-0034 section 6): the
+	 * expression then asks `project.parent` as well. Only set when the catalog knows sub projects,
+	 * so a server before the migration never gets the unknown field.
+	 */
+	withSubProjects?: boolean;
 }
 
 /** Open tickets that match a search: title, description or key contain the text. */
@@ -357,13 +363,43 @@ function sourceParams(family: SourceFamily): Record<string, string> {
 	};
 }
 
-/** Expression of the done tickets: DONE_FILTER, and with a chosen source also its clause. */
-function doneFilterExpression({ query }: DoneFilter): string {
-	return query.source === null ? DONE_FILTER : `${DONE_FILTER} && ${DONE_SOURCE_FILTER}`;
+/**
+ * A project with its sub projects (ADR-0034 section 6): the tickets of the project and of every
+ * project whose parent it is. Joins DONE_FILTER only then (see DoneFilter.withSubProjects); the
+ * project clause of DONE_FILTER is switched off meanwhile.
+ */
+const DONE_FAMILY_FILTER = [
+	'({:family} != "" && (project = {:family} || project.parent = {:family}))'
+].join(' && ');
+
+/** Whether the expression takes the sub projects of the chosen project in. */
+function takesSubProjects({ query, withSubProjects }: DoneFilter): boolean {
+	return (
+		withSubProjects === true &&
+		query.subProjects &&
+		query.project !== null &&
+		query.project !== NO_PROJECT
+	);
 }
 
-/** Parameters of DONE_FILTER; an unset filter is '', which switches its conditions off. */
-function doneFilterParams({ query, today }: DoneFilter): Record<string, string> {
+/**
+ * Expression of the done tickets: DONE_FILTER, with a chosen source also its clause, and with sub
+ * projects the clause of the project family.
+ */
+function doneFilterExpression(done: DoneFilter): string {
+	const parts = [DONE_FILTER];
+	if (done.query.source !== null) parts.push(DONE_SOURCE_FILTER);
+	if (takesSubProjects(done)) parts.push(DONE_FAMILY_FILTER);
+	return parts.join(' && ');
+}
+
+/**
+ * Parameters of DONE_FILTER; an unset filter is '', which switches its conditions off. With sub
+ * projects the project goes to DONE_FAMILY_FILTER instead of the plain project clause.
+ */
+function doneFilterParams(done: DoneFilter): Record<string, string> {
+	const { query, today } = done;
+	const family = takesSubProjects(done);
 	const dates =
 		query.due === null
 			? { today: '', tomorrow: '', horizon: '' }
@@ -379,10 +415,11 @@ function doneFilterParams({ query, today }: DoneFilter): Record<string, string> 
 		priority: query.priority ?? '',
 		due: query.due ?? '',
 		...dates,
-		project: query.project ?? '',
+		project: family ? '' : (query.project ?? ''),
 		noProject: NO_PROJECT,
 		tag: query.tag ?? '',
-		...(query.source === null ? {} : sourceParams(query.source))
+		...(query.source === null ? {} : sourceParams(query.source)),
+		...(family ? { family: query.project ?? '' } : {})
 	};
 }
 

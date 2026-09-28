@@ -49,6 +49,24 @@ describe('parseQuickEntry', () => {
 		expect(parse(`A ${token}`)).toMatchObject({ title: 'A', priority });
 	});
 
+	it('takes the code of a sub project like any other (ADR-0034)', () => {
+		const garden: ProjectRef = {
+			id: 'proj00000000011',
+			name: 'Garten',
+			code: 'GART',
+			archived: false,
+			parent: { id: HOUSE.id, name: HOUSE.name, code: HOUSE.code }
+		};
+		expect(parseQuickEntry('Beet umgraben @gart', [...PROJECTS, garden], TAGS)).toMatchObject({
+			title: 'Beet umgraben',
+			project: garden,
+			hints: []
+		});
+		expect(describeQuickEntry(parseQuickEntry('Beet @GART', [...PROJECTS, garden], TAGS))).toEqual([
+			'Projekt: Haushalt › Garten (GART)'
+		]);
+	});
+
 	it('keeps the value lists of words and numbers in the same order', () => {
 		expect(Object.values(PRIORITY_WORDS)).toEqual(Object.values(PRIORITY_NUMBERS));
 	});

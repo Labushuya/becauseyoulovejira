@@ -3,13 +3,14 @@
 	// list. Every step but the last is a link; the last one is the current page with
 	// aria-current="page". The separator is a CSS pseudo element, so screen readers do not read it.
 	// The path of a sub-task (ADR-0033, "HAUS-12 › HAUS-15") uses it with its own name, keys in the
-	// mono font and the title of the parent as tooltip.
+	// mono font and the title of the parent as tooltip. The path of a ticket in a sub project
+	// (ADR-0034, "Haus › Garten › GART-3") mixes names and keys: `mono` per step.
 	let {
 		items,
 		label = 'Brotkrumenpfad',
 		mono = false
 	}: {
-		items: readonly { label: string; href?: string; title?: string }[];
+		items: readonly { label: string; href?: string; title?: string; mono?: boolean }[];
 		/** Name of the navigation. */
 		label?: string;
 		/** Steps in the mono font (ticket keys). */
@@ -20,7 +21,7 @@
 <nav class="breadcrumbs" class:mono aria-label={label}>
 	<ol>
 		{#each items as item, index (index)}
-			<li>
+			<li class:mono-step={item.mono}>
 				{#if index < items.length - 1 && item.href}
 					<!-- eslint-disable-next-line svelte/no-navigation-without-resolve -- the callers pass resolved addresses -->
 					<a href={item.href} title={item.title || undefined}>{item.label}</a>
@@ -42,8 +43,14 @@
 		list-style: none;
 	}
 
-	.mono ol {
+	.mono ol,
+	.mono-step {
 		font-family: var(--font-mono);
+	}
+
+	/* The separator stays in the font of the path. */
+	.mono-step::before {
+		font-family: var(--font-ui);
 	}
 
 	li + li::before {

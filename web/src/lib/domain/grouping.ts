@@ -6,7 +6,8 @@ import type { CalendarDate } from './berlin-date';
 import { dueBucket, type DueBucket } from './filter';
 import { PRIORITY_LABELS, STATUS_LABELS } from './labels';
 import { NO_PROJECT, type Grouping } from './list-query';
-import { compareTitles, type ResolveProject } from './ordering';
+import { compareProjectPaths, type ResolveProject } from './ordering';
+import { projectPath } from './project-tree';
 import { SOURCE_FAMILIES, SOURCE_FAMILY_LABELS, sourceFamily, type SourceFamily } from './source';
 import { PRIORITIES, STATUSES } from './status';
 import type { ProjectRef, TicketSummary } from './ticket';
@@ -87,14 +88,14 @@ function projectGroups<T>(
 		projects.set(project.id, project);
 		return project.id;
 	});
-	// By name, then code and ID, so projects with the same name keep a fixed order.
-	const named = [...projects.values()].sort(
-		(a, b) =>
-			compareTitles(a.name, b.name) || compareTitles(a.code, b.code) || (a.id < b.id ? -1 : 1)
-	);
-	return inOrder(groups, [...named.map((project) => project.id), NO_PROJECT], (key) =>
-		key === NO_PROJECT ? NO_PROJECT_LABEL : (projects.get(key)?.name ?? key)
-	);
+	// Along the tree (ADR-0034): by name, sub projects right after their parent, one group each with
+	// the path "Haus › Garten" as its title; code and ID keep equal names in a fixed order.
+	const named = [...projects.values()].sort(compareProjectPaths);
+	return inOrder(groups, [...named.map((project) => project.id), NO_PROJECT], (key) => {
+		if (key === NO_PROJECT) return NO_PROJECT_LABEL;
+		const project = projects.get(key);
+		return project === undefined ? key : projectPath(project);
+	});
 }
 
 /**

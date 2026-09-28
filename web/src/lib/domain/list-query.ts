@@ -38,6 +38,11 @@ export interface ListQuery {
 	source: SourceFamily | null;
 	/** Project record ID or NO_PROJECT. */
 	project: string | null;
+	/**
+	 * A project filter takes the sub projects in (ADR-0034 section 6, default); false only with
+	 * `unterprojekte=0` in the URL.
+	 */
+	subProjects: boolean;
 	/** Tag record ID. */
 	tag: string | null;
 	/** Trimmed search text, 1 to SEARCH_MAX_LENGTH characters. */
@@ -67,6 +72,7 @@ export const EMPTY_LIST_QUERY: Readonly<ListQuery> = Object.freeze({
 	due: null,
 	source: null,
 	project: null,
+	subProjects: true,
 	tag: null,
 	search: null,
 	sort: null,
@@ -81,6 +87,7 @@ export const LIST_PARAMS = Object.freeze({
 	due: 'faellig',
 	source: 'quelle',
 	project: 'projekt',
+	subProjects: 'unterprojekte',
 	tag: 'tag',
 	search: 'q',
 	sort: 'sort',
@@ -164,6 +171,7 @@ export function parseListQuery(params: URLSearchParams): ListQuery {
 		due: keyOf(DUE_FILTERS, DUE_VALUES, single(params, LIST_PARAMS.due)),
 		source: keyOf(SOURCE_FAMILIES, SOURCE_FAMILY_VALUES, single(params, LIST_PARAMS.source)),
 		project: project === NO_PROJECT ? NO_PROJECT : parseRecordId(project),
+		subProjects: single(params, LIST_PARAMS.subProjects) !== '0',
 		tag: parseRecordId(single(params, LIST_PARAMS.tag)),
 		search: parseSearch(single(params, LIST_PARAMS.search)),
 		sort: parseSort(single(params, LIST_PARAMS.sort)),
@@ -181,6 +189,11 @@ function queryEntries(query: ListQuery): [string, string][] {
 		[LIST_PARAMS.due, query.due === null ? null : DUE_VALUES[query.due]],
 		[LIST_PARAMS.source, query.source === null ? null : SOURCE_FAMILY_VALUES[query.source]],
 		[LIST_PARAMS.project, query.project],
+		// Only the exception is written, and only where it means something: with a project.
+		[
+			LIST_PARAMS.subProjects,
+			!query.subProjects && query.project !== null && query.project !== NO_PROJECT ? '0' : null
+		],
 		[LIST_PARAMS.tag, query.tag],
 		[LIST_PARAMS.search, search],
 		[
@@ -230,6 +243,7 @@ export function resetFilters(query: ListQuery): ListQuery {
 		due: null,
 		source: null,
 		project: null,
+		subProjects: true,
 		tag: null,
 		search: null
 	};

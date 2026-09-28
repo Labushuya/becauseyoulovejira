@@ -473,6 +473,70 @@ describe('filters (E3 plan, package 10)', () => {
 	});
 });
 
+describe('project filter with sub projects (ADR-0034)', () => {
+	const query = (overrides: Partial<ListQuery>): ListQuery => ({
+		...EMPTY_LIST_QUERY,
+		...overrides
+	});
+	const HOUSE_ID = 'proj00000000001';
+	const GARDEN_ID = 'proj00000000011';
+
+	it('shows the tickets of the sub projects unless they are switched off', async () => {
+		const inHouse = ticket({ projectId: HOUSE_ID });
+		const inGarden = ticket({ projectId: GARDEN_ID });
+		const elsewhere = ticket({ projectId: 'proj00000000002' });
+		const store = new TicketListStore(fakeData([inHouse, inGarden, elsewhere]), session(), {
+			subProjectsOf: (id) => (id === HOUSE_ID ? [GARDEN_ID] : [])
+		});
+		store.activate(query({ project: HOUSE_ID }));
+		await settle();
+		expect(store.visible.map((entry) => entry.id).sort()).toEqual([inHouse.id, inGarden.id].sort());
+
+		store.activate(query({ project: HOUSE_ID, subProjects: false }));
+		expect(store.visible.map((entry) => entry.id)).toEqual([inHouse.id]);
+	});
+
+	it('asks the server for the sub projects of the done section and loads again when they change', async () => {
+		const data = fakeData([], [[]]);
+		let children: string[] = [];
+		const store = new TicketListStore(data, session(), {
+			subProjectsOf: (id) => (id === HOUSE_ID ? children : [])
+		});
+		const filters = query({ project: HOUSE_ID, showDone: true });
+		store.activate(filters);
+		await settle();
+		// Without sub projects the server gets the plain project filter.
+		expect(data.listDone).toHaveBeenLastCalledWith(
+			1,
+			expect.objectContaining({ filter: { query: filters, today: '2026-09-24' } })
+		);
+
+		// The catalog learns a sub project: the section loads again with it.
+		children = [GARDEN_ID];
+		store.followSubProjects();
+		await settle();
+		expect(data.listDone).toHaveBeenCalledTimes(2);
+		expect(data.listDone).toHaveBeenLastCalledWith(
+			1,
+			expect.objectContaining({
+				filter: { query: filters, today: '2026-09-24', withSubProjects: true }
+			})
+		);
+		store.followSubProjects();
+		await settle();
+		expect(data.listDone).toHaveBeenCalledTimes(2);
+
+		// Switched off, the server gets the plain filter again.
+		const only = { ...filters, subProjects: false };
+		store.activate(only);
+		await settle();
+		expect(data.listDone).toHaveBeenLastCalledWith(
+			1,
+			expect.objectContaining({ filter: { query: only, today: '2026-09-24' } })
+		);
+	});
+});
+
 describe('column sort (E3 plan, package 9)', () => {
 	const sorted = (key: 'status' | 'project', reversed = false): ListQuery => ({
 		...EMPTY_LIST_QUERY,
@@ -1254,6 +1318,17 @@ describe('sub-tasks (ADR-0033)', () => {
 		const created = result.ok ? result.ticket : null;
 		expect(store.subtasksOf(PARENT_ID).map((entry) => entry.title)).toContain('Kartons packen');
 		expect(idsOf(store.open)).toContain(created?.id);
+	});
+
+	it('keeps the sub project of the parent for a sub-task, not its parent project (ADR-0034)', async () => {
+		const { store, data, parent } = await loaded();
+		const inGarden = { ...parent, projectId: 'proj00000000011' };
+
+		await store.addSubtask(inGarden, 'Beet umgraben');
+
+		expect(data.create).toHaveBeenLastCalledWith(
+			expect.objectContaining({ project: 'proj00000000011', parent: PARENT_ID })
+		);
 	});
 
 	it('gives back the message of the refused field; an empty title sends nothing', async () => {

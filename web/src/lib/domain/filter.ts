@@ -3,6 +3,7 @@
 // predicate: the server answers it as a set of IDs (T-1, T-15). Project and tag compare the stored
 // relations (projectId, tagIds), the same fields the server expression of the done tickets uses.
 // The source compares the family of `source` (ADR-0019 section 2); no source counts as "manual".
+// A project takes its sub projects in (ADR-0034 section 6) unless the query switches them off.
 
 import { addDays, type CalendarDate } from './berlin-date';
 import { NO_PROJECT, type ListQuery } from './list-query';
@@ -36,27 +37,47 @@ function matchesDue(ticket: FilterableTicket, filter: ListQuery['due'], today: C
 	return bucket === filter;
 }
 
-function matchesProject(ticket: FilterableTicket, filter: string | null): boolean {
+/** Sub project IDs of a project (ADR-0034); the catalog answers it in the app. */
+export type SubProjectsOf = (projectId: string) => readonly string[];
+
+/** Without a catalog no project has sub projects. */
+export const NO_SUB_PROJECTS: SubProjectsOf = () => [];
+
+function matchesProject(
+	ticket: FilterableTicket,
+	query: Pick<ListQuery, 'project' | 'subProjects'>,
+	subProjectsOf: SubProjectsOf
+): boolean {
+	const filter = query.project;
 	if (filter === null) return true;
 	if (filter === NO_PROJECT) return ticket.projectId === null;
-	return ticket.projectId === filter;
+	if (ticket.projectId === filter) return true;
+	// A project filter takes its sub projects in unless `unterprojekte=0` (ADR-0034 section 6),
+	// like the server expression `project = p || project.parent = p`.
+	return (
+		query.subProjects &&
+		ticket.projectId !== null &&
+		subProjectsOf(filter).includes(ticket.projectId)
+	);
 }
 
 /**
  * True if the ticket passes the filters of `query` at the given Berlin date. The status filter
- * compares the status only; which section shows done tickets decides the list (T-6).
+ * compares the status only; which section shows done tickets decides the list (T-6). A project
+ * filter takes the sub projects `subProjectsOf` names in, unless the query switches them off.
  */
 export function matchesFilter(
 	ticket: FilterableTicket,
 	query: ListQuery,
-	today: CalendarDate
+	today: CalendarDate,
+	subProjectsOf: SubProjectsOf = NO_SUB_PROJECTS
 ): boolean {
 	return (
 		(query.status === null || ticket.status === query.status) &&
 		(query.priority === null || ticket.priority === query.priority) &&
 		matchesDue(ticket, query.due, today) &&
 		(query.source === null || sourceFamily(ticket.source) === query.source) &&
-		matchesProject(ticket, query.project) &&
+		matchesProject(ticket, query, subProjectsOf) &&
 		(query.tag === null || ticket.tagIds.includes(query.tag))
 	);
 }

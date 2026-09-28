@@ -26,12 +26,13 @@ import {
 	type DoneTicketPage
 } from '$lib/data/tickets';
 import { berlinToday, msUntilNextBerlinMidnight, type CalendarDate } from '$lib/domain/berlin-date';
-import { matchesFilter } from '$lib/domain/filter';
+import { NO_SUB_PROJECTS, matchesFilter, type SubProjectsOf } from '$lib/domain/filter';
 import { groupTickets, type TicketGroup } from '$lib/domain/grouping';
 import { countKpis, type Kpis } from '$lib/domain/kpis';
 import {
 	EMPTY_LIST_QUERY,
 	FILTER_KEYS,
+	NO_PROJECT,
 	activeSearch,
 	type ListQuery
 } from '$lib/domain/list-query';
@@ -197,7 +198,9 @@ export function showsDoneSection(query: ListQuery): boolean {
 const FILTERS_BESIDES_SEARCH = FILTER_KEYS.filter((key) => key !== 'search');
 
 function sameFiltersBesidesSearch(a: ListQuery, b: ListQuery): boolean {
-	return FILTERS_BESIDES_SEARCH.every((key) => a[key] === b[key]);
+	return (
+		FILTERS_BESIDES_SEARCH.every((key) => a[key] === b[key]) && a.subProjects === b.subProjects
+	);
 }
 
 /** Text of the live region after a filter change (E3 plan, package 10). */
@@ -228,6 +231,11 @@ export interface TicketListOptions {
 	 * catalog (`catalog.projectOf`), so a rename sorts again at once; default is `expand`.
 	 */
 	projectOf?: ResolveProject<TicketSummary>;
+	/**
+	 * Sub project IDs of a project (ADR-0034): a project filter takes them in. The app passes the
+	 * catalog; without it no project has sub projects.
+	 */
+	subProjectsOf?: SubProjectsOf;
 	/** Read rows and base line; without them nothing is marked as new. */
 	reads?: ReadsData;
 	/** Flags of the app (results, "Rückgängig", failures); without them nothing is shown. */
@@ -239,6 +247,7 @@ export class TicketListStore {
 	readonly #session: SessionGuard;
 	readonly #now: () => number;
 	readonly #projectOf: ResolveProject<TicketSummary>;
+	readonly #subProjectsOf: SubProjectsOf;
 
 	readonly #open = new SvelteMap<string, TicketSummary>();
 	readonly #done = new SvelteMap<string, TicketSummary>();
@@ -312,9 +321,11 @@ export class TicketListStore {
 		const today = this.#today;
 		const order = columnOrder(query.sort, today, this.#projectOf);
 		const ids = this.#search === null ? null : this.#searchIds;
+		const subProjectsOf = this.#subProjectsOf;
 		return this.#openList
 			.filter(
-				(ticket) => matchesFilter(ticket, query, today) && (ids === null || ids.has(ticket.id))
+				(ticket) =>
+					matchesFilter(ticket, query, today, subProjectsOf) && (ids === null || ids.has(ticket.id))
 			)
 			.sort(order);
 	});
@@ -326,8 +337,9 @@ export class TicketListStore {
 	#doneList = $derived.by(() => {
 		const query = this.#query;
 		const today = this.#today;
+		const subProjectsOf = this.#subProjectsOf;
 		return [...this.#done.values()]
-			.filter((ticket) => matchesFilter(ticket, query, today))
+			.filter((ticket) => matchesFilter(ticket, query, today, subProjectsOf))
 			.sort(compareDone);
 	});
 	#kpis = $derived(countKpis(this.#open.values(), this.#today));
@@ -364,6 +376,7 @@ export class TicketListStore {
 		{
 			now = Date.now,
 			projectOf = (ticket) => ticket.project,
+			subProjectsOf = NO_SUB_PROJECTS,
 			reads,
 			flags = SILENT_FLAGS
 		}: TicketListOptions = {}
@@ -372,6 +385,7 @@ export class TicketListStore {
 		this.#session = session;
 		this.#now = now;
 		this.#projectOf = projectOf;
+		this.#subProjectsOf = subProjectsOf;
 		this.#today = berlinToday(now());
 		this.#reads = reads ?? null;
 		this.#flags = flags;
@@ -722,6 +736,15 @@ export class TicketListStore {
 		if (!filtersChanged || this.#openState !== 'ready') return;
 		if (query.status === 'done') this.#announceDone = true;
 		else this.#announcement = countMessage(this.visibleCount);
+	}
+
+	/**
+	 * The sub projects of the chosen project changed (catalog loaded, one added or moved; ADR-0034):
+	 * the section "Erledigt" loads again if the server has to take other projects in.
+	 */
+	followSubProjects(): void {
+		if (this.#openState === 'idle') return;
+		this.#syncDone();
 	}
 
 	/**
@@ -1197,7 +1220,7 @@ export class TicketListStore {
 	 */
 	#belongsToLoadedDone(ticket: TicketSummary): boolean {
 		if (!this.#showDone || this.#doneState !== 'ready') return false;
-		if (!matchesFilter(ticket, this.#query, this.#today)) return false;
+		if (!matchesFilter(ticket, this.#query, this.#today, this.#subProjectsOf)) return false;
 		// An active search knows only the loaded rows and the IDs it found while they were open.
 		if (this.#search !== null && !this.#done.has(ticket.id) && !this.#searchIds?.has(ticket.id)) {
 			return false;
@@ -1209,7 +1232,22 @@ export class TicketListStore {
 
 	/** Filter of the done section for the server: the query at the current Berlin date. */
 	#doneFilter(): DoneFilter {
-		return { query: { ...this.#query, search: this.#search }, today: this.#today };
+		const filter: DoneFilter = {
+			query: { ...this.#query, search: this.#search },
+			today: this.#today
+		};
+		if (this.#subProjectIds().length > 0) filter.withSubProjects = true;
+		return filter;
+	}
+
+	/**
+	 * Sub projects the project filter takes in (ADR-0034): none without a project, with "Ohne
+	 * Projekt" or with `unterprojekte=0`.
+	 */
+	#subProjectIds(): readonly string[] {
+		const { project, subProjects } = this.#query;
+		if (project === null || project === NO_PROJECT || !subProjects) return [];
+		return this.#subProjectsOf(project);
 	}
 
 	/**
@@ -1306,7 +1344,10 @@ export class TicketListStore {
 		const key = show
 			? JSON.stringify([
 					...FILTER_KEYS.map((name) => query[name]),
-					query.due === null ? '' : this.#today
+					query.due === null ? '' : this.#today,
+					// Sub projects taken in (ADR-0034): switching them off or a new one loads again.
+					query.subProjects,
+					this.#subProjectIds()
 				])
 			: null;
 		if (key === this.#doneKey) return;

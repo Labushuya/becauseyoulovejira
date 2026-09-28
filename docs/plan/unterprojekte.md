@@ -1,6 +1,6 @@
 # E6-Plan, Teil Unterprojekte: eine Ebene, eigener Code, Baum in Liste und Kacheln, Filter mit Unterprojekten
 
-- **Stand:** in Umsetzung (2026-09-28): UP-1 (#130, Datenmodell, Hook, Spike), UP-2 (#131, Katalog und Datenschicht), UP-3 (#132, Liste und Kacheln als Baum), UP-4 (Projekt-Panel).
+- **Stand:** in Umsetzung (2026-09-28): UP-1 (#130, Datenmodell, Hook, Spike), UP-2 (#131, Katalog und Datenschicht), UP-3 (#132, Liste und Kacheln als Baum), UP-4 (#133, Projekt-Panel), UP-5 (Auswahl, Filter, Tabelle, Brotkrumen).
 - **Grundlage:**
   - [ADR-0034](../adr/0034-unterprojekte.md) (Datenmodell, Prüfregeln, Archiv-Kaskade, Spike, Oberfläche, Grenze zum Epic)
   - [ADR-0012](../adr/0012-plain-ticketing.md) mit dem Nachtrag „Unterprojekte als Gliederung, keine Epics“
@@ -61,6 +61,14 @@
 | 2026-09-28 | UP-4 | **Archivieren mit Rückfrage** nur, wenn aktive Unterprojekte mitgehen: `ConfirmDialog` „Projekt „Haus“ archivieren?“ mit „Archiviert auch 2 Unterprojekte: Dach und Garten. Zurückholen geht später für jedes einzeln.“, Verb „Archivieren“, erster Fokus auf „Abbrechen“; ein Fehler bleibt in der Frage. Ohne aktive Unterprojekte archiviert der Knopf wie bisher sofort. Die Unterprojekte kommen per Realtime in den Katalog (die Kaskade läuft im Hook). |
 | 2026-09-28 | UP-4 | **„Mit Oberprojekt zurückholen“** ersetzt bei einem archivierten Unterprojekt unter einem archivierten Oberprojekt „Aus dem Archiv holen“: Die Route holt erst das Oberprojekt, dann das Unterprojekt zurück (zwei Anfragen, weil der Hook das Kind sonst ablehnt); die übrigen Unterprojekte bleiben archiviert, das sagt der Hinweis. Scheitert das Oberprojekt, bleibt alles, wie es war. |
 | 2026-09-28 | UP-4 | **Löschen** bietet das Panel nur ohne Tickets und ohne Unterprojekte an; sonst nennt der Hinweis den Weg mit dem Text des Hooks. `ProjectPanel` zieht auf die Schriftgrößen-Tokens und fällt von der Liste (`no-own-font-sizes.test.ts` jetzt 193). |
+| 2026-09-28 | UP-5 | **Filter „Projekt“ schließt Unterprojekte ein** (auch archivierte, denn ihre Tickets gehören zum Oberprojekt). `ListQuery.subProjects` (Standard wahr) steht nur als Ausnahme `unterprojekte=0` in der URL und nur zusammen mit einem Projekt; ohne Projekt oder mit „Ohne Projekt“ fällt der Parameter weg. Wer ein anderes Projekt wählt, bekommt dessen Unterprojekte wieder dazu. „Zurücksetzen“ setzt den Schalter mit zurück. |
+| 2026-09-28 | UP-5 | **Checkbox „Unterprojekte einbeziehen“** unter den Radios im Popover „Projekt“ (`FilterPopover` hat dafür das Snippet `footer`), mit einer Zeile, die die Unterprojekte nennt; ohne Unterprojekte `aria-disabled` mit Grund („Das gewählte Projekt hat keine Unterprojekte.“). Ausgeschaltet nennt der Knopf „Projekt: Haus (HAUS), ohne Unterprojekte“. |
+| 2026-09-28 | UP-5 | **Client und Server rechnen gleich:** `matchesFilter(ticket, query, today, subProjectsOf)` nimmt die Unterprojekte aus dem Katalog; `listDoneTickets` bekommt `withSubProjects` und fragt dann `(project = {:family} \|\| project.parent = {:family})` statt `project = {:project}`. Das Feld `project.parent` geht nur an den Server, wenn der Katalog Unterprojekte kennt, also nie vor dem Neustart. Ändern sich die Unterprojekte des gewählten Projekts (Katalog geladen, anderes Tab), lädt der Abschnitt „Erledigt“ neu (`TicketListStore.followSubProjects`, ausgelöst im Layout der Aufgaben). Der Paritätstest hat Oberprojekt mit und ohne Unterprojekte, ein Unterprojekt, ein archiviertes Unterprojekt, ein Projekt ohne Unterprojekte, „Ohne Projekt“ und eine fremde ID. |
+| 2026-09-28 | UP-5 | **Pfad überall gleich:** Auswahl im Ticket, in der Regel, beim Sammelumwandeln und in „Erfassen“ als „Haus › Garten (GART)“ in Baum-Reihenfolge, der Filter ebenso (aktive und archivierte je in Baum-Reihenfolge), die Spalte „Projekt“ zeigt „Haus › Garten“ mit dem Code im `title`, die Vorschau der Schnellerfassung „Projekt: Haus › Garten (GART)“. `@GART` gilt wie jeder Code. |
+| 2026-09-28 | UP-5 | **Sortierung „Projekt“ nach dem Pfad:** erst der Name des obersten Projekts, dann das Oberprojekt vor seinen Unterprojekten, dann deren Name; gleiche Namen bleiben wie bisher gleichrangig, die Standard-Reihenfolge entscheidet. Die Gruppen folgen `compareProjectPaths` (mit Code und ID, damit gleichnamige Oberprojekte ihre Unterprojekte behalten). |
+| 2026-09-28 | UP-5 | **Brotkrumen im Ticket:** Ein Ticket in einem Unterprojekt beginnt den Pfad im Kopf des Panels und über dem Titel der Vollansicht mit „Haus › Garten“ (Links auf die nach dem Projekt gefilterte Liste, „Haus“ mit Unterprojekten), danach gegebenenfalls das übergeordnete Ticket und der Key (`ticketPathSteps`). `Breadcrumbs` kennt dafür `mono` je Schritt (Keys in Mono, Namen nicht). Tickets in obersten Projekten zeigen wie bisher nur den Key. |
+| 2026-09-28 | UP-5 | **Statische Prüfung der Filterausdrücke erweitert** (`data-layer.test.ts`): Neben dem einen Ternär ist jetzt auch eine Liste aus Konstanten erlaubt, die Bedingungen um weitere Konstanten ergänzen (`const parts = [DONE_FILTER]; if (…) parts.push(…)`). Werte gelangen weiter nur als Parameter von `pb.filter()` zum Server; die Konstante `DONE_FAMILY_FILTER` ist wie alle anderen reiner Text. |
+| 2026-09-28 | UP-5 | `FilterBar`, `FilterPopover`, `ProjectSelect` und `CaptureForm` ziehen auf die Schriftgrößen-Tokens und fallen von der Liste (`no-own-font-sizes.test.ts` jetzt 181). |
 | 2026-09-28 | UP-1 | **Gruppieren nach Projekt bleibt flach:** eine Gruppe je konkretem Projekt mit dem Pfad als Titel („Haus › Garten“), in Baum-Reihenfolge (Oberprojekt, dann seine Unterprojekte). Verworfen: eine Gruppe je Oberprojekt mit Unterprojekten darin. Die Tabelle kennt nur eine Gruppenebene; verschachtelte Gruppen bräuchten zweite Köpfe, eigene Zähler und Auf- und Zuklappen in der Tabelle. Flach mit Pfad zeigt, wohin jedes Ticket gehört (Key und Gruppe passen zusammen), zählt je Projekt, und die Baum-Reihenfolge hält die Unterprojekte trotzdem beim Oberprojekt. Wer alles unter „Haus“ sehen will, filtert nach „Haus“ (mit Unterprojekten). |
 
 ## 4. Status
@@ -70,12 +78,12 @@
 | UP-1 | gemergt (#130) |
 | UP-2 | gemergt (#131) |
 | UP-3 | gemergt (#132) |
-| UP-4 | umgesetzt (Projekt-Panel) |
-| UP-5 | geplant |
+| UP-4 | gemergt (#133) |
+| UP-5 | umgesetzt (Auswahl, Filter, Tabelle, Brotkrumen) |
 | UP-6 | geplant |
 
 ## 5. Offene Punkte
 
 - Manuelle Browser-Prüfungen der Pakete.
 - Nach dem Merge von UP-1 braucht die App einen Neustart (stop.bat, dann start.bat), damit die Migration läuft.
-- Die Reihenfolge der Datensätze in der Tabelle nach „Projekt“ und die Gruppen folgen mit UP-5; bis dahin zeigen sie den Namen des Unterprojekts ohne Pfad.
+- ~~Die Reihenfolge der Datensätze in der Tabelle nach „Projekt“ und die Gruppen folgen mit UP-5; bis dahin zeigen sie den Namen des Unterprojekts ohne Pfad.~~ Erledigt mit UP-5.

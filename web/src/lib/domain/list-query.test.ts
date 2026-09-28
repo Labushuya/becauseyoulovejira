@@ -91,7 +91,7 @@ describe('parseListQuery', () => {
 		expect(
 			parse(
 				`status=waiting&prio=high&faellig=bald&quelle=chat&projekt=${PROJECT_ID}&tag=${TAG_ID}` +
-					'&q=Auto&sort=-faellig&gruppe=projekt&erledigte=1'
+					'&q=Auto&sort=-faellig&gruppe=projekt&erledigte=1&unterprojekte=0'
 			)
 		).toEqual({
 			status: 'waiting',
@@ -99,6 +99,7 @@ describe('parseListQuery', () => {
 			due: 'soon',
 			source: 'chat',
 			project: PROJECT_ID,
+			subProjects: false,
 			tag: TAG_ID,
 			search: 'Auto',
 			sort: { key: 'due', reversed: true },
@@ -159,6 +160,7 @@ describe('serializeListQuery', () => {
 			sort: { key: 'created', reversed: false },
 			search: 'Öl wechseln',
 			tag: TAG_ID,
+			subProjects: true,
 			project: NO_PROJECT,
 			source: 'calendar',
 			due: 'overdue',
@@ -169,6 +171,24 @@ describe('serializeListQuery', () => {
 			`?status=backlog&prio=urgent&faellig=ueberfaellig&quelle=kalender&projekt=ohne&tag=${TAG_ID}` +
 				'&q=%C3%96l+wechseln&sort=erstellt&gruppe=faellig&erledigte=1'
 		);
+		expect(serializeListQuery({ ...full, project: PROJECT_ID, subProjects: false })).toBe(
+			`?status=backlog&prio=urgent&faellig=ueberfaellig&quelle=kalender&projekt=${PROJECT_ID}` +
+				`&unterprojekte=0&tag=${TAG_ID}&q=%C3%96l+wechseln&sort=erstellt&gruppe=faellig&erledigte=1`
+		);
+	});
+
+	it('reads and writes "unterprojekte=0" only with a project (ADR-0034)', () => {
+		expect(parse(`projekt=${PROJECT_ID}`).subProjects).toBe(true);
+		expect(parse(`projekt=${PROJECT_ID}&unterprojekte=0`).subProjects).toBe(false);
+		expect(parse(`projekt=${PROJECT_ID}&unterprojekte=1`).subProjects).toBe(true);
+		expect(parse(`projekt=${PROJECT_ID}&unterprojekte=0&unterprojekte=0`).subProjects).toBe(true);
+		expect(normalize(`unterprojekte=0&projekt=${PROJECT_ID}`)).toBe(
+			`?projekt=${PROJECT_ID}&unterprojekte=0`
+		);
+		// Without a project or with "Ohne Projekt" the switch means nothing and is left out.
+		expect(normalize('unterprojekte=0')).toBe('');
+		expect(normalize('projekt=ohne&unterprojekte=0')).toBe('?projekt=ohne');
+		expect(serializeListQuery(query({ subProjects: false }))).toBe('');
 	});
 
 	it('gives the same URL for the same filters in any input order', () => {
@@ -230,6 +250,7 @@ describe('withFilter, resetFilters, hasFilters', () => {
 		due: 'today',
 		source: 'link',
 		project: PROJECT_ID,
+		subProjects: false,
 		tag: TAG_ID,
 		search: 'Auto',
 		sort: { key: 'title', reversed: false },

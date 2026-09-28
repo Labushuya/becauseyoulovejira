@@ -28,6 +28,7 @@
 	import type { ResolvedPathname } from '$app/types';
 	import type { CalendarDate } from '$lib/domain/berlin-date';
 	import { berlinDateOf, formatBerlinDateTime, formatCalendarDate } from '$lib/domain/format';
+	import { projectChoiceLabel, projectPath } from '$lib/domain/project-tree';
 	import { SOURCE_FAMILY_LABELS, sourceFamily } from '$lib/domain/source';
 	import { progressLabel, type SubtaskProgress } from '$lib/domain/subtasks';
 	import type { ParentRef, ProjectRef, TagRef, TicketSummary } from '$lib/domain/ticket';
@@ -216,7 +217,8 @@
 	{#if shows('project')}
 		<td class="project" data-col="project">
 			{#if project}
-				<span title={`${project.name} (${project.code})`}>{project.name}</span>
+				<!-- A sub project shows its path "Haus › Garten" (ADR-0034); the title adds the code. -->
+				<span title={projectChoiceLabel(project)}>{projectPath(project)}</span>
 			{/if}
 		</td>
 	{/if}

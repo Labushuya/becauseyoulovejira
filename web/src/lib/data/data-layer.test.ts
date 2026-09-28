@@ -55,8 +55,9 @@ describe('web/src/lib/data', () => {
 
 	it.each(modules)('%s chooses filter expressions only among constants', (name) => {
 		// A function *Expression (E4 package 9: the source clause joins only when a source is
-		// chosen) may only pick and join constants, so every value still reaches the server as a
-		// parameter of pb.filter().
+		// chosen; ADR-0034: the clause of the sub projects only when the catalog knows some) may
+		// only pick and join constants, so every value still reaches the server as a parameter of
+		// pb.filter(). Two shapes: one ternary, or a list of constants that conditions extend.
 		const code = read(name);
 		for (const [, fn = ''] of code.matchAll(/\bfilter:\s*pb\.filter\(([a-z]\w*Expression)\(/g)) {
 			const body = new RegExp(
@@ -66,7 +67,7 @@ describe('web/src/lib/data', () => {
 			expect(body, `${name}: definition of ${fn}`).toBeDefined();
 			const shape = (body ?? '').replace(/\$\{[A-Z_]+\}/g, 'C').replace(/\b[A-Z_]{2,}\b/g, 'C');
 			expect(shape.trim(), `${name}: ${fn}`).toMatch(
-				/^return query\.\w+ === null \? C : `C( && C)*`;$/
+				/^(return query\.\w+ === null \? C : `C( && C)*`;|const parts = \[C\];(\n\tif \([^`$'"+]*\) parts\.push\(C\);)+\n\treturn parts\.join\(' && '\);)$/
 			);
 			for (const [, constant = ''] of (body ?? '').matchAll(/\b([A-Z_]{2,})\b/g)) {
 				const definition = new RegExp(

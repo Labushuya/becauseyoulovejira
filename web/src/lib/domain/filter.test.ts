@@ -133,6 +133,30 @@ describe('matchesFilter', () => {
 		}
 	});
 
+	it('takes the sub projects of a project in unless they are switched off (ADR-0034)', () => {
+		const GARDEN_ID = 'p00000000000011';
+		const subProjectsOf = (id: string) => (id === HOUSE.id ? [GARDEN_ID] : []);
+		const inGarden = ticket({ projectId: GARDEN_ID });
+		const inHouse = ticket({ projectId: HOUSE.id });
+		const inCar = ticket({ projectId: CAR.id });
+
+		const house = query({ project: HOUSE.id });
+		expect(matchesFilter(inGarden, house, TODAY, subProjectsOf)).toBe(true);
+		expect(matchesFilter(inHouse, house, TODAY, subProjectsOf)).toBe(true);
+		expect(matchesFilter(inCar, house, TODAY, subProjectsOf)).toBe(false);
+		// Without the catalog nothing is a sub project; with "unterprojekte=0" only the project.
+		expect(matchesFilter(inGarden, house, TODAY)).toBe(false);
+		const only = query({ project: HOUSE.id, subProjects: false });
+		expect(matchesFilter(inGarden, only, TODAY, subProjectsOf)).toBe(false);
+		expect(matchesFilter(inHouse, only, TODAY, subProjectsOf)).toBe(true);
+		// The sub project alone has no sub projects; "Ohne Projekt" stays without project.
+		expect(matchesFilter(inGarden, query({ project: GARDEN_ID }), TODAY, subProjectsOf)).toBe(true);
+		expect(matchesFilter(inHouse, query({ project: GARDEN_ID }), TODAY, subProjectsOf)).toBe(false);
+		expect(matchesFilter(inGarden, query({ project: NO_PROJECT }), TODAY, subProjectsOf)).toBe(
+			false
+		);
+	});
+
 	it('filters by tag', () => {
 		const both = ticket({ tagIds: [SHOP.id, CALL.id] });
 		expect(matchesFilter(both, query({ tag: SHOP.id }), TODAY)).toBe(true);

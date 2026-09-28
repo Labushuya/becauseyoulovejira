@@ -2,6 +2,7 @@
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
 	import { PRIORITY_LABELS, STATUS_LABELS } from '$lib/domain/labels';
+	import { projectChoiceLabel, treeOrder } from '$lib/domain/project-tree';
 	import {
 		DUE_FILTERS,
 		NO_PROJECT,
@@ -31,6 +32,9 @@
 	// entry, so reload, back and forward keep it; opening a ticket keeps it because links carry
 	// the query. Typing in the search replaces the entry instead, so back does not go through
 	// every letter; the list store applies the search after a pause.
+	// Sub projects (ADR-0034, UP-5): the projects stand in tree order as "Haus › Garten (GART)"; a
+	// project takes its sub projects in, and the checkbox "Unterprojekte einbeziehen" below the
+	// choices switches that off (`unterprojekte=0`). It is locked without sub projects.
 	let {
 		catalog,
 		searchBusy = false,
@@ -50,7 +54,8 @@
 		search: `${uid}-search`,
 		searchHint: `${uid}-search-hint`,
 		searchError: `${uid}-search-error`,
-		resetHint: `${uid}-reset-hint`
+		resetHint: `${uid}-reset-hint`,
+		subProjectsHint: `${uid}-sub-projects-hint`
 	};
 
 	const DUE_LABELS: Readonly<Record<DueFilter, string>> = {
@@ -79,23 +84,31 @@
 	);
 	const unknownTag = $derived(query.tag !== null && !catalog.tagById(query.tag));
 	const unknownLabel = $derived(catalog.state === 'ready' ? 'Unbekannt' : 'Wird geladen …');
-	/** "Ohne Projekt", the active projects, then the archived ones under "Archiviert". */
+	/**
+	 * "Ohne Projekt", the active projects, then the archived ones under "Archiviert"; each part in
+	 * tree order, sub projects with their path (ADR-0034).
+	 */
 	const projectOptions = $derived([
 		{ value: NO_PROJECT, label: 'Ohne Projekt' },
-		...catalog.projects
-			.filter((project) => !project.archived)
-			.map((project) => ({ value: project.id, label: `${project.name} (${project.code})` })),
-		...catalog.projects
-			.filter((project) => project.archived)
-			.map((project) => ({
-				value: project.id,
-				label: `${project.name} (${project.code})`,
-				section: 'Archiviert'
-			})),
+		...treeOrder(catalog.projects.filter((project) => !project.archived)).map((project) => ({
+			value: project.id,
+			label: projectChoiceLabel(project)
+		})),
+		...treeOrder(catalog.projects.filter((project) => project.archived)).map((project) => ({
+			value: project.id,
+			label: projectChoiceLabel(project),
+			section: 'Archiviert'
+		})),
 		...(unknownProject && query.project !== null
 			? [{ value: query.project, label: unknownLabel }]
 			: [])
 	]);
+	/** Sub projects of the chosen project; the checkbox is locked without them. */
+	const subProjects = $derived(
+		query.project === null || query.project === NO_PROJECT
+			? []
+			: catalog.subProjectsOf(query.project)
+	);
 	const tagOptions = $derived([
 		...catalog.tags.map((tag) => ({ value: tag.id, label: tag.name })),
 		...(unknownTag && query.tag !== null ? [{ value: query.tag, label: unknownLabel }] : [])
@@ -107,6 +120,20 @@
 
 	function setFilter<K extends FilterKey>(key: K, value: ListQuery[K]) {
 		void navigate(withFilter(query, key, value));
+	}
+
+	/** Another project takes its sub projects in again (the default of ADR-0034). */
+	function setProject(value: string | null) {
+		void navigate({ ...withFilter(query, 'project', value), subProjects: true });
+	}
+
+	/** "Unterprojekte einbeziehen"; locked (aria-disabled) while the project has none. */
+	function toggleSubProjects(event: Event & { currentTarget: HTMLInputElement }) {
+		if (subProjects.length === 0) {
+			event.currentTarget.checked = query.subProjects;
+			return;
+		}
+		void navigate({ ...query, subProjects: event.currentTarget.checked });
 	}
 
 	/** Text in the search field while it has the focus; else the field shows the URL. */
@@ -201,8 +228,35 @@
 			name={`${uid}-project`}
 			options={projectOptions}
 			value={query.project}
-			onchange={(value) => setFilter('project', value)}
-		/>
+			valueNote={subProjects.length > 0 && !query.subProjects ? 'ohne Unterprojekte' : null}
+			onchange={setProject}
+		>
+			{#snippet footer()}
+				<label class="sub-projects">
+					<input
+						type="checkbox"
+						checked={query.subProjects}
+						aria-disabled={subProjects.length === 0 ? 'true' : undefined}
+						aria-describedby={ids.subProjectsHint}
+						onchange={toggleSubProjects}
+					/>
+					Unterprojekte einbeziehen
+				</label>
+				<span class="sub-projects-hint" id={ids.subProjectsHint}>
+					{#if subProjects.length === 0}
+						{query.project === null || query.project === NO_PROJECT
+							? 'Gilt, sobald ein Projekt mit Unterprojekten gewählt ist.'
+							: 'Das gewählte Projekt hat keine Unterprojekte.'}
+					{:else}
+						{subProjects.length === 1
+							? '1 Unterprojekt: '
+							: `${subProjects.length} Unterprojekte: `}{subProjects
+							.map((project) => project.name)
+							.join(', ')}
+					{/if}
+				</span>
+			{/snippet}
+		</FilterPopover>
 
 		<FilterPopover
 			legend="Tag"
@@ -279,9 +333,23 @@
 		flex: 1;
 	}
 
+	.sub-projects {
+		display: flex;
+		gap: 0.5rem;
+		align-items: center;
+		font-size: var(--font-size-body);
+		cursor: pointer;
+	}
+
+	.sub-projects-hint {
+		font-size: var(--font-size-small);
+		color: var(--color-text-muted);
+		overflow-wrap: anywhere;
+	}
+
 	.retry {
 		padding: 0.125rem 0.5rem;
-		font-size: 0.8125rem;
+		font-size: var(--font-size-control);
 		background: none;
 		border: 1px solid currentColor;
 		border-radius: var(--radius-control);
@@ -293,7 +361,7 @@
 		gap: 0.25rem;
 		align-items: center;
 		padding: 0.1875rem 0.625rem;
-		font-size: 0.8125rem;
+		font-size: var(--font-size-control);
 		color: var(--color-text);
 		background: none;
 		border: 1px solid var(--color-line);

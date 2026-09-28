@@ -4,7 +4,6 @@
 // parent is not visible (deleted, not loaded yet) stands like a top-level project. The hook stays
 // authoritative for every rule (app/pb_hooks/lib/catalog-rules.js).
 
-import { compareTitles } from './ordering';
 import type { ProjectParentRef, ProjectRef } from './ticket';
 
 /**
@@ -94,30 +93,8 @@ export function projectChoiceLabel(project: Pick<ProjectRef, 'name' | 'code' | '
 	return `${projectPath(project)} (${project.code})`;
 }
 
-type PathProject = Pick<ProjectRef, 'id' | 'name' | 'code' | 'parent'>;
-
-function compareIds(a: string, b: string): number {
-	if (a === b) return 0;
-	return a < b ? -1 : 1;
-}
-
-/**
- * Order of projects along the tree (column sort "Projekt", groups): by the name of the top-level
- * project first, so sub projects stand with their parent, then the parent before its sub
- * projects, then by the own name. Codes and IDs break ties, so equal names keep a fixed order.
- */
-export function compareProjectPaths(a: PathProject, b: PathProject): number {
-	const topA = a.parent ?? a;
-	const topB = b.parent ?? b;
-	const top =
-		compareTitles(topA.name, topB.name) ||
-		compareTitles(topA.code, topB.code) ||
-		compareIds(topA.id, topB.id);
-	if (top !== 0) return top;
-	const depth = (a.parent ? 1 : 0) - (b.parent ? 1 : 0);
-	if (depth !== 0) return depth;
-	return compareTitles(a.name, b.name) || compareTitles(a.code, b.code) || compareIds(a.id, b.id);
-}
+// The order along the tree lives with the other orders in ordering.ts (column sort "Projekt").
+export { compareProjectPaths } from './ordering';
 
 /**
  * Projects a project may get as parent in the panel (ADR-0034 section 1): active top-level
