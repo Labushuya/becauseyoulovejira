@@ -6,6 +6,7 @@
 	import RecurrenceSummary from '$lib/components/RecurrenceSummary.svelte';
 	import TicketActivity from '$lib/components/TicketActivity.svelte';
 	import TicketPanel from '$lib/components/TicketPanel.svelte';
+	import TicketParentField from '$lib/components/TicketParentField.svelte';
 	import TicketSources from '$lib/components/TicketSources.svelte';
 	import TicketSubtasks from '$lib/components/TicketSubtasks.svelte';
 	import { parentOf } from '$lib/domain/subtasks';
@@ -138,7 +139,18 @@
 	sourceCount={sourceStore.ticketId === id ? sourceStore.items.length : 0}
 	{parent}
 	parentHref={parent ? ticketHref(parent.id, page.url) : null}
+	subtaskCount={tickets.progressOf(id).total}
 >
+	{#snippet parentField(ticket: Ticket)}
+		<TicketParentField
+			store={detail}
+			{ticket}
+			{parent}
+			parentHref={parent ? ticketHref(parent.id, page.url) : null}
+			subtaskCount={tickets.progressOf(ticket.id).total}
+			search={(text, options) => sourceStore.search(text, options)}
+		/>
+	{/snippet}
 	{#snippet subtasks(ticket: Ticket)}
 		{#if !ticket.parentId}
 			<TicketSubtasks

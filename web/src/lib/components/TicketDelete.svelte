@@ -1,31 +1,41 @@
 <script lang="ts">
-	import {
-		SOURCE_HANDLINGS,
-		SOURCE_HANDLING_HINTS,
-		SOURCE_HANDLING_LABELS,
-		sourceCountText,
-		type SourceHandling
-	} from '$lib/domain/sources';
+	import type { SourceHandling } from '$lib/domain/sources';
 	import type { TicketDetailStore } from '$lib/stores/ticket-detail.svelte';
 	import ConfirmDialog from './overlay/ConfirmDialog.svelte';
+	import SourceHandlingChoice from './SourceHandlingChoice.svelte';
+	import TicketDeleteText from './TicketDeleteText.svelte';
 
-	// "Löschen …" of a ticket (E2 plan, package 11), shared by the side panel and the full view:
-	// the confirmation asks before deleting for good and returns the focus itself. A failure stays in
-	// the dialog; after deleting, the owner closes the view. A ticket with sources (ADR-0031,
-	// addendum B) names their number and asks what happens to them: back to the inbox (chosen at
-	// first) or discarded. They are never deleted with the ticket.
+	// "Löschen …" of a ticket (E2 plan, package 11). In the side panel the confirmation asks before
+	// deleting for good and returns the focus itself; a failure stays in the dialog, after deleting
+	// the owner closes the view. A ticket with sources (ADR-0031, addendum B) names their number and
+	// asks what happens to them: back to the inbox (chosen at first) or discarded; sub-tasks stay
+	// (ADR-0033 section 4). The full view is a modal and opens no dialog (ADR-0025 section 3): with
+	// `inline` the button only asks the owner to show TicketDeleteQuestion in its content.
 	let {
 		store,
 		ondeleted,
-		sourceCount = 0
+		sourceCount = 0,
+		subtaskCount = 0,
+		inline = false,
+		asking = false,
+		onask,
+		button = $bindable()
 	}: {
 		store: TicketDetailStore;
 		ondeleted: () => void;
 		/** Number of sources of the ticket (inbox items with `ticket = <id>`). */
 		sourceCount?: number;
+		/** Number of sub-tasks of the ticket. */
+		subtaskCount?: number;
+		/** Full view: the question stands inline in the content, not in a dialog. */
+		inline?: boolean;
+		/** Inline: the question is shown (aria-expanded). */
+		asking?: boolean;
+		/** Inline: shows the question. */
+		onask?: () => void;
+		/** The button, for the focus after the inline question. */
+		button?: HTMLButtonElement;
 	} = $props();
-
-	const uid = $props.id();
 
 	let confirming = $state(false);
 	let deleting = $state(false);
@@ -35,6 +45,10 @@
 	const ticket = $derived(store.ticket);
 
 	function ask() {
+		if (inline) {
+			onask?.();
+			return;
+		}
 		error = null;
 		handling = 'inbox';
 		confirming = true;
@@ -64,9 +78,18 @@
 	}
 </script>
 
-<button class="button-subtle" type="button" aria-haspopup="dialog" onclick={ask}>Löschen …</button>
+<button
+	class="button-subtle"
+	type="button"
+	aria-haspopup={inline ? undefined : 'dialog'}
+	aria-expanded={inline ? asking : undefined}
+	bind:this={button}
+	onclick={ask}
+>
+	Löschen …
+</button>
 
-{#if ticket}
+{#if ticket && !inline}
 	<ConfirmDialog
 		open={confirming}
 		title={`${ticket.key} endgültig löschen?`}
@@ -76,74 +99,11 @@
 		onconfirm={remove}
 		oncancel={cancel}
 	>
-		<p>
-			Dabei werden auch alle Kommentare und der gesamte Verlauf dieses Tickets gelöscht. Das lässt
-			sich nicht rückgängig machen.
-			{#if ticket.recurring && ticket.status !== 'done'}Die Regel läuft weiter.{/if}
-		</p>
-		{#if sourceCount > 0}
-			<p>{sourceCountText(sourceCount)} Sie werden nicht mitgelöscht.</p>
-		{/if}
+		<TicketDeleteText {ticket} {sourceCount} {subtaskCount} />
 		{#snippet options()}
 			{#if sourceCount > 0}
-				<fieldset class="handling">
-					<legend>Quellen</legend>
-					{#each SOURCE_HANDLINGS as value (value)}
-						<label class="choice">
-							<input
-								type="radio"
-								name={`${uid}-sources`}
-								{value}
-								checked={handling === value}
-								disabled={deleting}
-								aria-describedby={`${uid}-${value}-hint`}
-								onchange={() => (handling = value)}
-							/>
-							<span class="choice-text">
-								<span>{SOURCE_HANDLING_LABELS[value]}</span>
-								<span class="hint" id={`${uid}-${value}-hint`}>{SOURCE_HANDLING_HINTS[value]}</span>
-							</span>
-						</label>
-					{/each}
-				</fieldset>
+				<SourceHandlingChoice bind:handling disabled={deleting} />
 			{/if}
 		{/snippet}
 	</ConfirmDialog>
 {/if}
-
-<style>
-	.handling {
-		display: grid;
-		gap: 0.5rem;
-		margin: 0;
-		padding: 0;
-		border: 0;
-	}
-
-	legend {
-		margin-bottom: 0.25rem;
-		font-weight: 600;
-	}
-
-	.choice {
-		display: grid;
-		grid-template-columns: auto minmax(0, 1fr);
-		gap: 0.5rem;
-		align-items: start;
-		cursor: pointer;
-	}
-
-	.choice input {
-		margin-top: 0.125rem;
-	}
-
-	.choice-text {
-		display: grid;
-		gap: 0.125rem;
-	}
-
-	.hint {
-		font-size: var(--font-size-small);
-		color: var(--color-text-muted);
-	}
-</style>

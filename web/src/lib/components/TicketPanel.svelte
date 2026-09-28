@@ -33,7 +33,9 @@
 		recurrence,
 		sources,
 		subtasks,
+		parentField,
 		sourceCount = 0,
+		subtaskCount = 0,
 		parent = null,
 		parentHref = null
 	}: {
@@ -56,6 +58,10 @@
 		sourceCount?: number;
 		/** Section "Unteraufgaben" (ADR-0033 section 4), after the description. */
 		subtasks?: Snippet<[Ticket]>;
+		/** Row "Übergeordnet" in the fields (ADR-0033 section 4). */
+		parentField?: Snippet<[Ticket]>;
+		/** Number of sub-tasks, for the question of "Löschen …". */
+		subtaskCount?: number;
 		/** The ticket this one is a sub-task of, null for a top-level ticket. */
 		parent?: ParentRef | null;
 		/** Address of the panel of that parent. */
@@ -103,7 +109,7 @@
 	{/snippet}
 	{#snippet actions()}
 		{#if store.state === 'ready' && ticket}
-			<TicketDelete {store} {ondeleted} {sourceCount} />
+			<TicketDelete {store} {ondeleted} {sourceCount} {subtaskCount} />
 		{/if}
 	{/snippet}
 
@@ -132,7 +138,11 @@
 		</div>
 	{:else if store.state === 'ready' && ticket}
 		<EditableTitle {store} {headingId} bind:heading />
-		<TicketFields {store} {catalog} {ticket} recurrenceShown={recurrence !== undefined} />
+		<TicketFields {store} {catalog} {ticket} recurrenceShown={recurrence !== undefined}>
+			{#snippet parentRow()}
+				{@render parentField?.(ticket)}
+			{/snippet}
+		</TicketFields>
 		{@render recurrence?.(ticket)}
 		<TicketDescription {store} {ticket} />
 		{@render subtasks?.(ticket)}

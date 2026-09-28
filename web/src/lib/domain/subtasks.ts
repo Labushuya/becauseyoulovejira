@@ -25,6 +25,13 @@ export function openChildrenMessage(count: number): string {
 	return `${subtaskCountText(count)} ${count === 1 ? 'ist' : 'sind'} noch offen.`;
 }
 
+/** Question before deleting a parent: "3 Unteraufgaben bleiben erhalten …" (ADR-0033 section 4). */
+export function remainingSubtasksText(count: number): string {
+	return count === 1
+		? '1 Unteraufgabe bleibt erhalten und ist danach keine Unteraufgabe mehr.'
+		: `${count} Unteraufgaben bleiben erhalten und sind danach keine Unteraufgaben mehr.`;
+}
+
 export type SubtaskLike = Pick<TicketSummary, 'id' | 'status' | 'created'>;
 
 /** Order of the section "Unteraufgaben": open ones first, then by creation, last the ID. */

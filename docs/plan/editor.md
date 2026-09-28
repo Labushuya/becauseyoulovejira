@@ -178,7 +178,7 @@ Siehe ADR-0032 §1 und §2. Der Serializer normalisiert beim ersten Speichern au
 ## 6. Offene Punkte
 
 - Manuelle Browser-Prüfungen der Pakete (BYL-E6-201, BYL-E6-205).
-- „Löschen …“ in der Vollansicht legt seine Bestätigung über das XL-Modal (seit HK-6 mit Radios über `ConfirmDialog.options`). Das widerspricht ADR-0025 §3 („kein Dialog aus einem Dialog“) und sollte eine Inline-Frage wie hier werden; das ist nicht Teil des Editors.
+- ~~„Löschen …“ in der Vollansicht legt seine Bestätigung über das XL-Modal (seit HK-6 mit Radios über `ConfirmDialog.options`).~~ Erledigt mit UA-3 ([Plan Unteraufgaben](unteraufgaben.md) §3): Die Vollansicht fragt inline (`TicketDeleteQuestion`).
 - **Hinweise für die Unterprojekte:** Der Plan ändert weder Datenmodell noch Filter; Beschreibungen von Unterprojekt-Tickets nutzen dieselbe Anzeige. `expected_updated` gilt für jedes Ticket-Update und stört ein späteres Umhängen in ein Unterprojekt nicht, solange es ohne das Feld gesendet wird.
 - **Hinweise für Stufe B:**
   - `prosemirror-markdown` 1.13.8 verlangt `markdown-it` ^14; per `overrides` auf die Version der Anzeige heben, sonst liegen zwei Parser im Bundle.

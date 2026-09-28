@@ -8,9 +8,11 @@
 	import RecurrenceSummary from '$lib/components/RecurrenceSummary.svelte';
 	import TicketActivity from '$lib/components/TicketActivity.svelte';
 	import TicketDelete from '$lib/components/TicketDelete.svelte';
+	import TicketDeleteQuestion from '$lib/components/TicketDeleteQuestion.svelte';
 	import TicketDescription from '$lib/components/TicketDescription.svelte';
 	import TicketFields from '$lib/components/TicketFields.svelte';
 	import TicketMeta from '$lib/components/TicketMeta.svelte';
+	import TicketParentField from '$lib/components/TicketParentField.svelte';
 	import TicketSources from '$lib/components/TicketSources.svelte';
 	import TicketSubtasks from '$lib/components/TicketSubtasks.svelte';
 	import { parentOf } from '$lib/domain/subtasks';
@@ -29,7 +31,8 @@
 	// route loads the ticket and holds the question about unsaved text; this page only shows it.
 	// Closing goes back to the panel with the same list query and the focus on "Vollansicht".
 	// A sub-task shows its path above the title; the path and the section "Unteraufgaben" lead to
-	// the full view of the other ticket (ADR-0033 section 4).
+	// the full view of the other ticket (ADR-0033 section 4). "Löschen …" asks inline at the top of
+	// the content, because no dialog opens from the full view (ADR-0025 section 3).
 
 	const detail = getTicketDetailStore();
 	const comments = getTicketActivityStore();
@@ -47,6 +50,21 @@
 	const parent = $derived(
 		ticket === null ? null : parentOf(ticket, (parentId) => tickets.find(parentId))
 	);
+	const sourceCount = $derived(
+		ticket !== null && sources.ticketId === ticket.id ? sources.items.length : 0
+	);
+	const subtaskCount = $derived(ticket === null ? 0 : tickets.progressOf(ticket.id).total);
+
+	/** Ticket whose inline question of "Löschen …" is shown; another ticket starts without it. */
+	let askingFor = $state<string | null>(null);
+	const asking = $derived(askingFor !== null && askingFor === id);
+	let deleteButton = $state<HTMLButtonElement>();
+
+	async function cancelDelete() {
+		askingFor = null;
+		await tick();
+		deleteButton?.focus();
+	}
 
 	async function close() {
 		await goto(ticketHref(id, page.url), { noScroll: true });
@@ -65,10 +83,22 @@
 			<TicketDelete
 				store={detail}
 				ondeleted={() => void route.deleted()}
-				sourceCount={sources.ticketId === ticket.id ? sources.items.length : 0}
+				inline
+				{asking}
+				onask={() => (askingFor = id)}
+				bind:button={deleteButton}
 			/>
 		{/snippet}
 		{#snippet main()}
+			{#if asking}
+				<TicketDeleteQuestion
+					store={detail}
+					ondeleted={() => void route.deleted()}
+					oncancel={() => void cancelDelete()}
+					{sourceCount}
+					{subtaskCount}
+				/>
+			{/if}
 			{#if parent}
 				<Breadcrumbs
 					label="Pfad des Tickets"
@@ -94,7 +124,18 @@
 		{#snippet side()}
 			<section class="card" aria-labelledby={`${uid}-details`}>
 				<h3 id={`${uid}-details`}>Details</h3>
-				<TicketFields store={detail} {catalog} {ticket} recurrenceShown />
+				<TicketFields store={detail} {catalog} {ticket} recurrenceShown>
+					{#snippet parentRow()}
+						<TicketParentField
+							store={detail}
+							{ticket}
+							{parent}
+							parentHref={parent ? fullViewHref(parent.id, page.url) : null}
+							{subtaskCount}
+							search={(text, options) => sources.search(text, options)}
+						/>
+					{/snippet}
+				</TicketFields>
 			</section>
 			<!-- RecurrenceSummary is the named section "Wiederholung"; the card only shows the title. -->
 			<div class="card">

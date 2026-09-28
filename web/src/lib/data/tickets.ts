@@ -142,9 +142,12 @@ function dueBody(due: CalendarDate | null): string {
 	return fromDueInput(due ?? '');
 }
 
+/** Request body of an update. */
+type PatchBody = Record<string, string | string[] | boolean>;
+
 /** Request body of a patch: only the given fields (ADR-0006 section 5). */
-function patchBody(patch: TicketPatch): Record<string, string | string[]> {
-	const body: Record<string, string | string[]> = {};
+function patchBody(patch: TicketPatch): PatchBody {
+	const body: PatchBody = {};
 	if (patch.title !== undefined) body.title = patch.title;
 	if (patch.description !== undefined) body.description = patch.description;
 	if (patch.status !== undefined) body.status = patch.status;
@@ -156,6 +159,7 @@ function patchBody(patch: TicketPatch): Record<string, string | string[]> {
 	if (patch.tags !== undefined) body.tags = [...patch.tags];
 	// '' releases a sub-task from its parent (ADR-0033).
 	if (patch.parent !== undefined) body.parent = patch.parent ?? '';
+	if (patch.blocksParent !== undefined) body.blocks_parent = patch.blocksParent;
 	return body;
 }
 
@@ -244,6 +248,11 @@ export interface TicketChoice {
 	key: string;
 	title: string;
 	status: Status;
+	/**
+	 * The ticket's own parent, null for a top-level ticket (ADR-0033: only those can become a
+	 * parent). The search always sets it; choices built by hand may leave it out.
+	 */
+	parentId?: string | null;
 }
 
 /** Most tickets the ticket search offers at once. */
@@ -264,22 +273,27 @@ export function searchTickets(
 		const number = /^\d{1,9}$/.test(search) ? Number(search) : -1;
 		const result = await pb
 			.collection(TICKETS)
-			.getList<{ id: string; key: string; title: string; status: string }>(1, TICKET_SEARCH_LIMIT, {
-				// Any visible ticket, open or done; `{:number}` is -1 for a text that is no number.
-				filter: pb.filter('key ~ {:q} || title ~ {:q} || number = {:number}', {
-					q: likeText(search),
-					number
-				}),
-				sort: '-updated,-id',
-				fields: 'id,key,title,status',
-				skipTotal: true,
-				signal
-			});
-		const choices = result.items.map((record) => ({
+			.getList<{ id: string; key: string; title: string; status: string; parent?: string }>(
+				1,
+				TICKET_SEARCH_LIMIT,
+				{
+					// Any visible ticket, open or done; `{:number}` is -1 for a text that is no number.
+					filter: pb.filter('key ~ {:q} || title ~ {:q} || number = {:number}', {
+						q: likeText(search),
+						number
+					}),
+					sort: '-updated,-id',
+					fields: 'id,key,title,status,parent',
+					skipTotal: true,
+					signal
+				}
+			);
+		const choices: TicketChoice[] = result.items.map((record) => ({
 			id: record.id,
 			key: record.key,
 			title: record.title,
-			status: isStatus(record.status) ? record.status : 'open'
+			status: isStatus(record.status) ? record.status : 'open',
+			parentId: record.parent || null
 		}));
 		return [
 			...choices.filter((choice) => choice.status !== 'done'),
@@ -467,7 +481,7 @@ export function updateTicket(
 	{ signal, expectedUpdated }: RequestOptions & DescriptionGuard = {}
 ) {
 	return withDataErrors(signal, async (): Promise<Ticket> => {
-		const body: Record<string, string | string[]> = patchBody(patch);
+		const body = patchBody(patch);
 		if (expectedUpdated !== undefined) body.expected_updated = expectedUpdated;
 		const record = await pb.collection(TICKETS).update<TicketRecord>(id, body, {
 			fields: TICKET_DETAIL_FIELDS,

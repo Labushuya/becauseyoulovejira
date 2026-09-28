@@ -121,8 +121,11 @@ export const MANUAL_ORIGIN: TicketOrigin = Object.freeze({ source: 'manual' });
 /** Origin of the quick entry (E4 plan, package 6). */
 export const QUICK_ORIGIN: TicketOrigin = Object.freeze({ source: 'quick' });
 
-/** Changed fields of an update; only these are sent (ADR-0006 section 5). */
-export type TicketPatch = Partial<TicketDraft>;
+/**
+ * Changed fields of an update; only these are sent (ADR-0006 section 5). `blocksParent` is the
+ * switch "Blockiert das übergeordnete Ticket" of a sub-task (ADR-0033).
+ */
+export type TicketPatch = Partial<TicketDraft> & { blocksParent?: boolean };
 
 export interface Comment {
 	id: string;

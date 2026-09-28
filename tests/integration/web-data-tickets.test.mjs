@@ -134,10 +134,15 @@ describe('web data layer: tickets', () => {
 		const parent = await createTicket(owner.client, draft());
 		const child = await createTicket(owner.client, draft({ parent: parent.id }));
 
+		const loose = await updateTicket(owner.client, child.id, { blocksParent: false });
+		expect(loose).toMatchObject({ parentId: parent.id, blocksParent: false });
+
 		const released = await updateTicket(owner.client, child.id, { parent: null });
 
 		expect(released).toMatchObject({ parentId: null, parentRef: null });
 		expect(await listSubtaskTickets(owner.client)).toEqual([]);
+		const again = await updateTicket(owner.client, child.id, { parent: parent.id });
+		expect(again.parentRef).toMatchObject({ id: parent.id, key: parent.key });
 	});
 
 	it('returns list entries without the description', async () => {
