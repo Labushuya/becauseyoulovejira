@@ -11,7 +11,10 @@ import type { Tag } from '$lib/domain/tag';
 import type { HistoryEntry } from '$lib/domain/ticket';
 import { CatalogStore, type CatalogData } from '$lib/stores/catalog.svelte';
 import { TicketActivityStore, type TicketActivityData } from '$lib/stores/ticket-activity.svelte';
+import { useProseMirrorStubs } from '$lib/test/prosemirror-stubs';
 import TicketActivity from './TicketActivity.svelte';
+
+useProseMirrorStubs();
 
 const TICKET = 'ticket000000001';
 const ME = 'user0000000001';
@@ -128,7 +131,10 @@ describe('activity tabs', () => {
 
 	it('keeps a comment being written when switching tabs', async () => {
 		await renderActivity();
-		const field = screen.getByLabelText<HTMLTextAreaElement>('Neuer Kommentar (Markdown)');
+		await fireEvent.click(screen.getByRole('button', { name: 'Kommentar hinzufügen …' }));
+		await screen.findByRole('textbox', { name: 'Neuer Kommentar' }, { timeout: 5000 });
+		await fireEvent.click(screen.getByRole('button', { name: 'Markdown' }));
+		const field = await screen.findByLabelText<HTMLTextAreaElement>('Neuer Kommentar (Markdown)');
 		await fireEvent.input(field, { target: { value: 'Entwurf' } });
 
 		await fireEvent.click(tab('Verlauf'));

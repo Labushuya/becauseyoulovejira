@@ -13,7 +13,7 @@ const SRC_DIR = resolve(import.meta.dirname, '..');
 const TOKENS_CSS = join('lib', 'styles', 'tokens.css');
 
 /** Numbers left from before G-6 in all listed files together; lower it when one goes. */
-const LEGACY_COUNT = 222;
+const LEGACY_COUNT = 208;
 
 /** Files that still carry font sizes as numbers (as of G-6). */
 const LEGACY_FILES = [
@@ -24,7 +24,6 @@ const LEGACY_FILES = [
 	'lib/components/ChannelsView.svelte',
 	'lib/components/ChipGroup.svelte',
 	'lib/components/ClipboardImport.svelte',
-	'lib/components/CommentForm.svelte',
 	'lib/components/CommentList.svelte',
 	'lib/components/ConnectionsSection.svelte',
 	'lib/components/DropZone.svelte',
@@ -48,7 +47,6 @@ const LEGACY_FILES = [
 	'lib/components/ProjectsView.svelte',
 	'lib/components/QuickCapture.svelte',
 	'lib/components/RecurrenceForm.svelte',
-	'lib/components/RecurrencePanel.svelte',
 	'lib/components/RecurrenceSummary.svelte',
 	'lib/components/RecurrencesView.svelte',
 	'lib/components/SessionNotice.svelte',
@@ -82,7 +80,6 @@ const LEGACY_FILES = [
 	'lib/components/overlay/FlagGroup.svelte',
 	'lib/components/overlay/FullView.svelte',
 	'lib/components/overlay/Modal.svelte',
-	'lib/components/overlay/Popover.svelte',
 	// The two heading sizes of Markdown.svelte moved here with the editor (RT-3), no new number.
 	'lib/styles/prose.css',
 	'lib/styles/tour.css',

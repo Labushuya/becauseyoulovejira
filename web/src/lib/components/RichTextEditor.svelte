@@ -19,9 +19,16 @@
 
 <script lang="ts">
 	import { onMount, tick, untrack } from 'svelte';
-	import type { EditorCommand, RichEditor, ToolbarState } from '$lib/editor/create-editor';
+	import type {
+		EditorCommand,
+		RichEditor,
+		SlashItem,
+		SlashState,
+		ToolbarState
+	} from '$lib/editor/create-editor';
 	import type { NotEditableReason } from '$lib/editor/markdown-bridge';
 	import MarkdownEditor from './MarkdownEditor.svelte';
+	import SuggestionList from './SuggestionList.svelte';
 	import EditorToolbar from './editor/EditorToolbar.svelte';
 	import SectionMessage from './guidance/SectionMessage.svelte';
 
@@ -60,6 +67,10 @@
 	const contentId = `${uid}-content`;
 	const counterId = `${uid}-counter`;
 	const hintId = `${uid}-hint`;
+	const slashListId = `${uid}-slash`;
+	const slashOptionId = (index: number) => `${uid}-slash-${index}`;
+	/** Width of the "/" menu in CSS pixels. */
+	const SLASH_WIDTH = 240;
 	/** The counter appears once 90 % of the limit are used (as in MarkdownEditor). */
 	const COUNTER_THRESHOLD = 0.9;
 
@@ -94,6 +105,14 @@
 	let textarea = $state<HTMLTextAreaElement>();
 	let toolbar = $state<ReturnType<typeof EditorToolbar>>();
 
+	/** The open "/" menu (RT-4): where "/" stands, its query and the caret; null when closed. */
+	let slash = $state<SlashState | null>(null);
+	let slashIndex = $state(0);
+	const slashItems = $derived<SlashItem[]>(
+		slash !== null && loaded !== null ? loaded.filterSlashItems(slash.query) : []
+	);
+	const slashOpen = $derived(slashItems.length > 0);
+
 	let rich: RichEditor | null = null;
 	/** The last Markdown the editor wrote or was given; other values come from outside. */
 	let written = untrack(() => value);
@@ -111,6 +130,12 @@
 		'aria-multiline': 'true',
 		'aria-labelledby': labelId,
 		class: 'prose rich-text-content',
+		// The "/" menu is a list of suggestions for the text (WAI-ARIA: the textbox keeps the focus
+		// and points at the active option; aria-expanded is not a state of a textbox).
+		'aria-autocomplete': 'list',
+		...(slashOpen
+			? { 'aria-controls': slashListId, 'aria-activedescendant': slashOptionId(slashIndex) }
+			: {}),
 		...(describedBy ? { 'aria-describedby': describedBy } : {}),
 		...(invalid || tooLong ? { 'aria-invalid': 'true' } : {})
 	});
@@ -152,7 +177,15 @@
 				},
 				onState: (state) => (toolbarState = state),
 				onSubmit: onsubmit === undefined ? undefined : () => onsubmit?.(),
-				onToolbar: () => toolbar?.focus()
+				onToolbar: () => toolbar?.focus(),
+				onLink: () => toolbar?.openLink(),
+				onSlash: {
+					onChange: (state) => {
+						slash = state;
+						slashIndex = 0;
+					},
+					onKeyDown: slashKey
+				}
 			});
 			rich = instance;
 			if (wantFocus) {
@@ -210,6 +243,42 @@
 		rich?.run(command);
 	}
 
+	/** Keys while the "/" menu is open: arrows move, Enter and Tab insert. */
+	function slashKey(event: KeyboardEvent): boolean {
+		const count = slashItems.length;
+		if (count === 0) return false;
+		if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+			slashIndex = (slashIndex + (event.key === 'ArrowDown' ? 1 : count - 1)) % count;
+			return true;
+		}
+		if (event.key === 'Enter' || event.key === 'Tab') {
+			const item = slashItems[slashIndex];
+			if (item !== undefined) chooseSlash(item);
+			return true;
+		}
+		return false;
+	}
+
+	function chooseSlash(item: SlashItem) {
+		const open = slash;
+		slash = null;
+		if (open !== null) rich?.runSlash(item.id, open.range);
+	}
+
+	/** The caret as anchor of the "/" menu. */
+	function slashAnchor() {
+		const rect = slash?.rect;
+		return rect ? { ...rect, width: SLASH_WIDTH } : null;
+	}
+
+	const link = {
+		current: () => rich?.link() ?? { href: null, text: '' },
+		apply: (href: string, text: string) => rich?.setLink(href, text),
+		remove: () => rich?.unsetLink()
+	};
+
+	const textTarget = () => document.getElementById(contentId);
+
 	async function toggleSource() {
 		if (source) {
 			if (loaded === null) return;
@@ -231,9 +300,9 @@
 	}
 
 	function onkeydown(event: KeyboardEvent) {
-		// A field in editing mode keeps Escape (escape chain, ADR-0025 section 1); menus inside
-		// consumed theirs already.
-		if (event.key === 'Escape' && !event.defaultPrevented) {
+		// A field in editing mode keeps Escape (escape chain, ADR-0025 section 1), also when the
+		// "/" menu used it to close.
+		if (event.key === 'Escape') {
 			event.preventDefault();
 			event.stopPropagation();
 			return;
@@ -276,6 +345,8 @@
 				onrun={run}
 				onsource={() => void toggleSource()}
 				onleave={() => rich?.focus()}
+				{link}
+				{textTarget}
 			/>
 		{/if}
 		{#if source}
@@ -296,9 +367,38 @@
 				<p>Editor wird geladen …</p>
 			</div>
 		{:else}
-			<div class="content" bind:this={host}></div>
+			<div class="content" bind:this={host} onfocusout={() => (slash = null)}></div>
 		{/if}
 	</div>
+	{#if !source}
+		<SuggestionList
+			id={slashListId}
+			label="Blöcke"
+			open={slashOpen}
+			anchor={slashAnchor}
+			width={SLASH_WIDTH}
+			revision={slashItems}
+		>
+			{#each slashItems as item, index (item.id)}
+				<!-- The focus stays in the text (aria-activedescendant); the click is for the mouse. -->
+				<!-- svelte-ignore a11y_click_events_have_key_events -->
+				<li
+					id={slashOptionId(index)}
+					class="option"
+					class:active={index === slashIndex}
+					role="option"
+					aria-selected={index === slashIndex}
+					onmousedown={(event) => event.preventDefault()}
+					onclick={() => chooseSlash(item)}
+				>
+					{item.label}
+				</li>
+			{/each}
+		</SuggestionList>
+		<p class="visually-hidden" aria-live="polite">
+			{slashOpen ? `${slashItems.length} Blöcke, Pfeiltasten wählen, Enter fügt ein.` : ''}
+		</p>
+	{/if}
 	{#if !source && counterVisible}
 		<p class="counter" id={counterId}>
 			{numbers.format(value.length)} von {numbers.format(maxlength)} Zeichen

@@ -3,14 +3,26 @@
 // the first "Bearbeiten" (RichTextEditor.svelte imports it with import(); editor-lazy.test.ts).
 // Tiptap is headless: toolbar, menus and texts are ours.
 
-import { Editor, Extension, getSchema, markInputRule, type AnyExtension } from '@tiptap/core';
+import {
+	Editor,
+	Extension,
+	getMarkRange,
+	getSchema,
+	markInputRule,
+	type AnyExtension,
+	type Range
+} from '@tiptap/core';
 import { BulletList, OrderedList, TaskItem, TaskList } from '@tiptap/extension-list';
 import { Placeholder } from '@tiptap/extensions';
 import StarterKit from '@tiptap/starter-kit';
 import { Underline } from '@tiptap/extension-underline';
-import type { Node } from '@tiptap/pm/model';
+import { Slice, type Node } from '@tiptap/pm/model';
 import { createMarkdownBridge, type MarkdownBridge } from './markdown-bridge';
+import { looksLikeMarkdown, transformPastedHTML } from './paste';
 import { richEditable, type EditableCheck } from './rich-editable';
+import { closeSlash, slashExtension, type SlashCallbacks } from './slash';
+
+export { filterSlashItems, type SlashItem, type SlashState } from './slash';
 
 /** What the toolbar shows as pressed or chosen. */
 export interface ToolbarState {
@@ -143,14 +155,34 @@ export interface RichEditorOptions {
 	onChange: (markdown: string) => void;
 	/** The state of the toolbar after every transaction. */
 	onState: (state: ToolbarState) => void;
-	/** Ctrl+Enter: save or send; without it, Ctrl+Enter inserts a line break. */
+	/** Ctrl+Enter: save or send; without it the key is left to the form around. */
 	onSubmit?: () => void;
 	/** Alt+F10: to the toolbar. */
 	onToolbar: () => void;
+	/** Ctrl+K and "Link" in the "/" menu: open the link popover (RT-4). */
+	onLink?: () => void;
+	/** The "/" menu (RT-4). */
+	onSlash?: SlashCallbacks;
+}
+
+/** The link at the selection: its address (null without link) and the text the popover shows. */
+export interface LinkState {
+	href: string | null;
+	text: string;
 }
 
 export interface RichEditor {
 	run(command: EditorCommand): void;
+	/** Inserts the block of an entry of the "/" menu in place of "/" and its query. */
+	runSlash(id: string, range: Range): void;
+	/** Closes the "/" menu without inserting. */
+	closeSlash(): void;
+	/** The link at the selection, for the popover. */
+	link(): LinkState;
+	/** Sets a link on the selection (or the link there); a text replaces the linked words. */
+	setLink(href: string, text: string): void;
+	/** Removes the link at the selection. */
+	unsetLink(): void;
 	/** Replaces the document without counting as a change. */
 	setDoc(doc: Node): void;
 	setAttributes(attributes: Record<string, string>): void;
@@ -214,31 +246,62 @@ export function createRichEditor(options: RichEditorOptions): RichEditor {
 		priority: 1000,
 		addKeyboardShortcuts() {
 			return {
+				// Ctrl+Enter saves or sends, never a line break (Shift+Enter makes one). Without
+				// onSubmit the key goes on to the form around (NewTicketForm, RecurrencePanel), which
+				// saves with the value just written.
 				'Mod-Enter': () => {
-					if (options.onSubmit === undefined) return false;
 					flush();
-					options.onSubmit();
+					options.onSubmit?.();
 					return true;
 				},
 				'Alt-F10': () => {
 					options.onToolbar();
+					return true;
+				},
+				'Mod-k': () => {
+					if (options.onLink === undefined) return false;
+					options.onLink();
 					return true;
 				}
 			};
 		}
 	});
 
+	// Pasting (RT-5): HTML is cleaned first; plain text that looks like Markdown is read through the
+	// bridge, unless it is pasted as plain text (Ctrl+Shift+V) or the bridge cannot hold it.
+	const readMarkdown = (text: string, plain: boolean): Slice | undefined => {
+		if (plain || !looksLikeMarkdown(text)) return undefined;
+		try {
+			// The bridge builds in the shared schema; every editor has its own instance of it.
+			const doc = editor.schema.nodeFromJSON(bridge.parse(text).toJSON());
+			return Slice.maxOpen(doc.content);
+		} catch {
+			return undefined;
+		}
+	};
+	const pasteProps = {
+		transformPastedHTML: (html: string) => transformPastedHTML(html),
+		// Without a result ProseMirror pastes the text as plain paragraphs (someProp takes the first
+		// truthy answer), so the type of the prop is met on purpose only by the Markdown case.
+		clipboardTextParser: (text: string, _context: unknown, plain: boolean) =>
+			readMarkdown(text, plain) as Slice
+	};
+
 	const editor = new Editor({
 		element: options.element,
 		extensions: [
 			...schemaExtensions(),
 			Placeholder.configure({ placeholder: options.placeholder ?? '' }),
-			keys
+			keys,
+			...(options.onSlash ? [slashExtension(options.onSlash)] : [])
 		],
 		content: options.doc.toJSON(),
 		// The CSS ProseMirror needs stands in RichTextEditor.svelte with the tokens.
 		injectCSS: false,
-		editorProps: { attributes: options.attributes },
+		// Markdown in pasted text is read by clipboardTextParser; the paste rules of Tiptap would
+		// also format text pasted as plain text (Ctrl+Shift+V).
+		enablePasteRules: false,
+		editorProps: { attributes: options.attributes, ...pasteProps },
 		onUpdate: () => {
 			if (editor.state.doc.content.size <= SYNC_LIMIT) {
 				write();
@@ -272,13 +335,61 @@ export function createRichEditor(options: RichEditorOptions): RichEditor {
 		run(command) {
 			COMMANDS[command](editor.chain().focus()).run();
 		},
+		runSlash(id, range) {
+			const chain = editor.chain().focus().deleteRange(range);
+			if (id === 'link') {
+				chain.run();
+				options.onLink?.();
+				return;
+			}
+			const command = COMMANDS[id as EditorCommand];
+			if (command === undefined) return;
+			command(chain).run();
+		},
+		closeSlash() {
+			closeSlash(editor);
+		},
+		link() {
+			const { state } = editor;
+			const { from, to, empty, $from } = state.selection;
+			const href = (editor.getAttributes('link').href as string | undefined) ?? null;
+			const type = state.schema.marks.link;
+			const range = href !== null && empty && type ? getMarkRange($from, type) : undefined;
+			const text = range
+				? state.doc.textBetween(range.from, range.to, ' ')
+				: state.doc.textBetween(from, to, ' ');
+			return { href, text };
+		},
+		setLink(href, text) {
+			const { state } = editor;
+			const type = state.schema.marks.link;
+			let { from, to } = state.selection;
+			if (from === to && type && editor.isActive('link')) {
+				const range = getMarkRange(state.selection.$from, type);
+				if (range) ({ from, to } = range);
+			}
+			const current = state.doc.textBetween(from, to, ' ');
+			const given = text.trim();
+			const wanted = given === '' ? (from === to ? href : current) : given;
+			const chain = editor.chain().focus().setTextSelection({ from, to });
+			if (wanted !== current) {
+				chain
+					.insertContent({ type: 'text', text: wanted, marks: [{ type: 'link', attrs: { href } }] })
+					.run();
+				return;
+			}
+			chain.setLink({ href }).run();
+		},
+		unsetLink() {
+			editor.chain().focus().extendMarkRange('link').unsetLink().run();
+		},
 		setDoc(doc) {
 			if (pending !== null) clearTimeout(pending);
 			pending = null;
 			editor.commands.setContent(doc.toJSON(), { emitUpdate: false });
 		},
 		setAttributes(attributes) {
-			editor.setOptions({ editorProps: { attributes } });
+			editor.setOptions({ editorProps: { attributes, ...pasteProps } });
 		},
 		flush,
 		focus() {

@@ -10,3 +10,5 @@ bun.lockb
 
 # Test corpus of the Markdown display and editor (ADR-0032): the texts stay exactly as written
 /src/lib/test/markdown-corpus/
+# Clipboard HTML of Word, Google Docs and LibreOffice (RT-5): kept as the programs write it
+/src/lib/test/paste-fixtures/

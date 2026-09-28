@@ -17,6 +17,10 @@
 		buttonLabel,
 		button,
 		initialFocus,
+		onopen,
+		returnFocus,
+		buttonTitle,
+		buttonKeyshortcuts,
 		children
 	}: {
 		kind: 'menu' | 'panel';
@@ -32,6 +36,17 @@
 		button: Snippet;
 		/** Element that gets the focus on opening; otherwise the checked or first entry. */
 		initialFocus?: (popover: HTMLElement) => HTMLElement | null;
+		/** Called when the popover opens, before the focus moves in (e.g. to fill a form). */
+		onopen?: () => void;
+		/**
+		 * Where the focus goes on closing instead of the button, e.g. back into the text of the
+		 * editor that opened a popover of its toolbar (RT-4).
+		 */
+		returnFocus?: () => HTMLElement | null;
+		/** Tooltip of the button, e.g. with its shortcut. */
+		buttonTitle?: string;
+		/** aria-keyshortcuts of the button. */
+		buttonKeyshortcuts?: string;
 		/** Content; `close` hides the popover and returns the focus to the button. */
 		children: Snippet<[{ close: () => void }]>;
 	} = $props();
@@ -74,13 +89,18 @@
 		(target ?? popover).focus();
 	}
 
-	/** Hides the popover; `returnFocus` puts the focus back on the button. */
-	function hide(returnFocus: boolean) {
+	/** Hides the popover; `focusBack` puts the focus back on the button (or `returnFocus`). */
+	function hide(focusBack: boolean) {
 		if (popover && expanded && typeof popover.hidePopover === 'function') popover.hidePopover();
-		if (returnFocus) trigger?.focus();
+		if (focusBack) (returnFocus?.() ?? trigger)?.focus();
 	}
 
 	const close = () => hide(true);
+
+	/** Opens the popover by code, as a click on the button would (e.g. Ctrl+K in the editor). */
+	export function open(): void {
+		if (popover && !expanded && typeof popover.showPopover === 'function') popover.showPopover();
+	}
 
 	// aria-expanded follows the toggle event explicitly: not every browser (and not jsdom) derives
 	// it from popovertarget. While open, the popover follows resizing and scrolling.
@@ -94,6 +114,7 @@
 		const ontoggle = (event: Event) => {
 			expanded = (event as ToggleEvent).newState === 'open';
 			if (!expanded) return;
+			onopen?.();
 			position();
 			element.style.visibility = '';
 			void tick().then(focusInside);
@@ -161,6 +182,8 @@
 	aria-expanded={expanded}
 	aria-controls={popoverId}
 	aria-label={buttonLabel}
+	title={buttonTitle}
+	aria-keyshortcuts={buttonKeyshortcuts}
 	bind:this={trigger}
 >
 	{@render button()}
@@ -226,7 +249,7 @@
 		width: 100%;
 		min-height: 1.5rem;
 		padding: 0.25rem 0.5rem;
-		font-size: 0.875rem;
+		font-size: var(--font-size-body);
 		color: var(--color-text);
 		text-align: left;
 		text-decoration: none;

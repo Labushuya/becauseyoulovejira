@@ -6,14 +6,15 @@
 	import type { TicketActivityStore } from '$lib/stores/ticket-activity.svelte';
 	import ErrorIcon from './ErrorIcon.svelte';
 	import Markdown from './Markdown.svelte';
-	import MarkdownEditor from './MarkdownEditor.svelte';
+	import RichTextEditor from './RichTextEditor.svelte';
 	import ConfirmDialog from './overlay/ConfirmDialog.svelte';
 
 	// One comment (E2 plan, T-9 and T-13): author relative to the signed-in user, time in Berlin,
 	// "bearbeitet" after a change, sanitized Markdown. "Löschen" asks through the confirmation of
 	// ADR-0025 section 4; a failure shows at the comment. Only own comments offer "Bearbeiten" and
 	// "Löschen"; the API rules enforce it. Only in own comments can tasks be ticked (ADR-0032
-	// section 6); in foreign ones the checkboxes stay disabled.
+	// section 6); in foreign ones the checkboxes stay disabled. "Bearbeiten" opens the compact
+	// editor (RT-6), Ctrl+Enter saves.
 	let {
 		comment,
 		store,
@@ -29,7 +30,7 @@
 	const errorId = `${uid}-error`;
 
 	let editButton = $state<HTMLButtonElement>();
-	let editText = $state<HTMLTextAreaElement>();
+	let editText = $state<ReturnType<typeof RichTextEditor>>();
 
 	const author = $derived(personLabel(comment.author, store.userId));
 	const time = $derived(formatBerlinDateTime(comment.created));
@@ -49,19 +50,13 @@
 
 	async function endEdit(save: boolean) {
 		if (save) {
+			editText?.flush();
 			if (!(await store.saveEdit(comment.id))) return;
 		} else {
 			store.cancelEdit(comment.id);
 		}
 		await tick();
 		editButton?.focus();
-	}
-
-	function onEditKeydown(event: KeyboardEvent) {
-		if (event.key === 'Enter' && (event.ctrlKey || event.metaKey)) {
-			event.preventDefault();
-			void endEdit(true);
-		}
 	}
 
 	let confirmingDelete = $state(false);
@@ -103,15 +98,15 @@
 		</header>
 
 		{#if editing}
-			<MarkdownEditor
-				label="Kommentar bearbeiten (Markdown)"
+			<RichTextEditor
+				bind:this={editText}
+				label="Kommentar bearbeiten"
+				compact
 				maxlength={COMMENT_MAX_LENGTH}
-				rows={4}
 				bind:value={() => store.editValue(comment.id), (value) => store.setEdit(comment.id, value)}
-				bind:textarea={editText}
-				aria-invalid={error ? 'true' : undefined}
-				aria-describedby={error ? errorId : undefined}
-				onkeydown={onEditKeydown}
+				invalid={error !== null}
+				describedby={error ? errorId : undefined}
+				onsubmit={() => void endEdit(true)}
 			/>
 			{#if error}
 				<p class="field-error" id={errorId}><ErrorIcon /><span>{error}</span></p>
