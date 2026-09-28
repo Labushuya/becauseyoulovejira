@@ -110,3 +110,13 @@ Der Text oben bleibt unverändert. Wo die Umsetzung abweicht oder genauer ist, g
 - **§6, Lösen:** Nur ein Leeren durch den Client (`@recurrence_detach`) löst die Regel aus §6 aus. Das Leeren durch PocketBase beim Löschen der Regel (§7) ändert an `next_due` nichts.
 - **§4 und §5:** Pausieren, Fortsetzen und Lösen fragen nicht nach, weil sie umkehrbar sind; sie melden sich als Erfolgs-Flag. Das Regel-Panel der Übersicht sendet den Rhythmus nur, wenn er sich geändert hat. So lässt das Speichern der Vorlage allein „Nächstes Ticket“ unverändert.
 - **Offen für E7:** Wechselt eine Regel mit Tickets den Bereich, prüft das noch kein Hook.
+
+## Nachtrag 2 (2026-09-28, Plan „Offene Reste“, OR-5): Rückgängig mit „Jeden Termin einzeln anlegen“
+
+Mit dem Schalter aus [ADR-0022](0022-erzeugung-von-instanzen.md) Nachtrag 2 darf eine Regel mehrere offene Tickets haben. §3 gilt deshalb in dieser Form (`reopen` in `lib/recurrence-service.js`, Entscheidung rein in `reopenConflicts`):
+
+- **Was dem Wiedereröffnen entgegensteht,** folgt dem eindeutigen Index: ohne Schalter jedes andere offene Ticket der Regel, mit Schalter nur ein offenes Ticket desselben Termins (`occurrence`). Das ist im Normalfall keines.
+- **Mit Schalter** lässt sich eine Instanz deshalb frei wiedereröffnen (auch per „Rückgängig“ nach dem Häkchen): Die übrigen offenen Tickets bleiben, nichts wird gelöscht, `next_due` bleibt. Das Erledigen erzeugt mit Schalter kein Folgeticket, das es zurückzunehmen gäbe; Tickets entstehen nur nach der Zeit.
+- **Steht genau ein Ticket entgegen,** gilt §3 wie bisher: unberührt (nicht vor dem `completed_at` entstanden, `updated = created`, ohne Kommentare) wird es gelöscht, sonst lehnt der Hook mit `validation_recurrence_open_instance` und dem Key ab. Mit Schalter bleibt `next_due` dabei stehen, weil ein Zurücksetzen Termine erneut erzeugen könnte, deren (erledigte) Tickets es schon gibt. Das betrifft nur Folgetickets von vor dem Einschalten (beide ohne `occurrence`).
+- **Stehen mehrere entgegen** (Schalter nach mehreren offenen Tickets wieder aus), lehnt der Hook mit dem Key des jüngsten ab; die Regel „eine offene Instanz“ würde sonst gebrochen. Bis alle erledigt sind, erzeugt die Regel ohne Schalter nichts.
+- Belegt in `recurrence-generate.test.mjs` (frei wiedereröffnen mit mehreren offenen Tickets, Folgeticket von vor dem Einschalten unberührt bzw. bearbeitet, Ablehnung nach dem Ausschalten) und `recurrence-rules.test.mjs`.

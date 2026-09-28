@@ -142,7 +142,8 @@ describe('migration rollback', () => {
 				const up = await migrate(args, 'up');
 				expect(appliedFiles(up, 'Applied')).toEqual(e4);
 				const migrated = withDatabase(dataDir, snapshot);
-				expect(migrated.tickets.map(({ source, source_item, ...rest }) => rest)).toEqual(before.tickets);
+				// occurrence comes with a later migration (plan OR-5) that `up` runs along.
+				expect(migrated.tickets.map(({ source, source_item, occurrence, ...rest }) => rest)).toEqual(before.tickets);
 				expect(migrated.tickets.map(({ source, source_item }) => ({ source, source_item }))).toEqual([
 					{ source: '', source_item: '' },
 					{ source: '', source_item: '' }
@@ -389,7 +390,7 @@ describe('migration rollback of the delete guard of sources (ADR-0031 section 3)
 				const up = await migrate(args, 'up');
 				expect(appliedFiles(up, 'Applied')).toEqual(fromGuard);
 				expect(deleteRuleOf(dataDir)).toBe(guarded);
-				expect(withDatabase(dataDir, snapshot)).toEqual(rows);
+				expect(withoutEach(withDatabase(dataDir, snapshot))).toEqual(rows);
 
 				const down = await migrate(args, 'down', String(fromGuard.length));
 				expect(appliedFiles(down, 'Reverted')).toEqual([...fromGuard].reverse());
@@ -465,7 +466,7 @@ describe('migration rollback of the orphaned sources (ADR-0031, addendum B)', ()
 				expect(withoutFields(after.inbox_items, ['state', 'handled_at', 'source_meta'])).toEqual(
 					withoutFields(rows.inbox_items, ['state', 'handled_at', 'source_meta'])
 				);
-				expect(after.tickets).toEqual(rows.tickets);
+				expect(withoutFields(after.tickets, EACH_TICKET_FIELDS)).toEqual(rows.tickets);
 
 				const down = await migrate(args, 'down', String(fromOrphans.length));
 				expect(appliedFiles(down, 'Reverted')).toEqual([...fromOrphans].reverse());
@@ -516,7 +517,8 @@ describe('migration rollback of the 25 MB originals (ADR-0031, addendum D)', () 
 					item.run('item00000000002', 'mail', 'mail', 'Ohne Datei', '', 'f2', 'new', '', 'u:user00000000001', 'user00000000001', STAMP, STAMP);
 				});
 				const rows = withDatabase(dataDir, snapshot);
-				// `up` also runs the later migrations; their changes (projects.parent, ADR-0034) are left out.
+				// `up` also runs the later migrations; their changes (projects.parent, ADR-0034; the
+				// fields and index of "Jeden Termin einzeln anlegen", plan OR-5) are left out.
 				const others = (dataDir) =>
 					withoutTimestamps(readDataDir(dataDir).collections).map((collection) => {
 						if (collection.name === 'inbox_items') {
@@ -529,7 +531,7 @@ describe('migration rollback of the 25 MB originals (ADR-0031, addendum D)', () 
 								indexes: collection.indexes.filter((index) => !/idx_projects_parent/.test(index))
 							};
 						}
-						return collection;
+						return withoutEachSchema(collection);
 					});
 				const before = others(dataDir);
 
@@ -537,7 +539,7 @@ describe('migration rollback of the 25 MB originals (ADR-0031, addendum D)', () 
 				expect(appliedFiles(up, 'Applied')).toEqual(fromSize);
 				expect(originalOf(dataDir)).toMatchObject({ maxSize: 25 * 1024 * 1024, maxSelect: 1, protected: true });
 				expect(others(dataDir)).toEqual(before);
-				expect(withDatabase(dataDir, snapshot)).toEqual(rows);
+				expect(withoutEach(withDatabase(dataDir, snapshot))).toEqual(rows);
 
 				const down = await migrate(args, 'down', String(fromSize.length));
 				expect(appliedFiles(down, 'Reverted')).toEqual([...fromSize].reverse());
@@ -600,10 +602,12 @@ describe('migration rollback of the sub projects (ADR-0034)', () => {
 					tickets: snapshot(db).tickets,
 					counters: counterRows(db)
 				}));
+				// The later migration of "Jeden Termin einzeln anlegen" (plan OR-5) runs along; its fields
+				// and index are left out.
 				const others = (dir) =>
-					withoutTimestamps(readDataDir(dir).collections).filter(
-						(collection) => collection.name !== 'projects'
-					);
+					withoutTimestamps(readDataDir(dir).collections)
+						.filter((collection) => collection.name !== 'projects')
+						.map(withoutEachSchema);
 				const otherCollections = others(dataDir);
 
 				const up = await migrate(args, 'up');
@@ -622,7 +626,7 @@ describe('migration rollback of the sub projects (ADR-0034)', () => {
 				withDatabase(dataDir, (db) => {
 					// Existing projects stay top-level; nothing else changes.
 					expect(projectRows(db)).toEqual(before.projects.map((row) => ({ ...row, parent: '' })));
-					expect(snapshot(db).tickets).toEqual(before.tickets);
+					expect(withoutFields(snapshot(db).tickets, EACH_TICKET_FIELDS)).toEqual(before.tickets);
 					expect(counterRows(db)).toEqual(before.counters);
 					// The hierarchy that is lost on the way back.
 					db.prepare('UPDATE projects SET parent = ? WHERE id = ?').run('project00000001', 'project00000002');
@@ -682,11 +686,54 @@ function snapshot(db) {
 }
 
 const E5_FIRST_MIGRATION = '1790201600_recurrence_rule_params.js';
-const E5_RULE_FIELDS = ['freq', 'interval', 'weekdays', 'month_day', 'anchor', 'lead_days', 'scope', 'last_hint'];
+// Fields of the later migration of "Jeden Termin einzeln anlegen" (plan OR-5), which the E5 tests
+// run along with; the rows of before E5 do not have them.
+const EACH_RULE_FIELDS = ['each_occurrence'];
+const EACH_TICKET_FIELDS = ['occurrence'];
+const E5_RULE_FIELDS = [
+	'freq',
+	'interval',
+	'weekdays',
+	'month_day',
+	'anchor',
+	'lead_days',
+	'scope',
+	'last_hint',
+	...EACH_RULE_FIELDS
+];
 const INCOMPLETE_HINT = 'Regel unvollständig – bitte Rhythmus wählen.';
 
 function withoutFields(rows, fields) {
 	return rows.map((row) => Object.fromEntries(Object.entries(row).filter(([name]) => !fields.includes(name))));
+}
+
+/**
+ * A snapshot without the columns of "Jeden Termin einzeln anlegen" (plan OR-5, migration
+ * 1790202200): the tests of earlier migrations run it along with `up`.
+ */
+function withoutEach(snap) {
+	return {
+		...snap,
+		tickets: snap.tickets === null ? null : withoutFields(snap.tickets, EACH_TICKET_FIELDS),
+		recurrence_rules: snap.recurrence_rules === null ? null : withoutFields(snap.recurrence_rules, EACH_RULE_FIELDS)
+	};
+}
+
+const OPEN_INSTANCE_INDEX = /idx_tickets_open_(recurrence|occurrence)/;
+
+/** A collection without the fields and the index of migration 1790202200 (plan OR-5). */
+function withoutEachSchema(collection) {
+	if (collection.name === 'tickets') {
+		return {
+			...collection,
+			fields: collection.fields.filter((field) => !EACH_TICKET_FIELDS.includes(field.name)),
+			indexes: collection.indexes.filter((index) => !OPEN_INSTANCE_INDEX.test(index))
+		};
+	}
+	if (collection.name === 'recurrence_rules') {
+		return { ...collection, fields: collection.fields.filter((field) => !EACH_RULE_FIELDS.includes(field.name)) };
+	}
+	return collection;
 }
 
 /** Data as it exists before E5: users, rules with the base fields only, tickets with and without a rule. */
@@ -733,7 +780,8 @@ describe('migration rollback of E5 (package 2)', () => {
 				const up = await migrate(args, 'up');
 				expect(appliedFiles(up, 'Applied')).toEqual(e5);
 				const migrated = withDatabase(dataDir, snapshot);
-				expect(migrated.tickets).toEqual(before.tickets);
+				expect(withoutFields(migrated.tickets, EACH_TICKET_FIELDS)).toEqual(before.tickets);
+				expect(migrated.tickets.every((ticket) => ticket.occurrence === '')).toBe(true);
 				expect(migrated.users).toEqual(before.users);
 				// The base fields stay, except that a rule without a rhythm is paused.
 				expect(withoutFields(migrated.recurrence_rules, [...E5_RULE_FIELDS, 'active'])).toEqual(
@@ -803,7 +851,140 @@ describe('migration rollback of E5 (package 2)', () => {
 				expect(byId.ticket000000009.recurrence).toBe('rule00000000001');
 				expect(byId.ticket000000001.recurrence).toBe('rule00000000001');
 				expect(byId.ticket000000002.recurrence).toBe('rule00000000001');
-				expect(withoutFields(migrated.tickets, ['recurrence'])).toEqual(withoutFields(before.tickets, ['recurrence']));
+				expect(withoutFields(migrated.tickets, ['recurrence', ...EACH_TICKET_FIELDS])).toEqual(
+					withoutFields(before.tickets, ['recurrence'])
+				);
+			});
+		},
+		60_000
+	);
+});
+
+const EACH_MIGRATION = '1790202200_recurrence_each_occurrence.js';
+
+describe('migration rollback of "Jeden Termin einzeln anlegen" (plan OR-5)', () => {
+	const ticketsOf = (dataDir) =>
+		readDataDir(dataDir).collections.find((collection) => collection.name === 'tickets');
+	const rulesOf = (dataDir) =>
+		readDataDir(dataDir).collections.find((collection) => collection.name === 'recurrence_rules');
+	const openIndexes = (dataDir) =>
+		ticketsOf(dataDir).indexes.filter((index) => OPEN_INSTANCE_INDEX.test(index));
+	const OWNER = 'user00000000001';
+	const SCOPE = 'u:user00000000001';
+	const day = (date) => `${date} 00:00:00.000Z`;
+
+	/** A rule with a done and an open instance, and a ticket without a series, as before OR-5. */
+	function insertData(db) {
+		db.prepare('INSERT INTO users (id, email, tokenKey, password, created, updated) VALUES (?, ?, ?, ?, ?, ?)').run(
+			OWNER,
+			'eins@example.invalid',
+			'tk1',
+			'hash',
+			STAMP,
+			STAMP
+		);
+		db.prepare(
+			'INSERT INTO recurrence_rules (id, title, mode, freq, interval, weekdays, anchor, lead_days, next_due, active, scope, owner, created, updated) ' +
+				'VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+		).run('rule00000000001', 'Blumen', 'calendar', 'weekly', 1, '["MO","WE","FR"]', day('2026-09-21'), 0, day('2026-09-30'), 1, SCOPE, OWNER, STAMP, STAMP);
+		const ticket = db.prepare(
+			'INSERT INTO tickets (id, number, key, title, status, priority, due, recurrence, scope, owner, created, updated) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+		);
+		ticket.run('ticket000000001', 1, 'TASK-1', 'Blumen', 'done', 'medium', day('2026-09-25'), 'rule00000000001', SCOPE, OWNER, STAMP, STAMP);
+		ticket.run('ticket000000002', 2, 'TASK-2', 'Blumen', 'open', 'medium', day('2026-09-28'), 'rule00000000001', SCOPE, OWNER, STAMP, STAMP);
+		ticket.run('ticket000000003', 3, 'TASK-3', 'Ohne Serie', 'open', 'low', '', '', SCOPE, OWNER, STAMP, STAMP);
+	}
+
+	const insertOpen = (db, id, number, occurrence, created = STAMP) =>
+		db
+			.prepare(
+				'INSERT INTO tickets (id, number, key, title, status, priority, due, recurrence, occurrence, scope, owner, created, updated) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+			)
+			.run(id, number, `TASK-${number}`, 'Blumen', 'open', 'medium', occurrence, 'rule00000000001', occurrence, SCOPE, OWNER, created, created);
+
+	it(
+		'adds the switch, the date of the series and the new index without changing a row, and back',
+		async () => {
+			const fromEach = MIGRATION_FILES.slice(MIGRATION_FILES.indexOf(EACH_MIGRATION));
+			expect(fromEach).toEqual([EACH_MIGRATION]);
+
+			await withTempDataDir(async ({ dataDir, args }) => {
+				await migrate(args, 'up');
+				await migrate(args, 'down', String(fromEach.length));
+				expect(openIndexes(dataDir)).toEqual([
+					"CREATE UNIQUE INDEX `idx_tickets_open_recurrence` ON `tickets` (recurrence) WHERE recurrence != '' AND status != 'done'"
+				]);
+				withDatabase(dataDir, insertData);
+				const before = withDatabase(dataDir, snapshot);
+				const otherCollections = (dir) =>
+					withoutTimestamps(readDataDir(dir).collections).map(withoutEachSchema);
+				const schemaBefore = otherCollections(dataDir);
+
+				const up = await migrate(args, 'up');
+				expect(appliedFiles(up, 'Applied')).toEqual(fromEach);
+				expect(rulesOf(dataDir).fields.find((field) => field.name === 'each_occurrence')).toMatchObject({
+					type: 'bool',
+					required: false
+				});
+				expect(ticketsOf(dataDir).fields.find((field) => field.name === 'occurrence')).toMatchObject({
+					type: 'date',
+					required: false
+				});
+				expect(openIndexes(dataDir)).toEqual([
+					"CREATE UNIQUE INDEX `idx_tickets_open_occurrence` ON `tickets` (recurrence, occurrence) WHERE recurrence != '' AND status != 'done'"
+				]);
+				assertSchema(readDataDir(dataDir).collections);
+				expect(otherCollections(dataDir)).toEqual(schemaBefore);
+				const migrated = withDatabase(dataDir, snapshot);
+				// No row changes: every ticket has an empty date of the series, every rule the old behaviour.
+				expect(withoutEach(migrated)).toEqual(before);
+				expect(migrated.tickets.map((ticket) => ticket.occurrence)).toEqual(['', '', '']);
+				expect(migrated.recurrence_rules.map((rule) => rule.each_occurrence)).toEqual([0]);
+
+				withDatabase(dataDir, (db) => {
+					// Still one open instance per rule for an empty date ...
+					expect(() => insertOpen(db, 'ticket000000004', 4, '')).toThrow(/UNIQUE constraint failed/);
+					// ... but one per date with "Jeden Termin einzeln anlegen", never the same date twice.
+					db.prepare('UPDATE recurrence_rules SET each_occurrence = 1 WHERE id = ?').run('rule00000000001');
+					insertOpen(db, 'ticket000000005', 5, day('2026-09-30'), '2026-09-02 10:00:00.000Z');
+					insertOpen(db, 'ticket000000006', 6, day('2026-10-02'), '2026-09-03 10:00:00.000Z');
+					expect(() => insertOpen(db, 'ticket000000007', 7, day('2026-10-02'))).toThrow(
+						/UNIQUE constraint failed/
+					);
+				});
+
+				// Back: the newest open ticket of the rule stays in the series, the older open ones become
+				// normal tickets; the done one and the ticket without a series stay as they are.
+				const down = await migrate(args, 'down', String(fromEach.length));
+				expect(appliedFiles(down, 'Reverted')).toEqual(fromEach);
+				expect(openIndexes(dataDir)).toEqual([
+					"CREATE UNIQUE INDEX `idx_tickets_open_recurrence` ON `tickets` (recurrence) WHERE recurrence != '' AND status != 'done'"
+				]);
+				expect(otherCollections(dataDir)).toEqual(schemaBefore);
+				const reverted = withDatabase(dataDir, snapshot);
+				expect(reverted.recurrence_rules).toEqual(before.recurrence_rules);
+				const byId = Object.fromEntries(reverted.tickets.map((ticket) => [ticket.id, ticket]));
+				expect(byId.ticket000000006.recurrence).toBe('rule00000000001');
+				expect(byId.ticket000000005.recurrence).toBe('');
+				expect(byId.ticket000000002.recurrence).toBe('');
+				expect(byId.ticket000000001.recurrence).toBe('rule00000000001');
+				expect(byId.ticket000000003.recurrence).toBe('');
+				// Only the column recurrence changed: `updated` and every other value stay.
+				expect(byId.ticket000000002).toEqual({ ...before.tickets[1], recurrence: '' });
+				expect(reverted.tickets.every((ticket) => !('occurrence' in ticket))).toBe(true);
+				// The old index holds again.
+				withDatabase(dataDir, (db) => {
+					expect(() =>
+						db
+							.prepare(
+								'INSERT INTO tickets (id, number, key, title, status, priority, recurrence, scope, owner, created, updated) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+							)
+							.run('ticket000000008', 8, 'TASK-8', 'Zweite', 'open', 'low', 'rule00000000001', SCOPE, OWNER, STAMP, STAMP)
+					).toThrow(/UNIQUE constraint failed/);
+				});
+
+				expect(appliedFiles(await migrate(args, 'up'), 'Applied')).toEqual(fromEach);
+				assertSchema(readDataDir(dataDir).collections);
 			});
 		},
 		60_000

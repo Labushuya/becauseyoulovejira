@@ -127,7 +127,8 @@ describe('RecurrencePanel: "Neue Regel"', () => {
 			weekdays: ['FR'],
 			month_day: 0,
 			anchor: TODAY,
-			lead_days: 3
+			lead_days: 3,
+			each_occurrence: false
 		});
 		expect(props.onsaved.mock.calls[0]?.[0]).toMatchObject({ id: 'rule00000000009' });
 		expect(

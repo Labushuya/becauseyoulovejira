@@ -22,6 +22,7 @@
 		initial,
 		today,
 		withoutDue = false,
+		eachAvailable = false,
 		submitLabel,
 		onsave,
 		onclose
@@ -31,6 +32,8 @@
 		today: CalendarDate;
 		/** The ticket has no due date: the form names the first date it gets. */
 		withoutDue?: boolean;
+		/** Offer "Jeden Termin einzeln anlegen" (plan OR-5, RecurrenceStore.eachReady). */
+		eachAvailable?: boolean;
 		submitLabel: string;
 		onsave: (values: RecurrenceFormValues) => Promise<EditResult<unknown>>;
 		/** Cancel, or after saving. */
@@ -102,7 +105,7 @@
 	onclose={() => onclose()}
 >
 	<form id={formId} class="form" novalidate onsubmit={save} bind:this={form}>
-		<RecurrenceForm bind:values {errors} {today} {withoutDue} />
+		<RecurrenceForm bind:values {errors} {today} {withoutDue} {eachAvailable} />
 		{#if message}
 			<div class="alert-error" role="alert"><ErrorIcon /><span>{message}</span></div>
 		{/if}

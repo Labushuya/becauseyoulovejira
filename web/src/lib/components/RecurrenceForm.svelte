@@ -12,6 +12,7 @@
 		type Weekday
 	} from '$lib/domain/recurrence';
 	import {
+		EACH_MAX_PER_RUN,
 		formPreview,
 		type RecurrenceFormField,
 		type RecurrenceFormValues
@@ -24,17 +25,22 @@
 	// labelled group of check boxes, day of the month with "Letzter Tag", start and lead time, and
 	// the preview "Nächste Termine", which follows every change at once. Field errors stand at their
 	// field (aria-invalid, aria-describedby); no state is shown by color alone.
+	// With a fixed rhythm and `eachAvailable` (plan OR-5, after its migration) the switch "Jeden
+	// Termin einzeln anlegen" follows, off by default, with a hint that says what each state means.
 	let {
 		values = $bindable(),
 		errors = {},
 		today,
-		withoutDue = false
+		withoutDue = false,
+		eachAvailable = false
 	}: {
 		values: RecurrenceFormValues;
 		errors?: Partial<Record<RecurrenceFormField, string>>;
 		today: CalendarDate;
 		/** The ticket has no due date yet: name the first date it gets (ADR-0023 section 1). */
 		withoutDue?: boolean;
+		/** The server knows "Jeden Termin einzeln anlegen" (RecurrenceStore.eachReady). */
+		eachAvailable?: boolean;
 	} = $props();
 
 	const uid = $props.id();
@@ -200,6 +206,32 @@
 		{@render fieldError('leadDays')}
 	</div>
 
+	{#if calendar && eachAvailable}
+		<div class="field">
+			<label class="switch-row" for={idOf('each')}>
+				<span>Jeden Termin einzeln anlegen</span>
+				<input
+					id={idOf('each')}
+					type="checkbox"
+					role="switch"
+					checked={values.eachOccurrence === true}
+					aria-invalid={errors.eachOccurrence ? 'true' : undefined}
+					aria-describedby={describedBy('eachOccurrence', idOf('each-hint'))}
+					onchange={(event) => (values.eachOccurrence = event.currentTarget.checked)}
+				/>
+			</label>
+			<p class="hint" id={idOf('each-hint')}>
+				{#if values.eachOccurrence === true}
+					Jeder Termin bekommt ein eigenes Ticket, auch wenn frühere noch offen sind. Nach einer
+					längeren Pause kommen höchstens {EACH_MAX_PER_RUN} auf einmal, der Rest im nächsten Lauf.
+				{:else}
+					Höchstens ein offenes Ticket; verpasste Termine werden zum jüngsten zusammengefasst.
+				{/if}
+			</p>
+			{@render fieldError('eachOccurrence')}
+		</div>
+	{/if}
+
 	<p class="preview" aria-live="polite">
 		{#if preview.dates.length === 0}
 			Nächste Termine erscheinen, sobald alle Angaben stimmen.
@@ -289,6 +321,18 @@
 
 	.number {
 		width: 5rem;
+	}
+
+	/* Name left, switch right, like "Glas-Effekt" (ADR-0029, G-5). */
+	.switch-row {
+		display: flex;
+		gap: 0.75rem;
+		align-items: center;
+		justify-content: space-between;
+		max-width: 26rem;
+		font-size: var(--font-size-body);
+		font-weight: 400;
+		cursor: pointer;
 	}
 
 	/* Disabled fields; checkboxes and radios keep the look of base.css. */

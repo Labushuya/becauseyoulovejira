@@ -56,6 +56,7 @@
 		tags,
 		projectById,
 		openTicket = null,
+		eachAvailable = false,
 		ticketHrefOf,
 		oncreatetag,
 		onsave,
@@ -76,6 +77,8 @@
 		projectById: (id: string) => ProjectRef | null;
 		/** Open ticket of the rule; null without one or while unknown. */
 		openTicket?: OpenInstance | null;
+		/** Offer "Jeden Termin einzeln anlegen" (plan OR-5, RecurrenceStore.eachReady). */
+		eachAvailable?: boolean;
 		ticketHrefOf: (ticketId: string) => ResolvedPathname;
 		/** Existing or new tag for a typed name (E3 plan, T-14). */
 		oncreatetag: (name: string) => Promise<EnsureTagResult>;
@@ -501,7 +504,7 @@
 
 		<section class="group" aria-labelledby={ids.rhythm}>
 			<h3 id={ids.rhythm}>Rhythmus</h3>
-			<RecurrenceForm bind:values errors={rhythmErrors} {today} />
+			<RecurrenceForm bind:values errors={rhythmErrors} {today} {eachAvailable} />
 			{#if creating}
 				<p class="hint">
 					Das erste Ticket entsteht, sobald der Vorlauf erreicht ist; liegt der erste Termin schon

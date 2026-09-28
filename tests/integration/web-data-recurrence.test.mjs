@@ -6,6 +6,7 @@ import { superuserClient } from "../support/api.mjs";
 import { createOwner, historyOf, uniqueCode } from "../support/scenario.mjs";
 import { addDays, berlinToday } from "../../web/src/lib/domain/berlin-date.ts";
 import {
+  defaultFormValues,
   formParams,
   formPreview,
   formValuesOf,
@@ -20,6 +21,7 @@ import {
   createRule,
   deleteRule,
   detachTicket,
+  eachOccurrenceReady,
   listRules,
   setRuleActive,
   updateRule,
@@ -362,5 +364,24 @@ describe("web data layer: a rule from a calendar series (E5 plan, package 6)", (
       recurring: false,
     });
     expect(await listRules(owner.client)).toEqual([]);
+  });
+});
+
+describe('web data layer: "Jeden Termin einzeln anlegen" (plan OR-5)', () => {
+  it("knows the switch after the migration, even without rules, and keeps its value", async () => {
+    const owner = await createOwner(await superuserClient());
+    expect(await eachOccurrenceReady(owner.client)).toBe(true);
+
+    const values = { ...defaultFormValues("2033-03-07", "2026-09-28"), eachOccurrence: true };
+    const rule = await createRule(owner.client, draft(formParams(values)));
+    expect(rule.eachOccurrence).toBe(true);
+    expect((await listRules(owner.client)).find((entry) => entry.id === rule.id)?.eachOccurrence).toBe(true);
+    const off = await updateRule(owner.client, rule.id, { each_occurrence: false });
+    expect(off.eachOccurrence).toBe(false);
+
+    const refused = await dataErrorOf(
+      updateRule(owner.client, rule.id, { mode: "after_completion", weekdays: [], each_occurrence: true }),
+    );
+    expect(refused.fields.each_occurrence?.code).toBe("validation_recurrence_each_mode");
   });
 });

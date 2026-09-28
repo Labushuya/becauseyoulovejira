@@ -106,6 +106,7 @@
 		initialProject={filteredProject}
 		tags={catalog.tags}
 		repeat={rules.state !== 'unavailable'}
+		eachAvailable={rules.eachReady}
 		today={tickets.today}
 		oncreatetag={(name) => catalog.ensureTag(name)}
 		oncreate={create}
@@ -121,6 +122,7 @@
 			sourceLabel={CHANNEL_LABELS[source.item.channel]}
 			suggestion={rules.state === 'unavailable' ? null : itemSuggestion(source.item, tickets.today)}
 			repeat={rules.state !== 'unavailable'}
+			eachAvailable={rules.eachReady}
 			today={tickets.today}
 			oncreatetag={(name) => catalog.ensureTag(name)}
 			oncreate={create}

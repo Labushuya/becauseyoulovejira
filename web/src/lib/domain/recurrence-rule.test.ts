@@ -120,7 +120,8 @@ describe('the form', () => {
 			weekdays: ['MO'],
 			month_day: 0,
 			anchor: '2026-09-28',
-			lead_days: 3
+			lead_days: 3,
+			each_occurrence: false
 		});
 		expect(formParams({ ...weekly, freq: 'monthly', lastDay: true })).toMatchObject({
 			weekdays: [],
@@ -130,6 +131,18 @@ describe('the form', () => {
 			weekdays: [],
 			month_day: 0
 		});
+	});
+
+	it('sends "Jeden Termin einzeln anlegen" only with a fixed rhythm (plan OR-5)', () => {
+		const weekly = { ...defaultFormValues('2026-09-28', TODAY), eachOccurrence: true };
+		expect(formParams(weekly).each_occurrence).toBe(true);
+		expect(formParams({ ...weekly, mode: 'after_completion' }).each_occurrence).toBe(false);
+		expect(formParams(defaultFormValues('2026-09-28', TODAY)).each_occurrence).toBe(false);
+		// The rule panel sends the rhythm again when only the switch changed.
+		expect(sameRhythm(weekly, { ...weekly, eachOccurrence: false })).toBe(false);
+		expect(sameRhythm(weekly, { ...weekly })).toBe(true);
+		expect(formValuesOf(rule({ eachOccurrence: true }), TODAY).eachOccurrence).toBe(true);
+		expect(formValuesOf(rule(), TODAY).eachOccurrence).toBe(false);
 	});
 
 	it('checks with the rules of the hook and its texts', () => {

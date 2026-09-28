@@ -99,6 +99,10 @@
 			{#if rule !== null}
 				<span aria-hidden="true">·</span>
 				<span>{nextTicketText(rule, today)}</span>
+				{#if rule.eachOccurrence === true}
+					<span aria-hidden="true">·</span>
+					<span>jeder Termin einzeln</span>
+				{/if}
 			{/if}
 		</p>
 		{#if rule !== null && rule.lastHint !== ''}
@@ -146,6 +150,7 @@
 		initial={prepared ?? defaultFormValues(ticket.due, today)}
 		{today}
 		withoutDue={ticket.due === null}
+		eachAvailable={store.eachReady}
 		submitLabel="Wiederholung anlegen"
 		onsave={repeat}
 		onclose={closeDialog}
@@ -156,6 +161,7 @@
 		heading="Regel bearbeiten"
 		initial={formValuesOf(current, today)}
 		{today}
+		eachAvailable={store.eachReady}
 		submitLabel="Speichern"
 		onsave={(values) => store.saveRhythm(current.id, values)}
 		onclose={closeDialog}

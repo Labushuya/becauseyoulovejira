@@ -46,6 +46,11 @@ export interface RecurrenceRule {
 	active: boolean;
 	/** Neutral hint of the server, '' without one. */
 	lastHint: string;
+	/**
+	 * "Jeden Termin einzeln anlegen" (plan OR-5): every date gets its own ticket, open earlier ones
+	 * or not; false as well before the migration. Optional so that rules built by hand stay valid.
+	 */
+	eachOccurrence?: boolean;
 	created: string;
 	updated: string;
 }
@@ -114,8 +119,16 @@ export const RECURRENCE_MESSAGES: Readonly<Record<string, string>> = Object.free
 	validation_recurrence_ticket_linked: 'Das Ticket gehört schon zu einer Serie.',
 	validation_recurrence_managed: 'Eine Wiederholung entsteht über „Wiederholen…“ am Ticket.',
 	validation_recurrence_open_instance:
-		'Von dieser Serie ist schon ein anderes Ticket offen. Erledige es zuerst oder löse ein Ticket aus der Serie.'
+		'Von dieser Serie ist schon ein anderes Ticket offen. Erledige es zuerst oder löse ein Ticket aus der Serie.',
+	validation_recurrence_each_mode:
+		'„Jeden Termin einzeln anlegen“ gibt es nur bei einem festen Rhythmus.'
 });
+
+/**
+ * At most so many tickets per rule and run with "Jeden Termin einzeln anlegen" (plan OR-5); the
+ * same number as EACH_MAX_PER_RUN of the hook (tests/unit/web-recurrence.test.mjs).
+ */
+export const EACH_MAX_PER_RUN = 20;
 
 /** Refusal of reopening with the key of the open ticket (ADR-0023 section 3). */
 export function openInstanceMessage(key: string): string {
@@ -135,10 +148,15 @@ export interface RecurrenceFormValues {
 	lastDay: boolean;
 	anchor: string;
 	leadDays: string;
+	/**
+	 * "Jeden Termin einzeln anlegen" (plan OR-5); sent only with a fixed rhythm. Optional so that
+	 * values built by hand stay valid (absent counts as off).
+	 */
+	eachOccurrence?: boolean;
 }
 
 export type RecurrenceFormField =
-	'mode' | 'freq' | 'interval' | 'weekdays' | 'monthDay' | 'anchor' | 'leadDays';
+	'mode' | 'freq' | 'interval' | 'weekdays' | 'monthDay' | 'anchor' | 'leadDays' | 'eachOccurrence';
 
 /** Maps the codes of the fields of recurrence.ts to the fields of the form. */
 const FORM_FIELDS: Readonly<Record<string, RecurrenceFormField>> = {
@@ -159,7 +177,8 @@ export const SERVER_FIELDS: Readonly<Record<RecurrenceFormField, string>> = Obje
 	weekdays: 'weekdays',
 	monthDay: 'month_day',
 	anchor: 'anchor',
-	leadDays: 'lead_days'
+	leadDays: 'lead_days',
+	eachOccurrence: 'each_occurrence'
 });
 
 /**
@@ -197,7 +216,8 @@ export function formValuesOf(rule: RecurrenceRule, today: CalendarDate): Recurre
 				: String(Number(anchor.slice(8, 10))),
 		lastDay: rule.monthDay === LAST_DAY,
 		anchor,
-		leadDays: String(rule.leadDays)
+		leadDays: String(rule.leadDays),
+		eachOccurrence: rule.eachOccurrence === true
 	};
 }
 
@@ -208,7 +228,8 @@ function wholeNumber(text: string): number {
 
 /**
  * Parameters as sent to the server: weekdays only for a fixed weekly rhythm, the day of the
- * month only for a fixed monthly one, so switching the rhythm leaves nothing behind.
+ * month only for a fixed monthly one, "Jeden Termin einzeln anlegen" only for a fixed rhythm, so
+ * switching the rhythm leaves nothing behind.
  */
 export function formParams(values: RecurrenceFormValues): {
 	mode: RecurrenceMode;
@@ -218,6 +239,7 @@ export function formParams(values: RecurrenceFormValues): {
 	month_day: number;
 	anchor: string;
 	lead_days: number;
+	each_occurrence: boolean;
 } {
 	const calendar = values.mode === 'calendar';
 	return {
@@ -232,7 +254,8 @@ export function formParams(values: RecurrenceFormValues): {
 					: wholeNumber(values.monthDay)
 				: 0,
 		anchor: values.anchor,
-		lead_days: wholeNumber(values.leadDays)
+		lead_days: wholeNumber(values.leadDays),
+		each_occurrence: calendar && values.eachOccurrence === true
 	};
 }
 
@@ -250,7 +273,8 @@ export function sameRhythm(a: RecurrenceFormValues, b: RecurrenceFormValues): bo
 		left.weekdays.join(',') === right.weekdays.join(',') &&
 		Object.is(left.month_day, right.month_day) &&
 		left.anchor === right.anchor &&
-		Object.is(left.lead_days, right.lead_days)
+		Object.is(left.lead_days, right.lead_days) &&
+		left.each_occurrence === right.each_occurrence
 	);
 }
 
