@@ -14,6 +14,16 @@ function values(overrides: Partial<RecurrenceFormValues> = {}): RecurrenceFormVa
 	return { ...defaultFormValues('2026-09-28', TODAY), ...overrides };
 }
 
+/** Due dates of the preview rows (plan "Wiederholungen verständlich machen"). */
+const dues = () =>
+	[...document.querySelectorAll<HTMLElement>('.preview li')].map((row) => row.dataset.due);
+/** The rows as read: "erscheint Fr 02.10. → fällig Mo 05.10.". */
+const rows = () =>
+	[...document.querySelectorAll<HTMLElement>('.preview li')].map((row) =>
+		(row.textContent ?? '').replace(/\s+/g, ' ').trim()
+	);
+const previewTitle = () => document.querySelector('.preview-title')?.textContent?.trim();
+
 describe('RecurrenceForm', () => {
 	it('offers a weekly rhythm on the weekday of the due date with the next three dates', () => {
 		render(RecurrenceForm, { props: { values: values(), today: TODAY } });
@@ -40,8 +50,20 @@ describe('RecurrenceForm', () => {
 		const lead = screen.getByLabelText<HTMLInputElement>('Vorlauf (Tage)');
 		expect(lead.value).toBe('3');
 		expect(lead.getAttribute('aria-describedby')).toBeTruthy();
-		expect(screen.getByText('Nächste Termine: 28.09.2026, 05.10.2026, 12.10.2026')).toBeTruthy();
+		// Each date with the day its ticket appears (lead time 3; today is Friday 25.09.).
+		expect(previewTitle()).toBe('Nächste Termine');
+		expect(rows()).toEqual([
+			'erscheint heute → fällig Mo 28.09.',
+			'erscheint Fr 02.10. → fällig Mo 05.10.',
+			'erscheint Fr 09.10. → fällig Mo 12.10.'
+		]);
 		expect(screen.queryByLabelText('Tag im Monat')).toBeNull();
+	});
+
+	it('says "sofort" when the lead time reaches back before today', () => {
+		render(RecurrenceForm, { props: { values: values({ leadDays: '7' }), today: TODAY } });
+		expect(rows()[0]).toBe('erscheint sofort → fällig Mo 28.09.');
+		expect(rows()[1]).toBe('erscheint Mo 28.09. → fällig Mo 05.10.');
 	});
 
 	it('shows the day of the month with "Letzter Tag" and the note about short months', () => {
@@ -55,7 +77,7 @@ describe('RecurrenceForm', () => {
 		);
 		expect(screen.getByText('In kürzeren Monaten am letzten Tag.')).toBeTruthy();
 		expect(screen.queryByRole('group', { name: 'Wochentage' })).toBeNull();
-		expect(screen.getByText('Nächste Termine: 30.09.2026, 31.10.2026, 30.11.2026')).toBeTruthy();
+		expect(dues()).toEqual(['2026-09-30', '2026-10-31', '2026-11-30']);
 	});
 
 	it('locks the day when "Letzter Tag" is chosen', () => {
@@ -75,9 +97,8 @@ describe('RecurrenceForm', () => {
 		});
 		expect(screen.getByLabelText<HTMLInputElement>('Abstand nach Erledigung').value).toBe('3');
 		expect(screen.queryByRole('group', { name: 'Wochentage' })).toBeNull();
-		expect(
-			screen.getByText('Wird das Ticket heute erledigt, ist das nächste am 28.09.2026 fällig.')
-		).toBeTruthy();
+		expect(previewTitle()).toBe('Wird das Ticket heute erledigt');
+		expect(rows()).toEqual(['erscheint heute → fällig Mo 28.09.']);
 	});
 
 	it('marks fields with an error and names it', () => {
@@ -106,6 +127,26 @@ describe('RecurrenceForm', () => {
 				'Das Ticket hat noch keine Fälligkeit und bekommt den ersten Termin: 25.09.2026.'
 			)
 		).toBeTruthy();
+		expect(screen.queryByText(/schon überfällig/)).toBeNull();
+	});
+
+	// Recommendation 4 of the plan "Wiederholungen verständlich machen".
+	it('warns without red when a start in the past makes the ticket overdue at once', () => {
+		render(RecurrenceForm, {
+			props: {
+				values: defaultFormValues('2026-09-07', TODAY),
+				today: TODAY,
+				withoutDue: true
+			}
+		});
+		const warning = screen.getByText(
+			/„Beginnt am“ liegt in der Vergangenheit: Das Ticket bekommt den ersten Termin 07\.09\.2026 und ist damit schon überfällig\./
+		);
+		const box = warning.closest('.section-message');
+		expect(box?.getAttribute('data-tone')).toBe('warning');
+		expect(warning.closest('.alert-error')).toBeNull();
+		// A ticket with a due date or after completion keeps its date: no warning.
+		expect(screen.queryByText(/bekommt den ersten Termin: /)).toBeNull();
 	});
 });
 
@@ -120,37 +161,38 @@ describe('RecurrenceForm: preview with several weekdays (OR-1)', () => {
 
 	it('follows each weekday that is checked or unchecked, across the turn of the month', async () => {
 		const { component } = start();
-		expect(preview()).toBe('Nächste Termine: 28.09.2026, 05.10.2026, 12.10.2026');
+		expect(dues()).toEqual(['2026-09-28', '2026-10-05', '2026-10-12']);
 		const days = screen.getByRole('group', { name: 'Wochentage' });
 
 		await fireEvent.click(within(days).getByRole('checkbox', { name: 'Freitag' }));
 		await fireEvent.click(within(days).getByRole('checkbox', { name: 'Mittwoch' }));
-		expect(preview()).toBe('Nächste Termine: 28.09.2026, 30.09.2026, 02.10.2026');
+		expect(dues()).toEqual(['2026-09-28', '2026-09-30', '2026-10-02']);
 		// The days stay in week order, whatever the order of the clicks.
 		expect(component.current().weekdays).toEqual(['MO', 'WE', 'FR']);
 
 		await fireEvent.click(within(days).getByRole('checkbox', { name: 'Montag' }));
-		expect(preview()).toBe('Nächste Termine: 30.09.2026, 02.10.2026, 07.10.2026');
+		expect(dues()).toEqual(['2026-09-30', '2026-10-02', '2026-10-07']);
 		expect(preview()).toBe(document.querySelector('[aria-live="polite"]')?.textContent?.trim());
 	});
 
 	it('skips the odd week with an interval of 2 and three days', async () => {
 		start({ anchor: '2026-09-23', weekdays: ['MO', 'WE', 'FR'] });
 		// From today (Friday 25.09.): the anchor week has Wednesday and Friday, the next week none.
-		expect(preview()).toBe('Nächste Termine: 25.09.2026, 28.09.2026, 30.09.2026');
+		expect(dues()).toEqual(['2026-09-25', '2026-09-28', '2026-09-30']);
 		await fireEvent.input(screen.getByLabelText('Alle'), { target: { value: '2' } });
-		expect(preview()).toBe('Nächste Termine: 25.09.2026, 05.10.2026, 07.10.2026');
+		expect(dues()).toEqual(['2026-09-25', '2026-10-05', '2026-10-07']);
 	});
 
 	it('starts with the first chosen day after an anchor in the middle of the week', async () => {
 		start({ anchor: '2026-10-01', weekdays: ['MO', 'WE', 'FR'] });
 		// Thursday 01.10.: the Wednesday before does not count, Friday is first.
-		expect(preview()).toBe('Nächste Termine: 02.10.2026, 05.10.2026, 07.10.2026');
+		expect(dues()).toEqual(['2026-10-02', '2026-10-05', '2026-10-07']);
 	});
 
 	it('runs across the turn of the year', async () => {
 		start({ anchor: '2026-12-30', weekdays: ['MO', 'WE', 'FR'] });
-		expect(preview()).toBe('Nächste Termine: 30.12.2026, 01.01.2027, 04.01.2027');
+		expect(dues()).toEqual(['2026-12-30', '2027-01-01', '2027-01-04']);
+		expect(rows()[1]).toBe('erscheint Di 29.12. → fällig Fr 01.01.2027');
 	});
 
 	it('asks for a weekday when the last one is unchecked', async () => {
@@ -163,7 +205,8 @@ describe('RecurrenceForm: preview with several weekdays (OR-1)', () => {
 		start({ weekdays: ['MO', 'WE', 'FR'] });
 		await fireEvent.click(screen.getByRole('radio', { name: 'Nach Erledigung' }));
 		expect(screen.queryByRole('group', { name: 'Wochentage' })).toBeNull();
-		expect(preview()).toBe('Wird das Ticket heute erledigt, ist das nächste am 02.10.2026 fällig.');
+		expect(previewTitle()).toBe('Wird das Ticket heute erledigt');
+		expect(dues()).toEqual(['2026-10-02']);
 	});
 });
 

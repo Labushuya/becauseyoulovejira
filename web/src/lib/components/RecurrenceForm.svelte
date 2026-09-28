@@ -14,6 +14,7 @@
 	import {
 		CATCH_UP_TODAY_LABEL,
 		EACH_MAX_PER_RUN,
+		appearsText,
 		backlogText,
 		catchUpAllLabel,
 		formBacklog,
@@ -24,7 +25,7 @@
 		type RecurrenceFormValues
 	} from '$lib/domain/recurrence-rule';
 	import SectionMessage from './guidance/SectionMessage.svelte';
-	import { WEEKDAY_NAMES, WEEKDAY_SHORT } from '$lib/domain/recurrence-text';
+	import { WEEKDAY_NAMES, WEEKDAY_SHORT, dayLabel } from '$lib/domain/recurrence-text';
 	import ErrorIcon from './ErrorIcon.svelte';
 
 	// Fields of a rhythm (E5 plan, package 4), shared by "Wiederholen…", the rule panel and the
@@ -72,7 +73,6 @@
 
 	const calendar = $derived(values.mode === 'calendar');
 	const preview = $derived(formPreview(values, today, withoutDue));
-	const previewText = $derived(preview.dates.map(formatCalendarDate).join(', '));
 	/** Days 29 to 31 do not exist in every month: they are clamped (ADR-0021 section 2). */
 	const clamped = $derived(!values.lastDay && Number(values.monthDay) >= 29);
 	/** Missed dates the switch would make at once (ADR-0022 addendum 5). */
@@ -283,16 +283,34 @@
 		{/if}
 	{/if}
 
-	<p class="preview" aria-live="polite">
-		{#if preview.dates.length === 0}
-			Nächste Termine erscheinen, sobald alle Angaben stimmen.
-		{:else if calendar}
-			Nächste Termine: {previewText}
+	<!-- Each date with the day its ticket appears, so the lead time shows (plan "Wiederholungen
+	     verständlich machen": "erscheint … → fällig …"). -->
+	<div class="preview" aria-live="polite">
+		{#if preview.rows.length === 0}
+			<p>Nächste Termine erscheinen, sobald alle Angaben stimmen.</p>
 		{:else}
-			Wird das Ticket heute erledigt, ist das nächste am {previewText} fällig.
+			<p class="preview-title">
+				{calendar ? 'Nächste Termine' : 'Wird das Ticket heute erledigt'}
+			</p>
+			<ol class="preview-rows">
+				{#each preview.rows as row (row.due)}
+					<li data-due={row.due}>
+						<span class="appears">{appearsText(row.appears, today)}</span>
+						<span class="arrow" aria-hidden="true">→</span>
+						<span class="due">fällig {dayLabel(row.due, today)}</span>
+					</li>
+				{/each}
+			</ol>
 		{/if}
-	</p>
-	{#if preview.firstDue !== null}
+	</div>
+	{#if preview.firstDue !== null && preview.firstDue < today}
+		<!-- Recommendation 4: a start in the past makes the ticket overdue at once. -->
+		<SectionMessage tone="warning" compact>
+			„Beginnt am“ liegt in der Vergangenheit: Das Ticket bekommt den ersten Termin {formatCalendarDate(
+				preview.firstDue
+			)} und ist damit schon überfällig.
+		</SectionMessage>
+	{:else if preview.firstDue !== null}
 		<p class="note">
 			Das Ticket hat noch keine Fälligkeit und bekommt den ersten Termin: {formatCalendarDate(
 				preview.firstDue
@@ -318,7 +336,7 @@
 	legend,
 	.field > label {
 		margin-bottom: 0.25rem;
-		font-size: 0.8125rem;
+		font-size: var(--font-size-control);
 		font-weight: 600;
 	}
 
@@ -338,7 +356,7 @@
 		display: inline-flex;
 		gap: 0.375rem;
 		align-items: center;
-		font-size: 0.875rem;
+		font-size: var(--font-size-body);
 	}
 
 	.days {
@@ -352,7 +370,7 @@
 		gap: 0.25rem;
 		align-items: center;
 		padding: 0.25rem 0.5rem;
-		font-size: 0.8125rem;
+		font-size: var(--font-size-control);
 		border: 1px solid var(--color-line);
 		border-radius: var(--radius-control);
 	}
@@ -360,7 +378,7 @@
 	input:not([type='radio'], [type='checkbox']),
 	select {
 		padding: 0.375rem 0.5rem;
-		font-size: 0.875rem;
+		font-size: var(--font-size-body);
 		background: var(--color-surface);
 		border: 1px solid var(--color-line);
 		border-radius: var(--radius-control);
@@ -394,15 +412,46 @@
 
 	.hint,
 	.note {
-		font-size: 0.75rem;
+		font-size: var(--font-size-small);
 		color: var(--color-text-muted);
 	}
 
 	.preview {
+		display: grid;
+		gap: 0.25rem;
 		padding: 0.5rem 0.75rem;
-		font-size: 0.8125rem;
+		font-size: var(--font-size-control);
 		background: var(--color-bg);
 		border: 1px solid var(--color-line);
 		border-radius: var(--radius-control);
+	}
+
+	.preview-title {
+		font-weight: 600;
+	}
+
+	/* Two columns: when the ticket appears, then its due date; the lead time is the gap. */
+	.preview-rows {
+		display: grid;
+		grid-template-columns: max-content max-content 1fr;
+		gap: 0.125rem 0.5rem;
+		padding: 0;
+		list-style: none;
+	}
+
+	/* Rows keep their list semantics (no display: contents) and line up through the subgrid. */
+	.preview-rows li {
+		display: grid;
+		grid-column: 1 / -1;
+		grid-template-columns: subgrid;
+	}
+
+	.appears,
+	.arrow {
+		color: var(--color-text-muted);
+	}
+
+	.due {
+		font-variant-numeric: tabular-nums;
 	}
 </style>

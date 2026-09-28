@@ -167,7 +167,10 @@ describe('RecurrencePanel: a rule', () => {
 		const heading = screen.getByRole('heading', { level: 2, name: 'Müll rausbringen' });
 		expect(document.activeElement).toBe(heading);
 		expect(within(panel()).getByText('Aktiv')).toBeTruthy();
-		expect(screen.getByText('Nächstes Ticket am 28.09.')).toBeTruthy();
+		// Recommendation 2: due date, appearance and the open ticket it waits for.
+		expect(
+			screen.getByText('Nächstes Ticket fällig 28.09., erscheint, sobald TASK-7 erledigt ist')
+		).toBeTruthy();
 		expect(screen.getByRole('link', { name: 'TASK-7' }).getAttribute('href')).toBe(
 			'/tickets/ticket000000001'
 		);

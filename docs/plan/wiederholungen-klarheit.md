@@ -1,6 +1,6 @@
 # E6-Plan „Wiederholungen verständlich machen“: Erklärung in der App und acht Empfehlungen
 
-- **Stand:** in Arbeit (2026-09-28). WK-1 gemergt (#153), WK-2 umgesetzt.
+- **Stand:** in Arbeit (2026-09-28). WK-1 gemergt (#153), WK-2 gemergt (#154), WK-3 umgesetzt.
 - **Grundlage:**
   - Vom Nutzer freigegebene Spec vom 2026-09-28: Teil A (Erklärung in der App: „So funktioniert’s“ im Formular mit Live-Beispielsatz, Vorschau „erscheint → fällig“, Kurz-Hinweise, Hilfeseite „Wiederholungen“, Beispiele aus der echten Rechenlogik mit Tests) und Teil B (Empfehlungen 1 bis 8).
   - [ADR-0021](../adr/0021-regelmodell-wiederkehrende-aufgaben.md) bis [ADR-0024](../adr/0024-serien-aus-kalendern.md) mit allen Nachträgen, [ADR-0013](../adr/0013-filter-suche-sortierung-gruppierung.md), [ADR-0025](../adr/0025-ui-konsistenz-overlay-system.md), [ADR-0026](../adr/0026-einstellungsbereich-und-hinweis-bausteine.md), [ADR-0009](../adr/0009-fehlerfarbe.md), [ADR-0029](../adr/0029-glas-materialien.md), [ADR-0030](../adr/0030-spalten-breiten-und-kompakte-zeilen.md), [ADR-0035](../adr/0035-start-einstieg-und-offene-tabs.md), [ADR-0036](../adr/0036-sammelbearbeitung-inline-und-oeffnungsmodus.md), [ADR-0037](../adr/0037-papierkorb.md)
@@ -21,7 +21,7 @@
 |---|---|---|
 | WK-1 | Empfehlung 1 (Wiedereröffnen nur beim direkten Vorgänger mit Entfernen des Folgetickets, sonst Ablehnung mit „Als normales Ticket wieder öffnen (aus der Serie lösen)“) und Empfehlung 3 (zusammengefasste verpasste Termine als Verlaufseintrag und Hinweis im Ticket) | BYL-E6-340 bis BYL-E6-342 |
 | WK-2 | Empfehlung 5 (Schalter mit mehr als 20 verpassten Terminen: „wartet auf Entscheidung“, ohne Migration), Empfehlung 6 (Schalter aus bei mehreren offenen Tickets) und Empfehlung 7 (alle offenen Tickets in Übersicht und Panel; zog aus WK-3 vor, weil dieselben Stellen die offenen Tickets für Empfehlung 6 brauchen) | BYL-E6-343 bis BYL-E6-346 |
-| WK-3 | Empfehlungen 2 und 4 sowie die Vorschau „erscheint → fällig“ | folgt |
+| WK-3 | Empfehlungen 2 und 4 sowie die Vorschau „erscheint → fällig“ | BYL-E6-347 bis BYL-E6-349 |
 | WK-4 | Teil A: „So funktioniert’s“ mit Live-Satz, Kurz-Hinweise, Hilfeseite „Wiederholungen“ mit Beispielen aus der Engine und Tests; Empfehlung 8 (Doku) | folgt |
 
 ## 3. Entscheidungen
@@ -41,14 +41,17 @@
 | 2026-09-28 | WK-2 | **Zustand „Wartet“** in der Spalte „Zustand“ (Lozenge neutral mit Warn-Icon, `title` mit dem Weg), weil „Wartet auf Entscheidung“ die Spalte (7rem) sprengen würde; Panel und Frage sagen es ausgeschrieben. |
 | 2026-09-28 | WK-2 | **Start- und Aufmerksamkeitsanzeige:** `AttentionDeps.opened` (ADR-0035 Nachtrag) ruft nach dem Flag „erneut geöffnet“ `RecurrenceStore.announceWaiting`; das `(app)`-Layout ruft es außerdem einmal nach dem Laden der Regeln. Ein Flag für alle wartenden Regeln mit „Ansehen“ (eine Regel: ihr Panel, mehrere: Übersicht). |
 | 2026-09-28 | WK-2 | **Alle offenen Tickets:** `openInstancesOf` (rein) liefert die offenen Tickets einer Regel aus der Liste der offenen Tickets, älteste zuerst. Die Spalte heißt jetzt „Offene Tickets“ (max. 16rem), zeigt bei mehreren „3 offene Tickets: HAUS-1, HAUS-2, HAUS-3“ (Zahl sichtbar, Wort für Screenreader) mit allen Keys als Links und der Liste als `title`. Das Regel-Panel listet sie mit Titeln, die Löschfrage nennt alle. |
+| 2026-09-28 | WK-3 | **„Nächstes Ticket“ aus einer Quelle:** `nextTicketOf` (rein) liefert Zustand, Fälligkeit, Erscheinen und die offenen Tickets, die es zurückhalten; daraus entstehen der Satz für Ticket und Panel (`nextTicketText`) und die zwei Zeilen der Spalte (`nextTicketDate`, `nextTicketNote`, Satz als `title`). Die Fälligkeit folgt ohne Schalter bei verpassten Terminen `catchUp`, damit der Satz nie einen Termin nennt, den der Server überspringen wird. „erscheint in Kürze“ statt eines Datums, sobald der Tag erreicht ist: Das Ticket kommt dann mit dem nächsten stündlichen Lauf. |
+| 2026-09-28 | WK-3 | **Vorschau als Liste:** geordnete Liste mit drei Spalten über `subgrid` (Erscheinen, Pfeil, Fälligkeit), Wochentag im Datum (`dayLabel`, „Mo 05.10.“, andere Jahre mit Jahreszahl), `aria-live` bleibt am Rahmen. „erscheint sofort“ für einen Tag vor heute, „erscheint heute“ für heute. Die Zeilen tragen `data-due` für die Tests. `RecurrenceForm` zieht dabei ganz auf die Schriftgrößen-Tokens (`no-own-font-sizes.test.ts` jetzt 166). |
+| 2026-09-28 | WK-3 | **Warnung „Beginnt am“ in der Vergangenheit** nur, wenn das Ticket keine Fälligkeit hat und ein fester Rhythmus ihm den ersten Termin gibt (ADR-0023 §1); „Nach Erledigung“ lässt die Fälligkeit, wie sie ist. Warnung ohne Rot (`SectionMessage` warning), sie ersetzt den neutralen Satz „bekommt den ersten Termin“. |
 
 ## 4. Status
 
 | Paket | Stand |
 |---|---|
 | WK-1 | gemergt (#153) |
-| WK-2 | umgesetzt |
-| WK-3 | geplant |
+| WK-2 | gemergt (#154) |
+| WK-3 | umgesetzt |
 | WK-4 | geplant |
 
 ## 5. Offene Punkte

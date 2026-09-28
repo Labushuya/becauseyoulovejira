@@ -2,7 +2,14 @@
 // line "Wiederholt sich: …", the accessible name of the symbol in the table and the overview.
 
 import type { CalendarDate } from './berlin-date';
-import { LAST_DAY, WEEKDAYS, type RecurrenceParams, type Weekday, validRule } from './recurrence';
+import {
+	LAST_DAY,
+	WEEKDAYS,
+	type RecurrenceParams,
+	type Weekday,
+	validRule,
+	weekdayOf
+} from './recurrence';
 
 export const WEEKDAY_NAMES: Readonly<Record<Weekday, string>> = Object.freeze({
 	MO: 'Montag',
@@ -112,4 +119,12 @@ export function shortDate(date: CalendarDate, today: CalendarDate): string {
 	const [year, month, day] = date.split('-');
 	const [currentYear] = today.split('-');
 	return year === currentYear ? `${day}.${month}.` : `${day}.${month}.${year}`;
+}
+
+/**
+ * A calendar date with its weekday, "Mo 05.10." (current year) or "Mo 05.10.2027", for the preview
+ * "erscheint … → fällig …" and the examples (plan "Wiederholungen verständlich machen").
+ */
+export function dayLabel(date: CalendarDate, today: CalendarDate): string {
+	return `${WEEKDAY_SHORT[weekdayOf(date)]} ${shortDate(date, today)}`;
 }

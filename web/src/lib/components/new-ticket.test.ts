@@ -931,7 +931,9 @@ describe('new ticket: repeat right away (plan OR-4)', () => {
 		const form = within(section());
 		expect(form.getByRole<HTMLInputElement>('checkbox', { name: 'Montag' }).checked).toBe(true);
 		expect(form.getByLabelText<HTMLInputElement>('Beginnt am').value).toBe('2026-09-28');
-		expect(form.getByText('Nächste Termine: 28.09.2026, 05.10.2026, 12.10.2026')).toBeTruthy();
+		const dues = () =>
+			[...section().querySelectorAll<HTMLElement>('.preview li')].map((row) => row.dataset.due);
+		expect(dues()).toEqual(['2026-09-28', '2026-10-05', '2026-10-12']);
 
 		// Untouched defaults move with the due date (Wednesday), chosen values stay.
 		await fireEvent.input(due, { target: { value: '2026-09-30' } });
@@ -942,7 +944,7 @@ describe('new ticket: repeat right away (plan OR-4)', () => {
 		await fireEvent.input(due, { target: { value: '2026-10-05' } });
 		await fireEvent.change(due);
 		expect(form.getByLabelText<HTMLInputElement>('Beginnt am').value).toBe('2026-09-30');
-		expect(form.getByText('Nächste Termine: 30.09.2026, 02.10.2026, 07.10.2026')).toBeTruthy();
+		expect(dues()).toEqual(['2026-09-30', '2026-10-02', '2026-10-07']);
 	});
 
 	it('creates the ticket, then the rule with it, and shows it in its series at once', async () => {
