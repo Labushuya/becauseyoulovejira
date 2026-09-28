@@ -60,6 +60,8 @@
 
 ## 6. Hinweise für den Papierkorb (ADR-0037)
 
+Umgesetzt nach dem [Plan Papierkorb](papierkorb.md): Sammel-Löschen verschiebt über die Route, „Rückgängig“ stellt mit `expected_updated` wieder her.
+
 - **Sammel-Löschen** läuft je Ticket über die Route „Ticket löschen mit Quellenbehandlung“; ein Papierkorb muss dort ansetzen (nicht im Store), damit Einzel- und Sammel-Löschen gleich bleiben. Mit ihm kann „Löschen“ ein „Rückgängig“ im Flag bekommen (heute ausdrücklich keins, der Dialog sagt „nicht rückgängig“).
 - **Rückgängig nach Projektwechsel** vergibt einen weiteren Key; ein wiederhergestelltes Ticket behält dagegen seinen Key (Nummernkreise, siehe [Offene Reste](offene-reste.md) §6).
 - **`expected_updated`** schützt „Rückgängig“ vor dem Überschreiben; ein Wiederherstellen aus dem Papierkorb sollte denselben Maßstab anlegen (nichts still überschreiben).

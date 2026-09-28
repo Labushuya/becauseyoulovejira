@@ -16,6 +16,8 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
 	{ id: 'kanaele', label: 'Kanäle', href: resolve('/einstellungen/kanaele') },
 	{ id: 'datei-importe', label: 'Datei-Importe', href: resolve('/einstellungen/datei-importe') },
 	{ id: 'tags', label: 'Tags', href: resolve('/einstellungen/tags') },
+	// Settings of the tickets, since ADR-0037 the retention of the trash.
+	{ id: 'tickets', label: 'Tickets', href: resolve('/einstellungen/tickets') },
 	{ id: 'darstellung', label: 'Darstellung', href: resolve('/einstellungen/darstellung') },
 	{ id: 'konto', label: 'Konto', href: resolve('/einstellungen/konto') },
 	{ id: 'hilfe', label: 'Hilfe', href: resolve('/einstellungen/hilfe') }

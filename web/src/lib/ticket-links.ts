@@ -153,6 +153,16 @@ export function recurrenceHref(id: string): ResolvedPathname {
 	return resolve(`/wiederholungen/${encodeURIComponent(id)}`) as ResolvedPathname;
 }
 
+/** View "Papierkorb" (ADR-0037 §9). */
+export function trashHref(): ResolvedPathname {
+	return resolve('/papierkorb');
+}
+
+/** Read-only preview of a ticket in the trash, addressed by record ID. */
+export function trashItemHref(id: string): ResolvedPathname {
+	return resolve(`/papierkorb/${encodeURIComponent(id)}`) as ResolvedPathname;
+}
+
 /** Panel "Neue Regel" (E5 plan, T-6). */
 export function newRecurrenceHref(): ResolvedPathname {
 	return resolve('/wiederholungen/neu');

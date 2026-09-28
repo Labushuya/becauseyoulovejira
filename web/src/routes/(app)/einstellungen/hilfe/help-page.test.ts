@@ -110,6 +110,7 @@ describe('help page (EH-9)', () => {
 			'Warum sehe ich im Admin-Bereich andere Konten?',
 			'Wie ändere ich Spalten und ihre Breite?',
 			'Wie arbeite ich mit Unteraufgaben?',
+			'Wie hole ich ein gelöschtes Ticket zurück?',
 			'Wie gliedere ich ein Projekt in Unterprojekte?',
 			'Wie formatiere ich Beschreibungen und Kommentare?'
 		]);

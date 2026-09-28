@@ -102,4 +102,7 @@
 
 ## Nachtrag (2026-09-28, Papierkorb, ADR-0037)
 
-- „Löschen“ je Ticket über die Route „Ticket löschen mit Quellenbehandlung“ verschiebt seit PB-1 in den Papierkorb; die Antwort `{ id, updated, tickets }` trägt die Grundlage für „Rückgängig“. §4 „‚Löschen‘ bietet keins“ entfällt mit PB-2: „Rückgängig“ ist dann das Wiederherstellen je Ticket mit `expected_updated` (derselbe Maßstab wie nach Feldänderungen), Konflikte stehen je Ticket im Ergebnis.
+- „Löschen“ je Ticket über die Route „Ticket löschen mit Quellenbehandlung“ verschiebt seit PB-1 in den Papierkorb; die Antwort `{ id, updated, tickets }` trägt die Grundlage für „Rückgängig“. §4 „‚Löschen‘ bietet keins“ entfällt mit PB-2: „Rückgängig“ ist das Wiederherstellen je Ticket mit `expected_updated` (derselbe Maßstab wie nach Feldänderungen), Konflikte stehen je Ticket im Ergebnis („Wurde inzwischen wiederhergestellt oder geändert.“).
+- Übergeordnete Tickets gehen zuerst: Ihre gewählten Unteraufgaben gehen als Gruppe mit (ein Eintrag zum Rückgängigmachen), eine danach schon verschobene Unteraufgabe (404) zählt als verschoben.
+- Die Frage heißt „N Tickets in den Papierkorb verschieben?“ mit „In den Papierkorb“ und nennt die Aufbewahrung; „nicht rückgängig“ steht nur noch beim endgültigen Löschen im Papierkorb.
+- Das Glas der Leiste (§3) steht seit PB-2 im gemeinsamen Baustein `SelectionBar`, den auch der Papierkorb nutzt (ADR-0029, Nachtrag).

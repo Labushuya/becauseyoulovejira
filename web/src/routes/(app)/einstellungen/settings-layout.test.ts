@@ -90,6 +90,7 @@ describe('settings layout', () => {
 			['Kanäle', '/einstellungen/kanaele'],
 			['Datei-Importe', '/einstellungen/datei-importe'],
 			['Tags', '/einstellungen/tags'],
+			['Tickets', '/einstellungen/tickets'],
 			['Darstellung', '/einstellungen/darstellung'],
 			['Konto', '/einstellungen/konto'],
 			['Hilfe', '/einstellungen/hilfe']

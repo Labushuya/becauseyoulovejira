@@ -13,6 +13,7 @@
 	import TicketDescription from './TicketDescription.svelte';
 	import TicketFields from './TicketFields.svelte';
 	import TicketMeta from './TicketMeta.svelte';
+	import TrashNotice from './TrashNotice.svelte';
 
 	// Detail panel (E2 plan, package 7; E3 plan, T-13 and T-14) on the side panel building block
 	// (ADR-0025 section 6): header with the key, "Löschen …", "Vollansicht" and ×; title, fields,
@@ -126,12 +127,14 @@
 		<div class="message">
 			<h2 id={headingId} tabindex="-1" bind:this={messageHeading}>Ticket nicht gefunden</h2>
 			<p>Das Ticket gibt es nicht, oder es ist für dich nicht sichtbar.</p>
+			<TrashNotice id={store.id} />
 			<a href={listHref}>Zur Liste</a>
 		</div>
 	{:else if store.state === 'deleted'}
 		<div class="message">
 			<h2 id={headingId} tabindex="-1" bind:this={messageHeading}>Dieses Ticket wurde gelöscht.</h2>
-			<p>Es wurde an anderer Stelle gelöscht, samt Kommentaren und Verlauf.</p>
+			<p>Es wurde an anderer Stelle gelöscht.</p>
+			<TrashNotice id={store.id} />
 			<a href={listHref}>Zur Liste</a>
 		</div>
 	{:else if store.state === 'error'}

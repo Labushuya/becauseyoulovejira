@@ -64,7 +64,7 @@
 {#if ticket}
 	<!-- svelte-ignore a11y_no_static_element_interactions -->
 	<div class="question" aria-busy={deleting ? 'true' : undefined} {onkeydown}>
-		<SectionMessage tone="warning" title={`${ticket.key} endgültig löschen?`}>
+		<SectionMessage tone="warning" title={`${ticket.key} in den Papierkorb verschieben?`}>
 			<div class="text">
 				<TicketDeleteText {ticket} {sourceCount} {subtaskCount} />
 				{#if sourceCount > 0}
@@ -90,7 +90,7 @@
 					aria-disabled={deleting ? 'true' : undefined}
 					onclick={remove}
 				>
-					{deleting ? 'Wird gelöscht …' : 'Endgültig löschen'}
+					{deleting ? 'Wird verschoben …' : 'In den Papierkorb'}
 				</button>
 			{/snippet}
 		</SectionMessage>

@@ -22,8 +22,9 @@ const GLASS_FILES = [
 	'lib/components/SuggestionList.svelte',
 	'lib/components/CenteredCard.svelte',
 	'lib/components/SettingsNav.svelte',
-	// The bar of the bulk actions above the ticket table (plan BI-2, ADR-0036 §3), thick material.
-	'lib/components/BulkActionBar.svelte',
+	// The bar of the chosen rows above the tables "Aufgaben" and "Papierkorb" (plan BI-2, ADR-0036
+	// §3; ADR-0037), thick material; BulkActionBar and TrashView put their actions into it.
+	'lib/components/SelectionBar.svelte',
 	'lib/styles/tour.css'
 ];
 

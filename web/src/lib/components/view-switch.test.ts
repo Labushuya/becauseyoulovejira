@@ -17,7 +17,7 @@ const mocks = vi.hoisted(() => ({ page: { url: new URL('http://localhost:3000/')
 vi.mock('$app/state', () => ({ page: mocks.page }));
 
 function show(
-	current: 'tasks' | 'projects' | 'inbox' | 'recurrences',
+	current: 'tasks' | 'projects' | 'inbox' | 'recurrences' | 'trash',
 	path: string,
 	inboxCount: number | null = null
 ) {
@@ -27,7 +27,7 @@ function show(
 }
 
 describe('view switch', () => {
-	it('is a navigation with four links and marks the list as current', () => {
+	it('is a navigation with four views and the trash, and marks the list as current', () => {
 		const nav = show('tasks', '/tickets/abc123def456ghi?status=open&sort=titel');
 
 		const links = nav.getAllByRole('link');
@@ -35,7 +35,8 @@ describe('view switch', () => {
 			'Aufgaben',
 			'Projekte',
 			'Eingang',
-			'Wiederholungen'
+			'Wiederholungen',
+			'Papierkorb'
 		]);
 		const tasks = nav.getByRole('link', { name: 'Aufgaben' });
 		expect(tasks.getAttribute('aria-current')).toBe('page');
@@ -55,13 +56,15 @@ describe('view switch', () => {
 			false,
 			false,
 			false,
+			false,
 			false
 		]);
 		expect(links.map((link) => link.getAttribute('href'))).toEqual([
 			'/',
 			'/projekte',
 			'/eingang',
-			'/wiederholungen'
+			'/wiederholungen',
+			'/papierkorb'
 		]);
 		expect(nav.getByRole('link', { name: 'Eingang (2 neu)' })).toBeTruthy();
 	});
@@ -118,8 +121,19 @@ describe('view switch', () => {
 
 	// Since G-4 the switch is the segmented control of base.css (ADR-0029 section 9): the current
 	// view is the raised thumb with weight and a frame besides its colour (ADR-0010 section 3).
+	it('shows the trash as a quiet link after the segments, with its number (ADR-0037)', () => {
+		const nav = show('trash', '/papierkorb/abc123def456ghi');
+		const trash = nav.getByRole('link', { name: 'Papierkorb' });
+		expect(trash.getAttribute('aria-current')).toBe('page');
+		expect(trash.getAttribute('href')).toBe('/papierkorb');
+		expect(trash.closest('.segmented')).toBeNull();
+		expect(nav.getByRole('link', { name: 'Aufgaben' }).hasAttribute('aria-current')).toBe(false);
+	});
+
 	it('marks the current view by weight and a frame besides its colour (segmented control)', () => {
-		expect(source).toMatch(/<nav class="view-switch segmented" aria-label="Ansicht">/);
+		expect(source).toMatch(
+			/<nav class="view-switch" aria-label="Ansicht">\s*<div class="segmented">/
+		);
 		const rule =
 			/\.segmented > :is\(\[aria-current='page'\], \[aria-pressed='true'\]\) \{([^}]*)\}/.exec(
 				base

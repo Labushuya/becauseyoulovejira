@@ -17,6 +17,7 @@ import {
 	deleteTicket,
 	getTicket,
 	updateTicket,
+	type TrashMove,
 	type UpdateOptions
 } from '$lib/data/tickets';
 import { toggleTask } from '$lib/markdown';
@@ -79,8 +80,16 @@ export interface TicketDetailData {
 	get(id: string, options: RequestOptions): Promise<Ticket>;
 	update(id: string, patch: TicketPatch, options?: UpdateOptions): Promise<Ticket>;
 	create(draft: TicketDraft, origin?: TicketOrigin): Promise<Ticket>;
-	/** With `sources` the route settles the sources as chosen; without, they go to the inbox. */
-	delete(id: string, sources?: SourceHandling): Promise<void>;
+	/**
+	 * Moves the ticket to the trash (ADR-0037) through the route, the sources as chosen; answers
+	 * the move for "Rückgängig" (null before the migration of the trash).
+	 */
+	delete(id: string, sources: SourceHandling): Promise<TrashMove | null>;
+}
+
+/** What the store needs of the trash: the flag with "Rückgängig" after a move (ADR-0037 §7). */
+export interface TrashUndo {
+	offerUndo(move: TrashMove, title: string): void;
 }
 
 /** Sources of the ticket to delete and what happens to them (ADR-0031, addendum B). */
@@ -138,9 +147,7 @@ export function ticketDetailData(pb: PocketBase): TicketDetailData {
 		get: (id, options) => getTicket(pb, id, options),
 		update: (id, patch, options) => updateTicket(pb, id, patch, options),
 		create: (draft, origin) => createTicket(pb, draft, { origin }),
-		delete: async (id, sources) => {
-			await deleteTicket(pb, id, sources === undefined ? {} : { sources });
-		}
+		delete: (id, sources) => deleteTicket(pb, id, { sources })
 	};
 }
 
@@ -181,6 +188,7 @@ export class TicketDetailStore {
 	readonly #data: TicketDetailData;
 	readonly #session: SessionGuard;
 	readonly #list: TicketListSync;
+	readonly #trash: TrashUndo | null;
 
 	readonly #drafts = new SvelteMap<EditableField, string>();
 	readonly #saving = new SvelteSet<FieldKey>();
@@ -214,10 +222,16 @@ export class TicketDetailStore {
 		return { ...own, ...summary, description: own.description };
 	});
 
-	constructor(data: TicketDetailData, session: SessionGuard, list: TicketListSync) {
+	constructor(
+		data: TicketDetailData,
+		session: SessionGuard,
+		list: TicketListSync,
+		trash: TrashUndo | null = null
+	) {
 		this.#data = data;
 		this.#session = session;
 		this.#list = list;
+		this.#trash = trash;
 	}
 
 	get id(): string | null {
@@ -721,20 +735,20 @@ export class TicketDetailStore {
 	}
 
 	/**
-	 * Deletes the shown ticket for good (E2 plan, T-12 and P-4; comments and history go with it
-	 * by cascade). On success the ticket leaves the list and the list announces it. A ticket that
-	 * is already gone (404) counts as deleted. Any other failure keeps the ticket. With `sources`
-	 * the sources go back to the inbox or are discarded as chosen (ADR-0031, addendum B), and the
-	 * announcement says so.
+	 * Moves the shown ticket with its sub-tasks to the trash (ADR-0037; before its migration the
+	 * server deletes for good as in E2). On success the ticket leaves the list and a flag says so,
+	 * with "Rückgängig" when the server answered the move. A ticket that is already gone (404)
+	 * counts as deleted. Any other failure keeps the ticket. The sources go back to the inbox or
+	 * stay with the ticket as chosen (ADR-0031, addendum B), and the flag says so.
 	 */
 	async deleteTicket(sources?: DeleteSources): Promise<DeleteResult> {
 		const ticket = this.#ticket;
 		if (ticket === null) return { ok: false, message: null };
 		if (!this.#session.ensureValid()) return { ok: false, message: null };
 		this.#deletingId = ticket.id;
+		let move: TrashMove | null = null;
 		try {
-			if (sources === undefined) await this.#data.delete(ticket.id);
-			else await this.#data.delete(ticket.id, sources.handling);
+			move = await this.#data.delete(ticket.id, sources?.handling ?? 'inbox');
 		} catch (error) {
 			if (this.#deletingId === ticket.id) this.#deletingId = null;
 			const failure = toDataError(error);
@@ -745,9 +759,14 @@ export class TicketDetailStore {
 			if (failure.kind !== 'not_found') return { ok: false, message: failure.message };
 		}
 		this.#list.remove(ticket.id);
-		this.#list.announce(
-			deletedWithSourcesText(ticket.key, sources?.count ?? 0, sources?.handling ?? 'inbox')
+		const text = deletedWithSourcesText(
+			ticket.key,
+			sources?.count ?? 0,
+			sources?.handling ?? 'inbox',
+			move !== null
 		);
+		if (move !== null && this.#trash !== null) this.#trash.offerUndo(move, text);
+		else this.#list.announce(text);
 		return { ok: true, key: ticket.key };
 	}
 

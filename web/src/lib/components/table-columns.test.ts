@@ -29,7 +29,9 @@ describe('tables without sideways scrolling', () => {
 			'InboxTable.svelte',
 			'ProjectTable.svelte',
 			'RecurrenceTable.svelte',
-			'TicketTable.svelte'
+			'TicketTable.svelte',
+			// The trash (ADR-0037).
+			'TrashTable.svelte'
 		]);
 	});
 
@@ -52,7 +54,7 @@ describe('tables without sideways scrolling', () => {
 		expect(style).not.toMatch(/container-type/);
 		expect(style).not.toMatch(/display:\s*none/);
 		expect(source).toMatch(
-			/new ColumnFit\(\s*getColumnPrefs\('(tickets|inbox|projects|recurrences)'\)/
+			/new ColumnFit\(\s*getColumnPrefs\('(tickets|inbox|projects|recurrences|trash)'\)/
 		);
 		expect(source).toMatch(/columnFit\.observe\(/);
 		expect(source).toContain('<colgroup>');

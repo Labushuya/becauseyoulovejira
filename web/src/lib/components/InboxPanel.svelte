@@ -21,11 +21,13 @@
 		COPY_LABELS,
 		copyCompleteness,
 		copyNote,
+		deletedTicketId,
 		deletedTicketNote,
 		pageCopyText
 	} from '$lib/domain/sources';
 	import { convertHref } from '$lib/ticket-links';
 	import ErrorIcon from './ErrorIcon.svelte';
+	import TrashNotice from './TrashNotice.svelte';
 	import Lozenge from './guidance/Lozenge.svelte';
 	import SectionMessage from './guidance/SectionMessage.svelte';
 	import LinkTicketDialog from './LinkTicketDialog.svelte';
@@ -319,6 +321,8 @@
 
 		{#if ticketGone !== null}
 			<SectionMessage tone="info" compact>{ticketGone}</SectionMessage>
+			<!-- Since the trash (ADR-0037) the ticket may still be there. -->
+			<TrashNotice id={deletedTicketId(item)} title="Das Ticket liegt im Papierkorb" />
 		{/if}
 
 		{#if item.state === 'discarded'}

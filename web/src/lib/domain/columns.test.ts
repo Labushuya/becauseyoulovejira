@@ -81,7 +81,7 @@ describe('column specs', () => {
 				expect(entry.width, entry.id).toBeLessThanOrEqual(entry.max);
 			}
 		}
-		expect(Object.keys(TABLES)).toEqual(['tickets', 'inbox', 'projects', 'recurrences']);
+		expect(Object.keys(TABLES)).toEqual(['tickets', 'inbox', 'projects', 'recurrences', 'trash']);
 	});
 
 	it('keeps key, title and actions of the tickets always shown and lists the rest in the menu', () => {

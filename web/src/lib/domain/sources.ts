@@ -142,10 +142,14 @@ export const SOURCE_HANDLING_LABELS: Readonly<Record<SourceHandling, string>> = 
 	discard: 'Quellen verwerfen'
 });
 
+/**
+ * What each choice means since the trash (ADR-0037 §6): back to the inbox at once, or along with
+ * the ticket into the trash, discarded only when the ticket is deleted for good.
+ */
 export const SOURCE_HANDLING_HINTS: Readonly<Record<SourceHandling, string>> = Object.freeze({
-	inbox: 'Sie stehen wieder als neu im Eingang, mit dem Hinweis auf das gelöschte Ticket.',
+	inbox: 'Sie stehen sofort wieder als neu im Eingang, mit dem Hinweis auf das gelöschte Ticket.',
 	discard:
-		'Sie gelten als verworfen: Ihr Inhalt wird nach 30 Tagen gelöscht, und dieselbe Mail oder Nachricht kommt nicht noch einmal herein.'
+		'Sie kommen mit in den Papierkorb und mit dem Ticket zurück. Erst beim endgültigen Löschen werden sie verworfen; dieselbe Mail oder Nachricht kommt dann nicht noch einmal herein.'
 });
 
 /** "Zu diesem Ticket gehört 1 Quelle." / "… gehören 3 Quellen." */
@@ -155,17 +159,27 @@ export function sourceCountText(count: number): string {
 		: `Zu diesem Ticket gehören ${count} Quellen.`;
 }
 
-/** Status message after deleting a ticket with sources: "HAUS-12 wurde gelöscht. 2 Quellen …". */
+/**
+ * Message after deleting a ticket with sources. In the trash (ADR-0037): "HAUS-12 in den
+ * Papierkorb verschoben. 2 Quellen sind wieder im Eingang." / "… bleiben beim Ticket.". Before
+ * the migration of the trash (`trashed` false): "HAUS-12 wurde gelöscht. …".
+ */
 export function deletedWithSourcesText(
 	key: string,
 	count: number,
-	handling: SourceHandling
+	handling: SourceHandling,
+	trashed = true
 ): string {
-	if (count === 0) return `${key} wurde gelöscht.`;
+	const moved = trashed ? `${key} in den Papierkorb verschoben.` : `${key} wurde gelöscht.`;
+	if (count === 0) return moved;
+	if (handling === 'discard') {
+		const kept = count === 1 ? '1 Quelle bleibt' : `${count} Quellen bleiben`;
+		return trashed
+			? `${moved} ${kept} beim Ticket.`
+			: `${moved} ${count === 1 ? '1 Quelle ist' : `${count} Quellen sind`} verworfen.`;
+	}
 	const sources = count === 1 ? '1 Quelle ist' : `${count} Quellen sind`;
-	return handling === 'discard'
-		? `${key} wurde gelöscht. ${sources} verworfen.`
-		: `${key} wurde gelöscht. ${sources} wieder im Eingang.`;
+	return `${moved} ${sources} wieder im Eingang.`;
 }
 
 /**
@@ -183,6 +197,20 @@ export function deletedTicketNote(
 	return item.state === 'discarded'
 		? `${ticket} wurde gelöscht; dieser Eintrag war eine Quelle und wurde dabei verworfen.`
 		: `${ticket} wurde gelöscht; dieser Eintrag war eine Quelle und ist wieder im Eingang.`;
+}
+
+/**
+ * ID of the deleted ticket of an entry (source_meta.ticket_deleted.ticket, since the trash,
+ * ADR-0037), so the panel can point to the trash; null without one or while it belongs to one.
+ */
+export function deletedTicketId(
+	item: Pick<InboxItemSummary, 'state' | 'sourceMeta'>
+): string | null {
+	if (item.state === 'converted') return null;
+	const note = item.sourceMeta.ticket_deleted;
+	if (typeof note !== 'object' || note === null || Array.isArray(note)) return null;
+	const { ticket } = note as Record<string, unknown>;
+	return typeof ticket === 'string' && /^[a-z0-9]{15}$/.test(ticket) ? ticket : null;
 }
 
 /** Text of the flag after linking: "3 Einträge mit TASK-4 verknüpft." */

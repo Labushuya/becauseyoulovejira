@@ -1,0 +1,266 @@
+// Trash for tickets (ADR-0037, plan PB-2): the only way of the SPA to tickets in the trash. The
+// API rules hide them everywhere else (migration 1790202300); these routes check the visibility
+// without the trash condition. Answers are read strictly: anything outside the expected shape is
+// dropped (a list entry) or counts as a server error.
+
+import type PocketBase from 'pocketbase';
+import { DataError, withDataErrors } from './errors';
+import type { RequestOptions } from './options';
+import type { Unsubscribe } from './realtime';
+import { PRIORITIES, STATUSES, type Priority, type Status } from '../domain/status';
+import {
+	parseRetention,
+	type RestoreOptions,
+	type RestoreResult,
+	type SkipReason,
+	type TrashItem,
+	type TrashPreview,
+	type TrashProject,
+	type TrashRetention
+} from '../domain/trash';
+
+const TRASH_ROUTE = '/api/byl/trash';
+
+/** Realtime topic of the server: the trash of the signed-in account changed (no data). */
+export const TRASH_TOPIC = 'byl/trash';
+
+type Json = Record<string, unknown>;
+
+function isRecord(value: unknown): value is Json {
+	return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function text(value: unknown): string | null {
+	return typeof value === 'string' ? value : null;
+}
+
+function strings(value: unknown): string[] | null {
+	if (!Array.isArray(value)) return null;
+	const list: string[] = [];
+	for (const entry of value) {
+		if (typeof entry !== 'string') return null;
+		list.push(entry);
+	}
+	return list;
+}
+
+function invalid(): DataError {
+	return new DataError('server');
+}
+
+function toProject(value: unknown): TrashProject | null | undefined {
+	if (value === null) return null;
+	if (!isRecord(value)) return undefined;
+	const id = text(value.id);
+	const code = text(value.code);
+	const name = text(value.name);
+	if (id === null || code === null || name === null || typeof value.exists !== 'boolean') {
+		return undefined;
+	}
+	return { id, code, name, exists: value.exists };
+}
+
+/** One entry of the list, or null when it does not have the expected shape. */
+export function toTrashItem(value: unknown): TrashItem | null {
+	if (!isRecord(value)) return null;
+	const project = toProject(value.project);
+	const fields = ['id', 'key', 'title', 'due', 'deleted_at', 'deleted_by', 'updated'].map((name) =>
+		text(value[name])
+	);
+	const [id, key, title, due, deletedAt, deletedBy, updated] = fields;
+	const status = STATUSES.find((entry) => entry === value.status);
+	const priority = PRIORITIES.find((entry) => entry === value.priority);
+	const days = value.days_left;
+	if (
+		project === undefined ||
+		fields.some((field) => field === null) ||
+		status === undefined ||
+		priority === undefined ||
+		typeof value.recurring !== 'boolean' ||
+		typeof value.children !== 'number' ||
+		!(days === null || typeof days === 'number')
+	) {
+		return null;
+	}
+	return {
+		id: id as string,
+		key: key as string,
+		title: title as string,
+		status: status as Status,
+		priority: priority as Priority,
+		due: due as string,
+		project,
+		recurring: value.recurring,
+		children: value.children,
+		deletedAt: deletedAt as string,
+		deletedBy: deletedBy as string,
+		updated: updated as string,
+		daysLeft: days
+	};
+}
+
+function toPreview(value: unknown): TrashPreview {
+	const item = toTrashItem(value);
+	if (item === null || !isRecord(value)) throw invalid();
+	const description = text(value.description);
+	const group = text(value.group);
+	const sources = isRecord(value.sources) ? value.sources : null;
+	if (description === null || group === null || sources === null) throw invalid();
+	const tags = Array.isArray(value.tags) ? value.tags : null;
+	const subtasks = Array.isArray(value.subtasks) ? value.subtasks : null;
+	if (tags === null || subtasks === null || typeof sources.count !== 'number') throw invalid();
+	return {
+		...item,
+		description,
+		group,
+		tags: tags.filter(isRecord).map((tag) => ({ id: String(tag.id), name: String(tag.name) })),
+		subtasks: subtasks.filter(isRecord).flatMap((child) => {
+			const status = STATUSES.find((entry) => entry === child.status);
+			return status === undefined
+				? []
+				: [{ id: String(child.id), key: String(child.key), title: String(child.title), status }];
+		}),
+		sources: {
+			handling: sources.handling === 'discard' ? 'discard' : 'inbox',
+			count: sources.count
+		}
+	};
+}
+
+const SKIP_REASONS: readonly SkipReason[] = ['converted', 'discarded', 'missing'];
+
+function toRestoreResult(value: unknown): RestoreResult {
+	if (!isRecord(value)) throw invalid();
+	const id = text(value.id);
+	const key = text(value.key);
+	const updated = text(value.updated);
+	const ruleMissing = strings(value.rule_missing);
+	const seriesDetached = strings(value.series_detached);
+	if (
+		id === null ||
+		key === null ||
+		updated === null ||
+		ruleMissing === null ||
+		seriesDetached === null ||
+		typeof value.parent_detached !== 'boolean' ||
+		!Array.isArray(value.tickets) ||
+		!Array.isArray(value.new_keys) ||
+		!Array.isArray(value.sources_skipped)
+	) {
+		throw invalid();
+	}
+	return {
+		id,
+		key,
+		updated,
+		tickets: value.tickets
+			.filter(isRecord)
+			.map((entry) => ({ id: String(entry.id), key: String(entry.key) })),
+		newKeys: value.new_keys.filter(isRecord).map((entry) => ({
+			id: String(entry.id),
+			key: String(entry.key),
+			previous: String(entry.previous)
+		})),
+		parentDetached: value.parent_detached,
+		ruleMissing,
+		seriesDetached,
+		sourcesSkipped: value.sources_skipped.filter(isRecord).map((entry) => ({
+			id: String(entry.id),
+			title: String(entry.title),
+			key: String(entry.key),
+			reason: SKIP_REASONS.find((reason) => reason === entry.reason) ?? 'missing'
+		}))
+	};
+}
+
+/** The trash of the signed-in account: its tickets (first of each group) and the retention. */
+export function listTrash(
+	pb: PocketBase,
+	{ signal }: RequestOptions = {}
+): Promise<{ items: TrashItem[]; retention: TrashRetention }> {
+	return withDataErrors(signal, async () => {
+		const answer: unknown = await pb.send(TRASH_ROUTE, { method: 'GET', signal });
+		if (!isRecord(answer) || !Array.isArray(answer.items)) throw invalid();
+		const items = answer.items.map(toTrashItem).filter((item): item is TrashItem => item !== null);
+		return { items, retention: parseRetention(answer.retention) };
+	});
+}
+
+/** Read-only preview of a ticket in the trash (also a sub-task of a group). */
+export function getTrashPreview(
+	pb: PocketBase,
+	id: string,
+	{ signal }: RequestOptions = {}
+): Promise<TrashPreview> {
+	return withDataErrors(signal, async () => {
+		const answer: unknown = await pb.send(`${TRASH_ROUTE}/${encodeURIComponent(id)}`, {
+			method: 'GET',
+			signal
+		});
+		return toPreview(answer);
+	});
+}
+
+/** "Wiederherstellen" (and "Rückgängig" with expectedUpdated) of a ticket with its group. */
+export function restoreFromTrash(
+	pb: PocketBase,
+	id: string,
+	{ signal, expectedUpdated, project, detachSeries }: RequestOptions & RestoreOptions = {}
+): Promise<RestoreResult> {
+	return withDataErrors(signal, async () => {
+		const body: Json = {};
+		if (expectedUpdated !== undefined) body.expected_updated = expectedUpdated;
+		if (project !== undefined) body.project = project;
+		if (detachSeries) body.detach_series = true;
+		const answer: unknown = await pb.send(`${TRASH_ROUTE}/${encodeURIComponent(id)}/restore`, {
+			method: 'POST',
+			body,
+			signal
+		});
+		return toRestoreResult(answer);
+	});
+}
+
+/** "Endgültig löschen" of a ticket of the trash with its group. */
+export function purgeFromTrash(
+	pb: PocketBase,
+	id: string,
+	{ signal }: RequestOptions = {}
+): Promise<void> {
+	return withDataErrors(signal, async () => {
+		await pb.send(`${TRASH_ROUTE}/${encodeURIComponent(id)}/purge`, { method: 'POST', signal });
+	});
+}
+
+/** "Papierkorb leeren": the number of tickets deleted for good. */
+export function emptyTrash(pb: PocketBase, { signal }: RequestOptions = {}): Promise<number> {
+	return withDataErrors(signal, async () => {
+		const answer: unknown = await pb.send(`${TRASH_ROUTE}/empty`, { method: 'POST', signal });
+		if (!isRecord(answer) || typeof answer.purged !== 'number') throw invalid();
+		return answer.purged;
+	});
+}
+
+/** Saves the retention of the signed-in account (users.trash_retention). */
+export function saveTrashRetention(
+	pb: PocketBase,
+	userId: string,
+	retention: TrashRetention,
+	{ signal }: RequestOptions = {}
+): Promise<TrashRetention> {
+	return withDataErrors(signal, async () => {
+		const record = await pb
+			.collection('users')
+			.update<{ trash_retention?: unknown }>(
+				userId,
+				{ trash_retention: retention },
+				{ fields: 'id,trash_retention', signal }
+			);
+		return parseRetention(record.trash_retention);
+	});
+}
+
+/** Calls `onChange` whenever the server reports a change of the own trash. */
+export function subscribeTrash(pb: PocketBase, onChange: () => void): Promise<Unsubscribe> {
+	return pb.realtime.subscribe(TRASH_TOPIC, () => onChange());
+}

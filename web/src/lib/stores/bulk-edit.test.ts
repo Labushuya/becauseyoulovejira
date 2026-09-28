@@ -78,7 +78,8 @@ function setup(tickets: TicketSummary[], overrides: Partial<BulkEditData> = {}) 
 	});
 	const data: BulkEditData = {
 		update,
-		delete: vi.fn(async () => undefined),
+		delete: vi.fn(async () => null),
+		restore: vi.fn(async () => undefined),
 		sourceDates: vi.fn(async () => new Map()),
 		sourceCount: vi.fn(async () => 0),
 		...overrides
@@ -276,7 +277,7 @@ describe('BulkEditStore: "Rückgängig"', () => {
 		]);
 	});
 
-	it('offers nothing to undo after "Löschen", and a new action replaces the old offer', async () => {
+	it('offers nothing to undo after "Löschen" before the migration of the trash; a new action replaces the old offer', async () => {
 		const { store, flags, shown } = setup([ticket('1'), ticket('2')]);
 		await store.run({ kind: 'priority', value: 'low' }, ['1']);
 		expect(store.canUndo).toBe(true);
@@ -285,6 +286,64 @@ describe('BulkEditStore: "Rückgängig"', () => {
 		expect(store.canUndo).toBe(false);
 		expect(shown.at(-1)).toMatchObject({ tone: 'success', title: '1 Ticket gelöscht.' });
 		expect(shown.at(-1)?.action).toBeUndefined();
+	});
+
+	it('restores tickets moved to the trash, guarded by expected_updated (ADR-0037 §7)', async () => {
+		const moved = (id: string) => ({
+			id,
+			updated: `2026-09-28 10:00:0${id}.000Z`,
+			tickets: [{ id, key: `TASK-${id}`, updated: `2026-09-28 10:00:0${id}.000Z` }]
+		});
+		const restore = vi.fn<BulkEditData['restore']>(async (id) => {
+			if (id === '2') {
+				throw new DataError('validation', {
+					status: 400,
+					fields: {
+						id: {
+							code: 'validation_trash_stale',
+							message: 'Das Ticket wurde inzwischen wiederhergestellt oder geändert.'
+						}
+					}
+				});
+			}
+		});
+		const { store, shown } = setup([ticket('1'), ticket('2')], {
+			delete: vi.fn(async (id: string) => moved(id)),
+			restore
+		});
+		await store.run({ kind: 'delete', sources: 'inbox' }, ['1', '2']);
+		expect(shown.at(-1)).toMatchObject({
+			tone: 'success',
+			title: '2 Tickets in den Papierkorb verschoben.'
+		});
+		expect(shown.at(-1)?.action?.label).toBe('Rückgängig');
+
+		const result = await store.undo();
+		expect(restore).toHaveBeenCalledWith('1', '2026-09-28 10:00:01.000Z');
+		expect(restore).toHaveBeenCalledWith('2', '2026-09-28 10:00:02.000Z');
+		expect(result?.title).toBe('1 Ticket wiederhergestellt, 1 fehlgeschlagen.');
+		expect(result?.failures).toEqual([
+			{
+				id: '2',
+				key: 'HAUS-2',
+				reason: 'Das Ticket wurde inzwischen wiederhergestellt oder geändert.'
+			}
+		]);
+	});
+
+	it('moves chosen sub-tasks along with their chosen parent: the parent goes first', async () => {
+		const order: string[] = [];
+		const { store } = setup([ticket('p'), ticket('c', { parentId: 'p' })], {
+			delete: vi.fn(async (id: string) => {
+				order.push(id);
+				if (id === 'c') throw new DataError('not_found', { status: 404 });
+				return { id, updated: 'u', tickets: [] };
+			})
+		});
+		const result = await store.run({ kind: 'delete', sources: 'inbox' }, ['c', 'p']);
+		expect(order).toEqual(['p', 'c']);
+		expect(result?.counts.changed).toBe(2);
+		expect(result?.failures).toEqual([]);
 	});
 });
 

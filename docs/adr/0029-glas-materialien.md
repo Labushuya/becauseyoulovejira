@@ -121,3 +121,7 @@ Präzisiert §2, §9 und §10, ohne sie aufzuheben:
 ## Nachtrag (2026-09-28): Sammel-Aktionsleiste (ADR-0036)
 
 Ergänzt §1 um einen Baustein der Bedienebene: Die Leiste der Sammelaktionen über der Tabelle „Aufgaben“ (`BulkActionBar.svelte`, [ADR-0036](0036-sammelbearbeitung-inline-und-oeffnungsmodus.md) §3) ist Glas mit `--material-thick`, `--glass-filter-thick`, Linie `--color-separator`, `--radius-overlay` und `--shadow-popover`. Sie steht `sticky` (nicht `fixed`) über der Tabelle, die darunter scrollt; darum thick. Sie ist die zehnte Datei der Allowlist von `glass-allowlist.test.ts`. Die Ergebnisliste darin ist Text auf dem Material, Fehler mit Icon und Text (ADR-0009).
+
+## Nachtrag (2026-09-28): gemeinsame Auswahlleiste (ADR-0037)
+
+Seit dem Papierkorb (PB-2, [ADR-0037](0037-papierkorb.md) §9) haben zwei Tabellen eine Auswahl mit Aktionen. Das Glas der Leiste steht darum im gemeinsamen Baustein `SelectionBar.svelte` (Zahl, Fortschritt, „Auswahl aufheben“, Platz für Ergebnis und Aktionen); `BulkActionBar.svelte` („Aufgaben“) und `TrashView.svelte` („Papierkorb“) setzen nur ihre Knöpfe hinein. In der Allowlist steht `SelectionBar.svelte` an der Stelle von `BulkActionBar.svelte`; die Zahl der Dateien bleibt zehn, Material, Linie, Radius und Schatten bleiben wie oben.

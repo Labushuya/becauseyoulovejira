@@ -5,6 +5,7 @@
 	import { PRIORITY_NUMBERS, PRIORITY_WORDS } from '$lib/domain/quick-syntax';
 	import { RESTART_NEEDED } from '$lib/guidance/texts';
 	import { HELP_SECTIONS } from '$lib/settings-sections';
+	import { trashHref } from '$lib/ticket-links';
 
 	// Settings "Hilfe" (ADR-0026 section 7, plan EH-9 §3.10): jump links, the keyboard shortcuts from
 	// the one source, the short syntax of the quick entry, how the access data work (moved here from
@@ -230,10 +231,20 @@
 						im Menü „Spalten“ aus, dort gibt es auch die Spalte „Übergeordnet“.
 					</li>
 					<li>
-						Wird ein Ticket gelöscht, bleiben seine Unteraufgaben als normale Tickets erhalten. Das
-						nächste Ticket einer wiederkehrenden Unteraufgabe gehört zu keinem Ticket.
+						Wird ein Ticket gelöscht, gehen seine Unteraufgaben mit in den Papierkorb und kommen mit
+						ihm zurück. Das nächste Ticket einer wiederkehrenden Unteraufgabe gehört zu keinem
+						Ticket.
 					</li>
 				</ul>
+			</details>
+			<details>
+				<summary>Wie hole ich ein gelöschtes Ticket zurück?</summary>
+				<p>
+					Gelöschte Tickets liegen im <a href={trashHref()}>Papierkorb</a> (Link neben dem Umschalter
+					der Ansichten). Dort stellst du ein Ticket mit „Wiederherstellen“ wieder her, samt Key, Unteraufgaben
+					und Quellen; direkt nach dem Löschen geht das auch mit „Rückgängig“ unten links. Nach 30 Tagen
+					löscht die App es endgültig; die Frist stellst du unter „Einstellungen → Tickets“ ein.
+				</p>
 			</details>
 			<details>
 				<summary>Wie gliedere ich ein Projekt in Unterprojekte?</summary>

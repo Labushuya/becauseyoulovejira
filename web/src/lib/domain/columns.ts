@@ -1,14 +1,14 @@
 // Columns of the tables (ADR-0030): width, showing and hiding, and the fit into the frame. Pure.
 //
-// The four tables ("Aufgaben", "Eingang", "Projekte", "Wiederholungen") never scroll sideways
-// (ADR-0025 section 11). Until ADR-0030 container queries with fixed thresholds hid columns; they
+// The tables ("Aufgaben", "Eingang", "Projekte", "Wiederholungen", since ADR-0037 "Papierkorb")
+// never scroll sideways (ADR-0025 section 11). Until ADR-0030 container queries with fixed thresholds hid columns; they
 // knew nothing of a width the user dragged. Now `fitColumns` decides from the width of the frame,
 // the specs below and the preferences of the device which columns are shown and how wide they are.
 // Widths are CSS pixels of the whole column (cell padding included), as `<col>` of a table with
 // `table-layout: fixed` takes them. One column per table is flexible and takes the rest.
 
 /** The tables with their own column preferences. */
-export type TableId = 'tickets' | 'inbox' | 'projects' | 'recurrences';
+export type TableId = 'tickets' | 'inbox' | 'projects' | 'recurrences' | 'trash';
 
 export interface ColumnSpec {
 	/** Name in code, also `data-col` in the markup. */
@@ -196,11 +196,28 @@ export const RECURRENCE_TABLE: TableSpec = table('recurrences', [
 	fixed('actions', 'Aktionen', 3.5)
 ]);
 
+/**
+ * "Papierkorb" (ADR-0037): selection, Key, Titel, Projekt, Gelöscht am, Von, the days until it is
+ * deleted for good, actions (restore, delete for good). "Von" gives way first, then the date,
+ * Projekt and the days.
+ */
+export const TRASH_TABLE: TableSpec = table('trash', [
+	fixed('select', 'Auswahl', 2.5),
+	column('key', 'Key', { width: 6, min: 4, max: 8, required: true }),
+	flexible('title', 'Titel', 10),
+	column('project', 'Projekt', { width: 8, min: 4, max: 16, hideRank: 3 }),
+	column('deleted', 'Gelöscht am', { width: 7, min: 5.5, max: 10, hideRank: 2 }),
+	column('by', 'Von', { width: 6, min: 4, max: 10, hideRank: 1 }),
+	column('left', 'Endgültig gelöscht', { width: 8.5, min: 6, max: 11, hideRank: 4 }),
+	fixed('actions', 'Aktionen', 5)
+]);
+
 export const TABLES: Readonly<Record<TableId, TableSpec>> = Object.freeze({
 	tickets: TICKET_TABLE,
 	inbox: INBOX_TABLE,
 	projects: PROJECT_TABLE,
-	recurrences: RECURRENCE_TABLE
+	recurrences: RECURRENCE_TABLE,
+	trash: TRASH_TABLE
 });
 
 /** Whether the user can change the width of the column (by dragging or in the menu). */
