@@ -31,6 +31,7 @@
 	import KeywordEditor from '../KeywordEditor.svelte';
 	import CodeBlock from '../guidance/CodeBlock.svelte';
 	import ExternalLink from '../guidance/ExternalLink.svelte';
+	import HostPlatformNote from '../guidance/HostPlatformNote.svelte';
 	import SectionMessage from '../guidance/SectionMessage.svelte';
 	import Stepper from '../guidance/Stepper.svelte';
 	import Tabs from '../guidance/Tabs.svelte';
@@ -523,6 +524,7 @@
 				Diese Verbindung gibt es nicht mehr. Im ersten Schritt legst du eine neue an.
 			</SectionMessage>
 		{/if}
+		<HostPlatformNote />
 
 		{#if overview}
 			<div class="overview">

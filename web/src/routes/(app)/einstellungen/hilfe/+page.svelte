@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { resolve } from '$app/paths';
 	import CodeBlock from '$lib/components/guidance/CodeBlock.svelte';
+	import HostPlatformNote from '$lib/components/guidance/HostPlatformNote.svelte';
 	import RecurrenceHelp from '$lib/components/help/RecurrenceHelp.svelte';
 	import ShortcutList from '$lib/components/help/ShortcutList.svelte';
 	import { PRIORITY_NUMBERS, PRIORITY_WORDS } from '$lib/domain/quick-syntax';
@@ -102,6 +103,7 @@
 			Windows-Kontos, deren Name mit <code>BYL_</code> beginnt (nur Großbuchstaben, Ziffern und _). So
 			landen sie weder in der App noch in Sicherungen oder Kopien des Ordners.
 		</p>
+		<HostPlatformNote headingLevel={4} />
 		<h4>Zugangsdaten als Windows-Variable setzen</h4>
 		<ol>
 			<li>
@@ -335,6 +337,7 @@
 
 	<section id="betrieb" aria-labelledby="betrieb-title">
 		<h3 id="betrieb-title">Betrieb</h3>
+		<HostPlatformNote headingLevel={4} />
 		<dl class="tokens">
 			<div class="row">
 				<dt>Neu starten</dt>
