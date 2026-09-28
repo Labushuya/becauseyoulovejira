@@ -28,12 +28,7 @@
 		type FileImportResult,
 		type FileSelection
 	} from '$lib/stores/mail-import';
-	import {
-		channelSetupHref,
-		connectionCardHref,
-		inboxItemHref,
-		ticketPath
-	} from '$lib/ticket-links';
+	import { channelSetupHref, connectionCardHref, inboxItemHref } from '$lib/ticket-links';
 	import { pb } from '$lib/pocketbase';
 	import { BulkConverter, bulkConvertData } from '$lib/stores/bulk-convert.svelte';
 	import { draftsSummary, saveDrafts, type DraftsOutcome } from '$lib/stores/capture';
@@ -43,6 +38,7 @@
 	import { getTicketListStore } from '$lib/stores/ticket-list.svelte';
 	import { getTicketSourcesStore } from '$lib/stores/ticket-sources.svelte';
 	import { readWhatsAppFile } from '$lib/whatsapp-file';
+	import { ticketLinks } from '$lib/stores/open-mode.svelte';
 
 	// Inbox view (E4 plan, T-3 and package 3): the table with the chips of the URL on the left, the
 	// panel of an entry (/eingang/<id>) on the right, like the ticket view (ADR-0010 section 1).
@@ -50,6 +46,9 @@
 	// imports and conversions go out as flags (ADR-0025 section 8): success, or neutral when a part
 	// failed (the drop zone and the dialogs name the reasons).
 	let { children } = $props();
+
+	// Ticket links open the panel or the full view, as the user last chose (plan BI-1).
+	const links = ticketLinks();
 
 	const inbox = getInboxStore();
 	const tickets = getTicketListStore();
@@ -270,7 +269,7 @@
 					results={importResults}
 					onfiles={(files) => void importFiles(files)}
 					itemHref={(id) => inboxItemHref(id, page.url)}
-					ticketHref={ticketPath}
+					ticketHref={links.path}
 				/>
 			{/snippet}
 		</InboxTable>

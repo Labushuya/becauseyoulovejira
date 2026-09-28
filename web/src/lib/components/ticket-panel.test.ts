@@ -13,6 +13,7 @@ import type { Project } from '$lib/domain/project';
 import type { Tag } from '$lib/domain/tag';
 import type { Ticket, TicketPatch, TicketSummary } from '$lib/domain/ticket';
 import { CatalogStore, type CatalogData } from '$lib/stores/catalog.svelte';
+import { TicketOpenModeStore } from '$lib/stores/open-mode.svelte';
 import type { LiveSource, RecordChange } from '$lib/stores/realtime';
 import { TicketActivityStore, type TicketActivityData } from '$lib/stores/ticket-activity.svelte';
 import {
@@ -53,7 +54,8 @@ const mocks = vi.hoisted(() => ({
 	beforeNavigate: vi.fn(),
 	page: {
 		url: new URL('http://localhost:3000/tickets/abc123def456ghi?erledigte=1'),
-		params: { id: 'abc123def456ghi' } as Record<string, string>
+		params: { id: 'abc123def456ghi' } as Record<string, string>,
+		route: { id: '/(app)/(tickets)/tickets/[id]' }
 	},
 	detail: null as unknown,
 	activity: null as unknown,
@@ -131,6 +133,33 @@ vi.mock('$lib/stores/inbox.svelte', async (importOriginal) => ({
 
 const ID = 'abc123def456ghi';
 const LIST = '/?erledigte=1' as ResolvedPathname;
+const PANEL_ROUTE = '/(app)/(tickets)/tickets/[id]';
+const FULL_ROUTE = '/(app)/(tickets)/tickets/[id]/voll';
+
+/**
+ * The store of the (app) layout that remembers panel or full view (plan BI-1), over a window whose
+ * storage is the one of jsdom and whose width is `wide` (from 64rem) or not.
+ */
+function openModeStore({
+	stored = null,
+	wide = true
+}: { stored?: string | null; wide?: boolean } = {}) {
+	if (stored === null) localStorage.removeItem('byl-ticket-open');
+	else localStorage.setItem('byl-ticket-open', stored);
+	const media = { matches: wide, addEventListener: vi.fn(), removeEventListener: vi.fn() };
+	const win = {
+		localStorage,
+		matchMedia: () => media,
+		addEventListener: vi.fn(),
+		removeEventListener: vi.fn()
+	} as unknown as Window;
+	return new TicketOpenModeStore(win);
+}
+
+// Tests of the full view switch the route; every other test sees the panel route.
+afterEach(() => {
+	mocks.page.route = { id: PANEL_ROUTE };
+});
 
 function ticket(overrides: Partial<Ticket> = {}): Ticket {
 	return {
@@ -1003,6 +1032,7 @@ describe('ticket route: sub-tasks (ADR-0033)', () => {
 		mocks.detail = context.store;
 		mocks.catalog = catalogOf();
 		mocks.activity = activityStore();
+		mocks.page.route = { id: FULL_ROUTE };
 		render(FullViewRouteHarness);
 		await vi.waitFor(() => expect(context.store.state).toBe('ready'));
 
@@ -1306,15 +1336,16 @@ describe('ticket route: full view (ADR-0025 section 7, UI-7)', () => {
 
 	type Guard = (navigation: BeforeNavigate) => void;
 
-	async function renderFullView(initial?: Ticket) {
+	async function renderFullView(initial?: Ticket, openMode?: TicketOpenModeStore) {
 		mocks.page.url = new URL(`http://localhost:3000/tickets/${ID}/voll?erledigte=1`);
+		mocks.page.route = { id: FULL_ROUTE };
 		const context = createStore(initial);
 		const activity = activityStore();
 		mocks.detail = context.store;
 		mocks.activity = activity;
 		mocks.beforeNavigate.mockClear();
 		mocks.goto.mockClear();
-		render(FullViewRouteHarness);
+		render(FullViewRouteHarness, { props: { openMode } });
 		await vi.waitFor(() => expect(context.store.state).toBe('ready'));
 		await tick();
 		await tick();
@@ -1337,7 +1368,7 @@ describe('ticket route: full view (ADR-0025 section 7, UI-7)', () => {
 		expect(link.getAttribute('href')).toBe(`/tickets/${ID}/voll?erledigte=1`);
 	});
 
-	it('opens as XL modal over the panel: content left, cards right, the key in the tab', async () => {
+	it('opens as XL modal instead of the panel: content left, cards right, the key in the tab', async () => {
 		const { dialog } = await renderFullView(
 			ticket({ source: 'mail', sourceItem: 'item00000000001' })
 		);
@@ -1354,8 +1385,9 @@ describe('ticket route: full view (ADR-0025 section 7, UI-7)', () => {
 			within(view.getByRole('region', { name: 'Details' })).getByLabelText('Status')
 		).toBeTruthy();
 		expect(view.getByRole('button', { name: 'Löschen …' })).toBeTruthy();
-		// The panel stays below the full view.
-		expect(screen.getByRole('complementary', { name: 'Steuererklärung' })).toBeTruthy();
+		// The full view replaces the panel (plan BI-1): the panel is not mounted meanwhile.
+		expect(screen.queryByRole('complementary')).toBeNull();
+		expect(document.querySelector('aside.drawer')).toBeNull();
 		await vi.waitFor(() => expect(document.title).toMatch(/^TASK-3 · Vollansicht/));
 	});
 
@@ -1377,7 +1409,7 @@ describe('ticket route: full view (ADR-0025 section 7, UI-7)', () => {
 		['×', 'close-button'],
 		['Escape', 'escape'],
 		['the veil', 'blanket']
-	])('closes with %s back to the panel, with the focus on "Vollansicht"', async (way) => {
+	])('closes with %s back to the list without a panel (plan BI-1)', async (way) => {
 		const { dialog } = await renderFullView();
 		if (way === '×') {
 			await fireEvent.click(within(dialog).getByRole('button', { name: 'Schließen' }));
@@ -1387,12 +1419,94 @@ describe('ticket route: full view (ADR-0025 section 7, UI-7)', () => {
 			await fireEvent.pointerDown(dialog);
 			await fireEvent.click(dialog);
 		}
+		await vi.waitFor(() => expect(mocks.goto).toHaveBeenCalledWith(LIST, { noScroll: true }));
+	});
+
+	it('returns the focus to the row of the ticket after closing', async () => {
+		const { dialog } = await renderFullView();
+		// The row of the list behind the modal (TicketTable), as the tickets layout renders it.
+		const table = document.createElement('table');
+		table.innerHTML = `<tbody><tr data-ticket-id="${ID}"><th><a class="title-link" href="#">Steuererklärung</a></th></tr></tbody>`;
+		document.body.append(table);
+		try {
+			await fireEvent.click(within(dialog).getByRole('button', { name: 'Schließen' }));
+			await vi.waitFor(() =>
+				expect(document.activeElement).toBe(table.querySelector('a.title-link'))
+			);
+		} finally {
+			table.remove();
+		}
+	});
+
+	it('closes back to the panel below 64rem, with the focus on "Vollansicht"', async () => {
+		const { dialog } = await renderFullView(undefined, openModeStore({ wide: false }));
+		await fireEvent.click(within(dialog).getByRole('button', { name: 'Schließen' }));
 		await vi.waitFor(() =>
 			expect(mocks.goto).toHaveBeenCalledWith(`/tickets/${ID}?erledigte=1`, { noScroll: true })
 		);
-		await vi.waitFor(() =>
-			expect(document.activeElement).toBe(screen.getByRole('link', { name: 'Vollansicht öffnen' }))
-		);
+	});
+
+	describe('remembered way to open a ticket (plan BI-1)', () => {
+		afterEach(() => {
+			localStorage.clear();
+		});
+
+		it('offers "Im Seitenpanel öffnen" in the header of the full view', async () => {
+			const openMode = openModeStore({ stored: 'full' });
+			const { dialog } = await renderFullView(undefined, openMode);
+			const link = within(dialog).getByRole('link', { name: 'Im Seitenpanel öffnen' });
+			expect(link.getAttribute('href')).toBe(`/tickets/${ID}?erledigte=1`);
+			expect(link.getAttribute('title')).toBe('Im Seitenpanel öffnen');
+			// Next to the ×, after "Löschen …", like "Vollansicht" in the panel.
+			const header = dialog.querySelector('header');
+			const buttons = [...(header?.querySelectorAll('a, button') ?? [])];
+			expect(buttons.at(-1)?.getAttribute('aria-label')).toBe('Schließen');
+			expect(buttons.at(-2)).toBe(link);
+
+			link.addEventListener('click', (event) => event.preventDefault(), { once: true });
+			await fireEvent.click(link);
+
+			expect(openMode.mode).toBe('panel');
+			expect(localStorage.getItem('byl-ticket-open')).toBeNull();
+		});
+
+		it('remembers "Vollansicht" chosen in the panel', async () => {
+			const openMode = openModeStore();
+			mocks.detail = createStore().store;
+			mocks.activity = activityStore();
+			render(FullViewRouteHarness, { props: { full: false, openMode } });
+			const link = await screen.findByRole('link', { name: 'Vollansicht öffnen' });
+
+			link.addEventListener('click', (event) => event.preventDefault(), { once: true });
+			await fireEvent.click(link);
+
+			expect(openMode.mode).toBe('full');
+			expect(localStorage.getItem('byl-ticket-open')).toBe('full');
+		});
+
+		it('keeps the remembered choice below 64rem', async () => {
+			const openMode = openModeStore({ stored: 'full', wide: false });
+			const { dialog } = await renderFullView(undefined, openMode);
+			const link = within(dialog).getByRole('link', { name: 'Im Seitenpanel öffnen' });
+
+			link.addEventListener('click', (event) => event.preventDefault(), { once: true });
+			await fireEvent.click(link);
+
+			expect(openMode.mode).toBe('full');
+			expect(localStorage.getItem('byl-ticket-open')).toBe('full');
+		});
+
+		it('links sub-tasks of the panel in the remembered way', async () => {
+			const PARENT = { id: 'parent000000001', key: 'HAUS-12', title: 'Umzug' };
+			const openMode = openModeStore({ stored: 'full' });
+			mocks.detail = createStore(ticket({ parentId: PARENT.id, parentRef: PARENT })).store;
+			mocks.activity = activityStore();
+			render(FullViewRouteHarness, { props: { full: false, openMode } });
+			const path = await screen.findByRole('navigation', { name: 'Pfad des Tickets' });
+			expect(within(path).getByRole('link', { name: 'HAUS-12' }).getAttribute('href')).toBe(
+				`/tickets/${PARENT.id}/voll?erledigte=1`
+			);
+		});
 	});
 
 	it('moves between panel and full view of the same ticket without asking', async () => {

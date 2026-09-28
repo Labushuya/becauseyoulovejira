@@ -10,13 +10,14 @@
 	} from '$lib/domain/ticket';
 	import type { BulkConverter } from '$lib/stores/bulk-convert.svelte';
 	import type { EnsureTagResult } from '$lib/stores/catalog.svelte';
-	import { ticketPath } from '$lib/ticket-links';
+
 	import ErrorIcon from './ErrorIcon.svelte';
 	import Modal from './overlay/Modal.svelte';
 	import PrioritySelect from './PrioritySelect.svelte';
 	import ProjectSelect from './ProjectSelect.svelte';
 	import StatusSelect from './StatusSelect.svelte';
 	import TagPicker from './TagPicker.svelte';
+	import { ticketLinks } from '$lib/stores/open-mode.svelte';
 
 	// "Gesammelt umwandeln" (E4 plan, T-2 and package 3; ADR-0014 section 4): a modal dialog with
 	// the default values status, priority, project and tags for every chosen entry. Title and
@@ -44,6 +45,9 @@
 		/** Cancel, or "Schließen" after the run. */
 		onclose: () => void;
 	} = $props();
+
+	// Ticket links open the panel or the full view, as the user last chose (plan BI-1).
+	const links = ticketLinks();
 
 	const uid = $props.id();
 	const ids = {
@@ -218,7 +222,7 @@
 				<ul>
 					{#each converter.results as result (result.id)}
 						{#if result.ok}
-							<li><a href={ticketPath(result.ticketId)}>{result.key}</a> {result.title}</li>
+							<li><a href={links.path(result.ticketId)}>{result.key}</a> {result.title}</li>
 						{/if}
 					{/each}
 				</ul>

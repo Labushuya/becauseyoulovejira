@@ -6,12 +6,7 @@
 	import type { FlagSink } from '$lib/stores/flags.svelte';
 	import { RECURRENCE_UNAVAILABLE, type RecurrenceStore } from '$lib/stores/recurrence.svelte';
 	import type { TicketListStore } from '$lib/stores/ticket-list.svelte';
-	import {
-		NEW_RULE_LINK_ID,
-		newRecurrenceHref,
-		recurrenceHref,
-		ticketPath
-	} from '$lib/ticket-links';
+	import { NEW_RULE_LINK_ID, newRecurrenceHref, recurrenceHref } from '$lib/ticket-links';
 	import ColumnsPopover from './ColumnsPopover.svelte';
 	import EmptyState from './guidance/EmptyState.svelte';
 	import SectionMessage from './guidance/SectionMessage.svelte';
@@ -19,6 +14,7 @@
 	import SectionBar from './SectionBar.svelte';
 	import { ColumnFit } from './table/column-fit.svelte';
 	import ViewSwitch from './ViewSwitch.svelte';
+	import { ticketLinks } from '$lib/stores/open-mode.svelte';
 
 	// Overview "Wiederholungen" (E5 plan, T-6 and package 5), built like the project view (UI-8):
 	// the section bar with the switch at the same place as in the other views and "Neue Regel";
@@ -50,6 +46,9 @@
 		/** New inbox entries for the switch. */
 		inboxCount?: number | null;
 	} = $props();
+
+	// Ticket links open the panel or the full view, as the user last chose (plan BI-1).
+	const links = ticketLinks();
 
 	const uid = $props.id();
 	const headingId = `${uid}-heading`;
@@ -233,7 +232,7 @@
 			{columnFit}
 			hrefOf={(rule) => recurrenceHref(rule.id)}
 			{openTicketOf}
-			ticketHrefOf={ticketPath}
+			ticketHrefOf={links.path}
 			projectOf={(rule) => (rule.projectId === null ? null : catalog.projectById(rule.projectId))}
 			ontoggle={(rule) => void toggle(rule)}
 		/>

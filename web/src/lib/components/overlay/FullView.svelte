@@ -3,12 +3,13 @@
 	import Modal from './Modal.svelte';
 
 	// Full view (ADR-0025 section 7; plan UI-Konsistenz, package UI-7): the modal of size XL
-	// (1000 px, 92 vh, the whole screen below 48rem) with its own address, over the panel. Two
+	// (1000 px, 92 vh, the whole screen below 48rem) with its own address, in place of the panel
+	// (plan BI-1). Two
 	// columns: the content on the left, a column of --full-view-sidebar with cards on the right;
 	// below 64rem one column, the cards after the content, so the order on screen is the order of
 	// the keyboard. No footer "Speichern & Schließen": every field saves on its own. ×, Escape and
-	// the veil close; the owner goes back to the panel. The drafts live in the store and stay for
-	// the panel, so closing loses nothing and does not ask.
+	// the veil close; the owner goes back to the list (below 64rem to the panel). The drafts live in
+	// the store, so switching to the panel loses nothing and does not ask.
 	let {
 		title,
 		onclose,

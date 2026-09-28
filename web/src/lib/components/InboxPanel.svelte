@@ -24,7 +24,7 @@
 		deletedTicketNote,
 		pageCopyText
 	} from '$lib/domain/sources';
-	import { convertHref, ticketPath } from '$lib/ticket-links';
+	import { convertHref } from '$lib/ticket-links';
 	import ErrorIcon from './ErrorIcon.svelte';
 	import Lozenge from './guidance/Lozenge.svelte';
 	import SectionMessage from './guidance/SectionMessage.svelte';
@@ -32,6 +32,7 @@
 	import Markdown from './Markdown.svelte';
 	import MoveSourceDialog from './MoveSourceDialog.svelte';
 	import Drawer from './overlay/Drawer.svelte';
+	import { ticketLinks } from '$lib/stores/open-mode.svelte';
 
 	// Panel of one inbox entry (E4 plan, package 3; ADR-0019 section 5): title, the details of the
 	// source (kind, way, state, date at the sender, arrival, sender, place, chat, link), the text
@@ -69,6 +70,9 @@
 		/** × and Escape: back to the list with the chips of the URL. */
 		onclose: () => void;
 	} = $props();
+
+	// Ticket links open the panel or the full view, as the user last chose (plan BI-1).
+	const links = ticketLinks();
 
 	const uid = $props.id();
 	const headingId = `${uid}-title`;
@@ -265,7 +269,7 @@
 			</p>
 		{/if}
 		<div class="belongs-actions">
-			<a class="button-secondary entry-action" href={ticketPath(ticketId)}>Ticket öffnen</a>
+			<a class="button-secondary entry-action" href={links.path(ticketId)}>Ticket öffnen</a>
 			{#if sources !== null && ticket !== null && !ticket.primary}
 				<button
 					class="button-secondary"
@@ -345,7 +349,7 @@
 				<ul>
 					{#each duplicates.tickets as ticket (ticket.id)}
 						<li>
-							<a href={ticketPath(ticket.id)}>{ticket.key} {ticket.title}</a>
+							<a href={links.path(ticket.id)}>{ticket.key} {ticket.title}</a>
 							<button
 								class="text-button"
 								type="button"
@@ -403,7 +407,7 @@
 				{#snippet actions()}
 					<a
 						class="button-secondary entry-action"
-						href={ticketPath(target.id)}
+						href={links.path(target.id)}
 						onclick={(event) => {
 							// A new tab or window opens the ticket without the dialog.
 							if (event.button !== 0 || event.ctrlKey || event.metaKey || event.shiftKey) return;
