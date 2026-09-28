@@ -5,14 +5,21 @@
 	import ProjectPanel from '$lib/components/ProjectPanel.svelte';
 	import Drawer from '$lib/components/overlay/Drawer.svelte';
 	import type { Project, ProjectDraft } from '$lib/domain/project';
+	import { parentChoices } from '$lib/domain/project-tree';
 	import { getProjectRoute } from '$lib/project-route';
 	import { getCatalogStore } from '$lib/stores/catalog.svelte';
-	import { projectTicketsHref, projectsViewHref } from '$lib/ticket-links';
+	import {
+		newSubProjectHref,
+		projectHref,
+		projectTicketsHref,
+		projectsViewHref
+	} from '$lib/ticket-links';
 
 	// Panel of one project (/projekte/<record id>, package UI-8); a reload opens the same panel. The
 	// project comes from the catalog, so live changes show at once. While it is being deleted the
 	// panel keeps the last known project, so it does not turn into "nicht gefunden" before the
-	// navigation back to the tiles.
+	// navigation back to the tiles. Sub projects (ADR-0034, UP-4): the panel gets the parent, the
+	// choices of "Oberprojekt", the sub projects and "Mit Oberprojekt zurückholen".
 	const route = getProjectRoute();
 	const catalog = getCatalogStore();
 	const id = $derived(page.params.id ?? '');
@@ -21,6 +28,10 @@
 	/** The project being deleted, until the navigation back to the tiles. */
 	let removing = $state<Project | null>(null);
 	const project = $derived(catalog.projectById(id) ?? (removing?.id === id ? removing : null));
+	// Sub projects (ADR-0034, UP-4): parent, choices of the field "Oberprojekt" and sub projects.
+	const parent = $derived(project?.parentId ? catalog.projectById(project.parentId) : null);
+	const choices = $derived(project === null ? [] : parentChoices(catalog.projects, project));
+	const subProjects = $derived(project === null ? [] : catalog.subProjectsOf(project.id));
 
 	async function save(current: Project, draft: ProjectDraft) {
 		const result = await route.editor.updateProject(current, draft);
@@ -42,6 +53,17 @@
 		return result;
 	}
 
+	/** "Mit Oberprojekt zurückholen": the parent first, because the hook keeps the child below it. */
+	async function restoreWithParent(current: Project, archivedParent: Project) {
+		const first = await route.editor.setProjectArchived(archivedParent, false);
+		if (!first.ok) return first;
+		const result = await route.editor.setProjectArchived(current, false);
+		if (result.ok) {
+			route.notify(`Projekt „${current.name}“ mit „${archivedParent.name}“ aus dem Archiv geholt.`);
+		}
+		return result;
+	}
+
 	async function remove(current: Project) {
 		removing = current;
 		const result = await route.editor.deleteProject(current);
@@ -57,6 +79,7 @@
 
 {#if project}
 	{@const current = project}
+	{@const archivedParent = parent?.archived ? parent : null}
 	{#key id}
 		<ProjectPanel
 			project={current}
@@ -64,8 +87,18 @@
 			total={route.totalOf(current)}
 			fresh={route.newOf(current)}
 			ticketsHref={projectTicketsHref(current.id)}
+			{parent}
+			parentChoices={choices}
+			{subProjects}
+			hierarchyReady={catalog.hierarchyReady}
+			projectsHref={back}
+			projectHrefOf={(other) => projectHref(other.id, page.url)}
+			newSubProjectHref={newSubProjectHref(current.id, page.url)}
 			onsave={(draft) => save(current, draft)}
 			onarchive={(archived) => archive(current, archived)}
+			onrestorewithparent={archivedParent
+				? () => restoreWithParent(current, archivedParent)
+				: undefined}
 			ondelete={() => remove(current)}
 			ondeleted={() => goto(back)}
 			onclose={() => goto(back)}

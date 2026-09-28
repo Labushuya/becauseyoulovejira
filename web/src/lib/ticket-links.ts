@@ -80,6 +80,23 @@ export function newProjectHref(url: URL): ResolvedPathname {
 	return `${resolve('/projekte/neu')}${projectViewQuery(url)}` as ResolvedPathname;
 }
 
+/** Parameter of "Unterprojekt anlegen": the parent of the new project (ADR-0034). */
+export const PARENT_PARAM = 'oberprojekt';
+
+/** "Unterprojekt anlegen" (ADR-0034): "Neues Projekt" with the parent chosen in advance. */
+export function newSubProjectHref(parentId: string, url: URL): ResolvedPathname {
+	const params = new URLSearchParams(projectViewQuery(url));
+	params.set(PARENT_PARAM, parentId);
+	return `${resolve('/projekte/neu')}?${params.toString()}` as ResolvedPathname;
+}
+
+/** The parent chosen in advance for "Neues Projekt"; null without a well-formed record ID. */
+export function parentFrom(url: URL): string | null {
+	const values = url.searchParams.getAll(PARENT_PARAM);
+	const value = values.length === 1 ? (values[0] ?? '') : '';
+	return /^[a-z0-9]{15}$/.test(value) ? value : null;
+}
+
 /** Element ID of "Neues Projekt" in the section bar; closing its panel returns the focus to it. */
 export const NEW_PROJECT_LINK_ID = 'new-project-link';
 

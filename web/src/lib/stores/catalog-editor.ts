@@ -58,8 +58,8 @@ export type EditResult<T> =
 	| { ok: true; value: T }
 	| { ok: false; message: string | null; fields: Readonly<Record<string, string>> };
 
-/** Form fields of the project dialog and of renaming a tag. */
-const PROJECT_FIELDS = ['name', 'code'] as const;
+/** Form fields of the project panel (with the parent, ADR-0034) and of renaming a tag. */
+const PROJECT_FIELDS = ['name', 'code', 'parent'] as const;
 const TAG_FIELDS = ['name'] as const;
 
 function invalid<T>(fields: Record<string, string>): EditResult<T> {
@@ -92,9 +92,16 @@ export class CatalogEditor {
 		this.#catalog = catalog;
 	}
 
-	/** "Neues Projekt": name trimmed, code in capitals (T-11). */
+	/**
+	 * "Neues Projekt": name trimmed, code in capitals (T-11); with a parent it becomes a sub project
+	 * (ADR-0034). Without a parent nothing about it is sent, so it works before the restart.
+	 */
 	async createProject(draft: ProjectDraft): Promise<EditResult<Project>> {
-		const normalized = { name: draft.name.trim(), code: normalizeProjectCode(draft.code) };
+		const normalized: ProjectDraft = {
+			name: draft.name.trim(),
+			code: normalizeProjectCode(draft.code)
+		};
+		if (draft.parentId) normalized.parentId = draft.parentId;
 		const problems = draftProblems(normalized);
 		if (Object.keys(problems).length > 0) return invalid(problems);
 		return this.#run(PROJECT_FIELDS, async () => {
@@ -104,7 +111,10 @@ export class CatalogEditor {
 		});
 	}
 
-	/** Saves name and code of a project; sends only what changed, nothing if nothing did. */
+	/**
+	 * Saves name, code and parent of a project (ADR-0034); sends only what changed, nothing if
+	 * nothing did. A draft without `parentId` leaves the parent as it is.
+	 */
 	async updateProject(project: Project, draft: ProjectDraft): Promise<EditResult<Project>> {
 		const normalized = { name: draft.name.trim(), code: normalizeProjectCode(draft.code) };
 		const problems = draftProblems(normalized);
@@ -112,6 +122,9 @@ export class CatalogEditor {
 		const patch: ProjectPatch = {};
 		if (normalized.name !== project.name) patch.name = normalized.name;
 		if (normalized.code !== project.code) patch.code = normalized.code;
+		if (draft.parentId !== undefined && (draft.parentId ?? null) !== (project.parentId ?? null)) {
+			patch.parentId = draft.parentId ?? null;
+		}
 		if (Object.keys(patch).length === 0) return { ok: true, value: project };
 		return this.#run(PROJECT_FIELDS, async () => {
 			const saved = await this.#data.updateProject(project.id, patch);

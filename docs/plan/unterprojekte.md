@@ -1,6 +1,6 @@
 # E6-Plan, Teil Unterprojekte: eine Ebene, eigener Code, Baum in Liste und Kacheln, Filter mit Unterprojekten
 
-- **Stand:** in Umsetzung (2026-09-28): UP-1 (#130, Datenmodell, Hook, Spike), UP-2 (#131, Katalog und Datenschicht), UP-3 (Liste und Kacheln als Baum).
+- **Stand:** in Umsetzung (2026-09-28): UP-1 (#130, Datenmodell, Hook, Spike), UP-2 (#131, Katalog und Datenschicht), UP-3 (#132, Liste und Kacheln als Baum), UP-4 (Projekt-Panel).
 - **Grundlage:**
   - [ADR-0034](../adr/0034-unterprojekte.md) (Datenmodell, Prüfregeln, Archiv-Kaskade, Spike, Oberfläche, Grenze zum Epic)
   - [ADR-0012](../adr/0012-plain-ticketing.md) mit dem Nachtrag „Unterprojekte als Gliederung, keine Epics“
@@ -54,6 +54,13 @@
 | 2026-09-28 | UP-3 | **Knopf als Disclosure:** In der Liste ein Symbolknopf in der Namenszelle mit festem Namen „Unterprojekte von Haus“ und `aria-expanded` (kein wechselndes „ausblenden/einblenden“ im Namen, nur im `title`); in den Kacheln ein Textknopf „3 Unterprojekte“ unter der Kachel des Oberprojekts (Name „3 Unterprojekte von Haus“). Der Fokus bleibt beim Klappen auf dem Knopf. Kein `treegrid`. |
 | 2026-09-28 | UP-3 | **Tabellenregeln aus ADR-0030 bleiben:** Die Einrückung (1,75rem) und der Knopf liegen in der flexiblen Namenszelle; `PROJECT_TABLE` in `domain/columns.ts` ändert sich nicht (Spalten, Breiten, Reihenfolge beim Ausweichen), die Tabelle scrollt nie seitlich. Unterprojekte tragen für Screenreader „Unterprojekt von Haus,“ vor dem Link, der Name des Links bleibt der Projektname. |
 | 2026-09-28 | UP-3 | **Kacheln:** Ein Oberprojekt mit Unterprojekten bekommt eine eigene Zeile des Rasters (Kachel, Knopf, darunter ein eingerücktes Raster mit Linie links); Unterprojekt-Kacheln tragen die Überzeile „in Haus“. `ProjectTiles` und `ProjectsView` ziehen auf die Schriftgrößen-Tokens und fallen von der Liste (`no-own-font-sizes.test.ts` jetzt 202). |
+| 2026-09-28 | UP-4 | **Feld „Oberprojekt“ im Formular des Panels** (natives `select`, „Keins“ und die aktiven obersten Projekte außer dem Projekt selbst, `parentChoices`), gespeichert mit „Speichern“ wie Name und Code, samt Verwerfen-Frage. Das ist zugleich „Oberprojekt ändern“: Ein anderes Oberprojekt oder „Keins“ ändert keinen Key, das sagt der Hinweis. Ein archiviertes aktuelles Oberprojekt steht als eigene Option „Haus (HAUS, archiviert)“ da, damit das Feld den wahren Wert zeigt. Gesendet wird `parent` nur, wenn er gesetzt oder geändert ist, vor dem Neustart nie. |
+| 2026-09-28 | UP-4 | **Gesperrt statt versteckt:** Ein Projekt mit Unterprojekten zeigt das Feld deaktiviert mit dem Text des Hooks („Ein Projekt mit Unterprojekten kann kein Unterprojekt werden.“). Vor dem Neustart steht statt Feld und Abschnitt der Hinweis `restartNeeded('Unterprojekte sind')` als kompakte `SectionMessage`. |
+| 2026-09-28 | UP-4 | **Abschnitt „Unterprojekte“** nur bei obersten Projekten: Links auf die Panels der Unterprojekte (auch archivierte, mit „Archiviert“), „Keine Unterprojekte.“ und „Unterprojekt anlegen“ als Link auf `/projekte/neu?oberprojekt=<id>` (`newSubProjectHref`, `parentFrom`; die Vorbelegung zählt nur, wenn das Feld das Projekt anbietet). Unter einem archivierten Projekt fehlt der Link, ein Hinweis sagt warum. |
+| 2026-09-28 | UP-4 | **Brotkrumen** „Projekte › Haus › Garten“ (`Breadcrumbs`, Name „Pfad“) im Kontext des Kopfes eines Unterprojekts; oberste Projekte behalten „HAUS · Projekt“. |
+| 2026-09-28 | UP-4 | **Archivieren mit Rückfrage** nur, wenn aktive Unterprojekte mitgehen: `ConfirmDialog` „Projekt „Haus“ archivieren?“ mit „Archiviert auch 2 Unterprojekte: Dach und Garten. Zurückholen geht später für jedes einzeln.“, Verb „Archivieren“, erster Fokus auf „Abbrechen“; ein Fehler bleibt in der Frage. Ohne aktive Unterprojekte archiviert der Knopf wie bisher sofort. Die Unterprojekte kommen per Realtime in den Katalog (die Kaskade läuft im Hook). |
+| 2026-09-28 | UP-4 | **„Mit Oberprojekt zurückholen“** ersetzt bei einem archivierten Unterprojekt unter einem archivierten Oberprojekt „Aus dem Archiv holen“: Die Route holt erst das Oberprojekt, dann das Unterprojekt zurück (zwei Anfragen, weil der Hook das Kind sonst ablehnt); die übrigen Unterprojekte bleiben archiviert, das sagt der Hinweis. Scheitert das Oberprojekt, bleibt alles, wie es war. |
+| 2026-09-28 | UP-4 | **Löschen** bietet das Panel nur ohne Tickets und ohne Unterprojekte an; sonst nennt der Hinweis den Weg mit dem Text des Hooks. `ProjectPanel` zieht auf die Schriftgrößen-Tokens und fällt von der Liste (`no-own-font-sizes.test.ts` jetzt 193). |
 | 2026-09-28 | UP-1 | **Gruppieren nach Projekt bleibt flach:** eine Gruppe je konkretem Projekt mit dem Pfad als Titel („Haus › Garten“), in Baum-Reihenfolge (Oberprojekt, dann seine Unterprojekte). Verworfen: eine Gruppe je Oberprojekt mit Unterprojekten darin. Die Tabelle kennt nur eine Gruppenebene; verschachtelte Gruppen bräuchten zweite Köpfe, eigene Zähler und Auf- und Zuklappen in der Tabelle. Flach mit Pfad zeigt, wohin jedes Ticket gehört (Key und Gruppe passen zusammen), zählt je Projekt, und die Baum-Reihenfolge hält die Unterprojekte trotzdem beim Oberprojekt. Wer alles unter „Haus“ sehen will, filtert nach „Haus“ (mit Unterprojekten). |
 
 ## 4. Status
@@ -62,8 +69,8 @@
 |---|---|
 | UP-1 | gemergt (#130) |
 | UP-2 | gemergt (#131) |
-| UP-3 | umgesetzt (Liste und Kacheln als Baum) |
-| UP-4 | geplant |
+| UP-3 | gemergt (#132) |
+| UP-4 | umgesetzt (Projekt-Panel) |
 | UP-5 | geplant |
 | UP-6 | geplant |
 

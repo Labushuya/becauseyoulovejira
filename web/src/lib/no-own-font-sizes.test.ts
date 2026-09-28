@@ -13,7 +13,7 @@ const SRC_DIR = resolve(import.meta.dirname, '..');
 const TOKENS_CSS = join('lib', 'styles', 'tokens.css');
 
 /** Numbers left from before G-6 in all listed files together; lower it when one goes. */
-const LEGACY_COUNT = 202;
+const LEGACY_COUNT = 193;
 
 /** Files that still carry font sizes as numbers (as of G-6). */
 const LEGACY_FILES = [
@@ -41,7 +41,6 @@ const LEGACY_FILES = [
 	'lib/components/MailboxPicker.svelte',
 	'lib/components/MarkdownEditor.svelte',
 	'lib/components/NewTicketForm.svelte',
-	'lib/components/ProjectPanel.svelte',
 	'lib/components/ProjectSelect.svelte',
 	'lib/components/QuickCapture.svelte',
 	'lib/components/RecurrenceForm.svelte',

@@ -175,6 +175,64 @@ describe('CatalogEditor: projects', () => {
 	});
 });
 
+describe('CatalogEditor: sub projects (ADR-0034)', () => {
+	it('creates a sub project with its parent and sends no parent without one', async () => {
+		const { editor, data } = await setup();
+
+		await editor.createProject({ name: 'Garten', code: 'GART', parentId: HOUSE.id });
+		expect(data.createProject).toHaveBeenLastCalledWith({
+			name: 'Garten',
+			code: 'GART',
+			parentId: HOUSE.id
+		});
+		await editor.createProject({ name: 'Keller', code: 'KELL', parentId: null });
+		expect(data.createProject).toHaveBeenLastCalledWith({ name: 'Keller', code: 'KELL' });
+	});
+
+	it('sends the parent only when it changes, null to release', async () => {
+		const { editor, data } = await setup();
+		const garden: Project = {
+			id: 'proj00000000011',
+			name: 'Garten',
+			code: 'GART',
+			archived: false,
+			updated: T0,
+			parentId: HOUSE.id
+		};
+
+		await editor.updateProject(garden, { name: 'Garten', code: 'GART', parentId: HOUSE.id });
+		await editor.updateProject(garden, { name: 'Garten', code: 'GART' });
+		expect(data.updateProject).not.toHaveBeenCalled();
+
+		await editor.updateProject(garden, { name: 'Garten', code: 'GART', parentId: null });
+		expect(data.updateProject).toHaveBeenLastCalledWith(garden.id, { parentId: null });
+		await editor.updateProject(HOUSE, { name: 'Haus', code: 'HAUS', parentId: garden.id });
+		expect(data.updateProject).toHaveBeenLastCalledWith(HOUSE.id, { parentId: garden.id });
+	});
+
+	it('shows a refusal of the hook at the field "Oberprojekt"', async () => {
+		const { editor, data } = await setup();
+		data.updateProject.mockRejectedValueOnce(
+			validation({
+				parent: {
+					code: 'validation_project_parent_nested',
+					message: 'Das gewählte Projekt ist selbst ein Unterprojekt. Es gibt nur eine Ebene.'
+				}
+			})
+		);
+
+		expect(
+			await editor.updateProject(HOUSE, { name: 'Haus', code: 'HAUS', parentId: 'proj00000000011' })
+		).toEqual({
+			ok: false,
+			message: null,
+			fields: {
+				parent: 'Das gewählte Projekt ist selbst ein Unterprojekt. Es gibt nur eine Ebene.'
+			}
+		});
+	});
+});
+
 describe('CatalogEditor: tags', () => {
 	it('renames a tag trimmed and puts it into the catalog', async () => {
 		const { editor, data, catalog } = await setup();

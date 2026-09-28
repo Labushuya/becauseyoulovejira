@@ -14,7 +14,9 @@ import {
 	inboxItemHref,
 	listHref,
 	newProjectHref,
+	newSubProjectHref,
 	newTicketHref,
+	parentFrom,
 	projectHref,
 	projectsHref,
 	projectsViewHref,
@@ -128,6 +130,25 @@ describe('ticket links', () => {
 			'/projekte?archiviert=1'
 		);
 		expect(projectsViewHref(at('/projekte/neu'))).toBe('/projekte');
+	});
+
+	it('opens "Neues Projekt" with the parent for "Unterprojekt anlegen" (ADR-0034)', () => {
+		expect(newSubProjectHref('proj00000000001', at('/projekte/proj00000000001?archiviert=1'))).toBe(
+			'/projekte/neu?archiviert=1&oberprojekt=proj00000000001'
+		);
+		expect(newSubProjectHref('proj00000000001', at('/projekte'))).toBe(
+			'/projekte/neu?oberprojekt=proj00000000001'
+		);
+		expect(parentFrom(at('/projekte/neu?oberprojekt=proj00000000001'))).toBe('proj00000000001');
+		expect(parentFrom(at('/projekte/neu'))).toBeNull();
+		expect(parentFrom(at('/projekte/neu?oberprojekt=kurz'))).toBeNull();
+		expect(
+			parentFrom(at('/projekte/neu?oberprojekt=proj00000000001&oberprojekt=proj00000000002'))
+		).toBeNull();
+		// The panel of the new project keeps only the state of the view.
+		expect(projectsViewHref(at('/projekte/neu?oberprojekt=proj00000000001&q=au'))).toBe(
+			'/projekte?q=au'
+		);
 	});
 });
 
