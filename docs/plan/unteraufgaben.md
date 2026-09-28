@@ -83,7 +83,7 @@
 ## 5. Offene Punkte
 
 - Manuelle Browser-Prüfungen der Pakete (BYL-E6-223, BYL-E6-225, BYL-E6-227, BYL-E6-229).
-- **CLAUDE.md** nennt Sub-Tickets noch unter Stufe 2 (§5 „Parent (Stufe 2, nur Guard)“, §7 „Icon für blockiert ab Stufe 2“, §10). Die Anpassung ist als Vorschlag für den Nutzer vorbereitet und kommt nach seiner Freigabe.
+- ~~**CLAUDE.md** nennt Sub-Tickets noch unter Stufe 2 (§5 „Parent (Stufe 2, nur Guard)“, §7 „Icon für blockiert ab Stufe 2“, §10).~~ Erledigt nach Freigabe des Nutzers vom 2026-09-28: §5, §7 und §10 verweisen auf ADR-0033; das Icon für „blockiert“ gehört zu den Abhängigkeiten und bleibt Stufe 2.
 - **Verwerfen-Frage aus der Vollansicht:** Wer mit ungespeichertem Text aus der Vollansicht zu einem anderen Ticket wechselt (Pfad, Unteraufgabe), bekommt die bestehende Bestätigung „Änderungen verwerfen?“ des Ticket-Layouts über das XL-Modal gelegt. Das ist älter als dieser Plan (jede Navigation aus der Vollansicht) und wäre eine eigene Inline-Frage wert.
 
 ## 7. Hinweise für die nächsten Pakete

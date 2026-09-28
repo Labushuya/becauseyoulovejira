@@ -80,4 +80,4 @@ Es gibt keine Oberfläche, und `blocks_parent` hat keine Wirkung. Der Nutzer hat
 
 - Positiv: Keine Migration und kein Neustart. Die Sperre gilt auch für andere Clients und ist atomar. Einrücken, Filter und Sortierung widersprechen sich nicht.
 - Negativ: Die SPA lädt zusätzlich alle Unteraufgaben (auch erledigte) mit den Listenfeldern, damit Fortschritt und Liste ohne weitere Anfragen stimmen. Bei privaten Datenmengen ist das klein.
-- CLAUDE.md §5, §7 und §10 müssen nachgezogen werden (Stufe 2 → umgesetzt); das ist ein Vorschlag an den Nutzer, weil die Datei nur nach Rücksprache geändert wird.
+- CLAUDE.md §5, §7 und §10 sind nachgezogen (Stufe 2 → umgesetzt; Freigabe des Nutzers vom 2026-09-28).
