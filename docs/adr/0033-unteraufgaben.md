@@ -1,6 +1,6 @@
 # ADR-0033: Unteraufgaben: eine Ebene, Fortschritt, Einrücken in der Tabelle und „blockiert das übergeordnete Ticket“
 
-- **Status:** Angenommen und umgesetzt in den Paketen UA-1 bis UA-5 nach [docs/plan/unteraufgaben.md](../plan/unteraufgaben.md) (#118 bis #121 und der PR von UA-5); manuelle Browser-Prüfungen stehen im Test-Manifest
+- **Status:** Angenommen und umgesetzt in den Paketen UA-1 bis UA-5 nach [docs/plan/unteraufgaben.md](../plan/unteraufgaben.md) (#118 bis #122); manuelle Browser-Prüfungen stehen im Test-Manifest
 - **Datum:** 2026-09-28
 - **Entscheidung durch:** Nutzer (Freigabe der Unteraufgaben am 2026-09-28 als ausdrückliche Anweisung nach CLAUDE.md §10), Advisor (Umfang und Bausteine), Executor (Regeln für Einrücken, Wiederholungen und Erledigen, Einzelheiten)
 - **Ergänzt:** [ADR-0012](0012-plain-ticketing.md) und [ADR-0011](0011-roadmap-e3-bis-e7.md) (je ein Nachtrag), [ADR-0030](0030-spalten-breiten-und-kompakte-zeilen.md) (Spalte „Übergeordnet“, Vorliebe „Unteraufgaben einrücken“), [ADR-0023](0023-lebenszyklus-von-regeln-und-instanzen.md) (Folgetickets)

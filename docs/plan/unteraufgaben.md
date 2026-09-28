@@ -1,6 +1,6 @@
 # E6-Plan, Teil Unteraufgaben: Liste, Fortschritt, Einrücken und „blockiert das übergeordnete Ticket“
 
-- **Stand:** umgesetzt (2026-09-28): UA-0 (#117), UA-1 (#118, Sperre beim Erledigen im Hook), UA-2 (#119, Abschnitt „Unteraufgaben“, Pfad), UA-3 (#120, übergeordnetes Ticket, Switch, Löschen inline), UA-4 (#121, Frage beim Erledigen) und UA-5 (Tabelle, Hilfe, README). Offen sind die manuellen Browser-Prüfungen.
+- **Stand:** umgesetzt (2026-09-28): UA-0 (#117), UA-1 (#118, Sperre beim Erledigen im Hook), UA-2 (#119, Abschnitt „Unteraufgaben“, Pfad), UA-3 (#120, übergeordnetes Ticket, Switch, Löschen inline), UA-4 (#121, Frage beim Erledigen) und UA-5 (#122, Tabelle, Hilfe, README). Offen sind die manuellen Browser-Prüfungen.
 - **Grundlage:**
   - [ADR-0033](../adr/0033-unteraufgaben.md) (Umfang, Sperre beim Erledigen, Wiederholungen, Oberfläche, Tabelle)
   - [ADR-0012](../adr/0012-plain-ticketing.md) und [ADR-0011](../adr/0011-roadmap-e3-bis-e7.md) mit den Nachträgen vom 2026-09-28
@@ -78,7 +78,7 @@
 | UA-2 | gemergt (#119) |
 | UA-3 | gemergt (#120) |
 | UA-4 | gemergt (#121) |
-| UA-5 | PR offen |
+| UA-5 | gemergt (#122) |
 
 ## 5. Offene Punkte
 
