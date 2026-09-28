@@ -51,7 +51,7 @@ Die Bewertung vom 2026-09-27 hatte S0 bis S5 mit S2b und S4 als Optionen. Nach d
 |---|---|---|
 | S0-1 | `scripts/platform.mjs` (`executableName`), `scripts/fetch-pocketbase.mjs` (Tabelle Plattform → Archiv → SHA256 für `windows_amd64`, `linux_amd64`, `linux_arm64`, `linux_armv7`, ZIP-Lesen mit `node:zlib`, kein unzip nötig), `fetch-pocketbase.ps1` als Windows-Hülle, Harness und Mail-Hilfsprozess mit Binary-Namen je Plattform (Beenden unter Linux per `SIGKILL`), Windows-only-Tests ausgenommen, CI-Job „Linux build and test“ | gemergt (#157) |
 | S0-2 | Plattform-Hinweis des Servers: `lib/host-platform.js` (rein) und `GET /api/byl/host` für angemeldete Nutzer (`{ platform }`); `BYL_HOST_PLATFORM` mit bekanntem Wert gewinnt, sonst `$os.args[0]` (`.exe` = Windows, sonst Linux), ohne beides Windows | gemergt (#159) |
-| S0-3 | Anleitungen nach dem Server-System: `data/host.ts` (Route lesen, bei jedem Fehler Windows), `HostStore` im `(app)`-Layout (einmal je Anmeldung), Baustein `HostPlatformNote` über den Windows-Anleitungen (Kanäle, Einrichtungsassistent, Hilfe „Kanäle und Zugangsdaten“ und „Betrieb“) nur auf Linux- bzw. Container-Servern; Doku (ADR-0028-Nachtrag, README, CLAUDE.md) | in Arbeit |
+| S0-3 | Anleitungen nach dem Server-System: `data/host.ts` (Route lesen, bei jedem Fehler Windows), `HostStore` im `(app)`-Layout (einmal je Anmeldung), Baustein `HostPlatformNote` über den Windows-Anleitungen (Kanäle, Einrichtungsassistent, Hilfe „Kanäle und Zugangsdaten“ und „Betrieb“) nur auf Linux- bzw. Container-Servern; Doku (ADR-0028-Nachtrag, README, CLAUDE.md) | gemergt (#160) |
 
 **Abweichungen und Entscheidungen zu S0:**
 
@@ -141,5 +141,5 @@ Die Bewertung vom 2026-09-27 hatte S0 bis S5 mit S2b und S4 als Optionen. Nach d
 | 2026-09-27 | S4 | Tray-Hülle und Installer behalten den portablen Ordner mit den Daten darin (CLAUDE.md §1). |
 | 2026-09-27 | S0 | `release-please` für SemVer, CHANGELOG und Tags; Start bei `0.1.0`. |
 | 2026-09-28 | S1 | Mit dem Paket „Start und Fenster“ zusammengeführt (Nutzerentscheidung: installierbare Web-App mit `focus-existing`, `start.bat` bevorzugt die installierte App); Umsetzung als SF-5 nach [ADR-0035](../adr/0035-start-einstieg-und-offene-tabs.md) vor S0. |
-| 2026-09-28 | S0 | Umgesetzt in S0-1 (#157), S0-2 (#159) und S0-3; Abweichungen in §3 „S0“: Erkennung des Server-Systems statt Variable im Start, Hinweis statt vollständiger Anleitungen je System bis S3, SemVer und Releases zurückgestellt (Nutzerentscheidung zum Token nötig). |
+| 2026-09-28 | S0 | Umgesetzt in S0-1 (#157), S0-2 (#159) und S0-3 (#160); Abweichungen in §3 „S0“: Erkennung des Server-Systems statt Variable im Start, Hinweis statt vollständiger Anleitungen je System bis S3, SemVer und Releases zurückgestellt (Nutzerentscheidung zum Token nötig). |
 | 2026-09-28 | S0 | Der Linux-Job ist kein Pflicht-Check. Empfehlung: nach einigen grünen Läufen in das Ruleset aufnehmen (im selben PR wie die Änderung von `.github/rulesets/main.json`, CLAUDE.md §12); er ist mit gut 5 Minuten kürzer als der Windows-Job. |
