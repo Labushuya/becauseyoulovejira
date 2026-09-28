@@ -88,7 +88,7 @@
 	// back) asks first while a description, a comment or a name in the tag picker (E3 plan, T-14) is
 	// not saved. beforeNavigate cannot wait for a dialog (ADR-0025 section 4): the navigation is
 	// cancelled (SvelteKit restores the history position for back and forward), the confirmation
-	// opens, and "Verwerfen" starts it again. Logout and session end go to the login page and are
+	// opens (in the full view the inline question instead), and "Verwerfen" starts it again. Logout and session end go to the login page and are
 	// not held up; closing the browser tab is not covered.
 	beforeNavigate((navigation) => {
 		const to = navigation.to;
@@ -121,8 +121,32 @@
 		await goto(back);
 	}
 
-	// The full view deletes through the same way out (a flag of this layout).
-	setTicketRoute({ deleted });
+	/** Number of parts that ask inline (the full view); while one is shown, no confirmation opens. */
+	let inlineAskers = $state(0);
+
+	// The full view deletes through the same way out (a flag of this layout) and asks about unsaved
+	// text inline, because no dialog opens from it (ADR-0025 section 3).
+	setTicketRoute({
+		deleted,
+		askInline() {
+			inlineAskers += 1;
+			let ended = false;
+			return () => {
+				if (ended) return;
+				ended = true;
+				inlineAskers -= 1;
+				// A question the full view was asking goes with it (closing it keeps the ticket).
+				leaving = null;
+			};
+		},
+		get leaving() {
+			return leaving !== null && inlineAskers > 0;
+		},
+		stay() {
+			leaving = null;
+		},
+		discard: discardAndLeave
+	});
 </script>
 
 <svelte:head>
@@ -180,7 +204,7 @@
 </TicketPanel>
 
 <ConfirmDialog
-	open={leaving !== null}
+	open={leaving !== null && inlineAskers === 0}
 	title="Änderungen verwerfen?"
 	confirmLabel="Verwerfen"
 	cancelLabel="Weiter bearbeiten"

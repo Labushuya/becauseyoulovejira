@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { tick } from 'svelte';
+	import { tick, untrack } from 'svelte';
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
 	import Breadcrumbs from '$lib/components/Breadcrumbs.svelte';
@@ -11,6 +11,7 @@
 	import TicketDeleteQuestion from '$lib/components/TicketDeleteQuestion.svelte';
 	import TicketDescription from '$lib/components/TicketDescription.svelte';
 	import TicketFields from '$lib/components/TicketFields.svelte';
+	import TicketLeaveQuestion from '$lib/components/TicketLeaveQuestion.svelte';
 	import TicketMeta from '$lib/components/TicketMeta.svelte';
 	import TicketParentField from '$lib/components/TicketParentField.svelte';
 	import TicketSources from '$lib/components/TicketSources.svelte';
@@ -32,7 +33,8 @@
 	// Closing goes back to the panel with the same list query and the focus on "Vollansicht".
 	// A sub-task shows its path above the title; the path and the section "Unteraufgaben" lead to
 	// the full view of the other ticket (ADR-0033 section 4). "Löschen …" asks inline at the top of
-	// the content, because no dialog opens from the full view (ADR-0025 section 3).
+	// the content, because no dialog opens from the full view (ADR-0025 section 3); so does the
+	// question about unsaved text when a link leaves the ticket (the layout holds the navigation).
 
 	const detail = getTicketDetailStore();
 	const comments = getTicketActivityStore();
@@ -59,6 +61,9 @@
 	let askingFor = $state<string | null>(null);
 	const asking = $derived(askingFor !== null && askingFor === id);
 	let deleteButton = $state<HTMLButtonElement>();
+
+	// While the full view is shown, it asks about unsaved text instead of the layout.
+	$effect(() => untrack(() => route.askInline()));
 
 	async function cancelDelete() {
 		askingFor = null;
@@ -90,6 +95,9 @@
 			/>
 		{/snippet}
 		{#snippet main()}
+			{#if route.leaving}
+				<TicketLeaveQuestion onstay={() => route.stay()} ondiscard={() => void route.discard()} />
+			{/if}
 			{#if asking}
 				<TicketDeleteQuestion
 					store={detail}
