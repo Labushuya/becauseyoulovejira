@@ -119,7 +119,7 @@
 <style>
 	.kpi-tiles {
 		display: grid;
-		grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr));
+		grid-template-columns: repeat(auto-fit, minmax(min(9rem, 100%), 1fr));
 		gap: 0.75rem;
 		margin-bottom: 1rem;
 	}

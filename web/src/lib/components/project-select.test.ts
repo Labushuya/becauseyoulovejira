@@ -56,7 +56,22 @@ describe('project select with sub projects (ADR-0034)', () => {
 		const { select, onchoose } = show({ value: archived.id, current: archived });
 		expect(select.selectedOptions[0]?.textContent?.trim()).toBe('Haus › Dach (DACH, archiviert)');
 
+		expect(select.title).toBe('Haus › Dach (DACH, archiviert)');
+
 		await fireEvent.change(select, { target: { value: GARDEN.id } });
 		expect(onchoose).toHaveBeenCalledWith(GARDEN.id);
+	});
+
+	// A long label may end in an ellipsis (base.css, docs/plan/layout-ueberlauf.md); the title
+	// shows it whole, and the value of the select keeps it whole for screen readers.
+	it('shows the whole label of the chosen project as title, none for "Kein Projekt"', () => {
+		const { select } = show({ value: GARDEN.id });
+		expect(select.title).toBe('Haus › Garten (GART)');
+		expect(select.selectedOptions[0]?.textContent?.trim()).toBe(select.title);
+	});
+
+	it('has no title while no project is chosen', () => {
+		const { select } = show();
+		expect(select.hasAttribute('title')).toBe(false);
 	});
 });

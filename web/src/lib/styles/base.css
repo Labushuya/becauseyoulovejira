@@ -107,6 +107,32 @@ input {
 }
 
 /*
+ * Form controls never grow beyond their container (layout overflow fix, docs/plan/layout-ueberlauf.md).
+ * A select is as wide as its longest option ("Gesundheit › Christa (CHRS)", ADR-0034), and as a
+ * grid or flex item its automatic minimum width is that width; max-width: 100% alone then resolves
+ * against a track the control has already widened. min-width: 0 removes that minimum, so the
+ * control shrinks with its container, and a long value ends in an ellipsis (the full text stays
+ * the value of the control for screen readers; ProjectSelect repeats it as title). Components
+ * keep these two limits (no-control-overflow.test.ts). A fieldset has min-width: min-content by
+ * default, so its content could push it out as well.
+ */
+input,
+select,
+textarea {
+	min-width: 0;
+	max-width: 100%;
+}
+
+select,
+input:not([type='checkbox'], [type='radio']) {
+	text-overflow: ellipsis;
+}
+
+fieldset {
+	min-width: 0;
+}
+
+/*
  * Focus ring in the accent as text (ADR-0029 section 5): it keeps at least 4.5 : 1 on surfaces,
  * the page, the gradient and glass in every theme; --color-brand does not in dark mode.
  */
@@ -422,6 +448,8 @@ a.button-subtle {
 	display: inline-flex;
 	gap: 0.25rem;
 	align-items: center;
+	min-width: 0;
+	max-width: 100%;
 	min-height: var(--control-height-m);
 	padding: 0 0.5rem;
 	color: var(--color-text-muted);
