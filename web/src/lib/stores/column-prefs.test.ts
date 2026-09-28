@@ -48,9 +48,11 @@ describe('ColumnPrefsStore', () => {
 		const store = new ColumnPrefsStore(TICKET_TABLE, storage);
 		expect(store.widthOf('tags')).toBe(8 * REM);
 
-		expect(store.setWidth('tags', 200)).toBe(200);
+		store.setWidths({ tags: 200 });
 
 		expect(store.widthOf('tags')).toBe(200);
+		expect(store.hasWidth('tags')).toBe(true);
+		expect(store.hasWidth('due')).toBe(false);
 		expect(JSON.parse(storage.data.get('byl-columns-tickets') ?? '')).toEqual({
 			v: 1,
 			widths: { tags: 200 },
@@ -58,14 +60,28 @@ describe('ColumnPrefsStore', () => {
 		});
 	});
 
-	it('clamps widths and ignores the title, the actions and unknown columns', () => {
+	it('clamps widths, takes the title (Nachtrag 3) and ignores the actions and unknown columns', () => {
 		const storage = memoryStorage();
 		const store = new ColumnPrefsStore(TICKET_TABLE, storage);
-		expect(store.setWidth('tags', 5000)).toBe(20 * REM);
-		expect(store.setWidth('title', 400)).toBe(0);
-		expect(store.setWidth('actions', 100)).toBe(0);
-		expect(store.setWidth('nope', 100)).toBe(0);
-		expect(store.prefs.widths).toEqual({ tags: 20 * REM });
+		store.setWidths({ tags: 5000, title: 100, actions: 100, nope: 100, due: Number.NaN });
+		expect(store.prefs.widths).toEqual({ tags: 20 * REM, title: 10 * REM });
+
+		store.setWidths({ title: 400 });
+		expect(store.prefs.widths).toEqual({ tags: 20 * REM, title: 400 });
+	});
+
+	it('forgets a width: the title takes the rest again', () => {
+		const storage = memoryStorage();
+		const store = new ColumnPrefsStore(TICKET_TABLE, storage);
+		store.setWidths({ title: 400, tags: 200 });
+
+		store.clearWidth('title');
+		store.clearWidth('due');
+
+		expect(store.prefs.widths).toEqual({ tags: 200 });
+		expect(JSON.parse(storage.data.get('byl-columns-tickets') ?? '').widths).toEqual({ tags: 200 });
+		store.clearWidth('tags');
+		expect(storage.data.has('byl-columns-tickets')).toBe(false);
 	});
 
 	it('hides and shows optional columns in the order of the table, never required ones', () => {
@@ -102,10 +118,12 @@ describe('ColumnPrefsStore', () => {
 	it('keeps the choice for the page when the storage throws', () => {
 		const store = new ColumnPrefsStore(TICKET_TABLE, throwing);
 		expect(store.prefs).toEqual(DEFAULTS);
-		expect(() => store.setWidth('tags', 200)).not.toThrow();
+		expect(() => store.setWidths({ tags: 200 })).not.toThrow();
 		expect(store.widthOf('tags')).toBe(200);
 		expect(() => store.reset()).not.toThrow();
-		expect(new ColumnPrefsStore(TICKET_TABLE, null).setWidth('due', 150)).toBe(150);
+		const memory = new ColumnPrefsStore(TICKET_TABLE, null);
+		memory.setWidths({ due: 150 });
+		expect(memory.widthOf('due')).toBe(150);
 	});
 
 	it('resets widths and visibility of its table only, with the info flag "Spalten zurückgesetzt"', () => {
@@ -114,7 +132,7 @@ describe('ColumnPrefsStore', () => {
 		});
 		const flags = { show: vi.fn(() => 'flag'), dismiss: vi.fn() };
 		const store = new ColumnPrefsStore(TICKET_TABLE, storage, flags);
-		store.setWidth('tags', 200);
+		store.setWidths({ tags: 200, title: 480 });
 		store.setVisible('created', false);
 
 		store.reset();
@@ -140,7 +158,7 @@ describe('ColumnPrefsStore', () => {
 			hidden: ['parent', 'source'],
 			options: { nest: false }
 		});
-		store.setWidth('tags', 200);
+		store.setWidths({ tags: 200 });
 		expect(store.option('nest')).toBe(false);
 		expect(new ColumnPrefsStore(TICKET_TABLE, storage).option('nest')).toBe(false);
 
@@ -161,7 +179,7 @@ describe('ColumnPrefsRegistry', () => {
 		const tickets = registry.get('tickets');
 		expect(registry.get('tickets')).toBe(tickets);
 		expect(registry.get('inbox')).not.toBe(tickets);
-		tickets.setWidth('due', 150);
+		tickets.setWidths({ due: 150 });
 		expect(localStorage.getItem('byl-columns-tickets')).toContain('"due":150');
 	});
 

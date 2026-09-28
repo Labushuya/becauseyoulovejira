@@ -263,6 +263,61 @@ describe('menu "Spalten" (ADR-0030)', () => {
 		expect(live(menu)).toBe('Projekt: 7 rem');
 	});
 
+	it('changes the width of the title from the keyboard, the way of its grip (Nachtrag 3)', async () => {
+		await showTable();
+		resize(table().parentElement as HTMLElement, 1200);
+		await vi.advanceTimersByTimeAsync(0);
+		const menu = await openMenu();
+		const row = menuButton(menu, 'Spalte Titel breiter').closest('.row') as HTMLElement;
+		// Always shown: a row without a checkbox, "auto" until a width is chosen.
+		expect(within(row).queryByRole('checkbox', { hidden: true })).toBeNull();
+		expect(row.textContent).toContain('Titel');
+		expect(row.querySelector('.width')?.textContent).toBe('auto');
+		const wider = menuButton(menu, 'Spalte Titel breiter');
+		const narrower = menuButton(menu, 'Spalte Titel schmaler');
+		for (const button of [wider, narrower]) {
+			expect(button.tagName).toBe('BUTTON');
+			expect(button.getAttribute('tabindex')).toBeNull();
+		}
+
+		wider.focus();
+		await fireEvent.click(wider);
+		await vi.advanceTimersByTimeAsync(0);
+
+		// 352 px of rest plus 1rem; the other columns gave the 16 px.
+		expect(live(menu)).toBe('Titel: 23 rem');
+		expect(row.querySelector('.width')?.textContent).toBe('23 rem');
+		const widths = JSON.parse(localStorage.getItem('byl-columns-tickets') ?? '').widths;
+		expect(widths.title).toBe(368);
+		expect(document.activeElement).toBe(wider);
+
+		await fireEvent.click(narrower);
+		await fireEvent.click(narrower);
+		await vi.advanceTimersByTimeAsync(0);
+		expect(live(menu)).toBe('Titel: 21 rem');
+
+		await fireEvent.click(menuButton(menu, 'Standard wiederherstellen'));
+		await vi.advanceTimersByTimeAsync(0);
+		expect(row.querySelector('.width')?.textContent).toBe('auto');
+		expect(localStorage.getItem('byl-columns-tickets')).toBeNull();
+	});
+
+	it('stops the title at its minimum of 10rem and marks the button there', async () => {
+		localStorage.setItem('byl-columns-tickets', '{"v":1,"widths":{"title":170}}');
+		await showTable();
+		resize(table().parentElement as HTMLElement, 1200);
+		await vi.advanceTimersByTimeAsync(0);
+		const menu = await openMenu();
+		const narrower = menuButton(menu, 'Spalte Titel schmaler');
+
+		await fireEvent.click(narrower);
+		await vi.advanceTimersByTimeAsync(0);
+		expect(live(menu)).toBe('Titel: 10 rem');
+		expect(narrower.getAttribute('aria-disabled')).toBe('true');
+		await fireEvent.click(narrower);
+		expect(JSON.parse(localStorage.getItem('byl-columns-tickets') ?? '').widths.title).toBe(160);
+	});
+
 	it('stops at the bounds of a column and marks the button there', async () => {
 		await showTable();
 		const menu = await openMenu();

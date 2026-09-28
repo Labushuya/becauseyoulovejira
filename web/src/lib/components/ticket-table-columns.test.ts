@@ -297,6 +297,7 @@ describe('columns of the ticket table (ADR-0030)', () => {
 			'key',
 			'priority',
 			'status',
+			'title',
 			'project',
 			'tags',
 			'due',
@@ -306,6 +307,156 @@ describe('columns of the ticket table (ADR-0030)', () => {
 			expect(entry.getAttribute('aria-hidden')).toBe('true');
 			expect(entry.hasAttribute('tabindex')).toBe(false);
 		}
+	});
+
+	describe('width of the title (ADR-0030 Nachtrag 3)', () => {
+		/** Width the title gets: the frame minus the widths of the other columns of the colgroup. */
+		function titleWidth(frameWidth: number): number {
+			const others = [...table().querySelectorAll<HTMLElement>('col')]
+				.filter((col) => col.dataset.column !== 'title')
+				.reduce((total, col) => total + parseFloat(col.style.width), 0);
+			return frameWidth - others;
+		}
+
+		async function measure(width: number) {
+			resize(frame(), width);
+			await vi.advanceTimersByTimeAsync(0);
+		}
+
+		it('makes the title narrower by dragging; the others take the rest, the device keeps it', async () => {
+			await showTable();
+			await measure(1200);
+			// 848 px for the other columns, the title has the rest.
+			expect(titleWidth(1200)).toBe(352);
+			expect(grip('title').getAttribute('title')).toBe(
+				'Breite ziehen, Doppelklick gibt den Rest der Tabelle'
+			);
+
+			await fireEvent.pointerDown(grip('title'), { button: 0, pointerId: 1, clientX: 500 });
+			await fireEvent.pointerMove(grip('title'), { pointerId: 1, clientX: 450 });
+			expect(titleWidth(1200)).toBe(302);
+			expect(parseFloat(colWidth('tags'))).toBeGreaterThan(128);
+			expect(colWidth('title')).toBe('');
+			expect(stored()).toBeNull();
+
+			await fireEvent.pointerUp(grip('title'), { pointerId: 1, clientX: 450 });
+
+			expect(stored()).toEqual({ v: 1, widths: { title: 302 }, hidden: ['parent', 'source'] });
+			expect(titleWidth(1200)).toBe(302);
+		});
+
+		it('keeps the width after a reload', async () => {
+			localStorage.setItem(
+				'byl-columns-tickets',
+				JSON.stringify({ v: 1, widths: { title: 302 }, hidden: ['parent', 'source'] })
+			);
+			await showTable();
+			await measure(1200);
+
+			expect(titleWidth(1200)).toBe(302);
+		});
+
+		it('makes the title wider by dragging: the others shrink down to their minimum, then it stops', async () => {
+			await showTable();
+			await measure(1200);
+
+			await fireEvent.pointerDown(grip('title'), { button: 0, pointerId: 1, clientX: 500 });
+			await fireEvent.pointerMove(grip('title'), { pointerId: 1, clientX: 600 });
+			expect(titleWidth(1200)).toBe(452);
+			expect(parseFloat(colWidth('tags'))).toBeLessThan(128);
+
+			// Far beyond the room of the others: they stop at their minimum, none gives way.
+			await fireEvent.pointerMove(grip('title'), { pointerId: 1, clientX: 2000 });
+			expect(titleWidth(1200)).toBe(624);
+			expect(colWidth('key')).toBe('64px');
+			expect(headerIds()).toContain('created');
+			await fireEvent.pointerUp(grip('title'), { pointerId: 1, clientX: 2000 });
+
+			expect((stored() as { widths: Record<string, number> }).widths).toMatchObject({
+				title: 624,
+				key: 64,
+				tags: 64
+			});
+		});
+
+		it('puts the old width back on Escape during the drag of the title', async () => {
+			await showTable();
+			await measure(1200);
+
+			await fireEvent.pointerDown(grip('title'), { button: 0, pointerId: 1, clientX: 500 });
+			await fireEvent.pointerMove(grip('title'), { pointerId: 1, clientX: 600 });
+			const escape = new KeyboardEvent('keydown', {
+				key: 'Escape',
+				bubbles: true,
+				cancelable: true
+			});
+			document.body.dispatchEvent(escape);
+			await vi.advanceTimersByTimeAsync(0);
+
+			expect(escape.defaultPrevented).toBe(true);
+			expect(titleWidth(1200)).toBe(352);
+			expect(colWidth('tags')).toBe('128px');
+			await fireEvent.pointerUp(grip('title'), { pointerId: 1, clientX: 600 });
+			expect(stored()).toBeNull();
+		});
+
+		it('gives the title the rest again on a double click on its grip', async () => {
+			localStorage.setItem(
+				'byl-columns-tickets',
+				JSON.stringify({ v: 1, widths: { title: 302, tags: 200 }, hidden: ['parent', 'source'] })
+			);
+			await showTable();
+			await measure(1200);
+
+			await fireEvent.dblClick(grip('title'));
+
+			expect(mocks.goto).not.toHaveBeenCalled();
+			expect(stored()).toEqual({ v: 1, widths: { tags: 200 }, hidden: ['parent', 'source'] });
+			expect(titleWidth(1200)).toBe(1200 - 848 - 72);
+		});
+
+		it('lets a wide title give way first in a narrow frame, with the usual columns hidden', async () => {
+			localStorage.setItem(
+				'byl-columns-tickets',
+				JSON.stringify({ v: 1, widths: { title: 500 }, hidden: ['parent', 'source'] })
+			);
+			await showTable();
+			await measure(700);
+
+			expect(headerIds()).toEqual([
+				'select',
+				'key',
+				'priority',
+				'status',
+				'title',
+				'due',
+				'actions'
+			]);
+			expect(titleWidth(700)).toBe(700 - (40 + 96 + 64 + 104 + 128 + 64));
+
+			await measure(1500);
+			expect(headerIds()).toHaveLength(10);
+			expect(titleWidth(1500)).toBe(500);
+		});
+
+		it('keeps the title while another column is dragged', async () => {
+			localStorage.setItem(
+				'byl-columns-tickets',
+				JSON.stringify({ v: 1, widths: { title: 302 }, hidden: ['parent', 'source'] })
+			);
+			await showTable();
+			await measure(1200);
+			const tags = parseFloat(colWidth('tags'));
+			const due = colWidth('due');
+
+			await fireEvent.pointerDown(grip('project'), { button: 0, pointerId: 1, clientX: 100 });
+			await fireEvent.pointerUp(grip('project'), { pointerId: 1, clientX: 120 });
+
+			// The title gives the 20 px, the other columns stay where they were.
+			expect(titleWidth(1200)).toBe(282);
+			expect(colWidth('tags')).toBe(`${tags}px`);
+			expect(colWidth('due')).toBe(due);
+		});
 	});
 
 	it('follows the stored preferences of the device', async () => {
@@ -343,7 +494,7 @@ describe('columns of the ticket table (ADR-0030)', () => {
 		const registry = new ColumnPrefsRegistry(window);
 		await showTable('/', new Map([[COLUMN_PREFS_CONTEXT, registry]]));
 
-		registry.get('tickets').setWidth('due', 150);
+		registry.get('tickets').setWidths({ due: 150 });
 		await vi.advanceTimersByTimeAsync(0);
 
 		expect(colWidth('due')).toBe('150px');
