@@ -5,7 +5,9 @@
 	// Project of a ticket (E3 plan, T-13): "Kein Projekt" and the active projects as
 	// "Name (CODE)". A project that is archived but already assigned stays visible as
 	// "Name (CODE, archiviert)", so the select shows the true value; archived projects cannot be
-	// chosen otherwise (T-11). The hint says that a change gives the ticket a new key.
+	// chosen otherwise (T-11). The hint says that a change gives the ticket a new key; a caller with
+	// other words passes them as `hint` instead of a hint of its own, so the page holds one element
+	// with `hintId` and `aria-describedby` points at exactly that one.
 	// Sub projects (ADR-0034, UP-5): the options come in tree order (the catalog delivers them so),
 	// a sub project as "Haus › Garten (GART)", which every reader understands without indentation.
 	// The select never grows beyond its container (base.css): a long label ends in an ellipsis, and
@@ -20,6 +22,7 @@
 		error = null,
 		errorId,
 		hintId,
+		hint = 'Beim Wechsel bekommt das Ticket einen neuen Key.',
 		onchoose
 	}: {
 		id: string;
@@ -35,6 +38,8 @@
 		error?: string | null;
 		errorId: string;
 		hintId: string;
+		/** Text of the hint below the select, rendered here with `hintId`. */
+		hint?: string;
 		onchoose: (value: string) => void;
 	} = $props();
 
@@ -77,7 +82,7 @@
 		</option>
 	{/if}
 </select>
-<p class="hint" id={hintId}>Beim Wechsel bekommt das Ticket einen neuen Key.</p>
+<p class="hint" id={hintId}>{hint}</p>
 
 <style>
 	.hint {

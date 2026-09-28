@@ -12,6 +12,7 @@ import type { TicketPatch, TicketSummary } from '$lib/domain/ticket';
 import { BulkEditStore, type BulkEditData } from '$lib/stores/bulk-edit.svelte';
 import { CatalogStore } from '$lib/stores/catalog.svelte';
 import { TicketListStore, type TicketListData } from '$lib/stores/ticket-list.svelte';
+import { danglingReferences, duplicateIds } from '$lib/test/aria-ids';
 import { useOverlayStubs } from '$lib/test/overlay-stubs';
 import TicketTable from './TicketTable.svelte';
 
@@ -275,6 +276,24 @@ describe('bar of the bulk actions (plan BI-2)', () => {
 			't00000000000001',
 			't00000000000002'
 		]);
+	});
+
+	// The select renders the hint of "Projekt …" itself; a second hint of the bar with the same ID
+	// doubled it, and aria-describedby named only one of the two.
+	it('asks for the project in "Projekt …" with one hint and unique IDs', async () => {
+		await showTable([ticket(1), ticket(2)]);
+		await fireEvent.click(headBox());
+		await fireEvent.click(screen.getByRole('button', { name: 'Projekt …' }));
+
+		const dialog = screen.getByRole('dialog', { name: /^Projekt für/ });
+		const select = within(dialog).getByRole<HTMLSelectElement>('combobox', { name: 'Projekt' });
+		const hint = document.getElementById(select.getAttribute('aria-describedby') ?? '');
+		expect(hint?.textContent).toBe(
+			'Ein anderes Projekt gibt jedem Ticket einen neuen Key; der alte steht im Verlauf.'
+		);
+		expect(within(dialog).queryByText(/Beim Wechsel bekommt/)).toBeNull();
+		expect(duplicateIds()).toEqual([]);
+		expect(danglingReferences(dialog)).toEqual([]);
 	});
 
 	it('moves to the trash after a question naming it, with the choice for the sources (ADR-0037)', async () => {

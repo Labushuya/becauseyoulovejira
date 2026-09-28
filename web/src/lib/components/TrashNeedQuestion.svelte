@@ -42,9 +42,9 @@
 				{busy}
 				errorId={`${uid}-project-error`}
 				hintId={`${uid}-project-hint`}
+				hint="Der alte Key bleibt im Verlauf."
 				onchoose={(value) => (target = value)}
 			/>
-			<p class="hint" id={`${uid}-project-hint`}>Der alte Key bleibt im Verlauf.</p>
 		</div>
 	{/if}
 	{#snippet actions()}
@@ -85,11 +85,6 @@
 	.field label {
 		font-size: var(--font-size-control);
 		font-weight: 500;
-		color: var(--color-text-muted);
-	}
-
-	.hint {
-		font-size: var(--font-size-small);
 		color: var(--color-text-muted);
 	}
 </style>

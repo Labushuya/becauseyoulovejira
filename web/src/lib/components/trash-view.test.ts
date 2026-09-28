@@ -14,6 +14,7 @@ import type { ProjectRef } from '$lib/domain/ticket';
 import type { TrashItem, TrashPreview } from '$lib/domain/trash';
 import { SILENT_FLAGS } from '$lib/stores/flags.svelte';
 import { TrashStore, type TrashData } from '$lib/stores/trash.svelte';
+import { danglingReferences, duplicateIds } from '$lib/test/aria-ids';
 import { useOverlayStubs } from '$lib/test/overlay-stubs';
 import TrashContextHarness from '$lib/test/TrashContextHarness.svelte';
 import TrashPanel from './TrashPanel.svelte';
@@ -156,6 +157,11 @@ describe('view "Papierkorb"', () => {
 			expect(screen.getByText(/Das Projekt HAUS gibt es nicht mehr/)).toBeTruthy()
 		);
 		const target = screen.getByLabelText('Zielprojekt für HAUS-1') as HTMLSelectElement;
+		// One hint, rendered by the select with its own ID (no second one of the question).
+		const hint = document.getElementById(target.getAttribute('aria-describedby') ?? '');
+		expect(hint?.textContent).toBe('Der alte Key bleibt im Verlauf.');
+		expect(duplicateIds()).toEqual([]);
+		expect(danglingReferences(target.closest('.field') as HTMLElement)).toEqual([]);
 		await fireEvent.change(target, { target: { value: 'project00000001' } });
 		await fireEvent.click(screen.getByRole('button', { name: 'Wiederherstellen' }));
 		await vi.waitFor(() =>
