@@ -6,7 +6,7 @@ import { fireEvent, render, screen, within } from '@testing-library/svelte';
 import { tick } from 'svelte';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { ResolvedPathname } from '$app/types';
-import type { RecurrenceRule } from '$lib/domain/recurrence-rule';
+import { CATCH_UP_ASK_HINT, type RecurrenceRule } from '$lib/domain/recurrence-rule';
 import { resize, useResizeObserverStub } from '$lib/test/resize-observer-stub';
 import RecurrenceTable from './RecurrenceTable.svelte';
 
@@ -67,10 +67,10 @@ function setup(overrides: Record<string, unknown> = {}) {
 			rules: RULES,
 			today: TODAY,
 			hrefOf: (entry: RecurrenceRule) => `/wiederholungen/${entry.id}` as ResolvedPathname,
-			openTicketOf: (entry: RecurrenceRule) =>
+			openTicketsOf: (entry: RecurrenceRule) =>
 				entry.id === 'rule00000000001'
-					? { id: 'ticket000000001', key: 'TASK-7', title: 'Müll rausbringen' }
-					: null,
+					? [{ id: 'ticket000000001', key: 'TASK-7', title: 'Müll rausbringen' }]
+					: [],
 			ticketHrefOf: (id: string) => `/tickets/${id}` as ResolvedPathname,
 			projectOf: (entry: RecurrenceRule) =>
 				entry.projectId === null
@@ -98,7 +98,7 @@ describe('RecurrenceTable', () => {
 			'Titel',
 			'Rhythmus',
 			'Nächstes Ticket',
-			'Offenes Ticket',
+			'Offene Tickets',
 			'Projekt',
 			'Zustand',
 			'Aktionen'
@@ -159,8 +159,40 @@ describe('RecurrenceTable', () => {
 	});
 
 	it('says "wird geladen" while the open tickets are unknown', () => {
-		setup({ openTicketOf: () => undefined });
+		setup({ openTicketsOf: () => undefined });
 		expect(screen.getAllByText('wird geladen')).toHaveLength(3);
+	});
+
+	// Plan "Wiederholungen verständlich machen", recommendations 5 and 7.
+	it('shows every open ticket of a rule with their number, and a rule that waits', () => {
+		const waiting = rule({
+			id: 'rule00000000004',
+			title: 'Tabletten',
+			freq: 'daily',
+			weekdays: [],
+			eachOccurrence: true,
+			lastHint: CATCH_UP_ASK_HINT
+		});
+		const { table } = setup({
+			rules: [waiting],
+			openTicketsOf: () => [
+				{ id: 'ticket000000001', key: 'TASK-7', title: 'Tabletten' },
+				{ id: 'ticket000000002', key: 'TASK-8', title: 'Tabletten' },
+				{ id: 'ticket000000003', key: 'TASK-9', title: 'Tabletten' }
+			]
+		});
+		const cell = table.querySelector<HTMLElement>("td[data-col='open']");
+		expect(cell?.textContent?.replace(/\s+/g, ' ').trim()).toBe(
+			'3 offene Tickets: TASK-7, TASK-8, TASK-9'
+		);
+		expect(cell?.getAttribute('title')).toBe('TASK-7, TASK-8, TASK-9');
+		expect(screen.getByRole('link', { name: 'TASK-9' }).getAttribute('href')).toBe(
+			'/tickets/ticket000000003'
+		);
+		const state = table.querySelector<HTMLElement>("td[data-col='state']");
+		expect(state?.textContent?.trim()).toBe('Wartet');
+		expect(state?.getAttribute('title')).toBe('Wartet auf deine Entscheidung (im Panel der Regel)');
+		expect(state?.querySelector('[data-tone]')?.getAttribute('data-tone')).toBe('neutral');
 	});
 
 	it('pauses or resumes a row through a named icon button', async () => {

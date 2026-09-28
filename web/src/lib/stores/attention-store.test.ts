@@ -68,6 +68,32 @@ describe('AttentionStore', () => {
 		expect(blink).toHaveBeenCalledOnce();
 	});
 
+	// Plan "Wiederholungen verständlich machen", recommendation 5: rules that wait for a choice
+	// say so after the own flag, also for another tab of this browser; "stop" does not.
+	it('passes on to further hints after its flag when the app was opened again', () => {
+		const order: string[] = [];
+		const flags: FlagSink = {
+			show: (input) => String(order.push(`flag:${input.title}`)),
+			dismiss: () => undefined
+		};
+		const store = new AttentionStore({
+			ack: async () => undefined,
+			flags,
+			blink: () => undefined,
+			opened: () => order.push('opened')
+		});
+		store.receive(message('datei'));
+		store.show('start');
+		store.receive(message('stop'));
+		expect(order).toEqual([
+			`flag:${APP_OPENED_AGAIN.title}`,
+			'opened',
+			`flag:${APP_OPENED_AGAIN.title}`,
+			'opened',
+			`flag:${APP_STOPPED.title}`
+		]);
+	});
+
 	it('shows one flag for repeated messages', () => {
 		const { store, shown } = setup();
 		store.receive(message('start'));

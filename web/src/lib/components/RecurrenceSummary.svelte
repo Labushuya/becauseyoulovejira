@@ -4,12 +4,15 @@
 	import {
 		defaultFormValues,
 		formValuesOf,
+		isWaiting,
 		joinedSeries,
 		nextTicketText,
+		openBlockText,
 		parseSkipped,
 		ruleText,
 		skippedText,
 		SKIPPED_FIELD,
+		type OpenInstance,
 		type RecurrenceFormValues
 	} from '$lib/domain/recurrence-rule';
 	import type { HistoryEntry, Ticket } from '$lib/domain/ticket';
@@ -17,6 +20,7 @@
 	import { RECURRENCE_UNAVAILABLE, type RecurrenceStore } from '$lib/stores/recurrence.svelte';
 	import ErrorIcon from './ErrorIcon.svelte';
 	import SectionMessage from './guidance/SectionMessage.svelte';
+	import RecurrenceBacklogQuestion from './RecurrenceBacklogQuestion.svelte';
 	import RecurrenceDialog from './RecurrenceDialog.svelte';
 
 	// Recurrence of the ticket in the panel (E5 plan, package 4). A ticket in a series shows
@@ -31,11 +35,14 @@
 		store,
 		today,
 		history = [],
+		openTickets = [],
 		onticket
 	}: {
 		ticket: Ticket;
 		store: RecurrenceStore;
 		today: CalendarDate;
+		/** Open tickets of the series of the ticket, oldest first (recommendation 6). */
+		openTickets?: readonly OpenInstance[];
 		/**
 		 * History of the ticket as the panel loaded it; a catch-up ticket finds its note about the
 		 * missed dates there (ADR-0022 addendum 4).
@@ -123,7 +130,21 @@
 				{skippedText(skipped, today)}; dieses Ticket steht für sie mit.
 			</SectionMessage>
 		{/if}
-		{#if rule !== null && rule.lastHint !== ''}
+		{#if rule !== null && !rule.eachOccurrence && rule.active && openTickets.length > 1}
+			<!-- The switch went off while several were open (recommendation 6). -->
+			<SectionMessage tone="info" compact>
+				{openBlockText(openTickets.map((open) => open.key))}
+			</SectionMessage>
+		{/if}
+		{#if rule !== null && isWaiting(rule)}
+			{@const current = rule}
+			<RecurrenceBacklogQuestion
+				rule={current}
+				{today}
+				{busy}
+				ondecide={(choice) => act(() => store.decideBacklog(current.id, choice, today))}
+			/>
+		{:else if rule !== null && rule.lastHint !== ''}
 			<SectionMessage tone="info" compact>{rule.lastHint}</SectionMessage>
 		{/if}
 		<div class="actions">
@@ -169,6 +190,7 @@
 		{today}
 		withoutDue={ticket.due === null}
 		eachAvailable={store.eachReady}
+		context={{ kind: 'ticket', due: ticket.due }}
 		submitLabel="Wiederholung anlegen"
 		onsave={repeat}
 		onclose={closeDialog}
@@ -180,6 +202,8 @@
 		initial={formValuesOf(current, today)}
 		{today}
 		eachAvailable={store.eachReady}
+		context={{ kind: 'rule', nextDue: current.nextDue, each: current.eachOccurrence === true }}
+		openKeys={openTickets.map((open) => open.key)}
 		submitLabel="Speichern"
 		onsave={(values) => store.saveRhythm(current.id, values)}
 		onclose={closeDialog}

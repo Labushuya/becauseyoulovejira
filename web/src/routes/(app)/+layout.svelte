@@ -60,7 +60,7 @@
 	import { TicketOpenModeStore, setTicketOpenMode } from '$lib/stores/open-mode.svelte';
 	import { BulkEditStore, bulkEditData, setBulkEditStore } from '$lib/stores/bulk-edit.svelte';
 	import { TrashStore, setTrashStore, trashData, trashLive } from '$lib/stores/trash.svelte';
-	import { inboxItemHref } from '$lib/ticket-links';
+	import { inboxItemHref, recurrenceHref, recurrencesHref } from '$lib/ticket-links';
 
 	// Shell of every signed-in page (E2 plan, T-4). The root layout renders it only with a
 	// session; the login page stays outside this group.
@@ -130,6 +130,16 @@
 	const rules = setRecurrenceStore(new RecurrenceStore(recurrenceData(pb), auth, flags));
 	$effect(() => untrack(() => rules.start()));
 	$effect(() => untrack(() => rules.connect(recurrenceLive(pb))));
+	// Rules that wait for the choice about a large backlog (ADR-0022 addendum 5) say so once the
+	// rules are loaded, and again when the app is opened again (ADR-0035 section 5, below).
+	const openWaiting = (ruleId: string | null) =>
+		void goto(ruleId === null ? recurrencesHref() : recurrenceHref(ruleId));
+	let waitingAnnounced = false;
+	$effect(() => {
+		if (rules.state !== 'ready' || waitingAnnounced) return;
+		waitingAnnounced = true;
+		untrack(() => rules.announceWaiting(openWaiting));
+	});
 
 	// Session care while the app is shown (ADR-0007 section 1). The returned cleanup removes the
 	// timer and the listeners when the layout goes away (logout, session end). untrack: the
@@ -165,7 +175,8 @@
 		ack: (nonce) => ackAttention(pb, nonce),
 		flags,
 		blink: () => tabContext?.blinker.start(),
-		notify: () => void notifyStore.notify()
+		notify: () => void notifyStore.notify(),
+		opened: () => rules.announceWaiting(openWaiting)
 	});
 	$effect(() => untrack(() => notifyStore.connect()));
 	$effect(() => untrack(() => attention.connect(attentionSource(pb))));

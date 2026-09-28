@@ -35,6 +35,11 @@ export interface AttentionDeps {
 	blink(): void;
 	/** Windows notification if the user switched it on (NotifyStore, SF-6). */
 	notify?(): void;
+	/**
+	 * Further hints for someone who just opened the app again, after its own flag: rules that wait
+	 * for a choice (plan "Wiederholungen verständlich machen", recommendation 5).
+	 */
+	opened?(): void;
 }
 
 export class AttentionStore {
@@ -84,6 +89,7 @@ export class AttentionStore {
 		this.#againFlag = id;
 		this.#deps.blink();
 		this.#deps.notify?.();
+		this.#deps.opened?.();
 	}
 
 	/** The connection is back after an interruption: the app runs again. */

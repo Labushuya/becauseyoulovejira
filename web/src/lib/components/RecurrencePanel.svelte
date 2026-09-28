@@ -9,9 +9,13 @@
 		formErrors,
 		formParams,
 		formValuesOf,
+		isWaiting,
 		nextTicketText,
+		openBlockText,
 		ruleStateLabel,
 		sameRhythm,
+		type BacklogChoice,
+		type OpenInstance,
 		type RecurrenceFormField,
 		type RecurrenceFormValues,
 		type RecurrenceRule
@@ -34,8 +38,8 @@
 	import Drawer from './overlay/Drawer.svelte';
 	import PrioritySelect from './PrioritySelect.svelte';
 	import ProjectSelect from './ProjectSelect.svelte';
+	import RecurrenceBacklogQuestion from './RecurrenceBacklogQuestion.svelte';
 	import RecurrenceForm from './RecurrenceForm.svelte';
-	import type { OpenInstance } from './RecurrenceTable.svelte';
 	import TagPicker from './TagPicker.svelte';
 
 	// Panel of a rule (E5 plan, T-6 and package 5) on the side panel building block, like the
@@ -55,12 +59,13 @@
 		projects,
 		tags,
 		projectById,
-		openTicket = null,
+		openTickets = [],
 		eachAvailable = false,
 		ticketHrefOf,
 		oncreatetag,
 		onsave,
 		ontoggle,
+		ondecide,
 		ondelete,
 		onsaved,
 		ondeleted,
@@ -75,8 +80,8 @@
 		tags: readonly TagRef[];
 		/** A project of the catalog, also an archived one (the current project of the template). */
 		projectById: (id: string) => ProjectRef | null;
-		/** Open ticket of the rule; null without one or while unknown. */
-		openTicket?: OpenInstance | null;
+		/** Open tickets of the rule, oldest first; empty without one or while unknown. */
+		openTickets?: readonly OpenInstance[];
 		/** Offer "Jeden Termin einzeln anlegen" (plan OR-5, RecurrenceStore.eachReady). */
 		eachAvailable?: boolean;
 		ticketHrefOf: (ticketId: string) => ResolvedPathname;
@@ -86,6 +91,8 @@
 		onsave: (draft: Partial<RuleDraft>) => Promise<EditResult<RecurrenceRule>>;
 		/** "Pausieren" and "Fortsetzen" of a rule. */
 		ontoggle?: (active: boolean) => Promise<EditResult<RecurrenceRule>>;
+		/** The choice about a large backlog (ADR-0022 addendum 5). */
+		ondecide?: (choice: BacklogChoice) => Promise<EditResult<RecurrenceRule>>;
 		/** "Löschen …" of a rule. */
 		ondelete?: () => Promise<EditResult<void>>;
 		/** After saving: the saved rule (a new one gets its own panel). */
@@ -290,6 +297,19 @@
 		}
 	}
 
+	/** The choice about a large backlog; a refusal stands below the state like one of "Fortsetzen". */
+	async function decide(choice: BacklogChoice) {
+		if (ondecide === undefined || toggling) return;
+		toggling = true;
+		stateError = null;
+		try {
+			const result = await ondecide(choice);
+			if (!result.ok) stateError = result.message ?? Object.values(result.fields)[0] ?? null;
+		} finally {
+			toggling = false;
+		}
+	}
+
 	function addTag(tagId: string): boolean {
 		if (!tagIds.includes(tagId)) tagIds = [...tagIds, tagId];
 		tagError = null;
@@ -361,28 +381,57 @@
 
 	{#if rule !== null}
 		{@const current = rule}
+		{@const waiting = isWaiting(current)}
 		<section class="state" aria-labelledby={ids.state}>
 			<h3 id={ids.state} class="visually-hidden">Zustand</h3>
 			<div class="summary">
 				<Lozenge
 					label={ruleStateLabel(current)}
-					icon={current.active ? 'refresh' : 'pause'}
-					tone={current.active ? 'brand' : 'muted'}
+					icon={waiting ? 'warning' : current.active ? 'refresh' : 'pause'}
+					tone={waiting ? 'neutral' : current.active ? 'brand' : 'muted'}
 				/>
 				{#if current.active}
 					<span class="next">{nextTicketText(current, today)}</span>
 				{/if}
 			</div>
-			<p class="open">
-				Offenes Ticket:
-				{#if openTicket}
-					<a class="key-link" href={ticketHrefOf(openTicket.id)}>{openTicket.key}</a>
-					<span class="open-title">{openTicket.title}</span>
-				{:else}
-					keins
-				{/if}
-			</p>
-			{#if current.lastHint !== ''}
+			<!-- All open tickets of the rule, not only one (recommendation 7). -->
+			{#if openTickets.length > 1}
+				<div class="open">
+					<span>Offene Tickets ({openTickets.length}):</span>
+					<ul class="open-list">
+						{#each openTickets as open (open.id)}
+							<li>
+								<a class="key-link" href={ticketHrefOf(open.id)}>{open.key}</a>
+								<span class="open-title">{open.title}</span>
+							</li>
+						{/each}
+					</ul>
+				</div>
+			{:else}
+				<p class="open">
+					Offenes Ticket:
+					{#if openTickets[0]}
+						<a class="key-link" href={ticketHrefOf(openTickets[0].id)}>{openTickets[0].key}</a>
+						<span class="open-title">{openTickets[0].title}</span>
+					{:else}
+						keins
+					{/if}
+				</p>
+			{/if}
+			{#if !current.eachOccurrence && current.active && openTickets.length > 1}
+				<!-- The switch went off while several were open (recommendation 6). -->
+				<SectionMessage tone="info" compact>
+					{openBlockText(openTickets.map((open) => open.key))}
+				</SectionMessage>
+			{/if}
+			{#if waiting}
+				<RecurrenceBacklogQuestion
+					rule={current}
+					{today}
+					busy={toggling}
+					ondecide={(choice) => void decide(choice)}
+				/>
+			{:else if current.lastHint !== ''}
 				<SectionMessage tone="info" compact>{current.lastHint}</SectionMessage>
 			{/if}
 			{#if ontoggle}
@@ -504,7 +553,16 @@
 
 		<section class="group" aria-labelledby={ids.rhythm}>
 			<h3 id={ids.rhythm}>Rhythmus</h3>
-			<RecurrenceForm bind:values errors={rhythmErrors} {today} {eachAvailable} />
+			<RecurrenceForm
+				bind:values
+				errors={rhythmErrors}
+				{today}
+				{eachAvailable}
+				context={rule === null
+					? undefined
+					: { kind: 'rule', nextDue: rule.nextDue, each: rule.eachOccurrence === true }}
+				openKeys={openTickets.map((open) => open.key)}
+			/>
 			{#if creating}
 				<p class="hint">
 					Das erste Ticket entsteht, sobald der Vorlauf erreicht ist; liegt der erste Termin schon
@@ -536,9 +594,12 @@
 		}}
 	>
 		<p>
-			Bestehende Tickets bleiben erhalten. „{rule.title}“ erzeugt danach keine Tickets mehr{openTicket
-				? `; ${openTicket.key} bleibt als normales Ticket offen`
-				: ''}.
+			Bestehende Tickets bleiben erhalten. „{rule.title}“ erzeugt danach keine Tickets mehr{openTickets.length ===
+			1
+				? `; ${openTickets[0]?.key} bleibt als normales Ticket offen`
+				: openTickets.length > 1
+					? `; ${openTickets.map((open) => open.key).join(', ')} bleiben als normale Tickets offen`
+					: ''}.
 		</p>
 	</ConfirmDialog>
 {/if}
@@ -604,6 +665,19 @@
 	.open-title {
 		color: var(--color-text);
 		overflow-wrap: anywhere;
+	}
+
+	.open-list {
+		display: grid;
+		gap: 0.125rem;
+		width: 100%;
+		list-style: none;
+	}
+
+	.open-list li {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 0.25rem 0.5rem;
 	}
 
 	.key-link {

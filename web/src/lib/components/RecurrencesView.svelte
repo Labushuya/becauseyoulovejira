@@ -1,6 +1,10 @@
 <script lang="ts">
 	import { tick } from 'svelte';
-	import type { RecurrenceRule } from '$lib/domain/recurrence-rule';
+	import {
+		openInstancesOf,
+		type OpenInstance,
+		type RecurrenceRule
+	} from '$lib/domain/recurrence-rule';
 	import type { CatalogStore } from '$lib/stores/catalog.svelte';
 	import { getColumnPrefs } from '$lib/stores/column-prefs.svelte';
 	import type { FlagSink } from '$lib/stores/flags.svelte';
@@ -10,7 +14,7 @@
 	import ColumnsPopover from './ColumnsPopover.svelte';
 	import EmptyState from './guidance/EmptyState.svelte';
 	import SectionMessage from './guidance/SectionMessage.svelte';
-	import RecurrenceTable, { type OpenInstance } from './RecurrenceTable.svelte';
+	import RecurrenceTable from './RecurrenceTable.svelte';
 	import SectionBar from './SectionBar.svelte';
 	import { ColumnFit } from './table/column-fit.svelte';
 	import ViewSwitch from './ViewSwitch.svelte';
@@ -56,11 +60,13 @@
 	const rules = $derived(store.rules);
 	const countLabel = $derived(rules.length === 1 ? '1 Regel' : `${rules.length} Regeln`);
 
-	/** Open instance of a rule (at most one, ADR-0022 section 1); undefined while they load. */
-	function openTicketOf(rule: RecurrenceRule): OpenInstance | null | undefined {
+	/**
+	 * Open tickets of a rule, all of them (one without "Jeden Termin einzeln anlegen", several with
+	 * it or after it was switched off); undefined while they load.
+	 */
+	function openTicketsOf(rule: RecurrenceRule): readonly OpenInstance[] | undefined {
 		if (tickets.openState !== 'ready') return undefined;
-		const ticket = tickets.open.find((entry) => entry.recurrenceId === rule.id);
-		return ticket === undefined ? null : { id: ticket.id, key: ticket.key, title: ticket.title };
+		return openInstancesOf(tickets.open, rule.id);
 	}
 
 	let root = $state<HTMLElement>();
@@ -231,7 +237,7 @@
 			{busyId}
 			{columnFit}
 			hrefOf={(rule) => recurrenceHref(rule.id)}
-			{openTicketOf}
+			{openTicketsOf}
 			ticketHrefOf={links.path}
 			projectOf={(rule) => (rule.projectId === null ? null : catalog.projectById(rule.projectId))}
 			ontoggle={(rule) => void toggle(rule)}

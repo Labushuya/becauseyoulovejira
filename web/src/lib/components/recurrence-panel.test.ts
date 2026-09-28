@@ -10,7 +10,7 @@ import { tick } from 'svelte';
 import { describe, expect, it, vi } from 'vitest';
 import type { ResolvedPathname } from '$app/types';
 import type { RuleDraft } from '$lib/data/recurrence';
-import type { RecurrenceRule } from '$lib/domain/recurrence-rule';
+import { CATCH_UP_ASK_HINT, type RecurrenceRule } from '$lib/domain/recurrence-rule';
 import type { ProjectRef } from '$lib/domain/ticket';
 import type { EditResult } from '$lib/stores/catalog-editor';
 import { useOverlayStubs } from '$lib/test/overlay-stubs';
@@ -58,8 +58,8 @@ function show(current: RecurrenceRule | null, overrides: Record<string, unknown>
 		projects: [HOUSE],
 		tags: [{ id: 'tag000000000001', name: 'haushalt' }],
 		projectById: (id: string) => [HOUSE, OLD].find((project) => project.id === id) ?? null,
-		openTicket:
-			current === null ? null : { id: 'ticket000000001', key: 'TASK-7', title: 'Müll rausbringen' },
+		openTickets:
+			current === null ? [] : [{ id: 'ticket000000001', key: 'TASK-7', title: 'Müll rausbringen' }],
 		ticketHrefOf: (id: string) => `/tickets/${id}` as ResolvedPathname,
 		oncreatetag: vi.fn(async () => ({ ok: false as const, message: null })),
 		onsave: vi.fn(async (draft: Partial<RuleDraft>): Promise<SaveResult> => ({
@@ -231,6 +231,64 @@ describe('RecurrencePanel: a rule', () => {
 		expect(hint.closest('[role="status"], [role="alert"]')).toBeNull();
 		await fireEvent.click(screen.getByRole('button', { name: 'Fortsetzen' }));
 		expect(props.ontoggle).toHaveBeenCalledWith(true);
+	});
+
+	// Plan "Wiederholungen verständlich machen", recommendation 5 (ADR-0022 addendum 5).
+	it('asks about a large backlog instead of the raw hint and passes the choice on', async () => {
+		const waiting = rule({
+			freq: 'daily',
+			weekdays: [],
+			anchor: '2026-08-01',
+			nextDue: '2026-09-01',
+			eachOccurrence: true,
+			lastHint: CATCH_UP_ASK_HINT
+		});
+		const ondecide = vi.fn(async (): Promise<SaveResult> => ({ ok: true, value: waiting }));
+		show(waiting, { ondecide, openTickets: [] });
+		expect(within(panel()).getByText('Wartet')).toBeTruthy();
+		const question = screen.getByRole('heading', { name: /Wartet auf deine Entscheidung/ });
+		const box = question.closest('.section-message') as HTMLElement;
+		expect(box.getAttribute('data-tone')).toBe('warning');
+		expect(
+			within(box).getByText(/24 Termine \(01\.09\. bis 24\.09\.\) haben noch kein Ticket/)
+		).toBeTruthy();
+		expect(screen.queryByText(CATCH_UP_ASK_HINT)).toBeNull();
+
+		await fireEvent.click(within(box).getByRole('button', { name: 'Alle 24 nachholen' }));
+		expect(ondecide).toHaveBeenCalledWith('all');
+		await fireEvent.click(within(box).getByRole('button', { name: 'Nur ab heute' }));
+		await vi.waitFor(() => expect(ondecide).toHaveBeenLastCalledWith('today'));
+	});
+
+	// Recommendations 6 and 7.
+	it('lists every open ticket and says the series waits for them without the switch', async () => {
+		const open = [
+			{ id: 'ticket000000001', key: 'TASK-7', title: 'Müll Montag' },
+			{ id: 'ticket000000002', key: 'TASK-8', title: 'Müll Mittwoch' }
+		];
+		show(rule(), { openTickets: open });
+		expect(screen.getByText('Offene Tickets (2):')).toBeTruthy();
+		expect(screen.getByRole('link', { name: 'TASK-8' }).getAttribute('href')).toBe(
+			'/tickets/ticket000000002'
+		);
+		expect(
+			screen.getByText(
+				'Die Serie geht weiter, sobald alle 2 offenen Tickets erledigt sind (TASK-7, TASK-8).'
+			)
+		).toBeTruthy();
+	});
+
+	it('says so inline when the switch goes off while several tickets are open', async () => {
+		const open = [
+			{ id: 'ticket000000001', key: 'TASK-7', title: 'Müll Montag' },
+			{ id: 'ticket000000002', key: 'TASK-8', title: 'Müll Mittwoch' }
+		];
+		show(rule({ eachOccurrence: true }), { openTickets: open, eachAvailable: true });
+		const text =
+			'Die Serie geht weiter, sobald alle 2 offenen Tickets erledigt sind (TASK-7, TASK-8).';
+		expect(screen.queryByText(text)).toBeNull();
+		await fireEvent.click(screen.getByRole('switch', { name: 'Jeden Termin einzeln anlegen' }));
+		expect(screen.getByText(text)).toBeTruthy();
 	});
 
 	it('shows a refused "Fortsetzen" at the project field and at the button', async () => {

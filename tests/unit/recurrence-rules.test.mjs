@@ -234,37 +234,38 @@ describe('"Jeden Termin einzeln anlegen" (plan OR-5, ADR-0022 addendum 2)', () =
 		expect(rules.generationEach({ rule, today: '2037-06-01' }, recurrence)).toEqual({
 			dues: ['2037-06-01'],
 			nextDue: '2037-06-03',
-			limited: false
+			limited: false,
+			hint: ''
 		});
 		// Saturday after a missed week: Monday, Wednesday and Friday, each once.
 		expect(rules.generationEach({ rule, today: '2037-06-06' }, recurrence)).toEqual({
 			dues: ['2037-06-01', '2037-06-03', '2037-06-05'],
 			nextDue: '2037-06-08',
-			limited: false
+			limited: false,
+			hint: ''
 		});
 		// Lead time 3: the dates up to three days ahead of today come as well.
 		expect(rules.generationEach({ rule: running(monWedFri(), '2037-06-01', 3), today: '2037-06-01' }, recurrence)).toEqual({
 			dues: ['2037-06-01', '2037-06-03'],
 			nextDue: '2037-06-05',
-			limited: false
+			limited: false,
+			hint: ''
 		});
 	});
 
 	it('stops at the limit of a run and says that more are waiting', () => {
-		const daily = running(recurrence.normalize({ mode: 'calendar', freq: 'daily', anchor: '2038-01-01' }), '2038-01-01');
+		// 31 dates within the lead time of 30 days, none of them missed: batches without asking.
+		const ahead = running(recurrence.normalize({ mode: 'calendar', freq: 'daily', anchor: '2038-01-01' }), '2038-01-01', 30);
 		expect(rules.EACH_MAX_PER_RUN).toBe(20);
-		const first = rules.generationEach({ rule: daily, today: '2038-01-26' }, recurrence);
+		const first = rules.generationEach({ rule: ahead, today: '2038-01-01' }, recurrence);
 		expect(first.dues).toHaveLength(20);
 		expect(first.dues[0]).toBe('2038-01-01');
 		expect(first.dues[19]).toBe('2038-01-20');
-		expect(first).toMatchObject({ nextDue: '2038-01-21', limited: true });
-		const second = rules.generationEach({ rule: { ...daily, next_due: first.nextDue }, today: '2038-01-26' }, recurrence);
-		expect(second).toEqual({
-			dues: ['2038-01-21', '2038-01-22', '2038-01-23', '2038-01-24', '2038-01-25', '2038-01-26'],
-			nextDue: '2038-01-27',
-			limited: false
-		});
-		expect(rules.generationEach({ rule: daily, today: '2038-01-26', limit: 3 }, recurrence).dues).toEqual([
+		expect(first).toMatchObject({ nextDue: '2038-01-21', limited: true, hint: rules.EACH_LIMIT_HINT });
+		const second = rules.generationEach({ rule: { ...ahead, next_due: first.nextDue }, today: '2038-01-01', hint: first.hint }, recurrence);
+		expect(second.dues).toHaveLength(11);
+		expect(second).toMatchObject({ nextDue: '2038-02-01', limited: false, hint: '' });
+		expect(rules.generationEach({ rule: ahead, today: '2038-01-01', limit: 3 }, recurrence).dues).toEqual([
 			'2038-01-01',
 			'2038-01-02',
 			'2038-01-03'
@@ -272,6 +273,55 @@ describe('"Jeden Termin einzeln anlegen" (plan OR-5, ADR-0022 addendum 2)', () =
 		expect(rules.EACH_LIMIT_HINT).toBe(
 			'Viele Termine auf einmal: 20 Tickets angelegt, die übrigen folgen beim nächsten Lauf (stündlich).'
 		);
+	});
+
+	// Recommendation 5 of the plan "Wiederholungen verständlich machen" (ADR-0022 addendum 5).
+	it('waits for a decision with more than 20 missed dates, up to 20 it goes on by itself', () => {
+		const daily = running(recurrence.normalize({ mode: 'calendar', freq: 'daily', anchor: '2038-01-01' }), '2038-01-01');
+		// 25 dates before 26 January.
+		expect(rules.backlogCount(daily, '2038-01-26', 100, recurrence)).toBe(25);
+		expect(rules.backlogCount(daily, '2038-01-26', 21, recurrence)).toBe(21);
+		expect(rules.generationEach({ rule: daily, today: '2038-01-26' }, recurrence)).toEqual({ ask: true });
+		expect(rules.generationEach({ rule: daily, today: '2038-01-26', hint: rules.CATCH_UP_ASK_HINT }, recurrence)).toEqual({ ask: true });
+		expect(rules.generationEach({ rule: daily, today: '2038-01-26', hint: rules.EACH_LIMIT_HINT }, recurrence)).toEqual({ ask: true });
+		// 20 missed dates: made at once, as before.
+		expect(rules.generationEach({ rule: daily, today: '2038-01-21' }, recurrence)).toMatchObject({
+			nextDue: '2038-01-21',
+			limited: true,
+			hint: rules.EACH_LIMIT_HINT
+		});
+
+		// "Alle nachholen": batches of 20 that keep the mark until the last one.
+		const first = rules.generationEach({ rule: daily, today: '2038-01-26', hint: rules.CATCH_UP_ALL_HINT }, recurrence);
+		expect(first.dues).toHaveLength(20);
+		expect(first).toMatchObject({ nextDue: '2038-01-21', limited: true, hint: rules.CATCH_UP_ALL_HINT });
+		const second = rules.generationEach({ rule: { ...daily, next_due: first.nextDue }, today: '2038-01-26', hint: first.hint }, recurrence);
+		expect(second).toEqual({
+			dues: ['2038-01-21', '2038-01-22', '2038-01-23', '2038-01-24', '2038-01-25', '2038-01-26'],
+			nextDue: '2038-01-27',
+			limited: false,
+			hint: ''
+		});
+	});
+
+	it('applies the decision: all dates in batches, or only from today on', () => {
+		const daily = running(recurrence.normalize({ mode: 'calendar', freq: 'daily', anchor: '2038-01-01' }), '2038-01-01');
+		expect(rules.backlogDecision({ rule: daily, choice: 'all', today: '2038-01-26' }, recurrence)).toEqual({
+			nextDue: '2038-01-01',
+			hint: rules.CATCH_UP_ALL_HINT
+		});
+		expect(rules.backlogDecision({ rule: daily, choice: 'today', today: '2038-01-26' }, recurrence)).toEqual({
+			nextDue: '2038-01-26',
+			hint: ''
+		});
+		// Every second Monday from Wednesday 30 Sept: the next date from today, never back.
+		const monday = running(recurrence.normalize({ mode: 'calendar', freq: 'weekly', interval: 2, weekdays: ['MO'], anchor: '2026-09-30' }), '2026-10-12');
+		expect(rules.backlogDecision({ rule: monday, choice: 'today', today: '2026-11-04' }, recurrence).nextDue).toBe('2026-11-09');
+		expect(rules.backlogDecision({ rule: monday, choice: 'today', today: '2026-10-01' }, recurrence).nextDue).toBe('2026-10-12');
+		// Nothing missed: "all" leaves no mark.
+		expect(rules.backlogDecision({ rule: monday, choice: 'all', today: '2026-10-01' }, recurrence).hint).toBe('');
+		expect(rules.BACKLOG_CHOICES).toEqual(['all', 'today']);
+		expect(rules.MESSAGES.validation_recurrence_backlog).toBe('Bitte „Alle nachholen“ oder „Nur ab heute“ wählen.');
 	});
 
 	it('does nothing when paused, without a date, after completion or with an incomplete rule', () => {
@@ -300,17 +350,24 @@ describe('"Jeden Termin einzeln anlegen" (plan OR-5, ADR-0022 addendum 2)', () =
 			// The runs happen only every `gap` days (the PC is off in between), for 120 days.
 			const gap = 1 + Math.floor(next() * 30);
 			let state = { ...rule, active: true, next_due: recurrence.onOrAfter(rule, '2037-06-01'), each: true };
+			let hint = '';
 			const made = [];
 			let today = '2037-06-01';
 			let last = today;
 			const end = reference.dateOf(reference.dayNumber(today) + 120);
 			while (today <= end) {
-				// Several runs a day (hourly) until nothing is left.
+				// Several runs a day (hourly) until nothing is left; a large backlog asks, and the user
+				// answers "Alle nachholen" (addendum 5).
 				for (let run = 0; run < 30; run++) {
-					const plan = rules.generationEach({ rule: state, today }, recurrence);
+					const plan = rules.generationEach({ rule: state, today, hint }, recurrence);
 					if (plan === null) break;
+					if (plan.ask) {
+						hint = rules.backlogDecision({ rule: state, choice: 'all', today }, recurrence).hint;
+						continue;
+					}
 					made.push(...plan.dues);
 					state = { ...state, next_due: plan.nextDue };
+					hint = plan.hint;
 				}
 				last = today;
 				today = reference.dateOf(reference.dayNumber(today) + gap);

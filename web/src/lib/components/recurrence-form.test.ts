@@ -194,7 +194,59 @@ describe('RecurrenceForm: "Jeden Termin einzeln anlegen" (OR-5)', () => {
 		expect(hint()).toMatch(
 			/Jeder Termin bekommt ein eigenes Ticket, auch wenn frühere noch offen sind/
 		);
-		expect(hint()).toMatch(/höchstens 20 auf einmal/);
+		expect(hint().replace(/\s+/g, ' ')).toMatch(
+			/Fehlen mehr als 20 Termine .* fragt die Regel vorher, ob sie alle nachholt/
+		);
+	});
+
+	// Plan "Wiederholungen verständlich machen", recommendations 5 and 6 (ADR-0022 addendum 5).
+	it('asks inline about a backlog of more than 20 dates when it goes on, and sends the answer', async () => {
+		const past = values({ freq: 'daily', weekdays: [], anchor: '2026-08-01' });
+		const { component } = render(RecurrenceFormHarness, {
+			props: {
+				initial: past,
+				today: TODAY,
+				eachAvailable: true,
+				context: { kind: 'ticket', due: null }
+			}
+		});
+		expect(screen.queryByRole('group', { name: /liegen vor heute/ })).toBeNull();
+		await fireEvent.click(toggle() as HTMLInputElement);
+
+		// The ticket gets 01.08., the series goes on from 02.08.: 54 dates before 25.09.
+		const question = screen.getByRole('group', {
+			name: '54 Termine (02.08. bis 24.09.) liegen vor heute'
+		});
+		expect(question.closest('.section-message')?.getAttribute('data-tone')).toBe('warning');
+		expect(within(question).getByText(/Ohne Wahl wartet die Regel in der Übersicht/)).toBeTruthy();
+		const all = within(question).getByRole<HTMLInputElement>('radio', {
+			name: 'Alle 54 nachholen (höchstens 20 je Stunde)'
+		});
+		const today = within(question).getByRole<HTMLInputElement>('radio', { name: 'Nur ab heute' });
+		expect(all.checked || today.checked).toBe(false);
+		await fireEvent.click(today);
+		expect(component.current().backlog).toBe('today');
+
+		// Without a backlog (a rule of its own, nothing missed) there is no question.
+		await fireEvent.input(screen.getByLabelText('Beginnt am'), { target: { value: TODAY } });
+		expect(screen.queryByRole('group', { name: /liegen vor heute/ })).toBeNull();
+	});
+
+	it('says that the series waits for all open tickets when it goes off', async () => {
+		render(RecurrenceFormHarness, {
+			props: {
+				initial: values({ eachOccurrence: true }),
+				today: TODAY,
+				eachAvailable: true,
+				context: { kind: 'rule', nextDue: '2026-10-05', each: true },
+				openKeys: ['TASK-7', 'TASK-8', 'TASK-9']
+			}
+		});
+		const text =
+			'Die Serie geht weiter, sobald alle 3 offenen Tickets erledigt sind (TASK-7, TASK-8, TASK-9).';
+		expect(screen.queryByText(text)).toBeNull();
+		await fireEvent.click(toggle() as HTMLInputElement);
+		expect(screen.getByText(text)).toBeTruthy();
 	});
 
 	it('leaves the switch out after completion', async () => {

@@ -12,11 +12,18 @@
 		type Weekday
 	} from '$lib/domain/recurrence';
 	import {
+		CATCH_UP_TODAY_LABEL,
 		EACH_MAX_PER_RUN,
+		backlogText,
+		catchUpAllLabel,
+		formBacklog,
 		formPreview,
+		openBlockText,
+		type RecurrenceFormContext,
 		type RecurrenceFormField,
 		type RecurrenceFormValues
 	} from '$lib/domain/recurrence-rule';
+	import SectionMessage from './guidance/SectionMessage.svelte';
 	import { WEEKDAY_NAMES, WEEKDAY_SHORT } from '$lib/domain/recurrence-text';
 	import ErrorIcon from './ErrorIcon.svelte';
 
@@ -27,12 +34,17 @@
 	// field (aria-invalid, aria-describedby); no state is shown by color alone.
 	// With a fixed rhythm and `eachAvailable` (plan OR-5, after its migration) the switch "Jeden
 	// Termin einzeln anlegen" follows, off by default, with a hint that says what each state means.
+	// Switching it on with more than EACH_MAX_PER_RUN dates before today asks inline whether to
+	// catch up all of them or go on from today (ADR-0022 addendum 5); switching it off while several
+	// tickets of the rule are open says that the series waits for all of them (recommendation 6).
 	let {
 		values = $bindable(),
 		errors = {},
 		today,
 		withoutDue = false,
-		eachAvailable = false
+		eachAvailable = false,
+		context,
+		openKeys = []
 	}: {
 		values: RecurrenceFormValues;
 		errors?: Partial<Record<RecurrenceFormField, string>>;
@@ -41,6 +53,10 @@
 		withoutDue?: boolean;
 		/** The server knows "Jeden Termin einzeln anlegen" (RecurrenceStore.eachReady). */
 		eachAvailable?: boolean;
+		/** Ticket or rule the form belongs to; without it (a new rule) there is no backlog. */
+		context?: RecurrenceFormContext;
+		/** Keys of the open tickets of the rule, oldest first. */
+		openKeys?: readonly string[];
 	} = $props();
 
 	const uid = $props.id();
@@ -59,6 +75,17 @@
 	const previewText = $derived(preview.dates.map(formatCalendarDate).join(', '));
 	/** Days 29 to 31 do not exist in every month: they are clamped (ADR-0021 section 2). */
 	const clamped = $derived(!values.lastDay && Number(values.monthDay) >= 29);
+	/** Missed dates the switch would make at once (ADR-0022 addendum 5). */
+	const backlog = $derived(eachAvailable ? formBacklog(values, today, context) : null);
+	/** The switch goes off while several tickets of the rule are open (recommendation 6). */
+	const switchedOffWithOpen = $derived(
+		eachAvailable &&
+			calendar &&
+			context?.kind === 'rule' &&
+			context.each &&
+			values.eachOccurrence !== true &&
+			openKeys.length > 1
+	);
 
 	function describedBy(field: RecurrenceFormField, hint?: string): string | undefined {
 		const ids = [errors[field] ? errorIdOf(field) : '', hint ?? ''].filter((id) => id !== '');
@@ -222,14 +249,38 @@
 			</label>
 			<p class="hint" id={idOf('each-hint')}>
 				{#if values.eachOccurrence === true}
-					Jeder Termin bekommt ein eigenes Ticket, auch wenn frühere noch offen sind. Nach einer
-					längeren Pause kommen höchstens {EACH_MAX_PER_RUN} auf einmal, der Rest im nächsten Lauf.
+					Jeder Termin bekommt ein eigenes Ticket, auch wenn frühere noch offen sind. Fehlen mehr
+					als
+					{EACH_MAX_PER_RUN} Termine (etwa weil die App aus war), fragt die Regel vorher, ob sie alle
+					nachholt.
 				{:else}
 					Höchstens ein offenes Ticket; verpasste Termine werden zum jüngsten zusammengefasst.
 				{/if}
 			</p>
 			{@render fieldError('eachOccurrence')}
 		</div>
+		{#if backlog !== null}
+			<SectionMessage tone="warning" compact>
+				<fieldset class="group backlog">
+					<legend>{backlogText(backlog, today)} liegen vor heute</legend>
+					<p class="note">
+						So viele legt die App nicht von selbst an. Ohne Wahl wartet die Regel in der Übersicht
+						auf deine Entscheidung.
+					</p>
+					<label class="choice">
+						<input type="radio" name={idOf('backlog')} value="all" bind:group={values.backlog} />
+						{catchUpAllLabel(backlog)} (höchstens {EACH_MAX_PER_RUN} je Stunde)
+					</label>
+					<label class="choice">
+						<input type="radio" name={idOf('backlog')} value="today" bind:group={values.backlog} />
+						{CATCH_UP_TODAY_LABEL}
+					</label>
+				</fieldset>
+			</SectionMessage>
+		{/if}
+		{#if switchedOffWithOpen}
+			<SectionMessage tone="info" compact>{openBlockText(openKeys)}</SectionMessage>
+		{/if}
 	{/if}
 
 	<p class="preview" aria-live="polite">

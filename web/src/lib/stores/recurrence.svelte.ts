@@ -23,12 +23,18 @@ import {
 	type RuleDraft
 } from '$lib/data/recurrence';
 import { compareTitles } from '$lib/domain/ordering';
+import type { CalendarDate } from '$lib/domain/berlin-date';
 import {
+	backlogText,
 	formParams,
+	isWaiting,
+	ruleBacklog,
 	ruleText,
+	type BacklogChoice,
 	type RecurrenceFormValues,
 	type RecurrenceRule
 } from '$lib/domain/recurrence-rule';
+import { shortDate } from '$lib/domain/recurrence-text';
 import type { Ticket } from '$lib/domain/ticket';
 import type { EditResult } from './catalog-editor';
 import { SILENT_FLAGS, type FlagSink } from './flags.svelte';
@@ -40,6 +46,16 @@ import { restartNeeded } from '$lib/guidance/texts';
 export const RECURRENCE_UNAVAILABLE = restartNeeded('Wiederholungen sind');
 
 export type RecurrenceState = LoadState | 'unavailable';
+
+/** Title of the flag about rules that wait for the choice about a backlog (ADR-0022 addendum 5). */
+export function waitingTitle(count: number): string {
+	return count === 1
+		? '1 Wiederholung wartet auf deine Entscheidung.'
+		: `${count} Wiederholungen warten auf deine Entscheidung.`;
+}
+
+export const WAITING_DESCRIPTION =
+	'Viele Termine haben noch kein Ticket. Wähle „Alle nachholen“ oder „Nur ab heute“.';
 
 /** Start of the message when the rule of a converted series failed; the ticket stays. */
 export const REPEAT_FAILED = 'Das Ticket ist angelegt, die Wiederholung aber nicht.';
@@ -139,6 +155,8 @@ export class RecurrenceStore {
 	#list = $derived([...this.#rules.values()].sort(byNextTicket));
 	/** "Wiederholen…" handed over to the panel of one ticket, taken once (`takeOffer`). */
 	#offer: RepeatOffer | null = null;
+	/** The flag about rules that wait for a choice, while it is shown. */
+	#waitingFlag: string | null = null;
 
 	constructor(data: RecurrenceData, session: SessionGuard, flags: FlagSink = SILENT_FLAGS) {
 		this.#data = data;
@@ -333,6 +351,59 @@ export class RecurrenceStore {
 		});
 	}
 
+	/**
+	 * The choice about a large backlog (ADR-0022 addendum 5): "Alle nachholen" makes the missed
+	 * dates in batches of EACH_MAX_PER_RUN, "Nur ab heute" skips them and names them in the flag.
+	 */
+	decideBacklog(
+		id: string,
+		choice: BacklogChoice,
+		today: CalendarDate
+	): Promise<EditResult<RecurrenceRule>> {
+		const current = this.ruleById(id);
+		const backlog = current === null ? null : ruleBacklog(current, today);
+		return this.#run(async () => {
+			const rule = await this.#data.updateRule(id, { backlog: choice });
+			this.upsert(rule);
+			if (backlog === null) this.#notify('Regel gespeichert.');
+			else if (choice === 'all') {
+				this.#notify(`${backlogText(backlog, today)} werden nachgeholt, höchstens 20 je Lauf.`);
+			} else {
+				const date = rule.nextDue === null ? '' : shortDate(rule.nextDue, today);
+				const next = date === '' ? '' : ` Weiter am ${date}${date.endsWith('.') ? '' : '.'}`;
+				this.#notify(`${backlogText(backlog, today)} übersprungen.${next}`);
+			}
+			return rule;
+		});
+	}
+
+	/** Rules that wait for the choice about a large backlog (ADR-0022 addendum 5). */
+	get waiting(): readonly RecurrenceRule[] {
+		return this.#list.filter((rule) => isWaiting(rule));
+	}
+
+	/**
+	 * Info flag "N Wiederholungen warten auf deine Entscheidung." with "Ansehen" (the rule, or the
+	 * overview for several), shown when the app starts and when it is opened again (ADR-0035
+	 * section 5); nothing without a waiting rule. A newer flag replaces the older one.
+	 */
+	announceWaiting(open: (ruleId: string | null) => void): void {
+		const waiting = this.waiting;
+		if (waiting.length === 0) return;
+		if (this.#waitingFlag !== null) this.#flags.dismiss(this.#waitingFlag);
+		const only = waiting.length === 1 ? (waiting[0]?.id ?? null) : null;
+		const id = this.#flags.show({
+			tone: 'info',
+			title: waitingTitle(waiting.length),
+			description: WAITING_DESCRIPTION,
+			action: { label: 'Ansehen', run: () => open(only) },
+			onclose: () => {
+				if (this.#waitingFlag === id) this.#waitingFlag = null;
+			}
+		});
+		this.#waitingFlag = id;
+	}
+
 	/** "Aus der Serie lösen" (ADR-0023 section 6); the ticket comes back for the list. */
 	detach(ticketId: string): Promise<EditResult<Ticket>> {
 		return this.#run(async () => {
@@ -345,6 +416,7 @@ export class RecurrenceStore {
 	reset(): void {
 		this.#abort();
 		this.#offer = null;
+		this.#waitingFlag = null;
 		this.#rules.clear();
 		this.#deleted.clear();
 		this.#state = 'idle';

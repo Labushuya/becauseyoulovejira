@@ -31,6 +31,7 @@ var MESSAGES = {
   validation_recurrence_open_instance:
     'Von dieser Serie ist schon ein anderes Ticket offen. Erledige es zuerst oder löse ein Ticket aus der Serie.',
   validation_recurrence_each_mode: '„Jeden Termin einzeln anlegen“ gibt es nur bei einem festen Rhythmus.',
+  validation_recurrence_backlog: 'Bitte „Alle nachholen“ oder „Nur ab heute“ wählen.',
   validation_recurrence_reopen_older:
     'Von dieser Serie ist schon ein anderes Ticket offen, und dieses Ticket ist nicht das zuletzt erledigte. Du kannst es als normales Ticket wieder öffnen (aus der Serie lösen).',
   validation_project_archived: 'Das Projekt ist archiviert. Wähle ein anderes oder kein Projekt, um die Regel fortzusetzen.'
@@ -245,16 +246,54 @@ var EACH_LIMIT_HINT =
   EACH_MAX_PER_RUN +
   ' Tickets angelegt, die übrigen folgen beim nächsten Lauf (stündlich).';
 
+// A large backlog with "Jeden Termin einzeln anlegen" (plan "Wiederholungen verständlich machen",
+// recommendation 5; ADR-0022 addendum 5): more than EACH_MAX_PER_RUN dates before today without a
+// ticket are not made on their own. The rule waits with CATCH_UP_ASK_HINT until the user chooses
+// "Alle nachholen" (CATCH_UP_ALL_HINT, then batches as before) or "Nur ab heute" (next_due to the
+// first date from today on). The state is the hint of the last run: no own field, no migration.
+var CATCH_UP_ASK_HINT =
+  'Viele verpasste Termine: Die Regel wartet auf deine Entscheidung, ob sie alle nachholt oder erst ab heute weitermacht.';
+var CATCH_UP_ALL_HINT =
+  'Die verpassten Termine werden nachgeholt, höchstens ' + EACH_MAX_PER_RUN + ' je Lauf (stündlich).';
+var BACKLOG_CHOICES = ['all', 'today'];
+
+/**
+ * Dates of a calendar rule from its next_due on that lie before `today` and have no ticket yet,
+ * counted up to `cap` (the loop runs over dates of the series, never further). 0 without next_due.
+ */
+function backlogCount(rule, today, cap, recurrence) {
+  if (rule.mode !== 'calendar' || isEmpty(rule.next_due) || !recurrence.isValid(rule)) {
+    return 0;
+  }
+  var count = 0;
+  var date = rule.next_due;
+  while (date < today && count < cap) {
+    count += 1;
+    date = recurrence.after(rule, date);
+  }
+  return count;
+}
+
+// Whether the user chose "Alle nachholen" and the batches still go on (then nothing asks again).
+function isCatchingUp(hint) {
+  return hint === CATCH_UP_ALL_HINT;
+}
+
 /**
  * The tickets of a rule with "Jeden Termin einzeln anlegen" (plan OR-5, ADR-0022 addendum 2).
  * `input`:
  *   rule   normalized calendar rule with `active` and `next_due`
  *   today  Berlin date
  *   limit  at most so many tickets (default EACH_MAX_PER_RUN)
- * Open instances do not matter. Returns null (nothing to do) or { dues, nextDue, limited }: one due
- * date per date whose lead time is reached, oldest first and never a date twice (next_due moves
- * past them), next_due after the last one, and whether more are waiting for the next run. The
- * loop runs over dates of the series, at most `limit` times, never over days.
+ *   hint   last_hint of the rule: while it says the rule is catching up, a backlog goes on in
+ *          batches; otherwise a backlog of more than `limit` dates before today makes the rule ask
+ *          (addendum 5)
+ * Open instances do not matter. Returns null (nothing to do), { ask: true } (wait for a decision)
+ * or { dues, nextDue, limited, hint }: one due date per date whose lead time is reached, oldest
+ * first and never a date twice (next_due moves past them), next_due after the last one, whether
+ * more are waiting for the next run, and the hint the rule gets (while catching up after "Alle
+ * nachholen" CATCH_UP_ALL_HINT, else EACH_LIMIT_HINT with more waiting, else ''). The loop runs
+ * over dates of the series, at most `limit` times, never over days.
  */
 function generationEach(input, recurrence) {
   var rule = input.rule;
@@ -262,6 +301,10 @@ function generationEach(input, recurrence) {
     return null;
   }
   var limit = input.limit > 0 ? input.limit : EACH_MAX_PER_RUN;
+  var catchingUp = isCatchingUp(input.hint);
+  if (!catchingUp && backlogCount(rule, input.today, limit + 1, recurrence) > limit) {
+    return { ask: true };
+  }
   var due = rule.next_due;
   var dues = [];
   while (dues.length < limit && recurrence.createOn(due, rule.lead_days) <= input.today) {
@@ -271,7 +314,33 @@ function generationEach(input, recurrence) {
   if (dues.length === 0) {
     return null;
   }
-  return { dues: dues, nextDue: due, limited: recurrence.createOn(due, rule.lead_days) <= input.today };
+  var limited = recurrence.createOn(due, rule.lead_days) <= input.today;
+  return {
+    dues: dues,
+    nextDue: due,
+    limited: limited,
+    hint: !limited ? '' : catchingUp ? CATCH_UP_ALL_HINT : EACH_LIMIT_HINT
+  };
+}
+
+/**
+ * The choice of the user about a backlog (addendum 5), sent with a rule as the body field
+ * `backlog`. `input`:
+ *   rule    normalized calendar rule with "Jeden Termin einzeln anlegen" and its next_due
+ *   choice  'all' or 'today'
+ *   today   Berlin date
+ * Returns { nextDue, hint }: 'today' moves next_due to the first date from today on (never back)
+ * and clears the hint, the dates before are skipped; 'all' keeps next_due and marks the rule as
+ * catching up, so the batches of EACH_MAX_PER_RUN start without asking (only with a backlog).
+ */
+function backlogDecision(input, recurrence) {
+  var rule = input.rule;
+  var next = isEmpty(rule.next_due) ? '' : rule.next_due;
+  if (input.choice === 'today') {
+    var upcoming = recurrence.onOrAfter(rule, input.today);
+    return { nextDue: next === '' || next < upcoming ? upcoming : next, hint: '' };
+  }
+  return { nextDue: next, hint: backlogCount(rule, input.today, 1, recurrence) > 0 ? CATCH_UP_ALL_HINT : '' };
 }
 
 /**
@@ -441,6 +510,11 @@ module.exports = {
   HINT_MAX_LENGTH: HINT_MAX_LENGTH,
   EACH_MAX_PER_RUN: EACH_MAX_PER_RUN,
   EACH_LIMIT_HINT: EACH_LIMIT_HINT,
+  CATCH_UP_ASK_HINT: CATCH_UP_ASK_HINT,
+  CATCH_UP_ALL_HINT: CATCH_UP_ALL_HINT,
+  BACKLOG_CHOICES: BACKLOG_CHOICES,
+  backlogCount: backlogCount,
+  backlogDecision: backlogDecision,
   generation: generation,
   generationEach: generationEach,
   reopenConflicts: reopenConflicts,

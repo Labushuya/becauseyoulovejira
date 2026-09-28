@@ -1,13 +1,18 @@
 import { describe, expect, it, vi } from 'vitest';
 import { DataError } from '$lib/data/errors';
 import type { RecurrenceRule } from '$lib/domain/recurrence-rule';
-import { defaultFormValues } from '$lib/domain/recurrence-rule';
+import {
+	CATCH_UP_ALL_HINT,
+	CATCH_UP_ASK_HINT,
+	defaultFormValues
+} from '$lib/domain/recurrence-rule';
 import type { Ticket } from '$lib/domain/ticket';
-import type { FlagSink } from './flags.svelte';
+import type { FlagInput, FlagSink } from './flags.svelte';
 import type { RecordChange, Unsubscribe } from './realtime';
 import {
 	REPEAT_FAILED,
 	RecurrenceStore,
+	waitingTitle,
 	type RecurrenceData,
 	type RecurrenceLive
 } from './recurrence.svelte';
@@ -382,6 +387,81 @@ describe('RecurrenceStore: a series from the inbox (E5 plan, package 6)', () => 
 		store.offerRepeat('ticket000000003', values);
 		store.reset();
 		expect(store.takeOffer('ticket000000003')).toBeNull();
+	});
+});
+
+// Plan "Wiederholungen verständlich machen", recommendation 5 (ADR-0022 addendum 5).
+describe('RecurrenceStore: a large backlog', () => {
+	const TODAY = '2026-09-25';
+	const waiting = rule({
+		id: 'rule00000000005',
+		title: 'Tabletten',
+		freq: 'daily',
+		weekdays: [],
+		anchor: '2026-08-01',
+		nextDue: '2026-09-01',
+		eachOccurrence: true,
+		lastHint: CATCH_UP_ASK_HINT
+	});
+
+	it('knows the rules that wait and sends the choice with a flag that names the dates', async () => {
+		const data = fakeData([rule(), waiting]);
+		vi.mocked(data.updateRule).mockImplementation(async (id, patch) =>
+			patch.backlog === 'today'
+				? { ...waiting, id, nextDue: TODAY, lastHint: '', updated: '2026-09-25 10:00:00.000Z' }
+				: { ...waiting, id, lastHint: CATCH_UP_ALL_HINT, updated: '2026-09-25 10:00:00.000Z' }
+		);
+		const flags = recordedFlags();
+		const store = new RecurrenceStore(data, session(), flags.sink);
+		await store.load();
+		expect(store.waiting.map((entry) => entry.id)).toEqual(['rule00000000005']);
+
+		await store.decideBacklog('rule00000000005', 'all', TODAY);
+		expect(data.updateRule).toHaveBeenCalledWith('rule00000000005', { backlog: 'all' });
+		expect(flags.last()).toBe(
+			'24 Termine (01.09. bis 24.09.) werden nachgeholt, höchstens 20 je Lauf.'
+		);
+		expect(store.waiting).toEqual([]);
+
+		store.upsert({ ...waiting, updated: '2026-09-25 11:00:00.000Z' });
+		await store.decideBacklog('rule00000000005', 'today', TODAY);
+		expect(flags.last()).toBe('24 Termine (01.09. bis 24.09.) übersprungen. Weiter am 25.09.');
+	});
+
+	it('announces waiting rules in one flag with "Ansehen", and nothing without', async () => {
+		const shown: FlagInput[] = [];
+		const dismissed: string[] = [];
+		const sink: FlagSink = {
+			show: (input) => String(shown.push(input)),
+			dismiss: (id) => void dismissed.push(id)
+		};
+		const open = vi.fn();
+		const store = new RecurrenceStore(fakeData([rule(), waiting]), session(), sink);
+		await store.load();
+
+		store.announceWaiting(open);
+		expect(shown[0]).toMatchObject({
+			tone: 'info',
+			title: '1 Wiederholung wartet auf deine Entscheidung.',
+			description:
+				'Viele Termine haben noch kein Ticket. Wähle „Alle nachholen“ oder „Nur ab heute“.'
+		});
+		shown[0]?.action?.run();
+		expect(open).toHaveBeenCalledWith('rule00000000005');
+
+		// Again (the app was opened again): the newer flag replaces the older one.
+		store.upsert({ ...waiting, id: 'rule00000000006', title: 'Vitamine' });
+		store.announceWaiting(open);
+		expect(dismissed).toEqual(['1']);
+		expect(shown[1]?.title).toBe('2 Wiederholungen warten auf deine Entscheidung.');
+		shown[1]?.action?.run();
+		expect(open).toHaveBeenLastCalledWith(null);
+
+		const quiet = new RecurrenceStore(fakeData([rule()]), session(), sink);
+		await quiet.load();
+		quiet.announceWaiting(open);
+		expect(shown).toHaveLength(2);
+		expect(waitingTitle(3)).toBe('3 Wiederholungen warten auf deine Entscheidung.');
 	});
 });
 

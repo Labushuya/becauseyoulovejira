@@ -4,6 +4,7 @@
 	import {
 		SERVER_FIELDS,
 		formErrors,
+		type RecurrenceFormContext,
 		type RecurrenceFormField,
 		type RecurrenceFormValues
 	} from '$lib/domain/recurrence-rule';
@@ -23,6 +24,8 @@
 		today,
 		withoutDue = false,
 		eachAvailable = false,
+		context,
+		openKeys = [],
 		submitLabel,
 		onsave,
 		onclose
@@ -34,6 +37,10 @@
 		withoutDue?: boolean;
 		/** Offer "Jeden Termin einzeln anlegen" (plan OR-5, RecurrenceStore.eachReady). */
 		eachAvailable?: boolean;
+		/** Ticket or rule the form belongs to (question about a backlog, ADR-0022 addendum 5). */
+		context?: RecurrenceFormContext;
+		/** Keys of the open tickets of the rule (hint when the switch goes off). */
+		openKeys?: readonly string[];
 		submitLabel: string;
 		onsave: (values: RecurrenceFormValues) => Promise<EditResult<unknown>>;
 		/** Cancel, or after saving. */
@@ -105,7 +112,15 @@
 	onclose={() => onclose()}
 >
 	<form id={formId} class="form" novalidate onsubmit={save} bind:this={form}>
-		<RecurrenceForm bind:values {errors} {today} {withoutDue} {eachAvailable} />
+		<RecurrenceForm
+			bind:values
+			{errors}
+			{today}
+			{withoutDue}
+			{eachAvailable}
+			{context}
+			{openKeys}
+		/>
 		{#if message}
 			<div class="alert-error" role="alert"><ErrorIcon /><span>{message}</span></div>
 		{/if}

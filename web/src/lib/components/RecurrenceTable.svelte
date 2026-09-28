@@ -1,12 +1,3 @@
-<script lang="ts" module>
-	/** The open ticket of a rule as the table shows it. */
-	export interface OpenInstance {
-		id: string;
-		key: string;
-		title: string;
-	}
-</script>
-
 <script lang="ts">
 	import type { ResolvedPathname } from '$app/types';
 	import type { CalendarDate } from '$lib/domain/berlin-date';
@@ -16,9 +7,11 @@
 	import { ColumnFit } from './table/column-fit.svelte';
 	import ResizableHeader from './table/ResizableHeader.svelte';
 	import {
+		isWaiting,
 		nextTicketDate,
 		ruleParams,
 		ruleStateLabel,
+		type OpenInstance,
 		type RecurrenceRule
 	} from '$lib/domain/recurrence-rule';
 	import { recurrenceText } from '$lib/domain/recurrence-text';
@@ -27,8 +20,10 @@
 
 	// Overview "Wiederholungen" (E5 plan, package 5), a table like "Aufgaben", "Eingang" and
 	// "Projekte": Titel (link to the rule panel, like the title of a ticket), Rhythmus, Nächstes
-	// Ticket, Offenes Ticket (key with a link to its panel), Projekt, Zustand ("Aktiv" or "Pausiert"
-	// as text with an icon) and the action "Pausieren" or "Fortsetzen". The store keeps the order:
+	// Ticket, Offene Tickets (every key with a link to its panel, the number in front when there are
+	// several; plan "Wiederholungen verständlich machen", recommendation 7), Projekt, Zustand
+	// ("Aktiv", "Pausiert" or "Entscheidung nötig" as text with an icon) and the action "Pausieren"
+	// or "Fortsetzen". The store keeps the order:
 	// active rules first, then by the next ticket. The row of the rule in the panel is marked
 	// (colour plus a bar at its start, aria-current on the link). The table never scrolls sideways
 	// (package UI-6b): fitColumns (ADR-0030, package SP-5) fits the columns into the measured
@@ -40,7 +35,7 @@
 		rules,
 		today,
 		hrefOf,
-		openTicketOf,
+		openTicketsOf,
 		ticketHrefOf,
 		projectOf,
 		activeId = null,
@@ -53,8 +48,8 @@
 		today: CalendarDate;
 		/** Address of the rule panel. */
 		hrefOf: (rule: RecurrenceRule) => ResolvedPathname;
-		/** Open ticket of a rule; null without one, undefined while the open tickets load. */
-		openTicketOf: (rule: RecurrenceRule) => OpenInstance | null | undefined;
+		/** Open tickets of a rule, oldest first; undefined while the open tickets load. */
+		openTicketsOf: (rule: RecurrenceRule) => readonly OpenInstance[] | undefined;
 		/** Address of the panel of a ticket. */
 		ticketHrefOf: (ticketId: string) => ResolvedPathname;
 		/** Project of the template, null without one. */
@@ -117,8 +112,9 @@
 		</thead>
 		<tbody>
 			{#each rules as rule (rule.id)}
-				{@const open = openTicketOf(rule)}
+				{@const open = openTicketsOf(rule)}
 				{@const project = projectOf(rule)}
+				{@const waiting = isWaiting(rule)}
 				<tr
 					class="row"
 					class:active={rule.id === activeId}
@@ -144,13 +140,30 @@
 						<td class="date" data-col="next">{nextTicketDate(rule, today)}</td>
 					{/if}
 					{#if shown.has('open')}
-						<td class="key" data-col="open">
+						<td
+							class="key"
+							data-col="open"
+							title={open !== undefined && open.length > 1
+								? open.map((ticket) => ticket.key).join(', ')
+								: undefined}
+						>
 							{#if open === undefined}
 								<span aria-hidden="true">…</span><span class="visually-hidden">wird geladen</span>
-							{:else if open === null}
+							{:else if open.length === 0}
 								<span aria-hidden="true">–</span><span class="visually-hidden">keins</span>
 							{:else}
-								<a class="key-link" href={ticketHrefOf(open.id)} title={open.title}>{open.key}</a>
+								{#if open.length > 1}
+									<span class="count"
+										>{open.length}<span class="visually-hidden">&nbsp;offene Tickets</span>:</span
+									>
+								{/if}
+								{#each open as ticket, index (ticket.id)}
+									{#if index > 0}<span aria-hidden="true">,&nbsp;</span>{/if}<a
+										class="key-link"
+										href={ticketHrefOf(ticket.id)}
+										title={ticket.title}>{ticket.key}</a
+									>
+								{/each}
 							{/if}
 						</td>
 					{/if}
@@ -168,11 +181,15 @@
 							{/if}
 						</td>
 					{/if}
-					<td class="state" data-col="state">
+					<td
+						class="state"
+						data-col="state"
+						title={waiting ? 'Wartet auf deine Entscheidung (im Panel der Regel)' : undefined}
+					>
 						<Lozenge
 							label={ruleStateLabel(rule)}
-							icon={rule.active ? 'refresh' : 'pause'}
-							tone={rule.active ? 'brand' : 'muted'}
+							icon={waiting ? 'warning' : rule.active ? 'refresh' : 'pause'}
+							tone={waiting ? 'neutral' : rule.active ? 'brand' : 'muted'}
 						/>
 					</td>
 					<td class="actions" data-col="actions">
@@ -311,6 +328,13 @@
 
 	.key {
 		white-space: nowrap;
+	}
+
+	.count {
+		margin-right: 0.25rem;
+		font-size: var(--font-size-control);
+		color: var(--color-text-muted);
+		font-variant-numeric: tabular-nums;
 	}
 
 	.key-link,
