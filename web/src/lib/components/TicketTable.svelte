@@ -414,6 +414,13 @@
 			measure={measureChip}
 			selected={selection.ids.includes(ticket.id)}
 			onselect={(on, range) => select(ticket.id, on, range)}
+			edit={{
+				projects: catalog.activeProjects,
+				tags: catalog.tags,
+				busy: store.isPending(ticket.id),
+				save: (patch) => store.changeField(ticket.id, patch),
+				createTag: (name) => catalog.ensureTag(name)
+			}}
 			ontoggle={(done) => store.setDone(ticket.id, done)}
 		/>
 	{/each}

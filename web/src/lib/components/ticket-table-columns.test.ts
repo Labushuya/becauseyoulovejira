@@ -380,7 +380,7 @@ describe('ticket table: sub projects (ADR-0034, UP-5)', () => {
 		await vi.advanceTimersByTimeAsync(0);
 
 		const cell = (key: string) =>
-			screen.getByText(key).closest('tr')?.querySelector('[data-col="project"] span');
+			screen.getByText(key).closest('tr')?.querySelector('[data-col="project"] span[title]');
 		expect(cell('GART-1')?.textContent).toBe('Haus › Garten');
 		expect(cell('GART-1')?.getAttribute('title')).toBe('Haus › Garten (GART)');
 		expect(cell('HAUS-1')?.textContent).toBe('Haus');

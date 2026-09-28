@@ -1,6 +1,6 @@
 # ADR-0036: Gemerkter Öffnungsmodus, Sammelbearbeitung mit Rückgängig und Inline-Bearbeitung in der Tabelle
 
-- **Status:** Angenommen; §1 umgesetzt in BI-1, §2 bis §5 in BI-2. §6 folgt mit BI-3 nach [docs/plan/bulk-inline-ansicht.md](../plan/bulk-inline-ansicht.md) und wird dann hier ergänzt.
+- **Status:** Angenommen und umgesetzt: §1 in BI-1 (#148), §2 bis §5 in BI-2 (#149), §6 in BI-3, nach [docs/plan/bulk-inline-ansicht.md](../plan/bulk-inline-ansicht.md); manuelle Browser-Prüfungen stehen im Test-Manifest
 - **Datum:** 2026-09-28
 - **Entscheidung durch:** Nutzer (Arbeitspaket „Bulk & Inline & Ansicht“: Öffnungsmodus wie in Jira, Auswahlspalte mit Sammelaktionen und Rückgängig, Inline-Bearbeitung in Zellen), Advisor (Umfang, Reihenfolge, Anforderungen an die Architektur), Executor (Einzelheiten, Wahl der Architektur)
 - **Präzisiert:** [ADR-0025](0025-ui-konsistenz-overlay-system.md) §7 (Vollansicht „über dem Panel“, Schließen „zurück ins Panel“), siehe dort Nachtrag 15; [ADR-0030](0030-spalten-breiten-und-kompakte-zeilen.md) (Auswahlspalte der Aufgaben, Nachtrag 2); [ADR-0029](0029-glas-materialien.md) §1 (Sammel-Aktionsleiste auf Glas)
@@ -66,6 +66,16 @@
 - **Sammelaktion:** Es zählt nur die **Hauptquelle** (`source_item`, aus ihr entstand das Ticket), nicht später verknüpfte Quellen. `listSourceEventDates` holt in einer Anfrage alle Termine, die Hauptquelle ihres Tickets sind (`kind = event && ticket.source_item = id`); Tickets ohne solche Quelle werden mit „Die Hauptquelle ist kein Termin mit Datum.“ übersprungen.
 - **Umwandeln:** „Gesammelt umwandeln“ hat bei gewählten Terminen die Checkbox „Datum des Termins als Fälligkeit“ (aus, mit der Zahl der betroffenen Termine); andere Einträge bleiben ohne Fälligkeit (`eventDueDate` in `domain/inbox.ts`). Einzeln gibt es das seit E4 als „Als Fälligkeit übernehmen“ neben dem Quelldatum in „Neues Ticket“. Beides nur auf Wunsch, P-5 bleibt.
 
+### 6. Bearbeiten in Zellen (BI-3)
+
+- **Welche Zellen:** Priorität, Status, Projekt, Tags und Fälligkeit der Tabelle „Aufgaben“. Ihr Wert ist ein Knopf, der die Zelle füllt (`EditableCell` in `components/table/`), und öffnet ein kleines Popover nach ADR-0025 §5: Priorität, Status und Projekt als Menü (`menuitemradio`, der aktuelle Wert mit Haken und Gewicht; Projekt mit „Kein Projekt“ und den aktiven Projekten in Baum-Reihenfolge, „Haus › Garten (GART)“), die Fälligkeit als Formular mit dem Datumsfeld, „Übernehmen“ und „Leeren“, die Tags mit der Tag-Eingabe des Tickets (`TagPicker`: Komma, Enter, Rücktaste, neue Namen werden Tags; jede Änderung speichert sofort wie im Panel).
+- **Klick und Tastatur:** Ein Klick in eine dieser Zellen öffnet den Editor, nie das Ticket; auch Klicks im Popover erreichen die Zeile nicht (die Zeile ignoriert `[popover]`). Außerhalb dieser Zellen öffnet der Zeilenklick das Ticket im gemerkten Modus (§1), das Symbol „Öffnen“ bleibt. Tab erreicht jede Zelle, Enter oder Leertaste öffnet, in Menüs wählen Pfeiltasten und Enter übernimmt, im Formular übernimmt Enter, Esc schließt ohne zu speichern; der Fokus kehrt jedes Mal zur Zelle zurück (Popover). Name des Knopfs: „Priorität von HAUS-12: Hoch, ändern“.
+- **Hinweis beim Zeigen:** eine dezente Füllung (`--fill-control-hover`) und ein kleiner Stift, der bei Zeiger, Tastaturfokus und offenem Editor erscheint. Keine neuen Tokens.
+- **Gleiche Regeln wie im Ticket:** Gespeichert wird über `TicketListStore.changeField` mit derselben Record-API wie im Panel; der Hook vergibt bei einem anderen Projekt den neuen Key, schreibt den Verlauf und legt Folgetickets an. „Erledigt“ läuft über den Weg des Häkchens (`setDone`): mit offenen blockierenden Unteraufgaben erst die bekannte Frage (ADR-0033 §2), danach das Flag mit „Rückgängig“.
+- **Keine optimistische Anzeige:** Die Zelle zeigt den Wert erst mit der Antwort des Servers. Key, Erledigen und das Folgeticket einer Serie entstehen im Hook; ein vorher gezeigter Wert ließe sich nicht in jedem Fall sauber zurückrollen (Key, Unteraufgaben, Serie). Der Server läuft lokal, die Antwort kommt sofort; währenddessen ist die Zeile gesperrt (`aria-busy`-ähnlicher Zustand am Knopf, das Häkchen ist gesperrt).
+- **Fehler:** Eine Ablehnung erscheint als Fehler-Flag „HAUS-12 konnte nicht geändert werden. <Grund>“, die Zelle behält ihren Wert. Ein falsches Datum bleibt am Feld im Popover.
+- **Kosten:** bis zu fünf weitere Tab-Stopps je Zeile. Die Editoren rendern erst, wenn eine Zelle gezeigt oder fokussiert wird, damit große Listen nicht jedes Menü im DOM tragen.
+
 ## Alternativen
 
 - **Modus in der URL** (`?ansicht=voll`): Jede Adresse trüge ihn, Links aus anderen Ansichten müssten ihn kennen, und eine geteilte Adresse würde die Vorliebe eines anderen Geräts aufzwingen. Verworfen, wie bei den Spalten.
@@ -77,6 +87,8 @@
 - **PocketBase-Batch-API** (`/api/batch`): müsste per Einstellung eingeschaltet werden, bricht beim ersten Fehler alles ab (kein Teil-Erfolg) und meldet keinen Fortschritt (dieselbe Abwägung wie beim Sammelumwandeln, ADR-0014 §4). Verworfen.
 - **Rückgängig ohne Prüfung auf zwischenzeitliche Änderungen:** Würde eine Änderung aus einem anderen Tab still überschreiben. Verworfen zugunsten von `expected_updated`.
 - **Rückgängig auch für „Löschen“:** geht ohne Papierkorb nicht (Kommentare, Verlauf und Keys sind weg). Kommt mit dem Papierkorb (ADR-0037, reserviert).
+- **Optimistische Anzeige in Zellen:** Der neue Wert stünde sofort da, müsste aber bei einer Ablehnung zurückgerollt werden; bei Projekt (Key), Status (Unteraufgaben, Serie) ist das nicht sauber möglich, und eine halbe Lösung nur für Priorität und Fälligkeit wäre uneinheitlich. Verworfen (§6).
+- **Bearbeiten per Doppelklick oder eigenem Bearbeiten-Modus der Tabelle (Grid-Muster mit Pfeiltasten):** näher an Tabellenkalkulationen, aber ein eigenes Tastaturmodell (`role="grid"`, Roving-Tabindex) für die ganze Tabelle und ein zweiter Klick. Verworfen zugunsten eines Knopfs je Zelle mit dem bekannten Popover.
 - **Auswahl über Gruppenköpfe:** ein zusätzlicher Tab-Stopp je Gruppe neben dem Aufklapp-Knopf und eine unklare Bedeutung bei zwei Ebenen und zugeklappten Gruppen. Zurückgestellt; die Kopf-Checkbox und Umschalt+Klick decken den Bedarf.
 - **„Datum der Quelle“ auch aus Mails und Nachrichten:** Deren Datum ist das Senden, keine Frist; eine Fälligkeit daraus wäre fast immer falsch (P-5). Verworfen.
 

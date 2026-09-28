@@ -32,11 +32,17 @@
 	import { SOURCE_FAMILY_LABELS, sourceFamily } from '$lib/domain/source';
 	import { progressLabel, type SubtaskProgress } from '$lib/domain/subtasks';
 	import type { ParentRef, ProjectRef, TagRef, TicketSummary } from '$lib/domain/ticket';
+	import { PRIORITY_LABELS, STATUS_LABELS } from '$lib/domain/labels';
+	import { PRIORITIES, STATUSES } from '$lib/domain/status';
 	import DoneToggle from './DoneToggle.svelte';
 	import DueLabel from './DueLabel.svelte';
 	import PriorityIcon from './PriorityIcon.svelte';
 	import SourceIcon from './SourceIcon.svelte';
 	import StatusPill from './StatusPill.svelte';
+	import TagPicker from './TagPicker.svelte';
+	import DueEditor from './table/DueEditor.svelte';
+	import EditableCell from './table/EditableCell.svelte';
+	import type { RowEdit } from './table/row-edit';
 
 	// One row of the ticket table (E3 plan, T-4): key, priority, status, title with the symbol of
 	// its source (ADR-0019 section 4) and the recurring icon, project, tags, due date, creation
@@ -47,6 +53,8 @@
 	// higher than two lines of title. Sub-tasks (ADR-0033 section 5): a parent carries the chip
 	// "2/5" at its title; a sub-task is indented below its parent or, standing alone, shows the path
 	// hint "HAUS-12 ›"; screen readers hear "Unteraufgabe von HAUS-12" either way.
+	// With `edit` (plan BI-3, ADR-0036 §6) priority, status, project, tags and due date are buttons
+	// that edit the value in a small popover; a click in those cells never opens the ticket.
 	let {
 		ticket,
 		nested = false,
@@ -66,6 +74,7 @@
 		measure = estimateChip,
 		selected = false,
 		onselect,
+		edit,
 		ontoggle
 	}: {
 		ticket: TicketSummary;
@@ -102,8 +111,43 @@
 		 * no selection cell (single rows in tests).
 		 */
 		onselect?: (on: boolean, range: boolean) => void;
+		/** Editing in the cells (plan BI-3); without it the cells only show their value. */
+		edit?: RowEdit;
 		ontoggle: (done: boolean) => void;
 	} = $props();
+
+	/** Text typed into the tag input of the cell (plan BI-3). */
+	let tagText = $state('');
+	let tagError = $state<string | null>(null);
+	const tagIds = $derived(tags.map((tag) => tag.id));
+
+	async function addTag(tagId: string): Promise<boolean> {
+		if (!edit || tagIds.includes(tagId)) return true;
+		tagError = null;
+		return edit.save({ tags: [...tagIds, tagId] });
+	}
+
+	async function removeTag(tagId: string): Promise<boolean> {
+		if (!edit) return false;
+		tagError = null;
+		return edit.save({ tags: tagIds.filter((id) => id !== tagId) });
+	}
+
+	async function createTag(name: string): Promise<boolean> {
+		if (!edit) return false;
+		const result = await edit.createTag(name);
+		if (!result.ok) {
+			tagError = result.message;
+			return false;
+		}
+		return addTag(result.tag.id);
+	}
+
+	/** Chooses a value from a menu: the menu closes first, the cell keeps the focus. */
+	function choose(close: () => void, patch: Parameters<RowEdit['save']>[0]) {
+		close();
+		void edit?.save(patch);
+	}
 
 	/** Shift held on the last pointer or key press in the selection cell (a range, plan BI-2). */
 	let rangeHeld = false;
@@ -132,7 +176,7 @@
 	 * Controls of the row handle their own clicks; the row only takes clicks outside of them. The
 	 * selection cell never opens the ticket (plan BI-2).
 	 */
-	const CONTROLS = 'a, button, input, select, textarea, label, [data-col="select"]';
+	const CONTROLS = 'a, button, input, select, textarea, label, [popover], [data-col="select"]';
 
 	function onclick(event: MouseEvent) {
 		if (event.defaultPrevented || event.button !== 0) return;
@@ -143,6 +187,49 @@
 		void goto(href);
 	}
 </script>
+
+<!-- One choice of a cell menu (plan BI-3): the current value is checked, by mark and weight. -->
+{#snippet menuChoice(checked: boolean, text: string, onchoose: () => void)}
+	<button
+		class="item"
+		class:checked
+		type="button"
+		role="menuitemradio"
+		aria-checked={checked}
+		tabindex="-1"
+		onclick={onchoose}
+	>
+		<span class="mark" aria-hidden="true">{checked ? '✓' : ''}</span>{text}
+	</button>
+{/snippet}
+
+{#snippet projectValue()}
+	{#if project}
+		<!-- A sub project shows its path "Haus › Garten" (ADR-0034); the title adds the code. -->
+		<span title={projectChoiceLabel(project)}>{projectPath(project)}</span>
+	{/if}
+{/snippet}
+
+{#snippet tagsValue()}
+	{#if chips.rest.length === 0}
+		<span class="chips">
+			{#each tags as tag (tag.id)}
+				<span class="tag">{tag.name}</span>
+			{/each}
+		</span>
+	{:else}
+		<!-- One line: the chips that fit and "+N"; the whole list for screen readers. -->
+		<span class="chips" aria-hidden="true">
+			{#each chips.shown as name, index (index)}
+				<span class="tag">{name}</span>
+			{/each}
+			<span class="tag more" title={`Weitere Tags: ${chips.rest.join(', ')}`}
+				>{moreChipText(chips.rest.length)}</span
+			>
+		</span>
+		<span class="visually-hidden">{tags.map((tag) => tag.name).join(', ')}</span>
+	{/if}
+{/snippet}
 
 <!-- The title link is the keyboard target of the row; the click on the row is a mouse shortcut. -->
 <tr
@@ -177,10 +264,50 @@
 			>{/if}{ticket.key}
 	</td>
 	{#if shows('priority')}
-		<td class="priority" data-col="priority"><PriorityIcon priority={ticket.priority} /></td>
+		<td class="priority" class:editable={edit} data-col="priority">
+			{#if edit}
+				<EditableCell
+					kind="menu"
+					label={`Priorität von ${ticket.key}`}
+					buttonLabel={`Priorität von ${ticket.key}: ${PRIORITY_LABELS[ticket.priority]}, ändern`}
+					busy={edit.busy}
+				>
+					{#snippet value()}<PriorityIcon priority={ticket.priority} />{/snippet}
+					{#snippet editor({ close })}
+						{#each PRIORITIES as value (value)}
+							{@render menuChoice(value === ticket.priority, PRIORITY_LABELS[value], () =>
+								choose(close, { priority: value })
+							)}
+						{/each}
+					{/snippet}
+				</EditableCell>
+			{:else}
+				<PriorityIcon priority={ticket.priority} />
+			{/if}
+		</td>
 	{/if}
 	{#if shows('status')}
-		<td class="status" data-col="status"><StatusPill status={ticket.status} /></td>
+		<td class="status" class:editable={edit} data-col="status">
+			{#if edit}
+				<EditableCell
+					kind="menu"
+					label={`Status von ${ticket.key}`}
+					buttonLabel={`Status von ${ticket.key}: ${STATUS_LABELS[ticket.status]}, ändern`}
+					busy={edit.busy}
+				>
+					{#snippet value()}<StatusPill status={ticket.status} />{/snippet}
+					{#snippet editor({ close })}
+						{#each STATUSES as value (value)}
+							{@render menuChoice(value === ticket.status, STATUS_LABELS[value], () =>
+								choose(close, { status: value })
+							)}
+						{/each}
+					{/snippet}
+				</EditableCell>
+			{:else}
+				<StatusPill status={ticket.status} />
+			{/if}
+		</td>
 	{/if}
 	<th class="title" scope="row" data-col="title">
 		<!-- At most two lines, cut off only visually; screen readers read the whole title. -->
@@ -256,37 +383,87 @@
 		<td class="source" data-col="source">{SOURCE_FAMILY_LABELS[sourceFamily(ticket.source)]}</td>
 	{/if}
 	{#if shows('project')}
-		<td class="project" data-col="project">
-			{#if project}
-				<!-- A sub project shows its path "Haus › Garten" (ADR-0034); the title adds the code. -->
-				<span title={projectChoiceLabel(project)}>{projectPath(project)}</span>
+		<td class="project" class:editable={edit} data-col="project">
+			{#if edit}
+				<EditableCell
+					kind="menu"
+					label={`Projekt von ${ticket.key}`}
+					buttonLabel={`Projekt von ${ticket.key}: ${project ? projectChoiceLabel(project) : 'kein Projekt'}, ändern`}
+					busy={edit.busy}
+				>
+					{#snippet value()}{@render projectValue()}{/snippet}
+					{#snippet editor({ close })}
+						{@render menuChoice(ticket.projectId === null, 'Kein Projekt', () =>
+							choose(close, { project: null })
+						)}
+						{#each edit.projects as choice (choice.id)}
+							{@render menuChoice(choice.id === ticket.projectId, projectChoiceLabel(choice), () =>
+								choose(close, { project: choice.id })
+							)}
+						{/each}
+					{/snippet}
+				</EditableCell>
+			{:else}
+				{@render projectValue()}
 			{/if}
 		</td>
 	{/if}
 	{#if shows('tags')}
-		<td class="tags" data-col="tags">
-			{#if chips.rest.length === 0}
-				<span class="chips">
-					{#each tags as tag (tag.id)}
-						<span class="tag">{tag.name}</span>
-					{/each}
-				</span>
+		<td class="tags" class:editable={edit} data-col="tags">
+			{#if edit}
+				<EditableCell
+					kind="panel"
+					label={`Tags von ${ticket.key}`}
+					buttonLabel={`Tags von ${ticket.key}: ${tags.length === 0 ? 'keine' : tags.map((tag) => tag.name).join(', ')}, ändern`}
+					busy={edit.busy}
+				>
+					{#snippet value()}{@render tagsValue()}{/snippet}
+					{#snippet editor()}
+						<div class="tags-editor">
+							<label for={`${ticket.id}-tags`}>Tags von {ticket.key}</label>
+							<TagPicker
+								id={`${ticket.id}-tags`}
+								selected={tags}
+								tags={edit.tags}
+								bind:text={tagText}
+								busy={edit.busy}
+								error={tagError}
+								errorId={`${ticket.id}-tags-error`}
+								onadd={addTag}
+								onremove={removeTag}
+								oncreate={createTag}
+							/>
+						</div>
+					{/snippet}
+				</EditableCell>
 			{:else}
-				<!-- One line: the chips that fit and "+N"; the whole list for screen readers. -->
-				<span class="chips" aria-hidden="true">
-					{#each chips.shown as name, index (index)}
-						<span class="tag">{name}</span>
-					{/each}
-					<span class="tag more" title={`Weitere Tags: ${chips.rest.join(', ')}`}
-						>{moreChipText(chips.rest.length)}</span
-					>
-				</span>
-				<span class="visually-hidden">{tags.map((tag) => tag.name).join(', ')}</span>
+				{@render tagsValue()}
 			{/if}
 		</td>
 	{/if}
 	{#if shows('due')}
-		<td class="due" data-col="due"><DueLabel due={ticket.due} {today} {done} /></td>
+		<td class="due" class:editable={edit} data-col="due">
+			{#if edit}
+				<EditableCell
+					kind="panel"
+					label={`Fälligkeit von ${ticket.key}`}
+					buttonLabel={`Fälligkeit von ${ticket.key}: ${ticket.due === null ? 'keine' : formatCalendarDate(ticket.due)}, ändern`}
+					busy={edit.busy}
+				>
+					{#snippet value()}<DueLabel due={ticket.due} {today} {done} />{/snippet}
+					{#snippet editor({ close })}
+						<DueEditor
+							key={ticket.key}
+							value={ticket.due}
+							onsave={(due) => edit.save({ due })}
+							{close}
+						/>
+					{/snippet}
+				</EditableCell>
+			{:else}
+				<DueLabel due={ticket.due} {today} {done} />
+			{/if}
+		</td>
 	{/if}
 	{#if shows('created')}
 		<td class="created" data-col="created">
@@ -328,6 +505,37 @@
 	.row.active,
 	.row.selected {
 		background: var(--color-brand-soft-bg);
+	}
+
+	/* Cells edited in place (plan BI-3): the button of EditableCell fills the cell. */
+	td.editable {
+		padding: 0;
+	}
+
+	.priority.editable :global(button.cell-edit) {
+		justify-content: center;
+	}
+
+	.tags-editor {
+		display: grid;
+		gap: 0.375rem;
+		min-width: 16rem;
+		padding: 0.25rem;
+	}
+
+	.tags-editor label {
+		font-size: var(--font-size-control);
+		font-weight: 500;
+		color: var(--color-text-muted);
+	}
+
+	.mark {
+		display: inline-block;
+		width: 1.25em;
+	}
+
+	.item.checked {
+		font-weight: 600;
 	}
 
 	/* The selection (plan BI-2): the label fills the cell, so a click beside the box chooses too. */

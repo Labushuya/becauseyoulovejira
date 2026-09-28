@@ -1535,3 +1535,69 @@ describe('completing a ticket with open blocking sub-tasks (ADR-0033 section 2)'
 		]);
 	});
 });
+
+describe('editing a cell in place (plan BI-3)', () => {
+	async function started(items: TicketSummary[]) {
+		const data = fakeData(items);
+		const flags = new FlagStore();
+		const store = new TicketListStore(data, session(), { flags });
+		store.activate(withDone(false));
+		await settle();
+		return { data, flags, store };
+	}
+
+	it('saves the field through the Record API, locks meanwhile and shows the answer', async () => {
+		const item = ticket({ priority: 'low' });
+		const { data, store } = await started([item]);
+		const answer = deferred<TicketSummary>();
+		data.update.mockImplementationOnce(() => answer.promise);
+
+		const request = store.changeField(item.id, { priority: 'high' });
+		expect(store.isPending(item.id)).toBe(true);
+		expect(await store.changeField(item.id, { priority: 'urgent' })).toBe(false);
+		answer.resolve({ ...item, priority: 'high', updated: '2026-09-24 10:00:02.000Z' });
+
+		expect(await request).toBe(true);
+		expect(data.update).toHaveBeenCalledExactlyOnceWith(item.id, { priority: 'high' });
+		expect(store.find(item.id)?.priority).toBe('high');
+		expect(store.isPending(item.id)).toBe(false);
+	});
+
+	it('completes like the check mark, with "Rückgängig" in the flag', async () => {
+		const item = ticket({ status: 'waiting' });
+		const { data, flags, store } = await started([item]);
+
+		expect(await store.changeField(item.id, { status: 'done' })).toBe(true);
+
+		expect(data.setDone).toHaveBeenCalledWith(item.id, true);
+		expect(data.update).not.toHaveBeenCalled();
+		expect(flags.flags[0]?.action?.label).toBe('Rückgängig');
+	});
+
+	it('names a refusal with its reason in an error flag and keeps the value', async () => {
+		const item = ticket({ priority: 'low' });
+		const { data, flags, store } = await started([item]);
+		data.update.mockRejectedValueOnce(
+			new DataError('validation', {
+				status: 400,
+				fields: { due: { code: 'validation_calendar_date', message: 'Ungültiges Datum.' } }
+			})
+		);
+
+		expect(await store.changeField(item.id, { due: '2026-02-30' })).toBe(false);
+
+		expect(flags.flags.map((flag) => [flag.tone, flag.title])).toEqual([
+			['error', `${item.key} konnte nicht geändert werden. Ungültiges Datum.`]
+		]);
+		expect(store.find(item.id)?.due).toBeNull();
+	});
+
+	it('does nothing for an unknown ticket or without a session', async () => {
+		const item = ticket();
+		const { data, store } = await started([item]);
+		expect(await store.changeField('unknown00000000', { priority: 'high' })).toBe(false);
+		const ended = new TicketListStore(data, session(false));
+		expect(await ended.changeField(item.id, { priority: 'high' })).toBe(false);
+		expect(data.update).not.toHaveBeenCalled();
+	});
+});

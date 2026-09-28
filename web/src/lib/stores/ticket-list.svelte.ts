@@ -881,6 +881,42 @@ export class TicketListStore {
 	}
 
 	/**
+	 * A cell of the table edited in place (plan BI-3, ADR-0036 §6): the same Record API as the panel,
+	 * so the hook decides as there (a new key on another project, the history, a series). The row
+	 * shows the answer of the server; there is no optimistic value, because key, completion and the
+	 * next ticket of a series come from the server. "Erledigt" goes through `setDone` and its
+	 * question about open sub-tasks (ADR-0033 section 2), with "Rückgängig" in the flag. A refusal
+	 * comes as an error flag with the reason, the cell keeps its value. Resolves to true when saved.
+	 */
+	async changeField(id: string, patch: TicketPatch): Promise<boolean> {
+		const ticket = this.find(id);
+		if (ticket === null || this.#pending.has(id) || !this.#session.ensureValid()) return false;
+		if (patch.status === 'done' && ticket.status !== 'done' && Object.keys(patch).length === 1) {
+			await this.setDone(id, true);
+			return true;
+		}
+		this.#pending.set(id, ticket.status === 'done');
+		try {
+			this.upsert(await this.#data.update(id, patch));
+			return true;
+		} catch (error) {
+			const failure = toDataError(error);
+			const field = Object.values(failure.fields)[0];
+			if (field !== undefined && failure.kind === 'validation') {
+				this.#flags.show({
+					tone: 'error',
+					title: `${ticket.key} konnte nicht geändert werden. ${field.message}`
+				});
+			} else {
+				this.#fail(error, `${ticket.key} konnte nicht geändert werden.`);
+			}
+			return false;
+		} finally {
+			this.#pending.delete(id);
+		}
+	}
+
+	/**
 	 * "Rückgängig" of the flag after checking: restores the exact previous status (OF-E2-3), then
 	 * that of every sub-task completed along (ADR-0033 section 2), one after another. A sub-task that
 	 * fails is named in an error flag; the others are restored.
