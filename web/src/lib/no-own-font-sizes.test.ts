@@ -13,7 +13,7 @@ const SRC_DIR = resolve(import.meta.dirname, '..');
 const TOKENS_CSS = join('lib', 'styles', 'tokens.css');
 
 /** Numbers left from before G-6 in all listed files together; lower it when one goes. */
-const LEGACY_COUNT = 235;
+const LEGACY_COUNT = 228;
 
 /** Files that still carry font sizes as numbers (as of G-6). */
 const LEGACY_FILES = [
@@ -26,7 +26,6 @@ const LEGACY_FILES = [
 	'lib/components/ChipGroup.svelte',
 	'lib/components/ClipboardImport.svelte',
 	'lib/components/CommentForm.svelte',
-	'lib/components/CommentItem.svelte',
 	'lib/components/CommentList.svelte',
 	'lib/components/ConnectionsSection.svelte',
 	'lib/components/DropZone.svelte',
@@ -60,7 +59,6 @@ const LEGACY_FILES = [
 	'lib/components/TagManager.svelte',
 	'lib/components/ThemeMenu.svelte',
 	'lib/components/TicketActivity.svelte',
-	'lib/components/TicketDescription.svelte',
 	'lib/components/TicketFields.svelte',
 	'lib/components/TicketMeta.svelte',
 	'lib/components/TicketPanel.svelte',

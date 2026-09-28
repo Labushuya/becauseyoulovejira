@@ -58,6 +58,8 @@ const FIELD_MESSAGES: Readonly<Record<string, string>> = Object.freeze({
 	validation_invalid_url: 'Nur http- und https-Adressen.',
 	validation_source_not_allowed: 'Diese Quelle lässt sich nicht direkt setzen.',
 	validation_source_immutable: 'Die Quelle eines Tickets lässt sich nicht ändern.',
+	// Guard against overwriting the description (ADR-0032 section 6), the same text as the hook.
+	validation_description_stale: 'Die Beschreibung wurde inzwischen geändert.',
 	// Connections (ADR-0018; E4 plan, package 10).
 	validation_secret_name:
 		'Nur BYL_ mit Großbuchstaben, Ziffern und _, höchstens 64 Zeichen (etwa BYL_TELEGRAM_TOKEN).',

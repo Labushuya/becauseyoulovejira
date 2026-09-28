@@ -1,6 +1,6 @@
 # ADR-0032: Editor wie Jira: Tiptap mit Markdown als Speicherformat, Brücke über die markdown-it-Instanz der Anzeige
 
-- **Status:** Angenommen. Spike RT-0 abgeschlossen (Weg B, siehe §2); Stufe A (RT-1, RT-2) nach [docs/plan/editor.md](../plan/editor.md), der Editor selbst folgt mit Stufe B (RT-3 bis RT-6)
+- **Status:** Angenommen. Spike RT-0 abgeschlossen (Weg B, siehe §2, #114); Stufe A umgesetzt: RT-1 (Anzeige, #115) und RT-2 (Abhaken, Schutz vor Überschreiben, #116) nach [docs/plan/editor.md](../plan/editor.md); der Editor selbst folgt mit Stufe B (RT-3 bis RT-6)
 - **Datum:** 2026-09-28
 - **Entscheidung durch:** Nutzer (Tiptap als neue Abhängigkeit mit RT-0 als Abbruchpunkt, Markdown bleibt Speicherformat, `++Text++` für Unterstreichen, GFM-Task-Listen, Umfang wie Jira, 2026-09-28), Advisor (Konzept), Executor (Spike, Weg, Einzelheiten)
 - **Ergänzt:** [ADR-0008](0008-markdown-rendering-und-sanitizing.md) §1, §2 und §5 (Parser-Erweiterungen, Allowlist, Abhängigkeiten); **ersetzt ab RT-3** ADR-0008 §4 (Bearbeiten nur als `textarea`)
@@ -65,7 +65,16 @@ Der Editor ist **Tiptap 3** (MIT). Markdown liest und schreibt er **nicht** übe
 ### 6. Abhaken in der Ansicht und Schutz vor Überschreiben (RT-2)
 
 - Checkboxen der Ansicht lassen sich abhaken. Das schreibt die Beschreibung bzw. den eigenen Kommentar zurück, geändert wird genau `[ ]` ↔ `[x]` in der Zeile der Aufgabe.
-- Beschreibungen gehen dabei mit dem Body-Feld `expected_updated` an den Server. Weicht der Stand ab, lehnt der Ticket-Hook in der Transaktion mit `validation_description_stale` ab. Dasselbe gilt fürs Speichern der Beschreibung. Einzelheiten stehen im Plan.
+- Beschreibungen gehen dabei mit dem Body-Feld `expected_updated` an den Server. Dasselbe gilt fürs Speichern der Beschreibung.
+  - Der Ticket-Hook liest das Ticket in seiner Transaktion neu. Weicht `updated` ab, lehnt er mit `validation_description_stale` ab und ändert nichts.
+  - Das Feld wird nie gespeichert. Ohne das Feld gilt ein Update wie bisher.
+- Die Prüfung vergleicht `updated` und nicht den Text, damit kein Hash über 100 000 Zeichen nötig ist. Dadurch schlägt sie auch an, wenn sich nur ein anderes Feld geändert hat, etwa der Status über das Häkchen der Liste.
+  - Die SPA lädt das Ticket dann neu. Ist die Beschreibung gleich geblieben, sendet sie einmal erneut auf dem neuen Stand.
+  - Sonst meldet das Abhaken, dass die Beschreibung geändert wurde.
+  - Das Speichern fragt **inline** „Überschreiben“ oder „Verwerfen und neu laden“. Eine Bestätigung ginge nicht, weil die Vollansicht ein Modal ist und nach [ADR-0025](0025-ui-konsistenz-overlay-system.md) §3 kein Dialog aus einem Dialog aufgeht; das Panel fragt genauso.
+  - Kommt die neuere Beschreibung schon per Realtime an, fragt das Speichern ohne Anfrage.
+- Kommentare haben keine solche Prüfung: Nur ihr Autor darf sie ändern (API-Regel), ein Konflikt entsteht höchstens zwischen zwei eigenen Tabs.
+- Der Verlauf speichert weiter die ganze Beschreibung alt und neu. Ändert sich nur eine Aufgabe, nennt er „Aufgabe abgehakt: …“ bzw. „Aufgabe wieder offen: …“.
 
 ## Spike RT-0 (2026-09-28)
 

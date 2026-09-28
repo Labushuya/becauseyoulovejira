@@ -216,6 +216,41 @@ describe('describeHistoryEntry', () => {
 		expect(text(overrides)).toBe(expected);
 	});
 
+	it.each([
+		[
+			'a ticked task',
+			'- [ ] Milch\n- [ ] Brot',
+			'- [ ] Milch\n- [x] Brot',
+			'Aufgabe abgehakt: Brot'
+		],
+		['an unticked task', '> * [X] Zitat', '> * [ ] Zitat', 'Aufgabe wieder offen: Zitat'],
+		[
+			'escapes of a template',
+			'- [ ] Milch 1\\.5 %',
+			'- [x] Milch 1\\.5 %',
+			'Aufgabe abgehakt: Milch 1.5 %'
+		],
+		['an empty task', '- [x]', '- [ ]', 'Aufgabe wieder offen'],
+		['CRLF', 'a\r\n- [ ] b', 'a\r\n- [x] b', 'Aufgabe abgehakt: b'],
+		['two changed lines', '- [ ] a\n- [ ] b', '- [x] a\n- [x] b', 'Beschreibung geändert'],
+		['a changed text', '- [ ] a', '- [x] b', 'Beschreibung geändert'],
+		['another line count', '- [ ] a', '- [x] a\nb', 'Beschreibung geändert'],
+		['brackets inside the text', 'Text [ ] mitten', 'Text [x] mitten', 'Beschreibung geändert']
+	])('names %s of the description', (_name, oldValue, newValue, expected) => {
+		expect(text({ field: 'description', oldValue, newValue })).toBe(expected);
+	});
+
+	it('shortens a long task', () => {
+		const task = 'x'.repeat(100);
+		const line = text({
+			field: 'description',
+			oldValue: `- [ ] ${task}`,
+			newValue: `- [x] ${task}`
+		});
+
+		expect(line).toBe(`Aufgabe abgehakt: ${'x'.repeat(79)}…`);
+	});
+
 	it('returns old and new description as plain text details', () => {
 		const line = describeHistoryEntry(
 			entry({ field: 'description', oldValue: '**alt**', newValue: '<b>neu</b>' }),

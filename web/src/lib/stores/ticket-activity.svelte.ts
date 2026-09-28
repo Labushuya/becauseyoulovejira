@@ -13,6 +13,7 @@ import { toDataError } from '$lib/data/errors';
 import { listHistory } from '$lib/data/history';
 import type { RequestOptions } from '$lib/data/options';
 import type { Comment, HistoryEntry } from '$lib/domain/ticket';
+import { toggleTask } from '$lib/markdown';
 import { hold, type LiveSource } from './realtime';
 import type { LoadState, SessionGuard } from './ticket-list.svelte';
 
@@ -301,6 +302,33 @@ export class TicketActivityStore {
 			const saved = await this.#data.updateComment(id, draft);
 			this.upsertComment(saved);
 			if (this.#edits.get(id) === draft) this.#edits.delete(id);
+			return true;
+		} catch (error) {
+			const message = this.#failureMessage(error, 'body');
+			if (message !== null && this.#comments.has(id)) this.#commentErrors.set(id, message);
+			return false;
+		} finally {
+			this.#busy.delete(id);
+		}
+	}
+
+	/**
+	 * Ticks or unticks task `index` of an own comment in the view (ADR-0032 section 6); not while
+	 * it is edited or saved. Only the author may change a comment (API rules), so foreign comments
+	 * are refused here already. A failure shows at the comment.
+	 */
+	async toggleTask(id: string, index: number, checked: boolean): Promise<boolean> {
+		const comment = this.#comments.get(id);
+		if (comment === undefined || !this.isOwn(comment)) return false;
+		if (this.#edits.has(id) || this.#busy.has(id)) return false;
+		const body = toggleTask(comment.body, index, checked);
+		if (body === null) return false;
+		if (body === comment.body) return true;
+		if (!this.#session.ensureValid()) return false;
+		this.#busy.add(id);
+		this.#commentErrors.delete(id);
+		try {
+			this.upsertComment(await this.#data.updateComment(id, body));
 			return true;
 		} catch (error) {
 			const message = this.#failureMessage(error, 'body');

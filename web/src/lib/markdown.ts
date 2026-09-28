@@ -2,7 +2,8 @@
 // as a second, independent layer. The only consumer of the HTML is Markdown.svelte, the one place
 // with {@html}. Two extensions of the format (ADR-0032 section 1): "++text++" underlines
 // (markdown-it-ins, rendered as <u>), and GFM task lists ("- [ ]", "- [x]") in bullet lists become
-// disabled checkboxes, numbered by their index in the document.
+// disabled checkboxes, numbered by their index in the document. `toggleTask` ticks one of them in
+// the source text with the same parser (RT-2).
 
 import DOMPurify, { type DOMPurify as Purifier } from 'dompurify';
 import MarkdownIt, { type StateCore, type Token } from 'markdown-it';
@@ -109,6 +110,42 @@ parser.renderer.rules.task_checkbox = (tokens, idx) => {
 	const name = parser.utils.escapeHtml(label);
 	return `<input type="checkbox" disabled${checked ? ' checked' : ''} aria-label="${name}">`;
 };
+
+/** The tasks of a Markdown text in document order, as the display numbers them. */
+function tasksOf(source: string): TaskMeta[] {
+	return parser
+		.parse(source, {})
+		.flatMap((token) => token.children ?? [])
+		.filter((child) => child.type === 'task_checkbox')
+		.map((child) => child.meta as TaskMeta);
+}
+
+/**
+ * Containers in front of a task marker on its line: indentation, quote markers and list markers
+ * ("- ", "> - ", "1. - "); the line is known to hold the marker of a task.
+ */
+const TASK_LINE = /^([ \t>]*(?:(?:[-*+]|\d{1,9}[.)])[ \t]+[ \t>]*)*)\[[ xX]\]/;
+
+/**
+ * Ticks (`checked`) or unticks the task with the given index (ADR-0032 section 6): only the
+ * character between the brackets of that task changes, every other byte stays, line breaks
+ * included. Returns the text unchanged if the task already has the state, and null if there is
+ * no such task or the change cannot be made safely.
+ */
+export function toggleTask(source: string, index: number, checked: boolean): string | null {
+	const task = tasksOf(source)[index];
+	if (task === undefined) return null;
+	if (task.checked === checked) return source;
+	// Lines as markdown-it counts them, with their breaks kept at the odd positions.
+	const parts = source.split(/(\r\n|\r|\n)/);
+	const line = parts[task.line * 2];
+	const match = line === undefined ? null : TASK_LINE.exec(line);
+	if (line === undefined || match === null) return null;
+	const at = (match[1] ?? '').length;
+	parts[task.line * 2] = `${line.slice(0, at)}[${checked ? 'x' : ' '}]${line.slice(at + 3)}`;
+	const next = parts.join('');
+	return tasksOf(next)[index]?.checked === checked ? next : null;
+}
 
 /** Everything markdown-it produces except images, plus underline and the task checkbox. */
 const ALLOWED_TAGS = [
