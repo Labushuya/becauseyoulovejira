@@ -345,3 +345,41 @@ describe('columns of the ticket table (ADR-0030)', () => {
 		expect(colWidth('due')).toBe('150px');
 	});
 });
+
+describe('ticket table: sub projects (ADR-0034, UP-5)', () => {
+	it('shows the path "Haus › Garten" in the column "Projekt", with the code in the title', async () => {
+		const updated = '2026-09-01 10:00:00.000Z';
+		const house = { id: 'proj00000000001', name: 'Haus', code: 'HAUS', archived: false, updated };
+		const garden = {
+			...house,
+			id: 'proj00000000011',
+			name: 'Garten',
+			code: 'GART',
+			parentId: house.id
+		};
+		const inGarden = ticket(1, { key: 'GART-1', projectId: garden.id, project: garden });
+		const inHouse = ticket(2, { key: 'HAUS-1', projectId: house.id, project: house });
+		const catalog = new CatalogStore(
+			{
+				listProjects: vi.fn(async () => [house, garden]),
+				listTags: vi.fn(async () => []),
+				createTag: vi.fn()
+			},
+			SESSION
+		);
+		await catalog.load();
+		const store = new TicketListStore(fakeData([inGarden, inHouse]), SESSION, {
+			projectOf: (entry) => catalog.projectOf(entry)
+		});
+		store.activate(parseListQuery(new URLSearchParams()));
+		render(TicketTable, { props: { store, catalog } });
+		await vi.advanceTimersByTimeAsync(0);
+
+		const cell = (key: string) =>
+			screen.getByText(key).closest('tr')?.querySelector('[data-col="project"] span');
+		expect(cell('GART-1')?.textContent).toBe('Haus › Garten');
+		expect(cell('GART-1')?.getAttribute('title')).toBe('Haus › Garten (GART)');
+		expect(cell('HAUS-1')?.textContent).toBe('Haus');
+		expect(cell('HAUS-1')?.getAttribute('title')).toBe('Haus (HAUS)');
+	});
+});

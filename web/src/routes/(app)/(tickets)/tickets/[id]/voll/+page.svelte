@@ -24,7 +24,7 @@
 	import { getTicketDetailStore } from '$lib/stores/ticket-detail.svelte';
 	import { getTicketListStore } from '$lib/stores/ticket-list.svelte';
 	import { getTicketSourcesStore } from '$lib/stores/ticket-sources.svelte';
-	import { FULL_VIEW_LINK, fullViewHref, ticketHref } from '$lib/ticket-links';
+	import { FULL_VIEW_LINK, fullViewHref, ticketHref, ticketPathSteps } from '$lib/ticket-links';
 	import { getTicketRoute } from '$lib/ticket-route';
 
 	// Full view of a ticket (/tickets/<id>/voll; ADR-0025 section 7, decision 2 of the user): the
@@ -51,6 +51,18 @@
 	const ticket = $derived(detail.state === 'ready' ? detail.ticket : null);
 	const parent = $derived(
 		ticket === null ? null : parentOf(ticket, (parentId) => tickets.find(parentId))
+	);
+	/** "Haus › Garten › HAUS-12 › GART-3" (ADR-0033, ADR-0034); links lead to full views. */
+	const path = $derived(
+		ticket === null
+			? []
+			: ticketPathSteps(
+					ticket.key,
+					catalog.projectOf(ticket),
+					parent === null
+						? null
+						: { key: parent.key, title: parent.title, href: fullViewHref(parent.id, page.url) }
+				)
 	);
 	const sourceCount = $derived(
 		ticket !== null && sources.ticketId === ticket.id ? sources.items.length : 0
@@ -107,15 +119,8 @@
 					{subtaskCount}
 				/>
 			{/if}
-			{#if parent}
-				<Breadcrumbs
-					label="Pfad des Tickets"
-					mono
-					items={[
-						{ label: parent.key, href: fullViewHref(parent.id, page.url), title: parent.title },
-						{ label: ticket.key }
-					]}
-				/>
+			{#if path.length > 0}
+				<Breadcrumbs label="Pfad des Tickets" items={path} />
 			{/if}
 			<EditableTitle store={detail} {headingId} />
 			<TicketDescription store={detail} {ticket} />

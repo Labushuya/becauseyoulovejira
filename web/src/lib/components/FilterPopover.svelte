@@ -1,4 +1,5 @@
 <script lang="ts">
+	import type { Snippet } from 'svelte';
 	import Popover from './overlay/Popover.svelte';
 
 	// Choice of the filter bar for "Projekt" and "Tag" (ADR-0025 section 5; plan UI-Konsistenz,
@@ -9,12 +10,16 @@
 	// choice at once and leave it open. From SEARCH_FROM options a search field on top narrows the
 	// list; it gets the focus on opening, Enter there takes the first match, ArrowDown moves to the
 	// radios. The button names the group and the chosen value; a chosen value looks active.
+	// `footer` adds controls below the choices (the project filter: "Unterprojekte einbeziehen",
+	// ADR-0034), `valueNote` a note to the value in the button ("ohne Unterprojekte").
 	let {
 		legend,
 		name,
 		options,
 		value,
 		allLabel = 'Alle',
+		valueNote = null,
+		footer,
 		onchange
 	}: {
 		/** Name of the group, e.g. "Projekt". */
@@ -26,6 +31,10 @@
 		/** Chosen value, null for "Alle". */
 		value: string | null;
 		allLabel?: string;
+		/** Note after the chosen value in the button, e.g. "ohne Unterprojekte". */
+		valueNote?: string | null;
+		/** Controls below the choices, inside the popover. */
+		footer?: Snippet;
 		onchange: (value: string | null) => void;
 	} = $props();
 
@@ -102,7 +111,7 @@
 	>
 		{#snippet button()}
 			<span class="toggle-legend">{legend}:</span>
-			<span class="toggle-value">{chosenLabel}</span>
+			<span class="toggle-value">{chosenLabel}{valueNote ? `, ${valueNote}` : ''}</span>
 			<svg viewBox="0 0 16 16" aria-hidden="true" focusable="false">
 				<path d="M4 6l4 4 4-4" />
 			</svg>
@@ -167,6 +176,9 @@
 					<p class="none">Keine Treffer.</p>
 				{/if}
 			</fieldset>
+			{#if footer}
+				<div class="footer">{@render footer()}</div>
+			{/if}
 		{/snippet}
 	</Popover>
 </div>
@@ -182,7 +194,7 @@
 		align-items: center;
 		max-width: 16rem;
 		padding: 0.1875rem 0.5rem;
-		font-size: 0.8125rem;
+		font-size: var(--font-size-control);
 		color: var(--color-text);
 		background: var(--color-surface);
 		border: 1px solid var(--color-line);
@@ -206,7 +218,7 @@
 	}
 
 	.toggle-legend {
-		font-size: 0.75rem;
+		font-size: var(--font-size-small);
 		font-weight: 600;
 		color: var(--color-text-muted);
 	}
@@ -239,7 +251,7 @@
 
 	legend {
 		padding: 0 0.375rem 0.25rem;
-		font-size: 0.75rem;
+		font-size: var(--font-size-small);
 		font-weight: 600;
 		color: var(--color-text-muted);
 	}
@@ -262,7 +274,7 @@
 		gap: 0.5rem;
 		align-items: center;
 		padding: 0.25rem 0.375rem;
-		font-size: 0.875rem;
+		font-size: var(--font-size-body);
 		border-radius: var(--radius-control);
 		cursor: pointer;
 	}
@@ -288,9 +300,19 @@
 		font-weight: 600;
 	}
 
+	/* Controls below the choices, separated like "Alle" from the options. */
+	.footer {
+		display: grid;
+		gap: 0.25rem;
+		max-width: 20rem;
+		margin-top: 0.375rem;
+		padding: 0.5rem 0.375rem 0.125rem;
+		border-top: 1px solid var(--color-line);
+	}
+
 	.none {
 		padding: 0.25rem 0.375rem;
-		font-size: 0.8125rem;
+		font-size: var(--font-size-control);
 		color: var(--color-text-muted);
 	}
 </style>

@@ -107,6 +107,44 @@ describe('groupTickets', () => {
 		]);
 	});
 
+	it('groups each sub project with its path, right after its parent (ADR-0034)', () => {
+		const GARDEN: ProjectRef = {
+			id: 'p00000000000011',
+			name: 'Garten',
+			code: 'GART',
+			archived: false,
+			parent: { id: HOUSE.id, name: 'Haus', code: 'HAUS' }
+		};
+		const ATTIC: ProjectRef = { ...GARDEN, id: 'p00000000000012', name: 'Boden', code: 'BODEN' };
+		const tickets = [
+			row('garden', { project: GARDEN }),
+			row('zoo', { project: ZOO }),
+			row('house', { project: HOUSE }),
+			row('attic', { project: ATTIC }),
+			row('none')
+		];
+		expect(shape(groupTickets(tickets, 'project', TODAY))).toEqual([
+			[ZOO.id, 'auto', ['zoo']],
+			[HOUSE.id, 'Haus', ['house']],
+			[ATTIC.id, 'Haus › Boden', ['attic']],
+			[GARDEN.id, 'Haus › Garten', ['garden']],
+			[NO_PROJECT, NO_PROJECT_LABEL, ['none']]
+		]);
+		// A sub project without tickets of its parent still stands where the parent would.
+		expect(
+			shape(
+				groupTickets(
+					[row('garden', { project: GARDEN }), row('car', { project: CAR })],
+					'project',
+					TODAY
+				)
+			)
+		).toEqual([
+			[CAR.id, 'Auto', ['car']],
+			[GARDEN.id, 'Haus › Garten', ['garden']]
+		]);
+	});
+
 	it('groups by due date: overdue, today, next 7 days, later, without date', () => {
 		const tickets = [
 			row('none'),

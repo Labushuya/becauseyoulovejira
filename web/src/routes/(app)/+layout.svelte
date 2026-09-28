@@ -82,6 +82,8 @@
 	const tickets = setTicketListStore(
 		new TicketListStore(ticketListData(pb), auth, {
 			projectOf: (ticket) => catalog.projectOf(ticket),
+			// A project filter takes the sub projects in (ADR-0034).
+			subProjectsOf: (projectId) => catalog.subProjectsOf(projectId).map((project) => project.id),
 			reads: readsData(pb),
 			flags
 		})

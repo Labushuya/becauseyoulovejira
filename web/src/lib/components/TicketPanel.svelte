@@ -4,6 +4,7 @@
 	import type { ParentRef, Ticket } from '$lib/domain/ticket';
 	import type { CatalogStore } from '$lib/stores/catalog.svelte';
 	import type { TicketDetailStore } from '$lib/stores/ticket-detail.svelte';
+	import { ticketPathSteps } from '$lib/ticket-links';
 	import Breadcrumbs from './Breadcrumbs.svelte';
 	import Drawer from './overlay/Drawer.svelte';
 	import EditableTitle from './EditableTitle.svelte';
@@ -21,7 +22,8 @@
 	// focus (the rule is the Drawer's). Comments and history (E2 plan, packages 9 and 10) come in
 	// through `activity`, the series (E5 plan, package 4) through `recurrence`, the section
 	// "Unteraufgaben" (ADR-0033) through `subtasks`. A sub-task shows its path "HAUS-12 › HAUS-15"
-	// with a link to the parent in the header instead of the key alone.
+	// with a link to the parent in the header instead of the key alone; a ticket in a sub project
+	// starts it with "Haus › Garten" (ADR-0034), linking to the list filtered by the project.
 	let {
 		store,
 		catalog,
@@ -77,6 +79,16 @@
 	let focusedFor: string | null = null;
 
 	const ticket = $derived(store.ticket);
+	/** "Haus › Garten › HAUS-12 › GART-3" (ADR-0033, ADR-0034); empty for a plain ticket. */
+	const path = $derived(
+		ticket === null
+			? []
+			: ticketPathSteps(
+					ticket.key,
+					catalog.projectOf(ticket),
+					parent === null ? null : { key: parent.key, title: parent.title, href: parentHref }
+				)
+	);
 
 	// Focus on opening (E2 plan, section 3): the heading of the ticket, or the message heading.
 	$effect(() => {
@@ -94,15 +106,8 @@
 	fullViewHref={store.state === 'ready' ? fullViewHref : null}
 >
 	{#snippet context()}
-		{#if store.state === 'ready' && ticket && parent}
-			<Breadcrumbs
-				label="Pfad des Tickets"
-				mono
-				items={[
-					{ label: parent.key, href: parentHref ?? undefined, title: parent.title },
-					{ label: ticket.key }
-				]}
-			/>
+		{#if store.state === 'ready' && ticket && path.length > 0}
+			<Breadcrumbs label="Pfad des Tickets" items={path} />
 		{:else}
 			<span class="key">{ticket?.key ?? ''}</span>
 		{/if}

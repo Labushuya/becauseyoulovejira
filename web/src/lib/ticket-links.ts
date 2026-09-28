@@ -22,7 +22,9 @@ import {
 	serializeProjectViewQuery,
 	type ProjectViewQuery
 } from './domain/project-view';
+import { projectChoiceLabel } from './domain/project-tree';
 import { TEMPLATE_PARAM, TEMPLATE_VALUES, type CaptureTemplate } from './domain/templates';
+import type { ProjectRef } from './domain/ticket';
 
 /** Query parameter of the switch "Erledigte anzeigen" (CLAUDE.md section 7). */
 export const SHOW_DONE_PARAM = LIST_PARAMS.showDone;
@@ -43,6 +45,47 @@ export function listHref(url: URL): ResolvedPathname {
 export function projectTicketsHref(projectId: string): ResolvedPathname {
 	const query = serializeListQuery({ ...EMPTY_LIST_QUERY, project: projectId });
 	return `${resolve('/')}${query}` as ResolvedPathname;
+}
+
+/** One step of the path of a ticket (`Breadcrumbs`). */
+export interface PathStep {
+	label: string;
+	href?: string;
+	title?: string;
+	mono?: boolean;
+}
+
+/**
+ * Path of a ticket (ADR-0033 section 4, ADR-0034): a ticket in a sub project starts with
+ * "Haus › Garten" (links to the list filtered by the project), a sub-task names its parent (link
+ * `parent.href`), then the own key. Empty when the ticket has neither; the header then shows the
+ * key alone.
+ */
+export function ticketPathSteps(
+	key: string,
+	project: ProjectRef | null,
+	parent: { key: string; title: string; href: string | null } | null
+): PathStep[] {
+	const projectSteps: PathStep[] = project?.parent
+		? [
+				{
+					label: project.parent.name,
+					href: projectTicketsHref(project.parent.id),
+					title: `${project.parent.name} (${project.parent.code})`
+				},
+				{
+					label: project.name,
+					href: projectTicketsHref(project.id),
+					title: projectChoiceLabel(project)
+				}
+			]
+		: [];
+	if (projectSteps.length === 0 && parent === null) return [];
+	const parentSteps: PathStep[] =
+		parent === null
+			? []
+			: [{ label: parent.key, href: parent.href ?? undefined, title: parent.title, mono: true }];
+	return [...projectSteps, ...parentSteps, { label: key, mono: true }];
 }
 
 /** Path of the project view (E3 plan, T-3 and package 14). */

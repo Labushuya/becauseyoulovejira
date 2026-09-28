@@ -40,6 +40,21 @@
 		const current = query;
 		untrack(() => tickets.activate(current));
 	});
+
+	// The section "Erledigt" follows the sub projects of the chosen project (ADR-0034), e.g. once
+	// the catalog has loaded or a sub project was added in another tab.
+	const subProjectKey = $derived(
+		query.project === null
+			? ''
+			: catalog
+					.subProjectsOf(query.project)
+					.map((project) => project.id)
+					.join(',')
+	);
+	$effect(() => {
+		void subProjectKey;
+		untrack(() => tickets.followSubProjects());
+	});
 </script>
 
 <ViewWithPanel {withPanel}>

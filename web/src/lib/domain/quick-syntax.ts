@@ -5,6 +5,7 @@
 // projects; an archived one gives a hint instead of an error.
 
 import { PRIORITY_LABELS } from './labels';
+import { projectChoiceLabel } from './project-tree';
 import type { Priority } from './status';
 import { TAG_NAME_MAX_LENGTH, findTagByName, normalizeTagName, tagNameKey } from './tag';
 import { fitTitle } from './templates';
@@ -100,7 +101,8 @@ export function parseQuickEntry(
 /** What the preview under the field names: project, priority and tags that were recognised. */
 export function describeQuickEntry(entry: QuickEntry): string[] {
 	const parts: string[] = [];
-	if (entry.project !== null) parts.push(`Projekt: ${entry.project.name} (${entry.project.code})`);
+	// A sub project with its path, "Haus › Garten (GART)" (ADR-0034).
+	if (entry.project !== null) parts.push(`Projekt: ${projectChoiceLabel(entry.project)}`);
 	if (entry.priority !== null) parts.push(`Priorität: ${PRIORITY_LABELS[entry.priority]}`);
 	if (entry.tags.length > 0) {
 		const names = entry.tags.map((tag) => (tag.existing === null ? `${tag.name} (neu)` : tag.name));

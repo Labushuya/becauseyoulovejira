@@ -2,6 +2,7 @@
 	import { untrack } from 'svelte';
 	import type { ResolvedPathname } from '$app/types';
 	import { INBOX_BODY_MAX_LENGTH, INBOX_SOURCE_URL_MAX_LENGTH } from '$lib/domain/inbox';
+	import { projectChoiceLabel } from '$lib/domain/project-tree';
 	import { isPriority } from '$lib/domain/status';
 	import {
 		CAPTURE_TEMPLATES,
@@ -386,7 +387,7 @@
 					>
 						<option value="">Projekt wählen</option>
 						{#each projects as project (project.id)}
-							<option value={project.id}>{project.name} ({project.code})</option>
+							<option value={project.id}>{projectChoiceLabel(project)}</option>
 						{/each}
 					</select>
 				{:else if field === 'tags'}
@@ -476,7 +477,7 @@
 
 <style>
 	h2 {
-		font-size: 1.125rem;
+		font-size: var(--font-size-title);
 		font-weight: 600;
 	}
 
@@ -496,7 +497,7 @@
 	legend {
 		width: 100%;
 		margin-bottom: 0.375rem;
-		font-size: 0.8125rem;
+		font-size: var(--font-size-control);
 		font-weight: 500;
 		color: var(--color-text-muted);
 	}
@@ -517,7 +518,7 @@
 	}
 
 	.field > label {
-		font-size: 0.8125rem;
+		font-size: var(--font-size-control);
 		font-weight: 500;
 		color: var(--color-text-muted);
 	}
@@ -551,7 +552,7 @@
 	}
 
 	.hint {
-		font-size: 0.8125rem;
+		font-size: var(--font-size-control);
 		color: var(--color-text-muted);
 	}
 

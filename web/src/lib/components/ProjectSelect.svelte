@@ -1,10 +1,13 @@
 <script lang="ts">
+	import { projectChoiceLabel, projectPath } from '$lib/domain/project-tree';
 	import type { ProjectRef } from '$lib/domain/ticket';
 
 	// Project of a ticket (E3 plan, T-13): "Kein Projekt" and the active projects as
 	// "Name (CODE)". A project that is archived but already assigned stays visible as
 	// "Name (CODE, archiviert)", so the select shows the true value; archived projects cannot be
 	// chosen otherwise (T-11). The hint says that a change gives the ticket a new key.
+	// Sub projects (ADR-0034, UP-5): the options come in tree order (the catalog delivers them so),
+	// a sub project as "Haus › Garten (GART)", which every reader understands without indentation.
 	let {
 		id,
 		value,
@@ -20,7 +23,7 @@
 		id: string;
 		/** Chosen project ID, '' for none. */
 		value: string;
-		/** Projects that can be chosen (the active ones, by name). */
+		/** Projects that can be chosen (the active ones, in tree order). */
 		projects: readonly ProjectRef[];
 		/** Project the ticket has now; shown even if it is archived or not among `projects`. */
 		current?: ProjectRef | null;
@@ -51,12 +54,12 @@
 	<option value="" selected={value === ''}>Kein Projekt</option>
 	{#each projects as project (project.id)}
 		<option value={project.id} selected={value === project.id}>
-			{project.name} ({project.code})
+			{projectChoiceLabel(project)}
 		</option>
 	{/each}
 	{#if extra}
 		<option value={extra.id} selected={value === extra.id}>
-			{extra.name} ({extra.code}{extra.archived ? ', archiviert' : ''})
+			{projectPath(extra)} ({extra.code}{extra.archived ? ', archiviert' : ''})
 		</option>
 	{/if}
 </select>
@@ -64,7 +67,7 @@
 
 <style>
 	.hint {
-		font-size: 0.75rem;
+		font-size: var(--font-size-small);
 		color: var(--color-text-muted);
 	}
 </style>

@@ -415,6 +415,90 @@ describe('filter bar: search (E3 plan, package 11)', () => {
 	});
 });
 
+describe('filter bar: sub projects (ADR-0034, UP-5)', () => {
+	const GARDEN_PROJECT: Project = {
+		id: 'proj00000000011',
+		name: 'Garten',
+		code: 'GART',
+		archived: false,
+		updated: UPDATED,
+		parentId: HOUSE.id
+	};
+	const CAR: Project = {
+		id: 'proj00000000003',
+		name: 'Auto',
+		code: 'AUTO',
+		archived: false,
+		updated: UPDATED
+	};
+
+	async function showTree(path: string) {
+		mocks.page.url = new URL(path, 'http://localhost:3000');
+		const catalog = new CatalogStore(
+			{
+				listProjects: vi.fn(async () => [HOUSE, OLD, GARDEN_PROJECT, CAR]),
+				listTags: vi.fn(async () => [GARDEN]),
+				createTag: vi.fn()
+			},
+			SESSION
+		);
+		await catalog.load();
+		return render(FilterBar, { props: { catalog } });
+	}
+
+	const subProjects = () =>
+		within(
+			document.getElementById(
+				String(toggle('Projekt').getAttribute('aria-controls'))
+			) as HTMLElement
+		).getByRole<HTMLInputElement>('checkbox', { hidden: true, name: 'Unterprojekte einbeziehen' });
+
+	it('offers the projects in tree order with the path of a sub project', async () => {
+		await showTree('/');
+		expect(choiceLabels('Projekt')).toEqual([
+			'Alle',
+			'Ohne Projekt',
+			'Auto (AUTO)',
+			'Haushalt (HAUS)',
+			'Haushalt › Garten (GART)',
+			'Umzug (UMZ)'
+		]);
+	});
+
+	it('takes the sub projects in by default and switches them off in the URL', async () => {
+		await showTree(`/?projekt=${HOUSE.id}`);
+		expect(subProjects().checked).toBe(true);
+		expect(subProjects().hasAttribute('aria-disabled')).toBe(false);
+		const hint = document.getElementById(String(subProjects().getAttribute('aria-describedby')));
+		expect(hint?.textContent?.trim()).toBe('1 Unterprojekt: Garten');
+
+		await fireEvent.click(subProjects());
+		expect(lastTarget()).toBe(`/?projekt=${HOUSE.id}&unterprojekte=0`);
+
+		document.body.innerHTML = '';
+		await showTree(`/?projekt=${HOUSE.id}&unterprojekte=0`);
+		expect(subProjects().checked).toBe(false);
+		expect(toggle('Projekt').textContent?.replace(/\s+/g, ' ').trim()).toBe(
+			'Projekt: Haushalt (HAUS), ohne Unterprojekte'
+		);
+		await fireEvent.click(subProjects());
+		expect(lastTarget()).toBe(`/?projekt=${HOUSE.id}`);
+	});
+
+	it('locks the checkbox without sub projects and takes them in again for another project', async () => {
+		await showTree(`/?projekt=${CAR.id}&unterprojekte=0`);
+		expect(subProjects().getAttribute('aria-disabled')).toBe('true');
+		const hint = document.getElementById(String(subProjects().getAttribute('aria-describedby')));
+		expect(hint?.textContent?.trim()).toBe('Das gewählte Projekt hat keine Unterprojekte.');
+		await fireEvent.click(subProjects());
+		expect(mocks.goto).not.toHaveBeenCalled();
+
+		await open('Projekt');
+		await fireEvent.click(radio('Projekt', 'Haushalt (HAUS)'), { detail: 1 });
+		expect(lastTarget()).toBe(`/?projekt=${HOUSE.id}`);
+	});
+});
+
 describe('filter bar: source (E4 plan, package 9; ADR-0019 section 2)', () => {
 	it('offers the chip group "Quelle" after "Fällig", without Notion', async () => {
 		await showBar();

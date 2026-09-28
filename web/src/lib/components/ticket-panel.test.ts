@@ -957,6 +957,47 @@ describe('ticket route: sub-tasks (ADR-0033)', () => {
 		).toBeTruthy();
 	});
 
+	it('starts the path of a ticket in a sub project with "Haus › Garten" (ADR-0034)', async () => {
+		const updated = '2026-09-24 08:00:00.000Z';
+		const house: Project = {
+			id: 'proj00000000001',
+			name: 'Haus',
+			code: 'HAUS',
+			archived: false,
+			updated
+		};
+		const garden: Project = {
+			...house,
+			id: 'proj00000000011',
+			name: 'Garten',
+			code: 'GART',
+			parentId: house.id
+		};
+		const context = createStore(
+			ticket({ key: 'GART-3', projectId: garden.id, parentId: PARENT.id, parentRef: PARENT })
+		);
+		mocks.detail = context.store;
+		mocks.catalog = catalogOf([house, garden]);
+		mocks.activity = activityStore();
+		renderTicketRoute();
+		await vi.waitFor(() => expect(context.store.state).toBe('ready'));
+
+		const path = await screen.findByRole('navigation', { name: 'Pfad des Tickets' });
+		await vi.waitFor(() => expect(within(path).getAllByRole('listitem')).toHaveLength(4));
+		expect(
+			within(path)
+				.getAllByRole('listitem')
+				.map((item) => item.textContent?.trim())
+		).toEqual(['Haus', 'Garten', 'HAUS-12', 'GART-3']);
+		expect(within(path).getByRole('link', { name: 'Haus' }).getAttribute('href')).toBe(
+			`/?projekt=${house.id}`
+		);
+		expect(within(path).getByRole('link', { name: 'Garten' }).getAttribute('title')).toBe(
+			'Haus › Garten (GART)'
+		);
+		expect(within(path).getByText('GART-3').getAttribute('aria-current')).toBe('page');
+	});
+
 	it('shows the path and the section in the full view as well, linking to full views', async () => {
 		const context = createStore(ticket({ parentId: PARENT.id, parentRef: PARENT }));
 		mocks.detail = context.store;

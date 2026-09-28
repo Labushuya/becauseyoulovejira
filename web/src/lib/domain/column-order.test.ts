@@ -156,6 +156,32 @@ describe('columnOrder', () => {
 		expect(ids([...tickets].sort(order))).toEqual(['house', 'car']);
 	});
 
+	it('sorts by the path, so sub projects stand with their parent (ADR-0034)', () => {
+		const garden = { ...CAR, id: 'p00000000000011', name: 'Garten', parent: HOUSE };
+		const attic = { ...CAR, id: 'p00000000000012', name: 'Boden', parent: HOUSE };
+		const tickets = [
+			row('garden', { project: garden }),
+			row('car', { project: CAR }),
+			row('house', { project: HOUSE }),
+			row('attic', { project: attic }),
+			row('office', { project: OFFICE })
+		];
+		expect(sorted(tickets, natural('project'))).toEqual([
+			'car',
+			'office',
+			'house',
+			'attic',
+			'garden'
+		]);
+		expect(sorted(tickets, reversed('project'))).toEqual([
+			'garden',
+			'attic',
+			'house',
+			'office',
+			'car'
+		]);
+	});
+
 	it('sorts due dates earliest first, tickets without one last in both directions', () => {
 		const tickets = [
 			row('none'),

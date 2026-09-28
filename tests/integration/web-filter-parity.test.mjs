@@ -265,3 +265,78 @@ describe('web filter parity: server expression and matchesFilter', () => {
 		});
 	});
 });
+
+describe('web filter parity with sub projects (ADR-0034)', () => {
+	let owner;
+	/** Haus with Garten and the archived Dach, Keller without sub projects. */
+	let house;
+	let garden;
+	let roof;
+	let cellar;
+	let tickets;
+	/** As the catalog of the app answers it. */
+	let subProjectsOf;
+
+	beforeAll(async () => {
+		const superuser = await superuserClient();
+		owner = await createOwner(superuser);
+		house = await owner.project(uniqueCode(), { name: 'Haus' });
+		garden = await owner.project(uniqueCode(), { name: 'Garten', parent: house.id });
+		roof = await owner.project(uniqueCode(), { name: 'Dach', parent: house.id });
+		cellar = await owner.project(uniqueCode(), { name: 'Keller' });
+		for (const project of ['', house.id, garden.id, roof.id, cellar.id]) {
+			for (const priority of ['low', 'high']) {
+				await owner.ticket({ status: 'done', priority, project });
+			}
+			await owner.ticket({ status: 'open', priority: 'low', project });
+		}
+		await owner.client.collection('projects').update(roof.id, { archived: true });
+		const children = { [house.id]: [garden.id, roof.id] };
+		subProjectsOf = (id) => children[id] ?? [];
+		const done = await listDoneTickets(owner.client, 1, { perPage: 500 });
+		tickets = [...(await listOpenTickets(owner.client)), ...done.items];
+	});
+
+	async function serverIds(query) {
+		const page = await listDoneTickets(owner.client, 1, {
+			perPage: 500,
+			filter: {
+				query,
+				today: TODAY,
+				// As the list store decides it: only when the chosen project has sub projects.
+				withSubProjects:
+					query.project !== null && query.project !== NO_PROJECT && subProjectsOf(query.project).length > 0
+			}
+		});
+		return page.items.map((ticket) => ticket.id).sort();
+	}
+
+	function clientIds(query) {
+		return tickets
+			.filter((ticket) => ticket.status === 'done' && matchesFilter(ticket, query, TODAY, subProjectsOf))
+			.map((ticket) => ticket.id)
+			.sort();
+	}
+
+	it('agrees for a parent with and without its sub projects, a sub project and the rest', async () => {
+		const cases = [
+			{ project: house.id },
+			{ project: house.id, subProjects: false },
+			{ project: house.id, priority: 'high' },
+			{ project: house.id, subProjects: false, priority: 'low' },
+			{ project: garden.id },
+			{ project: roof.id },
+			{ project: cellar.id },
+			{ project: NO_PROJECT },
+			{ project: UNKNOWN_ID },
+			{}
+		];
+		for (const overrides of cases) {
+			const query = { ...EMPTY_LIST_QUERY, ...overrides };
+			expect(await serverIds(query), JSON.stringify(overrides)).toEqual(clientIds(query));
+		}
+		// "Haus" takes the done tickets of Haus, Garten and the archived Dach: 3 × 2.
+		expect(await serverIds({ ...EMPTY_LIST_QUERY, project: house.id })).toHaveLength(6);
+		expect(await serverIds({ ...EMPTY_LIST_QUERY, project: house.id, subProjects: false })).toHaveLength(2);
+	});
+});
