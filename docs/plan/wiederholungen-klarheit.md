@@ -62,4 +62,5 @@
 ## 5. Offene Punkte
 
 - Manuelle Browser-Prüfungen der Pakete (BYL-E6-342, BYL-E6-346, BYL-E6-349, BYL-E6-352).
-- Keine weiteren: Alle acht Empfehlungen und Teil A der Spec sind umgesetzt, Abweichungen stehen in §3.
+- Alle acht Empfehlungen und Teil A der Spec sind umgesetzt, Abweichungen stehen in §3.
+- **Technische Schuld (Empfehlung 5, [#158](https://github.com/Labushuya/becauseyoulovejira/issues/158)):** Der Zustand „Rückstand wartet auf Entscheidung“ (bzw. „holt nach“) wird aus dem Hinweistext `recurrence_rules.last_hint` abgeleitet (`CATCH_UP_ASK_HINT`, `CATCH_UP_ALL_HINT`, siehe §3 WK-2 „Ohne Migration“). Bei der nächsten ohnehin nötigen Migration an `recurrence_rules` bekommt er ein eigenes Statusfeld (nur der Server schreibt), befüllt aus dem vorhandenen `last_hint`, mit Rückweg und Rollback-Test; `last_hint` bleibt danach reiner Hinweis. Keine eigene Migration nur dafür.

@@ -49,8 +49,8 @@ Die Bewertung vom 2026-09-27 hatte S0 bis S5 mit S2b und S4 als Optionen. Nach d
 
 | Paket | Inhalt | Stand |
 |---|---|---|
-| S0-1 | `scripts/platform.mjs` (`executableName`), `scripts/fetch-pocketbase.mjs` (Tabelle Plattform → Archiv → SHA256 für `windows_amd64`, `linux_amd64`, `linux_arm64`, `linux_armv7`, ZIP-Lesen mit `node:zlib`, kein unzip nötig), `fetch-pocketbase.ps1` als Windows-Hülle, Harness und Mail-Hilfsprozess mit Binary-Namen je Plattform (Beenden unter Linux per `SIGKILL`), Windows-only-Tests ausgenommen, CI-Job „Linux build and test“ | in Arbeit |
-| S0-2 | Plattform-Hinweis des Servers: `BYL_HOST_PLATFORM` bzw. Erkennung, Route für angemeldete Nutzer | geplant |
+| S0-1 | `scripts/platform.mjs` (`executableName`), `scripts/fetch-pocketbase.mjs` (Tabelle Plattform → Archiv → SHA256 für `windows_amd64`, `linux_amd64`, `linux_arm64`, `linux_armv7`, ZIP-Lesen mit `node:zlib`, kein unzip nötig), `fetch-pocketbase.ps1` als Windows-Hülle, Harness und Mail-Hilfsprozess mit Binary-Namen je Plattform (Beenden unter Linux per `SIGKILL`), Windows-only-Tests ausgenommen, CI-Job „Linux build and test“ | gemergt (#157) |
+| S0-2 | Plattform-Hinweis des Servers: `lib/host-platform.js` (rein) und `GET /api/byl/host` für angemeldete Nutzer (`{ platform }`); `BYL_HOST_PLATFORM` mit bekanntem Wert gewinnt, sonst `$os.args[0]` (`.exe` = Windows, sonst Linux), ohne beides Windows | in Arbeit |
 | S0-3 | Anleitungen der Oberfläche nach dem Server-System, Doku (ADR-0028-Nachtrag, README, CLAUDE.md) | geplant |
 
 **Abweichungen und Entscheidungen zu S0:**
@@ -59,6 +59,7 @@ Die Bewertung vom 2026-09-27 hatte S0 bis S5 mit S2b und S4 als Optionen. Nach d
 - **`.gitattributes`:** `* text=auto eol=lf` deckt `*.sh` schon ab, `*.bat`, `*.cmd`, `*.vbs` und `*.ps1` stehen auf CRLF. Keine Änderung nötig.
 - **Mail-Hilfsprozess unter Linux:** `helpers/mail/build.mjs` schreibt dort `dist/byl-mail` (ohne `.exe`), damit der Linux-Job die Prozesstests des Hilfsprozesses fährt. Ein Linux-Build für den Betrieb (`app/byl-mail`, `arm64`) bleibt Teil von S3.
 - **Windows-only-Tests:** `admin-reset-logic`, `start-browser`, `start-logic` (Unit) und `admin-reset`, `backup-restore` (README-Weg mit `Expand-Archive`), `installer-check` (Integration) stehen in `WINDOWS_ONLY` von `vitest.config.mjs`; einzelne Fälle (Parser-Prüfung der `.ps1`, Anfrage aus `byl-control.ps1`) tragen `skipIf`. Die statischen Prüfungen der Start-Skripte (CRLF, BOM, keine absoluten Pfade) laufen auch unter Linux.
+- **Server-System per Erkennung statt Start-Skript (S0-2):** Der Plan sah vor, dass der Start `BYL_HOST_PLATFORM` setzt. Das hieße, `start.bat` und `byl-control.ps1` zu ändern, ohne dass sich unter Windows etwas ändert. Stattdessen erkennt der Hook Windows und Linux am Namen der laufenden Datei (`$os.args[0]`); die Variable bleibt für den Container (S3 setzt sie im Image) und als Übersteuerung. Ein unbekannter Wert wird ignoriert, ohne Hinweis bleibt es Windows.
 - **SemVer und Releases zurückgestellt (eigenes Paket vor S3):** `release-please` öffnet seine Release-PRs mit dem `GITHUB_TOKEN`. Solche PRs lösen keine Workflows aus, der Pflicht-Check „Check, lint, build and test“ käme nie, und das Ruleset ohne Ausnahmen ließe den Release-PR nicht zu. Nötig ist dafür eine Nutzerentscheidung: ein fein granulares Token bzw. eine GitHub-App als Secret für release-please oder ein manueller Weg (Version per normalem PR, Tag und Release per `workflow_dispatch`). Der erste Verbraucher von Releases ist S3; bis dahin bleibt `package.json` auf `0.0.1`.
 
 ### S1: Installierte Web-App (Windows und Browser)
