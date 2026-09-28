@@ -1,6 +1,6 @@
 # ADR-0012: Plain Ticketing ohne Ticket-Typen, Epics, Sprints und Story Points
 
-- **Status:** Angenommen (mit Nachtrag 2026-09-28: Unteraufgaben freigegeben, [ADR-0033](0033-unteraufgaben.md))
+- **Status:** Angenommen (mit Nachträgen 2026-09-28: Unteraufgaben freigegeben, [ADR-0033](0033-unteraufgaben.md); Unterprojekte als Gliederung, [ADR-0034](0034-unterprojekte.md))
 - **Datum:** 2026-09-25
 - **Entscheidung durch:** Nutzer (2026-09-25)
 
@@ -42,3 +42,12 @@ Der Text oben bleibt unverändert. Der Nutzer hat am 2026-09-28 ausdrücklich an
 - Umfang, Regeln und die Wirkung von `blocks_parent` stehen in [ADR-0033](0033-unteraufgaben.md), die Pakete im [Plan Unteraufgaben](../plan/unteraufgaben.md).
 - Das Datenmodell ändert sich nicht; es gibt weiter kein Feld `type`.
 - Die Konsequenz „Anlage- und Panel-Formulare bleiben kurz“ gilt weiter: Das Panel bekommt den Abschnitt „Unteraufgaben“ und die Zeile „Übergeordnet“, aber kein neues Pflichtfeld.
+
+## Nachtrag (2026-09-28): Unterprojekte als Gliederung, keine Epics
+
+Der Text oben bleibt unverändert. Der Nutzer hat am 2026-09-28 Unterprojekte freigegeben. Sie präzisieren „Projekte sind die einzige Ordnungsebene mit eigenem Nummernkreis“ und heben die Ablehnung der Epics nicht auf:
+
+- Ein Unterprojekt **ist ein Projekt** mit dem optionalen Feld `parent`: genau eine Ebene (Projekt → Unterprojekt), im selben Scope, mit **eigenem Code und eigenem Nummernkreis** (`GART-3`). Die Ordnungsebene mit Nummernkreis bleibt also das Projekt.
+- **Unterprojekte dienen nur der Gliederung.** Sie haben keinen Status, keinen Fortschritt, keine Laufzeit und keine Bündelung über Projekte hinweg. Sie sind damit **keine Epics**: Ein Epic ist eine Arbeitseinheit, die Tickets quer über Projekte bündelt und „erledigt“ wird; ein Unterprojekt liegt in genau einem Oberprojekt und kennt nur „archiviert“.
+- „Epics als Ebene über Projekten“ bleibt verworfen, ebenso jedes Roll-up von Status, Fortschritt oder Zeitplänen. Aggregiert werden nur die Anzahlen der Tickets (aktiv, gesamt, neu), mit dem Hinweis „davon direkt“.
+- Einzelheiten stehen in [ADR-0034](0034-unterprojekte.md), die Pakete im [Plan Unterprojekte](../plan/unterprojekte.md).

@@ -72,3 +72,16 @@ onRecordUpdateExecute(function (e) {
   }
   e.next();
 }, 'inbox_items');
+
+// Fails archiving a sub project with the marker name (ADR-0034 section 3): archiving its parent
+// archives it in the same transaction, so the parent and the other sub projects must stay active.
+onRecordUpdateExecute(function (e) {
+  if (
+    e.record.getString('name') === '__byl_fail_project_archive__' &&
+    !e.record.original().getBool('archived') &&
+    e.record.getBool('archived')
+  ) {
+    throw new BadRequestError('Injected project archive failure.');
+  }
+  e.next();
+}, 'projects');

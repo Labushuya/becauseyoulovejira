@@ -17,8 +17,8 @@ Bereits verbindlich in der [Projekt-CLAUDE.md](../../CLAUDE.md) festgelegt und d
 | [0009](0009-fehlerfarbe.md) | Fehlerfarbe als eigenes Design-Token | Angenommen (mit Nachtrag) | 2026-09-24 |
 | [0010](0010-layout-nach-task-board.md) | Seitenaufbau nach dem Vorbild des Task-Boards, im eigenen Stack und mit eigenen Farben | Angenommen, teilweise ersetzt durch 0025 und 0029, ergänzt durch 0027 | 2026-09-25 |
 | [0011](0011-roadmap-e3-bis-e7.md) | Neue Etappen E3 bis E7 mit vorgezogenen Eingangskanälen | Angenommen (mit Nachtrag: Unteraufgaben freigegeben, 0033) | 2026-09-25 |
-| [0012](0012-plain-ticketing.md) | Plain Ticketing ohne Ticket-Typen, Epics, Sprints und Story Points | Angenommen (mit Nachtrag: Unteraufgaben freigegeben, 0033) | 2026-09-25 |
-| [0013](0013-filter-suche-sortierung-gruppierung.md) | Filter, Suche, Sortierung und Gruppierung: was der Client und was der Server rechnet | Angenommen | 2026-09-25 |
+| [0012](0012-plain-ticketing.md) | Plain Ticketing ohne Ticket-Typen, Epics, Sprints und Story Points | Angenommen (mit Nachträgen: Unteraufgaben freigegeben, 0033; Unterprojekte als Gliederung, 0034) | 2026-09-25 |
+| [0013](0013-filter-suche-sortierung-gruppierung.md) | Filter, Suche, Sortierung und Gruppierung: was der Client und was der Server rechnet | Angenommen, Filter „Projekt“ präzisiert durch 0034 | 2026-09-25 |
 | [0014](0014-datenmodell-eingang.md) | Datenmodell des Eingangs (`inbox_items`) mit Rückverweis am Ticket und Duplikaterkennung | Angenommen | 2026-09-25 |
 | [0015](0015-neu-markierung-pro-nutzer.md) | „Neu“-Markierung pro Nutzer | Angenommen | 2026-09-25 |
 | [0016](0016-kanal-architektur-und-mail.md) | Architektur der Kanäle: HTTP-Kanäle im Hook per Cron, Mail über einen Hilfsprozess | Angenommen | 2026-09-25 |
@@ -39,3 +39,4 @@ Bereits verbindlich in der [Projekt-CLAUDE.md](../../CLAUDE.md) festgelegt und d
 | [0031](0031-herkunft-sichern.md) | Herkunft sichern: Quellen eines Tickets (`converted` für Umwandeln und Verknüpfen), Löschschutz, große Mails ohne Originaldatei, Kopie-Status und Seitenkopie mit SSRF-Schutz; Nachtrag: Umhängen, Löschen eines Tickets mit Quellen, Hervorhebung und Filter, Originaldateien bis 25 MB | Angenommen und umgesetzt (HK-1 bis HK-8) | 2026-09-27 |
 | [0032](0032-editor-tiptap-markdown.md) | Editor wie Jira: Tiptap mit Markdown als Speicherformat, Brücke über die markdown-it-Instanz der Anzeige; Unterstreichen `++`, Task-Listen, Abhaken mit Schutz vor Überschreiben | Angenommen (Spike RT-0: Weg B), Stufe A umgesetzt (RT-1, RT-2), Editor mit Stufe B | 2026-09-28 |
 | [0033](0033-unteraufgaben.md) | Unteraufgaben: eine Ebene, Fortschritt, Einrücken in der Tabelle und „blockiert das übergeordnete Ticket“ (atomar mit `force` bzw. `complete_children`), Folgetickets ohne Parent | Angenommen und umgesetzt (UA-1 bis UA-5) | 2026-09-28 |
+| [0034](0034-unterprojekte.md) | Unterprojekte als Gliederung der Projekte: eine Ebene, eigener Code und Nummernkreis, Archiv-Kaskade in einer Transaktion, Löschsperre, Filter mit Unterprojekten, keine Epics | Angenommen, Umsetzung UP-1 bis UP-6 | 2026-09-28 |

@@ -130,6 +130,45 @@ describe('realtime subscriptions on inbox_items', () => {
 	});
 });
 
+describe('realtime of the archive cascade of sub projects (ADR-0034, spike UP-1)', () => {
+	let s;
+
+	beforeAll(async () => {
+		s = await createScenario();
+	});
+
+	afterAll(async () => {
+		for (const client of [s?.a, s?.b, s?.c]) {
+			await client?.realtime.unsubscribe();
+		}
+	});
+
+	it('sends the updates of parent and sub projects after the commit, to members only', async () => {
+		const projects = s.a.collection('projects');
+		const parent = await projects.create(ownedPayload('projects', s.ids.a, s.h1.id));
+		const garden = await projects.create({
+			...ownedPayload('projects', s.ids.a, s.h1.id),
+			parent: parent.id
+		});
+		const roof = await projects.create({
+			...ownedPayload('projects', s.ids.a, s.h1.id),
+			parent: parent.id
+		});
+		const a = await subscribeTickets(s.a, 'projects');
+		const b = await subscribeTickets(s.b, 'projects');
+		const c = await subscribeTickets(s.c, 'projects');
+
+		await projects.update(parent.id, { archived: true });
+
+		for (const id of [parent.id, garden.id, roof.id]) {
+			await a.waitFor('update', id);
+			await b.waitFor('update', id);
+		}
+		await new Promise((resolve) => setTimeout(resolve, QUIET_PERIOD_MS));
+		expect(c.events).toEqual([]);
+	});
+});
+
 describe('realtime subscriptions on recurrence_rules (E5 plan, package 2)', () => {
 	let s;
 

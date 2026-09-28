@@ -1,6 +1,6 @@
 # E6-Plan, Teil Editor: Unterstreichen, Checklisten und ein Editor wie Jira
 
-- **Stand:** Stufe A umgesetzt (2026-09-28): RT-0 (#114, Weg B), RT-1 (#115), RT-2 (#116). Stufe B freigegeben und begonnen (Auftrag vom 2026-09-28): RT-3 (#125), RT-4 (#127), RT-5 (#128) und RT-6 umgesetzt; Stufe B ist damit fertig, RT-7 bleibt optional. Offen sind außerdem die manuellen Browser-Prüfungen.
+- **Stand:** Stufe A umgesetzt (2026-09-28): RT-0 (#114, Weg B), RT-1 (#115), RT-2 (#116). Stufe B freigegeben und begonnen (Auftrag vom 2026-09-28): RT-3 (#125), RT-4 (#127), RT-5 (#128) und RT-6 (#129) umgesetzt; Stufe B ist damit fertig, RT-7 bleibt optional. Offen sind außerdem die manuellen Browser-Prüfungen.
 - **Grundlage:**
   - [ADR-0032](../adr/0032-editor-tiptap-markdown.md) (Tiptap, Markdown als Speicherformat, Brücke über die markdown-it-Instanz der Anzeige, Spike RT-0)
   - [ADR-0008](../adr/0008-markdown-rendering-und-sanitizing.md), [ADR-0006](../adr/0006-frontend-zustand-und-datenzugriff.md) §5, [ADR-0025](../adr/0025-ui-konsistenz-overlay-system.md), [ADR-0026](../adr/0026-einstellungsbereich-und-hinweis-bausteine.md), [ADR-0029](../adr/0029-glas-materialien.md), [ADR-0030](../adr/0030-spalten-breiten-und-kompakte-zeilen.md), [ADR-0031](../adr/0031-herkunft-sichern.md)
@@ -201,7 +201,7 @@ Siehe ADR-0032 §1 und §2. Der Serializer normalisiert beim ersten Speichern au
 | RT-3 | gemergt (#125) |
 | RT-4 | gemergt (#127) |
 | RT-5 | gemergt (#128) |
-| RT-6 | umgesetzt (Kommentare und Formulare) |
+| RT-6 | gemergt (#129) |
 | RT-7 | optional, nicht beauftragt |
 
 ## 6. Offene Punkte

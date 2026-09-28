@@ -516,12 +516,21 @@ describe('migration rollback of the 25 MB originals (ADR-0031, addendum D)', () 
 					item.run('item00000000002', 'mail', 'mail', 'Ohne Datei', '', 'f2', 'new', '', 'u:user00000000001', 'user00000000001', STAMP, STAMP);
 				});
 				const rows = withDatabase(dataDir, snapshot);
+				// `up` also runs the later migrations; their changes (projects.parent, ADR-0034) are left out.
 				const others = (dataDir) =>
-					withoutTimestamps(readDataDir(dataDir).collections).map((collection) =>
-						collection.name === 'inbox_items'
-							? { ...collection, fields: collection.fields.filter((field) => field.name !== 'original') }
-							: collection
-					);
+					withoutTimestamps(readDataDir(dataDir).collections).map((collection) => {
+						if (collection.name === 'inbox_items') {
+							return { ...collection, fields: collection.fields.filter((field) => field.name !== 'original') };
+						}
+						if (collection.name === 'projects') {
+							return {
+								...collection,
+								fields: collection.fields.filter((field) => field.name !== 'parent'),
+								indexes: collection.indexes.filter((index) => !/idx_projects_parent/.test(index))
+							};
+						}
+						return collection;
+					});
 				const before = others(dataDir);
 
 				const up = await migrate(args, 'up');
@@ -534,6 +543,108 @@ describe('migration rollback of the 25 MB originals (ADR-0031, addendum D)', () 
 				expect(appliedFiles(down, 'Reverted')).toEqual([...fromSize].reverse());
 				expect(originalOf(dataDir).maxSize).toBe(10 * 1024 * 1024);
 				expect(withDatabase(dataDir, snapshot)).toEqual(rows);
+			});
+		},
+		60_000
+	);
+});
+
+const PARENT_MIGRATION = '1790202100_projects_parent.js';
+
+describe('migration rollback of the sub projects (ADR-0034)', () => {
+	it(
+		'adds only projects.parent and its index, and the way back loses only the hierarchy',
+		async () => {
+			const fromParent = MIGRATION_FILES.slice(MIGRATION_FILES.indexOf(PARENT_MIGRATION));
+			expect(fromParent[0]).toBe(PARENT_MIGRATION);
+			const projectsOf = (dataDir) =>
+				readDataDir(dataDir).collections.find((collection) => collection.name === 'projects');
+			const hasParent = (dataDir) =>
+				projectsOf(dataDir).fields.some((field) => field.name === 'parent');
+			const projectRows = (db) => db.prepare('SELECT * FROM projects ORDER BY id').all();
+			const counterRows = (db) => db.prepare('SELECT * FROM ticket_counters ORDER BY id').all();
+
+			await withTempDataDir(async ({ dataDir, args }) => {
+				await migrate(args, 'up');
+				expect(hasParent(dataDir)).toBe(true);
+				await migrate(args, 'down', String(fromParent.length));
+				expect(hasParent(dataDir)).toBe(false);
+
+				// Projects, tickets in them and counters as they exist before the migration.
+				withDatabase(dataDir, (db) => {
+					db.prepare('INSERT INTO users (id, email, tokenKey, password, created, updated) VALUES (?, ?, ?, ?, ?, ?)').run(
+						'user00000000001',
+						'eins@example.invalid',
+						'tk1',
+						'hash',
+						STAMP,
+						STAMP
+					);
+					const scope = 'u:user00000000001';
+					const project = db.prepare(
+						'INSERT INTO projects (id, name, code, archived, owner, household, scope, created, updated) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)'
+					);
+					project.run('project00000001', 'Haus', 'HAUS', 0, 'user00000000001', '', scope, STAMP, STAMP);
+					project.run('project00000002', 'Garten', 'GART', 1, 'user00000000001', '', scope, STAMP, STAMP);
+					const ticket = db.prepare(
+						'INSERT INTO tickets (id, number, key, title, status, priority, project, scope, owner, created, updated) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+					);
+					ticket.run('ticket000000001', 1, 'HAUS-1', 'Dach', 'open', 'medium', 'project00000001', scope, 'user00000000001', STAMP, STAMP);
+					ticket.run('ticket000000002', 1, 'GART-1', 'Beet', 'done', 'low', 'project00000002', scope, 'user00000000001', STAMP, STAMP);
+					const counter = db.prepare('INSERT INTO ticket_counters (id, key, value) VALUES (?, ?, ?)');
+					counter.run('counter00000001', `${scope}:project00000001`, 1);
+					counter.run('counter00000002', `${scope}:project00000002`, 1);
+				});
+				const before = withDatabase(dataDir, (db) => ({
+					projects: projectRows(db),
+					tickets: snapshot(db).tickets,
+					counters: counterRows(db)
+				}));
+				const others = (dir) =>
+					withoutTimestamps(readDataDir(dir).collections).filter(
+						(collection) => collection.name !== 'projects'
+					);
+				const otherCollections = others(dataDir);
+
+				const up = await migrate(args, 'up');
+				expect(appliedFiles(up, 'Applied')).toEqual(fromParent);
+				const migrated = projectsOf(dataDir);
+				expect(migrated.fields.find((field) => field.name === 'parent')).toMatchObject({
+					type: 'relation',
+					collectionId: migrated.id,
+					maxSelect: 1,
+					cascadeDelete: false,
+					required: false
+				});
+				expect(migrated.indexes.some((index) => /idx_projects_parent/.test(index))).toBe(true);
+				assertSchema(readDataDir(dataDir).collections);
+				expect(others(dataDir)).toEqual(otherCollections);
+				withDatabase(dataDir, (db) => {
+					// Existing projects stay top-level; nothing else changes.
+					expect(projectRows(db)).toEqual(before.projects.map((row) => ({ ...row, parent: '' })));
+					expect(snapshot(db).tickets).toEqual(before.tickets);
+					expect(counterRows(db)).toEqual(before.counters);
+					// The hierarchy that is lost on the way back.
+					db.prepare('UPDATE projects SET parent = ? WHERE id = ?').run('project00000001', 'project00000002');
+				});
+
+				const down = await migrate(args, 'down', String(fromParent.length));
+				expect(appliedFiles(down, 'Reverted')).toEqual([...fromParent].reverse());
+				expect(hasParent(dataDir)).toBe(false);
+				expect(projectsOf(dataDir).indexes.some((index) => /idx_projects_parent/.test(index))).toBe(
+					false
+				);
+				withDatabase(dataDir, (db) => {
+					expect(projectRows(db)).toEqual(before.projects);
+					expect(snapshot(db).tickets).toEqual(before.tickets);
+					expect(counterRows(db)).toEqual(before.counters);
+				});
+				expect(others(dataDir)).toEqual(otherCollections);
+
+				expect(appliedFiles(await migrate(args, 'up'), 'Applied')).toEqual(fromParent);
+				withDatabase(dataDir, (db) => {
+					expect(projectRows(db)).toEqual(before.projects.map((row) => ({ ...row, parent: '' })));
+				});
 			});
 		},
 		60_000
