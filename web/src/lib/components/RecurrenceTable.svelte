@@ -11,6 +11,7 @@
 	import type { ResolvedPathname } from '$app/types';
 	import type { CalendarDate } from '$lib/domain/berlin-date';
 	import { MORE_COLUMNS_HINT } from '$lib/domain/labels';
+	import { projectChoiceLabel, projectPath } from '$lib/domain/project-tree';
 	import { getColumnPrefs } from '$lib/stores/column-prefs.svelte';
 	import { ColumnFit } from './table/column-fit.svelte';
 	import ResizableHeader from './table/ResizableHeader.svelte';
@@ -157,12 +158,13 @@
 						<td
 							class="text"
 							data-col="project"
-							title={project === null ? undefined : `${project.name} (${project.code})`}
+							title={project === null ? undefined : projectChoiceLabel(project)}
 						>
 							{#if project === null}
 								<span aria-hidden="true">–</span><span class="visually-hidden">kein Projekt</span>
 							{:else}
-								{project.name} <span class="code">({project.code})</span>
+								<!-- A sub project with its path, "Haus › Garten" (ADR-0034). -->
+								{projectPath(project)} <span class="code">({project.code})</span>
 							{/if}
 						</td>
 					{/if}

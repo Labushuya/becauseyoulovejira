@@ -235,5 +235,25 @@ describe('RecurrenceTable', () => {
 			expect(rhythm.getAttribute('title')).toBe(rhythm.textContent);
 			expect(row.querySelector('[data-col="project"]')?.getAttribute('title')).toBe('Haus (HAUS)');
 		});
+
+		it('names a sub project with its path (ADR-0034)', () => {
+			const { table } = setup({
+				projectOf: (entry: RecurrenceRule) =>
+					entry.projectId === null
+						? null
+						: {
+								id: entry.projectId,
+								name: 'Garten',
+								code: 'GART',
+								archived: false,
+								parent: { id: 'proj00000000001', name: 'Haus', code: 'HAUS' }
+							}
+			});
+			const cell = table.querySelector(
+				'tr[data-rule-row="rule00000000002"] [data-col="project"]'
+			) as HTMLElement;
+			expect(cell.textContent?.replace(/\s+/g, ' ').trim()).toBe('Haus › Garten (GART)');
+			expect(cell.getAttribute('title')).toBe('Haus › Garten (GART)');
+		});
 	});
 });

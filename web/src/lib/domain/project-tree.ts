@@ -112,6 +112,40 @@ export function parentChoices<T extends TreeProject>(
 	);
 }
 
+/** Numbers of a project tile or row: not done, all (done included) and new for the user. */
+export interface ProjectCounts {
+	/** Null while the open tickets are not loaded. */
+	active: number | null;
+	/** Null while the done tickets are not counted. */
+	total: number | null;
+	fresh: number;
+}
+
+/**
+ * Numbers of a parent with its sub projects (ADR-0034 section 6): the sums of its own numbers and
+ * those of every sub project (archived ones included, their tickets belong to the parent too). A
+ * number stays unknown (null) while one of the parts is unknown, so nothing shows too little.
+ */
+export function aggregateCounts(
+	own: ProjectCounts,
+	subProjects: readonly ProjectCounts[]
+): ProjectCounts {
+	const sum = (pick: (counts: ProjectCounts) => number | null): number | null => {
+		let total = 0;
+		for (const counts of [own, ...subProjects]) {
+			const value = pick(counts);
+			if (value === null) return null;
+			total += value;
+		}
+		return total;
+	};
+	return {
+		active: sum((counts) => counts.active),
+		total: sum((counts) => counts.total),
+		fresh: [own, ...subProjects].reduce((total, counts) => total + counts.fresh, 0)
+	};
+}
+
 /**
  * IDs a project filter takes in (ADR-0034 section 6): the project and, unless `withSubProjects`
  * is off, its sub projects. The same set as the server expression

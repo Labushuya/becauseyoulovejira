@@ -19,7 +19,8 @@
 		newOf = () => 0,
 		hrefOf,
 		activeId = null,
-		ontoggle = () => undefined
+		ontoggle = () => undefined,
+		aggregatedOf = () => false
 	}: {
 		/** Rows of the view in tree order (filtered, sorted and folded). */
 		rows: readonly ProjectRow[];
@@ -35,6 +36,8 @@
 		activeId?: string | null;
 		/** Folds or unfolds the sub projects of a parent. */
 		ontoggle?: (project: Project) => void;
+		/** The numbers of the project include its sub projects (ADR-0034, UP-6). */
+		aggregatedOf?: (project: Project) => boolean;
 	} = $props();
 
 	/** Top-level rows, each with the rows of its sub projects that are shown. */
@@ -58,6 +61,7 @@
 	{@const active = activeOf(project)}
 	{@const total = totalOf(project)}
 	{@const fresh = newOf(project)}
+	{@const aggregated = aggregatedOf(project)}
 	<a
 		class="tile-link"
 		class:archived={project.archived}
@@ -79,13 +83,16 @@
 		{#if row.context}
 			<span class="visually-hidden">(passt nicht zur Suche, Kontext)</span>
 		{/if}
-		<span class="stats">
+		<span class="stats" title={aggregated ? 'inkl. Unterprojekte' : undefined}>
 			<span><strong>{number(active)}</strong> aktiv</span>
 			<span aria-hidden="true">·</span>
 			<span><strong>{number(total)}</strong> gesamt</span>
 			{#if fresh > 0}
 				<span aria-hidden="true">·</span>
 				<span class="new"><strong>{fresh}</strong> neu</span>
+			{/if}
+			{#if aggregated}
+				<span class="visually-hidden">, inkl. Unterprojekte</span>
 			{/if}
 		</span>
 	</a>

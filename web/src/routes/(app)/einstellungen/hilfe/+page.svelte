@@ -236,6 +236,33 @@
 				</ul>
 			</details>
 			<details>
+				<summary>Wie gliedere ich ein Projekt in Unterprojekte?</summary>
+				<ul>
+					<li>
+						Im Panel eines Projekts legst du unter „Unterprojekte“ mit „Unterprojekt anlegen“ etwa
+						„Garten“ in „Haus“ an, oder du wählst bei einem Projekt das Feld „Oberprojekt“. Es gibt
+						nur eine Ebene. Ein Unterprojekt hat einen eigenen Code und eigene Nummern, etwa GART-3;
+						ein anderes Oberprojekt oder „Keins“ ändert keinen Key.
+					</li>
+					<li>
+						Unter „Projekte“ stehen Unterprojekte eingerückt unter ihrem Oberprojekt; der Knopf am
+						Oberprojekt klappt sie zu. Die Zahlen des Oberprojekts zählen die Unterprojekte mit, das
+						Panel nennt „davon direkt“.
+					</li>
+					<li>
+						Der Filter „Projekt“ zeigt bei „Haus“ auch die Tickets von „Garten“. Mit „Unterprojekte
+						einbeziehen“ im Filter schaltest du das aus. Auswahllisten, die Spalte „Projekt“ und der
+						Pfad im Ticket zeigen „Haus › Garten“.
+					</li>
+					<li>
+						Archivieren von „Haus“ archiviert „Garten“ mit; zurück holst du jedes einzeln oder
+						„Garten“ mit „Mit Oberprojekt zurückholen“. Ein Projekt mit Unterprojekten lässt sich
+						nicht löschen. Unterprojekte haben keinen Status und keinen Fortschritt; sie gliedern
+						nur.
+					</li>
+				</ul>
+			</details>
+			<details>
 				<summary>Wie formatiere ich Beschreibungen und Kommentare?</summary>
 				<ul>
 					<li>

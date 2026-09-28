@@ -110,9 +110,16 @@ describe('help page (EH-9)', () => {
 			'Warum sehe ich im Admin-Bereich andere Konten?',
 			'Wie ändere ich Spalten und ihre Breite?',
 			'Wie arbeite ich mit Unteraufgaben?',
+			'Wie gliedere ich ein Projekt in Unterprojekte?',
 			'Wie formatiere ich Beschreibungen und Kommentare?'
 		]);
 		expect(section.querySelectorAll('details[open]')).toHaveLength(0);
+		// Sub projects (ADR-0034): creating, own code, filter, numbers, archive.
+		expect(text(section)).toContain('„Unterprojekt anlegen“');
+		expect(text(section)).toContain('GART-3');
+		expect(text(section)).toContain('„Unterprojekte einbeziehen“');
+		expect(text(section)).toContain('„davon direkt“');
+		expect(text(section)).toContain('„Mit Oberprojekt zurückholen“');
 		// Sub-tasks (ADR-0033): adding, the question before completing, nesting, deleting.
 		expect(text(section)).toContain('„Unteraufgaben mit erledigen“ oder „Trotzdem erledigen“');
 		expect(text(section)).toContain('„HAUS-12 ›“');

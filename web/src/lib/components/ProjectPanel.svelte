@@ -9,7 +9,11 @@
 		type Project,
 		type ProjectDraft
 	} from '$lib/domain/project';
-	import { PROJECT_PARENT_MESSAGES, projectChoiceLabel } from '$lib/domain/project-tree';
+	import {
+		PROJECT_PARENT_MESSAGES,
+		projectChoiceLabel,
+		type ProjectCounts
+	} from '$lib/domain/project-tree';
 	import { restartNeeded } from '$lib/guidance/texts';
 	import type { EditResult } from '$lib/stores/catalog-editor';
 	import Breadcrumbs from './Breadcrumbs.svelte';
@@ -39,6 +43,7 @@
 		total = null,
 		fresh = 0,
 		ticketsHref = null,
+		direct = null,
 		parent = null,
 		parentChoices = [],
 		subProjects = [],
@@ -65,6 +70,11 @@
 		fresh?: number;
 		/** "Tickets anzeigen": the list filtered by the project. */
 		ticketsHref?: ResolvedPathname | null;
+		/**
+		 * The numbers of the project alone when `active`, `total` and `fresh` include its sub
+		 * projects (ADR-0034, UP-6): "davon direkt in Haus"; null for a project without them.
+		 */
+		direct?: ProjectCounts | null;
 		/** Parent project of a sub project (from the catalog), null otherwise. */
 		parent?: Project | null;
 		/** Projects the field "Oberprojekt" offers (active top-level ones, not this one). */
@@ -147,8 +157,10 @@
 	const activeSubProjects = $derived(subProjects.filter((sub) => !sub.archived));
 	/** A sub project below an archived parent comes back only together with it. */
 	const restoreNeedsParent = $derived(project?.archived === true && parent?.archived === true);
+	/** Tickets of the project itself; `total` of a parent includes its sub projects (UP-6). */
+	const ownTotal = $derived(direct === null ? total : direct.total);
 	/** The hooks keep the code while tickets use the project (E1 plan, OF-14). */
-	const codeFixed = $derived(!creating && total !== null && total > 0);
+	const codeFixed = $derived(!creating && ownTotal !== null && ownTotal > 0);
 	/**
 	 * The hook refuses to delete a project that tickets use (archiving is the way then) or that has
 	 * sub projects (ADR-0034 section 3).
@@ -334,7 +346,7 @@
 			{#if project.archived}
 				<span class="badge">Archiviert</span>
 			{/if}
-			<p class="stats">
+			<p class="stats" title={direct ? 'inkl. Unterprojekte' : undefined}>
 				<span><strong>{number(active)}</strong> aktiv</span>
 				<span aria-hidden="true">·</span>
 				<span><strong>{number(total)}</strong> gesamt</span>
@@ -342,7 +354,22 @@
 					<span aria-hidden="true">·</span>
 					<span class="new"><strong>{fresh}</strong> neu</span>
 				{/if}
+				{#if direct}
+					<span class="visually-hidden">, inkl. Unterprojekte</span>
+				{/if}
 			</p>
+			{#if direct}
+				<p class="stats direct">
+					davon direkt in {project.name}:
+					<span><strong>{number(direct.active)}</strong> aktiv</span>
+					<span aria-hidden="true">·</span>
+					<span><strong>{number(direct.total)}</strong> gesamt</span>
+					{#if direct.fresh > 0}
+						<span aria-hidden="true">·</span>
+						<span class="new"><strong>{direct.fresh}</strong> neu</span>
+					{/if}
+				</p>
+			{/if}
 			{#if ticketsHref}
 				<a class="tickets" href={ticketsHref}>Tickets anzeigen</a>
 			{/if}
@@ -647,6 +674,11 @@
 	.stats .new,
 	.stats .new strong {
 		color: var(--color-brand-text);
+	}
+
+	/* "davon direkt" on its own line below the numbers with the sub projects. */
+	.stats.direct {
+		flex-basis: 100%;
 	}
 
 	.tickets {
