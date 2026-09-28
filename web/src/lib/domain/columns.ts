@@ -129,11 +129,13 @@ export const NEST_SUBTASKS = 'nest';
  * actions. Space runs out: Erstellt, Tags, Projekt, Fällig give way in this order (ADR-0025
  * section 11); the columns "Übergeordnet" (ADR-0033 section 5) and "Quelle" (ADR-0019 section 4),
  * both off by default, go before them. Prio and Status never give way on their own but can be
- * switched off, as in Jira. The switch "Unteraufgaben einrücken" is stored with the columns.
+ * switched off, as in Jira. The switch "Unteraufgaben einrücken" is stored with the columns. The
+ * selection (plan BI-2, ADR-0036 §2) comes first, fixed and always shown like in "Eingang".
  */
 export const TICKET_TABLE: TableSpec = table(
 	'tickets',
 	[
+		fixed('select', 'Auswahl', 2.5),
 		column('key', 'Key', { width: 6, min: 4, max: 8, required: true }),
 		column('priority', 'Prio', { width: 4, min: 3, max: 6 }),
 		column('status', 'Status', { width: 6.5, min: 4.5, max: 10 }),

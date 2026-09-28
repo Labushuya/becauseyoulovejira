@@ -8,7 +8,12 @@ import { toDataError } from '$lib/data/errors';
 import { getItem } from '$lib/data/inbox';
 import type { RequestOptions } from '$lib/data/options';
 import { createTicket } from '$lib/data/tickets';
-import { ticketPrefill, type InboxItem, type InboxItemSummary } from '$lib/domain/inbox';
+import {
+	eventDueDate,
+	ticketPrefill,
+	type InboxItem,
+	type InboxItemSummary
+} from '$lib/domain/inbox';
 import type { Priority, Status } from '$lib/domain/status';
 import type { Ticket, TicketDraft, TicketOrigin, TicketSummary } from '$lib/domain/ticket';
 import type { SessionGuard } from './ticket-list.svelte';
@@ -31,6 +36,11 @@ export interface BulkDefaults {
 	priority: Priority;
 	project: string | null;
 	tags: string[];
+	/**
+	 * "Datum des Termins als Fälligkeit" (plan BI-2, ADR-0036 §5): an event gets the date of its
+	 * start as due date; other entries stay without one. Off by default (P-5).
+	 */
+	dueFromEvent?: boolean;
 }
 
 export type BulkResult =
@@ -122,7 +132,7 @@ export class BulkConverter {
 					description: prefill.description,
 					status: defaults.status,
 					priority: defaults.priority,
-					due: null,
+					due: defaults.dueFromEvent === true ? eventDueDate(item) : null,
 					project: defaults.project,
 					tags: [...defaults.tags]
 				},

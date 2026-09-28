@@ -226,3 +226,57 @@ describe('bulk convert dialog', () => {
 		expect(source.replace(/alert-error/g, '')).not.toMatch(/danger/);
 	});
 });
+
+describe('bulk convert dialog: "Datum des Termins als Fälligkeit" (plan BI-2)', () => {
+	const EVENTS = [
+		{
+			id: 'item00000000001',
+			title: 'Termin',
+			kind: 'event' as const,
+			sourceDate: '2026-10-05 07:30:00.000Z'
+		},
+		{
+			id: 'item00000000002',
+			title: 'Mail',
+			kind: 'mail' as const,
+			sourceDate: '2026-10-01 08:00:00.000Z'
+		}
+	];
+
+	function showWith(items: typeof EVENTS | typeof ITEMS) {
+		const converter = new BulkConverter(
+			{ get: vi.fn(async (id: string) => entry(id)), createTicket: vi.fn(async () => ticket(1)) },
+			{ ensureValid: () => true, logout: vi.fn() },
+			{ upsertTicket: vi.fn(), markConverted: vi.fn() }
+		);
+		const run = vi.spyOn(converter, 'run');
+		render(BulkConvertDialog, {
+			props: { items, converter, projects: [HOUSE], tags: [], onclose: vi.fn() }
+		});
+		return { run };
+	}
+
+	it('offers the checkbox only among chosen events, off at first, and names how many it touches', async () => {
+		const { run } = showWith(EVENTS);
+		await tick();
+		const dialog = within(screen.getByRole('dialog'));
+		const check = dialog.getByRole<HTMLInputElement>('checkbox', {
+			name: 'Datum des Termins als Fälligkeit'
+		});
+		expect(check.checked).toBe(false);
+		expect(
+			dialog.getByText('Gilt für 1 Termin; andere Einträge bleiben ohne Fälligkeit.')
+		).toBeTruthy();
+
+		await fireEvent.click(check);
+		await fireEvent.click(dialog.getByRole('button', { name: '2 Einträge umwandeln' }));
+
+		expect(run).toHaveBeenCalledWith(EVENTS, expect.objectContaining({ dueFromEvent: true }));
+	});
+
+	it('has no checkbox without events', async () => {
+		showWith(ITEMS);
+		await tick();
+		expect(screen.queryByRole('checkbox', { name: 'Datum des Termins als Fälligkeit' })).toBeNull();
+	});
+});

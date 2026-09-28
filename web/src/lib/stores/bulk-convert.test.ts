@@ -178,3 +178,37 @@ describe('BulkConverter', () => {
 		expect(data.createTicket).toHaveBeenCalledTimes(3);
 	});
 });
+
+describe('BulkConverter: "Datum des Termins als Fälligkeit" (plan BI-2)', () => {
+	function withEvents() {
+		const context = setup();
+		context.data.get.mockImplementation(async (id) =>
+			id === 'item00000000001'
+				? entry(id, { channel: 'ics', kind: 'event', sourceDate: '2026-10-05 07:30:00.000Z' })
+				: id === 'item00000000002'
+					? entry(id, {
+							channel: 'ics',
+							kind: 'event',
+							sourceDate: '2026-10-06 22:00:00.000Z',
+							sourceMeta: { all_day: true }
+						})
+					: entry(id, { sourceDate: '2026-10-07 08:00:00.000Z' })
+		);
+		return context;
+	}
+
+	it('gives each event the Berlin date of its start and leaves other entries without one', async () => {
+		const { converter, data } = withEvents();
+		await converter.run(ITEMS, { ...DEFAULTS, dueFromEvent: true });
+		const dues = data.createTicket.mock.calls.map(([draft]) => draft.due);
+		// The all-day event starts at midnight in Berlin (22:00 UTC the day before); the mail keeps
+		// its date at the sender out of the due date.
+		expect(dues).toEqual(['2026-10-05', '2026-10-07', null]);
+	});
+
+	it('sets no due date without the choice (P-5)', async () => {
+		const { converter, data } = withEvents();
+		await converter.run(ITEMS, DEFAULTS);
+		expect(data.createTicket.mock.calls.map(([draft]) => draft.due)).toEqual([null, null, null]);
+	});
+});

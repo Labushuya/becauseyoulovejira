@@ -64,6 +64,8 @@
 		columns,
 		tagsSpace = DEFAULT_TAGS_SPACE,
 		measure = estimateChip,
+		selected = false,
+		onselect,
 		ontoggle
 	}: {
 		ticket: TicketSummary;
@@ -93,8 +95,18 @@
 		tagsSpace?: number;
 		/** Width of a whole tag chip (canvas in the browser, estimated without). */
 		measure?: MeasureText;
+		/** The row is chosen for a bulk action (plan BI-2). */
+		selected?: boolean;
+		/**
+		 * The checkbox of the selection changed to `on`; `range` with Shift. Without it the row has
+		 * no selection cell (single rows in tests).
+		 */
+		onselect?: (on: boolean, range: boolean) => void;
 		ontoggle: (done: boolean) => void;
 	} = $props();
+
+	/** Shift held on the last pointer or key press in the selection cell (a range, plan BI-2). */
+	let rangeHeld = false;
 
 	function shows(id: string): boolean {
 		return columns === undefined ? !HIDDEN_BY_DEFAULT.includes(id) : columns.has(id);
@@ -116,8 +128,11 @@
 	);
 	const createdDate = $derived(berlinDateOf(ticket.created));
 
-	/** Controls of the row handle their own clicks; the row only takes clicks outside of them. */
-	const CONTROLS = 'a, button, input, select, textarea, label';
+	/**
+	 * Controls of the row handle their own clicks; the row only takes clicks outside of them. The
+	 * selection cell never opens the ticket (plan BI-2).
+	 */
+	const CONTROLS = 'a, button, input, select, textarea, label, [data-col="select"]';
 
 	function onclick(event: MouseEvent) {
 		if (event.defaultPrevented || event.button !== 0) return;
@@ -130,7 +145,33 @@
 </script>
 
 <!-- The title link is the keyboard target of the row; the click on the row is a mouse shortcut. -->
-<tr class="row" class:done class:active class:nested data-ticket-id={ticket.id} {onclick}>
+<tr
+	class="row"
+	class:done
+	class:active
+	class:nested
+	class:selected
+	data-ticket-id={ticket.id}
+	{onclick}
+>
+	{#if onselect && shows('select')}
+		<!-- The whole cell is the label: a click anywhere in it chooses, never opens the ticket. -->
+		<td class="select" data-col="select" onpointerdown={(event) => (rangeHeld = event.shiftKey)}>
+			<label class="select-hit">
+				<input
+					type="checkbox"
+					aria-label={`${ticket.key} auswählen`}
+					checked={selected}
+					onkeydown={(event) => (rangeHeld = event.shiftKey)}
+					onchange={(event) => {
+						const range = rangeHeld;
+						rangeHeld = false;
+						onselect(event.currentTarget.checked, range);
+					}}
+				/>
+			</label>
+		</td>
+	{/if}
 	<td class="key" data-col="key">
 		{#if isNew}<span class="new-dot" title="Neu"><span class="visually-hidden">neu,</span></span
 			>{/if}{ticket.key}
@@ -284,8 +325,24 @@
 		background: var(--color-bg);
 	}
 
-	.row.active {
+	.row.active,
+	.row.selected {
 		background: var(--color-brand-soft-bg);
+	}
+
+	/* The selection (plan BI-2): the label fills the cell, so a click beside the box chooses too. */
+	.select {
+		padding: 0;
+		text-align: center;
+		user-select: none;
+	}
+
+	.select-hit {
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		min-height: 2.25rem;
+		cursor: pointer;
 	}
 
 	/* Second, non-colour mark of the open row: a bar at its start. */

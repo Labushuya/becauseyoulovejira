@@ -31,6 +31,16 @@
 	} from '$lib/ticket-links';
 	import { getQuickCaptureOpener } from '$lib/quick-capture-context';
 	import { ticketLinks } from '$lib/stores/open-mode.svelte';
+	import {
+		EMPTY_SELECTION,
+		clickRow,
+		headState,
+		keepShown,
+		toggleAll,
+		type Selection
+	} from '$lib/domain/selection';
+	import type { BulkEditStore } from '$lib/stores/bulk-edit.svelte';
+	import BulkActionBar from './BulkActionBar.svelte';
 	import ColumnsPopover from './ColumnsPopover.svelte';
 	import CompletionDialog from './CompletionDialog.svelte';
 	import ErrorIcon from './ErrorIcon.svelte';
@@ -62,6 +72,11 @@
 	// head is a disclosure button (aria-expanded) with the label and the number of open tickets;
 	// folded groups are kept per tab in sessionStorage. Sub-tasks follow their parent only within
 	// the same leaf group (arrangeRows per leaf, ADR-0033 section 5).
+	// Selection (plan BI-2, ADR-0036 §2): a fixed first column with a checkbox per row, apart from
+	// the check mark "erledigt" at the end. Shift+click chooses a range in the order of the rows,
+	// the head checkbox all rows that pass the filters (also in folded groups), indeterminate when
+	// only some are chosen. A filter change keeps only rows that are still shown; Escape in the
+	// table clears the selection. With `bulk` the bar of the bulk actions stands above the table.
 	let {
 		store,
 		catalog,
@@ -69,6 +84,7 @@
 		creating = false,
 		inboxCount = null,
 		recurrenceTextOf = () => '',
+		bulk,
 		tools,
 		emptyExtra
 	}: {
@@ -82,6 +98,8 @@
 		inboxCount?: number | null;
 		/** Rhythm of the series of a ticket in words, '' while unknown (E5 plan, package 4). */
 		recurrenceTextOf?: (ticket: TicketSummary) => string;
+		/** Bulk actions on the chosen rows (plan BI-2); without it the bar is not shown. */
+		bulk?: BulkEditStore;
 		/**
 		 * KPI tiles and filter bar, below the section bar: the switch "Aufgaben | Projekte |
 		 * Eingang" stands at the same place in every view (ADR-0025 section 10, package UI-8).
@@ -273,7 +291,7 @@
 	function restoreFocus() {
 		if (lastFocus === null || !focusLost()) return;
 		const { id, section, index } = lastFocus;
-		const moved = rowOf(id)?.querySelector<HTMLElement>('input');
+		const moved = rowOf(id)?.querySelector<HTMLElement>('[data-col="actions"] input');
 		const rows = rowsOf(section);
 		const neighbour =
 			rows[Math.min(index, rows.length - 1)]?.querySelector<HTMLElement>('a.title-link');
@@ -287,6 +305,61 @@
 		void store.done;
 		restoreFocus();
 	});
+
+	/** Chosen rows for the bulk actions (plan BI-2). */
+	let selection = $state<Selection>(EMPTY_SELECTION);
+	/** Rows a selection may hold: every ticket that passes the filters, open and shown done. */
+	const selectable = $derived(
+		[...store.visible, ...(showDone ? store.done : [])].map((ticket) => ticket.id)
+	);
+	const head = $derived(headState(selection, selectable));
+	const chosenTickets = $derived(
+		selection.ids.flatMap((id) => {
+			const ticket = store.find(id);
+			return ticket === null ? [] : [ticket];
+		})
+	);
+	let headBox = $state<HTMLInputElement>();
+	const selectColumn = TICKET_TABLE.columns.find((column) => column.id === 'select');
+
+	// A filter change, a new sort or rows that left the list: only shown rows stay chosen.
+	$effect(() => {
+		const next = keepShown(selection, selectable);
+		if (next !== selection) selection = next;
+	});
+
+	$effect(() => {
+		if (headBox) headBox.indeterminate = head === 'some';
+	});
+
+	/** IDs of the rendered rows in their order on screen, for a Shift range. */
+	function rowOrder(): string[] {
+		return [...(root?.querySelectorAll<HTMLElement>('tr[data-ticket-id]') ?? [])].flatMap((row) =>
+			row.dataset.ticketId ? [row.dataset.ticketId] : []
+		);
+	}
+
+	function select(id: string, on: boolean, range: boolean) {
+		selection = clickRow(selection, id, on, rowOrder(), range);
+	}
+
+	function clearSelection() {
+		selection = EMPTY_SELECTION;
+	}
+
+	/** Escape in the table or the bar clears the selection, unless a field or popover took it. */
+	function onkeydown(event: KeyboardEvent) {
+		if (event.key !== 'Escape' || event.defaultPrevented || selection.ids.length === 0) return;
+		const target = event.target;
+		const typing =
+			target instanceof HTMLTextAreaElement ||
+			target instanceof HTMLSelectElement ||
+			(target instanceof HTMLInputElement && target.type !== 'checkbox' && target.type !== 'radio');
+		if (typing) return;
+		event.preventDefault();
+		event.stopPropagation();
+		clearSelection();
+	}
 
 	/** Ticket whose panel was shown last. */
 	let shownId: string | null = null;
@@ -339,6 +412,8 @@
 			columns={shown}
 			{tagsSpace}
 			measure={measureChip}
+			selected={selection.ids.includes(ticket.id)}
+			onselect={(on, range) => select(ticket.id, on, range)}
 			ontoggle={(done) => store.setDone(ticket.id, done)}
 		/>
 	{/each}
@@ -428,12 +503,15 @@
 	</div>
 {/snippet}
 
+<!-- Escape clears the selection from anywhere in the table (plan BI-2). -->
+<!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
 <section
 	class="ticket-table"
 	aria-labelledby={ids.heading}
 	bind:this={root}
 	{onfocusin}
 	{onfocusout}
+	{onkeydown}
 >
 	<SectionBar
 		title="Aufgaben"
@@ -472,7 +550,7 @@
 			<ColumnsPopover
 				store={columnFit.store}
 				autoHidden={fit.autoHidden}
-				always="Key, Titel und das Häkchen sind immer sichtbar."
+				always="Auswahl, Key, Titel und das Häkchen sind immer sichtbar."
 			/>
 		{/snippet}
 	</SectionBar>
@@ -480,6 +558,16 @@
 	{@render tools?.()}
 
 	<p class="visually-hidden" aria-live="polite">{store.announcement}</p>
+
+	{#if bulk && (chosenTickets.length > 0 || bulk.busy || bulk.result !== null)}
+		<BulkActionBar
+			tickets={chosenTickets}
+			store={bulk}
+			{catalog}
+			openBlockingOf={(id) => store.openBlockingOf(id)}
+			onclear={clearSelection}
+		/>
+	{/if}
 
 	{#if store.openState === 'error' && store.openError}
 		{@render failure(store.openError, 'Erneut versuchen', () => store.reload())}
@@ -546,6 +634,18 @@
 				</colgroup>
 				<thead>
 					<tr>
+						{#if selectColumn && shown.has('select')}
+							<ResizableHeader column={selectColumn} fit={columnFit} className="select-head">
+								<input
+									type="checkbox"
+									aria-label="Alle angezeigten Tickets auswählen"
+									checked={head === 'all'}
+									disabled={selectable.length === 0}
+									bind:this={headBox}
+									onchange={() => (selection = toggleAll(selection, selectable))}
+								/>
+							</ResizableHeader>
+						{/if}
 						{@render header('key', 'Key', 'key')}
 						{@render header('priority', 'Prio', 'priority')}
 						{@render header('status', 'Status', 'status')}
@@ -730,6 +830,12 @@
 		white-space: nowrap;
 		color: var(--color-text-muted);
 		border-bottom: 1px solid var(--color-line);
+	}
+
+	/* Head checkbox of the selection (plan BI-2), centred above the boxes of the rows. */
+	thead :global(th.select-head) {
+		padding: 0.375rem 0;
+		text-align: center;
 	}
 
 	.sort {

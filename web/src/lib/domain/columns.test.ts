@@ -279,9 +279,10 @@ describe('fitColumns', () => {
 	});
 
 	// Thresholds of the container queries before ADR-0030 and with the default widths now. A fixed
-	// table layout needs real widths for key, status and actions, so they move by up to 2.5rem.
+	// table layout needs real widths for key, status and actions, so they move by up to 2.5rem. The
+	// selection of the tickets (plan BI-2) adds its 2.5rem on top of that.
 	it.each([
-		[TICKET_TABLE, { created: [60, 60.5], tags: [52, 54.5], project: [44, 46.5], due: [36, 38.5] }],
+		[TICKET_TABLE, { created: [60, 63], tags: [52, 57], project: [44, 49], due: [36, 41] }],
 		[
 			INBOX_TABLE,
 			{ arrival: [52, 50.5], source: [46, 44.5], kind: [40, 37.5], 'source-date': [34, 31.5] }
@@ -297,7 +298,8 @@ describe('fitColumns', () => {
 			const actual = threshold(table, id);
 			expect(Math.abs(actual - now), `${table.id}/${id}: ${actual}rem`).toBeLessThanOrEqual(1);
 			const label = `${table.id}/${id} against ${before}rem`;
-			expect(Math.abs(actual - before), label).toBeLessThanOrEqual(2.5);
+			const selection = table === TICKET_TABLE ? 2.5 : 0;
+			expect(Math.abs(actual - selection - before), label).toBeLessThanOrEqual(2.5);
 		}
 	});
 
@@ -305,6 +307,7 @@ describe('fitColumns', () => {
 		const fit = fitColumns(800, TICKET_TABLE.columns, NONE);
 		expect(fit.autoHidden).toEqual(['created', 'tags']);
 		expect(fit.visible).toEqual([
+			'select',
 			'key',
 			'priority',
 			'status',
@@ -313,18 +316,18 @@ describe('fitColumns', () => {
 			'due',
 			'actions'
 		]);
-		expect(fit.flexWidth).toBe(800 - 96 - 64 - 104 - 128 - 128 - 64);
+		expect(fit.flexWidth).toBe(800 - 40 - 96 - 64 - 104 - 128 - 128 - 64);
 	});
 
 	it('hides earlier when the user made columns wider, and keeps their widths', () => {
 		const wide: ColumnPrefs = { widths: { tags: 320 }, hidden: ['parent', 'source'] };
 		const before = threshold(TICKET_TABLE, 'created');
 		expect(threshold(TICKET_TABLE, 'created', wide)).toBeGreaterThan(before);
-		// All columns need 1160 px with the wide tags instead of 968 px.
-		const fit = fitColumns(1200, TICKET_TABLE.columns, wide);
+		// All columns need 1200 px with the wide tags instead of 1008 px (selection included).
+		const fit = fitColumns(1240, TICKET_TABLE.columns, wide);
 		expect(fit.widths.tags).toBe(320);
 		expect(fit.autoHidden).toEqual([]);
-		expect(fitColumns(1100, TICKET_TABLE.columns, wide).autoHidden).toEqual(['created']);
+		expect(fitColumns(1140, TICKET_TABLE.columns, wide).autoHidden).toEqual(['created']);
 	});
 
 	it('does not count columns the user switched off as hidden for space', () => {
