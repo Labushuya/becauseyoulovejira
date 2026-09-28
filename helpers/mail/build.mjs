@@ -2,7 +2,8 @@
 // esbuild bundles src/cli.ts with imapflow, postal-mime and the shared domain modules of the web
 // app into one CommonJS file, Node writes the preparation blob, postject injects it into a copy of
 // node.exe. Output in dist/; scripts/build-mail-helper.ps1 checks the executable and installs it
-// into app/. Nothing here touches app/.
+// into app/. Nothing here touches app/. On Linux the output is dist/byl-mail (no ending) for the
+// tests of the Linux CI job (ADR-0028, plan plattformen S0); its release build follows with S3.
 
 import { execFileSync } from 'node:child_process';
 import { copyFileSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
@@ -10,13 +11,14 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { build } from 'esbuild';
 import { inject } from 'postject';
+import { executableName } from '../../scripts/platform.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const DIST = join(HERE, 'dist');
 const BUNDLE = join(DIST, 'byl-mail.cjs');
 const BLOB = join(DIST, 'sea-prep.blob');
 const CONFIG = join(DIST, 'sea-config.json');
-const EXE = join(DIST, 'byl-mail.exe');
+const EXE = join(DIST, executableName('byl-mail'));
 // Fixed sentinel of Node's single executable applications.
 const SENTINEL_FUSE = 'NODE_SEA_FUSE_fce680ab2cc467b6e072b8b5df1996b2';
 

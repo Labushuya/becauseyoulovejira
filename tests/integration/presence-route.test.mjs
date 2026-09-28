@@ -244,7 +244,8 @@ describe('presence and attention (ADR-0035, SF-1)', () => {
 		expect((await call('/api/byl/presence')).body.tabs).toBe(1);
 	});
 
-	it('answers the requests of byl-control.ps1 like any script (SF-4)', async () => {
+	// Windows PowerShell only on Windows (plan plattformen S0).
+	it.skipIf(process.platform !== 'win32')('answers the requests of byl-control.ps1 like any script (SF-4)', async () => {
 		await nextSlot();
 		const answers = runPowerShellJson(
 			String.raw`

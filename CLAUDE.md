@@ -11,7 +11,7 @@ Privates, lokal laufendes Ticket-Dashboard (Linear-/Jira-artiges Ticket-Handling
 ```
 becauseyoulovejira/
   app/                 portabler Laufzeitordner (wird kopiert/gesichert)
-    pocketbase.exe     gitignored, via scripts/fetch-pocketbase.ps1 (SHA256-geprüft)
+    pocketbase.exe     gitignored, via scripts/fetch-pocketbase.mjs (gepinnte SHA256 je Plattform; unter Linux app/pocketbase)
     byl-mail.exe       optionaler Mail-Hilfsprozess, gitignored, via scripts/build-mail-helper.ps1
     pb_hooks/          *.pb.js Hooks, lib/*.js reine CommonJS-Module
     pb_migrations/     handgeschriebene JS-Migrationen
@@ -20,7 +20,7 @@ becauseyoulovejira/
     start.bat, start-hidden.vbs, autostart-an.bat, autostart-aus.bat, becauseyoulovejira.html
   web/                 SvelteKit-Quellcode, Build nach ../app/pb_public
   helpers/mail/        Mail-Hilfsprozess (TypeScript strict, eigenes package.json), Build nach ../../app/byl-mail.exe
-  scripts/             Build-/Setup-Skripte (PowerShell)
+  scripts/             Build-/Setup-Skripte (PowerShell als Windows-Hülle; fetch-pocketbase.mjs und platform.mjs in Node, plattformneutral)
   tests/               Vitest-Tests (u. a. für app/pb_hooks/lib/recurrence.js)
   docs/                README-Assets, ADRs
 ```
@@ -341,7 +341,7 @@ Erledigte Tickets treten in der Liste optisch zurück. Schriften: Inter für die
 - Nach jeder Etappe: Zusammenfassung, Testanleitung, Entscheidungen/offene Punkte – dann auf Freigabe warten.
 - Öffentliches GitHub-Repo `Labushuya/becauseyoulovejira` (seit 2026-09-26, Nutzerentscheidung; Secret Scanning mit Push Protection, private Meldung von Sicherheitslücken und Dependabot-Sicherheitsupdates sind aktiv). Jede Änderung läuft über einen kurzlebigen Branch (`feat/…`, `fix/…`, `chore/…`) und einen Pull Request in `main`; gemergt wird nur bei grüner CI, per Squash-Merge mit einem Titel nach Conventional Commits. Gepusht wird nur der Branch des PR, nie direkt auf `main`.
 - **Branch-Schutz:** Das Ruleset „main“ ([`.github/rulesets/main.json`](.github/rulesets/main.json), per API aktiv, ohne Ausnahmen) erzwingt das: PR vor dem Merge, nur Squash, Pflicht-Check „Check, lint, build and test“, kein Force-Push, kein Löschen; Pflicht-Reviews gibt es keine (Einzelentwicklung). Ändert sich der Name des Jobs in `ci.yml`, muss das Ruleset im selben PR mitgezogen werden, sonst blockiert der alte Name jeden Merge.
-- **CI** ([`.github/workflows/ci.yml`](.github/workflows/ci.yml)): läuft bei Pull Requests, wöchentlich auf `main` und per `workflow_dispatch`, nicht bei Push auf `main`. Ein neuer Push in denselben PR bricht den laufenden Lauf ab. PRs, die nur Markdown oder `docs/**` ändern (außer `docs/test-manifest.html`, das ein Test liest), überspringen den Windows-Job; der übersprungene Pflicht-Check gilt als bestanden. Hängt ein Test künftig an einer weiteren Doku-Datei, muss sie in die Ausnahme des Jobs „Detect code changes“.
+- **CI** ([`.github/workflows/ci.yml`](.github/workflows/ci.yml)): läuft bei Pull Requests, wöchentlich auf `main` und per `workflow_dispatch`, nicht bei Push auf `main`. Ein neuer Push in denselben PR bricht den laufenden Lauf ab. PRs, die nur Markdown oder `docs/**` ändern (außer `docs/test-manifest.html`, das ein Test liest), überspringen den Windows-Job; der übersprungene Pflicht-Check gilt als bestanden. Seit S0-1 ([Plan Plattformen](docs/plan/plattformen.md)) läuft daneben der Job „Linux build and test“ auf `ubuntu-latest` (Linux-Binary per `node scripts/fetch-pocketbase.mjs`, check, lint, Build, `node helpers/mail/build.mjs`, `npm test`) mit derselben Docs-Ausnahme; er ist (noch) kein Pflicht-Check. Tests der Windows-Betriebsschicht (Windows PowerShell 5.1, `byl-functions.ps1`, `Expand-Archive`) stehen in `WINDOWS_ONLY` von `vitest.config.mjs` bzw. tragen `skipIf(process.platform !== 'win32')`; Tests, Harness und Node-Skripte nehmen Binary-Namen aus `scripts/platform.mjs` (`executableName`) und bauen Pfade mit `path.join`. Hängt ein Test künftig an einer weiteren Doku-Datei, muss sie in die Ausnahme des Jobs „Detect code changes“.
 - Commits im Branch: ein Commit pro abgeschlossenem Arbeitsschritt, Conventional Commits (`feat:`, `fix:`, `chore:`, `docs:`, `test:`, `refactor:`, `ci:`). Keine Force-Pushes, keine Änderung der Historie.
 - Kein toter oder auskommentierter Code, keine TODOs ohne verlinktes Issue.
 - Qualitäts-Gates vor jedem Commit mit Code: `npm run check`, `npm run lint`, `npm test` grün; vor jedem PR läuft `scripts\build.ps1` lokal komplett grün. Die PR-Beschreibung folgt `.github/pull_request_template.md` mit ausgefüllter Checkliste.
