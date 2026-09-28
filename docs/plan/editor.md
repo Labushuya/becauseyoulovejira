@@ -1,6 +1,6 @@
 # E6-Plan, Teil Editor: Unterstreichen, Checklisten und ein Editor wie Jira
 
-- **Stand:** RT-0 gemergt (#114, 2026-09-28, Weg B), RT-1 gemergt (#115), RT-2 in Arbeit. Stufe B (RT-3 bis RT-6) offen.
+- **Stand:** Stufe A umgesetzt (2026-09-28): RT-0 (#114, Weg B), RT-1 (#115), RT-2 (#116). Offen sind die manuellen Browser-Prüfungen und Stufe B (RT-3 bis RT-6).
 - **Grundlage:**
   - [ADR-0032](../adr/0032-editor-tiptap-markdown.md) (Tiptap, Markdown als Speicherformat, Brücke über die markdown-it-Instanz der Anzeige, Spike RT-0)
   - [ADR-0008](../adr/0008-markdown-rendering-und-sanitizing.md), [ADR-0006](../adr/0006-frontend-zustand-und-datenzugriff.md) §5, [ADR-0025](../adr/0025-ui-konsistenz-overlay-system.md), [ADR-0026](../adr/0026-einstellungsbereich-und-hinweis-bausteine.md), [ADR-0029](../adr/0029-glas-materialien.md), [ADR-0030](../adr/0030-spalten-breiten-und-kompakte-zeilen.md), [ADR-0031](../adr/0031-herkunft-sichern.md)
@@ -172,7 +172,7 @@ Siehe ADR-0032 §1 und §2. Der Serializer normalisiert beim ersten Speichern au
 |---|---|
 | RT-0 | gemergt (#114) |
 | RT-1 | gemergt (#115) |
-| RT-2 | in Arbeit |
+| RT-2 | gemergt (#116) |
 | RT-3 bis RT-7 | Stufe B, nach Freigabe |
 
 ## 6. Offene Punkte
