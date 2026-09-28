@@ -55,7 +55,9 @@ jobs:
           echo "code=$code" >> "$GITHUB_OUTPUT"
 
   build:
-    # Required status check of the ruleset for main. For documentation-only pull requests the
+    # Required status check of the ruleset for main, like "Linux build and test" below; a
+    # renamed job needs the same change in .github/rulesets/main.json and the live ruleset
+    # (tests/unit/ci-ruleset.test.mjs). For documentation-only pull requests the
     # job is skipped, and GitHub counts a skipped required job as passed. If the classification
     # fails, the job runs anyway.
     name: Check, lint, build and test
@@ -100,8 +102,9 @@ jobs:
   linux:
     # Same checks, build and tests on Linux with the Linux PocketBase binary (ADR-0028, plan
     # plattformen S0). Tests of the Windows operation layer (Windows PowerShell, byl-functions.ps1)
-    # are excluded there (vitest.config.mjs). Not a required check yet; skipped like the Windows
-    # job for documentation-only pull requests.
+    # are excluded there (vitest.config.mjs). Second required status check of the ruleset for
+    # main (since AR-3); with the same condition as the Windows job it is skipped for
+    # documentation-only pull requests, and the skipped required job counts as passed.
     name: Linux build and test
     needs: changes
     if: ${{ !cancelled() && (needs.changes.result != 'success' || needs.changes.outputs.code == 'true') }}
