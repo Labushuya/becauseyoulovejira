@@ -7,6 +7,8 @@
 	import TicketActivity from '$lib/components/TicketActivity.svelte';
 	import TicketPanel from '$lib/components/TicketPanel.svelte';
 	import TicketSources from '$lib/components/TicketSources.svelte';
+	import TicketSubtasks from '$lib/components/TicketSubtasks.svelte';
+	import { parentOf } from '$lib/domain/subtasks';
 	import type { Ticket } from '$lib/domain/ticket';
 	import { getCatalogStore } from '$lib/stores/catalog.svelte';
 	import { getInboxStore } from '$lib/stores/inbox.svelte';
@@ -15,7 +17,7 @@
 	import { getTicketDetailStore } from '$lib/stores/ticket-detail.svelte';
 	import { getTicketListStore } from '$lib/stores/ticket-list.svelte';
 	import { getTicketSourcesStore } from '$lib/stores/ticket-sources.svelte';
-	import { appHref, fullViewHref, listHref } from '$lib/ticket-links';
+	import { appHref, fullViewHref, listHref, ticketHref } from '$lib/ticket-links';
 	import { setTicketRoute } from '$lib/ticket-route';
 
 	// Detail panel of /tickets/<record id> (E2 plan, T-4) and the full view /tickets/<id>/voll below
@@ -34,6 +36,12 @@
 	const id = $derived(page.params.id ?? '');
 	const back = $derived(listHref(page.url));
 	const full = $derived(fullViewHref(id, page.url));
+	// The parent of a sub-task for its path (ADR-0033), as the list knows it.
+	const parent = $derived(
+		detail.state === 'ready' && detail.ticket
+			? parentOf(detail.ticket, (parentId) => tickets.find(parentId))
+			: null
+	);
 
 	/** Panel and full view of the same ticket: moving between them keeps drafts and asks nothing. */
 	const TICKET_ROUTES = ['/(app)/(tickets)/tickets/[id]', '/(app)/(tickets)/tickets/[id]/voll'];
@@ -128,7 +136,18 @@
 	onclose={close}
 	ondeleted={deleted}
 	sourceCount={sourceStore.ticketId === id ? sourceStore.items.length : 0}
+	{parent}
+	parentHref={parent ? ticketHref(parent.id, page.url) : null}
 >
+	{#snippet subtasks(ticket: Ticket)}
+		{#if !ticket.parentId}
+			<TicketSubtasks
+				{ticket}
+				list={tickets}
+				hrefOf={(subtaskId) => ticketHref(subtaskId, page.url)}
+			/>
+		{/if}
+	{/snippet}
 	{#snippet recurrence(ticket: Ticket)}
 		<RecurrenceSummary
 			{ticket}

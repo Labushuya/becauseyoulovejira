@@ -20,6 +20,7 @@ import {
 	getTicket,
 	listDoneTickets,
 	listOpenTickets,
+	listSubtaskTickets,
 	setTicketDone,
 	updateTicket
 } from '../../web/src/lib/data/tickets.ts';
@@ -102,6 +103,41 @@ describe('web data layer: tickets', () => {
 		expect(ids).not.toContain(done.id);
 		expect(ids).not.toContain(foreign.id);
 		expect((await listOpenTickets(b.client)).map((ticket) => ticket.id)).not.toContain(open.id);
+	});
+
+	it('creates sub-tasks and lists all of them, open and done, with their parent (ADR-0033)', async () => {
+		const owner = await createOwner(superuser);
+		const parent = await createTicket(owner.client, draft({ title: 'Umzug' }));
+		expect(parent).toMatchObject({ parentId: null, blocksParent: true, parentRef: null });
+
+		const open = await createTicket(owner.client, draft({ title: 'Kartons', parent: parent.id }));
+		const closed = await createTicket(owner.client, draft({ title: 'Küche', parent: parent.id }));
+		await setTicketDone(owner.client, closed.id, true);
+		await createTicket(owner.client, draft());
+
+		expect(open).toMatchObject({
+			parentId: parent.id,
+			blocksParent: true,
+			parentRef: { id: parent.id, key: parent.key, title: 'Umzug' }
+		});
+		const listed = await listSubtaskTickets(owner.client);
+		expect(listed.map((ticket) => ticket.id).sort()).toEqual([open.id, closed.id].sort());
+		expect(listed.find((ticket) => ticket.id === closed.id)).toMatchObject({
+			status: 'done',
+			parentId: parent.id
+		});
+		expect((await listSubtaskTickets(a.client)).map((ticket) => ticket.id)).not.toContain(open.id);
+	});
+
+	it('releases a sub-task from its parent through the patch (ADR-0033)', async () => {
+		const owner = await createOwner(superuser);
+		const parent = await createTicket(owner.client, draft());
+		const child = await createTicket(owner.client, draft({ parent: parent.id }));
+
+		const released = await updateTicket(owner.client, child.id, { parent: null });
+
+		expect(released).toMatchObject({ parentId: null, parentRef: null });
+		expect(await listSubtaskTickets(owner.client)).toEqual([]);
 	});
 
 	it('returns list entries without the description', async () => {

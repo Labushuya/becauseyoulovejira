@@ -154,6 +154,24 @@ describe('web data layer: realtime', () => {
 		expect(change.record).not.toHaveProperty('description');
 	});
 
+	it('carries the parent of a sub-task with its key and title (ADR-0033)', async () => {
+		const events = collector();
+		await subscribe(subscribeTickets(first, events.onChange));
+		const parent = await createTicket(second, draft({ title: 'Umzug' }));
+		const child = await createTicket(second, draft({ parent: parent.id }));
+
+		const change = await events.waitFor(
+			(item) => item.action === 'create' && item.record.id === child.id,
+			'create of the sub-task'
+		);
+
+		expect(change.record).toMatchObject({
+			parentId: parent.id,
+			blocksParent: true,
+			parentRef: { id: parent.id, key: parent.key, title: 'Umzug' }
+		});
+	});
+
 	it('follows one ticket with its description for the panel', async () => {
 		const ticket = await createTicket(first, draft());
 		const events = collector();

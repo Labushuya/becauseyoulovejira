@@ -1,6 +1,6 @@
 # E6-Plan, Teil Unteraufgaben: Liste, Fortschritt, Einrücken und „blockiert das übergeordnete Ticket“
 
-- **Stand:** in Arbeit (2026-09-28): UA-0 (#117) und UA-1 (Sperre beim Erledigen im Hook) umgesetzt, UA-2 bis UA-5 geplant.
+- **Stand:** in Arbeit (2026-09-28): UA-0 (#117), UA-1 (#118, Sperre beim Erledigen im Hook) und UA-2 (Abschnitt „Unteraufgaben“, Pfad) umgesetzt, UA-3 bis UA-5 geplant.
 - **Grundlage:**
   - [ADR-0033](../adr/0033-unteraufgaben.md) (Umfang, Sperre beim Erledigen, Wiederholungen, Oberfläche, Tabelle)
   - [ADR-0012](../adr/0012-plain-ticketing.md) und [ADR-0011](../adr/0011-roadmap-e3-bis-e7.md) mit den Nachträgen vom 2026-09-28
@@ -47,14 +47,21 @@
 | 2026-09-28 | UA-1 | **Werte der Felder:** `true` oder der Text `"true"` (`isTrueFlag`), alles andere zählt als nicht gesendet. Sendet ein Client beide, gilt `complete_children` (die stärkere Bitte). Die Ablehnung trägt `params` `{ count, keys }` mit höchstens fünf Keys, damit die SPA ohne weitere Anfrage fragen kann. |
 | 2026-09-28 | UA-1 | **Texte im reinen Modul:** Die Meldungen der Codes (`validation_parent_*`, `validation_ticket_has_children`, `validation_parent_open_children`) liegen jetzt als `SUBTASK_MESSAGES` in `lib/ticket-rules.js`, mit dem Wortlaut der Oberfläche („übergeordnetes Ticket“, „Unteraufgabe“ statt „Eltern-Ticket“, „Unter-Ticket“), und gleich in `domain/subtasks.ts` (Paritätstest `web-subtasks.test.mjs`). `data/errors.ts` nennt bei `validation_parent_open_children` die Zahl („3 Unteraufgaben sind noch offen.“). |
 | 2026-09-28 | UA-1 | **Fehlerinjektion** `__byl_fail_child_done__` (Titel einer Unteraufgabe): Ihr Erledigen scheitert, und der Test belegt, dass übergeordnetes Ticket und übrige Unteraufgaben offen bleiben. |
+| 2026-09-28 | UA-2 | **Alle Unteraufgaben im `TicketListStore`:** Er lädt mit den offenen Tickets einmal alle Tickets mit `parent != ''` (auch erledigte, `listSubtaskTickets`) und hält sie in einem eigenen Index, den `upsert`, `remove` und der Abgleich nach dem Neuverbinden pflegen. So stimmen Fortschritt und Abschnitt ohne Anfrage je Ticket und folgen demselben Realtime-Abo wie die Liste. Offene Unteraufgaben stehen zusätzlich in der Liste; erledigte zeigt sie nur im Abschnitt „Erledigt“ wie bisher. `find` kennt den Index, deshalb geht das Häkchen (mit „Rückgängig“) auch für eine erledigte Unteraufgabe, die die Liste nicht geladen hat. |
+| 2026-09-28 | UA-2 | **Felder:** `parent` und `blocks_parent` gehören zu den Listenfeldern, das übergeordnete Ticket kommt per `expand=parent` mit Key und Titel (auch im Realtime-Abo). Im Typ heißt es `parentRef`, weil `TicketDraft.parent` (die ID beim Anlegen und im Patch) sonst mit dem Datensatz kollidiert. Für den Pfad gewinnt die Fassung der Liste (`parentOf`), damit ein neuer Key nach einem Projektwechsel sofort erscheint. Alle neuen Felder sind im Typ optional, damit handgebaute Tickets gültig bleiben (wie `recurrenceId`). |
+| 2026-09-28 | UA-2 | **Anlegen im Store** (`addSubtask`) statt über den `TicketDetailStore`: Dessen `create` macht das neue Ticket zum Ticket des Panels. Die Unteraufgabe erbt Projekt und Tags, kommt sofort in Liste und Abschnitt und zählt als gelesen (ADR-0015 §3). Ein Fehler kommt mit dem Text des abgelehnten Feldes zurück, etwa „Das Projekt ist archiviert.“, wenn das übergeordnete Ticket in einem archivierten Projekt liegt. |
+| 2026-09-28 | UA-2 | **Hinzufügen inline:** Enter legt an, leert das Feld und lässt den Fokus darin; was während des Speicherns getippt wird, bleibt stehen. Esc schließt das Feld, verbraucht die Taste (Panel und Vollansicht bleiben offen) und gibt den Fokus an „Unteraufgabe hinzufügen“. Ein Erfolg steht in einer höflichen Live-Zeile des Abschnitts („TASK-16 angelegt.“), nicht als Flag, damit mehrere Unteraufgaben hintereinander nicht drei Flags stapeln. Ein halb getippter Titel fragt beim Verlassen nicht nach (anders als Beschreibung und Tag-Feld); er ist kurz und sofort wieder getippt. |
+| 2026-09-28 | UA-2 | **Ort:** im Panel nach der Beschreibung, in der Vollansicht in der linken Spalte zwischen Beschreibung und Quellen (wie Jira). Links führen im Panel aufs Panel, in der Vollansicht auf die Vollansicht der Unteraufgabe bzw. des übergeordneten Tickets. Der Pfad nutzt `Breadcrumbs` mit eigenem Namen „Pfad des Tickets“, Keys in Mono und dem Titel des übergeordneten Tickets als Tooltip. Nur Tickets ohne eigenes übergeordnetes Ticket haben den Abschnitt. |
+| 2026-09-28 | UA-2 | `TicketPanel` und `Breadcrumbs` ziehen auf die Schriftgrößen-Tokens und fallen von der Liste (`no-own-font-sizes.test.ts` jetzt 223). Der Fortschrittsbalken nutzt `--color-line` als Spur und `--color-brand` als Füllung, `--radius-pill`; der Text daneben ist die Information, der Balken ist `aria-hidden`. |
 
 ## 4. Status
 
 | Paket | Stand |
 |---|---|
 | UA-0 | gemergt (#117) |
-| UA-1 | PR offen |
-| UA-2 bis UA-5 | geplant |
+| UA-1 | gemergt (#118) |
+| UA-2 | PR offen |
+| UA-3 bis UA-5 | geplant |
 
 ## 5. Offene Punkte
 

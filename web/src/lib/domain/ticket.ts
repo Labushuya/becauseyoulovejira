@@ -24,6 +24,13 @@ export interface TagRef {
 	name: string;
 }
 
+/** The ticket a sub-task belongs to (expanded relation `parent`, ADR-0033). */
+export interface ParentRef {
+	id: string;
+	key: string;
+	title: string;
+}
+
 /** Ticket as the list needs it (without the description). */
 export interface TicketSummary {
 	id: string;
@@ -48,6 +55,15 @@ export interface TicketSummary {
 	 * objects built by hand (tests, drafts) may leave it out.
 	 */
 	recurrenceId?: string | null;
+	/**
+	 * ID of the ticket this one is a sub-task of, null for a top-level ticket (ADR-0033). The data
+	 * layer always sets it and the two fields below; objects built by hand may leave them out.
+	 */
+	parentId?: string | null;
+	/** The sub-task blocks completing its parent while it is open (`blocks_parent`, default true). */
+	blocksParent?: boolean;
+	/** Expanded parent; only a fallback while the list does not know the parent itself. */
+	parentRef?: ParentRef | null;
 	/**
 	 * Way the ticket came in (ADR-0014 section 2); null for tickets before E4 and before the
 	 * migration, which count as "manual" (ADR-0019).
@@ -79,6 +95,8 @@ export interface TicketDraft {
 	project: string | null;
 	/** Tag IDs in the chosen order (T-14). */
 	tags: string[];
+	/** The ticket this one is a sub-task of (ADR-0033); left out or null for a top-level ticket. */
+	parent?: string | null;
 }
 
 /**
