@@ -1,6 +1,6 @@
 # Plan „Eigener Eingang und WhatsApp Web“: API mit Zugangsschlüssel und Browser-Erweiterung
 
-- **Stand:** EI-1 umgesetzt (2026-09-28; Neustart nötig). EI-2 und EI-3 folgen.
+- **Stand:** EI-1 umgesetzt (2026-09-28, #166; Neustart nötig), EI-2 umgesetzt (Erweiterung, kein Neustart der App). EI-3 folgt.
 - **Grundlage:**
   - Auftrag „Eigener Eingang (API mit Zugangsschlüssel)“ und „WhatsApp-Web-Browser-Erweiterung“ (2026-09-28) mit den Produktentscheidungen des Advisors (unten §1); vom Nutzer freigegebene Variante: Erweiterung, die im offenen Tab nur liest.
   - [ADR-0038](../adr/0038-eigener-eingang-und-whatsapp-web.md) (neu), [ADR-0016](../adr/0016-kanal-architektur-und-mail.md) §3 mit Nachtrag, [ADR-0020](../adr/0020-stichwoerter-pro-kanal.md), [ADR-0014](../adr/0014-datenmodell-eingang.md), [ADR-0031](../adr/0031-herkunft-sichern.md), [ADR-0026](../adr/0026-einstellungsbereich-und-hinweis-bausteine.md), [ADR-0025](../adr/0025-ui-konsistenz-overlay-system.md), [ADR-0009](../adr/0009-fehlerfarbe.md), [ADR-0029](../adr/0029-glas-materialien.md), [ADR-0037](../adr/0037-papierkorb.md)
@@ -23,7 +23,7 @@
 | Paket | Inhalt | Manifest |
 |---|---|---|
 | EI-1 | Migration (`inbox_keys`, Kanäle `api` und `whatsapp-web`), Routen und Regeln des Eingangs, Stichwörter der Kanäle, Karte „Eigener Eingang (API)“ mit Schlüsselverwaltung, Hilfe mit Beispielen, Tests, ADR, Plan | BYL-E6-420 bis BYL-E6-424, BYL-E6-425 (manuell) |
-| EI-2 | Erweiterung in `extensions/whatsapp-web/` (TypeScript, esbuild), Build-Ordner `app/erweiterung-whatsapp-web/`, Lint und Tests in beiden CI-Jobs, Fixtures | ab BYL-E6-426 |
+| EI-2 | Erweiterung in `extensions/whatsapp-web/` (TypeScript, esbuild), Build-Ordner `app/erweiterung-whatsapp-web/`, Lint und Tests in beiden CI-Jobs, Fixtures | BYL-E6-426 bis BYL-E6-429 |
 | EI-3 | Karte und Assistent „WhatsApp Web“, Hilfe, Nachtrag ADR-0016, README, CLAUDE.md, manuelle Browser-Fälle | ab BYL-E6-430 |
 
 ## 3. EI-1 im Detail
@@ -49,7 +49,32 @@
 - Integration: `inbox-keys.test.mjs` (einmal sichtbar, nur Hash, Besitzer, Regeln, 20er-Grenze, 401/403/400/422/429, Duplikat und Tombstone, Widerruf, Preflight), `migrations-rollback.test.mjs` (Hin und Rückweg), `hooks-before-migration.test.mjs` (503 vor dem Neustart).
 - Komponenten: `own-inbox-card.test.ts`, Hilfe-Seite.
 
-## 4. Grenzen und offene Punkte
+## 4. EI-2 im Detail
+
+### 4.1 Aufbau
+
+| Datei | Aufgabe |
+|---|---|
+| `static/manifest.json` | Manifest V3: `storage`, Hosts `web.whatsapp.com`, `127.0.0.1`, `localhost`; Service Worker, Content-Script mit CSS, Popup und Einstellungsseite (`options.html`) |
+| `src/selectors.ts` | alle Selektoren von WhatsApp Web |
+| `src/extract.ts`, `src/time.ts` | Nachrichten, Text, Absender, Zeit (`data-pre-plain-text` in de, en-US, en-GB, ISO), Chatname, Zustand der Seite |
+| `src/payload.ts` | Payload mit `external_id = wa:<SHA-256 der ID>` |
+| `src/auto.ts` | Regeln des Automatik-Modus (eingeschaltet, Chat-Liste, Schwelle = Minute des Einschaltens bzw. der zuletzt gesehenen Nachricht) |
+| `src/content-core.ts` | Knopf je Nachricht mit Text, Rückmeldung, Automatik, Meldung des Seitenzustands; `MutationObserver` mit 300 ms Pause |
+| `src/api.ts`, `src/background-core.ts` | Service Worker: prüft Absender und Nachricht, liest Adresse und Schlüssel, sendet, bildet Antworten ab |
+| `src/settings.ts`, `src/options-core.ts` | Einstellungen: Adresse nur Loopback, Schlüssel, Test, Schalter (aus), Chat-Liste, Status |
+
+### 4.2 Entscheidungen
+
+- **Nur Text:** Nachrichten ohne Textblock (Bilder, Sprach- und Videonachrichten, Sticker) bekommen keinen Knopf und gehen nie automatisch; eine Bildunterschrift gilt als Text. Ein Hinweis „[Medien – nicht übernommen]“ wäre ein Eintrag ohne Inhalt.
+- **Neu ist, was ab der Minute des Einschaltens bzw. der zuletzt gesehenen Nachricht des Chats erscheint.** Beim Öffnen eines Chats zeigt WhatsApp Web seine Historie; ältere Nachrichten zählen als gesehen. Dieselbe Minute kann doppelt kommen, die App meldet sie dann als Duplikat. Nachrichten ohne lesbare Zeit gehen nie automatisch.
+- **Chatname als Schlüssel des letzten Zeitpunkts** nur als SHA-256; die Chat-Liste steht im Klartext in den Einstellungen der Erweiterung, weil der Nutzer sie dort pflegt.
+- **Rückmeldung** im eigenen Element (Knopftext und `role="status"`), keine Meldung außerhalb der Nachricht; Tasten- und Mausereignisse des eigenen Elements erreichen WhatsApp nicht.
+- **Keine Minifizierung**, damit der Nutzer den geladenen Code lesen kann; kein Store, kein Paket, kein Update-Mechanismus.
+
+## 5. Grenzen und offene Punkte
 
 - Das Rate-Limit liegt im Speicher und beginnt nach einem Neustart neu; mehr braucht ein Server auf `127.0.0.1` nicht.
 - Fehlgeschlagene Anmeldungen werden nicht gebremst: Ein Schlüssel hat rund 238 Bit, Raten ist aussichtslos.
+- Die Selektoren sind nach eigenem Wissen über den Aufbau von WhatsApp Web gebaut und nur mit eigenen Nachbauten getestet (kein Aufruf der echten Seite). Ob sie zur aktuellen Seite passen, zeigt erst der manuelle Test; sonst meldet die Erweiterung „Seitenstruktur nicht erkannt“ und `src/selectors.ts` braucht eine Anpassung.
+- Automatisch erfasst werden nur Nachrichten des gerade geöffneten Chats und nur bei offenem Tab (WhatsApp Web zeigt nur diesen Chat an).

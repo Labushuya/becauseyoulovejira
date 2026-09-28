@@ -1,0 +1,3 @@
+package-lock.json
+# Hand-built pages of WhatsApp Web for the tests: kept as written, like the page would be.
+/src/fixtures/

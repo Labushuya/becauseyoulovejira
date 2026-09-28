@@ -27,8 +27,9 @@ function allItems() {
 }
 
 /**
- * Test files the manifest must cover: tests/unit, tests/integration, web/src/**\/*.test.ts and the
- * mail helper helpers/mail/src/**\/*.test.ts.
+ * Test files the manifest must cover: tests/unit, tests/integration, web/src/**\/*.test.ts, the
+ * mail helper helpers/mail/src/**\/*.test.ts and the browser extension
+ * extensions/whatsapp-web/src/**\/*.test.ts (ADR-0038).
  */
 function testFiles() {
 	const list = (dir, pattern) =>
@@ -39,7 +40,8 @@ function testFiles() {
 		...list('tests/unit', /\.test\.(js|mjs|ts)$/),
 		...list('tests/integration', /\.test\.(js|mjs|ts)$/),
 		...list('web/src', /\.test\.ts$/),
-		...list('helpers/mail/src', /\.test\.ts$/)
+		...list('helpers/mail/src', /\.test\.ts$/),
+		...list('extensions/whatsapp-web/src', /\.test\.ts$/)
 	].sort();
 }
 

@@ -98,8 +98,10 @@ becauseyoulovejira/
     autostart-an.bat      Autostart einrichten
     autostart-aus.bat     Autostart entfernen
     byl-control.ps1       Logik hinter den Skripten (byl-functions.ps1: testbare Funktionen)
+    erweiterung-whatsapp-web/  Browser-Erweiterung für WhatsApp Web zum entpackten Laden (gitignored)
   web/                    SvelteKit-Quellcode (Build → ../app/pb_public), Tests unter src/**/*.test.ts
   helpers/mail/           Mail-Hilfsprozess in TypeScript (Build → ../../app/byl-mail.exe), Tests unter src/*.test.ts
+  extensions/whatsapp-web/  Browser-Erweiterung in TypeScript (Build → ../../app/erweiterung-whatsapp-web), Tests unter src/*.test.ts
   scripts/                Build-/Setup-Skripte (PowerShell unter Windows; PocketBase-Abruf und Binary-Namen in Node)
   tests/                  Vitest-Tests (Hooks, Regeln, Login- und SPA-Integration)
   docs/                   ADRs, Etappenpläne, Test-Manifest, README-Assets
