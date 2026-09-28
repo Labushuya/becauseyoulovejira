@@ -253,6 +253,11 @@
 						mailto).
 					</li>
 					<li>
+						Aus Word, Google Docs oder einer Webseite eingefügter Text behält Überschriften, Listen,
+						Links und Formatierung, aber keine Farben, Schriften und Bilder. Text mit Markdown wird
+						formatiert eingefügt; <kbd>Strg</kbd>+<kbd>Umschalt</kbd>+<kbd>V</kbd> fügt reinen Text ein.
+					</li>
+					<li>
 						„Markdown“ in der Leiste zeigt den Text als Markdown. Texte mit Tabellen oder Listen aus
 						Aufgaben und normalen Punkten öffnen gleich dort, damit nichts verloren geht.
 					</li>

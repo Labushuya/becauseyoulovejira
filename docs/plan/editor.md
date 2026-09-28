@@ -1,6 +1,6 @@
 # E6-Plan, Teil Editor: Unterstreichen, Checklisten und ein Editor wie Jira
 
-- **Stand:** Stufe A umgesetzt (2026-09-28): RT-0 (#114, Weg B), RT-1 (#115), RT-2 (#116). Stufe B freigegeben und begonnen (Auftrag vom 2026-09-28): RT-3 (#125) und RT-4 umgesetzt, RT-5 und RT-6 folgen. Offen sind außerdem die manuellen Browser-Prüfungen.
+- **Stand:** Stufe A umgesetzt (2026-09-28): RT-0 (#114, Weg B), RT-1 (#115), RT-2 (#116). Stufe B freigegeben und begonnen (Auftrag vom 2026-09-28): RT-3 (#125), RT-4 (#127) und RT-5 umgesetzt, RT-6 folgt. Offen sind außerdem die manuellen Browser-Prüfungen.
 - **Grundlage:**
   - [ADR-0032](../adr/0032-editor-tiptap-markdown.md) (Tiptap, Markdown als Speicherformat, Brücke über die markdown-it-Instanz der Anzeige, Spike RT-0)
   - [ADR-0008](../adr/0008-markdown-rendering-und-sanitizing.md), [ADR-0006](../adr/0006-frontend-zustand-und-datenzugriff.md) §5, [ADR-0025](../adr/0025-ui-konsistenz-overlay-system.md), [ADR-0026](../adr/0026-einstellungsbereich-und-hinweis-bausteine.md), [ADR-0029](../adr/0029-glas-materialien.md), [ADR-0030](../adr/0030-spalten-breiten-und-kompakte-zeilen.md), [ADR-0031](../adr/0031-herkunft-sichern.md)
@@ -35,7 +35,7 @@
 | RT-2 | Checklisten in der Ansicht abhakbar: `toggleTask`, `Markdown.svelte` mit `ontoggletask`, Store, Hook `expected_updated` mit `validation_description_stale`, Konfliktfrage beim Speichern der Beschreibung, Kommentare nur für den Autor | BYL-E6-202 bis BYL-E6-204, BYL-E6-205 (manuell) |
 | RT-3 | `RichTextEditor` für die Beschreibung (Panel und Vollansicht): Extensions, Brücke, Toolbar, Kürzel, Eingaberegeln, Quelltextmodus, `richEditable`, dynamisches Laden mit Rückfall auf die `textarea`, `prose.css` | BYL-E6-241, BYL-E6-242 (manuell) |
 | RT-4 | „/“-Menü und Link-Popover | BYL-E6-243, BYL-E6-244 (manuell) |
-| RT-5 | Einfügen aus Word und HTML (`paste.ts` mit Fixtures) | |
+| RT-5 | Einfügen aus Word und HTML (`paste.ts` mit Fixtures) | BYL-E6-245, BYL-E6-246 (manuell) |
 | RT-6 | Kommentare (kompakt), `NewTicketForm`, `RecurrencePanel`; Kürzel in `shortcuts.ts`, Hilfeseite, README | |
 | RT-7 (optional) | Tabellen bearbeiten (`@tiptap/extension-table`, MIT) statt Quelltextmodus | |
 
@@ -182,6 +182,10 @@ Siehe ADR-0032 §1 und §2. Der Serializer normalisiert beim ersten Speichern au
 | 2026-09-28 | RT-4 | **ARIA des „/“-Menüs:** Das Textfeld behält den Fokus und trägt `aria-autocomplete="list"`, im offenen Zustand `aria-controls` und `aria-activedescendant`; `aria-expanded` entfällt, weil es kein Zustand der Rolle `textbox` ist (Abweichung vom Konzept). Eine höfliche Live-Zeile sagt „N Blöcke, Pfeiltasten wählen, Enter fügt ein.“. Pfeile, Enter und Tab gehören dem Menü, Esc schließt es und wird verbraucht. Findet der Filter nichts, schließt die Liste, Enter wirkt normal. Kein Eintrag „Unteraufgabe“ (Produktentscheidung). |
 | 2026-09-28 | RT-4 | **Link als Popover der Leiste:** Knopf „Link“ (Art `panel`, `aria-haspopup="dialog"`, Titel „Link (Strg+K)“), per Strg+K und „/link“ per Code geöffnet (`Popover.open()`); dafür bekam der Baustein `open()`, `onopen`, `returnFocus`, `buttonTitle` und `buttonKeyshortcuts`. Der Name des Popovers ist „Link einfügen“ bzw. „Link bearbeiten“. „Adresse“ prüft `domain/link.ts` (http, https, mailto; `www…` und `name.de/…` werden https, eine Mailadresse mailto; `javascript:`, `data:`, `ftp:` und Leerzeichen werden abgelehnt), der Fehler steht am Feld. „Text“ ersetzt die verlinkten Wörter; ohne Auswahl und Text wird die Adresse selbst der Link. Schließen (auch Esc) bringt den Fokus zurück in den Text. |
 | 2026-09-28 | RT-4 | `shortcuts.ts` nennt Strg+K und „/“ im Abschnitt „Editor“; die Hilfe erklärt beides. |
+| 2026-09-28 | RT-5 | **Bereinigen vor dem Schema:** `transformPastedHTML` (DOM, rein testbar) entfernt Kommentare samt bedingter Kommentare, `style`, `meta`, `link`, Office-Tags mit Doppelpunkt (`o:p`, `v:shape`), Bilder, Medien, eingebettete Inhalte, Formularfelder und Skripte, wandelt Word-Absätze mit `mso-list` in verschachtelte `ul`/`ol` (das Zeichen `mso-list:Ignore` entscheidet: `1.`, `a)`, `iv.` nummeriert, sonst Aufzählung; Listen mit anderer Kennung bleiben getrennt), macht aus Stil-Formatierung (`font-weight` ab 600, `font-style: italic`, `text-decoration`) Elemente, entfernt den fetten Rahmen von Google Docs (`b` mit `font-weight: normal`), packt `font`, `span`, `form` und `label` aus und lässt nur `href` (http, https, mailto; andere Links werden Text), `title` am Link und `start` stehen. Leere Absätze (Word-Abstände) fallen weg. Tabellen werden vom Schema zu Absätzen. |
+| 2026-09-28 | RT-5 | **Keine Anfrage beim Einfügen:** ProseMirror liest HTML in einem Dokument ohne Browsing-Kontext; Bilder fallen zusätzlich schon vorher weg. Fixtures aus Word 365, Google Docs und LibreOffice (erfundene Inhalte, `lib/test/paste-fixtures/`, in `.prettierignore`) prüfen das Ergebnis bis zum Markdown. |
+| 2026-09-28 | RT-5 | **Text mit Markdown:** `clipboardTextParser` liest reinen Text über die Brücke, wenn er nach Markdown aussieht (`looksLikeMarkdown`: Überschrift, Liste, Zitat, Zaun, `**`, `~~`, `++`, Backticks, Link); sonst, bei Tabellen und mit Strg+Umschalt+V bleibt er Text. Die Einfüge-Regeln von Tiptap (`enablePasteRules`) sind aus, weil sie auch reinen Text formatieren würden. Die Brücke baut im gemeinsamen Schema; das eingefügte Stück wird per JSON in das Schema des Editors übernommen (jeder Editor hat seine eigene Schema-Instanz, sonst passte nichts). |
+| 2026-09-28 | RT-5 | `prosemirror-stubs.ts` bringt eine Attrappe für `ClipboardEvent`; die Tests senden ein `paste`-Ereignis mit eigener Zwischenablage (`text/html`, `text/plain`). |
 
 ## 5. Status
 
@@ -191,13 +195,14 @@ Siehe ADR-0032 §1 und §2. Der Serializer normalisiert beim ersten Speichern au
 | RT-1 | gemergt (#115) |
 | RT-2 | gemergt (#116) |
 | RT-3 | gemergt (#125) |
-| RT-4 | umgesetzt („/“-Menü und Link) |
-| RT-5 und RT-6 | Stufe B, freigegeben, folgen |
+| RT-4 | gemergt (#127) |
+| RT-5 | umgesetzt (Einfügen) |
+| RT-6 | Stufe B, freigegeben, folgt |
 | RT-7 | optional, nicht beauftragt |
 
 ## 6. Offene Punkte
 
-- Manuelle Browser-Prüfungen der Pakete (BYL-E6-201, BYL-E6-205, BYL-E6-242, BYL-E6-244).
+- Manuelle Browser-Prüfungen der Pakete (BYL-E6-201, BYL-E6-205, BYL-E6-242, BYL-E6-244, BYL-E6-246).
 - ~~„Löschen …“ in der Vollansicht legt seine Bestätigung über das XL-Modal (seit HK-6 mit Radios über `ConfirmDialog.options`).~~ Erledigt mit UA-3 ([Plan Unteraufgaben](unteraufgaben.md) §3): Die Vollansicht fragt inline (`TicketDeleteQuestion`).
 - **Hinweise für die Unterprojekte:** Der Plan ändert weder Datenmodell noch Filter; Beschreibungen von Unterprojekt-Tickets nutzen dieselbe Anzeige. `expected_updated` gilt für jedes Ticket-Update und stört ein späteres Umhängen in ein Unterprojekt nicht, solange es ohne das Feld gesendet wird.
 - **Hinweise für Stufe B** (umgesetzt mit RT-3, bis auf die Attrappe für `ClipboardEvent`, die RT-5 braucht):

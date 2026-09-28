@@ -1,5 +1,5 @@
 // Stand-ins for the layout APIs that ProseMirror uses and jsdom lacks (plan editor section 3.6;
-// next to overlay-stubs.ts): client rects of a Range and elementFromPoint. jsdom has no layout,
+// next to overlay-stubs.ts): client rects of a Range, elementFromPoint and ClipboardEvent. jsdom has no layout,
 // so every rect is empty; the position of menus stays a manual case of the test manifest.
 // Typing goes through `typeText` (handleTextInput, so input rules apply), keys as KeyboardEvent
 // on the editable element.
@@ -18,10 +18,18 @@ const EMPTY_RECT = {
 	toJSON: () => ({})
 };
 
+/** ClipboardEvent is missing in jsdom; view.pasteHTML and view.pasteText create one. */
+class StubClipboardEvent extends Event {
+	readonly clipboardData: DataTransfer | null = null;
+}
+
 /** Installs the stand-ins for all tests of the calling file. */
 export function useProseMirrorStubs(): void {
-	const saved: { rects?: unknown; bounds?: unknown; fromPoint?: unknown } = {};
+	const saved: { rects?: unknown; bounds?: unknown; fromPoint?: unknown; clipboard?: unknown } = {};
 	beforeAll(() => {
+		const scope = globalThis as unknown as Record<string, unknown>;
+		saved.clipboard = scope.ClipboardEvent;
+		if (scope.ClipboardEvent === undefined) scope.ClipboardEvent = StubClipboardEvent;
 		const range = Range.prototype as unknown as Record<string, unknown>;
 		saved.rects = range.getClientRects;
 		saved.bounds = range.getBoundingClientRect;
@@ -35,6 +43,7 @@ export function useProseMirrorStubs(): void {
 		(document as unknown as Record<string, unknown>).elementFromPoint = () => null;
 	});
 	afterAll(() => {
+		(globalThis as unknown as Record<string, unknown>).ClipboardEvent = saved.clipboard;
 		const range = Range.prototype as unknown as Record<string, unknown>;
 		range.getClientRects = saved.rects;
 		range.getBoundingClientRect = saved.bounds;
