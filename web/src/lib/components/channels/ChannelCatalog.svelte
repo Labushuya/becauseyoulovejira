@@ -1,6 +1,7 @@
 <script lang="ts" module>
 	/** Entries of the catalog "Kanal hinzufügen" (plan §3.4); the IDs are those of the assistant (EH-5). */
-	export type CatalogEntry = 'kalender' | 'telegram' | 'webde' | 'gmail' | 'proton';
+	export type CatalogEntry =
+		'kalender' | 'telegram' | 'webde' | 'gmail' | 'proton' | 'whatsapp-web';
 </script>
 
 <script lang="ts">
@@ -113,6 +114,25 @@
 					data-sveltekit-replacestate
 				>
 					Anleitung<span class="visually-hidden">: Proton Mail</span>
+				</a>
+			</div>
+		</li>
+		<li class="tile">
+			<div class="head">
+				<ChannelIcon kind="whatsapp-web" />
+				<h4>WhatsApp Web</h4>
+			</div>
+			<p>Browser-Erweiterung: Nachrichten aus dem offenen Tab, liest nur.</p>
+			<div class="foot">
+				<Lozenge label="Erweiterung" icon="info" tone="muted" />
+				<a
+					class="button-secondary setup"
+					href={hrefOf('whatsapp-web')}
+					data-sveltekit-keepfocus
+					data-sveltekit-noscroll
+					data-sveltekit-replacestate
+				>
+					Einrichten<span class="visually-hidden">: WhatsApp Web</span>
 				</a>
 			</div>
 		</li>

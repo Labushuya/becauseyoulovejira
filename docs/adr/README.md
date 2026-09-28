@@ -21,7 +21,7 @@ Bereits verbindlich in der [Projekt-CLAUDE.md](../../CLAUDE.md) festgelegt und d
 | [0013](0013-filter-suche-sortierung-gruppierung.md) | Filter, Suche, Sortierung und Gruppierung: was der Client und was der Server rechnet | Angenommen, Filter „Projekt“ präzisiert durch 0034 | 2026-09-25 |
 | [0014](0014-datenmodell-eingang.md) | Datenmodell des Eingangs (`inbox_items`) mit Rückverweis am Ticket und Duplikaterkennung | Angenommen | 2026-09-25 |
 | [0015](0015-neu-markierung-pro-nutzer.md) | „Neu“-Markierung pro Nutzer | Angenommen | 2026-09-25 |
-| [0016](0016-kanal-architektur-und-mail.md) | Architektur der Kanäle: HTTP-Kanäle im Hook per Cron, Mail über einen Hilfsprozess | Angenommen | 2026-09-25 |
+| [0016](0016-kanal-architektur-und-mail.md) | Architektur der Kanäle: HTTP-Kanäle im Hook per Cron, Mail über einen Hilfsprozess | Angenommen (Nachtrag: WhatsApp Web über die Browser-Erweiterung aus 0038) | 2026-09-25 |
 | [0017](0017-parser-ics-eml.md) | Parser für `.ics` im Hook, für `.eml` im Browser und im Hilfsprozess | Angenommen | 2026-09-25 |
 | [0018](0018-secrets.md) | Zugangsdaten der Kanäle als Windows-Umgebungsvariablen | Angenommen | 2026-09-25 |
 | [0019](0019-kanal-filter-und-gruppierung.md) | Quelle als Filter, Gruppierung und Merkmal in der Tabelle | Angenommen (mit Nachtrag), §4 eingelöst durch 0030 | 2026-09-25 |
@@ -43,4 +43,4 @@ Bereits verbindlich in der [Projekt-CLAUDE.md](../../CLAUDE.md) festgelegt und d
 | [0035](0035-start-einstieg-und-offene-tabs.md) | Start, Einstieg per Datei und Wiederverwenden offener Tabs: Präsenz über Realtime mit Ack, BroadcastChannel als Sicherheitsnetz, Fail-open, installierbare Web-App mit `focus-existing` (S1 aus 0028) | Angenommen und umgesetzt (SF-1 bis SF-6) | 2026-09-28 |
 | [0036](0036-sammelbearbeitung-inline-und-oeffnungsmodus.md) | Gemerkter Öffnungsmodus (Seitenpanel oder Vollansicht, pro Gerät, Vollansicht ersetzt das Panel), Sammelbearbeitung mit Rückgängig und Inline-Bearbeitung in der Tabelle | Angenommen und umgesetzt (BI-1 bis BI-3) | 2026-09-28 |
 | [0037](0037-papierkorb.md) | Papierkorb für Tickets: weiches Löschen samt Unteraufgaben und Quellen, Unsichtbarkeit über die API-Regeln, Wiederherstellen mit Keys und Serien, Aufbewahrung 7/30/90 Tage oder nie | Angenommen und umgesetzt (PB-1, PB-2) | 2026-09-28 |
-| [0038](0038-eigener-eingang-und-whatsapp-web.md) | Eigener Eingang mit Zugangsschlüssel (nur Hash gespeichert, nur Einträge des Besitzers, Stichwörter für `auto`, Webseiten ausgeschlossen) und Browser-Erweiterung für WhatsApp Web, die im offenen Tab nur liest | Angenommen, EI-1 umgesetzt | 2026-09-28 |
+| [0038](0038-eigener-eingang-und-whatsapp-web.md) | Eigener Eingang mit Zugangsschlüssel (nur Hash gespeichert, nur Einträge des Besitzers, Stichwörter für `auto`, Webseiten ausgeschlossen) und Browser-Erweiterung für WhatsApp Web, die im offenen Tab nur liest | Angenommen und umgesetzt (EI-1 bis EI-3), Nachtrag zu 0016 | 2026-09-28 |

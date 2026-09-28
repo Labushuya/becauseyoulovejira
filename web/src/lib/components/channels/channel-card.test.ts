@@ -440,7 +440,8 @@ describe('channel catalog', () => {
 			'Telegram-Bot',
 			'Web.de',
 			'Gmail',
-			'Proton Mail'
+			'Proton Mail',
+			'WhatsApp Web'
 		]);
 		expect(within(tiles[0]!).queryByText('Nicht eingerichtet')).toBeNull();
 		expect(
@@ -458,6 +459,11 @@ describe('channel catalog', () => {
 		expect(catalog.getByRole('link', { name: 'Anleitung: Proton Mail' }).getAttribute('href')).toBe(
 			'/einstellungen/kanaele?einrichten=proton'
 		);
+		// The browser extension for WhatsApp Web (ADR-0038) has no connection.
+		expect(within(tiles[5]!).getByText('Erweiterung')).toBeTruthy();
+		expect(
+			catalog.getByRole('link', { name: 'Einrichten: WhatsApp Web' }).getAttribute('href')
+		).toBe('/einstellungen/kanaele?einrichten=whatsapp-web');
 		expect(catalog.queryAllByRole('button')).toEqual([]);
 	});
 });

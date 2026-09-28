@@ -6,6 +6,7 @@
 import { describe, expect, it } from 'vitest';
 import {
 	CHAT_COMMAND,
+	GUIDE_KINDS,
 	PROTON_LINK,
 	PROTON_STEPS,
 	SETUP_KINDS,
@@ -77,6 +78,10 @@ describe('address of the assistant', () => {
 			kind: 'kalender',
 			connectionId: null
 		});
+		expect(setupTargetOf(new URLSearchParams('einrichten=whatsapp-web'))).toEqual({
+			kind: 'whatsapp-web',
+			connectionId: null
+		});
 		expect(setupTargetOf(new URLSearchParams('einrichten=notion'))).toBeNull();
 		expect(setupTargetOf(new URLSearchParams('einrichten=kalender&einrichten=gmail'))).toBeNull();
 		expect(setupTargetOf(new URLSearchParams(''))).toBeNull();
@@ -96,7 +101,7 @@ describe('address of the assistant', () => {
 });
 
 describe('step data', () => {
-	it.each(SETUP_KINDS.filter((kind) => kind !== 'proton'))(
+	it.each(SETUP_KINDS.filter((kind) => !GUIDE_KINDS.includes(kind)))(
 		'%s has 3 to 6 steps with short labels',
 		(kind) => {
 			const steps = setupSteps(kind);

@@ -12,9 +12,20 @@ import { formatBerlinDateTime } from './format';
 
 /**
  * Kinds of the address `?einrichten=<art>` (the IDs of the catalog). Each opens in the app: the
- * assistant, for Proton (no automatic fetch, three short steps) the guide as a modal M.
+ * assistant, for Proton (no automatic fetch, three short steps) the guide as a modal M, for
+ * WhatsApp Web the assistant of the browser extension (no connection; domain/whatsapp-web.ts).
  */
-export const SETUP_KINDS = ['kalender', 'telegram', 'webde', 'gmail', 'proton'] as const;
+export const SETUP_KINDS = [
+	'kalender',
+	'telegram',
+	'webde',
+	'gmail',
+	'proton',
+	'whatsapp-web'
+] as const;
+
+/** Kinds without a connection and without the steps of this module. */
+export const GUIDE_KINDS: readonly SetupKind[] = ['proton', 'whatsapp-web'];
 export type SetupKind = (typeof SETUP_KINDS)[number];
 
 /** Name of the variable with the allowed chat IDs a new Telegram connection suggests. */
@@ -586,7 +597,8 @@ export const SETUP_TITLES: Readonly<Record<SetupKind, string>> = Object.freeze({
 	telegram: 'Telegram-Bot',
 	webde: 'Web.de',
 	gmail: 'Gmail',
-	proton: 'Proton Mail'
+	proton: 'Proton Mail',
+	'whatsapp-web': 'WhatsApp Web'
 });
 
 /** Steps through the Windows control panel instead of setx (tab "Systemsteuerung"). */

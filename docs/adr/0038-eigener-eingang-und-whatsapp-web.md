@@ -1,6 +1,6 @@
 # ADR-0038: Eigener Eingang mit Zugangsschlüssel und Browser-Erweiterung für WhatsApp Web
 
-- **Status:** Angenommen. EI-1 (Eingang mit Zugangsschlüssel, Einstellungen, Hilfe, #166) und EI-2 (Erweiterung) umgesetzt; EI-3 (Kanal-Karte, Assistent, Hilfe WhatsApp Web) folgt nach [docs/plan/eigener-eingang-whatsapp-web.md](../plan/eigener-eingang-whatsapp-web.md). Manuelle Browser-Prüfungen stehen im Test-Manifest.
+- **Status:** Angenommen und umgesetzt: EI-1 (Eingang mit Zugangsschlüssel, Einstellungen, Hilfe, #166), EI-2 (Erweiterung, #167) und EI-3 (Kanal-Karte, Assistent, Hilfe WhatsApp Web) nach [docs/plan/eigener-eingang-whatsapp-web.md](../plan/eigener-eingang-whatsapp-web.md). Manuelle Browser-Prüfungen stehen im Test-Manifest.
 - **Datum:** 2026-09-28
 - **Entscheidung durch:** Nutzer (Variante „Browser-Erweiterung, die im offenen WhatsApp-Web-Tab nur liest“, 2026-09-28), Advisor (Produktentscheidungen: Umfang, Regeln, Sicherheitsrahmen, Teilpakete), Executor (Architektur und Einzelheiten)
 - **Ergänzt:** [ADR-0016](0016-kanal-architektur-und-mail.md) §3 (WhatsApp; Nachtrag dort), [ADR-0020](0020-stichwoerter-pro-kanal.md) (Stichwörter je Kanal), [ADR-0014](0014-datenmodell-eingang.md) §3 (Duplikate)
@@ -51,7 +51,10 @@
 
 ### 4. In der App (EI-3)
 
-- Karte „WhatsApp Web (Browser-Erweiterung)“ unter **Einstellungen → Kanäle** mit Einrichtungsassistent (Stepper nach [ADR-0026](0026-einstellungsbereich-und-hinweis-bausteine.md) §4): Schlüssel erzeugen → Erweiterung laden (Edge und Chrome, Pfad zum Build-Ordner) → Schlüssel eintragen → Verbindung testen; Stichwörter wie bei anderen Kanälen; Hilfe mit den ehrlichen Grenzen (inoffiziell, liest nur die eigene Ansicht, nur bei offenem Tab, kann nach WhatsApp-Updates eine Anpassung brauchen).
+- Karte „WhatsApp Web (Browser-Erweiterung)“ unter **Einstellungen → Kanäle** („Selbst hereinbringen“) und eine Kachel im Katalog; beide öffnen den Einrichtungsassistenten über `?einrichten=whatsapp-web` (Modal L, Stepper nach [ADR-0026](0026-einstellungsbereich-und-hinweis-bausteine.md) §4) mit fünf Schritten: Schlüssel erzeugen → Erweiterung laden (Tabs Edge und Chrome, Ordner des Builds) → Schlüssel eintragen (App-Adresse und der eben erzeugte Schlüssel, nur solange der Assistent offen ist) → Testen → Stichwörter.
+- **Ordner des Builds:** `GET /api/byl/whatsapp-web/extension` (angemeldet) nennt den absoluten Ordner neben `pb_hooks`, ob ein Build dort liegt, und seine Version (`app/pb_hooks/extension.pb.js`, rein `lib/extension-rules.js`). Vor dem Neustart fehlt die Route; der Assistent nennt dann `app\erweiterung-whatsapp-web` relativ.
+- **Testen:** Die App sieht die Erweiterung nicht direkt. „Verbindung testen“ in der Erweiterung ruft `GET /api/byl/inbox/ingest` und setzt „zuletzt benutzt“ des Schlüssels; der Schritt „Testen“ lädt die Schlüssel mit „Prüfen“ neu und meldet Erfolg, wenn der Schlüssel des Assistenten (sonst der neueste) seit dem Öffnen benutzt wurde (eine Minute Spielraum, weil „zuletzt benutzt“ höchstens minütlich geschrieben wird).
+- Stichwörter wie bei anderen Kanälen (Editor im letzten Schritt und „Stichwörter …“ an der Karte); Hilfe „WhatsApp Web“ mit den ehrlichen Grenzen (inoffiziell, liest nur die eigene Ansicht, nur bei offenem Tab, kann nach WhatsApp-Updates eine Anpassung brauchen).
 
 ## Sicherheitsmodell
 

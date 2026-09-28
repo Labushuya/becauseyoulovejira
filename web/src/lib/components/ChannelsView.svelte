@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { resolve } from '$app/paths';
+	import type { ExtensionInfo } from '$lib/data/extension';
 	import { setupKindOf, type SetupTarget } from '$lib/domain/channel-setup';
 	import type { Connection } from '$lib/domain/connections';
 	import { IMPORT_KINDS, type ImportKind } from '$lib/domain/keywords';
@@ -14,6 +15,8 @@
 	import ChannelsIntro from './channels/ChannelsIntro.svelte';
 	import OwnInboxCard from './channels/OwnInboxCard.svelte';
 	import ProtonGuide from './channels/ProtonGuide.svelte';
+	import WhatsAppWebCard from './channels/WhatsAppWebCard.svelte';
+	import WhatsAppWebSetup from './channels/WhatsAppWebSetup.svelte';
 	import ConnectionsSection from './ConnectionsSection.svelte';
 
 	// Settings "Kanäle" (E4 plan, T-3 and packages 7, 10, 11, 13, 15, 17 and 23; ADR-0026 section 3,
@@ -23,11 +26,14 @@
 	// (EH-5 to EH-7): the assistant (modal L, ChannelSetup) for Google Calendar, Telegram, Web.de and
 	// Gmail, the guide modal for Proton. The catalog links to them, the cards and the edit modal open
 	// them for their connection, and the owner keeps them in the address (`setup`, `onsetupchange`).
+	// Since EI-1 and EI-3 (ADR-0038) "Selbst hereinbringen" holds the own inbox with its keys and
+	// WhatsApp Web with its assistant (WhatsAppWebSetup, ?einrichten=whatsapp-web).
 	let {
 		captureUrl,
 		connections,
 		importKeywords = null,
 		inboxKeys = null,
+		extension = null,
 		setup = null,
 		onsetupchange
 	}: {
@@ -39,8 +45,13 @@
 		 * own inbox (ADR-0038).
 		 */
 		importKeywords?: ImportKeywordsStore | null;
-		/** Access keys of the own inbox (ADR-0038); without them the card is not shown. */
+		/**
+		 * Access keys of the own inbox (ADR-0038); without them the cards of the own inbox and of
+		 * WhatsApp Web are not shown.
+		 */
 		inboxKeys?: InboxKeysStore | null;
+		/** Folder of the built extension for WhatsApp Web, null while unknown. */
+		extension?: ExtensionInfo | null;
 		/** Assistant in the address, null without one. */
 		setup?: SetupTarget | null;
 		/** Opens, moves or closes the assistant (the owner changes the address). */
@@ -109,6 +120,10 @@
 
 			{#if inboxKeys !== null}
 				<OwnInboxCard store={inboxKeys} {importKeywords} />
+				<WhatsAppWebCard
+					{importKeywords}
+					setupHref={channelSetupHref({ kind: 'whatsapp-web', connectionId: null })}
+				/>
 			{/if}
 		</div>
 	</section>
@@ -123,6 +138,16 @@
 {#if setup !== null}
 	{#if setup.kind === 'proton'}
 		<ProtonGuide onclose={() => onsetupchange(null)} />
+	{:else if setup.kind === 'whatsapp-web'}
+		{#if inboxKeys !== null}
+			<WhatsAppWebSetup
+				{inboxKeys}
+				{importKeywords}
+				{extension}
+				appUrl={new URL(captureUrl).origin}
+				onclose={() => onsetupchange(null)}
+			/>
+		{/if}
 	{:else}
 		{#key setup.kind}
 			<ChannelSetup

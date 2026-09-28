@@ -9,7 +9,7 @@
 	import { PRIORITY_NUMBERS, PRIORITY_WORDS } from '$lib/domain/quick-syntax';
 	import { RESTART_NEEDED } from '$lib/guidance/texts';
 	import { HELP_SECTIONS } from '$lib/settings-sections';
-	import { trashHref } from '$lib/ticket-links';
+	import { channelSetupHref, trashHref } from '$lib/ticket-links';
 
 	// Settings "Hilfe" (ADR-0026 section 7, plan EH-9 §3.10): jump links, the keyboard shortcuts from
 	// the one source, the short syntax of the quick entry, how the access data work (moved here from
@@ -234,6 +234,60 @@
 			Mit <code>GET</code> auf dieselbe Adresse und dem Schlüssel prüfst du die Verbindung: Die App nennt
 			den Namen des Schlüssels.
 		</p>
+	</section>
+
+	<section id="whatsapp-web" aria-labelledby="whatsapp-web-title">
+		<h3 id="whatsapp-web-title">WhatsApp Web</h3>
+		<p>
+			Die Browser-Erweiterung „becauseyoulovejira für WhatsApp Web“ (Edge und Chrome) bringt
+			Nachrichten aus deinem offenen WhatsApp-Web-Tab in den Eingang, ohne Export. Eingerichtet wird
+			sie unter <a href={channelSetupHref({ kind: 'whatsapp-web', connectionId: null })}
+				>Kanäle → WhatsApp Web → Einrichten</a
+			>: Zugangsschlüssel erzeugen, Erweiterung aus dem Ordner
+			<code>app\erweiterung-whatsapp-web</code>
+			entpackt laden, Schlüssel eintragen, Verbindung testen.
+		</p>
+		<h4>So benutzt du sie</h4>
+		<ul>
+			<li>
+				<strong>Einzeln:</strong> An jeder Nachricht mit Text steht beim Überfahren und per Tab ein kleiner
+				Knopf „In den Eingang“. Er meldet „Angelegt“, „Schon im Eingang“ oder den Fehler.
+			</li>
+			<li>
+				<strong>Automatisch:</strong> Der Schalter „Automatisch (nur mit Stichwort)“ in der Erweiterung
+				ist aus, bis du ihn einschaltest. Dann gehen neue Nachrichten des geöffneten Chats an die App;
+				übernommen wird nur, was ein Stichwort für WhatsApp Web enthält. Optional nur für genannte Chats.
+			</li>
+			<li>
+				Dieselbe Nachricht kommt nur einmal an, auch nachdem du sie verworfen hast. Bilder, Sprach-
+				und Videonachrichten ohne Text übernimmt die Erweiterung nicht; eine Bildunterschrift schon.
+			</li>
+		</ul>
+		<h4>Gut zu wissen</h4>
+		<ul>
+			<li>
+				Die Erweiterung ist inoffiziell und nicht von WhatsApp. Sie liest nur, was du im offenen Tab
+				siehst; sie sendet nie etwas, klickt nichts und ändert keine Nachricht.
+			</li>
+			<li>
+				Sie arbeitet nur, solange der WhatsApp-Web-Tab offen ist, und automatisch nur im gerade
+				geöffneten Chat. Nachrichten von vor dem Einschalten übernimmt sie nicht.
+			</li>
+			<li>
+				Nach Updates von WhatsApp kann sie eine Anpassung brauchen. Dann zeigt sie „Seitenstruktur
+				nicht erkannt – Erweiterung braucht ein Update“ und tut nichts.
+			</li>
+			<li>
+				Sie spricht nur mit der App auf diesem Rechner (<code>127.0.0.1</code> oder
+				<code>localhost</code>), ohne Dienst im Internet. Absender, Chat, Zeit und Text landen im
+				Eingang, Telefonnummern nicht.
+			</li>
+			<li>
+				Nach einem Update der App auf der Seite der Erweiterungen (<code>edge://extensions</code>
+				bzw.
+				<code>chrome://extensions</code>) bei der Erweiterung auf „Neu laden“ klicken.
+			</li>
+		</ul>
 	</section>
 
 	<section id="fragen" aria-labelledby="fragen-title">

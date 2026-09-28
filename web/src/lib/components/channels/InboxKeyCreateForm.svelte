@@ -12,19 +12,19 @@
 	import SectionMessage from '../guidance/SectionMessage.svelte';
 
 	// Creates an access key of the own inbox (ADR-0038; plan eigener-eingang-whatsapp-web, EI-1):
-	// a name, then the key in plain text with "Kopieren", exactly once. The key lives only in this
-	// component; it is gone when the component leaves (closing the modal or the step of the
-	// assistant). Used by the card "Eigener Eingang (API)" and the assistant of WhatsApp Web, so no
-	// dialog opens from a dialog.
+	// a name, then the key in plain text with "Kopieren". The key lives only in this component, or
+	// in the owner that binds `created` (the assistant of WhatsApp Web shows it again in the step
+	// "Schlüssel eintragen"); it is gone when the modal closes, and never stored. Used by the card
+	// "Eigener Eingang (API)" and the assistant, so no dialog opens from a dialog.
 	let {
 		store,
 		initialName = '',
-		oncreated
+		created = $bindable(null)
 	}: {
 		store: InboxKeysStore;
 		initialName?: string;
-		/** After the key was created (e.g. to move on in the assistant). */
-		oncreated?: (key: CreatedInboxKey) => void;
+		/** The new key in plain text, null before one was created. */
+		created?: CreatedInboxKey | null;
 	} = $props();
 
 	const uid = $props.id();
@@ -35,7 +35,6 @@
 	let submitted = $state(false);
 	let saving = $state(false);
 	let serverError = $state<string | null>(null);
-	let created = $state<CreatedInboxKey | null>(null);
 
 	const nameError = $derived(submitted ? inboxKeyNameError(name) : null);
 	const error = $derived(nameError ?? serverError);
@@ -55,7 +54,6 @@
 			return;
 		}
 		created = result.key;
-		oncreated?.(result.key);
 	}
 </script>
 
