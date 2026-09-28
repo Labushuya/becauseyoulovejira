@@ -57,7 +57,8 @@
 		setTicketListStore,
 		ticketListData
 	} from '$lib/stores/ticket-list.svelte';
-	import { inboxItemHref, ticketPath } from '$lib/ticket-links';
+	import { TicketOpenModeStore, setTicketOpenMode } from '$lib/stores/open-mode.svelte';
+	import { inboxItemHref } from '$lib/ticket-links';
 
 	// Shell of every signed-in page (E2 plan, T-4). The root layout renders it only with a
 	// session; the login page stays outside this group.
@@ -75,6 +76,9 @@
 	// follow through the storage event, "Standard wiederherstellen" reports as a flag.
 	const columnPrefs = setColumnPrefsRegistry(new ColumnPrefsRegistry(window, flags));
 	$effect(() => untrack(() => columnPrefs.connect()));
+	// Panel or full view for every ticket link (plan BI-1, ADR-0036 §1), remembered on this device.
+	const openMode = setTicketOpenMode(new TicketOpenModeStore(window));
+	$effect(() => untrack(() => openMode.connect()));
 	// The last view outside the settings, for "Zurück zu …" there (ADR-0026 section 1, EH-1): every
 	// shown address is offered, the store keeps only views (no settings, no full view).
 	const lastView = setLastViewStore(new LastViewStore(sessionStore, () => page.url.origin));
@@ -247,7 +251,7 @@
 		tags={catalog.tags}
 		onsave={(entry, target) => saveQuickEntry(entry, target, quickDeps)}
 		onclose={() => (quickOpen = false)}
-		resultHref={(target, id) => (target === 'ticket' ? ticketPath(id) : inboxItemHref(id))}
+		resultHref={(target, id) => (target === 'ticket' ? openMode.path(id) : inboxItemHref(id))}
 	/>
 {/if}
 

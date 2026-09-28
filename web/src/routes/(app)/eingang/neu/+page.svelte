@@ -10,7 +10,11 @@
 	import { getInboxStore } from '$lib/stores/inbox.svelte';
 	import { getTicketDetailStore } from '$lib/stores/ticket-detail.svelte';
 	import { getTicketListStore } from '$lib/stores/ticket-list.svelte';
-	import { inboxHref, inboxItemHref, ticketPath, withTemplate } from '$lib/ticket-links';
+	import { inboxHref, inboxItemHref, withTemplate } from '$lib/ticket-links';
+	import { ticketLinks } from '$lib/stores/open-mode.svelte';
+
+	// Ticket links open the panel or the full view, as the user last chose (plan BI-1).
+	const links = ticketLinks();
 
 	// Capture by template (E4 plan, T-3 and package 5): the form in the panel of the inbox view.
 	// The chosen template stays in the URL (?vorlage=), so reload and back keep it. A ticket is
@@ -70,6 +74,6 @@
 		onsavepage={(id, title) => inbox.savePage({ id, title })}
 		onclose={() => goto(inboxHref(page.url))}
 		resultHref={(target, id) =>
-			target === 'ticket' ? ticketPath(id) : inboxItemHref(id, page.url)}
+			target === 'ticket' ? links.path(id) : inboxItemHref(id, page.url)}
 	/>
 {/key}

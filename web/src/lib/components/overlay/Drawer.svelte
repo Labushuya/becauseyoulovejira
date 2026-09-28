@@ -16,6 +16,7 @@
 		onclose,
 		closeFromFields = false,
 		fullViewHref = null,
+		onfullview,
 		onkeydown: onpanelkeydown,
 		context,
 		actions,
@@ -30,6 +31,8 @@
 		closeFromFields?: boolean;
 		/** Address of the full view (UI-7); without it there is no link. */
 		fullViewHref?: ResolvedPathname | null;
+		/** A click on "Vollansicht" (the owner remembers the choice, plan BI-1). */
+		onfullview?: () => void;
 		/** Keys of the panel before the Escape rule (e.g. Ctrl+Enter saves a form). */
 		onkeydown?: (event: KeyboardEvent) => void;
 		/** Left part of the header: key, "Eintrag im Eingang", … */
@@ -77,6 +80,10 @@
 					aria-label="Vollansicht öffnen"
 					title="Vollansicht"
 					data-full-view-link
+					onclick={(event) => {
+						// Opening it in a new tab or window is no choice for this one.
+						if (!event.ctrlKey && !event.metaKey && !event.shiftKey) onfullview?.();
+					}}
 				>
 					<svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true" focusable="false">
 						<path d="M9.5 2.5h4v4M13.5 2.5L9 7M6.5 13.5h-4v-4M2.5 13.5L7 9" />

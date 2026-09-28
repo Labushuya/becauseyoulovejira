@@ -7,7 +7,11 @@
 	import { getCatalogStore } from '$lib/stores/catalog.svelte';
 	import { RECURRENCE_UNAVAILABLE, getRecurrenceStore } from '$lib/stores/recurrence.svelte';
 	import { getTicketListStore } from '$lib/stores/ticket-list.svelte';
-	import { recurrenceHref, recurrencesHref, ticketPath } from '$lib/ticket-links';
+	import { recurrenceHref, recurrencesHref } from '$lib/ticket-links';
+	import { ticketLinks } from '$lib/stores/open-mode.svelte';
+
+	// Ticket links open the panel or the full view, as the user last chose (plan BI-1).
+	const links = ticketLinks();
 
 	// "Neue Regel" (E5 plan, T-6 and package 5): a rule without a ticket (ADR-0023 section 1). The
 	// first ticket comes when the lead time is reached, right after saving if it already is. After
@@ -35,7 +39,7 @@
 		projects={catalog.activeProjects}
 		tags={catalog.tags}
 		projectById={(id) => catalog.projectById(id)}
-		ticketHrefOf={ticketPath}
+		ticketHrefOf={links.path}
 		oncreatetag={(name) => catalog.ensureTag(name)}
 		onsave={(draft) => store.create(draft as RuleDraft)}
 		onsaved={(rule) => goto(recurrenceHref(rule.id), { replaceState: true })}

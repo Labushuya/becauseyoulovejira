@@ -1,0 +1,47 @@
+# E6-Plan, Teil „Bulk, Inline und Ansicht“: Öffnungsmodus, Sammelaktionen, Bearbeiten in Zellen
+
+- **Stand:** BI-1 umgesetzt (Öffnungsmodus). BI-2 und BI-3 folgen.
+- **Grundlage:**
+  - Arbeitspaket „Bulk & Inline & Ansicht“ (2026-09-28): Öffnungsmodus wie Jira, Auswahlspalte mit Sammelaktionen und Rückgängig, Inline-Bearbeitung in Zellen.
+  - [ADR-0036](../adr/0036-sammelbearbeitung-inline-und-oeffnungsmodus.md) (neu), [ADR-0025](../adr/0025-ui-konsistenz-overlay-system.md) (Overlays, Nachtrag 15), [ADR-0026](../adr/0026-einstellungsbereich-und-hinweis-bausteine.md) (Hinweise), [ADR-0009](../adr/0009-fehlerfarbe.md) (Rot nur für echte Fehler), [ADR-0029](../adr/0029-glas-materialien.md) (Glas nur in der Bedienebene), [ADR-0030](../adr/0030-spalten-breiten-und-kompakte-zeilen.md) (Spalten), [ADR-0031](../adr/0031-herkunft-sichern.md) Nachtrag B (Löschen mit Quellen), [ADR-0033](../adr/0033-unteraufgaben.md) (Unteraufgaben), [ADR-0021](../adr/0021-regelmodell-wiederkehrende-aufgaben.md) bis [ADR-0024](../adr/0024-serien-aus-kalendern.md) (Wiederholungen)
+  - [CLAUDE.md](../../CLAUDE.md) §3, §5, §6, §7, §8, §11, §12
+- **Einordnung:** Paketkürzel `BI`, Manifest-Block „Bulk, Inline und Ansicht“ ab `BYL-E6-320` (Offene Reste endet bei 309). ADR-0036; ADR-0037 ist für den Papierkorb reserviert. Eine Migration ist nicht geplant; falls doch, folgt sie auf `1790202200`.
+
+## 1. Querschnittsregeln
+
+- Gearbeitet wird in einem eigenen Git-Worktree außerhalb des Live-Ordners (wie in [Offene Reste](offene-reste.md) §1): Hooks im Ordner `app/` des Hauptordners wirken sofort in der Instanz des Nutzers.
+- Keine neue Abhängigkeit, keine neuen Farb- oder Maß-Tokens; Schriftgrößen und Radien nur über Tokens, die Ausnahmelisten schrumpfen nur.
+- Nur die bestehenden Bausteine (Popover, Drawer, Modal, Bestätigung, Flags, `SectionMessage`, Switch, Checkboxen). Kein Dialog aus einem Dialog. Was jsdom nicht kann, steht als manueller Fall im Test-Manifest.
+- **Gates je Paket:** eigener Branch und PR, `scripts\build.ps1` lokal grün (Exit 0, „Build complete!“), CI grün, Squash-Merge, Branch löschen, danach `main` im Live-Ordner ziehen und dort `build.ps1`.
+
+## 2. Pakete
+
+| Paket | Inhalt | Manifest |
+|---|---|---|
+| BI-1 | Öffnungsmodus „Seitenpanel“/„Vollansicht“ pro Gerät, „Im Seitenpanel öffnen“ in der Vollansicht, Vollansicht ersetzt das Panel, alle Ticket-Links im gemerkten Modus | BYL-E6-320, BYL-E6-321 (manuell) |
+| BI-2 | Auswahlspalte, Sammel-Aktionsleiste (Fälligkeit, Priorität, Status, Projekt, Tags, Erledigen, Löschen) mit Fortschritt, Ergebnis und Rückgängig; „Datum des Termins als Fälligkeit“ beim Umwandeln | ab BYL-E6-322 |
+| BI-3 | Bearbeiten in Zellen (Priorität, Status, Fälligkeit, Projekt, Tags) über kleine Popover | folgt |
+
+## 3. Entscheidungen
+
+| Datum | Paket | Entscheidung |
+|---|---|---|
+| 2026-09-28 | BI-1 | **Speicher:** `localStorage` `byl-ticket-open`, nur `full`; „Seitenpanel“ entfernt den Schlüssel. Streng gelesen, Fehler des Speichers abgefangen, `storage`-Abgleich anderer Tabs. Nicht in der URL und nicht pro Nutzer (ADR-0036 §1, Alternativen). |
+| 2026-09-28 | BI-1 | **Wer merkt:** nur „Vollansicht öffnen“ im Panel und „Im Seitenpanel öffnen“ in der Vollansicht, jeweils ohne Strg/Cmd/Umschalt. Neuladen, Zurück und direkte Adressen ändern nichts. |
+| 2026-09-28 | BI-1 | **Unter 64rem** gilt das Verhalten von vorher (Panel als Overlay, Vollansicht schließt zurück ins Panel), und nichts wird gespeichert. Die Grenze ist `PANEL_EMBEDDED_QUERY` (dieselbe wie `ViewWithPanel`), der Store folgt ihr per `matchMedia`. |
+| 2026-09-28 | BI-1 | **Nie beide:** Die Route entscheidet. `(tickets)/+layout.svelte` gibt `ViewWithPanel` auf `/voll` kein Panel, `tickets/[id]/+layout.svelte` rendert `TicketPanel` dort nicht. `ViewWithPanel` rendert den Inhalt ohne Panel mit `display: contents` statt `display: none`, weil das Modal der Vollansicht sonst nicht erschiene. |
+| 2026-09-28 | BI-1 | **Schließen:** × der Vollansicht führt zur Liste (`listHref`) und fokussiert den Titel-Link der Zeile; ohne Zeile regelt `TicketTable` den Fokus wie beim Schließen des Panels. |
+| 2026-09-28 | BI-1 | **Ungespeichertes:** Der Wechsel zwischen Panel und Vollansicht desselben Tickets fragt nicht, weil die Entwürfe in den Stores liegen und das Layout beide Routen teilt (`TICKET_ROUTES`); die bestehende Inline-Frage gilt beim Verlassen des Tickets aus der Vollansicht. Eine Frage beim Moduswechsel wäre ohne Verlust und daher nur Reibung. |
+| 2026-09-28 | BI-1 | **Links:** `ticketLinks()` liefert `href(id, url)` (mit Listen-Query) und `path(id)` (ohne, für Eingang, Wiederholungen, Ergebnisse) im gemerkten Modus; ohne Kontext das Panel. In der Vollansicht bleiben Pfad und Unteraufgaben Links auf Vollansichten; nach „Neues Ticket“ bleibt das neue Ticket im Panel, in dem das Formular stand. |
+
+## 4. Status
+
+| Paket | Stand |
+|---|---|
+| BI-1 | umgesetzt |
+| BI-2 | offen |
+| BI-3 | offen |
+
+## 5. Offene Punkte
+
+- Manuelle Browser-Prüfungen (BYL-E6-321).

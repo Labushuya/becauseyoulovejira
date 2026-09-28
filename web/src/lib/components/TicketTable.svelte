@@ -26,11 +26,11 @@
 	import {
 		NEW_TICKET_LINK_ID,
 		newTicketHref,
-		ticketHref,
 		withListQuery,
 		withShowDone
 	} from '$lib/ticket-links';
 	import { getQuickCaptureOpener } from '$lib/quick-capture-context';
+	import { ticketLinks } from '$lib/stores/open-mode.svelte';
 	import ColumnsPopover from './ColumnsPopover.svelte';
 	import CompletionDialog from './CompletionDialog.svelte';
 	import ErrorIcon from './ErrorIcon.svelte';
@@ -92,6 +92,8 @@
 	} = $props();
 
 	const uid = $props.id();
+	// Rows open the panel or the full view, as the user last chose (plan BI-1).
+	const links = ticketLinks();
 	const ids = {
 		heading: `${uid}-heading`,
 		caption: `${uid}-caption`,
@@ -327,7 +329,7 @@
 			progress={store.progressOf(ticket.id)}
 			project={catalog.projectOf(ticket)}
 			tags={catalog.tagsOf(ticket)}
-			href={ticketHref(ticket.id, page.url)}
+			href={links.href(ticket.id, page.url)}
 			today={store.today}
 			checked={store.isChecked(ticket)}
 			pending={store.isPending(ticket.id)}

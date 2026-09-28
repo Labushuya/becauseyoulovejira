@@ -40,10 +40,10 @@ vi.mock('$lib/stores/recurrence.svelte', async (importOriginal) => ({
 	getRecurrenceStore: () => ({ textOf: () => '' })
 }));
 
-function renderLayout(path: string, id?: string) {
+function renderLayout(path: string, id?: string, route = '/(app)/(tickets)/tickets/[id]') {
 	mocks.page.url = new URL(path, 'http://localhost:3000');
 	mocks.page.params = id ? { id } : {};
-	mocks.page.route = { id: id ? '/(app)/(tickets)/tickets/[id]' : '/(app)/(tickets)' };
+	mocks.page.route = { id: id ? route : '/(app)/(tickets)' };
 	const store = new TicketListStore(
 		{
 			listOpen: vi.fn(async () => []),
@@ -109,5 +109,26 @@ describe('tickets layout', () => {
 
 		expect(activate).toHaveBeenCalledExactlyOnceWith({ ...EMPTY_LIST_QUERY, showDone: true });
 		expect(store.showDone).toBe(true);
+	});
+
+	// The full view replaces the panel (plan BI-1): the list keeps its full width behind the
+	// modal, and the route content (the modal) still renders.
+	it('shows no panel column while the full view is open', () => {
+		renderLayout(
+			'/tickets/abc123def456ghi/voll',
+			'abc123def456ghi',
+			'/(app)/(tickets)/tickets/[id]/voll'
+		);
+		const view = document.querySelector('.view');
+		expect(view?.classList.contains('with-panel')).toBe(false);
+		expect(view?.getAttribute('data-panel-mode')).toBeNull();
+		expect(screen.getByText('Panel')).toBeTruthy();
+	});
+
+	it('shows the panel column for a ticket in the panel', () => {
+		renderLayout('/tickets/abc123def456ghi', 'abc123def456ghi');
+		const view = document.querySelector('.view');
+		expect(view?.classList.contains('with-panel')).toBe(true);
+		expect(view?.getAttribute('data-panel-mode')).toBe('embedded');
 	});
 });

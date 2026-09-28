@@ -24,13 +24,23 @@
 	import { getTicketDetailStore } from '$lib/stores/ticket-detail.svelte';
 	import { getTicketListStore } from '$lib/stores/ticket-list.svelte';
 	import { getTicketSourcesStore } from '$lib/stores/ticket-sources.svelte';
-	import { FULL_VIEW_LINK, fullViewHref, ticketHref, ticketPathSteps } from '$lib/ticket-links';
+	import { findTicketOpenMode } from '$lib/stores/open-mode.svelte';
+	import {
+		FULL_VIEW_LINK,
+		fullViewHref,
+		listHref,
+		ticketHref,
+		ticketPathSteps
+	} from '$lib/ticket-links';
 	import { getTicketRoute } from '$lib/ticket-route';
 
 	// Full view of a ticket (/tickets/<id>/voll; ADR-0025 section 7, decision 2 of the user): the
-	// XL modal over the panel with the same parts arranged in two columns. The layout of the ticket
-	// route loads the ticket and holds the question about unsaved text; this page only shows it.
-	// Closing goes back to the panel with the same list query and the focus on "Vollansicht".
+	// XL modal over the list with the same parts arranged in two columns. It replaces the panel
+	// (plan BI-1): the panel is not mounted meanwhile. The layout of the ticket route loads the
+	// ticket and holds the question about unsaved text; this page only shows it. Closing goes back
+	// to the list with the same query and the focus on the row of the ticket (below 64rem to the
+	// panel with the focus on "Vollansicht"); "Im Seitenpanel öffnen" in the header, at the place of
+	// "Vollansicht" in the panel, shows the same ticket in the panel and remembers that choice.
 	// A sub-task shows its path above the title; the path and the section "Unteraufgaben" lead to
 	// the full view of the other ticket (ADR-0033 section 4). "Löschen …" asks inline at the top of
 	// the content, because no dialog opens from the full view (ADR-0025 section 3); so does the
@@ -44,6 +54,7 @@
 	const sources = getTicketSourcesStore();
 	const inbox = getInboxStore();
 	const route = getTicketRoute();
+	const openMode = findTicketOpenMode();
 
 	const uid = $props.id();
 	const headingId = `${uid}-title`;
@@ -83,10 +94,29 @@
 		deleteButton?.focus();
 	}
 
+	/**
+	 * ×, Escape and the veil: back to the list without a panel, the focus on the row of the ticket
+	 * (plan BI-1). Below 64rem, where the panel is an overlay, back to the panel as before.
+	 */
 	async function close() {
+		if (openMode?.wide ?? true) {
+			await goto(listHref(page.url), { noScroll: true });
+			await tick();
+			const row = [...document.querySelectorAll<HTMLElement>('tr[data-ticket-id]')].find(
+				(element) => element.dataset.ticketId === id
+			);
+			row?.querySelector<HTMLElement>('a.title-link')?.focus();
+			return;
+		}
 		await goto(ticketHref(id, page.url), { noScroll: true });
 		await tick();
 		document.querySelector<HTMLElement>(FULL_VIEW_LINK)?.focus();
+	}
+
+	/** "Im Seitenpanel öffnen": the same ticket in the panel, remembered as the way to open. */
+	function toPanel(event: MouseEvent) {
+		if (event.ctrlKey || event.metaKey || event.shiftKey) return;
+		openMode?.choose('panel');
 	}
 </script>
 
@@ -105,6 +135,19 @@
 				onask={() => (askingFor = id)}
 				bind:button={deleteButton}
 			/>
+			<!-- The mirror of "Vollansicht" in the panel: same place before the ×, same look. -->
+			<a
+				class="button-icon panel-view-link"
+				href={ticketHref(id, page.url)}
+				aria-label="Im Seitenpanel öffnen"
+				title="Im Seitenpanel öffnen"
+				data-panel-view-link
+				onclick={toPanel}
+			>
+				<svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true" focusable="false">
+					<path d="M13.5 6.5h-4v-4M9.5 6.5L14 2M2.5 9.5h4v4M6.5 9.5L2 14" />
+				</svg>
+			</a>
 		{/snippet}
 		{#snippet main()}
 			{#if route.leaving}
@@ -176,3 +219,14 @@
 		{/snippet}
 	</FullView>
 {/if}
+
+<style>
+	/* Drawn like the icons of the header of the panel and the modal. */
+	.panel-view-link svg {
+		fill: none;
+		stroke: currentColor;
+		stroke-width: 1.5;
+		stroke-linecap: round;
+		stroke-linejoin: round;
+	}
+</style>

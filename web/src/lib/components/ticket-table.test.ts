@@ -15,6 +15,8 @@ import type { Tag } from '$lib/domain/tag';
 import type { TicketPatch, TicketSummary } from '$lib/domain/ticket';
 import { CatalogStore } from '$lib/stores/catalog.svelte';
 import { FLAG_DURATION_MS, FlagStore } from '$lib/stores/flags.svelte';
+import { TicketOpenModeStore } from '$lib/stores/open-mode.svelte';
+import TicketTableWithOpenMode from '$lib/test/TicketTableWithOpenMode.svelte';
 import { TicketListStore, type TicketListData } from '$lib/stores/ticket-list.svelte';
 import { QUICK_CAPTURE_CONTEXT } from '$lib/quick-capture-context';
 import { NEW_TICKET_LINK_ID } from '$lib/ticket-links';
@@ -278,6 +280,33 @@ describe('ticket table', () => {
 		mocks.goto.mockClear();
 		await fireEvent.click(screen.getByRole('checkbox', { name: `${item.key} erledigt` }));
 		expect(mocks.goto).not.toHaveBeenCalled();
+	});
+
+	// Plan BI-1: rows follow the remembered way to open a ticket; with the full view the panel
+	// never mounts on the way.
+	it('opens the full view directly when it is the remembered way', async () => {
+		const item = ticket();
+		mocks.page.url = new URL('/?erledigte=1', 'http://localhost:3000');
+		const store = new TicketListStore(fakeData([item], [[]]), SESSION);
+		const catalog = new CatalogStore(
+			{ listProjects: vi.fn(async () => []), listTags: vi.fn(async () => []), createTag: vi.fn() },
+			SESSION
+		);
+		store.activate(parseListQuery(mocks.page.url.searchParams));
+		const openMode = new TicketOpenModeStore(null);
+		openMode.choose('full');
+		render(TicketTableWithOpenMode, { props: { openMode, store, catalog } });
+		await vi.advanceTimersByTimeAsync(0);
+
+		const full = `/tickets/${item.id}/voll?erledigte=1`;
+		expect(titleLink(openRows()[0]!).getAttribute('href')).toBe(full);
+		await fireEvent.click(openRows()[0]!.querySelector('.key')!);
+		expect(mocks.goto).toHaveBeenCalledExactlyOnceWith(full);
+
+		mocks.goto.mockClear();
+		openMode.choose('panel');
+		await tick();
+		expect(titleLink(openRows()[0]!).getAttribute('href')).toBe(`/tickets/${item.id}?erledigte=1`);
 	});
 
 	it('shows the empty states', async () => {

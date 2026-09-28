@@ -107,8 +107,13 @@
 		min-width: 0;
 	}
 
+	/*
+	 * Without a panel the route content takes no room, but it still renders: the full view of a
+	 * ticket is a modal in the top layer and replaces the panel (plan BI-1), and a dialog below an
+	 * ancestor with display: none would not show.
+	 */
 	.panel:not(.open) {
-		display: none;
+		display: contents;
 	}
 
 	/*

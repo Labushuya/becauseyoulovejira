@@ -29,6 +29,7 @@
 		catalog,
 		listHref,
 		fullViewHref = null,
+		onfullview,
 		onclose,
 		ondeleted,
 		activity,
@@ -48,6 +49,8 @@
 		listHref: ResolvedPathname;
 		/** Address of the full view (UI-7). */
 		fullViewHref?: ResolvedPathname | null;
+		/** A click on "Vollansicht": the owner remembers the choice (plan BI-1). */
+		onfullview?: () => void;
 		onclose: () => void;
 		/** Called after the ticket was deleted; the owner closes the panel. */
 		ondeleted: () => void;
@@ -104,6 +107,7 @@
 	labelledby={headingId}
 	{onclose}
 	fullViewHref={store.state === 'ready' ? fullViewHref : null}
+	{onfullview}
 >
 	{#snippet context()}
 		{#if store.state === 'ready' && ticket && path.length > 0}

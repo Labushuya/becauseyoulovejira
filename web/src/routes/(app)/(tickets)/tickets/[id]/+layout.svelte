@@ -18,15 +18,19 @@
 	import { getTicketDetailStore } from '$lib/stores/ticket-detail.svelte';
 	import { getTicketListStore } from '$lib/stores/ticket-list.svelte';
 	import { getTicketSourcesStore } from '$lib/stores/ticket-sources.svelte';
-	import { appHref, fullViewHref, listHref, ticketHref } from '$lib/ticket-links';
+	import { findTicketOpenMode, ticketLinks } from '$lib/stores/open-mode.svelte';
+	import { appHref, fullViewHref, listHref } from '$lib/ticket-links';
 	import { setTicketRoute } from '$lib/ticket-route';
 
 	// Detail panel of /tickets/<record id> (E2 plan, T-4) and the full view /tickets/<id>/voll below
 	// it (ADR-0025 section 7): this layout loads the ticket and its comments once for both, holds the
-	// question about unsaved text and renders the panel; the full view lies over it as a modal. A
-	// reload opens the same panel or full view.
+	// question about unsaved text and renders the panel. The full view replaces the panel (plan
+	// BI-1): while it is shown, the panel is not mounted, so the two never stand at the same time,
+	// also not after back or forward. A reload opens the same panel or full view. Links to other
+	// tickets follow the remembered way to open them (panel or full view).
 	let { children } = $props();
 
+	const links = ticketLinks();
 	const detail = getTicketDetailStore();
 	const comments = getTicketActivityStore();
 	const catalog = getCatalogStore();
@@ -37,6 +41,8 @@
 	const id = $derived(page.params.id ?? '');
 	const back = $derived(listHref(page.url));
 	const full = $derived(fullViewHref(id, page.url));
+	const fullView = $derived(page.route.id === '/(app)/(tickets)/tickets/[id]/voll');
+	const modeStore = findTicketOpenMode();
 	// The parent of a sub-task for its path (ADR-0033), as the list knows it.
 	const parent = $derived(
 		detail.state === 'ready' && detail.ticket
@@ -153,55 +159,58 @@
 	<title>{detail.ticket ? `${detail.ticket.key} · ` : ''}becauseyoulovejira</title>
 </svelte:head>
 
-<TicketPanel
-	store={detail}
-	{catalog}
-	listHref={back}
-	fullViewHref={full}
-	onclose={close}
-	ondeleted={deleted}
-	sourceCount={sourceStore.ticketId === id ? sourceStore.items.length : 0}
-	{parent}
-	parentHref={parent ? ticketHref(parent.id, page.url) : null}
-	subtaskCount={tickets.progressOf(id).total}
->
-	{#snippet parentField(ticket: Ticket)}
-		<TicketParentField
-			store={detail}
-			{ticket}
-			{parent}
-			parentHref={parent ? ticketHref(parent.id, page.url) : null}
-			subtaskCount={tickets.progressOf(ticket.id).total}
-			search={(text, options) => sourceStore.search(text, options)}
-		/>
-	{/snippet}
-	{#snippet subtasks(ticket: Ticket)}
-		{#if !ticket.parentId}
-			<TicketSubtasks
+{#if !fullView}
+	<TicketPanel
+		store={detail}
+		{catalog}
+		listHref={back}
+		fullViewHref={full}
+		onfullview={() => modeStore?.choose('full')}
+		onclose={close}
+		ondeleted={deleted}
+		sourceCount={sourceStore.ticketId === id ? sourceStore.items.length : 0}
+		{parent}
+		parentHref={parent ? links.href(parent.id, page.url) : null}
+		subtaskCount={tickets.progressOf(id).total}
+	>
+		{#snippet parentField(ticket: Ticket)}
+			<TicketParentField
+				store={detail}
 				{ticket}
-				list={tickets}
-				hrefOf={(subtaskId) => ticketHref(subtaskId, page.url)}
+				{parent}
+				parentHref={parent ? links.href(parent.id, page.url) : null}
+				subtaskCount={tickets.progressOf(ticket.id).total}
+				search={(text, options) => sourceStore.search(text, options)}
 			/>
-		{/if}
-	{/snippet}
-	{#snippet recurrence(ticket: Ticket)}
-		<RecurrenceSummary
-			{ticket}
-			store={rules}
-			today={tickets.today}
-			onticket={(changed) => {
-				detail.upsert(changed);
-				tickets.upsert(changed);
-			}}
-		/>
-	{/snippet}
-	{#snippet sources(ticket: Ticket)}
-		<TicketSources {ticket} store={sourceStore} candidates={inbox.newItems} />
-	{/snippet}
-	{#snippet activity()}
-		<TicketActivity store={comments} {catalog} />
-	{/snippet}
-</TicketPanel>
+		{/snippet}
+		{#snippet subtasks(ticket: Ticket)}
+			{#if !ticket.parentId}
+				<TicketSubtasks
+					{ticket}
+					list={tickets}
+					hrefOf={(subtaskId) => links.href(subtaskId, page.url)}
+				/>
+			{/if}
+		{/snippet}
+		{#snippet recurrence(ticket: Ticket)}
+			<RecurrenceSummary
+				{ticket}
+				store={rules}
+				today={tickets.today}
+				onticket={(changed) => {
+					detail.upsert(changed);
+					tickets.upsert(changed);
+				}}
+			/>
+		{/snippet}
+		{#snippet sources(ticket: Ticket)}
+			<TicketSources {ticket} store={sourceStore} candidates={inbox.newItems} />
+		{/snippet}
+		{#snippet activity()}
+			<TicketActivity store={comments} {catalog} />
+		{/snippet}
+	</TicketPanel>
+{/if}
 
 <ConfirmDialog
 	open={leaving !== null && inlineAskers === 0}

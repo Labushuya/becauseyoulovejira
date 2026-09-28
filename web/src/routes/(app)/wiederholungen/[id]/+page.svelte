@@ -9,7 +9,11 @@
 	import { getCatalogStore } from '$lib/stores/catalog.svelte';
 	import { RECURRENCE_UNAVAILABLE, getRecurrenceStore } from '$lib/stores/recurrence.svelte';
 	import { getTicketListStore } from '$lib/stores/ticket-list.svelte';
-	import { recurrencesHref, ticketPath } from '$lib/ticket-links';
+	import { recurrencesHref } from '$lib/ticket-links';
+	import { ticketLinks } from '$lib/stores/open-mode.svelte';
+
+	// Ticket links open the panel or the full view, as the user last chose (plan BI-1).
+	const links = ticketLinks();
 
 	// Panel of one rule (/wiederholungen/<record id>, E5 plan, T-6 and package 5); a reload opens
 	// the same panel. The rule comes from the store, so live changes (a ticket created by the
@@ -52,7 +56,7 @@
 			tags={catalog.tags}
 			projectById={(projectId) => catalog.projectById(projectId)}
 			{openTicket}
-			ticketHrefOf={ticketPath}
+			ticketHrefOf={links.path}
 			oncreatetag={(name) => catalog.ensureTag(name)}
 			onsave={(patch) => store.update(current.id, patch)}
 			ontoggle={(active) => store.setActive(current.id, active)}

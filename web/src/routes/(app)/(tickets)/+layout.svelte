@@ -31,7 +31,10 @@
 	const startTour = getTourStarter();
 	const query = $derived(parseListQuery(page.url.searchParams));
 	const activeId = $derived(page.params.id ?? null);
-	const withPanel = $derived(page.route.id !== '/(app)/(tickets)');
+	// The full view replaces the panel (plan BI-1): the list keeps its full width behind the modal.
+	const withPanel = $derived(
+		page.route.id !== '/(app)/(tickets)' && page.route.id !== '/(app)/(tickets)/tickets/[id]/voll'
+	);
 	const creating = $derived(page.route.id === '/(app)/(tickets)/tickets/neu');
 
 	// Loads the list and follows the list state in the URL (reload, back and forward included).

@@ -258,6 +258,11 @@ export function ticketPath(id: string): ResolvedPathname {
 	return resolve(`/tickets/${encodeURIComponent(id)}`);
 }
 
+/** Path of the full view of a ticket without any list state (links from inbox and rules). */
+export function fullViewPath(id: string): ResolvedPathname {
+	return resolve(`/tickets/${encodeURIComponent(id)}/voll`) as ResolvedPathname;
+}
+
 /**
  * Path, query and hash of a URL of this app, e.g. the target of a navigation that was held up for
  * a question (ADR-0025 section 4). SvelteKit gives such targets with the base path already in.

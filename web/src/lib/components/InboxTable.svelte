@@ -19,13 +19,7 @@
 	import { getColumnPrefs } from '$lib/stores/column-prefs.svelte';
 	import type { FlagSink } from '$lib/stores/flags.svelte';
 	import { INBOX_UNAVAILABLE_MESSAGE, type InboxStore } from '$lib/stores/inbox.svelte';
-	import {
-		captureHref,
-		convertHref,
-		inboxItemHref,
-		ticketPath,
-		withInboxQuery
-	} from '$lib/ticket-links';
+	import { captureHref, convertHref, inboxItemHref, withInboxQuery } from '$lib/ticket-links';
 	import ChipGroup from './ChipGroup.svelte';
 	import ColumnsPopover from './ColumnsPopover.svelte';
 	import EmptyState from './guidance/EmptyState.svelte';
@@ -34,6 +28,7 @@
 	import { ColumnFit } from './table/column-fit.svelte';
 	import ResizableHeader from './table/ResizableHeader.svelte';
 	import ViewSwitch from './ViewSwitch.svelte';
+	import { ticketLinks } from '$lib/stores/open-mode.svelte';
 
 	// Inbox view (E4 plan, package 3; ADR-0014 sections 3 and 4; ADR-0019 section 6): section bar
 	// "Eingang" with the switch and "Gesammelt umwandeln", the chips "Quelle" and "Zustand" (state
@@ -89,6 +84,9 @@
 		/** First actions of the section bar ("Alle Kanäle jetzt abrufen", package A item 4). */
 		actions?: Snippet;
 	} = $props();
+
+	// Ticket links open the panel or the full view, as the user last chose (plan BI-1).
+	const links = ticketLinks();
 
 	const uid = $props.id();
 	const ids = {
@@ -238,7 +236,7 @@
 		<p class="duplicate">
 			<span class="duplicate-label">Mögliches Duplikat:</span>
 			{#if ticket !== undefined}
-				<a href={ticketPath(ticket.id)}>{ticket.key}</a>
+				<a href={links.path(ticket.id)}>{ticket.key}</a>
 				<button
 					class="text-button"
 					type="button"
@@ -534,13 +532,13 @@
 									{:else if linkedTicket !== null}
 										<a
 											class="ticket-chip"
-											href={ticketPath(linkedTicket.id)}
+											href={links.path(linkedTicket.id)}
 											title={`${linkedTicket.key} · ${linkedTicket.title}`}
 											aria-label={`Ticket ${linkedTicket.key} öffnen: „${item.title}“`}
 											>→ <span class="ticket-key">{linkedTicket.key}</span></a
 										>
 									{:else if item.ticketId !== null}
-										<a class="action" href={ticketPath(item.ticketId)}
+										<a class="action" href={links.path(item.ticketId)}
 											>Ticket ansehen<span class="visually-hidden">: „{item.title}“</span></a
 										>
 									{/if}
