@@ -4,6 +4,7 @@
 	import { berlinDateOf, formatBerlinDateTime } from '$lib/domain/format';
 	import type { TicketPrefill } from '$lib/domain/inbox';
 	import {
+		defaultFormValues,
 		formErrors,
 		type RecurrenceFormField,
 		type RecurrenceFormValues
@@ -41,16 +42,22 @@
 	// (ADR-0025 section 4) if something was entered, a name in the tag picker included. From the inbox (E4 plan, T-5) title and description come
 	// filled in; the date at the sender is only a hint with "Als Fälligkeit übernehmen" (P-5).
 	// An entry the user typed in brings the project, tags, priority and due date chosen then.
+	// Repeating right away (plan OR-4): with `repeat` the form has the folded section "Wiederholen"
+	// (a disclosure button with aria-expanded as its heading); opened it holds the fields of a
+	// rhythm with the preview, starting on the due date or today. Only an open section creates a
+	// rule: the route creates it after the ticket, the known two steps; if it fails, the ticket
+	// stays and its panel offers "Wiederholen…". Folding keeps the values for this form. Untouched
+	// default values follow a changed due date.
 	// A calendar series (E5 plan, package 6; ADR-0024 section 1) shows its rhythm with "Als
-	// Wiederholung übernehmen"; only that click opens the section "Wiederholung" with the suggested
-	// values, and the icon button "Wiederholung entfernen" closes it again. A series the rules cannot express gets a neutral hint.
-	// Nothing is set without the click (P-5); the route creates the rule after the ticket.
+	// Wiederholung übernehmen"; that click opens the section with the suggested values. A series the
+	// rules cannot express gets a neutral hint. Nothing is set without a click (P-5).
 	let {
 		projects = [],
 		initialProject = null,
 		prefill = null,
 		sourceLabel = null,
 		suggestion = null,
+		repeat = false,
 		today = null,
 		tags = [],
 		oncreatetag = async () => ({ ok: false, message: null }),
@@ -68,6 +75,8 @@
 		sourceLabel?: string | null;
 		/** Suggestion from the RRULE of the entry (rrule.ts); null without a series. */
 		suggestion?: RruleSuggestion | null;
+		/** Rules are available (after the E5 migration): the section "Wiederholen" is offered. */
+		repeat?: boolean;
 		/** Berlin date of today, for the preview of the section "Wiederholung". */
 		today?: CalendarDate | null;
 		/** Tags that can be chosen (the catalog). */
@@ -104,7 +113,8 @@
 		tags: `${uid}-tags`,
 		tagsError: `${uid}-tags-error`,
 		description: `${uid}-description-error`,
-		recurrence: `${uid}-recurrence`
+		recurrence: `${uid}-recurrence`,
+		recurrenceBody: `${uid}-recurrence-body`
 	};
 
 	// The form is opened for one entry (the route keys it), so the values are read once.
@@ -132,14 +142,21 @@
 	let message = $state<string | null>(null);
 	let fieldErrors = $state<Partial<Record<keyof TicketDraft, string>>>({});
 	let titleInput = $state<HTMLInputElement>();
-	/** Section "Wiederholung"; null while it is closed, so no rule comes without the click. */
+	/**
+	 * Values of the section "Wiederholen"; null until it is opened the first time. They stay while
+	 * the section is folded; only an open section creates a rule.
+	 */
 	let recurrence = $state<{ values: RecurrenceFormValues } | null>(null);
+	let repeatOpen = $state(false);
+	/** Due date the default values were made for; null once they came from a suggestion. */
+	let defaultsFor: string | null = null;
 	let recurrenceErrors = $state<Partial<Record<RecurrenceFormField, string>>>({});
 	let recurrenceSection = $state<HTMLElement>();
-	let recurrenceHeading = $state<HTMLElement>();
-	let takeOverButton = $state<HTMLButtonElement>();
+	let repeatToggle = $state<HTMLButtonElement>();
 	const ruleSuggestion = $derived(suggestion?.kind === 'rule' ? suggestion : null);
 	const unsupported = $derived(suggestion?.kind === 'unsupported' ? suggestion : null);
+	/** The section is offered with rules available (or with a suggestion) and a known date. */
+	const canRepeat = $derived(today !== null && (repeat || ruleSuggestion !== null));
 
 	const wantedProject = $derived(preset?.project ?? initialProject);
 	const defaultProject = $derived(
@@ -167,7 +184,7 @@
 			project !== defaultProject ||
 			tagIds.join(',') !== initialTagIds.join(',') ||
 			tagText.trim() !== '' ||
-			recurrence !== null
+			repeatOpen
 	);
 	const dueError = $derived(dueInvalid ? 'Ungültiges Datum.' : (fieldErrors.due ?? null));
 
@@ -182,8 +199,9 @@
 			if (missingTitle) titleInput?.focus();
 			return;
 		}
-		if (recurrence !== null) {
-			recurrenceErrors = formErrors(recurrence.values);
+		const rhythm = repeatOpen && recurrence !== null ? recurrence.values : null;
+		if (rhythm !== null) {
+			recurrenceErrors = formErrors(rhythm);
 			if (Object.keys(recurrenceErrors).length > 0) {
 				await tick();
 				recurrenceSection?.querySelector<HTMLElement>('[aria-invalid="true"]')?.focus();
@@ -204,7 +222,7 @@
 				// Only tags the catalog knows: a preset may name a tag deleted since.
 				tags: chosenTags.map((tag) => tag.id)
 			},
-			recurrence === null ? null : recurrence.values
+			rhythm
 		);
 		if (result.ok) {
 			oncreated(result.ticket.id);
@@ -220,17 +238,51 @@
 	async function takeOver() {
 		if (ruleSuggestion === null) return;
 		recurrence = { values: suggestionFormValues(ruleSuggestion.params) };
+		defaultsFor = null;
 		recurrenceErrors = {};
+		repeatOpen = true;
 		await tick();
-		recurrenceHeading?.focus();
+		repeatToggle?.focus();
 	}
 
-	/** "Wiederholung entfernen": closes the section; the ticket is created without a rule. */
-	async function removeRecurrence() {
-		recurrence = null;
-		recurrenceErrors = {};
-		await tick();
-		takeOverButton?.focus();
+	function dueOrNull(value: string): CalendarDate | null {
+		return value === '' ? null : (value as CalendarDate);
+	}
+
+	/** The values are still the defaults made for `defaultsFor` (nothing chosen by hand). */
+	function untouchedDefaults(): boolean {
+		return (
+			recurrence !== null &&
+			defaultsFor !== null &&
+			today !== null &&
+			JSON.stringify(recurrence.values) ===
+				JSON.stringify(defaultFormValues(dueOrNull(defaultsFor), today))
+		);
+	}
+
+	function useDefaults() {
+		if (today === null) return;
+		recurrence = { values: defaultFormValues(dueOrNull(due), today) };
+		defaultsFor = due;
+	}
+
+	/**
+	 * The disclosure "Wiederholen": opening shows the values of before, or the defaults (weekly on
+	 * the weekday of the due date or of today, starting then, lead time 3); folding creates no rule.
+	 */
+	function toggleRepeat() {
+		if (repeatOpen) {
+			repeatOpen = false;
+			recurrenceErrors = {};
+			return;
+		}
+		if (recurrence === null || untouchedDefaults()) useDefaults();
+		repeatOpen = true;
+	}
+
+	/** A new due date moves untouched default values along (weekday and start). */
+	function dueChanged() {
+		if (repeatOpen && untouchedDefaults() && !dueInvalid) useDefaults();
 	}
 
 	/** "Als Fälligkeit übernehmen": the Berlin calendar date of the date at the sender. */
@@ -349,6 +401,7 @@
 					aria-describedby={dueError ? ids.dueError : undefined}
 					bind:value={due}
 					oninput={(event) => (dueInvalid = event.currentTarget.validity.badInput)}
+					onchange={dueChanged}
 				/>
 			</div>
 		</div>
@@ -370,13 +423,8 @@
 					{note}
 				{/each}
 				{#snippet actions()}
-					{#if recurrence === null}
-						<button
-							class="button-secondary"
-							type="button"
-							bind:this={takeOverButton}
-							onclick={takeOver}
-						>
+					{#if !repeatOpen}
+						<button class="button-secondary" type="button" onclick={takeOver}>
 							Als Wiederholung übernehmen
 						</button>
 					{/if}
@@ -388,28 +436,37 @@
 				dem Anlegen kannst du am Ticket „Wiederholen…“ wählen.
 			</SectionMessage>
 		{/if}
-		{#if recurrence !== null && today !== null}
+		{#if canRepeat && today !== null}
 			<section class="recurrence" aria-labelledby={ids.recurrence} bind:this={recurrenceSection}>
-				<div class="recurrence-head">
-					<h3 id={ids.recurrence} tabindex="-1" bind:this={recurrenceHeading}>Wiederholung</h3>
+				<h3 id={ids.recurrence}>
 					<button
-						class="button-icon"
+						class="disclosure"
 						type="button"
-						aria-label="Wiederholung entfernen"
-						title="Wiederholung entfernen"
-						onclick={removeRecurrence}
+						aria-expanded={repeatOpen}
+						aria-controls={ids.recurrenceBody}
+						bind:this={repeatToggle}
+						onclick={toggleRepeat}
 					>
-						<svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true" focusable="false">
-							<path d="M4 4l8 8M12 4l-8 8" stroke="currentColor" stroke-width="1.5" />
+						<svg viewBox="0 0 12 12" aria-hidden="true" focusable="false">
+							<path d={repeatOpen ? 'M3 4.5l3 3 3-3' : 'M4.5 3l3 3-3 3'} />
 						</svg>
+						Wiederholen
 					</button>
+				</h3>
+				<div class="recurrence-body" id={ids.recurrenceBody} hidden={!repeatOpen}>
+					{#if repeatOpen && recurrence !== null}
+						<p class="hint">
+							Das Ticket wird das erste der Serie; die Regel entsteht direkt nach dem Anlegen.
+							Zugeklappt entsteht keine Regel.
+						</p>
+						<RecurrenceForm
+							bind:values={recurrence.values}
+							errors={recurrenceErrors}
+							{today}
+							withoutDue={due === ''}
+						/>
+					{/if}
 				</div>
-				<RecurrenceForm
-					bind:values={recurrence.values}
-					errors={recurrenceErrors}
-					{today}
-					withoutDue={due === ''}
-				/>
 			</section>
 		{/if}
 
@@ -549,16 +606,47 @@
 		border-top: 1px solid var(--color-line);
 	}
 
-	.recurrence-head {
-		display: flex;
-		gap: 0.5rem;
-		align-items: center;
-		justify-content: space-between;
+	.recurrence-body {
+		display: grid;
+		gap: 0.75rem;
+	}
+
+	.recurrence-body[hidden] {
+		display: none;
 	}
 
 	h3 {
-		font-size: 0.9375rem;
+		font-size: var(--font-size-body);
 		font-weight: 600;
+	}
+
+	/* The heading of the section is its disclosure button (plan OR-4). */
+	.disclosure {
+		display: inline-flex;
+		gap: 0.375rem;
+		align-items: center;
+		padding: 0.125rem 0.25rem;
+		margin-left: -0.25rem;
+		font: inherit;
+		color: inherit;
+		background: none;
+		border: none;
+		border-radius: var(--radius-control);
+		cursor: pointer;
+	}
+
+	.disclosure:hover {
+		background: var(--fill-control-hover);
+	}
+
+	.disclosure svg {
+		width: 0.75rem;
+		height: 0.75rem;
+		fill: none;
+		stroke: currentColor;
+		stroke-width: 1.5;
+		stroke-linecap: round;
+		stroke-linejoin: round;
 	}
 
 	.source-date {
