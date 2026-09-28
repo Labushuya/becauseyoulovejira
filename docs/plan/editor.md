@@ -1,6 +1,6 @@
 # E6-Plan, Teil Editor: Unterstreichen, Checklisten und ein Editor wie Jira
 
-- **Stand:** Stufe A umgesetzt (2026-09-28): RT-0 (#114, Weg B), RT-1 (#115), RT-2 (#116). Stufe B freigegeben und begonnen (Auftrag vom 2026-09-28): RT-3 umgesetzt, RT-4 bis RT-6 folgen. Offen sind außerdem die manuellen Browser-Prüfungen.
+- **Stand:** Stufe A umgesetzt (2026-09-28): RT-0 (#114, Weg B), RT-1 (#115), RT-2 (#116). Stufe B freigegeben und begonnen (Auftrag vom 2026-09-28): RT-3 (#125) und RT-4 umgesetzt, RT-5 und RT-6 folgen. Offen sind außerdem die manuellen Browser-Prüfungen.
 - **Grundlage:**
   - [ADR-0032](../adr/0032-editor-tiptap-markdown.md) (Tiptap, Markdown als Speicherformat, Brücke über die markdown-it-Instanz der Anzeige, Spike RT-0)
   - [ADR-0008](../adr/0008-markdown-rendering-und-sanitizing.md), [ADR-0006](../adr/0006-frontend-zustand-und-datenzugriff.md) §5, [ADR-0025](../adr/0025-ui-konsistenz-overlay-system.md), [ADR-0026](../adr/0026-einstellungsbereich-und-hinweis-bausteine.md), [ADR-0029](../adr/0029-glas-materialien.md), [ADR-0030](../adr/0030-spalten-breiten-und-kompakte-zeilen.md), [ADR-0031](../adr/0031-herkunft-sichern.md)
@@ -34,7 +34,7 @@
 | RT-1 | Anzeige: `++u++` → `<u>` (`markdown-it-ins`), Task-Listen per eigenem Plugin, Sanitizer-Erweiterung mit Hook, Korpus; XSS-Tests; CLAUDE.md §7; Hilfeseite | BYL-E6-200, BYL-E6-201 (manuell) |
 | RT-2 | Checklisten in der Ansicht abhakbar: `toggleTask`, `Markdown.svelte` mit `ontoggletask`, Store, Hook `expected_updated` mit `validation_description_stale`, Konfliktfrage beim Speichern der Beschreibung, Kommentare nur für den Autor | BYL-E6-202 bis BYL-E6-204, BYL-E6-205 (manuell) |
 | RT-3 | `RichTextEditor` für die Beschreibung (Panel und Vollansicht): Extensions, Brücke, Toolbar, Kürzel, Eingaberegeln, Quelltextmodus, `richEditable`, dynamisches Laden mit Rückfall auf die `textarea`, `prose.css` | BYL-E6-241, BYL-E6-242 (manuell) |
-| RT-4 | „/“-Menü und Link-Popover | |
+| RT-4 | „/“-Menü und Link-Popover | BYL-E6-243, BYL-E6-244 (manuell) |
 | RT-5 | Einfügen aus Word und HTML (`paste.ts` mit Fixtures) | |
 | RT-6 | Kommentare (kompakt), `NewTicketForm`, `RecurrencePanel`; Kürzel in `shortcuts.ts`, Hilfeseite, README | |
 | RT-7 (optional) | Tabellen bearbeiten (`@tiptap/extension-table`, MIT) statt Quelltextmodus | |
@@ -176,6 +176,12 @@ Siehe ADR-0032 §1 und §2. Der Serializer normalisiert beim ersten Speichern au
 | 2026-09-28 | RT-3 | **Esc im ganzen Editor verbraucht** (Text, Leiste, Quelltextmodus), Menüs verbrauchen ihres vorher selbst. So schließt Esc weder Panel noch Vollansicht, solange ein Feld bearbeitet wird (Escape-Kette). |
 | 2026-09-28 | RT-3 | **CSS:** Tiptap injiziert sein CSS nicht (`injectCSS: false`, sonst schwarzer Gap-Cursor ohne Token); die nötigen Regeln stehen in `RichTextEditor.svelte`. Anzeige und Editor teilen `lib/styles/prose.css` (global im Wurzel-Layout); die zwei Überschriftgrößen von `Markdown.svelte` sind dorthin gewandert (`no-own-font-sizes.test.ts`: `prose.css` statt `Markdown.svelte`, Zahl unverändert). Fläche undurchsichtig mit dem Rahmen der `textarea`, Fokusring um Leiste und Text, Leiste ohne Glas. In `forced-colors` tragen gedrückte Knöpfe einen Rahmen. |
 | 2026-09-28 | RT-3 | **Größe:** Editor-Chunk 124,9 KB gz (396 KB minifiziert), nur per `import()` aus `RichTextEditor` geladen; `RichTextEditor` und die Leiste liegen im Chunk der Ticket-Ansicht. |
+| 2026-09-28 | RT-3 | Die Parität des langen Seitentexts dauert in jsdom Sekunden (DOMPurify, Vergleich) und bekam auf dem CI-Runner 30 s statt 5 s (zweiter CI-Lauf von #125). Im Browser ist das Öffnen eines solchen Texts spürbar, aber einmalig; BYL-E6-242 prüft es. |
+| 2026-09-28 | RT-4 | **Eigenes Plugin statt `@tiptap/suggestion`:** Die Version 3.31.3 importiert `@floating-ui/dom` (Peer-Abhängigkeit) für ihre Positionierung; wir positionieren mit `place()` wie jede Liste. `lib/editor/slash.ts` (etwa 100 Zeilen) erkennt „/“ am Zeilenanfang oder nach Leerraum vor dem Cursor, nicht in Code und nicht mitten im Wort, merkt sich ein mit Esc geschlossenes Menü bis zum nächsten „/“ und gibt Tasten an die Komponente. Keine neue Abhängigkeit. |
+| 2026-09-28 | RT-4 | **Gemeinsamer Listen-Baustein `SuggestionList`** (wie im Plan bevorzugt): die Liste des `TagPicker` samt Glas, Positionierung und Optionen-Stil, jetzt auch für das „/“-Menü (240 px breit am Cursor). In der Allowlist von `glass-allowlist.test.ts` steht `SuggestionList` statt `TagPicker`; die Tests des TagPicker laufen unverändert. |
+| 2026-09-28 | RT-4 | **ARIA des „/“-Menüs:** Das Textfeld behält den Fokus und trägt `aria-autocomplete="list"`, im offenen Zustand `aria-controls` und `aria-activedescendant`; `aria-expanded` entfällt, weil es kein Zustand der Rolle `textbox` ist (Abweichung vom Konzept). Eine höfliche Live-Zeile sagt „N Blöcke, Pfeiltasten wählen, Enter fügt ein.“. Pfeile, Enter und Tab gehören dem Menü, Esc schließt es und wird verbraucht. Findet der Filter nichts, schließt die Liste, Enter wirkt normal. Kein Eintrag „Unteraufgabe“ (Produktentscheidung). |
+| 2026-09-28 | RT-4 | **Link als Popover der Leiste:** Knopf „Link“ (Art `panel`, `aria-haspopup="dialog"`, Titel „Link (Strg+K)“), per Strg+K und „/link“ per Code geöffnet (`Popover.open()`); dafür bekam der Baustein `open()`, `onopen`, `returnFocus`, `buttonTitle` und `buttonKeyshortcuts`. Der Name des Popovers ist „Link einfügen“ bzw. „Link bearbeiten“. „Adresse“ prüft `domain/link.ts` (http, https, mailto; `www…` und `name.de/…` werden https, eine Mailadresse mailto; `javascript:`, `data:`, `ftp:` und Leerzeichen werden abgelehnt), der Fehler steht am Feld. „Text“ ersetzt die verlinkten Wörter; ohne Auswahl und Text wird die Adresse selbst der Link. Schließen (auch Esc) bringt den Fokus zurück in den Text. |
+| 2026-09-28 | RT-4 | `shortcuts.ts` nennt Strg+K und „/“ im Abschnitt „Editor“; die Hilfe erklärt beides. |
 
 ## 5. Status
 
@@ -184,13 +190,14 @@ Siehe ADR-0032 §1 und §2. Der Serializer normalisiert beim ersten Speichern au
 | RT-0 | gemergt (#114) |
 | RT-1 | gemergt (#115) |
 | RT-2 | gemergt (#116) |
-| RT-3 | umgesetzt (PR „feat: edit the description in a WYSIWYG editor“) |
-| RT-4 bis RT-6 | Stufe B, freigegeben, folgen |
+| RT-3 | gemergt (#125) |
+| RT-4 | umgesetzt („/“-Menü und Link) |
+| RT-5 und RT-6 | Stufe B, freigegeben, folgen |
 | RT-7 | optional, nicht beauftragt |
 
 ## 6. Offene Punkte
 
-- Manuelle Browser-Prüfungen der Pakete (BYL-E6-201, BYL-E6-205, BYL-E6-242).
+- Manuelle Browser-Prüfungen der Pakete (BYL-E6-201, BYL-E6-205, BYL-E6-242, BYL-E6-244).
 - ~~„Löschen …“ in der Vollansicht legt seine Bestätigung über das XL-Modal (seit HK-6 mit Radios über `ConfirmDialog.options`).~~ Erledigt mit UA-3 ([Plan Unteraufgaben](unteraufgaben.md) §3): Die Vollansicht fragt inline (`TicketDeleteQuestion`).
 - **Hinweise für die Unterprojekte:** Der Plan ändert weder Datenmodell noch Filter; Beschreibungen von Unterprojekt-Tickets nutzen dieselbe Anzeige. `expected_updated` gilt für jedes Ticket-Update und stört ein späteres Umhängen in ein Unterprojekt nicht, solange es ohne das Feld gesendet wird.
 - **Hinweise für Stufe B** (umgesetzt mit RT-3, bis auf die Attrappe für `ClipboardEvent`, die RT-5 braucht):

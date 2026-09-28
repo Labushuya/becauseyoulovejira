@@ -186,6 +186,19 @@ export const SHORTCUTS: readonly Shortcut[] = [
 	{ id: 'editor-quote', context: 'editor', keys: [['Strg', 'Umschalt', 'B']], action: 'Zitat' },
 	{ id: 'editor-code-block', context: 'editor', keys: [['Strg', 'Alt', 'C']], action: 'Codeblock' },
 	{
+		id: 'editor-link',
+		context: 'editor',
+		keys: [['Strg', 'K']],
+		action: 'Link einfügen oder bearbeiten'
+	},
+	{
+		id: 'editor-slash',
+		context: 'editor',
+		keys: [['/']],
+		action:
+			'Am Zeilenanfang oder nach einem Leerzeichen: Menü für Überschriften, Listen, Blöcke und Link; Esc schließt es'
+	},
+	{
 		id: 'editor-indent',
 		context: 'editor',
 		keys: [['Tab'], ['Umschalt', 'Tab']],

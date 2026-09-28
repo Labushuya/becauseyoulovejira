@@ -18,7 +18,8 @@ const GLASS_FILES = [
 	'lib/components/overlay/Modal.svelte',
 	'lib/components/overlay/Drawer.svelte',
 	'lib/components/overlay/FlagGroup.svelte',
-	'lib/components/TagPicker.svelte',
+	// The list of suggestions of the TagPicker, since RT-4 shared with the "/" menu of the editor.
+	'lib/components/SuggestionList.svelte',
 	'lib/components/CenteredCard.svelte',
 	'lib/components/SettingsNav.svelte',
 	'lib/styles/tour.css'

@@ -2,8 +2,9 @@
 	import { tick } from 'svelte';
 	import Popover from '$lib/components/overlay/Popover.svelte';
 	import { ariaKeyShortcuts, keysText, shortcutById } from '$lib/domain/shortcuts';
-	import type { EditorCommand, ToolbarState } from '$lib/editor/create-editor';
+	import type { EditorCommand, LinkState, ToolbarState } from '$lib/editor/create-editor';
 	import EditorIcon, { type EditorIconName } from './EditorIcon.svelte';
+	import LinkPopover from './LinkPopover.svelte';
 
 	// Toolbar of the editor (ADR-0032, plan editor section 3.2), after the WAI-ARIA toolbar pattern:
 	// one tab stop with a roving tabindex, arrow keys, Home and End move between the controls, Alt+F10
@@ -19,7 +20,9 @@
 		sourceAvailable = true,
 		onrun,
 		onsource,
-		onleave
+		onleave,
+		link,
+		textTarget
 	}: {
 		/** Formats at the selection: pressed toggles, chosen text style. */
 		formats: ToolbarState;
@@ -35,7 +38,22 @@
 		onsource: () => void;
 		/** Escape: back into the text. */
 		onleave: () => void;
+		/** The link at the selection and how to set or remove it (RT-4). */
+		link: {
+			current: () => LinkState;
+			apply: (href: string, text: string) => void;
+			remove: () => void;
+		};
+		/** The editable element, where the focus goes after the link popover. */
+		textTarget: () => HTMLElement | null;
 	} = $props();
+
+	let linkPopover = $state<ReturnType<typeof LinkPopover>>();
+
+	/** Opens the link popover (Ctrl+K and "Link" in the "/" menu). */
+	export function openLink(): void {
+		linkPopover?.open();
+	}
 
 	/** Below this width (px) lists and blocks go into the menu "…". */
 	const NARROW_BELOW = 560;
@@ -317,6 +335,13 @@
 				</button>
 			{/snippet}
 		</Popover>
+		<LinkPopover
+			bind:this={linkPopover}
+			current={link.current}
+			onapply={link.apply}
+			onremove={link.remove}
+			{textTarget}
+		/>
 		{#if narrow}
 			<Popover
 				kind="menu"

@@ -15,14 +15,14 @@
 		tagSuggestions
 	} from '$lib/domain/tag';
 	import type { TagRef } from '$lib/domain/ticket';
-	import { place } from '$lib/overlay/position';
+	import SuggestionList from './SuggestionList.svelte';
 
 	// Tag picker (E3 plan, T-14 and package 8) after the WAI-ARIA pattern "combobox with listbox":
 	// an input with suggestions (arrow keys move, Enter chooses, Escape closes), the chosen tags as
 	// chips with "Tag X entfernen". The last option creates a new tag from the input. Every action
 	// runs through the callbacks, which save at once; while one runs the picker takes no further
 	// action, so a quick double Enter creates one tag. The list of suggestions lies in the top layer
-	// (popover="manual", ADR-0025 section 5, package UI-9), placed below the input by place() and
+	// (SuggestionList, popover="manual", ADR-0025 section 5, package UI-9), placed below the input and
 	// following scrolling and resizing, so a scrolling panel or a modal no longer cuts it off. It
 	// opens and closes by code as before; the focus stays in the input. Escape closes the list and
 	// is consumed (preventDefault), so the panel or the modal around stays open.
@@ -73,7 +73,6 @@
 	const optionId = (index: number) => `${uid}-option-${index}`;
 
 	let input = $state<HTMLInputElement>();
-	let list = $state<HTMLElement>();
 	let expanded = $state(false);
 	let activeIndex = $state(-1);
 	/** An action of this picker is running. */
@@ -275,47 +274,6 @@
 	function onblur() {
 		close();
 	}
-
-	/** Highest list in CSS pixels, as before in the flow of the panel (12rem). */
-	const LIST_MAX_HEIGHT = 192;
-
-	function position() {
-		if (!list || !input) return;
-		const anchor = input.getBoundingClientRect();
-		const at = place(
-			anchor,
-			{ width: anchor.width, height: Math.min(list.scrollHeight, LIST_MAX_HEIGHT) },
-			{ width: window.innerWidth, height: window.innerHeight },
-			'bottom-start'
-		);
-		list.style.top = `${at.top}px`;
-		list.style.left = `${at.left}px`;
-		list.style.width = `${anchor.width}px`;
-		list.style.maxHeight = `${Math.min(at.maxHeight, LIST_MAX_HEIGHT)}px`;
-	}
-
-	// Shows the list in the top layer while there is something to show, and keeps it below the
-	// input while the page or the panel scrolls.
-	$effect(() => {
-		const element = list;
-		if (!element || !showList || typeof element.showPopover !== 'function') return;
-		element.showPopover();
-		position();
-		const update = () => position();
-		window.addEventListener('resize', update, { passive: true });
-		window.addEventListener('scroll', update, { passive: true, capture: true });
-		return () => {
-			window.removeEventListener('resize', update);
-			window.removeEventListener('scroll', update, { capture: true });
-			if (element.matches(':popover-open')) element.hidePopover();
-		};
-	});
-
-	// The suggestions change the height of the list; it stays below (or above) the input.
-	$effect(() => {
-		void options;
-		if (showList) position();
-	});
 </script>
 
 <div class="tag-picker">
@@ -369,15 +327,12 @@
 				if (!showList) open(normalizeTagName(text) === '' ? -1 : 0);
 			}}
 		/>
-		<ul
-			class="listbox"
+		<SuggestionList
 			id={listboxId}
-			role="listbox"
-			aria-label="Vorschläge"
-			popover="manual"
-			hidden={!showList}
-			data-overlay
-			bind:this={list}
+			label="Vorschläge"
+			open={showList}
+			anchor={() => input?.getBoundingClientRect() ?? null}
+			revision={options}
 		>
 			{#each options as option, index (option.kind === 'tag' ? option.tag.id : 'create')}
 				<!-- Options are never focused: the keyboard works on the input (aria-activedescendant),
@@ -396,7 +351,7 @@
 					{optionLabel(option)}
 				</li>
 			{/each}
-		</ul>
+		</SuggestionList>
 	</div>
 	<p class="visually-hidden" id={keysId}>
 		Komma oder Enter übernimmt den Tag, auch aus einer eingefügten Liste. Die Rücktaste im leeren
@@ -463,48 +418,7 @@
 		cursor: progress;
 	}
 
-	/* In the top layer, placed by position(); the surface of the popovers. */
-	.listbox {
-		position: fixed;
-		inset: auto;
-		margin: 0;
-		max-height: 12rem;
-		overflow-y: auto;
-		padding: 0.25rem 0;
-		list-style: none;
-		color: var(--color-text);
-		/* Thick glass like the menus of Popover (ADR-0029 section 1). */
-		background: var(--material-thick);
-		backdrop-filter: var(--glass-filter-thick);
-		border: 1px solid var(--color-separator);
-		border-radius: var(--radius-overlay);
-		box-shadow:
-			inset 0 1px 0 var(--glass-edge),
-			var(--shadow-popover);
-	}
-
-	.listbox:popover-open {
-		animation: list-in var(--motion-fast) var(--motion-ease);
-	}
-
-	@keyframes list-in {
-		from {
-			opacity: 0;
-		}
-	}
-
-	.option {
-		padding: 0.25rem 0.625rem;
-		font-size: var(--font-size-control);
-		cursor: pointer;
-	}
-
-	/* Active option: colour plus a bar at its start (a second, non-colour mark). */
-	.option.active {
-		background: var(--color-brand-soft-bg);
-		box-shadow: inset 3px 0 0 var(--color-brand);
-	}
-
+	/* The list itself and its options are drawn by SuggestionList. */
 	.option.create {
 		color: var(--color-brand-text);
 	}
