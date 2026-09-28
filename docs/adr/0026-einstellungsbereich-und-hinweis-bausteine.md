@@ -229,3 +229,8 @@ Der Hinweis am Feld nennt den Verlauf. Die Systemsteuerung ist als gleichwertige
 - Die Seite „Kanäle“ wird kürzer. Ihre Adresse bleibt, Lesezeichen und README-Verweise bleiben gültig. Der Link im Datei-Dialog zeigt auf „Datei-Importe“.
 - Die Stores behalten ihre Zustände. Nur die Wortlaute der Hinweise nach Migrationen ändern sich (EH-2); betroffene Tests werden im PR begründet angepasst.
 - jsdom kennt weder Ziehen noch Animation noch eine echte Zwischenablage. Dafür gibt es reine Funktionen, Attrappen und manuelle Fälle im Manifest.
+
+## Nachtrag (2026-09-28, Plan „Wiederholungen verständlich machen“, WK-4)
+
+- §7: Die Hilfe hat den Abschnitt „Wiederholungen“ nach „Kurzsyntax“ (`HELP_SECTIONS`, `helpHref('wiederholungen')`). Er folgt den Regeln der Seite: keine Tabelle, Begriffe als Beschreibungsliste, die Beispiele als nummerierte Zeitleisten. Seine Daten rechnet die App aus ihrer Erzeugungslogik ([ADR-0022](0022-erzeugung-von-instanzen.md) Nachtrag 7).
+- §2: Kontextuelle Hilfe im Formular „Wiederholen…“ als zugeklappter Bereich „So funktioniert’s“ (`<details>` mit `SectionMessage` info, kompakt); der Link in die Hilfe öffnet einen neuen Tab, damit Eingaben in Dialog und Panel nicht verloren gehen.

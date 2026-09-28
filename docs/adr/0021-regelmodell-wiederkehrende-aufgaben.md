@@ -28,6 +28,8 @@ CLAUDE.md §10 verbietet einen generischen Regel-Editor. Der Nutzer soll Rhythme
 
 ### 1. Felder der Regel (additive Migration `1790201500_recurrence_rule_params.js`)
 
+*(Tatsächlich `1790201600_recurrence_rule_params.js`, siehe Nachtrag; `each_occurrence` kam mit Nachtrag 2 dazu.)*
+
 | Feld | Typ | Bedeutung |
 |---|---|---|
 | `freq` | select `daily` \| `weekly` \| `monthly` \| `yearly`, Pflicht (Hook) | Einheit des Rhythmus. Bei `after_completion` ist es die Einheit des Abstands („3 Tage“, „2 Wochen“, „1 Monat“ nach Erledigung). |

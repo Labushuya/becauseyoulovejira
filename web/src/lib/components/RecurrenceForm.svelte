@@ -24,6 +24,8 @@
 		type RecurrenceFormField,
 		type RecurrenceFormValues
 	} from '$lib/domain/recurrence-rule';
+	import { liveExample } from '$lib/domain/recurrence-examples';
+	import { helpHref } from '$lib/settings-sections';
 	import SectionMessage from './guidance/SectionMessage.svelte';
 	import { WEEKDAY_NAMES, WEEKDAY_SHORT, dayLabel } from '$lib/domain/recurrence-text';
 	import ErrorIcon from './ErrorIcon.svelte';
@@ -73,6 +75,8 @@
 
 	const calendar = $derived(values.mode === 'calendar');
 	const preview = $derived(formPreview(values, today, withoutDue));
+	/** The sentence of "So funktioniert’s" with the dates of these settings. */
+	const example = $derived(liveExample(values, today));
 	/** Days 29 to 31 do not exist in every month: they are clamped (ADR-0021 section 2). */
 	const clamped = $derived(!values.lastDay && Number(values.monthDay) >= 29);
 	/** Missed dates the switch would make at once (ADR-0022 addendum 5). */
@@ -107,7 +111,7 @@
 {/snippet}
 
 <div class="recurrence-form">
-	<fieldset class="group" aria-describedby={describedBy('mode')}>
+	<fieldset class="group" aria-describedby={describedBy('mode', idOf('mode-hint'))}>
 		<legend>Art der Wiederholung</legend>
 		<label class="choice">
 			<input type="radio" name={idOf('mode')} value="calendar" bind:group={values.mode} />
@@ -117,6 +121,13 @@
 			<input type="radio" name={idOf('mode')} value="after_completion" bind:group={values.mode} />
 			Nach Erledigung
 		</label>
+		<p class="hint" id={idOf('mode-hint')}>
+			{#if calendar}
+				Feste Kalendertage: Früher oder später erledigen ändert die Termine nicht.
+			{:else}
+				Abstand ab dem Erledigen: Früher oder später erledigen verschiebt den nächsten Termin mit.
+			{/if}
+		</p>
 		{@render fieldError('mode')}
 	</fieldset>
 
@@ -228,7 +239,8 @@
 			aria-describedby={describedBy('leadDays', idOf('leadDays-hint'))}
 		/>
 		<p class="hint" id={idOf('leadDays-hint')}>
-			So viele Tage vor der Fälligkeit erscheint das nächste Ticket (0 = am Tag selbst).
+			So viele Tage vor der Fälligkeit erscheint das nächste Ticket (0 = am Tag selbst, kurz nach
+			Mitternacht).
 		</p>
 		{@render fieldError('leadDays')}
 	</div>
@@ -317,6 +329,38 @@
 			)}.
 		</p>
 	{/if}
+
+	<!-- "So funktioniert’s" (plan "Wiederholungen verständlich machen", part A): what the chosen kind
+	     and the switch mean, and a sentence with the dates of these very settings. Folded by default;
+	     the help opens in a new tab, so nothing typed here is lost. -->
+	<details class="how">
+		<summary>So funktioniert’s</summary>
+		<SectionMessage tone="info" compact>
+			<p>
+				{#if calendar}
+					Fester Rhythmus heißt: An festen Kalendertagen ist es dran. Früher oder später erledigen
+					ändert die Termine nicht.
+				{:else}
+					Nach Erledigung heißt: Der nächste Termin zählt ab dem Tag, an dem du erledigst. Früher
+					oder später erledigen verschiebt ihn mit.
+				{/if}
+				Das Ticket erscheint so viele Tage vor der Fälligkeit, wie der Vorlauf sagt.
+				{#if calendar && values.eachOccurrence === true}
+					Jeder Termin bekommt ein eigenes Ticket, auch wenn frühere noch offen sind.
+				{:else}
+					Solange ein Ticket der Serie offen ist, entsteht kein weiteres.
+				{/if}
+			</p>
+			{#if example !== null}
+				<p class="example">{example}</p>
+			{/if}
+			<p>
+				<a href={helpHref('wiederholungen')} target="_blank" rel="noopener"
+					>Mehr Beispiele in der Hilfe (neuer Tab)</a
+				>
+			</p>
+		</SectionMessage>
+	</details>
 </div>
 
 <style>
@@ -453,5 +497,28 @@
 
 	.due {
 		font-variant-numeric: tabular-nums;
+	}
+
+	.how {
+		font-size: var(--font-size-control);
+	}
+
+	.how summary {
+		width: fit-content;
+		font-weight: 600;
+		color: var(--color-brand-text);
+		cursor: pointer;
+	}
+
+	.how[open] summary {
+		margin-bottom: 0.375rem;
+	}
+
+	.how p + p {
+		margin-top: 0.375rem;
+	}
+
+	.how a {
+		color: var(--color-brand-text);
 	}
 </style>

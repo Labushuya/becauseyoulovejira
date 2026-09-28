@@ -7,9 +7,9 @@
 
 ## Kontext
 
-Die Invariante „höchstens eine offene Instanz pro Regel“ ([ADR-0022](0022-erzeugung-von-instanzen.md) §1) muss jeden Weg überstehen, den der Nutzer in der Oberfläche gehen kann:
+Die Invariante „höchstens eine offene Instanz pro Regel“ ([ADR-0022](0022-erzeugung-von-instanzen.md) §1) muss jeden Weg überstehen, den der Nutzer in der Oberfläche gehen kann *(heute nur ohne „Jeden Termin einzeln anlegen“, Nachtrag 2)*:
 
-- Das Häkchen in der Tabelle schreibt den Status sofort, und „Rückgängig“ stellt den vorigen Status innerhalb von 5 s wieder her (`UNDO_WINDOW_MS`, OF-E2-3). Beim Erledigen entsteht aber schon das Folgeticket.
+- Das Häkchen in der Tabelle schreibt den Status sofort, und „Rückgängig“ stellt den vorigen Status innerhalb von 5 s wieder her (`UNDO_WINDOW_MS`, OF-E2-3) *(seit UI-5 8 s im Flag, erster Nachtrag)*. Beim Erledigen entsteht aber schon das Folgeticket.
 - `tickets.recurrence` ist bisher ein frei setzbares Feld. Der Hook prüft nur den Scope.
 - Relationen ohne Cascade leert PocketBase beim Löschen des Ziels. Die Model-Hooks laufen dabei, die Historie hält die Änderung also fest.
 - Tickets können gelöscht werden (mit Sicherheitsabfrage), Projekte archiviert.
@@ -46,7 +46,7 @@ Verlässt eine Instanz `done` (Häkchen „Rückgängig“ oder Statuswechsel im
     - Es hat keine Kommentare.
   - Dann löscht der Hook das Folgeticket und stellt `next_due` wieder her: bei `calendar` auf die Fälligkeit des gelöschten Tickets, bei `after_completion` auf leer.
   - Die Regel für gelöschte Instanzen aus §6 greift dabei nicht, denn der Hook setzt `next_due` nach dem Löschen ausdrücklich.
-  - Der Fall ist das versehentliche Häkchen, und die Serie steht danach genau wie vorher.
+  - Der Fall ist das versehentliche Häkchen, und die Serie steht danach genau wie vorher. *(Nur für die zuletzt erledigte Instanz; eine ältere lehnt der Hook ab, siehe Nachtrag 4.)*
 - **Folgeticket schon bearbeitet:** Das Wiedereröffnen wird mit dem Feldfehler `validation_recurrence_open_instance` abgelehnt. Die Meldung lautet: „Von dieser Serie ist schon HAUS-12 offen. Erledige es zuerst oder löse ein Ticket aus der Serie.“ Das ist ein echter, abgelehnter Wunsch, also Fehlerfarbe nach [ADR-0009](0009-fehlerfarbe.md). Die Invariante bleibt hart.
 - **Kein Folgeticket vorhanden** (Vorlauf noch nicht erreicht): Das Wiedereröffnen ist erlaubt.
   - Bei `after_completion` wird `next_due` geleert, denn die Instanz ist wieder offen.
@@ -73,7 +73,7 @@ Verlässt eine Instanz `done` (Häkchen „Rückgängig“ oder Statuswechsel im
 
 - **Löschen der offenen Instanz** (Sicherheitsabfrage wie bisher, mit dem Zusatz „Die Regel läuft weiter.“):
   - `calendar`: `next_due` bleibt, und der gelöschte Termin gilt als übersprungen.
-  - `after_completion`: `next_due = afterCompletion(rule, heute)`, als wäre die Instanz heute erledigt worden. So erscheint nicht sofort ein neues Ticket.
+  - `after_completion`: `next_due = afterCompletion(rule, heute)`, als wäre die Instanz heute erledigt worden. So erscheint nicht sofort ein neues Ticket. *(Genauer: nicht im selben Schritt; liegt der neue Termin schon im Vorlauf, entsteht er beim nächsten stündlichen Lauf, siehe Nachtrag 5 und ADR-0022 Nachtrag 7. Seit dem Papierkorb verschiebt Löschen die Instanz dorthin, Nachtrag 3.)*
 - **„Aus der Serie lösen“** (Ticket-Panel, leert `tickets.recurrence`): Es gilt dasselbe wie beim Löschen, das Ticket bleibt als normales Ticket.
 - Erledigte Instanzen zu löschen oder zu lösen ändert an der Regel nichts.
 
@@ -138,3 +138,7 @@ Nutzerentscheidung vom 2026-09-28 (Empfehlung 1). §3 und Nachtrag 2 gelten weit
 - **Mit „Jeden Termin einzeln anlegen“** unverändert (Nachtrag 2): Jede Instanz gilt als direkt, und im Normalfall steht ohnehin nichts entgegen.
 - **Endgültig statt Papierkorb** (Nachtrag 3) bleibt für das unberührte Folgeticket des direkten Vorgängers: Der Server hat es eben erst angelegt, es trägt nichts vom Nutzer, und ein Wiederherstellen würde nur mit der wieder offenen Instanz kollidieren.
 - Belegt in `recurrence-generate.test.mjs` (ältere Instanz abgelehnt, Folgeticket und `next_due` bleiben, Ausweg mit `recurrence: ""`, direkter Vorgänger entfernt weiter) und `recurrence-rules.test.mjs`.
+
+## Nachtrag 5 (2026-09-28, Plan „Wiederholungen verständlich machen“, WK-4): „Ein Ersatz entsteht nie sofort“ richtiggestellt
+
+Empfehlung 8. §6 und CLAUDE.md §6 sagten „Ein Ersatz entsteht nie sofort“. Richtig ist: **nicht im selben Schritt.** Löschen (seit Nachtrag 3 in den Papierkorb) und „Aus der Serie lösen“ setzen nur `next_due` und rufen die Erzeugung nicht auf. Liegt der nächste Termin schon im Vorlauf, entsteht sein Ticket beim nächsten stündlichen Lauf (xx:07) oder beim nächsten Start. Beispiel: „nach Erledigung“ alle 2 Tage mit Vorlauf 3; nach dem Löschen ist der neue Termin in 2 Tagen, sein Vorlauf hat schon begonnen, das Ticket kommt mit dem nächsten Lauf. Die Hilfe „Wiederholungen“ erklärt Löschen, Lösen, Wiedereröffnen, Pausieren und Regel löschen so ([ADR-0022](0022-erzeugung-von-instanzen.md) Nachtrag 7).

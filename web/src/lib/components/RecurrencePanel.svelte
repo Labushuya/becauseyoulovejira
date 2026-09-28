@@ -30,6 +30,7 @@
 	} from '$lib/domain/ticket';
 	import type { EditResult } from '$lib/stores/catalog-editor';
 	import type { EnsureTagResult } from '$lib/stores/catalog.svelte';
+	import { helpHref } from '$lib/settings-sections';
 	import ErrorIcon from './ErrorIcon.svelte';
 	import Lozenge from './guidance/Lozenge.svelte';
 	import SectionMessage from './guidance/SectionMessage.svelte';
@@ -558,7 +559,13 @@
 		</section>
 
 		<section class="group" aria-labelledby={ids.rhythm}>
-			<h3 id={ids.rhythm}>Rhythmus</h3>
+			<div class="rhythm-head">
+				<h3 id={ids.rhythm}>Rhythmus</h3>
+				<!-- The help with the examples; a new tab keeps the input of the panel. -->
+				<a class="help-link" href={helpHref('wiederholungen')} target="_blank" rel="noopener"
+					>So funktionieren Wiederholungen (neuer Tab)</a
+				>
+			</div>
 			<RecurrenceForm
 				bind:values
 				errors={rhythmErrors}
@@ -671,6 +678,19 @@
 	.open-title {
 		color: var(--color-text);
 		overflow-wrap: anywhere;
+	}
+
+	.rhythm-head {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 0.25rem 0.75rem;
+		align-items: baseline;
+		justify-content: space-between;
+	}
+
+	.help-link {
+		font-size: var(--font-size-control);
+		color: var(--color-brand-text);
 	}
 
 	.open-list {

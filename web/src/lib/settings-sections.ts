@@ -41,6 +41,8 @@ export function isSettingsPath(pathname: string): boolean {
 export const HELP_SECTIONS = [
 	{ id: 'tastaturkuerzel', label: 'Tastaturkürzel' },
 	{ id: 'kurzsyntax', label: 'Kurzsyntax' },
+	// Plan "Wiederholungen verständlich machen": linked from the form, the overview and the rule.
+	{ id: 'wiederholungen', label: 'Wiederholungen' },
 	{ id: 'zugangsdaten', label: 'Kanäle und Zugangsdaten' },
 	{ id: 'fragen', label: 'Häufige Fragen' },
 	{ id: 'betrieb', label: 'Betrieb' }

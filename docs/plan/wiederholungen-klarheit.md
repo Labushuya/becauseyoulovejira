@@ -1,6 +1,6 @@
 # E6-Plan „Wiederholungen verständlich machen“: Erklärung in der App und acht Empfehlungen
 
-- **Stand:** in Arbeit (2026-09-28). WK-1 gemergt (#153), WK-2 gemergt (#154), WK-3 umgesetzt.
+- **Stand:** umgesetzt (2026-09-28): WK-1 (#153), WK-2 (#154), WK-3 (#155), WK-4 (#156). Kein Paket braucht eine Migration oder einen Neustart. Offen sind die manuellen Browser-Prüfungen (BYL-E6-342, -346, -349, -352).
 - **Grundlage:**
   - Vom Nutzer freigegebene Spec vom 2026-09-28: Teil A (Erklärung in der App: „So funktioniert’s“ im Formular mit Live-Beispielsatz, Vorschau „erscheint → fällig“, Kurz-Hinweise, Hilfeseite „Wiederholungen“, Beispiele aus der echten Rechenlogik mit Tests) und Teil B (Empfehlungen 1 bis 8).
   - [ADR-0021](../adr/0021-regelmodell-wiederkehrende-aufgaben.md) bis [ADR-0024](../adr/0024-serien-aus-kalendern.md) mit allen Nachträgen, [ADR-0013](../adr/0013-filter-suche-sortierung-gruppierung.md), [ADR-0025](../adr/0025-ui-konsistenz-overlay-system.md), [ADR-0026](../adr/0026-einstellungsbereich-und-hinweis-bausteine.md), [ADR-0009](../adr/0009-fehlerfarbe.md), [ADR-0029](../adr/0029-glas-materialien.md), [ADR-0030](../adr/0030-spalten-breiten-und-kompakte-zeilen.md), [ADR-0035](../adr/0035-start-einstieg-und-offene-tabs.md), [ADR-0036](../adr/0036-sammelbearbeitung-inline-und-oeffnungsmodus.md), [ADR-0037](../adr/0037-papierkorb.md)
@@ -22,7 +22,7 @@
 | WK-1 | Empfehlung 1 (Wiedereröffnen nur beim direkten Vorgänger mit Entfernen des Folgetickets, sonst Ablehnung mit „Als normales Ticket wieder öffnen (aus der Serie lösen)“) und Empfehlung 3 (zusammengefasste verpasste Termine als Verlaufseintrag und Hinweis im Ticket) | BYL-E6-340 bis BYL-E6-342 |
 | WK-2 | Empfehlung 5 (Schalter mit mehr als 20 verpassten Terminen: „wartet auf Entscheidung“, ohne Migration), Empfehlung 6 (Schalter aus bei mehreren offenen Tickets) und Empfehlung 7 (alle offenen Tickets in Übersicht und Panel; zog aus WK-3 vor, weil dieselben Stellen die offenen Tickets für Empfehlung 6 brauchen) | BYL-E6-343 bis BYL-E6-346 |
 | WK-3 | Empfehlungen 2 und 4 sowie die Vorschau „erscheint → fällig“ | BYL-E6-347 bis BYL-E6-349 |
-| WK-4 | Teil A: „So funktioniert’s“ mit Live-Satz, Kurz-Hinweise, Hilfeseite „Wiederholungen“ mit Beispielen aus der Engine und Tests; Empfehlung 8 (Doku) | folgt |
+| WK-4 | Teil A: „So funktioniert’s“ mit Live-Satz, Kurz-Hinweise, Hilfeseite „Wiederholungen“ mit Beispielen aus der Engine und Tests; Empfehlung 8 (Doku) | BYL-E6-350 bis BYL-E6-352 |
 
 ## 3. Entscheidungen
 
@@ -44,6 +44,11 @@
 | 2026-09-28 | WK-3 | **„Nächstes Ticket“ aus einer Quelle:** `nextTicketOf` (rein) liefert Zustand, Fälligkeit, Erscheinen und die offenen Tickets, die es zurückhalten; daraus entstehen der Satz für Ticket und Panel (`nextTicketText`) und die zwei Zeilen der Spalte (`nextTicketDate`, `nextTicketNote`, Satz als `title`). Die Fälligkeit folgt ohne Schalter bei verpassten Terminen `catchUp`, damit der Satz nie einen Termin nennt, den der Server überspringen wird. „erscheint in Kürze“ statt eines Datums, sobald der Tag erreicht ist: Das Ticket kommt dann mit dem nächsten stündlichen Lauf. |
 | 2026-09-28 | WK-3 | **Vorschau als Liste:** geordnete Liste mit drei Spalten über `subgrid` (Erscheinen, Pfeil, Fälligkeit), Wochentag im Datum (`dayLabel`, „Mo 05.10.“, andere Jahre mit Jahreszahl), `aria-live` bleibt am Rahmen. „erscheint sofort“ für einen Tag vor heute, „erscheint heute“ für heute. Die Zeilen tragen `data-due` für die Tests. `RecurrenceForm` zieht dabei ganz auf die Schriftgrößen-Tokens (`no-own-font-sizes.test.ts` jetzt 166). |
 | 2026-09-28 | WK-3 | **Warnung „Beginnt am“ in der Vergangenheit** nur, wenn das Ticket keine Fälligkeit hat und ein fester Rhythmus ihm den ersten Termin gibt (ADR-0023 §1); „Nach Erledigung“ lässt die Fälligkeit, wie sie ist. Warnung ohne Rot (`SectionMessage` warning), sie ersetzt den neutralen Satz „bekommt den ersten Termin“. |
+| 2026-09-28 | WK-4 | **Beispiele aus der Rechenlogik:** Die Hilfe rechnet jedes Datum mit `helpExamples()`: Eine kleine Simulation (`SeriesSimulation`) spielt jedes Szenario Tag für Tag, mit denselben Schritten wie der Server (Lauf je Tag, Erledigen mit anschließendem Lauf, Entscheidung über einen Rückstand) und den Entscheidungen der Erzeugung. Die SPA hat dafür einen Spiegel der reinen Funktionen des Hooks (`domain/recurrence-generation.ts`), wie `recurrence.ts` den von `recurrence.js`. Die Simulation bekommt die Entscheidungen als „Engine“; der Test `tests/unit/recurrence-examples.test.mjs` spielt dieselben Szenarien mit den Funktionen des Hooks und verlangt dasselbe Ergebnis, prüft die Erzählung der Spec und vergleicht den Spiegel mit 600 Zufallsregeln. Geprüft und verworfen: die Beispiele als feste Texte (veralten still), die Hook-Module im Browser laden (CommonJS außerhalb von `web/`, gegen die Trennung Hook/SPA). |
+| 2026-09-28 | WK-4 | **Referenzdatum** Montag 05.10.2026, damit die Wochentage der Spec stimmen; die Hilfe zeigt Daten ohne Jahr („Mo 05.10.“, „31.01.“), auch bei den Beispielen in 2027/2028 (Schaltjahre stehen als Wort da). Der Test verbietet Jahreszahlen im Abschnitt. |
+| 2026-09-28 | WK-4 | **Abweichung von der Spec „Zu spät (Mi 07.10.)“:** Mit Vorlauf 3 erscheint das Ticket für den 12.10. ohnehin erst am Fr 09.10.; ein Erledigen am Mittwoch verzögert nichts. Die Hilfe sagt das in einem eigenen Schritt und zeigt die Verzögerung mit Sa 10.10. („erscheint erst jetzt, am Sa 10.10.; fällig bleibt Mo 12.10.“). Beim dreiwöchigen Liegenlassen wird das nachgeholte Ticket im Beispiel am selben Tag erledigt, sonst hielte es das nächste (02.11., erscheint 30.10.) zurück. „Anhänge“ gibt es in der App nicht; „Gut zu wissen“ nennt stattdessen Unteraufgaben, Kommentare und Quellen als nicht übernommen. |
+| 2026-09-28 | WK-4 | **„So funktioniert’s“ im Formular:** zugeklappter `<details>`-Bereich mit `SectionMessage` info (kompakt), dessen Aussagen der gewählten Art und dem Schalter folgen, plus ein Satz mit den Daten der aktuellen Werte (`liveExample`, dieselben Funktionen wie die Vorschau). Der Link „Mehr Beispiele in der Hilfe (neuer Tab)“ öffnet einen neuen Tab, weil Dialog und Panel ungesicherte Eingaben halten; die Übersicht verlinkt im selben Tab („So funktioniert’s“ in der Abschnittsleiste, „So funktionieren Wiederholungen“ im leeren Zustand), das Regel-Panel im neuen Tab. Kurz-Hinweise an „Art der Wiederholung“ (folgt der Wahl), „Vorlauf (Tage)“ (jetzt mit „kurz nach Mitternacht“) und am Switch (seit WK-2). |
+| 2026-09-28 | WK-4 | **Empfehlung 8, Doku:** „Ein Ersatz entsteht nie sofort“ heißt jetzt „nicht im selben Schritt; im Vorlauf beim nächsten stündlichen Lauf“ (CLAUDE.md §6, ADR-0023 Nachtrag 5); Cron um xx:07 Berliner Zeit, erster Lauf gegen 00:07; Erledigungsdatum = Berliner „heute“ im Hook (ADR-0022 Nachtrag 7). Veraltete Haupttexte in ADR-0021, ADR-0022 und ADR-0023 (Migrationsnamen, `onServe`, 5 s, „höchstens eine offene Instanz“, „Nächstes Ticket am …“) tragen einen kursiven Verweis auf ihren Nachtrag; der Text selbst bleibt als Entscheidungsstand erhalten. |
 
 ## 4. Status
 
@@ -51,9 +56,10 @@
 |---|---|
 | WK-1 | gemergt (#153) |
 | WK-2 | gemergt (#154) |
-| WK-3 | umgesetzt |
-| WK-4 | geplant |
+| WK-3 | gemergt (#155) |
+| WK-4 | gemergt (#156) |
 
 ## 5. Offene Punkte
 
-- Manuelle Browser-Prüfungen der Pakete (Test-Manifest).
+- Manuelle Browser-Prüfungen der Pakete (BYL-E6-342, BYL-E6-346, BYL-E6-349, BYL-E6-352).
+- Keine weiteren: Alle acht Empfehlungen und Teil A der Spec sind umgesetzt, Abweichungen stehen in §3.
