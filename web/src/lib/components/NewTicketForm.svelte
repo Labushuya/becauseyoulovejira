@@ -58,6 +58,7 @@
 		sourceLabel = null,
 		suggestion = null,
 		repeat = false,
+		eachAvailable = false,
 		today = null,
 		tags = [],
 		oncreatetag = async () => ({ ok: false, message: null }),
@@ -77,6 +78,8 @@
 		suggestion?: RruleSuggestion | null;
 		/** Rules are available (after the E5 migration): the section "Wiederholen" is offered. */
 		repeat?: boolean;
+		/** Offer "Jeden Termin einzeln anlegen" in the section (plan OR-5). */
+		eachAvailable?: boolean;
 		/** Berlin date of today, for the preview of the section "Wiederholung". */
 		today?: CalendarDate | null;
 		/** Tags that can be chosen (the catalog). */
@@ -464,6 +467,7 @@
 							errors={recurrenceErrors}
 							{today}
 							withoutDue={due === ''}
+							{eachAvailable}
 						/>
 					{/if}
 				</div>

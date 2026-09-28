@@ -122,3 +122,8 @@ Der Text oben bleibt unverändert. Wo die Umsetzung abweicht, gilt dieser Nachtr
 - **Fehlercodes:** `validation_recurrence_mode`, `_freq`, `_interval`, `_weekdays`, `_weekdays_mode`, `_month_day`, `_month_day_mode`, `_anchor` und `_lead_days`. Die Texte stehen einmal im Hook und einmal in der SPA, ein Paritätstest hält beide gleich.
 - **Schnittstelle:** Zusätzlich gibt es `isValid`, `upcoming(rule, date, count)` für die Vorschau und `weekdayOf`. In der SPA heißen `normalize` und `validate` `normalizeRule` und `validateRule`.
 - **Rechenweg:** Beide Module rechnen mit Tagesnummern und springen zur Periode, ohne Schleife über Tage. Neben dem Paritätstest mit 5 000 Zufallsregeln prüft ein Test 400 Zufallsregeln gegen eine tageweise Aufzählung der Definition aus §2.
+
+## Nachtrag 2 (2026-09-28, Plan „Offene Reste“, OR-1 und OR-5)
+
+- **Referenzrechner (OR-1):** Die tageweise Aufzählung der Definition aus §2 liegt jetzt als eigenes Modul nur für Tests in `tests/support/recurrence-reference.mjs` (`onOrAfter`, `after`, `latestOnOrBefore`, `upcoming`, `catchUp`, `afterCompletion`, `createOn`, alle Tag für Tag). `recurrence-reference.test.mjs` prüft beide Module dagegen, besonders wöchentliche Regeln mit mehreren Wochentagen (alle 127 Mengen), und bestätigt die erwarteten Werte der gemeinsamen Falltabelle.
+- **Neues Feld (OR-5):** `each_occurrence` (bool, Standard aus) für „Jeden Termin einzeln anlegen“, nur bei `calendar` (sonst `validation_recurrence_each_mode`). Es gehört nicht zum Rhythmus: Umschalten rechnet `next_due` nicht neu, leert aber `last_hint`. Einzelheiten und der neue eindeutige Index in [ADR-0022](0022-erzeugung-von-instanzen.md), Nachtrag 2.

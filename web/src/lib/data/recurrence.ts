@@ -40,6 +40,7 @@ export const RULE_FIELDS = [
 	'last_generated_at',
 	'active',
 	'last_hint',
+	'each_occurrence',
 	'created',
 	'updated'
 ].join(',');
@@ -62,6 +63,8 @@ export interface RuleRecord {
 	last_generated_at: string;
 	active: boolean;
 	last_hint?: string;
+	/** "Jeden Termin einzeln anlegen" (plan OR-5); absent before its migration. */
+	each_occurrence?: boolean;
 	created: string;
 	updated: string;
 }
@@ -89,6 +92,7 @@ export function toRecurrenceRule(record: RuleRecord): RecurrenceRule {
 		lastGeneratedAt: record.last_generated_at || null,
 		active: record.active,
 		lastHint: record.last_hint ?? '',
+		eachOccurrence: record.each_occurrence === true,
 		created: record.created,
 		updated: record.updated
 	};
@@ -108,6 +112,8 @@ export interface RuleDraft {
 	month_day: number;
 	anchor: string;
 	lead_days: number;
+	/** "Jeden Termin einzeln anlegen" (plan OR-5); a server before its migration ignores it. */
+	each_occurrence?: boolean;
 }
 
 function draftBody(draft: Partial<RuleDraft>): Record<string, unknown> {
@@ -138,6 +144,31 @@ export function listRules(
 			return records.map(toRecurrenceRule);
 		} catch (error) {
 			if ((error as { status?: unknown } | null)?.status === 400) return null;
+			throw error;
+		}
+	});
+}
+
+/**
+ * Whether the server knows "Jeden Termin einzeln anlegen" (plan OR-5): a filter on
+ * `each_occurrence` answers 400 before its migration 1790202200 (like `scope` before E5). Works
+ * without any rule; the SPA shows the switch only then.
+ */
+export function eachOccurrenceReady(
+	pb: PocketBase,
+	{ signal }: RequestOptions = {}
+): Promise<boolean> {
+	return withDataErrors(signal, async () => {
+		try {
+			await pb.collection(RULES).getList(1, 1, {
+				filter: pb.filter('each_occurrence = {:yes}', { yes: true }),
+				fields: 'id',
+				skipTotal: true,
+				signal
+			});
+			return true;
+		} catch (error) {
+			if ((error as { status?: unknown } | null)?.status === 400) return false;
 			throw error;
 		}
 	});

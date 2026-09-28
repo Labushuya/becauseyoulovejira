@@ -6,7 +6,11 @@
 
 	// Test harness of RecurrenceForm (recurrence-form.test.ts): owns the bound values like the
 	// dialog and the panels do, so a click on a weekday changes the preview at once.
-	let { initial, today }: { initial: RecurrenceFormValues; today: CalendarDate } = $props();
+	let {
+		initial,
+		today,
+		eachAvailable = false
+	}: { initial: RecurrenceFormValues; today: CalendarDate; eachAvailable?: boolean } = $props();
 
 	let values = $state(untrack(() => structuredClone(initial)));
 
@@ -15,4 +19,4 @@
 	}
 </script>
 
-<RecurrenceForm bind:values {today} />
+<RecurrenceForm bind:values {today} {eachAvailable} />

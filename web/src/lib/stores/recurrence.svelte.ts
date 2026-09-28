@@ -16,6 +16,7 @@ import {
 	createRule,
 	deleteRule,
 	detachTicket,
+	eachOccurrenceReady,
 	listRules,
 	setRuleActive,
 	updateRule,
@@ -59,11 +60,17 @@ export interface RecurrenceData {
 	setActive(id: string, active: boolean): Promise<RecurrenceRule>;
 	deleteRule(id: string): Promise<void>;
 	detachTicket(ticketId: string): Promise<Ticket>;
+	/**
+	 * Whether the server knows "Jeden Termin einzeln anlegen" (plan OR-5); without it (tests) the
+	 * switch is not offered.
+	 */
+	eachOccurrenceReady?(options: RequestOptions): Promise<boolean>;
 }
 
 export function recurrenceData(pb: PocketBase): RecurrenceData {
 	return {
 		listRules: (options) => listRules(pb, options),
+		eachOccurrenceReady: (options) => eachOccurrenceReady(pb, options),
 		createRule: (draft, ticket) => createRule(pb, draft, ticket),
 		updateRule: (id, patch) => updateRule(pb, id, patch),
 		setActive: (id, active) => setRuleActive(pb, id, active),
@@ -108,6 +115,7 @@ const FORM_FIELDS = [
 	'month_day',
 	'anchor',
 	'lead_days',
+	'each_occurrence',
 	'ticket'
 ];
 
@@ -125,6 +133,8 @@ export class RecurrenceStore {
 
 	#state = $state<RecurrenceState>('idle');
 	#error = $state<string | null>(null);
+	/** The server knows "Jeden Termin einzeln anlegen" (after its migration, plan OR-5). */
+	#eachReady = $state(false);
 
 	#list = $derived([...this.#rules.values()].sort(byNextTicket));
 	/** "Wiederholen…" handed over to the panel of one ticket, taken once (`takeOffer`). */
@@ -147,6 +157,14 @@ export class RecurrenceStore {
 
 	get error(): string | null {
 		return this.#error;
+	}
+
+	/**
+	 * Whether the switch "Jeden Termin einzeln anlegen" is offered (plan OR-5): only once the server
+	 * knows it; before the next start of the app the forms leave it out.
+	 */
+	get eachReady(): boolean {
+		return this.#state === 'ready' && this.#eachReady;
 	}
 
 	ruleById(id: string | null | undefined): RecurrenceRule | null {
@@ -331,6 +349,7 @@ export class RecurrenceStore {
 		this.#deleted.clear();
 		this.#state = 'idle';
 		this.#error = null;
+		this.#eachReady = false;
 	}
 
 	/** Success flag of an action; the flag group announces it (role status). */
@@ -371,6 +390,8 @@ export class RecurrenceStore {
 			for (const rule of rules) {
 				if (!touched.has(rule.id)) this.upsert(rule);
 			}
+			this.#eachReady = await this.#probeEach(controller.signal);
+			if (controller.signal.aborted) return;
 			this.#state = 'ready';
 		} catch (error) {
 			if (controller.signal.aborted) return;
@@ -405,6 +426,16 @@ export class RecurrenceStore {
 			if (Object.keys(fields).length > 0) return { ok: false, message: null, fields };
 			const other = Object.values(failure.fields)[0]?.message;
 			return { ok: false, message: other ?? failure.message, fields: {} };
+		}
+	}
+
+	/** The switch stays hidden when the server cannot tell (old schema or a failed probe). */
+	async #probeEach(signal: AbortSignal): Promise<boolean> {
+		if (this.#data.eachOccurrenceReady === undefined) return false;
+		try {
+			return await this.#data.eachOccurrenceReady({ signal });
+		} catch {
+			return false;
 		}
 	}
 

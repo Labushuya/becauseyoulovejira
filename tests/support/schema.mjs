@@ -109,7 +109,9 @@ export const EXPECTED_COLLECTIONS = {
 			anchor: date(),
 			lead_days: number({ min: 0, max: 30 }),
 			scope: text({ required: true }),
-			last_hint: text({ max: 500 })
+			last_hint: text({ max: 500 }),
+			// "Jeden Termin einzeln anlegen" (plan OR-5, migration 1790202200).
+			each_occurrence: bool()
 		},
 		indexes: [
 			'CREATE INDEX idx_recurrence_rules_owner ON recurrence_rules (owner)',
@@ -136,7 +138,9 @@ export const EXPECTED_COLLECTIONS = {
 			...timestamps(),
 			parent: relation('tickets'),
 			source: select(CHANNELS, false),
-			source_item: relation('inbox_items')
+			source_item: relation('inbox_items'),
+			// Date of the series with "Jeden Termin einzeln anlegen" (plan OR-5, migration 1790202200).
+			occurrence: date()
 		},
 		indexes: [
 			'CREATE UNIQUE INDEX idx_tickets_scope_key ON tickets (scope, key)',
@@ -146,8 +150,10 @@ export const EXPECTED_COLLECTIONS = {
 			'CREATE INDEX idx_tickets_due ON tickets (due)',
 			'CREATE INDEX idx_tickets_parent ON tickets (parent)',
 			'CREATE INDEX idx_tickets_source_item ON tickets (source_item)',
-			// At most one open instance per rule (ADR-0022 section 1, migration 1790201610).
-			"CREATE UNIQUE INDEX idx_tickets_open_recurrence ON tickets (recurrence) WHERE recurrence != '' AND status != 'done'"
+			// At most one open instance per rule and date of the series (ADR-0022 section 1 and addendum
+			// 2; migration 1790201610, since 1790202200 with occurrence, which is empty for one open
+			// instance per rule).
+			"CREATE UNIQUE INDEX idx_tickets_open_occurrence ON tickets (recurrence, occurrence) WHERE recurrence != '' AND status != 'done'"
 		]
 	},
 	inbox_items: {

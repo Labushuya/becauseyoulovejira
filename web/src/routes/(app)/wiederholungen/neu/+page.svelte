@@ -31,6 +31,7 @@
 {:else}
 	<RecurrencePanel
 		today={tickets.today}
+		eachAvailable={store.eachReady}
 		projects={catalog.activeProjects}
 		tags={catalog.tags}
 		projectById={(id) => catalog.projectById(id)}

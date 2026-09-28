@@ -3,6 +3,7 @@
 
 import { describe, expect, it } from 'vitest';
 import { loadHookLib } from '../support/hook-lib.mjs';
+import * as reference from '../support/recurrence-reference.mjs';
 
 const rules = loadHookLib('recurrence-rules.js');
 const recurrence = loadHookLib('recurrence.js');
@@ -219,6 +220,139 @@ describe('generation (ADR-0022 sections 2 and 3; package 3)', () => {
 		expect(rules.nextDueOnCompletion(weekly(), '2026-09-25', recurrence)).toBeNull();
 		expect(rules.nextDueOnRelease(completion(), '2026-09-25', recurrence)).toBe('2026-09-28');
 		expect(rules.nextDueOnRelease(weekly(), '2026-09-25', recurrence)).toBeNull();
+	});
+});
+
+describe('"Jeden Termin einzeln anlegen" (plan OR-5, ADR-0022 addendum 2)', () => {
+	const monWedFri = (params = {}) =>
+		recurrence.normalize({ mode: 'calendar', freq: 'weekly', weekdays: ['MO', 'WE', 'FR'], anchor: '2037-06-01', ...params });
+	const running = (rule, nextDue, lead = 0) => ({ ...rule, lead_days: lead, active: true, next_due: nextDue, each: true });
+
+	it('creates one ticket per date whose lead time is reached, open instances or not', () => {
+		const rule = running(monWedFri(), '2037-06-01');
+		expect(rules.generationEach({ rule, today: '2037-05-31' }, recurrence)).toBeNull();
+		expect(rules.generationEach({ rule, today: '2037-06-01' }, recurrence)).toEqual({
+			dues: ['2037-06-01'],
+			nextDue: '2037-06-03',
+			limited: false
+		});
+		// Saturday after a missed week: Monday, Wednesday and Friday, each once.
+		expect(rules.generationEach({ rule, today: '2037-06-06' }, recurrence)).toEqual({
+			dues: ['2037-06-01', '2037-06-03', '2037-06-05'],
+			nextDue: '2037-06-08',
+			limited: false
+		});
+		// Lead time 3: the dates up to three days ahead of today come as well.
+		expect(rules.generationEach({ rule: running(monWedFri(), '2037-06-01', 3), today: '2037-06-01' }, recurrence)).toEqual({
+			dues: ['2037-06-01', '2037-06-03'],
+			nextDue: '2037-06-05',
+			limited: false
+		});
+	});
+
+	it('stops at the limit of a run and says that more are waiting', () => {
+		const daily = running(recurrence.normalize({ mode: 'calendar', freq: 'daily', anchor: '2038-01-01' }), '2038-01-01');
+		expect(rules.EACH_MAX_PER_RUN).toBe(20);
+		const first = rules.generationEach({ rule: daily, today: '2038-01-26' }, recurrence);
+		expect(first.dues).toHaveLength(20);
+		expect(first.dues[0]).toBe('2038-01-01');
+		expect(first.dues[19]).toBe('2038-01-20');
+		expect(first).toMatchObject({ nextDue: '2038-01-21', limited: true });
+		const second = rules.generationEach({ rule: { ...daily, next_due: first.nextDue }, today: '2038-01-26' }, recurrence);
+		expect(second).toEqual({
+			dues: ['2038-01-21', '2038-01-22', '2038-01-23', '2038-01-24', '2038-01-25', '2038-01-26'],
+			nextDue: '2038-01-27',
+			limited: false
+		});
+		expect(rules.generationEach({ rule: daily, today: '2038-01-26', limit: 3 }, recurrence).dues).toEqual([
+			'2038-01-01',
+			'2038-01-02',
+			'2038-01-03'
+		]);
+		expect(rules.EACH_LIMIT_HINT).toBe(
+			'Viele Termine auf einmal: 20 Tickets angelegt, die übrigen folgen beim nächsten Lauf (stündlich).'
+		);
+	});
+
+	it('does nothing when paused, without a date, after completion or with an incomplete rule', () => {
+		const rule = running(monWedFri(), '2037-06-01');
+		expect(rules.generationEach({ rule: { ...rule, active: false }, today: '2037-06-06' }, recurrence)).toBeNull();
+		expect(rules.generationEach({ rule: { ...rule, next_due: '' }, today: '2037-06-06' }, recurrence)).toBeNull();
+		expect(rules.generationEach({ rule: running(completion(), '2037-06-01'), today: '2037-06-06' }, recurrence)).toBeNull();
+		const incomplete = { mode: 'calendar', freq: '', interval: 1, weekdays: [], month_day: null, anchor: '', lead_days: 0 };
+		expect(rules.generationEach({ rule: running(incomplete, '2037-06-01'), today: '2037-06-06' }, recurrence)).toBeNull();
+	});
+
+	it('gives every date of the series exactly once, like a day-by-day reference, for 200 random rules', () => {
+		let seed = 20260928;
+		const next = () => {
+			seed = (seed * 1103515245 + 12345) & 0x7fffffff;
+			return seed / 0x7fffffff;
+		};
+		const WEEKDAYS = ['MO', 'TU', 'WE', 'TH', 'FR', 'SA', 'SU'];
+		for (let round = 0; round < 200; round++) {
+			const freq = ['daily', 'weekly', 'weekly', 'monthly'][Math.floor(next() * 4)];
+			const params = { mode: 'calendar', freq, interval: 1 + Math.floor(next() * 3), anchor: '2037-06-01' };
+			if (freq === 'weekly') params.weekdays = [...new Set(WEEKDAYS.filter(() => next() < 0.5).concat(['MO']))];
+			if (freq === 'monthly') params.month_day = next() < 0.3 ? -1 : 1 + Math.floor(next() * 31);
+			const lead = Math.floor(next() * 8);
+			const rule = recurrence.normalize({ ...params, lead_days: lead });
+			// The runs happen only every `gap` days (the PC is off in between), for 120 days.
+			const gap = 1 + Math.floor(next() * 30);
+			let state = { ...rule, active: true, next_due: recurrence.onOrAfter(rule, '2037-06-01'), each: true };
+			const made = [];
+			let today = '2037-06-01';
+			let last = today;
+			const end = reference.dateOf(reference.dayNumber(today) + 120);
+			while (today <= end) {
+				// Several runs a day (hourly) until nothing is left.
+				for (let run = 0; run < 30; run++) {
+					const plan = rules.generationEach({ rule: state, today }, recurrence);
+					if (plan === null) break;
+					made.push(...plan.dues);
+					state = { ...state, next_due: plan.nextDue };
+				}
+				last = today;
+				today = reference.dateOf(reference.dayNumber(today) + gap);
+			}
+			// Reference: every occurrence from the start whose lead time was reached by the last run.
+			const expected = [];
+			for (let dayNumber = reference.dayNumber('2037-06-01'); ; dayNumber++) {
+				if (reference.createOn(reference.dateOf(dayNumber), lead) > last) break;
+				if (reference.isOccurrence(rule, dayNumber)) expected.push(reference.dateOf(dayNumber));
+			}
+			expect(made, JSON.stringify({ rule, gap })).toEqual(expected);
+		}
+	});
+
+	it('refuses the switch after completion and clears the hint when it changes', () => {
+		expect(rules.eachViolation('calendar', true)).toBe('');
+		expect(rules.eachViolation('after_completion', true)).toBe('validation_recurrence_each_mode');
+		expect(rules.eachViolation('after_completion', false)).toBe('');
+		expect(rules.MESSAGES.validation_recurrence_each_mode).toBe(
+			'„Jeden Termin einzeln anlegen“ gibt es nur bei einem festen Rhythmus.'
+		);
+		const before = { ...weekly(), active: true, each: true };
+		expect(rules.clearsHint(before, { ...weekly(), active: true, each: false })).toBe(true);
+		expect(rules.clearsHint(before, { ...weekly(), active: true, each: true })).toBe(false);
+		expect(rules.clearsHint({ ...weekly(), active: true }, { ...weekly(), active: true, each: false })).toBe(false);
+	});
+
+	it('lets only a ticket of the same date stand against reopening, and every one with one instance', () => {
+		const others = [
+			{ id: 'b', occurrence: '2037-06-03 00:00:00.000Z' },
+			{ id: 'a', occurrence: '' }
+		];
+		expect(rules.reopenConflicts(others, '2037-06-01 00:00:00.000Z', true)).toEqual([]);
+		expect(rules.reopenConflicts(others, '', true)).toEqual([others[1]]);
+		expect(rules.reopenConflicts(others, '2037-06-03 00:00:00.000Z', true)).toEqual([others[0]]);
+		expect(rules.reopenConflicts(others, '2037-06-01 00:00:00.000Z', false)).toEqual(others);
+		expect(rules.reopenConflicts([], '', false)).toEqual([]);
+	});
+
+	it('counts a violation of the index on recurrence and occurrence as "already there"', () => {
+		expect(rules.isOpenInstanceConflict('occurrence: Value must be unique.; recurrence: Value must be unique.')).toBe(true);
+		expect(rules.isOpenInstanceConflict('UNIQUE constraint failed: tickets.recurrence, tickets.occurrence')).toBe(true);
 	});
 });
 

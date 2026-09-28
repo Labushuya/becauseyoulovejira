@@ -47,6 +47,7 @@
 		<RecurrencePanel
 			rule={current}
 			today={tickets.today}
+			eachAvailable={store.eachReady}
 			projects={catalog.activeProjects}
 			tags={catalog.tags}
 			projectById={(projectId) => catalog.projectById(projectId)}

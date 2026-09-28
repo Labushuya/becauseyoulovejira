@@ -166,3 +166,60 @@ describe('RecurrenceForm: preview with several weekdays (OR-1)', () => {
 		expect(preview()).toBe('Wird das Ticket heute erledigt, ist das nächste am 02.10.2026 fällig.');
 	});
 });
+
+// The switch "Jeden Termin einzeln anlegen" (plan OR-5): only with a fixed rhythm and once the
+// server knows it; off by default, with a hint on what each state means.
+describe('RecurrenceForm: "Jeden Termin einzeln anlegen" (OR-5)', () => {
+	const toggle = () =>
+		screen.queryByRole<HTMLInputElement>('switch', { name: 'Jeden Termin einzeln anlegen' });
+
+	it('is not offered before the server knows it', () => {
+		render(RecurrenceFormHarness, { props: { initial: values(), today: TODAY } });
+		expect(toggle()).toBeNull();
+	});
+
+	it('is a switch, off by default, whose hint follows the state and whose value goes along', async () => {
+		const { component } = render(RecurrenceFormHarness, {
+			props: { initial: values(), today: TODAY, eachAvailable: true }
+		});
+		const control = toggle();
+		expect(control?.type).toBe('checkbox');
+		expect(control?.checked).toBe(false);
+		const hint = () =>
+			document.getElementById(String(control?.getAttribute('aria-describedby')))?.textContent ?? '';
+		expect(hint()).toMatch(/Höchstens ein offenes Ticket; verpasste Termine werden zum jüngsten/);
+
+		await fireEvent.click(control as HTMLInputElement);
+		expect(component.current().eachOccurrence).toBe(true);
+		expect(hint()).toMatch(
+			/Jeder Termin bekommt ein eigenes Ticket, auch wenn frühere noch offen sind/
+		);
+		expect(hint()).toMatch(/höchstens 20 auf einmal/);
+	});
+
+	it('leaves the switch out after completion', async () => {
+		render(RecurrenceFormHarness, {
+			props: { initial: values({ eachOccurrence: true }), today: TODAY, eachAvailable: true }
+		});
+		expect(toggle()?.checked).toBe(true);
+		await fireEvent.click(screen.getByRole('radio', { name: 'Nach Erledigung' }));
+		expect(toggle()).toBeNull();
+	});
+
+	it('shows a refusal of the server at the switch', () => {
+		render(RecurrenceForm, {
+			props: {
+				values: values({ eachOccurrence: true }),
+				today: TODAY,
+				eachAvailable: true,
+				errors: {
+					eachOccurrence: '„Jeden Termin einzeln anlegen“ gibt es nur bei einem festen Rhythmus.'
+				}
+			}
+		});
+		const control = toggle();
+		expect(control?.getAttribute('aria-invalid')).toBe('true');
+		expect(control?.getAttribute('aria-describedby')).toMatch(/error/);
+		expect(screen.getByText(/gibt es nur bei einem festen Rhythmus/)).toBeTruthy();
+	});
+});

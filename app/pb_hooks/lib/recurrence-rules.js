@@ -30,6 +30,7 @@ var MESSAGES = {
   validation_recurrence_managed: 'Eine Wiederholung entsteht über „Wiederholen…“ am Ticket.',
   validation_recurrence_open_instance:
     'Von dieser Serie ist schon ein anderes Ticket offen. Erledige es zuerst oder löse ein Ticket aus der Serie.',
+  validation_recurrence_each_mode: '„Jeden Termin einzeln anlegen“ gibt es nur bei einem festen Rhythmus.',
   validation_project_archived: 'Das Projekt ist archiviert. Wähle ein anderes oder kein Projekt, um die Regel fortzusetzen.'
 };
 
@@ -196,9 +197,16 @@ function nextDueAfterEdit(input, recurrence) {
 }
 
 // Whether a client edit clears last_hint: resuming, or choosing a (new) rhythm, makes the hint
-// about a paused or incomplete rule stale.
+// about a paused or incomplete rule stale; so does switching "Jeden Termin einzeln anlegen", whose
+// hint about the limit of a run would no longer hold.
 function clearsHint(before, after) {
-  return (!before.active && after.active) || rhythmChanged(before, after);
+  return (!before.active && after.active) || rhythmChanged(before, after) || !before.each !== !after.each;
+}
+
+// "Jeden Termin einzeln anlegen" only with a fixed rhythm: after completion the next date waits for
+// the completion, so there is never more than one (plan OR-5). Returns an error code or ''.
+function eachViolation(mode, each) {
+  return each && mode !== 'calendar' ? 'validation_recurrence_each_mode' : '';
 }
 
 // --- Generation (ADR-0022, ADR-0023 sections 3 and 6; E5 plan package 3) --------------------
@@ -225,6 +233,63 @@ function generation(input, recurrence) {
     return { due: due, nextDue: recurrence.after(rule, due) };
   }
   return { due: rule.next_due, nextDue: '' };
+}
+
+// At most so many tickets per rule and run in "Jeden Termin einzeln anlegen" (plan OR-5): after a
+// long gap the dates come in batches (the next run is at most an hour away), not all at once.
+var EACH_MAX_PER_RUN = 20;
+var EACH_LIMIT_HINT =
+  'Viele Termine auf einmal: ' +
+  EACH_MAX_PER_RUN +
+  ' Tickets angelegt, die übrigen folgen beim nächsten Lauf (stündlich).';
+
+/**
+ * The tickets of a rule with "Jeden Termin einzeln anlegen" (plan OR-5, ADR-0022 addendum 2).
+ * `input`:
+ *   rule   normalized calendar rule with `active` and `next_due`
+ *   today  Berlin date
+ *   limit  at most so many tickets (default EACH_MAX_PER_RUN)
+ * Open instances do not matter. Returns null (nothing to do) or { dues, nextDue, limited }: one due
+ * date per date whose lead time is reached, oldest first and never a date twice (next_due moves
+ * past them), next_due after the last one, and whether more are waiting for the next run. The
+ * loop runs over dates of the series, at most `limit` times, never over days.
+ */
+function generationEach(input, recurrence) {
+  var rule = input.rule;
+  if (!rule.active || isEmpty(rule.next_due) || rule.mode !== 'calendar' || !recurrence.isValid(rule)) {
+    return null;
+  }
+  var limit = input.limit > 0 ? input.limit : EACH_MAX_PER_RUN;
+  var due = rule.next_due;
+  var dues = [];
+  while (dues.length < limit && recurrence.createOn(due, rule.lead_days) <= input.today) {
+    dues.push(due);
+    due = recurrence.after(rule, due);
+  }
+  if (dues.length === 0) {
+    return null;
+  }
+  return { dues: dues, nextDue: due, limited: recurrence.createOn(due, rule.lead_days) <= input.today };
+}
+
+/**
+ * The open instances that stand against reopening one (ADR-0023 section 3, addendum OR-5).
+ * `others` are the other open instances of the rule, newest first, each with its `occurrence`
+ * ('' unless made by "Jeden Termin einzeln anlegen"). With one open instance per rule every other
+ * open instance counts; with each date its own ticket only one of the same date, which is what
+ * the unique index says (normally none).
+ */
+function reopenConflicts(others, reopenedOccurrence, each) {
+  if (!each) {
+    return others;
+  }
+  var same = [];
+  for (var i = 0; i < others.length; i++) {
+    if (others[i].occurrence === reopenedOccurrence) {
+      same.push(others[i]);
+    }
+  }
+  return same;
 }
 
 // next_due when an instance is completed (ADR-0022 section 4): the completion date plus the
@@ -288,16 +353,25 @@ function failureHint(message) {
 }
 
 // A violation of the partial index means another run created the instance in the meantime; it
-// counts as "already there", not as an error (ADR-0022 section 5).
+// counts as "already there", not as an error (ADR-0022 section 5). Since OR-5 the index covers
+// (recurrence, occurrence), so PocketBase may name either field.
 function isOpenInstanceConflict(message) {
   var text = String(message);
-  return /recurrence: Value must be unique/.test(text) || /UNIQUE constraint failed: tickets\.recurrence/.test(text);
+  return (
+    /(recurrence|occurrence): Value must be unique/.test(text) ||
+    /UNIQUE constraint failed: tickets\.recurrence/.test(text)
+  );
 }
 
 module.exports = {
   ARCHIVED_HINT: ARCHIVED_HINT,
   HINT_MAX_LENGTH: HINT_MAX_LENGTH,
+  EACH_MAX_PER_RUN: EACH_MAX_PER_RUN,
+  EACH_LIMIT_HINT: EACH_LIMIT_HINT,
   generation: generation,
+  generationEach: generationEach,
+  reopenConflicts: reopenConflicts,
+  eachViolation: eachViolation,
   nextDueOnCompletion: nextDueOnCompletion,
   nextDueOnRelease: nextDueOnRelease,
   isUntouched: isUntouched,

@@ -1,12 +1,12 @@
 # E6-Plan, Teil Offene Reste A: „wiederkehrend“ filtern und gruppieren, Wiederholen beim Anlegen, jeden Termin einzeln, zwei Ebenen, mehrere Wochentage
 
-- **Stand:** in Arbeit (2026-09-28).
+- **Stand:** umgesetzt (2026-09-28): OR-1 (#143, Tests mehrere Wochentage), OR-2 (#144, Filter und Gruppe „wiederkehrend“), OR-3 (#145, zwei Ebenen), OR-4 (#146, Wiederholen beim Anlegen), OR-5 (jeden Termin einzeln, mit Migration). Offen sind die manuellen Browser-Prüfungen (BYL-E6-302, -304, -306, -309).
 - **Grundlage:**
   - Nutzerentscheidungen vom 2026-09-28 (Auftrag „Offene Reste“, Teil A); der Papierkorb ist ein eigener Auftrag danach.
   - [ADR-0013](../adr/0013-filter-suche-sortierung-gruppierung.md) (Filter, Gruppen, Paritätstest), [ADR-0021](../adr/0021-regelmodell-wiederkehrende-aufgaben.md) bis [ADR-0024](../adr/0024-serien-aus-kalendern.md) (Wiederholungen), [ADR-0030](../adr/0030-spalten-breiten-und-kompakte-zeilen.md) (Spalten), [ADR-0033](../adr/0033-unteraufgaben.md) (eingerückte Unteraufgaben), [ADR-0034](../adr/0034-unterprojekte.md) (Projektpfad in Gruppen), [ADR-0035](../adr/0035-start-einstieg-und-offene-tabs.md)
   - Hinweise aus den Plänen [E5](e5.md) §10 („Spalten und Filter“, „Papierkorb“), [Unteraufgaben](unteraufgaben.md) §7 (Gruppen trennen Unteraufgaben), [Spalten](e6-spalten.md), [Start und Fenster](start-fenster.md)
   - [CLAUDE.md](../../CLAUDE.md) §3, §5, §6, §7, §11, §12
-- **Einordnung:** Paketkürzel `OR` („Offene Reste“), Manifest-Block ab `BYL-E6-300` (Start und Fenster endet bei 290). Die nächste freie ADR-Nummer wäre 0036; dieser Teil braucht keine neue ADR, sondern Nachträge in ADR-0013, ADR-0022 und ADR-0023.
+- **Einordnung:** Paketkürzel `OR` („Offene Reste“), Manifest-Block ab `BYL-E6-300` (Start und Fenster endet bei 290). Die nächste freie ADR-Nummer wäre 0036; dieser Teil braucht keine neue ADR, sondern Nachträge in ADR-0013 (A, B), ADR-0021 (2), ADR-0022 (2), ADR-0023 (2) und ADR-0024 (2). Neue Migration: `1790202200_recurrence_each_occurrence.js` (nach `1790202100_projects_parent.js`).
 
 ## 1. Querschnittsregeln
 
@@ -49,6 +49,13 @@
 | 2026-09-28 | OR-4 | **Vorgaben:** wie „Wiederholen…“ (`defaultFormValues`): wöchentlich am Wochentag der Fälligkeit bzw. von heute, Beginn dort, Vorlauf 3. Solange die Werte unverändert die Vorgaben sind, folgen sie einer geänderten Fälligkeit (Ereignis `change` des Datumsfelds); was der Nutzer gewählt hat, bleibt. |
 | 2026-09-28 | OR-4 | **Zwei Schritte ohne neuen Server-Weg:** Die Route legt wie bei Kalenderserien erst das Ticket an und ruft dann `RecurrenceStore.repeatCreated` auf; das Ticket wird die erste Instanz, Panel und Liste zeigen es über `joinedSeries` sofort in der Serie. Scheitert die Regel, bleibt das Ticket, und `offerRepeat` bietet im Panel „Wiederholen…“ mit dem Grund an. Keine Änderung an Hooks. |
 | 2026-09-28 | OR-4 | **Nur mit Regeln:** Der Abschnitt erscheint mit `repeat` (Route: `RecurrenceStore.state !== 'unavailable'`) oder mit einem Vorschlag, vor der E5-Migration also nicht. `NewTicketForm` zieht auf die Schriftgrößen-Tokens (`no-own-font-sizes.test.ts` jetzt 177). |
+| 2026-09-28 | OR-5 | **Index und Modus:** `tickets.occurrence` (Datum der Serie, nur der Erzeugungsdienst, nur mit Schalter) und ein eindeutiger Teilindex über `(recurrence, occurrence)` für offene Instanzen statt über `(recurrence, due)`. Ohne Schalter bleibt `occurrence` leer, der Index hält also weiter „eine offene je Regel“ hart; mit Schalter „eine offene je Termin“, unabhängig von einer von Hand verschobenen Fälligkeit. Geprüft und verworfen: `(recurrence, due)` (Fälligkeit ist veränderlich, Ablehnungen beim Verschieben, zwei Tickets ohne Fälligkeit unmöglich, ohne Schalter kein hartes Netz mehr), eine Kopie des Schalters an jedem Ticket für einen Index nur ohne Schalter (Umschalten ändert alle Tickets), kein Index (kein Sicherheitsnetz). Begründung in ADR-0022 Nachtrag 2. |
+| 2026-09-28 | OR-5 | **Erzeugen:** `generationEach` (rein) legt je Termin mit erreichtem Vorlauf ein Ticket an, ältester zuerst, höchstens `EACH_MAX_PER_RUN = 20` je Regel und Lauf; der Rest folgt im nächsten Lauf (stündlich), bis dahin steht ein neutraler `last_hint` an der Regel. Die Obergrenze nimmt die älteren Termine zuerst, damit kein Termin übersprungen wird und nach einem kurzen Ausfall die Reihenfolge stimmt; ein langer Ausfall braucht so mehrere Läufe statt eines Stapels auf einmal. Zusätzlich überspringt der Dienst einen Termin, der schon ein offenes Ticket hat (statt am Index zu scheitern). |
+| 2026-09-28 | OR-5 | **Nur fester Rhythmus:** Nach Erledigung gibt es nur einen nächsten Termin; der Hook lehnt den Schalter dort mit `validation_recurrence_each_mode` ab, die SPA sendet ihn nur bei festem Rhythmus und blendet ihn sonst aus. Umschalten gehört nicht zum Rhythmus (`next_due` bleibt), leert aber `last_hint`. |
+| 2026-09-28 | OR-5 | **Rückgängig:** `reopenConflicts` folgt dem Index. Ohne Schalter wie bisher (jede andere offene Instanz, unberührt: löschen, sonst ablehnen; mehrere: ablehnen), mit Schalter nur ein offenes Ticket desselben Termins; normal keines, dann bleibt alles und `next_due` auch. ADR-0023 Nachtrag 2. |
+| 2026-09-28 | OR-5 | **Rückweg der Migration:** Er funktioniert auch mit mehreren offenen Tickets einer Regel: das jüngste bleibt in der Serie, die älteren werden normale Tickets (wie 1790201610), die Zahl steht im Log. Ein Abbruch mit Meldung hätte den Rückweg blockiert, bis jemand von Hand aufräumt; die Tickets selbst gehen nicht verloren. Die Rückweg-Tests älterer Migrationen lassen die Felder und den Index von OR-5 aus (`withoutEach`, `withoutEachSchema`). |
+| 2026-09-28 | OR-5 | **Vor dem Neustart:** `eachReady` (beide Felder da) in allen Hooks, sonst genau das Verhalten von vorher; PocketBase ignoriert ein gesendetes `each_occurrence`. Die SPA fragt mit einem Filter auf `each_occurrence` (400 vor der Migration, `eachOccurrenceReady`, optional in `RecurrenceData`) und zeigt den Switch erst danach (`RecurrenceStore.eachReady`). |
+| 2026-09-28 | OR-5 | **Oberfläche:** Switch (`role="switch"`, Zeile mit dem Namen links wie „Glas-Effekt“) in `RecurrenceForm` nach dem Vorlauf, nur bei festem Rhythmus; ein Hinweis darunter sagt, was die Stellung bedeutet. Er steht damit im Dialog „Wiederholen…“/„Regel bearbeiten“, im Regel-Panel und in „Neues Ticket“. Die Zeile „Wiederholt sich“ nennt „jeder Termin einzeln“. Kein eigenes Flag für die Obergrenze: Die Erzeugung läuft ohne offene Seite (Cron, Start), der Hinweis steht an der Regel (Panel und Zeile „Wiederholt sich“). |
 
 ## 4. Status
 
@@ -57,9 +64,18 @@
 | OR-1 | gemergt (#143) |
 | OR-2 | gemergt (#144) |
 | OR-3 | gemergt (#145) |
-| OR-4 | in Arbeit |
-| OR-5 | geplant |
+| OR-4 | gemergt (#146) |
+| OR-5 | in Arbeit (Migration: Neustart nötig) |
 
 ## 5. Offene Punkte
 
-- Manuelle Browser-Prüfungen der Pakete (siehe Test-Manifest).
+- Manuelle Browser-Prüfungen der Pakete (BYL-E6-302, BYL-E6-304, BYL-E6-306, BYL-E6-309).
+- Die Tabelle „Wiederholungen“ und das Regel-Panel nennen bei mehreren offenen Tickets einer Regel nur eines (das erste der Liste); eine Zahl „+2“ wäre ein kleiner Nachtrag, falls der Alltag sie braucht.
+
+## 6. Hinweise für den Papierkorb (nächster Auftrag)
+
+- **Wiederherstellen einer Instanz:** Der eindeutige Index ist seit OR-5 `(recurrence, occurrence)` für offene Tickets. Eine gelöschte offene Instanz ohne Schalter (`occurrence` leer) kollidiert beim Wiederherstellen mit einer inzwischen entstandenen offenen Instanz derselben Regel; mit Schalter nur mit einem offenen Ticket desselben Termins. Die Prüfung gehört wie `reopenConflicts` in die Transaktion (Konflikt: als normales Ticket ohne Serie wiederherstellen oder ablehnen, nie still verdoppeln). `occurrence` muss mit dem Ticket gesichert und zurückgeschrieben werden.
+- **`next_due` beim Löschen:** Löschen einer offenen Instanz überspringt bei `calendar` den Termin (ADR-0023 §6), bei `after_completion` setzt es `next_due` auf heute + Intervall. Wiederherstellen darf `next_due` nicht zurückdrehen (mit Schalter entstünden sonst Termine doppelt, siehe ADR-0023 Nachtrag 2).
+- **ADR-0031 Nachtrag B:** Beim Löschen eines Tickets gehen seine Quellen heute in den Eingang zurück (`new`, `source_meta.ticket_deleted`) oder werden verworfen. Ein Papierkorb muss entscheiden, ob Wiederherstellen die Quellen wieder verknüpft (Hauptquelle `source_item` bleibt am Ticket, der Eintrag steht dann aber als `new` im Eingang oder ist inzwischen umgewandelt oder verworfen) und wie `ticket_deleted` wieder entfernt wird; der Löschschutz der Quellen (`validation_inbox_item_linked`, deleteRule `ticket = ""`) gilt weiter.
+- **Nummernkreise:** Keys vergibt `ticket_counters` pro Scope und Projekt; ein wiederhergestelltes Ticket behält seinen Key, der Zähler zählt nie zurück, und `idx_tickets_scope_key` ist eindeutig. Hat das Projekt inzwischen den Bereich gewechselt oder ist es gelöscht, braucht das Wiederherstellen eine Regel (neuer Key im Ziel-Nummernkreis wie beim Projektwechsel, CLAUDE.md §5). Unteraufgaben verlieren beim Löschen ihr `parent`; Wiederherstellen stellt es nicht von selbst her.
+- **Nummern:** Nächste ADR 0036, Manifest-Block ab BYL-E6-320 (OR belegt 300 bis 309), nächste Migration nach `1790202200`.

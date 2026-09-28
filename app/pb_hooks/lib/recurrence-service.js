@@ -6,7 +6,9 @@
 //
 // The running instance loads new hooks at once but runs the E5 migrations only at its next
 // start (E4 plan section 12). Until then `recurrence_rules` has no `freq`, and every function
-// here leaves rules and tickets as they were in E4 (schemaReady).
+// here leaves rules and tickets as they were in E4 (schemaReady). The same holds for "Jeden
+// Termin einzeln anlegen" (plan OR-5): before its migration (eachReady) every rule keeps one open
+// instance.
 'use strict';
 
 var recurrence = require(__hooks + '/lib/recurrence.js');
@@ -40,6 +42,25 @@ function schemaReady(app) {
   } catch (err) {
     return false;
   }
+}
+
+// Whether the migration of "Jeden Termin einzeln anlegen" ran (plan OR-5): rules.each_occurrence
+// and tickets.occurrence exist. Before it, every rule keeps one open instance as in E5.
+function eachReady(app) {
+  try {
+    return (
+      !!app.findCachedCollectionByNameOrId(RULES).fields.getByName('each_occurrence') &&
+      !!app.findCachedCollectionByNameOrId(TICKETS).fields.getByName('occurrence')
+    );
+  } catch (err) {
+    return false;
+  }
+}
+
+// A rule with "Jeden Termin einzeln anlegen": only a fixed rhythm (after completion there is only
+// one next date). getBool gives false without the field, i.e. before the migration.
+function eachOf(record) {
+  return record.getBool('each_occurrence') && record.getString('mode') === 'calendar';
 }
 
 function findById(txApp, collection, id) {
@@ -148,25 +169,66 @@ function checkAnchorBody(e) {
 }
 
 // Ticket request hooks: `tickets.recurrence` is never set by a client, only cleared (ADR-0023
-// section 1). Before the E5 migrations it stays free as in E4.
+// section 1). Before the E5 migrations it stays free as in E4. `tickets.occurrence` (plan OR-5)
+// belongs to the generation alone: a client value is dropped silently, like a server field.
 function guardTicketCreate(e) {
   var value = e.requestInfo().body['recurrence'];
   if (value !== undefined && value !== null && value !== '' && schemaReady(e.app)) {
     throw fail('recurrence', 'validation_recurrence_managed');
   }
+  if (eachReady(e.app)) {
+    e.record.set('occurrence', '');
+  }
 }
 
 // A client that clears `recurrence` releases the ticket from its series ("Aus der Serie lösen");
-// the model hook then treats an open instance like a deleted one (ADR-0023 section 6).
+// the model hook then treats an open instance like a deleted one (ADR-0023 section 6). The date of
+// the series goes with it.
 function guardTicketUpdate(e) {
+  var original = e.record.original();
+  var each = eachReady(e.app);
+  if (each) {
+    e.record.set('occurrence', original.getString('occurrence'));
+  }
   var next = e.record.getString('recurrence');
-  if (next === e.record.original().getString('recurrence') || !schemaReady(e.app)) {
+  if (next === original.getString('recurrence') || !schemaReady(e.app)) {
     return;
   }
   if (next !== '') {
     throw fail('recurrence', 'validation_recurrence_managed');
   }
+  if (each) {
+    e.record.set('occurrence', '');
+  }
   e.record.set(DETACH_KEY, true);
+}
+
+// Date a new rhythm counts from (ADR-0023 section 5): the due date of the open instance, and with
+// "Jeden Termin einzeln anlegen" the latest date of the series among the open tickets, so a due
+// date moved by hand cannot bring back a date that has its ticket already.
+function openDateOf(txApp, ruleId, instance, each) {
+  var due = rules.calendarDateOf(instance.getString('due'));
+  if (!each || !eachReady(txApp)) {
+    return due;
+  }
+  var latest = txApp.findRecordsByFilter(
+    TICKETS,
+    "recurrence = {:rule} && status != 'done' && occurrence != ''",
+    '-occurrence',
+    1,
+    0,
+    { rule: ruleId }
+  );
+  var occurrence = latest.length > 0 ? rules.calendarDateOf(latest[0].getString('occurrence')) : '';
+  return occurrence > due ? occurrence : due;
+}
+
+// "Jeden Termin einzeln anlegen" needs a fixed rhythm (plan OR-5).
+function checkEach(record, values) {
+  var code = rules.eachViolation(values.mode, record.getBool('each_occurrence'));
+  if (code !== '') {
+    throw fail('each_occurrence', code);
+  }
 }
 
 // --- Model hooks -----------------------------------------------------------------------------
@@ -209,6 +271,7 @@ function prepareCreate(txApp, record, nowMs) {
   }
   var values = checkedParams(raw);
   writeParams(record, values);
+  checkEach(record, values);
   ticketService.checkRelations(txApp, record, scope, '');
 
   var dates = rules.createDates(
@@ -260,14 +323,17 @@ function prepareUpdate(txApp, record, nowMs) {
   }
   var values = checkedParams(raw);
   writeParams(record, values);
+  checkEach(record, values);
   var project = ticketService.checkRelations(txApp, record, scope, original.getString('project'));
 
   var beforeRaw = paramsOf(original);
   var before = recurrence.normalize(beforeRaw);
   before.active = beforeRaw.active;
   before.next_due = beforeRaw.next_due;
+  before.each = eachOf(original);
   var after = values;
   after.active = record.getBool('active');
+  after.each = eachOf(record);
 
   if (!before.active && after.active && project && project.getBool('archived')) {
     throw fail('project', 'validation_project_archived');
@@ -277,7 +343,7 @@ function prepareUpdate(txApp, record, nowMs) {
     {
       before: before,
       after: after,
-      openDue: instance ? rules.calendarDateOf(instance.getString('due')) : null,
+      openDue: instance ? openDateOf(txApp, record.id, instance, after.each) : null,
       today: today
     },
     recurrence
@@ -290,13 +356,28 @@ function prepareUpdate(txApp, record, nowMs) {
 
 // --- Generation (ADR-0022; E5 plan package 3) -------------------------------------------------
 
-// Normalized rule with the state the generation needs.
+// Normalized rule with the state the generation needs; `each` for "Jeden Termin einzeln anlegen".
 function ruleState(rule) {
   var raw = paramsOf(rule);
   var state = recurrence.normalize(raw);
   state.active = raw.active;
   state.next_due = raw.next_due;
+  state.each = eachOf(rule);
   return state;
+}
+
+// Whether an open ticket of the rule was made for this date already (plan OR-5).
+function hasOpenOccurrence(txApp, ruleId, due) {
+  return (
+    txApp.findRecordsByFilter(
+      TICKETS,
+      "recurrence = {:rule} && status != 'done' && occurrence = {:due}",
+      '',
+      1,
+      0,
+      { rule: ruleId, due: rules.storedDateOf(due) }
+    ).length > 0
+  );
 }
 
 function saveSystem(txApp, rule) {
@@ -324,7 +405,8 @@ function errorText(err) {
 // edited" when an instance is reopened (ADR-0023 section 3). record.set() ignores autodate
 // fields; a value from setRaw() is kept, because it differs from the empty original. The value is
 // the stored form, like last_generated_at, with the real clock (a run may pass another nowMs).
-function newInstance(txApp, rule, due) {
+// With `occurrence` (plan OR-5) the ticket carries its date of the series for the unique index.
+function newInstance(txApp, rule, due, occurrence) {
   var ticket = new Record(txApp.findCollectionByNameOrId(TICKETS));
   var now = berlinTime.toPocketBaseDate(Date.now());
   ticket.setRaw('created', now);
@@ -338,6 +420,9 @@ function newInstance(txApp, rule, due) {
   ticket.set('due', rules.storedDateOf(due));
   ticket.set('blocks_parent', true);
   ticket.set('recurrence', rule.id);
+  if (occurrence) {
+    ticket.set('occurrence', rules.storedDateOf(due));
+  }
   ticket.set('owner', rule.getString('owner'));
   ticket.set('household', rule.getString('household'));
   txApp.save(ticket);
@@ -364,12 +449,14 @@ function recordFailure(app, ruleId, err) {
 /**
  * Creates the next ticket of one rule if it is due, in one transaction (ADR-0022 section 2):
  * nothing for an inactive rule, without next_due, with an open instance or before the lead time.
- * An archived project pauses the rule with a neutral hint. Never throws: another error becomes a
- * hint at the rule and a log line. Returns { status: 'created' | 'paused' | 'skipped' | 'failed'
- * | 'unavailable', ticket }.
+ * With "Jeden Termin einzeln anlegen" (plan OR-5) it creates one ticket per date whose lead time
+ * is reached instead, open instances or not, at most EACH_MAX_PER_RUN per run with a neutral hint
+ * when more are waiting. An archived project pauses the rule with a neutral hint. Never throws:
+ * another error becomes a hint at the rule and a log line. Returns { status: 'created' | 'paused'
+ * | 'skipped' | 'failed' | 'unavailable', ticket, count }: the first new ticket and how many.
  */
 function materialize(app, ruleId, nowMs) {
-  var result = { status: 'skipped', ticket: '' };
+  var result = { status: 'skipped', ticket: '', count: 0 };
   if (!schemaReady(app)) {
     result.status = 'unavailable';
     return result;
@@ -381,10 +468,14 @@ function materialize(app, ruleId, nowMs) {
       if (rule === null) {
         return;
       }
-      var plan = rules.generation(
-        { rule: ruleState(rule), hasOpenInstance: openInstance(txApp, rule.id) !== null, today: today },
-        recurrence
-      );
+      var state = ruleState(rule);
+      var each = state.each && eachReady(txApp);
+      var plan = each
+        ? rules.generationEach({ rule: state, today: today }, recurrence)
+        : rules.generation(
+            { rule: state, hasOpenInstance: openInstance(txApp, rule.id) !== null, today: today },
+            recurrence
+          );
       if (plan === null) {
         return;
       }
@@ -397,20 +488,28 @@ function materialize(app, ruleId, nowMs) {
         result.status = 'paused';
         return;
       }
-      var ticket = newInstance(txApp, rule, plan.due);
+      var dues = each ? plan.dues : [plan.due];
+      var created = [];
+      for (var i = 0; i < dues.length; i++) {
+        // A date that has its open ticket already is not made twice (the index would refuse it).
+        if (!each || !hasOpenOccurrence(txApp, rule.id, dues[i])) {
+          created.push(newInstance(txApp, rule, dues[i], each).id);
+        }
+      }
       rule.set('next_due', rules.storedDateOf(plan.nextDue));
       rule.set('last_generated_at', berlinTime.toPocketBaseDate(nowMs));
-      rule.set('last_hint', '');
+      rule.set('last_hint', each && plan.limited ? rules.EACH_LIMIT_HINT : '');
       saveSystem(txApp, rule);
-      result.status = 'created';
-      result.ticket = ticket.id;
+      result.status = created.length > 0 ? 'created' : 'skipped';
+      result.ticket = created.length > 0 ? created[0] : '';
+      result.count = created.length;
     });
   } catch (err) {
     if (rules.isOpenInstanceConflict(errorText(err))) {
-      return { status: 'skipped', ticket: '' };
+      return { status: 'skipped', ticket: '', count: 0 };
     }
     recordFailure(app, ruleId, err);
-    return { status: 'failed', ticket: '' };
+    return { status: 'failed', ticket: '', count: 0 };
   }
   return result;
 }
@@ -418,10 +517,11 @@ function materialize(app, ruleId, nowMs) {
 /**
  * All rules that may be due (ADR-0022 section 2): active, with next_due up to today plus the
  * largest lead time; each one alone through materialize, so one failing rule stops no other.
- * Returns the counts { checked, created, paused, failed, unavailable }.
+ * Returns the counts { checked, created, paused, failed, unavailable, tickets }: `created` counts
+ * the rules that created, `tickets` the new tickets (several per rule with "Jeden Termin einzeln").
  */
 function runDue(app, nowMs) {
-  var counts = { checked: 0, created: 0, paused: 0, failed: 0, unavailable: false };
+  var counts = { checked: 0, created: 0, paused: 0, failed: 0, unavailable: false, tickets: 0 };
   if (!schemaReady(app)) {
     counts.unavailable = true;
     return counts;
@@ -437,15 +537,26 @@ function runDue(app, nowMs) {
   );
   for (var i = 0; i < due.length; i++) {
     counts.checked += 1;
-    var status = materialize(app, due[i].id, nowMs).status;
-    if (status === 'created' || status === 'paused' || status === 'failed') {
-      counts[status] += 1;
+    var run = materialize(app, due[i].id, nowMs);
+    if (run.status === 'created' || run.status === 'paused' || run.status === 'failed') {
+      counts[run.status] += 1;
     }
+    counts.tickets += run.count;
   }
   if (counts.created > 0 || counts.paused > 0 || counts.failed > 0) {
     app
       .logger()
-      .info('Wiederholungen erzeugt', 'created', counts.created, 'paused', counts.paused, 'failed', counts.failed);
+      .info(
+        'Wiederholungen erzeugt',
+        'created',
+        counts.created,
+        'tickets',
+        counts.tickets,
+        'paused',
+        counts.paused,
+        'failed',
+        counts.failed
+      );
   }
   return counts;
 }
@@ -506,21 +617,34 @@ function prepareTicketUpdate(txApp, record, nowMs) {
   }
 }
 
+// Reopening an instance (ADR-0023 section 3, addendum OR-5). The open instances that stand
+// against it follow the unique index: with one open instance per rule every other one, with
+// "Jeden Termin einzeln anlegen" only one of the same date (normally none, so reopening just
+// works and next_due stays). A single conflicting follow-up is removed if it is untouched,
+// otherwise, and with several, the reopening is refused with the newest key.
 function reopen(txApp, record, rule) {
   var others = txApp.findRecordsByFilter(
     TICKETS,
     "recurrence = {:rule} && status != 'done' && id != {:id}",
     '-created',
-    1,
+    0,
     0,
     { rule: rule.id, id: record.id }
   );
   var state = ruleState(rule);
-  if (others.length === 0) {
-    setNextDue(txApp, rule, rules.nextDueOnReopen(state, false, ''));
+  var each = state.each && eachReady(txApp);
+  var open = [];
+  for (var i = 0; i < others.length; i++) {
+    open.push({ ticket: others[i], occurrence: each ? others[i].getString('occurrence') : '' });
+  }
+  var conflicts = rules.reopenConflicts(open, each ? record.getString('occurrence') : '', each);
+  if (conflicts.length === 0) {
+    if (!each) {
+      setNextDue(txApp, rule, rules.nextDueOnReopen(state, false, ''));
+    }
     return;
   }
-  var followUp = others[0];
+  var followUp = conflicts[0].ticket;
   var comments = txApp.findRecordsByFilter('comments', 'ticket = {:id}', '', 1, 0, { id: followUp.id });
   var untouched = rules.isUntouched(
     {
@@ -530,7 +654,7 @@ function reopen(txApp, record, rule) {
     },
     record.original().getString('completed_at')
   );
-  if (!untouched) {
+  if (!untouched || conflicts.length > 1) {
     var key = followUp.getString('key');
     throw errors.fieldFailure('status', 'validation_recurrence_open_instance', rules.openInstanceMessage(key), {
       key: key,
@@ -540,7 +664,11 @@ function reopen(txApp, record, rule) {
   var removedDue = rules.calendarDateOf(followUp.getString('due'));
   followUp.set(UNDO_KEY, true);
   txApp.delete(followUp);
-  setNextDue(txApp, rule, rules.nextDueOnReopen(state, true, removedDue));
+  // With each date its own ticket, next_due stays: moving it back could make dates of the series
+  // again that have their (done) tickets already.
+  if (!each) {
+    setNextDue(txApp, rule, rules.nextDueOnReopen(state, true, removedDue));
+  }
 }
 
 function release(txApp, ruleId, today) {
@@ -582,6 +710,7 @@ module.exports = {
   TICKET_KEY: TICKET_KEY,
   SYSTEM_KEY: SYSTEM_KEY,
   schemaReady: schemaReady,
+  eachReady: eachReady,
   materialize: materialize,
   runDue: runDue,
   runStartup: runStartup,

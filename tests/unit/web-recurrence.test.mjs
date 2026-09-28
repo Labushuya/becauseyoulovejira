@@ -7,7 +7,11 @@ import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { loadHookLib } from '../support/hook-lib.mjs';
 import * as web from '../../web/src/lib/domain/recurrence.ts';
-import { RECURRENCE_MESSAGES, openInstanceMessage } from '../../web/src/lib/domain/recurrence-rule.ts';
+import {
+	EACH_MAX_PER_RUN,
+	RECURRENCE_MESSAGES,
+	openInstanceMessage
+} from '../../web/src/lib/domain/recurrence-rule.ts';
 
 const hook = loadHookLib('recurrence.js');
 const hookRules = loadHookLib('recurrence-rules.js');
@@ -131,5 +135,9 @@ describe('recurrence: web app against the hooks', () => {
 		);
 		expect({ ...RECURRENCE_MESSAGES }).toEqual(hookRecurrence);
 		expect(openInstanceMessage('HAUS-12')).toBe(hookRules.openInstanceMessage('HAUS-12'));
+	});
+
+	it('names the same limit per run for "Jeden Termin einzeln anlegen" as the hook (plan OR-5)', () => {
+		expect(EACH_MAX_PER_RUN).toBe(hookRules.EACH_MAX_PER_RUN);
 	});
 });

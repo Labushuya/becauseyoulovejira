@@ -7,7 +7,7 @@ import PocketBase from 'pocketbase';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { startPocketBase } from '../support/pocketbase-harness.mjs';
 import { createProject, listProjects, updateProject } from '../../web/src/lib/data/projects.ts';
-import { listRules } from '../../web/src/lib/data/recurrence.ts';
+import { eachOccurrenceReady, listRules } from '../../web/src/lib/data/recurrence.ts';
 import { unreadSinceOf } from '../../web/src/lib/domain/unread.ts';
 
 // First migration of E4; the instance runs only the migrations before it.
@@ -512,5 +512,91 @@ describe('HK-8 hooks before the migration of the 25 MB originals', () => {
 		const refused = await items.create(form('mittel', 12 * 1024 * 1024)).catch((error) => error);
 		expect(refused?.status).toBe(400);
 		expect(refused?.response?.data?.original).toBeTruthy();
+	});
+});
+
+// The instance of the user after the merge of OR-5, before its next start: rules without
+// each_occurrence, tickets without occurrence and the old index (one open instance per rule). The
+// new hooks keep exactly the behaviour of before; the SPA offers no switch yet.
+describe('OR-5 hooks before the migration of "Jeden Termin einzeln anlegen"', () => {
+	const EACH_MIGRATION = '1790202200_recurrence_each_occurrence.js';
+	let before;
+	let who;
+	let superuser;
+
+	beforeAll(async () => {
+		before = await startPocketBase({ migrationFilter: (name) => name < EACH_MIGRATION });
+		superuser = new PocketBase(before.url);
+		superuser.autoCancellation(false);
+		await superuser.collection('_superusers').authWithPassword(before.email, before.password);
+		const email = `user-${randomBytes(12).toString('hex')}@example.com`;
+		const password = randomBytes(24).toString('base64url');
+		const id = (await superuser.collection('users').create({ email, password, passwordConfirm: password })).id;
+		who = new PocketBase(before.url);
+		who.autoCancellation(false);
+		await who.collection('users').authWithPassword(email, password);
+		who.userId = id;
+	}, 60_000);
+
+	afterAll(async () => {
+		await before?.stop();
+	});
+
+	async function run(iso) {
+		const response = await fetch(`${before.url}/api/byl-test/recurrence/run`, {
+			method: 'POST',
+			headers: { Authorization: superuser.authStore.token, 'Content-Type': 'application/json' },
+			body: JSON.stringify({ now: Date.parse(iso) })
+		});
+		expect(response.status).toBe(200);
+		return response.json();
+	}
+
+	it('ignores the switch and keeps one open instance per rule, with catching up to the latest date', async () => {
+		const rules = who.collection('recurrence_rules');
+		const rule = await rules.create({
+			owner: who.userId,
+			title: 'Blumen',
+			mode: 'calendar',
+			freq: 'weekly',
+			weekdays: ['MO', 'WE', 'FR'],
+			anchor: '2037-06-01',
+			lead_days: 0,
+			each_occurrence: true
+		});
+		expect(rule.each_occurrence).toBeUndefined();
+		// Even after completion the switch is not refused: the server does not know it yet.
+		const later = await rules.create({ owner: who.userId, title: 'Später', mode: 'after_completion', freq: 'daily', each_occurrence: true });
+		expect(later.each_occurrence).toBeUndefined();
+		await rules.update(later.id, { active: false });
+
+		await run('2037-06-01T10:00:00Z');
+		await run('2037-06-06T10:00:00Z');
+		const open = await superuser
+			.collection('tickets')
+			.getFullList({ filter: superuser.filter("recurrence = {:rule} && status != 'done'", { rule: rule.id }) });
+		expect(open.map((ticket) => ticket.due.slice(0, 10))).toEqual(['2037-06-01']);
+		expect(open[0].occurrence).toBeUndefined();
+
+		// Reopening works as in E5: done, a new instance for Friday, reopening removes it again.
+		await who.collection('tickets').update(open[0].id, { status: 'done' });
+		await run('2037-06-06T10:00:00Z');
+		const reopened = await who.collection('tickets').update(open[0].id, { status: 'open' });
+		expect(reopened.status).toBe('open');
+		await rules.update(rule.id, { active: false });
+	});
+
+	it('lets tickets be created and changed; occurrence is ignored', async () => {
+		const tickets = who.collection('tickets');
+		const ticket = await tickets.create({ owner: who.userId, title: 'Eigen', occurrence: '2037-01-01' });
+		expect(ticket.occurrence).toBeUndefined();
+		expect((await tickets.update(ticket.id, { title: 'Neu', occurrence: '2037-01-02' })).title).toBe('Neu');
+	});
+
+	it('lets the SPA load the rules and learn that the switch waits for the restart', async () => {
+		const rules = await listRules(who);
+		expect(rules?.length).toBeGreaterThan(0);
+		expect(rules?.every((rule) => rule.eachOccurrence === false)).toBe(true);
+		expect(await eachOccurrenceReady(who)).toBe(false);
 	});
 });

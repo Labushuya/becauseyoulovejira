@@ -216,7 +216,8 @@ describe('RecurrenceStore', () => {
 				weekdays: ['MO'],
 				month_day: 0,
 				anchor: '2026-09-28',
-				lead_days: 3
+				lead_days: 3,
+				each_occurrence: false
 			},
 			'ticket000000001'
 		);
@@ -381,5 +382,79 @@ describe('RecurrenceStore: a series from the inbox (E5 plan, package 6)', () => 
 		store.offerRepeat('ticket000000003', values);
 		store.reset();
 		expect(store.takeOffer('ticket000000003')).toBeNull();
+	});
+});
+
+describe('RecurrenceStore: "Jeden Termin einzeln anlegen" (plan OR-5)', () => {
+	const values = defaultFormValues('2026-09-28', '2026-09-25');
+
+	it('offers the switch only once the server knows it, and forgets it on logout', async () => {
+		const data = { ...fakeData([rule()]), eachOccurrenceReady: vi.fn(async () => true) };
+		const store = new RecurrenceStore(data, session());
+		expect(store.eachReady).toBe(false);
+		await store.load();
+		expect(store.eachReady).toBe(true);
+		expect(data.eachOccurrenceReady).toHaveBeenCalledOnce();
+		store.reset();
+		expect(store.eachReady).toBe(false);
+	});
+
+	it('leaves it out before the migration, without a probe and when the probe fails', async () => {
+		const before = new RecurrenceStore(
+			{ ...fakeData([rule()]), eachOccurrenceReady: vi.fn(async () => false) },
+			session()
+		);
+		await before.load();
+		expect(before.state).toBe('ready');
+		expect(before.eachReady).toBe(false);
+
+		const without = new RecurrenceStore(fakeData([rule()]), session());
+		await without.load();
+		expect(without.eachReady).toBe(false);
+
+		const failing = new RecurrenceStore(
+			{
+				...fakeData([rule()]),
+				eachOccurrenceReady: vi.fn(async () => {
+					throw new Error('offline');
+				})
+			},
+			session()
+		);
+		await failing.load();
+		expect(failing.state).toBe('ready');
+		expect(failing.eachReady).toBe(false);
+
+		// Before E5 there are no rules at all, so there is nothing to offer either.
+		const unavailable = new RecurrenceStore(
+			{ ...fakeData(null), eachOccurrenceReady: vi.fn(async () => true) },
+			session()
+		);
+		await unavailable.load();
+		expect(unavailable.eachReady).toBe(false);
+	});
+
+	it('sends the switch with a rule from a ticket and shows a refusal at its field', async () => {
+		const data = fakeData([]);
+		vi.mocked(data.createRule).mockRejectedValueOnce(
+			new DataError('validation', {
+				fields: {
+					each_occurrence: {
+						code: 'validation_recurrence_each_mode',
+						message: '„Jeden Termin einzeln anlegen“ gibt es nur bei einem festen Rhythmus.'
+					}
+				}
+			})
+		);
+		const store = new RecurrenceStore(data, session());
+		const result = await store.repeat(ticket(), { ...values, eachOccurrence: true });
+		expect(vi.mocked(data.createRule).mock.calls[0]?.[0]).toMatchObject({ each_occurrence: true });
+		expect(result).toEqual({
+			ok: false,
+			message: null,
+			fields: {
+				each_occurrence: '„Jeden Termin einzeln anlegen“ gibt es nur bei einem festen Rhythmus.'
+			}
+		});
 	});
 });

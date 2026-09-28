@@ -218,6 +218,160 @@ describe('several weekdays with an open instance (plan OR-1)', () => {
 	});
 });
 
+describe('"Jeden Termin einzeln anlegen" (plan OR-5, ADR-0022 addendum 2)', () => {
+	const MON_WED_FRI = { freq: 'weekly', weekdays: ['MO', 'WE', 'FR'], anchor: '2037-06-01' };
+	const dues = (list) => list.map((ticket) => dateOf(ticket.due)).sort();
+	const occurrences = (list) => list.map((ticket) => dateOf(ticket.occurrence)).sort();
+
+	async function refusal(promise) {
+		try {
+			await promise;
+		} catch (error) {
+			return error;
+		}
+		throw new Error('expected a refusal');
+	}
+
+	it('gives every weekday its own ticket while earlier ones are still open, never one twice', async () => {
+		const rule = await createRule({ ...MON_WED_FRI, lead_days: 0, each_occurrence: true });
+		expect(rule.each_occurrence).toBe(true);
+		expect((await run('2037-06-01T10:00:00Z')).tickets).toBe(1);
+		// Wednesday with the Monday open: the Wednesday comes anyway.
+		expect((await run('2037-06-03T10:00:00Z')).tickets).toBe(1);
+		const open = await openOf(rule.id);
+		expect(dues(open)).toEqual(['2037-06-01', '2037-06-03']);
+		expect(occurrences(open)).toEqual(['2037-06-01', '2037-06-03']);
+
+		// The PC was off on Friday: on Saturday the Friday comes, as a ticket of its own.
+		expect((await run('2037-06-06T10:00:00Z')).tickets).toBe(1);
+		expect(dues(await openOf(rule.id))).toEqual(['2037-06-01', '2037-06-03', '2037-06-05']);
+		expect(dateOf((await ruleOf(rule.id)).next_due)).toBe('2037-06-08');
+		expect((await run('2037-06-06T10:00:00Z')).tickets).toBe(0);
+
+		// Parallel runs and the cron job a week later: Monday and Wednesday exactly once.
+		const results = await Promise.all(Array.from({ length: 5 }, () => run('2037-06-10T10:00:00Z')));
+		await cron();
+		expect(results.reduce((sum, result) => sum + result.tickets, 0)).toBe(2);
+		const all = await instancesOf(rule.id);
+		expect(dues(all)).toEqual(['2037-06-01', '2037-06-03', '2037-06-05', '2037-06-08', '2037-06-10']);
+		expect(new Set(occurrences(all)).size).toBe(5);
+		// One timestamp in created and updated of each of them (ADR-0022 addendum, flake guard).
+		expect(all.every((ticket) => ticket.updated === ticket.created)).toBe(true);
+	});
+
+	it('catches up one ticket per missed date after a gap, at most 20 per run, with a hint', async () => {
+		const rule = await createRule({ freq: 'daily', anchor: '2038-01-01', lead_days: 0, each_occurrence: true });
+		const first = await run('2038-01-26T10:00:00Z');
+		expect(first).toMatchObject({ created: 1, tickets: 20 });
+		let stored = await ruleOf(rule.id);
+		expect(dateOf(stored.next_due)).toBe('2038-01-21');
+		expect(stored.last_hint).toBe(
+			'Viele Termine auf einmal: 20 Tickets angelegt, die übrigen folgen beim nächsten Lauf (stündlich).'
+		);
+		expect(dues(await openOf(rule.id))[19]).toBe('2038-01-20');
+
+		// The next run brings the rest and clears the hint.
+		expect((await run('2038-01-26T11:07:00Z')).tickets).toBe(6);
+		stored = await ruleOf(rule.id);
+		expect(dateOf(stored.next_due)).toBe('2038-01-27');
+		expect(stored.last_hint).toBe('');
+		const open = await openOf(rule.id);
+		expect(open).toHaveLength(26);
+		expect(dues(open)[25]).toBe('2038-01-26');
+	});
+
+	it('reopens a ticket freely: the other open tickets stay and nothing is removed', async () => {
+		const rule = await createRule({ ...MON_WED_FRI, anchor: '2037-07-06', lead_days: 0, each_occurrence: true });
+		await run('2037-07-10T10:00:00Z');
+		const open = await openOf(rule.id);
+		expect(dues(open)).toEqual(['2037-07-06', '2037-07-08', '2037-07-10']);
+		const monday = open.find((ticket) => dateOf(ticket.due) === '2037-07-06');
+
+		await tickets().update(monday.id, { status: 'done' });
+		const reopened = await tickets().update(monday.id, { status: 'open' });
+		expect(reopened.status).toBe('open');
+		expect(dues(await openOf(rule.id))).toEqual(['2037-07-06', '2037-07-08', '2037-07-10']);
+		expect(dateOf((await ruleOf(rule.id)).next_due)).toBe('2037-07-13');
+	});
+
+	it('undoes an untouched follow-up of before the switch, and refuses once it was edited', async () => {
+		for (const touch of [false, true]) {
+			const anchor = touch ? '2039-04-01' : '2039-03-01';
+			const rule = await createRule({ freq: 'daily', anchor, lead_days: 0 });
+			await run(`${anchor}T10:00:00Z`);
+			const [first] = await instancesOf(rule.id);
+			await tickets().update(first.id, { status: 'done' });
+			await run(`${anchor.slice(0, 8)}02T10:00:00Z`);
+			const followUp = (await openOf(rule.id))[0];
+			expect(followUp.occurrence).toBe('');
+			if (touch) await tickets().update(followUp.id, { title: 'Schon bearbeitet' });
+
+			// Switched on now: both have no date of the series, so the index still sees them as one.
+			await rules().update(rule.id, { each_occurrence: true });
+			if (touch) {
+				const error = await refusal(tickets().update(first.id, { status: 'open' }));
+				expect(error.response.data.status).toMatchObject({
+					code: 'validation_recurrence_open_instance',
+					params: { key: followUp.key, ticket: followUp.id }
+				});
+			} else {
+				await tickets().update(first.id, { status: 'open' });
+				expect((await openOf(rule.id)).map((ticket) => ticket.id)).toEqual([first.id]);
+				// next_due stays with each date its own ticket.
+				expect(dateOf((await ruleOf(rule.id)).next_due)).toBe(`${anchor.slice(0, 8)}03`);
+			}
+		}
+	});
+
+	it('refuses to reopen once the switch is off again and another ticket is open', async () => {
+		const rule = await createRule({ ...MON_WED_FRI, anchor: '2037-08-03', lead_days: 0, each_occurrence: true });
+		await run('2037-08-05T10:00:00Z');
+		const open = await openOf(rule.id);
+		const monday = open.find((ticket) => dateOf(ticket.due) === '2037-08-03');
+		const wednesday = open.find((ticket) => dateOf(ticket.due) === '2037-08-05');
+		await rules().update(rule.id, { each_occurrence: false });
+
+		await tickets().update(monday.id, { status: 'done' });
+		const error = await refusal(tickets().update(monday.id, { status: 'open' }));
+		expect(error.response.data.status.code).toBe('validation_recurrence_open_instance');
+		expect(error.response.data.status.params.key).toBe(wednesday.key);
+		// One open instance per rule again: Friday waits for Wednesday.
+		expect((await run('2037-08-07T10:00:00Z')).tickets).toBe(0);
+	});
+
+	it('counts a new rhythm from the latest date of the series, not from a due date moved back', async () => {
+		const rule = await createRule({ ...MON_WED_FRI, anchor: '2037-09-07', lead_days: 0, each_occurrence: true });
+		await run('2037-09-12T10:00:00Z');
+		const friday = (await openOf(rule.id)).find((ticket) => dateOf(ticket.due) === '2037-09-11');
+		await tickets().update(friday.id, { due: '2037-08-20' });
+		const changed = await rules().update(rule.id, { weekdays: ['MO'] });
+		expect(dateOf(changed.next_due)).toBe('2037-09-14');
+	});
+
+	it('is only for a fixed rhythm', async () => {
+		const error = await refusal(
+			createRule({ mode: 'after_completion', freq: 'daily', interval: 2, anchor: today(), each_occurrence: true })
+		);
+		expect(error.status).toBe(400);
+		expect(error.response.data.each_occurrence.code).toBe('validation_recurrence_each_mode');
+		const rule = await createRule({ ...MON_WED_FRI, anchor: '2037-10-05', each_occurrence: true });
+		const change = await refusal(rules().update(rule.id, { mode: 'after_completion', weekdays: [] }));
+		expect(change.response.data.each_occurrence.code).toBe('validation_recurrence_each_mode');
+	});
+
+	it('keeps the date of the series in the hands of the server', async () => {
+		const own = await tickets().create({ owner: owner.id, title: 'Eigen', occurrence: '2037-01-01' });
+		expect(own.occurrence).toBe('');
+		const rule = await createRule({ ...MON_WED_FRI, anchor: '2037-11-02', lead_days: 0, each_occurrence: true });
+		await run('2037-11-02T10:00:00Z');
+		const [instance] = await openOf(rule.id);
+		const edited = await tickets().update(instance.id, { occurrence: '2037-12-24', title: 'Neu' });
+		expect(dateOf(edited.occurrence)).toBe('2037-11-02');
+		const released = await tickets().update(instance.id, { recurrence: '' });
+		expect(released.occurrence).toBe('');
+	});
+});
+
 describe('completing, reopening and releasing instances (ADR-0023 sections 2, 3 and 6)', () => {
 	it('fixes the next date on completion and shows the follow-up when it is within the lead time', async () => {
 		const rule = await createRule({ mode: 'after_completion', freq: 'daily', interval: 2, lead_days: 3, anchor: today() });
