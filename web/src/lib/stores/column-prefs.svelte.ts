@@ -7,8 +7,10 @@
 import { getContext, setContext } from 'svelte';
 import {
 	TABLES,
+	changedOptions,
 	clampWidth,
 	columnWidth,
+	optionValue,
 	defaultColumnPrefs,
 	isDefaultColumnPrefs,
 	isResizable,
@@ -29,7 +31,7 @@ export const COLUMNS_RESET_FLAG = 'Spalten zurückgesetzt';
 
 function read(storage: ColumnStorage | null, table: TableSpec): ColumnPrefs {
 	try {
-		return parseColumnPrefs(storage?.getItem(table.storageKey), table.columns);
+		return parseColumnPrefs(storage?.getItem(table.storageKey), table.columns, table.options);
 	} catch {
 		return defaultColumnPrefs(table.columns);
 	}
@@ -88,7 +90,24 @@ export class ColumnPrefsStore {
 		this.#save({ ...this.prefs, hidden });
 	}
 
-	/** "Standard wiederherstellen": widths and visibility of this table, with an info flag. */
+	/** Value of a switch of the table, e.g. "Unteraufgaben einrücken" (ADR-0033 section 5). */
+	option(id: string): boolean {
+		const option = this.table.options.find((entry) => entry.id === id);
+		return option === undefined ? false : optionValue(this.prefs, option);
+	}
+
+	/** Sets a switch of the table; its default is not stored. */
+	setOption(id: string, value: boolean): void {
+		if (!this.table.options.some((entry) => entry.id === id) || this.option(id) === value) return;
+		const options = changedOptions({ ...this.prefs.options, [id]: value }, this.table.options);
+		const { widths, hidden } = this.prefs;
+		this.#save(options === undefined ? { widths, hidden } : { widths, hidden, options });
+	}
+
+	/**
+	 * "Standard wiederherstellen": widths, visibility and switches of this table, with an info
+	 * flag.
+	 */
 	reset(): void {
 		this.#save(defaultColumnPrefs(this.table.columns));
 		this.#flags.show({ tone: 'info', title: COLUMNS_RESET_FLAG });
@@ -96,7 +115,7 @@ export class ColumnPrefsStore {
 
 	/** Takes a value written by another tab (null: the key was removed). */
 	sync(raw: string | null): void {
-		this.prefs = parseColumnPrefs(raw, this.table.columns);
+		this.prefs = parseColumnPrefs(raw, this.table.columns, this.table.options);
 	}
 
 	#save(prefs: ColumnPrefs): void {
@@ -105,7 +124,7 @@ export class ColumnPrefsStore {
 		try {
 			const key = this.table.storageKey;
 			if (isDefaultColumnPrefs(prefs, this.table.columns)) this.#storage.removeItem(key);
-			else this.#storage.setItem(key, serializeColumnPrefs(prefs));
+			else this.#storage.setItem(key, serializeColumnPrefs(prefs, this.table.columns));
 		} catch {
 			// The choice lasts for this page.
 		}

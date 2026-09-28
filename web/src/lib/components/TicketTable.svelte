@@ -2,7 +2,8 @@
 	import { tick, type Snippet } from 'svelte';
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
-	import { TICKET_TABLE } from '$lib/domain/columns';
+	import { NEST_SUBTASKS, TICKET_TABLE } from '$lib/domain/columns';
+	import { arrangeRows } from '$lib/domain/subtasks';
 	import { GROUPING_LABELS } from '$lib/domain/grouping';
 	import {
 		MORE_COLUMNS_HINT,
@@ -122,6 +123,8 @@
 	const columnFit = new ColumnFit(getColumnPrefs('tickets'));
 	const fit = $derived(columnFit.fit);
 	const shown = $derived(columnFit.shown);
+	// Sub-tasks directly below their parent (ADR-0033 section 5), a switch of the menu "Spalten".
+	const nest = $derived(columnFit.store.option(NEST_SUBTASKS));
 	let frame = $state<HTMLElement>();
 
 	$effect(() => {
@@ -278,10 +281,16 @@
 	});
 </script>
 
+<!-- One section (a group, the open or the done tickets): sub-tasks follow their parent only when
+     both are in it (ADR-0033 section 5). -->
 {#snippet rows(tickets: readonly TicketSummary[])}
-	{#each tickets as ticket (ticket.id)}
+	{#each arrangeRows(tickets, nest, (id) => store.find(id)) as row (row.ticket.id)}
+		{@const ticket = row.ticket}
 		<TicketTableRow
 			{ticket}
+			nested={row.nested}
+			parent={row.parent}
+			progress={store.progressOf(ticket.id)}
 			project={catalog.projectOf(ticket)}
 			tags={catalog.tagsOf(ticket)}
 			href={ticketHref(ticket.id, page.url)}
@@ -475,6 +484,7 @@
 						{@render header('priority', 'Prio', 'priority')}
 						{@render header('status', 'Status', 'status')}
 						{@render header('title', 'Titel', 'title')}
+						{@render header('parent', 'Übergeordnet')}
 						{@render header('source', 'Quelle')}
 						{@render header('project', 'Projekt', 'project')}
 						{@render header('tags', 'Tags')}

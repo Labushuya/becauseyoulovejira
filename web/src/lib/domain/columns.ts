@@ -30,6 +30,20 @@ export interface ColumnSpec {
 	readonly hideRank: number | null;
 	/** Off until the user switches it on (e.g. "Quelle"). */
 	readonly hiddenByDefault: boolean;
+	/**
+	 * Came after preferences were stored on devices (e.g. "Übergeordnet", ADR-0033): it counts as
+	 * shown only when the stored preferences list it under `shown`. A list `hidden` written before
+	 * the column existed does not name it, and must not switch it on.
+	 */
+	readonly optIn?: boolean;
+}
+
+/** A switch of a table beside its columns, e.g. "Unteraufgaben einrücken" (ADR-0033 section 5). */
+export interface TableOption {
+	readonly id: string;
+	/** Name in the menu "Spalten". */
+	readonly label: string;
+	readonly default: boolean;
 }
 
 export interface TableSpec {
@@ -38,6 +52,8 @@ export interface TableSpec {
 	readonly storageKey: string;
 	/** Columns in the order of the table. */
 	readonly columns: readonly ColumnSpec[];
+	/** Switches of the table, stored with the columns. */
+	readonly options: readonly TableOption[];
 }
 
 /** CSS pixels of 1rem at the default font size; widths in the specs are written in rem. */
@@ -59,6 +75,7 @@ interface ColumnOptions {
 	required?: boolean;
 	hideRank?: number | null;
 	hiddenByDefault?: boolean;
+	optIn?: boolean;
 }
 
 /** A column with its widths in rem. */
@@ -72,7 +89,8 @@ function column(id: string, label: string, options: ColumnOptions): ColumnSpec {
 		min: options.min * REM,
 		max: options.max * REM,
 		hideRank: options.hideRank ?? null,
-		hiddenByDefault: options.hiddenByDefault ?? false
+		hiddenByDefault: options.hiddenByDefault ?? false,
+		...(options.optIn && { optIn: true })
 	});
 }
 
@@ -90,32 +108,53 @@ function flexible(id: string, label: string, min: number): ColumnSpec {
 	});
 }
 
-function table(id: TableId, columns: readonly ColumnSpec[]): TableSpec {
+function table(
+	id: TableId,
+	columns: readonly ColumnSpec[],
+	options: readonly TableOption[] = []
+): TableSpec {
 	return Object.freeze({
 		id,
 		storageKey: `${COLUMN_PREFS_PREFIX}${id}`,
-		columns: Object.freeze([...columns])
+		columns: Object.freeze([...columns]),
+		options: Object.freeze(options.map((option) => Object.freeze({ ...option })))
 	});
 }
 
+/** "Unteraufgaben einrücken" of the tickets (ADR-0033 section 5), on by default. */
+export const NEST_SUBTASKS = 'nest';
+
 /**
- * "Aufgaben": Key, Prio, Status, Titel, Quelle, Projekt, Tags, Fällig, Erstellt, actions. Space
- * runs out: Erstellt, Tags, Projekt, Fällig give way in this order (ADR-0025 section 11); the
- * column "Quelle" (ADR-0019 section 4, off by default) goes before them. Prio and Status never
- * give way on their own but can be switched off, as in Jira.
+ * "Aufgaben": Key, Prio, Status, Titel, Übergeordnet, Quelle, Projekt, Tags, Fällig, Erstellt,
+ * actions. Space runs out: Erstellt, Tags, Projekt, Fällig give way in this order (ADR-0025
+ * section 11); the columns "Übergeordnet" (ADR-0033 section 5) and "Quelle" (ADR-0019 section 4),
+ * both off by default, go before them. Prio and Status never give way on their own but can be
+ * switched off, as in Jira. The switch "Unteraufgaben einrücken" is stored with the columns.
  */
-export const TICKET_TABLE: TableSpec = table('tickets', [
-	column('key', 'Key', { width: 6, min: 4, max: 8, required: true }),
-	column('priority', 'Prio', { width: 4, min: 3, max: 6 }),
-	column('status', 'Status', { width: 6.5, min: 4.5, max: 10 }),
-	flexible('title', 'Titel', 10),
-	column('source', 'Quelle', { width: 7, min: 4, max: 12, hideRank: 0, hiddenByDefault: true }),
-	column('project', 'Projekt', { width: 8, min: 4, max: 16, hideRank: 3 }),
-	column('tags', 'Tags', { width: 8, min: 4, max: 20, hideRank: 2 }),
-	column('due', 'Fällig', { width: 8, min: 5, max: 12, hideRank: 4 }),
-	column('created', 'Erstellt', { width: 6, min: 5, max: 9, hideRank: 1 }),
-	fixed('actions', 'Aktionen', 4)
-]);
+export const TICKET_TABLE: TableSpec = table(
+	'tickets',
+	[
+		column('key', 'Key', { width: 6, min: 4, max: 8, required: true }),
+		column('priority', 'Prio', { width: 4, min: 3, max: 6 }),
+		column('status', 'Status', { width: 6.5, min: 4.5, max: 10 }),
+		flexible('title', 'Titel', 10),
+		column('parent', 'Übergeordnet', {
+			width: 7,
+			min: 5,
+			max: 10,
+			hideRank: 0,
+			hiddenByDefault: true,
+			optIn: true
+		}),
+		column('source', 'Quelle', { width: 7, min: 4, max: 12, hideRank: 0, hiddenByDefault: true }),
+		column('project', 'Projekt', { width: 8, min: 4, max: 16, hideRank: 3 }),
+		column('tags', 'Tags', { width: 8, min: 4, max: 20, hideRank: 2 }),
+		column('due', 'Fällig', { width: 8, min: 5, max: 12, hideRank: 4 }),
+		column('created', 'Erstellt', { width: 6, min: 5, max: 9, hideRank: 1 }),
+		fixed('actions', 'Aktionen', 4)
+	],
+	[{ id: NEST_SUBTASKS, label: 'Unteraufgaben einrücken', default: true }]
+);
 
 /**
  * "Eingang": selection (only for new entries), Art, Titel, Quelle, Quelldatum, arrival, actions.
@@ -189,6 +228,32 @@ export interface ColumnPrefs {
 	readonly widths: Readonly<Record<string, number>>;
 	/** Columns the user switched off, only optional ones, in the order of the table. */
 	readonly hidden: readonly string[];
+	/**
+	 * Switches of the table the user set against their default (ADR-0033 section 5); missing when
+	 * all have their default.
+	 */
+	readonly options?: Readonly<Record<string, boolean>>;
+}
+
+/** Value of a switch: the chosen one, else its default. */
+export function optionValue(prefs: ColumnPrefs, option: TableOption): boolean {
+	return prefs.options?.[option.id] ?? option.default;
+}
+
+/**
+ * The switches that differ from their default, or undefined for none, so preferences without a
+ * changed switch keep their shape `{ widths, hidden }`.
+ */
+export function changedOptions(
+	values: Readonly<Record<string, unknown>>,
+	options: readonly TableOption[]
+): Readonly<Record<string, boolean>> | undefined {
+	const changed: Record<string, boolean> = {};
+	for (const option of options) {
+		const value = values[option.id];
+		if (typeof value === 'boolean' && value !== option.default) changed[option.id] = value;
+	}
+	return Object.keys(changed).length === 0 ? undefined : changed;
 }
 
 /** Nothing chosen: default widths, only the columns that are off by default are hidden. */
@@ -208,11 +273,14 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 /**
  * Reads the stored preferences strictly: broken JSON, another version or no object mean the
  * defaults; unknown columns, required ones in `hidden`, and widths that are no positive finite
- * number count as not set. Valid widths are clamped to the bounds of their column.
+ * number count as not set. Valid widths are clamped to the bounds of their column. A column that
+ * came later (`optIn`) is shown only when `shown` names it. Switches of the table (`options`)
+ * count only with a known name and a boolean value.
  */
 export function parseColumnPrefs(
 	raw: string | null | undefined,
-	columns: readonly ColumnSpec[]
+	columns: readonly ColumnSpec[],
+	options: readonly TableOption[] = []
 ): ColumnPrefs {
 	const defaults = defaultColumnPrefs(columns);
 	if (typeof raw !== 'string' || raw === '') return defaults;
@@ -239,16 +307,41 @@ export function parseColumnPrefs(
 		const listed = new Set(
 			data.hidden.filter((value): value is string => typeof value === 'string')
 		);
+		// A column that came later is shown only when `shown` names it (ColumnSpec.optIn).
+		const shown = Array.isArray(data.shown) ? data.shown : [];
 		hidden = columns
-			.filter((entry) => !entry.required && listed.has(entry.id))
+			.filter(
+				(entry) =>
+					!entry.required &&
+					(listed.has(entry.id) || (entry.optIn === true && !shown.includes(entry.id)))
+			)
 			.map((entry) => entry.id);
 	}
-	return { widths, hidden };
+	const changed = isRecord(data.options) ? changedOptions(data.options, options) : undefined;
+	return changed === undefined ? { widths, hidden } : { widths, hidden, options: changed };
 }
 
-/** The stored form: `{ "v": 1, "widths": { … }, "hidden": [ … ] }`. */
-export function serializeColumnPrefs(prefs: ColumnPrefs): string {
-	return JSON.stringify({ v: COLUMN_PREFS_VERSION, widths: prefs.widths, hidden: prefs.hidden });
+/**
+ * The stored form: `{ "v": 1, "widths": { … }, "hidden": [ … ] }`, with `"shown": [ … ]` for
+ * shown columns that came later (needs `columns`) and `"options": { … }` when a switch differs
+ * from its default.
+ */
+export function serializeColumnPrefs(
+	prefs: ColumnPrefs,
+	columns: readonly ColumnSpec[] = []
+): string {
+	const options = prefs.options && Object.keys(prefs.options).length > 0 ? prefs.options : null;
+	// Columns that came later (optIn) are named when shown, so older lists cannot switch them on.
+	const shown = columns
+		.filter((entry) => entry.optIn === true && !prefs.hidden.includes(entry.id))
+		.map((entry) => entry.id);
+	return JSON.stringify({
+		v: COLUMN_PREFS_VERSION,
+		widths: prefs.widths,
+		hidden: prefs.hidden,
+		...(shown.length > 0 && { shown }),
+		...(options && { options })
+	});
 }
 
 /** Whether `prefs` equal the defaults (then nothing needs to be stored). */
@@ -257,7 +350,8 @@ export function isDefaultColumnPrefs(prefs: ColumnPrefs, columns: readonly Colum
 	return (
 		Object.keys(prefs.widths).length === 0 &&
 		prefs.hidden.length === defaults.hidden.length &&
-		prefs.hidden.every((id) => defaults.hidden.includes(id))
+		prefs.hidden.every((id) => defaults.hidden.includes(id)) &&
+		Object.keys(prefs.options ?? {}).length === 0
 	);
 }
 

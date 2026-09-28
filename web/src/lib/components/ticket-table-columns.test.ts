@@ -185,7 +185,11 @@ describe('columns of the ticket table (ADR-0030)', () => {
 		await fireEvent.pointerUp(grip('project'), { pointerId: 1, clientX: 150 });
 
 		expect(colWidth('project')).toBe('178px');
-		expect(stored()).toEqual({ v: 1, widths: { project: 178 }, hidden: ['source'] });
+		expect(stored()).toEqual({
+			v: 1,
+			widths: { project: 178 },
+			hidden: ['parent', 'source']
+		});
 	});
 
 	it('clamps the drag to the maximum of the column and to the room of the title', async () => {
@@ -260,7 +264,7 @@ describe('columns of the ticket table (ADR-0030)', () => {
 			expect(stored()).toEqual({
 				v: 1,
 				widths: { created: 80, project: 256 },
-				hidden: ['source']
+				hidden: ['parent', 'source']
 			});
 		} finally {
 			delete (Range.prototype as { getBoundingClientRect?: unknown }).getBoundingClientRect;
@@ -304,7 +308,11 @@ describe('columns of the ticket table (ADR-0030)', () => {
 	it('follows the stored preferences of the device', async () => {
 		localStorage.setItem(
 			'byl-columns-tickets',
-			JSON.stringify({ v: 1, widths: { project: 200 }, hidden: ['priority', 'created'] })
+			JSON.stringify({
+				v: 1,
+				widths: { project: 200 },
+				hidden: ['priority', 'parent', 'created']
+			})
 		);
 		await showTable('/?gruppe=status');
 

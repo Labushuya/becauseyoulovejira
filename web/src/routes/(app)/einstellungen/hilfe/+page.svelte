@@ -211,6 +211,31 @@
 				</ul>
 			</details>
 			<details>
+				<summary>Wie arbeite ich mit Unteraufgaben?</summary>
+				<ul>
+					<li>
+						Im Ticket unter „Unteraufgaben“ legst du mit „Unteraufgabe hinzufügen“ eine nach der
+						anderen an: Titel tippen, <kbd>Enter</kbd>; <kbd>Esc</kbd> schließt das Feld. Sie bekommen
+						Projekt und Tags des Tickets. Ein vorhandenes Ticket wird in der Zeile „Übergeordnet“ mit
+						dem Knopf zum Festlegen zur Unteraufgabe. Es gibt nur eine Ebene.
+					</li>
+					<li>
+						Solange eine Unteraufgabe offen ist, fragt das Erledigen des übergeordneten Tickets
+						nach: „Unteraufgaben mit erledigen“ oder „Trotzdem erledigen“. Der Schalter „Blockiert
+						das übergeordnete Ticket“ in der Unteraufgabe nimmt sie aus dieser Frage heraus.
+					</li>
+					<li>
+						In der Liste stehen Unteraufgaben eingerückt unter ihrem Ticket, wenn beide zu sehen
+						sind; sonst steht vor dem Titel der Pfad, etwa „HAUS-12 ›“. Das Einrücken schaltest du
+						im Menü „Spalten“ aus, dort gibt es auch die Spalte „Übergeordnet“.
+					</li>
+					<li>
+						Wird ein Ticket gelöscht, bleiben seine Unteraufgaben als normale Tickets erhalten. Das
+						nächste Ticket einer wiederkehrenden Unteraufgabe gehört zu keinem Ticket.
+					</li>
+				</ul>
+			</details>
+			<details>
 				<summary>Wie formatiere ich Beschreibungen und Kommentare?</summary>
 				<ul>
 					<li>

@@ -1,6 +1,6 @@
 # E6-Plan, Teil Unteraufgaben: Liste, Fortschritt, Einrücken und „blockiert das übergeordnete Ticket“
 
-- **Stand:** in Arbeit (2026-09-28): UA-0 (#117), UA-1 (#118, Sperre beim Erledigen im Hook), UA-2 (#119, Abschnitt „Unteraufgaben“, Pfad), UA-3 (#120, übergeordnetes Ticket, Switch, Löschen inline) und UA-4 (Frage beim Erledigen) umgesetzt, UA-5 geplant.
+- **Stand:** umgesetzt (2026-09-28): UA-0 (#117), UA-1 (#118, Sperre beim Erledigen im Hook), UA-2 (#119, Abschnitt „Unteraufgaben“, Pfad), UA-3 (#120, übergeordnetes Ticket, Switch, Löschen inline), UA-4 (#121, Frage beim Erledigen) und UA-5 (#122, Tabelle, Hilfe, README). Offen sind die manuellen Browser-Prüfungen.
 - **Grundlage:**
   - [ADR-0033](../adr/0033-unteraufgaben.md) (Umfang, Sperre beim Erledigen, Wiederholungen, Oberfläche, Tabelle)
   - [ADR-0012](../adr/0012-plain-ticketing.md) und [ADR-0011](../adr/0011-roadmap-e3-bis-e7.md) mit den Nachträgen vom 2026-09-28
@@ -62,6 +62,11 @@
 | 2026-09-28 | UA-4 | **Zwei Formen, dieselbe Wahl:** Beim Häkchen der Tabelle die Bestätigung (`CompletionDialog` auf `ConfirmDialog` mit `options`), Titel „HAUS-12 erledigen?“, Text „N Unteraufgaben sind noch offen – trotzdem erledigen?“, Verb „Erledigen“. Beim Status in Panel und Vollansicht **inline** unter dem Status (`TicketCompletionQuestion`, `SectionMessage` warning mit der Frage als Titel), weil aus der Vollansicht kein Dialog aufgeht und beide Orte gleich sein sollen. Beide nutzen `CompletionChoiceField`: Radios „Unteraufgaben mit erledigen“ (vorausgewählt, der häufige Fall: Man hakt das übergeordnete Ticket ab, weil alles erledigt ist) und „Trotzdem erledigen“, je mit einem Hinweis, der die Keys nennt. Erster Fokus auf „Abbrechen“ wie bei jeder Bestätigung. |
 | 2026-09-28 | UA-4 | **Was das Steuerelement zeigt:** Häkchen (`DoneToggle`) und Status (`StatusSelect`) zeigen nach einer Eingabe wieder den Wert des Stores. Das ist während der Anfrage der gewählte Wert und vor der Frage der alte, damit das Häkchen nicht abgehakt aussieht, solange noch gefragt wird. |
 | 2026-09-28 | UA-4 | **„Rückgängig“ mit Unteraufgaben:** `completed` merkt sich die mit erledigten Unteraufgaben samt vorigem Status (`completedChildren`). „Rückgängig“ stellt erst das übergeordnete Ticket zurück, dann jede Unteraufgabe einzeln (kein Hook-Weg für mehrere zugleich nötig, denn Wiederöffnen sperrt nichts). Das Flag nennt „HAUS-12 und 2 Unteraufgaben sind wieder offen.“, eine gescheiterte nennt ein Fehler-Flag. „Trotzdem erledigen“ merkt sich keine Unteraufgaben. |
+| 2026-09-28 | UA-5 | **Einrücken als reine Funktion** `arrangeRows(tickets, nest, find)` je Abschnitt (Gruppe, offene Liste, „Erledigt“): Die Tabelle ruft sie mit den schon gefilterten und sortierten Zeilen auf. So gelten Filter, Suche, Sortierung, Gruppen und Zahlen unverändert je Ticket, und Einrücken geht nie über einen Abschnitt hinaus. Eine Unteraufgabe folgt ihrem übergeordneten Ticket nur, wenn es im selben Abschnitt steht; mehrere behalten untereinander die Reihenfolge der Sortierung. |
+| 2026-09-28 | UA-5 | **Kennzeichen der Zeile:** eingerückt 2rem mit einem Winkel-Symbol; allein stehend der Pfad „HAUS-12 ›“ in Mono vor dem Titel (`aria-hidden`, Titel des übergeordneten Tickets als `title`). Für Screenreader steht in beiden Fällen „Unteraufgabe von HAUS-12:“ im Zeilenkopf. Der Chip „2/5“ am übergeordneten Ticket ist nicht interaktiv (wie „+N“) mit `title` und Text für Screenreader; er zählt alle Unteraufgaben, auch nicht blockierende. |
+| 2026-09-28 | UA-5 | **„Unteraufgaben einrücken“ in den Spaltenvorlieben** (`TableSpec.options`, `ColumnPrefs.options`, nur ein vom Standard abweichender Wert wird gespeichert) statt eines eigenen Schlüssels: ein Speicherort je Tabelle, derselbe Abgleich über das `storage`-Ereignis, „Standard wiederherstellen“ setzt ihn mit zurück. Im Menü als Checkbox in einer Gruppe „Darstellung“ (Checkboxen im Menü wie die Spalten, Switch nur für betonte Einzeleinstellungen). Nachtrag in ADR-0030. |
+| 2026-09-28 | UA-5 | **Spalte „Übergeordnet“** zwischen Titel und Quelle, 7rem, standardmäßig aus, Rang 0 wie „Quelle“ (die weiter links weicht zuerst), nicht sortierbar (wie „Quelle“). Die Standardliste `hidden` ist jetzt `['parent', 'source']`. Weil Geräte schon Vorlieben mit einer Liste `hidden` ohne `parent` gespeichert haben, würde die Spalte dort sonst plötzlich erscheinen: Sie ist deshalb `optIn` und gilt nur als eingeblendet, wenn die gespeicherten Vorlieben sie unter `shown` nennen (das schreibt `serializeColumnPrefs` für eingeblendete `optIn`-Spalten). Für „Quelle“ bleibt die Bedeutung von `hidden` wie seit SP-3. |
+| 2026-09-28 | UA-5 | Hilfeseite: Frage „Wie arbeite ich mit Unteraufgaben?“; README: Abschnitt „Unteraufgaben“, Roadmap. |
 | 2026-09-28 | UA-4 | **Datenschicht:** `updateTicket` und `setTicketDone` nehmen `completion` (`complete_children` oder `force`) und senden es als Body-Feld `true`; `TicketDetailData.update` bekommt dafür `UpdateOptions` statt nur `DescriptionGuard`. |
 
 ## 4. Status
@@ -72,13 +77,24 @@
 | UA-1 | gemergt (#118) |
 | UA-2 | gemergt (#119) |
 | UA-3 | gemergt (#120) |
-| UA-4 | PR offen |
-| UA-5 | geplant |
+| UA-4 | gemergt (#121) |
+| UA-5 | gemergt (#122) |
 
 ## 5. Offene Punkte
 
-- Manuelle Browser-Prüfungen der Pakete.
+- Manuelle Browser-Prüfungen der Pakete (BYL-E6-223, BYL-E6-225, BYL-E6-227, BYL-E6-229).
 - **CLAUDE.md** nennt Sub-Tickets noch unter Stufe 2 (§5 „Parent (Stufe 2, nur Guard)“, §7 „Icon für blockiert ab Stufe 2“, §10). Die Anpassung ist als Vorschlag für den Nutzer vorbereitet und kommt nach seiner Freigabe.
+- **Verwerfen-Frage aus der Vollansicht:** Wer mit ungespeichertem Text aus der Vollansicht zu einem anderen Ticket wechselt (Pfad, Unteraufgabe), bekommt die bestehende Bestätigung „Änderungen verwerfen?“ des Ticket-Layouts über das XL-Modal gelegt. Das ist älter als dieser Plan (jede Navigation aus der Vollansicht) und wäre eine eigene Inline-Frage wert.
+
+## 7. Hinweise für die nächsten Pakete
+
+- **Editor Stufe B (RT-3 ff.):**
+  - Der Abschnitt „Unteraufgaben“ steht direkt unter der Beschreibung. Ein Editor mit Toolbar wird dort höher; die Reihenfolge Beschreibung → Unteraufgaben → Quellen soll bleiben.
+  - Esc im Editor muss wie in `TicketSubtasks`, `TicketParentField` und den Inline-Fragen verbraucht werden (`preventDefault` und `stopPropagation`), sonst schließt die Vollansicht.
+  - Inline-Fragen (Beschreibungskonflikt, Löschen, Erledigen) nutzen `SectionMessage` warning mit Fokus auf „Abbrechen“; der Editor sollte keine eigene Form erfinden.
+  - Titel von Unteraufgaben sind Klartext (keine Markdown-Anzeige); das „/“-Menü könnte später „Unteraufgabe“ anbieten, das wäre eine Produktentscheidung.
+  - `expected_updated` und die Flags `force` bzw. `complete_children` sind unabhängig voneinander; ein Update aus dem Editor sendet nur `expected_updated`.
+- **Unterprojekte:** Unteraufgaben erben beim Anlegen Projekt und Tags; wechselt das übergeordnete Ticket später das Projekt, bleiben die Unteraufgaben in ihrem (eigener Key und Nummernkreis). Kommen Unterprojekte, ist zu klären, ob „Unteraufgabe hinzufügen“ das Unterprojekt des übergeordneten Tickets erbt; die Regel „Kind im Scope des Parents“ gilt unabhängig vom Projekt. Gruppieren nach Projekt trennt Unteraufgaben von ihrem Ticket, wenn die Projekte verschieden sind; sie stehen dann mit Pfad-Hinweis (ADR-0033 §5).
 
 ## 6. Zurückgestellt
 

@@ -159,12 +159,15 @@ describe('menu "Spalten" (ADR-0030)', () => {
 		).toEqual([
 			['Prio', true],
 			['Status', true],
+			['Übergeordnet', false],
 			['Quelle', false],
 			['Projekt', true],
 			['Tags', true],
 			['Fällig', true],
-			['Erstellt', true]
+			['Erstellt', true],
+			['Unteraufgaben einrücken', true]
 		]);
+		expect(within(menu).getByRole('group', { hidden: true, name: 'Darstellung' })).toBeTruthy();
 		expect(menu.textContent).toContain('Key, Titel und das Häkchen sind immer sichtbar.');
 		// The focus goes to the first checked checkbox.
 		expect(document.activeElement).toBe(checkbox(menu, 'Prio'));
@@ -182,7 +185,7 @@ describe('menu "Spalten" (ADR-0030)', () => {
 		expect(JSON.parse(localStorage.getItem('byl-columns-tickets') ?? '')).toEqual({
 			v: 1,
 			widths: {},
-			hidden: ['source', 'created']
+			hidden: ['parent', 'source', 'created']
 		});
 		await vi.advanceTimersByTimeAsync(0);
 		expect(live(menu)).toBe('Erstellt ausgeblendet.');
@@ -214,6 +217,26 @@ describe('menu "Spalten" (ADR-0030)', () => {
 			(cell) => cell.textContent
 		);
 		expect(cells.sort()).toEqual(['Mail', 'Manuell']);
+	});
+
+	it('switches "Unteraufgaben einrücken" and the column "Übergeordnet" (ADR-0033)', async () => {
+		await showTable();
+		const menu = await openMenu();
+
+		await fireEvent.click(checkbox(menu, 'Übergeordnet'));
+		expect(headerIds()).toContain('parent');
+		await fireEvent.click(checkbox(menu, 'Unteraufgaben einrücken'));
+
+		expect((checkbox(menu, 'Unteraufgaben einrücken') as HTMLInputElement).checked).toBe(false);
+		expect(JSON.parse(localStorage.getItem('byl-columns-tickets') ?? '')).toEqual({
+			v: 1,
+			widths: {},
+			hidden: ['source'],
+			shown: ['parent'],
+			options: { nest: false }
+		});
+		await vi.advanceTimersByTimeAsync(0);
+		expect(live(menu)).toBe('Unteraufgaben einrücken aus.');
 	});
 
 	it('makes a column narrower and wider in steps of 1rem and says the new width', async () => {
