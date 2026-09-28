@@ -325,7 +325,7 @@ describe('web data layer: tickets', () => {
 		});
 		expect(detail).toMatchObject({ ...relations, project: projectRef, tags: [tagRef] });
 		expect(await listProjects(owner.client)).toEqual([
-			{ ...projectRef, updated: project.updated }
+			{ ...projectRef, updated: project.updated, parentId: null }
 		]);
 		expect(await listTags(owner.client)).toEqual([{ ...tagRef, updated: tag.updated }]);
 		expect((await listProjects(a.client)).map((entry) => entry.id)).not.toContain(project.id);

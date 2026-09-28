@@ -1,6 +1,6 @@
 # E6-Plan, Teil Unterprojekte: eine Ebene, eigener Code, Baum in Liste und Kacheln, Filter mit Unterprojekten
 
-- **Stand:** in Umsetzung (2026-09-28): UP-1 (Datenmodell, Hook, Spike).
+- **Stand:** in Umsetzung (2026-09-28): UP-1 (#130, Datenmodell, Hook, Spike), UP-2 (Katalog und Datenschicht).
 - **Grundlage:**
   - [ADR-0034](../adr/0034-unterprojekte.md) (Datenmodell, Prüfregeln, Archiv-Kaskade, Spike, Oberfläche, Grenze zum Epic)
   - [ADR-0012](../adr/0012-plain-ticketing.md) mit dem Nachtrag „Unterprojekte als Gliederung, keine Epics“
@@ -44,14 +44,18 @@
 | 2026-09-28 | UP-1 | **Vor der Migration** prüft der Hook das Feld über `record.collection().fields.getByName('parent')`. Ohne Feld: keine Prüfung, keine Kaskade, keine Löschsperre, ein gesendetes `parent` fällt weg. Ein Filter auf `project.parent` beantwortet PocketBase vor der Migration mit 400; die SPA darf ihn deshalb nur senden, wenn das gewählte Projekt Unterprojekte hat (`hooks-before-migration.test.mjs`). |
 | 2026-09-28 | UP-1 | **Texte im reinen Modul:** `PROJECT_PARENT_MESSAGES` in `lib/catalog-rules.js` mit dem Wortlaut der Oberfläche („Oberprojekt“, „Unterprojekt“); die SPA bekommt dieselben Texte mit UP-2 (Paritätstest). |
 | 2026-09-28 | UP-1 | **Unteraufgaben übernehmen das Projekt 1:1**, also auch ein Unterprojekt, und nicht das Oberprojekt: Eine Unteraufgabe gehört fachlich zu demselben Teil der Arbeit wie ihr übergeordnetes Ticket („Garten“), und der Key `GART-…` zeigt das. Hochrechnen würde die Unteraufgabe beim Filtern auf „Garten“ verstecken. Das ist das heutige Verhalten von `addSubtask`; UP-5 hält es mit einem Test fest. |
+| 2026-09-28 | UP-2 | **Parent im Katalog aufgelöst:** Die Datenschicht liefert `Project.parentId` (null für oberste), der `CatalogStore` löst daraus `parent` (ID, Name, Code) auf (`resolveParents`), in `projects`, `projectById` und damit auch `projectOf(ticket)`. Oberste Projekte bleiben dasselbe Objekt ohne `parent`, Unterprojekte sind Kopien. Ein Oberprojekt, das der Katalog nicht kennt, macht das Unterprojekt zu einem obersten (`treeOrder`, `projectPath`). So bekommen Tabelle, Sortierung, Gruppen und Auswahllisten den Pfad ohne weitere Anfrage, und eine Umbenennung von „Haus“ erscheint sofort in „Haus › Garten“. |
+| 2026-09-28 | UP-2 | **`activeProjects` in Baum-Reihenfolge** (nach Name, jedes oberste Projekt gefolgt von seinen Unterprojekten): Alle Auswahllisten (Ticket, Regel, Erfassen, Sammelumwandeln) lesen daraus; ohne Unterprojekte bleibt die Reihenfolge nach Name. |
+| 2026-09-28 | UP-2 | **Vor dem Neustart erkennbar:** `fields` enthält `parent`; ein Server ohne das Feld lässt es in der Antwort weg (Integrationstest gegen die Instanz vor der Migration). `toProject` markiert das Projekt dann mit `withoutParentField`, und `CatalogStore.hierarchyReady` ist falsch. Anlegen und Ändern senden `parent` nur, wenn der Entwurf `parentId` nennt, also nie vor dem Neustart. |
+| 2026-09-28 | UP-2 | **Texte der Codes** als `PROJECT_PARENT_MESSAGES` in `domain/project-tree.ts`, gleich dem Hook (`tests/unit/web-project-tree.test.mjs`), und in `data/errors.ts` eingebunden; eine Ablehnung steht damit mit dem Wortlaut des Hooks am Feld `parent`. |
 | 2026-09-28 | UP-1 | **Gruppieren nach Projekt bleibt flach:** eine Gruppe je konkretem Projekt mit dem Pfad als Titel („Haus › Garten“), in Baum-Reihenfolge (Oberprojekt, dann seine Unterprojekte). Verworfen: eine Gruppe je Oberprojekt mit Unterprojekten darin. Die Tabelle kennt nur eine Gruppenebene; verschachtelte Gruppen bräuchten zweite Köpfe, eigene Zähler und Auf- und Zuklappen in der Tabelle. Flach mit Pfad zeigt, wohin jedes Ticket gehört (Key und Gruppe passen zusammen), zählt je Projekt, und die Baum-Reihenfolge hält die Unterprojekte trotzdem beim Oberprojekt. Wer alles unter „Haus“ sehen will, filtert nach „Haus“ (mit Unterprojekten). |
 
 ## 4. Status
 
 | Paket | Stand |
 |---|---|
-| UP-1 | in Arbeit |
-| UP-2 | geplant |
+| UP-1 | gemergt (#130) |
+| UP-2 | umgesetzt (Katalog und Datenschicht) |
 | UP-3 | geplant |
 | UP-4 | geplant |
 | UP-5 | geplant |
@@ -61,3 +65,4 @@
 
 - Manuelle Browser-Prüfungen der Pakete.
 - Nach dem Merge von UP-1 braucht die App einen Neustart (stop.bat, dann start.bat), damit die Migration läuft.
+- Die Reihenfolge der Datensätze in der Tabelle nach „Projekt“ und die Gruppen folgen mit UP-5; bis dahin zeigen sie den Namen des Unterprojekts ohne Pfad.

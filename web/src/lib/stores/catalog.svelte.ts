@@ -15,6 +15,7 @@ import { createTag, listTags } from '$lib/data/tags';
 import { historyLookups, type HistoryLookups } from '$lib/domain/history-format';
 import { compareTitles } from '$lib/domain/ordering';
 import type { Project } from '$lib/domain/project';
+import { resolveParents, subProjectsOf, treeOrder } from '$lib/domain/project-tree';
 import {
 	findTagByName,
 	normalizeTagName,
@@ -107,8 +108,15 @@ export class CatalogStore {
 	#state = $state<LoadState>('idle');
 	#error = $state<string | null>(null);
 
-	#projectList = $derived([...this.#projects.map.values()].sort(byProjectName));
-	#activeProjects = $derived(this.#projectList.filter((project) => !project.archived));
+	/** By name, sub projects with their parent resolved (ADR-0034). */
+	#projectList = $derived(resolveParents([...this.#projects.map.values()].sort(byProjectName)));
+	#projectsById: Readonly<Record<string, Project>> = $derived(
+		Object.fromEntries(this.#projectList.map((project) => [project.id, project]))
+	);
+	/** Active projects in tree order: each top-level project followed by its sub projects. */
+	#activeProjects = $derived(treeOrder(this.#projectList.filter((project) => !project.archived)));
+	/** The server knows `projects.parent` (ADR-0034 section 5); true while no project says no. */
+	#hierarchyReady = $derived(!this.#projectList.some((project) => project.withoutParentField));
 	#tagList = $derived([...this.#tags.map.values()].sort(byTagName));
 	#lookups = $derived(historyLookups(this.#projectList, this.#tagList));
 
@@ -117,14 +125,33 @@ export class CatalogStore {
 		this.#session = session;
 	}
 
-	/** All visible projects, archived ones included, by name. */
+	/**
+	 * All visible projects, archived ones included, by name; a sub project carries its parent
+	 * (`parent`, ADR-0034).
+	 */
 	get projects(): readonly Project[] {
 		return this.#projectList;
 	}
 
-	/** Projects that can be chosen for a ticket (T-11), by name. */
+	/**
+	 * Projects that can be chosen for a ticket (T-11), in tree order: by name, each top-level
+	 * project followed by its sub projects (ADR-0034).
+	 */
 	get activeProjects(): readonly Project[] {
 		return this.#activeProjects;
+	}
+
+	/**
+	 * Whether sub projects are available: false while the server has not run the migration of
+	 * ADR-0034 yet (the panel then shows the restart hint instead of the field "Oberprojekt").
+	 */
+	get hierarchyReady(): boolean {
+		return this.#hierarchyReady;
+	}
+
+	/** Sub projects of a project by name, archived ones included (ADR-0034). */
+	subProjectsOf(id: string): readonly Project[] {
+		return subProjectsOf(this.#projectList, id);
 	}
 
 	/** All visible tags, by name. */
@@ -145,8 +172,9 @@ export class CatalogStore {
 		return this.#error;
 	}
 
+	/** Project of the catalog; a sub project carries its parent (`parent`, ADR-0034). */
 	projectById(id: string): Project | null {
-		return this.#projects.map.get(id) ?? null;
+		return Object.hasOwn(this.#projectsById, id) ? (this.#projectsById[id] ?? null) : null;
 	}
 
 	tagById(id: string): Tag | null {
