@@ -22,7 +22,7 @@
 	import type { EnsureTagResult } from '$lib/stores/catalog.svelte';
 	import type { CreateResult } from '$lib/stores/ticket-detail.svelte';
 	import ErrorIcon from './ErrorIcon.svelte';
-	import MarkdownEditor from './MarkdownEditor.svelte';
+	import RichTextEditor from './RichTextEditor.svelte';
 	import SectionMessage from './guidance/SectionMessage.svelte';
 	import PrioritySelect from './PrioritySelect.svelte';
 	import ProjectSelect from './ProjectSelect.svelte';
@@ -34,7 +34,8 @@
 
 	// "Neues Ticket" in the side panel (E2 plan, T-8 and package 8; E3 plan, T-13 and T-14):
 	// title (required, focused), priority "Mittel", status "Offen", due date, project, tags and
-	// description. With the list filtered by an active project, that project is chosen in
+	// description (since RT-6 in the editor of ADR-0032; Ctrl+Enter in it reaches the handler of
+	// the drawer below). With the list filtered by an active project, that project is chosen in
 	// advance. "Anlegen" or Ctrl+Enter creates; the button is locked during the request, so a
 	// double click creates one ticket. "Abbrechen" and Escape ask first through the confirmation
 	// (ADR-0025 section 4) if something was entered, a name in the tag picker included. From the inbox (E4 plan, T-5) title and description come
@@ -453,13 +454,13 @@
 			{/if}
 		</div>
 
-		<MarkdownEditor
+		<RichTextEditor
 			label="Beschreibung"
+			placeholder="Beschreibung eingeben …"
 			maxlength={DESCRIPTION_MAX_LENGTH}
-			rows={6}
 			bind:value={description}
-			aria-invalid={fieldErrors.description ? 'true' : undefined}
-			aria-describedby={fieldErrors.description ? ids.description : undefined}
+			invalid={fieldErrors.description !== undefined}
+			describedby={fieldErrors.description ? ids.description : undefined}
 		/>
 		{#if fieldErrors.description}
 			<p class="field-error" id={ids.description}>
@@ -490,7 +491,7 @@
 
 <style>
 	h2 {
-		font-size: 1.125rem;
+		font-size: var(--font-size-title);
 		font-weight: 600;
 	}
 
@@ -513,7 +514,7 @@
 	}
 
 	label {
-		font-size: 0.8125rem;
+		font-size: var(--font-size-control);
 		font-weight: 500;
 		color: var(--color-text-muted);
 	}
@@ -537,7 +538,7 @@
 	}
 
 	.hint {
-		font-size: 0.8125rem;
+		font-size: var(--font-size-control);
 		color: var(--color-text-muted);
 	}
 
@@ -569,7 +570,7 @@
 
 	.text-button {
 		padding: 0.0625rem 0.5rem;
-		font-size: 0.8125rem;
+		font-size: var(--font-size-control);
 		color: var(--color-brand-text);
 		background: none;
 		border: 1px solid var(--color-brand);

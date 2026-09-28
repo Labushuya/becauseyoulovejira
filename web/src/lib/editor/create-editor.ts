@@ -155,7 +155,7 @@ export interface RichEditorOptions {
 	onChange: (markdown: string) => void;
 	/** The state of the toolbar after every transaction. */
 	onState: (state: ToolbarState) => void;
-	/** Ctrl+Enter: save or send; without it, Ctrl+Enter inserts a line break. */
+	/** Ctrl+Enter: save or send; without it the key is left to the form around. */
 	onSubmit?: () => void;
 	/** Alt+F10: to the toolbar. */
 	onToolbar: () => void;
@@ -246,10 +246,12 @@ export function createRichEditor(options: RichEditorOptions): RichEditor {
 		priority: 1000,
 		addKeyboardShortcuts() {
 			return {
+				// Ctrl+Enter saves or sends, never a line break (Shift+Enter makes one). Without
+				// onSubmit the key goes on to the form around (NewTicketForm, RecurrencePanel), which
+				// saves with the value just written.
 				'Mod-Enter': () => {
-					if (options.onSubmit === undefined) return false;
 					flush();
-					options.onSubmit();
+					options.onSubmit?.();
 					return true;
 				},
 				'Alt-F10': () => {

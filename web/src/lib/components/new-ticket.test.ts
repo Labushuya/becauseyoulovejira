@@ -12,11 +12,14 @@ import type { Project } from '$lib/domain/project';
 import type { Ticket, TicketDraft } from '$lib/domain/ticket';
 import { CatalogStore } from '$lib/stores/catalog.svelte';
 import type { CreateResult } from '$lib/stores/ticket-detail.svelte';
+import type { Editor } from '@tiptap/core';
 import { useOverlayStubs } from '$lib/test/overlay-stubs';
+import { typeText, useProseMirrorStubs } from '$lib/test/prosemirror-stubs';
 import NewTicketForm from './NewTicketForm.svelte';
 import NewTicketPage from '../../routes/(app)/(tickets)/tickets/neu/+page.svelte';
 
 useOverlayStubs();
+useProseMirrorStubs();
 
 /** The open question "Neues Ticket verwerfen?", or null. */
 async function discardQuestion(): Promise<HTMLDialogElement | null> {
@@ -155,6 +158,18 @@ function createButton() {
 	return screen.getByRole('button', { name: /^(Anlegen|Wird angelegt …)$/ });
 }
 
+/** The editor of the description (RT-6) once it has loaded. */
+function descriptionEditor(): Promise<HTMLElement> {
+	return screen.findByRole('textbox', { name: 'Beschreibung' }, { timeout: 5000 });
+}
+
+/** The description as Markdown: the editor loads, then "Markdown" switches to the textarea. */
+async function descriptionSource(): Promise<HTMLTextAreaElement> {
+	await descriptionEditor();
+	await fireEvent.click(screen.getByRole('button', { name: 'Markdown' }));
+	return screen.findByLabelText<HTMLTextAreaElement>('Beschreibung (Markdown)');
+}
+
 beforeEach(() => {
 	mocks.goto.mockClear();
 	mocks.page.url = new URL('http://localhost:3000/tickets/neu?erledigte=1');
@@ -177,7 +192,12 @@ describe('new ticket form', () => {
 		expect(screen.getByLabelText<HTMLSelectElement>('Status').value).toBe('open');
 		expect(screen.getByLabelText<HTMLSelectElement>('Priorität').value).toBe('medium');
 		expect(screen.getByLabelText<HTMLInputElement>('Fälligkeit').value).toBe('');
-		expect(screen.getByLabelText<HTMLTextAreaElement>('Beschreibung').value).toBe('');
+		const description = await descriptionEditor();
+		expect(description.textContent).toBe('');
+		expect(description.querySelector('[data-placeholder]')?.getAttribute('data-placeholder')).toBe(
+			'Beschreibung eingeben …'
+		);
+		expect(document.activeElement).toBe(titleField());
 	});
 
 	it('locks "Anlegen" without a title and explains why', async () => {
@@ -202,7 +222,7 @@ describe('new ticket form', () => {
 		await fireEvent.change(screen.getByLabelText('Status'), { target: { value: 'in_progress' } });
 		await fireEvent.change(screen.getByLabelText('Priorität'), { target: { value: 'urgent' } });
 		await fireEvent.input(screen.getByLabelText('Fälligkeit'), { target: { value: '2026-10-01' } });
-		await fireEvent.input(screen.getByLabelText('Beschreibung'), { target: { value: '*Text*' } });
+		await fireEvent.input(await descriptionSource(), { target: { value: '*Text*' } });
 		await fireEvent.click(createButton());
 
 		expect(oncreate).toHaveBeenCalledExactlyOnceWith(
@@ -225,10 +245,20 @@ describe('new ticket form', () => {
 		const { oncreate } = renderForm();
 
 		await fireEvent.input(titleField(), { target: { value: 'Neu' } });
-		await fireEvent.keyDown(screen.getByLabelText('Beschreibung'), { key: 'Enter', ctrlKey: true });
+		const description = await descriptionEditor();
+		const editor = (description as HTMLElement & { editor: Editor }).editor;
+		editor.commands.focus('end');
+		typeText(editor.view, '**Wichtig**');
+		// In the editor Ctrl+Enter writes the text and goes on to the form (no line break).
+		await fireEvent.keyDown(description, { key: 'Enter', ctrlKey: true });
 
 		expect(oncreate).toHaveBeenCalledOnce();
-		expect(oncreate.mock.calls[0]?.[0]).toMatchObject({ title: 'Neu', status: 'open', due: null });
+		expect(oncreate.mock.calls[0]?.[0]).toMatchObject({
+			title: 'Neu',
+			status: 'open',
+			due: null,
+			description: '**Wichtig**'
+		});
 	});
 
 	it('creates only once during a running request', async () => {
@@ -574,7 +604,10 @@ describe('new ticket from the inbox (E4 plan, package 3)', () => {
 	it('fills title and description from the entry, with the header of the mail', async () => {
 		openFor(entry());
 		await vi.waitFor(() => expect(titleField().value).toBe('Rechnung September'));
-		const description = screen.getByLabelText<HTMLTextAreaElement>('Beschreibung');
+		// The prefill opens in the editor; its Markdown stays as the template wrote it.
+		const editor = await descriptionEditor();
+		expect(editor.querySelector('strong')?.textContent).toBe('Von:');
+		const description = await descriptionSource();
 		expect(description.value).toBe(
 			'- **Von:** Shop \\<shop@example\\.com\\>\n- **Datum:** 25.09.2026 01:30\n\nBitte bis Monatsende zahlen.'
 		);
@@ -680,9 +713,7 @@ describe('new ticket from the inbox (E4 plan, package 3)', () => {
 			})
 		);
 		await vi.waitFor(() => expect(titleField().value).toBe('Rechnung September'));
-		expect(screen.getByLabelText<HTMLTextAreaElement>('Beschreibung').value).toBe(
-			'- **Link:** <https://example.com/artikel>'
-		);
+		expect((await descriptionSource()).value).toBe('- **Link:** <https://example.com/artikel>');
 		expect(screen.queryByRole('button', { name: 'Als Fälligkeit übernehmen' })).toBeNull();
 	});
 

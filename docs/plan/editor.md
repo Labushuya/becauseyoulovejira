@@ -1,6 +1,6 @@
 # E6-Plan, Teil Editor: Unterstreichen, Checklisten und ein Editor wie Jira
 
-- **Stand:** Stufe A umgesetzt (2026-09-28): RT-0 (#114, Weg B), RT-1 (#115), RT-2 (#116). Stufe B freigegeben und begonnen (Auftrag vom 2026-09-28): RT-3 (#125), RT-4 (#127) und RT-5 umgesetzt, RT-6 folgt. Offen sind außerdem die manuellen Browser-Prüfungen.
+- **Stand:** Stufe A umgesetzt (2026-09-28): RT-0 (#114, Weg B), RT-1 (#115), RT-2 (#116). Stufe B freigegeben und begonnen (Auftrag vom 2026-09-28): RT-3 (#125), RT-4 (#127), RT-5 (#128) und RT-6 umgesetzt; Stufe B ist damit fertig, RT-7 bleibt optional. Offen sind außerdem die manuellen Browser-Prüfungen.
 - **Grundlage:**
   - [ADR-0032](../adr/0032-editor-tiptap-markdown.md) (Tiptap, Markdown als Speicherformat, Brücke über die markdown-it-Instanz der Anzeige, Spike RT-0)
   - [ADR-0008](../adr/0008-markdown-rendering-und-sanitizing.md), [ADR-0006](../adr/0006-frontend-zustand-und-datenzugriff.md) §5, [ADR-0025](../adr/0025-ui-konsistenz-overlay-system.md), [ADR-0026](../adr/0026-einstellungsbereich-und-hinweis-bausteine.md), [ADR-0029](../adr/0029-glas-materialien.md), [ADR-0030](../adr/0030-spalten-breiten-und-kompakte-zeilen.md), [ADR-0031](../adr/0031-herkunft-sichern.md)
@@ -36,7 +36,7 @@
 | RT-3 | `RichTextEditor` für die Beschreibung (Panel und Vollansicht): Extensions, Brücke, Toolbar, Kürzel, Eingaberegeln, Quelltextmodus, `richEditable`, dynamisches Laden mit Rückfall auf die `textarea`, `prose.css` | BYL-E6-241, BYL-E6-242 (manuell) |
 | RT-4 | „/“-Menü und Link-Popover | BYL-E6-243, BYL-E6-244 (manuell) |
 | RT-5 | Einfügen aus Word und HTML (`paste.ts` mit Fixtures) | BYL-E6-245, BYL-E6-246 (manuell) |
-| RT-6 | Kommentare (kompakt), `NewTicketForm`, `RecurrencePanel`; Kürzel in `shortcuts.ts`, Hilfeseite, README | |
+| RT-6 | Kommentare (kompakt), `NewTicketForm`, `RecurrencePanel`; Kürzel in `shortcuts.ts`, Hilfeseite, README | BYL-E6-247, BYL-E6-248 (manuell) |
 | RT-7 (optional) | Tabellen bearbeiten (`@tiptap/extension-table`, MIT) statt Quelltextmodus | |
 
 ## 3. Konzept (Kurzfassung für Stufe B)
@@ -186,6 +186,10 @@ Siehe ADR-0032 §1 und §2. Der Serializer normalisiert beim ersten Speichern au
 | 2026-09-28 | RT-5 | **Keine Anfrage beim Einfügen:** ProseMirror liest HTML in einem Dokument ohne Browsing-Kontext; Bilder fallen zusätzlich schon vorher weg. Fixtures aus Word 365, Google Docs und LibreOffice (erfundene Inhalte, `lib/test/paste-fixtures/`, in `.prettierignore`) prüfen das Ergebnis bis zum Markdown. |
 | 2026-09-28 | RT-5 | **Text mit Markdown:** `clipboardTextParser` liest reinen Text über die Brücke, wenn er nach Markdown aussieht (`looksLikeMarkdown`: Überschrift, Liste, Zitat, Zaun, `**`, `~~`, `++`, Backticks, Link); sonst, bei Tabellen und mit Strg+Umschalt+V bleibt er Text. Die Einfüge-Regeln von Tiptap (`enablePasteRules`) sind aus, weil sie auch reinen Text formatieren würden. Die Brücke baut im gemeinsamen Schema; das eingefügte Stück wird per JSON in das Schema des Editors übernommen (jeder Editor hat seine eigene Schema-Instanz, sonst passte nichts). |
 | 2026-09-28 | RT-5 | `prosemirror-stubs.ts` bringt eine Attrappe für `ClipboardEvent`; die Tests senden ein `paste`-Ereignis mit eigener Zwischenablage (`text/html`, `text/plain`). |
+| 2026-09-28 | RT-6 | **Neuer Kommentar hinter „Kommentar hinzufügen …“** (wie Jira): Das Eingabefeld unter den Kommentaren steht in jedem Panel; stünde der Editor dort sofort, lüde schon das Öffnen eines Tickets den Chunk („erst beim ersten Bearbeiten“, ADR-0032 §5). Ein Entwurf oder ein Fehler hält den Editor offen, nach dem Senden schließt er, und der Fokus geht zurück auf „Kommentar hinzufügen …“. Kommentare nutzen die kompakte Leiste (ohne Textstil). |
+| 2026-09-28 | RT-6 | **Strg+Enter im Editor** schreibt den Text und macht nie einen Zeilenumbruch (Umschalt+Enter macht einen). Mit `onsubmit` (Beschreibung, Kommentare) speichert bzw. sendet der Editor selbst; ohne (`NewTicketForm`, `RecurrencePanel`) geht die Taste weiter an den Drawer, der wie bisher anlegt bzw. speichert. |
+| 2026-09-28 | RT-6 | **Erfassen bleibt ohne Editor:** Die Felder der Vorlagen (Artikel je Zeile, Auszug) sind Eingaben, die die Vorlage selbst maskiert und in Markdown setzt (`escapeMarkdown`); ein WYSIWYG-Feld schriebe dort Markdown, das danach maskiert würde. Der Weg „Erfassen“ → „Umwandeln“ endet in „Neues Ticket“ und damit im Editor. Der Eingang bleibt `textarea` (Rohtext aus Kanälen, wie im Konzept). |
+| 2026-09-28 | RT-6 | **Schriftgrößen:** `CommentForm`, `RecurrencePanel` und `Popover` (geändert in RT-4) ziehen ganz auf die Tokens und fallen von der Liste, `NewTicketForm` bis auf 0.9375rem (kein Token); `no-own-font-sizes.test.ts` jetzt 208. `MarkdownEditor` nutzt nur noch `RichTextEditor` als Quelltextmodus. |
 
 ## 5. Status
 
@@ -196,13 +200,15 @@ Siehe ADR-0032 §1 und §2. Der Serializer normalisiert beim ersten Speichern au
 | RT-2 | gemergt (#116) |
 | RT-3 | gemergt (#125) |
 | RT-4 | gemergt (#127) |
-| RT-5 | umgesetzt (Einfügen) |
-| RT-6 | Stufe B, freigegeben, folgt |
+| RT-5 | gemergt (#128) |
+| RT-6 | umgesetzt (Kommentare und Formulare) |
 | RT-7 | optional, nicht beauftragt |
 
 ## 6. Offene Punkte
 
-- Manuelle Browser-Prüfungen der Pakete (BYL-E6-201, BYL-E6-205, BYL-E6-242, BYL-E6-244, BYL-E6-246).
+- Manuelle Browser-Prüfungen der Pakete (BYL-E6-201, BYL-E6-205, BYL-E6-242, BYL-E6-244, BYL-E6-246, BYL-E6-248).
+- **Hinweise für die Unterprojekte:** Der Editor ändert weder Datenmodell noch Filter. Neue Formulare für Projekte brauchen ihn nicht (Projekte haben keine Beschreibung). Wer später eine Beschreibung an Projekten will, nimmt `RichTextEditor` mit `bind:value` wie `NewTicketForm` (ohne `onsubmit`, Strg+Enter geht an den Drawer). Titel von Unteraufgaben bleiben Klartext; ein Eintrag „Unteraufgabe“ im „/“-Menü wäre eine Produktentscheidung.
+- **Bekannte Grenzen:** Tabellen, Listen aus Aufgaben und normalen Punkten und nummerierte Aufgaben öffnen im Quelltextmodus (RT-7 wäre Tabellen). Eine nackte Adresse, die im Editor Text blieb, verlinkt die Anzeige trotzdem. Große Seitentexte (um 100 000 Zeichen) brauchen beim Öffnen spürbar Zeit für die Prüfung.
 - ~~„Löschen …“ in der Vollansicht legt seine Bestätigung über das XL-Modal (seit HK-6 mit Radios über `ConfirmDialog.options`).~~ Erledigt mit UA-3 ([Plan Unteraufgaben](unteraufgaben.md) §3): Die Vollansicht fragt inline (`TicketDeleteQuestion`).
 - **Hinweise für die Unterprojekte:** Der Plan ändert weder Datenmodell noch Filter; Beschreibungen von Unterprojekt-Tickets nutzen dieselbe Anzeige. `expected_updated` gilt für jedes Ticket-Update und stört ein späteres Umhängen in ein Unterprojekt nicht, solange es ohne das Feld gesendet wird.
 - **Hinweise für Stufe B** (umgesetzt mit RT-3, bis auf die Attrappe für `ClipboardEvent`, die RT-5 braucht):

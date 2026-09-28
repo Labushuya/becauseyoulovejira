@@ -29,7 +29,7 @@
 	import ErrorIcon from './ErrorIcon.svelte';
 	import Lozenge from './guidance/Lozenge.svelte';
 	import SectionMessage from './guidance/SectionMessage.svelte';
-	import MarkdownEditor from './MarkdownEditor.svelte';
+	import RichTextEditor from './RichTextEditor.svelte';
 	import ConfirmDialog from './overlay/ConfirmDialog.svelte';
 	import Drawer from './overlay/Drawer.svelte';
 	import PrioritySelect from './PrioritySelect.svelte';
@@ -480,13 +480,12 @@
 				{/if}
 			</div>
 
-			<MarkdownEditor
+			<RichTextEditor
 				label="Beschreibung"
 				maxlength={DESCRIPTION_MAX_LENGTH}
-				rows={4}
 				bind:value={description}
-				aria-invalid={fieldErrors.description ? 'true' : undefined}
-				aria-describedby={fieldErrors.description ? ids.description : undefined}
+				invalid={fieldErrors.description !== undefined}
+				describedby={fieldErrors.description ? ids.description : undefined}
 			/>
 			{#if fieldErrors.description}
 				<p class="field-error" id={ids.description}>
@@ -557,19 +556,19 @@
 
 <style>
 	h2 {
-		font-size: 1.125rem;
+		font-size: var(--font-size-title);
 		font-weight: 600;
 		overflow-wrap: anywhere;
 	}
 
 	h3 {
-		font-size: 0.8125rem;
+		font-size: var(--font-size-control);
 		font-weight: 600;
 		color: var(--color-text-muted);
 	}
 
 	p {
-		font-size: 0.875rem;
+		font-size: var(--font-size-body);
 		line-height: 1.5;
 	}
 
@@ -584,7 +583,7 @@
 		flex-wrap: wrap;
 		gap: 0.375rem 0.75rem;
 		align-items: center;
-		font-size: 0.8125rem;
+		font-size: var(--font-size-control);
 	}
 
 	.next {
@@ -595,7 +594,7 @@
 		display: flex;
 		flex-wrap: wrap;
 		gap: 0.25rem 0.5rem;
-		font-size: 0.8125rem;
+		font-size: var(--font-size-control);
 		color: var(--color-text-muted);
 	}
 
@@ -628,7 +627,7 @@
 	}
 
 	label {
-		font-size: 0.8125rem;
+		font-size: var(--font-size-control);
 		font-weight: 500;
 		color: var(--color-text-muted);
 	}
@@ -647,7 +646,7 @@
 	}
 
 	.hint {
-		font-size: 0.8125rem;
+		font-size: var(--font-size-control);
 		color: var(--color-text-muted);
 	}
 </style>
