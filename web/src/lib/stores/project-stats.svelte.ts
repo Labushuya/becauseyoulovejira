@@ -79,13 +79,15 @@ export class ProjectStatsStore {
 	}
 
 	/**
-	 * Counts again after every ticket event and after a reconnection (ADR-0007). Returns the
-	 * cleanup, which ends the subscriptions and empties the store.
+	 * Counts again after every ticket event, after a reconnection (ADR-0007) and after a
+	 * subscription that came only after failed attempts. Returns the cleanup, which ends the
+	 * subscriptions and empties the store.
 	 */
 	connect(live: LiveSource): () => void {
+		const refresh = () => this.refresh();
 		const stops = [
-			hold(live.tickets(() => this.refresh())),
-			hold(live.reconnected(() => this.refresh()))
+			hold((guard) => live.tickets(guard(refresh)), { recovered: refresh }),
+			hold((guard) => live.reconnected(guard(refresh)), { recovered: refresh })
 		];
 		return () => {
 			for (const stop of stops) stop();

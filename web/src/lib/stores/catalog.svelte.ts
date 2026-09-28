@@ -257,24 +257,34 @@ export class CatalogStore {
 
 	/**
 	 * Keeps the catalog live (ADR-0007 sections 2 and 3): changes go through upsert and remove,
-	 * and after a reconnection the store reconciles once. Returns the cleanup, which ends every
-	 * subscription and a running reconciliation.
+	 * and after a reconnection or a subscription that came only after failed attempts the store
+	 * reconciles once. Returns the cleanup, which ends every subscription and a running
+	 * reconciliation.
 	 */
 	connect(live: LiveSource): () => void {
+		const reconcile = () => void this.reconcile();
 		const stops = [
 			hold(
-				live.projects((change) => {
-					if (change.action === 'delete') this.removeProject(change.id);
-					else this.upsertProject(change.record);
-				})
+				(guard) =>
+					live.projects(
+						guard((change) => {
+							if (change.action === 'delete') this.removeProject(change.id);
+							else this.upsertProject(change.record);
+						})
+					),
+				{ recovered: reconcile }
 			),
 			hold(
-				live.tags((change) => {
-					if (change.action === 'delete') this.removeTag(change.id);
-					else this.upsertTag(change.record);
-				})
+				(guard) =>
+					live.tags(
+						guard((change) => {
+							if (change.action === 'delete') this.removeTag(change.id);
+							else this.upsertTag(change.record);
+						})
+					),
+				{ recovered: reconcile }
 			),
-			hold(live.reconnected(() => void this.reconcile()))
+			hold((guard) => live.reconnected(guard(reconcile)), { recovered: reconcile })
 		];
 		return () => {
 			for (const stop of stops) stop();

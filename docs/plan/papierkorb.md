@@ -98,6 +98,8 @@ Grundsatz: Die API-Regeln verbergen jedes Ticket mit `deleted_at` (Migration `17
 | 2026-09-28 | PB-2 | **Einstellung unter „Tickets“:** neue Seite „Einstellungen → Tickets“ nach „Tags“ statt unter „Darstellung“, weil die Aufbewahrung am Konto auf dem Server gilt (der Cron braucht sie ohne offenen Tab), „Darstellung“ dagegen nur im Browser. |
 | 2026-09-28 | PB-2 | **Hinweis „liegt im Papierkorb“:** `TrashNotice` im Panel bei „nicht gefunden“ und „an anderer Stelle gelöscht“ und im Panel eines Eingangseintrags mit `ticket_deleted.ticket`. Er fragt erst die geladene Liste, dann (für Unteraufgaben einer Gruppe) die Vorschau-Route. Verweise im Verlauf und im Markdown-Text kennen keine Ticket-Links nach Key; dort gibt es nichts umzuleiten. |
 | 2026-09-28 | PB-2 | **Texte:** Löschfragen „… in den Papierkorb verschieben?“ mit „In den Papierkorb“ und der Aufbewahrung; „nicht rückgängig“ nur noch beim endgültigen Löschen. `remainingSubtasksText` („bleiben erhalten“) entfällt, weil Unteraufgaben jetzt mitgehen (`subtasksAlongText`). |
+| 2026-09-28 | AR-2 | **Zurückgeholte Tickets in offenen Tabs:** Der `TicketListStore` merkte sich gelöschte IDs, damit späte Antworten und Ereignisse sie nicht zurückbringen. Seit dem Papierkorb kommt ein Ticket aber zurück; seine Aktualisierung nach dem Wiederherstellen wurde deshalb verworfen, und es fehlte in jedem offenen Tab (auch dem, der „Rückgängig“ geklickt hatte) bis zum Neuladen. Jetzt holt ein Realtime-Update nach dem Löschereignis das Ticket zurück (der Server schickt seine Ereignisse in Reihenfolge), ebenso der Stand eines Abgleichs, wenn es nicht während des Abgleichs entfernt wurde; späte Antworten eigener Anfragen bleiben ausgeschlossen. |
+| 2026-09-28 | AR-2 | **Lesezeilen nach dem Wiederherstellen:** Solange ein Ticket im Papierkorb liegt, verbergen die Regeln seine Lesezeile, und kein Ereignis meldet sie beim Wiederherstellen zurück. Kommt ein offenes Ticket per Realtime-Update neu in die Liste (zurückgeholt oder in diesem Tab bisher unbekannt), lädt der Store die Lesezeilen neu (eine Anfrage, die laufende wird abgebrochen). So gilt es sofort wieder als gelesen, wenn es das vorher war. Angelegte, schon bekannte und erledigte Tickets lösen das nicht aus. |
 
 ## 5. Status
 
@@ -109,7 +111,7 @@ Grundsatz: Die API-Regeln verbergen jedes Ticket mit `deleted_at` (Migration `17
 ## 6. Offene Punkte und Folgeschritte
 
 - Manuelle Browser-Prüfung (BYL-E6-338).
-- Nach einem Wiederherstellen kommen Lesezeilen („neu“) erst mit dem nächsten Laden der Liste zurück; ein zurückgeholtes Ticket kann bis dahin als „neu“ gelten.
+- ~~Nach einem Wiederherstellen kommen Lesezeilen („neu“) erst mit dem nächsten Laden der Liste zurück; ein zurückgeholtes Ticket kann bis dahin als „neu“ gelten.~~ Behoben mit AR-2 (2026-09-28, §4): Das zurückgeholte Ticket erscheint sofort in allen offenen Tabs, die Lesezeilen werden dabei neu geladen (BYL-E6-404, manuell BYL-E6-405).
 
 - **Projekt-Papierkorb:** Projekte werden weiter sofort gelöscht (nur ohne Tickets und Unterprojekte). Ein Papierkorb für Projekte wäre ein eigener Schritt; Tickets im Papierkorb eines gelöschten Projekts verlangen beim Wiederherstellen schon heute ein Zielprojekt.
 - **Plattformen (S0, [ADR-0028](../adr/0028-plattform-strategie.md)):** Die Routen des Papierkorbs sind reine HTTP-JSON-Wege mit der Sitzung; ein nativer Client braucht nur sie und das Thema `byl/trash`.

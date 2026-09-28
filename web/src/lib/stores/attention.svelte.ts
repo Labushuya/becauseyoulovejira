@@ -97,10 +97,17 @@ export class AttentionStore {
 		if (this.#stopFlag !== null) this.#deps.flags.dismiss(this.#stopFlag);
 	}
 
-	/** Subscribes to the messages and reconnections; the returned stop ends both. */
+	/**
+	 * Subscribes to the messages and reconnections; the returned stop ends both. A subscription
+	 * that comes only after failed attempts counts as a reconnection.
+	 */
 	connect(source: AttentionSource): () => void {
-		const stopMessages = hold(source.attention((message) => this.receive(message)));
-		const stopReconnect = hold(source.reconnected(() => this.reconnected()));
+		const stopMessages = hold((guard) =>
+			source.attention(guard((message) => this.receive(message)))
+		);
+		const stopReconnect = hold((guard) => source.reconnected(guard(() => this.reconnected())), {
+			recovered: () => this.reconnected()
+		});
 		return () => {
 			stopMessages();
 			stopReconnect();

@@ -238,11 +238,15 @@ export class TrashStore {
 		};
 	}
 
-	/** Reads the trash again after every change the server reports and after a reconnection. */
+	/**
+	 * Reads the trash again after every change the server reports, after a reconnection and after
+	 * a subscription that came only after failed attempts.
+	 */
 	connect(live: TrashLive): () => void {
+		const reload = () => void this.reload();
 		const stops = [
-			hold(live.changes(() => void this.reload())),
-			hold(live.reconnected(() => void this.reload()))
+			hold((guard) => live.changes(guard(reload)), { recovered: reload }),
+			hold((guard) => live.reconnected(guard(reload)), { recovered: reload })
 		];
 		return () => {
 			for (const stop of stops) stop();

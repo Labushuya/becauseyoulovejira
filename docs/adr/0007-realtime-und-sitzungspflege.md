@@ -1,6 +1,6 @@
 # ADR-0007: Realtime-Abos und Sitzungspflege im Frontend
 
-- **Status:** Angenommen
+- **Status:** Angenommen (mit Nachtrag 2026-09-28: erneuter Versuch gescheiterter Abos und Hinweis)
 - **Datum:** 2026-09-24
 - **Entscheidung durch:** Advisor
 
@@ -66,3 +66,12 @@ Alle Ladevorgänge nutzen einen eigenen `AbortController` pro Store und Operatio
 - Positiv: Das Verhalten ist mit Integrationstests gegen den Harness belegbar (Events nach `authRefresh`, keine Events nach `unsubscribe` und Abmelden, Filter auf ein Ticket).
 - Negativ: Etwa alle 30 Minuten entsteht je offener Liste ein Abgleich. Lokal ist das vernachlässigbar.
 - Negativ: `auth.logout()` bekommt eine Abhängigkeit auf `pb.realtime`. Die bestehenden Unit-Tests für `Auth` werden entsprechend erweitert.
+
+## Nachtrag (2026-09-28, AR-2): Gescheiterte Abos werden erneut versucht
+
+Der Text oben bleibt unverändert. Offener Punkt aus dem [E2-Plan](../plan/e2.md) §8 und der E6-Zeile von [ADR-0011](0011-roadmap-e3-bis-e7.md): Scheiterte ein Abo beim ersten Laden (Server kurz nicht erreichbar), blieb die Seite ohne Live-Aktualisierung, bis sie neu geladen wurde. Das SDK verbindet nur eine bestehende Verbindung selbst neu; scheitert der erste Aufbau, lehnt es das Abo ab.
+
+- **Erneuter Versuch:** `hold` in `web/src/lib/stores/realtime.ts` bekommt statt des Versprechens eine Funktion, die das Abo startet. Scheitert es, versucht `hold` es nach 1, 2, 5 und 10 s und danach alle 30 s erneut, bis es steht oder der Besitzer es beendet. Steht es nach gescheiterten Versuchen, ruft `hold` `recovered` auf; die Stores gleichen dann ab wie nach dem Neuverbinden (§3), weil Ereignisse aus der Lücke fehlen.
+- **Listener gescheiterter Versuche:** Das SDK (0.28.1) behält den Listener eines gescheiterten Abos und ruft ihn auf, sobald später eine Verbindung steht. `hold` gibt der Startfunktion deshalb einen `guard`, der nur die Rückrufe des aktuellen Versuchs und nach dem Beenden keine mehr durchlässt. Doppelte Ereignisse oder Ereignisse eines alten Tickets nach einem Panelwechsel kommen so nicht an.
+- **Hinweis:** `LiveHealth` zählt die Abos, die gerade fehlen. Solange eines fehlt, zeigt das `(app)`-Layout über dem Inhalt `LiveUpdateNotice`: „Live-Aktualisierung unterbrochen – wird erneut versucht.“ mit „Neu laden“. Das ist eine `SectionMessage` im Ton `warning` (neutral, kein Rot nach [ADR-0009](0009-fehlerfarbe.md) und [ADR-0026](0026-einstellungsbereich-und-hinweis-bausteine.md) §2) in einer immer vorhandenen Statusregion; der Fokus wandert nicht. Ein Flag nach [ADR-0025](0025-ui-konsistenz-overlay-system.md) §8 passt nicht, weil `info` nach 8 s verschwindet und der Hinweis bis zur Lösung bleiben muss.
+- **Kein Polling:** Versucht wird nur das gescheiterte Abo; eine bestehende Verbindung behandelt weiter das SDK.

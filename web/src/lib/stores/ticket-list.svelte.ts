@@ -277,8 +277,9 @@ export class TicketListStore {
 	#completing = $state(false);
 	#completionError = $state<string | null>(null);
 	/**
-	 * IDs of deleted tickets: a late event or answer must not bring them back. Record IDs are
-	 * never reused, so the set only grows until the store is reset.
+	 * IDs of deleted tickets: a late answer must not bring them back. Only the server brings one
+	 * back, restored from the trash (ADR-0037): by a realtime update (`#arrive`) or in the snapshot
+	 * of a reconciliation (`#revive`).
 	 */
 	readonly #deleted = new SvelteSet<string>();
 	/**
@@ -808,8 +809,24 @@ export class TicketListStore {
 		else this.#done.delete(ticket.id);
 	}
 
+	/**
+	 * A created or updated ticket from a realtime event. The server sends its events in order, so
+	 * an update after the event that removed a ticket means it is visible again: restored from the
+	 * trash (ADR-0037), here or in another tab. It returns to the list; late answers of requests
+	 * still stay out (`upsert`). An open ticket that comes back by an update also brings its read
+	 * row back, which the rules hid while it lay in the trash, and no event reports that: the read
+	 * rows are loaded again, so it does not show as "neu" (plan papierkorb §6).
+	 */
+	#arrive(action: 'create' | 'update', ticket: TicketSummary): void {
+		const returning =
+			action === 'update' && (this.#deleted.delete(ticket.id) || this.find(ticket.id) === null);
+		this.upsert(ticket);
+		if (returning && ticket.status !== 'done') void this.#loadReads();
+	}
+
 	/** Removes a ticket from every part of the list (deleted or no longer visible). */
 	remove(id: string): void {
+		this.#touched?.add(id);
 		this.#deleted.add(id);
 		this.#open.delete(id);
 		this.#done.delete(id);
@@ -997,33 +1014,44 @@ export class TicketListStore {
 
 	/**
 	 * Keeps the list live (ADR-0007 sections 2 and 3): created and updated tickets go through
-	 * `upsert`, deleted ones through `remove`, and after a reconnection the store reconciles
-	 * once. Returns the cleanup, which ends both subscriptions and a running reconciliation.
+	 * `upsert`, deleted ones through `remove`, and after a reconnection or a subscription that
+	 * came only after failed attempts the store reconciles once. Returns the cleanup, which ends
+	 * both subscriptions and a running reconciliation.
 	 */
 	connect(live: LiveSource): () => void {
+		const reconcile = () => void this.reconcile();
 		const stops = [
 			hold(
-				live.tickets((change) => {
-					if (change.action === 'delete') {
-						this.remove(change.id);
-						return;
-					}
-					this.upsert(change.record);
-					// Title, description or key may have changed: ask for the IDs again.
-					this.#refreshSearch();
-				})
+				(guard) =>
+					live.tickets(
+						guard((change) => {
+							if (change.action === 'delete') {
+								this.remove(change.id);
+								return;
+							}
+							this.#arrive(change.action, change.record);
+							// Title, description or key may have changed: ask for the IDs again.
+							this.#refreshSearch();
+						})
+					),
+				{ recovered: reconcile }
 			),
-			hold(live.reconnected(() => void this.reconcile()))
+			hold((guard) => live.reconnected(guard(reconcile)), { recovered: reconcile })
 		];
 		// Read rows and base line only where the server knows them (after the migration).
-		if (this.#reads !== null && this.#reads.unreadSince() !== null) {
+		const reads = this.#reads;
+		if (reads !== null && reads.unreadSince() !== null) {
 			stops.push(
 				hold(
-					live.reads((change) => {
-						if (change.action === 'baseline') this.#unreadSince = change.unreadSince;
-						else if (change.action === 'delete') this.#readRows.delete(change.id);
-						else this.#readRows.set(change.read.id, change.read.ticket);
-					})
+					(guard) =>
+						live.reads(
+							guard((change) => {
+								if (change.action === 'baseline') this.#unreadSince = change.unreadSince;
+								else if (change.action === 'delete') this.#readRows.delete(change.id);
+								else this.#readRows.set(change.read.id, change.read.ticket);
+							})
+						),
+					{ recovered: () => void this.#loadReads() }
 				)
 			);
 		}
@@ -1235,6 +1263,15 @@ export class TicketListStore {
 		}
 	}
 
+	/**
+	 * A removed ticket in the snapshot of a reconciliation is visible again (restored from the
+	 * trash during a gap, ADR-0037), unless it was removed while the reconciliation ran: then the
+	 * snapshot may be older than the removal.
+	 */
+	#revive(id: string, touched: ReadonlySet<string>): void {
+		if (!touched.has(id)) this.#deleted.delete(id);
+	}
+
 	#mergeOpen(open: readonly TicketSummary[], touched: ReadonlySet<string>): void {
 		const ids = new SvelteSet(open.map((ticket) => ticket.id));
 		for (const id of [...this.#open.keys()]) {
@@ -1242,7 +1279,9 @@ export class TicketListStore {
 		}
 		// A just checked ticket may still be open in a snapshot that started before the check.
 		for (const ticket of open) {
-			if (!this.#undoable.has(ticket.id)) this.upsert(ticket);
+			if (this.#undoable.has(ticket.id)) continue;
+			this.#revive(ticket.id, touched);
+			this.upsert(ticket);
 		}
 	}
 
@@ -1256,6 +1295,7 @@ export class TicketListStore {
 			if (!ids.has(id) && !touched.has(id)) this.#subtasks.delete(id);
 		}
 		for (const ticket of subtasks) {
+			this.#revive(ticket.id, touched);
 			if (this.#deleted.has(ticket.id) || touched.has(ticket.id)) continue;
 			const existing = this.#subtasks.get(ticket.id);
 			if (existing === undefined || existing.updated <= ticket.updated) {
@@ -1271,6 +1311,7 @@ export class TicketListStore {
 			if (!ids.has(id) && !touched.has(id)) this.#done.delete(id);
 		}
 		for (const ticket of items) {
+			this.#revive(ticket.id, touched);
 			if (this.#deleted.has(ticket.id) || touched.has(ticket.id)) continue;
 			const existing = this.#done.get(ticket.id);
 			if (existing === undefined || existing.updated <= ticket.updated) {

@@ -1,7 +1,10 @@
 // Realtime in the stores with a fake source (E2 plan, package 12; ADR-0007 sections 2 to 4):
 // create, update and delete act on single records, a late older event is ignored, the
 // reconciliation after a reconnection inserts, replaces and removes without a loading state, a
-// second reconnection aborts a running one, drafts stay, and no subscription is left behind.
+// second reconnection aborts a running one, drafts stay, and no subscription is left behind. A
+// failed subscription is tried again with a growing wait and reported to the health of the
+// layout (ADR-0011 E6, E2 plan §8); a ticket restored from the trash comes back with its read row
+// (plan papierkorb §6).
 
 import { SvelteMap } from 'svelte/reactivity';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -13,8 +16,13 @@ import { EMPTY_LIST_QUERY } from '$lib/domain/list-query';
 import type { Project } from '$lib/domain/project';
 import type { Tag } from '$lib/domain/tag';
 import type { Comment, HistoryEntry, Ticket, TicketSummary } from '$lib/domain/ticket';
+import type { TicketRead } from '$lib/data/reads';
+import { LiveHealth } from './live-health.svelte';
 import {
 	hold,
+	RETRY_DELAYS_MS,
+	RETRY_MAX_MS,
+	type Guard,
 	type LiveSource,
 	type ReadChange,
 	type RecordChange,
@@ -26,7 +34,7 @@ import {
 	type TicketDetailData,
 	type TicketListSync
 } from './ticket-detail.svelte';
-import { TicketListStore, type TicketListData } from './ticket-list.svelte';
+import { TicketListStore, type ReadsData, type TicketListData } from './ticket-list.svelte';
 
 type Kind =
 	| 'tickets'
@@ -98,9 +106,21 @@ class FakeLive implements LiveSource {
 		}
 	}
 
+	readonly #failures = new Map<Kind, number>();
+
+	/** The next `times` subscriptions of `kind` fail, keeping their listener like the SDK does. */
+	failNext(kind: Kind, times = 1): void {
+		this.#failures.set(kind, times);
+	}
+
 	#add<T>(kind: Kind, key: string, call: (value: T) => void): Promise<Unsubscribe> {
 		const listener = { kind, key, call: call as (value: never) => void };
 		this.#listeners.push(listener);
+		const failures = this.#failures.get(kind) ?? 0;
+		if (failures > 0) {
+			this.#failures.set(kind, failures - 1);
+			return Promise.reject(new Error('Failed to establish realtime connection.'));
+		}
 		return Promise.resolve(async () => {
 			const index = this.#listeners.indexOf(listener);
 			if (index !== -1) this.#listeners.splice(index, 1);
@@ -158,9 +178,13 @@ afterEach(() => {
 });
 
 describe('hold', () => {
+	afterEach(() => {
+		vi.useRealTimers();
+	});
+
 	it('ends a subscription that is ready', async () => {
 		const unsubscribe = vi.fn(async () => undefined);
-		const stop = hold(Promise.resolve(unsubscribe));
+		const stop = hold(() => Promise.resolve(unsubscribe), { health: new LiveHealth() });
 		await flush();
 
 		stop();
@@ -172,7 +196,7 @@ describe('hold', () => {
 	it('ends a subscription that becomes ready after the stop', async () => {
 		const unsubscribe = vi.fn(async () => undefined);
 		const pending = deferred<Unsubscribe>();
-		const stop = hold(pending.promise);
+		const stop = hold(() => pending.promise, { health: new LiveHealth() });
 
 		stop();
 		pending.resolve(unsubscribe);
@@ -181,9 +205,12 @@ describe('hold', () => {
 		expect(unsubscribe).toHaveBeenCalledOnce();
 	});
 
-	it('ignores a failed subscription and a failed unsubscribe', async () => {
-		const stopFailed = hold(Promise.reject(new Error('offline')));
-		const stopBroken = hold(Promise.resolve(async () => Promise.reject(new Error('gone'))));
+	it('ignores a failed subscription and a failed unsubscribe when stopped', async () => {
+		const health = new LiveHealth();
+		const stopFailed = hold(() => Promise.reject(new Error('offline')), { health });
+		const stopBroken = hold(() => Promise.resolve(async () => Promise.reject(new Error('gone'))), {
+			health
+		});
 		await flush();
 
 		expect(() => {
@@ -191,11 +218,122 @@ describe('hold', () => {
 			stopBroken();
 		}).not.toThrow();
 		await flush();
+		expect(health.interrupted).toBe(false);
+	});
+
+	it('tries a failed subscription again with growing waits and reports it until it stands', async () => {
+		vi.useFakeTimers();
+		const health = new LiveHealth();
+		const recovered = vi.fn();
+		const unsubscribe = vi.fn(async () => undefined);
+		let failures = 6;
+		const start = vi.fn(() =>
+			failures-- > 0 ? Promise.reject(new Error('offline')) : Promise.resolve(unsubscribe)
+		);
+		const stop = hold(start, { recovered, health });
+		await vi.advanceTimersByTimeAsync(0);
+		expect(start).toHaveBeenCalledTimes(1);
+		expect(health.interrupted).toBe(true);
+
+		const waits = [...RETRY_DELAYS_MS, RETRY_MAX_MS, RETRY_MAX_MS];
+		for (const [index, wait] of waits.entries()) {
+			await vi.advanceTimersByTimeAsync(wait - 1);
+			expect(start).toHaveBeenCalledTimes(index + 1);
+			await vi.advanceTimersByTimeAsync(1);
+			expect(start).toHaveBeenCalledTimes(index + 2);
+		}
+
+		expect(health.interrupted).toBe(false);
+		expect(recovered).toHaveBeenCalledOnce();
+		await vi.advanceTimersByTimeAsync(RETRY_MAX_MS * 2);
+		expect(start).toHaveBeenCalledTimes(7);
+		stop();
+		expect(unsubscribe).toHaveBeenCalledOnce();
+	});
+
+	it('calls recovered only after failed attempts', async () => {
+		const recovered = vi.fn();
+		const stop = hold(() => Promise.resolve(async () => undefined), {
+			recovered,
+			health: new LiveHealth()
+		});
+		await flush();
+		stop();
+
+		expect(recovered).not.toHaveBeenCalled();
+	});
+
+	it('stops trying and reporting on the stop', async () => {
+		vi.useFakeTimers();
+		const health = new LiveHealth();
+		const start = vi.fn(() => Promise.reject(new Error('offline')));
+		const stop = hold(start, { health });
+		await vi.advanceTimersByTimeAsync(0);
+		expect(health.interrupted).toBe(true);
+
+		stop();
+		await vi.advanceTimersByTimeAsync(RETRY_MAX_MS * 3);
+
+		expect(start).toHaveBeenCalledOnce();
+		expect(health.interrupted).toBe(false);
+	});
+
+	it('counts every failed subscription until each one stands', async () => {
+		vi.useFakeTimers();
+		const health = new LiveHealth();
+		let firstFails = 1;
+		let secondFails = 2;
+		const stops = [
+			hold(
+				() =>
+					firstFails-- > 0
+						? Promise.reject(new Error('offline'))
+						: Promise.resolve(async () => undefined),
+				{ health }
+			),
+			hold(
+				() =>
+					secondFails-- > 0
+						? Promise.reject(new Error('offline'))
+						: Promise.resolve(async () => undefined),
+				{ health }
+			)
+		];
+		cleanups.push(() => stops.forEach((stop) => stop()));
+		await vi.advanceTimersByTimeAsync(RETRY_DELAYS_MS[0] ?? 0);
+		expect(health.interrupted).toBe(true);
+
+		await vi.advanceTimersByTimeAsync(RETRY_DELAYS_MS[1] ?? 0);
+		expect(health.interrupted).toBe(false);
+	});
+
+	it('lets only the callbacks of the current attempt through, and none after the stop', async () => {
+		vi.useFakeTimers();
+		const live = new FakeLive();
+		const seen = vi.fn();
+		live.failNext('tickets');
+		const stop = hold((guard: Guard) => live.tickets(guard(seen)), {
+			health: new LiveHealth()
+		});
+		await vi.advanceTimersByTimeAsync(RETRY_DELAYS_MS[0] ?? 0);
+		// The listener of the failed attempt stays in the source, like in the SDK.
+		expect(live.active).toEqual(['tickets:*', 'tickets:*']);
+
+		live.emit('tickets', '*', { action: 'delete', id: 'ticket000000001' });
+		expect(seen).toHaveBeenCalledOnce();
+
+		stop();
+		live.emit('tickets', '*', { action: 'delete', id: 'ticket000000001' });
+		expect(seen).toHaveBeenCalledOnce();
 	});
 });
 
 describe('list store live', () => {
-	function setup(open: TicketSummary[] = [summary()], done: TicketSummary[][] = []) {
+	function setup(
+		open: TicketSummary[] = [summary()],
+		done: TicketSummary[][] = [],
+		reads?: ReadsData
+	) {
 		const data = {
 			listOpen: vi.fn((options: RequestOptions) => abortable(options, Promise.resolve(open))),
 			listDone: vi.fn((page: number, options: RequestOptions) =>
@@ -215,7 +353,7 @@ describe('list store live', () => {
 			),
 			update: vi.fn()
 		} satisfies TicketListData;
-		const store = new TicketListStore(data, session());
+		const store = new TicketListStore(data, session(), { reads });
 		const live = new FakeLive();
 		cleanups.push(() => store.reset());
 		const disconnect = store.connect(live);
@@ -223,8 +361,13 @@ describe('list store live', () => {
 		return { store, data, live, disconnect };
 	}
 
-	async function ready(open?: TicketSummary[], done?: TicketSummary[][], showDone = false) {
-		const context = setup(open, done);
+	async function ready(
+		open?: TicketSummary[],
+		done?: TicketSummary[][],
+		showDone = false,
+		reads?: ReadsData
+	) {
+		const context = setup(open, done, reads);
 		context.store.activate({ ...EMPTY_LIST_QUERY, showDone });
 		await vi.waitFor(() => expect(context.store.openState).toBe('ready'));
 		if (showDone) await vi.waitFor(() => expect(context.store.doneState).toBe('ready'));
@@ -248,7 +391,7 @@ describe('list store live', () => {
 		expect(store.open.map((ticket) => ticket.id)).toEqual(['ticket000000001']);
 	});
 
-	it('ignores a late older event and events for deleted tickets', async () => {
+	it('ignores a late older event and a late answer for a deleted ticket', async () => {
 		const { store, live } = await ready();
 		live.emit('tickets', '*', {
 			action: 'update',
@@ -259,11 +402,131 @@ describe('list store live', () => {
 		expect(store.find('ticket000000001')?.title).toBe('Neu');
 
 		live.emit('tickets', '*', { action: 'delete', id: 'ticket000000001' });
+		store.upsert(summary({ updated: '2026-09-24 11:00:00.000Z' }));
+		expect(store.open).toEqual([]);
+	});
+
+	it('brings a ticket back that the server reports again after a delete (restored from the trash)', async () => {
+		const { store, live } = await ready();
+		live.emit('tickets', '*', { action: 'delete', id: 'ticket000000001' });
+		expect(store.open).toEqual([]);
+
 		live.emit('tickets', '*', {
 			action: 'update',
 			record: summary({ updated: '2026-09-24 11:00:00.000Z' })
 		});
+
+		expect(store.open.map((ticket) => ticket.id)).toEqual(['ticket000000001']);
+	});
+
+	it('brings a removed ticket back that the snapshot of a reconciliation lists again', async () => {
+		const { store, live } = await ready();
+		live.emit('tickets', '*', { action: 'delete', id: 'ticket000000001' });
 		expect(store.open).toEqual([]);
+
+		live.reconnect();
+		await flush();
+
+		expect(store.open.map((ticket) => ticket.id)).toEqual(['ticket000000001']);
+	});
+
+	it('keeps a ticket removed during a reconciliation out of its older snapshot', async () => {
+		const { store, data, live } = await ready();
+		const pending = deferred<TicketSummary[]>();
+		data.listOpen.mockImplementationOnce((options) => abortable(options, pending.promise));
+
+		live.reconnect();
+		store.remove('ticket000000001');
+		pending.resolve([summary()]);
+		await flush();
+
+		expect(store.open).toEqual([]);
+	});
+
+	it('loads the read rows again when a restored ticket comes back, so it is not "neu"', async () => {
+		const restored = summary({ id: 'ticket000000002', key: 'TASK-2' });
+		const row: TicketRead = { id: 'read00000000002', ticket: restored.id };
+		const reads = {
+			unreadSince: () => '2026-09-01 00:00:00.000Z',
+			// Loaded while the ticket lay in the trash: the rules hid its read row.
+			list: vi.fn<ReadsData['list']>(async () => []),
+			markRead: vi.fn<ReadsData['markRead']>(async () => null),
+			markAllRead: vi.fn<ReadsData['markAllRead']>(async () => '2026-09-24 12:00:00.000Z')
+		} satisfies ReadsData;
+		const { store, live } = await ready([summary()], [], false, reads);
+		await vi.waitFor(() => expect(reads.list).toHaveBeenCalledOnce());
+		reads.list.mockResolvedValue([row]);
+
+		live.emit('tickets', '*', { action: 'update', record: restored });
+		expect(store.find(restored.id)).not.toBeNull();
+
+		await vi.waitFor(() => expect(store.isNew(restored)).toBe(false));
+		expect(reads.list).toHaveBeenCalledTimes(2);
+	});
+
+	it('does not load the read rows again for created, known or done tickets', async () => {
+		const reads = {
+			unreadSince: () => '2026-09-01 00:00:00.000Z',
+			list: vi.fn<ReadsData['list']>(async () => []),
+			markRead: vi.fn<ReadsData['markRead']>(async () => null),
+			markAllRead: vi.fn<ReadsData['markAllRead']>(async () => '2026-09-24 12:00:00.000Z')
+		} satisfies ReadsData;
+		const { live } = await ready([summary()], [], false, reads);
+		await vi.waitFor(() => expect(reads.list).toHaveBeenCalledOnce());
+
+		live.emit('tickets', '*', {
+			action: 'create',
+			record: summary({ id: 'ticket000000003', key: 'TASK-3' })
+		});
+		live.emit('tickets', '*', {
+			action: 'update',
+			record: summary({ title: 'Geändert', updated: '2026-09-24 09:00:00.000Z' })
+		});
+		live.emit('tickets', '*', {
+			action: 'update',
+			record: summary({
+				id: 'ticket000000004',
+				key: 'TASK-4',
+				status: 'done',
+				completedAt: '2026-09-24 09:00:00.000Z'
+			})
+		});
+		await flush();
+
+		expect(reads.list).toHaveBeenCalledOnce();
+	});
+
+	it('reconciles when the ticket subscription stands only after failed attempts', async () => {
+		vi.useFakeTimers();
+		try {
+			const data = {
+				listOpen: vi.fn(async (): Promise<TicketSummary[]> => [summary()]),
+				listDone: vi.fn(async (page: number): Promise<DoneTicketPage> => ({
+					items: [],
+					page,
+					hasMore: false
+				})),
+				searchOpen: vi.fn(async (): Promise<string[]> => []),
+				setDone: vi.fn(),
+				update: vi.fn()
+			} satisfies TicketListData;
+			const store = new TicketListStore(data, session());
+			const live = new FakeLive();
+			live.failNext('tickets');
+			cleanups.push(() => store.reset());
+			cleanups.push(store.connect(live));
+			store.activate(EMPTY_LIST_QUERY);
+			await vi.advanceTimersByTimeAsync(0);
+			expect(store.openState).toBe('ready');
+			expect(data.listOpen).toHaveBeenCalledOnce();
+
+			await vi.advanceTimersByTimeAsync(RETRY_DELAYS_MS[0] ?? 0);
+
+			expect(data.listOpen).toHaveBeenCalledTimes(2);
+			expect(live.active.filter((entry) => entry === 'tickets:*')).toHaveLength(2);
+		} finally {
+			vi.useRealTimers();
+		}
 	});
 
 	it('moves a ticket done elsewhere out of the open tickets', async () => {
