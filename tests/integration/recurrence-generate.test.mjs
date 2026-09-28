@@ -177,6 +177,47 @@ describe('generation by the clock (ADR-0022 sections 2 and 3)', () => {
 	});
 });
 
+describe('several weekdays with an open instance (plan OR-1)', () => {
+	const MON_WED_FRI = { freq: 'weekly', weekdays: ['MO', 'WE', 'FR'], anchor: '2037-06-01' };
+
+	it('waits for the open Monday, then catches up to the latest date only', async () => {
+		const rule = await createRule({ ...MON_WED_FRI, lead_days: 0 });
+		expect((await run('2037-06-01T10:00:00Z')).created).toBe(1);
+		const [monday] = await instancesOf(rule.id);
+		expect(dateOf(monday.due)).toBe('2037-06-01');
+		expect(dateOf((await ruleOf(rule.id)).next_due)).toBe('2037-06-03');
+
+		// Wednesday and Saturday with the Monday still open: nothing new, the date waits.
+		expect((await run('2037-06-03T10:00:00Z')).created).toBe(0);
+		expect((await run('2037-06-06T10:00:00Z')).created).toBe(0);
+		expect(await instancesOf(rule.id)).toHaveLength(1);
+		expect(dateOf((await ruleOf(rule.id)).next_due)).toBe('2037-06-03');
+
+		// Done (with the real clock nothing is due yet); on Saturday one ticket for Friday, no stack.
+		await tickets().update(monday.id, { status: 'done' });
+		expect(await openOf(rule.id)).toEqual([]);
+		expect((await run('2037-06-06T10:00:00Z')).created).toBe(1);
+		const open = await openOf(rule.id);
+		expect(open.map((ticket) => dateOf(ticket.due))).toEqual(['2037-06-05']);
+		expect(dateOf((await ruleOf(rule.id)).next_due)).toBe('2037-06-08');
+	});
+
+	it('shows the next weekday within the lead time only after the open one is done', async () => {
+		const rule = await createRule({ ...MON_WED_FRI, lead_days: 2 });
+		// Saturday before: two days ahead of Monday.
+		expect((await run('2037-05-30T10:00:00Z')).created).toBe(1);
+		const [monday] = await instancesOf(rule.id);
+		expect(dateOf(monday.due)).toBe('2037-06-01');
+
+		// Monday is two days ahead of Wednesday, but the Monday ticket is open.
+		expect((await run('2037-06-01T10:00:00Z')).created).toBe(0);
+		await tickets().update(monday.id, { status: 'done' });
+		expect((await run('2037-06-01T10:00:00Z')).created).toBe(1);
+		expect((await openOf(rule.id)).map((ticket) => dateOf(ticket.due))).toEqual(['2037-06-03']);
+		expect(dateOf((await ruleOf(rule.id)).next_due)).toBe('2037-06-05');
+	});
+});
+
 describe('completing, reopening and releasing instances (ADR-0023 sections 2, 3 and 6)', () => {
 	it('fixes the next date on completion and shows the follow-up when it is within the lead time', async () => {
 		const rule = await createRule({ mode: 'after_completion', freq: 'daily', interval: 2, lead_days: 3, anchor: today() });
