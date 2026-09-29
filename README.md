@@ -89,7 +89,7 @@ becauseyoulovejira/
     pb_migrations/        Handgeschriebene JS-Migrationen
     pb_public/            Frontend-Build (gitignored)
     pb_data/              Daten und Backups (gitignored, niemals committen)
-    logs/                 Server-Ausgabe des letzten Starts (gitignored)
+    logs/                 Server- und Hilfsprozess-Ausgabe, Log der Steuerung (gitignored)
     run/                  Zustand der laufenden Instanz und Adresse für die Landing-Seite (gitignored)
     byl-config.json       Nur wenn der Port geändert wurde: {"port": …} (gitignored)
     start.bat             Starten (öffnet den Browser)
@@ -181,10 +181,19 @@ powershell -NoProfile -ExecutionPolicy Bypass -File app\byl-control.ps1 help
 | `start` | wie `start.bat`; `-NoBrowser` ohne Browser, `-Force` startet eine App neu, die nicht antwortet |
 | `stop` | wie `stop.bat` |
 | `restart` | beenden und neu starten |
+| `reload` | nur neu starten, wenn es nötig ist (siehe unten); `-Force` startet immer neu |
+| `status` | Zustand, Adresse, Mail-Hilfsprozess, ob ein Neustart nötig ist, Autostart; `-Json` für Skripte |
+| `open` | die laufende App öffnen (installierte App bzw. Tab) |
+| `logs` bzw. `logs server\|mail\|skript` | letzte Zeilen der Logs (`-Lines 50`), `-Follow` folgt einem Log |
+| `doctor` | prüft Dateien, Oberfläche, Port, Schreibrechte, Plattenplatz, andere Kopien und Autostart; `-Json` für Skripte |
 | `port` bzw. `port <Zahl>` | Port anzeigen bzw. umstellen |
 | `autostart-on`, `autostart-off`, `reset-admin` | wie die gleichnamigen `.bat`-Dateien |
 
-Exit-Codes: 0 erledigt, 1 Fehler, 2 Einrichtung offen, 4 Port belegt, 5 App antwortet nicht.
+Exit-Codes: 0 erledigt (bei `status`: läuft und ist aktuell), 1 Fehler, 2 Einrichtung offen, 3 läuft nicht, 4 Port belegt, 5 App antwortet nicht, 6 Neustart nötig.
+
+**Neustart nur bei Bedarf:** Beim Start merkt sich das Skript in `app\run\byl.state.json`, was der Server geladen hat (Stempel von `pocketbase.exe` und `byl-mail.exe`, Prüfsummen der Migrationen und Hooks, Port, die **Namen** der `BYL_*`-Variablen und die Version der Oberfläche). `status` vergleicht mit dem Ordner und sagt „aktuell“, „nur neu laden (F5 im offenen Tab) – Oberfläche neu gebaut“ oder „Neustart nötig“ mit Grund, etwa „neue oder geänderte Migration“ oder „geänderte Server-Logik (pb_hooks)“; PocketBase lädt geänderte Hooks unter Windows nicht selbst neu. `reload` startet genau dann neu. Einen geänderten **Wert** einer vorhandenen `BYL_*`-Variablen erkennt es nicht (Werte werden nie gespeichert); dafür `reload -Force`. War die App noch mit den alten Skripten gestartet, ist der Stand „unbekannt“, und `reload` startet einmal neu.
+
+**Logs** stehen in `app\logs\`: `pocketbase.out.log` und `.err.log` (Server), `byl-mail.log` und `.err.log` (Mail-Hilfsprozess), jeweils vom aktuellen Lauf, der vorige als `*.1.log`; `byl-control.log` hat eine Zeile je Start, Stopp, Neustart, Portwechsel und Autostart-Änderung (höchstens 1 MB, dann rotiert), ohne Zugangsdaten oder Inhalte.
 
 **Geordnetes Beenden:** `stop.bat` schickt PocketBase und dem Mail-Hilfsprozess ein Konsolensignal (Ctrl+Break). PocketBase schließt dann die Datenbank sauber, SQLite überträgt dabei das Write-Ahead-Log (`pb_data\data.db-wal` verschwindet). Erst wenn ein Prozess nach 15 Sekunden noch läuft, beendet `stop.bat` ihn hart und warnt davor. Auch das ist für die Daten unkritisch: SQLite (WAL-Modus) behält jede abgeschlossene Änderung, eine gerade laufende wird beim nächsten Start zurückgerollt. Nur während eines laufenden Backups solltest du nicht stoppen, sonst bleibt ein unvollständiges ZIP zurück.
 

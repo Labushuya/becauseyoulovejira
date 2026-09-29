@@ -1,6 +1,6 @@
-﻿# Operation of becauseyoulovejira (ADR-0039): start, stop, restart and port of the app, the
-# autostart (E1 plan, package 8), the admin reset (E1.1) and the mail helper byl-mail.exe next to
-# PocketBase (E4 plan, package 11).
+﻿# Operation of becauseyoulovejira (ADR-0039): start, stop, restart, reload, status, open, logs,
+# doctor and port of the app, the autostart (E1 plan, package 8), the admin reset (E1.1) and the
+# mail helper byl-mail.exe next to PocketBase (E4 plan, package 11).
 # Called by start.bat, start-hidden.vbs, stop.bat, autostart-an.bat, autostart-aus.bat and
 # admin-zuruecksetzen.bat, always with -NoProfile -ExecutionPolicy Bypass (script execution is
 # disabled on the target machine):
@@ -9,7 +9,8 @@
 #
 # Exit codes: 0 = done, 1 = error (message shown), 2 = setup pending (first-run hint, or a running
 # instance whose installer link still works; start.bat pauses so the hint stays readable),
-# 4 = the port is used by another program, 5 = the app runs but does not answer.
+# 3 = not running (status, open), 4 = the port is used by another program, 5 = the app runs but
+# does not answer, 6 = the app runs but needs a restart (status).
 #
 # -Hidden (autostart via start-hidden.vbs): no console exists, so hints and errors appear as a
 # message box, and a normal start does not open the browser (silent start at logon). In the first
@@ -24,13 +25,16 @@
 [CmdletBinding()]
 param(
     [Parameter(Position = 0)]
-    [ValidateSet('start', 'stop', 'restart', 'port', 'autostart-on', 'autostart-off', 'reset-admin', 'help')]
+    [ValidateSet('start', 'stop', 'restart', 'reload', 'status', 'open', 'logs', 'doctor', 'port', 'autostart-on', 'autostart-off', 'reset-admin', 'help')]
     [string]$Command = 'help',
     [Parameter(Position = 1)][string]$Value,
     [switch]$Force,
     [switch]$Hidden,
     [switch]$NoBrowser,
-    [switch]$Quiet
+    [switch]$Quiet,
+    [switch]$Json,
+    [switch]$Follow,
+    [ValidateRange(1, 10000)][int]$Lines = 30
 )
 
 $ErrorActionPreference = 'Stop'
@@ -75,6 +79,11 @@ Befehle:
   start           Startet die App (läuft sie schon, öffnet es nur den Browser). Doppelklick: start.bat
   stop            Beendet die App geordnet: erst den Mail-Hilfsprozess, dann PocketBase. Doppelklick: stop.bat
   restart         Beendet die App und startet sie neu.
+  reload          Startet nur neu, wenn es nötig ist (neue Migration, geänderte Hooks, …).
+  status          Zeigt, ob die App läuft, ihre Adresse und ob ein Neustart nötig ist.
+  open            Öffnet die laufende App im Browser.
+  logs [Log]      Letzte Zeilen der Logs: server, mail, skript oder alle.
+  doctor          Prüft Dateien, Port, Schreibrechte, Plattenplatz und andere Kopien.
   port [Zahl]     Zeigt den Port oder stellt ihn um (1024–65535, Standard $BylDefaultPort; gespeichert in $BylConfigName).
   autostart-on    Startet die App künftig bei der Anmeldung (autostart-an.bat).
   autostart-off   Nimmt die App aus dem Autostart (autostart-aus.bat).
@@ -82,18 +91,37 @@ Befehle:
   help            Diese Hilfe.
 
 Optionen:
-  -Force          start: eine laufende App, die nicht antwortet, neu starten.
-  -NoBrowser      start/restart: keinen Browser öffnen.
+  -Force          start: eine laufende App, die nicht antwortet, neu starten; reload: immer neu starten.
+  -NoBrowser      start/restart/reload/open: keinen Browser öffnen.
   -Quiet          nur Fehler und das Ergebnis ausgeben.
+  -Json           status/doctor: Ergebnis als JSON.
+  -Follow         logs: dem Log folgen (Strg+C beendet); nur mit server, mail oder skript.
+  -Lines <Zahl>   logs: Anzahl der Zeilen (Standard 30).
   -Hidden         ohne Fenster (Autostart): Hinweise als Meldungsfenster.
 
 Exit-Codes:
-  0  erledigt
+  0  erledigt (status: läuft und ist aktuell)
   1  Fehler (siehe Meldung)
   2  Einrichtung offen (erster Start)
+  3  läuft nicht (status, open)
   4  Port belegt durch ein anderes Programm
   5  App läuft, antwortet aber nicht
+  6  läuft, aber ein Neustart ist nötig (status)
 "@
+
+# Reasons for a restart (Compare-BylFingerprint) as the user reads them.
+$RestartReasonText = @{
+    unknown     = 'Startstand unbekannt (gestartet ohne diese Skripte)'
+    server      = 'neue PocketBase-Version (pocketbase.exe)'
+    migrations  = 'neue oder geänderte Migration'
+    hooks       = 'geänderte Server-Logik (pb_hooks)'
+    port        = "anderer Port eingestellt ($BylConfigName)"
+    environment = 'BYL_*-Variable angelegt oder entfernt'
+    mailHelper  = 'neuer Mail-Hilfsprozess (byl-mail.exe)'
+}
+
+# Log detail of the current command for byl-control.log (numbers and fixed words only).
+$script:LogDetail = ''
 
 function Show-Message {
     param([Parameter(Mandatory = $true)][string]$Text, [ValidateSet('Info', 'Warning', 'Error')][string]$Kind = 'Info')
@@ -112,15 +140,56 @@ function Show-Message {
 }
 
 function Write-Status {
-    # Progress and hints; silent with -Hidden (no console) and -Quiet.
+    # Progress and hints; silent with -Hidden (no console), -Quiet and -Json (only the JSON).
     param([Parameter(Mandatory = $true)][AllowEmptyString()][string]$Text)
-    if (-not $Hidden -and -not $Quiet) { Write-Host $Text }
+    if (-not $Hidden -and -not $Quiet -and -not $Json) { Write-Host $Text }
 }
 
 function Write-Notice {
-    # A warning that stays visible with -Quiet (yellow); silent with -Hidden.
+    # A warning that stays visible with -Quiet (yellow); silent with -Hidden and -Json.
     param([Parameter(Mandatory = $true)][string]$Text)
-    if (-not $Hidden) { Write-Host $Text -ForegroundColor Yellow }
+    if (-not $Hidden -and -not $Json) { Write-Host $Text -ForegroundColor Yellow }
+}
+
+function Write-ControlLog {
+    # One line per command in logs\byl-control.log (Format-ControlLogLine: time, command, exit code
+    # and $script:LogDetail, never values, passwords or e-mail addresses). Never fails the command.
+    param([Parameter(Mandatory = $true)][string]$Name, [Parameter(Mandatory = $true)][int]$ExitCode)
+
+    try {
+        $path = Get-ControlLogPath -AppDir $AppDir
+        [void][System.IO.Directory]::CreateDirectory([System.IO.Path]::GetDirectoryName($path))
+        Invoke-LogRotation -Path $path -LimitBytes $BylControlLogLimitBytes
+        $line = Format-ControlLogLine -TimeUtc ([DateTime]::UtcNow) -Command $Name -ExitCode $ExitCode -Detail $script:LogDetail
+        [System.IO.File]::AppendAllText($path, "$line`r`n", (New-Object System.Text.UTF8Encoding($false)))
+    }
+    catch {
+        $null = $_
+    }
+}
+
+function Get-EnvironmentName {
+    # Names of the BYL_* variables a start hands to PocketBase, fresh from the user and the machine
+    # scope (Get-BylVariableName); never values.
+    $user = [Environment]::GetEnvironmentVariables('User')
+    $machine = [Environment]::GetEnvironmentVariables('Machine')
+    return Get-BylVariableName -UserNames @($user.Keys) -MachineNames @($machine.Keys)
+}
+
+function Get-AutostartState {
+    # 'on' (the shortcut starts start-hidden.vbs of this folder), 'other' (it starts another
+    # folder, e.g. after moving app\) or 'off'.
+    $spec = Get-AutostartShortcut -AppDir $AppDir -StartupDir ([Environment]::GetFolderPath('Startup')) `
+        -SystemDir ([Environment]::SystemDirectory)
+    if (-not (Test-Path -LiteralPath $spec.Path -PathType Leaf)) { return 'off' }
+    try {
+        $arguments = (New-Object -ComObject WScript.Shell).CreateShortcut($spec.Path).Arguments
+    }
+    catch {
+        return 'other'
+    }
+    if (Test-SamePath -Path ([string]$arguments).Trim('"', ' ') -Expected ([System.IO.Path]::Combine($AppDir, 'start-hidden.vbs'))) { return 'on' }
+    return 'other'
 }
 
 function Read-TextFile {
@@ -492,6 +561,8 @@ function Start-MailHelper {
         if ($decision -eq 'Start') {
             $log = Get-MailHelperLogPath -AppDir $AppDir
             [void](New-Item -ItemType Directory -Force -Path $log.Directory)
+            Invoke-LogRotation -Path $log.Output
+            Invoke-LogRotation -Path $log.Error
             $process = Start-Process -FilePath $helper -ArgumentList (Get-MailHelperArgumentString) `
                 -WorkingDirectory $AppDir -WindowStyle Hidden -PassThru `
                 -RedirectStandardOutput $log.Output -RedirectStandardError $log.Error
@@ -516,7 +587,7 @@ function Wait-Ready {
     Write-Status "Warte auf $BylHealthUrl (höchstens $HealthTimeoutSeconds s) ..."
     $state = Wait-ServerReady -Process $Server -TimeoutSeconds $HealthTimeoutSeconds -Progress {
         param($Seconds)
-        if (-not $Hidden -and -not $Quiet) { Write-Host "  ... $Seconds s" }
+        if (-not $Hidden -and -not $Quiet -and -not $Json) { Write-Host "  ... $Seconds s" }
     }
     return $state
 }
@@ -526,13 +597,37 @@ function Complete-Start {
     param([Parameter(Mandatory = $true)][int]$ProcessId, [Parameter(Mandatory = $true)][bool]$ColdStart)
 
     Start-MailHelper
+    $script:LogDetail = ("$script:LogDetail pid=$ProcessId port=$BylPort").Trim()
     Write-Status "becauseyoulovejira läuft: $BylAppUrl (PID $ProcessId)."
     if (-not $Hidden -and -not $NoBrowser) { Open-Browser -ColdStart $ColdStart }
 }
 
+function Show-PreStartNotice {
+    # The part of "doctor" that matters before a cold start: disk space and other copies of the
+    # app. Only hints; the start goes on.
+    param([Parameter(Mandatory = $true)][object[]]$Processes)
+
+    try {
+        $drive = New-Object System.IO.DriveInfo([System.IO.Path]::GetPathRoot($AppDir))
+        $disk = Get-DiskVerdict -FreeBytes $drive.AvailableFreeSpace
+        if ($disk -ne 'Ok') {
+            Write-Notice ("Hinweis: Auf dem Laufwerk der App sind nur noch {0:N0} MB frei; Datenbank und Backups brauchen Platz." -f ($drive.AvailableFreeSpace / 1MB))
+        }
+    }
+    catch {
+        $null = $_
+    }
+    foreach ($other in @(Select-OtherServerProcess -Process $Processes -AppDir $AppDir)) {
+        if ($other.SameFolder) { continue }
+        $where = if ($null -ne $other.Port) { "Port $($other.Port)" } else { 'eine andere Adresse' }
+        Write-Notice "Hinweis: Eine andere Kopie läuft auf $where (PID $($other.ProcessId), $($other.ExecutablePath)); sie bleibt unberührt."
+    }
+}
+
 function Start-Server {
-    # Cold start of PocketBase: checks, start, state file, waiting for /api/health, first run.
-    param([Parameter(Mandatory = $true)][int]$Port)
+    # Cold start of PocketBase: checks, start, state file with the start fingerprint, waiting for
+    # /api/health, first run.
+    param([Parameter(Mandatory = $true)][int]$Port, [Parameter(Mandatory = $true)][object[]]$Processes)
 
     $exe = [System.IO.Path]::Combine($AppDir, 'pocketbase.exe')
     $log = Get-ServerLogPath -AppDir $AppDir
@@ -549,6 +644,7 @@ function Start-Server {
     if (-not (Test-Path -LiteralPath ([System.IO.Path]::Combine($AppDir, 'pb_public', 'index.html')) -PathType Leaf)) {
         Write-Notice 'Hinweis: Die Oberfläche fehlt (pb_public\index.html). Erst scripts\build.ps1 ausführen; die Verwaltung unter /_/ geht auch so.'
     }
+    Show-PreStartNotice -Processes $Processes
 
     Set-BylAddress -Port $Port
     $databaseExisted = Test-Path -LiteralPath ([System.IO.Path]::Combine($AppDir, 'pb_data', 'data.db')) -PathType Leaf
@@ -556,6 +652,10 @@ function Start-Server {
     try {
         Initialize-IngestToken
         Sync-BylEnvironment
+        # What this server loads; taken before the start, so a change during the start counts.
+        $fingerprint = Get-BylFingerprint -AppDir $AppDir -Port $Port -EnvironmentNames (Get-EnvironmentName)
+        Invoke-LogRotation -Path $log.Output
+        Invoke-LogRotation -Path $log.Error
         $server = Start-Process -FilePath $exe -ArgumentList (Get-ServerArgumentString -AppDir $AppDir -Port $Port) `
             -WorkingDirectory $AppDir -WindowStyle Hidden -PassThru `
             -RedirectStandardOutput $log.Output -RedirectStandardError $log.Error
@@ -568,7 +668,7 @@ function Start-Server {
     [void]$server.Handle
     try {
         Write-TextFile -Path $run.State -Text (ConvertTo-BylStateText -ProcessId $server.Id -Port $Port `
-                -ProcessStartUtc (Get-ProcessStartUtc -Process $server) -StartedUtc ([DateTime]::UtcNow))
+                -ProcessStartUtc (Get-ProcessStartUtc -Process $server) -StartedUtc ([DateTime]::UtcNow) -Fingerprint $fingerprint)
     }
     catch {
         Write-Notice "Hinweis: run\byl.state.json konnte nicht geschrieben werden ($($_.Exception.GetType().Name))."
@@ -637,7 +737,7 @@ function Invoke-Start {
         'Restart' {
             Write-Status "becauseyoulovejira (PID $processId) antwortet nicht; starte neu (-Force) ..."
             if ((Invoke-StopCore -Config $Config) -eq 'Failed') { return $BylExitError }
-            return Start-Server -Port $Config.Port
+            return Start-Server -Port $Config.Port -Processes $look.Processes
         }
         'Wait' {
             # Own instance exists but does not answer yet (started a moment ago): no second server.
@@ -658,6 +758,7 @@ function Invoke-Start {
         }
         'Open' {
             Write-Status "becauseyoulovejira läuft bereits (PID $processId, $BylAppUrl)."
+            $script:LogDetail = "pid=$processId port=$($look.RunningPort) running"
             if ($look.RunningPort -ne $Config.Port) {
                 Write-Notice "Hinweis: Eingestellt ist Port $($Config.Port); die neue Adresse gilt nach einem Neustart:`n  $ControlCall restart"
             }
@@ -674,7 +775,7 @@ function Invoke-Start {
             return $BylExitOk
         }
     }
-    return Start-Server -Port $Config.Port
+    return Start-Server -Port $Config.Port -Processes $look.Processes
 }
 
 function Send-ConsoleBreak {
@@ -821,6 +922,7 @@ function Invoke-Stop {
     param([Parameter(Mandatory = $true)][object]$Config)
 
     $result = Invoke-StopCore -Config $Config
+    $script:LogDetail = $result.ToLowerInvariant()
     if ($result -eq 'Failed') { return $BylExitError }
     if ($result -eq 'NotRunning') {
         Show-Message 'becauseyoulovejira läuft nicht.'
@@ -844,6 +946,321 @@ function Invoke-Restart {
         if ((Invoke-StopCore -Config $Config) -eq 'Failed') { return $BylExitError }
     }
     return Invoke-Start -Config $Config
+}
+
+function Get-StatusData {
+    # Everything "status" and "reload" need from one look: state of the own instance, address,
+    # mail helper, the comparison of the start fingerprint with the folder now, the owner of a busy
+    # port, other copies and the autostart.
+    param([Parameter(Mandatory = $true)][object]$Config)
+
+    $look = Get-Look -Port $Config.Port
+    $running = $look.ServerState -ne 'Stopped'
+    $port = if ($null -ne $look.RunningPort) { [int]$look.RunningPort } else { [int]$Config.Port }
+    $comparison = [pscustomobject]@{ Verdict = 'Current'; Restart = @(); Reload = @() }
+    if ($running) {
+        $started = if ($null -ne $look.State) { $look.State.Fingerprint } else { $null }
+        $current = Get-BylFingerprint -AppDir $AppDir -Port $Config.Port -EnvironmentNames (Get-EnvironmentName)
+        $comparison = Compare-BylFingerprint -Started $started -Current $current
+    }
+    $helpers = @(Select-MailHelperProcess -Process $look.Processes -AppDir $AppDir -Url @("http://127.0.0.1:$port"))
+    $startedAt = $null
+    if ($null -ne $look.State) {
+        $startedAt = $look.State.StartedUtc
+    }
+    elseif ($running -and $null -ne $look.Own[0].CreationDate) {
+        $startedAt = ([DateTime]$look.Own[0].CreationDate).ToUniversalTime()
+    }
+    $owner = $null
+    if (-not $running -and $look.PortState.State -eq 'Foreign') {
+        $owner = [pscustomobject]@{ pid = $look.PortState.ProcessId; name = $look.PortState.ProcessName; path = $look.PortState.ExecutablePath }
+    }
+    return [pscustomobject]@{
+        ServerState  = $look.ServerState
+        ProcessId    = if ($running) { [int]$look.Own[0].ProcessId } else { $null }
+        Port         = $port
+        Configured   = [int]$Config.Port
+        StartedUtc   = $startedAt
+        Comparison   = $comparison
+        MailHelperId = if ($helpers.Count -gt 0) { [int]$helpers[0].ProcessId } else { $null }
+        PortOwner    = $owner
+        Others       = @(Select-OtherServerProcess -Process $look.Processes -AppDir $AppDir)
+        Autostart    = Get-AutostartState
+    }
+}
+
+function Get-VerdictText {
+    # "aktuell", "nur neu laden (F5) ..." or "Neustart nötig – <Gründe>".
+    param([Parameter(Mandatory = $true)][object]$Comparison)
+
+    if ($Comparison.Verdict -eq 'Restart') {
+        return 'Neustart nötig – ' + ((@($Comparison.Restart) | ForEach-Object { $RestartReasonText[$_] }) -join ', ')
+    }
+    if ($Comparison.Verdict -eq 'Reload') { return 'nur neu laden (F5 im offenen Tab) – Oberfläche neu gebaut' }
+    return 'aktuell'
+}
+
+function Invoke-Status {
+    param([Parameter(Mandatory = $true)][object]$Config)
+
+    $data = Get-StatusData -Config $Config
+    $code = Resolve-StatusExitCode -ServerState $data.ServerState -Verdict $data.Comparison.Verdict
+    if ($Json) {
+        $result = [ordered]@{
+            state          = $data.ServerState.ToLowerInvariant()
+            pid            = $data.ProcessId
+            port           = $data.Port
+            configuredPort = $data.Configured
+            url            = "http://127.0.0.1:$($data.Port)/"
+            startedUtc     = if ($null -ne $data.StartedUtc) { $data.StartedUtc.ToString('o') } else { $null }
+            verdict        = $data.Comparison.Verdict.ToLowerInvariant()
+            restartReasons = @($data.Comparison.Restart)
+            reloadReasons  = @($data.Comparison.Reload)
+            mailHelperPid  = $data.MailHelperId
+            portOwner      = $data.PortOwner
+            otherServers   = @($data.Others | ForEach-Object { [ordered]@{ pid = $_.ProcessId; path = $_.ExecutablePath; port = $_.Port; sameFolder = $_.SameFolder } })
+            autostart      = $data.Autostart
+            exitCode       = $code
+        }
+        [Console]::Out.WriteLine(($result | ConvertTo-Json -Depth 4 -Compress))
+        return $code
+    }
+
+    $label = { param([string]$Name, [string]$Text) Write-Host ('  {0,-13} {1}' -f $Name, $Text) }
+    Write-Host 'becauseyoulovejira – Status'
+    switch ($data.ServerState) {
+        'Running' {
+            $since = if ($null -ne $data.StartedUtc) { ', gestartet ' + $data.StartedUtc.ToLocalTime().ToString('dd.MM.yyyy HH:mm') } else { '' }
+            & $label 'Zustand:' "läuft (PID $($data.ProcessId)$since)"
+        }
+        'Starting' { & $label 'Zustand:' "startet gerade (PID $($data.ProcessId)), antwortet noch nicht" }
+        'Unhealthy' { & $label 'Zustand:' "läuft (PID $($data.ProcessId)), antwortet aber nicht auf /api/health" }
+        default { & $label 'Zustand:' 'läuft nicht' }
+    }
+    & $label 'Adresse:' "http://127.0.0.1:$($data.Port)/"
+    if ($data.Configured -ne $data.Port) { & $label 'Eingestellt:' "Port $($data.Configured) (gilt nach einem Neustart)" }
+    if ($data.ServerState -ne 'Stopped') {
+        $helper = if ($null -ne $data.MailHelperId) { "läuft (PID $($data.MailHelperId))" } else { 'läuft nicht' }
+        & $label 'Mail-Helfer:' $helper
+        & $label 'Stand:' (Get-VerdictText -Comparison $data.Comparison)
+    }
+    elseif ($null -ne $data.PortOwner) {
+        & $label 'Port:' "belegt durch $($data.PortOwner.name) (PID $($data.PortOwner.pid)) $($data.PortOwner.path)"
+    }
+    $autostart = switch ($data.Autostart) { 'on' { 'an' } 'other' { 'zeigt auf einen anderen Ordner (autostart-an.bat hier erneut ausführen)' } default { 'aus' } }
+    & $label 'Autostart:' $autostart
+    & $label 'Ordner:' $AppDir
+    foreach ($other in $data.Others) {
+        $kind = if ($other.SameFolder) { 'Testinstanz dieses Ordners mit anderem Datenordner' } else { 'andere Kopie' }
+        $where = if ($null -ne $other.Port) { "Port $($other.Port)" } else { 'andere Adresse' }
+        Write-Host "  Hinweis: $kind auf $where (PID $($other.ProcessId)) $($other.ExecutablePath); bleibt unberührt."
+    }
+    if ($code -eq $BylExitNotRunning) { Write-Host "Starten: start.bat oder $ControlCall start" }
+    elseif ($code -eq $BylExitUnhealthy) { Write-Host "Neu starten: $ControlCall restart" }
+    elseif ($code -eq $BylExitRestartNeeded) { Write-Host "Neustart: $ControlCall reload" }
+    return $code
+}
+
+function Invoke-Reload {
+    # Restarts only if the running instance needs it (Resolve-ReloadAction), with -Force always.
+    param([Parameter(Mandatory = $true)][object]$Config)
+
+    if ($null -ne $Config.Problem) {
+        Show-Message -Kind Error -Text (Get-ConfigProblemText -Problem $Config.Problem)
+        return $BylExitError
+    }
+    $data = Get-StatusData -Config $Config
+    $action = Resolve-ReloadAction -ServerState $data.ServerState -Verdict $data.Comparison.Verdict -Force $Force.IsPresent
+    $script:LogDetail = "action=$($action.ToLowerInvariant())"
+    if ($action -eq 'Nothing') {
+        Show-Message "Kein Neustart nötig: becauseyoulovejira ist aktuell (PID $($data.ProcessId), http://127.0.0.1:$($data.Port)/)."
+        return $BylExitOk
+    }
+    if ($action -eq 'ReloadOnly') {
+        Show-Message 'Kein Neustart nötig. Die Oberfläche wurde neu gebaut: im offenen Tab einmal neu laden (F5).'
+        return $BylExitOk
+    }
+    if ($action -eq 'Restart') {
+        $why = if ($Force) { 'Neustart erzwungen (-Force)' }
+        elseif ($data.ServerState -eq 'Unhealthy') { 'Neustart nötig – die App antwortet nicht' }
+        else { Get-VerdictText -Comparison $data.Comparison }
+        Write-Status "$why. Starte neu ..."
+        if ((Invoke-StopCore -Config $Config) -eq 'Failed') { return $BylExitError }
+    }
+    elseif ($action -eq 'Start') {
+        Write-Status 'becauseyoulovejira läuft nicht; starte ...'
+    }
+    return Invoke-Start -Config $Config
+}
+
+function Invoke-Open {
+    # Opens the running app (installed app or tab, ADR-0035); with -NoBrowser only the address.
+    param([Parameter(Mandatory = $true)][object]$Config)
+
+    $look = Get-Look -Port $Config.Port
+    if ($look.ServerState -eq 'Stopped') {
+        Show-Message -Kind Error -Text 'becauseyoulovejira läuft nicht. Starten mit start.bat.'
+        return $BylExitNotRunning
+    }
+    Set-BylAddress -Port $look.RunningPort
+    if ($look.ServerState -ne 'Running') {
+        Show-Message -Kind Error -Text "becauseyoulovejira (PID $($look.Own[0].ProcessId)) antwortet nicht. Neu starten mit:`n  $ControlCall restart"
+        return $BylExitUnhealthy
+    }
+    if ($Hidden -or $NoBrowser) {
+        Show-Message "becauseyoulovejira läuft: $BylAppUrl"
+        return $BylExitOk
+    }
+    Open-Browser -ColdStart $false
+    return $BylExitOk
+}
+
+function Invoke-Logs {
+    # Last lines of the logs (the programs log counts and cleaned errors only, never values of
+    # variables or contents); -Follow follows one log until Ctrl+C.
+    $logDir = [System.IO.Path]::Combine($AppDir, 'logs')
+    $sets = [ordered]@{
+        server = @('pocketbase.out.log', 'pocketbase.err.log')
+        mail   = @('byl-mail.log', 'byl-mail.err.log')
+        skript = @('byl-control.log')
+    }
+    $name = if ([string]::IsNullOrWhiteSpace($Value)) { 'alle' } else { $Value.Trim().ToLowerInvariant() }
+    if ($name -ne 'alle' -and -not $sets.Contains($name)) {
+        Show-Message -Kind Error -Text "Unbekanntes Log „$Value“. Erlaubt: server, mail, skript oder alle."
+        return $BylExitError
+    }
+    if ($Follow) {
+        if ($name -eq 'alle') {
+            Show-Message -Kind Error -Text '-Follow folgt genau einem Log: server, mail oder skript.'
+            return $BylExitError
+        }
+        $path = [System.IO.Path]::Combine($logDir, $sets[$name][0])
+        if (-not [System.IO.File]::Exists($path)) {
+            Show-Message -Kind Error -Text "Das Log gibt es noch nicht:`n$path"
+            return $BylExitError
+        }
+        Write-Host "Folge $path (Strg+C beendet) ..."
+        Get-Content -LiteralPath $path -Tail $Lines -Wait | Out-Host
+        return $BylExitOk
+    }
+    $names = if ($name -eq 'alle') { @($sets.Keys) } else { @($name) }
+    foreach ($set in $names) {
+        foreach ($file in $sets[$set]) {
+            $path = [System.IO.Path]::Combine($logDir, $file)
+            if (-not [System.IO.File]::Exists($path)) {
+                Write-Host "== logs\$file (noch nicht vorhanden)"
+                continue
+            }
+            $info = New-Object System.IO.FileInfo($path)
+            Write-Host ('== logs\{0} ({1:N0} KB, geändert {2})' -f $file, [Math]::Ceiling($info.Length / 1KB), $info.LastWriteTime.ToString('dd.MM.yyyy HH:mm'))
+            foreach ($line in (Get-LogTailLines -Text (Read-TextFile -Path $path) -Count $Lines)) { Write-Host $line }
+        }
+    }
+    return $BylExitOk
+}
+
+function Test-WriteAccess {
+    # True if a file can be created and deleted in $Folder (created if missing).
+    param([Parameter(Mandatory = $true)][string]$Folder)
+
+    try {
+        [void][System.IO.Directory]::CreateDirectory($Folder)
+        $probe = [System.IO.Path]::Combine($Folder, ".byl-write-$([guid]::NewGuid().ToString('N')).tmp")
+        [System.IO.File]::WriteAllText($probe, 'x')
+        [System.IO.File]::Delete($probe)
+        return $true
+    }
+    catch {
+        return $false
+    }
+}
+
+function Invoke-Doctor {
+    # Checks before a start (ADR-0039 section 7); 0 without an error, 1 otherwise.
+    param([Parameter(Mandatory = $true)][object]$Config)
+
+    $checks = New-Object System.Collections.Generic.List[object]
+    $add = { param([string]$Name, [string]$Level, [string]$Text) $checks.Add([pscustomobject]@{ name = $Name; level = $Level; text = $Text }) }
+
+    $exe = [System.IO.Path]::Combine($AppDir, 'pocketbase.exe')
+    if ([System.IO.File]::Exists($exe)) { & $add 'pocketbase' 'ok' 'pocketbase.exe vorhanden' }
+    else { & $add 'pocketbase' 'error' 'pocketbase.exe fehlt: scripts\fetch-pocketbase.ps1 ausführen' }
+    foreach ($folder in @('pb_hooks', 'pb_migrations')) {
+        if ([System.IO.Directory]::Exists([System.IO.Path]::Combine($AppDir, $folder))) { & $add $folder 'ok' "$folder vorhanden" }
+        else { & $add $folder 'error' "$folder fehlt: der Ordner app ist unvollständig" }
+    }
+    if ([System.IO.File]::Exists([System.IO.Path]::Combine($AppDir, 'pb_public', 'index.html'))) { & $add 'web' 'ok' 'Oberfläche gebaut (pb_public)' }
+    else { & $add 'web' 'warning' 'Oberfläche fehlt (pb_public\index.html): scripts\build.ps1 ausführen' }
+    if ($null -ne $Config.Problem) { & $add 'config' 'error' (Get-ConfigProblemText -Problem $Config.Problem) }
+    else { & $add 'config' 'ok' "Port $($Config.Port)" }
+
+    $look = Get-Look -Port $Config.Port
+    switch ($look.ServerState) {
+        'Running' { & $add 'instance' 'ok' "läuft (PID $($look.Own[0].ProcessId), Port $($look.RunningPort))" }
+        'Starting' { & $add 'instance' 'warning' "startet gerade (PID $($look.Own[0].ProcessId))" }
+        'Unhealthy' { & $add 'instance' 'error' "läuft (PID $($look.Own[0].ProcessId)), antwortet aber nicht: $ControlCall restart" }
+        default { & $add 'instance' 'info' 'läuft nicht' }
+    }
+    switch ($look.PortState.State) {
+        'Free' { & $add 'port' 'ok' "Port $($Config.Port) ist frei" }
+        'App' { & $add 'port' 'ok' "Port $($Config.Port) gehört der eigenen Instanz" }
+        default {
+            $level = if ($look.ServerState -eq 'Stopped') { 'error' } else { 'warning' }
+            & $add 'port' $level ("Port $($Config.Port) belegt durch $($look.PortState.ProcessName) (PID $($look.PortState.ProcessId)) $($look.PortState.ExecutablePath)").Trim()
+        }
+    }
+    foreach ($folder in @('logs', 'run', 'pb_data')) {
+        $path = [System.IO.Path]::Combine($AppDir, $folder)
+        if ($folder -eq 'pb_data' -and -not [System.IO.Directory]::Exists($path)) {
+            & $add 'write-pb_data' 'info' 'pb_data gibt es noch nicht (der erste Start legt es an)'
+            continue
+        }
+        if (Test-WriteAccess -Folder $path) { & $add "write-$folder" 'ok' "$folder beschreibbar" }
+        else { & $add "write-$folder" 'error' "$folder ist nicht beschreibbar" }
+    }
+    try {
+        $drive = New-Object System.IO.DriveInfo([System.IO.Path]::GetPathRoot($AppDir))
+        $free = $drive.AvailableFreeSpace
+        $level = switch (Get-DiskVerdict -FreeBytes $free) { 'Critical' { 'error' } 'Low' { 'warning' } default { 'ok' } }
+        & $add 'disk' $level ('{0:N0} MB frei auf {1}' -f ($free / 1MB), $drive.Name)
+    }
+    catch {
+        & $add 'disk' 'warning' 'freier Platz nicht ermittelbar'
+    }
+    $others = @(Select-OtherServerProcess -Process $look.Processes -AppDir $AppDir)
+    if ($others.Count -eq 0) { & $add 'copies' 'ok' 'keine andere Kopie läuft' }
+    foreach ($other in $others) {
+        $kind = if ($other.SameFolder) { 'Testinstanz dieses Ordners' } else { 'andere Kopie' }
+        $where = if ($null -ne $other.Port) { "Port $($other.Port)" } else { 'andere Adresse' }
+        & $add 'copies' 'info' "$kind auf $where (PID $($other.ProcessId)) $($other.ExecutablePath); bleibt unberührt"
+    }
+    $helper = [System.IO.File]::Exists([System.IO.Path]::Combine($AppDir, $BylMailHelperName))
+    $token = -not [string]::IsNullOrWhiteSpace([Environment]::GetEnvironmentVariable($BylIngestTokenName, 'User'))
+    $mailText = if (-not $helper) { 'byl-mail.exe nicht vorhanden (nur für Postfächer nötig)' }
+    elseif ($token) { 'byl-mail.exe und BYL_INGEST_TOKEN vorhanden' }
+    else { 'byl-mail.exe vorhanden; BYL_INGEST_TOKEN legt der nächste Start an' }
+    & $add 'mail' 'info' $mailText
+    switch (Get-AutostartState) {
+        'on' { & $add 'autostart' 'info' 'Autostart an' }
+        'other' { & $add 'autostart' 'warning' 'Autostart zeigt auf einen anderen Ordner: autostart-an.bat hier erneut ausführen' }
+        default { & $add 'autostart' 'info' 'Autostart aus' }
+    }
+    & $add 'powershell' 'info' "Windows PowerShell $($PSVersionTable.PSVersion)"
+
+    $failed = @($checks | Where-Object { $_.level -eq 'error' }).Count
+    $code = if ($failed -gt 0) { $BylExitError } else { $BylExitOk }
+    if ($Json) {
+        [Console]::Out.WriteLine(([ordered]@{ appDir = $AppDir; ok = ($failed -eq 0); checks = @($checks.ToArray()) } | ConvertTo-Json -Depth 4 -Compress))
+        return $code
+    }
+    $tags = @{ ok = '[OK]      '; warning = '[WARNUNG] '; error = '[FEHLER]  '; info = '[INFO]    ' }
+    Write-Host "becauseyoulovejira – Prüfung (Ordner: $AppDir)"
+    foreach ($check in $checks) {
+        $color = switch ($check.level) { 'error' { 'Red' } 'warning' { 'Yellow' } default { 'Gray' } }
+        Write-Host ($tags[$check.level] + $check.text) -ForegroundColor $color
+    }
+    if ($failed -gt 0) { Write-Host "$failed Fehler gefunden." -ForegroundColor Red } else { Write-Host 'Keine Fehler gefunden.' }
+    return $code
 }
 
 function Invoke-Port {
@@ -880,6 +1297,7 @@ function Invoke-Port {
         Show-Message -Kind Error -Text "$BylConfigName konnte nicht geschrieben werden: $($_.Exception.Message)"
         return $BylExitError
     }
+    $script:LogDetail = "port=$port"
     $text = "Port $port eingestellt ($BylConfigName). Neue Adresse: http://127.0.0.1:$port/"
     if ($look.Own.Count -gt 0) {
         $text += "`nDie App läuft noch auf Port $($look.RunningPort); die neue Adresse gilt nach einem Neustart:`n  $ControlCall restart"
@@ -1025,6 +1443,11 @@ try {
         'start' { Invoke-Start -Config $config }
         'stop' { Invoke-Stop -Config $config }
         'restart' { Invoke-Restart -Config $config }
+        'reload' { Invoke-Reload -Config $config }
+        'status' { Invoke-Status -Config $config }
+        'open' { Invoke-Open -Config $config }
+        'logs' { Invoke-Logs }
+        'doctor' { Invoke-Doctor -Config $config }
         'port' { Invoke-Port -Config $config }
         'autostart-on' { Invoke-AutostartOn }
         'autostart-off' { Invoke-AutostartOff }
@@ -1040,4 +1463,9 @@ catch {
     $exitCode = $BylExitError
 }
 # A function that leaks output would turn the result into an array; the last value is the code.
-exit ([int](@($exitCode)[-1]))
+$exitCode = [int](@($exitCode)[-1])
+# Only commands that change something go into byl-control.log (status and logs would flood it).
+if (@('start', 'stop', 'restart', 'reload', 'port', 'autostart-on', 'autostart-off', 'reset-admin') -contains $Command) {
+    Write-ControlLog -Name $Command -ExitCode $exitCode
+}
+exit $exitCode

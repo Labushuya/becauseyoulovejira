@@ -360,9 +360,13 @@ describe('open tabs before opening the browser (ADR-0035, SF-4)', () => {
 		const calls = [...control().matchAll(/^.*Open-Browser -ColdStart.*$/gm)].map((match) => match[0].trim());
 		expect(calls).toEqual([
 			'if (-not $Hidden -and -not $NoBrowser) { Open-Browser -ColdStart $ColdStart }',
-			'if (-not $Hidden -and -not $NoBrowser) { Open-Browser -ColdStart $false }'
+			'if (-not $Hidden -and -not $NoBrowser) { Open-Browser -ColdStart $false }',
+			'Open-Browser -ColdStart $false'
 		]);
 		expect(startBranch('Open')).toContain('Open-Browser -ColdStart $false');
+		// "open" asks like a start of a running app, after its own check for -Hidden and -NoBrowser.
+		const open = functionBody(control(), 'Invoke-Open');
+		expect(open.indexOf('if ($Hidden -or $NoBrowser)')).toBeLessThan(open.indexOf('Open-Browser -ColdStart $false'));
 		const start = functionBody(control(), 'Start-Server');
 		expect(start.indexOf('Complete-Start -ProcessId $server.Id -ColdStart $true')).toBeGreaterThan(start.indexOf('Wait-Ready'));
 	});
@@ -482,6 +486,75 @@ describe('stop', () => {
 		expect(body.indexOf("-Name 'byl-mail.exe'")).toBeGreaterThan(-1);
 		expect(body.indexOf("-Name 'byl-mail.exe'")).toBeLessThan(body.indexOf("-Name 'PocketBase'"));
 		expect(body).toMatch(/Select-MailHelperProcess -Process \$Process -AppDir \$AppDir -Url \$urls/);
+	});
+});
+
+describe('status, reload, logs and doctor (ADR-0039 sections 5 to 7, BS-2)', () => {
+	it('stores the start fingerprint taken before the start, and rotates the logs of the run', () => {
+		const start = functionBody(control(), 'Start-Server');
+		const fingerprint = start.indexOf('$fingerprint = Get-BylFingerprint -AppDir $AppDir -Port $Port -EnvironmentNames (Get-EnvironmentName)');
+		expect(fingerprint).toBeGreaterThan(start.indexOf('Sync-BylEnvironment'));
+		expect(fingerprint).toBeLessThan(start.indexOf('Start-Process -FilePath $exe'));
+		expect(start).toContain('-Fingerprint $fingerprint');
+		expect(start.indexOf('Invoke-LogRotation -Path $log.Output')).toBeLessThan(start.indexOf('Start-Process -FilePath $exe'));
+		expect(start.indexOf('Show-PreStartNotice -Processes $Processes')).toBeLessThan(start.indexOf('Start-Process -FilePath $exe'));
+		const helper = functionBody(control(), 'Start-MailHelper');
+		expect(helper.indexOf('Invoke-LogRotation -Path $log.Output')).toBeLessThan(helper.indexOf('Start-Process'));
+		expect(functionBody(control(), 'Get-EnvironmentName')).not.toMatch(/GetEnvironmentVariable\(|\.Values|\[\$name\]/);
+	});
+
+	it('restarts in reload only through Resolve-ReloadAction and says so otherwise', () => {
+		const reload = functionBody(control(), 'Invoke-Reload');
+		expect(reload).toContain('Resolve-ReloadAction -ServerState $data.ServerState -Verdict $data.Comparison.Verdict -Force $Force.IsPresent');
+		expect(reload).toMatch(/if \(\$action -eq 'Nothing'\) \{[\s\S]*?Kein Neustart nötig[\s\S]*?return \$BylExitOk/);
+		expect(reload).toMatch(/if \(\$action -eq 'ReloadOnly'\) \{[\s\S]*?F5[\s\S]*?return \$BylExitOk/);
+		expect(reload.match(/Invoke-StopCore/g)).toHaveLength(1);
+		expect(reload.indexOf('Invoke-StopCore')).toBeGreaterThan(reload.indexOf("if ($action -eq 'Restart')"));
+	});
+
+	it('prints JSON only with -Json, as one line on standard output, and nothing else then', () => {
+		for (const name of ['Invoke-Status', 'Invoke-Doctor']) {
+			const body = functionBody(control(), name);
+			expect(body, name).toMatch(/if \(\$Json\) \{[\s\S]*?\[Console\]::Out\.WriteLine\(\([\s\S]*?ConvertTo-Json -Depth 4 -Compress\)\)\s*return \$code/);
+		}
+		for (const name of ['Write-Status', 'Write-Notice']) expect(functionBody(control(), name)).toContain('-not $Json');
+		expect(control().match(/\[Console\]::Out\.WriteLine/g)).toHaveLength(2);
+	});
+
+	it('names every reason of a restart and returns the documented exit codes of status', () => {
+		const reasons = control().match(/\$RestartReasonText = @\{([\s\S]*?)\r\n\}/)[1];
+		for (const part of ['unknown', 'server', 'migrations', 'hooks', 'port', 'environment', 'mailHelper']) expect(reasons).toMatch(new RegExp(`\\b${part}\\s+=`));
+		expect(functionBody(control(), 'Invoke-Status')).toContain('Resolve-StatusExitCode -ServerState $data.ServerState -Verdict $data.Comparison.Verdict');
+		expect(functions()).toContain('$BylExitNotRunning = 3');
+		expect(functions()).toContain('$BylExitRestartNeeded = 6');
+	});
+
+	it('logs changing commands only, with numbers and fixed words, never the admin e-mail', () => {
+		const main = control().slice(control().lastIndexOf('try {'));
+		expect(main).toContain("if (@('start', 'stop', 'restart', 'reload', 'port', 'autostart-on', 'autostart-off', 'reset-admin') -contains $Command) {");
+		const write = functionBody(control(), 'Write-ControlLog');
+		expect(write).toContain('Invoke-LogRotation -Path $path -LimitBytes $BylControlLogLimitBytes');
+		expect(write).toContain('[System.IO.File]::AppendAllText($path');
+		expect(functionBody(control(), 'Invoke-ResetAdmin')).not.toContain('LogDetail');
+		for (const line of control().split('\r\n').filter((text) => /\$script:LogDetail = /.test(text))) {
+			expect(line, line).not.toMatch(/\$email|\$password|\$token|Exception|\$Value/i);
+		}
+	});
+
+	it('shows logs read-only and follows one log only', () => {
+		const logs = functionBody(control(), 'Invoke-Logs');
+		expect(logs).toContain("Get-Content -LiteralPath $path -Tail $Lines -Wait | Out-Host");
+		expect(logs).toMatch(/if \(\$name -eq 'alle'\) \{[\s\S]*?-Follow folgt genau einem Log/);
+		expect(logs).not.toMatch(/Remove-Item|WriteAll|Delete\(|Set-Content|Clear-Content/);
+	});
+
+	it('doctor checks files, settings, instance, port, write access, disk, copies, mail helper and autostart', () => {
+		const doctor = functionBody(control(), 'Invoke-Doctor');
+		for (const name of ["'pocketbase'", '$folder', "'web'", "'config'", "'instance'", "'port'", '"write-$folder"', "'disk'", "'copies'", "'mail'", "'autostart'"]) {
+			expect(doctor, name).toContain(`& $add ${name}`);
+		}
+		expect(doctor).not.toMatch(/Stop-|Invoke-StopCore|Start-Server/);
+		expect(functionBody(control(), 'Test-WriteAccess')).toMatch(/WriteAllText\(\$probe, 'x'\)\s*\[System\.IO\.File\]::Delete\(\$probe\)/);
 	});
 });
 

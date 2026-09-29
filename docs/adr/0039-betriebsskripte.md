@@ -1,6 +1,6 @@
 # ADR-0039: Betriebsskripte – ein Steuerskript, Erkennung laufender Server, Port an einer Stelle, geordnetes Beenden und Neustart nur bei Bedarf
 
-- **Status:** Angenommen. Umgesetzt: BS-1 (Kern: Befehle `start`, `stop`, `restart`, `port`, Erkennung, Port, geordnetes Beenden) nach [docs/plan/betriebsskripte.md](../plan/betriebsskripte.md). BS-2 (Start-Fingerabdruck, `reload`, `status`, `open`, `logs`, `doctor`) und BS-3 (Doppelklick-Dateien, Autostart, Admin-Reset, Texte, Hilfe) folgen.
+- **Status:** Angenommen. Umgesetzt nach [docs/plan/betriebsskripte.md](../plan/betriebsskripte.md): BS-1 (#170, Kern: Befehle `start`, `stop`, `restart`, `port`, Erkennung, Port, geordnetes Beenden) und BS-2 (Start-Fingerabdruck, `reload`, `status`, `open`, `logs`, `doctor`). BS-3 (Doppelklick-Dateien, Autostart, Admin-Reset, Texte, Hilfe) folgt.
 - **Datum:** 2026-09-29
 - **Entscheidung durch:** Nutzer (Wunsch: „die einschlägigen Skripte alle anpassen. Soll richtig professionell sein mit bereits laufender Server-Erkennung und Port, sowie intelligentem Reload, Herunterfahren, etc.“, 2026-09-29), Advisor (Ziele, Port ohne stilles Ausweichen, Sicherheitsregel für `stop`, Teilpakete), Executor (Recherche, Umsetzung, Einzelheiten)
 - **Ergänzt:** [ADR-0035](0035-start-einstieg-und-offene-tabs.md) §1 und §7 (Nachtrag dort), [ADR-0016](0016-kanal-architektur-und-mail.md) §5 (Start und Stopp des Mail-Hilfsprozesses), [ADR-0018](0018-secrets.md) §6 (Weitergabe der `BYL_*`-Variablen)
@@ -62,7 +62,7 @@ Optionen: `-Force` (`start`: eine App, die nicht antwortet, neu starten; `reload
 ### 3. Erkennung der eigenen Instanz
 
 - **Eigene Instanz** ist ein Prozess `pocketbase.exe`, dessen **Programmpfad** `app\pocketbase.exe` dieses Ordners ist, mit `serve`, `--http=127.0.0.1:<beliebiger Port>` und `--dir=<dieser Ordner>\pb_data` (`Select-AppProcess`). Eine Kopie in einem anderen Ordner, eine Testinstanz mit anderem Datenordner, ein Server auf `0.0.0.0`, Einmal-Befehle (`superuser`, `migrate`) und Prozesse mit unlesbarer Kommandozeile zählen nie.
-- **Eigener Mail-Hilfsprozess** ist `byl-mail.exe` direkt in diesem Ordner, auch unter dem Namen `byl-mail.exe.old-<Zeit>` (`scripts\build-mail-helper.ps1` benennt einen laufenden Hilfsprozess um, und Windows meldet danach den neuen Namen), mit `run` und `--url` auf eine Adresse der eigenen Instanz (Port der laufenden Instanz, der Zustandsdatei oder der Einstellung).
+- **Eigener Mail-Hilfsprozess** ist `byl-mail.exe` direkt in diesem Ordner mit `run` und `--url` auf eine Adresse der eigenen Instanz (Port der laufenden Instanz, der Zustandsdatei oder der Einstellung). Benennt `scripts\build-mail-helper.ps1` einen laufenden Hilfsprozess in `byl-mail.exe.old-<Zeit>` um, meldet Windows weiter den Pfad vom Start (`byl-mail.exe`); er zählt also weiter als eigener (am Live-Rechner beobachtet, BS-2 korrigiert die Annahme aus BS-1, Windows melde den neuen Namen).
 - **Zustandsdatei** `app\run\byl.state.json` (gitignored): `pid`, `port`, `processStartUtc`, `startedUtc`, ab BS-2 der Start-Fingerabdruck (§5). Keine Geheimnisse. Sie gilt nur, wenn PID **und** Prozessstart (auf 2 s) zur laufenden eigenen Instanz passen; sonst (Prozess beendet, PID wiederverwendet) ist sie veraltet und wird entfernt. Maßgeblich bleibt immer der Blick auf die Prozesse; die Datei liefert Startzeit, Port und Fingerabdruck.
 - **Gesundheit:** `GET /api/health` mit Timeout, ohne Proxy. Eigener Prozess ohne Antwort ist in den ersten 30 s „startet“, danach „antwortet nicht“.
 - **Andere Server:** Wer den Port belegt, wird mit Programmpfad genannt; ab BS-2 nennen `status` und `doctor` auch laufende Kopien in anderen Ordnern (nur Hinweis, nie beendet).
@@ -92,8 +92,8 @@ Optionen: `-Force` (`start`: eine App, die nicht antwortet, neu starten; `reload
 ### 6. Logs (BS-2)
 
 - Ablage `app\logs\` (`*.log` gitignored): `pocketbase.out.log`/`.err.log`, `byl-mail.log`/`.err.log` und neu `byl-control.log`.
-- Server- und Hilfsprozess-Logs beginnt jeder Start neu; der vorige Lauf bleibt als `*.1.log`. `byl-control.log` bekommt je Befehl eine Zeile (Zeit, Befehl, Exit-Code, PID, Port) und wird ab 1 MB rotiert. Keine Werte von Variablen, keine Passwörter, keine E-Mail-Adressen, keine Inhalte.
-- `logs` zeigt die letzten Zeilen, `-Follow` folgt dem Server-Log.
+- Server- und Hilfsprozess-Logs beginnt jeder Start neu; der vorige Lauf bleibt als `*.1.log`. Während eines Laufs wachsen sie nur langsam (PocketBase schreibt seine Anfragen in die Datenbank, nicht in die Ausgabe; der Hilfsprozess eine Zeile je Abruf). `byl-control.log` bekommt je **ändernden** Befehl (`start`, `stop`, `restart`, `reload`, `port`, Autostart, `reset-admin`) eine Zeile (Zeit, Befehl, Exit-Code, Aktion, PID, Port) und wird ab 1 MB rotiert; `status` und `logs` schreiben nichts. Keine Werte von Variablen, keine Passwörter, keine E-Mail-Adressen, keine Inhalte.
+- `logs [server|mail|skript]` zeigt die letzten Zeilen (`-Lines`), `-Follow` folgt genau einem Log bis Strg+C.
 
 ### 7. Prüfungen (`doctor`, BS-2)
 

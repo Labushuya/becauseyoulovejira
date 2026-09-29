@@ -1,6 +1,6 @@
 # Plan Betriebsskripte: ein Steuerskript für Start, Stopp, Neustart, Status und Port
 
-- **Stand:** BS-1 umgesetzt (Kern, Port, geordnetes Beenden); BS-2 und BS-3 folgen. Offen sind die manuellen Prüfungen im Test-Manifest.
+- **Stand:** BS-1 umgesetzt (#170, Kern, Port, geordnetes Beenden), BS-2 umgesetzt (Fingerabdruck, `reload`, `status`, `open`, `logs`, `doctor`); BS-3 folgt. Offen sind die manuellen Prüfungen im Test-Manifest.
 - **Grundlage:**
   - [ADR-0039](../adr/0039-betriebsskripte.md) (Entscheidungen, Recherche, Grenzen, Alternativen)
   - [ADR-0035](../adr/0035-start-einstieg-und-offene-tabs.md) §1 und §7 (Landing-Seite, Tab-Wiederverwendung; Nachtrag), [ADR-0016](../adr/0016-kanal-architektur-und-mail.md) §5, [ADR-0018](../adr/0018-secrets.md) §6, [ADR-0038](../adr/0038-eigener-eingang-und-whatsapp-web.md)
@@ -20,8 +20,8 @@
 
 | Paket | Inhalt | Manifest |
 |---|---|---|
-| BS-1 | Befehle `start`, `stop`, `restart`, `port`, `help` mit Exit-Codes; Port in `byl-config.json`, `Set-BylAddress`, `run\app-adresse.js` für die Landing-Seite; Erkennung über Programmpfad und Zustandsdatei `run\byl.state.json`; idempotenter Start mit Fortschritt; geordnetes Beenden per `CTRL_BREAK_EVENT`, danach hart mit Warnung; Mail-Hilfsprozess auch als `byl-mail.exe.old-*`; Wrapper auf die neuen Befehle; ADR-0039, dieser Plan, README, CLAUDE.md, Nachtrag ADR-0035 | BYL-E6-440 bis BYL-E6-444, manuell BYL-E6-445 bis BYL-E6-447 |
-| BS-2 | Start-Fingerabdruck in der Zustandsdatei, `reload`, `status` (mit `-Json`, Exit 3 und 6), `open`, `logs` (Rotation, `byl-control.log`, `-Follow`), `doctor` (mit `-Json`), Prüfungen vor dem Kaltstart | ab BYL-E6-448 |
+| BS-1 | Befehle `start`, `stop`, `restart`, `port`, `help` mit Exit-Codes; Port in `byl-config.json`, `Set-BylAddress`, `run\app-adresse.js` für die Landing-Seite; Erkennung über Programmpfad und Zustandsdatei `run\byl.state.json`; idempotenter Start mit Fortschritt; geordnetes Beenden per `CTRL_BREAK_EVENT`, danach hart mit Warnung; Wrapper auf die neuen Befehle; ADR-0039, dieser Plan, README, CLAUDE.md, Nachtrag ADR-0035 | BYL-E6-440 bis BYL-E6-444, manuell BYL-E6-445 bis BYL-E6-447 |
+| BS-2 | Start-Fingerabdruck in der Zustandsdatei, `reload`, `status` (mit `-Json`, Exit 3 und 6), `open`, `logs` (Rotation, `byl-control.log`, `-Follow`), `doctor` (mit `-Json`), Hinweise vor dem Kaltstart (Platz, andere Kopien); Korrektur der Mail-Helfer-Erkennung aus BS-1 | BYL-E6-448 bis BYL-E6-450, manuell BYL-E6-451 und BYL-E6-452 |
 | BS-3 | `neu-starten.bat`, `status.bat`; Autostart und Admin-Reset mit derselben Logik; alle Neustart-Hinweise in Hooks, Oberfläche, Hilfe, Mail-Hilfsprozess und Erweiterung auf `neu-starten.bat`; Hilfe „Betrieb“; README und CLAUDE.md fertig | danach |
 
 ## 3. Entscheidungen und Befunde
@@ -34,4 +34,5 @@
 | 2026-09-29 | BS-1 | `Start-Process` vererbt alle vererbbaren Handles; eine mitgeschnittene Ausgabe endet erst mit dem Server. Die Standard-Handles zurückzusetzen hilft nicht; dokumentiert als Grenze (ADR-0039), der Test leitet in eine Datei. |
 | 2026-09-29 | BS-1 | Unter `%TEMP%` schaltet PocketBase in den Dev-Modus (SQL-Log mit dem Installer-Konto, falscher Erststart). Testkopien liegen deshalb unter `.tmp\` des Repos. |
 | 2026-09-29 | BS-1 | `-is [pscustomobject]` ist in PowerShell für jedes umhüllte Objekt wahr (auch ein JSON-Array); neue Prüfungen nutzen den vollen Typnamen. |
-| 2026-09-29 | BS-1 | Ein laufender Mail-Hilfsprozess, den `build-mail-helper.ps1` in `byl-mail.exe.old-<Zeit>` umbenannt hat, zählt weiter als eigener (sonst bliebe er nach einem Update beim Stopp stehen). |
+| 2026-09-29 | BS-1, korrigiert in BS-2 | Ein laufender Mail-Hilfsprozess, den `build-mail-helper.ps1` in `byl-mail.exe.old-<Zeit>` umbenannt hat, zählt weiter als eigener. BS-1 erkannte dafür zusätzlich den Namen `.old-*`; am Live-Rechner (nur lesend) zeigte sich, dass Windows den Pfad vom Start meldet (`byl-mail.exe`). BS-2 entfernt die überflüssige Namensregel. |
+| 2026-09-29 | BS-2 | Fingerabdruck ohne Werte: Namen der `BYL_*`-Variablen aus Benutzer- und Maschinenkonto (wie `Sync-BylEnvironment`) als ein Hash; große Dateien (`pocketbase.exe`, `byl-mail.exe`) nur mit Länge und Änderungszeit, Migrationen und Hooks mit SHA-256 über Namen und Inhalt. `reload` lässt eine gerade startende Instanz ohne `-Force` in Ruhe. `status` und `logs` schreiben nicht in `byl-control.log`. |

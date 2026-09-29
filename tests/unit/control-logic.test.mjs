@@ -1,6 +1,7 @@
-// Pure functions of byl-control.ps1 (ADR-0039, plan betriebsskripte BS-1): port and settings,
-// the address for the landing page, the state file, the decisions of start and the orderly stop,
-// all with fake inputs. Only app/byl-functions.ps1 runs here, never a script or a server.
+// Pure functions of byl-control.ps1 (ADR-0039, plan betriebsskripte BS-1 and BS-2): port and
+// settings, the address for the landing page, the state file, the decisions of start, reload and
+// status, the orderly stop, the start fingerprint and the logs, all with fake inputs and files in a
+// temp folder. Only app/byl-functions.ps1 runs here, never a script or a server.
 
 import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -274,13 +275,14 @@ describe('one address for everything (ADR-0039 section 2)', () => {
 });
 
 describe('state file byl.state.json (ADR-0039 section 3)', () => {
-	it('holds process id, port and times only, and reads back', () => {
+	it('holds process id, port, times and the fingerprint only, and reads back', () => {
 		expect(JSON.parse(result.state.text)).toEqual({
 			schema: 1,
 			pid: 4711,
 			port: 8091,
 			processStartUtc: '2026-09-29T10:00:00.0000000Z',
-			startedUtc: '2026-09-29T10:00:01.0000000Z'
+			startedUtc: '2026-09-29T10:00:01.0000000Z',
+			fingerprint: null
 		});
 		expect(result.state).toMatchObject({
 			processId: 4711,
@@ -375,5 +377,203 @@ describe('orderly stop (ADR-0039 section 4)', () => {
 		expect(result.breakCommand).toContain('exit ([BylConsoleBreak]::Send([uint32]4711))');
 		expect(result.breakCommand).toContain('GenerateConsoleCtrlEvent(1, 0)');
 		expect(result.breakZero).toBe('rejected');
+	});
+});
+
+// BS-2: the start fingerprint on a fake app folder in %TEMP% (files only, no program runs), the
+// decisions of reload and status, the logs and the other servers.
+const FINGERPRINT_SCRIPT = String.raw`
+. $env:BYL_FUNCTIONS
+Set-StrictMode -Version 2.0
+$in = $env:BYL_TEST_INPUT | ConvertFrom-Json
+$result = @{}
+$app = Join-Path $env:TEMP ('byl-fp-' + [guid]::NewGuid().ToString('N'))
+try {
+    foreach ($folder in @('pb_migrations', 'pb_hooks\lib', 'pb_public\_app', 'logs')) { [void](New-Item -ItemType Directory -Force -Path (Join-Path $app $folder)) }
+    $write = { param($Relative, $Text) [System.IO.File]::WriteAllText((Join-Path $app $Relative), $Text) }
+    & $write 'pocketbase.exe' 'binary'
+    & $write 'pb_migrations\1_a.js' 'migrate(1)'
+    & $write 'pb_migrations\readme.md' 'not a migration'
+    & $write 'pb_hooks\main.pb.js' 'hook'
+    & $write 'pb_hooks\lib\rules.js' 'rules'
+    & $write 'pb_public\_app\version.json' '{"version":"1"}'
+    & $write 'pb_public\index.html' '<html>'
+    $names = Get-BylVariableName -UserNames @('BYL_TOKEN', 'PATH', 'byl_lower', 'BYL_A') -MachineNames @('BYL_TOKEN', 'BYL_M')
+    $result.variableNames = @($names)
+    $take = { Get-BylFingerprint -AppDir $app -Port 8090 -EnvironmentNames $names }
+    $base = & $take
+    $result.fingerprintKeys = @($base.Keys)
+    $result.fingerprintShape = @{
+        server = $base.server -match '^\d+:\d+$'; migrations = $base.migrations -match '^[0-9a-f]{64}$'
+        hooks = $base.hooks -match '^[0-9a-f]{64}$'; port = $base.port; environment = $base.environment -match '^[0-9a-f]{64}$'
+        mailHelper = $base.mailHelper; web = $base.web -match '^[0-9a-f]{64}$'
+    }
+    $result.same = (Compare-BylFingerprint -Started $base -Current (& $take)).Verdict
+    $result.readmeIgnored = $base.migrations -eq (Get-BylFingerprint -AppDir $app -Port 8090 -EnvironmentNames $names).migrations
+
+    $changes = @{}
+    & $write 'pb_public\_app\version.json' '{"version":"2"}'
+    $changes.web = Compare-BylFingerprint -Started $base -Current (& $take)
+    & $write 'pb_hooks\lib\rules.js' 'rules changed'
+    $changes.hooks = Compare-BylFingerprint -Started $base -Current (& $take)
+    & $write 'pb_migrations\2_b.js' 'migrate(2)'
+    $changes.migrations = Compare-BylFingerprint -Started $base -Current (& $take)
+    $changes.port = Compare-BylFingerprint -Started $base -Current (Get-BylFingerprint -AppDir $app -Port 8091 -EnvironmentNames $names)
+    $changes.environment = Compare-BylFingerprint -Started $base -Current (Get-BylFingerprint -AppDir $app -Port 8090 -EnvironmentNames @('BYL_A'))
+    & $write 'byl-mail.exe' 'helper'
+    $changes.all = Compare-BylFingerprint -Started $base -Current (& $take)
+    $changes.unknown = Compare-BylFingerprint -Started $null -Current (& $take)
+    $result.changes = $changes
+
+    $state = ConvertFrom-BylState -Text (ConvertTo-BylStateText -ProcessId 7 -Port 8090 -ProcessStartUtc ([DateTime]::UtcNow) -StartedUtc ([DateTime]::UtcNow) -Fingerprint $base)
+    $result.stateFingerprint = (Compare-BylFingerprint -Started $state.Fingerprint -Current $base).Verdict
+
+    $log = Join-Path $app 'logs\byl-control.log'
+    & $write 'logs\byl-control.log' 'first'
+    Invoke-LogRotation -Path $log -LimitBytes 100
+    $result.rotationBelowLimit = @{ current = Test-Path $log; old = Test-Path (Join-Path $app 'logs\byl-control.1.log') }
+    Invoke-LogRotation -Path $log -LimitBytes 3
+    & $write 'logs\byl-control.log' 'second'
+    Invoke-LogRotation -Path $log
+    $result.rotation = @{
+        old = [System.IO.File]::ReadAllText((Join-Path $app 'logs\byl-control.1.log'))
+        current = Test-Path $log
+        rotatedName = [System.IO.Path]::GetFileName((Get-RotatedLogPath -Path (Join-Path $app 'logs\pocketbase.out.log')))
+    }
+    Invoke-LogRotation -Path (Join-Path $app 'logs\missing.log')
+}
+finally {
+    Remove-Item -LiteralPath $app -Recurse -Force -ErrorAction SilentlyContinue
+}
+
+$reload = @{}
+foreach ($case in $in.reload) { $reload[$case.name] = Resolve-ReloadAction -ServerState $case.server -Verdict $case.verdict -Force ([bool]$case.force) }
+$result.reload = $reload
+$status = @{}
+foreach ($case in $in.status) { $status[$case.name] = Resolve-StatusExitCode -ServerState $case.server -Verdict $case.verdict }
+$result.status = $status
+$result.disk = @(Get-DiskVerdict -FreeBytes 50MB; Get-DiskVerdict -FreeBytes 200MB; Get-DiskVerdict -FreeBytes 2GB)
+
+$time = [DateTime]::new(2026, 9, 29, 10, 0, 0, [DateTimeKind]::Utc)
+$result.logLine = Format-ControlLogLine -TimeUtc $time -Command 'start' -ExitCode 0 -Detail "pid=1 port=8090"
+$crlf = [string][char]13 + [char]10
+$lf = [string][char]10
+$result.logLineBreaks = Format-ControlLogLine -TimeUtc $time -Command 'stop' -ExitCode 1 -Detail ('a' + $crlf + 'b')
+$result.logLineEmpty = Format-ControlLogLine -TimeUtc $time -Command 'port' -ExitCode 0
+$result.tail = Get-LogTailLines -Text ('a' + $crlf + $crlf + 'b' + $lf + 'c' + $lf + ' d ' + $lf) -Count 2
+$result.tailShort = Get-LogTailLines -Text "only" -Count 5
+$result.tailEmpty = (Get-LogTailLines -Text $null).Count
+
+$others = @(Select-OtherServerProcess -Process @($in.processes) -AppDir $in.appDir)
+$result.others = @($others | ForEach-Object { @{ pid = $_.ProcessId; port = $_.Port; sameFolder = $_.SameFolder } })
+$result | ConvertTo-Json -Depth 6 -Compress
+`;
+
+describe('start fingerprint, reload, status and logs (ADR-0039 sections 5 and 6)', () => {
+	const APP = 'C:\\byl #1\\app';
+	const appArgs = `--dir="${APP}\\pb_data" --automigrate=false`;
+	let fp;
+
+	beforeAll(() => {
+		fp = runPowerShellJson(
+			FINGERPRINT_SCRIPT,
+			{
+				appDir: APP,
+				processes: [
+					{ ProcessId: 1, Name: 'pocketbase.exe', ExecutablePath: `${APP}\\pocketbase.exe`, CommandLine: `"${APP}\\pocketbase.exe" serve --http=127.0.0.1:8090 ${appArgs}` },
+					{ ProcessId: 2, Name: 'pocketbase.exe', ExecutablePath: 'D:\\copy\\app\\pocketbase.exe', CommandLine: '"D:\\copy\\app\\pocketbase.exe" serve --http=127.0.0.1:8091 --dir=D:\\copy\\app\\pb_data' },
+					{ ProcessId: 3, Name: 'pocketbase.exe', ExecutablePath: `${APP}\\pocketbase.exe`, CommandLine: `"${APP}\\pocketbase.exe" serve --http=127.0.0.1:53211 --dir=C:\\Temp\\byl-test-1\\pb_data` },
+					{ ProcessId: 4, Name: 'pocketbase.exe', ExecutablePath: 'D:\\copy\\app\\pocketbase.exe', CommandLine: '"D:\\copy\\app\\pocketbase.exe" migrate up' },
+					{ ProcessId: 5, Name: 'node.exe', ExecutablePath: 'C:\\node\\node.exe', CommandLine: 'node serve' },
+					{ ProcessId: 6, Name: 'pocketbase.exe', ExecutablePath: null, CommandLine: null }
+				],
+				reload: [
+					{ name: 'stopped', server: 'Stopped', verdict: 'Current', force: false },
+					{ name: 'current', server: 'Running', verdict: 'Current', force: false },
+					{ name: 'reloadOnly', server: 'Running', verdict: 'Reload', force: false },
+					{ name: 'restart', server: 'Running', verdict: 'Restart', force: false },
+					{ name: 'forced', server: 'Running', verdict: 'Current', force: true },
+					{ name: 'unhealthy', server: 'Unhealthy', verdict: 'Current', force: false },
+					{ name: 'starting', server: 'Starting', verdict: 'Restart', force: false },
+					{ name: 'startingForced', server: 'Starting', verdict: 'Current', force: true }
+				],
+				status: [
+					{ name: 'stopped', server: 'Stopped', verdict: 'Current' },
+					{ name: 'current', server: 'Running', verdict: 'Current' },
+					{ name: 'reload', server: 'Running', verdict: 'Reload' },
+					{ name: 'restart', server: 'Running', verdict: 'Restart' },
+					{ name: 'starting', server: 'Starting', verdict: 'Current' },
+					{ name: 'unhealthy', server: 'Unhealthy', verdict: 'Restart' }
+				]
+			},
+			{ BYL_FUNCTIONS: FUNCTIONS_FILE }
+		);
+	}, 60_000);
+
+	it('takes the names of the BYL_* variables only, sorted and once', () => {
+		expect(fp.variableNames).toEqual(['BYL_A', 'BYL_M', 'BYL_TOKEN']);
+	});
+
+	it('fingerprints what the server loads, without values', () => {
+		expect(fp.fingerprintKeys).toEqual(['server', 'migrations', 'hooks', 'port', 'environment', 'mailHelper', 'web']);
+		expect(fp.fingerprintShape).toEqual({
+			server: true,
+			migrations: true,
+			hooks: true,
+			port: '8090',
+			environment: true,
+			mailHelper: '',
+			web: true
+		});
+		expect(fp.same).toBe('Current');
+		expect(fp.readmeIgnored).toBe(true);
+		expect(fp.stateFingerprint).toBe('Current');
+	});
+
+	it('says reload for a new web build and restart with the reason for everything else', () => {
+		const pick = (change) => ({ verdict: change.Verdict, restart: change.Restart, reload: change.Reload });
+		expect(pick(fp.changes.web)).toEqual({ verdict: 'Reload', restart: [], reload: ['web'] });
+		expect(pick(fp.changes.hooks)).toEqual({ verdict: 'Restart', restart: ['hooks'], reload: ['web'] });
+		expect(pick(fp.changes.migrations)).toEqual({ verdict: 'Restart', restart: ['migrations', 'hooks'], reload: ['web'] });
+		expect(pick(fp.changes.port).restart).toEqual(['migrations', 'hooks', 'port']);
+		expect(pick(fp.changes.environment).restart).toEqual(['migrations', 'hooks', 'environment']);
+		expect(pick(fp.changes.all).restart).toEqual(['migrations', 'hooks', 'mailHelper']);
+		expect(pick(fp.changes.unknown)).toEqual({ verdict: 'Restart', restart: ['unknown'], reload: [] });
+	});
+
+	it('restarts only when needed, never while starting without -Force', () => {
+		expect(fp.reload).toEqual({
+			stopped: 'Start',
+			current: 'Nothing',
+			reloadOnly: 'ReloadOnly',
+			restart: 'Restart',
+			forced: 'Restart',
+			unhealthy: 'Restart',
+			starting: 'Wait',
+			startingForced: 'Restart'
+		});
+	});
+
+	it('gives status the documented exit codes', () => {
+		expect(fp.status).toEqual({ stopped: 3, current: 0, reload: 0, restart: 6, starting: 5, unhealthy: 5 });
+		expect(fp.disk).toEqual(['Critical', 'Low', 'Ok']);
+	});
+
+	it('rotates a log into one older generation and writes one line per command', () => {
+		expect(fp.rotationBelowLimit).toEqual({ current: true, old: false });
+		expect(fp.rotation).toEqual({ old: 'second', current: false, rotatedName: 'pocketbase.out.1.log' });
+		expect(fp.logLine).toBe('2026-09-29T10:00:00Z start exit=0 pid=1 port=8090');
+		expect(fp.logLineBreaks).toBe('2026-09-29T10:00:00Z stop exit=1 a b');
+		expect(fp.logLineEmpty).toBe('2026-09-29T10:00:00Z port exit=0');
+		expect(fp.tail).toEqual(['c', ' d ']);
+		expect(fp.tailShort).toEqual(['only']);
+		expect(fp.tailEmpty).toBe(0);
+	});
+
+	it('reports other servers (another copy, a test instance) and leaves out the own one', () => {
+		expect(fp.others).toEqual([
+			{ pid: 2, port: 8091, sameFolder: false },
+			{ pid: 3, port: 53211, sameFolder: true }
+		]);
 	});
 });
