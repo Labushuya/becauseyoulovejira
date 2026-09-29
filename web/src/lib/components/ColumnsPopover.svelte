@@ -1,29 +1,23 @@
 <script lang="ts">
 	import { tick } from 'svelte';
-	import {
-		WIDTH_STEP,
-		formatRem,
-		isResizable,
-		optionalColumns,
-		type ColumnSpec
-	} from '$lib/domain/columns';
-	import type { ColumnPrefsStore } from '$lib/stores/column-prefs.svelte';
+	import { formatRem, isResizable, menuColumns, type ColumnSpec } from '$lib/domain/columns';
+	import type { ColumnFit } from './table/column-fit.svelte';
 	import Popover from './overlay/Popover.svelte';
 
 	// Menu "Spalten" in the section bar (ADR-0030 section 4; ADR-0025 section 5): a panel of the
 	// popover building block. One row per optional column: a checkbox with its name, "schmaler" and
 	// "breiter" (1rem) and the width as text; a shared polite live region says the new width. It is
 	// the keyboard way to everything the grip does with the mouse. Columns hidden for lack of space
-	// stay checked and say so (aria-describedby). "Standard wiederherstellen" resets this table
-	// without a question; the flag comes from the store, the focus stays in the popover.
+	// stay checked and say so (aria-describedby). The flexible column (title, name) has a row of
+	// its own without a checkbox, it is always shown (Nachtrag 3); until the user sets its width it
+	// says "auto". "Standard wiederherstellen" resets this table without a question; the flag comes
+	// from the store, the focus stays in the popover.
 	let {
-		store,
-		autoHidden = [],
+		fit,
 		always
 	}: {
-		store: ColumnPrefsStore;
-		/** Columns hidden for lack of space right now (fitColumns). */
-		autoHidden?: readonly string[];
+		/** Column state of the table: preferences, fitted widths and the steps. */
+		fit: ColumnFit;
 		/** Sentence on the columns that are always shown, e.g. "Key, Titel und Häkchen …". */
 		always: string;
 	} = $props();
@@ -32,7 +26,9 @@
 	const legendId = `${uid}-legend`;
 	const hintId = (id: string) => `${uid}-auto-${id}`;
 
-	const columns = $derived(optionalColumns(store.table.columns));
+	const store = $derived(fit.store);
+	const autoHidden = $derived(fit.fit.autoHidden);
+	const columns = $derived(menuColumns(store.table.columns));
 	const custom = $derived(
 		columns.some((column) => store.isHidden(column.id) !== column.hiddenByDefault) ||
 			Object.keys(store.prefs.widths).length > 0 ||
@@ -54,12 +50,8 @@
 	}
 
 	function step(column: ColumnSpec, direction: -1 | 1) {
-		const before = store.widthOf(column.id);
-		const target = before + direction * WIDTH_STEP;
-		if (target < column.min && before <= column.min) return;
-		if (target > column.max && before >= column.max) return;
-		const width = store.setWidth(column.id, target);
-		void announce(`${column.label}: ${formatRem(width)}`);
+		const width = fit.step(column.id, direction);
+		if (width !== null) void announce(`${column.label}: ${formatRem(width)}`);
 	}
 
 	function toggleOption(id: string, label: string, value: boolean) {
@@ -88,20 +80,28 @@
 			{#each columns as column (column.id)}
 				{@const shown = !store.isHidden(column.id)}
 				{@const auto = shown && autoHidden.includes(column.id)}
-				{@const width = store.widthOf(column.id)}
+				{@const width = fit.menuWidth(column.id)}
+				{@const bounds = fit.menuBounds(column.id)}
 				<div class="row">
-					<label class="choice">
-						<input
-							type="checkbox"
-							checked={shown}
-							aria-describedby={auto ? hintId(column.id) : undefined}
-							onchange={(event) => toggle(column, event.currentTarget.checked)}
-						/>
-						<span class="name">{column.label}</span>
-						{#if auto}
-							<span class="auto" id={hintId(column.id)}>wegen Platz ausgeblendet</span>
-						{/if}
-					</label>
+					{#if column.flexible}
+						<!-- Always shown: no checkbox, only its width (Nachtrag 3). -->
+						<span class="choice always-shown">
+							<span class="name">{column.label}</span>
+						</span>
+					{:else}
+						<label class="choice">
+							<input
+								type="checkbox"
+								checked={shown}
+								aria-describedby={auto ? hintId(column.id) : undefined}
+								onchange={(event) => toggle(column, event.currentTarget.checked)}
+							/>
+							<span class="name">{column.label}</span>
+							{#if auto}
+								<span class="auto" id={hintId(column.id)}>wegen Platz ausgeblendet</span>
+							{/if}
+						</label>
+					{/if}
 					{#if isResizable(column)}
 						<span class="width-controls">
 							<button
@@ -109,20 +109,22 @@
 								type="button"
 								aria-label={`Spalte ${column.label} schmaler`}
 								title="Schmaler"
-								aria-disabled={width <= column.min ? 'true' : undefined}
+								aria-disabled={width <= bounds.min ? 'true' : undefined}
 								onclick={() => step(column, -1)}
 							>
 								<svg viewBox="0 0 16 16" aria-hidden="true" focusable="false">
 									<path d="M3.5 8h9" />
 								</svg>
 							</button>
-							<span class="width">{formatRem(width)}</span>
+							<span class="width"
+								>{column.flexible && !store.hasWidth(column.id) ? 'auto' : formatRem(width)}</span
+							>
 							<button
 								class="button-icon"
 								type="button"
 								aria-label={`Spalte ${column.label} breiter`}
 								title="Breiter"
-								aria-disabled={width >= column.max ? 'true' : undefined}
+								aria-disabled={width >= bounds.max ? 'true' : undefined}
 								onclick={() => step(column, 1)}
 							>
 								<svg viewBox="0 0 16 16" aria-hidden="true" focusable="false">
@@ -243,6 +245,12 @@
 		min-height: var(--control-height-m);
 		font-size: var(--font-size-body);
 		cursor: pointer;
+	}
+
+	/* The name of the flexible column in line with the names beside the checkboxes. */
+	.always-shown {
+		padding-left: 1.5rem;
+		cursor: default;
 	}
 
 	.auto {

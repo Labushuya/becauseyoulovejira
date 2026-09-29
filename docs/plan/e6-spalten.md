@@ -1,6 +1,6 @@
 # E6-Plan, Teil Spalten: Breiten ziehen, ein- und ausblenden, kompakte Zeilen
 
-- **Stand:** umgesetzt (2026-09-27): SP-1 bis SP-5, die Tag-Eingabe und der Switch im Kanal-Dialog (#98 bis #104). Offen sind die manuellen Browser-Prüfungen.
+- **Stand:** umgesetzt (2026-09-27): SP-1 bis SP-5, die Tag-Eingabe und der Switch im Kanal-Dialog (#98 bis #104); Nachtrag „Breite des Titels“ (2026-09-29, ADR-0030 Nachtrag 3, Manifest ab `BYL-E6-460`). Offen sind die manuellen Browser-Prüfungen.
 - **Grundlage:**
   - [ADR-0030](../adr/0030-spalten-breiten-und-kompakte-zeilen.md) (berechnete Anpassung, Breiten und Schwellen, Griff, Menü „Spalten“, Speichern, kompakte Zeilen)
   - [ADR-0025](../adr/0025-ui-konsistenz-overlay-system.md) §5 und §11, [ADR-0010](../adr/0010-layout-nach-task-board.md) §1, [ADR-0019](../adr/0019-kanal-filter-und-gruppierung.md) §4, [ADR-0029](../adr/0029-glas-materialien.md)
@@ -62,6 +62,7 @@
 | 2026-09-27 | Tags | **Rücktaste:** Nur der erste Druck einer gehaltenen Taste holt zurück (`repeat`), und nur wenn das Entfernen klappt, steht der Name im Feld, die Schreibmarke am Ende. Die Tasten nennt ein verborgener Hinweis per `aria-describedby` (die Felder im Panel bleiben optisch unverändert); die Ansage steht in einer eigenen `aria-live`-Zeile. |
 | 2026-09-27 | Tags | Bei der Gelegenheit ziehen `KeywordEditor` (Radien und Schriftgrößen) und `TagPicker` (Schriftgrößen) auf die Tokens; `KeywordEditor` fällt von der Ausnahmeliste von `no-own-radii.test.ts`, beide von der Liste von `no-own-font-sizes.test.ts` (jetzt 246). |
 | 2026-09-27 | Switch | **Kanal-Dialog:** Die zwei Schalter in `ChannelEditModal` (Telegram „Auf Nachrichten ohne Stichwort antworten“, Postfach „Betreff, Absender, Kopfzeilen und Text durchsuchen“) werden `role="switch"` nach ADR-0029 und G-5, als Zeile mit dem Namen links und dem Switch rechts wie „Glas-Effekt“ unter „Darstellung“. Kein neues Token; Name, Werte und Rückrufe bleiben. Die Schriftgrößen des Dialogs ziehen auf die Tokens (242). Damit ist der offene Punkt aus dem Glas-Plan §6 erledigt. |
+| 2026-09-29 | Titel | **Breite des Titels** (Nutzerwunsch, [ADR-0030](../adr/0030-spalten-breiten-und-kompakte-zeilen.md) Nachtrag 3): Die flexible Spalte aller fünf Tabellen hat einen Griff und eine Menüzeile ohne Checkbox („auto“ ohne gewählte Breite), 10 bis 60rem, gespeichert unter `widths`. Schmaler: der Rest geht gleichmäßig bis zum Maximum an die anderen sichtbaren Spalten, danach zurück an den Titel. Breiter: die anderen schrumpfen gleichmäßig bis zum Minimum und behalten das, dann stoppt der Griff. Im engen Rahmen gibt der Titel zuerst nach; das Ausblenden hängt weiter nur an seinem Minimum. Ziehen einer anderen Spalte bei gesetzter Titelbreite hält die übrigen fest, der Titel gleicht aus. Doppelklick auf den Griff des Titels vergisst seine Breite. Altdaten ohne Titelbreite: unverändertes Verhalten. `setWidth` im Store wird `setWidths`/`clearWidth`, alle Änderungen laufen über `resizeColumn`. |
 
 ## 4. Status
 
@@ -74,6 +75,7 @@
 | SP-5 | gemergt (#102) |
 | Tags | gemergt (#103) |
 | Switch | gemergt (#104) |
+| Titel | umgesetzt, Branch `feat/title-column-resize` (Manifest BYL-E6-460 bis BYL-E6-462) |
 
 ## 5. Offene Punkte
 

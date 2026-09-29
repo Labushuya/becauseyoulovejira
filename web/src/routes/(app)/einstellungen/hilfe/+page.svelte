@@ -369,6 +369,11 @@
 						ab, ein Doppelklick passt die Breite an den längsten Inhalt an.
 					</li>
 					<li>
+						Auch „Titel“ (in „Projekte“: „Name“) hat eine eigene Breite. Ist er schmaler, bekommen
+						die anderen Spalten den Platz; ist er breiter, werden sie schmaler, bis zu ihrer
+						Mindestbreite. Ein Doppelklick auf seinen Rand gibt ihm wieder den ganzen Rest.
+					</li>
+					<li>
 						Mit der Tastatur geht alles über das Menü „Spalten“ in der Leiste über jeder Tabelle:
 						Spalten ein- und ausblenden, schmaler und breiter um je 1 rem, „Standard
 						wiederherstellen“.

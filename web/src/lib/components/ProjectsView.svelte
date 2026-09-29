@@ -359,11 +359,7 @@
 				</button>
 			</div>
 			{#if layout === 'liste'}
-				<ColumnsPopover
-					store={columnFit.store}
-					autoHidden={columnFit.fit.autoHidden}
-					always="Code und Name sind immer sichtbar."
-				/>
+				<ColumnsPopover fit={columnFit} always="Code und Name sind immer sichtbar." />
 			{/if}
 			{@render newProjectLink(NEW_PROJECT_LINK_ID)}
 		{/snippet}

@@ -111,8 +111,7 @@
 					Papierkorb leeren …
 				</button>
 				<ColumnsPopover
-					store={columnFit.store}
-					autoHidden={columnFit.fit.autoHidden}
+					fit={columnFit}
 					always="Auswahl, Key, Titel und Aktionen sind immer sichtbar."
 				/>
 			{/if}

@@ -6,9 +6,11 @@
 	// Column header with a grip on its right edge (ADR-0030 section 3). The grip is for pointers
 	// only (mouse, pen, touch): aria-hidden and not focusable; the keyboard changes widths in the
 	// menu "Spalten". Dragging reports the width live (clamped to the bounds of the column and to
-	// the budget of the table, so the title keeps its minimum), releasing commits it, Escape during
-	// the drag puts the old width back and is consumed (ADR-0025 section 1). A double click fits
-	// the width to the content. Neither sorts: the grip is not part of the sort button.
+	// the budget of the table, so the title keeps its minimum; the title itself to the room the
+	// others leave, Nachtrag 3), releasing commits it, Escape during the drag puts the old width
+	// back and is consumed (ADR-0025 section 1). A double click fits the width to the content, on
+	// the title it gives the title the rest again. Neither sorts: the grip is not part of the sort
+	// button.
 	let {
 		column,
 		fit,
@@ -40,12 +42,19 @@
 	}
 
 	let grip = $state<HTMLElement>();
-	let drag = $state<{ pointerId: number; startX: number; startWidth: number; max: number } | null>(
-		null
-	);
+	let drag = $state<{
+		pointerId: number;
+		startX: number;
+		startWidth: number;
+		min: number;
+		max: number;
+	} | null>(null);
 
-	function clamp(px: number, max: number): number {
-		return Math.round(Math.min(Math.max(px, column.min), max));
+	/** Width at the pointer, within the bounds taken when the drag began. */
+	function widthAt(clientX: number): number {
+		if (drag === null) return width;
+		const px = drag.startWidth + clientX - drag.startX;
+		return Math.round(Math.min(Math.max(px, drag.min), drag.max));
 	}
 
 	function release() {
@@ -77,8 +86,8 @@
 		if (event.button !== 0 || drag !== null) return;
 		event.preventDefault();
 		event.stopPropagation();
-		const max = Math.max(column.min, Math.min(column.max, width + Math.max(0, fit.budget)));
-		drag = { pointerId: event.pointerId, startX: event.clientX, startWidth: width, max };
+		const { min, max } = fit.dragBounds(column.id);
+		drag = { pointerId: event.pointerId, startX: event.clientX, startWidth: width, min, max };
 		if (grip && typeof grip.setPointerCapture === 'function') {
 			try {
 				grip.setPointerCapture(event.pointerId);
@@ -91,12 +100,12 @@
 
 	function onpointermove(event: PointerEvent) {
 		if (drag === null || event.pointerId !== drag.pointerId) return;
-		fit.resize(column.id, clamp(drag.startWidth + event.clientX - drag.startX, drag.max));
+		fit.resize(column.id, widthAt(event.clientX));
 	}
 
 	function onpointerup(event: PointerEvent) {
 		if (drag === null || event.pointerId !== drag.pointerId) return;
-		const next = clamp(drag.startWidth + event.clientX - drag.startX, drag.max);
+		const next = widthAt(event.clientX);
 		release();
 		fit.commit(column.id, next);
 	}
@@ -117,7 +126,9 @@
 			class="grip"
 			class:active={drag !== null}
 			aria-hidden="true"
-			title="Breite ziehen, Doppelklick passt an"
+			title={column.flexible
+				? 'Breite ziehen, Doppelklick gibt den Rest der Tabelle'
+				: 'Breite ziehen, Doppelklick passt an'}
 			data-column-grip={column.id}
 			bind:this={grip}
 			{onpointerdown}

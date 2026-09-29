@@ -5,7 +5,9 @@
 // knew nothing of a width the user dragged. Now `fitColumns` decides from the width of the frame,
 // the specs below and the preferences of the device which columns are shown and how wide they are.
 // Widths are CSS pixels of the whole column (cell padding included), as `<col>` of a table with
-// `table-layout: fixed` takes them. One column per table is flexible and takes the rest.
+// `table-layout: fixed` takes them. One column per table is flexible and takes the rest; since
+// ADR-0030 Nachtrag 3 the user may give it a width of its own, see `fitColumns` and
+// `resizeColumn`.
 
 /** The tables with their own column preferences. */
 export type TableId = 'tickets' | 'inbox' | 'projects' | 'recurrences' | 'trash';
@@ -17,9 +19,12 @@ export interface ColumnSpec {
 	readonly label: string;
 	/** Always shown; not in the menu "Spalten". */
 	readonly required: boolean;
-	/** Takes the rest of the width (the title); exactly one per table. */
+	/**
+	 * Takes the rest of the width (the title); exactly one per table. A width the user chose for it
+	 * is a target: the rest beyond it goes to the other columns (ADR-0030 Nachtrag 3).
+	 */
 	readonly flexible: boolean;
-	/** Default width; for the flexible column its minimum. */
+	/** Default width; for the flexible column its minimum (it has no default: it takes the rest). */
 	readonly width: number;
 	readonly min: number;
 	readonly max: number;
@@ -99,10 +104,13 @@ function fixed(id: string, label: string, width: number): ColumnSpec {
 	return column(id, label, { width, min: width, max: width, required: true });
 }
 
+/** Upper bound of a width the user gives the flexible column: 60rem (ADR-0030 Nachtrag 3). */
+const FLEXIBLE_MAX_REM = 60;
+
 /** The flexible column with its minimum in rem; it is always there. */
 function flexible(id: string, label: string, min: number): ColumnSpec {
 	return Object.freeze({
-		...column(id, label, { width: min, min, max: min }),
+		...column(id, label, { width: min, min, max: FLEXIBLE_MAX_REM }),
 		required: true,
 		flexible: true
 	});
@@ -222,14 +230,20 @@ export const TABLES: Readonly<Record<TableId, TableSpec>> = Object.freeze({
 	trash: TRASH_TABLE
 });
 
-/** Whether the user can change the width of the column (by dragging or in the menu). */
+/**
+ * Whether the user can change the width of the column (by dragging or in the menu); since ADR-0030
+ * Nachtrag 3 also the flexible one.
+ */
 export function isResizable(column: ColumnSpec): boolean {
-	return !column.flexible && column.max > column.min;
+	return column.max > column.min;
 }
 
-/** Columns the menu "Spalten" lists: every column that is not required. */
-export function optionalColumns(columns: readonly ColumnSpec[]): ColumnSpec[] {
-	return columns.filter((entry) => !entry.required);
+/**
+ * Columns the menu "Spalten" lists, in the order of the table: every column that is not required,
+ * and the flexible one for its width (ADR-0030 Nachtrag 3).
+ */
+export function menuColumns(columns: readonly ColumnSpec[]): ColumnSpec[] {
+	return columns.filter((entry) => !entry.required || entry.flexible);
 }
 
 /** A width for people: "8 rem", "8,5 rem" (half steps; a dragged width is rounded). */
@@ -381,6 +395,16 @@ export function columnWidth(column: ColumnSpec, prefs: ColumnPrefs): number {
 	return clampWidth(column, prefs.widths[column.id] ?? column.width);
 }
 
+/**
+ * Width the user chose for the flexible column (ADR-0030 Nachtrag 3), or null: it takes the
+ * rest, as before. Older preferences never hold one.
+ */
+export function flexibleTarget(columns: readonly ColumnSpec[], prefs: ColumnPrefs): number | null {
+	const flex = columns.find((entry) => entry.flexible);
+	if (flex === undefined || prefs.widths[flex.id] === undefined) return null;
+	return columnWidth(flex, prefs);
+}
+
 /** What `fitColumns` decided. */
 export interface ColumnFit {
 	/** Shown columns in the order of the table. */
@@ -402,6 +426,10 @@ export interface ColumnFit {
  * 4. If it still does not fit, the widths shrink evenly towards their minimum, only then the
  *    flexible column below its minimum, and as a last resort every column in proportion. The sum
  *    of the widths never exceeds `available`.
+ * 5. With a width chosen for the flexible column (Nachtrag 3) it gets at most that width: the rest
+ *    beyond it goes evenly to the other shown columns up to their maximum, what is left after that
+ *    back to the flexible column. With less room than chosen the flexible column gives way first,
+ *    as in 3 and 4, so the choice never hides a column.
  * Without a measured frame (`available` null or 0, e.g. before the first layout or in jsdom) no
  * column gives way.
  */
@@ -417,8 +445,7 @@ export function fitColumns(
 	);
 	const flexMin = shown.find((entry) => entry.flexible)?.min ?? 0;
 
-	const measured = available !== null && Number.isFinite(available) && available > 0;
-	if (!measured) {
+	if (!isMeasured(available)) {
 		return {
 			visible: shown.map((entry) => entry.id),
 			autoHidden: [],
@@ -459,12 +486,131 @@ export function fitColumns(
 		}
 	}
 
+	// A chosen width of the flexible column: the rest beyond it widens the others evenly.
+	const target = flexibleTarget(shown, prefs);
+	const surplus = target === null ? 0 : available - sum() - target;
+	if (surplus > 0) {
+		const roomOf = (id: string, width: number) => (specs.get(id)?.max ?? width) - width;
+		const room = [...widths].reduce((total, [id, width]) => total + roomOf(id, width), 0);
+		const share = room > 0 ? Math.min(1, surplus / room) : 0;
+		let left = Math.floor(Math.min(surplus, room));
+		for (const [id, width] of widths) {
+			const grow = Math.floor(roomOf(id, width) * share);
+			widths.set(id, width + grow);
+			left -= grow;
+		}
+		// The pixels lost to rounding, one each in the order of the table: the title keeps its width.
+		for (const [id, width] of widths) {
+			if (left <= 0) break;
+			if (roomOf(id, width) < 1) continue;
+			widths.set(id, width + 1);
+			left -= 1;
+		}
+	}
+
 	return {
 		visible: shown.filter((entry) => !autoHidden.includes(entry.id)).map((entry) => entry.id),
 		autoHidden,
 		widths: Object.fromEntries(widths),
 		flexWidth: Math.max(0, Math.floor(available - sum()))
 	};
+}
+
+function isMeasured(available: number | null): available is number {
+	return available !== null && Number.isFinite(available) && available > 0;
+}
+
+/** Shown columns besides the flexible one with the width of their own (not the fitted one). */
+function ownWidths(
+	available: number,
+	columns: readonly ColumnSpec[],
+	prefs: ColumnPrefs
+): [ColumnSpec, number][] {
+	const visible = new Set(fitColumns(available, columns, prefs).visible);
+	return columns
+		.filter((entry) => !entry.flexible && visible.has(entry.id))
+		.map((entry) => [entry, columnWidth(entry, prefs)]);
+}
+
+/**
+ * How narrow and how wide the user can make the flexible column (ADR-0030 Nachtrag 3): at least
+ * its minimum, and not so narrow that the others would pass their maximum; at most its maximum,
+ * and not so wide that the others would pass their minimum (then the grip stops; it never hides a
+ * column). Without a measured frame just the bounds of the column.
+ */
+export function flexibleBounds(
+	available: number | null,
+	columns: readonly ColumnSpec[],
+	prefs: ColumnPrefs
+): { min: number; max: number } {
+	const flex = columns.find((entry) => entry.flexible);
+	if (flex === undefined) return { min: 0, max: 0 };
+	if (!isMeasured(available)) return { min: flex.min, max: flex.max };
+	const own = ownWidths(available, columns, prefs);
+	const rest = available - own.reduce((total, [, width]) => total + width, 0);
+	const roomDown = own.reduce((total, [entry, width]) => total + width - entry.min, 0);
+	const roomUp = own.reduce((total, [entry, width]) => total + entry.max - width, 0);
+	const max = Math.floor(Math.min(flex.max, Math.max(flex.min, rest + roomDown)));
+	const min = Math.ceil(Math.min(max, Math.max(flex.min, rest - roomUp)));
+	return { min, max };
+}
+
+/**
+ * The preferences after the user set the width of column `id` to `width` by grip, menu or double
+ * click (ADR-0030 section 3 and Nachtrag 3):
+ * - The flexible column gets `width` within `flexibleBounds` as its chosen width. Wider than the
+ *   rest, the other shown columns shrink evenly towards their minimum by the missing room, and
+ *   keep that width.
+ * - Another column gets `width` within its bounds. While the flexible column has a chosen width,
+ *   the shown columns keep the width they are shown with and the flexible one gives or takes the
+ *   difference, as it did before it had a width; so nothing else moves.
+ * Without a measured frame only the width of `id` changes.
+ */
+export function resizeColumn(
+	available: number | null,
+	columns: readonly ColumnSpec[],
+	prefs: ColumnPrefs,
+	id: string,
+	width: number
+): ColumnPrefs {
+	const spec = columns.find((entry) => entry.id === id);
+	if (spec === undefined || !isResizable(spec)) return prefs;
+	const widths: Record<string, number> = { ...prefs.widths };
+
+	if (spec.flexible) {
+		const bounds = flexibleBounds(available, columns, prefs);
+		const target = Math.round(Math.min(Math.max(width, bounds.min), bounds.max));
+		widths[id] = target;
+		if (isMeasured(available)) {
+			const own = ownWidths(available, columns, prefs);
+			const missing = target - (available - own.reduce((total, [, px]) => total + px, 0));
+			const room = own.reduce((total, [entry, px]) => total + px - entry.min, 0);
+			if (missing > 0 && room > 0) {
+				const share = Math.min(1, missing / room);
+				for (const [entry, px] of own) {
+					if (isResizable(entry)) widths[entry.id] = Math.floor(px - (px - entry.min) * share);
+				}
+			}
+		}
+		return { ...prefs, widths };
+	}
+
+	widths[id] = clampWidth(spec, width);
+	const flex = columns.find((entry) => entry.flexible);
+	if (flex !== undefined && flexibleTarget(columns, prefs) !== null && isMeasured(available)) {
+		const fit = fitColumns(available, columns, prefs);
+		if (fit.flexWidth !== null && fit.visible.includes(id)) {
+			for (const shown of columns) {
+				const px = fit.widths[shown.id];
+				if (shown.id !== id && !shown.flexible && isResizable(shown) && px !== undefined) {
+					widths[shown.id] = clampWidth(shown, px);
+				}
+			}
+			const before = fit.widths[id] ?? columnWidth(spec, prefs);
+			widths[flex.id] = clampWidth(flex, fit.flexWidth - (widths[id] - before));
+		}
+	}
+	return { ...prefs, widths };
 }
 
 /** Width of a text in CSS pixels, e.g. through canvas; tests pass their own. */
