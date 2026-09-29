@@ -39,6 +39,8 @@ export const INBOX_LIST_FIELDS = [
 	'state',
 	'ticket',
 	'handled_at',
+	// Area of the entry: the ticket picker offers only tickets of the same area (ADR-0042).
+	'scope',
 	'created',
 	'updated',
 	// The ticket of a converted or linked entry (ADR-0031, addendum): key and title for the chip and
@@ -70,6 +72,7 @@ export interface InboxRecord {
 	state: string;
 	ticket: string;
 	handled_at: string;
+	scope?: string;
 	created: string;
 	updated: string;
 	expand?: { ticket?: InboxTicketRecord };
@@ -119,6 +122,7 @@ export function toInboxItemSummary(record: InboxRecord): InboxItemSummary {
 		ticketId: record.ticket || null,
 		ticket: ticketRefOf(record),
 		handledAt: record.handled_at || null,
+		...(record.scope ? { scope: record.scope } : {}),
 		created: record.created,
 		updated: record.updated
 	};

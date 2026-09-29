@@ -53,7 +53,7 @@
 	}
 
 	// Shows the list in the top layer while it is open, and keeps it at its anchor while the page
-	// or the panel scrolls.
+	// or the panel scrolls, and after the opening animation of a modal around moved the anchor.
 	$effect(() => {
 		const element = list;
 		if (!element || !open || typeof element.showPopover !== 'function') return;
@@ -62,9 +62,11 @@
 		const update = () => position();
 		window.addEventListener('resize', update, { passive: true });
 		window.addEventListener('scroll', update, { passive: true, capture: true });
+		window.addEventListener('animationend', update, { passive: true, capture: true });
 		return () => {
 			window.removeEventListener('resize', update);
 			window.removeEventListener('scroll', update, { capture: true });
+			window.removeEventListener('animationend', update, { capture: true });
 			if (element.matches(':popover-open')) element.hidePopover();
 		};
 	});
@@ -76,15 +78,19 @@
 	});
 </script>
 
+<!-- A press into the list (options, headings, its scroll bar) keeps the focus in the field that
+     owns it; tabindex -1 keeps the scrolling list out of the tab order. -->
 <ul
 	class="suggestion-list"
 	{id}
 	role="listbox"
 	aria-label={label}
+	tabindex="-1"
 	popover="manual"
 	hidden={!open}
 	data-overlay
 	bind:this={list}
+	onmousedown={(event) => event.preventDefault()}
 >
 	{@render children()}
 </ul>

@@ -1,6 +1,8 @@
 // Row "Übergeordnet" (ADR-0033 section 4) on a real detail store with a fake data layer: the
 // parent with "Ändern", "Lösen" and the switch "Blockiert das übergeordnete Ticket", choosing a
-// parent inline with only allowed tickets, Escape, and the refusals of the hook.
+// parent inline with the ticket picker (ADR-0042: the list opens at once, the ticket itself is
+// hidden, sub-tasks and the current parent are greyed with the reason), Escape, and the refusals
+// of the hook.
 
 import { fireEvent, render, screen, within } from '@testing-library/svelte';
 import { tick } from 'svelte';
@@ -8,14 +10,18 @@ import { SvelteMap } from 'svelte/reactivity';
 import { describe, expect, it, vi } from 'vitest';
 import type { ResolvedPathname } from '$app/types';
 import { DataError } from '$lib/data/errors';
-import type { TicketChoice } from '$lib/data/tickets';
+import { PICKER_REASONS } from '$lib/domain/ticket-picker';
 import type { ParentRef, Ticket, TicketPatch, TicketSummary } from '$lib/domain/ticket';
 import {
 	TicketDetailStore,
 	type TicketDetailData,
 	type TicketListSync
 } from '$lib/stores/ticket-detail.svelte';
+import { useOverlayStubs } from '$lib/test/overlay-stubs';
+import { fakePickerSource, pickerTicket } from '$lib/test/ticket-picker-fake';
 import TicketParentField from './TicketParentField.svelte';
+
+useOverlayStubs();
 
 const ID = 'abc123def456ghi';
 const PARENT: ParentRef = { id: 'parent000000001', key: 'HAUS-12', title: 'Umzug' };
@@ -43,11 +49,13 @@ function ticket(overrides: Partial<Ticket> = {}): Ticket {
 	};
 }
 
-const CHOICES: TicketChoice[] = [
-	{ id: ID, key: 'TASK-3', title: 'Kartons packen', status: 'open', parentId: null },
-	{ id: 'parent000000001', key: 'HAUS-12', title: 'Umzug', status: 'open', parentId: null },
-	{ id: 'other0000000001', key: 'HAUS-13', title: 'Umzug Keller', status: 'done', parentId: null },
-	{ id: 'child0000000001', key: 'HAUS-14', title: 'Umzug Küche', status: 'open', parentId: 'x' }
+const OPEN: TicketSummary[] = [
+	pickerTicket({ id: ID, key: 'TASK-3', title: 'Kartons packen' }),
+	pickerTicket({ id: 'parent000000001', key: 'HAUS-12', title: 'Umzug' }),
+	pickerTicket({ id: 'child0000000001', key: 'HAUS-14', title: 'Umzug Küche', parentId: 'x' })
+];
+const DONE = [
+	pickerTicket({ id: 'other0000000001', key: 'HAUS-13', title: 'Umzug Keller', status: 'done' })
 ];
 
 async function setup(initial: Ticket, props: Record<string, unknown> = {}) {
@@ -77,7 +85,7 @@ async function setup(initial: Ticket, props: Record<string, unknown> = {}) {
 	const store = new TicketDetailStore(data, { ensureValid: () => true, logout: vi.fn() }, list);
 	store.open(ID);
 	await vi.waitFor(() => expect(store.state).toBe('ready'));
-	const search = vi.fn(async () => CHOICES);
+	const { source, listDone } = fakePickerSource({ open: OPEN, done: DONE });
 	const result = render(TicketParentField, {
 		props: {
 			store,
@@ -86,17 +94,27 @@ async function setup(initial: Ticket, props: Record<string, unknown> = {}) {
 			},
 			parent: initial.parentId ? PARENT : null,
 			parentHref: `/tickets/${PARENT.id}` as ResolvedPathname,
-			search,
+			picker: source,
 			...props
 		}
 	});
-	return { ...result, store, data, list, search };
+	return { ...result, store, data, list, listDone };
+}
+
+function picker(): HTMLInputElement {
+	return screen.getByRole('combobox', { name: /übergeordnetes Ticket/i });
+}
+
+function option(key: string): HTMLElement | undefined {
+	return screen
+		.queryAllByRole('option', { hidden: true })
+		.find((entry) => entry.querySelector('.key')?.textContent === key);
 }
 
 async function chooseParent(text: string) {
-	const input = screen.getByRole('combobox');
+	const input = picker();
 	await fireEvent.input(input, { target: { value: text } });
-	await vi.waitFor(() => expect(screen.getByRole('listbox').hidden).toBe(false));
+	await vi.waitFor(() => expect(input.getAttribute('aria-expanded')).toBe('true'));
 	return input;
 }
 
@@ -152,30 +170,40 @@ describe('row "Übergeordnet"', () => {
 		expect(toggle.getAttribute('aria-invalid')).toBe('true');
 	});
 
-	it('chooses a parent inline among tickets without a parent of their own', async () => {
-		const { data, list, search } = await setup(ticket());
+	it('chooses a parent inline from the list that opens at once', async () => {
+		const { data, list, listDone } = await setup(ticket());
 
 		await fireEvent.click(screen.getByRole('button', { name: 'Festlegen …' }));
-		expect(document.activeElement).toBe(
-			screen.getByRole('combobox', { name: 'Übergeordnetes Ticket' })
-		);
+		expect(document.activeElement).toBe(picker());
+		// The list is open without typing; the ticket itself is not offered, a sub-task is greyed.
+		expect(picker().getAttribute('aria-expanded')).toBe('true');
+		expect(option('TASK-3')).toBeUndefined();
+		expect(option('HAUS-12')?.getAttribute('aria-disabled')).toBeNull();
+		expect(option('HAUS-14')?.getAttribute('aria-disabled')).toBe('true');
+		expect(option('HAUS-14')?.textContent).toContain(PICKER_REASONS.isSubtask);
+		// Done tickets only without "Nur offene".
+		expect(option('HAUS-13')).toBeUndefined();
+		await fireEvent.click(screen.getByRole('button', { name: 'Nur offene' }));
+		await vi.waitFor(() => expect(listDone).toHaveBeenCalled());
+		await vi.waitFor(() => expect(option('HAUS-13')).toBeDefined());
+		await fireEvent.click(screen.getByRole('button', { name: 'Nur offene' }));
+
 		await chooseParent('Umzug');
-
-		expect(search).toHaveBeenCalledWith('Umzug', expect.anything());
-		const options = screen.getAllByRole('option').map((option) => option.textContent ?? '');
-		expect(options.some((text) => text.includes('HAUS-12'))).toBe(true);
-		expect(options.some((text) => text.includes('HAUS-13'))).toBe(true);
-		expect(options.some((text) => text.includes('HAUS-14'))).toBe(false);
-		expect(options.some((text) => text.includes('TASK-3'))).toBe(false);
-
-		await fireEvent.keyDown(screen.getByRole('combobox'), { key: 'Enter' });
+		await fireEvent.keyDown(picker(), { key: 'Enter' });
 		await fireEvent.click(screen.getByRole('button', { name: 'Übernehmen' }));
 
 		await vi.waitFor(() =>
 			expect(data.update).toHaveBeenCalledWith(ID, { parent: 'parent000000001' })
 		);
 		expect(list.announce).toHaveBeenCalledWith('TASK-3 ist jetzt eine Unteraufgabe von HAUS-12.');
-		await vi.waitFor(() => expect(screen.queryByRole('combobox')).toBeNull());
+		await vi.waitFor(() => expect(screen.queryByRole('combobox', { name: /Ticket/ })).toBeNull());
+	});
+
+	it('greys the current parent when changing it', async () => {
+		await setup(ticket({ parentId: PARENT.id }));
+		await fireEvent.click(screen.getByRole('button', { name: 'Übergeordnetes Ticket ändern' }));
+		expect(option('HAUS-12')?.getAttribute('aria-disabled')).toBe('true');
+		expect(option('HAUS-12')?.textContent).toContain(PICKER_REASONS.currentParent);
 	});
 
 	it('asks for a choice before taking one', async () => {
@@ -203,7 +231,7 @@ describe('row "Übergeordnet"', () => {
 		);
 		await fireEvent.click(screen.getByRole('button', { name: 'Festlegen …' }));
 		await chooseParent('Umzug');
-		await fireEvent.keyDown(screen.getByRole('combobox'), { key: 'Enter' });
+		await fireEvent.keyDown(picker(), { key: 'Enter' });
 
 		await fireEvent.click(screen.getByRole('button', { name: 'Übernehmen' }));
 
@@ -212,18 +240,21 @@ describe('row "Übergeordnet"', () => {
 				screen.getByText('Das gewählte Ticket ist selbst eine Unteraufgabe (nur eine Ebene).')
 			).toBeTruthy()
 		);
-		expect(screen.getByRole('combobox')).toBeTruthy();
+		expect(picker()).toBeTruthy();
 	});
 
-	it('ends choosing with Escape, consumes it and returns the focus', async () => {
+	it('closes the list with Escape, then ends choosing, consumes both and returns the focus', async () => {
 		await setup(ticket());
 		await fireEvent.click(screen.getByRole('button', { name: 'Festlegen …' }));
 
-		const passedOn = await fireEvent.keyDown(screen.getByRole('combobox'), { key: 'Escape' });
+		const first = await fireEvent.keyDown(picker(), { key: 'Escape' });
+		expect(first).toBe(false);
+		expect(picker().getAttribute('aria-expanded')).toBe('false');
+		const second = await fireEvent.keyDown(picker(), { key: 'Escape' });
 		await tick();
 
-		expect(passedOn).toBe(false);
-		expect(screen.queryByRole('combobox')).toBeNull();
+		expect(second).toBe(false);
+		expect(screen.queryByRole('combobox', { name: /Ticket/ })).toBeNull();
 		expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Festlegen …' }));
 	});
 

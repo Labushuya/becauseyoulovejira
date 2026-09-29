@@ -37,7 +37,7 @@
 | Quellen eines Tickets | gesperrt | Eintrag der Liste `aria-busy` |
 | Papierkorb: Vorschau, Frage nach Projekt oder Serie | gesperrt | `aria-busy` |
 | Rückstand einer Regel, Pausieren in Übersicht und Ticket | gesperrt | `aria-busy` am Knopf bzw. an der Gruppe |
-| „Weitere laden“ (Eingang, Erledigte), Fälligkeit im Panel, Zellen der Tabelle | eigener Warte-Zeiger bzw. gesperrt | `aria-busy` |
+| „Weitere laden“ (Eingang, Erledigte), „Mehr anzeigen“ der Ticketauswahl, Fälligkeit im Panel, Zellen der Tabelle | eigener Warte-Zeiger bzw. gesperrt | `aria-busy` |
 | Anmelden, „Erneut versuchen“ der Sitzung, „Prüfen“ (WhatsApp Web), Einstellungen → Tickets beim Laden | gesperrt | `aria-busy` |
 | „Hilfsprozess prüfen“ im Assistenten der Postfächer | ohne Sperre (ein zweiter Klick prüfte noch einmal) | „Hilfsprozess wird geprüft …“ mit `aria-busy` und `aria-disabled` |
 | Gesperrte Knöpfe der Knopfklassen ohne laufende Aktion: Import des Notion-Imports ohne Auswahl, „Weiter“ ohne Quelle, Spalten schmaler/breiter an der Grenze, „Standard wiederherstellen“ ohne Änderung, „Zugangsschlüssel erzeugen …“ vor dem Laden | Warte-Zeiger | „nicht erlaubt“ |

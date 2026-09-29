@@ -9,6 +9,7 @@
 		type CopyCompleteness
 	} from '$lib/domain/sources';
 	import type { Ticket } from '$lib/domain/ticket';
+	import type { TicketPickerSource } from '$lib/stores/ticket-picker.svelte';
 	import type { TicketSourcesStore } from '$lib/stores/ticket-sources.svelte';
 	import { inboxItemHref } from '$lib/ticket-links';
 	import AddSourcesDialog from './AddSourcesDialog.svelte';
@@ -29,12 +30,15 @@
 	let {
 		ticket,
 		store,
-		candidates
+		candidates,
+		picker
 	}: {
 		ticket: Pick<Ticket, 'id' | 'key' | 'sourceItem'>;
 		store: TicketSourcesStore;
 		/** New entries of the inbox for "Quelle hinzufügen …". */
 		candidates: readonly InboxItemSummary[];
+		/** Tickets of the picker of "Anderem Ticket zuordnen …"; the (app) layout provides them. */
+		picker?: TicketPickerSource;
 	} = $props();
 
 	const uid = $props.id();
@@ -42,7 +46,7 @@
 
 	let adding = $state(false);
 	/** Entry of the dialog "Anderem Ticket zuordnen …", null while it is closed. */
-	let moving = $state<Pick<InboxItemSummary, 'id' | 'title'> | null>(null);
+	let moving = $state<Pick<InboxItemSummary, 'id' | 'title' | 'scope'> | null>(null);
 	let message = $state<string | null>(null);
 
 	const LOZENGES: Readonly<
@@ -162,7 +166,9 @@
 								title="Anderem Ticket zuordnen …"
 								aria-disabled={store.isPending(item.id) ? 'true' : undefined}
 								onclick={() => {
-									if (!store.isPending(item.id)) moving = { id: item.id, title: item.title };
+									if (!store.isPending(item.id)) {
+										moving = { id: item.id, title: item.title, scope: item.scope };
+									}
 								}}
 							>
 								<svg
@@ -210,6 +216,7 @@
 		item={moving}
 		current={{ id: ticket.id, key: ticket.key }}
 		{store}
+		{picker}
 		onclose={() => (moving = null)}
 	/>
 {/if}

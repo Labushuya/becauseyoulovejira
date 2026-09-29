@@ -62,6 +62,13 @@
 		ticketListData
 	} from '$lib/stores/ticket-list.svelte';
 	import { TicketOpenModeStore, setTicketOpenMode } from '$lib/stores/open-mode.svelte';
+	import {
+		RecentTicketsStore,
+		setRecentTickets,
+		setTicketPickerSource,
+		ticketPickerData,
+		ticketPickerSource
+	} from '$lib/stores/ticket-picker.svelte';
 	import { BulkEditStore, bulkEditData, setBulkEditStore } from '$lib/stores/bulk-edit.svelte';
 	import { TrashStore, setTrashStore, trashData, trashLive } from '$lib/stores/trash.svelte';
 	import { inboxItemHref, recurrenceHref, recurrencesHref } from '$lib/ticket-links';
@@ -100,6 +107,18 @@
 			subProjectsOf: (projectId) => catalog.subProjectsOf(projectId).map((project) => project.id),
 			reads: readsData(pb),
 			flags
+		})
+	);
+	// Ticket picker (ADR-0042): every ticket choice lists the open tickets of the list store, the
+	// recently viewed ones of this device first; done ones come page by page from the server.
+	const recentTickets = setRecentTickets(new RecentTicketsStore(localStore, auth.userId));
+	setTicketPickerSource(
+		ticketPickerSource({
+			data: ticketPickerData(pb),
+			session: auth,
+			list: tickets,
+			catalog,
+			recent: recentTickets
 		})
 	);
 	// Trash (ADR-0037): its count for the navigation, the view "Papierkorb" and "Rückgängig" after
