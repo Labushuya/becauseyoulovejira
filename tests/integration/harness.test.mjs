@@ -1,3 +1,5 @@
+import { randomBytes } from 'node:crypto';
+import PocketBase from 'pocketbase';
 import { describe, expect, it } from 'vitest';
 import {
 	createAppUser,
@@ -5,7 +7,8 @@ import {
 	superuserClient,
 	userClient
 } from '../support/api.mjs';
-import { createCredentials } from '../support/pocketbase-harness.mjs';
+import { credentialNames, visibleNames } from '../support/clean-env.mjs';
+import { createCredentials, startPocketBase } from '../support/pocketbase-harness.mjs';
 
 describe('disposable PocketBase instance', () => {
 	it('creates superuser passwords the CLI cannot mistake for a flag', () => {
@@ -38,4 +41,25 @@ describe('disposable PocketBase instance', () => {
 		expect(client.authStore.record?.id).toBe(user.record.id);
 		expect(client.authStore.isSuperuser).toBe(false);
 	});
+
+	// Clean environment (tests/support/clean-env.mjs): a BYL_* variable of the test process (here a
+	// canary, on a developer machine also the real ones from the shell) never reaches the server.
+	it('starts the server without the BYL_* variables of this process, only with the explicit values', async () => {
+		const canary = `BYL_TEST_CANARY_${randomBytes(4).toString('hex').toUpperCase()}`;
+		const explicit = `BYL_TEST_EXPLICIT_${randomBytes(4).toString('hex').toUpperCase()}`;
+		process.env[canary] = 'nie-an-kindprozesse';
+		let instance;
+		try {
+			instance = await startPocketBase({ env: { [explicit]: 'erfunden' } });
+			const pb = new PocketBase(instance.url);
+			pb.autoCancellation(false);
+			await pb.collection('_superusers').authWithPassword(instance.email, instance.password);
+			const names = [...credentialNames(), explicit, 'BYL_TELEGRAM_API_BASE'];
+			expect(names).toContain(canary);
+			expect(await visibleNames(pb, names)).toEqual([explicit, 'BYL_TELEGRAM_API_BASE'].sort());
+		} finally {
+			delete process.env[canary];
+			await instance?.stop();
+		}
+	}, 60_000);
 });

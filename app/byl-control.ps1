@@ -168,14 +168,34 @@ function Write-ControlLog {
     }
 }
 
+# Disposable copies of the tests only (tests/integration/control-script.test.mjs, ADR-0039
+# addendum): with BYL_TEST_ISOLATED=1 in the environment of this process, the BYL_* variables come
+# from this process instead of the Windows account, and nothing is written into the account. The
+# test starts the script with a clean environment, so a copy sees only the values the test set.
+$IsolatedEnvironment = [Environment]::GetEnvironmentVariable('BYL_TEST_ISOLATED', 'Process') -eq '1'
+
+function Get-BylVariableScope {
+    # The user and the machine scope of the BYL_* variables (ADR-0018 section 6): those of the
+    # Windows account; for an isolated test copy this process as the user scope and no machine
+    # scope. The only place that reads the scopes of the account.
+    if ($IsolatedEnvironment) {
+        return [pscustomobject]@{ User = [Environment]::GetEnvironmentVariables('Process'); Machine = @{} }
+    }
+    return [pscustomobject]@{
+        User    = [Environment]::GetEnvironmentVariables('User')
+        Machine = [Environment]::GetEnvironmentVariables('Machine')
+    }
+}
+
 function Get-EnvironmentFingerprint {
     # Get-EnvironmentHash of the BYL_* variables a start hands to PocketBase (names from the user and
     # the machine scope, the value of the user scope first, as Sync-BylEnvironment), with $Key.
     # The values exist only in memory here; nothing is printed or stored.
     param([Parameter(Mandatory = $true)][byte[]]$Key)
 
-    $user = [Environment]::GetEnvironmentVariables('User')
-    $machine = [Environment]::GetEnvironmentVariables('Machine')
+    $scope = Get-BylVariableScope
+    $user = $scope.User
+    $machine = $scope.Machine
     $entries = foreach ($name in (Get-BylVariableName -UserNames @($user.Keys) -MachineNames @($machine.Keys))) {
         $value = if ($user.Contains($name)) { [string]$user[$name] } else { [string]$machine[$name] }
         "$name=$value"
@@ -531,9 +551,10 @@ function Sync-BylEnvironment {
     # as they were at its start, so the BYL_* variables are read fresh from the user scope and set
     # in this process, which Start-Process hands on to PocketBase. Removed ones are dropped. A
     # changed variable therefore works after a restart, without logging off. Nothing is printed,
-    # neither names nor values.
-    $user = [Environment]::GetEnvironmentVariables('User')
-    $machine = [Environment]::GetEnvironmentVariables('Machine')
+    # neither names nor values. An isolated test copy keeps the variables of its process.
+    $scope = Get-BylVariableScope
+    $user = $scope.User
+    $machine = $scope.Machine
     $process = [Environment]::GetEnvironmentVariables('Process')
     $change = Get-BylEnvironmentChange -UserNames @($user.Keys) -MachineNames @($machine.Keys) -ProcessNames @($process.Keys)
     foreach ($name in $change.Set) {
@@ -548,7 +569,9 @@ function Initialize-IngestToken {
     # Ingest token of the mail helper (ADR-0018 section 8): created once in the user scope when
     # byl-mail.exe is in the app folder and the variable is missing; Sync-BylEnvironment then hands
     # it to PocketBase and the helper. Neither name nor value is printed; a failure only means that
-    # the helper cannot deliver mails, the app itself starts anyway.
+    # the helper cannot deliver mails, the app itself starts anyway. An isolated test copy never
+    # writes into the account.
+    if ($IsolatedEnvironment) { return }
     $helper = [System.IO.Path]::Combine($AppDir, $BylMailHelperName)
     $current = [Environment]::GetEnvironmentVariable($BylIngestTokenName, 'User')
     if (-not (Test-IngestTokenNeeded -HelperExists (Test-Path -LiteralPath $helper -PathType Leaf) -CurrentValue $current)) { return }
@@ -1303,7 +1326,7 @@ function Invoke-Doctor {
         & $add 'copies' 'info' "$kind auf $where (PID $($other.ProcessId)) $($other.ExecutablePath); bleibt unberührt"
     }
     $helper = [System.IO.File]::Exists([System.IO.Path]::Combine($AppDir, $BylMailHelperName))
-    $token = -not [string]::IsNullOrWhiteSpace([Environment]::GetEnvironmentVariable($BylIngestTokenName, 'User'))
+    $token = -not [string]::IsNullOrWhiteSpace([string](Get-BylVariableScope).User[$BylIngestTokenName])
     $mailText = if (-not $helper) { 'byl-mail.exe nicht vorhanden (nur für Postfächer nötig)' }
     elseif ($token) { 'byl-mail.exe und BYL_INGEST_TOKEN vorhanden' }
     else { 'byl-mail.exe vorhanden; BYL_INGEST_TOKEN legt der nächste Start an' }

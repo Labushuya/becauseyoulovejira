@@ -2,10 +2,10 @@
 // functions of app/byl-functions.ps1 run; the batch file is never executed (CLAUDE.md §11.3).
 // The quoting is checked against a real Windows command line parser (node's argv).
 
-import { spawnSync } from 'node:child_process';
 import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { beforeAll, describe, expect, it } from 'vitest';
+import { spawnSyncClean } from '../support/clean-env.mjs';
 import { runPowerShellJson } from '../support/powershell.mjs';
 
 const ROOT_DIR = resolve(fileURLToPath(new URL('../..', import.meta.url)));
@@ -73,7 +73,7 @@ beforeAll(() => {
 
 /** argv as a Windows program sees it for the given raw command line tail. */
 function parseCommandLine(tail) {
-	const child = spawnSync(process.execPath, ['-p', 'JSON.stringify(process.argv.slice(1))', tail], {
+	const child = spawnSyncClean(process.execPath, ['-p', 'JSON.stringify(process.argv.slice(1))', tail], {
 		encoding: 'utf8',
 		windowsHide: true,
 		windowsVerbatimArguments: true
