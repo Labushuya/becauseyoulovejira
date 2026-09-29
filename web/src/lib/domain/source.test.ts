@@ -47,6 +47,6 @@ describe('source families', () => {
 		const values = Object.values(SOURCE_FAMILY_VALUES);
 		expect(new Set(values).size).toBe(values.length);
 		expect(SOURCE_FAMILY_SYMBOL_TEXT.mail).toBe('aus Mail');
-		expect(SOURCE_FAMILY_CHIPS).toEqual(['manual', 'link', 'mail', 'calendar', 'chat']);
+		expect(SOURCE_FAMILY_CHIPS).toEqual(['manual', 'link', 'mail', 'calendar', 'chat', 'notion']);
 	});
 });

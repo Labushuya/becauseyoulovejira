@@ -85,6 +85,31 @@ describe('copyCompleteness', () => {
 		).toBe('text');
 	});
 
+	it('calls a Notion entry complete only with its whole content (ADR-0041 §5)', () => {
+		const notion = (content: string, original = 'notion_abc.json') =>
+			item({ channel: 'notion', original, sourceMeta: { notion: { content } } });
+		expect(copyCompleteness(notion('complete'))).toBe('complete');
+		expect(copyNote(notion('complete'))).toBeNull();
+		expect(copyCompleteness(notion('properties'))).toBe('text');
+		expect(copyNote(notion('properties'))).toBe(
+			'Übernommen sind Titel, Datum und Eigenschaften der Zeile. Den Inhalt ihrer Seite zeigt der Link zu Notion.'
+		);
+		expect(copyCompleteness(notion('truncated'))).toBe('text');
+		expect(copyNote(notion('truncated'))).toMatch(/^Der Inhalt ist nur bis zur Grenze je Seite/);
+		const large = item({
+			channel: 'notion',
+			sourceMeta: {
+				original_omitted: 'too_large',
+				original_size: 30_000_000,
+				notion: { content: 'complete' }
+			}
+		});
+		expect(copyCompleteness(large)).toBe('too_large');
+		expect(copyNote(large)).toMatch(
+			/^Was Notion lieferte, war zu groß für die Originaldatei \(28,6 MB\)/
+		);
+	});
+
 	it('gives a neutral note only for copies that are not complete', () => {
 		expect(copyNote(item({ channel: 'manual' }))).toBeNull();
 		expect(copyNote(item({ channel: 'link', sourceUrl: 'https://example.com/' }))).toMatch(

@@ -1,6 +1,6 @@
 # ADR-0036: Gemerkter Öffnungsmodus, Sammelbearbeitung mit Rückgängig und Inline-Bearbeitung in der Tabelle
 
-- **Status:** Angenommen und umgesetzt: §1 in BI-1 (#148), §2 bis §5 in BI-2 (#149), §6 in BI-3, nach [docs/plan/bulk-inline-ansicht.md](../plan/bulk-inline-ansicht.md); manuelle Browser-Prüfungen stehen im Test-Manifest
+- **Status:** Angenommen und umgesetzt: §1 in BI-1 (#148), §2 bis §5 in BI-2 (#149), §6 in BI-3, nach [docs/plan/bulk-inline-ansicht.md](../plan/bulk-inline-ansicht.md); manuelle Browser-Prüfungen stehen im Test-Manifest; §5 gilt seit [ADR-0041](0041-notion-listen-uebernehmen.md) auch für Notion-Einträge (Nachtrag)
 - **Datum:** 2026-09-28
 - **Entscheidung durch:** Nutzer (Arbeitspaket „Bulk & Inline & Ansicht“: Öffnungsmodus wie in Jira, Auswahlspalte mit Sammelaktionen und Rückgängig, Inline-Bearbeitung in Zellen), Advisor (Umfang, Reihenfolge, Anforderungen an die Architektur), Executor (Einzelheiten, Wahl der Architektur)
 - **Präzisiert:** [ADR-0025](0025-ui-konsistenz-overlay-system.md) §7 (Vollansicht „über dem Panel“, Schließen „zurück ins Panel“), siehe dort Nachtrag 15; [ADR-0030](0030-spalten-breiten-und-kompakte-zeilen.md) (Auswahlspalte der Aufgaben, Nachtrag 2); [ADR-0029](0029-glas-materialien.md) §1 (Sammel-Aktionsleiste auf Glas)
@@ -106,3 +106,11 @@
 - Übergeordnete Tickets gehen zuerst: Ihre gewählten Unteraufgaben gehen als Gruppe mit (ein Eintrag zum Rückgängigmachen), eine danach schon verschobene Unteraufgabe (404) zählt als verschoben.
 - Die Frage heißt „N Tickets in den Papierkorb verschieben?“ mit „In den Papierkorb“ und nennt die Aufbewahrung; „nicht rückgängig“ steht nur noch beim endgültigen Löschen im Papierkorb.
 - Das Glas der Leiste (§3) steht seit PB-2 im gemeinsamen Baustein `SelectionBar`, den auch der Papierkorb nutzt (ADR-0029, Nachtrag).
+
+## Nachtrag (2026-09-29, Notion, ADR-0041)
+
+§5 gilt seit Paket NI-2 auch für Einträge aus Notion ([ADR-0041](0041-notion-listen-uebernehmen.md) §8): Ihr `source_date` stammt aus einer Datumseigenschaft der Liste, die der Nutzer dort selbst gesetzt hat, und ist damit wie ein Termin eine Fälligkeit auf Wunsch, kein Zeitpunkt des Sendens.
+
+- **Umwandeln:** `eventDueDate` in `domain/inbox.ts` nimmt neben `kind = event` auch `channel = notion` mit gesetztem `source_date`. „Gesammelt umwandeln“ zeigt die Checkbox „Datum des Termins als Fälligkeit“ auch bei gewählten Notion-Einträgen mit Datum; der Hinweis nennt dann „Einträge mit Datum aus Terminen oder aus Notion“. Die Checkbox bleibt aus, bis der Nutzer sie setzt (P-5).
+- **Sammelaktion „Datum der Quelle übernehmen“:** `listSourceEventDates` fragt `(kind = event || channel = notion)` ab; der Grund beim Überspringen heißt „Die Hauptquelle ist kein Termin und kein Notion-Eintrag mit Datum.“. Maßgeblich bleibt das Berliner Kalenderdatum, belegt in `tests/integration/web-data-bulk.test.mjs`.
+- Mail, Nachricht, Chat und Link bleiben ausgenommen.

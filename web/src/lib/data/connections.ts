@@ -188,6 +188,9 @@ function settingsValue(
 			};
 		case 'calendar':
 			return { keywords };
+		case 'notion':
+			// No keywords: the user chooses what to import (ADR-0041); the hook refuses any key.
+			return {};
 	}
 }
 

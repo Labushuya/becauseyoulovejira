@@ -142,8 +142,9 @@
 					</div>
 				{:else if choice.value === 'source'}
 					<p class="hint detail" id={ids.sourceHint}>
-						Nur für Tickets aus einem Kalendertermin (.ics oder Google Calendar): das Datum des
-						Termins. Die übrigen werden übersprungen und im Ergebnis genannt.
+						Nur für Tickets aus einem Kalendertermin (.ics oder Google Calendar) oder aus einem
+						Notion-Eintrag mit Datum: das Datum des Termins bzw. aus Notion. Die übrigen werden
+						übersprungen und im Ergebnis genannt.
 					</p>
 				{/if}
 			{/each}

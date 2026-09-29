@@ -293,6 +293,81 @@
 		</ul>
 	</section>
 
+	<section id="notion" aria-labelledby="notion-title">
+		<h3 id="notion-title">Notion</h3>
+		<p>
+			Aus Notion übernimmst du bestehende Listen als Kopien in den Eingang: die Zeilen einer
+			Datenbank oder die Punkte von To-do-, Aufzählungs- und nummerierten Listen einer Seite. Die
+			App liest nur; sie schreibt nie etwas nach Notion, meldet nichts zurück und ruft nie von
+			selbst ab. Eingerichtet wird unter
+			<a href={channelSetupHref({ kind: 'notion', connectionId: null })}
+				>Kanäle → Notion (Listen übernehmen) → Einrichten</a
+			>.
+		</p>
+		<h4>Einrichten</h4>
+		<ol>
+			<li>
+				Im Developer-Portal von Notion eine interne Integration anlegen („Internal connections“ →
+				„Create a new connection“) und unter „Capabilities“ nur „Read content“ eingeschaltet lassen.
+			</li>
+			<li>
+				Das Token (beginnt mit <code>ntn_</code>) als Windows-Variable setzen, Vorschlag
+				<code>BYL_NOTION_TOKEN</code>, dann <code>neu-starten.bat</code> im Ordner
+				<code>app</code> doppelklicken.
+			</li>
+			<li>
+				In Notion jede Seite oder Datenbank freigeben, die du übernehmen willst: „•••“ →
+				„Verbindungen“ → „Verbindung hinzufügen“. Unterseiten sind mit freigegeben.
+			</li>
+			<li>Im Assistenten oder an der Karte „Verbindung prüfen“.</li>
+		</ol>
+		<h4>Listen übernehmen</h4>
+		<ul>
+			<li>
+				„Listen übernehmen …“ an der Karte zeigt die freigegebenen Seiten und Datenbanken. Nach der
+				Wahl einer Quelle siehst du ihre Einträge mit Datum und Kurztext; was schon im Eingang ist,
+				ist gesperrt. Du wählst einzelne oder alle aus und übernimmst sie in den Eingang.
+			</li>
+			<li>
+				<strong>Datenbank:</strong> Jede Zeile wird ein Eintrag. Die erste Datums-Eigenschaft (oder die
+				gewählte) wird zum Datum, die übrigen Eigenschaften stehen als Liste im Text. Mit „Seiteninhalt
+				als Kopie mitnehmen“ kommt auch der Inhalt der Seite jeder Zeile mit, höchstens 500 Blöcke und
+				50.000 Zeichen je Seite; längere Seiten sind gekürzt und sagen das.
+			</li>
+			<li>
+				<strong>Seite:</strong> Jeder Punkt einer Liste wird ein Eintrag; verschachtelte Punkte stehen
+				als Text darunter. Eine Datumserwähnung im Punkt („@15. Oktober“) wird zum Datum.
+			</li>
+			<li>„Erledigte überspringen“ (Standard) lässt abgehakte To-dos und erledigte Zeilen aus.</li>
+			<li>
+				„Erneut abrufen“ an einer schon übernommenen Quelle holt nur Einträge, die noch nicht im
+				Eingang sind. Verworfene kommen nicht wieder, Änderungen in Notion erreichen die Kopien
+				nicht.
+			</li>
+			<li>
+				Umgewandelt wird im Eingang wie immer. „Gesammelt umwandeln“ kann das Datum als Fälligkeit
+				nehmen („Datum des Termins als Fälligkeit“).
+			</li>
+		</ul>
+		<h4>Gut zu wissen</h4>
+		<ul>
+			<li>
+				Das Token bleibt in der Variablen auf diesem Rechner; die App schickt es nur an Notion und
+				zeigt es nirgends. Widerrufen: im Developer-Portal bei der Integration das Token erneuern
+				oder die Integration löschen.
+			</li>
+			<li>
+				Eine interne Integration kann nur anlegen, wer „Workspace Owner“ ist. Personen erscheinen
+				mit Namen nur, wenn die Integration Benutzerinformationen lesen darf; sonst steht ihre Zahl
+				da.
+			</li>
+			<li>
+				Frisch freigegebene Seiten findet die Suche von Notion manchmal erst nach einem Moment; dann
+				„Liste aktualisieren“. Eine Datenbank liest die App bis 1.000 Zeilen.
+			</li>
+		</ul>
+	</section>
+
 	<section id="fragen" aria-labelledby="fragen-title">
 		<h3 id="fragen-title">Häufige Fragen</h3>
 		<div class="faq">

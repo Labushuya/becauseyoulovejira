@@ -22,8 +22,22 @@ describe('connection-rules.js', () => {
 		).toBe('');
 	});
 
-	it('refuses kinds of later packages, server fields and invalid names', () => {
-		expect(rules.createViolation({ ...base, ...empty, type: 'notion' }, secrets, keywords)).toMatchObject({
+	it('allows Notion without settings (ADR-0041): no keywords, nothing but the variable', () => {
+		const notion = { ...empty, type: 'notion', secret_env: 'BYL_NOTION_TOKEN' };
+		expect(rules.CREATABLE_TYPES).toContain('notion');
+		expect(rules.createViolation({ ...notion, settings: null }, secrets, keywords)).toBe('');
+		expect(rules.createViolation({ ...notion, settings: {} }, secrets, keywords)).toBe('');
+		for (const settings of [{ keywords: ['todo'] }, { token: 'x' }, { match_body: true }]) {
+			expect(rules.createViolation({ ...notion, settings }, secrets, keywords), JSON.stringify(settings)).toMatchObject({
+				field: 'settings',
+				code: 'validation_connection_settings'
+			});
+		}
+		expect(rules.sourceIdentity('notion', 'BYL_NOTION_TOKEN', {})).toBe('BYL_NOTION_TOKEN\n');
+	});
+
+	it('refuses unknown kinds, server fields and invalid names', () => {
+		expect(rules.createViolation({ ...base, ...empty, type: 'slack' }, secrets, keywords)).toMatchObject({
 			field: 'type',
 			code: 'validation_connection_type'
 		});

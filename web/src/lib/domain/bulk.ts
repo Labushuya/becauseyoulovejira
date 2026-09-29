@@ -54,7 +54,7 @@ export type BulkStep =
 /** Reasons for skipping a ticket; they name the ticket in the result list. */
 export const SKIP_REASONS = Object.freeze({
 	noDue: 'Hat keine Fälligkeit zum Verschieben.',
-	noSourceDate: 'Die Hauptquelle ist kein Termin mit Datum.'
+	noSourceDate: 'Die Hauptquelle ist kein Termin und kein Notion-Eintrag mit Datum.'
 });
 
 /** The largest shift in days or weeks the form accepts, in both directions. */

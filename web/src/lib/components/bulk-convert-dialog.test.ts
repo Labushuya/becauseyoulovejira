@@ -242,8 +242,32 @@ describe('bulk convert dialog: "Datum des Termins als Fälligkeit" (plan BI-2)',
 			sourceDate: '2026-10-01 08:00:00.000Z'
 		}
 	];
+	/** Entries from Notion: their date comes from the list, like an appointment (ADR-0041 §8). */
+	const NOTION = [
+		{
+			id: 'item00000000001',
+			title: 'Termin',
+			kind: 'event' as const,
+			channel: 'ics' as const,
+			sourceDate: '2026-10-05 07:30:00.000Z'
+		},
+		{
+			id: 'item00000000002',
+			title: 'Fenster putzen',
+			kind: 'task' as const,
+			channel: 'notion' as const,
+			sourceDate: '2026-10-04 22:00:00.000Z'
+		},
+		{
+			id: 'item00000000003',
+			title: 'Ohne Datum',
+			kind: 'todo' as const,
+			channel: 'notion' as const,
+			sourceDate: null
+		}
+	];
 
-	function showWith(items: typeof EVENTS | typeof ITEMS) {
+	function showWith(items: typeof EVENTS | typeof ITEMS | typeof NOTION) {
 		const converter = new BulkConverter(
 			{ get: vi.fn(async (id: string) => entry(id)), createTicket: vi.fn(async () => ticket(1)) },
 			{ ensureValid: () => true, logout: vi.fn() },
@@ -272,6 +296,26 @@ describe('bulk convert dialog: "Datum des Termins als Fälligkeit" (plan BI-2)',
 		await fireEvent.click(dialog.getByRole('button', { name: '2 Einträge umwandeln' }));
 
 		expect(run).toHaveBeenCalledWith(EVENTS, expect.objectContaining({ dueFromEvent: true }));
+	});
+
+	it('counts Notion entries with a date as well and says so (ADR-0041 §8)', async () => {
+		const { run } = showWith(NOTION);
+		await tick();
+		const dialog = within(screen.getByRole('dialog'));
+		const check = dialog.getByRole<HTMLInputElement>('checkbox', {
+			name: 'Datum des Termins als Fälligkeit'
+		});
+		expect(check.checked).toBe(false);
+		expect(
+			dialog.getByText(
+				'Gilt für 2 Einträge mit Datum aus Terminen oder aus Notion; andere Einträge bleiben ohne Fälligkeit.'
+			)
+		).toBeTruthy();
+
+		await fireEvent.click(check);
+		await fireEvent.click(dialog.getByRole('button', { name: '3 Einträge umwandeln' }));
+
+		expect(run).toHaveBeenCalledWith(NOTION, expect.objectContaining({ dueFromEvent: true }));
 	});
 
 	it('has no checkbox without events', async () => {

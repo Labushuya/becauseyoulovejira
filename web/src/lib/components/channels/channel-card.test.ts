@@ -435,6 +435,7 @@ describe('channel catalog', () => {
 			'Web.de',
 			'Gmail',
 			'Proton Mail',
+			'Notion (Listen übernehmen)',
 			'WhatsApp Web'
 		]);
 		expect(within(tiles[0]!).queryByText('Nicht eingerichtet')).toBeNull();
@@ -453,8 +454,13 @@ describe('channel catalog', () => {
 		expect(catalog.getByRole('link', { name: 'Anleitung: Proton Mail' }).getAttribute('href')).toBe(
 			'/einstellungen/kanaele?einrichten=proton'
 		);
+		// Notion (ADR-0041) only imports on request: the tile says so and leads to its assistant.
+		expect(within(tiles[5]!).getByText('Import')).toBeTruthy();
+		expect(catalog.getByRole('link', { name: 'Einrichten: Notion' }).getAttribute('href')).toBe(
+			'/einstellungen/kanaele?einrichten=notion'
+		);
 		// The browser extension for WhatsApp Web (ADR-0038) has no connection.
-		expect(within(tiles[5]!).getByText('Erweiterung')).toBeTruthy();
+		expect(within(tiles[6]!).getByText('Erweiterung')).toBeTruthy();
 		expect(
 			catalog.getByRole('link', { name: 'Einrichten: WhatsApp Web' }).getAttribute('href')
 		).toBe('/einstellungen/kanaele?einrichten=whatsapp-web');

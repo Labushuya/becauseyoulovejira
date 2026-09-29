@@ -317,16 +317,18 @@ export function sourceDateText(item: Pick<InboxItemSummary, 'sourceDate' | 'sour
 }
 
 /**
- * Date of an appointment as due date (plan BI-2, ADR-0036 §5): only an entry of the kind `event`
- * (calendar entries from `.ics` files and Google Calendar) has one; its Berlin calendar date of the
- * start, also for all-day events, whose start is the beginning of their day. Other kinds have a
- * date at the sender (sent, received), not an appointment: null. Never used without the user
- * asking for it (P-5).
+ * Date of an appointment as due date (plan BI-2, ADR-0036 §5): an entry of the kind `event`
+ * (calendar entries from `.ics` files and Google Calendar) and, since ADR-0041 §8, an entry from
+ * Notion, whose date comes from a date property or a date mention of the list, have one; its
+ * Berlin calendar date of the start, also for all-day dates, whose start is the beginning of their
+ * day. Other entries have a date at the sender (sent, received), not an appointment: null. Never
+ * used without the user asking for it (P-5).
  */
 export function eventDueDate(
-	item: Pick<InboxItemSummary, 'kind' | 'sourceDate'>
+	item: Pick<InboxItemSummary, 'kind' | 'channel' | 'sourceDate'>
 ): CalendarDate | null {
-	return item.kind === 'event' && item.sourceDate !== null ? berlinDateOf(item.sourceDate) : null;
+	const appointment = item.kind === 'event' || item.channel === 'notion';
+	return appointment && item.sourceDate !== null ? berlinDateOf(item.sourceDate) : null;
 }
 
 /** Markdown characters of a value from a source, escaped so they show as typed. */
@@ -355,7 +357,9 @@ function headerLines(item: InboxItem): string[] {
 							['Chat', from('chat')],
 							['Zeit', date]
 						]
-					: [];
+					: item.channel === 'notion'
+						? [['Datum', date]]
+						: [];
 	const header = lines
 		.filter(([, value]) => value !== '')
 		.map(([label, value]) => `- **${label}:** ${value}`);

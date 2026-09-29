@@ -12,12 +12,13 @@ const INBOX = 'inbox_items';
 
 /**
  * Events that are the main source of their ticket (ADR-0036 §5): only an entry of the kind
- * `event` (calendar entries from `.ics` files and Google Calendar) has a date that is a date of
- * the ticket; the date of a mail or a message is only when it was sent. The main source is the
- * entry the ticket was converted from (`tickets.source_item`), not a source linked later.
+ * `event` (calendar entries from `.ics` files and Google Calendar) and, since ADR-0041 §8, an
+ * entry from Notion have a date that is a date of the ticket; the date of a mail or a message is
+ * only when it was sent. The main source is the entry the ticket was converted from
+ * (`tickets.source_item`), not a source linked later.
  */
 const MAIN_EVENT_FILTER = [
-	'kind = {:kind}',
+	'(kind = {:kind} || channel = {:channel})',
 	'source_date != ""',
 	'ticket != ""',
 	'ticket.source_item = id'
@@ -40,7 +41,7 @@ export function listSourceEventDates(
 	return withDataErrors(signal, async () => {
 		const records = await pb.collection(INBOX).getFullList<EventSourceRecord>({
 			batch: 500,
-			filter: pb.filter(MAIN_EVENT_FILTER, { kind: 'event' }),
+			filter: pb.filter(MAIN_EVENT_FILTER, { kind: 'event', channel: 'notion' }),
 			fields: 'ticket,source_date',
 			signal
 		});

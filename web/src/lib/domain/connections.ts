@@ -1,17 +1,27 @@
-// Connections of the channels (ADR-0016 section 2, ADR-0018, ADR-0020; E4 plan packages 10, 13, 20 and 22).
+// Connections of the channels (ADR-0016 section 2, ADR-0018, ADR-0020; E4 plan packages 10, 13, 20 and 22;
+// Notion since ADR-0041).
 // Pure: types, labels and the checks of the form. Access data are Windows user environment variables; a
 // connection stores only their names. The name pattern mirrors app/pb_hooks/lib/secrets.js
 // and the mail settings mirror app/pb_hooks/lib/connection-rules.js
 // (tests/unit/web-connections.test.mjs compares both).
 
-export const CONNECTION_TYPES = ['calendar', 'telegram', 'mail'] as const;
+export const CONNECTION_TYPES = ['calendar', 'telegram', 'mail', 'notion'] as const;
 export type ConnectionType = (typeof CONNECTION_TYPES)[number];
 
 export const CONNECTION_TYPE_LABELS: Readonly<Record<ConnectionType, string>> = Object.freeze({
 	calendar: 'Google Calendar',
 	telegram: 'Telegram-Bot',
-	mail: 'Postfach (IMAP)'
+	mail: 'Postfach (IMAP)',
+	notion: 'Notion'
 });
+
+/**
+ * Whether a kind fetches by itself and through "Jetzt abrufen" (ADR-0016) and takes keywords.
+ * Notion only imports lists on request (ADR-0041): no run, no keywords.
+ */
+export function fetchesAutomatically(type: ConnectionType): boolean {
+	return type !== 'notion';
+}
 
 /** Mail providers; host, port and TLS follow from the provider in byl-mail.exe (ADR-0016 section 4). */
 export const MAIL_PROVIDERS = ['webde', 'gmail'] as const;
@@ -51,7 +61,8 @@ export const SECRET_NAME_PATTERN = /^BYL_[A-Z0-9_]{1,60}$/;
 export const DEFAULT_SECRET_NAMES: Readonly<Record<ConnectionType, string>> = Object.freeze({
 	calendar: 'BYL_GOOGLE_CALENDAR_URL',
 	telegram: 'BYL_TELEGRAM_TOKEN',
-	mail: MAIL_PROVIDER_SECRET_NAMES.webde
+	mail: MAIL_PROVIDER_SECRET_NAMES.webde,
+	notion: 'BYL_NOTION_TOKEN'
 });
 export const DEFAULT_ALLOWLIST_NAME = 'BYL_TELEGRAM_ALLOWED_IDS';
 
@@ -228,7 +239,8 @@ export const MAIL_INBOX_HINT =
 export const KEYWORD_SEARCH_TEXT: Readonly<Record<ConnectionType, string>> = Object.freeze({
 	calendar: 'Gesucht wird in Titel und Beschreibung der Termine.',
 	telegram: 'Gesucht wird im Text der Nachricht bzw. in der Bildunterschrift.',
-	mail: 'Gesucht wird in Betreff und Absender (Name und Adresse), mit „Betreff, Absender, Kopfzeilen und Text durchsuchen“ (Standard) auch in den Kopfzeilen (An, Cc, Antwort an, Liste, Organisation) und im ganzen Text. Neue Stichwörter gelten auch für ältere Mails im Posteingang.'
+	mail: 'Gesucht wird in Betreff und Absender (Name und Adresse), mit „Betreff, Absender, Kopfzeilen und Text durchsuchen“ (Standard) auch in den Kopfzeilen (An, Cc, Antwort an, Liste, Organisation) und im ganzen Text. Neue Stichwörter gelten auch für ältere Mails im Posteingang.',
+	notion: 'Notion hat keine Stichwörter: Übernommen wird nur, was du im Import auswählst.'
 });
 
 export interface ConnectionDraft {

@@ -14,12 +14,14 @@ import { formatBerlinDateTime } from './format';
  * Kinds of the address `?einrichten=<art>` (the IDs of the catalog). Each opens in the app: the
  * assistant, for Proton (no automatic fetch, three short steps) the guide as a modal M, for
  * WhatsApp Web the assistant of the browser extension (no connection; domain/whatsapp-web.ts).
+ * Notion (ADR-0041) has an assistant with a connection, but it only imports lists on request.
  */
 export const SETUP_KINDS = [
 	'kalender',
 	'telegram',
 	'webde',
 	'gmail',
+	'notion',
 	'proton',
 	'whatsapp-web'
 ] as const;
@@ -66,6 +68,7 @@ export function connectionTypeOf(kind: SetupKind): {
 } {
 	if (kind === 'kalender') return { type: 'calendar', provider: '' };
 	if (kind === 'telegram') return { type: 'telegram', provider: '' };
+	if (kind === 'notion') return { type: 'notion', provider: '' };
 	if (kind === 'gmail') return { type: 'mail', provider: 'gmail' };
 	return { type: 'mail', provider: 'webde' };
 }
@@ -84,6 +87,7 @@ export function matchesSetupKind(
 export function setupKindOf(connection: Pick<Connection, 'type' | 'mailProvider'>): SetupKind {
 	if (connection.type === 'calendar') return 'kalender';
 	if (connection.type === 'telegram') return 'telegram';
+	if (connection.type === 'notion') return 'notion';
 	return connection.mailProvider === 'gmail' ? 'gmail' : 'webde';
 }
 
@@ -95,9 +99,12 @@ export type SetupStepId =
 	| 'two-step'
 	| 'password'
 	| 'address'
+	| 'integration'
 	| 'variable'
 	| 'connect'
 	| 'restart'
+	| 'share'
+	| 'check'
 	| 'keywords'
 	| 'first-run';
 
@@ -564,11 +571,138 @@ export const CHAT_COMMAND: SetupCommand = {
 	copyable: true
 };
 
+/**
+ * Notion (ADR-0041): an internal integration that may only read, its token as variable, the
+ * connection, the restart, the pages shared with it and "Verbindung prüfen". The portal of Notion
+ * is in English; the page menu of Notion follows the language of the user. Stand: 2026-09.
+ */
+const NOTION_STEPS: readonly SetupStep[] = [
+	{
+		id: 'integration',
+		label: 'Integration',
+		title: 'Integration in Notion anlegen',
+		intro:
+			'Eine interne Integration ist ein eigener Leser in deinem Notion. Sie sieht nur Seiten, die du ihr freigibst, und soll nur lesen dürfen.',
+		actions: [
+			'Das Developer-Portal von Notion öffnen und links unter „Build“ auf „Internal connections“ klicken.',
+			'„Create a new connection“ klicken, als Namen „becauseyoulovejira“ eingeben, deinen Arbeitsbereich wählen und anlegen.',
+			'Im Tab „Configuration“ unter „Capabilities“ nur „Read content“ eingeschaltet lassen und „Update content“, „Insert content“ und die Kommentar-Fähigkeiten ausschalten. Bei den Benutzerinformationen „No user information“ wählen oder, wenn Personen mit Namen erscheinen sollen, „Read user information without email addresses“. Speichern.',
+			'Im selben Tab beim „API token“ auf „Show“ und dann „Copy“ klicken. Das Token beginnt mit ntn_ und ist geheim.'
+		],
+		links: [
+			{ href: 'https://app.notion.com/developers/connections', text: 'app.notion.com/developers' }
+		],
+		commands: [],
+		more: [
+			'Anlegen darf nur, wer „Workspace Owner“ ist; in deinem eigenen Arbeitsbereich bist du das. Ältere Anleitungen sprechen von „Integrations“ statt „Connections“.',
+			'Die App fragt Notion nur lesend. Ob die Integration mehr darf, kann sie nicht sehen; lass deshalb nur „Read content“ an.',
+			'Widerrufen: im Portal bei der Integration im Tab „Configuration“ das Token erneuern oder die Integration löschen, dann die Variable neu setzen bzw. löschen.'
+		],
+		checked: false
+	},
+	{
+		id: 'variable',
+		label: 'Token setzen',
+		title: 'Token als Windows-Variable setzen',
+		intro:
+			'Das Token kommt in eine Variable deines Windows-Kontos; die App speichert nur ihren Namen und schickt das Token nur an Notion.',
+		actions: [],
+		links: [],
+		commands: [
+			{
+				label: 'Befehl für die Eingabeaufforderung',
+				template: 'setx {{variable}} "{{wert}}"',
+				placeholders: {
+					variable: { label: 'Variable', secret: false },
+					wert: { label: 'Token', secret: true }
+				},
+				value: 'wert',
+				copyable: true
+			}
+		],
+		more: ['Der Befehl bleibt im Verlauf dieses Fensters, bis du es schließt.'],
+		checked: false
+	},
+	{
+		id: 'connect',
+		label: 'Verbinden',
+		title: 'Verbindung anlegen',
+		intro:
+			'Gib der Verbindung einen Namen; der Name der Variablen ist vorbelegt. Die App speichert nur den Namen, nie das Token.',
+		actions: [],
+		links: [],
+		commands: [],
+		more: [],
+		checked: true
+	},
+	{
+		id: 'restart',
+		label: 'Neu starten',
+		title: 'App neu starten',
+		intro:
+			'Die App sieht neue Variablen erst nach einem Neustart. Im Ordner app neu-starten.bat doppelklicken; es erkennt die neue Variable und startet die App neu.',
+		actions: [],
+		links: [],
+		commands: [
+			{
+				label: 'Diese Datei doppelklicken',
+				template: 'app\\neu-starten.bat',
+				placeholders: {},
+				copyable: false
+			}
+		],
+		more: [
+			'Vor dem Neustart kann die App nicht unterscheiden, ob die Variable fehlt oder nur noch nicht geladen ist.'
+		],
+		checked: true
+	},
+	{
+		id: 'share',
+		label: 'Freigeben',
+		title: 'Seiten und Datenbanken freigeben',
+		intro:
+			'Die Integration sieht nur, was du ihr freigibst. Gib genau die Listen frei, die du übernehmen willst; Unterseiten sind mit freigegeben.',
+		actions: [
+			'In Notion die Seite oder Datenbank öffnen.',
+			'Oben rechts auf „•••“ klicken, dann auf „Verbindungen“ (englisch „Connections“) und „Verbindung hinzufügen“ („+ Add connection“).',
+			'„becauseyoulovejira“ suchen, auswählen und den Zugriff bestätigen.'
+		],
+		links: [
+			{
+				href: 'https://www.notion.com/de/help/add-and-manage-connections-with-the-api',
+				text: 'notion.com: Verbindungen verwalten'
+			}
+		],
+		commands: [],
+		more: [
+			'Alternativ im Developer-Portal bei der Integration im Tab „Content access“ auf „Edit access“ klicken und die Seiten wählen.',
+			'Freigaben nimmst du genauso wieder weg; danach meldet der Import „nicht freigegeben“.'
+		],
+		checked: false
+	},
+	{
+		id: 'check',
+		label: 'Prüfen',
+		title: 'Verbindung prüfen',
+		intro:
+			'„Verbindung prüfen“ fragt Notion mit dem Token nach der Integration und danach, ob sie etwas sieht. Danach übernimmst du Listen an der Karte mit „Listen übernehmen …“.',
+		actions: [],
+		links: [],
+		commands: [],
+		more: [
+			'Die App ruft Notion nie von selbst ab. Sie liest nur, wenn du Listen übernimmst oder „Erneut abrufen“ wählst, und schreibt nie etwas nach Notion.',
+			'Frisch freigegebene Seiten findet die Suche von Notion manchmal erst nach einem Moment.'
+		],
+		checked: true
+	}
+];
+
 const STEPS: Readonly<Partial<Record<SetupKind, readonly SetupStep[]>>> = {
 	kalender: CALENDAR_STEPS,
 	telegram: TELEGRAM_STEPS,
 	webde: WEBDE_STEPS,
-	gmail: GMAIL_STEPS
+	gmail: GMAIL_STEPS,
+	notion: NOTION_STEPS
 };
 
 /** Name of the variable a new connection of the kind suggests. */
@@ -576,6 +710,7 @@ export function defaultVariable(kind: SetupKind): string {
 	if (kind === 'webde') return 'BYL_WEBDE_PASSWORD';
 	if (kind === 'gmail') return 'BYL_GMAIL_PASSWORD';
 	if (kind === 'telegram') return 'BYL_TELEGRAM_TOKEN';
+	if (kind === 'notion') return 'BYL_NOTION_TOKEN';
 	return 'BYL_GOOGLE_CALENDAR_URL';
 }
 
@@ -599,6 +734,7 @@ export const SETUP_TITLES: Readonly<Record<SetupKind, string>> = Object.freeze({
 	telegram: 'Telegram-Bot',
 	webde: 'Web.de',
 	gmail: 'Gmail',
+	notion: 'Notion',
 	proton: 'Proton Mail',
 	'whatsapp-web': 'WhatsApp Web'
 });
@@ -654,6 +790,11 @@ function checkHolds(kind: SetupKind, id: SetupStepId, facts: SetupFacts): boolea
 			if (isMailKind(kind)) return connection.lastRunAt !== null;
 			if (kind === 'telegram' && connection.keywords.length === 0) return false;
 			return connection.lastOkAt !== null;
+		case 'check':
+			// Notion answered with the token, and the integration sees something (no hint).
+			return (
+				connection.lastOkAt !== null && connection.lastError === '' && connection.lastHint === ''
+			);
 		default:
 			return false;
 	}
@@ -815,6 +956,18 @@ export function stepCheck(kind: SetupKind, id: SetupStepId, facts: SetupFacts): 
 				};
 			}
 			return { tone: 'open', text: 'Noch kein Abruf.' };
+		}
+		case 'check': {
+			if (connection === null) return { tone: 'open', text: 'Erst die Verbindung anlegen.' };
+			if (connection.lastError !== '') {
+				return { tone: 'error', text: `Letzte Prüfung fehlgeschlagen: ${connection.lastError}` };
+			}
+			if (connection.lastOkAt === null) return { tone: 'open', text: 'Noch nicht geprüft.' };
+			if (connection.lastHint !== '') return { tone: 'warning', text: connection.lastHint };
+			return {
+				tone: 'done',
+				text: `Notion antwortet und die Integration sieht freigegebene Seiten, zuletzt ${formatBerlinDateTime(connection.lastOkAt)}.`
+			};
 		}
 		default:
 			return null;

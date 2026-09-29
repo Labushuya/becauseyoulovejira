@@ -27,7 +27,7 @@ describe('help page (EH-9)', () => {
 		}
 	});
 
-	it('jumps to eight sections that exist on the page', () => {
+	it('jumps to nine sections that exist on the page', () => {
 		const { container } = render(Page);
 
 		const jump = within(screen.getByRole('navigation', { name: 'Auf dieser Seite' }));
@@ -39,6 +39,7 @@ describe('help page (EH-9)', () => {
 			'Kanäle und Zugangsdaten',
 			'Eigener Eingang (API)',
 			'WhatsApp Web',
+			'Notion',
 			'Häufige Fragen',
 			'Betrieb'
 		]);
@@ -274,5 +275,32 @@ describe('help page (EH-9)', () => {
 				.getByRole('link', { name: 'Kanäle → WhatsApp Web → Einrichten' })
 				.getAttribute('href')
 		).toBe('/einstellungen/kanaele?einrichten=whatsapp-web');
+	});
+
+	it('explains the Notion import: read only, copies, sharing, options and limits (ADR-0041)', () => {
+		render(Page);
+		const section = screen.getByRole('region', { name: 'Notion' });
+		const content = text(section);
+		for (const phrase of [
+			'Die App liest nur',
+			'schreibt nie etwas nach Notion',
+			'ruft nie von selbst ab',
+			'nur „Read content“',
+			'BYL_NOTION_TOKEN',
+			'neu-starten.bat',
+			'„Verbindungen“ → „Verbindung hinzufügen“',
+			'Seiteninhalt als Kopie mitnehmen',
+			'500 Blöcke und 50.000 Zeichen',
+			'Erledigte überspringen',
+			'holt nur Einträge, die noch nicht im Eingang sind',
+			'Workspace Owner'
+		]) {
+			expect(content, phrase).toContain(phrase);
+		}
+		expect(
+			within(section)
+				.getByRole('link', { name: 'Kanäle → Notion (Listen übernehmen) → Einrichten' })
+				.getAttribute('href')
+		).toBe('/einstellungen/kanaele?einrichten=notion');
 	});
 });

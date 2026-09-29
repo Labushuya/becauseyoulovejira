@@ -129,7 +129,7 @@ describe('connections: create and guard', () => {
 		expect(missing.codes).toEqual({ settings: 'validation_secret_name' });
 	});
 
-	it('refuses server fields, unknown settings and kinds that do not exist yet', async () => {
+	it('refuses server fields, unknown settings and kinds that do not exist', async () => {
 		expect((await codesOf(calendar(owner, { cursor: '17' }))).codes).toEqual({
 			cursor: 'validation_connection_server_field'
 		});
@@ -139,8 +139,16 @@ describe('connections: create and guard', () => {
 		expect((await codesOf(calendar(owner, { settings: { url: 'https://example.com' } }))).codes).toEqual({
 			settings: 'validation_connection_settings'
 		});
-		expect((await codesOf(calendar(owner, { type: 'notion' }))).codes).toEqual({
+		expect((await codesOf(calendar(owner, { type: 'slack' }))).codes).toEqual({
 			type: 'validation_connection_type'
+		});
+	});
+
+	it('creates a Notion connection with its variable only (ADR-0041)', async () => {
+		const record = await calendar(owner, { type: 'notion', label: 'Notion', secret_env: 'BYL_NOTION_TOKEN', settings: {} });
+		expect(record).toMatchObject({ type: 'notion', secret_env: 'BYL_NOTION_TOKEN', enabled: true });
+		expect((await codesOf(calendar(owner, { type: 'notion', settings: { keywords: ['todo'] } }))).codes).toEqual({
+			settings: 'validation_connection_settings'
 		});
 	});
 

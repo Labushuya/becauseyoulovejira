@@ -48,6 +48,8 @@ export const HELP_SECTIONS = [
 	{ id: 'eigener-eingang', label: 'Eigener Eingang (API)' },
 	// WhatsApp Web (ADR-0038 §4): linked from its card and its assistant.
 	{ id: 'whatsapp-web', label: 'WhatsApp Web' },
+	// Notion (ADR-0041): linked from its card and its import dialog.
+	{ id: 'notion', label: 'Notion' },
 	{ id: 'fragen', label: 'Häufige Fragen' },
 	{ id: 'betrieb', label: 'Betrieb' }
 ] as const;

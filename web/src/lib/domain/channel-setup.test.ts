@@ -82,7 +82,11 @@ describe('address of the assistant', () => {
 			kind: 'whatsapp-web',
 			connectionId: null
 		});
-		expect(setupTargetOf(new URLSearchParams('einrichten=notion'))).toBeNull();
+		expect(setupTargetOf(new URLSearchParams('einrichten=notion'))).toEqual({
+			kind: 'notion',
+			connectionId: null
+		});
+		expect(setupTargetOf(new URLSearchParams('einrichten=slack'))).toBeNull();
 		expect(setupTargetOf(new URLSearchParams('einrichten=kalender&einrichten=gmail'))).toBeNull();
 		expect(setupTargetOf(new URLSearchParams(''))).toBeNull();
 	});
@@ -93,6 +97,8 @@ describe('address of the assistant', () => {
 		expect(setupKindOf({ type: 'telegram', mailProvider: '' })).toBe('telegram');
 		expect(setupKindOf(mail)).toBe('gmail');
 		expect(setupKindOf({ type: 'mail', mailProvider: 'webde' })).toBe('webde');
+		expect(setupKindOf({ type: 'notion', mailProvider: '' })).toBe('notion');
+		expect(matchesSetupKind({ type: 'notion', mailProvider: '' }, 'notion')).toBe(true);
 		expect(matchesSetupKind(mail, 'gmail')).toBe(true);
 		expect(matchesSetupKind(mail, 'webde')).toBe(false);
 		expect(matchesSetupKind({ type: 'calendar', mailProvider: '' }, 'telegram')).toBe(false);
@@ -431,5 +437,61 @@ describe('Telegram (plan EH-6)', () => {
 		});
 		expect(setupComplete('telegram', bot(run))).toBe(false);
 		expect(setupComplete('telegram', bot({ ...run, keywords: ['todo'] }))).toBe(true);
+	});
+});
+
+describe('Notion (ADR-0041, plan notion-import NI-2)', () => {
+	function page(overrides: Partial<Connection> = {}, secret = true): SetupFacts {
+		return {
+			connection: connection({ label: 'Notion', secretEnv: 'BYL_NOTION_TOKEN', ...overrides }),
+			secretStatus: { secret, allowlist: null }
+		};
+	}
+	const OK = '2026-09-29 10:00:00.000Z';
+
+	it('guides through six steps: read-only integration, token, connection, restart, sharing, check', () => {
+		const steps = setupSteps('notion');
+		expect(steps.map((step) => step.id)).toEqual([
+			'integration',
+			'variable',
+			'connect',
+			'restart',
+			'share',
+			'check'
+		]);
+		expect(defaultVariable('notion')).toBe('BYL_NOTION_TOKEN');
+		const integration = steps[0]!;
+		expect(integration.links.map((link) => link.href)).toEqual([
+			'https://app.notion.com/developers/connections'
+		]);
+		expect(integration.actions.join(' ')).toMatch(/nur „Read content“ eingeschaltet lassen/);
+		expect(integration.actions.join(' ')).toMatch(/„Update content“, „Insert content“/);
+		expect(steps[1]!.commands[0]!.template).toBe('setx {{variable}} "{{wert}}"');
+		expect(steps[1]!.commands[0]!.placeholders.wert).toEqual({ label: 'Token', secret: true });
+		expect(steps[4]!.actions.join(' ')).toMatch(/„•••“.*„Verbindungen“/);
+		expect(GUIDE_KINDS).not.toContain('notion');
+	});
+
+	it('follows the facts: variable, restart, then the check of the server', () => {
+		expect(setupProgress('notion', NONE)).toBe(0);
+		expect(setupProgress('notion', page({}, false))).toBe(3);
+		expect(setupProgress('notion', page())).toBe(4);
+		expect(stepCheck('notion', 'check', page())).toEqual({
+			tone: 'open',
+			text: 'Noch nicht geprüft.'
+		});
+		// Notion answered, but the integration sees no page yet: "Freigeben" is still open.
+		const hint = 'Die Integration sieht noch keine Seite. In Notion …';
+		const unshared = page({ lastRunAt: OK, lastOkAt: OK, lastHint: hint });
+		expect(setupProgress('notion', unshared)).toBe(4);
+		expect(stepCheck('notion', 'check', unshared)).toEqual({ tone: 'warning', text: hint });
+		const refused = page({ lastRunAt: OK, lastError: 'Notion lehnt den Token ab (401).' });
+		expect(stepCheck('notion', 'check', refused)).toEqual({
+			tone: 'error',
+			text: 'Letzte Prüfung fehlgeschlagen: Notion lehnt den Token ab (401).'
+		});
+		const shared = page({ lastRunAt: OK, lastOkAt: OK });
+		expect(setupComplete('notion', shared)).toBe(true);
+		expect(stepCheck('notion', 'check', shared)?.tone).toBe('done');
 	});
 });

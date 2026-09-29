@@ -57,7 +57,9 @@
 			? 'Name der Variablen für die iCal-Adresse'
 			: draft.type === 'mail'
 				? 'Name der Variablen für das Passwort'
-				: 'Name der Variablen für das Bot-Token'
+				: draft.type === 'notion'
+					? 'Name der Variablen für das Token'
+					: 'Name der Variablen für das Bot-Token'
 	);
 
 	async function create(event: Event) {

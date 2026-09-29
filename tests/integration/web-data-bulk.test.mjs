@@ -69,6 +69,15 @@ describe('reads of the bulk actions', () => {
 			source_date: '2026-10-01 08:00:00.000Z'
 		});
 		const fromMail = await owner.ticket({ source_item: mail.id });
+		// An entry from Notion: its date comes from the list, like an appointment (ADR-0041 §8).
+		const notion = await createItem(owner, {
+			channel: 'notion',
+			kind: 'task',
+			source_ref: '00000000-0000-4000-8000-00000000c0de',
+			source_date: '2026-11-19 23:00:00.000Z',
+			source_meta: { all_day: true }
+		});
+		const fromNotion = await owner.ticket({ source_item: notion.id });
 		// An event linked later is a source, but not the main one.
 		const plain = await owner.ticket();
 		const linked = await createItem(owner, { source_date: '2026-11-11 09:00:00.000Z' });
@@ -83,6 +92,7 @@ describe('reads of the bulk actions', () => {
 
 		expect(dates.get(fromEvent.id)).toBe('2026-10-06');
 		expect(dates.get(fromAllDay.id)).toBe('2026-12-24');
+		expect(dates.get(fromNotion.id)).toBe('2026-11-20');
 		expect(dates.has(fromMail.id)).toBe(false);
 		expect(dates.has(plain.id)).toBe(false);
 		expect(dates.has(foreignTicket.id)).toBe(false);
