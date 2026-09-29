@@ -101,7 +101,7 @@ becauseyoulovejira/
     autostart-aus.bat     Autostart entfernen
     byl-control.ps1       Steuerskript mit allen Befehlen (byl-functions.ps1: testbare Funktionen)
     erweiterung-whatsapp-web/  Browser-Erweiterung für WhatsApp Web zum entpackten Laden (gitignored)
-  web/                    SvelteKit-Quellcode (Build → ../app/pb_public), Tests unter src/**/*.test.ts
+  web/                    SvelteKit-Quellcode (Build → web/build, veröffentlicht nach ../app/pb_public), Tests unter src/**/*.test.ts
   helpers/mail/           Mail-Hilfsprozess in TypeScript (Build → ../../app/byl-mail.exe), Tests unter src/*.test.ts
   extensions/whatsapp-web/  Browser-Erweiterung in TypeScript (Build → ../../app/erweiterung-whatsapp-web), Tests unter src/*.test.ts
   scripts/                Build-/Setup-Skripte (PowerShell unter Windows; PocketBase-Abruf und Binary-Namen in Node)
@@ -532,6 +532,7 @@ Gelöschte Tickets landen im **Papierkorb** ([ADR-0037](docs/adr/0037-papierkorb
 - Änderungen aus einem anderen Tab oder Browserfenster erscheinen ohne Neuladen in der Liste, im offenen Panel, in den Kommentaren, im Verlauf und in der Projektansicht (umbenannte Projekte und Tags auch in allen Zeilen). Wird das offene Ticket woanders gelöscht, zeigt das Panel „Dieses Ticket wurde gelöscht.“ mit dem Weg in den Papierkorb. Eine angefangene Eingabe wird dabei nicht überschrieben.
 - Ein aus dem Papierkorb zurückgeholtes Ticket erscheint sofort wieder in allen offenen Tabs, und zwar als gelesen, wenn es das vorher war.
 - War der Server beim Laden kurz nicht erreichbar, versucht die App die Live-Aktualisierung nach 1, 2, 5 und 10 Sekunden und danach alle 30 Sekunden erneut. Bis dahin steht über dem Inhalt der Hinweis **„Live-Aktualisierung unterbrochen – wird erneut versucht.“** mit **„Neu laden“**; er verschwindet von selbst, sobald die Verbindung steht, und die Ansicht holt nach, was inzwischen geändert wurde.
+- **Neue Version, während die App offen ist** ([ADR-0040](docs/adr/0040-veroeffentlichen-ohne-unterbrechung.md)): Wird die Oberfläche neu gebaut (`scripts\build.ps1`), arbeitet ein offener Tab ungestört weiter. Innerhalb einer Minute erscheint **„Eine neue Version von becauseyoulovejira ist da.“** mit **„Neu laden“**; der nächste Klick auf einen Link lädt dann die neue Version. Hast du Text getippt und noch nicht gespeichert, sagt der Hinweis das dazu, und die App lädt nicht von selbst neu. Konnte ein Teil der App trotzdem nicht geladen werden, lädt die Seite einmal von selbst neu und zeigt sonst eine Fehlerseite mit „Neu laden“. Neue Server-Logik (`pb_hooks`, Migrationen) wirkt weiterhin erst nach einem Neustart.
 
 ### Eingang
 
@@ -631,7 +632,7 @@ Qualitäts-Gates (alle über den Root, `scripts\build.ps1` führt sie in dieser 
 ```powershell
 npm run check   # svelte-check / TypeScript
 npm run lint    # Prettier + ESLint
-npm run build   # Frontend-Build nach app/pb_public
+npm run build   # Frontend-Build nach web/build, ohne Lücke veröffentlicht nach app/pb_public (ADR-0040)
 powershell -ExecutionPolicy Bypass -File scripts\build-mail-helper.ps1   # app\byl-mail.exe bauen und ohne Node prüfen
 npm test        # Vitest: Unit-, Hilfsprozess- und Integrationstests, danach die web-Tests
 ```
