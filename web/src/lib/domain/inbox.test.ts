@@ -6,6 +6,7 @@ import {
 	compareHandled,
 	compareNewest,
 	duplicateMessage,
+	eventDueDate,
 	findSoftDuplicates,
 	isInboxChannel,
 	isInboxKind,
@@ -215,6 +216,36 @@ describe('ticketPrefill (E4 plan, T-5)', () => {
 		const prefill = ticketPrefill(full({ title: 'x'.repeat(250), body: 'y'.repeat(100_010) }));
 		expect(prefill.title).toHaveLength(200);
 		expect(prefill.description).toHaveLength(100_000);
+	});
+
+	it('adds date and link of a Notion entry (ADR-0041)', () => {
+		expect(
+			ticketPrefill(
+				full({
+					channel: 'notion',
+					kind: 'task',
+					sourceDate: '2026-10-04 22:00:00.000Z',
+					sourceMeta: { all_day: true },
+					sourceUrl: 'https://www.notion.so/Zeile-1',
+					body: '- **Status:** Offen'
+				})
+			).description
+		).toBe(
+			'- **Datum:** 05.10.2026\n- **Link:** <https://www.notion.so/Zeile-1>\n\n- **Status:** Offen'
+		);
+	});
+});
+
+describe('eventDueDate (ADR-0036 §5, ADR-0041 §8)', () => {
+	it('takes the Berlin date of events and of Notion entries, never of messages', () => {
+		const date = '2026-10-04 22:00:00.000Z';
+		expect(eventDueDate({ kind: 'event', channel: 'calendar', sourceDate: date })).toBe(
+			'2026-10-05'
+		);
+		expect(eventDueDate({ kind: 'task', channel: 'notion', sourceDate: date })).toBe('2026-10-05');
+		expect(eventDueDate({ kind: 'todo', channel: 'notion', sourceDate: null })).toBeNull();
+		expect(eventDueDate({ kind: 'message', channel: 'telegram', sourceDate: date })).toBeNull();
+		expect(eventDueDate({ kind: 'mail', channel: 'mail', sourceDate: date })).toBeNull();
 	});
 });
 

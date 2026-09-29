@@ -211,4 +211,20 @@ describe('BulkConverter: "Datum des Termins als Fälligkeit" (plan BI-2)', () =>
 		await converter.run(ITEMS, DEFAULTS);
 		expect(data.createTicket.mock.calls.map(([draft]) => draft.due)).toEqual([null, null, null]);
 	});
+
+	it('gives a Notion entry the date of its list, one without a date none (ADR-0041 §8)', async () => {
+		const { converter, data } = setup();
+		data.get.mockImplementation(async (id) =>
+			id === 'item00000000001'
+				? entry(id, {
+						channel: 'notion',
+						kind: 'task',
+						sourceDate: '2026-11-19 23:00:00.000Z',
+						sourceMeta: { all_day: true }
+					})
+				: entry(id, { channel: 'notion', kind: 'todo' })
+		);
+		await converter.run(ITEMS.slice(0, 2), { ...DEFAULTS, dueFromEvent: true });
+		expect(data.createTicket.mock.calls.map(([draft]) => draft.due)).toEqual(['2026-11-20', null]);
+	});
 });

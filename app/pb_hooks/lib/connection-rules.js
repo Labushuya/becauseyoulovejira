@@ -7,8 +7,8 @@
 // the full scan of an inbox, ADR-0020 addendum 3) arrives as its JSON text, "null" when empty.
 var SERVER_FIELDS = ['cursor', 'last_run_at', 'last_ok_at', 'last_error', 'last_hint', 'running_since', 'scan'];
 
-// Kinds a user can set up now; notion stays in the value list for later.
-var CREATABLE_TYPES = ['calendar', 'telegram', 'mail'];
+// Kinds a user can set up. Notion only imports lists on request (ADR-0041, since NI-2).
+var CREATABLE_TYPES = ['calendar', 'telegram', 'mail', 'notion'];
 
 // Mail providers (ADR-0016 section 4): host, port and TLS follow from the provider in the mail
 // helper; the connection stores only the provider and the user name (E4 plan packages 11, 13 and 22).
@@ -17,10 +17,12 @@ var MAIL_USER_MAX_LENGTH = 254;
 
 // Keys of `settings` per kind. Only names of variables, never values (ADR-0018 section 2), the
 // keywords (ADR-0020 section 3) and, for Telegram, whether the bot answers messages without one.
+// Notion has none: the user chooses what to import, so no keyword applies (ADR-0041 §5).
 var SETTINGS_KEYS = {
   calendar: ['keywords'],
   telegram: ['allowed_env', 'keywords', 'reply_no_match'],
-  mail: ['provider', 'user', 'keywords', 'match_body']
+  mail: ['provider', 'user', 'keywords', 'match_body'],
+  notion: []
 };
 
 var MESSAGES = {

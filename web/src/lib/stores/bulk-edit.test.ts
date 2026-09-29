@@ -213,7 +213,11 @@ describe('BulkEditStore: field changes', () => {
 		expect(sourceDates).toHaveBeenCalledOnce();
 		expect(update).toHaveBeenCalledExactlyOnceWith('1', { due: '2026-11-05' });
 		expect(result?.skipped).toEqual([
-			{ id: '2', key: 'HAUS-2', reason: 'Die Hauptquelle ist kein Termin mit Datum.' }
+			{
+				id: '2',
+				key: 'HAUS-2',
+				reason: 'Die Hauptquelle ist kein Termin und kein Notion-Eintrag mit Datum.'
+			}
 		]);
 	});
 

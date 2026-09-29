@@ -5,6 +5,7 @@
 
 import {
 	NO_KEYWORDS_WARNING,
+	fetchesAutomatically,
 	secretStatusText,
 	type Connection,
 	type SecretStatus
@@ -106,9 +107,12 @@ function baseHealth(
 	}
 	// The hint of the last run wins over the missing keywords: it may carry the chat ID Telegram
 	// needs for the allowlist; the meta line "Stichwörter: keine" still shows the missing keywords.
+	// Notion has no keywords (ADR-0041): the user chooses what to import.
 	let hint: ChannelHealth['hint'] = null;
 	if (connection.lastHint !== '') hint = { tone: 'info', text: connection.lastHint };
-	else if (connection.keywords.length === 0) hint = { tone: 'warning', text: NO_KEYWORDS_WARNING };
+	else if (connection.keywords.length === 0 && fetchesAutomatically(connection.type)) {
+		hint = { tone: 'warning', text: NO_KEYWORDS_WARNING };
+	}
 	return {
 		state: 'ok',
 		label: 'Eingerichtet',

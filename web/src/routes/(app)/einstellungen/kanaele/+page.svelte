@@ -13,6 +13,7 @@
 	import { getFlagStore } from '$lib/stores/flags.svelte';
 	import { ImportKeywordsStore, importKeywordsData } from '$lib/stores/import-keywords.svelte';
 	import { InboxKeysStore, inboxKeysData } from '$lib/stores/inbox-keys.svelte';
+	import { NotionStore, notionData } from '$lib/stores/notion.svelte';
 	import { channelSetupHref } from '$lib/ticket-links';
 
 	// Settings of the channels (E4 plan, T-3): bookmarklet (package 7) and connections (package 10).
@@ -29,6 +30,8 @@
 	const importKeywords = new ImportKeywordsStore(importKeywordsData(pb), auth, flags);
 	// Access keys of the own inbox (ADR-0038), with its keywords in importKeywords.
 	const inboxKeys = new InboxKeysStore(inboxKeysData(pb), auth, flags);
+	// Notion import (ADR-0041): its cards load what was imported, the dialog asks Notion.
+	const notion = new NotionStore(notionData(pb), auth, flags);
 	// Folder of the built extension for WhatsApp Web, for its assistant (ADR-0038 §4).
 	let extension = $state<ExtensionInfo | null>(null);
 	const setup = $derived(setupTargetOf(page.url.searchParams));
@@ -52,6 +55,7 @@
 			connections.reset();
 			importKeywords.reset();
 			inboxKeys.reset();
+			notion.reset();
 		};
 	});
 
@@ -70,6 +74,7 @@
 <ChannelsView
 	{captureUrl}
 	{connections}
+	{notion}
 	{importKeywords}
 	{inboxKeys}
 	{extension}

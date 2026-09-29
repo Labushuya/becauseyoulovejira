@@ -10,6 +10,7 @@ import {
 	type InboxItemSummary
 } from './inbox';
 import { formatBerlinDateTime } from './format';
+import { notionContentOf } from './notion';
 
 /** What the copy of a source holds (ADR-0031 section 5). */
 export type CopyCompleteness = 'complete' | 'text' | 'address' | 'too_large';
@@ -33,12 +34,16 @@ export const ORIGINAL_OMITTED_TOO_LARGE = 'too_large';
 /**
  * What of the source is stored: the original file (or the typed text itself), only the text (chat
  * messages, mails and events without their file), only the address (a web link without a copy of
- * the page) or a mail without its file because it was larger than the limit of the file.
+ * the page) or a mail without its file because it was larger than the limit of the file. A Notion
+ * entry is complete only with its whole content (ADR-0041 §5): a row without its page content or
+ * a content cut at a limit is "Nur Text", although the entry keeps what Notion delivered as file.
  */
 export function copyCompleteness(
 	item: Pick<InboxItemSummary, 'channel' | 'original' | 'sourceMeta'>
 ): CopyCompleteness {
 	if (item.sourceMeta.original_omitted === ORIGINAL_OMITTED_TOO_LARGE) return 'too_large';
+	const notion = notionContentOf(item);
+	if (notion !== null && notion !== 'complete') return 'text';
 	if (item.original !== '' || TYPED_CHANNELS.includes(item.channel)) return 'complete';
 	return item.channel === 'link' ? 'address' : 'text';
 }
@@ -56,17 +61,27 @@ function sizeText(value: unknown): string {
 export function copyNote(
 	item: Pick<InboxItemSummary, 'channel' | 'original' | 'sourceMeta'>
 ): string | null {
+	const notion = notionContentOf(item);
 	switch (copyCompleteness(item)) {
 		case 'complete':
 			return null;
 		case 'too_large': {
 			const size = sizeText(item.sourceMeta.original_size);
+			if (notion !== null) {
+				return `Was Notion lieferte, war zu groß für die Originaldatei${size === '' ? '' : ` (${size})`}. Gespeichert sind Titel, Datum und Text.`;
+			}
 			// Neutral about the limit: entries from before addendum D were cut at 10 MB, newer at 25 MB.
 			return `Die Mail war zu groß für die Originaldatei${size === '' ? '' : ` (${size})`}. Gespeichert sind Absender, Betreff, Datum und der Anfang des Textes, die Originaldatei nicht.`;
 		}
 		case 'address':
 			return 'Gespeichert sind nur Adresse, Titel und Auszug. Der Inhalt der Seite steht nur unter der Adresse.';
 		case 'text':
+			if (notion === 'properties') {
+				return 'Übernommen sind Titel, Datum und Eigenschaften der Zeile. Den Inhalt ihrer Seite zeigt der Link zu Notion.';
+			}
+			if (notion === 'truncated') {
+				return 'Der Inhalt ist nur bis zur Grenze je Seite übernommen. Vollständig steht er in Notion.';
+			}
 			return 'Gespeichert ist nur der Text. Bilder, Dateien und Anhänge der Quelle sind nicht Teil der Kopie.';
 	}
 }

@@ -27,7 +27,9 @@
 		runResultText,
 		type Connection
 	} from '$lib/domain/connections';
+	import { checkText } from '$lib/domain/notion';
 	import type { ConnectionsStore } from '$lib/stores/connections.svelte';
+	import type { NotionStore } from '$lib/stores/notion.svelte';
 	import KeywordEditor from '../KeywordEditor.svelte';
 	import CodeBlock from '../guidance/CodeBlock.svelte';
 	import ExternalLink from '../guidance/ExternalLink.svelte';
@@ -48,20 +50,28 @@
 	// sessionStorage (only its number). "Weiter" is never locked; an open check of an earlier step
 	// is named at the top of the next one. While the assistant is open it watches its connection
 	// through realtime, so a run of the server shows without polling. Nothing is dirty: creating and
-	// keywords save at once, a typed value is dropped on purpose when the modal closes.
+	// keywords save at once, a typed value is dropped on purpose when the modal closes. Notion
+	// (ADR-0041) ends with "Verbindung prüfen"; its result offers "Listen übernehmen …", which closes
+	// the assistant and opens the import dialog (no dialog from a dialog).
 	let {
 		kind,
 		connectionId,
 		store,
+		notion,
 		onconnection,
+		onimport,
 		onclose
 	}: {
 		kind: SetupKind;
 		/** Connection of the address; null before it is created. */
 		connectionId: string | null;
 		store: ConnectionsStore;
+		/** Notion import: "Verbindung prüfen" of the last step. */
+		notion: NotionStore;
 		/** A connection was created; the owner writes its ID into the address. */
 		onconnection: (id: string) => void;
+		/** Closes the assistant and opens the import dialog of a Notion connection. */
+		onimport: (connection: Connection) => void;
 		onclose: () => void;
 	} = $props();
 
@@ -270,6 +280,18 @@
 	function stepIndex(id: SetupStep['id']): number {
 		return steps.findIndex((entry) => entry.id === id);
 	}
+
+	/** Notion: answer of "Verbindung prüfen" on this page, null before the first. */
+	const notionCheck = $derived(connection === null ? null : notion.lastCheck(connection.id));
+	const notionChecking = $derived(connection !== null && notion.isChecking(connection.id));
+
+	async function checkNotion() {
+		if (connection === null) return;
+		hold();
+		await notion.check(connection.id, connection.label, { announce: false });
+		// The check line reads the facts of the server; realtime brings them, this is the fallback.
+		await store.refresh(connection.id);
+	}
 </script>
 
 {#snippet links(entry: SetupStep)}
@@ -458,6 +480,62 @@
 				name="ids"
 				fixed={fixedValues}
 			/>
+		{/if}
+	{:else if entry.id === 'check'}
+		{#if connection !== null}
+			<div>
+				<button
+					class="button-secondary"
+					type="button"
+					aria-busy={notionChecking}
+					aria-disabled={notionChecking}
+					onclick={() => void checkNotion()}
+				>
+					{notionChecking ? 'Wird geprüft …' : 'Verbindung prüfen'}
+				</button>
+			</div>
+			{#if notionCheck !== null}
+				{#if notionCheck.kind === 'ok'}
+					<SectionMessage
+						tone={notionCheck.value.shared ? 'success' : 'info'}
+						title={notionCheck.value.shared ? 'Verbindung steht' : undefined}
+						compact={!notionCheck.value.shared}
+						live
+						headingLevel={4}
+					>
+						{checkText(notionCheck.value)}
+						{#snippet actions()}
+							{#if notionCheck?.kind === 'ok' && notionCheck.value.shared && connection !== null}
+								<button
+									class="button-subtle"
+									type="button"
+									aria-haspopup="dialog"
+									onclick={() => {
+										if (connection !== null) onimport(connection);
+									}}
+								>
+									Listen übernehmen …
+								</button>
+							{/if}
+						{/snippet}
+					</SectionMessage>
+				{:else}
+					<SectionMessage tone={notionCheck.kind === 'error' ? 'error' : 'info'} live>
+						{notionCheck.message}
+						{#snippet actions()}
+							{#if notionCheck?.kind === 'missing' && stepIndex('restart') >= 0}
+								<button
+									class="button-subtle"
+									type="button"
+									onclick={() => void goTo(stepIndex('restart'))}
+								>
+									Zu Schritt {stepIndex('restart') + 1}
+								</button>
+							{/if}
+						{/snippet}
+					</SectionMessage>
+				{/if}
+			{/if}
 		{/if}
 	{:else if entry.id === 'first-run'}
 		{#if kind === 'telegram' && connection !== null}

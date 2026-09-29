@@ -7,12 +7,14 @@
 	import type { ConnectionsStore } from '$lib/stores/connections.svelte';
 	import type { ImportKeywordsStore } from '$lib/stores/import-keywords.svelte';
 	import type { InboxKeysStore } from '$lib/stores/inbox-keys.svelte';
+	import type { NotionStore } from '$lib/stores/notion.svelte';
 	import { channelSetupHref } from '$lib/ticket-links';
 	import BookmarkletCard from './channels/BookmarkletCard.svelte';
 	import ChannelCatalog from './channels/ChannelCatalog.svelte';
 	import ChannelIcon from './channels/ChannelIcon.svelte';
 	import ChannelSetup from './channels/ChannelSetup.svelte';
 	import ChannelsIntro from './channels/ChannelsIntro.svelte';
+	import NotionImportDialog from './channels/NotionImportDialog.svelte';
 	import OwnInboxCard from './channels/OwnInboxCard.svelte';
 	import ProtonGuide from './channels/ProtonGuide.svelte';
 	import WhatsAppWebCard from './channels/WhatsAppWebCard.svelte';
@@ -23,14 +25,17 @@
 	// plan EH-3 and §3.4), read like an overview: the explanation of the two ways, the cards of the
 	// connections, "Selbst hereinbringen" (the bookmarklet card, the files card with the number of
 	// keywords per kind of file) and the catalog "Kanal hinzufügen". Every setup opens in the app
-	// (EH-5 to EH-7): the assistant (modal L, ChannelSetup) for Google Calendar, Telegram, Web.de and
-	// Gmail, the guide modal for Proton. The catalog links to them, the cards and the edit modal open
+	// (EH-5 to EH-7): the assistant (modal L, ChannelSetup) for Google Calendar, Telegram, Web.de,
+	// Gmail and Notion, the guide modal for Proton. The catalog links to them, the cards and the edit modal open
 	// them for their connection, and the owner keeps them in the address (`setup`, `onsetupchange`).
 	// Since EI-1 and EI-3 (ADR-0038) "Selbst hereinbringen" holds the own inbox with its keys and
-	// WhatsApp Web with its assistant (WhatsAppWebSetup, ?einrichten=whatsapp-web).
+	// WhatsApp Web with its assistant (WhatsAppWebSetup, ?einrichten=whatsapp-web). Since NI-2
+	// (ADR-0041) the import dialog of Notion opens from its card or, after "Verbindung prüfen", from
+	// the last step of its assistant: the assistant closes first, no dialog from a dialog.
 	let {
 		captureUrl,
 		connections,
+		notion,
 		importKeywords = null,
 		inboxKeys = null,
 		extension = null,
@@ -40,6 +45,8 @@
 		/** Absolute address of the capture form, e.g. http://127.0.0.1:8090/eingang/neu. */
 		captureUrl: string;
 		connections: ConnectionsStore;
+		/** Notion import (ADR-0041): check, sources, preview, import, "Erneut abrufen". */
+		notion: NotionStore;
 		/**
 		 * Keywords of the file imports, for the numbers on the files card, and of the channels of the
 		 * own inbox (ADR-0038).
@@ -87,12 +94,28 @@
 	function showSetup(connection: Connection) {
 		onsetupchange({ kind: setupKindOf(connection), connectionId: connection.id });
 	}
+
+	/** The Notion connection whose import dialog is open, null while it is closed. */
+	let importing = $state<Connection | null>(null);
+
+	function closeImport() {
+		const id = importing?.id ?? null;
+		importing = null;
+		// The import asked Notion; the card shows the new last run and error.
+		if (id !== null) void connections.refresh(id);
+	}
 </script>
 
 <div class="channels">
 	<ChannelsIntro />
 
-	<ConnectionsSection store={connections} onadd={focusCatalog} onsetup={showSetup} />
+	<ConnectionsSection
+		store={connections}
+		{notion}
+		onadd={focusCatalog}
+		onsetup={showSetup}
+		onimport={(connection) => (importing = connection)}
+	/>
 
 	<section class="own" aria-labelledby={ids.own}>
 		<h3 id={ids.own}>Selbst hereinbringen</h3>
@@ -154,11 +177,25 @@
 				kind={setup.kind}
 				connectionId={setup.connectionId}
 				store={connections}
+				{notion}
 				onconnection={(id) => onsetupchange({ kind: setup?.kind ?? 'kalender', connectionId: id })}
+				onimport={(connection) => {
+					onsetupchange(null);
+					importing = connection;
+				}}
 				onclose={() => onsetupchange(null)}
 			/>
 		{/key}
 	{/if}
+{/if}
+
+{#if importing !== null}
+	<NotionImportDialog
+		connectionId={importing.id}
+		label={importing.label}
+		{notion}
+		onclose={closeImport}
+	/>
 {/if}
 
 <style>

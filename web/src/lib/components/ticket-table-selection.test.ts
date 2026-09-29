@@ -244,7 +244,11 @@ describe('bar of the bulk actions (plan BI-2)', () => {
 		await fireEvent.click(screen.getByRole('button', { name: 'Fälligkeit …' }));
 		const radio = screen.getByRole('radio', { name: 'Datum der Quelle übernehmen' });
 		expect(radio.getAttribute('aria-describedby')).toBeTruthy();
-		expect(screen.getByText(/Nur für Tickets aus einem Kalendertermin/)).toBeTruthy();
+		expect(
+			screen.getByText(
+				/Nur für Tickets aus einem Kalendertermin .* oder aus einem Notion-Eintrag mit Datum/
+			)
+		).toBeTruthy();
 	});
 
 	it('asks before completing tickets with open sub-tasks, with them taken along at first', async () => {

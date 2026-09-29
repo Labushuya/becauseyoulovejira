@@ -120,6 +120,21 @@ describe('channelHealth', () => {
 		expect(channelHealth(mail, UNSET, false)).toMatchObject({ action: 'setup', pick: false });
 	});
 
+	it('does not ask Notion for keywords: the user chooses what to import (ADR-0041)', () => {
+		const notion = { ...BASE, type: 'notion' as const, keywords: [] };
+		expect(channelHealth(notion, SET, false)).toMatchObject({
+			state: 'ok',
+			hint: null,
+			action: 'run',
+			pick: false
+		});
+		const hint = 'Die Integration sieht noch keine Seite.';
+		expect(channelHealth({ ...notion, lastHint: hint }, SET, false).hint).toEqual({
+			tone: 'info',
+			text: hint
+		});
+	});
+
 	it('skips the check of the variables while their state is unknown', () => {
 		expect(channelHealth(BASE, null, false).state).toBe('ok');
 		expect(channelHealth({ ...BASE, lastError: 'x' }, null, false).state).toBe('error');

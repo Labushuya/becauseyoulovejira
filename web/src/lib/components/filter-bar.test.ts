@@ -501,7 +501,7 @@ describe('filter bar: sub projects (ADR-0034, UP-5)', () => {
 });
 
 describe('filter bar: source (E4 plan, package 9; ADR-0019 section 2)', () => {
-	it('offers the chip group "Quelle" after "Fällig", without Notion', async () => {
+	it('offers the chip group "Quelle" after "Fällig", with Notion since its import (ADR-0041)', async () => {
 		await showBar();
 		const legends = screen
 			.getAllByRole('group')
@@ -511,7 +511,7 @@ describe('filter bar: source (E4 plan, package 9; ADR-0019 section 2)', () => {
 			within(group('Quelle'))
 				.getAllByRole('radio')
 				.map((radio) => radio.parentElement?.textContent?.trim())
-		).toEqual(['Alle', 'Manuell', 'Web-Link', 'Mail', 'Kalender', 'Chat']);
+		).toEqual(['Alle', 'Manuell', 'Web-Link', 'Mail', 'Kalender', 'Chat', 'Notion']);
 	});
 
 	it.each([

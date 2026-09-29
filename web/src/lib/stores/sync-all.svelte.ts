@@ -8,7 +8,7 @@ import type PocketBase from 'pocketbase';
 import { listConnections, runConnection } from '$lib/data/connections';
 import { toDataError } from '$lib/data/errors';
 import type { RequestOptions } from '$lib/data/options';
-import type { Connection, RunResult } from '$lib/domain/connections';
+import { fetchesAutomatically, type Connection, type RunResult } from '$lib/domain/connections';
 import { syncProgressText, syncSummary, type SyncEntry } from '$lib/domain/sync-all';
 import type { FlagSink } from './flags.svelte';
 import type { SessionGuard } from './ticket-list.svelte';
@@ -89,7 +89,10 @@ export class SyncAllStore {
 		try {
 			let connections: Connection[];
 			try {
-				connections = (await this.#data.list({})).filter((item) => item.enabled);
+				// Notion only imports on request (ADR-0041); it has nothing to fetch.
+				connections = (await this.#data.list({})).filter(
+					(item) => item.enabled && fetchesAutomatically(item.type)
+				);
 			} catch (error) {
 				const failure = toDataError(error);
 				if (failure.kind === 'session') throw new SessionEnded();

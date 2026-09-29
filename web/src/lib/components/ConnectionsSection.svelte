@@ -7,8 +7,10 @@
 		CONNECTIONS_UNAVAILABLE_MESSAGE,
 		type ConnectionsStore
 	} from '$lib/stores/connections.svelte';
+	import type { NotionStore } from '$lib/stores/notion.svelte';
 	import ChannelCard from './channels/ChannelCard.svelte';
 	import ChannelEditModal from './channels/ChannelEditModal.svelte';
+	import NotionCard from './channels/NotionCard.svelte';
 	import EmptyState from './guidance/EmptyState.svelte';
 	import SectionMessage from './guidance/SectionMessage.svelte';
 	import MailboxPicker from './MailboxPicker.svelte';
@@ -19,17 +21,24 @@
 	// runs a fetch ("Jetzt abrufen", results as flags), opens the mailbox selection, pauses and
 	// resumes, and asks before deleting; "Bearbeiten" opens a modal with keywords and switches that
 	// save at once. Access data are Windows user variables; the app stores only their names
-	// (ADR-0018). New connections come from the catalog below (ChannelCatalog).
+	// (ADR-0018). New connections come from the catalog below (ChannelCatalog). A Notion connection
+	// (ADR-0041) has its own card: it fetches nothing by itself and opens the import dialog.
 	let {
 		store,
+		notion,
 		onadd,
-		onsetup
+		onsetup,
+		onimport
 	}: {
 		store: ConnectionsStore;
+		/** Notion import (ADR-0041) for the cards of Notion connections. */
+		notion: NotionStore;
 		/** "Kanal hinzufügen" of the empty state: to the catalog. */
 		onadd: () => void;
 		/** Shows the setup of the kind of a connection. */
 		onsetup: (connection: Connection) => void;
+		/** Opens the import dialog of a Notion connection. */
+		onimport: (connection: Connection) => void;
 	} = $props();
 
 	const uid = $props.id();
@@ -199,7 +208,7 @@
 				icon="channels"
 				headingLevel={4}
 				title="Noch kein Kanal verbunden"
-				description="Verbinde einen Kalender, einen Telegram-Bot oder ein Postfach. Die Einrichtung dauert etwa fünf Minuten."
+				description="Verbinde einen Kalender, einen Telegram-Bot oder ein Postfach, oder übernimm Listen aus Notion. Die Einrichtung dauert etwa fünf Minuten."
 			>
 				{#snippet primary()}
 					<button class="button-primary" type="button" onclick={onadd}>Kanal hinzufügen</button>
@@ -210,32 +219,49 @@
 				Solange die App läuft, ruft Google Calendar alle 15 Minuten ab, Telegram jede Minute und ein
 				Postfach alle 5 Minuten; „Aktualisieren“ zeigt das Ergebnis. „Jetzt abrufen“ holt sofort ab,
 				auch bei einem Postfach. Wie weit ein Posteingang durchsucht ist, zeigt seine Karte von
-				selbst.
+				selbst. Notion ruft nie von selbst ab: Listen übernimmst du an seiner Karte.
 			</p>
 			<ul class="grid">
 				{#each store.connections as connection (connection.id)}
 					<li>
-						<ChannelCard
-							{connection}
-							secretStatus={store.status(connection.id)}
-							running={store.isRunning(connection.id)}
-							helper={store.helper}
-							lastRun={store.lastRun(connection.id)}
-							message={messageOf(connection)}
-							onrun={() => void runNow(connection)}
-							onpick={() => (picking = connection)}
-							onedit={() => {
-								editMessage = null;
-								editingId = connection.id;
-							}}
-							onpause={(enabled) => void setEnabled(connection, enabled)}
-							ondelete={() => {
-								deleteError = null;
-								pendingDelete = connection;
-							}}
-							onsetup={() => onsetup(connection)}
-							onscan={(action) => void scan(connection, action)}
-						/>
+						{#if connection.type === 'notion'}
+							<NotionCard
+								{connection}
+								secretStatus={store.status(connection.id)}
+								{notion}
+								message={messageOf(connection)}
+								onimport={() => onimport(connection)}
+								onchanged={() => void store.refresh(connection.id)}
+								onpause={(enabled) => void setEnabled(connection, enabled)}
+								onsetup={() => onsetup(connection)}
+								ondelete={() => {
+									deleteError = null;
+									pendingDelete = connection;
+								}}
+							/>
+						{:else}
+							<ChannelCard
+								{connection}
+								secretStatus={store.status(connection.id)}
+								running={store.isRunning(connection.id)}
+								helper={store.helper}
+								lastRun={store.lastRun(connection.id)}
+								message={messageOf(connection)}
+								onrun={() => void runNow(connection)}
+								onpick={() => (picking = connection)}
+								onedit={() => {
+									editMessage = null;
+									editingId = connection.id;
+								}}
+								onpause={(enabled) => void setEnabled(connection, enabled)}
+								ondelete={() => {
+									deleteError = null;
+									pendingDelete = connection;
+								}}
+								onsetup={() => onsetup(connection)}
+								onscan={(action) => void scan(connection, action)}
+							/>
+						{/if}
 					</li>
 				{/each}
 			</ul>

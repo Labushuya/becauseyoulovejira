@@ -12,6 +12,7 @@
 		type InboxItemSummary
 	} from '$lib/domain/inbox';
 	import type { CalendarDate } from '$lib/domain/berlin-date';
+	import { notionOriginText } from '$lib/domain/notion';
 	import { itemSuggestion, suggestionFormValues } from '$lib/domain/rrule';
 	import type { TicketSummary } from '$lib/domain/ticket';
 	import type { InboxStore } from '$lib/stores/inbox.svelte';
@@ -128,6 +129,8 @@
 			['An', metaText(item, 'to')],
 			['Ort', metaText(item, 'location')],
 			['Chat', metaText(item, 'chat')],
+			// Notion (ADR-0041): the page or database and the section above the point.
+			['Aus', notionOriginText(item)],
 			['Stichwort', metaText(item, 'keyword')],
 			['Quelldatum', sourceDateText(item)],
 			['Eingang', formatBerlinDateTime(item.created)],

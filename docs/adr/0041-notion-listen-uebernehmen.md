@@ -1,6 +1,6 @@
 # ADR-0041: Notion: bestehende Listen nur lesend als Kopien in den Eingang übernehmen
 
-- **Status:** Angenommen. Umsetzung in zwei Paketen nach [docs/plan/notion-import.md](../plan/notion-import.md): NI-1 (Server, Routen, Tests gegen einen Fake der Notion-API) und NI-2 (Karte, Assistent, Import-Dialog, „Erneut abrufen“, Hilfe). Manuelle Browser-Prüfungen stehen im Test-Manifest.
+- **Status:** Angenommen und umgesetzt in zwei Paketen nach [docs/plan/notion-import.md](../plan/notion-import.md): NI-1 (Server, Routen, Tests gegen einen Fake der Notion-API) und NI-2 (Karte, Assistent, Import-Dialog, „Erneut abrufen“, Hilfe). Test-Manifest BYL-E6-520 bis BYL-E6-538; die manuellen Browser-Prüfungen BYL-E6-539 bis BYL-E6-547 sind offen.
 - **Datum:** 2026-09-29
 - **Entscheidung durch:** Nutzer („Da wir bislang nur mit Kopien gearbeitet haben, sollten wir das auch hier beibehalten: Variante 1 soll es sein. Notion nur nutzen, um andere bestehende Listen auf deren Inhalt hin zu übernehmen.“, 2026-09-29), Advisor (fachliche Vorgaben: Zugang, Quellen, Ablauf, Eingang, Doku), Executor (API-Version, Abfrageweg, Grenzen, Einzelheiten)
 - **Ersetzt:** [ADR-0016](0016-kanal-architektur-und-mail.md) §2, Absatz „Notion (zurückgestellt)“ (Abruf per Cron alle 15 Minuten mit Cursor), siehe Nachtrag dort
@@ -78,7 +78,7 @@ Notion stand seit E4 als letzter Kanal auf der Liste des Nutzers und war zurück
 
 - Option „Seiteninhalt als Kopie mitnehmen“ (Standard aus), nur für Datenbanken: Der Inhalt der Zeilenseite kommt als Markdown nach einer Linie (`---`) unter die Eigenschaften.
 - Grenzen je Seite: 500 Blöcke, 50 000 Zeichen, 40 Anfragen, Tiefe 8. Darüber endet der Text mit „_Seiteninhalt gekürzt: … Vollständig in Notion._“. Dateien, Bilder und PDFs aus Notion stehen nur mit Namen im Text: Ihre Adressen sind signiert und laufen nach einer Stunde ab. Externe Medien und Lesezeichen bleiben Links.
-- Grenzen je Quelle: 1 000 Zeilen einer Datenbank; beim Lesen einer Seite 100 Anfragen, 5 000 Blöcke, Tiefe 8; in der Quellenliste je 500 Datenquellen und Seiten (die Suche liest dafür bis zu 1 000 Seiten, weil Zeilen mitkommen); 100 Einträge je Import-Anfrage (die Oberfläche teilt größere Auswahlen auf und zeigt den Fortschritt). Eine gekürzte Quelle sagt das in der Vorschau.
+- Grenzen je Quelle: 1 000 Zeilen einer Datenbank; beim Lesen einer Seite 100 Anfragen, 5 000 Blöcke, Tiefe 8; in der Quellenliste je 500 Datenquellen und Seiten (die Suche liest dafür bis zu 1 000 Seiten, weil Zeilen mitkommen); 100 Einträge je Import-Anfrage (die Oberfläche teilt größere Auswahlen auf und zeigt den Fortschritt; mit Seiteninhalt schickt sie höchstens 10 je Anfrage, weil jede Zeile dann bis zu 40 Anfragen an Notion braucht). Eine gekürzte Quelle sagt das in der Vorschau.
 
 ### 7. Routen, Zustand der Verbindung und „Erneut abrufen“
 
@@ -101,6 +101,7 @@ Das Datum eines Notion-Eintrags ist ein Datum der Liste (Fälligkeit, Termin), k
 - Einstellungen → Kanäle: Katalog-Kachel „Notion (Listen übernehmen)“ und der **Assistent** (Stepper, [ADR-0026](0026-einstellungsbereich-und-hinweis-bausteine.md) §4): Integration anlegen (nur „Read content“) → Token als Variable → Verbindung anlegen → Neustart → Seiten freigeben → „Verbindung prüfen“. Die Karte der Verbindung zeigt Zustand, zuletzt geprüft, die bisher übernommenen Quellen mit „Erneut abrufen“ und „Listen übernehmen …“.
 - **Import-Dialog:** Quelle wählen (Suche, „Liste aktualisieren“), Vorschau mit Auswahl nach [ADR-0036](0036-sammelbearbeitung-inline-und-oeffnungsmodus.md) §2 (Kopf-Checkbox, Umschalt+Klick), Optionen, „In den Eingang übernehmen“ mit Fortschritt und Ergebnis. Kein Dialog aus einem Dialog.
 - Hilfe-Abschnitt „Notion“, Symbol und Kennzeichnung des Kanals wie bei den anderen.
+- Umgesetzt mit NI-2, Einzelheiten im [Plan](../plan/notion-import.md) §4: eigene Karte (`NotionCard`) statt der allgemeinen Kanal-Karte, weil Notion nichts von selbst abruft (kein „Jetzt abrufen“, kein „Pausieren“, keine Stichwörter, keine Warnung wegen fehlender Stichwörter); „Alle Kanäle jetzt abrufen“ lässt Notion aus; Quellen und Einträge als Listen mit Checkboxen statt als Tabelle; der Assistent schließt sich, bevor der Import-Dialog aufgeht.
 
 ### 10. Sicherheitsmodell
 

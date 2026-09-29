@@ -29,6 +29,7 @@ import { FlagStore } from '$lib/stores/flags.svelte';
 import { ImportKeywordsStore, type ImportKeywordsData } from '$lib/stores/import-keywords.svelte';
 import { EMPTY_IMPORT_KEYWORDS } from '$lib/domain/keywords';
 import ChannelsViewHarness from '$lib/test/ChannelsViewHarness.svelte';
+import { notionStoreOf } from '$lib/test/notion-fake';
 import { useOverlayStubs } from '$lib/test/overlay-stubs';
 import ChannelsView from './ChannelsView.svelte';
 import ConnectionsSection from './ConnectionsSection.svelte';
@@ -216,7 +217,9 @@ describe('connections store', () => {
 function renderCards(store: ConnectionsStore) {
 	const onadd = vi.fn();
 	const onsetup = vi.fn();
-	render(ConnectionsSection, { props: { store, onadd, onsetup } });
+	render(ConnectionsSection, {
+		props: { store, notion: notionStoreOf(), onadd, onsetup, onimport: vi.fn() }
+	});
 	return { onadd, onsetup };
 }
 
@@ -239,7 +242,12 @@ async function chooseFromMenu(name: string, entry: string) {
 function renderView(store: ConnectionsStore) {
 	const onsetupchange = vi.fn();
 	render(ChannelsView, {
-		props: { captureUrl: 'http://127.0.0.1:8090/eingang/neu', connections: store, onsetupchange }
+		props: {
+			captureUrl: 'http://127.0.0.1:8090/eingang/neu',
+			connections: store,
+			notion: notionStoreOf(),
+			onsetupchange
+		}
 	});
 	return { onsetupchange };
 }
@@ -420,7 +428,13 @@ describe('connections section', () => {
 		data.list.mockReturnValueOnce(new Promise(() => undefined));
 		void store.load();
 		const { container } = render(ConnectionsSection, {
-			props: { store, onadd: vi.fn(), onsetup: vi.fn() }
+			props: {
+				store,
+				notion: notionStoreOf(),
+				onadd: vi.fn(),
+				onsetup: vi.fn(),
+				onimport: vi.fn()
+			}
 		});
 		expect(screen.getByRole('status').textContent).toBe('Verbindungen werden geladen …');
 		expect(container.querySelectorAll('.placeholder')).toHaveLength(3);
@@ -449,6 +463,7 @@ describe('channels view: variables', () => {
 			props: {
 				captureUrl: 'http://127.0.0.1:8090/eingang/neu',
 				connections: store,
+				notion: notionStoreOf(),
 				onsetupchange: vi.fn()
 			}
 		});
@@ -744,6 +759,7 @@ describe('Postfächer (E4 plan, package 22)', () => {
 			props: {
 				captureUrl: 'http://127.0.0.1:8090/eingang/neu',
 				connections: store,
+				notion: notionStoreOf(),
 				importKeywords,
 				onsetupchange: vi.fn()
 			}

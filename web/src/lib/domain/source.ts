@@ -9,13 +9,14 @@ import type { InboxChannel } from './inbox';
 export const SOURCE_FAMILIES = ['manual', 'link', 'mail', 'calendar', 'chat', 'notion'] as const;
 export type SourceFamily = (typeof SOURCE_FAMILIES)[number];
 
-/** Families offered as chips; Notion only once its channel exists (ADR-0019 section 1). */
+/** Families offered as chips; Notion since its import exists (ADR-0019 section 1, ADR-0041). */
 export const SOURCE_FAMILY_CHIPS: readonly SourceFamily[] = Object.freeze([
 	'manual',
 	'link',
 	'mail',
 	'calendar',
-	'chat'
+	'chat',
+	'notion'
 ]);
 
 export const SOURCE_FAMILY_LABELS: Readonly<Record<SourceFamily, string>> = Object.freeze({

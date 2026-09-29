@@ -91,8 +91,7 @@ describe('source families', () => {
 		}
 	});
 
-	it('offers Notion as chip only once its channel exists', () => {
-		expect(SOURCE_FAMILY_CHIPS).not.toContain('notion');
-		expect(SOURCE_FAMILY_CHIPS).toEqual(['manual', 'link', 'mail', 'calendar', 'chat']);
+	it('offers Notion as chip since its import exists (ADR-0041)', () => {
+		expect(SOURCE_FAMILY_CHIPS).toEqual(['manual', 'link', 'mail', 'calendar', 'chat', 'notion']);
 	});
 });

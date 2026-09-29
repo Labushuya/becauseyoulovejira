@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { tick } from 'svelte';
-	import type { InboxItemSummary } from '$lib/domain/inbox';
+	import { eventDueDate, type InboxItemSummary } from '$lib/domain/inbox';
 	import { isPriority, isStatus, type Priority, type Status } from '$lib/domain/status';
 	import {
 		DEFAULT_PRIORITY,
@@ -25,7 +25,7 @@
 	// bar and a live region follow, failures are listed per entry with their reason, and entries
 	// that succeeded stay converted. No due date by itself: the date at the sender never becomes one
 	// (P-5); among chosen events the checkbox "Datum des Termins als Fälligkeit" (off at first, plan
-	// BI-2) gives each event the date of its start.
+	// BI-2) gives each event the date of its start, and since ADR-0041 each Notion entry its date.
 	// On the modal building block (ADR-0025 section 3, size M): while the run goes on nothing
 	// closes, and Escape keeps its own rule "Nach diesem Eintrag anhalten" (plan UI-4).
 	let {
@@ -38,7 +38,7 @@
 	}: {
 		/** Chosen new entries, in the order of the table. */
 		items: readonly (Pick<InboxItemSummary, 'id' | 'title'> &
-			Partial<Pick<InboxItemSummary, 'kind' | 'sourceDate'>>)[];
+			Partial<Pick<InboxItemSummary, 'kind' | 'channel' | 'sourceDate'>>)[];
 		converter: BulkConverter;
 		/** Projects that can be chosen (the active ones). */
 		projects?: readonly ProjectRef[];
@@ -78,10 +78,23 @@
 	let closeButton = $state<HTMLButtonElement>();
 
 	const count = $derived(items.length);
-	/** Chosen events with a date (plan BI-2); only then the checkbox appears. */
-	const events = $derived(
-		items.filter((item) => item.kind === 'event' && typeof item.sourceDate === 'string').length
+	/**
+	 * Chosen entries whose date is an appointment (plan BI-2): events and, since ADR-0041, entries
+	 * from Notion with a date; only then the checkbox appears.
+	 */
+	const dated = $derived(
+		items.filter(
+			(item) =>
+				item.kind !== undefined &&
+				eventDueDate({
+					kind: item.kind,
+					channel: item.channel ?? 'manual',
+					sourceDate: item.sourceDate ?? null
+				}) !== null
+		)
 	);
+	const events = $derived(dated.length);
+	const onlyEvents = $derived(dated.every((item) => item.kind === 'event'));
 	const heading = $derived(count === 1 ? '1 Eintrag umwandeln' : `${count} Einträge umwandeln`);
 	const chosenTags = $derived(
 		tagIds.flatMap((tagId) => {
@@ -158,9 +171,15 @@
 					/>
 					<label for={ids.eventDue}>Datum des Termins als Fälligkeit</label>
 					<p class="hint" id={ids.eventDueHint}>
-						{events === 1
-							? 'Gilt für 1 Termin; andere Einträge bleiben ohne Fälligkeit.'
-							: `Gilt für ${events} Termine; andere Einträge bleiben ohne Fälligkeit.`}
+						{#if onlyEvents}
+							{events === 1
+								? 'Gilt für 1 Termin; andere Einträge bleiben ohne Fälligkeit.'
+								: `Gilt für ${events} Termine; andere Einträge bleiben ohne Fälligkeit.`}
+						{:else}
+							{events === 1
+								? 'Gilt für 1 Eintrag mit Datum aus einem Termin oder aus Notion; andere Einträge bleiben ohne Fälligkeit.'
+								: `Gilt für ${events} Einträge mit Datum aus Terminen oder aus Notion; andere Einträge bleiben ohne Fälligkeit.`}
+						{/if}
 					</p>
 				</div>
 			{/if}

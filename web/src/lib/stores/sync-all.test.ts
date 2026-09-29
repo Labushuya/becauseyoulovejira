@@ -105,6 +105,18 @@ describe('SyncAllStore', () => {
 		expect(context.flags.flags[0]?.title).toBe('1 Kanal abgerufen: keine neuen.');
 	});
 
+	it('leaves Notion out: it only imports on request (ADR-0041)', async () => {
+		const notion = connection('conn00000000004', 'Notion', {
+			type: 'notion',
+			secretEnv: 'BYL_NOTION_TOKEN',
+			keywords: []
+		});
+		const context = setup([CAL, notion]);
+		await context.store.runAll();
+		expect(context.data.run.mock.calls.map(([id]) => id)).toEqual([CAL.id]);
+		expect(context.flags.flags[0]?.title).toBe('1 Kanal abgerufen: keine neuen.');
+	});
+
 	it('links the flag to the card of a failed connection and goes on with the others', async () => {
 		const context = setup();
 		context.data.run

@@ -1,7 +1,7 @@
 <script lang="ts" module>
 	/** Entries of the catalog "Kanal hinzufügen" (plan §3.4); the IDs are those of the assistant (EH-5). */
 	export type CatalogEntry =
-		'kalender' | 'telegram' | 'webde' | 'gmail' | 'proton' | 'whatsapp-web';
+		'kalender' | 'telegram' | 'webde' | 'gmail' | 'notion' | 'proton' | 'whatsapp-web';
 </script>
 
 <script lang="ts">
@@ -16,7 +16,8 @@
 	// offers "Weitere einrichten". Proton has no automatic fetch in the free plan and leads to its
 	// guide. The heading is the target of "Kanal hinzufügen" in the empty state. Every tile links to
 	// its assistant or guide (?einrichten=<art>, EH-5 to EH-7), so a middle click works too; the link
-	// replaces the history entry, like closing the assistant does.
+	// replaces the history entry, like closing the assistant does. Notion (ADR-0041) fetches nothing
+	// by itself; its tile says "Import".
 	let {
 		connections,
 		heading = $bindable(),
@@ -114,6 +115,27 @@
 					data-sveltekit-replacestate
 				>
 					Anleitung<span class="visually-hidden">: Proton Mail</span>
+				</a>
+			</div>
+		</li>
+		<li class="tile">
+			<div class="head">
+				<ChannelIcon kind="notion" />
+				<h4>Notion (Listen übernehmen)</h4>
+			</div>
+			<p>Bestehende Listen und Datenbanken als Kopien übernehmen, nur lesend, nur auf Anstoß.</p>
+			<div class="foot">
+				<Lozenge label="Import" icon="inbox" tone="muted" />
+				<a
+					class="button-secondary setup"
+					href={hrefOf('notion')}
+					data-sveltekit-keepfocus
+					data-sveltekit-noscroll
+					data-sveltekit-replacestate
+				>
+					{connections.some((connection) => connection.type === 'notion')
+						? 'Weitere einrichten'
+						: 'Einrichten'}<span class="visually-hidden">: Notion</span>
 				</a>
 			</div>
 		</li>
