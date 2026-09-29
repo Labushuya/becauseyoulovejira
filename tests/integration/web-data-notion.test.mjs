@@ -104,7 +104,8 @@ describe('data layer of the Notion import', () => {
 					{ ref: id(4, 1), status: 'created', message: '' },
 					{ ref: id(4, 3), status: 'skipped', message: 'Erledigt, übersprungen.' }
 				],
-				counts: { created: 1, duplicates: 0, skipped: 1, failed: 0 }
+				counts: { created: 1, duplicates: 0, skipped: 1, failed: 0 },
+				pending: []
 			}
 		});
 		const imports = await listNotionImports(pb, connection.id);
@@ -133,7 +134,8 @@ describe('data layer of the Notion import', () => {
 		expect(refused).toEqual({
 			kind: 'error',
 			message: 'Bitte 1 bis 100 Einträge je Anfrage wählen.',
-			reason: ''
+			reason: '',
+			partial: null
 		});
 		const hidden = await previewNotion(pb, connection.id, { type: 'page', id: id(2, 2) }, null);
 		expect(hidden).toMatchObject({ kind: 'error', reason: 'source' });

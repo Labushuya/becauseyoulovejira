@@ -329,6 +329,12 @@
 				ist gesperrt. Du wählst einzelne oder alle aus und übernimmst sie in den Eingang.
 			</li>
 			<li>
+				Die Übernahme läuft in Blöcken. Oben im Dialog siehst du, wie viele Einträge schon
+				bearbeitet sind, danach das Ergebnis mit „Im Eingang ansehen“. „Nach diesem Block anhalten“
+				stoppt nach dem laufenden Block. Was nicht übernommen wurde, bleibt ausgewählt; ein neuer
+				Versuch erkennt Übernommenes als „schon vorhanden“.
+			</li>
+			<li>
 				<strong>Datenbank:</strong> Jede Zeile wird ein Eintrag. Die erste Datums-Eigenschaft (oder die
 				gewählte) wird zum Datum, die übrigen Eigenschaften stehen als Liste im Text. Mit „Seiteninhalt
 				als Kopie mitnehmen“ kommt auch der Inhalt der Seite jeder Zeile mit, höchstens 500 Blöcke und

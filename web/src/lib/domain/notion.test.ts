@@ -5,18 +5,25 @@
 import { describe, expect, it } from 'vitest';
 import {
 	NOTION_DEFAULT_LIMITS,
+	NOTION_REQUEST_TIMEOUT_MS,
+	NO_COUNTS,
 	addCounts,
-	batches,
 	blockedReason,
 	checkText,
+	countsOf,
 	countsText,
+	entriesText,
 	importBatchSize,
 	importedSummary,
 	limitsText,
 	notionContentOf,
+	notionInboxQuery,
 	notionOriginText,
 	preselectedRefs,
+	progressText,
 	refetchText,
+	runSummary,
+	runningText,
 	truncatedText,
 	type NotionImportedSource,
 	type NotionPreviewItem
@@ -74,16 +81,91 @@ describe('choosing entries', () => {
 		expect(preselectedRefs(items, false)).toEqual(['a', 'b']);
 	});
 
-	it('cuts a selection into batches of the server limit', () => {
-		expect(batches(['a', 'b', 'c', 'd', 'e'], 2)).toEqual([['a', 'b'], ['c', 'd'], ['e']]);
-		expect(batches([], 100)).toEqual([]);
-		expect(batches(['a'], 0)).toEqual([['a']]);
+	it('sends blocks of 10 per 100 entries of the source, so progress is real (fix 2026-09-30)', () => {
+		expect(importBatchSize(NOTION_DEFAULT_LIMITS, false, 45)).toBe(10);
+		expect(importBatchSize(NOTION_DEFAULT_LIMITS, false, 0)).toBe(10);
+		expect(importBatchSize(NOTION_DEFAULT_LIMITS, false, 100)).toBe(10);
+		expect(importBatchSize(NOTION_DEFAULT_LIMITS, false, 101)).toBe(20);
+		expect(importBatchSize(NOTION_DEFAULT_LIMITS, false, 450)).toBe(50);
+		expect(importBatchSize(NOTION_DEFAULT_LIMITS, false, 1000)).toBe(100);
+		expect(importBatchSize({ importBatch: 30 }, false, 1000)).toBe(30);
 	});
 
-	it('takes smaller batches while the page content comes along', () => {
-		expect(importBatchSize(NOTION_DEFAULT_LIMITS, false)).toBe(100);
-		expect(importBatchSize(NOTION_DEFAULT_LIMITS, true)).toBe(10);
-		expect(importBatchSize({ importBatch: 5 }, true)).toBe(5);
+	it('takes blocks of 5 while the page content comes along', () => {
+		expect(importBatchSize(NOTION_DEFAULT_LIMITS, true, 45)).toBe(5);
+		expect(importBatchSize(NOTION_DEFAULT_LIMITS, true, 1000)).toBe(5);
+		expect(importBatchSize({ importBatch: 3 }, true, 45)).toBe(3);
+	});
+
+	it('waits for the server longer than it may take, shorter than PocketBase and Firefox', () => {
+		// The server ends a request after 90 s (notion-rules.js LIMITS.routeSeconds); both give up
+		// after 5 minutes.
+		expect(NOTION_REQUEST_TIMEOUT_MS).toBe(150_000);
+		expect(NOTION_REQUEST_TIMEOUT_MS).toBeGreaterThan(90_000 + 30_000);
+		expect(NOTION_REQUEST_TIMEOUT_MS).toBeLessThan(300_000);
+	});
+});
+
+describe('a run of the import (fix 2026-09-30)', () => {
+	it('counts the results and names the run in German', () => {
+		expect(
+			countsOf([
+				{ ref: 'a', status: 'created', message: '' },
+				{ ref: 'b', status: 'duplicate', message: 'Schon im Eingang.' },
+				{ ref: 'c', status: 'skipped', message: 'Erledigt, übersprungen.' },
+				{ ref: 'd', status: 'failed', message: 'x' },
+				{ ref: 'e', status: 'created', message: '' }
+			])
+		).toEqual({ created: 2, duplicates: 1, skipped: 1, failed: 1 });
+		expect(countsOf([])).toEqual(NO_COUNTS);
+		expect(entriesText(1)).toBe('1 Eintrag');
+		expect(entriesText(1200)).toBe('1.200 Einträge');
+		expect(runningText(45)).toBe('45 Einträge werden übernommen …');
+		expect(runningText(1)).toBe('1 Eintrag wird übernommen …');
+		expect(progressText(20, 45)).toBe('20 von 45 bearbeitet …');
+	});
+
+	it('leads to the Notion entries of the inbox, all of them when none is new', () => {
+		expect(notionInboxQuery({ ...NO_COUNTS, created: 3 })).toBe('?quelle=notion');
+		expect(notionInboxQuery({ ...NO_COUNTS, duplicates: 3 })).toBe('?quelle=notion&zustand=alle');
+	});
+
+	it('sums up a run: success, nothing new, entries with errors, an error, a stop', () => {
+		const done = { counts: { ...NO_COUNTS, created: 45 }, error: null, stopped: false, open: 0 };
+		expect(runSummary(done)).toEqual({
+			tone: 'success',
+			title: 'In den Eingang übernommen',
+			text: '45 angelegt.'
+		});
+		expect(runSummary({ ...done, counts: { ...NO_COUNTS, duplicates: 2 } })).toMatchObject({
+			tone: 'info',
+			text: '0 angelegt, 2 schon vorhanden.'
+		});
+		expect(runSummary({ ...done, counts: { ...NO_COUNTS, created: 3, failed: 1 } })).toEqual({
+			tone: 'success',
+			title: 'In den Eingang übernommen',
+			text: '3 angelegt, 1 mit Fehler. Einträge mit Fehler bleiben ausgewählt; der Grund steht darunter.'
+		});
+		expect(runSummary({ ...done, counts: { ...NO_COUNTS, failed: 2 } }).tone).toBe('error');
+		expect(
+			runSummary({
+				counts: { ...NO_COUNTS, created: 10 },
+				error: 'Notion bremst gerade die Anfragen (429). Bitte in einer Minute erneut versuchen.',
+				stopped: false,
+				open: 35
+			})
+		).toEqual({
+			tone: 'error',
+			title: 'Übernahme unterbrochen',
+			text: '10 angelegt. Notion bremst gerade die Anfragen (429). Bitte in einer Minute erneut versuchen. 35 Einträge noch nicht übernommen; sie bleiben ausgewählt, ein neuer Versuch erkennt Übernommenes als „schon vorhanden“.'
+		});
+		expect(
+			runSummary({ counts: { ...NO_COUNTS, created: 10 }, error: null, stopped: true, open: 35 })
+		).toEqual({
+			tone: 'info',
+			title: 'Angehalten',
+			text: '10 angelegt. 35 Einträge noch nicht übernommen; sie bleiben ausgewählt, ein neuer Versuch erkennt Übernommenes als „schon vorhanden“.'
+		});
 	});
 });
 

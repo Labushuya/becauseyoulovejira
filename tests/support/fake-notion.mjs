@@ -2,9 +2,9 @@
 // exactly the reading endpoints of the app (users/me, search, data sources and their query,
 // pages, block children) and answers everything else with 404, so a writing request would show in
 // the log and fail. It checks the token and the Notion-Version like Notion, paginates with a small
-// page size, hides what is not shared (404) and can answer chosen requests with an injected
-// failure (e.g. 429 with Retry-After). The log holds method, path, query and version per request,
-// never the Authorization header.
+// page size, hides what is not shared (404), can answer chosen requests with an injected failure
+// (e.g. 429 with Retry-After) and can answer slowly (`slow`, for time limits). The log holds
+// method, path, query, version and arrival time per request, never the Authorization header.
 
 import { createServer } from 'node:http';
 
@@ -50,11 +50,12 @@ async function readBody(request) {
  * rows: { dataSourceId: [page] }, pages: { id: page }, children: { id: [block] }, shared: Set of
  * the IDs of shared data sources and pages, pageSize }. Rows count as shared with their data
  * source, blocks with their page.
- * @returns {Promise<{ port: number, requests: object[], inject: (rule: object) => void, clear: () => void, close: () => Promise<void> }>}
+ * @returns {Promise<{ port: number, requests: object[], inject: (rule: object) => void, slow: (ms: number) => void, clear: () => void, close: () => Promise<void> }>}
  */
 export async function startFakeNotion(workspace) {
 	const requests = [];
 	let injections = [];
+	let delayMs = 0;
 	const size = workspace.pageSize ?? 100;
 	const rowIds = new Set(Object.values(workspace.rows).flatMap((rows) => rows.map((row) => row.id)));
 	const pages = { ...workspace.pages };
@@ -76,7 +77,11 @@ export async function startFakeNotion(workspace) {
 			error(response, 400, 'invalid_json', 'Body failed to parse.');
 			return;
 		}
-		requests.push({ method, path, query: Object.fromEntries(url.searchParams), version: request.headers['notion-version'] ?? '', body });
+		requests.push({ method, path, query: Object.fromEntries(url.searchParams), version: request.headers['notion-version'] ?? '', body, at: Date.now() });
+		if (delayMs > 0) {
+			await new Promise((resolve) => setTimeout(resolve, delayMs));
+			if (response.destroyed) return;
+		}
 
 		const injected = injections.find((rule) => rule.method === method && rule.path.test(path) && rule.times > 0);
 		if (injected !== undefined) {
@@ -165,10 +170,19 @@ export async function startFakeNotion(workspace) {
 		inject(rule) {
 			injections.push({ times: 1, headers: {}, code: 'injected', ...rule });
 		},
+		/** Every following answer waits `ms` first (0: at once); `clear` resets it. */
+		slow(ms) {
+			delayMs = ms;
+		},
 		clear() {
 			requests.length = 0;
 			injections = [];
+			delayMs = 0;
 		},
-		close: () => new Promise((resolve) => server.close(() => resolve()))
+		close: () =>
+			new Promise((resolve) => {
+				server.closeAllConnections();
+				server.close(() => resolve());
+			})
 	};
 }

@@ -48,7 +48,8 @@ export function fakeNotionData() {
 			kind: 'ok' as const,
 			value: {
 				items: request.refs.map((ref) => ({ ref, status: 'created' as const, message: '' })),
-				counts: { created: request.refs.length, duplicates: 0, skipped: 0, failed: 0 }
+				counts: { created: request.refs.length, duplicates: 0, skipped: 0, failed: 0 },
+				pending: []
 			}
 		}))
 	} satisfies NotionData;
