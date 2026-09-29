@@ -249,7 +249,7 @@ describe('mailbox assistant (EH-7)', () => {
 		await fireEvent.click(within(dialog).getByRole('button', { name: 'Hilfsprozess prüfen' }));
 		await vi.waitFor(() =>
 			expect(
-				within(dialog).getByText(/Der Mail-Hilfsprozess läuft nicht\. Nach stop\.bat/)
+				within(dialog).getByText(/Der Mail-Hilfsprozess läuft nicht\. neu-starten\.bat startet ihn/)
 			).toBeTruthy()
 		);
 		expect(data.listMailbox).toHaveBeenCalledWith(ID, 1, expect.anything());

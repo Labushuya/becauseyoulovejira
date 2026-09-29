@@ -1,8 +1,8 @@
 ﻿# Operation of becauseyoulovejira (ADR-0039): start, stop, restart, reload, status, open, logs,
 # doctor and port of the app, the autostart (E1 plan, package 8), the admin reset (E1.1) and the
 # mail helper byl-mail.exe next to PocketBase (E4 plan, package 11).
-# Called by start.bat, start-hidden.vbs, stop.bat, autostart-an.bat, autostart-aus.bat and
-# admin-zuruecksetzen.bat, always with -NoProfile -ExecutionPolicy Bypass (script execution is
+# Called by start.bat, start-hidden.vbs, stop.bat, neu-starten.bat, status.bat, autostart-an.bat,
+# autostart-aus.bat and admin-zuruecksetzen.bat, always with -NoProfile -ExecutionPolicy Bypass (script execution is
 # disabled on the target machine):
 #   powershell -NoProfile -ExecutionPolicy Bypass -File byl-control.ps1 <command> [options]
 # "help" lists the commands, options and exit codes.
@@ -56,7 +56,7 @@ Erster Start: Im Browser öffnet sich einmalig die Einrichtung.
   1. Lege dort dein Admin-Konto an.
   2. Lege danach im Admin-Bereich ({0}_/) unter „users“ dein App-Konto an (E-Mail und Passwort).
   3. Öffne {0} und melde dich mit dem App-Konto an.
-Der Einrichtungslink ist 30 Minuten gültig – ist er abgelaufen, starte die App neu (stop.bat, dann start.bat).
+Der Einrichtungslink ist 30 Minuten gültig – ist er abgelaufen, erst stop.bat, dann start.bat (erzeugt einen neuen Link).
 $MissedLinkHint
 "@
 
@@ -78,9 +78,9 @@ Aufruf: $ControlCall <Befehl> [Optionen]
 Befehle:
   start           Startet die App (läuft sie schon, öffnet es nur den Browser). Doppelklick: start.bat
   stop            Beendet die App geordnet: erst den Mail-Hilfsprozess, dann PocketBase. Doppelklick: stop.bat
-  restart         Beendet die App und startet sie neu.
-  reload          Startet nur neu, wenn es nötig ist (neue Migration, geänderte Hooks, …).
-  status          Zeigt, ob die App läuft, ihre Adresse und ob ein Neustart nötig ist.
+  restart         Beendet die App und startet sie neu (immer).
+  reload          Startet nur neu, wenn es nötig ist (neue Migration, geänderte Hooks, …). Doppelklick: neu-starten.bat
+  status          Zeigt, ob die App läuft, ihre Adresse und ob ein Neustart nötig ist. Doppelklick: status.bat
   open            Öffnet die laufende App im Browser.
   logs [Log]      Letzte Zeilen der Logs: server, mail, skript oder alle.
   doctor          Prüft Dateien, Port, Schreibrechte, Plattenplatz und andere Kopien.
@@ -615,7 +615,7 @@ function Start-MailHelper {
             Write-Status 'Mail-Hilfsprozess byl-mail.exe läuft bereits.'
         }
         elseif ($decision -eq 'NoRoute') {
-            Write-Status 'Hinweis: byl-mail.exe startet erst nach einem Neustart der App (stop.bat, dann start.bat).'
+            Write-Status 'Hinweis: byl-mail.exe startet erst nach einem Neustart der App (neu-starten.bat).'
         }
     }
     catch {
@@ -787,7 +787,7 @@ function Invoke-Start {
         }
         'Unhealthy' {
             Show-Message -Kind Error -Text ("becauseyoulovejira läuft (PID $processId, $BylAppUrl), antwortet aber nicht auf /api/health.`n" +
-                "Neu starten mit:`n  $ControlCall restart`noder start mit -Force." + (Get-LogTail))
+                "Neu starten: neu-starten.bat doppelklicken (oder $ControlCall restart)." + (Get-LogTail))
             return $BylExitUnhealthy
         }
         'Restart' {
@@ -806,7 +806,7 @@ function Invoke-Start {
             $state = Wait-Ready -Server $server
             if ($state -ne 'Ready') {
                 Show-Message -Kind Error -Text ("becauseyoulovejira (PID $processId) antwortet nicht auf /api/health.`n" +
-                    "Neu starten mit:`n  $ControlCall restart" + (Get-LogTail))
+                    "Neu starten: neu-starten.bat doppelklicken (oder $ControlCall restart)." + (Get-LogTail))
                 return $BylExitUnhealthy
             }
             Complete-Start -ProcessId $processId -ColdStart $true
@@ -816,7 +816,7 @@ function Invoke-Start {
             Write-Status "becauseyoulovejira läuft bereits (PID $processId, $BylAppUrl)."
             $script:LogDetail = "pid=$processId port=$($look.RunningPort) running"
             if ($look.RunningPort -ne $Config.Port) {
-                Write-Notice "Hinweis: Eingestellt ist Port $($Config.Port); die neue Adresse gilt nach einem Neustart:`n  $ControlCall restart"
+                Write-Notice "Hinweis: Eingestellt ist Port $($Config.Port); die neue Adresse gilt nach einem Neustart (neu-starten.bat)."
             }
             Update-AddressFile -Port $look.RunningPort
             $link = Get-PendingInstallerLink -ProcessId $processId
@@ -1119,9 +1119,9 @@ function Invoke-Status {
         $where = if ($null -ne $other.Port) { "Port $($other.Port)" } else { 'andere Adresse' }
         Write-Host "  Hinweis: $kind auf $where (PID $($other.ProcessId)) $($other.ExecutablePath); bleibt unberührt."
     }
-    if ($code -eq $BylExitNotRunning) { Write-Host "Starten: start.bat oder $ControlCall start" }
-    elseif ($code -eq $BylExitUnhealthy) { Write-Host "Neu starten: $ControlCall restart" }
-    elseif ($code -eq $BylExitRestartNeeded) { Write-Host "Neustart: $ControlCall reload" }
+    if ($code -eq $BylExitNotRunning) { Write-Host 'Starten: start.bat doppelklicken.' }
+    elseif ($code -eq $BylExitUnhealthy) { Write-Host 'Neu starten: neu-starten.bat doppelklicken.' }
+    elseif ($code -eq $BylExitRestartNeeded) { Write-Host 'Neustart: neu-starten.bat doppelklicken.' }
     return $code
 }
 
@@ -1136,12 +1136,16 @@ function Invoke-Reload {
     $data = Get-StatusData -Config $Config
     $action = Resolve-ReloadAction -ServerState $data.ServerState -Verdict $data.Comparison.Verdict -Force $Force.IsPresent
     $script:LogDetail = "action=$($action.ToLowerInvariant())"
-    if ($action -eq 'Nothing') {
-        Show-Message "Kein Neustart nötig: becauseyoulovejira ist aktuell (PID $($data.ProcessId), http://127.0.0.1:$($data.Port)/)."
-        return $BylExitOk
-    }
-    if ($action -eq 'ReloadOnly') {
-        Show-Message 'Kein Neustart nötig. Die Oberfläche wurde neu gebaut: im offenen Tab einmal neu laden (F5).'
+    if ($action -eq 'Nothing' -or $action -eq 'ReloadOnly') {
+        # No restart, but the mail helper may be missing (a mailbox was switched on since the start).
+        Set-BylAddress -Port $data.Port
+        Start-MailHelper
+        if ($action -eq 'Nothing') {
+            Show-Message "Kein Neustart nötig: becauseyoulovejira ist aktuell (PID $($data.ProcessId), $BylAppUrl)."
+        }
+        else {
+            Show-Message 'Kein Neustart nötig. Die Oberfläche wurde neu gebaut: im offenen Tab einmal neu laden (F5).'
+        }
         return $BylExitOk
     }
     if ($action -eq 'Restart') {
@@ -1168,7 +1172,7 @@ function Invoke-Open {
     }
     Set-BylAddress -Port $look.RunningPort
     if ($look.ServerState -ne 'Running') {
-        Show-Message -Kind Error -Text "becauseyoulovejira (PID $($look.Own[0].ProcessId)) antwortet nicht. Neu starten mit:`n  $ControlCall restart"
+        Show-Message -Kind Error -Text "becauseyoulovejira (PID $($look.Own[0].ProcessId)) antwortet nicht. Neu starten: neu-starten.bat doppelklicken."
         return $BylExitUnhealthy
     }
     if ($Hidden -or $NoBrowser) {
@@ -1262,7 +1266,7 @@ function Invoke-Doctor {
     switch ($look.ServerState) {
         'Running' { & $add 'instance' 'ok' "läuft (PID $($look.Own[0].ProcessId), Port $($look.RunningPort))" }
         'Starting' { & $add 'instance' 'warning' "startet gerade (PID $($look.Own[0].ProcessId))" }
-        'Unhealthy' { & $add 'instance' 'error' "läuft (PID $($look.Own[0].ProcessId)), antwortet aber nicht: $ControlCall restart" }
+        'Unhealthy' { & $add 'instance' 'error' "läuft (PID $($look.Own[0].ProcessId)), antwortet aber nicht: neu-starten.bat" }
         default { & $add 'instance' 'info' 'läuft nicht' }
     }
     switch ($look.PortState.State) {
@@ -1364,7 +1368,7 @@ function Invoke-Port {
     $script:LogDetail = "port=$port"
     $text = "Port $port eingestellt ($BylConfigName). Neue Adresse: http://127.0.0.1:$port/"
     if ($look.Own.Count -gt 0) {
-        $text += "`nDie App läuft noch auf Port $($look.RunningPort); die neue Adresse gilt nach einem Neustart:`n  $ControlCall restart"
+        $text += "`nDie App läuft noch auf Port $($look.RunningPort); die neue Adresse gilt nach einem Neustart (neu-starten.bat)."
     }
     else {
         Update-AddressFile -Port $port
@@ -1383,6 +1387,8 @@ function Invoke-AutostartOn {
     }
     $spec = Get-AutostartShortcut -AppDir $AppDir -StartupDir ([Environment]::GetFolderPath('Startup')) `
         -SystemDir ([Environment]::SystemDirectory)
+    # The shortcut has one name for every copy of the app: one of another folder is replaced.
+    $before = Get-AutostartState
     try {
         $shortcut = (New-Object -ComObject WScript.Shell).CreateShortcut($spec.Path)
         $shortcut.TargetPath = $spec.TargetPath
@@ -1395,7 +1401,9 @@ function Invoke-AutostartOn {
         Show-Message -Kind Error -Text "Autostart konnte nicht eingerichtet werden: $($_.Exception.Message)"
         return $BylExitError
     }
-    Show-Message "Autostart aktiviert:`n$($spec.Path)"
+    $text = "Autostart aktiviert (startet diesen Ordner bei der Anmeldung ohne Fenster):`n$($spec.Path)"
+    if ($before -eq 'other') { $text += "`nDie bisherige Verknüpfung zeigte auf einen anderen Ordner und wurde ersetzt." }
+    Show-Message $text
     return $BylExitOk
 }
 

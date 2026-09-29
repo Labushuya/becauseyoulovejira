@@ -27,7 +27,7 @@ export const PROVIDERS: Readonly<Record<string, MailProvider>> = Object.freeze({
 		port: 993,
 		secure: true,
 		loginHint:
-			'App-Passwort nötig (Bestätigung in zwei Schritten): Gmail nimmt das normale Kontopasswort nicht an. Unter myaccount.google.com → Sicherheit die Bestätigung in zwei Schritten einschalten, dann unter myaccount.google.com/apppasswords ein App-Passwort anlegen und per setx in die Variable der Verbindung schreiben (danach stop.bat und start.bat). Mit „Erweitertem Schutz“ gibt es keine App-Passwörter; dann bleibt der Weg über .eml-Dateien.'
+			'App-Passwort nötig (Bestätigung in zwei Schritten): Gmail nimmt das normale Kontopasswort nicht an. Unter myaccount.google.com → Sicherheit die Bestätigung in zwei Schritten einschalten, dann unter myaccount.google.com/apppasswords ein App-Passwort anlegen und per setx in die Variable der Verbindung schreiben (danach neu-starten.bat). Mit „Erweitertem Schutz“ gibt es keine App-Passwörter; dann bleibt der Weg über .eml-Dateien.'
 	}
 });
 

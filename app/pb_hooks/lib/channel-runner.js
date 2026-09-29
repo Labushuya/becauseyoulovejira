@@ -156,7 +156,7 @@ function runConnection(app, record) {
       app,
       'byl-missing:' + record.id + ':' + access.missing.join(','),
       'byl-' + type + ': Verbindung ' + label(record) + ' ruft nichts ab, solange ' + access.missing.join(' und ') +
-        ' fehlt (Variable anlegen, dann stop.bat und start.bat).'
+        ' fehlt (Variable anlegen, dann neu-starten.bat).'
     );
     return result;
   }

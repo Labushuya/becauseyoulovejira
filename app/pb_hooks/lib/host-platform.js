@@ -1,5 +1,5 @@
 // Operating system of the server for the guides of the SPA (ADR-0028, plan plattformen S0-2).
-// The guides name start.bat, stop.bat and setx; they describe the machine the server runs on, not
+// The guides name start.bat, neu-starten.bat and setx; they describe the machine the server runs on, not
 // the device with the open tab. Pure module: the route passes BYL_HOST_PLATFORM and the path of the
 // running executable ($os.args[0]).
 

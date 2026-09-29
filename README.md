@@ -96,6 +96,8 @@ becauseyoulovejira/
     start-hidden.vbs      Starten ohne Fenster (Ziel der Autostart-Verknüpfung)
     becauseyoulovejira.html  Einstieg per Doppelklick (prüft den Server, öffnet die App)
     stop.bat              Beenden, geordnet (nur die eigene Instanz)
+    neu-starten.bat       Neu starten, nur wenn nötig (Update, neue Variable, …)
+    status.bat            Zeigt, ob die App läuft, Adresse und ob ein Neustart nötig ist
     admin-zuruecksetzen.bat  Admin-Konto anlegen oder Admin-Passwort neu setzen (Notfall)
     autostart-an.bat      Autostart einrichten
     autostart-aus.bat     Autostart entfernen
@@ -162,7 +164,9 @@ Grenzen der Erkennung: `start.bat` meldet eine offene Einrichtung nur, wenn der 
 |---|---|
 | `app\start.bat` | Startet PocketBase ohne sichtbares Fenster mit den Daten in `app\pb_data`, wartet, bis `/api/health` antwortet (höchstens 30 s, mit Sekundenanzeige), meldet „becauseyoulovejira läuft: http://127.0.0.1:8090/ (PID …)“ und öffnet dann genau einmal die App. Ist die App schon in einem Tab offen, öffnet es **keinen** zweiten: Der offene Tab zeigt einen Hinweis, und das Fenster meldet „bereits in einem Browser-Tab offen“. Nach einem Neustart wartet es dafür bis zu 3 Sekunden, bis sich offene Tabs neu verbunden haben. Bleibt die Antwort aus, öffnet es den Tab wie früher. Läuft die App schon, startet es **nichts doppelt** und öffnet nur den Browser (bzw. nichts, wenn sie schon offen ist). Ist dort die Einrichtung noch offen, öffnet es stattdessen den Einrichtungslink (siehe oben). Läuft sie, antwortet aber nicht, meldet es das und nennt den Befehl zum Neustart. Ist der Port von einem anderen Programm belegt, bricht es ab und nennt Programm, PID, Pfad und einen freien Port zum Umstellen (siehe [Port ändern](#port-ändern)); das andere Programm bleibt unberührt. Bei Fehlern und Einrichtungshinweisen bleibt das Fenster offen, bis eine Taste gedrückt wird. Bei einem normalen Start schließt es sich von selbst. Details stehen in `app\logs\`. |
 | `app\becauseyoulovejira.html` | Einstieg per Doppelklick ([ADR-0035](docs/adr/0035-start-einstieg-und-offene-tabs.md)). Die Seite prüft, ob die App läuft. Läuft sie, öffnet sie die App im selben Tab bzw. sagt, dass sie schon in einem anderen Tab offen ist, und schließt sich nach 5 Sekunden. Läuft sie noch nicht, erklärt sie „start.bat ausführen“, prüft jede Sekunde und öffnet die App nach dem Start mit 5 Sekunden Countdown („Jetzt öffnen“, „Abbrechen“). Der Link „App öffnen“ ist immer da. Wer versehentlich `app\pb_public\index.html` öffnet, landet ebenfalls hier. |
-| `app\stop.bat` | Beendet **geordnet** nur die eigene Instanz: erst den eigenen Mail-Hilfsprozess (`byl-mail.exe` aus diesem Ordner), dann PocketBase (`pocketbase.exe` aus diesem Ordner mit `serve` und `app\pb_data`). Maßgeblich ist der Programmpfad in diesem Ordner, nie der Name; andere Prozesse, eine Kopie der App in einem anderen Ordner oder Testinstanzen bleiben unberührt. Offene Tabs zeigen vorher „becauseyoulovejira wurde beendet (stop.bat)“ statt Fehlermeldungen; nach `start.bat` verschwindet der Hinweis von selbst. Läuft nichts, meldet es „läuft nicht“. Die Erfolgsmeldung bleibt 5 Sekunden stehen (eine Taste schließt sofort), eine Fehlermeldung bis zu einem Tastendruck. |
+| `app\stop.bat` | Beendet **geordnet** nur die eigene Instanz: erst den eigenen Mail-Hilfsprozess (`byl-mail.exe` aus diesem Ordner), dann PocketBase (`pocketbase.exe` aus diesem Ordner mit `serve` und `app\pb_data`). Maßgeblich ist der Programmpfad in diesem Ordner, nie der Name; andere Prozesse, eine Kopie der App in einem anderen Ordner oder Testinstanzen bleiben unberührt. Offene Tabs zeigen vorher „becauseyoulovejira wurde beendet.“ statt Fehlermeldungen; nach `start.bat` bzw. einem Neustart verschwindet der Hinweis von selbst. Läuft nichts, meldet es „läuft nicht“. Die Erfolgsmeldung bleibt 5 Sekunden stehen (eine Taste schließt sofort), eine Fehlermeldung bis zu einem Tastendruck. |
+| `app\neu-starten.bat` | Startet die App **nur neu, wenn es nötig ist**: nach einem Update mit neuer Migration oder geänderter Server-Logik, nach einer neuen, geänderten oder entfernten `BYL_*`-Variable (etwa nach `setx`), einem neuen Mail-Hilfsprozess oder einem anderen Port, und wenn die App nicht antwortet. Sonst sagt es „Kein Neustart nötig“ (bzw. „F5 im offenen Tab“, wenn nur die Oberfläche neu gebaut ist) und startet höchstens einen fehlenden Mail-Hilfsprozess. Läuft die App nicht, startet es sie. Offene Tabs verbinden sich nach dem Neustart selbst. Die Meldung bleibt 5 Sekunden stehen, ein Fehler bis zu einem Tastendruck. Immer neu starten: `byl-control.ps1 reload -Force` bzw. `restart`. |
+| `app\status.bat` | Zeigt, ob die App läuft (seit wann, PID), die Adresse, den Mail-Hilfsprozess, ob ein Neustart nötig ist (mit Grund), den Autostart und laufende Kopien in anderen Ordnern. Ändert nichts; das Fenster bleibt bis zu einem Tastendruck offen. |
 | `app\admin-zuruecksetzen.bat` | Legt ein Admin-Konto an oder setzt das Admin-Passwort neu, ohne Daten zu löschen. Siehe [Konten verwalten](#konten-verwalten). |
 | `app\autostart-an.bat` / `app\autostart-aus.bat` | Legt die Verknüpfung `becauseyoulovejira.lnk` im Windows-Autostart-Ordner an bzw. entfernt sie. Sie startet `start-hidden.vbs`: Die App startet bei der Anmeldung still im Hintergrund, **ohne** Browser. Hinweise (Erststart) und Fehler erscheinen dann als Meldungsfenster. Nach dem Verschieben von `app\` einfach `autostart-an.bat` erneut ausführen. |
 
@@ -181,8 +185,8 @@ powershell -NoProfile -ExecutionPolicy Bypass -File app\byl-control.ps1 help
 | `start` | wie `start.bat`; `-NoBrowser` ohne Browser, `-Force` startet eine App neu, die nicht antwortet |
 | `stop` | wie `stop.bat` |
 | `restart` | beenden und neu starten |
-| `reload` | nur neu starten, wenn es nötig ist (siehe unten); `-Force` startet immer neu |
-| `status` | Zustand, Adresse, Mail-Hilfsprozess, ob ein Neustart nötig ist, Autostart; `-Json` für Skripte |
+| `reload` | wie `neu-starten.bat`: nur neu starten, wenn es nötig ist (siehe unten); `-Force` startet immer neu |
+| `status` | wie `status.bat`: Zustand, Adresse, Mail-Hilfsprozess, ob ein Neustart nötig ist, Autostart; `-Json` für Skripte |
 | `open` | die laufende App öffnen (installierte App bzw. Tab) |
 | `logs` bzw. `logs server\|mail\|skript` | letzte Zeilen der Logs (`-Lines 50`), `-Follow` folgt einem Log |
 | `doctor` | prüft Dateien, Oberfläche, Port, Schreibrechte, Plattenplatz, andere Kopien und Autostart; `-Json` für Skripte |
@@ -205,7 +209,7 @@ Standard ist `http://127.0.0.1:8090/`. Ist Port 8090 belegt, nennt `start.bat` e
 powershell -NoProfile -ExecutionPolicy Bypass -File app\byl-control.ps1 port 8091
 ```
 
-Der Port steht dann in `app\byl-config.json` (die einzige Stelle, wandert bei einer Ordnerkopie mit). Läuft die App gerade, gilt er nach `stop.bat` und `start.bat`. Die Landing-Seite `becauseyoulovejira.html`, der Mail-Hilfsprozess und die Anleitungen in der App folgen von selbst. Anpassen musst du: Lesezeichen, die installierte App (unter der neuen Adresse neu installieren), die App-Adresse in der Browser-Erweiterung für WhatsApp Web, und unter der neuen Adresse einmal neu anmelden (die Anmeldung gilt je Adresse). `port 8090` stellt zurück. Die App weicht nie selbst auf einen anderen Port aus.
+Der Port steht dann in `app\byl-config.json` (die einzige Stelle, wandert bei einer Ordnerkopie mit). Läuft die App gerade, gilt er nach `neu-starten.bat` (es erkennt den neuen Port). Die Landing-Seite `becauseyoulovejira.html`, der Mail-Hilfsprozess und die Anleitungen in der App folgen von selbst. Anpassen musst du: Lesezeichen, die installierte App (unter der neuen Adresse neu installieren), die App-Adresse in der Browser-Erweiterung für WhatsApp Web, und unter der neuen Adresse einmal neu anmelden (die Anmeldung gilt je Adresse). `port 8090` stellt zurück. Die App weicht nie selbst auf einen anderen Port aus.
 
 **Bindung:** nur `127.0.0.1` (nicht im Netz erreichbar – vorerst; Mehrgerätezugriff über Tailscale ist geplant, siehe [ADR-0001](docs/adr/0001-betriebsmodell-lokal-mehrgeraete-spaeter.md))
 
@@ -287,7 +291,7 @@ Google Calendar und Telegram holt die App selbst ab, Postfächer der Mail-Hilfsp
 
 - **Zugangsdaten nur als Windows-Variable:** Geheime Kalenderadresse, Bot-Token und erlaubte IDs stehen als Umgebungsvariablen deines Windows-Kontos, deren Name mit `BYL_` beginnt (Großbuchstaben, Ziffern, `_`). Die App speichert nur den Namen, nie den Wert. So stehen die Werte weder in `pb_data` noch in Backups oder Kopien von `app\`.
 - **Variable setzen:** Eingabeaufforderung öffnen (Windows-Taste, `cmd`) und `setx NAME "Wert"` eingeben, etwa `setx BYL_TELEGRAM_TOKEN "123456789:AA…"`. Alternativ: Windows-Taste, „Umgebungsvariablen“, dann **Umgebungsvariablen für dieses Konto bearbeiten** → **Benutzervariablen** → **Neu…**.
-- **Danach neu starten:** `stop.bat`, dann `start.bat`. `start.bat` liest alle `BYL_*`-Variablen frisch aus deinem Benutzerkonto und gibt sie an den Server weiter. Die Verbindung zeigt dann „Zugangsdaten gesetzt.“, sonst nennt sie die fehlende Variable.
+- **Danach neu starten:** `neu-starten.bat`. Es erkennt die neue oder geänderte Variable, startet neu und liest dabei alle `BYL_*`-Variablen frisch aus deinem Benutzerkonto (Werte werden dafür nicht gespeichert, siehe [ADR-0039](docs/adr/0039-betriebsskripte.md) §5). Die Verbindung zeigt dann „Zugangsdaten gesetzt.“, sonst nennt sie die fehlende Variable.
 - **Ändern oder entfernen:** `setx` mit neuem Wert bzw. die Variable in der Systemsteuerung löschen (oder `reg delete HKCU\Environment /v NAME /f`), dann neu starten.
 - **Umzug:** Auf einem anderen Rechner fehlen die Variablen; lege sie dort neu an.
 - **In der App:** Dieselbe Erklärung steht unter **Einstellungen → Hilfe → Kanäle und Zugangsdaten**; die Seite **Kanäle** verlinkt sie mit „Wie funktionieren die Zugangsdaten?“.
@@ -310,7 +314,7 @@ Die App liest den Kalender über seine **geheime iCal-Adresse** (nur lesend) und
 1. [Google Calendar](https://calendar.google.com) im Browser öffnen, links unter **Meine Kalender** beim Kalender auf **⋮** → **Einstellungen und Freigabe**.
 2. Ganz unten unter **Kalender integrieren** die **Privatadresse im iCal-Format** kopieren (beginnt mit `https://calendar.google.com/calendar/ical/`, endet auf `/basic.ics`).
 3. Eingabeaufforderung: `setx BYL_GOOGLE_CALENDAR_URL "<kopierte Adresse>"`.
-4. `stop.bat`, dann `start.bat`.
+4. `neu-starten.bat` doppelklicken.
 5. Die Verbindung mit der Variablen `BYL_GOOGLE_CALENDAR_URL` anlegen (im Assistenten Schritt 1; er lässt sich in jeder Reihenfolge durchgehen).
 6. Stichwörter eintragen, dann **Jetzt abrufen**.
 
@@ -328,8 +332,8 @@ Der Assistent (**Kanäle** → **Kanal hinzufügen** → **Telegram-Bot** → **
 1. In Telegram **@BotFather** öffnen, `/newbot` senden, Namen und Benutzernamen (endet auf „bot“) wählen.
 2. Den Token aus der Antwort setzen: `setx BYL_TELEGRAM_TOKEN "123456789:AA…"`, dazu vorläufig `setx BYL_TELEGRAM_ALLOWED_IDS "0"`.
 3. Die Verbindung mit `BYL_TELEGRAM_TOKEN` und `BYL_TELEGRAM_ALLOWED_IDS` anlegen.
-4. `stop.bat`, dann `start.bat`; der Assistent prüft, ob die App beide Variablen sieht.
-5. **Chat freigeben:** Dem Bot schreiben und **Jetzt abrufen**. Die App liest die Chat-ID aus dem Hinweis „Nachricht aus einem nicht freigegebenen Chat (Chat-ID …)“ und zeigt den fertigen Befehl, etwa `setx BYL_TELEGRAM_ALLOWED_IDS "424242"` (mehrere IDs durch Komma; eine Gruppe beginnt mit `-100`). Befehl ausführen, noch einmal `stop.bat`, dann `start.bat`, erneut **Jetzt abrufen**: Dann meldet die App keinen fremden Chat mehr.
+4. `neu-starten.bat`; der Assistent prüft, ob die App beide Variablen sieht.
+5. **Chat freigeben:** Dem Bot schreiben und **Jetzt abrufen**. Die App liest die Chat-ID aus dem Hinweis „Nachricht aus einem nicht freigegebenen Chat (Chat-ID …)“ und zeigt den fertigen Befehl, etwa `setx BYL_TELEGRAM_ALLOWED_IDS "424242"` (mehrere IDs durch Komma; eine Gruppe beginnt mit `-100`). Befehl ausführen, noch einmal `neu-starten.bat` (es erkennt den geänderten Wert), erneut **Jetzt abrufen**: Dann meldet die App keinen fremden Chat mehr.
 6. Stichwörter eintragen, „todo Test“ an den Bot schicken, **Jetzt abrufen**.
 
 - Der Offset rückt erst weiter, wenn eine Nachricht gespeichert ist; ein erneuter Abruf legt nichts doppelt an. Nachrichten fremder Chats werden nicht gespeichert, nur ihre Chat-ID erscheint als Hinweis an der Verbindung.
@@ -346,7 +350,7 @@ Der Mail-Hilfsprozess `app\byl-mail.exe` holt den Posteingang alle 5 Minuten ab,
 - **Wie:** in Blöcken zu 500 Mails von der neuesten zur ältesten; die Karte zeigt unter „Posteingang“ den Fortschritt, etwa „wird durchsucht: 1.200/4.800“, und bietet währenddessen **Abbrechen**. Im Menü **…** der Karte startet **Posteingang neu durchsuchen** die Suche von vorn. Die Kopfzeilen prüft die App selbst, im Text sucht zuerst der Mailserver, und nur die Treffer werden geladen und genau geprüft. Kann der Server nicht suchen, lädt die App die Mails blockweise (langsamer, die Karte sagt das).
 - **Höchstens 200 neue Einträge pro Abruf:** Gibt es mehr, meldet die Karte „Weitere Treffer – erneut abrufen“; **Jetzt abrufen** holt die nächsten 200. Die neuesten Mails kommen zuerst.
 - **Grenzen der Suche im Text:** Bei Gmail findet die Suche des Servers Wörter nur ganz, also „todo“ nicht in „Todos“. Auch eine Phrase über einen Zeilenumbruch kann im Text übersehen werden. Solche Mails holst du über **Aus dem Postfach wählen**.
-- **Originaldateien bis 25 MB:** Mails bis 25 MB kommen samt Originaldatei (mit Anhängen) in den Eingang. **Mails über 25 MB** kommen ohne Originaldatei, beim Abruf, bei der Durchsuchung und bei **Aus dem Postfach wählen** (ab `byl-mail.exe` 0.9.0; bis `stop.bat` und `start.bat` ihn ersetzen, gilt im älteren Hilfsprozess die alte Grenze von 10 MB). Gelesen werden nur die ersten 2 MB: Absender, Betreff, Datum und der Anfang des Textes, sonst nur die Kopfdaten. Der Eintrag zeigt „Ohne Originaldatei (zu groß)“ mit der Größe. Dasselbe gilt für eine `.eml`-Datei über 25 MB. Anhänge großer Mails bleiben im Postfach. Die höhere Grenze gilt erst nach dem Neustart (Migration); bis dahin lehnt der Server eine `.eml`-Datei zwischen 10 und 25 MB ab.
+- **Originaldateien bis 25 MB:** Mails bis 25 MB kommen samt Originaldatei (mit Anhängen) in den Eingang. **Mails über 25 MB** kommen ohne Originaldatei, beim Abruf, bei der Durchsuchung und bei **Aus dem Postfach wählen** (ab `byl-mail.exe` 0.9.0; bis `neu-starten.bat` ihn ersetzt, gilt im älteren Hilfsprozess die alte Grenze von 10 MB). Gelesen werden nur die ersten 2 MB: Absender, Betreff, Datum und der Anfang des Textes, sonst nur die Kopfdaten. Der Eintrag zeigt „Ohne Originaldatei (zu groß)“ mit der Größe. Dasselbe gilt für eine `.eml`-Datei über 25 MB. Anhänge großer Mails bleiben im Postfach. Die höhere Grenze gilt erst nach dem Neustart (Migration); bis dahin lehnt der Server eine `.eml`-Datei zwischen 10 und 25 MB ab.
 - **Backups werden größer:** Jede Originaldatei liegt in `app\pb_data` und damit in jedem Backup und jeder Ordnerkopie. Mit der Grenze von 25 MB statt 10 MB kann jede Mail mit großen Anhängen das Backup um bis zu 25 MB vergrößern. Wer Platz sparen will, verwirft Einträge mit großen Anhängen, die er nicht braucht (ihr Inhalt samt Datei wird nach 30 Tagen gelöscht).
 
 **Jetzt abrufen** an der Karte holt sofort ab, ohne die 5 Minuten abzuwarten; die Karte zeigt unter „Hilfsprozess“, ob `byl-mail.exe` läuft, und unter „Ergebnis“, was der letzte Abruf gebracht hat. Er liest nur: Gelesen-Status, Markierungen und Ordner bleiben unverändert, er löscht, verschiebt und verschickt nichts.
@@ -355,7 +359,7 @@ Der Mail-Hilfsprozess `app\byl-mail.exe` holt den Posteingang alle 5 Minuten ab,
 2. Mit Zwei-Faktor-Anmeldung: **Account verwalten** → **Login & Sicherheit** → **Anwendungsspezifische Passwörter verwalten** → neues Passwort erstellen (Name etwa „becauseyoulovejira“); es wird nur einmal angezeigt. Ohne Zwei-Faktor-Anmeldung gilt das normale Web.de-Passwort.
 3. Eingabeaufforderung: `setx BYL_WEBDE_PASSWORD "<Passwort>"`.
 4. Im Assistenten (**Kanäle** → **Kanal hinzufügen** → **Web.de** → **Einrichten**) die Verbindung anlegen: deine E-Mail-Adresse, Variable `BYL_WEBDE_PASSWORD`. Stichwörter eintragen.
-5. `stop.bat`, dann `start.bat`. Beim ersten Mal legt `start.bat` die Variable `BYL_INGEST_TOKEN` an (nichts zu tun) und startet `byl-mail.exe`.
+5. `neu-starten.bat`. Beim ersten Mal legt der Start die Variable `BYL_INGEST_TOKEN` an (nichts zu tun) und startet `byl-mail.exe`.
 6. Nach spätestens 5 Minuten zeigt die Verbindung „Letzter Abruf“ und den Hinweis „Erster Abruf“; **Jetzt abrufen** im Schritt „Erster Abruf“ startet den Abruf sofort (der Assistent zeigt das ohne Neuladen; **Hilfsprozess prüfen** fragt auf Klick, ob `byl-mail.exe` läuft): Der Posteingang wird durchsucht, Treffer erscheinen im Eingang, danach kommen neue Mails mit Stichwort.
 
 - **Einmal pro Mail:** Die Message-ID ist das Duplikatmerkmal. Dieselbe Mail als `.eml`-Datei oder ein zweiter Abruf ergibt keinen zweiten Eintrag. Die Originalmail hängt am Eintrag („Originaldatei herunterladen“).
@@ -374,7 +378,7 @@ Gmail holt derselbe Hilfsprozess ab wie Web.de, mit denselben Regeln: der gesamt
 2. [myaccount.google.com/apppasswords](https://myaccount.google.com/apppasswords) öffnen, einen Namen wie „becauseyoulovejira“ eingeben und **Erstellen** klicken. Das App-Passwort (16 Buchstaben in Vierergruppen) wird nur einmal angezeigt.
 3. Eingabeaufforderung: `setx BYL_GMAIL_PASSWORD "<App-Passwort ohne Leerzeichen>"`.
 4. Im Assistenten (**Kanäle** → **Kanal hinzufügen** → **Gmail** → **Einrichten**; er schlägt `BYL_GMAIL_PASSWORD` vor und entfernt im Feld „Wert hier einsetzen“ die Leerzeichen des App-Passworts) die Verbindung mit deiner Gmail-Adresse anlegen. Stichwörter eintragen.
-5. `stop.bat`, dann `start.bat`. Nach spätestens 5 Minuten zeigt die Verbindung „Letzter Abruf“ und den Hinweis „Erster Abruf“.
+5. `neu-starten.bat`. Nach spätestens 5 Minuten zeigt die Verbindung „Letzter Abruf“ und den Hinweis „Erster Abruf“.
 
 - **Anmeldung abgelehnt:** Die Verbindung meldet „Anmeldung bei Gmail abgelehnt.“ mit dem Hinweis **„App-Passwort nötig (Bestätigung in zwei Schritten)“**. Meist steht in der Variablen das normale Google-Passwort oder ein widerrufenes App-Passwort. Neues App-Passwort per `setx` setzen und neu starten.
 - **Kein App-Passwort möglich:** Mit „Erweitertem Schutz“, nur mit Sicherheitsschlüssel oder bei manchen Arbeitskonten bietet Google keine App-Passwörter an. Dann bleibt der Weg über `.eml`-Dateien (Mail öffnen → **⋮** → **Nachricht herunterladen**).
@@ -568,7 +572,7 @@ Ein Projekt kann Unterprojekte haben, genau eine Ebene tief ([ADR-0034](docs/adr
 - **Projektansicht:** Liste und Kacheln zeigen Unterprojekte eingerückt unter ihrem Oberprojekt; der Knopf am Oberprojekt klappt sie zu (gilt für diesen Tab). Die Suche zeigt ein passendes Unterprojekt mit seinem Oberprojekt. Die Zahlen eines Oberprojekts zählen die Unterprojekte mit („inkl. Unterprojekte“), das Panel nennt „davon direkt in Haus“.
 - **Filter und Tabelle:** Der Filter „Projekt“ zeigt bei „Haus“ auch die Tickets der Unterprojekte, offen wie erledigt. **„Unterprojekte einbeziehen“** im Filter schaltet das aus (`?unterprojekte=0`). Auswahllisten nennen „Haus › Garten (GART)“, die Spalte „Projekt“ „Haus › Garten“, und der Pfad oben im Ticket beginnt mit „Haus › Garten“. „Nach Projekt“ gruppiert je Projekt. `@GART` in der Schnellerfassung wählt das Unterprojekt; eine Unteraufgabe bekommt das Projekt ihres Tickets, auch ein Unterprojekt.
 - **Archivieren und Löschen:** „Archivieren“ von „Haus“ fragt vorher und archiviert die Unterprojekte mit. Zurück holt man jedes einzeln; ein Unterprojekt unter einem archivierten Oberprojekt kommt mit **„Mit Oberprojekt zurückholen“** zurück. Ein Projekt mit Unterprojekten lässt sich nicht löschen.
-- **Nach dem Update:** Unterprojekte gibt es erst nach einem Neustart der App (`stop.bat`, dann `start.bat`); bis dahin zeigt das Panel einen Hinweis, und alles andere funktioniert wie vorher.
+- **Nach dem Update:** Unterprojekte gibt es erst nach einem Neustart der App (`neu-starten.bat`); bis dahin zeigt das Panel einen Hinweis, und alles andere funktioniert wie vorher.
 
 ### Wiederholungen
 

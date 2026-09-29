@@ -148,7 +148,8 @@ describe('step data', () => {
 		expect(text).toMatch(/Einstellungen und Freigabe/);
 		expect(text).toMatch(/Privatadresse im iCal-Format/);
 		expect(text).toMatch(/setx \{\{variable\}\} \\"\{\{wert\}\}\\"/);
-		expect(text).toMatch(/stop\.bat, dann start\.bat/);
+		expect(text).toMatch(/app\\\\neu-starten\.bat/);
+		expect(text).not.toMatch(/stop\.bat/);
 		expect(text).toMatch(/Zurücksetzen/);
 	});
 });

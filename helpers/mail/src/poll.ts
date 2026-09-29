@@ -151,7 +151,7 @@ export async function pollConnection(
 	if (password === '' || connection.user === '') {
 		outcome.status = 'missing';
 		deps.log.warn(
-			`${label(connection)} ruft nichts ab, solange ${connection.secretEnv} fehlt (Variable anlegen, dann stop.bat und start.bat).`
+			`${label(connection)} ruft nichts ab, solange ${connection.secretEnv} fehlt (Variable anlegen, dann neu-starten.bat).`
 		);
 		return outcome;
 	}

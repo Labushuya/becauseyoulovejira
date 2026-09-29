@@ -152,15 +152,9 @@ describe('channel card', () => {
 		const cases: [MailHelperStatus | null, RegExp][] = [
 			[null, /^wird geprüft …$/],
 			[{ state: 'running', version: '0.5.0', message: '' }, /^läuft \(byl-mail 0\.5\.0\)$/],
-			[
-				{ state: 'stopped', version: '', message: '' },
-				/^läuft nicht\. .*stop\.bat, dann start\.bat/
-			],
+			[{ state: 'stopped', version: '', message: '' }, /^läuft nicht\. .*neu-starten\.bat/],
 			[{ state: 'refused', version: '', message: '' }, /BYL_INGEST_TOKEN/],
-			[
-				{ state: 'outdated', version: '', message: '' },
-				/älteren Version.*stop\.bat, dann start\.bat/
-			]
+			[{ state: 'outdated', version: '', message: '' }, /älteren Version.*neu-starten\.bat/]
 		];
 		for (const [helper, text] of cases) {
 			const { unmount } = render(ChannelCard, {

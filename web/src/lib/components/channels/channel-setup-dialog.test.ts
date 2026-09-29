@@ -254,8 +254,8 @@ describe('setup assistant: steps', () => {
 		await vi.waitFor(() => expect(data.secretStatus.mock.calls.length).toBe(before + 1));
 		expect(dialog().getByText('Die App sieht BYL_GOOGLE_CALENDAR_URL noch nicht.')).toBeTruthy();
 		expect(dialog().getByText(/Hast du setx schon ausgeführt\?/)).toBeTruthy();
-		expect(dialog().getByRole('region', { name: 'Erst diese Datei' }).textContent).toBe(
-			'app\\stop.bat'
+		expect(dialog().getByRole('region', { name: 'Diese Datei doppelklicken' }).textContent).toBe(
+			'app\\neu-starten.bat'
 		);
 
 		data.secretStatus.mockResolvedValue({ secret: true, allowlist: null });

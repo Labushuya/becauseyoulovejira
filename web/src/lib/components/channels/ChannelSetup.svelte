@@ -403,8 +403,8 @@
 		{@render commandBlocks(entry, false)}
 		{#if connection !== null && facts.secretStatus !== null && check?.tone === 'open'}
 			<SectionMessage tone="warning" compact>
-				Hast du setx schon ausgeführt? Dann starte die App neu: stop.bat, dann start.bat. Danach
-				„Erneut prüfen“.
+				Hast du setx schon ausgeführt? Dann starte die App neu: neu-starten.bat im Ordner app.
+				Danach „Erneut prüfen“.
 			</SectionMessage>
 		{/if}
 	{:else if entry.id === 'keywords'}
@@ -431,8 +431,8 @@
 				</SectionMessage>
 			{:else if helper === 'unavailable'}
 				<SectionMessage tone="info" live>
-					Der Mail-Hilfsprozess läuft nicht. Nach stop.bat, dann start.bat startet er, sobald eine
-					eingeschaltete Postfach-Verbindung besteht und die App die Variable sieht.
+					Der Mail-Hilfsprozess läuft nicht. neu-starten.bat startet ihn, sobald eine eingeschaltete
+					Postfach-Verbindung besteht und die App die Variable sieht.
 				</SectionMessage>
 			{:else if helper !== null}
 				<SectionMessage tone="error" live>{helper.message} {helper.hint}</SectionMessage>
@@ -442,8 +442,8 @@
 		{@render runBlock()}
 		{#if chatId !== null}
 			<SectionMessage tone="info" title={`Erkannte Chat-ID: ${chatId}`} live headingLevel={4}>
-				Gib diese ID frei: den Befehl ausführen, dann die App neu starten (stop.bat, dann start.bat)
-				und erneut „Jetzt abrufen“.
+				Gib diese ID frei: den Befehl ausführen, dann die App neu starten (neu-starten.bat) und
+				erneut „Jetzt abrufen“.
 			</SectionMessage>
 			<CodeBlock
 				code={CHAT_COMMAND.template}
