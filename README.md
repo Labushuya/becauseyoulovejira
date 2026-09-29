@@ -587,13 +587,15 @@ Ein Ticket kann Unteraufgaben haben, genau eine Ebene tief ([ADR-0033](docs/adr/
 
 ### Tickets auswählen
 
-Wo du ein Ticket wählst (übergeordnetes Ticket, „Mit Ticket verknüpfen …“, „Anderem Ticket zuordnen …“), musst du nichts wissen oder tippen ([ADR-0042](docs/adr/0042-tickets-und-projekte-aus-listen-waehlen.md)):
+Wo du ein Ticket wählst (übergeordnetes Ticket, „Mit Ticket verknüpfen …“, „Anderem Ticket zuordnen …“, „Oder ein Ticket“ im Link des Editors), musst du nichts wissen oder tippen ([ADR-0042](docs/adr/0042-tickets-und-projekte-aus-listen-waehlen.md)):
 
 - **Liste sofort:** Beim Klick ins Feld erscheinen zuerst die zuletzt angesehenen oder bearbeiteten Tickets, dann alle offenen nach Projekt („Haus › Garten“), jeweils mit Key, Titel, Status, Fälligkeit und dem Punkt für „neu“.
 - **Tippen filtert:** nach Key und Titel, Groß- und Kleinschreibung und Umlaute egal („apfel“ findet „Äpfel“), mehrere Wörter müssen alle vorkommen.
 - **Filter:** **„Nur offene“** (an) und **„Projekt“** (mit Unterprojekten). Ohne „Nur offene“ folgen die erledigten Tickets, zuletzt geänderte zuerst.
 - **Mehr:** 25 Einträge, dann **„Mehr anzeigen“**. Pfeiltasten, Pos1 und Ende bewegen, Enter wählt, Esc schließt die Liste.
 - **Nicht wählbar:** Was an dieser Stelle nicht geht (etwa eine Unteraufgabe als übergeordnetes Ticket), steht ausgegraut mit dem Grund in der Liste.
+- **Ticket verlinken:** Im Editor (Beschreibung, Kommentar) öffnet **„Link“** bzw. `Strg+K` auch **„Oder ein Ticket“**. Der Link zeigt auf das Ticket in der App (`/tickets/…`) und heißt, wenn nichts markiert ist, wie das Ticket („HAUS-12 Titel“); ein Klick darauf öffnet es im selben Tab.
+- **Projekte** wählst du überall aus Listen mit Pfad („Haus › Garten (GART)“). In der Schnellerfassung setzt **„Projekt“** unter der Zeile das Kürzel `@CODE` für dich ein; getipptes `@CODE` geht weiter.
 
 ### Unterprojekte
 
@@ -622,7 +624,7 @@ Eine **Regel** erzeugt Tickets nach einem Rhythmus ([ADR-0021](docs/adr/0021-reg
 
 - **„Erfassen“** in der Abschnittsleiste des Eingangs (`/eingang/neu`) bietet Vorlagen mit festen Feldern: To-do, Anruf, Einkauf (Artikel als Checkliste), Termin (Datum als Quelldatum, nicht als Fälligkeit), Projektaufgabe und Web-Link. Standardmäßig entsteht direkt ein Ticket. Der Schalter „In den Eingang statt direkt als Ticket“ oder `Alt+Enter` legt stattdessen einen Eingangseintrag an; Web-Links gehen immer in den Eingang.
 - **Schnellerfassung:** `c` oder `Strg+K` (oder der Knopf in der Kopfzeile) öffnet eine Zeile mit Kurzsyntax, etwa `Zahnarzt anrufen @PRIV !hoch #anruf`.
-  - `@CODE` setzt ein aktives Projekt.
+  - `@CODE` setzt ein aktives Projekt. Wer den Code nicht weiß, wählt das Projekt unter der Zeile bei **„Projekt“**; die Wahl schreibt `@CODE` in die Zeile.
   - `!niedrig`, `!mittel`, `!hoch`, `!dringend` bzw. `!1` bis `!4` (`!1` = niedrig) setzen die Priorität.
   - `#tag` nimmt einen Tag oder legt ihn an.
   - Was die App nicht erkennt, bleibt im Titel, und eine Vorschau zeigt, was erkannt wurde.
