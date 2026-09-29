@@ -114,6 +114,21 @@ function row(number, title, values) {
 	};
 }
 
+/**
+ * `count` rows "Zeile 1", "Zeile 2", … of the database for tests of larger imports (IDs id(4, 101)
+ * and up), created one minute apart on 2026-09-02, open and without a date.
+ */
+export function manyRows(count) {
+	return Array.from({ length: count }, (_, index) => {
+		const extra = row(101 + index, `Zeile ${index + 1}`, {});
+		const hour = String(10 + Math.floor(index / 60)).padStart(2, '0');
+		const minute = String(index % 60).padStart(2, '0');
+		extra.created_time = `2026-09-02T${hour}:${minute}:00.000Z`;
+		extra.last_edited_time = extra.created_time;
+		return extra;
+	});
+}
+
 /** A fresh workspace; tests may change their copy. */
 export function workspace() {
 	clock = 0;

@@ -5,6 +5,7 @@
 
 import { formatCount } from './connections';
 import type { InboxItemSummary, InboxState } from './inbox';
+import { serializeInboxQuery } from './inbox-query';
 
 export const NOTION_SOURCE_TYPES = ['data_source', 'page'] as const;
 export type NotionSourceType = (typeof NOTION_SOURCE_TYPES)[number];
@@ -111,6 +112,16 @@ export interface NotionImportResult {
 	message: string;
 }
 
+/**
+ * Answer of one import request: per entry and the counts, and the entries the server handed back
+ * because its time for new entries was over (they come again in the next request).
+ */
+export interface NotionImportBatch {
+	items: NotionImportResult[];
+	counts: NotionImportCounts;
+	pending: string[];
+}
+
 export interface NotionImportCounts {
 	created: number;
 	duplicates: number;
@@ -145,6 +156,34 @@ export type NotionOutcome<T> =
 			reason: 'connection' | 'source' | '';
 	  };
 
+/**
+ * Answer of an import request: like every route, but an error on the way (the token refused while
+ * page contents are read, Notion too slow) keeps what was taken before it in `partial`.
+ */
+export type NotionImportOutcome =
+	| { kind: 'ok'; value: NotionImportBatch }
+	| {
+			kind: 'missing' | 'disabled' | 'error';
+			message: string;
+			reason: 'connection' | 'source' | '';
+			partial: NotionImportBatch | null;
+	  };
+
+/**
+ * How long the browser waits for a route of the Notion import. The server ends every request after
+ * about 90 s (LIMITS.routeSeconds in app/pb_hooks/lib/notion-rules.js: no request to Notion starts
+ * later, an import hands the rest back after 30 s); 150 s leave room for one last request to Notion
+ * and stay below the 5 minutes after which PocketBase (WriteTimeout) and Firefox give up.
+ */
+export const NOTION_REQUEST_TIMEOUT_MS = 150_000;
+
+export const NOTION_TIMEOUT_MESSAGE =
+	'Der Server hat nicht innerhalb von 2,5 Minuten geantwortet (Zeitüberschreitung). Was schon übernommen ist, bleibt im Eingang; ein neuer Versuch erkennt es als „schon vorhanden“.';
+
+/** A request that answered without any result and without an error; the run stops instead of looping. */
+export const NOTION_NO_PROGRESS_MESSAGE =
+	'Der Server hat keinen der Einträge bearbeitet. Bitte erneut versuchen.';
+
 /** What an import sends; the server reads the source itself and takes only the IDs. */
 export interface NotionImportRequest {
 	source: { type: NotionSourceType; id: string };
@@ -170,23 +209,98 @@ export function preselectedRefs(items: readonly NotionPreviewItem[], skipDone: b
 }
 
 /**
- * Entries per import request: the limit of the server, but at most 10 while the page content comes
- * along, because each row may then take up to 40 requests to Notion at about 3 per second.
+ * Entries per import request (a block), so the dialog shows real progress (fix 2026-09-30):
+ *
+ * - Without page content 10 per 100 entries of the source, at least 10, at most the limit of the
+ *   server. Each request reads the source anew (1 request to Notion plus 1 per 100 rows, 350 ms
+ *   apart); this keeps that reading at about one request to Notion per 10 entries. 45 rows go in 5
+ *   blocks of about a second each, 1,000 rows in 10 blocks of 100.
+ * - With page content 5: every row needs at least one more request to Notion, up to 40.
+ *
+ * The server hands back what it could not take within its time (`pending`), so a block never runs
+ * into a time limit.
  */
 export function importBatchSize(
 	limits: Pick<NotionLimits, 'importBatch'>,
-	withContent: boolean
+	withContent: boolean,
+	entries: number
 ): number {
-	return withContent ? Math.min(10, limits.importBatch) : limits.importBatch;
+	if (withContent) return Math.max(1, Math.min(5, limits.importBatch));
+	const scaled = 10 * Math.max(1, Math.ceil(entries / 100));
+	return Math.max(1, Math.min(scaled, limits.importBatch));
 }
 
-/** `list` in parts of at most `size` (at least 1). */
-export function batches<T>(list: readonly T[], size: number): T[][] {
-	const step = Math.max(1, Math.floor(size));
-	const result: T[][] = [];
-	for (let start = 0; start < list.length; start += step)
-		result.push(list.slice(start, start + step));
-	return result;
+/** The counts of `results`. */
+export function countsOf(results: readonly NotionImportResult[]): NotionImportCounts {
+	const counts = { ...NO_COUNTS };
+	for (const result of results) {
+		if (result.status === 'created') counts.created += 1;
+		else if (result.status === 'duplicate') counts.duplicates += 1;
+		else if (result.status === 'skipped') counts.skipped += 1;
+		else counts.failed += 1;
+	}
+	return counts;
+}
+
+/** "1 Eintrag", "45 Einträge". */
+export function entriesText(count: number): string {
+	return count === 1 ? '1 Eintrag' : `${formatCount(count)} Einträge`;
+}
+
+/** Text of the import button while it runs: "45 Einträge werden übernommen …". */
+export function runningText(total: number): string {
+	return total === 1 ? '1 Eintrag wird übernommen …' : `${entriesText(total)} werden übernommen …`;
+}
+
+/** Progress line of the dialog: "20 von 45 bearbeitet …". */
+export function progressText(handled: number, total: number): string {
+	return `${formatCount(handled)} von ${formatCount(total)} bearbeitet …`;
+}
+
+/** Query of the inbox with the chip "Notion": the new entries, or all when none was created. */
+export function notionInboxQuery(counts: NotionImportCounts): string {
+	return serializeInboxQuery({ source: 'notion', state: counts.created > 0 ? 'new' : 'all' });
+}
+
+/** What an import run ended with, as the dialog shows it. */
+export interface NotionRunOutcome {
+	counts: NotionImportCounts;
+	/** Message of the error that stopped the run, null without one. */
+	error: string | null;
+	/** Stopped on request ("Nach diesem Block anhalten"). */
+	stopped: boolean;
+	/** Chosen entries without a result (not sent after an error or the stop). */
+	open: number;
+}
+
+/**
+ * Title, text and tone of the result (ADR-0009: red only when a request failed, or when nothing
+ * came in and entries failed; a stop is neutral).
+ */
+export function runSummary(run: NotionRunOutcome): {
+	tone: 'success' | 'info' | 'error';
+	title: string;
+	text: string;
+} {
+	const counts = `${countsText(run.counts)}.`;
+	const rest =
+		run.open === 0
+			? ''
+			: ` ${entriesText(run.open)} noch nicht übernommen; sie bleiben ausgewählt, ein neuer Versuch erkennt Übernommenes als „schon vorhanden“.`;
+	if (run.error !== null) {
+		return {
+			tone: 'error',
+			title: 'Übernahme unterbrochen',
+			text: `${counts} ${run.error}${rest}`
+		};
+	}
+	if (run.stopped) return { tone: 'info', title: 'Angehalten', text: `${counts}${rest}` };
+	const failed =
+		run.counts.failed === 0
+			? ''
+			: ' Einträge mit Fehler bleiben ausgewählt; der Grund steht darunter.';
+	const tone = run.counts.created > 0 ? 'success' : run.counts.failed > 0 ? 'error' : 'info';
+	return { tone, title: 'In den Eingang übernommen', text: `${counts}${failed}` };
 }
 
 export function addCounts(a: NotionImportCounts, b: NotionImportCounts): NotionImportCounts {
