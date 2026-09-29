@@ -37,7 +37,7 @@ describe('hostGuideNote', () => {
 	it('tells a Linux server where the variables go and to restart it', () => {
 		const note = hostGuideNote('linux');
 		expect(note?.title).toBe('Dein Server läuft unter Linux');
-		expect(note?.text).toContain('setx, start.bat, stop.bat');
+		expect(note?.text).toContain('setx, start.bat, neu-starten.bat');
 		expect(note?.text).toContain('Umgebung des PocketBase-Prozesses');
 		expect(note?.text).toContain('startest den Server danach neu');
 	});

@@ -108,7 +108,7 @@ function unknownChatHint(message, allowlistName) {
   }
   return (
     'Nachricht aus einem nicht freigegebenen Chat (' + ids + '), nicht gespeichert. Zum Freigeben die ID in ' +
-    allowlistName + ' aufnehmen (setx), dann stop.bat und start.bat.'
+    allowlistName + ' aufnehmen (setx), dann neu-starten.bat.'
   );
 }
 

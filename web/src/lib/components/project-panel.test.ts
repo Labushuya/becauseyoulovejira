@@ -573,6 +573,6 @@ describe('project panel: sub projects (ADR-0034, UP-4)', () => {
 		expect(
 			screen.getByText(/Unterprojekte sind nach dem nächsten Neustart verfügbar/)
 		).toBeTruthy();
-		expect(screen.getByText(/stop\.bat, dann start\.bat/)).toBeTruthy();
+		expect(screen.getByText(/neu-starten\.bat im Ordner app/)).toBeTruthy();
 	});
 });

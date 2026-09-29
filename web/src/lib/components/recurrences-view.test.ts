@@ -174,7 +174,7 @@ describe('RecurrencesView', () => {
 		await show(null);
 		const hint = screen.getByText(/Wiederholungen sind nach dem nächsten Neustart verfügbar/);
 		expect(hint.closest('[role="status"]')).toBeTruthy();
-		expect(screen.getByText(/stop\.bat, dann start\.bat/)).toBeTruthy();
+		expect(screen.getByText(/neu-starten\.bat im Ordner app/)).toBeTruthy();
 		expect(screen.queryByRole('link', { name: 'Neue Regel' })).toBeNull();
 		expect(document.querySelector('.alert-error')).toBeNull();
 	});

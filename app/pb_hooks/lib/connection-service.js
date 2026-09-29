@@ -9,7 +9,7 @@ var rules = require(__hooks + '/lib/connection-rules.js');
 var keywords = require(__hooks + '/lib/keywords.js');
 
 var COLLECTION = 'connections';
-var UNAVAILABLE = 'Die Verbindungen stehen nach dem nächsten Start der App bereit (start.bat).';
+var UNAVAILABLE = 'Die Verbindungen stehen nach dem nächsten Neustart der App bereit (neu-starten.bat).';
 
 function jsonOf(record, field) {
   var raw = record.getString(field);

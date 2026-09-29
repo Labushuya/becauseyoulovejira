@@ -134,12 +134,12 @@ describe('MailboxPicker', () => {
 		const { load } = setup({
 			kind: 'unavailable',
 			message: 'Der Mail-Hilfsprozess läuft nicht (byl-mail.exe fehlt oder ist beendet).',
-			hint: 'stop.bat und dann start.bat ausführen.'
+			hint: 'neu-starten.bat ausführen.'
 		});
 		const status = await screen.findByText(/Der Mail-Hilfsprozess läuft nicht/);
 		expect(status.closest('[role="status"]')).not.toBeNull();
 		expect(screen.queryByRole('alert')).toBeNull();
-		expect(screen.getByText('stop.bat und dann start.bat ausführen.')).toBeTruthy();
+		expect(screen.getByText('neu-starten.bat ausführen.')).toBeTruthy();
 		await fireEvent.click(screen.getByRole('button', { name: 'Erneut versuchen' }));
 		expect(load).toHaveBeenCalledTimes(2);
 	});

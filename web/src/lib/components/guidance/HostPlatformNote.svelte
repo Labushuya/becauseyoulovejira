@@ -3,7 +3,7 @@
 	import { findHostStore } from '$lib/stores/host.svelte';
 	import SectionMessage from './SectionMessage.svelte';
 
-	// Note above the guides that name setx, start.bat and stop.bat (ADR-0028, plan plattformen
+	// Note above the guides that name setx, start.bat and neu-starten.bat (ADR-0028, plan plattformen
 	// S0-3): shown only when the server runs on another system than Windows. On Windows, and outside
 	// the (app) layout, nothing is rendered.
 	let { headingLevel = 3 }: { headingLevel?: 3 | 4 } = $props();

@@ -218,7 +218,7 @@ async function openConnection(
 	if (password === '' || connection.user === '') {
 		throw new HttpError(
 			502,
-			`Zugangsdaten fehlen: Variable ${connection.secretEnv} anlegen, dann die App neu starten (stop.bat, dann start.bat).`
+			`Zugangsdaten fehlen: Variable ${connection.secretEnv} anlegen, dann die App neu starten (neu-starten.bat).`
 		);
 	}
 	const secrets = [password, deps.token];

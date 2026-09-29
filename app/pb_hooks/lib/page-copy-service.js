@@ -12,7 +12,7 @@ var INBOX = 'inbox_items';
 var TEST_PORT_ENV = 'BYL_TEST_PAGE_PORT';
 
 var MESSAGES = {
-  unavailable: 'Der Eingang steht nach dem nächsten Start der App bereit (start.bat).',
+  unavailable: 'Der Eingang steht nach dem nächsten Neustart der App bereit (neu-starten.bat).',
   notFound: 'Eintrag nicht gefunden.',
   notLink: 'Nur Web-Links mit Adresse haben eine Seite zum Sichern.',
   done: 'Die Seite ist schon gesichert.',

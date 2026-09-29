@@ -121,8 +121,8 @@ describe('ImportKeywordsSection', () => {
 		// Since EH-2 a section message with the one restart text.
 		const status = screen.getByRole('status');
 		expect(status.textContent).toMatch(/Nach dem nächsten Neustart verfügbar/);
-		expect(status.textContent).toMatch(/stop\.bat, dann start\.bat/);
-		expect(IMPORT_KEYWORDS_UNAVAILABLE_MESSAGE).toMatch(/stop\.bat, dann start\.bat/);
+		expect(status.textContent).toMatch(/neu-starten\.bat im Ordner app/);
+		expect(IMPORT_KEYWORDS_UNAVAILABLE_MESSAGE).toMatch(/neu-starten\.bat im Ordner app/);
 		expect(screen.queryByRole('group', { name: 'Stichwörter' })).toBeNull();
 	});
 });

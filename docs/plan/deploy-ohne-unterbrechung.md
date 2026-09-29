@@ -39,7 +39,7 @@ Widerlegt: Laufzeitfehler in jüngeren Änderungen (keine `load`-Funktion außer
 
 ## 4. Betrieb
 
-- Nach dem Merge im Live-Ordner `git pull --ff-only` und `scripts\build.ps1`: offene Tabs laufen weiter und zeigen den Hinweis. Der neue Hook wirkt erst nach einem Neustart der App (Steuerskript: `status` meldet „Neustart nötig“, geänderte `pb_hooks`).
+- Nach dem Merge im Live-Ordner `git pull --ff-only` und `scripts\build.ps1`: offene Tabs laufen weiter und zeigen den Hinweis. Der neue Hook wirkt erst nach einem Neustart der App mit `neu-starten.bat` (`status.bat` meldet bis dahin „Neustart nötig“, geänderte `pb_hooks`).
 - Der erste Build mit dem neuen Verfahren übernimmt den vorhandenen Stand von `pb_public` als vorigen Build.
 
 ## 5. Entscheidungen und Befunde

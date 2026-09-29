@@ -666,7 +666,7 @@ describe('app layout: opened again (ADR-0035 section 5)', () => {
 		expect(screen.getByText('Du hast becauseyoulovejira erneut geöffnet.')).toBeTruthy();
 	});
 
-	it('says "beendet" for stop.bat without a confirmation', async () => {
+	it('says "beendet" for stop.bat and a restart without a confirmation', async () => {
 		attentionMocks.ack.mockClear();
 		await renderLayout();
 		await vi.waitFor(() => expect(mocks.subscribed).toContain('byl/attention'));
@@ -675,6 +675,6 @@ describe('app layout: opened again (ADR-0035 section 5)', () => {
 		await tick();
 
 		expect(attentionMocks.ack).not.toHaveBeenCalled();
-		expect(screen.getByText('becauseyoulovejira wurde beendet (stop.bat).')).toBeTruthy();
+		expect(screen.getByText('becauseyoulovejira wurde beendet.')).toBeTruthy();
 	});
 });

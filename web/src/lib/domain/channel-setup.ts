@@ -2,7 +2,7 @@
 // per service (labels of one or two words, texts, fixed https links of the providers, commands
 // with their placeholders) and the progress, which comes from facts of the server, never from a
 // stored step: the connection, whether the server sees the variable, the keywords and the last
-// run. So after "stop.bat, dann start.bat" the assistant opens at the right step, also in a new
+// run. So after a restart (neu-starten.bat) the assistant opens at the right step, also in a new
 // tab. Which step was looked at last is only a hint of the session (the component keeps it).
 // Stand der Klickwege: 2026-09.
 
@@ -211,19 +211,13 @@ const CALENDAR_STEPS: readonly SetupStep[] = [
 		label: 'Neu starten',
 		title: 'App neu starten',
 		intro:
-			'Die App sieht neue Variablen erst nach einem Neustart. Im Ordner app erst stop.bat, dann start.bat per Doppelklick starten.',
+			'Die App sieht neue Variablen erst nach einem Neustart. Im Ordner app neu-starten.bat doppelklicken; es erkennt die neue Variable und startet die App neu.',
 		actions: [],
 		links: [],
 		commands: [
 			{
-				label: 'Erst diese Datei',
-				template: 'app\\stop.bat',
-				placeholders: {},
-				copyable: false
-			},
-			{
-				label: 'Dann diese Datei',
-				template: 'app\\start.bat',
+				label: 'Diese Datei doppelklicken',
+				template: 'app\\neu-starten.bat',
 				placeholders: {},
 				copyable: false
 			}
@@ -298,15 +292,19 @@ function mailTail(provider: string): readonly SetupStep[] {
 			label: 'Neu starten',
 			title: 'App neu starten',
 			intro:
-				'Die App sieht neue Variablen erst nach einem Neustart; dabei startet auch der Mail-Hilfsprozess byl-mail.exe. Im Ordner app erst stop.bat, dann start.bat per Doppelklick starten.',
+				'Die App sieht neue Variablen erst nach einem Neustart; dabei startet auch der Mail-Hilfsprozess byl-mail.exe. Im Ordner app neu-starten.bat doppelklicken.',
 			actions: [],
 			links: [],
 			commands: [
-				{ label: 'Erst diese Datei', template: 'app\\stop.bat', placeholders: {}, copyable: false },
-				{ label: 'Dann diese Datei', template: 'app\\start.bat', placeholders: {}, copyable: false }
+				{
+					label: 'Diese Datei doppelklicken',
+					template: 'app\\neu-starten.bat',
+					placeholders: {},
+					copyable: false
+				}
 			],
 			more: [
-				'start.bat legt beim ersten Mal den Zugang zwischen App und Hilfsprozess an (Variable BYL_INGEST_TOKEN, nichts zu tun) und startet byl-mail.exe, sobald eine eingeschaltete Postfach-Verbindung besteht.',
+				'Der Start legt beim ersten Mal den Zugang zwischen App und Hilfsprozess an (Variable BYL_INGEST_TOKEN, nichts zu tun) und startet byl-mail.exe, sobald eine eingeschaltete Postfach-Verbindung besteht.',
 				'Beim ersten Start von byl-mail.exe können SmartScreen oder ein Virenscanner nachfragen, weil die Datei nicht signiert ist.',
 				'Das Protokoll steht in app\\logs\\byl-mail.log, ohne Zugangsdaten und ohne Inhalte der Mails.'
 			],
@@ -508,12 +506,16 @@ const TELEGRAM_STEPS: readonly SetupStep[] = [
 		label: 'Neu starten',
 		title: 'App neu starten',
 		intro:
-			'Die App sieht neue Variablen erst nach einem Neustart. Im Ordner app erst stop.bat, dann start.bat per Doppelklick starten.',
+			'Die App sieht neue Variablen erst nach einem Neustart. Im Ordner app neu-starten.bat doppelklicken; es erkennt die neuen Variablen und startet die App neu.',
 		actions: [],
 		links: [],
 		commands: [
-			{ label: 'Erst diese Datei', template: 'app\\stop.bat', placeholders: {}, copyable: false },
-			{ label: 'Dann diese Datei', template: 'app\\start.bat', placeholders: {}, copyable: false }
+			{
+				label: 'Diese Datei doppelklicken',
+				template: 'app\\neu-starten.bat',
+				placeholders: {},
+				copyable: false
+			}
 		],
 		more: [
 			'Vor dem Neustart kann die App nicht unterscheiden, ob eine Variable fehlt oder nur noch nicht geladen ist.'
@@ -532,7 +534,7 @@ const TELEGRAM_STEPS: readonly SetupStep[] = [
 		more: [
 			'Im Chat mit dem Bot ist die ID deine User-ID. Für eine Gruppe den Bot hinzufügen; ihre ID beginnt mit -100. Mehrere IDs trennst du mit Komma.',
 			'In Gruppen sieht ein Bot normalerweise nur Befehle und Antworten an ihn. Soll er alles lesen, bei BotFather /setprivacy auf „Disable“ stellen.',
-			'Nach dem neuen Wert die App noch einmal neu starten (stop.bat, dann start.bat) und erneut „Jetzt abrufen“: Dann meldet die App keinen fremden Chat mehr.'
+			'Nach dem neuen Wert die App noch einmal neu starten (neu-starten.bat erkennt den geänderten Wert) und erneut „Jetzt abrufen“: Dann meldet die App keinen fremden Chat mehr.'
 		],
 		checked: true
 	},

@@ -143,7 +143,7 @@ describe('FileImportDialog', () => {
 				/Die Stichwörter für Datei-Importe sind nach dem nächsten Neustart verfügbar/
 			)
 		).toBeTruthy();
-		expect(screen.getByText(/stop\.bat, dann start\.bat/)).toBeTruthy();
+		expect(screen.getByText(/neu-starten\.bat im Ordner app/)).toBeTruthy();
 	});
 
 	it('closes with Escape without saving', async () => {

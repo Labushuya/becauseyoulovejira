@@ -1,11 +1,12 @@
 // Shared texts of the guidance (ADR-0026 section 2, plan EH-2). One wording for the hint after an
 // update whose migration runs only after a restart: while the app runs, start.bat only opens the
-// browser, so the hint always names "stop.bat, dann start.bat". Pure module without runes.
+// browser, so the hint names neu-starten.bat, which restarts exactly when an update needs it
+// (ADR-0039 section 5). Pure module without runes.
 
 /** Title and text of the section message "restart needed". */
 export const RESTART_NEEDED = {
 	title: 'Nach dem nächsten Neustart verfügbar',
-	text: 'Die App hat ein Update bekommen, das erst nach einem Neustart wirkt: stop.bat, dann start.bat im Ordner app.'
+	text: 'Die App hat ein Update bekommen, das erst nach einem Neustart wirkt: neu-starten.bat im Ordner app doppelklicken.'
 } as const;
 
 /**
@@ -22,10 +23,14 @@ export const APP_OPENED_AGAIN = {
 	description: 'Die App ist hier schon offen.'
 } as const;
 
-/** Neutral flag in the open tabs when stop.bat ends the app (ADR-0035 §5); not an error. */
+/**
+ * Neutral flag in the open tabs when stop.bat, a restart or neu-starten.bat ends the app (ADR-0035
+ * §5, ADR-0039); not an error. After a restart the tab reconnects on its own and the flag goes.
+ */
 export const APP_STOPPED = {
-	title: 'becauseyoulovejira wurde beendet (stop.bat).',
-	description: 'Zum Weiterarbeiten start.bat ausführen.'
+	title: 'becauseyoulovejira wurde beendet.',
+	description:
+		'Zum Weiterarbeiten start.bat ausführen. Nach einem Neustart verbindet sich dieser Tab von selbst.'
 } as const;
 
 /** Windows notification of a hidden tab (opt-in, ADR-0035 §5); a click brings the tab forward. */

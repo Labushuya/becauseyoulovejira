@@ -1,6 +1,6 @@
 # ADR-0039: Betriebsskripte – ein Steuerskript, Erkennung laufender Server, Port an einer Stelle, geordnetes Beenden und Neustart nur bei Bedarf
 
-- **Status:** Angenommen. Umgesetzt nach [docs/plan/betriebsskripte.md](../plan/betriebsskripte.md): BS-1 (#170, Kern: Befehle `start`, `stop`, `restart`, `port`, Erkennung, Port, geordnetes Beenden) und BS-2 (Start-Fingerabdruck, `reload`, `status`, `open`, `logs`, `doctor`). BS-3 (Doppelklick-Dateien, Autostart, Admin-Reset, Texte, Hilfe) folgt.
+- **Status:** Angenommen und umgesetzt nach [docs/plan/betriebsskripte.md](../plan/betriebsskripte.md): BS-1 (#170, Kern: Befehle `start`, `stop`, `restart`, `port`, Erkennung, Port, geordnetes Beenden), BS-2 (#172, Start-Fingerabdruck, `reload`, `status`, `open`, `logs`, `doctor`) und BS-3 (Doppelklick-Dateien `neu-starten.bat` und `status.bat`, Autostart, Texte, Hilfe). Manuelle Prüfungen stehen im Test-Manifest.
 - **Datum:** 2026-09-29
 - **Entscheidung durch:** Nutzer (Wunsch: „die einschlägigen Skripte alle anpassen. Soll richtig professionell sein mit bereits laufender Server-Erkennung und Port, sowie intelligentem Reload, Herunterfahren, etc.“, 2026-09-29), Advisor (Ziele, Port ohne stilles Ausweichen, Sicherheitsregel für `stop`, Teilpakete), Executor (Recherche, Umsetzung, Einzelheiten)
 - **Ergänzt:** [ADR-0035](0035-start-einstieg-und-offene-tabs.md) §1 und §7 (Nachtrag dort), [ADR-0016](0016-kanal-architektur-und-mail.md) §5 (Start und Stopp des Mail-Hilfsprozesses), [ADR-0018](0018-secrets.md) §6 (Weitergabe der `BYL_*`-Variablen)
@@ -101,7 +101,11 @@ Dateien (`pocketbase.exe`, `pb_hooks`, `pb_migrations`), Web-Build, Einstellung,
 
 ### 8. Texte (BS-3)
 
-Alle Hinweise „`stop.bat`, dann `start.bat`“ in Hooks, Oberfläche, Hilfe, Mail-Hilfsprozess und Erweiterung werden „`neu-starten.bat`“ bzw. „Neustart“. Die Hilfe „Betrieb“ erklärt Befehle, Status, Port und Fehlerbilder.
+- Alle Hinweise „`stop.bat`, dann `start.bat`“ in Hooks, Oberfläche, Hilfe, Mail-Hilfsprozess, Erweiterung und `build-mail-helper.ps1` werden „`neu-starten.bat`“; der Kanal-Assistent zeigt im Schritt „Neu starten“ nur noch `app\neu-starten.bat`. Das geht, weil `reload` genau die Fälle erkennt, für die diese Hinweise gedacht sind: neue Migration, neue oder geänderte Variable, neuer Mail-Hilfsprozess, Token nach dem Start angelegt. Ohne nötigen Neustart startet `reload` einen fehlenden Mail-Hilfsprozess.
+- **Ausnahme:** Der abgelaufene Einrichtungslink des ersten Starts braucht weiter „`stop.bat`, dann `start.bat`“: Die App ist dann „aktuell“, `neu-starten.bat` startete nicht neu, und nur ein neuer Serverlauf erzeugt einen neuen Link.
+- Der Hinweis im Tab nach `stop` heißt „becauseyoulovejira wurde beendet.“ ohne „(stop.bat)“, weil ihn auch `restart` und `neu-starten.bat` auslösen; nach dem Neustart verbindet sich der Tab und der Hinweis verschwindet.
+- `neu-starten.bat` zeigt Erfolg 5 s (wie `stop.bat`), `status.bat` wartet immer auf eine Taste. `autostart-an.bat` ersetzt eine Verknüpfung, die auf einen anderen Ordner zeigt, und sagt es; `admin-zuruecksetzen.bat` nennt die Verwaltung unter der Adresse der laufenden App.
+- Die Hilfe „Betrieb“ erklärt Starten, Neu starten nur bei Bedarf, geordnetes Beenden, `status.bat`, die tatsächliche Adresse dieser App mit dem Befehl zum Umstellen des Ports, Fehlerbilder mit `doctor` und die Logs.
 
 ## Grenzen
 

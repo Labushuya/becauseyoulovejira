@@ -16,6 +16,8 @@ const SCRIPTS_DIR = join(ROOT_DIR, 'scripts');
 const WRAPPERS = {
 	'start.bat': 'start',
 	'stop.bat': 'stop',
+	'neu-starten.bat': 'reload',
+	'status.bat': 'status',
 	'autostart-an.bat': 'autostart-on',
 	'autostart-aus.bat': 'autostart-off',
 	'admin-zuruecksetzen.bat': 'reset-admin'
@@ -28,7 +30,8 @@ const POWERSHELL_FILES = [
 		.map((name) => join(SCRIPTS_DIR, name))
 ];
 
-// The only allowed wait: stop.bat shows its success message for 5 s (a key ends it at once).
+// The only allowed wait: stop.bat and neu-starten.bat show their success message for 5 s (a key
+// ends it at once).
 const STOP_CLOSE_LINE = 'if "%BYL_EXIT%"=="0" (timeout /t 5 2>nul) else (pause)';
 
 const read = (name) => readFileSync(join(APP_DIR, name), 'utf8').replace(/^﻿/, '');
@@ -419,12 +422,16 @@ describe('open tabs before opening the browser (ADR-0035, SF-4)', () => {
 });
 
 describe('stop', () => {
-	it('stop.bat shows success for 5 seconds and waits for a key on errors', () => {
-		const lines = read('stop.bat').split('\r\n');
+	it.each(['stop.bat', 'neu-starten.bat'])('%s shows success for 5 seconds and waits for a key on errors', (name) => {
+		const lines = read(name).split('\r\n');
 		expect(lines).toContain(STOP_CLOSE_LINE);
 		expect(lines.filter((line) => /\b(pause|timeout)\b/i.test(line) && !/^rem\b/i.test(line))).toEqual([
 			STOP_CLOSE_LINE
 		]);
+	});
+
+	it('status.bat always waits for a key, so the status stays readable', () => {
+		expect(read('status.bat')).toMatch(/set "BYL_EXIT=%ERRORLEVEL%"\r\npause\r\nexit \/b %BYL_EXIT%/);
 	});
 
 	it('stops only processes chosen by Select-AppProcess, by process id', () => {
@@ -519,8 +526,13 @@ describe('status, reload, logs and doctor (ADR-0039 sections 5 to 7, BS-2)', () 
 	it('restarts in reload only through Resolve-ReloadAction and says so otherwise', () => {
 		const reload = functionBody(control(), 'Invoke-Reload');
 		expect(reload).toContain('Resolve-ReloadAction -ServerState $data.ServerState -Verdict $data.Comparison.Verdict -Force $Force.IsPresent');
-		expect(reload).toMatch(/if \(\$action -eq 'Nothing'\) \{[\s\S]*?Kein Neustart nötig[\s\S]*?return \$BylExitOk/);
-		expect(reload).toMatch(/if \(\$action -eq 'ReloadOnly'\) \{[\s\S]*?F5[\s\S]*?return \$BylExitOk/);
+		// Without a restart only the mail helper is started if it is missing (BS-3).
+		const quiet = reload.slice(reload.indexOf("if ($action -eq 'Nothing' -or $action -eq 'ReloadOnly') {"), reload.indexOf("if ($action -eq 'Restart')"));
+		expect(quiet).toContain('Start-MailHelper');
+		expect(quiet).toMatch(/Kein Neustart nötig: becauseyoulovejira ist aktuell/);
+		expect(quiet).toMatch(/Kein Neustart nötig\. Die Oberfläche wurde neu gebaut: [^\r\n]*F5/);
+		expect(quiet).toMatch(/return \$BylExitOk\s*\}\s*$/);
+		expect(quiet).not.toMatch(/Invoke-StopCore|Invoke-Start/);
 		expect(reload.match(/Invoke-StopCore/g)).toHaveLength(1);
 		expect(reload.indexOf('Invoke-StopCore')).toBeGreaterThan(reload.indexOf("if ($action -eq 'Restart')"));
 	});

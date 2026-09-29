@@ -40,7 +40,7 @@ Solange PocketBase `index.html` zum Ausliefern geöffnet hat, scheitert das Umbe
 
 ### 4. `Cache-Control: no-cache` für den Web-Build
 
-Der Hook `app/pb_hooks/static-cache.pb.js` (Regel rein in `lib/static-cache.js`) setzt für GET und HEAD außerhalb von `/api/` und `/_/` `Cache-Control: no-cache`. Der Browser behält seine Kopie, fragt aber jedes Mal nach (Antwort 304, solange sich nichts geändert hat). So startet nach einem Build kein altes `index.html` mehr aus dem Cache, und die Antwort `index.html` für ein fehlendes Modul bleibt nicht im Cache hängen. Wie jeder Hook wirkt er erst nach einem Neustart der Instanz (ADR-0039); bis dahin schützen §1, §2, §5 und §6.
+Der Hook `app/pb_hooks/static-cache.pb.js` (Regel rein in `lib/static-cache.js`) setzt für GET und HEAD außerhalb von `/api/` und `/_/` `Cache-Control: no-cache`. Der Browser behält seine Kopie, fragt aber jedes Mal nach (Antwort 304, solange sich nichts geändert hat). So startet nach einem Build kein altes `index.html` mehr aus dem Cache, und die Antwort `index.html` für ein fehlendes Modul bleibt nicht im Cache hängen. Wie jeder Hook wirkt er erst nach einem Neustart der Instanz (`neu-starten.bat`, ADR-0039); bis dahin schützen §1, §2, §5 und §6.
 
 ### 5. Neue Version erkennen und dezent anbieten
 

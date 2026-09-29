@@ -159,7 +159,7 @@ describe('mailbox-rules.js: "Jetzt abrufen" and probe of a mailbox (package A)',
 			status: 'error',
 			error: rules.OUTDATED
 		});
-		expect(rules.OUTDATED).toMatch(/stop\.bat, dann start\.bat/);
+		expect(rules.OUTDATED).toMatch(/neu-starten\.bat/);
 		expect(rules.runResult({ statusCode: 200, json: { status: 'gone' } }).status).toBe('disabled');
 		expect(rules.runResult({ statusCode: 200, json: { status: 'missing', missing: ['BYL_WEBDE_PASSWORD', 'rm -rf', 7] } })).toEqual({
 			...zero,
