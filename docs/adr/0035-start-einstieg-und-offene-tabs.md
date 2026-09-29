@@ -119,3 +119,8 @@
 
 - §5 bekommt einen Anschluss für weitere Hinweise: `AttentionDeps.opened` läuft nach dem Flag „Du hast becauseyoulovejira erneut geöffnet.“ (bei `start` und `datei`, auch über den BroadcastChannel aus §6, nie bei `stop`).
 - Einziger Nutzer ist bisher der Hinweis auf Wiederholungen, die auf eine Entscheidung über einen großen Rückstand warten ([ADR-0022](0022-erzeugung-von-instanzen.md) Nachtrag 5): das Info-Flag „1 Wiederholung wartet auf deine Entscheidung.“ mit „Ansehen“ (Regel-Panel, bei mehreren die Übersicht). Es erscheint außerdem einmal, sobald das `(app)`-Layout die Regeln geladen hat (Start der App bzw. des Tabs); ein neueres ersetzt das ältere. Ohne wartende Regel erscheint nichts.
+
+## Nachtrag (2026-09-29, [ADR-0039](0039-betriebsskripte.md), BS-1): Adresse der Landing-Seite und Befehle des Steuerskripts
+
+- **§1:** Die Adresse ist nicht mehr fest `http://127.0.0.1:8090/`, sondern die der App (Port in `app\byl-config.json`, Standard 8090). `becauseyoulovejira.html` lädt dafür genau ein Skript, `run/app-adresse.js` aus ihrem Ordner, das `byl-control.ps1` bei `start`, `stop` und `port` schreibt. Sie nimmt den Wert nur, wenn er genau `http://127.0.0.1:<Zahl>/` ist, sonst 8090; fehlt die Datei, bleibt es bei 8090. Sonst lädt die Seite weiterhin nichts, auch nichts von außen. Der Link „App öffnen“ zeigt auf dieselbe Adresse.
+- **§7:** `start.bat` und `stop.bat` rufen `byl-control.ps1 start` bzw. `stop` auf. Die Frage nach offenen Tabs, die Nachricht `stop` und der Kaltstart mit bis zu 3 s Wartezeit gelten unverändert, auch für `restart` und (ab BS-3) `neu-starten.bat`; `-NoBrowser` lässt die Frage aus. Beendet wird seit ADR-0039 geordnet (Konsolensignal, danach erst hart).

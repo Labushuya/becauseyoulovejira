@@ -6,12 +6,14 @@ import { configDefaults, defineConfig } from 'vitest/config';
 const WINDOWS_ONLY = {
 	unit: [
 		'tests/unit/admin-reset-logic.test.mjs',
+		'tests/unit/control-logic.test.mjs',
 		'tests/unit/start-browser.test.mjs',
 		'tests/unit/start-logic.test.mjs'
 	],
 	integration: [
 		'tests/integration/admin-reset.test.mjs',
 		'tests/integration/backup-restore.test.mjs',
+		'tests/integration/control-script.test.mjs',
 		'tests/integration/installer-check.test.mjs'
 	]
 };
