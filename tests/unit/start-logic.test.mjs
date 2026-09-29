@@ -91,13 +91,6 @@ const HELPERS = {
 	noUrl: { ProcessId: 606, Name: 'byl-mail.exe', ExecutablePath: HELPER, CommandLine: `"${HELPER}" run` },
 	pocketbase: PROCESSES.own,
 	unreadable: { ProcessId: 607, Name: 'byl-mail.exe', ExecutablePath: null, CommandLine: null },
-	// scripts\build-mail-helper.ps1 renamed the running helper; Windows reports the new name.
-	renamed: {
-		ProcessId: 608,
-		Name: 'byl-mail.exe.old-20260928153413',
-		ExecutablePath: `${HELPER}.old-20260928153413`,
-		CommandLine: `"${HELPER}" run --url=http://127.0.0.1:8090`
-	},
 	subfolder: {
 		ProcessId: 609,
 		Name: 'byl-mail.exe',
@@ -484,7 +477,7 @@ describe('ingest token of the mail helper (ADR-0018 section 8)', () => {
 
 describe('mail helper byl-mail.exe (E4 plan, package 11)', () => {
 	it('selects only the own helper, like the own PocketBase', () => {
-		expect(result.mailHelper.selectAll).toEqual([600, 601, 608]);
+		expect(result.mailHelper.selectAll).toEqual([600, 601]);
 		expect(result.mailHelper.single).toEqual({
 			own: 1,
 			ownOtherSpelling: 1,
@@ -495,14 +488,13 @@ describe('mail helper byl-mail.exe (E4 plan, package 11)', () => {
 			noUrl: 0,
 			pocketbase: 0,
 			unreadable: 0,
-			renamed: 1,
 			subfolder: 0,
 			otherName: 0
 		});
 	});
 
 	it('accepts every address of the own instance (port changed since the start)', () => {
-		expect(result.mailHelper.selectUrls).toEqual([600, 601, 603, 608]);
+		expect(result.mailHelper.selectUrls).toEqual([600, 601, 603]);
 	});
 
 	it('starts the helper for the own PocketBase and logs into app\\logs', () => {

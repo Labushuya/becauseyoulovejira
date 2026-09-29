@@ -139,12 +139,16 @@ function ConvertTo-AddressScript {
 }
 
 function ConvertTo-BylStateText {
-    # Text of the state file. Holds no secrets: process id, port and times.
+    # Text of the state file. Holds no secrets: process id, port, times, the start fingerprint
+    # (hashes and file stamps; the BYL_* variables only as keyed hash) and the key of that hash,
+    # encrypted for the Windows account ($EnvironmentKey, Base64 of DPAPI).
     param(
         [Parameter(Mandatory = $true)][int]$ProcessId,
         [Parameter(Mandatory = $true)][int]$Port,
         [Parameter(Mandatory = $true)][DateTime]$ProcessStartUtc,
-        [Parameter(Mandatory = $true)][DateTime]$StartedUtc
+        [Parameter(Mandatory = $true)][DateTime]$StartedUtc,
+        [AllowNull()][System.Collections.IDictionary]$Fingerprint,
+        [AllowNull()][AllowEmptyString()][string]$EnvironmentKey
     )
 
     $state = [ordered]@{
@@ -153,13 +157,15 @@ function ConvertTo-BylStateText {
         port            = $Port
         processStartUtc = $ProcessStartUtc.ToUniversalTime().ToString('o')
         startedUtc      = $StartedUtc.ToUniversalTime().ToString('o')
+        fingerprint     = $Fingerprint
+        environmentKey  = if ([string]::IsNullOrEmpty($EnvironmentKey)) { $null } else { $EnvironmentKey }
     }
     return ($state | ConvertTo-Json -Depth 4)
 }
 
 function ConvertFrom-BylState {
-    # The state file as object (ProcessId, Port, ProcessStartUtc, StartedUtc); $null if the text is
-    # no valid state.
+    # The state file as object (ProcessId, Port, ProcessStartUtc, StartedUtc, Fingerprint as
+    # hashtable of strings or $null, EnvironmentKey or $null); $null if the text is no valid state.
     param([AllowNull()][AllowEmptyString()][string]$Text)
 
     if ([string]::IsNullOrWhiteSpace($Text)) { return $null }
@@ -191,11 +197,20 @@ function ConvertFrom-BylState {
                 [Globalization.DateTimeStyles]::RoundtripKind, [ref]$parsed)) { return $null }
         $times[$name] = $parsed.ToUniversalTime()
     }
+    $fingerprint = $null
+    $rawFingerprint = & $get 'fingerprint'
+    if ($rawFingerprint -is [System.Management.Automation.PSCustomObject]) {
+        $fingerprint = @{}
+        foreach ($property in $rawFingerprint.PSObject.Properties) { $fingerprint[$property.Name] = [string]$property.Value }
+    }
+    $key = & $get 'environmentKey'
     return [pscustomobject]@{
         ProcessId       = [int]$processId
         Port            = [int]$port
         ProcessStartUtc = $times['processStartUtc']
         StartedUtc      = $times['startedUtc']
+        Fingerprint     = $fingerprint
+        EnvironmentKey  = if ($key -is [string] -and $key -match '^[A-Za-z0-9+/=]+$') { $key } else { $null }
     }
 }
 
@@ -221,14 +236,166 @@ function Resolve-StateMatch {
     return 'Stale'
 }
 
+# --- Start fingerprint and reload (ADR-0039 section 5) ------------------------------------------
+
+# Parts whose change needs a restart of PocketBase, and parts that only need a reload (F5) of the
+# open tabs. PocketBase 0.40.4 does not reload pb_hooks on Windows ("--hooksWatch ... has no effect
+# on Windows"), runs new migrations only at the start and serves pb_public fresh at every request.
+$BylRestartParts = @('server', 'migrations', 'hooks', 'port', 'environment', 'mailHelper')
+$BylReloadParts = @('web')
+
+function Get-BytesHash {
+    # SHA-256 of $Bytes as lower-case hex.
+    param([Parameter(Mandatory = $true)][AllowEmptyCollection()][byte[]]$Bytes)
+
+    $sha = [System.Security.Cryptography.SHA256]::Create()
+    try {
+        return ([BitConverter]::ToString($sha.ComputeHash($Bytes)) -replace '-', '').ToLowerInvariant()
+    }
+    finally {
+        $sha.Dispose()
+    }
+}
+
+function Get-FolderHash {
+    # SHA-256 over the relative names (lower case, "/") and the contents of the files *.js in
+    # $Folder (with -Recurse also below it), in ordinal order of the names; '' if the folder is
+    # missing.
+    param([Parameter(Mandatory = $true)][string]$Folder, [switch]$Recurse)
+
+    if (-not [System.IO.Directory]::Exists($Folder)) { return '' }
+    $option = if ($Recurse) { [System.IO.SearchOption]::AllDirectories } else { [System.IO.SearchOption]::TopDirectoryOnly }
+    $root = [System.IO.Path]::GetFullPath($Folder).TrimEnd('\') + '\'
+    $byName = @{}
+    foreach ($path in [System.IO.Directory]::GetFiles($Folder, '*.js', $option)) {
+        $byName[[System.IO.Path]::GetFullPath($path).Substring($root.Length).Replace('\', '/').ToLowerInvariant()] = $path
+    }
+    $names = [string[]]@($byName.Keys)
+    [Array]::Sort($names, [StringComparer]::Ordinal)
+    $builder = New-Object System.Text.StringBuilder
+    foreach ($name in $names) {
+        [void]$builder.Append($name).Append("`n")
+        [void]$builder.Append((Get-BytesHash -Bytes ([System.IO.File]::ReadAllBytes($byName[$name])))).Append("`n")
+    }
+    return Get-BytesHash -Bytes ([System.Text.Encoding]::UTF8.GetBytes($builder.ToString()))
+}
+
+function Get-FileStamp {
+    # Length and last write time (UTC ticks) of a large file such as pocketbase.exe, instead of a
+    # hash of 30 to 90 MB at every status; '' if the file is missing.
+    param([Parameter(Mandatory = $true)][string]$Path)
+
+    if (-not [System.IO.File]::Exists($Path)) { return '' }
+    $info = New-Object System.IO.FileInfo($Path)
+    return '{0}:{1}' -f $info.Length, $info.LastWriteTimeUtc.Ticks
+}
+
+function Get-WebBuildId {
+    # Identity of the web build in pb_public: the hash of _app\version.json (SvelteKit writes a new
+    # version at every build), else of index.html; '' without a build.
+    param([Parameter(Mandatory = $true)][string]$AppDir)
+
+    foreach ($relative in @('pb_public\_app\version.json', 'pb_public\index.html')) {
+        $path = [System.IO.Path]::Combine($AppDir, $relative)
+        if ([System.IO.File]::Exists($path)) { return Get-BytesHash -Bytes ([System.IO.File]::ReadAllBytes($path)) }
+    }
+    return ''
+}
+
+function Get-BylVariableName {
+    # Names of the BYL_* variables PocketBase gets at a start: the valid names of the user and the
+    # machine scope (Sync-BylEnvironment), sorted and without duplicates. Names only, never values.
+    param(
+        [AllowEmptyCollection()][string[]]$UserNames = @(),
+        [AllowEmptyCollection()][string[]]$MachineNames = @()
+    )
+
+    $names = [string[]]@(@($UserNames) + @($MachineNames) | Where-Object { $_ -cmatch $BylSecretNamePattern } | Select-Object -Unique)
+    [Array]::Sort($names, [StringComparer]::Ordinal)
+    return , $names
+}
+
+function Get-EnvironmentHash {
+    # HMAC-SHA256 with $Key over the entries "NAME=VALUE" of the BYL_* variables a start hands to
+    # PocketBase, in ordinal order: changes of names AND values show, but the values never leave
+    # memory. The key is random per start and lies in the state file only encrypted for the Windows
+    # account (DPAPI, byl-control.ps1), so the hash cannot be attacked offline; whoever can decrypt
+    # it can read the variables anyway.
+    param(
+        [AllowEmptyCollection()][string[]]$Entries = @(),
+        [Parameter(Mandatory = $true)][byte[]]$Key
+    )
+
+    $sorted = [string[]]@($Entries | Where-Object { $null -ne $_ })
+    [Array]::Sort($sorted, [StringComparer]::Ordinal)
+    $hmac = New-Object System.Security.Cryptography.HMACSHA256 (, $Key)
+    try {
+        $digest = $hmac.ComputeHash([System.Text.Encoding]::UTF8.GetBytes(($sorted -join "`n")))
+        return ([BitConverter]::ToString($digest) -replace '-', '').ToLowerInvariant()
+    }
+    finally {
+        $hmac.Dispose()
+    }
+}
+
+function Get-BylFingerprint {
+    # Start fingerprint of the app folder: what a server started now would load. $EnvironmentHash is
+    # Get-EnvironmentHash of the BYL_* variables ('' if it cannot be built).
+    param(
+        [Parameter(Mandatory = $true)][string]$AppDir,
+        [Parameter(Mandatory = $true)][int]$Port,
+        [AllowEmptyString()][string]$EnvironmentHash = ''
+    )
+
+    return [ordered]@{
+        server      = Get-FileStamp -Path ([System.IO.Path]::Combine($AppDir, 'pocketbase.exe'))
+        migrations  = Get-FolderHash -Folder ([System.IO.Path]::Combine($AppDir, 'pb_migrations'))
+        hooks       = Get-FolderHash -Folder ([System.IO.Path]::Combine($AppDir, 'pb_hooks')) -Recurse
+        port        = [string]$Port
+        environment = $EnvironmentHash
+        mailHelper  = Get-FileStamp -Path ([System.IO.Path]::Combine($AppDir, $BylMailHelperName))
+        web         = Get-WebBuildId -AppDir $AppDir
+    }
+}
+
+function Compare-BylFingerprint {
+    # What the running instance needs, from the fingerprint of its start ($Started, $null if it
+    # is unknown: started by an older script or without state file) and the current one:
+    #   Verdict 'Current' (nothing), 'Reload' (only the open tabs: F5) or 'Restart',
+    #   Restart  the changed parts that need a restart ('unknown' without a start fingerprint),
+    #   Reload   the changed parts that need a reload only.
+    param(
+        [AllowNull()][System.Collections.IDictionary]$Started,
+        [Parameter(Mandatory = $true)][System.Collections.IDictionary]$Current
+    )
+
+    $restart = New-Object System.Collections.Generic.List[string]
+    $reload = New-Object System.Collections.Generic.List[string]
+    if ($null -eq $Started) {
+        $restart.Add('unknown')
+    }
+    else {
+        foreach ($part in $BylRestartParts) {
+            if (-not [string]::Equals([string]$Started[$part], [string]$Current[$part], [System.StringComparison]::Ordinal)) { $restart.Add($part) }
+        }
+        foreach ($part in $BylReloadParts) {
+            if (-not [string]::Equals([string]$Started[$part], [string]$Current[$part], [System.StringComparison]::Ordinal)) { $reload.Add($part) }
+        }
+    }
+    $verdict = if ($restart.Count -gt 0) { 'Restart' } elseif ($reload.Count -gt 0) { 'Reload' } else { 'Current' }
+    return [pscustomobject]@{ Verdict = $verdict; Restart = @($restart.ToArray()); Reload = @($reload.ToArray()) }
+}
+
 # --- Decisions of the commands (ADR-0039 section 4) ---------------------------------------------
 
 # Exit codes of byl-control.ps1 (documented in its help and in ADR-0039).
 $BylExitOk = 0
 $BylExitError = 1
 $BylExitSetupPending = 2
+$BylExitNotRunning = 3
 $BylExitPortBusy = 4
 $BylExitUnhealthy = 5
+$BylExitRestartNeeded = 6
 
 function Resolve-ServerState {
     # State of the own instance from the facts of one look:
@@ -267,6 +434,47 @@ function Resolve-StartAction {
     }
     if ($PortState -eq 'Foreign') { return 'PortBusy' }
     return 'Start'
+}
+
+function Resolve-ReloadAction {
+    # What "reload" (neu-starten.bat) does: Start (nothing runs), Restart (-Force, no answer, or a
+    # change that needs it), ReloadOnly (only the web build changed: F5 in the open tabs) or
+    # Nothing. An instance that is starting right now is left alone (Wait).
+    param(
+        [Parameter(Mandatory = $true)][ValidateSet('Stopped', 'Running', 'Starting', 'Unhealthy')][string]$ServerState,
+        [Parameter(Mandatory = $true)][ValidateSet('Current', 'Reload', 'Restart')][string]$Verdict,
+        [bool]$Force = $false
+    )
+
+    if ($ServerState -eq 'Stopped') { return 'Start' }
+    if ($ServerState -eq 'Starting' -and -not $Force) { return 'Wait' }
+    if ($Force -or $ServerState -eq 'Unhealthy' -or $Verdict -eq 'Restart') { return 'Restart' }
+    if ($Verdict -eq 'Reload') { return 'ReloadOnly' }
+    return 'Nothing'
+}
+
+function Resolve-StatusExitCode {
+    # Exit code of "status": 3 not running, 5 no answer (also while starting), 6 runs but needs a
+    # restart, 0 otherwise (also when only a reload of the tabs is due).
+    param(
+        [Parameter(Mandatory = $true)][ValidateSet('Stopped', 'Running', 'Starting', 'Unhealthy')][string]$ServerState,
+        [Parameter(Mandatory = $true)][ValidateSet('Current', 'Reload', 'Restart')][string]$Verdict
+    )
+
+    if ($ServerState -eq 'Stopped') { return $BylExitNotRunning }
+    if ($ServerState -ne 'Running') { return $BylExitUnhealthy }
+    if ($Verdict -eq 'Restart') { return $BylExitRestartNeeded }
+    return $BylExitOk
+}
+
+function Get-DiskVerdict {
+    # Free space on the drive of the app folder: Ok, Low (below 500 MB: warn) or Critical (below
+    # 100 MB: SQLite and the backups may fail).
+    param([Parameter(Mandatory = $true)][long]$FreeBytes)
+
+    if ($FreeBytes -lt 100MB) { return 'Critical' }
+    if ($FreeBytes -lt 500MB) { return 'Low' }
+    return 'Ok'
 }
 
 # --- Processes ---------------------------------------------------------------------------------
@@ -403,6 +611,29 @@ function Select-AppProcess {
     }
 }
 
+function Select-OtherServerProcess {
+    # PocketBase servers ("serve") that are not the own instance: a copy of the app in another
+    # folder or a test instance. Only reported (status, doctor), never stopped. Returns ProcessId,
+    # ExecutablePath, Port ($null if not on 127.0.0.1) and SameFolder (the program of this folder
+    # with another data folder, e.g. the test harness).
+    param([AllowNull()][object[]]$Process, [Parameter(Mandatory = $true)][string]$AppDir)
+
+    $ownIds = @(Select-AppProcess -Process $Process -AppDir $AppDir | ForEach-Object { [int]$_.ProcessId })
+    foreach ($candidate in @($Process)) {
+        if ($null -eq $candidate -or $ownIds -contains [int]$candidate.ProcessId) { continue }
+        $path = [string]$candidate.ExecutablePath
+        $name = if ($path) { [System.IO.Path]::GetFileName($path) } else { [string]$candidate.Name }
+        if (-not [string]::Equals($name, 'pocketbase.exe', [System.StringComparison]::OrdinalIgnoreCase)) { continue }
+        if ((Get-ProcessArgument -Process $candidate) -cnotcontains 'serve') { continue }
+        [pscustomobject]@{
+            ProcessId      = [int]$candidate.ProcessId
+            ExecutablePath = if ($path) { $path } else { $null }
+            Port           = Get-ServerProcessPort -Process $candidate
+            SameFolder     = Test-FileInFolder -Path $path -Folder $AppDir
+        }
+    }
+}
+
 function Resolve-PortState {
     # Classifies LISTEN sockets shaped like Get-NetTCPConnection (LocalAddress, LocalPort,
     # OwningProcess) for http://127.0.0.1:<Port>:
@@ -475,11 +706,75 @@ function Wait-FirstRunSignal {
     }
 }
 
+# --- Logs (ADR-0039 section 6) ------------------------------------------------------------------
+
+# Log of byl-control.ps1 itself: one line per command (time, command, exit code, process id and
+# port), never values of variables, passwords, e-mail addresses or contents. Rotated at this size.
+$BylControlLogLimitBytes = 1MB
+
+function Get-ControlLogPath {
+    param([Parameter(Mandatory = $true)][string]$AppDir)
+
+    return [System.IO.Path]::Combine($AppDir, 'logs', 'byl-control.log')
+}
+
+function Get-RotatedLogPath {
+    # <name>.log -> <name>.1.log
+    param([Parameter(Mandatory = $true)][string]$Path)
+
+    $directory = [System.IO.Path]::GetDirectoryName($Path)
+    $name = [System.IO.Path]::GetFileNameWithoutExtension($Path)
+    return [System.IO.Path]::Combine($directory, "$name.1.log")
+}
+
+function Invoke-LogRotation {
+    # Keeps one older generation: moves $Path to <name>.1.log (replacing it) if it exists and is at
+    # least $LimitBytes long (0: always). Never fails the caller: a log that another process still
+    # holds open simply stays.
+    param([Parameter(Mandatory = $true)][string]$Path, [long]$LimitBytes = 0)
+
+    try {
+        if (-not [System.IO.File]::Exists($Path)) { return }
+        if ((New-Object System.IO.FileInfo($Path)).Length -lt $LimitBytes) { return }
+        $rotated = Get-RotatedLogPath -Path $Path
+        if ([System.IO.File]::Exists($rotated)) { [System.IO.File]::Delete($rotated) }
+        [System.IO.File]::Move($Path, $rotated)
+    }
+    catch {
+        $null = $_
+    }
+}
+
+function Format-ControlLogLine {
+    # One line of byl-control.log: UTC time, command, exit code and details (key=value pairs of
+    # numbers and fixed words only; line breaks are removed).
+    param(
+        [Parameter(Mandatory = $true)][DateTime]$TimeUtc,
+        [Parameter(Mandatory = $true)][string]$Command,
+        [Parameter(Mandatory = $true)][int]$ExitCode,
+        [AllowEmptyString()][string]$Detail = ''
+    )
+
+    $line = '{0} {1} exit={2}' -f $TimeUtc.ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ssZ'), $Command, $ExitCode
+    if (-not [string]::IsNullOrWhiteSpace($Detail)) { $line += ' ' + ($Detail -replace '[\r\n]+', ' ').Trim() }
+    return $line
+}
+
+function Get-LogTailLines {
+    # The last $Count non-empty lines of $Text.
+    param([AllowNull()][AllowEmptyString()][string]$Text, [int]$Count = 20)
+
+    $lines = @(([string]$Text) -split "`r?`n" | Where-Object { $_.Trim() -ne '' })
+    if ($lines.Count -le $Count) { return , $lines }
+    return , @($lines | Select-Object -Last $Count)
+}
+
 # --- Server start --------------------------------------------------------------------------------
 
 function Get-ServerLogPath {
-    # Output of the server process (overwritten at every start; *.log is gitignored). Standard
-    # output and error need separate files (Start-Process cannot redirect both into one).
+    # Output of the server process (*.log is gitignored). Standard output and error need separate
+    # files (Start-Process cannot redirect both into one); each start begins them anew and keeps
+    # the previous run as *.1.log (Invoke-LogRotation).
     param([Parameter(Mandatory = $true)][string]$AppDir)
 
     $logDir = [System.IO.Path]::Combine($AppDir, 'logs')
@@ -1016,8 +1311,8 @@ function Get-MailHelperArgumentString {
 }
 
 function Get-MailHelperLogPath {
-    # Output of the helper (overwritten at every start, like the server log). It logs counts and
-    # cleaned errors only, never access data or contents of mails.
+    # Output of the helper (begun anew at every start, the previous run stays as *.1.log, like the
+    # server log). It logs counts and cleaned errors only, never access data or contents of mails.
     param([Parameter(Mandatory = $true)][string]$AppDir)
 
     $logDir = [System.IO.Path]::Combine($AppDir, 'logs')
@@ -1030,11 +1325,12 @@ function Get-MailHelperLogPath {
 
 function Select-MailHelperProcess {
     # Returns the app's own mail helper(s) from process objects shaped like Win32_Process, by the
-    # same safety rule as Select-AppProcess: the program is byl-mail.exe directly in the app folder
-    # (or byl-mail.exe.old-<time>: scripts\build-mail-helper.ps1 renames a running helper, and
-    # Windows then reports the new name), the first argument is "run" and --url is one of $Url (the
-    # addresses of the own instance). Helpers of the tests (other folder or port), one-shot calls
-    # (--version, --self-test) and processes with an unreadable command line never qualify.
+    # same safety rule as Select-AppProcess: the program is byl-mail.exe directly in the app folder,
+    # the first argument is "run" and --url is one of $Url (the addresses of the own instance). A
+    # helper that scripts\build-mail-helper.ps1 renamed to byl-mail.exe.old-<time> while it ran
+    # still qualifies: Windows keeps reporting the path it was started from. Helpers of the tests
+    # (other folder or port), one-shot calls (--version, --self-test) and processes with an
+    # unreadable command line never qualify.
     param(
         [AllowNull()][object[]]$Process,
         [Parameter(Mandatory = $true)][string]$AppDir,
@@ -1043,8 +1339,7 @@ function Select-MailHelperProcess {
 
     foreach ($candidate in @($Process)) {
         if ($null -eq $candidate) { continue }
-        if (-not (Test-FileInFolder -Path $candidate.ExecutablePath -Folder $AppDir)) { continue }
-        if ([System.IO.Path]::GetFileName([string]$candidate.ExecutablePath) -notmatch '^byl-mail\.exe(\.old-\d{14})?$') { continue }
+        if (-not (Test-SamePath -Path $candidate.ExecutablePath -Expected ([System.IO.Path]::Combine($AppDir, $BylMailHelperName)))) { continue }
         $arguments = Get-ProcessArgument -Process $candidate
         if ($arguments.Count -eq 0 -or $arguments[0] -cne 'run') { continue }
         if ($Url -cnotcontains (Get-FlagValue -Arguments $arguments -Name 'url')) { continue }

@@ -1,14 +1,17 @@
 // byl-control.ps1 against disposable copies of the app folder (ADR-0039, plan betriebsskripte
-// BS-1). The script runs ONLY in two copies under .tmp\byl-ctl-* of the repo (one with a space
-// in the path), each with a superuser created beforehand (CLAUDE.md §11.2), a random port (never
-// 8090 or 8099) and -NoBrowser; app\ and the instance of the user are never touched. Every server
-// this file starts is ended in afterAll, and the copies are removed.
+// BS-1 and BS-2). The script runs ONLY in two copies under .tmp\byl-ctl-* of the repo (one with a
+// space in the path), each with a superuser created beforehand (CLAUDE.md §11.2), a random port
+// (never 8090 or 8099) and -NoBrowser; app\ and the instance of the user are never touched. Every
+// server this file starts is ended in afterAll, and the copies are removed. Like every start, the
+// copies get the BYL_* variables of the Windows account; their databases have no connection, so no
+// channel reaches a service.
 //
 // Proves: a start that starts once (second start: same process), the state file and the address
 // for the landing page, the orderly stop (console break: exit without a hard stop, the SQLite WAL
 // is checkpointed), a port used by another copy (reported with program path and a free port,
 // nothing stopped), restart, a stale state file, and the safety rule: stop in one folder never
-// ends the server of another folder.
+// ends the server of another folder. BS-2: status with its exit codes, reload only when needed
+// (a new web build only asks for F5, changed hooks restart), open, logs and doctor.
 
 import { spawnSync } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
@@ -162,8 +165,12 @@ afterAll(() => {
 	if (base) rmSync(base, { recursive: true, force: true, maxRetries: 10, retryDelay: 500 });
 }, 60_000);
 
+// A case starts and stops real servers, some twice (about 7 s each on a CI runner): more time than
+// the 15 s of the integration project.
+const CASE_TIMEOUT = { timeout: 120_000 };
+
 // The cases build on each other and run in this order (tests of one file run one after another).
-describe('byl-control.ps1 on disposable copies (BS-1)', () => {
+describe('byl-control.ps1 on disposable copies (BS-1)', CASE_TIMEOUT, () => {
 	it('stop without a running instance says so and ends with 0', () => {
 		const result = control(copies.a, 'stop');
 		expect(result.code).toBe(0);
@@ -262,5 +269,98 @@ describe('byl-control.ps1 on disposable copies (BS-1)', () => {
 		const result = control(copies.b, 'stop');
 		expect(result.code, result.output).toBe(0);
 		expect(existsSync(join(copies.b.dir, 'run', 'byl.state.json'))).toBe(false);
+	});
+});
+
+/** status -Json of a copy: exit code and the parsed JSON line. */
+function status(copy) {
+	const result = control(copy, 'status', '-Json');
+	return { code: result.code, data: JSON.parse(result.output.trim()) };
+}
+
+describe('byl-control.ps1: status, reload, open, logs and doctor (BS-2)', CASE_TIMEOUT, () => {
+	it('status and open report a stopped app with exit code 3, doctor finds no error', () => {
+		const stopped = status(copies.a);
+		expect(stopped.code).toBe(3);
+		expect(stopped.data).toMatchObject({ state: 'stopped', pid: null, port: copies.a.port, verdict: 'current', exitCode: 3 });
+		expect(control(copies.a, 'open').code).toBe(3);
+		const doctor = control(copies.a, 'doctor', '-Json');
+		expect(doctor.code, doctor.output).toBe(0);
+		const checks = JSON.parse(doctor.output.trim());
+		expect(checks.ok).toBe(true);
+		const byName = Object.fromEntries(checks.checks.map((check) => [check.name, check.level]));
+		expect(byName).toMatchObject({ pocketbase: 'ok', pb_hooks: 'ok', web: 'ok', config: 'ok', instance: 'info', port: 'ok', 'write-logs': 'ok' });
+	});
+
+	it('status after a start: running, current, with the start time', () => {
+		expect(control(copies.a, 'start').code).toBe(0);
+		const [server] = serversOf(copies.a);
+		const running = status(copies.a);
+		expect(running.code).toBe(0);
+		expect(running.data).toMatchObject({ state: 'running', pid: server.pid, port: copies.a.port, verdict: 'current', restartReasons: [], reloadReasons: [] });
+		expect(Date.parse(running.data.startedUtc)).not.toBeNaN();
+		expect(readState(copies.a).fingerprint).toMatchObject({ port: String(copies.a.port) });
+		const open = control(copies.a, 'open');
+		expect(open.code).toBe(0);
+		expect(open.output).toContain(`http://127.0.0.1:${copies.a.port}/`);
+	});
+
+	it('a new web build only asks for F5: reload keeps the server', () => {
+		const [before] = serversOf(copies.a);
+		mkdirSync(join(copies.a.dir, 'pb_public', '_app'), { recursive: true });
+		writeFileSync(join(copies.a.dir, 'pb_public', '_app', 'version.json'), JSON.stringify({ version: String(Date.now()) }));
+		const after = status(copies.a);
+		expect(after.code).toBe(0);
+		expect(after.data).toMatchObject({ verdict: 'reload', restartReasons: [], reloadReasons: ['web'] });
+		const reload = control(copies.a, 'reload');
+		expect(reload.code, reload.output).toBe(0);
+		expect(reload.output).toMatch(/Kein Neustart n.+tig/);
+		expect(serversOf(copies.a)).toEqual([before]);
+	});
+
+	it('changed hooks need a restart (exit code 6), and reload restarts', async () => {
+		const [before] = serversOf(copies.a);
+		writeFileSync(join(copies.a.dir, 'pb_hooks', 'zz-control-test.pb.js'), '// written by control-script.test.mjs\n');
+		const needed = status(copies.a);
+		expect(needed.code).toBe(6);
+		expect(needed.data.restartReasons).toEqual(['hooks']);
+		const reload = control(copies.a, 'reload');
+		expect(reload.code, reload.output).toBe(0);
+		expect(reload.output).toContain('Neustart n');
+		const [after] = serversOf(copies.a);
+		expect(after.pid).not.toBe(before.pid);
+		expect(await healthy(copies.a.port)).toBe(true);
+		expect(status(copies.a).data).toMatchObject({ verdict: 'current', pid: after.pid });
+		// The previous run of the server log stays as *.1.log.
+		expect(existsSync(join(copies.a.dir, 'logs', 'pocketbase.out.1.log'))).toBe(true);
+	});
+
+	it('a start without fingerprint (older scripts) counts as unknown; reload -Force always restarts', () => {
+		const state = readState(copies.a);
+		delete state.fingerprint;
+		writeFileSync(join(copies.a.dir, 'run', 'byl.state.json'), JSON.stringify(state));
+		const unknown = status(copies.a);
+		expect(unknown.code).toBe(6);
+		expect(unknown.data.restartReasons).toEqual(['unknown']);
+		expect(control(copies.a, 'reload').code).toBe(0);
+		const [restarted] = serversOf(copies.a);
+		expect(restarted.pid).not.toBe(state.pid);
+		expect(control(copies.a, 'reload', '-Force').code).toBe(0);
+		expect(serversOf(copies.a)[0].pid).not.toBe(restarted.pid);
+	});
+
+	it('logs shows the logs, including one line per changing command without values', () => {
+		const all = control(copies.a, 'logs', '-Lines', '5');
+		expect(all.code).toBe(0);
+		expect(all.output).toContain('== logs\\pocketbase.out.log');
+		expect(all.output).toContain('== logs\\byl-control.log');
+		const script = readFileSync(join(copies.a.dir, 'logs', 'byl-control.log'), 'utf8');
+		expect(script).toMatch(/^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ start exit=0 pid=\d+ port=\d+\r$/m);
+		expect(script).toMatch(/ reload exit=0 action=reloadonly\r$/m);
+		expect(script).toMatch(/ reload exit=0 action=restart pid=\d+ port=\d+\r$/m);
+		expect(script).not.toMatch(/status|@|BYL_/);
+		expect(control(copies.a, 'logs', 'unbekannt').code).toBe(1);
+		expect(control(copies.a, 'logs', '-Follow').code).toBe(1);
+		expect(control(copies.a, 'stop').code).toBe(0);
 	});
 });
