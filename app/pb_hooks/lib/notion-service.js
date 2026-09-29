@@ -436,7 +436,10 @@ function validationMessage(err) {
  * POST …/notion/import: takes the chosen entries of one source into the inbox (at most
  * LIMITS.importBatch per request). Per entry: created, duplicate (with the state of the existing
  * entry), skipped (done with "Erledigte überspringen") or failed. A failure of the connection on
- * the way stops the rest and answers the results so far with status "error".
+ * the way stops the rest and answers the results so far with status "error". Once the time for
+ * new entries is over (LIMITS.importSeconds) or Notion answers too late, the entries not taken yet
+ * go back in `pending` for the next request; this happens only after at least one result, so
+ * every request gets on (a time-out before any result answers as error).
  */
 function importEntries(e) {
   var context = prepare(e, true);
@@ -466,8 +469,13 @@ function importEntries(e) {
   var options = { copyContent: request.copyContent, dateProperty: fetched.dateProperty };
   var results = [];
   var counts = { created: 0, duplicates: 0, skipped: 0, failed: 0 };
+  var pending = [];
   for (var r = 0; r < request.refs.length; r++) {
     var ref = request.refs[r];
+    if (results.length > 0 && Date.now() >= client.importEndsAt) {
+      pending = request.refs.slice(r);
+      break;
+    }
     var entry = Object.prototype.hasOwnProperty.call(byRef, ref) ? byRef[ref] : null;
     if (entry === null) {
       counts.failed += 1;
@@ -490,9 +498,16 @@ function importEntries(e) {
       try {
         content = contentOf(client, entry);
       } catch (err) {
+        if (notion.isTimeout(err) && results.length > 0) {
+          pending = request.refs.slice(r);
+          break;
+        }
         var outcome = failed(e, context, err, 'source', false);
+        if (notion.isTimeout(err)) {
+          return answer(200, { status: 'error', message: outcome.body.message, reason: 'source', items: results, counts: counts });
+        }
         if (outcome.body.reason === 'connection') {
-          return answer(200, { status: 'error', message: outcome.body.message, items: results, counts: counts });
+          return answer(200, { status: 'error', message: outcome.body.message, reason: 'connection', items: results, counts: counts });
         }
         counts.failed += 1;
         results.push({ ref: ref, status: 'failed', message: outcome.body.message });
@@ -518,7 +533,7 @@ function importEntries(e) {
     }
   }
   note(e.app, context.record, { ok: true, hint: '' });
-  return answer(200, { status: 'ok', source: fetched.source, items: results, counts: counts });
+  return answer(200, { status: 'ok', source: fetched.source, items: results, counts: counts, pending: pending });
 }
 
 module.exports = {

@@ -11,6 +11,8 @@ var API_VERSION = '2026-03-11';
 // Tests only: with the mark of the test mode (set by a hook of tests/fixtures/pb_hooks, never part
 // of the app folder) this variable names the port of a fake server on 127.0.0.1.
 var TEST_PORT_ENV = 'BYL_TEST_NOTION_PORT';
+// Tests only, with the same mark: shorter time limits of a request ("importMs,routeMs").
+var TEST_TIMING_ENV = 'BYL_TEST_NOTION_TIMING';
 var TEST_MODE_KEY = 'byl-test-mode';
 var DEFAULT_SECRET_ENV = 'BYL_NOTION_TOKEN';
 
@@ -35,14 +37,23 @@ var LIMITS = Object.freeze({
   contentRequests: 40,
   contentBlocks: 500,
   contentChars: 50000,
-  // Entries per import request; the app sends larger selections in several requests.
+  // Entries per import request at most; the app sends smaller blocks (web/src/lib/domain/notion.ts).
   importBatch: 100,
   excerpt: 160,
   // About 3 requests per second (Notion: 180 per minute per integration).
   intervalMs: 350,
   retries: 3,
   retryAfterMaxSeconds: 30,
+  // Time limit of one request to Notion.
   timeoutSeconds: 30,
+  // Time limits of one request of the app (ADR-0041, addendum 2026-09-30): no request to Notion
+  // starts later than routeSeconds after it came in (the limit of each one shrinks to what is left,
+  // and no wait for a repetition goes beyond it), and an import starts no new entry after
+  // importSeconds; the rest goes back as `pending` and comes again in the next request. So every
+  // request ends after about 90 s, far below the 5 minutes of the PocketBase server and of Firefox;
+  // the browser waits up to 150 s.
+  routeSeconds: 90,
+  importSeconds: 30,
   responseBytes: 20 * 1024 * 1024,
   // Original file of an entry (ADR-0031, addendum D).
   originalBytes: 25 * 1024 * 1024
@@ -136,6 +147,12 @@ function apiBase(testMode, portValue) {
 function failureOf(status, code, context, variable) {
   var notionCode = trim(code) === '' ? '' : trim(code).replace(/[^a-z_]/g, '');
   var source = context === 'source';
+  if (status === 0 && notionCode === 'timeout') {
+    return {
+      message: 'Notion antwortet gerade zu langsam (Zeitüberschreitung). Bitte in einer Minute erneut versuchen.',
+      connection: false
+    };
+  }
   if (status === 0) {
     return { message: 'Notion ist nicht erreichbar. Besteht eine Internetverbindung?', connection: true };
   }
@@ -205,6 +222,45 @@ function throttleWaitMs(lastAt, now) {
   }
   var wait = last + LIMITS.intervalMs - now;
   return wait > 0 ? Math.min(wait, LIMITS.intervalMs) : 0;
+}
+
+/**
+ * The time limits of one request of the app in milliseconds: { routeMs, importMs } (LIMITS). Only
+ * in the test mode `value` ("importMs,routeMs", each at least 1 and at most the default) may make
+ * them shorter, so tests reach them within seconds.
+ */
+function timingOf(testMode, value) {
+  var timing = { routeMs: LIMITS.routeSeconds * 1000, importMs: LIMITS.importSeconds * 1000 };
+  if (testMode !== true) {
+    return timing;
+  }
+  var match = /^(\d{1,6}),(\d{1,6})$/.exec(trim(value));
+  if (!match) {
+    return timing;
+  }
+  var importMs = parseInt(match[1], 10);
+  var routeMs = parseInt(match[2], 10);
+  if (importMs < 1 || routeMs < 1 || importMs > timing.importMs || routeMs > timing.routeMs) {
+    return timing;
+  }
+  return { routeMs: routeMs, importMs: importMs };
+}
+
+/**
+ * Whole seconds the next request to Notion may take until `deadline` (milliseconds): at most
+ * LIMITS.timeoutSeconds, 0 when less than one second is left (then none starts).
+ */
+function attemptSeconds(deadline, now) {
+  var left = Math.floor((deadline - now) / 1000);
+  if (!(left >= 1)) {
+    return 0;
+  }
+  return Math.min(left, LIMITS.timeoutSeconds);
+}
+
+/** Whether the text of a failed $http.send names its time limit. */
+function isTimeoutText(value) {
+  return /timeout|deadline exceeded/i.test(text(value));
 }
 
 /** Title of a page: its property of the kind "title". */
@@ -895,6 +951,7 @@ module.exports = {
   API_BASE: API_BASE,
   API_VERSION: API_VERSION,
   TEST_PORT_ENV: TEST_PORT_ENV,
+  TEST_TIMING_ENV: TEST_TIMING_ENV,
   TEST_MODE_KEY: TEST_MODE_KEY,
   DEFAULT_SECRET_ENV: DEFAULT_SECRET_ENV,
   SOURCE_TYPES: SOURCE_TYPES,
@@ -909,6 +966,9 @@ module.exports = {
   failureOf: failureOf,
   retryDelayMs: retryDelayMs,
   throttleWaitMs: throttleWaitMs,
+  timingOf: timingOf,
+  attemptSeconds: attemptSeconds,
+  isTimeoutText: isTimeoutText,
   pageTitle: pageTitle,
   pageUrl: pageUrl,
   sourceOf: sourceOf,

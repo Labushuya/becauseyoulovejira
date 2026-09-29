@@ -108,6 +108,56 @@ describe('failures', () => {
 		expect(rules.throttleWaitMs(1000, 1400)).toBe(0);
 		expect(rules.throttleWaitMs(5000, 1000)).toBe(350);
 	});
+
+	it('calls a time-out slow, not unreachable, and no problem of the connection (fix 2026-09-30)', () => {
+		const slow = rules.failureOf(0, 'timeout', 'source', 'X');
+		expect(slow).toEqual({
+			message: 'Notion antwortet gerade zu langsam (Zeitüberschreitung). Bitte in einer Minute erneut versuchen.',
+			connection: false
+		});
+		expect(rules.failureOf(0, 'timeout', 'connection', 'X').connection).toBe(false);
+		expect(rules.failureOf(0, '', 'source', 'X').message).toContain('nicht erreichbar');
+		for (const text of [
+			'Get "http://127.0.0.1:9/v1/users/me": context deadline exceeded (Client.Timeout exceeded while awaiting headers)',
+			'net/http: request canceled (Client.Timeout exceeded)',
+			'i/o timeout'
+		]) {
+			expect(rules.isTimeoutText(text), text).toBe(true);
+		}
+		expect(rules.isTimeoutText('dial tcp 127.0.0.1:9: connectex: No connection could be made')).toBe(false);
+		expect(rules.isTimeoutText(undefined)).toBe(false);
+	});
+});
+
+describe('time limits of a request (fix 2026-09-30)', () => {
+	it('ends every request far below the 5 minutes of PocketBase and the browser', () => {
+		expect(rules.LIMITS).toMatchObject({ timeoutSeconds: 30, routeSeconds: 90, importSeconds: 30, importBatch: 100 });
+		expect(rules.LIMITS.importSeconds).toBeLessThan(rules.LIMITS.routeSeconds);
+		// The browser waits 150 s (web/src/lib/domain/notion.ts): more than a request may take.
+		expect(rules.LIMITS.routeSeconds + rules.LIMITS.timeoutSeconds).toBeLessThanOrEqual(150);
+	});
+
+	it('takes the defaults, shorter ones only in the test mode', () => {
+		const defaults = { routeMs: 90_000, importMs: 30_000 };
+		expect(rules.timingOf(false, '100,2000')).toEqual(defaults);
+		expect(rules.timingOf(undefined, '100,2000')).toEqual(defaults);
+		expect(rules.timingOf(true, '')).toEqual(defaults);
+		expect(rules.timingOf(true, '100,2000')).toEqual({ routeMs: 2000, importMs: 100 });
+		expect(rules.timingOf(true, ' 1,1 ')).toEqual({ routeMs: 1, importMs: 1 });
+		for (const value of ['0,2000', '100,0', '30001,2000', '100,90001', '100', 'a,b', '100;2000', '-1,2000']) {
+			expect(rules.timingOf(true, value), value).toEqual(defaults);
+		}
+		expect(rules.TEST_TIMING_ENV).toBe('BYL_TEST_NOTION_TIMING');
+	});
+
+	it('gives each request to Notion only the time left, and none below one second', () => {
+		expect(rules.attemptSeconds(100_000, 0)).toBe(30);
+		expect(rules.attemptSeconds(100_000, 80_000)).toBe(20);
+		expect(rules.attemptSeconds(100_000, 98_500)).toBe(1);
+		expect(rules.attemptSeconds(100_000, 99_001)).toBe(0);
+		expect(rules.attemptSeconds(100_000, 120_000)).toBe(0);
+		expect(rules.attemptSeconds(Number.NaN, 0)).toBe(0);
+	});
 });
 
 describe('sources of the search', () => {

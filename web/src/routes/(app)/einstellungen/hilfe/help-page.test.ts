@@ -293,7 +293,11 @@ describe('help page (EH-9)', () => {
 			'500 Blöcke und 50.000 Zeichen',
 			'Erledigte überspringen',
 			'holt nur Einträge, die noch nicht im Eingang sind',
-			'Workspace Owner'
+			'Workspace Owner',
+			// Blocks with progress and result (fix 2026-09-30).
+			'Die Übernahme läuft in Blöcken',
+			'„Nach diesem Block anhalten“',
+			'„Im Eingang ansehen“'
 		]) {
 			expect(content, phrase).toContain(phrase);
 		}

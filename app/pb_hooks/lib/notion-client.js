@@ -4,8 +4,11 @@
 // from the caller (read from its BYL_* variable at the moment of the request) and only goes into
 // the Authorization header; errors carry the HTTP status and the code of Notion, never the token
 // or an address. Requests keep about 3 per second (a mark in the store of the app) and repeat
-// after 429 with Retry-After and after a server error. Answers are parsed from their text, so the
-// pure modules get plain JavaScript values.
+// after 429 with Retry-After and after a server error, but never beyond the deadline of the
+// request of the app (LIMITS.routeSeconds from the creation of the client): after it no request
+// starts, the time limit of each one shrinks to what is left, and a time-out is a failure with the
+// code "timeout". Answers are parsed from their text, so the pure modules get plain JavaScript
+// values.
 // CommonJS module, ES5 only, Goja runtime only.
 'use strict';
 
@@ -36,6 +39,11 @@ function isFailure(error) {
   return !!error && typeof error.notionStatus === 'number';
 }
 
+/** Whether `error` is a time-out: Notion answered too late, or the deadline of the request passed. */
+function isTimeout(error) {
+  return isFailure(error) && error.notionStatus === 0 && error.notionCode === 'timeout';
+}
+
 // Value of a response header (map of lists in the JSVM), '' without one.
 function headerOf(headers, name) {
   if (!headers) {
@@ -64,11 +72,16 @@ function parseBody(response) {
 }
 
 /**
- * A client for one token. `app` gives the store (pause between requests, mark of the test mode).
+ * A client for one token and one request of the app. `app` gives the store (pause between
+ * requests, mark of the test mode). The deadline counts from now.
  */
 function create(app, token) {
   var store = app.store();
-  var base = rules.apiBase(store.get(rules.TEST_MODE_KEY) === true, $os.getenv(rules.TEST_PORT_ENV));
+  var testMode = store.get(rules.TEST_MODE_KEY) === true;
+  var base = rules.apiBase(testMode, $os.getenv(rules.TEST_PORT_ENV));
+  var timing = rules.timingOf(testMode, $os.getenv(rules.TEST_TIMING_ENV));
+  var started = Date.now();
+  var deadline = started + timing.routeMs;
 
   function pause() {
     var wait = rules.throttleWaitMs(store.get(LAST_REQUEST_KEY), Date.now());
@@ -82,6 +95,10 @@ function create(app, token) {
   function request(method, path, body) {
     for (var attempt = 0; ; attempt++) {
       pause();
+      var seconds = rules.attemptSeconds(deadline, Date.now());
+      if (seconds === 0) {
+        throw failure(0, 'timeout');
+      }
       var response;
       try {
         response = $http.send({
@@ -95,10 +112,10 @@ function create(app, token) {
             Accept: 'application/json',
             'User-Agent': USER_AGENT
           },
-          timeout: rules.LIMITS.timeoutSeconds
+          timeout: seconds
         });
       } catch (err) {
-        throw failure(0, '');
+        throw failure(0, rules.isTimeoutText(String(err)) ? 'timeout' : '');
       }
       if (response.body && response.body.length > rules.LIMITS.responseBytes) {
         throw failure(502, 'response_too_large');
@@ -112,7 +129,7 @@ function create(app, token) {
       }
       var code = isObject(json) && typeof json.code === 'string' ? json.code : '';
       var delay = rules.retryDelayMs(response.statusCode, headerOf(response.headers, 'Retry-After'), attempt);
-      if (delay < 0) {
+      if (delay < 0 || Date.now() + delay >= deadline) {
         throw failure(response.statusCode, code);
       }
       sleep(delay);
@@ -210,6 +227,8 @@ function create(app, token) {
   }
 
   return {
+    /** Time (Date.now) after which an import starts no new entry and hands the rest back. */
+    importEndsAt: started + timing.importMs,
     /** The bot user of the token (any capability may read it). */
     me: function () {
       return request('GET', '/v1/users/me');
@@ -259,5 +278,6 @@ function create(app, token) {
 module.exports = {
   LAST_REQUEST_KEY: LAST_REQUEST_KEY,
   create: create,
-  isFailure: isFailure
+  isFailure: isFailure,
+  isTimeout: isTimeout
 };

@@ -8,6 +8,7 @@
 import { fireEvent, render, screen, within } from '@testing-library/svelte';
 import { tick } from 'svelte';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { DataError } from '$lib/data/errors';
 import type { Connection } from '$lib/domain/connections';
 import type {
 	NotionImportedSource,
@@ -397,6 +398,227 @@ describe('Notion import dialog', () => {
 			skipDone: true,
 			copyContent: true,
 			dateProperty: 'Erinnerung'
+		});
+	});
+
+	describe('taking 45 rows over (fix 2026-09-30)', () => {
+		const database = (count: number): NotionPreview => ({
+			...EMPTY_PREVIEW,
+			source: {
+				id: DB_ID,
+				type: 'data_source',
+				title: 'Aufgaben Haushalt',
+				url: 'https://www.notion.so/db'
+			},
+			items: Array.from({ length: count }, (_, index) =>
+				point(`r${index + 1}`, `Zeile ${index + 1}`, { kind: 'task', section: '' })
+			)
+		});
+
+		async function openDatabase(
+			count: number,
+			configure: (data: FakeNotionData) => void = () => undefined
+		) {
+			const context = await openDialog((fake) => {
+				fake.preview.mockImplementation(async () => ({ kind: 'ok', value: database(count) }));
+				configure(fake);
+			});
+			const { dialog } = context;
+			await fireEvent.click(dialog.getByRole('radio', { name: /^Aufgaben Haushalt/ }));
+			await fireEvent.click(dialog.getByRole('button', { name: 'Weiter' }));
+			const submit = await vi.waitFor(() =>
+				dialog.getByRole('button', { name: `${count} Einträge in den Eingang übernehmen` })
+			);
+			return { ...context, submit };
+		}
+
+		/** Every block of the import waits until the test releases it. */
+		function holdBlocks(data: FakeNotionData) {
+			const waiting: Array<() => void> = [];
+			const answer = data.importBatch.getMockImplementation();
+			data.importBatch.mockImplementation(async (id, request) => {
+				await new Promise<void>((resolve) => waiting.push(resolve));
+				return answer!(id, request);
+			});
+			return async () => {
+				await vi.waitFor(() => expect(waiting.length).toBeGreaterThan(0));
+				waiting.shift()?.();
+			};
+		}
+
+		function chosenRows(dialog: ReturnType<typeof within>): number {
+			return dialog
+				.getAllByRole('checkbox', { name: /^Zeile / })
+				.filter((box: HTMLElement) => (box as HTMLInputElement).checked).length;
+		}
+
+		function before(first: Element, second: Element): boolean {
+			return (first.compareDocumentPosition(second) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0;
+		}
+
+		it('keeps the selection, says what runs and shows the progress above the list', async () => {
+			let release: () => Promise<void> = async () => undefined;
+			const { dialog, data, submit } = await openDatabase(45, (fake) => {
+				release = holdBlocks(fake);
+			});
+			await fireEvent.click(submit);
+
+			expect(submit.textContent?.trim()).toBe('45 Einträge werden übernommen …');
+			expect(submit.getAttribute('aria-disabled')).toBe('true');
+			expect(submit.getAttribute('aria-busy')).toBe('true');
+			const progress = dialog.getByText('0 von 45 bearbeitet …');
+			const list = dialog.getByRole('group', { name: 'Einträge von Aufgaben Haushalt' });
+			expect(before(progress, list)).toBe(true);
+			expect(chosenRows(dialog)).toBe(45);
+			expect(dialog.getByRole('button', { name: 'Nach diesem Block anhalten' })).toBeTruthy();
+			expect(dialog.queryByRole('button', { name: 'Andere Quelle' })).toBeNull();
+			expect(dialog.queryByRole('button', { name: 'Abbrechen' })).toBeNull();
+
+			await release();
+			await vi.waitFor(() => expect(dialog.getByText('10 von 45 bearbeitet …')).toBeTruthy());
+			// Only what is in the inbox now leaves the selection.
+			expect(dialog.getAllByText('Jetzt im Eingang.')).toHaveLength(10);
+			expect(chosenRows(dialog)).toBe(35);
+			expect(submit.textContent?.trim()).toBe('45 Einträge werden übernommen …');
+
+			for (let block = 0; block < 4; block++) await release();
+			await vi.waitFor(() =>
+				expect(dialog.getByRole('heading', { name: /In den Eingang übernommen$/ })).toBeTruthy()
+			);
+			expect(data.importBatch.mock.calls.map(([, request]) => request.refs.length)).toEqual([
+				10, 10, 10, 10, 5
+			]);
+			const result = dialog.getByText('45 angelegt.');
+			expect(before(result, list)).toBe(true);
+			expect(dialog.getByRole('link', { name: 'Im Eingang ansehen' }).getAttribute('href')).toBe(
+				'/eingang?quelle=notion'
+			);
+			// Nothing is left to take: no "0 Einträge …" button with a busy pointer, "Schließen" leads.
+			expect(dialog.queryByRole('button', { name: /in den Eingang übernehmen$/ })).toBeNull();
+			// The footer button, not the × of the head (named "Schließen" as well).
+			const close = dialog.getByText('Schließen', { selector: 'button' });
+			expect(close.classList.contains('button-primary')).toBe(true);
+			expect(document.activeElement).toBe(close);
+		});
+
+		it('keeps failed and unsent entries chosen, names the error and takes them on a retry', async () => {
+			const { dialog, data, submit } = await openDatabase(45, (fake) => {
+				const answer = fake.importBatch.getMockImplementation();
+				fake.importBatch
+					.mockImplementationOnce(async (id, request) => answer!(id, request))
+					.mockImplementationOnce(async () => ({
+						kind: 'error',
+						message:
+							'Notion bremst gerade die Anfragen (429). Bitte in einer Minute erneut versuchen.',
+						reason: 'source',
+						partial: null
+					}));
+			});
+			await fireEvent.click(submit);
+			const alert = await vi.waitFor(() => dialog.getByRole('alert'));
+			expect(alert.textContent).toContain('Übernahme unterbrochen');
+			expect(alert.textContent).toContain(
+				'10 angelegt. Notion bremst gerade die Anfragen (429). Bitte in einer Minute erneut versuchen. 35 Einträge noch nicht übernommen; sie bleiben ausgewählt'
+			);
+			expect(chosenRows(dialog)).toBe(35);
+			const retry = dialog.getByRole('button', { name: '35 Einträge in den Eingang übernehmen' });
+			expect(retry.getAttribute('aria-disabled')).toBeNull();
+
+			await fireEvent.click(retry);
+			await vi.waitFor(() => expect(dialog.getByText('35 angelegt.')).toBeTruthy());
+			expect(data.importBatch.mock.calls.slice(2).flatMap(([, request]) => request.refs)).toEqual(
+				Array.from({ length: 35 }, (_, index) => `r${index + 11}`)
+			);
+		});
+
+		it('lists entries that failed with their reason and keeps them chosen', async () => {
+			const { dialog, submit } = await openDatabase(3, (fake) =>
+				fake.importBatch.mockImplementation(async (_id, request) => ({
+					kind: 'ok',
+					value: {
+						items: request.refs.map((ref) =>
+							ref === 'r2'
+								? {
+										ref,
+										status: 'failed' as const,
+										message: 'Der Eintrag ließ sich nicht speichern.'
+									}
+								: { ref, status: 'created' as const, message: '' }
+						),
+						counts: { created: 2, duplicates: 0, skipped: 0, failed: 1 },
+						pending: []
+					}
+				}))
+			);
+			await fireEvent.click(submit);
+			const failures = await vi.waitFor(() =>
+				dialog.getByRole('heading', { name: 'Nicht übernommen' })
+			);
+			expect(failures.parentElement?.textContent).toContain(
+				'„Zeile 2“: Der Eintrag ließ sich nicht speichern.'
+			);
+			expect(dialog.getByText(/^2 angelegt, 1 mit Fehler\./)).toBeTruthy();
+			expect((dialog.getByRole('checkbox', { name: /^Zeile 2/ }) as HTMLInputElement).checked).toBe(
+				true
+			);
+			expect(
+				dialog.getByRole('button', { name: '1 Eintrag in den Eingang übernehmen' })
+			).toBeTruthy();
+		});
+
+		it('starts one import for two clicks and sends every entry once', async () => {
+			let release: () => Promise<void> = async () => undefined;
+			const { dialog, data, submit } = await openDatabase(45, (fake) => {
+				release = holdBlocks(fake);
+			});
+			await fireEvent.click(submit);
+			await fireEvent.click(submit);
+			for (let block = 0; block < 5; block++) await release();
+			await vi.waitFor(() => expect(dialog.getByText('45 angelegt.')).toBeTruthy());
+			const sent = data.importBatch.mock.calls.flatMap(([, request]) => request.refs);
+			expect(sent).toHaveLength(45);
+			expect(new Set(sent).size).toBe(45);
+		});
+
+		it('stops after the current block on request or with Esc, the rest stays chosen', async () => {
+			let release: () => Promise<void> = async () => undefined;
+			const { dialog, data, submit } = await openDatabase(45, (fake) => {
+				release = holdBlocks(fake);
+			});
+			await fireEvent.click(submit);
+			await fireEvent.click(dialog.getByRole('button', { name: 'Nach diesem Block anhalten' }));
+			expect(dialog.getByRole('button', { name: 'Hält nach diesem Block an …' })).toBeTruthy();
+			expect(dialog.getByText('0 von 45 bearbeitet … Hält nach diesem Block an.')).toBeTruthy();
+			await release();
+			await vi.waitFor(() =>
+				expect(dialog.getByRole('heading', { name: /Angehalten$/ })).toBeTruthy()
+			);
+			expect(data.importBatch).toHaveBeenCalledOnce();
+			expect(dialog.getByText(/^10 angelegt\. 35 Einträge noch nicht übernommen/)).toBeTruthy();
+			expect(chosenRows(dialog)).toBe(35);
+
+			await fireEvent.click(
+				dialog.getByRole('button', { name: '35 Einträge in den Eingang übernehmen' })
+			);
+			await fireEvent.keyDown(screen.getByRole('dialog'), { key: 'Escape' });
+			await release();
+			await vi.waitFor(() => expect(dialog.getByText(/^10 angelegt\. 25 Einträge/)).toBeTruthy());
+			expect(data.importBatch).toHaveBeenCalledTimes(2);
+			expect(screen.getByRole('dialog')).toBeTruthy();
+		});
+
+		it('names a failed request instead of staying silent and keeps everything chosen', async () => {
+			const { dialog, submit } = await openDatabase(45, (fake) =>
+				fake.importBatch.mockRejectedValue(new DataError('network'))
+			);
+			await fireEvent.click(submit);
+			const alert = await vi.waitFor(() => dialog.getByRole('alert'));
+			expect(alert.textContent).toContain('Server nicht erreichbar');
+			expect(alert.textContent).toContain('45 Einträge noch nicht übernommen');
+			expect(chosenRows(dialog)).toBe(45);
+			expect(
+				dialog.getByRole('button', { name: '45 Einträge in den Eingang übernehmen' })
+			).toBeTruthy();
 		});
 	});
 

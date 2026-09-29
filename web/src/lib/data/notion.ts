@@ -2,17 +2,20 @@
 // /api/byl/connections/{id}/notion/… of app/pb_hooks/notion.pb.js. Stateless functions with the
 // PocketBase instance as first parameter. The token never reaches the browser: the hook asks Notion
 // and answers with results. Missing access data, a paused connection and errors of Notion come as
-// an outcome with the German message of the server; a refused request (400) and a missing server
-// route (503 before the restart) too; everything else is a DataError.
+// an outcome with the German message of the server; a refused request (400), a missing server
+// route (503 before the restart) and no answer within NOTION_REQUEST_TIMEOUT_MS too; everything
+// else is a DataError.
 
 import type PocketBase from 'pocketbase';
 import {
 	NOTION_DEFAULT_LIMITS,
+	NOTION_REQUEST_TIMEOUT_MS,
+	NOTION_TIMEOUT_MESSAGE,
 	isNotionSourceType,
 	type NotionCheck,
-	type NotionImportCounts,
+	type NotionImportBatch,
+	type NotionImportOutcome,
 	type NotionImportRequest,
-	type NotionImportResult,
 	type NotionImportedSource,
 	type NotionLimits,
 	type NotionOutcome,
@@ -43,38 +46,61 @@ function routeOf(id: string, name: string): string {
 	return `/api/byl/connections/${encodeURIComponent(id)}/notion/${name}`;
 }
 
+type NotionFailure = Exclude<NotionOutcome<never>, { kind: 'ok' }>;
+
 /**
- * Runs a call of a Notion route: "missing", "disabled" and "error" of the answer, a refusal (400)
- * and a server without the route (503) become an outcome with the message of the server; every
- * other failure (session, not found, network) is a DataError.
+ * Asks a Notion route: the answer, or its failure when it says "missing", "disabled" or "error",
+ * refuses the request (400), lacks the route (503) or does not come within
+ * NOTION_REQUEST_TIMEOUT_MS; every other failure (session, not found, network, `signal` aborted)
+ * is a DataError. `call` gets the signal to pass on.
  */
-async function notionCall<T>(
+async function ask(
 	signal: AbortSignal | undefined,
-	call: () => Promise<Record<string, unknown>>,
-	map: (result: Record<string, unknown>) => T
-): Promise<NotionOutcome<T>> {
+	call: (signal: AbortSignal) => Promise<Record<string, unknown>>
+): Promise<{ result: Record<string, unknown>; failure: NotionFailure | null }> {
+	const limit = new AbortController();
+	const abort = () => limit.abort();
+	const timer = setTimeout(abort, NOTION_REQUEST_TIMEOUT_MS);
+	if (signal?.aborted) abort();
+	signal?.addEventListener('abort', abort, { once: true });
 	let result: Record<string, unknown>;
 	try {
-		result = await call();
+		result = await call(limit.signal);
 	} catch (error) {
+		if (limit.signal.aborted && !signal?.aborted) {
+			return {
+				result: {},
+				failure: { kind: 'error', message: NOTION_TIMEOUT_MESSAGE, reason: '' }
+			};
+		}
 		const status = isRecord(error) && typeof error.status === 'number' ? error.status : 0;
 		const response = isRecord(error) && isRecord(error.response) ? error.response : {};
 		if (!signal?.aborted && (status === 400 || status === 503)) {
-			return {
-				kind: 'error',
-				message: textOf(response.message) || DATA_ERROR_MESSAGES.server,
-				reason: ''
-			};
+			const message = textOf(response.message) || DATA_ERROR_MESSAGES.server;
+			return { result: {}, failure: { kind: 'error', message, reason: '' } };
 		}
 		throw toDataError(error, signal);
+	} finally {
+		clearTimeout(timer);
+		signal?.removeEventListener('abort', abort);
 	}
 	const status = result.status;
 	if (status === 'missing' || status === 'disabled' || status === 'error') {
 		const reason =
 			result.reason === 'connection' || result.reason === 'source' ? result.reason : '';
-		return { kind: status, message: textOf(result.message), reason };
+		return { result, failure: { kind: status, message: textOf(result.message), reason } };
 	}
-	return { kind: 'ok', value: map(result) };
+	return { result, failure: null };
+}
+
+/** A call of a Notion route as outcome: the mapped answer or its failure (see `ask`). */
+async function notionCall<T>(
+	signal: AbortSignal | undefined,
+	call: (signal: AbortSignal) => Promise<Record<string, unknown>>,
+	map: (result: Record<string, unknown>) => T
+): Promise<NotionOutcome<T>> {
+	const { result, failure } = await ask(signal, call);
+	return failure ?? { kind: 'ok', value: map(result) };
 }
 
 function toSource(raw: Record<string, unknown>): NotionSource | null {
@@ -97,7 +123,8 @@ export function checkNotion(
 ): Promise<NotionOutcome<NotionCheck>> {
 	return notionCall(
 		signal,
-		() => pb.send<Record<string, unknown>>(routeOf(id, 'check'), { method: 'POST', signal }),
+		(limit) =>
+			pb.send<Record<string, unknown>>(routeOf(id, 'check'), { method: 'POST', signal: limit }),
 		(result) => ({
 			workspace: textOf(result.workspace),
 			bot: textOf(result.bot),
@@ -116,11 +143,11 @@ export function listNotionSources(
 	const trimmed = query.trim();
 	return notionCall(
 		signal,
-		() =>
+		(limit) =>
 			pb.send<Record<string, unknown>>(routeOf(id, 'sources'), {
 				method: 'GET',
 				query: trimmed === '' ? {} : { q: trimmed },
-				signal
+				signal: limit
 			}),
 		(result) => ({
 			sources: (Array.isArray(result.sources) ? result.sources : [])
@@ -204,8 +231,12 @@ export function previewNotion(
 	if (dateProperty !== null) body.date_property = dateProperty;
 	return notionCall(
 		signal,
-		() =>
-			pb.send<Record<string, unknown>>(routeOf(id, 'preview'), { method: 'POST', body, signal }),
+		(limit) =>
+			pb.send<Record<string, unknown>>(routeOf(id, 'preview'), {
+				method: 'POST',
+				body,
+				signal: limit
+			}),
 		(result) => {
 			const raw = isRecord(result.source) ? result.source : {};
 			return {
@@ -232,22 +263,38 @@ export function previewNotion(
 	);
 }
 
-/** Result of one import request: per entry and the counts. */
-export interface NotionImportBatch {
-	items: NotionImportResult[];
-	counts: NotionImportCounts;
+function toBatch(result: Record<string, unknown>): NotionImportBatch {
+	const items = (Array.isArray(result.items) ? result.items : []).filter(isRecord).map((raw) => ({
+		ref: textOf(raw.ref),
+		status: IMPORT_STATUSES.find((value) => value === raw.status) ?? 'failed',
+		message: textOf(raw.message)
+	}));
+	const counts = isRecord(result.counts) ? result.counts : {};
+	return {
+		items,
+		counts: {
+			created: count(counts.created),
+			duplicates: count(counts.duplicates),
+			skipped: count(counts.skipped),
+			failed: count(counts.failed)
+		},
+		pending: (Array.isArray(result.pending) ? result.pending : []).filter(
+			(ref): ref is string => typeof ref === 'string' && ref !== ''
+		)
+	};
 }
 
 /**
  * Takes chosen entries of one source into the inbox (at most the batch limit of the server per
- * call). An error of Notion on the way answers as outcome "error"; what was taken before stays.
+ * call). Entries the server had no time for come back in `pending`. An error of Notion on the way
+ * answers as outcome "error" with what was taken before it in `partial`.
  */
-export function importNotion(
+export async function importNotion(
 	pb: PocketBase,
 	id: string,
 	request: NotionImportRequest,
 	{ signal }: RequestOptions = {}
-): Promise<NotionOutcome<NotionImportBatch>> {
+): Promise<NotionImportOutcome> {
 	const body: Record<string, unknown> = {
 		source: request.source,
 		refs: [...request.refs],
@@ -255,27 +302,14 @@ export function importNotion(
 		copy_content: request.copyContent
 	};
 	if (request.dateProperty !== null) body.date_property = request.dateProperty;
-	return notionCall(
-		signal,
-		() => pb.send<Record<string, unknown>>(routeOf(id, 'import'), { method: 'POST', body, signal }),
-		(result) => {
-			const items = (Array.isArray(result.items) ? result.items : [])
-				.filter(isRecord)
-				.map((raw) => ({
-					ref: textOf(raw.ref),
-					status: IMPORT_STATUSES.find((value) => value === raw.status) ?? 'failed',
-					message: textOf(raw.message)
-				}));
-			const counts = isRecord(result.counts) ? result.counts : {};
-			return {
-				items,
-				counts: {
-					created: count(counts.created),
-					duplicates: count(counts.duplicates),
-					skipped: count(counts.skipped),
-					failed: count(counts.failed)
-				}
-			};
-		}
+	const { result, failure } = await ask(signal, (limit) =>
+		pb.send<Record<string, unknown>>(routeOf(id, 'import'), {
+			method: 'POST',
+			body,
+			signal: limit
+		})
 	);
+	if (failure === null) return { kind: 'ok', value: toBatch(result) };
+	const partial = Array.isArray(result.items) && result.items.length > 0 ? toBatch(result) : null;
+	return { ...failure, partial };
 }
