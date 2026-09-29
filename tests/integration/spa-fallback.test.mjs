@@ -43,4 +43,17 @@ describe('SPA fallback', () => {
 		expect(response.status).toBe(200);
 		expect(response.headers.get('content-type')).toMatch(/^application\/json/);
 	});
+
+	// ADR-0040: without the header the browser reused an old index.html after a new build.
+	it('lets the browser ask again for pages and files of the build, not for the API', async () => {
+		const chunk = /\/_app\/immutable\/entry\/[^"]+\.js/.exec(indexHtml)?.[0];
+		expect(chunk).toBeDefined();
+		for (const path of ['/', '/tickets/abc', '/_app/version.json', chunk]) {
+			const response = await fetch(`${instance.url}${path}`);
+			expect(response.status, path).toBe(200);
+			expect(response.headers.get('cache-control'), path).toBe('no-cache');
+		}
+		const api = await fetch(`${instance.url}/api/health`);
+		expect(api.headers.get('cache-control')).not.toBe('no-cache');
+	});
 });

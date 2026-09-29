@@ -1,15 +1,43 @@
 <script lang="ts">
+	import { untrack } from 'svelte';
 	import { resolve } from '$app/paths';
 	import { page } from '$app/state';
+	import { claimReload, sessionStorageOf } from '$lib/app-update';
 	import CenteredCard from '$lib/components/CenteredCard.svelte';
+	import { loadFully, reloadPage } from '$lib/page-reload';
 
-	// Rendered inside the root layout, so the route guard has already run (E1.1).
+	// Rendered inside the root layout, so the route guard has already run (E1.1). A module that
+	// could not be loaded, usually because a new build replaced it (ADR-0040), makes the page load
+	// the address once more by itself; the guard in sessionStorage stops a loop, after that the
+	// page offers "Neu laden". Both ways out load a new document, so a broken client state ends.
+	let reloading = $state(false);
+
+	$effect(() => {
+		if (page.error?.kind !== 'module-load') return;
+		const href = page.url.href;
+		untrack(() => {
+			if (!claimReload(sessionStorageOf(window), href, Date.now())) return;
+			reloading = true;
+			loadFully(href);
+		});
+	});
+
 	const notFound = $derived(page.status === 404);
-	const title = $derived(notFound ? 'Seite nicht gefunden' : 'Etwas ist schiefgelaufen');
+	const title = $derived(
+		reloading
+			? 'Neue Version wird geladen …'
+			: notFound
+				? 'Seite nicht gefunden'
+				: 'Etwas ist schiefgelaufen'
+	);
 	const body = $derived(
-		notFound
-			? 'Diese Adresse gibt es in becauseyoulovejira nicht.'
-			: 'Die Seite konnte nicht geladen werden. Bitte lade sie neu oder versuche es später erneut.'
+		reloading
+			? 'becauseyoulovejira wurde aktualisiert. Die Seite lädt gleich neu.'
+			: notFound
+				? 'Diese Adresse gibt es in becauseyoulovejira nicht.'
+				: page.error?.kind === 'module-load'
+					? 'Ein Teil der App konnte nicht geladen werden, vermutlich wurde sie gerade aktualisiert oder neu gestartet. Lade die Seite neu.'
+					: 'Die Seite konnte nicht geladen werden. Lade sie neu oder versuche es später erneut.'
 	);
 </script>
 
@@ -21,20 +49,31 @@
 	<p class="brand">becauseyoulovejira</p>
 	<h1 id="error-title">{title}</h1>
 	<p class="body">{body}</p>
-	<p class="status">Fehlercode {page.status}</p>
-	<a class="button-primary" href={resolve('/')}>Zur Startseite</a>
+	{#if !reloading}
+		<p class="status">Fehlercode {page.status}</p>
+		<div class="actions">
+			{#if !notFound}
+				<button class="button-primary" type="button" onclick={reloadPage}>Neu laden</button>
+			{/if}
+			<a
+				class={notFound ? 'button-primary' : 'button-secondary'}
+				href={resolve('/')}
+				data-sveltekit-reload>Zur Übersicht</a
+			>
+		</div>
+	{/if}
 </CenteredCard>
 
 <style>
 	.brand {
-		font-size: 0.875rem;
+		font-size: var(--font-size-body);
 		font-weight: 600;
 		color: var(--color-brand-text);
 	}
 
 	h1 {
 		margin-top: 0.25rem;
-		font-size: 1.5rem;
+		font-size: var(--font-size-title);
 		font-weight: 600;
 	}
 
@@ -45,13 +84,18 @@
 
 	.status {
 		margin-top: 0.5rem;
-		font-size: 0.8125rem;
+		font-size: var(--font-size-control);
 		color: var(--color-text-muted);
 	}
 
-	a {
-		width: 100%;
+	.actions {
+		display: flex;
+		flex-direction: column;
+		gap: 0.5rem;
 		margin-top: 1.5rem;
+	}
+
+	a {
 		text-decoration: none;
 	}
 </style>

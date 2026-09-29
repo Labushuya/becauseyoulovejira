@@ -68,8 +68,9 @@ try {
 	npm run lint
 	if ($LASTEXITCODE -ne 0) { exit 1 }
 
-	# Run build (before the tests: the SPA fallback test serves app/pb_public); the extension goes
-	# to app/erweiterung-whatsapp-web
+	# Run build (before the tests: the SPA fallback test serves app/pb_public). The web app goes to
+	# web/build and scripts/publish-web.mjs moves it into app/pb_public without a gap, so open tabs
+	# of a running instance keep working (ADR-0040); the extension goes to app/erweiterung-whatsapp-web
 	Write-Host "Running build..."
 	npm run build
 	if ($LASTEXITCODE -ne 0) { exit 1 }

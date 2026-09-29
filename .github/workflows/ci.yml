@@ -150,8 +150,10 @@ jobs:
       - name: Lint
         run: npm run lint
 
-      # Before the tests: the SPA fallback test serves app/pb_public. Builds the extension for
-      # WhatsApp Web into app/erweiterung-whatsapp-web as well (ADR-0038).
+      # Before the tests: the SPA fallback test serves app/pb_public. The web app is built into
+      # web/build and published into app/pb_public by scripts/publish-web.mjs (ADR-0040), like in
+      # scripts\build.ps1. Builds the extension for WhatsApp Web into app/erweiterung-whatsapp-web
+      # as well (ADR-0038).
       - name: Build
         run: npm run build
 
