@@ -1,21 +1,30 @@
 <script lang="ts">
 	import Popover from '$lib/components/overlay/Popover.svelte';
 	import ErrorIcon from '$lib/components/ErrorIcon.svelte';
-	import { checkLink } from '$lib/domain/link';
+	import TicketPicker from '$lib/components/TicketPicker.svelte';
+	import { checkLink, ticketLinkHref } from '$lib/domain/link';
 	import { ariaKeyShortcuts, keysText, shortcutById } from '$lib/domain/shortcuts';
+	import type { TicketSummary } from '$lib/domain/ticket';
 	import type { LinkState } from '$lib/editor/create-editor';
+	import {
+		findTicketPickerSource,
+		type TicketPickerSource
+	} from '$lib/stores/ticket-picker.svelte';
 
 	// Link of the editor (plan editor section 3.2, RT-4): a Popover of kind "panel" at the button
 	// "Link" of the toolbar, no dialog, so it works in the full view too (ADR-0025 section 3).
 	// Ctrl+K and "Link" in the "/" menu open it by code. "Adresse" takes http, https and mailto
 	// (domain/link.ts; "www…" becomes https, an e-mail address mailto), errors stand at the field.
-	// "Text" replaces the linked words. "Link entfernen" appears on an existing link. Closing (also
-	// with Escape) puts the focus back into the text.
+	// Since AL-2 (ADR-0042 section 5) "Oder ein Ticket" chooses a ticket from the list of the ticket
+	// picker instead: the address becomes `/tickets/<id>`, an empty text key and title. "Text"
+	// replaces the linked words. "Link entfernen" appears on an existing link. Closing (also with
+	// Escape) puts the focus back into the text.
 	let {
 		current,
 		onapply,
 		onremove,
-		textTarget
+		textTarget,
+		picker
 	}: {
 		/** The link at the selection when the popover opens. */
 		current: () => LinkState;
@@ -23,8 +32,12 @@
 		onremove: () => void;
 		/** The editable element the focus returns to. */
 		textTarget: () => HTMLElement | null;
+		/** Tickets of the picker; the (app) layout provides them, without them only "Adresse". */
+		picker?: TicketPickerSource;
 	} = $props();
 
+	const fromContext = findTicketPickerSource();
+	const source = $derived(picker ?? fromContext);
 	const uid = $props.id();
 	const hrefId = `${uid}-href`;
 	const textId = `${uid}-text`;
@@ -64,6 +77,13 @@
 	function remove(close: () => void) {
 		close();
 		onremove();
+	}
+
+	/** A ticket from the list: its address, and key and title as text unless one is there. */
+	function chooseTicket(ticket: TicketSummary) {
+		href = ticketLinkHref(ticket.id);
+		if (text.trim() === '') text = `${ticket.key} ${ticket.title}`;
+		error = null;
 	}
 </script>
 
@@ -113,6 +133,14 @@
 			{#if error}
 				<p class="field-error" id={errorId}><ErrorIcon /><span>{error}</span></p>
 			{/if}
+			{#if source}
+				<TicketPicker
+					label="Oder ein Ticket"
+					hint="Der Link öffnet das Ticket in der App."
+					{source}
+					onchoose={chooseTicket}
+				/>
+			{/if}
 			<label for={textId}>Text</label>
 			<input id={textId} type="text" autocomplete="off" bind:value={text} />
 			<div class="buttons">
@@ -146,7 +174,7 @@
 	.link-form {
 		display: grid;
 		gap: 0.375rem;
-		width: 18rem;
+		width: 22rem;
 		max-width: calc(100vw - 2rem);
 		padding: 0.375rem;
 	}

@@ -8,15 +8,17 @@ import { fireEvent, render, screen, within } from '@testing-library/svelte';
 import { tick } from 'svelte';
 import { describe, expect, it, vi } from 'vitest';
 import type { Editor } from '@tiptap/core';
+import type { TicketPickerSource } from '$lib/stores/ticket-picker.svelte';
 import { useOverlayStubs } from '$lib/test/overlay-stubs';
 import { typeText, useProseMirrorStubs } from '$lib/test/prosemirror-stubs';
 import RichTextEditorHarness from '$lib/test/RichTextEditorHarness.svelte';
+import { fakePickerSource, pickerTicket } from '$lib/test/ticket-picker-fake';
 
 useOverlayStubs();
 useProseMirrorStubs();
 
-async function setup(initial = '') {
-	const view = render(RichTextEditorHarness, { props: { initial } });
+async function setup(initial = '', picker?: TicketPickerSource) {
+	const view = render(RichTextEditorHarness, { props: { initial, picker } });
 	const element = await screen.findByRole('textbox', { name: 'Beschreibung' }, { timeout: 5000 });
 	const editor = (element as HTMLElement & { editor: Editor }).editor;
 	editor.commands.focus('end');
@@ -233,5 +235,68 @@ describe('the link popover', () => {
 			'false'
 		);
 		expect(document.activeElement).toBe(element);
+	});
+
+	it('offers no ticket without the tickets of the app', async () => {
+		const { element } = await setup('Text');
+		await fireEvent.keyDown(element, { key: 'k', ctrlKey: true });
+		expect(within(popover()).queryByLabelText('Oder ein Ticket')).toBeNull();
+	});
+});
+
+describe('link to a ticket (ADR-0042)', () => {
+	const ROOF = pickerTicket({ id: 'abc123def456ghi', key: 'HAUS-12', title: 'Dach prüfen' });
+
+	function popover(): HTMLElement {
+		const dialog = document.querySelector<HTMLElement>('[role="dialog"][aria-label^="Link "]');
+		if (dialog === null || !dialog.matches(':popover-open')) throw new Error('No link popover');
+		return dialog;
+	}
+
+	async function chooseRoof(dialog: HTMLElement) {
+		const picker = within(dialog).getByLabelText<HTMLInputElement>('Oder ein Ticket');
+		// The list opens without typing.
+		await fireEvent.focus(picker);
+		expect(picker.getAttribute('aria-expanded')).toBe('true');
+		const option = [...document.querySelectorAll<HTMLElement>('li[role="option"]')].find(
+			(entry) => entry.querySelector('.key')?.textContent === 'HAUS-12'
+		);
+		await fireEvent.click(option as HTMLElement);
+		return picker;
+	}
+
+	it('links a ticket chosen from the list with key and title as text', async () => {
+		const { element, value } = await setup('', fakePickerSource({ open: [ROOF] }).source);
+		await fireEvent.keyDown(element, { key: 'k', ctrlKey: true });
+		const dialog = popover();
+		await chooseRoof(dialog);
+		const href = within(dialog).getByLabelText<HTMLInputElement>('Adresse');
+		expect(href.value).toBe('/tickets/abc123def456ghi');
+		expect(within(dialog).getByLabelText<HTMLInputElement>('Text').value).toBe(
+			'HAUS-12 Dach prüfen'
+		);
+		await fireEvent.submit(href.form!);
+		await tick();
+		expect(value()).toBe('[HAUS-12 Dach prüfen](/tickets/abc123def456ghi)');
+	});
+
+	it('keeps the selected words as text and Escape closes only the list first', async () => {
+		const { element, editor, value } = await setup(
+			'Siehe Dach heute',
+			fakePickerSource({ open: [ROOF] }).source
+		);
+		editor.commands.setTextSelection({ from: 7, to: 11 });
+		await fireEvent.keyDown(element, { key: 'k', ctrlKey: true });
+		const dialog = popover();
+		const picker = within(dialog).getByLabelText<HTMLInputElement>('Oder ein Ticket');
+		await fireEvent.focus(picker);
+		await fireEvent.keyDown(picker, { key: 'Escape' });
+		expect(picker.getAttribute('aria-expanded')).toBe('false');
+		expect(dialog.matches(':popover-open')).toBe(true);
+		await chooseRoof(dialog);
+		expect(within(dialog).getByLabelText<HTMLInputElement>('Text').value).toBe('Dach');
+		await fireEvent.submit(within(dialog).getByLabelText<HTMLInputElement>('Adresse').form!);
+		await tick();
+		expect(value()).toBe('Siehe [Dach](/tickets/abc123def456ghi) heute');
 	});
 });

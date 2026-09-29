@@ -98,6 +98,30 @@ export function parseQuickEntry(
 	return entry;
 }
 
+/**
+ * The line with the project chosen from the list (ADR-0042 section 3): the token that set the
+ * project so far goes, `@CODE` of the chosen one comes at the end; null only removes the token.
+ * The line stays the one source of the entry, and the user sees the short syntax at work.
+ */
+export function withProjectToken(
+	text: string,
+	code: string | null,
+	projects: readonly ProjectRef[]
+): string {
+	let rest = text;
+	for (const match of text.matchAll(/\S+/g)) {
+		const found = PROJECT_TOKEN.exec(match[0])?.[1]?.toUpperCase();
+		const project = projects.find((candidate) => candidate.code === found);
+		if (project === undefined || project.archived) continue;
+		const before = text.slice(0, match.index).trimEnd();
+		const after = text.slice(match.index + match[0].length).trimStart();
+		rest = before === '' || after === '' ? `${before}${after}` : `${before} ${after}`;
+		break;
+	}
+	if (code === null) return rest;
+	return rest.trim() === '' ? `@${code}` : `${rest.trimEnd()} @${code}`;
+}
+
 /** What the preview under the field names: project, priority and tags that were recognised. */
 export function describeQuickEntry(entry: QuickEntry): string[] {
 	const parts: string[] = [];
