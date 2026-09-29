@@ -1,4 +1,6 @@
 <script lang="ts">
+	import { resolve } from '$app/paths';
+	import type { ResolvedPathname } from '$app/types';
 	import { tick, untrack } from 'svelte';
 	import { SvelteMap } from 'svelte/reactivity';
 	import { berlinDateOf, formatBerlinDateTime, formatCalendarDate } from '$lib/domain/format';
@@ -7,10 +9,14 @@
 		NOTION_SOURCE_TYPES,
 		NOTION_SOURCE_TYPE_LABELS,
 		blockedReason,
-		countsText,
+		entriesText,
 		importBatchSize,
 		limitsText,
+		notionInboxQuery,
 		preselectedRefs,
+		progressText,
+		runSummary,
+		runningText,
 		truncatedText,
 		type NotionImportResult,
 		type NotionPreview,
@@ -26,7 +32,8 @@
 		toggleAll,
 		type Selection
 	} from '$lib/domain/selection';
-	import type { NotionImportRun, NotionStore } from '$lib/stores/notion.svelte';
+	import type { NotionImportRun } from '$lib/stores/notion-run';
+	import type { NotionStore } from '$lib/stores/notion.svelte';
 	import ErrorIcon from '../ErrorIcon.svelte';
 	import EmptyState from '../guidance/EmptyState.svelte';
 	import ExternalLink from '../guidance/ExternalLink.svelte';
@@ -39,8 +46,12 @@
 	// with the entries and their state in the inbox. The selection follows the tables (ADR-0036 §2:
 	// head checkbox with "some" state, Shift for a range, only what can be chosen); entries that are
 	// in the inbox already, and done ones while they are skipped, stay visible but cannot be chosen.
-	// "In den Eingang übernehmen" runs in batches with progress; the dialog stays open afterwards and
-	// shows the result per entry. Notion only answers questions; nothing is written there.
+	// "N Einträge in den Eingang übernehmen" runs in blocks (fix 2026-09-30, ADR-0041 addendum): the
+	// button says "N Einträge werden übernommen …", a progress bar with the count stands above the
+	// options (scrolled into view), "Nach diesem Block anhalten" or Esc stop after the current block.
+	// An entry leaves the selection only with its own result, and only when it is in the inbox now;
+	// failed and unsent ones stay chosen. The result (counts, errors, "Im Eingang ansehen") takes the
+	// place of the progress. Notion only answers questions; nothing is written there.
 	let {
 		connectionId,
 		label,
@@ -91,13 +102,19 @@
 	/** Shift at the moment a row was pressed (the click on the label does not keep it reliably). */
 	let shift = false;
 	let running = $state(false);
+	/** "Nach diesem Block anhalten" was asked for. */
+	let stopping = $state(false);
 	let handled = $state(0);
 	let total = $state(0);
 	let lastRun = $state<NotionImportRun | null>(null);
 	const results = new SvelteMap<string, NotionImportResult>();
 	let controller: AbortController | null = null;
+	/** Stops the running import after its current block. */
+	let stopper: AbortController | null = null;
 	let heading = $state<HTMLElement>();
 	let headBox = $state<HTMLInputElement>();
+	let runBox = $state<HTMLElement>();
+	let closeButton = $state<HTMLButtonElement>();
 
 	const imported = $derived(notion.imports(connectionId) ?? []);
 	const preview = $derived(previewView.kind === 'ready' ? previewView.preview : null);
@@ -108,9 +125,30 @@
 	const doneCount = $derived(items.filter((item) => item.done && item.state === '').length);
 	const knownCount = $derived(items.filter((item) => item.state !== '').length);
 	const isDatabase = $derived(chosenSource?.type === 'data_source');
+	/** Before the first run always; afterwards while something is chosen (else "Schließen" leads). */
+	const offerImport = $derived(lastRun === null || chosen.length > 0);
+	const summary = $derived(
+		lastRun === null
+			? null
+			: runSummary({
+					counts: lastRun.counts,
+					error: lastRun.error,
+					stopped: lastRun.stopped,
+					open: lastRun.open.length
+				})
+	);
+	const failures = $derived(
+		(lastRun?.results ?? [])
+			.filter((result) => result.status === 'failed')
+			.map((result) => ({
+				ref: result.ref,
+				title: items.find((item) => item.ref === result.ref)?.title ?? '',
+				message: result.message
+			}))
+	);
 	/** "12 Einträge, davon 2 schon im Eingang, 3 erledigt. 1 leerer Punkt ausgelassen." */
 	const overview = $derived.by(() => {
-		const parts = [countText(items.length)];
+		const parts = [entriesText(items.length)];
 		if (knownCount > 0) parts.push(`davon ${knownCount} schon im Eingang`);
 		if (doneCount > 0) parts.push(`${doneCount} erledigt`);
 		const blank = preview?.blankPoints ?? 0;
@@ -126,8 +164,11 @@
 		if (headBox) headBox.indeterminate = head === 'some';
 	});
 
-	// A request still running when the dialog goes away is aborted.
-	$effect(() => () => controller?.abort());
+	// A request still running when the dialog goes away is aborted; an import stops after its block.
+	$effect(() => () => {
+		controller?.abort();
+		stopper?.abort();
+	});
 
 	// The list of sources loads when the dialog opens.
 	$effect(() => untrack(() => void loadSources()));
@@ -259,7 +300,7 @@
 			}
 		}
 		if (known !== undefined) {
-			parts.push(`schon übernommen: ${countText(known.count)}`);
+			parts.push(`schon übernommen: ${entriesText(known.count)}`);
 		}
 		return parts.join(' · ');
 	}
@@ -268,37 +309,76 @@
 		return list.filter((source) => source.type === type);
 	}
 
-	function countText(count: number): string {
-		return count === 1 ? '1 Eintrag' : `${count} Einträge`;
+	/** The Notion entries of the inbox after `run` ("Im Eingang ansehen"). */
+	function inboxHref(run: NotionImportRun): ResolvedPathname {
+		return `${resolve('/eingang')}${notionInboxQuery(run.counts)}` as ResolvedPathname;
+	}
+
+	/** Brings progress or result into the visible part of the content (the list may be long). */
+	async function revealRun() {
+		await tick();
+		runBox?.scrollIntoView?.({ block: 'nearest' });
+	}
+
+	function stop() {
+		if (!running || stopping) return;
+		stopping = true;
+		stopper?.abort();
 	}
 
 	async function submit(event: Event) {
 		event.preventDefault();
 		if (running || preview === null || chosenSource === null || chosen.length === 0) return;
 		const refs = [...chosen];
+		const withContent = isDatabase && copyContent;
+		const current = new AbortController();
+		stopper = current;
 		running = true;
+		stopping = false;
 		handled = 0;
 		total = refs.length;
-		const withContent = isDatabase && copyContent;
-		const run = await notion.runImport(
-			connectionId,
-			{
-				source: { type: chosenSource.type, id: chosenSource.id },
-				refs,
-				skipDone,
-				copyContent: withContent,
-				dateProperty: isDatabase ? dateProperty : null
-			},
-			importBatchSize(preview.limits, withContent),
-			(count) => (handled = count)
-		);
-		running = false;
+		lastRun = null;
+		void revealRun();
+		let run: NotionImportRun | null;
+		try {
+			run = await notion.runImport(
+				connectionId,
+				{
+					source: { type: chosenSource.type, id: chosenSource.id },
+					refs,
+					skipDone,
+					copyContent: withContent,
+					dateProperty: isDatabase ? dateProperty : null
+				},
+				importBatchSize(preview.limits, withContent, items.length),
+				{
+					stop: current.signal,
+					onblock: (block) => {
+						for (const result of block) results.set(result.ref, result);
+						handled += block.length;
+					}
+				}
+			);
+		} finally {
+			running = false;
+			stopping = false;
+			if (stopper === current) stopper = null;
+		}
 		if (run === null) return;
-		for (const result of run.results) results.set(result.ref, result);
 		selection = keepShown(selection, chosable);
 		lastRun = run;
+		await tick();
+		// The import button goes when nothing is left to choose; the focus must not get lost with it.
+		if (!offerImport) closeButton?.focus();
+		await revealRun();
 	}
 </script>
+
+{#snippet inboxLink()}
+	{#if lastRun !== null}
+		<a class="button-subtle" href={inboxHref(lastRun)}>Im Eingang ansehen</a>
+	{/if}
+{/snippet}
 
 <Modal
 	open
@@ -306,6 +386,7 @@
 	title={`Listen aus Notion übernehmen: ${label}`}
 	describedBy={ids.summary}
 	busy={running}
+	onbusyescape={stop}
 	onclose={() => onclose()}
 >
 	<p id={ids.summary} class="hint">
@@ -401,6 +482,39 @@
 			<span class="hint">{NOTION_SOURCE_TYPE_LABELS[chosenSource.type]}</span>
 			<ExternalLink href={chosenSource.url}>In Notion öffnen</ExternalLink>
 		</p>
+
+		<!-- Progress and result above the options, so a long list never hides them. -->
+		{#if running}
+			<div class="progress" role="status" bind:this={runBox}>
+				<progress value={handled} max={total} aria-hidden="true"></progress>
+				<span>{progressText(handled, total)}{stopping ? ' Hält nach diesem Block an.' : ''}</span>
+			</div>
+		{:else if lastRun !== null && summary !== null}
+			<div class="run" bind:this={runBox}>
+				<SectionMessage
+					tone={summary.tone}
+					title={summary.title}
+					live
+					headingLevel={4}
+					actions={lastRun.counts.created + lastRun.counts.duplicates > 0 ? inboxLink : undefined}
+				>
+					{summary.text}
+				</SectionMessage>
+				{#if failures.length > 0}
+					<div class="alert-error failures">
+						<h4>Nicht übernommen</h4>
+						<ul>
+							{#each failures as failure (failure.ref)}
+								<li>
+									<ErrorIcon />
+									<span>„{failure.title}“: {failure.message}</span>
+								</li>
+							{/each}
+						</ul>
+					</div>
+				{/if}
+			</div>
+		{/if}
 
 		<fieldset class="options" disabled={running}>
 			<legend>Optionen</legend>
@@ -531,39 +645,31 @@
 				</form>
 			{/if}
 		{/if}
-
-		{#if running}
-			<div class="progress" role="status">
-				<progress value={handled} max={total} aria-hidden="true"></progress>
-				<span>{handled} von {total} übernommen …</span>
-			</div>
-		{:else if lastRun !== null}
-			{#if lastRun.error !== null}
-				<SectionMessage tone="error" live>
-					{countsText(lastRun.counts)}. {lastRun.error}
-				</SectionMessage>
-			{:else}
-				<SectionMessage
-					tone={lastRun.counts.created > 0 ? 'success' : 'info'}
-					title="In den Eingang übernommen"
-					live
-					headingLevel={4}
-				>
-					{countsText(lastRun.counts)}.
-				</SectionMessage>
-			{/if}
-		{/if}
 	{/if}
 
 	{#snippet footer({ close })}
-		{#if phase === 'preview'}
-			<button class="button-secondary back" type="button" disabled={running} onclick={back}>
-				Andere Quelle
+		{#if running}
+			<button
+				class="button-secondary"
+				type="button"
+				aria-disabled={stopping ? 'true' : undefined}
+				onclick={stop}
+			>
+				{stopping ? 'Hält nach diesem Block an …' : 'Nach diesem Block anhalten'}
+			</button>
+		{:else}
+			{#if phase === 'preview'}
+				<button class="button-secondary back" type="button" onclick={back}>Andere Quelle</button>
+			{/if}
+			<button
+				class={phase === 'preview' && !offerImport ? 'button-primary' : 'button-secondary'}
+				type="button"
+				bind:this={closeButton}
+				onclick={close}
+			>
+				{lastRun === null ? 'Abbrechen' : 'Schließen'}
 			</button>
 		{/if}
-		<button class="button-secondary" type="button" onclick={close}>
-			{lastRun === null ? 'Abbrechen' : 'Schließen'}
-		</button>
 		{#if phase === 'sources'}
 			<button
 				class="button-primary"
@@ -573,14 +679,15 @@
 			>
 				Weiter
 			</button>
-		{:else if items.length > 0}
+		{:else if items.length > 0 && (running || offerImport)}
 			<button
 				class="button-primary"
 				type="submit"
 				form={ids.importForm}
 				aria-disabled={running || chosen.length === 0 ? 'true' : undefined}
+				aria-busy={running ? 'true' : undefined}
 			>
-				{running ? 'Wird übernommen …' : `${countText(chosen.length)} in den Eingang übernehmen`}
+				{running ? runningText(total) : `${entriesText(chosen.length)} in den Eingang übernehmen`}
 			</button>
 		{/if}
 	{/snippet}
@@ -746,6 +853,37 @@
 		display: grid;
 		gap: 0.25rem;
 		font-size: var(--font-size-control);
+	}
+
+	.run {
+		display: grid;
+		gap: 0.5rem;
+	}
+
+	.failures {
+		display: block;
+	}
+
+	.failures h4 {
+		margin-bottom: 0.25rem;
+		font-size: var(--font-size-body);
+		font-weight: 600;
+	}
+
+	.failures ul {
+		display: grid;
+		gap: 0.25rem;
+		margin: 0;
+		padding: 0;
+		font-size: var(--font-size-control);
+		list-style: none;
+	}
+
+	.failures li {
+		display: flex;
+		gap: 0.375rem;
+		align-items: flex-start;
+		overflow-wrap: anywhere;
 	}
 
 	progress {

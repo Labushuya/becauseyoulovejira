@@ -1,6 +1,6 @@
 # ADR-0041: Notion: bestehende Listen nur lesend als Kopien in den Eingang übernehmen
 
-- **Status:** Angenommen und umgesetzt in zwei Paketen nach [docs/plan/notion-import.md](../plan/notion-import.md): NI-1 (Server, Routen, Tests gegen einen Fake der Notion-API) und NI-2 (Karte, Assistent, Import-Dialog, „Erneut abrufen“, Hilfe). Test-Manifest BYL-E6-520 bis BYL-E6-538; die manuellen Browser-Prüfungen BYL-E6-539 bis BYL-E6-547 sind offen.
+- **Status:** Angenommen und umgesetzt in zwei Paketen nach [docs/plan/notion-import.md](../plan/notion-import.md): NI-1 (Server, Routen, Tests gegen einen Fake der Notion-API) und NI-2 (Karte, Assistent, Import-Dialog, „Erneut abrufen“, Hilfe). Test-Manifest BYL-E6-520 bis BYL-E6-538; die manuellen Browser-Prüfungen BYL-E6-539 bis BYL-E6-547 sind offen. Ergänzt durch den [Nachtrag vom 2026-09-30](#nachtrag-2026-09-30-rückmeldung-und-laufzeiten-beim-import) (Rückmeldung und Laufzeiten beim Import, BYL-E6-560 bis BYL-E6-565, manuell BYL-E6-566 offen).
 - **Datum:** 2026-09-29
 - **Entscheidung durch:** Nutzer („Da wir bislang nur mit Kopien gearbeitet haben, sollten wir das auch hier beibehalten: Variante 1 soll es sein. Notion nur nutzen, um andere bestehende Listen auf deren Inhalt hin zu übernehmen.“, 2026-09-29), Advisor (fachliche Vorgaben: Zugang, Quellen, Ablauf, Eingang, Doku), Executor (API-Version, Abfrageweg, Grenzen, Einzelheiten)
 - **Ersetzt:** [ADR-0016](0016-kanal-architektur-und-mail.md) §2, Absatz „Notion (zurückgestellt)“ (Abruf per Cron alle 15 Minuten mit Cursor), siehe Nachtrag dort
@@ -46,7 +46,7 @@ Notion stand seit E4 als letzter Kanal auf der Liste des Nutzers und war zurück
 - **Nur lesende Endpunkte**, in `app/pb_hooks/lib/notion-client.js` als einzige Funktionen vorhanden: `GET /v1/users/me`, `POST /v1/search`, `GET /v1/data_sources/{id}`, `POST /v1/data_sources/{id}/query`, `GET /v1/pages/{id}`, `GET /v1/blocks/{id}/children`. Suche und Abfrage sind POST, ändern aber nichts. Ein Endpunkt, der schreibt, existiert im Code nicht.
 - **Paginierung** vollständig mit `page_size` 100 und `start_cursor`, bis zu den Grenzen in §6. Zeilen in der Reihenfolge ihrer Anlage (`sorts` nach `created_time`), damit Vorschau und Import dieselbe Reihenfolge sehen; Quellen zuletzt bearbeitet zuerst.
 - **Drosselung:** höchstens etwa 3 Anfragen je Sekunde (350 ms Abstand über eine Marke im Store der App, für alle Anfragen des Servers).
-- **Wiederholung:** 429 und 529 nach `Retry-After` (ganze Sekunden, sonst 1, 2, 4 s), höchstens dreimal und nur bis 30 s Wartezeit; 500, 502, 503, 504 zweimal nach 1 und 2 s; alles andere nicht. Zeitlimit 30 s je Anfrage, Antworten über 20 MB werden verworfen.
+- **Wiederholung:** 429 und 529 nach `Retry-After` (ganze Sekunden, sonst 1, 2, 4 s), höchstens dreimal und nur bis 30 s Wartezeit; 500, 502, 503, 504 zweimal nach 1 und 2 s; alles andere nicht. Zeitlimit 30 s je Anfrage, Antworten über 20 MB werden verworfen. Seit dem Nachtrag vom 2026-09-30 gilt dazu eine Frist je Anfrage der App (90 s), in der alle Versuche und Wartezeiten liegen müssen.
 - **Fehler** als deutscher Text ohne Token (`notion-rules.failureOf`): 401 „Notion lehnt den Token ab (401). Stimmt der Wert von BYL_NOTION_TOKEN? …“, 403 „… Read content …“, 404 „nicht freigegeben oder gelöscht (404) … „•••“ → „Verbindungen“ …“, 429 „bremst gerade …“, 5xx „gerade nicht verfügbar“, keine Antwort „nicht erreichbar“. Ob ein Fehler die **Verbindung** betrifft (Token, Rechte) oder nur eine **Quelle** (404/403 einer Seite, 429, 5xx), steht in der Antwort (`reason`).
 - **Test:** Nur mit der Marke des Testmodus, die allein ein Hook der Tests setzt (`tests/fixtures/pb_hooks/test-mode.pb.js`, nie Teil des App-Ordners), nimmt der Client statt `api.notion.com` den Port aus `BYL_TEST_NOTION_PORT` auf `127.0.0.1`. Der Harness setzt ihn für jede Wegwerf-Instanz auf einen geschlossenen Port; keine Testinstanz erreicht Notion. Eine gleichnamige Variable im Konto des Nutzers ändert nichts.
 
@@ -78,7 +78,7 @@ Notion stand seit E4 als letzter Kanal auf der Liste des Nutzers und war zurück
 
 - Option „Seiteninhalt als Kopie mitnehmen“ (Standard aus), nur für Datenbanken: Der Inhalt der Zeilenseite kommt als Markdown nach einer Linie (`---`) unter die Eigenschaften.
 - Grenzen je Seite: 500 Blöcke, 50 000 Zeichen, 40 Anfragen, Tiefe 8. Darüber endet der Text mit „_Seiteninhalt gekürzt: … Vollständig in Notion._“. Dateien, Bilder und PDFs aus Notion stehen nur mit Namen im Text: Ihre Adressen sind signiert und laufen nach einer Stunde ab. Externe Medien und Lesezeichen bleiben Links.
-- Grenzen je Quelle: 1 000 Zeilen einer Datenbank; beim Lesen einer Seite 100 Anfragen, 5 000 Blöcke, Tiefe 8; in der Quellenliste je 500 Datenquellen und Seiten (die Suche liest dafür bis zu 1 000 Seiten, weil Zeilen mitkommen); 100 Einträge je Import-Anfrage (die Oberfläche teilt größere Auswahlen auf und zeigt den Fortschritt; mit Seiteninhalt schickt sie höchstens 10 je Anfrage, weil jede Zeile dann bis zu 40 Anfragen an Notion braucht). Eine gekürzte Quelle sagt das in der Vorschau.
+- Grenzen je Quelle: 1 000 Zeilen einer Datenbank; beim Lesen einer Seite 100 Anfragen, 5 000 Blöcke, Tiefe 8; in der Quellenliste je 500 Datenquellen und Seiten (die Suche liest dafür bis zu 1 000 Seiten, weil Zeilen mitkommen); 100 Einträge je Import-Anfrage (die Oberfläche teilt größere Auswahlen auf und zeigt den Fortschritt; mit Seiteninhalt schickt sie höchstens 10 je Anfrage, weil jede Zeile dann bis zu 40 Anfragen an Notion braucht; kleinere Blöcke seit dem Nachtrag vom 2026-09-30). Eine gekürzte Quelle sagt das in der Vorschau.
 
 ### 7. Routen, Zustand der Verbindung und „Erneut abrufen“
 
@@ -131,3 +131,44 @@ Das Datum eines Notion-Eintrags ist ein Datum der Liste (Fälligkeit, Termin), k
 - Grenzen, die der Nutzer sieht: höchstens 1 000 Zeilen je Datenbank und 500 Blöcke bzw. 50 000 Zeichen Seiteninhalt je Zeile; die Suche findet frisch freigegebene Seiten manchmal erst nach einem Moment („Liste aktualisieren“); Personen ohne Benutzerinformationen nur als Zahl; Zeitangaben in fremden Zeitzonen ohne Offset nur als Tag; eine interne Integration kann nur ein Workspace Owner anlegen.
 - Änderungen in Notion nach dem Import erreichen die Kopie nicht; „Erneut abrufen“ holt nur Punkte, die neu sind (neue IDs).
 - Neue reine Module mit Unit-Tests (`notion-rules.js`, `notion-markdown.js`, gegen den Parser der Anzeige geprüft), ein Fake der Notion-API für die Integrationstests (`tests/support/fake-notion.mjs`) und ein Hook nur für Tests (`tests/fixtures/pb_hooks/test-mode.pb.js`).
+
+## Nachtrag (2026-09-30): Rückmeldung und Laufzeiten beim Import
+
+**Beobachtung des Nutzers:** Er übernahm 45 Einträge einer Datenbank. Danach war die Auswahl leer, der Knopf hieß „0 Einträge in den Eingang übernehmen“, und nur der Mauszeiger über dem Knopf zeigte „beschäftigt“. Fortschritt, Ergebnis oder Fehler sah er nicht, und er wusste nicht, ob der Import noch lief.
+
+**Befund**, nachgestellt mit einer Wegwerf-Instanz, dem Fake der Notion-API, einem Komponententest und Edge headless:
+
+1. **Der Import lief durch.** 45 Zeilen ohne Seiteninhalt gingen als eine einzige Anfrage (Teile zu 100): 2 Anfragen an Notion, 45 Einträge, 0,85 s gegen den Fake. Der Fortschritt „0 von 45 übernommen …“ und das Ergebnis „45 angelegt“ standen unter der Liste im scrollenden Inhalt des Modals: 4.111 px Inhalt bei 563 px sichtbarer Höhe, also außer Sicht.
+2. **Der Knopf zeigte das Falsche.** Nach dem Ergebnis sind alle 45 Einträge „Jetzt im Eingang.“ und nicht mehr wählbar. Die Auswahl wird leer, der Knopf zeigt „0 Einträge …“ mit `aria-disabled`, und `base.css` gibt solchen Knöpfen `cursor: progress`. Dieser Zeiger war das einzige sichtbare Zeichen, und er sagte „beschäftigt“, obwohl nichts mehr lief.
+3. **Weitere Ursachen:**
+   - Antwortete Notion nicht binnen 30 s, hieß das „Notion ist nicht erreichbar. Besteht eine Internetverbindung?“ und landete als Fehler der Verbindung in `last_error`.
+   - Eine Anfrage hatte keine Obergrenze. Eine einzelne Anfrage an Notion konnte bis 210 s dauern (vier Versuche zu 30 s, dazu dreimal bis 30 s `Retry-After`). Ein Teil mit Seiteninhalt konnte bis 400 Anfragen brauchen. PocketBase 0.40.4 (`WriteTimeout` 5 min) und Firefox (300 s) geben vorher auf, und der Browser meldete dann „Server nicht erreichbar“, obwohl Einträge angelegt waren.
+   - Der Store verschluckte eine abgebrochene Anfrage (weder Ergebnis noch Meldung).
+   - Einträge, die eine Fehlerantwort noch angelegt hatte, fehlten im Ergebnis.
+
+**Entscheidung:**
+
+- **Blöcke statt einer Anfrage:** Ohne Seiteninhalt schickt die Oberfläche 10 Einträge je 100 Einträge der Quelle (mindestens 10, höchstens 100), mit Seiteninhalt 5 (`importBatchSize`).
+  - Jede Anfrage liest die Quelle neu (1 Anfrage an Notion plus 1 je 100 Zeilen, 350 ms Abstand). So bleibt es bei etwa einer Anfrage an Notion je 10 Einträge.
+  - 45 Zeilen laufen in 5 Blöcken zu je gut einer halben Sekunde, 1.000 Zeilen in 10 Blöcken zu 100.
+  - Mit Seiteninhalt braucht jede Zeile mindestens eine weitere Anfrage, bis zu 40.
+- **Laufzeiten aufeinander abgestimmt:**
+  - Kein Versuch an Notion beginnt später als 90 s nach dem Eingang der Anfrage der App (`LIMITS.routeSeconds`). Das Zeitlimit jedes Versuchs (höchstens 30 s) schrumpft auf den Rest. Würde eine Wartezeit nach `Retry-After` darüber hinausgehen, gilt gleich der Fehler (etwa 429).
+  - Ein Import nimmt nach 30 s (`LIMITS.importSeconds`) keinen neuen Eintrag mehr an und gibt den Rest als `pending` zurück; die Oberfläche schickt ihn als nächsten Block.
+  - Das gilt nur nach mindestens einem Ergebnis. Läuft die Zeit vorher ab, ist es ein Fehler. So kommt jede Anfrage voran, und die Schleife kann nicht kreisen.
+  - Der Browser wartet 150 s (`NOTION_REQUEST_TIMEOUT_MS`) und meldet dann eine Zeitüberschreitung.
+  - Reihenfolge: 30 s je Versuch < 90 s je Anfrage < 150 s im Browser < 300 s bei PocketBase und Firefox. Keine Einzelanfrage läuft in ein fremdes Zeitlimit.
+- **Zeitüberschreitung als eigener Fehler:** „Notion antwortet gerade zu langsam (Zeitüberschreitung). Bitte in einer Minute erneut versuchen.“ Sie betrifft die Quelle, nicht die Verbindung (kein `last_error`).
+- **Dialog:**
+  - Der Knopf heißt während des Laufs „45 Einträge werden übernommen …“ (`aria-disabled`, `aria-busy`).
+  - Über den Optionen steht der Fortschritt „20 von 45 bearbeitet …“ mit Balken (`role="status"`). Er wird beim Start in den sichtbaren Bereich gerollt, ebenso später das Ergebnis.
+  - Statt „Abbrechen“ und „Andere Quelle“ steht „Nach diesem Block anhalten“; Esc wirkt genauso. Abbrechen geht nur zwischen Blöcken, weil der Server eine laufende Anfrage zu Ende führt.
+  - Ein Eintrag verlässt die Auswahl erst mit seinem eigenen Ergebnis und nur, wenn er jetzt im Eingang ist (angelegt, schon vorhanden, übersprungen). Fehlgeschlagene und nicht mehr gesendete Einträge bleiben gewählt.
+  - Danach steht an derselben Stelle das Ergebnis: „In den Eingang übernommen“, „Angehalten“ oder „Übernahme unterbrochen“ (rot nur bei einem Fehler, [ADR-0009](0009-fehlerfarbe.md)). Es nennt die Zahlen, den Rest und den Grund, bietet „Im Eingang ansehen“ (`/eingang?quelle=notion`) und listet Einträge mit Fehler unter „Nicht übernommen“.
+  - Ist nichts mehr zu wählen, verschwindet der Import-Knopf. „Schließen“ wird zum Hauptknopf und bekommt den Fokus.
+  - Ein Doppelklick startet nichts zweimal: Dialog und Store lassen je Verbindung nur einen Lauf zu.
+- **Kein Fehler bleibt still:** Jeder Fehler eines Laufs ist sein Ergebnis, ob von Notion, aus dem Netz, eine Zeitüberschreitung oder ein Abbruch. Ausgenommen ist nur die abgelaufene Sitzung, die wie überall abmeldet. Was eine Fehlerantwort schon angelegt hat (`items`), zählt mit. Die Garantie „schon vorhanden“ (Fingerprint `notion|<ID>`) macht jeden neuen Versuch sicher.
+- **Umsetzung:** Die Schleife steht ohne Svelte in `web/src/lib/stores/notion-run.ts` (relative Importe). So prüfen die Integrationstests dieselbe Schleife gegen PocketBase und den Fake-Server. Nur im Testmodus verkürzt `BYL_TEST_NOTION_TIMING` („importMs,routeMs“) die Grenzen, und der Fake kann langsam antworten (`slow`).
+- **Nicht geändert:** `cursor: progress` für gesperrte Knöpfe gilt weiter in der ganzen App. Im Import-Dialog erscheint nach dem Lauf kein gesperrter Import-Knopf mehr.
+
+**Konsequenzen:** 45 Zeilen brauchen mit Blöcken etwa 3,5 s statt 0,85 s gegen den Fake, weil jede Anfrage die Quelle neu liest. Dafür ist der Fortschritt echt. Die Hooks wirken erst nach `neu-starten.bat`. Test-Manifest BYL-E6-560 bis BYL-E6-565, die manuelle Prüfung BYL-E6-566 ist offen.

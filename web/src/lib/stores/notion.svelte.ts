@@ -1,41 +1,40 @@
 // Notion import on the page "Kanäle" (ADR-0041, plan notion-import NI-2; ADR-0006): "Verbindung
 // prüfen", the sources imported so far per connection (from the inbox, loaded with the card), the
-// list of shared sources and the preview for the import dialog, the import in batches with
-// progress, and "Erneut abrufen", which takes only entries that are not in the inbox yet with the
-// options of the last import. Only reading: nothing goes to Notion but questions. Results go out
-// as flags (ADR-0025 section 8); a lost session logs out once.
+// list of shared sources and the preview for the import dialog, the import in blocks with
+// progress (stores/notion-run.ts; one run per connection at a time), and "Erneut abrufen", which
+// takes only entries that are not in the inbox yet with the options of the last import. Only
+// reading: nothing goes to Notion but questions. Results go out as flags (ADR-0025 section 8); a
+// lost session logs out once, every other failure of an import is its error, never silence.
 
 import type PocketBase from 'pocketbase';
-import { SvelteMap } from 'svelte/reactivity';
-import { toDataError } from '$lib/data/errors';
+import { SvelteMap, SvelteSet } from 'svelte/reactivity';
+import { DataError, toDataError } from '$lib/data/errors';
 import {
 	checkNotion,
 	importNotion,
 	listNotionImports,
 	listNotionSources,
-	previewNotion,
-	type NotionImportBatch
+	previewNotion
 } from '$lib/data/notion';
 import type { RequestOptions } from '$lib/data/options';
 import {
 	NO_COUNTS,
 	addCounts,
-	batches,
 	blockedReason,
 	checkText,
 	countsText,
 	importBatchSize,
 	refetchText,
 	type NotionCheck,
-	type NotionImportCounts,
+	type NotionImportOutcome,
 	type NotionImportRequest,
-	type NotionImportResult,
 	type NotionImportedSource,
 	type NotionOutcome,
 	type NotionPreview,
 	type NotionSourceList
 } from '$lib/domain/notion';
 import { SILENT_FLAGS, type FlagSink } from './flags.svelte';
+import { runInBlocks, type NotionImportRun, type NotionRunOptions } from './notion-run';
 import type { SessionGuard } from './ticket-list.svelte';
 
 export interface NotionData {
@@ -52,7 +51,7 @@ export interface NotionData {
 		dateProperty: string | null,
 		options: RequestOptions
 	): Promise<NotionOutcome<NotionPreview>>;
-	importBatch(id: string, request: NotionImportRequest): Promise<NotionOutcome<NotionImportBatch>>;
+	importBatch(id: string, request: NotionImportRequest): Promise<NotionImportOutcome>;
 }
 
 export function notionData(pb: PocketBase): NotionData {
@@ -64,14 +63,6 @@ export function notionData(pb: PocketBase): NotionData {
 			previewNotion(pb, id, source, dateProperty, options),
 		importBatch: (id, request) => importNotion(pb, id, request)
 	};
-}
-
-/** Outcome of a whole import (all batches) or of "Erneut abrufen". */
-export interface NotionImportRun {
-	results: NotionImportResult[];
-	counts: NotionImportCounts;
-	/** Error that stopped the run (message of the server), null when every batch ran. */
-	error: string | null;
 }
 
 /** Answer of "Verbindung prüfen" in the page: the result or why it failed. */
@@ -89,6 +80,8 @@ export class NotionStore {
 	readonly #lastCheck = new SvelteMap<string, NotionCheckState>();
 	/** Source of a running "Erneut abrufen" per connection. */
 	readonly #refetching = new SvelteMap<string, string>();
+	/** Connections with a running import. */
+	readonly #importing = new SvelteSet<string>();
 
 	constructor(data: NotionData, session: SessionGuard, flags: FlagSink = SILENT_FLAGS) {
 		this.#data = data;
@@ -112,6 +105,11 @@ export class NotionStore {
 	/** Source ID of a running "Erneut abrufen" of the connection, null if none runs. */
 	refetching(id: string): string | null {
 		return this.#refetching.get(id) ?? null;
+	}
+
+	/** Whether an import of the connection runs (dialog or "Erneut abrufen"). */
+	isImporting(id: string): boolean {
+		return this.#importing.has(id);
 	}
 
 	/** Loads the imported sources of a connection; unknown on failure (the card says nothing). */
@@ -195,39 +193,47 @@ export class NotionStore {
 	}
 
 	/**
-	 * Takes the chosen entries into the inbox in batches of `batchSize` (the limit of the server),
-	 * one after the other; `onprogress` gets the number of handled entries after each batch. An
-	 * error stops the rest; what was taken stays. Reloads the imported sources afterwards. null when
-	 * the session ended.
+	 * Takes the chosen entries into the inbox in blocks of `blockSize` (importBatchSize), one after
+	 * the other (stores/notion-run.ts): `onblock` gets the results of each block, `stop` ends the run
+	 * after the current one. An error stops the rest and is the error of the run, whatever failed
+	 * (Notion, the network, the time limit); what was taken stays. Reloads the imported sources
+	 * afterwards. null when the session ended or an import of the connection already runs.
 	 */
 	async runImport(
 		id: string,
 		request: NotionImportRequest,
-		batchSize: number,
-		onprogress: (handled: number) => void = () => undefined
+		blockSize: number,
+		{ onblock, stop }: Pick<NotionRunOptions, 'onblock' | 'stop'> = {}
 	): Promise<NotionImportRun | null> {
-		const run: NotionImportRun = { results: [], counts: { ...NO_COUNTS }, error: null };
-		for (const refs of batches(request.refs, batchSize)) {
-			if (!this.#session.ensureValid()) return null;
-			let outcome: NotionOutcome<NotionImportBatch>;
-			try {
-				outcome = await this.#data.importBatch(id, { ...request, refs });
-			} catch (error) {
-				const failed = this.#failed(error, undefined);
-				if (failed === null) return null;
-				run.error = failed.message;
-				break;
-			}
-			if (outcome.kind !== 'ok') {
-				run.error = outcome.message;
-				break;
-			}
-			run.results.push(...outcome.value.items);
-			run.counts = addCounts(run.counts, outcome.value.counts);
-			onprogress(run.results.length);
+		if (this.#importing.has(id)) return null;
+		this.#importing.add(id);
+		try {
+			// The guard ends an expired session itself; only a refused request still needs the logout.
+			const ended = new DataError('session');
+			const run = await runInBlocks(
+				(refs) => {
+					if (!this.#session.ensureValid()) throw ended;
+					return this.#data.importBatch(id, { ...request, refs });
+				},
+				request.refs,
+				blockSize,
+				{
+					onblock,
+					stop,
+					failure: (error) => {
+						if (error === ended) return null;
+						const failure = toDataError(error);
+						if (failure.kind !== 'session') return failure.message;
+						this.#session.logout();
+						return null;
+					}
+				}
+			);
+			if (run !== null) await this.loadImports(id);
+			return run;
+		} finally {
+			this.#importing.delete(id);
 		}
-		await this.loadImports(id);
-		return run;
 	}
 
 	/**
@@ -273,7 +279,7 @@ export class NotionStore {
 					copyContent: withContent,
 					dateProperty: source.type === 'data_source' ? source.dateProperty : null
 				},
-				importBatchSize(preview.value.limits, withContent)
+				importBatchSize(preview.value.limits, withContent, preview.value.items.length)
 			);
 			if (run === null) return null;
 			const counts = addCounts(run.counts, { ...NO_COUNTS, duplicates: known, skipped: done });
@@ -296,6 +302,7 @@ export class NotionStore {
 		this.#checking.clear();
 		this.#lastCheck.clear();
 		this.#refetching.clear();
+		this.#importing.clear();
 	}
 
 	#toFlag(text: { text: string; tone: 'success' | 'info' | 'error' }) {
