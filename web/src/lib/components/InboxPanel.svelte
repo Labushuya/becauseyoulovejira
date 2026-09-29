@@ -17,6 +17,7 @@
 	import type { TicketSummary } from '$lib/domain/ticket';
 	import type { InboxStore } from '$lib/stores/inbox.svelte';
 	import type { RecurrenceStore } from '$lib/stores/recurrence.svelte';
+	import type { TicketPickerSource } from '$lib/stores/ticket-picker.svelte';
 	import type { TicketSourcesStore } from '$lib/stores/ticket-sources.svelte';
 	import {
 		COPY_LABELS,
@@ -58,6 +59,7 @@
 		recurrence = null,
 		today = null,
 		sources = null,
+		picker,
 		onclose
 	}: {
 		id: string;
@@ -70,6 +72,8 @@
 		today?: CalendarDate | null;
 		/** Linking to a ticket (ADR-0031); without it the panel offers no "Mit Ticket verknüpfen …". */
 		sources?: TicketSourcesStore | null;
+		/** Tickets of the picker (ADR-0042); the (app) layout provides them. */
+		picker?: TicketPickerSource;
 		/** × and Escape: back to the list with the chips of the URL. */
 		onclose: () => void;
 	} = $props();
@@ -450,17 +454,19 @@
 
 {#if linking && sources !== null && item !== null && item.state === 'new'}
 	<LinkTicketDialog
-		items={[{ id: item.id, title: item.title }]}
+		items={[{ id: item.id, title: item.title, scope: item.scope }]}
 		store={sources}
+		{picker}
 		onclose={() => (linking = false)}
 	/>
 {/if}
 
 {#if moving && sources !== null && item !== null && item.ticketId !== null && item.ticket}
 	<MoveSourceDialog
-		item={{ id: item.id, title: item.title }}
+		item={{ id: item.id, title: item.title, scope: item.scope }}
 		current={{ id: item.ticketId, key: item.ticket.key }}
 		store={sources}
+		{picker}
 		onmoved={update}
 		onclose={() => (moving = false)}
 	/>

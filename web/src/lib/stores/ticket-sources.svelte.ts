@@ -13,20 +13,22 @@ import { SvelteMap, SvelteSet } from 'svelte/reactivity';
 import { toDataError } from '$lib/data/errors';
 import { assignToTicket, listTicketSources, originalFileUrl, releaseItem } from '$lib/data/inbox';
 import type { RequestOptions } from '$lib/data/options';
-import { searchTickets, type TicketChoice } from '$lib/data/tickets';
 import type { InboxItemSummary } from '$lib/domain/inbox';
 import { linkSummary, orderSources, type LinkOutcome } from '$lib/domain/sources';
 import { SILENT_FLAGS, type FlagSink } from './flags.svelte';
 import { hold, type LiveSource } from './realtime';
 import type { LoadState, SessionGuard } from './ticket-list.svelte';
 
-export type { TicketChoice };
+/** The ticket an entry goes to (chosen with the ticket picker, ADR-0042). */
+export interface TicketTarget {
+	id: string;
+	key: string;
+}
 
 export interface TicketSourcesData {
 	list(ticketId: string, options: RequestOptions): Promise<InboxItemSummary[]>;
 	link(id: string, ticketId: string): Promise<InboxItemSummary>;
 	release(id: string): Promise<InboxItemSummary>;
-	search(text: string, options: RequestOptions): Promise<TicketChoice[]>;
 	originalUrl(item: Pick<InboxItemSummary, 'id' | 'original'>): Promise<string | null>;
 }
 
@@ -35,7 +37,6 @@ export function ticketSourcesData(pb: PocketBase): TicketSourcesData {
 		list: (ticketId, options) => listTicketSources(pb, ticketId, options),
 		link: (id, ticketId) => assignToTicket(pb, id, ticketId),
 		release: (id) => releaseItem(pb, id),
-		search: (text, options) => searchTickets(pb, text, options),
 		originalUrl: (item) => originalFileUrl(pb, item)
 	};
 }
@@ -162,18 +163,13 @@ export class TicketSourcesStore {
 		}
 	}
 
-	/** Tickets for the ticket search by number, key or title. */
-	search(text: string, options: RequestOptions = {}): Promise<TicketChoice[]> {
-		return this.#data.search(text, options);
-	}
-
 	/**
 	 * Links the items one after the other to `ticket` (ADR-0031 section 2); each is atomic on its
 	 * own. Failures stay with their reason, one flag names how many were linked.
 	 */
 	async link(
 		items: readonly Pick<InboxItemSummary, 'id' | 'title'>[],
-		ticket: Pick<TicketChoice, 'id' | 'key'>
+		ticket: TicketTarget
 	): Promise<LinkOutcome> {
 		const outcome: LinkOutcome = { linked: [], failures: [] };
 		for (const item of items) {
@@ -209,7 +205,7 @@ export class TicketSourcesStore {
 	 */
 	async move(
 		item: Pick<InboxItemSummary, 'id' | 'title'>,
-		ticket: Pick<TicketChoice, 'id' | 'key'>
+		ticket: TicketTarget
 	): Promise<SourceActionResult<InboxItemSummary>> {
 		if (this.#pending.has(item.id) || !this.#session.ensureValid()) {
 			return { ok: false, message: null };

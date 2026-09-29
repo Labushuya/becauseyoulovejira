@@ -25,13 +25,7 @@ import {
 } from '../../web/src/lib/data/inbox.ts';
 import { getImportKeywords, saveImportKeywords } from '../../web/src/lib/data/import-keywords.ts';
 import { subscribeInboxItems } from '../../web/src/lib/data/realtime.ts';
-import {
-	createTicket,
-	getTicket,
-	listOpenTickets,
-	searchTickets,
-	setTicketDone
-} from '../../web/src/lib/data/tickets.ts';
+import { createTicket, getTicket, listOpenTickets } from '../../web/src/lib/data/tickets.ts';
 import { bookmarkletValues } from '../../web/src/lib/domain/bookmarklet.ts';
 import {
 	EMPTY_CAPTURE_INPUT,
@@ -551,36 +545,6 @@ describe('sources of a ticket (ADR-0031, HK-2)', () => {
 			kind: 'validation',
 			fields: { state: { code: 'validation_inbox_primary_source' } }
 		});
-	});
-
-	it('searches tickets by number, key and title, open ones first, done ones too', async () => {
-		const word = `Suche${uniqueSuffix()}`;
-		const open = await createTicket(owner.client, ticketDraft({ title: `${word} offen` }));
-		const done = await createTicket(owner.client, ticketDraft({ title: `${word} erledigt` }));
-		await setTicketDone(owner.client, done.id, true);
-
-		const byTitle = await searchTickets(owner.client, word.toLowerCase());
-		expect(byTitle.map((choice) => choice.id)).toEqual([open.id, done.id]);
-		expect(byTitle[0]).toEqual({
-			id: open.id,
-			key: open.key,
-			title: open.title,
-			status: 'open',
-			parentId: null
-		});
-		expect(byTitle[1]?.status).toBe('done');
-		// A sub-task names its parent, so it is not offered as a parent (ADR-0033).
-		const child = await createTicket(owner.client, ticketDraft({ title: `${word} Teil`, parent: open.id }));
-		expect((await searchTickets(owner.client, child.key))[0]?.parentId).toBe(open.id);
-
-		const byKey = await searchTickets(owner.client, open.key);
-		expect(byKey.map((choice) => choice.id)).toEqual([open.id]);
-		const byNumber = await searchTickets(owner.client, open.key.split('-')[1]);
-		expect(byNumber.map((choice) => choice.id)).toContain(open.id);
-		expect(await searchTickets(owner.client, '   ')).toEqual([]);
-		// Another user finds none of them; "%" is taken literally.
-		expect(await searchTickets(other.client, word)).toEqual([]);
-		expect(await searchTickets(owner.client, `${word}%`)).toEqual([]);
 	});
 });
 

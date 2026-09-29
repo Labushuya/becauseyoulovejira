@@ -1,62 +1,77 @@
-// "Mit Ticket verknüpfen …" (ADR-0031 sections 2 and 7): the ticket search as combobox (APG
-// pattern: arrow keys, Enter, Escape, status line) and the modal that links one or several entries,
-// with failures per entry. Real store with fake data.
+// "Mit Ticket verknüpfen …" (ADR-0031 sections 2 and 7) with the ticket picker (ADR-0042): the list
+// opens with the dialog without typing, the modal links one or several entries, with failures per
+// entry, and tickets of another area than the entries cannot be chosen. Real store with fake data.
 
 import { cleanup, fireEvent, render, screen, within } from '@testing-library/svelte';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { DataError } from '$lib/data/errors';
-import type { TicketChoice } from '$lib/data/tickets';
+import type { InboxItemSummary } from '$lib/domain/inbox';
+import { PICKER_REASONS } from '$lib/domain/ticket-picker';
 import { FlagStore } from '$lib/stores/flags.svelte';
 import { TicketSourcesStore, type TicketSourcesData } from '$lib/stores/ticket-sources.svelte';
 import { useOverlayStubs } from '$lib/test/overlay-stubs';
+import { fakePickerSource, pickerTicket } from '$lib/test/ticket-picker-fake';
 import LinkTicketDialog from './LinkTicketDialog.svelte';
 
 useOverlayStubs();
 
-const CHOICES: TicketChoice[] = [
-	{ id: 'ticket000000004', key: 'TASK-4', title: 'Steuer 2025', status: 'open' },
-	{ id: 'ticket000000009', key: 'HAUS-9', title: 'Steuerbescheid prüfen', status: 'done' }
-];
+const TAX = pickerTicket({ key: 'TASK-4', title: 'Steuer 2025' });
+const NOTICE = pickerTicket({
+	key: 'HAUS-9',
+	title: 'Steuerbescheid prüfen',
+	status: 'done',
+	updated: '2026-08-01 10:00:00.000Z'
+});
+const SHARED = pickerTicket({ key: 'HH-2', title: 'Steuer Haushalt', scope: 'h:house0000000001' });
 
-function setup(items = [{ id: 'item00000000001', title: 'Brief vom Finanzamt' }]) {
+function linked(id: string, ticketId: string, title: string): InboxItemSummary {
+	return {
+		id,
+		channel: 'mail',
+		kind: 'mail',
+		title,
+		sourceUrl: '',
+		sourceRef: '',
+		sourceDate: null,
+		sourceMeta: {},
+		original: '',
+		state: 'converted',
+		ticketId,
+		handledAt: '2026-09-25 10:00:00.000Z',
+		created: '2026-09-25 08:00:00.000Z',
+		updated: '2026-09-25 10:00:00.000Z'
+	};
+}
+
+function setup(
+	items: { id: string; title: string; scope?: string }[] = [
+		{ id: 'item00000000001', title: 'Brief vom Finanzamt', scope: 'u:owner0000000001' }
+	]
+) {
 	const data = {
 		list: vi.fn<TicketSourcesData['list']>(async () => []),
-		link: vi.fn<TicketSourcesData['link']>(async (id, ticketId) => ({
-			id,
-			channel: 'mail',
-			kind: 'mail',
-			title: items.find((entry) => entry.id === id)?.title ?? '',
-			sourceUrl: '',
-			sourceRef: '',
-			sourceDate: null,
-			sourceMeta: {},
-			original: '',
-			state: 'converted',
-			ticketId,
-			handledAt: '2026-09-25 10:00:00.000Z',
-			created: '2026-09-25 08:00:00.000Z',
-			updated: '2026-09-25 10:00:00.000Z'
-		})),
-		release: vi.fn<TicketSourcesData['release']>(),
-		search: vi.fn<TicketSourcesData['search']>(async (text) =>
-			CHOICES.filter((choice) =>
-				`${choice.key} ${choice.title}`.toLowerCase().includes(text.toLowerCase())
-			)
+		link: vi.fn<TicketSourcesData['link']>(async (id, ticketId) =>
+			linked(id, ticketId, items.find((entry) => entry.id === id)?.title ?? '')
 		),
+		release: vi.fn<TicketSourcesData['release']>(),
 		originalUrl: vi.fn<TicketSourcesData['originalUrl']>(async () => null)
 	} satisfies TicketSourcesData;
 	const flags = new FlagStore();
 	const store = new TicketSourcesStore(data, { ensureValid: () => true, logout: vi.fn() }, flags);
+	const { source, listDone } = fakePickerSource({ open: [TAX, SHARED], done: [NOTICE] });
 	const onclose = vi.fn();
 	const onlinked = vi.fn();
-	render(LinkTicketDialog, { props: { items, store, onclose, onlinked } });
+	render(LinkTicketDialog, { props: { items, store, picker: source, onclose, onlinked } });
 	const input = screen.getByRole('combobox', { name: 'Ticket' }) as HTMLInputElement;
-	return { data, flags, onclose, onlinked, input };
+	return { data, flags, onclose, onlinked, input, listDone };
 }
 
-async function type(input: HTMLInputElement, value: string) {
-	input.value = value;
-	await fireEvent.input(input);
+function option(key: string): HTMLElement {
+	const found = screen
+		.getAllByRole('option', { hidden: true })
+		.find((entry) => entry.querySelector('.key')?.textContent === key);
+	if (found === undefined) throw new Error(`No option ${key}`);
+	return found;
 }
 
 afterEach(() => {
@@ -64,72 +79,8 @@ afterEach(() => {
 	vi.useRealTimers();
 });
 
-describe('ticket search (combobox)', () => {
-	it('searches after a pause, moves with the arrow keys and chooses with Enter', async () => {
-		const { data, input } = setup();
-		expect(input.getAttribute('aria-expanded')).toBe('false');
-		expect(input.getAttribute('aria-autocomplete')).toBe('list');
-		expect(input.getAttribute('aria-describedby')).toBeTruthy();
-
-		await type(input, 'steuer');
-		await vi.waitFor(() => expect(input.getAttribute('aria-expanded')).toBe('true'));
-		expect(data.search).toHaveBeenCalledOnce();
-		expect(data.search.mock.calls[0]?.[0]).toBe('steuer');
-		const listbox = screen.getByRole('listbox', { name: 'Tickets' });
-		const options = within(listbox).getAllByRole('option');
-		expect(options.map((option) => option.textContent?.replace(/\s+/g, ' ').trim())).toEqual([
-			'TASK-4 Steuer 2025',
-			'HAUS-9 Steuerbescheid prüfen Erledigt'
-		]);
-		expect(input.getAttribute('aria-activedescendant')).toBe(options[0]?.id);
-		expect(screen.getByText('2 Tickets gefunden.')).toBeTruthy();
-
-		await fireEvent.keyDown(input, { key: 'ArrowDown' });
-		expect(input.getAttribute('aria-activedescendant')).toBe(options[1]?.id);
-		expect(options[1]?.getAttribute('aria-selected')).toBe('true');
-		await fireEvent.keyDown(input, { key: 'ArrowDown' });
-		expect(input.getAttribute('aria-activedescendant')).toBe(options[0]?.id);
-		await fireEvent.keyDown(input, { key: 'ArrowUp' });
-		await fireEvent.keyDown(input, { key: 'Enter' });
-		expect(input.value).toBe('HAUS-9 Steuerbescheid prüfen');
-		expect(input.getAttribute('aria-expanded')).toBe('false');
-		expect(screen.getByText('HAUS-9 gewählt.')).toBeTruthy();
-	});
-
-	it('closes the list with Escape, then empties the field, and consumes both', async () => {
-		const { input } = setup();
-		await type(input, 'task');
-		await vi.waitFor(() => expect(input.getAttribute('aria-expanded')).toBe('true'));
-		const outside = vi.fn();
-		document.addEventListener('keydown', outside);
-		try {
-			await fireEvent.keyDown(input, { key: 'Escape' });
-			expect(input.getAttribute('aria-expanded')).toBe('false');
-			expect(input.value).toBe('task');
-			await fireEvent.keyDown(input, { key: 'Escape' });
-			expect(input.value).toBe('');
-			expect(outside).not.toHaveBeenCalled();
-		} finally {
-			document.removeEventListener('keydown', outside);
-		}
-		// The dialog is still open: Escape only closed the list and emptied the field.
-		expect(screen.getByRole('dialog')).toBeTruthy();
-	});
-
-	it('says when nothing is found and chooses with the mouse', async () => {
-		const { input } = setup();
-		await type(input, 'nichts');
-		await vi.waitFor(() => expect(screen.getByText('Kein Ticket gefunden.')).toBeTruthy());
-		expect(input.getAttribute('aria-expanded')).toBe('false');
-		await type(input, 'task-4');
-		await vi.waitFor(() => expect(input.getAttribute('aria-expanded')).toBe('true'));
-		await fireEvent.click(screen.getByRole('option', { name: /TASK-4/ }));
-		expect(input.value).toBe('TASK-4 Steuer 2025');
-	});
-});
-
 describe('LinkTicketDialog', () => {
-	it('links one entry to the chosen ticket and closes with a flag', async () => {
+	it('opens the list without typing and links one entry to the chosen ticket', async () => {
 		const { data, flags, onclose, onlinked, input } = setup();
 		const dialog = screen.getByRole('dialog', { name: 'Mit Ticket verknüpfen' });
 		expect(
@@ -142,15 +93,44 @@ describe('LinkTicketDialog', () => {
 		expect(within(dialog).getByText('Bitte ein Ticket wählen.')).toBeTruthy();
 		expect(data.link).not.toHaveBeenCalled();
 
-		await type(input, 'TASK-4');
-		await vi.waitFor(() => expect(input.getAttribute('aria-expanded')).toBe('true'));
-		await fireEvent.keyDown(input, { key: 'Enter' });
+		await fireEvent.focus(input);
+		expect(input.getAttribute('aria-expanded')).toBe('true');
+		await fireEvent.click(option('TASK-4'));
+		expect(input.value).toBe('TASK-4 Steuer 2025');
 		await fireEvent.click(within(dialog).getByRole('button', { name: 'Verknüpfen' }));
 
 		await vi.waitFor(() => expect(onclose).toHaveBeenCalledOnce());
-		expect(data.link).toHaveBeenCalledWith('item00000000001', 'ticket000000004');
+		expect(data.link).toHaveBeenCalledWith('item00000000001', TAX.id);
 		expect(onlinked).toHaveBeenCalledWith(['item00000000001']);
 		expect(flags.flags.at(-1)?.title).toBe('1 Eintrag mit TASK-4 verknüpft.');
+	});
+
+	it('keeps tickets of another area visible but not choosable', async () => {
+		const { input } = setup();
+		await fireEvent.focus(input);
+		const shared = option('HH-2');
+		expect(shared.getAttribute('aria-disabled')).toBe('true');
+		expect(shared.textContent).toContain(PICKER_REASONS.otherScope);
+		await fireEvent.click(shared);
+		expect(input.value).toBe('');
+	});
+
+	it('offers done tickets with "Nur offene" switched off', async () => {
+		const { input, listDone } = setup();
+		await fireEvent.focus(input);
+		await fireEvent.click(screen.getByRole('button', { name: 'Nur offene' }));
+		await vi.waitFor(() => expect(listDone).toHaveBeenCalled());
+		await vi.waitFor(() => expect(option('HAUS-9')).toBeTruthy());
+		await fireEvent.click(option('HAUS-9'));
+		expect(input.value).toBe('HAUS-9 Steuerbescheid prüfen');
+	});
+
+	it('closes the list with Escape first, and the dialog stays open', async () => {
+		const { input } = setup();
+		await fireEvent.focus(input);
+		await fireEvent.keyDown(input, { key: 'Escape' });
+		expect(input.getAttribute('aria-expanded')).toBe('false');
+		expect(screen.getByRole('dialog')).toBeTruthy();
 	});
 
 	it('links several entries and keeps the failed ones with their reason', async () => {
@@ -168,26 +148,12 @@ describe('LinkTicketDialog', () => {
 				}
 			});
 		});
-		data.link.mockImplementationOnce(async (id, ticketId) => ({
-			id,
-			channel: 'mail',
-			kind: 'mail',
-			title: 'Brief',
-			sourceUrl: '',
-			sourceRef: '',
-			sourceDate: null,
-			sourceMeta: {},
-			original: '',
-			state: 'converted',
-			ticketId,
-			handledAt: null,
-			created: '2026-09-25 08:00:00.000Z',
-			updated: '2026-09-25 10:00:00.000Z'
-		}));
+		data.link.mockImplementationOnce(async (id, ticketId) => linked(id, ticketId, 'Brief'));
 		const dialog = screen.getByRole('dialog', { name: '2 Einträge mit Ticket verknüpfen' });
-		await type(input, 'steuer');
-		await vi.waitFor(() => expect(input.getAttribute('aria-expanded')).toBe('true'));
+		await fireEvent.focus(input);
+		await fireEvent.input(input, { target: { value: 'steuer 2025' } });
 		await fireEvent.keyDown(input, { key: 'Enter' });
+		expect(input.value).toBe('TASK-4 Steuer 2025');
 		await fireEvent.click(within(dialog).getByRole('button', { name: 'Verknüpfen' }));
 
 		const alert = await within(dialog).findByRole('alert');
