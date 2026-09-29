@@ -2,12 +2,12 @@
 // index.html last, files of older builds kept for open tabs, retention, and locked files on
 // Windows (PocketBase holds a file open while it serves it).
 
-import { spawn } from 'node:child_process';
 import * as fs from 'node:fs';
 import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
+import { spawnClean } from '../support/clean-env.mjs';
 import {
 	ENTRY_FILE,
 	HISTORY_FILE,
@@ -279,7 +279,7 @@ describe('publish with locked files', () => {
 			const target = tempDir();
 			await publish({ from: stagedBuild('a'), to: target });
 			const index = join(target, ENTRY_FILE).replaceAll("'", "''");
-			const holder = spawn(
+			const holder = spawnClean(
 				'powershell.exe',
 				[
 					'-NoProfile',

@@ -240,9 +240,34 @@ describe('start', () => {
 		expect(start.indexOf('Sync-BylEnvironment')).toBeGreaterThan(-1);
 		expect(start.indexOf('Sync-BylEnvironment')).toBeLessThan(start.indexOf('Start-Process -FilePath $exe'));
 		const sync = functionBody(control(), 'Sync-BylEnvironment');
-		expect(sync).toContain("GetEnvironmentVariables('User')");
+		expect(sync).toContain('$scope = Get-BylVariableScope');
 		expect(sync).toMatch(/Get-BylEnvironmentChange/);
 		expect(sync).not.toMatch(/Write-|Show-Message|Out-|Add-Content|Set-Content/);
+	});
+
+	it('reads the account only in Get-BylVariableScope, and an isolated test copy neither reads nor writes it', () => {
+		const source = control();
+		expect(source).toContain(
+			"$IsolatedEnvironment = [Environment]::GetEnvironmentVariable('BYL_TEST_ISOLATED', 'Process') -eq '1'"
+		);
+		const scope = functionBody(source, 'Get-BylVariableScope');
+		expect(scope).toMatch(
+			/if \(\$IsolatedEnvironment\) \{\s*return \[pscustomobject\]@\{ User = \[Environment\]::GetEnvironmentVariables\('Process'\); Machine = @\{\} \}\s*\}/
+		);
+		const init = functionBody(source, 'Initialize-IngestToken');
+		const guard = init.indexOf('if ($IsolatedEnvironment) { return }');
+		expect(guard).toBeGreaterThan(-1);
+		// Every access to the user or machine scope: in Get-BylVariableScope, or in
+		// Initialize-IngestToken after the guard of isolated copies.
+		for (const match of source.matchAll(/'(User|Machine)'\)/g)) {
+			const inScope = match.index > source.indexOf(scope) && match.index < source.indexOf(scope) + scope.length;
+			const afterGuard = match.index > source.indexOf(init) + guard && match.index < source.indexOf(init) + init.length;
+			expect(inScope || afterGuard, source.slice(match.index - 80, match.index + 10)).toBe(true);
+		}
+		for (const name of ['Get-EnvironmentFingerprint', 'Sync-BylEnvironment', 'Invoke-Doctor']) {
+			expect(functionBody(source, name), name).toContain('Get-BylVariableScope');
+		}
+		expect(functions()).not.toMatch(/'(User|Machine)'\)/);
 	});
 
 	it('starts the mail helper after PocketBase, also when the app runs already (package 11)', () => {

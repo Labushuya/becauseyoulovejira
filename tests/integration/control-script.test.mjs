@@ -2,18 +2,20 @@
 // BS-1 and BS-2). The script runs ONLY in two copies under .tmp\byl-ctl-* of the repo (one with a
 // space in the path), each with a superuser created beforehand (CLAUDE.md §11.2), a random port
 // (never 8090 or 8099) and -NoBrowser; app\ and the instance of the user are never touched. Every
-// server this file starts is ended in afterAll, and the copies are removed. Like every start, the
-// copies get the BYL_* variables of the Windows account; their databases have no connection, so no
-// channel reaches a service.
+// server this file starts is ended in afterAll, and the copies are removed. The script runs with a
+// clean environment (tests/support/clean-env.mjs) plus BYL_TEST_ISOLATED=1: it then takes the BYL_*
+// variables from its own process instead of the Windows account and writes nothing into the
+// account (ADR-0039, addendum of 2026-09-29), so a copy sees only the invented values of this file,
+// never access data of the user; their databases have no connection either.
 //
 // Proves: a start that starts once (second start: same process), the state file and the address
-// for the landing page, the orderly stop (console break: exit without a hard stop, the SQLite WAL
-// is checkpointed), a port used by another copy (reported with program path and a free port,
-// nothing stopped), restart, a stale state file, and the safety rule: stop in one folder never
-// ends the server of another folder. BS-2: status with its exit codes, reload only when needed
-// (a new web build only asks for F5, changed hooks restart), open, logs and doctor.
+// for the landing page, the clean environment of the server, the orderly stop (console break: exit
+// without a hard stop, the SQLite WAL is checkpointed), a port used by another copy (reported with
+// program path and a free port, nothing stopped), a copy with byl-mail.exe that starts no helper,
+// restart, a stale state file, and the safety rule: stop in one folder never ends the server of
+// another folder. BS-2: status with its exit codes, reload only when needed (a new web build only
+// asks for F5, changed hooks restart), open, logs and doctor.
 
-import { spawnSync } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
 import {
 	closeSync,
@@ -28,24 +30,34 @@ import {
 	rmSync,
 	writeFileSync
 } from 'node:fs';
+import { get } from 'node:http';
 import { createServer } from 'node:net';
 import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import PocketBase from 'pocketbase';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { credentialNames, spawnSyncClean, visibleNames } from '../support/clean-env.mjs';
 import { POCKETBASE_EXE } from '../support/pocketbase-harness.mjs';
 import { POWERSHELL_EXE, runPowerShellJson } from '../support/powershell.mjs';
 
 const ROOT_DIR = resolve(fileURLToPath(new URL('../..', import.meta.url)));
 const APP_DIR = join(ROOT_DIR, 'app');
 const TEMP_ROOT = join(ROOT_DIR, '.tmp');
+const PROBE_HOOK = join(ROOT_DIR, 'tests', 'fixtures', 'pb_hooks', 'environment-probe.pb.js');
 const RESERVED_PORTS = new Set([8090, 8099]);
 const COMMAND_TIMEOUT_MS = 60_000;
+
+// The only variables of every call: the switch for disposable copies and an invented marker. The
+// same for all calls, so the start fingerprint of the variables stays the same between them.
+const CONTROL_ENV = { BYL_TEST_ISOLATED: '1', BYL_TEST_MARKER: randomBytes(8).toString('hex') };
+// Set in this test process only; the clean environment must keep it from every child.
+const CANARY = `BYL_TEST_CANARY_${randomBytes(4).toString('hex').toUpperCase()}`;
 
 let base;
 /** @type {{ a: Copy, b: Copy }} */
 const copies = {};
 
-/** @typedef {{ dir: string, port: number }} Copy */
+/** @typedef {{ dir: string, port: number, email: string, password: string }} Copy */
 
 async function freePort() {
 	for (;;) {
@@ -57,19 +69,24 @@ async function freePort() {
 	}
 }
 
-/** A copy of the runtime parts of app/ with its own data folder, superuser and port. */
+/**
+ * A copy of the runtime parts of app/ with its own data folder, superuser and port, without
+ * byl-mail.exe, plus the test route that names the variables its server sees. The superuser stays
+ * in memory.
+ */
 function makeCopy(name, port) {
 	const dir = join(base, name, 'app');
 	mkdirSync(join(dir, 'pb_public'), { recursive: true });
 	for (const file of ['byl-control.ps1', 'byl-functions.ps1']) copyFileSync(join(APP_DIR, file), join(dir, file));
 	copyFileSync(POCKETBASE_EXE, join(dir, 'pocketbase.exe'));
 	cpSync(join(APP_DIR, 'pb_hooks'), join(dir, 'pb_hooks'), { recursive: true });
+	copyFileSync(PROBE_HOOK, join(dir, 'pb_hooks', 'environment-probe.pb.js'));
 	cpSync(join(APP_DIR, 'pb_migrations'), join(dir, 'pb_migrations'), { recursive: true });
 	writeFileSync(join(dir, 'pb_public', 'index.html'), '<!doctype html><title>test</title>');
 	writeFileSync(join(dir, 'byl-config.json'), JSON.stringify({ port }));
 	const email = `ctl-${randomBytes(6).toString('hex')}@example.com`;
 	const password = randomBytes(18).toString('base64');
-	const upsert = spawnSync(
+	const upsert = spawnSyncClean(
 		join(dir, 'pocketbase.exe'),
 		[
 			'superuser',
@@ -84,15 +101,15 @@ function makeCopy(name, port) {
 		{ encoding: 'utf8', windowsHide: true, timeout: 60_000 }
 	);
 	if (upsert.status !== 0) throw new Error(`superuser upsert failed in ${dir} (exit code ${upsert.status})`);
-	return { dir, port };
+	return { dir, port, email, password };
 }
 
 let outputs = 0;
 
 /**
- * Runs byl-control.ps1 of a copy; never without -NoBrowser. The output goes into a file: the
- * started server inherits the handles of PowerShell, so a pipe would stay open until the server
- * ends (ADR-0039, limits).
+ * Runs byl-control.ps1 of a copy; never without -NoBrowser, always with a clean environment and
+ * CONTROL_ENV. The output goes into a file: the started server inherits the handles of PowerShell,
+ * so a pipe would stay open until the server ends (ADR-0039, limits).
  */
 function control(copy, ...args) {
 	outputs += 1;
@@ -100,10 +117,10 @@ function control(copy, ...args) {
 	const fd = openSync(file, 'w');
 	let result;
 	try {
-		result = spawnSync(
+		result = spawnSyncClean(
 			POWERSHELL_EXE,
 			['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', join(copy.dir, 'byl-control.ps1'), ...args, '-NoBrowser'],
-			{ windowsHide: true, timeout: COMMAND_TIMEOUT_MS, stdio: ['ignore', fd, fd] }
+			{ windowsHide: true, timeout: COMMAND_TIMEOUT_MS, stdio: ['ignore', fd, fd], env: CONTROL_ENV }
 		);
 	} finally {
 		closeSync(fd);
@@ -127,18 +144,52 @@ ConvertTo-Json -InputObject $found -Compress`,
 
 const serversOf = (copy) => servers().filter((server) => server.path.toLowerCase() === join(copy.dir, 'pocketbase.exe').toLowerCase());
 
-async function healthy(port) {
-	try {
-		const response = await fetch(`http://127.0.0.1:${port}/api/health`, { signal: AbortSignal.timeout(2000) });
-		return response.status === 200;
-	} catch {
-		return false;
-	}
+/**
+ * GET /api/health on a new connection each time (agent: false). fetch would reuse a pooled
+ * keep-alive socket of a server that was stopped in the meantime: spawnSync blocks the event loop
+ * during the whole command, so the pool only learns afterwards that the socket is gone, and the
+ * request on it fails although the new server on the same port answers.
+ */
+function healthy(port) {
+	return new Promise((resolvePromise) => {
+		const request = get({ host: '127.0.0.1', port, path: '/api/health', agent: false, timeout: 2000 }, (response) => {
+			response.resume();
+			resolvePromise(response.statusCode === 200);
+		});
+		request.once('timeout', () => request.destroy());
+		request.once('error', () => resolvePromise(false));
+	});
 }
 
 const readState = (copy) => JSON.parse(readFileSync(join(copy.dir, 'run', 'byl.state.json'), 'utf8'));
 
+/** Names (never values) of the BYL_* variables in the user and the machine scope of the account. */
+function accountVariableNames() {
+	return runPowerShellJson(
+		String.raw`
+$names = foreach ($scope in 'User', 'Machine') {
+    [Environment]::GetEnvironmentVariables($scope).Keys | Where-Object { $_ -like 'BYL_*' }
+}
+ConvertTo-Json -InputObject @($names | Sort-Object -Unique) -Compress`,
+		null
+	);
+}
+
+/**
+ * The BYL_* names the running server of a copy sees, among those of the account, of this test
+ * process (with CANARY) and of CONTROL_ENV.
+ */
+async function serverSees(copy) {
+	const pb = new PocketBase(`http://127.0.0.1:${copy.port}`);
+	pb.autoCancellation(false);
+	await pb.collection('_superusers').authWithPassword(copy.email, copy.password);
+	const names = [...accountVariableNames(), ...credentialNames(), ...Object.keys(CONTROL_ENV)];
+	expect(names).toContain(CANARY);
+	return visibleNames(pb, names);
+}
+
 beforeAll(async () => {
+	process.env[CANARY] = 'nie-an-kindprozesse';
 	// Not in %TEMP%: PocketBase takes a program there for "go run" and switches to its dev mode,
 	// whose SQL log names the installer account and looks like a first run. .tmp is gitignored.
 	mkdirSync(TEMP_ROOT, { recursive: true });
@@ -155,6 +206,7 @@ beforeAll(async () => {
 }, 120_000);
 
 afterAll(() => {
+	delete process.env[CANARY];
 	for (const server of base ? servers() : []) {
 		try {
 			process.kill(server.pid);
@@ -191,6 +243,10 @@ describe('byl-control.ps1 on disposable copies (BS-1)', CASE_TIMEOUT, () => {
 			`window.BYL_APP_URL = 'http://127.0.0.1:${copies.a.port}/';`
 		);
 		expect(result.output).toContain(`http://127.0.0.1:${copies.a.port}/ (PID ${running[0].pid})`);
+	});
+
+	it('gives the server only the explicit test values, no BYL_* variable of the account or of the tests', async () => {
+		expect(await serverSees(copies.a)).toEqual(Object.keys(CONTROL_ENV).sort());
 	});
 
 	it('a second start starts nothing and keeps the process', () => {
@@ -231,6 +287,19 @@ describe('byl-control.ps1 on disposable copies (BS-1)', CASE_TIMEOUT, () => {
 		expect(readFileSync(join(copies.b.dir, 'run', 'app-adresse.js'), 'utf8')).toContain(`:${copies.b.port}/`);
 	});
 
+	it('a copy with byl-mail.exe starts no mail helper and writes no access data into the account', async () => {
+		const before = accountVariableNames();
+		// Never run: an attempt would show as "byl-mail.exe konnte nicht gestartet werden".
+		writeFileSync(join(copies.b.dir, 'byl-mail.exe'), 'placeholder of control-script.test.mjs\n');
+		const result = control(copies.b, 'start');
+		expect(result.code, result.output).toBe(0);
+		expect(result.output).not.toMatch(/byl-mail\.exe|Mail-Hilfsprozess/);
+		expect(existsSync(join(copies.b.dir, 'logs', 'byl-mail.log'))).toBe(false);
+		// Without BYL_INGEST_TOKEN the server has no ingest route, and no token was created.
+		expect(await serverSees(copies.b)).toEqual(Object.keys(CONTROL_ENV).sort());
+		expect(accountVariableNames()).toEqual(before);
+	});
+
 	it('stops only its own server, in order, and leaves the other copy running', async () => {
 		expect(control(copies.b, 'start').code).toBe(0);
 		const [serverB] = serversOf(copies.b);
@@ -260,7 +329,7 @@ describe('byl-control.ps1 on disposable copies (BS-1)', CASE_TIMEOUT, () => {
 
 	it('removes a stale state file of a process that ended', () => {
 		expect(control(copies.b, 'stop').code).toBe(0);
-		const gone = spawnSync(process.execPath, ['-e', ''], { windowsHide: true });
+		const gone = spawnSyncClean(process.execPath, ['-e', ''], { windowsHide: true });
 		mkdirSync(join(copies.b.dir, 'run'), { recursive: true });
 		writeFileSync(
 			join(copies.b.dir, 'run', 'byl.state.json'),

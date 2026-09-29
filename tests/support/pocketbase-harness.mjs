@@ -4,7 +4,6 @@
 // A data folder with a superuser never opens the browser installer. Credentials are
 // only returned in memory; they are never written to disk or printed.
 
-import { spawn, spawnSync } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
 import { existsSync, rmSync } from 'node:fs';
 import { cp, mkdir, mkdtemp, readdir, rm } from 'node:fs/promises';
@@ -14,6 +13,7 @@ import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { setTimeout as delay } from 'node:timers/promises';
 import { executableName } from '../../scripts/platform.mjs';
+import { spawnClean, spawnSyncClean } from './clean-env.mjs';
 
 const ROOT_DIR = resolve(fileURLToPath(new URL('../..', import.meta.url)));
 // app/pocketbase.exe on Windows, app/pocketbase on Linux (ADR-0028, plan plattformen S0).
@@ -33,6 +33,9 @@ const KILL_WAIT_MS = 3_000;
 const OUTPUT_LIMIT = 64 * 1024;
 const INSTALLER_MARKER = 'pbinstal';
 const EXIT_SIGNALS = ['SIGINT', 'SIGTERM', 'SIGBREAK', 'SIGHUP'];
+// Explicit values of every server: the Telegram Bot API points to a closed local port unless a test
+// sets its fake server, so no test instance can ever reach api.telegram.org (E4 plan, package 17).
+const SERVER_ENV = { BYL_TELEGRAM_API_BASE: 'http://127.0.0.1:9' };
 
 /**
  * Starts a disposable PocketBase instance.
@@ -43,9 +46,10 @@ const EXIT_SIGNALS = ['SIGINT', 'SIGTERM', 'SIGBREAK', 'SIGHUP'];
  *   before `superuser upsert` and `serve` (e.g. with an unpacked backup). `migrationFilter`:
  *   runs only the app migrations it accepts (e.g. the state before a new migration, while the
  *   hooks are already the new ones). `env`: variables for the server process, e.g. invented
- *   access data of a channel (ADR-0018: tests set them only for the disposable instance). The
- *   instance never inherits BYL_* variables of the developer, so a channel in a test can reach
- *   no real service.
+ *   access data of a channel (ADR-0018: tests set them only for the disposable instance). Every
+ *   pocketbase.exe of the harness gets a clean environment (tests/support/clean-env.mjs): it
+ *   never inherits BYL_* variables of the developer, so a channel in a test can reach no real
+ *   service.
  * @returns {Promise<{ url: string, email: string, password: string, dataDir: string,
  *   output: () => string, stop: () => Promise<void>,
  *   restart: (options?: { migrationFilter?: (fileName: string) => boolean }) => Promise<void> }>}
@@ -240,7 +244,7 @@ function appendOutput(buffer, chunk) {
 
 function runToCompletion(args, input) {
 	return new Promise((resolvePromise, reject) => {
-		const child = spawn(POCKETBASE_EXE, args, {
+		const child = spawnClean(POCKETBASE_EXE, args, {
 			windowsHide: true,
 			stdio: [input === undefined ? 'ignore' : 'pipe', 'pipe', 'pipe']
 		});
@@ -253,24 +257,11 @@ function runToCompletion(args, input) {
 	});
 }
 
-/**
- * Environment of the server: the own one without BYL_* variables, plus `extra`. The Telegram Bot
- * API points to a closed local port unless a test sets its fake server, so no test instance can
- * ever reach api.telegram.org (E4 plan, package 17).
- */
-export function serverEnvironment(extra = {}) {
-	const env = {};
-	for (const [name, value] of Object.entries(process.env)) {
-		if (!/^BYL_/i.test(name)) env[name] = value;
-	}
-	return { ...env, BYL_TELEGRAM_API_BASE: 'http://127.0.0.1:9', ...extra };
-}
-
 function startServer(args, extraEnv) {
-	const child = spawn(POCKETBASE_EXE, args, {
+	const child = spawnClean(POCKETBASE_EXE, args, {
 		windowsHide: true,
 		stdio: ['ignore', 'pipe', 'pipe'],
-		env: serverEnvironment(extraEnv)
+		env: { ...SERVER_ENV, ...extraEnv }
 	});
 	const server = { child, output: '', spawnError: null };
 	child.stdout.on('data', (chunk) => (server.output = appendOutput(server.output, chunk)));
@@ -360,7 +351,7 @@ function forceKill(pid) {
 		}
 		return;
 	}
-	spawnSync(TASKKILL_EXE, ['/PID', String(pid), '/T', '/F'], {
+	spawnSyncClean(TASKKILL_EXE, ['/PID', String(pid), '/T', '/F'], {
 		windowsHide: true,
 		stdio: 'ignore'
 	});

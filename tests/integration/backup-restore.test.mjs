@@ -4,13 +4,13 @@
 // instance A (user + ticket, backup by the superuser) -> stop A -> Expand-Archive into the new
 // data folder of instance B -> ticket, key and the user's old password work on B.
 
-import { spawnSync } from 'node:child_process';
 import { copyFile, mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { randomBytes } from 'node:crypto';
 import PocketBase from 'pocketbase';
 import { afterAll, describe, expect, it } from 'vitest';
+import { spawnSyncClean } from '../support/clean-env.mjs';
 import { startPocketBase } from '../support/pocketbase-harness.mjs';
 import { POWERSHELL_EXE } from '../support/powershell.mjs';
 
@@ -38,7 +38,7 @@ function client(url) {
 
 /** The README command: Expand-Archive in Windows PowerShell with -NoProfile. */
 function expandArchive(zipPath, destination) {
-	const result = spawnSync(
+	const result = spawnSyncClean(
 		POWERSHELL_EXE,
 		[
 			'-NoProfile',
@@ -52,7 +52,7 @@ function expandArchive(zipPath, destination) {
 			encoding: 'utf8',
 			windowsHide: true,
 			timeout: 60_000,
-			env: { ...process.env, BYL_ZIP: zipPath, BYL_DEST: destination }
+			env: { BYL_ZIP: zipPath, BYL_DEST: destination }
 		}
 	);
 	if (result.error) throw result.error;

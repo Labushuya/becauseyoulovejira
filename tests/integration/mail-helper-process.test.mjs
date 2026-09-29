@@ -6,7 +6,6 @@
 // hard stop and a new start it continues at the saved cursor without duplicates. Its log holds
 // neither access data nor contents of mails.
 
-import { spawn, spawnSync } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
 import { existsSync } from 'node:fs';
 import { createServer as createNetServer } from 'node:net';
@@ -15,6 +14,7 @@ import { fileURLToPath } from 'node:url';
 import { setTimeout as delay } from 'node:timers/promises';
 import PocketBase from 'pocketbase';
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
+import { spawnClean, spawnSyncClean } from '../support/clean-env.mjs';
 import { startPocketBase } from '../support/pocketbase-harness.mjs';
 import { FakeImapServer, fakeMail } from '../../helpers/mail/test/fake-imap.ts';
 import { executableName } from '../../scripts/platform.mjs';
@@ -42,36 +42,41 @@ async function freePort() {
 	return port;
 }
 
-/** An environment without Node: only the system folders in PATH, plus `extra`. */
-function environment(extra = {}) {
+/** The base environment of the helper, without Node: only the system folders in PATH. */
+function withoutNode() {
 	if (process.platform !== 'win32') {
-		return { PATH: '/usr/bin:/bin', TMPDIR: process.env.TMPDIR ?? '/tmp', ...extra };
+		return { PATH: '/usr/bin:/bin', TMPDIR: process.env.TMPDIR ?? '/tmp' };
 	}
 	return {
 		SystemRoot: SYSTEM_ROOT,
 		PATH: `${SYSTEM_ROOT}\\System32;${SYSTEM_ROOT}`,
 		TEMP: process.env.TEMP ?? '',
-		TMP: process.env.TMP ?? '',
-		...extra
+		TMP: process.env.TMP ?? ''
 	};
 }
 
 function runOnce(args) {
-	const result = spawnSync(HELPER, args, { env: environment(), encoding: 'utf8', timeout: 60_000, windowsHide: true });
+	const result = spawnSyncClean(HELPER, args, {
+		baseEnv: withoutNode(),
+		encoding: 'utf8',
+		timeout: 60_000,
+		windowsHide: true
+	});
 	return { status: result.status, output: `${result.stdout}${result.stderr}` };
 }
 
 /** Starts the helper with "run"; `output()` is its console output so far. */
 function startHelper(url = instance.url) {
-	const child = spawn(HELPER, ['run', `--url=${url}`], {
-		env: environment({
+	const child = spawnClean(HELPER, ['run', `--url=${url}`], {
+		baseEnv: withoutNode(),
+		env: {
 			BYL_INGEST_TOKEN: TOKEN,
 			BYL_TEST_MAIL_PASSWORD: PASSWORD,
 			BYL_MAIL_INTERVAL_SECONDS: '1',
 			BYL_MAIL_TEST_IMAP_PORT: String(imap.port),
 			// Never the default 8091: a helper of the app on this machine may use it.
 			BYL_MAIL_HELPER_PORT: String(helperPort)
-		}),
+		},
 		windowsHide: true,
 		stdio: ['ignore', 'pipe', 'pipe']
 	});
