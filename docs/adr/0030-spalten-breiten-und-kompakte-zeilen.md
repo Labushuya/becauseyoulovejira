@@ -1,6 +1,6 @@
 # ADR-0030: Spaltenbreiten, Ein- und Ausblenden und kompakte Zeilen in Tabellen
 
-- **Status:** Angenommen und umgesetzt in den Paketen SP-1 bis SP-5 nach [docs/plan/e6-spalten.md](../plan/e6-spalten.md) (#98 bis #101 und der PR von SP-5); manuelle Browser-Prüfungen stehen im Test-Manifest; Nachtrag 2026-09-28 (Spalte „Übergeordnet“ und Schalter der Tabelle, [ADR-0033](0033-unteraufgaben.md))
+- **Status:** Angenommen und umgesetzt in den Paketen SP-1 bis SP-5 nach [docs/plan/e6-spalten.md](../plan/e6-spalten.md) (#98 bis #101 und der PR von SP-5); manuelle Browser-Prüfungen stehen im Test-Manifest; Nachtrag 2026-09-28 (Spalte „Übergeordnet“ und Schalter der Tabelle, [ADR-0033](0033-unteraufgaben.md)); Nachtrag 2 (Auswahlspalte); Nachtrag 3 2026-09-29 (Breite des Titels)
 - **Datum:** 2026-09-27
 - **Entscheidung durch:** Nutzer (Wunsch „Spalten ziehen, ein- und ausblenden, kompakte Zeilen wie in Jira“, Reihenfolge „Spalten zuerst“), Advisor (Konzept „Spalten“), Executor (Breiten, Schwellen, Einzelheiten)
 - **Präzisiert:** [ADR-0025](0025-ui-konsistenz-overlay-system.md) §11 (Ausblenden per Container-Queries) und [ADR-0010](0010-layout-nach-task-board.md) §1 (Popover „Spalten“ ab E6). „Tabellen scrollen nie seitlich“ und die Reihenfolge beim Ausblenden bleiben.
@@ -112,3 +112,38 @@ Der Text oben bleibt unverändert. Mit den Unteraufgaben ([ADR-0033](0033-untera
 ## Nachtrag 2 (2026-09-28): Auswahlspalte der Aufgaben (ADR-0036)
 
 Mit den Sammelaktionen ([ADR-0036](0036-sammelbearbeitung-inline-und-oeffnungsmodus.md) §2, Paket BI-2) hat „Aufgaben“ vorn die Spalte **„Auswahl“** (`select`): fest 2,5rem, Pflicht, nicht ausschaltbar, nicht im Menü „Spalten“, ohne Griff, wie die Auswahl im Eingang. Die Schwellen der Tabelle steigen dadurch um 2,5rem (Erstellt 63, Tags 57, Projekt 49, Fällig 41rem); die Reihenfolge beim Ausweichen und „Tabellen scrollen nie seitlich“ bleiben. Das Menü „Spalten“ nennt sie im Satz der immer sichtbaren Spalten. Gespeicherte Vorlieben ändern sich nicht (Pflichtspalten stehen nie in `hidden`).
+
+## Nachtrag 3 (2026-09-29): Breite des Titels
+
+Nutzerwunsch: „Ich möchte zudem, dass ich auch die Spalte ‚Titel‘ in ihrer Breite verändern kann.“ Bisher war die flexible Spalte (Titel, in „Projekte“ der Name) ohne Griff und nahm immer den Rest. Der Text oben bleibt, soweit hier nichts anderes steht. „Tabellen scrollen nie seitlich“ bleibt.
+
+### Entscheidung
+
+- **Alle fünf Tabellen:** Die flexible Spalte ist änderbar, 10rem bis 60rem (`isResizable` gilt jetzt auch für sie). Sie hat denselben Griff wie die anderen (nur Zeiger, `aria-hidden`, Esc bricht ab) und im Menü „Spalten“ eine Zeile an ihrer Stelle in der Tabelle, ohne Checkbox (sie ist Pflicht), mit „schmaler“, „breiter“ und der Breite; ohne gewählte Breite steht dort „auto“. Das ist derselbe Tastaturweg wie bei den übrigen Spalten (§3 und §4).
+- **Gespeichert** wird die Breite wie die anderen unter `widths` (z. B. `{ "title": 320 }`), Version 1 bleibt. Ältere Werte ohne diesen Schlüssel ergeben genau das bisherige Verhalten: der Titel nimmt den Rest. Ältere Stände der App übergehen den Schlüssel, weil sie die Spalte nicht als änderbar kennen. „Standard wiederherstellen“ setzt die Titelbreite mit zurück; ein Doppelklick auf den Griff des Titels vergisst nur sie (der Titel hat keine natürliche Breite, er bricht auf 2 Zeilen um).
+- **Wohin der Platz geht** (`fitColumns` Schritt 5, reine Funktion):
+  1. Welche Spalten wegen Platz weichen, entscheidet weiter allein das Minimum des Titels (Schritt 3). Eine gewählte Titelbreite blendet nie eine Spalte aus, und die Schwellen bleiben, wie sie sind.
+  2. **Mehr Platz als die Titelbreite:** Der Titel bekommt genau seine Breite. Der Rest geht gleichmäßig an die übrigen sichtbaren Spalten, jede im Verhältnis zu ihrem Abstand zum Maximum (Tags mit 20rem bekommen am meisten, feste Spalten wie Auswahl und Aktionen nichts). Die Pixel aus dem Runden gehen einzeln in der Reihenfolge der Tabelle an Spalten mit Luft, damit der Titel pixelgenau stehen bleibt. Sind alle am Maximum, geht der Rest an den Titel zurück.
+  3. **Weniger Platz als die Titelbreite** (Fenster schmaler, Panel offen, andere Spalte breiter): Der Titel gibt zuerst nach, wie bisher bis zu seinem Minimum; danach weichen Spalten wie bisher. Unterhalb der gewählten Breite ist das Ergebnis also identisch mit dem ohne Titelbreite.
+- **Ziehen und Menü** (`resizeColumn`, `flexibleBounds`):
+  - **Titel breiter** als der Rest: Die übrigen sichtbaren Spalten werden gleichmäßig zu ihrem Minimum hin schmaler und behalten diese Breite (sie wird mit gespeichert). Am Minimum aller stoppt der Griff; es verschwindet keine Spalte.
+  - **Titel schmaler:** Nur die Titelbreite ändert sich; den Rest verteilt Schritt 5. Der Griff stoppt, wo alle anderen am Maximum wären, und nie unter 10rem.
+  - **Andere Spalte, während der Titel eine Breite hat:** Die sichtbaren Spalten behalten die Breite, mit der sie gerade gezeigt werden (sie wird gespeichert), und der Titel gibt oder nimmt die Differenz, wie ohne Titelbreite. So bewegt sich beim Ziehen nur die Grenze zwischen Spalte und Titel, nichts springt. Ohne Titelbreite ändert sich wie bisher nur die gezogene Spalte.
+  - Grenzen werden beim Beginn des Ziehens aus den gespeicherten Vorlieben berechnet, die Vorschau beim Ziehen immer aus ihnen neu. Nichts schreibt aus dem Layout zurück: keine Schleife zwischen `ResizeObserver`, `fitColumns` und Speicher.
+
+### Begründung
+
+- **Titel gibt zuerst nach, statt die anderen zu stauchen:** Dann hängt das Ausblenden nicht von der Titelbreite ab, und beim Verkleinern des Fensters verhält sich die Tabelle genau wie bisher, bis der Titel wieder seine Breite hat. Ein Titel, der beim Verkleinern alle anderen Spalten zusammendrückt, würde Key, Status und Datum abschneiden, bevor etwas weicht (das Argument gegen Prozent-Breiten oben).
+- **Rest auf alle statt einer Ausgleichsspalte:** Eine einzelne Ausgleichsspalte liefe bei breitem Fenster über ihr Maximum hinaus oder müsste an eine zweite weitergeben; die gleichmäßige Verteilung nach dem Abstand zum Maximum ist das Spiegelbild des Schrumpfens in Schritt 4 und für jede Tabelle gleich.
+- **Stauchen beim Breiterziehen wird gespeichert:** Sonst würde jede später gezogene andere Spalte gegen den Titel arbeiten (die Tabelle hätte zwei Spalten, die den Rest beanspruchen) und beim Loslassen springen.
+
+### Alternativen
+
+- **Titelbreite als Mindestbreite** (Rest weiter an den Titel): Schmaler ziehen hätte auf breiten Fenstern keine Wirkung. Verworfen.
+- **Leerraum rechts der Tabelle:** Zeilen, Gruppenköpfe und Rahmen endeten vor dem Rand oder bräuchten eine leere Spalte in jeder Zeile. Verworfen.
+- **Fokussierbarer Griff:** aus demselben Grund wie in §3 verworfen; die Tastatur nutzt das Menü.
+
+### Konsequenzen
+
+- `ColumnPrefsStore.setWidth` ist durch `setWidths` (mehrere Breiten auf einmal) und `clearWidth` ersetzt; `ColumnFit` führt jede Breitenänderung über `resizeColumn` und hält beim Ziehen die ganze Vorschau (`live`). Das Menü „Spalten“ bekommt den `ColumnFit` statt Store und `autoHidden`.
+- Tests: `columns.test.ts` (Verteilung, Grenzen, Fenster, ausgeblendete Spalten, Altdaten), `column-prefs.test.ts`, `ticket-table-columns.test.ts` (Griff) und `columns-popover.test.ts` (Tastatur); Manifest BYL-E6-460 bis BYL-E6-462.

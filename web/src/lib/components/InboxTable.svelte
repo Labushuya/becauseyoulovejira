@@ -300,11 +300,7 @@
 					<span class="hint" id={ids.bulkHint}>Erst Einträge auswählen.</span>
 				{/if}
 			{/if}
-			<ColumnsPopover
-				store={columnFit.store}
-				autoHidden={columnFit.fit.autoHidden}
-				always="Auswahl, Titel und Aktionen sind immer sichtbar."
-			/>
+			<ColumnsPopover fit={columnFit} always="Auswahl, Titel und Aktionen sind immer sichtbar." />
 		{/snippet}
 	</SectionBar>
 

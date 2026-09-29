@@ -67,15 +67,37 @@ export class ColumnPrefsStore {
 		return this.prefs.hidden.includes(id);
 	}
 
-	/** Sets the width of a resizable column (clamped) and stores it; returns the width set. */
-	setWidth(id: string, px: number): number {
-		const spec = this.#spec(id);
-		if (spec === undefined || !isResizable(spec)) return 0;
-		const width = clampWidth(spec, px);
-		if (this.prefs.widths[id] !== width) {
-			this.#save({ ...this.prefs, widths: { ...this.prefs.widths, [id]: width } });
+	/**
+	 * Sets the widths of resizable columns (clamped) and stores them; other columns in `changes`
+	 * are left out. Several at once, because a width of the title can move the others (ADR-0030
+	 * Nachtrag 3, `resizeColumn`).
+	 */
+	setWidths(changes: Readonly<Record<string, number>>): void {
+		const widths: Record<string, number> = { ...this.prefs.widths };
+		let changed = false;
+		for (const [id, px] of Object.entries(changes)) {
+			const spec = this.#spec(id);
+			if (spec === undefined || !isResizable(spec) || !Number.isFinite(px)) continue;
+			const width = clampWidth(spec, px);
+			if (widths[id] === width) continue;
+			widths[id] = width;
+			changed = true;
 		}
-		return width;
+		if (changed) this.#save({ ...this.prefs, widths });
+	}
+
+	/** Forgets the width of a column: its default again, for the title the rest of the table. */
+	clearWidth(id: string): void {
+		if (this.prefs.widths[id] === undefined) return;
+		const widths = Object.fromEntries(
+			Object.entries(this.prefs.widths).filter(([entry]) => entry !== id)
+		);
+		this.#save({ ...this.prefs, widths });
+	}
+
+	/** Whether the user chose a width for the column. */
+	hasWidth(id: string): boolean {
+		return this.prefs.widths[id] !== undefined;
 	}
 
 	/** Shows or hides an optional column; required ones stay. */

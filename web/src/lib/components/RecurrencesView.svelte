@@ -190,11 +190,7 @@
 				<a class="button-subtle help-link" href={helpHref('wiederholungen')}>So funktioniert’s</a>
 			{/if}
 			{#if store.state === 'ready' && rules.length > 0}
-				<ColumnsPopover
-					store={columnFit.store}
-					autoHidden={columnFit.fit.autoHidden}
-					always="Titel, Zustand und Aktion sind immer sichtbar."
-				/>
+				<ColumnsPopover fit={columnFit} always="Titel, Zustand und Aktion sind immer sichtbar." />
 			{/if}
 		{/snippet}
 	</SectionBar>

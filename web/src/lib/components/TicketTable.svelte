@@ -555,8 +555,7 @@
 			{/if}
 			<GroupPopover />
 			<ColumnsPopover
-				store={columnFit.store}
-				autoHidden={fit.autoHidden}
+				fit={columnFit}
 				always="Auswahl, Key, Titel und das Häkchen sind immer sichtbar."
 			/>
 		{/snippet}
