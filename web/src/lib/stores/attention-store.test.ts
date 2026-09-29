@@ -109,8 +109,9 @@ describe('AttentionStore', () => {
 		const [flag] = [...shown.values()];
 		expect(flag).toMatchObject({
 			tone: 'info',
-			title: 'becauseyoulovejira wurde beendet (stop.bat).',
-			description: 'Zum Weiterarbeiten start.bat ausführen.',
+			title: 'becauseyoulovejira wurde beendet.',
+			description:
+				'Zum Weiterarbeiten start.bat ausführen. Nach einem Neustart verbindet sich dieser Tab von selbst.',
 			duration: null
 		});
 		store.receive(message('stop'));

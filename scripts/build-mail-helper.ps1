@@ -99,7 +99,7 @@ if (Test-Path -LiteralPath $target -PathType Leaf) {
         # A running helper locks its file; Windows still allows renaming it.
         $old = 'byl-mail.exe.old-' + [DateTime]::UtcNow.ToString('yyyyMMddHHmmss')
         Rename-Item -LiteralPath $target -NewName $old
-        Write-Host "app\byl-mail.exe is running; the old file is now app\$old. The new version runs after stop.bat and start.bat." -ForegroundColor Yellow
+        Write-Host "app\byl-mail.exe is running; the old file is now app\$old. The new version runs after neu-starten.bat." -ForegroundColor Yellow
     }
 }
 Copy-Item -LiteralPath $built -Destination $target

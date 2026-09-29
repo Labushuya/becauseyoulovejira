@@ -136,7 +136,7 @@ export class IngestClient implements IngestApi {
 		if (status === 404) {
 			throw new IngestError(
 				'no-route',
-				'PocketBase läuft ohne BYL_INGEST_TOKEN; bitte stop.bat und dann start.bat ausführen.'
+				'PocketBase läuft ohne BYL_INGEST_TOKEN; bitte neu-starten.bat ausführen.'
 			);
 		}
 		if (status !== 200 || !isRecord(json) || !Array.isArray(json.items)) {

@@ -170,7 +170,7 @@ describe('connections domain', () => {
 			text: 'Zugangsdaten gesetzt.'
 		});
 		expect(secretStatusText(BOT, { secret: false, allowlist: false })?.text).toBe(
-			'Zugangsdaten fehlen: Variablen BYL_TELEGRAM_TOKEN und BYL_TELEGRAM_ALLOWED_IDS anlegen, dann die App neu starten (stop.bat, dann start.bat).'
+			'Zugangsdaten fehlen: Variablen BYL_TELEGRAM_TOKEN und BYL_TELEGRAM_ALLOWED_IDS anlegen, dann die App neu starten (neu-starten.bat).'
 		);
 		expect(secretStatusText(CAL, { secret: false, allowlist: null })?.text).toMatch(
 			/^Zugangsdaten fehlen: Variable BYL_GOOGLE_CALENDAR_URL anlegen/
@@ -366,7 +366,7 @@ describe('connections section', () => {
 		// Since EH-2 a section message with title (RESTART_NEEDED), announced as status.
 		const status = screen.getByRole('status');
 		expect(status.textContent).toMatch(/Hinweis:\s*Nach dem nächsten Neustart verfügbar/);
-		expect(status.textContent).toMatch(/stop\.bat, dann start\.bat im Ordner app/);
+		expect(status.textContent).toMatch(/neu-starten\.bat im Ordner app/);
 		expect(status.getAttribute('data-tone')).toBe('info');
 		expect(screen.queryByRole('alert')).toBeNull();
 	});
@@ -564,7 +564,7 @@ describe('Telegram-Bot einrichten (E4 plan, package 17; since EH-6 in the assist
 		expect(text).toMatch(/setx BYL_TELEGRAM_TOKEN/);
 		expect(text).toMatch(/setx BYL_TELEGRAM_ALLOWED_IDS "0"/);
 		expect(text).toMatch(/beginnt mit -100/);
-		expect(text).toMatch(/stop\.bat, dann start\.bat/);
+		expect(text).toMatch(/neu-starten\.bat/);
 		expect(text).toMatch(/Im Eingang gespeichert/);
 		expect(text).toMatch(/24 Stunden/);
 		expect(text).toMatch(/\/revoke/);
@@ -847,7 +847,7 @@ describe('Web.de-Postfach einrichten (E4 plan, package 11; since EH-7 in the ass
 		expect(text).toMatch(/POP3- und IMAP-Zugriff erlauben/);
 		expect(text).toMatch(/Anwendungsspezifische Passwörter verwalten/);
 		expect(text).toMatch(/setx BYL_WEBDE_PASSWORD/);
-		expect(text).toMatch(/stop\.bat, dann start\.bat/);
+		expect(text).toMatch(/neu-starten\.bat/);
 		expect(text).toMatch(/BYL_INGEST_TOKEN/);
 		expect(text).toMatch(/längere Zeit nicht genutzt/);
 		expect(text).toContain('app\\logs\\byl-mail.log');
@@ -864,7 +864,7 @@ describe('Gmail einrichten (E4 plan, package 13; since EH-7 in the assistant)', 
 		expect(text).toMatch(/Bestätigung in zwei Schritten/);
 		expect(text).toMatch(/setx BYL_GMAIL_PASSWORD/);
 		expect(text).toMatch(/Anbieter Gmail/);
-		expect(text).toMatch(/stop\.bat, dann start\.bat/);
+		expect(text).toMatch(/neu-starten\.bat/);
 		expect(text).toMatch(/Anmeldung bei Gmail abgelehnt/);
 		expect(text).toMatch(/„Aus dem Postfach wählen“/);
 		const link = within(dialog).getByRole('link', { name: /myaccount\.google\.com\/apppasswords/ });
@@ -949,7 +949,7 @@ describe('Jetzt abrufen at a mailbox (package A, item 4)', () => {
 		keywords: ['europa-go']
 	});
 	const NOT_RUNNING =
-		'Der Mail-Hilfsprozess läuft nicht (byl-mail.exe fehlt oder ist beendet). Mit einer eingeschalteten Postfach-Verbindung startet start.bat ihn mit; sonst stop.bat und dann start.bat ausführen.';
+		'Der Mail-Hilfsprozess läuft nicht (byl-mail.exe fehlt oder ist beendet). Mit einer eingeschalteten Postfach-Verbindung startet start.bat bzw. neu-starten.bat ihn mit.';
 
 	it('probes the helper only with a mailbox in the list', async () => {
 		const without = setup([CAL]);

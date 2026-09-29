@@ -39,7 +39,7 @@ export const FAILURE_MESSAGES: Readonly<Record<FailureReason, string>> = Object.
 	forbidden: 'Die App hat die Anfrage abgelehnt.',
 	rate_limited: 'Zu viele Anfragen in einer Minute. Bitte kurz warten.',
 	invalid: 'Die App hat die Nachricht abgelehnt.',
-	unavailable: 'Die App braucht einen Neustart (stop.bat, dann start.bat).',
+	unavailable: 'Die App braucht einen Neustart (neu-starten.bat im Ordner app).',
 	server: 'Die App hat mit einem Fehler geantwortet.'
 });
 

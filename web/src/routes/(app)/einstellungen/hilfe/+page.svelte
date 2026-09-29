@@ -27,6 +27,9 @@
 	const priorityWords = Object.keys(PRIORITY_WORDS).map((word) => `!${word}`);
 	const priorityNumbers = Object.keys(PRIORITY_NUMBERS).map((number) => `!${number}`);
 	const EXAMPLE = 'Zahnarzt anrufen @HAUS !hoch #anruf';
+	// Port change of the control script (ADR-0039 section 2), run in PowerShell in the folder app.
+	const PORT_COMMAND =
+		'powershell -NoProfile -ExecutionPolicy Bypass -File .\\byl-control.ps1 port 8091';
 </script>
 
 <svelte:head>
@@ -124,9 +127,9 @@
 				mit „OK“ bestätigen.
 			</li>
 			<li>
-				Danach die App neu starten: <code>stop.bat</code> und dann <code>start.bat</code> im Ordner
-				<code>app</code> doppelklicken. Erst dann sieht die App die Variable, und die Karte der Verbindung
-				steht nicht mehr auf „Nicht eingerichtet“.
+				Danach die App neu starten: <code>neu-starten.bat</code> im Ordner <code>app</code>
+				doppelklicken. Es erkennt die neue oder geänderte Variable und startet neu. Erst dann sieht die
+				App die Variable, und die Karte der Verbindung steht nicht mehr auf „Nicht eingerichtet“.
 			</li>
 		</ol>
 		<p class="note">
@@ -326,7 +329,7 @@
 				<summary>Was bedeutet „{RESTART_NEEDED.title}“?</summary>
 				<p>
 					{RESTART_NEEDED.text} Läuft die App, öffnet <code>start.bat</code> allein nur den Browser;
-					erst mit <code>stop.bat</code> davor startet der Server neu.
+					<code>neu-starten.bat</code> startet den Server neu, wenn ein Update es braucht.
 				</p>
 			</details>
 			<details>
@@ -504,17 +507,61 @@
 		<HostPlatformNote headingLevel={4} />
 		<dl class="tokens">
 			<div class="row">
+				<dt>Starten</dt>
+				<dd>
+					<code>start.bat</code> im Ordner <code>app</code>. Läuft die App schon, startet es nichts
+					doppelt und öffnet nur den Browser.
+				</dd>
+			</div>
+			<div class="row">
 				<dt>Neu starten</dt>
 				<dd>
-					<code>stop.bat</code>, dann <code>start.bat</code> im Ordner <code>app</code>. Läuft die
-					App schon, öffnet <code>start.bat</code> allein nur den Browser.
+					<code>neu-starten.bat</code> im Ordner <code>app</code>. Es startet nur neu, wenn es nötig
+					ist: nach einem Update mit neuer Migration oder Server-Logik, nach einer neuen oder
+					geänderten <code>BYL_</code>-Variable oder einem neuen Mail-Hilfsprozess. Ist nur die
+					Oberfläche neu gebaut, sagt es „F5 im offenen Tab genügt“.
+				</dd>
+			</div>
+			<div class="row">
+				<dt>Beenden</dt>
+				<dd>
+					<code>stop.bat</code> beendet geordnet erst den Mail-Hilfsprozess, dann den Server, und nur
+					Programme aus diesem Ordner. Nach 15 Sekunden ohne Ende beendet es hart und sagt es.
+				</dd>
+			</div>
+			<div class="row">
+				<dt>Status</dt>
+				<dd>
+					<code>status.bat</code> zeigt, ob die App läuft, unter welcher Adresse, ob der Mail-Hilfsprozess
+					läuft und ob ein Neustart nötig ist.
+				</dd>
+			</div>
+			<div class="row">
+				<dt>Adresse und Port</dt>
+				<dd>
+					Diese App läuft unter <code>{page.url.origin}</code>. Den Port stellst du in PowerShell im
+					Ordner <code>app</code> um, danach <code>neu-starten.bat</code>:
+					<CodeBlock code={PORT_COMMAND} label="Port umstellen (PowerShell)" />
+					Lesezeichen, die installierte App und die Browser-Erweiterung für WhatsApp Web brauchen dann
+					die neue Adresse; anmelden musst du dich dort einmal neu.
+				</dd>
+			</div>
+			<div class="row">
+				<dt>Wenn es hakt</dt>
+				<dd>
+					Ist der Port belegt, nennt <code>start.bat</code> das Programm und einen freien Port.
+					Antwortet die App nicht, hilft <code>neu-starten.bat</code>. Die Prüfung
+					<code>byl-control.ps1 doctor</code> zeigt fehlende Dateien, Schreibrechte, Plattenplatz und
+					andere laufende Kopien.
 				</dd>
 			</div>
 			<div class="row">
 				<dt>Protokolle</dt>
 				<dd>
-					Im Ordner <code>app\logs</code>: die Ausgabe des Servers vom letzten Start und
-					<code>byl-mail.log</code> des Mail-Hilfsprozesses (ohne Zugangsdaten und Inhalte).
+					Im Ordner <code>app\logs</code>: die Ausgabe des Servers, <code>byl-mail.log</code> des
+					Mail-Hilfsprozesses (jeweils der vorige Lauf als <code>*.1.log</code>) und
+					<code>byl-control.log</code> mit einer Zeile je Start und Stopp, alles ohne Zugangsdaten und
+					Inhalte.
 				</dd>
 			</div>
 			<div class="row">

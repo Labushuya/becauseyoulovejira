@@ -5,6 +5,7 @@
 
 import { render, screen, within } from '@testing-library/svelte';
 import { describe, expect, it } from 'vitest';
+import { page } from '$app/state';
 import { RESTART_NEEDED } from '$lib/guidance/texts';
 import { HELP_SECTIONS, SETTINGS_SECTIONS, helpHref } from '$lib/settings-sections';
 import Page from './+page.svelte';
@@ -94,7 +95,7 @@ describe('help page (EH-9)', () => {
 		const content = text(section);
 		expect(content).toMatch(/setx BYL_TELEGRAM_TOKEN/);
 		expect(content).toMatch(/Umgebungsvariablen für dieses Konto bearbeiten/);
-		expect(content).toMatch(/stop\.bat und dann start\.bat/);
+		expect(content).toMatch(/neu-starten\.bat im Ordner app doppelklicken/);
 		expect(within(section).getByRole('link', { name: 'Kanäle' }).getAttribute('href')).toBe(
 			'/einstellungen/kanaele'
 		);
@@ -145,12 +146,27 @@ describe('help page (EH-9)', () => {
 		expect(container.querySelector('#zugangsdaten')).not.toBeNull();
 	});
 
-	it('names restart, logs and the administration under "Betrieb"', () => {
+	it('names start, restart, stop, status, port, logs and the administration under "Betrieb"', () => {
 		render(Page);
 		const section = screen.getByRole('region', { name: 'Betrieb' });
 		const content = text(section);
-		expect(content).toMatch(/stop\.bat, dann start\.bat im Ordner app/);
+		// ADR-0039: one file per task, a restart only when needed, the address of this app.
+		expect(content).toMatch(
+			/start\.bat im Ordner app\. Läuft die App schon, startet es nichts doppelt/
+		);
+		expect(content).toMatch(
+			/neu-starten\.bat im Ordner app\. Es startet nur neu, wenn es nötig ist/
+		);
+		expect(content).toMatch(
+			/stop\.bat beendet geordnet erst den Mail-Hilfsprozess, dann den Server/
+		);
+		expect(content).toMatch(/status\.bat zeigt, ob die App läuft/);
+		expect(content).toContain(`Diese App läuft unter ${page.url.origin}.`);
+		expect(content).toMatch(/byl-control\.ps1 port 8091/);
+		expect(content).toMatch(/byl-control\.ps1 doctor/);
+		expect(content).not.toMatch(/stop\.bat, dann start\.bat/);
 		expect(content).toMatch(/byl-mail\.log/);
+		expect(content).toMatch(/byl-control\.log/);
 		// ADR-0029 section 8: the glass costs GPU time; the switch helps over a remote desktop.
 		expect(content).toMatch(
 			/Remote-Desktop, schalte unter Einstellungen → Darstellung den Glas-Effekt aus/

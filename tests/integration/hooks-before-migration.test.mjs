@@ -92,7 +92,7 @@ describe('E4 hooks on the schema before the E4 migrations', () => {
 		});
 		expect(response.status).toBe(503);
 		expect((await response.json()).message).toBe(
-			'Der Eingang steht nach dem nächsten Start der App bereit (start.bat).'
+			'Der Eingang steht nach dem nächsten Neustart der App bereit (neu-starten.bat).'
 		);
 	});
 
@@ -126,7 +126,7 @@ describe('E4 hooks on the schema before the E4 migrations', () => {
 		});
 		expect(response.status).toBe(503);
 		expect((await response.json()).message).toBe(
-			'Die Verbindungen stehen nach dem nächsten Start der App bereit (start.bat).'
+			'Die Verbindungen stehen nach dem nächsten Neustart der App bereit (neu-starten.bat).'
 		);
 	});
 
@@ -163,7 +163,7 @@ describe('E4 hooks on the schema before the E4 migrations', () => {
 		const headers = { Authorization: `Bearer ${INGEST_TOKEN}`, 'Content-Type': 'application/json' };
 		const list = await fetch(`${instance.url}/api/byl/ingest/connections`, { headers });
 		expect(list.status).toBe(503);
-		expect((await list.json()).message).toMatch(/nach dem nächsten Start/);
+		expect((await list.json()).message).toMatch(/nach dem nächsten Neustart der App bereit \(neu-starten\.bat\)/);
 		const item = await fetch(`${instance.url}/api/byl/ingest/items`, {
 			method: 'POST',
 			headers,

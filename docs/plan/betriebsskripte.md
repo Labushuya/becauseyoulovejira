@@ -1,6 +1,6 @@
 # Plan Betriebsskripte: ein Steuerskript für Start, Stopp, Neustart, Status und Port
 
-- **Stand:** BS-1 umgesetzt (#170, Kern, Port, geordnetes Beenden), BS-2 umgesetzt (Fingerabdruck, `reload`, `status`, `open`, `logs`, `doctor`); BS-3 folgt. Offen sind die manuellen Prüfungen im Test-Manifest.
+- **Stand:** umgesetzt: BS-1 (#170, Kern, Port, geordnetes Beenden), BS-2 (#172, Fingerabdruck, `reload`, `status`, `open`, `logs`, `doctor`), BS-3 (Doppelklick-Dateien, Texte, Hilfe). Offen sind die manuellen Prüfungen im Test-Manifest (BYL-E6-445 bis BYL-E6-447, BYL-E6-451, BYL-E6-452, BYL-E6-455 bis BYL-E6-459).
 - **Grundlage:**
   - [ADR-0039](../adr/0039-betriebsskripte.md) (Entscheidungen, Recherche, Grenzen, Alternativen)
   - [ADR-0035](../adr/0035-start-einstieg-und-offene-tabs.md) §1 und §7 (Landing-Seite, Tab-Wiederverwendung; Nachtrag), [ADR-0016](../adr/0016-kanal-architektur-und-mail.md) §5, [ADR-0018](../adr/0018-secrets.md) §6, [ADR-0038](../adr/0038-eigener-eingang-und-whatsapp-web.md)
@@ -22,7 +22,7 @@
 |---|---|---|
 | BS-1 | Befehle `start`, `stop`, `restart`, `port`, `help` mit Exit-Codes; Port in `byl-config.json`, `Set-BylAddress`, `run\app-adresse.js` für die Landing-Seite; Erkennung über Programmpfad und Zustandsdatei `run\byl.state.json`; idempotenter Start mit Fortschritt; geordnetes Beenden per `CTRL_BREAK_EVENT`, danach hart mit Warnung; Wrapper auf die neuen Befehle; ADR-0039, dieser Plan, README, CLAUDE.md, Nachtrag ADR-0035 | BYL-E6-440 bis BYL-E6-444, manuell BYL-E6-445 bis BYL-E6-447 |
 | BS-2 | Start-Fingerabdruck in der Zustandsdatei, `reload`, `status` (mit `-Json`, Exit 3 und 6), `open`, `logs` (Rotation, `byl-control.log`, `-Follow`), `doctor` (mit `-Json`), Hinweise vor dem Kaltstart (Platz, andere Kopien); Korrektur der Mail-Helfer-Erkennung aus BS-1 | BYL-E6-448 bis BYL-E6-450, manuell BYL-E6-451 und BYL-E6-452 |
-| BS-3 | `neu-starten.bat`, `status.bat`; Autostart und Admin-Reset mit derselben Logik; alle Neustart-Hinweise in Hooks, Oberfläche, Hilfe, Mail-Hilfsprozess und Erweiterung auf `neu-starten.bat`; Hilfe „Betrieb“; README und CLAUDE.md fertig | danach |
+| BS-3 | `neu-starten.bat`, `status.bat`; Autostart ersetzt eine Verknüpfung eines anderen Ordners, `reload` ohne Neustart startet einen fehlenden Mail-Hilfsprozess; alle Neustart-Hinweise in Hooks, Oberfläche, Hilfe, Mail-Hilfsprozess, Erweiterung und `build-mail-helper.ps1` auf `neu-starten.bat` (außer dem abgelaufenen Einrichtungslink); Hinweis „wurde beendet.“ ohne „(stop.bat)“; Hilfe „Betrieb“; README und CLAUDE.md | BYL-E6-453 und BYL-E6-454, manuell BYL-E6-455 bis BYL-E6-459 |
 
 ## 3. Entscheidungen und Befunde
 
@@ -36,3 +36,5 @@
 | 2026-09-29 | BS-1 | `-is [pscustomobject]` ist in PowerShell für jedes umhüllte Objekt wahr (auch ein JSON-Array); neue Prüfungen nutzen den vollen Typnamen. |
 | 2026-09-29 | BS-1, korrigiert in BS-2 | Ein laufender Mail-Hilfsprozess, den `build-mail-helper.ps1` in `byl-mail.exe.old-<Zeit>` umbenannt hat, zählt weiter als eigener. BS-1 erkannte dafür zusätzlich den Namen `.old-*`; am Live-Rechner (nur lesend) zeigte sich, dass Windows den Pfad vom Start meldet (`byl-mail.exe`). BS-2 entfernt die überflüssige Namensregel. |
 | 2026-09-29 | BS-2 | Fingerabdruck ohne gespeicherte Werte: Ein Hash nur der Namen hätte einen neuen Wert (Telegram-Chat-IDs nach `setx`) übersehen, und `neu-starten.bat` hätte „kein Neustart nötig“ gesagt. Deshalb HMAC-SHA256 über „Name=Wert“ mit einem Zufallsschlüssel je Start, der nur DPAPI-verschlüsselt (Windows-Konto) in der Zustandsdatei liegt. Große Dateien (`pocketbase.exe`, `byl-mail.exe`) nur mit Länge und Änderungszeit, Migrationen und Hooks mit SHA-256 über Namen und Inhalt. `reload` lässt eine gerade startende Instanz ohne `-Force` in Ruhe. `status` und `logs` schreiben nicht in `byl-control.log`. |
+| 2026-09-29 | BS-2 | Ein Integrationsfall mit zwei Neustarts brauchte auf dem Windows-Runner mehr als die 15 s des Integrationsprojekts; die Skriptfälle haben 120 s. Parallel wurde PR #171 (andere Sitzung, Spaltenbreite) gemergt; der Konflikt in der Meta-Zeile des Manifests wurde per Merge von `main` gelöst. |
+| 2026-09-29 | BS-3 | Der abgelaufene Einrichtungslink bleibt bei „`stop.bat`, dann `start.bat`“: Die App ist dann aktuell, `neu-starten.bat` startete nicht neu. Alle anderen Neustart-Hinweise nennen `neu-starten.bat`. Der Hinweis im Tab heißt „wurde beendet.“, weil ihn auch ein Neustart auslöst. Manifest-IDs 453 bis 459, weil ab 460 die Spaltenbreite (#171) belegt. |

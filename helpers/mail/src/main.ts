@@ -1,8 +1,9 @@
 // Entry of byl-mail.exe (ADR-0016 sections 4 and 5; E4 plan package 11). byl-control.ps1 starts it
-// with "run" next to PocketBase and stop.bat ends it; it fetches the mail connections every five
-// minutes and waits quietly while there are none. Next to it runs the local interface of the mailbox
-// selection (server.ts, package 23) on 127.0.0.1. "--version" and "--self-test" run without
-// network, so the build can check the executable on a machine without Node.
+// with "run" next to PocketBase and ends it with Ctrl+Break (stop, ADR-0039); it fetches the mail
+// connections every five minutes and waits quietly while there are none. Next to it runs the local
+// interface of the mailbox selection (server.ts, package 23) on 127.0.0.1. "--version" and
+// "--self-test" run without network, so the build can check the executable on a machine without
+// Node.
 
 import { ImapFlow } from 'imapflow';
 import { parseCommand, readConfig, TOKEN_ENV, USAGE, type HelperConfig } from './config';

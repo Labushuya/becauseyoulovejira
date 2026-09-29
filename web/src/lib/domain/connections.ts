@@ -326,7 +326,7 @@ export function secretStatusText(
 	const variable = missing.length === 1 ? 'Variable' : 'Variablen';
 	return {
 		ok: false,
-		text: `Zugangsdaten fehlen: ${variable} ${names} anlegen, dann die App neu starten (stop.bat, dann start.bat).`
+		text: `Zugangsdaten fehlen: ${variable} ${names} anlegen, dann die App neu starten (neu-starten.bat).`
 	};
 }
 
@@ -429,10 +429,10 @@ export function mailHelperText(status: MailHelperStatus | null): string {
 		case 'running':
 			return status.version === '' ? 'läuft' : `läuft (byl-mail ${status.version})`;
 		case 'stopped':
-			return 'läuft nicht. Mit einer eingeschalteten Postfach-Verbindung startet start.bat ihn mit (sonst stop.bat, dann start.bat).';
+			return 'läuft nicht. Mit einer eingeschalteten Postfach-Verbindung startet start.bat bzw. neu-starten.bat ihn mit.';
 		case 'refused':
-			return 'läuft, kennt aber den Zugang der App nicht (BYL_INGEST_TOKEN). Bitte stop.bat, dann start.bat.';
+			return 'läuft, kennt aber den Zugang der App nicht (BYL_INGEST_TOKEN). Bitte neu-starten.bat.';
 		case 'outdated':
-			return 'läuft in einer älteren Version ohne „Jetzt abrufen“. Bitte stop.bat, dann start.bat.';
+			return 'läuft in einer älteren Version ohne „Jetzt abrufen“. Bitte neu-starten.bat.';
 	}
 }

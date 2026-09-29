@@ -43,7 +43,7 @@ export const USAGE = [
 	'  byl-mail.exe --version                           Version ausgeben',
 	'  byl-mail.exe --self-test                         Selbsttest ohne Netzwerk',
 	'',
-	'Gestartet und beendet wird der Prozess von start.bat und stop.bat.'
+	'Gestartet und beendet wird der Prozess von start.bat, neu-starten.bat und stop.bat.'
 ].join('\n');
 
 /** http://127.0.0.1:<port> without path; null for anything else. */
