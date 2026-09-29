@@ -93,7 +93,7 @@
 	}
 
 	/** Entries of the dialog "Mit Ticket verknüpfen …" (ADR-0031), null while it is closed. */
-	let linkItems = $state<Pick<InboxItemSummary, 'id' | 'title'>[] | null>(null);
+	let linkItems = $state<Pick<InboxItemSummary, 'id' | 'title' | 'scope'>[] | null>(null);
 
 	function openLink() {
 		linkItems = chosenItems();
@@ -101,16 +101,17 @@
 
 	function chosenItems(): Pick<
 		InboxItemSummary,
-		'id' | 'title' | 'kind' | 'channel' | 'sourceDate'
+		'id' | 'title' | 'kind' | 'channel' | 'sourceDate' | 'scope'
 	>[] {
 		return inbox.visible
 			.filter((item) => item.state === 'new' && selected.includes(item.id))
-			.map(({ id, title, kind, channel, sourceDate }) => ({
+			.map(({ id, title, kind, channel, sourceDate, scope }) => ({
 				id,
 				title,
 				kind,
 				channel,
-				sourceDate
+				sourceDate,
+				scope
 			}));
 	}
 

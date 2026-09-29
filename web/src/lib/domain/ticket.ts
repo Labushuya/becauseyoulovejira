@@ -77,6 +77,11 @@ export interface TicketSummary {
 	/** Expanded parent; only a fallback while the list does not know the parent itself. */
 	parentRef?: ParentRef | null;
 	/**
+	 * Area of the ticket (`u:<owner>` or `h:<household>`); the ticket picker offers only tickets of
+	 * the same area where the hook demands it (ADR-0042). The data layer always sets it.
+	 */
+	scope?: string;
+	/**
 	 * Way the ticket came in (ADR-0014 section 2); null for tickets before E4 and before the
 	 * migration, which count as "manual" (ADR-0019).
 	 */

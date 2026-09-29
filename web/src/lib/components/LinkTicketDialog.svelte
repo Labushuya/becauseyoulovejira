@@ -1,28 +1,40 @@
 <script lang="ts">
 	import type { InboxItemSummary } from '$lib/domain/inbox';
-	import type { TicketChoice, TicketSourcesStore } from '$lib/stores/ticket-sources.svelte';
+	import { sameScope } from '$lib/domain/ticket-picker';
+	import type { TicketSummary } from '$lib/domain/ticket';
+	import {
+		findTicketPickerSource,
+		type TicketPickerSource
+	} from '$lib/stores/ticket-picker.svelte';
+	import type { TicketSourcesStore } from '$lib/stores/ticket-sources.svelte';
 	import ErrorIcon from './ErrorIcon.svelte';
 	import Modal from './overlay/Modal.svelte';
-	import TicketCombobox from './TicketCombobox.svelte';
+	import TicketPicker from './TicketPicker.svelte';
 
 	// "Mit Ticket verknüpfen …" (ADR-0031 sections 2 and 7): links one or several new inbox entries
-	// to any ticket, also one typed in by hand. Modal M with the ticket search as combobox; the
-	// entries are linked one after the other through the same way as "Dem Ticket zuordnen". Without
-	// failures the dialog closes (the flag names the result); failed entries stay with their reason
-	// and can be tried again.
+	// to any ticket. Modal M with the ticket picker (ADR-0042): its list opens with the dialog, so
+	// nothing has to be typed; done tickets come with "Nur offene" switched off. Tickets of another
+	// area than the entries stay visible with the reason. The entries are linked one after the other
+	// through the same way as "Dem Ticket zuordnen". Without failures the dialog closes (the flag
+	// names the result); failed entries stay with their reason and can be tried again.
 	let {
 		items,
 		store,
+		picker,
 		onclose,
 		onlinked = () => undefined
 	}: {
-		items: readonly Pick<InboxItemSummary, 'id' | 'title'>[];
+		items: readonly Pick<InboxItemSummary, 'id' | 'title' | 'scope'>[];
 		store: TicketSourcesStore;
+		/** Tickets of the picker; the (app) layout provides them. */
+		picker?: TicketPickerSource;
 		onclose: () => void;
 		/** IDs of the entries that were linked (e.g. to clear the selection of the table). */
 		onlinked?: (ids: string[]) => void;
 	} = $props();
 
+	const fromContext = findTicketPickerSource();
+	const source = $derived(picker ?? fromContext);
 	const uid = $props.id();
 	const formId = `${uid}-form`;
 	const describedId = `${uid}-described`;
@@ -32,9 +44,17 @@
 		return items.map(({ id, title }) => ({ id, title }));
 	}
 
+	/** The one area of all entries, or null if they differ (the hook then decides per entry). */
+	const area = $derived.by(() => {
+		const scopes = new Set(items.map((item) => item.scope ?? ''));
+		const [only] = scopes;
+		return scopes.size === 1 && only ? only : null;
+	});
+	const rules = $derived([sameScope(area)]);
+
 	// After a partial failure only the failed entries remain.
 	let remaining = $state(initialItems());
-	let ticket = $state<TicketChoice | null>(null);
+	let ticket = $state<TicketSummary | null>(null);
 	let error = $state<string | null>(null);
 	let failures = $state<{ id: string; title: string; message: string }[]>([]);
 	let busy = $state(false);
@@ -79,13 +99,16 @@
 				</ul>
 			{/if}
 		</div>
-		<TicketCombobox
-			label="Ticket"
-			hint="Nummer, Key oder Titel eingeben, auch erledigte Tickets."
-			search={(text, options) => store.search(text, options)}
-			bind:value={ticket}
-			{error}
-		/>
+		{#if source}
+			<TicketPicker
+				label="Ticket"
+				hint="Aus der Liste wählen oder tippen; erledigte Tickets ohne „Nur offene“."
+				{source}
+				{rules}
+				bind:value={ticket}
+				{error}
+			/>
+		{/if}
 		{#if failures.length > 0}
 			<div class="alert-error" role="alert">
 				<ErrorIcon />
