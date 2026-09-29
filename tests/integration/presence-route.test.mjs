@@ -95,6 +95,21 @@ async function until(check) {
 	}
 }
 
+/**
+ * The number of tabs once it is `expected`, or the last one after EVENT_TIMEOUT_MS. When a tab drops
+ * its last subscription, the SDK only closes its EventSource, without a request (sendSubscriptions
+ * calls disconnect); PocketBase forgets the client when it notices the closed connection, in its
+ * own goroutine. A presence request right after can come first (Linux CI: 2 instead of 1).
+ */
+async function tabsBecome(expected) {
+	const start = Date.now();
+	for (;;) {
+		const { tabs } = (await call('/api/byl/presence')).body;
+		if (tabs === expected || Date.now() - start > EVENT_TIMEOUT_MS) return tabs;
+		await new Promise((resolve) => setTimeout(resolve, 25));
+	}
+}
+
 const quiet = () => new Promise((resolve) => setTimeout(resolve, QUIET_PERIOD_MS));
 
 beforeAll(async () => {
@@ -241,7 +256,7 @@ describe('presence and attention (ADR-0035, SF-1)', () => {
 
 	it('forgets a tab that unsubscribed', async () => {
 		await second.realtime.unsubscribe(TOPIC);
-		expect((await call('/api/byl/presence')).body.tabs).toBe(1);
+		expect(await tabsBecome(1)).toBe(1);
 	});
 
 	// Windows PowerShell only on Windows (plan plattformen S0).
@@ -289,6 +304,6 @@ $gone = Invoke-LocalRequest -Url 'http://127.0.0.1:9/api/byl/presence' -TimeoutM
 		expect((await call(`/api/byl/attention/${nonce}`)).body).toEqual({ acked: true });
 		await expect(ackAttention(pb, '../x')).rejects.toThrow('Invalid nonce');
 		await stop();
-		expect((await call('/api/byl/presence')).body.tabs).toBe(1);
+		expect(await tabsBecome(1)).toBe(1);
 	});
 });

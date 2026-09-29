@@ -1,6 +1,6 @@
 # Plan: Test-Härtung
 
-- **Stand:** T-1 umgesetzt (Testkopien und Test-Server ohne Zugangsdaten). T-2 (instabile Tests) folgt in einem eigenen PR.
+- **Stand:** umgesetzt: T-1 (#175, Testkopien und Test-Server ohne Zugangsdaten) und T-2 (drei gelegentlich rote Tests deterministisch, dazu ein gleich gebauter Fall).
 - **Grundlage:** [ADR-0018](../adr/0018-secrets.md) (Zugangsdaten als `BYL_*`-Variablen, Nachtrag), [ADR-0039](../adr/0039-betriebsskripte.md) (Steuerskript, Nachtrag „Testkopien ohne Zugangsdaten“), [ADR-0004](../adr/0004-teststrategie-hooks-migrationen.md) (Wegwerf-Instanzen); [CLAUDE.md](../../CLAUDE.md) §3, §11, §12.
 - **Einordnung:** Auftrag vom 2026-09-29. Manifest-IDs ab `BYL-E6-500`, Paketkürzel `T`.
 
@@ -18,6 +18,28 @@
 
 **Nebenbefund:** `healthy()` in `control-script.test.mjs` nutzte `fetch`. Nach `restart` nahm der Pool einen Keep-alive-Socket des alten Servers (`spawnSync` blockiert die Ereignisschleife während des ganzen Befehls, das Schließen des Sockets kam erst danach an): ECONNRESET, obwohl der neue Server antwortete, mit der neuen Prüfung 3 von 3 Läufen. Jetzt öffnet jede Prüfung eine neue Verbindung (`node:http`, `agent: false`).
 
+## 2. T-2: Instabile Tests stabilisieren
+
+Grundlage: die letzten 60 CI-Läufe (`gh run list`, `gh run view --log-failed`, nur lesend, Stand 2026-09-29) und die Meldungen des Auftrags. Keine Erwartung wurde gelockert; jeder Fix wartet auf den Zielzustand (mit Obergrenze) oder legt die Reihenfolge mit Fake-Timern fest.
+
+| Test | Rot | Ursache | Fix | Beleg |
+|---|---|---|---|---|
+| `tests/integration/presence-route.test.mjs` › forgets a tab that unsubscribed | Linux, 2-mal (Läufe 36504733031 und 36510390998, je Versuch 1: „expected 2 to be 1“ nach 14 ms) | Gibt ein Tab sein letztes Abo auf, schließt das SDK 0.28.1 nur die EventSource, ohne Anfrage (`sendSubscriptions` ruft `disconnect`). PocketBase vergisst den Client erst, wenn es die geschlossene Verbindung bemerkt, in der Goroutine dieser Verbindung. Die Präsenz-Anfrage direkt danach läuft in einer anderen Goroutine und kann zuerst drankommen; die Reihenfolge hängt vom Scheduler ab (unter Windows mit einem Messskript 0 von 200 Versuchen, unter Linux in der CI 2 Treffer). | `tabsBecome(1)`: Präsenz abfragen, bis sie 1 meldet (höchstens 5 s), dann weiter `toBe(1)`. Ebenso nach `stop()` in „works with the data layer of the SPA (SF-3)“, gleiches Muster, bisher nicht rot. | Greift auf jedem System, weil nicht mehr die Reihenfolge zweier Goroutinen zählt, sondern nur, dass PocketBase das Schließen einer Loopback-Verbindung bemerkt; 1 bleibt die einzige akzeptierte Zahl. 30 von 30 Läufen lokal grün. |
+| `tests/integration/channel-calendar.test.mjs` › Google Calendar: cron job › fetches every switched-on connection and does nothing without the variable | Linux, 1-mal (Lauf 36506768267, Versuch 1: „expected +0 to be 1“, Matcher nach 5 s) | PocketBase 0.40.4 schreibt Logs gebündelt, 3 s nach dem letzten neuen Eintrag oder bei 200 (`initLogger` setzt den Ticker bei jedem Eintrag zurück). Der Test lief bis 01:15:02 UTC; um 01:15:00 startete in der Testinstanz der planmäßige Lauf `byl-calendar` (`*/15`) und protokollierte nacheinander die Fehler der Verbindungen aus den Tests davor (404, keine Kalenderseite, über 20 MB, keine http-Adresse). Das verschob das Schreiben über das Fenster von 5 s. Zweitens las der Test nur die ersten 500 Einträge; ohne Sortierung liefert `/api/logs` die ältesten zuerst (mit 603 Einträgen belegt), ein neuer Eintrag fiele bei mehr als 500 heraus. | `logCount`: Zählung per Filter über alle Einträge; warten bis 30 s (Intervall 250 ms), Testzeit 60 s; weiter genau 1. | Nachgestellt mit einem zusätzlichen Lauf des Cron-Jobs 2,5 s nach Beginn des Wartens: alter Test 3 von 3 rot mit derselben Meldung nach 5,3 s, neuer Test 3 von 3 grün (Eintrag nach rund 5,9 s geschrieben). 30 von 30 Läufen lokal grün. |
+| `web/src/routes/layout.test.ts` › second tab of the same browser | einmal rot (lokal gemeldet, in den CI-Läufen nicht) | Echte Timer: Die Fake-Kanäle stellen jede Nachricht per Timer zu, `vi.waitFor` fragt im 50-ms-Takt. War die Ereignisschleife blockiert (Last, erstes Rendern in jsdom), liefen die Zustellung von „here“ und die Abfrage im selben Durchgang: Der Hinweis stand schon, der Timer mit „attention“ an den anderen Tab aber noch nicht, also `received` = `['hello']`. Dazu die Grenze von 1 s bei `waitFor` und feste Pausen von 400 ms. | Fake-Timer nur für `setTimeout` und `setInterval` (ein gefälschtes `performance` verdeckte den Spy); `settle()` spult das Zeitfenster der Prüfung (300 ms) vor, danach genaue Prüfungen, keine echten Pausen. „Hier weiterarbeiten“ prüft jetzt mit geschlossenem anderem Tab genau `['here']`; vorher hätte der andere Tab die Antwort geliefert (Gegenprobe: ohne `tabs.answer()` in `keepThisTab` jetzt rot, vorher grün). | 30 von 30 Läufen lokal grün. |
+
+**Weitere Funde in den CI-Läufen:**
+
+- `control-script.test.mjs` › a start without fingerprint … reload -Force always restarts: Zeitüberschreitung nach 15 s unter Windows (Läufe 36501711010 und 36502445136 im PR von BS-2). Vor dem Merge von #172 behoben: Die Fälle des Skripts haben 120 s (Plan Betriebsskripte, Befund BS-2).
+- `web/src/lib/editor/markdown-bridge.test.ts` › long page …: Zeitüberschreitung nach 5 s unter Windows (Lauf 36374312164 im PR von RT-3). Vor dem Merge von #125 behoben (30 s).
+- `control-script.test.mjs` › restart: `fetch` auf einen Keep-alive-Socket des gestoppten Servers (T-1, siehe oben).
+- Kein weiterer Test war in den letzten 60 Läufen rot.
+
+**Restrisiken (nicht geändert):** Der Kalender-Integrationstest rechnet „heute“ beim Laden der Datei; ein Lauf über Berliner Mitternacht verschöbe das Fenster (nicht beobachtet). Einige Negativprüfungen auf Logs direkt nach einem Cron-Lauf (etwa in `hooks-before-migration.test.mjs`) sehen wegen des gebündelten Schreibens noch nichts; sie sind schwach, aber nicht instabil.
+
+## 3. Entscheidungen und Befunde
+
 | Datum | Paket | Befund bzw. Entscheidung |
 |---|---|---|
 | 2026-09-29 | T-1 | Umgebungsvariable statt Parameter von `byl-control.ps1`: Sie gehört zur Umgebung des Tests, erscheint nicht in `help` und bleibt mit der bereinigten Umgebung beisammen. Ein Prüfwert im Benutzerbereich hätte den Pfad über das Konto auch in der CI belegt, hätte aber auf dem Entwicklungsrechner ins Konto des Nutzers geschrieben; belegt wird er stattdessen über die Positivprobe (ohne Isolation entfernte `Sync-BylEnvironment` die Testwerte) und lokal über die echten Namen im Konto. |
+| 2026-09-29 | T-2 | Die planmäßigen Cron-Läufe der Testinstanzen bleiben an: Sie abzuschalten hieße, Hooks nur für Tests umzuschreiben. Die Tests vertragen sie (Sperre, `logOnce`, Warten auf das Schreiben der Logs). Linux ließ sich lokal nicht nachstellen (kein WSL); der Fix im Präsenztest hängt nicht vom System ab. |
