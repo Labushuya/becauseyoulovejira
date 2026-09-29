@@ -55,3 +55,14 @@ export const LIVE_INTERRUPTED = {
 	text: 'Live-Aktualisierung unterbrochen – wird erneut versucht.',
 	reload: 'Neu laden'
 } as const;
+
+/**
+ * Hint once a new build of the app is published while the tab is open (ADR-0040): information,
+ * not a warning, because the running version keeps working. `unsaved` is added while typed text
+ * would be lost by loading the page again.
+ */
+export const APP_UPDATED = {
+	text: 'Eine neue Version von becauseyoulovejira ist da.',
+	unsaved: 'Speichere zuerst deine Eingaben, beim Neuladen gehen sie verloren.',
+	reload: 'Neu laden'
+} as const;

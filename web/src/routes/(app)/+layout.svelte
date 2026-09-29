@@ -4,6 +4,7 @@
 	import { page } from '$app/state';
 	import { auth } from '$lib/auth.svelte';
 	import AppHeader from '$lib/components/AppHeader.svelte';
+	import AppUpdateNotice from '$lib/components/AppUpdateNotice.svelte';
 	import LiveUpdateNotice from '$lib/components/LiveUpdateNotice.svelte';
 	import ShortcutsModal from '$lib/components/help/ShortcutsModal.svelte';
 	import FlagGroup from '$lib/components/overlay/FlagGroup.svelte';
@@ -117,7 +118,7 @@
 	);
 	// Bulk actions on the chosen rows of the table (plan BI-2, ADR-0036 §3): one request per ticket
 	// through the Record API, results and "Rückgängig" as flags.
-	setBulkEditStore(new BulkEditStore(bulkEditData(pb), auth, tickets, flags));
+	const bulk = setBulkEditStore(new BulkEditStore(bulkEditData(pb), auth, tickets, flags));
 	// The inbox (E4 plan, T-4): new entries in full, for the view and the count at the switch.
 	const inbox = setInboxStore(new InboxStore(inboxData(pb), auth, flags));
 	const activity = setTicketActivityStore(
@@ -285,6 +286,12 @@
 <main class="content">
 	<!-- A failed realtime subscription is tried again; meanwhile a hint says so (ADR-0011 E6). -->
 	<LiveUpdateNotice />
+	<!-- A new build while this tab is open (ADR-0040): hint, and the next link loads it, unless
+	     typed text of the ticket, a running bulk action or an offered "Rückgängig" would be lost. -->
+	<AppUpdateNotice
+		unsaved={() => detail.hasUnsavedInput || activity.dirty}
+		pending={() => bulk.busy || flags.flags.some((flag) => flag.action !== null)}
+	/>
 	{@render children()}
 </main>
 <FlagGroup store={flags} />

@@ -17,7 +17,7 @@
 		"check": "npm --prefix web run check && npm --prefix helpers/mail run check && npm --prefix extensions/whatsapp-web run check",
 		"lint": "npm --prefix web run lint && npm --prefix extensions/whatsapp-web run lint",
 		"format": "npm --prefix web run format",
-		"build": "npm --prefix web run build && npm --prefix extensions/whatsapp-web run build"
+		"build": "npm --prefix web run build && node scripts/publish-web.mjs && npm --prefix extensions/whatsapp-web run build"
 	},
 	"devDependencies": {
 		"pocketbase": "^0.28.1",

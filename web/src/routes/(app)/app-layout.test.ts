@@ -76,9 +76,11 @@ vi.mock('$app/navigation', () => ({
 	goto: mocks.goto,
 	afterNavigate: (callback: (navigation: { to: { url: URL } | null }) => void) => {
 		mocks.afterNavigate.push(callback);
-	}
+	},
+	// The hint after a new build (ADR-0040) is covered in app-update-notice.test.ts.
+	onNavigate: () => undefined
 }));
-vi.mock('$app/state', () => ({ page: mocks.page }));
+vi.mock('$app/state', () => ({ page: mocks.page, updated: { current: false } }));
 vi.mock('$lib/auth.svelte', () => ({ auth: mocks.auth }));
 // The tour itself is covered in lib/tour/tour.test.ts; here only how the layout starts it (EH-13).
 const tourMocks = vi.hoisted(() => ({
