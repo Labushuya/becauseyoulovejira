@@ -8,6 +8,7 @@
 import DOMPurify, { type DOMPurify as Purifier } from 'dompurify';
 import MarkdownIt, { type StateCore, type Token } from 'markdown-it';
 import markdownItIns from 'markdown-it-ins';
+import { TICKET_LINK } from './domain/link';
 
 /** Task marker at the start of the first paragraph of a list item (GFM). */
 const TASK_MARKER = /^\[([ xX])\](?=[ \t]|$)/;
@@ -196,13 +197,23 @@ const ALLOWED_ATTR = ['href', 'title', 'start', 'target', 'rel', 'data-task', ..
 const URI_SAFE_ATTR = ['start', 'type', 'aria-label', 'data-task'];
 /** Index of a task: digits only. */
 const TASK_INDEX = /^\d{1,4}$/;
-/** Links only to http, https and mailto; everything else loses its href. */
-const ALLOWED_URI_REGEXP = /^(?:https?|mailto):/i;
+/**
+ * Links only to http, https and mailto, and to a ticket of the app as `/tickets/<id>` (ADR-0042
+ * section 5); everything else loses its href. DOMPurify takes one expression: the flag i lets the
+ * ticket part take upper-case letters as well, which name no record.
+ */
+const ALLOWED_URI_REGEXP = new RegExp(
+	`^(?:(?:https?|mailto):|${TICKET_LINK.source.slice(1)})`,
+	'i'
+);
 const EXTERNAL = /^https?:/i;
 
 let purifier: Purifier | null = null;
 
-/** External links open in a new tab without referrer; others lose target and rel. */
+/**
+ * External links open in a new tab without referrer; others (mailto, links to a ticket, which the
+ * app opens itself) lose target and rel.
+ */
 function secureLink(node: Element): void {
 	const href = node.getAttribute('href');
 	if (href !== null && EXTERNAL.test(href)) {

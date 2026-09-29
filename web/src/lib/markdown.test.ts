@@ -141,11 +141,27 @@ describe('renderMarkdown: formatting', () => {
 		expect(link?.hasAttribute('target')).toBe(false);
 	});
 
-	it('drops relative links to keep only http, https and mailto', () => {
-		const link = dom('[intern](/tickets/abc)').querySelector('a');
+	it('drops relative links other than to a ticket', () => {
+		for (const href of [
+			'/tickets/abc',
+			'/tickets/abc123def456ghi/voll',
+			'/einstellungen',
+			'//example.com/tickets/abc123def456ghi',
+			'../tickets/abc123def456ghi'
+		]) {
+			const link = dom(`[intern](${href})`).querySelector('a');
+			expect(link?.hasAttribute('href'), href).toBe(false);
+			expect(link?.textContent).toBe('intern');
+		}
+	});
 
-		expect(link?.hasAttribute('href')).toBe(false);
-		expect(link?.textContent).toBe('intern');
+	it('keeps a link to a ticket of the app, opened in the app (ADR-0042)', () => {
+		const link = dom('[HAUS-12 Dach prüfen](/tickets/abc123def456ghi)').querySelector('a');
+
+		expect(link?.getAttribute('href')).toBe('/tickets/abc123def456ghi');
+		expect(link?.hasAttribute('target')).toBe(false);
+		expect(link?.hasAttribute('rel')).toBe(false);
+		expect(link?.textContent).toBe('HAUS-12 Dach prüfen');
 	});
 
 	it('does not render images', () => {

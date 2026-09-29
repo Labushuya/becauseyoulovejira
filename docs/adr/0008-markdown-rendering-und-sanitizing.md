@@ -1,6 +1,6 @@
 # ADR-0008: Markdown-Rendering und Sanitizing
 
-- **Status:** Angenommen; §1, §2 und §5 ergänzt durch [ADR-0032](0032-editor-tiptap-markdown.md) (Unterstreichen, Task-Listen, Allowlist), §4 ab RT-3 ersetzt durch ADR-0032 (Editor)
+- **Status:** Angenommen; §1, §2 und §5 ergänzt durch [ADR-0032](0032-editor-tiptap-markdown.md) (Unterstreichen, Task-Listen, Allowlist), §4 ab RT-3 ersetzt durch ADR-0032 (Editor); §2 ergänzt durch [ADR-0042](0042-tickets-und-projekte-aus-listen-waehlen.md) (Links auf Tickets der App, siehe Nachtrag)
 - **Datum:** 2026-09-24
 - **Entscheidung durch:** Advisor
 
@@ -31,3 +31,7 @@
 - Negativ: Etwa 120 KB zusätzliches JavaScript (unkomprimiert). Für eine lokal ausgelieferte App ist das unerheblich.
 - Negativ: Eingefügte Bild-Markdowns erscheinen nicht als Bild. Das bleibt so, bis Anhänge (Stufe 2) freigegeben sind.
 - Tests: XSS-Fälle (`<script>`, `<img onerror>`, `javascript:`-Links, `data:`-URLs, HTML-Entities, verschachtelte Links, SVG) als Unit-Tests in jsdom.
+
+## Nachtrag (2026-09-30, ADR-0042, AL-2): Links auf Tickets der App
+
+Ergänzt §2, ohne die übrigen Regeln aufzuheben: Neben `http:`, `https:` und `mailto:` behält ein Link genau die Adresse `/tickets/<id>` (15 Zeichen `a-z0-9`), die der Editor über „Oder ein Ticket“ setzt ([ADR-0042](0042-tickets-und-projekte-aus-listen-waehlen.md) §5). Sie hat kein Schema, keinen Host und keinen Pfad darüber hinaus; die App öffnet sie selbst, deshalb bekommt sie weder `target` noch `rel`. Alle anderen relativen oder schemalosen Adressen (`/einstellungen`, `//host/…`, `../…`, `/tickets/<id>/voll`) verlieren ihr `href` wie bisher. Dieselbe Form (`TICKET_LINK` in `domain/link.ts`) prüfen `checkLink`, `isAllowedUri` des Editors und `ALLOWED_URI_REGEXP` von DOMPurify; `markdown.test.ts` hält beides fest. Auch Inhalte aus Kanälen dürfen einen solchen Link tragen; er führt nur zu einem Ticket, das der Nutzer ohnehin sehen darf (API-Regeln).

@@ -1,6 +1,6 @@
 # Tickets und Projekte aus einer Liste wählen
 
-- **Stand:** AL-1 umgesetzt (Baustein `TicketPicker`, Übergeordnet, Verknüpfen und Umhängen im Eingang); AL-2 (Ticket-Link im Editor, Projekt in der Schnellerfassung) folgt. Keine Migration, kein Neustart (nur der Build der SPA). Offen sind die manuellen Browser-Prüfungen ab `BYL-E6-610`.
+- **Stand:** umgesetzt: AL-1 (#180: Baustein `TicketPicker`, Übergeordnet, Verknüpfen und Umhängen im Eingang) und AL-2 (Ticket-Link im Editor, Projekt in der Schnellerfassung). Keine Migration, kein Neustart (nur der Build der SPA). Offen sind die manuellen Browser-Prüfungen `BYL-E6-610` bis `BYL-E6-614`.
 - **Grundlage:** Nutzer-Beobachtung vom 2026-09-30: „Selektion von Projekten oder Tickets per reiner manueller Eingabe grauenhaft (was, wenn ich die Ticket-Nummer nicht weiß?) – Einfache Auflistung für User“. Entscheidung in [ADR-0042](../adr/0042-tickets-und-projekte-aus-listen-waehlen.md); Bezug: [ADR-0025](../adr/0025-ui-konsistenz-overlay-system.md) (Popover, Combobox), [ADR-0033](../adr/0033-unteraufgaben.md) (eine Ebene), [ADR-0034](../adr/0034-unterprojekte.md) (Pfad „Haus › Garten“), [ADR-0037](../adr/0037-papierkorb.md) (Papierkorb), [ADR-0009](../adr/0009-fehlerfarbe.md), [Plan Layout-Überlauf](layout-ueberlauf.md).
 - **Einordnung:** Manifest-Block „Auswahl-Listen“ ab `BYL-E6-600`.
 
@@ -14,8 +14,8 @@ Gesucht waren alle Stellen, an denen ein Ticket oder ein Projekt nur durch Einti
 | Unteraufgabe lösen | `TicketParentField` („Lösen“) | Knopf, kein Eintippen | unverändert |
 | Eingang: „Mit Ticket verknüpfen …“ (Panel eines Eintrags und Auswahlleiste) | `LinkTicketDialog` | `TicketCombobox` wie oben | `TicketPicker` im Modal; Tickets eines anderen Bereichs als die Einträge ausgegraut (AL-1) |
 | „Anderem Ticket zuordnen …“ (Quellen im Ticket und Panel eines Eintrags) | `MoveSourceDialog` | `TicketCombobox`, das aktuelle Ticket still ausgefiltert | `TicketPicker`; das aktuelle Ticket ausgegraut mit „Der Eintrag gehört schon zu HAUS-12.“, andere Bereiche ebenso (AL-1) |
-| Editor: Link auf ein Ticket (Beschreibung, Kommentare, Neues Ticket, Regel-Vorlage) | `LinkPopover` | nur „Adresse“ zum Eintippen oder Einfügen; die Adresse eines Tickets kennt niemand auswendig | zusätzlich „Ticket“ mit `TicketPicker` (auch erledigte ohne „Nur offene“); der Link heißt `/tickets/<id>` und öffnet in der App (AL-2, folgt) |
-| Schnellerfassung: Projekt | `QuickCapture` | nur Kurzsyntax `@CODE` | zusätzlich „Projekt“ als `ProjectSelect`; die Wahl schreibt `@CODE` in die Zeile, ein getipptes `@CODE` stellt die Auswahl (AL-2, folgt) |
+| Editor: Link auf ein Ticket (Beschreibung, Kommentare, Neues Ticket, Regel-Vorlage) | `LinkPopover` | nur „Adresse“ zum Eintippen oder Einfügen; die Adresse eines Tickets kennt niemand auswendig | zusätzlich „Ticket“ mit `TicketPicker` (auch erledigte ohne „Nur offene“); der Link heißt `/tickets/<id>` und öffnet in der App (AL-2) |
+| Schnellerfassung: Projekt | `QuickCapture` | nur Kurzsyntax `@CODE` | zusätzlich „Projekt“ als `ProjectSelect`; die Wahl schreibt `@CODE` in die Zeile, ein getipptes `@CODE` stellt die Auswahl (AL-2) |
 | Eingang: Projekt beim Erfassen | `CaptureForm` | natives `select` („Projekt wählen“, Baum-Reihenfolge, Pfad) | unverändert (gleichwertige Liste) |
 | Ticket: Projekt (Panel, Vollansicht, Neues Ticket) | `TicketFields`, `NewTicketForm`, `ProjectSelect` | `ProjectSelect` | unverändert |
 | Sammelaktion „Projekt …“ | `BulkActionBar`, `ProjectSelect` | `ProjectSelect` | unverändert |
@@ -61,5 +61,6 @@ Gesucht waren alle Stellen, an denen ein Ticket oder ein Projekt nur durch Einti
 
 - Unit: `domain/ticket-picker.test.ts` (Normalisierung, Umlaute, UND, lockeres Muster samt Obermengen-Eigenschaft, Regeln, Liste, Grenze, aktiver Eintrag, Status, gemerkte Tickets), `stores/ticket-picker.test.ts` (Quelle und gemerkte Tickets).
 - Komponente: `components/ticket-picker.test.ts` (Liste ohne Tippen, Gruppen, Tastatur, Screenreader-Attribute und Live-Region, gesperrte Einträge, „Mehr anzeigen“, Chips, erledigte vom Server) und die angepassten Tests der Fundstellen.
+- AL-2: `domain/link.test.ts` (Ticket-Links angenommen, andere relative Formen abgelehnt), `markdown.test.ts` (Ticket-Link ohne `target`, andere relative Links ohne `href`), `domain/quick-syntax.test.ts` (`withProjectToken`), `components/editor-menus.test.ts` (Link auf ein Ticket im echten Editor, Markdown `[HAUS-12 Dach prüfen](/tickets/…)`), `components/quick-capture.test.ts` („Projekt“ und `@CODE`).
 - Integration: `tests/integration/web-data-ticket-picker.test.mjs` gegen PocketBase (Umlaute, ß, Akzente über das lockere Muster, UND, Projekt mit und ohne Unterprojekte, „Ohne Projekt“, Seiten, `%` wörtlich, fremde Nutzer und Papierkorb nie, Bereich in der SPA).
 - Manuell: Bedienung im Browser (Top-Layer, Glas, Fokus, Screenreader), siehe Manifest.
