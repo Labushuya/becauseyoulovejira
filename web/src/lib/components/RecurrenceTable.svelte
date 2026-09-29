@@ -208,6 +208,7 @@
 							aria-label={`${rule.active ? 'Pausieren' : 'Fortsetzen'}: ${rule.title}`}
 							title={rule.active ? 'Pausieren' : 'Fortsetzen'}
 							aria-disabled={busyId === rule.id ? 'true' : undefined}
+							aria-busy={busyId === rule.id ? 'true' : undefined}
 							onclick={() => {
 								if (busyId !== rule.id) ontoggle(rule);
 							}}

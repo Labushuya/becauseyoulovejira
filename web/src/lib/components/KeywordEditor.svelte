@@ -200,7 +200,7 @@
 	}
 </script>
 
-<fieldset class="keywords" aria-labelledby={ids.legend}>
+<fieldset class="keywords" aria-labelledby={ids.legend} aria-busy={saving ? 'true' : undefined}>
 	<legend id={ids.legend}>Stichwörter</legend>
 	<p class="hint" id={ids.hint}>
 		{description} Groß-/Kleinschreibung egal, Umlaute auch. Gesucht wird am Wortanfang, auch in Adressen:
@@ -361,6 +361,11 @@
 	[aria-disabled='true'] {
 		cursor: not-allowed;
 		opacity: 0.6;
+	}
+
+	/* Locked while a change of the keywords is saved (ADR-0026, addendum of 2026-09-30). */
+	.keywords[aria-busy='true'] [aria-disabled='true'] {
+		cursor: progress;
 	}
 
 	.hint {

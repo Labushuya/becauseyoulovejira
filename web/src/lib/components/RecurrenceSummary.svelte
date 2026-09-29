@@ -153,7 +153,7 @@
 		{:else if rule !== null && rule.lastHint !== ''}
 			<SectionMessage tone="info" compact>{rule.lastHint}</SectionMessage>
 		{/if}
-		<div class="actions">
+		<div class="actions" aria-busy={busy ? 'true' : undefined}>
 			{#if rule !== null}
 				{@const current = rule}
 				<button
@@ -246,7 +246,12 @@
 	}
 
 	[aria-disabled='true'] {
-		cursor: progress;
+		cursor: not-allowed;
 		opacity: 0.75;
+	}
+
+	/* Locked because an action of the series runs (ADR-0026, addendum of 2026-09-30). */
+	.actions[aria-busy='true'] [aria-disabled='true'] {
+		cursor: progress;
 	}
 </style>

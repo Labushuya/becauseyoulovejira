@@ -262,12 +262,15 @@
 
 	/** Result of "Hilfsprozess prüfen": only on a click, the helper logs in to the mailbox. */
 	let helper = $state<'ok' | 'unavailable' | { message: string; hint: string } | null>(null);
+	/** "Hilfsprozess prüfen" runs (it logs in to the mailbox, which takes a moment). */
+	let probing = $state(false);
 
 	async function probe() {
-		if (connection === null) return;
+		if (connection === null || probing) return;
 		hold();
 		helper = null;
-		const outcome = await store.probeHelper(connection.id);
+		probing = true;
+		const outcome = await store.probeHelper(connection.id).finally(() => (probing = false));
 		if (outcome === null) return;
 		helper =
 			outcome.kind === 'ok'
@@ -443,8 +446,14 @@
 		{#if connection !== null}
 			{@render runBlock()}
 			<div class="row">
-				<button class="button-secondary" type="button" onclick={() => void probe()}>
-					Hilfsprozess prüfen
+				<button
+					class="button-secondary"
+					type="button"
+					aria-busy={probing}
+					aria-disabled={probing}
+					onclick={() => void probe()}
+				>
+					{probing ? 'Hilfsprozess wird geprüft …' : 'Hilfsprozess prüfen'}
 				</button>
 			</div>
 			{#if helper === 'ok'}

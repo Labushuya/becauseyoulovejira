@@ -5,7 +5,7 @@
 	// by "Aufgaben" and "Papierkorb"): it names the number of chosen rows, offers the actions of its
 	// owner and "Auswahl aufheben". Control layer, so glass (ADR-0029 section 1): it stands sticky
 	// above the table while the list scrolls. While an action runs, a progress bar replaces the
-	// buttons; the result of the last action stands below them.
+	// buttons and the bar is aria-busy; the result of the last action stands below them.
 	let {
 		countText,
 		progress = null,
@@ -37,7 +37,12 @@
 	const uid = $props.id();
 </script>
 
-<section class="bulk-bar" aria-labelledby={`${uid}-count`} bind:this={bar}>
+<section
+	class="bulk-bar"
+	aria-labelledby={`${uid}-count`}
+	aria-busy={progress ? 'true' : undefined}
+	bind:this={bar}
+>
 	<p class="count" id={`${uid}-count`} aria-live="polite">{countText}</p>
 	{#if progress}
 		<div class="progress" role="status">

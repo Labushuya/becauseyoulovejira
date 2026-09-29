@@ -225,8 +225,14 @@ input[type='radio'][aria-disabled='true'] {
 	opacity: 0.5;
 }
 
-/* Locked while a request runs (DoneToggle): the focus stays, the pointer says "wait". */
-input[type='checkbox'][aria-busy='true'] {
+/*
+ * Locked while a request runs (DoneToggle, a switch that saves): the focus stays, the pointer
+ * says "wait"; locked without a running request it says "not allowed" (rule above).
+ */
+input[type='checkbox'][aria-busy='true'],
+input[type='radio'][aria-busy='true'],
+[aria-busy='true']
+	input:is([type='checkbox'], [type='radio']):is(:disabled, [aria-disabled='true']) {
 	cursor: progress;
 }
 
@@ -312,7 +318,7 @@ a.button-subtle {
 
 .button-primary:disabled,
 .button-primary[aria-disabled='true'] {
-	cursor: progress;
+	cursor: not-allowed;
 	opacity: 0.75;
 }
 
@@ -375,8 +381,23 @@ a.button-subtle {
 .button-secondary[aria-disabled='true'],
 .button-subtle[aria-disabled='true'],
 .button-icon[aria-disabled='true'] {
-	cursor: progress;
+	cursor: not-allowed;
 	opacity: 0.75;
+}
+
+/*
+ * Locked and busy are two states (ADR-0026, addendum of 2026-09-30). A locked control (disabled,
+ * aria-disabled) shows "not allowed" above. The busy pointer only shows while something really
+ * runs, marked with aria-busy="true" on the control or on its region (dialog, form, question,
+ * selection bar); controls locked inside a busy region show it too, because they only wait.
+ * They come after the rules of locked buttons, so they win at equal specificity; checkboxes and
+ * radios keep their own rules above. no-busy-cursor.test.ts checks that no rule shows the busy
+ * pointer without aria-busy and that no rule gives it to a locked control.
+ */
+[aria-busy='true'],
+[aria-busy='true']:is(:disabled, [aria-disabled='true']),
+[aria-busy='true'] :is(:disabled, [aria-disabled='true']) {
+	cursor: progress;
 }
 
 /*

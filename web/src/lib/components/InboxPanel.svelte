@@ -236,6 +236,7 @@
 			class="button-secondary"
 			type="button"
 			disabled={store.isPending(entry.id)}
+			aria-busy={store.isPending(entry.id) ? 'true' : undefined}
 			onclick={() => run(() => store.discard(entry.id))}>Verwerfen</button
 		>
 		{#if sources !== null}
@@ -243,6 +244,7 @@
 				class="button-secondary"
 				type="button"
 				disabled={store.isPending(entry.id)}
+				aria-busy={store.isPending(entry.id) ? 'true' : undefined}
 				onclick={() => (linking = true)}>Mit Ticket verknüpfen …</button
 			>
 		{/if}
@@ -252,6 +254,7 @@
 			class="button-secondary"
 			type="button"
 			disabled={store.isPending(entry.id)}
+			aria-busy={store.isPending(entry.id) ? 'true' : undefined}
 			onclick={() => run(() => store.restore(entry.id))}>Wiederherstellen</button
 		>
 	{/if}
@@ -273,7 +276,10 @@
 				und lässt sich weder lösen noch einem anderen Ticket zuordnen.
 			</p>
 		{/if}
-		<div class="belongs-actions">
+		<div
+			class="belongs-actions"
+			aria-busy={sources !== null && sources.isPending(entry.id) ? 'true' : undefined}
+		>
 			<a class="button-secondary entry-action" href={links.path(ticketId)}>Ticket öffnen</a>
 			{#if sources !== null && ticket !== null && !ticket.primary}
 				<button
@@ -361,6 +367,7 @@
 								class="text-button"
 								type="button"
 								disabled={store.isPending(item.id)}
+								aria-busy={store.isPending(item.id) ? 'true' : undefined}
 								onclick={() => run(() => store.assign(item.id, ticket.id, ticket.key))}
 							>
 								Dem Ticket {ticket.key} zuordnen
@@ -566,5 +573,14 @@
 		border: 1px solid currentColor;
 		border-radius: var(--radius-control);
 		cursor: pointer;
+	}
+
+	.text-button:disabled {
+		cursor: not-allowed;
+	}
+
+	/* The entry is being changed (ADR-0026, addendum of 2026-09-30). */
+	.text-button[aria-busy='true'] {
+		cursor: progress;
 	}
 </style>

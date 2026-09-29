@@ -371,7 +371,13 @@
 		{#if creating}
 			<button class="button-secondary" type="button" onclick={close}>Abbrechen</button>
 		{/if}
-		<button class="button-primary" type="submit" form={ids.form} aria-disabled={busy}>
+		<button
+			class="button-primary"
+			type="submit"
+			form={ids.form}
+			aria-disabled={busy}
+			aria-busy={busy ? 'true' : undefined}
+		>
 			{busy ? 'Wird gespeichert …' : creating ? 'Anlegen' : 'Speichern'}
 		</button>
 	{/snippet}
@@ -446,6 +452,7 @@
 					class="button-secondary toggle"
 					type="button"
 					aria-disabled={toggling ? 'true' : undefined}
+					aria-busy={toggling ? 'true' : undefined}
 					onclick={() => void toggle()}
 				>
 					{current.active ? 'Pausieren' : 'Fortsetzen'}

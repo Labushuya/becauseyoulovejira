@@ -36,7 +36,11 @@
 {#if store.state === 'unavailable'}
 	<SectionMessage tone="info">{restartNeeded('Der Papierkorb ist')}</SectionMessage>
 {:else}
-	<fieldset class="retention" aria-describedby={`${uid}-note`}>
+	<fieldset
+		class="retention"
+		aria-describedby={`${uid}-note`}
+		aria-busy={store.state === 'loading' ? 'true' : undefined}
+	>
 		<legend>Papierkorb</legend>
 		<p class="note" id={`${uid}-note`}>
 			Gelöschte Tickets liegen im <a href={trashHref()}>Papierkorb</a> und lassen sich dort

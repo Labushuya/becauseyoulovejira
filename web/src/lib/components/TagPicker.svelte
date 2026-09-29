@@ -402,7 +402,7 @@
 	}
 
 	.remove[aria-disabled='true'] {
-		cursor: progress;
+		cursor: not-allowed;
 		opacity: 0.6;
 	}
 

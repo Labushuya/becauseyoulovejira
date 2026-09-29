@@ -104,7 +104,12 @@
 				bind:this={passwordInput}
 			/>
 		</div>
-		<button class="button-primary" type="submit" disabled={pending}>
+		<button
+			class="button-primary"
+			type="submit"
+			disabled={pending}
+			aria-busy={pending ? 'true' : undefined}
+		>
 			{#if pending}
 				<span class="spinner" aria-hidden="true"></span>
 				Anmeldung läuft …

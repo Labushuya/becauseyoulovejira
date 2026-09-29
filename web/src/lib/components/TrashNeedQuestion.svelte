@@ -53,6 +53,7 @@
 				class="button-primary"
 				type="button"
 				aria-disabled={busy ? 'true' : undefined}
+				aria-busy={busy ? 'true' : undefined}
 				onclick={() => {
 					if (!busy) onrestore({ project: target });
 				}}
@@ -64,6 +65,7 @@
 				class="button-primary"
 				type="button"
 				aria-disabled={busy ? 'true' : undefined}
+				aria-busy={busy ? 'true' : undefined}
 				onclick={() => {
 					if (!busy) onrestore({ detachSeries: true });
 				}}

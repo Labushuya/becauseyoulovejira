@@ -116,6 +116,7 @@
 					class="button-primary small-primary"
 					type="button"
 					disabled={busy}
+					aria-busy={busy ? 'true' : undefined}
 					onclick={() => endEdit(true)}
 				>
 					{busy ? 'Wird gespeichert …' : 'Speichern'}
@@ -200,8 +201,9 @@
 		cursor: pointer;
 	}
 
+	/* Locked while the comment is saved or deleted; the running button carries aria-busy. */
 	.small[aria-disabled='true'] {
-		cursor: progress;
+		cursor: not-allowed;
 	}
 
 	.small-primary {

@@ -155,6 +155,7 @@
 				type="button"
 				aria-haspopup="dialog"
 				aria-disabled={busy ? 'true' : undefined}
+				aria-busy={busy ? 'true' : undefined}
 				onclick={() => {
 					if (!busy) onpurge();
 				}}
@@ -165,6 +166,7 @@
 				class="button-primary"
 				type="button"
 				aria-disabled={busy ? 'true' : undefined}
+				aria-busy={busy ? 'true' : undefined}
 				onclick={() => {
 					if (!busy) onrestore({});
 				}}
