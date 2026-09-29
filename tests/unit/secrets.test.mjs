@@ -55,6 +55,13 @@ describe('secrets.js: redact', () => {
 		expect(secrets.redact(`Token ${TOKEN} abgelehnt`, [])).toBe('Token *** abgelehnt');
 	});
 
+	it('removes a Notion token from plain text (ADR-0041), not ordinary words', () => {
+		const notion = 'ntn_' + 'Erfunden0Beispiel0NurFuerTests0123456789';
+		const legacy = 'secret_' + 'Erfunden0Beispiel0NurFuerTests0123456789';
+		expect(secrets.redact(`Authorization: Bearer ${notion} / ${legacy}`, [])).toBe('Authorization: Bearer *** / ***');
+		expect(secrets.redact('secret_key und ntn_kurz bleiben', [])).toBe('secret_key und ntn_kurz bleiben');
+	});
+
 	it('replaces every listed value, also URL-encoded, but not very short ones', () => {
 		const password = 'geheim&passwort';
 		expect(secrets.redact(`login failed for ${password} (${encodeURIComponent(password)})`, [password])).toBe(

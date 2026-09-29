@@ -54,9 +54,9 @@ describe('disposable PocketBase instance', () => {
 			const pb = new PocketBase(instance.url);
 			pb.autoCancellation(false);
 			await pb.collection('_superusers').authWithPassword(instance.email, instance.password);
-			const names = [...credentialNames(), explicit, 'BYL_TELEGRAM_API_BASE'];
+			const names = [...credentialNames(), explicit, 'BYL_TELEGRAM_API_BASE', 'BYL_TEST_NOTION_PORT'];
 			expect(names).toContain(canary);
-			expect(await visibleNames(pb, names)).toEqual([explicit, 'BYL_TELEGRAM_API_BASE'].sort());
+			expect(await visibleNames(pb, names)).toEqual([explicit, 'BYL_TELEGRAM_API_BASE', 'BYL_TEST_NOTION_PORT'].sort());
 		} finally {
 			delete process.env[canary];
 			await instance?.stop();

@@ -35,7 +35,9 @@ const INSTALLER_MARKER = 'pbinstal';
 const EXIT_SIGNALS = ['SIGINT', 'SIGTERM', 'SIGBREAK', 'SIGHUP'];
 // Explicit values of every server: the Telegram Bot API points to a closed local port unless a test
 // sets its fake server, so no test instance can ever reach api.telegram.org (E4 plan, package 17).
-const SERVER_ENV = { BYL_TELEGRAM_API_BASE: 'http://127.0.0.1:9' };
+// The same for the Notion API (ADR-0041): every test instance runs in the test mode of
+// tests/fixtures/pb_hooks/test-mode.pb.js, where this port replaces api.notion.com.
+const SERVER_ENV = { BYL_TELEGRAM_API_BASE: 'http://127.0.0.1:9', BYL_TEST_NOTION_PORT: '9' };
 
 /**
  * Starts a disposable PocketBase instance.
