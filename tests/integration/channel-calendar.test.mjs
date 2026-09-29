@@ -122,6 +122,22 @@ async function logText() {
 	return JSON.stringify(await superuser.send('/api/logs', { query: { perPage: 500 } }));
 }
 
+/** Number of log entries whose message contains `text`, over all entries (not only one page). */
+async function logCount(text) {
+	const page = await superuser.send('/api/logs', {
+		query: { filter: superuser.filter('message ~ {:text}', { text }), perPage: 1 }
+	});
+	return page.totalItems;
+}
+
+// PocketBase 0.40.4 writes its logs in batches: 3 s after the last new entry, or at 200 entries
+// (initLogger resets its ticker with every entry). Any other activity of the instance postpones the
+// write, above all a run of the cron job byl-calendar on its schedule (*/15, UTC) while this file
+// runs: it logs the failing connections of the tests above one after the other (Linux CI
+// 2026-09-29, run 36506768267, 01:15:00 within the last 5 s of the test). A log entry is therefore
+// awaited as long as such a run can take plus the 3 s.
+const LOG_WRITE_TIMEOUT_MS = 30_000;
+
 beforeAll(async () => {
 	await new Promise((resolve) => fake.listen(0, '127.0.0.1', resolve));
 	const base = `http://127.0.0.1:${fake.address().port}/${SECRET}`;
@@ -352,9 +368,9 @@ describe('Google Calendar: cron job', () => {
 		expect(untouched).toMatchObject({ last_run_at: '', last_error: '' });
 		expect(await runNow(who, unset.id)).toMatchObject({ status: 'missing', missing: ['BYL_TEST_UNSET_CALENDAR'] });
 		await expect
-			.poll(async () => (await logText()).split('BYL_TEST_UNSET_CALENDAR fehlt').length - 1, { timeout: 5_000 })
+			.poll(() => logCount('BYL_TEST_UNSET_CALENDAR fehlt'), { timeout: LOG_WRITE_TIMEOUT_MS, interval: 250 })
 			.toBe(1);
-	});
+	}, 60_000);
 
 	it('never writes the secret address to the log or the console', async () => {
 		const logs = await logText();

@@ -7,7 +7,7 @@ import { fireEvent, render, screen } from '@testing-library/svelte';
 import { createRawSnippet, tick } from 'svelte';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { SessionFailure, SessionStatus } from '$lib/auth.svelte';
-import { TAB_KEEP_KEY, type TabMessage } from '$lib/tab-presence';
+import { DUPLICATE_PROBE_MS, TAB_KEEP_KEY, type TabMessage } from '$lib/tab-presence';
 import { useOverlayStubs } from '$lib/test/overlay-stubs';
 import Layout from './+layout.svelte';
 
@@ -137,6 +137,9 @@ describe('session notice', () => {
 	});
 });
 
+// With fake timers: a message of a tab and the window of the check are timers, so the order is fixed.
+// With real timers, the polling of vi.waitFor could see the notice after "here" had arrived but
+// before the timer that carries "attention" to the other tab had run.
 describe('second tab of the same browser (ADR-0035 section 6)', () => {
 	useOverlayStubs();
 
@@ -175,13 +178,18 @@ describe('second tab of the same browser (ADR-0035 section 6)', () => {
 			received.push(type);
 			if (type === 'hello') channel.postMessage({ type: 'here' });
 		});
-		return received;
+		return { channel, received };
 	}
+
+	/** Runs the window of the check and every message it causes (the countdown of 5 s not yet). */
+	const settle = () => vi.advanceTimersByTimeAsync(DUPLICATE_PROBE_MS);
 
 	const notice = () =>
 		screen.queryByRole('dialog', { hidden: true, name: 'Die App ist schon offen' });
 
 	beforeEach(() => {
+		// Only the timers: a faked performance would hide the spy on getEntriesByType.
+		vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval'] });
 		FakeChannel.open.clear();
 		sessionStorage.removeItem(TAB_KEEP_KEY);
 		vi.stubGlobal('BroadcastChannel', FakeChannel);
@@ -191,39 +199,45 @@ describe('second tab of the same browser (ADR-0035 section 6)', () => {
 	});
 
 	afterEach(() => {
+		vi.useRealTimers();
 		vi.restoreAllMocks();
 		sessionStorage.removeItem(TAB_KEEP_KEY);
 	});
 
 	it('asks the open tab for its hint and offers to close this one', async () => {
-		const received = openTab();
+		const { received } = openTab();
 		await renderLayout('/', { status: 'ready', isLoggedIn: true });
+		await settle();
 
-		await vi.waitFor(() => expect(notice()).not.toBeNull());
+		expect(notice()).not.toBeNull();
 		expect(received).toEqual(['hello', 'attention']);
 		expect(screen.getByText(CONTENT)).toBeTruthy();
 	});
 
 	it('keeps this tab for the session with "Hier weiterarbeiten" and answers other tabs then', async () => {
-		openTab();
+		const other = openTab();
 		await renderLayout('/login', { status: 'ready', isLoggedIn: false });
-		await vi.waitFor(() => expect(notice()).not.toBeNull());
+		await settle();
+		expect(notice()).not.toBeNull();
 
 		await fireEvent.click(screen.getByRole('button', { name: 'Hier weiterarbeiten' }));
 		await tick();
 
 		expect(notice()).toBeNull();
 		expect(sessionStorage.getItem(TAB_KEEP_KEY)).toBe('1');
+		// The other tab is closed now, so only this one can answer.
+		other.channel.close();
 		const later = new FakeChannel('byl-tabs');
 		const answers: string[] = [];
 		later.addEventListener('message', (event) => answers.push((event.data as TabMessage).type));
 		later.postMessage({ type: 'hello' });
-		await vi.waitFor(() => expect(answers).toContain('here'));
+		await settle();
+		expect(answers).toEqual(['here']);
 	});
 
 	it('stays without notice when no other tab answers', async () => {
 		await renderLayout('/', { status: 'ready', isLoggedIn: true });
-		await new Promise((resolve) => setTimeout(resolve, 400));
+		await settle();
 		expect(notice()).toBeNull();
 	});
 
@@ -231,9 +245,9 @@ describe('second tab of the same browser (ADR-0035 section 6)', () => {
 		vi.mocked(performance.getEntriesByType).mockReturnValue([
 			{ type: 'reload' } as unknown as PerformanceEntry
 		]);
-		const received = openTab();
+		const { received } = openTab();
 		await renderLayout('/', { status: 'ready', isLoggedIn: true });
-		await new Promise((resolve) => setTimeout(resolve, 400));
+		await settle();
 		expect(received).toEqual([]);
 		expect(notice()).toBeNull();
 	});
