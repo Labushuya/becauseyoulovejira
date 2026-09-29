@@ -15,6 +15,7 @@ import type { Ticket, TicketPatch, TicketSummary } from '$lib/domain/ticket';
 import { CatalogStore, type CatalogData } from '$lib/stores/catalog.svelte';
 import { TicketOpenModeStore } from '$lib/stores/open-mode.svelte';
 import type { LiveSource, RecordChange } from '$lib/stores/realtime';
+import { getRecurrenceStore } from '$lib/stores/recurrence.svelte';
 import { TicketActivityStore, type TicketActivityData } from '$lib/stores/ticket-activity.svelte';
 import {
 	TicketDetailStore,
@@ -1163,6 +1164,48 @@ describe('ticket route: unsaved text', () => {
 		expect(dialog?.open).toBe(false);
 		expect(mocks.goto).not.toHaveBeenCalled();
 		expect(store.hasUnsavedInput).toBe(true);
+	});
+
+	// Plan WV: the template of the series edited inline at the ticket counts as unsaved input.
+	it('asks before a changed template of the series is lost, not while it is unchanged', async () => {
+		const { guard } = await renderRoute();
+		const rules = getRecurrenceStore();
+		rules.upsert({
+			id: 'rule00000000001',
+			title: 'Steuererklärung',
+			description: '',
+			projectId: null,
+			tagIds: [],
+			priority: 'high',
+			mode: 'calendar',
+			freq: 'yearly',
+			interval: 1,
+			weekdays: [],
+			monthDay: null,
+			anchor: '2026-05-31',
+			leadDays: 30,
+			nextDue: '2027-05-31',
+			lastGeneratedAt: null,
+			active: true,
+			lastHint: '',
+			created: '2026-09-01 10:00:00.000Z',
+			updated: '2026-09-01 10:00:00.000Z'
+		});
+		rules.editTemplate('rule00000000001');
+		const unchanged = navigation('/?erledigte=1', '/(app)/(tickets)');
+		guard(unchanged.navigation);
+		expect(unchanged.cancel).not.toHaveBeenCalled();
+
+		const draft = rules.templateDraft;
+		if (draft === null) throw new Error('No draft');
+		rules.setTemplateDraft({ ...draft.template, priority: 'low' }, '');
+		const changed = navigation('/?erledigte=1', '/(app)/(tickets)');
+		guard(changed.navigation);
+		expect(changed.cancel).toHaveBeenCalledOnce();
+		expect(await question()).not.toBeNull();
+		await answer('Weiter bearbeiten');
+		expect(rules.templateDirty).toBe(true);
+		rules.cancelTemplate();
 	});
 
 	it('leaves after "Verwerfen" and does not ask again on the way', async () => {

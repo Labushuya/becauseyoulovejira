@@ -23,6 +23,7 @@ import {
 import { toggleTask } from '$lib/markdown';
 import { deletedWithSourcesText, type SourceHandling } from '$lib/domain/sources';
 import { isCalendarDate } from '$lib/domain/berlin-date';
+import { NO_SERIES, type SeriesChangeSink } from '$lib/domain/series-template';
 import { isPriority, isStatus, type Status } from '$lib/domain/status';
 import { openBlocking, type CompletionChoice } from '$lib/domain/subtasks';
 import type {
@@ -196,6 +197,8 @@ export class TicketDetailStore {
 	readonly #session: SessionGuard;
 	readonly #list: TicketListSync;
 	readonly #trash: TrashUndo | null;
+	/** Offers to take a change of an open ticket of a series over into its template (plan WV). */
+	readonly #series: SeriesChangeSink;
 
 	readonly #drafts = new SvelteMap<EditableField, string>();
 	readonly #saving = new SvelteSet<FieldKey>();
@@ -235,12 +238,14 @@ export class TicketDetailStore {
 		data: TicketDetailData,
 		session: SessionGuard,
 		list: TicketListSync,
-		trash: TrashUndo | null = null
+		trash: TrashUndo | null = null,
+		series: SeriesChangeSink = NO_SERIES
 	) {
 		this.#data = data;
 		this.#session = session;
 		this.#list = list;
 		this.#trash = trash;
+		this.#series = series;
 	}
 
 	get id(): string | null {
@@ -654,6 +659,9 @@ export class TicketDetailStore {
 				this.upsert(saved);
 				if (this.#drafts.get(field) === draft) this.cancel(field);
 			}
+			// Title, description, priority or project of an open ticket of a series: only this
+			// ticket changed; the flag offers the same for the next ones (status and due date never).
+			this.#series.offerTemplate([{ before: ticket, after: saved }]);
 			return true;
 		} catch (error) {
 			const failure = toDataError(error);
@@ -699,7 +707,8 @@ export class TicketDetailStore {
 	 * Ticks or unticks task `index` of the description in the view (ADR-0032 section 6); not
 	 * while the description is edited or saved. The change goes with `expected_updated`. If the
 	 * ticket changed meanwhile but its description is the same, it is sent once more on the new
-	 * version; otherwise the result says that the description changed.
+	 * version; otherwise the result says that the description changed. Ticking is progress of this
+	 * ticket like its status, so a ticket of a series offers nothing for its template (plan WV).
 	 */
 	async toggleTask(index: number, checked: boolean): Promise<TaskResult> {
 		const ticket = this.#ticket;
@@ -871,6 +880,7 @@ export class TicketDetailStore {
 			const saved = await this.#data.update(ticket.id, { tags });
 			this.#list.upsert(saved);
 			if (saved.id === this.#id) this.upsert(saved);
+			this.#series.offerTemplate([{ before: ticket, after: saved }]);
 			return true;
 		} catch (error) {
 			const failure = toDataError(error);

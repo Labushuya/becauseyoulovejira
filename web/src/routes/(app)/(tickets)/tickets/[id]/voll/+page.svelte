@@ -200,6 +200,7 @@
 				<RecurrenceSummary
 					{ticket}
 					store={rules}
+					{catalog}
 					today={tickets.today}
 					history={comments.history}
 					openTickets={ticket.recurrenceId

@@ -57,8 +57,10 @@
 	$effect(() => {
 		const current = id;
 		untrack(() => {
-			// Another ticket in the same panel: its drafts are new, so leaving asks again.
+			// Another ticket in the same panel: its drafts are new, so leaving asks again. The draft
+			// of a template belongs to the ticket it was opened at (plan WV).
 			discarding = false;
+			rules.cancelTemplate();
 			detail.open(current);
 			comments.open(current);
 		});
@@ -84,6 +86,7 @@
 		detail.reset();
 		comments.reset();
 		sourceStore.reset();
+		rules.cancelTemplate();
 	});
 
 	/** Set once the ticket was deleted or its drafts discarded here: leaving needs no question. */
@@ -92,8 +95,8 @@
 	let leaving = $state<{ url: URL; delta: number | undefined } | null>(null);
 
 	// Leaving the panel within the app (Schließen, Escape, another ticket, "Neues Ticket", browser
-	// back) asks first while a description, a comment or a name in the tag picker (E3 plan, T-14) is
-	// not saved. beforeNavigate cannot wait for a dialog (ADR-0025 section 4): the navigation is
+	// back) asks first while a description, a comment, a name in the tag picker (E3 plan, T-14) or
+	// the template of the series edited here (plan WV) is not saved. beforeNavigate cannot wait for a dialog (ADR-0025 section 4): the navigation is
 	// cancelled (SvelteKit restores the history position for back and forward), the confirmation
 	// opens (in the full view the inline question instead), and "Verwerfen" starts it again. Logout and session end go to the login page and are
 	// not held up; closing the browser tab is not covered.
@@ -102,7 +105,8 @@
 		if (discarding || navigation.type === 'leave' || to === null) return;
 		if (!to.route.id?.startsWith('/(app)/') || to.url.pathname === page.url.pathname) return;
 		if (TICKET_ROUTES.includes(to.route.id) && to.params?.id === id) return;
-		if (detail.state !== 'ready' || !(detail.hasUnsavedInput || comments.dirty)) return;
+		if (detail.state !== 'ready') return;
+		if (!(detail.hasUnsavedInput || comments.dirty || rules.templateDirty)) return;
 		navigation.cancel();
 		leaving = {
 			url: to.url,
@@ -197,6 +201,7 @@
 			<RecurrenceSummary
 				{ticket}
 				store={rules}
+				{catalog}
 				today={tickets.today}
 				history={comments.history}
 				openTickets={ticket.recurrenceId ? openInstancesOf(tickets.open, ticket.recurrenceId) : []}

@@ -20,32 +20,29 @@
 		type RecurrenceFormValues,
 		type RecurrenceRule
 	} from '$lib/domain/recurrence-rule';
-	import { isPriority, type Priority } from '$lib/domain/status';
 	import {
-		DEFAULT_PRIORITY,
-		DESCRIPTION_MAX_LENGTH,
-		TITLE_MAX_LENGTH,
-		type ProjectRef,
-		type TagRef
-	} from '$lib/domain/ticket';
+		DEFAULT_TEMPLATE_STATUS,
+		templateChanges,
+		templateOf,
+		type RuleTemplate
+	} from '$lib/domain/series-template';
+	import { DEFAULT_PRIORITY, type ProjectRef, type TagRef } from '$lib/domain/ticket';
 	import type { EditResult } from '$lib/stores/catalog-editor';
 	import type { EnsureTagResult } from '$lib/stores/catalog.svelte';
 	import { helpHref } from '$lib/settings-sections';
 	import ErrorIcon from './ErrorIcon.svelte';
 	import Lozenge from './guidance/Lozenge.svelte';
 	import SectionMessage from './guidance/SectionMessage.svelte';
-	import RichTextEditor from './RichTextEditor.svelte';
 	import ConfirmDialog from './overlay/ConfirmDialog.svelte';
 	import Drawer from './overlay/Drawer.svelte';
-	import PrioritySelect from './PrioritySelect.svelte';
-	import ProjectSelect from './ProjectSelect.svelte';
 	import RecurrenceBacklogQuestion from './RecurrenceBacklogQuestion.svelte';
 	import RecurrenceForm from './RecurrenceForm.svelte';
-	import TagPicker from './TagPicker.svelte';
+	import RecurrenceTemplateFields from './RecurrenceTemplateFields.svelte';
 
 	// Panel of a rule (E5 plan, T-6 and package 5) on the side panel building block, like the
 	// project panel (UI-8): "Neue Regel" under /wiederholungen/neu and a rule under
-	// /wiederholungen/<id>. The template (title, priority, project, tags, description) and the
+	// /wiederholungen/<id>. The template (title, priority, "Status beim Anlegen" since plan WV,
+	// project, tags, description; the same fields as the inline editor at the ticket) and the
 	// rhythm (RecurrenceForm with the preview "Nächste Termine") in one form. A rule also shows its
 	// state with the next ticket, its open ticket, the neutral hint of the server and "Pausieren" or
 	// "Fortsetzen"; "Löschen …" in the header asks "Regel löschen?" (its tickets stay, ADR-0023
@@ -62,6 +59,7 @@
 		projectById,
 		openTickets = [],
 		eachAvailable = false,
+		statusAvailable = false,
 		ticketHrefOf,
 		oncreatetag,
 		onsave,
@@ -85,6 +83,8 @@
 		openTickets?: readonly OpenInstance[];
 		/** Offer "Jeden Termin einzeln anlegen" (plan OR-5, RecurrenceStore.eachReady). */
 		eachAvailable?: boolean;
+		/** Offer "Status beim Anlegen" and send it (plan WV, RecurrenceStore.statusReady). */
+		statusAvailable?: boolean;
 		ticketHrefOf: (ticketId: string) => ResolvedPathname;
 		/** Existing or new tag for a typed name (E3 plan, T-14). */
 		oncreatetag: (name: string) => Promise<EnsureTagResult>;
@@ -104,41 +104,39 @@
 		onclose: () => void;
 	} = $props();
 
-	interface Template {
-		title: string;
-		description: string;
-		/** Project ID, '' for none. */
-		project: string;
-		tagIds: string[];
-		priority: Priority;
-	}
+	/** Fields of the template, by the names of the server. */
+	type TemplateErrorField =
+		'title' | 'description' | 'project' | 'tags' | 'priority' | 'initial_status';
+	const TEMPLATE_ERROR_FIELDS: readonly string[] = [
+		'title',
+		'description',
+		'project',
+		'tags',
+		'priority',
+		'initial_status'
+	];
 
 	const uid = $props.id();
 	const ids = {
 		heading: `${uid}-heading`,
 		form: `${uid}-form`,
-		title: `${uid}-title`,
-		titleError: `${uid}-title-error`,
-		priority: `${uid}-priority`,
-		project: `${uid}-project`,
-		projectHint: `${uid}-project-hint`,
-		projectError: `${uid}-project-error`,
-		tags: `${uid}-tags`,
-		tagsError: `${uid}-tags-error`,
-		description: `${uid}-description-error`,
 		template: `${uid}-template`,
 		rhythm: `${uid}-rhythm`,
 		state: `${uid}-state`
 	};
 
-	function templateOf(source: RecurrenceRule | null): Template {
-		return {
-			title: source?.title ?? '',
-			description: source?.description ?? '',
-			project: source?.projectId ?? '',
-			tagIds: [...(source?.tagIds ?? [])],
-			priority: source?.priority ?? DEFAULT_PRIORITY
-		};
+	/** The template of a rule, or the empty one of "Neue Regel". */
+	function initialTemplateOf(source: RecurrenceRule | null): RuleTemplate {
+		return source === null
+			? {
+					title: '',
+					description: '',
+					projectId: null,
+					tagIds: [],
+					priority: DEFAULT_PRIORITY,
+					initialStatus: DEFAULT_TEMPLATE_STATUS
+				}
+			: templateOf(source);
 	}
 
 	function copyValues(values: RecurrenceFormValues): RecurrenceFormValues {
@@ -148,24 +146,19 @@
 	// The route keys the panel by rule, so the values are read once; later changes of the rule
 	// (realtime, "Fortsetzen") show in the state block, not in fields the user may be editing.
 	const creating = untrack(() => rule === null);
-	const initialTemplate = untrack(() => templateOf(rule));
+	const initialTemplate = untrack(() => initialTemplateOf(rule));
 	const initialValues = untrack(() =>
 		rule === null ? defaultFormValues(null, today) : formValuesOf(rule, today)
 	);
 
-	let title = $state(initialTemplate.title);
-	let description = $state(initialTemplate.description);
-	let project = $state(initialTemplate.project);
-	let tagIds = $state<string[]>([...initialTemplate.tagIds]);
-	let priority = $state<Priority>(initialTemplate.priority);
+	let template = $state<RuleTemplate>({ ...initialTemplate, tagIds: [...initialTemplate.tagIds] });
 	let values = $state<RecurrenceFormValues>(copyValues(initialValues));
 	let tagText = $state('');
 	/** Values as last saved; unsaved input is measured against them. */
 	let saved = $state({ template: initialTemplate, values: copyValues(initialValues) });
 
-	let fieldErrors = $state<Partial<Record<keyof Template | 'tags', string>>>({});
+	let fieldErrors = $state<Partial<Record<TemplateErrorField, string>>>({});
 	let rhythmErrors = $state<Partial<Record<RecurrenceFormField, string>>>({});
-	let tagError = $state<string | null>(null);
 	let message = $state<string | null>(null);
 	let stateError = $state<string | null>(null);
 	let busy = $state(false);
@@ -179,22 +172,12 @@
 	let titleInput = $state<HTMLInputElement>();
 	let form = $state<HTMLFormElement>();
 
-	const chosenTags = $derived(
-		tagIds.flatMap((tagId) => {
-			const tag = tags.find((entry) => entry.id === tagId);
-			return tag === undefined ? [] : [tag];
-		})
-	);
 	/** The project of the template, shown even if it is archived. */
-	const currentProject = $derived(project === '' ? null : projectById(project));
-	const tagsError = $derived(tagError ?? fieldErrors.tags ?? null);
-	const templateNow = $derived<Template>({ title, description, project, tagIds, priority });
+	const currentProject = $derived(
+		template.projectId === null ? null : projectById(template.projectId)
+	);
 	const templateChanged = $derived(
-		templateNow.title !== saved.template.title ||
-			templateNow.description !== saved.template.description ||
-			templateNow.project !== saved.template.project ||
-			templateNow.tagIds.join(',') !== saved.template.tagIds.join(',') ||
-			templateNow.priority !== saved.template.priority
+		Object.keys(templateChanges(saved.template, template)).length > 0
 	);
 	const rhythmChanged = $derived(!sameRhythm(values, saved.values));
 	const dirty = $derived(templateChanged || rhythmChanged || tagText.trim() !== '');
@@ -214,25 +197,19 @@
 	/** Field errors of the server: rhythm fields to the form, template fields to theirs. */
 	function fromServer(fields: Readonly<Record<string, string>>): void {
 		const rhythm: Partial<Record<RecurrenceFormField, string>> = {};
-		const template: Partial<Record<keyof Template | 'tags', string>> = {};
+		const templateErrors: Partial<Record<TemplateErrorField, string>> = {};
 		const others: string[] = [];
 		for (const [field, text] of Object.entries(fields)) {
 			const formField = (Object.keys(SERVER_FIELDS) as RecurrenceFormField[]).find(
 				(candidate) => SERVER_FIELDS[candidate] === field
 			);
 			if (formField !== undefined) rhythm[formField] = text;
-			else if (
-				field === 'title' ||
-				field === 'description' ||
-				field === 'project' ||
-				field === 'tags' ||
-				field === 'priority'
-			) {
-				template[field] = text;
+			else if (TEMPLATE_ERROR_FIELDS.includes(field)) {
+				templateErrors[field as TemplateErrorField] = text;
 			} else others.push(text);
 		}
 		rhythmErrors = rhythm;
-		fieldErrors = template;
+		fieldErrors = templateErrors;
 		if (others.length > 0) message = others[0] ?? null;
 	}
 
@@ -242,35 +219,41 @@
 	}
 
 	function draftOf(withRhythm: boolean): Partial<RuleDraft> {
-		const template = {
-			title: title.trim(),
-			description,
-			project: project === '' ? null : project,
+		const draft: Partial<RuleDraft> = {
+			title: template.title.trim(),
+			description: template.description,
+			project: template.projectId,
 			// Only tags the catalog knows: a tag may have been deleted since.
-			tags: chosenTags.map((tag) => tag.id),
-			priority
+			tags: template.tagIds.filter((tagId) => tags.some((tag) => tag.id === tagId)),
+			priority: template.priority,
+			// Only a server after the migration knows the field (plan WV).
+			...(statusAvailable && { initial_status: template.initialStatus })
 		};
-		return withRhythm ? { ...template, ...formParams(values) } : template;
+		return withRhythm ? { ...draft, ...formParams(values) } : draft;
 	}
 
 	async function save(event?: Event) {
 		event?.preventDefault();
 		if (busy) return;
 		message = null;
-		fieldErrors = title.trim() === '' ? { title: 'Bitte einen Titel eingeben.' } : {};
+		fieldErrors = template.title.trim() === '' ? { title: 'Bitte einen Titel eingeben.' } : {};
 		rhythmErrors = formErrors(values);
 		if (Object.keys(fieldErrors).length > 0 || Object.keys(rhythmErrors).length > 0) {
 			await focusFirstError();
 			return;
 		}
 		busy = true;
-		const sentTemplate: Template = { ...templateNow, title: title.trim(), tagIds: [...tagIds] };
+		const sentTemplate: RuleTemplate = {
+			...template,
+			title: template.title.trim(),
+			tagIds: [...template.tagIds]
+		};
 		const sentValues = copyValues(values);
 		try {
 			const result = await onsave(draftOf(creating || rhythmChanged));
 			if (result.ok) {
 				saved = { template: sentTemplate, values: sentValues };
-				title = sentTemplate.title;
+				template = { ...template, title: sentTemplate.title };
 				onsaved?.(result.value);
 				return;
 			}
@@ -309,21 +292,6 @@
 		} finally {
 			toggling = false;
 		}
-	}
-
-	function addTag(tagId: string): boolean {
-		if (!tagIds.includes(tagId)) tagIds = [...tagIds, tagId];
-		tagError = null;
-		return true;
-	}
-
-	async function createTag(name: string): Promise<boolean> {
-		const result = await oncreatetag(name);
-		if (!result.ok) {
-			tagError = result.message;
-			return false;
-		}
-		return addTag(result.tag.id);
 	}
 
 	function askDelete() {
@@ -460,97 +428,22 @@
 	<form id={ids.form} class="form" novalidate onsubmit={save} bind:this={form}>
 		<section class="group" aria-labelledby={ids.template}>
 			<h3 id={ids.template}>Vorlage</h3>
-			<div class="field">
-				<label for={ids.title}>Titel</label>
-				<input
-					id={ids.title}
-					type="text"
-					required
-					aria-required="true"
-					autocomplete="off"
-					maxlength={TITLE_MAX_LENGTH}
-					aria-invalid={fieldErrors.title ? 'true' : undefined}
-					aria-describedby={fieldErrors.title ? ids.titleError : undefined}
-					bind:value={title}
-					bind:this={titleInput}
-				/>
-				{#if fieldErrors.title}
-					<p class="field-error" id={ids.titleError}>
-						<ErrorIcon /><span>{fieldErrors.title}</span>
-					</p>
-				{/if}
-			</div>
-
-			<div class="field">
-				<label for={ids.priority}>Priorität</label>
-				<PrioritySelect
-					id={ids.priority}
-					value={priority}
-					error={fieldErrors.priority ?? null}
-					errorId={`${ids.priority}-error`}
-					onchoose={(value) => {
-						if (isPriority(value)) priority = value;
-					}}
-				/>
-			</div>
-
-			<div class="field">
-				<label for={ids.project}>Projekt</label>
-				<ProjectSelect
-					id={ids.project}
-					value={project}
-					{projects}
-					current={currentProject}
-					error={fieldErrors.project ?? null}
-					errorId={ids.projectError}
-					hintId={ids.projectHint}
-					onchoose={(value) => {
-						project = value;
-						stateError = null;
-						fieldErrors = { ...fieldErrors, project: undefined };
-					}}
-				/>
-				{#if fieldErrors.project}
-					<p class="field-error" id={ids.projectError}>
-						<ErrorIcon /><span>{fieldErrors.project}</span>
-					</p>
-				{/if}
-			</div>
-
-			<div class="field">
-				<label for={ids.tags}>Tags</label>
-				<TagPicker
-					id={ids.tags}
-					selected={chosenTags}
-					{tags}
-					bind:text={tagText}
-					{busy}
-					error={tagsError}
-					errorId={ids.tagsError}
-					onadd={addTag}
-					onremove={(tagId) => {
-						tagIds = tagIds.filter((entry) => entry !== tagId);
-						return true;
-					}}
-					oncreate={createTag}
-				/>
-				{#if tagsError}
-					<p class="field-error" id={ids.tagsError}><ErrorIcon /><span>{tagsError}</span></p>
-				{/if}
-			</div>
-
-			<RichTextEditor
-				label="Beschreibung"
-				maxlength={DESCRIPTION_MAX_LENGTH}
-				bind:value={description}
-				invalid={fieldErrors.description !== undefined}
-				describedby={fieldErrors.description ? ids.description : undefined}
+			<RecurrenceTemplateFields
+				bind:values={template}
+				bind:tagText
+				bind:titleInput
+				errors={fieldErrors}
+				{projects}
+				{tags}
+				{currentProject}
+				{busy}
+				{statusAvailable}
+				{oncreatetag}
+				onprojectchosen={() => {
+					stateError = null;
+					fieldErrors = { ...fieldErrors, project: undefined };
+				}}
 			/>
-			{#if fieldErrors.description}
-				<p class="field-error" id={ids.description}>
-					<ErrorIcon /><span>{fieldErrors.description}</span>
-				</p>
-			{/if}
 			<p class="hint">
 				{creating
 					? 'Jedes Ticket der Regel bekommt diese Vorlage.'
@@ -722,30 +615,12 @@
 		min-width: 0;
 	}
 
-	.field {
-		display: grid;
-		gap: 0.375rem;
-		align-content: start;
-		min-width: 0;
-	}
-
-	label {
-		font-size: var(--font-size-control);
-		font-weight: 500;
-		color: var(--color-text-muted);
-	}
-
-	input,
 	.form :global(select) {
 		max-width: 100%;
 		padding: 0.375rem 0.5rem;
 		background: var(--color-surface);
 		border: 1px solid var(--color-text-muted);
 		border-radius: var(--radius-control);
-	}
-
-	input[type='text'] {
-		width: 100%;
 	}
 
 	.hint {

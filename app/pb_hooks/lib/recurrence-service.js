@@ -8,7 +8,8 @@
 // start (E4 plan section 12). Until then `recurrence_rules` has no `freq`, and every function
 // here leaves rules and tickets as they were in E4 (schemaReady). The same holds for "Jeden
 // Termin einzeln anlegen" (plan OR-5): before its migration (eachReady) every rule keeps one open
-// instance.
+// instance; and for "Status beim Anlegen" (plan WV): before its migration (initialStatusReady)
+// every new ticket starts "open".
 'use strict';
 
 var recurrence = require(__hooks + '/lib/recurrence.js');
@@ -56,6 +57,16 @@ function eachReady(app) {
       !!app.findCachedCollectionByNameOrId(RULES).fields.getByName('each_occurrence') &&
       !!app.findCachedCollectionByNameOrId(TICKETS).fields.getByName('occurrence')
     );
+  } catch (err) {
+    return false;
+  }
+}
+
+// Whether the migration of "Status beim Anlegen" ran (plan WV, ADR-0022 addendum 8). Before it
+// every new ticket of a rule starts "open" as in E5: getString gives '' without the field.
+function initialStatusReady(app) {
+  try {
+    return !!app.findCachedCollectionByNameOrId(RULES).fields.getByName('initial_status');
   } catch (err) {
     return false;
   }
@@ -264,6 +275,23 @@ function checkEach(record, values) {
   }
 }
 
+// "Status beim Anlegen" (ADR-0022 addendum 8): every status but done, refused with the German text
+// before the select field answers; an empty value is stored as "open", the default. Nothing before
+// the migration (the field does not exist, and a sent value is dropped by PocketBase).
+function checkInitialStatus(txApp, record) {
+  if (!initialStatusReady(txApp)) {
+    return;
+  }
+  var value = record.getString('initial_status');
+  var code = rules.initialStatusViolation(value);
+  if (code !== '') {
+    throw fail('initial_status', code);
+  }
+  if (value === '') {
+    record.set('initial_status', rules.DEFAULT_INITIAL_STATUS);
+  }
+}
+
 // --- Model hooks -----------------------------------------------------------------------------
 
 /**
@@ -309,6 +337,7 @@ function prepareCreate(txApp, record, nowMs) {
   var values = checkedParams(raw);
   writeParams(record, values);
   checkEach(record, values);
+  checkInitialStatus(txApp, record);
   ticketService.checkRelations(txApp, record, scope, '');
 
   var dates = rules.createDates(
@@ -362,6 +391,7 @@ function prepareUpdate(txApp, record, nowMs) {
   var values = checkedParams(raw);
   writeParams(record, values);
   checkEach(record, values);
+  checkInitialStatus(txApp, record);
   var project = ticketService.checkRelations(txApp, record, scope, original.getString('project'));
 
   var beforeRaw = paramsOf(original);
@@ -436,7 +466,9 @@ function errorText(err) {
   return err && err.message ? err.message : String(err);
 }
 
-// The new ticket of a rule: template, status open, the due date, the rule and the owner. Key,
+// The new ticket of a rule: template, its "Status beim Anlegen" (open when empty, i.e. before the
+// migration 1790202500 or for rules from before it; ADR-0022 addendum 8), the due date, the rule
+// and the owner. Every such status is "not done", so the ticket is an open instance. Key,
 // scope, history ("created" without a user) and the "new" mark come from the ticket hooks, which
 // run inside the same transaction (the nested inTransaction reuses it).
 // created and updated get one timestamp: PocketBase reads the clock once per autodate field, so
@@ -455,7 +487,7 @@ function newInstance(txApp, rule, due, occurrence) {
   ticket.set('project', rule.getString('project'));
   ticket.set('tags', listOf(rule.getStringSlice('tags')));
   ticket.set('priority', rule.getString('priority') || 'medium');
-  ticket.set('status', 'open');
+  ticket.set('status', rules.initialStatusOf(rule.getString('initial_status')));
   ticket.set('due', rules.storedDateOf(due));
   ticket.set('blocks_parent', true);
   ticket.set('recurrence', rule.id);
@@ -815,6 +847,7 @@ module.exports = {
   SYSTEM_KEY: SYSTEM_KEY,
   schemaReady: schemaReady,
   eachReady: eachReady,
+  initialStatusReady: initialStatusReady,
   materialize: materialize,
   runDue: runDue,
   runStartup: runStartup,
