@@ -116,7 +116,7 @@ $RestartReasonText = @{
     migrations  = 'neue oder geänderte Migration'
     hooks       = 'geänderte Server-Logik (pb_hooks)'
     port        = "anderer Port eingestellt ($BylConfigName)"
-    environment = 'BYL_*-Variable angelegt oder entfernt'
+    environment = 'BYL_*-Variable angelegt, geändert oder entfernt'
     mailHelper  = 'neuer Mail-Hilfsprozess (byl-mail.exe)'
 }
 
@@ -168,12 +168,55 @@ function Write-ControlLog {
     }
 }
 
-function Get-EnvironmentName {
-    # Names of the BYL_* variables a start hands to PocketBase, fresh from the user and the machine
-    # scope (Get-BylVariableName); never values.
+function Get-EnvironmentFingerprint {
+    # Get-EnvironmentHash of the BYL_* variables a start hands to PocketBase (names from the user and
+    # the machine scope, the value of the user scope first, as Sync-BylEnvironment), with $Key.
+    # The values exist only in memory here; nothing is printed or stored.
+    param([Parameter(Mandatory = $true)][byte[]]$Key)
+
     $user = [Environment]::GetEnvironmentVariables('User')
     $machine = [Environment]::GetEnvironmentVariables('Machine')
-    return Get-BylVariableName -UserNames @($user.Keys) -MachineNames @($machine.Keys)
+    $entries = foreach ($name in (Get-BylVariableName -UserNames @($user.Keys) -MachineNames @($machine.Keys))) {
+        $value = if ($user.Contains($name)) { [string]$user[$name] } else { [string]$machine[$name] }
+        "$name=$value"
+    }
+    return Get-EnvironmentHash -Entries @($entries) -Key $Key
+}
+
+function Protect-EnvironmentKey {
+    # The key of the environment hash, encrypted for this Windows account (DPAPI), as Base64.
+    param([Parameter(Mandatory = $true)][byte[]]$Key)
+
+    Add-Type -AssemblyName System.Security
+    return [Convert]::ToBase64String([System.Security.Cryptography.ProtectedData]::Protect($Key, $null, 'CurrentUser'))
+}
+
+function Unprotect-EnvironmentKey {
+    # The key from the state file; $null if it is missing or another account or machine wrote it
+    # (then the environment counts as changed).
+    param([AllowNull()][AllowEmptyString()][string]$Protected)
+
+    if ([string]::IsNullOrEmpty($Protected)) { return $null }
+    try {
+        Add-Type -AssemblyName System.Security
+        return , [System.Security.Cryptography.ProtectedData]::Unprotect([Convert]::FromBase64String($Protected), $null, 'CurrentUser')
+    }
+    catch {
+        return $null
+    }
+}
+
+function New-EnvironmentKey {
+    # 32 random bytes for the environment hash of one start.
+    $bytes = New-Object byte[] 32
+    $generator = [System.Security.Cryptography.RandomNumberGenerator]::Create()
+    try {
+        $generator.GetBytes($bytes)
+    }
+    finally {
+        $generator.Dispose()
+    }
+    return , $bytes
 }
 
 function Get-AutostartState {
@@ -653,7 +696,19 @@ function Start-Server {
         Initialize-IngestToken
         Sync-BylEnvironment
         # What this server loads; taken before the start, so a change during the start counts.
-        $fingerprint = Get-BylFingerprint -AppDir $AppDir -Port $Port -EnvironmentNames (Get-EnvironmentName)
+        # Without DPAPI (never seen on Windows 10) the variables are simply not compared.
+        $environmentHash = ''
+        $protectedKey = $null
+        try {
+            $key = New-EnvironmentKey
+            $protectedKey = Protect-EnvironmentKey -Key $key
+            $environmentHash = Get-EnvironmentFingerprint -Key $key
+        }
+        catch {
+            $protectedKey = $null
+            $environmentHash = ''
+        }
+        $fingerprint = Get-BylFingerprint -AppDir $AppDir -Port $Port -EnvironmentHash $environmentHash
         Invoke-LogRotation -Path $log.Output
         Invoke-LogRotation -Path $log.Error
         $server = Start-Process -FilePath $exe -ArgumentList (Get-ServerArgumentString -AppDir $AppDir -Port $Port) `
@@ -668,7 +723,8 @@ function Start-Server {
     [void]$server.Handle
     try {
         Write-TextFile -Path $run.State -Text (ConvertTo-BylStateText -ProcessId $server.Id -Port $Port `
-                -ProcessStartUtc (Get-ProcessStartUtc -Process $server) -StartedUtc ([DateTime]::UtcNow) -Fingerprint $fingerprint)
+                -ProcessStartUtc (Get-ProcessStartUtc -Process $server) -StartedUtc ([DateTime]::UtcNow) -Fingerprint $fingerprint `
+                -EnvironmentKey $protectedKey)
     }
     catch {
         Write-Notice "Hinweis: run\byl.state.json konnte nicht geschrieben werden ($($_.Exception.GetType().Name))."
@@ -960,7 +1016,15 @@ function Get-StatusData {
     $comparison = [pscustomobject]@{ Verdict = 'Current'; Restart = @(); Reload = @() }
     if ($running) {
         $started = if ($null -ne $look.State) { $look.State.Fingerprint } else { $null }
-        $current = Get-BylFingerprint -AppDir $AppDir -Port $Config.Port -EnvironmentNames (Get-EnvironmentName)
+        # The environment hash with the key of this start; a key that cannot be read any more
+        # (another account wrote it) counts as a change, a start without key (no DPAPI) as none.
+        $environmentHash = ''
+        if ($null -ne $started) {
+            $key = Unprotect-EnvironmentKey -Protected $look.State.EnvironmentKey
+            if ($null -ne $key) { $environmentHash = Get-EnvironmentFingerprint -Key $key }
+            elseif (-not [string]::IsNullOrEmpty($started['environment'])) { $environmentHash = 'unreadable' }
+        }
+        $current = Get-BylFingerprint -AppDir $AppDir -Port $Config.Port -EnvironmentHash $environmentHash
         $comparison = Compare-BylFingerprint -Started $started -Current $current
     }
     $helpers = @(Select-MailHelperProcess -Process $look.Processes -AppDir $AppDir -Url @("http://127.0.0.1:$port"))

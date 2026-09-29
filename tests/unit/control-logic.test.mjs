@@ -282,7 +282,8 @@ describe('state file byl.state.json (ADR-0039 section 3)', () => {
 			port: 8091,
 			processStartUtc: '2026-09-29T10:00:00.0000000Z',
 			startedUtc: '2026-09-29T10:00:01.0000000Z',
-			fingerprint: null
+			fingerprint: null,
+			environmentKey: null
 		});
 		expect(result.state).toMatchObject({
 			processId: 4711,
@@ -400,7 +401,20 @@ try {
     & $write 'pb_public\index.html' '<html>'
     $names = Get-BylVariableName -UserNames @('BYL_TOKEN', 'PATH', 'byl_lower', 'BYL_A') -MachineNames @('BYL_TOKEN', 'BYL_M')
     $result.variableNames = @($names)
-    $take = { Get-BylFingerprint -AppDir $app -Port 8090 -EnvironmentNames $names }
+    $key = [byte[]](1..32)
+    $otherKey = [byte[]](2..33)
+    $entries = @('BYL_TOKEN=secret-1', 'BYL_A=a')
+    $hash = Get-EnvironmentHash -Entries $entries -Key $key
+    $result.environmentHash = @{
+        shape = $hash -match '^[0-9a-f]{64}$'
+        order = $hash -eq (Get-EnvironmentHash -Entries @('BYL_A=a', 'BYL_TOKEN=secret-1') -Key $key)
+        value = $hash -ne (Get-EnvironmentHash -Entries @('BYL_TOKEN=secret-2', 'BYL_A=a') -Key $key)
+        name = $hash -ne (Get-EnvironmentHash -Entries @('BYL_TOKEN=secret-1') -Key $key)
+        key = $hash -ne (Get-EnvironmentHash -Entries $entries -Key $otherKey)
+        plain = -not $hash.Contains('secret')
+        empty = (Get-EnvironmentHash -Entries @() -Key $key) -match '^[0-9a-f]{64}$'
+    }
+    $take = { Get-BylFingerprint -AppDir $app -Port 8090 -EnvironmentHash $hash }
     $base = & $take
     $result.fingerprintKeys = @($base.Keys)
     $result.fingerprintShape = @{
@@ -409,7 +423,7 @@ try {
         mailHelper = $base.mailHelper; web = $base.web -match '^[0-9a-f]{64}$'
     }
     $result.same = (Compare-BylFingerprint -Started $base -Current (& $take)).Verdict
-    $result.readmeIgnored = $base.migrations -eq (Get-BylFingerprint -AppDir $app -Port 8090 -EnvironmentNames $names).migrations
+    $result.readmeIgnored = $base.migrations -eq (Get-BylFingerprint -AppDir $app -Port 8090 -EnvironmentHash $hash).migrations
 
     $changes = @{}
     & $write 'pb_public\_app\version.json' '{"version":"2"}'
@@ -418,15 +432,17 @@ try {
     $changes.hooks = Compare-BylFingerprint -Started $base -Current (& $take)
     & $write 'pb_migrations\2_b.js' 'migrate(2)'
     $changes.migrations = Compare-BylFingerprint -Started $base -Current (& $take)
-    $changes.port = Compare-BylFingerprint -Started $base -Current (Get-BylFingerprint -AppDir $app -Port 8091 -EnvironmentNames $names)
-    $changes.environment = Compare-BylFingerprint -Started $base -Current (Get-BylFingerprint -AppDir $app -Port 8090 -EnvironmentNames @('BYL_A'))
+    $changes.port = Compare-BylFingerprint -Started $base -Current (Get-BylFingerprint -AppDir $app -Port 8091 -EnvironmentHash $hash)
+    $changes.environment = Compare-BylFingerprint -Started $base -Current (Get-BylFingerprint -AppDir $app -Port 8090 -EnvironmentHash (Get-EnvironmentHash -Entries @('BYL_TOKEN=secret-2', 'BYL_A=a') -Key $key))
     & $write 'byl-mail.exe' 'helper'
     $changes.all = Compare-BylFingerprint -Started $base -Current (& $take)
     $changes.unknown = Compare-BylFingerprint -Started $null -Current (& $take)
     $result.changes = $changes
 
-    $state = ConvertFrom-BylState -Text (ConvertTo-BylStateText -ProcessId 7 -Port 8090 -ProcessStartUtc ([DateTime]::UtcNow) -StartedUtc ([DateTime]::UtcNow) -Fingerprint $base)
+    $state = ConvertFrom-BylState -Text (ConvertTo-BylStateText -ProcessId 7 -Port 8090 -ProcessStartUtc ([DateTime]::UtcNow) -StartedUtc ([DateTime]::UtcNow) -Fingerprint $base -EnvironmentKey 'AQID+/8=')
     $result.stateFingerprint = (Compare-BylFingerprint -Started $state.Fingerprint -Current $base).Verdict
+    $result.stateKey = $state.EnvironmentKey
+    $result.stateBadKey = $null -eq (ConvertFrom-BylState -Text '{"pid":7,"port":8090,"processStartUtc":"2026-09-29T10:00:00Z","startedUtc":"2026-09-29T10:00:00Z","environmentKey":"a b"}').EnvironmentKey
 
     $log = Join-Path $app 'logs\byl-control.log'
     & $write 'logs\byl-control.log' 'first'
@@ -510,8 +526,11 @@ describe('start fingerprint, reload, status and logs (ADR-0039 sections 5 and 6)
 		);
 	}, 60_000);
 
-	it('takes the names of the BYL_* variables only, sorted and once', () => {
+	it('takes the valid BYL_* names, sorted and once, and hashes names and values with a key', () => {
 		expect(fp.variableNames).toEqual(['BYL_A', 'BYL_M', 'BYL_TOKEN']);
+		// Order does not matter; a changed value, a missing name or another key change the hash; the
+		// value itself is never in it.
+		expect(fp.environmentHash).toEqual({ shape: true, order: true, value: true, name: true, key: true, plain: true, empty: true });
 	});
 
 	it('fingerprints what the server loads, without values', () => {
@@ -528,6 +547,8 @@ describe('start fingerprint, reload, status and logs (ADR-0039 sections 5 and 6)
 		expect(fp.same).toBe('Current');
 		expect(fp.readmeIgnored).toBe(true);
 		expect(fp.stateFingerprint).toBe('Current');
+		expect(fp.stateKey).toBe('AQID+/8=');
+		expect(fp.stateBadKey).toBe(true);
 	});
 
 	it('says reload for a new web build and restart with the reason for everything else', () => {

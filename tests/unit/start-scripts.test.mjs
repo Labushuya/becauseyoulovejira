@@ -492,15 +492,28 @@ describe('stop', () => {
 describe('status, reload, logs and doctor (ADR-0039 sections 5 to 7, BS-2)', () => {
 	it('stores the start fingerprint taken before the start, and rotates the logs of the run', () => {
 		const start = functionBody(control(), 'Start-Server');
-		const fingerprint = start.indexOf('$fingerprint = Get-BylFingerprint -AppDir $AppDir -Port $Port -EnvironmentNames (Get-EnvironmentName)');
+		const fingerprint = start.indexOf('$fingerprint = Get-BylFingerprint -AppDir $AppDir -Port $Port -EnvironmentHash $environmentHash');
 		expect(fingerprint).toBeGreaterThan(start.indexOf('Sync-BylEnvironment'));
 		expect(fingerprint).toBeLessThan(start.indexOf('Start-Process -FilePath $exe'));
-		expect(start).toContain('-Fingerprint $fingerprint');
+		expect(start.indexOf('$environmentHash = Get-EnvironmentFingerprint -Key $key')).toBeLessThan(fingerprint);
+		expect(start).toContain('-Fingerprint $fingerprint `');
+		expect(start).toContain('-EnvironmentKey $protectedKey)');
 		expect(start.indexOf('Invoke-LogRotation -Path $log.Output')).toBeLessThan(start.indexOf('Start-Process -FilePath $exe'));
 		expect(start.indexOf('Show-PreStartNotice -Processes $Processes')).toBeLessThan(start.indexOf('Start-Process -FilePath $exe'));
 		const helper = functionBody(control(), 'Start-MailHelper');
 		expect(helper.indexOf('Invoke-LogRotation -Path $log.Output')).toBeLessThan(helper.indexOf('Start-Process'));
-		expect(functionBody(control(), 'Get-EnvironmentName')).not.toMatch(/GetEnvironmentVariable\(|\.Values|\[\$name\]/);
+	});
+
+	it('hashes the BYL_* variables only with a key protected for the account, never stores or prints a value', () => {
+		const entries = functionBody(control(), 'Get-EnvironmentFingerprint');
+		expect(entries).toContain('return Get-EnvironmentHash -Entries @($entries) -Key $Key');
+		expect(entries).not.toMatch(/Write-|Show-Message|WriteAll|Append|Out-/);
+		expect(functionBody(control(), 'Protect-EnvironmentKey')).toContain("[System.Security.Cryptography.ProtectedData]::Protect($Key, $null, 'CurrentUser')");
+		expect(functionBody(control(), 'Unprotect-EnvironmentKey')).toContain("ProtectedData]::Unprotect([Convert]::FromBase64String($Protected), $null, 'CurrentUser')");
+		expect(functionBody(functions(), 'Get-EnvironmentHash')).toContain('New-Object System.Security.Cryptography.HMACSHA256 (, $Key)');
+		const status = functionBody(control(), 'Get-StatusData');
+		expect(status).toContain('Unprotect-EnvironmentKey -Protected $look.State.EnvironmentKey');
+		expect(status).toContain("$environmentHash = 'unreadable'");
 	});
 
 	it('restarts in reload only through Resolve-ReloadAction and says so otherwise', () => {

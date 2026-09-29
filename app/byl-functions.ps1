@@ -139,14 +139,16 @@ function ConvertTo-AddressScript {
 }
 
 function ConvertTo-BylStateText {
-    # Text of the state file. Holds no secrets: process id, port, times and the start fingerprint
-    # (hashes and file stamps; the names of the BYL_* variables only as one hash).
+    # Text of the state file. Holds no secrets: process id, port, times, the start fingerprint
+    # (hashes and file stamps; the BYL_* variables only as keyed hash) and the key of that hash,
+    # encrypted for the Windows account ($EnvironmentKey, Base64 of DPAPI).
     param(
         [Parameter(Mandatory = $true)][int]$ProcessId,
         [Parameter(Mandatory = $true)][int]$Port,
         [Parameter(Mandatory = $true)][DateTime]$ProcessStartUtc,
         [Parameter(Mandatory = $true)][DateTime]$StartedUtc,
-        [AllowNull()][System.Collections.IDictionary]$Fingerprint
+        [AllowNull()][System.Collections.IDictionary]$Fingerprint,
+        [AllowNull()][AllowEmptyString()][string]$EnvironmentKey
     )
 
     $state = [ordered]@{
@@ -156,13 +158,14 @@ function ConvertTo-BylStateText {
         processStartUtc = $ProcessStartUtc.ToUniversalTime().ToString('o')
         startedUtc      = $StartedUtc.ToUniversalTime().ToString('o')
         fingerprint     = $Fingerprint
+        environmentKey  = if ([string]::IsNullOrEmpty($EnvironmentKey)) { $null } else { $EnvironmentKey }
     }
     return ($state | ConvertTo-Json -Depth 4)
 }
 
 function ConvertFrom-BylState {
     # The state file as object (ProcessId, Port, ProcessStartUtc, StartedUtc, Fingerprint as
-    # hashtable of strings or $null); $null if the text is no valid state.
+    # hashtable of strings or $null, EnvironmentKey or $null); $null if the text is no valid state.
     param([AllowNull()][AllowEmptyString()][string]$Text)
 
     if ([string]::IsNullOrWhiteSpace($Text)) { return $null }
@@ -200,12 +203,14 @@ function ConvertFrom-BylState {
         $fingerprint = @{}
         foreach ($property in $rawFingerprint.PSObject.Properties) { $fingerprint[$property.Name] = [string]$property.Value }
     }
+    $key = & $get 'environmentKey'
     return [pscustomobject]@{
         ProcessId       = [int]$processId
         Port            = [int]$port
         ProcessStartUtc = $times['processStartUtc']
         StartedUtc      = $times['startedUtc']
         Fingerprint     = $fingerprint
+        EnvironmentKey  = if ($key -is [string] -and $key -match '^[A-Za-z0-9+/=]+$') { $key } else { $null }
     }
 }
 
@@ -310,15 +315,36 @@ function Get-BylVariableName {
     return , $names
 }
 
+function Get-EnvironmentHash {
+    # HMAC-SHA256 with $Key over the entries "NAME=VALUE" of the BYL_* variables a start hands to
+    # PocketBase, in ordinal order: changes of names AND values show, but the values never leave
+    # memory. The key is random per start and lies in the state file only encrypted for the Windows
+    # account (DPAPI, byl-control.ps1), so the hash cannot be attacked offline; whoever can decrypt
+    # it can read the variables anyway.
+    param(
+        [AllowEmptyCollection()][string[]]$Entries = @(),
+        [Parameter(Mandatory = $true)][byte[]]$Key
+    )
+
+    $sorted = [string[]]@($Entries | Where-Object { $null -ne $_ })
+    [Array]::Sort($sorted, [StringComparer]::Ordinal)
+    $hmac = New-Object System.Security.Cryptography.HMACSHA256 (, $Key)
+    try {
+        $digest = $hmac.ComputeHash([System.Text.Encoding]::UTF8.GetBytes(($sorted -join "`n")))
+        return ([BitConverter]::ToString($digest) -replace '-', '').ToLowerInvariant()
+    }
+    finally {
+        $hmac.Dispose()
+    }
+}
+
 function Get-BylFingerprint {
-    # Start fingerprint of the app folder: what a server started now would load. $EnvironmentNames
-    # are the names of the BYL_* variables handed to PocketBase (Get-BylVariableName); only one hash
-    # of them is kept, values never enter it (a changed value of an existing variable is not seen:
-    # "-Force" restarts anyway).
+    # Start fingerprint of the app folder: what a server started now would load. $EnvironmentHash is
+    # Get-EnvironmentHash of the BYL_* variables ('' if it cannot be built).
     param(
         [Parameter(Mandatory = $true)][string]$AppDir,
         [Parameter(Mandatory = $true)][int]$Port,
-        [AllowEmptyCollection()][string[]]$EnvironmentNames = @()
+        [AllowEmptyString()][string]$EnvironmentHash = ''
     )
 
     return [ordered]@{
@@ -326,7 +352,7 @@ function Get-BylFingerprint {
         migrations  = Get-FolderHash -Folder ([System.IO.Path]::Combine($AppDir, 'pb_migrations'))
         hooks       = Get-FolderHash -Folder ([System.IO.Path]::Combine($AppDir, 'pb_hooks')) -Recurse
         port        = [string]$Port
-        environment = Get-BytesHash -Bytes ([System.Text.Encoding]::UTF8.GetBytes((@($EnvironmentNames) -join "`n")))
+        environment = $EnvironmentHash
         mailHelper  = Get-FileStamp -Path ([System.IO.Path]::Combine($AppDir, $BylMailHelperName))
         web         = Get-WebBuildId -AppDir $AppDir
     }
