@@ -1,27 +1,32 @@
 <script lang="ts">
 	import { tick } from 'svelte';
 	import type { ResolvedPathname } from '$app/types';
-	import type { RequestOptions } from '$lib/data/options';
-	import type { TicketChoice } from '$lib/data/tickets';
-	import type { ParentRef, Ticket } from '$lib/domain/ticket';
+	import { parentRules } from '$lib/domain/ticket-picker';
+	import type { ParentRef, Ticket, TicketSummary } from '$lib/domain/ticket';
 	import type { TicketDetailStore } from '$lib/stores/ticket-detail.svelte';
+	import {
+		findTicketPickerSource,
+		type TicketPickerSource
+	} from '$lib/stores/ticket-picker.svelte';
 	import ErrorIcon from './ErrorIcon.svelte';
-	import TicketCombobox from './TicketCombobox.svelte';
+	import TicketPicker from './TicketPicker.svelte';
 
 	// Row "Übergeordnet" of the fields (ADR-0033 section 4), shared by the side panel and the full
 	// view. A sub-task names its parent with "Ändern" and "Lösen" and the switch "Blockiert das
 	// übergeordnete Ticket"; a top-level ticket offers "Festlegen …", unless it has sub-tasks itself
-	// (one level only). Choosing happens inline with the ticket search, because no dialog may open
-	// from the full view (ADR-0025 section 3); only tickets without a parent of their own are
-	// offered, the hook checks the rest. Escape while choosing ends it and is consumed, so neither
-	// the panel nor the full view closes. The row consists of two cells of the grid of TicketFields.
+	// (one level only). Choosing happens inline with the ticket picker (ADR-0042), because no dialog
+	// may open from the full view (ADR-0025 section 3): its list opens at once, the ticket itself
+	// is hidden, its current parent, sub-tasks and tickets of another area stay visible with the
+	// reason; the hook checks the rest. Escape while choosing ends it (after the list and the text
+	// of the picker) and is consumed, so neither the panel nor the full view closes. The row
+	// consists of two cells of the grid of TicketFields.
 	let {
 		store,
 		ticket,
 		parent,
 		parentHref = null,
 		subtaskCount = 0,
-		search
+		picker
 	}: {
 		store: TicketDetailStore;
 		ticket: Ticket;
@@ -31,9 +36,12 @@
 		parentHref?: ResolvedPathname | null;
 		/** Number of sub-tasks of this ticket. */
 		subtaskCount?: number;
-		/** Ticket search by number, key or title. */
-		search: (text: string, options: RequestOptions) => Promise<TicketChoice[]>;
+		/** Tickets of the picker; the (app) layout provides them. */
+		picker?: TicketPickerSource;
 	} = $props();
+
+	const fromContext = findTicketPickerSource();
+	const source = $derived(picker ?? fromContext);
 
 	const uid = $props.id();
 	const ids = {
@@ -44,7 +52,7 @@
 	};
 
 	let choosing = $state(false);
-	let choice = $state<TicketChoice | null>(null);
+	let choice = $state<TicketSummary | null>(null);
 	let choiceError = $state<string | null>(null);
 	let startButton = $state<HTMLButtonElement>();
 	let area = $state<HTMLElement>();
@@ -53,14 +61,7 @@
 	const error = $derived(store.fieldError('parent'));
 	const switchError = $derived(store.fieldError('blocksParent'));
 	const blocks = $derived(ticket.blocksParent ?? true);
-
-	/** Only top-level tickets other than this one and its current parent can become the parent. */
-	async function allowed(text: string, options: RequestOptions): Promise<TicketChoice[]> {
-		const found = await search(text, options);
-		return found.filter(
-			(entry) => entry.id !== ticket.id && entry.id !== parent?.id && !entry.parentId
-		);
-	}
+	const rules = $derived(parentRules(ticket));
 
 	async function start() {
 		choosing = true;
@@ -116,13 +117,16 @@
 	{#if choosing}
 		<!-- svelte-ignore a11y_no_static_element_interactions -->
 		<div class="choose" bind:this={area} {onkeydown}>
-			<TicketCombobox
-				label={parent ? 'Neues übergeordnetes Ticket' : 'Übergeordnetes Ticket'}
-				hint="Nummer, Key oder Titel eingeben; nur Tickets ohne eigenes übergeordnetes Ticket."
-				search={allowed}
-				bind:value={choice}
-				error={choiceError ?? error}
-			/>
+			{#if source}
+				<TicketPicker
+					label={parent ? 'Neues übergeordnetes Ticket' : 'Übergeordnetes Ticket'}
+					hint="Aus der Liste wählen oder tippen; Unteraufgaben kommen nicht in Frage (nur eine Ebene)."
+					{source}
+					{rules}
+					bind:value={choice}
+					error={choiceError ?? error}
+				/>
+			{/if}
 			<div class="buttons">
 				<button
 					class="button-primary small-primary"

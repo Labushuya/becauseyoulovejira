@@ -189,7 +189,6 @@
 							{parent}
 							parentHref={parent ? fullViewHref(parent.id, page.url) : null}
 							{subtaskCount}
-							search={(text, options) => sources.search(text, options)}
 						/>
 					{/snippet}
 				</TicketFields>

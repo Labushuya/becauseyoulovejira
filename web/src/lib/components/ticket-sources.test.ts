@@ -7,12 +7,21 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { InboxItemSummary } from '$lib/domain/inbox';
 import { FlagStore } from '$lib/stores/flags.svelte';
 import { TicketSourcesStore, type TicketSourcesData } from '$lib/stores/ticket-sources.svelte';
+import { alreadyLinkedReason } from '$lib/domain/ticket-picker';
 import { useOverlayStubs } from '$lib/test/overlay-stubs';
+import { fakePickerSource, pickerTicket } from '$lib/test/ticket-picker-fake';
 import TicketSources from './TicketSources.svelte';
 
 useOverlayStubs();
 
 const TICKET = { id: 'ticket000000001', key: 'TASK-4', sourceItem: 'main00000000001' };
+/** Open tickets of the picker of "Anderem Ticket zuordnen …" (ADR-0042). */
+const PICKER = fakePickerSource({
+	open: [
+		pickerTicket({ id: TICKET.id, key: 'TASK-4', title: 'Dieses' }),
+		pickerTicket({ id: 'ticket000000013', key: 'HAUS-13', title: 'Anderes' })
+	]
+});
 
 function item(id: string, overrides: Partial<InboxItemSummary> = {}): InboxItemSummary {
 	return {
@@ -66,13 +75,12 @@ async function setup(sources: InboxItemSummary[], candidates: InboxItemSummary[]
 			ticketId: null,
 			updated: '2026-09-25 11:00:00.000Z'
 		})),
-		search: vi.fn<TicketSourcesData['search']>(async () => []),
 		originalUrl: vi.fn<TicketSourcesData['originalUrl']>(async () => 'http://x/mail.eml?token=t')
 	} satisfies TicketSourcesData;
 	const flags = new FlagStore();
 	const store = new TicketSourcesStore(data, { ensureValid: () => true, logout: vi.fn() }, flags);
 	store.open(TICKET.id, TICKET.sourceItem);
-	render(TicketSources, { props: { ticket: TICKET, store, candidates } });
+	render(TicketSources, { props: { ticket: TICKET, store, candidates, picker: PICKER.source } });
 	await vi.waitFor(() => expect(store.state).toBe('ready'));
 	return { store, data, flags };
 }
@@ -133,10 +141,6 @@ describe('TicketSources', () => {
 
 	it('moves a linked source to another ticket (ADR-0031 addendum)', async () => {
 		const { data, flags } = await setup([MAIN, CHAT]);
-		data.search.mockResolvedValue([
-			{ id: TICKET.id, key: 'TASK-4', title: 'Dieses', status: 'open' },
-			{ id: 'ticket000000013', key: 'HAUS-13', title: 'Anderes', status: 'open' }
-		]);
 		const move = screen.getByRole('button', {
 			name: '„Nachricht chat00000000001“ anderem Ticket zuordnen …'
 		});
@@ -147,11 +151,15 @@ describe('TicketSources', () => {
 		const input = within(dialog).getByRole('combobox', {
 			name: 'Neues Ticket'
 		}) as HTMLInputElement;
-		input.value = 'a';
-		await fireEvent.input(input);
+		// The list opens without typing (ADR-0042); the current ticket is greyed with the reason.
+		await fireEvent.focus(input);
 		await vi.waitFor(() => expect(input.getAttribute('aria-expanded')).toBe('true'));
-		expect(within(dialog).getAllByRole('option')).toHaveLength(1);
+		const options = within(dialog).getAllByRole('option', { hidden: true });
+		const current = options.find((option) => option.textContent?.includes('Dieses'));
+		expect(current?.getAttribute('aria-disabled')).toBe('true');
+		expect(current?.textContent).toContain(alreadyLinkedReason('TASK-4'));
 		await fireEvent.keyDown(input, { key: 'Enter' });
+		expect(input.value).toBe('HAUS-13 Anderes');
 		await fireEvent.click(within(dialog).getByRole('button', { name: 'Zuordnen' }));
 		await vi.waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
 		expect(data.link).toHaveBeenCalledWith('chat00000000001', 'ticket000000013');

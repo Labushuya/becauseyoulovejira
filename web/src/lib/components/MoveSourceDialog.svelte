@@ -1,35 +1,51 @@
 <script lang="ts">
 	import type { InboxItemSummary } from '$lib/domain/inbox';
-	import type { TicketChoice, TicketSourcesStore } from '$lib/stores/ticket-sources.svelte';
+	import { alreadyLinkedReason, blockTicket, sameScope } from '$lib/domain/ticket-picker';
+	import type { TicketSummary } from '$lib/domain/ticket';
+	import {
+		findTicketPickerSource,
+		type TicketPickerSource
+	} from '$lib/stores/ticket-picker.svelte';
+	import type { TicketSourcesStore } from '$lib/stores/ticket-sources.svelte';
 	import ErrorIcon from './ErrorIcon.svelte';
 	import Modal from './overlay/Modal.svelte';
-	import TicketCombobox from './TicketCombobox.svelte';
+	import TicketPicker from './TicketPicker.svelte';
 
 	// "Anderem Ticket zuordnen …" (ADR-0031, addendum): a linked entry changes directly from its
 	// ticket to another one, in one step and atomic in the hook, which writes the history of both
-	// tickets. Modal M with the ticket search as combobox; the current ticket is not offered. The
-	// main source never gets here (the callers show why instead). A refusal stays in the dialog.
+	// tickets. Modal M with the ticket picker (ADR-0042): the list opens with the dialog; the current
+	// ticket stays visible but cannot be chosen, tickets of another area neither. The main source
+	// never gets here (the callers show why instead). A refusal stays in the dialog.
 	let {
 		item,
 		current,
 		store,
+		picker,
 		onclose,
 		onmoved = () => undefined
 	}: {
-		item: Pick<InboxItemSummary, 'id' | 'title'>;
+		item: Pick<InboxItemSummary, 'id' | 'title' | 'scope'>;
 		/** The ticket the entry belongs to now. */
 		current: { id: string; key: string };
 		store: TicketSourcesStore;
+		/** Tickets of the picker; the (app) layout provides them. */
+		picker?: TicketPickerSource;
 		onclose: () => void;
 		/** The entry after the move. */
 		onmoved?: (item: InboxItemSummary) => void;
 	} = $props();
 
+	const fromContext = findTicketPickerSource();
+	const source = $derived(picker ?? fromContext);
 	const uid = $props.id();
 	const formId = `${uid}-form`;
 	const describedId = `${uid}-described`;
+	const rules = $derived([
+		blockTicket(current.id, alreadyLinkedReason(current.key)),
+		sameScope(item.scope)
+	]);
 
-	let ticket = $state<TicketChoice | null>(null);
+	let ticket = $state<TicketSummary | null>(null);
 	let fieldError = $state<string | null>(null);
 	let failure = $state<string | null>(null);
 	let busy = $state(false);
@@ -39,10 +55,6 @@
 		if (busy) return;
 		if (ticket === null) {
 			fieldError = 'Bitte ein Ticket wählen.';
-			return;
-		}
-		if (ticket.id === current.id) {
-			fieldError = `Der Eintrag gehört schon zu ${current.key}.`;
 			return;
 		}
 		fieldError = null;
@@ -75,14 +87,16 @@
 			„{item.title}“ gehört zu {current.key} und wechselt direkt zum gewählten Ticket. Beide Tickets vermerken
 			den Wechsel im Verlauf.
 		</p>
-		<TicketCombobox
-			label="Neues Ticket"
-			hint="Nummer, Key oder Titel eingeben, auch erledigte Tickets."
-			search={async (text, options) =>
-				(await store.search(text, options)).filter((choice) => choice.id !== current.id)}
-			bind:value={ticket}
-			error={fieldError}
-		/>
+		{#if source}
+			<TicketPicker
+				label="Neues Ticket"
+				hint="Aus der Liste wählen oder tippen; erledigte Tickets ohne „Nur offene“."
+				{source}
+				{rules}
+				bind:value={ticket}
+				error={fieldError}
+			/>
+		{/if}
 		{#if failure !== null}
 			<p class="alert-error" role="alert"><ErrorIcon /><span>{failure}</span></p>
 		{/if}

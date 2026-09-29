@@ -120,7 +120,6 @@ vi.mock('$lib/stores/ticket-sources.svelte', async (importOriginal) => {
 			list: async () => [],
 			link: vi.fn(),
 			release: vi.fn(),
-			search: async () => [],
 			originalUrl: async () => null
 		},
 		{ ensureValid: () => true, logout: vi.fn() }

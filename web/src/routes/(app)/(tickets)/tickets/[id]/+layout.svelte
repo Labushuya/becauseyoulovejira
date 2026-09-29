@@ -20,6 +20,7 @@
 	import { getTicketListStore } from '$lib/stores/ticket-list.svelte';
 	import { getTicketSourcesStore } from '$lib/stores/ticket-sources.svelte';
 	import { findTicketOpenMode, ticketLinks } from '$lib/stores/open-mode.svelte';
+	import { findRecentTickets } from '$lib/stores/ticket-picker.svelte';
 	import { appHref, fullViewHref, listHref } from '$lib/ticket-links';
 	import { setTicketRoute } from '$lib/ticket-route';
 
@@ -44,6 +45,7 @@
 	const full = $derived(fullViewHref(id, page.url));
 	const fullView = $derived(page.route.id === '/(app)/(tickets)/tickets/[id]/voll');
 	const modeStore = findTicketOpenMode();
+	const recentTickets = findRecentTickets();
 	// The parent of a sub-task for its path (ADR-0033), as the list knows it.
 	const parent = $derived(
 		detail.state === 'ready' && detail.ticket
@@ -66,10 +68,15 @@
 		});
 	});
 
-	// Opening a ticket in the panel marks it as read (ADR-0015 section 3), in every tab.
+	// Opening a ticket in the panel marks it as read (ADR-0015 section 3), in every tab, and puts it
+	// first among the recently viewed ones of the ticket picker (ADR-0042).
 	$effect(() => {
 		const ticket = detail.state === 'ready' ? detail.ticket : null;
-		if (ticket !== null) untrack(() => void tickets.markRead(ticket));
+		if (ticket === null) return;
+		untrack(() => {
+			void tickets.markRead(ticket);
+			recentTickets?.remember(ticket.id);
+		});
 	});
 
 	// The sources of the shown ticket (ADR-0031 section 7), with its main source.
@@ -185,7 +192,6 @@
 				{parent}
 				parentHref={parent ? links.href(parent.id, page.url) : null}
 				subtaskCount={tickets.progressOf(ticket.id).total}
-				search={(text, options) => sourceStore.search(text, options)}
 			/>
 		{/snippet}
 		{#snippet subtasks(ticket: Ticket)}

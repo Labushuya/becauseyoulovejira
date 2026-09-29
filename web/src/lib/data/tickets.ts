@@ -56,6 +56,8 @@ export const TICKET_LIST_FIELDS = [
 	'blocks_parent',
 	// Way the ticket came in (ADR-0014 section 2); unknown to the server before the migration.
 	'source',
+	// Area of the ticket, for the rules of the ticket picker (ADR-0042).
+	'scope',
 	'completed_at',
 	'created',
 	'updated',
@@ -91,6 +93,7 @@ export interface TicketRecord {
 	/** Missing before the migration 1790201210 (the server leaves unknown fields out). */
 	source?: string;
 	source_item?: string;
+	scope?: string;
 	completed_at: string;
 	created: string;
 	updated: string;
@@ -125,6 +128,7 @@ export function toTicketSummary(record: TicketRecord): TicketSummary {
 				}
 			: null,
 		source: isInboxChannel(record.source) ? record.source : null,
+		...(record.scope ? { scope: record.scope } : {}),
 		completedAt: record.completed_at || null,
 		created: record.created,
 		updated: record.updated
@@ -251,63 +255,95 @@ export function searchOpenTicketIds(
 	});
 }
 
-/** A ticket as choice of the ticket search ("Mit Ticket verknüpfen …", ADR-0031 section 7). */
-export interface TicketChoice {
-	id: string;
-	key: string;
-	title: string;
-	status: Status;
+/** Done tickets per page of the ticket picker (ADR-0042 section 4). */
+export const PICKER_DONE_PAGE_SIZE = 20;
+
+/** What the ticket picker asks the server for when it shows done tickets. */
+export interface DoneChoiceQuery {
 	/**
-	 * The ticket's own parent, null for a top-level ticket (ADR-0033: only those can become a
-	 * parent). The search always sets it; choices built by hand may leave it out.
+	 * Loose LIKE patterns of the search words (`loosePattern` in domain/ticket-picker.ts), at most
+	 * PICKER_SERVER_WORDS; each must match key or title. The picker narrows the answer exactly.
 	 */
-	parentId?: string | null;
+	patterns: readonly string[];
+	/** Chosen project: its ID, NO_PROJECT for tickets without one, null for all. */
+	project: string | null;
+	/**
+	 * The chosen project has sub projects (the catalog knows them, ADR-0034): the expression then
+	 * takes their tickets in through `project.parent`; never set before the migration.
+	 */
+	withSubProjects?: boolean;
 }
 
-/** Most tickets the ticket search offers at once. */
-export const TICKET_SEARCH_LIMIT = 20;
+/** One page of done tickets for the ticket picker. */
+export interface TicketChoicePage {
+	items: TicketSummary[];
+	/** True if a further page may hold more (the page was full). */
+	hasMore: boolean;
+}
 
 /**
- * Tickets for the ticket search by number, key or title (ADR-0031 section 7), open ones first,
- * then the most recently changed; at most TICKET_SEARCH_LIMIT. An empty text gives none.
+ * Done tickets of the ticket picker (ADR-0042 section 4): up to five loose patterns (unused ones
+ * are '' and off), each on key or title, and the project filter of the list. The project clause
+ * with sub projects is DONE_FAMILY_FILTER, as for the list.
  */
-export function searchTickets(
+const DONE_CHOICE_FILTER = [
+	'status = {:done}',
+	'({:w1} = "" || key ~ {:w1} || title ~ {:w1})',
+	'({:w2} = "" || key ~ {:w2} || title ~ {:w2})',
+	'({:w3} = "" || key ~ {:w3} || title ~ {:w3})',
+	'({:w4} = "" || key ~ {:w4} || title ~ {:w4})',
+	'({:w5} = "" || key ~ {:w5} || title ~ {:w5})',
+	'({:project} = "" || {:project} = {:noProject} || project = {:project})',
+	'({:project} != {:noProject} || project = "")'
+].join(' && ');
+
+/** Expression of the done choices: DONE_CHOICE_FILTER, with sub projects also their clause. */
+function doneChoiceExpression(query: DoneChoiceQuery): string {
+	const parts = [DONE_CHOICE_FILTER];
+	if (query.withSubProjects === true && query.project !== null) parts.push(DONE_FAMILY_FILTER);
+	return parts.join(' && ');
+}
+
+/** Parameters of DONE_CHOICE_FILTER (and DONE_FAMILY_FILTER); an unset value is '' and off. */
+function doneChoiceParams(query: DoneChoiceQuery): Record<string, string> {
+	const family = query.withSubProjects === true && query.project !== null;
+	const [w1 = '', w2 = '', w3 = '', w4 = '', w5 = ''] = query.patterns;
+	return {
+		done: 'done' satisfies Status,
+		w1,
+		w2,
+		w3,
+		w4,
+		w5,
+		project: family ? '' : (query.project ?? ''),
+		noProject: NO_PROJECT,
+		...(family ? { family: query.project ?? '' } : {})
+	};
+}
+
+/**
+ * One page of done tickets for the ticket picker, most recently changed first (ADR-0042 section 4).
+ * Tickets in the trash never come back: the API rules hide them (ADR-0037 section 3).
+ */
+export function listDoneTicketChoices(
 	pb: PocketBase,
-	text: string,
+	query: DoneChoiceQuery,
+	page: number,
 	{ signal }: RequestOptions = {}
-): Promise<TicketChoice[]> {
+): Promise<TicketChoicePage> {
 	return withDataErrors(signal, async () => {
-		const search = text.trim();
-		if (search === '') return [];
-		const number = /^\d{1,9}$/.test(search) ? Number(search) : -1;
-		const result = await pb
-			.collection(TICKETS)
-			.getList<{ id: string; key: string; title: string; status: string; parent?: string }>(
-				1,
-				TICKET_SEARCH_LIMIT,
-				{
-					// Any visible ticket, open or done; `{:number}` is -1 for a text that is no number.
-					filter: pb.filter('key ~ {:q} || title ~ {:q} || number = {:number}', {
-						q: likeText(search),
-						number
-					}),
-					sort: '-updated,-id',
-					fields: 'id,key,title,status,parent',
-					skipTotal: true,
-					signal
-				}
-			);
-		const choices: TicketChoice[] = result.items.map((record) => ({
-			id: record.id,
-			key: record.key,
-			title: record.title,
-			status: isStatus(record.status) ? record.status : 'open',
-			parentId: record.parent || null
-		}));
-		return [
-			...choices.filter((choice) => choice.status !== 'done'),
-			...choices.filter((choice) => choice.status === 'done')
-		];
+		const result = await pb.collection(TICKETS).getList<TicketRecord>(page, PICKER_DONE_PAGE_SIZE, {
+			filter: pb.filter(doneChoiceExpression(query), doneChoiceParams(query)),
+			sort: '-updated,-id',
+			fields: TICKET_LIST_FIELDS,
+			expand: TICKET_EXPAND,
+			skipTotal: true,
+			signal
+		});
+		return {
+			items: result.items.map(toTicketSummary),
+			hasMore: result.items.length === PICKER_DONE_PAGE_SIZE
+		};
 	});
 }
 

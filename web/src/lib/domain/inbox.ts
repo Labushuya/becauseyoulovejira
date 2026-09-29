@@ -177,6 +177,11 @@ export interface InboxItemSummary {
 	ticket?: InboxTicketRef | null;
 	/** Time of converting or discarding, null while new. */
 	handledAt: string | null;
+	/**
+	 * Area of the entry (`u:<owner>` or `h:<household>`): only tickets of the same area can take it
+	 * (ADR-0031, ADR-0042). The data layer always sets it; objects built by hand may leave it out.
+	 */
+	scope?: string;
 	created: string;
 	updated: string;
 }

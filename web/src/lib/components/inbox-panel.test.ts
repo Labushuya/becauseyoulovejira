@@ -11,6 +11,7 @@ import { InboxStore, type InboxData } from '$lib/stores/inbox.svelte';
 import { RecurrenceStore, type RecurrenceData } from '$lib/stores/recurrence.svelte';
 import { TicketSourcesStore, type TicketSourcesData } from '$lib/stores/ticket-sources.svelte';
 import { useOverlayStubs } from '$lib/test/overlay-stubs';
+import { fakePickerSource, pickerTicket } from '$lib/test/ticket-picker-fake';
 import InboxPanel from './InboxPanel.svelte';
 
 useOverlayStubs();
@@ -352,9 +353,6 @@ describe('inbox panel: copy and linking (ADR-0031)', () => {
 				updated: '2026-09-25 10:00:00.000Z'
 			})),
 			release: vi.fn<TicketSourcesData['release']>(),
-			search: vi.fn<TicketSourcesData['search']>(async () => [
-				{ id: 'ticket000000004', key: 'TASK-4', title: 'Zahlungen', status: 'open' }
-			]),
 			originalUrl: vi.fn<TicketSourcesData['originalUrl']>(async () => null)
 		} satisfies TicketSourcesData;
 		return {
@@ -407,13 +405,16 @@ describe('inbox panel: copy and linking (ADR-0031)', () => {
 
 	it('links a new entry to a ticket through "Mit Ticket verknüpfen …"', async () => {
 		const linking = sources();
-		setup(entry(), [], { sources: linking.store });
+		const { source } = fakePickerSource({
+			open: [pickerTicket({ id: 'ticket000000004', key: 'TASK-4', title: 'Zahlungen' })]
+		});
+		setup(entry(), [], { sources: linking.store, picker: source });
 		await screen.findByRole('heading', { name: 'Rechnung September' });
 		await fireEvent.click(screen.getByRole('button', { name: 'Mit Ticket verknüpfen …' }));
 		const dialog = screen.getByRole('dialog', { name: 'Mit Ticket verknüpfen' });
 		const input = within(dialog).getByRole('combobox', { name: 'Ticket' }) as HTMLInputElement;
-		input.value = 'TASK-4';
-		await fireEvent.input(input);
+		// The list is there without typing (ADR-0042).
+		await fireEvent.focus(input);
 		await vi.waitFor(() => expect(input.getAttribute('aria-expanded')).toBe('true'));
 		await fireEvent.keyDown(input, { key: 'Enter' });
 		await fireEvent.click(within(dialog).getByRole('button', { name: 'Verknüpfen' }));
@@ -489,13 +490,18 @@ describe('inbox panel: copy and linking (ADR-0031)', () => {
 		expect(within(section).queryByText(/^Hauptquelle/)).toBeNull();
 	});
 
-	it('moves a linked entry to another ticket; the current one is not offered', async () => {
+	/** Open tickets of the picker (ADR-0042): the current ticket of the entry and another one. */
+	const movePicker = () =>
+		fakePickerSource({
+			open: [
+				pickerTicket({ id: 'ticket000000012', key: 'HAUS-12', title: 'Steuer 2025' }),
+				pickerTicket({ id: 'ticket000000004', key: 'TASK-4', title: 'Zahlungen' })
+			]
+		}).source;
+
+	it('moves a linked entry to another ticket; the current one cannot be chosen', async () => {
 		const linking = sources();
-		linking.data.search.mockResolvedValue([
-			{ id: 'ticket000000012', key: 'HAUS-12', title: 'Steuer 2025', status: 'open' },
-			{ id: 'ticket000000004', key: 'TASK-4', title: 'Zahlungen', status: 'open' }
-		]);
-		setup(linked(false), [], { sources: linking.store });
+		setup(linked(false), [], { sources: linking.store, picker: movePicker() });
 		await fireEvent.click(await screen.findByRole('button', { name: 'Anderem Ticket zuordnen …' }));
 		const dialog = screen.getByRole('dialog', { name: 'Anderem Ticket zuordnen' });
 		expect(within(dialog).getByText(/gehört zu HAUS-12 und wechselt direkt/)).toBeTruthy();
@@ -504,14 +510,19 @@ describe('inbox panel: copy and linking (ADR-0031)', () => {
 		const input = within(dialog).getByRole('combobox', {
 			name: 'Neues Ticket'
 		}) as HTMLInputElement;
-		input.value = 'a';
-		await fireEvent.input(input);
+		await fireEvent.focus(input);
 		await vi.waitFor(() => expect(input.getAttribute('aria-expanded')).toBe('true'));
+		// Options of the ticket list (the select "Projekt" has options as well).
+		const options = [...dialog.querySelectorAll('li[role="option"]')];
 		expect(
-			within(dialog)
-				.getAllByRole('option')
-				.map((option) => option.textContent)
-		).toEqual([expect.stringContaining('TASK-4')]);
+			options.map((option) => [
+				option.textContent?.includes('HAUS-12'),
+				option.getAttribute('aria-disabled')
+			])
+		).toEqual([
+			[true, 'true'],
+			[false, null]
+		]);
 		await fireEvent.keyDown(input, { key: 'Enter' });
 		await fireEvent.click(within(dialog).getByRole('button', { name: 'Zuordnen' }));
 		await vi.waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
@@ -530,14 +541,13 @@ describe('inbox panel: copy and linking (ADR-0031)', () => {
 				}
 			})
 		);
-		setup(linked(false), [], { sources: linking.store });
+		setup(linked(false), [], { sources: linking.store, picker: movePicker() });
 		await fireEvent.click(await screen.findByRole('button', { name: 'Anderem Ticket zuordnen …' }));
 		const dialog = screen.getByRole('dialog', { name: 'Anderem Ticket zuordnen' });
 		const input = within(dialog).getByRole('combobox', {
 			name: 'Neues Ticket'
 		}) as HTMLInputElement;
-		input.value = 'TASK';
-		await fireEvent.input(input);
+		await fireEvent.input(input, { target: { value: 'TASK' } });
 		await vi.waitFor(() => expect(input.getAttribute('aria-expanded')).toBe('true'));
 		await fireEvent.keyDown(input, { key: 'Enter' });
 		await fireEvent.click(within(dialog).getByRole('button', { name: 'Zuordnen' }));

@@ -45,7 +45,6 @@ function setup(sources: InboxItemSummary[] = [], valid = true) {
 			item(id, { ticketId, updated: '2026-09-25 10:00:00.000Z' })
 		),
 		release: vi.fn<TicketSourcesData['release']>(async (id) => released(item(id))),
-		search: vi.fn<TicketSourcesData['search']>(async () => []),
 		originalUrl: vi.fn<TicketSourcesData['originalUrl']>(async () => 'http://x/datei?token=t')
 	} satisfies TicketSourcesData;
 	const session = { ensureValid: vi.fn(() => valid), logout: vi.fn() };
@@ -260,14 +259,8 @@ describe('TicketSourcesStore', () => {
 		expect(session.logout).toHaveBeenCalledOnce();
 	});
 
-	it('searches tickets through the data layer and forgets everything on reset', async () => {
-		const { store, data } = setup([item('a')]);
-		data.search.mockResolvedValueOnce([
-			{ id: TICKET, key: 'TASK-4', title: 'Ziel', status: 'open' }
-		]);
-		expect(await store.search('4')).toEqual([
-			{ id: TICKET, key: 'TASK-4', title: 'Ziel', status: 'open' }
-		]);
+	it('forgets everything on reset', async () => {
+		const { store } = setup([item('a')]);
 		store.open(TICKET, null);
 		await vi.waitFor(() => expect(store.items).toHaveLength(1));
 		store.reset();
