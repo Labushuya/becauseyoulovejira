@@ -165,8 +165,12 @@ afterAll(() => {
 	if (base) rmSync(base, { recursive: true, force: true, maxRetries: 10, retryDelay: 500 });
 }, 60_000);
 
+// A case starts and stops real servers, some twice (about 7 s each on a CI runner): more time than
+// the 15 s of the integration project.
+const CASE_TIMEOUT = { timeout: 120_000 };
+
 // The cases build on each other and run in this order (tests of one file run one after another).
-describe('byl-control.ps1 on disposable copies (BS-1)', () => {
+describe('byl-control.ps1 on disposable copies (BS-1)', CASE_TIMEOUT, () => {
 	it('stop without a running instance says so and ends with 0', () => {
 		const result = control(copies.a, 'stop');
 		expect(result.code).toBe(0);
@@ -274,7 +278,7 @@ function status(copy) {
 	return { code: result.code, data: JSON.parse(result.output.trim()) };
 }
 
-describe('byl-control.ps1: status, reload, open, logs and doctor (BS-2)', () => {
+describe('byl-control.ps1: status, reload, open, logs and doctor (BS-2)', CASE_TIMEOUT, () => {
 	it('status and open report a stopped app with exit code 3, doctor finds no error', () => {
 		const stopped = status(copies.a);
 		expect(stopped.code).toBe(3);
