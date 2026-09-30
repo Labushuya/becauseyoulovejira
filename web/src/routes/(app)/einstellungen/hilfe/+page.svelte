@@ -628,6 +628,17 @@
 				</dd>
 			</div>
 			<div class="row">
+				<dt>Aus dem Dashboard</dt>
+				<dd>
+					Unter <a href={resolve('/einstellungen/system')}>Einstellungen → System</a> siehst du
+					dasselbe und kannst die App neu starten, den Mail-Hilfsprozess neu starten, den Autostart
+					ein- und ausschalten, die Umgebung prüfen und die Logs ansehen. Das geht nur im Browser
+					auf dem Rechner der App und nur mit dem App-Konto, das bei der Einrichtung zuerst angelegt
+					wurde. Beenden geht weiter nur mit
+					<code>stop.bat</code>; die Dateien im Ordner <code>app</code> bleiben wie sie sind.
+				</dd>
+			</div>
+			<div class="row">
 				<dt>Adresse und Port</dt>
 				<dd>
 					Diese App läuft unter <code>{page.url.origin}</code>. Den Port stellst du in PowerShell im

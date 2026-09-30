@@ -41,10 +41,11 @@ function accentRadios(): HTMLInputElement[] {
 }
 
 describe('appearance page (EH-8)', () => {
-	it('is a page of the settings before "Konto" and "Hilfe"', () => {
-		expect(SETTINGS_SECTIONS.map((section) => section.id).slice(-3)).toEqual([
+	it('is a page of the settings before "Konto", "System" (ADR-0043) and "Hilfe"', () => {
+		expect(SETTINGS_SECTIONS.map((section) => section.id).slice(-4)).toEqual([
 			'darstellung',
 			'konto',
+			'system',
 			'hilfe'
 		]);
 	});

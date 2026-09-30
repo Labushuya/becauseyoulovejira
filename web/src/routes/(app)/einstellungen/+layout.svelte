@@ -4,12 +4,14 @@
 	import Breadcrumbs from '$lib/components/Breadcrumbs.svelte';
 	import SettingsNav from '$lib/components/SettingsNav.svelte';
 	import ViewSwitch from '$lib/components/ViewSwitch.svelte';
+	import { DEFAULT_HOST_PLATFORM } from '$lib/domain/host-platform';
 	import {
 		SETTINGS_HOME,
-		SETTINGS_SECTIONS,
 		isSettingsPath,
-		settingsSectionOf
+		settingsSectionOf,
+		visibleSettingsSections
 	} from '$lib/settings-sections';
+	import { findHostStore } from '$lib/stores/host.svelte';
 	import { getInboxStore } from '$lib/stores/inbox.svelte';
 	import { getLastViewStore, lastViewLabel } from '$lib/stores/last-view.svelte';
 	import { getTicketListStore } from '$lib/stores/ticket-list.svelte';
@@ -24,6 +26,10 @@
 	const tickets = getTicketListStore();
 	const inbox = getInboxStore();
 	const lastView = getLastViewStore();
+	// "System" only for a server on Windows (ADR-0043); until the answer and outside the app layout
+	// the server counts as Windows, like the guides.
+	const host = findHostStore();
+	const sections = $derived(visibleSettingsSections(host?.platform ?? DEFAULT_HOST_PLATFORM));
 
 	const uid = $props.id();
 	const headingId = `${uid}-heading`;
@@ -47,12 +53,7 @@
 
 <div class="settings">
 	<div class="nav-column">
-		<SettingsNav
-			sections={SETTINGS_SECTIONS}
-			current={section?.id ?? null}
-			{backHref}
-			{backLabel}
-		/>
+		<SettingsNav {sections} current={section?.id ?? null} {backHref} {backLabel} />
 	</div>
 	<div class="page">
 		<Breadcrumbs items={[{ label: 'Einstellungen', href: SETTINGS_HOME }, { label: title }]} />

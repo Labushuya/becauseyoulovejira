@@ -565,10 +565,17 @@ describe('status, reload, logs and doctor (ADR-0039 sections 5 to 7, BS-2)', () 
 	it('prints JSON only with -Json, as one line on standard output, and nothing else then', () => {
 		for (const name of ['Invoke-Status', 'Invoke-Doctor']) {
 			const body = functionBody(control(), name);
-			expect(body, name).toMatch(/if \(\$Json\) \{[\s\S]*?\[Console\]::Out\.WriteLine\(\([\s\S]*?ConvertTo-Json -Depth 4 -Compress\)\)\s*return \$code/);
+			expect(body, name).toMatch(/if \(\$Json\) \{[\s\S]*?Write-JsonLine \([\s\S]*?ConvertTo-Json -Depth 4 -Compress\)\s*return \$code/);
 		}
+		const logs = functionBody(control(), 'Invoke-Logs');
+		expect(logs).toMatch(/if \(\$Json\) \{[\s\S]*?Write-JsonLine \(Get-LogsJson [^\r\n]*\)\s*return \$BylExitOk/);
 		for (const name of ['Write-Status', 'Write-Notice']) expect(functionBody(control(), name)).toContain('-not $Json');
-		expect(control().match(/\[Console\]::Out\.WriteLine/g)).toHaveLength(2);
+		// One writer: UTF-8 without BOM when a program reads it (ADR-0043), the console otherwise.
+		const writer = functionBody(control(), 'Write-JsonLine');
+		expect(writer).toContain('if (-not [Console]::IsOutputRedirected) {');
+		expect(writer).toContain('(New-Object System.Text.UTF8Encoding($false)).GetBytes($Text + "`n")');
+		expect(control().match(/\[Console\]::Out\.WriteLine/g)).toHaveLength(1);
+		expect(control().match(/OpenStandardOutput/g)).toHaveLength(1);
 	});
 
 	it('names every reason of a restart and returns the documented exit codes of status', () => {
@@ -581,7 +588,7 @@ describe('status, reload, logs and doctor (ADR-0039 sections 5 to 7, BS-2)', () 
 
 	it('logs changing commands only, with numbers and fixed words, never the admin e-mail', () => {
 		const main = control().slice(control().lastIndexOf('try {'));
-		expect(main).toContain("if (@('start', 'stop', 'restart', 'reload', 'port', 'autostart-on', 'autostart-off', 'reset-admin') -contains $Command) {");
+		expect(main).toContain("if (@('start', 'stop', 'restart', 'reload', 'port', 'autostart-on', 'autostart-off', 'mail-restart', 'reset-admin') -contains $Command) {");
 		const write = functionBody(control(), 'Write-ControlLog');
 		expect(write).toContain('Invoke-LogRotation -Path $path -LimitBytes $BylControlLogLimitBytes');
 		expect(write).toContain('[System.IO.File]::AppendAllText($path');
@@ -605,6 +612,53 @@ describe('status, reload, logs and doctor (ADR-0039 sections 5 to 7, BS-2)', () 
 		}
 		expect(doctor).not.toMatch(/Stop-|Invoke-StopCore|Start-Server/);
 		expect(functionBody(control(), 'Test-WriteAccess')).toMatch(/WriteAllText\(\$probe, 'x'\)\s*\[System\.IO\.File\]::Delete\(\$probe\)/);
+	});
+});
+
+describe('commands of the page System (ADR-0043)', () => {
+	it('restart -Detach starts restart of this folder as its own process and ends at once', () => {
+		const restart = functionBody(control(), 'Invoke-Restart');
+		expect(restart.indexOf('if ($Detach) { return Start-DetachedRestart }')).toBeGreaterThan(restart.indexOf('$Config.Problem'));
+		expect(restart.indexOf('if ($Detach)')).toBeLessThan(restart.indexOf('Get-Look'));
+		expect(restart).toMatch(/if \(\$WaitForProcess -gt 0\) \{[\s\S]*?Wait-ProcessExit -ProcessId \$WaitForProcess/);
+		const detached = functionBody(control(), 'Start-DetachedRestart');
+		// Without redirection Start-Process goes through ShellExecuteEx: own console, no inherited
+		// handles; the new process waits for this one ($PID) before it stops the server.
+		expect(detached).toContain('-WaitForProcess $PID');
+		expect(detached).toMatch(/Start-Process -FilePath \$powershell -ArgumentList \$arguments -WorkingDirectory \$AppDir -WindowStyle Hidden -PassThru/);
+		expect(detached).not.toMatch(/-Redirect|-NoNewWindow|Invoke-StopCore|Stop-/);
+		expect(detached).toContain("[System.IO.Path]::Combine($env:SystemRoot, 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe')");
+		const main = control().slice(control().lastIndexOf('try {'));
+		expect(main).toMatch(/if \(\(\$Detach -or \$WaitForProcess -gt 0\) -and \$Command -ne 'restart'\) \{/);
+	});
+
+	it('mail-restart stops only the own mail helper, in order, and starts it again', () => {
+		const mail = functionBody(control(), 'Invoke-MailRestart');
+		expect(mail).toContain('Select-MailHelperProcess -Process $look.Processes -AppDir $AppDir -Url $urls');
+		expect(mail).toContain("Stop-OwnProcess -Candidates $helpers -Name 'byl-mail.exe'");
+		expect(mail.indexOf('Stop-OwnProcess')).toBeLessThan(mail.indexOf('\n    Start-MailHelper\r'));
+		expect(mail).not.toMatch(/Select-AppProcess|Invoke-StopCore|Stop-Process/);
+		expect(mail).toContain('return $BylExitNotRunning');
+	});
+
+	it('an isolated test copy never uses the startup folder of the account for the autostart', () => {
+		const source = control();
+		const folder = functionBody(source, 'Get-StartupFolder');
+		expect(folder).toMatch(/if \(\$IsolatedEnvironment\) \{[\s\S]*?'BYL_TEST_STARTUP_DIR'[\s\S]*?return \$folder\s*\}\s*return \[Environment\]::GetFolderPath\('Startup'\)/);
+		// The startup folder of the account is read in Get-StartupFolder only.
+		expect(source.match(/GetFolderPath\('Startup'\)/g)).toHaveLength(1);
+		for (const name of ['Get-AutostartState', 'Invoke-AutostartOn', 'Invoke-AutostartOff']) {
+			expect(functionBody(source, name), name).toMatch(/Get-StartupFolder/);
+		}
+	});
+
+	it('logs -Json removes the values of the BYL_* variables from every line', () => {
+		const json = functionBody(control(), 'Get-LogsJson');
+		expect(json).toContain('$secrets = Get-LogSecretValue');
+		expect(json).toContain('Protect-LogText -Text $_ -Secrets $secrets');
+		const secrets = functionBody(control(), 'Get-LogSecretValue');
+		expect(secrets).toContain('$scope = Get-BylVariableScope');
+		expect(secrets).not.toMatch(/Write-|Show-Message|Out-|Add-Content|Set-Content/);
 	});
 });
 

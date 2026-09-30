@@ -1,6 +1,8 @@
 ﻿# Operation of becauseyoulovejira (ADR-0039): start, stop, restart, reload, status, open, logs,
 # doctor and port of the app, the autostart (E1 plan, package 8), the admin reset (E1.1) and the
-# mail helper byl-mail.exe next to PocketBase (E4 plan, package 11).
+# mail helper byl-mail.exe next to PocketBase (E4 plan, package 11). The page "Einstellungen →
+# System" of the app (ADR-0043) calls fixed commands of it: status, doctor and logs with -Json,
+# restart -Detach, mail-restart, autostart-on and autostart-off.
 # Called by start.bat, start-hidden.vbs, stop.bat, neu-starten.bat, status.bat, autostart-an.bat,
 # autostart-aus.bat and admin-zuruecksetzen.bat, always with -NoProfile -ExecutionPolicy Bypass (script execution is
 # disabled on the target machine):
@@ -25,7 +27,7 @@
 [CmdletBinding()]
 param(
     [Parameter(Position = 0)]
-    [ValidateSet('start', 'stop', 'restart', 'reload', 'status', 'open', 'logs', 'doctor', 'port', 'autostart-on', 'autostart-off', 'reset-admin', 'help')]
+    [ValidateSet('start', 'stop', 'restart', 'reload', 'status', 'open', 'logs', 'doctor', 'port', 'autostart-on', 'autostart-off', 'mail-restart', 'reset-admin', 'help')]
     [string]$Command = 'help',
     [Parameter(Position = 1)][string]$Value,
     [switch]$Force,
@@ -34,7 +36,9 @@ param(
     [switch]$Quiet,
     [switch]$Json,
     [switch]$Follow,
-    [ValidateRange(1, 10000)][int]$Lines = 30
+    [ValidateRange(1, 10000)][int]$Lines = 30,
+    [switch]$Detach,
+    [ValidateRange(0, 2147483647)][int]$WaitForProcess = 0
 )
 
 $ErrorActionPreference = 'Stop'
@@ -47,6 +51,8 @@ $Title = 'becauseyoulovejira'
 $HealthTimeoutSeconds = 30
 $StopGraceSeconds = 15
 $PortFreeTimeoutSeconds = 10
+# restart -WaitForProcess: how long the detached restart waits for its caller to end.
+$CallerExitSeconds = 10
 $ControlCall = 'powershell -NoProfile -ExecutionPolicy Bypass -File "{0}"' -f ([System.IO.Path]::Combine($AppDir, 'byl-control.ps1'))
 
 $MissedLinkHint = 'Link verpasst oder abgelaufen? admin-zuruecksetzen.bat legt ein Admin-Konto an, ohne Daten zu löschen.'
@@ -87,6 +93,7 @@ Befehle:
   port [Zahl]     Zeigt den Port oder stellt ihn um (1024–65535, Standard $BylDefaultPort; gespeichert in $BylConfigName).
   autostart-on    Startet die App künftig bei der Anmeldung (autostart-an.bat).
   autostart-off   Nimmt die App aus dem Autostart (autostart-aus.bat).
+  mail-restart    Startet den Mail-Hilfsprozess neu (beendet ihn geordnet und startet ihn, wenn ein Postfach eingeschaltet ist).
   reset-admin     Legt ein Admin-Konto an oder setzt sein Passwort neu (admin-zuruecksetzen.bat).
   help            Diese Hilfe.
 
@@ -94,10 +101,12 @@ Optionen:
   -Force          start: eine laufende App, die nicht antwortet, neu starten; reload: immer neu starten.
   -NoBrowser      start/restart/reload/open: keinen Browser öffnen.
   -Quiet          nur Fehler und das Ergebnis ausgeben.
-  -Json           status/doctor: Ergebnis als JSON.
+  -Json           status/doctor/logs: Ergebnis als JSON (logs ohne Werte der BYL_*-Variablen).
   -Follow         logs: dem Log folgen (Strg+C beendet); nur mit server, mail oder skript.
   -Lines <Zahl>   logs: Anzahl der Zeilen (Standard 30).
   -Hidden         ohne Fenster (Autostart): Hinweise als Meldungsfenster.
+  -Detach         restart: startet den Neustart als eigenen Prozess im Hintergrund und endet sofort
+                  (für die Seite „System“ der App; Ergebnis in logs\byl-control.log).
 
 Exit-Codes:
   0  erledigt (status: läuft und ist aktuell)
@@ -122,6 +131,8 @@ $RestartReasonText = @{
 
 # Log detail of the current command for byl-control.log (numbers and fixed words only).
 $script:LogDetail = ''
+# What the last Start-MailHelper decided (Get-MailHelperDecision, or Failed); mail-restart logs it.
+$script:MailHelperDecision = 'None'
 
 function Show-Message {
     param([Parameter(Mandatory = $true)][string]$Text, [ValidateSet('Info', 'Warning', 'Error')][string]$Kind = 'Info')
@@ -149,6 +160,22 @@ function Write-Notice {
     # A warning that stays visible with -Quiet (yellow); silent with -Hidden and -Json.
     param([Parameter(Mandatory = $true)][string]$Text)
     if (-not $Hidden -and -not $Json) { Write-Host $Text -ForegroundColor Yellow }
+}
+
+function Write-JsonLine {
+    # The one line of JSON of -Json on standard output. A program that reads it (the page System of
+    # the app, ADR-0043) gets UTF-8 without BOM, whatever the code page of the console; in a console
+    # window it goes through the console as before.
+    param([Parameter(Mandatory = $true)][string]$Text)
+
+    if (-not [Console]::IsOutputRedirected) {
+        [Console]::Out.WriteLine($Text)
+        return
+    }
+    $bytes = (New-Object System.Text.UTF8Encoding($false)).GetBytes($Text + "`n")
+    $stream = [Console]::OpenStandardOutput()
+    $stream.Write($bytes, 0, $bytes.Length)
+    $stream.Flush()
 }
 
 function Write-ControlLog {
@@ -239,11 +266,24 @@ function New-EnvironmentKey {
     return , $bytes
 }
 
+function Get-StartupFolder {
+    # The Windows startup folder of the account. An isolated test copy never uses it: only the
+    # folder of the test in BYL_TEST_STARTUP_DIR, or none at all ($null), so no test can change the
+    # autostart of the user (ADR-0043).
+    if ($IsolatedEnvironment) {
+        $folder = [Environment]::GetEnvironmentVariable('BYL_TEST_STARTUP_DIR', 'Process')
+        if ([string]::IsNullOrWhiteSpace($folder)) { return $null }
+        return $folder
+    }
+    return [Environment]::GetFolderPath('Startup')
+}
+
 function Get-AutostartState {
     # 'on' (the shortcut starts start-hidden.vbs of this folder), 'other' (it starts another
-    # folder, e.g. after moving app\) or 'off'.
-    $spec = Get-AutostartShortcut -AppDir $AppDir -StartupDir ([Environment]::GetFolderPath('Startup')) `
-        -SystemDir ([Environment]::SystemDirectory)
+    # folder, e.g. after moving app\) or 'off' (also for a test copy without its own folder).
+    $startup = Get-StartupFolder
+    if ($null -eq $startup) { return 'off' }
+    $spec = Get-AutostartShortcut -AppDir $AppDir -StartupDir $startup -SystemDir ([Environment]::SystemDirectory)
     if (-not (Test-Path -LiteralPath $spec.Path -PathType Leaf)) { return 'off' }
     try {
         $arguments = (New-Object -ComObject WScript.Shell).CreateShortcut($spec.Path).Arguments
@@ -624,6 +664,7 @@ function Start-MailHelper {
         $count = -1
         if ($exists -and $tokenSet -and -not $running) { $count = Get-MailConnectionCount -Token $token.Trim() }
         $decision = Get-MailHelperDecision -HelperExists $exists -TokenSet $tokenSet -Running $running -MailConnectionCount $count
+        $script:MailHelperDecision = $decision
         if ($decision -eq 'Start') {
             $log = Get-MailHelperLogPath -AppDir $AppDir
             [void](New-Item -ItemType Directory -Force -Path $log.Directory)
@@ -642,6 +683,7 @@ function Start-MailHelper {
         }
     }
     catch {
+        $script:MailHelperDecision = 'Failed'
         Write-Status "Hinweis: byl-mail.exe konnte nicht gestartet werden ($($_.Exception.GetType().Name))."
     }
 }
@@ -1012,12 +1054,40 @@ function Invoke-Stop {
     return $BylExitOk
 }
 
+function Start-DetachedRestart {
+    # restart -Detach (the page System of the app, ADR-0043). PocketBase cannot restart itself in
+    # its own process, and a child in its console would get the console break of the stop. So this
+    # starts "restart" of this folder as a process of its own and ends at once: Start-Process
+    # without redirection goes through ShellExecuteEx, which gives the new Windows PowerShell its
+    # own hidden console and hands on no handles, and Windows does not end a process with its
+    # parent. The new process waits for this one (-WaitForProcess) before it stops the server, so
+    # no other process shares the console of PocketBase when the break is sent. Its result goes to
+    # byl-control.log like every restart.
+    $powershell = [System.IO.Path]::Combine($env:SystemRoot, 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe')
+    $arguments = Get-DetachedRestartArgumentString -ScriptPath ([System.IO.Path]::Combine($AppDir, 'byl-control.ps1')) -WaitForProcess $PID
+    try {
+        $child = Start-Process -FilePath $powershell -ArgumentList $arguments -WorkingDirectory $AppDir -WindowStyle Hidden -PassThru
+    }
+    catch {
+        Show-Message -Kind Error -Text "Der Neustart konnte nicht gestartet werden: $($_.Exception.Message)"
+        return $BylExitError
+    }
+    $script:LogDetail = "detached=$($child.Id)"
+    Write-Status "Neustart läuft im Hintergrund (PID $($child.Id)); das Ergebnis steht danach in logs\byl-control.log."
+    return $BylExitOk
+}
+
 function Invoke-Restart {
     param([Parameter(Mandatory = $true)][object]$Config)
 
     if ($null -ne $Config.Problem) {
         Show-Message -Kind Error -Text (Get-ConfigProblemText -Problem $Config.Problem)
         return $BylExitError
+    }
+    if ($Detach) { return Start-DetachedRestart }
+    if ($WaitForProcess -gt 0) {
+        # Started by restart -Detach: the caller ends right after starting this process.
+        [void](Wait-ProcessExit -ProcessId $WaitForProcess -Milliseconds ($CallerExitSeconds * 1000))
     }
     $look = Get-Look -Port $Config.Port
     if ($look.Own.Count -gt 0) {
@@ -1109,11 +1179,11 @@ function Invoke-Status {
             autostart      = $data.Autostart
             exitCode       = $code
         }
-        [Console]::Out.WriteLine(($result | ConvertTo-Json -Depth 4 -Compress))
+        Write-JsonLine ($result | ConvertTo-Json -Depth 4 -Compress)
         return $code
     }
 
-    $label = { param([string]$Name, [string]$Text) Write-Host ('  {0,-13} {1}' -f $Name, $Text) }
+    $label ={ param([string]$Name, [string]$Text) Write-Host ('  {0,-13} {1}' -f $Name, $Text) }
     Write-Host 'becauseyoulovejira – Status'
     switch ($data.ServerState) {
         'Running' {
@@ -1184,6 +1254,56 @@ function Invoke-Reload {
     return Invoke-Start -Config $Config
 }
 
+function Invoke-MailRestart {
+    # Restarts the own mail helper (the page System of the app, ADR-0043): stops it in order like
+    # stop (only byl-mail.exe of this folder with the address of the running instance, console
+    # break first), then Start-MailHelper starts it again if its conditions hold (file, token,
+    # switched-on mailbox). The helper needs the app: 3 if it does not run, 5 if it does not answer.
+    param([Parameter(Mandatory = $true)][object]$Config)
+
+    if ($null -ne $Config.Problem) {
+        Show-Message -Kind Error -Text (Get-ConfigProblemText -Problem $Config.Problem)
+        return $BylExitError
+    }
+    $look = Get-Look -Port $Config.Port
+    if ($look.ServerState -eq 'Stopped') {
+        Show-Message -Kind Error -Text 'becauseyoulovejira läuft nicht; der Mail-Hilfsprozess braucht die App. Starten mit start.bat.'
+        return $BylExitNotRunning
+    }
+    if ($look.ServerState -ne 'Running') {
+        Show-Message -Kind Error -Text "becauseyoulovejira (PID $($look.Own[0].ProcessId)) antwortet nicht. Neu starten: neu-starten.bat doppelklicken."
+        return $BylExitUnhealthy
+    }
+    Set-BylAddress -Port $look.RunningPort
+    $urls = @($BylMailHelperUrl)
+    $helpers = @(Select-MailHelperProcess -Process $look.Processes -AppDir $AppDir -Url $urls)
+    $failed = New-Object System.Collections.Generic.List[string]
+    $forced = New-Object System.Collections.Generic.List[string]
+    foreach ($line in @(Stop-OwnProcess -Candidates $helpers -Name 'byl-mail.exe' -Forced $forced -Select {
+                param($Process) Select-MailHelperProcess -Process $Process -AppDir $AppDir -Url $urls
+            })) { $failed.Add([string]$line) }
+    if ($forced.Count -gt 0) {
+        Write-Notice ('Warnung: Nicht rechtzeitig geordnet beendet, daher hart beendet: ' + ($forced -join ', ') + '.')
+    }
+    if ($failed.Count -gt 0) {
+        Show-Message -Kind Error -Text ("Der Mail-Hilfsprozess konnte nicht beendet werden:`n" + ($failed -join "`n"))
+        return $BylExitError
+    }
+    Start-MailHelper
+    $script:LogDetail = "stopped=$($helpers.Count) helper=$($script:MailHelperDecision.ToLowerInvariant())"
+    $text = switch ($script:MailHelperDecision) {
+        'Start' { 'Mail-Hilfsprozess neu gestartet.' }
+        'Running' { 'Der Mail-Hilfsprozess läuft.' }
+        'NoHelper' { 'byl-mail.exe fehlt im Ordner der App; es gibt keinen Mail-Hilfsprozess.' }
+        'NoToken' { 'Der Zugang für byl-mail.exe fehlt; er entsteht beim nächsten Start (neu-starten.bat).' }
+        'NoRoute' { 'byl-mail.exe startet erst nach einem Neustart der App (neu-starten.bat).' }
+        'NoConnection' { 'Kein Postfach ist eingeschaltet; der Mail-Hilfsprozess wird nicht gebraucht.' }
+        default { 'Der Mail-Hilfsprozess konnte nicht gestartet werden; Einzelheiten in logs\byl-mail.err.log.' }
+    }
+    Show-Message $text
+    return $BylExitOk
+}
+
 function Invoke-Open {
     # Opens the running app (installed app or tab, ADR-0035); with -NoBrowser only the address.
     param([Parameter(Mandatory = $true)][object]$Config)
@@ -1206,9 +1326,51 @@ function Invoke-Open {
     return $BylExitOk
 }
 
+function Get-LogSecretValue {
+    # Values of the BYL_* variables of the account and of this process, which logs -Json removes
+    # from every line (Protect-LogText). Only in memory, never printed.
+    $scope = Get-BylVariableScope
+    $values = New-Object System.Collections.Generic.List[string]
+    foreach ($table in @($scope.User, $scope.Machine, [Environment]::GetEnvironmentVariables('Process'))) {
+        foreach ($variable in @($table.Keys)) {
+            if ([string]$variable -match $BylSecretNamePattern) { $values.Add([string]$table[$variable]) }
+        }
+    }
+    return , $values.ToArray()
+}
+
+function Get-LogsJson {
+    # logs -Json (the page System of the app, ADR-0043): per log the files with size, time of the
+    # last change and the last $Lines lines, each without the values of the BYL_* variables.
+    param(
+        [Parameter(Mandatory = $true)][string]$LogDir,
+        [Parameter(Mandatory = $true)][System.Collections.Specialized.OrderedDictionary]$Sets,
+        [Parameter(Mandatory = $true)][string[]]$Names
+    )
+
+    $secrets = Get-LogSecretValue
+    $logs = foreach ($set in $Names) {
+        $files = foreach ($file in $Sets[$set]) {
+            $path = [System.IO.Path]::Combine($LogDir, $file)
+            if (-not [System.IO.File]::Exists($path)) {
+                [ordered]@{ file = $file; exists = $false; sizeBytes = 0; modifiedUtc = $null; lines = @() }
+                continue
+            }
+            $info = New-Object System.IO.FileInfo($path)
+            # Get-LogTailLines emits its array as one object; ForEach-Object goes through its lines.
+            $tail = @(Get-LogTailLines -Text (Read-TextFile -Path $path) -Count $Lines | ForEach-Object { $_ } |
+                    ForEach-Object { Protect-LogText -Text $_ -Secrets $secrets })
+            [ordered]@{ file = $file; exists = $true; sizeBytes = $info.Length; modifiedUtc = $info.LastWriteTimeUtc.ToString('o'); lines = $tail }
+        }
+        [ordered]@{ name = $set; files = @($files) }
+    }
+    return ConvertTo-Json -InputObject ([ordered]@{ lines = $Lines; logs = @($logs) }) -Depth 6 -Compress
+}
+
 function Invoke-Logs {
     # Last lines of the logs (the programs log counts and cleaned errors only, never values of
-    # variables or contents); -Follow follows one log until Ctrl+C.
+    # variables or contents); -Follow follows one log until Ctrl+C, -Json gives them to the page
+    # System of the app.
     $logDir = [System.IO.Path]::Combine($AppDir, 'logs')
     $sets = [ordered]@{
         server = @('pocketbase.out.log', 'pocketbase.err.log')
@@ -1219,6 +1381,15 @@ function Invoke-Logs {
     if ($name -ne 'alle' -and -not $sets.Contains($name)) {
         Show-Message -Kind Error -Text "Unbekanntes Log „$Value“. Erlaubt: server, mail, skript oder alle."
         return $BylExitError
+    }
+    if ($Json) {
+        if ($Follow) {
+            Show-Message -Kind Error -Text '-Follow und -Json gehen nicht zusammen.'
+            return $BylExitError
+        }
+        $names = if ($name -eq 'alle') { @($sets.Keys) } else { @($name) }
+        Write-JsonLine (Get-LogsJson -LogDir $logDir -Sets $sets -Names $names)
+        return $BylExitOk
     }
     if ($Follow) {
         if ($name -eq 'alle') {
@@ -1341,7 +1512,7 @@ function Invoke-Doctor {
     $failed = @($checks | Where-Object { $_.level -eq 'error' }).Count
     $code = if ($failed -gt 0) { $BylExitError } else { $BylExitOk }
     if ($Json) {
-        [Console]::Out.WriteLine(([ordered]@{ appDir = $AppDir; ok = ($failed -eq 0); checks = @($checks.ToArray()) } | ConvertTo-Json -Depth 4 -Compress))
+        Write-JsonLine ([ordered]@{ appDir = $AppDir; ok = ($failed -eq 0); checks = @($checks.ToArray()) } | ConvertTo-Json -Depth 4 -Compress)
         return $code
     }
     $tags = @{ ok = '[OK]      '; warning = '[WARNUNG] '; error = '[FEHLER]  '; info = '[INFO]    ' }
@@ -1402,14 +1573,25 @@ function Invoke-Port {
     return $BylExitOk
 }
 
+function Get-StartupFolderOrFail {
+    # The startup folder for autostart-on and autostart-off; $null after an error message if a test
+    # copy has no folder of its own (Get-StartupFolder).
+    $startup = Get-StartupFolder
+    if ($null -eq $startup) {
+        Show-Message -Kind Error -Text 'Autostart ist in dieser Testkopie gesperrt: Es fehlt ein eigener Ordner (BYL_TEST_STARTUP_DIR).'
+    }
+    return $startup
+}
+
 function Invoke-AutostartOn {
     $vbs = [System.IO.Path]::Combine($AppDir, 'start-hidden.vbs')
     if (-not (Test-Path -LiteralPath $vbs -PathType Leaf)) {
         Show-Message -Kind Error -Text "start-hidden.vbs fehlt in:`n$AppDir"
         return $BylExitError
     }
-    $spec = Get-AutostartShortcut -AppDir $AppDir -StartupDir ([Environment]::GetFolderPath('Startup')) `
-        -SystemDir ([Environment]::SystemDirectory)
+    $startup = Get-StartupFolderOrFail
+    if ($null -eq $startup) { return $BylExitError }
+    $spec = Get-AutostartShortcut -AppDir $AppDir -StartupDir $startup -SystemDir ([Environment]::SystemDirectory)
     # The shortcut has one name for every copy of the app: one of another folder is replaced.
     $before = Get-AutostartState
     try {
@@ -1431,8 +1613,9 @@ function Invoke-AutostartOn {
 }
 
 function Invoke-AutostartOff {
-    $spec = Get-AutostartShortcut -AppDir $AppDir -StartupDir ([Environment]::GetFolderPath('Startup')) `
-        -SystemDir ([Environment]::SystemDirectory)
+    $startup = Get-StartupFolderOrFail
+    if ($null -eq $startup) { return $BylExitError }
+    $spec = Get-AutostartShortcut -AppDir $AppDir -StartupDir $startup -SystemDir ([Environment]::SystemDirectory)
     if (-not (Test-Path -LiteralPath $spec.Path -PathType Leaf)) {
         Show-Message 'Autostart ist nicht aktiviert.'
         return $BylExitOk
@@ -1534,6 +1717,10 @@ function Invoke-ResetAdmin {
 try {
     $config = Get-Config
     Set-BylAddress -Port $config.Port
+    if (($Detach -or $WaitForProcess -gt 0) -and $Command -ne 'restart') {
+        Show-Message -Kind Error -Text '-Detach und -WaitForProcess gelten nur für restart.'
+        exit $BylExitError
+    }
     $exitCode = switch ($Command) {
         'start' { Invoke-Start -Config $config }
         'stop' { Invoke-Stop -Config $config }
@@ -1546,6 +1733,7 @@ try {
         'port' { Invoke-Port -Config $config }
         'autostart-on' { Invoke-AutostartOn }
         'autostart-off' { Invoke-AutostartOff }
+        'mail-restart' { Invoke-MailRestart -Config $config }
         'reset-admin' { Invoke-ResetAdmin }
         'help' {
             Write-Host $HelpText
@@ -1560,7 +1748,7 @@ catch {
 # A function that leaks output would turn the result into an array; the last value is the code.
 $exitCode = [int](@($exitCode)[-1])
 # Only commands that change something go into byl-control.log (status and logs would flood it).
-if (@('start', 'stop', 'restart', 'reload', 'port', 'autostart-on', 'autostart-off', 'reset-admin') -contains $Command) {
+if (@('start', 'stop', 'restart', 'reload', 'port', 'autostart-on', 'autostart-off', 'mail-restart', 'reset-admin') -contains $Command) {
     Write-ControlLog -Name $Command -ExitCode $exitCode
 }
 exit $exitCode
