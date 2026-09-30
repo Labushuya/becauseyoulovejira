@@ -72,8 +72,11 @@ export const TICKET_LIST_FIELDS = [
 	'expand.parent.title'
 ].join(',');
 
-/** Fields of the detail panel: the list fields plus the description and the inbox entry. */
-export const TICKET_DETAIL_FIELDS = `${TICKET_LIST_FIELDS},description,source_item`;
+/**
+ * Fields of the detail panel: the list fields plus the description, the inbox entry and the pinned
+ * comment (ADR-0044; unknown to the server before the migration 1790202600).
+ */
+export const TICKET_DETAIL_FIELDS = `${TICKET_LIST_FIELDS},description,source_item,pinned_comment`;
 
 /** Ticket record as the API returns it with the fields above. */
 export interface TicketRecord {
@@ -93,6 +96,8 @@ export interface TicketRecord {
 	/** Missing before the migration 1790201210 (the server leaves unknown fields out). */
 	source?: string;
 	source_item?: string;
+	/** Pinned comment, '' without one; missing before the migration 1790202600 (ADR-0044). */
+	pinned_comment?: string;
 	scope?: string;
 	completed_at: string;
 	created: string;
@@ -139,7 +144,9 @@ export function toTicket(record: TicketRecord): Ticket {
 	return {
 		...toTicketSummary(record),
 		description: record.description ?? '',
-		sourceItem: record.source_item || null
+		sourceItem: record.source_item || null,
+		// Left out while the server does not know the field yet (before the restart).
+		...(record.pinned_comment !== undefined ? { pinnedComment: record.pinned_comment || null } : {})
 	};
 }
 
@@ -165,6 +172,8 @@ function patchBody(patch: TicketPatch): PatchBody {
 	// '' releases a sub-task from its parent (ADR-0033).
 	if (patch.parent !== undefined) body.parent = patch.parent ?? '';
 	if (patch.blocksParent !== undefined) body.blocks_parent = patch.blocksParent;
+	// Pins a comment of the ticket, '' releases the pin (ADR-0044); the hook checks the comment.
+	if (patch.pinnedComment !== undefined) body.pinned_comment = patch.pinnedComment ?? '';
 	// The only change a client may make to the series: leaving it (ADR-0023 section 1).
 	if (patch.detachSeries === true) body.recurrence = '';
 	return body;

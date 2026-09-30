@@ -2,6 +2,7 @@
 // (`status`, `isAbort`, `response`) instead of `instanceof ClientResponseError`, because the
 // root integration tests and the web app each load their own copy of the SDK.
 
+import { PIN_MESSAGES } from '../domain/comments';
 import { INBOX_KEY_MESSAGES } from '../domain/inbox-keys';
 import { PROJECT_PARENT_MESSAGES } from '../domain/project-tree';
 import {
@@ -85,7 +86,9 @@ const FIELD_MESSAGES: Readonly<Record<string, string>> = Object.freeze({
 	// Trash (ADR-0037), the same texts as the hook.
 	...TRASH_MESSAGES,
 	// Access keys of the own inbox (ADR-0038), the same texts as the hook.
-	...INBOX_KEY_MESSAGES
+	...INBOX_KEY_MESSAGES,
+	// The pinned comment (ADR-0044), the same texts as the hook.
+	...PIN_MESSAGES
 });
 
 /** Texts that depend on the field as well, keyed by `<field>:<code>`; they win over the above. */

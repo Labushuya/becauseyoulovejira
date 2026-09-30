@@ -143,10 +143,12 @@ describe('migration rollback', () => {
 				const up = await migrate(args, 'up');
 				expect(appliedFiles(up, 'Applied')).toEqual(e4);
 				const migrated = withDatabase(dataDir, snapshot);
-				// occurrence and the fields of the trash come with later migrations (plan OR-5, ADR-0037)
-				// that `up` runs along.
+				// occurrence, the fields of the trash and the pinned comment come with later migrations
+				// (plan OR-5, ADR-0037, ADR-0044) that `up` runs along.
 				expect(
-					migrated.tickets.map(({ source, source_item, occurrence, deleted_at, deleted_by, trash, ...rest }) => rest)
+					migrated.tickets.map(
+						({ source, source_item, occurrence, deleted_at, deleted_by, trash, pinned_comment, ...rest }) => rest
+					)
 				).toEqual(before.tickets);
 				expect(migrated.tickets.map(({ source, source_item }) => ({ source, source_item }))).toEqual([
 					{ source: '', source_item: '' },
@@ -703,7 +705,9 @@ const LATER_RULE_FIELDS = [...EACH_RULE_FIELDS, ...STATUS_RULE_FIELDS];
 // along as well.
 const TRASH_TICKET_FIELDS = ['deleted_at', 'deleted_by', 'trash'];
 const TRASH_USER_FIELDS = ['trash_retention'];
-const LATER_TICKET_FIELDS = [...EACH_TICKET_FIELDS, ...TRASH_TICKET_FIELDS];
+// The pinned comment (ADR-0044, 1790202600), which every earlier test runs along as well.
+const PIN_TICKET_FIELDS = ['pinned_comment'];
+const LATER_TICKET_FIELDS = [...EACH_TICKET_FIELDS, ...TRASH_TICKET_FIELDS, ...PIN_TICKET_FIELDS];
 // Conditions the trash appends to the API rules (1790202300).
 const TRASH_RULE_SUFFIXES = [
 	' && deleted_at = ""',
@@ -730,8 +734,9 @@ function withoutFields(rows, fields) {
 
 /**
  * A snapshot without the columns of "Jeden Termin einzeln anlegen" (plan OR-5, migration
- * 1790202200), of the trash (ADR-0037, 1790202300) and of "Status beim Anlegen" (plan WV,
- * 1790202500): the tests of earlier migrations run them along with `up`.
+ * 1790202200), of the trash (ADR-0037, 1790202300), of "Status beim Anlegen" (plan WV,
+ * 1790202500) and of the pinned comment (ADR-0044, 1790202600): the tests of earlier migrations
+ * run them along with `up`.
  */
 function withoutLater(snap) {
 	return {
@@ -744,6 +749,7 @@ function withoutLater(snap) {
 
 const OPEN_INSTANCE_INDEX = /idx_tickets_open_(recurrence|occurrence)/;
 const TRASH_INDEX = /idx_tickets_deleted_at/;
+const PIN_INDEX = /idx_tickets_pinned_comment/;
 
 /** The API rules of a collection without the conditions of the trash (1790202300). */
 function withoutTrashRules(collection) {
@@ -788,10 +794,21 @@ function withoutStatusField(collection) {
 	return { ...collection, fields: collection.fields.filter((field) => !STATUS_RULE_FIELDS.includes(field.name)) };
 }
 
+/** A collection without the field and index of the pinned comment (ADR-0044, 1790202600). */
+function withoutPinField(collection) {
+	if (collection.name !== 'tickets') return collection;
+	return {
+		...collection,
+		fields: collection.fields.filter((field) => !PIN_TICKET_FIELDS.includes(field.name)),
+		indexes: collection.indexes.filter((index) => !PIN_INDEX.test(index))
+	};
+}
+
 /**
  * A collection without the fields, indexes and rule conditions of the migrations 1790202200
- * (plan OR-5), 1790202300 (trash, ADR-0037), 1790202500 (plan WV) and without the channels of
- * 1790202400 (own inbox, ADR-0038; its collection leaves with `withoutLaterCollections`).
+ * (plan OR-5), 1790202300 (trash, ADR-0037), 1790202500 (plan WV), 1790202600 (pinned comment,
+ * ADR-0044) and without the channels of 1790202400 (own inbox, ADR-0038; its collection leaves
+ * with `withoutLaterCollections`).
  */
 function withoutLaterSchema(collection) {
 	const plain = withoutOwnInboxChannels(withoutTrashRules(collection));
@@ -799,7 +816,9 @@ function withoutLaterSchema(collection) {
 		return {
 			...plain,
 			fields: plain.fields.filter((field) => !LATER_TICKET_FIELDS.includes(field.name)),
-			indexes: collection.indexes.filter((index) => !OPEN_INSTANCE_INDEX.test(index) && !TRASH_INDEX.test(index))
+			indexes: collection.indexes.filter(
+				(index) => !OPEN_INSTANCE_INDEX.test(index) && !TRASH_INDEX.test(index) && !PIN_INDEX.test(index)
+			)
 		};
 	}
 	if (collection.name === 'recurrence_rules') {
@@ -939,6 +958,7 @@ const EACH_MIGRATION = '1790202200_recurrence_each_occurrence.js';
 const TRASH_MIGRATION = '1790202300_tickets_trash.js';
 const OWN_INBOX_MIGRATION = '1790202400_inbox_keys.js';
 const STATUS_MIGRATION = '1790202500_recurrence_initial_status.js';
+const PIN_MIGRATION = '1790202600_tickets_pinned_comment.js';
 
 describe('migration rollback of "Jeden Termin einzeln anlegen" (plan OR-5)', () => {
 	const ticketsOf = (dataDir) =>
@@ -984,10 +1004,16 @@ describe('migration rollback of "Jeden Termin einzeln anlegen" (plan OR-5)', () 
 		'adds the switch, the date of the series and the new index without changing a row, and back',
 		async () => {
 			// The trash (ADR-0037, 1790202300) follows and runs along; it adds deleted_at = '' to the
-			// condition of the index. The own inbox (ADR-0038, 1790202400) and "Status beim Anlegen"
-			// (plan WV, 1790202500) run along as well.
+			// condition of the index. The own inbox (ADR-0038, 1790202400), "Status beim Anlegen"
+			// (plan WV, 1790202500) and the pinned comment (ADR-0044, 1790202600) run along as well.
 			const fromEach = MIGRATION_FILES.slice(MIGRATION_FILES.indexOf(EACH_MIGRATION));
-			expect(fromEach).toEqual([EACH_MIGRATION, TRASH_MIGRATION, OWN_INBOX_MIGRATION, STATUS_MIGRATION]);
+			expect(fromEach).toEqual([
+				EACH_MIGRATION,
+				TRASH_MIGRATION,
+				OWN_INBOX_MIGRATION,
+				STATUS_MIGRATION,
+				PIN_MIGRATION
+			]);
 
 			await withTempDataDir(async ({ dataDir, args }) => {
 				await migrate(args, 'up');
@@ -1117,10 +1143,10 @@ describe('migration rollback of the trash (ADR-0037)', () => {
 	it(
 		'adds the fields, the index condition and the rule conditions without changing a row, and deletes the trash on the way back',
 		async () => {
-			// The own inbox (ADR-0038, 1790202400) and "Status beim Anlegen" (plan WV, 1790202500)
-			// follow and run along; they change no row here.
+			// The own inbox (ADR-0038, 1790202400), "Status beim Anlegen" (plan WV, 1790202500) and the
+			// pinned comment (ADR-0044, 1790202600) follow and run along; they change no row here.
 			const fromTrash = MIGRATION_FILES.slice(MIGRATION_FILES.indexOf(TRASH_MIGRATION));
-			expect(fromTrash).toEqual([TRASH_MIGRATION, OWN_INBOX_MIGRATION, STATUS_MIGRATION]);
+			expect(fromTrash).toEqual([TRASH_MIGRATION, OWN_INBOX_MIGRATION, STATUS_MIGRATION, PIN_MIGRATION]);
 
 			await withTempDataDir(async ({ dataDir, args }) => {
 				await migrate(args, 'up');
@@ -1137,7 +1163,9 @@ describe('migration rollback of the trash (ADR-0037)', () => {
 				expect(appliedFiles(up, 'Applied')).toEqual(fromTrash);
 				assertSchema(readDataDir(dataDir).collections);
 				const migrated = withDatabase(dataDir, snapshot);
-				expect(withoutFields(migrated.tickets, TRASH_TICKET_FIELDS)).toEqual(before.tickets);
+				expect(withoutFields(migrated.tickets, [...TRASH_TICKET_FIELDS, ...PIN_TICKET_FIELDS])).toEqual(
+					before.tickets
+				);
 				expect(migrated.tickets.map(({ deleted_at, deleted_by }) => deleted_at + deleted_by)).toEqual(['', '', '']);
 				expect(withoutFields(migrated.users, TRASH_USER_FIELDS)).toEqual(before.users);
 				expect(migrated.inbox_items).toEqual(before.inbox_items);
@@ -1206,9 +1234,10 @@ describe('migration rollback of the own inbox (ADR-0038)', () => {
 	it(
 		'adds the keys and the two channels without changing a row, and keeps the content of new entries on the way back',
 		async () => {
-			// "Status beim Anlegen" (plan WV, 1790202500) follows and runs along; it changes no row.
+			// "Status beim Anlegen" (plan WV, 1790202500) and the pinned comment (ADR-0044, 1790202600)
+			// follow and run along; they change no row.
 			const fromOwn = MIGRATION_FILES.slice(MIGRATION_FILES.indexOf(OWN_INBOX_MIGRATION));
-			expect(fromOwn).toEqual([OWN_INBOX_MIGRATION, STATUS_MIGRATION]);
+			expect(fromOwn).toEqual([OWN_INBOX_MIGRATION, STATUS_MIGRATION, PIN_MIGRATION]);
 
 			await withTempDataDir(async ({ dataDir, args }) => {
 				await migrate(args, 'up');
@@ -1226,11 +1255,13 @@ describe('migration rollback of the own inbox (ADR-0038)', () => {
 					inbox_items: [...OLD_VALUES, 'api', 'whatsapp-web'],
 					tickets: [...OLD_VALUES, 'api', 'whatsapp-web']
 				});
-				expect(withDatabase(dataDir, snapshot)).toEqual(before);
+				const migratedOwn = withDatabase(dataDir, snapshot);
+				expect({ ...migratedOwn, tickets: withoutFields(migratedOwn.tickets, PIN_TICKET_FIELDS) }).toEqual(before);
 				expect(
 					withoutLaterCollections(withoutTimestamps(readDataDir(dataDir).collections))
 						.map(withoutOwnInboxChannels)
 						.map(withoutStatusField)
+						.map(withoutPinField)
 				).toEqual(schemaBefore);
 
 				// Entries, a ticket, keyword lists and a key of the own inbox, then back.
@@ -1308,8 +1339,9 @@ describe('migration rollback of "Status beim Anlegen" (plan WV, ADR-0022 addendu
 	it(
 		'adds the field without changing a row, and the tickets made with it keep their status on the way back',
 		async () => {
+			// The pinned comment (ADR-0044, 1790202600) follows and runs along; it changes no row.
 			const fromStatus = MIGRATION_FILES.slice(MIGRATION_FILES.indexOf(STATUS_MIGRATION));
-			expect(fromStatus).toEqual([STATUS_MIGRATION]);
+			expect(fromStatus).toEqual([STATUS_MIGRATION, PIN_MIGRATION]);
 
 			await withTempDataDir(async ({ dataDir, args }) => {
 				await migrate(args, 'up');
@@ -1328,12 +1360,14 @@ describe('migration rollback of "Status beim Anlegen" (plan WV, ADR-0022 addendu
 					values: ['backlog', 'open', 'in_progress', 'waiting'],
 					maxSelect: 1
 				});
-				expect(withoutTimestamps(readDataDir(dataDir).collections).map(withoutStatusField)).toEqual(schemaBefore);
+				expect(
+					withoutTimestamps(readDataDir(dataDir).collections).map(withoutStatusField).map(withoutPinField)
+				).toEqual(schemaBefore);
 				// No row changes: the rule of before has an empty status, which the hooks read as "open".
 				const migrated = withDatabase(dataDir, snapshot);
 				expect(withoutFields(migrated.recurrence_rules, STATUS_RULE_FIELDS)).toEqual(before.recurrence_rules);
 				expect(migrated.recurrence_rules.map((rule) => rule.initial_status)).toEqual(['']);
-				expect(migrated.tickets).toEqual(before.tickets);
+				expect(withoutFields(migrated.tickets, PIN_TICKET_FIELDS)).toEqual(before.tickets);
 				// "done" is no value of the field.
 				expect(statusField(dataDir).values).not.toContain('done');
 
@@ -1351,12 +1385,89 @@ describe('migration rollback of "Status beim Anlegen" (plan WV, ADR-0022 addendu
 				// The field goes with its value; the rule makes "open" tickets again (the hooks read no
 				// field), the ticket made meanwhile stays "waiting".
 				expect(reverted.recurrence_rules).toEqual(withoutFields(withStatus.recurrence_rules, STATUS_RULE_FIELDS));
-				expect(reverted.tickets).toEqual(withStatus.tickets);
+				expect(reverted.tickets).toEqual(withoutFields(withStatus.tickets, PIN_TICKET_FIELDS));
 				expect(reverted.tickets.map((ticket) => ticket.status)).toEqual(['done', 'waiting']);
 
 				expect(appliedFiles(await migrate(args, 'up'), 'Applied')).toEqual(fromStatus);
 				assertSchema(readDataDir(dataDir).collections);
 				expect(withDatabase(dataDir, snapshot).recurrence_rules.map((rule) => rule.initial_status)).toEqual(['']);
+			});
+		},
+		60_000
+	);
+});
+
+describe('migration rollback of the pinned comment (ADR-0044)', () => {
+	const OWNER = 'user00000000001';
+	const SCOPE = 'u:user00000000001';
+	const ticketsOf = (dataDir) => readDataDir(dataDir).collections.find((collection) => collection.name === 'tickets');
+	const pinField = (dataDir) => ticketsOf(dataDir).fields.find((field) => field.name === 'pinned_comment');
+	const commentsOf = (db) => db.prepare('SELECT * FROM comments ORDER BY id').all();
+
+	/** Two tickets with comments, as before the pin. */
+	function insertData(db) {
+		db.prepare('INSERT INTO users (id, email, tokenKey, password, created, updated) VALUES (?, ?, ?, ?, ?, ?)').run(OWNER, 'eins@example.invalid', 'tk1', 'hash', STAMP, STAMP);
+		const ticket = db.prepare(
+			'INSERT INTO tickets (id, number, key, title, status, priority, scope, owner, created, updated) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+		);
+		ticket.run('ticket000000001', 1, 'TASK-1', 'Mit Kommentaren', 'open', 'medium', SCOPE, OWNER, STAMP, STAMP);
+		ticket.run('ticket000000002', 2, 'TASK-2', 'Ohne', 'done', 'low', SCOPE, OWNER, STAMP, STAMP);
+		const comment = db.prepare('INSERT INTO comments (id, ticket, author, body, created, updated) VALUES (?, ?, ?, ?, ?, ?)');
+		comment.run('comment00000001', 'ticket000000001', OWNER, 'Erster', STAMP, STAMP);
+		comment.run('comment00000002', 'ticket000000001', OWNER, 'Wichtig', STAMP, STAMP);
+	}
+
+	it(
+		'adds the relation and its index without changing a row, and drops only the pins on the way back',
+		async () => {
+			const fromPin = MIGRATION_FILES.slice(MIGRATION_FILES.indexOf(PIN_MIGRATION));
+			expect(fromPin).toEqual([PIN_MIGRATION]);
+
+			await withTempDataDir(async ({ dataDir, args }) => {
+				await migrate(args, 'up');
+				await migrate(args, 'down', String(fromPin.length));
+				expect(pinField(dataDir)).toBeUndefined();
+				withDatabase(dataDir, insertData);
+				const before = withDatabase(dataDir, snapshot);
+				const commentsBefore = withDatabase(dataDir, commentsOf);
+				const schemaBefore = withoutTimestamps(readDataDir(dataDir).collections);
+
+				const up = await migrate(args, 'up');
+				expect(appliedFiles(up, 'Applied')).toEqual(fromPin);
+				assertSchema(readDataDir(dataDir).collections);
+				const comments = readDataDir(dataDir).collections.find((collection) => collection.name === 'comments');
+				expect(pinField(dataDir)).toMatchObject({
+					type: 'relation',
+					required: false,
+					collectionId: comments.id,
+					cascadeDelete: false,
+					maxSelect: 1
+				});
+				// The exact statement is checked by assertSchema.
+				expect(ticketsOf(dataDir).indexes.filter((index) => PIN_INDEX.test(index))).toHaveLength(1);
+				expect(withoutTimestamps(readDataDir(dataDir).collections).map(withoutPinField)).toEqual(schemaBefore);
+				// No row changes: every ticket starts without a pin.
+				const migrated = withDatabase(dataDir, snapshot);
+				expect(withoutFields(migrated.tickets, PIN_TICKET_FIELDS)).toEqual(before.tickets);
+				expect(migrated.tickets.map((ticket) => ticket.pinned_comment)).toEqual(['', '']);
+
+				// A pinned comment, then back: only the column goes, tickets and comments stay.
+				withDatabase(dataDir, (db) => {
+					db.prepare('UPDATE tickets SET pinned_comment = ? WHERE id = ?').run('comment00000002', 'ticket000000001');
+				});
+				const pinned = withDatabase(dataDir, snapshot);
+
+				const down = await migrate(args, 'down', String(fromPin.length));
+				expect(appliedFiles(down, 'Reverted')).toEqual([...fromPin].reverse());
+				expect(withoutTimestamps(readDataDir(dataDir).collections)).toEqual(schemaBefore);
+				const reverted = withDatabase(dataDir, snapshot);
+				expect(reverted.tickets).toEqual(withoutFields(pinned.tickets, PIN_TICKET_FIELDS));
+				expect(reverted.tickets).toEqual(before.tickets);
+				expect(withDatabase(dataDir, commentsOf)).toEqual(commentsBefore);
+
+				expect(appliedFiles(await migrate(args, 'up'), 'Applied')).toEqual(fromPin);
+				assertSchema(readDataDir(dataDir).collections);
+				expect(withDatabase(dataDir, snapshot).tickets.map((ticket) => ticket.pinned_comment)).toEqual(['', '']);
 			});
 		},
 		60_000

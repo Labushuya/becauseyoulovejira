@@ -8,8 +8,9 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { startPocketBase } from '../support/pocketbase-harness.mjs';
 import { createInboxKey, listInboxKeys } from '../../web/src/lib/data/inbox-keys.ts';
 import { createProject, listProjects, updateProject } from '../../web/src/lib/data/projects.ts';
+import { createComment, deleteComment } from '../../web/src/lib/data/comments.ts';
 import { eachOccurrenceReady, initialStatusReady, listRules } from '../../web/src/lib/data/recurrence.ts';
-import { deleteTicket } from '../../web/src/lib/data/tickets.ts';
+import { createTicket, deleteTicket, getTicket, updateTicket } from '../../web/src/lib/data/tickets.ts';
 import { unreadSinceOf } from '../../web/src/lib/domain/unread.ts';
 
 // First migration of E4; the instance runs only the migrations before it.
@@ -761,5 +762,48 @@ describe('WV hooks before the migration of "Status beim Anlegen"', () => {
 		expect(rules?.every((rule) => rule.initialStatus === 'open')).toBe(true);
 		expect(await initialStatusReady(who)).toBe(false);
 		expect(await eachOccurrenceReady(who)).toBe(true);
+	});
+});
+
+// The instance of the user after the merge of KO-1 (ADR-0044), before its next start: tickets
+// without pinned_comment. The new hooks read the field as empty, so tickets and comments work as
+// before; the SPA sees no field and offers no pinning yet.
+describe('KO-1 hooks before the migration of the pinned comment (ADR-0044)', () => {
+	const PIN_MIGRATION = '1790202600_tickets_pinned_comment.js';
+	let before;
+	let who;
+
+	beforeAll(async () => {
+		before = await startPocketBase({ migrationFilter: (name) => name < PIN_MIGRATION });
+		const superuser = new PocketBase(before.url);
+		superuser.autoCancellation(false);
+		await superuser.collection('_superusers').authWithPassword(before.email, before.password);
+		const email = `user-${randomBytes(12).toString('hex')}@example.com`;
+		const password = randomBytes(24).toString('base64url');
+		await superuser.collection('users').create({ email, password, passwordConfirm: password });
+		who = new PocketBase(before.url);
+		who.autoCancellation(false);
+		await who.collection('users').authWithPassword(email, password);
+	}, 60_000);
+
+	afterAll(async () => {
+		await before?.stop();
+	});
+
+	it('creates, changes and comments tickets as before; a sent pin is dropped', async () => {
+		const draft = { title: 'Vor dem Neustart', description: '', status: 'open', priority: 'medium', due: null };
+		const ticket = await createTicket(who, draft);
+		// Without the field on the server the SPA knows no pin and offers none.
+		expect(ticket).not.toHaveProperty('pinnedComment');
+		const comment = await createComment(who, ticket.id, 'Wichtig');
+
+		const changed = await updateTicket(who, ticket.id, { title: 'Geändert', pinnedComment: comment.id });
+		expect(changed.title).toBe('Geändert');
+		expect(changed).not.toHaveProperty('pinnedComment');
+
+		// Deleting a comment releases nothing: there is no pin to release.
+		await deleteComment(who, comment.id);
+		expect((await getTicket(who, ticket.id)).title).toBe('Geändert');
+		await deleteTicket(who, ticket.id);
 	});
 });

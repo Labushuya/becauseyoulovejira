@@ -39,7 +39,8 @@ describe('labels', () => {
 		['priority', 'Priorität'],
 		['due', 'Fälligkeit'],
 		['description', 'Beschreibung'],
-		['household', 'Haushalt']
+		['household', 'Haushalt'],
+		['pinned_comment', 'Angepinnter Kommentar']
 	])('names the history field %s "%s"', (field, label) => {
 		expect(historyFieldLabel(field)).toBe(label);
 	});

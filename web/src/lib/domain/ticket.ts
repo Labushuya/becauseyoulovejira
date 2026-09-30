@@ -99,6 +99,11 @@ export interface Ticket extends TicketSummary {
 	description: string;
 	/** Inbox entry the ticket came from; null without one or after the entry was deleted. */
 	sourceItem: string | null;
+	/**
+	 * The pinned comment (ADR-0044), null without one. Left out while the server does not know the
+	 * field (before the restart after the migration): pinning is not offered then.
+	 */
+	pinnedComment?: string | null;
 }
 
 /** Fields a user sets when creating a ticket; key, scope and number come from the hook. */
@@ -142,9 +147,14 @@ export const QUICK_ORIGIN: TicketOrigin = Object.freeze({ source: 'quick' });
  * Changed fields of an update; only these are sent (ADR-0006 section 5). `blocksParent` is the
  * switch "Blockiert das übergeordnete Ticket" of a sub-task (ADR-0033). `detachSeries` releases the
  * ticket from its series in the same request (ADR-0023 section 6), e.g. to reopen an older
- * instance as a normal ticket (addendum 4).
+ * instance as a normal ticket (addendum 4). `pinnedComment` pins a comment of the ticket, null
+ * releases the pin (ADR-0044).
  */
-export type TicketPatch = Partial<TicketDraft> & { blocksParent?: boolean; detachSeries?: boolean };
+export type TicketPatch = Partial<TicketDraft> & {
+	blocksParent?: boolean;
+	detachSeries?: boolean;
+	pinnedComment?: string | null;
+};
 
 export interface Comment {
 	id: string;

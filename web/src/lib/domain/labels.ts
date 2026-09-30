@@ -36,7 +36,8 @@ export const HISTORY_FIELD_LABELS: Readonly<Record<string, string>> = Object.fre
 	blocks_parent: 'Blockiert übergeordnetes Ticket',
 	recurrence: 'Wiederholung',
 	key: 'Key',
-	household: 'Haushalt'
+	household: 'Haushalt',
+	pinned_comment: 'Angepinnter Kommentar'
 });
 
 /** Label of a history field; an unknown field shows its technical name instead of nothing. */

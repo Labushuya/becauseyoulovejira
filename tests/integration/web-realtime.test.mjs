@@ -185,6 +185,28 @@ describe('web data layer: realtime', () => {
 		expect(change.record.description).toBe('**Neu** aus dem zweiten Fenster');
 	});
 
+	it('follows the pinned comment of the shown ticket in every tab (ADR-0044)', async () => {
+		const ticket = await createTicket(first, draft());
+		const comment = await createComment(first, ticket.id, 'Wichtig');
+		const events = collector();
+		await subscribe(subscribeTicket(first, ticket.id, events.onChange));
+
+		await updateTicket(second, ticket.id, { pinnedComment: comment.id });
+		const pinned = await events.waitFor(
+			(item) => item.action === 'update' && item.record.pinnedComment === comment.id,
+			'pinned'
+		);
+		// Deleting the pinned comment in the second tab releases the pin for the first as well.
+		await second.collection('comments').delete(comment.id);
+		const released = await events.waitFor(
+			(item) => item.action === 'update' && item.record.pinnedComment === null,
+			'released'
+		);
+
+		expect(pinned.record.id).toBe(ticket.id);
+		expect(released.record.updated >= pinned.record.updated).toBe(true);
+	});
+
 	it('delivers only comments and history of the filtered ticket', async () => {
 		const shown = await createTicket(first, draft());
 		const elsewhere = await createTicket(first, draft());
