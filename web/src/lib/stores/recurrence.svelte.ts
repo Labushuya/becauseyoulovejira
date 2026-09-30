@@ -5,6 +5,9 @@
 // Before the E5 migration the server does not know the rules yet: the store then says so neutrally
 // ("unavailable") instead of showing an error. Results of actions go out as success flags
 // (ADR-0025 section 8; E5 plan, package 5); refusals come back as EditResult for their place.
+// The template of a rule (plan WV, ADR-0023 addendum 6): the draft of its inline editor at the
+// ticket lives here like the drafts of a ticket (panel and full view share it), and after a change
+// of an open ticket of a series the store offers "Auch für künftige Tickets übernehmen" in a flag.
 
 import type PocketBase from 'pocketbase';
 import { createContext } from 'svelte';
@@ -17,11 +20,27 @@ import {
 	deleteRule,
 	detachTicket,
 	eachOccurrenceReady,
+	initialStatusReady,
 	listRules,
 	setRuleActive,
 	updateRule,
 	type RuleDraft
 } from '$lib/data/recurrence';
+import {
+	OFFER_ACTION,
+	appliedTitle,
+	offerDescription,
+	offerTitle,
+	templateBody,
+	templateChanges,
+	templateOf,
+	templateOffers,
+	ticketTemplate,
+	type RuleTemplate,
+	type SeriesChange,
+	type SeriesChangeSink,
+	type TemplateOffer
+} from '$lib/domain/series-template';
 import { compareTitles } from '$lib/domain/ordering';
 import type { CalendarDate } from '$lib/domain/berlin-date';
 import {
@@ -68,6 +87,16 @@ export interface RepeatOffer {
 	message: string | null;
 }
 
+/**
+ * Draft of the template edited inline at a ticket ("Wiederholt sich" → "Bearbeiten", plan WV):
+ * one at a time, for its rule; the text in the tag picker counts as unsaved input.
+ */
+export interface TemplateDraft {
+	ruleId: string;
+	template: RuleTemplate;
+	tagText: string;
+}
+
 /** Data access of the store; tests pass a fake, the app binds the data layer to its client. */
 export interface RecurrenceData {
 	listRules(options: RequestOptions): Promise<RecurrenceRule[] | null>;
@@ -81,12 +110,18 @@ export interface RecurrenceData {
 	 * switch is not offered.
 	 */
 	eachOccurrenceReady?(options: RequestOptions): Promise<boolean>;
+	/**
+	 * Whether the server knows "Status beim Anlegen" (plan WV); without it (tests) the field is not
+	 * offered.
+	 */
+	initialStatusReady?(options: RequestOptions): Promise<boolean>;
 }
 
 export function recurrenceData(pb: PocketBase): RecurrenceData {
 	return {
 		listRules: (options) => listRules(pb, options),
 		eachOccurrenceReady: (options) => eachOccurrenceReady(pb, options),
+		initialStatusReady: (options) => initialStatusReady(pb, options),
 		createRule: (draft, ticket) => createRule(pb, draft, ticket),
 		updateRule: (id, patch) => updateRule(pb, id, patch),
 		setActive: (id, active) => setRuleActive(pb, id, active),
@@ -132,10 +167,11 @@ const FORM_FIELDS = [
 	'anchor',
 	'lead_days',
 	'each_occurrence',
+	'initial_status',
 	'ticket'
 ];
 
-export class RecurrenceStore {
+export class RecurrenceStore implements SeriesChangeSink {
 	readonly #data: RecurrenceData;
 	readonly #session: SessionGuard;
 	readonly #flags: FlagSink;
@@ -151,6 +187,12 @@ export class RecurrenceStore {
 	#error = $state<string | null>(null);
 	/** The server knows "Jeden Termin einzeln anlegen" (after its migration, plan OR-5). */
 	#eachReady = $state(false);
+	/** The server knows "Status beim Anlegen" (after its migration, plan WV). */
+	#statusReady = $state(false);
+	/** Draft of the template edited at a ticket, null while none is edited. */
+	#templateDraft = $state<TemplateDraft | null>(null);
+	/** The flag offering "Auch für künftige Tickets übernehmen", while it is shown. */
+	#templateOffer: string | null = null;
 
 	#list = $derived([...this.#rules.values()].sort(byNextTicket));
 	/** "Wiederholen…" handed over to the panel of one ticket, taken once (`takeOffer`). */
@@ -183,6 +225,14 @@ export class RecurrenceStore {
 	 */
 	get eachReady(): boolean {
 		return this.#state === 'ready' && this.#eachReady;
+	}
+
+	/**
+	 * Whether "Status beim Anlegen" is offered (plan WV): only once the server knows it; before the
+	 * next start of the app every ticket of a rule starts "open" and the forms leave it out.
+	 */
+	get statusReady(): boolean {
+		return this.#state === 'ready' && this.#statusReady;
 	}
 
 	ruleById(id: string | null | undefined): RecurrenceRule | null {
@@ -258,19 +308,13 @@ export class RecurrenceStore {
 	}
 
 	/**
-	 * "Wiederholen…" (ADR-0023 section 1): a rule whose template is the ticket, with the ticket as
-	 * its current instance.
+	 * "Wiederholen…" (ADR-0023 section 1): a rule whose template is the ticket as it is now, its
+	 * status as "Status beim Anlegen" included (plan WV), with the ticket as its current instance.
+	 * A server before the migration of the status ignores that field.
 	 */
 	repeat(ticket: Ticket, values: RecurrenceFormValues): Promise<EditResult<RecurrenceRule>> {
 		return this.create(
-			{
-				title: ticket.title,
-				description: ticket.description,
-				project: ticket.projectId,
-				tags: [...ticket.tagIds],
-				priority: ticket.priority,
-				...formParams(values)
-			},
+			{ ...templateBody(ticketTemplate(ticket)), ...formParams(values) },
 			ticket.id
 		);
 	}
@@ -419,15 +463,138 @@ export class RecurrenceStore {
 		});
 	}
 
+	// --- The template at the ticket (plan WV, ADR-0023 addendum 6) ---------------------------------
+
+	/** The template being edited at a ticket, null while none is. */
+	get templateDraft(): TemplateDraft | null {
+		return this.#templateDraft;
+	}
+
+	/** True while the draft of the template differs from the rule or the tag picker holds text. */
+	get templateDirty(): boolean {
+		const draft = this.#templateDraft;
+		const rule = draft === null ? null : this.ruleById(draft.ruleId);
+		if (draft === null || rule === null) return false;
+		const changes = templateChanges(templateOf(rule), draft.template);
+		return Object.keys(changes).length > 0 || draft.tagText.trim() !== '';
+	}
+
+	/** "Bearbeiten" of the template of a rule: a draft of it, unless that rule has one already. */
+	editTemplate(ruleId: string): void {
+		const rule = this.ruleById(ruleId);
+		if (rule === null || this.#templateDraft?.ruleId === ruleId) return;
+		this.#templateDraft = { ruleId, template: templateOf(rule), tagText: '' };
+	}
+
+	/** New values of the draft (the fields replace the whole template on every change). */
+	setTemplateDraft(template: RuleTemplate, tagText: string): void {
+		const draft = this.#templateDraft;
+		if (draft !== null) this.#templateDraft = { ruleId: draft.ruleId, template, tagText };
+	}
+
+	/** "Abbrechen", Escape, leaving the ticket: the draft goes. */
+	cancelTemplate(): void {
+		this.#templateDraft = null;
+	}
+
+	/**
+	 * Saves the changed fields of the draft (only tags `keepTag` accepts: a tag may have been deleted
+	 * since); the draft ends after success, a refusal keeps it with the errors per field. Without a
+	 * change it just ends.
+	 */
+	async saveTemplate(
+		keepTag: (tagId: string) => boolean = () => true
+	): Promise<EditResult<RecurrenceRule | null>> {
+		const draft = this.#templateDraft;
+		const rule = draft === null ? null : this.ruleById(draft.ruleId);
+		if (draft === null || rule === null) return { ok: true, value: null };
+		const patch = templateChanges(templateOf(rule), {
+			...draft.template,
+			title: draft.template.title.trim(),
+			tagIds: draft.template.tagIds.filter(keepTag)
+		});
+		if (!this.statusReady) delete patch.initial_status;
+		if (Object.keys(patch).length === 0) {
+			this.#templateDraft = null;
+			return { ok: true, value: rule };
+		}
+		const result = await this.#run(async () => {
+			const saved = await this.#data.updateRule(rule.id, patch);
+			this.upsert(saved);
+			this.#notify('Vorlage gespeichert. Sie gilt für die künftigen Tickets der Serie.');
+			return saved;
+		});
+		if (result.ok && this.#templateDraft?.ruleId === rule.id) this.#templateDraft = null;
+		return result;
+	}
+
+	/**
+	 * After the user changed open tickets of a series (panel, full view, cell, bulk action): the info
+	 * flag "Nur dieses Ticket geändert." with "Auch für künftige Tickets übernehmen", which writes
+	 * exactly the changed fields into the templates. Nothing to offer (other fields, a done ticket,
+	 * a template with these values already): no flag, null. A newer offer replaces an older one.
+	 */
+	offerTemplate(changes: readonly SeriesChange[]): string | null {
+		const offers = templateOffers(changes, (id) => this.ruleById(id));
+		if (offers.length === 0) return null;
+		if (this.#templateOffer !== null) this.#flags.dismiss(this.#templateOffer);
+		const id = this.#flags.show({
+			tone: 'info',
+			title: offerTitle(offers),
+			description: offerDescription(offers),
+			action: { label: OFFER_ACTION, run: () => void this.#applyOffers(offers) },
+			onclose: () => {
+				if (this.#templateOffer === id) this.#templateOffer = null;
+			}
+		});
+		this.#templateOffer = id;
+		return id;
+	}
+
+	/** Withdraws an offer whose changes were undone ("Rückgängig" of a bulk action). */
+	withdrawTemplateOffer(id: string): void {
+		if (id !== this.#templateOffer) return;
+		this.#templateOffer = null;
+		this.#flags.dismiss(id);
+	}
+
+	/** The action of the offer: each rule gets its fields; one flag for the result. */
+	async #applyOffers(offers: readonly TemplateOffer[]): Promise<void> {
+		if (!this.#session.ensureValid()) return;
+		const applied: TemplateOffer[] = [];
+		for (const offer of offers) {
+			try {
+				this.upsert(await this.#data.updateRule(offer.ruleId, offer.patch));
+				applied.push(offer);
+			} catch (error) {
+				const failure = toDataError(error);
+				if (failure.kind === 'session') {
+					this.#session.logout();
+					return;
+				}
+				if (failure.kind === 'aborted') continue;
+				const reason = Object.values(failure.fields)[0]?.message ?? failure.message;
+				this.#flags.show({
+					tone: 'error',
+					title: `Die Vorlage von „${offer.title}“ wurde nicht geändert. ${reason}`
+				});
+			}
+		}
+		if (applied.length > 0) this.#notify(appliedTitle(applied));
+	}
+
 	reset(): void {
 		this.#abort();
 		this.#offer = null;
 		this.#waitingFlag = null;
+		this.#templateOffer = null;
+		this.#templateDraft = null;
 		this.#rules.clear();
 		this.#deleted.clear();
 		this.#state = 'idle';
 		this.#error = null;
 		this.#eachReady = false;
+		this.#statusReady = false;
 	}
 
 	/** Success flag of an action; the flag group announces it (role status). */
@@ -468,7 +635,9 @@ export class RecurrenceStore {
 			for (const rule of rules) {
 				if (!touched.has(rule.id)) this.upsert(rule);
 			}
-			this.#eachReady = await this.#probeEach(controller.signal);
+			this.#eachReady = await this.#probe('eachOccurrenceReady', controller.signal);
+			if (controller.signal.aborted) return;
+			this.#statusReady = await this.#probe('initialStatusReady', controller.signal);
 			if (controller.signal.aborted) return;
 			this.#state = 'ready';
 		} catch (error) {
@@ -507,11 +676,18 @@ export class RecurrenceStore {
 		}
 	}
 
-	/** The switch stays hidden when the server cannot tell (old schema or a failed probe). */
-	async #probeEach(signal: AbortSignal): Promise<boolean> {
-		if (this.#data.eachOccurrenceReady === undefined) return false;
+	/**
+	 * Whether the server knows a field of a later migration; the switch or field stays hidden when
+	 * it cannot tell (old schema, a failed probe, no probe in tests).
+	 */
+	async #probe(
+		name: 'eachOccurrenceReady' | 'initialStatusReady',
+		signal: AbortSignal
+	): Promise<boolean> {
+		const probe = this.#data[name]?.bind(this.#data);
+		if (probe === undefined) return false;
 		try {
-			return await this.#data.eachOccurrenceReady({ signal });
+			return await probe({ signal });
 		} catch {
 			return false;
 		}

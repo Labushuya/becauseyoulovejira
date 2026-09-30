@@ -215,6 +215,8 @@ describe('RecurrenceStore', () => {
 				project: 'proj00000000001',
 				tags: ['tag000000000001'],
 				priority: 'high',
+				// "Status beim Anlegen" (plan WV): the status of the ticket, as every other value.
+				initial_status: 'open',
 				mode: 'calendar',
 				freq: 'weekly',
 				interval: 1,
@@ -230,6 +232,34 @@ describe('RecurrenceStore', () => {
 		expect(flags.shown).toEqual([
 			{ tone: 'success', title: 'Wiederholung angelegt: jeden Montag.' }
 		]);
+	});
+
+	// Plan WV, the report of the user: the next ticket came "open" instead of the chosen status.
+	it('takes the status and every value of the ticket into the template, also for "Neues Ticket"', async () => {
+		const data = fakeData([]);
+		const store = new RecurrenceStore(data, session());
+		await store.load();
+		const values = defaultFormValues('2026-09-28', '2026-09-25');
+
+		await store.repeat(ticket({ status: 'backlog', priority: 'urgent' }), values);
+		await store.repeatCreated(ticket({ status: 'waiting', priority: 'low' }), values);
+		// A done ticket never starts a series (the hook refuses it); its template would say "open".
+		await store.repeat(ticket({ status: 'done' }), values);
+
+		const drafts = vi.mocked(data.createRule).mock.calls.map(([draft]) => draft);
+		expect(drafts.map(({ priority, initial_status }) => ({ priority, initial_status }))).toEqual([
+			{ priority: 'urgent', initial_status: 'backlog' },
+			{ priority: 'low', initial_status: 'waiting' },
+			{ priority: 'high', initial_status: 'open' }
+		]);
+		for (const draft of drafts) {
+			expect(draft).toMatchObject({
+				title: 'Steuer',
+				description: 'Belege',
+				project: 'proj00000000001',
+				tags: ['tag000000000001']
+			});
+		}
 	});
 
 	it('pauses, resumes, saves a rhythm, deletes and detaches with success flags', async () => {
@@ -536,5 +566,213 @@ describe('RecurrenceStore: "Jeden Termin einzeln anlegen" (plan OR-5)', () => {
 				each_occurrence: '„Jeden Termin einzeln anlegen“ gibt es nur bei einem festen Rhythmus.'
 			}
 		});
+	});
+});
+
+// Plan WV (ADR-0023 addendum 6): the template at the ticket and the offer after a change.
+describe('RecurrenceStore: the template of a series (plan WV)', () => {
+	/** Flag sink that keeps every flag with its action and whether it was dismissed. */
+	function flagLog() {
+		const flags: (FlagInput & { id: string; dismissed: boolean })[] = [];
+		const sink: FlagSink = {
+			show: (input) => {
+				const id = `flag-${flags.length + 1}`;
+				flags.push({ ...input, id, dismissed: false });
+				return id;
+			},
+			dismiss: (id) => {
+				const flag = flags.find((entry) => entry.id === id);
+				if (flag !== undefined && !flag.dismissed) {
+					flag.dismissed = true;
+					flag.onclose?.();
+				}
+			}
+		};
+		return { sink, flags };
+	}
+
+	/** A change of an open ticket of the series of rule 1. */
+	function change(before: Partial<Ticket>, after: Partial<Ticket>) {
+		const base = ticket({ recurring: true, recurrenceId: 'rule00000000001', priority: 'medium' });
+		return { before: { ...base, ...before }, after: { ...base, ...after } };
+	}
+
+	it('knows "Status beim Anlegen" only after its migration', async () => {
+		const ready = new RecurrenceStore(
+			{ ...fakeData([]), initialStatusReady: vi.fn(async () => true) },
+			session()
+		);
+		expect(ready.statusReady).toBe(false);
+		await ready.load();
+		expect(ready.statusReady).toBe(true);
+		const before = new RecurrenceStore(
+			{ ...fakeData([]), initialStatusReady: vi.fn(async () => false) },
+			session()
+		);
+		await before.load();
+		expect(before.statusReady).toBe(false);
+		const failing = new RecurrenceStore(
+			{ ...fakeData([]), initialStatusReady: vi.fn(async () => Promise.reject(new Error('x'))) },
+			session()
+		);
+		await failing.load();
+		expect(failing.statusReady).toBe(false);
+	});
+
+	it('offers exactly the changed fields for the next tickets and writes them on the action', async () => {
+		const data = fakeData([rule({ priority: 'medium', tagIds: ['tag000000000001'] })]);
+		const log = flagLog();
+		const store = new RecurrenceStore(data, session(), log.sink);
+		await store.load();
+
+		const id = store.offerTemplate([
+			change({ priority: 'medium' }, { priority: 'urgent', title: 'Steuer 2027' })
+		]);
+		expect(id).toBe('flag-1');
+		const [flag] = log.flags;
+		expect(flag).toMatchObject({
+			tone: 'info',
+			title: 'Nur dieses Ticket geändert.',
+			description:
+				'Künftige Tickets von „Müll“ kommen weiter mit der bisherigen Vorlage (Titel, Priorität).',
+			action: { label: 'Auch für künftige Tickets übernehmen' }
+		});
+		flag?.action?.run();
+		await vi.waitFor(() => expect(data.updateRule).toHaveBeenCalledTimes(1));
+		expect(data.updateRule).toHaveBeenCalledWith('rule00000000001', {
+			title: 'Steuer 2027',
+			priority: 'urgent'
+		});
+		await vi.waitFor(() =>
+			expect(log.flags.at(-1)).toMatchObject({
+				tone: 'success',
+				title: 'Vorlage von „Müll“ übernommen.'
+			})
+		);
+	});
+
+	it('offers nothing for status, due date, a done ticket or a template that has the value', async () => {
+		const log = flagLog();
+		const store = new RecurrenceStore(fakeData([rule({ priority: 'high' })]), session(), log.sink);
+		await store.load();
+		expect(store.offerTemplate([change({ status: 'open' }, { status: 'in_progress' })])).toBeNull();
+		expect(store.offerTemplate([change({ due: '2026-09-28' }, { due: '2026-09-30' })])).toBeNull();
+		expect(
+			store.offerTemplate([change({ priority: 'low' }, { priority: 'urgent', status: 'done' })])
+		).toBeNull();
+		expect(store.offerTemplate([change({ priority: 'low' }, { priority: 'high' })])).toBeNull();
+		const normal = ticket({ priority: 'low' });
+		expect(
+			store.offerTemplate([{ before: normal, after: { ...normal, priority: 'high' } }])
+		).toBeNull();
+		expect(log.flags).toEqual([]);
+	});
+
+	it('shows one flag for several tickets and rules, replaces an older one and can withdraw it', async () => {
+		const data = fakeData([
+			rule(),
+			rule({ id: 'rule00000000002', title: 'Blumen', tagIds: ['tag000000000009'] })
+		]);
+		const log = flagLog();
+		const store = new RecurrenceStore(data, session(), log.sink);
+		await store.load();
+		const first = store.offerTemplate([change({ title: 'Steuer' }, { title: 'Steuern' })]);
+		const flowers = { id: 'ticket000000002', key: 'TASK-4', recurrenceId: 'rule00000000002' };
+		const second = store.offerTemplate([
+			change({ tagIds: [] }, { tagIds: ['tag000000000001'] }),
+			change({ ...flowers, tagIds: [] }, { ...flowers, tagIds: ['tag000000000001'] })
+		]);
+		expect(log.flags.find((flag) => flag.id === first)?.dismissed).toBe(true);
+		const flag = log.flags.find((entry) => entry.id === second);
+		expect(flag).toMatchObject({
+			title: 'Nur diese 2 Tickets geändert.',
+			description: 'Künftige Tickets von 2 Serien kommen weiter mit der bisherigen Vorlage (Tags).'
+		});
+		flag?.action?.run();
+		await vi.waitFor(() => expect(data.updateRule).toHaveBeenCalledTimes(2));
+		// Tags as the change the tickets got, added to the tags of each template.
+		expect(data.updateRule).toHaveBeenCalledWith('rule00000000001', { tags: ['tag000000000001'] });
+		expect(data.updateRule).toHaveBeenCalledWith('rule00000000002', {
+			tags: ['tag000000000009', 'tag000000000001']
+		});
+		await vi.waitFor(() =>
+			expect(log.flags.at(-1)?.title).toBe('Vorlagen von 2 Serien übernommen.')
+		);
+
+		const third = store.offerTemplate([change({ title: 'Steuer' }, { title: 'Abgaben' })]);
+		store.withdrawTemplateOffer('flag-unknown');
+		expect(log.flags.find((entry) => entry.id === third)?.dismissed).toBe(false);
+		store.withdrawTemplateOffer(third ?? '');
+		expect(log.flags.find((entry) => entry.id === third)?.dismissed).toBe(true);
+	});
+
+	it('names a refusal of the server in an error flag', async () => {
+		const data = fakeData([rule()]);
+		vi.mocked(data.updateRule).mockRejectedValueOnce(
+			new DataError('validation', {
+				fields: {
+					project: { code: 'validation_project_archived', message: 'Das Projekt ist archiviert.' }
+				}
+			})
+		);
+		const log = flagLog();
+		const store = new RecurrenceStore(data, session(), log.sink);
+		await store.load();
+		store.offerTemplate([change({ projectId: null }, { projectId: 'proj00000000002' })]);
+		log.flags[0]?.action?.run();
+		await vi.waitFor(() =>
+			expect(log.flags.at(-1)).toMatchObject({
+				tone: 'error',
+				title: 'Die Vorlage von „Müll“ wurde nicht geändert. Das Projekt ist archiviert.'
+			})
+		);
+	});
+
+	it('keeps the draft of the template, knows unsaved input and saves only the changes', async () => {
+		const data = fakeData([rule({ tagIds: ['tag000000000001'] })]);
+		const store = new RecurrenceStore(
+			{ ...data, initialStatusReady: vi.fn(async () => true) },
+			session()
+		);
+		await store.load();
+		store.editTemplate('unknown');
+		expect(store.templateDraft).toBeNull();
+		store.editTemplate('rule00000000001');
+		const template = store.templateDraft?.template;
+		expect(template).toEqual({
+			title: 'Müll',
+			description: '',
+			projectId: null,
+			tagIds: ['tag000000000001'],
+			priority: 'medium',
+			initialStatus: 'open'
+		});
+		if (template === undefined) return;
+		expect(store.templateDirty).toBe(false);
+		store.setTemplateDraft(template, 'neu');
+		expect(store.templateDirty).toBe(true);
+		store.setTemplateDraft(
+			{
+				...template,
+				title: ' Müll (gelb) ',
+				initialStatus: 'backlog',
+				tagIds: ['tag000000000001', 'gone00000000001']
+			},
+			''
+		);
+		const result = await store.saveTemplate((tagId) => tagId !== 'gone00000000001');
+		expect(result.ok).toBe(true);
+		expect(data.updateRule).toHaveBeenCalledExactlyOnceWith('rule00000000001', {
+			title: 'Müll (gelb)',
+			initial_status: 'backlog'
+		});
+		expect(store.templateDraft).toBeNull();
+
+		store.editTemplate('rule00000000001');
+		expect(await store.saveTemplate()).toMatchObject({ ok: true });
+		expect(data.updateRule).toHaveBeenCalledTimes(1);
+		store.editTemplate('rule00000000001');
+		store.cancelTemplate();
+		expect(store.templateDraft).toBeNull();
 	});
 });

@@ -681,3 +681,78 @@ describe('failures (ADR-0022 section 2, ADR-0023 section 8)', () => {
 		expect(dateOf((await ruleOf(good.id)).next_due)).toBe('2036-02-02');
 	});
 });
+
+// Plan WV (ADR-0022 addendum 8): the next tickets start with "Status beim Anlegen" of the template
+// instead of always "open". Every such status is "not done", so the rules of open instances hold.
+describe('"Status beim Anlegen" of the template (plan WV)', () => {
+	async function refusal(promise) {
+		try {
+			await promise;
+		} catch (error) {
+			return error;
+		}
+		throw new Error('expected a refusal');
+	}
+
+	it('starts the next tickets with the status of the template, as open instances of the series', async () => {
+		const rule = await createRule({ title: 'Blumen gießen', priority: 'high', initial_status: 'waiting', anchor: '2044-03-01' });
+		expect(rule.initial_status).toBe('waiting');
+		expect((await run('2044-03-01T12:00:00Z')).created).toBe(1);
+		const [first] = await instancesOf(rule.id);
+		expect(first).toMatchObject({ title: 'Blumen gießen', status: 'waiting', priority: 'high', completed_at: '' });
+		// Untouched like every new instance (ADR-0023 section 3); "created" without a user (T-9).
+		expect(first.updated).toBe(first.created);
+		expect((await historyOf(first.id)).map(({ field, user }) => ({ field, user }))).toEqual([{ field: 'created', user: '' }]);
+		// "Open" means "not done": the waiting instance holds the next date back.
+		expect((await run('2044-03-02T12:00:00Z')).created).toBe(0);
+		expect(await openOf(rule.id)).toHaveLength(1);
+
+		// Done: the next run makes the next ticket, waiting again ...
+		await tickets().update(first.id, { status: 'done' });
+		expect((await run('2044-03-02T12:00:00Z')).created).toBe(1);
+		const [second] = await openOf(rule.id);
+		expect(second).toMatchObject({ status: 'waiting', recurrence: rule.id });
+		// ... and reopening the direct predecessor removes the untouched follow-up as before.
+		await tickets().update(first.id, { status: 'in_progress' });
+		expect((await openOf(rule.id)).map((ticket) => ticket.id)).toEqual([first.id]);
+		await expect(superuser.collection('tickets').getOne(second.id)).rejects.toMatchObject({ status: 404 });
+	});
+
+	it('stores "open" without a choice, refuses "done" and changes only the next tickets', async () => {
+		const plain = await createRule({ anchor: '2044-04-01' });
+		expect(plain.initial_status).toBe('open');
+		const attempts = [
+			() => createRule({ anchor: '2044-04-01', initial_status: 'done' }),
+			() => rules().update(plain.id, { initial_status: 'done' })
+		];
+		for (const attempt of attempts) {
+			const error = await refusal(attempt());
+			expect(error.status).toBe(400);
+			expect(error.response.data.initial_status).toMatchObject({
+				code: 'validation_recurrence_initial_status',
+				message: 'Als „Status beim Anlegen“ geht jeder Status außer „Erledigt“.'
+			});
+		}
+
+		await run('2044-04-01T12:00:00Z');
+		const [open] = await instancesOf(plain.id);
+		expect(open.status).toBe('open');
+		// A new status in the template: the open ticket stays, the next one starts in the backlog.
+		expect((await rules().update(plain.id, { initial_status: 'backlog' })).initial_status).toBe('backlog');
+		expect((await superuser.collection('tickets').getOne(open.id)).status).toBe('open');
+		await tickets().update(open.id, { status: 'done' });
+		await run('2044-04-02T12:00:00Z');
+		expect((await openOf(plain.id)).map((ticket) => ticket.status)).toEqual(['backlog']);
+	});
+
+	it('makes one ticket per date with the status of the template ("Jeden Termin einzeln anlegen")', async () => {
+		const rule = await createRule({ initial_status: 'in_progress', anchor: '2044-05-01', each_occurrence: true });
+		await run('2044-05-03T12:00:00Z');
+		const open = await openOf(rule.id);
+		expect(open.map((ticket) => [dateOf(ticket.occurrence), ticket.status]).sort()).toEqual([
+			['2044-05-01', 'in_progress'],
+			['2044-05-02', 'in_progress'],
+			['2044-05-03', 'in_progress']
+		]);
+	});
+});

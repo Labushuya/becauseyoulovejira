@@ -953,6 +953,12 @@ describe('new ticket: repeat right away (plan OR-4)', () => {
 		await fireEvent.click(disclosure());
 		// Without a due date: today (Friday 25.09.) and the first date the ticket gets.
 		expect(within(section()).getByText(/bekommt den ersten Termin: 25\.09\.2026/)).toBeTruthy();
+		// Plan WV: the next tickets take the values of this form, the status included.
+		expect(
+			within(section()).getByText(
+				/Künftige Tickets bekommen Titel, Beschreibung, Priorität, Status, Projekt und Tags aus diesem Formular\./
+			)
+		).toBeTruthy();
 		await fireEvent.click(createButton());
 
 		await vi.waitFor(() => expect(mocks.rules.repeatCreated).toHaveBeenCalledOnce());

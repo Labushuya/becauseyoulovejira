@@ -142,4 +142,4 @@ Texte, die auf Knöpfe der Karte verweisen, nennen jetzt das Menü „•••�
 - `web/src/lib/components/channels/channel-cards-inventory.test.ts` (BYL-E6-625): Inventur, je Karte genau eine Kopfzeile, eine Infozeile, ein Hauptknopf.
 - `web/src/lib/components/channels/channel-card.test.ts` (BYL-E6-626): Baustein (Menü, Details, beschäftigt und gesperrt, Link) und Karte einer Verbindung samt Uhr; angepasst `connections-page.test.ts`, `notion.test.ts`, `own-inbox-card.test.ts`, `whatsapp-web-setup.test.ts`; die Hilfe (`help-page.test.ts`) beschreibt den Aufbau.
 - Manuell BYL-E6-627 und BYL-E6-628: Aussehen, schmale Fenster, Tastatur und NVDA.
-- Die Listen `no-own-font-sizes` (163 → 149 Werte, `ChannelCard` und `BookmarkletCard` sind herunter) und `no-own-radii` (`ConnectionsSection` ist herunter) sind geschrumpft.
+- Die Listen `no-own-font-sizes` (14 Werte weniger, 158 → 144; `ChannelCard` und `BookmarkletCard` sind herunter) und `no-own-radii` (`ConnectionsSection` ist herunter) sind geschrumpft.

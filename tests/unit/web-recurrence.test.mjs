@@ -18,6 +18,11 @@ import {
 	parseSkipped,
 	reopenOlderMessage
 } from '../../web/src/lib/domain/recurrence-rule.ts';
+import {
+	DEFAULT_TEMPLATE_STATUS,
+	TEMPLATE_STATUSES,
+	templateStatusOf
+} from '../../web/src/lib/domain/series-template.ts';
 
 const hook = loadHookLib('recurrence.js');
 const hookRules = loadHookLib('recurrence-rules.js');
@@ -142,6 +147,14 @@ describe('recurrence: web app against the hooks', () => {
 		expect({ ...RECURRENCE_MESSAGES }).toEqual(hookRecurrence);
 		expect(openInstanceMessage('HAUS-12')).toBe(hookRules.openInstanceMessage('HAUS-12'));
 		expect(reopenOlderMessage('HAUS-12')).toBe(hookRules.reopenOlderMessage('HAUS-12'));
+	});
+
+	it('offers the statuses for "Status beim Anlegen" the hook accepts, "Offen" by default (plan WV)', () => {
+		expect([...TEMPLATE_STATUSES]).toEqual(hookRules.INITIAL_STATUSES);
+		expect(DEFAULT_TEMPLATE_STATUS).toBe(hookRules.DEFAULT_INITIAL_STATUS);
+		for (const value of ['backlog', 'open', 'in_progress', 'waiting', 'done', '', 'x']) {
+			expect(templateStatusOf(value), value).toBe(hookRules.initialStatusOf(value));
+		}
 	});
 
 	it('knows the hints and the backlog of a waiting rule like the hook (ADR-0022 addendum 5)', () => {

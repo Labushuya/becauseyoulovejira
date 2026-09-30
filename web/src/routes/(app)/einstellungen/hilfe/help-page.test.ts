@@ -246,6 +246,22 @@ describe('help page (EH-9)', () => {
 		expect(section.querySelectorAll('ol')).toHaveLength(3);
 	});
 
+	// Plan WV: what the next tickets get, the offer after a change, and why nothing asks.
+	it('explains the template of the next tickets and why nothing asks when one appears', () => {
+		render(Page);
+		const content = text(screen.getByRole('region', { name: 'Wiederholungen' }));
+		for (const phrase of [
+			'Folgetickets bekommen Titel, Beschreibung, Priorität, Projekt, Tags und den „Status beim Anlegen“ aus der Vorlage der Regel.',
+			'Die Vorlage übernimmt beim Einrichten die Werte des Tickets, auch seinen Status',
+			'am Ticket unter „Wiederholt sich“ („Künftige Tickets“, „Bearbeiten“)',
+			'Ein Hinweis bietet „Auch für künftige Tickets übernehmen“ an',
+			'Status und Fälligkeit gehören immer nur zum einzelnen Ticket.',
+			'Eine Rückfrage beim Entstehen eines Tickets gibt es nicht: Folgetickets entstehen im Hintergrund zur festen Zeit'
+		]) {
+			expect(content, phrase).toContain(phrase);
+		}
+	});
+
 	it('explains the own inbox with examples for PowerShell and curl, the key as placeholder (ADR-0038)', () => {
 		render(Page);
 		const section = screen.getByRole('region', { name: 'Eigener Eingang (API)' });

@@ -8,7 +8,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { startPocketBase } from '../support/pocketbase-harness.mjs';
 import { createInboxKey, listInboxKeys } from '../../web/src/lib/data/inbox-keys.ts';
 import { createProject, listProjects, updateProject } from '../../web/src/lib/data/projects.ts';
-import { eachOccurrenceReady, listRules } from '../../web/src/lib/data/recurrence.ts';
+import { eachOccurrenceReady, initialStatusReady, listRules } from '../../web/src/lib/data/recurrence.ts';
 import { deleteTicket } from '../../web/src/lib/data/tickets.ts';
 import { unreadSinceOf } from '../../web/src/lib/domain/unread.ts';
 
@@ -686,5 +686,72 @@ describe('EI-1 hooks before the migration of the own inbox (ADR-0038)', () => {
 			import_keywords: { eml: { keywords: ['todo'] }, api: { keywords: ['todo'] } }
 		});
 		expect(user.import_keywords).toEqual({ eml: { keywords: ['todo'] }, api: { keywords: ['todo'] } });
+	});
+});
+
+// The instance of the user after the merge of plan WV, before its next start: rules without
+// initial_status. The new hooks make every ticket "open" as before, a sent status is dropped by
+// PocketBase (also "done", which the hook refuses only after the migration), and the SPA offers
+// no "Status beim Anlegen" yet.
+describe('WV hooks before the migration of "Status beim Anlegen"', () => {
+	const STATUS_MIGRATION = '1790202500_recurrence_initial_status.js';
+	let before;
+	let who;
+	let superuser;
+
+	beforeAll(async () => {
+		before = await startPocketBase({ migrationFilter: (name) => name < STATUS_MIGRATION });
+		superuser = new PocketBase(before.url);
+		superuser.autoCancellation(false);
+		await superuser.collection('_superusers').authWithPassword(before.email, before.password);
+		const email = `user-${randomBytes(12).toString('hex')}@example.com`;
+		const password = randomBytes(24).toString('base64url');
+		const id = (await superuser.collection('users').create({ email, password, passwordConfirm: password })).id;
+		who = new PocketBase(before.url);
+		who.autoCancellation(false);
+		await who.collection('users').authWithPassword(email, password);
+		who.userId = id;
+	}, 60_000);
+
+	afterAll(async () => {
+		await before?.stop();
+	});
+
+	it('ignores the status of the template and starts every ticket "open"', async () => {
+		const rules = who.collection('recurrence_rules');
+		const rule = await rules.create({
+			owner: who.userId,
+			title: 'Blumen',
+			priority: 'high',
+			mode: 'calendar',
+			freq: 'daily',
+			anchor: '2038-06-01',
+			lead_days: 0,
+			initial_status: 'waiting'
+		});
+		expect(rule.initial_status).toBeUndefined();
+		const done = await rules.create({ owner: who.userId, title: 'Erledigt', mode: 'calendar', freq: 'daily', anchor: '2038-06-01', initial_status: 'done' });
+		expect(done.initial_status).toBeUndefined();
+		await rules.update(done.id, { active: false });
+
+		const response = await fetch(`${before.url}/api/byl-test/recurrence/run`, {
+			method: 'POST',
+			headers: { Authorization: superuser.authStore.token, 'Content-Type': 'application/json' },
+			body: JSON.stringify({ now: Date.parse('2038-06-01T10:00:00Z') })
+		});
+		expect(response.status).toBe(200);
+		const tickets = await superuser
+			.collection('tickets')
+			.getFullList({ filter: superuser.filter('recurrence = {:rule}', { rule: rule.id }) });
+		expect(tickets.map(({ status, priority }) => ({ status, priority }))).toEqual([{ status: 'open', priority: 'high' }]);
+		await rules.update(rule.id, { active: false });
+	});
+
+	it('lets the SPA load the rules as "open" and learn that the field waits for the restart', async () => {
+		const rules = await listRules(who);
+		expect(rules?.length).toBeGreaterThan(0);
+		expect(rules?.every((rule) => rule.initialStatus === 'open')).toBe(true);
+		expect(await initialStatusReady(who)).toBe(false);
+		expect(await eachOccurrenceReady(who)).toBe(true);
 	});
 });

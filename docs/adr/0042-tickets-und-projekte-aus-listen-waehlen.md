@@ -1,6 +1,6 @@
 # ADR-0042: Tickets und Projekte immer aus einer Liste wählen: ein Auswahl-Baustein für Tickets, Listen für Projekte
 
-- **Status:** Angenommen; §1, §2 und §4 umgesetzt in Paket AL-1 nach [docs/plan/auswahl-listen.md](../plan/auswahl-listen.md), §3 und §5 folgen in AL-2; manuelle Browser-Prüfungen stehen im Test-Manifest
+- **Status:** Angenommen und umgesetzt in den Paketen AL-1 (#180: §1, §2, §4) und AL-2 (§3, §5) nach [docs/plan/auswahl-listen.md](../plan/auswahl-listen.md); manuelle Browser-Prüfungen stehen im Test-Manifest
 - **Datum:** 2026-09-30
 - **Entscheidung durch:** Nutzer (Beobachtung „Selektion von Projekten oder Tickets per reiner manueller Eingabe grauenhaft (was, wenn ich die Ticket-Nummer nicht weiß?) – Einfache Auflistung für User“), Advisor (Anforderungen an den Baustein), Executor (Datenweg, Einzelheiten)
 - **Präzisiert:** [ADR-0025](0025-ui-konsistenz-overlay-system.md) §5 (eine weitere Combobox auf `SuggestionList`), [ADR-0031](0031-herkunft-sichern.md) §7 (Ticketsuche beim Verknüpfen), [ADR-0033](0033-unteraufgaben.md) §4 (Auswahl des übergeordneten Tickets), [ADR-0008](0008-markdown-rendering-und-sanitizing.md) (App-Links auf Tickets, AL-2)

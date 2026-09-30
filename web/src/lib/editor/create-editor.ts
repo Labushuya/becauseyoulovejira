@@ -17,6 +17,7 @@ import { Placeholder } from '@tiptap/extensions';
 import StarterKit from '@tiptap/starter-kit';
 import { Underline } from '@tiptap/extension-underline';
 import { Slice, type Node } from '@tiptap/pm/model';
+import { TICKET_LINK } from '$lib/domain/link';
 import { createMarkdownBridge, type MarkdownBridge } from './markdown-bridge';
 import { looksLikeMarkdown, transformPastedHTML } from './paste';
 import { richEditable, type EditableCheck } from './rich-editable';
@@ -76,7 +77,10 @@ export type EditorCommand =
 	| 'horizontalRule'
 	| 'clearFormatting';
 
-/** Links only to http, https and mailto (ADR-0008, CLAUDE.md section 7). */
+/**
+ * Links only to http, https and mailto (ADR-0008, CLAUDE.md section 7), and to a ticket of the app
+ * as `/tickets/<id>` (ADR-0042 section 5).
+ */
 const ALLOWED_LINK = /^(?:https?:|mailto:)/i;
 
 /** "++text++" underlines while typing, like "**text**" makes bold (ADR-0032 section 1). */
@@ -101,7 +105,8 @@ function schemaExtensions(): AnyExtension[] {
 				autolink: true,
 				linkOnPaste: true,
 				defaultProtocol: 'https',
-				isAllowedUri: (url, context) => ALLOWED_LINK.test(url) && context.defaultValidate(url),
+				isAllowedUri: (url, context) =>
+					(ALLOWED_LINK.test(url) || TICKET_LINK.test(url)) && context.defaultValidate(url),
 				HTMLAttributes: { target: null, rel: 'noopener noreferrer nofollow' }
 			}
 		}),
