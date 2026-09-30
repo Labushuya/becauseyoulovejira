@@ -673,8 +673,16 @@ describe('Stichwörter (E4 plan, package 20; since EH-3 in "Bearbeiten", since K
 			)
 		);
 		await vi.waitFor(() => expect(scope.getByText('#byl')).toBeTruthy());
-		// The details of the card show the number and the first three keywords.
-		expect(card('Telegram-Bot').getByText('6 (Einkauf, todo, aufgabe, +3)')).toBeTruthy();
+		// The details of the card list every keyword as a chip (ADR-0026, addendum KL).
+		const chips = card('Telegram-Bot').getByRole('list', {
+			name: 'Stichwörter von „Telegram-Bot“',
+			hidden: true
+		});
+		expect(
+			within(chips)
+				.getAllByRole('listitem', { hidden: true })
+				.map((item) => item.textContent?.trim())
+		).toEqual(['Einkauf', 'todo', 'aufgabe', 'erledigen', 'ticket', '#byl']);
 
 		await fireEvent.click(
 			scope.getByRole('switch', {

@@ -1,6 +1,6 @@
 # Plan „Kommentare: Reihenfolge, Anpinnen, Einklappen; Listen der Kanal-Karten einklappbar“
 
-- **Stand:** KO-1 umgesetzt (2026-09-30, #189, Migration `1790202600_tickets_pinned_comment.js`: **Neustart nötig**, `neu-starten.bat`), KO-2 umgesetzt (2026-09-30, Branch `feat/comment-view`, nur Oberfläche: Build, dann F5; Anpinnen erst nach dem Neustart von KO-1). KL folgt.
+- **Stand:** KO-1 umgesetzt (2026-09-30, #189, Migration `1790202600_tickets_pinned_comment.js`: **Neustart nötig**, `neu-starten.bat`), KO-2 umgesetzt (2026-09-30, #190, nur Oberfläche: Build, dann F5; Anpinnen erst nach dem Neustart von KO-1), KL umgesetzt (2026-09-30, Branch `feat/chip-lists`, nur Oberfläche). Offen sind die manuellen Browser-Prüfungen BYL-E6-708 und BYL-E6-714.
 - **Grundlage:** Spec des Nutzers vom 2026-09-30 (freigegeben): Sortierung der Kommentare, höchstens ein angepinnter Kommentar ganz oben, lange Kommentare ein- und ausklappbar; unter Einstellungen → Kanäle → Karte → Details die Stichwort- und Tag-Listen einklappbar. Klarstellung: Anpinnen nur für Kommentare.
 - **Entscheidungen:** [ADR-0044](../adr/0044-kommentare-reihenfolge-anpinnen-einklappen.md) (Kommentare) und ein Nachtrag zu [ADR-0026](../adr/0026-einstellungsbereich-und-hinweis-bausteine.md) (Listen der Karten, mit KL). Bezüge: [ADR-0006](../adr/0006-frontend-zustand-und-datenzugriff.md), [ADR-0007](../adr/0007-realtime-und-sitzungspflege.md), [ADR-0025](../adr/0025-ui-konsistenz-overlay-system.md) Nachtrag 16, [ADR-0032](../adr/0032-editor-tiptap-markdown.md), [ADR-0037](../adr/0037-papierkorb.md), [ADR-0042](../adr/0042-tickets-und-projekte-aus-listen-waehlen.md) (Normalisierung des Filters).
 - **Einordnung:** Manifest-Block „Kommentare und Listen“ ab `BYL-E6-700`.
@@ -11,7 +11,7 @@
 |---|---|---|
 | KO-1 | Pin auf dem Server: Migration mit Rückweg, Hook (nur Kommentare des Tickets, nie beim Anlegen), Verlauf, Lösen beim Löschen des Kommentars, Papierkorb, Datenschicht der SPA | umgesetzt |
 | KO-2 | Oberfläche: Umschalter „Neueste zuerst“/„Älteste zuerst“, Eingabefeld oben, Anpinnen/Lösen mit „Rückgängig“, Etikett „Angepinnt“, Einklappen langer Kommentare, Verlaufstexte, Hilfe, README | umgesetzt |
-| KL | Baustein für lange Chip-Listen (erste Einträge, „+ N weitere“, Filter ab vielen Einträgen) in den Details der Kanal-Karten; Prüfung weiterer Stellen | folgt |
+| KL | Baustein für lange Chip-Listen (erste Einträge, „+ N weitere“, Filter ab vielen Einträgen) in den Details der Kanal-Karten; Prüfung weiterer Stellen | umgesetzt |
 
 ## 2. KO-1: Pin auf dem Server
 
@@ -74,4 +74,31 @@
 
 ## 4. KL: Listen der Kanal-Karten
 
-Folgt mit KL.
+Entscheidung im Nachtrag „KL“ zu ADR-0026. Keine Migration, kein Neustart (Build, dann F5).
+
+### 4.1 Baustein `components/ChipList.svelte`
+
+| Teil | Verhalten |
+|---|---|
+| Liste | `ul` mit Namen (`label`), je Eintrag ein Chip (`li`, Akzentfläche, `--radius-pill`); eigener Inhalt je Chip über das Snippet `chip` (der Editor setzt dort seinen Entfernen-Knopf ein) |
+| Einklappen | bis 10 Einträge alle; darüber die ersten 8 und „+ N weitere“ bzw. „Weniger anzeigen“ (`aria-expanded`, `aria-controls`; der Name nennt Art und Liste, etwa „+ 5 weitere Stichwörter anzeigen: Stichwörter von „Gmail““) |
+| Filter | ab 21 Einträgen `.search-field` mit Lupe über der Liste, „‹Art› filtern“; Normalisierung wie im `TicketPicker` (`normalizeSearch`, `searchWords`); Treffer ungekürzt, „N von M“ bzw. „Keine Treffer“ sichtbar, angesagt nach 0,5 s; Esc leert zuerst den Filter (verbraucht) |
+| Zustand | `expanded` und `query` bindbar (`$bindable`), sonst im Baustein |
+| Regeln | `domain/chip-list.ts`: `CHIP_LIST_SHOWN` (8), `CHIP_LIST_FOLD_ABOVE` (10), `CHIP_LIST_FILTER_ABOVE` (20), `chipListView`, `chipListStatus`, `moreLabel` |
+
+### 4.2 Einsatz
+
+| Stelle | Vorher | Jetzt |
+|---|---|---|
+| `ConnectionCard`, Details „Stichwörter“ | „12 (todo, rechnung, #byl, +9)“ | Chip-Liste „Stichwörter von „‹Name›““, ohne Stichwörter „keine“ |
+| `OwnInboxCard`, Details „Stichwörter für „mode: auto““ | Zusammenfassung | Chip-Liste |
+| `WhatsAppWebCard`, Details | nur in der Infozeile | neu die Zeile „Stichwörter für „Automatisch““ mit Chip-Liste; die Infozeile bleibt |
+| `FilesCard`, Details | nur die Zahlen in der Infozeile | neu je Art eine Zeile („Mail (.eml)“, „Kalender (.ics)“, „WhatsApp-Export“) mit Chip-Liste; die Infozeile bleibt |
+| `KeywordEditor` (Dialoge, Assistenten, „Datei-Importe“) | alle Chips mit Entfernen-Knopf | Chip-Liste mit denselben Chips; nach jedem Hinzufügen und „Vorschläge übernehmen“ aufgeklappt und ohne Filter |
+| `TagPicker`, Tabelle „Aufgaben“, Tag-Verwaltung, Filter-Popover | – | unverändert (Begründung im Nachtrag) |
+
+### 4.3 Tests
+
+- `domain/chip-list.test.ts` (Grenzen, Filter mit Umlauten und mehreren Wörtern, Status), `components/chip-list.test.ts` (Einklappen, Filter, Esc, Namen, Snippet).
+- Karten: `channel-card.test.ts`, `own-inbox-card.test.ts`, `channel-cards-inventory.test.ts` (Stichwörter jetzt als Chips an ihrem Ort, neue Zeilen bei WhatsApp Web und Dateien), `keyword-editor.test.ts` (Einklappen und Aufklappen nach dem Hinzufügen, Filter, Entfernen im gekürzten Zustand).
+- Manuell BYL-E6-714: Browser, Tastatur, NVDA.

@@ -111,6 +111,10 @@ describe('help page (EH-9)', () => {
 		expect(content).toMatch(/Zuletzt\s+abgerufen vor 5 Min\. · 3 neu/);
 		expect(content).toMatch(/Menü „•••“/);
 		expect(content).toMatch(/unter „Details“/);
+		// Long keyword lists fold (ADR-0026, addendum KL).
+		expect(content).toMatch(
+			/zuerst 8 und „\+ N weitere“,\s*ab 21 Stichwörtern mit einem Filterfeld/
+		);
 		expect(content).toMatch(/steht nicht mehr auf „Einrichtung offen“/);
 		expect(content).not.toMatch(/Nicht eingerichtet/);
 	});

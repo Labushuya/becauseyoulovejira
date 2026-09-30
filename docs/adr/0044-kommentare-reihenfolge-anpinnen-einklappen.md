@@ -16,7 +16,7 @@
 
 ### 1. Reihenfolge
 
-- Über den Kommentaren steht der Umschalter **„Neueste zuerst“ | „Älteste zuerst“** als Segment (`.segmented`, zwei Knöpfe mit `aria-pressed` in einer Gruppe „Reihenfolge der Kommentare“). Standard ist „Neueste zuerst“. Eine Änderung sagt eine höfliche Live-Region an („Neueste Kommentare zuerst.“).
+- Über den Kommentaren steht ab zwei Kommentaren der Umschalter **„Neueste zuerst“ | „Älteste zuerst“** als Segment (`.segmented`, zwei Knöpfe mit `aria-pressed` in einer Gruppe „Reihenfolge der Kommentare“). Standard ist „Neueste zuerst“. Eine Änderung sagt eine höfliche Live-Region an („Neueste Kommentare zuerst.“).
 - Gemerkt **pro Gerät** in `localStorage` unter `byl-comments-order`; gespeichert wird nur `oldest`, der Standard entfernt den Schlüssel (wie `byl-ticket-open`). Andere Tabs folgen über das `storage`-Ereignis. Ein Store im `(app)`-Layout (`CommentViewStore`) gilt für Seitenpanel und Vollansicht.
 - Sortiert wird im Client ([ADR-0006](0006-frontend-zustand-und-datenzugriff.md) §2): Die Kommentare eines Tickets sind vollständig geladen, Realtime fügt einzelne ein, und die Anordnung ist eine reine Funktion (`arrangeComments` in `domain/comments.ts`). Gleiche Zeitstempel behalten die Reihenfolge des Servers (`created,@rowid`), bei „Neueste zuerst“ umgekehrt. Neue und geänderte Kommentare stehen so sofort an der richtigen Stelle.
 - **Das Eingabefeld steht in beiden Reihenfolgen oben**, direkt unter dem Umschalter (Advisor-Empfehlung, wie in Jira): eine feste Stelle, die nicht mit der Zahl der Kommentare wandert und beim Umschalten nicht springt. Nach dem Absenden steht der neue Kommentar

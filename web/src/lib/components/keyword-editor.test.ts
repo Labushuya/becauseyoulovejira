@@ -4,7 +4,7 @@
 
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { fireEvent, render, screen } from '@testing-library/svelte';
+import { fireEvent, render, screen, within } from '@testing-library/svelte';
 import { describe, expect, it, vi } from 'vitest';
 import KeywordEditor from './KeywordEditor.svelte';
 
@@ -297,6 +297,65 @@ describe('KeywordEditor input: comma, paste, Backspace (package A)', () => {
 		expect(described).toMatch(/Rücktaste im\s+leeren Feld holt das letzte Stichwort/);
 		const live = document.querySelector('[aria-live="polite"]');
 		expect(live?.classList.contains('visually-hidden')).toBe(true);
+	});
+});
+
+describe('KeywordEditor with a long list (ADR-0026, addendum KL)', () => {
+	const words = (count: number) => Array.from({ length: count }, (_, index) => `wort${index + 1}`);
+	const LIST = 'Stichwörter von „Web.de“';
+	const shown = () =>
+		within(screen.getByRole('list', { name: LIST }))
+			.getAllByRole('listitem')
+			.map((item) => item.querySelector('span')?.textContent);
+
+	it('folds a long list, removes a shown keyword and unfolds after adding one', async () => {
+		const { onsave, input, list } = renderWithParent(words(12));
+		expect(shown()).toEqual(words(8));
+		expect(
+			screen.getByRole('button', { name: `+ 4 weitere Stichwörter anzeigen: ${LIST}` })
+		).toBeTruthy();
+
+		await fireEvent.click(screen.getByRole('button', { name: 'Stichwort „wort2“ entfernen' }));
+		await vi.waitFor(() => expect(list()).not.toContain('wort2'));
+		expect(shown()).toHaveLength(8);
+
+		await type(input, 'Neu');
+		await fireEvent.keyDown(input, { key: 'Enter' });
+
+		await vi.waitFor(() =>
+			expect(onsave).toHaveBeenLastCalledWith(expect.any(Array), 'Stichwort „Neu“ hinzugefügt.')
+		);
+		await vi.waitFor(() => expect(shown().at(-1)).toBe('Neu'));
+		expect(shown()).toHaveLength(12);
+		expect(
+			screen
+				.getByRole('button', { name: `Weniger anzeigen: ${LIST}` })
+				.getAttribute('aria-expanded')
+		).toBe('true');
+	});
+
+	it('takes back the last keyword with Backspace also while it is folded away', async () => {
+		const { input, list } = renderWithParent(words(12));
+		expect(shown()).not.toContain('wort12');
+
+		await fireEvent.keyDown(input, { key: 'Backspace' });
+
+		await vi.waitFor(() => expect(input.value).toBe('wort12'));
+		await vi.waitFor(() => expect(list()).toEqual(words(11)));
+	});
+
+	it('filters a list above 20 and clears the filter after adding, so the new keyword is seen', async () => {
+		const { input } = renderWithParent(words(22));
+		const filter = screen.getByRole<HTMLInputElement>('searchbox', { name: 'Stichwörter filtern' });
+		await fireEvent.input(filter, { target: { value: 'wort2' } });
+		expect(shown()).toEqual(['wort2', 'wort20', 'wort21', 'wort22']);
+
+		await type(input, 'Rechnung');
+		await fireEvent.keyDown(input, { key: 'Enter' });
+
+		await vi.waitFor(() => expect(filter.value).toBe(''));
+		expect(shown()).toHaveLength(23);
+		expect(shown().at(-1)).toBe('Rechnung');
 	});
 });
 

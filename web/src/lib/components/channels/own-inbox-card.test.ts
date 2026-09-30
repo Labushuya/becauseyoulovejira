@@ -148,7 +148,13 @@ describe('OwnInboxCard', () => {
 		);
 		expect(rows[1]?.textContent).toMatch(/zuletzt 28\.09\.2026 12:15/);
 		expect(details.getByText('Stichwörter für „mode: auto“')).toBeTruthy();
-		expect(details.getByText('2 (todo, rechnung)')).toBeTruthy();
+		// The keywords as chips (ADR-0026, addendum KL).
+		const chips = details.getByRole('list', { name: 'Stichwörter von „Eigener Eingang (API)“' });
+		expect(
+			within(chips)
+				.getAllByRole('listitem')
+				.map((item) => item.textContent)
+		).toEqual(['todo', 'rechnung']);
 		expect(details.getByText(/Ein Schlüssel kann nur das/)).toBeTruthy();
 		expect(menu.getByRole('menuitem', { name: 'Hilfe', hidden: true }).getAttribute('href')).toBe(
 			'/einstellungen/hilfe#eigener-eingang'

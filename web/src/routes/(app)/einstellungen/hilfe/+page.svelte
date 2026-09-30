@@ -119,7 +119,8 @@
 			abgerufen vor 5 Min. · 3 neu“ und ein Knopf für den nächsten Schritt, etwa „Jetzt abrufen“
 			oder „Einrichtung fortsetzen“. Alles Weitere steht im Menü „•••“ (Stichwörter, Pausieren,
 			Einrichtung, Hilfe, Löschen), Einzelheiten wie Stichwörter, Postfach, Hilfsprozess und letzter
-			Fehler unter „Details“.
+			Fehler unter „Details“. Lange Listen von Stichwörtern zeigen dort zuerst 8 und „+ N weitere“,
+			ab 21 Stichwörtern mit einem Filterfeld.
 		</p>
 		<HostPlatformNote headingLevel={4} />
 		<h4>Zugangsdaten als Windows-Variable setzen</h4>

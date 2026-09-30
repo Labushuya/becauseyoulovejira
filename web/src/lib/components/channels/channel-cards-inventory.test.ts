@@ -286,7 +286,9 @@ const CASES: Case[] = [
 			{ old: '„zuletzt erfolgreich …“', place: 'details', now: /zuletzt erfolgreich 24\.09\.2026/ },
 			{ old: 'Zeile „Ergebnis“', place: 'info', now: /· ohne Fehler$/ },
 			{ old: 'Zeile „Ergebnis“', place: 'details', now: 'ohne Fehler' },
-			{ old: 'Zeile „Stichwörter“', place: 'details', now: '2 (todo, ticket)' },
+			// Since ADR-0026 (addendum KL) every keyword as a chip instead of "2 (todo, ticket)".
+			{ old: 'Zeile „Stichwörter“', place: 'details', now: 'todo' },
+			{ old: 'Zeile „Stichwörter“', place: 'details', now: 'ticket' },
 			{ old: 'Knopf „Jetzt abrufen“', place: 'main', now: 'Jetzt abrufen' },
 			{ old: 'Knopf „Bearbeiten“', place: 'menu', now: 'Stichwörter und Einstellungen …' },
 			{ old: 'Menü „Pausieren“', place: 'menu', now: 'Pausieren' },
@@ -531,11 +533,13 @@ const CASES: Case[] = [
 			},
 			{ old: '„Widerrufen …“ je Schlüssel', place: 'details', now: 'Widerrufen …: Laptop' },
 			{ old: '„Widerrufen …“ je Schlüssel', place: 'details', now: 'Widerrufen …: Skript' },
+			// Since ADR-0026 (addendum KL) every keyword as a chip.
 			{
 				old: 'Zeile „Stichwörter für „mode: auto““',
 				place: 'details',
-				now: /Stichwörter für „mode: auto“\s*2 \(todo, rechnung\)/
+				now: /^Stichwörter für „mode: auto“\s*todo\s*rechnung$/
 			},
+			{ old: 'Zeile „Stichwörter für „mode: auto““', place: 'details', now: 'rechnung' },
 			{
 				old: 'Knopf „Zugangsschlüssel erzeugen …“',
 				place: 'main',
@@ -623,6 +627,11 @@ const CASES: Case[] = [
 				now: 'Stichwörter für „Automatisch“: 1 (#byl)'
 			},
 			{ old: 'Erklärung', place: 'details', now: /sendet nie etwas in WhatsApp/ },
+			{
+				old: '(neu, ADR-0026 Nachtrag KL) Stichwörter in den Details',
+				place: 'details',
+				now: /^Stichwörter für „Automatisch“\s*#byl$/
+			},
 			{ old: 'Link „Einrichten“', place: 'main', now: 'Einrichten' },
 			{ old: 'Knopf „Stichwörter …“', place: 'menu', now: 'Stichwörter …' },
 			{ old: 'Link „So geht’s“', place: 'menu', now: 'Hilfe' }
@@ -639,6 +648,21 @@ const CASES: Case[] = [
 				now: 'Stichwörter: Mail 3 · Kalender 0 · WhatsApp 2'
 			},
 			{ old: 'Erklärung', place: 'details', now: /Mail-Dateien \(\.eml, auch aus Proton\)/ },
+			{
+				old: '(neu, ADR-0026 Nachtrag KL) Stichwörter je Art in den Details',
+				place: 'details',
+				now: /^Mail \(\.eml\)\s*todo\s*rechnung\s*#byl$/
+			},
+			{
+				old: '(neu, ADR-0026 Nachtrag KL) Stichwörter je Art in den Details',
+				place: 'details',
+				now: /^Kalender \(\.ics\)\s*keine$/
+			},
+			{
+				old: '(neu, ADR-0026 Nachtrag KL) Stichwörter je Art in den Details',
+				place: 'details',
+				now: /^WhatsApp-Export\s*todo\s*einkauf$/
+			},
 			{ old: 'Link „Zum Eingang“', place: 'main', now: 'Zum Eingang' },
 			{ old: 'Link „Stichwörter bearbeiten“', place: 'menu', now: 'Anleitungen und Stichwörter' }
 		]
