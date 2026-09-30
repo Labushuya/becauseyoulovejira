@@ -76,7 +76,9 @@ const OUTCOME: DuplicateOutcome = {
 	source: null
 };
 
-function storeOf(answer: (request: DuplicateRequest) => Promise<DuplicateOutcome> = async () => OUTCOME) {
+function storeOf(
+	answer: (request: DuplicateRequest) => Promise<DuplicateOutcome> = async () => OUTCOME
+) {
 	const flags: FlagInput[] = [];
 	const data = { duplicate: vi.fn((_id: string, request: DuplicateRequest) => answer(request)) };
 	const store = new TicketDuplicateStore(
@@ -151,7 +153,15 @@ describe('button "Duplizieren …"', () => {
 		const { store } = storeOf();
 		const onask = vi.fn();
 		render(TicketDuplicate, {
-			props: { ticket: ticket(), store, projects: [HOUSE], onopen: vi.fn(), inline: true, asking: true, onask }
+			props: {
+				ticket: ticket(),
+				store,
+				projects: [HOUSE],
+				onopen: vi.fn(),
+				inline: true,
+				asking: true,
+				onask
+			}
 		});
 		const button = screen.getByRole('button', { name: 'Duplizieren …' });
 		expect(button.getAttribute('aria-haspopup')).toBeNull();
@@ -174,9 +184,9 @@ describe('the question "Wie soll das Duplikat entstehen?"', () => {
 		expect(checked('Projekt')).toBe(true);
 		expect(checked('Tags: Garten')).toBe(true);
 		expect(checked('Fälligkeit: 05.10.2026')).toBe(true);
-		expect(within(take).getByRole<HTMLSelectElement>('combobox', { name: 'Projekt des Duplikats' }).value).toBe(
-			HOUSE.id
-		);
+		expect(
+			within(take).getByRole<HTMLSelectElement>('combobox', { name: 'Projekt des Duplikats' }).value
+		).toBe(HOUSE.id);
 		// Only for sub-tasks, parents and tickets with comments; no sources, no section.
 		expect(within(take).queryByRole('checkbox', { name: /Unteraufgaben/ })).toBeNull();
 		expect(within(take).queryByRole('checkbox', { name: /Kommentare/ })).toBeNull();
@@ -238,7 +248,10 @@ describe('the question "Wie soll das Duplikat entstehen?"', () => {
 			source: 'none'
 		});
 		expect(onclose).toHaveBeenCalledOnce();
-		expect(flags[0]).toMatchObject({ title: 'HAUS-12 dupliziert.', description: 'Das Duplikat ist HAUS-13.' });
+		expect(flags[0]).toMatchObject({
+			title: 'HAUS-12 dupliziert.',
+			description: 'Das Duplikat ist HAUS-13.'
+		});
 		flags[0]?.action?.run();
 		expect(onopen).toHaveBeenLastCalledWith('ticket000000012');
 	});
@@ -246,7 +259,9 @@ describe('the question "Wie soll das Duplikat entstehen?"', () => {
 	it('sends no project when "Projekt" is unchecked, and offers none for an archived one', async () => {
 		const { data } = renderDialog({ ticket: ticket({ projectId: OLD.id, project: OLD }) });
 		const take = screen.getByRole('group', { name: 'Übernehmen' });
-		const select = within(take).getByRole<HTMLSelectElement>('combobox', { name: 'Projekt des Duplikats' });
+		const select = within(take).getByRole<HTMLSelectElement>('combobox', {
+			name: 'Projekt des Duplikats'
+		});
 		expect(select.value).toBe('');
 		expect(screen.getByText(/„Altbau“ ist archiviert und nimmt keine Tickets auf/)).toBeTruthy();
 		await fireEvent.click(within(take).getByRole('checkbox', { name: 'Projekt' }));
@@ -263,7 +278,10 @@ describe('the question "Wie soll das Duplikat entstehen?"', () => {
 				throw new DataError('validation', {
 					status: 400,
 					fields: {
-						title: { code: 'validation_duplicate_title', message: 'Bitte einen Titel mit höchstens 200 Zeichen angeben.' }
+						title: {
+							code: 'validation_duplicate_title',
+							message: 'Bitte einen Titel mit höchstens 200 Zeichen angeben.'
+						}
 					}
 				});
 			}
@@ -281,9 +299,10 @@ describe('the question "Wie soll das Duplikat entstehen?"', () => {
 	it('offers the parent of a sub-task, checked', () => {
 		renderDialog({ ticket: ticket({ parentId: 'parent000000001' }), parentKey: 'HAUS-7' });
 		const take = screen.getByRole('group', { name: 'Übernehmen' });
-		expect(within(take).getByRole<HTMLInputElement>('checkbox', { name: 'Unter HAUS-7 einordnen' }).checked).toBe(
-			true
-		);
+		expect(
+			within(take).getByRole<HTMLInputElement>('checkbox', { name: 'Unter HAUS-7 einordnen' })
+				.checked
+		).toBe(true);
 	});
 
 	it('asks for the source only with sources: none by default, the copy with what it holds', async () => {
@@ -292,12 +311,16 @@ describe('the question "Wie soll das Duplikat entstehen?"', () => {
 			sources: [mailSource()]
 		});
 		const group = screen.getByRole('radiogroup', { name: 'Quelle' });
-		expect(within(group).getByRole<HTMLInputElement>('radio', { name: 'Keine Quelle' }).checked).toBe(true);
-		const copy = within(group).getByRole<HTMLInputElement>('radio', { name: 'Kopie der Herkunft übernehmen' });
+		expect(
+			within(group).getByRole<HTMLInputElement>('radio', { name: 'Keine Quelle' }).checked
+		).toBe(true);
+		const copy = within(group).getByRole<HTMLInputElement>('radio', {
+			name: 'Kopie der Herkunft übernehmen'
+		});
 		expect(copy.disabled).toBe(false);
-		expect(document.getElementById(copy.getAttribute('aria-describedby') ?? '')?.textContent).toContain(
-			'Kopie von „Rechnung März“ (Postfach)'
-		);
+		expect(
+			document.getElementById(copy.getAttribute('aria-describedby') ?? '')?.textContent
+		).toContain('Kopie von „Rechnung März“ (Postfach)');
 		await fireEvent.click(copy);
 		await fireEvent.click(within(statusGroup()).getByRole('radio', { name: 'Offen' }));
 		await submit();
@@ -307,7 +330,9 @@ describe('the question "Wie soll das Duplikat entstehen?"', () => {
 
 	it('locks the copy without a main source and says why', () => {
 		renderDialog({ sources: [mailSource({ id: 'item00000000002' })] });
-		const copy = screen.getByRole<HTMLInputElement>('radio', { name: 'Kopie der Herkunft übernehmen' });
+		const copy = screen.getByRole<HTMLInputElement>('radio', {
+			name: 'Kopie der Herkunft übernehmen'
+		});
 		expect(copy.disabled).toBe(true);
 		expect(document.getElementById(copy.getAttribute('aria-describedby') ?? '')?.textContent).toBe(
 			'Das Original hat keine Hauptquelle, die sich kopieren ließe.'
@@ -317,7 +342,9 @@ describe('the question "Wie soll das Duplikat entstehen?"', () => {
 	it('says that a series never comes along', () => {
 		renderDialog({ ticket: ticket({ recurring: true, recurrenceId: 'rule00000000001' }) });
 		expect(
-			screen.getByText('HAUS-12 gehört zu einer Serie. Das Duplikat wird ein normales Ticket ohne Wiederholung.')
+			screen.getByText(
+				'HAUS-12 gehört zu einer Serie. Das Duplikat wird ein normales Ticket ohne Wiederholung.'
+			)
 		).toBeTruthy();
 	});
 
@@ -325,7 +352,9 @@ describe('the question "Wie soll das Duplikat entstehen?"', () => {
 		const { onclose } = renderDialog({ inModal: true });
 		expect(screen.getAllByRole('dialog')).toHaveLength(1);
 		const area = screen.getByRole('region', { name: 'HAUS-12 duplizieren' });
-		await vi.waitFor(() => expect(document.activeElement).toBe(within(area).getByLabelText('Titel')));
+		await vi.waitFor(() =>
+			expect(document.activeElement).toBe(within(area).getByLabelText('Titel'))
+		);
 		const escape = new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true });
 		document.activeElement?.dispatchEvent(escape);
 		expect(escape.defaultPrevented).toBe(true);

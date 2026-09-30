@@ -983,19 +983,26 @@ describe('ticket route', () => {
 
 		const duplicate = screen.getByRole('button', { name: 'Duplizieren …' });
 		const remove = screen.getByRole('button', { name: 'Löschen …' });
-		expect(duplicate.compareDocumentPosition(remove) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+		expect(
+			duplicate.compareDocumentPosition(remove) & Node.DOCUMENT_POSITION_FOLLOWING
+		).toBeTruthy();
 		await fireEvent.click(duplicate);
 		const dialog = screen.getByRole('dialog', { name: 'TASK-3 duplizieren' });
 		expect(within(dialog).getByLabelText<HTMLInputElement>('Titel').value).toBe(
 			'Steuererklärung (Kopie)'
 		);
-		await fireEvent.click(within(dialog).getByRole('radio', { name: 'Wie das Original: In Arbeit' }));
+		await fireEvent.click(
+			within(dialog).getByRole('radio', { name: 'Wie das Original: In Arbeit' })
+		);
 		await fireEvent.click(within(dialog).getByRole('button', { name: 'Duplizieren' }));
 
 		await vi.waitFor(() =>
 			expect(mocks.goto).toHaveBeenCalledWith('/tickets/dupl00000000013?erledigte=1')
 		);
-		expect(data.duplicate).toHaveBeenCalledWith(ID, expect.objectContaining({ status: 'in_progress' }));
+		expect(data.duplicate).toHaveBeenCalledWith(
+			ID,
+			expect.objectContaining({ status: 'in_progress' })
+		);
 		expect(screen.queryByRole('dialog', { name: 'TASK-3 duplizieren' })).toBeNull();
 	});
 });
@@ -2009,7 +2016,11 @@ describe('ticket route: full view (ADR-0025 section 7, UI-7)', () => {
 			);
 
 			// Escape closes only the area; the full view stays and the focus goes back.
-			const escape = new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true });
+			const escape = new KeyboardEvent('keydown', {
+				key: 'Escape',
+				bubbles: true,
+				cancelable: true
+			});
 			document.activeElement?.dispatchEvent(escape);
 			await tick();
 			await tick();

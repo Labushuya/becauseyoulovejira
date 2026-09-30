@@ -320,9 +320,9 @@ describe('duplicate in the history (ADR-0045)', () => {
 		const to = JSON.stringify({ direction: 'to', ticket: 'ticket000000002', key: 'HAUS-13' });
 		expect(duplicateText(from)).toBe('Dupliziert aus HAUS-12');
 		expect(duplicateText(to)).toBe('Dupliziert nach HAUS-13');
-		expect(describeHistoryEntry(entry({ field: 'duplicate', newValue: to }), lookups, ME).actor).toBe(
-			'Du'
-		);
+		expect(
+			describeHistoryEntry(entry({ field: 'duplicate', newValue: to }), lookups, ME).actor
+		).toBe('Du');
 	});
 
 	it('says only "Dupliziert" for a value it cannot read', () => {

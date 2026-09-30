@@ -67,7 +67,10 @@ describe('the question', () => {
 	});
 
 	it('sends the chosen project only while "Projekt" is checked', () => {
-		const form = { ...initialDuplicateForm({ title: 'Rasen', projectId: 'p1' }, ['p1']), status: 'backlog' as const };
+		const form = {
+			...initialDuplicateForm({ title: 'Rasen', projectId: 'p1' }, ['p1']),
+			status: 'backlog' as const
+		};
 		expect(duplicateRequestOf({ ...form, title: ' Neu ' })).toEqual({
 			title: 'Neu',
 			status: 'backlog',
@@ -89,7 +92,12 @@ describe('the question', () => {
 			['waiting', 'Wartet']
 		]);
 		expect(answers('open')[0]).toEqual(['open', 'Offen (wie das Original)']);
-		expect(answers('done').map(([value]) => value)).toEqual(['open', 'backlog', 'in_progress', 'waiting']);
+		expect(answers('done').map(([value]) => value)).toEqual([
+			'open',
+			'backlog',
+			'in_progress',
+			'waiting'
+		]);
 	});
 
 	it('says what the copy of the main source holds, or why there is none', () => {
