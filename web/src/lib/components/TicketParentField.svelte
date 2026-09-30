@@ -132,6 +132,7 @@
 					class="button-primary small-primary"
 					type="button"
 					aria-disabled={saving ? 'true' : undefined}
+					aria-busy={saving ? 'true' : undefined}
 					onclick={take}
 				>
 					{saving ? 'Wird gespeichert …' : 'Übernehmen'}
@@ -162,6 +163,7 @@
 				aria-label="Aus übergeordnetem Ticket lösen"
 				title="Lösen"
 				aria-disabled={saving ? 'true' : undefined}
+				aria-busy={saving ? 'true' : undefined}
 				onclick={release}
 			>
 				<svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true" focusable="false">

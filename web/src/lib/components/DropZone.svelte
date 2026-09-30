@@ -156,6 +156,11 @@
 		cursor: pointer;
 	}
 
+	/* Files are being taken over (ADR-0026, addendum of 2026-09-30). */
+	.drop-zone[aria-busy='true'] .pick {
+		cursor: progress;
+	}
+
 	.results {
 		display: grid;
 		gap: 0.25rem;

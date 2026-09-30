@@ -224,6 +224,7 @@
 							class="button-subtle"
 							type="button"
 							aria-disabled={checking}
+							aria-busy={checking}
 							onclick={() => void recheck()}
 						>
 							{checking ? 'Wird geprüft …' : 'Prüfen'}

@@ -106,6 +106,7 @@
 					type="button"
 					aria-haspopup="dialog"
 					disabled={store.progress !== null}
+					aria-busy={store.progress !== null ? 'true' : undefined}
 					onclick={() => (asking = { kind: 'empty' })}
 				>
 					Papierkorb leeren …

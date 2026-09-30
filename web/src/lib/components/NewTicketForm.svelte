@@ -336,6 +336,7 @@
 			type="submit"
 			form={ids.form}
 			aria-disabled={missingTitle || pending ? 'true' : undefined}
+			aria-busy={pending ? 'true' : undefined}
 			aria-describedby={missingTitle ? ids.titleHint : undefined}
 		>
 			{pending ? 'Wird angelegt …' : 'Anlegen'}
@@ -349,7 +350,13 @@
 		{/if}
 	</div>
 
-	<form id={ids.form} class="form" novalidate onsubmit={submit}>
+	<form
+		id={ids.form}
+		class="form"
+		novalidate
+		aria-busy={pending ? 'true' : undefined}
+		onsubmit={submit}
+	>
 		<div class="field">
 			<label for={ids.title}>Titel</label>
 			<input
@@ -601,6 +608,11 @@
 	.button-primary[aria-disabled='true'] {
 		cursor: not-allowed;
 		opacity: 0.6;
+	}
+
+	/* The ticket is being created (ADR-0026, addendum of 2026-09-30). */
+	.button-primary[aria-busy='true'] {
+		cursor: progress;
 	}
 
 	.hint {

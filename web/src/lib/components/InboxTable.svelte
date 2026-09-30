@@ -241,6 +241,7 @@
 					class="text-button"
 					type="button"
 					disabled={store.isPending(item.id)}
+					aria-busy={store.isPending(item.id) ? 'true' : undefined}
 					onclick={() => act(() => store.assign(item.id, ticket.id, ticket.key))}
 				>
 					Dem Ticket {ticket.key} zuordnen
@@ -512,6 +513,7 @@
 											class="action"
 											type="button"
 											disabled={pending}
+											aria-busy={pending ? 'true' : undefined}
 											onclick={() => discard(item)}
 										>
 											Verwerfen<span class="visually-hidden">: „{item.title}“</span>
@@ -521,6 +523,7 @@
 											class="action"
 											type="button"
 											disabled={pending}
+											aria-busy={pending ? 'true' : undefined}
 											onclick={() => act(() => store.restore(item.id))}
 										>
 											Wiederherstellen<span class="visually-hidden">: „{item.title}“</span>
@@ -552,6 +555,7 @@
 			class="more"
 			type="button"
 			disabled={store.loadingMoreHandled}
+			aria-busy={store.loadingMoreHandled ? 'true' : undefined}
 			onclick={() => store.loadMoreHandled()}
 		>
 			{store.loadingMoreHandled ? 'Wird geladen …' : 'Weitere laden'}
@@ -770,8 +774,14 @@
 	}
 
 	.action:disabled {
-		cursor: progress;
+		cursor: not-allowed;
 		opacity: 0.6;
+	}
+
+	/* The row is being changed (ADR-0026, addendum of 2026-09-30). */
+	.action[aria-busy='true'],
+	.text-button[aria-busy='true'] {
+		cursor: progress;
 	}
 
 	.more {
@@ -785,6 +795,10 @@
 	}
 
 	.more:disabled {
+		cursor: not-allowed;
+	}
+
+	.more[aria-busy='true'] {
 		cursor: progress;
 	}
 

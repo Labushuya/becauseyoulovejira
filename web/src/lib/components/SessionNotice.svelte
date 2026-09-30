@@ -26,7 +26,13 @@
 <CenteredCard labelledby="session-notice-title">
 	<h1 id="session-notice-title">{text.title}</h1>
 	<p>{text.body}</p>
-	<button class="button-primary" type="button" disabled={busy} onclick={onretry}>
+	<button
+		class="button-primary"
+		type="button"
+		disabled={busy}
+		aria-busy={busy ? 'true' : undefined}
+		onclick={onretry}
+	>
 		{busy ? 'Wird geprüft …' : 'Erneut versuchen'}
 	</button>
 </CenteredCard>

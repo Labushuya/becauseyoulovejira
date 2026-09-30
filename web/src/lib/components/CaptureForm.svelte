@@ -258,6 +258,7 @@
 			type="submit"
 			form={formId}
 			aria-disabled={pending ? 'true' : undefined}
+			aria-busy={pending ? 'true' : undefined}
 		>
 			{pending
 				? 'Wird gespeichert …'
@@ -293,6 +294,7 @@
 		id={formId}
 		class="form"
 		novalidate
+		aria-busy={pending ? 'true' : undefined}
 		onsubmit={(event) => save(effectiveTarget, event)}
 		bind:this={form}
 	>
@@ -555,6 +557,11 @@
 	.button-primary[aria-disabled='true'] {
 		cursor: not-allowed;
 		opacity: 0.6;
+	}
+
+	/* The entry is being saved (ADR-0026, addendum of 2026-09-30). */
+	.button-primary[aria-busy='true'] {
+		cursor: progress;
 	}
 
 	.hint {

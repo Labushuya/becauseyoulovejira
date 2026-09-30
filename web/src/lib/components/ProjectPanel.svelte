@@ -340,7 +340,13 @@
 		{#if creating}
 			<button class="button-secondary" type="button" onclick={close}>Abbrechen</button>
 		{/if}
-		<button class="button-primary" type="submit" form={ids.form} aria-disabled={busy}>
+		<button
+			class="button-primary"
+			type="submit"
+			form={ids.form}
+			aria-disabled={busy}
+			aria-busy={busy ? 'true' : undefined}
+		>
 			{busy ? 'Wird gespeichert …' : creating ? 'Anlegen' : 'Speichern'}
 		</button>
 	{/snippet}
@@ -384,7 +390,7 @@
 		</div>
 	{/if}
 
-	<form id={ids.form} class="form" novalidate onsubmit={save}>
+	<form id={ids.form} class="form" novalidate aria-busy={busy ? 'true' : undefined} onsubmit={save}>
 		<div class="field">
 			<label for={ids.name}>Name</label>
 			<input
@@ -519,7 +525,7 @@
 	{#if project !== null && onarchive}
 		{@const current = project}
 		{@const change = onarchive}
-		<section class="manage" aria-labelledby={ids.archive}>
+		<section class="manage" aria-labelledby={ids.archive} aria-busy={busy ? 'true' : undefined}>
 			<h3 id={ids.archive}>Archiv</h3>
 			{#if restoreNeedsParent && parent !== null}
 				<button

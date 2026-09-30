@@ -301,6 +301,7 @@
 						class="template-form"
 						aria-label="Vorlage der künftigen Tickets"
 						novalidate
+						aria-busy={templateBusy ? 'true' : undefined}
 						onsubmit={saveTemplate}
 						onkeydown={templateKeys}
 						bind:this={templateForm}
@@ -333,7 +334,12 @@
 							<button class="button-secondary" type="button" onclick={() => void endTemplate()}>
 								Abbrechen
 							</button>
-							<button class="button-primary" type="submit" aria-disabled={templateBusy}>
+							<button
+								class="button-primary"
+								type="submit"
+								aria-disabled={templateBusy}
+								aria-busy={templateBusy ? 'true' : undefined}
+							>
 								{templateBusy ? 'Wird gespeichert …' : 'Vorlage speichern'}
 							</button>
 						</div>
@@ -341,7 +347,7 @@
 				{/if}
 			</div>
 		{/if}
-		<div class="actions">
+		<div class="actions" aria-busy={busy ? 'true' : undefined}>
 			{#if rule !== null}
 				{@const current = rule}
 				<button
@@ -469,7 +475,13 @@
 	}
 
 	[aria-disabled='true'] {
-		cursor: progress;
+		cursor: not-allowed;
 		opacity: 0.75;
+	}
+
+	/* Locked because an action of the series or the template runs (ADR-0026, addendum of 2026-09-30). */
+	[aria-busy='true'] [aria-disabled='true'],
+	[aria-busy='true'][aria-disabled='true'] {
+		cursor: progress;
 	}
 </style>

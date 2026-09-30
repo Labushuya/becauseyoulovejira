@@ -49,7 +49,7 @@
 	}
 </script>
 
-<div class="due-input">
+<div class="due-input" aria-busy={saving ? 'true' : undefined}>
 	<input
 		{id}
 		type="date"
