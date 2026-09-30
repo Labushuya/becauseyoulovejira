@@ -123,3 +123,18 @@ routerAdd(
   },
   $apis.requireAuth('users')
 );
+
+// "Ticket duplizieren" (ADR-0045): JSON with the title, the required status, the project and what
+// to take over (description, priority, tags, due, parent, sub-tickets, comments) and whether the
+// main source is copied ({ source: 'none' | 'copy' }). Creates the duplicate with everything
+// chosen in one transaction, or nothing; only for a ticket the request may see (else 404, the
+// trash included) in an area where the user may create tickets (else 403).
+routerAdd(
+  'POST',
+  '/api/byl/tickets/{id}/duplicate',
+  function (e) {
+    var result = require(`${__hooks}/lib/duplicate-service.js`).duplicate(e, e.request.pathValue('id'));
+    return e.json(200, result);
+  },
+  $apis.requireAuth('users')
+);

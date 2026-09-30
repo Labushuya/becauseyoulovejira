@@ -171,9 +171,21 @@ function fingerprint(item, hash, newId) {
   return { fingerprint: String(hash(result.key)) };
 }
 
+/**
+ * Duplicate key of the copy of a source ("Kopie der Herkunft übernehmen", ADR-0045): derived from
+ * the fingerprint of the original entry and a new random ID. It never equals the key of a channel
+ * (those start with their family), so the copy neither blocks nor answers a later import of the
+ * same object: that still meets the original entry, also as a tombstone. Every copy is an entry
+ * of its own, like a manual one.
+ */
+function copyFingerprintKey(originalFingerprint, newId) {
+  return join(['copy', text(originalFingerprint), text(newId)]);
+}
+
 module.exports = {
   normalizeMessageId: normalizeMessageId,
   normalizeUrl: normalizeUrl,
   fingerprintKey: fingerprintKey,
-  fingerprint: fingerprint
+  fingerprint: fingerprint,
+  copyFingerprintKey: copyFingerprintKey
 };

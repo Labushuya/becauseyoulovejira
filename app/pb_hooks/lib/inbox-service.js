@@ -44,6 +44,11 @@ var SOURCE_LINK_FIELD = 'source_link';
 // such a change writes no "source_link" entry, the ticket records "trash" instead.
 var SILENT_KEY = '@trash_silent';
 
+// Transient record key of the copy of a source for a duplicate ticket (ADR-0045): the fingerprint
+// of the original entry, from which the copy derives a key of its own. Only the server sets it; a
+// client cannot send a field name with "@".
+var COPY_OF_KEY = '@copy_of';
+
 // The ticket of an item as a duplicate or a lookup names it: a ticket in the trash counts as
 // none (ADR-0037 §3), so no message names a key that cannot be opened.
 function visibleTicket(txApp, ticketId) {
@@ -131,6 +136,14 @@ function prepareRecord(record) {
   if (!source.isChannel(channel)) {
     record.set('fingerprint', '');
     return { scope: scope, fingerprint: '' };
+  }
+  // The copy of a source for a duplicate ticket (ADR-0045) gets a key of its own, derived from the
+  // original entry; the family key of its channel stays with the original.
+  var copyOf = record.get(COPY_OF_KEY);
+  if (copyOf) {
+    var copyFingerprint = String($security.sha256(fingerprints.copyFingerprintKey(String(copyOf), $security.randomString(24))));
+    record.set('fingerprint', copyFingerprint);
+    return { scope: scope, fingerprint: copyFingerprint };
   }
   var result = fingerprints.fingerprint(
     {
@@ -485,6 +498,62 @@ function purgeContent(item) {
   }
 }
 
+// Storage key of the original file of an entry ('' without one).
+function originalFileKey(item) {
+  var name = item.getString('original');
+  return name === '' ? '' : item.baseFilesPath() + '/' + name;
+}
+
+/**
+ * "Kopie der Herkunft übernehmen" (ADR-0045): a new, own entry with everything the source kept
+ * (channel, kind, title, text, address, reference, date, details and the original file, also a
+ * saved page), saved as "new" in the transaction of the duplicate, whose ticket hook then converts
+ * it. `target` { owner, household, meta }: the owner and area of the duplicate and the details of
+ * the copy (with `copy_of`). The copy takes no connection: it did not come in through one, so the
+ * counts of a connection stay those of its channel. Its fingerprint derives from the original
+ * entry (COPY_OF_KEY), so the duplicate check of the original is neither blocked nor answered by
+ * it. The caller checked that the original file exists; the file is copied in the storage without
+ * reading it into memory.
+ */
+function copySource(txApp, item, target) {
+  var copy = new Record(txApp.findCollectionByNameOrId(INBOX));
+  copy.set('owner', target.owner);
+  copy.set('household', target.household);
+  var fields = ['channel', 'kind', 'title', 'body', 'source_url', 'source_ref', 'source_date'];
+  for (var i = 0; i < fields.length; i++) {
+    copy.set(fields[i], item.getString(fields[i]));
+  }
+  copy.set('source_meta', target.meta);
+  copy.set(COPY_OF_KEY, item.getString('fingerprint'));
+  var key = originalFileKey(item);
+  if (key === '') {
+    txApp.save(copy);
+    return copy;
+  }
+  var fsys = txApp.newFilesystem();
+  try {
+    copy.set('original', fsys.getReuploadableFile(key, true));
+    txApp.save(copy);
+  } finally {
+    fsys.close();
+  }
+  return copy;
+}
+
+// Whether the original file of an entry is in the storage (true without one).
+function originalFileExists(app, item) {
+  var key = originalFileKey(item);
+  if (key === '') {
+    return true;
+  }
+  var fsys = app.newFilesystem();
+  try {
+    return fsys.exists(key);
+  } finally {
+    fsys.close();
+  }
+}
+
 module.exports = {
   IMMUTABLE_FIELDS: IMMUTABLE_FIELDS,
   metaOf: metaOf,
@@ -500,7 +569,10 @@ module.exports = {
   completeConversion: completeConversion,
   SOURCE_HANDLING_KEY: SOURCE_HANDLING_KEY,
   SILENT_KEY: SILENT_KEY,
+  COPY_OF_KEY: COPY_OF_KEY,
   findById: findById,
   sourcesOfDeletedTicket: sourcesOfDeletedTicket,
-  settleSourcesOfDeletedTicket: settleSourcesOfDeletedTicket
+  settleSourcesOfDeletedTicket: settleSourcesOfDeletedTicket,
+  copySource: copySource,
+  originalFileExists: originalFileExists
 };
