@@ -98,6 +98,11 @@
 	afterNavigate(({ to }) => {
 		if (to) lastView.remember(to.url);
 	});
+	// Recurrence rules (E5 plan, T-7): all of them, for the table, the panel and the overview;
+	// results of their actions go out as flags (package 5). They come first: a change of an open
+	// ticket of a series in the panel, a cell or a bulk action offers the same for the template of
+	// its rule (plan WV).
+	const rules = setRecurrenceStore(new RecurrenceStore(recurrenceData(pb), auth, flags));
 	// The column sort "Projekt" resolves projects through the catalog (E3 plan, package 9); the
 	// "new" mark follows the own read rows and base line (E4 plan, package 4).
 	const tickets = setTicketListStore(
@@ -106,7 +111,8 @@
 			// A project filter takes the sub projects in (ADR-0034).
 			subProjectsOf: (projectId) => catalog.subProjectsOf(projectId).map((project) => project.id),
 			reads: readsData(pb),
-			flags
+			flags,
+			series: rules
 		})
 	);
 	// Ticket picker (ADR-0042): every ticket choice lists the open tickets of the list store, the
@@ -133,11 +139,11 @@
 	$effect(() => untrack(() => trash.start()));
 	$effect(() => untrack(() => trash.connect(trashLive(pb))));
 	const detail = setTicketDetailStore(
-		new TicketDetailStore(ticketDetailData(pb), auth, tickets, trash)
+		new TicketDetailStore(ticketDetailData(pb), auth, tickets, trash, rules)
 	);
 	// Bulk actions on the chosen rows of the table (plan BI-2, ADR-0036 §3): one request per ticket
 	// through the Record API, results and "Rückgängig" as flags.
-	const bulk = setBulkEditStore(new BulkEditStore(bulkEditData(pb), auth, tickets, flags));
+	const bulk = setBulkEditStore(new BulkEditStore(bulkEditData(pb), auth, tickets, flags, rules));
 	// The inbox (E4 plan, T-4): new entries in full, for the view and the count at the switch.
 	const inbox = setInboxStore(new InboxStore(inboxData(pb), auth, flags));
 	const activity = setTicketActivityStore(
@@ -148,9 +154,6 @@
 	const sources = setTicketSourcesStore(
 		new TicketSourcesStore(ticketSourcesData(pb), auth, flags, (item) => inbox.upsert(item))
 	);
-	// Recurrence rules (E5 plan, T-7): all of them, for the table, the panel and the overview;
-	// results of their actions go out as flags (package 5).
-	const rules = setRecurrenceStore(new RecurrenceStore(recurrenceData(pb), auth, flags));
 	$effect(() => untrack(() => rules.start()));
 	$effect(() => untrack(() => rules.connect(recurrenceLive(pb))));
 	// Rules that wait for the choice about a large backlog (ADR-0022 addendum 5) say so once the

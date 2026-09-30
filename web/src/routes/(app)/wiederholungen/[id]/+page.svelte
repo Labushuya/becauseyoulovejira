@@ -49,6 +49,7 @@
 			rule={current}
 			today={tickets.today}
 			eachAvailable={store.eachReady}
+			statusAvailable={store.statusReady}
 			projects={catalog.activeProjects}
 			tags={catalog.tags}
 			projectById={(projectId) => catalog.projectById(projectId)}
@@ -84,12 +85,12 @@
 
 <style>
 	h2 {
-		font-size: 1.125rem;
+		font-size: var(--font-size-title);
 		font-weight: 600;
 	}
 
 	p {
-		font-size: 0.875rem;
+		font-size: var(--font-size-body);
 	}
 
 	.loading {

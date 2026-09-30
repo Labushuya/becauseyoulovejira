@@ -38,6 +38,7 @@ import {
 } from '$lib/domain/list-query';
 import { columnOrder, ticketOrder, type ResolveProject } from '$lib/domain/ordering';
 import { REOPEN_DETACHED_LABEL, REOPEN_REFUSALS } from '$lib/domain/recurrence-rule';
+import { NO_SERIES, type SeriesChangeSink } from '$lib/domain/series-template';
 import type { Status } from '$lib/domain/status';
 import {
 	compareSubtasks,
@@ -251,6 +252,11 @@ export interface TicketListOptions {
 	reads?: ReadsData;
 	/** Flags of the app (results, "Rückgängig", failures); without them nothing is shown. */
 	flags?: FlagSink;
+	/**
+	 * The rules: a cell that changed an open ticket of a series offers the change for its template
+	 * (plan WV); without them nothing is offered.
+	 */
+	series?: SeriesChangeSink;
 }
 
 export class TicketListStore {
@@ -270,6 +276,7 @@ export class TicketListStore {
 	/** Just checked tickets whose flag still offers "Rückgängig", keyed by ticket ID. */
 	readonly #undoable = new SvelteMap<string, Undoable>();
 	readonly #flags: FlagSink;
+	readonly #series: SeriesChangeSink;
 	/** Target state of running check mark requests, keyed by ticket ID. */
 	readonly #pending = new SvelteMap<string, boolean>();
 	/** Question before completing a ticket with open blocking sub-tasks (ADR-0033 section 2). */
@@ -396,7 +403,8 @@ export class TicketListStore {
 			projectOf = (ticket) => ticket.project,
 			subProjectsOf = NO_SUB_PROJECTS,
 			reads,
-			flags = SILENT_FLAGS
+			flags = SILENT_FLAGS,
+			series = NO_SERIES
 		}: TicketListOptions = {}
 	) {
 		this.#data = data;
@@ -407,6 +415,7 @@ export class TicketListStore {
 		this.#today = berlinToday(now());
 		this.#reads = reads ?? null;
 		this.#flags = flags;
+		this.#series = series;
 	}
 
 	/** True if the ticket is new for the signed-in user (ADR-0015 section 2). */
@@ -920,6 +929,8 @@ export class TicketListStore {
 	 * next ticket of a series come from the server. "Erledigt" goes through `setDone` and its
 	 * question about open sub-tasks (ADR-0033 section 2), with "Rückgängig" in the flag. A refusal
 	 * comes as an error flag with the reason, the cell keeps its value. Resolves to true when saved.
+	 * A changed priority, project or tags of an open ticket of a series brings the flag "Nur dieses
+	 * Ticket geändert." with "Auch für künftige Tickets übernehmen" (plan WV), as in the panel.
 	 */
 	async changeField(id: string, patch: TicketPatch): Promise<boolean> {
 		const ticket = this.find(id);
@@ -930,7 +941,9 @@ export class TicketListStore {
 		}
 		this.#pending.set(id, ticket.status === 'done');
 		try {
-			this.upsert(await this.#data.update(id, patch));
+			const saved = await this.#data.update(id, patch);
+			this.upsert(saved);
+			this.#series.offerTemplate([{ before: ticket, after: saved }]);
 			return true;
 		} catch (error) {
 			const failure = toDataError(error);

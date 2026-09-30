@@ -8,7 +8,10 @@ import {
 	type OpenInstance,
 	type RecurrenceRule
 } from '$lib/domain/recurrence-rule';
+import type { Project } from '$lib/domain/project';
+import type { Tag } from '$lib/domain/tag';
 import type { HistoryEntry, Ticket } from '$lib/domain/ticket';
+import { CatalogStore } from '$lib/stores/catalog.svelte';
 import type { FlagSink } from '$lib/stores/flags.svelte';
 import { REPEAT_FAILED, RecurrenceStore, type RecurrenceData } from '$lib/stores/recurrence.svelte';
 import RecurrenceSummary from './RecurrenceSummary.svelte';
@@ -16,9 +19,19 @@ import { useOverlayStubs } from '$lib/test/overlay-stubs';
 
 // Recurrence in the ticket panel (E5 plan, package 4): "Wiederholen…" for an open ticket, the
 // line "Wiederholt sich: …" with its actions for a ticket in a series, neutral hints, errors of
-// refused requests, focus. The store runs for real on a fake data layer.
+// refused requests, focus. Since plan WV the template of the next tickets with its inline editor.
+// The store runs for real on a fake data layer.
 
 const TODAY = '2026-09-25';
+const HOUSE: Project = {
+	id: 'proj00000000001',
+	name: 'Haus',
+	code: 'HAUS',
+	archived: false,
+	updated: '2026-09-01 10:00:00.000Z'
+};
+const GARDEN: Tag = { id: 'tag000000000001', name: 'Garten', updated: '2026-09-01 10:00:00.000Z' };
+const WASTE: Tag = { id: 'tag000000000002', name: 'Müll', updated: '2026-09-01 10:00:00.000Z' };
 
 useOverlayStubs();
 
@@ -106,9 +119,18 @@ async function setup(
 	const store = new RecurrenceStore(fake, { ensureValid: () => true, logout: vi.fn() }, flags);
 	await store.load();
 	before(store);
+	const catalog = new CatalogStore(
+		{
+			listProjects: vi.fn(async () => [HOUSE]),
+			listTags: vi.fn(async () => [GARDEN, WASTE]),
+			createTag: vi.fn()
+		},
+		{ ensureValid: () => true, logout: vi.fn() }
+	);
+	await catalog.load();
 	const onticket = vi.fn();
 	render(RecurrenceSummary, {
-		props: { ticket: item, store, today: TODAY, history, openTickets, onticket }
+		props: { ticket: item, store, catalog, today: TODAY, history, openTickets, onticket }
 	});
 	return { fake, store, onticket, flagTitles };
 }
@@ -385,5 +407,164 @@ describe('RecurrenceSummary: "Wiederholen…" prepared from a calendar series (E
 		);
 		expect(screen.queryByRole('dialog')).toBeNull();
 		expect(screen.getByText('Wiederholt sich: jeden Montag')).toBeTruthy();
+	});
+});
+
+describe('RecurrenceSummary: the template of the next tickets (plan WV)', () => {
+	const inSeries = () => ticket({ recurring: true, recurrenceId: 'rule00000000001' });
+	const series = () =>
+		rule({
+			priority: 'high',
+			projectId: HOUSE.id,
+			tagIds: [GARDEN.id],
+			initialStatus: 'waiting'
+		});
+	const statusReady = { initialStatusReady: vi.fn(async () => true) };
+
+	it('names what the next tickets get', async () => {
+		await setup(inSeries(), [series()], statusReady);
+		expect(
+			screen.getByText(
+				'Künftige Tickets: Priorität Hoch · Projekt Haus · Tags Garten · Status beim Anlegen Wartet'
+			)
+		).toBeTruthy();
+		expect(screen.getByRole('button', { name: 'Vorlage bearbeiten' }).textContent?.trim()).toBe(
+			'Bearbeiten'
+		);
+	});
+
+	it('leaves the status out before its migration, and so does the editor', async () => {
+		await setup(inSeries(), [rule()]);
+		expect(
+			screen.getByText('Künftige Tickets: Priorität Mittel · ohne Projekt · ohne Tags')
+		).toBeTruthy();
+		await fireEvent.click(screen.getByRole('button', { name: 'Vorlage bearbeiten' }));
+		expect(screen.queryByLabelText('Status beim Anlegen')).toBeNull();
+	});
+
+	it('edits the template inline, without a dialog, and sends only the changed fields', async () => {
+		const updateRule = vi.fn(async (id: string, patch: object) => ({
+			...series(),
+			...patch,
+			id,
+			priority: 'urgent' as const,
+			initialStatus: 'backlog' as const,
+			updated: '2026-09-02 10:00:00.000Z'
+		}));
+		const { flagTitles } = await setup(inSeries(), [series()], { ...statusReady, updateRule });
+		const edit = screen.getByRole('button', { name: 'Vorlage bearbeiten' });
+		edit.focus();
+		await fireEvent.click(edit);
+		const form = screen.getByRole('form', { name: 'Vorlage der künftigen Tickets' });
+		expect(screen.queryByRole('dialog')).toBeNull();
+		await vi.waitFor(() =>
+			expect(document.activeElement).toBe(within(form).getByLabelText('Titel'))
+		);
+		expect(within(form).getByLabelText<HTMLInputElement>('Titel').value).toBe('Müll');
+		expect(within(form).getByLabelText<HTMLSelectElement>('Projekt').value).toBe(HOUSE.id);
+		const status = within(form).getByLabelText<HTMLSelectElement>('Status beim Anlegen');
+		expect([...status.options].map((option) => option.textContent)).toEqual([
+			'Backlog',
+			'Offen',
+			'In Arbeit',
+			'Wartet'
+		]);
+
+		await fireEvent.change(within(form).getByLabelText('Priorität'), {
+			target: { value: 'urgent' }
+		});
+		await fireEvent.change(status, { target: { value: 'backlog' } });
+		await fireEvent.click(within(form).getByRole('button', { name: 'Vorlage speichern' }));
+
+		await vi.waitFor(() => expect(screen.queryByRole('form')).toBeNull());
+		expect(updateRule).toHaveBeenCalledExactlyOnceWith('rule00000000001', {
+			priority: 'urgent',
+			initial_status: 'backlog'
+		});
+		expect(flagTitles).toEqual([
+			'Vorlage gespeichert. Sie gilt für die künftigen Tickets der Serie.'
+		]);
+		expect(
+			screen.getByText(
+				/Priorität Dringend · Projekt Haus · Tags Garten · Status beim Anlegen Backlog/
+			)
+		).toBeTruthy();
+		await vi.waitFor(() =>
+			expect(document.activeElement).toBe(
+				screen.getByRole('button', { name: 'Vorlage bearbeiten' })
+			)
+		);
+	});
+
+	it('drops the draft with Escape and "Abbrechen", without a request', async () => {
+		const { fake, store } = await setup(inSeries(), [series()], statusReady);
+		await fireEvent.click(screen.getByRole('button', { name: 'Vorlage bearbeiten' }));
+		const title = screen.getByLabelText('Titel');
+		await fireEvent.input(title, { target: { value: 'Papiermüll' } });
+		expect(store.templateDirty).toBe(true);
+		const escape = new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true });
+		title.dispatchEvent(escape);
+		await tick();
+		expect(escape.defaultPrevented).toBe(true);
+		expect(screen.queryByRole('form')).toBeNull();
+		expect(store.templateDraft).toBeNull();
+
+		await fireEvent.click(screen.getByRole('button', { name: 'Vorlage bearbeiten' }));
+		expect(screen.getByLabelText<HTMLInputElement>('Titel').value).toBe('Müll');
+		await fireEvent.click(screen.getByRole('button', { name: 'Abbrechen' }));
+		expect(screen.queryByRole('form')).toBeNull();
+		expect(fake.updateRule).not.toHaveBeenCalled();
+	});
+
+	it('checks the title and shows a refusal of the server at its field, keeping the draft', async () => {
+		const updateRule = vi.fn(async () => {
+			throw new DataError('validation', {
+				status: 400,
+				fields: {
+					project: { code: 'validation_project_archived', message: 'Das Projekt ist archiviert.' }
+				}
+			});
+		});
+		await setup(inSeries(), [series()], { ...statusReady, updateRule });
+		await fireEvent.click(screen.getByRole('button', { name: 'Vorlage bearbeiten' }));
+		await fireEvent.input(screen.getByLabelText('Titel'), { target: { value: '  ' } });
+		await fireEvent.click(screen.getByRole('button', { name: 'Vorlage speichern' }));
+		expect(updateRule).not.toHaveBeenCalled();
+		expect(screen.getByText('Bitte einen Titel eingeben.')).toBeTruthy();
+
+		await fireEvent.input(screen.getByLabelText('Titel'), { target: { value: 'Müll' } });
+		await fireEvent.change(screen.getByLabelText('Projekt'), { target: { value: '' } });
+		await fireEvent.click(screen.getByRole('button', { name: 'Vorlage speichern' }));
+		await vi.waitFor(() =>
+			expect(screen.getByLabelText('Projekt').getAttribute('aria-invalid')).toBe('true')
+		);
+		expect(screen.getByText('Das Projekt ist archiviert.')).toBeTruthy();
+		expect(screen.getByRole('form', { name: 'Vorlage der künftigen Tickets' })).toBeTruthy();
+	});
+
+	it('"Wiederholen…" names what the next tickets take from the ticket, its status included', async () => {
+		const { fake } = await setup(
+			ticket({ status: 'in_progress', priority: 'high', tagIds: [WASTE.id] }),
+			[],
+			statusReady
+		);
+		await fireEvent.click(screen.getByRole('button', { name: 'Wiederholen…' }));
+		const dialog = screen.getByRole('dialog', { name: 'Wiederholen…' });
+		expect(
+			within(dialog).getByText(
+				'Künftige Tickets bekommen die Werte dieses Tickets: Priorität Hoch · ohne Projekt · Tags Müll · Status beim Anlegen In Arbeit. Ändern kannst du sie danach hier unter „Wiederholt sich“.'
+			)
+		).toBeTruthy();
+		await fireEvent.click(within(dialog).getByRole('button', { name: 'Wiederholung anlegen' }));
+		await vi.waitFor(() => expect(fake.createRule).toHaveBeenCalledTimes(1));
+		expect(fake.createRule).toHaveBeenCalledWith(
+			expect.objectContaining({
+				title: 'Müll rausbringen',
+				priority: 'high',
+				tags: [WASTE.id],
+				initial_status: 'in_progress'
+			}),
+			'ticket000000001'
+		);
 	});
 });

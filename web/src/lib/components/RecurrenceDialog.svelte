@@ -21,6 +21,7 @@
 	let {
 		heading,
 		initial,
+		note = null,
 		today,
 		withoutDue = false,
 		eachAvailable = false,
@@ -32,6 +33,8 @@
 	}: {
 		heading: string;
 		initial: RecurrenceFormValues;
+		/** A hint above the form, e.g. what the next tickets take from the ticket (plan WV). */
+		note?: string | null;
 		today: CalendarDate;
 		/** The ticket has no due date: the form names the first date it gets. */
 		withoutDue?: boolean;
@@ -112,6 +115,9 @@
 	onclose={() => onclose()}
 >
 	<form id={formId} class="form" novalidate onsubmit={save} bind:this={form}>
+		{#if note}
+			<p class="hint">{note}</p>
+		{/if}
 		<RecurrenceForm
 			bind:values
 			{errors}
@@ -140,5 +146,10 @@
 	.form {
 		display: grid;
 		gap: 0.875rem;
+	}
+
+	.hint {
+		font-size: var(--font-size-control);
+		color: var(--color-text-muted);
 	}
 </style>

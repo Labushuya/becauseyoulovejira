@@ -462,6 +462,10 @@
 							Das Ticket wird das erste der Serie; die Regel entsteht direkt nach dem Anlegen.
 							Zugeklappt entsteht keine Regel.
 						</p>
+						<p class="hint">
+							Künftige Tickets bekommen Titel, Beschreibung, Priorität, Status, Projekt und Tags aus
+							diesem Formular. Ändern kannst du das danach am Ticket unter „Wiederholt sich“.
+						</p>
 						<RecurrenceForm
 							bind:values={recurrence.values}
 							errors={recurrenceErrors}
