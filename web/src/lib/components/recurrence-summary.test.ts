@@ -542,7 +542,7 @@ describe('RecurrenceSummary: the template of the next tickets (plan WV)', () => 
 		expect(screen.getByRole('form', { name: 'Vorlage der künftigen Tickets' })).toBeTruthy();
 	});
 
-	it('"Wiederholen…" names what the next tickets take from the ticket, its status included', async () => {
+	it('"Wiederholen…" names what the next tickets take from the ticket and asks for the status', async () => {
 		const { fake } = await setup(
 			ticket({ status: 'in_progress', priority: 'high', tagIds: [WASTE.id] }),
 			[],
@@ -552,9 +552,12 @@ describe('RecurrenceSummary: the template of the next tickets (plan WV)', () => 
 		const dialog = screen.getByRole('dialog', { name: 'Wiederholen…' });
 		expect(
 			within(dialog).getByText(
-				'Künftige Tickets bekommen die Werte dieses Tickets: Priorität Hoch · ohne Projekt · Tags Müll · Status beim Anlegen In Arbeit. Ändern kannst du sie danach hier unter „Wiederholt sich“.'
+				'Künftige Tickets bekommen die Werte dieses Tickets: Priorität Hoch · ohne Projekt · Tags Müll. Ändern kannst du sie danach hier unter „Wiederholt sich“.'
 			)
 		).toBeTruthy();
+		await fireEvent.click(
+			within(dialog).getByRole('radio', { name: 'Wie dieses Ticket: In Arbeit' })
+		);
 		await fireEvent.click(within(dialog).getByRole('button', { name: 'Wiederholung anlegen' }));
 		await vi.waitFor(() => expect(fake.createRule).toHaveBeenCalledTimes(1));
 		expect(fake.createRule).toHaveBeenCalledWith(
@@ -566,5 +569,121 @@ describe('RecurrenceSummary: the template of the next tickets (plan WV)', () => 
 			}),
 			'ticket000000001'
 		);
+	});
+});
+
+// ADR-0022 addendum 9, decision of the user: "den Benutzer fragen, mit welchem Status das
+// Folge-Ticket starten soll." "Wiederholen…" asks it as a required choice without an answer in
+// advance; "Regel bearbeiten" does not ask again.
+describe('RecurrenceSummary: "Folgetickets starten mit" in "Wiederholen…" (ADR-0022 addendum 9)', () => {
+	const statusReady = { initialStatusReady: vi.fn(async () => true) };
+	const REQUIRED = 'Bitte wählen, mit welchem Status Folgetickets starten.';
+	const question = (dialog: HTMLElement) =>
+		within(dialog).getByRole('radiogroup', { name: 'Folgetickets starten mit' });
+	const answers = (group: HTMLElement) =>
+		within(group)
+			.getAllByRole<HTMLInputElement>('radio')
+			.map((radio) => [radio.labels?.[0]?.textContent?.trim(), radio.checked]);
+
+	it('asks without an answer in advance and sends nothing until one is chosen', async () => {
+		const { fake } = await setup(ticket({ status: 'waiting' }), [], statusReady);
+		await fireEvent.click(screen.getByRole('button', { name: 'Wiederholen…' }));
+		const dialog = screen.getByRole('dialog', { name: 'Wiederholen…' });
+		const group = question(dialog);
+		expect(group.getAttribute('aria-required')).toBe('true');
+		expect(answers(group)).toEqual([
+			['Offen', false],
+			['Wie dieses Ticket: Wartet', false],
+			['Backlog', false],
+			['In Arbeit', false]
+		]);
+
+		await fireEvent.click(within(dialog).getByRole('button', { name: 'Wiederholung anlegen' }));
+		await tick();
+		expect(fake.createRule).not.toHaveBeenCalled();
+		expect(group.getAttribute('aria-invalid')).toBe('true');
+		const error = within(group).getByText(REQUIRED);
+		expect(group.getAttribute('aria-describedby')).toContain(error.parentElement?.id);
+		expect(document.activeElement).toBe(group);
+
+		await fireEvent.click(within(group).getByRole('radio', { name: 'Offen' }));
+		expect(group.getAttribute('aria-invalid')).toBeNull();
+		expect(within(group).queryByText(REQUIRED)).toBeNull();
+		await fireEvent.click(within(dialog).getByRole('button', { name: 'Wiederholung anlegen' }));
+		await vi.waitFor(() => expect(fake.createRule).toHaveBeenCalledTimes(1));
+		expect(fake.createRule).toHaveBeenCalledWith(
+			expect.objectContaining({ initial_status: 'open' }),
+			'ticket000000001'
+		);
+	});
+
+	it('names an open ticket at "Offen" and shows a refusal of the server at the question', async () => {
+		const createRule = vi.fn(async () => {
+			throw new DataError('validation', {
+				status: 400,
+				fields: {
+					initial_status: {
+						code: 'validation_recurrence_initial_status',
+						message: 'Als „Status beim Anlegen“ geht jeder Status außer „Erledigt“.'
+					}
+				}
+			});
+		});
+		await setup(ticket({ status: 'open' }), [], { ...statusReady, createRule });
+		await fireEvent.click(screen.getByRole('button', { name: 'Wiederholen…' }));
+		const dialog = screen.getByRole('dialog', { name: 'Wiederholen…' });
+		const group = question(dialog);
+		expect(answers(group).map(([label]) => label)).toEqual([
+			'Offen (wie dieses Ticket)',
+			'Backlog',
+			'In Arbeit',
+			'Wartet'
+		]);
+		await fireEvent.click(within(group).getByRole('radio', { name: 'Backlog' }));
+		await fireEvent.click(within(dialog).getByRole('button', { name: 'Wiederholung anlegen' }));
+		await vi.waitFor(() => expect(group.getAttribute('aria-invalid')).toBe('true'));
+		expect(
+			within(group).getByText('Als „Status beim Anlegen“ geht jeder Status außer „Erledigt“.')
+		).toBeTruthy();
+		expect(screen.getByRole('dialog', { name: 'Wiederholen…' })).toBeTruthy();
+	});
+
+	it('keeps the answer the user gave before a failed rule', async () => {
+		await setup(ticket(), [], statusReady, (store) =>
+			store.offerRepeat(
+				'ticket000000001',
+				defaultFormValues(null, TODAY),
+				`${REPEAT_FAILED} Server nicht erreichbar.`,
+				'backlog'
+			)
+		);
+		await fireEvent.click(screen.getByRole('button', { name: 'Wiederholen…' }));
+		const group = question(screen.getByRole('dialog', { name: 'Wiederholen…' }));
+		expect(within(group).getByRole<HTMLInputElement>('radio', { name: 'Backlog' }).checked).toBe(
+			true
+		);
+	});
+
+	it('asks nothing before the migration of "Status beim Anlegen"', async () => {
+		const { fake } = await setup(ticket());
+		await fireEvent.click(screen.getByRole('button', { name: 'Wiederholen…' }));
+		const dialog = screen.getByRole('dialog', { name: 'Wiederholen…' });
+		expect(
+			within(dialog).queryByRole('radiogroup', { name: 'Folgetickets starten mit' })
+		).toBeNull();
+		await fireEvent.click(within(dialog).getByRole('button', { name: 'Wiederholung anlegen' }));
+		await vi.waitFor(() => expect(fake.createRule).toHaveBeenCalledTimes(1));
+		expect(vi.mocked(fake.createRule).mock.calls[0]?.[0]).not.toHaveProperty('initial_status');
+	});
+
+	it('does not ask again in "Regel bearbeiten"', async () => {
+		await setup(
+			ticket({ recurring: true, recurrenceId: 'rule00000000001' }),
+			[rule()],
+			statusReady
+		);
+		await fireEvent.click(screen.getByRole('button', { name: 'Regel bearbeiten' }));
+		const dialog = screen.getByRole('dialog', { name: 'Regel bearbeiten' });
+		expect(within(dialog).queryByRole('radiogroup')).toBeNull();
 	});
 });

@@ -35,6 +35,7 @@ var MESSAGES = {
   validation_recurrence_reopen_older:
     'Von dieser Serie ist schon ein anderes Ticket offen, und dieses Ticket ist nicht das zuletzt erledigte. Du kannst es als normales Ticket wieder öffnen (aus der Serie lösen).',
   validation_recurrence_initial_status: 'Als „Status beim Anlegen“ geht jeder Status außer „Erledigt“.',
+  validation_recurrence_initial_status_required: 'Bitte wählen, mit welchem Status Folgetickets starten.',
   validation_project_archived: 'Das Projekt ist archiviert. Wähle ein anderes oder kein Projekt, um die Regel fortzusetzen.'
 };
 
@@ -133,6 +134,15 @@ function initialStatusOf(value) {
 // Code of a status the template may not have ('' when it may, an empty value included).
 function initialStatusViolation(value) {
   return isEmpty(value) || INITIAL_STATUSES.indexOf(value) !== -1 ? '' : 'validation_recurrence_initial_status';
+}
+
+// Code of the value a user sent for "Status beim Anlegen" when creating a rule (ADR-0022
+// addendum 9): the user chooses it, so an empty or missing value is refused ('' when it may).
+function initialStatusChoiceViolation(value) {
+  if (isEmpty(value)) {
+    return 'validation_recurrence_initial_status_required';
+  }
+  return typeof value === 'string' && INITIAL_STATUSES.indexOf(value) !== -1 ? '' : 'validation_recurrence_initial_status';
 }
 
 // Checks the ticket a rule is created with (ADR-0023 section 1). `ticket` is null when it was
@@ -563,6 +573,7 @@ module.exports = {
   DEFAULT_INITIAL_STATUS: DEFAULT_INITIAL_STATUS,
   initialStatusOf: initialStatusOf,
   initialStatusViolation: initialStatusViolation,
+  initialStatusChoiceViolation: initialStatusChoiceViolation,
   ticketViolation: ticketViolation,
   createDates: createDates,
   nextDueAfterEdit: nextDueAfterEdit,

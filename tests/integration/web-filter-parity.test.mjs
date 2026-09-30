@@ -281,7 +281,14 @@ describe('web filter parity with recurring tickets (plan OR-2)', () => {
 		owner = await createOwner(superuser);
 		const rules = owner.client.collection('recurrence_rules');
 		const repeat = (ticket) =>
-			rules.create({ owner: owner.id, title: ticket.title, mode: 'calendar', freq: 'weekly', ticket: ticket.id });
+			rules.create({
+				owner: owner.id,
+				title: ticket.title,
+				mode: 'calendar',
+				freq: 'weekly',
+				initial_status: 'open',
+				ticket: ticket.id
+			});
 		const created = [];
 		// Far in the future, so completing an instance creates no follow-up with the real clock.
 		for (const [index, priority] of ['low', 'high', 'low', 'high', 'urgent', 'medium'].entries()) {

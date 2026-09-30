@@ -75,6 +75,22 @@ describe('"Status beim Anlegen" of the template (plan WV, ADR-0022 addendum 8)',
 			'Als „Status beim Anlegen“ geht jeder Status außer „Erledigt“.'
 		);
 	});
+
+	// ADR-0022 addendum 9: a user who creates a rule chooses the status; no answer is refused.
+	it('requires the answer of a user when a rule is created', () => {
+		for (const missing of ['', null, undefined]) {
+			expect(rules.initialStatusChoiceViolation(missing)).toBe('validation_recurrence_initial_status_required');
+		}
+		for (const status of rules.INITIAL_STATUSES) {
+			expect(rules.initialStatusChoiceViolation(status)).toBe('');
+		}
+		for (const wrong of ['done', 'offen', 1, true, ['open']]) {
+			expect(rules.initialStatusChoiceViolation(wrong), String(wrong)).toBe('validation_recurrence_initial_status');
+		}
+		expect(rules.MESSAGES.validation_recurrence_initial_status_required).toBe(
+			'Bitte wählen, mit welchem Status Folgetickets starten.'
+		);
+	});
 });
 
 describe('the ticket a rule starts with', () => {

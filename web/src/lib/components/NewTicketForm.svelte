@@ -4,12 +4,15 @@
 	import { berlinDateOf, formatBerlinDateTime } from '$lib/domain/format';
 	import type { TicketPrefill } from '$lib/domain/inbox';
 	import {
+		INITIAL_STATUS_REQUIRED,
 		defaultFormValues,
 		formErrors,
 		type RecurrenceFormField,
-		type RecurrenceFormValues
+		type RecurrenceFormValues,
+		type RepeatRequest
 	} from '$lib/domain/recurrence-rule';
 	import { suggestionFormValues, type RruleSuggestion } from '$lib/domain/rrule';
+	import type { TemplateStatus } from '$lib/domain/series-template';
 	import { isPriority, isStatus, type Priority, type Status } from '$lib/domain/status';
 	import {
 		DEFAULT_PRIORITY,
@@ -23,6 +26,7 @@
 	import type { EnsureTagResult } from '$lib/stores/catalog.svelte';
 	import type { CreateResult } from '$lib/stores/ticket-detail.svelte';
 	import ErrorIcon from './ErrorIcon.svelte';
+	import InitialStatusChoice from './InitialStatusChoice.svelte';
 	import RichTextEditor from './RichTextEditor.svelte';
 	import SectionMessage from './guidance/SectionMessage.svelte';
 	import PrioritySelect from './PrioritySelect.svelte';
@@ -47,7 +51,9 @@
 	// rhythm with the preview, starting on the due date or today. Only an open section creates a
 	// rule: the route creates it after the ticket, the known two steps; if it fails, the ticket
 	// stays and its panel offers "Wiederholen…". Folding keeps the values for this form. Untouched
-	// default values follow a changed due date.
+	// default values follow a changed due date. After the migration of "Status beim Anlegen" the
+	// open section asks "Folgetickets starten mit" (ADR-0022 addendum 9): required, nothing chosen
+	// in advance, "Wie dieses Ticket" follows the status chosen in this form.
 	// A calendar series (E5 plan, package 6; ADR-0024 section 1) shows its rhythm with "Als
 	// Wiederholung übernehmen"; that click opens the section with the suggested values. A series the
 	// rules cannot express gets a neutral hint. Nothing is set without a click (P-5).
@@ -59,6 +65,7 @@
 		suggestion = null,
 		repeat = false,
 		eachAvailable = false,
+		statusAvailable = false,
 		today = null,
 		tags = [],
 		oncreatetag = async () => ({ ok: false, message: null }),
@@ -80,17 +87,19 @@
 		repeat?: boolean;
 		/** Offer "Jeden Termin einzeln anlegen" in the section (plan OR-5). */
 		eachAvailable?: boolean;
+		/** Ask "Folgetickets starten mit" in the section (RecurrenceStore.statusReady). */
+		statusAvailable?: boolean;
 		/** Berlin date of today, for the preview of the section "Wiederholung". */
 		today?: CalendarDate | null;
 		/** Tags that can be chosen (the catalog). */
 		tags?: readonly TagRef[];
 		/** Existing or new tag for a typed name (T-14). */
 		oncreatetag?: (name: string) => Promise<EnsureTagResult>;
-		/** Creates the ticket; `recurrence` holds the values of the open section "Wiederholung". */
-		oncreate: (
-			draft: TicketDraft,
-			recurrence: RecurrenceFormValues | null
-		) => Promise<CreateResult>;
+		/**
+		 * Creates the ticket; `recurrence` holds the values of the open section "Wiederholen" and the
+		 * answer to "Folgetickets starten mit".
+		 */
+		oncreate: (draft: TicketDraft, recurrence: RepeatRequest | null) => Promise<CreateResult>;
 		oncreated: (id: string) => void;
 		oncancel: () => void;
 	} = $props();
@@ -154,6 +163,9 @@
 	/** Due date the default values were made for; null once they came from a suggestion. */
 	let defaultsFor: string | null = null;
 	let recurrenceErrors = $state<Partial<Record<RecurrenceFormField, string>>>({});
+	/** Answer to "Folgetickets starten mit"; '' while none is given. */
+	let repeatStatus = $state<TemplateStatus | ''>('');
+	let repeatStatusError = $state<string | null>(null);
 	let recurrenceSection = $state<HTMLElement>();
 	let repeatToggle = $state<HTMLButtonElement>();
 	const ruleSuggestion = $derived(suggestion?.kind === 'rule' ? suggestion : null);
@@ -205,7 +217,8 @@
 		const rhythm = repeatOpen && recurrence !== null ? recurrence.values : null;
 		if (rhythm !== null) {
 			recurrenceErrors = formErrors(rhythm);
-			if (Object.keys(recurrenceErrors).length > 0) {
+			repeatStatusError = statusAvailable && repeatStatus === '' ? INITIAL_STATUS_REQUIRED : null;
+			if (Object.keys(recurrenceErrors).length > 0 || repeatStatusError !== null) {
 				await tick();
 				recurrenceSection?.querySelector<HTMLElement>('[aria-invalid="true"]')?.focus();
 				return;
@@ -225,7 +238,12 @@
 				// Only tags the catalog knows: a preset may name a tag deleted since.
 				tags: chosenTags.map((tag) => tag.id)
 			},
-			rhythm
+			rhythm === null
+				? null
+				: {
+						values: rhythm,
+						initialStatus: statusAvailable && repeatStatus !== '' ? repeatStatus : null
+					}
 		);
 		if (result.ok) {
 			oncreated(result.ticket.id);
@@ -277,6 +295,7 @@
 		if (repeatOpen) {
 			repeatOpen = false;
 			recurrenceErrors = {};
+			repeatStatusError = null;
 			return;
 		}
 		if (recurrence === null || untouchedDefaults()) useDefaults();
@@ -469,10 +488,6 @@
 							Das Ticket wird das erste der Serie; die Regel entsteht direkt nach dem Anlegen.
 							Zugeklappt entsteht keine Regel.
 						</p>
-						<p class="hint">
-							Künftige Tickets bekommen Titel, Beschreibung, Priorität, Status, Projekt und Tags aus
-							diesem Formular. Ändern kannst du das danach am Ticket unter „Wiederholt sich“.
-						</p>
 						<RecurrenceForm
 							bind:values={recurrence.values}
 							errors={recurrenceErrors}
@@ -481,6 +496,24 @@
 							{eachAvailable}
 							context={{ kind: 'ticket', due: dueOrNull(due) }}
 						/>
+						<p class="hint">
+							Künftige Tickets bekommen Titel, Beschreibung, Priorität, Projekt und Tags aus diesem
+							Formular{statusAvailable ? '; den Status wählst du hier' : ''}. Ändern kannst du das
+							danach am Ticket unter „Wiederholt sich“.
+						</p>
+						{#if statusAvailable}
+							<InitialStatusChoice
+								bind:value={
+									() => repeatStatus,
+									(chosen) => {
+										repeatStatus = chosen;
+										repeatStatusError = null;
+									}
+								}
+								ticketStatus={status}
+								error={repeatStatusError}
+							/>
+						{/if}
 					{/if}
 				</div>
 			</section>

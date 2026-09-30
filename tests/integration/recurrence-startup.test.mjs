@@ -101,7 +101,8 @@ describe('start of the app (ADR-0022 section 4)', () => {
 			title: 'Nach dem Urlaub',
 			...params,
 			anchor: '2040-01-02',
-			lead_days: 0
+			lead_days: 0,
+			initial_status: 'open'
 		});
 		// As if the PC had been off for two weeks: the pending date lies in the past.
 		const pending = latestOnOrBefore(params, addDays(today(), -14));
@@ -145,7 +146,8 @@ describe('start of the app (ADR-0022 section 4)', () => {
 			mode: 'calendar',
 			freq: 'daily',
 			anchor: '2040-01-02',
-			lead_days: 0
+			lead_days: 0,
+			initial_status: 'open'
 		});
 		await (await superuser()).collection('recurrence_rules').update(rule.id, { anchor: '2026-01-01', next_due: today() });
 		const broken = await pb

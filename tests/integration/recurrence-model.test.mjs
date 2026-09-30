@@ -24,8 +24,16 @@ beforeAll(async () => {
 
 const rules = () => owner.client.collection('recurrence_rules');
 const tickets = () => owner.client.collection('tickets');
+// A user chooses "Status beim Anlegen" when creating a rule (ADR-0022 addendum 9).
 const createRule = (data = {}) =>
-	rules().create({ owner: owner.id, title: `Regel ${uniqueSuffix()}`, mode: 'calendar', freq: 'weekly', ...data });
+	rules().create({
+		owner: owner.id,
+		title: `Regel ${uniqueSuffix()}`,
+		mode: 'calendar',
+		freq: 'weekly',
+		initial_status: 'open',
+		...data
+	});
 
 async function countRules(title) {
 	const found = await superuser

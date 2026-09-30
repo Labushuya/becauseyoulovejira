@@ -152,6 +152,7 @@ describe('series and sub-tickets (ADR-0033 section 3)', () => {
 			freq: 'daily',
 			interval: 1,
 			lead_days: 3,
+			initial_status: 'open',
 			ticket: child.id
 		});
 		rulesToPause.push(rule.id);

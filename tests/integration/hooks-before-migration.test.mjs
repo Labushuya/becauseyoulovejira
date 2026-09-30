@@ -747,6 +747,14 @@ describe('WV hooks before the migration of "Status beim Anlegen"', () => {
 		await rules.update(rule.id, { active: false });
 	});
 
+	it('asks for no status before the migration (ADR-0022 addendum 9)', async () => {
+		// Without the field there is nothing to choose: a rule without "Status beim Anlegen" is created.
+		const rules = who.collection('recurrence_rules');
+		const rule = await rules.create({ owner: who.userId, title: 'Ohne Wahl', mode: 'calendar', freq: 'daily', anchor: '2038-07-01' });
+		expect(rule.initial_status).toBeUndefined();
+		await rules.update(rule.id, { active: false });
+	});
+
 	it('lets the SPA load the rules as "open" and learn that the field waits for the restart', async () => {
 		const rules = await listRules(who);
 		expect(rules?.length).toBeGreaterThan(0);

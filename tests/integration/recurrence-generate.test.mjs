@@ -50,8 +50,17 @@ afterEach(async () => {
 
 const rules = () => owner.pb.collection('recurrence_rules');
 const tickets = () => owner.pb.collection('tickets');
+// A user chooses "Status beim Anlegen" when creating a rule (ADR-0022 addendum 9).
 const createRule = (data = {}) =>
-	rules().create({ owner: owner.id, title: `Regel ${unique()}`, mode: 'calendar', freq: 'daily', lead_days: 0, ...data });
+	rules().create({
+		owner: owner.id,
+		title: `Regel ${unique()}`,
+		mode: 'calendar',
+		freq: 'daily',
+		lead_days: 0,
+		initial_status: 'open',
+		...data
+	});
 
 async function run(iso) {
 	const response = await fetch(`${instance.url}/api/byl-test/recurrence/run`, {
@@ -718,7 +727,7 @@ describe('"Status beim Anlegen" of the template (plan WV)', () => {
 		await expect(superuser.collection('tickets').getOne(second.id)).rejects.toMatchObject({ status: 404 });
 	});
 
-	it('stores "open" without a choice, refuses "done" and changes only the next tickets', async () => {
+	it('refuses "done" and changes only the next tickets', async () => {
 		const plain = await createRule({ anchor: '2044-04-01' });
 		expect(plain.initial_status).toBe('open');
 		const attempts = [
@@ -743,6 +752,54 @@ describe('"Status beim Anlegen" of the template (plan WV)', () => {
 		await tickets().update(open.id, { status: 'done' });
 		await run('2044-04-02T12:00:00Z');
 		expect((await openOf(plain.id)).map((ticket) => ticket.status)).toEqual(['backlog']);
+	});
+
+	it('asks the user for "Status beim Anlegen" when creating a rule, not when editing it (ADR-0022 addendum 9)', async () => {
+		const required = {
+			code: 'validation_recurrence_initial_status_required',
+			message: 'Bitte wählen, mit welchem Status Folgetickets starten.'
+		};
+		const ticket = await tickets().create({ owner: owner.id, title: `Ticket ${unique()}`, status: 'in_progress' });
+		const title = `Ohne Wahl ${unique()}`;
+		// "Neue Regel" and "Wiederholen…" (with the ticket) without a choice, or with an empty one.
+		for (const attempt of [
+			() => createRule({ title, anchor: '2044-07-01', initial_status: undefined }),
+			() => createRule({ title, anchor: '2044-07-01', initial_status: '' }),
+			() => createRule({ title, anchor: '2044-07-01', initial_status: undefined, ticket: ticket.id })
+		]) {
+			const error = await refusal(attempt());
+			expect(error.status).toBe(400);
+			expect(error.response.data.initial_status).toMatchObject(required);
+		}
+		// Nothing was saved: no rule, and the ticket is in no series.
+		expect(await superuser.collection('recurrence_rules').getFullList({ filter: superuser.filter('title = {:title}', { title }) })).toEqual([]);
+		expect((await superuser.collection('tickets').getOne(ticket.id)).recurrence).toBe('');
+
+		// With the choice the rule starts, and the ticket joins the series as it is.
+		const chosen = await createRule({ title, anchor: '2044-07-01', initial_status: 'waiting', ticket: ticket.id });
+		expect(chosen.initial_status).toBe('waiting');
+		const joined = await superuser.collection('tickets').getOne(ticket.id);
+		expect(joined).toMatchObject({ recurrence: chosen.id, status: 'in_progress' });
+
+		// Editing asks nothing: the stored choice stays unless it is changed.
+		const edited = await rules().update(chosen.id, { title: `${title} (neu)`, priority: 'low' });
+		expect(edited.initial_status).toBe('waiting');
+		expect((await rules().update(chosen.id, { initial_status: 'backlog' })).initial_status).toBe('backlog');
+	});
+
+	it('starts rules made without a user with "Offen" (ADR-0022 addendum 9)', async () => {
+		// A rule without a user of the app (the admin UI, a repair): no question, "open" as default.
+		const rule = await superuser.collection('recurrence_rules').create({
+			owner: owner.id,
+			title: `Ohne Nutzer ${unique()}`,
+			mode: 'calendar',
+			freq: 'daily',
+			lead_days: 0,
+			anchor: '2044-08-01'
+		});
+		expect(rule.initial_status).toBe('open');
+		expect((await run('2044-08-01T12:00:00Z')).created).toBe(1);
+		expect((await openOf(rule.id)).map((ticket) => ticket.status)).toEqual(['open']);
 	});
 
 	it('makes one ticket per date with the status of the template ("Jeden Termin einzeln anlegen")', async () => {

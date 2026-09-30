@@ -7,7 +7,7 @@
 	import { toDataError } from '$lib/data/errors';
 	import { CHANNEL_LABELS, ticketPrefill, type InboxItem } from '$lib/domain/inbox';
 	import { parseListQuery } from '$lib/domain/list-query';
-	import { joinedSeries, type RecurrenceFormValues } from '$lib/domain/recurrence-rule';
+	import { joinedSeries, type RepeatRequest } from '$lib/domain/recurrence-rule';
 	import { itemSuggestion } from '$lib/domain/rrule';
 	import type { TicketDraft } from '$lib/domain/ticket';
 	import { getCatalogStore } from '$lib/stores/catalog.svelte';
@@ -75,7 +75,7 @@
 		return () => controller.abort();
 	});
 
-	async function create(draft: TicketDraft, recurrence: RecurrenceFormValues | null) {
+	async function create(draft: TicketDraft, recurrence: RepeatRequest | null) {
 		const itemId = source?.state === 'ready' ? source.item.id : null;
 		const result = await detail.create(draft, itemId === null ? undefined : { sourceItem: itemId });
 		// A ticket created one by one is read (ADR-0015 section 3).
@@ -87,7 +87,7 @@
 		if (result.ok && recurrence !== null) {
 			const rule = await rules.repeatCreated(result.ticket, recurrence);
 			if (rule !== null) {
-				const joined = joinedSeries(result.ticket, rule.id, recurrence, tickets.today);
+				const joined = joinedSeries(result.ticket, rule.id, recurrence.values, tickets.today);
 				detail.upsert(joined);
 				tickets.upsert(joined);
 			}
@@ -107,6 +107,7 @@
 		tags={catalog.tags}
 		repeat={rules.state !== 'unavailable'}
 		eachAvailable={rules.eachReady}
+		statusAvailable={rules.statusReady}
 		today={tickets.today}
 		oncreatetag={(name) => catalog.ensureTag(name)}
 		oncreate={create}
@@ -123,6 +124,7 @@
 			suggestion={rules.state === 'unavailable' ? null : itemSuggestion(source.item, tickets.today)}
 			repeat={rules.state !== 'unavailable'}
 			eachAvailable={rules.eachReady}
+			statusAvailable={rules.statusReady}
 			today={tickets.today}
 			oncreatetag={(name) => catalog.ensureTag(name)}
 			oncreate={create}

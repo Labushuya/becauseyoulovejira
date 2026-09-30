@@ -60,6 +60,8 @@ const draft = (overrides = {}) => ({
   month_day: 0,
   anchor: "2031-01-06",
   lead_days: 3,
+  // The answer to "Folgetickets starten mit" the SPA sends (ADR-0022 addendum 9).
+  initial_status: "open",
   ...overrides,
 });
 
@@ -347,6 +349,7 @@ describe("web data layer: a rule from a calendar series (E5 plan, package 6)", (
         project: null,
         tags: [],
         priority: ticket.priority,
+        initial_status: "open",
         ...formParams(values),
       },
       ticket.id,
@@ -414,9 +417,10 @@ describe('web data layer: "Jeden Termin einzeln anlegen" (plan OR-5)', () => {
 
 // Plan WV, the report of the user: "Wiederholungen erstellen das Folgeticket mit falscher Priorität
 // (offen, statt derzeit ausgewähltem Status …)". Every way a rule starts gives the values of its
-// ticket (or of the form) to the template and from there to the next ticket, since WV the status
-// as well. The template is a snapshot: a later change of the ticket stays with it until the
-// template takes it over ("Auch für künftige Tickets übernehmen" writes it with updateRule).
+// ticket (or of the form) to the template and from there to the next ticket, and the status the
+// user chose for "Folgetickets starten mit" (ADR-0022 addendum 9). The template is a snapshot: a
+// later change of the ticket stays with it until the template takes it over ("Auch für künftige
+// Tickets übernehmen" writes it with updateRule).
 describe("web data layer: from every way a rule starts to the next ticket (plan WV)", () => {
   let superuser;
 
@@ -459,8 +463,13 @@ describe("web data layer: from every way a rule starts to the next ticket (plan 
   it('"Wiederholen…" and "Neues Ticket" with "Wiederholen": the next ticket has the values of the ticket', async () => {
     const owner = await createOwner(superuser);
     const { ticket, project, tag } = await templateTicket(owner);
-    // The same draft as RecurrenceStore.repeat and repeatCreated send.
-    const rule = await createRule(owner.client, { ...templateBody(ticketTemplate(ticket)), ...soon() }, ticket.id);
+    // The same draft as RecurrenceStore.repeat and repeatCreated send, with the answer "Wie
+    // dieses Ticket: In Arbeit".
+    const rule = await createRule(
+      owner.client,
+      { ...templateBody(ticketTemplate(ticket, "in_progress")), ...soon() },
+      ticket.id,
+    );
     expect(rule).toMatchObject({
       title: "Filter wechseln",
       description: "Dunstabzug, **beide** Filter",
@@ -527,7 +536,11 @@ describe("web data layer: from every way a rule starts to the next ticket (plan 
       { title: outcome.item.title, description: "", status: "backlog", priority: "high", due: null, project: null, tags: [] },
       { origin: { sourceItem: outcome.item.id } },
     );
-    const rule = await createRule(owner.client, { ...templateBody(ticketTemplate(ticket)), ...formParams(values) }, ticket.id);
+    const rule = await createRule(
+      owner.client,
+      { ...templateBody(ticketTemplate(ticket, "backlog")), ...formParams(values) },
+      ticket.id,
+    );
     expect(rule).toMatchObject({ priority: "high", initialStatus: "backlog" });
 
     await updateTicket(owner.client, ticket.id, { status: "done" });
@@ -535,10 +548,30 @@ describe("web data layer: from every way a rule starts to the next ticket (plan 
     expect(next).toMatchObject({ title: "Blumen gießen", priority: "high", status: "backlog", source: "" });
   });
 
+  it('asks for "Folgetickets starten mit": a rule without the answer is refused with its text', async () => {
+    const owner = await createOwner(superuser);
+    const { ticket } = await templateTicket(owner);
+    for (const ticketId of [ticket.id, null]) {
+      const refused = await dataErrorOf(
+        createRule(owner.client, { ...draft(), initial_status: undefined }, ticketId),
+      );
+      expect(refused.fields.initial_status).toMatchObject({
+        code: "validation_recurrence_initial_status_required",
+        message: "Bitte wählen, mit welchem Status Folgetickets starten.",
+      });
+    }
+    expect(await listRules(owner.client)).toEqual([]);
+    expect(await getTicket(owner.client, ticket.id)).toMatchObject({ recurring: false });
+  });
+
   it("keeps the template as set up until the change of a ticket is taken over", async () => {
     const owner = await createOwner(superuser);
     const { ticket } = await templateTicket(owner, { priority: "medium", status: "open" });
-    const rule = await createRule(owner.client, { ...templateBody(ticketTemplate(ticket)), ...soon() }, ticket.id);
+    const rule = await createRule(
+      owner.client,
+      { ...templateBody(ticketTemplate(ticket, "open")), ...soon() },
+      ticket.id,
+    );
 
     // Changed at the ticket after setting up: only this ticket (the snapshot of the template).
     await updateTicket(owner.client, ticket.id, { priority: "high" });
