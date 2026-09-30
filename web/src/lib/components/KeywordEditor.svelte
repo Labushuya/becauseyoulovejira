@@ -12,6 +12,7 @@
 		splitAtCaret,
 		splitListInput
 	} from '$lib/domain/list-input';
+	import ChipList from './ChipList.svelte';
 	import ErrorIcon from './ErrorIcon.svelte';
 	import SectionMessage from './guidance/SectionMessage.svelte';
 
@@ -23,6 +24,9 @@
 	// text as keywords and empty the field; Backspace in the empty field brings the last keyword back
 	// as editable text. What happens to the field is said in a polite live region. The rules of the
 	// field are shared with the tag picker (domain/list-input.ts).
+	// Since ADR-0026 (addendum KL) the keywords stand in the building block of long chip lists: a
+	// long list folds, a very long one gets a filter. Every added keyword unfolds the list and empties
+	// the filter, so a new keyword never appears hidden.
 	let {
 		keywords,
 		name,
@@ -55,8 +59,17 @@
 	let saving = $state(false);
 	let field = $state<HTMLInputElement>();
 	let live = $state('');
+	/** The list of chips: unfolded, and its filter text. */
+	let expanded = $state(false);
+	let query = $state('');
 
 	const suggestionsMissing = $derived(withSuggestions(keywords).length > keywords.length);
+
+	/** After adding: the whole list without a filter, so the new keywords are seen. */
+	function reveal() {
+		expanded = true;
+		query = '';
+	}
 
 	async function save(next: string[], announcement: string): Promise<boolean> {
 		if (saving) return false;
@@ -81,7 +94,9 @@
 		const next = withSuggestions(keywords);
 		const added = next.length - keywords.length;
 		if (added === 0) return;
-		await save(next, `${added} ${added === 1 ? 'Vorschlag' : 'Vorschläge'} übernommen.`);
+		if (await save(next, `${added} ${added === 1 ? 'Vorschlag' : 'Vorschläge'} übernommen.`)) {
+			reveal();
+		}
 	}
 
 	/** Says `text` in the live region, also when it is the same text as before. */
@@ -125,6 +140,7 @@
 			if (input === original) input = unsaved;
 			return;
 		}
+		reveal();
 		if (input.startsWith(original)) input = remaining + input.slice(original.length);
 		const taken =
 			accepted.length === 1
@@ -209,24 +225,28 @@
 	{#if keywords.length === 0}
 		<SectionMessage tone="warning" compact>{emptyText}</SectionMessage>
 	{:else}
-		<ul class="list" aria-label={`Stichwörter von „${name}“`}>
-			{#each keywords as keyword (keyword)}
-				<li>
-					<span>{keyword}</span>
-					<button
-						type="button"
-						class="remove"
-						aria-label={`Stichwort „${keyword}“ entfernen`}
-						aria-disabled={saving ? 'true' : undefined}
-						onclick={() => {
-							if (!saving) void remove(keyword);
-						}}
-					>
-						<span aria-hidden="true">×</span>
-					</button>
-				</li>
-			{/each}
-		</ul>
+		<ChipList
+			items={keywords}
+			label={`Stichwörter von „${name}“`}
+			noun="Stichwörter"
+			bind:expanded
+			bind:query
+		>
+			{#snippet chip(keyword)}
+				<span>{keyword}</span>
+				<button
+					type="button"
+					class="remove"
+					aria-label={`Stichwort „${keyword}“ entfernen`}
+					aria-disabled={saving ? 'true' : undefined}
+					onclick={() => {
+						if (!saving) void remove(keyword);
+					}}
+				>
+					<span aria-hidden="true">×</span>
+				</button>
+			{/snippet}
+		</ChipList>
 	{/if}
 	<div class="add">
 		<label for={ids.input}>Neues Stichwort</label>
@@ -298,31 +318,13 @@
 		font-weight: 600;
 	}
 
-	.list {
-		display: flex;
-		flex-wrap: wrap;
-		gap: 0.375rem;
-		margin: 0;
-		padding: 0;
-		list-style: none;
-	}
-
-	.list li {
-		display: inline-flex;
-		gap: 0.25rem;
-		align-items: center;
-		padding: 0.125rem 0.25rem 0.125rem 0.5rem;
-		font-size: var(--font-size-control);
-		color: var(--color-brand-soft-text);
-		background: var(--color-brand-soft-bg);
-		border-radius: var(--radius-pill);
-	}
-
+	/* The chip comes from ChipList; the button ends it closer, as before. */
 	.remove {
 		display: inline-grid;
 		place-items: center;
 		width: 1.5rem;
 		height: 1.5rem;
+		margin-right: -0.25rem;
 		padding: 0;
 		color: inherit;
 		background: none;

@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { minuteClock } from '$lib/clock.svelte';
 	import { connectionInfo } from '$lib/domain/channel-card';
-	import { channelHealth, keywordSummary } from '$lib/domain/channel-health';
+	import { channelHealth } from '$lib/domain/channel-health';
 	import {
 		CONNECTION_TYPE_LABELS,
 		MAIL_INBOX_HINT,
@@ -17,6 +17,7 @@
 	import { formatBerlinDateTime } from '$lib/domain/format';
 	import { connectionAnchor } from '$lib/domain/sync-all';
 	import { helpHref } from '$lib/settings-sections';
+	import ChipList from '../ChipList.svelte';
 	import ChannelCard, { type CardAction } from './ChannelCard.svelte';
 
 	// Card of a connection that fetches by itself: Google Calendar, Telegram and the mailboxes
@@ -171,7 +172,14 @@
 			{/if}
 			<div>
 				<dt>Stichwörter</dt>
-				<dd>{keywordSummary(connection.keywords)}</dd>
+				<dd>
+					<ChipList
+						items={connection.keywords}
+						label={`Stichwörter von „${connection.label}“`}
+						noun="Stichwörter"
+						emptyText="keine"
+					/>
+				</dd>
 			</div>
 			{#if connection.type === 'telegram'}
 				<div>

@@ -1,13 +1,13 @@
 <script lang="ts">
 	import { minuteClock } from '$lib/clock.svelte';
 	import { inboxKeysInfo, inboxKeysStatus } from '$lib/domain/channel-card';
-	import { keywordSummary } from '$lib/domain/channel-health';
 	import { formatBerlinDateTime } from '$lib/domain/format';
 	import type { InboxKey } from '$lib/domain/inbox-keys';
 	import { RESTART_NEEDED } from '$lib/guidance/texts';
 	import { helpHref } from '$lib/settings-sections';
 	import type { ImportKeywordsStore } from '$lib/stores/import-keywords.svelte';
 	import type { InboxKeysStore } from '$lib/stores/inbox-keys.svelte';
+	import ChipList from '../ChipList.svelte';
 	import ConfirmDialog from '../overlay/ConfirmDialog.svelte';
 	import Modal from '../overlay/Modal.svelte';
 	import ChannelCard, { type CardAction } from './ChannelCard.svelte';
@@ -18,8 +18,9 @@
 	// kanal-karten KK-2 a configuration of the building block ChannelCard): the main button
 	// "Zugangsschlüssel erzeugen …" (modal M, the key is shown once), the keywords of the channel
 	// "api" for entries of the mode "auto" and the help in the menu "•••", and in the details the
-	// keys with name, start, creation, last use and "Widerrufen …" each. The state says whether a
-	// program has used a key yet. The way to use a key stands in the help.
+	// keys with name, start, creation, last use and "Widerrufen …" each, and the keywords as a list
+	// of chips (ADR-0026, addendum KL). The state says whether a program has used a key yet. The way
+	// to use a key stands in the help.
 	let {
 		store,
 		importKeywords = null
@@ -38,7 +39,7 @@
 	let revokeError = $state<string | null>(null);
 
 	const keywords = $derived(
-		importKeywords?.state === 'ready' ? keywordSummary(importKeywords.settings.api.keywords) : null
+		importKeywords?.state === 'ready' ? importKeywords.settings.api.keywords : null
 	);
 	const status = $derived(inboxKeysStatus(store.state, store.keys));
 	const loading = $derived(store.state === 'idle' || store.state === 'loading');
@@ -149,7 +150,14 @@
 			<dl>
 				<div>
 					<dt>Stichwörter für „mode: auto“</dt>
-					<dd>{keywords}</dd>
+					<dd>
+						<ChipList
+							items={keywords}
+							label={`Stichwörter von „${TITLE}“`}
+							noun="Stichwörter"
+							emptyText="keine"
+						/>
+					</dd>
 				</div>
 			</dl>
 		{/if}

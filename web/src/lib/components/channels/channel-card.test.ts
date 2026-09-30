@@ -268,7 +268,13 @@ describe('channel card', () => {
 		expect(card.getByText('Zuletzt abgerufen vor 6 Min. · ohne Fehler')).toBeTruthy();
 		const details = await openDetails(article, 'Kalender');
 		expect(details.getByText('25.09.2026 10:15')).toBeTruthy();
-		expect(details.getByText('2 (todo, ticket)')).toBeTruthy();
+		// The keywords as chips (ADR-0026, addendum KL).
+		const keywords = details.getByRole('list', { name: 'Stichwörter von „Kalender“' });
+		expect(
+			within(keywords)
+				.getAllByRole('listitem')
+				.map((item) => item.textContent)
+		).toEqual(['todo', 'ticket']);
 		expect(details.queryByText(/zuletzt erfolgreich/)).toBeNull();
 		expect(details.queryByText(MAIL_INBOX_HINT)).toBeNull();
 		// No variables on the card: they stand in the edit modal (ADR-0018).
