@@ -52,6 +52,11 @@
 		ticketDetailData
 	} from '$lib/stores/ticket-detail.svelte';
 	import {
+		TicketDuplicateStore,
+		setTicketDuplicateStore,
+		ticketDuplicateData
+	} from '$lib/stores/ticket-duplicate.svelte';
+	import {
 		TicketSourcesStore,
 		setTicketSourcesStore,
 		ticketSourcesData
@@ -147,6 +152,8 @@
 	const detail = setTicketDetailStore(
 		new TicketDetailStore(ticketDetailData(pb), auth, tickets, trash, rules, flags)
 	);
+	// "Ticket duplizieren" (ADR-0045): one request, the result as a flag with the way back.
+	setTicketDuplicateStore(new TicketDuplicateStore(ticketDuplicateData(pb), auth, flags));
 	// Bulk actions on the chosen rows of the table (plan BI-2, ADR-0036 §3): one request per ticket
 	// through the Record API, results and "Rückgängig" as flags.
 	const bulk = setBulkEditStore(new BulkEditStore(bulkEditData(pb), auth, tickets, flags, rules));

@@ -3,6 +3,7 @@
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
 	import Breadcrumbs from '$lib/components/Breadcrumbs.svelte';
+	import DuplicateDialog from '$lib/components/DuplicateDialog.svelte';
 	import EditableTitle from '$lib/components/EditableTitle.svelte';
 	import FullView from '$lib/components/overlay/FullView.svelte';
 	import RecurrenceSummary from '$lib/components/RecurrenceSummary.svelte';
@@ -10,6 +11,7 @@
 	import TicketDelete from '$lib/components/TicketDelete.svelte';
 	import TicketDeleteQuestion from '$lib/components/TicketDeleteQuestion.svelte';
 	import TicketDescription from '$lib/components/TicketDescription.svelte';
+	import TicketDuplicate from '$lib/components/TicketDuplicate.svelte';
 	import TicketFields from '$lib/components/TicketFields.svelte';
 	import TicketLeaveQuestion from '$lib/components/TicketLeaveQuestion.svelte';
 	import TicketMeta from '$lib/components/TicketMeta.svelte';
@@ -23,9 +25,10 @@
 	import { getRecurrenceStore } from '$lib/stores/recurrence.svelte';
 	import { getTicketActivityStore } from '$lib/stores/ticket-activity.svelte';
 	import { getTicketDetailStore } from '$lib/stores/ticket-detail.svelte';
+	import { findTicketDuplicateStore } from '$lib/stores/ticket-duplicate.svelte';
 	import { getTicketListStore } from '$lib/stores/ticket-list.svelte';
 	import { getTicketSourcesStore } from '$lib/stores/ticket-sources.svelte';
-	import { findTicketOpenMode } from '$lib/stores/open-mode.svelte';
+	import { findTicketOpenMode, ticketLinks } from '$lib/stores/open-mode.svelte';
 	import {
 		FULL_VIEW_LINK,
 		fullViewHref,
@@ -46,6 +49,8 @@
 	// the full view of the other ticket (ADR-0033 section 4). "Löschen …" asks inline at the top of
 	// the content, because no dialog opens from the full view (ADR-0025 section 3); so does the
 	// question about unsaved text when a link leaves the ticket (the layout holds the navigation).
+	// "Duplizieren …" unfolds its question at the same place (ADR-0045 §2); the duplicate then opens
+	// in the remembered way (ADR-0036 §1).
 
 	const detail = getTicketDetailStore();
 	const comments = getTicketActivityStore();
@@ -56,6 +61,8 @@
 	const inbox = getInboxStore();
 	const route = getTicketRoute();
 	const openMode = findTicketOpenMode();
+	const links = ticketLinks();
+	const duplicates = findTicketDuplicateStore();
 
 	const uid = $props.id();
 	const headingId = `${uid}-title`;
@@ -85,6 +92,15 @@
 	let askingFor = $state<string | null>(null);
 	const asking = $derived(askingFor !== null && askingFor === id);
 	let deleteButton = $state<HTMLButtonElement>();
+	/** Ticket whose question of "Duplizieren …" is unfolded; another ticket starts without it. */
+	let duplicatingFor = $state<string | null>(null);
+	const duplicating = $derived(duplicatingFor !== null && duplicatingFor === id);
+	let duplicateButton = $state<HTMLButtonElement>();
+
+	/** Opens a ticket (the duplicate, or the original from its flag) in the remembered way. */
+	function openTicket(ticketId: string) {
+		void goto(links.href(ticketId, page.url));
+	}
 
 	// While the full view is shown, it asks about unsaved text instead of the layout.
 	$effect(() => untrack(() => route.askInline()));
@@ -128,12 +144,30 @@
 {#if ticket}
 	<FullView title={`${ticket.key} · ${ticket.title}`} onclose={close}>
 		{#snippet actions()}
+			{#if duplicates !== null}
+				<TicketDuplicate
+					{ticket}
+					store={duplicates}
+					projects={catalog.activeProjects}
+					onopen={openTicket}
+					inline
+					asking={duplicating}
+					onask={() => {
+						duplicatingFor = duplicating ? null : id;
+						askingFor = null;
+					}}
+					bind:button={duplicateButton}
+				/>
+			{/if}
 			<TicketDelete
 				store={detail}
 				ondeleted={() => void route.deleted()}
 				inline
 				{asking}
-				onask={() => (askingFor = id)}
+				onask={() => {
+					askingFor = id;
+					duplicatingFor = null;
+				}}
 				bind:button={deleteButton}
 			/>
 			<!-- The mirror of "Vollansicht" in the panel: same place before the ×, same look. -->
@@ -161,6 +195,20 @@
 					oncancel={() => void cancelDelete()}
 					{sourceCount}
 					{subtaskCount}
+				/>
+			{/if}
+			{#if duplicating && duplicates !== null}
+				<DuplicateDialog
+					{ticket}
+					projects={catalog.activeProjects}
+					sources={sources.ticketId === ticket.id ? sources.items : []}
+					commentCount={comments.ticketId === ticket.id ? comments.comments.length : 0}
+					{subtaskCount}
+					parentKey={ticket.parentId ? (parent?.key ?? null) : null}
+					store={duplicates}
+					onopen={openTicket}
+					returnFocus={() => duplicateButton}
+					onclose={() => (duplicatingFor = null)}
 				/>
 			{/if}
 			{#if path.length > 0}

@@ -5,6 +5,7 @@
 	import ConfirmDialog from '$lib/components/overlay/ConfirmDialog.svelte';
 	import RecurrenceSummary from '$lib/components/RecurrenceSummary.svelte';
 	import TicketActivity from '$lib/components/TicketActivity.svelte';
+	import TicketDuplicate from '$lib/components/TicketDuplicate.svelte';
 	import TicketPanel from '$lib/components/TicketPanel.svelte';
 	import TicketParentField from '$lib/components/TicketParentField.svelte';
 	import TicketSources from '$lib/components/TicketSources.svelte';
@@ -17,6 +18,7 @@
 	import { getRecurrenceStore } from '$lib/stores/recurrence.svelte';
 	import { getTicketActivityStore } from '$lib/stores/ticket-activity.svelte';
 	import { getTicketDetailStore } from '$lib/stores/ticket-detail.svelte';
+	import { findTicketDuplicateStore } from '$lib/stores/ticket-duplicate.svelte';
 	import { getTicketListStore } from '$lib/stores/ticket-list.svelte';
 	import { getTicketSourcesStore } from '$lib/stores/ticket-sources.svelte';
 	import { findTicketOpenMode, ticketLinks } from '$lib/stores/open-mode.svelte';
@@ -46,12 +48,18 @@
 	const fullView = $derived(page.route.id === '/(app)/(tickets)/tickets/[id]/voll');
 	const modeStore = findTicketOpenMode();
 	const recentTickets = findRecentTickets();
+	const duplicates = findTicketDuplicateStore();
 	// The parent of a sub-task for its path (ADR-0033), as the list knows it.
 	const parent = $derived(
 		detail.state === 'ready' && detail.ticket
 			? parentOf(detail.ticket, (parentId) => tickets.find(parentId))
 			: null
 	);
+
+	/** Opens a ticket (the duplicate, or the original from its flag) in the remembered way (ADR-0036). */
+	function openTicket(ticketId: string) {
+		void goto(links.href(ticketId, page.url));
+	}
 
 	/** Panel and full view of the same ticket: moving between them keeps drafts and asks nothing. */
 	const TICKET_ROUTES = ['/(app)/(tickets)/tickets/[id]', '/(app)/(tickets)/tickets/[id]/voll'];
@@ -185,6 +193,20 @@
 		parentHref={parent ? links.href(parent.id, page.url) : null}
 		subtaskCount={tickets.progressOf(id).total}
 	>
+		{#snippet duplicate(ticket: Ticket)}
+			{#if duplicates !== null}
+				<TicketDuplicate
+					{ticket}
+					store={duplicates}
+					projects={catalog.activeProjects}
+					sources={sourceStore.ticketId === ticket.id ? sourceStore.items : []}
+					commentCount={comments.ticketId === ticket.id ? comments.comments.length : 0}
+					subtaskCount={tickets.progressOf(ticket.id).total}
+					parentKey={ticket.parentId ? (parent?.key ?? null) : null}
+					onopen={openTicket}
+				/>
+			{/if}
+		{/snippet}
 		{#snippet parentField(ticket: Ticket)}
 			<TicketParentField
 				store={detail}

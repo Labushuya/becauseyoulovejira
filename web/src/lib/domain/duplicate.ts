@@ -1,7 +1,8 @@
-// "Ticket duplizieren" (ADR-0045): what the SPA sends to the route and reads from its answer. Pure.
-// The texts of the codes are the same as in app/pb_hooks/lib/duplicate-rules.js
-// (tests/unit/web-duplicate.test.mjs).
+// "Ticket duplizieren" (ADR-0045): what the SPA sends to the route and reads from its answer, and
+// the rules of the question "Wie soll das Duplikat entstehen?". Pure. The texts of the codes are the
+// same as in app/pb_hooks/lib/duplicate-rules.js (tests/unit/web-duplicate.test.mjs).
 
+import { CHANNEL_LABELS, type InboxItemSummary } from './inbox';
 import type { Status } from './status';
 
 /** A duplicate starts as new work: every status but "Erledigt". */
@@ -113,5 +114,141 @@ export function toDuplicateOutcome(value: unknown): DuplicateOutcome | null {
 		subtasks: children,
 		comments,
 		source: source === '' ? null : source
+	};
+}
+
+/** Longest title of a ticket (tickets.title). */
+export const DUPLICATE_TITLE_MAX = 200;
+
+/** What the title of the original gets for the duplicate. */
+export const DUPLICATE_TITLE_SUFFIX = ' (Kopie)';
+
+/**
+ * The title the question starts with: "‹Titel› (Kopie)". A long title is cut before the suffix
+ * with "…", so the whole stays within DUPLICATE_TITLE_MAX.
+ */
+export function duplicateTitle(title: string): string {
+	const base = title.trim();
+	if (base.length + DUPLICATE_TITLE_SUFFIX.length <= DUPLICATE_TITLE_MAX) {
+		return `${base}${DUPLICATE_TITLE_SUFFIX}`;
+	}
+	const room = DUPLICATE_TITLE_MAX - DUPLICATE_TITLE_SUFFIX.length - 1;
+	return `${base.slice(0, room).trimEnd()}…${DUPLICATE_TITLE_SUFFIX}`;
+}
+
+/** What the question takes over at first: the fields of the ticket, not sub-tasks and comments. */
+export const DEFAULT_TAKE: Readonly<DuplicateTake> = Object.freeze({
+	description: true,
+	priority: true,
+	tags: true,
+	due: true,
+	parent: true,
+	subtasks: false,
+	comments: false
+});
+
+/** The answers of the question "Wie soll das Duplikat entstehen?". */
+export interface DuplicateForm {
+	title: string;
+	/** '' until the user chooses: no answer in advance (ADR-0045 §2). */
+	status: DuplicateStatus | '';
+	/** "Projekt" is checked: the duplicate goes into `project`. */
+	takeProject: boolean;
+	/** The chosen project, '' for none. */
+	project: string;
+	take: DuplicateTake;
+	source: DuplicateSource;
+}
+
+/**
+ * The question as it starts for a ticket: its title with "(Kopie)", its project if that can still
+ * take tickets (one of `activeProjectIds`; an archived one cannot), no status, no source.
+ */
+export function initialDuplicateForm(
+	ticket: { title: string; projectId: string | null },
+	activeProjectIds: readonly string[]
+): DuplicateForm {
+	const project =
+		ticket.projectId !== null && activeProjectIds.includes(ticket.projectId)
+			? ticket.projectId
+			: '';
+	return {
+		title: duplicateTitle(ticket.title),
+		status: '',
+		takeProject: true,
+		project,
+		take: { ...DEFAULT_TAKE },
+		source: 'none'
+	};
+}
+
+/** Fields of the question that carry an error of their own. */
+export type DuplicateField = 'title' | 'status' | 'project' | 'source';
+
+/** Errors of the question before sending: a title of 1 to 200 characters and a status. */
+export function duplicateFormErrors(
+	form: Pick<DuplicateForm, 'title' | 'status'>
+): Partial<Record<DuplicateField, string>> {
+	const errors: Partial<Record<DuplicateField, string>> = {};
+	const title = form.title.trim();
+	if (title === '' || title.length > DUPLICATE_TITLE_MAX) {
+		errors.title = DUPLICATE_MESSAGES.validation_duplicate_title;
+	}
+	if (form.status === '') errors.status = DUPLICATE_MESSAGES.validation_duplicate_status_required;
+	return errors;
+}
+
+/** The request of an answered question. */
+export function duplicateRequestOf(
+	form: DuplicateForm & { status: DuplicateStatus }
+): DuplicateRequest {
+	return {
+		title: form.title.trim(),
+		status: form.status,
+		project: form.takeProject && form.project !== '' ? form.project : null,
+		take: { ...form.take },
+		source: form.source
+	};
+}
+
+/**
+ * What "Kopie der Herkunft übernehmen" does with the main source of the original, or why it is not
+ * possible without one.
+ */
+export function copySourceHint(
+	main: Pick<InboxItemSummary, 'title' | 'channel' | 'original'> | null,
+	key: string
+): string {
+	if (main === null) return DUPLICATE_MESSAGES.validation_duplicate_source_missing;
+	const what =
+		main.original === '' ? 'mit Text und Details' : 'mit Text, Details und Originaldatei';
+	return `Ein neuer Eintrag als Kopie von „${main.title}“ (${CHANNEL_LABELS[main.channel]}) wird die Hauptquelle des Duplikats, ${what}, gekennzeichnet als „Kopie aus ${key}“.`;
+}
+
+/** Text of a history entry "duplicate" (ADR-0045 §6): "Dupliziert aus HAUS-12" or "… nach HAUS-13". */
+export function duplicateHistoryText(value: string): string {
+	try {
+		const parsed: unknown = JSON.parse(value);
+		if (isRecord(parsed)) {
+			const { direction, key } = parsed;
+			const other = typeof key === 'string' && key !== '' ? ` ${key}` : '';
+			if (direction === 'from') return `Dupliziert aus${other}`;
+			if (direction === 'to') return `Dupliziert nach${other}`;
+		}
+	} catch {
+		// Not readable: named without the other ticket.
+	}
+	return 'Dupliziert';
+}
+
+/** The flag after duplicating: what happened, the new key and the way back to the original. */
+export function duplicatedFlag(
+	originalKey: string,
+	duplicateKey: string
+): { title: string; description: string; action: string } {
+	return {
+		title: `${originalKey} dupliziert.`,
+		description: `Das Duplikat ist ${duplicateKey}.`,
+		action: `${originalKey} öffnen`
 	};
 }

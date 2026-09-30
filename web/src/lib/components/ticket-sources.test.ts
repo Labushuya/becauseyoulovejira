@@ -186,6 +186,21 @@ describe('TicketSources', () => {
 		expect(data.originalUrl).toHaveBeenCalledOnce();
 	});
 
+	it('names the copy of a source made for a duplicate (ADR-0031 addendum F)', async () => {
+		const copy = item('copy00000000001', {
+			...MAIN,
+			id: 'copy00000000001',
+			sourceMeta: {
+				...MAIN.sourceMeta,
+				copy_of: { item: MAIN.id, ticket: 'ticket000000012', key: 'HAUS-12', at: '' }
+			}
+		});
+		await setup([copy, CHAT]);
+		const note = await screen.findByText('Kopie aus HAUS-12');
+		expect(within(note.closest('li') as HTMLElement).getByText('Rechnung März')).toBeTruthy();
+		expect(screen.getAllByText(/Kopie aus/)).toHaveLength(1);
+	});
+
 	it('says there are no sources yet', async () => {
 		await setup([]);
 		expect(screen.getByRole('heading', { name: 'Noch keine Quellen' })).toBeTruthy();

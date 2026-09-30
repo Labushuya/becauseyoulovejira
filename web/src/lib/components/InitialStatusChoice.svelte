@@ -13,10 +13,15 @@
 	// Nothing is chosen in advance; the owner checks that an answer was given and passes the error,
 	// which stands at the group like every field error (ADR-0009). The answer is stored as "Status
 	// beim Anlegen" of the rule and can be changed there later.
+	// "Ticket duplizieren" asks the same way for the status of the duplicate (ADR-0045 §2), with its
+	// own legend and hint and the original named as "das Original".
 	let {
 		value = $bindable(''),
 		ticketStatus = null,
-		error = null
+		error = null,
+		legend = 'Folgetickets starten mit',
+		hint = 'Jedes neue Ticket der Serie beginnt mit diesem Status („Status beim Anlegen“). Ändern kannst du ihn später an der Regel.',
+		like = 'dieses Ticket'
 	}: {
 		/** The chosen status; '' while none is chosen. */
 		value: TemplateStatus | '';
@@ -24,12 +29,18 @@
 		ticketStatus?: string | null;
 		/** Field error: no answer, or a refusal of the server. */
 		error?: string | null;
+		/** Name of the group. */
+		legend?: string;
+		/** What the answer means, below the name. */
+		hint?: string;
+		/** How the answers name the ticket ("Wie dieses Ticket: …"). */
+		like?: string;
 	} = $props();
 
 	const uid = $props.id();
 	const hintId = `${uid}-hint`;
 	const errorId = `${uid}-error`;
-	const options = $derived(initialStatusOptions(ticketStatus));
+	const options = $derived(initialStatusOptions(ticketStatus, like));
 	const first = $derived(options.filter((option) => option.first));
 	const others = $derived(options.filter((option) => !option.first));
 </script>
@@ -53,11 +64,8 @@
 	aria-invalid={error ? 'true' : undefined}
 	aria-describedby={error ? `${hintId} ${errorId}` : hintId}
 >
-	<legend>Folgetickets starten mit</legend>
-	<p class="hint" id={hintId}>
-		Jedes neue Ticket der Serie beginnt mit diesem Status („Status beim Anlegen“). Ändern kannst du
-		ihn später an der Regel.
-	</p>
+	<legend>{legend}</legend>
+	<p class="hint" id={hintId}>{hint}</p>
 	<div class="options">{@render radios(first)}</div>
 	<div class="options others">{@render radios(others)}</div>
 	{#if error}

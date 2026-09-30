@@ -3,6 +3,7 @@
 // appear as "(gelöscht)". Descriptions are returned as plain text for a collapsible detail and
 // never rendered as Markdown.
 
+import { duplicateHistoryText } from './duplicate';
 import { formatCalendarDate, formatBerlinDateTime } from './format';
 import { CHANNEL_LABELS, isInboxChannel } from './inbox';
 import { PRIORITY_LABELS, STATUS_LABELS, historyFieldLabel } from './labels';
@@ -264,6 +265,9 @@ function describe(entry: HistoryEntry, lookups: HistoryLookups, selfId: string |
 			return sourceLinkText(oldValue, newValue);
 		case 'pinned_comment':
 			return pinText(oldValue, newValue, lookups, selfId);
+		case 'duplicate':
+			// ADR-0045 §6: the duplicate names its original, the original its duplicate.
+			return duplicateHistoryText(newValue);
 		case SKIPPED_FIELD: {
 			// ADR-0022 addendum 4: a catch-up ticket names the missed dates it stands for.
 			const skipped = parseSkipped(newValue);

@@ -1,6 +1,6 @@
 # ADR-0045: Ticket duplizieren: Abfrage im Dialog, eine Route in einer Transaktion, Kopie der Herkunft als eigener Eingangseintrag
 
-- **Status:** Angenommen; Server und Datenschicht in DU-1, Oberfläche in DU-2 nach [docs/plan/duplizieren.md](../plan/duplizieren.md); manuelle Browser-Prüfungen stehen im Test-Manifest
+- **Status:** Angenommen und umgesetzt: Server und Datenschicht in DU-1 (#192), Oberfläche in DU-2 nach [docs/plan/duplizieren.md](../plan/duplizieren.md); die manuelle Browser-Prüfung steht im Test-Manifest
 - **Datum:** 2026-10-01
 - **Entscheidung durch:** Nutzer (Wunsch vom 2026-10-01, wörtlich: „Ich möchte die Möglichkeit haben, jedes Ticket zu duplizieren – nicht zwangsläufig mit Quelle (manuell abfragen wie Duplikat erstellt werden soll).“), Advisor (Einstieg, Felder der Abfrage und ihre Vorbelegung, Pflicht-Status, Quelle mit Fallback, Atomarität, Verlauf, Rechte, Papierkorb), Executor (Machbarkeit der Kopie, Serverweg, Kommentare, Einzelheiten)
 - **Ergänzt:** [ADR-0031](0031-herkunft-sichern.md) (Nachtrag F: Kopie der Herkunft), [ADR-0033](0033-unteraufgaben.md) (Nachtrag: Unteraufgaben beim Duplizieren)

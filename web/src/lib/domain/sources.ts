@@ -228,6 +228,24 @@ export function deletedTicketId(
 	return typeof ticket === 'string' && /^[a-z0-9]{15}$/.test(ticket) ? ticket : null;
 }
 
+/**
+ * The ticket a copied source came from (`source_meta.copy_of` of "Kopie der Herkunft übernehmen",
+ * ADR-0031 addendum F): its key and, when it is a record ID, its ID for a link; null for any other
+ * entry.
+ */
+export function copiedFrom(
+	item: Pick<InboxItemSummary, 'sourceMeta'>
+): { key: string; ticket: string | null } | null {
+	const note = item.sourceMeta.copy_of;
+	if (typeof note !== 'object' || note === null || Array.isArray(note)) return null;
+	const { key, ticket } = note as Record<string, unknown>;
+	if (typeof key !== 'string' || key === '') return null;
+	return {
+		key,
+		ticket: typeof ticket === 'string' && /^[a-z0-9]{15}$/.test(ticket) ? ticket : null
+	};
+}
+
 /** Text of the flag after linking: "3 Einträge mit TASK-4 verknüpft." */
 export function linkSummary(count: number, ticketKey: string): string {
 	return count === 1
