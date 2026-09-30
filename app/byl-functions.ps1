@@ -769,6 +769,41 @@ function Get-LogTailLines {
     return , @($lines | Select-Object -Last $Count)
 }
 
+# Log lines for the page System of the app (logs -Json, ADR-0043): values shorter than this are not
+# replaced (they would hit ordinary words), and a line is cut to this length.
+$BylLogSecretMinLength = 4
+$BylLogLineMax = 2000
+
+function Protect-LogText {
+    # A log line without the values in $Secrets (the BYL_* variables): every value of at least
+    # $BylLogSecretMinLength characters becomes ***, also URL-encoded, the longest first; the line
+    # is cut to $BylLogLineMax characters. The same rule as secrets.redact of the hooks, which the
+    # route applies on top (URLs, tokens, e-mail addresses).
+    param([AllowNull()][AllowEmptyString()][string]$Text, [AllowEmptyCollection()][AllowNull()][string[]]$Secrets = @())
+
+    $result = [string]$Text
+    $values = @(@($Secrets) | Where-Object { $null -ne $_ -and $_.Length -ge $BylLogSecretMinLength } |
+            Sort-Object -Property Length -Descending)
+    foreach ($value in $values) {
+        foreach ($variant in @($value, [Uri]::EscapeDataString($value))) {
+            $result = $result.Replace($variant, '***')
+        }
+    }
+    if ($result.Length -gt $BylLogLineMax) { $result = $result.Substring(0, $BylLogLineMax - 3) + '...' }
+    return $result
+}
+
+function Get-DetachedRestartArgumentString {
+    # Arguments of Windows PowerShell for the detached restart (restart -Detach, ADR-0043): the
+    # control script $ScriptPath with restart, without browser, only errors and the result, and
+    # only after process $WaitForProcess (the caller) ended. The path is quoted (spaces, #); Windows
+    # paths cannot contain double quotes.
+    param([Parameter(Mandatory = $true)][string]$ScriptPath, [Parameter(Mandatory = $true)][int]$WaitForProcess)
+
+    return ('-NoProfile -NonInteractive -ExecutionPolicy Bypass -File "{0}" restart -NoBrowser -Quiet -WaitForProcess {1}' -f
+        $ScriptPath, $WaitForProcess)
+}
+
 # --- Server start --------------------------------------------------------------------------------
 
 function Get-ServerLogPath {

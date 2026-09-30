@@ -184,20 +184,23 @@ powershell -NoProfile -ExecutionPolicy Bypass -File app\byl-control.ps1 help
 |---|---|
 | `start` | wie `start.bat`; `-NoBrowser` ohne Browser, `-Force` startet eine App neu, die nicht antwortet |
 | `stop` | wie `stop.bat` |
-| `restart` | beenden und neu starten |
+| `restart` | beenden und neu starten; `-Detach` startet den Neustart als eigenen Prozess im Hintergrund (für die Seite „System“) |
 | `reload` | wie `neu-starten.bat`: nur neu starten, wenn es nötig ist (siehe unten); `-Force` startet immer neu |
 | `status` | wie `status.bat`: Zustand, Adresse, Mail-Hilfsprozess, ob ein Neustart nötig ist, Autostart; `-Json` für Skripte |
 | `open` | die laufende App öffnen (installierte App bzw. Tab) |
-| `logs` bzw. `logs server\|mail\|skript` | letzte Zeilen der Logs (`-Lines 50`), `-Follow` folgt einem Log |
+| `logs` bzw. `logs server\|mail\|skript` | letzte Zeilen der Logs (`-Lines 50`), `-Follow` folgt einem Log, `-Json` ohne Werte der `BYL_*`-Variablen |
 | `doctor` | prüft Dateien, Oberfläche, Port, Schreibrechte, Plattenplatz, andere Kopien und Autostart; `-Json` für Skripte |
 | `port` bzw. `port <Zahl>` | Port anzeigen bzw. umstellen |
 | `autostart-on`, `autostart-off`, `reset-admin` | wie die gleichnamigen `.bat`-Dateien |
+| `mail-restart` | beendet den eigenen Mail-Hilfsprozess geordnet und startet ihn wieder, wenn ein Postfach eingeschaltet ist |
 
 Exit-Codes: 0 erledigt (bei `status`: läuft und ist aktuell), 1 Fehler, 2 Einrichtung offen, 3 läuft nicht, 4 Port belegt, 5 App antwortet nicht, 6 Neustart nötig.
 
 **Neustart nur bei Bedarf:** Beim Start merkt sich das Skript in `app\run\byl.state.json`, was der Server geladen hat (Stempel von `pocketbase.exe` und `byl-mail.exe`, Prüfsummen der Migrationen und Hooks, Port, eine Prüfsumme der `BYL_*`-Variablen und die Version der Oberfläche). `status` vergleicht mit dem Ordner und sagt „aktuell“, „nur neu laden (F5 im offenen Tab) – Oberfläche neu gebaut“ oder „Neustart nötig“ mit Grund, etwa „neue oder geänderte Migration“ oder „geänderte Server-Logik (pb_hooks)“; PocketBase lädt geänderte Hooks unter Windows nicht selbst neu. `reload` startet genau dann neu. Auch eine neue, geänderte oder entfernte `BYL_*`-Variable (etwa nach `setx`) zählt; gespeichert wird dafür nur eine Prüfsumme mit einem Schlüssel, den nur dein Windows-Konto entschlüsseln kann, nie ein Wert. War die App noch mit den alten Skripten gestartet, ist der Stand „unbekannt“, und `reload` startet einmal neu.
 
-**Logs** stehen in `app\logs\`: `pocketbase.out.log` und `.err.log` (Server), `byl-mail.log` und `.err.log` (Mail-Hilfsprozess), jeweils vom aktuellen Lauf, der vorige als `*.1.log`; `byl-control.log` hat eine Zeile je Start, Stopp, Neustart, Portwechsel und Autostart-Änderung (höchstens 1 MB, dann rotiert), ohne Zugangsdaten oder Inhalte.
+**Logs** stehen in `app\logs\`: `pocketbase.out.log` und `.err.log` (Server), `byl-mail.log` und `.err.log` (Mail-Hilfsprozess), jeweils vom aktuellen Lauf, der vorige als `*.1.log`; `byl-control.log` hat eine Zeile je Start, Stopp, Neustart, Portwechsel, Autostart-Änderung und Neustart des Mail-Hilfsprozesses (höchstens 1 MB, dann rotiert), ohne Zugangsdaten oder Inhalte.
+
+**Aus dem Dashboard:** Unter **Einstellungen → System** zeigt die App dasselbe wie `status.bat` (PID nur in den technischen Angaben) und bietet „Jetzt neu starten“, „Mail-Helfer neu starten“, den Autostart als Schalter, „Umgebung prüfen“ (`doctor`) und „Logs ansehen“ (letzte 200 Zeilen je Datei, ohne Zugangsdaten, E-Mail-Adressen und Pfade von Adressen). Die Seite ruft nur diese festen Befehle von `byl-control.ps1` auf, nur im Browser auf dem Rechner der App (`127.0.0.1`/`localhost`, kein Proxy) und nur für das App-Konto, das bei der Einrichtung zuerst angelegt wurde; jede Aktion steht mit Konto und Zeit im Log der Verwaltung. Der Neustart läuft als eigener Prozess weiter, während der Server endet; die Seite verbindet sich danach selbst neu. Beenden gibt es dort nicht, dafür bleibt `stop.bat`. Unter Linux und im Container ist die Seite ausgeblendet ([ADR-0043](docs/adr/0043-system-seite.md)).
 
 **Geordnetes Beenden:** `stop.bat` schickt PocketBase und dem Mail-Hilfsprozess ein Konsolensignal (Ctrl+Break). PocketBase schließt dann die Datenbank sauber, SQLite überträgt dabei das Write-Ahead-Log (`pb_data\data.db-wal` verschwindet). Erst wenn ein Prozess nach 15 Sekunden noch läuft, beendet `stop.bat` ihn hart und warnt davor. Auch das ist für die Daten unkritisch: SQLite (WAL-Modus) behält jede abgeschlossene Änderung, eine gerade laufende wird beim nächsten Start zurückgerollt. Nur während eines laufenden Backups solltest du nicht stoppen, sonst bleibt ein unvollständiges ZIP zurück.
 

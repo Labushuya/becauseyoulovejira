@@ -4,6 +4,7 @@
 
 import { resolve } from '$app/paths';
 import type { ResolvedPathname } from '$app/types';
+import type { HostPlatform } from '$lib/domain/host-platform';
 
 export interface SettingsSection {
 	/** Last part of the address, e.g. "kanaele". */
@@ -20,8 +21,20 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
 	{ id: 'tickets', label: 'Tickets', href: resolve('/einstellungen/tickets') },
 	{ id: 'darstellung', label: 'Darstellung', href: resolve('/einstellungen/darstellung') },
 	{ id: 'konto', label: 'Konto', href: resolve('/einstellungen/konto') },
+	// Operation of the app from the dashboard (ADR-0043), only for a server on Windows.
+	{ id: 'system', label: 'System', href: resolve('/einstellungen/system') },
 	{ id: 'hilfe', label: 'Hilfe', href: resolve('/einstellungen/hilfe') }
 ];
+
+/**
+ * The pages the navigation lists for a server on `platform`: "System" drives the scripts of the
+ * folder app under Windows, so it is left out for Linux and containers (ADR-0043).
+ */
+export function visibleSettingsSections(platform: HostPlatform): readonly SettingsSection[] {
+	return platform === 'windows'
+		? SETTINGS_SECTIONS
+		: SETTINGS_SECTIONS.filter((section) => section.id !== 'system');
+}
 
 /** Start of the settings area; it forwards to the first page. */
 export const SETTINGS_HOME = resolve('/einstellungen');

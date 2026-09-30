@@ -8,13 +8,15 @@ const WINDOWS_ONLY = {
 		'tests/unit/admin-reset-logic.test.mjs',
 		'tests/unit/control-logic.test.mjs',
 		'tests/unit/start-browser.test.mjs',
-		'tests/unit/start-logic.test.mjs'
+		'tests/unit/start-logic.test.mjs',
+		'tests/unit/system-control-logic.test.mjs'
 	],
 	integration: [
 		'tests/integration/admin-reset.test.mjs',
 		'tests/integration/backup-restore.test.mjs',
 		'tests/integration/control-script.test.mjs',
-		'tests/integration/installer-check.test.mjs'
+		'tests/integration/installer-check.test.mjs',
+		'tests/integration/system-control.test.mjs'
 	]
 };
 

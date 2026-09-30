@@ -18,7 +18,9 @@ const mocks = vi.hoisted(() => ({
 	page: { url: new URL('http://127.0.0.1:8090/einstellungen/kanaele') },
 	afterNavigate: [] as ((navigation: Navigation) => void)[],
 	stored: {} as Record<string, string>,
-	lastView: null as unknown
+	lastView: null as unknown,
+	// Operating system of the server (host store of the (app) layout); null: no store.
+	platform: null as string | null
 }));
 
 vi.mock('$app/state', () => ({ page: mocks.page }));
@@ -42,6 +44,10 @@ vi.mock('$lib/stores/last-view.svelte', async (importOriginal) => ({
 	...(await importOriginal<object>()),
 	getLastViewStore: () => mocks.lastView
 }));
+vi.mock('$lib/stores/host.svelte', async (importOriginal) => ({
+	...(await importOriginal<object>()),
+	findHostStore: () => (mocks.platform === null ? null : { platform: mocks.platform })
+}));
 
 const CONTENT = 'Inhalt der Unterseite';
 
@@ -63,6 +69,7 @@ async function renderSettings(path: string, remembered: string | null = null) {
 
 beforeEach(() => {
 	mocks.afterNavigate.length = 0;
+	mocks.platform = null;
 	document.body.innerHTML = '';
 });
 
@@ -93,12 +100,26 @@ describe('settings layout', () => {
 			['Tickets', '/einstellungen/tickets'],
 			['Darstellung', '/einstellungen/darstellung'],
 			['Konto', '/einstellungen/konto'],
+			['System', '/einstellungen/system'],
 			['Hilfe', '/einstellungen/hilfe']
 		]);
 		expect(pages[0]?.hasAttribute('aria-current')).toBe(false);
 		expect(pages[1]?.getAttribute('aria-current')).toBe('page');
 		expect(screen.getByRole('heading', { level: 2 }).textContent).toBe('Datei-Importe');
 		expect(screen.getByText(CONTENT)).toBeTruthy();
+	});
+
+	it.each([
+		['windows', true],
+		['linux', false],
+		['container', false]
+	])('lists "System" for a server on %s: %s (ADR-0043)', async (platform, listed) => {
+		mocks.platform = platform;
+		await renderSettings('/einstellungen/konto');
+
+		const nav = within(screen.getByRole('navigation', { name: 'Einstellungen' }));
+		expect(nav.queryByRole('link', { name: 'System' }) !== null).toBe(listed);
+		expect(nav.getByRole('link', { name: 'Hilfe' })).toBeTruthy();
 	});
 
 	it('shows the breadcrumbs with the current page last', async () => {

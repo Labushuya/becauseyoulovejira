@@ -162,6 +162,13 @@ describe('help page (EH-9)', () => {
 			/stop\.bat beendet geordnet erst den Mail-Hilfsprozess, dann den Server/
 		);
 		expect(content).toMatch(/status\.bat zeigt, ob die App läuft/);
+		// ADR-0043: the same from the dashboard, only on this machine and for the owner, no "Beenden".
+		const system = within(section).getByRole('link', { name: 'Einstellungen → System' });
+		expect(system.getAttribute('href')).toBe('/einstellungen/system');
+		expect(content).toMatch(
+			/nur im Browser auf dem Rechner der App und nur mit dem App-Konto, das bei der Einrichtung zuerst angelegt wurde/
+		);
+		expect(content).toMatch(/Beenden geht weiter nur mit stop\.bat/);
 		expect(content).toContain(`Diese App läuft unter ${page.url.origin}.`);
 		expect(content).toMatch(/byl-control\.ps1 port 8091/);
 		expect(content).toMatch(/byl-control\.ps1 doctor/);
