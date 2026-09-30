@@ -92,15 +92,22 @@ $http = @{}
 foreach ($case in $in.httpValues.PSObject.Properties) { $http[$case.Name] = Get-HttpPort -Value $case.Value }
 $result.http = $http
 
-function Invoke-StopCase([string]$Break, [bool]$EndsAfterBreak, [bool]$EndsAfterKill, [bool]$KillThrows) {
+# $Replies: exit code of the sender per attempt ('throw': the sender does not start). $EndsAfter:
+# number of attempts after which the process ends by itself (0: never). (Not "$Codes": the
+# script blocks run in the scope of Stop-Gracefully, which has a parameter of that name.)
+function Invoke-StopCase([object[]]$Replies, [int]$EndsAfter, [bool]$EndsAfterKill, [bool]$KillThrows) {
     $script:log = New-Object System.Collections.Generic.List[string]
     $script:alive = $true
-    $outcome = Stop-Gracefully -ProcessId 42 -GraceMilliseconds 1234 -SendBreak {
+    $script:attempts = 0
+    $sent = New-Object System.Collections.Generic.List[int]
+    $outcome = Stop-Gracefully -ProcessId 42 -GraceMilliseconds 1234 -RetryMilliseconds 250 -Codes $sent -SendBreak {
         param($id)
         $script:log.Add("break $id")
-        if ($Break -eq 'throw') { throw 'no console' }
-        if ($Break -eq 'sent' -and $EndsAfterBreak) { $script:alive = $false }
-        $Break -eq 'sent'
+        $code = $Replies[$script:attempts]
+        $script:attempts += 1
+        if ($EndsAfter -gt 0 -and $script:attempts -ge $EndsAfter) { $script:alive = $false }
+        if ($code -eq 'throw') { throw 'no powershell' }
+        [int]$code
     } -WaitExit {
         param($id, $milliseconds)
         $script:log.Add("wait $id $milliseconds")
@@ -111,15 +118,23 @@ function Invoke-StopCase([string]$Break, [bool]$EndsAfterBreak, [bool]$EndsAfter
         if ($KillThrows) { throw 'denied' }
         if ($EndsAfterKill) { $script:alive = $false }
     }
-    return @{ outcome = $outcome; log = @($script:log.ToArray()) }
+    return @{ outcome = $outcome; log = @($script:log.ToArray()); codes = @($sent.ToArray()) }
 }
 $result.stop = @{
-    graceful = Invoke-StopCase 'sent' $true $true $false
-    slow = Invoke-StopCase 'sent' $false $true $false
-    notSent = Invoke-StopCase 'failed' $false $true $false
-    throws = Invoke-StopCase 'throw' $false $true $false
-    stuck = Invoke-StopCase 'sent' $false $false $true
+    graceful = Invoke-StopCase @(0) 1 $true $false
+    slow = Invoke-StopCase @(0, 0) 0 $true $false
+    endedSender = Invoke-StopCase @(-1073741510) 1 $true $false
+    retried = Invoke-StopCase @(1, 0) 2 $true $false
+    hungButDelivered = Invoke-StopCase @(-1) 1 $true $false
+    unknownTwice = Invoke-StopCase @(-1, 9) 0 $true $false
+    notSent = Invoke-StopCase @(2, 4) 0 $true $false
+    refused = Invoke-StopCase @(3, 0) 0 $true $false
+    throws = Invoke-StopCase @('throw', 'throw') 0 $true $false
+    stuck = Invoke-StopCase @(0) 0 $false $true
 }
+$kinds = @{}
+foreach ($code in -2, -1, 0, 1, 2, 3, 4, 5, -1073741510) { $kinds["$code"] = Resolve-BreakCode -Code $code }
+$result.breakKinds = $kinds
 
 $encoded = Get-ConsoleBreakCommand -ProcessId 4711
 $result.breakCommand = [System.Text.Encoding]::Unicode.GetString([Convert]::FromBase64String($encoded))
@@ -361,17 +376,71 @@ describe('decisions of start (ADR-0039 section 4)', () => {
 
 describe('orderly stop (ADR-0039 section 4)', () => {
 	it('ends a process with the console break and waits for it, without killing', () => {
-		expect(result.stop.graceful).toEqual({ outcome: 'Graceful', log: ['break 42', 'wait 42 1234'] });
+		expect(result.stop.graceful).toEqual({ outcome: 'Graceful', log: ['break 42', 'wait 42 1234'], codes: [0] });
 	});
 
 	it('kills only after the wait, and only a process still there', () => {
-		expect(result.stop.slow).toEqual({ outcome: 'Forced', log: ['break 42', 'wait 42 1234', 'kill 42', 'wait 42 10000'] });
-		expect(result.stop.notSent).toEqual({ outcome: 'Forced', log: ['break 42', 'kill 42', 'wait 42 10000'] });
-		expect(result.stop.throws).toEqual({ outcome: 'Forced', log: ['break 42', 'kill 42', 'wait 42 10000'] });
+		// A break that went out is not repeated: the process had the signal and its time.
+		expect(result.stop.slow).toEqual({
+			outcome: 'Forced',
+			log: ['break 42', 'wait 42 1234', 'kill 42', 'wait 42 10000'],
+			codes: [0]
+		});
 	});
 
 	it('reports a process that survives even the hard stop', () => {
-		expect(result.stop.stuck).toEqual({ outcome: 'Running', log: ['break 42', 'wait 42 1234', 'kill 42', 'wait 42 10000'] });
+		expect(result.stop.stuck).toEqual({
+			outcome: 'Running',
+			log: ['break 42', 'wait 42 1234', 'kill 42', 'wait 42 10000'],
+			codes: [0]
+		});
+	});
+
+	// Plan test-haertung, T-3: whether the stop was in order, the process decides, not the sender.
+	it('names what the code of the sender says about the break', () => {
+		expect(result.breakKinds).toEqual({
+			'-2': 'NotSent',
+			'-1': 'Unknown',
+			0: 'Sent',
+			1: 'NotSent',
+			2: 'NotSent',
+			3: 'Refused',
+			4: 'NotSent',
+			5: 'Unknown',
+			'-1073741510': 'Sent'
+		});
+	});
+
+	it('counts a break the sender did not survive, or reported late, as delivered once the process ends', () => {
+		expect(result.stop.endedSender).toEqual({ outcome: 'Graceful', log: ['break 42', 'wait 42 1234'], codes: [-1073741510] });
+		expect(result.stop.hungButDelivered).toEqual({ outcome: 'Graceful', log: ['break 42', 'wait 42 1234'], codes: [-1] });
+	});
+
+	it('sends a break that did not go out once more, and only then stops hard', () => {
+		expect(result.stop.retried).toEqual({
+			outcome: 'Graceful',
+			log: ['break 42', 'wait 42 250', 'break 42', 'wait 42 1234'],
+			codes: [1, 0]
+		});
+		expect(result.stop.notSent).toEqual({
+			outcome: 'Forced',
+			log: ['break 42', 'wait 42 250', 'break 42', 'wait 42 250', 'kill 42', 'wait 42 10000'],
+			codes: [2, 4]
+		});
+		expect(result.stop.throws).toEqual({
+			outcome: 'Forced',
+			log: ['break 42', 'wait 42 250', 'break 42', 'wait 42 250', 'kill 42', 'wait 42 10000'],
+			codes: [-2, -2]
+		});
+		expect(result.stop.unknownTwice).toEqual({
+			outcome: 'Forced',
+			log: ['break 42', 'wait 42 1234', 'break 42', 'wait 42 1234', 'kill 42', 'wait 42 10000'],
+			codes: [-1, 9]
+		});
+	});
+
+	it('never repeats a break the shared console refused', () => {
+		expect(result.stop.refused).toEqual({ outcome: 'Forced', log: ['break 42', 'kill 42', 'wait 42 10000'], codes: [3] });
 	});
 
 	it('builds the console break for exactly one process id', () => {

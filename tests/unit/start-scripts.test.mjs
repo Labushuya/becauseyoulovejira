@@ -478,14 +478,21 @@ describe('stop', () => {
 	it('ends in order first (console break, waiting) and hard only after that, with a warning', () => {
 		const stop = functionBody(control(), 'Stop-OwnProcess');
 		expect(stop).toContain('Stop-Gracefully -ProcessId $processId -GraceMilliseconds ($StopGraceSeconds * 1000)');
-		expect(stop).toContain('-SendBreak { param($id) (Send-ConsoleBreak -ProcessId $id) -eq 0 }');
+		// The exit code of the sender goes to Stop-Gracefully (Resolve-BreakCode, plan T-3) and to the log.
+		expect(stop).toContain('-SendBreak { param($id) Send-ConsoleBreak -ProcessId $id }');
+		expect(stop).toContain('-Codes $script:BreakCodes');
 		expect(stop).toContain("if ($result -eq 'Forced') { $Forced.Add(\"$Name (PID $processId)\") }");
 		expect(control()).toMatch(/\$StopGraceSeconds = 15\b/);
+		expect(control()).toMatch(/\$BreakSenderSeconds = 30\b/);
+		expect(functionBody(control(), 'Write-ControlLog')).toContain("break=\" + ($script:BreakCodes -join ',')");
 		expect(functionBody(control(), 'Invoke-StopCore')).toContain('Warnung: Nicht rechtzeitig geordnet beendet, daher hart beendet: ');
 		const send = functionBody(control(), 'Send-ConsoleBreak');
 		expect(send).toContain('Get-ConsoleBreakCommand -ProcessId $ProcessId');
 		expect(send).toContain('$startInfo.CreateNoWindow = $true');
 		expect(send).toContain('$startInfo.UseShellExecute = $false');
+		// While the sender runs, the target decides: once it has ended, the break reached it.
+		expect(send).toContain('$ended = $target.HasExited');
+		expect(send).toContain('[DateTime]::UtcNow.AddSeconds($BreakSenderSeconds)');
 		// The child sends CTRL_BREAK_EVENT only to a console of the target alone, and survives it.
 		const source = functions().match(/\$BylConsoleBreakSource = @'\r\n([\s\S]*?)\r\n'@/)[1];
 		expect(source).toContain('GenerateConsoleCtrlEvent(1, 0)');

@@ -163,6 +163,12 @@ function healthy(port) {
 
 const readState = (copy) => JSON.parse(readFileSync(join(copy.dir, 'run', 'byl.state.json'), 'utf8'));
 
+/** logs\byl-control.log of a copy (one line per changing command), '' without one. */
+function controlLog(copy) {
+	const path = join(copy.dir, 'logs', 'byl-control.log');
+	return existsSync(path) ? readFileSync(path, 'utf8') : '';
+}
+
 /** Names (never values) of the BYL_* variables in the user and the machine scope of the account. */
 function accountVariableNames() {
 	return runPowerShellJson(
@@ -306,7 +312,10 @@ describe('byl-control.ps1 on disposable copies (BS-1)', CASE_TIMEOUT, () => {
 		const result = control(copies.a, 'stop');
 		expect(result.code, result.output).toBe(0);
 		expect(result.output).toContain('becauseyoulovejira wurde beendet.');
-		expect(result.output).not.toContain('hart beendet');
+		// The log line names the exit codes of the senders of the console break (plan T-3), so a
+		// hard stop says why.
+		expect(result.output, controlLog(copies.a)).not.toContain('hart beendet');
+		expect(controlLog(copies.a)).toMatch(/ stop exit=0 stopped break=-?\d+(,-?\d+)*\r$/m);
 		expect(serversOf(copies.a)).toEqual([]);
 		expect(await healthy(copies.a.port)).toBe(false);
 		// PocketBase closed its database: the WAL was checkpointed and removed.
@@ -426,7 +435,7 @@ describe('byl-control.ps1: status, reload, open, logs and doctor (BS-2)', CASE_T
 		const script = readFileSync(join(copies.a.dir, 'logs', 'byl-control.log'), 'utf8');
 		expect(script).toMatch(/^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ start exit=0 pid=\d+ port=\d+\r$/m);
 		expect(script).toMatch(/ reload exit=0 action=reloadonly\r$/m);
-		expect(script).toMatch(/ reload exit=0 action=restart pid=\d+ port=\d+\r$/m);
+		expect(script).toMatch(/ reload exit=0 action=restart pid=\d+ port=\d+ break=-?\d+(,-?\d+)*\r$/m);
 		expect(script).not.toMatch(/status|@|BYL_/);
 		expect(control(copies.a, 'logs', 'unbekannt').code).toBe(1);
 		expect(control(copies.a, 'logs', '-Follow').code).toBe(1);
