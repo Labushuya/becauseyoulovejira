@@ -157,6 +157,34 @@ describe('quick capture', () => {
 	});
 });
 
+describe('quick capture: project from the list (ADR-0042)', () => {
+	it('offers the active projects and writes @CODE into the line', async () => {
+		const { input, onsave } = renderQuick();
+		const select = screen.getByRole<HTMLSelectElement>('combobox', { name: 'Projekt' });
+		expect([...select.options].map((option) => option.textContent?.trim())).toEqual([
+			'Kein Projekt',
+			'Haushalt (HAUS)'
+		]);
+		await fireEvent.input(input, { target: { value: 'Zahnarzt anrufen' } });
+		await fireEvent.change(select, { target: { value: HOUSE.id } });
+		expect(input.value).toBe('Zahnarzt anrufen @HAUS');
+		expect(screen.getByText('Projekt: Haushalt (HAUS)')).toBeTruthy();
+		await fireEvent.keyDown(input, { key: 'Enter' });
+		expect(onsave.mock.calls[0]?.[0]).toMatchObject({ title: 'Zahnarzt anrufen', project: HOUSE });
+	});
+
+	it('shows a typed @CODE in the list and removes it with "Kein Projekt"', async () => {
+		const { input } = renderQuick();
+		const select = screen.getByRole<HTMLSelectElement>('combobox', { name: 'Projekt' });
+		await fireEvent.input(input, { target: { value: 'Zahnarzt @haus anrufen' } });
+		expect(select.value).toBe(HOUSE.id);
+		expect(select.title).toBe('Haushalt (HAUS)');
+		await fireEvent.change(select, { target: { value: '' } });
+		expect(input.value).toBe('Zahnarzt anrufen');
+		expect(select.value).toBe('');
+	});
+});
+
 describe('quick capture: typed text is not lost without asking (plan UI-4)', () => {
 	async function typed() {
 		const view = renderQuick();

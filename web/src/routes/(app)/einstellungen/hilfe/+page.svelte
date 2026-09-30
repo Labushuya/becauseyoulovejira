@@ -66,7 +66,8 @@
 				<dt><code>@CODE</code></dt>
 				<dd>
 					Projekt mit diesem Code (2 bis 6 Buchstaben). Nur aktive Projekte; ein archiviertes bleibt
-					im Titel, und die Vorschau sagt es.
+					im Titel, und die Vorschau sagt es. Ohne den Code zu kennen: „Projekt“ unter der Zeile
+					wählen, das setzt ihn ein.
 				</dd>
 			</div>
 			<div class="row">

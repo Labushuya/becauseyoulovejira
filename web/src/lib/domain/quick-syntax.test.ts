@@ -7,7 +7,8 @@ import {
 	PRIORITY_NUMBERS,
 	PRIORITY_WORDS,
 	describeQuickEntry,
-	parseQuickEntry
+	parseQuickEntry,
+	withProjectToken
 } from './quick-syntax';
 import type { ProjectRef, TagRef } from './ticket';
 
@@ -134,5 +135,31 @@ describe('describeQuickEntry', () => {
 			'Tags: Anruf, Garten (neu)'
 		]);
 		expect(describeQuickEntry(parse('Nur Text'))).toEqual([]);
+	});
+});
+
+describe('withProjectToken (ADR-0042)', () => {
+	const choose = (text: string, code: string | null) => withProjectToken(text, code, PROJECTS);
+
+	it('appends @CODE of the chosen project, also to an empty line', () => {
+		expect(choose('Zahnarzt anrufen !hoch', 'AUTO')).toBe('Zahnarzt anrufen !hoch @AUTO');
+		expect(choose('Zahnarzt anrufen ', 'AUTO')).toBe('Zahnarzt anrufen @AUTO');
+		expect(choose('', 'HAUS')).toBe('@HAUS');
+		expect(parse(choose('Reifen wechseln', 'AUTO')).project).toEqual(CAR);
+	});
+
+	it('replaces the token that set the project, wherever it stands', () => {
+		expect(choose('@haus Zahnarzt anrufen', 'AUTO')).toBe('Zahnarzt anrufen @AUTO');
+		expect(choose('Zahnarzt @HAUS anrufen', 'AUTO')).toBe('Zahnarzt anrufen @AUTO');
+		expect(choose('Zahnarzt @HAUS', 'HAUS')).toBe('Zahnarzt @HAUS');
+		expect(parse(choose('Zahnarzt @HAUS anrufen', 'AUTO')).project).toEqual(CAR);
+	});
+
+	it('removes the token for "Kein Projekt" and keeps tokens that set no project', () => {
+		expect(choose('Zahnarzt @HAUS anrufen', null)).toBe('Zahnarzt anrufen');
+		// Archived and unknown codes are part of the title; they stay.
+		expect(choose('Umbau @ALT planen', null)).toBe('Umbau @ALT planen');
+		expect(choose('Mail an @XY', 'HAUS')).toBe('Mail an @XY @HAUS');
+		expect(parse(choose('Umbau @ALT planen', 'HAUS')).project).toEqual(HOUSE);
 	});
 });
