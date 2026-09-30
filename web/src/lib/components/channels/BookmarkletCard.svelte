@@ -179,11 +179,12 @@
 </section>
 
 <style>
+	/* Frame, header and type as the building block of the other cards (plan kanal-karten KK-2). */
 	.card {
 		display: grid;
 		gap: 0.75rem;
 		min-width: 0;
-		padding: 1.25rem;
+		padding: 1rem;
 		background: var(--color-surface);
 		border: 1px solid var(--color-line);
 		border-radius: var(--radius-surface);
@@ -191,18 +192,21 @@
 
 	.head {
 		display: flex;
-		gap: 0.625rem;
+		gap: 0.75rem;
 		align-items: flex-start;
 	}
 
 	h4 {
-		font-size: 0.9375rem;
+		font-size: var(--font-size-body);
 		font-weight: 600;
 	}
 
-	.lead,
+	.lead {
+		font-size: var(--font-size-control);
+	}
+
 	.steps {
-		font-size: 0.875rem;
+		font-size: var(--font-size-body);
 	}
 
 	.lead {
@@ -322,7 +326,7 @@
 		top: 0.25rem;
 		left: 50%;
 		padding: 0 0.5rem;
-		font-size: 0.75rem;
+		font-size: var(--font-size-small);
 		color: var(--color-brand-soft-text);
 		white-space: nowrap;
 		background: var(--color-brand-soft-bg);
@@ -341,7 +345,7 @@
 		gap: 0.375rem;
 		align-items: center;
 		padding: 0.375rem 0.875rem 0.375rem 0.5rem;
-		font-size: 0.875rem;
+		font-size: var(--font-size-body);
 		font-weight: 600;
 		color: var(--color-brand-soft-text);
 		text-decoration: none;
@@ -360,7 +364,7 @@
 	}
 
 	.hint {
-		font-size: 0.8125rem;
+		font-size: var(--font-size-control);
 		color: var(--color-text-muted);
 	}
 
@@ -371,7 +375,7 @@
 	}
 
 	summary {
-		font-size: 0.875rem;
+		font-size: var(--font-size-body);
 		font-weight: 500;
 		color: var(--color-brand-text);
 		cursor: pointer;

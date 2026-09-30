@@ -83,6 +83,8 @@ function next(dialog: HTMLElement) {
 }
 
 describe('WhatsAppWebCard', () => {
+	const NAME = 'WhatsApp Web (Browser-Erweiterung)';
+
 	it('says what the extension does, shows its keywords and leads to the assistant', async () => {
 		const { importKeywords } = stores([], ['#byl']);
 		await importKeywords.load();
@@ -92,19 +94,72 @@ describe('WhatsAppWebCard', () => {
 				setupHref: '/einstellungen/kanaele?einrichten=whatsapp-web' as ResolvedPathname
 			}
 		});
-		const card = screen.getByRole('region', { name: 'WhatsApp Web (Browser-Erweiterung)' });
-		expect(card.textContent).toContain('sendet nie etwas in WhatsApp');
-		expect(card.textContent).toContain('Stichwörter für „Automatisch“: 1 (#byl)');
-		expect(
-			within(card).getByRole('link', { name: 'Einrichten: WhatsApp Web' }).getAttribute('href')
-		).toBe('/einstellungen/kanaele?einrichten=whatsapp-web');
-		expect(within(card).getByRole('link', { name: 'So geht’s' }).getAttribute('href')).toBe(
+		const card = screen.getByRole('article', { name: NAME });
+		// The card building block (KK-2): the keywords in the info line, the rest in the details.
+		expect(within(card).getByText('Stichwörter für „Automatisch“: 1 (#byl)')).toBeTruthy();
+		await fireEvent.click(within(card).getByRole('button', { name: `Details: ${NAME}` }));
+		expect(within(card).getByText(/sendet nie etwas in WhatsApp/)).toBeTruthy();
+		const setup = within(card).getByRole('link', { name: `Einrichten: ${NAME}` });
+		expect(setup.getAttribute('href')).toBe('/einstellungen/kanaele?einrichten=whatsapp-web');
+		expect(setup.hasAttribute('data-sveltekit-replacestate')).toBe(true);
+		const trigger = within(card).getByRole('button', { name: `Weitere Aktionen für ${NAME}` });
+		const menu = within(document.getElementById(trigger.getAttribute('aria-controls') ?? '')!);
+		expect(menu.getByRole('menuitem', { name: 'Hilfe', hidden: true }).getAttribute('href')).toBe(
 			'/einstellungen/hilfe#whatsapp-web'
 		);
-		await fireEvent.click(
-			within(card).getByRole('button', { name: 'Stichwörter …: WhatsApp Web' })
-		);
+		await fireEvent.click(trigger);
+		await fireEvent.click(menu.getByRole('menuitem', { name: 'Stichwörter …', hidden: true }));
 		expect(screen.getByRole('dialog', { name: 'Stichwörter: WhatsApp Web' })).toBeTruthy();
+	});
+
+	it('says only what the app knows about the extension, never "Verbunden" (ADR-0038 §4)', async () => {
+		const setupHref = '/einstellungen/kanaele?einrichten=whatsapp-web' as ResolvedPathname;
+		const without = stores([]);
+		await without.inboxKeys.load();
+		const first = render(WhatsAppWebCard, {
+			props: {
+				inboxKeys: without.inboxKeys,
+				extension: { folder: FOLDER, built: true, version: '0.1.0' },
+				setupHref
+			}
+		});
+		// No key yet: the extension cannot bring anything.
+		expect(screen.getByText('Einrichtung offen')).toBeTruthy();
+		first.unmount();
+
+		const withKey = stores([
+			{
+				id: 'key000000000001',
+				name: 'WhatsApp Web',
+				tokenHint: 'byl_Wa12',
+				created: '2026-09-28 08:00:00.000Z',
+				lastUsedAt: null
+			}
+		]);
+		await withKey.inboxKeys.load();
+		const second = render(WhatsAppWebCard, {
+			props: {
+				inboxKeys: withKey.inboxKeys,
+				extension: { folder: FOLDER, built: false, version: '' },
+				setupHref
+			}
+		});
+		expect(screen.getByText('Einrichtung offen')).toBeTruthy();
+		expect(screen.getByText(/Er entsteht beim Bauen der App/)).toBeTruthy();
+		second.unmount();
+
+		render(WhatsAppWebCard, {
+			props: {
+				inboxKeys: withKey.inboxKeys,
+				extension: { folder: FOLDER, built: true, version: '0.1.0' },
+				setupHref
+			}
+		});
+		const card = screen.getByRole('article', { name: NAME });
+		expect(card.querySelector('[data-tone]')).toBeNull();
+		expect(within(card).queryByText('Verbunden')).toBeNull();
+		await fireEvent.click(within(card).getByRole('button', { name: `Details: ${NAME}` }));
+		expect(within(card).getByText('gebaut, Version 0.1.0')).toBeTruthy();
 	});
 });
 

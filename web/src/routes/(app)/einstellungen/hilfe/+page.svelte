@@ -113,6 +113,14 @@
 			Windows-Kontos, deren Name mit <code>BYL_</code> beginnt (nur Großbuchstaben, Ziffern und _). So
 			landen sie weder in der App noch in Sicherungen oder Kopien des Ordners.
 		</p>
+		<p>
+			Jeder Kanal hat dort eine Karte gleichen Aufbaus: oben der Zustand („Verbunden“, „Pausiert“,
+			„Fehler“, „Einrichtung offen“ oder „Neustart nötig“), darunter eine Zeile wie „Zuletzt
+			abgerufen vor 5 Min. · 3 neu“ und ein Knopf für den nächsten Schritt, etwa „Jetzt abrufen“
+			oder „Einrichtung fortsetzen“. Alles Weitere steht im Menü „•••“ (Stichwörter, Pausieren,
+			Einrichtung, Hilfe, Löschen), Einzelheiten wie Stichwörter, Postfach, Hilfsprozess und letzter
+			Fehler unter „Details“.
+		</p>
 		<HostPlatformNote headingLevel={4} />
 		<h4>Zugangsdaten als Windows-Variable setzen</h4>
 		<ol>
@@ -130,7 +138,7 @@
 			<li>
 				Danach die App neu starten: <code>neu-starten.bat</code> im Ordner <code>app</code>
 				doppelklicken. Es erkennt die neue oder geänderte Variable und startet neu. Erst dann sieht die
-				App die Variable, und die Karte der Verbindung steht nicht mehr auf „Nicht eingerichtet“.
+				App die Variable, und die Karte der Verbindung steht nicht mehr auf „Einrichtung offen“.
 			</li>
 		</ol>
 		<p class="note">
@@ -320,7 +328,7 @@
 				In Notion jede Seite oder Datenbank freigeben, die du übernehmen willst: „•••“ →
 				„Verbindungen“ → „Verbindung hinzufügen“. Unterseiten sind mit freigegeben.
 			</li>
-			<li>Im Assistenten oder an der Karte „Verbindung prüfen“.</li>
+			<li>Im Assistenten oder an der Karte im Menü „•••“ „Verbindung prüfen“.</li>
 		</ol>
 		<h4>Listen übernehmen</h4>
 		<ul>
@@ -347,9 +355,9 @@
 			</li>
 			<li>„Erledigte überspringen“ (Standard) lässt abgehakte To-dos und erledigte Zeilen aus.</li>
 			<li>
-				„Erneut abrufen“ an einer schon übernommenen Quelle holt nur Einträge, die noch nicht im
-				Eingang sind. Verworfene kommen nicht wieder, Änderungen in Notion erreichen die Kopien
-				nicht.
+				„Erneut abrufen“ an einer schon übernommenen Quelle (unter „Details“ der Karte) holt nur
+				Einträge, die noch nicht im Eingang sind. Verworfene kommen nicht wieder, Änderungen in
+				Notion erreichen die Kopien nicht.
 			</li>
 			<li>
 				Umgewandelt wird im Eingang wie immer. „Gesammelt umwandeln“ kann das Datum als Fälligkeit
@@ -385,8 +393,8 @@
 						Automatisch kommen Mails aus dem <strong>gesamten Posteingang</strong> (nicht
 						Papierkorb, Spam oder Gesendet), in denen ein <strong>Stichwort</strong> vorkommt: in Betreff,
 						Absender, Kopfzeilen oder Text. Pro Abruf kommen höchstens 200 neue Einträge; die Karte sagt
-						dann „Weitere Treffer – erneut abrufen“. Mails ohne Stichwort holst du an der Karte mit „Aus
-						dem Postfach wählen“.
+						dann „Weitere Treffer – erneut abrufen“. Mails ohne Stichwort holst du an der Karte im Menü
+						„•••“ mit „Aus dem Postfach wählen …“.
 					</li>
 					<li>
 						Postfächer ruft der Hilfsprozess <code>byl-mail.exe</code> alle 5 Minuten ab. Er startet
@@ -395,7 +403,8 @@
 					</li>
 					<li>
 						Die Karte der Verbindung unter „Kanäle“ zeigt, ob sie pausiert ist, ob Zugangsdaten
-						fehlen oder was beim letzten Abruf schiefging.
+						fehlen, ob der Hilfsprozess einen Neustart braucht oder was beim letzten Abruf
+						schiefging; unter „Details“ steht, was durchsucht wird.
 					</li>
 				</ul>
 			</details>
@@ -433,7 +442,7 @@
 				</ul>
 				<p>
 					Danach die Variable entfernen und die App neu starten, oder die Verbindung unter „Kanäle“
-					im Menü „…“ pausieren bzw. löschen.
+					im Menü „•••“ ihrer Karte pausieren bzw. löschen.
 				</p>
 			</details>
 			<details>

@@ -1,275 +1,242 @@
+<script lang="ts" module>
+	import type { ResolvedPathname } from '$app/types';
+	import type { CardStatus } from '$lib/domain/channel-card';
+
+	/** An action of a card: its main button or an entry of the menu "•••". */
+	export interface CardAction {
+		/** Visible text, e.g. "Jetzt abrufen" or "Löschen …". */
+		label: string;
+		/** Runs the action; not called while `busy` or `locked`. */
+		onselect?: () => void;
+		/** A link instead of a button: an assistant, the help, another page. */
+		href?: ResolvedPathname;
+		/** The link opens an assistant in the address: keep focus and scroll, replace the entry. */
+		inPlace?: boolean;
+		/** Opens a dialog. */
+		dialog?: boolean;
+		/** The action runs (aria-busy); the button waits. */
+		busy?: boolean;
+		/** Not possible now (aria-disabled). */
+		locked?: boolean;
+		/** Menu only: a line before the entry, e.g. before "Löschen …". */
+		separated?: boolean;
+	}
+</script>
+
 <script lang="ts">
-	import { channelHealth, keywordSummary } from '$lib/domain/channel-health';
-	import {
-		CONNECTION_TYPE_LABELS,
-		MAIL_INBOX_HINT,
-		MAIL_PROVIDER_LABELS,
-		lastResultText,
-		mailHelperText,
-		mailScanText,
-		type Connection,
-		type MailHelperStatus,
-		type RunResult,
-		type SecretStatus
-	} from '$lib/domain/connections';
-	import { formatBerlinDateTime } from '$lib/domain/format';
-	import { connectionAnchor } from '$lib/domain/sync-all';
+	import type { Snippet } from 'svelte';
 	import Lozenge from '../guidance/Lozenge.svelte';
 	import SectionMessage from '../guidance/SectionMessage.svelte';
 	import Popover from '../overlay/Popover.svelte';
-	import ChannelIcon from './ChannelIcon.svelte';
+	import ChannelIcon, { type ChannelIconKind } from './ChannelIcon.svelte';
 
-	// Card of a connection (ADR-0026 section 3, plan EH-3 and §3.5): symbol, name, kind line, state
-	// as lozenge (channelHealth), the meta lines, at most one compact hint and the actions. The main
-	// action follows the state ("Jetzt abrufen", "Fortsetzen", "Einrichtung fortsetzen"); a mailbox
-	// also has "Aus dem Postfach wählen" and says whether the mail helper runs (package A, item 4).
-	// "Bearbeiten" opens the modal of its owner, and the menu "…" holds pausing, the setup and
-	// deleting. Every action names the connection for screen readers. The card carries the anchor
-	// `#verbindung-<id>`, the target of the link in the flag of "Alle Kanäle jetzt abrufen".
-	// A mailbox shows the full scan of its inbox (ADR-0020, addendum 3) in the line "Posteingang"
-	// with its progress, "Abbrechen" while it runs, and "Posteingang neu durchsuchen" in the menu.
+	// The one building block of every card on the page "Kanäle" (ADR-0026, addendum of 2026-09-30,
+	// plan kanal-karten KK-2): a header with symbol, name, kind and the state as lozenge, exactly one
+	// info line, at most one hint, exactly one main button that follows the state, all further
+	// actions in the menu "•••" (popover menu, ADR-0025 section 5) and the details, which fold open
+	// below (disclosure button). The kinds only configure it: ConnectionCard (calendar, Telegram,
+	// mailbox), NotionCard, OwnInboxCard, WhatsAppWebCard and FilesCard. Actions that belong to one
+	// entry of the details ("Widerrufen …" of a key, "Erneut abrufen" of a source) stand at that
+	// entry. Every action names the card for screen readers; the state is text. The card is
+	// opaque like every card (ADR-0029); only the menu is glass.
 	let {
-		connection,
-		secretStatus,
-		running,
-		helper = null,
-		lastRun = null,
+		icon,
+		title,
+		subtitle,
+		status = null,
+		info,
+		progress = null,
+		hint = null,
 		message = null,
-		onrun,
-		onpick,
-		onedit,
-		onpause,
-		ondelete,
-		onsetup,
-		onscan = () => undefined
+		busy = false,
+		primary,
+		menu = [],
+		details,
+		anchor
 	}: {
-		connection: Connection;
-		/** State of the variables; null while unknown. */
-		secretStatus: SecretStatus | null;
-		/** "Jetzt abrufen" is running. */
-		running: boolean;
-		/** Probe of the mail helper (mailboxes only); null while unknown. */
-		helper?: MailHelperStatus | null;
-		/** Answer of the last "Jetzt abrufen" on this page, or null. */
-		lastRun?: RunResult | null;
+		icon: ChannelIconKind;
+		/** Name of the card (heading). */
+		title: string;
+		/** Kind of the channel below the name, e.g. "Postfach · Gmail · anna@gmail.com". */
+		subtitle: string;
+		/** State as lozenge; null where the app does not know it (files, WhatsApp Web). */
+		status?: CardStatus | null;
+		/** The one info line, e.g. "Zuletzt abgerufen vor 5 Min. · 3 neu". */
+		info: string;
+		/** A bar below the info line while something runs in the background (scan of an inbox). */
+		progress?: { value: number; max: number } | null;
+		/** At most one compact hint (channelHealth), e.g. missing variables or the last error. */
+		hint?: { tone: 'info' | 'warning' | 'error'; text: string } | null;
 		/** Error of the last action of this card (inline, ADR-0009). */
 		message?: string | null;
-		onrun: () => void;
-		onpick: () => void;
-		onedit: () => void;
-		/** Pauses (false) or resumes (true) the connection. */
-		onpause: (enabled: boolean) => void;
-		ondelete: () => void;
-		/** Shows the setup of the kind of this connection. */
-		onsetup: () => void;
-		/** Mailbox: starts the full scan of the inbox again or cancels it. */
-		onscan?: (action: 'start' | 'cancel') => void;
+		/** The card loads (aria-busy); the info line says what. */
+		busy?: boolean;
+		/** The one main button. */
+		primary: CardAction;
+		/** Further actions in the menu "•••", in this order. */
+		menu?: CardAction[];
+		/** Folded details. */
+		details?: Snippet;
+		/**
+		 * ID of the card as target of a link (#verbindung-<id>); the page then focuses the card,
+		 * which every card allows by script (tabindex -1), never by Tab.
+		 */
+		anchor?: string;
 	} = $props();
-
-	const scan = $derived(connection.type === 'mail' ? (connection.scan ?? null) : null);
 
 	const uid = $props.id();
 	const headingId = `${uid}-name`;
+	const detailsId = `${uid}-details`;
 
-	const health = $derived(channelHealth(connection, secretStatus, running));
-	const kindLine = $derived(
-		[
-			connection.type === 'mail' ? 'Postfach' : CONNECTION_TYPE_LABELS[connection.type],
-			connection.type === 'mail' && connection.mailProvider !== ''
-				? MAIL_PROVIDER_LABELS[connection.mailProvider]
-				: null,
-			connection.type === 'mail' && connection.mailUser !== '' ? connection.mailUser : null
-		]
-			.filter((part): part is string => part !== null)
-			.join(' · ')
-	);
-	const lastRunText = $derived(
-		connection.lastRunAt === null ? 'noch nie' : formatBerlinDateTime(connection.lastRunAt)
-	);
-	const result = $derived(lastResultText(connection, lastRun));
-	const lastOk = $derived(
-		connection.lastOkAt !== null && connection.lastOkAt !== connection.lastRunAt
-			? formatBerlinDateTime(connection.lastOkAt)
-			: null
-	);
-	const icon = $derived(
-		connection.type === 'calendar'
-			? 'calendar'
-			: connection.type === 'telegram'
-				? 'telegram'
-				: 'mail'
-	);
+	let open = $state(false);
+
+	function run(action: CardAction) {
+		if (action.busy || action.locked) return;
+		action.onselect?.();
+	}
 </script>
 
 <article
 	class="channel-card"
-	id={connectionAnchor(connection.id)}
+	id={anchor}
 	tabindex="-1"
 	aria-labelledby={headingId}
-	data-state={health.state}
+	aria-busy={busy ? 'true' : undefined}
 >
 	<header class="head">
 		<ChannelIcon kind={icon} />
 		<div class="names">
-			<h4 id={headingId}>{connection.label}</h4>
-			<p class="kind">{kindLine}</p>
+			<h4 id={headingId}>{title}</h4>
+			<p class="kind">{subtitle}</p>
 		</div>
-		<Lozenge label={health.label} icon={health.icon} tone={health.tone} />
+		{#if status !== null}
+			<Lozenge label={status.label} icon={status.icon} tone={status.tone} />
+		{/if}
 	</header>
 
-	<dl class="meta">
-		<div>
-			<dt>Letzter Abruf</dt>
-			<dd>
-				{lastRunText}{#if lastOk !== null}<span class="ok">, zuletzt erfolgreich {lastOk}</span
-					>{/if}
-			</dd>
-		</div>
-		{#if result !== null}
-			<div>
-				<dt>Ergebnis</dt>
-				<dd>{result}</dd>
-			</div>
-		{/if}
-		<div>
-			<dt>Stichwörter</dt>
-			<dd>{keywordSummary(connection.keywords)}</dd>
-		</div>
-		{#if connection.type === 'mail'}
-			<div>
-				<dt>Hilfsprozess</dt>
-				<dd>{mailHelperText(helper)}</dd>
-			</div>
-			<div>
-				<dt>Automatisch</dt>
-				<dd>{MAIL_INBOX_HINT}</dd>
-			</div>
-			{#if scan !== null}
-				<div>
-					<dt>Posteingang</dt>
-					<dd>
-						{mailScanText(scan)}
-						{#if scan.state === 'running' && scan.total > 0}
-							<progress value={scan.done} max={scan.total} aria-hidden="true"></progress>
-						{/if}
-					</dd>
-				</div>
-			{/if}
-		{/if}
-	</dl>
-
-	{#if health.hint !== null}
-		<SectionMessage tone={health.hint.tone} compact>{health.hint.text}</SectionMessage>
+	<p class="info-line" role={busy ? 'status' : undefined}>{info}</p>
+	{#if progress !== null}
+		<progress value={progress.value} max={progress.max} aria-hidden="true"></progress>
+	{/if}
+	{#if hint !== null}
+		<SectionMessage tone={hint.tone} compact>{hint.text}</SectionMessage>
 	{/if}
 	{#if message !== null}
 		<SectionMessage tone="error" compact live>{message}</SectionMessage>
 	{/if}
 
 	<footer class="actions">
-		{#if health.action === 'resume'}
-			<button class="button-secondary" type="button" onclick={() => onpause(true)}>
-				Fortsetzen<span class="visually-hidden">: {connection.label}</span>
-			</button>
-		{:else if health.action === 'setup'}
-			<button class="button-secondary" type="button" onclick={onsetup}>
-				Einrichtung fortsetzen<span class="visually-hidden">: {connection.label}</span>
-			</button>
-		{:else if health.action === 'run'}
-			<button class="button-secondary" type="button" onclick={onrun}>
-				Jetzt abrufen<span class="visually-hidden">: {connection.label}</span>
-			</button>
-		{:else}
-			<button class="button-secondary" type="button" aria-disabled="true" aria-busy="true">
-				Wird abgerufen …<span class="visually-hidden">: {connection.label}</span>
-			</button>
-		{/if}
-		{#if scan?.state === 'running'}
-			<button class="button-secondary" type="button" onclick={() => onscan('cancel')}>
-				Abbrechen<span class="visually-hidden">: Durchsuchen von {connection.label}</span>
-			</button>
-		{/if}
-		{#if health.pick}
-			<button class="button-secondary" type="button" onclick={onpick}>
-				Aus dem Postfach wählen<span class="visually-hidden">: {connection.label}</span>
-			</button>
-		{/if}
-		<button class="button-secondary" type="button" aria-haspopup="dialog" onclick={onedit}>
-			Bearbeiten<span class="visually-hidden">: {connection.label}</span>
-		</button>
-		<span class="more">
-			<Popover
-				kind="menu"
-				label={`Weitere Aktionen für ${connection.label}`}
-				placement="bottom-end"
-				buttonClass="button-icon"
-				buttonLabel={`Weitere Aktionen für ${connection.label}`}
+		{#if primary.href !== undefined}
+			<a
+				class="button-secondary"
+				href={primary.href}
+				data-card-primary
+				data-sveltekit-keepfocus={primary.inPlace ? '' : undefined}
+				data-sveltekit-noscroll={primary.inPlace ? '' : undefined}
+				data-sveltekit-replacestate={primary.inPlace ? '' : undefined}
 			>
-				{#snippet button()}
-					<svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true" focusable="false">
-						<circle cx="3.5" cy="8" r="1.1" />
-						<circle cx="8" cy="8" r="1.1" />
-						<circle cx="12.5" cy="8" r="1.1" />
-					</svg>
-				{/snippet}
-				{#snippet children({ close })}
+				{primary.label}<span class="visually-hidden">: {title}</span>
+			</a>
+		{:else}
+			<button
+				class="button-secondary"
+				type="button"
+				data-card-primary
+				aria-haspopup={primary.dialog ? 'dialog' : undefined}
+				aria-disabled={primary.busy || primary.locked ? 'true' : undefined}
+				aria-busy={primary.busy ? 'true' : undefined}
+				onclick={() => run(primary)}
+			>
+				{primary.label}<span class="visually-hidden">: {title}</span>
+			</button>
+		{/if}
+		{#if details !== undefined || menu.length > 0}
+			<span class="more">
+				{#if details !== undefined}
 					<button
+						class="button-subtle toggle"
 						type="button"
-						role="menuitem"
-						tabindex="-1"
-						onclick={() => {
-							close();
-							onpause(!connection.enabled);
-						}}
+						aria-expanded={open}
+						aria-controls={detailsId}
+						onclick={() => (open = !open)}
 					>
-						{connection.enabled ? 'Pausieren' : 'Fortsetzen'}
-					</button>
-					<button
-						type="button"
-						role="menuitem"
-						tabindex="-1"
-						onclick={() => {
-							close();
-							onsetup();
-						}}
-					>
-						Einrichtung ansehen
-					</button>
-					{#if health.pick && connection.enabled}
-						<button
-							type="button"
-							role="menuitem"
-							tabindex="-1"
-							onclick={() => {
-								close();
-								onscan('start');
-							}}
+						Details<span class="visually-hidden">: {title}</span>
+						<svg
+							class="chevron"
+							viewBox="0 0 16 16"
+							width="12"
+							height="12"
+							aria-hidden="true"
+							focusable="false"
 						>
-							Posteingang neu durchsuchen
-						</button>
-					{/if}
-					<div role="separator"></div>
-					<button
-						type="button"
-						role="menuitem"
-						tabindex="-1"
-						aria-haspopup="dialog"
-						onclick={() => {
-							close();
-							ondelete();
-						}}
-					>
-						Löschen …
+							<path d="M4 6l4 4 4-4" />
+						</svg>
 					</button>
-				{/snippet}
-			</Popover>
-		</span>
+				{/if}
+				{#if menu.length > 0}
+					<Popover
+						kind="menu"
+						label={`Weitere Aktionen für ${title}`}
+						placement="bottom-end"
+						buttonClass="button-icon"
+						buttonLabel={`Weitere Aktionen für ${title}`}
+					>
+						{#snippet button()}
+							<svg
+								class="dots"
+								viewBox="0 0 16 16"
+								width="16"
+								height="16"
+								aria-hidden="true"
+								focusable="false"
+							>
+								<circle cx="3.5" cy="8" r="1.1" />
+								<circle cx="8" cy="8" r="1.1" />
+								<circle cx="12.5" cy="8" r="1.1" />
+							</svg>
+						{/snippet}
+						{#snippet children({ close })}
+							{#each menu as item (item.label)}
+								{#if item.separated}
+									<div role="separator"></div>
+								{/if}
+								{#if item.href !== undefined}
+									<a role="menuitem" tabindex="-1" href={item.href} onclick={close}>{item.label}</a>
+								{:else}
+									<button
+										type="button"
+										role="menuitem"
+										tabindex="-1"
+										aria-haspopup={item.dialog ? 'dialog' : undefined}
+										aria-disabled={item.busy || item.locked ? 'true' : undefined}
+										aria-busy={item.busy ? 'true' : undefined}
+										onclick={() => {
+											if (item.busy || item.locked) return;
+											close();
+											run(item);
+										}}
+									>
+										{item.label}
+									</button>
+								{/if}
+							{/each}
+						{/snippet}
+					</Popover>
+				{/if}
+			</span>
+		{/if}
 	</footer>
+
+	{#if details !== undefined}
+		<div class="details" id={detailsId} hidden={!open}>
+			{@render details()}
+		</div>
+	{/if}
 </article>
 
 <style>
 	.channel-card {
 		display: grid;
-		grid-template-rows: auto auto auto 1fr;
 		gap: 0.75rem;
 		min-width: 0;
 		padding: 1rem;
@@ -290,47 +257,28 @@
 	}
 
 	h4 {
-		font-size: 0.9375rem;
+		font-size: var(--font-size-body);
 		font-weight: 600;
 		overflow-wrap: anywhere;
 	}
 
 	.kind {
-		font-size: 0.8125rem;
+		font-size: var(--font-size-control);
 		color: var(--color-text-muted);
 		overflow-wrap: anywhere;
 	}
 
-	.meta {
-		display: grid;
-		gap: 0.25rem;
-		font-size: 0.8125rem;
-	}
-
-	.meta div {
-		display: grid;
-		grid-template-columns: 7rem minmax(0, 1fr);
-		gap: 0.5rem;
-	}
-
-	dt {
-		color: var(--color-text-muted);
-	}
-
-	dd {
+	.info-line {
+		font-size: var(--font-size-control);
+		font-variant-numeric: tabular-nums;
 		overflow-wrap: anywhere;
 	}
 
-	.ok {
-		color: var(--color-text-muted);
-	}
-
-	/* Progress of the full scan; the text next to it says the numbers. */
+	/* Progress of a background run (scan of an inbox); the info line says the numbers. */
 	progress {
 		display: block;
 		inline-size: 100%;
 		block-size: 0.375rem;
-		margin-top: 0.25rem;
 		accent-color: var(--color-brand);
 	}
 
@@ -338,16 +286,72 @@
 		display: flex;
 		flex-wrap: wrap;
 		gap: 0.5rem;
-		align-items: flex-end;
-		align-self: end;
+		align-items: center;
 	}
 
 	.more {
 		display: inline-flex;
+		gap: 0.25rem;
+		align-items: center;
 		margin-left: auto;
 	}
 
-	.more svg {
+	.dots {
 		fill: currentColor;
+	}
+
+	.toggle {
+		font-size: var(--font-size-control);
+	}
+
+	.chevron {
+		fill: none;
+		stroke: currentColor;
+		stroke-width: 1.5;
+		stroke-linecap: round;
+		stroke-linejoin: round;
+		transition: rotate var(--motion-fast) var(--motion-ease);
+	}
+
+	.toggle[aria-expanded='true'] .chevron {
+		rotate: 180deg;
+	}
+
+	@media (prefers-reduced-motion: reduce) {
+		.chevron {
+			transition: none;
+		}
+	}
+
+	/* The details of every card look alike: rows of name and value, lists, short text. */
+	.details {
+		display: grid;
+		gap: 0.75rem;
+		padding-top: 0.75rem;
+		font-size: var(--font-size-control);
+		border-top: 1px solid var(--color-line);
+	}
+
+	.details[hidden] {
+		display: none;
+	}
+
+	.details :global(dl) {
+		display: grid;
+		gap: 0.25rem;
+	}
+
+	.details :global(dl > div) {
+		display: grid;
+		grid-template-columns: 7rem minmax(0, 1fr);
+		gap: 0.5rem;
+	}
+
+	.details :global(dt) {
+		color: var(--color-text-muted);
+	}
+
+	.details :global(dd) {
+		overflow-wrap: anywhere;
 	}
 </style>

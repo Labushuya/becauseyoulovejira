@@ -102,6 +102,19 @@ describe('help page (EH-9)', () => {
 		);
 	});
 
+	it('describes the channel cards: state, one line, one button, the menu "•••" and details (KK-2)', () => {
+		render(Page);
+		const content = text(screen.getByRole('region', { name: 'Kanäle und Zugangsdaten' }));
+		expect(content).toMatch(
+			/„Verbunden“, „Pausiert“,\s*„Fehler“, „Einrichtung offen“ oder „Neustart nötig“/
+		);
+		expect(content).toMatch(/Zuletzt\s+abgerufen vor 5 Min\. · 3 neu/);
+		expect(content).toMatch(/Menü „•••“/);
+		expect(content).toMatch(/unter „Details“/);
+		expect(content).toMatch(/steht nicht mehr auf „Einrichtung offen“/);
+		expect(content).not.toMatch(/Nicht eingerichtet/);
+	});
+
 	it('answers the frequent questions in folded details', () => {
 		const { container } = render(Page);
 		const section = screen.getByRole('region', { name: 'Häufige Fragen' });
