@@ -66,6 +66,8 @@ const mocks = vi.hoisted(() => ({
 	tickets: {
 		markRead: vi.fn(async () => undefined),
 		today: '2026-09-25',
+		// Open tickets for the open instances of a series ("Wiederholt sich").
+		open: [] as unknown[],
 		upsert: vi.fn(),
 		find: () => null,
 		subtasksOf: () => [],
@@ -1378,11 +1380,14 @@ describe('ticket route: full view (ADR-0025 section 7, UI-7)', () => {
 
 	type Guard = (navigation: BeforeNavigate) => void;
 
-	async function renderFullView(initial?: Ticket, openMode?: TicketOpenModeStore) {
+	async function renderFullView(
+		initial?: Ticket,
+		openMode?: TicketOpenModeStore,
+		activity: TicketActivityStore = activityStore()
+	) {
 		mocks.page.url = new URL(`http://localhost:3000/tickets/${ID}/voll?erledigte=1`);
 		mocks.page.route = { id: FULL_ROUTE };
 		const context = createStore(initial);
-		const activity = activityStore();
 		mocks.detail = context.store;
 		mocks.activity = activity;
 		mocks.beforeNavigate.mockClear();
@@ -1704,5 +1709,181 @@ describe('ticket route: full view (ADR-0025 section 7, UI-7)', () => {
 		expect(screen.getByRole('dialog')).toBe(dialog);
 		expect(data.delete).not.toHaveBeenCalled();
 		expect(mocks.goto).not.toHaveBeenCalled();
+	});
+
+	// ADR-0025 section 3, addendum 16: no dialog from the full view. Forms unfold inline where they
+	// were asked for, questions stand inline; Escape closes them first and is consumed, so the full
+	// view stays, and the focus goes back to the button that opened them.
+	describe('no dialog from the full view (ADR-0025 addendum 16)', () => {
+		it('unfolds "Wiederholen…" inline in the card, closes it with Escape and "Abbrechen"', async () => {
+			const { dialog } = await renderFullView();
+			const card = within(dialog).getByRole('region', { name: 'Wiederholung' });
+			const trigger = within(card).getByRole('button', { name: 'Wiederholen…' });
+			expect(trigger.getAttribute('aria-haspopup')).toBeNull();
+			expect(trigger.getAttribute('aria-expanded')).toBe('false');
+			trigger.focus();
+			await fireEvent.click(trigger);
+			await tick();
+
+			expect(screen.getAllByRole('dialog')).toEqual([dialog]);
+			const area = within(card).getByRole('region', { name: 'Wiederholen…' });
+			expect(trigger.getAttribute('aria-expanded')).toBe('true');
+			expect(within(area).getByRole('button', { name: 'Wiederholung anlegen' })).toBeTruthy();
+			await vi.waitFor(() =>
+				expect(document.activeElement).toBe(
+					within(area).getByRole('radio', { name: 'Fester Rhythmus' })
+				)
+			);
+
+			const escape = new KeyboardEvent('keydown', {
+				key: 'Escape',
+				bubbles: true,
+				cancelable: true
+			});
+			document.activeElement?.dispatchEvent(escape);
+			await tick();
+			await tick();
+			expect(escape.defaultPrevented).toBe(true);
+			expect(within(card).queryByRole('region', { name: 'Wiederholen…' })).toBeNull();
+			expect(dialog.open).toBe(true);
+			expect(mocks.goto).not.toHaveBeenCalled();
+			await vi.waitFor(() => expect(document.activeElement).toBe(trigger));
+
+			await fireEvent.click(trigger);
+			await tick();
+			const again = within(card).getByRole('region', { name: 'Wiederholen…' });
+			await fireEvent.click(within(again).getByRole('button', { name: 'Abbrechen' }));
+			await tick();
+			await tick();
+			expect(within(card).queryByRole('region', { name: 'Wiederholen…' })).toBeNull();
+			await vi.waitFor(() => expect(document.activeElement).toBe(trigger));
+		});
+
+		it('creates the rule inline and puts the focus on "Regel bearbeiten" of the new series', async () => {
+			const rules = getRecurrenceStore();
+			const created = {
+				id: 'rule00000000009',
+				title: 'Steuererklärung',
+				description: '',
+				projectId: null,
+				tagIds: [],
+				priority: 'high' as const,
+				mode: 'calendar' as const,
+				freq: 'weekly' as const,
+				interval: 1,
+				weekdays: ['TH' as const],
+				monthDay: null,
+				anchor: '2026-10-01',
+				leadDays: 3,
+				nextDue: '2026-10-08',
+				lastGeneratedAt: null,
+				active: true,
+				lastHint: '',
+				created: '2026-09-25 10:00:00.000Z',
+				updated: '2026-09-25 10:00:00.000Z'
+			};
+			const repeat = vi.spyOn(rules, 'repeat').mockImplementation(async () => {
+				rules.upsert(created);
+				return { ok: true, value: created };
+			});
+			try {
+				const { dialog } = await renderFullView();
+				const card = within(dialog).getByRole('region', { name: 'Wiederholung' });
+				const trigger = within(card).getByRole('button', { name: 'Wiederholen…' });
+				// A browser focuses the button on the click; it gives way to the series afterwards.
+				trigger.focus();
+				await fireEvent.click(trigger);
+				const area = within(card).getByRole('region', { name: 'Wiederholen…' });
+				await fireEvent.click(within(area).getByRole('button', { name: 'Wiederholung anlegen' }));
+
+				await vi.waitFor(() => expect(repeat).toHaveBeenCalledOnce());
+				await vi.waitFor(() =>
+					expect(document.activeElement).toBe(
+						within(card).getByRole('button', { name: 'Regel bearbeiten' })
+					)
+				);
+				expect(within(card).queryByRole('region', { name: 'Wiederholen…' })).toBeNull();
+				expect(screen.getAllByRole('dialog')).toEqual([dialog]);
+			} finally {
+				repeat.mockRestore();
+				rules.remove(created.id);
+			}
+		});
+
+		it('unfolds "Quelle hinzufügen …" inline below the heading of the sources', async () => {
+			const { dialog } = await renderFullView();
+			const sources = within(dialog).getByRole('region', { name: 'Quellen' });
+			const trigger = within(sources).getByRole('button', { name: 'Quelle hinzufügen …' });
+			trigger.focus();
+			await fireEvent.click(trigger);
+			await tick();
+
+			expect(screen.getAllByRole('dialog')).toEqual([dialog]);
+			const area = within(sources).getByRole('region', { name: 'Quelle hinzufügen' });
+			expect(trigger.getAttribute('aria-expanded')).toBe('true');
+			expect(within(area).getByText('Keine neuen Einträge')).toBeTruthy();
+			await fireEvent.keyDown(within(area).getByRole('button', { name: 'Abbrechen' }), {
+				key: 'Escape'
+			});
+			await tick();
+			await tick();
+			expect(within(sources).queryByRole('region', { name: 'Quelle hinzufügen' })).toBeNull();
+			expect(dialog.open).toBe(true);
+			await vi.waitFor(() => expect(document.activeElement).toBe(trigger));
+		});
+
+		it('asks before deleting a comment inline, with the focus on "Abbrechen" and Escape', async () => {
+			const comment = {
+				id: 'comment00000001',
+				ticket: ID,
+				author: 'me',
+				body: 'Belege liegen im Ordner.',
+				created: '2026-09-02 12:00:00.000Z',
+				updated: '2026-09-02 12:00:00.000Z'
+			};
+			const data = {
+				listComments: vi.fn(async () => [comment]),
+				createComment: vi.fn(),
+				updateComment: vi.fn(),
+				deleteComment: vi.fn(async () => undefined),
+				listHistory: vi.fn(async () => [])
+			} satisfies TicketActivityData;
+			const activity = new TicketActivityStore(
+				data,
+				{ ensureValid: () => true, logout: vi.fn() },
+				() => 'me'
+			);
+			const { dialog } = await renderFullView(undefined, undefined, activity);
+			const remove = await within(dialog).findByRole('button', { name: /^Löschen: Kommentar/ });
+			remove.focus();
+			await fireEvent.click(remove);
+			await tick();
+
+			expect(screen.getAllByRole('dialog')).toEqual([dialog]);
+			const question = within(dialog).getByRole('group', { name: 'Kommentar löschen?' });
+			expect(within(question).getByText(/wird endgültig gelöscht/)).toBeTruthy();
+			await vi.waitFor(() =>
+				expect(document.activeElement).toBe(
+					within(question).getByRole('button', { name: 'Abbrechen' })
+				)
+			);
+			await fireEvent.keyDown(document.activeElement as HTMLElement, { key: 'Escape' });
+			await tick();
+			await tick();
+			expect(within(dialog).queryByRole('group', { name: 'Kommentar löschen?' })).toBeNull();
+			expect(dialog.open).toBe(true);
+			await vi.waitFor(() => expect(document.activeElement).toBe(remove));
+
+			await fireEvent.click(remove);
+			await tick();
+			await fireEvent.click(
+				within(within(dialog).getByRole('group', { name: 'Kommentar löschen?' })).getByRole(
+					'button',
+					{ name: 'Löschen' }
+				)
+			);
+			await vi.waitFor(() => expect(data.deleteComment).toHaveBeenCalledWith(comment.id));
+			expect(screen.getAllByRole('dialog')).toEqual([dialog]);
+		});
 	});
 });

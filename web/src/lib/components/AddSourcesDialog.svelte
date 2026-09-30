@@ -1,15 +1,19 @@
 <script lang="ts">
 	import { normalizeTitle, type InboxItemSummary } from '$lib/domain/inbox';
 	import { sourceChannelLabel, sourceOrigin, sourceWhen } from '$lib/domain/sources';
+	import { insideModal } from '$lib/overlay/modal-context';
 	import type { TicketSourcesStore } from '$lib/stores/ticket-sources.svelte';
 	import EmptyState from './guidance/EmptyState.svelte';
 	import ErrorIcon from './ErrorIcon.svelte';
+	import InlineDialog from './InlineDialog.svelte';
 	import Modal from './overlay/Modal.svelte';
 
 	// "Quelle hinzufügen …" in the ticket (ADR-0031 section 7): choose new entries of the inbox and
 	// link them to this ticket, the same way as "Mit Ticket verknüpfen …" in the inbox. Modal M with
 	// a search over title, sender, chat and address and one checkbox per entry. Without failures
 	// the dialog closes (the flag names the result); failed entries stay chosen with their reason.
+	// Inside a modal (the full view) the same form unfolds inline where the owner renders it
+	// (ADR-0025 section 3, addendum 16).
 	let {
 		ticket,
 		candidates,
@@ -23,6 +27,7 @@
 		onclose: () => void;
 	} = $props();
 
+	const inline = insideModal();
 	const uid = $props.id();
 	const formId = `${uid}-form`;
 	const searchId = `${uid}-search`;
@@ -70,7 +75,7 @@
 	}
 </script>
 
-<Modal open size="m" title="Quelle hinzufügen" {busy} onclose={() => onclose()}>
+{#snippet content()}
 	{#if candidates.length === 0}
 		<EmptyState
 			size="compact"
@@ -141,18 +146,34 @@
 			{/if}
 		</form>
 	{/if}
+{/snippet}
 
-	{#snippet footer({ close })}
-		<button class="button-secondary" type="button" aria-disabled={busy} onclick={close}>
-			{failures.length > 0 ? 'Schließen' : 'Abbrechen'}
+{#snippet buttons({ close }: { close: () => void })}
+	<button class="button-secondary" type="button" aria-disabled={busy} onclick={close}>
+		{failures.length > 0 ? 'Schließen' : 'Abbrechen'}
+	</button>
+	{#if candidates.length > 0}
+		<button
+			class="button-primary"
+			type="submit"
+			form={formId}
+			aria-disabled={busy}
+			aria-busy={busy ? 'true' : undefined}
+		>
+			{busy ? 'Wird verknüpft …' : `Verknüpfen${chosen.length > 0 ? ` (${chosen.length})` : ''}`}
 		</button>
-		{#if candidates.length > 0}
-			<button class="button-primary" type="submit" form={formId} aria-disabled={busy}>
-				{busy ? 'Wird verknüpft …' : `Verknüpfen${chosen.length > 0 ? ` (${chosen.length})` : ''}`}
-			</button>
-		{/if}
-	{/snippet}
-</Modal>
+	{/if}
+{/snippet}
+
+{#if inline}
+	<InlineDialog open title="Quelle hinzufügen" {busy} onclose={() => onclose()} footer={buttons}>
+		{@render content()}
+	</InlineDialog>
+{:else}
+	<Modal open size="m" title="Quelle hinzufügen" {busy} onclose={() => onclose()} footer={buttons}>
+		{@render content()}
+	</Modal>
+{/if}
 
 <style>
 	.form {

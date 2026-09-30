@@ -13,7 +13,8 @@
 		skippedText,
 		SKIPPED_FIELD,
 		type OpenInstance,
-		type RecurrenceFormValues
+		type RecurrenceFormValues,
+		type RecurrenceRule
 	} from '$lib/domain/recurrence-rule';
 	import {
 		DEFAULT_TEMPLATE_STATUS,
@@ -27,6 +28,7 @@
 	import type { HistoryEntry, ProjectRef, TagRef, Ticket } from '$lib/domain/ticket';
 	import type { EditResult } from '$lib/stores/catalog-editor';
 	import type { EnsureTagResult } from '$lib/stores/catalog.svelte';
+	import { insideModal } from '$lib/overlay/modal-context';
 	import { RECURRENCE_UNAVAILABLE, type RecurrenceStore } from '$lib/stores/recurrence.svelte';
 	import ErrorIcon from './ErrorIcon.svelte';
 	import SectionMessage from './guidance/SectionMessage.svelte';
@@ -52,6 +54,8 @@
 	// opens at once, after a failed conversion the panel shows why and offers the prepared dialog.
 	// "Wiederholen…" asks with which status the next tickets start (ADR-0022 addendum 9), without
 	// an answer in advance; only an answer the user gave before the failed rule comes prepared.
+	// In the side panel "Wiederholen…" and "Regel bearbeiten" open a modal; in the full view (itself
+	// a modal) they unfold inline in this section (ADR-0025 section 3, addendum 16).
 	// The template of the series (plan WV): "Künftige Tickets: Priorität Hoch · …" with
 	// "Bearbeiten", which edits it inline here, not in a dialog (the full view is one already,
 	// ADR-0025 section 3). Its draft lives in the store, so panel and full view share it and leaving
@@ -101,9 +105,18 @@
 	);
 	let busy = $state(false);
 	let error = $state<string | null>(initialOffer?.message ?? null);
+	/** In the full view (a modal) "Wiederholen…" and "Regel bearbeiten" unfold inline. */
+	const inline = insideModal();
+	let ruleButton = $state<HTMLButtonElement>();
+
+	/** Opens a dialog; inline the button unfolds and folds its area. */
+	function openDialog(kind: 'create' | 'edit') {
+		dialog = inline && dialog === kind ? null : kind;
+	}
 
 	// The modal returns the focus to its opener, or to the heading of the view when the opener is
-	// gone (after "Wiederholen…" the button gives way to the summary; ADR-0025 section 3).
+	// gone (after "Wiederholen…" the button gives way to the summary; ADR-0025 section 3). Inline
+	// the focus goes to "Regel bearbeiten" then.
 	function closeDialog() {
 		dialog = null;
 	}
@@ -360,8 +373,10 @@
 				<button
 					class="small"
 					type="button"
-					aria-haspopup="dialog"
-					onclick={() => (dialog = 'edit')}
+					aria-haspopup={inline ? undefined : 'dialog'}
+					aria-expanded={inline ? dialog === 'edit' : undefined}
+					bind:this={ruleButton}
+					onclick={() => openDialog('edit')}
 				>
 					Regel bearbeiten
 				</button>
@@ -381,16 +396,37 @@
 	{:else if store.state === 'unavailable'}
 		<SectionMessage tone="info" compact>{RECURRENCE_UNAVAILABLE}</SectionMessage>
 	{:else if ticket.status !== 'done'}
-		<button class="small" type="button" aria-haspopup="dialog" onclick={() => (dialog = 'create')}>
+		<button
+			class="small"
+			type="button"
+			aria-haspopup={inline ? undefined : 'dialog'}
+			aria-expanded={inline ? dialog === 'create' : undefined}
+			onclick={() => openDialog('create')}
+		>
 			Wiederholen…
 		</button>
 	{/if}
 	{#if error}
 		<div class="alert-error" role="alert"><ErrorIcon /><span>{error}</span></div>
 	{/if}
+	{#if inline}
+		{@render dialogs()}
+	{/if}
 </section>
 
-{#if dialog === 'create'}
+{#if !inline}
+	{@render dialogs()}
+{/if}
+
+{#snippet dialogs()}
+	{#if dialog === 'create'}
+		{@render createDialog()}
+	{:else if dialog === 'edit' && rule !== null}
+		{@render editDialog(rule)}
+	{/if}
+{/snippet}
+
+{#snippet createDialog()}
 	<RecurrenceDialog
 		heading="Wiederholen…"
 		initial={prepared?.values ?? defaultFormValues(ticket.due, today)}
@@ -403,11 +439,13 @@
 		ticketStatus={ticket.status}
 		initialStatus={prepared?.initialStatus ?? null}
 		submitLabel="Wiederholung anlegen"
+		returnFocus={() => ruleButton}
 		onsave={repeat}
 		onclose={closeDialog}
 	/>
-{:else if dialog === 'edit' && rule !== null}
-	{@const current = rule}
+{/snippet}
+
+{#snippet editDialog(current: RecurrenceRule)}
 	<RecurrenceDialog
 		heading="Regel bearbeiten"
 		initial={formValuesOf(current, today)}
@@ -419,7 +457,7 @@
 		onsave={(values) => store.saveRhythm(current.id, values)}
 		onclose={closeDialog}
 	/>
-{/if}
+{/snippet}
 
 <style>
 	.recurrence {

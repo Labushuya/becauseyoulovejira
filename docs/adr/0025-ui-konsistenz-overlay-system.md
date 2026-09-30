@@ -1,6 +1,6 @@
 # ADR-0025: UI-Konsistenz – ein Overlay-System, Theme-Umschalter und angeglichene Projekt-UI
 
-- **Status:** Angenommen; §2 („Kein Schatten-Token“) teilweise ersetzt durch [ADR-0029](0029-glas-materialien.md), siehe Nachtrag 13; §11 präzisiert durch [ADR-0030](0030-spalten-breiten-und-kompakte-zeilen.md), siehe Nachtrag 14; §7 präzisiert durch [ADR-0036](0036-sammelbearbeitung-inline-und-oeffnungsmodus.md), siehe Nachtrag 15
+- **Status:** Angenommen; §2 („Kein Schatten-Token“) teilweise ersetzt durch [ADR-0029](0029-glas-materialien.md), siehe Nachtrag 13; §11 präzisiert durch [ADR-0030](0030-spalten-breiten-und-kompakte-zeilen.md), siehe Nachtrag 14; §7 präzisiert durch [ADR-0036](0036-sammelbearbeitung-inline-und-oeffnungsmodus.md), siehe Nachtrag 15; §3 und §4 („kein Dialog aus einem Dialog“) präzisiert durch Nachtrag 16
 - **Datum:** 2026-09-25
 - **Entscheidung durch:** Nutzer (Fragen 1 bis 4 in Abschnitt 9, 2026-09-25), Advisor (übrige Festlegungen)
 - **Ersetzt teilweise:** [ADR-0010](0010-layout-nach-task-board.md) §1 (Reihenfolge der Leisten, 5 s „Rückgängig“ in der Zeile) und §2 (Aufbau des Detail-Panels, Vollansicht)
@@ -172,6 +172,36 @@ Präzisiert Abschnitt 7, ohne die Nutzerentscheidung 2 aufzuheben: Die Vollansic
 - Auf `/voll` ist das Panel nicht gemountet; die Liste steht in voller Breite hinter dem Modal. Panel und Vollansicht erscheinen nie zugleich, auch nicht über Zurück und Vor.
 - ×, Esc und Schleier führen zur Liste ohne Panel, der Fokus geht auf die Zeile des Tickets. Unter 64rem bleibt es beim Weg zurück ins Panel mit Fokus auf „Vollansicht“.
 - Neu im Kopf der Vollansicht: „Im Seitenpanel öffnen“ vor dem ×, das Gegenstück zu „Vollansicht“ im Panel. Beide Knöpfe merken die Wahl pro Gerät; Ticket-Links der App öffnen danach im gemerkten Modus.
+
+### 16. Nachtrag (2026-09-30, Paket KD): Kein Dialog aus einem Dialog – eingebettet in der Vollansicht, Wächter im Overlay-System
+
+Präzisiert §3 („Stapel: höchstens ein Modal; kein Dialog aus einem Dialog“) und §4 („In einem Modal wird keine Bestätigung gestapelt“). **Befund:** Die Vollansicht (XL-Modal, `/tickets/<id>/voll`) öffnete für „Wiederholen…“ und „Regel bearbeiten“ ein weiteres Modal; die Inventur fand drei weitere Stellen.
+
+**Inventur** (Suche nach `<Modal`, `<ConfirmDialog`, `<FullView`, `<Drawer` und den Aufrufketten über die Importe aller Komponenten; alt → neu):
+
+| Ort | Auslöser | vorher | jetzt |
+|---|---|---|---|
+| Vollansicht → `RecurrenceSummary` | „Wiederholen…“ | `RecurrenceDialog` (Modal M) über der Vollansicht | eingebetteter Bereich im Abschnitt „Wiederholung“ (`InlineDialog`), gleiches Formular samt „Folgetickets starten mit“ |
+| Vollansicht → `RecurrenceSummary` | „Regel bearbeiten“ | `RecurrenceDialog` (Modal M) | eingebetteter Bereich im Abschnitt |
+| Vollansicht → `TicketSources` | „Quelle hinzufügen …“ | `AddSourcesDialog` (Modal M) | eingebetteter Bereich unter der Überschrift „Quellen“ |
+| Vollansicht → `TicketSources` | „Anderem Ticket zuordnen …“ | `MoveSourceDialog` (Modal M) | eingebetteter Bereich unter dem Eintrag |
+| Vollansicht → `TicketActivity` → `CommentList` → `CommentItem` | „Löschen“ eines Kommentars | `ConfirmDialog` (Modal S) | Inline-Frage (`SectionMessage` warning) unter dem Kommentar |
+| Vollansicht | „Löschen …“ des Tickets | schon inline (`TicketDeleteQuestion`, UA-3) | unverändert |
+| Vollansicht | „Änderungen verwerfen?“ beim Verlassen | schon inline (`TicketLeaveQuestion`) | unverändert |
+| Vollansicht | Beschreibung geändert, Erledigen mit Unteraufgaben, Wiedereröffnen, Rückstand, Vorlage bearbeiten | schon inline | unverändert |
+
+Keine weiteren Fundstellen: Die übrigen Modals (Assistenten, Importe, Stichwörter, Sammelaktionen, Zugangsschlüssel, Postfach-Auswahl, Tastaturkürzel, Schnellerfassung) öffnen aus ihrem Inhalt kein weiteres Modal; wo eine Komponente mehrere hält (`BulkActionBar`, `OwnInboxCard`, `ConnectionsSection`, Ticket-Route), stehen sie nebeneinander und gehen nur aus der Seite auf. Popover (Menüs, Vorschlagslisten, Link-Popover des Editors) sind keine Dialoge im Sinn dieser Regel und bleiben in Modals erlaubt.
+
+**Welcher Baustein wo:**
+
+- **Seitenpanel (Drawer):** nicht modal (§6), daher dürfen „Wiederholen…“, „Regel bearbeiten“, „Quelle hinzufügen …“, „Anderem Ticket zuordnen …“ und alle Bestätigungen dort weiter als Modal bzw. `ConfirmDialog` aufgehen; unverändert.
+- **Modal und Vollansicht:** Jedes Modal markiert die Komponenten darunter über einen Kontext (`lib/overlay/modal-context.ts`, gesetzt in `Modal.svelte`, also auch für Bestätigung und Vollansicht). Eine Komponente, die sonst ein Modal öffnet, fragt `insideModal()` und zeigt Formulare als **eingebetteten Bereich** (`components/InlineDialog.svelte`: Rahmen wie der Editor der Vorlage aus WV, Überschrift, Inhalt, Knöpfe; kein Schleier, keine Fokusfalle, kein Overlay-Baustein im Sinn von §1). Der `ConfirmDialog` selbst wird in einem Modal-Kontext zur **Inline-Frage**: `SectionMessage` warning mit der Frage als Titel, Text, Optionen, Fehler und den Knöpfen „Abbrechen“ und Verb (kein Rot, ADR-0009). Die Auslöser tragen dort `aria-expanded` statt `aria-haspopup="dialog"` und klappen den Bereich auch wieder zu.
+- **Fokus und Esc:** Beim Öffnen geht der Fokus wie im Modal auf `initialFocus` bzw. das erste Element (bei „Wiederholen…“ die gewählte Art, bei der Frage „Abbrechen“), beim Schließen zurück zum Auslöser; fehlt er (nach „Wiederholen…“ weicht der Knopf der Serie, nach dem Zuordnen der Eintrag), auf „Regel bearbeiten“ bzw. „Quelle hinzufügen …“. Esc schließt zuerst den Bereich bzw. die Frage, wird verbraucht (`preventDefault`, `stopPropagation`), und die Vollansicht bleibt; ein Element darin, das Esc selbst nutzt (Vorschlagsliste, Editor), geht vor. Eine laufende Aktion sperrt jeden Weg (`aria-busy`), wie im Modal.
+- **„Änderungen verwerfen?“:** unverändert. Die Frage beim Verlassen des Tickets (Panel: Bestätigung, Vollansicht: inline) gilt weiter für Beschreibung, Kommentare, Tag-Text und Vorlage. Die eingebetteten Formulare verhalten sich wie ihre Modals, die keine Verwerfen-Frage haben: „Abbrechen“ und Esc verwerfen ohne Rückfrage.
+
+**Absicherung (Wächter statt statischer Liste):** `Modal.svelte` meldet, wenn es in einem Modal-Kontext geöffnet wird (beim Einhängen schon offen oder später geöffnet): `reportNestedModal` wirft im Testmodus von Vite (`NestedModalError` mit beiden Titeln) und schreibt in der App nur einen festen Text ohne Titel in die Konsole des Browsers, damit keine Inhalte eines Tickets dort landen und der Nutzer nie festsitzt (das Modal geht dann trotzdem auf). Dadurch schlägt **jeder** Komponententest fehl, der eine solche Stelle erreicht, auch künftige, ohne eine Liste pflegen zu müssen. Belegt in `modal-context.test.ts` (Werfen, Loggen, geschlossenes Modal darf im offenen stehen, offen beim Einhängen und später geöffnet werden abgelehnt) und für die Fundstellen in `ticket-panel.test.ts` (echte Vollansicht: genau ein Dialog, Bereich im Abschnitt, Fokus, Esc, Kommentar-Frage), `recurrence-summary.test.ts` und `ticket-sources.test.ts` (Komponenten in einem offenen Modal, `InModalHarness`).
+
+**Verworfen:** ein statischer Test über die Importe (die Komponenten importieren ihre Modals zu Recht für das Panel; er hätte eine gepflegte Ausnahmeliste gebraucht und dynamische Zusammensetzung über Snippets nicht gesehen); ein Modal, das sich in einem Modal selbst einbettet (hätte jede künftige Stelle unbemerkt eingebettet, auch große Dialoge in die schmale Spalte der Vollansicht, und die Regel verdeckt statt sichtbar gemacht); ein zusätzliches Merken ungespeicherter Eingaben der eingebetteten Formulare für die Frage beim Verlassen (ihre Modals fragen auch nicht; ein eigener Weg ohne Nutzen gegenüber „Abbrechen“).
 
 ## Alternativen
 

@@ -11,6 +11,7 @@
 	import type { Ticket } from '$lib/domain/ticket';
 	import type { TicketPickerSource } from '$lib/stores/ticket-picker.svelte';
 	import type { TicketSourcesStore } from '$lib/stores/ticket-sources.svelte';
+	import { insideModal } from '$lib/overlay/modal-context';
 	import { inboxItemHref } from '$lib/ticket-links';
 	import AddSourcesDialog from './AddSourcesDialog.svelte';
 	import ErrorIcon from './ErrorIcon.svelte';
@@ -26,7 +27,9 @@
 	// inbox), the original file and "Lösen" (not for the main source) as named icon buttons, so the
 	// row fits the 480 px panel. "Quelle hinzufügen …" chooses new entries of the inbox.
 	// "Anderem Ticket zuordnen …" (ADR-0031 addendum) moves an entry directly to another ticket;
-	// the main source stays and says why.
+	// the main source stays and says why. Both open a modal in the side panel; in the full view
+	// (itself a modal) they unfold inline: "Quelle hinzufügen …" below the heading, "Anderem Ticket
+	// zuordnen …" below its entry (ADR-0025 section 3, addendum 16).
 	let {
 		ticket,
 		store,
@@ -43,8 +46,11 @@
 
 	const uid = $props.id();
 	const headingId = `${uid}-heading`;
+	/** In the full view (a modal) both forms unfold inline instead of opening a dialog. */
+	const inline = insideModal();
 
 	let adding = $state(false);
+	let addButton = $state<HTMLButtonElement>();
 	/** Entry of the dialog "Anderem Ticket zuordnen …", null while it is closed. */
 	let moving = $state<Pick<InboxItemSummary, 'id' | 'title' | 'scope'> | null>(null);
 	let message = $state<string | null>(null);
@@ -76,10 +82,20 @@
 <section class="sources" aria-labelledby={headingId}>
 	<div class="head">
 		<h3 id={headingId}>Quellen</h3>
-		<button class="button-subtle" type="button" onclick={() => (adding = true)}>
+		<button
+			class="button-subtle"
+			type="button"
+			aria-haspopup={inline ? undefined : 'dialog'}
+			aria-expanded={inline ? adding : undefined}
+			bind:this={addButton}
+			onclick={() => (adding = inline ? !adding : true)}
+		>
 			Quelle hinzufügen …
 		</button>
 	</div>
+	{#if inline && adding}
+		{@render addDialog()}
+	{/if}
 
 	<div aria-live="polite">
 		{#if message}
@@ -164,11 +180,15 @@
 								type="button"
 								aria-label={`„${item.title}“ anderem Ticket zuordnen …`}
 								title="Anderem Ticket zuordnen …"
+								aria-haspopup={inline ? undefined : 'dialog'}
+								aria-expanded={inline ? moving?.id === item.id : undefined}
 								aria-disabled={store.isPending(item.id) ? 'true' : undefined}
 								onclick={() => {
-									if (!store.isPending(item.id)) {
-										moving = { id: item.id, title: item.title, scope: item.scope };
-									}
+									if (store.isPending(item.id)) return;
+									moving =
+										inline && moving?.id === item.id
+											? null
+											: { id: item.id, title: item.title, scope: item.scope };
 								}}
 							>
 								<svg
@@ -205,30 +225,42 @@
 							</button>
 						{/if}
 					</div>
+					{#if inline && moving !== null && moving.id === item.id}
+						<div class="inline">{@render moveDialog(moving)}</div>
+					{/if}
 				</li>
 			{/each}
 		</ul>
 	{/if}
 </section>
 
-{#if moving !== null}
+{#if !inline && moving !== null}
+	{@render moveDialog(moving)}
+{/if}
+
+{#if !inline && adding}
+	{@render addDialog()}
+{/if}
+
+{#snippet moveDialog(entry: Pick<InboxItemSummary, 'id' | 'title' | 'scope'>)}
 	<MoveSourceDialog
-		item={moving}
+		item={entry}
 		current={{ id: ticket.id, key: ticket.key }}
 		{store}
 		{picker}
+		returnFocus={() => addButton}
 		onclose={() => (moving = null)}
 	/>
-{/if}
+{/snippet}
 
-{#if adding}
+{#snippet addDialog()}
 	<AddSourcesDialog
 		ticket={{ id: ticket.id, key: ticket.key }}
 		{candidates}
 		{store}
 		onclose={() => (adding = false)}
 	/>
-{/if}
+{/snippet}
 
 <style>
 	.sources {
@@ -316,6 +348,12 @@
 		display: flex;
 		gap: 0.25rem;
 		align-items: center;
+	}
+
+	/* "Anderem Ticket zuordnen …" in the full view, below the whole entry. */
+	.inline {
+		grid-column: 1 / -1;
+		min-width: 0;
 	}
 
 	.view {
