@@ -195,3 +195,31 @@ describe('isTrueFlag', () => {
 		}
 	});
 });
+
+describe('pinnedCommentViolation (ADR-0044 section 2)', () => {
+	const pin = { isCreate: false, pinned: 'c1', previous: '', commentTicket: 't1', ticketId: 't1' };
+
+	it.each([
+		['pins a comment of the ticket', pin, ''],
+		['replaces the pinned comment with another of the ticket', { ...pin, previous: 'c0' }, ''],
+		['releases the pin', { ...pin, pinned: '', previous: 'c1', commentTicket: null }, ''],
+		['lets an unchanged pin pass, even if its comment is gone', { ...pin, previous: 'c1', commentTicket: null }, ''],
+		['refuses a comment of another ticket', { ...pin, commentTicket: 't2' }, 'validation_pinned_comment_foreign'],
+		['refuses a comment that does not exist', { ...pin, commentTicket: null }, 'validation_pinned_comment_missing'],
+		['refuses a pin on create', { ...pin, isCreate: true, ticketId: '' }, 'validation_pinned_comment_create'],
+		['lets a create without a pin pass', { ...pin, isCreate: true, pinned: '', ticketId: '' }, '']
+	])('%s', (_name, input, expected) => {
+		expect(rules.pinnedCommentViolation(input)).toBe(expected);
+	});
+
+	it('has a German text for every code', () => {
+		for (const code of [
+			'validation_pinned_comment_create',
+			'validation_pinned_comment_missing',
+			'validation_pinned_comment_foreign'
+		]) {
+			expect(rules.PIN_MESSAGES[code], code).toMatch(/\S/);
+		}
+		expect(Object.isFrozen(rules.PIN_MESSAGES)).toBe(true);
+	});
+});

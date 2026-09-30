@@ -240,6 +240,45 @@ function checkRelations(txApp, record, scope, previousProject) {
   return project;
 }
 
+// The pinned comment (ADR-0044 section 2): only a comment of this ticket, none on create.
+// `original` is the stored ticket (null on create). Before the migration of the pin the field is
+// unknown and reads as '', so nothing is checked.
+function checkPinnedComment(txApp, record, original) {
+  var pinned = record.getString('pinned_comment');
+  var previous = original ? original.getString('pinned_comment') : '';
+  var comment = pinned !== '' && pinned !== previous ? findById(txApp, 'comments', pinned) : null;
+  var code = rules.pinnedCommentViolation({
+    isCreate: original === null,
+    pinned: pinned,
+    previous: previous,
+    commentTicket: comment ? comment.getString('ticket') : null,
+    ticketId: record.id
+  });
+  if (code !== '') {
+    throw errors.fieldFailure('pinned_comment', code, rules.PIN_MESSAGES[code]);
+  }
+}
+
+/**
+ * comments.pb.js, onRecordDelete before e.next(), inside the transaction (ADR-0044 section 2):
+ * deleting the pinned comment of a ticket releases the pin first, with the acting user of the
+ * delete, so the ticket hooks write the history entry and open tabs get the ticket by realtime.
+ * PocketBase would clear the relation afterwards by itself, but without anyone to name.
+ */
+function releasePinOf(txApp, comment) {
+  var ticket = findById(txApp, 'tickets', comment.getString('ticket'));
+  if (!ticket || ticket.getString('pinned_comment') !== comment.id) {
+    return;
+  }
+  ticket.set('pinned_comment', '');
+  var actor = actorOf(comment);
+  if (actor !== '') {
+    ticket.set(ACTOR_KEY, actor);
+  }
+  // Like PocketBase's own clearing of a relation: only a relation goes, nothing to validate.
+  txApp.saveNoValidate(ticket);
+}
+
 // Due dates are calendar dates only (CLAUDE.md section 5).
 function checkDue(record) {
   if (!rules.isCalendarDate(record.getString('due'))) {
@@ -327,6 +366,7 @@ function prepareCreate(txApp, record) {
 
   checkDue(record);
   var project = checkRelations(txApp, record, scope, '');
+  checkPinnedComment(txApp, record, null);
   var item = inbox.prepareConversion(txApp, record, scope);
   applyCompletedAt(record, null);
   assignKey(txApp, record, scope, project);
@@ -381,6 +421,7 @@ function prepareUpdate(txApp, record) {
   }
   checkDue(record);
   var project = checkRelations(txApp, record, scope, original.getString('project'));
+  checkPinnedComment(txApp, record, original);
   applyCompletedAt(record, original);
 
   var before = {
@@ -448,6 +489,8 @@ module.exports = {
   prepareCompletion: prepareCompletion,
   completeChildren: completeChildren,
   checkRelations: checkRelations,
+  checkPinnedComment: checkPinnedComment,
+  releasePinOf: releasePinOf,
   prepareCreate: prepareCreate,
   recordCreation: recordCreation,
   guardSourceChange: guardSourceChange,

@@ -6,7 +6,8 @@
 // by the caller; anything else throws instead of logging a meaningless value.
 'use strict';
 
-// Business fields of tickets that are recorded on change.
+// Business fields of tickets that are recorded on change; the pinned comment since ADR-0044
+// (pinned, released, replaced; the values are comment IDs).
 var TRACKED_FIELDS = Object.freeze([
   'title',
   'description',
@@ -19,7 +20,8 @@ var TRACKED_FIELDS = Object.freeze([
   'blocks_parent',
   'recurrence',
   'key',
-  'household'
+  'household',
+  'pinned_comment'
 ]);
 
 // Multi-value fields: order does not matter, stored as sorted JSON array.

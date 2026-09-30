@@ -15,11 +15,12 @@ const BASE = {
 	blocks_parent: true,
 	recurrence: '',
 	key: 'ABC-1',
-	household: ''
+	household: '',
+	pinned_comment: ''
 };
 
 describe('TRACKED_FIELDS', () => {
-	it('matches the whitelist of the E1 plan (OF-12)', () => {
+	it('matches the whitelist of the E1 plan (OF-12) plus the pinned comment (ADR-0044)', () => {
 		expect([...TRACKED_FIELDS]).toEqual([
 			'title',
 			'description',
@@ -32,9 +33,22 @@ describe('TRACKED_FIELDS', () => {
 			'blocks_parent',
 			'recurrence',
 			'key',
-			'household'
+			'household',
+			'pinned_comment'
 		]);
 		expect(Object.isFrozen(TRACKED_FIELDS)).toBe(true);
+	});
+
+	it('records pinning, replacing and releasing a comment (ADR-0044)', () => {
+		expect(diff(BASE, { ...BASE, pinned_comment: 'c1' })).toEqual([
+			{ field: 'pinned_comment', old_value: '', new_value: 'c1' }
+		]);
+		expect(diff({ ...BASE, pinned_comment: 'c1' }, { ...BASE, pinned_comment: 'c2' })).toEqual([
+			{ field: 'pinned_comment', old_value: 'c1', new_value: 'c2' }
+		]);
+		expect(diff({ ...BASE, pinned_comment: 'c2' }, BASE)).toEqual([
+			{ field: 'pinned_comment', old_value: 'c2', new_value: '' }
+		]);
 	});
 });
 

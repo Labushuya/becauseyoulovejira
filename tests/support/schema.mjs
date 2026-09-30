@@ -151,7 +151,9 @@ export const EXPECTED_COLLECTIONS = {
 			// Trash (ADR-0037, migration 1790202300); only the server writes them.
 			deleted_at: date(),
 			deleted_by: relation('users'),
-			trash: { type: 'json', required: false, maxSize: 20000 }
+			trash: { type: 'json', required: false, maxSize: 20000 },
+			// The pinned comment (ADR-0044, migration 1790202600): one per ticket.
+			pinned_comment: relation('comments')
 		},
 		indexes: [
 			'CREATE UNIQUE INDEX idx_tickets_scope_key ON tickets (scope, key)',
@@ -165,7 +167,8 @@ export const EXPECTED_COLLECTIONS = {
 			// 2; migration 1790201610, since 1790202200 with occurrence, which is empty for one open
 			// instance per rule; since 1790202300 without the tickets in the trash, ADR-0037).
 			"CREATE UNIQUE INDEX idx_tickets_open_occurrence ON tickets (recurrence, occurrence) WHERE recurrence != '' AND status != 'done' AND deleted_at = ''",
-			'CREATE INDEX idx_tickets_deleted_at ON tickets (deleted_at)'
+			'CREATE INDEX idx_tickets_deleted_at ON tickets (deleted_at)',
+			'CREATE INDEX idx_tickets_pinned_comment ON tickets (pinned_comment)'
 		]
 	},
 	inbox_items: {

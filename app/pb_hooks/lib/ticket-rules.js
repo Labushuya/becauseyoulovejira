@@ -134,6 +134,36 @@ function completionDecision(input) {
   return input.force ? 'force' : 'refuse';
 }
 
+// Texts of the codes of the pinned comment (ADR-0044 section 2).
+var PIN_MESSAGES = Object.freeze({
+  validation_pinned_comment_create: 'Ein neues Ticket hat noch keinen Kommentar zum Anpinnen.',
+  validation_pinned_comment_missing: 'Der Kommentar wurde inzwischen gelöscht.',
+  validation_pinned_comment_foreign: 'Anpinnen lässt sich nur ein Kommentar dieses Tickets.'
+});
+
+// Pinned comment (ADR-0044 section 2): at most one per ticket (the field holds one value), and
+// only a comment of the ticket itself. `input`:
+//   isCreate       the ticket is being created
+//   pinned         the comment id after the write ('' when none)
+//   previous       the stored comment id before the write ('' on create)
+//   commentTicket  the ticket of that comment, null when the comment does not exist
+//   ticketId       the ticket's id
+// Returns an error code or '' when the pin is allowed. An unchanged pin passes, so other changes
+// of the ticket never fail because of it. A new ticket has no comments yet: a sub-ticket or the
+// next ticket of a series never takes a pin along.
+function pinnedCommentViolation(input) {
+  if (input.pinned === '' || input.pinned === input.previous) {
+    return '';
+  }
+  if (input.isCreate) {
+    return 'validation_pinned_comment_create';
+  }
+  if (input.commentTicket === null) {
+    return 'validation_pinned_comment_missing';
+  }
+  return input.commentTicket === input.ticketId ? '' : 'validation_pinned_comment_foreign';
+}
+
 module.exports = {
   DEFAULT_STATUS: DEFAULT_STATUS,
   DEFAULT_PRIORITY: DEFAULT_PRIORITY,
@@ -147,5 +177,7 @@ module.exports = {
   archivedProjectViolation: archivedProjectViolation,
   SUBTASK_MESSAGES: SUBTASK_MESSAGES,
   isTrueFlag: isTrueFlag,
-  completionDecision: completionDecision
+  completionDecision: completionDecision,
+  PIN_MESSAGES: PIN_MESSAGES,
+  pinnedCommentViolation: pinnedCommentViolation
 };

@@ -511,6 +511,21 @@ describe('completing, reopening and releasing instances (ADR-0023 sections 2, 3 
 		expect(dateOf((await ruleOf(rule.id)).next_due)).toBe(addDays(today(), 1));
 	});
 
+	it('never takes the pinned comment to the next ticket of the series (ADR-0044)', async () => {
+		const ticket = await tickets().create({ owner: owner.id, title: 'Mit Pin', due: today() });
+		const comment = await owner.pb
+			.collection('comments')
+			.create({ ticket: ticket.id, author: owner.id, body: 'Wichtig' });
+		await tickets().update(ticket.id, { pinned_comment: comment.id });
+		const rule = await createRule({ lead_days: 3, ticket: ticket.id });
+
+		await tickets().update(ticket.id, { status: 'done' });
+
+		const followUps = (await instancesOf(rule.id)).filter((item) => item.id !== ticket.id);
+		expect(followUps.map((item) => item.pinned_comment)).toEqual(['']);
+		expect((await tickets().getOne(ticket.id)).pinned_comment).toBe(comment.id);
+	});
+
 	it('refuses to reopen when the follow-up was edited or commented', async () => {
 		for (const touch of ['edit', 'comment']) {
 			const rule = await createRule({ mode: 'after_completion', freq: 'daily', interval: 1, lead_days: 3, anchor: today() });
