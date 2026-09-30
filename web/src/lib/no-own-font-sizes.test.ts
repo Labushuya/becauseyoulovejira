@@ -13,7 +13,7 @@ const SRC_DIR = resolve(import.meta.dirname, '..');
 const TOKENS_CSS = join('lib', 'styles', 'tokens.css');
 
 /** Numbers left from before G-6 in all listed files together; lower it when one goes. */
-const LEGACY_COUNT = 144;
+const LEGACY_COUNT = 140;
 
 /** Files that still carry font sizes as numbers (as of G-6). */
 const LEGACY_FILES = [
@@ -22,7 +22,6 @@ const LEGACY_FILES = [
 	'lib/components/ChannelsView.svelte',
 	'lib/components/ChipGroup.svelte',
 	'lib/components/ClipboardImport.svelte',
-	'lib/components/CommentList.svelte',
 	'lib/components/ConnectionsSection.svelte',
 	'lib/components/DropZone.svelte',
 	'lib/components/DueLabel.svelte',
@@ -42,7 +41,6 @@ const LEGACY_FILES = [
 	'lib/components/SyncAllButton.svelte',
 	'lib/components/TagManager.svelte',
 	'lib/components/ThemeMenu.svelte',
-	'lib/components/TicketActivity.svelte',
 	'lib/components/TicketMeta.svelte',
 	'lib/components/ViewSwitch.svelte',
 	'lib/components/WhatsAppImport.svelte',

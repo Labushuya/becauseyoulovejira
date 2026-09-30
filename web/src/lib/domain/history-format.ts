@@ -9,15 +9,25 @@ import { PRIORITY_LABELS, STATUS_LABELS, historyFieldLabel } from './labels';
 import { personLabel } from './people';
 import { SKIPPED_FIELD, parseSkipped, skippedText } from './recurrence-rule';
 import { isPriority, isStatus } from './status';
-import { toDueInput, type HistoryEntry, type ProjectRef, type TagRef } from './ticket';
+import {
+	toDueInput,
+	type Comment,
+	type HistoryEntry,
+	type ProjectRef,
+	type TagRef
+} from './ticket';
 
 export const EMPTY_VALUE = '–';
 export const DELETED_VALUE = '(gelöscht)';
 
-/** Projects and tags visible to the user, keyed by record ID. */
+/**
+ * Projects and tags visible to the user, keyed by record ID; the loaded comments of the ticket
+ * name a pinned comment by author and time (ADR-0044).
+ */
 export interface HistoryLookups {
 	projects: ReadonlyMap<string, ProjectRef>;
 	tags: ReadonlyMap<string, TagRef>;
+	comments?: ReadonlyMap<string, Pick<Comment, 'author' | 'created'>>;
 }
 
 /** Lookups from the visible projects and tags (read-only after creation). */
@@ -29,6 +39,14 @@ export function historyLookups(
 		projects: new Map(projects.map((project) => [project.id, project])),
 		tags: new Map(tags.map((tag) => [tag.id, tag]))
 	};
+}
+
+/** The lookups plus the loaded comments of the ticket (ADR-0044). */
+export function withComments(
+	lookups: HistoryLookups,
+	comments: readonly Pick<Comment, 'id' | 'author' | 'created'>[]
+): HistoryLookups {
+	return { ...lookups, comments: new Map(comments.map((comment) => [comment.id, comment])) };
 }
 
 export interface HistoryLine {
@@ -191,8 +209,28 @@ function taskToggleText(before: string, after: string): string | null {
 	return shown === '' ? verb : `${verb}: ${shown}`;
 }
 
+/**
+ * Pinning a comment (ADR-0044 section 2): pinned (empty → ID), released (ID → empty) or replaced
+ * (ID → ID). The comment it now concerns (the new one, or the released one) is named by author and
+ * time while it is loaded; a deleted comment is not.
+ */
+function pinText(
+	oldValue: string,
+	newValue: string,
+	lookups: HistoryLookups,
+	selfId: string | null
+): string {
+	let verb = 'Angepinnten Kommentar ersetzt';
+	if (oldValue === '') verb = 'Kommentar angepinnt';
+	else if (newValue === '') verb = 'Anpinnen gelöst';
+	const comment = lookups.comments?.get(newValue === '' ? oldValue : newValue);
+	if (comment === undefined) return verb;
+	const author = personLabel(comment.author, selfId);
+	return `${verb}: Kommentar von ${author} vom ${formatBerlinDateTime(comment.created)}`;
+}
+
 /** Text of one entry, without actor and time. */
-function describe(entry: HistoryEntry, lookups: HistoryLookups): string {
+function describe(entry: HistoryEntry, lookups: HistoryLookups, selfId: string | null): string {
 	const { field, oldValue, newValue } = entry;
 	switch (field) {
 		case 'created':
@@ -224,6 +262,8 @@ function describe(entry: HistoryEntry, lookups: HistoryLookups): string {
 			return 'Wiederholung geändert';
 		case 'source_link':
 			return sourceLinkText(oldValue, newValue);
+		case 'pinned_comment':
+			return pinText(oldValue, newValue, lookups, selfId);
 		case SKIPPED_FIELD: {
 			// ADR-0022 addendum 4: a catch-up ticket names the missed dates it stands for.
 			const skipped = parseSkipped(newValue);
@@ -261,7 +301,7 @@ export function describeHistoryEntry(
 		id: entry.id,
 		time: formatBerlinDateTime(entry.created),
 		actor: createdByRule(entry) ? RECURRENCE_ACTOR : personLabel(entry.user, selfId),
-		text: describe(entry, lookups),
+		text: describe(entry, lookups, selfId),
 		details:
 			entry.field === 'description' ? { before: entry.oldValue, after: entry.newValue } : null
 	};

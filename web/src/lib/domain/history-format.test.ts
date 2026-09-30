@@ -5,6 +5,7 @@ import {
 	RECURRENCE_ACTOR,
 	describeHistoryEntry,
 	historyLookups,
+	withComments,
 	type HistoryLookups
 } from './history-format';
 import type { HistoryEntry } from './ticket';
@@ -281,6 +282,33 @@ describe('describeHistoryEntry', () => {
 		expect(text({ field: 'due', oldValue: 'kaputt', newValue: '2026-10-01 00:00:00.000Z' })).toBe(
 			'Fälligkeit: kaputt → 01.10.2026'
 		);
+	});
+});
+
+describe('pinned comment in the history (ADR-0044)', () => {
+	const A = 'comment00000001';
+	const B = 'comment00000002';
+	const withLoaded = withComments(lookups, [
+		{ id: A, author: ME, created: '2026-09-24 09:00:00.000Z' },
+		{ id: B, author: 'user0000000009', created: '2026-09-24 10:30:00.000Z' }
+	]);
+	const pinText = (oldValue: string, newValue: string, known = withLoaded) =>
+		describeHistoryEntry(entry({ field: 'pinned_comment', oldValue, newValue }), known, ME).text;
+
+	it('names pinning, replacing and releasing with the comment while it is loaded', () => {
+		expect(pinText('', A)).toBe('Kommentar angepinnt: Kommentar von Du vom 24.09.2026 11:00');
+		expect(pinText(A, B)).toBe(
+			'Angepinnten Kommentar ersetzt: Kommentar von Anderes Konto vom 24.09.2026 12:30'
+		);
+		expect(pinText(B, '')).toBe(
+			'Anpinnen gelöst: Kommentar von Anderes Konto vom 24.09.2026 12:30'
+		);
+	});
+
+	it('names only what happened when the comment is gone', () => {
+		expect(pinText('', A, lookups)).toBe('Kommentar angepinnt');
+		expect(pinText(A, B, lookups)).toBe('Angepinnten Kommentar ersetzt');
+		expect(pinText(A, '', lookups)).toBe('Anpinnen gelöst');
 	});
 });
 

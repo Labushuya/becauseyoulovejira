@@ -539,6 +539,16 @@ a.button-subtle {
 	border-color: var(--color-danger);
 }
 
+/*
+ * Folded text (ADR-0044 section 3, long comments): the last lines fade out. A mask, not a colour:
+ * only the alpha of the gradient counts, so the fade works on every surface and in every theme. The
+ * height comes from the component.
+ */
+.fade-end {
+	overflow: hidden;
+	mask-image: linear-gradient(to bottom, var(--color-text) calc(100% - 3rem), transparent);
+}
+
 /* Text for screen readers only (icon alternatives, status messages). */
 .visually-hidden {
 	position: absolute;

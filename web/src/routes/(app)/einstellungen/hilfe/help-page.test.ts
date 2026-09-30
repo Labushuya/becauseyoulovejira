@@ -131,8 +131,13 @@ describe('help page (EH-9)', () => {
 			'Wie arbeite ich mit Unteraufgaben?',
 			'Wie hole ich ein gelöschtes Ticket zurück?',
 			'Wie gliedere ich ein Projekt in Unterprojekte?',
-			'Wie formatiere ich Beschreibungen und Kommentare?'
+			'Wie formatiere ich Beschreibungen und Kommentare?',
+			'Wie ordne ich Kommentare und hebe einen hervor?'
 		]);
+		// Comments (ADR-0044): order, the pinned comment with "Rückgängig", folding.
+		expect(text(section)).toContain('„Neueste zuerst“ (Standard) oder „Älteste zuerst“');
+		expect(text(section)).toContain('höchstens einen angepinnten Kommentar');
+		expect(text(section)).toContain('„Weiterlesen“');
 		expect(section.querySelectorAll('details[open]')).toHaveLength(0);
 		// Sub projects (ADR-0034): creating, own code, filter, numbers, archive.
 		expect(text(section)).toContain('„Unterprojekt anlegen“');

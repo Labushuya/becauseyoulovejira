@@ -5,7 +5,8 @@
 // shown, the store follows it live, including its description and its deletion elsewhere.
 // The description never overwrites a newer one silently (ADR-0032 section 6): saving it and ticking
 // a task in it send `expected_updated`; a description that changed meanwhile ends in a question
-// (saving) or a message (ticking) instead.
+// (saving) or a message (ticking) instead. The pinned comment of the ticket (ADR-0044) is a field
+// of the ticket as well: pinning another one replaces it and offers "Rückgängig" in a flag.
 
 import type PocketBase from 'pocketbase';
 import { createContext } from 'svelte';
@@ -21,6 +22,7 @@ import {
 	type UpdateOptions
 } from '$lib/data/tickets';
 import { toggleTask } from '$lib/markdown';
+import { PIN_FLAGS, type CommentPinControl } from '$lib/domain/comments';
 import { deletedWithSourcesText, type SourceHandling } from '$lib/domain/sources';
 import { isCalendarDate } from '$lib/domain/berlin-date';
 import { NO_SERIES, type SeriesChangeSink } from '$lib/domain/series-template';
@@ -33,6 +35,7 @@ import type {
 	TicketPatch,
 	TicketSummary
 } from '$lib/domain/ticket';
+import { SILENT_FLAGS, type FlagSink } from './flags.svelte';
 import { hold, type LiveSource } from './realtime';
 import {
 	completedChildren,
@@ -192,13 +195,15 @@ function patchFor(field: EditableField, draft: string): PatchResult {
 	}
 }
 
-export class TicketDetailStore {
+export class TicketDetailStore implements CommentPinControl {
 	readonly #data: TicketDetailData;
 	readonly #session: SessionGuard;
 	readonly #list: TicketListSync;
 	readonly #trash: TrashUndo | null;
 	/** Offers to take a change of an open ticket of a series over into its template (plan WV). */
 	readonly #series: SeriesChangeSink;
+	/** "Angepinnter Kommentar ersetzt." with "Rückgängig" (ADR-0044 section 2). */
+	readonly #flags: FlagSink;
 
 	readonly #drafts = new SvelteMap<EditableField, string>();
 	readonly #saving = new SvelteSet<FieldKey>();
@@ -217,6 +222,10 @@ export class TicketDetailStore {
 	#completion = $state<(DetailCompletionQuestion & { ticketId: string }) | null>(null);
 	/** A refused reopening of an instance, for the ticket it came from (ADR-0023 addendum 4). */
 	#reopen = $state<(DetailReopenQuestion & { ticketId: string }) | null>(null);
+	/** Comment whose pin is being saved (ADR-0044 section 2). */
+	#pinning = $state<string | null>(null);
+	/** Why pinning or releasing a comment of the shown ticket failed. */
+	#pinFailure = $state<{ ticketId: string; commentId: string; message: string } | null>(null);
 
 	#id = $state<string | null>(null);
 	#own = $state.raw<Ticket | null>(null);
@@ -239,13 +248,15 @@ export class TicketDetailStore {
 		session: SessionGuard,
 		list: TicketListSync,
 		trash: TrashUndo | null = null,
-		series: SeriesChangeSink = NO_SERIES
+		series: SeriesChangeSink = NO_SERIES,
+		flags: FlagSink = SILENT_FLAGS
 	) {
 		this.#data = data;
 		this.#session = session;
 		this.#list = list;
 		this.#trash = trash;
 		this.#series = series;
+		this.#flags = flags;
 	}
 
 	get id(): string | null {
@@ -499,6 +510,113 @@ export class TicketDetailStore {
 			return null;
 		} finally {
 			this.#saving.delete(field);
+		}
+	}
+
+	/**
+	 * The pinned comment of the shown ticket (ADR-0044 section 2): null without one, undefined
+	 * while the server does not know pins (before the restart) or no ticket is shown.
+	 */
+	get pinnedComment(): string | null | undefined {
+		return this.#ticket?.pinnedComment;
+	}
+
+	/** Comment whose pin is being saved, null otherwise. */
+	get pinning(): string | null {
+		return this.#pinning;
+	}
+
+	/** Why pinning or releasing this comment of the shown ticket failed, null otherwise. */
+	pinError(commentId: string): string | null {
+		const failure = this.#pinFailure;
+		return failure !== null && failure.ticketId === this.#id && failure.commentId === commentId
+			? failure.message
+			: null;
+	}
+
+	/**
+	 * Pins a comment of the shown ticket. The field holds one comment, so another pinned one is
+	 * replaced; the info flag then offers "Rückgängig" (ADR-0044 section 2). One pin at a time.
+	 */
+	async pin(commentId: string): Promise<boolean> {
+		const ticket = this.#ticket;
+		if (ticket === null) return false;
+		const previous = ticket.pinnedComment ?? null;
+		if (previous === commentId) return true;
+		const saved = await this.#savePin(ticket, commentId, commentId);
+		if (saved === null) return false;
+		if (previous !== null) this.#offerPinUndo(saved.id, previous, commentId);
+		return true;
+	}
+
+	/** Releases the pin of the shown ticket. */
+	async unpin(): Promise<boolean> {
+		const ticket = this.#ticket;
+		const current = ticket?.pinnedComment ?? null;
+		if (ticket === null || current === null) return true;
+		return (await this.#savePin(ticket, null, current)) !== null;
+	}
+
+	/** Sends the pin (`commentId`, null releases it); `target` is the comment of the button. */
+	async #savePin(ticket: Ticket, commentId: string | null, target: string): Promise<Ticket | null> {
+		if (this.#pinning !== null || !this.#session.ensureValid()) return null;
+		this.#pinning = target;
+		this.#pinFailure = null;
+		try {
+			const saved = await this.#data.update(ticket.id, { pinnedComment: commentId });
+			this.#list.upsert(saved);
+			if (saved.id === this.#id) this.upsert(saved);
+			return saved;
+		} catch (error) {
+			const failure = toDataError(error);
+			if (failure.kind === 'session') this.#session.logout();
+			else if (failure.kind !== 'aborted' && ticket.id === this.#id) {
+				const message = failure.fields.pinned_comment?.message ?? failure.message;
+				this.#pinFailure = { ticketId: ticket.id, commentId: target, message };
+			}
+			return null;
+		} finally {
+			this.#pinning = null;
+		}
+	}
+
+	/** Info flag after replacing a pinned comment, with "Rückgängig" for 8 s (ADR-0025 §8). */
+	#offerPinUndo(ticketId: string, previous: string, replacement: string): void {
+		this.#flags.show({
+			tone: 'info',
+			title: PIN_FLAGS.replaced,
+			action: {
+				label: 'Rückgängig',
+				run: () => void this.#undoPin(ticketId, previous, replacement)
+			}
+		});
+	}
+
+	/**
+	 * "Rückgängig": pins the previous comment again, but only while the replacement is still pinned
+	 * (read fresh from the server), so a pin chosen meanwhile, here or in another tab, is never
+	 * overwritten. Works for the ticket of the flag, also after the panel moved on.
+	 */
+	async #undoPin(ticketId: string, previous: string, replacement: string): Promise<void> {
+		if (!this.#session.ensureValid()) return;
+		try {
+			const current = await this.#data.get(ticketId, {});
+			if (current.pinnedComment !== replacement) {
+				this.#flags.show({ tone: 'info', title: PIN_FLAGS.changed });
+				return;
+			}
+			const saved = await this.#data.update(ticketId, { pinnedComment: previous });
+			this.#list.upsert(saved);
+			if (saved.id === this.#id) this.upsert(saved);
+		} catch (error) {
+			const failure = toDataError(error);
+			if (failure.kind === 'session') this.#session.logout();
+			if (failure.kind === 'session' || failure.kind === 'aborted') return;
+			this.#flags.show({
+				tone: 'error',
+				title: PIN_FLAGS.undoFailed,
+				description: failure.fields.pinned_comment?.message ?? failure.message
+			});
 		}
 	}
 
@@ -860,6 +978,8 @@ export class TicketDetailStore {
 		this.#conflict = false;
 		this.#completion = null;
 		this.#reopen = null;
+		this.#pinning = null;
+		this.#pinFailure = null;
 		this.#tagInput = '';
 		this.#id = null;
 		this.#own = null;

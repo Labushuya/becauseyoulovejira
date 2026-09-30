@@ -56,7 +56,12 @@ describe('base.css', () => {
 			/radial-gradient\([^()]*var\(--color-brand-soft-bg\),\s*transparent [^()]*\)/g
 		);
 		expect(fromAccent).toHaveLength(2);
-		expect(SOURCE.match(/gradient\(/g)).toHaveLength(2);
+		// Besides the background only the mask that fades folded comments out (ADR-0044 §3): it paints
+		// no colour, only the alpha of the gradient counts.
+		expect(SOURCE.match(/gradient\(/g)).toHaveLength(3);
+		expect(rule('.fade-end')).toMatch(
+			/mask-image:\s*linear-gradient\(to bottom, var\(--color-text\) calc\(100% - 3rem\), transparent\)/
+		);
 		expect(SOURCE).not.toMatch(/background-attachment/);
 		// The page shows the background of html; body paints none, so the layer stays visible.
 		expect(rule('body')).not.toMatch(/background/);

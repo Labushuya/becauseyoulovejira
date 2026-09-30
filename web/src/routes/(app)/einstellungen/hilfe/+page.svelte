@@ -590,6 +590,29 @@
 					</li>
 				</ul>
 			</details>
+			<details>
+				<summary>Wie ordne ich Kommentare und hebe einen hervor?</summary>
+				<ul>
+					<li>
+						Über den Kommentaren wählst du „Neueste zuerst“ (Standard) oder „Älteste zuerst“; die
+						Wahl gilt auf diesem Gerät für alle Tickets. „Kommentar hinzufügen …“ steht in beiden
+						Fällen oben. Bei „Älteste zuerst“ springt die Ansicht nach dem Senden zu deinem neuen
+						Kommentar am Ende.
+					</li>
+					<li>
+						„Anpinnen“ an einem Kommentar stellt ihn immer ganz oben hin, mit „Angepinnt“ markiert.
+						Ein Ticket hat höchstens einen angepinnten Kommentar: Pinnst du einen anderen an,
+						ersetzt er den bisherigen, und die Meldung unten links bietet 8 Sekunden lang
+						„Rückgängig“. „Lösen“ nimmt ihn wieder heraus; der Verlauf nennt jeden Schritt. Wird der
+						angepinnte Kommentar gelöscht, ist das Anpinnen aufgehoben.
+					</li>
+					<li>
+						Lange Kommentare zeigen zuerst etwa 12 Zeilen, dann „Weiterlesen“; „Weniger anzeigen“
+						klappt sie wieder ein. Aufgeklappte bleiben es, solange der Tab offen ist. Zum
+						Bearbeiten siehst du immer den ganzen Text.
+					</li>
+				</ul>
+			</details>
 		</div>
 	</section>
 

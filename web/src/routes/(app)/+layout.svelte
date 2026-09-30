@@ -22,6 +22,7 @@
 	} from '$lib/stores/capture';
 	import { CatalogStore, catalogData, setCatalogStore } from '$lib/stores/catalog.svelte';
 	import { ColumnPrefsRegistry, setColumnPrefsRegistry } from '$lib/stores/column-prefs.svelte';
+	import { CommentViewStore, setCommentView } from '$lib/stores/comment-view.svelte';
 	import { FirstStepsStore, localStore, setFirstStepsStore } from '$lib/stores/first-steps.svelte';
 	import { fetchHostPlatform } from '$lib/data/host';
 	import { HostStore, setHostStore } from '$lib/stores/host.svelte';
@@ -92,6 +93,10 @@
 	// Panel or full view for every ticket link (plan BI-1, ADR-0036 §1), remembered on this device.
 	const openMode = setTicketOpenMode(new TicketOpenModeStore(window));
 	$effect(() => untrack(() => openMode.connect()));
+	// Order of the comments on this device and the long ones unfolded in this tab (ADR-0044), the
+	// same in panel and full view; other tabs follow the order through the storage event.
+	const commentView = setCommentView(new CommentViewStore(window));
+	$effect(() => untrack(() => commentView.connect()));
 	// The last view outside the settings, for "Zurück zu …" there (ADR-0026 section 1, EH-1): every
 	// shown address is offered, the store keeps only views (no settings, no full view).
 	const lastView = setLastViewStore(new LastViewStore(sessionStore, () => page.url.origin));
@@ -138,8 +143,9 @@
 	);
 	$effect(() => untrack(() => trash.start()));
 	$effect(() => untrack(() => trash.connect(trashLive(pb))));
+	// Replacing a pinned comment offers "Rückgängig" as a flag (ADR-0044).
 	const detail = setTicketDetailStore(
-		new TicketDetailStore(ticketDetailData(pb), auth, tickets, trash, rules)
+		new TicketDetailStore(ticketDetailData(pb), auth, tickets, trash, rules, flags)
 	);
 	// Bulk actions on the chosen rows of the table (plan BI-2, ADR-0036 §3): one request per ticket
 	// through the Record API, results and "Rückgängig" as flags.

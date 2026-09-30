@@ -65,6 +65,8 @@ export class TicketActivityStore {
 	#newComment = $state('');
 	#posting = $state(false);
 	#postError = $state<string | null>(null);
+	/** The comment the last "Kommentieren" created, so the list can show it (ADR-0044 §1). */
+	#lastPosted = $state<string | null>(null);
 
 	/** Newest first (T-11), as the server sorts it (`-created,-@rowid`). */
 	#history = $state.raw<readonly HistoryEntry[]>([]);
@@ -134,6 +136,11 @@ export class TicketActivityStore {
 
 	get postError(): string | null {
 		return this.#postError;
+	}
+
+	/** ID of the comment the last successful "Kommentieren" created, null before one. */
+	get lastPostedId(): string | null {
+		return this.#lastPosted;
 	}
 
 	isEditing(id: string): boolean {
@@ -254,6 +261,7 @@ export class TicketActivityStore {
 		try {
 			const comment = await this.#data.createComment(ticketId, body);
 			this.upsertComment(comment);
+			if (ticketId === this.#ticketId) this.#lastPosted = comment.id;
 			if (ticketId === this.#ticketId && this.#newComment === body) this.#newComment = '';
 			return true;
 		} catch (error) {
@@ -389,6 +397,7 @@ export class TicketActivityStore {
 		this.#newComment = '';
 		this.#posting = false;
 		this.#postError = null;
+		this.#lastPosted = null;
 	}
 
 	#follow(ticketId: string): void {

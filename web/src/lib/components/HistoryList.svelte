@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { describeHistoryEntry } from '$lib/domain/history-format';
+	import { describeHistoryEntry, withComments } from '$lib/domain/history-format';
 	import type { CatalogStore } from '$lib/stores/catalog.svelte';
 	import type { TicketActivityStore } from '$lib/stores/ticket-activity.svelte';
 	import ErrorIcon from './ErrorIcon.svelte';
@@ -8,11 +8,13 @@
 	// History of the open ticket (E2 plan, T-10 and T-11): newest first, each entry with time in
 	// Berlin, actor and a readable text. A changed description opens old and new text as plain
 	// text, never as rendered Markdown. Project and tag names come from the catalog (E3 plan,
-	// T-16); until it is loaded the history waits, so nothing shows as "(gelöscht)" by mistake.
+	// T-16); until it is loaded the history waits, so nothing shows as "(gelöscht)" by mistake. A
+	// pinned comment is named by author and time while it is loaded (ADR-0044).
 	let { store, catalog }: { store: TicketActivityStore; catalog: CatalogStore } = $props();
 
+	const lookups = $derived(withComments(catalog.lookups, store.comments));
 	const lines = $derived(
-		store.history.map((entry) => describeHistoryEntry(entry, catalog.lookups, store.userId))
+		store.history.map((entry) => describeHistoryEntry(entry, lookups, store.userId))
 	);
 	const error = $derived(
 		store.historyState === 'error'
