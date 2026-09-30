@@ -1,9 +1,7 @@
 <script lang="ts">
-	import { resolve } from '$app/paths';
 	import type { ExtensionInfo } from '$lib/data/extension';
 	import { setupKindOf, type SetupTarget } from '$lib/domain/channel-setup';
 	import type { Connection } from '$lib/domain/connections';
-	import { IMPORT_KINDS, type ImportKind } from '$lib/domain/keywords';
 	import type { ConnectionsStore } from '$lib/stores/connections.svelte';
 	import type { ImportKeywordsStore } from '$lib/stores/import-keywords.svelte';
 	import type { InboxKeysStore } from '$lib/stores/inbox-keys.svelte';
@@ -11,9 +9,9 @@
 	import { channelSetupHref } from '$lib/ticket-links';
 	import BookmarkletCard from './channels/BookmarkletCard.svelte';
 	import ChannelCatalog from './channels/ChannelCatalog.svelte';
-	import ChannelIcon from './channels/ChannelIcon.svelte';
 	import ChannelSetup from './channels/ChannelSetup.svelte';
 	import ChannelsIntro from './channels/ChannelsIntro.svelte';
+	import FilesCard from './channels/FilesCard.svelte';
 	import NotionImportDialog from './channels/NotionImportDialog.svelte';
 	import OwnInboxCard from './channels/OwnInboxCard.svelte';
 	import ProtonGuide from './channels/ProtonGuide.svelte';
@@ -31,7 +29,8 @@
 	// Since EI-1 and EI-3 (ADR-0038) "Selbst hereinbringen" holds the own inbox with its keys and
 	// WhatsApp Web with its assistant (WhatsAppWebSetup, ?einrichten=whatsapp-web). Since NI-2
 	// (ADR-0041) the import dialog of Notion opens from its card or, after "Verbindung prüfen", from
-	// the last step of its assistant: the assistant closes first, no dialog from a dialog.
+	// the last step of its assistant: the assistant closes first, no dialog from a dialog. Since the
+	// plan kanal-karten KK-2 every card of the page stands on the building block ChannelCard.
 	let {
 		captureUrl,
 		connections,
@@ -66,21 +65,7 @@
 	} = $props();
 
 	const uid = $props.id();
-	const ids = { own: `${uid}-own`, files: `${uid}-files` };
-	/** Short names of the kinds of file on the files card. */
-	const FILE_NAMES: Readonly<Record<ImportKind, string>> = {
-		eml: 'Mail',
-		ics: 'Kalender',
-		whatsapp: 'WhatsApp'
-	};
-
-	const fileKeywords = $derived(
-		importKeywords?.state === 'ready'
-			? IMPORT_KINDS.map(
-					(kind) => `${FILE_NAMES[kind]} ${importKeywords.settings[kind].keywords.length}`
-				).join(' · ')
-			: null
-	);
+	const ownId = `${uid}-own`;
 
 	let catalogHeading = $state<HTMLElement>();
 
@@ -117,34 +102,17 @@
 		onimport={(connection) => (importing = connection)}
 	/>
 
-	<section class="own" aria-labelledby={ids.own}>
-		<h3 id={ids.own}>Selbst hereinbringen</h3>
+	<section class="own" aria-labelledby={ownId}>
+		<h3 id={ownId}>Selbst hereinbringen</h3>
 		<div class="own-cards">
 			<BookmarkletCard {captureUrl} />
-
-			<section class="card files" aria-labelledby={ids.files}>
-				<div class="files-head">
-					<ChannelIcon kind="files" />
-					<h4 id={ids.files}>Dateien hereinziehen</h4>
-				</div>
-				<p>
-					Mail-Dateien (.eml, auch aus Proton), Kalenderdateien (.ics) und WhatsApp-Exporte ziehst
-					du in den Eingang oder wählst sie dort mit „Datei wählen“. Treffer deiner Stichwörter sind
-					in der Auswahl schon markiert.
-				</p>
-				{#if fileKeywords !== null}
-					<p class="meta">Stichwörter: {fileKeywords}</p>
-				{/if}
-				<p class="links">
-					<a href={resolve('/einstellungen/datei-importe')}>Stichwörter bearbeiten</a>
-					<a href={resolve('/eingang')}>Zum Eingang</a>
-				</p>
-			</section>
-
+			<FilesCard {importKeywords} />
 			{#if inboxKeys !== null}
 				<OwnInboxCard store={inboxKeys} {importKeywords} />
 				<WhatsAppWebCard
 					{importKeywords}
+					{inboxKeys}
+					{extension}
 					setupHref={channelSetupHref({ kind: 'whatsapp-web', connectionId: null })}
 				/>
 			{/if}
@@ -210,56 +178,16 @@
 		font-weight: 600;
 	}
 
-	h4 {
-		font-size: 0.9375rem;
-		font-weight: 600;
-	}
-
 	.own {
 		display: grid;
 		gap: 0.75rem;
 	}
 
+	/* The same grid as "Deine Verbindungen"; every card keeps its own height. */
 	.own-cards {
 		display: grid;
-		grid-template-columns: repeat(auto-fit, minmax(min(18rem, 100%), 1fr));
+		grid-template-columns: repeat(auto-fill, minmax(min(18rem, 100%), 1fr));
 		gap: 0.75rem;
 		align-items: start;
-	}
-
-	.card {
-		display: grid;
-		gap: 0.75rem;
-		min-width: 0;
-		padding: 1.25rem;
-		background: var(--color-surface);
-		border: 1px solid var(--color-line);
-		border-radius: var(--radius-surface);
-	}
-
-	.files-head {
-		display: flex;
-		gap: 0.625rem;
-		align-items: center;
-	}
-
-	.files p {
-		font-size: 0.875rem;
-	}
-
-	.files .meta {
-		font-size: 0.8125rem;
-		font-variant-numeric: tabular-nums;
-		color: var(--color-text-muted);
-	}
-
-	.links {
-		display: flex;
-		flex-wrap: wrap;
-		gap: 0.5rem 1.25rem;
-	}
-
-	.links a {
-		color: var(--color-brand-text);
 	}
 </style>

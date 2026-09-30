@@ -290,7 +290,7 @@ function mailTail(provider: string): readonly SetupStep[] {
 			links: [],
 			commands: [],
 			more: [
-				'Gesucht wird in Betreff, Absender, den Kopfzeilen (An, Cc, Antwort an, Liste, Organisation) und im ganzen Text. Nur Betreff und Absender stellst du unter „Bearbeiten“ an der Karte ein.'
+				'Gesucht wird in Betreff, Absender, den Kopfzeilen (An, Cc, Antwort an, Liste, Organisation) und im ganzen Text. Nur Betreff und Absender stellst du an der Karte im Menü „•••“ unter „Stichwörter und Einstellungen …“ ein.'
 			],
 			checked: true
 		},
@@ -327,7 +327,7 @@ function mailTail(provider: string): readonly SetupStep[] {
 			links: [],
 			commands: [],
 			more: [
-				'In den Eingang kommen alte und neue Mails des Posteingangs, in denen ein Stichwort vorkommt, höchstens 200 neue Einträge pro Abruf. Ergänzte Stichwörter gelten auch für ältere Mails. Mails ohne Stichwort holst du mit „Aus dem Postfach wählen“ an der Karte.',
+				'In den Eingang kommen alte und neue Mails des Posteingangs, in denen ein Stichwort vorkommt, höchstens 200 neue Einträge pro Abruf. Ergänzte Stichwörter gelten auch für ältere Mails. Mails ohne Stichwort holst du mit „Aus dem Postfach wählen …“ im Menü „•••“ der Karte.',
 				'Der Hilfsprozess liest nur: Gelesen-Status, Markierungen und Ordner bleiben, und er verschickt nichts.'
 			],
 			checked: true
@@ -555,7 +555,7 @@ const TELEGRAM_STEPS: readonly SetupStep[] = [
 		links: [],
 		commands: [],
 		more: [
-			'Jede gespeicherte Nachricht beantwortet der Bot mit „Im Eingang gespeichert“. Auf Nachrichten ohne Stichwort antwortet er „Kein Stichwort erkannt – nicht gespeichert“ (abschaltbar unter „Bearbeiten“).',
+			'Jede gespeicherte Nachricht beantwortet der Bot mit „Im Eingang gespeichert“. Auf Nachrichten ohne Stichwort antwortet er „Kein Stichwort erkannt – nicht gespeichert“ (abschaltbar an der Karte im Menü „•••“ unter „Stichwörter und Einstellungen …“).',
 			'Telegram hält Nachrichten für den Bot höchstens 24 Stunden bereit; läuft die App länger nicht, gehen sie verloren.'
 		],
 		checked: true

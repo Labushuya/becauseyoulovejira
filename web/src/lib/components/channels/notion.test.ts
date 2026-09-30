@@ -198,32 +198,51 @@ afterEach(() => {
 	sessionStorage.clear();
 });
 
+/** The menu "•••" of the Notion card; jsdom shows popovers as hidden. */
+function notionMenu(card: ReturnType<typeof within>) {
+	const trigger = card.getByRole('button', { name: 'Weitere Aktionen für Notion' });
+	const menu = within(document.getElementById(trigger.getAttribute('aria-controls') ?? '')!);
+	const items = () =>
+		menu.getAllByRole('menuitem', { hidden: true }).map((item) => item.textContent?.trim());
+	return { trigger, menu, items };
+}
+
 describe('Notion card', () => {
 	it('shows the imported sources and offers import, check and "Erneut abrufen", no run and no pause', async () => {
 		const { card } = await open();
 		expect(card.getByText('Notion · Listen übernehmen, nur lesend')).toBeTruthy();
-		expect(card.getByText('Eingerichtet')).toBeTruthy();
-		await vi.waitFor(() => expect(card.getByText('8 Einträge aus 2 Quellen')).toBeTruthy());
+		expect(card.getByText('Verbunden')).toBeTruthy();
+		await vi.waitFor(() =>
+			expect(card.getByText(/^8 Einträge aus 2 Quellen übernommen( · |$)/)).toBeTruthy()
+		);
+		// The card building block (KK-2): one main button, the rest in the menu "•••", the sources
+		// in the details.
+		const main = card.getByRole('button', { name: 'Listen übernehmen …: Notion' });
+		expect(main.hasAttribute('data-card-primary')).toBe(true);
+		expect(main.getAttribute('aria-haspopup')).toBe('dialog');
+		const { menu, items } = notionMenu(card);
+		expect(items()).toEqual(['Verbindung prüfen', 'Einrichtung ansehen', 'Hilfe', 'Löschen …']);
+		expect(menu.getByRole('menuitem', { name: 'Hilfe', hidden: true }).getAttribute('href')).toBe(
+			'/einstellungen/hilfe#notion'
+		);
+		await fireEvent.click(card.getByRole('button', { name: 'Details: Notion' }));
 		const list = within(card.getByRole('region', { name: 'Bisher übernommen' }));
 		expect(list.getByRole('link', { name: /Wochenplan/ }).getAttribute('href')).toBe(
 			'https://www.notion.so/Wochenplan-b1'
 		);
 		expect(list.getByText(/^Seite · 3 Einträge · zuletzt/)).toBeTruthy();
 		expect(list.getByRole('button', { name: 'Erneut abrufen: Aufgaben Haushalt' })).toBeTruthy();
-		expect(card.getByRole('button', { name: 'Listen übernehmen …: Notion' })).toBeTruthy();
-		expect(card.getByRole('button', { name: 'Verbindung prüfen: Notion' })).toBeTruthy();
 		expect(card.queryByRole('button', { name: /Jetzt abrufen/ })).toBeNull();
-		expect(card.queryByRole('button', { name: /Bearbeiten/ })).toBeNull();
+		expect(items()).not.toContain('Pausieren');
+		expect(items().some((item) => item?.startsWith('Stichwörter'))).toBe(false);
 		expect(
 			card.queryByText('Keine Stichwörter: Diese Verbindung übernimmt nichts automatisch.')
 		).toBeNull();
-		expect(card.getByRole('link', { name: 'So geht’s' }).getAttribute('href')).toBe(
-			'/einstellungen/hilfe#notion'
-		);
 	});
 
 	it('takes only new entries with "Erneut abrufen" and says so in a flag', async () => {
 		const { card, data, flags } = await open();
+		await fireEvent.click(card.getByRole('button', { name: 'Details: Notion' }));
 		await vi.waitFor(() =>
 			expect(card.getByRole('button', { name: 'Erneut abrufen: Wochenplan' })).toBeTruthy()
 		);
@@ -245,7 +264,9 @@ describe('Notion card', () => {
 
 	it('checks the connection and reads it again', async () => {
 		const { card, data, connections, flags } = await open();
-		await fireEvent.click(card.getByRole('button', { name: 'Verbindung prüfen: Notion' }));
+		const { trigger, menu } = notionMenu(card);
+		await fireEvent.click(trigger);
+		await fireEvent.click(menu.getByRole('menuitem', { name: 'Verbindung prüfen', hidden: true }));
 		await vi.waitFor(() => expect(data.check).toHaveBeenCalledWith(ID));
 		await vi.waitFor(() => expect(connections.data.get).toHaveBeenCalledWith(ID));
 		expect(flags.flags[0]?.title).toMatch(/^„Notion“: Verbunden mit dem Arbeitsbereich „Beispiel“/);
@@ -259,9 +280,10 @@ describe('Notion card', () => {
 			props: { connections: connections.store, notion: notionStoreOf(), onchange: vi.fn() }
 		});
 		const card = within(await screen.findByRole('article', { name: 'Notion' }));
-		expect(card.getByText('Nicht eingerichtet')).toBeTruthy();
+		expect(card.getByText('Einrichtung offen')).toBeTruthy();
 		expect(card.getByRole('button', { name: 'Einrichtung fortsetzen: Notion' })).toBeTruthy();
 		expect(card.queryByRole('button', { name: /Listen übernehmen/ })).toBeNull();
+		expect(notionMenu(card).items()).not.toContain('Verbindung prüfen');
 	});
 });
 

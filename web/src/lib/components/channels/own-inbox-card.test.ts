@@ -1,7 +1,9 @@
-// Card "Eigener Eingang (API)" (ADR-0038; plan eigener-eingang-whatsapp-web, EI-1): the keys with
-// name, start, creation and last use, "Zugangsschlüssel erzeugen …" with the key shown once,
-// "Widerrufen …" through the confirmation, the keywords of the channel "api" and the states before
-// the migration and after a failure.
+// Card "Eigener Eingang (API)" (ADR-0038; plan eigener-eingang-whatsapp-web, EI-1; since the plan
+// kanal-karten KK-2 on the card building block): the keys with name, start, creation and last use
+// in the details, "Zugangsschlüssel erzeugen …" as main button with the key shown once,
+// "Widerrufen …" through the confirmation, the keywords of the channel "api" and the help in the
+// menu "•••", the state and the info line, and the states before the migration and after a
+// failure.
 
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/svelte';
 import { describe, expect, it, vi } from 'vitest';
@@ -112,6 +114,19 @@ describe('InboxKeysStore', () => {
 	});
 });
 
+const NAME = 'Eigener Eingang (API)';
+
+/** The card, its menu "•••" and its details (opened). */
+async function openCard() {
+	const article = screen.getByRole('article', { name: NAME });
+	const toggle = within(article).getByRole('button', { name: `Details: ${NAME}` });
+	if (toggle.getAttribute('aria-expanded') !== 'true') await fireEvent.click(toggle);
+	const details = within(document.getElementById(toggle.getAttribute('aria-controls') ?? '')!);
+	const trigger = within(article).getByRole('button', { name: `Weitere Aktionen für ${NAME}` });
+	const menu = within(document.getElementById(trigger.getAttribute('aria-controls') ?? '')!);
+	return { article, card: within(article), details, trigger, menu };
+}
+
 describe('OwnInboxCard', () => {
 	it('lists the keys without the key itself, with start, creation and last use', async () => {
 		const { store, keywords } = setup([
@@ -121,20 +136,32 @@ describe('OwnInboxCard', () => {
 		await store.load();
 		await keywords.load();
 		render(OwnInboxCard, { props: { store, importKeywords: keywords } });
-		const card = screen.getByRole('region', { name: 'Eigener Eingang (API)' });
-		const list = within(card).getByRole('list', { name: 'Zugangsschlüssel' });
+		const { card, details, menu } = await openCard();
+		// A program used a key: the setup is done; the info line counts the keys.
+		expect(card.getByText('Verbunden')).toBeTruthy();
+		expect(card.getByText(/^2 Schlüssel, zuletzt benutzt /)).toBeTruthy();
+		const list = details.getByRole('list', { name: 'Zugangsschlüssel' });
 		const rows = within(list).getAllByRole('listitem');
 		expect(rows).toHaveLength(2);
 		expect(rows[0]?.textContent).toMatch(
 			/Laptop.*byl_Ab12….*angelegt 28\.09\.2026.*noch nie benutzt/s
 		);
 		expect(rows[1]?.textContent).toMatch(/zuletzt 28\.09\.2026 12:15/);
-		expect(
-			within(card).getByText(/Stichwörter für „mode: auto“: 2 \(todo, rechnung\)/)
-		).toBeTruthy();
-		expect(within(card).getByRole('link', { name: 'So geht’s' }).getAttribute('href')).toBe(
+		expect(details.getByText('Stichwörter für „mode: auto“')).toBeTruthy();
+		expect(details.getByText('2 (todo, rechnung)')).toBeTruthy();
+		expect(details.getByText(/Ein Schlüssel kann nur das/)).toBeTruthy();
+		expect(menu.getByRole('menuitem', { name: 'Hilfe', hidden: true }).getAttribute('href')).toBe(
 			'/einstellungen/hilfe#eigener-eingang'
 		);
+	});
+
+	it('says the setup is open while no program has used a key', async () => {
+		const { store } = setup([KEY]);
+		await store.load();
+		render(OwnInboxCard, { props: { store } });
+		const { card } = await openCard();
+		expect(card.getByText('Einrichtung offen')).toBeTruthy();
+		expect(card.getByText('1 Schlüssel, noch nie benutzt')).toBeTruthy();
 	});
 
 	it('shows a new key once, with a copy button, and forgets it when the modal closes', async () => {
@@ -142,9 +169,14 @@ describe('OwnInboxCard', () => {
 		await store.load();
 		await keywords.load();
 		render(OwnInboxCard, { props: { store, importKeywords: keywords } });
-		expect(screen.getByRole('heading', { name: 'Noch kein Zugangsschlüssel' })).toBeTruthy();
+		const { card, details } = await openCard();
+		expect(card.getByText('Einrichtung offen')).toBeTruthy();
+		expect(card.getByText('Noch kein Zugangsschlüssel')).toBeTruthy();
+		expect(details.getByText(/für jedes Programm, das Einträge bringen soll/)).toBeTruthy();
 
-		await fireEvent.click(screen.getByRole('button', { name: 'Zugangsschlüssel erzeugen …' }));
+		const create = card.getByRole('button', { name: `Zugangsschlüssel erzeugen …: ${NAME}` });
+		expect(create.getAttribute('aria-haspopup')).toBe('dialog');
+		await fireEvent.click(create);
 		const dialog = screen.getByRole('dialog', { name: 'Zugangsschlüssel erzeugen' });
 		await fireEvent.click(within(dialog).getByRole('button', { name: 'Schlüssel erzeugen' }));
 		expect(
@@ -180,7 +212,8 @@ describe('OwnInboxCard', () => {
 		await store.load();
 		await keywords.load();
 		render(OwnInboxCard, { props: { store, importKeywords: keywords } });
-		await fireEvent.click(screen.getByRole('button', { name: 'Widerrufen …: Laptop' }));
+		const { details } = await openCard();
+		await fireEvent.click(details.getByRole('button', { name: 'Widerrufen …: Laptop' }));
 		const dialog = screen.getByRole('dialog', { name: 'Zugangsschlüssel „Laptop“ widerrufen?' });
 		expect(document.activeElement?.textContent).toBe('Abbrechen');
 		expect(data.revoke).not.toHaveBeenCalled();
@@ -196,9 +229,11 @@ describe('OwnInboxCard', () => {
 		await store.load();
 		await keywords.load();
 		render(OwnInboxCard, { props: { store, importKeywords: keywords } });
-		await fireEvent.click(
-			screen.getByRole('button', { name: 'Stichwörter …: Eigener Eingang (API)' })
-		);
+		const { trigger, menu } = await openCard();
+		await fireEvent.click(trigger);
+		const entry = menu.getByRole('menuitem', { name: 'Stichwörter …', hidden: true });
+		expect(entry.getAttribute('aria-haspopup')).toBe('dialog');
+		await fireEvent.click(entry);
 		const dialog = screen.getByRole('dialog', { name: 'Stichwörter: Eigener Eingang (API)' });
 		expect(within(dialog).getByText(/Gesucht wird in Titel und Text/)).toBeTruthy();
 		await fireEvent.click(
@@ -215,10 +250,12 @@ describe('OwnInboxCard', () => {
 		const before = setup(null);
 		await before.store.load();
 		const { unmount } = render(OwnInboxCard, { props: { store: before.store } });
+		expect(screen.getByText('Neustart nötig')).toBeTruthy();
 		expect(screen.getByText('Nach dem nächsten Neustart verfügbar')).toBeTruthy();
+		expect(screen.getByText(/neu-starten\.bat im Ordner app/)).toBeTruthy();
 		expect(
 			screen
-				.getByRole('button', { name: 'Zugangsschlüssel erzeugen …' })
+				.getByRole('button', { name: `Zugangsschlüssel erzeugen …: ${NAME}` })
 				.getAttribute('aria-disabled')
 		).toBe('true');
 		unmount();
@@ -227,9 +264,13 @@ describe('OwnInboxCard', () => {
 		failed.data.list.mockRejectedValueOnce(new DataError('network'));
 		await failed.store.load();
 		render(OwnInboxCard, { props: { store: failed.store } });
-		await fireEvent.click(screen.getByRole('button', { name: 'Erneut versuchen' }));
+		expect(screen.getByText('Fehler').closest('[data-tone]')?.getAttribute('data-tone')).toBe(
+			'danger'
+		);
+		await fireEvent.click(screen.getByRole('button', { name: `Erneut versuchen: ${NAME}` }));
+		const { details } = await openCard();
 		await waitFor(() =>
-			expect(screen.getByRole('list', { name: 'Zugangsschlüssel' })).toBeTruthy()
+			expect(details.getByRole('list', { name: 'Zugangsschlüssel' })).toBeTruthy()
 		);
 	});
 });

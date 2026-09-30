@@ -234,6 +234,8 @@ Das Formular „Neue Verbindung“ entfällt als Dauerformular. Anlegen geschieh
 
 ### 3.5 Kanal-Karte `ChannelCard.svelte`
 
+> Seit 2026-09-30 abgelöst durch den gemeinsamen Karten-Baustein aus dem [Plan „Kanal-Karten“](kanal-karten.md) (KK-2): `ChannelCard.svelte` ist jetzt der Baustein, die Karte einer Verbindung heißt `ConnectionCard.svelte`, die Zustände heißen „Verbunden“, „Pausiert“, „Fehler“, „Einrichtung offen“ und „Neustart nötig“, „Bearbeiten“ steht als „Stichwörter und Einstellungen …“ im Menü „•••“. Der Text unten beschreibt den Stand von EH-3.
+
 ```
 ┌────────────────────────────────────────────────────┐
 │ [Icon]  Gmail privat                  [● Fehler]   │

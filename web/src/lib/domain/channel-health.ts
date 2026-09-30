@@ -1,17 +1,22 @@
-// State of a connection at a glance (ADR-0026 section 3, plan EH-3 and §3.5): one pure function
-// decides the lozenge, the one hint of the card and the main action. The order of the checks is
-// fixed: a running fetch, then paused, then missing access data, then the last error, else set up.
-// An unknown state of the variables (null, request failed) skips the check for missing data.
+// State of a connection at a glance (ADR-0026 section 3, plan EH-3 and §3.5; since the plan
+// kanal-karten KK-2 with the states of the unified card): one pure function decides the lozenge,
+// the one hint of the card and the main action. The order of the checks is fixed: a running
+// fetch, then paused, then missing access data, then the last error, then a mail helper that
+// needs a restart, else connected. An unknown state of the variables or of the mail helper (null,
+// request failed) skips its check.
 
+import { CARD_STATUS } from './channel-card';
 import {
 	NO_KEYWORDS_WARNING,
 	fetchesAutomatically,
+	mailHelperText,
 	secretStatusText,
 	type Connection,
+	type MailHelperStatus,
 	type SecretStatus
 } from './connections';
 
-export type ChannelHealthState = 'running' | 'paused' | 'unset' | 'error' | 'ok';
+export type ChannelHealthState = 'running' | 'paused' | 'unset' | 'error' | 'restart' | 'ok';
 
 export interface ChannelHealth {
 	state: ChannelHealthState;
@@ -20,7 +25,7 @@ export interface ChannelHealth {
 	/** Tone of the lozenge; "danger" only for a real error (ADR-0009). */
 	tone: 'neutral' | 'brand' | 'danger' | 'muted';
 	/** Icon of the lozenge (GuidanceIcon). */
-	icon: 'refresh' | 'pause' | 'pending' | 'error' | 'check';
+	icon: 'refresh' | 'pause' | 'pending' | 'error' | 'check' | 'warning';
 	/** At most one compact hint of the card. */
 	hint: { tone: 'info' | 'warning' | 'error'; text: string } | null;
 	/**
@@ -28,7 +33,7 @@ export interface ChannelHealth {
 	 * a mailbox too (the hook asks the mail helper).
 	 */
 	action: 'run' | 'resume' | 'setup' | 'none';
-	/** A mailbox that is set up also offers "Aus dem Postfach wählen" next to the main action. */
+	/** A mailbox that is set up also offers "Aus dem Postfach wählen". */
 	pick: boolean;
 }
 
@@ -40,21 +45,26 @@ type ConnectionFacts = Pick<
 export function channelHealth(
 	connection: ConnectionFacts,
 	secretStatus: SecretStatus | null,
-	running: boolean
+	running: boolean,
+	helper: MailHelperStatus | null = null
 ): ChannelHealth {
-	const health = baseHealth(connection, secretStatus, running);
+	const health = baseHealth(connection, secretStatus, running, helper);
 	return {
 		...health,
 		pick:
 			connection.type === 'mail' &&
-			(health.state === 'ok' || health.state === 'error' || health.state === 'running')
+			(health.state === 'ok' ||
+				health.state === 'error' ||
+				health.state === 'restart' ||
+				health.state === 'running')
 	};
 }
 
 function baseHealth(
 	connection: ConnectionFacts,
 	secretStatus: SecretStatus | null,
-	running: boolean
+	running: boolean,
+	helper: MailHelperStatus | null
 ): Omit<ChannelHealth, 'pick'> {
 	const regular: ChannelHealth['action'] = 'run';
 	if (running) {
@@ -70,9 +80,7 @@ function baseHealth(
 	if (!connection.enabled) {
 		return {
 			state: 'paused',
-			label: 'Pausiert',
-			tone: 'muted',
-			icon: 'pause',
+			...CARD_STATUS.paused,
 			hint: {
 				tone: 'info',
 				text:
@@ -87,9 +95,7 @@ function baseHealth(
 	if (secret !== null && !secret.ok) {
 		return {
 			state: 'unset',
-			label: 'Nicht eingerichtet',
-			tone: 'neutral',
-			icon: 'pending',
+			...CARD_STATUS.setup,
 			hint: { tone: 'warning', text: secret.text },
 			action: 'setup'
 		};
@@ -98,15 +104,23 @@ function baseHealth(
 		const hint = connection.lastHint !== '' ? ` ${connection.lastHint}` : '';
 		return {
 			state: 'error',
-			label: 'Fehler',
-			tone: 'danger',
-			icon: 'error',
+			...CARD_STATUS.error,
 			hint: { tone: 'error', text: `Letzter Fehler: ${connection.lastError}${hint}` },
 			action: regular
 		};
 	}
+	// A mailbox needs the mail helper (ADR-0016 §4): if it does not run or runs with another token
+	// or an old version, a restart of the app starts the right one (neu-starten.bat).
+	if (connection.type === 'mail' && helper !== null && helper.state !== 'running') {
+		return {
+			state: 'restart',
+			...CARD_STATUS.restart,
+			hint: { tone: 'warning', text: `Hilfsprozess ${mailHelperText(helper)}` },
+			action: regular
+		};
+	}
 	// The hint of the last run wins over the missing keywords: it may carry the chat ID Telegram
-	// needs for the allowlist; the meta line "Stichwörter: keine" still shows the missing keywords.
+	// needs for the allowlist; the details still say "Stichwörter: keine".
 	// Notion has no keywords (ADR-0041): the user chooses what to import.
 	let hint: ChannelHealth['hint'] = null;
 	if (connection.lastHint !== '') hint = { tone: 'info', text: connection.lastHint };
@@ -115,9 +129,7 @@ function baseHealth(
 	}
 	return {
 		state: 'ok',
-		label: 'Eingerichtet',
-		tone: 'brand',
-		icon: 'check',
+		...CARD_STATUS.connected,
 		hint,
 		action: regular
 	};
