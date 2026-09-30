@@ -645,6 +645,20 @@ describe('PB-1 hooks before the migration of the trash (ADR-0037)', () => {
 		expect((await items.getOne(main.id)).state).toBe('discarded');
 	});
 
+	it('duplicates a ticket with sub-tickets and comments before the migrations of the trash and the pin (ADR-0045)', async () => {
+		const original = await who.collection('tickets').create({ owner: who.userId, title: 'Original' });
+		await who.collection('tickets').create({ owner: who.userId, title: 'Kind', parent: original.id });
+		await who.collection('comments').create({ ticket: original.id, author: who.userId, body: 'Notiz' });
+		const answer = await who.send(`/api/byl/tickets/${original.id}/duplicate`, {
+			method: 'POST',
+			body: { title: 'Kopie', status: 'open', subtasks: true, comments: true }
+		});
+		expect(answer).toMatchObject({ title: 'Kopie', comments: 1, subtasks: [{ key: expect.stringMatching(/^TASK-/) }] });
+		const copy = await who.collection('tickets').getOne(answer.id);
+		expect(copy).toMatchObject({ title: 'Kopie', status: 'open' });
+		expect(copy.pinned_comment).toBeUndefined();
+	});
+
 	it('answers the routes of the trash with the restart hint and ignores its fields', async () => {
 		await expect(who.send('/api/byl/trash', { method: 'GET' })).rejects.toMatchObject({ status: 503 });
 		const ticket = await who.collection('tickets').create({ owner: who.userId, title: 'Feld', deleted_at: '2037-01-01 00:00:00.000Z' });

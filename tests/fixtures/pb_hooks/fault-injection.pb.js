@@ -85,3 +85,19 @@ onRecordUpdateExecute(function (e) {
   }
   e.next();
 }, 'projects');
+
+// Fails the last write of "Ticket duplizieren" (ADR-0045): the entry "Dupliziert nach …" in the
+// history of an original with the marker title. Copy of the source, duplicate, sub-tickets,
+// comments, pin and the history of the duplicate were written before in the same transaction, so
+// none of them may stay.
+onRecordCreate(function (e) {
+  if (e.record.getString('field') === 'duplicate') {
+    var found = e.app.findRecordsByFilter('tickets', 'id = {:id}', '', 1, 0, {
+      id: e.record.getString('ticket')
+    });
+    if (found.length > 0 && found[0].getString('title') === '__byl_fail_duplicate__') {
+      throw new BadRequestError('Injected duplicate failure.');
+    }
+  }
+  e.next();
+}, 'ticket_history');

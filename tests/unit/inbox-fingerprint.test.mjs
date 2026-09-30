@@ -169,3 +169,25 @@ describe('escaping and hashing', () => {
 		expect(() => fp.fingerprintKey({ channel: 'fax' }, 'x')).toThrow(/unknown channel/);
 	});
 });
+
+describe('copy of a source for a duplicate ticket (ADR-0045)', () => {
+	const original = sha256('mail|x@y');
+
+	it('derives a key of its own from the original entry and a new ID', () => {
+		expect(fp.copyFingerprintKey(original, 'r1')).toBe(`copy|${original}|r1`);
+		expect(fp.copyFingerprintKey(original, 'r2')).not.toBe(fp.copyFingerprintKey(original, 'r1'));
+	});
+
+	it('never meets the key of a channel, so it neither blocks nor answers an import', () => {
+		const copy = fp.copyFingerprintKey(original, 'r1');
+		for (const item of [
+			{ channel: 'eml', source_ref: '<x@y>' },
+			{ channel: 'mail', source_ref: 'x@y' },
+			{ channel: 'manual' },
+			{ channel: 'link', source_url: 'https://example.com/' }
+		]) {
+			expect(keyOf(item, 'r1')).not.toBe(copy);
+		}
+		expect(fp.copyFingerprintKey('a|b', 'c')).not.toBe(fp.copyFingerprintKey('a', 'b|c'));
+	});
+});

@@ -4,6 +4,12 @@
 
 import type PocketBase from 'pocketbase';
 import { addDays, type CalendarDate } from '../domain/berlin-date';
+import {
+	duplicateRequestBody,
+	toDuplicateOutcome,
+	type DuplicateOutcome,
+	type DuplicateRequest
+} from '../domain/duplicate';
 import { isInboxChannel } from '../domain/inbox';
 import { EMPTY_LIST_QUERY, NO_PROJECT, activeSearch, type ListQuery } from '../domain/list-query';
 import { SOON_DAYS } from '../domain/ordering';
@@ -659,5 +665,29 @@ export function deleteTicket(
 			signal
 		});
 		return toTrashMove(answer);
+	});
+}
+
+/**
+ * "Ticket duplizieren" (ADR-0045): the route creates the duplicate with everything chosen (new
+ * sub-tasks, copied comments, the copy of the main source) in one transaction, or nothing. A ticket
+ * the user may not see, also one in the trash, is not found; refusals come per field (title,
+ * status, project, source).
+ */
+export function duplicateTicket(
+	pb: PocketBase,
+	id: string,
+	request: DuplicateRequest,
+	{ signal }: RequestOptions = {}
+): Promise<DuplicateOutcome> {
+	return withDataErrors(signal, async () => {
+		const answer: unknown = await pb.send(`/api/byl/tickets/${encodeURIComponent(id)}/duplicate`, {
+			method: 'POST',
+			body: duplicateRequestBody(request),
+			signal
+		});
+		const outcome = toDuplicateOutcome(answer);
+		if (outcome === null) throw new DataError('server');
+		return outcome;
 	});
 }
