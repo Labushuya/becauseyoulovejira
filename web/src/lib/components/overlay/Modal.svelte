@@ -1,6 +1,11 @@
 <script lang="ts">
-	import { tick, type Snippet } from 'svelte';
+	import { tick, untrack, type Snippet } from 'svelte';
 	import { closeAction, type CloseTrigger } from '$lib/overlay/close-rules';
+	import {
+		enclosingModal,
+		provideModalContext,
+		reportNestedModal
+	} from '$lib/overlay/modal-context';
 
 	// Modal building block (ADR-0025 section 3): a native <dialog> with showModal() for top layer,
 	// focus trap and inert background. Header with the title and the mandatory ×, a content area
@@ -9,6 +14,9 @@
 	// verwerfen?" in place of the footer (no dialog from a dialog), a running action blocks every
 	// way. The owner decides about `open`; `onclose` only asks for it. The focus goes to the first
 	// control of the content on opening and back to the element that had it on closing.
+	// No dialog from a dialog (ADR-0025 section 3, addendum 16): the modal marks the components below
+	// it (modal-context.ts), so they show forms and questions inline; a modal that opens inside
+	// another one anyway is reported (thrown in tests, logged in the app).
 	let {
 		open,
 		size = 'm',
@@ -55,6 +63,23 @@
 	const uid = $props.id();
 	const titleId = `${uid}-title`;
 	const discardId = `${uid}-discard`;
+
+	/** The modal this one renders in, if any: then it must not open (ADR-0025 section 3). */
+	const outer = enclosingModal();
+	provideModalContext({
+		get title() {
+			return title;
+		}
+	});
+	/** A nested opening was reported already (at mounting open); the next opening reports again. */
+	let nestedReported = false;
+	if (outer !== null && untrack(() => open)) {
+		nestedReported = true;
+		reportNestedModal(
+			untrack(() => title),
+			outer.title
+		);
+	}
 	const FOCUSABLE =
 		'input:not([disabled]):not([type="hidden"]), select:not([disabled]), textarea:not([disabled]), button:not([disabled]), a[href], [tabindex]:not([tabindex="-1"])';
 
@@ -99,6 +124,8 @@
 		const element = dialog;
 		if (element === undefined) return;
 		if (open && !element.open) {
+			if (outer !== null && !nestedReported) untrack(() => reportNestedModal(title, outer.title));
+			nestedReported = false;
 			returnTarget = activeElement();
 			asking = false;
 			element.showModal();

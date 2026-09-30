@@ -11,8 +11,10 @@
 	} from '$lib/domain/recurrence-rule';
 	import type { TemplateStatus } from '$lib/domain/series-template';
 	import type { EditResult } from '$lib/stores/catalog-editor';
+	import { insideModal } from '$lib/overlay/modal-context';
 	import ErrorIcon from './ErrorIcon.svelte';
 	import InitialStatusChoice from './InitialStatusChoice.svelte';
+	import InlineDialog from './InlineDialog.svelte';
 	import Modal from './overlay/Modal.svelte';
 	import RecurrenceForm from './RecurrenceForm.svelte';
 
@@ -24,6 +26,9 @@
 	// "Wiederholen…" asks "Folgetickets starten mit" after the rhythm (`askStatus`, ADR-0022
 	// addendum 9): a required choice without an answer in advance; "Regel bearbeiten" does not ask
 	// again (the status of the rule is edited with its template).
+	// Inside a modal (the full view) no dialog opens (ADR-0025 section 3, addendum 16): the same form
+	// stands inline as an unfolded area (InlineDialog) where the owner renders it, with the same
+	// rules for Escape, "Abbrechen", focus and a running save.
 	let {
 		heading,
 		initial,
@@ -37,6 +42,7 @@
 		ticketStatus = null,
 		initialStatus = null,
 		submitLabel,
+		returnFocus,
 		onsave,
 		onclose
 	}: {
@@ -60,6 +66,8 @@
 		/** An answer the user gave before (a prepared "Wiederholen…" after a failed rule). */
 		initialStatus?: TemplateStatus | null;
 		submitLabel: string;
+		/** Inline only: where the focus goes on closing when the opener is gone. */
+		returnFocus?: () => HTMLElement | null | undefined;
 		/** The rhythm and the answer to the question (null when it was not asked). */
 		onsave: (
 			values: RecurrenceFormValues,
@@ -71,6 +79,8 @@
 
 	const uid = $props.id();
 	const formId = `${uid}-form`;
+	/** In the full view (a modal) the form stands inline instead of in a dialog of its own. */
+	const inline = insideModal();
 
 	let values = $state<RecurrenceFormValues>(
 		untrack(() => ({ ...initial, weekdays: [...initial.weekdays] }))
@@ -130,14 +140,7 @@
 	}
 </script>
 
-<Modal
-	open
-	size="m"
-	title={heading}
-	{busy}
-	initialFocus={form?.querySelector<HTMLElement>('input:checked') ?? null}
-	onclose={() => onclose()}
->
+{#snippet content()}
 	<form id={formId} class="form" novalidate onsubmit={save} bind:this={form}>
 		<RecurrenceForm
 			bind:values
@@ -168,16 +171,48 @@
 			<div class="alert-error" role="alert"><ErrorIcon /><span>{message}</span></div>
 		{/if}
 	</form>
+{/snippet}
 
-	{#snippet footer({ close })}
-		<button class="button-secondary" type="button" aria-disabled={busy} onclick={close}>
-			Abbrechen
-		</button>
-		<button class="button-primary" type="submit" form={formId} aria-disabled={busy}>
-			{busy ? 'Wird gespeichert …' : submitLabel}
-		</button>
-	{/snippet}
-</Modal>
+{#snippet buttons({ close }: { close: () => void })}
+	<button class="button-secondary" type="button" aria-disabled={busy} onclick={close}>
+		Abbrechen
+	</button>
+	<button
+		class="button-primary"
+		type="submit"
+		form={formId}
+		aria-disabled={busy}
+		aria-busy={busy ? 'true' : undefined}
+	>
+		{busy ? 'Wird gespeichert …' : submitLabel}
+	</button>
+{/snippet}
+
+{#if inline}
+	<InlineDialog
+		open
+		title={heading}
+		{busy}
+		initialFocus={form?.querySelector<HTMLElement>('input:checked') ?? null}
+		{returnFocus}
+		onclose={() => onclose()}
+		footer={buttons}
+	>
+		{@render content()}
+	</InlineDialog>
+{:else}
+	<Modal
+		open
+		size="m"
+		title={heading}
+		{busy}
+		initialFocus={form?.querySelector<HTMLElement>('input:checked') ?? null}
+		onclose={() => onclose()}
+		footer={buttons}
+	>
+		{@render content()}
+	</Modal>
+{/if}
 
 <style>
 	.form {

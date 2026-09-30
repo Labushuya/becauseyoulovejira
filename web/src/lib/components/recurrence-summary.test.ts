@@ -15,6 +15,7 @@ import { CatalogStore } from '$lib/stores/catalog.svelte';
 import type { FlagSink } from '$lib/stores/flags.svelte';
 import { REPEAT_FAILED, RecurrenceStore, type RecurrenceData } from '$lib/stores/recurrence.svelte';
 import RecurrenceSummary from './RecurrenceSummary.svelte';
+import InModalHarness from '$lib/test/InModalHarness.svelte';
 import { useOverlayStubs } from '$lib/test/overlay-stubs';
 
 // Recurrence in the ticket panel (E5 plan, package 4): "Wiederholen…" for an open ticket, the
@@ -93,7 +94,9 @@ async function setup(
 	/** History of the ticket as the panel loaded it (ADR-0022 addendum 4). */
 	history: HistoryEntry[] = [],
 	/** Open tickets of the series (recommendation 6). */
-	openTickets: OpenInstance[] = []
+	openTickets: OpenInstance[] = [],
+	/** Inside an open modal, as in the full view (ADR-0025 addendum 16). */
+	inModal = false
 ) {
 	const fake: RecurrenceData = {
 		listRules: vi.fn(async () => rules),
@@ -129,9 +132,9 @@ async function setup(
 	);
 	await catalog.load();
 	const onticket = vi.fn();
-	render(RecurrenceSummary, {
-		props: { ticket: item, store, catalog, today: TODAY, history, openTickets, onticket }
-	});
+	const props = { ticket: item, store, catalog, today: TODAY, history, openTickets, onticket };
+	if (inModal) render(InModalHarness, { props: { component: RecurrenceSummary, props } });
+	else render(RecurrenceSummary, { props });
 	return { fake, store, onticket, flagTitles };
 }
 
@@ -685,5 +688,67 @@ describe('RecurrenceSummary: "Folgetickets starten mit" in "Wiederholen…" (ADR
 		await fireEvent.click(screen.getByRole('button', { name: 'Regel bearbeiten' }));
 		const dialog = screen.getByRole('dialog', { name: 'Regel bearbeiten' });
 		expect(within(dialog).queryByRole('radiogroup')).toBeNull();
+	});
+});
+
+// In the full view (a modal) no dialog opens (ADR-0025 section 3, addendum 16): "Wiederholen…"
+// and "Regel bearbeiten" unfold inline in the section, with the same form and rules.
+describe('RecurrenceSummary in the full view', () => {
+	const fullView = () => screen.getByRole('dialog', { name: 'Vollansicht' });
+
+	it('creates a rule in an area of the section', async () => {
+		const { fake, onticket } = await setup(ticket(), [], {}, undefined, [], [], true);
+		const trigger = screen.getByRole('button', { name: 'Wiederholen…' });
+		expect(trigger.getAttribute('aria-haspopup')).toBeNull();
+		await fireEvent.click(trigger);
+		expect(screen.getAllByRole('dialog')).toEqual([fullView()]);
+		const section = screen.getByRole('region', { name: 'Wiederholung' });
+		const area = within(section).getByRole('region', { name: 'Wiederholen…' });
+		await fireEvent.click(within(area).getByRole('button', { name: 'Wiederholung anlegen' }));
+		await vi.waitFor(() => expect(fake.createRule).toHaveBeenCalledOnce());
+		await vi.waitFor(() => expect(onticket).toHaveBeenCalledOnce());
+		await vi.waitFor(() =>
+			expect(within(section).queryByRole('region', { name: 'Wiederholen…' })).toBeNull()
+		);
+	});
+
+	it('edits the rhythm in an area of the section, the button unfolds and folds it', async () => {
+		const updateRule = vi.fn(async (id: string) =>
+			rule({ id, weekdays: ['MO', 'TH'], updated: '2026-09-02 10:00:00.000Z' })
+		);
+		await setup(
+			ticket({ recurring: true, recurrenceId: 'rule00000000001' }),
+			[rule()],
+			{ updateRule },
+			undefined,
+			[],
+			[],
+			true
+		);
+		const trigger = screen.getByRole('button', { name: 'Regel bearbeiten' });
+		trigger.focus();
+		await fireEvent.click(trigger);
+		expect(trigger.getAttribute('aria-expanded')).toBe('true');
+		expect(screen.getAllByRole('dialog')).toEqual([fullView()]);
+		const section = screen.getByRole('region', { name: 'Wiederholung' });
+		const area = within(section).getByRole('region', { name: 'Regel bearbeiten' });
+		await fireEvent.click(trigger);
+		expect(area.isConnected).toBe(false);
+		await vi.waitFor(() => expect(document.activeElement).toBe(trigger));
+
+		await fireEvent.click(trigger);
+		const again = within(section).getByRole('region', { name: 'Regel bearbeiten' });
+		await fireEvent.click(within(again).getByRole('checkbox', { name: 'Donnerstag' }));
+		await fireEvent.click(within(again).getByRole('button', { name: 'Speichern' }));
+		await vi.waitFor(() =>
+			expect(updateRule).toHaveBeenCalledWith(
+				'rule00000000001',
+				expect.objectContaining({ weekdays: ['MO', 'TH'] })
+			)
+		);
+		await vi.waitFor(() =>
+			expect(within(section).queryByRole('region', { name: 'Regel bearbeiten' })).toBeNull()
+		);
+		await vi.waitFor(() => expect(document.activeElement).toBe(trigger));
 	});
 });

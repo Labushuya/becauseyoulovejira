@@ -6,8 +6,10 @@
 		findTicketPickerSource,
 		type TicketPickerSource
 	} from '$lib/stores/ticket-picker.svelte';
+	import { insideModal } from '$lib/overlay/modal-context';
 	import type { TicketSourcesStore } from '$lib/stores/ticket-sources.svelte';
 	import ErrorIcon from './ErrorIcon.svelte';
+	import InlineDialog from './InlineDialog.svelte';
 	import Modal from './overlay/Modal.svelte';
 	import TicketPicker from './TicketPicker.svelte';
 
@@ -15,12 +17,15 @@
 	// ticket to another one, in one step and atomic in the hook, which writes the history of both
 	// tickets. Modal M with the ticket picker (ADR-0042): the list opens with the dialog; the current
 	// ticket stays visible but cannot be chosen, tickets of another area neither. The main source
-	// never gets here (the callers show why instead). A refusal stays in the dialog.
+	// never gets here (the callers show why instead). A refusal stays in the dialog. Inside a modal
+	// (the full view) the same form unfolds inline where the owner renders it (ADR-0025 section 3,
+	// addendum 16).
 	let {
 		item,
 		current,
 		store,
 		picker,
+		returnFocus,
 		onclose,
 		onmoved = () => undefined
 	}: {
@@ -30,6 +35,8 @@
 		store: TicketSourcesStore;
 		/** Tickets of the picker; the (app) layout provides them. */
 		picker?: TicketPickerSource;
+		/** Inline only: where the focus goes on closing when the opener is gone. */
+		returnFocus?: () => HTMLElement | null | undefined;
 		onclose: () => void;
 		/** The entry after the move. */
 		onmoved?: (item: InboxItemSummary) => void;
@@ -37,6 +44,7 @@
 
 	const fromContext = findTicketPickerSource();
 	const source = $derived(picker ?? fromContext);
+	const inline = insideModal();
 	const uid = $props.id();
 	const formId = `${uid}-form`;
 	const describedId = `${uid}-described`;
@@ -74,14 +82,7 @@
 	}
 </script>
 
-<Modal
-	open
-	size="m"
-	title="Anderem Ticket zuordnen"
-	describedBy={describedId}
-	{busy}
-	onclose={() => onclose()}
->
+{#snippet content()}
 	<form id={formId} class="form" novalidate onsubmit={move}>
 		<p id={describedId}>
 			„{item.title}“ gehört zu {current.key} und wechselt direkt zum gewählten Ticket. Beide Tickets vermerken
@@ -101,16 +102,48 @@
 			<p class="alert-error" role="alert"><ErrorIcon /><span>{failure}</span></p>
 		{/if}
 	</form>
+{/snippet}
 
-	{#snippet footer({ close })}
-		<button class="button-secondary" type="button" aria-disabled={busy} onclick={close}>
-			Abbrechen
-		</button>
-		<button class="button-primary" type="submit" form={formId} aria-disabled={busy}>
-			{busy ? 'Wird zugeordnet …' : 'Zuordnen'}
-		</button>
-	{/snippet}
-</Modal>
+{#snippet buttons({ close }: { close: () => void })}
+	<button class="button-secondary" type="button" aria-disabled={busy} onclick={close}>
+		Abbrechen
+	</button>
+	<button
+		class="button-primary"
+		type="submit"
+		form={formId}
+		aria-disabled={busy}
+		aria-busy={busy ? 'true' : undefined}
+	>
+		{busy ? 'Wird zugeordnet …' : 'Zuordnen'}
+	</button>
+{/snippet}
+
+{#if inline}
+	<InlineDialog
+		open
+		title="Anderem Ticket zuordnen"
+		describedBy={describedId}
+		{busy}
+		{returnFocus}
+		onclose={() => onclose()}
+		footer={buttons}
+	>
+		{@render content()}
+	</InlineDialog>
+{:else}
+	<Modal
+		open
+		size="m"
+		title="Anderem Ticket zuordnen"
+		describedBy={describedId}
+		{busy}
+		onclose={() => onclose()}
+		footer={buttons}
+	>
+		{@render content()}
+	</Modal>
+{/if}
 
 <style>
 	.form {
