@@ -88,19 +88,23 @@ export interface InitialStatusOption {
  * The answers of "Folgetickets starten mit": "Offen" and, when it differs, the status of the
  * ticket ("Wie dieses Ticket: In Arbeit") first, then the other statuses of an open ticket in
  * their usual order. None is chosen in advance. Without a ticket ("Neue Regel") or with a done one
- * "Offen" stands first alone.
+ * "Offen" stands first alone. The same answers start a duplicate (ADR-0045 §2), `like` "das
+ * Original" then names the original ("Wie das Original: In Arbeit").
  */
-export function initialStatusOptions(ticketStatus: string | null): InitialStatusOption[] {
+export function initialStatusOptions(
+	ticketStatus: string | null,
+	like = 'dieses Ticket'
+): InitialStatusOption[] {
 	const own = isTemplateStatus(ticketStatus) ? ticketStatus : null;
 	const first: InitialStatusOption[] = [
 		{
 			value: 'open',
-			label: own === 'open' ? `${STATUS_LABELS.open} (wie dieses Ticket)` : STATUS_LABELS.open,
+			label: own === 'open' ? `${STATUS_LABELS.open} (wie ${like})` : STATUS_LABELS.open,
 			first: true
 		}
 	];
 	if (own !== null && own !== 'open') {
-		first.push({ value: own, label: `Wie dieses Ticket: ${STATUS_LABELS[own]}`, first: true });
+		first.push({ value: own, label: `Wie ${like}: ${STATUS_LABELS[own]}`, first: true });
 	}
 	const others = TEMPLATE_STATUSES.filter(
 		(status) => !first.some((option) => option.value === status)

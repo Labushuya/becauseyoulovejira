@@ -21,6 +21,7 @@
 	import type { TicketSourcesStore } from '$lib/stores/ticket-sources.svelte';
 	import {
 		COPY_LABELS,
+		copiedFrom,
 		copyCompleteness,
 		copyNote,
 		deletedTicketId,
@@ -51,7 +52,8 @@
 	// "Wiederholen…" with them. A series the rules cannot express gets a neutral hint.
 	// A converted or linked entry names its ticket at the top ("Gehört zu HAUS-12 · Titel", ADR-0031
 	// addendum) with "Ticket öffnen", "Anderem Ticket zuordnen …" and "Lösen"; the main source of a
-	// ticket keeps only "Ticket öffnen" and says why it stays.
+	// ticket keeps only "Ticket öffnen" and says why it stays. The copy of a source made for a
+	// duplicate names the ticket it came from ("Kopie aus HAUS-12", ADR-0031 addendum F).
 	let {
 		id,
 		store,
@@ -105,6 +107,8 @@
 	const note = $derived(item === null ? null : copyNote(item));
 	/** The ticket of this source was deleted (ADR-0031, addendum B). */
 	const ticketGone = $derived(item === null ? null : deletedTicketNote(item));
+	/** The entry is the copy of a source made for a duplicate (ADR-0031, addendum F). */
+	const copied = $derived(item === null ? null : copiedFrom(item));
 	const duplicates = $derived(
 		item !== null && item.state === 'new' ? store.softDuplicates(item, openTickets) : null
 	);
@@ -330,6 +334,15 @@
 
 		{#if item.state === 'converted' && item.ticketId !== null}
 			{@render belongsTo(item, item.ticketId)}
+		{/if}
+
+		{#if copied !== null}
+			<SectionMessage tone="info" compact>
+				Kopie aus
+				{#if copied.ticket !== null}
+					<a href={links.path(copied.ticket)}>{copied.key}</a>{:else}{copied.key}{/if}: beim
+				Duplizieren als eigener Eintrag angelegt; die Quelle des Originals ist unverändert.
+			</SectionMessage>
 		{/if}
 
 		{#if ticketGone !== null}

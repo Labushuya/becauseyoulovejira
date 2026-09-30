@@ -22,9 +22,10 @@
 	// arranges them differently (section 7). Escape closes the panel unless a form field has the
 	// focus (the rule is the Drawer's). Comments and history (E2 plan, packages 9 and 10) come in
 	// through `activity`, the series (E5 plan, package 4) through `recurrence`, the section
-	// "Unteraufgaben" (ADR-0033) through `subtasks`. A sub-task shows its path "HAUS-12 › HAUS-15"
-	// with a link to the parent in the header instead of the key alone; a ticket in a sub project
-	// starts it with "Haus › Garten" (ADR-0034), linking to the list filtered by the project.
+	// "Unteraufgaben" (ADR-0033) through `subtasks`, "Duplizieren …" (ADR-0045) through `duplicate`.
+	// A sub-task shows its path "HAUS-12 › HAUS-15" with a link to the parent in the header instead
+	// of the key alone; a ticket in a sub project starts it with "Haus › Garten" (ADR-0034), linking
+	// to the list filtered by the project.
 	let {
 		store,
 		catalog,
@@ -38,6 +39,7 @@
 		sources,
 		subtasks,
 		parentField,
+		duplicate,
 		sourceCount = 0,
 		subtaskCount = 0,
 		parent = null,
@@ -66,6 +68,8 @@
 		subtasks?: Snippet<[Ticket]>;
 		/** Row "Übergeordnet" in the fields (ADR-0033 section 4). */
 		parentField?: Snippet<[Ticket]>;
+		/** "Duplizieren …" in the header, before "Löschen …" (ADR-0045 §1). */
+		duplicate?: Snippet<[Ticket]>;
 		/** Number of sub-tasks, for the question of "Löschen …". */
 		subtaskCount?: number;
 		/** The ticket this one is a sub-task of, null for a top-level ticket. */
@@ -119,6 +123,7 @@
 	{/snippet}
 	{#snippet actions()}
 		{#if store.state === 'ready' && ticket}
+			{@render duplicate?.(ticket)}
 			<TicketDelete {store} {ondeleted} {sourceCount} {subtaskCount} />
 		{/if}
 	{/snippet}

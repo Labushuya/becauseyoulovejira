@@ -134,6 +134,7 @@ describe('help page (EH-9)', () => {
 			'Wie ändere ich Spalten und ihre Breite?',
 			'Wie arbeite ich mit Unteraufgaben?',
 			'Wie hole ich ein gelöschtes Ticket zurück?',
+			'Wie dupliziere ich ein Ticket?',
 			'Wie gliedere ich ein Projekt in Unterprojekte?',
 			'Wie formatiere ich Beschreibungen und Kommentare?',
 			'Wie ordne ich Kommentare und hebe einen hervor?'
@@ -143,6 +144,12 @@ describe('help page (EH-9)', () => {
 		expect(text(section)).toContain('höchstens einen angepinnten Kommentar');
 		expect(text(section)).toContain('„Weiterlesen“');
 		expect(section.querySelectorAll('details[open]')).toHaveLength(0);
+		// Duplicating (ADR-0045): the question, the status, sub-tasks, comments, the source, the result.
+		expect(text(section)).toContain('„Duplizieren …“');
+		expect(text(section)).toContain('„Erledigt“ gibt es dabei nicht');
+		expect(text(section)).toContain('„Kopiert aus HAUS-12“');
+		expect(text(section)).toContain('„Kopie der Herkunft übernehmen“');
+		expect(text(section)).toContain('„Dupliziert aus …“');
 		// Sub projects (ADR-0034): creating, own code, filter, numbers, archive.
 		expect(text(section)).toContain('„Unterprojekt anlegen“');
 		expect(text(section)).toContain('GART-3');

@@ -601,6 +601,21 @@ describe('inbox panel: copy and linking (ADR-0031)', () => {
 		).toBeTruthy();
 	});
 
+	it('names the ticket a copied source came from, with a link to it (ADR-0031 addendum F)', async () => {
+		setup(
+			entry({
+				sourceMeta: {
+					copy_of: { item: 'item00000000009', ticket: 'ticket000000012', key: 'HAUS-12', at: '' }
+				}
+			})
+		);
+		const link = await screen.findByRole('link', { name: 'HAUS-12' });
+		expect(link.getAttribute('href')).toBe('/tickets/ticket000000012');
+		expect(link.closest('p, div')?.textContent?.replace(/\s+/g, ' ')).toContain(
+			'Kopie aus HAUS-12: beim Duplizieren als eigener Eintrag angelegt; die Quelle des Originals ist unverändert.'
+		);
+	});
+
 	it('offers no linking without the store, nor for a handled entry', async () => {
 		setup();
 		await screen.findByRole('heading', { name: 'Rechnung September' });

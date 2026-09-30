@@ -17,6 +17,7 @@ import { TicketOpenModeStore } from '$lib/stores/open-mode.svelte';
 import type { LiveSource, RecordChange } from '$lib/stores/realtime';
 import { getRecurrenceStore } from '$lib/stores/recurrence.svelte';
 import { TicketActivityStore, type TicketActivityData } from '$lib/stores/ticket-activity.svelte';
+import { TicketDuplicateStore } from '$lib/stores/ticket-duplicate.svelte';
 import {
 	TicketDetailStore,
 	type TicketDetailData,
@@ -61,6 +62,8 @@ const mocks = vi.hoisted(() => ({
 	detail: null as unknown,
 	activity: null as unknown,
 	catalog: null as unknown,
+	// "Duplizieren …" (ADR-0045) shows only with the store of the (app) layout; null hides it.
+	duplicates: null as unknown,
 	// The section "Unteraufgaben" (ADR-0033) is covered in ticket-subtasks.test.ts; here the ticket
 	// has none.
 	tickets: {
@@ -96,6 +99,10 @@ vi.mock('$lib/stores/catalog.svelte', async (importOriginal) => ({
 vi.mock('$lib/stores/ticket-list.svelte', async (importOriginal) => ({
 	...(await importOriginal<object>()),
 	getTicketListStore: () => mocks.tickets
+}));
+vi.mock('$lib/stores/ticket-duplicate.svelte', async (importOriginal) => ({
+	...(await importOriginal<object>()),
+	findTicketDuplicateStore: () => mocks.duplicates
 }));
 // The route shows "Wiederholen…" (E5 plan, package 4); rules are covered in
 // recurrence-summary.test.ts, here the store stays unloaded.
@@ -161,7 +168,26 @@ function openModeStore({
 // Tests of the full view switch the route; every other test sees the panel route.
 afterEach(() => {
 	mocks.page.route = { id: PANEL_ROUTE };
+	mocks.duplicates = null;
 });
+
+/** The store of "Duplizieren …" (ADR-0045) on a fake route that answers the duplicate TASK-4. */
+function duplicateStore() {
+	const data = {
+		duplicate: vi.fn(async () => ({
+			id: 'dupl00000000013',
+			key: 'TASK-4',
+			title: 'Steuererklärung (Kopie)',
+			original: { id: ID, key: 'TASK-3' },
+			subtasks: [],
+			comments: 0,
+			source: null
+		}))
+	};
+	const store = new TicketDuplicateStore(data, { ensureValid: () => true, logout: vi.fn() });
+	mocks.duplicates = store;
+	return { store, data };
+}
 
 function ticket(overrides: Partial<Ticket> = {}): Ticket {
 	return {
@@ -945,6 +971,39 @@ describe('ticket route', () => {
 		unmount();
 		expect(store.state).toBe('idle');
 		expect(activity.ticketId).toBeNull();
+	});
+
+	it('offers "Duplizieren …" before "Löschen …" and opens the duplicate in the panel (ADR-0045)', async () => {
+		const { data } = duplicateStore();
+		const { store } = createStore();
+		mocks.detail = store;
+		mocks.activity = activityStore();
+		renderTicketRoute();
+		await vi.waitFor(() => expect(store.state).toBe('ready'));
+
+		const duplicate = screen.getByRole('button', { name: 'Duplizieren …' });
+		const remove = screen.getByRole('button', { name: 'Löschen …' });
+		expect(
+			duplicate.compareDocumentPosition(remove) & Node.DOCUMENT_POSITION_FOLLOWING
+		).toBeTruthy();
+		await fireEvent.click(duplicate);
+		const dialog = screen.getByRole('dialog', { name: 'TASK-3 duplizieren' });
+		expect(within(dialog).getByLabelText<HTMLInputElement>('Titel').value).toBe(
+			'Steuererklärung (Kopie)'
+		);
+		await fireEvent.click(
+			within(dialog).getByRole('radio', { name: 'Wie das Original: In Arbeit' })
+		);
+		await fireEvent.click(within(dialog).getByRole('button', { name: 'Duplizieren' }));
+
+		await vi.waitFor(() =>
+			expect(mocks.goto).toHaveBeenCalledWith('/tickets/dupl00000000013?erledigte=1')
+		);
+		expect(data.duplicate).toHaveBeenCalledWith(
+			ID,
+			expect.objectContaining({ status: 'in_progress' })
+		);
+		expect(screen.queryByRole('dialog', { name: 'TASK-3 duplizieren' })).toBeNull();
 	});
 });
 
@@ -1936,6 +1995,49 @@ describe('ticket route: full view (ADR-0025 section 7, UI-7)', () => {
 					view.getByText('Angepinnt').closest('article')?.getAttribute('data-comment-id')
 				).toBe('comment00000002')
 			);
+			expect(screen.getAllByRole('dialog')).toEqual([dialog]);
+		});
+
+		it('unfolds "Duplizieren …" inline and opens the duplicate in the remembered full view (ADR-0045)', async () => {
+			const { data } = duplicateStore();
+			const { dialog } = await renderFullView(undefined, openModeStore({ stored: 'full' }));
+			const trigger = within(dialog).getByRole('button', { name: 'Duplizieren …' });
+			expect(trigger.getAttribute('aria-haspopup')).toBeNull();
+			expect(trigger.getAttribute('aria-expanded')).toBe('false');
+			trigger.focus();
+			await fireEvent.click(trigger);
+			await tick();
+
+			expect(screen.getAllByRole('dialog')).toEqual([dialog]);
+			expect(trigger.getAttribute('aria-expanded')).toBe('true');
+			const area = within(dialog).getByRole('region', { name: 'TASK-3 duplizieren' });
+			await vi.waitFor(() =>
+				expect(document.activeElement).toBe(within(area).getByLabelText('Titel'))
+			);
+
+			// Escape closes only the area; the full view stays and the focus goes back.
+			const escape = new KeyboardEvent('keydown', {
+				key: 'Escape',
+				bubbles: true,
+				cancelable: true
+			});
+			document.activeElement?.dispatchEvent(escape);
+			await tick();
+			await tick();
+			expect(escape.defaultPrevented).toBe(true);
+			expect(within(dialog).queryByRole('region', { name: 'TASK-3 duplizieren' })).toBeNull();
+			expect(dialog.open).toBe(true);
+			await vi.waitFor(() => expect(document.activeElement).toBe(trigger));
+
+			await fireEvent.click(trigger);
+			await tick();
+			const again = within(dialog).getByRole('region', { name: 'TASK-3 duplizieren' });
+			await fireEvent.click(within(again).getByRole('radio', { name: 'Offen' }));
+			await fireEvent.click(within(again).getByRole('button', { name: 'Duplizieren' }));
+			await vi.waitFor(() =>
+				expect(mocks.goto).toHaveBeenCalledWith('/tickets/dupl00000000013/voll?erledigte=1')
+			);
+			expect(data.duplicate).toHaveBeenCalledWith(ID, expect.objectContaining({ status: 'open' }));
 			expect(screen.getAllByRole('dialog')).toEqual([dialog]);
 		});
 	});

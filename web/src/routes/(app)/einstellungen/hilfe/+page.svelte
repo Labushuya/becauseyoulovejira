@@ -516,6 +516,36 @@
 				</p>
 			</details>
 			<details>
+				<summary>Wie dupliziere ich ein Ticket?</summary>
+				<ul>
+					<li>
+						„Duplizieren …“ (das Symbol mit den zwei Blättern oben im Panel und in der Vollansicht,
+						vor „Löschen …“) fragt, wie das Duplikat entstehen soll: den Titel (vorbelegt mit
+						„(Kopie)“), was es übernimmt (Beschreibung, Priorität, Projekt, Tags und Fälligkeit sind
+						angehakt, Unteraufgaben und Kommentare nicht) und den Status. Den Status wählst du immer
+						selbst, „Erledigt“ gibt es dabei nicht. Das Duplikat bekommt einen neuen Key im
+						gewählten Projekt.
+					</li>
+					<li>
+						Unteraufgaben kommen als neue, offene Unteraufgaben mit. Kopierte Kommentare beginnen
+						mit „Kopiert aus HAUS-12“ und behalten Autor und Zeit; ein angepinnter bleibt angepinnt.
+						Eine Wiederholung kommt nie mit: Das Duplikat ist ein normales Ticket.
+					</li>
+					<li>
+						Hat das Ticket Quellen, wählst du „Keine Quelle“ (Standard) oder „Kopie der Herkunft
+						übernehmen“: Dann bekommt das Duplikat einen eigenen Eintrag als Kopie seiner
+						Hauptquelle, mit Text, Details und Originaldatei, markiert als „Kopie aus HAUS-12“. Die
+						Quelle des Originals bleibt, wo sie ist, und dieselbe Mail kommt trotzdem nicht doppelt
+						in den Eingang.
+					</li>
+					<li>
+						Danach öffnet sich das Duplikat, wie du Tickets zuletzt geöffnet hast (Panel oder
+						Vollansicht). Der Verlauf nennt an beiden Tickets „Dupliziert aus …“ bzw. „Dupliziert
+						nach …“, und die Meldung unten links führt mit „HAUS-12 öffnen“ zurück zum Original.
+					</li>
+				</ul>
+			</details>
+			<details>
 				<summary>Wie gliedere ich ein Projekt in Unterprojekte?</summary>
 				<ul>
 					<li>

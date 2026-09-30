@@ -2,6 +2,7 @@
 	import type { InboxItemSummary } from '$lib/domain/inbox';
 	import {
 		COPY_LABELS,
+		copiedFrom,
 		copyCompleteness,
 		sourceChannelLabel,
 		sourceOrigin,
@@ -29,7 +30,8 @@
 	// "Anderem Ticket zuordnen …" (ADR-0031 addendum) moves an entry directly to another ticket;
 	// the main source stays and says why. Both open a modal in the side panel; in the full view
 	// (itself a modal) they unfold inline: "Quelle hinzufügen …" below the heading, "Anderem Ticket
-	// zuordnen …" below its entry (ADR-0025 section 3, addendum 16).
+	// zuordnen …" below its entry (ADR-0025 section 3, addendum 16). The copy of a source made for a
+	// duplicate says where it came from ("Kopie aus HAUS-12", ADR-0031 addendum F).
 	let {
 		ticket,
 		store,
@@ -125,6 +127,7 @@
 			{#each items as item (item.id)}
 				{@const copy = copyCompleteness(item)}
 				{@const origin = sourceOrigin(item)}
+				{@const copied = copiedFrom(item)}
 				{@const main = item.id === ticket.sourceItem}
 				<li class="source" aria-busy={store.isPending(item.id) ? 'true' : undefined}>
 					<div class="text">
@@ -138,6 +141,9 @@
 						<p class="title">{item.title}</p>
 						{#if origin !== ''}
 							<p class="origin">{origin}</p>
+						{/if}
+						{#if copied !== null}
+							<p class="origin">Kopie aus {copied.key}</p>
 						{/if}
 						<Lozenge
 							label={COPY_LABELS[copy]}

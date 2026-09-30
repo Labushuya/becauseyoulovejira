@@ -312,6 +312,26 @@ describe('pinned comment in the history (ADR-0044)', () => {
 	});
 });
 
+describe('duplicate in the history (ADR-0045)', () => {
+	const duplicateText = (newValue: string) => text({ field: 'duplicate', newValue });
+
+	it('names the original in the duplicate and the duplicate in the original, with the user', () => {
+		const from = JSON.stringify({ direction: 'from', ticket: 'ticket000000001', key: 'HAUS-12' });
+		const to = JSON.stringify({ direction: 'to', ticket: 'ticket000000002', key: 'HAUS-13' });
+		expect(duplicateText(from)).toBe('Dupliziert aus HAUS-12');
+		expect(duplicateText(to)).toBe('Dupliziert nach HAUS-13');
+		expect(
+			describeHistoryEntry(entry({ field: 'duplicate', newValue: to }), lookups, ME).actor
+		).toBe('Du');
+	});
+
+	it('says only "Dupliziert" for a value it cannot read', () => {
+		expect(duplicateText('')).toBe('Dupliziert');
+		expect(duplicateText('{"direction":"sideways","key":"X-1"}')).toBe('Dupliziert');
+		expect(duplicateText(JSON.stringify({ direction: 'from', key: '' }))).toBe('Dupliziert aus');
+	});
+});
+
 describe('historyLookups', () => {
 	it('keys projects and tags by ID', () => {
 		const project = { id: 'p1', name: 'Finanzen', code: 'FIN', archived: false };
