@@ -1,5 +1,6 @@
-// State of a connection as lozenge (ADR-0026 section 3, plan EH-3 §3.5): every row of the table
-// and the order of the checks, an unknown state of the variables, and the keyword summary.
+// State of a connection as lozenge (ADR-0026 section 3, plan EH-3 §3.5; since the plan
+// kanal-karten KK-2 with the states of the unified card): every row of the table and the order of
+// the checks, an unknown state of the variables and of the mail helper, and the keyword summary.
 
 import { describe, expect, it } from 'vitest';
 import { channelHealth, keywordSummary } from './channel-health';
@@ -43,11 +44,11 @@ describe('channelHealth', () => {
 		);
 	});
 
-	it('says "Nicht eingerichtet" while a variable is missing, before the last error', () => {
+	it('says "Einrichtung offen" while a variable is missing, before the last error', () => {
 		const health = channelHealth({ ...BASE, lastError: 'HTTP 404' }, UNSET, false);
 		expect(health).toMatchObject({
 			state: 'unset',
-			label: 'Nicht eingerichtet',
+			label: 'Einrichtung offen',
 			tone: 'neutral',
 			action: 'setup'
 		});
@@ -82,10 +83,39 @@ describe('channelHealth', () => {
 		});
 	});
 
-	it('says "Eingerichtet" otherwise, with the hint of the last run or a warning without keywords', () => {
+	it('says "Neustart nötig" at a mailbox whose mail helper does not run as it should (KK-2)', () => {
+		const mail = { ...BASE, type: 'mail' as const };
+		for (const state of ['stopped', 'refused', 'outdated'] as const) {
+			const health = channelHealth(mail, SET, false, { state, version: '', message: '' });
+			expect(health).toMatchObject({
+				state: 'restart',
+				label: 'Neustart nötig',
+				tone: 'neutral',
+				icon: 'warning',
+				action: 'run',
+				pick: true
+			});
+			expect(health.hint?.tone).toBe('warning');
+			expect(health.hint?.text).toMatch(/^Hilfsprozess läuft/);
+		}
+		expect(
+			channelHealth(mail, SET, false, { state: 'stopped', version: '', message: '' }).hint?.text
+		).toMatch(/neu-starten\.bat/);
+		// Running, unknown, other kinds, and the states before it keep their order.
+		const running = { state: 'running' as const, version: '0.9.0', message: '' };
+		expect(channelHealth(mail, SET, false, running).state).toBe('ok');
+		expect(channelHealth(mail, SET, false, null).state).toBe('ok');
+		const stopped = { state: 'stopped' as const, version: '', message: '' };
+		expect(channelHealth(BASE, SET, false, stopped).state).toBe('ok');
+		expect(channelHealth({ ...mail, lastError: 'x' }, SET, false, stopped).state).toBe('error');
+		expect(channelHealth({ ...mail, enabled: false }, SET, false, stopped).state).toBe('paused');
+		expect(channelHealth(mail, UNSET, false, stopped).state).toBe('unset');
+	});
+
+	it('says "Verbunden" otherwise, with the hint of the last run or a warning without keywords', () => {
 		expect(channelHealth(BASE, SET, false)).toMatchObject({
 			state: 'ok',
-			label: 'Eingerichtet',
+			label: 'Verbunden',
 			tone: 'brand',
 			hint: null,
 			action: 'run'
@@ -95,7 +125,7 @@ describe('channelHealth', () => {
 			text: 'Erster Abruf.'
 		});
 		const empty = channelHealth({ ...BASE, keywords: [] }, SET, false);
-		expect(empty.label).toBe('Eingerichtet');
+		expect(empty.label).toBe('Verbunden');
 		expect(empty.hint).toEqual({ tone: 'warning', text: NO_KEYWORDS_WARNING });
 		// The hint of the last run (e.g. the chat ID of Telegram) wins over the missing keywords.
 		const chat = 'Nachricht aus einem nicht freigegebenen Chat (Chat-ID 424242).';
@@ -145,6 +175,11 @@ describe('channelHealth', () => {
 			channelHealth(BASE, SET, true),
 			channelHealth({ ...BASE, enabled: false }, SET, false),
 			channelHealth(BASE, UNSET, false),
+			channelHealth({ ...BASE, type: 'mail' }, SET, false, {
+				state: 'stopped',
+				version: '',
+				message: ''
+			}),
 			channelHealth(BASE, SET, false)
 		];
 		expect(states.map((health) => health.tone)).not.toContain('danger');

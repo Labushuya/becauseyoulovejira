@@ -739,6 +739,7 @@
 											class="more"
 											type="button"
 											disabled={store.loadingMoreDone}
+											aria-busy={store.loadingMoreDone ? 'true' : undefined}
 											onclick={() => store.loadMoreDone()}
 										>
 											{store.loadingMoreDone ? 'Wird geladen …' : 'Weitere laden'}
@@ -1014,6 +1015,10 @@
 	}
 
 	.more:disabled {
+		cursor: not-allowed;
+	}
+
+	.more[aria-busy='true'] {
 		cursor: progress;
 	}
 </style>

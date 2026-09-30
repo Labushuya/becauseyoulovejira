@@ -510,6 +510,7 @@
 				role="option"
 				aria-selected={activeIndex === entries.length}
 				aria-disabled={doneLoading ? 'true' : undefined}
+				aria-busy={doneLoading ? 'true' : undefined}
 				onclick={() => void showMore()}
 			>
 				{doneLoading ? 'Wird geladen …' : 'Mehr anzeigen'}
@@ -688,6 +689,11 @@
 	.more {
 		font-weight: 600;
 		color: var(--color-brand-text);
+	}
+
+	/* More tickets are being loaded (ADR-0026, addendum of 2026-09-30). */
+	.option.more[aria-busy='true'] {
+		cursor: progress;
 	}
 
 	.hint {

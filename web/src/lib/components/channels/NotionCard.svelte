@@ -1,28 +1,23 @@
 <script lang="ts">
 	import { untrack } from 'svelte';
+	import { minuteClock } from '$lib/clock.svelte';
+	import { notionInfo } from '$lib/domain/channel-card';
 	import { channelHealth } from '$lib/domain/channel-health';
 	import type { Connection, SecretStatus } from '$lib/domain/connections';
 	import { formatBerlinDateTime } from '$lib/domain/format';
-	import {
-		NOTION_SOURCE_TYPE_LABELS,
-		importedSummary,
-		type NotionImportedSource
-	} from '$lib/domain/notion';
+	import { NOTION_SOURCE_TYPE_LABELS, type NotionImportedSource } from '$lib/domain/notion';
 	import { connectionAnchor } from '$lib/domain/sync-all';
 	import { helpHref } from '$lib/settings-sections';
 	import type { NotionStore } from '$lib/stores/notion.svelte';
 	import ExternalLink from '../guidance/ExternalLink.svelte';
-	import Lozenge from '../guidance/Lozenge.svelte';
-	import SectionMessage from '../guidance/SectionMessage.svelte';
-	import Popover from '../overlay/Popover.svelte';
-	import ChannelIcon from './ChannelIcon.svelte';
+	import ChannelCard, { type CardAction } from './ChannelCard.svelte';
 
-	// Card of a Notion connection (ADR-0041 §9, plan notion-import NI-2): like the other cards
-	// (ADR-0026 section 3) with state as lozenge, but Notion fetches nothing by itself. The main
-	// action opens the import dialog ("Listen übernehmen …"); "Verbindung prüfen" asks Notion with
-	// the token. Below, the sources taken over so far (from the inbox, no request to Notion) with
-	// "Erneut abrufen", which takes only entries that are not in the inbox yet. No "Pausieren" and
-	// no keywords: the user chooses what comes in.
+	// Card of a Notion connection (ADR-0041 §9, plan notion-import NI-2; since the plan kanal-karten
+	// KK-2 a configuration of the building block ChannelCard): Notion fetches nothing by itself, so
+	// the main button opens the import dialog ("Listen übernehmen …"). "Verbindung prüfen" asks
+	// Notion with the token (menu "•••"). The details list the sources taken over so far (from the
+	// inbox, no request to Notion), each with "Erneut abrufen", which takes only entries that are
+	// not in the inbox yet. No "Pausieren" and no keywords: the user chooses what comes in.
 	let {
 		connection,
 		secretStatus,
@@ -50,10 +45,7 @@
 		ondelete: () => void;
 	} = $props();
 
-	const uid = $props.id();
-	const headingId = `${uid}-name`;
-	const listId = `${uid}-imports`;
-
+	const clock = minuteClock();
 	const connectionId = $derived(connection.id);
 	// The sources taken over so far come with the card, from the inbox of the server.
 	$effect(() => {
@@ -68,6 +60,7 @@
 	const busy = $derived(checking || refetching !== null);
 	const health = $derived(channelHealth(connection, secretStatus, busy));
 	const imports = $derived(notion.imports(connection.id));
+	const info = $derived(notionInfo(imports, connection.lastRunAt, clock.now));
 	const lastRunText = $derived(
 		connection.lastRunAt === null ? 'noch nie' : formatBerlinDateTime(connection.lastRunAt)
 	);
@@ -92,209 +85,95 @@
 		const last = source.last === null ? '' : ` · zuletzt ${formatBerlinDateTime(source.last)}`;
 		return `${NOTION_SOURCE_TYPE_LABELS[source.type]} · ${entries}${last}`;
 	}
+
+	const primary = $derived.by((): CardAction => {
+		if (health.action === 'none') {
+			return { label: checking ? 'Wird geprüft …' : 'Wird abgerufen …', busy: true };
+		}
+		if (health.action === 'resume') return { label: 'Fortsetzen', onselect: () => onpause(true) };
+		if (health.action === 'setup')
+			return { label: 'Einrichtung fortsetzen', onselect: () => onsetup() };
+		return { label: 'Listen übernehmen …', dialog: true, onselect: () => onimport() };
+	});
+
+	const menu = $derived.by((): CardAction[] => {
+		const entries: CardAction[] = [];
+		if (health.action === 'run') {
+			entries.push({ label: 'Verbindung prüfen', onselect: () => void check() });
+		}
+		if (health.action !== 'setup') {
+			entries.push({ label: 'Einrichtung ansehen', onselect: () => onsetup() });
+		}
+		entries.push({ label: 'Hilfe', href: helpHref('notion') });
+		entries.push({ label: 'Löschen …', dialog: true, separated: true, onselect: () => ondelete() });
+		return entries;
+	});
 </script>
 
-<article
-	class="channel-card"
-	id={connectionAnchor(connection.id)}
-	tabindex="-1"
-	aria-labelledby={headingId}
-	data-state={health.state}
+<ChannelCard
+	icon="notion"
+	title={connection.label}
+	subtitle="Notion · Listen übernehmen, nur lesend"
+	status={checking ? { ...health, label: 'Wird geprüft' } : health}
+	{info}
+	hint={health.hint}
+	message={message ?? refetchError}
+	{primary}
+	{menu}
+	anchor={connectionAnchor(connection.id)}
 >
-	<header class="head">
-		<ChannelIcon kind="notion" />
-		<div class="names">
-			<h4 id={headingId}>{connection.label}</h4>
-			<p class="kind">Notion · Listen übernehmen, nur lesend</p>
-		</div>
-		<Lozenge label={health.label} icon={health.icon} tone={health.tone} />
-	</header>
-
-	<dl class="meta">
-		<div>
-			<dt>Letzter Abruf</dt>
-			<dd>{lastRunText}</dd>
-		</div>
-		<div>
-			<dt>Übernommen</dt>
-			<dd>{imports === null ? 'wird geladen …' : importedSummary(imports)}</dd>
-		</div>
-	</dl>
-
-	{#if health.hint !== null}
-		<SectionMessage tone={health.hint.tone} compact>{health.hint.text}</SectionMessage>
-	{/if}
-	{#if message !== null}
-		<SectionMessage tone="error" compact live>{message}</SectionMessage>
-	{/if}
-
-	{#if imports !== null && imports.length > 0}
-		<section class="imports" aria-labelledby={listId}>
-			<h5 id={listId}>Bisher übernommen</h5>
-			<ul>
-				{#each imports as source (source.id)}
-					<li>
-						<div class="source">
-							<ExternalLink href={source.url}>{source.title}</ExternalLink>
-							<span class="source-meta">{sourceMeta(source)}</span>
-						</div>
-						<button
-							class="button-subtle"
-							type="button"
-							aria-busy={refetching === source.id}
-							aria-disabled={busy || health.action !== 'run' ? 'true' : undefined}
-							onclick={() => {
-								if (health.action === 'run') void refetch(source);
-							}}
-						>
-							{refetching === source.id ? 'Wird abgerufen …' : 'Erneut abrufen'}<span
-								class="visually-hidden">: {source.title}</span
-							>
-						</button>
-					</li>
-				{/each}
-			</ul>
-			<p class="note">„Erneut abrufen“ übernimmt nur Einträge, die noch nicht im Eingang sind.</p>
-		</section>
-	{/if}
-	{#if refetchError !== null}
-		<SectionMessage tone="error" compact live>{refetchError}</SectionMessage>
-	{/if}
-	<p class="note"><a href={helpHref('notion')}>So geht’s</a></p>
-
-	<footer class="actions">
-		{#if health.action === 'resume'}
-			<button class="button-secondary" type="button" onclick={() => onpause(true)}>
-				Fortsetzen<span class="visually-hidden">: {connection.label}</span>
-			</button>
-		{:else if health.action === 'setup'}
-			<button class="button-secondary" type="button" onclick={onsetup}>
-				Einrichtung fortsetzen<span class="visually-hidden">: {connection.label}</span>
-			</button>
-		{:else if health.action === 'run'}
-			<button class="button-secondary" type="button" aria-haspopup="dialog" onclick={onimport}>
-				Listen übernehmen …<span class="visually-hidden">: {connection.label}</span>
-			</button>
-			<button class="button-secondary" type="button" onclick={() => void check()}>
-				Verbindung prüfen<span class="visually-hidden">: {connection.label}</span>
-			</button>
+	{#snippet details()}
+		<dl>
+			<div>
+				<dt>Letzter Abruf</dt>
+				<dd>{lastRunText}</dd>
+			</div>
+		</dl>
+		{#if imports === null}
+			<p class="note">Übernommene Listen werden geladen …</p>
+		{:else if imports.length === 0}
+			<p class="note">Noch nichts übernommen.</p>
 		{:else}
-			<button class="button-secondary" type="button" aria-disabled="true" aria-busy="true">
-				{checking ? 'Wird geprüft …' : 'Wird abgerufen …'}<span class="visually-hidden"
-					>: {connection.label}</span
-				>
-			</button>
+			<section class="imports" aria-label="Bisher übernommen">
+				<h5>Bisher übernommen</h5>
+				<ul>
+					{#each imports as source (source.id)}
+						<li>
+							<div class="source">
+								<ExternalLink href={source.url}>{source.title}</ExternalLink>
+								<span class="source-meta">{sourceMeta(source)}</span>
+							</div>
+							<button
+								class="button-subtle"
+								type="button"
+								aria-busy={refetching === source.id ? 'true' : undefined}
+								aria-disabled={busy || health.action !== 'run' ? 'true' : undefined}
+								onclick={() => {
+									if (health.action === 'run') void refetch(source);
+								}}
+							>
+								{refetching === source.id ? 'Wird abgerufen …' : 'Erneut abrufen'}<span
+									class="visually-hidden">: {source.title}</span
+								>
+							</button>
+						</li>
+					{/each}
+				</ul>
+				<p class="note">„Erneut abrufen“ übernimmt nur Einträge, die noch nicht im Eingang sind.</p>
+			</section>
 		{/if}
-		<span class="more">
-			<Popover
-				kind="menu"
-				label={`Weitere Aktionen für ${connection.label}`}
-				placement="bottom-end"
-				buttonClass="button-icon"
-				buttonLabel={`Weitere Aktionen für ${connection.label}`}
-			>
-				{#snippet button()}
-					<svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true" focusable="false">
-						<circle cx="3.5" cy="8" r="1.1" />
-						<circle cx="8" cy="8" r="1.1" />
-						<circle cx="12.5" cy="8" r="1.1" />
-					</svg>
-				{/snippet}
-				{#snippet children({ close })}
-					<button
-						type="button"
-						role="menuitem"
-						tabindex="-1"
-						onclick={() => {
-							close();
-							onsetup();
-						}}
-					>
-						Einrichtung ansehen
-					</button>
-					<div role="separator"></div>
-					<button
-						type="button"
-						role="menuitem"
-						tabindex="-1"
-						aria-haspopup="dialog"
-						onclick={() => {
-							close();
-							ondelete();
-						}}
-					>
-						Löschen …
-					</button>
-				{/snippet}
-			</Popover>
-		</span>
-	</footer>
-</article>
+	{/snippet}
+</ChannelCard>
 
 <style>
-	.channel-card {
+	.imports {
 		display: grid;
-		gap: 0.75rem;
-		min-width: 0;
-		padding: 1rem;
-		background: var(--color-surface);
-		border: 1px solid var(--color-line);
-		border-radius: var(--radius-surface);
-	}
-
-	.head {
-		display: flex;
-		gap: 0.75rem;
-		align-items: flex-start;
-	}
-
-	.names {
-		flex: 1;
-		min-width: 0;
-	}
-
-	h4 {
-		font-size: var(--font-size-body);
-		font-weight: 600;
-		overflow-wrap: anywhere;
+		gap: 0.5rem;
 	}
 
 	h5 {
 		font-size: var(--font-size-control);
 		font-weight: 600;
-	}
-
-	.kind,
-	.source-meta,
-	.note,
-	dt {
-		color: var(--color-text-muted);
-	}
-
-	.kind,
-	.meta,
-	.note {
-		font-size: var(--font-size-control);
-	}
-
-	.meta {
-		display: grid;
-		gap: 0.25rem;
-	}
-
-	.meta div {
-		display: grid;
-		grid-template-columns: 7rem minmax(0, 1fr);
-		gap: 0.5rem;
-	}
-
-	dd {
-		overflow-wrap: anywhere;
-	}
-
-	.imports {
-		display: grid;
-		gap: 0.5rem;
 	}
 
 	.imports ul {
@@ -316,7 +195,6 @@
 	.source {
 		display: grid;
 		min-width: 0;
-		font-size: var(--font-size-control);
 		overflow-wrap: anywhere;
 	}
 
@@ -324,24 +202,8 @@
 		font-size: var(--font-size-small);
 	}
 
-	.actions {
-		display: flex;
-		flex-wrap: wrap;
-		gap: 0.5rem;
-		align-items: flex-end;
-		align-self: end;
-	}
-
-	.note a {
-		color: var(--color-brand-text);
-	}
-
-	.more {
-		display: inline-flex;
-		margin-left: auto;
-	}
-
-	.more svg {
-		fill: currentColor;
+	.note,
+	.source-meta {
+		color: var(--color-text-muted);
 	}
 </style>

@@ -111,7 +111,13 @@
 					laden“ zeigt die neue Fassung; dein Text geht dabei verloren.
 				</p>
 				{#snippet actions()}
-					<button class="button-secondary" type="button" disabled={saving} onclick={overwrite}>
+					<button
+						class="button-secondary"
+						type="button"
+						disabled={saving}
+						aria-busy={saving ? 'true' : undefined}
+						onclick={overwrite}
+					>
 						{saving ? 'Wird gespeichert …' : 'Überschreiben'}
 					</button>
 					<button class="button-subtle" type="button" disabled={saving} onclick={discard}>
@@ -125,6 +131,7 @@
 					class="button-primary small-primary"
 					type="button"
 					disabled={saving}
+					aria-busy={saving ? 'true' : undefined}
 					onclick={() => end(true)}
 				>
 					{saving ? 'Wird gespeichert …' : 'Speichern'}

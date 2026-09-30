@@ -116,7 +116,9 @@ export const EXPECTED_COLLECTIONS = {
 			scope: text({ required: true }),
 			last_hint: text({ max: 500 }),
 			// "Jeden Termin einzeln anlegen" (plan OR-5, migration 1790202200).
-			each_occurrence: bool()
+			each_occurrence: bool(),
+			// "Status beim Anlegen" (plan WV, migration 1790202500): every status but done.
+			initial_status: select(['backlog', 'open', 'in_progress', 'waiting'], false)
 		},
 		indexes: [
 			'CREATE INDEX idx_recurrence_rules_owner ON recurrence_rules (owner)',

@@ -228,7 +228,7 @@ function card(name: string) {
 	return within(screen.getByRole('article', { name }));
 }
 
-/** Chooses an entry of the menu "…" of a card; jsdom shows popovers as hidden. */
+/** Chooses an entry of the menu "•••" of a card; jsdom shows popovers as hidden. */
 async function chooseFromMenu(name: string, entry: string) {
 	const trigger = screen.getByRole('button', { name: `Weitere Aktionen für ${name}` });
 	await fireEvent.click(trigger);
@@ -236,6 +236,13 @@ async function chooseFromMenu(name: string, entry: string) {
 	await fireEvent.click(
 		within(menu as HTMLElement).getByRole('menuitem', { name: entry, hidden: true })
 	);
+}
+
+/** Opens the details of a card (plan kanal-karten KK-2) and returns them. */
+async function openDetails(name: string) {
+	const toggle = screen.getByRole('button', { name: `Details: ${name}` });
+	if (toggle.getAttribute('aria-expanded') !== 'true') await fireEvent.click(toggle);
+	return within(document.getElementById(toggle.getAttribute('aria-controls') ?? '') as HTMLElement);
 }
 
 /** The channels page with the catalog, for creating connections. */
@@ -267,13 +274,16 @@ describe('connections section', () => {
 		const calendar = card('Google Kalender');
 		expect(calendar.getByText('Google Calendar')).toBeTruthy();
 		expect(calendar.getByText('Fehler')).toBeTruthy();
-		expect(calendar.getByText(/25\.09\.2026 10:15/)).toBeTruthy();
-		expect(calendar.getByText(/zuletzt erfolgreich 25\.09\.2026 10:00/)).toBeTruthy();
-		expect(calendar.getByText('keine')).toBeTruthy();
+		expect(calendar.getByText(/^Zuletzt abgerufen .* · fehlgeschlagen$/)).toBeTruthy();
+		const details = await openDetails('Google Kalender');
+		expect(details.getByText(/^25\.09\.2026 10:15/)).toBeTruthy();
+		expect(details.getByText(/zuletzt erfolgreich 25\.09\.2026 10:00/)).toBeTruthy();
+		expect(details.getByText('keine')).toBeTruthy();
 		const error = calendar.getByText(/Letzter Fehler: HTTP 404/);
 		expect(error.closest('[data-tone="error"]')?.querySelector('svg')).not.toBeNull();
 		const telegram = card('Telegram-Bot');
-		expect(telegram.getByText('Nicht eingerichtet')).toBeTruthy();
+		expect(telegram.getByText('Einrichtung offen')).toBeTruthy();
+		expect(telegram.getByText('Noch nie abgerufen')).toBeTruthy();
 		expect(telegram.getByText('noch nie')).toBeTruthy();
 		expect(telegram.getByText(/Variable BYL_TELEGRAM_TOKEN anlegen/)).toBeTruthy();
 		// One hint per card: the missing variable wins over the hint of the last run.
@@ -404,11 +414,21 @@ describe('connections section', () => {
 			'Kanal hinzufügen'
 		]);
 		expect(document.querySelectorAll('.guide details')).toHaveLength(0);
-		const files = within(screen.getByRole('region', { name: 'Dateien hereinziehen' }));
-		expect(files.getByRole('link', { name: 'Stichwörter bearbeiten' }).getAttribute('href')).toBe(
-			'/einstellungen/datei-importe'
-		);
-		expect(files.getByRole('link', { name: 'Zum Eingang' }).getAttribute('href')).toBe('/eingang');
+		// The files card on the building block (KK-2): the inbox as main button, the page of the file
+		// imports in the menu "•••".
+		const files = within(screen.getByRole('article', { name: 'Dateien hereinziehen' }));
+		expect(
+			files.getByRole('link', { name: 'Zum Eingang: Dateien hereinziehen' }).getAttribute('href')
+		).toBe('/eingang');
+		const trigger = files.getByRole('button', {
+			name: 'Weitere Aktionen für Dateien hereinziehen'
+		});
+		const menu = within(document.getElementById(trigger.getAttribute('aria-controls') ?? '')!);
+		expect(
+			menu
+				.getByRole('menuitem', { name: 'Anleitungen und Stichwörter', hidden: true })
+				.getAttribute('href')
+		).toBe('/einstellungen/datei-importe');
 	});
 
 	it('links Proton to its guide and opens the assistant of a card (EH-3, EH-6, EH-7)', async () => {
@@ -527,8 +547,13 @@ describe('Jetzt abrufen (E4 plan, package 15)', () => {
 		);
 		await vi.waitFor(() => expect(calendar.queryByText(/Letzter Fehler/)).toBeNull());
 		// Last run and last success are the same now: one date, and the lozenge says so.
-		await vi.waitFor(() => expect(calendar.getByText('Eingerichtet')).toBeTruthy());
-		expect(calendar.getAllByText(/25\.09\.2026 12:00/)).toHaveLength(1);
+		await vi.waitFor(() => expect(calendar.getByText('Verbunden')).toBeTruthy());
+		expect(
+			calendar.getByText(/^Zuletzt abgerufen .* · 3 neu, 1 schon vorhanden, 1 aktualisiert$/)
+		).toBeTruthy();
+		const details = await openDetails('Google Kalender');
+		expect(details.getAllByText(/25\.09\.2026 12:00/)).toHaveLength(1);
+		expect(details.queryByText(/zuletzt erfolgreich/)).toBeNull();
 	});
 
 	it('shows "Wird abgerufen" while a run is going (EH-3)', async () => {
@@ -586,13 +611,15 @@ describe('Telegram-Bot einrichten (E4 plan, package 17; since EH-6 in the assist
 	});
 });
 
-describe('Stichwörter (E4 plan, package 20; since EH-3 in "Bearbeiten")', () => {
+describe('Stichwörter (E4 plan, package 20; since EH-3 in "Bearbeiten", since KK-2 in the menu "•••")', () => {
+	const EDIT = 'Stichwörter und Einstellungen …';
+
 	it('warns at a connection without keywords and says where they are searched', async () => {
 		const context = setup([{ ...CAL, lastError: '' }, BOT]);
 		await context.store.load();
 		renderCards(context.store);
 		expect(card('Google Kalender').getByText(NO_KEYWORDS_WARNING)).toBeTruthy();
-		await fireEvent.click(screen.getByRole('button', { name: 'Bearbeiten: Google Kalender' }));
+		await chooseFromMenu('Google Kalender', EDIT);
 		const dialog = within(screen.getByRole('dialog', { name: 'Google Kalender bearbeiten' }));
 		expect(dialog.getByText(NO_KEYWORDS_WARNING)).toBeTruthy();
 		expect(dialog.getByText(/Titel und Beschreibung der Termine/)).toBeTruthy();
@@ -607,7 +634,7 @@ describe('Stichwörter (E4 plan, package 20; since EH-3 in "Bearbeiten")', () =>
 		const context = setup();
 		await context.store.load();
 		renderCards(context.store);
-		await fireEvent.click(screen.getByRole('button', { name: 'Bearbeiten: Telegram-Bot' }));
+		await chooseFromMenu('Telegram-Bot', EDIT);
 		const scope = within(screen.getByRole('dialog', { name: 'Telegram-Bot bearbeiten' }));
 		expect(scope.getByText(/im Text der Nachricht/)).toBeTruthy();
 		expect(scope.getByText('BYL_TELEGRAM_ALLOWED_IDS')).toBeTruthy();
@@ -646,7 +673,7 @@ describe('Stichwörter (E4 plan, package 20; since EH-3 in "Bearbeiten")', () =>
 			)
 		);
 		await vi.waitFor(() => expect(scope.getByText('#byl')).toBeTruthy());
-		// The card shows the number and the first three keywords.
+		// The details of the card show the number and the first three keywords.
 		expect(card('Telegram-Bot').getByText('6 (Einkauf, todo, aufgabe, +3)')).toBeTruthy();
 
 		await fireEvent.click(
@@ -670,16 +697,16 @@ describe('Stichwörter (E4 plan, package 20; since EH-3 in "Bearbeiten")', () =>
 		const context = setup([CAL]);
 		await context.store.load();
 		renderCards(context.store);
-		await fireEvent.click(screen.getByRole('button', { name: 'Bearbeiten: Google Kalender' }));
+		await chooseFromMenu('Google Kalender', EDIT);
 		expect(screen.getByRole('dialog', { name: 'Google Kalender bearbeiten' })).toBeTruthy();
 		expect(screen.queryByRole('switch', { name: /ohne Stichwort antworten/ })).toBeNull();
 	});
 
-	it('leads from "Bearbeiten" to the setup and closes the modal first (EH-3)', async () => {
+	it('leads from the edit modal to the setup and closes the modal first (EH-3)', async () => {
 		const context = setup([CAL]);
 		await context.store.load();
 		const { onsetup } = renderCards(context.store);
-		await fireEvent.click(screen.getByRole('button', { name: 'Bearbeiten: Google Kalender' }));
+		await chooseFromMenu('Google Kalender', EDIT);
 		await fireEvent.click(screen.getByRole('button', { name: 'Einrichtung erneut ansehen' }));
 		expect(screen.queryByRole('dialog')).toBeNull();
 		expect(onsetup).toHaveBeenCalledWith(expect.objectContaining({ id: CAL.id }));
@@ -714,10 +741,14 @@ describe('Postfächer (E4 plan, package 22)', () => {
 		const scope = card('Web.de');
 		expect(scope.getByText('Postfach · Web.de · anna@web.de')).toBeTruthy();
 		expect(scope.getByRole('button', { name: 'Jetzt abrufen: Web.de' })).toBeTruthy();
-		expect(scope.getByRole('button', { name: 'Aus dem Postfach wählen: Web.de' })).toBeTruthy();
+		const trigger = scope.getByRole('button', { name: 'Weitere Aktionen für Web.de' });
+		const menu = within(document.getElementById(trigger.getAttribute('aria-controls') ?? '')!);
+		expect(
+			menu.getByRole('menuitem', { name: 'Aus dem Postfach wählen …', hidden: true })
+		).toBeTruthy();
 		// The restart hint is no longer repeated at every mailbox (EH-3).
 		expect(scope.queryByText(/byl-mail\.exe ruft dieses Postfach/)).toBeNull();
-		await fireEvent.click(scope.getByRole('button', { name: 'Bearbeiten: Web.de' }));
+		await chooseFromMenu('Web.de', 'Stichwörter und Einstellungen …');
 		const dialog = within(screen.getByRole('dialog', { name: 'Web.de bearbeiten' }));
 		expect(dialog.getByText('BYL_WEBDE_PASSWORD')).toBeTruthy();
 		expect(
@@ -764,7 +795,7 @@ describe('Postfächer (E4 plan, package 22)', () => {
 				onsetupchange: vi.fn()
 			}
 		});
-		const files = within(screen.getByRole('region', { name: 'Dateien hereinziehen' }));
+		const files = within(screen.getByRole('article', { name: 'Dateien hereinziehen' }));
 		expect(files.getByText('Stichwörter: Mail 3 · Kalender 0 · WhatsApp 2')).toBeTruthy();
 	});
 
@@ -869,7 +900,7 @@ describe('Web.de-Postfach einrichten (E4 plan, package 11; since EH-7 in the ass
 		expect(text).toContain('app\\logs\\byl-mail.log');
 		expect(text).toMatch(/Gelesen-Status, Markierungen und Ordner bleiben/);
 		// Package 23: older mails and mails without keyword come through the mailbox selection.
-		expect(text).toMatch(/„Aus dem Postfach wählen“ an der Karte/);
+		expect(text).toMatch(/„Aus dem Postfach wählen …“ im Menü „•••“ der Karte/);
 	});
 });
 
@@ -882,7 +913,7 @@ describe('Gmail einrichten (E4 plan, package 13; since EH-7 in the assistant)', 
 		expect(text).toMatch(/Anbieter Gmail/);
 		expect(text).toMatch(/neu-starten\.bat/);
 		expect(text).toMatch(/Anmeldung bei Gmail abgelehnt/);
-		expect(text).toMatch(/„Aus dem Postfach wählen“/);
+		expect(text).toMatch(/„Aus dem Postfach wählen …“/);
 		const link = within(dialog).getByRole('link', { name: /myaccount\.google\.com\/apppasswords/ });
 		expect(link.getAttribute('href')).toBe('https://myaccount.google.com/apppasswords');
 		expect(link.getAttribute('rel')).toBe('noopener noreferrer');
@@ -921,7 +952,7 @@ describe('Aus dem Postfach wählen (E4 plan, package 23)', () => {
 		});
 		await context.store.load();
 		renderCards(context.store);
-		await fireEvent.click(screen.getByRole('button', { name: 'Aus dem Postfach wählen: Web.de' }));
+		await chooseFromMenu('Web.de', 'Aus dem Postfach wählen …');
 		const dialog = await screen.findByRole('dialog', { name: 'Aus dem Postfach wählen' });
 		expect(context.data.listMailbox).toHaveBeenCalledWith(MAILBOX.id, 50, {
 			signal: expect.any(AbortSignal)
@@ -938,7 +969,9 @@ describe('Aus dem Postfach wählen (E4 plan, package 23)', () => {
 		const context = setup([{ ...MAILBOX, enabled: false }]);
 		await context.store.load();
 		renderCards(context.store);
-		expect(screen.queryByRole('button', { name: /^Aus dem Postfach wählen/ })).toBeNull();
+		expect(
+			screen.queryAllByRole('menuitem', { name: /^Aus dem Postfach wählen/, hidden: true })
+		).toHaveLength(0);
 		const scope = card('Web.de');
 		expect(scope.getByText(/Der Hilfsprozess ruft pausierte Postfächer nicht ab/)).toBeTruthy();
 		await fireEvent.click(scope.getByRole('button', { name: 'Fortsetzen: Web.de' }));
@@ -948,10 +981,17 @@ describe('Aus dem Postfach wählen (E4 plan, package 23)', () => {
 	});
 
 	it('offers the selection only at mailboxes', async () => {
-		const context = setup();
+		const context = setup([CAL, BOT, MAILBOX]);
 		await context.store.load();
 		renderCards(context.store);
-		expect(screen.queryByRole('button', { name: /^Aus dem Postfach wählen/ })).toBeNull();
+		expect(
+			screen.getAllByRole('menuitem', { name: /^Aus dem Postfach wählen/, hidden: true })
+		).toHaveLength(1);
+		expect(
+			within(
+				card('Web.de').getByRole('button', { name: 'Weitere Aktionen für Web.de' }).parentElement!
+			).getByRole('menuitem', { name: 'Aus dem Postfach wählen …', hidden: true })
+		).toBeTruthy();
 	});
 });
 
@@ -1133,12 +1173,13 @@ describe('full scan of an inbox on the page (ADR-0020, addendum 3)', () => {
 			}
 		});
 		await vi.waitFor(() =>
-			expect(card('Web.de').getByText('wird durchsucht: 500/4.800')).toBeTruthy()
+			expect(card('Web.de').getByText('Posteingang wird durchsucht: 500/4.800')).toBeTruthy()
 		);
 
+		// While the scan runs, cancelling it is the main button of the card (KK-2).
 		context.data.scan.mockResolvedValueOnce({ status: 'cancelling', message: '' });
 		await fireEvent.click(
-			card('Web.de').getByRole('button', { name: 'Abbrechen: Durchsuchen von Web.de' })
+			card('Web.de').getByRole('button', { name: 'Durchsuchen abbrechen: Web.de' })
 		);
 		expect(context.data.scan).toHaveBeenLastCalledWith(MAILBOX.id, 'cancel');
 		await vi.waitFor(() =>

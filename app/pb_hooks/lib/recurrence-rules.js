@@ -34,6 +34,7 @@ var MESSAGES = {
   validation_recurrence_backlog: 'Bitte „Alle nachholen“ oder „Nur ab heute“ wählen.',
   validation_recurrence_reopen_older:
     'Von dieser Serie ist schon ein anderes Ticket offen, und dieses Ticket ist nicht das zuletzt erledigte. Du kannst es als normales Ticket wieder öffnen (aus der Serie lösen).',
+  validation_recurrence_initial_status: 'Als „Status beim Anlegen“ geht jeder Status außer „Erledigt“.',
   validation_project_archived: 'Das Projekt ist archiviert. Wähle ein anderes oder kein Projekt, um die Regel fortzusetzen.'
 };
 
@@ -117,6 +118,21 @@ function checkParams(raw, recurrence) {
 // otherwise today (ADR-0023 section 1).
 function defaultAnchor(ticketDue, today) {
   return isEmpty(ticketDue) ? today : ticketDue;
+}
+
+// "Status beim Anlegen" of the template (ADR-0022 addendum 8): every status but done, "open" as
+// before when it is empty (rules from before the migration 1790202500).
+var INITIAL_STATUSES = ['backlog', 'open', 'in_progress', 'waiting'];
+var DEFAULT_INITIAL_STATUS = 'open';
+
+// The status a new ticket of the rule starts with.
+function initialStatusOf(value) {
+  return INITIAL_STATUSES.indexOf(value) === -1 ? DEFAULT_INITIAL_STATUS : value;
+}
+
+// Code of a status the template may not have ('' when it may, an empty value included).
+function initialStatusViolation(value) {
+  return isEmpty(value) || INITIAL_STATUSES.indexOf(value) !== -1 ? '' : 'validation_recurrence_initial_status';
 }
 
 // Checks the ticket a rule is created with (ADR-0023 section 1). `ticket` is null when it was
@@ -543,6 +559,10 @@ module.exports = {
   fieldErrors: fieldErrors,
   checkParams: checkParams,
   defaultAnchor: defaultAnchor,
+  INITIAL_STATUSES: INITIAL_STATUSES,
+  DEFAULT_INITIAL_STATUS: DEFAULT_INITIAL_STATUS,
+  initialStatusOf: initialStatusOf,
+  initialStatusViolation: initialStatusViolation,
   ticketViolation: ticketViolation,
   createDates: createDates,
   nextDueAfterEdit: nextDueAfterEdit,

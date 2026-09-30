@@ -36,6 +36,7 @@
 	<RecurrencePanel
 		today={tickets.today}
 		eachAvailable={store.eachReady}
+		statusAvailable={store.statusReady}
 		projects={catalog.activeProjects}
 		tags={catalog.tags}
 		projectById={(id) => catalog.projectById(id)}
@@ -49,7 +50,7 @@
 
 <style>
 	h2 {
-		font-size: 1.125rem;
+		font-size: var(--font-size-title);
 		font-weight: 600;
 	}
 </style>

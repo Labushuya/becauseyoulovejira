@@ -1,10 +1,14 @@
-// Component tests of the card of a connection, the edit modal and the catalog (ADR-0026 section 3,
-// plan EH-3): lozenge and meta per state, the main action per kind, the menu "…" on the popover
-// building block, "Bearbeiten" as modal M with "Schließen", and the tiles of the catalog.
+// Component tests of the card building block and of the card of a connection, the edit modal and
+// the catalog (ADR-0026 section 3 and addendum of 2026-09-30; plans EH-3 and kanal-karten KK-2):
+// one header with lozenge, one info line, one main button per state, the menu "•••" on the
+// popover building block, the folded details, "Stichwörter und Einstellungen …" as modal M with
+// "Schließen", and the tiles of the catalog.
 
 import { fireEvent, render, screen, within } from '@testing-library/svelte';
-import { describe, expect, it, vi } from 'vitest';
+import { createRawSnippet } from 'svelte';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { ResolvedPathname } from '$app/types';
+import { CARD_STATUS } from '$lib/domain/channel-card';
 import {
 	MAIL_INBOX_HINT,
 	lastResultText,
@@ -16,8 +20,13 @@ import { useOverlayStubs } from '$lib/test/overlay-stubs';
 import ChannelCard from './ChannelCard.svelte';
 import ChannelCatalog from './ChannelCatalog.svelte';
 import ChannelEditModal from './ChannelEditModal.svelte';
+import ConnectionCard from './ConnectionCard.svelte';
 
 useOverlayStubs();
+
+afterEach(() => {
+	vi.useRealTimers();
+});
 
 const EMPTY_RUN: RunResult = {
 	status: 'ok',
@@ -55,47 +64,225 @@ function connection(overrides: Partial<Connection> = {}): Connection {
 	};
 }
 
-function renderCard(value: Connection, running = false, message: string | null = null) {
-	const callbacks = {
+function callbacks() {
+	return {
 		onrun: vi.fn(),
 		onpick: vi.fn(),
 		onedit: vi.fn(),
 		onpause: vi.fn(),
 		ondelete: vi.fn(),
-		onsetup: vi.fn()
+		onsetup: vi.fn(),
+		onscan: vi.fn()
 	};
-	render(ChannelCard, {
+}
+
+function renderCard(
+	value: Connection,
+	options: {
+		running?: boolean;
+		message?: string | null;
+		helper?: MailHelperStatus | null;
+		lastRun?: RunResult | null;
+	} = {}
+) {
+	const spies = callbacks();
+	render(ConnectionCard, {
 		props: {
 			connection: value,
 			secretStatus: { secret: true, allowlist: null },
-			running,
-			message,
-			...callbacks
+			running: options.running ?? false,
+			message: options.message ?? null,
+			helper: options.helper ?? null,
+			lastRun: options.lastRun ?? null,
+			...spies
 		}
 	});
-	return { card: within(screen.getByRole('article', { name: value.label })), ...callbacks };
+	const article = screen.getByRole('article', { name: value.label });
+	return { article, card: within(article), ...spies };
 }
 
-describe('channel card', () => {
-	it('is an article named by its heading with kind, lozenge and meta', () => {
-		const { card } = renderCard(connection());
+/** The main button of a card (exactly one). */
+function primaryOf(article: HTMLElement): HTMLElement {
+	const found = article.querySelectorAll<HTMLElement>('[data-card-primary]');
+	expect(found).toHaveLength(1);
+	return found[0] as HTMLElement;
+}
+
+/** The menu "•••" of a card; jsdom shows popovers as hidden. */
+function menuOf(article: HTMLElement, name: string) {
+	const trigger = within(article).getByRole('button', { name: `Weitere Aktionen für ${name}` });
+	const menu = within(document.getElementById(trigger.getAttribute('aria-controls') ?? '')!);
+	const items = () =>
+		menu.getAllByRole('menuitem', { hidden: true }).map((item) => item.textContent?.trim());
+	return { trigger, menu, items };
+}
+
+async function choose(article: HTMLElement, name: string, entry: string) {
+	const { trigger, menu } = menuOf(article, name);
+	await fireEvent.click(trigger);
+	await fireEvent.click(menu.getByRole('menuitem', { name: entry, hidden: true }));
+}
+
+/** Opens the details of a card and returns them. */
+async function openDetails(article: HTMLElement, name: string) {
+	const toggle = within(article).getByRole('button', { name: `Details: ${name}` });
+	await fireEvent.click(toggle);
+	return within(document.getElementById(toggle.getAttribute('aria-controls') ?? '')!);
+}
+
+describe('channel card building block (KK-2)', () => {
+	const details = createRawSnippet(() => ({
+		render: () => '<dl><div><dt>Stichwörter</dt><dd>2 (todo, ticket)</dd></div></dl>'
+	}));
+
+	it('has a header with name, kind and state as text, one info line and one main button', async () => {
+		const onselect = vi.fn();
+		render(ChannelCard, {
+			props: {
+				icon: 'calendar',
+				title: 'Kalender',
+				subtitle: 'Google Calendar',
+				status: CARD_STATUS.connected,
+				info: 'Zuletzt abgerufen vor 5 Min. · 3 neu',
+				primary: { label: 'Jetzt abrufen', onselect },
+				menu: [
+					{ label: 'Pausieren', onselect: vi.fn() },
+					{ label: 'Hilfe', href: '/einstellungen/hilfe#zugangsdaten' as ResolvedPathname },
+					{ label: 'Löschen …', dialog: true, separated: true, onselect: vi.fn() }
+				],
+				details,
+				anchor: 'verbindung-x'
+			}
+		});
+		const article = screen.getByRole('article', { name: 'Kalender' });
+		const card = within(article);
 		expect(card.getByRole('heading', { level: 4, name: 'Kalender' })).toBeTruthy();
 		expect(card.getByText('Google Calendar')).toBeTruthy();
-		expect(card.getByText('Eingerichtet').closest('[data-tone]')?.getAttribute('data-tone')).toBe(
+		expect(card.getByText('Verbunden').closest('[data-tone]')?.getAttribute('data-tone')).toBe(
 			'brand'
 		);
-		expect(card.getByText('25.09.2026 10:15')).toBeTruthy();
-		expect(card.getByText('2 (todo, ticket)')).toBeTruthy();
-		expect(card.queryByText(/zuletzt erfolgreich/)).toBeNull();
-		expect(card.queryByText(MAIL_INBOX_HINT)).toBeNull();
+		expect(article.querySelectorAll('.info-line')).toHaveLength(1);
+		expect(card.getByText('Zuletzt abgerufen vor 5 Min. · 3 neu')).toBeTruthy();
+		expect(article.id).toBe('verbindung-x');
+		expect(article.getAttribute('tabindex')).toBe('-1');
+
+		const main = primaryOf(article);
+		expect(main.textContent).toBe('Jetzt abrufen: Kalender');
+		await fireEvent.click(main);
+		expect(onselect).toHaveBeenCalledOnce();
+
+		const { trigger, menu, items } = menuOf(article, 'Kalender');
+		expect(trigger.getAttribute('aria-haspopup')).toBe('menu');
+		expect(items()).toEqual(['Pausieren', 'Hilfe', 'Löschen …']);
+		expect(menu.getByRole('separator', { hidden: true })).toBeTruthy();
+		expect(menu.getByRole('menuitem', { name: 'Hilfe', hidden: true }).getAttribute('href')).toBe(
+			'/einstellungen/hilfe#zugangsdaten'
+		);
+		expect(
+			menu.getByRole('menuitem', { name: 'Löschen …', hidden: true }).getAttribute('aria-haspopup')
+		).toBe('dialog');
 	});
 
-	it('says at a mailbox that the whole inbox is searched (full inbox)', () => {
-		const { card } = renderCard(
+	it('folds the details open and closed with a disclosure button', async () => {
+		render(ChannelCard, {
+			props: {
+				icon: 'calendar',
+				title: 'Kalender',
+				subtitle: 'Google Calendar',
+				info: 'Noch nie abgerufen',
+				primary: { label: 'Jetzt abrufen', onselect: vi.fn() },
+				details
+			}
+		});
+		const article = screen.getByRole('article', { name: 'Kalender' });
+		const toggle = within(article).getByRole('button', { name: 'Details: Kalender' });
+		const region = document.getElementById(toggle.getAttribute('aria-controls') ?? '');
+		expect(toggle.getAttribute('aria-expanded')).toBe('false');
+		expect(region?.hidden).toBe(true);
+		await fireEvent.click(toggle);
+		expect(toggle.getAttribute('aria-expanded')).toBe('true');
+		expect(region?.hidden).toBe(false);
+		expect(within(region!).getByText('2 (todo, ticket)')).toBeTruthy();
+		await fireEvent.click(toggle);
+		expect(region?.hidden).toBe(true);
+		// Without a menu there is no button "•••".
+		expect(within(article).queryByRole('button', { name: /Weitere Aktionen/ })).toBeNull();
+	});
+
+	it('marks a running main action busy and a locked one as not possible, and runs neither', async () => {
+		const onselect = vi.fn();
+		const { rerender } = render(ChannelCard, {
+			props: {
+				icon: 'api',
+				title: 'Eigener Eingang (API)',
+				subtitle: 'Für eigene Skripte',
+				info: 'Zugangsschlüssel werden geladen …',
+				busy: true,
+				primary: { label: 'Wird abgerufen …', busy: true, onselect }
+			}
+		});
+		const article = screen.getByRole('article', { name: 'Eigener Eingang (API)' });
+		expect(article.getAttribute('aria-busy')).toBe('true');
+		expect(within(article).getByRole('status').textContent).toBe(
+			'Zugangsschlüssel werden geladen …'
+		);
+		let main = primaryOf(article);
+		expect(main.getAttribute('aria-busy')).toBe('true');
+		expect(main.getAttribute('aria-disabled')).toBe('true');
+		await fireEvent.click(main);
+		await rerender({ busy: false, primary: { label: 'Erzeugen …', locked: true, onselect } });
+		main = primaryOf(article);
+		expect(main.getAttribute('aria-busy')).toBeNull();
+		expect(main.getAttribute('aria-disabled')).toBe('true');
+		await fireEvent.click(main);
+		expect(onselect).not.toHaveBeenCalled();
+		// A link as main action (an assistant in the address keeps focus and scroll).
+		await rerender({
+			primary: {
+				label: 'Einrichten',
+				href: '/einstellungen/kanaele?einrichten=whatsapp-web' as ResolvedPathname,
+				inPlace: true
+			}
+		});
+		main = primaryOf(article);
+		expect(main.tagName).toBe('A');
+		expect(main.getAttribute('href')).toBe('/einstellungen/kanaele?einrichten=whatsapp-web');
+		expect(main.hasAttribute('data-sveltekit-keepfocus')).toBe(true);
+		expect(main.hasAttribute('data-sveltekit-replacestate')).toBe(true);
+	});
+});
+
+describe('channel card', () => {
+	it('is an article named by its heading with kind, lozenge and one info line', async () => {
+		vi.useFakeTimers({ toFake: ['Date', 'setInterval', 'clearInterval'] });
+		vi.setSystemTime(Date.parse('2026-09-25T08:20:00Z'));
+		const { article, card } = renderCard(connection());
+		expect(card.getByRole('heading', { level: 4, name: 'Kalender' })).toBeTruthy();
+		expect(card.getByText('Google Calendar')).toBeTruthy();
+		expect(card.getByText('Verbunden').closest('[data-tone]')?.getAttribute('data-tone')).toBe(
+			'brand'
+		);
+		expect(card.getByText('Zuletzt abgerufen vor 5 Min. · ohne Fehler')).toBeTruthy();
+		// The relative time follows the clock while the card is shown.
+		await vi.advanceTimersByTimeAsync(60_000);
+		expect(card.getByText('Zuletzt abgerufen vor 6 Min. · ohne Fehler')).toBeTruthy();
+		const details = await openDetails(article, 'Kalender');
+		expect(details.getByText('25.09.2026 10:15')).toBeTruthy();
+		expect(details.getByText('2 (todo, ticket)')).toBeTruthy();
+		expect(details.queryByText(/zuletzt erfolgreich/)).toBeNull();
+		expect(details.queryByText(MAIL_INBOX_HINT)).toBeNull();
+		// No variables on the card: they stand in the edit modal (ADR-0018).
+		expect(card.queryByText('BYL_GOOGLE_CALENDAR_URL')).toBeNull();
+	});
+
+	it('says at a mailbox that the whole inbox is searched (full inbox)', async () => {
+		const { article } = renderCard(
 			connection({ type: 'mail', label: 'Web.de', mailProvider: 'webde', mailUser: 'anna@web.de' })
 		);
-		expect(card.getByText('Automatisch')).toBeTruthy();
-		expect(card.getByText(MAIL_INBOX_HINT)).toBeTruthy();
+		const details = await openDetails(article, 'Web.de');
+		expect(details.getByText('Automatisch')).toBeTruthy();
+		expect(details.getByText(MAIL_INBOX_HINT)).toBeTruthy();
+		expect(details.getByText('Betreff und Absender')).toBeTruthy();
 		expect(MAIL_INBOX_HINT).toBe(
 			'Der gesamte Posteingang wird durchsucht (nicht Papierkorb/Spam/Gesendet).'
 		);
@@ -126,61 +313,84 @@ describe('channel card', () => {
 		expect(dialog.getByText(/in Betreff und Absender \(Name und Adresse\)/)).toBeTruthy();
 	});
 
-	it('runs a calendar and names the connection in every action', async () => {
-		const { card, onrun, onedit } = renderCard(connection());
-		await fireEvent.click(card.getByRole('button', { name: 'Jetzt abrufen: Kalender' }));
+	it('runs a calendar and names the connection in the main button', async () => {
+		const { article, onrun, onedit } = renderCard(connection());
+		const main = primaryOf(article);
+		expect(main.textContent).toBe('Jetzt abrufen: Kalender');
+		await fireEvent.click(main);
 		expect(onrun).toHaveBeenCalledOnce();
-		const edit = card.getByRole('button', { name: 'Bearbeiten: Kalender' });
-		expect(edit.getAttribute('aria-haspopup')).toBe('dialog');
-		await fireEvent.click(edit);
+		await choose(article, 'Kalender', 'Stichwörter und Einstellungen …');
 		expect(onedit).toHaveBeenCalledOnce();
 	});
 
-	it('offers "Jetzt abrufen" and the mailbox selection for mailboxes (package A)', async () => {
-		const { card, onpick, onrun } = renderCard(
+	it('offers "Jetzt abrufen" as main button and the mailbox selection in the menu (package A)', async () => {
+		const { article, card, onpick, onrun } = renderCard(
 			connection({ type: 'mail', label: 'Gmail', mailProvider: 'gmail', mailUser: 'a@gmail.com' })
 		);
 		expect(card.getByText('Postfach · Gmail · a@gmail.com')).toBeTruthy();
 		await fireEvent.click(card.getByRole('button', { name: 'Jetzt abrufen: Gmail' }));
 		expect(onrun).toHaveBeenCalledOnce();
-		await fireEvent.click(card.getByRole('button', { name: 'Aus dem Postfach wählen: Gmail' }));
+		const { menu } = menuOf(article, 'Gmail');
+		expect(
+			menu
+				.getByRole('menuitem', { name: 'Aus dem Postfach wählen …', hidden: true })
+				.getAttribute('aria-haspopup')
+		).toBe('dialog');
+		await choose(article, 'Gmail', 'Aus dem Postfach wählen …');
 		expect(onpick).toHaveBeenCalledOnce();
 	});
 
-	it('says honestly whether the mail helper runs (package A)', () => {
+	it('says honestly whether the mail helper runs (package A)', async () => {
 		const mail = connection({ type: 'mail', label: 'Web.de', mailProvider: 'webde' });
-		const cases: [MailHelperStatus | null, RegExp][] = [
-			[null, /^wird geprüft …$/],
-			[{ state: 'running', version: '0.5.0', message: '' }, /^läuft \(byl-mail 0\.5\.0\)$/],
-			[{ state: 'stopped', version: '', message: '' }, /^läuft nicht\. .*neu-starten\.bat/],
-			[{ state: 'refused', version: '', message: '' }, /BYL_INGEST_TOKEN/],
-			[{ state: 'outdated', version: '', message: '' }, /älteren Version.*neu-starten\.bat/]
+		const cases: [MailHelperStatus | null, RegExp, string][] = [
+			[null, /^wird geprüft …$/, 'Verbunden'],
+			[
+				{ state: 'running', version: '0.5.0', message: '' },
+				/^läuft \(byl-mail 0\.5\.0\)$/,
+				'Verbunden'
+			],
+			[
+				{ state: 'stopped', version: '', message: '' },
+				/^läuft nicht\. .*neu-starten\.bat/,
+				'Neustart nötig'
+			],
+			[{ state: 'refused', version: '', message: '' }, /BYL_INGEST_TOKEN/, 'Neustart nötig'],
+			[
+				{ state: 'outdated', version: '', message: '' },
+				/älteren Version.*neu-starten\.bat/,
+				'Neustart nötig'
+			]
 		];
-		for (const [helper, text] of cases) {
-			const { unmount } = render(ChannelCard, {
+		for (const [helper, text, lozenge] of cases) {
+			const spies = callbacks();
+			const { unmount } = render(ConnectionCard, {
 				props: {
 					connection: mail,
 					secretStatus: { secret: true, allowlist: null },
 					running: false,
 					helper,
-					onrun: vi.fn(),
-					onpick: vi.fn(),
-					onedit: vi.fn(),
-					onpause: vi.fn(),
-					ondelete: vi.fn(),
-					onsetup: vi.fn()
+					...spies
 				}
 			});
-			const row = screen.getByText('Hilfsprozess').closest('div') as HTMLElement;
+			const article = screen.getByRole('article', { name: 'Web.de' });
+			expect(within(article).getByText(lozenge)).toBeTruthy();
+			const details = await openDetails(article, 'Web.de');
+			const row = details.getByText('Hilfsprozess').closest('div') as HTMLElement;
 			expect(within(row).getByRole('definition').textContent?.trim()).toMatch(text);
+			if (lozenge === 'Neustart nötig') {
+				// The one hint says why, and "Jetzt abrufen" asks the helper again.
+				expect(within(article).getByText(/^Hilfsprozess läuft/)).toBeTruthy();
+				expect(primaryOf(article).textContent).toBe('Jetzt abrufen: Web.de');
+			}
 			unmount();
 		}
 		// Other kinds do not need the helper.
-		const { card } = renderCard(connection());
-		expect(card.queryByText('Hilfsprozess')).toBeNull();
+		const { article } = renderCard(connection());
+		const details = await openDetails(article, 'Kalender');
+		expect(details.queryByText('Hilfsprozess')).toBeNull();
 	});
 
-	it('shows the result of the last run: counts on this page, else with or without error (package A)', () => {
+	it('shows the result of the last run: counts on this page, else with or without error (package A)', async () => {
 		expect(lastResultText({ lastRunAt: null, lastError: '' }, null)).toBeNull();
 		expect(lastResultText({ lastRunAt: '2026-09-25 08:15:00.000Z', lastError: '' }, null)).toBe(
 			'ohne Fehler'
@@ -194,73 +404,94 @@ describe('channel card', () => {
 			lastResultText({ lastRunAt: null, lastError: '' }, { ...EMPTY_RUN, status: 'unavailable' })
 		).toBe('Hilfsprozess läuft nicht');
 
-		render(ChannelCard, {
-			props: {
-				connection: connection(),
-				secretStatus: { secret: true, allowlist: null },
-				running: false,
-				lastRun: run,
-				onrun: vi.fn(),
-				onpick: vi.fn(),
-				onedit: vi.fn(),
-				onpause: vi.fn(),
-				ondelete: vi.fn(),
-				onsetup: vi.fn()
-			}
-		});
-		const card = within(screen.getByRole('article', { name: 'Kalender' }));
-		expect(card.getByText('Ergebnis')).toBeTruthy();
-		expect(card.getByText('2 neu, 1 ohne Stichwort')).toBeTruthy();
+		const { article, card } = renderCard(connection(), { lastRun: run });
+		expect(card.getByText(/· 2 neu, 1 ohne Stichwort$/)).toBeTruthy();
+		const details = await openDetails(article, 'Kalender');
+		expect(details.getByText('Ergebnis')).toBeTruthy();
+		expect(details.getByText('2 neu, 1 ohne Stichwort')).toBeTruthy();
 		// The anchor of "Zur Karte" in the flag of "Alle Kanäle jetzt abrufen".
-		const article = screen.getByRole('article', { name: 'Kalender' });
 		expect(article.id).toBe('verbindung-conn00000000001');
 		expect(article.getAttribute('tabindex')).toBe('-1');
 	});
 
-	it('marks a running fetch with a busy button', () => {
-		const { card } = renderCard(connection(), true);
+	it('marks a running fetch with a busy main button', () => {
+		const { article, card } = renderCard(connection(), { running: true });
 		expect(card.getByText('Wird abgerufen')).toBeTruthy();
 		const button = card.getByRole('button', { name: 'Wird abgerufen …: Kalender' });
+		expect(button).toBe(primaryOf(article));
 		expect(button.getAttribute('aria-busy')).toBe('true');
+		expect(button.getAttribute('aria-disabled')).toBe('true');
 	});
 
 	it('shows an error of its last action as live error message', () => {
-		const { card } = renderCard(connection(), false, 'Server nicht erreichbar.');
+		const { card } = renderCard(connection(), { message: 'Server nicht erreichbar.' });
 		const alert = card.getByRole('alert');
 		expect(alert.textContent).toMatch(/Server nicht erreichbar\./);
 	});
 
-	it('holds pausing, the setup and deleting in the menu "…"', async () => {
-		const { card, onpause, onsetup, ondelete } = renderCard(connection());
-		const trigger = card.getByRole('button', { name: 'Weitere Aktionen für Kalender' });
-		expect(trigger.getAttribute('aria-haspopup')).toBe('menu');
-		const menu = within(document.getElementById(trigger.getAttribute('aria-controls') ?? '')!);
-		expect(
-			menu.getAllByRole('menuitem', { hidden: true }).map((item) => item.textContent?.trim())
-		).toEqual(['Pausieren', 'Einrichtung ansehen', 'Löschen …']);
-		expect(menu.getByRole('separator', { hidden: true })).toBeTruthy();
-
-		await fireEvent.click(trigger);
-		await fireEvent.click(menu.getByRole('menuitem', { name: 'Pausieren', hidden: true }));
-		expect(onpause).toHaveBeenCalledWith(false);
-		await fireEvent.click(trigger);
-		await fireEvent.click(
-			menu.getByRole('menuitem', { name: 'Einrichtung ansehen', hidden: true })
+	it('shows the last error as hint and in the details', async () => {
+		const { article, card } = renderCard(
+			connection({ lastError: 'HTTP 404', lastOkAt: '2026-09-24 08:15:00.000Z' })
 		);
+		expect(card.getByText('Fehler').closest('[data-tone]')?.getAttribute('data-tone')).toBe(
+			'danger'
+		);
+		expect(card.getByText(/Letzter Fehler: HTTP 404/)).toBeTruthy();
+		expect(primaryOf(article).textContent).toBe('Jetzt abrufen: Kalender');
+		const details = await openDetails(article, 'Kalender');
+		expect(details.getByText(/zuletzt erfolgreich 24\.09\.2026 10:15/)).toBeTruthy();
+		expect(details.getByText('Letzter Fehler')).toBeTruthy();
+	});
+
+	it('holds the keywords, pausing, the setup, the help and deleting in the menu "•••"', async () => {
+		const { article, onpause, onsetup, ondelete, onedit } = renderCard(connection());
+		const { trigger, menu, items } = menuOf(article, 'Kalender');
+		expect(trigger.getAttribute('aria-haspopup')).toBe('menu');
+		expect(items()).toEqual([
+			'Stichwörter und Einstellungen …',
+			'Pausieren',
+			'Einrichtung ansehen',
+			'Hilfe',
+			'Löschen …'
+		]);
+		expect(menu.getByRole('separator', { hidden: true })).toBeTruthy();
+		expect(menu.getByRole('menuitem', { name: 'Hilfe', hidden: true }).getAttribute('href')).toBe(
+			'/einstellungen/hilfe#zugangsdaten'
+		);
+
+		await choose(article, 'Kalender', 'Stichwörter und Einstellungen …');
+		expect(onedit).toHaveBeenCalledOnce();
+		await choose(article, 'Kalender', 'Pausieren');
+		expect(onpause).toHaveBeenCalledWith(false);
+		await choose(article, 'Kalender', 'Einrichtung ansehen');
 		expect(onsetup).toHaveBeenCalledOnce();
-		await fireEvent.click(trigger);
-		await fireEvent.click(menu.getByRole('menuitem', { name: 'Löschen …', hidden: true }));
+		await choose(article, 'Kalender', 'Löschen …');
 		expect(ondelete).toHaveBeenCalledOnce();
 	});
 
-	it('offers "Fortsetzen" for a paused connection, in the card and in the menu', async () => {
-		const { card, onpause } = renderCard(connection({ enabled: false }));
+	it('offers "Fortsetzen" for a paused connection as main button, not twice', async () => {
+		const { article, card, onpause } = renderCard(connection({ enabled: false }));
 		expect(card.getByText('Pausiert')).toBeTruthy();
 		await fireEvent.click(card.getByRole('button', { name: 'Fortsetzen: Kalender' }));
 		expect(onpause).toHaveBeenCalledWith(true);
-		const trigger = card.getByRole('button', { name: 'Weitere Aktionen für Kalender' });
-		const menu = within(document.getElementById(trigger.getAttribute('aria-controls') ?? '')!);
-		expect(menu.getByRole('menuitem', { name: 'Fortsetzen', hidden: true })).toBeTruthy();
+		expect(menuOf(article, 'Kalender').items()).not.toContain('Fortsetzen');
+		expect(menuOf(article, 'Kalender').items()).not.toContain('Pausieren');
+	});
+
+	it('leads a connection without its variable to the setup (main button)', () => {
+		const spies = callbacks();
+		render(ConnectionCard, {
+			props: {
+				connection: connection(),
+				secretStatus: { secret: false, allowlist: null },
+				running: false,
+				...spies
+			}
+		});
+		const article = screen.getByRole('article', { name: 'Kalender' });
+		expect(within(article).getByText('Einrichtung offen')).toBeTruthy();
+		expect(primaryOf(article).textContent).toBe('Einrichtung fortsetzen: Kalender');
+		expect(menuOf(article, 'Kalender').items()).not.toContain('Einrichtung ansehen');
 	});
 });
 
@@ -272,29 +503,7 @@ describe('full scan of an inbox on the card (ADR-0020, addendum 3)', () => {
 		mailUser: 'anna@web.de'
 	};
 
-	function renderScan(value: Connection) {
-		const onscan = vi.fn();
-		render(ChannelCard, {
-			props: {
-				connection: value,
-				secretStatus: { secret: true, allowlist: null },
-				running: false,
-				onrun: vi.fn(),
-				onpick: vi.fn(),
-				onedit: vi.fn(),
-				onpause: vi.fn(),
-				ondelete: vi.fn(),
-				onsetup: vi.fn(),
-				onscan
-			}
-		});
-		const card = within(screen.getByRole('article', { name: value.label }));
-		const trigger = card.getByRole('button', { name: `Weitere Aktionen für ${value.label}` });
-		const menu = within(document.getElementById(trigger.getAttribute('aria-controls') ?? '')!);
-		return { card, trigger, menu, onscan };
-	}
-
-	it('shows the progress of a running scan and cancels it', async () => {
+	it('shows the progress of a running scan in the info line and cancels it', async () => {
 		const scan = {
 			state: 'running' as const,
 			done: 1200,
@@ -302,17 +511,23 @@ describe('full scan of an inbox on the card (ADR-0020, addendum 3)', () => {
 			created: 7,
 			fallback: false
 		};
-		const { card, onscan } = renderScan(connection({ ...MAIL, scan }));
-		expect(card.getByText('Posteingang')).toBeTruthy();
-		expect(card.getByText(/wird durchsucht: 1\.200\/4\.800/)).toBeTruthy();
-		const bar = document.querySelector('progress');
+		const { article, card, onscan, onrun } = renderCard(connection({ ...MAIL, scan }));
+		expect(card.getByText('Posteingang wird durchsucht: 1.200/4.800')).toBeTruthy();
+		const bar = article.querySelector('progress');
 		expect(bar?.getAttribute('value')).toBe('1200');
 		expect(bar?.getAttribute('max')).toBe('4800');
-		await fireEvent.click(card.getByRole('button', { name: 'Abbrechen: Durchsuchen von Web.de' }));
+		const main = primaryOf(article);
+		expect(main.textContent).toBe('Durchsuchen abbrechen: Web.de');
+		await fireEvent.click(main);
 		expect(onscan).toHaveBeenCalledWith('cancel');
+		// "Jetzt abrufen" stays reachable in the menu.
+		await choose(article, 'Web.de', 'Jetzt abrufen');
+		expect(onrun).toHaveBeenCalledOnce();
+		const details = await openDetails(article, 'Web.de');
+		expect(details.getByText('Posteingang')).toBeTruthy();
 	});
 
-	it('says how a finished, paused or cancelled scan ended, without "Abbrechen" or a bar', () => {
+	it('says how a finished, paused or cancelled scan ended, without "Abbrechen" or a bar', async () => {
 		const cases: [NonNullable<Connection['scan']>, RegExp][] = [
 			[
 				{ state: 'done', done: 4800, total: 4800, created: 12, fallback: false },
@@ -328,31 +543,35 @@ describe('full scan of an inbox on the card (ADR-0020, addendum 3)', () => {
 			]
 		];
 		for (const [scan, text] of cases) {
-			const { card } = renderScan(
-				connection({ ...MAIL, id: `conn-${scan.state}`, label: `Web.de ${scan.state}`, scan })
+			const label = `Web.de ${scan.state}`;
+			const { article } = renderCard(
+				connection({ ...MAIL, id: `conn-${scan.state}`, label, scan })
 			);
-			expect(card.getByText(text)).toBeTruthy();
-			expect(card.queryByRole('button', { name: /^Abbrechen/ })).toBeNull();
+			const details = await openDetails(article, label);
+			expect(details.getByText(text)).toBeTruthy();
+			expect(primaryOf(article).textContent).toBe(`Jetzt abrufen: ${label}`);
+			expect(menuOf(article, label).items()).not.toContain('Durchsuchen abbrechen');
 		}
 		expect(document.querySelector('progress')).toBeNull();
 	});
 
 	it('offers "Posteingang neu durchsuchen" in the menu of a set-up mailbox only', async () => {
-		const { trigger, menu, onscan } = renderScan(connection({ ...MAIL, scan: null }));
-		expect(
-			menu.getAllByRole('menuitem', { hidden: true }).map((item) => item.textContent?.trim())
-		).toEqual(['Pausieren', 'Einrichtung ansehen', 'Posteingang neu durchsuchen', 'Löschen …']);
-		await fireEvent.click(trigger);
-		await fireEvent.click(
-			menu.getByRole('menuitem', { name: 'Posteingang neu durchsuchen', hidden: true })
-		);
+		const { article, onscan } = renderCard(connection({ ...MAIL, scan: null }));
+		expect(menuOf(article, 'Web.de').items()).toEqual([
+			'Aus dem Postfach wählen …',
+			'Stichwörter und Einstellungen …',
+			'Pausieren',
+			'Posteingang neu durchsuchen',
+			'Einrichtung ansehen',
+			'Hilfe',
+			'Löschen …'
+		]);
+		await choose(article, 'Web.de', 'Posteingang neu durchsuchen');
 		expect(onscan).toHaveBeenCalledWith('start');
-		const paused = renderScan(
+		const paused = renderCard(
 			connection({ ...MAIL, id: 'conn-aus', label: 'Aus', enabled: false })
 		);
-		expect(
-			paused.menu.queryByRole('menuitem', { name: 'Posteingang neu durchsuchen', hidden: true })
-		).toBeNull();
+		expect(menuOf(paused.article, 'Aus').items()).not.toContain('Posteingang neu durchsuchen');
 	});
 });
 

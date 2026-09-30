@@ -298,4 +298,14 @@ describe('modal source', () => {
 		// The blanket stays a plain veil without blur (ADR-0029 section 8).
 		expect(rule('.modal::backdrop')).not.toMatch(/filter/);
 	});
+
+	it('lets a footer button with margin-right: auto stand on the left (fix 2026-09-30)', () => {
+		// The group of buttons fills the footer; sized to its content it left no space, and
+		// "Andere Quelle" of the Notion import and "Später fortsetzen" of the assistants stood on
+		// the right next to the other buttons.
+		const buttons = /\.buttons \{([^}]*)\}/.exec(source)?.[1] ?? '';
+		expect(buttons).toMatch(/display:\s*flex/);
+		expect(buttons).toMatch(/flex:\s*1 1 auto/);
+		expect(buttons).toMatch(/justify-content:\s*flex-end/);
+	});
 });

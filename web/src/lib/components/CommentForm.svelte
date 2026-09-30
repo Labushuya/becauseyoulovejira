@@ -69,6 +69,7 @@
 				class="button-primary send"
 				type="button"
 				aria-disabled={locked}
+				aria-busy={store.posting ? 'true' : undefined}
 				aria-describedby={empty ? hintId : undefined}
 				onclick={send}
 			>
@@ -124,6 +125,11 @@
 	.send[aria-disabled='true'] {
 		cursor: not-allowed;
 		opacity: 0.6;
+	}
+
+	/* The comment is being sent (ADR-0026, addendum of 2026-09-30). */
+	.send[aria-busy='true'] {
+		cursor: progress;
 	}
 
 	.hint {

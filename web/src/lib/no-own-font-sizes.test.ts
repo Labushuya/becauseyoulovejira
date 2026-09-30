@@ -13,7 +13,7 @@ const SRC_DIR = resolve(import.meta.dirname, '..');
 const TOKENS_CSS = join('lib', 'styles', 'tokens.css');
 
 /** Numbers left from before G-6 in all listed files together; lower it when one goes. */
-const LEGACY_COUNT = 163;
+const LEGACY_COUNT = 144;
 
 /** Files that still carry font sizes as numbers (as of G-6). */
 const LEGACY_FILES = [
@@ -36,7 +36,6 @@ const LEGACY_FILES = [
 	'lib/components/MailboxPicker.svelte',
 	'lib/components/MarkdownEditor.svelte',
 	'lib/components/QuickCapture.svelte',
-	'lib/components/RecurrenceSummary.svelte',
 	'lib/components/RecurrencesView.svelte',
 	'lib/components/SessionNotice.svelte',
 	'lib/components/StatusPill.svelte',
@@ -47,8 +46,6 @@ const LEGACY_FILES = [
 	'lib/components/TicketMeta.svelte',
 	'lib/components/ViewSwitch.svelte',
 	'lib/components/WhatsAppImport.svelte',
-	'lib/components/channels/BookmarkletCard.svelte',
-	'lib/components/channels/ChannelCard.svelte',
 	'lib/components/channels/ChannelCatalog.svelte',
 	'lib/components/channels/ChannelSetup.svelte',
 	'lib/components/channels/ChannelsIntro.svelte',
@@ -78,8 +75,6 @@ const LEGACY_FILES = [
 	'routes/(app)/einstellungen/konto/+page.svelte',
 	'routes/(app)/einstellungen/tags/+page.svelte',
 	'routes/(app)/projekte/[id]/+page.svelte',
-	'routes/(app)/wiederholungen/[id]/+page.svelte',
-	'routes/(app)/wiederholungen/neu/+page.svelte',
 	'routes/login/+page.svelte'
 ].map((path) => join(...path.split('/')));
 

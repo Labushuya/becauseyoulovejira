@@ -41,6 +41,7 @@
 <!-- svelte-ignore a11y_no_static_element_interactions -->
 <span
 	class="editable-cell"
+	aria-busy={busy ? 'true' : undefined}
 	onpointerenter={() => (opened = true)}
 	onfocusin={() => (opened = true)}
 >
@@ -48,7 +49,7 @@
 		{kind}
 		{label}
 		{buttonLabel}
-		buttonClass={busy ? 'cell-edit busy' : 'cell-edit'}
+		buttonClass="cell-edit"
 		buttonTitle={buttonLabel}
 		onopen={() => (opened = true)}
 	>
@@ -100,7 +101,8 @@
 		background: var(--fill-control-hover);
 	}
 
-	:global(button.cell-edit.busy) {
+	/* A save of this ticket runs (ADR-0026, addendum of 2026-09-30): the cell waits. */
+	.editable-cell[aria-busy='true'] :global(button.cell-edit) {
 		cursor: progress;
 		opacity: 0.75;
 	}

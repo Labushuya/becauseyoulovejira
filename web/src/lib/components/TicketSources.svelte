@@ -110,7 +110,7 @@
 				{@const copy = copyCompleteness(item)}
 				{@const origin = sourceOrigin(item)}
 				{@const main = item.id === ticket.sourceItem}
-				<li class="source">
+				<li class="source" aria-busy={store.isPending(item.id) ? 'true' : undefined}>
 					<div class="text">
 						<p class="line">
 							<span class="channel">{sourceChannelLabel(item)}</span>

@@ -14,10 +14,7 @@ const TOKENS_CSS = join('lib', 'styles', 'tokens.css');
  * and move to the tokens with their next change. The list may only shrink: a file listed here
  * without a literal fails the test.
  */
-const LEGACY_RADII = [
-	join('lib', 'components', 'ConnectionsSection.svelte'),
-	join('lib', 'components', 'ImportKeywordsSection.svelte')
-];
+const LEGACY_RADII = [join('lib', 'components', 'ImportKeywordsSection.svelte')];
 
 /** Values a radius may take besides a token: none, a circle, or what the parent has. */
 const PLAIN_RADII = new Set(['0', '50%', 'inherit']);

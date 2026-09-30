@@ -102,6 +102,19 @@ describe('help page (EH-9)', () => {
 		);
 	});
 
+	it('describes the channel cards: state, one line, one button, the menu "•••" and details (KK-2)', () => {
+		render(Page);
+		const content = text(screen.getByRole('region', { name: 'Kanäle und Zugangsdaten' }));
+		expect(content).toMatch(
+			/„Verbunden“, „Pausiert“,\s*„Fehler“, „Einrichtung offen“ oder „Neustart nötig“/
+		);
+		expect(content).toMatch(/Zuletzt\s+abgerufen vor 5 Min\. · 3 neu/);
+		expect(content).toMatch(/Menü „•••“/);
+		expect(content).toMatch(/unter „Details“/);
+		expect(content).toMatch(/steht nicht mehr auf „Einrichtung offen“/);
+		expect(content).not.toMatch(/Nicht eingerichtet/);
+	});
+
 	it('answers the frequent questions in folded details', () => {
 		const { container } = render(Page);
 		const section = screen.getByRole('region', { name: 'Häufige Fragen' });
@@ -238,6 +251,22 @@ describe('help page (EH-9)', () => {
 		expect(content).not.toMatch(/\d\.\./);
 		expect(section.querySelectorAll('table')).toHaveLength(0);
 		expect(section.querySelectorAll('ol')).toHaveLength(3);
+	});
+
+	// Plan WV: what the next tickets get, the offer after a change, and why nothing asks.
+	it('explains the template of the next tickets and why nothing asks when one appears', () => {
+		render(Page);
+		const content = text(screen.getByRole('region', { name: 'Wiederholungen' }));
+		for (const phrase of [
+			'Folgetickets bekommen Titel, Beschreibung, Priorität, Projekt, Tags und den „Status beim Anlegen“ aus der Vorlage der Regel.',
+			'Die Vorlage übernimmt beim Einrichten die Werte des Tickets, auch seinen Status',
+			'am Ticket unter „Wiederholt sich“ („Künftige Tickets“, „Bearbeiten“)',
+			'Ein Hinweis bietet „Auch für künftige Tickets übernehmen“ an',
+			'Status und Fälligkeit gehören immer nur zum einzelnen Ticket.',
+			'Eine Rückfrage beim Entstehen eines Tickets gibt es nicht: Folgetickets entstehen im Hintergrund zur festen Zeit'
+		]) {
+			expect(content, phrase).toContain(phrase);
+		}
 	});
 
 	it('explains the own inbox with examples for PowerShell and curl, the key as placeholder (ADR-0038)', () => {

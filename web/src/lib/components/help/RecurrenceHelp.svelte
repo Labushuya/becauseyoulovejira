@@ -5,8 +5,10 @@
 
 	// Section "Wiederholungen" of the help (plan "Wiederholungen verständlich machen", part A): what
 	// the kinds, the lead time and the switch mean, three examples as timelines, special dates and
-	// the rest. Every date comes from helpExamples(), which plays the scenarios with the decisions
-	// of the generation; nothing is typed by hand (tests/unit/web-recurrence.test.mjs checks them
+	// the rest, since plan WV with the template (what the next tickets get, "Auch für künftige
+	// Tickets übernehmen", why nothing asks when a ticket appears). Every date comes from
+	// helpExamples(), which plays the scenarios with the decisions of the generation; nothing is
+	// typed by hand (tests/unit/web-recurrence.test.mjs checks them
 	// against the hook). The year of the examples is never shown. No table (like the whole help):
 	// timelines are ordered lists, terms a description list.
 	let { headingLevel = 3 }: { headingLevel?: 3 | 4 } = $props();
@@ -195,9 +197,23 @@
 		<li>Eine Regel zu löschen, lässt ihre Tickets als normale Tickets stehen.</li>
 		<li>„Neues Ticket“ mit „Wiederholen“: Das angelegte Ticket ist das erste der Serie.</li>
 		<li>
-			Folgetickets bekommen Titel, Beschreibung, Projekt, Tags und Priorität aus der Vorlage der
-			Regel (beim Einrichten übernommen, ändern kannst du sie im Panel der Regel unter
-			„Wiederholungen“). Unteraufgaben, Kommentare und Quellen gehen nicht mit.
+			Folgetickets bekommen Titel, Beschreibung, Priorität, Projekt, Tags und den „Status beim
+			Anlegen“ aus der Vorlage der Regel. Die Vorlage übernimmt beim Einrichten die Werte des
+			Tickets, auch seinen Status; ohne Ticket („Neue Regel“) starten neue Tickets als „Offen“.
+			Ansehen und ändern kannst du sie am Ticket unter „Wiederholt sich“ („Künftige Tickets“,
+			„Bearbeiten“) oder im Panel der Regel unter „Wiederholungen“. Unteraufgaben, Kommentare und
+			Quellen gehen nicht mit.
+		</li>
+		<li>
+			Änderst du Titel, Beschreibung, Priorität, Projekt oder Tags eines offenen Tickets der Serie,
+			gilt das zuerst nur für dieses Ticket. Ein Hinweis bietet „Auch für künftige Tickets
+			übernehmen“ an, auch nach einer Änderung in der Tabelle oder für mehrere Tickets. Status und
+			Fälligkeit gehören immer nur zum einzelnen Ticket.
+		</li>
+		<li>
+			Eine Rückfrage beim Entstehen eines Tickets gibt es nicht: Folgetickets entstehen im
+			Hintergrund zur festen Zeit, auch wenn die App gerade niemand ansieht. Was sie bekommen, legst
+			du deshalb vorher in der Vorlage fest.
 		</li>
 		<li>
 			Tickets haben keine Uhrzeit. Sie entstehen, wenn die App läuft: jede Stunde um 7 nach, der

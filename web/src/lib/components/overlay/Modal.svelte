@@ -386,8 +386,13 @@
 		font-size: 0.875rem;
 	}
 
+	/*
+	 * The buttons fill the footer and stand on the right; a button with margin-right: auto
+	 * ("Andere Quelle", "Später fortsetzen") takes the free space and stands on the left.
+	 */
 	.buttons {
 		display: flex;
+		flex: 1 1 auto;
 		flex-wrap: wrap;
 		gap: 0.5rem;
 		justify-content: flex-end;

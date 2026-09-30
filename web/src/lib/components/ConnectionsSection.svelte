@@ -8,8 +8,8 @@
 		type ConnectionsStore
 	} from '$lib/stores/connections.svelte';
 	import type { NotionStore } from '$lib/stores/notion.svelte';
-	import ChannelCard from './channels/ChannelCard.svelte';
 	import ChannelEditModal from './channels/ChannelEditModal.svelte';
+	import ConnectionCard from './channels/ConnectionCard.svelte';
 	import NotionCard from './channels/NotionCard.svelte';
 	import EmptyState from './guidance/EmptyState.svelte';
 	import SectionMessage from './guidance/SectionMessage.svelte';
@@ -17,12 +17,13 @@
 	import ConfirmDialog from './overlay/ConfirmDialog.svelte';
 
 	// "Deine Verbindungen" on the page "Kanäle" (E4 plan, packages 10, 15, 20, 22 and 23; ADR-0026
-	// section 3, plan EH-3): a grid of cards with the state of each connection as lozenge. The card
-	// runs a fetch ("Jetzt abrufen", results as flags), opens the mailbox selection, pauses and
-	// resumes, and asks before deleting; "Bearbeiten" opens a modal with keywords and switches that
-	// save at once. Access data are Windows user variables; the app stores only their names
-	// (ADR-0018). New connections come from the catalog below (ChannelCatalog). A Notion connection
-	// (ADR-0041) has its own card: it fetches nothing by itself and opens the import dialog.
+	// section 3, plan EH-3; since the plan kanal-karten KK-2 on the building block ChannelCard): a
+	// grid of cards with the state of each connection as lozenge. The card runs a fetch ("Jetzt
+	// abrufen", results as flags), opens the mailbox selection, pauses and resumes, and asks before
+	// deleting; "Stichwörter und Einstellungen …" opens a modal with keywords and switches that save
+	// at once. Access data are Windows user variables; the app stores only their names (ADR-0018).
+	// New connections come from the catalog below (ChannelCatalog). A Notion connection (ADR-0041)
+	// has its own configuration: it fetches nothing by itself and opens the import dialog.
 	let {
 		store,
 		notion,
@@ -240,7 +241,7 @@
 								}}
 							/>
 						{:else}
-							<ChannelCard
+							<ConnectionCard
 								{connection}
 								secretStatus={store.status(connection.id)}
 								running={store.isRunning(connection.id)}
@@ -353,19 +354,24 @@
 	.count {
 		min-width: 1.5rem;
 		padding: 0 0.375rem;
-		font-size: 0.75rem;
+		font-size: var(--font-size-small);
 		font-weight: 600;
 		line-height: 1.25rem;
 		text-align: center;
 		color: var(--color-text-muted);
 		border: 1px solid var(--color-line);
-		border-radius: 0.625rem;
+		border-radius: var(--radius-pill);
 	}
 
+	/*
+	 * The same grid as "Selbst hereinbringen" (plan kanal-karten KK-2): every card keeps its own
+	 * height, so opening the details of one does not stretch its neighbours.
+	 */
 	.grid {
 		display: grid;
 		grid-template-columns: repeat(auto-fill, minmax(min(18rem, 100%), 1fr));
 		gap: 0.75rem;
+		align-items: start;
 		list-style: none;
 	}
 
@@ -382,7 +388,7 @@
 	}
 
 	.hint {
-		font-size: 0.8125rem;
+		font-size: var(--font-size-control);
 		color: var(--color-text-muted);
 	}
 </style>

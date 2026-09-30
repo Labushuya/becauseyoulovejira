@@ -14,6 +14,7 @@ import {
 	type Weekday
 } from '../domain/recurrence';
 import type { RecurrenceRule } from '../domain/recurrence-rule';
+import { templateStatusOf, type TemplateStatus } from '../domain/series-template';
 import type { Ticket } from '../domain/ticket';
 import { DataError, withDataErrors } from './errors';
 import { currentUserId, type RequestOptions } from './options';
@@ -41,6 +42,7 @@ export const RULE_FIELDS = [
 	'active',
 	'last_hint',
 	'each_occurrence',
+	'initial_status',
 	'created',
 	'updated'
 ].join(',');
@@ -65,6 +67,8 @@ export interface RuleRecord {
 	last_hint?: string;
 	/** "Jeden Termin einzeln anlegen" (plan OR-5); absent before its migration. */
 	each_occurrence?: boolean;
+	/** "Status beim Anlegen" (plan WV); absent before its migration, '' for older rules. */
+	initial_status?: string;
 	created: string;
 	updated: string;
 }
@@ -93,6 +97,7 @@ export function toRecurrenceRule(record: RuleRecord): RecurrenceRule {
 		active: record.active,
 		lastHint: record.last_hint ?? '',
 		eachOccurrence: record.each_occurrence === true,
+		initialStatus: templateStatusOf(record.initial_status),
 		created: record.created,
 		updated: record.updated
 	};
@@ -119,6 +124,11 @@ export interface RuleDraft {
 	 * catches up in batches, "today" goes on from today.
 	 */
 	backlog?: 'all' | 'today';
+	/**
+	 * "Status beim Anlegen" of the template (plan WV); a server before its migration ignores it and
+	 * starts every ticket "open".
+	 */
+	initial_status?: TemplateStatus;
 }
 
 function draftBody(draft: Partial<RuleDraft>): Record<string, unknown> {
@@ -163,14 +173,42 @@ export function eachOccurrenceReady(
 	pb: PocketBase,
 	{ signal }: RequestOptions = {}
 ): Promise<boolean> {
+	return answeredWithout400(signal, () =>
+		pb.collection(RULES).getList(1, 1, {
+			filter: pb.filter('each_occurrence = {:yes}', { yes: true }),
+			fields: 'id',
+			skipTotal: true,
+			signal
+		})
+	);
+}
+
+/**
+ * Whether the server knows "Status beim Anlegen" (plan WV): a filter on `initial_status` answers
+ * 400 before its migration 1790202500. The SPA shows the field only then.
+ */
+export function initialStatusReady(
+	pb: PocketBase,
+	{ signal }: RequestOptions = {}
+): Promise<boolean> {
+	return answeredWithout400(signal, () =>
+		pb.collection(RULES).getList(1, 1, {
+			filter: pb.filter('initial_status = {:status}', { status: 'open' }),
+			fields: 'id',
+			skipTotal: true,
+			signal
+		})
+	);
+}
+
+/** True unless the request is answered with 400 (a filter on a field the server does not know). */
+function answeredWithout400(
+	signal: AbortSignal | undefined,
+	request: () => Promise<unknown>
+): Promise<boolean> {
 	return withDataErrors(signal, async () => {
 		try {
-			await pb.collection(RULES).getList(1, 1, {
-				filter: pb.filter('each_occurrence = {:yes}', { yes: true }),
-				fields: 'id',
-				skipTotal: true,
-				signal
-			});
+			await request();
 			return true;
 		} catch (error) {
 			if ((error as { status?: unknown } | null)?.status === 400) return false;

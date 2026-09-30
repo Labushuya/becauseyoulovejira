@@ -50,6 +50,7 @@
 			class="button-secondary"
 			type="button"
 			aria-disabled={busy ? 'true' : undefined}
+			aria-busy={busy ? 'true' : undefined}
 			onclick={() => decide('all')}
 		>
 			{backlog === null ? 'Alle nachholen' : catchUpAllLabel(backlog)}
@@ -58,6 +59,7 @@
 			class="button-secondary"
 			type="button"
 			aria-disabled={busy ? 'true' : undefined}
+			aria-busy={busy ? 'true' : undefined}
 			onclick={() => decide('today')}
 		>
 			{CATCH_UP_TODAY_LABEL}

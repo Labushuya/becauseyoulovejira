@@ -3,7 +3,9 @@
 // "Löschen"), at most BULK_CONCURRENCY at a time. So every hook rule applies unchanged: keys on a
 // new project, the history with the acting user, the lock of open sub-tasks, the next ticket of a
 // series. The store shows the progress, keeps the result with a reason per ticket (partial success
-// is possible) and offers "Rückgängig" in the flag for field changes and "Erledigen".
+// is possible) and offers "Rückgängig" in the flag for field changes and "Erledigen". A field change
+// of open tickets of series offers the same for their templates in a second flag (plan WV), which
+// "Rückgängig" withdraws.
 
 import type PocketBase from 'pocketbase';
 import { createContext } from 'svelte';
@@ -26,6 +28,7 @@ import {
 	type SourceDates
 } from '$lib/domain/bulk';
 import type { CalendarDate } from '$lib/domain/berlin-date';
+import { NO_SERIES, type SeriesChange, type SeriesChangeSink } from '$lib/domain/series-template';
 import type { SourceHandling } from '$lib/domain/sources';
 import { openChildrenMessage, subtaskCountText, type CompletionChoice } from '$lib/domain/subtasks';
 import type { TicketPatch, TicketSummary } from '$lib/domain/ticket';
@@ -149,11 +152,15 @@ export class BulkEditStore {
 	readonly #session: SessionGuard;
 	readonly #list: BulkList;
 	readonly #flags: FlagSink;
+	readonly #series: SeriesChangeSink;
 
 	#progress = $state<BulkProgress | null>(null);
 	#result = $state<BulkResult | null>(null);
-	/** Restores of the last action while its flag offers "Rückgängig". */
-	#undo: { entries: readonly UndoEntry[]; flagId: string } | null = null;
+	/**
+	 * Restores of the last action while its flag offers "Rückgängig", with the ID of the offer for
+	 * the templates it brought (withdrawn by "Rückgängig").
+	 */
+	#undo: { entries: readonly UndoEntry[]; flagId: string; offer: string | null } | null = null;
 	/** The session ended during an action: the remaining tickets are not sent. */
 	#stopped = false;
 
@@ -161,12 +168,14 @@ export class BulkEditStore {
 		data: BulkEditData,
 		session: SessionGuard,
 		list: BulkList,
-		flags: FlagSink = SILENT_FLAGS
+		flags: FlagSink = SILENT_FLAGS,
+		series: SeriesChangeSink = NO_SERIES
 	) {
 		this.#data = data;
 		this.#session = session;
 		this.#list = list;
 		this.#flags = flags;
+		this.#series = series;
 	}
 
 	/** The running action, null while none runs. */
@@ -241,6 +250,7 @@ export class BulkEditStore {
 		if (undo === null || this.busy || !this.#session.ensureValid()) return null;
 		this.#undo = null;
 		this.#flags.dismiss(undo.flagId);
+		if (undo.offer !== null) this.#series.withdrawTemplateOffer(undo.offer);
 		this.#result = null;
 		this.#stopped = false;
 		this.#progress = { label: 'Rückgängig', total: undo.entries.length, done: 0 };
@@ -311,6 +321,7 @@ export class BulkEditStore {
 		const failures: BulkProblem[] = [];
 		const skipped: BulkProblem[] = [];
 		const entries: UndoEntry[] = [];
+		const changes: SeriesChange[] = [];
 		let unchanged = 0;
 		await inPool(tickets, BULK_CONCURRENCY, async (ticket) => {
 			try {
@@ -326,6 +337,7 @@ export class BulkEditStore {
 				if (this.#stopped) return;
 				const saved = await this.#data.update(ticket.id, step.patch);
 				this.#list.upsert(saved);
+				changes.push({ before: ticket, after: saved });
 				entries.push({
 					id: saved.id,
 					key: saved.key,
@@ -345,7 +357,11 @@ export class BulkEditStore {
 			unchanged,
 			failed: failures.length
 		};
-		return this.#finish(counts, 'geändert', failures, skipped, entries);
+		const result = this.#finish(counts, 'geändert', failures, skipped, entries);
+		// Open tickets of series: one flag for all their rules, after the result (plan WV).
+		const offer = result === null ? null : this.#series.offerTemplate(changes);
+		if (offer !== null && this.#undo !== null) this.#undo = { ...this.#undo, offer };
+		return result;
 	}
 
 	/**
@@ -518,7 +534,7 @@ export class BulkEditStore {
 				if (this.#undo?.flagId === flagId) this.#undo = null;
 			}
 		});
-		this.#undo = { entries, flagId };
+		this.#undo = { entries, flagId, offer: null };
 		return result;
 	}
 

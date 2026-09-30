@@ -1,4 +1,6 @@
 <script lang="ts">
+	import { minuteClock } from '$lib/clock.svelte';
+	import { inboxKeysInfo, inboxKeysStatus } from '$lib/domain/channel-card';
 	import { keywordSummary } from '$lib/domain/channel-health';
 	import { formatBerlinDateTime } from '$lib/domain/format';
 	import type { InboxKey } from '$lib/domain/inbox-keys';
@@ -6,18 +8,18 @@
 	import { helpHref } from '$lib/settings-sections';
 	import type { ImportKeywordsStore } from '$lib/stores/import-keywords.svelte';
 	import type { InboxKeysStore } from '$lib/stores/inbox-keys.svelte';
-	import EmptyState from '../guidance/EmptyState.svelte';
-	import SectionMessage from '../guidance/SectionMessage.svelte';
 	import ConfirmDialog from '../overlay/ConfirmDialog.svelte';
 	import Modal from '../overlay/Modal.svelte';
-	import ChannelIcon from './ChannelIcon.svelte';
+	import ChannelCard, { type CardAction } from './ChannelCard.svelte';
 	import ChannelKeywordsModal from './ChannelKeywordsModal.svelte';
 	import InboxKeyCreateForm from './InboxKeyCreateForm.svelte';
 
-	// Card "Eigener Eingang (API)" (ADR-0038; plan eigener-eingang-whatsapp-web, EI-1): the access
-	// keys of the user with name, start of the key, creation and last use, "Widerrufen …" per key,
-	// "Zugangsschlüssel erzeugen …" (modal M, the key is shown once) and the keywords of the channel
-	// "api" for entries of the mode "auto". The way to use a key stands in the help.
+	// Card "Eigener Eingang (API)" (ADR-0038; plan eigener-eingang-whatsapp-web, EI-1; since the plan
+	// kanal-karten KK-2 a configuration of the building block ChannelCard): the main button
+	// "Zugangsschlüssel erzeugen …" (modal M, the key is shown once), the keywords of the channel
+	// "api" for entries of the mode "auto" and the help in the menu "•••", and in the details the
+	// keys with name, start, creation, last use and "Widerrufen …" each. The state says whether a
+	// program has used a key yet. The way to use a key stands in the help.
 	let {
 		store,
 		importKeywords = null
@@ -26,8 +28,8 @@
 		importKeywords?: ImportKeywordsStore | null;
 	} = $props();
 
-	const uid = $props.id();
-	const headingId = `${uid}-heading`;
+	const TITLE = 'Eigener Eingang (API)';
+	const clock = minuteClock();
 
 	let creating = $state(false);
 	let editingKeywords = $state(false);
@@ -38,6 +40,48 @@
 	const keywords = $derived(
 		importKeywords?.state === 'ready' ? keywordSummary(importKeywords.settings.api.keywords) : null
 	);
+	const status = $derived(inboxKeysStatus(store.state, store.keys));
+	const loading = $derived(store.state === 'idle' || store.state === 'loading');
+	const info = $derived(
+		store.state === 'ready'
+			? inboxKeysInfo(store.keys, clock.now)
+			: store.state === 'unavailable'
+				? RESTART_NEEDED.title
+				: store.state === 'error'
+					? 'Die Zugangsschlüssel ließen sich nicht laden.'
+					: 'Zugangsschlüssel werden geladen …'
+	);
+	const hint = $derived(
+		store.state === 'unavailable'
+			? { tone: 'info' as const, text: RESTART_NEEDED.text }
+			: store.state === 'error' && store.error !== null
+				? { tone: 'error' as const, text: store.error }
+				: null
+	);
+
+	const primary = $derived.by((): CardAction => {
+		if (store.state === 'error')
+			return { label: 'Erneut versuchen', onselect: () => void store.load() };
+		return {
+			label: 'Zugangsschlüssel erzeugen …',
+			dialog: true,
+			locked: store.state !== 'ready',
+			onselect: () => (creating = true)
+		};
+	});
+
+	const menu = $derived.by((): CardAction[] => {
+		const entries: CardAction[] = [];
+		if (importKeywords !== null) {
+			entries.push({
+				label: 'Stichwörter …',
+				dialog: true,
+				onselect: () => (editingKeywords = true)
+			});
+		}
+		entries.push({ label: 'Hilfe', href: helpHref('eigener-eingang') });
+		return entries;
+	});
 
 	function lastUsed(key: InboxKey): string {
 		return key.lastUsedAt === null
@@ -54,99 +98,63 @@
 	}
 </script>
 
-<section class="card" aria-labelledby={headingId}>
-	<header class="head">
-		<ChannelIcon kind="api" />
-		<div class="names">
-			<h4 id={headingId}>Eigener Eingang (API)</h4>
-			<p class="kind">Für eigene Skripte und die Erweiterung für WhatsApp Web</p>
-		</div>
-	</header>
-	<p>
-		Programme auf diesem Rechner legen mit einem Zugangsschlüssel Einträge in deinen Eingang. Ein
-		Schlüssel kann nur das: nichts lesen, nichts ändern, nichts löschen.
-	</p>
-
-	{#if store.state === 'unavailable'}
-		<SectionMessage tone="info" title={RESTART_NEEDED.title} headingLevel={4}>
-			{RESTART_NEEDED.text}
-		</SectionMessage>
-	{:else if store.state === 'error'}
-		<SectionMessage tone="error" live>
-			{store.error}
-			{#snippet actions()}
-				<button class="button-secondary" type="button" onclick={() => void store.load()}>
-					Erneut versuchen
-				</button>
-			{/snippet}
-		</SectionMessage>
-	{:else if store.state === 'ready'}
-		{#if store.keys.length === 0}
-			<EmptyState
-				title="Noch kein Zugangsschlüssel"
-				description="Erzeuge einen für jedes Programm, das Einträge bringen soll."
-				size="compact"
-				headingLevel={4}
-			/>
-		{:else}
-			<ul class="keys" aria-label="Zugangsschlüssel">
-				{#each store.keys as key (key.id)}
-					<li>
-						<div class="key">
-							<span class="name">{key.name}</span>
-							<span class="detail">
-								<code>{key.tokenHint}…</code> · angelegt {formatBerlinDateTime(key.created)} · {lastUsed(
-									key
-								)}
-							</span>
-						</div>
-						<button
-							class="button-subtle"
-							type="button"
-							aria-haspopup="dialog"
-							onclick={() => {
-								revokeError = null;
-								revoking = key;
-							}}
-						>
-							Widerrufen …<span class="visually-hidden">: {key.name}</span>
-						</button>
-					</li>
-				{/each}
-			</ul>
+<ChannelCard
+	icon="api"
+	title={TITLE}
+	subtitle="Für eigene Skripte und die Erweiterung für WhatsApp Web"
+	{status}
+	{info}
+	{hint}
+	busy={loading}
+	{primary}
+	{menu}
+>
+	{#snippet details()}
+		<p>
+			Programme auf diesem Rechner legen mit einem Zugangsschlüssel Einträge in deinen Eingang. Ein
+			Schlüssel kann nur das: nichts lesen, nichts ändern, nichts löschen.
+		</p>
+		{#if store.state === 'ready'}
+			{#if store.keys.length === 0}
+				<p>Erzeuge einen Zugangsschlüssel für jedes Programm, das Einträge bringen soll.</p>
+			{:else}
+				<ul class="keys" aria-label="Zugangsschlüssel">
+					{#each store.keys as key (key.id)}
+						<li>
+							<div class="key">
+								<span class="name">{key.name}</span>
+								<span class="detail">
+									<code>{key.tokenHint}…</code> · angelegt {formatBerlinDateTime(key.created)} · {lastUsed(
+										key
+									)}
+								</span>
+							</div>
+							<button
+								class="button-subtle"
+								type="button"
+								aria-haspopup="dialog"
+								onclick={() => {
+									revokeError = null;
+									revoking = key;
+								}}
+							>
+								Widerrufen …<span class="visually-hidden">: {key.name}</span>
+							</button>
+						</li>
+					{/each}
+				</ul>
+			{/if}
 		{/if}
 		{#if keywords !== null}
-			<p class="meta">Stichwörter für „mode: auto“: {keywords}</p>
+			<dl>
+				<div>
+					<dt>Stichwörter für „mode: auto“</dt>
+					<dd>{keywords}</dd>
+				</div>
+			</dl>
 		{/if}
-	{:else}
-		<p class="meta" role="status">Zugangsschlüssel werden geladen …</p>
-	{/if}
-
-	<footer class="actions">
-		<button
-			class="button-secondary"
-			type="button"
-			aria-haspopup="dialog"
-			aria-disabled={store.state !== 'ready'}
-			onclick={() => {
-				if (store.state === 'ready') creating = true;
-			}}
-		>
-			Zugangsschlüssel erzeugen …
-		</button>
-		{#if importKeywords !== null}
-			<button
-				class="button-secondary"
-				type="button"
-				aria-haspopup="dialog"
-				onclick={() => (editingKeywords = true)}
-			>
-				Stichwörter …<span class="visually-hidden">: Eigener Eingang (API)</span>
-			</button>
-		{/if}
-		<a class="help" href={helpHref('eigener-eingang')}>So geht’s</a>
-	</footer>
-</section>
+	{/snippet}
+</ChannelCard>
 
 {#if creating}
 	<Modal open size="m" title="Zugangsschlüssel erzeugen" onclose={() => (creating = false)}>
@@ -179,42 +187,6 @@
 </ConfirmDialog>
 
 <style>
-	.card {
-		display: grid;
-		gap: 0.75rem;
-		min-width: 0;
-		padding: 1.25rem;
-		background: var(--color-surface);
-		border: 1px solid var(--color-line);
-		border-radius: var(--radius-surface);
-	}
-
-	.head {
-		display: flex;
-		gap: 0.625rem;
-		align-items: center;
-	}
-
-	.names {
-		min-width: 0;
-	}
-
-	h4 {
-		font-size: var(--font-size-body);
-		font-weight: 600;
-	}
-
-	.kind,
-	.meta,
-	.detail {
-		font-size: var(--font-size-control);
-		color: var(--color-text-muted);
-	}
-
-	p {
-		font-size: var(--font-size-body);
-	}
-
 	.keys {
 		display: grid;
 		gap: 0.5rem;
@@ -243,21 +215,11 @@
 	}
 
 	.detail {
+		color: var(--color-text-muted);
 		overflow-wrap: anywhere;
 	}
 
 	.keys button {
 		flex: none;
-	}
-
-	.actions {
-		display: flex;
-		flex-wrap: wrap;
-		gap: 0.5rem 1rem;
-		align-items: center;
-	}
-
-	.help {
-		color: var(--color-brand-text);
 	}
 </style>

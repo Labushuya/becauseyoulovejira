@@ -166,7 +166,12 @@
 			{#each tags as tag (tag.id)}
 				<li data-tag-id={tag.id}>
 					{#if renaming?.id === tag.id}
-						<form class="rename" novalidate onsubmit={saveRename}>
+						<form
+							class="rename"
+							novalidate
+							aria-busy={renameBusy ? 'true' : undefined}
+							onsubmit={saveRename}
+						>
 							<label class="visually-hidden" for={`${uid}-${tag.id}`}>
 								Neuer Name für den Tag „{tag.name}“
 							</label>
@@ -329,7 +334,12 @@
 	}
 
 	[aria-disabled='true'] {
-		cursor: progress;
+		cursor: not-allowed;
 		opacity: 0.75;
+	}
+
+	/* Locked because the new name is being saved (ADR-0026, addendum of 2026-09-30). */
+	.rename[aria-busy='true'] [aria-disabled='true'] {
+		cursor: progress;
 	}
 </style>
