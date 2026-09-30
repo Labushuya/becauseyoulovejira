@@ -1,6 +1,6 @@
 # Plan: Test-Härtung
 
-- **Stand:** umgesetzt: T-1 (#175, Testkopien und Test-Server ohne Zugangsdaten) und T-2 (drei gelegentlich rote Tests deterministisch, dazu ein gleich gebauter Fall).
+- **Stand:** umgesetzt: T-1 (#175, Testkopien und Test-Server ohne Zugangsdaten), T-2 (drei gelegentlich rote Tests deterministisch, dazu ein gleich gebauter Fall) und T-3 (geordnetes Beenden unter Last, Manifest ab `BYL-E6-680`).
 - **Grundlage:** [ADR-0018](../adr/0018-secrets.md) (Zugangsdaten als `BYL_*`-Variablen, Nachtrag), [ADR-0039](../adr/0039-betriebsskripte.md) (Steuerskript, Nachtrag „Testkopien ohne Zugangsdaten“), [ADR-0004](../adr/0004-teststrategie-hooks-migrationen.md) (Wegwerf-Instanzen); [CLAUDE.md](../../CLAUDE.md) §3, §11, §12.
 - **Einordnung:** Auftrag vom 2026-09-29. Manifest-IDs ab `BYL-E6-500`, Paketkürzel `T`.
 
@@ -37,9 +37,22 @@ Grundlage: die letzten 60 CI-Läufe (`gh run list`, `gh run view --log-failed`, 
 
 **Restrisiken (nicht geändert):** Der Kalender-Integrationstest rechnet „heute“ beim Laden der Datei; ein Lauf über Berliner Mitternacht verschöbe das Fenster (nicht beobachtet). Einige Negativprüfungen auf Logs direkt nach einem Cron-Lauf (etwa in `hooks-before-migration.test.mjs`) sehen wegen des gebündelten Schreibens noch nichts; sie sind schwach, aber nicht instabil.
 
-## 3. Entscheidungen und Befunde
+## 3. T-3: Geordnetes Beenden unter Last
+
+Grundlage: die letzten gut 40 CI-Läufe (`gh run list`, `gh run view --log-failed`, nur lesend, Stand 2026-09-30, Läufe 36420547461 bis 36730749975).
+
+| Test | Rot | Ursache | Fix | Beleg |
+|---|---|---|---|---|
+| `tests/integration/control-script.test.mjs` › byl-control.ps1 on disposable copies (BS-1) › stops only its own server, in order, and leaves the other copy running | Windows, 1-mal (Lauf 36644951532 von #181, Versuch 1: „expected … not to contain 'hart beendet'“, 35 s; nach „Rerun failed jobs“ grün) | Der Lauf war stark ausgelastet: Im selben Lauf brauchte „port sets the port …“ 14,5 s statt 2 bis 3 s (drei Starts von PowerShell). Die Dauer des Falls passt nur zu einem Sender des Konsolensignals, der schnell mit einem Code ungleich 0 endete; ein hängender Sender hätte über 30 s gebraucht, ein zu langsames PocketBase nach gesendetem Signal über 15 s mehr. `Stop-Gracefully` beendete dann sofort hart, auch wenn der Bruch angekommen war (ein vom Signal selbst beendeter Sender meldet `STATUS_CONTROL_C_EXIT`) oder nur vorübergehend scheiterte (Compiler von `Add-Type`, Anhängen an die Konsole unter Last). Welcher Code es war, hielt nichts fest. | Der Prozess entscheidet, nicht der Sender: Einordnung des Codes (`Resolve-BreakCode`), nach „gesendet“ und „unklar“ die Frist von 15 s, nach „nicht gesendet“ ein zweiter Versuch nach höchstens 1 s, eine geteilte Konsole nie; `Send-ConsoleBreak` beobachtet das Ziel, solange der Sender läuft. Die Codes stehen in `byl-control.log` (`break=0`), der Test nennt das Protokoll, falls ein Stopp doch hart endet. Die Erwartung „nicht hart beendet“ bleibt. ADR-0039, Nachtrag T-3. | `control-logic.test.mjs` (alle Codes und Wege mit Fakes), `start-scripts.test.mjs`, `control-script.test.mjs` 20-mal hintereinander grün unter zusätzlicher CPU-Last (siehe Entscheidungen) |
+
+**Weitere Läufe:** In den Läufen seit T-2 (#176) war sonst kein Test rot. Davor, schon mit T-2 behoben bzw. im PR selbst: `presence-route.test.mjs` (Läufe 36504733031, 36510390998), `channel-calendar.test.mjs` (Lauf 36506768267), `control-script.test.mjs` › „a start without fingerprint …“ mit 15 s Zeitgrenze (Läufe 36501711010, 36502445136 im PR von BS-2, seitdem 120 s je Fall). Abgebrochene Läufe waren von neueren Pushes ersetzt, keine Fehler.
+
+**Nicht geändert, geprüft:** Die Ports der Kopien kommen vom System (`listen(0)`, ohne 8090 und 8099) und sind für die Dauer der Datei belegt; zwischen Stopp und Neustart derselben Kopie könnte ein anderer Test denselben Port bekommen, das trat in keinem Lauf auf und hätte eine andere Meldung (Exit 4). Prozesse werden nur über ihren Programmpfad unter `.tmp\byl-ctl-*` gezählt und in `afterAll` beendet.
+
+## 4. Entscheidungen und Befunde
 
 | Datum | Paket | Befund bzw. Entscheidung |
 |---|---|---|
 | 2026-09-29 | T-1 | Umgebungsvariable statt Parameter von `byl-control.ps1`: Sie gehört zur Umgebung des Tests, erscheint nicht in `help` und bleibt mit der bereinigten Umgebung beisammen. Ein Prüfwert im Benutzerbereich hätte den Pfad über das Konto auch in der CI belegt, hätte aber auf dem Entwicklungsrechner ins Konto des Nutzers geschrieben; belegt wird er stattdessen über die Positivprobe (ohne Isolation entfernte `Sync-BylEnvironment` die Testwerte) und lokal über die echten Namen im Konto. |
+| 2026-09-30 | T-3 | Ein zweiter Versuch statt mehrerer: Bei unabhängigen, vorübergehenden Fehlern des Senders sinkt die Wahrscheinlichkeit damit auf ihr Quadrat, und der schlimmste Fall (Sender hängt zweimal) bleibt bei gut 90 s statt Minuten. „Nicht gesendet“ wartet nur bis zu 1 s auf den Prozess (er kann trotzdem enden, und ein vorübergehender Fehler kommt nicht sofort wieder), „unklar“ die ganze Frist, weil der Bruch angekommen sein kann; beides fragt den Prozess ab und kehrt sofort zurück, wenn er endet. Eine Fehlerinjektion im Steuerskript (Umgebungsvariable nur für Tests) wurde verworfen: Sie wäre ein Pfad nur für Tests im Betriebsskript; die Entscheidungen belegen die Fakes in `control-logic.test.mjs`, die echten Wege die Integrationstests. Lokal ließ sich der rote Lauf nicht nachstellen. Wiederholungsbeleg mit der Änderung: `control-script.test.mjs` 20-mal hintereinander grün (je 90 bis 97 s) unter 12 zusätzlichen PowerShell-Prozessen mit Dauerlast auf 16 logischen Prozessoren; bei 28 solchen Prozessen wurde schon der Harness nicht in 20 s gesund, das ist keine Aussage über den Stopp. |
 | 2026-09-29 | T-2 | Die planmäßigen Cron-Läufe der Testinstanzen bleiben an: Sie abzuschalten hieße, Hooks nur für Tests umzuschreiben. Die Tests vertragen sie (Sperre, `logOnce`, Warten auf das Schreiben der Logs). Linux ließ sich lokal nicht nachstellen (kein WSL); der Fix im Präsenztest hängt nicht vom System ab. |

@@ -979,27 +979,61 @@ function Get-ConsoleBreakCommand {
     return [Convert]::ToBase64String([System.Text.Encoding]::Unicode.GetBytes($script))
 }
 
+# Exit code of a sender that the break ended itself (STATUS_CONTROL_C_EXIT, 0xC000013A as Int32):
+# the break reached its console, so it reached the target as well.
+$BylBreakEndedSender = -1073741510
+
+function Resolve-BreakCode {
+    # What the exit code of the sending child says about the console break (plan test-haertung,
+    # T-3): 'Sent' (0, or the sender ended by the break itself), 'Refused' (3: the console is
+    # shared, no other program may get the signal), 'NotSent' (2 no console to attach, 4 sending
+    # failed, 1 the child failed before sending, e.g. compiling its code under load, -2 the child
+    # did not start) or 'Unknown' (-1 the child hung and was ended, anything else).
+    param([Parameter(Mandatory = $true)][int]$Code)
+
+    if ($Code -eq 0 -or $Code -eq $BylBreakEndedSender) { return 'Sent' }
+    if ($Code -eq 3) { return 'Refused' }
+    if ($Code -in -2, 1, 2, 4) { return 'NotSent' }
+    return 'Unknown'
+}
+
 function Stop-Gracefully {
-    # Ends one process in order: the console break ($SendBreak param($ProcessId) -> $true if it
-    # went out), then up to $GraceMilliseconds for the process to end ($WaitExit param($ProcessId,
-    # $Milliseconds) -> $true if it ended), and only then hard ($Kill param($ProcessId), may throw),
-    # followed by up to 10 s of waiting. Returns 'Graceful', 'Forced' or 'Running' (still there).
+    # Ends one process in order: the console break ($SendBreak param($ProcessId) -> exit code of the
+    # sending child, see Resolve-BreakCode), then up to $GraceMilliseconds for the process to end
+    # ($WaitExit param($ProcessId, $Milliseconds) -> $true once it ended; it asks the process and
+    # returns as soon as it is gone), and only then hard ($Kill param($ProcessId), may throw),
+    # followed by up to 10 s of waiting. Whether the stop was in order is decided by the process,
+    # not by the sender: after a break that went out or may have gone out the process gets its
+    # grace time. A break that did not go out, or of unknown fate while the process runs on, is sent
+    # again, up to $Attempts in all; after one that did not go out the process gets up to
+    # $RetryMilliseconds first (it may end meanwhile, and a passing failure does not come right
+    # back). A refused break (shared console) is never repeated. The codes of the attempts go to
+    # $Codes (for the log). Returns 'Graceful', 'Forced' or 'Running' (still there).
     param(
         [Parameter(Mandatory = $true)][int]$ProcessId,
         [Parameter(Mandatory = $true)][scriptblock]$SendBreak,
         [Parameter(Mandatory = $true)][scriptblock]$WaitExit,
         [Parameter(Mandatory = $true)][scriptblock]$Kill,
-        [int]$GraceMilliseconds = 15000
+        [int]$GraceMilliseconds = 15000,
+        [ValidateRange(1, 10)][int]$Attempts = 2,
+        [int]$RetryMilliseconds = 1000,
+        [AllowEmptyCollection()][System.Collections.Generic.List[int]]$Codes
     )
 
-    $sent = $false
-    try {
-        $sent = [bool](& $SendBreak $ProcessId)
+    for ($attempt = 1; $attempt -le $Attempts; $attempt++) {
+        try {
+            $code = [int](& $SendBreak $ProcessId)
+        }
+        catch {
+            $code = -2
+        }
+        if ($null -ne $Codes) { $Codes.Add($code) }
+        $kind = Resolve-BreakCode -Code $code
+        if ($kind -eq 'Refused') { break }
+        $wait = if ($kind -eq 'NotSent') { $RetryMilliseconds } else { $GraceMilliseconds }
+        if (& $WaitExit $ProcessId $wait) { return 'Graceful' }
+        if ($kind -eq 'Sent') { break }
     }
-    catch {
-        $sent = $false
-    }
-    if ($sent -and (& $WaitExit $ProcessId $GraceMilliseconds)) { return 'Graceful' }
     try {
         & $Kill $ProcessId
     }

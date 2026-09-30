@@ -413,7 +413,11 @@ describe('page System on a disposable copy (ADR-0043)', CASE_TIMEOUT, () => {
 		// The detached process ends after the new server answers: it starts the mail helper again,
 		// then it writes its line.
 		const log = () => readFileSync(join(copy.dir, 'logs', 'byl-control.log'), 'utf8');
-		const finished = new RegExp(` restart exit=0 pid=${after.pid} port=${copy.port}\\r$`, 'm');
+		// The line ends with the exit codes of the senders of the console breaks (plan T-3).
+		const finished = new RegExp(
+			` restart exit=0 pid=${after.pid} port=${copy.port} break=-?\\d+(,-?\\d+)*\\r$`,
+			'm'
+		);
 		expect(await until(() => finished.test(log()), 30_000)).toBe(true);
 		expect(log()).toMatch(/ restart exit=0 detached=\d+\r$/m);
 		expect(helpers()).toHaveLength(1);

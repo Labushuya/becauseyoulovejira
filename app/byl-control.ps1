@@ -49,7 +49,10 @@ $AppDir = $PSScriptRoot
 
 $Title = 'becauseyoulovejira'
 $HealthTimeoutSeconds = 30
+# PocketBase ends about 1 s after the console break (1 s for open requests, then the database).
 $StopGraceSeconds = 15
+# The child that sends the console break: about 0.5 s, up to about 12 s on a busy CI runner.
+$BreakSenderSeconds = 30
 $PortFreeTimeoutSeconds = 10
 # restart -WaitForProcess: how long the detached restart waits for its caller to end.
 $CallerExitSeconds = 10
@@ -131,6 +134,9 @@ $RestartReasonText = @{
 
 # Log detail of the current command for byl-control.log (numbers and fixed words only).
 $script:LogDetail = ''
+# Exit codes of the senders of console breaks of this command (Stop-Gracefully), in order; the log
+# line ends with them ("break=0" or "break=1,0"), so a hard stop tells why (plan test-haertung T-3).
+$script:BreakCodes = New-Object System.Collections.Generic.List[int]
 # What the last Start-MailHelper decided (Get-MailHelperDecision, or Failed); mail-restart logs it.
 $script:MailHelperDecision = 'None'
 
@@ -187,7 +193,9 @@ function Write-ControlLog {
         $path = Get-ControlLogPath -AppDir $AppDir
         [void][System.IO.Directory]::CreateDirectory([System.IO.Path]::GetDirectoryName($path))
         Invoke-LogRotation -Path $path -LimitBytes $BylControlLogLimitBytes
-        $line = Format-ControlLogLine -TimeUtc ([DateTime]::UtcNow) -Command $Name -ExitCode $ExitCode -Detail $script:LogDetail
+        $detail = $script:LogDetail
+        if ($script:BreakCodes.Count -gt 0) { $detail = ("$detail break=" + ($script:BreakCodes -join ',')).Trim() }
+        $line = Format-ControlLogLine -TimeUtc ([DateTime]::UtcNow) -Command $Name -ExitCode $ExitCode -Detail $detail
         [System.IO.File]::AppendAllText($path, "$line`r`n", (New-Object System.Text.UTF8Encoding($false)))
     }
     catch {
@@ -902,24 +910,36 @@ function Invoke-Start {
 function Send-ConsoleBreak {
     # Runs the console break of Get-ConsoleBreakCommand in a child PowerShell without window (the
     # child leaves its own console, so this one keeps its window). Returns the exit code of the
-    # child (0 = sent), -1 if it hung.
+    # child (Resolve-BreakCode), -1 if it hung. While the child runs, the target is watched: once
+    # it has ended, the break reached it, whatever the child still does (0; the child is ended).
+    # The child needs a PowerShell start and a compiled type, about 0.5 s, some seconds under load
+    # (up to 12 s seen on a busy CI runner), so it gets $BreakSenderSeconds.
     param([Parameter(Mandatory = $true)][int]$ProcessId)
 
+    $target = Get-Process -Id $ProcessId -ErrorAction SilentlyContinue
+    if ($null -eq $target) { return 0 }
     $startInfo = New-Object System.Diagnostics.ProcessStartInfo
     $startInfo.FileName = [System.IO.Path]::Combine($env:SystemRoot, 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe')
     $startInfo.Arguments = '-NoProfile -NonInteractive -ExecutionPolicy Bypass -EncodedCommand ' + (Get-ConsoleBreakCommand -ProcessId $ProcessId)
     $startInfo.UseShellExecute = $false
     $startInfo.CreateNoWindow = $true
-    $child = [System.Diagnostics.Process]::Start($startInfo)
+    $child = $null
     try {
-        if (-not $child.WaitForExit(30000)) {
-            try { $child.Kill() } catch { $null = $_ }
-            return -1
+        $child = [System.Diagnostics.Process]::Start($startInfo)
+        $deadline = [DateTime]::UtcNow.AddSeconds($BreakSenderSeconds)
+        while (-not $child.WaitForExit(100)) {
+            $ended = $target.HasExited
+            if ($ended -or [DateTime]::UtcNow -ge $deadline) {
+                try { $child.Kill() } catch { $null = $_ }
+                if ($ended) { return 0 }
+                return -1
+            }
         }
         return $child.ExitCode
     }
     finally {
-        $child.Dispose()
+        if ($null -ne $child) { $child.Dispose() }
+        $target.Dispose()
     }
 }
 
@@ -956,9 +976,9 @@ function Stop-OwnProcess {
     } -StopProcess {
         param($processId)
         $result = Stop-Gracefully -ProcessId $processId -GraceMilliseconds ($StopGraceSeconds * 1000) `
-            -SendBreak { param($id) (Send-ConsoleBreak -ProcessId $id) -eq 0 } `
+            -SendBreak { param($id) Send-ConsoleBreak -ProcessId $id } `
             -WaitExit { param($id, $milliseconds) Wait-ProcessExit -ProcessId $id -Milliseconds $milliseconds } `
-            -Kill { param($id) Stop-Process -Id $id -Force }
+            -Kill { param($id) Stop-Process -Id $id -Force } -Codes $script:BreakCodes
         if ($result -eq 'Forced') { $Forced.Add("$Name (PID $processId)") }
     } -StillRunningText 'läuft nach dem Beenden noch' -Report {
         param($Text)
