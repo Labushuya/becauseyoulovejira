@@ -7,11 +7,26 @@ import { fireEvent, render, screen, within } from '@testing-library/svelte';
 import { tick } from 'svelte';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { DataError } from '$lib/data/errors';
-import { COMMENT_MAX_LENGTH, type Comment } from '$lib/domain/ticket';
+import type { CommentOrder } from '$lib/domain/comments';
+import { NO_SERIES } from '$lib/domain/series-template';
+import {
+	COMMENT_MAX_LENGTH,
+	type Comment,
+	type Ticket,
+	type TicketPatch
+} from '$lib/domain/ticket';
+import { CommentViewStore } from '$lib/stores/comment-view.svelte';
+import type { FlagInput, FlagSink } from '$lib/stores/flags.svelte';
 import { TicketActivityStore, type TicketActivityData } from '$lib/stores/ticket-activity.svelte';
+import {
+	TicketDetailStore,
+	type TicketDetailData,
+	type TicketListSync
+} from '$lib/stores/ticket-detail.svelte';
 import type { Editor } from '@tiptap/core';
 import { useOverlayStubs } from '$lib/test/overlay-stubs';
 import { typeText, useProseMirrorStubs } from '$lib/test/prosemirror-stubs';
+import { resize, useResizeObserverStub } from '$lib/test/resize-observer-stub';
 import CommentList from './CommentList.svelte';
 
 useOverlayStubs();
@@ -393,5 +408,346 @@ describe('editing and deleting', () => {
 		expect(error.closest('.field-error')).not.toBeNull();
 		expect(dialog.open).toBe(false);
 		expect(screen.getByText('fetter')).toBeTruthy();
+	});
+});
+
+// ADR-0044: order, pinned comment and folding. Three comments (the middle one of another
+// account); the pin runs through the real detail store of the ticket on a fake data layer.
+const OLD = comment({
+	id: 'comment00000001',
+	body: 'Alt',
+	created: '2026-09-24 09:00:00.000Z',
+	updated: '2026-09-24 09:00:00.000Z'
+});
+const MIDDLE = comment({
+	id: 'comment00000002',
+	author: OTHER,
+	body: 'Mitte',
+	created: '2026-09-24 10:00:00.000Z',
+	updated: '2026-09-24 10:00:00.000Z'
+});
+const NEW = comment({
+	id: 'comment00000003',
+	body: 'Neu',
+	created: '2026-09-24 11:00:00.000Z',
+	updated: '2026-09-24 11:00:00.000Z'
+});
+
+function ticketWith(pinnedComment: string | null | undefined): Ticket {
+	return {
+		id: TICKET,
+		key: 'TASK-3',
+		title: 'Steuererklärung',
+		description: '',
+		sourceItem: null,
+		status: 'open',
+		priority: 'medium',
+		due: null,
+		projectId: null,
+		tagIds: [],
+		project: null,
+		tags: [],
+		recurring: false,
+		source: null,
+		completedAt: null,
+		created: '2026-09-24 08:00:00.000Z',
+		updated: '2026-09-24 08:00:00.000Z',
+		// Left out before the restart, as the data layer does.
+		...(pinnedComment === undefined ? {} : { pinnedComment })
+	};
+}
+
+async function renderPinned({
+	comments = [OLD, MIDDLE, NEW],
+	pinned = null,
+	order,
+	beforeRestart = false
+}: {
+	comments?: Comment[];
+	pinned?: string | null;
+	order?: CommentOrder;
+	/** The server does not know the field yet (before the restart after the migration). */
+	beforeRestart?: boolean;
+} = {}) {
+	let current = ticketWith(beforeRestart ? undefined : pinned);
+	let clock = 0;
+	const ticketData = {
+		get: vi.fn(async () => current),
+		update: vi.fn(async (_id: string, patch: TicketPatch): Promise<Ticket> => {
+			clock += 1;
+			// The list only sends the pin.
+			const pinnedComment = patch.pinnedComment ?? null;
+			current = { ...current, pinnedComment, updated: `2026-09-24 12:00:0${clock}.000Z` };
+			return current;
+		}),
+		create: vi.fn(),
+		delete: vi.fn()
+	} satisfies TicketDetailData;
+	const list = {
+		find: () => null,
+		upsert: vi.fn(),
+		completed: vi.fn(),
+		remove: vi.fn(),
+		announce: vi.fn()
+	} satisfies TicketListSync;
+	const flags: FlagInput[] = [];
+	const sink: FlagSink = {
+		show: (input) => {
+			flags.push(input);
+			return String(flags.length);
+		},
+		dismiss: vi.fn()
+	};
+	const session = { ensureValid: () => true, logout: vi.fn() };
+	const detail = new TicketDetailStore(ticketData, session, list, null, NO_SERIES, sink);
+	detail.open(TICKET);
+	await vi.waitFor(() => expect(detail.state).toBe('ready'));
+	const data = {
+		listComments: vi.fn(async () => comments),
+		createComment: vi.fn(async (ticket: string, body: string): Promise<Comment> =>
+			comment({
+				id: 'comment00000009',
+				ticket,
+				body,
+				created: '2026-09-24 13:00:00.000Z',
+				updated: '2026-09-24 13:00:00.000Z'
+			})
+		),
+		updateComment: vi.fn(),
+		deleteComment: vi.fn(async (): Promise<void> => undefined),
+		listHistory: vi.fn(async () => [])
+	} satisfies TicketActivityData;
+	const store = new TicketActivityStore(data, session, () => ME);
+	store.open(TICKET);
+	const view = new CommentViewStore(null);
+	if (order !== undefined) view.setOrder(order);
+	render(CommentList, { props: { store, ondeleted: vi.fn(), pin: detail, view } });
+	await vi.waitFor(() => expect(store.commentsState).toBe('ready'));
+	await tick();
+	return { store, data, detail, ticketData, flags, view };
+}
+
+/** Bodies of the comments in the order of the list. */
+function shownBodies(): string[] {
+	return [...document.querySelectorAll('article[data-comment-id] .markdown')].map(
+		(element) => element.textContent?.trim() ?? ''
+	);
+}
+
+describe('order of the comments (ADR-0044 section 1)', () => {
+	it('shows the newest first, the switch and the input field above the list', async () => {
+		await renderPinned();
+
+		expect(shownBodies()).toEqual(['Neu', 'Mitte', 'Alt']);
+		const group = screen.getByRole('group', { name: 'Reihenfolge der Kommentare' });
+		expect(
+			within(group).getByRole('button', { name: 'Neueste zuerst' }).getAttribute('aria-pressed')
+		).toBe('true');
+		expect(
+			within(group).getByRole('button', { name: 'Älteste zuerst' }).getAttribute('aria-pressed')
+		).toBe('false');
+		const opener = screen.getByRole('button', { name: 'Kommentar hinzufügen …' });
+		const first = document.querySelector('article[data-comment-id]') as HTMLElement;
+		expect(group.compareDocumentPosition(opener) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+		expect(opener.compareDocumentPosition(first) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+	});
+
+	it('switches to "Älteste zuerst", says so and remembers it', async () => {
+		const { view } = await renderPinned();
+
+		await fireEvent.click(screen.getByRole('button', { name: 'Älteste zuerst' }));
+
+		expect(shownBodies()).toEqual(['Alt', 'Mitte', 'Neu']);
+		expect(
+			screen.getByRole('button', { name: 'Älteste zuerst' }).getAttribute('aria-pressed')
+		).toBe('true');
+		expect(screen.getByText('Älteste Kommentare zuerst.').getAttribute('role')).toBe('status');
+		expect(view.order).toBe('oldest');
+	});
+
+	it('shows no switch for a single comment', async () => {
+		await renderPinned({ comments: [OLD] });
+		expect(screen.queryByRole('group', { name: 'Reihenfolge der Kommentare' })).toBeNull();
+	});
+
+	it('puts a new comment at the end with "Älteste zuerst" and moves the focus to it', async () => {
+		const { data } = await renderPinned({ order: 'oldest' });
+		await fireEvent.input(await newCommentField(), { target: { value: 'Ganz neu' } });
+
+		await fireEvent.click(screen.getByRole('button', { name: 'Kommentieren' }));
+
+		await vi.waitFor(() => expect(data.createComment).toHaveBeenCalled());
+		await vi.waitFor(() =>
+			expect(document.activeElement?.getAttribute('data-comment-id')).toBe('comment00000009')
+		);
+		expect(shownBodies().at(-1)).toBe('Ganz neu');
+	});
+
+	it('puts a new comment below the field with "Neueste zuerst", the focus back on the field', async () => {
+		await renderPinned();
+		await fireEvent.input(await newCommentField(), { target: { value: 'Ganz neu' } });
+
+		await fireEvent.click(screen.getByRole('button', { name: 'Kommentieren' }));
+
+		await vi.waitFor(() =>
+			expect(document.activeElement).toBe(
+				screen.getByRole('button', { name: 'Kommentar hinzufügen …' })
+			)
+		);
+		expect(shownBodies()[0]).toBe('Ganz neu');
+	});
+});
+
+describe('pinned comment (ADR-0044 section 2)', () => {
+	it('puts the pinned comment on top in either order, with "Angepinnt" and "Lösen"', async () => {
+		await renderPinned({ pinned: OLD.id });
+
+		expect(shownBodies()).toEqual(['Alt', 'Neu', 'Mitte']);
+		const top = document.querySelector('article[data-comment-id]') as HTMLElement;
+		expect(within(top).getByText('Angepinnt')).toBeTruthy();
+		expect(within(top).getByRole('button', { name: /^Lösen: Kommentar von Du/ })).toBeTruthy();
+		expect(screen.getAllByText('Angepinnt')).toHaveLength(1);
+
+		await fireEvent.click(screen.getByRole('button', { name: 'Älteste zuerst' }));
+		expect(shownBodies()).toEqual(['Alt', 'Mitte', 'Neu']);
+	});
+
+	it('offers "Anpinnen" on every comment, also on a foreign one', async () => {
+		await renderPinned();
+		expect(screen.getAllByRole('button', { name: /^Anpinnen: / })).toHaveLength(3);
+		const foreign = commentOf(/Kommentar von Anderes Konto/);
+		expect(within(foreign).getByRole('button', { name: /^Anpinnen: / })).toBeTruthy();
+		expect(within(foreign).queryByRole('button', { name: /^Bearbeiten: / })).toBeNull();
+	});
+
+	it('pins, replaces the pinned one with "Rückgängig" in a flag, and releases it', async () => {
+		const { ticketData, flags } = await renderPinned();
+
+		await fireEvent.click(
+			within(commentOf(/Anderes Konto/)).getByRole('button', { name: /^Anpinnen: / })
+		);
+		await vi.waitFor(() => expect(shownBodies()[0]).toBe('Mitte'));
+		expect(ticketData.update).toHaveBeenLastCalledWith(TICKET, { pinnedComment: MIDDLE.id });
+		expect(flags).toEqual([]);
+
+		const older = screen
+			.getAllByRole('button', { name: /^Anpinnen: / })
+			.find((button) => button.closest('article')?.getAttribute('data-comment-id') === OLD.id);
+		await fireEvent.click(older as HTMLElement);
+		await vi.waitFor(() => expect(shownBodies()[0]).toBe('Alt'));
+		expect(flags).toHaveLength(1);
+		expect(flags[0]).toMatchObject({
+			tone: 'info',
+			title: 'Angepinnter Kommentar ersetzt.',
+			action: { label: 'Rückgängig' }
+		});
+
+		flags[0]?.action?.run();
+		await vi.waitFor(() => expect(shownBodies()[0]).toBe('Mitte'));
+		expect(ticketData.update).toHaveBeenLastCalledWith(TICKET, { pinnedComment: MIDDLE.id });
+
+		await fireEvent.click(screen.getByRole('button', { name: /^Lösen: / }));
+		await vi.waitFor(() => expect(screen.queryByText('Angepinnt')).toBeNull());
+		expect(ticketData.update).toHaveBeenLastCalledWith(TICKET, { pinnedComment: null });
+		expect(shownBodies()).toEqual(['Neu', 'Mitte', 'Alt']);
+	});
+
+	it('waits while the pin is saved and shows a failure at the comment', async () => {
+		const { ticketData } = await renderPinned();
+		let fail!: (error: unknown) => void;
+		ticketData.update.mockImplementationOnce(
+			() => new Promise<Ticket>((_resolve, reject) => (fail = reject))
+		);
+		const button = within(commentOf(/Anderes Konto/)).getByRole('button', { name: /^Anpinnen: / });
+
+		await fireEvent.click(button);
+
+		expect(button.getAttribute('aria-busy')).toBe('true');
+		for (const other of screen.getAllByRole('button', { name: /^Anpinnen: / })) {
+			expect(other.getAttribute('aria-disabled')).toBe('true');
+		}
+		fail(
+			new DataError('validation', {
+				status: 400,
+				fields: {
+					pinned_comment: {
+						code: 'validation_pinned_comment_missing',
+						message: 'Der Kommentar wurde inzwischen gelöscht.'
+					}
+				}
+			})
+		);
+		const error = await within(commentOf(/Anderes Konto/)).findByText(
+			'Der Kommentar wurde inzwischen gelöscht.'
+		);
+		expect(error.closest('.field-error')?.id).toBe(button.getAttribute('aria-describedby'));
+		expect(button.getAttribute('aria-busy')).toBeNull();
+		expect(screen.queryByText('Angepinnt')).toBeNull();
+	});
+
+	it('offers no pinning before the restart (the server knows no pin yet)', async () => {
+		await renderPinned({ beforeRestart: true });
+		expect(screen.queryByRole('button', { name: /^Anpinnen: / })).toBeNull();
+		expect(screen.getAllByRole('button', { name: /^Bearbeiten: / })).toHaveLength(2);
+	});
+});
+
+describe('folding long comments (ADR-0044 section 3)', () => {
+	useResizeObserverStub();
+
+	/** Lets the text of a comment be `lines` lines of 20 px high and reports it. */
+	async function measure(id: string, lines: number) {
+		const article = document.querySelector(`article[data-comment-id="${id}"]`) as HTMLElement;
+		const text = article.querySelector('.markdown') as HTMLElement;
+		text.style.lineHeight = '20px';
+		const inner = text.parentElement as HTMLElement;
+		Object.defineProperty(inner, 'offsetHeight', { configurable: true, get: () => lines * 20 });
+		resize(inner, 300);
+		await tick();
+		return article;
+	}
+
+	it('folds a comment higher than 14 lines to 12 and unfolds it for the tab', async () => {
+		const { view } = await renderPinned();
+		const article = await measure(NEW.id, 30);
+
+		const more = within(article).getByRole('button', { name: /^Weiterlesen: Kommentar von Du/ });
+		expect(more.getAttribute('aria-expanded')).toBe('false');
+		const clip = document.getElementById(more.getAttribute('aria-controls') ?? '') as HTMLElement;
+		expect(clip.classList.contains('fade-end')).toBe(true);
+		expect(clip.style.maxHeight).toBe('240px');
+		// The whole text stays in the DOM for screen readers.
+		expect(clip.textContent).toContain('Neu');
+
+		await fireEvent.click(more);
+
+		expect(more.getAttribute('aria-expanded')).toBe('true');
+		expect(more.textContent).toMatch(/^Weniger anzeigen/);
+		expect(clip.classList.contains('fade-end')).toBe(false);
+		expect(clip.style.maxHeight).toBe('');
+		expect(view.isExpanded(NEW.id)).toBe(true);
+
+		await fireEvent.click(more);
+		expect(view.isExpanded(NEW.id)).toBe(false);
+		expect(clip.classList.contains('fade-end')).toBe(true);
+	});
+
+	it('keeps a comment of up to 14 lines whole', async () => {
+		await renderPinned();
+		const article = await measure(NEW.id, 14);
+		expect(within(article).queryByRole('button', { name: /^Weiterlesen/ })).toBeNull();
+	});
+
+	it('folds the pinned comment as well and shows the whole text while editing', async () => {
+		await renderPinned({ pinned: NEW.id });
+		const article = await measure(NEW.id, 30);
+		expect(within(article).getByText('Angepinnt')).toBeTruthy();
+		expect(within(article).getByRole('button', { name: /^Weiterlesen/ })).toBeTruthy();
+
+		await fireEvent.click(within(article).getByRole('button', { name: /^Bearbeiten: / }));
+
+		await editEditor();
+		expect(within(article).queryByRole('button', { name: /^Weiterlesen/ })).toBeNull();
+		expect(article.querySelector('.fade-end')).toBeNull();
 	});
 });

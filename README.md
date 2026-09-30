@@ -537,7 +537,9 @@ Das Exportieren einzelner Mails geht laut [Proton-Hilfe](https://proton.me/suppo
 
 ### Kommentare und Verlauf
 
-- Unter den Feldern stehen zwei Reiter. **Kommentare:** älteste oben, darunter „Kommentar hinzufügen …“, das den kompakten [Editor](#editor) öffnet (`Strg+Enter` sendet). Eigene Kommentare lassen sich bearbeiten und nach einer Rückfrage löschen; geänderte tragen den Hinweis „bearbeitet“.
+- Unter den Feldern stehen zwei Reiter. **Kommentare:** oben „Kommentar hinzufügen …“, das den kompakten [Editor](#editor) öffnet (`Strg+Enter` sendet), darunter die Kommentare, die neuesten zuerst. Ab zwei Kommentaren wählst du darüber **„Neueste zuerst“** oder **„Älteste zuerst“**; die Wahl gilt auf diesem Gerät für alle Tickets. Bei „Älteste zuerst“ springt die Ansicht nach dem Senden zu deinem neuen Kommentar am Ende. Eigene Kommentare lassen sich bearbeiten und nach einer Rückfrage löschen; geänderte tragen den Hinweis „bearbeitet“ ([ADR-0044](docs/adr/0044-kommentare-reihenfolge-anpinnen-einklappen.md)).
+- **Anpinnen:** Jeder Kommentar hat „Anpinnen“. Der angepinnte steht immer ganz oben, egal in welcher Reihenfolge, und ist mit „Angepinnt“ markiert; „Lösen“ nimmt ihn wieder heraus. Ein Ticket hat höchstens einen: Ein anderer ersetzt ihn, und die Meldung unten links bietet 8 Sekunden lang „Rückgängig“. Anpinnen darf, wer das Ticket ändern darf; der Verlauf nennt jeden Schritt. Wird der angepinnte Kommentar gelöscht, ist das Anpinnen aufgehoben; im Papierkorb bleibt es erhalten. Neue Tickets, Unteraufgaben und Folgetickets einer Serie beginnen ohne. Nach dem Update steht „Anpinnen“ erst nach `neu-starten.bat` bereit.
+- **Lange Kommentare** zeigen zuerst etwa 12 Zeilen und blenden dann aus; „Weiterlesen“ klappt sie auf, „Weniger anzeigen“ wieder ein. Aufgeklappte bleiben es, solange der Tab offen ist; zum Bearbeiten siehst du immer den ganzen Text.
 - **Verlauf:** jede Änderung mit Zeitpunkt, Urheber („Du“ oder „System“) und Inhalt, die neueste oben. Bei geänderten Beschreibungen lassen sich alter und neuer Text aufklappen.
 
 ### Löschen

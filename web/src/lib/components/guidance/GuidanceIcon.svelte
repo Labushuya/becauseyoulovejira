@@ -19,7 +19,8 @@
 		| 'tags'
 		| 'comments'
 		| 'recurrence'
-		| 'trash';
+		| 'trash'
+		| 'pin';
 </script>
 
 <script lang="ts">
@@ -87,6 +88,9 @@
 		<path d="M3.25 1.75v3h3M12.75 14.25v-3h-3" />
 	{:else if name === 'trash'}
 		<path d="M3 4.5h10M6.5 4.5V3h3v1.5M4.5 4.5l.75 9h5.5l.75-9M7 7v4M9 7v4" />
+	{:else if name === 'pin'}
+		<!-- A pushpin: head, body widening to the plate, needle (ADR-0044). -->
+		<path d="M5.5 2h5M6.5 2v4L4 9h8L9.5 6V2M8 9v5" />
 	{/if}
 </svg>
 

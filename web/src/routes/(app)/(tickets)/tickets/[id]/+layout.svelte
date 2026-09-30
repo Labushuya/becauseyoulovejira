@@ -221,7 +221,7 @@
 			<TicketSources {ticket} store={sourceStore} candidates={inbox.newItems} />
 		{/snippet}
 		{#snippet activity()}
-			<TicketActivity store={comments} {catalog} />
+			<TicketActivity store={comments} {catalog} pin={detail} />
 		{/snippet}
 	</TicketPanel>
 {/if}

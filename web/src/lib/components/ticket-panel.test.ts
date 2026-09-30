@@ -1885,5 +1885,58 @@ describe('ticket route: full view (ADR-0025 section 7, UI-7)', () => {
 			await vi.waitFor(() => expect(data.deleteComment).toHaveBeenCalledWith(comment.id));
 			expect(screen.getAllByRole('dialog')).toEqual([dialog]);
 		});
+
+		it('pins and replaces a comment in the full view without a dialog (ADR-0044)', async () => {
+			const at = (hour: number) => `2026-09-02 ${hour}:00:00.000Z`;
+			const comments = [
+				{
+					id: 'comment00000001',
+					ticket: ID,
+					author: 'me',
+					body: 'Erster',
+					created: at(10),
+					updated: at(10)
+				},
+				{
+					id: 'comment00000002',
+					ticket: ID,
+					author: 'other',
+					body: 'Zweiter',
+					created: at(11),
+					updated: at(11)
+				}
+			];
+			const data = {
+				listComments: vi.fn(async () => comments),
+				createComment: vi.fn(),
+				updateComment: vi.fn(),
+				deleteComment: vi.fn(),
+				listHistory: vi.fn(async () => [])
+			} satisfies TicketActivityData;
+			const activity = new TicketActivityStore(
+				data,
+				{ ensureValid: () => true, logout: vi.fn() },
+				() => 'me'
+			);
+			const { dialog, data: tickets } = await renderFullView(
+				ticket({ pinnedComment: 'comment00000001' }),
+				undefined,
+				activity
+			);
+			const view = within(dialog);
+			await vi.waitFor(() => expect(view.getByText('Angepinnt')).toBeTruthy());
+
+			await fireEvent.click(view.getByRole('button', { name: /^Anpinnen: Kommentar von Anderes/ }));
+
+			await vi.waitFor(() =>
+				expect(tickets.update).toHaveBeenCalledWith(ID, { pinnedComment: 'comment00000002' })
+			);
+			await vi.waitFor(() =>
+				expect(
+					view.getByText('Angepinnt').closest('article')?.getAttribute('data-comment-id')
+				).toBe('comment00000002')
+			);
+			expect(screen.getAllByRole('dialog')).toEqual([dialog]);
+		});
 	});
 });

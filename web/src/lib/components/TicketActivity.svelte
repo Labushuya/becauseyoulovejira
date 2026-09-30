@@ -1,4 +1,5 @@
 <script lang="ts">
+	import type { CommentPinControl } from '$lib/domain/comments';
 	import type { CatalogStore } from '$lib/stores/catalog.svelte';
 	import type { TicketActivityStore } from '$lib/stores/ticket-activity.svelte';
 	import CommentList from './CommentList.svelte';
@@ -6,8 +7,17 @@
 
 	// Activity below the ticket fields (E2 plan, T-11): tabs "Kommentare" (selected first) and
 	// "Verlauf" after the WAI-ARIA tabs pattern with automatic activation. Both panels stay in
-	// the DOM, so switching keeps a comment being written.
-	let { store, catalog }: { store: TicketActivityStore; catalog: CatalogStore } = $props();
+	// the DOM, so switching keeps a comment being written. `pin` is the ticket's way to pin a
+	// comment (ADR-0044), the detail store in panel and full view.
+	let {
+		store,
+		catalog,
+		pin = null
+	}: {
+		store: TicketActivityStore;
+		catalog: CatalogStore;
+		pin?: CommentPinControl | null;
+	} = $props();
 
 	type Tab = 'comments' | 'history';
 	const TABS: readonly { id: Tab; label: string }[] = [
@@ -76,7 +86,7 @@
 		hidden={selected !== 'comments'}
 		bind:this={commentsPanel}
 	>
-		<CommentList {store} ondeleted={() => commentsPanel?.focus()} />
+		<CommentList {store} {pin} ondeleted={() => commentsPanel?.focus()} />
 	</div>
 	<div
 		class="panel"
@@ -110,7 +120,7 @@
 		align-items: center;
 		margin-bottom: -1px;
 		padding: 0.375rem 0.75rem;
-		font-size: 0.875rem;
+		font-size: var(--font-size-body);
 		color: var(--color-text-muted);
 		background: none;
 		border: none;
@@ -126,7 +136,7 @@
 
 	.count {
 		padding: 0 0.375rem;
-		font-size: 0.75rem;
+		font-size: var(--font-size-small);
 		color: var(--color-brand-soft-text);
 		background: var(--color-brand-soft-bg);
 		border-radius: var(--radius-pill);

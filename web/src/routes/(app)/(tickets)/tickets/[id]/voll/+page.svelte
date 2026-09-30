@@ -176,7 +176,7 @@
 				/>
 			{/if}
 			<TicketSources {ticket} store={sources} candidates={inbox.newItems} />
-			<TicketActivity store={comments} {catalog} />
+			<TicketActivity store={comments} {catalog} pin={detail} />
 		{/snippet}
 		{#snippet side()}
 			<section class="card" aria-labelledby={`${uid}-details`}>

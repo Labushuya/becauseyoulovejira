@@ -5,13 +5,22 @@
 	import ErrorIcon from './ErrorIcon.svelte';
 	import RichTextEditor from './RichTextEditor.svelte';
 
-	// New comment below the list (E2 plan, T-11 and package 9; since RT-6 the editor of ADR-0032,
-	// compact, with "Markdown" as source mode): `Strg+Enter` sends. Like in Jira the editor opens
-	// on "Kommentar hinzufügen …", so opening a ticket loads no editor (plan editor RT-6); a draft
-	// or an error keeps it open. "Kommentieren" stays focusable while locked (like "Anlegen",
-	// package 8) and explains why; the text stays after a failure. After sending the field closes
-	// and the focus goes back to "Kommentar hinzufügen …".
-	let { store }: { store: TicketActivityStore } = $props();
+	// New comment above the list (E2 plan, T-11 and package 9; since ADR-0044 at the top in either
+	// order, like in Jira; since RT-6 the editor of ADR-0032, compact, with "Markdown" as source
+	// mode): `Strg+Enter` sends. Like in Jira the editor opens on "Kommentar hinzufügen …", so
+	// opening a ticket loads no editor (plan editor RT-6); a draft or an error keeps it open.
+	// "Kommentieren" stays focusable while locked (like "Anlegen", package 8) and explains why; the
+	// text stays after a failure. After sending the field closes and the focus goes back to
+	// "Kommentar hinzufügen …", unless `onposted` shows the new comment and takes the focus there
+	// (at the end of the list, "Älteste zuerst").
+	let {
+		store,
+		onposted
+	}: {
+		store: TicketActivityStore;
+		/** After a sent comment; true if it moved the focus to the new comment itself. */
+		onposted?: () => Promise<boolean>;
+	} = $props();
 
 	const uid = $props.id();
 	const hintId = `${uid}-hint`;
@@ -44,7 +53,7 @@
 		}
 		opened = false;
 		await tick();
-		opener?.focus();
+		if (!((await onposted?.()) ?? false)) opener?.focus();
 	}
 </script>
 
@@ -89,11 +98,11 @@
 </div>
 
 <style>
+	/* Above the list; the line of the first comment separates them. */
 	.comment-form {
 		display: grid;
 		gap: 0.5rem;
-		padding-top: 0.75rem;
-		border-top: 1px solid var(--color-line);
+		padding-bottom: 0.25rem;
 	}
 
 	/* Looks like the empty field it opens, like in Jira. */

@@ -1,12 +1,15 @@
 // Detail store with a fake data layer (E2 plan, package 7; E3 plan, T-13): saving sends only the
 // changed field, a failure keeps the draft and sets the field error, an incoming update keeps the
 // draft, a new project gives a new key. The description is guarded against overwriting and its
-// tasks can be ticked (ADR-0032 section 6).
+// tasks can be ticked (ADR-0032 section 6). The pinned comment is replaced with "Rückgängig"
+// (ADR-0044 section 2).
 
 import { SvelteMap } from 'svelte/reactivity';
 import { describe, expect, it, vi } from 'vitest';
 import { DATA_ERROR_MESSAGES, DataError } from '$lib/data/errors';
+import { NO_SERIES } from '$lib/domain/series-template';
 import type { Ticket, TicketDraft, TicketPatch, TicketSummary } from '$lib/domain/ticket';
+import { SILENT_FLAGS, type FlagInput, type FlagSink } from './flags.svelte';
 import {
 	INVALID_DATE_MESSAGE,
 	TASK_STALE_MESSAGE,
@@ -72,7 +75,7 @@ function applyPatch(current: Ticket, { project, tags, ...fields }: TicketPatch):
 	};
 }
 
-function setup(initial: Ticket = ticket()) {
+function setup(initial: Ticket = ticket(), flags: FlagSink = SILENT_FLAGS) {
 	let current = initial;
 	const data = {
 		get: vi.fn<TicketDetailData['get']>(async () => current),
@@ -111,12 +114,12 @@ function setup(initial: Ticket = ticket()) {
 		announce: vi.fn()
 	} satisfies TicketListSync;
 	const session = { ensureValid: vi.fn(() => true), logout: vi.fn() };
-	const store = new TicketDetailStore(data, session, list);
+	const store = new TicketDetailStore(data, session, list, null, NO_SERIES, flags);
 	return { store, data, list, listTickets, session };
 }
 
-async function opened(initial?: Ticket) {
-	const context = setup(initial);
+async function opened(initial?: Ticket, flags?: FlagSink) {
+	const context = setup(initial, flags);
 	context.store.open(ID);
 	await vi.waitFor(() => expect(context.store.state).toBe('ready'));
 	return context;
@@ -1079,5 +1082,142 @@ describe('TicketDetailStore: refused reopening of a series (ADR-0023 addendum 4)
 		expect(await store.reopenDetached()).toBe(false);
 		expect(store.reopenQuestion).toBeNull();
 		expect(store.fieldError('status')).toMatch(/Server nicht erreichbar/);
+	});
+});
+
+describe('pinned comment (ADR-0044 section 2)', () => {
+	const FIRST = 'comment00000001';
+	const SECOND = 'comment00000002';
+
+	function flagSpy() {
+		const shown: FlagInput[] = [];
+		const flags: FlagSink = {
+			show: (input) => {
+				shown.push(input);
+				return String(shown.length);
+			},
+			dismiss: vi.fn()
+		};
+		return { shown, flags };
+	}
+
+	it('pins a comment without a flag and releases it', async () => {
+		const { shown, flags } = flagSpy();
+		const { store, data, list } = await opened(ticket({ pinnedComment: null }), flags);
+		expect(store.pinnedComment).toBeNull();
+
+		expect(await store.pin(FIRST)).toBe(true);
+		expect(data.update).toHaveBeenLastCalledWith(ID, { pinnedComment: FIRST });
+		expect(store.pinnedComment).toBe(FIRST);
+		expect(list.upsert).toHaveBeenCalled();
+		expect(shown).toEqual([]);
+		// Pinning the pinned one again sends nothing.
+		expect(await store.pin(FIRST)).toBe(true);
+		expect(data.update).toHaveBeenCalledTimes(1);
+
+		expect(await store.unpin()).toBe(true);
+		expect(data.update).toHaveBeenLastCalledWith(ID, { pinnedComment: null });
+		expect(store.pinnedComment).toBeNull();
+		expect(await store.unpin()).toBe(true);
+		expect(data.update).toHaveBeenCalledTimes(2);
+	});
+
+	it('replaces the pinned comment and undoes it with "Rückgängig" in the flag', async () => {
+		const { shown, flags } = flagSpy();
+		const { store, data } = await opened(ticket({ pinnedComment: FIRST }), flags);
+
+		expect(await store.pin(SECOND)).toBe(true);
+		expect(store.pinnedComment).toBe(SECOND);
+		expect(shown).toHaveLength(1);
+		expect(shown[0]).toMatchObject({
+			tone: 'info',
+			title: 'Angepinnter Kommentar ersetzt.',
+			action: { label: 'Rückgängig' }
+		});
+
+		shown[0]?.action?.run();
+		await vi.waitFor(() => expect(store.pinnedComment).toBe(FIRST));
+		expect(data.get).toHaveBeenCalledTimes(2);
+		expect(data.update).toHaveBeenLastCalledWith(ID, { pinnedComment: FIRST });
+	});
+
+	it('overwrites nothing when the pin changed meanwhile', async () => {
+		const { shown, flags } = flagSpy();
+		const { store, data } = await opened(ticket({ pinnedComment: FIRST }), flags);
+		await store.pin(SECOND);
+		// Another tab released the pin in between.
+		data.get.mockResolvedValueOnce(
+			ticket({ pinnedComment: null, updated: '2026-09-30 10:00:00.000Z' })
+		);
+
+		shown[0]?.action?.run();
+
+		await vi.waitFor(() => expect(shown).toHaveLength(2));
+		expect(shown[1]).toMatchObject({
+			tone: 'info',
+			title: 'Der angepinnte Kommentar wurde inzwischen geändert. Nichts wurde überschrieben.'
+		});
+		expect(data.update).toHaveBeenCalledTimes(1);
+	});
+
+	it('says why "Rückgängig" failed', async () => {
+		const { shown, flags } = flagSpy();
+		const { store, data } = await opened(ticket({ pinnedComment: FIRST }), flags);
+		await store.pin(SECOND);
+		data.update.mockRejectedValueOnce(
+			new DataError('validation', {
+				status: 400,
+				fields: {
+					pinned_comment: {
+						code: 'validation_pinned_comment_missing',
+						message: 'Der Kommentar wurde inzwischen gelöscht.'
+					}
+				}
+			})
+		);
+
+		shown[0]?.action?.run();
+
+		await vi.waitFor(() => expect(shown).toHaveLength(2));
+		expect(shown[1]).toMatchObject({
+			tone: 'error',
+			title: 'Rückgängig ging nicht.',
+			description: 'Der Kommentar wurde inzwischen gelöscht.'
+		});
+		expect(store.pinnedComment).toBe(SECOND);
+	});
+
+	it('shows a failure at the comment, one pin at a time, and resets with another ticket', async () => {
+		const { store, data } = await opened(ticket({ pinnedComment: null }));
+		const pending = deferred<Ticket>();
+		data.update.mockReturnValueOnce(pending.promise);
+
+		const first = store.pin(FIRST);
+		expect(store.pinning).toBe(FIRST);
+		expect(await store.pin(SECOND)).toBe(false);
+		pending.reject(
+			new DataError('validation', {
+				status: 400,
+				fields: {
+					pinned_comment: {
+						code: 'validation_pinned_comment_foreign',
+						message: 'Anpinnen lässt sich nur ein Kommentar dieses Tickets.'
+					}
+				}
+			})
+		);
+
+		expect(await first).toBe(false);
+		expect(store.pinning).toBeNull();
+		expect(store.pinError(FIRST)).toBe('Anpinnen lässt sich nur ein Kommentar dieses Tickets.');
+		expect(store.pinError(SECOND)).toBeNull();
+		expect(store.pinnedComment).toBeNull();
+		store.reset();
+		expect(store.pinError(FIRST)).toBeNull();
+	});
+
+	it('knows no pin before the restart (the server leaves the field out)', async () => {
+		const { store } = await opened(ticket());
+		expect(store.pinnedComment).toBeUndefined();
 	});
 });
