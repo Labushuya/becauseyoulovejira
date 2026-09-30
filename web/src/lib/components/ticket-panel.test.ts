@@ -312,6 +312,28 @@ function heading() {
 	return screen.getByRole('heading', { level: 2 });
 }
 
+/** An entry of the menu "•••" in the header (plan aktionsmenues); jsdom shows popovers as hidden. */
+function actionEntry(scope: HTMLElement, name: string) {
+	const trigger = within(scope).getByRole('button', { name: 'Weitere Aktionen' });
+	const menu = document.getElementById(trigger.getAttribute('aria-controls') ?? '');
+	if (menu === null) throw new Error('No menu "•••"');
+	return { trigger, entry: within(menu).getByRole('menuitem', { name, hidden: true }) };
+}
+
+/**
+ * Chooses an entry of the menu "•••" like a browser does: the menu opens from its focused button,
+ * and the entry closes it first, which puts the focus back on the button. Returns the button.
+ */
+async function chooseAction(scope: HTMLElement, name: string) {
+	const { trigger, entry } = actionEntry(scope, name);
+	trigger.focus();
+	await fireEvent.click(trigger);
+	await tick();
+	await fireEvent.click(entry);
+	await tick();
+	return trigger;
+}
+
 beforeEach(() => {
 	mocks.goto.mockClear();
 });
@@ -973,7 +995,7 @@ describe('ticket route', () => {
 		expect(activity.ticketId).toBeNull();
 	});
 
-	it('offers "Duplizieren …" before "Löschen …" and opens the duplicate in the panel (ADR-0045)', async () => {
+	it('offers "Duplizieren …" in the menu "•••" and opens the duplicate in the panel (ADR-0045, AM-1)', async () => {
 		const { data } = duplicateStore();
 		const { store } = createStore();
 		mocks.detail = store;
@@ -981,12 +1003,32 @@ describe('ticket route', () => {
 		renderTicketRoute();
 		await vi.waitFor(() => expect(store.state).toBe('ready'));
 
-		const duplicate = screen.getByRole('button', { name: 'Duplizieren …' });
-		const remove = screen.getByRole('button', { name: 'Löschen …' });
-		expect(
-			duplicate.compareDocumentPosition(remove) & Node.DOCUMENT_POSITION_FOLLOWING
-		).toBeTruthy();
-		await fireEvent.click(duplicate);
+		// The header keeps only the menu, "Vollansicht" and × as symbols (plan aktionsmenues).
+		const panel = screen.getByRole('complementary', { name: 'Steuererklärung' });
+		const header = panel.querySelector('header');
+		const controls = [...(header?.querySelectorAll(':scope a, :scope button') ?? [])].filter(
+			(element) => element.closest('[popover]') === null
+		);
+		expect(controls.map((element) => element.getAttribute('aria-label'))).toEqual([
+			'Weitere Aktionen',
+			'Vollansicht öffnen',
+			'Panel schließen'
+		]);
+		expect(screen.queryByRole('button', { name: 'Duplizieren …' })).toBeNull();
+		expect(screen.queryByRole('button', { name: 'Löschen …' })).toBeNull();
+
+		// "Abbrechen" gives the focus back to the button of the menu.
+		const trigger = await chooseAction(document.body, 'Duplizieren …');
+		const first = screen.getByRole('dialog', { name: 'TASK-3 duplizieren' });
+		await vi.waitFor(() =>
+			expect(document.activeElement).toBe(within(first).getByLabelText('Titel'))
+		);
+		await fireEvent.click(within(first).getByRole('button', { name: 'Abbrechen' }));
+		await tick();
+		expect(screen.queryByRole('dialog', { name: 'TASK-3 duplizieren' })).toBeNull();
+		expect(document.activeElement).toBe(trigger);
+
+		await chooseAction(document.body, 'Duplizieren …');
 		const dialog = screen.getByRole('dialog', { name: 'TASK-3 duplizieren' });
 		expect(within(dialog).getByLabelText<HTMLInputElement>('Titel').value).toBe(
 			'Steuererklärung (Kopie)'
@@ -1400,7 +1442,7 @@ describe('ticket panel: deleted elsewhere', () => {
 		});
 		expect(document.activeElement).toBe(message);
 		expect(screen.getByRole('link', { name: 'Zur Liste' }).getAttribute('href')).toBe(LIST);
-		expect(screen.queryByRole('button', { name: 'Löschen …' })).toBeNull();
+		expect(screen.queryByRole('button', { name: 'Weitere Aktionen' })).toBeNull();
 		disconnect();
 	});
 });
@@ -1490,7 +1532,8 @@ describe('ticket route: full view (ADR-0025 section 7, UI-7)', () => {
 		expect(
 			within(view.getByRole('region', { name: 'Details' })).getByLabelText('Status')
 		).toBeTruthy();
-		expect(view.getByRole('button', { name: 'Löschen …' })).toBeTruthy();
+		expect(view.getByRole('button', { name: 'Weitere Aktionen' })).toBeTruthy();
+		expect(view.queryByRole('button', { name: 'Löschen …' })).toBeNull();
 		// The full view replaces the panel (plan BI-1): the panel is not mounted meanwhile.
 		expect(screen.queryByRole('complementary')).toBeNull();
 		expect(document.querySelector('aside.drawer')).toBeNull();
@@ -1563,10 +1606,16 @@ describe('ticket route: full view (ADR-0025 section 7, UI-7)', () => {
 			const link = within(dialog).getByRole('link', { name: 'Im Seitenpanel öffnen' });
 			expect(link.getAttribute('href')).toBe(`/tickets/${ID}?erledigte=1`);
 			expect(link.getAttribute('title')).toBe('Im Seitenpanel öffnen');
-			// Next to the ×, after "Löschen …", like "Vollansicht" in the panel.
+			// Next to the ×, after the menu "•••", like "Vollansicht" in the panel (plan aktionsmenues).
 			const header = dialog.querySelector('header');
-			const buttons = [...(header?.querySelectorAll('a, button') ?? [])];
-			expect(buttons.at(-1)?.getAttribute('aria-label')).toBe('Schließen');
+			const buttons = [...(header?.querySelectorAll('a, button') ?? [])].filter(
+				(element) => element.closest('[popover]') === null
+			);
+			expect(buttons.map((element) => element.getAttribute('aria-label'))).toEqual([
+				'Weitere Aktionen',
+				'Im Seitenpanel öffnen',
+				'Schließen'
+			]);
 			expect(buttons.at(-2)).toBe(link);
 
 			link.addEventListener('click', (event) => event.preventDefault(), { once: true });
@@ -1677,7 +1726,7 @@ describe('ticket route: full view (ADR-0025 section 7, UI-7)', () => {
 
 		it('asks inline in the full view, without a dialog over it', async () => {
 			const { dialog, guard } = await withDraft();
-			const origin = within(dialog).getByRole('button', { name: 'Löschen …' });
+			const origin = within(dialog).getByRole('button', { name: 'Weitere Aktionen' });
 			origin.focus();
 
 			const cancel = leave(guard);
@@ -1735,12 +1784,12 @@ describe('ticket route: full view (ADR-0025 section 7, UI-7)', () => {
 	it('deletes from the full view inline, without a dialog over it, and goes back to the list', async () => {
 		const { dialog, data } = await renderFullView();
 		data.delete.mockResolvedValueOnce(null);
-		const trigger = within(dialog).getByRole('button', { name: 'Löschen …' });
-		trigger.focus();
-		await fireEvent.click(trigger);
+		// The entry of the menu "•••" unfolds a question, it opens no dialog (plan aktionsmenues).
+		expect(
+			actionEntry(dialog, 'In den Papierkorb …').entry.getAttribute('aria-haspopup')
+		).toBeNull();
+		await chooseAction(dialog, 'In den Papierkorb …');
 
-		expect(trigger.getAttribute('aria-expanded')).toBe('true');
-		expect(trigger.getAttribute('aria-haspopup')).toBeNull();
 		expect(screen.getAllByRole('dialog')).toHaveLength(1);
 		const question = within(dialog).getByRole('heading', {
 			name: /TASK-3 in den Papierkorb verschieben\?/
@@ -1755,9 +1804,9 @@ describe('ticket route: full view (ADR-0025 section 7, UI-7)', () => {
 
 	it('cancels the inline question with Escape, keeps the full view and returns the focus', async () => {
 		const { dialog, data } = await renderFullView();
-		const trigger = within(dialog).getByRole('button', { name: 'Löschen …' });
-		await fireEvent.click(trigger);
+		const trigger = await chooseAction(dialog, 'In den Papierkorb …');
 		const cancel = within(dialog).getByRole('button', { name: 'Abbrechen' });
+		expect(document.activeElement).toBe(cancel);
 
 		await fireEvent.keyDown(cancel, { key: 'Escape' });
 		await tick();
@@ -1998,18 +2047,13 @@ describe('ticket route: full view (ADR-0025 section 7, UI-7)', () => {
 			expect(screen.getAllByRole('dialog')).toEqual([dialog]);
 		});
 
-		it('unfolds "Duplizieren …" inline and opens the duplicate in the remembered full view (ADR-0045)', async () => {
+		it('unfolds "Duplizieren …" of the menu inline and opens the duplicate in the remembered full view (ADR-0045, AM-1)', async () => {
 			const { data } = duplicateStore();
 			const { dialog } = await renderFullView(undefined, openModeStore({ stored: 'full' }));
-			const trigger = within(dialog).getByRole('button', { name: 'Duplizieren …' });
-			expect(trigger.getAttribute('aria-haspopup')).toBeNull();
-			expect(trigger.getAttribute('aria-expanded')).toBe('false');
-			trigger.focus();
-			await fireEvent.click(trigger);
-			await tick();
+			expect(actionEntry(dialog, 'Duplizieren …').entry.getAttribute('aria-haspopup')).toBeNull();
+			const trigger = await chooseAction(dialog, 'Duplizieren …');
 
 			expect(screen.getAllByRole('dialog')).toEqual([dialog]);
-			expect(trigger.getAttribute('aria-expanded')).toBe('true');
 			const area = within(dialog).getByRole('region', { name: 'TASK-3 duplizieren' });
 			await vi.waitFor(() =>
 				expect(document.activeElement).toBe(within(area).getByLabelText('Titel'))
@@ -2029,8 +2073,13 @@ describe('ticket route: full view (ADR-0025 section 7, UI-7)', () => {
 			expect(dialog.open).toBe(true);
 			await vi.waitFor(() => expect(document.activeElement).toBe(trigger));
 
-			await fireEvent.click(trigger);
-			await tick();
+			// "In den Papierkorb …" and "Duplizieren …" close each other.
+			await chooseAction(dialog, 'In den Papierkorb …');
+			expect(
+				within(dialog).getByRole('heading', { name: /TASK-3 in den Papierkorb verschieben\?/ })
+			).toBeTruthy();
+			await chooseAction(dialog, 'Duplizieren …');
+			expect(within(dialog).queryByRole('button', { name: 'In den Papierkorb' })).toBeNull();
 			const again = within(dialog).getByRole('region', { name: 'TASK-3 duplizieren' });
 			await fireEvent.click(within(again).getByRole('radio', { name: 'Offen' }));
 			await fireEvent.click(within(again).getByRole('button', { name: 'Duplizieren' }));

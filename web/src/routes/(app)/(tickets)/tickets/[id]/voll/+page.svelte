@@ -7,11 +7,10 @@
 	import EditableTitle from '$lib/components/EditableTitle.svelte';
 	import FullView from '$lib/components/overlay/FullView.svelte';
 	import RecurrenceSummary from '$lib/components/RecurrenceSummary.svelte';
+	import TicketActions from '$lib/components/TicketActions.svelte';
 	import TicketActivity from '$lib/components/TicketActivity.svelte';
-	import TicketDelete from '$lib/components/TicketDelete.svelte';
 	import TicketDeleteQuestion from '$lib/components/TicketDeleteQuestion.svelte';
 	import TicketDescription from '$lib/components/TicketDescription.svelte';
-	import TicketDuplicate from '$lib/components/TicketDuplicate.svelte';
 	import TicketFields from '$lib/components/TicketFields.svelte';
 	import TicketLeaveQuestion from '$lib/components/TicketLeaveQuestion.svelte';
 	import TicketMeta from '$lib/components/TicketMeta.svelte';
@@ -21,6 +20,7 @@
 	import { openInstancesOf } from '$lib/domain/recurrence-rule';
 	import { parentOf } from '$lib/domain/subtasks';
 	import { getCatalogStore } from '$lib/stores/catalog.svelte';
+	import { SILENT_FLAGS, findFlagStore } from '$lib/stores/flags.svelte';
 	import { getInboxStore } from '$lib/stores/inbox.svelte';
 	import { getRecurrenceStore } from '$lib/stores/recurrence.svelte';
 	import { getTicketActivityStore } from '$lib/stores/ticket-activity.svelte';
@@ -46,11 +46,12 @@
 	// panel with the focus on "Vollansicht"); "Im Seitenpanel öffnen" in the header, at the place of
 	// "Vollansicht" in the panel, shows the same ticket in the panel and remembers that choice.
 	// A sub-task shows its path above the title; the path and the section "Unteraufgaben" lead to
-	// the full view of the other ticket (ADR-0033 section 4). "Löschen …" asks inline at the top of
-	// the content, because no dialog opens from the full view (ADR-0025 section 3); so does the
-	// question about unsaved text when a link leaves the ticket (the layout holds the navigation).
-	// "Duplizieren …" unfolds its question at the same place (ADR-0045 §2); the duplicate then opens
-	// in the remembered way (ADR-0036 §1).
+	// the full view of the other ticket (ADR-0033 section 4). The menu "•••" of the header (plan
+	// aktionsmenues) copies the link; its "In den Papierkorb …" asks inline at the top of the
+	// content, because no dialog opens from the full view (ADR-0025 section 3); so does the question
+	// about unsaved text when a link leaves the ticket (the layout holds the navigation). Its
+	// "Duplizieren …" unfolds the question at the same place (ADR-0045 §2); the duplicate then opens
+	// in the remembered way (ADR-0036 §1). Closing a question gives the focus back to the menu.
 
 	const detail = getTicketDetailStore();
 	const comments = getTicketActivityStore();
@@ -63,6 +64,7 @@
 	const openMode = findTicketOpenMode();
 	const links = ticketLinks();
 	const duplicates = findTicketDuplicateStore();
+	const flags = findFlagStore() ?? SILENT_FLAGS;
 
 	const uid = $props.id();
 	const headingId = `${uid}-title`;
@@ -88,14 +90,14 @@
 	);
 	const subtaskCount = $derived(ticket === null ? 0 : tickets.progressOf(ticket.id).total);
 
-	/** Ticket whose inline question of "Löschen …" is shown; another ticket starts without it. */
+	/** Ticket whose inline question of "In den Papierkorb …" is shown; another starts without it. */
 	let askingFor = $state<string | null>(null);
 	const asking = $derived(askingFor !== null && askingFor === id);
-	let deleteButton = $state<HTMLButtonElement>();
 	/** Ticket whose question of "Duplizieren …" is unfolded; another ticket starts without it. */
 	let duplicatingFor = $state<string | null>(null);
 	const duplicating = $derived(duplicatingFor !== null && duplicatingFor === id);
-	let duplicateButton = $state<HTMLButtonElement>();
+	/** The button of the menu "•••": the questions give the focus back to it. */
+	let menuButton = $state<HTMLButtonElement>();
 
 	/** Opens a ticket (the duplicate, or the original from its flag) in the remembered way. */
 	function openTicket(ticketId: string) {
@@ -108,7 +110,7 @@
 	async function cancelDelete() {
 		askingFor = null;
 		await tick();
-		deleteButton?.focus();
+		menuButton?.focus();
 	}
 
 	/**
@@ -144,31 +146,21 @@
 {#if ticket}
 	<FullView title={`${ticket.key} · ${ticket.title}`} onclose={close}>
 		{#snippet actions()}
-			{#if duplicates !== null}
-				<TicketDuplicate
-					{ticket}
-					store={duplicates}
-					projects={catalog.activeProjects}
-					onopen={openTicket}
-					inline
-					asking={duplicating}
-					onask={() => {
-						duplicatingFor = duplicating ? null : id;
-						askingFor = null;
-					}}
-					bind:button={duplicateButton}
-				/>
-			{/if}
-			<TicketDelete
-				store={detail}
-				ondeleted={() => void route.deleted()}
+			<TicketActions
+				{ticket}
+				{flags}
 				inline
-				{asking}
-				onask={() => {
+				onduplicate={duplicates === null
+					? null
+					: () => {
+							duplicatingFor = id;
+							askingFor = null;
+						}}
+				ondelete={() => {
 					askingFor = id;
 					duplicatingFor = null;
 				}}
-				bind:button={deleteButton}
+				bind:trigger={menuButton}
 			/>
 			<!-- The mirror of "Vollansicht" in the panel: same place before the ×, same look. -->
 			<a
@@ -207,7 +199,7 @@
 					parentKey={ticket.parentId ? (parent?.key ?? null) : null}
 					store={duplicates}
 					onopen={openTicket}
-					returnFocus={() => duplicateButton}
+					returnFocus={() => menuButton}
 					onclose={() => (duplicatingFor = null)}
 				/>
 			{/if}

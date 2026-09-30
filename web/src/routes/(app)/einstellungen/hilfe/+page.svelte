@@ -509,22 +509,41 @@
 			<details>
 				<summary>Wie hole ich ein gelöschtes Ticket zurück?</summary>
 				<p>
-					Gelöschte Tickets liegen im <a href={trashHref()}>Papierkorb</a> (Link neben dem Umschalter
-					der Ansichten). Dort stellst du ein Ticket mit „Wiederherstellen“ wieder her, samt Key, Unteraufgaben
-					und Quellen; direkt nach dem Löschen geht das auch mit „Rückgängig“ unten links. Nach 30 Tagen
-					löscht die App es endgültig; die Frist stellst du unter „Einstellungen → Tickets“ ein.
+					Gelöschte Tickets („In den Papierkorb …“ im Menü „•••“ des Tickets) liegen im
+					<a href={trashHref()}>Papierkorb</a> (Link neben dem Umschalter der Ansichten). Dort stellst
+					du ein Ticket mit „Wiederherstellen“ wieder her, samt Key, Unteraufgaben und Quellen; direkt
+					nach dem Löschen geht das auch mit „Rückgängig“ unten links. Nach 30 Tagen löscht die App es
+					endgültig; die Frist stellst du unter „Einstellungen → Tickets“ ein.
 				</p>
+			</details>
+			<details>
+				<summary>Was steht im Menü „•••“ eines Tickets?</summary>
+				<ul>
+					<li>
+						Oben im Panel und in der Vollansicht öffnet „•••“ (Weitere Aktionen) die Aktionen des
+						Tickets: „Link kopieren“, „Duplizieren …“ und „In den Papierkorb …“. Daneben bleiben
+						„Vollansicht“ bzw. „Im Seitenpanel öffnen“ und das Schließen.
+					</li>
+					<li>
+						Mit der Tastatur: <kbd>Tab</kbd> bis zu „•••“, <kbd>Enter</kbd> oder die Leertaste
+						öffnet, die Pfeiltasten wählen, <kbd>Enter</kbd> führt aus, <kbd>Esc</kbd> schließt das Menü.
+					</li>
+					<li>
+						„Link kopieren“ legt die Adresse des Tickets in die Zwischenablage, die Meldung unten
+						links sagt „Link kopiert“. Der Link öffnet das Ticket im Seitenpanel, auch in einem
+						anderen Tab.
+					</li>
+				</ul>
 			</details>
 			<details>
 				<summary>Wie dupliziere ich ein Ticket?</summary>
 				<ul>
 					<li>
-						„Duplizieren …“ (das Symbol mit den zwei Blättern oben im Panel und in der Vollansicht,
-						vor „Löschen …“) fragt, wie das Duplikat entstehen soll: den Titel (vorbelegt mit
-						„(Kopie)“), was es übernimmt (Beschreibung, Priorität, Projekt, Tags und Fälligkeit sind
-						angehakt, Unteraufgaben und Kommentare nicht) und den Status. Den Status wählst du immer
-						selbst, „Erledigt“ gibt es dabei nicht. Das Duplikat bekommt einen neuen Key im
-						gewählten Projekt.
+						„Duplizieren …“ (im Menü „•••“ oben im Panel und in der Vollansicht) fragt, wie das
+						Duplikat entstehen soll: den Titel (vorbelegt mit „(Kopie)“), was es übernimmt
+						(Beschreibung, Priorität, Projekt, Tags und Fälligkeit sind angehakt, Unteraufgaben und
+						Kommentare nicht) und den Status. Den Status wählst du immer selbst, „Erledigt“ gibt es
+						dabei nicht. Das Duplikat bekommt einen neuen Key im gewählten Projekt.
 					</li>
 					<li>
 						Unteraufgaben kommen als neue, offene Unteraufgaben mit. Kopierte Kommentare beginnen
