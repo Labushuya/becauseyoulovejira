@@ -2,14 +2,17 @@
 	import { tick, untrack } from 'svelte';
 	import type { CalendarDate } from '$lib/domain/berlin-date';
 	import {
+		INITIAL_STATUS_REQUIRED,
 		SERVER_FIELDS,
 		formErrors,
 		type RecurrenceFormContext,
 		type RecurrenceFormField,
 		type RecurrenceFormValues
 	} from '$lib/domain/recurrence-rule';
+	import type { TemplateStatus } from '$lib/domain/series-template';
 	import type { EditResult } from '$lib/stores/catalog-editor';
 	import ErrorIcon from './ErrorIcon.svelte';
+	import InitialStatusChoice from './InitialStatusChoice.svelte';
 	import Modal from './overlay/Modal.svelte';
 	import RecurrenceForm from './RecurrenceForm.svelte';
 
@@ -18,6 +21,9 @@
 	// goes back to the opener on closing. The input is checked with the rules of the hook before it
 	// is sent; field errors of the server stand at their field, any other refusal as a message
 	// (ADR-0009). Nothing is saved without the primary button.
+	// "Wiederholen…" asks "Folgetickets starten mit" after the rhythm (`askStatus`, ADR-0022
+	// addendum 9): a required choice without an answer in advance; "Regel bearbeiten" does not ask
+	// again (the status of the rule is edited with its template).
 	let {
 		heading,
 		initial,
@@ -27,13 +33,16 @@
 		eachAvailable = false,
 		context,
 		openKeys = [],
+		askStatus = false,
+		ticketStatus = null,
+		initialStatus = null,
 		submitLabel,
 		onsave,
 		onclose
 	}: {
 		heading: string;
 		initial: RecurrenceFormValues;
-		/** A hint above the form, e.g. what the next tickets take from the ticket (plan WV). */
+		/** A hint above the question of the status, e.g. what the next tickets take from the ticket. */
 		note?: string | null;
 		today: CalendarDate;
 		/** The ticket has no due date: the form names the first date it gets. */
@@ -44,8 +53,18 @@
 		context?: RecurrenceFormContext;
 		/** Keys of the open tickets of the rule (hint when the switch goes off). */
 		openKeys?: readonly string[];
+		/** Ask "Folgetickets starten mit" (after the migration, RecurrenceStore.statusReady). */
+		askStatus?: boolean;
+		/** Status of the ticket, offered as "Wie dieses Ticket: …". */
+		ticketStatus?: string | null;
+		/** An answer the user gave before (a prepared "Wiederholen…" after a failed rule). */
+		initialStatus?: TemplateStatus | null;
 		submitLabel: string;
-		onsave: (values: RecurrenceFormValues) => Promise<EditResult<unknown>>;
+		/** The rhythm and the answer to the question (null when it was not asked). */
+		onsave: (
+			values: RecurrenceFormValues,
+			initialStatus: TemplateStatus | null
+		) => Promise<EditResult<unknown>>;
 		/** Cancel, or after saving. */
 		onclose: () => void;
 	} = $props();
@@ -56,21 +75,25 @@
 	let values = $state<RecurrenceFormValues>(
 		untrack(() => ({ ...initial, weekdays: [...initial.weekdays] }))
 	);
+	let status = $state<TemplateStatus | ''>(untrack(() => initialStatus ?? ''));
 	let errors = $state<Partial<Record<RecurrenceFormField, string>>>({});
+	let statusError = $state<string | null>(null);
 	let message = $state<string | null>(null);
 	let busy = $state(false);
 	let form = $state<HTMLFormElement>();
 
-	/** Server field errors of the form's fields, the rest as one message. */
+	/** Server field errors of the form's fields and of the question, the rest as one message. */
 	function fromServer(fields: Readonly<Record<string, string>>): void {
 		const mapped: Partial<Record<RecurrenceFormField, string>> = {};
 		const others: string[] = [];
+		statusError = null;
 		for (const [field, text] of Object.entries(fields)) {
 			const formField = (Object.keys(SERVER_FIELDS) as RecurrenceFormField[]).find(
 				(candidate) => SERVER_FIELDS[candidate] === field
 			);
-			if (formField === undefined) others.push(text);
-			else mapped[formField] = text;
+			if (formField !== undefined) mapped[formField] = text;
+			else if (field === 'initial_status' && askStatus) statusError = text;
+			else others.push(text);
 		}
 		errors = mapped;
 		message = others[0] ?? null;
@@ -86,13 +109,14 @@
 		if (busy) return;
 		message = null;
 		errors = formErrors(values);
-		if (Object.keys(errors).length > 0) {
+		statusError = askStatus && status === '' ? INITIAL_STATUS_REQUIRED : null;
+		if (Object.keys(errors).length > 0 || statusError !== null) {
 			await focusFirstError();
 			return;
 		}
 		busy = true;
 		try {
-			const result = await onsave(values);
+			const result = await onsave(values, askStatus && status !== '' ? status : null);
 			if (result.ok) {
 				onclose();
 				return;
@@ -115,9 +139,6 @@
 	onclose={() => onclose()}
 >
 	<form id={formId} class="form" novalidate onsubmit={save} bind:this={form}>
-		{#if note}
-			<p class="hint">{note}</p>
-		{/if}
 		<RecurrenceForm
 			bind:values
 			{errors}
@@ -127,6 +148,22 @@
 			{context}
 			{openKeys}
 		/>
+		{#if note}
+			<p class="hint">{note}</p>
+		{/if}
+		{#if askStatus}
+			<InitialStatusChoice
+				bind:value={
+					() => status,
+					(chosen) => {
+						status = chosen;
+						statusError = null;
+					}
+				}
+				{ticketStatus}
+				error={statusError}
+			/>
+		{/if}
 		{#if message}
 			<div class="alert-error" role="alert"><ErrorIcon /><span>{message}</span></div>
 		{/if}

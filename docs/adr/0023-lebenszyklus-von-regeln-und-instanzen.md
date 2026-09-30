@@ -153,3 +153,7 @@ Empfehlung 8. §6 und CLAUDE.md §6 sagten „Ein Ersatz entsteht nie sofort“.
 - **Warum ein Flag und keine Frage:** Eine Frage vor dem Speichern hätte jede Änderung eines Serientickets aufgehalten, auch die gewöhnliche („nur diesmal dringend“), und in der Vollansicht wäre sie ein Dialog aus einem Dialog. Das Flag lässt die Änderung sofort gelten und bietet den seltenen zweiten Schritt 8 s lang an (Pause bei Zeiger und Fokus); danach bleibt „Bearbeiten“ am Ticket.
 - **Kein neuer Server-Weg:** Beide Schritte laufen über die Record-API (`updateRule`) mit den Prüfungen von §5 (Scope, archiviertes Projekt, Status beim Anlegen); die Rechte folgen der `updateRule` der Collection.
 - Belegt in `web-data-recurrence.test.mjs` (alle Anlegewege bis zum Folgeticket, Schnappschuss und Übernahme), `recurrence-summary.test.ts`, `series-template-offer.test.ts`, `recurrence-store.test.ts`, `ticket-panel.test.ts` (Frage beim Verlassen) und `series-template.test.ts`.
+
+## Nachtrag 7 (2026-09-30, WV-2): Status beim Anlegen gefragt
+
+Der erste Punkt von Nachtrag 6 („übernehmen … dazu seinen Status“) gilt für den Status nicht mehr: Seit [ADR-0022](0022-erzeugung-von-instanzen.md) Nachtrag 9 fragt jedes Anlegen einer Regel mit Nutzer „Folgetickets starten mit“ (Pflicht, ohne Vorauswahl; der Server verlangt die Antwort), statt den Status des Tickets still zu übernehmen. Alle anderen Werte kommen weiter aus dem Ticket; die Vorlage am Ticket und „Auch für künftige Tickets übernehmen“ bleiben unverändert.

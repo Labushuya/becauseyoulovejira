@@ -171,6 +171,7 @@ describe('single paths of the bulk actions', () => {
 			mode: 'calendar',
 			freq: 'daily',
 			lead_days: 3,
+			initial_status: 'open',
 			ticket: ticket.id
 		});
 		rulesToPause.push(rule.id);
@@ -195,6 +196,7 @@ describe('single paths of the bulk actions', () => {
 			mode: 'calendar',
 			freq: 'daily',
 			lead_days: 3,
+			initial_status: 'open',
 			ticket: ticket.id
 		});
 		rulesToPause.push(rule.id);

@@ -46,7 +46,7 @@ const mocks = vi.hoisted(() => ({
 		markRead: vi.fn(async () => undefined),
 		upsert: vi.fn()
 	},
-	rules: { state: 'ready', repeatCreated: vi.fn() }
+	rules: { state: 'ready', statusReady: false, repeatCreated: vi.fn() }
 }));
 
 vi.mock('$app/navigation', () => ({ goto: mocks.goto }));
@@ -760,7 +760,7 @@ describe('new ticket from a calendar series (E5 plan, package 6; ADR-0024 sectio
 		};
 	}
 
-	function openFor(item: InboxItem, state = 'ready') {
+	function openFor(item: InboxItem, state = 'ready', statusReady = false) {
 		mocks.page.url = new URL(`http://localhost:3000/tickets/neu?aus=${ITEM_ID}`);
 		mocks.inbox.fetch.mockReset();
 		mocks.inbox.fetch.mockResolvedValue(item);
@@ -769,6 +769,7 @@ describe('new ticket from a calendar series (E5 plan, package 6; ADR-0024 sectio
 		mocks.detail.upsert.mockReset();
 		mocks.tickets.upsert.mockReset();
 		mocks.rules.state = state;
+		mocks.rules.statusReady = statusReady;
 		mocks.rules.repeatCreated.mockReset();
 		mocks.rules.repeatCreated.mockResolvedValue(RULE);
 		render(NewTicketPage);
@@ -816,15 +817,16 @@ describe('new ticket from a calendar series (E5 plan, package 6; ADR-0024 sectio
 		await fireEvent.click(createButton());
 		await vi.waitFor(() => expect(mocks.rules.repeatCreated).toHaveBeenCalledOnce());
 		expect(mocks.detail.create).toHaveBeenCalledOnce();
-		expect(mocks.rules.repeatCreated).toHaveBeenCalledWith(
-			CREATED,
-			expect.objectContaining({
+		// Before the migration of "Status beim Anlegen" nothing is asked (ADR-0022 addendum 9).
+		expect(mocks.rules.repeatCreated).toHaveBeenCalledWith(CREATED, {
+			values: expect.objectContaining({
 				mode: 'calendar',
 				freq: 'weekly',
 				weekdays: ['MO'],
 				anchor: '2026-10-05'
-			})
-		);
+			}),
+			initialStatus: null
+		});
 		// Panel and list show the ticket in its series at once, with the first date as due date.
 		const joined = { ...CREATED, recurring: true, recurrenceId: RULE.id, due: '2026-10-05' };
 		expect(mocks.detail.upsert).toHaveBeenCalledWith(joined);
@@ -861,6 +863,32 @@ describe('new ticket from a calendar series (E5 plan, package 6; ADR-0024 sectio
 		expect(mocks.detail.create).not.toHaveBeenCalled();
 	});
 
+	it('asks "Folgetickets starten mit" before a series becomes a rule (ADR-0022 addendum 9)', async () => {
+		openFor(event({ rrule: 'FREQ=WEEKLY;BYDAY=MO' }), 'ready', true);
+		await fireEvent.click(await takeOver());
+		const section = screen.getByRole('region', { name: 'Wiederholen' });
+		const group = within(section).getByRole('radiogroup', { name: 'Folgetickets starten mit' });
+		expect(
+			within(group)
+				.getAllByRole<HTMLInputElement>('radio')
+				.some((radio) => radio.checked)
+		).toBe(false);
+		await fireEvent.click(createButton());
+		await vi.waitFor(() => expect(document.activeElement).toBe(group));
+		expect(
+			within(group).getByText('Bitte wählen, mit welchem Status Folgetickets starten.')
+		).toBeTruthy();
+		expect(mocks.detail.create).not.toHaveBeenCalled();
+
+		await fireEvent.click(within(group).getByRole('radio', { name: 'Backlog' }));
+		await fireEvent.click(createButton());
+		await vi.waitFor(() => expect(mocks.rules.repeatCreated).toHaveBeenCalledOnce());
+		expect(mocks.rules.repeatCreated).toHaveBeenCalledWith(CREATED, {
+			values: expect.objectContaining({ weekdays: ['MO'] }),
+			initialStatus: 'backlog'
+		});
+	});
+
 	it('explains neutrally why a series cannot become a rule, without a button', async () => {
 		openFor(event({ rrule: 'FREQ=MONTHLY;BYDAY=2TU;UNTIL=20271231T000000Z' }));
 		const hint = await screen.findByText(/Diese Serie lässt sich nicht als Regel übernehmen/);
@@ -890,7 +918,7 @@ describe('new ticket from a calendar series (E5 plan, package 6; ADR-0024 sectio
 describe('new ticket: repeat right away (plan OR-4)', () => {
 	const RULE = { id: 'rule00000000010' };
 
-	async function openPlain(state = 'ready') {
+	async function openPlain(state = 'ready', statusReady = false) {
 		mocks.page.url = new URL('http://localhost:3000/tickets/neu');
 		mocks.detail.create.mockReset();
 		mocks.detail.create.mockResolvedValue({ ok: true, ticket: CREATED });
@@ -898,6 +926,7 @@ describe('new ticket: repeat right away (plan OR-4)', () => {
 		mocks.tickets.upsert.mockReset();
 		mocks.goto.mockClear();
 		mocks.rules.state = state;
+		mocks.rules.statusReady = statusReady;
 		mocks.rules.repeatCreated.mockReset();
 		mocks.rules.repeatCreated.mockResolvedValue(RULE);
 		const { release } = catalog();
@@ -953,27 +982,29 @@ describe('new ticket: repeat right away (plan OR-4)', () => {
 		await fireEvent.click(disclosure());
 		// Without a due date: today (Friday 25.09.) and the first date the ticket gets.
 		expect(within(section()).getByText(/bekommt den ersten Termin: 25\.09\.2026/)).toBeTruthy();
-		// Plan WV: the next tickets take the values of this form, the status included.
+		// Plan WV: the next tickets take the values of this form; before the migration of "Status
+		// beim Anlegen" nothing is asked about the status (ADR-0022 addendum 9).
 		expect(
 			within(section()).getByText(
-				/Künftige Tickets bekommen Titel, Beschreibung, Priorität, Status, Projekt und Tags aus diesem Formular\./
+				/Künftige Tickets bekommen Titel, Beschreibung, Priorität, Projekt und Tags aus diesem Formular\./
 			)
 		).toBeTruthy();
+		expect(within(section()).queryByRole('radiogroup')).toBeNull();
 		await fireEvent.click(createButton());
 
 		await vi.waitFor(() => expect(mocks.rules.repeatCreated).toHaveBeenCalledOnce());
 		expect(mocks.detail.create.mock.invocationCallOrder[0]).toBeLessThan(
 			mocks.rules.repeatCreated.mock.invocationCallOrder[0] ?? 0
 		);
-		expect(mocks.rules.repeatCreated).toHaveBeenCalledWith(
-			CREATED,
-			expect.objectContaining({
+		expect(mocks.rules.repeatCreated).toHaveBeenCalledWith(CREATED, {
+			values: expect.objectContaining({
 				mode: 'calendar',
 				freq: 'weekly',
 				weekdays: ['FR'],
 				anchor: '2026-09-25'
-			})
-		);
+			}),
+			initialStatus: null
+		});
 		const joined = { ...CREATED, recurring: true, recurrenceId: RULE.id, due: '2026-09-25' };
 		expect(mocks.detail.upsert).toHaveBeenCalledWith(joined);
 		expect(mocks.tickets.upsert).toHaveBeenCalledWith(joined);
@@ -1024,5 +1055,64 @@ describe('new ticket: repeat right away (plan OR-4)', () => {
 	it('offers no section before the migration of E5', async () => {
 		await openPlain('unavailable');
 		expect(screen.queryByRole('button', { name: 'Wiederholen' })).toBeNull();
+	});
+
+	// ADR-0022 addendum 9: the open section asks with which status the next tickets start; "Wie
+	// dieses Ticket" follows the status chosen in the form.
+	it('asks "Folgetickets starten mit" without an answer in advance, following the status of the form', async () => {
+		await openPlain('ready', true);
+		await fireEvent.input(titleField(), { target: { value: 'Blumen gießen' } });
+		await fireEvent.click(disclosure());
+		expect(
+			within(section()).getByText(
+				/Künftige Tickets bekommen Titel, Beschreibung, Priorität, Projekt und Tags aus diesem Formular; den Status wählst du hier\./
+			)
+		).toBeTruthy();
+		const group = within(section()).getByRole('radiogroup', { name: 'Folgetickets starten mit' });
+		const answers = () =>
+			within(group)
+				.getAllByRole<HTMLInputElement>('radio')
+				.map((radio) => [radio.labels?.[0]?.textContent?.trim(), radio.checked]);
+		expect(answers()).toEqual([
+			['Offen (wie dieses Ticket)', false],
+			['Backlog', false],
+			['In Arbeit', false],
+			['Wartet', false]
+		]);
+		await fireEvent.change(screen.getByLabelText('Status'), { target: { value: 'in_progress' } });
+		expect(answers()).toEqual([
+			['Offen', false],
+			['Wie dieses Ticket: In Arbeit', false],
+			['Backlog', false],
+			['Wartet', false]
+		]);
+
+		await fireEvent.click(createButton());
+		await vi.waitFor(() => expect(document.activeElement).toBe(group));
+		expect(group.getAttribute('aria-invalid')).toBe('true');
+		expect(mocks.detail.create).not.toHaveBeenCalled();
+
+		await fireEvent.click(
+			within(group).getByRole('radio', { name: 'Wie dieses Ticket: In Arbeit' })
+		);
+		expect(group.getAttribute('aria-invalid')).toBeNull();
+		await fireEvent.click(createButton());
+		await vi.waitFor(() => expect(mocks.rules.repeatCreated).toHaveBeenCalledOnce());
+		expect(mocks.detail.create).toHaveBeenCalledWith(
+			expect.objectContaining({ status: 'in_progress' }),
+			undefined
+		);
+		expect(mocks.rules.repeatCreated).toHaveBeenCalledWith(CREATED, {
+			values: expect.objectContaining({ weekdays: ['FR'] }),
+			initialStatus: 'in_progress'
+		});
+	});
+
+	it('asks nothing while the section is folded', async () => {
+		await openPlain('ready', true);
+		await fireEvent.input(titleField(), { target: { value: 'Blumen gießen' } });
+		await fireEvent.click(createButton());
+		await vi.waitFor(() => expect(mocks.detail.create).toHaveBeenCalledOnce());
+		expect(mocks.rules.repeatCreated).not.toHaveBeenCalled();
 	});
 });

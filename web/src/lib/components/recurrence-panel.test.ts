@@ -218,23 +218,51 @@ describe('RecurrencePanel: a rule', () => {
 		});
 	});
 
-	it('starts a new rule with "Offen" and shows a refusal of the status at its field', async () => {
+	// ADR-0022 addendum 9: a new rule asks with which status its tickets start, without an answer
+	// in advance; a saved rule shows its value in "Status beim Anlegen" (above).
+	it('asks a new rule "Folgetickets starten mit" and shows a refusal of the status at the question', async () => {
 		const onsave = vi.fn(async (): Promise<SaveResult> => ({
 			ok: false,
 			message: null,
 			fields: { initial_status: 'Als „Status beim Anlegen“ geht jeder Status außer „Erledigt“.' }
 		}));
 		show(null, { statusAvailable: true, onsave });
-		expect(screen.getByLabelText<HTMLSelectElement>('Status beim Anlegen').value).toBe('open');
+		expect(screen.queryByLabelText('Status beim Anlegen')).toBeNull();
+		const group = screen.getByRole('radiogroup', { name: 'Folgetickets starten mit' });
+		const radios = within(group).getAllByRole<HTMLInputElement>('radio');
+		expect(radios.map((radio) => [radio.labels?.[0]?.textContent?.trim(), radio.checked])).toEqual([
+			['Offen', false],
+			['Backlog', false],
+			['In Arbeit', false],
+			['Wartet', false]
+		]);
+
 		await fireEvent.input(screen.getByLabelText('Titel'), { target: { value: 'Blumen' } });
 		await fireEvent.click(screen.getByRole('button', { name: 'Anlegen' }));
-		await vi.waitFor(() =>
-			expect(screen.getByLabelText('Status beim Anlegen').getAttribute('aria-invalid')).toBe('true')
-		);
-		expect(onsave).toHaveBeenCalledWith(expect.objectContaining({ initial_status: 'open' }));
+		await tick();
+		expect(onsave).not.toHaveBeenCalled();
+		expect(group.getAttribute('aria-invalid')).toBe('true');
 		expect(
-			screen.getByText('Als „Status beim Anlegen“ geht jeder Status außer „Erledigt“.')
+			within(group).getByText('Bitte wählen, mit welchem Status Folgetickets starten.')
 		).toBeTruthy();
+		expect(document.activeElement).toBe(group);
+
+		await fireEvent.click(within(group).getByRole('radio', { name: 'Wartet' }));
+		expect(group.getAttribute('aria-invalid')).toBeNull();
+		await fireEvent.click(screen.getByRole('button', { name: 'Anlegen' }));
+		await vi.waitFor(() => expect(group.getAttribute('aria-invalid')).toBe('true'));
+		expect(onsave).toHaveBeenCalledWith(expect.objectContaining({ initial_status: 'waiting' }));
+		expect(
+			within(group).getByText('Als „Status beim Anlegen“ geht jeder Status außer „Erledigt“.')
+		).toBeTruthy();
+	});
+
+	it('counts an answer to the question of a new rule as unsaved input', async () => {
+		const props = show(null, { statusAvailable: true });
+		await fireEvent.click(screen.getByRole('radio', { name: 'Offen' }));
+		await fireEvent.click(within(panel()).getByRole('button', { name: 'Abbrechen' }));
+		expect(props.onclose).not.toHaveBeenCalled();
+		expect(screen.getByRole('dialog', { name: 'Neue Regel verwerfen?' })).toBeTruthy();
 	});
 
 	it('sends a changed rhythm with the template', async () => {

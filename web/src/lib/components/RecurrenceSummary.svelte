@@ -16,11 +16,13 @@
 		type RecurrenceFormValues
 	} from '$lib/domain/recurrence-rule';
 	import {
+		DEFAULT_TEMPLATE_STATUS,
 		templateOf,
 		templateSummary,
 		ticketTemplate,
 		type RuleTemplate,
-		type TemplateNames
+		type TemplateNames,
+		type TemplateStatus
 	} from '$lib/domain/series-template';
 	import type { HistoryEntry, ProjectRef, TagRef, Ticket } from '$lib/domain/ticket';
 	import type { EditResult } from '$lib/stores/catalog-editor';
@@ -48,6 +50,8 @@
 	// shows its hint neutrally, a refused request as an error (ADR-0009). "Wiederholen…" may come
 	// prepared from a calendar series (E5 plan, package 6; store.offerRepeat): from the inbox panel it
 	// opens at once, after a failed conversion the panel shows why and offers the prepared dialog.
+	// "Wiederholen…" asks with which status the next tickets start (ADR-0022 addendum 9), without
+	// an answer in advance; only an answer the user gave before the failed rule comes prepared.
 	// The template of the series (plan WV): "Künftige Tickets: Priorität Hoch · …" with
 	// "Bearbeiten", which edits it inline here, not in a dialog (the full view is one already,
 	// ADR-0025 section 3). Its draft lives in the store, so panel and full view share it and leaving
@@ -90,7 +94,7 @@
 	);
 	/** Offer taken for this ticket; it prepares "Wiederholen…" until a rule exists. */
 	let offer = $state(initialOffer);
-	const prepared = $derived(offer !== null && offer.ticketId === ticket.id ? offer.values : null);
+	const prepared = $derived(offer !== null && offer.ticketId === ticket.id ? offer : null);
 
 	let dialog = $state<'create' | 'edit' | null>(
 		initialOffer !== null && initialOffer.message === null ? 'create' : null
@@ -104,8 +108,8 @@
 		dialog = null;
 	}
 
-	async function repeat(values: RecurrenceFormValues) {
-		const result = await store.repeat(ticket, values);
+	async function repeat(values: RecurrenceFormValues, initialStatus: TemplateStatus | null) {
+		const result = await store.repeat(ticket, { values, initialStatus });
 		if (result.ok) {
 			offer = null;
 			error = null;
@@ -145,9 +149,12 @@
 	const summary = $derived(
 		rule === null ? '' : templateSummary(templateOf(rule), names, store.statusReady)
 	);
-	/** What "Wiederholen…" takes from this ticket, named in the dialog. */
+	/**
+	 * What "Wiederholen…" takes from this ticket, named in the dialog; the status is asked there
+	 * ("Folgetickets starten mit", ADR-0022 addendum 9), so the sentence leaves it out.
+	 */
 	const repeatNote = $derived(
-		`Künftige Tickets bekommen die Werte dieses Tickets: ${templateSummary(ticketTemplate(ticket), names, store.statusReady)}. Ändern kannst du sie danach hier unter „Wiederholt sich“.`
+		`Künftige Tickets bekommen die Werte dieses Tickets: ${templateSummary(ticketTemplate(ticket, DEFAULT_TEMPLATE_STATUS), names, false)}. Ändern kannst du sie danach hier unter „Wiederholt sich“.`
 	);
 	/** The draft of the template of this series, while it is edited. */
 	const draft = $derived(
@@ -386,12 +393,15 @@
 {#if dialog === 'create'}
 	<RecurrenceDialog
 		heading="Wiederholen…"
-		initial={prepared ?? defaultFormValues(ticket.due, today)}
+		initial={prepared?.values ?? defaultFormValues(ticket.due, today)}
 		note={repeatNote}
 		{today}
 		withoutDue={ticket.due === null}
 		eachAvailable={store.eachReady}
 		context={{ kind: 'ticket', due: ticket.due }}
+		askStatus={store.statusReady}
+		ticketStatus={ticket.status}
+		initialStatus={prepared?.initialStatus ?? null}
 		submitLabel="Wiederholung anlegen"
 		onsave={repeat}
 		onclose={closeDialog}

@@ -205,7 +205,7 @@ describe('RecurrenceStore', () => {
 		await store.load();
 		const values = defaultFormValues('2026-09-28', '2026-09-25');
 
-		const result = await store.repeat(ticket(), values);
+		const result = await store.repeat(ticket(), { values, initialStatus: 'open' });
 
 		expect(result.ok).toBe(true);
 		expect(data.createRule).toHaveBeenCalledWith(
@@ -215,7 +215,7 @@ describe('RecurrenceStore', () => {
 				project: 'proj00000000001',
 				tags: ['tag000000000001'],
 				priority: 'high',
-				// "Status beim Anlegen" (plan WV): the status of the ticket, as every other value.
+				// "Status beim Anlegen": the answer to "Folgetickets starten mit" (ADR-0022 addendum 9).
 				initial_status: 'open',
 				mode: 'calendar',
 				freq: 'weekly',
@@ -235,23 +235,34 @@ describe('RecurrenceStore', () => {
 	});
 
 	// Plan WV, the report of the user: the next ticket came "open" instead of the chosen status.
-	it('takes the status and every value of the ticket into the template, also for "Neues Ticket"', async () => {
+	// Since ADR-0022 addendum 9 the user answers "Folgetickets starten mit"; nothing comes silently
+	// from the status of the ticket.
+	it('takes the chosen status and every value of the ticket into the template, also for "Neues Ticket"', async () => {
 		const data = fakeData([]);
 		const store = new RecurrenceStore(data, session());
 		await store.load();
 		const values = defaultFormValues('2026-09-28', '2026-09-25');
 
-		await store.repeat(ticket({ status: 'backlog', priority: 'urgent' }), values);
-		await store.repeatCreated(ticket({ status: 'waiting', priority: 'low' }), values);
-		// A done ticket never starts a series (the hook refuses it); its template would say "open".
-		await store.repeat(ticket({ status: 'done' }), values);
+		await store.repeat(ticket({ status: 'backlog', priority: 'urgent' }), {
+			values,
+			initialStatus: 'backlog'
+		});
+		await store.repeatCreated(ticket({ status: 'waiting', priority: 'low' }), {
+			values,
+			initialStatus: 'open'
+		});
+		await store.repeat(ticket({ status: 'open' }), { values, initialStatus: 'in_progress' });
+		// Nothing asked (before the migration of "Status beim Anlegen"): the field is left out.
+		await store.repeat(ticket({ status: 'in_progress' }), { values, initialStatus: null });
 
 		const drafts = vi.mocked(data.createRule).mock.calls.map(([draft]) => draft);
 		expect(drafts.map(({ priority, initial_status }) => ({ priority, initial_status }))).toEqual([
 			{ priority: 'urgent', initial_status: 'backlog' },
-			{ priority: 'low', initial_status: 'waiting' },
-			{ priority: 'high', initial_status: 'open' }
+			{ priority: 'low', initial_status: 'open' },
+			{ priority: 'high', initial_status: 'in_progress' },
+			{ priority: 'high', initial_status: undefined }
 		]);
+		expect(drafts[3]).not.toHaveProperty('initial_status');
 		for (const draft of drafts) {
 			expect(draft).toMatchObject({
 				title: 'Steuer',
@@ -329,14 +340,14 @@ describe('RecurrenceStore', () => {
 			)
 			.mockRejectedValueOnce(new DataError('network'));
 		const store = new RecurrenceStore(data, session());
-		const values = defaultFormValues(null, '2026-09-25');
+		const request = { values: defaultFormValues(null, '2026-09-25'), initialStatus: null };
 
-		expect(await store.repeat(ticket(), values)).toEqual({
+		expect(await store.repeat(ticket(), request)).toEqual({
 			ok: false,
 			message: null,
 			fields: { weekdays: 'Bitte mindestens einen Wochentag wählen.' }
 		});
-		const network = await store.repeat(ticket(), values);
+		const network = await store.repeat(ticket(), request);
 		expect(network.ok).toBe(false);
 		expect(!network.ok && network.message).toMatch(/Server nicht erreichbar/);
 	});
@@ -360,10 +371,18 @@ describe('RecurrenceStore: a series from the inbox (E5 plan, package 6)', () => 
 	it('creates the rule for a converted ticket with the ticket as its instance', async () => {
 		const data = fakeData([]);
 		const store = new RecurrenceStore(data, session());
-		const created = await store.repeatCreated(ticket({ due: null }), values);
+		const created = await store.repeatCreated(ticket({ due: null }), {
+			values,
+			initialStatus: 'waiting'
+		});
 		expect(created?.id).toBe('rule00000000009');
 		expect(data.createRule).toHaveBeenCalledWith(
-			expect.objectContaining({ title: 'Steuer', freq: 'weekly', weekdays: ['MO'] }),
+			expect.objectContaining({
+				title: 'Steuer',
+				freq: 'weekly',
+				weekdays: ['MO'],
+				initial_status: 'waiting'
+			}),
 			'ticket000000001'
 		);
 		expect(store.takeOffer('ticket000000001')).toBeNull();
@@ -386,19 +405,21 @@ describe('RecurrenceStore: a series from the inbox (E5 plan, package 6)', () => 
 			.mockRejectedValueOnce(new DataError('network'));
 		const store = new RecurrenceStore(data, session());
 
-		expect(await store.repeatCreated(ticket(), values)).toBeNull();
+		// The answer to "Folgetickets starten mit" comes along: the user gave it already.
+		expect(await store.repeatCreated(ticket(), { values, initialStatus: 'backlog' })).toBeNull();
 		expect(store.takeOffer('another00000001')).toBeNull();
 		const offer = store.takeOffer('ticket000000001');
 		expect(offer).toEqual({
 			ticketId: 'ticket000000001',
 			values,
+			initialStatus: 'backlog',
 			message: `${REPEAT_FAILED} Das Ticket gehört schon zu einer Serie.`
 		});
 		// The offer holds a copy: the form may change its values without touching the caller's.
 		expect(offer?.values).not.toBe(values);
 		expect(store.takeOffer('ticket000000001')).toBeNull();
 
-		expect(await store.repeatCreated(ticket(), values)).toBeNull();
+		expect(await store.repeatCreated(ticket(), { values, initialStatus: null })).toBeNull();
 		expect(store.takeOffer('ticket000000001')?.message).toMatch(
 			new RegExp(`^${REPEAT_FAILED} .*Server nicht erreichbar`)
 		);
@@ -409,9 +430,11 @@ describe('RecurrenceStore: a series from the inbox (E5 plan, package 6)', () => 
 		store.offerRepeat('ticket000000001', values);
 		store.offerRepeat('ticket000000002', values);
 		expect(store.takeOffer('ticket000000001')).toBeNull();
+		// From the inbox nothing was answered yet: the dialog asks (ADR-0022 addendum 9).
 		expect(store.takeOffer('ticket000000002')).toEqual({
 			ticketId: 'ticket000000002',
 			values,
+			initialStatus: null,
 			message: null
 		});
 		store.offerRepeat('ticket000000003', values);
@@ -557,7 +580,10 @@ describe('RecurrenceStore: "Jeden Termin einzeln anlegen" (plan OR-5)', () => {
 			})
 		);
 		const store = new RecurrenceStore(data, session());
-		const result = await store.repeat(ticket(), { ...values, eachOccurrence: true });
+		const result = await store.repeat(ticket(), {
+			values: { ...values, eachOccurrence: true },
+			initialStatus: 'open'
+		});
 		expect(vi.mocked(data.createRule).mock.calls[0]?.[0]).toMatchObject({ each_occurrence: true });
 		expect(result).toEqual({
 			ok: false,

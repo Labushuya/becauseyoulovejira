@@ -199,10 +199,11 @@
 		<li>
 			Folgetickets bekommen Titel, Beschreibung, Priorität, Projekt, Tags und den „Status beim
 			Anlegen“ aus der Vorlage der Regel. Die Vorlage übernimmt beim Einrichten die Werte des
-			Tickets, auch seinen Status; ohne Ticket („Neue Regel“) starten neue Tickets als „Offen“.
-			Ansehen und ändern kannst du sie am Ticket unter „Wiederholt sich“ („Künftige Tickets“,
-			„Bearbeiten“) oder im Panel der Regel unter „Wiederholungen“. Unteraufgaben, Kommentare und
-			Quellen gehen nicht mit.
+			Tickets. Mit welchem Status Folgetickets starten, fragt die App beim Anlegen der Regel
+			(„Folgetickets starten mit“: „Offen“, „Wie dieses Ticket“ oder ein anderer Status), ohne
+			Vorauswahl; ohne Wahl lässt sich die Regel nicht anlegen. Ansehen und ändern kannst du die
+			Vorlage am Ticket unter „Wiederholt sich“ („Künftige Tickets“, „Bearbeiten“) oder im Panel der
+			Regel unter „Wiederholungen“. Unteraufgaben, Kommentare und Quellen gehen nicht mit.
 		</li>
 		<li>
 			Änderst du Titel, Beschreibung, Priorität, Projekt oder Tags eines offenen Tickets der Serie,
@@ -213,7 +214,7 @@
 		<li>
 			Eine Rückfrage beim Entstehen eines Tickets gibt es nicht: Folgetickets entstehen im
 			Hintergrund zur festen Zeit, auch wenn die App gerade niemand ansieht. Was sie bekommen, legst
-			du deshalb vorher in der Vorlage fest.
+			du deshalb vorher in der Vorlage fest; gefragt wird einmal beim Anlegen der Regel.
 		</li>
 		<li>
 			Tickets haben keine Uhrzeit. Sie entstehen, wenn die App läuft: jede Stunde um 7 nach, der

@@ -4,6 +4,7 @@
 	import type { RuleDraft } from '$lib/data/recurrence';
 	import type { CalendarDate } from '$lib/domain/berlin-date';
 	import {
+		INITIAL_STATUS_REQUIRED,
 		SERVER_FIELDS,
 		defaultFormValues,
 		formErrors,
@@ -24,7 +25,8 @@
 		DEFAULT_TEMPLATE_STATUS,
 		templateChanges,
 		templateOf,
-		type RuleTemplate
+		type RuleTemplate,
+		type TemplateStatus
 	} from '$lib/domain/series-template';
 	import { DEFAULT_PRIORITY, type ProjectRef, type TagRef } from '$lib/domain/ticket';
 	import type { EditResult } from '$lib/stores/catalog-editor';
@@ -33,6 +35,7 @@
 	import ErrorIcon from './ErrorIcon.svelte';
 	import Lozenge from './guidance/Lozenge.svelte';
 	import SectionMessage from './guidance/SectionMessage.svelte';
+	import InitialStatusChoice from './InitialStatusChoice.svelte';
 	import ConfirmDialog from './overlay/ConfirmDialog.svelte';
 	import Drawer from './overlay/Drawer.svelte';
 	import RecurrenceBacklogQuestion from './RecurrenceBacklogQuestion.svelte';
@@ -42,7 +45,8 @@
 	// Panel of a rule (E5 plan, T-6 and package 5) on the side panel building block, like the
 	// project panel (UI-8): "Neue Regel" under /wiederholungen/neu and a rule under
 	// /wiederholungen/<id>. The template (title, priority, "Status beim Anlegen" since plan WV,
-	// project, tags, description; the same fields as the inline editor at the ticket) and the
+	// project, tags, description; the same fields as the inline editor at the ticket; "Neue Regel"
+	// asks it as "Folgetickets starten mit" without an answer in advance, ADR-0022 addendum 9) and the
 	// rhythm (RecurrenceForm with the preview "Nächste Termine") in one form. A rule also shows its
 	// state with the next ticket, its open ticket, the neutral hint of the server and "Pausieren" or
 	// "Fortsetzen"; "Löschen …" in the header asks "Regel löschen?" (its tickets stay, ADR-0023
@@ -154,6 +158,10 @@
 	let template = $state<RuleTemplate>({ ...initialTemplate, tagIds: [...initialTemplate.tagIds] });
 	let values = $state<RecurrenceFormValues>(copyValues(initialValues));
 	let tagText = $state('');
+	/** "Neue Regel": the answer to "Folgetickets starten mit"; '' while none is given. */
+	let chosenStatus = $state<TemplateStatus | ''>('');
+	/** A new rule asks for the status of its tickets (ADR-0022 addendum 9), a saved one shows it. */
+	const askStatus = $derived(creating && statusAvailable);
 	/** Values as last saved; unsaved input is measured against them. */
 	let saved = $state({ template: initialTemplate, values: copyValues(initialValues) });
 
@@ -180,7 +188,9 @@
 		Object.keys(templateChanges(saved.template, template)).length > 0
 	);
 	const rhythmChanged = $derived(!sameRhythm(values, saved.values));
-	const dirty = $derived(templateChanged || rhythmChanged || tagText.trim() !== '');
+	const dirty = $derived(
+		templateChanged || rhythmChanged || tagText.trim() !== '' || (askStatus && chosenStatus !== '')
+	);
 
 	// Focus when the panel opens: the title for "Neue Regel", else the heading (ADR-0025 section 6).
 	$effect(() => {
@@ -226,8 +236,11 @@
 			// Only tags the catalog knows: a tag may have been deleted since.
 			tags: template.tagIds.filter((tagId) => tags.some((tag) => tag.id === tagId)),
 			priority: template.priority,
-			// Only a server after the migration knows the field (plan WV).
-			...(statusAvailable && { initial_status: template.initialStatus })
+			// Only a server after the migration knows the field (plan WV); a new rule sends the answer
+			// to "Folgetickets starten mit" (ADR-0022 addendum 9).
+			...(statusAvailable && {
+				initial_status: askStatus && chosenStatus !== '' ? chosenStatus : template.initialStatus
+			})
 		};
 		return withRhythm ? { ...draft, ...formParams(values) } : draft;
 	}
@@ -236,7 +249,10 @@
 		event?.preventDefault();
 		if (busy) return;
 		message = null;
-		fieldErrors = template.title.trim() === '' ? { title: 'Bitte einen Titel eingeben.' } : {};
+		fieldErrors = {
+			...(template.title.trim() === '' && { title: 'Bitte einen Titel eingeben.' }),
+			...(askStatus && chosenStatus === '' && { initial_status: INITIAL_STATUS_REQUIRED })
+		};
 		rhythmErrors = formErrors(values);
 		if (Object.keys(fieldErrors).length > 0 || Object.keys(rhythmErrors).length > 0) {
 			await focusFirstError();
@@ -444,13 +460,25 @@
 				{tags}
 				{currentProject}
 				{busy}
-				{statusAvailable}
+				statusAvailable={statusAvailable && !askStatus}
 				{oncreatetag}
 				onprojectchosen={() => {
 					stateError = null;
 					fieldErrors = { ...fieldErrors, project: undefined };
 				}}
 			/>
+			{#if askStatus}
+				<InitialStatusChoice
+					bind:value={
+						() => chosenStatus,
+						(chosen) => {
+							chosenStatus = chosen;
+							fieldErrors = { ...fieldErrors, initial_status: undefined };
+						}
+					}
+					error={fieldErrors.initial_status ?? null}
+				/>
+			{/if}
 			<p class="hint">
 				{creating
 					? 'Jedes Ticket der Regel bekommt diese Vorlage.'

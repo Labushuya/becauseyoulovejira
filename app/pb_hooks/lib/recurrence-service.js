@@ -148,6 +148,7 @@ function fail(field, code) {
 // hook. An anchor the date field could not read counts as an error, not as "empty".
 function prepareCreateRequest(e) {
   var body = e.requestInfo().body;
+  checkInitialStatusChoice(e, body);
   if (body['active'] === undefined) {
     e.record.set('active', true);
   }
@@ -176,6 +177,22 @@ function prepareUpdateRequest(e) {
   checkAnchorBody(e);
   checkBacklogBody(e);
   ticketService.rememberActor(e);
+}
+
+// "Status beim Anlegen" is the choice of the user (ADR-0022 addendum 9): after its migration a
+// create request of an app account must carry it, whichever way it comes ("Wiederholen…" with
+// `ticket`, the second step of "Neues Ticket", "Neue Regel"). Checked in the request hook, so it
+// never touches a rule without a user: a superuser (admin UI, repairs) and saves of the server
+// keep the default "open" of the model hook (checkInitialStatus), and editing a rule asks nothing.
+// Before the migration there is no field and nothing to ask.
+function checkInitialStatusChoice(e, body) {
+  if (e.hasSuperuserAuth() || !initialStatusReady(e.app)) {
+    return;
+  }
+  var code = rules.initialStatusChoiceViolation(body['initial_status']);
+  if (code !== '') {
+    throw fail('initial_status', code);
+  }
 }
 
 // The body field `backlog` (ADR-0022 addendum 5): 'all' or 'today', anything else is refused; an

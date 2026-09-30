@@ -5,6 +5,7 @@ import {
 	TEMPLATE_STATUSES,
 	appliedTitle,
 	changedTemplateFields,
+	initialStatusOptions,
 	offerDescription,
 	offerTitle,
 	templateBody,
@@ -94,22 +95,24 @@ describe('templates of rules and tickets', () => {
 		expect(templateOf(rule({ initialStatus: 'backlog' })).initialStatus).toBe('backlog');
 	});
 
-	it('takes every value of a ticket into a new template, its status included', () => {
-		const template = ticketTemplate({
+	it('takes every value of a ticket into a new template, the status as the user chose it', () => {
+		const ticket = {
 			title: 'Steuer',
 			description: 'Belege',
 			projectId: 'proj00000000001',
 			tagIds: ['tag000000000002'],
-			priority: 'high',
-			status: 'in_progress'
-		});
+			priority: 'high' as const,
+			status: 'in_progress' as const
+		};
+		// ADR-0022 addendum 9: the status comes from the answer, not silently from the ticket.
+		const template = ticketTemplate(ticket, 'waiting');
 		expect(template).toEqual({
 			title: 'Steuer',
 			description: 'Belege',
 			projectId: 'proj00000000001',
 			tagIds: ['tag000000000002'],
 			priority: 'high',
-			initialStatus: 'in_progress'
+			initialStatus: 'waiting'
 		});
 		expect(templateBody(template)).toEqual({
 			title: 'Steuer',
@@ -117,9 +120,39 @@ describe('templates of rules and tickets', () => {
 			project: 'proj00000000001',
 			tags: ['tag000000000002'],
 			priority: 'high',
-			initial_status: 'in_progress'
+			initial_status: 'waiting'
 		});
-		expect(ticketTemplate({ ...template, status: 'done' }).initialStatus).toBe('open');
+		expect(ticketTemplate(ticket, 'in_progress').initialStatus).toBe('in_progress');
+	});
+
+	it('offers "Offen" and the status of the ticket first, the other statuses below, "Erledigt" never', () => {
+		const answers = (status: string | null) =>
+			initialStatusOptions(status).map(({ value, label, first }) => [value, label, first]);
+		expect(answers('in_progress')).toEqual([
+			['open', 'Offen', true],
+			['in_progress', 'Wie dieses Ticket: In Arbeit', true],
+			['backlog', 'Backlog', false],
+			['waiting', 'Wartet', false]
+		]);
+		expect(answers('open')).toEqual([
+			['open', 'Offen (wie dieses Ticket)', true],
+			['backlog', 'Backlog', false],
+			['in_progress', 'In Arbeit', false],
+			['waiting', 'Wartet', false]
+		]);
+		expect(answers('backlog').slice(0, 2)).toEqual([
+			['open', 'Offen', true],
+			['backlog', 'Wie dieses Ticket: Backlog', true]
+		]);
+		// "Neue Regel" has no ticket; a done ticket never starts a series.
+		for (const status of [null, 'done']) {
+			expect(answers(status), String(status)).toEqual([
+				['open', 'Offen', true],
+				['backlog', 'Backlog', false],
+				['in_progress', 'In Arbeit', false],
+				['waiting', 'Wartet', false]
+			]);
+		}
 	});
 
 	it('names only the changed fields of a template', () => {

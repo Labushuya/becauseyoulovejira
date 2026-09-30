@@ -39,7 +39,14 @@ export function ownedPayload(collection, ownerId, householdId = '') {
 			return { ...base, name: `tag-${suffix}` };
 		case 'recurrence_rules':
 			// Since E5 the hook needs a rhythm (ADR-0021 section 1); "Beginnt am" defaults to today.
-			return { ...base, title: `Regel ${suffix}`, mode: 'calendar', freq: 'daily' };
+			// A user chooses "Status beim Anlegen" when creating (ADR-0022 addendum 9).
+			return {
+				...base,
+				title: `Regel ${suffix}`,
+				mode: 'calendar',
+				freq: 'daily',
+				initial_status: 'open'
+			};
 		case 'tickets':
 			return { ...base, title: `Ticket ${suffix}` };
 		case 'inbox_items':

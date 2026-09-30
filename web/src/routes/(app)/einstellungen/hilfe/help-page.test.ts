@@ -253,17 +253,20 @@ describe('help page (EH-9)', () => {
 		expect(section.querySelectorAll('ol')).toHaveLength(3);
 	});
 
-	// Plan WV: what the next tickets get, the offer after a change, and why nothing asks.
+	// Plan WV: what the next tickets get, the offer after a change, and why nothing asks when one
+	// appears; since ADR-0022 addendum 9 the status is asked once, when the rule is created.
 	it('explains the template of the next tickets and why nothing asks when one appears', () => {
 		render(Page);
 		const content = text(screen.getByRole('region', { name: 'Wiederholungen' }));
 		for (const phrase of [
 			'Folgetickets bekommen Titel, Beschreibung, Priorität, Projekt, Tags und den „Status beim Anlegen“ aus der Vorlage der Regel.',
-			'Die Vorlage übernimmt beim Einrichten die Werte des Tickets, auch seinen Status',
+			'Die Vorlage übernimmt beim Einrichten die Werte des Tickets.',
+			'Mit welchem Status Folgetickets starten, fragt die App beim Anlegen der Regel („Folgetickets starten mit“: „Offen“, „Wie dieses Ticket“ oder ein anderer Status), ohne Vorauswahl',
 			'am Ticket unter „Wiederholt sich“ („Künftige Tickets“, „Bearbeiten“)',
 			'Ein Hinweis bietet „Auch für künftige Tickets übernehmen“ an',
 			'Status und Fälligkeit gehören immer nur zum einzelnen Ticket.',
-			'Eine Rückfrage beim Entstehen eines Tickets gibt es nicht: Folgetickets entstehen im Hintergrund zur festen Zeit'
+			'Eine Rückfrage beim Entstehen eines Tickets gibt es nicht: Folgetickets entstehen im Hintergrund zur festen Zeit',
+			'gefragt wird einmal beim Anlegen der Regel'
 		]) {
 			expect(content, phrase).toContain(phrase);
 		}

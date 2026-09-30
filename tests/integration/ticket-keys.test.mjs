@@ -256,7 +256,8 @@ describe('relations across scopes (OF-3 c)', () => {
 				owner: s.ids.a,
 				title: 'Regel',
 				mode: 'calendar',
-				freq: 'daily'
+				freq: 'daily',
+				initial_status: 'open'
 			})
 		};
 	});
@@ -274,6 +275,7 @@ describe('relations across scopes (OF-3 c)', () => {
 			title: 'Regel',
 			mode: 'calendar',
 			freq: 'daily',
+			initial_status: 'open',
 			ticket: ticket.id
 		});
 

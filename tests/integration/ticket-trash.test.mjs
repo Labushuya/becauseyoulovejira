@@ -236,7 +236,9 @@ describe('moving to the trash (ADR-0037 §2 and §3)', () => {
 		expect((await rejection(link(owner, item.id, ticket.id))).codes).toEqual({ ticket: 'validation_scope_mismatch' });
 		expect((await rejection(owner.ticket({ parent: ticket.id }))).codes).toEqual({ parent: 'validation_scope_mismatch' });
 		const rule = await rejection(
-			owner.pb.collection('recurrence_rules').create({ owner: owner.id, title: 'Regel', mode: 'calendar', freq: 'daily', ticket: ticket.id })
+			owner.pb
+				.collection('recurrence_rules')
+				.create({ owner: owner.id, title: 'Regel', mode: 'calendar', freq: 'daily', initial_status: 'open', ticket: ticket.id })
 		);
 		expect(rule.codes).toEqual({ ticket: 'validation_recurrence_ticket_missing' });
 	});
@@ -429,7 +431,16 @@ describe('series (ADR-0037 §5, ADR-0022/0023)', () => {
 
 	it('frees the unique index for the next instance and never doubles on restore', async () => {
 		const instanceTicket = await owner.ticket();
-		const rule = await rules().create({ owner: owner.id, title: 'Blumen', mode: 'calendar', freq: 'daily', lead_days: 0, active: false, ticket: instanceTicket.id });
+		const rule = await rules().create({
+			owner: owner.id,
+			title: 'Blumen',
+			mode: 'calendar',
+			freq: 'daily',
+			lead_days: 0,
+			active: false,
+			initial_status: 'open',
+			ticket: instanceTicket.id
+		});
 		const second = await owner.ticket();
 		expect(await linkRule(second.id, rule.id)).toBe(400);
 
@@ -461,6 +472,7 @@ describe('series (ADR-0037 §5, ADR-0022/0023)', () => {
 			interval: 2,
 			lead_days: 0,
 			active: false,
+			initial_status: 'open',
 			ticket: ticket.id
 		});
 		const before = (await stored('recurrence_rules', rule.id)).next_due;

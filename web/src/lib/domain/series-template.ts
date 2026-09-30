@@ -55,14 +55,14 @@ export function templateOf(
 
 /**
  * A ticket as the template of a new rule ("Wiederholen…", "Neues Ticket" with "Wiederholen", a
- * series from a calendar): a snapshot of its values, its status included (the user report of WV:
- * the next ticket came "open" instead of the chosen status). A done ticket never starts a series;
- * it would give "open".
+ * series from a calendar): a snapshot of its values. The status the next tickets start with is
+ * what the user chose (ADR-0022 addendum 9: asked, never taken silently from the ticket).
  */
 export function ticketTemplate(
-	ticket: Pick<TicketSummary, 'title' | 'projectId' | 'tagIds' | 'priority' | 'status'> & {
+	ticket: Pick<TicketSummary, 'title' | 'projectId' | 'tagIds' | 'priority'> & {
 		description: string;
-	}
+	},
+	initialStatus: TemplateStatus
 ): RuleTemplate {
 	return {
 		title: ticket.title,
@@ -70,8 +70,42 @@ export function ticketTemplate(
 		projectId: ticket.projectId,
 		tagIds: [...ticket.tagIds],
 		priority: ticket.priority,
-		initialStatus: templateStatusOf(ticket.status)
+		initialStatus
 	};
+}
+
+// --- "Folgetickets starten mit": the question when a rule is created (ADR-0022 addendum 9) ------
+
+/** One answer of the question. */
+export interface InitialStatusOption {
+	value: TemplateStatus;
+	label: string;
+	/** "Offen" and the status of the ticket stand first, the other statuses below them. */
+	first: boolean;
+}
+
+/**
+ * The answers of "Folgetickets starten mit": "Offen" and, when it differs, the status of the
+ * ticket ("Wie dieses Ticket: In Arbeit") first, then the other statuses of an open ticket in
+ * their usual order. None is chosen in advance. Without a ticket ("Neue Regel") or with a done one
+ * "Offen" stands first alone.
+ */
+export function initialStatusOptions(ticketStatus: string | null): InitialStatusOption[] {
+	const own = isTemplateStatus(ticketStatus) ? ticketStatus : null;
+	const first: InitialStatusOption[] = [
+		{
+			value: 'open',
+			label: own === 'open' ? `${STATUS_LABELS.open} (wie dieses Ticket)` : STATUS_LABELS.open,
+			first: true
+		}
+	];
+	if (own !== null && own !== 'open') {
+		first.push({ value: own, label: `Wie dieses Ticket: ${STATUS_LABELS[own]}`, first: true });
+	}
+	const others = TEMPLATE_STATUSES.filter(
+		(status) => !first.some((option) => option.value === status)
+	).map((status) => ({ value: status, label: STATUS_LABELS[status], first: false }));
+	return [...first, ...others];
 }
 
 /** Fields of a template as the data layer sends them (a part of RuleDraft). */

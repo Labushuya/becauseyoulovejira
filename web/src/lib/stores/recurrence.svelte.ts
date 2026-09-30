@@ -27,6 +27,7 @@ import {
 	type RuleDraft
 } from '$lib/data/recurrence';
 import {
+	DEFAULT_TEMPLATE_STATUS,
 	OFFER_ACTION,
 	appliedTitle,
 	offerDescription,
@@ -39,7 +40,8 @@ import {
 	type RuleTemplate,
 	type SeriesChange,
 	type SeriesChangeSink,
-	type TemplateOffer
+	type TemplateOffer,
+	type TemplateStatus
 } from '$lib/domain/series-template';
 import { compareTitles } from '$lib/domain/ordering';
 import type { CalendarDate } from '$lib/domain/berlin-date';
@@ -51,7 +53,8 @@ import {
 	ruleText,
 	type BacklogChoice,
 	type RecurrenceFormValues,
-	type RecurrenceRule
+	type RecurrenceRule,
+	type RepeatRequest
 } from '$lib/domain/recurrence-rule';
 import { shortDate } from '$lib/domain/recurrence-text';
 import type { Ticket } from '$lib/domain/ticket';
@@ -83,6 +86,11 @@ export const REPEAT_FAILED = 'Das Ticket ist angelegt, die Wiederholung aber nic
 export interface RepeatOffer {
 	ticketId: string;
 	values: RecurrenceFormValues;
+	/**
+	 * The answer the user gave to "Folgetickets starten mit" before the rule failed; null: nothing
+	 * was answered yet, the dialog asks (ADR-0022 addendum 9).
+	 */
+	initialStatus: TemplateStatus | null;
 	/** Why it is offered (the rule failed), shown as an error; null: open the dialog at once. */
 	message: string | null;
 }
@@ -308,13 +316,24 @@ export class RecurrenceStore implements SeriesChangeSink {
 	}
 
 	/**
-	 * "Wiederholen…" (ADR-0023 section 1): a rule whose template is the ticket as it is now, its
-	 * status as "Status beim Anlegen" included (plan WV), with the ticket as its current instance.
-	 * A server before the migration of the status ignores that field.
+	 * "Wiederholen…" (ADR-0023 section 1): a rule whose template is the ticket as it is now, with
+	 * the ticket as its current instance. The next tickets start with the status the user chose
+	 * for "Folgetickets starten mit" (ADR-0022 addendum 9); without a choice (before the migration
+	 * of "Status beim Anlegen", nothing is asked) the field is left out.
 	 */
-	repeat(ticket: Ticket, values: RecurrenceFormValues): Promise<EditResult<RecurrenceRule>> {
+	repeat(
+		ticket: Ticket,
+		{ values, initialStatus }: RepeatRequest
+	): Promise<EditResult<RecurrenceRule>> {
+		const { initial_status: chosen, ...template } = templateBody(
+			ticketTemplate(ticket, initialStatus ?? DEFAULT_TEMPLATE_STATUS)
+		);
 		return this.create(
-			{ ...templateBody(ticketTemplate(ticket)), ...formParams(values) },
+			{
+				...template,
+				...(initialStatus !== null && { initial_status: chosen }),
+				...formParams(values)
+			},
 			ticket.id
 		);
 	}
@@ -322,21 +341,19 @@ export class RecurrenceStore implements SeriesChangeSink {
 	/**
 	 * Second step of converting a calendar series with "Als Wiederholung übernehmen" (ADR-0024
 	 * section 1) and of "Neues Ticket" with the section "Wiederholen" (plan OR-4): the ticket
-	 * exists already and becomes the current instance of the new rule. If
-	 * the rule fails, the ticket stays, and its panel offers "Wiederholen…" with the same values
-	 * and the reason. The rule, or null if it failed.
+	 * exists already and becomes the current instance of the new rule. If the rule fails, the
+	 * ticket stays, and its panel offers "Wiederholen…" with the same values, the same answer to
+	 * "Folgetickets starten mit" and the reason. The rule, or null if it failed.
 	 */
-	async repeatCreated(
-		ticket: Ticket,
-		values: RecurrenceFormValues
-	): Promise<RecurrenceRule | null> {
-		const result = await this.repeat(ticket, values);
+	async repeatCreated(ticket: Ticket, request: RepeatRequest): Promise<RecurrenceRule | null> {
+		const result = await this.repeat(ticket, request);
 		if (result.ok) return result.value;
 		const reason = result.message ?? Object.values(result.fields)[0] ?? null;
 		this.offerRepeat(
 			ticket.id,
-			values,
-			reason === null ? REPEAT_FAILED : `${REPEAT_FAILED} ${reason}`
+			request.values,
+			reason === null ? REPEAT_FAILED : `${REPEAT_FAILED} ${reason}`,
+			request.initialStatus
 		);
 		return null;
 	}
@@ -344,10 +361,21 @@ export class RecurrenceStore implements SeriesChangeSink {
 	/**
 	 * Hands "Wiederholen…" with prepared values to the panel of a ticket (inbox panel: "Wiederholung
 	 * für TASK-12 anlegen…"). Without a message the panel opens the dialog at once; with one it
-	 * shows the message and offers the prepared dialog. A newer offer replaces an older one.
+	 * shows the message and offers the prepared dialog. A newer offer replaces an older one. The
+	 * answer to "Folgetickets starten mit" comes along only when the user gave it already.
 	 */
-	offerRepeat(ticketId: string, values: RecurrenceFormValues, message: string | null = null): void {
-		this.#offer = { ticketId, values: { ...values, weekdays: [...values.weekdays] }, message };
+	offerRepeat(
+		ticketId: string,
+		values: RecurrenceFormValues,
+		message: string | null = null,
+		initialStatus: TemplateStatus | null = null
+	): void {
+		this.#offer = {
+			ticketId,
+			values: { ...values, weekdays: [...values.weekdays] },
+			initialStatus,
+			message
+		};
 	}
 
 	/** The offer for this ticket, once; null without one. */

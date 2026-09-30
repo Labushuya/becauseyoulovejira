@@ -214,6 +214,12 @@ export function ruleStateLabel(
 	return isWaiting(rule) ? 'Wartet' : 'Aktiv';
 }
 
+/**
+ * "Folgetickets starten mit" without an answer (ADR-0022 addendum 9): the form checks it before
+ * sending, the hook refuses a create without it with the same text.
+ */
+export const INITIAL_STATUS_REQUIRED = 'Bitte wählen, mit welchem Status Folgetickets starten.';
+
 /** German texts of the codes; the same as the hook sends (tests/unit/web-recurrence.test.mjs). */
 export const RECURRENCE_MESSAGES: Readonly<Record<string, string>> = Object.freeze({
 	validation_recurrence_mode: 'Bitte „Fester Rhythmus“ oder „Nach Erledigung“ wählen.',
@@ -241,7 +247,8 @@ export const RECURRENCE_MESSAGES: Readonly<Record<string, string>> = Object.free
 	validation_recurrence_reopen_older:
 		'Von dieser Serie ist schon ein anderes Ticket offen, und dieses Ticket ist nicht das zuletzt erledigte. Du kannst es als normales Ticket wieder öffnen (aus der Serie lösen).',
 	validation_recurrence_initial_status:
-		'Als „Status beim Anlegen“ geht jeder Status außer „Erledigt“.'
+		'Als „Status beim Anlegen“ geht jeder Status außer „Erledigt“.',
+	validation_recurrence_initial_status_required: INITIAL_STATUS_REQUIRED
 });
 
 /**
@@ -465,6 +472,16 @@ export interface RecurrenceFormValues {
 	 * absent: no answer, the rule then waits for it at the overview.
 	 */
 	backlog?: BacklogChoice;
+}
+
+/**
+ * A rule to create for a ticket ("Wiederholen…", the section "Wiederholen" of "Neues Ticket"): the
+ * rhythm and the answer to "Folgetickets starten mit" (ADR-0022 addendum 9); null where nothing is
+ * asked (before the migration of "Status beim Anlegen").
+ */
+export interface RepeatRequest {
+	values: RecurrenceFormValues;
+	initialStatus: TemplateStatus | null;
 }
 
 export type RecurrenceFormField =
