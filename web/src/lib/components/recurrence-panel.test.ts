@@ -193,6 +193,48 @@ describe('RecurrencePanel: a rule', () => {
 			tags: [],
 			priority: 'high'
 		});
+		// Before the migration of the status the field is not there and nothing is sent for it.
+		expect(screen.queryByLabelText('Status beim Anlegen')).toBeNull();
+	});
+
+	// Plan WV (ADR-0022 addendum 8).
+	it('offers "Status beim Anlegen" after its migration, every status but "Erledigt"', async () => {
+		const props = show(rule({ initialStatus: 'waiting' }), { statusAvailable: true });
+		const status = screen.getByLabelText<HTMLSelectElement>('Status beim Anlegen');
+		expect(status.value).toBe('waiting');
+		expect([...status.options].map((option) => option.value)).toEqual([
+			'backlog',
+			'open',
+			'in_progress',
+			'waiting'
+		]);
+		expect(status.getAttribute('aria-describedby')).toBeTruthy();
+		await fireEvent.change(status, { target: { value: 'in_progress' } });
+		await fireEvent.click(screen.getByRole('button', { name: 'Speichern' }));
+		await vi.waitFor(() => expect(props.onsave).toHaveBeenCalledTimes(1));
+		expect(props.onsave.mock.calls[0]?.[0]).toMatchObject({
+			priority: 'high',
+			initial_status: 'in_progress'
+		});
+	});
+
+	it('starts a new rule with "Offen" and shows a refusal of the status at its field', async () => {
+		const onsave = vi.fn(async (): Promise<SaveResult> => ({
+			ok: false,
+			message: null,
+			fields: { initial_status: 'Als „Status beim Anlegen“ geht jeder Status außer „Erledigt“.' }
+		}));
+		show(null, { statusAvailable: true, onsave });
+		expect(screen.getByLabelText<HTMLSelectElement>('Status beim Anlegen').value).toBe('open');
+		await fireEvent.input(screen.getByLabelText('Titel'), { target: { value: 'Blumen' } });
+		await fireEvent.click(screen.getByRole('button', { name: 'Anlegen' }));
+		await vi.waitFor(() =>
+			expect(screen.getByLabelText('Status beim Anlegen').getAttribute('aria-invalid')).toBe('true')
+		);
+		expect(onsave).toHaveBeenCalledWith(expect.objectContaining({ initial_status: 'open' }));
+		expect(
+			screen.getByText('Als „Status beim Anlegen“ geht jeder Status außer „Erledigt“.')
+		).toBeTruthy();
 	});
 
 	it('sends a changed rhythm with the template', async () => {

@@ -53,6 +53,30 @@ describe('checkParams', () => {
 	});
 });
 
+describe('"Status beim Anlegen" of the template (plan WV, ADR-0022 addendum 8)', () => {
+	it('allows every status but done and reads an empty value as "open"', () => {
+		expect(rules.INITIAL_STATUSES).toEqual(['backlog', 'open', 'in_progress', 'waiting']);
+		for (const status of rules.INITIAL_STATUSES) {
+			expect(rules.initialStatusOf(status)).toBe(status);
+			expect(rules.initialStatusViolation(status)).toBe('');
+		}
+		for (const empty of ['', null, undefined]) {
+			expect(rules.initialStatusOf(empty)).toBe('open');
+			expect(rules.initialStatusViolation(empty)).toBe('');
+		}
+	});
+
+	it('refuses done and unknown values with a German message; a ticket made from it is open', () => {
+		for (const value of ['done', 'offen']) {
+			expect(rules.initialStatusViolation(value)).toBe('validation_recurrence_initial_status');
+			expect(rules.initialStatusOf(value)).toBe('open');
+		}
+		expect(rules.MESSAGES.validation_recurrence_initial_status).toBe(
+			'Als „Status beim Anlegen“ geht jeder Status außer „Erledigt“.'
+		);
+	});
+});
+
 describe('the ticket a rule starts with', () => {
 	it('must exist in the scope, be open and in no series', () => {
 		const scope = 'u:a';

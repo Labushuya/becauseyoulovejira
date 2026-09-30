@@ -696,6 +696,9 @@ const E5_FIRST_MIGRATION = '1790201600_recurrence_rule_params.js';
 // run along with; the rows of before E5 do not have them.
 const EACH_RULE_FIELDS = ['each_occurrence'];
 const EACH_TICKET_FIELDS = ['occurrence'];
+// "Status beim Anlegen" (plan WV, 1790202500), which every earlier test runs along as well.
+const STATUS_RULE_FIELDS = ['initial_status'];
+const LATER_RULE_FIELDS = [...EACH_RULE_FIELDS, ...STATUS_RULE_FIELDS];
 // Fields of the later migration of the trash (ADR-0037, 1790202300), which every earlier test runs
 // along as well.
 const TRASH_TICKET_FIELDS = ['deleted_at', 'deleted_by', 'trash'];
@@ -717,7 +720,7 @@ const E5_RULE_FIELDS = [
 	'lead_days',
 	'scope',
 	'last_hint',
-	...EACH_RULE_FIELDS
+	...LATER_RULE_FIELDS
 ];
 const INCOMPLETE_HINT = 'Regel unvollständig – bitte Rhythmus wählen.';
 
@@ -727,15 +730,15 @@ function withoutFields(rows, fields) {
 
 /**
  * A snapshot without the columns of "Jeden Termin einzeln anlegen" (plan OR-5, migration
- * 1790202200) and of the trash (ADR-0037, 1790202300): the tests of earlier migrations run them
- * along with `up`.
+ * 1790202200), of the trash (ADR-0037, 1790202300) and of "Status beim Anlegen" (plan WV,
+ * 1790202500): the tests of earlier migrations run them along with `up`.
  */
 function withoutLater(snap) {
 	return {
 		...snap,
 		users: snap.users === null ? null : withoutFields(snap.users, TRASH_USER_FIELDS),
 		tickets: snap.tickets === null ? null : withoutFields(snap.tickets, LATER_TICKET_FIELDS),
-		recurrence_rules: snap.recurrence_rules === null ? null : withoutFields(snap.recurrence_rules, EACH_RULE_FIELDS)
+		recurrence_rules: snap.recurrence_rules === null ? null : withoutFields(snap.recurrence_rules, LATER_RULE_FIELDS)
 	};
 }
 
@@ -779,10 +782,16 @@ function withoutOwnInboxChannels(collection) {
 	};
 }
 
+/** A collection without the field of "Status beim Anlegen" (plan WV, 1790202500). */
+function withoutStatusField(collection) {
+	if (collection.name !== 'recurrence_rules') return collection;
+	return { ...collection, fields: collection.fields.filter((field) => !STATUS_RULE_FIELDS.includes(field.name)) };
+}
+
 /**
  * A collection without the fields, indexes and rule conditions of the migrations 1790202200
- * (plan OR-5), 1790202300 (trash, ADR-0037) and without the channels of 1790202400 (own inbox,
- * ADR-0038; its collection leaves with `withoutLaterCollections`).
+ * (plan OR-5), 1790202300 (trash, ADR-0037), 1790202500 (plan WV) and without the channels of
+ * 1790202400 (own inbox, ADR-0038; its collection leaves with `withoutLaterCollections`).
  */
 function withoutLaterSchema(collection) {
 	const plain = withoutOwnInboxChannels(withoutTrashRules(collection));
@@ -794,7 +803,7 @@ function withoutLaterSchema(collection) {
 		};
 	}
 	if (collection.name === 'recurrence_rules') {
-		return { ...plain, fields: collection.fields.filter((field) => !EACH_RULE_FIELDS.includes(field.name)) };
+		return { ...plain, fields: collection.fields.filter((field) => !LATER_RULE_FIELDS.includes(field.name)) };
 	}
 	if (collection.name === 'users') {
 		return { ...plain, fields: collection.fields.filter((field) => !TRASH_USER_FIELDS.includes(field.name)) };
@@ -929,6 +938,7 @@ describe('migration rollback of E5 (package 2)', () => {
 const EACH_MIGRATION = '1790202200_recurrence_each_occurrence.js';
 const TRASH_MIGRATION = '1790202300_tickets_trash.js';
 const OWN_INBOX_MIGRATION = '1790202400_inbox_keys.js';
+const STATUS_MIGRATION = '1790202500_recurrence_initial_status.js';
 
 describe('migration rollback of "Jeden Termin einzeln anlegen" (plan OR-5)', () => {
 	const ticketsOf = (dataDir) =>
@@ -974,9 +984,10 @@ describe('migration rollback of "Jeden Termin einzeln anlegen" (plan OR-5)', () 
 		'adds the switch, the date of the series and the new index without changing a row, and back',
 		async () => {
 			// The trash (ADR-0037, 1790202300) follows and runs along; it adds deleted_at = '' to the
-			// condition of the index. The own inbox (ADR-0038, 1790202400) runs along as well.
+			// condition of the index. The own inbox (ADR-0038, 1790202400) and "Status beim Anlegen"
+			// (plan WV, 1790202500) run along as well.
 			const fromEach = MIGRATION_FILES.slice(MIGRATION_FILES.indexOf(EACH_MIGRATION));
-			expect(fromEach).toEqual([EACH_MIGRATION, TRASH_MIGRATION, OWN_INBOX_MIGRATION]);
+			expect(fromEach).toEqual([EACH_MIGRATION, TRASH_MIGRATION, OWN_INBOX_MIGRATION, STATUS_MIGRATION]);
 
 			await withTempDataDir(async ({ dataDir, args }) => {
 				await migrate(args, 'up');
@@ -1106,9 +1117,10 @@ describe('migration rollback of the trash (ADR-0037)', () => {
 	it(
 		'adds the fields, the index condition and the rule conditions without changing a row, and deletes the trash on the way back',
 		async () => {
-			// The own inbox (ADR-0038, 1790202400) follows and runs along; it changes no row here.
+			// The own inbox (ADR-0038, 1790202400) and "Status beim Anlegen" (plan WV, 1790202500)
+			// follow and run along; they change no row here.
 			const fromTrash = MIGRATION_FILES.slice(MIGRATION_FILES.indexOf(TRASH_MIGRATION));
-			expect(fromTrash).toEqual([TRASH_MIGRATION, OWN_INBOX_MIGRATION]);
+			expect(fromTrash).toEqual([TRASH_MIGRATION, OWN_INBOX_MIGRATION, STATUS_MIGRATION]);
 
 			await withTempDataDir(async ({ dataDir, args }) => {
 				await migrate(args, 'up');
@@ -1194,8 +1206,9 @@ describe('migration rollback of the own inbox (ADR-0038)', () => {
 	it(
 		'adds the keys and the two channels without changing a row, and keeps the content of new entries on the way back',
 		async () => {
+			// "Status beim Anlegen" (plan WV, 1790202500) follows and runs along; it changes no row.
 			const fromOwn = MIGRATION_FILES.slice(MIGRATION_FILES.indexOf(OWN_INBOX_MIGRATION));
-			expect(fromOwn).toEqual([OWN_INBOX_MIGRATION]);
+			expect(fromOwn).toEqual([OWN_INBOX_MIGRATION, STATUS_MIGRATION]);
 
 			await withTempDataDir(async ({ dataDir, args }) => {
 				await migrate(args, 'up');
@@ -1215,7 +1228,9 @@ describe('migration rollback of the own inbox (ADR-0038)', () => {
 				});
 				expect(withDatabase(dataDir, snapshot)).toEqual(before);
 				expect(
-					withoutLaterCollections(withoutTimestamps(readDataDir(dataDir).collections)).map(withoutOwnInboxChannels)
+					withoutLaterCollections(withoutTimestamps(readDataDir(dataDir).collections))
+						.map(withoutOwnInboxChannels)
+						.map(withoutStatusField)
 				).toEqual(schemaBefore);
 
 				// Entries, a ticket, keyword lists and a key of the own inbox, then back.
@@ -1240,7 +1255,7 @@ describe('migration rollback of the own inbox (ADR-0038)', () => {
 				const withNew = withDatabase(dataDir, snapshot);
 
 				const down = await migrate(args, 'down', String(fromOwn.length));
-				expect(appliedFiles(down, 'Reverted')).toEqual(fromOwn);
+				expect(appliedFiles(down, 'Reverted')).toEqual([...fromOwn].reverse());
 				expect(collectionOf(dataDir, 'inbox_keys')).toBeUndefined();
 				expect(channelValues(dataDir)).toEqual({ inbox_items: OLD_VALUES, tickets: OLD_VALUES });
 				expect(withoutTimestamps(readDataDir(dataDir).collections)).toEqual(schemaBefore);
@@ -1259,6 +1274,89 @@ describe('migration rollback of the own inbox (ADR-0038)', () => {
 
 				expect(appliedFiles(await migrate(args, 'up'), 'Applied')).toEqual(fromOwn);
 				assertSchema(readDataDir(dataDir).collections);
+			});
+		},
+		60_000
+	);
+});
+
+describe('migration rollback of "Status beim Anlegen" (plan WV, ADR-0022 addendum 8)', () => {
+	const OWNER = 'user00000000001';
+	const SCOPE = 'u:user00000000001';
+	const day = (date) => `${date} 00:00:00.000Z`;
+	const statusField = (dataDir) =>
+		readDataDir(dataDir)
+			.collections.find((collection) => collection.name === 'recurrence_rules')
+			.fields.find((field) => field.name === 'initial_status');
+	const insertTicket = (db, id, number, status) =>
+		db
+			.prepare(
+				'INSERT INTO tickets (id, number, key, title, status, priority, due, recurrence, scope, owner, created, updated) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+			)
+			.run(id, number, `TASK-${number}`, 'Müll', status, 'high', day('2026-09-28'), 'rule00000000001', SCOPE, OWNER, STAMP, STAMP);
+
+	/** A rule with a done instance, as before the field. */
+	function insertData(db) {
+		db.prepare('INSERT INTO users (id, email, tokenKey, password, created, updated) VALUES (?, ?, ?, ?, ?, ?)').run(OWNER, 'eins@example.invalid', 'tk1', 'hash', STAMP, STAMP);
+		db.prepare(
+			'INSERT INTO recurrence_rules (id, title, priority, mode, freq, interval, weekdays, anchor, lead_days, next_due, active, scope, owner, created, updated) ' +
+				'VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+		).run('rule00000000001', 'Müll', 'high', 'calendar', 'weekly', 1, '["MO"]', day('2026-09-21'), 3, day('2026-10-05'), 1, SCOPE, OWNER, STAMP, STAMP);
+		insertTicket(db, 'ticket000000001', 1, 'done');
+	}
+
+	it(
+		'adds the field without changing a row, and the tickets made with it keep their status on the way back',
+		async () => {
+			const fromStatus = MIGRATION_FILES.slice(MIGRATION_FILES.indexOf(STATUS_MIGRATION));
+			expect(fromStatus).toEqual([STATUS_MIGRATION]);
+
+			await withTempDataDir(async ({ dataDir, args }) => {
+				await migrate(args, 'up');
+				await migrate(args, 'down', String(fromStatus.length));
+				expect(statusField(dataDir)).toBeUndefined();
+				withDatabase(dataDir, insertData);
+				const before = withDatabase(dataDir, snapshot);
+				const schemaBefore = withoutTimestamps(readDataDir(dataDir).collections);
+
+				const up = await migrate(args, 'up');
+				expect(appliedFiles(up, 'Applied')).toEqual(fromStatus);
+				assertSchema(readDataDir(dataDir).collections);
+				expect(statusField(dataDir)).toMatchObject({
+					type: 'select',
+					required: false,
+					values: ['backlog', 'open', 'in_progress', 'waiting'],
+					maxSelect: 1
+				});
+				expect(withoutTimestamps(readDataDir(dataDir).collections).map(withoutStatusField)).toEqual(schemaBefore);
+				// No row changes: the rule of before has an empty status, which the hooks read as "open".
+				const migrated = withDatabase(dataDir, snapshot);
+				expect(withoutFields(migrated.recurrence_rules, STATUS_RULE_FIELDS)).toEqual(before.recurrence_rules);
+				expect(migrated.recurrence_rules.map((rule) => rule.initial_status)).toEqual(['']);
+				expect(migrated.tickets).toEqual(before.tickets);
+				// "done" is no value of the field.
+				expect(statusField(dataDir).values).not.toContain('done');
+
+				// The template says "waiting", and the next ticket was made with it.
+				withDatabase(dataDir, (db) => {
+					db.prepare('UPDATE recurrence_rules SET initial_status = ? WHERE id = ?').run('waiting', 'rule00000000001');
+					insertTicket(db, 'ticket000000002', 2, 'waiting');
+				});
+				const withStatus = withDatabase(dataDir, snapshot);
+
+				const down = await migrate(args, 'down', String(fromStatus.length));
+				expect(appliedFiles(down, 'Reverted')).toEqual([...fromStatus].reverse());
+				expect(withoutTimestamps(readDataDir(dataDir).collections)).toEqual(schemaBefore);
+				const reverted = withDatabase(dataDir, snapshot);
+				// The field goes with its value; the rule makes "open" tickets again (the hooks read no
+				// field), the ticket made meanwhile stays "waiting".
+				expect(reverted.recurrence_rules).toEqual(withoutFields(withStatus.recurrence_rules, STATUS_RULE_FIELDS));
+				expect(reverted.tickets).toEqual(withStatus.tickets);
+				expect(reverted.tickets.map((ticket) => ticket.status)).toEqual(['done', 'waiting']);
+
+				expect(appliedFiles(await migrate(args, 'up'), 'Applied')).toEqual(fromStatus);
+				assertSchema(readDataDir(dataDir).collections);
+				expect(withDatabase(dataDir, snapshot).recurrence_rules.map((rule) => rule.initial_status)).toEqual(['']);
 			});
 		},
 		60_000

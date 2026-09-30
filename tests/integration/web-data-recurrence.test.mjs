@@ -15,6 +15,10 @@ import {
   itemSuggestion,
   suggestionFormValues,
 } from "../../web/src/lib/domain/rrule.ts";
+import {
+  templateBody,
+  ticketTemplate,
+} from "../../web/src/lib/domain/series-template.ts";
 import { DataError } from "../../web/src/lib/data/errors.ts";
 import { createItem, getItem } from "../../web/src/lib/data/inbox.ts";
 import {
@@ -22,6 +26,7 @@ import {
   deleteRule,
   detachTicket,
   eachOccurrenceReady,
+  initialStatusReady,
   listRules,
   setRuleActive,
   updateRule,
@@ -404,5 +409,149 @@ describe('web data layer: "Jeden Termin einzeln anlegen" (plan OR-5)', () => {
       updateRule(owner.client, rule.id, { mode: "after_completion", weekdays: [], each_occurrence: true }),
     );
     expect(refused.fields.each_occurrence?.code).toBe("validation_recurrence_each_mode");
+  });
+});
+
+// Plan WV, the report of the user: "Wiederholungen erstellen das Folgeticket mit falscher Priorität
+// (offen, statt derzeit ausgewähltem Status …)". Every way a rule starts gives the values of its
+// ticket (or of the form) to the template and from there to the next ticket, since WV the status
+// as well. The template is a snapshot: a later change of the ticket stays with it until the
+// template takes it over ("Auch für künftige Tickets übernehmen" writes it with updateRule).
+describe("web data layer: from every way a rule starts to the next ticket (plan WV)", () => {
+  let superuser;
+
+  beforeAll(async () => {
+    superuser = await superuserClient();
+  });
+
+  /** After completion, every day, lead time 1: the next ticket appears right after completing. */
+  const soon = () =>
+    formParams({
+      ...defaultFormValues(null, berlinToday(Date.now())),
+      mode: "after_completion",
+      freq: "daily",
+      interval: "1",
+      leadDays: "1",
+    });
+
+  /** The open tickets of a rule, as the owner sees them. */
+  const openOf = (owner, ruleId) =>
+    owner.client.collection("tickets").getFullList({
+      filter: owner.client.filter("recurrence = {:rule} && status != 'done'", { rule: ruleId }),
+    });
+
+  async function templateTicket(owner, data = {}) {
+    const project = await owner.project(uniqueCode());
+    const tag = await owner.tag(`t-${uniqueCode()}`);
+    const ticket = await createTicket(owner.client, {
+      title: "Filter wechseln",
+      description: "Dunstabzug, **beide** Filter",
+      status: "in_progress",
+      priority: "urgent",
+      due: null,
+      project: project.id,
+      tags: [tag.id],
+      ...data,
+    });
+    return { ticket, project, tag };
+  }
+
+  it('"Wiederholen…" and "Neues Ticket" with "Wiederholen": the next ticket has the values of the ticket', async () => {
+    const owner = await createOwner(superuser);
+    const { ticket, project, tag } = await templateTicket(owner);
+    // The same draft as RecurrenceStore.repeat and repeatCreated send.
+    const rule = await createRule(owner.client, { ...templateBody(ticketTemplate(ticket)), ...soon() }, ticket.id);
+    expect(rule).toMatchObject({
+      title: "Filter wechseln",
+      description: "Dunstabzug, **beide** Filter",
+      priority: "urgent",
+      projectId: project.id,
+      tagIds: [tag.id],
+      initialStatus: "in_progress",
+    });
+
+    await updateTicket(owner.client, ticket.id, { status: "done" });
+    const [next] = await openOf(owner, rule.id);
+    expect(next).toMatchObject({
+      title: "Filter wechseln",
+      description: "Dunstabzug, **beide** Filter",
+      priority: "urgent",
+      status: "in_progress",
+      project: project.id,
+      tags: [tag.id],
+    });
+  });
+
+  it('"Neue Regel": the first ticket has the values of the form', async () => {
+    const owner = await createOwner(superuser);
+    // The SPA offers "Status beim Anlegen" once the server knows it, without any rule.
+    expect(await initialStatusReady(owner.client)).toBe(true);
+    const project = await owner.project(uniqueCode());
+    const today = berlinToday(Date.now());
+    const rule = await createRule(
+      owner.client,
+      draft({
+        project: project.id,
+        priority: "low",
+        initial_status: "backlog",
+        freq: "daily",
+        weekdays: [],
+        anchor: today,
+        lead_days: 0,
+      }),
+    );
+    expect(rule).toMatchObject({ priority: "low", initialStatus: "backlog" });
+    const [first] = await openOf(owner, rule.id);
+    expect(first).toMatchObject({
+      title: "Müll rausbringen",
+      priority: "low",
+      status: "backlog",
+      project: project.id,
+    });
+  });
+
+  it("a series from a calendar: the next ticket has the values of the converted ticket", async () => {
+    const owner = await createOwner(superuser);
+    const today = berlinToday(Date.now());
+    const outcome = await createItem(owner.client, {
+      channel: "ics",
+      kind: "event",
+      title: "Blumen gießen",
+      sourceRef: `uid-${uniqueCode()}@example.com`,
+      sourceDate: `${today} 10:00:00.000Z`,
+      sourceMeta: { rrule: "FREQ=DAILY" },
+    });
+    const values = suggestionFormValues(itemSuggestion(outcome.item, today).params);
+    const ticket = await createTicket(
+      owner.client,
+      { title: outcome.item.title, description: "", status: "backlog", priority: "high", due: null, project: null, tags: [] },
+      { origin: { sourceItem: outcome.item.id } },
+    );
+    const rule = await createRule(owner.client, { ...templateBody(ticketTemplate(ticket)), ...formParams(values) }, ticket.id);
+    expect(rule).toMatchObject({ priority: "high", initialStatus: "backlog" });
+
+    await updateTicket(owner.client, ticket.id, { status: "done" });
+    const [next] = await openOf(owner, rule.id);
+    expect(next).toMatchObject({ title: "Blumen gießen", priority: "high", status: "backlog", source: "" });
+  });
+
+  it("keeps the template as set up until the change of a ticket is taken over", async () => {
+    const owner = await createOwner(superuser);
+    const { ticket } = await templateTicket(owner, { priority: "medium", status: "open" });
+    const rule = await createRule(owner.client, { ...templateBody(ticketTemplate(ticket)), ...soon() }, ticket.id);
+
+    // Changed at the ticket after setting up: only this ticket (the snapshot of the template).
+    await updateTicket(owner.client, ticket.id, { priority: "high" });
+    await updateTicket(owner.client, ticket.id, { status: "done" });
+    const [second] = await openOf(owner, rule.id);
+    expect(second).toMatchObject({ priority: "medium", status: "open" });
+
+    // "Auch für künftige Tickets übernehmen" writes the changed field into the template.
+    await updateTicket(owner.client, second.id, { priority: "high" });
+    const taken = await updateRule(owner.client, rule.id, { priority: "high" });
+    expect(taken.priority).toBe("high");
+    await updateTicket(owner.client, second.id, { status: "done" });
+    const [third] = await openOf(owner, rule.id);
+    expect(third).toMatchObject({ priority: "high", status: "open" });
   });
 });

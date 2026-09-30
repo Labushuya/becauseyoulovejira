@@ -24,6 +24,7 @@ import {
 } from './recurrence';
 import { formatCalendarDate } from './format';
 import { dayLabel, joinWords, recurrenceTextInSentence, shortDate } from './recurrence-text';
+import type { TemplateStatus } from './series-template';
 import type { Priority } from './status';
 
 /** A rule as the data layer maps it (ADR-0021 section 1). */
@@ -55,6 +56,12 @@ export interface RecurrenceRule {
 	 * or not; false as well before the migration. Optional so that rules built by hand stay valid.
 	 */
 	eachOccurrence?: boolean;
+	/**
+	 * "Status beim Anlegen" of the template (plan WV, ADR-0022 addendum 8): the status the next
+	 * tickets start with; "open" before the migration and for older rules. Optional so that rules
+	 * built by hand stay valid (absent counts as "open").
+	 */
+	initialStatus?: TemplateStatus;
 	created: string;
 	updated: string;
 }
@@ -232,7 +239,9 @@ export const RECURRENCE_MESSAGES: Readonly<Record<string, string>> = Object.free
 		'„Jeden Termin einzeln anlegen“ gibt es nur bei einem festen Rhythmus.',
 	validation_recurrence_backlog: 'Bitte „Alle nachholen“ oder „Nur ab heute“ wählen.',
 	validation_recurrence_reopen_older:
-		'Von dieser Serie ist schon ein anderes Ticket offen, und dieses Ticket ist nicht das zuletzt erledigte. Du kannst es als normales Ticket wieder öffnen (aus der Serie lösen).'
+		'Von dieser Serie ist schon ein anderes Ticket offen, und dieses Ticket ist nicht das zuletzt erledigte. Du kannst es als normales Ticket wieder öffnen (aus der Serie lösen).',
+	validation_recurrence_initial_status:
+		'Als „Status beim Anlegen“ geht jeder Status außer „Erledigt“.'
 });
 
 /**
