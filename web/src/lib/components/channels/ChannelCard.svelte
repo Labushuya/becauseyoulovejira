@@ -9,11 +9,24 @@
 		/** The link opens an assistant in the address: keep focus and scroll, replace the entry. */
 		inPlace?: boolean;
 	}
+
+	/**
+	 * Renaming in the card (ADR-0026, addendum KK-3): the configuration puts "Umbenennen …" into its
+	 * menu and calls `startRename` of the card; the name in the header then becomes a field.
+	 */
+	export interface CardRename {
+		/** Names of the other cards of the list: the same name is allowed, with a neutral note. */
+		others: readonly string[];
+		/** Saves the new name; resolves to the error text for the field, or null once it is saved. */
+		save: (label: string) => Promise<string | null>;
+	}
 </script>
 
 <script lang="ts">
-	import type { Snippet } from 'svelte';
+	import { tick, type Snippet } from 'svelte';
+	import { labelError, sameLabelHint } from '$lib/domain/connections';
 	import ActionsMenu from '../ActionsMenu.svelte';
+	import ErrorIcon from '../ErrorIcon.svelte';
 	import Lozenge from '../guidance/Lozenge.svelte';
 	import SectionMessage from '../guidance/SectionMessage.svelte';
 	import ChannelIcon, { type ChannelIconKind } from './ChannelIcon.svelte';
@@ -26,7 +39,9 @@
 	// mailbox), NotionCard, OwnInboxCard, WhatsAppWebCard and FilesCard. Actions that belong to one
 	// entry of the details ("Widerrufen …" of a key, "Erneut abrufen" of a source) stand at that
 	// entry. Every action names the card for screen readers; the state is text. The card is
-	// opaque like every card (ADR-0029); only the menu is glass.
+	// opaque like every card (ADR-0029); only the menu is glass. A card with `rename` can rename
+	// its connection in place (KK-3): no dialog, Enter or "Speichern" saves, Esc or "Abbrechen"
+	// goes back, and the focus returns to "•••".
 	let {
 		icon,
 		title,
@@ -40,7 +55,8 @@
 		primary,
 		menu = [],
 		details,
-		anchor
+		anchor,
+		rename = null
 	}: {
 		icon: ChannelIconKind;
 		/** Name of the card (heading). */
@@ -70,17 +86,92 @@
 		 * which every card allows by script (tabindex -1), never by Tab.
 		 */
 		anchor?: string;
+		/** Renaming in the card; null for cards without a name of their own. */
+		rename?: CardRename | null;
 	} = $props();
 
 	const uid = $props.id();
 	const headingId = `${uid}-name`;
 	const detailsId = `${uid}-details`;
+	const renameIds = {
+		input: `${uid}-rename`,
+		error: `${uid}-rename-error`,
+		hint: `${uid}-rename-hint`
+	};
 
 	let open = $state(false);
+	let renaming = $state(false);
+	let draft = $state('');
+	let renameError = $state<string | null>(null);
+	let saving = $state(false);
+	let nameInput = $state<HTMLInputElement>();
+	let menuButton = $state<HTMLButtonElement>();
+
+	const sameName = $derived(
+		rename === null || !renaming ? null : sameLabelHint(draft, rename.others)
+	);
+	const describedBy = $derived(
+		[renameError === null ? '' : renameIds.error, sameName === null ? '' : renameIds.hint]
+			.filter((id) => id !== '')
+			.join(' ') || undefined
+	);
 
 	function run(action: CardAction) {
 		if (action.busy || action.locked) return;
 		action.onselect?.();
+	}
+
+	/** "Umbenennen …": the name in the header becomes a field with the current name chosen. */
+	export async function startRename(): Promise<void> {
+		if (rename === null || renaming) return;
+		draft = title;
+		renameError = null;
+		renaming = true;
+		await tick();
+		nameInput?.focus();
+		nameInput?.select();
+	}
+
+	async function endRename() {
+		renaming = false;
+		renameError = null;
+		await tick();
+		menuButton?.focus();
+	}
+
+	async function saveRename(event: SubmitEvent) {
+		event.preventDefault();
+		if (rename === null || saving) return;
+		const invalid = labelError(draft);
+		if (invalid !== null) {
+			renameError = invalid;
+			nameInput?.focus();
+			return;
+		}
+		// The same name again: nothing to save.
+		if (draft.trim() === title) {
+			await endRename();
+			return;
+		}
+		saving = true;
+		try {
+			const error = await rename.save(draft);
+			if (error === null) {
+				await endRename();
+				return;
+			}
+			renameError = error;
+			nameInput?.focus();
+		} finally {
+			saving = false;
+		}
+	}
+
+	function onRenameKeydown(event: KeyboardEvent) {
+		if (event.key !== 'Escape' || saving) return;
+		event.preventDefault();
+		event.stopPropagation();
+		void endRename();
 	}
 </script>
 
@@ -94,7 +185,57 @@
 	<header class="head">
 		<ChannelIcon kind={icon} />
 		<div class="names">
-			<h4 id={headingId}>{title}</h4>
+			{#if renaming}
+				<!-- The card keeps its name for screen readers while the field is open. -->
+				<h4 id={headingId} class="visually-hidden">{title}</h4>
+				<form
+					class="rename"
+					novalidate
+					aria-busy={saving ? 'true' : undefined}
+					onsubmit={saveRename}
+				>
+					<label class="visually-hidden" for={renameIds.input}>Neuer Name für „{title}“</label>
+					<input
+						id={renameIds.input}
+						type="text"
+						autocomplete="off"
+						bind:value={draft}
+						bind:this={nameInput}
+						aria-invalid={renameError === null ? undefined : 'true'}
+						aria-describedby={describedBy}
+						oninput={() => (renameError = null)}
+						onkeydown={onRenameKeydown}
+					/>
+					<span class="rename-actions">
+						<button
+							class="button-primary"
+							type="submit"
+							aria-disabled={saving ? 'true' : undefined}
+							aria-busy={saving ? 'true' : undefined}
+						>
+							{saving ? 'Wird gespeichert …' : 'Speichern'}
+						</button>
+						<button
+							class="button-subtle"
+							type="button"
+							aria-disabled={saving ? 'true' : undefined}
+							onclick={() => {
+								if (!saving) void endRename();
+							}}
+						>
+							Abbrechen
+						</button>
+					</span>
+					{#if renameError !== null}
+						<p class="field-error" id={renameIds.error}><ErrorIcon /><span>{renameError}</span></p>
+					{/if}
+					{#if sameName !== null}
+						<p class="rename-hint" id={renameIds.hint}>{sameName}</p>
+					{/if}
+				</form>
+			{:else}
+				<h4 id={headingId}>{title}</h4>
+			{/if}
 			<p class="kind">{subtitle}</p>
 		</div>
 		{#if status !== null}
@@ -166,6 +307,7 @@
 						label={`Weitere Aktionen für ${title}`}
 						buttonLabel={`Weitere Aktionen für ${title}`}
 						items={menu}
+						bind:trigger={menuButton}
 					/>
 				{/if}
 			</span>
@@ -211,6 +353,41 @@
 		font-size: var(--font-size-control);
 		color: var(--color-text-muted);
 		overflow-wrap: anywhere;
+	}
+
+	/* Renaming in the header (KK-3): the field takes the width of the name, the buttons follow. */
+	.rename {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 0.375rem 0.5rem;
+		align-items: center;
+		margin-bottom: 0.25rem;
+	}
+
+	.rename input {
+		flex: 1 1 10rem;
+		min-height: var(--control-height-m);
+		padding: 0.25rem 0.5rem;
+		font-size: var(--font-size-body);
+		font-weight: 600;
+		background: var(--color-surface);
+		border: 1px solid var(--color-text-muted);
+		border-radius: var(--radius-control);
+	}
+
+	.rename-actions {
+		display: inline-flex;
+		gap: 0.25rem;
+	}
+
+	.rename .field-error,
+	.rename-hint {
+		flex-basis: 100%;
+	}
+
+	.rename-hint {
+		font-size: var(--font-size-control);
+		color: var(--color-text-muted);
 	}
 
 	.info-line {

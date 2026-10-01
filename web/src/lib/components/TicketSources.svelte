@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { withConnectionName } from '$lib/domain/connections';
 	import type { InboxItemSummary } from '$lib/domain/inbox';
 	import {
 		COPY_LABELS,
@@ -11,6 +12,7 @@
 		type CopyCompleteness
 	} from '$lib/domain/sources';
 	import type { Ticket } from '$lib/domain/ticket';
+	import { findConnectionNames } from '$lib/stores/connection-names.svelte';
 	import type { TicketPickerSource } from '$lib/stores/ticket-picker.svelte';
 	import type { TicketSourcesStore } from '$lib/stores/ticket-sources.svelte';
 	import { insideModal } from '$lib/overlay/modal-context';
@@ -51,6 +53,8 @@
 	const headingId = `${uid}-heading`;
 	/** In the full view (a modal) both forms unfold inline instead of opening a dialog. */
 	const inline = insideModal();
+	/** Names of the connections (ADR-0026, addendum KK-3); outside the (app) layout none. */
+	const connectionNames = findConnectionNames();
 
 	let adding = $state(false);
 	let addButton = $state<HTMLButtonElement>();
@@ -134,7 +138,12 @@
 				<li class="source" aria-busy={store.isPending(item.id) ? 'true' : undefined}>
 					<div class="text">
 						<p class="line">
-							<span class="channel">{sourceChannelLabel(item)}</span>
+							<span class="channel"
+								>{withConnectionName(
+									sourceChannelLabel(item),
+									connectionNames?.nameOf(item.connectionId) ?? null
+								)}</span
+							>
 							<span class="when">{sourceWhen(item)}</span>
 							{#if main}
 								<span class="main">Hauptquelle</span>

@@ -63,6 +63,10 @@ function connectionsOf(item: Connection) {
 		list: vi.fn<ConnectionsData['list']>(async () => [item]),
 		create: vi.fn<ConnectionsData['create']>(),
 		setEnabled: vi.fn<ConnectionsData['setEnabled']>(),
+		rename: vi.fn<ConnectionsData['rename']>(async (_id, label) => ({
+			...item,
+			label: label.trim()
+		})),
 		saveSettings: vi.fn<ConnectionsData['saveSettings']>(),
 		remove: vi.fn<ConnectionsData['remove']>(),
 		secretStatus: vi.fn<ConnectionsData['secretStatus']>(async () => ({
@@ -222,7 +226,13 @@ describe('Notion card', () => {
 		expect(main.hasAttribute('data-card-primary')).toBe(true);
 		expect(main.getAttribute('aria-haspopup')).toBe('dialog');
 		const { menu, items } = notionMenu(card);
-		expect(items()).toEqual(['Verbindung prüfen', 'Einrichtung ansehen', 'Hilfe', 'Löschen …']);
+		expect(items()).toEqual([
+			'Verbindung prüfen',
+			'Umbenennen …',
+			'Einrichtung ansehen',
+			'Hilfe',
+			'Löschen …'
+		]);
 		expect(menu.getByRole('menuitem', { name: 'Hilfe', hidden: true }).getAttribute('href')).toBe(
 			'/einstellungen/hilfe#notion'
 		);

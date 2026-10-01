@@ -96,6 +96,10 @@ function setup(items: Connection[] = [CAL, BOT], statuses: Record<string, Secret
 			...(items.find((item) => item.id === id) as Connection),
 			enabled
 		})),
+		rename: vi.fn<ConnectionsData['rename']>(async (id, label) => ({
+			...(items.find((item) => item.id === id) as Connection),
+			label: label.trim()
+		})),
 		saveSettings: vi.fn<ConnectionsData['saveSettings']>(async (current, settings) => ({
 			...current,
 			keywords: settings.keywords,
@@ -1238,16 +1242,18 @@ describe('full scan of an inbox on the page (ADR-0020, addendum 3)', () => {
 
 	it('starts the scan from the menu, announces it and follows the progress through realtime', async () => {
 		const context = setup([CAL, MAILBOX]);
-		const listeners: Parameters<ConnectionsData['subscribe']>[1][] = [];
-		context.data.subscribe.mockImplementation(async (_id, onChange) => {
-			listeners.push(onChange);
+		const listeners = new Map<string, Parameters<ConnectionsData['subscribe']>[1]>();
+		context.data.subscribe.mockImplementation(async (id, onChange) => {
+			listeners.set(id, onChange);
 			return async () => undefined;
 		});
 		await context.store.load();
 		renderCards(context.store);
-		// Only mailboxes are watched.
-		await vi.waitFor(() => expect(context.data.subscribe).toHaveBeenCalledOnce());
-		expect(context.data.subscribe.mock.calls[0]?.[0]).toBe(MAILBOX.id);
+		// Every connection is watched (since KK-3 also for its name).
+		await vi.waitFor(() => expect(context.data.subscribe).toHaveBeenCalledTimes(2));
+		expect(context.data.subscribe.mock.calls.map((call) => call[0]).sort()).toEqual(
+			[CAL.id, MAILBOX.id].sort()
+		);
 		expect(card('Web.de').getByText('durchsucht: 10 Mails, 2 Einträge übernommen')).toBeTruthy();
 
 		await chooseFromMenu('Web.de', 'Posteingang neu durchsuchen');
@@ -1256,7 +1262,7 @@ describe('full scan of an inbox on the page (ADR-0020, addendum 3)', () => {
 			expect(latestFlag(context.flags)).toBe('„Web.de“: Der Posteingang wird durchsucht.')
 		);
 
-		listeners[0]?.({
+		listeners.get(MAILBOX.id)?.({
 			action: 'update',
 			record: {
 				...MAILBOX,
@@ -1292,5 +1298,152 @@ describe('full scan of an inbox on the page (ADR-0020, addendum 3)', () => {
 		context.data.scan.mockRejectedValueOnce(new DataError('network'));
 		await chooseFromMenu('Web.de', 'Posteingang neu durchsuchen');
 		await vi.waitFor(() => expect(card('Web.de').getByRole('alert')).toBeTruthy());
+	});
+});
+
+describe('renaming in the card (ADR-0026, addendum KK-3)', () => {
+	async function startRename(name: string) {
+		await chooseFromMenu(name, 'Umbenennen …');
+		const field = await vi.waitFor(() =>
+			screen.getByRole('textbox', { name: `Neuer Name für „${name}“` })
+		);
+		return field as HTMLInputElement;
+	}
+
+	it('offers "Umbenennen …" in the menu of every connection, before the setup', async () => {
+		const context = setup([CAL, BOT]);
+		await context.store.load();
+		renderCards(context.store);
+		for (const name of ['Google Kalender', 'Telegram-Bot']) {
+			const trigger = screen.getByRole('button', { name: `Weitere Aktionen für ${name}` });
+			const menu = within(document.getElementById(trigger.getAttribute('aria-controls') ?? '')!);
+			const items = menu
+				.getAllByRole('menuitem', { hidden: true })
+				.map((item) => item.textContent?.trim());
+			expect(items).toContain('Umbenennen …');
+			expect(items.indexOf('Umbenennen …')).toBe(items.indexOf('Einrichtung ansehen') - 1);
+			// Inline in the card, no dialog.
+			expect(
+				menu
+					.getByRole('menuitem', { name: 'Umbenennen …', hidden: true })
+					.hasAttribute('aria-haspopup')
+			).toBe(false);
+		}
+	});
+
+	it('renames inline with Enter: only the name goes to the server, the flag names both', async () => {
+		const context = setup([CAL, BOT]);
+		await context.store.load();
+		renderCards(context.store);
+		const field = await startRename('Google Kalender');
+		expect(document.activeElement).toBe(field);
+		expect(field.value).toBe('Google Kalender');
+		expect(field.selectionStart).toBe(0);
+		expect(field.selectionEnd).toBe('Google Kalender'.length);
+		await fireEvent.input(field, { target: { value: '  Familie  ' } });
+		await fireEvent.submit(field.closest('form') as HTMLFormElement);
+		await vi.waitFor(() => expect(screen.getByRole('article', { name: 'Familie' })).toBeTruthy());
+		expect(context.data.rename).toHaveBeenCalledWith(CAL.id, '  Familie  ');
+		expect(context.data.saveSettings).not.toHaveBeenCalled();
+		expect(context.data.setEnabled).not.toHaveBeenCalled();
+		expect(latestFlag(context.flags)).toBe('„Google Kalender“ heißt jetzt „Familie“.');
+		// The focus goes back to the menu of the card.
+		await vi.waitFor(() =>
+			expect(document.activeElement).toBe(
+				screen.getByRole('button', { name: 'Weitere Aktionen für Familie' })
+			)
+		);
+	});
+
+	it('cancels with Escape or "Abbrechen" and sends nothing', async () => {
+		const context = setup([CAL]);
+		await context.store.load();
+		renderCards(context.store);
+		const field = await startRename('Google Kalender');
+		await fireEvent.input(field, { target: { value: 'Anders' } });
+		await fireEvent.keyDown(field, { key: 'Escape' });
+		await vi.waitFor(() =>
+			expect(screen.queryByRole('textbox', { name: /Neuer Name/ })).toBeNull()
+		);
+		expect(card('Google Kalender')).toBeTruthy();
+		await vi.waitFor(() =>
+			expect(document.activeElement).toBe(
+				screen.getByRole('button', { name: 'Weitere Aktionen für Google Kalender' })
+			)
+		);
+		await startRename('Google Kalender');
+		await fireEvent.click(card('Google Kalender').getByRole('button', { name: 'Abbrechen' }));
+		await vi.waitFor(() =>
+			expect(screen.queryByRole('textbox', { name: /Neuer Name/ })).toBeNull()
+		);
+		expect(context.data.rename).not.toHaveBeenCalled();
+	});
+
+	it('says what is wrong at the field, notes a name that is taken, and keeps the same name without a request', async () => {
+		const context = setup([CAL, BOT]);
+		await context.store.load();
+		renderCards(context.store);
+		const field = await startRename('Google Kalender');
+		await fireEvent.input(field, { target: { value: '   ' } });
+		await fireEvent.submit(field.closest('form') as HTMLFormElement);
+		expect(field.getAttribute('aria-invalid')).toBe('true');
+		const error = document.getElementById(field.getAttribute('aria-describedby') ?? '');
+		expect(error?.textContent).toBe('Bitte einen Namen eingeben.');
+		expect(error?.classList.contains('field-error')).toBe(true);
+		await fireEvent.input(field, { target: { value: 'x'.repeat(101) } });
+		expect(field.hasAttribute('aria-invalid')).toBe(false);
+		await fireEvent.submit(field.closest('form') as HTMLFormElement);
+		expect(document.getElementById(field.getAttribute('aria-describedby') ?? '')?.textContent).toBe(
+			'Höchstens 100 Zeichen.'
+		);
+		// The name of another connection is allowed, with a neutral note (not red).
+		await fireEvent.input(field, { target: { value: 'telegram-bot' } });
+		const hint = screen.getByText(/^Eine andere Verbindung heißt auch so\./);
+		expect(hint.classList.contains('field-error')).toBe(false);
+		expect(field.getAttribute('aria-describedby')).toBe(hint.id);
+		// The same name again closes without a request.
+		await fireEvent.input(field, { target: { value: 'Google Kalender' } });
+		await fireEvent.submit(field.closest('form') as HTMLFormElement);
+		await vi.waitFor(() =>
+			expect(screen.queryByRole('textbox', { name: /Neuer Name/ })).toBeNull()
+		);
+		expect(context.data.rename).not.toHaveBeenCalled();
+	});
+
+	it('shows a refusal of the server at the field and keeps the field open', async () => {
+		const context = setup([CAL]);
+		context.data.rename.mockRejectedValueOnce(
+			new DataError('validation', {
+				status: 400,
+				fields: {
+					label: { code: 'validation_connection_label_max', message: 'Höchstens 100 Zeichen.' }
+				}
+			})
+		);
+		await context.store.load();
+		renderCards(context.store);
+		const field = await startRename('Google Kalender');
+		await fireEvent.input(field, { target: { value: 'Neu' } });
+		await fireEvent.submit(field.closest('form') as HTMLFormElement);
+		await vi.waitFor(() => expect(field.getAttribute('aria-invalid')).toBe('true'));
+		expect(screen.getByText('Höchstens 100 Zeichen.')).toBeTruthy();
+		expect(card('Google Kalender')).toBeTruthy();
+	});
+
+	it('takes a name changed in another tab through realtime', async () => {
+		const context = setup([CAL]);
+		const listeners = new Map<string, Parameters<ConnectionsData['subscribe']>[1]>();
+		context.data.subscribe.mockImplementation(async (id, onChange) => {
+			listeners.set(id, onChange);
+			return async () => undefined;
+		});
+		await context.store.load();
+		renderCards(context.store);
+		await vi.waitFor(() => expect(listeners.has(CAL.id)).toBe(true));
+		listeners.get(CAL.id)?.({
+			action: 'update',
+			record: { ...CAL, label: 'Arbeit', updated: '2026-10-01 12:00:00.000Z' }
+		});
+		await vi.waitFor(() => expect(screen.getByRole('article', { name: 'Arbeit' })).toBeTruthy());
 	});
 });

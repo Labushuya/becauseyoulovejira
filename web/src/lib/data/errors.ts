@@ -3,6 +3,7 @@
 // root integration tests and the web app each load their own copy of the SDK.
 
 import { PIN_MESSAGES } from '../domain/comments';
+import { CONNECTION_LABEL_MESSAGES } from '../domain/connections';
 import { DUPLICATE_MESSAGES } from '../domain/duplicate';
 import { INBOX_KEY_MESSAGES } from '../domain/inbox-keys';
 import { PROJECT_PARENT_MESSAGES } from '../domain/project-tree';
@@ -78,6 +79,8 @@ const FIELD_MESSAGES: Readonly<Record<string, string>> = Object.freeze({
 	validation_connection_server_field: 'Dieses Feld setzt nur der Server.',
 	validation_connection_settings: 'Unbekannte Einstellung.',
 	validation_keywords: 'Stichwörter: höchstens 50, je 1 bis 100 Zeichen, ohne Zeilenumbruch.',
+	// The name of a connection (ADR-0026, addendum KK-3), the same texts as the hook.
+	...CONNECTION_LABEL_MESSAGES,
 	// Recurrence rules (ADR-0021 to ADR-0023; E5 plan, package 4), the same texts as the hook.
 	...RECURRENCE_MESSAGES,
 	// Sub-tasks (ADR-0033), the same texts as the hook.

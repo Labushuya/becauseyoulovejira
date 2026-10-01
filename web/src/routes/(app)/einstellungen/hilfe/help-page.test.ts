@@ -117,6 +117,12 @@ describe('help page (EH-9)', () => {
 		);
 		expect(content).toMatch(/steht nicht mehr auf „Einrichtung offen“/);
 		expect(content).not.toMatch(/Nicht eingerichtet/);
+		// Renaming in the card (ADR-0026, addendum KK-3).
+		expect(content).toMatch(/„Umbenennen …“ macht den Namen oben in der Karte zum Textfeld/);
+		expect(content).toMatch(/ändert nur den Namen, nie Abruf, Zugangsdaten oder Stichwörter/);
+		expect(content).toMatch(
+			/Eigener Eingang, WhatsApp Web, Dateien und\s+Bookmarklet haben feste Namen/
+		);
 	});
 
 	it('answers the frequent questions in folded details', () => {

@@ -41,6 +41,8 @@ export const INBOX_LIST_FIELDS = [
 	'handled_at',
 	// Area of the entry: the ticket picker offers only tickets of the same area (ADR-0042).
 	'scope',
+	// The connection that brought the entry: panel and sources name it (ADR-0026, addendum KK-3).
+	'connection',
 	'created',
 	'updated',
 	// The ticket of a converted or linked entry (ADR-0031, addendum): key and title for the chip and
@@ -73,6 +75,7 @@ export interface InboxRecord {
 	ticket: string;
 	handled_at: string;
 	scope?: string;
+	connection?: string;
 	created: string;
 	updated: string;
 	expand?: { ticket?: InboxTicketRecord };
@@ -123,6 +126,7 @@ export function toInboxItemSummary(record: InboxRecord): InboxItemSummary {
 		ticket: ticketRefOf(record),
 		handledAt: record.handled_at || null,
 		...(record.scope ? { scope: record.scope } : {}),
+		...(record.connection ? { connectionId: record.connection } : {}),
 		created: record.created,
 		updated: record.updated
 	};

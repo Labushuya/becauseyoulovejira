@@ -1,6 +1,6 @@
 # Plan „Kanal-Karten vereinheitlichen“
 
-- **Stand:** KK-1 umgesetzt (2026-09-30, Branch `fix/locked-cursor`), KK-2 umgesetzt (2026-09-30, Branch `feat/channel-cards`). Keine Migration, kein Neustart (nur der Build der SPA, dann F5). Offen sind die manuellen Browser-Prüfungen BYL-E6-622, BYL-E6-627 und BYL-E6-628.
+- **Stand:** KK-1 umgesetzt (2026-09-30, Branch `fix/locked-cursor`), KK-2 umgesetzt (2026-09-30, Branch `feat/channel-cards`). Keine Migration, kein Neustart (nur der Build der SPA, dann F5). Offen sind die manuellen Browser-Prüfungen BYL-E6-622, BYL-E6-627 und BYL-E6-628. KK-3 (Kanäle umbenennen, 2026-10-01, Branch `feat/rename-channels`) umgesetzt: geänderte Hooks, also Neustart der App nötig, keine Migration; offen die manuelle Prüfung BYL-E6-854.
 - **Grundlage:** Spec des Nutzers vom 2026-09-30 („Vorschlag passt“): Darstellungen und Optionen der Kanal-Karten anpassen, ohne funktionale Einbußen in der Anzeige. Dazu zwei Befunde des Advisors: der Warte-Zeiger über gesperrten Knöpfen und „Andere Quelle“ im Notion-Import, das nicht links steht.
 - **Entscheidungen:** [ADR-0026](../adr/0026-einstellungsbereich-und-hinweis-bausteine.md), Nachträge vom 2026-09-30 (keine neue ADR). Bezüge: [ADR-0016](../adr/0016-kanal-architektur-und-mail.md) und [ADR-0020](../adr/0020-stichwoerter-pro-kanal.md) (Kanäle, Mail), [ADR-0025](../adr/0025-ui-konsistenz-overlay-system.md) (Menüs, Modal), [ADR-0029](../adr/0029-glas-materialien.md) (Glas), [ADR-0038](../adr/0038-eigener-eingang-und-whatsapp-web.md) (eigener Eingang, WhatsApp Web), [ADR-0041](../adr/0041-notion-listen-uebernehmen.md) (Notion samt Nachtrag), [CLAUDE.md](../../CLAUDE.md) §7 und §8, [Plan Layout-Überlauf](layout-ueberlauf.md).
 - **Einordnung:** Manifest-Block „Kanal-Karten“ ab `BYL-E6-620`.
@@ -11,6 +11,7 @@
 |---|---|---|
 | KK-1 | Mauszeiger „gesperrt“ und „beschäftigt“ app-weit, Fuß der Modals mit Knopf links | umgesetzt |
 | KK-2 | Ein Karten-Baustein für alle Kanäle: Kopfzeile, eine Infozeile, ein Hauptknopf, Menü „•••“, aufklappbare Details; Inventur alt → neu mit Test | umgesetzt |
+| KK-3 | Kanäle umbenennen: „Umbenennen …“ im Menü jeder Verbindung, inline in der Karte; Regeln im Hook; Name in Eingang und Quellen per Realtime | umgesetzt |
 
 ## 2. KK-1: Mauszeiger und Fuß der Modals
 
@@ -143,3 +144,34 @@ Texte, die auf Knöpfe der Karte verweisen, nennen jetzt das Menü „•••�
 - `web/src/lib/components/channels/channel-card.test.ts` (BYL-E6-626): Baustein (Menü, Details, beschäftigt und gesperrt, Link) und Karte einer Verbindung samt Uhr; angepasst `connections-page.test.ts`, `notion.test.ts`, `own-inbox-card.test.ts`, `whatsapp-web-setup.test.ts`; die Hilfe (`help-page.test.ts`) beschreibt den Aufbau.
 - Manuell BYL-E6-627 und BYL-E6-628: Aussehen, schmale Fenster, Tastatur und NVDA.
 - Die Listen `no-own-font-sizes` (14 Werte weniger, 158 → 144; `ChannelCard` und `BookmarkletCard` sind herunter) und `no-own-radii` (`ConnectionsSection` ist herunter) sind geschrumpft.
+
+## 4. KK-3: Kanäle umbenennen
+
+Nutzerwunsch vom 2026-10-01: „Es sollte auch möglich sein, Kanäle nachträglich jederzeit umbenennen zu können.“ Entscheidung im Nachtrag „KK-3“ zu [ADR-0026](../adr/0026-einstellungsbereich-und-hinweis-bausteine.md), Regeln des Servers im Nachtrag „Name einer Verbindung“ zu [ADR-0016](../adr/0016-kanal-architektur-und-mail.md).
+
+### 4.1 Welche Karten
+
+| Karte | Umbenennen | Grund |
+|---|---|---|
+| Google Calendar, Telegram-Bot, Postfach (Web.de, Gmail) | ja, „Umbenennen …“ im Menü vor „Einrichtung ansehen“ | Verbindung mit eigenem Namen (`connections.label`) |
+| Notion | ja, nach „Verbindung prüfen“ | ebenso |
+| Eigener Eingang (API), WhatsApp Web, Dateien, Bookmarklet | nein | feste Wege der App ohne gespeicherten Namen; ihr Name ist der Name des Kanals in Eingang, Chips, Filtern, Hilfe und Assistent. Ein eigener Name bräuchte ein neues Feld (Migration). |
+
+### 4.2 Umsetzung
+
+| Teil | Inhalt |
+|---|---|
+| Hook | `connection-rules.js`: `labelViolation` (nach dem Kürzen nicht leer, höchstens 100 Zeichen), `renameViolation` (mit neuem Namen ändert sich nichts anderes: `RENAME_KEEPS` und die Felder des Servers, Einstellungen als gespeicherter JSON-Text), `normalizeLabel`. `connection-service.js`: prüft beides bei Anfragen eines Nutzers, speichert den Namen ohne Leerraum am Rand. |
+| Datenschicht | `renameConnection` (nur `label`), `listConnectionNames`, `subscribeConnectionNames` (nur `id` und `label`); Einträge des Eingangs tragen `connectionId`. Texte der Codes `CONNECTION_LABEL_MESSAGES` in `domain/connections.ts`, gleich dem Hook. |
+| Stores | `ConnectionsStore.rename` (Flag „„Alt“ heißt jetzt „Neu“.“, Fehler als Text für das Feld); `ConnectionNamesStore` im `(app)`-Layout (einmal laden, Realtime, nach einer Wiederverbindung neu laden). |
+| Karte | `ChannelCard` mit `rename` (`CardRename`) und `startRename()`: Feld statt Name in der Kopfzeile, „Speichern“, „Abbrechen“, Enter, Esc, Feldfehler, neutraler Hinweis bei gleichem Namen, Fokus zurück auf „•••“. `ConnectionCard` und `NotionCard` mit `onrename` und `others`. |
+| Seite „Kanäle“ | `ConnectionsSection` verbindet das Umbenennen und beobachtet jetzt jede Verbindung per Realtime (bisher nur Postfächer). |
+| Eingang und Ticket | Zeile „Quelle“ im Panel und Kanal in „Quellen“ mit Namen: `withConnectionName` („Postfach · Gmail Arbeit“; gleiches Wort nur einmal). Chips und Filter bleiben bei den Familien (ADR-0019). |
+| Hilfe | „Kanäle und Zugangsdaten“: Umbenennen, Grenzen, was gleich bleibt, welche Karten feste Namen haben. |
+
+### 4.3 Tests
+
+- Unit: `tests/unit/connection-rules.test.mjs` (Name, nur der Name), `tests/unit/web-connections.test.mjs` (Grenze und Texte gleich dem Hook), `web/src/lib/domain/connection-name.test.ts`, `web/src/lib/stores/connection-names.test.ts` (BYL-E6-850, BYL-E6-853).
+- Integration: `tests/integration/connections.test.mjs` (nur der Name ändert sich, Ablehnungen, Rechte im Haushalt, Realtime, Datenschicht) (BYL-E6-851).
+- Komponenten: `connections-page.test.ts` (Menü, Enter, Esc, „Abbrechen“, Feldfehler, Hinweis, Ablehnung des Servers, anderer Tab), `channel-cards-inventory.test.ts` (nur Verbindungen), `inbox-panel.test.ts`, `ticket-sources.test.ts`, `help-page.test.ts` (BYL-E6-852, BYL-E6-853).
+- Manuell BYL-E6-854: alle Kartenarten im Browser, Tastatur und NVDA, zweiter Tab, Eingang und Quellen.

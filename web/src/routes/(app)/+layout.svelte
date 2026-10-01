@@ -23,6 +23,11 @@
 	import { CatalogStore, catalogData, setCatalogStore } from '$lib/stores/catalog.svelte';
 	import { ColumnPrefsRegistry, setColumnPrefsRegistry } from '$lib/stores/column-prefs.svelte';
 	import { CommentViewStore, setCommentView } from '$lib/stores/comment-view.svelte';
+	import {
+		ConnectionNamesStore,
+		connectionNamesData,
+		setConnectionNames
+	} from '$lib/stores/connection-names.svelte';
 	import { FirstStepsStore, localStore, setFirstStepsStore } from '$lib/stores/first-steps.svelte';
 	import { fetchHostPlatform } from '$lib/data/host';
 	import { HostStore, setHostStore } from '$lib/stores/host.svelte';
@@ -177,6 +182,12 @@
 	const sources = setTicketSourcesStore(
 		new TicketSourcesStore(ticketSourcesData(pb), auth, flags, (item) => inbox.upsert(item))
 	);
+	// Names of the connections for the inbox and the sources (ADR-0026, addendum KK-3): loaded once
+	// per session, renames arrive through realtime.
+	const connectionNames = setConnectionNames(
+		new ConnectionNamesStore(connectionNamesData(pb), auth)
+	);
+	$effect(() => untrack(() => connectionNames.start()));
 	$effect(() => untrack(() => rules.start()));
 	$effect(() => untrack(() => rules.connect(recurrenceLive(pb))));
 	// Rules that wait for the choice about a large backlog (ADR-0022 addendum 5) say so once the

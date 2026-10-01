@@ -4,10 +4,15 @@
 
 import { cleanup, fireEvent, render, screen, within } from '@testing-library/svelte';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import type { RecordChange } from '$lib/data/realtime';
+import type { ConnectionName } from '$lib/domain/connections';
 import type { InboxItemSummary } from '$lib/domain/inbox';
+import { ConnectionNamesStore } from '$lib/stores/connection-names.svelte';
 import { FlagStore } from '$lib/stores/flags.svelte';
+import { LiveHealth } from '$lib/stores/live-health.svelte';
 import { TicketSourcesStore, type TicketSourcesData } from '$lib/stores/ticket-sources.svelte';
 import { alreadyLinkedReason } from '$lib/domain/ticket-picker';
+import ConnectionNamesHarness from '$lib/test/ConnectionNamesHarness.svelte';
 import InModalHarness from '$lib/test/InModalHarness.svelte';
 import { useOverlayStubs } from '$lib/test/overlay-stubs';
 import { fakePickerSource, pickerTicket } from '$lib/test/ticket-picker-fake';
@@ -135,6 +140,56 @@ describe('TicketSources', () => {
 		const link = rows[2] as HTMLElement;
 		expect(link.textContent).toContain('https://example.com/artikel');
 		expect(link.textContent).toContain('Nur Adresse');
+	});
+
+	it('names the connection of a source and follows a rename at once (KK-3)', async () => {
+		let emit: (change: RecordChange<ConnectionName>) => void = () => undefined;
+		const names = new ConnectionNamesStore(
+			{
+				list: async () => [{ id: 'conn00000000001', label: 'Familienchat' }],
+				subscribe: async (onChange) => {
+					emit = onChange;
+					return async () => undefined;
+				},
+				reconnected: async () => async () => undefined
+			},
+			{ ensureValid: () => true, logout: vi.fn() },
+			{ health: new LiveHealth() }
+		);
+		const stop = names.start();
+		const data = {
+			list: vi.fn<TicketSourcesData['list']>(async () => [
+				{ ...CHAT, connectionId: 'conn00000000001' },
+				MAIN
+			]),
+			link: vi.fn<TicketSourcesData['link']>(),
+			release: vi.fn<TicketSourcesData['release']>(),
+			originalUrl: vi.fn<TicketSourcesData['originalUrl']>()
+		} satisfies TicketSourcesData;
+		const store = new TicketSourcesStore(
+			data,
+			{ ensureValid: () => true, logout: vi.fn() },
+			new FlagStore()
+		);
+		store.open(TICKET.id, TICKET.sourceItem);
+		render(ConnectionNamesHarness, {
+			props: {
+				names,
+				component: TicketSources,
+				props: { ticket: TICKET, store, candidates: [], picker: PICKER.source }
+			}
+		});
+		const section = await screen.findByRole('region', { name: 'Quellen' });
+		await vi.waitFor(() =>
+			expect(within(section).getByText('Telegram · Familienchat')).toBeTruthy()
+		);
+		// A source without a connection names its channel only.
+		expect(within(section).getByText('Mail-Datei')).toBeTruthy();
+		emit({ action: 'update', record: { id: 'conn00000000001', label: 'Familie Beispiel' } });
+		await vi.waitFor(() =>
+			expect(within(section).getByText('Telegram · Familie Beispiel')).toBeTruthy()
+		);
+		stop();
 	});
 
 	it('releases a linked source; it leaves the list with a flag', async () => {

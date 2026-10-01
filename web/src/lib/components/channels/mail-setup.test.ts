@@ -54,6 +54,7 @@ async function open(
 		list: vi.fn<ConnectionsData['list']>(async () => items),
 		create: vi.fn<ConnectionsData['create']>(),
 		setEnabled: vi.fn<ConnectionsData['setEnabled']>(),
+		rename: vi.fn<ConnectionsData['rename']>(),
 		saveSettings: vi.fn<ConnectionsData['saveSettings']>(async (current, settings) => ({
 			...current,
 			keywords: settings.keywords

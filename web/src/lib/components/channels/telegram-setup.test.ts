@@ -56,6 +56,7 @@ async function open(
 		list: vi.fn<ConnectionsData['list']>(async () => [item]),
 		create: vi.fn<ConnectionsData['create']>(),
 		setEnabled: vi.fn<ConnectionsData['setEnabled']>(),
+		rename: vi.fn<ConnectionsData['rename']>(),
 		saveSettings: vi.fn<ConnectionsData['saveSettings']>(),
 		remove: vi.fn<ConnectionsData['remove']>(),
 		secretStatus: vi.fn<ConnectionsData['secretStatus']>(async () => status),
@@ -161,7 +162,8 @@ describe('Telegram assistant (EH-6)', () => {
 			{ secret: true, allowlist: true }
 		);
 		expect(heading(dialog).textContent).toMatch(/^Schritt 5 von 6/);
-		await vi.waitFor(() => expect(listeners.length).toBe(1));
+		// The assistant and, since KK-3, the card on the page follow the connection.
+		await vi.waitFor(() => expect(listeners.length).toBe(2));
 		// The user stays at the step (a choice holds it; without one the assistant follows the facts).
 		await fireEvent.click(within(dialog).getByRole('button', { name: /Chat freigeben, aktuell/ }));
 
