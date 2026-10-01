@@ -1,8 +1,8 @@
 # Plan „Aktionsmenüs“
 
-- **Stand:** AM-1 umgesetzt (2026-10-01, #194, nur Oberfläche: Build, dann F5; kein Neustart). AM-2 umgesetzt (2026-10-01, #195, nur Oberfläche: Build, dann F5; kein Neustart). AM-3 umgesetzt (2026-10-01, Branch `feat/row-context-menu`, nur Oberfläche: Build, dann F5; kein Neustart). Offen sind AM-4 und die manuellen Browser-Prüfungen BYL-E6-742, BYL-E6-746 und BYL-E6-764.
+- **Stand:** AM-1 umgesetzt (2026-10-01, #194, nur Oberfläche: Build, dann F5; kein Neustart). AM-2 umgesetzt (2026-10-01, #195, nur Oberfläche: Build, dann F5; kein Neustart). AM-3 umgesetzt (2026-10-01, #196, nur Oberfläche: Build, dann F5; kein Neustart). AM-4 umgesetzt (2026-10-01, Branch `feat/row-menus-tables`, nur Oberfläche: Build, dann F5; kein Neustart). Offen sind die manuellen Browser-Prüfungen BYL-E6-742, BYL-E6-746, BYL-E6-764 und BYL-E6-770 und die Folgepunkte in §6.6.
 - **Grundlage:** Nutzerentscheidung vom 2026-10-01 auf die Frage, ob es in der Tabelle ein Zeilenmenü „•••“ (Öffnen, Duplizieren, Löschen) geben soll oder der Knopf im Ticket reicht: „beides, aber vorrangig für das Ticket selbst“. Vorgaben des Advisors: Reihenfolge AM-1 (Ticket) vor AM-2 (Tabelle), Einträge, Kopf entschlacken wie in Jira, keine Funktion verloren, Tests für Maus und Tastatur, Doku. Für AM-3 und AM-4 die Nutzerentscheidung vom 2026-10-01 zu den Folgepunkten in §4: „Alle Verbesserungen einpflegen“.
-- **Entscheidungen:** Nachtrag in [ADR-0045](../adr/0045-ticket-duplizieren.md) (Einstieg über das Menü), Nachträge in [ADR-0036](../adr/0036-sammelbearbeitung-inline-und-oeffnungsmodus.md) (Kopf von Panel und Vollansicht; Zeilenmenü; Rechtsklick und Sammel-Leiste), Nachtrag 4 in [ADR-0030](../adr/0030-spalten-breiten-und-kompakte-zeilen.md) (Breite der Spalte „Aktionen“). Das Menü selbst folgt [ADR-0025](../adr/0025-ui-konsistenz-overlay-system.md) §5 (Popover der Art `menu`, „später Aktionsmenüs“), seit AM-3 mit virtuellem Anker.
+- **Entscheidungen:** Nachtrag in [ADR-0045](../adr/0045-ticket-duplizieren.md) (Einstieg über das Menü), Nachträge in [ADR-0036](../adr/0036-sammelbearbeitung-inline-und-oeffnungsmodus.md) (Kopf von Panel und Vollansicht; Zeilenmenü; Rechtsklick und Sammel-Leiste; Zeilenmenüs der übrigen Tabellen), Nachträge 4 und 5 in [ADR-0030](../adr/0030-spalten-breiten-und-kompakte-zeilen.md) (Breite der Spalten „Aktionen“), Nachtrag in [ADR-0037](../adr/0037-papierkorb.md) (Zeile des Papierkorbs). Das Menü selbst folgt [ADR-0025](../adr/0025-ui-konsistenz-overlay-system.md) §5 (Popover der Art `menu`, „später Aktionsmenüs“), seit AM-3 mit virtuellem Anker.
 - **Einordnung:** Manifest-Block „Aktionsmenüs“ ab `BYL-E6-740`, AM-3 und AM-4 ab `BYL-E6-760`. Keine Migration, keine Hooks.
 
 ## 1. Pakete
@@ -12,7 +12,7 @@
 | AM-1 | Menü „•••“ im Kopf von Panel und Vollansicht: „Link kopieren“, „Duplizieren …“, „In den Papierkorb …“; der Kopf behält als Symbole nur „Vollansicht“ bzw. „Im Seitenpanel öffnen“ und ×; gemeinsamer Baustein `ActionsMenu` (auch für die Kanal-Karten) | umgesetzt |
 | AM-2 | Zeilenmenü „•••“ in der Spalte „Aktionen“ der Tabelle „Aufgaben“ nach „Öffnen“: „Im Seitenpanel öffnen“, „In Vollansicht öffnen“, „Link kopieren“, „Duplizieren …“, „In den Papierkorb …“; Spalte „Aktionen“ 5,5 statt 4rem | umgesetzt |
 | AM-3 | Sammel-Leiste „In den Papierkorb …“ statt „Löschen …“; Rechtsklick auf eine Zeile von „Aufgaben“ öffnet das Zeilenmenü am Mauszeiger, Umschalt+F10 und die Kontextmenü-Taste am fokussierten Element; Regeln für das Menü des Browsers | umgesetzt |
-| AM-4 | Zeilenmenüs mit Rechtsklick auch in „Papierkorb“, „Eingang“, „Projekte“ und „Wiederholungen“, nur mit vorhandenen Aktionen; Spalten nach ADR-0030 | geplant |
+| AM-4 | Zeilenmenüs mit Rechtsklick auch in „Papierkorb“, „Eingang“, „Projekte“ und „Wiederholungen“, nur mit vorhandenen Aktionen; Spalten nach ADR-0030 | umgesetzt |
 
 ## 2. AM-1: Menü im Ticket
 
@@ -104,7 +104,7 @@ Nutzerentscheidung vom 2026-10-01: „Alle Verbesserungen einpflegen“.
 
 - [x] **Sammel-Leiste:** „In den Papierkorb …“ statt „Löschen …“ (AM-3, §5.1).
 - [x] **Rechtsklick auf eine Zeile:** öffnet das Zeilenmenü am Zeiger, dazu Umschalt+F10 und die Kontextmenü-Taste (AM-3, §5.2).
-- [ ] **Andere Tabellen:** Zeilenmenüs in „Papierkorb“, „Eingang“, „Projekte“ und „Wiederholungen“ (AM-4).
+- [x] **Andere Tabellen:** Zeilenmenüs in „Papierkorb“, „Eingang“, „Projekte“ und „Wiederholungen“ (AM-4, §6); neue Folgepunkte in §6.6.
 
 ## 5. AM-3: Sammel-Leiste und Rechtsklick
 
@@ -133,3 +133,72 @@ Entscheidung und Gründe: [ADR-0036](../adr/0036-sammelbearbeitung-inline-und-oe
 - `components/ticket-table-row-menu.test.ts` (AM-3): Rechtsklick öffnet am Zeiger (Position), Fokus im Menü, kein Öffnen und keine Auswahl in allen Zellen, Links der Zeile ja und Links im Menü nein, Strg, Touch und Markierung, Feld eines Zellen-Editors und Kopf, Umschalt+F10 unter dem Element mit Fokus zurück, Kontextmenü-Taste in einer Zelle, eine Aktion aus dem Kontextmenü, danach wieder unter „•••“.
 - `components/ticket-table-selection.test.ts` und `domain/bulk.test.ts`: „In den Papierkorb …“ statt „Löschen …“, Fortschritt.
 - Manuell BYL-E6-764: Browser (auch die Ränder des Fensters), Tastatur und NVDA.
+
+## 6. AM-4: Zeilenmenüs der übrigen Tabellen
+
+Entscheidung und Gründe: [ADR-0036](../adr/0036-sammelbearbeitung-inline-und-oeffnungsmodus.md), Nachtrag „Zeilenmenüs der übrigen Tabellen“; Spalten: [ADR-0030](../adr/0030-spalten-breiten-und-kompakte-zeilen.md), Nachtrag 5. Nur Aktionen, die es in der Tabelle oder im Panel der Zeile schon gab; jede Tabelle bekommt „•••“ am Ende der Spalte „Aktionen“ (Knopf „Weitere Aktionen für …“, `row-menu`), den Rechtsklick und Umschalt+F10 aus AM-3 (`{@attach rowMenus}`, `data-row-link` am Titel bzw. Namen).
+
+### 6.1 Papierkorb
+
+| Eintrag | Wirkung |
+|---|---|
+| „Vorschau öffnen“ | Link auf `/papierkorb/<id>` wie der Titel |
+| „Wiederherstellen“ (Linie davor) | wie das Symbol: mit Frage nach Zielprojekt oder Serie inline unter der Zeile, wenn nötig |
+| „Endgültig löschen …“ (Linie davor) | dieselbe Bestätigung wie bisher („… endgültig löschen?“, „Das lässt sich nicht rückgängig machen.“) |
+
+- **Zeile:** „Wiederherstellen“ bleibt als Symbol; das Symbol „Endgültig löschen …“ entfällt (selten, destruktiv, neben „Wiederherstellen“ verwechselbar). Während ein Wiederherstellen läuft, warten beide Einträge (`aria-busy` bzw. gesperrt).
+- **„Link kopieren“:** nicht aufgenommen; die Vorschau ist nach der Aufbewahrung weg, der dauerhafte Link ist der des Tickets nach dem Wiederherstellen.
+- **Browser-Menü:** in der Frage eines Wiederherstellens (Auswahl des Zielprojekts).
+
+### 6.2 Eingang
+
+| Zustand | Einträge |
+|---|---|
+| neu | „Öffnen“ (Panel), Linie, „Umwandeln …“ (Link auf `/tickets/neu?aus=<id>`), „Mit Ticket verknüpfen …“ (derselbe Dialog wie für gewählte Einträge, mit diesem einen; nur mit dem Layout), „Verwerfen“ (mit „Rückgängig“ im Flag) |
+| verworfen | „Öffnen“, Linie, „Wiederherstellen“ |
+| verknüpft | „Öffnen“, Linie, „Ticket HAUS-12 öffnen“ (ohne geladenen Key „Ticket öffnen“) |
+| jeder mit Originaldatei | dazu nach einer Linie „Originaldatei herunterladen“ (wie im Panel: neues Datei-Token, dann die Datei; ohne Datei ein Fehler-Flag; die Zelle trägt solange `aria-busy`) |
+
+- **Zeile:** „Umwandeln“, „Verwerfen“, „Wiederherstellen“ und der Chip „→ HAUS-12“ bleiben sichtbar, weil das Sichten des Eingangs genau sie braucht; „•••“ kommt dazu. Die Spalte wächst von 13 auf 15rem.
+- **„Umwandeln …“** trägt im Menü Auslassungspunkte, weil es ein Formular öffnet, das noch Eingaben braucht; der sichtbare Knopf heißt weiter „Umwandeln“.
+- **Browser-Menü:** auf „Umwandeln“, dem Chip, „Ticket ansehen“ und den Links des Hinweises „Mögliches Duplikat“ (echte Links); der Titel zeigt das Zeilenmenü.
+
+### 6.3 Projekte
+
+| Eintrag | wann | Wirkung |
+|---|---|---|
+| „Öffnen“ | immer | Panel des Projekts, dort wird es bearbeitet (kein eigener Eintrag „Bearbeiten“: dieselbe Stelle) |
+| „Tickets anzeigen“ | immer | die Tabelle „Aufgaben“ mit dem Projekt als Filter |
+| „Unterprojekt anlegen“ | aktives Oberprojekt, Unterprojekte verfügbar | `/projekte/neu` mit dem Projekt als Oberprojekt |
+| „Archivieren“ (Linie davor) | aktiv | sofort, mit aktiven Unterprojekten erst die Frage des Panels („Archiviert auch 1 Unterprojekt: …“) |
+| „Aus dem Archiv holen“ bzw. „Mit Oberprojekt zurückholen“ | archiviert (bzw. unter archiviertem Oberprojekt) | wie im Panel, Flag mit Ergebnis |
+| „Löschen …“ (Linie davor) | ohne Tickets und Unterprojekte | Bestätigung des Panels („… wird endgültig gelöscht“) |
+
+- **Nur die Liste:** Die Kacheln bekommen kein Menü (keine Tabelle; die ganze Kachel ist ein Link).
+- **Neue Spalte** „Aktionen“ 3,5rem, Pflicht, sortiert nicht; das Menü „Spalten“ nennt „Code, Name und Aktionen“ als immer sichtbar.
+- **Eine Logik:** Archivieren, Zurückholen und Löschen samt Flags stehen in der `ProjectRoute` des Layouts, Regel und Texte der Fragen in `domain/project-tree.ts`; Panel und Menü nutzen dieselben. Eine Ablehnung ohne Frage ist ein Fehler-Flag mit Grund, in einer Frage steht sie dort. Ist das Panel eines gelöschten Projekts offen, schließt es sich.
+
+### 6.4 Wiederholungen
+
+| Eintrag | wann | Wirkung |
+|---|---|---|
+| „Regel öffnen“ | immer | Panel der Regel |
+| „Zum offenen Ticket HAUS-12“ bzw. „Zum ältesten offenen Ticket HAUS-12“ | mit offenem Ticket | Link im gemerkten Öffnungsmodus; alle Keys stehen weiter in der Spalte „Offene Tickets“ |
+| „Pausieren“ bzw. „Fortsetzen“ (Linie davor) | immer | wie bisher, Flag „Regel pausiert.“, Ablehnung als Fehler-Flag |
+| „Löschen …“ (Linie davor) | immer | Frage des Panels „Regel löschen?“ mit den Tickets, die offen bleiben (`ruleDeleteText`); schließt das Panel der Regel |
+
+- **Zeile:** Das Symbol „Pausieren“/„Fortsetzen“ entfällt (selten, mehrdeutig); die Spalte bleibt 3,5rem.
+- **Browser-Menü:** auf den Keys der offenen Tickets (echte Links).
+
+### 6.5 Tests
+
+- Neu: `components/trash-row-menu.test.ts`, `components/inbox-row-menu.test.ts`, `components/project-row-menu.test.ts`, `components/recurrence-row-menu.test.ts`: Knopf und Name, Einträge je Zustand mit Links und Linien, Ausführen, Fragen (Projekte, Regeln, Papierkorb), Fehler als Flag bzw. in der Frage, Panel schließt, Fokus auf die nächste Zeile, Rechtsklick am Zeiger, Umschalt+F10 bzw. Kontextmenü-Taste mit Fokus zurück, Browser-Menü auf anderen Links und in Feldern, keine Auswahl.
+- Angepasst: `trash-view.test.ts` (Endgültig löschen aus dem Menü), `inbox-table.test.ts` (Ausweichen bei 640 px), `projects-view.test.ts` (Spalte „Aktionen“, 500 px), `recurrence-table.test.ts` und `recurrences-view.test.ts` (Pausieren aus dem Menü), `domain/columns.test.ts` (Breiten, Schwellen), `domain/project-tree.test.ts` und `domain/recurrence-rule.test.ts` (Texte), `table-columns.test.ts` (jede Tabelle mit Menü und Kontextmenü).
+- Manuell BYL-E6-770: Browser, Tastatur und NVDA in allen vier Tabellen.
+
+### 6.6 Folgepunkte (nicht umgesetzt, weil es sie in der Zeile oder im Panel noch nicht gab bzw. wegen Platz)
+
+- **Eingang, verknüpfte Einträge:** „Anderem Ticket zuordnen …“ und „Lösen“ stehen im Panel des Eintrags; im Zeilenmenü fehlen sie noch (brauchen den Quellen-Store in der Tabelle). Ebenso „Seiteninhalt sichern“ und der Link der Quelle („Link öffnen“ in neuem Tab).
+- **Projekte, Kacheln:** ein Menü je Kachel bräuchte einen Knopf neben dem Link der ganzen Kachel.
+- **Papierkorb:** „Link kopieren“ (bewusst nicht, siehe §6.1).
+- **Touch:** ein langes Drücken als Kontextmenü (bewusst nicht, ADR-0036 Nachtrag „Rechtsklick“).

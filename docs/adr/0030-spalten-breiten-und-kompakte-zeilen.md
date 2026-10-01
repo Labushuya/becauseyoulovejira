@@ -1,6 +1,6 @@
 # ADR-0030: Spaltenbreiten, Ein- und Ausblenden und kompakte Zeilen in Tabellen
 
-- **Status:** Angenommen und umgesetzt in den Paketen SP-1 bis SP-5 nach [docs/plan/e6-spalten.md](../plan/e6-spalten.md) (#98 bis #101 und der PR von SP-5); manuelle Browser-Prüfungen stehen im Test-Manifest; Nachtrag 2026-09-28 (Spalte „Übergeordnet“ und Schalter der Tabelle, [ADR-0033](0033-unteraufgaben.md)); Nachtrag 2 (Auswahlspalte); Nachtrag 3 2026-09-29 (Breite des Titels); Nachtrag 4 2026-10-01 (Spalte „Aktionen“ mit dem Zeilenmenü)
+- **Status:** Angenommen und umgesetzt in den Paketen SP-1 bis SP-5 nach [docs/plan/e6-spalten.md](../plan/e6-spalten.md) (#98 bis #101 und der PR von SP-5); manuelle Browser-Prüfungen stehen im Test-Manifest; Nachtrag 2026-09-28 (Spalte „Übergeordnet“ und Schalter der Tabelle, [ADR-0033](0033-unteraufgaben.md)); Nachtrag 2 (Auswahlspalte); Nachtrag 3 2026-09-29 (Breite des Titels); Nachtrag 4 2026-10-01 (Spalte „Aktionen“ mit dem Zeilenmenü); Nachtrag 5 2026-10-01 (Spalten „Aktionen“ der übrigen Tabellen mit dem Zeilenmenü)
 - **Datum:** 2026-09-27
 - **Entscheidung durch:** Nutzer (Wunsch „Spalten ziehen, ein- und ausblenden, kompakte Zeilen wie in Jira“, Reihenfolge „Spalten zuerst“), Advisor (Konzept „Spalten“), Executor (Breiten, Schwellen, Einzelheiten)
 - **Präzisiert:** [ADR-0025](0025-ui-konsistenz-overlay-system.md) §11 (Ausblenden per Container-Queries) und [ADR-0010](0010-layout-nach-task-board.md) §1 (Popover „Spalten“ ab E6). „Tabellen scrollen nie seitlich“ und die Reihenfolge beim Ausblenden bleiben.
@@ -157,3 +157,22 @@ Mit dem Zeilenmenü „•••“ ([Plan Aktionsmenüs](../plan/aktionsmenues.
 - **Gespeicherte Vorlieben** ändern sich nicht: Pflichtspalten stehen nie in `widths` oder `hidden`. Eine gespeicherte Titelbreite (Nachtrag 3) gilt weiter; ihr Höchstwert beim Ziehen sinkt um die 1,5rem, die die Spalte mehr braucht.
 - **Alternative verworfen:** 6rem mit dem bisherigen Innenabstand (0,5rem mehr Platz, der nur leer stünde) und ein Menü statt des Symbols „Öffnen“ (das Symbol bleibt nach Vorgabe; der Titel-Link und der Zeilenklick öffnen ohnehin).
 - Tests: `columns.test.ts` (Schwellen, Beispiele bei 840 und 800 px, Grenzen des Titels), `ticket-table-columns.test.ts`, `columns-popover.test.ts`; Manifest BYL-E6-745.
+
+## Nachtrag 5 (2026-10-01): Spalten „Aktionen“ der übrigen Tabellen mit dem Zeilenmenü
+
+Mit den Zeilenmenüs „•••“ in „Papierkorb“, „Eingang“, „Projekte“ und „Wiederholungen“ ([Plan Aktionsmenüs](../plan/aktionsmenues.md) AM-4, [ADR-0036](0036-sammelbearbeitung-inline-und-oeffnungsmodus.md), Nachtrag „Zeilenmenüs der übrigen Tabellen“) endet jede Zeile jeder Tabelle mit diesem Menü. Der Text oben bleibt, soweit hier nichts anderes steht; „Tabellen scrollen nie seitlich“ und die Reihenfolge beim Ausweichen bleiben.
+
+- **Ein Maß für den Knopf:** „•••“ steht in allen Tabellen in `--control-height-s` (1,5rem); die Regel `.button-icon.row-menu` steht jetzt in `base.css` statt in `TicketTableRow`, damit keine Zeile höher wird. Keine neuen Tokens.
+
+| Tabelle | Spalte „Aktionen“ vorher → jetzt | Inhalt | Schwellen beim Ausweichen |
+|---|---|---|---|
+| Papierkorb | 5 → 5rem (unverändert) | „Wiederherstellen“ (2rem) und „•••“; das Symbol „Endgültig löschen …“ entfällt, Innenabstand 0,5rem | unverändert |
+| Eingang | 13 → **15rem** | „Umwandeln“ und „Verwerfen“ (bzw. „Wiederherstellen“, der Chip des Tickets) und „•••“ | +2rem: Eingang 52,5, Quelle 46,5, Art 39,5, Quelldatum 33,5rem |
+| Projekte | keine → **3,5rem** (neu, Pflicht, ohne Griff, nicht im Menü „Spalten“, sortiert nicht) | „•••“ | +3,5rem: archiviert 41,5, neu 35, gesamt 30, aktiv 24,5rem |
+| Wiederholungen | 3,5 → 3,5rem (unverändert) | „•••“ statt des Symbols „Pausieren“/„Fortsetzen“ | unverändert |
+
+- **Gespeicherte Vorlieben** ändern sich nicht: Pflichtspalten stehen nie in `widths` oder `hidden`. Eine gespeicherte Titel- bzw. Namensbreite gilt weiter; im Eingang und in den Projekten sinkt ihr Höchstwert beim Ziehen um die zusätzliche Breite.
+- **Menü „Spalten“:** Der Satz der immer sichtbaren Spalten nennt in den Projekten jetzt „Code, Name und Aktionen“, in den Wiederholungen „Titel, Zustand und Aktionen“.
+- **Breite des Eingangs:** „Umwandeln“ und „Verwerfen“ brauchen in Inter bei `--font-size-control` je etwa 5rem samt Innenabstand und Rahmen, dazu „•••“ (1,5rem), zwei Abstände (1rem) und der Innenabstand der Zelle (1,5rem): 14,4rem. 15rem lassen Luft für Rundung und andere Schriftglättung; 14rem hätten auf manchen Systemen „•••“ abgeschnitten.
+- **Alternative verworfen:** „Verwerfen“ im Eingang nur noch im Menü, um die Breite zu halten. Umwandeln und Verwerfen sind die zwei Wege beim Sichten des Eingangs; beide bleiben sichtbar. Im Papierkorb und in den Wiederholungen ersetzt „•••“ dagegen ein seltenes Symbol, deshalb bleibt die Breite dort.
+- Tests: `columns.test.ts` (Schwellen und Breiten), `inbox-table.test.ts` (Ausweichen bei 640 statt 600 px), `projects-view.test.ts` (Spalten, Ausweichen bei 500 statt 450 px), `table-columns.test.ts` (Menü und Kontextmenü in jeder Tabelle); Manifest BYL-E6-769.

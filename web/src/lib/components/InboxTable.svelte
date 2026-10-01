@@ -16,10 +16,12 @@
 	import { MORE_COLUMNS_HINT } from '$lib/domain/labels';
 	import { SOURCE_FAMILY_CHIPS, SOURCE_FAMILY_LABELS, type SourceFamily } from '$lib/domain/source';
 	import type { TicketSummary } from '$lib/domain/ticket';
+	import { rowMenus } from '$lib/overlay/context-menu';
 	import { getColumnPrefs } from '$lib/stores/column-prefs.svelte';
 	import type { FlagSink } from '$lib/stores/flags.svelte';
 	import { INBOX_UNAVAILABLE_MESSAGE, type InboxStore } from '$lib/stores/inbox.svelte';
 	import { captureHref, convertHref, inboxItemHref, withInboxQuery } from '$lib/ticket-links';
+	import ActionsMenu, { type MenuAction } from './ActionsMenu.svelte';
 	import ChipGroup from './ChipGroup.svelte';
 	import ColumnsPopover from './ColumnsPopover.svelte';
 	import EmptyState from './guidance/EmptyState.svelte';
@@ -45,7 +47,11 @@
 	// and the menu "Spalten" change widths and visibility; the title takes at most two lines.
 	// Linked entries (ADR-0031, addendum C) carry the row mark in the accent colour and the chip
 	// "→ HAUS-12", a link to their ticket; the chip "Zustand" offers "Neu" (default), "Verknüpft",
-	// "Verworfen" and "Alle".
+	// "Verworfen" and "Alle". Every row ends with the menu "•••" (plan aktionsmenues, AM-4), after
+	// the buttons the triage needs often, which stay: "Öffnen", then by state "Umwandeln …", "Mit
+	// Ticket verknüpfen …" and "Verwerfen", "Wiederherstellen" or the ticket, and "Originaldatei
+	// herunterladen" where there is one. A right click on a row or Shift+F10 open the same menu
+	// (AM-3, rowMenus); the browser keeps its menu on the other links of a row.
 	let {
 		store,
 		flags,
@@ -57,6 +63,7 @@
 		onclipboard,
 		onbulk,
 		onlink,
+		onlinkitem,
 		tools,
 		actions
 	}: {
@@ -75,6 +82,8 @@
 		onbulk: () => void;
 		/** "Mit Ticket verknüpfen …" for the chosen entries (ADR-0031); without it there is no button. */
 		onlink?: () => void;
+		/** "Mit Ticket verknüpfen …" in the menu of one new entry; without it the menu has none. */
+		onlinkitem?: (item: InboxItemSummary) => void;
 		/** "Aus Zwischenablage" (E4 plan, package 6); without it there is no button. */
 		onclipboard?: () => void;
 		/** Why the clipboard could not be read, with the way through Ctrl+V; neutral, no error. */
@@ -200,6 +209,64 @@
 	async function act(action: () => Promise<{ ok: boolean; message?: string | null }>) {
 		const result = await action();
 		if (!result.ok) fail(result.message);
+	}
+
+	/** Entry whose original file is being fetched from the menu of its row (one at a time). */
+	let downloading = $state<string | null>(null);
+
+	/** "Originaldatei herunterladen" of a row, as in the panel: a fresh file token, then the file. */
+	async function download(item: InboxItemSummary) {
+		if (downloading !== null) return;
+		downloading = item.id;
+		try {
+			const result = await store.originalUrl(item);
+			if (result.ok) window.location.assign(result.url);
+			else fail(result.message);
+		} finally {
+			downloading = null;
+		}
+	}
+
+	/** The entries of the menu "•••" of a row (AM-4), by the state of the entry. */
+	function menuOf(item: InboxItemSummary, ticketKey: string | null): MenuAction[] {
+		const pending = store.isPending(item.id);
+		const entries: MenuAction[] = [{ label: 'Öffnen', href: inboxItemHref(item.id, page.url) }];
+		if (item.state === 'new') {
+			entries.push({ label: 'Umwandeln …', href: convertHref(item.id), separated: true });
+			if (onlinkitem) {
+				const link = onlinkitem;
+				entries.push({
+					label: 'Mit Ticket verknüpfen …',
+					dialog: true,
+					locked: pending,
+					onselect: () => link(item)
+				});
+			}
+			entries.push({ label: 'Verwerfen', busy: pending, onselect: () => void discard(item) });
+		} else if (item.state === 'discarded') {
+			entries.push({
+				label: 'Wiederherstellen',
+				separated: true,
+				busy: pending,
+				onselect: () => void act(() => store.restore(item.id))
+			});
+		} else if (item.ticketId !== null) {
+			entries.push({
+				label: ticketKey === null ? 'Ticket öffnen' : `Ticket ${ticketKey} öffnen`,
+				href: links.path(item.ticketId),
+				separated: true
+			});
+		}
+		if (item.original !== '') {
+			entries.push({
+				label: 'Originaldatei herunterladen',
+				separated: true,
+				busy: downloading === item.id,
+				locked: downloading !== null && downloading !== item.id,
+				onselect: () => void download(item)
+			});
+		}
+		return entries;
 	}
 
 	/** Entry whose panel was shown last. */
@@ -405,7 +472,7 @@
 
 	{#if rows.length > 0}
 		<div class="frame" bind:this={frame}>
-			<table>
+			<table {@attach rowMenus}>
 				<caption id={ids.caption}
 					>{caption}{#if columnFit.fit.autoHidden.length > 0}<span class="caption-more"
 							>{MORE_COLUMNS_HINT}</span
@@ -474,6 +541,7 @@
 									<a
 										class="title-link"
 										href={inboxItemHref(item.id, page.url)}
+										data-row-link
 										title={item.title.length >= LONG_TITLE ? item.title : undefined}
 										aria-current={item.id === activeId ? 'page' : undefined}>{item.title}</a
 									>
@@ -503,7 +571,11 @@
 									</time>
 								</td>
 							{/if}
-							<td class="actions" data-col="actions">
+							<td
+								class="actions"
+								data-col="actions"
+								aria-busy={downloading === item.id ? 'true' : undefined}
+							>
 								<span class="action-group">
 									{#if item.state === 'new'}
 										<a class="action primary" href={convertHref(item.id)}
@@ -541,6 +613,13 @@
 											>Ticket ansehen<span class="visually-hidden">: „{item.title}“</span></a
 										>
 									{/if}
+									<ActionsMenu
+										label={`Weitere Aktionen für „${item.title}“`}
+										buttonLabel={`Weitere Aktionen für „${item.title}“`}
+										buttonTitle="Weitere Aktionen"
+										buttonClass="button-icon row-menu"
+										items={menuOf(item, linkedTicket?.key ?? null)}
+									/>
 								</span>
 							</td>
 						</tr>

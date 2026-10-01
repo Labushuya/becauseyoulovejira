@@ -4,7 +4,10 @@
 import { describe, expect, it } from 'vitest';
 import {
 	aggregateCounts,
+	archiveWithSubProjectsText,
+	canDeleteProject,
 	compareProjectPaths,
+	deleteProjectText,
 	parentChoices,
 	projectChoiceLabel,
 	projectFamily,
@@ -176,5 +179,30 @@ describe('parentChoices', () => {
 
 	it('offers nothing to a project that has sub projects', () => {
 		expect(parentChoices(BY_NAME, HOUSE)).toEqual([]);
+	});
+});
+
+// The questions of the panel and of the menu of a row (plan aktionsmenues, AM-4): one source.
+describe('archiving and deleting a project', () => {
+	it('deletes only a project known to have no tickets and no sub projects', () => {
+		expect(canDeleteProject(0, [])).toBe(true);
+		expect(canDeleteProject(3, [])).toBe(false);
+		expect(canDeleteProject(null, [])).toBe(false);
+		expect(canDeleteProject(0, [GARDEN])).toBe(false);
+	});
+
+	it('names the active sub projects that archiving takes along', () => {
+		expect(archiveWithSubProjectsText([GARDEN])).toBe(
+			'Archiviert auch 1 Unterprojekt: Garten. Zurückholen geht später für jedes einzeln.'
+		);
+		expect(archiveWithSubProjectsText([GARDEN, ROOF, CAR])).toBe(
+			'Archiviert auch 3 Unterprojekte: Garten, Dach und Auto. Zurückholen geht später für jedes einzeln.'
+		);
+	});
+
+	it('says that deleting cannot be undone', () => {
+		expect(deleteProjectText({ name: 'Haus', code: 'HAUS' })).toBe(
+			'„Haus“ (HAUS) hat keine Tickets. Das Projekt wird endgültig gelöscht; das lässt sich nicht rückgängig machen.'
+		);
 	});
 });

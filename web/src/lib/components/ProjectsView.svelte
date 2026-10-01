@@ -19,6 +19,13 @@
 		type ProjectSortKey,
 		type ProjectViewQuery
 	} from '$lib/domain/project-view';
+	import {
+		archiveWithSubProjectsText,
+		canDeleteProject,
+		deleteProjectText
+	} from '$lib/domain/project-tree';
+	import type { ProjectActions } from '$lib/project-route';
+	import type { EditResult } from '$lib/stores/catalog-editor';
 	import type { CatalogStore } from '$lib/stores/catalog.svelte';
 	import { getColumnPrefs } from '$lib/stores/column-prefs.svelte';
 	import type { ProjectStatsStore } from '$lib/stores/project-stats.svelte';
@@ -26,13 +33,18 @@
 	import {
 		NEW_PROJECT_LINK_ID,
 		newProjectHref,
+		newSubProjectHref,
 		projectHref,
+		projectTicketsHref,
+		projectsViewHref,
 		withProjectViewQuery,
 		withShowArchived
 	} from '$lib/ticket-links';
+	import type { MenuAction } from './ActionsMenu.svelte';
 	import ColumnsPopover from './ColumnsPopover.svelte';
 	import ErrorIcon from './ErrorIcon.svelte';
 	import EmptyState from './guidance/EmptyState.svelte';
+	import ConfirmDialog from './overlay/ConfirmDialog.svelte';
 	import ProjectTable from './ProjectTable.svelte';
 	import ProjectTiles from './ProjectTiles.svelte';
 	import SectionBar from './SectionBar.svelte';
@@ -52,7 +64,12 @@
 	// (/einstellungen/tags). "aktiv" comes from the list store, "gesamt" adds the done tickets the
 	// server counts. Sub projects (ADR-0034, UP-3) stand as a tree below their parent in list and
 	// tiles; folding is kept per tab in sessionStorage, and a search shows a matching sub project
-	// with its parent as context.
+	// with its parent as context. Every row of the list ends with the menu "•••" (plan
+	// aktionsmenues, AM-4): "Öffnen" (the panel, where the project is edited), "Tickets anzeigen",
+	// "Unterprojekt anlegen" (an active top-level project), and with `actions` "Archivieren", "Aus
+	// dem Archiv holen" or "Mit Oberprojekt zurückholen" and "Löschen …" (only without tickets and
+	// sub projects). Archiving with active sub projects and deleting ask first, as in the panel; the
+	// list is no modal, so they are dialogs. The tiles have no menu.
 	let {
 		catalog,
 		tickets,
@@ -61,6 +78,7 @@
 		totalOf,
 		newOf = (project: Project) => tickets.newInProject(project.id),
 		aggregatedOf = () => false,
+		actions,
 		activeId = null,
 		creating = false,
 		inboxCount = null
@@ -76,6 +94,8 @@
 		newOf?: (project: Project) => number;
 		/** The numbers of the project include its sub projects (ADR-0034); said to screen readers. */
 		aggregatedOf?: (project: Project) => boolean;
+		/** Archiving, restoring and deleting from the menu of a row; without them it only links. */
+		actions?: ProjectActions;
 		/** Project shown in the panel; its row or tile is marked as current. */
 		activeId?: string | null;
 		/** The panel "Neues Projekt" is open. */
@@ -264,6 +284,161 @@
 			if (focusLost()) (document.getElementById(NEW_PROJECT_LINK_ID) ?? heading)?.focus();
 		});
 	});
+
+	/** Project whose archiving or restoring from the menu of its row runs (one at a time). */
+	let busyId = $state<string | null>(null);
+	/** The question of the menu of a row: archiving with active sub projects, or deleting. */
+	let asking = $state<{ kind: 'archive' | 'delete'; project: Project } | null>(null);
+	let askBusy = $state(false);
+	let askError = $state<string | null>(null);
+
+	/** Active sub projects that archiving takes along (only a top-level project has them). */
+	function activeSubProjectsOf(project: Project): Project[] {
+		if (project.parentId) return [];
+		return catalog.subProjectsOf(project.id).filter((sub) => !sub.archived);
+	}
+
+	/** The reason of a refused action: its message, else the first field error. */
+	function reasonOf<T>(result: EditResult<T>): string | null {
+		return result.ok ? null : (result.message ?? Object.values(result.fields)[0] ?? null);
+	}
+
+	/**
+	 * A row left the list (deleted, archived while archived ones are hidden): the focus goes to the
+	 * row that followed it, else the one before, else to the heading, unless it is somewhere else.
+	 * A dialog gives it to the heading when its row is gone; the next row is closer.
+	 */
+	async function keepFocusNear(id: string, order: readonly string[]) {
+		await tick();
+		if (!focusLost() && document.activeElement !== heading) return;
+		const index = order.indexOf(id);
+		const near = [id, ...order.slice(index + 1), ...order.slice(0, index).reverse()];
+		const link = near.map((other) => linkOf(other)).find((entry) => entry !== undefined);
+		(link ?? heading)?.focus();
+	}
+
+	/** Archiving or restoring from the menu of a row; a refusal is an error flag with the reason. */
+	async function runAction(
+		project: Project,
+		failure: string,
+		action: () => Promise<EditResult<Project>>
+	) {
+		if (actions === undefined || busyId !== null) return;
+		const order = rows.map((row) => row.project.id);
+		busyId = project.id;
+		try {
+			const result = await action();
+			const reason = reasonOf(result);
+			if (!result.ok && reason !== null) actions.fail(failure, reason);
+		} finally {
+			busyId = null;
+		}
+		await keepFocusNear(project.id, order);
+	}
+
+	function archive(project: Project) {
+		if (actions === undefined) return;
+		if (activeSubProjectsOf(project).length > 0) {
+			askError = null;
+			asking = { kind: 'archive', project };
+			return;
+		}
+		const run = actions;
+		void runAction(project, `Projekt „${project.name}“ ließ sich nicht archivieren.`, () =>
+			run.archive(project, true)
+		);
+	}
+
+	function restore(project: Project, archivedParent: Project | null) {
+		if (actions === undefined) return;
+		const run = actions;
+		void runAction(
+			project,
+			`Projekt „${project.name}“ ließ sich nicht aus dem Archiv holen.`,
+			() =>
+				archivedParent === null
+					? run.archive(project, false)
+					: run.restoreWithParent(project, archivedParent)
+		);
+	}
+
+	/** "Archivieren" or "Endgültig löschen" of the question; a refusal stays in it. */
+	async function confirmAsked() {
+		const question = asking;
+		if (question === null || actions === undefined || askBusy) return;
+		const order = rows.map((row) => row.project.id);
+		askBusy = true;
+		askError = null;
+		const result =
+			question.kind === 'archive'
+				? await actions.archive(question.project, true)
+				: await actions.remove(question.project);
+		askBusy = false;
+		if (result.ok) {
+			asking = null;
+			// The panel of a deleted project has nothing to show any more.
+			if (question.kind === 'delete' && question.project.id === activeId) {
+				await goto(projectsViewHref(page.url));
+			}
+			await keepFocusNear(question.project.id, order);
+			return;
+		}
+		askError = reasonOf(result);
+		if (askError === null) asking = null;
+	}
+
+	function cancelAsked() {
+		if (askBusy) return;
+		asking = null;
+		askError = null;
+	}
+
+	/** The entries of the menu "•••" of a row of the list (AM-4). */
+	function menuOf(project: Project): MenuAction[] {
+		const entries: MenuAction[] = [
+			{ label: 'Öffnen', href: projectHref(project.id, page.url) },
+			{ label: 'Tickets anzeigen', href: projectTicketsHref(project.id) }
+		];
+		if (catalog.hierarchyReady && !project.parentId && !project.archived) {
+			entries.push({
+				label: 'Unterprojekt anlegen',
+				href: newSubProjectHref(project.id, page.url)
+			});
+		}
+		if (actions === undefined) return entries;
+		const busy = busyId === project.id;
+		const parent = project.parentId ? catalog.projectById(project.parentId) : null;
+		if (!project.archived) {
+			entries.push({
+				label: 'Archivieren',
+				separated: true,
+				dialog: activeSubProjectsOf(project).length > 0,
+				busy,
+				onselect: () => archive(project)
+			});
+		} else {
+			const archivedParent = parent?.archived ? parent : null;
+			entries.push({
+				label: archivedParent ? 'Mit Oberprojekt zurückholen' : 'Aus dem Archiv holen',
+				separated: true,
+				busy,
+				onselect: () => restore(project, archivedParent)
+			});
+		}
+		if (canDeleteProject(totalOf(project), catalog.subProjectsOf(project.id))) {
+			entries.push({
+				label: 'Löschen …',
+				dialog: true,
+				separated: true,
+				locked: busy,
+				onselect: () => {
+					askError = null;
+					asking = { kind: 'delete', project };
+				}
+			});
+		}
+		return entries;
+	}
 </script>
 
 {#snippet newProjectLink(id?: string)}
@@ -359,7 +534,7 @@
 				</button>
 			</div>
 			{#if layout === 'liste'}
-				<ColumnsPopover fit={columnFit} always="Code und Name sind immer sichtbar." />
+				<ColumnsPopover fit={columnFit} always="Code, Name und Aktionen sind immer sichtbar." />
 			{/if}
 			{@render newProjectLink(NEW_PROJECT_LINK_ID)}
 		{/snippet}
@@ -390,6 +565,7 @@
 					searching={query.search !== null}
 					{columnFit}
 					hrefOf={(project) => projectHref(project.id, page.url)}
+					{menuOf}
 					onsort={(key) => void sortBy(key)}
 					ontoggle={toggleFolded}
 				/>
@@ -444,6 +620,35 @@
 		{/if}
 	{/if}
 </section>
+
+<!-- The questions of the menu of a row (AM-4), the same as in the panel; the list is no modal. -->
+{#if asking?.kind === 'archive'}
+	{@const project = asking.project}
+	<ConfirmDialog
+		open
+		title={`Projekt „${project.name}“ archivieren?`}
+		confirmLabel="Archivieren"
+		busy={askBusy}
+		error={askError}
+		onconfirm={() => void confirmAsked()}
+		oncancel={cancelAsked}
+	>
+		<p>{archiveWithSubProjectsText(activeSubProjectsOf(project))}</p>
+	</ConfirmDialog>
+{:else if asking?.kind === 'delete'}
+	{@const project = asking.project}
+	<ConfirmDialog
+		open
+		title={`Projekt „${project.name}“ löschen?`}
+		confirmLabel="Endgültig löschen"
+		busy={askBusy}
+		error={askError}
+		onconfirm={() => void confirmAsked()}
+		oncancel={cancelAsked}
+	>
+		<p>{deleteProjectText(project)}</p>
+	</ConfirmDialog>
+{/if}
 
 <style>
 	.projects-view {

@@ -23,6 +23,7 @@ import {
 	REOPEN_DETACHED_LABEL,
 	REOPEN_REFUSALS,
 	reopenOlderMessage,
+	ruleDeleteText,
 	ruleParams,
 	ruleStateLabel,
 	ruleText,
@@ -463,6 +464,18 @@ describe('open tickets of a rule (recommendations 6 and 7)', () => {
 		]);
 		expect(openBlockText(['TASK-1', 'TASK-3'])).toBe(
 			'Die Serie geht weiter, sobald alle 2 offenen Tickets erledigt sind (TASK-1, TASK-3).'
+		);
+	});
+
+	// The question of the panel and of the menu of a row (plan aktionsmenues, AM-4).
+	it('says which open tickets stay when a rule is deleted', () => {
+		const start = 'Bestehende Tickets bleiben erhalten. „Müll“ erzeugt danach keine Tickets mehr';
+		expect(ruleDeleteText('Müll', [])).toBe(`${start}.`);
+		expect(ruleDeleteText('Müll', ['TASK-7'])).toBe(
+			`${start}; TASK-7 bleibt als normales Ticket offen.`
+		);
+		expect(ruleDeleteText('Müll', ['TASK-7', 'TASK-8'])).toBe(
+			`${start}; TASK-7, TASK-8 bleiben als normale Tickets offen.`
 		);
 	});
 });

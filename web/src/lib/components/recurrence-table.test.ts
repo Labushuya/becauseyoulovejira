@@ -115,9 +115,11 @@ describe('RecurrenceTable', () => {
 		]);
 
 		const [weekly, afterCompletion, yearly] = rows as [HTMLElement, HTMLElement, HTMLElement];
+		// The last cell holds the menu "•••" (AM-4), covered in recurrence-row-menu.test.ts.
 		const cells = (row: HTMLElement) =>
 			within(row)
 				.getAllByRole('cell')
+				.filter((cell) => cell.getAttribute('data-col') !== 'actions')
 				.map((cell) => cell.textContent?.replace(/\s+/g, ' ').trim());
 		// Below the due date: when the ticket appears, or the open ticket it waits for.
 		expect(cells(weekly)).toEqual([
@@ -125,24 +127,21 @@ describe('RecurrenceTable', () => {
 			'28.09. nach TASK-7',
 			'TASK-7',
 			'–kein Projekt',
-			'Aktiv',
-			''
+			'Aktiv'
 		]);
 		expect(cells(afterCompletion)).toEqual([
 			'3 Tage nach Erledigung',
 			'nach dem Erledigen',
 			'–keins',
 			'Haus (HAUS)',
-			'Aktiv',
-			''
+			'Aktiv'
 		]);
 		expect(cells(yearly)).toEqual([
 			'Jährlich am 31. Mai',
 			'31.05.2027',
 			'–keins',
 			'–kein Projekt',
-			'Pausiert',
-			''
+			'Pausiert'
 		]);
 		expect(weekly.querySelector("td[data-col='next']")?.getAttribute('title')).toBe(
 			'Nächstes Ticket fällig 28.09., erscheint, sobald TASK-7 erledigt ist'
@@ -199,21 +198,29 @@ describe('RecurrenceTable', () => {
 		expect(state?.querySelector('[data-tone]')?.getAttribute('data-tone')).toBe('neutral');
 	});
 
-	it('pauses or resumes a row through a named icon button', async () => {
+	/** An entry of the menu "•••" of the row of a rule (AM-4); jsdom shows popovers as hidden. */
+	function entry(title: string, name: string): HTMLElement {
+		const row = screen.getByRole('link', { name: title }).closest('tr') as HTMLElement;
+		return within(row).getByRole('menuitem', { name, hidden: true });
+	}
+
+	it('pauses or resumes a row through its menu "•••" instead of a symbol (AM-4)', async () => {
 		const { ontoggle } = setup();
-		const pause = screen.getByRole('button', { name: 'Pausieren: Müll rausbringen' });
-		expect(pause.getAttribute('title')).toBe('Pausieren');
-		await fireEvent.click(pause);
+		expect(screen.queryByRole('button', { name: /^Pausieren: / })).toBeNull();
+		await fireEvent.click(entry('Müll rausbringen', 'Pausieren'));
 		expect(ontoggle).toHaveBeenCalledWith(RULES[0]);
 
-		await fireEvent.click(screen.getByRole('button', { name: 'Fortsetzen: Steuer' }));
+		await fireEvent.click(entry('Steuer', 'Fortsetzen'));
 		expect(ontoggle).toHaveBeenLastCalledWith(RULES[2]);
 	});
 
-	it('locks the button of a running action', async () => {
+	it('locks the entries of a running action', async () => {
 		const { ontoggle } = setup({ busyId: 'rule00000000001' });
-		const pause = screen.getByRole('button', { name: 'Pausieren: Müll rausbringen' });
+		const pause = entry('Müll rausbringen', 'Pausieren');
 		expect(pause.getAttribute('aria-disabled')).toBe('true');
+		expect(pause.getAttribute('aria-busy')).toBe('true');
+		const cell = pause.closest('td') as HTMLElement;
+		expect(cell.getAttribute('aria-busy')).toBe('true');
 		await fireEvent.click(pause);
 		expect(ontoggle).not.toHaveBeenCalled();
 	});

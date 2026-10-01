@@ -12,6 +12,7 @@ import {
 	REM,
 	TABLES,
 	TICKET_TABLE,
+	TRASH_TABLE,
 	changedOptions,
 	clampWidth,
 	columnWidth,
@@ -292,14 +293,20 @@ describe('fitColumns', () => {
 	// Thresholds of the container queries before ADR-0030 and with the default widths now. A fixed
 	// table layout needs real widths for key, status and actions, so they move by up to 2.5rem. The
 	// selection of the tickets (plan BI-2) adds its 2.5rem on top of that, the menu "•••" of a row
-	// (plan aktionsmenues, AM-2) another 1.5rem.
+	// (plan aktionsmenues, AM-2) another 1.5rem; with the menus of AM-4 the inbox adds 2rem and the
+	// projects their new column of 3.5rem (ADR-0030, Nachtrag 5). Trash and rules keep their width.
+	const ADDED = new Map([
+		[TICKET_TABLE, 2.5 + 1.5],
+		[INBOX_TABLE, 2],
+		[PROJECT_TABLE, 3.5]
+	]);
 	it.each([
 		[TICKET_TABLE, { created: [60, 64.5], tags: [52, 58.5], project: [44, 50.5], due: [36, 42.5] }],
 		[
 			INBOX_TABLE,
-			{ arrival: [52, 50.5], source: [46, 44.5], kind: [40, 37.5], 'source-date': [34, 31.5] }
+			{ arrival: [52, 52.5], source: [46, 46.5], kind: [40, 39.5], 'source-date': [34, 33.5] }
 		],
-		[PROJECT_TABLE, { archived: [40, 38], new: [34, 31.5], total: [28, 26.5], active: [22, 21] }],
+		[PROJECT_TABLE, { archived: [40, 41.5], new: [34, 35], total: [28, 30], active: [22, 24.5] }],
 		[
 			RECURRENCE_TABLE,
 			{ project: [52, 53.5], open: [44, 44.5], next: [36, 37.5], rhythm: [28, 30.5] }
@@ -310,9 +317,18 @@ describe('fitColumns', () => {
 			const actual = threshold(table, id);
 			expect(Math.abs(actual - now), `${table.id}/${id}: ${actual}rem`).toBeLessThanOrEqual(1);
 			const label = `${table.id}/${id} against ${before}rem`;
-			const added = table === TICKET_TABLE ? 2.5 + 1.5 : 0;
+			const added = ADDED.get(table) ?? 0;
 			expect(Math.abs(actual - added - before), label).toBeLessThanOrEqual(2.5);
 		}
+	});
+
+	it('gives the actions of the other tables room for the menu "•••" of AM-4', () => {
+		const actions = (table: TableSpec) => table.columns.find((entry) => entry.id === 'actions');
+		expect(actions(INBOX_TABLE)?.width).toBe(15 * REM);
+		expect(actions(PROJECT_TABLE)).toMatchObject({ width: 3.5 * REM, required: true });
+		expect(actions(RECURRENCE_TABLE)?.width).toBe(3.5 * REM);
+		expect(actions(TRASH_TABLE)?.width).toBe(5 * REM);
+		expect(menuColumns(PROJECT_TABLE.columns).map((entry) => entry.id)).not.toContain('actions');
 	});
 
 	it('hides "Erstellt" and "Tags" of the tickets at 840 px and names them as hidden for space', () => {

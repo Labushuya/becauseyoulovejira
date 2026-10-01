@@ -1,7 +1,9 @@
 <script lang="ts">
 	import { tick } from 'svelte';
+	import { goto } from '$app/navigation';
 	import {
 		openInstancesOf,
+		ruleDeleteText,
 		type OpenInstance,
 		type RecurrenceRule
 	} from '$lib/domain/recurrence-rule';
@@ -10,11 +12,17 @@
 	import type { FlagSink } from '$lib/stores/flags.svelte';
 	import { RECURRENCE_UNAVAILABLE, type RecurrenceStore } from '$lib/stores/recurrence.svelte';
 	import type { TicketListStore } from '$lib/stores/ticket-list.svelte';
-	import { NEW_RULE_LINK_ID, newRecurrenceHref, recurrenceHref } from '$lib/ticket-links';
+	import {
+		NEW_RULE_LINK_ID,
+		newRecurrenceHref,
+		recurrenceHref,
+		recurrencesHref
+	} from '$lib/ticket-links';
 	import { helpHref } from '$lib/settings-sections';
 	import ColumnsPopover from './ColumnsPopover.svelte';
 	import EmptyState from './guidance/EmptyState.svelte';
 	import SectionMessage from './guidance/SectionMessage.svelte';
+	import ConfirmDialog from './overlay/ConfirmDialog.svelte';
 	import RecurrenceTable from './RecurrenceTable.svelte';
 	import SectionBar from './SectionBar.svelte';
 	import { ColumnFit } from './table/column-fit.svelte';
@@ -25,11 +33,13 @@
 	// the section bar with the switch at the same place as in the other views and "Neue Regel";
 	// below it all rules of the store as a table, active ones first, then by the next ticket. A row
 	// opens the rule panel (/wiederholungen/<id>) next to the view, "Neue Regel" the panel
-	// /wiederholungen/neu. "Pausieren" and "Fortsetzen" work in the row; a refusal (an archived
-	// project) comes as an error flag, like every failed row action (ADR-0025 section 8). Closing a
-	// panel returns the focus to the link of its rule; after deleting, to the rule that followed it
-	// (or the one before), else to the heading. Before the E5 migration a neutral hint says when
-	// the rules come (restartNeeded); the empty list offers "Regel anlegen".
+	// /wiederholungen/neu. "Pausieren" and "Fortsetzen" work from the menu "•••" of the row (plan
+	// aktionsmenues, AM-4); a refusal (an archived project) comes as an error flag, like every
+	// failed row action (ADR-0025 section 8). "Löschen …" of the menu asks the question of the panel
+	// as a dialog (the list is no modal) and closes the panel of the rule. Closing a panel returns
+	// the focus to the link of its rule; after deleting, to the rule that followed it (or the one
+	// before), else to the heading. Before the E5 migration a neutral hint says when the rules come
+	// (restartNeeded); the empty list offers "Regel anlegen".
 	let {
 		store,
 		tickets,
@@ -158,6 +168,44 @@
 			if (focusLost()) (document.getElementById(NEW_RULE_LINK_ID) ?? heading)?.focus();
 		});
 	});
+
+	/** The rule whose "Löschen …" of its menu asks (AM-4). */
+	let deleting = $state<RecurrenceRule | null>(null);
+	let deleteBusy = $state(false);
+	let deleteError = $state<string | null>(null);
+
+	/** "Löschen" of the question: the rule goes, its tickets stay (ADR-0023 section 7). */
+	async function confirmDelete() {
+		const rule = deleting;
+		if (rule === null || deleteBusy) return;
+		const order = rules.map((entry) => entry.id);
+		deleteBusy = true;
+		deleteError = null;
+		const result = await store.deleteRule(rule.id);
+		deleteBusy = false;
+		if (!result.ok) {
+			deleteError = result.message;
+			if (deleteError === null) deleting = null;
+			return;
+		}
+		deleting = null;
+		// The panel of the deleted rule closes; the effect above then hands the focus on.
+		if (rule.id === activeId) {
+			await goto(recurrencesHref());
+			return;
+		}
+		// The dialog gives the focus to the heading when its row is gone; the next row is closer.
+		await tick();
+		if (focusLost() || document.activeElement === heading) {
+			(neighbourOf(rule.id, order) ?? heading)?.focus();
+		}
+	}
+
+	function cancelDelete() {
+		if (deleteBusy) return;
+		deleting = null;
+		deleteError = null;
+	}
 </script>
 
 <section class="recurrences-view" aria-labelledby={headingId} bind:this={root}>
@@ -190,7 +238,7 @@
 				<a class="button-subtle help-link" href={helpHref('wiederholungen')}>So funktioniert’s</a>
 			{/if}
 			{#if store.state === 'ready' && rules.length > 0}
-				<ColumnsPopover fit={columnFit} always="Titel, Zustand und Aktion sind immer sichtbar." />
+				<ColumnsPopover fit={columnFit} always="Titel, Zustand und Aktionen sind immer sichtbar." />
 			{/if}
 		{/snippet}
 	</SectionBar>
@@ -247,9 +295,30 @@
 			ticketHrefOf={links.path}
 			projectOf={(rule) => (rule.projectId === null ? null : catalog.projectById(rule.projectId))}
 			ontoggle={(rule) => void toggle(rule)}
+			ondelete={(rule) => {
+				deleteError = null;
+				deleting = rule;
+			}}
 		/>
 	{/if}
 </section>
+
+<!-- "Löschen …" of the menu of a row (AM-4): the question of the panel; the list is no modal. -->
+{#if deleting !== null}
+	{@const rule = deleting}
+	{@const openKeys = (openTicketsOf(rule) ?? []).map((open) => open.key)}
+	<ConfirmDialog
+		open
+		title="Regel löschen?"
+		confirmLabel="Löschen"
+		busy={deleteBusy}
+		error={deleteError}
+		onconfirm={() => void confirmDelete()}
+		oncancel={cancelDelete}
+	>
+		<p>{ruleDeleteText(rule.title, openKeys)}</p>
+	</ConfirmDialog>
+{/if}
 
 <style>
 	.recurrences-view {

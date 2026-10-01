@@ -365,6 +365,16 @@ a.button-subtle {
 	border: 1px solid transparent;
 }
 
+/*
+ * The menu "•••" of a table row (plan aktionsmenues, AM-2 and AM-4) at the small control height,
+ * so a row with it is no higher than one with a check box. The class also marks the button a
+ * right click on the row opens (lib/overlay/context-menu.ts).
+ */
+.button-icon.row-menu {
+	width: var(--control-height-s);
+	height: var(--control-height-s);
+}
+
 .button-secondary:hover {
 	border-color: var(--color-text-muted);
 }

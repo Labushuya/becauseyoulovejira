@@ -540,11 +540,12 @@ describe('columns of the inbox (ADR-0030, package SP-5)', () => {
 	const marks = () =>
 		screen.getAllByRole('columnheader').map((header) => header.getAttribute('data-col'));
 
-	it('lets the arrival date and "Quelle" give way at 600 px; selection, title and actions stay', async () => {
+	// 640 px instead of 600 since the actions hold the menu "•••" (2rem more, plan aktionsmenues, AM-4).
+	it('lets the arrival date and "Quelle" give way at 640 px; selection, title and actions stay', async () => {
 		setup();
 		await table();
 
-		resize(screen.getByRole('table').parentElement as HTMLElement, 600);
+		resize(screen.getByRole('table').parentElement as HTMLElement, 640);
 		await tick();
 
 		expect(marks()).toEqual(['select', 'kind', 'title', 'source-date', 'actions']);

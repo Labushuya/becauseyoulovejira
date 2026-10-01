@@ -11,6 +11,9 @@
 	} from '$lib/domain/project';
 	import {
 		PROJECT_PARENT_MESSAGES,
+		archiveWithSubProjectsText,
+		canDeleteProject,
+		deleteProjectText,
 		projectChoiceLabel,
 		type ProjectCounts
 	} from '$lib/domain/project-tree';
@@ -171,10 +174,10 @@
 	const codeFixed = $derived(!creating && ownTotal !== null && ownTotal > 0);
 	/**
 	 * The hook refuses to delete a project that tickets use (archiving is the way then) or that has
-	 * sub projects (ADR-0034 section 3).
+	 * sub projects (ADR-0034 section 3); the menu of a row asks the same (canDeleteProject).
 	 */
 	const canDelete = $derived(
-		!creating && total === 0 && subProjects.length === 0 && ondelete !== undefined
+		!creating && canDeleteProject(total, subProjects) && ondelete !== undefined
 	);
 	const dirty = $derived(
 		(typedName !== null && typedName.trim() !== (project?.name ?? '')) ||
@@ -303,12 +306,6 @@
 		} else {
 			confirmingDelete = false;
 		}
-	}
-
-	function names(projects: readonly Project[]): string {
-		const list = projects.map((entry) => entry.name);
-		if (list.length <= 1) return list.join('');
-		return `${list.slice(0, -1).join(', ')} und ${list.at(-1)}`;
 	}
 </script>
 
@@ -590,10 +587,7 @@
 			deleteError = null;
 		}}
 	>
-		<p>
-			„{project.name}“ ({project.code}) hat keine Tickets. Das Projekt wird endgültig gelöscht; das
-			lässt sich nicht rückgängig machen.
-		</p>
+		<p>{deleteProjectText(project)}</p>
 	</ConfirmDialog>
 
 	<ConfirmDialog
@@ -608,12 +602,7 @@
 			archiveError = null;
 		}}
 	>
-		<p>
-			{activeSubProjects.length === 1
-				? 'Archiviert auch 1 Unterprojekt:'
-				: `Archiviert auch ${activeSubProjects.length} Unterprojekte:`}
-			{names(activeSubProjects)}. Zurückholen geht später für jedes einzeln.
-		</p>
+		<p>{archiveWithSubProjectsText(activeSubProjects)}</p>
 	</ConfirmDialog>
 {/if}
 

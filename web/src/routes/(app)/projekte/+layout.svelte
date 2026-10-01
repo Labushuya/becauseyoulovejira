@@ -64,13 +64,44 @@
 	const totalOf = (project: Project) => countsOf(project).total;
 	const newOf = (project: Project) => countsOf(project).fresh;
 
-	setProjectRoute({
+	const notify = (title: string) => flags.show({ tone: 'success', title });
+
+	// Archiving, restoring and deleting with their flags, for the panel and the menu "•••" of a row
+	// (plan aktionsmenues, AM-4).
+	const route = setProjectRoute({
 		editor,
 		activeOf,
 		totalOf,
 		newOf,
 		directOf: (project) => (subProjectsOf(project).length === 0 ? null : ownCounts(project)),
-		notify: (title) => flags.show({ tone: 'success', title })
+		notify,
+		fail: (title, reason) =>
+			flags.show({ tone: 'error', title, ...(reason === null ? {} : { description: reason }) }),
+		async archive(project, archived) {
+			const result = await editor.setProjectArchived(project, archived);
+			if (result.ok) {
+				notify(
+					archived
+						? `Projekt „${project.name}“ archiviert.`
+						: `Projekt „${project.name}“ aus dem Archiv geholt.`
+				);
+			}
+			return result;
+		},
+		async restoreWithParent(project, parent) {
+			const first = await editor.setProjectArchived(parent, false);
+			if (!first.ok) return first;
+			const result = await editor.setProjectArchived(project, false);
+			if (result.ok) {
+				notify(`Projekt „${project.name}“ mit „${parent.name}“ aus dem Archiv geholt.`);
+			}
+			return result;
+		},
+		async remove(project) {
+			const result = await editor.deleteProject(project);
+			if (result.ok) notify(`Projekt „${project.name}“ gelöscht.`);
+			return result;
+		}
 	});
 
 	// "aktiv" counts the open tickets of the list store, also when the app starts here.
@@ -88,6 +119,7 @@
 			{totalOf}
 			{newOf}
 			aggregatedOf={(project) => subProjectsOf(project).length > 0}
+			actions={route}
 			{activeId}
 			{creating}
 			inboxCount={inbox.newCount}

@@ -144,10 +144,12 @@ const tileText = (name: string) =>
 		.textContent?.replace(/\s+/g, ' ')
 		.trim();
 
-/** Cells of the list row of a project, in column order. */
+/** Cells of the list row of a project, in column order, without the menu "•••" (AM-4). */
 function rowCells(name: string): string[] {
 	const row = screen.getByRole('link', { name }).closest('tr') as HTMLElement;
-	return [...row.children].map((cell) => cell.textContent?.replace(/\s+/g, ' ').trim() ?? '');
+	return [...row.children]
+		.filter((cell) => cell.getAttribute('data-col') !== 'actions')
+		.map((cell) => cell.textContent?.replace(/\s+/g, ' ').trim() ?? '');
 }
 
 /** Project names of the list in the shown order. */
@@ -200,11 +202,15 @@ describe('project view', () => {
 		const { countDone } = await show();
 
 		const table = screen.getByRole('table');
+		// The actions (menu "•••", AM-4) name their column for screen readers only and sort nothing.
 		expect(
 			within(table)
 				.getAllByRole('columnheader')
-				.map((th) => th.querySelector('[aria-hidden="true"]')?.textContent)
-		).toEqual(['Code', 'Name', 'aktiv', 'gesamt', 'neu', 'archiviert']);
+				.map(
+					(th) => th.querySelector('[aria-hidden="true"]')?.textContent ?? th.textContent?.trim()
+				)
+		).toEqual(['Code', 'Name', 'aktiv', 'gesamt', 'neu', 'archiviert', 'Aktionen']);
+		expect(within(table).getAllByRole('button', { name: /sortieren/ })).toHaveLength(6);
 		expect(table.querySelector('caption')?.textContent).toMatch(/^Projekte · nach Name/);
 		expect(listNames()).toEqual(['Auto', 'Haus']);
 		await vi.waitFor(() =>
@@ -485,14 +491,15 @@ describe('project view', () => {
 		const table = screen.getByRole('table');
 		expect(screen.getByRole('button', { name: 'Spalten' })).toBeTruthy();
 
-		resize(table.parentElement as HTMLElement, 450);
+		// 500 px instead of 450 since the rows end with the menu "•••" (3.5rem, AM-4); it always stays.
+		resize(table.parentElement as HTMLElement, 500);
 		await tick();
 
 		expect(
 			within(table)
 				.getAllByRole('columnheader')
 				.map((header) => header.getAttribute('data-col'))
-		).toEqual(['code', 'name', 'active', 'total']);
+		).toEqual(['code', 'name', 'active', 'total', 'actions']);
 		expect(table.querySelector('caption')?.textContent).toMatch(/Weitere Spalten im Panel$/);
 		document.body.innerHTML = '';
 
