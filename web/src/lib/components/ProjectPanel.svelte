@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { tick, untrack } from 'svelte';
+	import { tick, untrack, type Snippet } from 'svelte';
 	import type { ResolvedPathname } from '$app/types';
 	import {
 		PROJECT_CODE_MAX_LENGTH,
@@ -40,6 +40,10 @@
 	// the breadcrumbs "Projekte › Haus › Garten" of a sub project, the question before archiving a
 	// project with active sub projects (they go with it) and "Mit Oberprojekt zurückholen" for a
 	// sub project below an archived parent. A project with sub projects cannot be deleted.
+	// Open tickets (ADR-0034, addendum "Offene Tickets in Projekten"): the section "Offene Tickets"
+	// after the form, with the content of the route (`openTickets`, the compact list of the project
+	// and of its sub projects); its heading takes the focus when the focused entry leaves an emptied
+	// list.
 	let {
 		project = null,
 		active = null,
@@ -61,7 +65,8 @@
 		ondelete,
 		onsaved,
 		ondeleted,
-		onclose
+		onclose,
+		openTickets
 	}: {
 		/** Project of the panel; null for "Neues Projekt". */
 		project?: Project | null;
@@ -107,6 +112,11 @@
 		ondeleted?: () => void;
 		/** × and Escape (after the question about unsaved input). */
 		onclose: () => void;
+		/**
+		 * The open tickets of the project, below the heading "Offene Tickets"; the argument gives the
+		 * focus to that heading.
+		 */
+		openTickets?: Snippet<[() => HTMLElement | undefined]>;
 	} = $props();
 
 	const uid = $props.id();
@@ -122,6 +132,7 @@
 		parentHint: `${uid}-parent-hint`,
 		parentError: `${uid}-parent-error`,
 		subProjects: `${uid}-sub-projects`,
+		openTickets: `${uid}-open-tickets`,
 		archive: `${uid}-archive`
 	};
 
@@ -186,6 +197,7 @@
 	);
 
 	let heading = $state<HTMLElement>();
+	let ticketsHeading = $state<HTMLElement>();
 	let nameInput = $state<HTMLInputElement>();
 	let codeInput = $state<HTMLInputElement>();
 	let parentSelect = $state<HTMLSelectElement>();
@@ -491,6 +503,13 @@
 		{/if}
 	</div>
 
+	{#if project !== null && openTickets}
+		<section class="manage tickets-section" aria-labelledby={ids.openTickets}>
+			<h3 id={ids.openTickets} tabindex="-1" bind:this={ticketsHeading}>Offene Tickets</h3>
+			{@render openTickets(() => ticketsHeading)}
+		</section>
+	{/if}
+
 	{#if project !== null && hierarchyReady && !project.parentId}
 		<section class="manage" aria-labelledby={ids.subProjects}>
 			<h3 id={ids.subProjects}>Unterprojekte</h3>
@@ -736,6 +755,12 @@
 		justify-items: start;
 		padding-top: 1rem;
 		border-top: 1px solid var(--color-line);
+	}
+
+	/* The list takes the width of the panel; the other sections line up at the start. */
+	.tickets-section {
+		justify-items: stretch;
+		min-width: 0;
 	}
 
 	.sub-projects {

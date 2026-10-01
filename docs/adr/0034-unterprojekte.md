@@ -1,6 +1,6 @@
 # ADR-0034: Unterprojekte als Gliederung der Projekte: eine Ebene, eigener Code, Archiv-Kaskade, keine Epics
 
-- **Status:** Angenommen und umgesetzt in den Paketen UP-1 bis UP-6 nach [docs/plan/unterprojekte.md](../plan/unterprojekte.md) (#130 bis #135); manuelle Browser-Prüfungen stehen im Test-Manifest
+- **Status:** Angenommen und umgesetzt in den Paketen UP-1 bis UP-6 nach [docs/plan/unterprojekte.md](../plan/unterprojekte.md) (#130 bis #135); manuelle Browser-Prüfungen stehen im Test-Manifest; Nachtrag „Offene Tickets in Projekten“ (2026-10-01, Paket PT-1 nach [docs/plan/projekte-tickets.md](../plan/projekte-tickets.md))
 - **Datum:** 2026-09-28
 - **Entscheidung durch:** Nutzer (Freigabe der Unterprojekte mit einer Ebene, eigenem Code, Brotkrumen, Filter mit Unterprojekten, aggregierten Zahlen, Archiv-Kaskade und Löschsperre am 2026-09-28), Advisor (Konzept „Unterprojekte“), Executor (Prüfregeln, Spike, Einzelheiten)
 - **Präzisiert:** [ADR-0012](0012-plain-ticketing.md) (Nachtrag, der Text bleibt), [ADR-0013](0013-filter-suche-sortierung-gruppierung.md) §3 und §4 (Filter „Projekt“ mit Unterprojekten, Parameter `unterprojekte`)
@@ -100,3 +100,28 @@ Unterprojekte haben keinen Status, keinen Fortschritt, keine Laufzeit und keine 
 - Negativ: Der Projektfilter hat zwei Formen mehr (Client-Menge und Serverausdruck); der Paritätstest hält sie gleich.
 - Nach dem Update ist ein Neustart der App nötig (stop.bat, dann start.bat), bevor Unterprojekte angelegt werden können.
 - CLAUDE.md §5 (`projects.parent?`), §7 und §10 (Präzisierung) sind nachgezogen.
+
+## Nachtrag (2026-10-01): Offene Tickets in Projekten
+
+**Anlass:** Nutzerwunsch (freigegeben): Tickets, die Projekten zugeordnet sind, sollen in der Projekt-Oberfläche sichtbar sein, ohne erst „Tickets anzeigen“ zu klicken. Vorgaben des Advisors, vom Nutzer bestätigt (Einzelheiten im [Plan](../plan/projekte-tickets.md)). Der Text oben bleibt; dieser Nachtrag ergänzt §6.
+
+**Entscheidung:**
+
+- **Projektliste:** Jede Zeile hat vor dem Code den Disclosure-Knopf „Offene Tickets von „Haus““ (`aria-expanded`, `aria-controls`, solange offen). Aufgeklappt folgt eine Zeile über die volle Breite mit den offenen Tickets (nicht erledigt; im Papierkorb erreicht keines den Client) des Projekts. Der Baum bleibt: Ein Oberprojekt zeigt dort nur seine eigenen Tickets („Offene Tickets direkt in „Haus““), jedes Unterprojekt seine eigenen unter seiner Zeile, eingerückt wie sein Name. Die Zahlen des Oberprojekts bleiben die mit den Unterprojekten (§6). Der Knopf zum Zuklappen der Unterprojekte bleibt in der Namenszelle.
+- **Liste:** eine echte Liste mit Namen; je Eintrag Key und Titel als ein Link, Status, Priorität und Fälligkeit, nach Fälligkeit (ohne am Ende), dann Priorität. Höchstens 10, danach „Alle N in Aufgaben öffnen“ (der Sprung mit dem Projekt als Filter; beim Oberprojekt mit `unterprojekte=0`, damit „Aufgaben“ dieselben N zeigt). Ein Klick öffnet das Ticket im gemerkten Modus ([ADR-0036](0036-sammelbearbeitung-inline-und-oeffnungsmodus.md) §1), mit dem Projekt als Zustand der Liste dahinter. Jeder Eintrag hat das Zeilenmenü „•••“ der Tabelle „Aufgaben“ samt Rechtsklick (ADR-0036, Nachträge „Aktionsmenüs“ und „Rechtsklick“; derselbe Baustein und Store, die Fragen als Dialoge des Layouts `/projekte`). Kein Bearbeiten, keine Auswahl, keine Sammelaktionen, keine eigenen Filter: dafür gibt es „Aufgaben“.
+- **„Alle aufklappen“ und „Alle zuklappen“** über der Liste. Welche Zeilen offen sind, merkt sich das Gerät (`localStorage` `byl-projects-tickets`, nur IDs, höchstens 500), nicht der Tab wie das Zuklappen der Unterprojekte: Es ist eine Vorliebe wie die Spalten ([ADR-0030](0030-spalten-breiten-und-kompakte-zeilen.md) §5).
+- **Projekt-Panel:** Abschnitt „Offene Tickets“ mit derselben Liste und Grenze; beim Oberprojekt zuerst seine eigenen, dann je Unterprojekt eingerückt mit Überschrift („Haus › Garten“), ein archiviertes nur mit offenen Tickets.
+- **Kacheln:** keine Liste und kein weiterer Zähler. „N aktiv“ ist schon die Zahl der offenen Tickets; ein Link in der Kachel ginge nicht (die Kachel ist ein Link) und kostete einen Tab-Stopp je Kachel; „Tickets anzeigen“ steht im Menü der Kachel, ein Klick öffnet das Panel mit der Liste.
+- **Daten:** aus dem `TicketListStore`, der alle offenen Tickets live hält ([ADR-0042](0042-tickets-und-projekte-aus-listen-waehlen.md) §4, Nachtrag); keine Anfrage, Realtime wirkt von selbst. Gruppiert in einem Durchgang und nur berechnet, solange eine Zeile offen ist; gerendert nur offene Zeilen mit höchstens 10 Einträgen.
+- **Tabellenregeln ([ADR-0030](0030-spalten-breiten-und-kompakte-zeilen.md)):** keine neue Spalte, Breiten und Schwellen unverändert (der Knopf sitzt in der Codezelle, deren linker Innenabstand 0,75rem auf 0,375rem sinkt). Die Liste scrollt nie seitlich: Status, Priorität, Fälligkeit und „•••“ stehen neben Key und Titel und brechen auf schmaler Breite als Block darunter um.
+- **Kontextmenü:** `rowMenus` nimmt nur noch den Knopf „•••“ der Zeile selbst, nicht den einer darin geschachtelten Zeile. Sonst öffnete ein Rechtsklick neben den Einträgen das Menü des ersten Eintrags; dort bleibt das Menü des Browsers.
+
+**Alternativen:**
+
+- **Eine Tabelle je Projekt:** bräuchte die Spalten-Mechanik der großen Tabellen (Breiten, Menü „Spalten“), die `table-columns.test.ts` für jede Tabelle verlangt, für eine Unterliste mit fünf Werten. Verworfen zugunsten einer Liste mit festen Plätzen und Umbruch.
+- **Der Knopf in der Namenszelle:** Beim Oberprojekt stünden zwei gleiche Pfeile nebeneinander (Tickets und Unterprojekte). Verworfen.
+- **Treegrid mit Tickets als Zeilen der Projekttabelle:** eigenes Tastaturmodell und Spalten, die für Projekte gedacht sind (aktiv, gesamt). Verworfen.
+- **Beim Oberprojekt alle Tickets samt Unterprojekten:** Die Tickets der Unterprojekte stünden doppelt (unter dem Oberprojekt und unter dem Unterprojekt). Verworfen.
+- **Zustand je Tab:** Vorgabe ist das Gerät.
+
+**Konsequenzen:** keine Migration, kein Neustart, nur die Oberfläche (Build, dann F5). Die Fragen „Duplizieren …“ und „In den Papierkorb …“ eines Zeilenmenüs zeigt der gemeinsame Baustein `TicketRowDialogs` (aus `TicketTable` herausgelöst). Tests und Manifest: BYL-E6-960 bis BYL-E6-971. CLAUDE.md §7, README und Hilfe sind nachgezogen.

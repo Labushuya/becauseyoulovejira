@@ -24,12 +24,15 @@
 		canDeleteProject,
 		deleteProjectText
 	} from '$lib/domain/project-tree';
+	import { PROJECT_TICKETS_FAILED, openTicketsByProject } from '$lib/domain/project-tickets';
 	import type { ProjectActions } from '$lib/project-route';
 	import type { EditResult } from '$lib/stores/catalog-editor';
 	import type { CatalogStore } from '$lib/stores/catalog.svelte';
 	import { getColumnPrefs } from '$lib/stores/column-prefs.svelte';
 	import type { ProjectStatsStore } from '$lib/stores/project-stats.svelte';
+	import { ProjectTicketsDisclosure } from '$lib/stores/project-tickets.svelte';
 	import type { TicketListStore } from '$lib/stores/ticket-list.svelte';
+	import type { TicketRowActionsStore } from '$lib/stores/ticket-row-actions.svelte';
 	import {
 		NEW_PROJECT_LINK_ID,
 		newProjectHref,
@@ -46,6 +49,7 @@
 	import EmptyState from './guidance/EmptyState.svelte';
 	import ConfirmDialog from './overlay/ConfirmDialog.svelte';
 	import ProjectTable from './ProjectTable.svelte';
+	import ProjectTicketList from './ProjectTicketList.svelte';
 	import ProjectTiles from './ProjectTiles.svelte';
 	import SectionBar from './SectionBar.svelte';
 	import { ColumnFit } from './table/column-fit.svelte';
@@ -70,6 +74,11 @@
 	// dem Archiv holen" or "Mit Oberprojekt zurückholen" and "Löschen …" (only without tickets and
 	// sub projects). Archiving with active sub projects and deleting ask first, as in the panel; the
 	// list is no modal, so they are dialogs. Every tile has the same menu (AM-5), from `menuOf`.
+	// Open tickets (ADR-0034, addendum "Offene Tickets in Projekten"): every row of the list opens
+	// to the open tickets of its project (ProjectTicketList, from the list store, no request of its
+	// own, live with realtime); "Alle aufklappen" and "Alle zuklappen" above the list. Which rows are
+	// open is kept on this device (ProjectTicketsDisclosure). The tiles show no list (no room; their
+	// "aktiv" already counts the open tickets, the panel lists them).
 	let {
 		catalog,
 		tickets,
@@ -81,7 +90,9 @@
 		actions,
 		activeId = null,
 		creating = false,
-		inboxCount = null
+		inboxCount = null,
+		rowActions = null,
+		duplicates = false
 	}: {
 		catalog: CatalogStore;
 		tickets: TicketListStore;
@@ -102,10 +113,18 @@
 		creating?: boolean;
 		/** New inbox entries for the switch (E4 plan, package 3). */
 		inboxCount?: number | null;
+		/** The menu "•••" of the open tickets (plan aktionsmenues, AM-2); without it they have none. */
+		rowActions?: TicketRowActionsStore | null;
+		/** "Duplizieren …" in that menu (ADR-0045). */
+		duplicates?: boolean;
 	} = $props();
 
 	const uid = $props.id();
-	const ids = { heading: `${uid}-heading`, search: `${uid}-search` };
+	const ids = {
+		heading: `${uid}-heading`,
+		search: `${uid}-search`,
+		ticketTools: `${uid}-ticket-tools`
+	};
 
 	function storage(): Storage | null {
 		try {
@@ -132,20 +151,45 @@
 
 	/** Parents whose sub projects are folded away (ADR-0034); per tab, default open. */
 	const collapsed = new SvelteSet<string>(readCollapsedProjects(sessionStore()));
+	const numbers = {
+		active: (project: Project) => activeOf(project),
+		total: (project: Project) => totalOf(project),
+		fresh: (project: Project) => newOf(project)
+	};
 	/** The projects as a tree (ADR-0034): searched, sorted, folded; list and tiles show the same. */
-	const rows = $derived(
-		projectRows(
-			available,
-			query.search,
-			query.sort,
-			{
-				active: (project) => activeOf(project),
-				total: (project) => totalOf(project),
-				fresh: (project) => newOf(project)
-			},
-			collapsed
+	const rows = $derived(projectRows(available, query.search, query.sort, numbers, collapsed));
+
+	/** Rows of the list that show their open tickets; kept on this device. */
+	const disclosure = new ProjectTicketsDisclosure(window);
+	$effect(() => disclosure.connect());
+	/** The open tickets per project, ordered; only computed while a row shows its tickets. */
+	const openByProject = $derived(openTicketsByProject(tickets.open));
+	/** Every project of the list, folded sub projects too: "Alle aufklappen" opens them all. */
+	const listedIds = $derived(
+		projectRows(available, query.search, query.sort, numbers, new Set()).map(
+			(row) => row.project.id
 		)
 	);
+	const allOpen = $derived(listedIds.every((id) => disclosure.isOpen(id)));
+	const noneOpen = $derived(!listedIds.some((id) => disclosure.isOpen(id)));
+
+	/** "Alle aufklappen" and "Alle zuklappen"; the focus stays on the button. */
+	function openAllTickets() {
+		if (!allOpen) disclosure.openAll(listedIds);
+	}
+
+	function closeAllTickets() {
+		if (!noneOpen) disclosure.closeAll();
+	}
+
+	/** The disclosure of the open tickets of a row, where the focus goes when its list empties. */
+	function ticketsToggleOf(projectId: string): HTMLElement | null {
+		return (
+			[...(root?.querySelectorAll<HTMLElement>('[data-tickets-toggle]') ?? [])].find(
+				(button) => button.dataset.ticketsToggle === projectId
+			) ?? null
+		);
+	}
 	/** Projects that match the search; parents shown only as context do not count. */
 	const matchCount = $derived(filterProjects(available, query.search).length);
 	const countLabel = $derived(matchCount === 1 ? '1 Projekt' : `${matchCount} Projekte`);
@@ -450,6 +494,21 @@
 	</a>
 {/snippet}
 
+<!-- The open tickets below a row of the list (ADR-0034, addendum "Offene Tickets in Projekten"). -->
+{#snippet ticketList(project: Project)}
+	<ProjectTicketList
+		{project}
+		tickets={openByProject.get(project.id) ?? []}
+		today={tickets.today}
+		ownOnly={catalog.subProjectsOf(project.id).length > 0}
+		loading={tickets.openState === 'idle' || tickets.openState === 'loading'}
+		error={tickets.openState === 'error' ? PROJECT_TICKETS_FAILED : null}
+		{rowActions}
+		{duplicates}
+		returnFocus={() => ticketsToggleOf(project.id)}
+	/>
+{/snippet}
+
 {#snippet failure(message: string, onretry: () => void)}
 	<div class="alert-error failure">
 		<ErrorIcon />
@@ -554,6 +613,25 @@
 
 		{#if rows.length > 0}
 			{#if layout === 'liste'}
+				<div class="ticket-tools" role="group" aria-labelledby={ids.ticketTools}>
+					<span class="ticket-tools-label" id={ids.ticketTools}>Offene Tickets</span>
+					<button
+						class="button-subtle"
+						type="button"
+						aria-disabled={allOpen}
+						onclick={openAllTickets}
+					>
+						Alle aufklappen
+					</button>
+					<button
+						class="button-subtle"
+						type="button"
+						aria-disabled={noneOpen}
+						onclick={closeAllTickets}
+					>
+						Alle zuklappen
+					</button>
+				</div>
 				<ProjectTable
 					{rows}
 					{activeOf}
@@ -568,6 +646,9 @@
 					{menuOf}
 					onsort={(key) => void sortBy(key)}
 					ontoggle={toggleFolded}
+					{ticketList}
+					ticketsOpen={(project) => disclosure.isOpen(project.id)}
+					ontoggletickets={(project) => disclosure.toggle(project.id)}
 				/>
 			{:else}
 				<ProjectTiles
@@ -684,6 +765,20 @@
 
 	.layout-switch .dot {
 		stroke-width: 2.25;
+	}
+
+	/* "Alle aufklappen" and "Alle zuklappen" of the open tickets, above the list. */
+	.ticket-tools {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 0.25rem 0.5rem;
+		align-items: center;
+		margin-bottom: 0.5rem;
+	}
+
+	.ticket-tools-label {
+		font-size: var(--font-size-control);
+		color: var(--color-text-muted);
 	}
 
 	.new {
