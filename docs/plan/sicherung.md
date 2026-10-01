@@ -1,6 +1,6 @@
 # Plan Sicherung: Generationen, Zielverzeichnis, Prüfung, Wiederherstellen, Notfallplan
 
-- **Stand:** umgesetzt: BK-1 (Generationen, Zielverzeichnis, Verschlüsselung mit age, Zugangsdaten, Seite „Sicherung“). Offen: BK-2 (Prüfung), BK-3 (Wiederherstellen), BK-4 (Notfallplan) und die manuellen Prüfungen im Test-Manifest.
+- **Stand:** umgesetzt: BK-1 (Generationen, Zielverzeichnis, Verschlüsselung mit age, Zugangsdaten, Seite „Sicherung“), BK-2 (Prüfung). Offen: BK-3 (Wiederherstellen), BK-4 (Notfallplan) und die manuellen Prüfungen im Test-Manifest.
 - **Grundlage:**
   - [ADR-0046](../adr/0046-sicherung-pruefung-wiederherstellen.md) (Entscheidungen, Format, Sicherheitsmodell, Grenzen, Alternativen)
   - [ADR-0003](../adr/0003-pb-data-und-backups.md) (Nachtrag), [ADR-0018](../adr/0018-secrets.md), [ADR-0039](../adr/0039-betriebsskripte.md) und [ADR-0043](../adr/0043-system-seite.md) mit Nachträgen, [Plan System-Seite](system-seite.md), [Plan Test-Härtung](test-haertung.md)
@@ -18,7 +18,7 @@
 | Paket | Inhalt | Manifest |
 |---|---|---|
 | BK-1 | Hilfsprogramm `helpers/backup` (`byl-backup.exe`: age mit Passphrase über `age-encryption` 0.3.1, tar-Behälter, `seal`/`open`, Build-Kette wie `byl-mail.exe`), Migration `1790203000_backups_own_schedule.js` (Backup von PocketBase aus), Cron und Dienst (`backup.pb.js`, `lib/backup-service.js`, rein `lib/backup-rules.js`: Namen, GFS, Fälligkeit, Warnungen), Befehle `backup-info`, `backup-configure`, `backup-passphrase`, `backup-export` des Steuerskripts (DPAPI, Prüfung des Ziels, Zugangsdaten aus dem Konto), Routen mit dem Sicherheitsmodell von ADR-0043, Seite „Einstellungen → Sicherung“, Hinweis beim Öffnen, Doku | ab BYL-E6-880 |
-| BK-2 | Prüfung: `byl-backup.exe check` (`PRAGMA integrity_check`, Zählungen, Dateien der Dateifelder in `storage`), `byl-control.ps1 backup-verify` (entschlüsseln, entpacken, Wegwerf-PocketBase ohne Hooks mit Wegwerf-Superuser auf Zufallsport, Health, Zählungen), wöchentlich im Cron und „Jetzt prüfen“, Ergebnis auf der Seite, `backup-restore.test.mjs` mit Originaldateien | folgt |
+| BK-2 | Prüfung: `byl-backup.exe check` (`PRAGMA integrity_check`, Zählungen, Dateien der Dateifelder in `storage`), `byl-control.ps1 backup-verify` (entschlüsseln, entpacken, Wegwerf-PocketBase ohne Hooks mit Wegwerf-Superuser auf Zufallsport, Health, Zählungen), wöchentlich im Cron, „Jetzt prüfen“ und „Prüfen“ je Sicherung (Passphrase einer älteren Sicherung unter ihr), Route `POST /api/byl/backup/verify`, Ergebnis auf der Seite, `backup-restore.test.mjs` mit Originaldateien | ab BYL-E6-900 |
 | BK-3 | Wiederherstellen: `byl-control.ps1 restore` und `wiederherstellen.bat` (Auswahl, Passphrase, Prüfung, Sicherheitskopie, Rückfall), Zugangsdaten zurückschreiben (Isolation der Tests), losgelöster Lauf aus der App mit starker Bestätigung, frische Installation | folgt |
 | BK-4 | Notfallplan: Hilfe „Sicherung & Notfall“, README, Notfallkarte, Hinweis `stop.bat` in „Sichern und umziehen“ | folgt |
 
@@ -34,3 +34,6 @@
 | 2026-10-01 | BK-1 | Freier Platz auch für Freigaben über `GetDiskFreeSpaceEx` (`DriveInfo` kennt keine UNC-Pfade). |
 | 2026-10-01 | BK-1 | Eine Sicherung am Tag statt alle vier Stunden (Generationen in Tagen, Kopie je Sicherung ins Ziel); „Jetzt sichern“ für vorher. Die bisherigen automatischen Sicherungen bleiben liegen und werden nicht gelöscht. |
 | 2026-10-01 | BK-1 | Die Seite prüft ihre Formulare selbst (`novalidate`): Fehler stehen am Feld (ADR-0009), nicht in Blasen des Browsers. |
+| 2026-10-01 | BK-2 | `PRAGMA integrity_check` und die Dateien der Dateifelder prüft `byl-backup.exe check` mit `node:sqlite` (SQLite 3.53 in Node 24, ohne weitere Abhängigkeit); Windows PowerShell hat kein SQLite, und PocketBase selbst prüft die Integrität beim Start nicht. |
+| 2026-10-01 | BK-2 | Die Wegwerf-PocketBase startet ohne Hooks (leerer Ordner), aber mit den Migrationen der App: Eine ältere Sicherung kommt in der Kopie auf den Stand, und nichts läuft mit den Zugangsdaten eines Kanals. Ihr Superuser entsteht vorher über `Get-AdminUpsertArgument`, die einzige Stelle, die einen Superuser-Befehl baut. |
+| 2026-10-01 | BK-2 | Die Routen erlauben zehn Änderungen je Minute; der Integrationstest der Sicherung braucht mehr und wartet bei 429 die Zeit aus `Retry-After` ab (`appChange`), statt die Grenze für Tests zu lockern. |

@@ -1,21 +1,24 @@
 <script lang="ts">
 	import SectionMessage from '$lib/components/guidance/SectionMessage.svelte';
-	import { runText, warningText, type BackupFile } from '$lib/domain/backup';
+	import { newestToVerify, runText, verifyText, warningText } from '$lib/domain/backup';
 	import type { HostPlatform } from '$lib/domain/host-platform';
-	import { formatPointInTime, sizeText } from '$lib/domain/system';
+	import { formatPointInTime } from '$lib/domain/system';
 	import { backupDenialNotice, type BackupStore } from '$lib/stores/backup.svelte';
+	import BackupList from './BackupList.svelte';
 	import BackupPassphrase from './BackupPassphrase.svelte';
 	import BackupSettings from './BackupSettings.svelte';
 
-	// Page "Einstellungen → Sicherung" (ADR-0046): the state of the backups, warnings (red only for
-	// real errors, ADR-0009), "Jetzt sichern", target folder, passphrase, access data, generations
-	// and the backups here and in the target. A server that is not on Windows gets the hint instead
-	// (the target, the passphrase and the access data need the scripts of the folder app).
+	// Page "Einstellungen → Sicherung" (ADR-0046): the state of the backups and their last check,
+	// warnings (red only for real errors, ADR-0009), "Jetzt sichern", "Jetzt prüfen", target folder,
+	// passphrase, access data, generations and the backups here and in the target. A server that is
+	// not on Windows gets the hint instead (the target, the passphrase and the access data need the
+	// scripts of the folder app).
 	let { store, platform }: { store: BackupStore; platform: HostPlatform } = $props();
 
 	const uid = $props.id();
 	const overview = $derived(store.overview);
 	const busy = $derived(store.busy !== null);
+	const newest = $derived(overview === null ? null : newestToVerify(overview));
 	const platformNotice = backupDenialNotice('platform');
 	const counts = $derived(
 		overview === null
@@ -28,10 +31,6 @@
 		const newest = overview.sealed[0];
 		return newest === undefined ? 'Noch keine' : runText({ at: newest.at, bytes: newest.bytes });
 	});
-
-	function fileText(file: BackupFile): string {
-		return `${formatPointInTime(file.at)} · ${sizeText(file.bytes)}`;
-	}
 </script>
 
 {#if platform !== 'windows'}
@@ -91,6 +90,10 @@
 				<dt>Aufbewahrung</dt>
 				<dd>{counts}</dd>
 			</div>
+			<div class="row">
+				<dt>Letzte Prüfung</dt>
+				<dd>{verifyText(overview.last.verify)}</dd>
+			</div>
 		</dl>
 		{#if store.actionMessage !== null}
 			<SectionMessage
@@ -119,44 +122,38 @@
 				Zielverzeichnis.
 			</p>
 		</div>
+		{#if newest !== null}
+			<div class="action">
+				<button
+					class="button-secondary"
+					type="button"
+					aria-disabled={busy}
+					aria-busy={store.busy === 'verify'}
+					aria-describedby={`${uid}-verify-hint`}
+					onclick={() => {
+						if (!busy) void store.verify(newest);
+					}}
+				>
+					Jetzt prüfen
+				</button>
+				<p class="hint" id={`${uid}-verify-hint`}>
+					Prüft die neueste Sicherung{newest.source === 'target' ? ' im Zielverzeichnis' : ''} so, als
+					müsstest du sie wiederherstellen. Das macht die App auch einmal in der Woche von selbst.
+				</p>
+			</div>
+		{/if}
 		<div class="live" role="status">
-			{#if store.busy === 'run'}Sicherung läuft …{/if}
+			{#if store.busy === 'run'}
+				Sicherung läuft …
+			{:else if store.busy === 'verify'}
+				Prüfung läuft …
+			{/if}
 		</div>
 	</section>
 
 	<BackupSettings {store} {overview} />
 	<BackupPassphrase {store} {overview} />
-
-	<section class="part" aria-labelledby={`${uid}-list`}>
-		<h3 id={`${uid}-list`}>Sicherungen</h3>
-		<h4>Im Ordner app (pb_data\backups)</h4>
-		{#if overview.local.length === 0}
-			<p class="hint">Noch keine.</p>
-		{:else}
-			<ul class="files">
-				{#each overview.local as file (file.name)}
-					<li>
-						<span>{fileText(file)}</span>
-						<span class="hint">{file.ours ? 'Generation' : 'Andere Sicherung (bleibt)'}</span>
-					</li>
-				{/each}
-			</ul>
-		{/if}
-		{#if overview.settings.target !== null}
-			<h4>Im Zielverzeichnis (verschlüsselt)</h4>
-			{#if overview.target !== null && !overview.target.reachable}
-				<p class="hint">Das Zielverzeichnis ist gerade nicht erreichbar.</p>
-			{:else if overview.sealed.length === 0}
-				<p class="hint">Noch keine.</p>
-			{:else}
-				<ul class="files">
-					{#each overview.sealed as file (file.name)}
-						<li><span>{fileText(file)}</span><code class="hint">{file.name}</code></li>
-					{/each}
-				</ul>
-			{/if}
-		{/if}
-	</section>
+	<BackupList {store} {overview} />
 {/if}
 
 <style>
@@ -175,11 +172,6 @@
 
 	h3 {
 		font-size: var(--font-size-title);
-		font-weight: 600;
-	}
-
-	h4 {
-		font-size: var(--font-size-body);
 		font-weight: 600;
 	}
 
@@ -213,21 +205,6 @@
 		gap: 0.375rem;
 		justify-items: start;
 		padding: 0.25rem 0 0.5rem;
-	}
-
-	.files {
-		display: grid;
-		gap: 0.25rem;
-		list-style: none;
-		font-size: var(--font-size-body);
-	}
-
-	.files li {
-		display: flex;
-		flex-wrap: wrap;
-		gap: 0.25rem 1rem;
-		padding: 0.25rem 0;
-		border-bottom: 1px solid var(--color-line);
 	}
 
 	.live {

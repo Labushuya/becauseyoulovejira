@@ -30,7 +30,8 @@ var ACTIONS = {
   'backup-info': { method: 'GET', args: ['backup-info', '-Json'], output: true, changes: false, backup: true },
   'backup-configure': { method: 'POST', args: ['backup-configure', '-Json'], output: true, changes: true, input: true, backup: true },
   'backup-passphrase': { method: 'POST', args: ['backup-passphrase', '-Json'], output: true, changes: true, input: true, backup: true },
-  'backup-export': { method: 'POST', args: ['backup-export', '-Json'], output: true, changes: true, input: true, backup: true }
+  'backup-export': { method: 'POST', args: ['backup-export', '-Json'], output: true, changes: true, input: true, backup: true },
+  'backup-verify': { method: 'POST', args: ['backup-verify', '-Json'], output: true, changes: true, input: true, backup: true }
 };
 
 // Windows PowerShell 5.1 below the system folder, never a name looked up in PATH; the script is the

@@ -6,8 +6,10 @@
 // BYL_TEST_ISOLATED=1 (tests/support/clean-env.mjs): the copy reads only the invented BYL_* values
 // of this file as "access data of the account", keeps its passphrase only in a folder of the test
 // (BYL_TEST_SECRET_DIR), never under %LOCALAPPDATA%, and its autostart goes into a folder of the
-// test. app\ and the instance of the user are never started, stopped or asked. Every server of the
-// copy ends in afterAll, and the copy is removed.
+// test. app\ and the instance of the user are never started, stopped or asked. The checks (BK-2)
+// start throwaway servers of the copy's pocketbase.exe on random ports and unpack into
+// %TEMP%\byl-pruefung-*; the cases see that both are gone afterwards. Every server of the copy ends
+// in afterAll, and the copy is removed.
 
 import { createHash, randomBytes } from 'node:crypto';
 import {
@@ -27,6 +29,7 @@ import {
 } from 'node:fs';
 import { request } from 'node:http';
 import { createServer } from 'node:net';
+import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
@@ -47,6 +50,7 @@ const DAY = 24 * 60 * MINUTE;
 // Invented values: the access data the copy takes for those of the account, and the passphrase.
 const SECRET_VALUE = `erfunden-${randomBytes(9).toString('hex')}`;
 const PASSPHRASE = `Pferd Batterie Heftklammer ${randomBytes(4).toString('hex')} äöü`;
+const WRONG_PASSPHRASE = `Falsche Passphrase ${randomBytes(4).toString('hex')}`;
 let CONTROL_ENV;
 
 let base;
@@ -54,6 +58,8 @@ let copy;
 let owner;
 let other;
 let superuserToken;
+// The inbox item of the owner with an original file (its storage file is removed in a later case).
+let original;
 
 async function freePort() {
 	for (;;) {
@@ -65,7 +71,7 @@ async function freePort() {
 	}
 }
 
-/** One HTTP request on a new connection; the body parsed as JSON when it is JSON. */
+/** One HTTP request on a new connection; the body parsed as JSON when it is JSON, and the headers. */
 function call(method, path, { token, origin, headers = {}, body } = {}) {
 	return new Promise((done, fail) => {
 		const data = body === undefined ? undefined : JSON.stringify(body);
@@ -95,7 +101,7 @@ function call(method, path, { token, origin, headers = {}, body } = {}) {
 					} catch {
 						// not JSON
 					}
-					done({ status: response.statusCode, body: parsed });
+					done({ status: response.statusCode, body: parsed, headers: response.headers });
 				});
 			}
 		);
@@ -110,8 +116,28 @@ function call(method, path, { token, origin, headers = {}, body } = {}) {
 const app = (method, path, options = {}) =>
 	call(method, path, { token: owner.token, origin: method === 'POST' ? `http://127.0.0.1:${copy.port}` : undefined, ...options });
 
+/**
+ * A changing request of the app. The routes allow ten of them a minute (ADR-0043 §3); when the
+ * cases before used them up, it waits as long as Retry-After says and asks once more.
+ */
+async function appChange(path, body) {
+	const answer = await app('POST', path, { body });
+	if (answer.status !== 429 || answer.body?.reason !== 'rate') return answer;
+	const seconds = Number(answer.headers['retry-after']);
+	expect(seconds).toBeGreaterThan(0);
+	expect(seconds).toBeLessThanOrEqual(60);
+	await new Promise((done) => setTimeout(done, seconds * 1000 + 250));
+	return app('POST', path, { body });
+}
+
 /** One run of the backups with a given clock (fixture route, superusers only). */
 const runAt = (now, force) => call('POST', '/api/byl-test/backup/run', { token: superuserToken, body: { now, force } });
+
+/** The weekly check of the cron with a given clock (fixture route, superusers only). */
+const verifyDueAt = (now) => call('POST', '/api/byl-test/backup/verify-due', { token: superuserToken, body: { now } });
+
+/** Work folders of the checks under %TEMP%. */
+const workFolders = () => readdirSync(tmpdir()).filter((name) => name.startsWith('byl-pruefung-')).sort();
 
 let outputs = 0;
 
@@ -187,6 +213,24 @@ async function createUser() {
 	return { id: created.body.id, token: await authToken('users', email, password) };
 }
 
+/** An inbox item of the owner with an original file, as a channel keeps a mail. */
+async function createOriginal() {
+	const form = new FormData();
+	form.append('owner', owner.id);
+	form.append('channel', 'eml');
+	form.append('kind', 'mail');
+	form.append('title', 'Mit Original');
+	const mail = `Message-ID: <${randomBytes(6).toString('hex')}@example.com>\r\nSubject: Original\r\n\r\nHallo`;
+	form.append('original', new Blob([mail], { type: 'message/rfc822' }), 'mail.eml');
+	const response = await fetch(`http://127.0.0.1:${copy.port}/api/collections/inbox_items/records`, {
+		method: 'POST',
+		headers: { Authorization: owner.token },
+		body: form
+	});
+	if (response.status !== 200) throw new Error(`inbox item not created (${response.status})`);
+	return response.json();
+}
+
 const sealedIn = (folder) => readdirSync(folder).filter((name) => name.endsWith('.tar.age')).sort();
 const localBackups = () => readdirSync(join(copy.dir, 'pb_data', 'backups')).filter((name) => /^byl-.*\.zip$/.test(name)).sort();
 
@@ -238,6 +282,8 @@ beforeAll(async () => {
 	// A ticket, so the manifest has something to count.
 	const ticket = await call('POST', '/api/collections/tickets/records', { token: owner.token, body: { title: 'Vor der Sicherung', owner: owner.id } });
 	if (ticket.status !== 200) throw new Error(`ticket not created (${ticket.status})`);
+	original = await createOriginal();
+	if (!/^mail_\w+\.eml$/.test(original.original)) throw new Error('original file not kept');
 }, 180_000);
 
 afterAll(() => {
@@ -418,13 +464,103 @@ describe('backups with a target folder on a disposable copy (ADR-0046)', CASE_TI
 		expect(opened.answer.manifest.variables).toEqual([]);
 	});
 
+	it('checks a sealed backup in the target: decrypted, unpacked, integrity, originals, a throwaway server', async () => {
+		const before = workFolders();
+		const name = sealedIn(copy.target).at(-1);
+		const answer = await appChange('/api/byl/backup/verify', { source: 'target', name });
+		expect(answer.status, JSON.stringify(answer.body)).toBe(200);
+		expect(answer.body.result.verify).toMatchObject({
+			ok: true,
+			reason: '',
+			encrypted: true,
+			variables: [],
+			counts: { users: 2, tickets: 1, inbox_items: 1 },
+			files: { expected: 1, missing: 0, examples: [] }
+		});
+		expect(answer.body.result.verify.createdUtc).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/);
+		expect(answer.body.last.verify).toMatchObject({ name, source: 'target', ok: true, reason: '' });
+		expect(answer.body.warnings.map((warning) => warning.code)).not.toContain('verify-failed');
+		// The work folder and the throwaway server are gone; only the server of the copy runs.
+		expect(workFolders()).toEqual(before);
+		expect(processes().map((left) => left.name)).toEqual(['pocketbase.exe']);
+	});
+
+	it('checks from the console too: a local backup by its name, a sealed one by its path', () => {
+		const local = localBackups().at(-1);
+		const plain = control('backup-verify', local, '-Json');
+		expect(plain.code, plain.output).toBe(0);
+		expect(JSON.parse(plain.output.trim().split('\n').pop())).toMatchObject({
+			ok: true,
+			encrypted: false,
+			name: local,
+			files: { expected: 1, missing: 0 }
+		});
+		const sealed = sealedIn(copy.target).at(-1);
+		const byPath = control('backup-verify', join(copy.target, sealed), '-Json');
+		expect(byPath.code, byPath.output).toBe(0);
+		expect(JSON.parse(byPath.output.trim().split('\n').pop())).toMatchObject({ ok: true, encrypted: true, name: sealed });
+		const unknown = control('backup-verify', 'byl-20200101-000000.zip', '-Json');
+		expect(unknown.code).toBe(1);
+		expect(JSON.parse(unknown.output.trim().split('\n').pop())).toEqual({ ok: false, reason: 'missing', name: '' });
+	});
+
+	it('names a wrong passphrase, refuses unknown names and asks for attention after a failed check', async () => {
+		const name = sealedIn(copy.target).at(-1);
+		const wrong = await appChange('/api/byl/backup/verify', { source: 'target', name, passphrase: WRONG_PASSPHRASE });
+		expect(wrong.status, JSON.stringify(wrong.body)).toBe(200);
+		expect(wrong.body.result.verify).toMatchObject({ ok: false, reason: 'passphrase', encrypted: true, counts: null, files: null });
+		expect(wrong.body.last.verify).toMatchObject({ name, ok: false, reason: 'passphrase' });
+		expect(wrong.body.warnings).toContainEqual(expect.objectContaining({ code: 'verify-failed', tone: 'error', reason: 'passphrase' }));
+		const notice = await app('GET', '/api/byl/backup/notice');
+		expect(notice.body.attention).toBe(true);
+		expect(notice.body.warnings).toContain('verify-failed');
+
+		for (const body of [
+			{ source: 'local', name: '..\\data.db' },
+			{ source: 'target', name: localBackups()[0] },
+			{ source: 'path', name: join(copy.target, name) }
+		]) {
+			const refused = await appChange('/api/byl/backup/verify', body);
+			expect(refused, JSON.stringify(body)).toMatchObject({ status: 400, body: { reason: 'invalid', problem: 'name' } });
+		}
+		const gone = await appChange('/api/byl/backup/verify', { source: 'local', name: 'byl-20200101-000000.zip' });
+		expect(gone.body.result.verify).toMatchObject({ ok: false, reason: 'missing' });
+	});
+
+	it('checks the newest backup once a week by itself, the copy in the target first', async () => {
+		const now = Date.now();
+		expect((await verifyDueAt(now)).body).toEqual({ result: null });
+		const due = await verifyDueAt(now + 8 * DAY);
+		expect(due.status, JSON.stringify(due.body)).toBe(200);
+		expect(due.body.result).toMatchObject({ ok: true, encrypted: true, files: { missing: 0 } });
+		const state = await app('GET', '/api/byl/backup');
+		expect(state.body.last.verify).toMatchObject({ source: 'target', name: sealedIn(copy.target).at(-1), ok: true });
+		expect(state.body.warnings.map((warning) => warning.code)).not.toContain('verify-failed');
+	});
+
+	it('finds an original that is missing in a backup', async () => {
+		rmSync(join(copy.dir, 'pb_data', 'storage', original.collectionId, original.id, original.original));
+		const made = await runAt(Date.now() + 5 * DAY, true);
+		expect(made.body.backup).toMatch(/^byl-\d{8}-\d{6}\.zip$/);
+		const answer = await appChange('/api/byl/backup/verify', { source: 'local', name: made.body.backup });
+		expect(answer.status, JSON.stringify(answer.body)).toBe(200);
+		expect(answer.body.result.verify).toMatchObject({
+			ok: false,
+			reason: 'files',
+			encrypted: false,
+			counts: { inbox_items: 1 },
+			files: { expected: 1, missing: 1, examples: [`inbox_items/${original.id}`] }
+		});
+		expect(JSON.stringify(answer.body)).not.toContain(original.original);
+	});
+
 	it('writes audit entries and log lines without values', async () => {
 		const filter = encodeURIComponent("message ~ 'byl-backup:'");
 		const answer = await call('GET', `/api/logs?filter=${filter}&perPage=500&sort=created`, { token: superuserToken });
 		const entries = answer.body.items ?? [];
 		const actions = entries.filter((entry) => entry.message === 'byl-backup: Aktion ausgeführt');
 		expect(actions.map((entry) => entry.data.action)).toEqual(
-			expect.arrayContaining(['backup-configure', 'backup-passphrase', 'backup-run'])
+			expect.arrayContaining(['backup-configure', 'backup-passphrase', 'backup-run', 'backup-verify'])
 		);
 		for (const entry of actions) expect(entry.data.user).toBe(owner.id);
 		expect(entries).toContainEqual(
@@ -434,7 +570,10 @@ describe('backups with a target folder on a disposable copy (ADR-0046)', CASE_TI
 		expect(log).toMatch(/ backup-passphrase exit=0 passphrase=set\r$/m);
 		expect(log).toMatch(/ backup-export exit=0 file=byl-\d{8}-\d{6}\.tar\.age bytes=\d+\r$/m);
 		expect(log).toMatch(/ backup-configure exit=1 problem=inside-app\r$/m);
+		expect(log).toMatch(/ backup-verify exit=0 name=byl-\d{8}-\d{6}\.tar\.age ok=true\r$/m);
+		expect(log).toMatch(/ backup-verify exit=1 name=byl-\d{8}-\d{6}\.tar\.age ok=false reason=passphrase\r$/m);
+		expect(log).toMatch(/ backup-verify exit=1 name=byl-\d{8}-\d{6}\.zip ok=false reason=files\r$/m);
 		const everything = [JSON.stringify(entries), ...readdirSync(join(copy.dir, 'logs')).map((file) => readFileSync(join(copy.dir, 'logs', file), 'latin1'))].join('\n');
-		for (const value of [SECRET_VALUE, PASSPHRASE, copy.target]) expect(everything).not.toContain(value);
+		for (const value of [SECRET_VALUE, PASSPHRASE, WRONG_PASSPHRASE, copy.target, original.original]) expect(everything).not.toContain(value);
 	});
 });

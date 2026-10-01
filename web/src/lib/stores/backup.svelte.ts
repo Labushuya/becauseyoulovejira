@@ -1,8 +1,8 @@
 // Page "Einstellungen → Sicherung" (ADR-0046; ADR-0006): the state of the backups and the changes
 // of the page (target folder, generations, switch of the access data, passphrase, "Jetzt
-// sichern"). Loaded when the page opens and gone with it. A refused input stays at its field
-// (ADR-0009), a refusal of the route next to the actions, results go out as flags. The passphrase
-// lives only in the call that sends it.
+// sichern", "Prüfen"). Loaded when the page opens and gone with it. A refused input stays at its
+// field (ADR-0009), a refusal of the route next to the actions, results go out as flags. A
+// passphrase lives only in the call that sends it.
 
 import type PocketBase from 'pocketbase';
 import {
@@ -10,6 +10,7 @@ import {
 	runBackupNow,
 	saveBackupPassphrase,
 	saveBackupSettings,
+	verifyBackup,
 	type BackupAnswer
 } from '$lib/data/backup';
 import { toDataError } from '$lib/data/errors';
@@ -17,11 +18,15 @@ import type { RequestOptions } from '$lib/data/options';
 import {
 	exportReasonText,
 	PASSPHRASE_PROBLEMS,
+	verifyCountsText,
+	verifyReasonText,
 	type BackupOverview,
 	type BackupSettings,
+	type BackupSource,
 	type KeepName,
 	type PassphraseProblem,
-	type RunResult
+	type RunResult,
+	type VerifyResult
 } from '$lib/domain/backup';
 import { DENIAL_TEXTS, type SystemDenial, type SystemNotice } from '$lib/domain/system';
 import { RESTART_NEEDED, restartNeeded } from '$lib/guidance/texts';
@@ -58,6 +63,10 @@ export interface BackupData {
 		confirmation: string,
 		options: RequestOptions
 	): Promise<BackupAnswer<BackupOverview>>;
+	verify(
+		backup: { source: BackupSource; name: string; passphrase?: string },
+		options: RequestOptions
+	): Promise<BackupAnswer<{ overview: BackupOverview; result: VerifyResult }>>;
 }
 
 export function backupData(pb: PocketBase): BackupData {
@@ -66,13 +75,26 @@ export function backupData(pb: PocketBase): BackupData {
 		run: (options) => runBackupNow(pb, options),
 		saveSettings: (settings, options) => saveBackupSettings(pb, settings, options),
 		savePassphrase: (passphrase, confirmation, options) =>
-			saveBackupPassphrase(pb, passphrase, confirmation, options)
+			saveBackupPassphrase(pb, passphrase, confirmation, options),
+		verify: (backup, options) => verifyBackup(pb, backup, options)
 	};
 }
 
 export type BackupLoadState = 'idle' | 'loading' | 'ready' | 'denied' | 'error';
 /** The change that runs now. */
-export type BackupBusy = 'run' | 'target' | 'keep' | 'credentials' | 'passphrase';
+export type BackupBusy = 'run' | 'target' | 'keep' | 'credentials' | 'passphrase' | 'verify';
+
+/** One backup of the lists: where it lies and its name. */
+export interface BackupRef {
+	source: BackupSource;
+	name: string;
+}
+
+/** A sealed backup the stored passphrase does not open: the page asks for its passphrase. */
+export interface PassphraseRequest extends BackupRef {
+	/** 'no-passphrase' (none stored) or 'passphrase' (the given or stored one does not fit). */
+	reason: 'no-passphrase' | 'passphrase';
+}
 
 export class BackupStore {
 	readonly #data: BackupData;
@@ -88,6 +110,8 @@ export class BackupStore {
 	#targetProblem = $state<string | null>(null);
 	#keepProblem = $state(false);
 	#passphraseProblem = $state<PassphraseProblem | null>(null);
+	#verifying = $state<BackupRef | null>(null);
+	#passphraseRequest = $state<PassphraseRequest | null>(null);
 
 	constructor(data: BackupData, session: SessionGuard, flags: FlagSink = SILENT_FLAGS) {
 		this.#data = data;
@@ -128,6 +152,16 @@ export class BackupStore {
 
 	get passphraseProblem(): PassphraseProblem | null {
 		return this.#passphraseProblem;
+	}
+
+	/** The backup "Prüfen" checks right now, or null. */
+	get verifying(): BackupRef | null {
+		return this.#verifying;
+	}
+
+	/** The sealed backup whose passphrase the page asks for (next to its row), or null. */
+	get passphraseRequest(): PassphraseRequest | null {
+		return this.#passphraseRequest;
 	}
 
 	get #signal(): AbortSignal {
@@ -350,6 +384,62 @@ export class BackupStore {
 			title: 'Gesichert, aber nicht im Zielverzeichnis.',
 			description: exportReasonText(result.export.reason)
 		});
+	}
+
+	/**
+	 * "Prüfen" / "Jetzt prüfen": checks one backup (ADR-0046 §6, takes a while). `passphrase` only
+	 * for a sealed backup the stored passphrase does not open; it is sent once and not kept. When
+	 * the passphrase is missing or does not fit, the page asks for it next to the backup instead of
+	 * a flag.
+	 */
+	async verify(backup: BackupRef, passphrase?: string): Promise<void> {
+		if (this.#busy !== null) return;
+		this.#verifying = { source: backup.source, name: backup.name };
+		let answer: { overview: BackupOverview; result: VerifyResult } | null;
+		try {
+			answer = await this.#change(
+				'verify',
+				(options) =>
+					this.#data.verify(passphrase === undefined ? backup : { ...backup, passphrase }, options),
+				() =>
+					(this.#actionMessage = {
+						tone: 'error',
+						message: { title: 'Nicht geprüft', text: verifyReasonText('name') }
+					})
+			);
+		} finally {
+			this.#verifying = null;
+		}
+		if (answer === null) return;
+		this.#accept(answer.overview);
+		const { result } = answer;
+		if (
+			backup.source === 'target' &&
+			(result.reason === 'passphrase' || result.reason === 'no-passphrase')
+		) {
+			this.#passphraseRequest = { ...backup, reason: result.reason };
+			return;
+		}
+		this.#passphraseRequest = null;
+		const counts = verifyCountsText(result);
+		if (result.ok) {
+			this.#flags.show({
+				tone: 'success',
+				title: 'Sicherung geprüft: in Ordnung.',
+				...(counts === '' ? {} : { description: `${counts}.` })
+			});
+			return;
+		}
+		this.#flags.show({
+			tone: 'error',
+			title: 'Die Prüfung der Sicherung ist gescheitert.',
+			description: verifyReasonText(result.reason)
+		});
+	}
+
+	/** Closes the question for a passphrase without checking. */
+	cancelPassphraseRequest(): void {
+		this.#passphraseRequest = null;
 	}
 
 	/** Ends every request of the page (the page goes). */
