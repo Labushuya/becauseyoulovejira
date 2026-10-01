@@ -29,12 +29,13 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { spawnSyncClean } from '../support/clean-env.mjs';
 import { POCKETBASE_EXE } from '../support/pocketbase-harness.mjs';
 import { POWERSHELL_EXE } from '../support/powershell.mjs';
+import { scaled } from '../support/timing.mjs';
 
 const ROOT_DIR = resolve(fileURLToPath(new URL('../..', import.meta.url)));
 const APP_DIR = join(ROOT_DIR, 'app');
 const TEMP_ROOT = join(ROOT_DIR, '.tmp');
 const RESERVED_PORTS = new Set([8090, 8091, 8099]);
-const COMMAND_TIMEOUT_MS = 60_000;
+const COMMAND_TIMEOUT_MS = scaled(60_000);
 const LEFTOVERS = ['byl-mail.exe.old-20260101000000', 'byl-backup.exe.old-20260101000000'];
 const EXPIRED = 'pb_data.vor-wiederherstellung-20200101-000000';
 
@@ -63,7 +64,7 @@ function call(method, path, { token, origin, body } = {}) {
 				path,
 				method,
 				agent: false,
-				timeout: 90_000,
+				timeout: scaled(90_000),
 				headers: {
 					...(token ? { Authorization: token } : {}),
 					...(origin ? { Origin: origin } : {}),
@@ -157,7 +158,7 @@ beforeAll(async () => {
 	const upsert = spawnSyncClean(
 		join(dir, 'pocketbase.exe'),
 		['superuser', 'upsert', `--dir=${join(dir, 'pb_data')}`, `--hooksDir=${join(dir, 'pb_hooks')}`, `--migrationsDir=${join(dir, 'pb_migrations')}`, '--automigrate=false', email, password],
-		{ encoding: 'utf8', windowsHide: true, timeout: 60_000 }
+		{ encoding: 'utf8', windowsHide: true, timeout: scaled(60_000) }
 	);
 	if (upsert.status !== 0) throw new Error(`superuser upsert failed (exit code ${upsert.status})`);
 	copy = { dir, port };
@@ -173,15 +174,15 @@ beforeAll(async () => {
 	if (created.status !== 200) throw new Error(`user not created (${created.status})`);
 	owner = await authToken('users', userEmail, userPassword);
 	for (const name of LEFTOVERS) writeFileSync(join(dir, name), Buffer.alloc(1234));
-}, 180_000);
+});
 
 afterAll(() => {
 	if (copy) control('stop');
 	if (base) rmSync(base, { recursive: true, force: true, maxRetries: 10, retryDelay: 500 });
-}, 120_000);
+});
 
 // Windows only (WINDOWS_ONLY in vitest.config.mjs): the copy runs byl-control.ps1.
-describe('page Speicher on a disposable copy (ADR-0047)', { timeout: 120_000 }, () => {
+describe('page Speicher on a disposable copy (ADR-0047)', { timeout: scaled(120_000) }, () => {
 	it('shows program files, leftovers, safety copies, logs and the free space of its own instance', async () => {
 		safetyCopy(EXPIRED, 300);
 		const fresh = freshName();

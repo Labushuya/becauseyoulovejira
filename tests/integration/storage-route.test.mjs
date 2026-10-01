@@ -15,6 +15,7 @@ import { join } from 'node:path';
 import PocketBase from 'pocketbase';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { startPocketBase } from '../support/pocketbase-harness.mjs';
+import { scaled } from '../support/timing.mjs';
 import { fetchStorage, runStorageAction } from '../../web/src/lib/data/storage.ts';
 
 let windows;
@@ -32,7 +33,7 @@ function call(instance, method, path, { token, origin, host, headers = {}, body 
 				path,
 				method,
 				agent: false,
-				timeout: 30_000,
+				timeout: scaled(30_000),
 				headers: {
 					...(token ? { Authorization: token } : {}),
 					...(origin ? { Origin: origin } : {}),
@@ -108,13 +109,13 @@ beforeAll(async () => {
 	accounts.superuserToken = superuser.authStore.token;
 	accounts.superuser = superuser;
 	accounts.linuxOwner = await account(await superuserOf(linux), linux);
-}, 90_000);
+});
 
 afterAll(async () => {
 	for (const instance of [windows, linux]) {
 		if (instance) await instance.stop();
 	}
-}, 60_000);
+});
 
 describe('route of the page Speicher: refusals', () => {
 	it('answers 401 without a session and refuses an admin account and other accounts', async () => {
