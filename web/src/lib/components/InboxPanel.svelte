@@ -21,11 +21,14 @@
 	import type { TicketSourcesStore } from '$lib/stores/ticket-sources.svelte';
 	import {
 		COPY_LABELS,
+		canLeaveTicket,
+		canSavePage,
 		copiedFrom,
 		copyCompleteness,
 		copyNote,
 		deletedTicketId,
 		deletedTicketNote,
+		isMainSource,
 		pageCopyText
 	} from '$lib/domain/sources';
 	import { convertHref } from '$lib/ticket-links';
@@ -289,7 +292,7 @@
 			aria-busy={sources !== null && sources.isPending(entry.id) ? 'true' : undefined}
 		>
 			<a class="button-secondary entry-action" href={links.path(ticketId)}>Ticket öffnen</a>
-			{#if sources !== null && ticket !== null && !ticket.primary}
+			{#if sources !== null && canLeaveTicket(entry, isMainSource(entry))}
 				<button
 					class="button-secondary"
 					type="button"
@@ -355,7 +358,7 @@
 			<SectionMessage tone="info" compact>{DISCARDED_CONTENT_NOTE}</SectionMessage>
 		{/if}
 
-		{#if note !== null && copy === 'address'}
+		{#if note !== null && canSavePage(item)}
 			<SectionMessage tone="info">
 				{note}
 				{#snippet actions()}

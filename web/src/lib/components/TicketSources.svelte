@@ -2,6 +2,7 @@
 	import type { InboxItemSummary } from '$lib/domain/inbox';
 	import {
 		COPY_LABELS,
+		canLeaveTicket,
 		copiedFrom,
 		copyCompleteness,
 		sourceChannelLabel,
@@ -129,6 +130,7 @@
 				{@const origin = sourceOrigin(item)}
 				{@const copied = copiedFrom(item)}
 				{@const main = item.id === ticket.sourceItem}
+				{@const leaves = canLeaveTicket(item, main)}
 				<li class="source" aria-busy={store.isPending(item.id) ? 'true' : undefined}>
 					<div class="text">
 						<p class="line">
@@ -180,7 +182,7 @@
 								</svg>
 							</button>
 						{/if}
-						{#if !main}
+						{#if leaves}
 							<button
 								class="button-icon"
 								type="button"

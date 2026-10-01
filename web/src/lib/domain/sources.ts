@@ -87,6 +87,40 @@ export function copyNote(
 }
 
 /**
+ * Whether "Seiteninhalt sichern" applies (ADR-0031 section 6): a web link of which only the address
+ * is stored, in any state. The route refuses anything else; panel and menu "•••" of the inbox row
+ * offer it alike.
+ */
+export function canSavePage(
+	item: Pick<InboxItemSummary, 'channel' | 'original' | 'sourceMeta'>
+): boolean {
+	return copyCompleteness(item) === 'address';
+}
+
+/**
+ * Whether the entry is the main source of its ticket (tickets.source_item, ADR-0031 section 1), as
+ * the ticket loaded with it says (`expand=ticket`); null while that ticket is not known.
+ */
+export function isMainSource(item: Pick<InboxItemSummary, 'ticketId' | 'ticket'>): boolean | null {
+	if (item.ticketId === null || item.ticket?.id !== item.ticketId) return null;
+	return item.ticket.primary;
+}
+
+/**
+ * Whether a linked entry may leave its ticket: "Anderem Ticket zuordnen …" and "Lösen" (ADR-0031
+ * section 2 and addendum A). Only a linked entry (converted, with a ticket) known not to be the
+ * main source of that ticket (`main` false): the main source stays with the ticket made from it,
+ * and while that is unknown (`main` null) neither is offered, because the hook refuses the main
+ * source. Section "Quellen" of a ticket, panel and menu "•••" of an inbox row share this rule.
+ */
+export function canLeaveTicket(
+	item: Pick<InboxItemSummary, 'state' | 'ticketId'>,
+	main: boolean | null
+): boolean {
+	return item.state === 'converted' && item.ticketId !== null && main === false;
+}
+
+/**
  * When the page of a web link was saved (source_meta.page of the hook, ADR-0031 section 6), as
  * "27.09.2026 21:30" and ", auf 2 MB gekürzt" for a cut page; '' without a page copy.
  */

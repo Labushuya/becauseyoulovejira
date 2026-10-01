@@ -2,8 +2,11 @@
 // which stay, with the entries of its state: "Öffnen", "Umwandeln …", "Mit Ticket verknüpfen …"
 // and "Verwerfen" for a new entry, "Wiederherstellen" for a discarded one, the ticket for a linked
 // one, and "Originaldatei herunterladen" where there is one. A right click and Shift+F10 open it
-// (AM-3) without touching the selection; other links of the row keep the menu of the browser. The
-// store is real with fake data, the shared overlay stubs; page state and navigation are mocked.
+// (AM-3) without touching the selection; other links of the row keep the menu of the browser.
+// AM-5 adds "Link der Quelle öffnen" (https only, new tab), "Anderem Ticket zuordnen …" and
+// "Lösen" for a linked entry that is not the main source of its ticket, and "Seiteninhalt sichern"
+// for a web link of which only the address is stored. The stores are real with fake data, the
+// shared overlay stubs; page state and navigation are mocked.
 
 import { fireEvent, render, screen, within } from '@testing-library/svelte';
 import { tick } from 'svelte';
@@ -13,7 +16,10 @@ import type { InboxQuery } from '$lib/domain/inbox-query';
 import type { TicketSummary } from '$lib/domain/ticket';
 import { FlagStore } from '$lib/stores/flags.svelte';
 import { InboxStore, type InboxData } from '$lib/stores/inbox.svelte';
+import type { TicketPickerSource } from '$lib/stores/ticket-picker.svelte';
+import { TicketSourcesStore, type TicketSourcesData } from '$lib/stores/ticket-sources.svelte';
 import { useOverlayStubs } from '$lib/test/overlay-stubs';
+import { fakePickerSource, pickerTicket } from '$lib/test/ticket-picker-fake';
 import InboxTable from './InboxTable.svelte';
 import FlagGroup from './overlay/FlagGroup.svelte';
 
@@ -68,13 +74,17 @@ const DUPLICATE_OF = {
 function setup(
 	options: {
 		query?: InboxQuery;
+		fresh?: InboxItemSummary[];
 		handled?: InboxItemSummary[];
 		onlinkitem?: ((item: InboxItemSummary) => void) | null;
 		tickets?: TicketSummary[];
+		/** With the sources store of the layout (AM-5): moving and releasing a linked entry. */
+		sources?: boolean;
+		picker?: TicketPickerSource;
 	} = {}
 ) {
 	const data = {
-		listNew: vi.fn<InboxData['listNew']>(async () => [MILK, BILL]),
+		listNew: vi.fn<InboxData['listNew']>(async () => options.fresh ?? [MILK, BILL]),
 		listHandled: vi.fn<InboxData['listHandled']>(async (_state, page) => ({
 			items: options.handled ?? [],
 			page,
@@ -97,20 +107,46 @@ function setup(
 		savePage: vi.fn<InboxData['savePage']>()
 	} satisfies InboxData;
 	const flags = new FlagStore();
-	const store = new InboxStore(data, { ensureValid: () => true, logout: vi.fn() }, flags);
+	const session = { ensureValid: () => true, logout: vi.fn() };
+	const store = new InboxStore(data, session, flags);
 	store.activate(options.query ?? { source: null, state: 'new' });
+	const known = () => [...(options.fresh ?? [MILK, BILL]), ...(options.handled ?? [])];
+	const sourcesData = {
+		list: vi.fn<TicketSourcesData['list']>(async () => []),
+		link: vi.fn<TicketSourcesData['link']>(async (id, ticketId) => ({
+			...known().find((entry) => entry.id === id)!,
+			ticketId,
+			ticket: { id: ticketId, key: 'TASK-4', title: 'Zahlungen', primary: false },
+			updated: '2026-09-25 11:00:00.000Z'
+		})),
+		release: vi.fn<TicketSourcesData['release']>(async (id) => ({
+			...known().find((entry) => entry.id === id)!,
+			state: 'new',
+			ticketId: null,
+			ticket: null,
+			handledAt: null,
+			updated: '2026-09-25 11:00:00.000Z'
+		})),
+		originalUrl: vi.fn<TicketSourcesData['originalUrl']>(async () => null)
+	} satisfies TicketSourcesData;
+	// As in the (app) layout: what the sources store changes goes to the inbox at once.
+	const sources = options.sources
+		? new TicketSourcesStore(sourcesData, session, flags, (entry) => store.upsert(entry))
+		: undefined;
 	const onlinkitem = options.onlinkitem === null ? undefined : (options.onlinkitem ?? vi.fn());
 	render(InboxTable, {
 		props: {
 			store,
 			flags,
+			sources,
+			picker: options.picker,
 			openTickets: options.tickets ?? [],
 			onbulk: vi.fn(),
 			onlinkitem
 		}
 	});
 	render(FlagGroup, { props: { store: flags } });
-	return { store, data, onlinkitem };
+	return { store, data, onlinkitem, sourcesData };
 }
 
 async function rowOf(title: string): Promise<HTMLElement> {
@@ -297,5 +333,262 @@ describe('menu "•••" of a row of the inbox (AM-4)', () => {
 
 		await fireEvent.keyDown(document.activeElement as Element, { key: 'Escape' });
 		expect(document.activeElement).toBe(title);
+	});
+});
+
+describe('menu "•••" of a row of the inbox: sources and copies (AM-5)', () => {
+	const HANDLED = '2026-09-20 10:00:00.000Z';
+	/** A web link of which only the address is stored, with an https address. */
+	const PAGE = item('item00000000003', {
+		title: 'Artikel lesen',
+		channel: 'link',
+		kind: 'link',
+		sourceUrl: 'https://example.com/artikel'
+	});
+	/** The same with an http address: no link in the menu (ExternalLink takes https only). */
+	const PLAIN = item('item00000000004', {
+		title: 'Alte Seite',
+		channel: 'link',
+		kind: 'link',
+		sourceUrl: 'http://example.com/alt'
+	});
+	/** Linked to HAUS-12, not its main source; its page is saved already. */
+	const LINKED = item('item00000000005', {
+		title: 'Beleg',
+		channel: 'link',
+		kind: 'link',
+		sourceUrl: 'https://example.com/beleg',
+		original: 'seite.html',
+		state: 'converted',
+		ticketId: 'tick00000000012',
+		ticket: { id: 'tick00000000012', key: 'HAUS-12', title: 'Steuer 2025', primary: false },
+		handledAt: HANDLED
+	});
+	/** The main source of HAUS-13: it stays with its ticket. */
+	const MAIN = item('item00000000006', {
+		title: 'Stromrechnung',
+		channel: 'eml',
+		kind: 'mail',
+		original: 'strom.eml',
+		state: 'converted',
+		ticketId: 'tick00000000013',
+		ticket: { id: 'tick00000000013', key: 'HAUS-13', title: 'Strom', primary: true },
+		handledAt: '2026-09-21 10:00:00.000Z'
+	});
+	/** Linked, but its ticket was not loaded: whether it is the main source is unknown. */
+	const UNKNOWN = item('item00000000007', {
+		title: 'Notiz',
+		state: 'converted',
+		ticketId: 'tick00000000014',
+		ticket: null,
+		handledAt: HANDLED
+	});
+	const DROPPED = item('item00000000008', {
+		title: 'Weg',
+		channel: 'link',
+		kind: 'link',
+		sourceUrl: 'https://example.com/weg',
+		state: 'discarded',
+		handledAt: HANDLED
+	});
+	const LINK_ENTRY = 'Link der Quelle öffnen (öffnet in neuem Tab)';
+
+	/** The entries of a menu in order, "—" for a line. */
+	function structure(title: string): string[] {
+		return [...menuOf(menuButton(title)).children].map((child) =>
+			child.getAttribute('role') === 'separator' ? '—' : (child.textContent?.trim() ?? '')
+		);
+	}
+
+	const flagTexts = () => within(screen.getByRole('region', { name: 'Benachrichtigungen' }));
+
+	it('offers the entries of each state; the main source keeps its ticket', async () => {
+		setup({
+			query: { source: null, state: 'all' },
+			handled: [MILK, PAGE, PLAIN, LINKED, MAIN, UNKNOWN, DROPPED],
+			sources: true
+		});
+		await rowOf('Beleg');
+
+		expect(structure('Artikel lesen')).toEqual([
+			'Öffnen',
+			LINK_ENTRY,
+			'—',
+			'Umwandeln …',
+			'Mit Ticket verknüpfen …',
+			'Verwerfen',
+			'—',
+			'Seiteninhalt sichern'
+		]);
+		// An http address and no address at all: no link of the source.
+		expect(structure('Alte Seite')).toEqual([
+			'Öffnen',
+			'—',
+			'Umwandeln …',
+			'Mit Ticket verknüpfen …',
+			'Verwerfen',
+			'—',
+			'Seiteninhalt sichern'
+		]);
+		expect(structure('Milch kaufen')).toEqual([
+			'Öffnen',
+			'—',
+			'Umwandeln …',
+			'Mit Ticket verknüpfen …',
+			'Verwerfen'
+		]);
+		expect(structure('Beleg')).toEqual([
+			'Öffnen',
+			LINK_ENTRY,
+			'—',
+			'Ticket HAUS-12 öffnen',
+			'Anderem Ticket zuordnen …',
+			'Lösen',
+			'—',
+			'Originaldatei herunterladen'
+		]);
+		expect(entry('Beleg', 'Anderem Ticket zuordnen …').getAttribute('aria-haspopup')).toBe(
+			'dialog'
+		);
+		expect(entry('Beleg', 'Lösen').hasAttribute('aria-haspopup')).toBe(false);
+		// The main source and an entry whose ticket is unknown neither move nor leave.
+		expect(structure('Stromrechnung')).toEqual([
+			'Öffnen',
+			'—',
+			'Ticket HAUS-13 öffnen',
+			'—',
+			'Originaldatei herunterladen'
+		]);
+		expect(structure('Notiz')).toEqual(['Öffnen', '—', 'Ticket öffnen']);
+		expect(structure('Weg')).toEqual([
+			'Öffnen',
+			LINK_ENTRY,
+			'—',
+			'Wiederherstellen',
+			'—',
+			'Seiteninhalt sichern'
+		]);
+	});
+
+	it('offers neither moving nor releasing without the sources store', async () => {
+		setup({ query: { source: null, state: 'converted' }, handled: [LINKED] });
+		await rowOf('Beleg');
+		expect(structure('Beleg')).toEqual([
+			'Öffnen',
+			LINK_ENTRY,
+			'—',
+			'Ticket HAUS-12 öffnen',
+			'—',
+			'Originaldatei herunterladen'
+		]);
+	});
+
+	it('opens the link of the source in a new tab, by the rules of ExternalLink', async () => {
+		setup({ fresh: [PAGE] });
+		await rowOf('Artikel lesen');
+		const link = within(menuOf(menuButton('Artikel lesen'))).getByRole('menuitem', {
+			name: /^Link der Quelle öffnen/,
+			hidden: true
+		});
+
+		expect(link.tagName).toBe('A');
+		// The hidden part of the name says where it opens, as ExternalLink does.
+		expect(link.textContent?.trim()).toBe(LINK_ENTRY);
+		expect(link.querySelector('.visually-hidden')?.textContent).toBe('(öffnet in neuem Tab)');
+		expect(link.getAttribute('href')).toBe('https://example.com/artikel');
+		expect(link.getAttribute('target')).toBe('_blank');
+		expect(link.getAttribute('rel')).toBe('noopener noreferrer');
+		expect(link.querySelector('svg')?.getAttribute('aria-hidden')).toBe('true');
+		// A real link in the open menu: the browser keeps its menu there ("Link kopieren" …).
+		expect(await fireEvent.contextMenu(link, { button: 2 })).toBe(true);
+	});
+
+	it('releases a linked entry like the panel; the focus goes to the next row', async () => {
+		const { sourcesData } = setup({
+			query: { source: null, state: 'converted' },
+			handled: [MAIN, LINKED],
+			sources: true
+		});
+		await rowOf('Beleg');
+
+		await fireEvent.click(entry('Beleg', 'Lösen'));
+		await vi.waitFor(() => expect(sourcesData.release).toHaveBeenCalledWith(LINKED.id));
+		await vi.waitFor(() => expect(screen.queryByRole('link', { name: 'Beleg' })).toBeNull());
+		expect(flagTexts().getAllByText('„Beleg“ ist wieder im Eingang.').length).toBeGreaterThan(0);
+		await vi.waitFor(() =>
+			expect(document.activeElement).toBe(screen.getByRole('link', { name: 'Stromrechnung' }))
+		);
+	});
+
+	it('moves a linked entry with the dialog of the panel; the focus returns to "•••"', async () => {
+		const picker = fakePickerSource({
+			open: [
+				pickerTicket({ id: 'tick00000000012', key: 'HAUS-12', title: 'Steuer 2025' }),
+				pickerTicket({ id: 'tick00000000004', key: 'TASK-4', title: 'Zahlungen' })
+			]
+		}).source;
+		const { sourcesData } = setup({
+			query: { source: null, state: 'converted' },
+			handled: [LINKED],
+			sources: true,
+			picker
+		});
+		await rowOf('Beleg');
+
+		await fireEvent.click(entry('Beleg', 'Anderem Ticket zuordnen …'));
+		await tick();
+		const dialog = screen.getByRole('dialog', { name: 'Anderem Ticket zuordnen' });
+		expect(screen.getAllByRole('dialog')).toHaveLength(1);
+		expect(within(dialog).getByText(/„Beleg“ gehört zu HAUS-12 und wechselt direkt/)).toBeTruthy();
+		const input = within(dialog).getByRole('combobox', { name: 'Neues Ticket' });
+		await fireEvent.focus(input);
+		await vi.waitFor(() => expect(input.getAttribute('aria-expanded')).toBe('true'));
+		await fireEvent.keyDown(input, { key: 'Enter' });
+		await fireEvent.click(within(dialog).getByRole('button', { name: 'Zuordnen' }));
+
+		await vi.waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+		expect(sourcesData.link).toHaveBeenCalledWith(LINKED.id, 'tick00000000004');
+		expect(flagTexts().getAllByText('„Beleg“ gehört jetzt zu TASK-4.').length).toBeGreaterThan(0);
+		expect(screen.getByRole('link', { name: 'Ticket TASK-4 öffnen: „Beleg“' })).toBeTruthy();
+		await vi.waitFor(() => expect(document.activeElement).toBe(menuButton('Beleg')));
+	});
+
+	it('saves the page of a web link like the panel; a refusal becomes an error flag', async () => {
+		const { data } = setup({ fresh: [PAGE] });
+		const row = await rowOf('Artikel lesen');
+		const cell = row.querySelector('[data-col="actions"]') as HTMLElement;
+		let finish: (outcome: Awaited<ReturnType<InboxData['savePage']>>) => void = () => undefined;
+		data.savePage.mockImplementationOnce(
+			() =>
+				new Promise((resolve) => {
+					finish = resolve;
+				})
+		);
+
+		await fireEvent.click(entry('Artikel lesen', 'Seiteninhalt sichern'));
+		await vi.waitFor(() => expect(data.savePage).toHaveBeenCalledWith(PAGE.id));
+		// While the server fetches the page, the entry and its cell wait.
+		expect(entry('Artikel lesen', 'Seiteninhalt sichern').getAttribute('aria-busy')).toBe('true');
+		expect(cell.getAttribute('aria-busy')).toBe('true');
+		finish({ kind: 'saved', title: 'Artikel', size: 2048, truncated: false });
+		await vi.waitFor(() =>
+			expect(
+				flagTexts().getAllByText('Seite von „Artikel lesen“ gesichert.').length
+			).toBeGreaterThan(0)
+		);
+		expect(cell.hasAttribute('aria-busy')).toBe(false);
+
+		data.savePage.mockResolvedValueOnce({
+			kind: 'refused',
+			message: 'Lokale, private und interne Adressen werden nicht abgerufen.'
+		});
+		await fireEvent.click(entry('Artikel lesen', 'Seiteninhalt sichern'));
+		await vi.waitFor(() =>
+			expect(
+				flagTexts().getAllByText(
+					'Seite von „Artikel lesen“ ließ sich nicht sichern: Lokale, private und interne Adressen werden nicht abgerufen.'
+				).length
+			).toBeGreaterThan(0)
+		);
 	});
 });

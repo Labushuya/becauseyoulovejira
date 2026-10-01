@@ -2,12 +2,15 @@
 // and "N aktiv · M gesamt" in one link to the project panel, the current project marked, archived
 // projects in words, "–" while a number is unknown. Sub projects (ADR-0034, UP-3): a parent with
 // its sub projects in a section with a fold button, the sub projects indented with "in Haus".
+// The menu "•••" of each tile (plan aktionsmenues, AM-5) is tested with the view in
+// project-row-menu.test.ts; here only that it stands next to the link.
 
 import { fireEvent, render, screen, within } from '@testing-library/svelte';
 import { describe, expect, it, vi } from 'vitest';
 import type { ResolvedPathname } from '$app/types';
 import type { Project } from '$lib/domain/project';
 import type { ProjectRow } from '$lib/domain/project-view';
+import type { MenuAction } from './ActionsMenu.svelte';
 import ProjectTiles from './ProjectTiles.svelte';
 import source from './ProjectTiles.svelte?raw';
 
@@ -53,10 +56,13 @@ function show(
 	totalOf: (project: Project) => number | null = (project) => (project.id === HOUSE.id ? 7 : 2),
 	activeId: string | null = null
 ) {
-	render(ProjectTiles, { props: { rows: rowsOf(projects), activeOf, totalOf, hrefOf, activeId } });
+	render(ProjectTiles, {
+		props: { rows: rowsOf(projects), activeOf, totalOf, hrefOf, menuOf, activeId }
+	});
 }
 
 const hrefOf = (project: Project) => `/projekte/${project.id}` as ResolvedPathname;
+const menuOf = (project: Project): MenuAction[] => [{ label: 'Öffnen', href: hrefOf(project) }];
 
 function tileOf(name: string): HTMLElement {
 	const link = screen.getByRole('link', { name: new RegExp(`^${name}`) });
@@ -71,7 +77,10 @@ describe('project tiles', () => {
 
 		const link = screen.getByRole('link', { name: /^Haus/ });
 		expect(link.getAttribute('href')).toBe('/projekte/proj00000000001');
-		expect(within(tileOf('Haus')).queryByRole('button')).toBeNull();
+		// The only button of the tile is its menu, next to the link and never inside it (AM-5).
+		const menu = within(tileOf('Haus')).getByRole('button');
+		expect(menu.getAttribute('aria-label')).toBe('Weitere Aktionen für „Haus“');
+		expect(link.contains(menu)).toBe(false);
 		expect(link.textContent?.replace(/\s+/g, ' ').trim()).toBe('Haus HAUS 3 aktiv · 7 gesamt');
 		expect(link.querySelector('.code')?.textContent).toBe('HAUS');
 		expect(screen.getAllByRole('listitem')).toHaveLength(2);
@@ -129,7 +138,8 @@ describe('project tiles: new (E4 plan, package 4)', () => {
 				activeOf: () => 1,
 				totalOf: () => 2,
 				newOf: (project: Project) => (project.id === HOUSE.id ? 2 : 0),
-				hrefOf
+				hrefOf,
+				menuOf
 			}
 		});
 		expect(tileOf(HOUSE.name).textContent?.replace(/\s+/g, ' ')).toContain('2 neu');
@@ -148,7 +158,7 @@ describe('project tiles: sub projects (ADR-0034)', () => {
 				: [{ project: GARDEN, depth: 1 as const, context: false, childCount: 0, collapsed: false }])
 		];
 		render(ProjectTiles, {
-			props: { rows, activeOf: () => 1, totalOf: () => 2, hrefOf, activeId, ontoggle }
+			props: { rows, activeOf: () => 1, totalOf: () => 2, hrefOf, menuOf, activeId, ontoggle }
 		});
 		return { ontoggle };
 	}

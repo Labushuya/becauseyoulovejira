@@ -1,9 +1,9 @@
 # Plan „Aktionsmenüs“
 
-- **Stand:** AM-1 umgesetzt (2026-10-01, #194, nur Oberfläche: Build, dann F5; kein Neustart). AM-2 umgesetzt (2026-10-01, #195, nur Oberfläche: Build, dann F5; kein Neustart). AM-3 umgesetzt (2026-10-01, #196, nur Oberfläche: Build, dann F5; kein Neustart). AM-4 umgesetzt (2026-10-01, Branch `feat/row-menus-tables`, nur Oberfläche: Build, dann F5; kein Neustart). Offen sind die manuellen Browser-Prüfungen BYL-E6-742, BYL-E6-746, BYL-E6-764 und BYL-E6-770 und die Folgepunkte in §6.6.
-- **Grundlage:** Nutzerentscheidung vom 2026-10-01 auf die Frage, ob es in der Tabelle ein Zeilenmenü „•••“ (Öffnen, Duplizieren, Löschen) geben soll oder der Knopf im Ticket reicht: „beides, aber vorrangig für das Ticket selbst“. Vorgaben des Advisors: Reihenfolge AM-1 (Ticket) vor AM-2 (Tabelle), Einträge, Kopf entschlacken wie in Jira, keine Funktion verloren, Tests für Maus und Tastatur, Doku. Für AM-3 und AM-4 die Nutzerentscheidung vom 2026-10-01 zu den Folgepunkten in §4: „Alle Verbesserungen einpflegen“.
-- **Entscheidungen:** Nachtrag in [ADR-0045](../adr/0045-ticket-duplizieren.md) (Einstieg über das Menü), Nachträge in [ADR-0036](../adr/0036-sammelbearbeitung-inline-und-oeffnungsmodus.md) (Kopf von Panel und Vollansicht; Zeilenmenü; Rechtsklick und Sammel-Leiste; Zeilenmenüs der übrigen Tabellen), Nachträge 4 und 5 in [ADR-0030](../adr/0030-spalten-breiten-und-kompakte-zeilen.md) (Breite der Spalten „Aktionen“), Nachtrag in [ADR-0037](../adr/0037-papierkorb.md) (Zeile des Papierkorbs). Das Menü selbst folgt [ADR-0025](../adr/0025-ui-konsistenz-overlay-system.md) §5 (Popover der Art `menu`, „später Aktionsmenüs“), seit AM-3 mit virtuellem Anker.
-- **Einordnung:** Manifest-Block „Aktionsmenüs“ ab `BYL-E6-740`, AM-3 und AM-4 ab `BYL-E6-760`. Keine Migration, keine Hooks.
+- **Stand:** AM-1 umgesetzt (2026-10-01, #194, nur Oberfläche: Build, dann F5; kein Neustart). AM-2 umgesetzt (2026-10-01, #195, nur Oberfläche: Build, dann F5; kein Neustart). AM-3 umgesetzt (2026-10-01, #196, nur Oberfläche: Build, dann F5; kein Neustart). AM-4 umgesetzt (2026-10-01, #197, nur Oberfläche: Build, dann F5; kein Neustart). AM-5 umgesetzt (2026-10-01, Branch `feat/menu-additions`, nur Oberfläche: Build, dann F5; kein Neustart). Offen sind die manuellen Browser-Prüfungen BYL-E6-742, BYL-E6-746, BYL-E6-764, BYL-E6-770 und BYL-E6-783; von den Folgepunkten in §6.6 bleiben nur die zwei bewusst nicht umgesetzten.
+- **Grundlage:** Nutzerentscheidung vom 2026-10-01 auf die Frage, ob es in der Tabelle ein Zeilenmenü „•••“ (Öffnen, Duplizieren, Löschen) geben soll oder der Knopf im Ticket reicht: „beides, aber vorrangig für das Ticket selbst“. Vorgaben des Advisors: Reihenfolge AM-1 (Ticket) vor AM-2 (Tabelle), Einträge, Kopf entschlacken wie in Jira, keine Funktion verloren, Tests für Maus und Tastatur, Doku. Für AM-3 und AM-4 die Nutzerentscheidung vom 2026-10-01 zu den Folgepunkten in §4: „Alle Verbesserungen einpflegen“. Für AM-5 die Nutzerentscheidung vom 2026-10-01 zu den Folgepunkten in §6.6: „Mögliche Ergänzungen umsetzen“; die Hauptquelle eines Tickets bleibt dabei unveränderlich ([ADR-0031](../adr/0031-herkunft-sichern.md), Nachtrag A).
+- **Entscheidungen:** Nachtrag in [ADR-0045](../adr/0045-ticket-duplizieren.md) (Einstieg über das Menü), Nachträge in [ADR-0036](../adr/0036-sammelbearbeitung-inline-und-oeffnungsmodus.md) (Kopf von Panel und Vollansicht; Zeilenmenü; Rechtsklick und Sammel-Leiste; Zeilenmenüs der übrigen Tabellen; Ergänzungen in Eingang und Kacheln), Nachträge 4 und 5 in [ADR-0030](../adr/0030-spalten-breiten-und-kompakte-zeilen.md) (Breite der Spalten „Aktionen“), Nachtrag in [ADR-0037](../adr/0037-papierkorb.md) (Zeile des Papierkorbs), Nachtrag G in [ADR-0031](../adr/0031-herkunft-sichern.md) (Quellen im Zeilenmenü des Eingangs). Das Menü selbst folgt [ADR-0025](../adr/0025-ui-konsistenz-overlay-system.md) §5 (Popover der Art `menu`, „später Aktionsmenüs“), seit AM-3 mit virtuellem Anker.
+- **Einordnung:** Manifest-Block „Aktionsmenüs“ ab `BYL-E6-740`, AM-3 und AM-4 ab `BYL-E6-760`, AM-5 ab `BYL-E6-780`. Keine Migration, keine Hooks.
 
 ## 1. Pakete
 
@@ -13,6 +13,7 @@
 | AM-2 | Zeilenmenü „•••“ in der Spalte „Aktionen“ der Tabelle „Aufgaben“ nach „Öffnen“: „Im Seitenpanel öffnen“, „In Vollansicht öffnen“, „Link kopieren“, „Duplizieren …“, „In den Papierkorb …“; Spalte „Aktionen“ 5,5 statt 4rem | umgesetzt |
 | AM-3 | Sammel-Leiste „In den Papierkorb …“ statt „Löschen …“; Rechtsklick auf eine Zeile von „Aufgaben“ öffnet das Zeilenmenü am Mauszeiger, Umschalt+F10 und die Kontextmenü-Taste am fokussierten Element; Regeln für das Menü des Browsers | umgesetzt |
 | AM-4 | Zeilenmenüs mit Rechtsklick auch in „Papierkorb“, „Eingang“, „Projekte“ und „Wiederholungen“, nur mit vorhandenen Aktionen; Spalten nach ADR-0030 | umgesetzt |
+| AM-5 | Folgepunkte aus §6.6: im Zeilenmenü des Eingangs „Link der Quelle öffnen“, „Anderem Ticket zuordnen …“, „Lösen“ (nie die Hauptquelle) und „Seiteninhalt sichern“; Menü „•••“ mit Rechtsklick und Tastatur auf jeder Projektkachel | umgesetzt |
 
 ## 2. AM-1: Menü im Ticket
 
@@ -162,6 +163,7 @@ Entscheidung und Gründe: [ADR-0036](../adr/0036-sammelbearbeitung-inline-und-oe
 - **Zeile:** „Umwandeln“, „Verwerfen“, „Wiederherstellen“ und der Chip „→ HAUS-12“ bleiben sichtbar, weil das Sichten des Eingangs genau sie braucht; „•••“ kommt dazu. Die Spalte wächst von 13 auf 15rem.
 - **„Umwandeln …“** trägt im Menü Auslassungspunkte, weil es ein Formular öffnet, das noch Eingaben braucht; der sichtbare Knopf heißt weiter „Umwandeln“.
 - **Browser-Menü:** auf „Umwandeln“, dem Chip, „Ticket ansehen“ und den Links des Hinweises „Mögliches Duplikat“ (echte Links); der Titel zeigt das Zeilenmenü.
+- **Ergänzt mit AM-5** (§7.1): „Link der Quelle öffnen“, „Anderem Ticket zuordnen …“, „Lösen“ und „Seiteninhalt sichern“.
 
 ### 6.3 Projekte
 
@@ -174,7 +176,7 @@ Entscheidung und Gründe: [ADR-0036](../adr/0036-sammelbearbeitung-inline-und-oe
 | „Aus dem Archiv holen“ bzw. „Mit Oberprojekt zurückholen“ | archiviert (bzw. unter archiviertem Oberprojekt) | wie im Panel, Flag mit Ergebnis |
 | „Löschen …“ (Linie davor) | ohne Tickets und Unterprojekte | Bestätigung des Panels („… wird endgültig gelöscht“) |
 
-- **Nur die Liste:** Die Kacheln bekommen kein Menü (keine Tabelle; die ganze Kachel ist ein Link).
+- **Nur die Liste:** Die Kacheln bekommen kein Menü (keine Tabelle; die ganze Kachel ist ein Link). Überholt durch AM-5 (§7.2): Seitdem hat jede Kachel dasselbe Menü neben ihrem Link.
 - **Neue Spalte** „Aktionen“ 3,5rem, Pflicht, sortiert nicht; das Menü „Spalten“ nennt „Code, Name und Aktionen“ als immer sichtbar.
 - **Eine Logik:** Archivieren, Zurückholen und Löschen samt Flags stehen in der `ProjectRoute` des Layouts, Regel und Texte der Fragen in `domain/project-tree.ts`; Panel und Menü nutzen dieselben. Eine Ablehnung ohne Frage ist ein Fehler-Flag mit Grund, in einer Frage steht sie dort. Ist das Panel eines gelöschten Projekts offen, schließt es sich.
 
@@ -196,9 +198,46 @@ Entscheidung und Gründe: [ADR-0036](../adr/0036-sammelbearbeitung-inline-und-oe
 - Angepasst: `trash-view.test.ts` (Endgültig löschen aus dem Menü), `inbox-table.test.ts` (Ausweichen bei 640 px), `projects-view.test.ts` (Spalte „Aktionen“, 500 px), `recurrence-table.test.ts` und `recurrences-view.test.ts` (Pausieren aus dem Menü), `domain/columns.test.ts` (Breiten, Schwellen), `domain/project-tree.test.ts` und `domain/recurrence-rule.test.ts` (Texte), `table-columns.test.ts` (jede Tabelle mit Menü und Kontextmenü).
 - Manuell BYL-E6-770: Browser, Tastatur und NVDA in allen vier Tabellen.
 
-### 6.6 Folgepunkte (nicht umgesetzt, weil es sie in der Zeile oder im Panel noch nicht gab bzw. wegen Platz)
+### 6.6 Folgepunkte (bei AM-4 nicht umgesetzt, weil es sie in der Zeile oder im Panel noch nicht gab bzw. wegen Platz)
 
-- **Eingang, verknüpfte Einträge:** „Anderem Ticket zuordnen …“ und „Lösen“ stehen im Panel des Eintrags; im Zeilenmenü fehlen sie noch (brauchen den Quellen-Store in der Tabelle). Ebenso „Seiteninhalt sichern“ und der Link der Quelle („Link öffnen“ in neuem Tab).
-- **Projekte, Kacheln:** ein Menü je Kachel bräuchte einen Knopf neben dem Link der ganzen Kachel.
-- **Papierkorb:** „Link kopieren“ (bewusst nicht, siehe §6.1).
-- **Touch:** ein langes Drücken als Kontextmenü (bewusst nicht, ADR-0036 Nachtrag „Rechtsklick“).
+Nutzerentscheidung vom 2026-10-01: „Mögliche Ergänzungen umsetzen“ (AM-5, §7).
+
+- [x] **Eingang, verknüpfte Einträge:** „Anderem Ticket zuordnen …“ und „Lösen“ stehen im Panel des Eintrags; im Zeilenmenü fehlten sie (brauchen den Quellen-Store in der Tabelle). Ebenso „Seiteninhalt sichern“ und der Link der Quelle („Link öffnen“ in neuem Tab). Umgesetzt mit AM-5 (§7.1), nie für die Hauptquelle.
+- [x] **Projekte, Kacheln:** ein Menü je Kachel bräuchte einen Knopf neben dem Link der ganzen Kachel. Umgesetzt mit AM-5 (§7.2): der Knopf steht neben dem Link in der Ecke der Kachel.
+- **Papierkorb:** „Link kopieren“ (bewusst nicht, siehe §6.1; unverändert).
+- **Touch:** ein langes Drücken als Kontextmenü (bewusst nicht, ADR-0036 Nachtrag „Rechtsklick“; unverändert).
+
+## 7. AM-5: Ergänzungen in Eingang und Kacheln
+
+Entscheidung und Gründe: [ADR-0036](../adr/0036-sammelbearbeitung-inline-und-oeffnungsmodus.md), Nachtrag „Ergänzungen in Eingang und Kacheln“, und [ADR-0031](../adr/0031-herkunft-sichern.md), Nachtrag G. Wieder nur vorhandene Aktionen und Wege: `MoveSourceDialog`, `TicketSourcesStore.release` (`releaseItem`), `InboxStore.savePage` (Route `POST /api/byl/inbox/{id}/page` mit dem SSRF-Schutz aus ADR-0031 §6) und die Projekt-Aktionen von AM-4 (`menuOf` der `ProjectsView` mit der `ProjectRoute`).
+
+### 7.1 Eingang
+
+| Zustand | Einträge (Linien als „—“) |
+|---|---|
+| neu | „Öffnen“, „Link der Quelle öffnen“¹ — „Umwandeln …“, „Mit Ticket verknüpfen …“, „Verwerfen“ — „Seiteninhalt sichern“² bzw. „Originaldatei herunterladen“³ |
+| verworfen | „Öffnen“, „Link der Quelle öffnen“¹ — „Wiederherstellen“ — „Seiteninhalt sichern“² bzw. „Originaldatei herunterladen“³ |
+| verknüpft (nicht Hauptquelle) | „Öffnen“, „Link der Quelle öffnen“¹ — „Ticket HAUS-12 öffnen“, „Anderem Ticket zuordnen …“⁴, „Lösen“⁴ — „Seiteninhalt sichern“² bzw. „Originaldatei herunterladen“³ |
+| Hauptquelle eines Tickets | „Öffnen“, „Link der Quelle öffnen“¹ — „Ticket HAUS-12 öffnen“ — „Seiteninhalt sichern“² bzw. „Originaldatei herunterladen“³ |
+| verknüpft, Ticket nicht geladen | „Öffnen“, „Link der Quelle öffnen“¹ — „Ticket öffnen“ — wie oben |
+
+¹ nur mit einer https-Adresse (`sourceUrl`), als Link in neuem Tab nach den Regeln von `ExternalLink` (ADR-0026 §6): `target="_blank"`, `rel="noopener noreferrer"`, Symbol „außen“ und „(öffnet in neuem Tab)“ im Namen. Eine http-Adresse steht nur im Panel (Zeile „Link“). ² nur bei einem Web-Link, von dem nur die Adresse gespeichert ist (`canSavePage`), in jedem Zustand wie im Panel. ³ nur mit Originaldatei; beides zugleich gibt es nicht, weil eine gesicherte Seite die Originaldatei ist. ⁴ nur für einen verknüpften Eintrag, von dem bekannt ist, dass er nicht die Hauptquelle ist (`canLeaveTicket` mit `isMainSource`), und nur mit dem `TicketSourcesStore` des Layouts.
+
+- **Gemeinsame Regeln** in `domain/sources.ts`: `canSavePage` (Panel und Menü), `isMainSource` (aus dem mitgeladenen Ticket, sonst unbekannt) und `canLeaveTicket` (Abschnitt „Quellen“ im Ticket, Panel des Eintrags und Menü). Vorher stand dieselbe Bedingung dreimal verschieden formuliert in `TicketSources`, `InboxPanel` und als Lücke im Menü.
+- **Hauptquelle:** kein „Anderem Ticket zuordnen …“ und kein „Lösen“, auch nicht ausgegraut. Begründung: So halten es `TicketSources` und das Panel des Eintrags (die Knöpfe fehlen, ein Satz sagt, warum); ein Menüeintrag hat keinen Platz für einen Grund (ein gesperrter Eintrag ohne Grund wäre ein Rätsel, `locked` bedeutet im Menü „läuft gerade“). Den Grund nennt das Panel, das „Öffnen“ zeigt. Ist das Ticket des Eintrags nicht geladen, fehlen beide ebenfalls, weil der Hook die Hauptquelle ablehnen würde.
+- **Wirkung wie im Panel:** „Anderem Ticket zuordnen …“ öffnet `MoveSourceDialog` (Modal M mit `TicketPicker`, die Tabelle ist kein Modal, also kein Dialog aus einem Dialog), Erfolg als Flag „„…“ gehört jetzt zu TASK-4.“, eine Ablehnung bleibt im Dialog; danach kehrt der Fokus zu „•••“ zurück. „Lösen“ ohne Rückfrage, Flag „„…“ ist wieder im Eingang.“ bzw. Fehler-Flag mit Grund (beides aus dem Store); in der Ansicht „Verknüpft“ verlässt die Zeile die Liste, und der Fokus geht an die Zeile an ihrer Stelle wie nach „Verwerfen“. „Seiteninhalt sichern“ ohne Rückfrage, Flag „Seite von „…“ gesichert.“; eine Ablehnung des Servers wird das Fehler-Flag „Seite von „…“ ließ sich nicht sichern: <Grund>“ (im Panel steht sie im Panel). Während einer dieser Aktionen trägt die Zelle „Aktionen“ `aria-busy`, der laufende Eintrag ebenso, eine zweite Seitenkopie wartet.
+- **Rückgängig:** Keine der drei Aktionen hatte bisher ein „Rückgängig“; das bleibt so (Lösen lässt sich mit „Mit Ticket verknüpfen …“ umkehren, Umhängen mit „Anderem Ticket zuordnen …“, eine Seitenkopie gibt es nur einmal).
+- **Browser-Menü:** Der Eintrag „Link der Quelle öffnen“ ist ein echter Link im offenen Menü; ein Rechtsklick darauf zeigt das Menü des Browsers (Link kopieren, in neuem Fenster öffnen).
+
+### 7.2 Projektkacheln
+
+- **Ort:** „•••“ („Weitere Aktionen für „Haus““, `.button-icon.row-menu` in `--control-height-s`) oben rechts in jeder Kachel, als Geschwister des Links der Kachel (ein Knopf in einem Link ist kein gültiges HTML); der Link bekommt rechts Platz (2,5rem), damit kein Text unter dem Knopf liegt. Gilt für oberste Projekte, Oberprojekte mit Unterprojekten und Unterprojekte gleich.
+- **Einträge:** genau die der Zeile der Liste aus derselben Funktion `menuOf` der `ProjectsView` (AM-4, §6.3), mit denselben Fragen, Flags und dem Fokus danach.
+- **Rechtsklick und Tastatur:** `rowMenus` hängt auch an der Liste der Kacheln; eine Kachel trägt `data-menu-row` und zählt damit wie eine Zeile, ihr Link `data-row-link` wie der Titel einer Zeile. Ein Rechtsklick auf die Kachel öffnet ihr Menü am Zeiger, Umschalt+F10 und die Kontextmenü-Taste auf ihrem Link darunter, Esc gibt den Fokus an den Link zurück. Das Menü des Browsers bleibt mit Strg, bei Touch, auf markiertem Text, in Feldern und außerhalb einer Kachel (etwa auf „3 Unterprojekte“). Ein Rechtsklick öffnet nie das Panel.
+- **Klick:** Ein Klick auf die Kachel öffnet das Projekt-Panel wie bisher; „•••“ liegt nicht im Link.
+
+### 7.3 Tests
+
+- Neu bzw. erweitert: `domain/sources.test.ts` (`canSavePage`, `isMainSource`, `canLeaveTicket`), `components/inbox-row-menu.test.ts` (Einträge je Zustand mit Linien, auch Hauptquelle, unbekanntes Ticket, Eintrag ohne und mit http-Adresse; ohne Quellen-Store; Link in neuem Tab mit Browser-Menü; Lösen mit Flag und Fokus; Umhängen über den Dialog mit Flag, neuem Chip und Fokus; Seitenkopie mit Warten, Flag und Fehler-Flag), `components/project-row-menu.test.ts` (Kacheln: dieselben Einträge wie die Liste, Ausführen mit Fragen, Rechtsklick am Zeiger, Unterprojekt mit eigenem Menü, Strg und außerhalb der Kacheln, Umschalt+F10 und Kontextmenü-Taste mit Fokus zurück, Klick öffnet weiter), `components/project-tiles.test.ts` (Knopf neben dem Link), Hilfe (`help-page.test.ts`).
+- Unverändert grün: `ticket-sources.test.ts` und `inbox-panel.test.ts` (die gemeinsame Regel ändert ihr Verhalten nicht).
+- Manuell BYL-E6-783: Browser, Tastatur und NVDA in Eingang und Kacheln.

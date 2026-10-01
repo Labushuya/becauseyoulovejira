@@ -2,9 +2,10 @@
 // where a project is edited), "Tickets anzeigen", "Unterprojekt anlegen" for an active top-level
 // project, then "Archivieren", "Aus dem Archiv holen" or "Mit Oberprojekt zurückholen", and
 // "Löschen …" only without tickets and sub projects. Archiving with active sub projects and
-// deleting ask first, as in the panel; a right click and Shift+F10 open the menu (AM-3). The tiles
-// have none. The stores run with fake data layers, the actions of the route are spies; navigation
-// and page state are mocked.
+// deleting ask first, as in the panel; a right click and Shift+F10 open the menu (AM-3). Since
+// AM-5 every tile has the same menu in its corner, with the right click and the keys of the rows;
+// a click on the tile still opens the panel. The stores run with fake data layers, the actions of
+// the route are spies; navigation and page state are mocked.
 
 import { fireEvent, render, screen, within } from '@testing-library/svelte';
 import { tick } from 'svelte';
@@ -192,7 +193,7 @@ afterEach(() => {
 });
 
 describe('menu "•••" of a row of the project list (AM-4)', () => {
-	it('ends every row of the list with "•••"; the tiles have none', async () => {
+	it('ends every row of the list with "•••"', async () => {
 		await show();
 		const row = screen.getByRole('link', { name: 'Haus' }).closest('tr') as HTMLElement;
 		const cell = row.querySelector('[data-col="actions"]') as HTMLElement;
@@ -201,10 +202,6 @@ describe('menu "•••" of a row of the project list (AM-4)', () => {
 		);
 		expect(menuButton('Haus').classList.contains('row-menu')).toBe(true);
 		expect(menuButton('Haus').getAttribute('title')).toBe('Weitere Aktionen');
-		document.body.innerHTML = '';
-
-		await show('/projekte?archiviert=1&darstellung=kacheln');
-		expect(screen.queryByRole('button', { name: /^Weitere Aktionen/ })).toBeNull();
 	});
 
 	it('offers the entries of each state, "Löschen …" only without tickets and sub projects', async () => {
@@ -340,5 +337,141 @@ describe('menu "•••" of a row of the project list (AM-4)', () => {
 		expect(document.activeElement).toBe(fold);
 		expect(fold.getAttribute('aria-expanded')).toBe('true');
 		expect(mocks.goto).not.toHaveBeenCalled();
+	});
+});
+
+describe('menu "•••" of a project tile (AM-5)', () => {
+	const TILES = '/projekte?archiviert=1&darstellung=kacheln';
+	const NAMES = ['Haus', 'Garten', 'Leer', 'Büro', 'Alt', 'Kiste'];
+
+	/** The link of the tile of a project (a sub project's starts with "in Haus"). */
+	function tileLink(name: string): HTMLElement {
+		const link = screen
+			.getAllByRole('link')
+			.find((candidate) => candidate.querySelector('.name')?.textContent === name);
+		if (link === undefined) throw new Error(`No tile for ${name}`);
+		return link;
+	}
+
+	/** The tile around the link of a project (a menu row of the grid). */
+	function tileOf(name: string): HTMLElement {
+		return tileLink(name).closest('[data-menu-row]') as HTMLElement;
+	}
+
+	it('gives every tile the menu of its row in the list, next to its link', async () => {
+		await show();
+		const inList = new Map(NAMES.map((name) => [name, labels(name)]));
+		document.body.innerHTML = '';
+
+		await show(TILES);
+		for (const name of NAMES) {
+			const button = menuButton(name);
+			expect(tileOf(name).contains(button), name).toBe(true);
+			expect(tileLink(name).contains(button), name).toBe(false);
+			expect(button.classList.contains('row-menu'), name).toBe(true);
+			expect(button.getAttribute('title'), name).toBe('Weitere Aktionen');
+			expect(labels(name), name).toEqual(inList.get(name));
+		}
+		const url = new URL(`http://localhost:3000${TILES}`);
+		expect(entry('Haus', 'Öffnen').getAttribute('href')).toBe(projectHref(HOUSE.id, url));
+		expect(entry('Garten', 'Tickets anzeigen').getAttribute('href')).toBe(
+			projectTicketsHref(GARDEN.id)
+		);
+	});
+
+	it('runs the entries of a tile like those of a row, with the questions of the panel', async () => {
+		const { actions } = await show(TILES);
+
+		await fireEvent.click(entry('Büro', 'Aus dem Archiv holen'));
+		await vi.waitFor(() => expect(actions?.archive).toHaveBeenCalledWith(OLD, false));
+
+		await fireEvent.click(entry('Haus', 'Archivieren'));
+		await tick();
+		const archive = screen.getByRole('dialog', { name: 'Projekt „Haus“ archivieren?' });
+		await fireEvent.click(within(archive).getByRole('button', { name: 'Abbrechen' }));
+		await vi.waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+		expect(actions?.archive).toHaveBeenCalledTimes(1);
+
+		await fireEvent.click(entry('Leer', 'Löschen …'));
+		await tick();
+		const remove = screen.getByRole('dialog', { name: 'Projekt „Leer“ löschen?' });
+		await fireEvent.click(within(remove).getByRole('button', { name: 'Endgültig löschen' }));
+		await vi.waitFor(() => expect(actions?.remove).toHaveBeenCalledWith(EMPTY));
+	});
+
+	it('opens the menu of a tile at the pointer on a right click, never the panel', async () => {
+		await show(TILES);
+		const name = tileLink('Leer').querySelector('.name') as HTMLElement;
+
+		expect(await fireEvent.contextMenu(name, { button: 2, clientX: 120, clientY: 80 })).toBe(false);
+		await tick();
+		expect(isOpen('Leer')).toBe(true);
+		expect(menuOf(menuButton('Leer')).style.top).toBe('80px');
+		expect(menuOf(menuButton('Leer')).style.left).toBe('120px');
+		await vi.waitFor(() => expect(document.activeElement?.textContent?.trim()).toBe('Öffnen'));
+		await fireEvent.keyDown(document.activeElement as Element, { key: 'Escape' });
+
+		// A sub project opens its own menu, not the one of its parent.
+		const garden = tileLink('Garten').querySelector('.name') as HTMLElement;
+		expect(await fireEvent.contextMenu(garden, { button: 2 })).toBe(false);
+		await tick();
+		expect(isOpen('Garten')).toBe(true);
+		expect(isOpen('Haus')).toBe(false);
+		expect(mocks.goto).not.toHaveBeenCalled();
+	});
+
+	it('leaves the menu of the browser with Ctrl and outside the tiles', async () => {
+		await show(TILES);
+
+		expect(await fireEvent.contextMenu(tileLink('Leer'), { button: 2, ctrlKey: true })).toBe(true);
+		const fold = screen.getByRole('button', { name: '1 Unterprojekt von Haus' });
+		expect(await fireEvent.contextMenu(fold, { button: 2 })).toBe(true);
+		expect(NAMES.some((name) => isOpen(name))).toBe(false);
+	});
+
+	it('opens the menu of the focused tile with Shift+F10 and the context menu key', async () => {
+		await show(TILES);
+		const link = tileLink('Büro');
+		link.focus();
+
+		expect(await fireEvent.keyDown(link, { key: 'F10', shiftKey: true })).toBe(false);
+		await tick();
+		expect(isOpen('Büro')).toBe(true);
+		await vi.waitFor(() => expect(document.activeElement?.textContent?.trim()).toBe('Öffnen'));
+		await fireEvent.keyDown(document.activeElement as Element, { key: 'Escape' });
+		expect(document.activeElement).toBe(link);
+
+		const other = tileLink('Kiste');
+		other.focus();
+		expect(await fireEvent.keyDown(other, { key: 'ContextMenu' })).toBe(false);
+		await tick();
+		expect(isOpen('Kiste')).toBe(true);
+		await vi.waitFor(() => expect(document.activeElement?.textContent?.trim()).toBe('Öffnen'));
+		await fireEvent.keyDown(document.activeElement as Element, { key: 'Escape' });
+		expect(document.activeElement).toBe(other);
+		expect(mocks.goto).not.toHaveBeenCalled();
+	});
+
+	it('still opens the panel with a click on the tile; "•••" is no part of the link', async () => {
+		await show(TILES);
+		const link = tileLink('Leer');
+		const url = new URL(`http://localhost:3000${TILES}`);
+
+		expect(link.getAttribute('href')).toBe(projectHref(EMPTY.id, url));
+		// Nothing of the view takes the click (jsdom would try to navigate, so the test stops it last).
+		let prevented: boolean | null = null;
+		const last = (event: Event) => {
+			prevented = event.defaultPrevented;
+			event.preventDefault();
+		};
+		document.addEventListener('click', last);
+		await fireEvent.click(link);
+		document.removeEventListener('click', last);
+		expect(prevented).toBe(false);
+		expect(isOpen('Leer')).toBe(false);
+
+		await fireEvent.click(menuButton('Leer'));
+		expect(isOpen('Leer')).toBe(true);
+		expect(link.contains(menuButton('Leer'))).toBe(false);
 	});
 });

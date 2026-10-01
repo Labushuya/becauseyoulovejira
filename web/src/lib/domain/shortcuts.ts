@@ -62,12 +62,14 @@ export const SHORTCUTS: readonly Shortcut[] = [
 		keys: [['Leertaste']],
 		action: 'Häkchen setzen oder entfernen'
 	},
-	// The menu of a row (plan aktionsmenues, AM-3); lib/overlay/context-menu.ts takes these keys.
+	// The menu of a row or a project tile (plan aktionsmenues, AM-3 and AM-5);
+	// lib/overlay/context-menu.ts takes these keys.
 	{
 		id: 'row-menu',
 		context: 'list',
 		keys: [['Umschalt', 'F10'], ['Kontextmenü']],
-		action: 'Das Menü „•••“ der Zeile öffnen, in der der Fokus steht (wie ein Rechtsklick)'
+		action:
+			'Das Menü „•••“ der Zeile oder Kachel öffnen, in der der Fokus steht (wie ein Rechtsklick)'
 	},
 	{
 		id: 'filter-arrows',
