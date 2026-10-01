@@ -126,6 +126,58 @@ export interface VerifyResult {
 	files: VerifyFiles | null;
 }
 
+/** The word that confirms a restore (ADR-0046 §7); the same in backup-rules.js and the control script. */
+export const RESTORE_CONFIRM_WORD = 'WIEDERHERSTELLEN';
+/** Days the data folder before a restore stays as a safety copy in the folder app. */
+export const SAFETY_KEEP_DAYS = 7;
+
+/** What a restore does with the access data of a backup. */
+export const CREDENTIAL_MODES = ['missing', 'all', 'none'] as const;
+export type CredentialMode = (typeof CREDENTIAL_MODES)[number];
+export const CREDENTIAL_MODE_TEXTS: Readonly<Record<CredentialMode, string>> = {
+	missing: 'Nur fehlende ergänzen',
+	all: 'Alle mit den Werten der Sicherung überschreiben',
+	none: 'Nicht zurückschreiben'
+};
+
+export const RESTORE_RUNNING_PHASES = [
+	'started',
+	'checking',
+	'stopping',
+	'restoring',
+	'starting'
+] as const;
+export type RestoreRunningPhase = (typeof RESTORE_RUNNING_PHASES)[number];
+export const RESTORE_PHASES = [...RESTORE_RUNNING_PHASES, 'done', 'failed', 'rolled-back'] as const;
+export type RestorePhase = (typeof RESTORE_PHASES)[number];
+
+/** The last restore (run/wiederherstellung.json, written by the control script). */
+export interface RestoreState {
+	at: string;
+	phase: RestorePhase;
+	/** It still runs (a phase before its end, written recently). */
+	running: boolean;
+	name: string;
+	source: BackupSource | 'path' | '';
+	ok: boolean;
+	/** Why it ended without restoring (restoreReasonText); '' otherwise. */
+	reason: string;
+	/** The safety copy of the former data folder, '' without one. */
+	safety: string;
+	counts: Record<string, number> | null;
+	files: VerifyFiles | null;
+	credentials: { mode: CredentialMode | ''; written: string[]; failed: boolean };
+	/** What happened to byl-config.json: kept, taken from the backup, none. */
+	config: 'kept' | 'taken' | 'none' | '';
+}
+
+/** A safety copy of the data folder before a restore; the app removes it at `until`. */
+export interface SafetyCopy {
+	name: string;
+	at: string;
+	until: string;
+}
+
 export interface BackupOverview {
 	appDir: string;
 	settings: BackupSettings;
@@ -146,6 +198,8 @@ export interface BackupOverview {
 	};
 	nextBackupAt: string | null;
 	warnings: BackupWarning[];
+	restore: RestoreState | null;
+	safety: SafetyCopy[];
 }
 
 /** What "Jetzt sichern" did: the new backup and its copy into the target. */
@@ -169,6 +223,15 @@ function textOf(value: unknown): string {
 
 function oneOf<T extends string>(list: readonly T[], value: unknown): value is T {
 	return typeof value === 'string' && (list as readonly string[]).includes(value);
+}
+
+/** Valid names of BYL_* variables in `raw` (never values). */
+function variableNames(raw: unknown): string[] {
+	return Array.isArray(raw)
+		? raw.filter(
+				(name): name is string => typeof name === 'string' && /^BYL_[A-Z0-9_]{1,60}$/.test(name)
+			)
+		: [];
 }
 
 function keepOf(value: unknown, name: KeepName): number {
@@ -239,6 +302,43 @@ function parseVerifyRun(raw: unknown): VerifyRun | null {
 	};
 }
 
+/** The last restore in an answer, or null. */
+export function parseRestoreState(raw: unknown): RestoreState | null {
+	if (!isRecord(raw) || textOf(raw.at) === '' || !oneOf(RESTORE_PHASES, raw.phase)) return null;
+	const credentials = isRecord(raw.credentials) ? raw.credentials : {};
+	const source = raw.source;
+	const config = raw.config;
+	return {
+		at: textOf(raw.at),
+		phase: raw.phase,
+		running: raw.running === true,
+		name: textOf(raw.name),
+		source: source === 'local' || source === 'target' || source === 'path' ? source : '',
+		ok: raw.ok === true,
+		reason: textOf(raw.reason),
+		safety: textOf(raw.safety),
+		counts: parseCounts(raw.counts),
+		files: parseVerifyFiles(raw.files),
+		credentials: {
+			mode: oneOf(CREDENTIAL_MODES, credentials.mode) ? credentials.mode : '',
+			written: variableNames(credentials.written),
+			failed: credentials.failed === true
+		},
+		config: config === 'kept' || config === 'taken' || config === 'none' ? config : ''
+	};
+}
+
+/** The safety copies in an answer. */
+export function parseSafetyCopies(raw: unknown): SafetyCopy[] {
+	if (!Array.isArray(raw)) return [];
+	return raw.filter(isRecord).flatMap((copy): SafetyCopy[] => {
+		const name = textOf(copy.name);
+		const at = textOf(copy.at);
+		const until = textOf(copy.until);
+		return name === '' || at === '' || until === '' ? [] : [{ name, at, until }];
+	});
+}
+
 /** The answer of GET /api/byl/backup (and of the changes), or null. */
 export function parseOverview(raw: unknown): BackupOverview | null {
 	if (!isRecord(raw) || !isRecord(raw.settings) || !isRecord(raw.last)) return null;
@@ -284,11 +384,7 @@ export function parseOverview(raw: unknown): BackupOverview | null {
 		settings: parseSettings(raw.settings),
 		passphrase: oneOf(PASSPHRASE_STATES, raw.passphrase) ? raw.passphrase : 'missing',
 		helper: raw.helper === true,
-		variables: Array.isArray(raw.variables)
-			? raw.variables.filter(
-					(name): name is string => typeof name === 'string' && /^BYL_[A-Z0-9_]{1,60}$/.test(name)
-				)
-			: [],
+		variables: variableNames(raw.variables),
 		target,
 		local: parseFiles(raw.local),
 		sealed: parseFiles(raw.sealed),
@@ -300,7 +396,9 @@ export function parseOverview(raw: unknown): BackupOverview | null {
 			verify: parseVerifyRun(last.verify)
 		},
 		nextBackupAt: textOf(raw.nextBackupAt) || null,
-		warnings
+		warnings,
+		restore: parseRestoreState(raw.restore),
+		safety: parseSafetyCopies(raw.safety)
 	};
 }
 
@@ -331,11 +429,7 @@ export function parseVerifyResult(raw: unknown): VerifyResult | null {
 		reason: verify.ok === true ? '' : textOf(verify.reason) || 'failed',
 		encrypted: verify.encrypted === true,
 		createdUtc: textOf(verify.createdUtc) || null,
-		variables: Array.isArray(verify.variables)
-			? verify.variables.filter(
-					(name): name is string => typeof name === 'string' && /^BYL_[A-Z0-9_]{1,60}$/.test(name)
-				)
-			: [],
+		variables: variableNames(verify.variables),
 		counts: parseCounts(verify.counts),
 		files: parseVerifyFiles(verify.files)
 	};
@@ -407,6 +501,66 @@ export function verifyText(run: VerifyRun | null): string {
 		? `in Ordnung${counts === '' ? '' : ` (${counts})`}`
 		: `gescheitert: ${verifyReasonText(run.reason)}`;
 	return `${formatPointInTime(run.at)} · Sicherung ${where} ${outcome}`;
+}
+
+export function isRestoreRunning(phase: RestorePhase): phase is RestoreRunningPhase {
+	return (RESTORE_RUNNING_PHASES as readonly string[]).includes(phase);
+}
+
+/** What the page says while a restore runs ('offline': the app is away for its restart). */
+export const RESTORE_PROGRESS_TEXTS: Readonly<Record<RestoreRunningPhase | 'offline', string>> = {
+	started: 'Die Wiederherstellung beginnt …',
+	checking: 'Die Sicherung wird geprüft …',
+	stopping: 'Die App wird beendet …',
+	restoring: 'Die Daten werden ausgetauscht …',
+	starting: 'Die App startet mit der Sicherung …',
+	offline: 'Die App ist kurz nicht erreichbar, sie startet neu …'
+};
+
+/** Why a restore did not happen, besides the reasons of a check (the same words as the control script). */
+export const RESTORE_REASON_TEXTS: Readonly<Record<string, string>> = {
+	confirm: `Zur Bestätigung fehlt das Wort ${RESTORE_CONFIRM_WORD}.`,
+	credentials: 'Unbekannte Auswahl für die Zugangsdaten.',
+	cancel: 'Abgebrochen; nichts wurde geändert.',
+	input: 'Der Auftrag der Wiederherstellung kam nicht an.',
+	'space-app': 'Auf dem Laufwerk der App ist für die entpackte Sicherung zu wenig Platz frei.',
+	stop: 'Die App ließ sich nicht beenden; nichts wurde geändert.',
+	swap: 'Der Datenordner ließ sich nicht austauschen; der bisherige ist wieder an seinem Platz.',
+	detach: 'Die Wiederherstellung ließ sich nicht im Hintergrund starten.'
+};
+
+export const RESTORE_START_FAILED =
+	'Mit der wiederhergestellten Sicherung startete die App nicht; der bisherige Stand ist zurück.';
+
+/** The reason of an ended restore; a start that failed after the swap has its own words. */
+export function restoreReasonText(state: Pick<RestoreState, 'phase' | 'reason'>): string {
+	if (state.phase === 'rolled-back' && state.reason === 'start') return RESTORE_START_FAILED;
+	return RESTORE_REASON_TEXTS[state.reason] ?? verifyReasonText(state.reason);
+}
+
+/** The row "Letzte Wiederherstellung". */
+export function restoreText(state: RestoreState | null): string {
+	if (state === null) return 'Noch keine';
+	const when = formatPointInTime(state.at);
+	if (state.running) return `${when} · läuft`;
+	if (state.phase === 'done') return `${when} · ${state.name} wiederhergestellt`;
+	if (isRestoreRunning(state.phase)) return `${when} · ohne Ergebnis abgebrochen`;
+	const outcome = state.phase === 'rolled-back' ? 'zurückgenommen' : 'nicht möglich';
+	return `${when} · ${outcome}: ${restoreReasonText(state)}`;
+}
+
+/** The description of the flag after a restore. */
+export function restoreDoneText(state: RestoreState): string {
+	const parts = [`Die Daten sind auf dem Stand von ${state.name}.`];
+	if (state.safety !== '') {
+		parts.push(`Die bisherigen liegen ${SAFETY_KEEP_DAYS} Tage im Ordner app als ${state.safety}.`);
+	}
+	if (state.credentials.written.length > 0) {
+		parts.push(`Zugangsdaten zurückgeschrieben: ${state.credentials.written.join(', ')}.`);
+	}
+	if (state.credentials.failed)
+		parts.push('Einige Zugangsdaten ließen sich nicht zurückschreiben.');
+	return parts.join(' ');
 }
 
 /** What the page says about a target folder the control script refused. */

@@ -1,6 +1,7 @@
 // Pure rules of the backups (ADR-0046): names of the backups, the generations kept (GFS), the
-// settings of byl-config.json, when a backup and a copy into the target folder are due, and the
-// warnings of the page "Einstellungen → Sicherung". CommonJS module, ES5 only, no dependencies
+// settings of byl-config.json, when a backup, a copy into the target folder and a check are due,
+// the request and the state of a restore, the safety copies, and the warnings of the page
+// "Einstellungen → Sicherung". CommonJS module, ES5 only, no dependencies
 // (Goja runtime and Vitest load it the same way); the effects live in lib/backup-service.js.
 // The limits and defaults of the generations are the same in byl-functions.ps1 ($BylBackupKeep).
 'use strict';
@@ -53,6 +54,22 @@ var VERIFY_REASONS = [
   'failed'
 ];
 var LOCAL_ANY_PATTERN = /^[A-Za-z0-9@._-]{1,200}\.zip$/;
+
+// Restore (ADR-0046 §7): the word that confirms it (also byl-functions.ps1), the choices for the
+// access data of a backup, the phases byl-control.ps1 restore writes into run/wiederherstellung.json,
+// and the safety copies of the data folder next to pb_data (pb_data.vor-wiederherstellung-<UTC>),
+// removed after seven days.
+var RESTORE_CONFIRM = 'WIEDERHERSTELLEN';
+var CREDENTIAL_MODES = ['missing', 'all', 'none'];
+var RESTORE_RUNNING = ['started', 'checking', 'stopping', 'restoring', 'starting'];
+var RESTORE_PHASES = RESTORE_RUNNING.concat(['done', 'failed', 'rolled-back']);
+var RESTORE_REASONS = VERIFY_REASONS.concat(['confirm', 'credentials', 'cancel', 'input', 'space-app', 'stop', 'swap', 'detach']);
+// A run that wrote nothing for this long ended without a word (killed, machine off).
+var RESTORE_STALE_MS = 30 * MINUTE_MS;
+var SAFETY_PATTERN = /^pb_data\.vor-wiederherstellung-(\d{4})(\d{2})(\d{2})-(\d{2})(\d{2})(\d{2})$/;
+var SAFETY_KEEP_MS = 7 * DAY_MS;
+// A file name of a backup in the state file (a restore from a path names its file).
+var FILE_NAME_PATTERN = /^[^\\/:*?"<>|\x00-\x1f]{1,200}$/;
 
 var TARGET_PROBLEMS = ['format', 'too-long', 'inside-app', 'missing', 'not-writable', 'space'];
 var PASSPHRASE_STATES = ['set', 'missing', 'unreadable', 'unavailable'];
@@ -108,9 +125,8 @@ function sealedName(name) {
   return isLocalName(name) ? String(name).slice(0, -4) + '.tar.age' : '';
 }
 
-/** Time (ms, UTC) in the name of a backup or a sealed copy; null for any other name. */
-function timeOfName(name) {
-  var match = LOCAL_PATTERN.exec(String(name)) || SEALED_PATTERN.exec(String(name));
+/** Time (ms, UTC) of the six groups of a name with a time stamp; null for none or an impossible date. */
+function timeOfMatch(match) {
   if (match === null) {
     return null;
   }
@@ -124,6 +140,22 @@ function timeOfName(name) {
     return null;
   }
   return ms;
+}
+
+/** Time (ms, UTC) in the name of a backup or a sealed copy; null for any other name. */
+function timeOfName(name) {
+  return timeOfMatch(LOCAL_PATTERN.exec(String(name)) || SEALED_PATTERN.exec(String(name)));
+}
+
+/** Time (ms, UTC) of a safety copy of the data folder by its name; null for any other name. */
+function safetyTime(name) {
+  return timeOfMatch(SAFETY_PATTERN.exec(String(name)));
+}
+
+/** Whether the safety copy `name` is seven days old or older at `now`. */
+function safetyExpired(name, now) {
+  var time = safetyTime(name);
+  return time !== null && now - time >= SAFETY_KEEP_MS;
 }
 
 function isLocalName(name) {
@@ -389,6 +421,95 @@ function verifyView(raw) {
   };
 }
 
+/**
+ * The body of "Wiederherstellen": { source, name, passphrase?, credentials ('missing' by default,
+ * 'all', 'none'), confirm ('WIEDERHERSTELLEN') }. Returns { value } for the control script or
+ * { problem } ('name', 'passphrase', 'credentials', 'confirm').
+ */
+function restoreInput(body) {
+  var checked = verifyInput(body);
+  if (checked.problem) {
+    return checked;
+  }
+  var mode = body.credentials === undefined || body.credentials === null ? 'missing' : body.credentials;
+  if (CREDENTIAL_MODES.indexOf(mode) === -1) {
+    return { problem: 'credentials' };
+  }
+  if (typeof body.confirm !== 'string' || body.confirm.replace(/^\s+|\s+$/g, '') !== RESTORE_CONFIRM) {
+    return { problem: 'confirm' };
+  }
+  var value = { source: checked.value.source, name: checked.value.name, credentials: mode, confirm: RESTORE_CONFIRM };
+  if (checked.value.passphrase !== undefined) {
+    value.passphrase = checked.value.passphrase;
+  }
+  return { value: value };
+}
+
+/** run/wiederherstellung.json as written by byl-control.ps1 restore; null for none or a broken one. */
+function parseRestoreState(text) {
+  var raw = null;
+  try {
+    raw = JSON.parse(String(text || ''));
+  } catch (err) {
+    return null;
+  }
+  if (!isRecord(raw) || RESTORE_PHASES.indexOf(raw.phase) === -1 || !isWhole(raw.at)) {
+    return null;
+  }
+  var ended = raw.phase === 'failed' || raw.phase === 'rolled-back';
+  var credentials = isRecord(raw.credentials) ? raw.credentials : {};
+  var written = [];
+  var listed = credentials.written instanceof Array ? credentials.written : [];
+  for (var i = 0; i < listed.length; i++) {
+    if (typeof listed[i] === 'string' && /^BYL_[A-Z0-9_]{1,60}$/.test(listed[i])) {
+      written.push(listed[i]);
+    }
+  }
+  return {
+    at: raw.at,
+    phase: raw.phase,
+    name: typeof raw.name === 'string' && FILE_NAME_PATTERN.test(raw.name) ? raw.name : '',
+    source: ['local', 'target', 'path'].indexOf(raw.source) !== -1 ? raw.source : '',
+    ok: raw.phase === 'done' && raw.ok === true,
+    reason: !ended ? '' : RESTORE_REASONS.indexOf(raw.reason) !== -1 ? raw.reason : 'failed',
+    safety: typeof raw.safety === 'string' && safetyTime(raw.safety) !== null ? raw.safety : '',
+    counts: countsOf(raw.counts),
+    files: filesOf(raw.files),
+    credentials: {
+      mode: CREDENTIAL_MODES.indexOf(credentials.mode) !== -1 ? credentials.mode : '',
+      written: written,
+      failed: credentials.failed === true
+    },
+    config: ['kept', 'taken', 'none'].indexOf(raw.config) !== -1 ? raw.config : ''
+  };
+}
+
+/** Whether the restore of `state` still runs at `now`: a phase before its end, written recently. */
+function restoreRunning(state, now) {
+  return state !== null && RESTORE_RUNNING.indexOf(state.phase) !== -1 && now - state.at < RESTORE_STALE_MS;
+}
+
+/** A state of parseRestoreState in the shape of the routes (times as ISO 8601); null for none. */
+function restoreView(state, now) {
+  if (state === null) {
+    return null;
+  }
+  return {
+    at: iso(state.at),
+    phase: state.phase,
+    running: restoreRunning(state, now),
+    name: state.name,
+    source: state.source,
+    ok: state.ok,
+    reason: state.reason,
+    safety: state.safety,
+    counts: state.counts,
+    files: state.files,
+    credentials: state.credentials,
+    config: state.config
+  };
+}
+
 /** When the next backup is due (ms): a day after the newest one, now without any. */
 function nextBackupAt(newestLocal, now) {
   return isWhole(newestLocal) ? Math.max(now, newestLocal + BACKUP_EVERY_MS) : now;
@@ -580,12 +701,18 @@ module.exports = {
   EXPORT_RETRY_MS: EXPORT_RETRY_MS,
   VERIFY_EVERY_MS: VERIFY_EVERY_MS,
   VERIFY_REASONS: VERIFY_REASONS,
+  RESTORE_CONFIRM: RESTORE_CONFIRM,
+  RESTORE_REASONS: RESTORE_REASONS,
+  RESTORE_STALE_MS: RESTORE_STALE_MS,
+  SAFETY_KEEP_MS: SAFETY_KEEP_MS,
   TARGET_MAX_LENGTH: TARGET_MAX_LENGTH,
   TARGET_PROBLEMS: TARGET_PROBLEMS,
   EXPORT_REASONS: EXPORT_REASONS,
   backupName: backupName,
   sealedName: sealedName,
   timeOfName: timeOfName,
+  safetyTime: safetyTime,
+  safetyExpired: safetyExpired,
   isLocalName: isLocalName,
   isSealedName: isSealedName,
   isoWeek: isoWeek,
@@ -598,6 +725,10 @@ module.exports = {
   planVerify: planVerify,
   verifyInput: verifyInput,
   verifyView: verifyView,
+  restoreInput: restoreInput,
+  parseRestoreState: parseRestoreState,
+  restoreRunning: restoreRunning,
+  restoreView: restoreView,
   warnings: warnings,
   needsAttention: needsAttention,
   parseStatus: parseStatus,

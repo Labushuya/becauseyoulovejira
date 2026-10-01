@@ -1,6 +1,6 @@
 # ADR-0003: Speicherort von `pb_data` und Backup-Strategie
 
-- **Status:** Angenommen; §2 und §6 ersetzt durch [ADR-0046](0046-sicherung-pruefung-wiederherstellen.md) (Nachtrag unten)
+- **Status:** Angenommen; §2, §4 und §6 ersetzt durch [ADR-0046](0046-sicherung-pruefung-wiederherstellen.md) (Nachträge unten)
 - **Datum:** 2026-09-24
 - **Entscheidung durch:** Advisor
 
@@ -53,3 +53,7 @@ Befunde für PocketBase 0.40.4 (Quelltext `core/backup*.go`, `core/settings_mode
 - **§6 ist ersetzt:** Eine Kopie außer Haus macht die App selbst, verschlüsselt (age mit Passphrase) in ein frei wählbares Zielverzeichnis, auf Wunsch mit den Werten der `BYL_*`-Variablen (Einstellungen → Sicherung).
 - **§4 (Wiederherstellen):** Die Schritte von Hand bleiben gültig, bis das Wiederherstellen per Skript und App kommt (ADR-0046 §7, Paket BK-3); danach ersetzt es sie.
 - §1, §3, §5 und §7 gelten weiter. Die Konsequenz „Backups liegen auf demselben Datenträger“ gilt nur noch ohne Zielverzeichnis.
+
+## Nachtrag (2026-10-01, [ADR-0046](0046-sicherung-pruefung-wiederherstellen.md), BK-3): Wiederherstellen per Skript und App
+
+- **§4 ist ersetzt:** Wiederhergestellt wird mit `wiederherstellen.bat` (bzw. `byl-control.ps1 restore`) oder aus der App unter Einstellungen → Sicherung: erst geprüft (ADR-0046 §6), dann mit Sicherheitskopie `pb_data.vor-wiederherstellung-<Zeit>` des bisherigen Ordners, die die App nach sieben Tagen entfernt, und mit Rückweg, wenn die App danach nicht startet (ADR-0046 §7). Die Schritte von Hand in der README bleiben als Rückfall beschrieben; den Weg über die Verwaltung unterstützt PocketBase unter Windows weiter nicht.

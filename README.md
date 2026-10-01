@@ -100,6 +100,7 @@ becauseyoulovejira/
     neu-starten.bat       Neu starten, nur wenn nötig (Update, neue Variable, …)
     status.bat            Zeigt, ob die App läuft, Adresse und ob ein Neustart nötig ist
     admin-zuruecksetzen.bat  Admin-Konto anlegen oder Admin-Passwort neu setzen (Notfall)
+    wiederherstellen.bat  Eine Sicherung wiederherstellen (mit Prüfung, Sicherheitskopie und Rückweg)
     autostart-an.bat      Autostart einrichten
     autostart-aus.bat     Autostart entfernen
     byl-control.ps1       Steuerskript mit allen Befehlen (byl-functions.ps1: testbare Funktionen)
@@ -170,6 +171,7 @@ Grenzen der Erkennung: `start.bat` meldet eine offene Einrichtung nur, wenn der 
 | `app\neu-starten.bat` | Startet die App **nur neu, wenn es nötig ist**: nach einem Update mit neuer Migration oder geänderter Server-Logik, nach einer neuen, geänderten oder entfernten `BYL_*`-Variable (etwa nach `setx`), einem neuen Mail-Hilfsprozess oder einem anderen Port, und wenn die App nicht antwortet. Sonst sagt es „Kein Neustart nötig“ (bzw. „F5 im offenen Tab“, wenn nur die Oberfläche neu gebaut ist) und startet höchstens einen fehlenden Mail-Hilfsprozess. Läuft die App nicht, startet es sie. Offene Tabs verbinden sich nach dem Neustart selbst. Die Meldung bleibt 5 Sekunden stehen, ein Fehler bis zu einem Tastendruck. Immer neu starten: `byl-control.ps1 reload -Force` bzw. `restart`. |
 | `app\status.bat` | Zeigt, ob die App läuft (seit wann, PID), die Adresse, den Mail-Hilfsprozess, ob ein Neustart nötig ist (mit Grund), den Autostart und laufende Kopien in anderen Ordnern. Ändert nichts; das Fenster bleibt bis zu einem Tastendruck offen. |
 | `app\admin-zuruecksetzen.bat` | Legt ein Admin-Konto an oder setzt das Admin-Passwort neu, ohne Daten zu löschen. Siehe [Konten verwalten](#konten-verwalten). |
+| `app\wiederherstellen.bat` | Stellt eine Sicherung wieder her: Liste der Sicherungen im Ordner `app` und im Zielverzeichnis (oder der volle Pfad einer Sicherung, etwa auf einem neuen Rechner), Passphrase, Prüfung, Rückfrage mit dem Wort `WIEDERHERSTELLEN`, Sicherheitskopie der jetzigen Daten, Start. Siehe [Backup und Wiederherstellung](#backup-und-wiederherstellung). Das Fenster bleibt bis zu einem Tastendruck offen. |
 | `app\autostart-an.bat` / `app\autostart-aus.bat` | Legt die Verknüpfung `becauseyoulovejira.lnk` im Windows-Autostart-Ordner an bzw. entfernt sie. Sie startet `start-hidden.vbs`: Die App startet bei der Anmeldung still im Hintergrund, **ohne** Browser. Hinweise (Erststart) und Fehler erscheinen dann als Meldungsfenster. Nach dem Verschieben von `app\` einfach `autostart-an.bat` erneut ausführen. |
 
 `start.bat` startet nach PocketBase auch `app\byl-mail.exe`, wenn die Datei da ist und es mindestens eine eingeschaltete Postfach-Verbindung gibt (auch wenn die App schon läuft und nur der Hilfsprozess fehlt). Beim ersten Mal legt es dafür die Benutzervariable `BYL_INGEST_TOKEN` an (24 Zufallsbytes), die nur PocketBase und der Hilfsprozess kennen. Das Protokoll des Hilfsprozesses steht in `app\logs\byl-mail.log`.
@@ -187,6 +189,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File app\byl-control.ps1 help
 | `start` | wie `start.bat`; `-NoBrowser` ohne Browser, `-Force` startet eine App neu, die nicht antwortet |
 | `stop` | wie `stop.bat` |
 | `restart` | beenden und neu starten; `-Detach` startet den Neustart als eigenen Prozess im Hintergrund (für die Seite „System“) |
+| `restore` bzw. `restore <Sicherung oder Pfad>` | wie `wiederherstellen.bat`; `-Detach` (für die Seite „Sicherung“) startet die Wiederherstellung als eigenen Prozess im Hintergrund |
 | `reload` | wie `neu-starten.bat`: nur neu starten, wenn es nötig ist (siehe unten); `-Force` startet immer neu |
 | `status` | wie `status.bat`: Zustand, Adresse, Mail-Hilfsprozess, ob ein Neustart nötig ist, Autostart; `-Json` für Skripte |
 | `open` | die laufende App öffnen (installierte App bzw. Tab) |
@@ -276,7 +279,14 @@ Details und Begründung: [ADR-0046](docs/adr/0046-sicherung-pruefung-wiederherst
 - **Von Hand:** `byl-control.ps1 backup-configure "<Ordner>"`, `backup-passphrase` (fragt zweimal verdeckt), `backup-info`, `backup-export <byl-….zip>` und `backup-verify <byl-….zip, byl-….tar.age oder voller Pfad>` im Ordner `app`.
 - **Umzug:** `stop.bat`, dann den ganzen Ordner `app\` kopieren; die Sicherungen in `pb_data\backups` wandern mit. Die Passphrase legst du auf dem neuen Rechner neu fest.
 
-**Wiederherstellen (nur manuell):** Die Wiederherstellung über das Admin-UI unterstützt PocketBase unter Windows nicht. Manuelle Schritte, PowerShell im Ordner `app` (Datum und Backup-Namen anpassen):
+**Wiederherstellen** geht auf zwei Wegen, beide mit Prüfung, Sicherheitskopie und Rückweg:
+
+- **Aus der App:** Einstellungen → Sicherung → an einer Sicherung **„Wiederherstellen …“**. Die App prüft die Sicherung (wie „Prüfen“) und fragt dann direkt darunter: Sie zeigt, was sie fand, die **Namen** der Zugangsdaten in der Sicherung (und welche auf deinem Windows-Konto fehlen) mit der Wahl „Nur fehlende ergänzen“ (Standard), „Alle überschreiben“ oder „Nicht zurückschreiben“, und du tippst zur Bestätigung **WIEDERHERSTELLEN**. Dann beendet die App sich, tauscht die Daten und startet neu; die Seite zeigt „Wiederherstellung läuft …“ und meldet sich danach mit dem Ergebnis.
+- **Mit `app\wiederherstellen.bat`** (auch, wenn die App nicht startet, und auf einem neuen Rechner): Es listet die Sicherungen im Ordner `app` und im Zielverzeichnis mit Datum und Größe; wähle eine Nummer oder gib den vollen Pfad einer Sicherung an (etwa `E:\Sicherung\byl-20261001-080000.tar.age` von der USB-Platte). Danach fragt es die Passphrase (falls keine gespeichert ist), prüft, zeigt das Ergebnis, fragt nach den Zugangsdaten und nach dem Wort `WIEDERHERSTELLEN`.
+- **Was passiert:** Die Sicherung wird neben `pb_data` entpackt, die App geordnet beendet, der bisherige Ordner `pb_data` wird zu **`pb_data.vor-wiederherstellung-<Datum>-<Uhrzeit>`** (UTC) und bleibt **7 Tage** im Ordner `app` (danach löscht die App ihn; die Seite listet ihn bis dahin), der wiederhergestellte tritt an seine Stelle, die Sicherungen in `pb_data\backups` wandern mit. `byl-config.json` bleibt, wie sie ist; nur ein Ordner ohne diese Datei (neuer Rechner) bekommt die aus der Sicherung (Port, Zielverzeichnis, Aufbewahrung). Gewählte Zugangsdaten schreibt die App in deine Windows-Umgebungsvariablen. **Startet die App danach nicht, geht alles zurück** (Daten, Einstellungen, Zugangsdaten), und die bisherige App startet wieder.
+- **Was danach nicht mehr in der App ist:** alles, was nach der Sicherung dazukam (bis zum Löschen noch in der Sicherheitskopie). Es gelten die Konten und Passwörter zum Zeitpunkt der Sicherung; ist dein Konto dort ein anderes, meldest du dich neu an.
+
+**Wiederherstellen von Hand (Rückfall):** Die Wiederherstellung über das Admin-UI unterstützt PocketBase unter Windows nicht. Ohne `wiederherstellen.bat` gehen diese Schritte, PowerShell im Ordner `app` (Datum und Backup-Namen anpassen; eine verschlüsselte Sicherung vorher mit `age` entschlüsseln und `pb_data.zip` aus dem tar-Archiv nehmen, siehe „Format“):
 
 ```powershell
 # 1. Server beenden
@@ -724,7 +734,7 @@ Die CI ([`.github/workflows/ci.yml`](.github/workflows/ci.yml)) läuft bei jedem
 | `tests/integration/` | gegen Wegwerf-PocketBase-Instanzen: Migrationen (hin, zurück und Hooks vor der Migration), API-Regeln, Hooks, Login, gesperrte Mail-Abläufe, Admin-Reset, SPA-Fallback, Backup-Wiederherstellung, Datenzugriff und Realtime des Frontends (`web/src/lib/data`), Eingang, Kanäle gegen lokale Fake-Server (Kalender, Telegram), Ingest-Route, Postfach-Auswahl und Bereinigung |
 | `web/src/**/*.test.ts` | Frontend: Domänenlogik, Stores, Unit- und Komponententests (jsdom) |
 | `helpers/mail/src/*.test.ts` | Mail-Hilfsprozess gegen einen kleinen IMAP-Server im Test (`helpers/mail/test/fake-imap.ts`, nur `127.0.0.1`): nur lesende Befehle, Cursor, Stichwörter, Fehler; dazu `tests/integration/mail-*.test.mjs` mit PocketBase und dem gebauten `byl-mail.exe` ohne Node |
-| `helpers/backup/src/*.test.ts` | Hilfsprogramm der Sicherung: tar-Behälter, Versiegeln und Öffnen mit age, falsche Passphrase, veränderte und abgeschnittene Dateien, offizielle Testvektoren von age, Prüfung einer Datenbank (Integrität, Zählungen, fehlende Originaldateien); dazu `tests/integration/backup-*.test.mjs` (gebautes `byl-backup.exe` ohne Node, tar des Systems, Sicherungen einer Wegwerf-Instanz und einer Wegwerf-Kopie des Ordners `app` mit Zielverzeichnis, Prüfungen mit Probe-Instanz) |
+| `helpers/backup/src/*.test.ts` | Hilfsprogramm der Sicherung: tar-Behälter, Versiegeln und Öffnen mit age, falsche Passphrase, veränderte und abgeschnittene Dateien, offizielle Testvektoren von age, Prüfung einer Datenbank (Integrität, Zählungen, fehlende Originaldateien); dazu `tests/integration/backup-*.test.mjs` (gebautes `byl-backup.exe` ohne Node, tar des Systems, Sicherungen einer Wegwerf-Instanz und einer Wegwerf-Kopie des Ordners `app` mit Zielverzeichnis, Prüfungen mit Probe-Instanz, Wiederherstellen mit Rückweg, losgelöst aus der Route und auf einem frischen Ordner, Zugangsdaten nur in eine Datei des Tests) |
 
 ```powershell
 npm run test:unit          # nur reine Logik, ohne PocketBase

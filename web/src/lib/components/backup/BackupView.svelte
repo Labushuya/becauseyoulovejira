@@ -1,6 +1,13 @@
 <script lang="ts">
 	import SectionMessage from '$lib/components/guidance/SectionMessage.svelte';
-	import { newestToVerify, runText, verifyText, warningText } from '$lib/domain/backup';
+	import {
+		newestToVerify,
+		RESTORE_PROGRESS_TEXTS,
+		restoreText,
+		runText,
+		verifyText,
+		warningText
+	} from '$lib/domain/backup';
 	import type { HostPlatform } from '$lib/domain/host-platform';
 	import { formatPointInTime } from '$lib/domain/system';
 	import { backupDenialNotice, type BackupStore } from '$lib/stores/backup.svelte';
@@ -8,11 +15,11 @@
 	import BackupPassphrase from './BackupPassphrase.svelte';
 	import BackupSettings from './BackupSettings.svelte';
 
-	// Page "Einstellungen → Sicherung" (ADR-0046): the state of the backups and their last check,
-	// warnings (red only for real errors, ADR-0009), "Jetzt sichern", "Jetzt prüfen", target folder,
-	// passphrase, access data, generations and the backups here and in the target. A server that is
-	// not on Windows gets the hint instead (the target, the passphrase and the access data need the
-	// scripts of the folder app).
+	// Page "Einstellungen → Sicherung" (ADR-0046): the state of the backups, their last check and the
+	// last restore, warnings (red only for real errors, ADR-0009), a running restore, "Jetzt
+	// sichern", "Jetzt prüfen", target folder, passphrase, access data, generations, the backups here
+	// and in the target and the safety copies. A server that is not on Windows gets the hint instead
+	// (the target, the passphrase and the access data need the scripts of the folder app).
 	let { store, platform }: { store: BackupStore; platform: HostPlatform } = $props();
 
 	const uid = $props.id();
@@ -56,6 +63,12 @@
 		dort.
 	</p>
 
+	{#if store.restoreProgress !== null}
+		<SectionMessage tone="info" live title="Wiederherstellung läuft">
+			{RESTORE_PROGRESS_TEXTS[store.restoreProgress]} Die Seite meldet sich, sobald die App wieder da
+			ist; bitte nicht schließen.
+		</SectionMessage>
+	{/if}
 	{#each overview.warnings as warning (warning.code)}
 		{@const text = warningText(warning)}
 		<SectionMessage tone={warning.tone} title={text.title}>{text.text}</SectionMessage>
@@ -94,6 +107,12 @@
 				<dt>Letzte Prüfung</dt>
 				<dd>{verifyText(overview.last.verify)}</dd>
 			</div>
+			{#if overview.restore !== null}
+				<div class="row">
+					<dt>Letzte Wiederherstellung</dt>
+					<dd>{restoreText(overview.restore)}</dd>
+				</div>
+			{/if}
 		</dl>
 		{#if store.actionMessage !== null}
 			<SectionMessage
