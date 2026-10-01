@@ -5,7 +5,9 @@
 import { randomBytes } from 'node:crypto';
 import PocketBase from 'pocketbase';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { writtenLogs } from '../support/logs.mjs';
 import { startPocketBase } from '../support/pocketbase-harness.mjs';
+import { scaled } from '../support/timing.mjs';
 import {
 	createConnection,
 	deleteConnection,
@@ -100,7 +102,7 @@ beforeAll(async () => {
 	await superuser.collection('_superusers').authWithPassword(instance.email, instance.password);
 	owner = await user();
 	other = await user();
-}, 60_000);
+});
 
 afterAll(async () => {
 	await instance?.stop();
@@ -284,7 +286,7 @@ describe('connections: renaming (ADR-0026, addendum KK-3)', () => {
 		const events = [];
 		const unsubscribe = await owner.pb.collection('connections').subscribe(record.id, (event) => events.push(event));
 		await owner.pb.collection('connections').update(record.id, { label: 'Arbeit' });
-		await expect.poll(() => events.map((event) => event.record.label), { timeout: 5_000 }).toContain('Arbeit');
+		await expect.poll(() => events.map((event) => event.record.label), { timeout: scaled(5_000) }).toContain('Arbeit');
 		await unsubscribe();
 	});
 });
@@ -317,12 +319,13 @@ describe('connections: no values anywhere', () => {
 		const unsubscribe = await owner.pb.collection('connections').subscribe('*', (event) => events.push(event));
 		const bot = await telegram(owner);
 		await owner.pb.collection('connections').update(bot.id, { label: 'Umbenannt' });
-		await expect.poll(() => events.length, { timeout: 5_000 }).toBeGreaterThanOrEqual(2);
+		await expect.poll(() => events.length, { timeout: scaled(5_000) }).toBeGreaterThanOrEqual(2);
 		await unsubscribe();
 		expectNoValues(JSON.stringify(events));
 		expectNoValues(JSON.stringify(await owner.pb.collection('connections').getFullList()));
 		expectNoValues(JSON.stringify(await superuser.collection('connections').getFullList()));
-		expectNoValues(JSON.stringify(await superuser.send('/api/logs', { query: { perPage: 500 } })));
+		// The log once PocketBase has written the entries of these requests too (it writes in batches).
+		expectNoValues(JSON.stringify(await writtenLogs(superuser)));
 		expectNoValues(instance.output());
 	});
 
@@ -403,7 +406,7 @@ describe('data layer of the web app', () => {
 		const renamed = await renameConnection(fresh.pb, bot.id, ' Familienchat ');
 		expect(renamed).toMatchObject({ id: bot.id, label: 'Familienchat', secretEnv: 'BYL_TEST_TOKEN', allowlistEnv: 'BYL_TEST_ALLOWED' });
 		await expect
-			.poll(() => changes, { timeout: 5_000 })
+			.poll(() => changes, { timeout: scaled(5_000) })
 			.toContainEqual({ action: 'update', record: { id: bot.id, label: 'Familienchat' } });
 		await expect(renameConnection(fresh.pb, bot.id, '   ')).rejects.toMatchObject({
 			kind: 'validation',
@@ -411,7 +414,7 @@ describe('data layer of the web app', () => {
 		});
 		expect(await listConnectionNames(fresh.pb)).toEqual([{ id: bot.id, label: 'Familienchat' }]);
 		await deleteConnection(fresh.pb, bot.id);
-		await expect.poll(() => changes, { timeout: 5_000 }).toContainEqual({ action: 'delete', id: bot.id });
+		await expect.poll(() => changes, { timeout: scaled(5_000) }).toContainEqual({ action: 'delete', id: bot.id });
 		await unsubscribe();
 		expect(await listConnectionNames(fresh.pb)).toEqual([]);
 	});

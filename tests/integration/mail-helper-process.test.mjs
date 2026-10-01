@@ -16,6 +16,7 @@ import PocketBase from 'pocketbase';
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 import { spawnClean, spawnSyncClean } from '../support/clean-env.mjs';
 import { startPocketBase } from '../support/pocketbase-harness.mjs';
+import { scaled } from '../support/timing.mjs';
 import { FakeImapServer, fakeMail } from '../../helpers/mail/test/fake-imap.ts';
 import { executableName } from '../../scripts/platform.mjs';
 
@@ -59,7 +60,7 @@ function runOnce(args) {
 	const result = spawnSyncClean(HELPER, args, {
 		baseEnv: withoutNode(),
 		encoding: 'utf8',
-		timeout: 60_000,
+		timeout: scaled(60_000),
 		windowsHide: true
 	});
 	return { status: result.status, output: `${result.stdout}${result.stderr}` };
@@ -95,7 +96,7 @@ async function stopHelper(helper) {
 	await exited;
 }
 
-async function waitFor(check, timeoutMs = 20_000) {
+async function waitFor(check, timeoutMs = scaled(20_000)) {
 	const deadline = Date.now() + timeoutMs;
 	for (;;) {
 		const value = await check();
@@ -135,7 +136,7 @@ beforeAll(async () => {
 	imap.password = PASSWORD;
 	await imap.start();
 	helperPort = await freePort();
-}, 60_000);
+});
 
 afterEach(async () => {
 	for (const child of running) child.kill();
@@ -171,7 +172,7 @@ describe('byl-mail.exe as process', () => {
 		await delay(1500);
 		expect(helper.child.exitCode).toBeNull();
 		await stopHelper(helper);
-	}, 30_000);
+	});
 
 	it('fetches, survives an outage of the mailbox and continues after a hard stop', async () => {
 		const box = await superuser.collection('connections').create({
@@ -218,7 +219,7 @@ describe('byl-mail.exe as process', () => {
 		for (const value of [TOKEN, PASSWORD, SUBJECT_SECRET, 'Inhalt der Mail', 'bert@example.com']) {
 			expect(log).not.toContain(value);
 		}
-	}, 90_000);
+	}, scaled(90_000));
 
 	it('offers the mailbox selection on 127.0.0.1 with the token only (package 23)', async () => {
 		const box = await superuser.collection('connections').create({
@@ -244,5 +245,5 @@ describe('byl-mail.exe as process', () => {
 		expect((await answer.json()).items.length).toBeGreaterThan(0);
 		await stopHelper(helper);
 		await superuser.collection('connections').delete(box.id);
-	}, 60_000);
+	});
 });

@@ -112,8 +112,7 @@ describe('migration rollback', () => {
 				);
 				expect(second.settings.backups).toEqual(first.settings.backups);
 			});
-		},
-		60_000
+		}
 	);
 
 	it(
@@ -169,8 +168,7 @@ describe('migration rollback', () => {
 				const reverted = withDatabase(dataDir, snapshot);
 				expect(reverted).toEqual(before);
 			});
-		},
-		60_000
+		}
 	);
 
 	it(
@@ -215,8 +213,7 @@ describe('migration rollback', () => {
 				expect(reverted.connections).toBeNull();
 				expect(reverted.users).toEqual(before.users);
 			});
-		},
-		60_000
+		}
 	);
 
 	it(
@@ -255,8 +252,7 @@ describe('migration rollback', () => {
 				expect(reverted.users).toEqual(before.users);
 				expect(reverted.inbox_items).toEqual(before.inbox_items);
 			});
-		},
-		60_000
+		}
 	);
 });
 
@@ -347,8 +343,7 @@ describe('migration rollback of the full inbox scan (ADR-0020, addendum 3)', () 
 				// And up again.
 				expect(appliedFiles(await migrate(args, 'up'), 'Applied')).toEqual(fromScan);
 			});
-		},
-		60_000
+		}
 	);
 });
 
@@ -417,8 +412,7 @@ describe('migration rollback of the delete guard of sources (ADR-0031 section 3)
 				expect(appliedFiles(await migrate(args, 'up'), 'Applied')).toEqual(fromGuard);
 				expect(deleteRuleOf(dataDir)).toBeNull();
 			});
-		},
-		60_000
+		}
 	);
 });
 
@@ -462,8 +456,7 @@ describe('migration of the backup schedule (ADR-0046)', () => {
 				await migrate(args, 'up');
 				expect(backupsOf(dataDir)).toMatchObject(EXPECTED_BACKUPS);
 			});
-		},
-		60_000
+		}
 	);
 });
 
@@ -527,8 +520,7 @@ describe('migration rollback of the delete lock of inbox items (ADR-0014, addend
 				expect(inboxDeleteRuleOf(dataDir)).toBeNull();
 				expect(withoutTimestamps(readDataDir(dataDir).collections)).toEqual(schemaAfter);
 			});
-		},
-		60_000
+		}
 	);
 });
 
@@ -602,8 +594,7 @@ describe('migration rollback of the orphaned sources (ADR-0031, addendum B)', ()
 				expect(appliedFiles(await migrate(args, 'up'), 'Applied')).toEqual(fromOrphans);
 				expect(byId(withDatabase(dataDir, snapshot)).item00000000002.state).toBe('new');
 			});
-		},
-		60_000
+		}
 	);
 });
 
@@ -675,8 +666,7 @@ describe('migration rollback of the 25 MB originals (ADR-0031, addendum D)', () 
 				expect(originalOf(dataDir).maxSize).toBe(10 * 1024 * 1024);
 				expect(withDatabase(dataDir, snapshot)).toEqual(rows);
 			});
-		},
-		60_000
+		}
 	);
 });
 
@@ -779,8 +769,7 @@ describe('migration rollback of the sub projects (ADR-0034)', () => {
 					expect(projectRows(db)).toEqual(before.projects.map((row) => ({ ...row, parent: '' })));
 				});
 			});
-		},
-		60_000
+		}
 	);
 });
 
@@ -1057,8 +1046,7 @@ describe('migration rollback of E5 (package 2)', () => {
 				expect(reverted.users).toEqual(before.users);
 				expect(reverted.recurrence_rules).toEqual(withoutFields(migrated.recurrence_rules, E5_RULE_FIELDS));
 			});
-		},
-		60_000
+		}
 	);
 
 	it(
@@ -1088,8 +1076,7 @@ describe('migration rollback of E5 (package 2)', () => {
 					withoutFields(before.tickets, ['recurrence'])
 				);
 			});
-		},
-		60_000
+		}
 	);
 });
 
@@ -1238,8 +1225,7 @@ describe('migration rollback of "Jeden Termin einzeln anlegen" (plan OR-5)', () 
 				expect(appliedFiles(await migrate(args, 'up'), 'Applied')).toEqual(fromEach);
 				assertSchema(readDataDir(dataDir).collections);
 			});
-		},
-		60_000
+		}
 	);
 });
 
@@ -1357,8 +1343,7 @@ describe('migration rollback of the trash (ADR-0037)', () => {
 				expect(appliedFiles(await migrate(args, 'up'), 'Applied')).toEqual(fromTrash);
 				assertSchema(readDataDir(dataDir).collections);
 			});
-		},
-		60_000
+		}
 	);
 });
 
@@ -1473,8 +1458,7 @@ describe('migration rollback of the own inbox (ADR-0038)', () => {
 				expect(appliedFiles(await migrate(args, 'up'), 'Applied')).toEqual(fromOwn);
 				assertSchema(readDataDir(dataDir).collections);
 			});
-		},
-		60_000
+		}
 	);
 });
 
@@ -1572,8 +1556,7 @@ describe('migration rollback of "Status beim Anlegen" (plan WV, ADR-0022 addendu
 				assertSchema(readDataDir(dataDir).collections);
 				expect(withDatabase(dataDir, snapshot).recurrence_rules.map((rule) => rule.initial_status)).toEqual(['']);
 			});
-		},
-		60_000
+		}
 	);
 });
 
@@ -1657,8 +1640,7 @@ describe('migration rollback of the pinned comment (ADR-0044)', () => {
 				assertSchema(readDataDir(dataDir).collections);
 				expect(withDatabase(dataDir, snapshot).tickets.map((ticket) => ticket.pinned_comment)).toEqual(['', '']);
 			});
-		},
-		60_000
+		}
 	);
 });
 
@@ -1749,7 +1731,6 @@ describe('migration rollback of the sub-tasks of the template (plan WV-3, ADR-00
 				assertSchema(readDataDir(dataDir).collections);
 				expect(withDatabase(dataDir, snapshot).recurrence_rules.map((rule) => rule.template_subtasks)).toEqual([null]);
 			});
-		},
-		60_000
+		}
 	);
 });

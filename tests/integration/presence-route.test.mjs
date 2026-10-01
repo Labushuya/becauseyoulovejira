@@ -11,12 +11,13 @@ import PocketBase from 'pocketbase';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { startPocketBase } from '../support/pocketbase-harness.mjs';
 import { runPowerShellJson } from '../support/powershell.mjs';
+import { scaled } from '../support/timing.mjs';
 import { ackAttention, subscribeAttention } from '../../web/src/lib/data/attention.ts';
 
 const TOPIC = 'byl/attention';
 const FUNCTIONS_FILE = fileURLToPath(new URL('../../app/byl-functions.ps1', import.meta.url));
 const GAP_MS = 2100;
-const EVENT_TIMEOUT_MS = 5_000;
+const EVENT_TIMEOUT_MS = scaled(5_000);
 const QUIET_PERIOD_MS = 400;
 
 const FILE_PAGE = { Origin: 'null', 'Sec-Fetch-Site': 'cross-site', 'Sec-Fetch-Mode': 'cors' };
@@ -117,7 +118,7 @@ beforeAll(async () => {
 	superuser = new PocketBase(instance.url);
 	superuser.autoCancellation(false);
 	await superuser.collection('_superusers').authWithPassword(instance.email, instance.password);
-}, 60_000);
+});
 
 afterAll(async () => {
 	for (const pb of clients) await pb.realtime.unsubscribe().catch(() => undefined);
@@ -287,7 +288,7 @@ $gone = Invoke-LocalRequest -Url 'http://127.0.0.1:9/api/byl/presence' -TimeoutM
 		expect(answers.acked).toBe(false);
 		expect(answers.gone).toBe(true);
 		await until(() => firstMessages.at(-1)?.nonce === answers.message.Nonce);
-	}, 60_000);
+	});
 
 	it('works with the data layer of the SPA (SF-3)', async () => {
 		const pb = await user();

@@ -14,6 +14,7 @@ import { afterAll, describe, expect, it } from 'vitest';
 import { spawnSyncClean } from '../support/clean-env.mjs';
 import { startPocketBase } from '../support/pocketbase-harness.mjs';
 import { POWERSHELL_EXE } from '../support/powershell.mjs';
+import { scaled } from '../support/timing.mjs';
 
 const BACKUP_NAME = 'restore-test.zip';
 
@@ -52,7 +53,7 @@ function expandArchive(zipPath, destination) {
 		{
 			encoding: 'utf8',
 			windowsHide: true,
-			timeout: 60_000,
+			timeout: scaled(60_000),
 			env: { BYL_ZIP: zipPath, BYL_DEST: destination }
 		}
 	);
@@ -63,7 +64,7 @@ function expandArchive(zipPath, destination) {
 }
 
 describe('backup and manual restore', () => {
-	it('restores tickets, keys, original files and logins from a backup ZIP', { timeout: 120_000 }, async () => {
+	it('restores tickets, keys, original files and logins from a backup ZIP', { timeout: scaled(120_000) }, async () => {
 		// Folder for the ZIP between the two instances (byl-test- prefix like the harness).
 		const scratchDir = await mkdtemp(join(tmpdir(), 'byl-test-'));
 		cleanup.push(() => rm(scratchDir, { recursive: true, force: true, maxRetries: 20, retryDelay: 250 }));

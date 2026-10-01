@@ -130,7 +130,7 @@ beforeAll(async () => {
 	who = await user(superuser);
 	other = await user(superuser);
 	anonymous = null;
-}, 60_000);
+});
 
 afterAll(async () => {
 	await instance?.stop();

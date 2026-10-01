@@ -6,6 +6,7 @@
 import { randomBytes } from 'node:crypto';
 import PocketBase from 'pocketbase';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { writtenLogs } from '../support/logs.mjs';
 import { startPocketBase } from '../support/pocketbase-harness.mjs';
 import { FakeImapServer, fakeMail } from '../../helpers/mail/test/fake-imap.ts';
 import { IngestClient } from '../../helpers/mail/src/ingest-client.ts';
@@ -91,7 +92,7 @@ beforeAll(async () => {
 	imap = new FakeImapServer();
 	imap.password = PASSWORD;
 	await imap.start();
-}, 60_000);
+});
 
 afterAll(async () => {
 	await imap?.stop();
@@ -287,7 +288,8 @@ describe('mail helper with PocketBase (P-10)', () => {
 		const everything = [
 			lines.join('\n'),
 			JSON.stringify(await superuser.collection('connections').getFullList()),
-			JSON.stringify(await superuser.send('/api/logs', { query: { perPage: 500 } })),
+			// All entries, once PocketBase has written those of this run (it writes in batches).
+			JSON.stringify(await writtenLogs(superuser)),
 			instance.output()
 		].join('\n');
 		expect(everything).not.toContain(TOKEN);

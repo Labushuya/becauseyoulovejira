@@ -10,7 +10,9 @@ import { createServer } from 'node:http';
 import PocketBase from 'pocketbase';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { loadHookLib } from '../support/hook-lib.mjs';
+import { writtenLogs } from '../support/logs.mjs';
 import { startPocketBase } from '../support/pocketbase-harness.mjs';
+import { LOG_WRITE_MS, scaled } from '../support/timing.mjs';
 import { getConnection, runConnection } from '../../web/src/lib/data/connections.ts';
 
 const berlin = loadHookLib('berlin-time.js');
@@ -118,10 +120,6 @@ function itemsOf(who) {
 	return who.pb.collection('inbox_items').getFullList({ sort: 'source_date,title' });
 }
 
-async function logText() {
-	return JSON.stringify(await superuser.send('/api/logs', { query: { perPage: 500 } }));
-}
-
 /** Number of log entries whose message contains `text`, over all entries (not only one page). */
 async function logCount(text) {
 	const page = await superuser.send('/api/logs', {
@@ -135,8 +133,7 @@ async function logCount(text) {
 // write, above all a run of the cron job byl-calendar on its schedule (*/15, UTC) while this file
 // runs: it logs the failing connections of the tests above one after the other (Linux CI
 // 2026-09-29, run 36506768267, 01:15:00 within the last 5 s of the test). A log entry is therefore
-// awaited as long as such a run can take plus the 3 s.
-const LOG_WRITE_TIMEOUT_MS = 30_000;
+// awaited as long as such a run can take plus the 3 s (LOG_WRITE_MS, tests/support/timing.mjs).
 
 beforeAll(async () => {
 	await new Promise((resolve) => fake.listen(0, '127.0.0.1', resolve));
@@ -156,7 +153,7 @@ beforeAll(async () => {
 	owner = await user();
 	other = await user();
 	feed = calendarText(BASE_EVENTS());
-}, 60_000);
+});
 
 afterAll(async () => {
 	for (const timer of pending) clearTimeout(timer);
@@ -348,7 +345,7 @@ describe('Google Calendar: errors without the secret address', () => {
 		expect(result.status).toBe('error');
 		expect(result.error).toMatch(/deadline exceeded|Timeout/i);
 		expect(result.error).not.toContain('slow.ics');
-	}, 90_000);
+	}, scaled(90_000));
 });
 
 describe('Google Calendar: cron job', () => {
@@ -363,17 +360,17 @@ describe('Google Calendar: cron job', () => {
 			});
 			expect(response.status).toBe(204);
 		}
-		await expect.poll(async () => (await itemsOf(who)).length, { timeout: 10_000 }).toBe(4);
+		await expect.poll(async () => (await itemsOf(who)).length, { timeout: scaled(10_000) }).toBe(4);
 		const untouched = await who.pb.collection('connections').getOne(unset.id);
 		expect(untouched).toMatchObject({ last_run_at: '', last_error: '' });
 		expect(await runNow(who, unset.id)).toMatchObject({ status: 'missing', missing: ['BYL_TEST_UNSET_CALENDAR'] });
 		await expect
-			.poll(() => logCount('BYL_TEST_UNSET_CALENDAR fehlt'), { timeout: LOG_WRITE_TIMEOUT_MS, interval: 250 })
+			.poll(() => logCount('BYL_TEST_UNSET_CALENDAR fehlt'), { timeout: LOG_WRITE_MS, interval: 250 })
 			.toBe(1);
-	}, 60_000);
+	});
 
 	it('never writes the secret address to the log or the console', async () => {
-		const logs = await logText();
+		const logs = JSON.stringify(await writtenLogs(superuser));
 		expect(logs).not.toContain(SECRET);
 		expect(logs).toContain('byl-calendar');
 		expect(instance.output()).not.toContain(SECRET);

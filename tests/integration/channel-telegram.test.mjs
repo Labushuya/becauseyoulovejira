@@ -11,7 +11,9 @@ import { randomBytes } from 'node:crypto';
 import { createServer } from 'node:http';
 import PocketBase from 'pocketbase';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { writtenLogs } from '../support/logs.mjs';
 import { startPocketBase } from '../support/pocketbase-harness.mjs';
+import { scaled } from '../support/timing.mjs';
 
 const TOKEN = `7${randomBytes(4).readUInt32BE()}:AA${randomBytes(18).toString('hex')}`;
 const BROKEN_TOKEN = `8${randomBytes(4).readUInt32BE()}:AA${randomBytes(18).toString('hex')}`;
@@ -152,7 +154,7 @@ beforeAll(async () => {
 	await superuser.collection('_superusers').authWithPassword(instance.email, instance.password);
 	owner = await user();
 	bot = await connection(owner, 'BYL_TEST_TG_TOKEN');
-}, 60_000);
+});
 
 afterAll(async () => {
 	fake.closeAllConnections();
@@ -295,7 +297,7 @@ describe('Telegram: messages into the inbox', () => {
 		});
 		expect(response.status).toBe(204);
 		await expect
-			.poll(async () => (await telegramItems(owner)).map((item) => item.title), { timeout: 10_000 })
+			.poll(async () => (await telegramItems(owner)).map((item) => item.title), { timeout: scaled(10_000) })
 			.toContain('Über den Cron-Job');
 	});
 });
@@ -327,10 +329,10 @@ describe('Telegram: errors without the token', () => {
 	});
 
 	it('never writes the token to the log or the console', async () => {
-		// PocketBase writes its log in batches; wait for the warnings of the failed runs.
-		const read = async () => JSON.stringify(await superuser.send('/api/logs', { query: { perPage: 500 } }));
-		await expect.poll(read, { timeout: 15_000 }).toContain('byl-telegram');
-		const logs = await read();
+		// PocketBase writes its log in batches: everything up to now, with the warnings of the failed
+		// runs, and all entries, not only the first page.
+		const logs = JSON.stringify(await writtenLogs(superuser));
+		expect(logs).toContain('byl-telegram');
 		for (const secret of [TOKEN, BROKEN_TOKEN]) {
 			expect(logs).not.toContain(secret);
 			expect(instance.output()).not.toContain(secret);

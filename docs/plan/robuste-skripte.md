@@ -1,6 +1,6 @@
 # Plan Robuste Skripte und Wartung: Fehlerkatalog, Abhängigkeiten, Tests unter Last, Test-Instanzen
 
-- **Stand:** RS-2 (Build und Abhängigkeiten) in Arbeit; RS-3 (Tests unter Last), RS-1 (Fehlerkatalog der Skripte) und RS-4 (System-Seite und Manifest-Pflege) folgen, je ein PR.
+- **Stand:** umgesetzt: RS-2 (#216, Build und Abhängigkeiten), RS-3 (Tests unter Last). RS-1 (Fehlerkatalog der Skripte) und RS-4 (System-Seite und Manifest-Pflege) folgen, je ein PR.
 - **Grundlage:**
   - [ADR-0039](../adr/0039-betriebsskripte.md) (Steuerskript, Exit-Codes), [ADR-0040](../adr/0040-veroeffentlichen-ohne-unterbrechung.md) (Build, Nachtrag „Build und Abhängigkeiten“), [ADR-0043](../adr/0043-system-seite.md) (Seite „System“, andere Kopien), [ADR-0046](../adr/0046-sicherung-pruefung-wiederherstellen.md) (Sicherung), [ADR-0035](../adr/0035-start-einstieg-und-offene-tabs.md) (Start, Hinweise beim Öffnen)
   - [Plan Betriebsskripte](betriebsskripte.md), [Plan Sicherung](sicherung.md), [Plan Test-Härtung](test-haertung.md)
@@ -18,7 +18,7 @@
 | Paket | Inhalt | Manifest |
 |---|---|---|
 | RS-2 | `build.ps1` installiert neu, wenn sich ein Lockfile geändert hat (Prüfsumme je Ordner in `node_modules`), die Hilfsprogramm-Builds ebenso; Install-Skript von esbuild über `allowScripts` freigegeben; `npm audit` und Dependabot geprüft. Nachtrag ADR-0040 | BYL-E6-975 bis BYL-E6-977 |
-| RS-3 | Tests robust gegen Last: Logs von PocketBase abwarten statt sofort lesen, Bereitschaft abfragen statt fester Grenzen, zentrale Zeitgrenzen, Parallelität der Prozess-Tests begrenzt; Nebenbefund CRLF im Text eines Eingangseintrags | folgt |
+| RS-3 | Tests robust gegen Last: Logs von PocketBase erst nach dem Schreiben lesen (`tests/support/logs.mjs`), zentrale, gemessene und skalierbare Zeitgrenzen (`tests/support/timing.mjs`), die Dateien mit Prozessen zuletzt und höchstens zu viert, Bereitschaft abfragen statt fester Pause; Nebenbefund CRLF im Text eines Eingangseintrags | BYL-E6-978 bis BYL-E6-982 |
 | RS-1 | Fehlerkatalog aller Skripte: einheitliches Format mit Ursache, Schritten und Befehl mit echten Pfaden, Angebot zum Selbstlösen, offenes Fenster bei Fehlern, Hinweis nach Fehlern im Hintergrund, Hilfe-Seite „Betrieb“ als FAQ, neue ADR | folgt |
 | RS-4 | Seite „System“ und `status`: Test-Instanzen aus Entwicklung und Tests eingeklappt; Test-Manifest: Paket für den Prüfmodus (#204), Text von BYL-X-004, `meta.commit`. Nachtrag ADR-0043 | folgt |
 
@@ -42,10 +42,58 @@
 - **Kein Fix innerhalb von SemVer:** 2.70.3 ist die neueste Version von SvelteKit 2, alle hängen von `cookie` `^0.6.0` ab; `npm audit fix` schlägt nur `--force` mit SvelteKit 3.0.0 vor (Major, Breaking Change, Freigabe nötig). Ein `overrides` auf `cookie` 0.7 läge außerhalb des Bereichs, den SvelteKit 2 angibt, und wurde verworfen.
 - **Ausnutzbarkeit im Projekt: keine.** `cookie` gehört zur Server-Laufzeit von SvelteKit (`cookies.set` in Server-Hooks und Endpunkten). Die App ist eine statische SPA (`adapter-static`, `ssr = false`), ausgeliefert von PocketBase; im Build steckt kein Server von SvelteKit (es gibt nur `hooks.client.ts`, keine Server-Hooks oder Endpunkte), und Cookies setzt die App nicht (das Token geht im Kopf `Authorization`, ADR-0043 §4). Nur der Dev-Server nutzt den Code, und auch der übergibt keine Eingaben als Namen, Pfad oder Domain eines Cookies. Erledigt sich mit SvelteKit 3; bis dahin bleibt die Warnung offen und wird hier geführt.
 
-## 4. Entscheidungen und Befunde
+## 4. RS-3: Tests unter Last
+
+### Logs von PocketBase erst nach dem Schreiben lesen
+
+- **Befund:** `backup-control.test.mjs` › „writes audit entries and log lines without values“ las `/api/logs` sofort. PocketBase 0.40.4 schreibt sein Log gebündelt, 3 s nach dem letzten neuen Eintrag (`initLogger`); unter Last fehlten die Einträge der Fälle direkt davor. Die Suche nach `/api/logs` fand dasselbe Muster an zehn weiteren Stellen: Die Prüfungen „kein Wert im Log“ (`channel-telegram`, `channel-calendar`, `connections`, `ingest-route`, `mail-ingest`, `mailbox-route`, `notion-import`) und „der Cron schreibt nichts“ (`hooks-before-migration`, zweimal) lasen sofort und nur die ersten 500 Einträge (ohne `sort` die ältesten), sahen also die Einträge ihrer eigenen Fälle meist gar nicht; `system-control` wartete nur auf den Eintrag des Neustarts, `inbox-cleanup` las nur die erste Seite.
+- **Umsetzung:** `tests/support/logs.mjs`: `writtenLogs` schickt eine Anfrage mit eigener Marke an `/api/health` (PocketBase protokolliert jede Anfrage mit ihrer Adresse), wartet, bis sie geschrieben ist (dann ist alles davor geschrieben), und liest alle Seiten; `allLogEntries` liest alle Seiten mit Filter. Die Audit-Tests fragen ab, bis alle erwarteten Einträge da sind, und prüfen dann wie bisher. Keine Erwartung gelockert. Statisch geprüft: kein Test liest `/api/logs` mehr nur mit `perPage` (`tests/unit/test-timing.test.mjs`).
+- **Fund dabei:** Mit dem Abwarten fand die Prüfung „byl-calendar schreibt nichts“ den Eintrag der Anfrage `POST /api/crons/byl-calendar`, die den Lauf auslöst: Vorher hatte sie nie einen Eintrag ihres eigenen Falls gesehen. Sie prüft jetzt die Einträge des Servers (ohne `type: request`).
+
+### Zeitüberschreitungen unter Last
+
+- **Befund:** Lokal liefen Zeitgrenzen in `beforeAll` ab (`spa-fallback`, `web-app`, `control-script`, `mail-helper-process`, `web-publish`, `backup-restore` u. a.), wenn mehrere Agenten gleichzeitig bauten; die CI blieb grün.
+- **Messung** (Entwicklungsrechner, 16 logische Prozessoren, `startPocketBase` des Harness = `superuser upsert` mit allen 34 Migrationen, dann `serve` bis `/api/health`; künstliche Last aus Worker-Threads mit Dauerschleife):
+
+| Lage | Dauer je Start |
+|---|---|
+| allein | 0,9 bis 1,0 s |
+| 12 Starts gleichzeitig, sonst ruhig | 1,5 bis 2,3 s |
+| 4 gleichzeitig, 16 Threads Last | 9 bis 45 s, davon zwei über die 20 s von `/api/health` |
+| 12 gleichzeitig, 16 Threads Last | 25 bis 167 s, acht über die 20 s |
+| 4 gleichzeitig, nur Plattenlast (8 MB alle 50 ms) | 0,9 bis 1,0 s |
+
+- **Ursache:** Konkurrenz um den Prozessor, nicht die Platte. Ein Build oder Testlauf daneben (Vite, svelte-check, Vitest mit eigenen Servern) macht jeden Start von PocketBase, PowerShell und den Hilfsprogrammen um ein Vielfaches langsamer. Dazu kamen die festen Grenzen (20 s für `/api/health` im Harness, 30 s je Hook im Projekt, 60 bis 120 s in einzelnen Dateien) und die eigene Parallelität: Vitest startete lokal bis zu 15 Dateien mit eigenen Servern gleichzeitig, neben den Unit-Tests mit ihren PowerShell-Aufrufen.
+- **Umsetzung:**
+  - `tests/support/timing.mjs` hält jede Grenze der Dateien mit Prozessen an einer Stelle, begründet mit der Messung: `/api/health` im Harness 90 s (war 20 s), je Test 60 s (war 15 s), je Hook 180 s (war 30 s), Schreiben des Logs 30 s. `BECAUSEYOULOVEJIRA_TEST_TIME_SCALE` (1 bis 10, kein `BYL_*`-Name, denn die sind Zugangsdaten) vervielfacht alle für einen Rechner, auf dem gerade mehr läuft.
+  - Die Dateien mit Prozessen laufen als eigene, letzte Gruppe (`sequence.groupOrder` 2) mit höchstens vier gleichzeitig (`processWorkers`: Prozessoren minus eins, höchstens vier; der Windows-Runner mit vier Prozessoren behält seine drei). Vitest verlangt für Projekte derselben Gruppe dieselbe Zahl Worker, deshalb laufen `unit` und `helper` vorher für sich.
+  - Keine Datei mit Prozessen setzt mehr eine feste Zahl, nur `scaled(…)` oder die Vorgaben des Projekts (statisch geprüft). Die feste Pause von 300 ms vor dem ersten Veröffentlichen in `web-publish` wartet jetzt auf die erste Antwort der Last.
+  - Bewusst fest bleiben Grenzen des Produkts: die 15 s des geordneten Beendens (`system-control` prüft, dass der Server vor 14 s weg ist, sonst wäre er hart beendet), die 60 s von `Invoke-AdminUpsert` und die 2 s der Prüfung des Einrichtungslinks.
+- **Kosten:** Lokal dauert die Gruppe ohne Last 3 bis 3,5 min statt 2,4 min (vier statt fünfzehn Dateien zugleich). Im Windows-Job ändert sich die Zahl der Worker nicht.
+- **Beleg (Wiederholungen unter künstlicher Last, 2026-10-02, je `npx vitest run --project integration-processes`, 36 Dateien, 408 Fälle):**
+
+| Konfiguration | Last | Ergebnis |
+|---|---|---|
+| vorher | 8 Threads | mindestens 13 Dateien rot, jede mit „Hook timed out“ (60 s bzw. 90 s, `host-route` 30 s) |
+| vorher | 16 Threads | mindestens 19 Dateien rot, „Hook timed out“ und „did not report healthy within 20000 ms“ |
+| nachher | 8 Threads | dreimal alles grün (177 s, 248 s, 180 s) |
+| nachher | 16 Threads | 8 von 408 Fällen rot nach 15 min: zwei an der Grenze von 60 s je Test, `recurrence-startup` als ganze Datei, die übrigen an Grenzen des Produkts und an Abfragen in den Fällen (Cron-Lauf, 14 s des Beendens, Prüfung des Installers); 28 Dateien grün |
+| nachher, `BECAUSEYOULOVEJIRA_TEST_TIME_SCALE=3` | 16 Threads | 3 von 419 Fällen rot nach 12 min (inzwischen mit den Fällen von SPE-1): zwei in `system-control` rund um den Neustart (die 14 s des geordneten Beendens sind eine Grenze des Produkts) und die Abfrage auf den Lauf des Cron-Jobs in `channel-calendar`; 34 von 36 Dateien grün, kein Hook |
+
+### Nebenbefund: CRLF im Text eines Eingangseintrags
+
+- **Befund:** Ein Eingangseintrag mit Originaldatei (Mail-Datei, Postfach-Auswahl) wird als Formular hochgeladen; Browser und Node schicken die Textfelder eines `multipart/form-data` nach HTML-Standard mit CRLF. Der Text kam deshalb mit CRLF zurück, derselbe Eintrag über JSON (Hilfsprozess, eigener Eingang) mit LF.
+- **Bewertung: ein Fehler.** Die Anzeige (markdown-it) verträgt beides, Duplikate hängen nicht am Text (Fingerprint aus Message-ID usw.). Aber ein Ticket aus dem Eintrag (`ticketPrefill`) mischte die LF der Kopfzeilen mit den CRLF des Textes, das Bearbeiten im Editor schreibt LF zurück (der Verlauf sähe eine Änderung jeder Zeile), und die Grenze von 100 000 Zeichen zählte jedes CR mit: ein langer Text wurde früher abgeschnitten.
+- **Umsetzung:** an einer Stelle, im Hook: `normalizeBody` in `lib/inbox-rules.js` macht aus CRLF und CR ein LF, bevor gekürzt wird (alle Kanäle legen über `inbox-service.js` an). Regressionstests: Unit (`inbox-rules.test.mjs`) und Integration gegen die Wegwerf-Instanz (`web-data-inbox.test.mjs`: Eintrag mit und ohne Datei gleich, ohne CR). Bestehende Einträge bleiben, wie sie sind (keine Migration: sie werden richtig angezeigt). Wirkt nach einem Neustart der App.
+
+## 5. Entscheidungen und Befunde
 
 | Datum | Paket | Befund bzw. Entscheidung |
 |---|---|---|
 | 2026-10-01 | RS-2 | Lockfile-Prüfsumme in PowerShell (`scripts\build-functions.ps1`) statt in Node: Nur `build.ps1` und die Builds der Hilfsprogramme installieren; die CI installiert ohnehin frisch. Die reinen Funktionen laufen im Unit-Test gegen Ordner unter Temp, `npm` nie. |
 | 2026-10-01 | RS-2 | `allowScripts` nach Name statt nach Version, und Freigabe statt Ablehnung (siehe §3). |
 | 2026-10-01 | RS-2 | `npm audit` in `web`: kein Fix ohne SvelteKit 3; nicht ausnutzbar, weil die App keinen Server von SvelteKit hat (siehe §3). |
+| 2026-10-02 | RS-3 | Längere, aber begründete und skalierbare Grenzen statt fester; dazu weniger eigene Parallelität. Eine Wiederholung fehlgeschlagener Fälle (`retry`) wurde verworfen: Sie sendete schreibende Anfragen doppelt und verdeckte echte Stillstände. Ein höheres Limit für die gemeinsame Instanz auch nicht: Die Gruppe läuft allein (T-4), ihr Limit von 15 s fängt Stillstände ab. |
+| 2026-10-02 | RS-3 | Die Marke von `writtenLogs` ist eine Anfrage an `/api/health` mit eigenem Parameter: Sie braucht keine Rechte, ändert nichts, und PocketBase protokolliert sie wie jede Anfrage (gemessen: geschrieben nach gut 3 s, mit 404- und anderen Anfragen davor). Weil das Log der Reihe nach geschrieben wird, ist mit ihr alles davor geschrieben. Ein Lauf eines Cron-Jobs im Hintergrund kann theoretisch später schreiben; die Marke kommt nach seiner Anfrage und mindestens 3 s Bündeln, das reicht für die Jobs, die hier nichts tun. |
+| 2026-10-02 | RS-3 | Höchstens vier Dateien mit Prozessen zugleich: Bei zwölf zugleich wurde jeder Start unter Last ein Mehrfaches langsamer (Messung §4), bei vier blieb der Lauf ohne Last bei gut drei Minuten. Der Windows-Runner hat vier Prozessoren und hatte schon vorher drei Worker. |
+| 2026-10-02 | RS-3 | Ziel ist ein grüner Lauf neben einem zweiten Build (8 Threads, belegt dreimal). Bei voller Last daneben (16 Threads auf 16 Prozessoren) hilft der Faktor `BECAUSEYOULOVEJIRA_TEST_TIME_SCALE=3`; was dann noch scheitert, sind Grenzen des Produkts (14 s des Beendens) und einzelne Abfragen in Fällen. Diese bleiben bewusst so: Eine Grenze des Produkts im Test zu lockern hieße, ein langsames Beenden nicht mehr zu bemerken. Wer so parallel arbeitet, startet die Tests mit dem Faktor oder nacheinander. |

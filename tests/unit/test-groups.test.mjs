@@ -1,11 +1,13 @@
 // Groups of the integration tests (plan test-haertung T-4, tests/support/test-groups.mjs): the
-// files on the shared instance only run first and alone, every file that starts processes of its
-// own runs afterwards with the unit and helper tests. Guards the split and the configuration.
+// files on the shared instance only run first and alone, then the unit and helper tests, and last
+// every file that starts processes of its own, a few at a time (plan robuste-skripte RS-3). Guards
+// the split and the configuration.
 
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import config from '../../vitest.config.mjs';
 import { integrationGroups, startsProcesses } from '../support/test-groups.mjs';
+import { PROCESS_HOOK_MS, PROCESS_TEST_MS, processWorkers } from '../support/timing.mjs';
 
 const ROOT = fileURLToPath(new URL('../../', import.meta.url));
 const groups = integrationGroups(ROOT, 'tests/integration');
@@ -35,13 +37,18 @@ describe('groups of the integration tests (T-4)', () => {
 		expect(projects.integration.include).toEqual(groups.shared);
 		expect(projects['integration-processes'].include).toEqual(groups.processes);
 		expect(projects.integration.sequence.groupOrder).toBe(0);
-		for (const name of ['unit', 'helper', 'integration-processes']) {
+		for (const name of ['unit', 'helper']) {
 			expect(projects[name].sequence.groupOrder).toBe(1);
 		}
-		// Both integration projects get the shared instance and the same limits.
+		// Last and a few at a time (plan robuste-skripte RS-3): the files that start processes.
+		expect(projects['integration-processes'].sequence.groupOrder).toBe(2);
+		expect(projects['integration-processes'].maxWorkers).toBe(processWorkers());
+		// Both integration projects get the shared instance.
 		for (const name of ['integration', 'integration-processes']) {
 			expect(projects[name].globalSetup).toEqual(['tests/support/global-setup.mjs']);
-			expect(projects[name].testTimeout).toBe(15_000);
 		}
+		// The shared instance keeps its 15 s (T-4); the files with processes get the central limits.
+		expect(projects.integration).toMatchObject({ testTimeout: 15_000, hookTimeout: 30_000 });
+		expect(projects['integration-processes']).toMatchObject({ testTimeout: PROCESS_TEST_MS, hookTimeout: PROCESS_HOOK_MS });
 	});
 });

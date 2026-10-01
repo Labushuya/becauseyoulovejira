@@ -1,6 +1,6 @@
 # Plan: Test-Härtung
 
-- **Stand:** umgesetzt: T-1 (#175, Testkopien und Test-Server ohne Zugangsdaten), T-2 (drei gelegentlich rote Tests deterministisch, dazu ein gleich gebauter Fall), T-3 (geordnetes Beenden unter Last, Manifest ab `BYL-E6-680`) und T-4 (gemeinsame Testinstanz ohne parallele Prozess-Last, Manifest ab `BYL-E6-840`).
+- **Stand:** umgesetzt: T-1 (#175, Testkopien und Test-Server ohne Zugangsdaten), T-2 (drei gelegentlich rote Tests deterministisch, dazu ein gleich gebauter Fall), T-3 (geordnetes Beenden unter Last, Manifest ab `BYL-E6-680`) und T-4 (gemeinsame Testinstanz ohne parallele Prozess-Last, Manifest ab `BYL-E6-840`). Fortgesetzt im [Plan Robuste Skripte](robuste-skripte.md), RS-3: Logs erst nach dem Schreiben lesen, zentrale skalierbare Zeitgrenzen der Dateien mit Prozessen, diese zuletzt und höchstens zu viert.
 - **Grundlage:** [ADR-0018](../adr/0018-secrets.md) (Zugangsdaten als `BYL_*`-Variablen, Nachtrag), [ADR-0039](../adr/0039-betriebsskripte.md) (Steuerskript, Nachtrag „Testkopien ohne Zugangsdaten“), [ADR-0004](../adr/0004-teststrategie-hooks-migrationen.md) (Wegwerf-Instanzen); [CLAUDE.md](../../CLAUDE.md) §3, §11, §12.
 - **Einordnung:** Auftrag vom 2026-09-29. Manifest-IDs ab `BYL-E6-500`, Paketkürzel `T`.
 

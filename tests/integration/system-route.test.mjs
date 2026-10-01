@@ -11,6 +11,7 @@ import { request } from 'node:http';
 import PocketBase from 'pocketbase';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { startPocketBase } from '../support/pocketbase-harness.mjs';
+import { scaled } from '../support/timing.mjs';
 import {
 	fetchSystemDoctor,
 	fetchSystemLogs,
@@ -38,7 +39,7 @@ function call(instance, method, path, { token, origin, host, headers = {} } = {}
 				path,
 				method,
 				agent: false,
-				timeout: 15_000,
+				timeout: scaled(15_000),
 				headers: {
 					...(token ? { Authorization: token } : {}),
 					...(origin ? { Origin: origin } : {}),
@@ -113,13 +114,13 @@ beforeAll(async () => {
 	accounts.proxiedOwner = await account(proxySuperuser, proxied);
 	// This instance takes the client address from a header of a trusted proxy (PocketBase settings).
 	await proxySuperuser.settings.update({ trustedProxy: { headers: ['CF-Connecting-IP'], useLeftmostIP: false } });
-}, 90_000);
+});
 
 afterAll(async () => {
 	for (const instance of [windows, linux, proxied]) {
 		if (instance) await instance.stop();
 	}
-}, 60_000);
+});
 
 describe.skipIf(!WINDOWS)('routes of the page System on a server under Windows: refusals', () => {
 	it('answer 401 without a session', async () => {

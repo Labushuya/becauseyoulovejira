@@ -11,6 +11,7 @@ import PocketBase from 'pocketbase';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { loadHookLib } from '../support/hook-lib.mjs';
 import { startPocketBase } from '../support/pocketbase-harness.mjs';
+import { scaled } from '../support/timing.mjs';
 
 const rules = loadHookLib('backup-rules.js');
 const berlin = loadHookLib('berlin-time.js');
@@ -31,7 +32,7 @@ beforeAll(async () => {
 	instance = await startPocketBase();
 	superuser = client(instance.url);
 	await superuser.collection('_superusers').authWithPassword(instance.email, instance.password);
-}, 60_000);
+});
 
 afterAll(async () => {
 	await instance?.stop();
@@ -76,7 +77,7 @@ describe('local backups (ADR-0046)', () => {
 			.keep.sort();
 		expect(ours.sort()).toEqual(expected);
 		expect(ours.length).toBeLessThan(made.length);
-	}, 120_000);
+	}, scaled(120_000));
 
 	it('does nothing in the cron of a test instance', async () => {
 		expect(await superuser.send('/api/byl-test/backup/tick', { method: 'POST', body: { now: T0 + 100 * DAY } })).toEqual({ result: null });
