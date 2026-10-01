@@ -157,7 +157,8 @@ const IMPORTED: NotionImportedSource[] = [
 		count: 5,
 		last: '2026-09-25 08:15:00.000Z',
 		dateProperty: '',
-		copyContent: false
+		copyContent: false,
+		subpages: false
 	},
 	{
 		id: 'source-2',
@@ -167,7 +168,8 @@ const IMPORTED: NotionImportedSource[] = [
 		count: 3,
 		last: null,
 		dateProperty: '',
-		copyContent: false
+		copyContent: false,
+		subpages: false
 	}
 ];
 

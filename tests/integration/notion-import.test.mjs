@@ -2,10 +2,10 @@
 // API on 127.0.0.1 (tests/support/fake-notion.mjs, invented workspace in
 // tests/fixtures/notion/workspace.mjs). The disposable instance runs in the test mode of the
 // harness, so the client talks to the fake instead of api.notion.com. Checked: "Verbindung
-// prüfen", the list of shared sources, previews of a database and of a page with lists, the import
-// with "Erledigte überspringen" and "Seiteninhalt als Kopie mitnehmen", duplicates and tombstones,
-// the summary for "Erneut abrufen", errors (token, not shared, 429) and that the app only reads
-// and never shows the token.
+// prüfen", the list of shared sources, previews of a database and of a page with lists (with
+// "Unterseiten einbeziehen" also of its sub-pages), the import with "Erledigte überspringen" and
+// "Seiteninhalt als Kopie mitnehmen", duplicates and tombstones, the summary for "Erneut abrufen",
+// errors (token, not shared, 429) and that the app only reads and never shows the token.
 
 import { randomBytes } from 'node:crypto';
 import PocketBase from 'pocketbase';
@@ -263,8 +263,40 @@ describe('Notion: preview', () => {
 		]);
 		expect(result.body.items[2]).toMatchObject({ ref: BLOCK(4), kind: 'todo', excerpt: 'Boskop Elstar' });
 		expect(result.body.items[0].url).toBe(`https://www.notion.so/Wochenplan-${PAGE_ID.replace(/-/g, '')}#${BLOCK(2).replace(/-/g, '')}`);
-		// The sub-page is a source of its own and not read.
+		// Without "Unterseiten einbeziehen" the sub-page is a source of its own and not read.
 		expect(fake.requests.some((request) => request.path.includes(BLOCK(11)))).toBe(false);
+		expect(result.body).toMatchObject({ subpages: 0, subpages_hidden: 0 });
+	}, 30_000);
+
+	it('reads the sub-pages of a page on request, down the levels, and counts those it does not see', async () => {
+		const conn = await connection(owner);
+		const result = await preview(owner, conn, { source: page, subpages: true });
+		expect(result.body).toMatchObject({ status: 'ok', truncated: false, subpages: 2, subpages_hidden: 1 });
+		expect(result.body.limits).toMatchObject({ subpages: 50, subpage_depth: 3 });
+		// The points of the page first, then those of its sub-pages under their path.
+		expect(result.body.items.map((item) => [item.title, item.section])).toEqual([
+			['Milch', 'Einkauf'],
+			['Brot', 'Einkauf'],
+			['Äpfel', 'Einkauf'],
+			['Zahnarzt anrufen 02.10.2026', 'Termine'],
+			['Erstens', 'Termine'],
+			['Formular hier ausfüllen', 'Termine'],
+			['Garage streichen', 'Später'],
+			['Fliesen aussuchen', 'Unterseite'],
+			['Silikon erneuern', 'Unterseite › Tiefer › Bad']
+		]);
+		const tiles = result.body.items[7];
+		expect(tiles).toMatchObject({ ref: BLOCK(40), kind: 'todo' });
+		expect(tiles.url).toBe(`https://www.notion.so/${BLOCK(11).replace(/-/g, '')}#${BLOCK(40).replace(/-/g, '')}`);
+		// Each sub-page once, the hidden one asked once and left out.
+		const asked = fake.requests.filter((request) => request.path.startsWith('/v1/blocks/')).map((request) => request.path);
+		expect(asked.filter((path) => path.includes(BLOCK(11)))).toHaveLength(1);
+		expect(asked.filter((path) => path.includes(BLOCK(41)))).toHaveLength(1);
+		expect(asked.filter((path) => path.includes(BLOCK(42)))).toHaveLength(1);
+		// The option counts for pages only.
+		const rows = await preview(owner, conn, { source: dataSource, subpages: true });
+		expect(rows.body).toMatchObject({ status: 'ok', subpages: 0, subpages_hidden: 0 });
+		expect((await owner.pb.collection('connections').getOne(conn.id)).last_error).toBe('');
 	}, 30_000);
 
 	it('reports a page that is not shared as a problem of the source, not of the connection', async () => {
@@ -405,6 +437,27 @@ describe('Notion: import into the inbox', () => {
 		expect(again.body.items[0]).toMatchObject({ status: 'duplicate', message: 'Schon verworfen.', state: 'discarded' });
 	}, 30_000);
 
+	it('takes points of sub-pages into the source of the page only on request and remembers that', async () => {
+		const reader = await user();
+		const own = await connection(reader);
+		const without = await importItems(reader, own, { source: page, refs: [BLOCK(40)] });
+		expect(without.body.items[0]).toMatchObject({ status: 'failed', message: 'Nicht mehr in der Quelle (in Notion gelöscht oder verschoben).' });
+		const result = await importItems(reader, own, { source: page, refs: [BLOCK(40), BLOCK(44)], subpages: true });
+		expect(result.body.counts).toEqual({ created: 2, duplicates: 0, skipped: 0, failed: 0 });
+		const items = await itemsOf(reader);
+		expect(items.map((item) => [item.title, item.kind, item.source_meta.notion.section])).toEqual([
+			['Fliesen aussuchen', 'todo', 'Unterseite'],
+			['Silikon erneuern', 'todo', 'Unterseite › Tiefer › Bad']
+		]);
+		expect(items[1]).toMatchObject({
+			source_url: `https://www.notion.so/${BLOCK(41).replace(/-/g, '')}#${BLOCK(44).replace(/-/g, '')}`,
+			source_meta: { notion: { source_id: PAGE_ID, source_type: 'page', subpages: true } }
+		});
+		// "Erneut abrufen" takes the option of the last import.
+		const listed = await imports(reader, own);
+		expect(listed.body.imports.map((entry) => [entry.id, entry.type, entry.count, entry.subpages])).toEqual([[PAGE_ID, 'page', 2, true]]);
+	}, 30_000);
+
 	it('names entries that are gone from the source and refuses too many or no refs', async () => {
 		const gone = await importItems(who, conn, { source: page, refs: [id(3, 999)] });
 		expect(gone.body.items[0]).toMatchObject({ status: 'failed', message: 'Nicht mehr in der Quelle (in Notion gelöscht oder verschoben).' });
@@ -417,9 +470,9 @@ describe('Notion: import into the inbox', () => {
 		fake.clear();
 		const result = await imports(who, conn);
 		expect(result.body.status).toBe('ok');
-		expect(result.body.imports.map((entry) => [entry.type, entry.title, entry.count, entry.date_property, entry.copy_content])).toEqual([
-			['page', 'Wochenplan', 3, '', false],
-			['data_source', 'Aufgaben Haushalt', 5, 'Fällig', false]
+		expect(result.body.imports.map((entry) => [entry.type, entry.title, entry.count, entry.date_property, entry.copy_content, entry.subpages])).toEqual([
+			['page', 'Wochenplan', 3, '', false, false],
+			['data_source', 'Aufgaben Haushalt', 5, 'Fällig', false, false]
 		]);
 		expect(result.body.imports[1]).toMatchObject({ id: DATA_SOURCE_ID, url: `https://www.notion.so/${DATABASE_ID.replace(/-/g, '')}` });
 		expect(fake.requests).toHaveLength(0);

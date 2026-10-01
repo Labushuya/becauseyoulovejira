@@ -458,8 +458,12 @@ describe('request bodies of the routes', () => {
 	it('checks source, date property, options and refs', () => {
 		expect(rules.parseRequest({ source: { type: 'page', id: ID(1).replace(/-/g, '') } }, false)).toEqual({
 			ok: true,
-			value: { source: { type: 'page', id: ID(1) }, dateProperty: null, skipDone: true, copyContent: false, refs: [] }
+			value: { source: { type: 'page', id: ID(1) }, dateProperty: null, skipDone: true, copyContent: false, subpages: false, refs: [] }
 		});
+		// "Unterseiten einbeziehen" counts for pages only (addendum of 2026-10-01).
+		expect(rules.parseRequest({ source: { type: 'page', id: ID(1) }, subpages: true }, false).value.subpages).toBe(true);
+		expect(rules.parseRequest({ source: { type: 'page', id: ID(1) }, subpages: 'ja' }, false).value.subpages).toBe(false);
+		expect(rules.parseRequest({ source: { type: 'data_source', id: ID(1) }, subpages: true }, false).value.subpages).toBe(false);
 		const full = rules.parseRequest(
 			{ source: { type: 'data_source', id: ID(1) }, date_property: '', skip_done: false, copy_content: true, refs: [ID(2), ID(2), ID(3)] },
 			true
@@ -476,5 +480,112 @@ describe('request bodies of the routes', () => {
 			ok: false,
 			message: 'Bitte 1 bis 100 Einträge je Anfrage wählen.'
 		});
+	});
+});
+
+describe('sub-pages of a page ("Unterseiten einbeziehen", addendum of 2026-10-01)', () => {
+	const child = (number, title) => ({ ...block('child_page', { title }), id: ID(number) });
+	const todo = (text) => block('to_do', { rich_text: [rt(text)], checked: false });
+	const hidden = () => Object.assign(new Error('Notion 404'), { notionStatus: 404, notionCode: 'object_not_found' });
+	const options = (extra = {}) => ({
+		stopped: () => false,
+		isHidden: (error) => error.notionStatus === 404 || error.notionStatus === 403,
+		...extra
+	});
+
+	it('finds the sub-pages of a page, also in toggles, columns and points, in their order', () => {
+		const blocks = [
+			child(1, 'Erste'),
+			block('toggle', { rich_text: [rt('Mehr')] }, [child(2, ' Zweite  Seite ')]),
+			block('column_list', {}, [block('column', {}, [child(3, '')])]),
+			block('bulleted_list_item', { rich_text: [rt('Punkt')] }, [child(4, 'Unter Punkt')]),
+			{ ...block('child_page', { title: 'Ohne ID' }), id: 'kaputt' },
+			block('child_database', { title: 'Datenbank' })
+		];
+		expect(rules.childPagesOf(blocks)).toEqual([
+			{ id: ID(1), title: 'Erste' },
+			{ id: ID(2), title: 'Zweite Seite' },
+			{ id: ID(3), title: 'Ohne Titel' },
+			{ id: ID(4), title: 'Unter Punkt' }
+		]);
+		expect(rules.childPagesOf(null)).toEqual([]);
+	});
+
+	it('names the section of a point with the path of its sub-page', () => {
+		const blocks = [
+			todo('Vor der Überschrift'),
+			block('heading_2', { rich_text: [rt('Einkauf')] }),
+			todo('Milch'),
+			block('toggle', { rich_text: [rt('Später')] }, [todo('Garage')])
+		];
+		const { entries } = rules.pointEntries(blocks, { url: 'https://www.notion.so/x', section: 'Haus › Garten' }, berlin, md);
+		expect(entries.map((entry) => [entry.title, entry.section])).toEqual([
+			['Vor der Überschrift', 'Haus › Garten'],
+			['Milch', 'Haus › Garten › Einkauf'],
+			['Garage', 'Haus › Garten › Später']
+		]);
+		// Without a path the sections stay as before.
+		const plain = rules.pointEntries(blocks, { url: 'https://www.notion.so/x' }, berlin, md).entries;
+		expect(plain.map((entry) => entry.section)).toEqual(['', 'Einkauf', 'Später']);
+	});
+
+	it('reads the sub-pages breadth first down to the third level, once each, and counts hidden ones', () => {
+		const trees = {
+			[ID(1)]: [todo('Eins'), child(11, 'Kind'), child(2, 'Zwei')],
+			[ID(2)]: [todo('Zwei')],
+			[ID(11)]: [child(111, 'Enkel'), child(1, 'Eins wieder')],
+			[ID(111)]: [child(1111, 'Urenkel')],
+			[ID(1111)]: [todo('zu tief')]
+		};
+		const read = [];
+		const result = rules.collectSubpages(ID(99), [child(1, 'Eins'), child(3, 'Geheim')], (id) => {
+			read.push(id);
+			if (id === ID(3)) throw hidden();
+			return trees[id];
+		}, options());
+		expect(result.pages.map((page) => [page.title, page.section])).toEqual([
+			['Eins', 'Eins'],
+			['Kind', 'Eins › Kind'],
+			['Zwei', 'Eins › Zwei'],
+			['Enkel', 'Eins › Kind › Enkel']
+		]);
+		expect(result.hidden).toBe(1);
+		// The fourth level is not read, and the result says so.
+		expect(read).not.toContain(ID(1111));
+		expect(result.truncated).toBe(true);
+		expect(result.pages[0].blocks).toBe(trees[ID(1)]);
+	});
+
+	it('stops at 50 sub-pages or when the shared budget is used up, and passes other failures on', () => {
+		const many = Array.from({ length: 60 }, (_, index) => child(1000 + index, `Seite ${index + 1}`));
+		const fifty = rules.collectSubpages(ID(99), many, () => [], options());
+		expect(rules.LIMITS.subpages).toBe(50);
+		expect(fifty.pages).toHaveLength(50);
+		expect(fifty.truncated).toBe(true);
+		let reads = 0;
+		const budget = rules.collectSubpages(ID(99), many, () => {
+			reads += 1;
+			return [];
+		}, options({ stopped: () => reads >= 3 }));
+		expect(budget.pages).toHaveLength(3);
+		expect(budget.truncated).toBe(true);
+		const limited = Object.assign(new Error('Notion 429'), { notionStatus: 429, notionCode: 'rate_limited' });
+		expect(() =>
+			rules.collectSubpages(ID(99), many, () => {
+				throw limited;
+			}, options())
+		).toThrow(limited);
+		const none = rules.collectSubpages(ID(99), [todo('nur Punkte')], () => [], options());
+		expect(none).toEqual({ pages: [], hidden: 0, truncated: false });
+	});
+
+	it('keeps the option in source_meta of a page only', () => {
+		const point = { kind: 'todo', blockType: 'to_do', section: 'Haus', truncated: false, date: null };
+		const page = { id: ID(1), type: 'page', title: 'Wochenplan', url: 'https://www.notion.so/w' };
+		expect(rules.metaOf(point, page, { copyContent: false, dateProperty: '', subpages: true }, null).notion.subpages).toBe(true);
+		expect(rules.metaOf(point, page, { copyContent: false, dateProperty: '' }, null).notion).not.toHaveProperty('subpages');
+		const row = { kind: 'task', truncated: false, date: null };
+		const database = { ...page, type: 'data_source' };
+		expect(rules.metaOf(row, database, { copyContent: false, dateProperty: '', subpages: true }, null).notion).not.toHaveProperty('subpages');
 	});
 });

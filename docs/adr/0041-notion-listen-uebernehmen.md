@@ -1,6 +1,6 @@
 # ADR-0041: Notion: bestehende Listen nur lesend als Kopien in den Eingang übernehmen
 
-- **Status:** Angenommen und umgesetzt in zwei Paketen nach [docs/plan/notion-import.md](../plan/notion-import.md): NI-1 (Server, Routen, Tests gegen einen Fake der Notion-API) und NI-2 (Karte, Assistent, Import-Dialog, „Erneut abrufen“, Hilfe). Test-Manifest BYL-E6-520 bis BYL-E6-538; die manuellen Browser-Prüfungen BYL-E6-539 bis BYL-E6-547 sind offen. Ergänzt durch den [Nachtrag vom 2026-09-30](#nachtrag-2026-09-30-rückmeldung-und-laufzeiten-beim-import) (Rückmeldung und Laufzeiten beim Import, BYL-E6-560 bis BYL-E6-565, manuell BYL-E6-566 offen).
+- **Status:** Angenommen und umgesetzt in zwei Paketen nach [docs/plan/notion-import.md](../plan/notion-import.md): NI-1 (Server, Routen, Tests gegen einen Fake der Notion-API) und NI-2 (Karte, Assistent, Import-Dialog, „Erneut abrufen“, Hilfe). Test-Manifest BYL-E6-520 bis BYL-E6-538; die manuellen Browser-Prüfungen BYL-E6-539 bis BYL-E6-547 sind offen. Ergänzt durch den [Nachtrag vom 2026-09-30](#nachtrag-2026-09-30-rückmeldung-und-laufzeiten-beim-import) (Rückmeldung und Laufzeiten beim Import, BYL-E6-560 bis BYL-E6-565, manuell BYL-E6-566 offen) und den [Nachtrag vom 2026-10-01](#nachtrag-2026-10-01-mehrere-quellen-alle-erneut-abrufen-unterseiten-und-mehrere-verbindungen) (mehrere Quellen, „Alle erneut abrufen“, Unterseiten, mehrere Verbindungen; NI-3, BYL-E6-860 bis BYL-E6-865, manuell BYL-E6-866 bis BYL-E6-868 offen).
 - **Datum:** 2026-09-29
 - **Entscheidung durch:** Nutzer („Da wir bislang nur mit Kopien gearbeitet haben, sollten wir das auch hier beibehalten: Variante 1 soll es sein. Notion nur nutzen, um andere bestehende Listen auf deren Inhalt hin zu übernehmen.“, 2026-09-29), Advisor (fachliche Vorgaben: Zugang, Quellen, Ablauf, Eingang, Doku), Executor (API-Version, Abfrageweg, Grenzen, Einzelheiten)
 - **Ersetzt:** [ADR-0016](0016-kanal-architektur-und-mail.md) §2, Absatz „Notion (zurückgestellt)“ (Abruf per Cron alle 15 Minuten mit Cursor), siehe Nachtrag dort
@@ -172,3 +172,67 @@ Das Datum eines Notion-Eintrags ist ein Datum der Liste (Fälligkeit, Termin), k
 - **Nicht geändert:** `cursor: progress` für gesperrte Knöpfe gilt weiter in der ganzen App. Im Import-Dialog erscheint nach dem Lauf kein gesperrter Import-Knopf mehr. *Überholt durch [ADR-0026](0026-einstellungsbereich-und-hinweis-bausteine.md), Nachtrag vom 2026-09-30 (KK-1): Gesperrt zeigt „nicht erlaubt“, den Warte-Zeiger gibt es nur mit `aria-busy`.*
 
 **Konsequenzen:** 45 Zeilen brauchen mit Blöcken etwa 3,5 s statt 0,85 s gegen den Fake, weil jede Anfrage die Quelle neu liest. Dafür ist der Fortschritt echt. Die Hooks wirken erst nach `neu-starten.bat`. Test-Manifest BYL-E6-560 bis BYL-E6-565, die manuelle Prüfung BYL-E6-566 ist offen.
+
+## Nachtrag (2026-10-01): Mehrere Quellen, „Alle erneut abrufen“, Unterseiten und mehrere Verbindungen
+
+**Nutzerwunsch:** „Es macht Sinn, mehrere Quellen als Bezug mit reinzunehmen.“ Vorgaben des Advisors: im Dialog mehrere Quellen zugleich wählen, die Vorschau nach Quelle gruppieren, ein Durchgang mit gemeinsamem Fortschritt und Ergebnis je Quelle, „Alle erneut abrufen“ an der Karte. Dazu prüfen, ob Unterseiten erfasst werden und ob mehrere Notion-Verbindungen nebeneinander gehen. Die Pflichten aus §1 bleiben: nur lesen, nur Kopien, kein Abruf im Hintergrund, Duplikate über `notion|<ID>`. Plan: [notion-import.md](../plan/notion-import.md) §7 (NI-3).
+
+### 1. Mehrere Quellen in einem Durchgang
+
+- **Quellen wählen:** Checkboxen statt Radios, gruppiert nach „Datenbanken“ und „Seiten“. Die Auswahl folgt `domain/selection.ts` ([ADR-0036](0036-sammelbearbeitung-inline-und-oeffnungsmodus.md) §2): Umschalt+Klick über die angezeigte Reihenfolge, Kopf-Checkbox „Alle angezeigten Quellen auswählen“ mit Zustand „teilweise“, darunter „3 Quellen ausgewählt“. Die Wahl bleibt über eine neue Suche hinweg bestehen; die Kopf-Checkbox wirkt nur auf die angezeigten Quellen. „Weiter“ führt zur Vorschau.
+- **Vorschau:** Überschrift „Vorschau: Wochenplan“ bzw. „Vorschau: 3 Quellen“, darunter je Quelle eine Gruppe.
+  - Jede Gruppe hat eine Überschrift mit Titel, Art und „In Notion öffnen“ und lässt sich ein- und ausklappen (Disclosure mit `aria-expanded`).
+  - Jede Gruppe hat die Checkbox „Alle aus „Wochenplan“ auswählen“ (mit `indeterminate`) und ihren eigenen Zustand: lädt, Fehler mit „Erneut versuchen“, leer, gekürzt.
+  - Die Vorschauen laden nacheinander, eine Anfrage je Quelle mit ihren Grenzen.
+  - Steht ein Eintrag schon in einer Gruppe weiter oben (etwa eine Unterseite, die auch selbst gewählt ist), ist er gesperrt: „Steht schon unter „Wochenplan“.“
+  - Die Kopf-Checkbox „Alle wählbaren Einträge auswählen“ und Umschalt+Klick gelten über alle Gruppen.
+  - „Andere Quellen“ führt zurück zur Wahl der Quellen.
+- **Optionen:** „Erledigte überspringen“ gilt für alle gewählten Quellen. „Seiteninhalt als Kopie mitnehmen“ gilt für alle gewählten Datenbanken und erscheint nur, wenn eine gewählt ist. „Unterseiten einbeziehen“ gilt für alle gewählten Seiten (§3). Nur „Datum aus“ steht je Datenbank in ihrer Gruppe, weil jede Datenbank eigene Datums-Eigenschaften hat. Begründung: Ein Schalter je Quelle für etwas, das man fast immer für alle gleich will, vervielfacht die Bedienelemente; nur die Datums-Eigenschaft hängt vom Schema ab.
+- **Durchgang:** Die Quellen laufen nacheinander, jede in ihren Blöcken (`importBatchSize` je Quelle, Nachtrag vom 2026-09-30).
+  - Der Fortschritt zählt über alle Quellen („20 von 45 bearbeitet …“).
+  - „Nach diesem Block anhalten“ und Esc halten nach dem laufenden Block an; danach beginnt keine weitere Quelle.
+  - Ein Fehler, der nur eine Quelle betrifft (`reason: "source"`: nicht freigegeben, 429, 5xx, zu langsam), beendet nur diese Quelle, und die nächste läuft weiter. Ein Fehler der Verbindung (Token, Rechte) oder eine ausgefallene Anfrage beendet den Durchgang.
+  - Danach steht das Ergebnis über allem: die Zahlen, „Eine Quelle mit Fehler; der Grund steht bei der Quelle.“ und der Rest. Darunter folgt „Ergebnis je Quelle“ mit einer Zeile je Quelle, etwa „Wochenplan: 3 angelegt, 1 schon vorhanden.“ oder mit Grund. Rot nur bei einem Fehler ([ADR-0009](0009-fehlerfarbe.md)).
+  - Ein Eintrag verlässt die Auswahl weiter nur mit eigenem Erfolg.
+- **Umsetzung:** keine neue Route; Vorschau und Import bleiben je Quelle. Die Schleife über die Quellen steht ohne Svelte in `stores/notion-run.ts` (`runSources`), damit die Integrationstests sie gegen PocketBase und den Fake prüfen. Jede Anfrage hält ihre Grenzen (90 s je Anfrage, 30 s für neue Einträge, 150 s im Browser). Der Abstand von 350 ms gilt für alle Anfragen des Servers an Notion.
+
+### 2. „Alle erneut abrufen“
+
+- Steht im Menü „•••“ der Karte, sobald eine Quelle übernommen ist und die Verbindung bereit ist. Holt aus allen bisher übernommenen Quellen nacheinander nur neue Einträge, wie „Erneut abrufen“ je Quelle: mit „Erledigte überspringen“ und den Optionen des letzten Imports der Quelle (Datums-Eigenschaft, Seiteninhalt, Unterseiten). Eine Quelle ohne Neues schickt keine Import-Anfrage.
+- **Während des Laufs:**
+  - Lozenge „Wird abgerufen“.
+  - Die Infozeile sagt „Erneut abrufen: Quelle 2 von 5 („Wochenplan“) …“ (`role="status"`), darunter ein Balken mit den fertigen Quellen.
+  - Der Hauptknopf heißt „Nach diesem Block anhalten“; danach beginnt keine weitere Quelle.
+- **Danach:** Ein Flag fasst zusammen, etwa „3 Quellen erneut abgerufen: 5 angelegt, 2 schon vorhanden; 1 Quelle mit Fehler.“ (rot nur, wenn nichts kam und eine Quelle scheiterte). In „Bisher übernommen“ steht unter jeder Quelle „Erneut abgerufen: …“ mit dem Ergebnis bzw. dem Grund (Fehler rot mit Symbol); das gilt auch für „Erneut abrufen“ einer einzelnen Quelle und bleibt bis zum Neuladen der Seite.
+- Ein Fehler einer Quelle beendet nur diese, ein Fehler der Verbindung den Lauf. Nur auf Klick, nie im Hintergrund. Je Verbindung läuft nur ein Import oder Abruf zugleich.
+- **Umsetzung:** `refetchSources` in `stores/notion-run.ts`; auch „Erneut abrufen“ einer Quelle läuft darüber.
+
+### 3. Unterseiten (Befund und Umsetzung)
+
+**Befund:** Eine Unterseite einer freigegebenen Seite sieht die Integration (die Freigabe vererbt sich), übernommen wurde sie aber nicht.
+- Beim Lesen einer Seite stieg die App nicht in `child_page` ab (§4: „Unterseiten … sind eigene Quellen und werden nicht gelesen“).
+- In der Quellenliste erscheint eine Unterseite nur, wenn die Suche sie liefert. Notion garantiert das nur für direkt freigegebene Seiten ([Search optimizations and limitations](https://developers.notion.com/reference/search-optimizations-and-limitations): „Any pages or databases that are directly shared with a connection are guaranteed to be returned.“).
+- Der Satz „Unterseiten sind mit freigegeben“ in der Hilfe stimmte also für den Zugriff, nicht für den Import.
+
+**Entscheidung:** Schalter „Unterseiten einbeziehen“ (Standard aus) für Seiten. Mit ihm liest die App nach der Seite ihre Unterseiten (Blöcke `child_page`, auch in Umschaltern und Spalten) und deren Unterseiten, Ebene für Ebene, und übernimmt deren Listenpunkte wie die der Seite (reine Regeln `childPagesOf`, `collectSubpages`).
+- **Grenzen:** höchstens 50 Unterseiten (`LIMITS.subpages`, sichtbare und nicht sichtbare zusammen) bis zur dritten Ebene (`LIMITS.subpageDepth`). Dazu teilen sich Seite und Unterseiten die Grenzen beim Lesen einer Seite (100 Anfragen, 5 000 Blöcke). Darüber ist die Vorschau gekürzt und sagt das.
+- **Nur Sichtbares:** Antwortet Notion für eine Unterseite mit 404 oder 403 (eigene Freigaben in Notion), bleibt sie weg und wird gezählt: „2 Unterseiten gelesen, 1 Unterseite nicht sichtbar.“ steht in der Gruppe. Andere Fehler gelten wie bisher für die Quelle.
+- **Zuordnung:** Die Einträge gehören zur gewählten Seite (`source_meta.notion.source_id`). Ihr Abschnitt ist der Pfad „Unterseite“ bzw. „Unterseite › Kind › Überschrift“, der Link führt auf die Unterseite mit Anker des Blocks. `source_meta.notion.subpages = true` merkt die Option für „Erneut abrufen“ (`GET …/notion/imports` liefert `subpages`). Eingebettete Datenbanken bleiben eigene Quellen.
+- **Routen:** `preview` und `import` nehmen `subpages: true` (nur bei Seiten wirksam); die Vorschau antwortet zusätzlich `subpages` und `subpages_hidden`, die Grenzen `subpages` und `subpage_depth`.
+- **Zeitfenster:** Mit Unterseiten kann das Lesen einer Quelle bis zur Frist von 90 s dauern. Damit danach nicht nur ein Eintrag je Anfrage übernommen wird, zählen die 30 s für neue Einträge (`LIMITS.importSeconds`) jetzt ab dem Ende des Lesens statt ab dem Eingang der Anfrage. Anfragen an Notion enden weiter spätestens nach 90 s. Eine Anfrage der App dauert damit höchstens etwa 120 s und bleibt unter den 150 s des Browsers und den 300 s von PocketBase und Firefox.
+
+### 4. Mehrere Notion-Verbindungen (Befund und Umsetzung)
+
+**Befund:** Mehrere Verbindungen der Art `notion` gingen schon.
+- Jede hat ihre eigene Variable (`secret_env`), Karte, „Bisher übernommen“ (per SQL je Verbindung) und ihren eigenen Lauf; der Katalog bietet „Weitere einrichten“.
+- Duplikate erkennt der Fingerprint `notion|<ID>` über alle Verbindungen eines Bereichs: Zwei Integrationen desselben Arbeitsbereichs liefern dieselben IDs.
+- Der Abstand von 350 ms gilt für alle Anfragen des Servers zusammen, also strenger als nötig (Notion begrenzt je Integration).
+- **Lücke:** Der Assistent schlug für jede neue Verbindung `BYL_NOTION_TOKEN` vor, auch im Befehl `setx` vor dem Anlegen. Wer ihm für einen zweiten Arbeitsbereich folgte, überschrieb das Token der ersten Verbindung.
+
+**Entscheidung:** Der Vorschlag nimmt einen Namen, den noch keine Verbindung nutzt (`BYL_NOTION_TOKEN_2`, `_3` …; `freeVariableName` in `domain/connections.ts`), im Befehl `setx` und im Formular „Verbindung anlegen“. Das gilt für alle Arten mit Assistent, weil dieselbe Lücke einen zweiten Kalender, Bot oder ein zweites Postfach traf. Mehrere Arbeitsbereiche bedeuten je eine interne Integration und eine Verbindung mit eigener Variable.
+
+### Konsequenzen
+
+- Keine Migration, keine neue Route. Geänderte Hooks (`notion-rules.js`, `notion-client.js`, `notion-service.js`) wirken nach `neu-starten.bat`, die Oberfläche nach F5. Vor dem Neustart ignoriert der alte Server `subpages`; die Vorschau zeigt dann keine Unterseiten.
+- „Alle erneut abrufen“ braucht je Quelle eine Vorschau und, falls es Neues gibt, Import-Anfragen. Bei vielen Quellen dauert das entsprechend; der Balken zeigt, wo es steht.
+- Test-Manifest BYL-E6-860 bis BYL-E6-868; die manuellen Prüfungen BYL-E6-866 bis BYL-E6-868 sind offen.

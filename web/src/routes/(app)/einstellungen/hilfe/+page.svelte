@@ -341,26 +341,33 @@
 			<li>
 				Das Token (beginnt mit <code>ntn_</code>) als Windows-Variable setzen, Vorschlag
 				<code>BYL_NOTION_TOKEN</code>, dann <code>neu-starten.bat</code> im Ordner
-				<code>app</code> doppelklicken.
+				<code>app</code> doppelklicken. Für einen weiteren Arbeitsbereich legst du eine weitere
+				Verbindung an; der Assistent schlägt dann einen freien Namen vor (etwa
+				<code>BYL_NOTION_TOKEN_2</code>), damit das erste Token bleibt.
 			</li>
 			<li>
 				In Notion jede Seite oder Datenbank freigeben, die du übernehmen willst: „•••“ →
-				„Verbindungen“ → „Verbindung hinzufügen“. Unterseiten sind mit freigegeben.
+				„Verbindungen“ → „Verbindung hinzufügen“. Unterseiten sind mit freigegeben; übernommen
+				werden ihre Listen mit „Unterseiten einbeziehen“ oder wenn du sie selbst als Quelle wählst.
 			</li>
 			<li>Im Assistenten oder an der Karte im Menü „•••“ „Verbindung prüfen“.</li>
 		</ol>
 		<h4>Listen übernehmen</h4>
 		<ul>
 			<li>
-				„Listen übernehmen …“ an der Karte zeigt die freigegebenen Seiten und Datenbanken. Nach der
-				Wahl einer Quelle siehst du ihre Einträge mit Datum und Kurztext; was schon im Eingang ist,
-				ist gesperrt. Du wählst einzelne oder alle aus und übernimmst sie in den Eingang.
+				„Listen übernehmen …“ an der Karte zeigt die freigegebenen Seiten und Datenbanken. Du wählst
+				eine oder mehrere Quellen (Umschalt+Klick für einen Bereich); die Wahl bleibt auch nach
+				einer neuen Suche. Danach siehst du die Einträge je Quelle in einer Gruppe, die sich
+				einklappen lässt, mit Datum und Kurztext; was schon im Eingang ist, ist gesperrt. Du wählst
+				einzelne, alle einer Quelle oder alle aus und übernimmst sie in einem Durchgang.
 			</li>
 			<li>
-				Die Übernahme läuft in Blöcken. Oben im Dialog siehst du, wie viele Einträge schon
-				bearbeitet sind, danach das Ergebnis mit „Im Eingang ansehen“. „Nach diesem Block anhalten“
-				stoppt nach dem laufenden Block. Was nicht übernommen wurde, bleibt ausgewählt; ein neuer
-				Versuch erkennt Übernommenes als „schon vorhanden“.
+				Die Übernahme läuft Quelle für Quelle in Blöcken. Oben im Dialog siehst du, wie viele
+				Einträge schon bearbeitet sind, danach das Ergebnis mit „Im Eingang ansehen“ und bei
+				mehreren Quellen eine Zeile je Quelle. „Nach diesem Block anhalten“ stoppt nach dem
+				laufenden Block. Scheitert eine Quelle (etwa nicht mehr freigegeben), laufen die anderen
+				weiter. Was nicht übernommen wurde, bleibt ausgewählt; ein neuer Versuch erkennt
+				Übernommenes als „schon vorhanden“.
 			</li>
 			<li>
 				<strong>Datenbank:</strong> Jede Zeile wird ein Eintrag. Die erste Datums-Eigenschaft (oder die
@@ -370,13 +377,21 @@
 			</li>
 			<li>
 				<strong>Seite:</strong> Jeder Punkt einer Liste wird ein Eintrag; verschachtelte Punkte stehen
-				als Text darunter. Eine Datumserwähnung im Punkt („@15. Oktober“) wird zum Datum.
+				als Text darunter. Eine Datumserwähnung im Punkt („@15. Oktober“) wird zum Datum. Mit „Unterseiten
+				einbeziehen“ kommen auch die Listen ihrer Unterseiten mit, höchstens 50 Unterseiten bis zur dritten
+				Ebene; der Abschnitt nennt die Unterseite. Unterseiten, die die Integration nicht sieht, fehlen
+				und werden gezählt.
 			</li>
-			<li>„Erledigte überspringen“ (Standard) lässt abgehakte To-dos und erledigte Zeilen aus.</li>
+			<li>
+				Die Optionen gelten für alle gewählten Quellen; nur „Datum aus“ wählst du je Datenbank.
+				„Erledigte überspringen“ (Standard) lässt abgehakte To-dos und erledigte Zeilen aus.
+			</li>
 			<li>
 				„Erneut abrufen“ an einer schon übernommenen Quelle (unter „Details“ der Karte) holt nur
-				Einträge, die noch nicht im Eingang sind. Verworfene kommen nicht wieder, Änderungen in
-				Notion erreichen die Kopien nicht.
+				Einträge, die noch nicht im Eingang sind, mit den Optionen des letzten Imports. „Alle erneut
+				abrufen“ im Menü „•••“ der Karte macht das für alle Quellen nacheinander; die Karte zeigt,
+				welche Quelle gerade läuft, und danach unter „Details“ das Ergebnis je Quelle. Verworfene
+				kommen nicht wieder, Änderungen in Notion erreichen die Kopien nicht.
 			</li>
 			<li>
 				Umgewandelt wird im Eingang wie immer. „Gesammelt umwandeln“ kann das Datum als Fälligkeit

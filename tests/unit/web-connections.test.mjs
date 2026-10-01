@@ -1,8 +1,9 @@
 // The connections of the web app (web/src/lib/domain/connections.ts) against the hook modules:
 // the same name pattern for variables, only kinds a user may create (E4 plan, package 10) and the
 // same check of mailboxes (package 22), the suggestions per mail provider (package 13), the
-// texts of the Telegram bot (ADR-0016, addendum of 2026-10-01) and the check of a new name with
-// its texts (ADR-0026, addendum KK-3).
+// texts of the Telegram bot (ADR-0016, addendum of 2026-10-01), the check of a new name with
+// its texts (ADR-0026, addendum KK-3) and the variable suggested for a further connection
+// (ADR-0041, addendum of 2026-10-01).
 
 import { describe, expect, it } from 'vitest';
 import { loadHookLib } from '../support/hook-lib.mjs';
@@ -17,6 +18,7 @@ import {
 	TELEGRAM_CONFIRMATION,
 	TELEGRAM_NO_MATCH,
 	emptyConnectionDraft,
+	freeVariableName,
 	isMailUser,
 	isSecretName,
 	labelError,
@@ -83,5 +85,19 @@ describe('mail provider in the form (E4 plan, package 13)', () => {
 	it('keeps what the user typed', () => {
 		const typed = { ...emptyConnectionDraft('mail'), secretEnv: 'BYL_PRIVAT', label: 'Privat', mailUser: 'anna@gmail.com' };
 		expect(withMailProvider(typed, 'gmail')).toEqual({ ...typed, mailProvider: 'gmail' });
+	});
+});
+
+describe('variable of a further connection (ADR-0041, addendum of 2026-10-01)', () => {
+	it('suggests a name no connection uses yet, valid for secrets.js', () => {
+		expect(freeVariableName('BYL_NOTION_TOKEN', [])).toBe('BYL_NOTION_TOKEN');
+		expect(freeVariableName('BYL_NOTION_TOKEN', ['BYL_TELEGRAM_TOKEN'])).toBe('BYL_NOTION_TOKEN');
+		expect(freeVariableName('BYL_NOTION_TOKEN', ['BYL_NOTION_TOKEN'])).toBe('BYL_NOTION_TOKEN_2');
+		expect(freeVariableName('BYL_NOTION_TOKEN', ['BYL_NOTION_TOKEN', 'BYL_NOTION_TOKEN_2', 'BYL_NOTION_TOKEN_4'])).toBe(
+			'BYL_NOTION_TOKEN_3'
+		);
+		// A gap at the start counts as free.
+		expect(freeVariableName('BYL_NOTION_TOKEN', ['BYL_NOTION_TOKEN_2'])).toBe('BYL_NOTION_TOKEN');
+		expect(secrets.isValidName(freeVariableName('BYL_GOOGLE_CALENDAR_URL', ['BYL_GOOGLE_CALENDAR_URL']))).toBe(true);
 	});
 });
