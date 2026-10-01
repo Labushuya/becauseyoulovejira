@@ -1,0 +1,49 @@
+From: =?UTF-8?Q?J=C3=BCrgen_M=C3=BCller?= <juergen@example.com>
+To: Anna Beispiel <anna@example.com>
+Subject: =?UTF-8?Q?Pr=C3=BCfbericht_f=C3=BCr_M=C3=A4rz?=
+Date: Mon, 12 Oct 2026 14:30:00 +0200
+Message-ID: <alternative.inline.attachment@example.com>
+MIME-Version: 1.0
+Content-Type: multipart/mixed; boundary="aussen"
+
+--aussen
+Content-Type: multipart/related; boundary="bezug"
+
+--bezug
+Content-Type: multipart/alternative; boundary="wahl"
+
+--wahl
+Content-Type: text/plain; charset=utf-8
+Content-Transfer-Encoding: quoted-printable
+
+Hallo Anna,
+
+anbei der Pr=C3=BCfbericht f=C3=BCr M=C3=A4rz.
+
+Viele Gr=C3=BC=C3=9Fe
+J=C3=BCrgen
+--wahl
+Content-Type: text/html; charset=utf-8
+Content-Transfer-Encoding: quoted-printable
+
+<html><body><p>Hallo Anna,</p><p>anbei der <b>Pr=C3=BCfbericht</b> f=C3=BC=
+r M=C3=A4rz.</p><img src=3D"cid:logo.inline@example.com" alt=3D"Logo"></body=
+></html>
+--wahl--
+
+--bezug
+Content-Type: image/png; name="=?UTF-8?Q?Gr=C3=BC=C3=9Fe_Logo.png?="
+Content-Disposition: inline; filename="=?UTF-8?Q?Gr=C3=BC=C3=9Fe_Logo.png?="
+Content-ID: <logo.inline@example.com>
+Content-Transfer-Encoding: base64
+
+iVBORw0KGgo=
+--bezug--
+
+--aussen
+Content-Type: application/pdf; name*=UTF-8''Pr%C3%BCfbericht%20M%C3%A4rz.pdf
+Content-Disposition: attachment; filename*=UTF-8''Pr%C3%BCfbericht%20M%C3%A4rz.pdf
+Content-Transfer-Encoding: base64
+
+JVBERi0xLjQgZXJmdW5kZW4=
+--aussen--

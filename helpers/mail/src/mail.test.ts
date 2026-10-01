@@ -1,5 +1,6 @@
 // A mail from the mailbox gives the same draft as the same mail dropped as .eml file (ADR-0017
-// section 2), with the parser limits and the keyword matching of the web app (ADR-0020).
+// section 2), with the parser limits and the keyword matching of the web app (ADR-0020). A mail
+// with alternative parts, an inline image and an attachment guards the update to postal-mime 4.
 
 import { readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
@@ -27,6 +28,27 @@ describe('mail from the mailbox', () => {
 			expect(matchTexts).toEqual(mailMatchTexts(parsed, decodeWords));
 		}
 	);
+
+	it('reads a mail with alternative parts, inline image and attachment with umlauts (BYL-E6-941)', async () => {
+		const lf = readFileSync(join(FIXTURES, 'alternative-inline-attachment.eml'), 'latin1');
+		const expected = {
+			channel: 'mail',
+			kind: 'mail',
+			title: 'Prüfbericht für März',
+			body: 'Hallo Anna,\n\nanbei der Prüfbericht für März.\n\nViele Grüße\nJürgen\n\n_2 Anhänge, nur in der Originaldatei._',
+			sourceRef: '<alternative.inline.attachment@example.com>',
+			sourceDate: '2026-10-12 12:30:00.000Z',
+			sourceMeta: {
+				from: 'Jürgen Müller <juergen@example.com>',
+				to: 'Anna Beispiel <anna@example.com>',
+				attachments: 2
+			},
+			matchTexts: ['Anna Beispiel <anna@example.com>', 'Hallo Anna,\n\nanbei der Prüfbericht für März.']
+		};
+		for (const source of [lf, lf.replace(/\r?\n/g, '\r\n')]) {
+			expect(await parseMail(new TextEncoder().encode(source))).toEqual(expected);
+		}
+	});
 
 	it('matches keywords in the subject and, on request, in the whole text', async () => {
 		const draft = await parseMail(
