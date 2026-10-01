@@ -1,4 +1,5 @@
 $ErrorActionPreference = 'Stop'
+. (Join-Path $PSScriptRoot 'build-functions.ps1')
 
 # Node.js is a dev tool only (CLAUDE.md section 3). It must be reachable via PATH;
 # this script does not assume any install location.
@@ -30,39 +31,19 @@ $rootDir = Split-Path -Parent $PSScriptRoot
 Push-Location $rootDir
 
 try {
-	# Install root dependencies if node_modules missing
-	if (-not (Test-Path 'node_modules')) {
-		Write-Host "Installing root dependencies..."
-		npm ci
-		if ($LASTEXITCODE -ne 0) { exit 1 }
-	}
-
-	# Install web dependencies if node_modules missing
-	if (-not (Test-Path 'web/node_modules')) {
-		Write-Host "Installing web dependencies..."
-		npm --prefix web ci
-		if ($LASTEXITCODE -ne 0) { exit 1 }
-	}
-
-	# Install mail helper dependencies if node_modules missing (E4 plan, package 11)
-	if (-not (Test-Path 'helpers/mail/node_modules')) {
-		Write-Host "Installing mail helper dependencies..."
-		npm --prefix helpers/mail ci
-		if ($LASTEXITCODE -ne 0) { exit 1 }
-	}
-
-	# Install backup helper dependencies if node_modules missing (ADR-0046)
-	if (-not (Test-Path 'helpers/backup/node_modules')) {
-		Write-Host "Installing backup helper dependencies..."
-		npm --prefix helpers/backup ci
-		if ($LASTEXITCODE -ne 0) { exit 1 }
-	}
-
-	# Install the dependencies of the browser extension for WhatsApp Web if missing (ADR-0038)
-	if (-not (Test-Path 'extensions/whatsapp-web/node_modules')) {
-		Write-Host "Installing extension dependencies..."
-		npm --prefix extensions/whatsapp-web ci
-		if ($LASTEXITCODE -ne 0) { exit 1 }
+	# Dependencies of the root, the web app, the mail helper (E4 plan, package 11), the backup helper
+	# (ADR-0046) and the browser extension for WhatsApp Web (ADR-0038): "npm ci" wherever
+	# node_modules is missing or does not match the package-lock.json of the folder any more (an
+	# update of a dependency or a merge of main), so the build never tests the versions of an older
+	# lockfile (ADR-0040, addendum "Build und Abhaengigkeiten"; scripts\build-functions.ps1).
+	foreach ($folder in $BylDependencyFolders) {
+		try {
+			[void](Update-BylDependency -Root $rootDir -Folder $folder)
+		}
+		catch {
+			Write-Host $_.Exception.Message -ForegroundColor Red
+			exit 1
+		}
 	}
 
 	# Run check (web app, mail helper, backup helper and extension)

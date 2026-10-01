@@ -341,7 +341,7 @@
   "meta": {
     "projekt": "becauseyoulovejira",
     "stand": "2026-10-02",
-    "commit": "c3f6cd9"
+    "commit": "11c2511"
   },
   "bereiche": [
     { "id": "betrieb", "titel": "Betrieb: Start, Stopp, Skripte und Daten" },
@@ -520,6 +520,8 @@
     { "id": "BK-4", "vorhaben": "Sicherung, Prüfung, Wiederherstellen", "titel": "Notfallplan: Hilfe „Sicherung & Notfall“, Notfallkarte und README", "bereich": "betrieb", "quelle": "Nutzerentscheidung", "datum": "2026-10-01", "adr": ["0046-sicherung-pruefung-wiederherstellen.md"], "plan": "sicherung.md", "faelle": ["BYL-E6-950..BYL-E6-954"],
       "vermerk": "Vorgesehen war BYL-E6-940; die IDs 940 bis 943 hat inzwischen postal-mime-4." },
     { "id": "SPE-1", "vorhaben": "Speicher und Abhängigkeiten beim Löschen", "titel": "Papierkorb: erst entscheiden, dann endgültig löschen, mit Entscheidungshilfe und Hinweis", "bereich": "papierkorb", "quelle": "Nutzerentscheidung", "datum": "2026-10-01", "adr": ["0047-speicher-und-abhaengigkeiten-beim-loeschen.md", "0037-papierkorb.md"], "plan": "speicher.md", "faelle": ["BYL-E6-1000..BYL-E6-1008"] },
+    { "id": "RS-2", "vorhaben": "Robuste Skripte und Wartung", "titel": "build.ps1 installiert nach geändertem Lockfile neu, Install-Skript nur für esbuild, npm audit geprüft", "bereich": "entwicklung", "quelle": "Befund", "datum": "2026-10-01", "adr": ["0040-veroeffentlichen-ohne-unterbrechung.md, Nachtrag RS-2"], "plan": "robuste-skripte.md", "faelle": ["BYL-E6-975..BYL-E6-977"],
+      "vermerk": "npm audit in web: 3 niedrige Meldungen (cookie über SvelteKit 2), nur mit SvelteKit 3 behebbar, nicht ausnutzbar; Begründung im Plan." },
     { "id": "SPE-2", "vorhaben": "Speicher und Abhängigkeiten beim Löschen", "titel": "Seite „Einstellungen → Speicher“: messen beim Aufruf, größte Einträge, aufräumen mit Vorschau", "bereich": "einstellungen", "quelle": "Nutzerwunsch", "datum": "2026-10-02", "adr": ["0047-speicher-und-abhaengigkeiten-beim-loeschen.md", "0043-system-seite.md"], "plan": "speicher.md", "faelle": ["BYL-E6-1010..BYL-E6-1018"] },
     { "id": "querschnitt", "vorhaben": "Querschnitt", "titel": "Testumgebung, Regeln der Datenschicht, Hook-Module und dieses Manifest", "bereich": "entwicklung", "faelle": ["BYL-X-001..BYL-X-004"] }
   ],
@@ -4082,6 +4084,23 @@
         { "id": "BYL-E6-943", "title": "Mail mit Anhang im Eingang nach Update (manuell)", "art": ["manuell"], "status": "offen",
           "pre": "Update gezogen und mit scripts\\build.ps1 gebaut (baut auch den neuen byl-mail.exe); App mit neu-starten.bat neu gestartet; eine Mail-Verbindung eingerichtet.", "steps": ["Unter „Eingang“ die Datei tests\\fixtures\\eml\\alternative-inline-attachment.eml aus dem Repo auf die Drop-Zone ziehen und den Eintrag öffnen.", "Die Originaldatei über den Eintrag herunterladen und im Mail-Programm öffnen.", "An der Mail-Verbindung „Aus dem Postfach wählen …“ öffnen und eine eigene Mail mit Anhang übernehmen."],
           "expect": "Titel „Prüfbericht für März“, Von „Jürgen Müller“, Datum 12.10.2026, Text bis „Jürgen“ und „2 Anhänge, nur in der Originaldatei.“; die heruntergeladene Datei zeigt Text, Logo und das PDF „Prüfbericht März.pdf“. Die Mail aus dem Postfach kommt mit Betreff, Absender, Datum, Text, Anhang-Hinweis und Originaldatei wie vor dem Update; byl-mail.log ohne Fehler.",
+          "tests": [] }
+      ]
+    },
+    {
+      "tag": "Alle", "name": "Robuste Skripte und Wartung", "desc": "Nutzerwunsch vom 2026-10-01 („alle Skripte so gestaltet …, dass sie Probleme abfangen und klar mit dem User kommunizieren was zu tun ist“) und Wartung (docs/plan/robuste-skripte.md): Build und Abhängigkeiten (RS-2). IDs ab BYL-E6-975.",
+      "items": [
+        { "id": "BYL-E6-975", "title": "npm ci nach geändertem Lockfile (build.ps1 und Builds der Hilfsprogramme)", "art": ["unit"], "status": "bestanden",
+          "pre": "–", "steps": ["npm run test:unit"],
+          "expect": "scripts\\build-functions.ps1 nennt genau die Ordner mit package-lock.json; in Windows PowerShell gilt ein Ordner ohne Lockfile als NoLockfile, ohne node_modules als Missing, ohne Prüfsumme als Unknown, mit der SHA-256 des Lockfiles als Current und nach einer Änderung des Lockfiles als Changed, je mit Grund. build.ps1 bringt alle Ordner vor check auf Stand, build-mail-helper.ps1 und build-backup-helper.ps1 ihren eigenen; die Prüfsumme entsteht erst nach einem erfolgreichen npm ci.",
+          "tests": ["tests/unit/build-dependencies.test.mjs::names exactly the folders with a package-lock.json", "tests/unit/build-dependencies.test.mjs::build.ps1 brings every folder up to date before the check, the helper builds their own", "tests/unit/build-dependencies.test.mjs::writes the marker only after npm ci succeeded", "tests/unit/build-dependencies.test.mjs::tells missing, unknown, current and changed apart by the SHA-256 of the lockfile"] },
+        { "id": "BYL-E6-976", "title": "Install-Skript nur für esbuild freigegeben (allowScripts)", "art": ["unit"], "status": "bestanden",
+          "pre": "–", "steps": ["npm run test:unit"],
+          "expect": "Jeder Ordner mit esbuild als Abhängigkeit hat \"allowScripts\": { \"esbuild\": true } (nach Name, nicht nach Version), alle anderen keinen Eintrag; npm ci meldet danach keine nicht geprüften Install-Skripte mehr.",
+          "tests": ["tests/unit/build-dependencies.test.mjs::allows the postinstall of esbuild by name wherever esbuild is a dependency, and nothing else"] },
+        { "id": "BYL-E6-977", "title": "build.ps1 nach einem Update mit neuem Lockfile (manuell)", "art": ["manuell"], "status": "offen",
+          "pre": "Repo mit einem früheren Build (node_modules vorhanden).", "steps": ["Ein Update ziehen, das ein package-lock.json ändert (etwa ein Merge eines Dependabot-PRs), dann powershell -ExecutionPolicy Bypass -File scripts\\build.ps1 ausführen.", "Die Zeilen „Dependencies of …“ am Anfang lesen.", "build.ps1 gleich noch einmal ausführen."],
+          "expect": "Beim ersten Lauf steht für den geänderten Ordner „package-lock.json changed since the last install, installing (npm ci)“ (beim ersten Build nach diesem Paket für alle Ordner „installed without a lockfile marker“), für die übrigen „up to date“; keine Warnung „install scripts not yet covered by allowScripts“. Der zweite Lauf meldet überall „up to date“ und endet mit „Build complete!“.",
           "tests": [] }
       ]
     },
