@@ -3,6 +3,7 @@
 	import {
 		connectionDraftErrors,
 		emptyConnectionDraft,
+		freeVariableName,
 		withMailProvider,
 		type Connection,
 		type ConnectionDraft
@@ -13,7 +14,8 @@
 	// Step "Verbinden" of the assistant (ADR-0026 section 4, plan EH-5 §3.7): name of the connection
 	// and the names of its variables, preset for the service; never a value (ADR-0018). Creating
 	// saves at once, so there is nothing to discard; field errors of the client and the server stand
-	// at the field. It replaces the former modal "Verbindung anlegen".
+	// at the field. It replaces the former modal "Verbindung anlegen". The variable is preset to a
+	// name no connection uses yet, like the steps before (ADR-0041, addendum of 2026-10-01).
 	let {
 		kind,
 		store,
@@ -34,8 +36,10 @@
 
 	function initialDraft(): ConnectionDraft {
 		const { type, provider } = connectionTypeOf(kind);
-		const draft = emptyConnectionDraft(type);
-		return type === 'mail' && provider !== '' ? withMailProvider(draft, provider) : draft;
+		const empty = emptyConnectionDraft(type);
+		const draft = type === 'mail' && provider !== '' ? withMailProvider(empty, provider) : empty;
+		const taken = store.connections.map((connection) => connection.secretEnv);
+		return { ...draft, secretEnv: freeVariableName(draft.secretEnv, taken) };
 	}
 
 	let draft = $state<ConnectionDraft>(initialDraft());

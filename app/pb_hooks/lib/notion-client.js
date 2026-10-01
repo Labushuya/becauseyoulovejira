@@ -227,8 +227,11 @@ function create(app, token) {
   }
 
   return {
-    /** Time (Date.now) after which an import starts no new entry and hands the rest back. */
-    importEndsAt: started + timing.importMs,
+    /**
+     * How long an import takes new entries once its source is read (ADR-0041, addendum of
+     * 2026-09-30, since 2026-10-01 counted from the end of reading); then it hands the rest back.
+     */
+    importMs: timing.importMs,
     /** The bot user of the token (any capability may read it). */
     me: function () {
       return request('GET', '/v1/users/me');
@@ -264,11 +267,12 @@ function create(app, token) {
     },
     /**
      * The blocks below a page or block with their children in `children`, read where
-     * `descend(block, inPoint)` allows, within `limits` ({ requests, blocks, depth }).
-     * { blocks, truncated }.
+     * `descend(block, inPoint)` allows, within `limits` ({ requests, blocks, depth }). Several
+     * trees can share one `shared` state ({ requests, blocks, truncated }), so a page and its
+     * sub-pages stay within one budget. { blocks, truncated }.
      */
-    tree: function (id, descend, limits) {
-      var state = { requests: 0, blocks: 0, truncated: false };
+    tree: function (id, descend, limits, shared) {
+      var state = shared || { requests: 0, blocks: 0, truncated: false };
       var blocks = load(id, 0, false, descend, state, limits);
       return { blocks: blocks, truncated: state.truncated };
     }

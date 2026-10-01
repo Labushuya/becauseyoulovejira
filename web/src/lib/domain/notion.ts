@@ -50,6 +50,8 @@ export interface NotionImportedSource {
 	dateProperty: string;
 	/** Whether the last import copied the page content of rows. */
 	copyContent: boolean;
+	/** Whether the last import of a page read its sub-pages ("Unterseiten einbeziehen"). */
+	subpages: boolean;
 }
 
 /** Limits of the server that the dialog names. */
@@ -60,6 +62,9 @@ export interface NotionLimits {
 	contentChars: number;
 	/** Blocks read of a page with lists. */
 	treeBlocks: number;
+	/** Sub-pages read at most with "Unterseiten einbeziehen", and down to which level. */
+	subpages: number;
+	subpageDepth: number;
 }
 
 export const NOTION_DEFAULT_LIMITS: Readonly<NotionLimits> = Object.freeze({
@@ -67,7 +72,9 @@ export const NOTION_DEFAULT_LIMITS: Readonly<NotionLimits> = Object.freeze({
 	importBatch: 100,
 	contentBlocks: 500,
 	contentChars: 50_000,
-	treeBlocks: 5000
+	treeBlocks: 5000,
+	subpages: 50,
+	subpageDepth: 3
 });
 
 /** One entry of the preview: a row of a database or a point of a list. */
@@ -101,7 +108,19 @@ export interface NotionPreview {
 	truncated: boolean;
 	/** Points without text on a page, left out. */
 	blankPoints: number;
+	/** Sub-pages read with "Unterseiten einbeziehen", and those the integration does not see. */
+	subpages: number;
+	hiddenSubpages: number;
 	limits: NotionLimits;
+}
+
+/** What a preview asks for: the source and its options. */
+export interface NotionPreviewRequest {
+	source: { type: NotionSourceType; id: string };
+	/** null: the server takes the first date property; '': none. */
+	dateProperty: string | null;
+	/** Pages only: read the sub-pages as well (ADR-0041, addendum of 2026-10-01). */
+	subpages: boolean;
 }
 
 export type NotionImportStatus = 'created' | 'duplicate' | 'skipped' | 'failed';
@@ -192,6 +211,8 @@ export interface NotionImportRequest {
 	copyContent: boolean;
 	/** null: the server takes the first date property; '': none. */
 	dateProperty: string | null;
+	/** Pages only: the sub-pages count to the source (ADR-0041, addendum of 2026-10-01). */
+	subpages: boolean;
 }
 
 /** Why an entry cannot be chosen: it is in the inbox already, or done and skipped; else ''. */
@@ -271,11 +292,16 @@ export interface NotionRunOutcome {
 	stopped: boolean;
 	/** Chosen entries without a result (not sent after an error or the stop). */
 	open: number;
+	/**
+	 * Sources of a run over several that ended with an error of their own while the others went on
+	 * (ADR-0041, addendum of 2026-10-01); 0 or missing for none.
+	 */
+	failedSources?: number;
 }
 
 /**
  * Title, text and tone of the result (ADR-0009: red only when a request failed, or when nothing
- * came in and entries failed; a stop is neutral).
+ * came in and entries or sources failed; a stop is neutral).
  */
 export function runSummary(run: NotionRunOutcome): {
 	tone: 'success' | 'info' | 'error';
@@ -287,20 +313,106 @@ export function runSummary(run: NotionRunOutcome): {
 		run.open === 0
 			? ''
 			: ` ${entriesText(run.open)} noch nicht übernommen; sie bleiben ausgewählt, ein neuer Versuch erkennt Übernommenes als „schon vorhanden“.`;
+	const failedSources = run.failedSources ?? 0;
+	const sources =
+		failedSources === 0
+			? ''
+			: ` ${failedSources === 1 ? 'Eine Quelle' : `${failedSources} Quellen`} mit Fehler; der Grund steht bei der Quelle.`;
 	if (run.error !== null) {
 		return {
 			tone: 'error',
 			title: 'Übernahme unterbrochen',
-			text: `${counts} ${run.error}${rest}`
+			text: `${counts} ${run.error}${sources}${rest}`
 		};
 	}
-	if (run.stopped) return { tone: 'info', title: 'Angehalten', text: `${counts}${rest}` };
+	if (run.stopped) return { tone: 'info', title: 'Angehalten', text: `${counts}${sources}${rest}` };
 	const failed =
 		run.counts.failed === 0
 			? ''
 			: ' Einträge mit Fehler bleiben ausgewählt; der Grund steht darunter.';
-	const tone = run.counts.created > 0 ? 'success' : run.counts.failed > 0 ? 'error' : 'info';
-	return { tone, title: 'In den Eingang übernommen', text: `${counts}${failed}` };
+	const problems = run.counts.failed > 0 || failedSources > 0;
+	const tone = run.counts.created > 0 ? (failedSources > 0 ? 'info' : 'success') : problems ? 'error' : 'info';
+	return { tone, title: 'In den Eingang übernommen', text: `${counts}${sources}${failed}${rest}` };
+}
+
+/**
+ * Result of one source in a run over several sources or in "Alle erneut abrufen" (ADR-0041,
+ * addendum of 2026-10-01).
+ */
+export interface NotionSourceResult {
+	id: string;
+	title: string;
+	counts: NotionImportCounts;
+	/** Message of the error that ended this source, null without one. */
+	error: string | null;
+	/** Chosen entries of this source without a result (not sent after a stop or an error). */
+	open: number;
+}
+
+/**
+ * Line of one source: "3 angelegt, 1 schon vorhanden." plus what is left and the error; a source
+ * that failed before anything came of it (its preview) names only the error.
+ */
+export function sourceResultText(
+	result: Pick<NotionSourceResult, 'counts' | 'error' | 'open'>
+): string {
+	const { created, duplicates, skipped, failed } = result.counts;
+	if (result.error !== null && created + duplicates + skipped + failed + result.open === 0) {
+		return result.error;
+	}
+	const left = result.open === 0 ? '' : `, ${entriesText(result.open)} noch nicht übernommen`;
+	const text = `${countsText(result.counts)}${left}.`;
+	return result.error === null ? text : `${text} ${result.error}`;
+}
+
+/** The line of the card while "Alle erneut abrufen" runs. */
+export function refetchProgressText(index: number, total: number, title: string): string {
+	return `Erneut abrufen: Quelle ${formatCount(index)} von ${formatCount(total)} („${title}“) …`;
+}
+
+/**
+ * Flag after "Alle erneut abrufen": the sources, the counts of all of them, how many failed and
+ * whether it was stopped. Red only when nothing came in and a source failed (ADR-0009).
+ */
+export function refetchAllText(
+	results: readonly NotionSourceResult[],
+	stopped: boolean
+): { text: string; tone: 'success' | 'info' | 'error' } {
+	const counts = results.reduce((sum, result) => addCounts(sum, result.counts), { ...NO_COUNTS });
+	const failed = results.filter((result) => result.error !== null).length;
+	const sources = results.length === 1 ? '1 Quelle' : `${formatCount(results.length)} Quellen`;
+	const parts = [`${sources} erneut abgerufen: ${countsText(counts)}`];
+	if (failed > 0) parts.push(`${failed === 1 ? '1 Quelle' : `${formatCount(failed)} Quellen`} mit Fehler`);
+	if (stopped) parts.push('angehalten');
+	const tone = counts.created > 0 ? 'success' : failed > 0 ? 'error' : 'info';
+	return { text: `${parts.join('; ')}.`, tone };
+}
+
+/** Hint of the option "Unterseiten einbeziehen" with its limits. */
+export function subpagesHint(limits: Pick<NotionLimits, 'subpages' | 'subpageDepth'>): string {
+	return `Liest bei Seiten auch ihre Unterseiten, soweit die Integration sie sieht: höchstens ${formatCount(limits.subpages)} Unterseiten, bis ${formatCount(limits.subpageDepth)} Ebenen tief. Ihre Punkte stehen unter „Unterseite › Abschnitt“.`;
+}
+
+/** What the preview of a page says about its sub-pages, '' without any. */
+export function subpagesOverview(
+	preview: Pick<NotionPreview, 'subpages' | 'hiddenSubpages'>
+): string {
+	const parts: string[] = [];
+	if (preview.subpages > 0) {
+		parts.push(
+			preview.subpages === 1
+				? '1 Unterseite gelesen'
+				: `${formatCount(preview.subpages)} Unterseiten gelesen`
+		);
+	}
+	if (preview.hiddenSubpages > 0) {
+		parts.push(
+			preview.hiddenSubpages === 1
+				? '1 Unterseite nicht sichtbar'
+				: `${formatCount(preview.hiddenSubpages)} Unterseiten nicht sichtbar`
+		);
+	}
+	return parts.length === 0 ? '' : `${parts.join(', ')}.`;
 }
 
 export function addCounts(a: NotionImportCounts, b: NotionImportCounts): NotionImportCounts {

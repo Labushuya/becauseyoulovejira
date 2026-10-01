@@ -5,10 +5,16 @@
 	import { channelHealth } from '$lib/domain/channel-health';
 	import type { Connection, SecretStatus } from '$lib/domain/connections';
 	import { formatBerlinDateTime } from '$lib/domain/format';
-	import { NOTION_SOURCE_TYPE_LABELS, type NotionImportedSource } from '$lib/domain/notion';
+	import {
+		NOTION_SOURCE_TYPE_LABELS,
+		refetchProgressText,
+		sourceResultText,
+		type NotionImportedSource
+	} from '$lib/domain/notion';
 	import { connectionAnchor } from '$lib/domain/sync-all';
 	import { helpHref } from '$lib/settings-sections';
 	import type { NotionStore } from '$lib/stores/notion.svelte';
+	import ErrorIcon from '../ErrorIcon.svelte';
 	import ExternalLink from '../guidance/ExternalLink.svelte';
 	import ChannelCard, { type CardAction, type CardRename } from './ChannelCard.svelte';
 
@@ -17,8 +23,11 @@
 	// the main button opens the import dialog ("Listen übernehmen …"). "Verbindung prüfen" asks
 	// Notion with the token (menu "•••"). The details list the sources taken over so far (from the
 	// inbox, no request to Notion), each with "Erneut abrufen", which takes only entries that are
-	// not in the inbox yet. No "Pausieren" and no keywords: the user chooses what comes in. With
-	// `onrename` the menu offers "Umbenennen …" in the card (ADR-0026, addendum KK-3).
+	// not in the inbox yet, and the result of its last "Erneut abrufen" on this page. "Alle erneut
+	// abrufen" (menu, ADR-0041 addendum of 2026-10-01) does that for every source, one after the
+	// other: the info line names the source with a bar, the main button stops after the current
+	// block. No "Pausieren" and no keywords: the user chooses what comes in. With `onrename` the
+	// menu offers "Umbenennen …" in the card (ADR-0026, addendum KK-3).
 	let {
 		connection,
 		secretStatus,
@@ -68,10 +77,16 @@
 
 	const checking = $derived(notion.isChecking(connection.id));
 	const refetching = $derived(notion.refetching(connection.id));
+	const progress = $derived(notion.refetchProgress(connection.id));
+	const stopping = $derived(notion.isStopping(connection.id));
 	const busy = $derived(checking || refetching !== null);
 	const health = $derived(channelHealth(connection, secretStatus, busy));
 	const imports = $derived(notion.imports(connection.id));
-	const info = $derived(notionInfo(imports, connection.lastRunAt, clock.now));
+	const info = $derived(
+		progress === null
+			? notionInfo(imports, connection.lastRunAt, clock.now)
+			: refetchProgressText(progress.index, progress.total, progress.title)
+	);
 	const lastRunText = $derived(
 		connection.lastRunAt === null ? 'noch nie' : formatBerlinDateTime(connection.lastRunAt)
 	);
@@ -91,6 +106,14 @@
 		onchanged();
 	}
 
+	/** Errors stand at their source and in the flag, so the card keeps no message of its own. */
+	async function refetchAll() {
+		if (busy) return;
+		refetchError = null;
+		await notion.refetchAll(connection.id);
+		onchanged();
+	}
+
 	function sourceMeta(source: NotionImportedSource): string {
 		const entries = source.count === 1 ? '1 Eintrag' : `${source.count} Einträge`;
 		const last = source.last === null ? '' : ` · zuletzt ${formatBerlinDateTime(source.last)}`;
@@ -98,6 +121,11 @@
 	}
 
 	const primary = $derived.by((): CardAction => {
+		if (progress !== null) {
+			return stopping
+				? { label: 'Hält nach diesem Block an …', busy: true }
+				: { label: 'Nach diesem Block anhalten', onselect: () => notion.stopRefetch(connection.id) };
+		}
 		if (health.action === 'none') {
 			return { label: checking ? 'Wird geprüft …' : 'Wird abgerufen …', busy: true };
 		}
@@ -111,6 +139,9 @@
 		const entries: CardAction[] = [];
 		if (health.action === 'run') {
 			entries.push({ label: 'Verbindung prüfen', onselect: () => void check() });
+			if (imports !== null && imports.length > 0) {
+				entries.push({ label: 'Alle erneut abrufen', onselect: () => void refetchAll() });
+			}
 		}
 		if (rename !== null) {
 			entries.push({ label: 'Umbenennen …', onselect: () => void card?.startRename() });
@@ -131,6 +162,8 @@
 	subtitle="Notion · Listen übernehmen, nur lesend"
 	status={checking ? { ...health, label: 'Wird geprüft' } : health}
 	{info}
+	progress={progress === null ? null : { value: progress.index - 1, max: progress.total }}
+	busy={progress !== null}
 	hint={health.hint}
 	message={message ?? refetchError}
 	{primary}
@@ -154,10 +187,17 @@
 				<h5>Bisher übernommen</h5>
 				<ul>
 					{#each imports as source (source.id)}
+						{@const result = notion.refetchResult(connection.id, source.id)}
 						<li>
 							<div class="source">
 								<ExternalLink href={source.url}>{source.title}</ExternalLink>
 								<span class="source-meta">{sourceMeta(source)}</span>
+								{#if result !== null}
+									<span class="source-result" class:failed={result.error !== null}>
+										{#if result.error !== null}<ErrorIcon />{/if}
+										<span>Erneut abgerufen: {sourceResultText(result)}</span>
+									</span>
+								{/if}
 							</div>
 							<button
 								class="button-subtle"
@@ -214,12 +254,24 @@
 		overflow-wrap: anywhere;
 	}
 
-	.source-meta {
+	.source-meta,
+	.source-result {
 		font-size: var(--font-size-small);
 	}
 
+	.source-result {
+		display: inline-flex;
+		gap: 0.25rem;
+		align-items: flex-start;
+	}
+
 	.note,
-	.source-meta {
+	.source-meta,
+	.source-result {
 		color: var(--color-text-muted);
+	}
+
+	.source-result.failed {
+		color: var(--color-danger);
 	}
 </style>

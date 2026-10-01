@@ -5,9 +5,11 @@
 	import { SvelteMap } from 'svelte/reactivity';
 	import { berlinDateOf, formatBerlinDateTime, formatCalendarDate } from '$lib/domain/format';
 	import {
+		NO_COUNTS,
 		NOTION_DEFAULT_LIMITS,
 		NOTION_SOURCE_TYPES,
 		NOTION_SOURCE_TYPE_LABELS,
+		addCounts,
 		blockedReason,
 		entriesText,
 		importBatchSize,
@@ -17,11 +19,15 @@
 		progressText,
 		runSummary,
 		runningText,
+		sourceResultText,
+		subpagesHint,
+		subpagesOverview,
 		truncatedText,
 		type NotionImportResult,
 		type NotionPreview,
 		type NotionPreviewItem,
 		type NotionSource,
+		type NotionSourceResult,
 		type NotionSourceType
 	} from '$lib/domain/notion';
 	import {
@@ -32,8 +38,8 @@
 		toggleAll,
 		type Selection
 	} from '$lib/domain/selection';
-	import type { NotionImportRun } from '$lib/stores/notion-run';
-	import type { NotionStore } from '$lib/stores/notion.svelte';
+	import type { NotionSourcesRun } from '$lib/stores/notion-run';
+	import type { NotionImportPlan, NotionStore } from '$lib/stores/notion.svelte';
 	import ErrorIcon from '../ErrorIcon.svelte';
 	import EmptyState from '../guidance/EmptyState.svelte';
 	import ExternalLink from '../guidance/ExternalLink.svelte';
@@ -42,16 +48,22 @@
 
 	// "Listen übernehmen" from Notion (ADR-0041 §9, plan notion-import NI-2) on the modal building
 	// block (ADR-0025 section 3, size L), in two steps within the one dialog (no dialog from a
-	// dialog): choose a shared source (search of Notion, "Liste aktualisieren"), then its preview
-	// with the entries and their state in the inbox. The selection follows the tables (ADR-0036 §2:
-	// head checkbox with "some" state, Shift for a range, only what can be chosen); entries that are
-	// in the inbox already, and done ones while they are skipped, stay visible but cannot be chosen.
-	// "N Einträge in den Eingang übernehmen" runs in blocks (fix 2026-09-30, ADR-0041 addendum): the
-	// button says "N Einträge werden übernommen …", a progress bar with the count stands above the
-	// options (scrolled into view), "Nach diesem Block anhalten" or Esc stop after the current block.
-	// An entry leaves the selection only with its own result, and only when it is in the inbox now;
-	// failed and unsent ones stay chosen. The result (counts, errors, "Im Eingang ansehen") takes the
-	// place of the progress. Notion only answers questions; nothing is written there.
+	// dialog). Since the addendum of 2026-10-01 several sources at once:
+	// 1. Choose shared sources with checkboxes (search of Notion, "Liste aktualisieren"); the choice
+	//    follows the tables (ADR-0036 §2: head checkbox with "some" state, Shift for a range) and
+	//    stays across searches.
+	// 2. The preview groups the entries by source. Each group folds (disclosure), has "Alle aus …"
+	//    and its own state; the previews load one after the other. An entry that a group above
+	//    already lists (a sub-page chosen on its own as well) cannot be chosen twice. "Erledigte
+	//    überspringen", "Seiteninhalt als Kopie mitnehmen" (databases) and "Unterseiten einbeziehen"
+	//    (pages) count for every chosen source; "Datum aus" stands in the group of each database,
+	//    whose properties differ.
+	// "N Einträge in den Eingang übernehmen" runs over every source, one after the other, in blocks
+	// (ADR-0041 addendum of 2026-09-30): one progress bar for all, "Nach diesem Block anhalten" or
+	// Esc stop after the current block, an error of one source ends only that source. An entry leaves
+	// the selection only with its own result, and only when it is in the inbox now. The result names
+	// the counts of all, a line per source and the entries that failed. Notion only answers
+	// questions; nothing is written there.
 	let {
 		connectionId,
 		label,
@@ -76,8 +88,8 @@
 		skipDoneHint: `${uid}-skip-done-hint`,
 		copy: `${uid}-copy`,
 		copyHint: `${uid}-copy-hint`,
-		dateProperty: `${uid}-date-property`,
-		head: `${uid}-head`
+		subpages: `${uid}-subpages`,
+		subpagesHint: `${uid}-subpages-hint`
 	};
 
 	type SourcesView =
@@ -85,19 +97,30 @@
 		| { kind: 'ready'; sources: NotionSource[]; truncated: boolean }
 		| { kind: 'failed'; message: string; tone: 'error' | 'info' };
 	type PreviewView =
+		| { kind: 'waiting' }
 		| { kind: 'loading' }
 		| { kind: 'ready'; preview: NotionPreview }
 		| { kind: 'failed'; message: string; tone: 'error' | 'info' };
+	/** A chosen source in the preview, with its own state, date property and fold. */
+	interface Group {
+		source: NotionSource;
+		view: PreviewView;
+		/** null: the first date property of the database (the server decides); '': none. */
+		dateProperty: string | null;
+		open: boolean;
+	}
 
 	let phase = $state<'sources' | 'preview'>('sources');
 	let query = $state('');
 	let sourcesView = $state<SourcesView>({ kind: 'loading' });
-	let chosenSource = $state<NotionSource | null>(null);
-	let previewView = $state<PreviewView>({ kind: 'loading' });
+	/** Chosen sources, in the order of choosing; they stay chosen across searches. */
+	let sourceSelection = $state<Selection>(EMPTY_SELECTION);
+	/** Every source a list showed, so a chosen one stays known after another search. */
+	const knownSources = new SvelteMap<string, NotionSource>();
+	let groups = $state<Group[]>([]);
 	let skipDone = $state(true);
 	let copyContent = $state(false);
-	/** null: the first date property of the database (the server decides); '': none. */
-	let dateProperty = $state<string | null>(null);
+	let subpages = $state(false);
 	let selection = $state<Selection>(EMPTY_SELECTION);
 	/** Shift at the moment a row was pressed (the click on the label does not keep it reliably). */
 	let shift = false;
@@ -106,63 +129,103 @@
 	let stopping = $state(false);
 	let handled = $state(0);
 	let total = $state(0);
-	let lastRun = $state<NotionImportRun | null>(null);
+	let lastRun = $state<NotionSourcesRun | null>(null);
+	/** The sources of the last run with their result (one line each). */
+	let lastResults = $state<NotionSourceResult[]>([]);
 	const results = new SvelteMap<string, NotionImportResult>();
 	let controller: AbortController | null = null;
 	/** Stops the running import after its current block. */
 	let stopper: AbortController | null = null;
 	let heading = $state<HTMLElement>();
-	let headBox = $state<HTMLInputElement>();
 	let runBox = $state<HTMLElement>();
 	let closeButton = $state<HTMLButtonElement>();
 
 	const imported = $derived(notion.imports(connectionId) ?? []);
-	const preview = $derived(previewView.kind === 'ready' ? previewView.preview : null);
-	const items = $derived(preview?.items ?? []);
-	const chosable = $derived(items.filter((item) => reasonOf(item) === '').map((item) => item.ref));
+	const shownSources = $derived.by(() => {
+		const view = sourcesView;
+		return view.kind === 'ready'
+			? NOTION_SOURCE_TYPES.flatMap((type) => sourcesOf(view.sources, type))
+			: [];
+	});
+	const shownSourceIds = $derived(shownSources.map((source) => source.id));
+	const chosenSources = $derived(
+		sourceSelection.ids.flatMap((id) => {
+			const source = knownSources.get(id);
+			return source === undefined ? [] : [source];
+		})
+	);
+	const sourceHead = $derived(headState(sourceSelection, shownSourceIds));
+
+	const readyGroups = $derived(
+		groups.flatMap((group) =>
+			group.view.kind === 'ready' ? [{ group, preview: group.view.preview }] : []
+		)
+	);
+	/** The first group that lists an entry; a later group shows it as taken. */
+	const ownerOf = $derived.by(() => {
+		const owner = new Map<string, string>();
+		for (const { group, preview } of readyGroups) {
+			for (const item of preview.items) {
+				if (!owner.has(item.ref)) owner.set(item.ref, group.source.id);
+			}
+		}
+		return owner;
+	});
+	const chosable = $derived(
+		readyGroups.flatMap(({ group, preview }) =>
+			preview.items.filter((item) => reasonOf(item, group) === '').map((item) => item.ref)
+		)
+	);
 	const chosen = $derived(selection.ids.filter((ref) => chosable.includes(ref)));
 	const head = $derived(headState(selection, chosable));
-	const doneCount = $derived(items.filter((item) => item.done && item.state === '').length);
-	const knownCount = $derived(items.filter((item) => item.state !== '').length);
-	const isDatabase = $derived(chosenSource?.type === 'data_source');
+	const hasDatabase = $derived(groups.some((group) => group.source.type === 'data_source'));
+	const hasPage = $derived(groups.some((group) => group.source.type === 'page'));
+	const allItems = $derived(readyGroups.flatMap(({ preview }) => preview.items));
+	const limits = $derived(readyGroups[0]?.preview.limits ?? NOTION_DEFAULT_LIMITS);
 	/** Before the first run always; afterwards while something is chosen (else "Schließen" leads). */
 	const offerImport = $derived(lastRun === null || chosen.length > 0);
-	const summary = $derived(
-		lastRun === null
-			? null
-			: runSummary({
-					counts: lastRun.counts,
-					error: lastRun.error,
-					stopped: lastRun.stopped,
-					open: lastRun.open.length
-				})
-	);
+	const summary = $derived.by(() => {
+		if (lastRun === null) return null;
+		// With one source its error interrupts the run; with several, the others went on and each
+		// source names its own error in its line.
+		const single = lastResults.length === 1 ? (lastResults[0] ?? null) : null;
+		const failedSources = lastResults.filter((result) => result.error !== null).length;
+		return runSummary({
+			counts: lastResults.reduce((sum, result) => addCounts(sum, result.counts), { ...NO_COUNTS }),
+			error: lastRun.error ?? single?.error ?? null,
+			stopped: lastRun.stopped,
+			open: lastResults.reduce((sum, result) => sum + result.open, 0),
+			failedSources:
+				single !== null ? 0 : lastRun.error === null ? failedSources : Math.max(0, failedSources - 1)
+		});
+	});
 	const failures = $derived(
-		(lastRun?.results ?? [])
+		[...results.values()]
 			.filter((result) => result.status === 'failed')
 			.map((result) => ({
 				ref: result.ref,
-				title: items.find((item) => item.ref === result.ref)?.title ?? '',
+				title: allItems.find((item) => item.ref === result.ref)?.title ?? '',
 				message: result.message
 			}))
 	);
 	/** "12 Einträge, davon 2 schon im Eingang, 3 erledigt. 1 leerer Punkt ausgelassen." */
 	const overview = $derived.by(() => {
-		const parts = [entriesText(items.length)];
-		if (knownCount > 0) parts.push(`davon ${knownCount} schon im Eingang`);
-		if (doneCount > 0) parts.push(`${doneCount} erledigt`);
-		const blank = preview?.blankPoints ?? 0;
+		const known = allItems.filter((item) => item.state !== '').length;
+		const done = allItems.filter((item) => item.done && item.state === '').length;
+		const blank = readyGroups.reduce((sum, { preview }) => sum + preview.blankPoints, 0);
+		const from = groups.length > 1 ? ` aus ${groups.length} Quellen` : '';
+		const parts = [`${entriesText(allItems.length)}${from}`];
+		if (known > 0) parts.push(`davon ${known} schon im Eingang`);
+		if (done > 0) parts.push(`${done} erledigt`);
 		const blankText =
 			blank === 0
 				? ''
 				: ` ${blank === 1 ? '1 leerer Punkt' : `${blank} leere Punkte`} ausgelassen.`;
 		return `${parts.join(', ')}.${blankText}`;
 	});
-
-	// The head checkbox shows "some" as indeterminate (ADR-0036 §2).
-	$effect(() => {
-		if (headBox) headBox.indeterminate = head === 'some';
-	});
+	const loadingPreviews = $derived(
+		groups.some((group) => group.view.kind === 'loading' || group.view.kind === 'waiting')
+	);
 
 	// A request still running when the dialog goes away is aborted; an import stops after its block.
 	$effect(() => () => {
@@ -172,6 +235,13 @@
 
 	// The list of sources loads when the dialog opens.
 	$effect(() => untrack(() => void loadSources()));
+
+	/** Sets `indeterminate` of a checkbox ("some chosen", ADR-0036 §2). */
+	function indeterminate(value: boolean) {
+		return (node: HTMLInputElement) => {
+			node.indeterminate = value;
+		};
+	}
 
 	function begin(): AbortController {
 		controller?.abort();
@@ -191,38 +261,93 @@
 			sourcesView = { kind: 'failed', message: outcome.message, tone: toneOf(outcome.kind) };
 			return;
 		}
+		for (const source of outcome.value.sources) knownSources.set(source.id, source);
 		sourcesView = { kind: 'ready', ...outcome.value };
-		if (chosenSource !== null && !outcome.value.sources.some((s) => s.id === chosenSource?.id)) {
-			chosenSource = null;
-		}
 	}
 
 	function toneOf(kind: 'missing' | 'disabled' | 'error'): 'error' | 'info' {
 		return kind === 'error' ? 'error' : 'info';
 	}
 
-	async function loadPreview() {
-		if (chosenSource === null) return;
-		const current = begin();
-		previewView = { kind: 'loading' };
-		results.clear();
-		lastRun = null;
-		const outcome = await notion.preview(
-			connectionId,
-			{ type: chosenSource.type, id: chosenSource.id },
-			chosenSource.type === 'data_source' ? dateProperty : null,
-			current.signal
-		);
-		if (controller !== current) return;
-		controller = null;
-		if (outcome === null) return;
-		if (outcome.kind !== 'ok') {
-			previewView = { kind: 'failed', message: outcome.message, tone: toneOf(outcome.kind) };
-			return;
+	function sourcesOf(list: readonly NotionSource[], type: NotionSourceType): NotionSource[] {
+		return list.filter((source) => source.type === type);
+	}
+
+	function toggleSource(id: string, on: boolean) {
+		sourceSelection = clickRow(sourceSelection, id, on, shownSourceIds, shift);
+		shift = false;
+	}
+
+	/** Why an entry cannot be chosen now: listed above, in the inbox, done and skipped, taken now. */
+	function reasonOf(item: NotionPreviewItem, group: Group): string {
+		const owner = ownerOf.get(item.ref);
+		if (owner !== undefined && owner !== group.source.id) {
+			return `Steht schon unter „${knownSources.get(owner)?.title ?? ''}“.`;
 		}
-		previewView = { kind: 'ready', preview: outcome.value };
-		dateProperty = outcome.value.dateProperty;
-		selection = { ids: preselectedRefs(outcome.value.items, skipDone), anchor: null };
+		const result = results.get(item.ref);
+		if (result?.status === 'created') return 'Jetzt im Eingang.';
+		if (result?.status === 'duplicate' || result?.status === 'skipped') {
+			return result.message || 'Schon im Eingang.';
+		}
+		return blockedReason(item, skipDone);
+	}
+
+	function chosableOf(group: Group): string[] {
+		if (group.view.kind !== 'ready') return [];
+		return group.view.preview.items
+			.filter((item) => reasonOf(item, group) === '')
+			.map((item) => item.ref);
+	}
+
+	/**
+	 * Loads the previews of `targets`, one after the other (each its own request to the server, as
+	 * the rate of Notion asks for), and chooses what can be chosen in each.
+	 */
+	async function loadPreviews(targets: readonly Group[]) {
+		const current = begin();
+		// The entries a group listed before: a new preview replaces their choice (as in one source).
+		const previous = new Map(
+			targets.map((group) => [
+				group.source.id,
+				new Set(group.view.kind === 'ready' ? group.view.preview.items.map((item) => item.ref) : [])
+			])
+		);
+		for (const group of targets) group.view = { kind: 'waiting' };
+		for (const group of targets) {
+			if (controller !== current) return;
+			group.view = { kind: 'loading' };
+			const isDatabase = group.source.type === 'data_source';
+			const outcome = await notion.preview(
+				connectionId,
+				{
+					source: { type: group.source.type, id: group.source.id },
+					dateProperty: isDatabase ? group.dateProperty : null,
+					subpages: !isDatabase && subpages
+				},
+				current.signal
+			);
+			if (controller !== current) return;
+			if (outcome === null) {
+				group.view = { kind: 'waiting' };
+				continue;
+			}
+			if (outcome.kind !== 'ok') {
+				group.view = { kind: 'failed', message: outcome.message, tone: toneOf(outcome.kind) };
+				continue;
+			}
+			const before = previous.get(group.source.id) ?? new Set<string>();
+			group.view = { kind: 'ready', preview: outcome.value };
+			if (isDatabase) group.dateProperty = outcome.value.dateProperty;
+			const ownedHere = (ref: string) => (ownerOf.get(ref) ?? group.source.id) === group.source.id;
+			const wanted = preselectedRefs(outcome.value.items, skipDone).filter(ownedHere);
+			// What this group listed before goes, unless a group above lists it now (its choice).
+			const kept = selection.ids.filter((ref) => !before.has(ref) || !ownedHere(ref));
+			selection = {
+				ids: [...kept, ...wanted.filter((ref) => !kept.includes(ref))],
+				anchor: null
+			};
+		}
+		if (controller === current) controller = null;
 	}
 
 	async function focusHeading() {
@@ -232,12 +357,21 @@
 
 	async function showPreview(event: Event) {
 		event.preventDefault();
-		if (chosenSource === null) return;
+		if (chosenSources.length === 0) return;
 		phase = 'preview';
 		copyContent = false;
-		dateProperty = null;
+		results.clear();
+		lastRun = null;
+		lastResults = [];
+		selection = EMPTY_SELECTION;
+		groups = chosenSources.map((source) => ({
+			source,
+			view: { kind: 'waiting' },
+			dateProperty: null,
+			open: true
+		}));
 		void focusHeading();
-		await loadPreview();
+		await loadPreviews(groups);
 	}
 
 	function back() {
@@ -252,16 +386,6 @@
 		void loadSources();
 	}
 
-	/** Why an entry cannot be chosen now: in the inbox, done and skipped, or taken just now. */
-	function reasonOf(item: NotionPreviewItem): string {
-		const result = results.get(item.ref);
-		if (result?.status === 'created') return 'Jetzt im Eingang.';
-		if (result?.status === 'duplicate' || result?.status === 'skipped') {
-			return result.message || 'Schon im Eingang.';
-		}
-		return blockedReason(item, skipDone);
-	}
-
 	function toggle(ref: string, on: boolean) {
 		selection = clickRow(selection, ref, on, chosable, shift);
 		shift = false;
@@ -270,6 +394,16 @@
 	function changeSkipDone(value: boolean) {
 		skipDone = value;
 		selection = keepShown(selection, chosable);
+	}
+
+	function changeSubpages(value: boolean) {
+		subpages = value;
+		void loadPreviews(groups.filter((group) => group.source.type === 'page'));
+	}
+
+	function changeDateProperty(group: Group, value: string) {
+		group.dateProperty = value;
+		void loadPreviews([group]);
 	}
 
 	function dateText(item: NotionPreviewItem): string {
@@ -305,13 +439,23 @@
 		return parts.join(' · ');
 	}
 
-	function sourcesOf(list: readonly NotionSource[], type: NotionSourceType): NotionSource[] {
-		return list.filter((source) => source.type === type);
+	/** Meta line of a group: kind, number of entries, sub-pages. */
+	function groupMeta(group: Group): string {
+		const parts = [NOTION_SOURCE_TYPE_LABELS[group.source.type]];
+		if (group.view.kind === 'ready') {
+			parts.push(entriesText(group.view.preview.items.length));
+			const sub = subpagesOverview(group.view.preview);
+			if (sub !== '') parts.push(sub.slice(0, -1));
+		}
+		return parts.join(' · ');
 	}
 
-	/** The Notion entries of the inbox after `run` ("Im Eingang ansehen"). */
-	function inboxHref(run: NotionImportRun): ResolvedPathname {
-		return `${resolve('/eingang')}${notionInboxQuery(run.counts)}` as ResolvedPathname;
+	/** The Notion entries of the inbox after the run ("Im Eingang ansehen"). */
+	function inboxHref(): ResolvedPathname {
+		const counts = lastResults.reduce((sum, result) => addCounts(sum, result.counts), {
+			...NO_COUNTS
+		});
+		return `${resolve('/eingang')}${notionInboxQuery(counts)}` as ResolvedPathname;
 	}
 
 	/** Brings progress or result into the visible part of the content (the list may be long). */
@@ -328,32 +472,48 @@
 
 	async function submit(event: Event) {
 		event.preventDefault();
-		if (running || preview === null || chosenSource === null || chosen.length === 0) return;
-		const refs = [...chosen];
-		const withContent = isDatabase && copyContent;
+		if (running || chosen.length === 0) return;
+		const plan: { plan: NotionImportPlan; title: string }[] = [];
+		const picked = new Set(chosen);
+		for (const { group, preview } of readyGroups) {
+			// In the order of the source, whatever the order of choosing.
+			const own = preview.items
+				.map((item) => item.ref)
+				.filter((ref) => picked.has(ref) && ownerOf.get(ref) === group.source.id);
+			if (own.length === 0) continue;
+			const isDatabase = group.source.type === 'data_source';
+			const withContent = isDatabase && copyContent;
+			plan.push({
+				title: group.source.title,
+				plan: {
+					request: {
+						source: { type: group.source.type, id: group.source.id },
+						refs: own,
+						skipDone,
+						copyContent: withContent,
+						dateProperty: isDatabase ? group.dateProperty : null,
+						subpages: !isDatabase && subpages
+					},
+					size: importBatchSize(preview.limits, withContent, preview.items.length)
+				}
+			});
+		}
 		const current = new AbortController();
 		stopper = current;
 		running = true;
 		stopping = false;
 		handled = 0;
-		total = refs.length;
+		total = plan.reduce((sum, entry) => sum + entry.plan.request.refs.length, 0);
 		lastRun = null;
 		void revealRun();
-		let run: NotionImportRun | null;
+		let run: NotionSourcesRun | null;
 		try {
-			run = await notion.runImport(
+			run = await notion.runImports(
 				connectionId,
-				{
-					source: { type: chosenSource.type, id: chosenSource.id },
-					refs,
-					skipDone,
-					copyContent: withContent,
-					dateProperty: isDatabase ? dateProperty : null
-				},
-				importBatchSize(preview.limits, withContent, items.length),
+				plan.map((entry) => entry.plan),
 				{
 					stop: current.signal,
-					onblock: (block) => {
+					onblock: (_source, block) => {
 						for (const result of block) results.set(result.ref, result);
 						handled += block.length;
 					}
@@ -365,6 +525,16 @@
 			if (stopper === current) stopper = null;
 		}
 		if (run === null) return;
+		lastResults = plan.map(({ plan: { request }, title }) => {
+			const done = run.runs.find((entry) => entry.key === request.source.id)?.run;
+			return {
+				id: request.source.id,
+				title,
+				counts: done?.counts ?? { ...NO_COUNTS },
+				error: done?.error ?? null,
+				open: done === undefined ? request.refs.length : done.open.length
+			};
+		});
 		selection = keepShown(selection, chosable);
 		lastRun = run;
 		await tick();
@@ -376,7 +546,7 @@
 
 {#snippet inboxLink()}
 	{#if lastRun !== null}
-		<a class="button-subtle" href={inboxHref(lastRun)}>Im Eingang ansehen</a>
+		<a class="button-subtle" href={inboxHref()}>Im Eingang ansehen</a>
 	{/if}
 {/snippet}
 
@@ -395,7 +565,7 @@
 	</p>
 
 	{#if phase === 'sources'}
-		<h3 id={ids.heading} tabindex="-1" bind:this={heading}>Quelle wählen</h3>
+		<h3 id={ids.heading} tabindex="-1" bind:this={heading}>Quellen wählen</h3>
 		<form class="search" role="search" onsubmit={searchSources}>
 			<div class="search-row">
 				<div class="search-field">
@@ -443,6 +613,20 @@
 			/>
 		{:else}
 			<form id={ids.sourceForm} class="form" novalidate onsubmit={showPreview}>
+				<div class="choice">
+					<label class="head-box">
+						<input
+							type="checkbox"
+							checked={sourceHead === 'all'}
+							{@attach indeterminate(sourceHead === 'some')}
+							onchange={() => (sourceSelection = toggleAll(sourceSelection, shownSourceIds))}
+						/>
+						<span>Alle angezeigten Quellen auswählen</span>
+					</label>
+					<span class="hint" aria-live="polite">
+						{chosenSources.length === 1 ? '1 Quelle' : `${chosenSources.length} Quellen`} ausgewählt
+					</span>
+				</div>
 				{#each NOTION_SOURCE_TYPES as type (type)}
 					{@const list = sourcesOf(sourcesView.sources, type)}
 					{#if list.length > 0}
@@ -451,13 +635,12 @@
 							<ul>
 								{#each list as source (source.id)}
 									<li>
-										<label>
+										<label onpointerdown={(event) => (shift = event.shiftKey)}>
 											<input
-												type="radio"
-												name={`${uid}-source`}
-												value={source.id}
-												checked={chosenSource?.id === source.id}
-												onchange={() => (chosenSource = source)}
+												type="checkbox"
+												checked={sourceSelection.ids.includes(source.id)}
+												onkeydown={(event) => (shift = event.shiftKey)}
+												onchange={(event) => toggleSource(source.id, event.currentTarget.checked)}
 											/>
 											<span class="title">{source.title}</span>
 											<span class="meta">{editedText(source)}</span>
@@ -476,12 +659,12 @@
 				{/if}
 			</form>
 		{/if}
-	{:else if chosenSource !== null}
-		<h3 id={ids.heading} tabindex="-1" bind:this={heading}>{chosenSource.title}</h3>
-		<p class="links">
-			<span class="hint">{NOTION_SOURCE_TYPE_LABELS[chosenSource.type]}</span>
-			<ExternalLink href={chosenSource.url}>In Notion öffnen</ExternalLink>
-		</p>
+	{:else}
+		<h3 id={ids.heading} tabindex="-1" bind:this={heading}>
+			Vorschau: {groups.length === 1
+				? (groups[0]?.source.title ?? '')
+				: `${groups.length} Quellen`}
+		</h3>
 
 		<!-- Progress and result above the options, so a long list never hides them. -->
 		{#if running}
@@ -496,10 +679,24 @@
 					title={summary.title}
 					live
 					headingLevel={4}
-					actions={lastRun.counts.created + lastRun.counts.duplicates > 0 ? inboxLink : undefined}
+					actions={lastResults.some(
+						(result) => result.counts.created + result.counts.duplicates > 0
+					)
+						? inboxLink
+						: undefined}
 				>
 					{summary.text}
 				</SectionMessage>
+				{#if lastResults.length > 1}
+					<ul class="per-source" aria-label="Ergebnis je Quelle">
+						{#each lastResults as result (result.id)}
+							<li class:failed={result.error !== null}>
+								{#if result.error !== null}<ErrorIcon />{/if}
+								<span><strong>{result.title}:</strong> {sourceResultText(result)}</span>
+							</li>
+						{/each}
+					</ul>
+				{/if}
 				{#if failures.length > 0}
 					<div class="alert-error failures">
 						<h4>Nicht übernommen</h4>
@@ -517,7 +714,7 @@
 		{/if}
 
 		<fieldset class="options" disabled={running}>
-			<legend>Optionen</legend>
+			<legend>Optionen{groups.length > 1 ? ' (für alle gewählten Quellen)' : ''}</legend>
 			<div class="check">
 				<input
 					id={ids.skipDone}
@@ -532,7 +729,7 @@
 					Kontrollkästchen „Erledigt“ gesetzt ist.
 				</p>
 			</div>
-			{#if isDatabase}
+			{#if hasDatabase}
 				<div class="check">
 					<input
 						id={ids.copy}
@@ -542,109 +739,177 @@
 					/>
 					<label for={ids.copy}>Seiteninhalt als Kopie mitnehmen</label>
 					<p class="hint" id={ids.copyHint}>
-						Der Inhalt der Seite jeder Zeile kommt als Text unter ihre Eigenschaften. {limitsText(
-							preview?.limits ?? NOTION_DEFAULT_LIMITS
-						)}
+						Der Inhalt der Seite jeder Zeile einer Datenbank kommt als Text unter ihre Eigenschaften.
+						{limitsText(limits)}
 					</p>
 				</div>
-				{#if preview !== null && preview.dateProperties.length > 0}
-					<div class="field">
-						<label for={ids.dateProperty}>Datum aus</label>
-						<select
-							id={ids.dateProperty}
-							value={dateProperty ?? ''}
-							onchange={(event) => {
-								dateProperty = event.currentTarget.value;
-								void loadPreview();
-							}}
-						>
-							{#each preview.dateProperties as name (name)}
-								<option value={name}>{name}</option>
-							{/each}
-							<option value="">Kein Datum</option>
-						</select>
-					</div>
-				{/if}
+			{/if}
+			{#if hasPage}
+				<div class="check">
+					<input
+						id={ids.subpages}
+						type="checkbox"
+						checked={subpages}
+						aria-describedby={ids.subpagesHint}
+						onchange={(event) => changeSubpages(event.currentTarget.checked)}
+					/>
+					<label for={ids.subpages}>Unterseiten einbeziehen</label>
+					<p class="hint" id={ids.subpagesHint}>{subpagesHint(limits)}</p>
+				</div>
 			{/if}
 		</fieldset>
 
-		{#if previewView.kind === 'loading'}
-			<p class="hint" role="status">Die Einträge werden gelesen …</p>
-		{:else if previewView.kind === 'failed'}
-			<SectionMessage tone={previewView.tone} live>
-				{previewView.message}
-				{#snippet actions()}
-					<button class="button-subtle" type="button" onclick={() => void loadPreview()}>
-						Erneut versuchen
-					</button>
-				{/snippet}
-			</SectionMessage>
-		{:else if preview !== null}
+		{#if readyGroups.length > 0}
 			<p class="hint" aria-live="polite">{overview}</p>
-			{#if preview.truncated}
-				<SectionMessage tone="info" compact>
-					{truncatedText(preview.limits, chosenSource.type)}
-				</SectionMessage>
-			{/if}
-			{#if items.length === 0}
-				<EmptyState
-					size="compact"
-					headingLevel={4}
-					title="Keine Einträge"
-					description={chosenSource.type === 'page'
-						? 'Auf dieser Seite stehen keine To-do-, Aufzählungs- oder nummerierten Listen.'
-						: 'Diese Datenbank hat keine Zeilen.'}
-				/>
-			{:else}
-				<form id={ids.importForm} class="form" novalidate onsubmit={submit}>
-					<div class="choice">
-						<label class="head-box">
-							<input
-								type="checkbox"
-								bind:this={headBox}
-								checked={head === 'all'}
-								disabled={chosable.length === 0 || running}
-								onchange={() => (selection = toggleAll(selection, chosable))}
-							/>
-							<span>Alle wählbaren Einträge auswählen</span>
-						</label>
-						<span class="hint" aria-live="polite">{chosen.length} ausgewählt</span>
-					</div>
-					<fieldset class="entries">
-						<legend class="visually-hidden">Einträge von {chosenSource.title}</legend>
-						<ul>
-							{#each items as item (item.ref)}
-								{@const reason = reasonOf(item)}
-								{@const result = results.get(item.ref)}
-								<li class:blocked={reason !== ''}>
-									<label onpointerdown={(event) => (shift = event.shiftKey)}>
-										<input
-											type="checkbox"
-											checked={reason === '' && selection.ids.includes(item.ref)}
-											disabled={reason !== '' || running}
-											onkeydown={(event) => (shift = event.shiftKey)}
-											onchange={(event) => toggle(item.ref, event.currentTarget.checked)}
-										/>
-										<span class="title">{item.title}</span>
-										{#if metaLine(item) !== ''}
-											<span class="meta">{metaLine(item)}</span>
-										{/if}
-										{#if item.excerpt !== ''}
-											<span class="meta excerpt">{item.excerpt}</span>
-										{/if}
-										{#if reason !== ''}
-											<span class="meta">{reason}</span>
-										{:else if result?.status === 'failed'}
-											<span class="meta failed"><ErrorIcon /><span>{result.message}</span></span>
-										{/if}
-									</label>
-								</li>
-							{/each}
-						</ul>
-					</fieldset>
-				</form>
-			{/if}
+		{:else if loadingPreviews}
+			<p class="hint" role="status">Die Einträge werden gelesen …</p>
 		{/if}
+
+		<form id={ids.importForm} class="form" novalidate onsubmit={submit}>
+			{#if allItems.length > 0}
+				<div class="choice">
+					<label class="head-box">
+						<input
+							type="checkbox"
+							checked={head === 'all'}
+							{@attach indeterminate(head === 'some')}
+							disabled={chosable.length === 0 || running}
+							onchange={() => (selection = toggleAll(selection, chosable))}
+						/>
+						<span>Alle wählbaren Einträge auswählen</span>
+					</label>
+					<span class="hint" aria-live="polite">{chosen.length} ausgewählt</span>
+				</div>
+			{/if}
+			{#each groups as group (group.source.id)}
+				{@const groupId = `${uid}-group-${group.source.id}`}
+				{@const own = chosableOf(group)}
+				{@const groupHead = headState(selection, own)}
+				<section class="group" aria-labelledby={`${groupId}-title`}>
+					<div class="group-head">
+						<h4>
+							<button
+								class="button-subtle toggle"
+								type="button"
+								aria-expanded={group.open}
+								aria-controls={`${groupId}-body`}
+								onclick={() => (group.open = !group.open)}
+							>
+								<svg
+									class="chevron"
+									viewBox="0 0 16 16"
+									width="12"
+									height="12"
+									aria-hidden="true"
+									focusable="false"
+								>
+									<path d="M4 6l4 4 4-4" />
+								</svg>
+								<span id={`${groupId}-title`}>{group.source.title}</span>
+							</button>
+						</h4>
+						<span class="meta">{groupMeta(group)}</span>
+						<ExternalLink href={group.source.url}>In Notion öffnen</ExternalLink>
+						{#if own.length > 0}
+							<label class="group-box">
+								<input
+									type="checkbox"
+									checked={groupHead === 'all'}
+									{@attach indeterminate(groupHead === 'some')}
+									disabled={running}
+									onchange={() => (selection = toggleAll(selection, own))}
+								/>
+								<span>Alle aus „{group.source.title}“ auswählen</span>
+							</label>
+						{/if}
+					</div>
+					<div class="group-body" id={`${groupId}-body`} hidden={!group.open}>
+						{#if group.view.kind === 'waiting'}
+							<p class="hint">Wartet …</p>
+						{:else if group.view.kind === 'loading'}
+							<p class="hint" role="status">Die Einträge werden gelesen …</p>
+						{:else if group.view.kind === 'failed'}
+							<SectionMessage tone={group.view.tone} live>
+								{group.view.message}
+								{#snippet actions()}
+									<button
+										class="button-subtle"
+										type="button"
+										onclick={() => void loadPreviews([group])}
+									>
+										Erneut versuchen
+									</button>
+								{/snippet}
+							</SectionMessage>
+						{:else}
+							{@const preview = group.view.preview}
+							{#if group.source.type === 'data_source' && preview.dateProperties.length > 0}
+								<div class="field">
+									<label for={`${groupId}-date`}>Datum aus</label>
+									<select
+										id={`${groupId}-date`}
+										value={group.dateProperty ?? ''}
+										disabled={running}
+										onchange={(event) => changeDateProperty(group, event.currentTarget.value)}
+									>
+										{#each preview.dateProperties as name (name)}
+											<option value={name}>{name}</option>
+										{/each}
+										<option value="">Kein Datum</option>
+									</select>
+								</div>
+							{/if}
+							{#if preview.truncated}
+								<SectionMessage tone="info" compact>
+									{truncatedText(preview.limits, group.source.type)}
+								</SectionMessage>
+							{/if}
+							{#if preview.items.length === 0}
+								<p class="hint">
+									{group.source.type === 'page'
+										? 'Keine Einträge: Auf dieser Seite stehen keine To-do-, Aufzählungs- oder nummerierten Listen.'
+										: 'Keine Einträge: Diese Datenbank hat keine Zeilen.'}
+								</p>
+							{:else}
+								<fieldset class="entries">
+									<legend class="visually-hidden">Einträge von {group.source.title}</legend>
+									<ul>
+										{#each preview.items as item (item.ref)}
+											{@const reason = reasonOf(item, group)}
+											{@const result = results.get(item.ref)}
+											<li class:blocked={reason !== ''}>
+												<label onpointerdown={(event) => (shift = event.shiftKey)}>
+													<input
+														type="checkbox"
+														checked={reason === '' && selection.ids.includes(item.ref)}
+														disabled={reason !== '' || running}
+														onkeydown={(event) => (shift = event.shiftKey)}
+														onchange={(event) => toggle(item.ref, event.currentTarget.checked)}
+													/>
+													<span class="title">{item.title}</span>
+													{#if metaLine(item) !== ''}
+														<span class="meta">{metaLine(item)}</span>
+													{/if}
+													{#if item.excerpt !== ''}
+														<span class="meta excerpt">{item.excerpt}</span>
+													{/if}
+													{#if reason !== ''}
+														<span class="meta">{reason}</span>
+													{:else if result?.status === 'failed'}
+														<span class="meta failed"><ErrorIcon /><span>{result.message}</span></span
+														>
+													{/if}
+												</label>
+											</li>
+										{/each}
+									</ul>
+								</fieldset>
+							{/if}
+						{/if}
+					</div>
+				</section>
+			{/each}
+		</form>
 	{/if}
 
 	{#snippet footer({ close })}
@@ -659,7 +924,7 @@
 			</button>
 		{:else}
 			{#if phase === 'preview'}
-				<button class="button-secondary back" type="button" onclick={back}>Andere Quelle</button>
+				<button class="button-secondary back" type="button" onclick={back}>Andere Quellen</button>
 			{/if}
 			<button
 				class={phase === 'preview' && !offerImport ? 'button-primary' : 'button-secondary'}
@@ -675,11 +940,11 @@
 				class="button-primary"
 				type="submit"
 				form={ids.sourceForm}
-				aria-disabled={chosenSource === null ? 'true' : undefined}
+				aria-disabled={chosenSources.length === 0 ? 'true' : undefined}
 			>
 				Weiter
 			</button>
-		{:else if items.length > 0 && (running || offerImport)}
+		{:else if allItems.length > 0 && (running || offerImport)}
 			<button
 				class="button-primary"
 				type="submit"
@@ -716,7 +981,7 @@
 
 	.search-row,
 	.choice,
-	.links {
+	.group-head {
 		display: flex;
 		flex-wrap: wrap;
 		gap: 0.5rem;
@@ -778,12 +1043,67 @@
 		border-radius: var(--radius-control);
 	}
 
-	.head-box {
+	.head-box,
+	.group-box {
 		display: inline-flex;
 		gap: 0.5rem;
 		align-items: center;
 		font-size: var(--font-size-control);
 		cursor: pointer;
+	}
+
+	.group-box {
+		margin-left: auto;
+	}
+
+	/* A group per source (addendum of 2026-10-01): a heading with the fold, then its entries. */
+	.group {
+		display: grid;
+		gap: 0.5rem;
+		padding-top: 0.5rem;
+		border-top: 1px solid var(--color-line);
+	}
+
+	.group h4 {
+		min-width: 0;
+		font-size: var(--font-size-body);
+		font-weight: 600;
+	}
+
+	.toggle {
+		gap: 0.375rem;
+		font-weight: 600;
+		overflow-wrap: anywhere;
+	}
+
+	.chevron {
+		flex: none;
+		fill: none;
+		stroke: currentColor;
+		stroke-width: 1.5;
+		stroke-linecap: round;
+		stroke-linejoin: round;
+		rotate: -90deg;
+		transition: rotate var(--motion-fast) var(--motion-ease);
+	}
+
+	.toggle[aria-expanded='true'] .chevron {
+		rotate: 0deg;
+	}
+
+	@media (prefers-reduced-motion: reduce) {
+		.chevron {
+			transition: none;
+		}
+	}
+
+	.group-body {
+		display: grid;
+		gap: 0.5rem;
+	}
+
+	.group-body[hidden] {
+		display: none;
 	}
 
 	/* The content of the modal scrolls; the list has no scroll area of its own. */
@@ -842,6 +1162,10 @@
 		overflow-wrap: anywhere;
 	}
 
+	.group-head .meta {
+		grid-column: auto;
+	}
+
 	.meta.failed {
 		display: inline-flex;
 		gap: 0.25rem;
@@ -858,6 +1182,26 @@
 	.run {
 		display: grid;
 		gap: 0.5rem;
+	}
+
+	.per-source {
+		display: grid;
+		gap: 0.25rem;
+		margin: 0;
+		padding: 0;
+		font-size: var(--font-size-control);
+		list-style: none;
+	}
+
+	.per-source li {
+		display: flex;
+		gap: 0.375rem;
+		align-items: flex-start;
+		overflow-wrap: anywhere;
+	}
+
+	.per-source li.failed {
+		color: var(--color-danger);
 	}
 
 	.failures {
@@ -897,7 +1241,7 @@
 		color: var(--color-text-muted);
 	}
 
-	/* "Andere Quelle" stands on the left, away from closing and taking over. */
+	/* "Andere Quellen" stands on the left, away from closing and taking over. */
 	.back {
 		margin-right: auto;
 	}

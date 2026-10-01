@@ -1,6 +1,6 @@
 // Invented Notion workspace for the tests of the import (ADR-0041): one database "Aufgaben
-// Haushalt" with a status, a date and other properties, one page "Wochenplan" with lists, and one
-// page that is not shared. Every name, address and person is made up (example.com, "Anna
+// Haushalt" with a status, a date and other properties, one page "Wochenplan" with lists and
+// sub-pages (one of them hidden), and one page that is not shared. Every name, address and person is made up (example.com, "Anna
 // Beispiel"); the shapes follow the Notion API 2026-03-11 (data sources, in_trash).
 
 /** A UUID of the fixture: kind digit and number, e.g. id(1, 3). */
@@ -186,7 +186,17 @@ export function workspace() {
 		],
 		[id(3, 4)]: [block(20, 'bulleted_list_item', { rich_text: [rt('Boskop')] }), block(21, 'bulleted_list_item', { rich_text: [rt('Elstar')] })],
 		[id(3, 10)]: [block(30, 'to_do', { rich_text: [rt('Garage streichen')], checked: false })],
-		[id(3, 11)]: [block(40, 'to_do', { rich_text: [rt('Nicht lesen: Unterseite')], checked: false })],
+		// The sub-page "Unterseite" with a sub-page of its own and one the integration does not see
+		// (no blocks: the fake answers 404); read only with "Unterseiten einbeziehen".
+		[id(3, 11)]: [
+			block(40, 'to_do', { rich_text: [rt('Fliesen aussuchen')], checked: false }),
+			block(41, 'child_page', { title: 'Tiefer' }),
+			block(42, 'child_page', { title: 'Privat' })
+		],
+		[id(3, 41)]: [
+			block(43, 'heading_3', { rich_text: [rt('Bad')], is_toggleable: false }),
+			block(44, 'to_do', { rich_text: [rt('Silikon erneuern')], checked: false })
+		],
 		[id(4, 5)]: [
 			block(50, 'heading_3', { rich_text: [rt('Ideen')], is_toggleable: false }),
 			block(51, 'to_do', { rich_text: [rt('Buch')], checked: false }),
