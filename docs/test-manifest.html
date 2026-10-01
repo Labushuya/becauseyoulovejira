@@ -509,8 +509,8 @@
     { "id": "querschnitt", "vorhaben": "Querschnitt", "titel": "Testumgebung, Regeln der Datenschicht, Hook-Module und dieses Manifest", "bereich": "entwicklung", "faelle": ["BYL-X-001..BYL-X-004"] }
   ],
   "zurueckgestellt": [
-    { "id": "plattform-ausbau", "titel": "Plattform-Ausbau S2 bis S6", "quelle": "Nutzerentscheidung", "datum": "2026-09-28", "adr": ["0028-plattform-strategie.md, Nachtrag"], "plan": "plattformen.md", "faelle": ["BYL-E6-362", "BYL-E6-366"],
-      "vermerk": "Raspberry Pi mit Docker und Traefik, Tailscale, Android-APK, Tray und Installer, iOS und macOS, Push und Erinnerungen. Die Prüfungen von S0 auf einem Linux-Rechner bzw. für einen Linux-Server warten mit." },
+    { "id": "plattform-ausbau", "titel": "Plattform-Ausbau S2 bis S6", "quelle": "Nutzerentscheidung", "datum": "2026-09-28", "adr": ["0028-plattform-strategie.md, Nachtrag"], "plan": "plattformen.md", "faelle": ["BYL-E6-362"],
+      "vermerk": "Raspberry Pi mit Docker und Traefik, Tailscale, Android-APK, Tray und Installer, iOS und macOS, Push und Erinnerungen. Die Prüfung von S0 auf einem echten Linux-Rechner wartet mit." },
     { "id": "semver", "titel": "SemVer und Releases", "quelle": "Nutzerentscheidung", "datum": "2026-09-28", "adr": ["0028-plattform-strategie.md, Nachtrag"], "plan": "plattformen.md", "faelle": [],
       "vermerk": "Release-Automatisierung mit release-please-Token, Tags und GitHub Releases; der Nutzer entscheidet, wann die Version dafür bereit ist." }
   ],
@@ -3279,7 +3279,7 @@
           "pre": "domain/host-platform.ts rein, HostPlatformNote mit HostStore (Harness) in jsdom, data/host.ts gegen die Wegwerf-Instanz.", "steps": ["npm run test:web", "npm run test:integration"],
           "expect": "Die Antwort der Route wird streng gelesen, alles andere ist Windows. Unter Windows und außerhalb des (app)-Layouts erscheint nichts; für linux bzw. container erscheint nach dem Laden eine Hinweis-Box mit Titel (Überschrift mit verstecktem „Hinweis:“, ohne Live-Rolle) und den Texten zu Umgebung bzw. Umgebungsdatei, Neustart bzw. docker compose up -d. Die Antwort einer abgebrochenen Anfrage verwirft der Store; die Datenschicht liefert ohne Anmeldung windows.",
           "tests": ["web/src/lib/domain/host-platform.test.ts", "web/src/lib/components/guidance/host-platform-note.test.ts", "tests/integration/host-route.test.mjs::reaches the SPA through the data layer"] },
-        { "id": "BYL-E6-366", "title": "Hinweis im Browser bei einem Server unter Linux (S0-3)", "art": ["manuell"], "status": "zurückgestellt",
+        { "id": "BYL-E6-366", "title": "Hinweis im Browser bei einem Server unter Linux (S0-3)", "art": ["manuell"], "status": "offen",
           "pre": "Build von main in app\\ und Neustart (stop.bat, dann start.bat), damit die Route da ist. Der Linux-Fall wird unter Windows über die Übersteuerung BYL_HOST_PLATFORM nachgestellt (ändert nur die Texte).", "steps": ["Einstellungen → Kanäle, einen Einrichtungsassistenten und Einstellungen → Hilfe („Kanäle und Zugangsdaten“, „Betrieb“) öffnen.", "In der Eingabeaufforderung setx BYL_HOST_PLATFORM \"linux\", dann stop.bat und start.bat; dieselben Stellen öffnen, mit NVDA die Hinweis-Box lesen.", "Variable wieder entfernen (Systemsteuerung oder reg delete HKCU\\Environment /v BYL_HOST_PLATFORM /f), dann stop.bat und start.bat."],
           "expect": "Ohne Variable sieht alles aus wie vorher, ohne neue Box. Mit linux steht an allen vier Stellen die Box „Dein Server läuft unter Linux“ über der Windows-Anleitung, gut lesbar in hell und dunkel; NVDA liest „Hinweis:“ und den Titel als Überschrift. Nach dem Entfernen ist die Box wieder weg.",
           "tests": [] }
