@@ -1,5 +1,5 @@
 // Page "Einstellungen → Sicherung" (ADR-0046): the answers of the server in the shape of the page,
-// the checks of the forms and the texts of warnings, runs, checks and free space.
+// the checks of the forms and the texts of warnings, runs, checks, restores and free space.
 
 import { describe, expect, it } from 'vitest';
 import {
@@ -8,15 +8,22 @@ import {
 	keepProblem,
 	newestToVerify,
 	parseOverview,
+	parseRestoreState,
 	parseRunResult,
+	parseSafetyCopies,
 	parseVerifyResult,
 	passphraseProblem,
+	RESTORE_START_FAILED,
+	restoreDoneText,
+	restoreReasonText,
+	restoreText,
 	runText,
 	verifyCountsText,
 	verifyReasonText,
 	verifyText,
 	warningText,
-	type BackupOverview
+	type BackupOverview,
+	type RestoreState
 } from './backup';
 
 const RAW = {
@@ -251,5 +258,76 @@ describe('texts', () => {
 		expect(freeText(5.25 * 1024 ** 3)).toBe('5,3 GB frei');
 		expect(freeText(300 * 1024 ** 2)).toBe('300 MB frei');
 		expect(freeText(null)).toBe('');
+	});
+});
+
+describe('restore (BK-3)', () => {
+	const RAW_STATE = {
+		at: '2026-10-01T10:00:00.000Z',
+		phase: 'done',
+		running: false,
+		name: 'byl-20261001-080000.tar.age',
+		source: 'target',
+		ok: true,
+		reason: '',
+		safety: 'pb_data.vor-wiederherstellung-20261001-095900',
+		counts: { tickets: 3 },
+		files: { expected: 1, missing: 0, examples: [] },
+		credentials: { mode: 'missing', written: ['BYL_A', 'nein'], failed: true },
+		config: 'kept'
+	};
+
+	it('reads the last restore and the safety copies, in the overview as well', () => {
+		const state = parseRestoreState(RAW_STATE) as RestoreState;
+		expect(state).toEqual({
+			...RAW_STATE,
+			credentials: { mode: 'missing', written: ['BYL_A'], failed: true }
+		});
+		expect(parseRestoreState({ ...RAW_STATE, phase: 'irgendwas' })).toBeNull();
+		expect(parseRestoreState({ ...RAW_STATE, source: 'woanders', config: 7 })).toMatchObject({
+			source: '',
+			config: ''
+		});
+		const copies = [
+			{
+				name: 'pb_data.vor-wiederherstellung-20261001-095900',
+				at: '2026-10-01T09:59:00.000Z',
+				until: '2026-10-08T09:59:00.000Z'
+			},
+			{ name: '' }
+		];
+		expect(parseSafetyCopies(copies)).toEqual([copies[0]]);
+		expect(parseSafetyCopies(null)).toEqual([]);
+		const overview = parseOverview({ ...RAW, restore: RAW_STATE, safety: copies });
+		expect(overview?.restore?.phase).toBe('done');
+		expect(overview?.safety).toHaveLength(1);
+		expect(parseOverview(RAW)).toMatchObject({ restore: null, safety: [] });
+	});
+
+	it('names the last restore and its result', () => {
+		const state = parseRestoreState(RAW_STATE) as RestoreState;
+		expect(restoreText(null)).toBe('Noch keine');
+		expect(restoreText(state)).toBe(
+			'01.10.2026 12:00 · byl-20261001-080000.tar.age wiederhergestellt'
+		);
+		expect(restoreText({ ...state, phase: 'checking', running: true })).toBe(
+			'01.10.2026 12:00 · läuft'
+		);
+		expect(restoreText({ ...state, phase: 'checking', running: false })).toBe(
+			'01.10.2026 12:00 · ohne Ergebnis abgebrochen'
+		);
+		expect(restoreText({ ...state, phase: 'rolled-back', reason: 'start' })).toBe(
+			`01.10.2026 12:00 · zurückgenommen: ${RESTORE_START_FAILED}`
+		);
+		expect(restoreText({ ...state, phase: 'failed', reason: 'passphrase' })).toBe(
+			'01.10.2026 12:00 · nicht möglich: Die Passphrase passt nicht zu dieser Sicherung.'
+		);
+		expect(restoreReasonText({ phase: 'failed', reason: 'start' })).toBe(verifyReasonText('start'));
+		expect(restoreReasonText({ phase: 'failed', reason: 'space-app' })).toContain(
+			'Laufwerk der App'
+		);
+		expect(restoreDoneText(state)).toBe(
+			'Die Daten sind auf dem Stand von byl-20261001-080000.tar.age. Die bisherigen liegen 7 Tage im Ordner app als pb_data.vor-wiederherstellung-20261001-095900. Zugangsdaten zurückgeschrieben: BYL_A. Einige Zugangsdaten ließen sich nicht zurückschreiben.'
+		);
 	});
 });

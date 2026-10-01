@@ -26,6 +26,7 @@ describe('whitelist', () => {
 			'backup-export',
 			'backup-info',
 			'backup-passphrase',
+			'backup-restore',
 			'backup-verify',
 			'doctor',
 			'logs',
@@ -45,9 +46,18 @@ describe('whitelist', () => {
 			input: true,
 			backup: true
 		});
+		// BK-3: the restore starts a process of its own like the restart; its answer is a state file.
+		expect(rules.ACTIONS['backup-restore']).toEqual({
+			method: 'POST',
+			args: ['restore', '-Detach', '-Quiet'],
+			output: false,
+			changes: true,
+			input: true,
+			backup: true
+		});
 		for (const [name, spec] of Object.entries(rules.ACTIONS)) {
 			// Commands that start processes never have their output read (the pipe would be inherited).
-			if (['restart', 'mail-restart'].includes(name)) expect(spec.output, name).toBe(false);
+			if (['restart', 'mail-restart', 'backup-restore'].includes(name)) expect(spec.output, name).toBe(false);
 			expect(spec.method, name).toBe(spec.changes ? 'POST' : 'GET');
 			expect(spec.backup === true, name).toBe(name.startsWith('backup-'));
 			expect(spec.args.every((arg) => /^-?[A-Za-z]+(-[a-z]+)?$|^\d+$/.test(arg)), name).toBe(true);

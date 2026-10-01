@@ -1,7 +1,9 @@
 // Pure functions of byl-control.ps1 for the backups (ADR-0046): the checks of a target folder, the
 // backup section of byl-config.json (the same as lib/backup-rules.js reads it), the merge with the
-// port, the passphrase, the access data a backup takes along and the file of the passphrase. Only
-// app/byl-functions.ps1 runs here, never a script or a server.
+// port, the passphrase, the access data a backup takes along and the file of the passphrase, and
+// for a restore the access data it writes back, the confirmation word, the names of the folders and
+// the command line of the detached run. Only app/byl-functions.ps1 runs here, never a script or a
+// server.
 
 import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -102,6 +104,27 @@ $result.space = @(
 )
 $result.keep = @{}
 foreach ($name in @($BylBackupKeep.Keys)) { $result.keep[$name] = @($BylBackupKeep[$name].Default, $BylBackupKeep[$name].Min, $BylBackupKeep[$name].Max) }
+$backupSecrets = [ordered]@{ BYL_B = 'neu-b'; BYL_A = 'neu-a'; BYL_TEST_X = '1'; BYL_lower = 'x'; BYL_LEER = ''; BYL_NUL = "a$([char]0)b" }
+$account = @{ BYL_A = 'alt-a'; BYL_C = 'c'; BYL_LEER = '' }
+$result.restore = @{}
+foreach ($mode in @('missing', 'all', 'none')) {
+    $selection = Select-BylRestoreVariable -Secrets $backupSecrets -Current $account -Mode $mode
+    $result.restore[$mode] = @{ write = $selection.Write; skipped = @($selection.Skipped) }
+}
+$result.restoreEmpty = @((Select-BylRestoreVariable -Secrets $null -Current $null -Mode all).Write.Keys).Count
+$result.confirm = @(
+    (Test-BylRestoreConfirmation -Text 'WIEDERHERSTELLEN'),
+    (Test-BylRestoreConfirmation -Text ' WIEDERHERSTELLEN '),
+    (Test-BylRestoreConfirmation -Text 'wiederherstellen'),
+    (Test-BylRestoreConfirmation -Text 'WIEDERHERSTELLE'),
+    (Test-BylRestoreConfirmation -Text ''),
+    (Test-BylRestoreConfirmation -Text $null)
+)
+$result.safetyName = Get-BylFolderStamp -Prefix $BylSafetyCopyPrefix -TimeUtc ([DateTime]::new(2026, 10, 1, 8, 5, 9, [DateTimeKind]::Utc))
+$result.stagingName = Get-BylFolderStamp -Prefix $BylStagingPrefix -TimeUtc ([DateTime]::new(2026, 10, 1, 10, 5, 9, [DateTimeKind]::Local))
+$result.restoreWord = $BylRestoreConfirmWord
+$result.safetyDays = $BylSafetyKeepDays
+$result.detachedRestore = Get-DetachedRestoreArgumentString -ScriptPath 'C:\Apps\byl #1\app\byl-control.ps1' -WaitForProcess 4242
 ConvertTo-Json -InputObject $result -Depth 6 -Compress`;
 
 let result;
@@ -184,5 +207,32 @@ describe('passphrase and access data', () => {
 		expect(result.sealed).toBe('byl-20261001-080509.tar.age');
 		expect(result.sealedOther).toBe('rejected');
 		expect(result.space).toEqual(['Ok', 'Low', 'Low']);
+	});
+});
+
+describe('restore (BK-3)', () => {
+	it('writes back missing, all or no access data, only valid names with a value an environment variable can hold', () => {
+		expect(result.restore.missing).toEqual({ write: { BYL_B: 'neu-b' }, skipped: ['BYL_A', 'BYL_NUL'] });
+		expect(result.restore.all).toEqual({ write: { BYL_A: 'neu-a', BYL_B: 'neu-b' }, skipped: ['BYL_NUL'] });
+		expect(result.restore.none).toEqual({ write: {}, skipped: ['BYL_A', 'BYL_B', 'BYL_NUL'] });
+		expect(result.restoreEmpty).toBe(0);
+	});
+
+	it('wants exactly the word WIEDERHERSTELLEN, the same as the app', () => {
+		expect(result.confirm).toEqual([true, true, false, false, false, false]);
+		expect(result.restoreWord).toBe(rules.RESTORE_CONFIRM);
+	});
+
+	it('names the safety copy with the UTC time stamp the cron of the app reads, kept seven days', () => {
+		expect(result.safetyName).toBe('pb_data.vor-wiederherstellung-20261001-080509');
+		expect(rules.safetyTime(result.safetyName)).toBe(Date.UTC(2026, 9, 1, 8, 5, 9));
+		expect(result.stagingName).toMatch(/^pb_data\.neu-20261001-\d{6}$/);
+		expect(result.safetyDays * 24 * 60 * 60 * 1000).toBe(rules.SAFETY_KEEP_MS);
+	});
+
+	it('starts the detached restore with the script, the command and the caller only', () => {
+		expect(result.detachedRestore).toBe(
+			'-NoProfile -NonInteractive -ExecutionPolicy Bypass -File "C:\\Apps\\byl #1\\app\\byl-control.ps1" restore -NoBrowser -Quiet -WaitForProcess 4242'
+		);
 	});
 });

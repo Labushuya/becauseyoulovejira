@@ -155,15 +155,16 @@ function run(appDir, name, input) {
   var cmd = $os.cmd.apply(null, [line.program].concat(line.args));
   cmd.dir = appDir;
   var output = '';
-  if (spec.output) {
+  if (spec.output || spec.input) {
     var stdin = spec.input ? cmd.stdinPipe() : null;
-    var pipe = cmd.stdoutPipe();
+    // Without output the command gets no pipe for it (a process it starts could inherit the pipe).
+    var pipe = spec.output ? cmd.stdoutPipe() : null;
     cmd.start();
     if (stdin !== null) {
       stdin.write(toBytes(JSON.stringify(input || {})));
       stdin.close();
     }
-    output = toString(pipe, MAX_OUTPUT_BYTES);
+    output = pipe !== null ? toString(pipe, MAX_OUTPUT_BYTES) : '';
     try {
       cmd.wait();
     } catch (err) {
@@ -309,6 +310,7 @@ module.exports = {
   check: check,
   refuse: refuse,
   ownAppDir: ownAppDir,
+  run: run,
   runJson: runJson,
   userOf: userOf
 };

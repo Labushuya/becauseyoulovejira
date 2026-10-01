@@ -2,10 +2,11 @@
 # doctor and port of the app, the autostart (E1 plan, package 8), the admin reset (E1.1) and the
 # mail helper byl-mail.exe next to PocketBase (E4 plan, package 11). The page "Einstellungen →
 # System" of the app (ADR-0043) calls fixed commands of it: status, doctor and logs with -Json,
-# restart -Detach, mail-restart, autostart-on and autostart-off.
+# restart -Detach, mail-restart, autostart-on and autostart-off; the page "Einstellungen →
+# Sicherung" (ADR-0046) the commands backup-* and restore -Detach.
 # Called by start.bat, start-hidden.vbs, stop.bat, neu-starten.bat, status.bat, autostart-an.bat,
-# autostart-aus.bat and admin-zuruecksetzen.bat, always with -NoProfile -ExecutionPolicy Bypass (script execution is
-# disabled on the target machine):
+# autostart-aus.bat, admin-zuruecksetzen.bat and wiederherstellen.bat, always with -NoProfile
+# -ExecutionPolicy Bypass (script execution is disabled on the target machine):
 #   powershell -NoProfile -ExecutionPolicy Bypass -File byl-control.ps1 <command> [options]
 # "help" lists the commands, options and exit codes.
 #
@@ -28,7 +29,7 @@
 param(
     [Parameter(Position = 0)]
     [ValidateSet('start', 'stop', 'restart', 'reload', 'status', 'open', 'logs', 'doctor', 'port', 'autostart-on', 'autostart-off', 'mail-restart', 'reset-admin',
-        'backup-info', 'backup-configure', 'backup-passphrase', 'backup-export', 'backup-verify', 'help')]
+        'backup-info', 'backup-configure', 'backup-passphrase', 'backup-export', 'backup-verify', 'restore', 'help')]
     [string]$Command = 'help',
     [Parameter(Position = 1)][string]$Value,
     [switch]$Force,
@@ -108,6 +109,9 @@ Befehle:
                   Verschlüsselt eine Sicherung aus pb_data\backups ins Zielverzeichnis.
   backup-verify <Sicherung oder Pfad>
                   Prüft eine Sicherung: entschlüsseln, entpacken, Datenbank, Originaldateien, Probe-Start.
+  restore [Sicherung oder Pfad]
+                  Stellt eine Sicherung wieder her (wiederherstellen.bat): prüfen, Rückfrage, Sicherheits-
+                  kopie der jetzigen Daten, austauschen, starten; startet sie nicht, gilt wieder der alte Stand.
   help            Diese Hilfe.
 
 Optionen:
@@ -118,8 +122,9 @@ Optionen:
   -Follow         logs: dem Log folgen (Strg+C beendet); nur mit server, mail oder skript.
   -Lines <Zahl>   logs: Anzahl der Zeilen (Standard 30).
   -Hidden         ohne Fenster (Autostart): Hinweise als Meldungsfenster.
-  -Detach         restart: startet den Neustart als eigenen Prozess im Hintergrund und endet sofort
-                  (für die Seite „System“ der App; Ergebnis in logs\byl-control.log).
+  -Detach         restart, restore: startet den Neustart bzw. die Wiederherstellung als eigenen Prozess
+                  im Hintergrund und endet sofort (für die Seiten „System“ und „Sicherung“ der App;
+                  Ergebnis in logs\byl-control.log).
 
 Exit-Codes:
   0  erledigt (status: läuft und ist aktuell)
@@ -230,6 +235,33 @@ function Get-BylVariableScope {
         User    = [Environment]::GetEnvironmentVariables('User')
         Machine = [Environment]::GetEnvironmentVariables('Machine')
     }
+}
+
+function Set-BylAccountVariable {
+    # Writes the BYL_* variable $Name of the Windows account (user scope; an empty $Value removes it)
+    # and of this process, so a following start hands it on (Sync-BylEnvironment). The only place
+    # that writes access data into the account (restore, ADR-0046 section 7). An isolated test copy
+    # never reaches the account: it writes this process and the JSON file BYL_TEST_ACCOUNT_FILE of
+    # the test (name -> value), and refuses without that file.
+    param([Parameter(Mandatory = $true)][string]$Name, [AllowNull()][AllowEmptyString()][string]$Value)
+
+    if ($Name -cnotmatch $BylSecretNamePattern -or $Name.StartsWith('BYL_TEST_')) { throw "Keine Variable der Zugangsdaten: $Name" }
+    if ($IsolatedEnvironment) {
+        $file = [Environment]::GetEnvironmentVariable('BYL_TEST_ACCOUNT_FILE', 'Process')
+        if ([string]::IsNullOrWhiteSpace($file)) { throw 'Diese Testkopie hat keine Datei für das Konto (BYL_TEST_ACCOUNT_FILE).' }
+        $account = [ordered]@{}
+        if ([System.IO.File]::Exists($file)) {
+            foreach ($property in ([System.IO.File]::ReadAllText($file) | ConvertFrom-Json).PSObject.Properties) {
+                $account[$property.Name] = [string]$property.Value
+            }
+        }
+        if ([string]::IsNullOrEmpty($Value)) { $account.Remove($Name) } else { $account[$Name] = $Value }
+        [System.IO.File]::WriteAllText($file, (ConvertTo-Json -InputObject $account -Compress), (New-Object System.Text.UTF8Encoding($false)))
+        [Environment]::SetEnvironmentVariable($Name, $Value, 'Process')
+        return
+    }
+    [Environment]::SetEnvironmentVariable($Name, $Value, 'User')
+    [Environment]::SetEnvironmentVariable($Name, $Value, 'Process')
 }
 
 function Get-EnvironmentFingerprint {
@@ -2432,10 +2464,10 @@ function Resolve-BackupFile {
     # The file of a backup: 'local' a ZIP in pb_data\backups by its name, 'target' a sealed backup in
     # the target folder by its name, 'path' a full path to a .zip or .tar.age (console, restore of a
     # copied file). Names never leave their folder. Path, or Problem ('name', 'missing',
-    # 'unreachable').
+    # 'unreachable'), and the Source.
     param([Parameter(Mandatory = $true)][string]$Source, [AllowNull()][AllowEmptyString()][string]$Name)
 
-    $fail = { param($Problem) [pscustomobject]@{ Path = $null; Problem = $Problem } }
+    $fail = { param($Problem) [pscustomobject]@{ Path = $null; Problem = $Problem; Source = $Source } }
     switch ($Source) {
         'local' {
             if ($Name -notmatch $LocalBackupNamePattern) { return & $fail 'name' }
@@ -2454,7 +2486,7 @@ function Resolve-BackupFile {
         default { return & $fail 'name' }
     }
     if (-not [System.IO.File]::Exists($path)) { return & $fail 'missing' }
-    return [pscustomobject]@{ Path = $path; Problem = $null }
+    return [pscustomobject]@{ Path = $path; Problem = $null; Source = $Source }
 }
 
 $VerifyReasonText = @{
@@ -2522,6 +2554,508 @@ function Invoke-BackupVerify {
         $text = "Sicherung $name geprüft: $($VerifyReasonText[$result.reason])"
     }
     return Write-BackupAnswer -Answer $result -Text $text
+}
+
+# --- Restore (ADR-0046 section 7) ---------------------------------------------------------------
+
+# The job of a restore from the app (restore -Detach) for the detached process: JSON in this
+# variable of the process environment, never on the command line; the new process reads and removes
+# it first. Not a BYL_* name: those are the access data of the account (ADR-0018).
+$RestoreJobVariable = 'BECAUSEYOULOVEJIRA_RESTORE_JOB'
+
+# Reasons of a restore that did not happen or was undone, besides those of a check ($VerifyReasonText).
+$RestoreReasonText = @{
+    confirm     = "Zur Bestätigung fehlt das Wort $BylRestoreConfirmWord."
+    credentials = 'Unbekannte Auswahl für die Zugangsdaten.'
+    cancel      = 'Abgebrochen; nichts wurde geändert.'
+    input       = 'Der Auftrag der Wiederherstellung fehlt oder ist unlesbar.'
+    'space-app' = 'Auf dem Laufwerk der App ist für die entpackte Sicherung zu wenig Platz frei.'
+    stop        = 'Die App ließ sich nicht beenden; nichts wurde geändert.'
+    swap        = 'Der Datenordner ließ sich nicht austauschen; der bisherige ist wieder an seinem Platz.'
+    detach      = 'Die Wiederherstellung ließ sich nicht im Hintergrund starten.'
+}
+$RestoreStartFailedText = 'Mit der wiederhergestellten Sicherung startete die App nicht; der bisherige Stand ist zurück.'
+
+function Get-RestoreText {
+    # The text of a reason of a restore ($RestoreReasonText, else $VerifyReasonText).
+    param([Parameter(Mandatory = $true)][string]$Reason)
+
+    if ($RestoreReasonText.ContainsKey($Reason)) { return $RestoreReasonText[$Reason] }
+    if ($VerifyReasonText.ContainsKey($Reason)) { return $VerifyReasonText[$Reason] }
+    return 'Die Wiederherstellung ist gescheitert.'
+}
+
+function Write-RestoreState {
+    # run\wiederherstellung.json for the page (lib/backup-rules.js parseRestoreState): phase, backup,
+    # reason, safety copy, counts, choice and names of the access data written, what happened to the
+    # settings; never a value or the passphrase. A failure to write only costs the page its progress.
+    param([Parameter(Mandatory = $true)][System.Collections.IDictionary]$State)
+
+    try {
+        $State['at'] = [DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds()
+        $run = Get-BylRunPath -AppDir $AppDir
+        Write-TextFile -Path ([System.IO.Path]::Combine($run.Directory, 'wiederherstellung.json')) -Text (ConvertTo-Json -InputObject $State -Depth 6 -Compress)
+    }
+    catch {
+        $null = $_
+    }
+}
+
+function Get-RestoreChoice {
+    # The backups the console offers, newest first: those in pb_data\backups and the sealed ones in
+    # the target folder, with time and size.
+    $list = New-Object System.Collections.Generic.List[object]
+    $places = @(
+        [pscustomobject]@{ Source = 'local'; Folder = [System.IO.Path]::Combine($AppDir, 'pb_data', 'backups'); Filter = '*.zip'; Pattern = $LocalBackupNamePattern }
+        [pscustomobject]@{ Source = 'target'; Folder = (Get-BackupSettings).Target; Filter = '*.tar.age'; Pattern = $BylSealedBackupPattern }
+    )
+    foreach ($place in $places) {
+        if ([string]::IsNullOrEmpty($place.Folder) -or -not [System.IO.Directory]::Exists($place.Folder)) { continue }
+        foreach ($file in (New-Object System.IO.DirectoryInfo($place.Folder)).GetFiles($place.Filter)) {
+            if ($file.Name -notmatch $place.Pattern) { continue }
+            $list.Add([pscustomobject]@{ Source = $place.Source; Name = $file.Name; Time = $file.LastWriteTime; Bytes = $file.Length })
+        }
+    }
+    return @($list | Sort-Object -Property Time -Descending)
+}
+
+function Select-RestoreBackup {
+    # Console: lists the backups (Get-RestoreChoice) and asks for a number or the full path of a file
+    # (a fresh folder on a new machine has none); $null when the answer is empty.
+    $choices = @(Get-RestoreChoice)
+    Write-Host 'Sicherungen (neueste zuerst):'
+    if ($choices.Count -eq 0) { Write-Host '  keine im Ordner app und im Zielverzeichnis' }
+    for ($i = 0; $i -lt $choices.Count; $i++) {
+        $choice = $choices[$i]
+        $where = if ($choice.Source -eq 'target') { 'Zielverzeichnis' } else { 'Ordner app' }
+        Write-Host ('  {0,2}  {1}  {2,9:N1} MB  {3,-15}  {4}' -f ($i + 1), $choice.Time.ToString('dd.MM.yyyy HH:mm'), ($choice.Bytes / 1MB), $where, $choice.Name)
+    }
+    $answer = ([string](Read-Host -Prompt 'Nummer der Sicherung oder voller Pfad einer Datei (.tar.age oder .zip); leer: abbrechen')).Trim().Trim('"')
+    if ($answer -eq '') { return $null }
+    if ($answer -match '^\d{1,4}$') {
+        $number = [int]$answer
+        if ($number -lt 1 -or $number -gt $choices.Count) { return [pscustomobject]@{ Path = $null; Problem = 'name'; Source = 'local' } }
+        return Resolve-BackupFile -Source $choices[$number - 1].Source -Name $choices[$number - 1].Name
+    }
+    return Resolve-BackupFile -Source 'path' -Name $answer
+}
+
+function Get-ZipContentBytes {
+    # The size of the files in the ZIP $Path once unpacked.
+    param([Parameter(Mandatory = $true)][string]$Path)
+
+    Add-Type -AssemblyName System.IO.Compression.FileSystem
+    $zip = [System.IO.Compression.ZipFile]::OpenRead($Path)
+    try {
+        $sum = [long]0
+        foreach ($entry in $zip.Entries) { $sum += $entry.Length }
+        return $sum
+    }
+    finally {
+        $zip.Dispose()
+    }
+}
+
+function Test-DataFolderPath {
+    # Whether $Path is pb_data, a folder pb_data.<name> directly in this app folder, or the folder
+    # backups in one of them: the only folders a restore moves or removes.
+    param([Parameter(Mandatory = $true)][string]$Path)
+
+    $full = [System.IO.Path]::GetFullPath($Path).TrimEnd('\')
+    $name = [System.IO.Path]::GetFileName($full)
+    $parent = [System.IO.Path]::GetDirectoryName($full)
+    if ($name -eq 'backups') {
+        $name = [System.IO.Path]::GetFileName($parent)
+        $parent = [System.IO.Path]::GetDirectoryName($parent)
+    }
+    $app = [System.IO.Path]::GetFullPath($AppDir).TrimEnd('\')
+    return [string]::Equals($parent, $app, [System.StringComparison]::OrdinalIgnoreCase) -and $name -match '^pb_data(\.[A-Za-z0-9-]+)?$'
+}
+
+function Move-DataFolder {
+    # Renames a data folder of this app folder (Test-DataFolderPath), with a few tries: a scanner or
+    # the indexer may hold a file for a moment after the server ended.
+    param([Parameter(Mandatory = $true)][string]$From, [Parameter(Mandatory = $true)][string]$To)
+
+    if (-not (Test-DataFolderPath -Path $From) -or -not (Test-DataFolderPath -Path $To)) { throw "Kein Datenordner der App: $From" }
+    for ($attempt = 1; ; $attempt++) {
+        try {
+            [System.IO.Directory]::Move($From, $To)
+            return
+        }
+        catch {
+            if ($attempt -ge 40) { throw }
+            Start-Sleep -Milliseconds 250
+        }
+    }
+}
+
+function Remove-DataFolder {
+    # Removes a data folder of this app folder (Test-DataFolderPath), with a few tries; $false if it stays.
+    param([Parameter(Mandatory = $true)][string]$Path)
+
+    if (-not (Test-DataFolderPath -Path $Path)) { return $false }
+    for ($attempt = 0; $attempt -lt 40; $attempt++) {
+        if (-not [System.IO.Directory]::Exists($Path)) { return $true }
+        try {
+            [System.IO.Directory]::Delete($Path, $true)
+            return $true
+        }
+        catch {
+            Start-Sleep -Milliseconds 250
+        }
+    }
+    return -not [System.IO.Directory]::Exists($Path)
+}
+
+function ConvertTo-SecretMap {
+    # The access data of an opened backup (an object of the JSON answer of byl-backup.exe) as
+    # name -> value, in memory only.
+    param([AllowNull()][object]$Secrets)
+
+    $map = [ordered]@{}
+    if ($null -eq $Secrets) { return $map }
+    foreach ($property in $Secrets.PSObject.Properties) { $map[$property.Name] = [string]$property.Value }
+    return $map
+}
+
+function Invoke-Restore {
+    # restore (ADR-0046 section 7; wiederherstellen.bat, the page Sicherung through restore -Detach):
+    # 1. the backup: from the app or its job by source and name, in the console by name or path or
+    #    chosen from a list; the passphrase from the app, stored, or asked in the console;
+    # 2. checked like backup-verify, with the values of the access data in memory only; nothing
+    #    happens to a backup that fails;
+    # 3. the console shows what it found, asks what happens to the access data (names only) and for
+    #    the word WIEDERHERSTELLEN; the app sends both;
+    # 4. unpacked next to pb_data (same drive), the app stopped in order, pb_data renamed to the
+    #    safety copy pb_data.vor-wiederherstellung-<UTC>, the new folder put in its place and the
+    #    local backups moved along (the checked copy under Temp is never used: it has the throwaway
+    #    superuser and the migrations of the check);
+    # 5. byl-config.json of the backup only for a folder without one; the access data into the
+    #    account (Set-BylAccountVariable) as chosen;
+    # 6. started and asked /api/health; if it does not start, everything goes back (access data,
+    #    settings, data folder) and the former state starts again if it ran.
+    # Progress and result in run\wiederherstellung.json for the page, a line in byl-control.log
+    # (names and numbers only).
+    param([Parameter(Mandatory = $true)][object]$Config)
+
+    if ($Detach) { return Start-DetachedRestore }
+    if ($Hidden) {
+        Show-Message -Kind Error -Text 'Die Wiederherstellung braucht ein Konsolenfenster: wiederherstellen.bat doppelklicken.'
+        return $BylExitError
+    }
+    $state = [ordered]@{
+        phase = 'checking'; name = ''; source = ''; ok = $false; reason = ''; safety = ''
+        counts = $null; files = $null; credentials = [ordered]@{ mode = ''; written = @(); failed = $false }; config = ''
+    }
+    $fail = {
+        param($Reason)
+        $state.phase = 'failed'
+        $state.reason = $Reason
+        Write-RestoreState -State $state
+        $script:LogDetail = ("name=$($state.name) ok=false reason=$Reason").Trim()
+        return Write-BackupAnswer -Answer ([ordered]@{ ok = $false; reason = $Reason; name = $state.name }) -Text (Get-RestoreText -Reason $Reason)
+    }
+
+    $request = $null
+    if ($WaitForProcess -gt 0) {
+        # Started by restore -Detach: the job comes in the environment and goes from it at once.
+        $raw = [Environment]::GetEnvironmentVariable($RestoreJobVariable, 'Process')
+        [Environment]::SetEnvironmentVariable($RestoreJobVariable, $null, 'Process')
+        [void](Wait-ProcessExit -ProcessId $WaitForProcess -Milliseconds ($CallerExitSeconds * 1000))
+        try {
+            if (-not [string]::IsNullOrWhiteSpace($raw)) { $request = $raw | ConvertFrom-Json }
+        }
+        catch {
+            $request = $null
+        }
+        $raw = $null
+        if ($null -eq $request -or $request -isnot [System.Management.Automation.PSCustomObject]) { return & $fail 'input' }
+    }
+    else {
+        $request = Read-InputJson
+    }
+    $console = $null -eq $request -and -not $Json
+
+    # 1. Which backup.
+    if ($console -and [string]::IsNullOrWhiteSpace($Value)) {
+        $file = Select-RestoreBackup
+        if ($null -eq $file) { return & $fail 'cancel' }
+    }
+    else {
+        $file = Get-RequestedBackup -Request $request
+    }
+    $state.source = $file.Source
+    $state.name = if ($null -ne $file.Path) { [System.IO.Path]::GetFileName($file.Path) } else { [string](Get-InputValue $request 'name') }
+    if ($null -ne $file.Problem) { return & $fail $file.Problem }
+    $mode = 'missing'
+    if (-not $console) {
+        if (-not (Test-BylRestoreConfirmation -Text ([string](Get-InputValue $request 'confirm')))) { return & $fail 'confirm' }
+        $requested = Get-InputValue $request 'credentials'
+        if ($null -ne $requested) {
+            if ($BylCredentialModes -cnotcontains [string]$requested) { return & $fail 'credentials' }
+            $mode = [string]$requested
+        }
+    }
+
+    # 2. The passphrase and the check.
+    $sealed = $file.Path -match '\.tar\.age$'
+    $passphrase = [string](Get-InputValue $request 'passphrase')
+    $storedPassphrase = $false
+    if ($sealed -and $passphrase -eq '') {
+        $stored = Read-StoredPassphrase
+        if ($stored.State -eq 'Set') {
+            $passphrase = $stored.Value
+            $storedPassphrase = $true
+        }
+        elseif ($console) {
+            $passphrase = Read-Secret -Prompt 'Passphrase der Sicherung'
+        }
+    }
+    Write-RestoreState -State $state
+    $work = New-WorkFolder
+    $staging = $null
+    $secrets = $null
+    try {
+        if ($console) { Write-Host 'Prüfe die Sicherung (entschlüsseln, entpacken, Datenbank, Originaldateien, Probe-Start) ...' }
+        $result, $extra = Invoke-Verification -File $file.Path -Passphrase $passphrase -Work $work -Secrets
+        if (-not $result.ok) { return & $fail $result.reason }
+        $state.counts = $result.counts
+        $state.files = $result.files
+        $secrets = ConvertTo-SecretMap -Secrets $extra.Secrets
+        $current = (Get-BylVariableScope).User
+        $names = @((Select-BylSecretVariable -Variables $secrets).Keys)
+
+        # 3. Console: what it found, the access data, the word.
+        if ($console) {
+            $when = if ($result.createdUtc) {
+                ([DateTime]::Parse($result.createdUtc, [System.Globalization.CultureInfo]::InvariantCulture, [System.Globalization.DateTimeStyles]::AdjustToUniversal)).ToLocalTime()
+            }
+            else {
+                (New-Object System.IO.FileInfo($file.Path)).LastWriteTime
+            }
+            Write-Host ''
+            Write-Host "Sicherung $($state.name) vom $($when.ToString('dd.MM.yyyy HH:mm')): in Ordnung, $($result.counts['tickets']) Tickets, $($result.files.expected) Originaldateien."
+            Write-Host 'Danach sind alle Daten der App auf dem Stand dieser Sicherung; was seitdem dazukam, ist dann nicht mehr in der App.'
+            Write-Host "Die jetzigen Daten bleiben $BylSafetyKeepDays Tage als Sicherheitskopie pb_data.vor-wiederherstellung-... im Ordner app."
+            if ($names.Count -gt 0) {
+                $missing = @($names | Where-Object { [string]::IsNullOrEmpty([string]$current[$_]) })
+                Write-Host ('Zugangsdaten in der Sicherung: ' + ($names -join ', '))
+                if ($missing.Count -gt 0) { Write-Host ('Davon fehlen auf diesem Windows-Konto: ' + ($missing -join ', ')) }
+                $answer = ([string](Read-Host -Prompt 'Zurückschreiben? [f] nur fehlende (Standard), [a] alle überschreiben, [n] keine')).Trim().ToLowerInvariant()
+                $mode = switch ($answer) { 'a' { 'all' } 'n' { 'none' } default { 'missing' } }
+            }
+            if (-not (Test-BylRestoreConfirmation -Text ([string](Read-Host -Prompt "Zum Wiederherstellen $BylRestoreConfirmWord eintippen (sonst Abbruch)")))) { return & $fail 'cancel' }
+        }
+        $state.credentials.mode = $mode
+
+        # 4. Unpack next to pb_data, stop, swap.
+        $free = Get-FreeBytes -Path $AppDir
+        if ($null -ne $free -and (Get-BylBackupSpaceVerdict -FreeBytes $free -NeededBytes (Get-ZipContentBytes -Path $extra.Zip)) -ne 'Ok') { return & $fail 'space-app' }
+        foreach ($left in [System.IO.Directory]::GetDirectories($AppDir, "$BylStagingPrefix*")) { [void](Remove-DataFolder -Path $left) }
+        $now = [DateTime]::UtcNow
+        $staging = [System.IO.Path]::Combine($AppDir, (Get-BylFolderStamp -Prefix $BylStagingPrefix -TimeUtc $now))
+        try {
+            Add-Type -AssemblyName System.IO.Compression.FileSystem
+            [System.IO.Compression.ZipFile]::ExtractToDirectory($extra.Zip, $staging)
+        }
+        catch {
+            return & $fail 'zip'
+        }
+        if ($console) { Write-Host 'Beende die App ...' }
+        $state.phase = 'stopping'
+        Write-RestoreState -State $state
+        $stopped = @(Invoke-StopCore -Config $Config)[-1]
+        if ($stopped -eq 'Failed') { return & $fail 'stop' }
+        $state.phase = 'restoring'
+        Write-RestoreState -State $state
+        $data = [System.IO.Path]::Combine($AppDir, 'pb_data')
+        $safety = $null
+        $oldBackups = $null
+        $newBackups = [System.IO.Path]::Combine($data, 'backups')
+        $backupsMoved = $false
+        $configPath = Get-BylConfigPath -AppDir $AppDir
+        $configTaken = $false
+        $written = New-Object System.Collections.Generic.List[string]
+        $previous = @{}
+        # Back to the former state: access data, settings, data folder (also after a failed swap).
+        $undo = {
+            foreach ($name in @($written)) {
+                try { Set-BylAccountVariable -Name $name -Value $previous[$name] } catch { $null = $_ }
+            }
+            if ($configTaken) {
+                try { [System.IO.File]::Delete($configPath) } catch { $null = $_ }
+            }
+            if ($backupsMoved) {
+                try { Move-DataFolder -From $newBackups -To $oldBackups } catch { $null = $_ }
+            }
+            if ($null -ne $safety -and [System.IO.Directory]::Exists($safety)) {
+                if ([System.IO.Directory]::Exists($data) -and -not (Remove-DataFolder -Path $data)) {
+                    Move-DataFolder -From $data -To ([System.IO.Path]::Combine($AppDir, (Get-BylFolderStamp -Prefix 'pb_data.verworfen-' -TimeUtc $now)))
+                }
+                Move-DataFolder -From $safety -To $data
+            }
+            elseif ($null -eq $safety -and $null -eq $staging) {
+                # A fresh folder had no data folder: the restored one goes again.
+                [void](Remove-DataFolder -Path $data)
+            }
+        }
+        try {
+            if ([System.IO.Directory]::Exists($data)) {
+                $safety = [System.IO.Path]::Combine($AppDir, (Get-BylFolderStamp -Prefix $BylSafetyCopyPrefix -TimeUtc $now))
+                Move-DataFolder -From $data -To $safety
+                $oldBackups = [System.IO.Path]::Combine($safety, 'backups')
+            }
+            Move-DataFolder -From $staging -To $data
+            $staging = $null
+            if ($null -ne $oldBackups -and [System.IO.Directory]::Exists($oldBackups) -and -not [System.IO.Directory]::Exists($newBackups)) {
+                Move-DataFolder -From $oldBackups -To $newBackups
+                $backupsMoved = $true
+            }
+        }
+        catch {
+            try { & $undo } catch { $null = $_ }
+            if ($stopped -eq 'Stopped') { [void](Invoke-Start -Config (Get-Config)) }
+            $state.phase = 'rolled-back'
+            $state.reason = 'swap'
+            $state.safety = ''
+            Write-RestoreState -State $state
+            $script:LogDetail = "name=$($state.name) ok=false reason=swap rolled-back"
+            return Write-BackupAnswer -Answer ([ordered]@{ ok = $false; reason = 'swap'; rolledBack = $true; name = $state.name }) -Text (Get-RestoreText -Reason 'swap')
+        }
+        $state.safety = if ($null -ne $safety) { [System.IO.Path]::GetFileName($safety) } else { '' }
+
+        # 5. Settings and access data.
+        if ([System.IO.File]::Exists($configPath)) {
+            $state.config = 'kept'
+        }
+        elseif ($null -ne $extra.Config) {
+            [System.IO.File]::Copy($extra.Config, $configPath)
+            $configTaken = $true
+            $state.config = 'taken'
+        }
+        else {
+            $state.config = 'none'
+        }
+        $selection = Select-BylRestoreVariable -Secrets $secrets -Current $current -Mode $mode
+        foreach ($name in @($selection.Write.Keys)) {
+            $previous[$name] = [string]$current[$name]
+            try {
+                Set-BylAccountVariable -Name $name -Value $selection.Write[$name]
+                $written.Add($name)
+            }
+            catch {
+                $state.credentials.failed = $true
+            }
+        }
+        $state.credentials.written = @($written)
+
+        # 6. Start and health; if not, back.
+        if ($console) { Write-Host 'Starte die App mit der wiederhergestellten Sicherung ...' }
+        $state.phase = 'starting'
+        Write-RestoreState -State $state
+        $restored = Get-Config
+        Set-BylAddress -Port $restored.Port
+        # Test copies only (BYL_TEST_ISOLATED): the way back after a start that fails.
+        $fault = $IsolatedEnvironment -and [Environment]::GetEnvironmentVariable('BYL_TEST_RESTORE_FAULT', 'Process') -eq 'start'
+        $code = if ($fault -or $null -ne $restored.Problem) { $BylExitError } else { [int](@(Invoke-Start -Config $restored)[-1]) }
+        if ($code -ne $BylExitOk) {
+            [void](Invoke-StopCore -Config $restored)
+            & $undo
+            if ($stopped -eq 'Stopped') {
+                $former = Get-Config
+                Set-BylAddress -Port $former.Port
+                [void](Invoke-Start -Config $former)
+            }
+            $state.phase = 'rolled-back'
+            $state.reason = 'start'
+            $state.safety = ''
+            $state.config = ''
+            $state.credentials.written = @()
+            Write-RestoreState -State $state
+            $script:LogDetail = "name=$($state.name) ok=false reason=start rolled-back"
+            return Write-BackupAnswer -Answer ([ordered]@{ ok = $false; reason = 'start'; rolledBack = $true; name = $state.name }) -Text $RestoreStartFailedText
+        }
+        $state.phase = 'done'
+        $state.ok = $true
+        Write-RestoreState -State $state
+        $script:LogDetail = "name=$($state.name) ok=true safety=$($state.safety) credentials=$mode written=$($written.Count) config=$($state.config)"
+        if ($console -and $sealed -and -not $storedPassphrase -and (Read-StoredPassphrase).State -eq 'Missing') {
+            $keep = ([string](Read-Host -Prompt 'Diese Passphrase für künftige Sicherungen auf diesem Rechner speichern? [j/n]')).Trim().ToLowerInvariant()
+            if ($keep -eq 'j') {
+                try {
+                    Save-StoredPassphrase -Passphrase $passphrase
+                }
+                catch {
+                    Show-Message -Kind Warning -Text 'Die Passphrase ließ sich nicht speichern; unter Einstellungen → Sicherung festlegen.'
+                }
+            }
+        }
+        $text = "Wiederhergestellt: $($state.name)."
+        if ($state.safety -ne '') { $text += " Die bisherigen Daten liegen $BylSafetyKeepDays Tage in $($state.safety)." }
+        if ($written.Count -gt 0) { $text += ' Zugangsdaten zurückgeschrieben: ' + (@($written) -join ', ') + '.' }
+        if ($state.credentials.failed) { $text += ' Einige Zugangsdaten ließen sich nicht zurückschreiben.' }
+        return Write-BackupAnswer -Answer ([ordered]@{
+                ok = $true; name = $state.name; safety = $state.safety; counts = $state.counts; files = $state.files
+                credentials = $state.credentials; config = $state.config
+            }) -Text $text
+    }
+    finally {
+        $passphrase = $null
+        $secrets = $null
+        if ($null -ne $staging) { [void](Remove-DataFolder -Path $staging) }
+        Remove-WorkFolder -Path $work
+    }
+}
+
+function Start-DetachedRestore {
+    # restore -Detach (the page Sicherung, ADR-0046 section 7): checks the request of the app (backup,
+    # confirmation word, choice for the access data), then starts restore of this folder as a
+    # process of its own like Start-DetachedRestart and ends at once. The job, with the passphrase if
+    # the app sent one, goes to the new process in $RestoreJobVariable of the environment, never on
+    # its command line; this process removes it right after the start. The state "started" (or the
+    # reason of a refusal) goes to run\wiederherstellung.json, where the route reads it.
+    $request = Read-InputJson
+    $file = Get-RequestedBackup -Request $request
+    $name = if ($null -ne $file.Path) { [System.IO.Path]::GetFileName($file.Path) } else { [string](Get-InputValue $request 'name') }
+    $mode = [string](Get-InputValue $request 'credentials')
+    if ($mode -eq '') { $mode = 'missing' }
+    $state = [ordered]@{
+        phase = 'failed'; name = $name; source = $file.Source; ok = $false; reason = ''; safety = ''
+        counts = $null; files = $null; credentials = [ordered]@{ mode = $mode; written = @(); failed = $false }; config = ''
+    }
+    $refuse = {
+        param($Reason)
+        $state.reason = $Reason
+        Write-RestoreState -State $state
+        $script:LogDetail = "reason=$Reason"
+        return Write-BackupAnswer -Answer ([ordered]@{ ok = $false; reason = $Reason; name = $name }) -Text (Get-RestoreText -Reason $Reason)
+    }
+    if ($null -eq $request) { return & $refuse 'input' }
+    if ($null -ne $file.Problem) { return & $refuse $file.Problem }
+    if (-not (Test-BylRestoreConfirmation -Text ([string](Get-InputValue $request 'confirm')))) { return & $refuse 'confirm' }
+    if ($BylCredentialModes -cnotcontains $mode) { return & $refuse 'credentials' }
+    $job = [ordered]@{ source = $file.Source; name = [string](Get-InputValue $request 'name'); confirm = $BylRestoreConfirmWord; credentials = $mode }
+    $passphrase = [string](Get-InputValue $request 'passphrase')
+    if ($passphrase -ne '') { $job['passphrase'] = $passphrase }
+    $powershell = [System.IO.Path]::Combine($env:SystemRoot, 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe')
+    $arguments = Get-DetachedRestoreArgumentString -ScriptPath ([System.IO.Path]::Combine($AppDir, 'byl-control.ps1')) -WaitForProcess $PID
+    try {
+        [Environment]::SetEnvironmentVariable($RestoreJobVariable, (ConvertTo-Json -InputObject $job -Compress), 'Process')
+        $child = Start-Process -FilePath $powershell -ArgumentList $arguments -WorkingDirectory $AppDir -WindowStyle Hidden -PassThru
+    }
+    catch {
+        return & $refuse 'detach'
+    }
+    finally {
+        [Environment]::SetEnvironmentVariable($RestoreJobVariable, $null, 'Process')
+        $job = $null
+        $passphrase = $null
+    }
+    $state.phase = 'started'
+    Write-RestoreState -State $state
+    $script:LogDetail = "detached=$($child.Id) name=$name"
+    return Write-BackupAnswer -Answer ([ordered]@{ ok = $true; started = $true; name = $name }) -Text "Wiederherstellung läuft im Hintergrund (PID $($child.Id)); das Ergebnis steht danach unter Einstellungen → Sicherung und in logs\byl-control.log."
 }
 
 function Read-Secret {
@@ -2610,8 +3144,8 @@ function Invoke-ResetAdmin {
 try {
     $config = Get-Config
     Set-BylAddress -Port $config.Port
-    if (($Detach -or $WaitForProcess -gt 0) -and $Command -ne 'restart') {
-        Show-Message -Kind Error -Text '-Detach und -WaitForProcess gelten nur für restart.'
+    if (($Detach -or $WaitForProcess -gt 0) -and @('restart', 'restore') -notcontains $Command) {
+        Show-Message -Kind Error -Text '-Detach und -WaitForProcess gelten nur für restart und restore.'
         exit $BylExitError
     }
     $exitCode = switch ($Command) {
@@ -2633,6 +3167,7 @@ try {
         'backup-passphrase' { Invoke-BackupPassphrase }
         'backup-export' { Invoke-BackupExport }
         'backup-verify' { Invoke-BackupVerify }
+        'restore' { Invoke-Restore -Config $config }
         'help' {
             Write-Host $HelpText
             $BylExitOk
@@ -2647,7 +3182,7 @@ catch {
 $exitCode = [int](@($exitCode)[-1])
 # Only commands that change something go into byl-control.log (status and logs would flood it).
 if (@('start', 'stop', 'restart', 'reload', 'port', 'autostart-on', 'autostart-off', 'mail-restart', 'reset-admin',
-        'backup-configure', 'backup-passphrase', 'backup-export', 'backup-verify') -contains $Command) {
+        'backup-configure', 'backup-passphrase', 'backup-export', 'backup-verify', 'restore') -contains $Command) {
     Write-ControlLog -Name $Command -ExitCode $exitCode
 }
 exit $exitCode
