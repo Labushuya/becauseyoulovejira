@@ -174,7 +174,7 @@ describe('menu "•••" of a row (AM-2)', () => {
 		for (const [id, key] of [
 			[ID, 'TASK-1'],
 			[OTHER, 'TASK-2']
-		]) {
+		] as const) {
 			const actions = rowOf(id).querySelector('[data-col="actions"]') as HTMLElement;
 			const button = within(actions).getByRole('button', { name: `Weitere Aktionen für ${key}` });
 			const controls = [...actions.querySelectorAll('input, a, button')].filter(
