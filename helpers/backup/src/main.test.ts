@@ -46,6 +46,9 @@ describe('byl-backup command line', () => {
 		await expect(readInput(stdin('kein json'))).rejects.toMatchObject({ reason: 'input' });
 		await expect(readInput(stdin(`{"a":"${'x'.repeat(1024 * 1024)}"}`))).rejects.toMatchObject({ reason: 'input' });
 		expect(await readInput(stdin('{"a":"ä"}'))).toEqual({ a: 'ä' });
+		// Windows PowerShell in a UTF-8 console closes the input with a byte order mark.
+		expect(await readInput(stdin('{"a":"ä"}﻿'))).toEqual({ a: 'ä' });
+		expect(await readInput(stdin('﻿{"a":1}\r\n'))).toEqual({ a: 1 });
 		const missing = await run(['seal'], '{"data":"x"}');
 		expect(missing.code).toBe(1);
 		expect(JSON.parse(missing.lines[0] ?? '')).toMatchObject({ ok: false, reason: 'input' });

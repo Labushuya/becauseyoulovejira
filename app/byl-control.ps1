@@ -2167,8 +2167,7 @@ function Invoke-BackupExport {
 # Collections the throwaway server counts (the same as the manifest of a sealed backup).
 $CountedCollections = @('users', 'projects', 'tags', 'tickets', 'comments', 'inbox_items', 'recurrence_rules', 'connections')
 # A throwaway server gets this long to answer /api/health (it runs the migrations on the copy first).
-$ThrowawayStartSeconds = 120
-# Names of backups in pb_data\backups that can be checked and restored (any ZIP of PocketBase there).
+$ThrowawayStartSeconds = 120# Names of backups in pb_data\backups that can be checked and restored (any ZIP of PocketBase there).
 $LocalBackupNamePattern = '^[A-Za-z0-9@._-]{1,200}\.zip$'
 
 function New-WorkFolder {
@@ -2403,7 +2402,10 @@ function Invoke-Verification {
     }
     $check = Invoke-BackupHelper -Command check -Parameters ([ordered]@{ dir = $data })
     if ((Get-InputValue $check 'ok') -ne $true) {
-        $result.reason = switch ([string](Get-InputValue $check 'reason')) { 'missing' { 'no-db' } 'helper' { 'helper' } default { 'integrity' } }
+        $checkReason = [string](Get-InputValue $check 'reason')
+        $result.reason = switch ($checkReason) { 'missing' { 'no-db' } 'helper' { 'helper' } default { 'integrity' } }
+        # The reason of the helper (a fixed word such as damaged, input or internal), for the log of a test.
+        $result['check'] = $checkReason
         return $result, $extra
     }
     $result.integrity = @(Get-InputValue $check 'integrity')

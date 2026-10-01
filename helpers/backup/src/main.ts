@@ -51,7 +51,12 @@ function stringMap(value: unknown): Record<string, string> {
 	return result;
 }
 
-/** Reads the JSON object of standard input (UTF-8, at most 1 MB). */
+/**
+ * Reads the JSON object of standard input (UTF-8, at most 1 MB). Windows PowerShell 5.1 writes the
+ * preamble of the input encoding of its console when it closes a redirected standard input: in a
+ * console with the UTF-8 code page (65001) a byte order mark arrives after the data. Space and byte
+ * order marks around the object are therefore no error (trim() removes U+FEFF as well).
+ */
 export async function readInput(stream: AsyncIterable<Uint8Array>): Promise<Record<string, unknown>> {
 	const parts: Uint8Array[] = [];
 	let size = 0;
@@ -62,7 +67,7 @@ export async function readInput(stream: AsyncIterable<Uint8Array>): Promise<Reco
 	}
 	let value: unknown;
 	try {
-		value = JSON.parse(Buffer.concat(parts).toString('utf8'));
+		value = JSON.parse(Buffer.concat(parts).toString('utf8').trim());
 	} catch {
 		throw new BundleError('input', 'input is not JSON');
 	}

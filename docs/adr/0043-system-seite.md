@@ -1,6 +1,6 @@
 # ADR-0043: Seite „Einstellungen → System“ – Betrieb aus dem Dashboard über feste Befehle des Steuerskripts, losgelöster Neustart, nur Besitzer, nur dieser Rechner
 
-- **Status:** Angenommen und umgesetzt (SY-1, [Plan](../plan/system-seite.md)). Manuelle Prüfungen stehen im Test-Manifest (BYL-E6-650 bis BYL-E6-656). Nachtrag BK-1 ([ADR-0046](0046-sicherung-pruefung-wiederherstellen.md): die Seite „Sicherung“ nutzt dieselben Prüfungen).
+- **Status:** Angenommen und umgesetzt (SY-1, [Plan](../plan/system-seite.md)). Manuelle Prüfungen stehen im Test-Manifest (BYL-E6-650 bis BYL-E6-656). Nachtrag BK-1 ([ADR-0046](0046-sicherung-pruefung-wiederherstellen.md): die Seite „Sicherung“ nutzt dieselben Prüfungen). Nachtrag BK-2 (Prüfen einer Sicherung).
 - **Datum:** 2026-09-30
 - **Entscheidung durch:** Nutzer (Wunsch „Einpflegen von Triggern von .bat Dateien per Einstellungen? … Ausführung wäre eine unheimliche Erleichterung, da alles aus Dashboard heraus“, Freigabe der Spec „ja, ohne Beenden“, 2026-09-30), Advisor (Umfang, Sicherheitsrahmen, Tests), Executor (Recherche, Festlegung des Besitzers, Umsetzung, Einzelheiten)
 - **Ergänzt:** [ADR-0039](0039-betriebsskripte.md) (Nachtrag dort: `mail-restart`, `restart -Detach`, `logs -Json`, Autostart-Ordner der Testkopien), [ADR-0026](0026-einstellungsbereich-und-hinweis-bausteine.md) §1 (neue Unterseite)
@@ -109,3 +109,8 @@ Jede Route prüft in dieser Reihenfolge; die erste Ablehnung antwortet mit `{ st
 - Die Routen der Seite „Einstellungen → Sicherung“ (`backup.pb.js`, `lib/backup-service.js`) prüfen in derselben Reihenfolge mit derselben Funktion (`check` aus `lib/system-service.js`, jetzt mit der Art des Rate-Limits und `local` für eine Route ohne Befehl) und loggen ihre Ablehnungen als „byl-backup: Anfrage abgelehnt“. Die eigene Instanz prüft `ownAppDir` (auch für den Cron der Sicherung).
 - **Whitelist:** Vier Befehle der Sicherung kamen dazu (`backup-info`, `backup-configure`, `backup-passphrase`, `backup-export`) mit dem Merkmal `backup` und `input` (ein JSON-Objekt auf der Standardeingabe, `run(appDir, name, input)` schreibt es per `stdinPipe`). `/api/byl/system/actions/{action}` führt sie nicht aus (404 `unknown` wie jeder unbekannte Name); die Seite System bleibt bei ihren sieben Befehlen.
 - Belegt in `system-rules.test.mjs` (Whitelist, Argumente nur Wörter und Zahlen) und `backup-control.test.mjs` (Ablehnungen und echte Befehle gegen eine Wegwerf-Kopie).
+
+## Nachtrag (2026-10-01, [ADR-0046](0046-sicherung-pruefung-wiederherstellen.md), BK-2): Prüfen aus der Seite „Sicherung“
+
+- **Whitelist:** `backup-verify` kam dazu (Merkmal `backup`, `input`). Die Route `POST /api/byl/backup/verify` prüft wie die übrigen, zählt als Änderung (zehn je Minute: eine Prüfung belegt Platte und Prozessor etwa eine Minute) und läuft nur, wenn weder „Jetzt sichern“ noch der Cron der Sicherung laufen (409 `busy`). Namen nur nach den Mustern ihres Orts, kein Pfad aus der App.
+- Belegt in `system-rules.test.mjs` und `backup-control.test.mjs`.

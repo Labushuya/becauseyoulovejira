@@ -44,10 +44,11 @@ function withoutNode() {
 	};
 }
 
-function helper(args, input) {
+/** The helper with `input` as JSON on standard input (`after` follows it, e.g. a byte order mark). */
+function helper(args, input, after = '') {
 	const result = spawnSyncClean(HELPER, args, {
 		baseEnv: withoutNode(),
-		input: input === undefined ? '' : JSON.stringify(input),
+		input: input === undefined ? '' : JSON.stringify(input) + after,
 		encoding: 'utf8',
 		windowsHide: true,
 		timeout: 120_000
@@ -69,6 +70,13 @@ describe('byl-backup.exe without Node', () => {
 		const selfTest = helper(['--self-test']);
 		expect(selfTest.code, selfTest.stdout + selfTest.stderr).toBe(0);
 		expect(JSON.parse(selfTest.stdout)).toMatchObject({ ok: true });
+	});
+
+	it('takes its input with the byte order mark Windows PowerShell adds when it closes the input in a UTF-8 console', () => {
+		const answer = helper(['check'], { dir: join(dir, 'gibt es nicht') }, '﻿');
+		expect(answer.code).toBe(1);
+		// "missing", not "input": the JSON was read.
+		expect(JSON.parse(answer.stdout)).toMatchObject({ ok: false, reason: 'missing' });
 	});
 
 	it('seals and opens a backup with parameters only on standard input', () => {
