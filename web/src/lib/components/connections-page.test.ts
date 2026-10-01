@@ -17,6 +17,7 @@ import {
 	runResultText,
 	scanResultText,
 	secretStatusText,
+	TELEGRAM_REPLIES_HINT,
 	type Connection,
 	type SecretStatus
 } from '$lib/domain/connections';
@@ -51,6 +52,7 @@ function connection(id: string, overrides: Partial<Connection> = {}): Connection
 		lastError: '',
 		lastHint: '',
 		keywords: [],
+		replySaved: true,
 		replyNoMatch: true,
 		mailProvider: '',
 		mailUser: '',
@@ -97,6 +99,7 @@ function setup(items: Connection[] = [CAL, BOT], statuses: Record<string, Secret
 		saveSettings: vi.fn<ConnectionsData['saveSettings']>(async (current, settings) => ({
 			...current,
 			keywords: settings.keywords,
+			replySaved: settings.replySaved,
 			replyNoMatch: settings.replyNoMatch,
 			matchBody: settings.matchBody
 		})),
@@ -647,6 +650,7 @@ describe('Stichwörter (E4 plan, package 20; since EH-3 in "Bearbeiten", since K
 				expect.objectContaining({ id: BOT.id }),
 				{
 					keywords: ['Einkauf'],
+					replySaved: true,
 					replyNoMatch: true,
 					matchBody: false
 				}
@@ -667,6 +671,7 @@ describe('Stichwörter (E4 plan, package 20; since EH-3 in "Bearbeiten", since K
 				expect.objectContaining({ id: BOT.id }),
 				{
 					keywords: ['Einkauf', 'todo', 'aufgabe', 'erledigen', 'ticket', '#byl'],
+					replySaved: true,
 					replyNoMatch: true,
 					matchBody: false
 				}
@@ -686,7 +691,7 @@ describe('Stichwörter (E4 plan, package 20; since EH-3 in "Bearbeiten", since K
 
 		await fireEvent.click(
 			scope.getByRole('switch', {
-				name: /Auf Nachrichten ohne Stichwort antworten/
+				name: /^Hinweis bei fehlendem Stichwort senden/
 			})
 		);
 		await vi.waitFor(() =>
@@ -694,11 +699,88 @@ describe('Stichwörter (E4 plan, package 20; since EH-3 in "Bearbeiten", since K
 				expect.objectContaining({ id: BOT.id }),
 				{
 					keywords: ['Einkauf', 'todo', 'aufgabe', 'erledigen', 'ticket', '#byl'],
+					replySaved: true,
 					replyNoMatch: false,
 					matchBody: false
 				}
 			)
 		);
+		await vi.waitFor(() =>
+			expect(latestFlag(context.flags)).toBe(
+				'„Telegram-Bot“ antwortet nicht mehr auf Nachrichten ohne Stichwort.'
+			)
+		);
+
+		// The confirmation is a switch of its own and keeps the other one (ADR-0016, addendum of
+		// 2026-10-01).
+		await fireEvent.click(scope.getByRole('switch', { name: /^Bestätigung senden/ }));
+		await vi.waitFor(() =>
+			expect(context.data.saveSettings).toHaveBeenLastCalledWith(
+				expect.objectContaining({ id: BOT.id }),
+				{
+					keywords: ['Einkauf', 'todo', 'aufgabe', 'erledigen', 'ticket', '#byl'],
+					replySaved: false,
+					replyNoMatch: false,
+					matchBody: false
+				}
+			)
+		);
+		await vi.waitFor(() =>
+			expect(latestFlag(context.flags)).toBe(
+				'„Telegram-Bot“ bestätigt gespeicherte Nachrichten nicht mehr im Chat.'
+			)
+		);
+		expect(scope.getByText(TELEGRAM_REPLIES_HINT)).toBeTruthy();
+	});
+
+	it('saves the answers of the bot from the details of the card, an error stays at the card', async () => {
+		const context = setup([BOT]);
+		await context.store.load();
+		renderCards(context.store);
+		await fireEvent.click(
+			card('Telegram-Bot').getByRole('button', { name: 'Details: Telegram-Bot' })
+		);
+		const saved = card('Telegram-Bot').getByRole<HTMLInputElement>('switch', {
+			name: /^Bestätigung senden/
+		});
+		expect(saved.checked).toBe(true);
+		await fireEvent.click(saved);
+		await vi.waitFor(() =>
+			expect(context.data.saveSettings).toHaveBeenLastCalledWith(
+				expect.objectContaining({ id: BOT.id }),
+				{ keywords: [], replySaved: false, replyNoMatch: true, matchBody: false }
+			)
+		);
+		await vi.waitFor(() =>
+			expect(
+				card('Telegram-Bot').getByRole<HTMLInputElement>('switch', { name: /^Bestätigung senden/ })
+					.checked
+			).toBe(false)
+		);
+
+		context.data.saveSettings.mockRejectedValueOnce(
+			new DataError('validation', {
+				status: 400,
+				fields: {
+					settings: { code: 'validation_connection_settings', message: 'Unbekannte Einstellung.' }
+				}
+			})
+		);
+		await fireEvent.click(
+			card('Telegram-Bot').getByRole('switch', { name: /^Hinweis bei fehlendem Stichwort senden/ })
+		);
+		await vi.waitFor(() =>
+			expect(card('Telegram-Bot').getByText('Unbekannte Einstellung.')).toBeTruthy()
+		);
+		// The refused change does not stay on the screen.
+		await vi.waitFor(() =>
+			expect(
+				card('Telegram-Bot').getByRole<HTMLInputElement>('switch', {
+					name: /^Hinweis bei fehlendem Stichwort senden/
+				}).checked
+			).toBe(true)
+		);
+		expect(screen.queryByRole('dialog')).toBeNull();
 	});
 
 	it('shows no answer switch for the calendar', async () => {
@@ -707,7 +789,9 @@ describe('Stichwörter (E4 plan, package 20; since EH-3 in "Bearbeiten", since K
 		renderCards(context.store);
 		await chooseFromMenu('Google Kalender', EDIT);
 		expect(screen.getByRole('dialog', { name: 'Google Kalender bearbeiten' })).toBeTruthy();
-		expect(screen.queryByRole('switch', { name: /ohne Stichwort antworten/ })).toBeNull();
+		expect(
+			screen.queryByRole('switch', { name: /Stichwort senden|Bestätigung senden/ })
+		).toBeNull();
 	});
 
 	it('leads from the edit modal to the setup and closes the modal first (EH-3)', async () => {
@@ -770,7 +854,7 @@ describe('Postfächer (E4 plan, package 22)', () => {
 		await vi.waitFor(() =>
 			expect(context.data.saveSettings).toHaveBeenLastCalledWith(
 				expect.objectContaining({ id: MAIL.id }),
-				{ keywords: ['todo'], replyNoMatch: true, matchBody: true }
+				{ keywords: ['todo'], replySaved: true, replyNoMatch: true, matchBody: true }
 			)
 		);
 		await vi.waitFor(() =>

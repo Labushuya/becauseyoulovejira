@@ -104,6 +104,7 @@ export function toConnection(record: ConnectionRecord): Connection {
 		lastError: record.last_error ?? '',
 		lastHint: record.last_hint ?? '',
 		keywords: keywordListOf(settingsRecord(record.settings).keywords),
+		replySaved: settingsRecord(record.settings).reply_saved !== false,
 		replyNoMatch: settingsRecord(record.settings).reply_no_match !== false,
 		...mail,
 		scan: record.type === 'mail' ? mailScanOf(record.scan) : null,
@@ -174,9 +175,13 @@ function settingsValue(
 	const keywords = settings.keywords.map((keyword) => keyword.trim());
 	switch (connection.type) {
 		case 'telegram':
+			// The confirmation is stored only while switched off; without the key it is on (ADR-0016,
+			// addendum of 2026-10-01). So saving keywords also works against the hooks of before the
+			// switch, which do not know the key, until the next restart of the app.
 			return {
 				allowed_env: connection.allowlistEnv,
 				keywords,
+				...(settings.replySaved === false ? { reply_saved: false } : {}),
 				reply_no_match: settings.replyNoMatch
 			};
 		case 'mail':
@@ -195,9 +200,9 @@ function settingsValue(
 }
 
 /**
- * Saves keywords and, for Telegram, the answer without keyword, for mail whether the start of
- * the text is searched. `settings` is written whole, so the name of the allowlist variable and
- * the mailbox go along unchanged.
+ * Saves keywords and, for Telegram, the two answers of the bot, for mail whether the whole text
+ * is searched. `settings` is written whole, so the name of the allowlist variable and the mailbox
+ * go along unchanged.
  */
 export function saveConnectionSettings(
 	pb: PocketBase,

@@ -127,6 +127,7 @@ describe('help page (EH-9)', () => {
 		);
 		expect(questions).toEqual([
 			'Warum kommt meine Mail nicht an?',
+			'Was schreibt der Telegram-Bot in den Chat?',
 			'Wo sind meine Zugangsdaten gespeichert?',
 			`Was bedeutet „${RESTART_NEEDED.title}“?`,
 			'Wie widerrufe ich einen Zugang?',
@@ -140,6 +141,13 @@ describe('help page (EH-9)', () => {
 			'Wie formatiere ich Beschreibungen und Kommentare?',
 			'Wie ordne ich Kommentare und hebe einen hervor?'
 		]);
+		// The answers of the Telegram bot and their switches (ADR-0016, addendum of 2026-10-01).
+		expect(text(section)).toContain('„Im Eingang gespeichert“');
+		expect(text(section)).toContain('„Kein Stichwort erkannt – nicht gespeichert“');
+		expect(text(section)).toContain(
+			'„Bestätigung senden“ und „Hinweis bei fehlendem Stichwort senden“'
+		);
+		expect(text(section)).toContain('in Gruppen sehen sie alle Mitglieder');
 		// Comments (ADR-0044): order, the pinned comment with "Rückgängig", folding.
 		expect(text(section)).toContain('„Neueste zuerst“ (Standard) oder „Älteste zuerst“');
 		expect(text(section)).toContain('höchstens einen angepinnten Kommentar');

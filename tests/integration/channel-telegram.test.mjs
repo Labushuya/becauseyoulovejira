@@ -1,5 +1,6 @@
-// Telegram bot (ADR-0016 section 2, ADR-0020; E4 plan packages 17 and 20) against a fake Bot API on
-// 127.0.0.1 instead of api.telegram.org. The bot of the tests has the keywords KEYWORDS; "mull"
+// Telegram bot (ADR-0016 section 2 and addendum of 2026-10-01, ADR-0020; E4 plan packages 17 and 20)
+// against a fake Bot API on 127.0.0.1 instead of api.telegram.org: messages, the answers in the
+// chat and their switches. The bot of the tests has the keywords KEYWORDS; "mull"
 // and "uber" also check that umlauts do not count. An own disposable instance gets an invented token, the allowlist
 // and the address of the fake server (BYL_TELEGRAM_API_BASE) as variables. The token may appear
 // nowhere: not in responses, not in last_error, not in the server log and not in the console.
@@ -240,6 +241,50 @@ describe('Telegram: messages into the inbox', () => {
 		expect(confirmations.length).toBe(before + 1);
 		expect(await telegramItems(owner)).toHaveLength(4);
 		await owner.pb.collection('connections').update(bot.id, { settings: record.settings });
+	});
+
+	it('switches each answer off on its own; a connection without the switches answers (ADR-0016, addendum of 2026-10-01)', async () => {
+		const connections = owner.pb.collection('connections');
+		const record = await connections.getOne(bot.id);
+		// Data of before: the bot was created without the switches and confirmed and answered above.
+		expect(record.settings).not.toHaveProperty('reply_saved');
+		expect(record.settings).not.toHaveProperty('reply_no_match');
+		const cursorOf = async () => (await connections.getOne(bot.id)).cursor;
+		const titles = async () => (await telegramItems(owner)).map((item) => item.title);
+		const answers = (from) => confirmations.slice(from).map((item) => [item.chat_id, item.text, item.reply_parameters.message_id]);
+		try {
+			// Confirmation off: the entry is saved without an answer, the hint without keyword stays.
+			const before = confirmations.length;
+			await connections.update(bot.id, { settings: { ...record.settings, reply_saved: false } });
+			send(PRIVATE, { text: 'Milch ohne Bestätigung' });
+			const hello = send(PRIVATE, { text: 'Guten Morgen' });
+			await runNow(owner, bot.id);
+			await expect.poll(cursorOf).toBe(String(hello.update_id));
+			expect(await titles()).toContain('Milch ohne Bestätigung');
+			expect(answers(before)).toEqual([[OWN_ID, 'Kein Stichwort erkannt – nicht gespeichert', hello.message.message_id]]);
+
+			// Both off: nothing goes into the chat, the entry is saved all the same.
+			const quiet = confirmations.length;
+			await connections.update(bot.id, { settings: { ...record.settings, reply_saved: false, reply_no_match: false } });
+			send(GROUP, { text: 'Rechnung ohne Antwort' });
+			const greeting = send(PRIVATE, { text: 'Noch ein Gruß ohne Antwort' });
+			await runNow(owner, bot.id);
+			await expect.poll(cursorOf).toBe(String(greeting.update_id));
+			expect(await titles()).toContain('Rechnung ohne Antwort');
+			expect(confirmations.length).toBe(quiet);
+
+			// Hint off, confirmation on (stored as true): only the confirmation.
+			const loud = confirmations.length;
+			await connections.update(bot.id, { settings: { ...record.settings, reply_saved: true, reply_no_match: false } });
+			const dentist = send(PRIVATE, { text: 'Zahnarzt mit Bestätigung' });
+			const last = send(PRIVATE, { text: 'Kein Treffer hier' });
+			await runNow(owner, bot.id);
+			await expect.poll(cursorOf).toBe(String(last.update_id));
+			expect(answers(loud)).toEqual([[OWN_ID, 'Im Eingang gespeichert', dentist.message.message_id]]);
+			expect((await connections.getOne(bot.id)).last_error).toBe('');
+		} finally {
+			await connections.update(bot.id, { settings: record.settings });
+		}
 	});
 
 	it('fetches through the cron job as well', async () => {

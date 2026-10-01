@@ -1,6 +1,12 @@
 <script lang="ts">
 	import { tick } from 'svelte';
-	import type { Connection } from '$lib/domain/connections';
+	import {
+		settingsDraftOf,
+		telegramRepliesAnnouncement,
+		type Connection,
+		type ConnectionSettingsDraft,
+		type TelegramRepliesChange
+	} from '$lib/domain/connections';
 	import { cardAnchorOf } from '$lib/domain/sync-all';
 	import { RESTART_NEEDED } from '$lib/guidance/texts';
 	import {
@@ -119,7 +125,7 @@
 	async function saveKeywords(connection: Connection, keywords: string[], announcement: string) {
 		const result = await store.saveSettings(
 			connection.id,
-			{ keywords, replyNoMatch: connection.replyNoMatch, matchBody: connection.matchBody },
+			{ ...settingsDraftOf(connection), keywords },
 			announcement
 		);
 		if (result.ok) return null;
@@ -130,26 +136,44 @@
 		);
 	}
 
+	/**
+	 * Saves one switch of a connection; an error stays where the switch is: in the edit modal or
+	 * at the card (switches of the Telegram answers in its details).
+	 */
 	async function saveSwitch(
 		connection: Connection,
-		change: { replyNoMatch?: boolean; matchBody?: boolean },
-		announcement: string
+		change: Partial<ConnectionSettingsDraft>,
+		announcement: string,
+		place: 'modal' | 'card' = 'modal'
 	) {
-		editMessage = null;
+		if (place === 'card') cardMessage = null;
+		else editMessage = null;
 		const result = await store.saveSettings(
 			connection.id,
-			{
-				keywords: connection.keywords,
-				replyNoMatch: change.replyNoMatch ?? connection.replyNoMatch,
-				matchBody: change.matchBody ?? connection.matchBody
-			},
+			{ ...settingsDraftOf(connection), ...change },
 			announcement
 		);
-		if (!result.ok)
-			editMessage =
-				result.message ??
-				Object.values(result.fields)[0] ??
-				'Die Einstellung ließ sich nicht speichern.';
+		if (result.ok) return;
+		const text =
+			result.message ??
+			Object.values(result.fields)[0] ??
+			'Die Einstellung ließ sich nicht speichern.';
+		if (place === 'card') cardMessage = { id: connection.id, text };
+		else editMessage = text;
+	}
+
+	/** Telegram: one of the two answers of the bot in the chat (ADR-0016, addendum of 2026-10-01). */
+	function saveReplies(
+		connection: Connection,
+		change: TelegramRepliesChange,
+		place: 'modal' | 'card'
+	): Promise<void> {
+		return saveSwitch(
+			connection,
+			change,
+			telegramRepliesAnnouncement(connection.label, change),
+			place
+		);
 	}
 
 	async function confirmDelete() {
@@ -261,6 +285,7 @@
 								}}
 								onsetup={() => onsetup(connection)}
 								onscan={(action) => void scan(connection, action)}
+								onreplies={(change) => saveReplies(connection, change, 'card')}
 							/>
 						{/if}
 					</li>
@@ -276,14 +301,7 @@
 		{connection}
 		message={editMessage}
 		onkeywords={(next, announcement) => saveKeywords(connection, next, announcement)}
-		onreply={(replyNoMatch) =>
-			void saveSwitch(
-				connection,
-				{ replyNoMatch },
-				replyNoMatch
-					? `„${connection.label}“ antwortet auf Nachrichten ohne Stichwort.`
-					: `„${connection.label}“ antwortet nicht mehr auf Nachrichten ohne Stichwort.`
-			)}
+		onreplies={(change) => saveReplies(connection, change, 'modal')}
 		onmatchbody={(matchBody) =>
 			void saveSwitch(
 				connection,

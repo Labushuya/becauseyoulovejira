@@ -74,6 +74,7 @@ function connection(overrides: Partial<Connection> = {}): Connection {
 		lastError: '',
 		lastHint: '',
 		keywords: ['todo', 'ticket'],
+		replySaved: true,
 		replyNoMatch: true,
 		mailProvider: '',
 		mailUser: '',
@@ -130,7 +131,8 @@ async function connectionCard(
 			onpause: vi.fn(),
 			ondelete: vi.fn(),
 			onsetup: vi.fn(),
-			onscan: vi.fn()
+			onscan: vi.fn(),
+			onreplies: vi.fn()
 		}
 	});
 	return screen.getByRole('article', { name: value.label });
@@ -377,7 +379,12 @@ const CASES: Case[] = [
 				place: 'menu',
 				now: 'Stichwörter und Einstellungen …'
 			},
-			{ old: '(neu) Antwort ohne Stichwort', place: 'details', now: /Kein Stichwort erkannt/ }
+			{ old: '(neu) Antwort ohne Stichwort', place: 'details', now: /Kein Stichwort erkannt/ },
+			{
+				old: '(neu) Schalter der Antworten im Chat (ADR-0016, Nachtrag vom 2026-10-01)',
+				place: 'details',
+				now: /Bestätigung senden \(„Im Eingang gespeichert“\)/
+			}
 		]
 	},
 	{

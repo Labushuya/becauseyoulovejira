@@ -4,6 +4,8 @@
 // so the order "save, then confirm, then move the offset" is testable without a server.
 'use strict';
 
+// Answer to a newly saved entry, unless the connection switched it off (ADR-0016, addendum of
+// 2026-10-01). The same text stands in web/src/lib/domain/connections.ts (parity test).
 var CONFIRMATION = 'Im Eingang gespeichert';
 // Answer to a message without keyword (ADR-0020 section 4), unless the connection switched it off.
 var NO_MATCH = 'Kein Stichwort erkannt – nicht gespeichert';
@@ -117,17 +119,19 @@ function unknownChatHint(message, allowlistName) {
  *   allowed        IDs of the allowlist
  *   allowlistName  name of the allowlist variable (for the hint)
  *   save(draft)    creates the entry: 'created' or 'duplicate'; throws if it cannot be saved
- *   confirm(chatId, messageId)  sends "Im Eingang gespeichert"; throws on failure
+ *   replySaved     whether a newly saved entry gets the answer CONFIRMATION
+ *   confirm(chatId, messageId)  sends CONFIRMATION; throws on failure
  *   match(text)    the keyword of the connection that matches the text, or ''
  *   replyNoMatch   whether a message without keyword gets the answer NO_MATCH
  *   decline(chatId, messageId)  sends NO_MATCH; throws on failure
  *   berlin         berlin-time.js
- * The offset (`cursor`, the last handled update_id) moves past an update only when it is done:
- * saved, a duplicate, not allowed, without text or without keyword (not saved at all, ADR-0020).
- * A failed save stops the run and leaves the offset before that update, so Telegram offers it
- * again. A failed confirmation or answer keeps the offset and is reported. Returns { cursor,
- * created, duplicates, skipped, unmatched, hint, error }; `hint` is undefined if no unknown chat
- * wrote.
+ * A duplicate and a message of a chat that is not allowed never get an answer, whatever the
+ * switches say. The offset (`cursor`, the last handled update_id) moves past an update only when
+ * it is done: saved, a duplicate, not allowed, without text or without keyword (not saved at all,
+ * ADR-0020). A failed save stops the run and leaves the offset before that update, so Telegram
+ * offers it again. A failed confirmation or answer keeps the offset and is reported. Returns
+ * { cursor, created, duplicates, skipped, unmatched, hint, error }; `hint` is undefined if no
+ * unknown chat wrote.
  */
 function processUpdates(updates, cursor, ctx) {
   var result = { cursor: cursor, created: 0, duplicates: 0, skipped: 0, unmatched: 0, hint: undefined, error: '' };
@@ -181,10 +185,12 @@ function processUpdates(updates, cursor, ctx) {
     }
     if (saved === 'created') {
       result.created++;
-      try {
-        ctx.confirm(message.chat.id, message.message_id);
-      } catch (err) {
-        confirmErrors.push(text(err && err.message ? err.message : err));
+      if (ctx.replySaved) {
+        try {
+          ctx.confirm(message.chat.id, message.message_id);
+        } catch (err) {
+          confirmErrors.push(text(err && err.message ? err.message : err));
+        }
       }
     } else {
       result.duplicates++;

@@ -16,11 +16,12 @@ var MAIL_PROVIDERS = ['webde', 'gmail'];
 var MAIL_USER_MAX_LENGTH = 254;
 
 // Keys of `settings` per kind. Only names of variables, never values (ADR-0018 section 2), the
-// keywords (ADR-0020 section 3) and, for Telegram, whether the bot answers messages without one.
-// Notion has none: the user chooses what to import, so no keyword applies (ADR-0041 §5).
+// keywords (ADR-0020 section 3) and, for Telegram, the two answers of the bot in the chat: the
+// confirmation of a saved entry and the hint for a message without keyword (ADR-0016, addendum of
+// 2026-10-01). Notion has none: the user chooses what to import, so no keyword applies (ADR-0041 §5).
 var SETTINGS_KEYS = {
   calendar: ['keywords'],
-  telegram: ['allowed_env', 'keywords', 'reply_no_match'],
+  telegram: ['allowed_env', 'keywords', 'reply_saved', 'reply_no_match'],
   mail: ['provider', 'user', 'keywords', 'match_body'],
   notion: []
 };
@@ -47,6 +48,11 @@ function isPlainObject(value) {
   return value !== null && typeof value === 'object' && Object.prototype.toString.call(value) === '[object Object]';
 }
 
+// A switch of the settings: missing (the default applies) or true or false.
+function isOptionalSwitch(value) {
+  return value === undefined || typeof value === 'boolean';
+}
+
 /**
  * Checks `settings` of a connection of `type`. `settings` is the parsed JSON (null for empty).
  * Returns '' or { field, code, message }.
@@ -68,7 +74,7 @@ function settingsViolation(type, settings, secrets, keywords) {
   if (keywords.listViolation(value.keywords) !== '') {
     return { field: 'settings', code: 'validation_keywords', message: keywords.MESSAGE };
   }
-  if (value.reply_no_match !== undefined && typeof value.reply_no_match !== 'boolean') {
+  if (!isOptionalSwitch(value.reply_saved) || !isOptionalSwitch(value.reply_no_match)) {
     return failure('settings', 'validation_connection_settings');
   }
   if (type === 'telegram' && !secrets.isValidName(value.allowed_env)) {
@@ -174,6 +180,14 @@ function sourceIdentity(type, secretEnv, settings) {
   return parts.join('\n');
 }
 
+/**
+ * Telegram: whether the bot confirms a saved entry in the chat (default yes; a connection from
+ * before the switch has no value and confirms, ADR-0016, addendum of 2026-10-01).
+ */
+function repliesOnSave(settings) {
+  return !(isPlainObject(settings) && settings.reply_saved === false);
+}
+
 /** Telegram: whether the bot answers a message without keyword (default yes). */
 function repliesWithoutMatch(settings) {
   return !(isPlainObject(settings) && settings.reply_no_match === false);
@@ -215,5 +229,6 @@ module.exports = {
   isMailUser: isMailUser,
   mailSettingsOf: mailSettingsOf,
   sourceIdentity: sourceIdentity,
+  repliesOnSave: repliesOnSave,
   repliesWithoutMatch: repliesWithoutMatch
 };

@@ -410,6 +410,26 @@
 				</ul>
 			</details>
 			<details>
+				<summary>Was schreibt der Telegram-Bot in den Chat?</summary>
+				<ul>
+					<li>
+						Auf jede Nachricht, die er in den Eingang legt, antwortet er „Im Eingang gespeichert“;
+						auf eine Nachricht ohne Stichwort „Kein Stichwort erkannt – nicht gespeichert“. Doppelte
+						Nachrichten und Nachrichten aus nicht freigegebenen Chats beantwortet er nie.
+					</li>
+					<li>
+						Beide Antworten schaltest du einzeln ab: „Bestätigung senden“ und „Hinweis bei fehlendem
+						Stichwort senden“ an der Karte unter „Details“, im Menü „•••“ unter „Stichwörter und
+						Einstellungen …“ oder im letzten Schritt der Einrichtung. Standardmäßig sind beide an.
+					</li>
+					<li>
+						Der Bot schreibt diese Antworten in den Chat; in Gruppen sehen sie alle Mitglieder. Ohne
+						Bestätigung siehst du im Chat nicht, ob eine Nachricht angekommen ist, nur im Eingang.
+						Telegram hält Nachrichten für den Bot höchstens 24 Stunden bereit.
+					</li>
+				</ul>
+			</details>
+			<details>
 				<summary>Wo sind meine Zugangsdaten gespeichert?</summary>
 				<p>
 					Nur als Umgebungsvariable in deinem Windows-Konto. Die App kennt den Namen der Variablen,

@@ -32,6 +32,7 @@ function mailbox(overrides: Partial<Connection> = {}): Connection {
 		lastError: '',
 		lastHint: '',
 		keywords: [],
+		replySaved: true,
 		replyNoMatch: true,
 		mailProvider: 'webde',
 		mailUser: 'anna@web.de',
