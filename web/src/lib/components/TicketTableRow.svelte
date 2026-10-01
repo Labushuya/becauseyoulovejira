@@ -24,6 +24,7 @@
 </script>
 
 <script lang="ts">
+	import type { Snippet } from 'svelte';
 	import { goto } from '$app/navigation';
 	import type { ResolvedPathname } from '$app/types';
 	import type { CalendarDate } from '$lib/domain/berlin-date';
@@ -54,7 +55,9 @@
 	// "2/5" at its title; a sub-task is indented below its parent or, standing alone, shows the path
 	// hint "HAUS-12 ›"; screen readers hear "Unteraufgabe von HAUS-12" either way.
 	// With `edit` (plan BI-3, ADR-0036 §6) priority, status, project, tags and due date are buttons
-	// that edit the value in a small popover; a click in those cells never opens the ticket.
+	// that edit the value in a small popover; a click in those cells never opens the ticket. With
+	// `menu` (plan aktionsmenues, AM-2) the actions end with the menu "•••" of the ticket, after
+	// "Öffnen"; a click on it or in the menu never opens the row either.
 	let {
 		ticket,
 		nested = false,
@@ -75,6 +78,8 @@
 		selected = false,
 		onselect,
 		edit,
+		menu,
+		menuBusy = false,
 		ontoggle
 	}: {
 		ticket: TicketSummary;
@@ -113,6 +118,10 @@
 		onselect?: (on: boolean, range: boolean) => void;
 		/** Editing in the cells (plan BI-3); without it the cells only show their value. */
 		edit?: RowEdit;
+		/** The menu "•••" of the ticket at the end of the actions (plan aktionsmenues, AM-2). */
+		menu?: Snippet<[TicketSummary]>;
+		/** A dialog of the menu is being prepared for this row (aria-busy on the actions). */
+		menuBusy?: boolean;
 		ontoggle: (done: boolean) => void;
 	} = $props();
 
@@ -472,7 +481,7 @@
 			</time>
 		</td>
 	{/if}
-	<td class="actions" data-col="actions">
+	<td class="actions" data-col="actions" aria-busy={menuBusy ? 'true' : undefined}>
 		<span class="action-group">
 			<DoneToggle key={ticket.key} {checked} {pending} onchange={ontoggle} />
 			<!-- Mouse only: the title link does the same for keyboard and screen readers. -->
@@ -488,6 +497,7 @@
 					/>
 				</svg>
 			</a>
+			{@render menu?.(ticket)}
 		</span>
 	</td>
 </tr>
@@ -721,10 +731,24 @@
 		font-variant-numeric: tabular-nums;
 	}
 
+	/*
+	 * Check mark, "Öffnen" and the menu "•••" in 5.5rem (ADR-0030, addendum of plan aktionsmenues):
+	 * a narrower padding, and the button of the menu at the small control height, so the row
+	 * keeps its height.
+	 */
+	.actions {
+		padding-inline: 0.5rem;
+	}
+
 	.action-group {
 		display: inline-flex;
 		gap: 0.5rem;
 		align-items: center;
+	}
+
+	.action-group :global(.row-menu) {
+		width: var(--control-height-s);
+		height: var(--control-height-s);
 	}
 
 	.open {

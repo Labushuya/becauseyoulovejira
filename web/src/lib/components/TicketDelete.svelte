@@ -1,16 +1,16 @@
 <script lang="ts">
 	import type { SourceHandling } from '$lib/domain/sources';
 	import type { TicketSummary } from '$lib/domain/ticket';
-	import type { DeleteResult, DeleteSources } from '$lib/stores/ticket-detail.svelte';
+	import type { DeleteResult, DeleteSources } from '$lib/stores/trash-move';
 	import ConfirmDialog from './overlay/ConfirmDialog.svelte';
 	import SourceHandlingChoice from './SourceHandlingChoice.svelte';
 	import TicketDeleteText from './TicketDeleteText.svelte';
 
 	// "In den Papierkorb …" of a ticket outside the full view (E2 plan, package 11; ADR-0037): the
-	// confirmation asks before moving the ticket to the trash; the owner shows it after the choice
-	// in the menu "•••" (plan aktionsmenues) and drops it on `onclose`, and the modal returns the
-	// focus to the button of the menu. A failure stays in the dialog; afterwards the owner closes
-	// the view and a flag offers "Rückgängig". A ticket with sources (ADR-0031, addendum B) names
+	// confirmation asks before moving the ticket to the trash; the owner (the side panel, since AM-2
+	// also the table for a row) shows it after the choice in the menu "•••" (plan aktionsmenues)
+	// and drops it on `onclose`, and the modal returns the focus to the button of the menu. A failure
+	// stays in the dialog; afterwards the panel closes and a flag offers "Rückgängig". A ticket with sources (ADR-0031, addendum B) names
 	// their number and asks what happens to them: back to the inbox (chosen at first) or along with
 	// the ticket; sub-tasks go along (ADR-0033, addendum). The full view asks inline instead
 	// (TicketDeleteQuestion), because no dialog opens from it (ADR-0025 section 3).
@@ -25,7 +25,8 @@
 		ticket: Pick<TicketSummary, 'key' | 'recurring' | 'status'>;
 		/** Moves the ticket to the trash, the sources as chosen. */
 		remove: (sources?: DeleteSources) => Promise<DeleteResult>;
-		ondeleted: () => void;
+		/** The ticket is in the trash: the panel closes (a row of the table needs nothing). */
+		ondeleted?: () => void;
 		/** Cancel, or the ticket is gone: the owner drops the dialog. */
 		onclose: () => void;
 		/** Number of sources of the ticket (inbox items with `ticket = <id>`). */
@@ -46,7 +47,7 @@
 		deleting = false;
 		if (result.ok) {
 			onclose();
-			ondeleted();
+			ondeleted?.();
 		} else if (result.message !== null) {
 			error = result.message;
 		} else {

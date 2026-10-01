@@ -149,6 +149,9 @@ describe('help page (EH-9)', () => {
 		expect(text(section)).toContain('„Link kopieren“, „Duplizieren …“ und „In den Papierkorb …“');
 		expect(text(section)).toContain('die Pfeiltasten wählen');
 		expect(text(section)).toContain('„Link kopiert“');
+		// The menu of a row of the table (AM-2): both ways to open, the row does not open.
+		expect(text(section)).toContain('„Im Seitenpanel öffnen“ und „In Vollansicht öffnen“');
+		expect(text(section)).toContain('Ein Klick auf „•••“ öffnet die Zeile nicht.');
 		// Duplicating (ADR-0045): the question, the status, sub-tasks, comments, the source, the result.
 		expect(text(section)).toContain('„Duplizieren …“ (im Menü „•••“');
 		expect(text(section)).toContain('„Erledigt“ gibt es dabei nicht');

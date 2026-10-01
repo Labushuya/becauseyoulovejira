@@ -33,6 +33,7 @@
 		label,
 		buttonLabel,
 		buttonTitle,
+		buttonClass = 'button-icon',
 		placement = 'bottom-end',
 		items,
 		trigger = $bindable()
@@ -43,6 +44,8 @@
 		buttonLabel: string;
 		/** Tooltip of the button. */
 		buttonTitle?: string;
+		/** Classes of the button: `.button-icon`, plus one the owner sizes (a row of a table). */
+		buttonClass?: string;
 		placement?: 'bottom-start' | 'bottom-end';
 		/** The entries, in this order. */
 		items: readonly MenuAction[];
@@ -57,15 +60,7 @@
 	}
 </script>
 
-<Popover
-	kind="menu"
-	{label}
-	{placement}
-	buttonClass="button-icon"
-	{buttonLabel}
-	{buttonTitle}
-	bind:trigger
->
+<Popover kind="menu" {label} {placement} {buttonClass} {buttonLabel} {buttonTitle} bind:trigger>
 	{#snippet button()}
 		<svg
 			class="dots"

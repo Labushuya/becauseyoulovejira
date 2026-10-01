@@ -192,7 +192,7 @@ export function ticketHref(id: string, url: URL): ResolvedPathname {
  * ticket without the state of the list, so it opens the same ticket in any tab.
  */
 export function ticketShareUrl(id: string, origin: string): string {
-	return new URL(resolve(`/tickets/${encodeURIComponent(id)}`), origin).href;
+	return new URL(ticketPath(id), origin).href;
 }
 
 /**
