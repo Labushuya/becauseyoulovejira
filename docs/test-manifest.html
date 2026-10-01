@@ -341,7 +341,7 @@
   "meta": {
     "projekt": "becauseyoulovejira",
     "stand": "2026-10-01",
-    "commit": "16a5a35"
+    "commit": "396153c"
   },
   "bereiche": [
     { "id": "betrieb", "titel": "Betrieb: Start, Stopp, Skripte und Daten" },
@@ -515,7 +515,10 @@
     { "id": "BK-3", "vorhaben": "Sicherung, Prüfung, Wiederherstellen", "titel": "Wiederherstellen per wiederherstellen.bat und aus der App, mit Sicherheitskopie und Rückweg", "bereich": "betrieb", "quelle": "Nutzerentscheidung", "datum": "2026-10-01", "adr": ["0046-sicherung-pruefung-wiederherstellen.md", "0003-pb-data-und-backups.md, Nachtrag BK-3", "0039-betriebsskripte.md, Nachtrag BK-3", "0043-system-seite.md, Nachtrag BK-3"], "plan": "sicherung.md", "faelle": ["BYL-E6-920..BYL-E6-930"],
       "vermerk": "Entscheidung: „Wiederherstellen aus der App: wenn möglich auch das, ja“." },
     { "id": "PT-1", "vorhaben": "Offene Tickets in Projekten", "titel": "Aufklappbare Projektzeilen mit den offenen Tickets, Abschnitt im Projekt-Panel und Zeilenmenü der Einträge", "bereich": "aufgaben", "quelle": "Nutzerwunsch", "datum": "2026-10-01", "adr": ["0034-unterprojekte.md, Nachtrag „Offene Tickets in Projekten“", "0042-tickets-und-projekte-aus-listen-waehlen.md, Nachtrag vom 2026-10-01"], "plan": "projekte-tickets.md", "faelle": ["BYL-E6-960..BYL-E6-971"] },
-    { "id": "BK-4", "vorhaben": "Sicherung, Prüfung, Wiederherstellen", "titel": "Notfallplan: Hilfe „Sicherung & Notfall“, Notfallkarte und README", "bereich": "betrieb", "quelle": "Nutzerentscheidung", "datum": "2026-10-01", "adr": ["0046-sicherung-pruefung-wiederherstellen.md"], "plan": "sicherung.md", "faelle": ["BYL-E6-940..BYL-E6-944"] },
+    { "id": "postal-mime-4", "vorhaben": "Abhängigkeiten", "titel": "postal-mime 4 in der SPA und im Mail-Hilfsprozess", "bereich": "eingang", "quelle": "Nutzerentscheidung", "datum": "2026-10-01", "adr": ["0017-parser-ics-eml.md", "0016-kanal-architektur-und-mail.md"], "faelle": ["BYL-E6-940..BYL-E6-943"],
+      "vermerk": "Ersetzt Dependabot #207 und #208; Freigabe: „postal-mime 4.0.0 übernehmen, nach gezielter Prüfung“." },
+    { "id": "BK-4", "vorhaben": "Sicherung, Prüfung, Wiederherstellen", "titel": "Notfallplan: Hilfe „Sicherung & Notfall“, Notfallkarte und README", "bereich": "betrieb", "quelle": "Nutzerentscheidung", "datum": "2026-10-01", "adr": ["0046-sicherung-pruefung-wiederherstellen.md"], "plan": "sicherung.md", "faelle": ["BYL-E6-950..BYL-E6-954"],
+      "vermerk": "Vorgesehen war BYL-E6-940; die IDs 940 bis 943 hat inzwischen postal-mime-4." },
     { "id": "querschnitt", "vorhaben": "Querschnitt", "titel": "Testumgebung, Regeln der Datenschicht, Hook-Module und dieses Manifest", "bereich": "entwicklung", "faelle": ["BYL-X-001..BYL-X-004"] }
   ],
   "zurueckgestellt": [
@@ -3746,7 +3749,7 @@
       ]
     },
     {
-      "tag": "E6", "name": "Sicherung", "desc": "Gestufte Sicherung mit Generationen, verschlüsseltem Zielverzeichnis (age) und Zugangsdaten, Prüfung mit Wegwerf-Instanz und Wiederherstellen (Nutzerentscheidungen vom 2026-10-01, ADR-0046, docs/plan/sicherung.md). IDs ab BYL-E6-880, Prüfung (BK-2) ab BYL-E6-900, Wiederherstellen (BK-3) ab BYL-E6-920, Notfallplan (BK-4) ab BYL-E6-940. byl-control.ps1 läuft in Tests nur gegen Wegwerf-Kopien unter .tmp\\ mit Zufallsport; Passphrase und Zugangsdaten der Tests sind erfunden und bleiben in Ordnern des Tests.",
+      "tag": "E6", "name": "Sicherung", "desc": "Gestufte Sicherung mit Generationen, verschlüsseltem Zielverzeichnis (age) und Zugangsdaten, Prüfung mit Wegwerf-Instanz und Wiederherstellen (Nutzerentscheidungen vom 2026-10-01, ADR-0046, docs/plan/sicherung.md). IDs ab BYL-E6-880, Prüfung (BK-2) ab BYL-E6-900, Wiederherstellen (BK-3) ab BYL-E6-920, Notfallplan (BK-4) ab BYL-E6-950. byl-control.ps1 läuft in Tests nur gegen Wegwerf-Kopien unter .tmp\\ mit Zufallsport; Passphrase und Zugangsdaten der Tests sind erfunden und bleiben in Ordnern des Tests.",
       "items": [
         { "id": "BYL-E6-880", "title": "Namen und Generationen (GFS) nach Berliner Tagen", "art": ["unit"], "status": "bestanden",
           "pre": "–", "steps": ["npm run test:unit"],
@@ -3900,23 +3903,23 @@
           "pre": "Wie BYL-E6-929; in der Kopie eine Sicherung im Zielverzeichnis von vor einem Wechsel der Passphrase.", "steps": ["wiederherstellen.bat der Kopie doppelklicken, die ältere Sicherung im Ziel wählen.", "Die alte Passphrase eingeben, die Liste der Zugangsdaten lesen, „f“ wählen, beim Wort einmal Enter (Abbruch).", "Noch einmal, diesmal WIEDERHERSTELLEN eintippen."],
           "expect": "Liste mit Datum, Größe und Ort; die Prüfung meldet Tickets und Originaldateien, die Zugangsdaten nur mit Namen (fehlende extra); ohne das Wort „Abgebrochen; nichts wurde geändert.“; danach läuft die Kopie mit dem Stand der Sicherung, das Fenster nennt die Sicherheitskopie und die zurückgeschriebenen Namen; logs\\byl-control.log der Kopie enthält eine Zeile restore ohne Werte.",
           "tests": [] },
-        { "id": "BYL-E6-940", "title": "Notfallplan aus einer Quelle: Schritte, Skripte, Dateien der Sicherung", "art": ["unit"], "status": "bestanden",
+        { "id": "BYL-E6-950", "title": "Notfallplan aus einer Quelle: Schritte, Skripte, Dateien der Sicherung", "art": ["unit"], "status": "bestanden",
           "pre": "–", "steps": ["npm run test:web"],
           "expect": "Zehn Schritte von „App holen“ bis „Sicherung prüfen“, jeder einmal, wiederherstellen.bat vor der Passphrase und neu-starten.bat vor dem Autostart; jedes genannte Skript und die Erweiterung liegen im Ordner app; age --decrypt und tar -xf; jede genannte Datei der Sicherung kommt im Hilfsprogramm vor; kein Variablenname und kein Wert, nur das Muster BYL_*.",
           "tests": ["web/src/lib/domain/backup.test.ts::emergency plan (BK-4)"] },
-        { "id": "BYL-E6-941", "title": "Notfallkarte: Orte, Namen der Zugangsdaten, Drucken, Ablehnungen", "art": ["komponente"], "status": "bestanden",
+        { "id": "BYL-E6-951", "title": "Notfallkarte: Orte, Namen der Zugangsdaten, Drucken, Ablehnungen", "art": ["komponente"], "status": "bestanden",
           "pre": "–", "steps": ["npm run test:web"],
           "expect": "Eine eigene Seite ohne Kopfzeile: Ordner der App, Zielverzeichnis, neueste Sicherung mit Zeit, Namen der Zugangsdaten, alle Schritte und Verluste, eine Zeile für den Ort der Passphrase, nie die Passphrase; „Drucken“ ruft den Druck auf, gedruckt wird mit den hellen Tokens (danach wieder der Modus von vorher), der Rückweg führt zu Einstellungen → Sicherung; eine Ablehnung des Servers statt der Karte; unter Linux der Hinweis ohne Anfrage.",
           "tests": ["web/src/routes/notfallkarte/notfallkarte-page.test.ts"] },
-        { "id": "BYL-E6-942", "title": "Hilfe „Sicherung & Notfall“ und stop.bat vor dem Kopieren", "art": ["komponente"], "status": "bestanden",
+        { "id": "BYL-E6-952", "title": "Hilfe „Sicherung & Notfall“ und stop.bat vor dem Kopieren", "art": ["komponente"], "status": "bestanden",
           "pre": "–", "steps": ["npm run test:web"],
           "expect": "Der Abschnitt steht in der Sprungleiste und erklärt Einrichten (mit dem Hinweis auf den Passwort-Manager), Wiederherstellen, die Schritte der Notfallkarte, age und tar und was verloren gehen kann; „Sichern und umziehen“ sagt, dass erst stop.bat kommt; die Seite „Sicherung“ verlinkt Notfallkarte und Abschnitt.",
           "tests": ["web/src/routes/(app)/einstellungen/hilfe/help-page.test.ts::explains the backups and the emergency plan for a new machine, from the source of the Notfallkarte (ADR-0046)", "web/src/routes/(app)/einstellungen/hilfe/help-page.test.ts::copies and moves the app only after stop.bat", "web/src/routes/(app)/einstellungen/hilfe/help-page.test.ts::jumps to ten sections that exist on the page", "web/src/lib/components/backup/backup-view.test.ts::links the Notfallkarte and the help for an emergency"] },
-        { "id": "BYL-E6-943", "title": "Notfallkarte drucken (manuell)", "art": ["manuell"], "status": "offen",
+        { "id": "BYL-E6-953", "title": "Notfallkarte drucken (manuell)", "art": ["manuell"], "status": "offen",
           "pre": "Die App läuft mit Zielverzeichnis, Passphrase und mindestens einer Sicherung dort; Zugangsdaten mitsichern an.", "steps": ["Einstellungen → Sicherung, Link „Notfallkarte“.", "„Drucken“, Vorschau ansehen (auch als PDF), hell und dunkel."],
           "expect": "Die Vorschau zeigt nur die Karte, ohne „Drucken“ und Rückweg, lesbar auf weißem Papier; Ordner, Adresse, Zielverzeichnis, neueste Sicherungen und Namen der Zugangsdaten stimmen; nirgends Passphrase oder Wert; die Zeile für den Ort der Passphrase ist leer.",
           "tests": [] },
-        { "id": "BYL-E6-944", "title": "Totalausfall nach dem Notfallplan auf einem frischen Ordner (manuell)", "art": ["manuell"], "status": "offen",
+        { "id": "BYL-E6-954", "title": "Totalausfall nach dem Notfallplan auf einem frischen Ordner (manuell)", "art": ["manuell"], "status": "offen",
           "pre": "Eine Sicherung im Zielverzeichnis (.tar.age) mit Zugangsdaten; ein frischer Ordner app einer aktuellen Version, ohne pb_data und ohne byl-config.json, idealerweise auf einem zweiten Rechner oder in einem zweiten Windows-Konto; die echte Instanz bleibt unberührt.", "steps": ["Die zehn Schritte der Notfallkarte der Reihe nach ausführen.", "Eine Sicherung zusätzlich mit age --decrypt und tar -xf ohne die App öffnen."],
           "expect": "Die App startet mit dem Stand der Sicherung und ihren Einstellungen; die fehlenden Zugangsdaten stehen im Konto, die Kanäle verbinden sich nach neu-starten.bat; Anmeldung, Web-App und die Erweiterung mit neuem Schlüssel gehen; „Jetzt sichern“ und „Jetzt prüfen“ gelingen; age und tar liefern die genannten Dateien.",
           "tests": [] }
@@ -3974,6 +3977,27 @@
           "pre": "Wie BYL-E6-970; ein zweiter Tab mit „Aufgaben“.",
           "steps": ["In Tab 1 die Zeile eines Projekts aufklappen.", "In Tab 2 ein Ticket dieses Projekts erledigen, eines anlegen, eines in den Papierkorb verschieben und eines in ein anderes Projekt verschieben.", "In Tab 2 zur Projektansicht wechseln und „Alle zuklappen“."],
           "expect": "Tab 1 zeigt jede Änderung ohne Neuladen: erledigte und gelöschte verschwinden, das neue erscheint an seinem Platz, das verschobene wechselt zur Zeile des anderen Projekts; nach „Alle zuklappen“ in Tab 2 sind auch in Tab 1 alle Zeilen zu.",
+          "tests": [] }
+      ]
+    },
+    {
+      "tag": "E6", "name": "Abhängigkeiten", "desc": "Major-Updates mit gezielter Prüfung statt Merge des Dependabot-PRs: postal-mime 4 in der SPA und in byl-mail.exe (ersetzt #207 und #208), mit einer Regressions-Fixture für Mails mit Anhängen.",
+      "items": [
+        { "id": "BYL-E6-940", "title": "Mail-Datei mit Alternativteilen, Inline-Bild und Anhang mit Umlauten (SPA)", "art": ["unit"], "status": "bestanden",
+          "pre": "–", "steps": ["npm run test:web"],
+          "expect": "Die erfundene Mail tests/fixtures/eml/alternative-inline-attachment.eml (multipart/mixed mit multipart/related, multipart/alternative aus Text und HTML, Inline-PNG mit Content-ID und PDF-Anhang; Dateinamen nach RFC 2047 und RFC 2231 mit Umlauten) ergibt über readMailFile denselben Entwurf wie mit postal-mime 3: Titel „Prüfbericht für März“, Text aus dem Textteil mit „_2 Anhänge, nur in der Originaldatei._“, Absender, Empfänger, Datum, Message-ID, die Datei als Original und dieselben Suchtexte; mit CRLF statt LF dasselbe. postal-mime nennt beide Anhänge mit Namen, Typ, disposition „inline“ bzw. „attachment“, Content-ID und unverändertem Inhalt.",
+          "tests": ["web/src/lib/mail-file.test.ts::mail with alternative parts, inline image and attachment (BYL-E6-940)"] },
+        { "id": "BYL-E6-941", "title": "Dieselbe Mail aus dem Postfach im Mail-Hilfsprozess", "art": ["unit"], "status": "bestanden",
+          "pre": "–", "steps": ["npm run test:helper"],
+          "expect": "parseMail von byl-mail liefert für die Fixture mit LF und mit CRLF denselben Entwurf wie die SPA, nur mit Kanal „mail“, samt Suchtexten; die Fixture läuft auch im Vergleich aller Mail-Fixtures mit der SPA mit.",
+          "tests": ["helpers/mail/src/mail.test.ts::reads a mail with alternative parts, inline image and attachment with umlauts (BYL-E6-941)", "helpers/mail/src/mail.test.ts::like the web app, only with channel"] },
+        { "id": "BYL-E6-942", "title": "Eingangseintrag mit Originaldatei gegen die Wegwerf-Instanz", "art": ["integration"], "status": "bestanden",
+          "pre": "app\\pocketbase.exe vorhanden, Web-Build da.", "steps": ["npm run test:integration"],
+          "expect": "createItem legt die Mail als Eintrag mit Kanal eml, Titel, Text mit Anhang-Hinweis, Message-ID, Datum, Absender, Empfänger und attachments 2 an; die geschützte Originaldatei kommt Byte für Byte gleich zurück.",
+          "tests": ["tests/integration/web-data-inbox.test.mjs::keeps a mail with alternative parts, inline image and attachment with its original (BYL-E6-942)"] },
+        { "id": "BYL-E6-943", "title": "Mail mit Anhang im Eingang nach Update (manuell)", "art": ["manuell"], "status": "offen",
+          "pre": "Update gezogen und mit scripts\\build.ps1 gebaut (baut auch den neuen byl-mail.exe); App mit neu-starten.bat neu gestartet; eine Mail-Verbindung eingerichtet.", "steps": ["Unter „Eingang“ die Datei tests\\fixtures\\eml\\alternative-inline-attachment.eml aus dem Repo auf die Drop-Zone ziehen und den Eintrag öffnen.", "Die Originaldatei über den Eintrag herunterladen und im Mail-Programm öffnen.", "An der Mail-Verbindung „Aus dem Postfach wählen …“ öffnen und eine eigene Mail mit Anhang übernehmen."],
+          "expect": "Titel „Prüfbericht für März“, Von „Jürgen Müller“, Datum 12.10.2026, Text bis „Jürgen“ und „2 Anhänge, nur in der Originaldatei.“; die heruntergeladene Datei zeigt Text, Logo und das PDF „Prüfbericht März.pdf“. Die Mail aus dem Postfach kommt mit Betreff, Absender, Datum, Text, Anhang-Hinweis und Originaldatei wie vor dem Update; byl-mail.log ohne Fehler.",
           "tests": [] }
       ]
     },
