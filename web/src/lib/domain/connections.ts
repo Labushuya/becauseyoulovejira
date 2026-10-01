@@ -378,11 +378,9 @@ export const SAME_LABEL_HINT =
 
 /** SAME_LABEL_HINT when `label` equals one of `others` (case and white space at the ends aside). */
 export function sameLabelHint(label: string, others: readonly string[]): string | null {
-	const value = label.trim().toLocaleLowerCase('de');
+	const value = label.trim().toLowerCase();
 	if (value === '') return null;
-	return others.some((other) => other.trim().toLocaleLowerCase('de') === value)
-		? SAME_LABEL_HINT
-		: null;
+	return others.some((other) => other.trim().toLowerCase() === value) ? SAME_LABEL_HINT : null;
 }
 
 /** Flag after renaming: „Gmail“ heißt jetzt „Gmail Arbeit“. */
@@ -402,9 +400,7 @@ export interface ConnectionName {
  */
 export function withConnectionName(channel: string, name: string | null): string {
 	const value = name?.trim() ?? '';
-	if (value === '' || value.toLocaleLowerCase('de') === channel.toLocaleLowerCase('de')) {
-		return channel;
-	}
+	if (value === '' || value.toLowerCase() === channel.toLowerCase()) return channel;
 	return `${channel} · ${value}`;
 }
 
