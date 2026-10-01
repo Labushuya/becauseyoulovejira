@@ -21,6 +21,7 @@ const WINDOWS_ONLY = {
 		'tests/integration/backup-restore.test.mjs',
 		'tests/integration/control-script.test.mjs',
 		'tests/integration/installer-check.test.mjs',
+		'tests/integration/storage-control.test.mjs',
 		'tests/integration/system-control.test.mjs'
 	]
 };

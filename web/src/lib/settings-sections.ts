@@ -23,6 +23,9 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
 	{ id: 'konto', label: 'Konto', href: resolve('/einstellungen/konto') },
 	// Backups, target folder and passphrase (ADR-0046), only for a server on Windows.
 	{ id: 'sicherung', label: 'Sicherung', href: resolve('/einstellungen/sicherung') },
+	// What the app takes and what can be cleared (ADR-0047 §6), on every server; the parts of the
+	// folder app under Windows only there.
+	{ id: 'speicher', label: 'Speicher', href: resolve('/einstellungen/speicher') },
 	// Operation of the app from the dashboard (ADR-0043), only for a server on Windows.
 	{ id: 'system', label: 'System', href: resolve('/einstellungen/system') },
 	{ id: 'hilfe', label: 'Hilfe', href: resolve('/einstellungen/hilfe') }
@@ -71,7 +74,9 @@ export const HELP_SECTIONS = [
 	{ id: 'fragen', label: 'Häufige Fragen' },
 	{ id: 'betrieb', label: 'Betrieb' },
 	// Backups and the emergency plan (ADR-0046 §8): linked from the page "Sicherung".
-	{ id: 'sicherung', label: 'Sicherung & Notfall' }
+	{ id: 'sicherung', label: 'Sicherung & Notfall' },
+	// What the app takes and what can be cleared (ADR-0047 §6): linked from the page "Speicher".
+	{ id: 'speicher', label: 'Speicher' }
 ] as const;
 
 export type HelpSection = (typeof HELP_SECTIONS)[number]['id'];

@@ -1,6 +1,6 @@
 # ADR-0047: Speicher und Abhängigkeiten beim Löschen – erst entscheiden, dann endgültig löschen; Speicher einsehen und aufräumen
 
-- **Status:** Angenommen. §1 bis §5 umgesetzt mit SPE-1 (Papierkorb), §6 geplant für SPE-2 (Seite „Einstellungen → Speicher“), nach [docs/plan/speicher.md](../plan/speicher.md); Paketkürzel `SPE`, weil `SP` die Pakete „Spalten“ tragen
+- **Status:** Angenommen und umgesetzt: §1 bis §5 mit SPE-1 (Papierkorb, #217), §6 bis §9 mit SPE-2 (Seite „Einstellungen → Speicher“), nach [docs/plan/speicher.md](../plan/speicher.md); Paketkürzel `SPE`, weil `SP` die Pakete „Spalten“ tragen
 - **Datum:** 2026-10-01
 - **Entscheidung durch:** Nutzer („Dass man in den Einstellungen den belegten Speicher der App einsehen und ganzheitlich verwalten kann bis hin zur Warnung zu Verknüpfungen, wenn gespeicherte Daten und Einträge gelöscht werden sollen, für Tickets, die noch nicht abgeschlossen sind (oder Untertickets). Geht das ohne Over Engineering?“; zum Papierkorb: „Verweigern von Löschung, erst Abhängigkeiten auflösen (mit Entscheidungs-Auswahlhilfe aller verknüpften Quellen oder alternative Lösung, wenn Verstoß gegen unsere Regeln).“), Advisor (Regel, Wege, Umfang, Pakete), Executor (Recherche, Umsetzung, Einzelheiten)
 - **Ändert:** [ADR-0037](0037-papierkorb.md) §2, §6 und §8 (Nachtrag dort): Endgültiges Löschen nimmt nur noch Gruppen ohne Abhängigkeiten; verworfene Quellen werden nicht mehr beim endgültigen Löschen geleert.
@@ -63,9 +63,30 @@ Sammelwege mit Vorschau („Betrifft 2 Quellen: …“) vor dem Ausführen: „A
 
 Ohne die neuen Hooks fehlen `dependencies` und `dependency_list`; die SPA liest dann 0 bzw. eine leere Liste, und alle Wege löschen wie vorher. Keine Migration.
 
-### 6. Seite „Einstellungen → Speicher“ (SPE-2, geplant)
+### 6. Seite „Einstellungen → Speicher“ (SPE-2): messen beim Aufruf
 
-Eine Route `GET /api/byl/storage` mit dem Sicherheitsmodell von ADR-0043 rechnet beim Aufruf (ohne Hintergrundjob, ohne Tabelle): Datenbank nach Gruppen, Dateien des Eingangs nach Zugehörigkeit, Sicherungen, Logs, Programmreste, freier Platz. Aktionen mit Vorschau und derselben Regel wie §1. Einzelheiten in [docs/plan/speicher.md](../plan/speicher.md); diese ADR wird mit SPE-2 ergänzt.
+- **Route** `GET /api/byl/storage` (`app/pb_hooks/storage.pb.js`, Dienst `lib/storage-service.js`, rein `lib/storage-rules.js`). Zugriff mit den Prüfungen von ADR-0043 über `check` aus `lib/system-service.js`: angemeldet (`users`), dieser Rechner, Host und `Origin` der App, nur der Besitzer der Instanz, Rate-Limit (lesen 30, ändern 10 je Minute); neu ist die Option `anyPlatform`, die Windows nicht verlangt, weil der größte Teil auf jedem Server messbar ist. Es gibt keinen Hintergrundjob und keine Tabelle: Die Route rechnet beim Aufruf.
+- **Datenbank:** `data.db` und `auxiliary.db` mit Größe auf der Platte, Schreibprotokoll (`-wal`) und freien Seiten (`pragma_page_size`, `pragma_page_count`, `pragma_freelist_count`). Gruppen (Tickets und Kommentare, Verlauf, Eingang, Sonstiges, je mit ihren Indizes) über `dbstat`, wenn `pragma_compile_options` `ENABLE_DBSTAT_VTAB` nennt (PocketBase 0.40.4 mit modernc.org/sqlite: ja, im Test belegt), sonst nur die Summen. Der Papierkorb als Schätzung (Anzahl, Text von Tickets, Kommentaren und Verlauf im Papierkorb) mit der Zahl der blockierten Gruppen und dem Link dorthin.
+- **Dateien des Eingangs** (einziges Dateifeld `inbox_items.original`; Größen aus `$app.newFilesystem().list`): neu, an offenen Tickets, an erledigten Tickets, verworfen (mit dem Berliner Tag, ab dem die Bereinigung den nächsten leert), an Tickets im Papierkorb (mit ihnen verworfen), Sonstiges (Dateien ohne Eintrag); dazu „davon Kopien aus Duplizieren“ (`source_meta.copy_of`). **„Größte Einträge“:** die 20 größten mit Link in den Eingang und der Zugehörigkeit („gehört zu HAUS-12 (offen)“, „im Papierkorb“, „Kopie aus HAUS-3“).
+- **Sicherungen:** hier (`byl-*.zip`), im Zielverzeichnis (versiegelte `.tar.age`, „nicht erreichbar“ oder kein Ziel), alte automatische Sicherungen von PocketBase (`@auto_pb_backup_*`), andere ZIP-Dateien und die Sicherheitskopien neben `pb_data` (`pb_data.vor-wiederherstellung-*` der App, `pb_data.vor-restore-*` des Handbetriebs von ADR-0003), je Anzahl, Summe, älteste und neueste.
+- **Nur für die eigene Instanz eines Ordners `app` unter Windows** (`ownAppDir`): Logs (`app\logs`), Programmdateien, Reste nach Updates (`byl-mail.exe.old-*`, `byl-backup.exe.old-*`), die Oberfläche (`pb_public`, mit der Zahl der Builds aus `_app/builds.json`), Sicherheitskopien und der freie Platz aus der Prüfung `disk` von `byl-control.ps1 doctor -Json` (Text und Stufe, wie die Seite System). Sonst sind diese Teile `null`, und die Seite sagt es (Linux, Container, Entwicklungsinstanz, Tests).
+
+### 7. Aktionen mit Vorschau
+
+`POST /api/byl/storage/actions/{action}` (nur `vacuum`, `leftovers`, `discarded`, sonst 404 `unknown`; eine Aktion zur Zeit, sonst 409 `busy`; Audit „byl-storage: Aktion ausgeführt“ mit Aktion und Konto). Die Seite zeigt vorher, was eine Aktion betrifft („Betrifft 2 Einträge, 135 MB.“), und fragt (`ConfirmDialog`, kein Rot); der Server bestimmt beim Ausführen neu, was er löscht, und antwortet mit dem Ergebnis, danach misst die Seite neu.
+
+- **„Datenbank verdichten“:** `$app.vacuum()` und `$app.auxVacuum()`, Größen vorher und nachher; die Seite sagt, dass andere Anfragen kurz warten.
+- **„Liegengebliebenes aufräumen“** mit `{ groups }`: `programs` (Reste nach Updates; eine noch laufende `byl-mail.exe.old-*` bleibt gesperrt und wird als „in Benutzung“ übersprungen), `safety` (Sicherheitskopien älter als sieben Tage, wie die Sicherung sie ohnehin entfernt, und alte `pb_data.vor-restore-*` nach ihrer Änderungszeit), `pocketbase` (alte automatische Sicherungen; nur wenn ausdrücklich gewählt, standardmäßig aus). Die Sicherungen der App bleiben immer. Ohne eigene Instanz werden `programs` und `safety` mit `unavailable` übersprungen; unbekannte, leere oder doppelte Gruppen 400 `invalid`.
+- **„Verworfene jetzt leeren“:** verworfene Einträge ohne Ticket, die noch Inhalt haben, werden wie von der täglichen Bereinigung geleert (`clean` aus `lib/inbox-cleanup-service.js`): Text, Originaldatei und Details gehen, Zustand und Fingerprint bleiben als Sperre.
+- **Regel von §1:** Keine Aktion löscht ein Ticket oder eine Quelle, die an einem Ticket hängt. Verworfene Einträge hängen nach §1 an nichts; Originaldateien an Quellen sind unveränderlich und werden nie einzeln gelöscht. Tickets gehen nur über den Papierkorb und dort endgültig nur ohne Abhängigkeiten; die Seite verweist dorthin.
+
+### 8. Oberfläche
+
+`StorageView` (`components/storage/`, Store `stores/storage.svelte.ts` der Seite, Datenschicht `data/storage.ts`, Texte und strenges Lesen der Antwort `domain/storage.ts`): Abschnitte „Datenbank“, „Dateien im Eingang“, „Größte Einträge“, „Sicherungen“ (mit Link auf „Einstellungen → Sicherung“, dort „Jetzt sichern“), „Programm und Logs“ (freier Platz mit Lozenge „Wird knapp“, Rot nur bei „Fast voll“) und „Aufräumen“ mit den drei Aktionen; „Neu messen“; Ablehnungen der Route als `SectionMessage`; vor dem Neustart der Neustart-Hinweis. Die Seite steht in der Navigation nach „Sicherung“, auf jedem Server; die Hilfe hat den Abschnitt „Speicher“.
+
+### 9. Bewusst nicht
+
+Kein Dateibrowser, keine Kontingente, keine Diagramme, kein Zählen im Hintergrund, kein Löschen einzelner Originaldateien.
 
 ## Alternativen
 
@@ -74,9 +95,13 @@ Eine Route `GET /api/byl/storage` mit dem Sicherheitsmodell von ADR-0043 rechnet
 - **Hauptquelle umhängen erlauben, wenn ihr Ticket im Papierkorb liegt:** verworfen, ADR-0031 hält die Hauptquelle unveränderlich (Nutzerentscheidung); die Hilfe bietet die erlaubten Wege und sagt, warum der dritte fehlt.
 - **„Verwerfen“ in der Hilfe sofort leeren** (wie bisher beim endgültigen Löschen): verworfen, ein Eintrag soll wie jeder verworfene 30 Tage zurückholbar sein; das vorzeitige Leeren gehört zur Seite „Speicher“ (SPE-2, ausdrücklich und mit Vorschau).
 - **Eigene Entscheidungs-Collection oder gespeicherter Zustand „blockiert“:** verworfen, die Regel rechnet aus den Daten, die es schon gibt, und kann nicht veralten.
+- **Speicher im Hintergrund zählen und in einer Tabelle halten:** verworfen (Auftrag „ohne Over Engineering“); die Messung beim Aufruf dauert auch bei großen Ordnern nur Sekunden und ist nie veraltet.
+- **Seite nur unter Windows** wie System und Sicherung: verworfen, Datenbank, Dateien und Sicherungen sind überall messbar; nur die Teile des Ordners `app` fehlen anderswo, mit Hinweis.
+- **Freien Platz ohne Steuerskript messen:** Die JSVM kennt keinen Aufruf dafür; die Prüfung `disk` von `doctor` gibt es schon (ADR-0043).
 
 ## Konsequenzen
 
 - Endgültiges Löschen verliert nie unbemerkt offene Arbeit oder Quellen; der Papierkorb kann dafür länger voll bleiben, und der Hinweis erinnert daran.
 - Hooks und Tests, die bisher offene Tickets endgültig löschten, erledigen sie vorher oder entscheiden über die Quellen.
+- Der Besitzer der Instanz sieht auf der Seite „Speicher“ die Größen aller Konten (heute eines; mit Haushalten E7 prüfen).
 - Neustart nötig (Hooks); keine Migration.

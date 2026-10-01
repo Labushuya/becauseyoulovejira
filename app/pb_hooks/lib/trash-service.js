@@ -1065,6 +1065,24 @@ function preview(e, id) {
   return summary;
 }
 
+/**
+ * How many groups of the whole trash wait for a decision (ADR-0047), for the page "Speicher" of the
+ * owner of the instance; 0 before the migration.
+ */
+function blockedCount(app) {
+  if (!trashReady(app)) {
+    return 0;
+  }
+  var roots = app.findRecordsByFilter(TICKETS, "deleted_at != '' && parent = ''", '', 0, 0);
+  var count = 0;
+  for (var i = 0; i < roots.length; i++) {
+    if (dependencyRules.isBlocked(dependenciesOfGroup(app, groupOf(app, roots[i])))) {
+      count += 1;
+    }
+  }
+  return count;
+}
+
 module.exports = {
   TRASH_OP_KEY: TRASH_OP_KEY,
   TOPIC: TOPIC,
@@ -1082,5 +1100,6 @@ module.exports = {
   empty: empty,
   purgeDue: purgeDue,
   list: list,
-  preview: preview
+  preview: preview,
+  blockedCount: blockedCount
 };
