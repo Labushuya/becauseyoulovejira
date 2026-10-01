@@ -341,7 +341,7 @@
   "meta": {
     "projekt": "becauseyoulovejira",
     "stand": "2026-10-01",
-    "commit": "aff2446"
+    "commit": "3358f29"
   },
   "bereiche": [
     { "id": "betrieb", "titel": "Betrieb: Start, Stopp, Skripte und Daten" },
@@ -506,6 +506,7 @@
       "vermerk": "Entscheidung: „abschaltbar, Standard an“; keine Migration." },
     { "id": "loesch-sperre", "vorhaben": "Telegram-Antworten, Lösch-Sperre und neuer Tab", "titel": "Kein Eingangseintrag lässt sich über die API löschen", "bereich": "eingang", "quelle": "Befund", "datum": "2026-10-01", "adr": ["0014-datenmodell-eingang.md, Nachtrag", "0031-herkunft-sichern.md, Nachtrag H", "0037-papierkorb.md, Nachtrag"], "faelle": ["BYL-E6-823", "BYL-E6-826"] },
     { "id": "neuer-tab", "vorhaben": "Telegram-Antworten, Lösch-Sperre und neuer Tab", "titel": "Leerzeichen vor „(öffnet in neuem Tab)“", "bereich": "darstellung", "adr": ["0026-einstellungsbereich-und-hinweis-bausteine.md, Nachtrag"], "faelle": ["BYL-E6-824", "BYL-E6-827"] },
+    { "id": "T-4", "vorhaben": "Test-Härtung", "titel": "Gemeinsame Testinstanz ohne parallele Prozess-Last", "bereich": "entwicklung", "quelle": "Fehlerbericht", "datum": "2026-10-01", "plan": "test-haertung.md", "faelle": ["BYL-E6-840..BYL-E6-841"] },
     { "id": "querschnitt", "vorhaben": "Querschnitt", "titel": "Testumgebung, Regeln der Datenschicht, Hook-Module und dieses Manifest", "bereich": "entwicklung", "faelle": ["BYL-X-001..BYL-X-004"] }
   ],
   "zurueckgestellt": [
@@ -3315,7 +3316,7 @@
       ]
     },
     {
-      "tag": "Alle", "name": "Test-Härtung", "desc": "Kindprozesse der Tests ohne Zugangsdaten (T-1), stabile Tests statt gelegentlich roter (T-2) und geordnetes Beenden unter Last (T-3), docs/plan/test-haertung.md. IDs ab BYL-E6-500, T-3 ab BYL-E6-680.",
+      "tag": "Alle", "name": "Test-Härtung", "desc": "Kindprozesse der Tests ohne Zugangsdaten (T-1), stabile Tests statt gelegentlich roter (T-2), geordnetes Beenden unter Last (T-3) und die gemeinsame Testinstanz ohne parallele Prozess-Last (T-4), docs/plan/test-haertung.md. IDs ab BYL-E6-500, T-3 ab BYL-E6-680, T-4 ab BYL-E6-840.",
       "items": [
         { "id": "BYL-E6-500", "title": "Kindprozesse der Tests nur mit bereinigter Umgebung (T-1)", "art": ["unit"], "status": "bestanden",
           "pre": "tests/support/clean-env.mjs; eine im Testprozess gesetzte BYL_*-Prüfvariable; Node als Kindprozess, der die Namen seiner Umgebung ausgibt.", "steps": ["npm run test:unit"],
@@ -3350,9 +3351,17 @@
           "expect": "stop einer Kopie endet ohne „hart beendet“ (die Meldung des Tests nennt sonst byl-control.log), der Server der anderen Kopie läuft weiter, die WAL ist übertragen. byl-control.log endet für stop, reload mit Neustart und den losgelösten Neustart mit break= und den Codes (etwa „stop exit=0 stopped break=0“); status, logs und start ohne Stopp schreiben kein break=.",
           "tests": ["tests/integration/control-script.test.mjs::stops only its own server, in order, and leaves the other copy running", "tests/integration/control-script.test.mjs::logs shows the logs, including one line per changing command without values", "tests/integration/system-control.test.mjs::restarts through a detached process that outlives the server it was started from"] },
         { "id": "BYL-E6-682", "title": "Wiederholungslauf des Steuerskript-Tests unter Last (T-3)", "art": ["integration"], "status": "bestanden",
-          "pre": "Windows, Worktree mit der Änderung; 12 zusätzliche PowerShell-Prozesse mit Dauerlast (16 logische Prozessoren).", "steps": ["tests/integration/control-script.test.mjs 20-mal hintereinander (npx vitest run --project integration …)"],
+          "pre": "Windows, Worktree mit der Änderung; 12 zusätzliche PowerShell-Prozesse mit Dauerlast (16 logische Prozessoren).", "steps": ["tests/integration/control-script.test.mjs 20-mal hintereinander (npx vitest run --project integration …; seit T-4 im Projekt integration-processes)"],
           "expect": "Alle 20 Läufe grün, jeder Stopp und Neustart geordnet; die Protokollzeilen nennen die Codes der Sender.",
-          "tests": ["tests/integration/control-script.test.mjs"] }
+          "tests": ["tests/integration/control-script.test.mjs"] },
+        { "id": "BYL-E6-840", "title": "Zwei Gruppen der Integrationstests: Einordnung und Konfiguration (T-4)", "art": ["unit"], "status": "bestanden",
+          "pre": "vitest.config.mjs mit tests/support/test-groups.mjs.", "steps": ["npm run test:unit"],
+          "expect": "Eine Datei startet Prozesse genau dann, wenn sie pocketbase-harness.mjs, powershell.mjs oder clean-env.mjs importiert (nicht schon bei einer Erwähnung im Kommentar). Jede Integrationsdatei steht in genau einer Gruppe; inbox-link und web-filter-parity in integration, control-script, system-control, migrations-rollback, mail-helper-process, installer-check und host-route in integration-processes. integration hat groupOrder 0, unit, helper und integration-processes 1; beide Integrationsprojekte haben die gemeinsame Instanz und 15 s je Fall.",
+          "tests": ["tests/unit/test-groups.test.mjs"] },
+        { "id": "BYL-E6-841", "title": "Hauptquelle nie lösen und die übrigen Fälle der gemeinsamen Instanz ohne Stillstand, Wiederholungslauf (T-4)", "art": ["integration"], "status": "bestanden",
+          "pre": "Windows, Worktree mit der Änderung, Web-Build und app\\byl-mail.exe vorhanden (scripts\\build.ps1); Windows-Job der CI im PR.", "steps": ["Root-Vitest (npx vitest run) 28-mal hintereinander, je Lauf den langsamsten Fall der gemeinsamen Instanz notieren", "Im Windows-Job des PR die Dauer der Fälle der gemeinsamen Instanz ablesen"],
+          "expect": "Alle 441 Fälle der gemeinsamen Instanz in jedem Lauf grün; „never releases the main source of a ticket“ unverändert (400 validation_inbox_primary_source, Eintrag bleibt umgewandelt am Ticket). Der langsamste Fall der Instanz braucht höchstens etwa 6 s (web-filter-parity), alle anderen höchstens gut 2 s; währenddessen läuft keine Datei mit eigenen Prozessen.",
+          "tests": ["tests/integration/inbox-link.test.mjs::never releases the main source of a ticket"] }
       ]
     },
     {
