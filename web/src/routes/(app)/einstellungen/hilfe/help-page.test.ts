@@ -144,6 +144,7 @@ describe('help page (EH-9)', () => {
 			'Was steht im Menü „•••“ eines Tickets?',
 			'Wie dupliziere ich ein Ticket?',
 			'Wie gliedere ich ein Projekt in Unterprojekte?',
+			'Wie sehe ich die offenen Tickets eines Projekts?',
 			'Wie formatiere ich Beschreibungen und Kommentare?',
 			'Wie ordne ich Kommentare und hebe einen hervor?'
 		]);
@@ -193,6 +194,11 @@ describe('help page (EH-9)', () => {
 		expect(text(section)).toContain('„Unterprojekte einbeziehen“');
 		expect(text(section)).toContain('„davon direkt“');
 		expect(text(section)).toContain('„Mit Oberprojekt zurückholen“');
+		// Open tickets of a project (ADR-0034, addendum): the disclosure, limit, link, remembered rows.
+		expect(text(section)).toContain('der Pfeil vor dem Code eine Zeile auf');
+		expect(text(section)).toContain('„Alle 12 in Aufgaben öffnen“');
+		expect(text(section)).toContain('„Alle aufklappen“ und „Alle zuklappen“');
+		expect(text(section)).toContain('Welche Zeilen offen sind, merkt sich dieser Browser.');
 		// Sub-tasks (ADR-0033): adding, the question before completing, nesting, deleting.
 		expect(text(section)).toContain('„Unteraufgaben mit erledigen“ oder „Trotzdem erledigen“');
 		expect(text(section)).toContain('„HAUS-12 ›“');

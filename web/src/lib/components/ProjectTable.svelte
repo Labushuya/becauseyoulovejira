@@ -1,4 +1,5 @@
 <script lang="ts">
+	import type { Snippet } from 'svelte';
 	import type { ResolvedPathname } from '$app/types';
 	import { MORE_COLUMNS_HINT } from '$lib/domain/labels';
 	import type { Project } from '$lib/domain/project';
@@ -33,6 +34,13 @@
 	// stands as context of a search match is dimmed and says so. Every row ends with the menu "•••"
 	// (plan aktionsmenues, AM-4; the entries come from the view), which a right click on the row or
 	// Shift+F10 open as well (AM-3, rowMenus); its column sorts nothing.
+	// Open tickets (ADR-0034, addendum "Offene Tickets in Projekten"): with `ticketList` every row
+	// starts with a disclosure button "Offene Tickets von „Haus“" in the code cell (aria-expanded,
+	// aria-controls while open; the fold of the sub projects stays in the name cell). An open row is
+	// followed by a row of the full width with the list of the view, indented like the name of its
+	// row, so a sub project shows its own tickets below it. The columns stay as ADR-0030 says; only
+	// open rows render their list. The focus stays on the button (APG "Disclosure"); the list follows
+	// it in the reading order.
 	let {
 		rows,
 		activeOf,
@@ -46,7 +54,10 @@
 		columnFit = new ColumnFit(getColumnPrefs('projects')),
 		onsort,
 		ontoggle = () => undefined,
-		aggregatedOf = () => false
+		aggregatedOf = () => false,
+		ticketList,
+		ticketsOpen = () => false,
+		ontoggletickets = () => undefined
 	}: {
 		/** Rows in the order to show (filtered, sorted and folded by the view). */
 		rows: readonly ProjectRow[];
@@ -74,9 +85,21 @@
 		ontoggle?: (project: Project) => void;
 		/** The numbers of the project include its sub projects (ADR-0034, UP-6). */
 		aggregatedOf?: (project: Project) => boolean;
+		/** The open tickets of a project below its row; without it the rows have no disclosure. */
+		ticketList?: Snippet<[Project]>;
+		/** Whether the row of a project shows its open tickets. */
+		ticketsOpen?: (project: Project) => boolean;
+		/** Opens or closes the open tickets of a row. */
+		ontoggletickets?: (project: Project) => void;
 	} = $props();
 
+	const uid = $props.id();
 	const shown = $derived(columnFit.shown);
+
+	/** ID of the cell with the open tickets of a project, for aria-controls. */
+	function ticketsId(project: Project): string {
+		return `${uid}-tickets-${project.id}`;
+	}
 	let frame = $state<HTMLElement>();
 
 	$effect(() => {
@@ -167,6 +190,7 @@
 				{@const project = row.project}
 				{@const fresh = newOf(project)}
 				{@const aggregated = aggregatedOf(project)}
+				{@const open = ticketList !== undefined && ticketsOpen(project)}
 				<tr
 					class="row"
 					class:active={project.id === activeId}
@@ -175,7 +199,29 @@
 					class:child={row.depth === 1}
 					data-project-row={project.id}
 				>
-					<td class="code" data-col="code">{project.code}</td>
+					<td class="code" class:with-tickets={ticketList !== undefined} data-col="code">
+						{#if ticketList}
+							<span class="code-cell">
+								<button
+									class="button-icon fold"
+									type="button"
+									aria-expanded={open}
+									aria-controls={open ? ticketsId(project) : undefined}
+									aria-label={`Offene Tickets von „${project.name}“`}
+									title={open ? 'Offene Tickets ausblenden' : 'Offene Tickets anzeigen'}
+									data-tickets-toggle={project.id}
+									onclick={() => ontoggletickets(project)}
+								>
+									<svg viewBox="0 0 12 12" aria-hidden="true" focusable="false">
+										<path d={open ? 'M3 4.5l3 3 3-3' : 'M4.5 3l3 3-3 3'} />
+									</svg>
+								</button>
+								<span class="code-text">{project.code}</span>
+							</span>
+						{:else}
+							{project.code}
+						{/if}
+					</td>
 					<th class="name" scope="row" data-col="name">
 						<span class="name-cell">
 							{#if row.childCount > 0}
@@ -256,6 +302,18 @@
 						/>
 					</td>
 				</tr>
+				{#if open && ticketList}
+					<tr class="tickets-row" class:child={row.depth === 1} data-tickets-of={project.id}>
+						<td
+							class="tickets"
+							id={ticketsId(project)}
+							colspan={columnFit.shownColumns.length}
+							style:--tickets-indent={`${columnFit.widthOf('code')}px`}
+						>
+							{@render ticketList(project)}
+						</td>
+					</tr>
+				{/if}
 			{/each}
 		</tbody>
 	</table>
@@ -368,6 +426,45 @@
 		font-size: var(--font-size-control);
 		white-space: nowrap;
 		color: var(--color-brand-text);
+	}
+
+	/* The disclosure of the open tickets before the code; the cell keeps its width (ADR-0030). */
+	.code.with-tickets {
+		padding-left: 0.375rem;
+	}
+
+	.code-cell {
+		display: flex;
+		gap: 0.25rem;
+		align-items: center;
+		min-width: 0;
+	}
+
+	.code-text {
+		min-width: 0;
+		overflow: hidden;
+		text-overflow: ellipsis;
+	}
+
+	/* The open tickets of a row below it: a well over the full width, the list under the name (and
+	   indented with it for a sub project, ADR-0034). */
+	.tickets-row {
+		border-bottom: 1px solid var(--color-line);
+	}
+
+	.tickets-row:last-child {
+		border-bottom: none;
+	}
+
+	.tickets {
+		padding-top: 0.25rem;
+		padding-bottom: 0.5rem;
+		padding-left: var(--tickets-indent, 0.75rem);
+		background: var(--color-bg);
+	}
+
+	.tickets-row.child .tickets {
+		padding-left: calc(var(--tickets-indent, 0.75rem) + 1.75rem);
 	}
 
 	.name {

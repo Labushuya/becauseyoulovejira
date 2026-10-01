@@ -668,6 +668,29 @@
 				</ul>
 			</details>
 			<details>
+				<summary>Wie sehe ich die offenen Tickets eines Projekts?</summary>
+				<ul>
+					<li>
+						In der Liste unter „Projekte“ klappt der Pfeil vor dem Code eine Zeile auf: Darunter
+						stehen die offenen Tickets des Projekts (nicht erledigt, nicht im Papierkorb) mit Key,
+						Titel, Status, Priorität und Fälligkeit, die früheste Fälligkeit zuerst, ohne Fälligkeit
+						am Ende. Unterprojekte zeigen ihre eigenen Tickets eingerückt unter ihrer Zeile; ein
+						Oberprojekt zeigt dort nur die Tickets direkt in ihm.
+					</li>
+					<li>
+						Es stehen höchstens 10 Tickets da; bei mehr führt „Alle 12 in Aufgaben öffnen“ zu
+						„Aufgaben“ mit dem Projekt als Filter. Ein Klick auf ein Ticket öffnet es, wie du
+						Tickets zuletzt geöffnet hast (Panel oder Vollansicht); „•••“ und der Rechtsklick bieten
+						dasselbe Menü wie in „Aufgaben“. Bearbeitet wird im Ticket oder in „Aufgaben“.
+					</li>
+					<li>
+						„Alle aufklappen“ und „Alle zuklappen“ über der Liste öffnen bzw. schließen alle Zeilen.
+						Welche Zeilen offen sind, merkt sich dieser Browser. Das Panel eines Projekts zeigt
+						dieselbe Liste unter „Offene Tickets“, die Kacheln zählen sie als „aktiv“.
+					</li>
+				</ul>
+			</details>
+			<details>
 				<summary>Wie formatiere ich Beschreibungen und Kommentare?</summary>
 				<ul>
 					<li>

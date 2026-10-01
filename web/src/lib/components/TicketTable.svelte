@@ -52,7 +52,6 @@
 	import BulkActionBar from './BulkActionBar.svelte';
 	import ColumnsPopover from './ColumnsPopover.svelte';
 	import CompletionDialog from './CompletionDialog.svelte';
-	import DuplicateDialog from './DuplicateDialog.svelte';
 	import ErrorIcon from './ErrorIcon.svelte';
 	import EmptyState from './guidance/EmptyState.svelte';
 	import GroupPopover from './GroupPopover.svelte';
@@ -62,7 +61,7 @@
 	import { naturalWidth } from './table/measure';
 	import ResizableHeader from './table/ResizableHeader.svelte';
 	import TicketActions from './TicketActions.svelte';
-	import TicketDelete from './TicketDelete.svelte';
+	import TicketRowDialogs from './TicketRowDialogs.svelte';
 	import TicketTableRow from './TicketTableRow.svelte';
 	import ViewSwitch from './ViewSwitch.svelte';
 
@@ -401,9 +400,6 @@
 			(rowOf(previous)?.querySelector<HTMLElement>('a.title-link') ?? heading)?.focus();
 		});
 	});
-
-	/** The dialog a row asked for in its menu "•••" (plan aktionsmenues, AM-2). */
-	const rowDialog = $derived(rowActions?.dialog ?? null);
 
 	/** "In den Papierkorb …" of a row; the panel of that ticket closes afterwards. */
 	async function moveRowToTrash(ticketId: string, sources?: DeleteSources): Promise<DeleteResult> {
@@ -811,25 +807,15 @@
 
 <!-- The questions of the menu of a row (plan aktionsmenues, AM-2): the table is no modal, so
      they open as dialogs, and the modal gives the focus back to "•••" (or the heading). -->
-{#if rowDialog?.kind === 'duplicate' && duplicates !== null}
-	<DuplicateDialog
-		ticket={rowDialog.ticket}
+{#if rowActions}
+	<TicketRowDialogs
+		{rowActions}
+		{duplicates}
 		projects={catalog.activeProjects}
-		sources={rowDialog.sources}
-		commentCount={rowDialog.commentCount}
-		subtaskCount={store.progressOf(rowDialog.ticket.id).total}
-		parentKey={parentOf(rowDialog.ticket, (id) => store.find(id))?.key ?? null}
-		store={duplicates}
+		subtaskCountOf={(id) => store.progressOf(id).total}
+		parentKeyOf={(ticket) => parentOf(ticket, (id) => store.find(id))?.key ?? null}
 		onopen={(id) => void goto(links.href(id, page.url))}
-		onclose={() => rowActions?.close()}
-	/>
-{:else if rowDialog?.kind === 'delete'}
-	<TicketDelete
-		ticket={rowDialog.ticket}
-		remove={(sources) => moveRowToTrash(rowDialog.ticket.id, sources)}
-		onclose={() => rowActions?.close()}
-		sourceCount={rowDialog.sourceCount}
-		subtaskCount={store.progressOf(rowDialog.ticket.id).total}
+		moveToTrash={moveRowToTrash}
 	/>
 {/if}
 
