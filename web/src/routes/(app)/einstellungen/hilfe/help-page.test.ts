@@ -162,6 +162,11 @@ describe('help page (EH-9)', () => {
 		expect(text(section)).toContain(
 			'Auch Papierkorb, Eingang, die Liste der Projekte und die Wiederholungen haben am Ende jeder Zeile „•••“'
 		);
+		// The follow-ups (AM-5): sources and copies in the inbox, the main source stays, the tiles.
+		expect(text(section)).toContain('„Link der Quelle öffnen“');
+		expect(text(section)).toContain('„Anderem Ticket zuordnen …“ und „Lösen“');
+		expect(text(section)).toContain('Die Hauptquelle eines Tickets bleibt bei ihm');
+		expect(text(section)).toContain('Die Kacheln der Projekte haben „•••“ oben rechts');
 		// Duplicating (ADR-0045): the question, the status, sub-tasks, comments, the source, the result.
 		expect(text(section)).toContain('„Duplizieren …“ (im Menü „•••“');
 		expect(text(section)).toContain('„Erledigt“ gibt es dabei nicht');

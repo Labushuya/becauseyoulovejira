@@ -6,7 +6,8 @@
 // links (except the link that opens the row itself, whose ways the row menu offers), with Ctrl
 // held (the way to the browser menu anywhere, e.g. "Untersuchen") and for touch (a long press
 // selects text and previews links; "•••" stays the way there). A right click never chooses or
-// opens the row: only the menu reacts to it.
+// opens the row: only the menu reacts to it. A tile of a grid (the project tiles, AM-5) is a row
+// in this sense: it carries MENU_ROW_ATTRIBUTE, its link the mark of the row link.
 
 import type { Attachment } from 'svelte/attachments';
 import type { VirtualAnchor } from './position';
@@ -15,6 +16,8 @@ import type { VirtualAnchor } from './position';
 export const ROW_MENU = '.row-menu';
 /** Marks the link that opens the row itself (title, "Öffnen"); it gets the row menu. */
 export const ROW_LINK_ATTRIBUTE = 'data-row-link';
+/** Marks an element outside a table that has a row menu, e.g. a tile of a grid. */
+export const MENU_ROW_ATTRIBUTE = 'data-menu-row';
 /** Asks the ActionsMenu of a button to open at another place; the detail is a MenuRequest. */
 export const OPEN_MENU_EVENT = 'byl-open-menu';
 
@@ -82,9 +85,11 @@ function onSelectedText(target: Element): boolean {
 	return selection.containsNode(target, true);
 }
 
-/** The button "•••" of the row around `target`, null outside a row with a menu. */
+/** The button "•••" of the row (or tile) around `target`, null outside a row with a menu. */
 function rowMenuOf(target: Element): HTMLElement | null {
-	return target.closest('tr')?.querySelector<HTMLElement>(ROW_MENU) ?? null;
+	return (
+		target.closest(`tr, [${MENU_ROW_ATTRIBUTE}]`)?.querySelector<HTMLElement>(ROW_MENU) ?? null
+	);
 }
 
 /** Asks the menu of `trigger` to open; false if no menu answered. */
@@ -103,8 +108,9 @@ function focusedElement(page: Document): HTMLElement | null {
 }
 
 /**
- * The context menus of the rows of a table, attached to the table (`{@attach rowMenus}`): one set
- * of listeners for all rows. A row takes part when it holds a `.row-menu`.
+ * The context menus of the rows of a table, attached to the table (`{@attach rowMenus}`), or of the
+ * tiles of a grid, attached to the grid: one set of listeners for all of them. A row (or tile)
+ * takes part when it holds a `.row-menu`.
  */
 export const rowMenus: Attachment<HTMLElement> = (table) => {
 	const page = table.ownerDocument;

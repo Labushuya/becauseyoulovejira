@@ -551,6 +551,18 @@
 						Ticket verknüpfen …“ im Eingang, „Archivieren“ bei Projekten und „Pausieren“ bei
 						Wiederholungen.
 					</li>
+					<li>
+						Im Eingang öffnet „Link der Quelle öffnen“ die Adresse eines Eintrags in einem neuen Tab
+						(nur https). Ein verknüpfter Eintrag hat dort auch „Anderem Ticket zuordnen …“ und
+						„Lösen“, ein Web-Link ohne Kopie „Seiteninhalt sichern“. Die Hauptquelle eines Tickets
+						bleibt bei ihm: Ihr Menü hat kein „Lösen“ und kein anderes Ticket, das Panel des
+						Eintrags sagt, warum.
+					</li>
+					<li>
+						Die Kacheln der Projekte haben „•••“ oben rechts mit denselben Einträgen wie die Liste,
+						auch per Rechtsklick auf die Kachel oder <kbd>Umschalt</kbd>+<kbd>F10</kbd> auf ihr. Ein Klick
+						auf die Kachel öffnet das Projekt wie bisher.
+					</li>
 				</ul>
 			</details>
 			<details>

@@ -268,6 +268,7 @@
 		<InboxTable
 			store={inbox}
 			{flags}
+			{sources}
 			openTickets={tickets.open}
 			{activeId}
 			projectsNewCount={tickets.newInProjects}

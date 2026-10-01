@@ -4,10 +4,13 @@ import { describe, expect, it } from 'vitest';
 import { INBOX_CHANNELS, type InboxItemSummary } from './inbox';
 import {
 	COPY_LABELS,
+	canLeaveTicket,
+	canSavePage,
 	copyCompleteness,
 	copyNote,
 	deletedTicketNote,
 	deletedWithSourcesText,
+	isMainSource,
 	linkSummary,
 	orderSources,
 	pageCopyText,
@@ -122,6 +125,49 @@ describe('copyCompleteness', () => {
 			'Nur Adresse',
 			'Ohne Originaldatei (zu groß)'
 		]);
+	});
+});
+
+describe('what an entry allows (panel, sources of a ticket and menu of the inbox row, AM-5)', () => {
+	const ticket = (primary: boolean) => ({
+		id: 'ticket000000001',
+		key: 'HAUS-12',
+		title: 'Steuer',
+		primary
+	});
+
+	it('offers "Seiteninhalt sichern" only for a web link of which only the address is stored', () => {
+		const link = {
+			channel: 'link' as const,
+			kind: 'link' as const,
+			sourceUrl: 'https://x.example'
+		};
+		expect(canSavePage(item({ ...link, state: 'new', ticketId: null }))).toBe(true);
+		expect(canSavePage(item({ ...link, state: 'discarded', ticketId: null }))).toBe(true);
+		expect(canSavePage(item(link))).toBe(true);
+		expect(canSavePage(item({ ...link, original: 'seite.html' }))).toBe(false);
+		expect(canSavePage(item())).toBe(false);
+		expect(canSavePage(item({ channel: 'manual', kind: 'todo' }))).toBe(false);
+	});
+
+	it('knows the main source from the ticket loaded with the entry, else not at all', () => {
+		expect(isMainSource(item({ ticket: ticket(true) }))).toBe(true);
+		expect(isMainSource(item({ ticket: ticket(false) }))).toBe(false);
+		expect(isMainSource(item({ ticket: null }))).toBeNull();
+		expect(isMainSource(item())).toBeNull();
+		// A ticket of an older state (the entry moved since) says nothing about the new one.
+		expect(isMainSource(item({ ticketId: 'ticket000000002', ticket: ticket(false) }))).toBeNull();
+		expect(isMainSource(item({ state: 'new', ticketId: null, ticket: null }))).toBeNull();
+	});
+
+	it('lets only a linked entry that is surely no main source leave its ticket', () => {
+		expect(canLeaveTicket(item(), false)).toBe(true);
+		expect(canLeaveTicket(item(), true)).toBe(false);
+		expect(canLeaveTicket(item(), null)).toBe(false);
+		expect(canLeaveTicket(item({ state: 'new', ticketId: null }), false)).toBe(false);
+		expect(canLeaveTicket(item({ state: 'discarded', ticketId: null }), false)).toBe(false);
+		// Converted without a ticket (its ticket is gone): nothing to leave.
+		expect(canLeaveTicket(item({ ticketId: null }), false)).toBe(false);
 	});
 });
 
