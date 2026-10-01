@@ -12,6 +12,7 @@
 	import { helpHref } from '$lib/settings-sections';
 	import type { CaptureSaveResult } from '$lib/stores/capture';
 	import ErrorIcon from './ErrorIcon.svelte';
+	import NewTabHint from './guidance/NewTabHint.svelte';
 	import Modal from './overlay/Modal.svelte';
 	import ProjectSelect from './ProjectSelect.svelte';
 
@@ -155,7 +156,7 @@
 			!hoch #anruf“ (Priorität !niedrig, !mittel, !hoch, !dringend oder !1 bis !4).
 			<!-- A new tab, so typed text is never lost (plan UI-4) and the dialog stays as it is. -->
 			<a href={helpHref('kurzsyntax')} target="_blank" rel="noopener">
-				Mehr zur Kurzsyntax<span class="visually-hidden"> (öffnet in neuem Tab)</span>
+				Mehr zur Kurzsyntax<NewTabHint />
 			</a>
 		</p>
 

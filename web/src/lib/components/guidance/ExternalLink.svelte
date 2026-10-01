@@ -1,10 +1,11 @@
 <script lang="ts">
 	import type { Snippet } from 'svelte';
 	import { isHttpsUrl } from '$lib/guidance/links';
+	import NewTabHint from './NewTabHint.svelte';
 
 	// Link to a page of a provider (ADR-0026 section 6, plan EH-4): only fixed https addresses, in a
-	// new tab without opener and referrer, with an icon "outside" and a hidden "(öffnet in neuem
-	// Tab)". An address that is not https is not linked; its text stays.
+	// new tab without opener and referrer, with an icon "outside" and a hidden " (öffnet in neuem
+	// Tab)" (NewTabHint, with its space). An address that is not https is not linked; its text stays.
 	let { href, children }: { href: string; children: Snippet } = $props();
 
 	const safe = $derived(isHttpsUrl(href));
@@ -19,7 +20,7 @@
 			height="12"
 			aria-hidden="true"
 			focusable="false"><path d="M9 3h4v4M13 3L7.5 8.5M11.5 9.5v3.5h-8.5v-8.5h3.5" /></svg
-		><span class="visually-hidden"> (öffnet in neuem Tab)</span></a
+		><NewTabHint /></a
 	>
 {:else}
 	<span class="external">{@render children()}</span>

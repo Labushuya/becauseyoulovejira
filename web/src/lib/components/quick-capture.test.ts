@@ -78,7 +78,8 @@ describe('quick capture', () => {
 		const { input, onclose } = renderQuick();
 		await fireEvent.input(input, { target: { value: 'Zahnarzt' } });
 		const link = screen.getByRole('link', { name: /^Mehr zur Kurzsyntax/ });
-		expect(link.textContent).toMatch(/Mehr zur Kurzsyntax\s*\(öffnet in neuem Tab\)/);
+		// The hidden end keeps its space (ADR-0026, addendum of 2026-10-01).
+		expect(link.textContent?.trim()).toBe('Mehr zur Kurzsyntax (öffnet in neuem Tab)');
 		expect(link.getAttribute('href')).toBe('/einstellungen/hilfe#kurzsyntax');
 		expect(link.getAttribute('target')).toBe('_blank');
 		expect(link.getAttribute('rel')).toBe('noopener');
