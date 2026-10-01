@@ -341,7 +341,7 @@
   "meta": {
     "projekt": "becauseyoulovejira",
     "stand": "2026-10-01",
-    "commit": "37dccb7"
+    "commit": "16a5a35"
   },
   "bereiche": [
     { "id": "betrieb", "titel": "Betrieb: Start, Stopp, Skripte und Daten" },
@@ -514,6 +514,8 @@
     { "id": "NI-3", "vorhaben": "Notion-Import (nur lesend, Kopien, nur auf Anstoß)", "titel": "Mehrere Quellen, „Alle erneut abrufen“, Unterseiten und mehrere Verbindungen", "bereich": "eingang", "quelle": "Nutzerwunsch", "datum": "2026-10-01", "adr": ["0041-notion-listen-uebernehmen.md, Nachtrag vom 2026-10-01"], "plan": "notion-import.md", "faelle": ["BYL-E6-860..BYL-E6-868"] },
     { "id": "BK-3", "vorhaben": "Sicherung, Prüfung, Wiederherstellen", "titel": "Wiederherstellen per wiederherstellen.bat und aus der App, mit Sicherheitskopie und Rückweg", "bereich": "betrieb", "quelle": "Nutzerentscheidung", "datum": "2026-10-01", "adr": ["0046-sicherung-pruefung-wiederherstellen.md", "0003-pb-data-und-backups.md, Nachtrag BK-3", "0039-betriebsskripte.md, Nachtrag BK-3", "0043-system-seite.md, Nachtrag BK-3"], "plan": "sicherung.md", "faelle": ["BYL-E6-920..BYL-E6-930"],
       "vermerk": "Entscheidung: „Wiederherstellen aus der App: wenn möglich auch das, ja“." },
+    { "id": "postal-mime-4", "vorhaben": "Abhängigkeiten", "titel": "postal-mime 4 in der SPA und im Mail-Hilfsprozess", "bereich": "eingang", "quelle": "Nutzerentscheidung", "datum": "2026-10-01", "adr": ["0017-parser-ics-eml.md", "0016-kanal-architektur-und-mail.md"], "faelle": ["BYL-E6-940..BYL-E6-943"],
+      "vermerk": "Ersetzt Dependabot #207 und #208; Freigabe: „postal-mime 4.0.0 übernehmen, nach gezielter Prüfung“." },
     { "id": "querschnitt", "vorhaben": "Querschnitt", "titel": "Testumgebung, Regeln der Datenschicht, Hook-Module und dieses Manifest", "bereich": "entwicklung", "faelle": ["BYL-X-001..BYL-X-004"] }
   ],
   "zurueckgestellt": [
@@ -3897,6 +3899,27 @@
         { "id": "BYL-E6-930", "title": "wiederherstellen.bat auf einer Kopie (manuell)", "art": ["manuell"], "status": "offen",
           "pre": "Wie BYL-E6-929; in der Kopie eine Sicherung im Zielverzeichnis von vor einem Wechsel der Passphrase.", "steps": ["wiederherstellen.bat der Kopie doppelklicken, die ältere Sicherung im Ziel wählen.", "Die alte Passphrase eingeben, die Liste der Zugangsdaten lesen, „f“ wählen, beim Wort einmal Enter (Abbruch).", "Noch einmal, diesmal WIEDERHERSTELLEN eintippen."],
           "expect": "Liste mit Datum, Größe und Ort; die Prüfung meldet Tickets und Originaldateien, die Zugangsdaten nur mit Namen (fehlende extra); ohne das Wort „Abgebrochen; nichts wurde geändert.“; danach läuft die Kopie mit dem Stand der Sicherung, das Fenster nennt die Sicherheitskopie und die zurückgeschriebenen Namen; logs\\byl-control.log der Kopie enthält eine Zeile restore ohne Werte.",
+          "tests": [] }
+      ]
+    },
+    {
+      "tag": "E6", "name": "Abhängigkeiten", "desc": "Major-Updates mit gezielter Prüfung statt Merge des Dependabot-PRs: postal-mime 4.0.0 in der SPA und in byl-mail.exe (ersetzt #207 und #208), mit einer Regressions-Fixture für Mails mit Anhängen.",
+      "items": [
+        { "id": "BYL-E6-940", "title": "Mail-Datei mit Alternativteilen, Inline-Bild und Anhang mit Umlauten (SPA)", "art": ["unit"], "status": "bestanden",
+          "pre": "–", "steps": ["npm run test:web"],
+          "expect": "Die erfundene Mail tests/fixtures/eml/alternative-inline-attachment.eml (multipart/mixed mit multipart/related, multipart/alternative aus Text und HTML, Inline-PNG mit Content-ID und PDF-Anhang; Dateinamen nach RFC 2047 und RFC 2231 mit Umlauten) ergibt über readMailFile denselben Entwurf wie mit postal-mime 3: Titel „Prüfbericht für März“, Text aus dem Textteil mit „_2 Anhänge, nur in der Originaldatei._“, Absender, Empfänger, Datum, Message-ID, die Datei als Original und dieselben Suchtexte; mit CRLF statt LF dasselbe. postal-mime nennt beide Anhänge mit Namen, Typ, disposition „inline“ bzw. „attachment“, Content-ID und unverändertem Inhalt.",
+          "tests": ["web/src/lib/mail-file.test.ts::mail with alternative parts, inline image and attachment (BYL-E6-940)"] },
+        { "id": "BYL-E6-941", "title": "Dieselbe Mail aus dem Postfach im Mail-Hilfsprozess", "art": ["unit"], "status": "bestanden",
+          "pre": "–", "steps": ["npm run test:helper"],
+          "expect": "parseMail von byl-mail liefert für die Fixture mit LF und mit CRLF denselben Entwurf wie die SPA, nur mit Kanal „mail“, samt Suchtexten; die Fixture läuft auch im Vergleich aller Mail-Fixtures mit der SPA mit.",
+          "tests": ["helpers/mail/src/mail.test.ts::reads a mail with alternative parts, inline image and attachment with umlauts (BYL-E6-941)", "helpers/mail/src/mail.test.ts::like the web app, only with channel"] },
+        { "id": "BYL-E6-942", "title": "Eingangseintrag mit Originaldatei gegen die Wegwerf-Instanz", "art": ["integration"], "status": "bestanden",
+          "pre": "app\\pocketbase.exe vorhanden, Web-Build da.", "steps": ["npm run test:integration"],
+          "expect": "createItem legt die Mail als Eintrag mit Kanal eml, Titel, Text mit Anhang-Hinweis, Message-ID, Datum, Absender, Empfänger und attachments 2 an; die geschützte Originaldatei kommt Byte für Byte gleich zurück.",
+          "tests": ["tests/integration/web-data-inbox.test.mjs::keeps a mail with alternative parts, inline image and attachment with its original (BYL-E6-942)"] },
+        { "id": "BYL-E6-943", "title": "Mail mit Anhang im Eingang nach Update (manuell)", "art": ["manuell"], "status": "offen",
+          "pre": "Update gezogen und mit scripts\\build.ps1 gebaut, dazu scripts\\build-mail-helper.ps1 für den neuen byl-mail.exe; App mit neu-starten.bat neu gestartet; eine Mail-Verbindung eingerichtet.", "steps": ["Unter „Eingang“ die Datei tests\\fixtures\\eml\\alternative-inline-attachment.eml aus dem Repo auf die Drop-Zone ziehen und den Eintrag öffnen.", "Die Originaldatei über den Eintrag herunterladen und im Mail-Programm öffnen.", "An der Mail-Verbindung „Aus dem Postfach wählen …“ öffnen und eine eigene Mail mit Anhang übernehmen."],
+          "expect": "Titel „Prüfbericht für März“, Von „Jürgen Müller“, Datum 12.10.2026, Text bis „Jürgen“ und „2 Anhänge, nur in der Originaldatei.“; die heruntergeladene Datei zeigt Text, Logo und das PDF „Prüfbericht März.pdf“. Die Mail aus dem Postfach kommt mit Betreff, Absender, Datum, Text, Anhang-Hinweis und Originaldatei wie vor dem Update; byl-mail.log ohne Fehler.",
           "tests": [] }
       ]
     },

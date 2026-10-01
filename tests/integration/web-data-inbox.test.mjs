@@ -339,6 +339,35 @@ describe('mail files (E4 plan, package 8)', () => {
 		const withFiles = await createItem(fresh.client, await readDraft('attachments.eml'));
 		expect(withFiles).toMatchObject({ kind: 'created', item: { sourceMeta: { attachments: 2 } } });
 	});
+
+	it('keeps a mail with alternative parts, inline image and attachment with its original (BYL-E6-942)', async () => {
+		const fresh = await createOwner(superuser);
+		const name = 'alternative-inline-attachment.eml';
+		const outcome = await createItem(fresh.client, await readDraft(name));
+		expect(outcome).toMatchObject({
+			kind: 'created',
+			item: {
+				channel: 'eml',
+				kind: 'mail',
+				title: 'Prüfbericht für März',
+				sourceRef: '<alternative.inline.attachment@example.com>',
+				sourceDate: '2026-10-12 12:30:00.000Z',
+				sourceMeta: {
+					from: 'Jürgen Müller <juergen@example.com>',
+					to: 'Anna Beispiel <anna@example.com>',
+					attachments: 2
+				}
+			}
+		});
+		// The form upload with the original turns the line breaks of the text into CRLF.
+		expect(outcome.item.body.replace(/\r\n/g, '\n')).toBe(
+			'Hallo Anna,\n\nanbei der Prüfbericht für März.\n\nViele Grüße\nJürgen\n\n_2 Anhänge, nur in der Originaldatei._'
+		);
+		expect(outcome.item.original).toMatch(/\.eml$/);
+		const response = await fetch(await originalFileUrl(fresh.client, outcome.item));
+		expect(response.status).toBe(200);
+		expect(Buffer.from(await response.arrayBuffer())).toEqual(readFileSync(new URL(name, EML)));
+	});
 });
 
 describe('calendar files (E4 plan, package 14)', () => {

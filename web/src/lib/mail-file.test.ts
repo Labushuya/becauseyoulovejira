@@ -1,11 +1,18 @@
 // Mail files (E4 plan, package 8): type and size checks, parsing with the file as original and
 // refusal of crafted mails; calendar files (package 14) are recognised by name or type. The import
-// with its selection view is tested in stores/mail-import.test.ts (package 21).
+// with its selection view is tested in stores/mail-import.test.ts (package 21). A mail with
+// alternative parts, an inline image and an attachment with umlauts in the names guards the
+// update to postal-mime 4 (BYL-E6-940).
 
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
+import PostalMime from 'postal-mime';
 import { describe, expect, it } from 'vitest';
-import { MAIL_PARTIAL_BYTES, ORIGINAL_OMITTED_NOTE } from './domain/inbox-mail';
+import {
+	MAIL_PARSER_OPTIONS,
+	MAIL_PARTIAL_BYTES,
+	ORIGINAL_OMITTED_NOTE
+} from './domain/inbox-mail';
 import {
 	EML_MAX_BYTES,
 	NOT_EML_MESSAGE,
@@ -107,6 +114,76 @@ describe('readMailFile', () => {
 		for (let level = depth - 1; level >= 0; level--) parts.push(`--b${level}--`);
 		const file = new File([parts.join('\r\n')], 'tief.eml');
 		expect(await readMailFile(file)).toEqual({ ok: false, message: UNREADABLE_MESSAGE });
+	});
+});
+
+describe('mail with alternative parts, inline image and attachment (BYL-E6-940)', () => {
+	const NAME = 'alternative-inline-attachment.eml';
+	const DRAFT = {
+		channel: 'eml',
+		kind: 'mail',
+		title: 'Prüfbericht für März',
+		body: 'Hallo Anna,\n\nanbei der Prüfbericht für März.\n\nViele Grüße\nJürgen\n\n_2 Anhänge, nur in der Originaldatei._',
+		sourceRef: '<alternative.inline.attachment@example.com>',
+		sourceDate: '2026-10-12 12:30:00.000Z',
+		sourceMeta: {
+			from: 'Jürgen Müller <juergen@example.com>',
+			to: 'Anna Beispiel <anna@example.com>',
+			attachments: 2
+		}
+	};
+
+	it('gives title, text, sender, date, Message-ID and attachments, with the file as original', async () => {
+		const file = fixture(NAME, '');
+		const result = await readMailFile(file);
+		if (!result.ok) throw new Error(result.message);
+		const { original, ...fields } = result.draft;
+		expect(fields).toEqual(DRAFT);
+		expect(original).toBe(file);
+		expect(result.matchTexts).toEqual([
+			'Anna Beispiel <anna@example.com>',
+			'Hallo Anna,\n\nanbei der Prüfbericht für März.'
+		]);
+	});
+
+	it('reads the same mail with CRLF line ends, as it comes from a mailbox', async () => {
+		const crlf = readFileSync(join(FIXTURES, NAME), 'latin1').replace(/\r?\n/g, '\r\n');
+		const file = new File([crlf], NAME);
+		const result = await readMailFile(file);
+		if (!result.ok) throw new Error(result.message);
+		expect({ ...result.draft, original: undefined }).toEqual(DRAFT);
+		expect(result.draft.original).toBe(file);
+	});
+
+	it('names the attachments with umlauts, their types, disposition and content', async () => {
+		const email = await PostalMime.parse(readFileSync(join(FIXTURES, NAME)), MAIL_PARSER_OPTIONS);
+		const bytes = (content: unknown) =>
+			content instanceof ArrayBuffer ? Array.from(new Uint8Array(content)) : content;
+		expect(
+			email.attachments.map(({ content, ...attachment }) => ({
+				...attachment,
+				content: bytes(content)
+			}))
+		).toEqual([
+			{
+				filename: 'Grüße Logo.png',
+				mimeType: 'image/png',
+				disposition: 'inline',
+				related: true,
+				contentId: '<logo.inline@example.com>',
+				content: [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]
+			},
+			{
+				filename: 'Prüfbericht März.pdf',
+				mimeType: 'application/pdf',
+				disposition: 'attachment',
+				content: Array.from(new TextEncoder().encode('%PDF-1.4 erfunden'))
+			}
+		]);
+		expect(email.text?.trim()).toBe(
+			'Hallo Anna,\n\nanbei der Prüfbericht für März.\n\nViele Grüße\nJürgen'
+		);
+		expect(email.html).toContain('<img src="cid:logo.inline@example.com" alt="Logo">');
 	});
 });
 
