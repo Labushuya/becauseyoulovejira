@@ -18,12 +18,14 @@
 	} from '$lib/domain/recurrence-rule';
 	import {
 		DEFAULT_TEMPLATE_STATUS,
+		subtasksWithoutTitle,
 		templateOf,
 		templateSummary,
 		ticketTemplate,
 		type RuleTemplate,
 		type TemplateNames,
-		type TemplateStatus
+		type TemplateStatus,
+		type TicketSubtask
 	} from '$lib/domain/series-template';
 	import type { HistoryEntry, ProjectRef, TagRef, Ticket } from '$lib/domain/ticket';
 	import type { EditResult } from '$lib/stores/catalog-editor';
@@ -59,7 +61,8 @@
 	// The template of the series (plan WV): "Künftige Tickets: Priorität Hoch · …" with
 	// "Bearbeiten", which edits it inline here, not in a dialog (the full view is one already,
 	// ADR-0025 section 3). Its draft lives in the store, so panel and full view share it and leaving
-	// the ticket asks first; Escape or "Abbrechen" drop it.
+	// the ticket asks first; Escape or "Abbrechen" drop it. Since WV-3 the template has a list of
+	// sub-tasks, which "Unteraufgaben dieses Tickets übernehmen" fills from the sub-tasks here.
 	let {
 		ticket,
 		store,
@@ -67,6 +70,7 @@
 		today,
 		history = [],
 		openTickets = [],
+		subtasks = [],
 		onticket
 	}: {
 		ticket: Ticket;
@@ -81,6 +85,8 @@
 		 * missed dates there (ADR-0022 addendum 4).
 		 */
 		history?: readonly HistoryEntry[];
+		/** Sub-tasks of the ticket, for "Unteraufgaben dieses Tickets übernehmen" (plan WV-3). */
+		subtasks?: readonly TicketSubtask[];
 		/** The ticket after joining or leaving its series, for panel and list. */
 		onticket: (ticket: Ticket) => void;
 	} = $props();
@@ -167,23 +173,36 @@
 	 * ("Folgetickets starten mit", ADR-0022 addendum 9), so the sentence leaves it out.
 	 */
 	const repeatNote = $derived(
-		`Künftige Tickets bekommen die Werte dieses Tickets: ${templateSummary(ticketTemplate(ticket, DEFAULT_TEMPLATE_STATUS), names, false)}. Ändern kannst du sie danach hier unter „Wiederholt sich“.`
+		`Künftige Tickets bekommen die Werte dieses Tickets: ${templateSummary(ticketTemplate(ticket, DEFAULT_TEMPLATE_STATUS), names, false)}. Ändern kannst du sie danach hier unter „Wiederholt sich“.` +
+			(store.subtasksReady && subtasks.length > 0
+				? ' Unteraufgaben kommen nicht von selbst mit; übernimm sie dort mit „Unteraufgaben dieses Tickets übernehmen“.'
+				: '')
 	);
 	/** The draft of the template of this series, while it is edited. */
 	const draft = $derived(
 		rule !== null && store.templateDraft?.ruleId === rule.id ? store.templateDraft : null
 	);
 
-	type TemplateError = 'title' | 'description' | 'priority' | 'project' | 'tags' | 'initial_status';
+	type TemplateError =
+		| 'title'
+		| 'description'
+		| 'priority'
+		| 'project'
+		| 'tags'
+		| 'initial_status'
+		| 'template_subtasks';
 	const TEMPLATE_ERRORS: readonly string[] = [
 		'title',
 		'description',
 		'priority',
 		'project',
 		'tags',
-		'initial_status'
+		'initial_status',
+		'template_subtasks'
 	];
 	let templateErrors = $state<Partial<Record<TemplateError, string>>>({});
+	/** Rows of the list of sub-tasks without a title (checked before sending). */
+	let invalidSubtasks = $state<number[]>([]);
 	let templateMessage = $state<string | null>(null);
 	let templateBusy = $state(false);
 	let editButton = $state<HTMLButtonElement>();
@@ -193,6 +212,7 @@
 	async function editTemplate() {
 		if (rule === null) return;
 		templateErrors = {};
+		invalidSubtasks = [];
 		templateMessage = null;
 		store.editTemplate(rule.id);
 		await tick();
@@ -204,6 +224,7 @@
 		if (templateBusy) return;
 		store.cancelTemplate();
 		templateErrors = {};
+		invalidSubtasks = [];
 		templateMessage = null;
 		await tick();
 		editButton?.focus();
@@ -216,7 +237,8 @@
 		templateMessage = null;
 		templateErrors =
 			current.template.title.trim() === '' ? { title: 'Bitte einen Titel eingeben.' } : {};
-		if (Object.keys(templateErrors).length === 0) {
+		invalidSubtasks = store.subtasksReady ? subtasksWithoutTitle(current.template.subtasks) : [];
+		if (Object.keys(templateErrors).length === 0 && invalidSubtasks.length === 0) {
 			templateBusy = true;
 			try {
 				// Only tags the catalog knows: a tag may have been deleted since.
@@ -340,6 +362,9 @@
 								: catalog.projectById(current.template.projectId)}
 							busy={templateBusy}
 							statusAvailable={store.statusReady}
+							subtasksAvailable={store.subtasksReady}
+							ticketSubtasks={subtasks}
+							{invalidSubtasks}
 							oncreatetag={(name) => catalog.ensureTag(name)}
 						/>
 						<p class="hint">

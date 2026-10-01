@@ -2,7 +2,8 @@
 // open ticket of a series in the panel, in a cell of the table or with a bulk action, an info flag
 // says "Nur dieses Ticket geändert." and its action writes exactly the changed fields into the
 // template of the rule. Status and due date never offer it; "Rückgängig" of a bulk action
-// withdraws it. The stores run for real on fake data layers, the flags in FlagGroup.
+// withdraws it. Since WV-3 a sub-task added to the ticket is offered the same way. The stores run
+// for real on fake data layers, the flags in FlagGroup.
 
 import { fireEvent, render, screen, within } from '@testing-library/svelte';
 import { tick } from 'svelte';
@@ -22,6 +23,7 @@ import { TicketListStore, type TicketListData } from '$lib/stores/ticket-list.sv
 import { useOverlayStubs } from '$lib/test/overlay-stubs';
 import FlagGroup from './overlay/FlagGroup.svelte';
 import TicketPanel from './TicketPanel.svelte';
+import TicketSubtasks from './TicketSubtasks.svelte';
 import TicketTable from './TicketTable.svelte';
 
 useOverlayStubs();
@@ -115,7 +117,7 @@ function applied(current: Ticket, { project, tags, ...fields }: TicketPatch): Ti
 }
 
 /** Rules with a real store over a fake data layer; the flags go to a real FlagStore. */
-async function rulesWith(rules: RecurrenceRule[]) {
+async function rulesWith(rules: RecurrenceRule[], extra: Partial<RecurrenceData> = {}) {
 	const flags = new FlagStore();
 	const data: RecurrenceData = {
 		listRules: vi.fn(async () => rules),
@@ -126,7 +128,8 @@ async function rulesWith(rules: RecurrenceRule[]) {
 		})),
 		setActive: vi.fn(),
 		deleteRule: vi.fn(),
-		detachTicket: vi.fn()
+		detachTicket: vi.fn(),
+		...extra
 	};
 	const store = new RecurrenceStore(data, SESSION, flags);
 	await store.load();
@@ -386,5 +389,111 @@ describe('the offer after a bulk action', () => {
 		expect(shownTitles()).toContain('4 Tickets geändert.');
 		expect(offerFlag()).toBeNull();
 		expect(data.updateRule).not.toHaveBeenCalled();
+	});
+});
+
+// Plan WV-3 (ADR-0022 addendum 10): "Unteraufgabe hinzufügen" at an open ticket of a series offers
+// the sub-task for the template in the same flag; only adding, never removing or renaming.
+describe('the offer after a sub-task was added (plan WV-3)', () => {
+	async function showSubtasks(parent: Ticket = ticket(), ready = true) {
+		const rules = await rulesWith(
+			[rule({ templateSubtasks: [{ title: 'Rahmen', priority: 'medium' }] })],
+			{
+				templateSubtasksReady: vi.fn(async () => ready)
+			}
+		);
+		let sequence = 0;
+		const data: TicketListData = {
+			listOpen: vi.fn(async () => [parent]),
+			listSubtasks: vi.fn(async () => []),
+			listDone: vi.fn(async (page: number) => ({ items: [], page, hasMore: false })),
+			searchOpen: vi.fn(async (): Promise<string[]> => []),
+			setDone: vi.fn(),
+			update: vi.fn(),
+			create: vi.fn(async (draft) => {
+				sequence += 1;
+				return ticket({
+					id: `t0000000000010${sequence}`,
+					key: `TASK-${10 + sequence}`,
+					title: draft.title,
+					priority: draft.priority,
+					parentId: draft.parent ?? null,
+					recurring: false,
+					recurrenceId: null
+				});
+			})
+		};
+		const list = new TicketListStore(data, SESSION, { flags: rules.flags, series: rules.store });
+		list.activate(parseListQuery(mocks.page.url.searchParams));
+		await vi.waitFor(() => expect(list.openState).toBe('ready'));
+		render(TicketSubtasks, {
+			props: { ticket: parent, list, hrefOf: (id: string) => `/tickets/${id}` as ResolvedPathname }
+		});
+		return rules;
+	}
+
+	async function addSubtask(title: string) {
+		const section = screen.getByRole('region', { name: 'Unteraufgaben' });
+		const open = within(section).queryByRole('button', { name: 'Unteraufgabe hinzufügen' });
+		if (open !== null) await fireEvent.click(open);
+		const field = within(section).getByLabelText('Titel der Unteraufgabe');
+		await fireEvent.input(field, { target: { value: title } });
+		await fireEvent.submit(field.closest('form') as HTMLFormElement);
+	}
+
+	it('offers the added sub-task, joins the next one and adds both to the template', async () => {
+		const { data } = await showSubtasks();
+		await addSubtask('Scheiben');
+		await vi.waitFor(() => expect(offerFlag()).not.toBeNull());
+		expect(
+			within(offerFlag() as HTMLElement).getByText('Nur dieses Ticket geändert.')
+		).toBeTruthy();
+		expect(
+			within(offerFlag() as HTMLElement).getByText(
+				'Künftige Tickets von „Fenster putzen“ bekommen die Unteraufgabe „Scheiben“ nicht.'
+			)
+		).toBeTruthy();
+		// Not blocking: no question before, the field stays open for the next one.
+		expect(screen.queryByRole('dialog')).toBeNull();
+
+		await addSubtask('Rahmen');
+		await addSubtask('Fensterbank');
+		await vi.waitFor(() =>
+			expect(
+				within(offerFlag() as HTMLElement).getByText(
+					'Künftige Tickets von „Fenster putzen“ bekommen die Unteraufgaben „Scheiben“ und „Fensterbank“ nicht.'
+				)
+			).toBeTruthy()
+		);
+		// One offer at a time.
+		expect(screen.getAllByRole('button', { name: OFFER })).toHaveLength(1);
+
+		await fireEvent.click(screen.getByRole('button', { name: OFFER }));
+		await vi.waitFor(() =>
+			expect(data.updateRule).toHaveBeenCalledExactlyOnceWith(RULE_ID, {
+				template_subtasks: [
+					{ title: 'Rahmen', priority: 'medium' },
+					{ title: 'Scheiben', priority: 'medium' },
+					{ title: 'Fensterbank', priority: 'medium' }
+				]
+			})
+		);
+		await vi.waitFor(() =>
+			expect(shownTitles()).toContain('Vorlage von „Fenster putzen“ übernommen.')
+		);
+	});
+
+	it('offers nothing for a done ticket, a ticket without a series or before the migration', async () => {
+		for (const [parent, ready] of [
+			[ticket({ status: 'done', completedAt: '2026-09-02 10:00:00.000Z' }), true],
+			[ticket({ recurring: false, recurrenceId: null }), true],
+			[ticket(), false]
+		] as const) {
+			await showSubtasks(parent, ready);
+			await addSubtask('Scheiben');
+			await vi.waitFor(() => expect(screen.getByText(/TASK-\d+ angelegt\./)).toBeTruthy());
+			expect(offerFlag()).toBeNull();
+			document.body.innerHTML = '';
+		}
 	});
 });

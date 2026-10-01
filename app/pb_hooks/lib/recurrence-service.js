@@ -9,7 +9,8 @@
 // here leaves rules and tickets as they were in E4 (schemaReady). The same holds for "Jeden
 // Termin einzeln anlegen" (plan OR-5): before its migration (eachReady) every rule keeps one open
 // instance; and for "Status beim Anlegen" (plan WV): before its migration (initialStatusReady)
-// every new ticket starts "open".
+// every new ticket starts "open"; and for the sub-tasks of the template (plan WV-3): before its
+// migration (templateSubtasksReady) no ticket gets sub-tasks.
 'use strict';
 
 var recurrence = require(__hooks + '/lib/recurrence.js');
@@ -70,6 +71,36 @@ function initialStatusReady(app) {
   } catch (err) {
     return false;
   }
+}
+
+// Whether the migration of the sub-tasks of the template ran (plan WV-3, ADR-0022 addendum 10).
+// Before it a rule has no sub-tasks to give: getString gives '' without the field.
+function templateSubtasksReady(app) {
+  try {
+    return !!app.findCachedCollectionByNameOrId(RULES).fields.getByName('template_subtasks');
+  } catch (err) {
+    return false;
+  }
+}
+
+// The stored JSON of a field as a value (null for empty or unreadable text).
+function jsonOf(record, field) {
+  var raw = record.getString(field);
+  if (raw === '' || raw === 'null') {
+    return null;
+  }
+  try {
+    return JSON.parse(raw);
+  } catch (err) {
+    return raw;
+  }
+}
+
+// The sub-tasks of the template of a rule as the generation applies them: [] without the field,
+// without sub-tasks or with a value the hook would refuse (never stored, but never a reason to fail).
+function templateSubtasksOf(rule) {
+  var checked = rules.templateSubtasksCheck(jsonOf(rule, 'template_subtasks'));
+  return checked.code === '' ? checked.value : [];
 }
 
 // A rule with "Jeden Termin einzeln anlegen": only a fixed rhythm (after completion there is only
@@ -309,6 +340,26 @@ function checkInitialStatus(txApp, record) {
   }
 }
 
+// The sub-tasks of the template (plan WV-3, ADR-0022 addendum 10): at most TEMPLATE_SUBTASKS_MAX,
+// each with a title and a priority, refused with the German text before the JSON field answers,
+// and stored normalized (titles trimmed, an empty priority "medium", an empty list []). For every
+// write of a client or a superuser; nothing before the migration (PocketBase drops a sent value).
+function checkTemplateSubtasks(txApp, record) {
+  if (!templateSubtasksReady(txApp)) {
+    return;
+  }
+  var checked = rules.templateSubtasksCheck(jsonOf(record, 'template_subtasks'));
+  if (checked.code !== '') {
+    throw errors.fieldFailure(
+      'template_subtasks',
+      checked.code,
+      rules.MESSAGES[checked.code],
+      checked.index >= 0 ? { index: checked.index } : undefined
+    );
+  }
+  record.set('template_subtasks', checked.value);
+}
+
 // --- Model hooks -----------------------------------------------------------------------------
 
 /**
@@ -355,6 +406,7 @@ function prepareCreate(txApp, record, nowMs) {
   writeParams(record, values);
   checkEach(record, values);
   checkInitialStatus(txApp, record);
+  checkTemplateSubtasks(txApp, record);
   ticketService.checkRelations(txApp, record, scope, '');
 
   var dates = rules.createDates(
@@ -394,6 +446,11 @@ function prepareUpdate(txApp, record, nowMs) {
   var scope = ticketKey.scopeOf(record.getString('owner'), record.getString('household'));
   record.set('scope', scope);
   if (record.get(SYSTEM_KEY)) {
+    // A superuser may set every field, but no list of sub-tasks the hook would refuse (plan WV-3:
+    // the limits hold on the server); the saves of the server never change it.
+    if (record.getString('template_subtasks') !== original.getString('template_subtasks')) {
+      checkTemplateSubtasks(txApp, record);
+    }
     return;
   }
   record.set('next_due', original.getString('next_due'));
@@ -409,6 +466,7 @@ function prepareUpdate(txApp, record, nowMs) {
   writeParams(record, values);
   checkEach(record, values);
   checkInitialStatus(txApp, record);
+  checkTemplateSubtasks(txApp, record);
   var project = ticketService.checkRelations(txApp, record, scope, original.getString('project'));
 
   var beforeRaw = paramsOf(original);
@@ -494,9 +552,12 @@ function errorText(err) {
 // fields; a value from setRaw() is kept, because it differs from the empty original. The value is
 // the stored form, like last_generated_at, with the real clock (a run may pass another nowMs).
 // With `occurrence` (plan OR-5) the ticket carries its date of the series for the unique index.
+// The sub-tasks of the template (plan WV-3) follow in the same transaction (newSubtasks).
 function newInstance(txApp, rule, due, occurrence) {
-  var ticket = new Record(txApp.findCollectionByNameOrId(TICKETS));
-  var now = berlinTime.toPocketBaseDate(Date.now());
+  var collection = txApp.findCollectionByNameOrId(TICKETS);
+  var ticket = new Record(collection);
+  var nowMs = Date.now();
+  var now = berlinTime.toPocketBaseDate(nowMs);
   ticket.setRaw('created', now);
   ticket.setRaw('updated', now);
   ticket.set('title', rule.getString('title'));
@@ -514,7 +575,52 @@ function newInstance(txApp, rule, due, occurrence) {
   ticket.set('owner', rule.getString('owner'));
   ticket.set('household', rule.getString('household'));
   txApp.save(ticket);
+  newSubtasks(txApp, collection, rule, ticket, nowMs);
   return ticket;
+}
+
+/**
+ * The sub-tasks of the template as new, open sub-tasks of a new ticket of the series (plan WV-3,
+ * ADR-0022 addendum 10), in the transaction of the ticket: title and priority of the entry, project,
+ * tags, owner and household of the ticket (like "Unteraufgabe hinzufügen", ADR-0033 section 4), no
+ * due date, blocks_parent true (the default of ADR-0033 section 2), no series. Each runs through the
+ * ticket hooks (scope, key, checks, history "created" with the rule as author). Created and updated
+ * get one timestamp each, one millisecond apart in the order of the template, so a sub-task stays
+ * untouched and the list keeps the order (it sorts by creation). The note SUBTASKS_FIELD names them
+ * for reopening (ADR-0023 section 3); like the note of missed dates it leaves `updated` of the
+ * ticket alone.
+ */
+function newSubtasks(txApp, collection, rule, ticket, nowMs) {
+  var subtasks = templateSubtasksOf(rule);
+  if (subtasks.length === 0) {
+    return;
+  }
+  var made = [];
+  for (var i = 0; i < subtasks.length; i++) {
+    var child = new Record(collection);
+    var stamp = berlinTime.toPocketBaseDate(nowMs + i + 1);
+    child.setRaw('created', stamp);
+    child.setRaw('updated', stamp);
+    child.set('title', subtasks[i].title);
+    child.set('description', '');
+    child.set('project', ticket.getString('project'));
+    child.set('tags', listOf(ticket.getStringSlice('tags')));
+    child.set('priority', subtasks[i].priority);
+    child.set('status', 'open');
+    child.set('due', '');
+    child.set('blocks_parent', true);
+    child.set('parent', ticket.id);
+    child.set('owner', ticket.getString('owner'));
+    child.set('household', ticket.getString('household'));
+    child.set(ticketService.CREATED_BY_RULE_KEY, rule.id);
+    txApp.save(child);
+    made.push(child.id);
+  }
+  ticketService.saveHistoryEntry(txApp, ticket, {
+    field: rules.SUBTASKS_FIELD,
+    old_value: rule.id,
+    new_value: JSON.stringify({ count: made.length, tickets: made })
+  });
 }
 
 // Missed dates of a fixed rhythm made into one ticket (ADR-0022 section 3, addendum 4): the new
@@ -776,15 +882,16 @@ function reopen(txApp, record, rule) {
   }
   var followUp = conflicts[0].ticket;
   var completedAt = record.original().getString('completed_at');
-  var comments = txApp.findRecordsByFilter('comments', 'ticket = {:id}', '', 1, 0, { id: followUp.id });
-  var untouched = rules.isUntouched(
-    {
-      created: followUp.getString('created'),
-      updated: followUp.getString('updated'),
-      comments: comments.length
-    },
-    completedAt
-  );
+  var children = subtasksOf(txApp, followUp.id);
+  var untouched =
+    rules.isUntouched(
+      {
+        created: followUp.getString('created'),
+        updated: followUp.getString('updated'),
+        comments: commentCount(txApp, followUp.id)
+      },
+      completedAt
+    ) && rules.subtasksUntouched(madeSubtasks(txApp, followUp.id), childStates(txApp, children));
   var outcome = rules.reopenOutcome({
     conflicts: conflicts.length,
     untouched: untouched,
@@ -801,6 +908,12 @@ function reopen(txApp, record, rule) {
     );
   }
   var removedDue = rules.calendarDateOf(followUp.getString('due'));
+  // Its untouched sub-tasks from the template go with it (deleted first: PocketBase would only
+  // clear their parent and leave them behind as tickets of their own).
+  for (var c = 0; c < children.length; c++) {
+    children[c].set(UNDO_KEY, true);
+    txApp.delete(children[c]);
+  }
   followUp.set(UNDO_KEY, true);
   txApp.delete(followUp);
   // With each date its own ticket, next_due stays: moving it back could make dates of the series
@@ -808,6 +921,44 @@ function reopen(txApp, record, rule) {
   if (!each) {
     setNextDue(txApp, rule, rules.nextDueOnReopen(state, true, removedDue));
   }
+}
+
+function commentCount(txApp, ticketId) {
+  return txApp.findRecordsByFilter('comments', 'ticket = {:id}', '', 1, 0, { id: ticketId }).length;
+}
+
+// The sub-tasks of a ticket, oldest first (in the trash or not; one moved to the trash alone has
+// left its parent).
+function subtasksOf(txApp, ticketId) {
+  return txApp.findRecordsByFilter(TICKETS, 'parent = {:id}', 'created,id', 0, 0, { id: ticketId });
+}
+
+// What subtasksUntouched needs of the sub-tasks of a follow-up.
+function childStates(txApp, children) {
+  var states = [];
+  for (var i = 0; i < children.length; i++) {
+    states.push({
+      id: children[i].id,
+      created: children[i].getString('created'),
+      updated: children[i].getString('updated'),
+      comments: commentCount(txApp, children[i].id)
+    });
+  }
+  return states;
+}
+
+// IDs of the sub-tasks the generation made for a ticket from the template (its note
+// SUBTASKS_FIELD); [] for a ticket without one.
+function madeSubtasks(txApp, ticketId) {
+  var notes = txApp.findRecordsByFilter(
+    'ticket_history',
+    'ticket = {:id} && field = {:field}',
+    '',
+    1,
+    0,
+    { id: ticketId, field: rules.SUBTASKS_FIELD }
+  );
+  return notes.length === 0 ? [] : rules.subtasksNoteIds(notes[0].getString('new_value'));
 }
 
 // completed_at of the newest other done instance of a rule ('' without one). Instances in the
@@ -865,6 +1016,7 @@ module.exports = {
   schemaReady: schemaReady,
   eachReady: eachReady,
   initialStatusReady: initialStatusReady,
+  templateSubtasksReady: templateSubtasksReady,
   materialize: materialize,
   runDue: runDue,
   runStartup: runStartup,

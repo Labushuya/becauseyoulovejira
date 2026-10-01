@@ -14,7 +14,12 @@ import {
 	type Weekday
 } from '../domain/recurrence';
 import type { RecurrenceRule } from '../domain/recurrence-rule';
-import { templateStatusOf, type TemplateStatus } from '../domain/series-template';
+import {
+	templateStatusOf,
+	templateSubtasksOf,
+	type TemplateStatus,
+	type TemplateSubtask
+} from '../domain/series-template';
 import type { Ticket } from '../domain/ticket';
 import { DataError, withDataErrors } from './errors';
 import { currentUserId, type RequestOptions } from './options';
@@ -43,6 +48,7 @@ export const RULE_FIELDS = [
 	'last_hint',
 	'each_occurrence',
 	'initial_status',
+	'template_subtasks',
 	'created',
 	'updated'
 ].join(',');
@@ -69,6 +75,8 @@ export interface RuleRecord {
 	each_occurrence?: boolean;
 	/** "Status beim Anlegen" (plan WV); absent before its migration, '' for older rules. */
 	initial_status?: string;
+	/** Sub-tasks of the template (plan WV-3); absent before its migration, null for older rules. */
+	template_subtasks?: unknown;
 	created: string;
 	updated: string;
 }
@@ -98,6 +106,7 @@ export function toRecurrenceRule(record: RuleRecord): RecurrenceRule {
 		lastHint: record.last_hint ?? '',
 		eachOccurrence: record.each_occurrence === true,
 		initialStatus: templateStatusOf(record.initial_status),
+		templateSubtasks: templateSubtasksOf(record.template_subtasks),
 		created: record.created,
 		updated: record.updated
 	};
@@ -129,6 +138,11 @@ export interface RuleDraft {
 	 * starts every ticket "open".
 	 */
 	initial_status?: TemplateStatus;
+	/**
+	 * Sub-tasks of the template (plan WV-3), the whole list; a server before its migration ignores
+	 * it, and the hook refuses more than 20 or an entry without a title.
+	 */
+	template_subtasks?: TemplateSubtask[];
 }
 
 function draftBody(draft: Partial<RuleDraft>): Record<string, unknown> {
@@ -194,6 +208,24 @@ export function initialStatusReady(
 	return answeredWithout400(signal, () =>
 		pb.collection(RULES).getList(1, 1, {
 			filter: pb.filter('initial_status = {:status}', { status: 'open' }),
+			fields: 'id',
+			skipTotal: true,
+			signal
+		})
+	);
+}
+
+/**
+ * Whether the server knows the sub-tasks of the template (plan WV-3): a filter on
+ * `template_subtasks` answers 400 before its migration 1790202700. The SPA shows the list only then.
+ */
+export function templateSubtasksReady(
+	pb: PocketBase,
+	{ signal }: RequestOptions = {}
+): Promise<boolean> {
+	return answeredWithout400(signal, () =>
+		pb.collection(RULES).getList(1, 1, {
+			filter: pb.filter('template_subtasks != {:none}', { none: '' }),
 			fields: 'id',
 			skipTotal: true,
 			signal

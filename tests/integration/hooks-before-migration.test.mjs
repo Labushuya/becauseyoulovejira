@@ -9,7 +9,12 @@ import { startPocketBase } from '../support/pocketbase-harness.mjs';
 import { createInboxKey, listInboxKeys } from '../../web/src/lib/data/inbox-keys.ts';
 import { createProject, listProjects, updateProject } from '../../web/src/lib/data/projects.ts';
 import { createComment, deleteComment } from '../../web/src/lib/data/comments.ts';
-import { eachOccurrenceReady, initialStatusReady, listRules } from '../../web/src/lib/data/recurrence.ts';
+import {
+	eachOccurrenceReady,
+	initialStatusReady,
+	listRules,
+	templateSubtasksReady
+} from '../../web/src/lib/data/recurrence.ts';
 import { createTicket, deleteTicket, getTicket, updateTicket } from '../../web/src/lib/data/tickets.ts';
 import { unreadSinceOf } from '../../web/src/lib/domain/unread.ts';
 
@@ -830,6 +835,93 @@ describe('WV hooks before the migration of "Status beim Anlegen"', () => {
 		expect(rules?.every((rule) => rule.initialStatus === 'open')).toBe(true);
 		expect(await initialStatusReady(who)).toBe(false);
 		expect(await eachOccurrenceReady(who)).toBe(true);
+	});
+});
+
+// The instance of the user after the merge of WV-3, before its next start: rules without
+// template_subtasks. The new hooks give no ticket sub-tasks, a sent list is dropped by PocketBase
+// (also one the hook would refuse after the migration), reopening works as before, and the SPA
+// offers no list yet.
+describe('WV-3 hooks before the migration of the sub-tasks of the template', () => {
+	const SUBTASKS_MIGRATION = '1790202700_recurrence_template_subtasks.js';
+	let before;
+	let who;
+	let superuser;
+
+	beforeAll(async () => {
+		before = await startPocketBase({ migrationFilter: (name) => name < SUBTASKS_MIGRATION });
+		superuser = new PocketBase(before.url);
+		superuser.autoCancellation(false);
+		await superuser.collection('_superusers').authWithPassword(before.email, before.password);
+		const email = `user-${randomBytes(12).toString('hex')}@example.com`;
+		const password = randomBytes(24).toString('base64url');
+		const id = (await superuser.collection('users').create({ email, password, passwordConfirm: password })).id;
+		who = new PocketBase(before.url);
+		who.autoCancellation(false);
+		await who.collection('users').authWithPassword(email, password);
+		who.userId = id;
+	}, 60_000);
+
+	afterAll(async () => {
+		await before?.stop();
+	});
+
+	it('drops a sent list and makes tickets without sub-tasks; reopening removes the follow-up as before', async () => {
+		const rules = who.collection('recurrence_rules');
+		const rule = await rules.create({
+			owner: who.userId,
+			title: 'Kaffeemaschine',
+			mode: 'calendar',
+			freq: 'daily',
+			anchor: '2038-06-01',
+			lead_days: 0,
+			initial_status: 'open',
+			template_subtasks: [{ title: 'Entkalken' }, { title: '' }]
+		});
+		expect(rule.template_subtasks).toBeUndefined();
+
+		const response = await fetch(`${before.url}/api/byl-test/recurrence/run`, {
+			method: 'POST',
+			headers: { Authorization: superuser.authStore.token, 'Content-Type': 'application/json' },
+			body: JSON.stringify({ now: Date.parse('2038-06-01T10:00:00Z') })
+		});
+		expect(response.status).toBe(200);
+		const [ticket] = await superuser
+			.collection('tickets')
+			.getFullList({ filter: superuser.filter('recurrence = {:rule}', { rule: rule.id }) });
+		const children = await superuser
+			.collection('tickets')
+			.getFullList({ filter: superuser.filter('parent = {:id}', { id: ticket.id }) });
+		expect(children).toEqual([]);
+		const history = await superuser
+			.collection('ticket_history')
+			.getFullList({ filter: superuser.filter('ticket = {:id}', { id: ticket.id }) });
+		expect(history.map((entry) => entry.field)).toEqual(['created']);
+
+		// Done, the next run makes the follow-up, reopened: the untouched follow-up goes as before.
+		await who.collection('tickets').update(ticket.id, { status: 'done' });
+		const next = await fetch(`${before.url}/api/byl-test/recurrence/run`, {
+			method: 'POST',
+			headers: { Authorization: superuser.authStore.token, 'Content-Type': 'application/json' },
+			body: JSON.stringify({ now: Date.parse('2038-06-02T10:00:00Z') })
+		});
+		expect((await next.json()).tickets).toBe(1);
+		const openOf = () =>
+			superuser
+				.collection('tickets')
+				.getFullList({ filter: superuser.filter("recurrence = {:rule} && status != 'done'", { rule: rule.id }) });
+		expect((await openOf()).map((entry) => entry.id)).not.toContain(ticket.id);
+		await who.collection('tickets').update(ticket.id, { status: 'open' });
+		expect((await openOf()).map((entry) => entry.id)).toEqual([ticket.id]);
+		await rules.update(rule.id, { active: false });
+	});
+
+	it('lets the SPA load the rules without sub-tasks and learn that the list waits for the restart', async () => {
+		const rules = await listRules(who);
+		expect(rules?.length).toBeGreaterThan(0);
+		expect(rules?.every((rule) => rule.templateSubtasks?.length === 0)).toBe(true);
+		expect(await templateSubtasksReady(who)).toBe(false);
+		expect(await initialStatusReady(who)).toBe(true);
 	});
 });
 

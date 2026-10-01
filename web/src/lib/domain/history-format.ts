@@ -8,7 +8,13 @@ import { formatCalendarDate, formatBerlinDateTime } from './format';
 import { CHANNEL_LABELS, isInboxChannel } from './inbox';
 import { PRIORITY_LABELS, STATUS_LABELS, historyFieldLabel } from './labels';
 import { personLabel } from './people';
-import { SKIPPED_FIELD, parseSkipped, skippedText } from './recurrence-rule';
+import {
+	SKIPPED_FIELD,
+	SUBTASKS_FIELD,
+	parseSkipped,
+	skippedText,
+	subtasksNoteText
+} from './recurrence-rule';
 import { isPriority, isStatus } from './status';
 import {
 	toDueInput,
@@ -275,6 +281,9 @@ function describe(entry: HistoryEntry, lookups: HistoryLookups, selfId: string |
 				? 'Verpasste Termine zusammengefasst'
 				: `${skippedText(skipped)}, zusammengefasst in diesem Ticket`;
 		}
+		case SUBTASKS_FIELD:
+			// ADR-0022 addendum 10: the sub-tasks this ticket got from the template of its rule.
+			return subtasksNoteText(newValue);
 		default:
 			return `${historyFieldLabel(field)} geändert`;
 	}
@@ -285,11 +294,14 @@ export const RECURRENCE_ACTOR = 'Wiederholung';
 
 /**
  * A rule created the ticket: the entry "created" has no user and the rule as old value (the
- * hook writes it so since E5, package 3).
+ * hook writes it so since E5, package 3; for a sub-task from the template of the rule since WV-3),
+ * and so do its notes about missed dates and sub-tasks.
  */
 function createdByRule(entry: HistoryEntry): boolean {
 	return (
-		(entry.field === 'created' || entry.field === SKIPPED_FIELD) &&
+		(entry.field === 'created' ||
+			entry.field === SKIPPED_FIELD ||
+			entry.field === SUBTASKS_FIELD) &&
 		entry.user === '' &&
 		entry.oldValue !== ''
 	);

@@ -245,6 +245,7 @@
 					openTickets={ticket.recurrenceId
 						? openInstancesOf(tickets.open, ticket.recurrenceId)
 						: []}
+					subtasks={tickets.subtasksOf(ticket.id)}
 					onticket={(changed) => {
 						detail.upsert(changed);
 						tickets.upsert(changed);

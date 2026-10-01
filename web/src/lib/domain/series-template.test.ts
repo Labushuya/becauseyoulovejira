@@ -2,19 +2,32 @@ import { describe, expect, it } from 'vitest';
 import type { RecurrenceRule } from './recurrence-rule';
 import {
 	DEFAULT_TEMPLATE_STATUS,
+	ONE_TICKET_CHANGED,
 	TEMPLATE_STATUSES,
+	TEMPLATE_SUBTASKS_MAX,
 	appliedTitle,
 	changedTemplateFields,
 	initialStatusOptions,
+	moveSubtask,
 	offerDescription,
 	offerTitle,
+	sameSubtasks,
+	subtaskCountText,
+	subtaskOffer,
+	subtaskOfferDescription,
+	subtasksOfTicket,
+	subtasksWithoutTitle,
+	takeSubtasks,
+	takenText,
 	templateBody,
 	templateChanges,
 	templateOf,
 	templateOffers,
 	templateStatusOf,
+	templateSubtasksOf,
 	templateSummary,
 	ticketTemplate,
+	trimmedSubtasks,
 	type SeriesChange,
 	type SeriesTicket
 } from './series-template';
@@ -90,9 +103,15 @@ describe('templates of rules and tickets', () => {
 			projectId: null,
 			tagIds: ['tag000000000001'],
 			priority: 'medium',
-			initialStatus: 'open'
+			initialStatus: 'open',
+			subtasks: []
 		});
 		expect(templateOf(rule({ initialStatus: 'backlog' })).initialStatus).toBe('backlog');
+		// Plan WV-3: the sub-tasks of the template, as copies.
+		const subtasks = [{ title: 'Filter wechseln', priority: 'high' as const }];
+		const template = templateOf(rule({ templateSubtasks: subtasks }));
+		expect(template.subtasks).toEqual(subtasks);
+		expect(template.subtasks[0]).not.toBe(subtasks[0]);
 	});
 
 	it('takes every value of a ticket into a new template, the status as the user chose it', () => {
@@ -112,8 +131,11 @@ describe('templates of rules and tickets', () => {
 			projectId: 'proj00000000001',
 			tagIds: ['tag000000000002'],
 			priority: 'high',
-			initialStatus: 'waiting'
+			initialStatus: 'waiting',
+			// Plan WV-3: the sub-tasks of the ticket never come along on their own.
+			subtasks: []
 		});
+		// Without sub-tasks the body leaves the field out (a server before the migration ignores it).
 		expect(templateBody(template)).toEqual({
 			title: 'Steuer',
 			description: 'Belege',
@@ -122,6 +144,10 @@ describe('templates of rules and tickets', () => {
 			priority: 'high',
 			initial_status: 'waiting'
 		});
+		expect(
+			templateBody({ ...template, subtasks: [{ title: 'Belege sortieren', priority: 'low' }] })
+				.template_subtasks
+		).toEqual([{ title: 'Belege sortieren', priority: 'low' }]);
 		expect(ticketTemplate(ticket, 'in_progress').initialStatus).toBe('in_progress');
 	});
 
@@ -166,6 +192,25 @@ describe('templates of rules and tickets', () => {
 				initialStatus: 'waiting'
 			})
 		).toEqual({ project: 'proj00000000001', tags: [], initial_status: 'waiting' });
+		// The whole list of sub-tasks once it differs, also by order or priority (plan WV-3).
+		const list = [
+			{ title: 'A', priority: 'low' as const },
+			{ title: 'B', priority: 'high' as const }
+		];
+		const withList = { ...before, subtasks: list };
+		expect(templateChanges(before, withList)).toEqual({ template_subtasks: list });
+		expect(templateChanges(withList, { ...before, subtasks: [...list] })).toEqual({});
+		expect(templateChanges(withList, { ...before, subtasks: [list[1]!, list[0]!] })).toEqual({
+			template_subtasks: [list[1], list[0]]
+		});
+		expect(
+			templateChanges(withList, {
+				...before,
+				subtasks: [list[0]!, { title: 'B', priority: 'urgent' }]
+			})
+		).toEqual({
+			template_subtasks: [list[0], { title: 'B', priority: 'urgent' }]
+		});
 	});
 
 	it('says what the next tickets get in one line', () => {
@@ -187,6 +232,131 @@ describe('templates of rules and tickets', () => {
 		expect(
 			templateSummary(templateOf(rule({ projectId: 'gone00000000001', tagIds: [] })), NAMES, false)
 		).toBe('Priorität Mittel · Projekt unbekannt · ohne Tags');
+		// Plan WV-3: the number of sub-tasks, only when there are some.
+		const one = [{ title: 'A', priority: 'low' as const }];
+		expect(templateSummary(templateOf(rule({ templateSubtasks: one })), NAMES, true)).toBe(
+			'Priorität Mittel · ohne Projekt · Tags Garten · Status beim Anlegen Offen · 1 Unteraufgabe'
+		);
+		expect(
+			templateSummary(
+				templateOf(rule({ templateSubtasks: [...one, ...one, ...one] })),
+				NAMES,
+				false
+			)
+		).toBe('Priorität Mittel · ohne Projekt · Tags Garten · 3 Unteraufgaben');
+	});
+});
+
+// Plan WV-3 (ADR-0022 addendum 10): the list "Unteraufgaben" of the template.
+describe('the sub-tasks of a template', () => {
+	const entry = (title: string, priority: 'low' | 'medium' | 'high' | 'urgent' = 'medium') => ({
+		title,
+		priority
+	});
+
+	it('reads the stored list: entries with a title, "Mittel" without a priority, nothing else', () => {
+		expect(TEMPLATE_SUBTASKS_MAX).toBe(20);
+		expect(
+			templateSubtasksOf([
+				{ title: 'A', priority: 'high' },
+				{ title: 'B' },
+				{ title: 'C', priority: 'sofort' },
+				{ title: '  ' },
+				{ priority: 'low' },
+				'D',
+				null
+			])
+		).toEqual([entry('A', 'high'), entry('B'), entry('C')]);
+		for (const value of [null, undefined, '', {}, 'x']) {
+			expect(templateSubtasksOf(value), String(value)).toEqual([]);
+		}
+	});
+
+	it('moves, trims and finds rows without a title', () => {
+		const list = [entry('A'), entry('B'), entry('C')];
+		expect(moveSubtask(list, 0, 2).map((item) => item.title)).toEqual(['B', 'C', 'A']);
+		expect(moveSubtask(list, 2, 1).map((item) => item.title)).toEqual(['A', 'C', 'B']);
+		// Out of range: unchanged (and a copy).
+		expect(moveSubtask(list, 0, -1)).toEqual(list);
+		expect(moveSubtask(list, 0, 3)).not.toBe(list);
+		expect(trimmedSubtasks([entry('  A  ', 'high')])).toEqual([entry('A', 'high')]);
+		expect(subtasksWithoutTitle([entry('A'), entry(' '), entry(''), entry('B')])).toEqual([1, 2]);
+		expect(sameSubtasks([entry('A')], [entry('A')])).toBe(true);
+		expect(sameSubtasks([entry('A')], [entry('A', 'low')])).toBe(false);
+	});
+
+	it('takes the sub-tasks of a ticket in the order they were made, open and done ones', () => {
+		const children = [
+			{ id: 'b', title: 'Zweite', priority: 'low' as const, created: '2026-09-02 10:00:00.000Z' },
+			{ id: 'a', title: 'Erste', priority: 'high' as const, created: '2026-09-01 10:00:00.000Z' },
+			{ id: 'c', title: 'Dritte', priority: 'medium' as const, created: '2026-09-02 10:00:00.000Z' }
+		];
+		expect(subtasksOfTicket(children)).toEqual([
+			entry('Erste', 'high'),
+			entry('Zweite', 'low'),
+			entry('Dritte')
+		]);
+	});
+
+	it('adds them after the list without the known titles, or replaces it, never more than 20', () => {
+		const current = [entry('Filter wechseln'), entry('Deckel putzen')];
+		const incoming = [entry(' filter WECHSELN', 'high'), entry('Entkalken', 'urgent')];
+		const added = takeSubtasks(current, incoming, false);
+		expect(added).toEqual({
+			subtasks: [...current, entry('Entkalken', 'urgent')],
+			added: 1,
+			known: 1,
+			cut: 0
+		});
+		expect(takenText(added)).toBe('1 Unteraufgabe übernommen. 1 stand schon in der Liste.');
+		const replaced = takeSubtasks(current, incoming, true);
+		expect(replaced).toEqual({ subtasks: incoming, added: 2, known: 0, cut: 0 });
+		expect(takenText(replaced)).toBe('2 Unteraufgaben übernommen.');
+
+		const many = Array.from({ length: 25 }, (_value, index) => entry(`Schritt ${index + 1}`));
+		const full = takeSubtasks(current, many, false);
+		expect(full.subtasks).toHaveLength(20);
+		expect(full).toMatchObject({ added: 18, known: 0, cut: 7 });
+		expect(takenText(full)).toBe(
+			'18 Unteraufgaben übernommen. 7 passten nicht mehr (höchstens 20).'
+		);
+		expect(takeSubtasks([], many, true)).toMatchObject({ added: 20, cut: 5 });
+		expect(takenText({ subtasks: [], added: 0, known: 2, cut: 1 })).toBe(
+			'0 Unteraufgaben übernommen. 2 standen schon in der Liste. 1 passte nicht mehr (höchstens 20).'
+		);
+	});
+
+	it('offers a sub-task added to an open ticket of a series for the template, if it is new and fits', () => {
+		const parent = { key: 'TASK-3', status: 'open' as const, recurrenceId: 'rule00000000001' };
+		const withList = rule({ templateSubtasks: [entry('Filter wechseln')] });
+		const offer = subtaskOffer(parent, [entry('Deckel putzen', 'high')], () => withList);
+		expect(offer).toEqual({
+			ruleId: 'rule00000000001',
+			title: 'Müll',
+			subtasks: [entry('Deckel putzen', 'high')],
+			patch: { template_subtasks: [entry('Filter wechseln'), entry('Deckel putzen', 'high')] }
+		});
+		expect(subtaskOfferDescription(offer!)).toBe(
+			'Künftige Tickets von „Müll“ bekommen die Unteraufgabe „Deckel putzen“ nicht.'
+		);
+		const two = subtaskOffer(parent, [entry('A'), entry('B')], () => withList);
+		expect(subtaskOfferDescription(two!)).toBe(
+			'Künftige Tickets von „Müll“ bekommen die Unteraufgaben „A“ und „B“ nicht.'
+		);
+		// Nothing to offer: the template has the title, it is full, the ticket is done or in no
+		// series, or the rule is unknown.
+		expect(subtaskOffer(parent, [entry('filter wechseln')], () => withList)).toBeNull();
+		const full = rule({
+			templateSubtasks: Array.from({ length: 20 }, (_value, index) => entry(`S${index}`))
+		});
+		expect(subtaskOffer(parent, [entry('Neu')], () => full)).toBeNull();
+		expect(subtaskOffer({ ...parent, status: 'done' }, [entry('Neu')], () => withList)).toBeNull();
+		expect(
+			subtaskOffer({ ...parent, recurrenceId: null }, [entry('Neu')], () => withList)
+		).toBeNull();
+		expect(subtaskOffer(parent, [entry('Neu')], () => null)).toBeNull();
+		expect(subtaskCountText(1)).toBe('1 Unteraufgabe');
+		expect(ONE_TICKET_CHANGED).toBe('Nur dieses Ticket geändert.');
 	});
 });
 

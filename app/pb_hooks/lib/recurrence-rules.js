@@ -36,6 +36,11 @@ var MESSAGES = {
     'Von dieser Serie ist schon ein anderes Ticket offen, und dieses Ticket ist nicht das zuletzt erledigte. Du kannst es als normales Ticket wieder öffnen (aus der Serie lösen).',
   validation_recurrence_initial_status: 'Als „Status beim Anlegen“ geht jeder Status außer „Erledigt“.',
   validation_recurrence_initial_status_required: 'Bitte wählen, mit welchem Status Folgetickets starten.',
+  validation_recurrence_subtasks: 'Die Unteraufgaben der Vorlage sind ungültig.',
+  validation_recurrence_subtasks_max: 'Die Vorlage hat höchstens 20 Unteraufgaben.',
+  validation_recurrence_subtask_title: 'Jede Unteraufgabe der Vorlage braucht einen Titel.',
+  validation_recurrence_subtask_title_max: 'Der Titel einer Unteraufgabe hat höchstens 200 Zeichen.',
+  validation_recurrence_subtask_priority: 'Bitte für jede Unteraufgabe eine gültige Priorität wählen.',
   validation_project_archived: 'Das Projekt ist archiviert. Wähle ein anderes oder kein Projekt, um die Regel fortzusetzen.'
 };
 
@@ -143,6 +148,112 @@ function initialStatusChoiceViolation(value) {
     return 'validation_recurrence_initial_status_required';
   }
   return typeof value === 'string' && INITIAL_STATUSES.indexOf(value) !== -1 ? '' : 'validation_recurrence_initial_status';
+}
+
+// --- Sub-tasks of the template (plan WV-3, ADR-0022 addendum 10) --------------------------------
+
+// At most so many sub-tasks per template; each becomes a new open sub-task of every next ticket.
+var TEMPLATE_SUBTASKS_MAX = 20;
+// The same limit as the title of a ticket (characters, as PocketBase counts them).
+var TEMPLATE_SUBTASK_TITLE_MAX = 200;
+var SUBTASK_PRIORITIES = ['low', 'medium', 'high', 'urgent'];
+var DEFAULT_SUBTASK_PRIORITY = 'medium';
+
+// Characters of a text as PocketBase counts them (code points: a surrogate pair is one).
+function characterCount(text) {
+  var count = 0;
+  for (var i = 0; i < text.length; i++) {
+    var code = text.charCodeAt(i);
+    if (code < 0xdc00 || code > 0xdfff) {
+      count += 1;
+    }
+  }
+  return count;
+}
+
+/**
+ * Checks and normalizes the sub-tasks of a template (`template_subtasks`, a JSON list). Empty
+ * (undefined, null, '') is the empty list. Each entry is { title, priority }: the title is trimmed
+ * and required (at most TEMPLATE_SUBTASK_TITLE_MAX characters), the priority one of the four, an
+ * empty one "medium"; other keys are dropped. Returns { value, code, index }: the normalized list
+ * and '' when valid, else the code of the first problem and the index of its entry (-1 for the
+ * list as a whole).
+ */
+function templateSubtasksCheck(raw) {
+  if (isEmpty(raw)) {
+    return { value: [], code: '', index: -1 };
+  }
+  if (Object.prototype.toString.call(raw) !== '[object Array]') {
+    return { value: null, code: 'validation_recurrence_subtasks', index: -1 };
+  }
+  if (raw.length > TEMPLATE_SUBTASKS_MAX) {
+    return { value: null, code: 'validation_recurrence_subtasks_max', index: -1 };
+  }
+  var value = [];
+  for (var i = 0; i < raw.length; i++) {
+    var item = raw[i];
+    if (item === null || typeof item !== 'object' || Object.prototype.toString.call(item) === '[object Array]') {
+      return { value: null, code: 'validation_recurrence_subtasks', index: i };
+    }
+    var title = typeof item.title === 'string' ? item.title.trim() : '';
+    if (title === '') {
+      return { value: null, code: 'validation_recurrence_subtask_title', index: i };
+    }
+    if (characterCount(title) > TEMPLATE_SUBTASK_TITLE_MAX) {
+      return { value: null, code: 'validation_recurrence_subtask_title_max', index: i };
+    }
+    var priority = isEmpty(item.priority) ? DEFAULT_SUBTASK_PRIORITY : item.priority;
+    if (SUBTASK_PRIORITIES.indexOf(priority) === -1) {
+      return { value: null, code: 'validation_recurrence_subtask_priority', index: i };
+    }
+    value.push({ title: title, priority: priority });
+  }
+  return { value: value, code: '', index: -1 };
+}
+
+// History field of the note on a ticket whose sub-tasks came from the template (old value the
+// rule, new value { count, tickets }): which sub-tasks the generation made, so reopening the direct
+// predecessor knows whether the user changed them (isUntouched, subtasksUntouched). No schema field.
+var SUBTASKS_FIELD = 'recurrence_subtasks';
+
+// IDs of the sub-tasks a note SUBTASKS_FIELD names; [] for anything else.
+function subtasksNoteIds(value) {
+  var parsed;
+  try {
+    parsed = JSON.parse(String(value === undefined || value === null ? '' : value));
+  } catch (err) {
+    return [];
+  }
+  if (parsed === null || typeof parsed !== 'object' || Object.prototype.toString.call(parsed.tickets) !== '[object Array]') {
+    return [];
+  }
+  var ids = [];
+  for (var i = 0; i < parsed.tickets.length; i++) {
+    if (typeof parsed.tickets[i] === 'string') {
+      ids.push(parsed.tickets[i]);
+    }
+  }
+  return ids;
+}
+
+/**
+ * Whether the sub-tasks of a follow-up are still the ones the generation made (ADR-0023 section
+ * 3, addendum 8): `made` are the IDs of its note, `children` its sub-tasks now, each
+ * { id, created, updated, comments }. Untouched means exactly the same sub-tasks (none added, none
+ * moved away, to the trash or deleted) and none of them changed since or commented. A follow-up
+ * without sub-tasks of the template has none, and one the user added makes it touched.
+ */
+function subtasksUntouched(made, children) {
+  if (made.length !== children.length) {
+    return false;
+  }
+  for (var i = 0; i < children.length; i++) {
+    var child = children[i];
+    if (made.indexOf(child.id) === -1 || child.updated !== child.created || child.comments !== 0) {
+      return false;
+    }
+  }
+  return true;
 }
 
 // Checks the ticket a rule is created with (ADR-0023 section 1). `ticket` is null when it was
@@ -574,6 +685,14 @@ module.exports = {
   initialStatusOf: initialStatusOf,
   initialStatusViolation: initialStatusViolation,
   initialStatusChoiceViolation: initialStatusChoiceViolation,
+  TEMPLATE_SUBTASKS_MAX: TEMPLATE_SUBTASKS_MAX,
+  TEMPLATE_SUBTASK_TITLE_MAX: TEMPLATE_SUBTASK_TITLE_MAX,
+  SUBTASK_PRIORITIES: SUBTASK_PRIORITIES,
+  DEFAULT_SUBTASK_PRIORITY: DEFAULT_SUBTASK_PRIORITY,
+  templateSubtasksCheck: templateSubtasksCheck,
+  SUBTASKS_FIELD: SUBTASKS_FIELD,
+  subtasksNoteIds: subtasksNoteIds,
+  subtasksUntouched: subtasksUntouched,
   ticketViolation: ticketViolation,
   createDates: createDates,
   nextDueAfterEdit: nextDueAfterEdit,

@@ -108,6 +108,7 @@
 		repeat={rules.state !== 'unavailable'}
 		eachAvailable={rules.eachReady}
 		statusAvailable={rules.statusReady}
+		subtasksAvailable={rules.subtasksReady}
 		today={tickets.today}
 		oncreatetag={(name) => catalog.ensureTag(name)}
 		oncreate={create}
@@ -125,6 +126,7 @@
 			repeat={rules.state !== 'unavailable'}
 			eachAvailable={rules.eachReady}
 			statusAvailable={rules.statusReady}
+			subtasksAvailable={rules.subtasksReady}
 			today={tickets.today}
 			oncreatetag={(name) => catalog.ensureTag(name)}
 			oncreate={create}

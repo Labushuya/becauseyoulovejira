@@ -29,6 +29,11 @@ var DESCRIPTION_STALE = 'Die Beschreibung wurde inzwischen geändert.';
 var FORCE_DONE_KEY = '@force_done';
 var COMPLETE_CHILDREN_KEY = '@complete_children';
 
+// Transient record key of a sub-ticket the generation of a series makes from the template of its
+// rule (ADR-0022 addendum 10): the rule, so its history names "Wiederholung" as its author like the
+// ticket of the series itself. Only the server sets it; a sub-ticket has no `recurrence`.
+var CREATED_BY_RULE_KEY = '@created_by_rule';
+
 // At most this many keys of blocking sub-tickets go to the client with the refusal.
 var OPEN_CHILDREN_KEYS_MAX = 5;
 
@@ -376,11 +381,13 @@ function prepareCreate(txApp, record) {
 // onRecordCreate after e.next(): the creation itself is recorded with the key, and the inbox
 // item the ticket came from becomes "converted" (ADR-0014 section 2), in the same transaction.
 // A ticket a recurrence rule created (only the server sets `recurrence` on create since E5)
-// carries the rule as old value, so the history can name "Wiederholung" as its author (T-9).
+// carries the rule as old value, so the history can name "Wiederholung" as its author (T-9); so
+// does a sub-ticket from the template of the rule (CREATED_BY_RULE_KEY).
 function recordCreation(txApp, record, item) {
+  var rule = record.get(CREATED_BY_RULE_KEY);
   saveHistoryEntry(txApp, record, {
     field: 'created',
-    old_value: record.getString('recurrence'),
+    old_value: record.getString('recurrence') || (rule ? String(rule) : ''),
     new_value: record.getString('key')
   });
   inbox.completeConversion(txApp, item || null, record);
@@ -477,6 +484,7 @@ function deleteWithSources(e, id) {
 
 module.exports = {
   ACTOR_KEY: ACTOR_KEY,
+  CREATED_BY_RULE_KEY: CREATED_BY_RULE_KEY,
   deleteWithSources: deleteWithSources,
   assignKey: assignKey,
   historyValues: historyValues,
