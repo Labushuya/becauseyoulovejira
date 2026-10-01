@@ -6,15 +6,17 @@ $ErrorActionPreference = 'Stop'
 # The executable is checked without Node (PATH only with the Windows folders): "--version" and a
 # self-test that seals and opens an invented backup in a temporary folder. app\byl-backup.exe is
 # gitignored like pocketbase.exe. The helper runs only for a moment (one command per call); should
-# it run while the build replaces it, the old file is renamed and removed at a later build.
+# it run while the build replaces it, the old file is renamed and removed at a later build. Problems
+# are entries of the catalog app\byl-problems.ps1 (ADR-0048).
 #
 # Call: powershell -NoProfile -ExecutionPolicy Bypass -File scripts\build-backup-helper.ps1
 
-$rootDir = Split-Path -Parent $PSScriptRoot
+$rootDir = $BylRepositoryRoot
 $helperDir = [System.IO.Path]::Combine($rootDir, 'helpers', 'backup')
 $appDir = [System.IO.Path]::Combine($rootDir, 'app')
 $built = [System.IO.Path]::Combine($helperDir, 'dist', 'byl-backup.exe')
 $target = [System.IO.Path]::Combine($appDir, 'byl-backup.exe')
+$problemValues = @{ exe = 'byl-backup.exe'; rerun = 'powershell -NoProfile -ExecutionPolicy Bypass -File "{0}"' -f $PSCommandPath }
 
 function Invoke-WithoutNode {
     # Runs the built executable with an environment that has no Node: PATH only with the Windows
@@ -43,7 +45,7 @@ function Invoke-WithoutNode {
         $standardError = $process.StandardError.ReadToEndAsync()
         if (-not $process.WaitForExit(60000)) {
             $process.Kill()
-            throw "byl-backup.exe $Arguments did not finish within 60 seconds."
+            throw (New-BylProblemError -Code 'helper-check' -Values ($problemValues + @{ check = $Arguments; code = 'keiner, nach 60 Sekunden beendet' }))
         }
         $process.WaitForExit()
         return [pscustomobject]@{
@@ -56,59 +58,63 @@ function Invoke-WithoutNode {
     }
 }
 
-Push-Location $helperDir
 try {
-    # npm ci if node_modules is missing or older than the lockfile (scripts\build-functions.ps1).
+    Push-Location $helperDir
     try {
+        # npm ci if node_modules is missing or older than the lockfile (scripts\build-functions.ps1).
         [void](Update-BylDependency -Root $rootDir -Folder 'helpers/backup')
+        Write-Host 'Building byl-backup.exe...'
+        node build.mjs
+        if ($LASTEXITCODE -ne 0) {
+            exit (Write-BylBuildProblem -Code 'helper-build' -Values ($problemValues + @{ detail = "node build.mjs, Exit-Code $LASTEXITCODE" }))
+        }
+    }
+    finally {
+        Pop-Location
+    }
+
+    $version = Invoke-WithoutNode -Arguments '--version'
+    if ($version.ExitCode -ne 0 -or $version.Output -notmatch '^byl-backup \d+\.\d+\.\d+$') {
+        exit (Write-BylBuildProblem -Code 'helper-check' -Values ($problemValues + @{ check = '--version'; code = $version.ExitCode }) -Facts @($version.Output -split "`r?`n"))
+    }
+    $selfTest = Invoke-WithoutNode -Arguments '--self-test'
+    $selfTestOk = $false
+    try {
+        $selfTestOk = $selfTest.ExitCode -eq 0 -and ($selfTest.Output | ConvertFrom-Json).ok -eq $true
     }
     catch {
-        Write-Host $_.Exception.Message -ForegroundColor Red
-        exit 1
+        $selfTestOk = $false
     }
-    Write-Host 'Building byl-backup.exe...'
-    node build.mjs
-    if ($LASTEXITCODE -ne 0) { exit 1 }
-}
-finally {
-    Pop-Location
-}
+    if (-not $selfTestOk) {
+        exit (Write-BylBuildProblem -Code 'helper-check' -Values ($problemValues + @{ check = '--self-test'; code = $selfTest.ExitCode }) -Facts @($selfTest.Output -split "`r?`n"))
+    }
+    Write-Host "$($version.Output): self-test without Node passed."
 
-$version = Invoke-WithoutNode -Arguments '--version'
-if ($version.ExitCode -ne 0 -or $version.Output -notmatch '^byl-backup \d+\.\d+\.\d+$') {
-    Write-Host "byl-backup.exe --version failed without Node (exit code $($version.ExitCode)):`n$($version.Output)" -ForegroundColor Red
-    exit 1
-}
-$selfTest = Invoke-WithoutNode -Arguments '--self-test'
-$selfTestOk = $false
-try {
-    $selfTestOk = $selfTest.ExitCode -eq 0 -and ($selfTest.Output | ConvertFrom-Json).ok -eq $true
+    # Leftovers of earlier builds that replaced a running helper.
+    Get-ChildItem -LiteralPath $appDir -Filter 'byl-backup.exe.old-*' -ErrorAction SilentlyContinue |
+        ForEach-Object { Remove-Item -LiteralPath $_.FullName -Force -ErrorAction SilentlyContinue }
+
+    try {
+        if (Test-Path -LiteralPath $target -PathType Leaf) {
+            try {
+                Remove-Item -LiteralPath $target -Force
+            }
+            catch {
+                # A running helper locks its file; Windows still allows renaming it.
+                $old = 'byl-backup.exe.old-' + [DateTime]::UtcNow.ToString('yyyyMMddHHmmss')
+                Rename-Item -LiteralPath $target -NewName $old
+                Write-Host "app\byl-backup.exe is running; the old file is now app\$old." -ForegroundColor Yellow
+            }
+        }
+        Copy-Item -LiteralPath $built -Destination $target
+    }
+    catch {
+        exit (Write-BylBuildProblem -Code 'helper-install' -Values ($problemValues + @{ detail = $_.Exception.Message }))
+    }
+    $megabytes = [Math]::Round((Get-Item -LiteralPath $target).Length / 1MB, 1)
+    Write-Host "Installed app\byl-backup.exe ($megabytes MB)."
+    exit 0
 }
 catch {
-    $selfTestOk = $false
+    exit (Write-BylBuildError -ErrorRecord $_)
 }
-if (-not $selfTestOk) {
-    Write-Host "byl-backup.exe --self-test failed without Node (exit code $($selfTest.ExitCode)):`n$($selfTest.Output)" -ForegroundColor Red
-    exit 1
-}
-Write-Host "$($version.Output): self-test without Node passed."
-
-# Leftovers of earlier builds that replaced a running helper.
-Get-ChildItem -LiteralPath $appDir -Filter 'byl-backup.exe.old-*' -ErrorAction SilentlyContinue |
-    ForEach-Object { Remove-Item -LiteralPath $_.FullName -Force -ErrorAction SilentlyContinue }
-
-if (Test-Path -LiteralPath $target -PathType Leaf) {
-    try {
-        Remove-Item -LiteralPath $target -Force
-    }
-    catch {
-        # A running helper locks its file; Windows still allows renaming it.
-        $old = 'byl-backup.exe.old-' + [DateTime]::UtcNow.ToString('yyyyMMddHHmmss')
-        Rename-Item -LiteralPath $target -NewName $old
-        Write-Host "app\byl-backup.exe is running; the old file is now app\$old." -ForegroundColor Yellow
-    }
-}
-Copy-Item -LiteralPath $built -Destination $target
-$megabytes = [Math]::Round((Get-Item -LiteralPath $target).Length / 1MB, 1)
-Write-Host "Installed app\byl-backup.exe ($megabytes MB)."
-exit 0

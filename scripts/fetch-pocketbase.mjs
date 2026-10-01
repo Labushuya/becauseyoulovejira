@@ -116,12 +116,33 @@ function installedVersion(binary) {
 	return (result.stdout ?? '').split(/\r?\n/)[0].trim();
 }
 
+/**
+ * Exit codes of this script per cause; scripts\fetch-pocketbase.ps1 turns them into the entries
+ * pocketbase-download, -checksum, -write, -version and -platform of the catalog app\byl-problems.ps1
+ * (ADR-0048). Anything else ends with 1.
+ */
+export const FETCH_EXIT_CODES = Object.freeze({ download: 2, checksum: 3, write: 4, version: 5, platform: 6 });
+
+/** An error of `cause` (a key of FETCH_EXIT_CODES) with its exit code. */
+function failure(cause, message) {
+	return Object.assign(new Error(message), { exitCode: FETCH_EXIT_CODES[cause] });
+}
+
+/** `action()`, with an error of it as one of `cause`. */
+async function as(cause, action) {
+	try {
+		return await action();
+	} catch (error) {
+		throw failure(cause, error instanceof Error ? error.message : String(error));
+	}
+}
+
 async function main() {
 	const rootDir = resolve(fileURLToPath(new URL('..', import.meta.url)));
 	const appDir = join(rootDir, 'app');
-	const target = pocketBaseTarget();
+	const target = await as('platform', () => pocketBaseTarget());
 	const destination = join(appDir, target.binary);
-	mkdirSync(appDir, { recursive: true });
+	await as('write', () => mkdirSync(appDir, { recursive: true }));
 
 	if (existsSync(destination) && installedVersion(destination).includes(POCKETBASE_VERSION)) {
 		console.log(`PocketBase ${POCKETBASE_VERSION} already present at ${destination}`);
@@ -129,29 +150,33 @@ async function main() {
 	}
 
 	console.log(`Downloading ${target.url} ...`);
-	const response = await fetch(target.url, { signal: AbortSignal.timeout(DOWNLOAD_TIMEOUT_MS) });
-	if (!response.ok) throw new Error(`Download failed: HTTP ${response.status}`);
-	const zip = Buffer.from(await response.arrayBuffer());
+	const zip = await as('download', async () => {
+		const response = await fetch(target.url, { signal: AbortSignal.timeout(DOWNLOAD_TIMEOUT_MS) });
+		if (!response.ok) throw new Error(`Download failed: HTTP ${response.status}`);
+		return Buffer.from(await response.arrayBuffer());
+	});
 
 	const actual = createHash('sha256').update(zip).digest('hex');
 	if (actual !== target.sha256) {
-		throw new Error(`SHA256 mismatch for ${target.archive}: expected ${target.sha256}, got ${actual}`);
+		throw failure('checksum', `SHA256 mismatch for ${target.archive}: expected ${target.sha256}, got ${actual}`);
 	}
 	console.log(`Checksum verified: ${actual}`);
 
-	const binary = readZipEntry(zip, target.binary);
+	const binary = await as('checksum', () => readZipEntry(zip, target.binary));
 	const temporary = `${destination}.download`;
-	try {
-		writeFileSync(temporary, binary, { mode: 0o755 });
-		if (process.platform !== 'win32') chmodSync(temporary, 0o755);
-		renameSync(temporary, destination);
-	} finally {
-		rmSync(temporary, { force: true });
-	}
+	await as('write', () => {
+		try {
+			writeFileSync(temporary, binary, { mode: 0o755 });
+			if (process.platform !== 'win32') chmodSync(temporary, 0o755);
+			renameSync(temporary, destination);
+		} finally {
+			rmSync(temporary, { force: true });
+		}
+	});
 
 	const version = installedVersion(destination);
 	if (!version.includes(POCKETBASE_VERSION)) {
-		throw new Error(`The installed binary does not report version ${POCKETBASE_VERSION} (got "${version}").`);
+		throw failure('version', `The installed binary does not report version ${POCKETBASE_VERSION} (got "${version}").`);
 	}
 	console.log(`Installed ${version} at ${destination}`);
 }
@@ -159,6 +184,6 @@ async function main() {
 if (process.argv[1] !== undefined && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
 	main().catch((error) => {
 		console.error(error instanceof Error ? error.message : error);
-		process.exit(1);
+		process.exit(Number.isInteger(error?.exitCode) ? error.exitCode : 1);
 	});
 }

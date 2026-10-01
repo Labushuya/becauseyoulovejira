@@ -4,5 +4,6 @@ rem autostart-an.bat - legt die Verknuepfung becauseyoulovejira.lnk im Windows-A
 rem Ziel: wscript.exe mit start-hidden.vbs (Start ohne Fenster). Logik in byl-control.ps1.
 "%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -ExecutionPolicy Bypass -File "%~dp0byl-control.ps1" autostart-on
 set "BYL_EXIT=%ERRORLEVEL%"
+if not "%BYL_EXIT%"=="0" call "%~dp0byl-pruefen.bat" %BYL_EXIT%
 pause
 exit /b %BYL_EXIT%

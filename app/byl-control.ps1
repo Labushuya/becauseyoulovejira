@@ -23,14 +23,17 @@
 # folder (Select-AppProcess, Select-MailHelperProcess), never by name alone, and first in order
 # (console break, then waiting), only then hard.
 #
+# Problems (ADR-0048): every error and every hint of a problem is an entry of the catalog
+# byl-problems.ps1, reported by Write-BylProblem with cause, steps and a command with the real paths
+# of this folder; an offer to solve it only in a console window; a run without window keeps it for
+# the next one and the page System.
+#
 # Saved as UTF-8 with BOM: Windows PowerShell 5.1 reads BOM-less files as ANSI (umlauts).
 
 [CmdletBinding()]
 param(
-    [Parameter(Position = 0)]
-    [ValidateSet('start', 'stop', 'restart', 'reload', 'status', 'open', 'logs', 'doctor', 'port', 'autostart-on', 'autostart-off', 'mail-restart', 'reset-admin',
-        'backup-info', 'backup-configure', 'backup-passphrase', 'backup-export', 'backup-verify', 'restore', 'help')]
-    [string]$Command = 'help',
+    # Checked against $BylCommands below (an entry of the catalog instead of the error of PowerShell).
+    [Parameter(Position = 0)][string]$Command = 'help',
     [Parameter(Position = 1)][string]$Value,
     [switch]$Force,
     [switch]$Hidden,
@@ -48,7 +51,10 @@ Set-StrictMode -Version 2.0
 
 $AppDir = $PSScriptRoot
 . ([System.IO.Path]::Combine($PSScriptRoot, 'byl-functions.ps1'))
+. ([System.IO.Path]::Combine($PSScriptRoot, 'byl-problems.ps1'))
 
+$BylCommands = @('start', 'stop', 'restart', 'reload', 'status', 'open', 'logs', 'doctor', 'port', 'autostart-on', 'autostart-off', 'mail-restart', 'reset-admin',
+    'backup-info', 'backup-configure', 'backup-passphrase', 'backup-export', 'backup-verify', 'restore', 'help')
 $Title = 'becauseyoulovejira'
 $HealthTimeoutSeconds = 30
 # PocketBase ends about 1 s after the console break (1 s for open requests, then the database).
@@ -156,19 +162,15 @@ $script:BreakCodes = New-Object System.Collections.Generic.List[int]
 $script:MailHelperDecision = 'None'
 
 function Show-Message {
-    param([Parameter(Mandatory = $true)][string]$Text, [ValidateSet('Info', 'Warning', 'Error')][string]$Kind = 'Info')
+    # A result or a hint that is no problem (problems: Write-BylProblem). With -Hidden a message box.
+    param([Parameter(Mandatory = $true)][string]$Text)
 
     if ($Hidden) {
-        # WScript.Shell.Popup: 0 = no timeout; 64 = information, 48 = warning, 16 = error icon.
-        $icon = switch ($Kind) { 'Error' { 16 } 'Warning' { 48 } default { 64 } }
-        [void](New-Object -ComObject WScript.Shell).Popup($Text, 0, $Title, $icon)
+        # WScript.Shell.Popup: 0 = no timeout, 64 = information icon.
+        [void](New-Object -ComObject WScript.Shell).Popup($Text, 0, $Title, 64)
         return
     }
-    switch ($Kind) {
-        'Error' { Write-Host $Text -ForegroundColor Red }
-        'Warning' { Write-Host $Text -ForegroundColor Yellow }
-        default { Write-Host $Text }
-    }
+    Write-Host $Text
 }
 
 function Write-Status {
@@ -201,7 +203,9 @@ function Write-JsonLine {
 
 function Write-ControlLog {
     # One line per command in logs\byl-control.log (Format-ControlLogLine: time, command, exit code
-    # and $script:LogDetail, never values, passwords or e-mail addresses). Never fails the command.
+    # and $script:LogDetail, never values, passwords or e-mail addresses), with the codes of its
+    # problems (problem=, unless the detail names a reason already) and, after an unexpected error,
+    # a second line with type, place and message (Format-ControlErrorLine). Never fails the command.
     param([Parameter(Mandatory = $true)][string]$Name, [Parameter(Mandatory = $true)][int]$ExitCode)
 
     try {
@@ -209,13 +213,193 @@ function Write-ControlLog {
         [void][System.IO.Directory]::CreateDirectory([System.IO.Path]::GetDirectoryName($path))
         Invoke-LogRotation -Path $path -LimitBytes $BylControlLogLimitBytes
         $detail = $script:LogDetail
+        if ($script:ProblemCodes.Count -gt 0 -and $detail -notmatch '(^| )(problem|reason)=') {
+            $detail = ("$detail problem=" + ($script:ProblemCodes -join ',')).Trim()
+        }
+        if ($script:ProblemFixed) { $detail = "$detail fix=yes".Trim() }
         if ($script:BreakCodes.Count -gt 0) { $detail = ("$detail break=" + ($script:BreakCodes -join ',')).Trim() }
-        $line = Format-ControlLogLine -TimeUtc ([DateTime]::UtcNow) -Command $Name -ExitCode $ExitCode -Detail $detail
+        $now = [DateTime]::UtcNow
+        $line = Format-ControlLogLine -TimeUtc $now -Command $Name -ExitCode $ExitCode -Detail $detail
+        if ($null -ne $script:UnexpectedError) {
+            $line += "`r`n" + (Format-ControlErrorLine -TimeUtc $now -Command $Name -ErrorType $script:UnexpectedError.Type `
+                    -Position $script:UnexpectedError.Position -Message $script:UnexpectedError.Message -Secrets (Get-LogSecretValue))
+        }
         [System.IO.File]::AppendAllText($path, "$line`r`n", (New-Object System.Text.UTF8Encoding($false)))
     }
     catch {
         $null = $_
     }
+}
+
+# --- Problems (ADR-0048) ---------------------------------------------------------------------------
+
+# Codes of the problems of this command in order, for its line in byl-control.log; whether one was an
+# error (then even a command that changes nothing writes the line); whether an offer was taken; the
+# unexpected error of the last catch (type, place, message) for the second line of the log; whether a
+# hint was shown in the console (start then waits for a key, see the end of this file).
+$script:ProblemCodes = New-Object System.Collections.Generic.List[string]
+$script:ProblemError = $false
+$script:ProblemFixed = $false
+$script:UnexpectedError = $null
+$script:NoticeShown = $false
+
+function Get-RepositoryRoot {
+    # The folder above app when it is a checkout of the repository (scripts\build.ps1 is there), for
+    # the commands {build} and {fetch}; '' for a copy of the folder app alone.
+    $root = [System.IO.Path]::GetDirectoryName($AppDir)
+    if ([System.IO.File]::Exists([System.IO.Path]::Combine($root, 'scripts', 'build.ps1'))) { return $root }
+    return ''
+}
+
+function Test-ConsoleQuestion {
+    # Whether this run may ask before it solves a problem (Test-BylCanAsk): a person in a console
+    # window, not the app (always -NonInteractive), not a test (redirected input and output), not
+    # the autostart and not a run in the background.
+    $nonInteractive = @([Environment]::GetCommandLineArgs() | Where-Object { [string]$_ -ieq '-NonInteractive' }).Count -gt 0
+    return Test-BylCanAsk -Hidden $Hidden.IsPresent -Quiet $Quiet.IsPresent -Json $Json.IsPresent -Background ($WaitForProcess -gt 0) `
+        -UserInteractive ([Environment]::UserInteractive) -NonInteractive $nonInteractive `
+        -InputRedirected ([Console]::IsInputRedirected) -OutputRedirected ([Console]::IsOutputRedirected)
+}
+
+function Get-ProblemReport {
+    # The entry $Code of the catalog with the paths of this folder and the values of the call.
+    param(
+        [Parameter(Mandatory = $true)][string]$Code,
+        [System.Collections.IDictionary]$Values = @{},
+        [AllowEmptyCollection()][string[]]$Facts = @()
+    )
+
+    $log = Get-ControlLogPath -AppDir $AppDir
+    $all = Get-BylProblemValues -AppDir $AppDir -Log $log -RepositoryRoot (Get-RepositoryRoot)
+    foreach ($key in @($Values.Keys)) { $all[[string]$key] = $Values[$key] }
+    return Get-BylProblemReport -Code $Code -Values $all -Facts $Facts -Log $log
+}
+
+function Write-ProblemLines {
+    # The lines of a report in the console: the first red for an error, yellow for a hint.
+    param([Parameter(Mandatory = $true)][object]$Report)
+
+    $lines = @(Format-BylProblem -Report $Report)
+    Write-Host $lines[0] -ForegroundColor $(if ($Report.Level -eq 'error') { 'Red' } else { 'Yellow' })
+    foreach ($line in @($lines | Select-Object -Skip 1)) { Write-Host $line }
+}
+
+function Write-BylProblem {
+    # Reports the problem $Code of the catalog byl-problems.ps1 and returns its exit code:
+    #   console        the block of Format-BylProblem; with $Fix and an offer of the entry it asks
+    #                  (Test-ConsoleQuestion) and returns the exit code of $Fix after a yes;
+    #   -Json          an error as the one JSON line { ok, exitCode, report }, a hint not at all;
+    #   -Hidden        an error as a message box (autostart, no console), a hint not at all;
+    #   no console     (-Hidden or -WaitForProcess) an error also in run\hintergrund-problem.json.
+    # $Facts are lines of this case under the problem (who uses a port, the last lines of a log).
+    # The code goes into the line of byl-control.log. $Fix runs in the scope of the caller.
+    # $Answer: the JSON answer of a backup command (ok, reason, …); with -Json it gets the report and
+    # is the line that is written, whatever the level.
+    param(
+        [Parameter(Mandatory = $true)][string]$Code,
+        [System.Collections.IDictionary]$Values = @{},
+        [AllowEmptyCollection()][string[]]$Facts = @(),
+        [scriptblock]$Fix,
+        [System.Collections.IDictionary]$Answer
+    )
+
+    $problemReport = Get-ProblemReport -Code $Code -Values $Values -Facts $Facts
+    $problemIsError = $problemReport.Level -eq 'error'
+    $script:ProblemCodes.Add($problemReport.Code)
+    if ($problemIsError) { $script:ProblemError = $true }
+    if ($problemIsError -and ($Hidden -or $WaitForProcess -gt 0)) { Save-BackgroundProblem -Report $problemReport }
+    if ($Json) {
+        if ($null -ne $Answer) {
+            $Answer['report'] = ConvertTo-BylProblemData -Report $problemReport
+            Write-JsonLine (ConvertTo-Json -InputObject $Answer -Depth 6 -Compress)
+        }
+        elseif ($problemIsError) {
+            Write-JsonLine (ConvertTo-Json -InputObject ([ordered]@{ ok = $false; exitCode = $problemReport.Exit; report = ConvertTo-BylProblemData -Report $problemReport }) -Depth 4 -Compress)
+        }
+        return $problemReport.Exit
+    }
+    if ($Hidden) {
+        if ($problemIsError) {
+            [void](New-Object -ComObject WScript.Shell).Popup(((Format-BylProblem -Report $problemReport) -join "`n"), 0, $Title, 16)
+        }
+        return $problemReport.Exit
+    }
+    Write-ProblemLines -Report $problemReport
+    if (-not $problemIsError) { $script:NoticeShown = $true }
+    if ($null -ne $Fix -and $problemReport.Offer -ne '' -and (Test-ConsoleQuestion)) {
+        if (Test-BylYes -Answer (Read-Host -Prompt $problemReport.Offer)) {
+            $script:ProblemFixed = $true
+            return [int](@(& $Fix)[-1])
+        }
+    }
+    return $problemReport.Exit
+}
+
+function Get-BackgroundProblemPath {
+    return [System.IO.Path]::Combine((Get-BylRunPath -AppDir $AppDir).Directory, 'hintergrund-problem.json')
+}
+
+function Save-BackgroundProblem {
+    # Keeps an error of a run without console (autostart, restart and restore of the pages of the
+    # app) in run\hintergrund-problem.json: time, command and the entry with its texts, for the next
+    # run in a console window (Show-BackgroundProblem) and the page System (status -Json). Facts are
+    # cleaned of the values of the BYL_* variables. Never fails the command.
+    param([Parameter(Mandatory = $true)][object]$Report)
+
+    try {
+        $data = ConvertTo-BylProblemData -Report $Report
+        $secrets = Get-LogSecretValue
+        $data.facts = @(foreach ($fact in @($data.facts)) { Protect-LogText -Text $fact -Secrets $secrets })
+        $saved = [ordered]@{ atUtc = [DateTime]::UtcNow.ToString('o'); run = $Command; report = $data }
+        Write-TextFile -Path (Get-BackgroundProblemPath) -Text (ConvertTo-Json -InputObject $saved -Depth 4 -Compress)
+    }
+    catch {
+        $null = $_
+    }
+}
+
+function Read-BackgroundProblem {
+    # The kept problem as AtUtc, Run and Report (ConvertFrom-BylProblemData); $null without one.
+    $text = Read-TextFile -Path (Get-BackgroundProblemPath)
+    if ([string]::IsNullOrWhiteSpace($text)) { return $null }
+    try {
+        $value = $text | ConvertFrom-Json
+    }
+    catch {
+        return $null
+    }
+    if ($value -isnot [System.Management.Automation.PSCustomObject] -or $null -eq $value.PSObject.Properties['report']) { return $null }
+    $report = ConvertFrom-BylProblemData -Data $value.report
+    if ($null -eq $report) { return $null }
+    $at = if ($null -ne $value.PSObject.Properties['atUtc']) { [string]$value.atUtc } else { '' }
+    $run = if ($null -ne $value.PSObject.Properties['run']) { [string]$value.run } else { '' }
+    return [pscustomobject]@{ AtUtc = $at; Run = $run; Report = $report }
+}
+
+function Remove-BackgroundProblem {
+    try {
+        $path = Get-BackgroundProblemPath
+        if ([System.IO.File]::Exists($path)) { [System.IO.File]::Delete($path) }
+    }
+    catch {
+        $null = $_
+    }
+}
+
+function Show-BackgroundProblem {
+    # In a console window: the problem of the last run without window, once; then it is removed.
+    if ($Hidden -or $Json -or $WaitForProcess -gt 0) { return }
+    $saved = Read-BackgroundProblem
+    if ($null -eq $saved) { return }
+    $when = ''
+    $time = [DateTime]::MinValue
+    if ([DateTime]::TryParse($saved.AtUtc, [System.Globalization.CultureInfo]::InvariantCulture, [System.Globalization.DateTimeStyles]::RoundtripKind, [ref]$time)) {
+        $when = ', ' + $time.ToLocalTime().ToString('dd.MM.yyyy HH:mm')
+    }
+    Write-Host "Hinweis: Beim letzten Lauf ohne Fenster ($($saved.Run)$when) gab es dieses Problem:" -ForegroundColor Yellow
+    Write-ProblemLines -Report $saved.Report
+    Write-Host ''
+    Remove-BackgroundProblem
 }
 
 # Disposable copies of the tests only (tests/integration/control-script.test.mjs, ADR-0039
@@ -245,10 +429,12 @@ function Set-BylAccountVariable {
     # the test (name -> value), and refuses without that file.
     param([Parameter(Mandatory = $true)][string]$Name, [AllowNull()][AllowEmptyString()][string]$Value)
 
-    if ($Name -cnotmatch $BylSecretNamePattern -or $Name.StartsWith('BYL_TEST_')) { throw "Keine Variable der Zugangsdaten: $Name" }
+    if ($Name -cnotmatch $BylSecretNamePattern -or $Name.StartsWith('BYL_TEST_')) {
+        throw (New-BylProblemError -Code 'unexpected' -Values @{ detail = "keine Variable der Zugangsdaten: $Name" })
+    }
     if ($IsolatedEnvironment) {
         $file = [Environment]::GetEnvironmentVariable('BYL_TEST_ACCOUNT_FILE', 'Process')
-        if ([string]::IsNullOrWhiteSpace($file)) { throw 'Diese Testkopie hat keine Datei für das Konto (BYL_TEST_ACCOUNT_FILE).' }
+        if ([string]::IsNullOrWhiteSpace($file)) { throw (New-BylProblemError -Code 'unexpected' -Values @{ detail = 'diese Testkopie hat keine Datei für das Konto (BYL_TEST_ACCOUNT_FILE)' }) }
         $account = [ordered]@{}
         if ([System.IO.File]::Exists($file)) {
             foreach ($property in ([System.IO.File]::ReadAllText($file) | ConvertFrom-Json).PSObject.Properties) {
@@ -388,12 +574,47 @@ function Get-Config {
     return ConvertFrom-BylConfig -Text $text
 }
 
-function Get-ConfigProblemText {
-    param([Parameter(Mandatory = $true)][string]$Problem)
+function Save-PortSetting {
+    # Writes $Port into byl-config.json; the backup settings in the same file stay (ADR-0046). A file
+    # that is no JSON stays next to it as byl-config.json.defekt-<UTC> (its backup settings cannot
+    # be read any more; the page Sicherung asks for them again). Returns 0, or the exit code after
+    # the problem was shown.
+    param([Parameter(Mandatory = $true)][int]$Port)
 
-    $what = if ($Problem -eq 'Port') { "enthält keinen gültigen Port ($BylPortMin–$BylPortMax)" } else { 'ist kein gültiges JSON' }
-    return ("Die Einstellungsdatei $BylConfigName $($what):`n$(Get-BylConfigPath -AppDir $AppDir)`n" +
-        "Erwartet wird zum Beispiel { `"port`": $BylDefaultPort }. Reparieren mit:`n  $ControlCall port $BylDefaultPort")
+    $configPath = Get-BylConfigPath -AppDir $AppDir
+    try {
+        $text = Read-TextFile -Path $configPath
+        if ((ConvertFrom-BylConfig -Text $text).Problem -eq 'Json') {
+            $broken = [System.IO.Path]::Combine($AppDir, (Get-BylFolderStamp -Prefix "$BylConfigName.defekt-" -TimeUtc ([DateTime]::UtcNow)))
+            [System.IO.File]::Copy($configPath, $broken, $true)
+            Write-Status "Die beschädigte Datei liegt jetzt als $([System.IO.Path]::GetFileName($broken)) daneben."
+            $text = ''
+        }
+        Write-TextFile -Path $configPath -Text (Merge-BylConfigText -Text $text -Port $Port)
+    }
+    catch {
+        return Write-BylProblem -Code 'config-write' -Values @{ detail = $_.Exception.GetType().Name }
+    }
+    $script:LogDetail = "port=$Port"
+    return $BylExitOk
+}
+
+function Write-ConfigProblem {
+    # A broken byl-config.json (Problem 'Json' or 'Port' of Get-Config). In a console window it
+    # offers to set the standard port (Save-PortSetting) and then runs $Retry with the new settings
+    # (param($Config) -> exit code); without $Retry the port is all.
+    param([Parameter(Mandatory = $true)][string]$Problem, [scriptblock]$Retry)
+
+    $code = if ($Problem -eq 'Port') { 'config-port' } else { 'config-json' }
+    return Write-BylProblem -Code $code -Values @{ file = Get-BylConfigPath -AppDir $AppDir } -Fix {
+        $saved = Save-PortSetting -Port $BylDefaultPort
+        if ($saved -ne $BylExitOk) { return $saved }
+        Write-Status "Port $BylDefaultPort eingestellt ($BylConfigName)."
+        if ($null -eq $Retry) { return $BylExitOk }
+        $fixed = Get-Config
+        Set-BylAddress -Port $fixed.Port
+        return & $Retry $fixed
+    }
 }
 
 function Update-AddressFile {
@@ -404,7 +625,7 @@ function Update-AddressFile {
         Write-TextFile -Path (Get-BylRunPath -AppDir $AppDir).Address -Text (ConvertTo-AddressScript -Port $Port)
     }
     catch {
-        Write-Notice "Hinweis: run\app-adresse.js konnte nicht geschrieben werden ($($_.Exception.GetType().Name)); becauseyoulovejira.html nimmt dann Port $BylDefaultPort an."
+        [void](Write-BylProblem -Code 'address-write' -Values @{ detail = $_.Exception.GetType().Name })
     }
 }
 
@@ -414,7 +635,7 @@ function Remove-StateFile {
         if ([System.IO.File]::Exists($path)) { [System.IO.File]::Delete($path) }
     }
     catch {
-        Write-Notice "Hinweis: run\byl.state.json konnte nicht gelöscht werden ($($_.Exception.GetType().Name))."
+        [void](Write-BylProblem -Code 'state-delete' -Values @{ detail = $_.Exception.GetType().Name })
     }
 }
 
@@ -468,25 +689,26 @@ function Test-PortFree {
     }
 }
 
-function Get-PortBusyText {
-    # Message for a port that another program uses: who it is, that nothing is stopped, and the
-    # command for the next free port.
-    param([Parameter(Mandatory = $true)][int]$Port, [Parameter(Mandatory = $true)][object]$PortState)
+function Write-PortBusy {
+    # Port $Port is used by another program ($PortState of Resolve-PortState): who it is (it stays
+    # untouched, nothing is stopped), the next free port with the command to switch, and in a
+    # console window the offer to switch; after the switch $Retry runs with the new settings
+    # (param($Config) -> exit code), without it the switch is all. Returns the exit code.
+    param([Parameter(Mandatory = $true)][int]$Port, [Parameter(Mandatory = $true)][object]$PortState, [scriptblock]$Retry)
 
-    $text = "Port $Port auf 127.0.0.1 ist belegt durch $($PortState.ProcessName) (PID $($PortState.ProcessId))."
-    if ($PortState.ExecutablePath) { $text += "`n  Programm: $($PortState.ExecutablePath)" }
-    if ($PortState.ExecutablePath -and [System.IO.Path]::GetFileName($PortState.ExecutablePath) -ieq 'pocketbase.exe') {
-        $text += "`n  Das ist vermutlich eine andere Kopie von becauseyoulovejira. Beende sie in ihrem Ordner mit stop.bat."
-    }
-    $text += "`nbecauseyoulovejira wird nicht gestartet; das andere Programm bleibt unberührt."
+    $owner = "Belegt durch $($PortState.ProcessName) (PID $($PortState.ProcessId))"
+    if ($PortState.ExecutablePath) { $owner += ": $($PortState.ExecutablePath)" }
     $next = Find-NextFreePort -Start $Port -IsFree { param($Candidate) Test-PortFree -Port $Candidate }
-    $text += "`n`nMöglichkeiten:`n  1. Das andere Programm beenden und start.bat erneut ausführen."
-    if ($null -ne $next) {
-        $text += ("`n  2. becauseyoulovejira auf den freien Port $next umstellen und danach start.bat ausführen:" +
-            "`n     $ControlCall port $next" +
-            "`n     Lesezeichen, die installierte App und die Browser-Erweiterung für WhatsApp Web brauchen dann die neue Adresse.")
+    if ($null -eq $next) { return Write-BylProblem -Code 'port-busy' -Values @{ port = $Port } -Facts @($owner) }
+    return Write-BylProblem -Code 'port-busy' -Values @{ port = $Port; next = $next } -Facts @($owner) -Fix {
+        $saved = Save-PortSetting -Port $next
+        if ($saved -ne $BylExitOk) { return $saved }
+        Write-Status "Port $next eingestellt ($BylConfigName). Neue Adresse: http://127.0.0.1:$next/"
+        if ($null -eq $Retry) { return $BylExitOk }
+        $switched = Get-Config
+        Set-BylAddress -Port $switched.Port
+        return & $Retry $switched
     }
-    return $text
 }
 
 function Read-ServerLog {
@@ -499,12 +721,12 @@ function Read-ServerLog {
     }
 }
 
-function Get-LogTail {
-    # Last lines of the server output for error messages (never contains credentials: the
-    # installer link is a one-time token for the local machine, printed by PocketBase itself).
-    $lines = @((Read-ServerLog) -split "`r?`n" | Where-Object { $_.Trim() -ne '' })
-    if ($lines.Count -eq 0) { return '' }
-    return "`n`nLetzte Log-Zeilen:`n" + (($lines | Select-Object -Last 8) -join "`n")
+function Get-LogTailFacts {
+    # The last lines of the server output as facts of a problem (never credentials: the installer
+    # link is a one-time token for the local machine, printed by PocketBase itself); none if empty.
+    $lines = @((Read-ServerLog) -split "`r?`n" | Where-Object { $_.Trim() -ne '' } | Select-Object -Last 8)
+    if ($lines.Count -eq 0) { return , [string[]]@() }
+    return , [string[]](@('Letzte Zeilen des Server-Logs:') + @($lines | ForEach-Object { '  ' + $_ }))
 }
 
 function Open-App {
@@ -669,7 +891,7 @@ function Initialize-IngestToken {
         [Environment]::SetEnvironmentVariable($BylIngestTokenName, (New-IngestTokenValue), 'User')
     }
     catch {
-        Write-Status "Hinweis: Der Zugang für byl-mail.exe konnte nicht angelegt werden ($($_.Exception.GetType().Name)). Postfächer werden nicht abgerufen."
+        [void](Write-BylProblem -Code 'ingest-token' -Values @{ detail = $_.Exception.GetType().Name })
     }
 }
 
@@ -734,7 +956,7 @@ function Start-MailHelper {
     }
     catch {
         $script:MailHelperDecision = 'Failed'
-        Write-Status "Hinweis: byl-mail.exe konnte nicht gestartet werden ($($_.Exception.GetType().Name))."
+        [void](Write-BylProblem -Code 'mail-helper-start' -Values @{ detail = $_.Exception.GetType().Name })
     }
 }
 
@@ -762,18 +984,19 @@ function Complete-Start {
 
 function Show-PreStartNotice {
     # The part of "doctor" that matters before a cold start: disk space and other copies of the
-    # app. Only hints; the start goes on.
+    # app. Only hints; the start goes on. A drive that does not tell its free space says nothing
+    # here (doctor names it).
     param([Parameter(Mandatory = $true)][object[]]$Processes)
 
+    $free = $null
     try {
-        $drive = New-Object System.IO.DriveInfo([System.IO.Path]::GetPathRoot($AppDir))
-        $disk = Get-DiskVerdict -FreeBytes $drive.AvailableFreeSpace
-        if ($disk -ne 'Ok') {
-            Write-Notice ("Hinweis: Auf dem Laufwerk der App sind nur noch {0:N0} MB frei; Datenbank und Backups brauchen Platz." -f ($drive.AvailableFreeSpace / 1MB))
-        }
+        $free = (New-Object System.IO.DriveInfo([System.IO.Path]::GetPathRoot($AppDir))).AvailableFreeSpace
     }
     catch {
-        $null = $_
+        $free = $null
+    }
+    if ($null -ne $free -and (Get-DiskVerdict -FreeBytes $free) -ne 'Ok') {
+        [void](Write-BylProblem -Code 'disk-low' -Values @{ free = '{0:N0}' -f ($free / 1MB) })
     }
     foreach ($other in @(Select-OtherServerProcess -Process $Processes -AppDir $AppDir)) {
         if ($other.SameFolder) { continue }
@@ -789,18 +1012,17 @@ function Start-Server {
 
     $exe = [System.IO.Path]::Combine($AppDir, 'pocketbase.exe')
     $log = Get-ServerLogPath -AppDir $AppDir
-    $logHint = "Log: $($log.Output)`n     $($log.Error)"
+    $logFacts = @("Server-Log: $($log.Output)", "            $($log.Error)")
     $run = Get-BylRunPath -AppDir $AppDir
     try {
         [void][System.IO.Directory]::CreateDirectory($log.Directory)
         [void][System.IO.Directory]::CreateDirectory($run.Directory)
     }
     catch {
-        Show-Message -Kind Error -Text "Der Ordner der App ist nicht beschreibbar ($($_.Exception.Message)):`n$AppDir"
-        return $BylExitError
+        return Write-BylProblem -Code 'folder-not-writable' -Values @{ folder = $AppDir; detail = $_.Exception.GetType().Name }
     }
     if (-not (Test-Path -LiteralPath ([System.IO.Path]::Combine($AppDir, 'pb_public', 'index.html')) -PathType Leaf)) {
-        Write-Notice 'Hinweis: Die Oberfläche fehlt (pb_public\index.html). Erst scripts\build.ps1 ausführen; die Verwaltung unter /_/ geht auch so.'
+        [void](Write-BylProblem -Code 'web-missing')
     }
     Show-PreStartNotice -Processes $Processes
 
@@ -811,7 +1033,7 @@ function Start-Server {
         Initialize-IngestToken
         Sync-BylEnvironment
         # What this server loads; taken before the start, so a change during the start counts.
-        # Without DPAPI (never seen on Windows 10) the variables are simply not compared.
+        # Without DPAPI (never seen on Windows 10) the variables are not compared; a hint says so.
         $environmentHash = ''
         $protectedKey = $null
         try {
@@ -822,6 +1044,7 @@ function Start-Server {
         catch {
             $protectedKey = $null
             $environmentHash = ''
+            [void](Write-BylProblem -Code 'dpapi-start' -Values @{ detail = $_.Exception.GetType().Name })
         }
         $fingerprint = Get-BylFingerprint -AppDir $AppDir -Port $Port -EnvironmentHash $environmentHash
         Invoke-LogRotation -Path $log.Output
@@ -831,8 +1054,7 @@ function Start-Server {
             -RedirectStandardOutput $log.Output -RedirectStandardError $log.Error
     }
     catch {
-        Show-Message -Kind Error -Text "PocketBase konnte nicht gestartet werden: $($_.Exception.Message)"
-        return $BylExitError
+        return Write-BylProblem -Code 'pocketbase-start' -Values @{ detail = $_.Exception.Message }
     }
     # Touch the handle now; otherwise Windows PowerShell 5.1 cannot report the exit code later.
     [void]$server.Handle
@@ -842,20 +1064,18 @@ function Start-Server {
                 -EnvironmentKey $protectedKey)
     }
     catch {
-        Write-Notice "Hinweis: run\byl.state.json konnte nicht geschrieben werden ($($_.Exception.GetType().Name))."
+        [void](Write-BylProblem -Code 'state-write' -Values @{ detail = $_.Exception.GetType().Name })
     }
     Update-AddressFile -Port $Port
 
     $state = Wait-Ready -Server $server
     if ($state -eq 'Exited') {
         Remove-StateFile
-        Show-Message -Kind Error -Text ("PocketBase wurde beim Start beendet (Exit-Code $($server.ExitCode)).`n$logHint" + (Get-LogTail))
-        return $BylExitError
+        return Write-BylProblem -Code 'pocketbase-exited' -Values @{ code = $server.ExitCode } -Facts ($logFacts + (Get-LogTailFacts))
     }
     if ($state -eq 'Timeout') {
-        Show-Message -Kind Error -Text ("PocketBase hat nach $HealthTimeoutSeconds Sekunden nicht auf /api/health geantwortet.`n" +
-            "$logHint`nDer Serverprozess (PID $($server.Id)) läuft eventuell weiter; stop.bat beendet ihn." + (Get-LogTail))
-        return $BylExitUnhealthy
+        return Write-BylProblem -Code 'health-timeout' -Values @{ seconds = $HealthTimeoutSeconds } `
+            -Facts (@("Serverprozess: PID $($server.Id)") + $logFacts + (Get-LogTailFacts))
     }
 
     if (Wait-FirstRunSignal -ReadLog { Read-ServerLog } -DatabaseExisted $databaseExisted) {
@@ -882,12 +1102,10 @@ function Invoke-Start {
 
     $exe = [System.IO.Path]::Combine($AppDir, 'pocketbase.exe')
     if (-not (Test-Path -LiteralPath $exe -PathType Leaf)) {
-        Show-Message -Kind Error -Text "pocketbase.exe fehlt in:`n$AppDir`n`nBitte zuerst scripts\fetch-pocketbase.ps1 ausführen."
-        return $BylExitError
+        return Write-BylProblem -Code 'pocketbase-missing'
     }
     if ($null -ne $Config.Problem) {
-        Show-Message -Kind Error -Text (Get-ConfigProblemText -Problem $Config.Problem)
-        return $BylExitError
+        return Write-ConfigProblem -Problem $Config.Problem -Retry { param($Fixed) Invoke-Start -Config $Fixed }
     }
 
     $look = Get-Look -Port $Config.Port
@@ -897,13 +1115,13 @@ function Invoke-Start {
 
     switch ($action) {
         'PortBusy' {
-            Show-Message -Kind Error -Text (Get-PortBusyText -Port $Config.Port -PortState $look.PortState)
-            return $BylExitPortBusy
+            return Write-PortBusy -Port $Config.Port -PortState $look.PortState -Retry { param($Switched) Invoke-Start -Config $Switched }
         }
         'Unhealthy' {
-            Show-Message -Kind Error -Text ("becauseyoulovejira läuft (PID $processId, $BylAppUrl), antwortet aber nicht auf /api/health.`n" +
-                "Neu starten: neu-starten.bat doppelklicken (oder $ControlCall restart)." + (Get-LogTail))
-            return $BylExitUnhealthy
+            return Write-BylProblem -Code 'app-unhealthy' -Values @{ pid = $processId; url = $BylAppUrl } -Facts (Get-LogTailFacts) -Fix {
+                if ((Invoke-StopCore -Config $Config) -eq 'Failed') { return $BylExitError }
+                return Start-Server -Port $Config.Port -Processes $look.Processes
+            }
         }
         'Restart' {
             Write-Status "becauseyoulovejira (PID $processId) antwortet nicht; starte neu (-Force) ..."
@@ -915,14 +1133,14 @@ function Invoke-Start {
             Write-Status "becauseyoulovejira startet bereits (PID $processId), warte auf den Server ..."
             $server = Get-Process -Id $processId -ErrorAction SilentlyContinue
             if ($null -eq $server) {
-                Show-Message -Kind Error -Text 'Die gerade startende Instanz wurde wieder beendet. Bitte start.bat erneut ausführen.'
-                return $BylExitError
+                return Write-BylProblem -Code 'start-vanished' -Values @{ pid = $processId }
             }
             $state = Wait-Ready -Server $server
             if ($state -ne 'Ready') {
-                Show-Message -Kind Error -Text ("becauseyoulovejira (PID $processId) antwortet nicht auf /api/health.`n" +
-                    "Neu starten: neu-starten.bat doppelklicken (oder $ControlCall restart)." + (Get-LogTail))
-                return $BylExitUnhealthy
+                return Write-BylProblem -Code 'app-unhealthy' -Values @{ pid = $processId; url = $BylAppUrl } -Facts (Get-LogTailFacts) -Fix {
+                    if ((Invoke-StopCore -Config $Config) -eq 'Failed') { return $BylExitError }
+                    return Start-Server -Port $Config.Port -Processes $look.Processes
+                }
             }
             Complete-Start -ProcessId $processId -ColdStart $true
             return $BylExitOk
@@ -1083,17 +1301,16 @@ function Invoke-StopCore {
                 param($Process) Select-AppProcess -Process $Process -AppDir $AppDir
             })) { $failed.Add([string]$line) }
     if ($forced.Count -gt 0) {
-        Write-Notice ("Warnung: Nicht rechtzeitig geordnet beendet, daher hart beendet: " + ($forced -join ', ') + '.' +
-            "`nBereits gespeicherte Änderungen bleiben erhalten (SQLite übernimmt sie beim nächsten Start).")
+        [void](Write-BylProblem -Code 'hard-stop' -Values @{ name = $forced -join ', ' })
     }
     if ($failed.Count -gt 0) {
-        Show-Message -Kind Error -Text ("becauseyoulovejira konnte nicht beendet werden:`n" + ($failed -join "`n"))
+        [void](Write-BylProblem -Code 'stop-failed' -Facts $failed.ToArray())
         return 'Failed'
     }
     foreach ($process in $own) {
         $port = Get-ServerProcessPort -Process $process
         if ($null -ne $port -and -not (Wait-PortFree -Port $port)) {
-            Write-Notice "Hinweis: Port $port ist nach $PortFreeTimeoutSeconds s noch belegt."
+            [void](Write-BylProblem -Code 'port-still-busy' -Values @{ port = $port; seconds = $PortFreeTimeoutSeconds })
         }
     }
     Remove-StateFile
@@ -1131,8 +1348,7 @@ function Start-DetachedRestart {
         $child = Start-Process -FilePath $powershell -ArgumentList $arguments -WorkingDirectory $AppDir -WindowStyle Hidden -PassThru
     }
     catch {
-        Show-Message -Kind Error -Text "Der Neustart konnte nicht gestartet werden: $($_.Exception.Message)"
-        return $BylExitError
+        return Write-BylProblem -Code 'detach-failed' -Values @{ detail = $_.Exception.Message }
     }
     $script:LogDetail = "detached=$($child.Id)"
     Write-Status "Neustart läuft im Hintergrund (PID $($child.Id)); das Ergebnis steht danach in logs\byl-control.log."
@@ -1143,8 +1359,7 @@ function Invoke-Restart {
     param([Parameter(Mandatory = $true)][object]$Config)
 
     if ($null -ne $Config.Problem) {
-        Show-Message -Kind Error -Text (Get-ConfigProblemText -Problem $Config.Problem)
-        return $BylExitError
+        return Write-ConfigProblem -Problem $Config.Problem -Retry { param($Fixed) Invoke-Restart -Config $Fixed }
     }
     if ($Detach) { return Start-DetachedRestart }
     if ($WaitForProcess -gt 0) {
@@ -1225,6 +1440,9 @@ function Invoke-Status {
     $data = Get-StatusData -Config $Config
     $code = Resolve-StatusExitCode -ServerState $data.ServerState -Verdict $data.Comparison.Verdict
     if ($Json) {
+        # The problem of the last run without window stays until a run in a console window has shown
+        # it or a run without window ended well (ADR-0048).
+        $background = Read-BackgroundProblem
         $result = [ordered]@{
             state          = $data.ServerState.ToLowerInvariant()
             pid            = $data.ProcessId
@@ -1239,9 +1457,13 @@ function Invoke-Status {
             portOwner      = $data.PortOwner
             otherServers   = @($data.Others | ForEach-Object { [ordered]@{ pid = $_.ProcessId; path = $_.ExecutablePath; port = $_.Port; sameFolder = $_.SameFolder } })
             autostart      = $data.Autostart
+            backgroundProblem = if ($null -ne $background) {
+                [ordered]@{ atUtc = $background.AtUtc; run = $background.Run; report = ConvertTo-BylProblemData -Report $background.Report }
+            }
+            else { $null }
             exitCode       = $code
         }
-        Write-JsonLine ($result | ConvertTo-Json -Depth 4 -Compress)
+        Write-JsonLine ($result | ConvertTo-Json -Depth 5 -Compress)
         return $code
     }
 
@@ -1285,8 +1507,7 @@ function Invoke-Reload {
     param([Parameter(Mandatory = $true)][object]$Config)
 
     if ($null -ne $Config.Problem) {
-        Show-Message -Kind Error -Text (Get-ConfigProblemText -Problem $Config.Problem)
-        return $BylExitError
+        return Write-ConfigProblem -Problem $Config.Problem -Retry { param($Fixed) Invoke-Reload -Config $Fixed }
     }
     $data = Get-StatusData -Config $Config
     $action = Resolve-ReloadAction -ServerState $data.ServerState -Verdict $data.Comparison.Verdict -Force $Force.IsPresent
@@ -1324,17 +1545,14 @@ function Invoke-MailRestart {
     param([Parameter(Mandatory = $true)][object]$Config)
 
     if ($null -ne $Config.Problem) {
-        Show-Message -Kind Error -Text (Get-ConfigProblemText -Problem $Config.Problem)
-        return $BylExitError
+        return Write-ConfigProblem -Problem $Config.Problem -Retry { param($Fixed) Invoke-MailRestart -Config $Fixed }
     }
     $look = Get-Look -Port $Config.Port
     if ($look.ServerState -eq 'Stopped') {
-        Show-Message -Kind Error -Text 'becauseyoulovejira läuft nicht; der Mail-Hilfsprozess braucht die App. Starten mit start.bat.'
-        return $BylExitNotRunning
+        return Write-BylProblem -Code 'mail-not-running' -Fix { Invoke-Start -Config $Config }
     }
     if ($look.ServerState -ne 'Running') {
-        Show-Message -Kind Error -Text "becauseyoulovejira (PID $($look.Own[0].ProcessId)) antwortet nicht. Neu starten: neu-starten.bat doppelklicken."
-        return $BylExitUnhealthy
+        return Write-BylProblem -Code 'app-unhealthy' -Values @{ pid = $look.Own[0].ProcessId; url = $BylAppUrl } -Fix { Invoke-Restart -Config $Config }
     }
     Set-BylAddress -Port $look.RunningPort
     $urls = @($BylMailHelperUrl)
@@ -1345,14 +1563,14 @@ function Invoke-MailRestart {
                 param($Process) Select-MailHelperProcess -Process $Process -AppDir $AppDir -Url $urls
             })) { $failed.Add([string]$line) }
     if ($forced.Count -gt 0) {
-        Write-Notice ('Warnung: Nicht rechtzeitig geordnet beendet, daher hart beendet: ' + ($forced -join ', ') + '.')
+        [void](Write-BylProblem -Code 'hard-stop' -Values @{ name = $forced -join ', ' })
     }
     if ($failed.Count -gt 0) {
-        Show-Message -Kind Error -Text ("Der Mail-Hilfsprozess konnte nicht beendet werden:`n" + ($failed -join "`n"))
-        return $BylExitError
+        return Write-BylProblem -Code 'mail-stop-failed' -Facts $failed.ToArray()
     }
     Start-MailHelper
     $script:LogDetail = "stopped=$($helpers.Count) helper=$($script:MailHelperDecision.ToLowerInvariant())"
+    # 'Failed' was reported by Start-MailHelper already (mail-helper-start).
     $text = switch ($script:MailHelperDecision) {
         'Start' { 'Mail-Hilfsprozess neu gestartet.' }
         'Running' { 'Der Mail-Hilfsprozess läuft.' }
@@ -1360,9 +1578,9 @@ function Invoke-MailRestart {
         'NoToken' { 'Der Zugang für byl-mail.exe fehlt; er entsteht beim nächsten Start (neu-starten.bat).' }
         'NoRoute' { 'byl-mail.exe startet erst nach einem Neustart der App (neu-starten.bat).' }
         'NoConnection' { 'Kein Postfach ist eingeschaltet; der Mail-Hilfsprozess wird nicht gebraucht.' }
-        default { 'Der Mail-Hilfsprozess konnte nicht gestartet werden; Einzelheiten in logs\byl-mail.err.log.' }
+        default { '' }
     }
-    Show-Message $text
+    if ($text -ne '') { Show-Message $text }
     return $BylExitOk
 }
 
@@ -1372,13 +1590,11 @@ function Invoke-Open {
 
     $look = Get-Look -Port $Config.Port
     if ($look.ServerState -eq 'Stopped') {
-        Show-Message -Kind Error -Text 'becauseyoulovejira läuft nicht. Starten mit start.bat.'
-        return $BylExitNotRunning
+        return Write-BylProblem -Code 'not-running' -Fix { Invoke-Start -Config $Config }
     }
     Set-BylAddress -Port $look.RunningPort
     if ($look.ServerState -ne 'Running') {
-        Show-Message -Kind Error -Text "becauseyoulovejira (PID $($look.Own[0].ProcessId)) antwortet nicht. Neu starten: neu-starten.bat doppelklicken."
-        return $BylExitUnhealthy
+        return Write-BylProblem -Code 'app-unhealthy' -Values @{ pid = $look.Own[0].ProcessId; url = $BylAppUrl } -Fix { Invoke-Restart -Config $Config }
     }
     if ($Hidden -or $NoBrowser) {
         Show-Message "becauseyoulovejira läuft: $BylAppUrl"
@@ -1441,13 +1657,11 @@ function Invoke-Logs {
     }
     $name = if ([string]::IsNullOrWhiteSpace($Value)) { 'alle' } else { $Value.Trim().ToLowerInvariant() }
     if ($name -ne 'alle' -and -not $sets.Contains($name)) {
-        Show-Message -Kind Error -Text "Unbekanntes Log „$Value“. Erlaubt: server, mail, skript oder alle."
-        return $BylExitError
+        return Write-BylProblem -Code 'logs-unknown' -Values @{ name = $Value }
     }
     if ($Json) {
         if ($Follow) {
-            Show-Message -Kind Error -Text '-Follow und -Json gehen nicht zusammen.'
-            return $BylExitError
+            return Write-BylProblem -Code 'logs-follow-json'
         }
         $names = if ($name -eq 'alle') { @($sets.Keys) } else { @($name) }
         Write-JsonLine (Get-LogsJson -LogDir $logDir -Sets $sets -Names $names)
@@ -1455,13 +1669,11 @@ function Invoke-Logs {
     }
     if ($Follow) {
         if ($name -eq 'alle') {
-            Show-Message -Kind Error -Text '-Follow folgt genau einem Log: server, mail oder skript.'
-            return $BylExitError
+            return Write-BylProblem -Code 'logs-follow-one'
         }
         $path = [System.IO.Path]::Combine($logDir, $sets[$name][0])
         if (-not [System.IO.File]::Exists($path)) {
-            Show-Message -Kind Error -Text "Das Log gibt es noch nicht:`n$path"
-            return $BylExitError
+            return Write-BylProblem -Code 'log-missing' -Values @{ file = $path }
         }
         Write-Host "Folge $path (Strg+C beendet) ..."
         Get-Content -LiteralPath $path -Tail $Lines -Wait | Out-Host
@@ -1500,37 +1712,60 @@ function Test-WriteAccess {
 }
 
 function Invoke-Doctor {
-    # Checks before a start (ADR-0039 section 7); 0 without an error, 1 otherwise.
+    # Checks before a start (ADR-0039 section 7); 0 without an error, 1 otherwise. A check that finds
+    # a problem names its entry of the catalog (code, with -Json also the report), and the console
+    # shows these entries with cause, steps and command below the list. Findings, not failures of the
+    # command: they do not go into byl-control.log.
     param([Parameter(Mandatory = $true)][object]$Config)
 
     $checks = New-Object System.Collections.Generic.List[object]
-    $add = { param([string]$Name, [string]$Level, [string]$Text) $checks.Add([pscustomobject]@{ name = $Name; level = $Level; text = $Text }) }
+    $reports = New-Object System.Collections.Generic.List[object]
+    $add = {
+        param([string]$Name, [string]$Level, [string]$Text, [string]$Problem = '', [System.Collections.IDictionary]$With = @{})
+        $check = [ordered]@{ name = $Name; level = $Level; text = $Text }
+        if ($Problem -ne '') {
+            $found = Get-ProblemReport -Code $Problem -Values $With
+            $check['code'] = $found.Code
+            $check['report'] = ConvertTo-BylProblemData -Report $found
+            $reports.Add($found)
+        }
+        $checks.Add([pscustomobject]$check)
+    }
 
     $exe = [System.IO.Path]::Combine($AppDir, 'pocketbase.exe')
     if ([System.IO.File]::Exists($exe)) { & $add 'pocketbase' 'ok' 'pocketbase.exe vorhanden' }
-    else { & $add 'pocketbase' 'error' 'pocketbase.exe fehlt: scripts\fetch-pocketbase.ps1 ausführen' }
+    else { & $add 'pocketbase' 'error' 'pocketbase.exe fehlt' 'pocketbase-missing' }
     foreach ($folder in @('pb_hooks', 'pb_migrations')) {
         if ([System.IO.Directory]::Exists([System.IO.Path]::Combine($AppDir, $folder))) { & $add $folder 'ok' "$folder vorhanden" }
-        else { & $add $folder 'error' "$folder fehlt: der Ordner app ist unvollständig" }
+        else { & $add $folder 'error' "$folder fehlt: der Ordner app ist unvollständig" 'app-incomplete' @{ name = $folder } }
     }
     if ([System.IO.File]::Exists([System.IO.Path]::Combine($AppDir, 'pb_public', 'index.html'))) { & $add 'web' 'ok' 'Oberfläche gebaut (pb_public)' }
-    else { & $add 'web' 'warning' 'Oberfläche fehlt (pb_public\index.html): scripts\build.ps1 ausführen' }
-    if ($null -ne $Config.Problem) { & $add 'config' 'error' (Get-ConfigProblemText -Problem $Config.Problem) }
+    else { & $add 'web' 'warning' 'Oberfläche fehlt (pb_public\index.html)' 'web-missing' }
+    if ($null -ne $Config.Problem) {
+        $configCode = if ($Config.Problem -eq 'Port') { 'config-port' } else { 'config-json' }
+        & $add 'config' 'error' "$BylConfigName ist beschädigt" $configCode @{ file = Get-BylConfigPath -AppDir $AppDir }
+    }
     else { & $add 'config' 'ok' "Port $($Config.Port)" }
 
     $look = Get-Look -Port $Config.Port
     switch ($look.ServerState) {
         'Running' { & $add 'instance' 'ok' "läuft (PID $($look.Own[0].ProcessId), Port $($look.RunningPort))" }
         'Starting' { & $add 'instance' 'warning' "startet gerade (PID $($look.Own[0].ProcessId))" }
-        'Unhealthy' { & $add 'instance' 'error' "läuft (PID $($look.Own[0].ProcessId)), antwortet aber nicht: neu-starten.bat" }
+        'Unhealthy' {
+            & $add 'instance' 'error' "läuft (PID $($look.Own[0].ProcessId)), antwortet aber nicht" 'app-unhealthy' @{ pid = $look.Own[0].ProcessId; url = $BylAppUrl }
+        }
         default { & $add 'instance' 'info' 'läuft nicht' }
     }
     switch ($look.PortState.State) {
         'Free' { & $add 'port' 'ok' "Port $($Config.Port) ist frei" }
         'App' { & $add 'port' 'ok' "Port $($Config.Port) gehört der eigenen Instanz" }
         default {
-            $level = if ($look.ServerState -eq 'Stopped') { 'error' } else { 'warning' }
-            & $add 'port' $level ("Port $($Config.Port) belegt durch $($look.PortState.ProcessName) (PID $($look.PortState.ProcessId)) $($look.PortState.ExecutablePath)").Trim()
+            $owner = ("Port $($Config.Port) belegt durch $($look.PortState.ProcessName) (PID $($look.PortState.ProcessId)) $($look.PortState.ExecutablePath)").Trim()
+            if ($look.ServerState -eq 'Stopped') {
+                $next = Find-NextFreePort -Start $Config.Port -IsFree { param($Candidate) Test-PortFree -Port $Candidate }
+                & $add 'port' 'error' $owner 'port-busy' @{ port = $Config.Port; next = $next }
+            }
+            else { & $add 'port' 'warning' $owner }
         }
     }
     foreach ($folder in @('logs', 'run', 'pb_data')) {
@@ -1540,16 +1775,21 @@ function Invoke-Doctor {
             continue
         }
         if (Test-WriteAccess -Folder $path) { & $add "write-$folder" 'ok' "$folder beschreibbar" }
-        else { & $add "write-$folder" 'error' "$folder ist nicht beschreibbar" }
+        else { & $add "write-$folder" 'error' "$folder ist nicht beschreibbar" 'folder-not-writable' @{ folder = $path; detail = 'Probedatei' } }
     }
     try {
         $drive = New-Object System.IO.DriveInfo([System.IO.Path]::GetPathRoot($AppDir))
         $free = $drive.AvailableFreeSpace
-        $level = switch (Get-DiskVerdict -FreeBytes $free) { 'Critical' { 'error' } 'Low' { 'warning' } default { 'ok' } }
-        & $add 'disk' $level ('{0:N0} MB frei auf {1}' -f ($free / 1MB), $drive.Name)
+        $megabytes = '{0:N0}' -f ($free / 1MB)
+        $diskText = '{0} MB frei auf {1}' -f $megabytes, $drive.Name
+        switch (Get-DiskVerdict -FreeBytes $free) {
+            'Critical' { & $add 'disk' 'error' $diskText 'disk-critical' @{ free = $megabytes } }
+            'Low' { & $add 'disk' 'warning' $diskText 'disk-low' @{ free = $megabytes } }
+            default { & $add 'disk' 'ok' $diskText }
+        }
     }
     catch {
-        & $add 'disk' 'warning' 'freier Platz nicht ermittelbar'
+        & $add 'disk' 'warning' 'freier Platz nicht ermittelbar' 'disk-unknown'
     }
     $others = @(Select-OtherServerProcess -Process $look.Processes -AppDir $AppDir)
     if ($others.Count -eq 0) { & $add 'copies' 'ok' 'keine andere Kopie läuft' }
@@ -1566,7 +1806,7 @@ function Invoke-Doctor {
     & $add 'mail' 'info' $mailText
     switch (Get-AutostartState) {
         'on' { & $add 'autostart' 'info' 'Autostart an' }
-        'other' { & $add 'autostart' 'warning' 'Autostart zeigt auf einen anderen Ordner: autostart-an.bat hier erneut ausführen' }
+        'other' { & $add 'autostart' 'warning' 'Autostart zeigt auf einen anderen Ordner' 'autostart-other' }
         default { & $add 'autostart' 'info' 'Autostart aus' }
     }
     & $add 'powershell' 'info' "Windows PowerShell $($PSVersionTable.PSVersion)"
@@ -1574,16 +1814,21 @@ function Invoke-Doctor {
     $failed = @($checks | Where-Object { $_.level -eq 'error' }).Count
     $code = if ($failed -gt 0) { $BylExitError } else { $BylExitOk }
     if ($Json) {
-        Write-JsonLine ([ordered]@{ appDir = $AppDir; ok = ($failed -eq 0); checks = @($checks.ToArray()) } | ConvertTo-Json -Depth 4 -Compress)
+        Write-JsonLine ([ordered]@{ appDir = $AppDir; ok = ($failed -eq 0); checks = @($checks.ToArray()) } | ConvertTo-Json -Depth 6 -Compress)
         return $code
     }
     $tags = @{ ok = '[OK]      '; warning = '[WARNUNG] '; error = '[FEHLER]  '; info = '[INFO]    ' }
+    $colors = @{ ok = 'Gray'; warning = 'Yellow'; error = 'Red'; info = 'Gray' }
     Write-Host "becauseyoulovejira – Prüfung (Ordner: $AppDir)"
     foreach ($check in $checks) {
-        $color = switch ($check.level) { 'error' { 'Red' } 'warning' { 'Yellow' } default { 'Gray' } }
-        Write-Host ($tags[$check.level] + $check.text) -ForegroundColor $color
+        Write-Host ($tags[$check.level] + $check.text) -ForegroundColor $colors[$check.level]
     }
-    if ($failed -gt 0) { Write-Host "$failed Fehler gefunden." -ForegroundColor Red } else { Write-Host 'Keine Fehler gefunden.' }
+    $summary = if ($failed -gt 0) { 'error' } else { 'ok' }
+    Write-Host $(if ($failed -gt 0) { "$failed Fehler gefunden." } else { 'Keine Fehler gefunden.' }) -ForegroundColor $colors[$summary]
+    foreach ($found in $reports) {
+        Write-Host ''
+        Write-ProblemLines -Report $found
+    }
     return $code
 }
 
@@ -1592,8 +1837,7 @@ function Invoke-Port {
 
     if ([string]::IsNullOrWhiteSpace($Value)) {
         if ($null -ne $Config.Problem) {
-            Show-Message -Kind Error -Text (Get-ConfigProblemText -Problem $Config.Problem)
-            return $BylExitError
+            return Write-ConfigProblem -Problem $Config.Problem
         }
         $source = if ([System.IO.File]::Exists((Get-BylConfigPath -AppDir $AppDir))) { $BylConfigName } else { 'Standard' }
         Show-Message ("Port: $($Config.Port) ($source), Adresse: http://127.0.0.1:$($Config.Port)/`n" +
@@ -1602,8 +1846,7 @@ function Invoke-Port {
     }
     $port = ConvertTo-PortNumber -Text $Value
     if ($null -eq $port) {
-        Show-Message -Kind Error -Text "„$Value“ ist kein gültiger Port. Erlaubt sind ganze Zahlen von $BylPortMin bis $BylPortMax."
-        return $BylExitError
+        return Write-BylProblem -Code 'port-invalid' -Values @{ value = $Value }
     }
     if ($null -eq $Config.Problem -and $port -eq $Config.Port) {
         Show-Message "Port $port ist bereits eingestellt."
@@ -1611,19 +1854,10 @@ function Invoke-Port {
     }
     $look = Get-Look -Port $port
     if ($look.PortState.State -eq 'Foreign') {
-        Show-Message -Kind Error -Text (Get-PortBusyText -Port $port -PortState $look.PortState)
-        return $BylExitPortBusy
+        return Write-PortBusy -Port $port -PortState $look.PortState
     }
-    try {
-        # The backup settings in the same file stay as they are (ADR-0046).
-        $configPath = Get-BylConfigPath -AppDir $AppDir
-        Write-TextFile -Path $configPath -Text (Merge-BylConfigText -Text (Read-TextFile -Path $configPath) -Port $port)
-    }
-    catch {
-        Show-Message -Kind Error -Text "$BylConfigName konnte nicht geschrieben werden: $($_.Exception.Message)"
-        return $BylExitError
-    }
-    $script:LogDetail = "port=$port"
+    $saved = Save-PortSetting -Port $port
+    if ($saved -ne $BylExitOk) { return $saved }
     $text = "Port $port eingestellt ($BylConfigName). Neue Adresse: http://127.0.0.1:$port/"
     if ($look.Own.Count -gt 0) {
         $text += "`nDie App läuft noch auf Port $($look.RunningPort); die neue Adresse gilt nach einem Neustart (neu-starten.bat)."
@@ -1638,11 +1872,11 @@ function Invoke-Port {
 }
 
 function Get-StartupFolderOrFail {
-    # The startup folder for autostart-on and autostart-off; $null after an error message if a test
-    # copy has no folder of its own (Get-StartupFolder).
+    # The startup folder for autostart-on and autostart-off; $null after the problem was shown if a
+    # test copy has no folder of its own (Get-StartupFolder).
     $startup = Get-StartupFolder
     if ($null -eq $startup) {
-        Show-Message -Kind Error -Text 'Autostart ist in dieser Testkopie gesperrt: Es fehlt ein eigener Ordner (BYL_TEST_STARTUP_DIR).'
+        [void](Write-BylProblem -Code 'autostart-test')
     }
     return $startup
 }
@@ -1650,8 +1884,7 @@ function Get-StartupFolderOrFail {
 function Invoke-AutostartOn {
     $vbs = [System.IO.Path]::Combine($AppDir, 'start-hidden.vbs')
     if (-not (Test-Path -LiteralPath $vbs -PathType Leaf)) {
-        Show-Message -Kind Error -Text "start-hidden.vbs fehlt in:`n$AppDir"
-        return $BylExitError
+        return Write-BylProblem -Code 'autostart-vbs-missing'
     }
     $startup = Get-StartupFolderOrFail
     if ($null -eq $startup) { return $BylExitError }
@@ -1667,8 +1900,7 @@ function Invoke-AutostartOn {
         $shortcut.Save()
     }
     catch {
-        Show-Message -Kind Error -Text "Autostart konnte nicht eingerichtet werden: $($_.Exception.Message)"
-        return $BylExitError
+        return Write-BylProblem -Code 'autostart-write' -Values @{ detail = $_.Exception.Message }
     }
     $text = "Autostart aktiviert (startet diesen Ordner bei der Anmeldung ohne Fenster):`n$($spec.Path)"
     if ($before -eq 'other') { $text += "`nDie bisherige Verknüpfung zeigte auf einen anderen Ordner und wurde ersetzt." }
@@ -1688,8 +1920,7 @@ function Invoke-AutostartOff {
         Remove-Item -LiteralPath $spec.Path -Force
     }
     catch {
-        Show-Message -Kind Error -Text "Autostart konnte nicht entfernt werden: $($_.Exception.Message)"
-        return $BylExitError
+        return Write-BylProblem -Code 'autostart-remove' -Values @{ detail = $_.Exception.Message }
     }
     Show-Message 'Autostart deaktiviert.'
     return $BylExitOk
@@ -1716,7 +1947,7 @@ function Read-InputJson {
         $chunk = New-Object byte[] 65536
         while (($read = $stream.Read($chunk, 0, $chunk.Length)) -gt 0) {
             $buffer.Write($chunk, 0, $read)
-            if ($buffer.Length -gt 1MB) { throw 'Die Eingabe ist zu groß.' }
+            if ($buffer.Length -gt 1MB) { throw (New-BylProblemError -Code 'input-invalid' -Values @{ detail = 'größer als 1 MB' }) }
         }
         $text = (New-Object System.Text.UTF8Encoding($false)).GetString($buffer.ToArray())
     }
@@ -1724,8 +1955,13 @@ function Read-InputJson {
         $buffer.Dispose()
     }
     if ([string]::IsNullOrWhiteSpace($text)) { return $null }
-    $value = $text | ConvertFrom-Json
-    if ($value -isnot [System.Management.Automation.PSCustomObject]) { throw 'Die Eingabe ist kein JSON-Objekt.' }
+    try {
+        $value = $text | ConvertFrom-Json
+    }
+    catch {
+        throw (New-BylProblemError -Code 'input-invalid' -Values @{ detail = 'kein gültiges JSON' })
+    }
+    if ($value -isnot [System.Management.Automation.PSCustomObject]) { throw (New-BylProblemError -Code 'input-invalid' -Values @{ detail = 'kein JSON-Objekt' }) }
     return $value
 }
 
@@ -1740,22 +1976,22 @@ function Get-InputValue {
 }
 
 function Write-BackupAnswer {
-    # The answer of a backup command: one JSON line with -Json, otherwise $Text (an error in red).
-    # Returns the exit code: 0 with ok, 1 otherwise.
-    param([Parameter(Mandatory = $true)][System.Collections.IDictionary]$Answer, [Parameter(Mandatory = $true)][string]$Text)
+    # The answer of a backup command. Done (ok): one JSON line with -Json, otherwise $Text. Not done:
+    # the entry $Code of the catalog with $Values (Write-BylProblem), with -Json as the answer with
+    # its report. Returns the exit code: 0 when done, else that of the entry.
+    param(
+        [Parameter(Mandatory = $true)][System.Collections.IDictionary]$Answer,
+        [AllowEmptyString()][string]$Text = '',
+        [AllowEmptyString()][string]$Code = '',
+        [System.Collections.IDictionary]$Values = @{}
+    )
 
-    $ok = $Answer['ok'] -eq $true
-    if ($Json) {
-        Write-JsonLine (ConvertTo-Json -InputObject $Answer -Depth 6 -Compress)
+    if ($Answer['ok'] -eq $true) {
+        if ($Json) { Write-JsonLine (ConvertTo-Json -InputObject $Answer -Depth 6 -Compress) }
+        else { Show-Message $Text }
+        return $BylExitOk
     }
-    elseif ($ok) {
-        Show-Message $Text
-    }
-    else {
-        Show-Message -Kind Error -Text $Text
-    }
-    if ($ok) { return $BylExitOk }
-    return $BylExitError
+    return Write-BylProblem -Code $Code -Values $Values -Answer $Answer
 }
 
 function Get-PassphraseFile {
@@ -1801,7 +2037,7 @@ function Save-StoredPassphrase {
     param([Parameter(Mandatory = $true)][string]$Passphrase)
 
     $path = Get-PassphraseFile
-    if ($null -eq $path) { throw 'Diese Testkopie hat keinen Ordner für die Passphrase (BYL_TEST_SECRET_DIR).' }
+    if ($null -eq $path) { throw (New-BylProblemError -Code 'passphrase-unavailable') }
     Add-Type -AssemblyName System.Security
     $bytes = (New-Object System.Text.UTF8Encoding($false)).GetBytes($Passphrase)
     try {
@@ -2010,17 +2246,16 @@ function Invoke-BackupInfo {
     return Write-BackupAnswer -Answer $answer -Text ($lines -join "`n")
 }
 
-# Codes of the problems of a target for the app (lib/backup-rules.js TARGET_PROBLEMS).
+# Codes of the problems of a target for the app (lib/backup-rules.js TARGET_PROBLEMS) and their
+# entries of the catalog.
 $TargetProblemCode = @{ Format = 'format'; TooLong = 'too-long'; InsideApp = 'inside-app'; Missing = 'missing'; NotWritable = 'not-writable'; Space = 'space' }
-
-$TargetProblemText = @{
-    Format      = 'Das ist kein vollständiger Pfad: Laufwerk mit Ordner (etwa einer USB-Platte) oder eine Freigabe wie \\NAS\Freigabe\Sicherung.'
-    TooLong     = "Der Pfad ist zu lang (höchstens $BylBackupTargetMaxLength Zeichen)."
-    InsideApp   = 'Das Zielverzeichnis darf nicht im Ordner app liegen: Eine Kopie des Ordners nähme die Sicherungen mit, ein Plattendefekt beide.'
-    Missing     = 'Den Ordner gibt es nicht oder er ist gerade nicht erreichbar (USB-Platte angeschlossen? Netzlaufwerk verbunden?).'
-    NotWritable = 'In den Ordner lässt sich nicht schreiben.'
-    Space       = 'Auf dem Laufwerk ist zu wenig Platz frei.'
-    Keep        = 'Die Aufbewahrung ist ungültig.'
+$TargetProblemEntry = @{
+    Format      = 'backup-target-format'
+    TooLong     = 'backup-target-too-long'
+    InsideApp   = 'backup-target-inside-app'
+    Missing     = 'backup-target-unreachable'
+    NotWritable = 'backup-target-not-writable'
+    Space       = 'backup-target-space'
 }
 
 function Invoke-BackupConfigure {
@@ -2037,7 +2272,8 @@ function Invoke-BackupConfigure {
             $limit = $BylBackupKeep[$name]
             if ($null -eq $number) { continue }
             if (-not ($number -is [int] -or $number -is [long]) -or $number -lt $limit.Min -or $number -gt $limit.Max) {
-                return Write-BackupAnswer -Answer ([ordered]@{ ok = $false; problem = 'keep' }) -Text $TargetProblemText.Keep
+                $script:LogDetail = 'problem=keep'
+                return Write-BackupAnswer -Answer ([ordered]@{ ok = $false; problem = 'keep' }) -Code 'backup-keep'
             }
             $settings.($name.Substring(0, 1).ToUpperInvariant() + $name.Substring(1)) = [int]$number
         }
@@ -2051,7 +2287,7 @@ function Invoke-BackupConfigure {
             $code = $TargetProblemCode[$check.Problem]
             $script:LogDetail = "problem=$code"
             return Write-BackupAnswer -Answer ([ordered]@{ ok = $false; problem = $code; freeBytes = $check.FreeBytes; sameDrive = $check.SameDrive }) `
-                -Text $TargetProblemText[$check.Problem]
+                -Code $TargetProblemEntry[$check.Problem] -Values @{ max = $BylBackupTargetMaxLength }
         }
         $settings.Target = $target.TrimEnd('\')
         if ($settings.Target -match '^[A-Za-z]:$') { $settings.Target += '\' }
@@ -2060,7 +2296,12 @@ function Invoke-BackupConfigure {
         $settings.Target = $null
     }
     $path = Get-BylConfigPath -AppDir $AppDir
-    Write-TextFile -Path $path -Text (Merge-BylConfigText -Text (Read-TextFile -Path $path) -Backup $settings)
+    try {
+        Write-TextFile -Path $path -Text (Merge-BylConfigText -Text (Read-TextFile -Path $path) -Backup $settings)
+    }
+    catch {
+        throw (New-BylProblemError -Code 'config-write' -Values @{ detail = $_.Exception.GetType().Name })
+    }
     $script:LogDetail = "target=$(if ($null -eq $settings.Target) { 'none' } else { 'set' })"
     $text = if ($null -eq $settings.Target) { 'Kein Zielverzeichnis: Sicherungen bleiben nur in pb_data\backups.' } else { "Zielverzeichnis eingestellt: $($settings.Target)" }
     return Write-BackupAnswer -Answer ([ordered]@{
@@ -2071,15 +2312,8 @@ function Invoke-BackupConfigure {
         }) -Text $text
 }
 
+# Codes of the problems of a passphrase for the app; the entry of the catalog is passphrase-<code>.
 $PassphraseProblemCode = @{ Mismatch = 'mismatch'; TooShort = 'too-short'; TooLong = 'too-long'; Character = 'character'; Unavailable = 'unavailable' }
-
-$PassphraseProblemText = @{
-    Mismatch    = 'Die beiden Eingaben stimmen nicht überein.'
-    TooShort    = "Die Passphrase muss mindestens $BylPassphraseMinLength Zeichen lang sein."
-    TooLong     = "Die Passphrase ist zu lang (höchstens $BylPassphraseMaxBytes Byte)."
-    Character   = 'Die Passphrase darf keine Steuerzeichen enthalten.'
-    Unavailable = 'Diese Testkopie hat keinen Ordner für die Passphrase.'
-}
 
 function Invoke-BackupPassphrase {
     # backup-passphrase: the passphrase twice (from the app as JSON, in the console as hidden
@@ -2103,9 +2337,16 @@ function Invoke-BackupPassphrase {
         if ($null -ne $problem) {
             $code = $PassphraseProblemCode[$problem]
             $script:LogDetail = "problem=$code"
-            return Write-BackupAnswer -Answer ([ordered]@{ ok = $false; problem = $code }) -Text $PassphraseProblemText[$problem]
+            return Write-BackupAnswer -Answer ([ordered]@{ ok = $false; problem = $code }) -Code "passphrase-$code" `
+                -Values @{ min = $BylPassphraseMinLength; max = $BylPassphraseMaxBytes }
         }
-        Save-StoredPassphrase -Passphrase $passphrase
+        try {
+            Save-StoredPassphrase -Passphrase $passphrase
+        }
+        catch {
+            $script:LogDetail = 'problem=save'
+            return Write-BackupAnswer -Answer ([ordered]@{ ok = $false }) -Code 'passphrase-save' -Values @{ detail = $_.Exception.GetType().Name }
+        }
     }
     finally {
         $passphrase = $null
@@ -2115,17 +2356,18 @@ function Invoke-BackupPassphrase {
     return Write-BackupAnswer -Answer ([ordered]@{ ok = $true }) -Text ('Passphrase gespeichert (an dieses Windows-Konto gebunden). Neue Sicherungen nutzen sie; ältere bleiben mit ihrer bisherigen Passphrase lesbar.')
 }
 
-$ExportReasonText = @{
-    name          = 'Unbekannte Sicherung.'
-    missing       = 'Die Sicherung gibt es in pb_data\backups nicht.'
-    'no-target'   = 'Es ist kein Zielverzeichnis eingestellt.'
-    unreachable   = 'Das Zielverzeichnis ist gerade nicht erreichbar.'
-    'no-passphrase' = 'Es ist keine Passphrase festgelegt.'
-    'passphrase-unreadable' = 'Die gespeicherte Passphrase lässt sich mit diesem Windows-Konto nicht lesen; bitte neu festlegen.'
-    helper        = 'byl-backup.exe fehlt oder antwortet nicht; scripts\build.ps1 baut es.'
-    space         = 'Im Zielverzeichnis ist zu wenig Platz frei.'
-    'not-writable' = 'In das Zielverzeichnis lässt sich nicht schreiben.'
-    failed        = 'Die Sicherung ließ sich nicht verschlüsseln.'
+# Reasons of backup-export for the app and their entries of the catalog.
+$ExportReasonCode = @{
+    name                    = 'backup-name'
+    missing                 = 'backup-missing'
+    'no-target'             = 'backup-no-target'
+    unreachable             = 'backup-target-unreachable'
+    'no-passphrase'         = 'passphrase-missing'
+    'passphrase-unreadable' = 'passphrase-unreadable'
+    helper                  = 'backup-helper'
+    space                   = 'backup-target-space'
+    'not-writable'          = 'backup-target-not-writable'
+    failed                  = 'backup-seal'
 }
 
 function Invoke-BackupExport {
@@ -2139,7 +2381,7 @@ function Invoke-BackupExport {
     $fail = {
         param([string]$Reason)
         $script:LogDetail = "reason=$Reason"
-        Write-BackupAnswer -Answer ([ordered]@{ ok = $false; reason = $Reason }) -Text $ExportReasonText[$Reason]
+        Write-BackupAnswer -Answer ([ordered]@{ ok = $false; reason = $Reason }) -Code $ExportReasonCode[$Reason] -Values @{ name = $name }
     }
     if ($name -notmatch $BylLocalBackupPattern) { return & $fail 'name' }
     $zip = [System.IO.Path]::Combine($AppDir, 'pb_data', 'backups', $name)
@@ -2199,7 +2441,8 @@ function Invoke-BackupExport {
 # Collections the throwaway server counts (the same as the manifest of a sealed backup).
 $CountedCollections = @('users', 'projects', 'tags', 'tickets', 'comments', 'inbox_items', 'recurrence_rules', 'connections')
 # A throwaway server gets this long to answer /api/health (it runs the migrations on the copy first).
-$ThrowawayStartSeconds = 120# Names of backups in pb_data\backups that can be checked and restored (any ZIP of PocketBase there).
+$ThrowawayStartSeconds = 120
+# Names of backups in pb_data\backups that can be checked and restored (any ZIP of PocketBase there).
 $LocalBackupNamePattern = '^[A-Za-z0-9@._-]{1,200}\.zip$'
 
 function New-WorkFolder {
@@ -2489,21 +2732,22 @@ function Resolve-BackupFile {
     return [pscustomobject]@{ Path = $path; Problem = $null; Source = $Source }
 }
 
-$VerifyReasonText = @{
-    name            = 'Unbekannte Sicherung.'
-    missing         = 'Die Sicherung gibt es nicht (mehr).'
-    unreachable     = 'Das Zielverzeichnis ist nicht erreichbar.'
-    'no-passphrase' = 'Für eine verschlüsselte Sicherung fehlt die Passphrase.'
-    passphrase      = 'Die Passphrase passt nicht zu dieser Sicherung.'
-    format          = 'Das ist keine Sicherung im Format age.'
-    damaged         = 'Die Sicherung ist beschädigt oder unvollständig.'
-    zip             = 'Das ZIP der Sicherung lässt sich nicht entpacken.'
-    'no-db'         = 'In der Sicherung fehlt die Datenbank (data.db).'
-    integrity       = 'Die Datenbank der Sicherung ist beschädigt (integrity_check).'
-    files           = 'In der Sicherung fehlen Originaldateien.'
-    start           = 'Eine Probe-Instanz ließ sich mit der Sicherung nicht starten.'
-    space           = 'Für die Prüfung ist im Temp-Ordner zu wenig Platz frei.'
-    helper          = 'byl-backup.exe fehlt oder antwortet nicht; scripts\build.ps1 baut es.'
+# Reasons of a check for the app and their entries of the catalog.
+$VerifyReasonCode = @{
+    name            = 'backup-name'
+    missing         = 'backup-missing'
+    unreachable     = 'backup-target-unreachable'
+    'no-passphrase' = 'backup-no-passphrase'
+    passphrase      = 'backup-passphrase'
+    format          = 'backup-format'
+    damaged         = 'backup-damaged'
+    zip             = 'backup-zip'
+    'no-db'         = 'backup-no-db'
+    integrity       = 'backup-integrity'
+    files           = 'backup-files'
+    start           = 'backup-start'
+    space           = 'backup-temp-space'
+    helper          = 'backup-helper'
 }
 
 function Get-RequestedBackup {
@@ -2529,7 +2773,8 @@ function Invoke-BackupVerify {
     $name = if ($null -ne $file.Path) { [System.IO.Path]::GetFileName($file.Path) } else { '' }
     if ($null -ne $file.Problem) {
         $script:LogDetail = "reason=$($file.Problem)"
-        return Write-BackupAnswer -Answer ([ordered]@{ ok = $false; reason = $file.Problem; name = $name }) -Text $VerifyReasonText[$file.Problem]
+        $asked = if ($null -ne $request) { [string](Get-InputValue $request 'name') } else { [string]$Value }
+        return Write-BackupAnswer -Answer ([ordered]@{ ok = $false; reason = $file.Problem; name = $name }) -Code $VerifyReasonCode[$file.Problem] -Values @{ name = $asked }
     }
     $passphrase = [string](Get-InputValue $request 'passphrase')
     if ($file.Path -match '\.tar\.age$' -and $passphrase -eq '') {
@@ -2549,11 +2794,9 @@ function Invoke-BackupVerify {
     $script:LogDetail = ("name=$name ok=$($result.ok.ToString().ToLowerInvariant())" + $(if ($result.ok) { '' } else { " reason=$($result.reason)" }))
     if ($result.ok) {
         $text = "Sicherung $name geprüft: in Ordnung ($($result.counts['tickets']) Tickets, $($result.files.expected) Originaldateien)."
+        return Write-BackupAnswer -Answer $result -Text $text
     }
-    else {
-        $text = "Sicherung $name geprüft: $($VerifyReasonText[$result.reason])"
-    }
-    return Write-BackupAnswer -Answer $result -Text $text
+    return Write-BackupAnswer -Answer $result -Code $VerifyReasonCode[$result.reason] -Values @{ name = $name }
 }
 
 # --- Restore (ADR-0046 section 7) ---------------------------------------------------------------
@@ -2563,26 +2806,28 @@ function Invoke-BackupVerify {
 # it first. Not a BYL_* name: those are the access data of the account (ADR-0018).
 $RestoreJobVariable = 'BECAUSEYOULOVEJIRA_RESTORE_JOB'
 
-# Reasons of a restore that did not happen or was undone, besides those of a check ($VerifyReasonText).
-$RestoreReasonText = @{
-    confirm     = "Zur Bestätigung fehlt das Wort $BylRestoreConfirmWord."
-    credentials = 'Unbekannte Auswahl für die Zugangsdaten.'
-    cancel      = 'Abgebrochen; nichts wurde geändert.'
-    input       = 'Der Auftrag der Wiederherstellung fehlt oder ist unlesbar.'
-    'space-app' = 'Auf dem Laufwerk der App ist für die entpackte Sicherung zu wenig Platz frei.'
-    stop        = 'Die App ließ sich nicht beenden; nichts wurde geändert.'
-    swap        = 'Der Datenordner ließ sich nicht austauschen; der bisherige ist wieder an seinem Platz.'
-    detach      = 'Die Wiederherstellung ließ sich nicht im Hintergrund starten.'
+# Reasons of a restore that did not happen or was undone and their entries of the catalog, besides
+# those of a check ($VerifyReasonCode).
+$RestoreReasonCode = @{
+    confirm     = 'restore-confirm'
+    credentials = 'restore-credentials'
+    cancel      = 'restore-cancel'
+    input       = 'restore-input'
+    'space-app' = 'restore-space'
+    stop        = 'restore-stop'
+    swap        = 'restore-swap'
+    detach      = 'restore-detach'
 }
-$RestoreStartFailedText = 'Mit der wiederhergestellten Sicherung startete die App nicht; der bisherige Stand ist zurück.'
 
-function Get-RestoreText {
-    # The text of a reason of a restore ($RestoreReasonText, else $VerifyReasonText).
+function Get-RestoreCode {
+    # The entry of the catalog for a reason of a restore ($RestoreReasonCode, else $VerifyReasonCode:
+    # "start" there is the throwaway server of the check; a restored folder that does not start is
+    # restore-start, reported where it is undone).
     param([Parameter(Mandatory = $true)][string]$Reason)
 
-    if ($RestoreReasonText.ContainsKey($Reason)) { return $RestoreReasonText[$Reason] }
-    if ($VerifyReasonText.ContainsKey($Reason)) { return $VerifyReasonText[$Reason] }
-    return 'Die Wiederherstellung ist gescheitert.'
+    if ($RestoreReasonCode.ContainsKey($Reason)) { return $RestoreReasonCode[$Reason] }
+    if ($VerifyReasonCode.ContainsKey($Reason)) { return $VerifyReasonCode[$Reason] }
+    return 'unexpected'
 }
 
 function Write-RestoreState {
@@ -2677,7 +2922,9 @@ function Move-DataFolder {
     # the indexer may hold a file for a moment after the server ended.
     param([Parameter(Mandatory = $true)][string]$From, [Parameter(Mandatory = $true)][string]$To)
 
-    if (-not (Test-DataFolderPath -Path $From) -or -not (Test-DataFolderPath -Path $To)) { throw "Kein Datenordner der App: $From" }
+    if (-not (Test-DataFolderPath -Path $From) -or -not (Test-DataFolderPath -Path $To)) {
+        throw (New-BylProblemError -Code 'unexpected' -Values @{ detail = "kein Datenordner der App: $From" })
+    }
     for ($attempt = 1; ; $attempt++) {
         try {
             [System.IO.Directory]::Move($From, $To)
@@ -2741,8 +2988,7 @@ function Invoke-Restore {
 
     if ($Detach) { return Start-DetachedRestore }
     if ($Hidden) {
-        Show-Message -Kind Error -Text 'Die Wiederherstellung braucht ein Konsolenfenster: wiederherstellen.bat doppelklicken.'
-        return $BylExitError
+        return Write-BylProblem -Code 'console-needed' -Values @{ name = 'Die Wiederherstellung'; bat = 'wiederherstellen.bat'; command = 'restore' }
     }
     $state = [ordered]@{
         phase = 'checking'; name = ''; source = ''; ok = $false; reason = ''; safety = ''
@@ -2754,7 +3000,8 @@ function Invoke-Restore {
         $state.reason = $Reason
         Write-RestoreState -State $state
         $script:LogDetail = ("name=$($state.name) ok=false reason=$Reason").Trim()
-        return Write-BackupAnswer -Answer ([ordered]@{ ok = $false; reason = $Reason; name = $state.name }) -Text (Get-RestoreText -Reason $Reason)
+        return Write-BackupAnswer -Answer ([ordered]@{ ok = $false; reason = $Reason; name = $state.name }) -Code (Get-RestoreCode -Reason $Reason) `
+            -Values @{ name = $state.name; detail = "Grund $Reason" }
     }
 
     $request = $null
@@ -2921,18 +3168,25 @@ function Invoke-Restore {
             $state.safety = ''
             Write-RestoreState -State $state
             $script:LogDetail = "name=$($state.name) ok=false reason=swap rolled-back"
-            return Write-BackupAnswer -Answer ([ordered]@{ ok = $false; reason = 'swap'; rolledBack = $true; name = $state.name }) -Text (Get-RestoreText -Reason 'swap')
+            return Write-BackupAnswer -Answer ([ordered]@{ ok = $false; reason = 'swap'; rolledBack = $true; name = $state.name }) -Code 'restore-swap'
         }
         $state.safety = if ($null -ne $safety) { [System.IO.Path]::GetFileName($safety) } else { '' }
 
-        # 5. Settings and access data.
+        # 5. Settings and access data. Settings that cannot be taken over leave the standard values
+        # (a hint, the restore goes on).
         if ([System.IO.File]::Exists($configPath)) {
             $state.config = 'kept'
         }
         elseif ($null -ne $extra.Config) {
-            [System.IO.File]::Copy($extra.Config, $configPath)
-            $configTaken = $true
-            $state.config = 'taken'
+            try {
+                [System.IO.File]::Copy($extra.Config, $configPath)
+                $configTaken = $true
+                $state.config = 'taken'
+            }
+            catch {
+                $state.config = 'none'
+                [void](Write-BylProblem -Code 'restore-config' -Values @{ detail = $_.Exception.GetType().Name })
+            }
         }
         else {
             $state.config = 'none'
@@ -2974,7 +3228,7 @@ function Invoke-Restore {
             $state.credentials.written = @()
             Write-RestoreState -State $state
             $script:LogDetail = "name=$($state.name) ok=false reason=start rolled-back"
-            return Write-BackupAnswer -Answer ([ordered]@{ ok = $false; reason = 'start'; rolledBack = $true; name = $state.name }) -Text $RestoreStartFailedText
+            return Write-BackupAnswer -Answer ([ordered]@{ ok = $false; reason = 'start'; rolledBack = $true; name = $state.name }) -Code 'restore-start'
         }
         $state.phase = 'done'
         $state.ok = $true
@@ -2987,14 +3241,14 @@ function Invoke-Restore {
                     Save-StoredPassphrase -Passphrase $passphrase
                 }
                 catch {
-                    Show-Message -Kind Warning -Text 'Die Passphrase ließ sich nicht speichern; unter Einstellungen → Sicherung festlegen.'
+                    [void](Write-BylProblem -Code 'passphrase-save-later' -Values @{ detail = $_.Exception.GetType().Name })
                 }
             }
         }
         $text = "Wiederhergestellt: $($state.name)."
         if ($state.safety -ne '') { $text += " Die bisherigen Daten liegen $BylSafetyKeepDays Tage in $($state.safety)." }
         if ($written.Count -gt 0) { $text += ' Zugangsdaten zurückgeschrieben: ' + (@($written) -join ', ') + '.' }
-        if ($state.credentials.failed) { $text += ' Einige Zugangsdaten ließen sich nicht zurückschreiben.' }
+        if ($state.credentials.failed) { [void](Write-BylProblem -Code 'restore-credential') }
         return Write-BackupAnswer -Answer ([ordered]@{
                 ok = $true; name = $state.name; safety = $state.safety; counts = $state.counts; files = $state.files
                 credentials = $state.credentials; config = $state.config
@@ -3029,7 +3283,7 @@ function Start-DetachedRestore {
         $state.reason = $Reason
         Write-RestoreState -State $state
         $script:LogDetail = "reason=$Reason"
-        return Write-BackupAnswer -Answer ([ordered]@{ ok = $false; reason = $Reason; name = $name }) -Text (Get-RestoreText -Reason $Reason)
+        return Write-BackupAnswer -Answer ([ordered]@{ ok = $false; reason = $Reason; name = $name }) -Code (Get-RestoreCode -Reason $Reason) -Values @{ name = $name }
     }
     if ($null -eq $request) { return & $refuse 'input' }
     if ($null -ne $file.Problem) { return & $refuse $file.Problem }
@@ -3081,13 +3335,11 @@ function Invoke-ResetAdmin {
     # the prompts, success or the error (the password never appears; PocketBase output is shown
     # only with the password replaced by ***).
     if ($Hidden) {
-        Show-Message -Kind Error -Text 'Das Zurücksetzen des Admin-Kontos braucht ein Konsolenfenster: admin-zuruecksetzen.bat doppelklicken.'
-        return $BylExitError
+        return Write-BylProblem -Code 'console-needed' -Values @{ name = 'Das Zurücksetzen des Admin-Kontos'; bat = 'admin-zuruecksetzen.bat'; command = 'reset-admin' }
     }
     $exe = [System.IO.Path]::Combine($AppDir, 'pocketbase.exe')
     if (-not (Test-Path -LiteralPath $exe -PathType Leaf)) {
-        Show-Message -Kind Error -Text "pocketbase.exe fehlt in:`n$AppDir`n`nBitte zuerst scripts\fetch-pocketbase.ps1 ausführen."
-        return $BylExitError
+        return Write-BylProblem -Code 'pocketbase-missing'
     }
     # The address of the running instance, if one runs (the admin UI is on that port).
     $running = @(Select-AppProcess -Process (Get-ProcessSnapshot) -AppDir $AppDir)
@@ -3108,15 +3360,14 @@ function Invoke-ResetAdmin {
         $confirmation = Read-Secret -Prompt 'Passwort wiederholen'
         $problem = Test-AdminCredential -Email $email -Password $password -Confirmation $confirmation
         if ($null -ne $problem) {
-            $reason = switch ($problem) {
-                'EmailInvalid' { 'Das ist keine gültige E-Mail-Adresse.' }
-                'PasswordMismatch' { 'Die beiden Passwörter stimmen nicht überein.' }
-                'PasswordTooShort' { "Das Passwort muss mindestens $BylAdminPasswordMinLength Zeichen lang sein." }
-                'PasswordTooLong' { "Das Passwort ist zu lang (höchstens $BylAdminPasswordMaxBytes Byte; Umlaute und Sonderzeichen zählen mehrfach)." }
-                'PasswordCharacter' { 'Das Passwort darf keine Anführungszeichen (") und keine Steuerzeichen enthalten.' }
+            $entry = switch ($problem) {
+                'EmailInvalid' { 'admin-email' }
+                'PasswordMismatch' { 'admin-password-mismatch' }
+                'PasswordTooShort' { 'admin-password-short' }
+                'PasswordTooLong' { 'admin-password-long' }
+                default { 'admin-password-character' }
             }
-            Show-Message -Kind Error -Text "$reason`nEs wurde nichts geändert. Bitte admin-zuruecksetzen.bat erneut ausführen."
-            return $BylExitError
+            return Write-BylProblem -Code $entry -Values @{ min = $BylAdminPasswordMinLength; max = $BylAdminPasswordMaxBytes }
         }
         Write-Host ''
         Write-Host 'Speichere das Admin-Konto ...'
@@ -3128,61 +3379,97 @@ function Invoke-ResetAdmin {
     }
 
     if ($result.ExitCode -ne 0) {
-        $text = if ($result.ExitCode -eq -1) { 'PocketBase hat nicht innerhalb von 60 Sekunden geantwortet.' } else { "PocketBase meldet einen Fehler (Exit-Code $($result.ExitCode))." }
-        if ($result.Output -match 'locked|busy') {
-            $text += "`nDie Datenbank ist gerade gesperrt. Bitte zuerst stop.bat ausführen und es dann erneut versuchen."
-        }
-        if ($result.Output) { $text += "`n`n$($result.Output)" }
-        Show-Message -Kind Error -Text "Das Admin-Konto konnte nicht gespeichert werden.`n$text"
-        return $BylExitError
+        # The output of PocketBase comes with the password replaced by *** (Invoke-AdminUpsert).
+        $output = @(([string]$result.Output) -split "`r?`n" | Where-Object { $_.Trim() -ne '' })
+        $entry = if ($result.ExitCode -eq -1) { 'admin-timeout' } elseif ($result.Output -match 'locked|busy') { 'admin-locked' } else { 'admin-failed' }
+        return Write-BylProblem -Code $entry -Values @{ code = $result.ExitCode } -Facts $output
     }
     Show-Message ("Admin-Konto gespeichert: $email`nAnmelden in der Verwaltung: $($BylAppUrl)_/`n" +
         'Ein noch offener Einrichtungs-Tab wird damit ungültig und kann geschlossen werden.')
     return $BylExitOk
 }
 
+$exitCode = $BylExitError
 try {
-    $config = Get-Config
-    Set-BylAddress -Port $config.Port
-    if (($Detach -or $WaitForProcess -gt 0) -and @('restart', 'restore') -notcontains $Command) {
-        Show-Message -Kind Error -Text '-Detach und -WaitForProcess gelten nur für restart und restore.'
-        exit $BylExitError
+    if ($BylCommands -notcontains $Command) {
+        $exitCode = Write-BylProblem -Code 'command-unknown' -Values @{ name = $Command; commands = $BylCommands -join ', ' }
+        # The log names no text of the call.
+        $Command = 'unbekannt'
     }
-    $exitCode = switch ($Command) {
-        'start' { Invoke-Start -Config $config }
-        'stop' { Invoke-Stop -Config $config }
-        'restart' { Invoke-Restart -Config $config }
-        'reload' { Invoke-Reload -Config $config }
-        'status' { Invoke-Status -Config $config }
-        'open' { Invoke-Open -Config $config }
-        'logs' { Invoke-Logs }
-        'doctor' { Invoke-Doctor -Config $config }
-        'port' { Invoke-Port -Config $config }
-        'autostart-on' { Invoke-AutostartOn }
-        'autostart-off' { Invoke-AutostartOff }
-        'mail-restart' { Invoke-MailRestart -Config $config }
-        'reset-admin' { Invoke-ResetAdmin }
-        'backup-info' { Invoke-BackupInfo }
-        'backup-configure' { Invoke-BackupConfigure }
-        'backup-passphrase' { Invoke-BackupPassphrase }
-        'backup-export' { Invoke-BackupExport }
-        'backup-verify' { Invoke-BackupVerify }
-        'restore' { Invoke-Restore -Config $config }
-        'help' {
-            Write-Host $HelpText
-            $BylExitOk
+    else {
+        $config = Get-Config
+        Set-BylAddress -Port $config.Port
+        if (($Detach -or $WaitForProcess -gt 0) -and @('restart', 'restore') -notcontains $Command) {
+            $exitCode = Write-BylProblem -Code 'detach-only'
+        }
+        else {
+            if (@('start', 'stop', 'restart', 'reload', 'status') -contains $Command) { Show-BackgroundProblem }
+            $exitCode = switch ($Command) {
+                'start' { Invoke-Start -Config $config }
+                'stop' { Invoke-Stop -Config $config }
+                'restart' { Invoke-Restart -Config $config }
+                'reload' { Invoke-Reload -Config $config }
+                'status' { Invoke-Status -Config $config }
+                'open' { Invoke-Open -Config $config }
+                'logs' { Invoke-Logs }
+                'doctor' { Invoke-Doctor -Config $config }
+                'port' { Invoke-Port -Config $config }
+                'autostart-on' { Invoke-AutostartOn }
+                'autostart-off' { Invoke-AutostartOff }
+                'mail-restart' { Invoke-MailRestart -Config $config }
+                'reset-admin' { Invoke-ResetAdmin }
+                'backup-info' { Invoke-BackupInfo }
+                'backup-configure' { Invoke-BackupConfigure }
+                'backup-passphrase' { Invoke-BackupPassphrase }
+                'backup-export' { Invoke-BackupExport }
+                'backup-verify' { Invoke-BackupVerify }
+                'restore' { Invoke-Restore -Config $config }
+                'help' {
+                    Write-Host $HelpText
+                    $BylExitOk
+                }
+            }
         }
     }
 }
 catch {
-    Show-Message -Kind Error -Text "Unerwarteter Fehler: $($_.Exception.Message)"
-    $exitCode = $BylExitError
+    # A problem thrown deep in a call (New-BylProblemError) is reported here; anything else is
+    # unexpected: its type, place and message go into the log (without values), the console names
+    # the log and how to send its last lines.
+    $thrown = Get-BylProblemOfError -ErrorRecord $_
+    if ($null -ne $thrown) {
+        $exitCode = Write-BylProblem -Code $thrown.Code -Values $thrown.Values -Facts $thrown.Facts
+    }
+    else {
+        $script:UnexpectedError = [pscustomobject]@{
+            Type     = $_.Exception.GetType().FullName
+            Position = '{0}:{1}' -f [System.IO.Path]::GetFileName([string]$_.InvocationInfo.ScriptName), $_.InvocationInfo.ScriptLineNumber
+            Message  = $_.Exception.Message
+        }
+        $exitCode = Write-BylProblem -Code 'unexpected' -Values @{ detail = Protect-LogText -Text $_.Exception.Message -Secrets (Get-LogSecretValue) }
+    }
 }
 # A function that leaks output would turn the result into an array; the last value is the code.
 $exitCode = [int](@($exitCode)[-1])
-# Only commands that change something go into byl-control.log (status and logs would flood it).
-if (@('start', 'stop', 'restart', 'reload', 'port', 'autostart-on', 'autostart-off', 'mail-restart', 'reset-admin',
+# Commands that change something go into byl-control.log, the others only after an error (status
+# and logs would flood it).
+if ($script:ProblemError -or @('start', 'stop', 'restart', 'reload', 'port', 'autostart-on', 'autostart-off', 'mail-restart', 'reset-admin',
         'backup-configure', 'backup-passphrase', 'backup-export', 'backup-verify', 'restore') -contains $Command) {
     Write-ControlLog -Name $Command -ExitCode $exitCode
+}
+# A run without window that went well clears the problem an earlier one kept (ADR-0048).
+if (($Hidden -or $WaitForProcess -gt 0) -and -not $script:ProblemError -and @($BylExitOk, $BylExitSetupPending) -contains $exitCode) {
+    Remove-BackgroundProblem
+}
+# start.bat closes its window after a start without error: hints shown before stay readable until a key.
+if ($Command -eq 'start' -and $exitCode -eq $BylExitOk -and $script:NoticeShown -and (Test-ConsoleQuestion)) {
+    Write-Host ''
+    Write-Host 'Bitte die Hinweise oben lesen; weiter mit einer beliebigen Taste ...'
+    try {
+        [void][Console]::ReadKey($true)
+    }
+    catch {
+        $null = $_
+    }
 }
 exit $exitCode
