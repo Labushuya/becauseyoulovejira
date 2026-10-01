@@ -9,12 +9,17 @@
 import type PocketBase from 'pocketbase';
 import {
 	parseOverview,
+	parseRestoreState,
 	parseRunResult,
+	parseSafetyCopies,
 	parseVerifyResult,
 	type BackupOverview,
 	type BackupSettings,
 	type BackupSource,
+	type CredentialMode,
+	type RestoreState,
 	type RunResult,
+	type SafetyCopy,
 	type VerifyResult
 } from '../domain/backup';
 import { denialOf, type SystemDenial } from '../domain/system';
@@ -154,6 +159,56 @@ export function verifyBackup(
 			const result = parseVerifyResult(answer);
 			return overview === null || result === null ? null : { overview, result };
 		}
+	);
+}
+
+/** The request of "Wiederherstellen" after its confirmation. */
+export interface RestoreRequest {
+	source: BackupSource;
+	name: string;
+	credentials: CredentialMode;
+	confirm: string;
+	passphrase?: string;
+}
+
+/**
+ * "Wiederherstellen": starts the restore as a process of its own (ADR-0046 §7); answers with the
+ * time of its state "started", from which the page follows it through the restart of the app. The
+ * passphrase goes in the body of this POST only.
+ */
+export function startRestore(
+	pb: PocketBase,
+	request: RestoreRequest,
+	options: RequestOptions = {}
+): Promise<BackupAnswer<{ since: string }>> {
+	return ask(
+		options.signal,
+		() =>
+			pb.send(`${ROUTE}/restore`, {
+				method: 'POST',
+				body: request,
+				requestKey: null,
+				signal: options.signal
+			}),
+		(answer) =>
+			isRecord(answer) && answer.restoring === true && typeof answer.since === 'string'
+				? { since: answer.since }
+				: null
+	);
+}
+
+/** The last restore (running or ended) and the safety copies. */
+export function fetchRestoreState(
+	pb: PocketBase,
+	options: RequestOptions = {}
+): Promise<BackupAnswer<{ restore: RestoreState | null; safety: SafetyCopy[] }>> {
+	return ask(
+		options.signal,
+		() => pb.send(`${ROUTE}/restore`, { method: 'GET', requestKey: null, signal: options.signal }),
+		(answer) =>
+			isRecord(answer)
+				? { restore: parseRestoreState(answer.restore), safety: parseSafetyCopies(answer.safety) }
+				: null
 	);
 }
 

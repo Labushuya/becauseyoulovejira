@@ -8,8 +8,9 @@
 // (BYL_TEST_SECRET_DIR), never under %LOCALAPPDATA%, and its autostart goes into a folder of the
 // test. app\ and the instance of the user are never started, stopped or asked. The checks (BK-2)
 // start throwaway servers of the copy's pocketbase.exe on random ports and unpack into
-// %TEMP%\byl-pruefung-*; the cases see that both are gone afterwards. Every server of the copy ends
-// in afterAll, and the copy is removed.
+// byl-pruefung-* in the Temp folder of the copy (TEMP and TMP of its environment point into the
+// base of this file); the cases see that both are gone afterwards. Every server of the copy ends in
+// afterAll, and the copy is removed.
 
 import { createHash, randomBytes } from 'node:crypto';
 import {
@@ -29,7 +30,6 @@ import {
 } from 'node:fs';
 import { request } from 'node:http';
 import { createServer } from 'node:net';
-import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
@@ -54,6 +54,7 @@ const WRONG_PASSPHRASE = `Falsche Passphrase ${randomBytes(4).toString('hex')}`;
 let CONTROL_ENV;
 
 let base;
+let temp;
 let copy;
 let owner;
 let other;
@@ -136,8 +137,8 @@ const runAt = (now, force) => call('POST', '/api/byl-test/backup/run', { token: 
 /** The weekly check of the cron with a given clock (fixture route, superusers only). */
 const verifyDueAt = (now) => call('POST', '/api/byl-test/backup/verify-due', { token: superuserToken, body: { now } });
 
-/** Work folders of the checks under %TEMP%. */
-const workFolders = () => readdirSync(tmpdir()).filter((name) => name.startsWith('byl-pruefung-')).sort();
+/** Work folders of the checks in the Temp folder of the copy. */
+const workFolders = () => readdirSync(temp).filter((name) => name.startsWith('byl-pruefung-')).sort();
 
 let outputs = 0;
 
@@ -245,7 +246,10 @@ beforeAll(async () => {
 	const startup = join(base, 'startup');
 	const secrets = join(base, 'geheim');
 	const target = join(base, 'Ziel Sicherung');
-	for (const folder of [join(dir, 'pb_public'), startup, secrets, target]) mkdirSync(folder, { recursive: true });
+	// The Temp folder of the copy and its children (the work folders of the checks): its own, so
+	// the cases see only their own work folders, not those of other files running at the same time.
+	temp = join(base, 'temp');
+	for (const folder of [join(dir, 'pb_public'), startup, secrets, target, temp]) mkdirSync(folder, { recursive: true });
 	for (const file of ['byl-control.ps1', 'byl-functions.ps1']) copyFileSync(join(APP_DIR, file), join(dir, file));
 	copyFileSync(POCKETBASE_EXE, join(dir, 'pocketbase.exe'));
 	copyFileSync(BACKUP_HELPER, join(dir, 'byl-backup.exe'));
@@ -261,6 +265,8 @@ beforeAll(async () => {
 		BYL_TEST_ISOLATED: '1',
 		BYL_TEST_STARTUP_DIR: startup,
 		BYL_TEST_SECRET_DIR: secrets,
+		TEMP: temp,
+		TMP: temp,
 		// The "access data of the account" of the copy: invented.
 		BYL_BACKUPTEST_TOKEN: SECRET_VALUE
 	};

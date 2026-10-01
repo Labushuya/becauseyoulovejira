@@ -1,10 +1,14 @@
 // Pure rules of the backups (ADR-0046): names, the generations kept (GFS) by Berlin calendar days,
-// the settings of byl-config.json, when a backup and a copy are due, the warnings and the shape of
-// the answers of the control script.
+// the settings of byl-config.json, when a backup and a copy are due, the warnings, the shape of the
+// answers of the control script, the request and the state of a restore and the safety copies.
 
 import { describe, expect, it } from 'vitest';
 import { loadHookLib } from '../support/hook-lib.mjs';
-import { KEEP as WEB_KEEP, TARGET_MAX_LENGTH as WEB_TARGET_MAX } from '../../web/src/lib/domain/backup.ts';
+import {
+	KEEP as WEB_KEEP,
+	RESTORE_CONFIRM_WORD as WEB_RESTORE_CONFIRM,
+	TARGET_MAX_LENGTH as WEB_TARGET_MAX
+} from '../../web/src/lib/domain/backup.ts';
 
 const rules = loadHookLib('backup-rules.js');
 const berlin = loadHookLib('berlin-time.js');
@@ -372,5 +376,93 @@ describe('check of a backup (BK-2)', () => {
 		});
 		expect(list).toEqual([{ code: 'verify-failed', tone: 'error', since: now - 1000, reason: 'integrity' }]);
 		expect(rules.needsAttention(list)).toBe(true);
+	});
+});
+
+describe('restore (BK-3)', () => {
+	const now = Date.UTC(2026, 9, 1, 12, 0, 0);
+	const sealed = 'byl-20261001-080000.tar.age';
+
+	it('wants the word WIEDERHERSTELLEN and a known choice for the access data (the same word as the page)', () => {
+		expect(rules.RESTORE_CONFIRM).toBe(WEB_RESTORE_CONFIRM);
+		const body = { source: 'target', name: sealed, confirm: ' WIEDERHERSTELLEN ' };
+		expect(rules.restoreInput(body)).toEqual({
+			value: { source: 'target', name: sealed, credentials: 'missing', confirm: 'WIEDERHERSTELLEN' }
+		});
+		expect(rules.restoreInput({ ...body, credentials: 'all', passphrase: 'alt' })).toEqual({
+			value: { source: 'target', name: sealed, credentials: 'all', confirm: 'WIEDERHERSTELLEN', passphrase: 'alt' }
+		});
+		expect(rules.restoreInput({ ...body, confirm: 'wiederherstellen' })).toEqual({ problem: 'confirm' });
+		expect(rules.restoreInput({ ...body, confirm: undefined })).toEqual({ problem: 'confirm' });
+		expect(rules.restoreInput({ ...body, credentials: 'einige' })).toEqual({ problem: 'credentials' });
+		expect(rules.restoreInput({ ...body, source: 'path', name: 'C:\\x.tar.age' })).toEqual({ problem: 'name' });
+		expect(rules.restoreInput({ ...body, passphrase: 'x'.repeat(1025) })).toEqual({ problem: 'passphrase' });
+	});
+
+	it('reads the state file of a restore and keeps only known parts', () => {
+		const text = JSON.stringify({
+			at: now,
+			phase: 'done',
+			name: sealed,
+			source: 'target',
+			ok: true,
+			reason: 'files',
+			safety: 'pb_data.vor-wiederherstellung-20261001-115900',
+			counts: { tickets: 3 },
+			files: { expected: 1, missing: 0, examples: [] },
+			credentials: { mode: 'missing', written: ['BYL_A', 'geheim'], failed: false, values: { BYL_A: 'x' } },
+			config: 'kept',
+			passphrase: 'nie'
+		});
+		const state = rules.parseRestoreState(text);
+		expect(state).toEqual({
+			at: now,
+			phase: 'done',
+			name: sealed,
+			source: 'target',
+			ok: true,
+			reason: '',
+			safety: 'pb_data.vor-wiederherstellung-20261001-115900',
+			counts: { tickets: 3 },
+			files: { expected: 1, missing: 0, examples: [] },
+			credentials: { mode: 'missing', written: ['BYL_A'], failed: false },
+			config: 'kept'
+		});
+		expect(rules.restoreView(state, now)).toEqual({ ...state, at: '2026-10-01T12:00:00.000Z', running: false });
+		expect(rules.parseRestoreState(JSON.stringify({ at: now, phase: 'rolled-back', reason: 'erfunden' }))).toMatchObject({
+			phase: 'rolled-back',
+			reason: 'failed',
+			ok: false,
+			name: '',
+			safety: ''
+		});
+		expect(rules.parseRestoreState(JSON.stringify({ at: now, phase: 'failed', reason: 'space-app', name: '..\\x' }))).toMatchObject({ reason: 'space-app', name: '' });
+		for (const broken of ['', '{', '[]', JSON.stringify({ at: now, phase: 'irgendwas' }), JSON.stringify({ phase: 'done' })]) {
+			expect(rules.parseRestoreState(broken), broken).toBeNull();
+		}
+		expect(rules.restoreView(null, now)).toBeNull();
+	});
+
+	it('counts a restore as running until its end, or until it wrote nothing for 30 minutes', () => {
+		const state = (phase, at) => rules.parseRestoreState(JSON.stringify({ at, phase }));
+		for (const phase of ['started', 'checking', 'stopping', 'restoring', 'starting']) {
+			expect(rules.restoreRunning(state(phase, now - 60_000), now), phase).toBe(true);
+		}
+		expect(rules.restoreRunning(state('checking', now - rules.RESTORE_STALE_MS), now)).toBe(false);
+		for (const phase of ['done', 'failed', 'rolled-back']) {
+			expect(rules.restoreRunning(state(phase, now), now), phase).toBe(false);
+		}
+		expect(rules.restoreRunning(null, now)).toBe(false);
+	});
+
+	it('knows safety copies by name and removes them after seven days', () => {
+		const name = 'pb_data.vor-wiederherstellung-20261001-080000';
+		expect(rules.safetyTime(name)).toBe(Date.UTC(2026, 9, 1, 8, 0, 0));
+		for (const other of ['pb_data', 'pb_data.neu-20261001-080000', 'pb_data.vor-wiederherstellung-20260230-080000', `${name}x`]) {
+			expect(rules.safetyTime(other), other).toBeNull();
+		}
+		expect(rules.safetyExpired(name, Date.UTC(2026, 9, 8, 7, 59, 59))).toBe(false);
+		expect(rules.safetyExpired(name, Date.UTC(2026, 9, 8, 8, 0, 0))).toBe(true);
+		expect(rules.safetyExpired('pb_data', Date.UTC(2030, 0, 1))).toBe(false);
 	});
 });

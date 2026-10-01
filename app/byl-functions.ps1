@@ -172,6 +172,17 @@ $BylPassphraseMinLength = 12
 $BylPassphraseMaxBytes = 1024
 # Free space a target needs at least, besides the size of the backup itself.
 $BylBackupReserveBytes = 200MB
+# Restore (ADR-0046 section 7). The data folder before a restore stays next to pb_data under this
+# prefix and the UTC time stamp for $BylSafetyKeepDays days (the cron of the backups removes older
+# ones); the backup is unpacked first under the staging prefix, on the same drive.
+$BylSafetyCopyPrefix = 'pb_data.vor-wiederherstellung-'
+$BylStagingPrefix = 'pb_data.neu-'
+$BylSafetyKeepDays = 7
+# The word that confirms a restore, in the console and on the page (also lib/backup-rules.js).
+$BylRestoreConfirmWord = 'WIEDERHERSTELLEN'
+# What a restore does with the access data of a backup: write those missing in the account
+# (default), all of them (overwriting) or none.
+$BylCredentialModes = @('missing', 'all', 'none')
 
 # --- Runtime files (ADR-0039 section 3) --------------------------------------------------------
 
@@ -1873,4 +1884,56 @@ function Get-BylBackupSpaceVerdict {
 
     if ($FreeBytes -lt ($NeededBytes + $BylBackupReserveBytes)) { return 'Low' }
     return 'Ok'
+}
+
+function Get-BylFolderStamp {
+    # Name of a folder next to pb_data: $Prefix and the UTC time stamp of $TimeUtc (yyyyMMdd-HHmmss).
+    param([Parameter(Mandatory = $true)][string]$Prefix, [Parameter(Mandatory = $true)][DateTime]$TimeUtc)
+
+    return $Prefix + $TimeUtc.ToUniversalTime().ToString('yyyyMMdd-HHmmss', [System.Globalization.CultureInfo]::InvariantCulture)
+}
+
+function Test-BylRestoreConfirmation {
+    # Whether $Text is the word that confirms a restore (spaces around it do not count, the case does).
+    param([AllowNull()][AllowEmptyString()][string]$Text)
+
+    return -not [string]::IsNullOrEmpty($Text) -and $Text.Trim() -ceq $BylRestoreConfirmWord
+}
+
+function Select-BylRestoreVariable {
+    # The access data of a backup ($Secrets, name -> value) a restore writes into the account in
+    # $Mode: 'all' every valid one (Select-BylSecretVariable) with a value an environment variable
+    # can hold, 'missing' only those without a value in the account ($Current, name -> value),
+    # 'none' nothing. Write (ordered name -> value) and Skipped (names).
+    param(
+        [AllowNull()][System.Collections.IDictionary]$Secrets,
+        [AllowNull()][System.Collections.IDictionary]$Current,
+        [Parameter(Mandatory = $true)][ValidateSet('missing', 'all', 'none')][string]$Mode
+    )
+
+    $write = [ordered]@{}
+    $skipped = New-Object System.Collections.Generic.List[string]
+    $valid = Select-BylSecretVariable -Variables $Secrets
+    foreach ($name in @($valid.Keys)) {
+        $value = [string]$valid[$name]
+        $present = $null -ne $Current -and -not [string]::IsNullOrEmpty([string]$Current[$name])
+        $holdable = $value.Length -le 32766 -and $value.IndexOf([char]0) -lt 0
+        if ($Mode -eq 'none' -or ($Mode -eq 'missing' -and $present) -or -not $holdable) {
+            $skipped.Add($name)
+            continue
+        }
+        $write[$name] = $value
+    }
+    return [pscustomobject]@{ Write = $write; Skipped = @($skipped) }
+}
+
+function Get-DetachedRestoreArgumentString {
+    # Arguments of Windows PowerShell for the detached restore (restore -Detach, ADR-0046 section 7):
+    # the control script $ScriptPath with restore, without browser, only errors and the result, and
+    # only after process $WaitForProcess (the caller) ended. The job comes in the environment, never
+    # here.
+    param([Parameter(Mandatory = $true)][string]$ScriptPath, [Parameter(Mandatory = $true)][int]$WaitForProcess)
+
+    return ('-NoProfile -NonInteractive -ExecutionPolicy Bypass -File "{0}" restore -NoBrowser -Quiet -WaitForProcess {1}' -f
+        $ScriptPath, $WaitForProcess)
 }

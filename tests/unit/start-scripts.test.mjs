@@ -20,7 +20,8 @@ const WRAPPERS = {
 	'status.bat': 'status',
 	'autostart-an.bat': 'autostart-on',
 	'autostart-aus.bat': 'autostart-off',
-	'admin-zuruecksetzen.bat': 'reset-admin'
+	'admin-zuruecksetzen.bat': 'reset-admin',
+	'wiederherstellen.bat': 'restore'
 };
 const APP_SCRIPTS = [...Object.keys(WRAPPERS), 'start-hidden.vbs', 'byl-control.ps1', 'byl-functions.ps1'];
 const POWERSHELL_FILES = [
@@ -257,13 +258,33 @@ describe('start', () => {
 		const init = functionBody(source, 'Initialize-IngestToken');
 		const guard = init.indexOf('if ($IsolatedEnvironment) { return }');
 		expect(guard).toBeGreaterThan(-1);
-		// Every access to the user or machine scope: in Get-BylVariableScope, or in
-		// Initialize-IngestToken after the guard of isolated copies.
+		// ADR-0046 §7: the restore writes access data only through Set-BylAccountVariable. Its branch
+		// for isolated copies writes the file of the test and this process and returns; it refuses
+		// without the file. Only after that branch comes the user scope.
+		const account = functionBody(source, 'Set-BylAccountVariable');
+		const isolated = /if \(\$IsolatedEnvironment\) \{[\s\S]*?\r\n        return\r\n    \}/.exec(account);
+		expect(isolated).not.toBeNull();
+		expect(isolated[0]).toContain("[Environment]::GetEnvironmentVariable('BYL_TEST_ACCOUNT_FILE', 'Process')");
+		expect(isolated[0]).toMatch(/if \(\[string\]::IsNullOrWhiteSpace\(\$file\)\) \{ throw /);
+		expect(isolated[0]).not.toMatch(/'(User|Machine)'\)/);
+		const accountStart = source.indexOf(account);
+		const afterIsolated = accountStart + isolated.index + isolated[0].length;
+		// Every access to the user or machine scope: in Get-BylVariableScope, in
+		// Initialize-IngestToken after the guard of isolated copies, or in Set-BylAccountVariable after
+		// its isolated branch.
 		for (const match of source.matchAll(/'(User|Machine)'\)/g)) {
 			const inScope = match.index > source.indexOf(scope) && match.index < source.indexOf(scope) + scope.length;
 			const afterGuard = match.index > source.indexOf(init) + guard && match.index < source.indexOf(init) + init.length;
-			expect(inScope || afterGuard, source.slice(match.index - 80, match.index + 10)).toBe(true);
+			const afterAccountBranch = match.index > afterIsolated && match.index < accountStart + account.length;
+			expect(inScope || afterGuard || afterAccountBranch, source.slice(match.index - 80, match.index + 10)).toBe(true);
 		}
+		// The restore calls nothing else that writes the account, and its fault switch of the tests
+		// counts only in an isolated copy.
+		const restore = functionBody(source, 'Invoke-Restore');
+		expect(restore).not.toMatch(/SetEnvironmentVariable\([^)]*'User'\)/);
+		expect(restore).toContain('Set-BylAccountVariable -Name $name -Value $selection.Write[$name]');
+		expect(restore).toContain("$fault = $IsolatedEnvironment -and [Environment]::GetEnvironmentVariable('BYL_TEST_RESTORE_FAULT', 'Process') -eq 'start'");
+		expect(source.match(/BYL_TEST_RESTORE_FAULT/g)).toHaveLength(1);
 		for (const name of ['Get-EnvironmentFingerprint', 'Sync-BylEnvironment', 'Invoke-Doctor']) {
 			expect(functionBody(source, name), name).toContain('Get-BylVariableScope');
 		}
@@ -597,7 +618,7 @@ describe('status, reload, logs and doctor (ADR-0039 sections 5 to 7, BS-2)', () 
 		const main = control().slice(control().lastIndexOf('try {'));
 		expect(main).toContain(
 			"if (@('start', 'stop', 'restart', 'reload', 'port', 'autostart-on', 'autostart-off', 'mail-restart', 'reset-admin',\r\n" +
-				"        'backup-configure', 'backup-passphrase', 'backup-export', 'backup-verify') -contains $Command) {"
+				"        'backup-configure', 'backup-passphrase', 'backup-export', 'backup-verify', 'restore') -contains $Command) {"
 		);
 		const write = functionBody(control(), 'Write-ControlLog');
 		expect(write).toContain('Invoke-LogRotation -Path $path -LimitBytes $BylControlLogLimitBytes');
@@ -639,7 +660,7 @@ describe('commands of the page System (ADR-0043)', () => {
 		expect(detached).not.toMatch(/-Redirect|-NoNewWindow|Invoke-StopCore|Stop-/);
 		expect(detached).toContain("[System.IO.Path]::Combine($env:SystemRoot, 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe')");
 		const main = control().slice(control().lastIndexOf('try {'));
-		expect(main).toMatch(/if \(\(\$Detach -or \$WaitForProcess -gt 0\) -and \$Command -ne 'restart'\) \{/);
+		expect(main).toMatch(/if \(\(\$Detach -or \$WaitForProcess -gt 0\) -and @\('restart', 'restore'\) -notcontains \$Command\) \{/);
 	});
 
 	it('mail-restart stops only the own mail helper, in order, and starts it again', () => {
@@ -734,6 +755,54 @@ describe('commands of the backup (ADR-0046)', () => {
 		expect(resolve).toContain("if ($Name -notmatch $LocalBackupNamePattern) { return & $fail 'name' }");
 		expect(resolve).toContain("if ($Name -notmatch $BylSealedBackupPattern) { return & $fail 'name' }");
 		expect(source).toContain("$LocalBackupNamePattern = '^[A-Za-z0-9@._-]{1,200}\\.zip$'");
+	});
+
+	it('restores only after a check, unpacks before it stops the app, keeps a safety copy and can go back (BK-3)', () => {
+		const restore = functionBody(control(), 'Invoke-Restore');
+		const order = [
+			'Invoke-Verification -File $file.Path -Passphrase $passphrase -Work $work -Secrets',
+			'[System.IO.Compression.ZipFile]::ExtractToDirectory($extra.Zip, $staging)',
+			'$stopped = @(Invoke-StopCore -Config $Config)[-1]',
+			'Move-DataFolder -From $data -To $safety',
+			'Move-DataFolder -From $staging -To $data',
+			'Set-BylAccountVariable -Name $name -Value $selection.Write[$name]',
+			'Invoke-Start -Config $restored'
+		];
+		const positions = order.map((part) => restore.indexOf(part));
+		for (const [index, position] of positions.entries()) expect(position, order[index]).toBeGreaterThan(-1);
+		expect([...positions].sort((a, b) => a - b)).toEqual(positions);
+		// The checked copy under Temp (throwaway superuser, migrations of the check) is never used.
+		expect(restore).not.toMatch(/Move-DataFolder -From \$work|Copy[^\r\n]*\$work/);
+		// Without the word (or its question in the console) nothing happens.
+		expect(restore.indexOf("return & $fail 'confirm'")).toBeLessThan(restore.indexOf('Invoke-Verification'));
+		expect(restore).toMatch(/if \(-not \(Test-BylRestoreConfirmation -Text \(\[string\]\(Read-Host -Prompt "Zum Wiederherstellen \$BylRestoreConfirmWord eintippen/);
+		// The way back: access data, settings, data folder, then the former app.
+		expect(restore).toMatch(/\$undo = \{[\s\S]*?Set-BylAccountVariable -Name \$name -Value \$previous\[\$name\][\s\S]*?\[System\.IO\.File\]::Delete\(\$configPath\)[\s\S]*?Move-DataFolder -From \$safety -To \$data/);
+		expect(restore).toMatch(/if \(\$code -ne \$BylExitOk\) \{\s*\[void\]\(Invoke-StopCore -Config \$restored\)\s*& \$undo/);
+		// Only folders pb_data and pb_data.<name> of this app folder (and their backups) are moved or removed.
+		for (const name of ['Move-DataFolder', 'Remove-DataFolder']) {
+			expect(functionBody(control(), name), name).toMatch(/if \(-not \(Test-DataFolderPath -Path \$(From|Path)\)/);
+		}
+		for (const line of restore.split('\r\n').filter((text) => /LogDetail = /.test(text))) {
+			expect(line, line).not.toMatch(/\$passphrase|\$secrets|\$selection|\$current|\$request/i);
+		}
+	});
+
+	it('starts the restore of the page as its own process and hands the job over in the environment, never on the command line', () => {
+		const detached = functionBody(control(), 'Start-DetachedRestore');
+		expect(detached).toContain('$arguments = Get-DetachedRestoreArgumentString -ScriptPath ([System.IO.Path]::Combine($AppDir, \'byl-control.ps1\')) -WaitForProcess $PID');
+		expect(detached).toMatch(/Start-Process -FilePath \$powershell -ArgumentList \$arguments -WorkingDirectory \$AppDir -WindowStyle Hidden -PassThru/);
+		expect(detached).not.toMatch(/-Redirect|-NoNewWindow|Invoke-StopCore/);
+		expect(detached).toMatch(/\[Environment\]::SetEnvironmentVariable\(\$RestoreJobVariable, \(ConvertTo-Json -InputObject \$job -Compress\), 'Process'\)/);
+		expect(detached).toMatch(/finally \{\s*\[Environment\]::SetEnvironmentVariable\(\$RestoreJobVariable, \$null, 'Process'\)/);
+		// The command line holds the script, the command, two switches and the caller, nothing else.
+		expect(functionBody(functions(), 'Get-DetachedRestoreArgumentString')).toMatch(
+			/return \('-NoProfile -NonInteractive -ExecutionPolicy Bypass -File "\{0\}" restore -NoBrowser -Quiet -WaitForProcess \{1\}' -f\s+\$ScriptPath, \$WaitForProcess\)/
+		);
+		// The detached process takes the job and removes it before anything else.
+		const restore = functionBody(control(), 'Invoke-Restore');
+		expect(restore).toMatch(/\$raw = \[Environment\]::GetEnvironmentVariable\(\$RestoreJobVariable, 'Process'\)\s*\[Environment\]::SetEnvironmentVariable\(\$RestoreJobVariable, \$null, 'Process'\)/);
+		expect(control()).toContain("$RestoreJobVariable = 'BECAUSEYOULOVEJIRA_RESTORE_JOB'");
 	});
 });
 

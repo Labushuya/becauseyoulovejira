@@ -24,15 +24,19 @@ var TEST_MODE_KEY = 'byl-test-mode';
 var MESSAGES = {
   invalid: 'Die Eingaben sind ungültig.',
   target: 'Das Zielverzeichnis passt nicht.',
-  passphrase: 'Die Passphrase passt nicht.'
+  passphrase: 'Die Passphrase passt nicht.',
+  restore: 'Die Wiederherstellung ließ sich nicht starten.'
 };
 
 function paths(app) {
   var appDir = $filepath.dir(app.dataDir());
   return {
+    appDir: appDir,
     config: $filepath.join(appDir, 'byl-config.json'),
     runDir: $filepath.join(appDir, 'run'),
-    status: $filepath.join(appDir, 'run', 'sicherung.json')
+    status: $filepath.join(appDir, 'run', 'sicherung.json'),
+    // Written by byl-control.ps1 restore only (ADR-0046 §7).
+    restore: $filepath.join(appDir, 'run', 'wiederherstellung.json')
   };
 }
 
@@ -50,6 +54,41 @@ function readSettings(app) {
 
 function readStatus(app) {
   return rules.parseStatus(readText(paths(app).status));
+}
+
+function readRestore(app) {
+  return rules.parseRestoreState(readText(paths(app).restore));
+}
+
+/** Safety copies of the data folder next to pb_data ({ name, time }), newest first. */
+function listSafety(app) {
+  var entries;
+  try {
+    entries = $os.readDir(paths(app).appDir);
+  } catch (err) {
+    return [];
+  }
+  var result = [];
+  for (var i = 0; i < entries.length; i++) {
+    var name = String(entries[i].name());
+    var time = rules.safetyTime(name);
+    if (time !== null && entries[i].isDir()) {
+      result.push({ name: name, time: time });
+    }
+  }
+  return result.sort(function (a, b) {
+    return b.time - a.time;
+  });
+}
+
+/** The safety copies for the page: name, time, and when the cron removes them. */
+function safetyView(app) {
+  var copies = listSafety(app);
+  var result = [];
+  for (var i = 0; i < copies.length; i++) {
+    result.push({ name: copies[i].name, at: rules.iso(copies[i].time), until: rules.iso(copies[i].time + rules.SAFETY_KEEP_MS) });
+  }
+  return result;
 }
 
 /** Writes run/sicherung.json through a temporary file, so a reader never sees half of it. */
@@ -350,9 +389,38 @@ function verifyDue(app, now) {
   return planned.due ? verifyBackup(app, appDir, planned.source, planned.name, '', now) : null;
 }
 
-/** The cron of the backups (every five minutes, backup.pb.js); never throws, never in tests. */
+/**
+ * Removes the safety copies of a restore that are seven days old (ADR-0046 §7): only for the own
+ * instance of an app folder and only folders with the name of a safety copy next to pb_data.
+ * Returns the names removed.
+ */
+function pruneSafety(app, now) {
+  if (system.ownAppDir() === '') {
+    return [];
+  }
+  var removed = [];
+  var copies = listSafety(app);
+  for (var i = 0; i < copies.length; i++) {
+    if (!rules.safetyExpired(copies[i].name, now)) {
+      continue;
+    }
+    try {
+      $os.removeAll($filepath.join(paths(app).appDir, copies[i].name));
+      removed.push(copies[i].name);
+      app.logger().info(AREA + ': Sicherheitskopie entfernt', 'name', copies[i].name);
+    } catch (err) {
+      app.logger().warn(AREA + ': Sicherheitskopie nicht entfernt', 'name', copies[i].name, 'error', shortError(err));
+    }
+  }
+  return removed;
+}
+
+/**
+ * The cron of the backups (every five minutes, backup.pb.js); never throws, never in tests, and not
+ * while a restore runs (it stops this server soon).
+ */
 function tick(app, now) {
-  if (app.store().get(TEST_MODE_KEY) === true) {
+  if (app.store().get(TEST_MODE_KEY) === true || rules.restoreRunning(readRestore(app), now)) {
     return null;
   }
   if (!claim(app, now)) {
@@ -361,6 +429,7 @@ function tick(app, now) {
   try {
     var result = runOnce(app, now, false);
     result.verify = verifyDue(app, now);
+    result.pruned = pruneSafety(app, now);
     return result;
   } catch (err) {
     app.logger().error(AREA + ': Lauf gescheitert', 'error', shortError(err));
@@ -408,8 +477,8 @@ function entryOf(entry) {
 
 /**
  * Everything the page shows: settings, passphrase, helper, names of the variables, target, the
- * backups here and in the target, the last runs, the next backup and the warnings. `info` is the
- * answer of backup-info (rules.infoView).
+ * backups here and in the target, the last runs, the next backup, the warnings, the last restore and
+ * the safety copies. `info` is the answer of backup-info (rules.infoView).
  */
 function overview(app, appDir, info, now) {
   var settings = readSettings(app);
@@ -462,7 +531,9 @@ function overview(app, appDir, info, now) {
         : null
     },
     nextBackupAt: rules.iso(rules.nextBackupAt(current.newest ? current.newest.time : null, now)),
-    warnings: warnings
+    warnings: warnings,
+    restore: rules.restoreView(readRestore(app), now),
+    safety: safetyView(app)
   };
 }
 
@@ -526,7 +597,7 @@ function runNow(e) {
     return system.refuse(e, 'backup-run', context.refused, context.retryAfterSeconds, AREA);
   }
   var now = Date.now();
-  if (!claim(e.app, now)) {
+  if (rules.restoreRunning(readRestore(e.app), now) || !claim(e.app, now)) {
     return system.refuse(e, 'backup-run', 'busy', 0, AREA);
   }
   var result;
@@ -601,7 +672,7 @@ function verify(e) {
     return invalid(e, 'invalid', input.problem);
   }
   var now = Date.now();
-  if (!claim(e.app, now)) {
+  if (rules.restoreRunning(readRestore(e.app), now) || !claim(e.app, now)) {
     return system.refuse(e, 'backup-verify', 'busy', 0, AREA);
   }
   var result;
@@ -614,11 +685,65 @@ function verify(e) {
   return answerOverview(e, context.appDir, { verify: result });
 }
 
+/**
+ * POST /api/byl/backup/restore ("Wiederherstellen"): { source, name, passphrase?, credentials,
+ * confirm: 'WIEDERHERSTELLEN' }. Runs byl-control.ps1 restore -Detach, which checks the request and
+ * starts the restore as a process of its own (check, stop, swap, start; ADR-0046 §7) and writes the
+ * state "started" or the reason of a refusal into run/wiederherstellung.json. Answers 202 with the
+ * time of that state, from which the page follows GET /api/byl/backup/restore through the restart.
+ * The passphrase is only handed on, never kept or logged.
+ */
+function restore(e) {
+  var context = system.check(e, 'backup-restore', 'POST');
+  if (context.refused) {
+    return system.refuse(e, 'backup-restore', context.refused, context.retryAfterSeconds, AREA);
+  }
+  var input = rules.restoreInput(e.requestInfo().body);
+  if (input.problem) {
+    return invalid(e, 'invalid', input.problem);
+  }
+  var now = Date.now();
+  if (rules.restoreRunning(readRestore(e.app), now) || !claim(e.app, now)) {
+    return system.refuse(e, 'backup-restore', 'busy', 0, AREA);
+  }
+  var code = -1;
+  try {
+    code = system.run(context.appDir, 'backup-restore', input.value).code;
+  } catch (err) {
+    code = -1;
+  } finally {
+    release(e.app);
+  }
+  // A state older than this request is not its answer.
+  var state = readRestore(e.app);
+  var answered = state !== null && state.at >= now - 1000;
+  audit(e, 'backup-restore', code === 0 && answered ? 'started' : answered ? state.reason : 'failed');
+  if (!answered || (code !== 0 && state.phase !== 'failed')) {
+    return system.refuse(e, 'backup-restore', 'script', 0, AREA);
+  }
+  if (code !== 0) {
+    return invalid(e, 'restore', state.reason);
+  }
+  return e.json(202, { restoring: true, since: rules.iso(state.at) });
+}
+
+/** GET /api/byl/backup/restore: the last restore (running or ended) and the safety copies. */
+function restoreState(e) {
+  var context = system.check(e, 'backup-info', 'GET', { local: true });
+  if (context.refused) {
+    return system.refuse(e, 'backup-restore', context.refused, context.retryAfterSeconds, AREA);
+  }
+  return e.json(200, { restore: rules.restoreView(readRestore(e.app), Date.now()), safety: safetyView(e.app) });
+}
+
 module.exports = {
   tick: tick,
   runOnce: runOnce,
   verifyDue: verifyDue,
+  pruneSafety: pruneSafety,
   verify: verify,
+  restore: restore,
+  restoreState: restoreState,
   read: read,
   notice: notice,
   runNow: runNow,

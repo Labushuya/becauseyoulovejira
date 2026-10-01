@@ -17,6 +17,7 @@ const WINDOWS_ONLY = {
 	integration: [
 		'tests/integration/admin-reset.test.mjs',
 		'tests/integration/backup-control.test.mjs',
+		'tests/integration/backup-restore-control.test.mjs',
 		'tests/integration/backup-restore.test.mjs',
 		'tests/integration/control-script.test.mjs',
 		'tests/integration/installer-check.test.mjs',

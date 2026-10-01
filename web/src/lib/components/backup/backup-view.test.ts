@@ -2,8 +2,9 @@
 // for a server that is not on Windows, the state and its warnings (red only for real errors), "Jetzt
 // sichern", the target folder with its field error, the passphrase checked before sending and
 // emptied after saving, the switch of the access data with its hint about the environment
-// variables, the generations, the lists of backups, the last check, "Jetzt prüfen", "Prüfen" and
-// the passphrase asked for below a sealed backup.
+// variables, the generations, the lists of backups, the last check, "Jetzt prüfen", "Prüfen", the
+// passphrase asked for below a sealed backup, and the restore: its confirmation below the backup,
+// the running restore, the last one and the safety copies.
 
 import { fireEvent, render, screen, within } from '@testing-library/svelte';
 import { tick } from 'svelte';
@@ -11,7 +12,19 @@ import { describe, expect, it, vi } from 'vitest';
 import type { BackupAnswer } from '$lib/data/backup';
 import { parseOverview, type BackupOverview, type VerifyResult } from '$lib/domain/backup';
 import { BackupStore, type BackupData } from '$lib/stores/backup.svelte';
+import type { SystemClock } from '$lib/stores/system.svelte';
 import BackupView from './BackupView.svelte';
+
+/** A clock that moves on with every wait, so a restore is followed without real time. */
+function fakeClock(): SystemClock {
+	let time = 0;
+	return {
+		now: () => time,
+		wait: async (ms) => {
+			time += ms;
+		}
+	};
+}
 
 function overview(overrides: Record<string, unknown> = {}): BackupOverview {
 	const parsed = parseOverview({
@@ -87,10 +100,17 @@ async function show(
 		),
 		savePassphrase: vi.fn(async () => ok(first)),
 		verify: vi.fn(async () => ok({ overview: first, result: verified() })),
+		restore: vi.fn(async () => ok({ since: '2026-10-01T11:00:00.000Z' })),
+		restoreState: vi.fn(async () => ok({ restore: null, safety: [] })),
 		...data
 	};
 	const flags = { show: vi.fn(() => 'flag'), dismiss: vi.fn() };
-	const store = new BackupStore(full, { ensureValid: () => true, logout: vi.fn() }, flags);
+	const store = new BackupStore(
+		full,
+		{ ensureValid: () => true, logout: vi.fn() },
+		flags,
+		fakeClock()
+	);
 	if (platform === 'windows') await store.load();
 	render(BackupView, { props: { store, platform } });
 	await tick();
@@ -358,5 +378,117 @@ describe('page Sicherung', () => {
 		);
 		expect(screen.getByText('byl-backup.exe fehlt')).toBeTruthy();
 		expect(screen.getByText(/liegt auf demselben Laufwerk wie die App/)).toBeTruthy();
+	});
+
+	it('restores a backup after its check, with the choice for the access data and the word', async () => {
+		const done = parseOverview({
+			...JSON.parse(JSON.stringify(overview())),
+			restore: {
+				at: '2026-10-01T11:01:00.000Z',
+				phase: 'done',
+				running: false,
+				name: 'byl-20261001-100000.zip',
+				source: 'local',
+				ok: true,
+				safety: 'pb_data.vor-wiederherstellung-20261001-110030',
+				credentials: { mode: 'all', written: ['BYL_NEU'], failed: false },
+				config: 'kept'
+			}
+		});
+		const { data, flags } = await show({
+			verify: vi.fn(async () =>
+				ok({
+					overview: overview(),
+					result: verified({ encrypted: false, variables: ['BYL_TELEGRAM_TOKEN', 'BYL_NEU'] })
+				})
+			),
+			restoreState: vi.fn(async () => ok({ restore: done?.restore ?? null, safety: [] }))
+		});
+		const list = within(screen.getByRole('region', { name: 'Sicherungen' }));
+		await fireEvent.click(
+			list.getByRole('button', {
+				name: 'Sicherung vom 01.10.2026 12:00 im Ordner app wiederherstellen …'
+			})
+		);
+		const form = await list.findByRole('form', {
+			name: 'Sicherung vom 01.10.2026 12:00 wiederherstellen'
+		});
+		const panel = within(form);
+		expect(panel.getByText(/Auf diesem Windows-Konto fehlen: BYL_NEU\./)).toBeTruthy();
+		const word = panel.getByLabelText('Zur Bestätigung WIEDERHERSTELLEN eintippen');
+		await vi.waitFor(() => expect(document.activeElement).toBe(word));
+		await fireEvent.input(word, { target: { value: 'wiederherstellen' } });
+		await fireEvent.click(panel.getByRole('button', { name: 'Wiederherstellen' }));
+		expect(data.restore).not.toHaveBeenCalled();
+		expect(word.getAttribute('aria-invalid')).toBe('true');
+		expect(panel.getByText('Bitte genau WIEDERHERSTELLEN eintippen.')).toBeTruthy();
+
+		await fireEvent.click(
+			panel.getByRole('radio', { name: 'Alle mit den Werten der Sicherung überschreiben' })
+		);
+		await fireEvent.input(word, { target: { value: 'WIEDERHERSTELLEN' } });
+		await fireEvent.click(panel.getByRole('button', { name: 'Wiederherstellen' }));
+		await vi.waitFor(() =>
+			expect(flags.show).toHaveBeenLastCalledWith(
+				expect.objectContaining({ tone: 'success', title: 'Wiederhergestellt.' })
+			)
+		);
+		expect(data.restore).toHaveBeenCalledWith(
+			{
+				source: 'local',
+				name: 'byl-20261001-100000.zip',
+				credentials: 'all',
+				confirm: 'WIEDERHERSTELLEN'
+			},
+			expect.anything()
+		);
+		expect(list.queryByRole('form')).toBeNull();
+	});
+
+	it('gives the focus back to "Wiederherstellen …" when the confirmation is cancelled', async () => {
+		await show();
+		const list = within(screen.getByRole('region', { name: 'Sicherungen' }));
+		const button = list.getByRole('button', {
+			name: 'Sicherung vom 01.10.2026 12:00 im Zielverzeichnis wiederherstellen …'
+		});
+		await fireEvent.click(button);
+		const form = await list.findByRole('form');
+		await fireEvent.click(within(form).getByRole('button', { name: 'Abbrechen' }));
+		await vi.waitFor(() => expect(document.activeElement).toBe(button));
+		expect(list.queryByRole('form')).toBeNull();
+	});
+
+	it('shows a running restore, the last restore and the safety copies', async () => {
+		await show(
+			{ restoreState: vi.fn(() => new Promise<never>(() => undefined)) },
+			'windows',
+			overview({
+				restore: {
+					at: '2026-10-01T10:00:00.000Z',
+					phase: 'restoring',
+					running: true,
+					name: 'byl-20261001-100000.zip',
+					source: 'local'
+				},
+				safety: [
+					{
+						name: 'pb_data.vor-wiederherstellung-20261001-095900',
+						at: '2026-10-01T09:59:00.000Z',
+						until: '2026-10-08T09:59:00.000Z'
+					}
+				]
+			})
+		);
+		const progress = screen.getByText('Wiederherstellung läuft').closest('[data-tone]');
+		expect(progress?.getAttribute('data-tone')).toBe('info');
+		const state = within(screen.getByRole('region', { name: 'Zustand' }));
+		expect(state.getByText('01.10.2026 12:00 · läuft')).toBeTruthy();
+		const list = within(screen.getByRole('region', { name: 'Sicherungen' }));
+		expect(list.getByText('pb_data.vor-wiederherstellung-20261001-095900')).toBeTruthy();
+		expect(list.getByText('bis 08.10.2026 11:59')).toBeTruthy();
+		// Nothing else starts while it runs.
+		expect(
+			screen.getByRole('button', { name: 'Jetzt sichern' }).getAttribute('aria-disabled')
+		).toBe('true');
 	});
 });

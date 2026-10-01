@@ -34,6 +34,21 @@ routerAdd(
   $apis.requireSuperuserAuth()
 );
 
+// The removal of old safety copies of a restore with a given clock (pruneSafety); answers
+// { removed } with the names of the folders removed.
+routerAdd(
+  'POST',
+  '/api/byl-test/backup/prune-safety',
+  function (e) {
+    var now = Number(e.requestInfo().body['now']);
+    if (!isFinite(now)) {
+      throw new BadRequestError('now fehlt');
+    }
+    return e.json(200, { removed: require(`${__hooks}/lib/backup-service.js`).pruneSafety(e.app, now) });
+  },
+  $apis.requireSuperuserAuth()
+);
+
 // The cron of the backups with a given clock; answers { result } (null: nothing ran, e.g. in the
 // test mode of the harness).
 routerAdd(

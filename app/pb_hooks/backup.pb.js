@@ -6,8 +6,9 @@
 // inside them.
 
 // Every five minutes: a backup when the newest one is a day old (also soon after a start, ADR-0046
-// §1), the copy into the target folder when it is missing there, and once a week the check of the
-// newest backup (§6). Never throws.
+// §1), the copy into the target folder when it is missing there, once a week the check of the
+// newest backup (§6), and the removal of safety copies of a restore after seven days (§7); nothing
+// while a restore runs. Never throws.
 cronAdd('byl-backup', '*/5 * * * *', function () {
   require(`${__hooks}/lib/backup-service.js`).tick($app, Date.now());
 });
@@ -49,6 +50,27 @@ routerAdd(
   '/api/byl/backup/verify',
   function (e) {
     return require(`${__hooks}/lib/backup-service.js`).verify(e);
+  },
+  $apis.requireAuth('users')
+);
+
+// "Wiederherstellen …": JSON { source, name, passphrase?, credentials, confirm: 'WIEDERHERSTELLEN' };
+// starts the restore of ADR-0046 §7 as a process of its own and answers 202 with { since }.
+routerAdd(
+  'POST',
+  '/api/byl/backup/restore',
+  function (e) {
+    return require(`${__hooks}/lib/backup-service.js`).restore(e);
+  },
+  $apis.requireAuth('users')
+);
+
+// The last restore (also while it runs and after the restart it causes) and the safety copies.
+routerAdd(
+  'GET',
+  '/api/byl/backup/restore',
+  function (e) {
+    return require(`${__hooks}/lib/backup-service.js`).restoreState(e);
   },
   $apis.requireAuth('users')
 );

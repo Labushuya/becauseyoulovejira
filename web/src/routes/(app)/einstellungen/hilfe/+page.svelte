@@ -859,7 +859,10 @@
 					einmal am Tag in <code>app\pb_data\backups</code> und, wenn eingerichtet, verschlüsselt in
 					ein Zielverzeichnis auf einem anderen Laufwerk; einmal in der Woche prüft sie, ob sich die
 					neueste Sicherung öffnen und starten lässt. Alles dazu unter
-					<a href={resolve('/einstellungen/sicherung')}>Einstellungen → Sicherung</a>.
+					<a href={resolve('/einstellungen/sicherung')}>Einstellungen → Sicherung</a>. Zurückholen
+					geht dort an jeder Sicherung mit „Wiederherstellen …“ oder mit
+					<code>app\wiederherstellen.bat</code>; die bisherigen Daten bleiben sieben Tage als
+					Sicherheitskopie im Ordner <code>app</code>.
 				</dd>
 			</div>
 		</dl>
