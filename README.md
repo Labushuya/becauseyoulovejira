@@ -732,7 +732,7 @@ npm run test:integration   # gegen eine Wegwerf-PocketBase-Instanz
 npm run test:web           # Frontend: Unit- und Komponententests (jsdom)
 ```
 
-**Test-Manifest:** Alle Testfälle stehen in [`docs/test-manifest.html`](docs/test-manifest.html) (lokal im Browser öffnen, funktioniert offline): oben der Stand mit den Zahlen, die offenen manuellen Prüfungen nach Bereichen und die Tabelle „Etappen und Pakete“, darunter die automatisierten Tests bereichsweise mit Verweis auf die Testdateien und die manuellen Prüfpunkte aus den Plänen zum Abhaken. Jedes Arbeitspaket pflegt es mit (ein Eintrag in `pakete` plus seine Fälle); `tests/unit/test-manifest.test.mjs` prüft, dass es zu den Testdateien passt und die Zahlen stimmen.
+Alle Testfälle und die manuellen Prüfungen stehen im [Test-Manifest](#test-manifest).
 
 `npm test` im Root führt erst die Root-Tests (Unit und Integration) und danach die web-Tests aus. **Vorher muss der Frontend-Build existieren** (`npm run build` nach `app/pb_public`), sonst schlägt der SPA-Fallback-Test mit einem Hinweis fehl. Die Integrationstests brauchen außerdem `app/pocketbase.exe` (Quickstart, Schritt 1). Die Start-Skripte selbst werden von den Tests nie ausgeführt; die Tests der Start-Logik rufen nur die Funktionen in Windows PowerShell auf (`-NoProfile -ExecutionPolicy Bypass`).
 
@@ -741,6 +741,18 @@ Pro Lauf startet ein Vitest-`globalSetup` eine eigene PocketBase-Instanz in eine
 Für den Vite-Dev-Server (`npm --prefix web run dev`) leitet `web/vite.config.ts` die Pfade `/api` und `/_/` an die laufende Instanz auf `127.0.0.1:8090` weiter; im Betrieb liefert PocketBase die App selbst aus (gleiche Origin).
 
 **Beiträge:** Jede Änderung läuft über einen kurzlebigen Branch (`feat/…`, `fix/…`, `chore/…`) und einen Pull Request in `main`. Gemergt wird nur bei grüner CI, per Squash-Merge mit einem Titel nach Conventional Commits (`feat:`, `fix:`, `docs:`, `test:`, `refactor:`, `chore:`, `ci:`); direkte Pushes auf `main` gibt es nicht. Ein Ruleset schützt `main` ([`.github/rulesets/main.json`](.github/rulesets/main.json)): nur per Pull Request, nur Squash-Merge, Pflicht-Checks „Check, lint, build and test“ (Windows) und „Linux build and test“, kein Force-Push, kein Löschen, keine Pflicht-Reviews. Die [PR-Vorlage](.github/pull_request_template.md) enthält die Checkliste. Sicherheitslücken bitte privat melden, siehe [SECURITY.md](.github/SECURITY.md).
+
+### Test-Manifest
+
+[`docs/test-manifest.html`](docs/test-manifest.html) sammelt alle Testfälle: oben der Stand mit den Zahlen, die offenen manuellen Prüfungen nach Bereichen und die Tabelle „Etappen und Pakete“, darunter die automatisierten Tests bereichsweise mit Verweis auf die Testdateien und die manuellen Prüfpunkte aus den Plänen. Die Datei öffnet sich per Doppelklick (`file://`) in Chrome, Edge, Firefox und Opera GX, offline und ohne Abhängigkeiten. Jedes Arbeitspaket pflegt sie mit (ein Eintrag in `pakete` plus seine Fälle); `tests/unit/test-manifest.test.mjs` prüft, dass sie zu den Testdateien passt, die Zahlen stimmen und der Prüfmodus richtig rechnet.
+
+**Manuelle Prüfungen melden:**
+
+1. Einen offenen manuellen Fall durchgehen und unter „Dein Ergebnis“ „bestanden“ oder „fehlgeschlagen“ wählen (Tab in die Gruppe, Pfeiltasten wählen). Bei „fehlgeschlagen“ in der Notiz beschreiben, was abweicht; Notizen gehen auch ohne Ergebnis.
+2. „Ergebnis kopieren“ legt einen kurzen Text in die Zwischenablage: Kopf mit Commit und Zeitpunkt, dann „Fehlgeschlagen“ mit Notiz, „Bestanden“ als Liste der IDs und „Notizen“.
+3. Den Text im Chat an Claude schicken. Claude überträgt ihn ins Repo: Bestandenes bekommt den Status „bestanden“ mit Datum und „manuell durch Nutzer“, Fehlgeschlagenes wird ein Fehlerpaket.
+
+Eingaben bleiben nur in diesem Browser (`localStorage`, Schlüssel `byl-test-manifest-v2`; Häkchen der früheren Fassung `v1` werden als „bestanden“ übernommen) und ändern die Datei nie. Kopfzeile, Fortschritt und Übersicht rechnen sie mit: Der Umschalter „Von dir geprüfte Fälle ausblenden“ blendet Geprüftes aus (Standard) oder markiert es, Fehlgeschlagenes steht oben in einem eigenen Block. Der Filter „Deine Eingabe“ (noch nicht geprüft, bestanden, fehlgeschlagen, mit Notiz) wirkt zusammen mit „Art“ und „Status“. Steht ein Fall inzwischen im Repo als bestanden oder haben sich Titel, Schritte oder Erwartung geändert, ist die Eingabe veraltet: Sie bleibt am Fall sichtbar, wird nicht mehr mitkopiert und verschwindet mit „Veraltete Einträge entfernen“. „Alles kopieren“ liefert alle Fälle mit Status und Eingaben.
 
 ---
 
