@@ -5,6 +5,7 @@ updates:
       - /
       - /web
       - /helpers/mail
+      - /helpers/backup
     schedule:
       interval: weekly
       day: monday

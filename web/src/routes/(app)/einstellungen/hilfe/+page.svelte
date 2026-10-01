@@ -110,8 +110,10 @@
 		<p>
 			Kanäle richtest du unter <a href={resolve('/einstellungen/kanaele')}>Kanäle</a> mit einem
 			Assistenten ein. Jede Verbindung liest ihre Zugangsdaten aus einer Umgebungsvariablen deines
-			Windows-Kontos, deren Name mit <code>BYL_</code> beginnt (nur Großbuchstaben, Ziffern und _). So
-			landen sie weder in der App noch in Sicherungen oder Kopien des Ordners.
+			Windows-Kontos, deren Name mit <code>BYL_</code> beginnt (nur Großbuchstaben, Ziffern und _).
+			So landen sie weder in der App noch in Kopien des Ordners oder den Sicherungen im Ordner app;
+			nur die Sicherungen im Zielverzeichnis nehmen sie verschlüsselt mit, wenn du es unter
+			<a href={resolve('/einstellungen/sicherung')}>Sicherung</a> so lässt.
 		</p>
 		<p>
 			Jeder Kanal hat dort eine Karte gleichen Aufbaus: oben der Zustand („Verbunden“, „Pausiert“,
@@ -806,8 +808,10 @@
 			<div class="row">
 				<dt>Sichern und umziehen</dt>
 				<dd>
-					Die App ist der Ordner <code>app</code>: Kopieren sichert sie. Automatische Sicherungen
-					legt der Server alle 4 Stunden an; Einzelheiten stehen in der README.
+					Die App ist der Ordner <code>app</code>: Kopieren sichert sie. Automatisch sichert die App
+					einmal am Tag in <code>app\pb_data\backups</code> und, wenn eingerichtet, verschlüsselt in
+					ein Zielverzeichnis auf einem anderen Laufwerk; alles dazu unter
+					<a href={resolve('/einstellungen/sicherung')}>Einstellungen → Sicherung</a>.
 				</dd>
 			</div>
 		</dl>

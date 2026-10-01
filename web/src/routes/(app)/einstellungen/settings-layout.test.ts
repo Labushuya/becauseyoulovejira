@@ -100,6 +100,7 @@ describe('settings layout', () => {
 			['Tickets', '/einstellungen/tickets'],
 			['Darstellung', '/einstellungen/darstellung'],
 			['Konto', '/einstellungen/konto'],
+			['Sicherung', '/einstellungen/sicherung'],
 			['System', '/einstellungen/system'],
 			['Hilfe', '/einstellungen/hilfe']
 		]);
@@ -113,14 +114,18 @@ describe('settings layout', () => {
 		['windows', true],
 		['linux', false],
 		['container', false]
-	])('lists "System" for a server on %s: %s (ADR-0043)', async (platform, listed) => {
-		mocks.platform = platform;
-		await renderSettings('/einstellungen/konto');
+	])(
+		'lists "Sicherung" and "System" for a server on %s: %s (ADR-0043, ADR-0046)',
+		async (platform, listed) => {
+			mocks.platform = platform;
+			await renderSettings('/einstellungen/konto');
 
-		const nav = within(screen.getByRole('navigation', { name: 'Einstellungen' }));
-		expect(nav.queryByRole('link', { name: 'System' }) !== null).toBe(listed);
-		expect(nav.getByRole('link', { name: 'Hilfe' })).toBeTruthy();
-	});
+			const nav = within(screen.getByRole('navigation', { name: 'Einstellungen' }));
+			expect(nav.queryByRole('link', { name: 'System' }) !== null).toBe(listed);
+			expect(nav.queryByRole('link', { name: 'Sicherung' }) !== null).toBe(listed);
+			expect(nav.getByRole('link', { name: 'Hilfe' })).toBeTruthy();
+		}
+	);
 
 	it('shows the breadcrumbs with the current page last', async () => {
 		await renderSettings('/einstellungen/kanaele');

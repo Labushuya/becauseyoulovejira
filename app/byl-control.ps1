@@ -27,7 +27,8 @@
 [CmdletBinding()]
 param(
     [Parameter(Position = 0)]
-    [ValidateSet('start', 'stop', 'restart', 'reload', 'status', 'open', 'logs', 'doctor', 'port', 'autostart-on', 'autostart-off', 'mail-restart', 'reset-admin', 'help')]
+    [ValidateSet('start', 'stop', 'restart', 'reload', 'status', 'open', 'logs', 'doctor', 'port', 'autostart-on', 'autostart-off', 'mail-restart', 'reset-admin',
+        'backup-info', 'backup-configure', 'backup-passphrase', 'backup-export', 'help')]
     [string]$Command = 'help',
     [Parameter(Position = 1)][string]$Value,
     [switch]$Force,
@@ -98,13 +99,20 @@ Befehle:
   autostart-off   Nimmt die App aus dem Autostart (autostart-aus.bat).
   mail-restart    Startet den Mail-Hilfsprozess neu (beendet ihn geordnet und startet ihn, wenn ein Postfach eingeschaltet ist).
   reset-admin     Legt ein Admin-Konto an oder setzt sein Passwort neu (admin-zuruecksetzen.bat).
+  backup-info     Zustand der Sicherung: Zielverzeichnis, Passphrase, Hilfsprogramm, Namen der BYL_*-Variablen.
+  backup-configure [Pfad]
+                  Stellt das Zielverzeichnis der verschlüsselten Sicherungen ein (leer: keins).
+  backup-passphrase
+                  Legt die Passphrase der Sicherungen fest (zweimal eingeben; an dieses Windows-Konto gebunden).
+  backup-export <Sicherung>
+                  Verschlüsselt eine Sicherung aus pb_data\backups ins Zielverzeichnis.
   help            Diese Hilfe.
 
 Optionen:
   -Force          start: eine laufende App, die nicht antwortet, neu starten; reload: immer neu starten.
   -NoBrowser      start/restart/reload/open: keinen Browser öffnen.
   -Quiet          nur Fehler und das Ergebnis ausgeben.
-  -Json           status/doctor/logs: Ergebnis als JSON (logs ohne Werte der BYL_*-Variablen).
+  -Json           status/doctor/logs/backup-*: Ergebnis als JSON (logs ohne Werte der BYL_*-Variablen).
   -Follow         logs: dem Log folgen (Strg+C beendet); nur mit server, mail oder skript.
   -Lines <Zahl>   logs: Anzahl der Zeilen (Standard 30).
   -Hidden         ohne Fenster (Autostart): Hinweise als Meldungsfenster.
@@ -1573,7 +1581,9 @@ function Invoke-Port {
         return $BylExitPortBusy
     }
     try {
-        Write-TextFile -Path (Get-BylConfigPath -AppDir $AppDir) -Text (ConvertTo-BylConfigText -Port $port)
+        # The backup settings in the same file stay as they are (ADR-0046).
+        $configPath = Get-BylConfigPath -AppDir $AppDir
+        Write-TextFile -Path $configPath -Text (Merge-BylConfigText -Text (Read-TextFile -Path $configPath) -Port $port)
     }
     catch {
         Show-Message -Kind Error -Text "$BylConfigName konnte nicht geschrieben werden: $($_.Exception.Message)"
@@ -1649,6 +1659,505 @@ function Invoke-AutostartOff {
     }
     Show-Message 'Autostart deaktiviert.'
     return $BylExitOk
+}
+
+# --- Backup (ADR-0046) ---------------------------------------------------------------------------
+# The app (lib/backup-service.js) runs these commands with -Json and gives their parameters as one
+# JSON object on standard input; nothing of a request reaches the command line. The passphrase is
+# kept with DPAPI for this Windows account outside the app folder; the values of the BYL_*
+# variables are read from the account and go only into encrypted backups, through byl-backup.exe.
+
+# Entropy of the DPAPI blob of the passphrase: no other DPAPI blob of the account opens with it.
+$PassphraseEntropy = [System.Text.Encoding]::UTF8.GetBytes('becauseyoulovejira-sicherung')
+# A seal or open of a large backup may take long; a helper that hangs is ended after this.
+$BackupHelperSeconds = 3600
+
+function Read-InputJson {
+    # The JSON object a program gives on standard input (UTF-8, whatever the code page, at most
+    # 1 MB); $null for a call from the console or without input.
+    if (-not [Console]::IsInputRedirected) { return $null }
+    $stream = [Console]::OpenStandardInput()
+    $buffer = New-Object System.IO.MemoryStream
+    try {
+        $chunk = New-Object byte[] 65536
+        while (($read = $stream.Read($chunk, 0, $chunk.Length)) -gt 0) {
+            $buffer.Write($chunk, 0, $read)
+            if ($buffer.Length -gt 1MB) { throw 'Die Eingabe ist zu groß.' }
+        }
+        $text = (New-Object System.Text.UTF8Encoding($false)).GetString($buffer.ToArray())
+    }
+    finally {
+        $buffer.Dispose()
+    }
+    if ([string]::IsNullOrWhiteSpace($text)) { return $null }
+    $value = $text | ConvertFrom-Json
+    if ($value -isnot [System.Management.Automation.PSCustomObject]) { throw 'Die Eingabe ist kein JSON-Objekt.' }
+    return $value
+}
+
+function Get-InputValue {
+    # Value of the property $Name of the input (strict mode forbids missing properties); $null.
+    param([AllowNull()][object]$InputObject, [Parameter(Mandatory = $true)][string]$Name)
+
+    if ($null -eq $InputObject) { return $null }
+    $property = $InputObject.PSObject.Properties[$Name]
+    if ($null -eq $property) { return $null }
+    return $property.Value
+}
+
+function Write-BackupAnswer {
+    # The answer of a backup command: one JSON line with -Json, otherwise $Text (an error in red).
+    # Returns the exit code: 0 with ok, 1 otherwise.
+    param([Parameter(Mandatory = $true)][System.Collections.IDictionary]$Answer, [Parameter(Mandatory = $true)][string]$Text)
+
+    $ok = $Answer['ok'] -eq $true
+    if ($Json) {
+        Write-JsonLine (ConvertTo-Json -InputObject $Answer -Depth 6 -Compress)
+    }
+    elseif ($ok) {
+        Show-Message $Text
+    }
+    else {
+        Show-Message -Kind Error -Text $Text
+    }
+    if ($ok) { return $BylExitOk }
+    return $BylExitError
+}
+
+function Get-PassphraseFile {
+    # The file of the passphrase of this folder (Get-BylPassphrasePath) under
+    # %LOCALAPPDATA%\becauseyoulovejira. An isolated test copy uses only the folder of the test in
+    # BYL_TEST_SECRET_DIR, or none ($null), so no test touches the files of the account.
+    if ($IsolatedEnvironment) {
+        $base = [Environment]::GetEnvironmentVariable('BYL_TEST_SECRET_DIR', 'Process')
+        if ([string]::IsNullOrWhiteSpace($base)) { return $null }
+    }
+    else {
+        $base = [System.IO.Path]::Combine([Environment]::GetFolderPath('LocalApplicationData'), 'becauseyoulovejira')
+    }
+    return Get-BylPassphrasePath -AppDir $AppDir -BaseDir $base
+}
+
+function Read-StoredPassphrase {
+    # The passphrase for unattended backups: State 'Set' (with Value, only in memory), 'Missing',
+    # 'Unreadable' (another account or machine wrote it) or 'Unavailable' (a test copy without a
+    # folder for it).
+    $path = Get-PassphraseFile
+    if ($null -eq $path) { return [pscustomobject]@{ State = 'Unavailable'; Value = $null } }
+    if (-not [System.IO.File]::Exists($path)) { return [pscustomobject]@{ State = 'Missing'; Value = $null } }
+    try {
+        Add-Type -AssemblyName System.Security
+        $protected = [Convert]::FromBase64String((Read-SharedText -Path $path).Trim())
+        $bytes = [System.Security.Cryptography.ProtectedData]::Unprotect($protected, $PassphraseEntropy, 'CurrentUser')
+        try {
+            $value = (New-Object System.Text.UTF8Encoding($false, $true)).GetString($bytes)
+        }
+        finally {
+            [Array]::Clear($bytes, 0, $bytes.Length)
+        }
+        return [pscustomobject]@{ State = 'Set'; Value = $value }
+    }
+    catch {
+        return [pscustomobject]@{ State = 'Unreadable'; Value = $null }
+    }
+}
+
+function Save-StoredPassphrase {
+    # Keeps $Passphrase with DPAPI for this Windows account (CurrentUser) in Get-PassphraseFile.
+    param([Parameter(Mandatory = $true)][string]$Passphrase)
+
+    $path = Get-PassphraseFile
+    if ($null -eq $path) { throw 'Diese Testkopie hat keinen Ordner für die Passphrase (BYL_TEST_SECRET_DIR).' }
+    Add-Type -AssemblyName System.Security
+    $bytes = (New-Object System.Text.UTF8Encoding($false)).GetBytes($Passphrase)
+    try {
+        $protected = [System.Security.Cryptography.ProtectedData]::Protect($bytes, $PassphraseEntropy, 'CurrentUser')
+    }
+    finally {
+        [Array]::Clear($bytes, 0, $bytes.Length)
+    }
+    Write-TextFile -Path $path -Text ([Convert]::ToBase64String($protected))
+}
+
+function Get-FreeBytes {
+    # Bytes this account may still write on the drive or share of the folder $Path
+    # (GetDiskFreeSpaceEx, also for UNC paths); $null if Windows cannot tell.
+    param([Parameter(Mandatory = $true)][string]$Path)
+
+    if (-not ('Byl.DiskSpace' -as [type])) {
+        Add-Type -Namespace Byl -Name DiskSpace -MemberDefinition (
+            '[DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)] [return: MarshalAs(UnmanagedType.Bool)] ' +
+            'public static extern bool GetDiskFreeSpaceEx(string directory, out ulong freeForCaller, out ulong total, out ulong totalFree);')
+    }
+    $free = [uint64]0
+    $total = [uint64]0
+    $totalFree = [uint64]0
+    if ([Byl.DiskSpace]::GetDiskFreeSpaceEx($Path.TrimEnd('\') + '\', [ref]$free, [ref]$total, [ref]$totalFree)) { return [double]$free }
+    return $null
+}
+
+function Get-BackupSettings {
+    # The backup settings of byl-config.json (ConvertFrom-BylBackupConfig).
+    return ConvertFrom-BylBackupConfig -Text (Read-TextFile -Path (Get-BylConfigPath -AppDir $AppDir))
+}
+
+function Test-SameDrive {
+    # Whether $Path lies on the drive or share of the app folder (a target there does not help
+    # against a broken disk; only a hint).
+    param([Parameter(Mandatory = $true)][string]$Path)
+
+    return [string]::Equals([System.IO.Path]::GetPathRoot($Path), [System.IO.Path]::GetPathRoot($AppDir), [System.StringComparison]::OrdinalIgnoreCase)
+}
+
+function Get-TargetCheck {
+    # Checks the target folder $Path (ADR-0046 section 2): format and place (Test-BylBackupTarget),
+    # existence, write access (with -WriteProbe a file that is deleted again) and free space for
+    # $NeededBytes. Problem: $null or 'Format', 'TooLong', 'InsideApp', 'Missing', 'NotWritable',
+    # 'Space'; FreeBytes and SameDrive as information.
+    param([Parameter(Mandatory = $true)][string]$Path, [double]$NeededBytes = 0, [switch]$WriteProbe)
+
+    $result = [ordered]@{ Problem = $null; FreeBytes = $null; SameDrive = $false }
+    $result.Problem = Test-BylBackupTarget -Path $Path -AppDir $AppDir
+    if ($null -ne $result.Problem) { return [pscustomobject]$result }
+    $folder = $Path.Trim()
+    $result.SameDrive = Test-SameDrive -Path $folder
+    if (-not [System.IO.Directory]::Exists($folder)) {
+        $result.Problem = 'Missing'
+        return [pscustomobject]$result
+    }
+    if ($WriteProbe -and -not (Test-WriteAccess -Folder $folder)) {
+        $result.Problem = 'NotWritable'
+        return [pscustomobject]$result
+    }
+    $result.FreeBytes = Get-FreeBytes -Path $folder
+    if ($null -ne $result.FreeBytes -and (Get-BylBackupSpaceVerdict -FreeBytes $result.FreeBytes -NeededBytes $NeededBytes) -ne 'Ok') {
+        $result.Problem = 'Space'
+    }
+    return [pscustomobject]$result
+}
+
+function Get-BylCommit {
+    # The commit of this folder when it is part of a checkout of the repository (a worktree as
+    # well), the first 7 characters; $null otherwise. For the manifest of a backup only.
+    try {
+        $root = [System.IO.Path]::GetDirectoryName($AppDir)
+        $gitDir = [System.IO.Path]::Combine($root, '.git')
+        if ([System.IO.File]::Exists($gitDir)) {
+            if ((Read-SharedText -Path $gitDir).Trim() -notmatch '^gitdir: (.+)$') { return $null }
+            $gitDir = [System.IO.Path]::GetFullPath([System.IO.Path]::Combine($root, $Matches[1].Trim()))
+        }
+        if (-not [System.IO.Directory]::Exists($gitDir)) { return $null }
+        $head = (Read-SharedText -Path ([System.IO.Path]::Combine($gitDir, 'HEAD'))).Trim()
+        if ($head -match '^[0-9a-f]{40}$') { return $head.Substring(0, 7) }
+        if ($head -notmatch '^ref: (refs/\S+)$') { return $null }
+        $ref = $Matches[1]
+        $common = $gitDir
+        $commonFile = [System.IO.Path]::Combine($gitDir, 'commondir')
+        if ([System.IO.File]::Exists($commonFile)) {
+            $common = [System.IO.Path]::GetFullPath([System.IO.Path]::Combine($gitDir, (Read-SharedText -Path $commonFile).Trim()))
+        }
+        $refFile = [System.IO.Path]::Combine($common, $ref.Replace('/', '\'))
+        if ([System.IO.File]::Exists($refFile)) {
+            $hash = (Read-SharedText -Path $refFile).Trim()
+            if ($hash -match '^[0-9a-f]{40}$') { return $hash.Substring(0, 7) }
+            return $null
+        }
+        $packed = [System.IO.Path]::Combine($common, 'packed-refs')
+        if (-not [System.IO.File]::Exists($packed)) { return $null }
+        foreach ($line in ((Read-SharedText -Path $packed) -split "`r?`n")) {
+            if ($line -match "^([0-9a-f]{40}) $([regex]::Escape($ref))$") { return $Matches[1].Substring(0, 7) }
+        }
+        return $null
+    }
+    catch {
+        return $null
+    }
+}
+
+function Invoke-BackupHelper {
+    # Runs byl-backup.exe of this folder with the command $Command; its parameters go as JSON on
+    # standard input, never on the command line, and its environment has no BYL_* variable. Returns
+    # the parsed answer; a helper that is missing, hangs or prints no JSON gives ok = false with the
+    # reason 'helper'.
+    param([Parameter(Mandatory = $true)][ValidateSet('seal', 'open')][string]$Command, [Parameter(Mandatory = $true)][System.Collections.IDictionary]$Parameters)
+
+    $helper = [System.IO.Path]::Combine($AppDir, $BylBackupHelperName)
+    if (-not [System.IO.File]::Exists($helper)) { return [pscustomobject]@{ ok = $false; reason = 'helper' } }
+    $startInfo = New-Object System.Diagnostics.ProcessStartInfo
+    $startInfo.FileName = $helper
+    $startInfo.Arguments = $Command
+    $startInfo.UseShellExecute = $false
+    $startInfo.CreateNoWindow = $true
+    $startInfo.RedirectStandardInput = $true
+    $startInfo.RedirectStandardOutput = $true
+    $startInfo.RedirectStandardError = $true
+    $startInfo.StandardOutputEncoding = New-Object System.Text.UTF8Encoding($false)
+    $startInfo.WorkingDirectory = $AppDir
+    foreach ($name in @($startInfo.EnvironmentVariables.Keys)) {
+        if ([string]$name -like 'BYL_*' -or [string]$name -like 'NODE_*') { $startInfo.EnvironmentVariables.Remove($name) }
+    }
+    $process = [System.Diagnostics.Process]::Start($startInfo)
+    try {
+        $output = $process.StandardOutput.ReadToEndAsync()
+        $errors = $process.StandardError.ReadToEndAsync()
+        $bytes = (New-Object System.Text.UTF8Encoding($false)).GetBytes((ConvertTo-Json -InputObject $Parameters -Depth 10 -Compress))
+        try {
+            $process.StandardInput.BaseStream.Write($bytes, 0, $bytes.Length)
+            $process.StandardInput.Close()
+        }
+        finally {
+            [Array]::Clear($bytes, 0, $bytes.Length)
+        }
+        if (-not $process.WaitForExit($BackupHelperSeconds * 1000)) {
+            try { $process.Kill() } catch { $null = $_ }
+            return [pscustomobject]@{ ok = $false; reason = 'helper' }
+        }
+        $process.WaitForExit()
+        [void]$errors.Result
+        $line = @($output.Result -split "`r?`n" | Where-Object { $_.Trim() -ne '' } | Select-Object -Last 1)
+        try {
+            $answer = if ($line.Count -gt 0) { $line[0] | ConvertFrom-Json } else { $null }
+        }
+        catch {
+            $answer = $null
+        }
+        if ($null -eq $answer -or $null -eq $answer.PSObject.Properties['ok']) { return [pscustomobject]@{ ok = $false; reason = 'helper' } }
+        return $answer
+    }
+    finally {
+        $process.Dispose()
+    }
+}
+
+function Get-SettingsAnswer {
+    # The backup settings as the app reads them.
+    param([Parameter(Mandatory = $true)][object]$Settings)
+
+    return [ordered]@{
+        target      = $Settings.Target
+        daily       = $Settings.Daily
+        weekly      = $Settings.Weekly
+        monthly     = $Settings.Monthly
+        credentials = $Settings.Credentials
+    }
+}
+
+function Invoke-BackupInfo {
+    # backup-info: settings, target (exists, free space, same drive), passphrase, helper and the
+    # names of the BYL_* variables a backup takes along. Only reads; never a value.
+    $settings = Get-BackupSettings
+    $passphrase = (Read-StoredPassphrase).State
+    $target = $null
+    if ($null -ne $settings.Target) {
+        $check = Get-TargetCheck -Path $settings.Target
+        $target = [ordered]@{
+            path      = $settings.Target
+            reachable = $check.Problem -ne 'Missing'
+            problem   = if ($null -eq $check.Problem) { $null } else { $TargetProblemCode[$check.Problem] }
+            freeBytes = $check.FreeBytes
+            sameDrive = $check.SameDrive
+        }
+    }
+    $names = @((Select-BylSecretVariable -Variables (Get-BylVariableScope).User).Keys)
+    $answer = [ordered]@{
+        ok         = $true
+        settings   = Get-SettingsAnswer -Settings $settings
+        target     = $target
+        passphrase = $passphrase.ToLowerInvariant()
+        helper     = [System.IO.File]::Exists([System.IO.Path]::Combine($AppDir, $BylBackupHelperName))
+        variables  = @($names)
+    }
+    $lines = @(
+        "Zielverzeichnis: $(if ($null -eq $settings.Target) { 'keins' } else { $settings.Target })",
+        "Passphrase:      $(switch ($passphrase) { 'Set' { 'gesetzt' } 'Missing' { 'fehlt' } default { 'nicht lesbar' } })",
+        "Aufbewahrung:    $($settings.Daily) täglich, $($settings.Weekly) wöchentlich, $($settings.Monthly) monatlich",
+        "Zugangsdaten:    $(if ($settings.Credentials) { 'werden mitgesichert' } else { 'werden nicht mitgesichert' }) ($(@($names).Count) Variablen)"
+    )
+    return Write-BackupAnswer -Answer $answer -Text ($lines -join "`n")
+}
+
+# Codes of the problems of a target for the app (lib/backup-rules.js TARGET_PROBLEMS).
+$TargetProblemCode = @{ Format = 'format'; TooLong = 'too-long'; InsideApp = 'inside-app'; Missing = 'missing'; NotWritable = 'not-writable'; Space = 'space' }
+
+$TargetProblemText = @{
+    Format      = 'Das ist kein vollständiger Pfad: Laufwerk mit Ordner (etwa einer USB-Platte) oder eine Freigabe wie \\NAS\Freigabe\Sicherung.'
+    TooLong     = "Der Pfad ist zu lang (höchstens $BylBackupTargetMaxLength Zeichen)."
+    InsideApp   = 'Das Zielverzeichnis darf nicht im Ordner app liegen: Eine Kopie des Ordners nähme die Sicherungen mit, ein Plattendefekt beide.'
+    Missing     = 'Den Ordner gibt es nicht oder er ist gerade nicht erreichbar (USB-Platte angeschlossen? Netzlaufwerk verbunden?).'
+    NotWritable = 'In den Ordner lässt sich nicht schreiben.'
+    Space       = 'Auf dem Laufwerk ist zu wenig Platz frei.'
+    Keep        = 'Die Aufbewahrung ist ungültig.'
+}
+
+function Invoke-BackupConfigure {
+    # backup-configure: target folder (checked like Get-TargetCheck with a write probe; '' or none
+    # removes it), generations and the switch for the access data. From the console only the target
+    # ($Value); the rest stays.
+    $request = Read-InputJson
+    $settings = Get-BackupSettings
+    $target = if ($null -ne $request) { [string](Get-InputValue $request 'target') } else { [string]$Value }
+    $target = $target.Trim()
+    if ($null -ne $request) {
+        foreach ($name in @($BylBackupKeep.Keys)) {
+            $number = Get-InputValue $request $name
+            $limit = $BylBackupKeep[$name]
+            if ($null -eq $number) { continue }
+            if (-not ($number -is [int] -or $number -is [long]) -or $number -lt $limit.Min -or $number -gt $limit.Max) {
+                return Write-BackupAnswer -Answer ([ordered]@{ ok = $false; problem = 'keep' }) -Text $TargetProblemText.Keep
+            }
+            $settings.($name.Substring(0, 1).ToUpperInvariant() + $name.Substring(1)) = [int]$number
+        }
+        $credentials = Get-InputValue $request 'credentials'
+        if ($credentials -is [bool]) { $settings.Credentials = $credentials }
+    }
+    $check = $null
+    if ($target -ne '') {
+        $check = Get-TargetCheck -Path $target -WriteProbe
+        if ($null -ne $check.Problem) {
+            $code = $TargetProblemCode[$check.Problem]
+            $script:LogDetail = "problem=$code"
+            return Write-BackupAnswer -Answer ([ordered]@{ ok = $false; problem = $code; freeBytes = $check.FreeBytes; sameDrive = $check.SameDrive }) `
+                -Text $TargetProblemText[$check.Problem]
+        }
+        $settings.Target = $target.TrimEnd('\')
+        if ($settings.Target -match '^[A-Za-z]:$') { $settings.Target += '\' }
+    }
+    else {
+        $settings.Target = $null
+    }
+    $path = Get-BylConfigPath -AppDir $AppDir
+    Write-TextFile -Path $path -Text (Merge-BylConfigText -Text (Read-TextFile -Path $path) -Backup $settings)
+    $script:LogDetail = "target=$(if ($null -eq $settings.Target) { 'none' } else { 'set' })"
+    $text = if ($null -eq $settings.Target) { 'Kein Zielverzeichnis: Sicherungen bleiben nur in pb_data\backups.' } else { "Zielverzeichnis eingestellt: $($settings.Target)" }
+    return Write-BackupAnswer -Answer ([ordered]@{
+            ok        = $true
+            settings  = Get-SettingsAnswer -Settings $settings
+            freeBytes = if ($null -ne $check) { $check.FreeBytes } else { $null }
+            sameDrive = if ($null -ne $check) { $check.SameDrive } else { $false }
+        }) -Text $text
+}
+
+$PassphraseProblemCode = @{ Mismatch = 'mismatch'; TooShort = 'too-short'; TooLong = 'too-long'; Character = 'character'; Unavailable = 'unavailable' }
+
+$PassphraseProblemText = @{
+    Mismatch    = 'Die beiden Eingaben stimmen nicht überein.'
+    TooShort    = "Die Passphrase muss mindestens $BylPassphraseMinLength Zeichen lang sein."
+    TooLong     = "Die Passphrase ist zu lang (höchstens $BylPassphraseMaxBytes Byte)."
+    Character   = 'Die Passphrase darf keine Steuerzeichen enthalten.'
+    Unavailable = 'Diese Testkopie hat keinen Ordner für die Passphrase.'
+}
+
+function Invoke-BackupPassphrase {
+    # backup-passphrase: the passphrase twice (from the app as JSON, in the console as hidden
+    # input), kept with DPAPI for this Windows account. Never printed, never logged. Older backups
+    # keep the passphrase they were sealed with.
+    $request = Read-InputJson
+    $passphrase = $null
+    $confirmation = $null
+    try {
+        if ($null -ne $request) {
+            $passphrase = [string](Get-InputValue $request 'passphrase')
+            $confirmation = [string](Get-InputValue $request 'confirmation')
+        }
+        elseif (-not $Hidden -and -not $Json) {
+            Write-Host 'Passphrase der Sicherungen festlegen. Bewahre sie in deinem Passwort-Manager auf – ohne sie lässt sich eine Sicherung nicht öffnen.'
+            $passphrase = Read-Secret -Prompt "Passphrase (mindestens $BylPassphraseMinLength Zeichen)"
+            $confirmation = Read-Secret -Prompt 'Passphrase wiederholen'
+        }
+        $problem = Test-BylPassphrase -Passphrase $passphrase -Confirmation $confirmation
+        if ($null -eq $problem -and $null -eq (Get-PassphraseFile)) { $problem = 'Unavailable' }
+        if ($null -ne $problem) {
+            $code = $PassphraseProblemCode[$problem]
+            $script:LogDetail = "problem=$code"
+            return Write-BackupAnswer -Answer ([ordered]@{ ok = $false; problem = $code }) -Text $PassphraseProblemText[$problem]
+        }
+        Save-StoredPassphrase -Passphrase $passphrase
+    }
+    finally {
+        $passphrase = $null
+        $confirmation = $null
+    }
+    $script:LogDetail = 'passphrase=set'
+    return Write-BackupAnswer -Answer ([ordered]@{ ok = $true }) -Text ('Passphrase gespeichert (an dieses Windows-Konto gebunden). Neue Sicherungen nutzen sie; ältere bleiben mit ihrer bisherigen Passphrase lesbar.')
+}
+
+$ExportReasonText = @{
+    name          = 'Unbekannte Sicherung.'
+    missing       = 'Die Sicherung gibt es in pb_data\backups nicht.'
+    'no-target'   = 'Es ist kein Zielverzeichnis eingestellt.'
+    unreachable   = 'Das Zielverzeichnis ist gerade nicht erreichbar.'
+    'no-passphrase' = 'Es ist keine Passphrase festgelegt.'
+    'passphrase-unreadable' = 'Die gespeicherte Passphrase lässt sich mit diesem Windows-Konto nicht lesen; bitte neu festlegen.'
+    helper        = 'byl-backup.exe fehlt oder antwortet nicht; scripts\build.ps1 baut es.'
+    space         = 'Im Zielverzeichnis ist zu wenig Platz frei.'
+    'not-writable' = 'In das Zielverzeichnis lässt sich nicht schreiben.'
+    failed        = 'Die Sicherung ließ sich nicht verschlüsseln.'
+}
+
+function Invoke-BackupExport {
+    # backup-export: seals the local backup $name (pb_data\backups\byl-<stamp>.zip) into the target
+    # folder as byl-<stamp>.tar.age, with the settings of this folder, a manifest (from the app:
+    # counts and the newest migration; here: time, commit, names of the variables) and, if
+    # switched on, the values of the BYL_* variables of the account. A missing target, passphrase or
+    # helper is an answer with a reason, not a crash; the app tries again later.
+    $request = Read-InputJson
+    $name = if ($null -ne $request) { [string](Get-InputValue $request 'name') } else { [string]$Value }
+    $fail = {
+        param([string]$Reason)
+        $script:LogDetail = "reason=$Reason"
+        Write-BackupAnswer -Answer ([ordered]@{ ok = $false; reason = $Reason }) -Text $ExportReasonText[$Reason]
+    }
+    if ($name -notmatch $BylLocalBackupPattern) { return & $fail 'name' }
+    $zip = [System.IO.Path]::Combine($AppDir, 'pb_data', 'backups', $name)
+    if (-not [System.IO.File]::Exists($zip)) { return & $fail 'missing' }
+    $settings = Get-BackupSettings
+    if ($null -eq $settings.Target) { return & $fail 'no-target' }
+    if (-not [System.IO.Directory]::Exists($settings.Target)) { return & $fail 'unreachable' }
+    if (-not [System.IO.File]::Exists([System.IO.Path]::Combine($AppDir, $BylBackupHelperName))) { return & $fail 'helper' }
+    $stored = Read-StoredPassphrase
+    if ($stored.State -eq 'Unreadable') { return & $fail 'passphrase-unreadable' }
+    if ($stored.State -ne 'Set') { return & $fail 'no-passphrase' }
+    $size = (New-Object System.IO.FileInfo($zip)).Length
+    $free = Get-FreeBytes -Path $settings.Target
+    if ($null -ne $free -and (Get-BylBackupSpaceVerdict -FreeBytes $free -NeededBytes $size) -ne 'Ok') { return & $fail 'space' }
+
+    $secrets = if ($settings.Credentials) { Select-BylSecretVariable -Variables (Get-BylVariableScope).User } else { [ordered]@{} }
+    $manifest = [ordered]@{}
+    $given = Get-InputValue $request 'manifest'
+    if ($null -ne $given -and $given -is [System.Management.Automation.PSCustomObject]) {
+        foreach ($property in $given.PSObject.Properties) { $manifest[$property.Name] = $property.Value }
+    }
+    $manifest['app'] = 'becauseyoulovejira'
+    $manifest['name'] = $name.Substring(0, $name.Length - 4)
+    $manifest['createdUtc'] = [DateTime]::UtcNow.ToString('yyyy-MM-ddTHH:mm:ssZ')
+    $manifest['commit'] = Get-BylCommit
+    $manifest['variables'] = @($secrets.Keys)
+    $config = Get-BylConfigPath -AppDir $AppDir
+    $sealedName = Get-BylSealedName -LocalName $name
+    $answer = Invoke-BackupHelper -Command seal -Parameters ([ordered]@{
+            data       = $zip
+            out        = [System.IO.Path]::Combine($settings.Target, $sealedName)
+            config     = if ([System.IO.File]::Exists($config)) { $config } else { $null }
+            passphrase = $stored.Value
+            manifest   = $manifest
+            secrets    = $secrets
+        })
+    $stored = $null
+    $secrets = $null
+    if ((Get-InputValue $answer 'ok') -ne $true) {
+        $reason = switch ([string](Get-InputValue $answer 'reason')) {
+            'space' { 'space' }
+            'access' { 'not-writable' }
+            'missing' { 'unreachable' }
+            'helper' { 'helper' }
+            default { 'failed' }
+        }
+        return & $fail $reason
+    }
+    $bytes = [long](Get-InputValue $answer 'bytes')
+    $script:LogDetail = "file=$sealedName bytes=$bytes"
+    return Write-BackupAnswer -Answer ([ordered]@{ ok = $true; file = $sealedName; bytes = $bytes; variables = @($manifest['variables']) }) `
+        -Text "Sicherung verschlüsselt: $([System.IO.Path]::Combine($settings.Target, $sealedName))"
 }
 
 function Read-Secret {
@@ -1755,6 +2264,10 @@ try {
         'autostart-off' { Invoke-AutostartOff }
         'mail-restart' { Invoke-MailRestart -Config $config }
         'reset-admin' { Invoke-ResetAdmin }
+        'backup-info' { Invoke-BackupInfo }
+        'backup-configure' { Invoke-BackupConfigure }
+        'backup-passphrase' { Invoke-BackupPassphrase }
+        'backup-export' { Invoke-BackupExport }
         'help' {
             Write-Host $HelpText
             $BylExitOk
@@ -1768,7 +2281,8 @@ catch {
 # A function that leaks output would turn the result into an array; the last value is the code.
 $exitCode = [int](@($exitCode)[-1])
 # Only commands that change something go into byl-control.log (status and logs would flood it).
-if (@('start', 'stop', 'restart', 'reload', 'port', 'autostart-on', 'autostart-off', 'mail-restart', 'reset-admin') -contains $Command) {
+if (@('start', 'stop', 'restart', 'reload', 'port', 'autostart-on', 'autostart-off', 'mail-restart', 'reset-admin',
+        'backup-configure', 'backup-passphrase', 'backup-export') -contains $Command) {
     Write-ControlLog -Name $Command -ExitCode $exitCode
 }
 exit $exitCode

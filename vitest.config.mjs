@@ -8,6 +8,7 @@ import { integrationGroups } from './tests/support/test-groups.mjs';
 const WINDOWS_ONLY = {
 	unit: [
 		'tests/unit/admin-reset-logic.test.mjs',
+		'tests/unit/backup-control-logic.test.mjs',
 		'tests/unit/control-logic.test.mjs',
 		'tests/unit/start-browser.test.mjs',
 		'tests/unit/start-logic.test.mjs',
@@ -15,6 +16,7 @@ const WINDOWS_ONLY = {
 	],
 	integration: [
 		'tests/integration/admin-reset.test.mjs',
+		'tests/integration/backup-control.test.mjs',
 		'tests/integration/backup-restore.test.mjs',
 		'tests/integration/control-script.test.mjs',
 		'tests/integration/installer-check.test.mjs',
@@ -74,9 +76,10 @@ export default defineConfig({
 			},
 			{
 				test: {
-					// The mail helper byl-mail.exe (E4 plan, package 11), against a fake IMAP server on 127.0.0.1.
+					// The mail helper byl-mail.exe (E4 plan, package 11), against a fake IMAP server on
+					// 127.0.0.1, and the backup helper byl-backup.exe (ADR-0046).
 					name: 'helper',
-					include: ['helpers/mail/src/**/*.test.ts'],
+					include: ['helpers/mail/src/**/*.test.ts', 'helpers/backup/src/**/*.test.ts'],
 					environment: 'node',
 					testTimeout: 20_000,
 					sequence: { groupOrder: 1 }

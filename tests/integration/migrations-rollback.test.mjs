@@ -11,6 +11,7 @@ import {
 	withTempDataDir
 } from '../support/pocketbase-harness.mjs';
 import {
+	ADR_0003_BACKUPS,
 	CHANNELS,
 	DEFAULT_BACKUPS,
 	DEFAULT_USERS_RULES,
@@ -415,6 +416,51 @@ describe('migration rollback of the delete guard of sources (ADR-0031 section 3)
 
 				expect(appliedFiles(await migrate(args, 'up'), 'Applied')).toEqual(fromGuard);
 				expect(deleteRuleOf(dataDir)).toBeNull();
+			});
+		},
+		60_000
+	);
+});
+
+// The backups of the app replace the automatic backup of PocketBase (ADR-0046 §1).
+const BACKUP_SCHEDULE_MIGRATION = '1790203000_backups_own_schedule.js';
+
+/** Sets backups.cron in the stored settings of the data folder (a schedule from the admin UI). */
+function setBackupCron(dataDir, cron) {
+	withDatabase(dataDir, (db) => {
+		const row = db.prepare("SELECT value FROM _params WHERE id = 'settings'").get();
+		const settings = JSON.parse(new TextDecoder().decode(row.value));
+		settings.backups.cron = cron;
+		db.prepare("UPDATE _params SET value = ? WHERE id = 'settings'").run(new TextEncoder().encode(JSON.stringify(settings)));
+	});
+}
+
+describe('migration of the backup schedule (ADR-0046)', () => {
+	it(
+		'switches the automatic backup of ADR-0003 off and back on, and keeps a schedule of the admin UI',
+		async () => {
+			const fromSchedule = MIGRATION_FILES.slice(MIGRATION_FILES.indexOf(BACKUP_SCHEDULE_MIGRATION));
+			expect(fromSchedule[0]).toBe(BACKUP_SCHEDULE_MIGRATION);
+			const backupsOf = (dataDir) => readDataDir(dataDir).settings.backups;
+
+			await withTempDataDir(async ({ dataDir, args }) => {
+				await migrate(args, 'up');
+				expect(backupsOf(dataDir)).toMatchObject(EXPECTED_BACKUPS);
+
+				const down = await migrate(args, 'down', String(fromSchedule.length));
+				expect(appliedFiles(down, 'Reverted')).toEqual([...fromSchedule].reverse());
+				expect(backupsOf(dataDir)).toMatchObject(ADR_0003_BACKUPS);
+
+				// A schedule of the user stays, up and down.
+				setBackupCron(dataDir, '0 3 * * *');
+				expect(appliedFiles(await migrate(args, 'up'), 'Applied')).toEqual(fromSchedule);
+				expect(backupsOf(dataDir)).toMatchObject({ cron: '0 3 * * *', cronMaxKeep: 12 });
+				await migrate(args, 'down', String(fromSchedule.length));
+				expect(backupsOf(dataDir)).toMatchObject({ cron: '0 3 * * *', cronMaxKeep: 12 });
+
+				setBackupCron(dataDir, ADR_0003_BACKUPS.cron);
+				await migrate(args, 'up');
+				expect(backupsOf(dataDir)).toMatchObject(EXPECTED_BACKUPS);
 			});
 		},
 		60_000
@@ -1100,8 +1146,8 @@ describe('migration rollback of "Jeden Termin einzeln anlegen" (plan OR-5)', () 
 			// The trash (ADR-0037, 1790202300) follows and runs along; it adds deleted_at = '' to the
 			// condition of the index. The own inbox (ADR-0038, 1790202400), "Status beim Anlegen"
 			// (plan WV, 1790202500), the pinned comment (ADR-0044, 1790202600), the sub-tasks of the
-			// template (plan WV-3, 1790202700) and the delete lock of inbox items (ADR-0014 addendum,
-			// 1790202800) run along as well.
+			// template (plan WV-3, 1790202700), the delete lock of inbox items (ADR-0014 addendum,
+			// 1790202800) and the backup schedule (ADR-0046, 1790203000) run along as well.
 			const fromEach = MIGRATION_FILES.slice(MIGRATION_FILES.indexOf(EACH_MIGRATION));
 			expect(fromEach).toEqual([
 				EACH_MIGRATION,
@@ -1110,7 +1156,8 @@ describe('migration rollback of "Jeden Termin einzeln anlegen" (plan OR-5)', () 
 				STATUS_MIGRATION,
 				PIN_MIGRATION,
 				SUBTASKS_MIGRATION,
-				NO_DELETE_MIGRATION
+				NO_DELETE_MIGRATION,
+				BACKUP_SCHEDULE_MIGRATION
 			]);
 
 			await withTempDataDir(async ({ dataDir, args }) => {
@@ -1243,8 +1290,8 @@ describe('migration rollback of the trash (ADR-0037)', () => {
 		async () => {
 			// The own inbox (ADR-0038, 1790202400), "Status beim Anlegen" (plan WV, 1790202500), the
 			// pinned comment (ADR-0044, 1790202600), the sub-tasks of the template (plan WV-3,
-			// 1790202700) and the delete lock of inbox items (ADR-0014 addendum, 1790202800) follow and
-			// run along; they change no row here.
+			// 1790202700), the delete lock of inbox items (ADR-0014 addendum, 1790202800) and the
+			// backup schedule (ADR-0046, 1790203000) follow and run along; they change no row here.
 			const fromTrash = MIGRATION_FILES.slice(MIGRATION_FILES.indexOf(TRASH_MIGRATION));
 			expect(fromTrash).toEqual([
 				TRASH_MIGRATION,
@@ -1252,7 +1299,8 @@ describe('migration rollback of the trash (ADR-0037)', () => {
 				STATUS_MIGRATION,
 				PIN_MIGRATION,
 				SUBTASKS_MIGRATION,
-				NO_DELETE_MIGRATION
+				NO_DELETE_MIGRATION,
+				BACKUP_SCHEDULE_MIGRATION
 			]);
 
 			await withTempDataDir(async ({ dataDir, args }) => {
@@ -1343,15 +1391,17 @@ describe('migration rollback of the own inbox (ADR-0038)', () => {
 		'adds the keys and the two channels without changing a row, and keeps the content of new entries on the way back',
 		async () => {
 			// "Status beim Anlegen" (plan WV, 1790202500), the pinned comment (ADR-0044, 1790202600)
-			// the sub-tasks of the template (plan WV-3, 1790202700) and the delete lock of inbox items
-			// (ADR-0014 addendum, 1790202800) follow and run along; they change no row.
+			// the sub-tasks of the template (plan WV-3, 1790202700), the delete lock of inbox items
+			// (ADR-0014 addendum, 1790202800) and the backup schedule (ADR-0046, 1790203000) follow
+			// and run along; they change no row.
 			const fromOwn = MIGRATION_FILES.slice(MIGRATION_FILES.indexOf(OWN_INBOX_MIGRATION));
 			expect(fromOwn).toEqual([
 				OWN_INBOX_MIGRATION,
 				STATUS_MIGRATION,
 				PIN_MIGRATION,
 				SUBTASKS_MIGRATION,
-				NO_DELETE_MIGRATION
+				NO_DELETE_MIGRATION,
+				BACKUP_SCHEDULE_MIGRATION
 			]);
 
 			await withTempDataDir(async ({ dataDir, args }) => {
@@ -1457,10 +1507,16 @@ describe('migration rollback of "Status beim Anlegen" (plan WV, ADR-0022 addendu
 		'adds the field without changing a row, and the tickets made with it keep their status on the way back',
 		async () => {
 			// The pinned comment (ADR-0044, 1790202600), the sub-tasks of the template (plan WV-3,
-			// 1790202700) and the delete lock of inbox items (ADR-0014 addendum, 1790202800) follow and
-			// run along; they change no row.
+			// 1790202700), the delete lock of inbox items (ADR-0014 addendum, 1790202800) and the
+			// backup schedule (ADR-0046, 1790203000) follow and run along; they change no row.
 			const fromStatus = MIGRATION_FILES.slice(MIGRATION_FILES.indexOf(STATUS_MIGRATION));
-			expect(fromStatus).toEqual([STATUS_MIGRATION, PIN_MIGRATION, SUBTASKS_MIGRATION, NO_DELETE_MIGRATION]);
+			expect(fromStatus).toEqual([
+				STATUS_MIGRATION,
+				PIN_MIGRATION,
+				SUBTASKS_MIGRATION,
+				NO_DELETE_MIGRATION,
+				BACKUP_SCHEDULE_MIGRATION
+			]);
 			const ruleFields = [...STATUS_RULE_FIELDS, ...SUBTASKS_RULE_FIELDS];
 
 			await withTempDataDir(async ({ dataDir, args }) => {
@@ -1544,10 +1600,11 @@ describe('migration rollback of the pinned comment (ADR-0044)', () => {
 	it(
 		'adds the relation and its index without changing a row, and drops only the pins on the way back',
 		async () => {
-			// The sub-tasks of the template (plan WV-3, 1790202700) and the delete lock of inbox items
-			// (ADR-0014 addendum, 1790202800) follow and run along; no row changes.
+			// The sub-tasks of the template (plan WV-3, 1790202700), the delete lock of inbox items
+			// (ADR-0014 addendum, 1790202800) and the backup schedule (ADR-0046, 1790203000) follow and
+			// run along; no row changes.
 			const fromPin = MIGRATION_FILES.slice(MIGRATION_FILES.indexOf(PIN_MIGRATION));
-			expect(fromPin).toEqual([PIN_MIGRATION, SUBTASKS_MIGRATION, NO_DELETE_MIGRATION]);
+			expect(fromPin).toEqual([PIN_MIGRATION, SUBTASKS_MIGRATION, NO_DELETE_MIGRATION, BACKUP_SCHEDULE_MIGRATION]);
 
 			await withTempDataDir(async ({ dataDir, args }) => {
 				await migrate(args, 'up');
@@ -1633,10 +1690,10 @@ describe('migration rollback of the sub-tasks of the template (plan WV-3, ADR-00
 	it(
 		'adds the field without changing a row, and the sub-tasks made with it stay on the way back',
 		async () => {
-			// The delete lock of inbox items (ADR-0014 addendum, 1790202800) follows and runs along; it
-			// changes no row.
+			// The delete lock of inbox items (ADR-0014 addendum, 1790202800) and the backup schedule
+			// (ADR-0046, 1790203000) follow and run along; they change no row.
 			const fromSubtasks = MIGRATION_FILES.slice(MIGRATION_FILES.indexOf(SUBTASKS_MIGRATION));
-			expect(fromSubtasks).toEqual([SUBTASKS_MIGRATION, NO_DELETE_MIGRATION]);
+			expect(fromSubtasks).toEqual([SUBTASKS_MIGRATION, NO_DELETE_MIGRATION, BACKUP_SCHEDULE_MIGRATION]);
 
 			await withTempDataDir(async ({ dataDir, args }) => {
 				await migrate(args, 'up');

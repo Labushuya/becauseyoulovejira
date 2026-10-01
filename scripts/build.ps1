@@ -51,6 +51,13 @@ try {
 		if ($LASTEXITCODE -ne 0) { exit 1 }
 	}
 
+	# Install backup helper dependencies if node_modules missing (ADR-0046)
+	if (-not (Test-Path 'helpers/backup/node_modules')) {
+		Write-Host "Installing backup helper dependencies..."
+		npm --prefix helpers/backup ci
+		if ($LASTEXITCODE -ne 0) { exit 1 }
+	}
+
 	# Install the dependencies of the browser extension for WhatsApp Web if missing (ADR-0038)
 	if (-not (Test-Path 'extensions/whatsapp-web/node_modules')) {
 		Write-Host "Installing extension dependencies..."
@@ -58,7 +65,7 @@ try {
 		if ($LASTEXITCODE -ne 0) { exit 1 }
 	}
 
-	# Run check (web app, mail helper and extension)
+	# Run check (web app, mail helper, backup helper and extension)
 	Write-Host "Running check..."
 	npm run check
 	if ($LASTEXITCODE -ne 0) { exit 1 }
@@ -78,6 +85,11 @@ try {
 	# Build the mail helper app/byl-mail.exe and check it without Node (before the tests: they run it)
 	Write-Host "Building mail helper..."
 	& powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot 'build-mail-helper.ps1')
+	if ($LASTEXITCODE -ne 0) { exit 1 }
+
+	# Build the backup helper app/byl-backup.exe and check it without Node (ADR-0046; the tests run it)
+	Write-Host "Building backup helper..."
+	& powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot 'build-backup-helper.ps1')
 	if ($LASTEXITCODE -ne 0) { exit 1 }
 
 	# Run tests (root unit, helper and integration tests, then the web and extension tests)
