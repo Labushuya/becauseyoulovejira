@@ -405,9 +405,17 @@ describe('help page (EH-9)', () => {
 			'holt nur Einträge, die noch nicht im Eingang sind',
 			'Workspace Owner',
 			// Blocks with progress and result (fix 2026-09-30).
-			'Die Übernahme läuft in Blöcken',
+			'Die Übernahme läuft Quelle für Quelle in Blöcken',
 			'„Nach diesem Block anhalten“',
-			'„Im Eingang ansehen“'
+			'„Im Eingang ansehen“',
+			// Several sources, "Alle erneut abrufen", sub-pages, a further connection (NI-3).
+			'eine oder mehrere Quellen',
+			'eine Zeile je Quelle',
+			'Scheitert eine Quelle (etwa nicht mehr freigegeben), laufen die anderen weiter',
+			'„Alle erneut abrufen“ im Menü „•••“ der Karte',
+			'„Unterseiten einbeziehen“',
+			'höchstens 50 Unterseiten bis zur dritten Ebene',
+			'BYL_NOTION_TOKEN_2'
 		]) {
 			expect(content, phrase).toContain(phrase);
 		}

@@ -36,7 +36,12 @@ import {
 	type NotionSourceResult
 } from '$lib/domain/notion';
 import { SILENT_FLAGS, type FlagSink } from './flags.svelte';
-import { refetchSources, runSources, type NotionRefetchRun, type NotionSourcesRun } from './notion-run';
+import {
+	refetchSources,
+	runSources,
+	type NotionRefetchRun,
+	type NotionSourcesRun
+} from './notion-run';
 import type { SessionGuard } from './ticket-list.svelte';
 
 export interface NotionData {
@@ -98,7 +103,7 @@ export class NotionStore {
 	/** Result of the last "Erneut abrufen" per connection and source, for the card. */
 	readonly #results = new SvelteMap<string, ReadonlyMap<string, NotionSourceResult>>();
 	/** Stops a running "Alle erneut abrufen" after its current block. */
-	readonly #stops = new Map<string, AbortController>();
+	readonly #stops = new SvelteMap<string, AbortController>();
 	readonly #stopping = new SvelteSet<string>();
 	/** Connections with a running import. */
 	readonly #importing = new SvelteSet<string>();
@@ -241,7 +246,10 @@ export class NotionStore {
 		{
 			onblock,
 			stop
-		}: { onblock?: (sourceId: string, results: NotionImportResult[]) => void; stop?: AbortSignal } = {}
+		}: {
+			onblock?: (sourceId: string, results: NotionImportResult[]) => void;
+			stop?: AbortSignal;
+		} = {}
 	): Promise<NotionSourcesRun | null> {
 		if (this.#importing.has(id)) return null;
 		this.#importing.add(id);
@@ -344,9 +352,8 @@ export class NotionStore {
 				}
 			);
 			if (run === null) return null;
-			const results = new Map(this.#results.get(id) ?? []);
-			for (const result of run.results) results.set(result.id, result);
-			this.#results.set(id, results);
+			const latest = run.results.map((result) => [result.id, result] as const);
+			this.#results.set(id, new SvelteMap([...(this.#results.get(id) ?? []), ...latest]));
 			await this.loadImports(id);
 			return run;
 		} finally {

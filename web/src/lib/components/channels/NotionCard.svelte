@@ -124,7 +124,10 @@
 		if (progress !== null) {
 			return stopping
 				? { label: 'Hält nach diesem Block an …', busy: true }
-				: { label: 'Nach diesem Block anhalten', onselect: () => notion.stopRefetch(connection.id) };
+				: {
+						label: 'Nach diesem Block anhalten',
+						onselect: () => notion.stopRefetch(connection.id)
+					};
 		}
 		if (health.action === 'none') {
 			return { label: checking ? 'Wird geprüft …' : 'Wird abgerufen …', busy: true };

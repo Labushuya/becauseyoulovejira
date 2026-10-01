@@ -297,7 +297,9 @@ describe('Notion card', () => {
 		await vi.waitFor(() => expect(card.getByText(/^8 Einträge aus 2 Quellen/)).toBeTruthy());
 		const { trigger, menu } = notionMenu(card);
 		await fireEvent.click(trigger);
-		await fireEvent.click(menu.getByRole('menuitem', { name: 'Alle erneut abrufen', hidden: true }));
+		await fireEvent.click(
+			menu.getByRole('menuitem', { name: 'Alle erneut abrufen', hidden: true })
+		);
 
 		// While it runs: the source in the info line with a bar, the stop as main button.
 		const article = screen.getByRole('article', { name: 'Notion' });
@@ -359,7 +361,9 @@ describe('Notion card', () => {
 		await vi.waitFor(() => expect(card.getByText(/^8 Einträge aus 2 Quellen/)).toBeTruthy());
 		const { trigger, menu } = notionMenu(card);
 		await fireEvent.click(trigger);
-		await fireEvent.click(menu.getByRole('menuitem', { name: 'Alle erneut abrufen', hidden: true }));
+		await fireEvent.click(
+			menu.getByRole('menuitem', { name: 'Alle erneut abrufen', hidden: true })
+		);
 		await vi.waitFor(() => expect(data.importBatch).toHaveBeenCalledOnce());
 		await fireEvent.click(card.getByRole('button', { name: 'Nach diesem Block anhalten: Notion' }));
 		const stopping = card.getByRole('button', { name: 'Hält nach diesem Block an …: Notion' });
@@ -811,7 +815,12 @@ describe('Notion import dialog', () => {
 				return {
 					kind: 'ok',
 					value: request.subpages
-						? { ...PAGE_PREVIEW, items: [...PAGE_PREVIEW.items, TILES], subpages: 1, hiddenSubpages: 1 }
+						? {
+								...PAGE_PREVIEW,
+								items: [...PAGE_PREVIEW.items, TILES],
+								subpages: 1,
+								hiddenSubpages: 1
+							}
 						: PAGE_PREVIEW
 				};
 			});
@@ -867,8 +876,12 @@ describe('Notion import dialog', () => {
 				DB_ID,
 				PAGE_ID
 			]);
-			expect(dialog.getByRole('group', { name: 'Optionen (für alle gewählten Quellen)' })).toBeTruthy();
-			expect(dialog.getByRole('checkbox', { name: 'Seiteninhalt als Kopie mitnehmen' })).toBeTruthy();
+			expect(
+				dialog.getByRole('group', { name: 'Optionen (für alle gewählten Quellen)' })
+			).toBeTruthy();
+			expect(
+				dialog.getByRole('checkbox', { name: 'Seiteninhalt als Kopie mitnehmen' })
+			).toBeTruthy();
 			expect(dialog.getByRole('checkbox', { name: 'Unterseiten einbeziehen' })).toBeTruthy();
 
 			const rows = within(dialog.getByRole('region', { name: 'Aufgaben Haushalt' }));
@@ -879,7 +892,9 @@ describe('Notion import dialog', () => {
 			expect(dialog.getByText('5 ausgewählt')).toBeTruthy();
 
 			// "Alle aus …" acts on its group; the group folds.
-			await fireEvent.click(week.getByRole('checkbox', { name: 'Alle aus „Wochenplan“ auswählen' }));
+			await fireEvent.click(
+				week.getByRole('checkbox', { name: 'Alle aus „Wochenplan“ auswählen' })
+			);
 			expect(dialog.getByText('2 ausgewählt')).toBeTruthy();
 			const fold = week.getByRole('button', { name: 'Wochenplan' });
 			expect(fold.getAttribute('aria-expanded')).toBe('true');
@@ -897,7 +912,8 @@ describe('Notion import dialog', () => {
 					request.source.id === DB_ID
 						? {
 								kind: 'error',
-								message: 'Notion bremst gerade die Anfragen (429). Bitte in einer Minute erneut versuchen.',
+								message:
+									'Notion bremst gerade die Anfragen (429). Bitte in einer Minute erneut versuchen.',
 								reason: 'source',
 								partial: null
 							}
@@ -911,7 +927,9 @@ describe('Notion import dialog', () => {
 			await vi.waitFor(() =>
 				expect(dialog.getByRole('heading', { name: /In den Eingang übernommen$/ })).toBeTruthy()
 			);
-			expect(data.importBatch.mock.calls.map(([, request]) => [request.source.id, request.refs])).toEqual([
+			expect(
+				data.importBatch.mock.calls.map(([, request]) => [request.source.id, request.refs])
+			).toEqual([
 				[DB_ID, ['r1', 'r2']],
 				[PAGE_ID, ['p1', 'p3', 'p5']]
 			]);
@@ -940,23 +958,23 @@ describe('Notion import dialog', () => {
 			const { dialog, data } = await openDialog(previews);
 			await chooseAndPreview(dialog, ['Wochenplan', 'Unterseite']);
 			const sub = within(dialog.getByRole('region', { name: 'Unterseite' }));
-			expect((sub.getByRole('checkbox', { name: /^Fliesen aussuchen/ }) as HTMLInputElement).checked).toBe(
-				true
-			);
+			expect(
+				(sub.getByRole('checkbox', { name: /^Fliesen aussuchen/ }) as HTMLInputElement).checked
+			).toBe(true);
 
 			await fireEvent.click(dialog.getByRole('checkbox', { name: 'Unterseiten einbeziehen' }));
-			await vi.waitFor(() =>
-				expect(sub.getByText('Steht schon unter „Wochenplan“.')).toBeTruthy()
-			);
+			await vi.waitFor(() => expect(sub.getByText('Steht schon unter „Wochenplan“.')).toBeTruthy());
 			expect(data.preview.mock.calls.slice(2).map(([, request]) => request)).toEqual([
 				{ source: { type: 'page', id: PAGE_ID }, dateProperty: null, subpages: true },
 				{ source: { type: 'page', id: SUB_ID }, dateProperty: null, subpages: true }
 			]);
 			const week = within(dialog.getByRole('region', { name: 'Wochenplan' }));
-			expect(week.getByText('Seite · 6 Einträge · 1 Unterseite gelesen, 1 Unterseite nicht sichtbar')).toBeTruthy();
-			expect((sub.getByRole('checkbox', { name: /^Fliesen aussuchen/ }) as HTMLInputElement).disabled).toBe(
-				true
-			);
+			expect(
+				week.getByText('Seite · 6 Einträge · 1 Unterseite gelesen, 1 Unterseite nicht sichtbar')
+			).toBeTruthy();
+			expect(
+				(sub.getByRole('checkbox', { name: /^Fliesen aussuchen/ }) as HTMLInputElement).disabled
+			).toBe(true);
 
 			await fireEvent.click(
 				dialog.getByRole('button', { name: '4 Einträge in den Eingang übernehmen' })

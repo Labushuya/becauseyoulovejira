@@ -280,33 +280,37 @@ describe('several sources, "Alle erneut abrufen" and sub-pages (addendum of 2026
 	});
 
 	it('sums up a run over several sources: an error of one source is neither a stop nor silent', () => {
-		expect(
-			runSummary({ counts: { ...NO_COUNTS, created: 5 }, error: null, stopped: false, open: 2, failedSources: 1 })
-		).toEqual({
+		const run = (created: number, open: number, failedSources = 0) => ({
+			counts: { ...NO_COUNTS, created },
+			error: null,
+			stopped: false,
+			open,
+			failedSources
+		});
+		expect(runSummary(run(5, 2, 1))).toEqual({
 			tone: 'info',
 			title: 'In den Eingang übernommen',
 			text: '5 angelegt. Eine Quelle mit Fehler; der Grund steht bei der Quelle. 2 Einträge noch nicht übernommen; sie bleiben ausgewählt, ein neuer Versuch erkennt Übernommenes als „schon vorhanden“.'
 		});
-		expect(
-			runSummary({ counts: { ...NO_COUNTS }, error: null, stopped: false, open: 3, failedSources: 2 }).tone
-		).toBe('error');
-		expect(
-			runSummary({ counts: { ...NO_COUNTS, created: 1 }, error: null, stopped: false, open: 0 }).tone
-		).toBe('success');
+		expect(runSummary(run(0, 3, 2)).tone).toBe('error');
+		expect(runSummary(run(1, 0)).tone).toBe('success');
 	});
 
 	it('says which source "Alle erneut abrufen" reads and sums it up in one flag', () => {
 		expect(refetchProgressText(2, 5, 'Wochenplan')).toBe(
 			'Erneut abrufen: Quelle 2 von 5 („Wochenplan“) …'
 		);
-		expect(
-			refetchAllText([result('a', { created: 3, duplicates: 2 }), result('b', { created: 2 })], false)
-		).toEqual({ text: '2 Quellen erneut abgerufen: 5 angelegt, 2 schon vorhanden.', tone: 'success' });
+		const both = [result('a', { created: 3, duplicates: 2 }), result('b', { created: 2 })];
+		expect(refetchAllText(both, false)).toEqual({
+			text: '2 Quellen erneut abgerufen: 5 angelegt, 2 schon vorhanden.',
+			tone: 'success'
+		});
 		expect(refetchAllText([result('a', { duplicates: 4 })], false)).toEqual({
 			text: '1 Quelle erneut abgerufen: 0 angelegt, 4 schon vorhanden.',
 			tone: 'info'
 		});
-		expect(refetchAllText([result('a', {}, 'Notion bremst gerade.'), result('b', {})], true)).toEqual({
+		const failed = [result('a', {}, 'Notion bremst gerade.'), result('b', {})];
+		expect(refetchAllText(failed, true)).toEqual({
 			text: '2 Quellen erneut abgerufen: 0 angelegt; 1 Quelle mit Fehler; angehalten.',
 			tone: 'error'
 		});

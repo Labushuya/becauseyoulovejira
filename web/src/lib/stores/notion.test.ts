@@ -301,7 +301,11 @@ describe('NotionStore', () => {
 		expect(await store.refetch(CONN, SOURCE)).toBeNull();
 		expect(data.preview).toHaveBeenCalledWith(
 			CONN,
-			{ source: { type: 'data_source', id: SOURCE.id }, dateProperty: 'Erinnerung', subpages: false },
+			{
+				source: { type: 'data_source', id: SOURCE.id },
+				dateProperty: 'Erinnerung',
+				subpages: false
+			},
 			{}
 		);
 		expect(data.importBatch).toHaveBeenCalledWith(CONN, {
@@ -399,7 +403,10 @@ describe('NotionStore', () => {
 		await running;
 		expect(seen).toEqual(['Aufgaben', 'Wochenplan']);
 		expect(store.refetchProgress(CONN)).toBeNull();
-		expect(store.refetchResult(CONN, DATABASE)).toMatchObject({ counts: { created: 2 }, error: null });
+		expect(store.refetchResult(CONN, DATABASE)).toMatchObject({
+			counts: { created: 2 },
+			error: null
+		});
 		expect(store.refetchResult(CONN, PAGE)).toMatchObject({ error: 'Notion bremst gerade (429).' });
 		expect(flags.flags[0]).toMatchObject({
 			tone: 'success',
@@ -411,10 +418,8 @@ describe('NotionStore', () => {
 		const { store, data, flags } = setup();
 		data.imports.mockResolvedValue([SOURCE, PAGE_SOURCE]);
 		await store.loadImports(CONN);
-		data.preview.mockResolvedValue({
-			kind: 'ok',
-			value: { ...EMPTY_PREVIEW, items: Array.from({ length: 12 }, (_, index) => item(`r${index}`)) }
-		});
+		const items = Array.from({ length: 12 }, (_, index) => item(`r${index}`));
+		data.preview.mockResolvedValue({ kind: 'ok', value: { ...EMPTY_PREVIEW, items } });
 		data.importBatch.mockImplementation(async (_id, sent) => {
 			store.stopRefetch(CONN);
 			expect(store.isStopping(CONN)).toBe(true);

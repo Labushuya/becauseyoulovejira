@@ -331,7 +331,8 @@ export function runSummary(run: NotionRunOutcome): {
 			? ''
 			: ' Einträge mit Fehler bleiben ausgewählt; der Grund steht darunter.';
 	const problems = run.counts.failed > 0 || failedSources > 0;
-	const tone = run.counts.created > 0 ? (failedSources > 0 ? 'info' : 'success') : problems ? 'error' : 'info';
+	const tone =
+		run.counts.created > 0 ? (failedSources > 0 ? 'info' : 'success') : problems ? 'error' : 'info';
 	return { tone, title: 'In den Eingang übernommen', text: `${counts}${sources}${failed}${rest}` };
 }
 
@@ -380,9 +381,10 @@ export function refetchAllText(
 ): { text: string; tone: 'success' | 'info' | 'error' } {
 	const counts = results.reduce((sum, result) => addCounts(sum, result.counts), { ...NO_COUNTS });
 	const failed = results.filter((result) => result.error !== null).length;
-	const sources = results.length === 1 ? '1 Quelle' : `${formatCount(results.length)} Quellen`;
-	const parts = [`${sources} erneut abgerufen: ${countsText(counts)}`];
-	if (failed > 0) parts.push(`${failed === 1 ? '1 Quelle' : `${formatCount(failed)} Quellen`} mit Fehler`);
+	const sourcesText = (count: number) =>
+		count === 1 ? '1 Quelle' : `${formatCount(count)} Quellen`;
+	const parts = [`${sourcesText(results.length)} erneut abgerufen: ${countsText(counts)}`];
+	if (failed > 0) parts.push(`${sourcesText(failed)} mit Fehler`);
 	if (stopped) parts.push('angehalten');
 	const tone = counts.created > 0 ? 'success' : failed > 0 ? 'error' : 'info';
 	return { text: `${parts.join('; ')}.`, tone };

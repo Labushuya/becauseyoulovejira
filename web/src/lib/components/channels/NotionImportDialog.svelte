@@ -161,16 +161,19 @@
 			group.view.kind === 'ready' ? [{ group, preview: group.view.preview }] : []
 		)
 	);
-	/** The first group that lists an entry; a later group shows it as taken. */
-	const ownerOf = $derived.by(() => {
-		const owner = new Map<string, string>();
-		for (const { group, preview } of readyGroups) {
-			for (const item of preview.items) {
-				if (!owner.has(item.ref)) owner.set(item.ref, group.source.id);
-			}
-		}
-		return owner;
-	});
+	/**
+	 * The first group that lists an entry; a later group shows it as taken. Reversed, so the first
+	 * group's pair is the last one the map keeps.
+	 */
+	const ownerOf = $derived(
+		new Map(
+			readyGroups
+				.flatMap(({ group, preview }) =>
+					preview.items.map((item) => [item.ref, group.source.id] as const)
+				)
+				.reverse()
+		)
+	);
 	const chosable = $derived(
 		readyGroups.flatMap(({ group, preview }) =>
 			preview.items.filter((item) => reasonOf(item, group) === '').map((item) => item.ref)
@@ -187,16 +190,17 @@
 	const summary = $derived.by(() => {
 		if (lastRun === null) return null;
 		// With one source its error interrupts the run; with several, the others went on and each
-		// source names its own error in its line.
+		// source names its own error in its line. An error of the run is not counted twice.
 		const single = lastResults.length === 1 ? (lastResults[0] ?? null) : null;
-		const failedSources = lastResults.filter((result) => result.error !== null).length;
+		let failedSources =
+			single === null ? lastResults.filter((result) => result.error !== null).length : 0;
+		if (lastRun.error !== null) failedSources = Math.max(0, failedSources - 1);
 		return runSummary({
 			counts: lastResults.reduce((sum, result) => addCounts(sum, result.counts), { ...NO_COUNTS }),
 			error: lastRun.error ?? single?.error ?? null,
 			stopped: lastRun.stopped,
 			open: lastResults.reduce((sum, result) => sum + result.open, 0),
-			failedSources:
-				single !== null ? 0 : lastRun.error === null ? failedSources : Math.max(0, failedSources - 1)
+			failedSources
 		});
 	});
 	const failures = $derived(
@@ -661,9 +665,7 @@
 		{/if}
 	{:else}
 		<h3 id={ids.heading} tabindex="-1" bind:this={heading}>
-			Vorschau: {groups.length === 1
-				? (groups[0]?.source.title ?? '')
-				: `${groups.length} Quellen`}
+			Vorschau: {groups.length === 1 ? (groups[0]?.source.title ?? '') : `${groups.length} Quellen`}
 		</h3>
 
 		<!-- Progress and result above the options, so a long list never hides them. -->
@@ -739,7 +741,8 @@
 					/>
 					<label for={ids.copy}>Seiteninhalt als Kopie mitnehmen</label>
 					<p class="hint" id={ids.copyHint}>
-						Der Inhalt der Seite jeder Zeile einer Datenbank kommt als Text unter ihre Eigenschaften.
+						Der Inhalt der Seite jeder Zeile einer Datenbank kommt als Text unter ihre
+						Eigenschaften.
 						{limitsText(limits)}
 					</p>
 				</div>
@@ -896,7 +899,8 @@
 													{#if reason !== ''}
 														<span class="meta">{reason}</span>
 													{:else if result?.status === 'failed'}
-														<span class="meta failed"><ErrorIcon /><span>{result.message}</span></span
+														<span class="meta failed"
+															><ErrorIcon /><span>{result.message}</span></span
 														>
 													{/if}
 												</label>

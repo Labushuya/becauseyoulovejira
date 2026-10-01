@@ -187,6 +187,15 @@ export interface NotionRefetchRun {
 	stopped: boolean;
 }
 
+/** Result of a source of "Alle erneut abrufen" with nothing left open. */
+function resultOf(
+	source: NotionImportedSource,
+	counts: NotionImportCounts,
+	error: string | null
+): NotionSourceResult {
+	return { id: source.id, title: source.title, counts, error, open: 0 };
+}
+
 /**
  * "Alle erneut abrufen" (ADR-0041, addendum of 2026-10-01; also "Erneut abrufen" of one source):
  * for each source, one after the other, its preview with the options of its last import, then only
@@ -229,18 +238,12 @@ export async function refetchSources(
 		} catch (error) {
 			const message = failure(error);
 			if (message === null) return null;
-			outcome.results.push({ id: source.id, title: source.title, counts: { ...NO_COUNTS }, error: message, open: 0 });
+			outcome.results.push(resultOf(source, { ...NO_COUNTS }, message));
 			ended = true;
 			continue;
 		}
 		if (preview.kind !== 'ok') {
-			outcome.results.push({
-				id: source.id,
-				title: source.title,
-				counts: { ...NO_COUNTS },
-				error: preview.message,
-				open: 0
-			});
+			outcome.results.push(resultOf(source, { ...NO_COUNTS }, preview.message));
 			if (preview.reason !== 'source') ended = true;
 			continue;
 		}
@@ -250,7 +253,7 @@ export async function refetchSources(
 		const done = items.filter((item) => item.state === '' && item.done).length;
 		const before = { ...NO_COUNTS, duplicates: known, skipped: done };
 		if (refs.length === 0) {
-			outcome.results.push({ id: source.id, title: source.title, counts: before, error: null, open: 0 });
+			outcome.results.push(resultOf(source, before, null));
 			continue;
 		}
 		const withContent = source.type === 'data_source' && source.copyContent;
