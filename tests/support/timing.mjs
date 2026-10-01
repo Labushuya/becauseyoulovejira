@@ -45,8 +45,10 @@ export const LOG_WRITE_MS = scaled(30_000);
 
 /**
  * Files with processes at the same time: one fewer than the processors, at most four. Twelve at a
- * time made each PocketBase start several times slower under load (see above); four kept the run
- * about as fast as before on this machine, and the CI runner (four processors) keeps its three.
+ * time made each PocketBase start several times slower under load (see above). With four the group
+ * takes about three minutes instead of two and a half on this machine without load, but stays
+ * green beside eight busy threads of another process; the CI runner (four processors) keeps its
+ * three.
  */
 export function processWorkers(processors = availableParallelism()) {
 	return Math.max(1, Math.min(4, processors - 1));
