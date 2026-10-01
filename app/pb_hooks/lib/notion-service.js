@@ -182,8 +182,8 @@ function sources(e) {
 /**
  * GET …/notion/imports: the sources taken from this connection so far, from the inbox: title,
  * kind, address, number of entries, last import and the options of the last one (date property,
- * page content), newest first. Entries discarded long ago (tombstones without details) count no
- * more.
+ * page content, sub-pages), newest first. Entries discarded long ago (tombstones without details)
+ * count no more.
  */
 function imports(e) {
   var context = prepare(e, false);
@@ -198,6 +198,7 @@ function imports(e) {
       source_url: '',
       date_property: '',
       copy: 0,
+      subpages: 0,
       count: 0,
       last_created: ''
     })
@@ -211,6 +212,7 @@ function imports(e) {
         "IFNULL(json_extract(source_meta, '$.notion.source_url'), '') AS source_url, " +
         "IFNULL(json_extract(source_meta, '$.notion.date_property'), '') AS date_property, " +
         "IFNULL(json_extract(source_meta, '$.notion.copy'), 0) AS copy, " +
+        "IFNULL(json_extract(source_meta, '$.notion.subpages'), 0) AS subpages, " +
         'COUNT(*) AS count, MAX(created) AS last_created ' +
         "FROM inbox_items WHERE channel = 'notion' AND connection = {:connection} AND json_valid(source_meta) " +
         "AND json_type(source_meta, '$.notion.source_id') = 'text' " +
@@ -232,7 +234,8 @@ function imports(e) {
       count: rows[i].count,
       last: rows[i].last_created,
       date_property: rows[i].date_property,
-      copy_content: Number(rows[i].copy) === 1
+      copy_content: Number(rows[i].copy) === 1,
+      subpages: Number(rows[i].subpages) === 1
     });
   }
   return answer(200, { status: 'ok', imports: list });
@@ -275,7 +278,8 @@ function fetchSource(client, request) {
       truncated: rows.truncated,
       empty: 0,
       dateProperties: rules.dateProperties(schema),
-      dateProperty: chosen.name
+      dateProperty: chosen.name,
+      subpages: { read: 0, hidden: 0, truncated: false }
     };
   }
   var page = client.page(request.source.id);
@@ -285,19 +289,47 @@ function fetchSource(client, request) {
     title: rules.pageTitle(page, markdown) || rules.UNTITLED,
     url: rules.pageUrl(page, markdown)
   };
-  var tree = client.tree(request.source.id, rules.descendForPoints, {
-    requests: limits.treeRequests,
-    blocks: limits.treeBlocks,
-    depth: limits.treeDepth
-  });
+  // The page and, with "Unterseiten einbeziehen", its sub-pages share one budget of requests and
+  // blocks (ADR-0041, addendum of 2026-10-01).
+  var treeLimits = { requests: limits.treeRequests, blocks: limits.treeBlocks, depth: limits.treeDepth };
+  var state = { requests: 0, blocks: 0, truncated: false };
+  var tree = client.tree(request.source.id, rules.descendForPoints, treeLimits, state);
   var points = rules.pointEntries(tree.blocks, { url: pageSource.url }, berlin, markdown);
+  var entries = points.entries;
+  var empty = points.empty;
+  var subpages = { read: 0, hidden: 0, truncated: false };
+  if (request.subpages) {
+    var found = rules.collectSubpages(
+      request.source.id,
+      tree.blocks,
+      function (id) {
+        return client.tree(id, rules.descendForPoints, treeLimits, state).blocks;
+      },
+      {
+        stopped: function () {
+          return state.truncated;
+        },
+        isHidden: function (err) {
+          return notion.isFailure(err) && (err.notionStatus === 404 || err.notionStatus === 403);
+        }
+      }
+    );
+    for (var p = 0; p < found.pages.length; p++) {
+      var sub = found.pages[p];
+      var subPoints = rules.pointEntries(sub.blocks, { url: markdown.notionUrl(sub.id), section: sub.section }, berlin, markdown);
+      entries = entries.concat(subPoints.entries);
+      empty += subPoints.empty;
+    }
+    subpages = { read: found.pages.length, hidden: found.hidden, truncated: found.truncated };
+  }
   return {
     source: pageSource,
-    entries: points.entries,
-    truncated: tree.truncated,
-    empty: points.empty,
+    entries: entries,
+    truncated: state.truncated || subpages.truncated,
+    empty: empty,
     dateProperties: [],
-    dateProperty: ''
+    dateProperty: '',
+    subpages: subpages
   };
 }
 
@@ -313,7 +345,9 @@ function limitsOf() {
     import_batch: limits.importBatch,
     content_blocks: limits.contentBlocks,
     content_chars: limits.contentChars,
-    tree_blocks: limits.treeBlocks
+    tree_blocks: limits.treeBlocks,
+    subpages: limits.subpages,
+    subpage_depth: limits.subpageDepth
   };
 }
 
@@ -365,6 +399,8 @@ function preview(e) {
     items: items,
     truncated: fetched.truncated,
     empty: fetched.empty,
+    subpages: fetched.subpages.read,
+    subpages_hidden: fetched.subpages.hidden,
     limits: limitsOf()
   });
 }
@@ -437,9 +473,9 @@ function validationMessage(err) {
  * LIMITS.importBatch per request). Per entry: created, duplicate (with the state of the existing
  * entry), skipped (done with "Erledigte überspringen") or failed. A failure of the connection on
  * the way stops the rest and answers the results so far with status "error". Once the time for
- * new entries is over (LIMITS.importSeconds) or Notion answers too late, the entries not taken yet
- * go back in `pending` for the next request; this happens only after at least one result, so
- * every request gets on (a time-out before any result answers as error).
+ * new entries is over (LIMITS.importSeconds after the source is read) or Notion answers too late,
+ * the entries not taken yet go back in `pending` for the next request; this happens only after at
+ * least one result, so every request gets on (a time-out before any result answers as error).
  */
 function importEntries(e) {
   var context = prepare(e, true);
@@ -465,14 +501,17 @@ function importEntries(e) {
   for (var i = 0; i < fetched.entries.length; i++) {
     byRef[fetched.entries[i].ref] = fetched.entries[i];
   }
+  // New entries for LIMITS.importSeconds after the source is read: reading a page with its
+  // sub-pages can take most of the time of the request (ADR-0041, addendum of 2026-10-01).
+  var importEndsAt = Date.now() + client.importMs;
   var owner = context.record.getString('owner');
-  var options = { copyContent: request.copyContent, dateProperty: fetched.dateProperty };
+  var options = { copyContent: request.copyContent, dateProperty: fetched.dateProperty, subpages: request.subpages };
   var results = [];
   var counts = { created: 0, duplicates: 0, skipped: 0, failed: 0 };
   var pending = [];
   for (var r = 0; r < request.refs.length; r++) {
     var ref = request.refs[r];
-    if (results.length > 0 && Date.now() >= client.importEndsAt) {
+    if (results.length > 0 && Date.now() >= importEndsAt) {
       pending = request.refs.slice(r);
       break;
     }

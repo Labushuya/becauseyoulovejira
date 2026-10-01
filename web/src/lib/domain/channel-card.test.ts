@@ -39,7 +39,8 @@ function source(id: string, count: number): NotionImportedSource {
 		count,
 		last: null,
 		dateProperty: '',
-		copyContent: false
+		copyContent: false,
+		subpages: false
 	};
 }
 

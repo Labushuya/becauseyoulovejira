@@ -21,9 +21,14 @@ import {
 	notionOriginText,
 	preselectedRefs,
 	progressText,
+	refetchAllText,
+	refetchProgressText,
 	refetchText,
 	runSummary,
 	runningText,
+	sourceResultText,
+	subpagesHint,
+	subpagesOverview,
 	truncatedText,
 	type NotionImportedSource,
 	type NotionPreviewItem
@@ -56,6 +61,7 @@ function imported(overrides: Partial<NotionImportedSource> = {}): NotionImported
 		last: null,
 		dateProperty: '',
 		copyContent: false,
+		subpages: false,
 		...overrides
 	};
 }
@@ -247,5 +253,80 @@ describe('Notion entries of the inbox', () => {
 		expect(notionContentOf(meta({ content: 'truncated' }))).toBe('truncated');
 		expect(notionContentOf(meta({ content: 'anders' }))).toBeNull();
 		expect(notionContentOf({ channel: 'link', sourceMeta: {} })).toBeNull();
+	});
+});
+
+describe('several sources, "Alle erneut abrufen" and sub-pages (addendum of 2026-10-01)', () => {
+	const result = (
+		id: string,
+		counts: Partial<typeof NO_COUNTS>,
+		error: string | null = null,
+		open = 0
+	) => ({ id, title: `Liste ${id}`, counts: { ...NO_COUNTS, ...counts }, error, open });
+
+	it('names the result of one source with what is left and its error', () => {
+		expect(sourceResultText(result('a', { created: 3, duplicates: 1 }))).toBe(
+			'3 angelegt, 1 schon vorhanden.'
+		);
+		expect(sourceResultText(result('a', { created: 2 }, null, 4))).toBe(
+			'2 angelegt, 4 Einträge noch nicht übernommen.'
+		);
+		expect(
+			sourceResultText(result('a', {}, 'Diese Quelle ist nicht freigegeben oder gelöscht (404).'))
+		).toBe('Diese Quelle ist nicht freigegeben oder gelöscht (404).');
+		expect(sourceResultText(result('a', { created: 1 }, 'Notion bremst gerade.', 2))).toBe(
+			'1 angelegt, 2 Einträge noch nicht übernommen. Notion bremst gerade.'
+		);
+	});
+
+	it('sums up a run over several sources: an error of one source is neither a stop nor silent', () => {
+		const run = (created: number, open: number, failedSources = 0) => ({
+			counts: { ...NO_COUNTS, created },
+			error: null,
+			stopped: false,
+			open,
+			failedSources
+		});
+		expect(runSummary(run(5, 2, 1))).toEqual({
+			tone: 'info',
+			title: 'In den Eingang übernommen',
+			text: '5 angelegt. Eine Quelle mit Fehler; der Grund steht bei der Quelle. 2 Einträge noch nicht übernommen; sie bleiben ausgewählt, ein neuer Versuch erkennt Übernommenes als „schon vorhanden“.'
+		});
+		expect(runSummary(run(0, 3, 2)).tone).toBe('error');
+		expect(runSummary(run(1, 0)).tone).toBe('success');
+	});
+
+	it('says which source "Alle erneut abrufen" reads and sums it up in one flag', () => {
+		expect(refetchProgressText(2, 5, 'Wochenplan')).toBe(
+			'Erneut abrufen: Quelle 2 von 5 („Wochenplan“) …'
+		);
+		const both = [result('a', { created: 3, duplicates: 2 }), result('b', { created: 2 })];
+		expect(refetchAllText(both, false)).toEqual({
+			text: '2 Quellen erneut abgerufen: 5 angelegt, 2 schon vorhanden.',
+			tone: 'success'
+		});
+		expect(refetchAllText([result('a', { duplicates: 4 })], false)).toEqual({
+			text: '1 Quelle erneut abgerufen: 0 angelegt, 4 schon vorhanden.',
+			tone: 'info'
+		});
+		const failed = [result('a', {}, 'Notion bremst gerade.'), result('b', {})];
+		expect(refetchAllText(failed, true)).toEqual({
+			text: '2 Quellen erneut abgerufen: 0 angelegt; 1 Quelle mit Fehler; angehalten.',
+			tone: 'error'
+		});
+	});
+
+	it('explains sub-pages with their limits and names what a preview read', () => {
+		expect(subpagesHint(NOTION_DEFAULT_LIMITS)).toBe(
+			'Liest bei Seiten auch ihre Unterseiten, soweit die Integration sie sieht: höchstens 50 Unterseiten, bis 3 Ebenen tief. Ihre Punkte stehen unter „Unterseite › Abschnitt“.'
+		);
+		expect(subpagesOverview({ subpages: 0, hiddenSubpages: 0 })).toBe('');
+		expect(subpagesOverview({ subpages: 1, hiddenSubpages: 0 })).toBe('1 Unterseite gelesen.');
+		expect(subpagesOverview({ subpages: 4, hiddenSubpages: 1 })).toBe(
+			'4 Unterseiten gelesen, 1 Unterseite nicht sichtbar.'
+		);
+		expect(subpagesOverview({ subpages: 0, hiddenSubpages: 2 })).toBe(
+			'2 Unterseiten nicht sichtbar.'
+		);
 	});
 });
