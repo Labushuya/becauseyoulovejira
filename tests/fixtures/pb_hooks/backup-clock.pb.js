@@ -19,6 +19,21 @@ routerAdd(
   $apis.requireSuperuserAuth()
 );
 
+// The weekly check of the cron with a given clock (verifyDue); answers { result } (null: nothing
+// was due, or the server is not the own instance of an app folder).
+routerAdd(
+  'POST',
+  '/api/byl-test/backup/verify-due',
+  function (e) {
+    var now = Number(e.requestInfo().body['now']);
+    if (!isFinite(now)) {
+      throw new BadRequestError('now fehlt');
+    }
+    return e.json(200, { result: require(`${__hooks}/lib/backup-service.js`).verifyDue(e.app, now) });
+  },
+  $apis.requireSuperuserAuth()
+);
+
 // The cron of the backups with a given clock; answers { result } (null: nothing ran, e.g. in the
 // test mode of the harness).
 routerAdd(

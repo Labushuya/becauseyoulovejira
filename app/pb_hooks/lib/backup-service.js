@@ -294,6 +294,62 @@ function runOnce(app, now, force) {
   return result;
 }
 
+/**
+ * Checks the backup `name` of `source` ('local' or 'target') with byl-control.ps1 backup-verify
+ * (decrypt, unpack, integrity, files, throwaway server) and keeps the result in the state file.
+ * The passphrase of the app (optional) goes only to the control script; without it the stored one
+ * is used. Returns the result (rules.verifyView).
+ */
+function verifyBackup(app, appDir, source, name, passphrase, now) {
+  var input = { source: source, name: name };
+  if (passphrase) {
+    input.passphrase = passphrase;
+  }
+  var result = rules.verifyView(system.runJson(appDir, 'backup-verify', input)) || {
+    ok: false,
+    reason: 'failed',
+    encrypted: false,
+    createdUtc: null,
+    variables: [],
+    counts: null,
+    files: null
+  };
+  var status = readStatus(app);
+  status.verify = { at: now, name: name, source: source, ok: result.ok, reason: result.reason, counts: result.counts, files: result.files };
+  writeStatus(app, status);
+  if (result.ok) {
+    app.logger().info(AREA + ': Sicherung geprüft', 'name', name, 'source', source);
+  } else {
+    app.logger().warn(AREA + ': Prüfung einer Sicherung gescheitert', 'name', name, 'source', source, 'reason', result.reason);
+  }
+  return result;
+}
+
+/** The weekly check of the cron (rules.planVerify), only for the own instance. */
+function verifyDue(app, now) {
+  var appDir = system.ownAppDir();
+  if (appDir === '') {
+    return null;
+  }
+  var settings = readSettings(app);
+  var status = readStatus(app);
+  var local = rules.newestUntil(
+    listLocal(app).filter(function (entry) {
+      return entry.ours;
+    }),
+    now
+  );
+  var sealed = settings.target ? listSealed(settings.target) : null;
+  var newestSealed = sealed === null ? null : rules.newestUntil(sealed, now);
+  var planned = rules.planVerify(
+    status.verify ? status.verify.at : null,
+    local ? local.name : '',
+    newestSealed ? newestSealed.name : '',
+    now
+  );
+  return planned.due ? verifyBackup(app, appDir, planned.source, planned.name, '', now) : null;
+}
+
 /** The cron of the backups (every five minutes, backup.pb.js); never throws, never in tests. */
 function tick(app, now) {
   if (app.store().get(TEST_MODE_KEY) === true) {
@@ -303,7 +359,9 @@ function tick(app, now) {
     return null;
   }
   try {
-    return runOnce(app, now, false);
+    var result = runOnce(app, now, false);
+    result.verify = verifyDue(app, now);
+    return result;
   } catch (err) {
     app.logger().error(AREA + ': Lauf gescheitert', 'error', shortError(err));
     return null;
@@ -338,7 +396,8 @@ function currentWarnings(app, settings, status, passphrase, now) {
       target: !!settings.target,
       passphrase: passphrase,
       backupError: status.backupError,
-      exportProblem: status.exportProblem
+      exportProblem: status.exportProblem,
+      verify: status.verify
     })
   };
 }
@@ -389,6 +448,17 @@ function overview(app, appDir, info, now) {
       export: status.export ? entryOf(status.export) : null,
       exportProblem: status.exportProblem
         ? { at: rules.iso(status.exportProblem.at), reason: status.exportProblem.reason, since: rules.iso(status.exportProblem.since) }
+        : null,
+      verify: status.verify
+        ? {
+            at: rules.iso(status.verify.at),
+            name: status.verify.name,
+            source: status.verify.source,
+            ok: status.verify.ok === true,
+            reason: status.verify.reason || '',
+            counts: status.verify.counts,
+            files: status.verify.files
+          }
         : null
     },
     nextBackupAt: rules.iso(rules.nextBackupAt(current.newest ? current.newest.time : null, now)),
@@ -517,9 +587,38 @@ function savePassphrase(e) {
   return answerOverview(e, context.appDir);
 }
 
+/**
+ * POST /api/byl/backup/verify ("Prüfen", "Jetzt prüfen"): { source, name, passphrase? }. The
+ * passphrase is only handed on, never kept or logged.
+ */
+function verify(e) {
+  var context = system.check(e, 'backup-verify', 'POST');
+  if (context.refused) {
+    return system.refuse(e, 'backup-verify', context.refused, context.retryAfterSeconds, AREA);
+  }
+  var input = rules.verifyInput(e.requestInfo().body);
+  if (input.problem) {
+    return invalid(e, 'invalid', input.problem);
+  }
+  var now = Date.now();
+  if (!claim(e.app, now)) {
+    return system.refuse(e, 'backup-verify', 'busy', 0, AREA);
+  }
+  var result;
+  try {
+    result = verifyBackup(e.app, context.appDir, input.value.source, input.value.name, input.value.passphrase || '', now);
+  } finally {
+    release(e.app);
+  }
+  audit(e, 'backup-verify', result.ok ? 'ok' : result.reason);
+  return answerOverview(e, context.appDir, { verify: result });
+}
+
 module.exports = {
   tick: tick,
   runOnce: runOnce,
+  verifyDue: verifyDue,
+  verify: verify,
   read: read,
   notice: notice,
   runNow: runNow,

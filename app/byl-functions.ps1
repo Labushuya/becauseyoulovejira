@@ -1313,19 +1313,25 @@ function ConvertTo-ProcessArgument {
 
 function Get-AdminUpsertArgument {
     # Command line for pocketbase.exe to create a superuser or set its password, on the app's own
-    # folders (as Get-ServerArgumentString) with --automigrate=false. The flags come first and
-    # "--" ends them, so an e-mail or password starting with "-" is never read as a flag.
+    # folders (as Get-ServerArgumentString) with --automigrate=false; with -DataDir and -HooksDir
+    # on the unpacked copy of a backup for the throwaway server of a check (ADR-0046 section 6).
+    # The flags come first and "--" ends them, so an e-mail or password starting with "-" is never
+    # read as a flag.
     param(
         [Parameter(Mandatory = $true)][string]$AppDir,
         [Parameter(Mandatory = $true)][string]$Email,
-        [Parameter(Mandatory = $true)][string]$Password
+        [Parameter(Mandatory = $true)][string]$Password,
+        [string]$DataDir,
+        [string]$HooksDir
     )
 
     $folder = { param([string]$Name) [System.IO.Path]::Combine($AppDir, $Name) }
+    if ([string]::IsNullOrEmpty($DataDir)) { $DataDir = & $folder 'pb_data' }
+    if ([string]::IsNullOrEmpty($HooksDir)) { $HooksDir = & $folder 'pb_hooks' }
     $arguments = @(
         'superuser', 'upsert',
-        "--dir=$(& $folder 'pb_data')",
-        "--hooksDir=$(& $folder 'pb_hooks')",
+        "--dir=$DataDir",
+        "--hooksDir=$HooksDir",
         "--migrationsDir=$(& $folder 'pb_migrations')",
         '--automigrate=false',
         '--', $Email, $Password

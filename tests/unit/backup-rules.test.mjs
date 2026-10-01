@@ -277,7 +277,7 @@ describe('answers of the control script and the state file', () => {
 	});
 
 	it('reads its state file and survives a broken one', () => {
-		const empty = { backup: null, backupError: null, export: null, exportAttempt: null, exportProblem: null };
+		const empty = { backup: null, backupError: null, export: null, exportAttempt: null, exportProblem: null, verify: null };
 		expect(rules.parseStatus('')).toEqual(empty);
 		expect(rules.parseStatus('{')).toEqual(empty);
 		expect(
@@ -292,5 +292,85 @@ describe('answers of the control script and the state file', () => {
 		});
 		expect(rules.iso(Date.UTC(2026, 9, 1))).toBe('2026-10-01T00:00:00.000Z');
 		expect(rules.iso(null)).toBeNull();
+		expect(
+			rules.parseStatus(JSON.stringify({ verify: { at: 7, name: 'n', source: 'target', ok: false, reason: 'files', counts: { tickets: 1 }, files: null } }))
+				.verify
+		).toEqual({ at: 7, name: 'n', source: 'target', ok: false, reason: 'files', counts: { tickets: 1 }, files: null });
+	});
+});
+
+describe('check of a backup (BK-2)', () => {
+	const now = Date.UTC(2026, 9, 1, 12, 0, 0);
+	const sealed = 'byl-20261001-080000.tar.age';
+	const local = 'byl-20261001-080000.zip';
+
+	it('checks once a week, the newest copy in the target first', () => {
+		expect(rules.planVerify(null, local, sealed, now)).toEqual({ due: true, source: 'target', name: sealed });
+		expect(rules.planVerify(null, local, '', now)).toEqual({ due: true, source: 'local', name: local });
+		expect(rules.planVerify(now - 6 * DAY, local, sealed, now).due).toBe(false);
+		expect(rules.planVerify(now - 7 * DAY, local, sealed, now).due).toBe(true);
+		expect(rules.planVerify(now + DAY, local, sealed, now).due).toBe(true);
+		expect(rules.planVerify(null, '', '', now)).toEqual({ due: false, source: '', name: '' });
+	});
+
+	it('takes only backups of their place and a passphrase of at most 1024 characters', () => {
+		expect(rules.verifyInput({ source: 'local', name: '@auto_pb_backup_byl_20261001000000.zip' })).toEqual({
+			value: { source: 'local', name: '@auto_pb_backup_byl_20261001000000.zip' }
+		});
+		expect(rules.verifyInput({ source: 'target', name: sealed, passphrase: 'geheim' })).toEqual({
+			value: { source: 'target', name: sealed, passphrase: 'geheim' }
+		});
+		expect(rules.verifyInput({ source: 'target', name: sealed, passphrase: '' })).toEqual({ value: { source: 'target', name: sealed } });
+		for (const body of [
+			{ source: 'local', name: '..\\data.db' },
+			{ source: 'local', name: 'x.tar.age' },
+			{ source: 'target', name: local },
+			{ source: 'path', name: 'C:\\x.zip' },
+			null
+		]) {
+			expect(rules.verifyInput(body), JSON.stringify(body)).toEqual({ problem: 'name' });
+		}
+		expect(rules.verifyInput({ source: 'target', name: sealed, passphrase: 'x'.repeat(1025) })).toEqual({ problem: 'passphrase' });
+	});
+
+	it('keeps only known parts of the answer, never names of files', () => {
+		expect(
+			rules.verifyView({
+				ok: false,
+				reason: 'files',
+				encrypted: true,
+				createdUtc: '2026-10-01T08:00:00Z',
+				variables: ['BYL_A', 'x'],
+				counts: { tickets: 3, 'drop table': 1, users: -1 },
+				files: { expected: 2, missing: 1, examples: ['inbox_items/abc123', 'inbox_items/abc123/mail.eml'] },
+				secrets: { BYL_A: 'geheim' }
+			})
+		).toEqual({
+			ok: false,
+			reason: 'files',
+			encrypted: true,
+			createdUtc: '2026-10-01T08:00:00Z',
+			variables: ['BYL_A'],
+			counts: { tickets: 3 },
+			files: { expected: 2, missing: 1, examples: ['inbox_items/abc123'] }
+		});
+		expect(rules.verifyView({ ok: false, reason: 'erfunden' }).reason).toBe('failed');
+		expect(rules.verifyView({ ok: true, reason: 'files' }).reason).toBe('');
+		expect(rules.verifyView(null)).toBeNull();
+	});
+
+	it('warns about a failed check as an error that asks for attention', () => {
+		const list = rules.warnings({
+			now,
+			newestLocal: now - 60 * 60 * 1000,
+			newestSealed: null,
+			target: false,
+			passphrase: 'set',
+			backupError: null,
+			exportProblem: null,
+			verify: { at: now - 1000, ok: false, reason: 'integrity' }
+		});
+		expect(list).toEqual([{ code: 'verify-failed', tone: 'error', since: now - 1000, reason: 'integrity' }]);
+		expect(rules.needsAttention(list)).toBe(true);
 	});
 });

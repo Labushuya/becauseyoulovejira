@@ -10,9 +10,12 @@ import type PocketBase from 'pocketbase';
 import {
 	parseOverview,
 	parseRunResult,
+	parseVerifyResult,
 	type BackupOverview,
 	type BackupSettings,
-	type RunResult
+	type BackupSource,
+	type RunResult,
+	type VerifyResult
 } from '../domain/backup';
 import { denialOf, type SystemDenial } from '../domain/system';
 import { toDataError } from './errors';
@@ -121,6 +124,36 @@ export function saveBackupPassphrase(
 				signal: options.signal
 			}),
 		parseOverview
+	);
+}
+
+/**
+ * "Prüfen": checks one backup with a throwaway server (ADR-0046 §6); the state afterwards. The
+ * passphrase (only for a sealed backup whose stored one does not fit) goes in the body of this
+ * POST only.
+ */
+export function verifyBackup(
+	pb: PocketBase,
+	backup: { source: BackupSource; name: string; passphrase?: string },
+	options: RequestOptions = {}
+): Promise<BackupAnswer<{ overview: BackupOverview; result: VerifyResult }>> {
+	const body: Record<string, string> = { source: backup.source, name: backup.name };
+	if (backup.passphrase !== undefined && backup.passphrase !== '')
+		body.passphrase = backup.passphrase;
+	return ask(
+		options.signal,
+		() =>
+			pb.send(`${ROUTE}/verify`, {
+				method: 'POST',
+				body,
+				requestKey: null,
+				signal: options.signal
+			}),
+		(answer) => {
+			const overview = parseOverview(answer);
+			const result = parseVerifyResult(answer);
+			return overview === null || result === null ? null : { overview, result };
+		}
 	);
 }
 

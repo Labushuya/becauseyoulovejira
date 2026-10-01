@@ -6,7 +6,8 @@
 // inside them.
 
 // Every five minutes: a backup when the newest one is a day old (also soon after a start, ADR-0046
-// §1), the copy into the target folder when it is missing there. Never throws.
+// §1), the copy into the target folder when it is missing there, and once a week the check of the
+// newest backup (§6). Never throws.
 cronAdd('byl-backup', '*/5 * * * *', function () {
   require(`${__hooks}/lib/backup-service.js`).tick($app, Date.now());
 });
@@ -37,6 +38,17 @@ routerAdd(
   '/api/byl/backup/run',
   function (e) {
     return require(`${__hooks}/lib/backup-service.js`).runNow(e);
+  },
+  $apis.requireAuth('users')
+);
+
+// "Prüfen" and "Jetzt prüfen": JSON { source, name, passphrase? }; the check of ADR-0046 §6 with
+// a throwaway server. The passphrase is only handed on to the control script.
+routerAdd(
+  'POST',
+  '/api/byl/backup/verify',
+  function (e) {
+    return require(`${__hooks}/lib/backup-service.js`).verify(e);
   },
   $apis.requireAuth('users')
 );

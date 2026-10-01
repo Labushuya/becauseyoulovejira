@@ -28,7 +28,7 @@
 param(
     [Parameter(Position = 0)]
     [ValidateSet('start', 'stop', 'restart', 'reload', 'status', 'open', 'logs', 'doctor', 'port', 'autostart-on', 'autostart-off', 'mail-restart', 'reset-admin',
-        'backup-info', 'backup-configure', 'backup-passphrase', 'backup-export', 'help')]
+        'backup-info', 'backup-configure', 'backup-passphrase', 'backup-export', 'backup-verify', 'help')]
     [string]$Command = 'help',
     [Parameter(Position = 1)][string]$Value,
     [switch]$Force,
@@ -106,6 +106,8 @@ Befehle:
                   Legt die Passphrase der Sicherungen fest (zweimal eingeben; an dieses Windows-Konto gebunden).
   backup-export <Sicherung>
                   Verschlüsselt eine Sicherung aus pb_data\backups ins Zielverzeichnis.
+  backup-verify <Sicherung oder Pfad>
+                  Prüft eine Sicherung: entschlüsseln, entpacken, Datenbank, Originaldateien, Probe-Start.
   help            Diese Hilfe.
 
 Optionen:
@@ -1879,7 +1881,7 @@ function Invoke-BackupHelper {
     # standard input, never on the command line, and its environment has no BYL_* variable. Returns
     # the parsed answer; a helper that is missing, hangs or prints no JSON gives ok = false with the
     # reason 'helper'.
-    param([Parameter(Mandatory = $true)][ValidateSet('seal', 'open')][string]$Command, [Parameter(Mandatory = $true)][System.Collections.IDictionary]$Parameters)
+    param([Parameter(Mandatory = $true)][ValidateSet('seal', 'open', 'check')][string]$Command, [Parameter(Mandatory = $true)][System.Collections.IDictionary]$Parameters)
 
     $helper = [System.IO.Path]::Combine($AppDir, $BylBackupHelperName)
     if (-not [System.IO.File]::Exists($helper)) { return [pscustomobject]@{ ok = $false; reason = 'helper' } }
@@ -2160,6 +2162,368 @@ function Invoke-BackupExport {
         -Text "Sicherung verschlüsselt: $([System.IO.Path]::Combine($settings.Target, $sealedName))"
 }
 
+# --- Check of a backup (ADR-0046 section 6) -------------------------------------------------------
+
+# Collections the throwaway server counts (the same as the manifest of a sealed backup).
+$CountedCollections = @('users', 'projects', 'tags', 'tickets', 'comments', 'inbox_items', 'recurrence_rules', 'connections')
+# A throwaway server gets this long to answer /api/health (it runs the migrations on the copy first).
+$ThrowawayStartSeconds = 120# Names of backups in pb_data\backups that can be checked and restored (any ZIP of PocketBase there).
+$LocalBackupNamePattern = '^[A-Za-z0-9@._-]{1,200}\.zip$'
+
+function New-WorkFolder {
+    # A new folder for one check or restore under %TEMP% (byl-pruefung-<random>); the caller removes it.
+    $path = [System.IO.Path]::Combine([System.IO.Path]::GetTempPath(), 'byl-pruefung-' + [guid]::NewGuid().ToString('N'))
+    [void][System.IO.Directory]::CreateDirectory($path)
+    return $path
+}
+
+function Remove-WorkFolder {
+    # Removes a work folder of New-WorkFolder, and only such a folder; SQLite and the throwaway server
+    # may hold a file for a moment after they ended.
+    param([AllowNull()][AllowEmptyString()][string]$Path)
+
+    if ([string]::IsNullOrEmpty($Path) -or -not [System.IO.Directory]::Exists($Path)) { return }
+    $prefix = [System.IO.Path]::Combine([System.IO.Path]::GetTempPath(), 'byl-pruefung-')
+    if (-not $Path.StartsWith($prefix, [System.StringComparison]::OrdinalIgnoreCase)) { return }
+    for ($attempt = 0; $attempt -lt 40; $attempt++) {
+        try {
+            [System.IO.Directory]::Delete($Path, $true)
+            return
+        }
+        catch {
+            Start-Sleep -Milliseconds 250
+        }
+    }
+}
+
+function Get-FreeLoopbackPort {
+    # A free port on 127.0.0.1 for a throwaway server: never the port of the app, of its mail helper
+    # (8091) or the one kept for spikes (8099).
+    while ($true) {
+        $listener = New-Object System.Net.Sockets.TcpListener([System.Net.IPAddress]::Loopback, 0)
+        $listener.Start()
+        $port = ([System.Net.IPEndPoint]$listener.LocalEndpoint).Port
+        $listener.Stop()
+        if (@($BylDefaultPort, 8091, 8099, $BylPort) -notcontains $port) { return $port }
+    }
+}
+
+function Invoke-JsonRequest {
+    # One request with a JSON body to a throwaway server on 127.0.0.1, without proxy; StatusCode and
+    # the parsed Body, $null without an answer.
+    param(
+        [Parameter(Mandatory = $true)][string]$Url,
+        [ValidateSet('GET', 'POST')][string]$Method = 'GET',
+        [AllowNull()][object]$Body,
+        [AllowNull()][AllowEmptyString()][string]$Token
+    )
+
+    $request = [System.Net.WebRequest]::Create($Url)
+    $request.Proxy = $null
+    $request.Timeout = 60000
+    $request.KeepAlive = $false
+    $request.Method = $Method
+    if (-not [string]::IsNullOrEmpty($Token)) { $request.Headers.Add('Authorization', $Token) }
+    if ($null -ne $Body) {
+        $bytes = (New-Object System.Text.UTF8Encoding($false)).GetBytes((ConvertTo-Json -InputObject $Body -Compress))
+        $request.ContentType = 'application/json'
+        $request.ContentLength = $bytes.Length
+        $stream = $request.GetRequestStream()
+        try { $stream.Write($bytes, 0, $bytes.Length) } finally { $stream.Dispose() }
+    }
+    try {
+        $response = $request.GetResponse()
+    }
+    catch [System.Net.WebException] {
+        $response = $_.Exception.Response
+        if ($null -eq $response) { return $null }
+    }
+    try {
+        $reader = New-Object System.IO.StreamReader($response.GetResponseStream(), [System.Text.Encoding]::UTF8)
+        $text = $reader.ReadToEnd()
+        $parsed = $null
+        try { $parsed = $text | ConvertFrom-Json } catch { $parsed = $null }
+        return [pscustomobject]@{ StatusCode = [int]$response.StatusCode; Body = $parsed }
+    }
+    finally {
+        $response.Close()
+    }
+}
+
+function Start-PocketBaseProcess {
+    # pocketbase.exe of this folder with $Arguments for a throwaway server of a check: no window, its
+    # output read and dropped (it must not reach the JSON line of this command), no BYL_* variable.
+    param([Parameter(Mandatory = $true)][string]$Arguments)
+
+    $startInfo = New-Object System.Diagnostics.ProcessStartInfo
+    $startInfo.FileName = [System.IO.Path]::Combine($AppDir, 'pocketbase.exe')
+    $startInfo.Arguments = $Arguments
+    $startInfo.UseShellExecute = $false
+    $startInfo.CreateNoWindow = $true
+    $startInfo.RedirectStandardOutput = $true
+    $startInfo.RedirectStandardError = $true
+    $startInfo.WorkingDirectory = $AppDir
+    foreach ($name in @($startInfo.EnvironmentVariables.Keys)) {
+        if ([string]$name -like 'BYL_*') { $startInfo.EnvironmentVariables.Remove($name) }
+    }
+    $process = [System.Diagnostics.Process]::Start($startInfo)
+    $process.BeginOutputReadLine()
+    $process.BeginErrorReadLine()
+    return $process
+}
+
+function Invoke-ThrowawayCheck {
+    # Starts pocketbase.exe of this folder on the copy $DataDir with a throwaway superuser (created
+    # first, CLAUDE.md section 11.2), without hooks (no cron, no channel runs with access data), on a
+    # random port; waits for /api/health and counts the collections through the API. Ends the server
+    # in any case. Ok and Counts.
+    param([Parameter(Mandatory = $true)][string]$DataDir, [Parameter(Mandatory = $true)][string]$Work)
+
+    $hooks = [System.IO.Path]::Combine($Work, 'hooks')
+    $public = [System.IO.Path]::Combine($Work, 'public')
+    [void][System.IO.Directory]::CreateDirectory($hooks)
+    [void][System.IO.Directory]::CreateDirectory($public)
+    $common = (@(
+            "--dir=$DataDir",
+            "--hooksDir=$hooks",
+            "--migrationsDir=$([System.IO.Path]::Combine($AppDir, 'pb_migrations'))",
+            "--publicDir=$public",
+            '--automigrate=false'
+        ) | ForEach-Object { ConvertTo-ProcessArgument -Value $_ }) -join ' '
+    $bytes = New-Object byte[] 24
+    $generator = [System.Security.Cryptography.RandomNumberGenerator]::Create()
+    try { $generator.GetBytes($bytes) } finally { $generator.Dispose() }
+    $password = 'P' + ([Convert]::ToBase64String($bytes) -replace '[+/=]', 'x')
+    $email = "pruefung-$([guid]::NewGuid().ToString('N'))@example.invalid"
+    $failed = [pscustomobject]@{ Ok = $false; Counts = $null }
+
+    $upsert = Start-PocketBaseProcess -Arguments (Get-AdminUpsertArgument -AppDir $AppDir -Email $email -Password $password -DataDir $DataDir -HooksDir $hooks)
+    try {
+        if (-not $upsert.WaitForExit(120000)) {
+            try { $upsert.Kill() } catch { $null = $_ }
+            return $failed
+        }
+        $upsert.WaitForExit()
+        if ($upsert.ExitCode -ne 0) { return $failed }
+    }
+    finally {
+        $upsert.Dispose()
+    }
+    $port = Get-FreeLoopbackPort
+    $server = Start-PocketBaseProcess -Arguments "serve --http=127.0.0.1:$port $common"
+    try {
+        $base = "http://127.0.0.1:$port"
+        $deadline = [DateTime]::UtcNow.AddSeconds($ThrowawayStartSeconds)
+        while (-not (Test-Health -Url "$base/api/health")) {
+            if ($server.HasExited -or [DateTime]::UtcNow -ge $deadline) { return $failed }
+            Start-Sleep -Milliseconds 250
+        }
+        $auth = Invoke-JsonRequest -Url "$base/api/collections/_superusers/auth-with-password" -Method POST -Body @{ identity = $email; password = $password }
+        if ($null -eq $auth -or $auth.StatusCode -ne 200 -or $null -eq $auth.Body) { return $failed }
+        $token = [string](Get-InputValue $auth.Body 'token')
+        $counts = [ordered]@{}
+        foreach ($name in $CountedCollections) {
+            $answer = Invoke-JsonRequest -Url "$base/api/collections/$name/records?perPage=1&fields=id" -Token $token
+            if ($null -eq $answer -or $answer.StatusCode -ne 200 -or $null -eq $answer.Body) { return $failed }
+            $counts[$name] = [long](Get-InputValue $answer.Body 'totalItems')
+        }
+        return [pscustomobject]@{ Ok = $true; Counts = $counts }
+    }
+    finally {
+        if (-not $server.HasExited) {
+            try { $server.Kill() } catch { $null = $_ }
+        }
+        [void]$server.WaitForExit(15000)
+        $server.Dispose()
+    }
+}
+
+function Invoke-Verification {
+    # The check of ADR-0046 section 6 of the backup $File in the work folder $Work: a sealed backup
+    # (.tar.age) is opened with $Passphrase (age decrypts to the last chunk), then the ZIP of
+    # PocketBase is unpacked, data.db checked (integrity, counts, every file of a file field in
+    # storage) and served by a throwaway server. Returns the result as an ordered dictionary for the
+    # answer; with -Secrets the values of the access data of the backup in the property Secrets of
+    # the second return value (memory only, never in an answer or log).
+    param(
+        [Parameter(Mandatory = $true)][string]$File,
+        [AllowNull()][AllowEmptyString()][string]$Passphrase,
+        [Parameter(Mandatory = $true)][string]$Work,
+        [switch]$Secrets
+    )
+
+    $result = [ordered]@{
+        ok = $false; reason = $null; encrypted = $false; createdUtc = $null; variables = @()
+        integrity = $null; counts = $null; files = $null
+    }
+    $extra = [pscustomobject]@{ Secrets = $null; Config = $null; Zip = $null }
+    $zip = $File
+    if ($File -match '\.tar\.age$') {
+        $result.encrypted = $true
+        if ([string]::IsNullOrEmpty($Passphrase)) {
+            $result.reason = 'no-passphrase'
+            return $result, $extra
+        }
+        $opened = Invoke-BackupHelper -Command open -Parameters ([ordered]@{ file = $File; out = $Work; passphrase = $Passphrase; secrets = $Secrets.IsPresent })
+        if ((Get-InputValue $opened 'ok') -ne $true) {
+            $result.reason = switch ([string](Get-InputValue $opened 'reason')) {
+                'passphrase' { 'passphrase' }
+                'format' { 'format' }
+                'missing' { 'missing' }
+                'space' { 'space' }
+                'helper' { 'helper' }
+                default { 'damaged' }
+            }
+            return $result, $extra
+        }
+        $manifest = Get-InputValue $opened 'manifest'
+        $result.createdUtc = [string](Get-InputValue $manifest 'createdUtc')
+        $result.variables = @(Get-InputValue $opened 'variables')
+        if ($Secrets) { $extra.Secrets = Get-InputValue $opened 'secrets' }
+        $config = [System.IO.Path]::Combine($Work, $BylConfigName)
+        if ([System.IO.File]::Exists($config)) { $extra.Config = $config }
+        $zip = [System.IO.Path]::Combine($Work, 'pb_data.zip')
+    }
+    $extra.Zip = $zip
+    $size = (New-Object System.IO.FileInfo($zip)).Length
+    $free = Get-FreeBytes -Path $Work
+    if ($null -ne $free -and (Get-BylBackupSpaceVerdict -FreeBytes $free -NeededBytes (3 * $size)) -ne 'Ok') {
+        $result.reason = 'space'
+        return $result, $extra
+    }
+    $data = [System.IO.Path]::Combine($Work, 'pb_data')
+    try {
+        Add-Type -AssemblyName System.IO.Compression.FileSystem
+        [System.IO.Compression.ZipFile]::ExtractToDirectory($zip, $data)
+    }
+    catch {
+        $result.reason = 'zip'
+        return $result, $extra
+    }
+    $check = Invoke-BackupHelper -Command check -Parameters ([ordered]@{ dir = $data })
+    if ((Get-InputValue $check 'ok') -ne $true) {
+        $checkReason = [string](Get-InputValue $check 'reason')
+        $result.reason = switch ($checkReason) { 'missing' { 'no-db' } 'helper' { 'helper' } default { 'integrity' } }
+        # The reason of the helper (a fixed word such as damaged, input or internal), for the log of a test.
+        $result['check'] = $checkReason
+        return $result, $extra
+    }
+    $result.integrity = @(Get-InputValue $check 'integrity')
+    $result.files = Get-InputValue $check 'files'
+    if (-not ($result.integrity.Count -eq 1 -and $result.integrity[0] -eq 'ok')) {
+        $result.reason = 'integrity'
+        return $result, $extra
+    }
+    $server = Invoke-ThrowawayCheck -DataDir $data -Work $Work
+    if (-not $server.Ok) {
+        $result.reason = 'start'
+        return $result, $extra
+    }
+    $result.counts = $server.Counts
+    if ([long](Get-InputValue $result.files 'missing') -gt 0) {
+        $result.reason = 'files'
+        return $result, $extra
+    }
+    $result.ok = $true
+    return $result, $extra
+}
+
+function Resolve-BackupFile {
+    # The file of a backup: 'local' a ZIP in pb_data\backups by its name, 'target' a sealed backup in
+    # the target folder by its name, 'path' a full path to a .zip or .tar.age (console, restore of a
+    # copied file). Names never leave their folder. Path, or Problem ('name', 'missing',
+    # 'unreachable').
+    param([Parameter(Mandatory = $true)][string]$Source, [AllowNull()][AllowEmptyString()][string]$Name)
+
+    $fail = { param($Problem) [pscustomobject]@{ Path = $null; Problem = $Problem } }
+    switch ($Source) {
+        'local' {
+            if ($Name -notmatch $LocalBackupNamePattern) { return & $fail 'name' }
+            $path = [System.IO.Path]::Combine($AppDir, 'pb_data', 'backups', $Name)
+        }
+        'target' {
+            if ($Name -notmatch $BylSealedBackupPattern) { return & $fail 'name' }
+            $target = (Get-BackupSettings).Target
+            if ($null -eq $target -or -not [System.IO.Directory]::Exists($target)) { return & $fail 'unreachable' }
+            $path = [System.IO.Path]::Combine($target, $Name)
+        }
+        'path' {
+            if ([string]::IsNullOrWhiteSpace($Name) -or $Name -notmatch '\.(zip|tar\.age)$' -or -not [System.IO.Path]::IsPathRooted($Name)) { return & $fail 'name' }
+            $path = [System.IO.Path]::GetFullPath($Name)
+        }
+        default { return & $fail 'name' }
+    }
+    if (-not [System.IO.File]::Exists($path)) { return & $fail 'missing' }
+    return [pscustomobject]@{ Path = $path; Problem = $null }
+}
+
+$VerifyReasonText = @{
+    name            = 'Unbekannte Sicherung.'
+    missing         = 'Die Sicherung gibt es nicht (mehr).'
+    unreachable     = 'Das Zielverzeichnis ist nicht erreichbar.'
+    'no-passphrase' = 'Für eine verschlüsselte Sicherung fehlt die Passphrase.'
+    passphrase      = 'Die Passphrase passt nicht zu dieser Sicherung.'
+    format          = 'Das ist keine Sicherung im Format age.'
+    damaged         = 'Die Sicherung ist beschädigt oder unvollständig.'
+    zip             = 'Das ZIP der Sicherung lässt sich nicht entpacken.'
+    'no-db'         = 'In der Sicherung fehlt die Datenbank (data.db).'
+    integrity       = 'Die Datenbank der Sicherung ist beschädigt (integrity_check).'
+    files           = 'In der Sicherung fehlen Originaldateien.'
+    start           = 'Eine Probe-Instanz ließ sich mit der Sicherung nicht starten.'
+    space           = 'Für die Prüfung ist im Temp-Ordner zu wenig Platz frei.'
+    helper          = 'byl-backup.exe fehlt oder antwortet nicht; scripts\build.ps1 baut es.'
+}
+
+function Get-RequestedBackup {
+    # The backup a command means: from the app source and name; from the console $Value as a full
+    # path, a name in pb_data\backups or a name in the target folder.
+    param([AllowNull()][object]$Request)
+
+    if ($null -ne $Request) {
+        return Resolve-BackupFile -Source ([string](Get-InputValue $Request 'source')) -Name ([string](Get-InputValue $Request 'name'))
+    }
+    $text = ([string]$Value).Trim()
+    if ($text -match '[\\/]') { return Resolve-BackupFile -Source 'path' -Name $text }
+    $source = if ($text -match $BylSealedBackupPattern) { 'target' } else { 'local' }
+    return Resolve-BackupFile -Source $source -Name $text
+}
+
+function Invoke-BackupVerify {
+    # backup-verify: checks one backup (Invoke-Verification) in a work folder under %TEMP% that is
+    # removed afterwards. The passphrase of a sealed backup comes from the app, else the stored one,
+    # in the console also asked for. Prints the result (counts, files, never values).
+    $request = Read-InputJson
+    $file = Get-RequestedBackup -Request $request
+    $name = if ($null -ne $file.Path) { [System.IO.Path]::GetFileName($file.Path) } else { '' }
+    if ($null -ne $file.Problem) {
+        $script:LogDetail = "reason=$($file.Problem)"
+        return Write-BackupAnswer -Answer ([ordered]@{ ok = $false; reason = $file.Problem; name = $name }) -Text $VerifyReasonText[$file.Problem]
+    }
+    $passphrase = [string](Get-InputValue $request 'passphrase')
+    if ($file.Path -match '\.tar\.age$' -and $passphrase -eq '') {
+        $stored = Read-StoredPassphrase
+        if ($stored.State -eq 'Set') { $passphrase = $stored.Value }
+        elseif ($null -eq $request -and -not $Hidden -and -not $Json) { $passphrase = Read-Secret -Prompt 'Passphrase der Sicherung' }
+    }
+    $work = New-WorkFolder
+    try {
+        $result, $null = Invoke-Verification -File $file.Path -Passphrase $passphrase -Work $work
+    }
+    finally {
+        $passphrase = $null
+        Remove-WorkFolder -Path $work
+    }
+    $result['name'] = $name
+    $script:LogDetail = ("name=$name ok=$($result.ok.ToString().ToLowerInvariant())" + $(if ($result.ok) { '' } else { " reason=$($result.reason)" }))
+    if ($result.ok) {
+        $text = "Sicherung $name geprüft: in Ordnung ($($result.counts['tickets']) Tickets, $($result.files.expected) Originaldateien)."
+    }
+    else {
+        $text = "Sicherung $name geprüft: $($VerifyReasonText[$result.reason])"
+    }
+    return Write-BackupAnswer -Answer $result -Text $text
+}
+
 function Read-Secret {
     # One Read-Host -AsSecureString prompt as plain text. The plain text exists only as the
     # returned string; the unmanaged copy is zeroed and freed at once.
@@ -2268,6 +2632,7 @@ try {
         'backup-configure' { Invoke-BackupConfigure }
         'backup-passphrase' { Invoke-BackupPassphrase }
         'backup-export' { Invoke-BackupExport }
+        'backup-verify' { Invoke-BackupVerify }
         'help' {
             Write-Host $HelpText
             $BylExitOk
@@ -2282,7 +2647,7 @@ catch {
 $exitCode = [int](@($exitCode)[-1])
 # Only commands that change something go into byl-control.log (status and logs would flood it).
 if (@('start', 'stop', 'restart', 'reload', 'port', 'autostart-on', 'autostart-off', 'mail-restart', 'reset-admin',
-        'backup-configure', 'backup-passphrase', 'backup-export') -contains $Command) {
+        'backup-configure', 'backup-passphrase', 'backup-export', 'backup-verify') -contains $Command) {
     Write-ControlLog -Name $Command -ExitCode $exitCode
 }
 exit $exitCode

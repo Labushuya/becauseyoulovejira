@@ -32,6 +32,27 @@ var BACKUP_EVERY_MS = DAY_MS;
 var STALE_MS = 36 * HOUR_MS;
 // A copy into the target folder that failed is tried again after this long (or with a new backup).
 var EXPORT_RETRY_MS = 15 * MINUTE_MS;
+// The cron checks the newest backup once a week (ADR-0046 §6).
+var VERIFY_EVERY_MS = 7 * DAY_MS;
+// Reasons of byl-control.ps1 backup-verify.
+var VERIFY_REASONS = [
+  'name',
+  'missing',
+  'unreachable',
+  'no-passphrase',
+  'passphrase',
+  'format',
+  'damaged',
+  'zip',
+  'no-db',
+  'integrity',
+  'files',
+  'start',
+  'space',
+  'helper',
+  'failed'
+];
+var LOCAL_ANY_PATTERN = /^[A-Za-z0-9@._-]{1,200}\.zip$/;
 
 var TARGET_PROBLEMS = ['format', 'too-long', 'inside-app', 'missing', 'not-writable', 'space'];
 var PASSPHRASE_STATES = ['set', 'missing', 'unreadable', 'unavailable'];
@@ -272,6 +293,102 @@ function plan(state, now) {
   return result;
 }
 
+/**
+ * Whether the weekly check is due (`lastVerify`: ms of the last check or null) and which backup it
+ * takes: the newest sealed copy in the target if there is one (it proves the decryption as well),
+ * else the newest local backup; { due, source, name }.
+ */
+function planVerify(lastVerify, newestLocalName, newestSealedName, now) {
+  var none = { due: false, source: '', name: '' };
+  if (isWhole(lastVerify) && now >= lastVerify && now - lastVerify < VERIFY_EVERY_MS) {
+    return none;
+  }
+  if (newestSealedName) {
+    return { due: true, source: 'target', name: newestSealedName };
+  }
+  if (newestLocalName) {
+    return { due: true, source: 'local', name: newestLocalName };
+  }
+  return none;
+}
+
+/**
+ * The body of "Prüfen": { source ('local' | 'target'), name, passphrase? }. Returns { value } for the
+ * control script or { problem } ('name', 'passphrase').
+ */
+function verifyInput(body) {
+  if (!isRecord(body)) {
+    return { problem: 'name' };
+  }
+  var name = typeof body.name === 'string' ? body.name : '';
+  var ok = body.source === 'local' ? LOCAL_ANY_PATTERN.test(name) : body.source === 'target' && isSealedName(name);
+  if (!ok) {
+    return { problem: 'name' };
+  }
+  var value = { source: body.source, name: name };
+  if (body.passphrase !== undefined && body.passphrase !== null && body.passphrase !== '') {
+    if (typeof body.passphrase !== 'string' || body.passphrase.length > 1024) {
+      return { problem: 'passphrase' };
+    }
+    value.passphrase = body.passphrase;
+  }
+  return { value: value };
+}
+
+function countsOf(raw) {
+  if (!isRecord(raw)) {
+    return null;
+  }
+  var counts = {};
+  for (var key in raw) {
+    if (Object.prototype.hasOwnProperty.call(raw, key) && /^[A-Za-z0-9_]{1,100}$/.test(key) && isWhole(raw[key]) && raw[key] >= 0) {
+      counts[key] = raw[key];
+    }
+  }
+  return counts;
+}
+
+function filesOf(raw) {
+  if (!isRecord(raw)) {
+    return null;
+  }
+  var examples = [];
+  var listed = raw.examples instanceof Array ? raw.examples : [];
+  for (var i = 0; i < listed.length && i < 10; i++) {
+    if (typeof listed[i] === 'string' && /^[A-Za-z0-9_]{1,100}\/[A-Za-z0-9_]{1,64}$/.test(listed[i])) {
+      examples.push(listed[i]);
+    }
+  }
+  return {
+    expected: isWhole(raw.expected) && raw.expected >= 0 ? raw.expected : 0,
+    missing: isWhole(raw.missing) && raw.missing >= 0 ? raw.missing : 0,
+    examples: examples
+  };
+}
+
+/** The answer of backup-verify in the shape of the route and the state file, or null. */
+function verifyView(raw) {
+  if (!isRecord(raw) || typeof raw.ok !== 'boolean') {
+    return null;
+  }
+  var names = [];
+  var listed = raw.variables instanceof Array ? raw.variables : [];
+  for (var i = 0; i < listed.length; i++) {
+    if (typeof listed[i] === 'string' && /^BYL_[A-Z0-9_]{1,60}$/.test(listed[i])) {
+      names.push(listed[i]);
+    }
+  }
+  return {
+    ok: raw.ok,
+    reason: raw.ok ? '' : VERIFY_REASONS.indexOf(raw.reason) !== -1 ? raw.reason : 'failed',
+    encrypted: raw.encrypted === true,
+    createdUtc: typeof raw.createdUtc === 'string' && raw.createdUtc !== '' ? raw.createdUtc : null,
+    variables: names,
+    counts: countsOf(raw.counts),
+    files: filesOf(raw.files)
+  };
+}
+
 /** When the next backup is due (ms): a day after the newest one, now without any. */
 function nextBackupAt(newestLocal, now) {
   return isWhole(newestLocal) ? Math.max(now, newestLocal + BACKUP_EVERY_MS) : now;
@@ -285,15 +402,20 @@ function nextBackupAt(newestLocal, now) {
  *                    backup, or there is none and the copies fail for longer than STALE_MS (with
  *                    the reason of the last try),
  *   export-failed    the last copy failed for another reason than the state of the target (error),
- *   no-passphrase    a target is set, but there is no passphrase it could use.
+ *   no-passphrase    a target is set, but there is no passphrase it could use,
+ *   verify-failed    the last check of a backup failed (error, with its reason).
  *   facts: { now, newestLocal, newestSealed (time of the newest copy in the target, also from the
  *            last export while the target is not reachable; ms or null), target (configured),
- *            passphrase, backupError ({ at } or null), exportProblem ({ reason, since } or null) }
+ *            passphrase, backupError ({ at } or null), exportProblem ({ reason, since } or null),
+ *            verify ({ at, ok, reason } or null) }
  * Every warning: { code, tone ('warning' | 'error'), since (ms or null), reason }.
  */
 function warnings(facts) {
   var list = [];
   var now = facts.now;
+  if (facts.verify && facts.verify.ok === false && isWhole(facts.verify.at)) {
+    list.push({ code: 'verify-failed', tone: 'error', since: facts.verify.at, reason: String(facts.verify.reason || '') });
+  }
   if (facts.backupError && isWhole(facts.backupError.at) && (!isWhole(facts.newestLocal) || facts.backupError.at > facts.newestLocal)) {
     list.push({ code: 'backup-failed', tone: 'error', since: facts.backupError.at, reason: '' });
   }
@@ -333,7 +455,7 @@ function needsAttention(list) {
 
 /** The status file run/sicherung.json as written by the service; unknown parts become null. */
 function parseStatus(text) {
-  var empty = { backup: null, backupError: null, export: null, exportAttempt: null, exportProblem: null };
+  var empty = { backup: null, backupError: null, export: null, exportAttempt: null, exportProblem: null, verify: null };
   var value = null;
   try {
     value = JSON.parse(String(text || ''));
@@ -358,7 +480,8 @@ function parseStatus(text) {
     backupError: entry(value.backupError, ['message']),
     export: entry(value.export, ['name', 'bytes']),
     exportAttempt: isWhole(value.exportAttempt) ? value.exportAttempt : null,
-    exportProblem: entry(value.exportProblem, ['reason', 'since'])
+    exportProblem: entry(value.exportProblem, ['reason', 'since']),
+    verify: entry(value.verify, ['name', 'source', 'ok', 'reason', 'counts', 'files'])
   };
 }
 
@@ -455,6 +578,8 @@ module.exports = {
   BACKUP_EVERY_MS: BACKUP_EVERY_MS,
   STALE_MS: STALE_MS,
   EXPORT_RETRY_MS: EXPORT_RETRY_MS,
+  VERIFY_EVERY_MS: VERIFY_EVERY_MS,
+  VERIFY_REASONS: VERIFY_REASONS,
   TARGET_MAX_LENGTH: TARGET_MAX_LENGTH,
   TARGET_PROBLEMS: TARGET_PROBLEMS,
   EXPORT_REASONS: EXPORT_REASONS,
@@ -470,6 +595,9 @@ module.exports = {
   newestUntil: newestUntil,
   plan: plan,
   nextBackupAt: nextBackupAt,
+  planVerify: planVerify,
+  verifyInput: verifyInput,
+  verifyView: verifyView,
   warnings: warnings,
   needsAttention: needsAttention,
   parseStatus: parseStatus,

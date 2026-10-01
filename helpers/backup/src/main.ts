@@ -8,15 +8,17 @@
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { DatabaseSync } from 'node:sqlite';
 import { AgeError } from './age';
 import { BundleError, open, seal } from './bundle';
+import { checkData } from './check';
 
 declare const __BYL_BACKUP_VERSION__: string | undefined;
 
 /** Version of the helper; set by the build (esbuild define), "dev" when run from source. */
 export const VERSION = typeof __BYL_BACKUP_VERSION__ === 'string' ? __BYL_BACKUP_VERSION__ : 'dev';
 
-export const USAGE = 'byl-backup <seal|open> (parameters as JSON on standard input) | --version | --self-test';
+export const USAGE = 'byl-backup <seal|open|check> (parameters as JSON on standard input) | --version | --self-test';
 // The input is a few paths, a manifest and the access data: far below this.
 const INPUT_MAX = 1024 * 1024;
 
@@ -49,7 +51,12 @@ function stringMap(value: unknown): Record<string, string> {
 	return result;
 }
 
-/** Reads the JSON object of standard input (UTF-8, at most 1 MB). */
+/**
+ * Reads the JSON object of standard input (UTF-8, at most 1 MB). Windows PowerShell 5.1 writes the
+ * preamble of the input encoding of its console when it closes a redirected standard input: in a
+ * console with the UTF-8 code page (65001) a byte order mark arrives after the data. Space and byte
+ * order marks around the object are therefore no error (trim() removes U+FEFF as well).
+ */
 export async function readInput(stream: AsyncIterable<Uint8Array>): Promise<Record<string, unknown>> {
 	const parts: Uint8Array[] = [];
 	let size = 0;
@@ -60,7 +67,7 @@ export async function readInput(stream: AsyncIterable<Uint8Array>): Promise<Reco
 	}
 	let value: unknown;
 	try {
-		value = JSON.parse(Buffer.concat(parts).toString('utf8'));
+		value = JSON.parse(Buffer.concat(parts).toString('utf8').trim());
 	} catch {
 		throw new BundleError('input', 'input is not JSON');
 	}
@@ -83,6 +90,12 @@ export async function runCommand(command: string, input: Record<string, unknown>
 				secrets: stringMap(input.secrets)
 			});
 			return { ok: true, bytes };
+		}
+		case 'check': {
+			// The verdict (integrity, missing files) is the business of the caller; only the first
+			// lines of a failed integrity check go back.
+			const result = checkData(text(input, 'dir'));
+			return { ok: true, integrity: result.integrity.slice(0, 5), counts: result.counts, files: result.files };
 		}
 		case 'open': {
 			const result = await open({
@@ -130,11 +143,19 @@ export async function selfTest(): Promise<{ ok: boolean; checks: Record<string, 
 		} catch (error) {
 			wrong = error instanceof AgeError && error.reason === 'passphrase';
 		}
+		const memory = new DatabaseSync(':memory:');
+		let sqlite = false;
+		try {
+			sqlite = Object.values(memory.prepare('PRAGMA integrity_check').get() ?? {})[0] === 'ok';
+		} finally {
+			memory.close();
+		}
 		const checks = {
 			roundTrip: (await readFile(join(out, 'pb_data.zip'), 'utf8')) === 'PK selbsttest',
 			secrets: opened.secrets.BYL_SELBSTTEST === 'wert',
 			manifest: opened.manifest.app === 'becauseyoulovejira',
-			wrongPassphrase: wrong
+			wrongPassphrase: wrong,
+			sqlite
 		};
 		return { ok: Object.values(checks).every(Boolean), checks };
 	} finally {
@@ -171,7 +192,7 @@ export async function main(
 			stdout.write(JSON.stringify(result));
 			return result.ok ? 0 : 1;
 		}
-		if (command !== 'seal' && command !== 'open') throw new UsageError(`unknown command: ${command}`);
+		if (command !== 'seal' && command !== 'open' && command !== 'check') throw new UsageError(`unknown command: ${command}`);
 		stdout.write(JSON.stringify(await runCommand(command, await readInput(stdin))));
 		return 0;
 	} catch (error) {
