@@ -1,6 +1,7 @@
 // Telegram bot, pure part (E4 plan, packages 17 and 20): allowlist, text and captions, the order
 // "save, confirm, move the offset", the hint for unknown chats, keywords with the answer for
-// messages without one, and failures of saving, confirming and answering.
+// messages without one, both answers as switches (ADR-0016, addendum of 2026-10-01), and failures
+// of saving, confirming and answering.
 
 import { describe, expect, it } from 'vitest';
 import { loadHookLib } from '../support/hook-lib.mjs';
@@ -40,6 +41,7 @@ function context(overrides = {}) {
 				log.push(['save', draft.source_ref]);
 				return 'created';
 			},
+			replySaved: true,
 			confirm: (chatId, messageId) => log.push(['confirm', chatId, messageId]),
 			match: (body) => keywords.matchKeyword(['nachricht', 'todo'], [body]),
 			replyNoMatch: true,
@@ -187,6 +189,39 @@ describe('channel-telegram.js: processing', () => {
 		const empty = context({ match: (body) => keywords.matchKeyword([], [body]) });
 		expect(telegram.processUpdates([update(11, PRIVATE)], 10, empty.ctx)).toMatchObject({ created: 0, unmatched: 1 });
 		expect(empty.log).toEqual([['decline', 424242, 110]]);
+	});
+
+	it('saves without a confirmation when it is switched off, and still answers without keyword', () => {
+		const { ctx, log } = context({ replySaved: false });
+		const result = telegram.processUpdates(
+			[update(11, PRIVATE, { text: 'todo Milch' }), update(12, PRIVATE, { text: 'Hallo' }), update(13, FAMILY, { text: 'todo Brot' })],
+			10,
+			ctx
+		);
+		expect(log).toEqual([
+			['save', '424242:110'],
+			['decline', 424242, 120],
+			['save', '-100123:130']
+		]);
+		expect(result).toMatchObject({ cursor: 13, created: 2, unmatched: 1, error: '' });
+	});
+
+	it('stays silent with both answers switched off, and never answers a duplicate or a stranger', () => {
+		const quiet = context({ replySaved: false, replyNoMatch: false });
+		const result = telegram.processUpdates(
+			[update(11, PRIVATE, { text: 'todo Milch' }), update(12, PRIVATE, { text: 'Hallo' }), update(13, STRANGER, { text: 'todo' })],
+			10,
+			quiet.ctx
+		);
+		expect(quiet.log).toEqual([['save', '424242:110']]);
+		expect(result).toMatchObject({ cursor: 13, created: 1, unmatched: 1, skipped: 1, error: '' });
+		expect(result.hint).toMatch(/Chat-ID 999/);
+
+		// With both on, a duplicate and a message of a chat that is not allowed get no answer either.
+		const loud = context({ save: (draft) => (loud.log.push(['save', draft.source_ref]), 'duplicate') });
+		const again = telegram.processUpdates([update(11, PRIVATE, { text: 'todo Milch' }), update(12, STRANGER, { text: 'Hallo' })], 10, loud.ctx);
+		expect(loud.log).toEqual([['save', '424242:110']]);
+		expect(again).toMatchObject({ cursor: 12, created: 0, duplicates: 1, unmatched: 0, skipped: 1, error: '' });
 	});
 
 	it('moves on when the answer fails and reports it with a failed confirmation', () => {

@@ -1,5 +1,6 @@
 // Component tests of the code block and the external link (ADR-0026 section 6, plan EH-4): copy
-// with success and refusal, status, names, placeholders, masking, and links only to https pages.
+// with success and refusal, status, names, placeholders, masking, and links only to https pages
+// with "(öffnet in neuem Tab)" after a space.
 
 import { fireEvent, render, screen } from '@testing-library/svelte';
 import { createRawSnippet } from 'svelte';
@@ -113,12 +114,24 @@ describe('external link', () => {
 	it('opens an https page in a new tab without opener and says so', () => {
 		render(ExternalLink, { props: { href: 'https://myaccount.google.com', children: text } });
 		const link = screen.getByRole('link', {
-			name: /^myaccount\.google\.com\s*\(öffnet in neuem Tab\)$/
+			name: 'myaccount.google.com (öffnet in neuem Tab)'
 		});
 		expect(link.getAttribute('href')).toBe('https://myaccount.google.com');
 		expect(link.getAttribute('target')).toBe('_blank');
 		expect(link.getAttribute('rel')).toBe('noopener noreferrer');
 		expect(link.querySelector('svg')?.getAttribute('aria-hidden')).toBe('true');
+	});
+
+	it('keeps the space before "(öffnet in neuem Tab)" (ADR-0026, addendum of 2026-10-01)', () => {
+		render(ExternalLink, { props: { href: 'https://myaccount.google.com', children: text } });
+		const link = screen.getByRole('link');
+		// Svelte 5 removes white space at the start of an element's markup, so the space is a text
+		// node of the link before the hidden part, not a part of it.
+		const hidden = link.querySelector('.visually-hidden');
+		expect(hidden?.textContent).toBe('(öffnet in neuem Tab)');
+		expect(hidden?.previousSibling?.nodeType).toBe(Node.TEXT_NODE);
+		expect(hidden?.previousSibling?.textContent).toBe(' ');
+		expect(link.textContent).toBe('myaccount.google.com (öffnet in neuem Tab)');
 	});
 
 	it.each(['http://example.com', 'javascript:alert(1)', '/eingang'])('does not link %s', (href) => {

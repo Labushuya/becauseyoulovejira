@@ -102,9 +102,12 @@ describe('realtime subscriptions on inbox_items', () => {
 		const items = s.a.collection('inbox_items');
 
 		const aPrivate = await items.create(ownedPayload('inbox_items', s.ids.a));
-		await items.update(aPrivate.id, { state: 'discarded' });
+		const ticket = await s.a.collection('tickets').create({ owner: s.ids.a, title: 'Ziel' });
+		await items.update(aPrivate.id, { state: 'converted', ticket: ticket.id });
 		const aH1 = await items.create(ownedPayload('inbox_items', s.ids.a, s.h1.id));
-		await items.delete(aPrivate.id);
+		// No item is deleted through the API (ADR-0014, addendum of 2026-10-01); a source that the
+		// trash keeps with its ticket ("Quellen verwerfen") disappears with a delete event instead.
+		await s.a.send(`/api/byl/tickets/${ticket.id}/delete`, { method: 'POST', body: { sources: 'discard' } });
 		const last = await items.create(ownedPayload('inbox_items', s.ids.a, s.h1.id));
 
 		await a.waitFor('create', aPrivate.id);

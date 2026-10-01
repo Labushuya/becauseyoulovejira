@@ -85,6 +85,11 @@ export interface Connection {
 	lastHint: string;
 	/** Keywords (ADR-0020): only what one of them matches comes into the inbox automatically. */
 	keywords: string[];
+	/**
+	 * Telegram: whether the bot confirms a saved entry in the chat (ADR-0016, addendum of
+	 * 2026-10-01); true for other kinds and for a connection from before the switch.
+	 */
+	replySaved: boolean;
 	/** Telegram: whether the bot answers a message without keyword; true for other kinds. */
 	replyNoMatch: boolean;
 	/** Mail: provider and user name of the mailbox ('' for other kinds). */
@@ -218,9 +223,53 @@ export interface SecretStatus {
 /** The settings a user changes on an existing connection. */
 export interface ConnectionSettingsDraft {
 	keywords: string[];
+	/** Telegram only; ignored for other kinds. */
+	replySaved: boolean;
+	/** Telegram only; ignored for other kinds. */
 	replyNoMatch: boolean;
 	/** Mail only; ignored for other kinds. */
 	matchBody: boolean;
+}
+
+/** The settings of a connection as they are; a change replaces only its own part. */
+export function settingsDraftOf(connection: Connection): ConnectionSettingsDraft {
+	return {
+		keywords: connection.keywords,
+		replySaved: connection.replySaved,
+		replyNoMatch: connection.replyNoMatch,
+		matchBody: connection.matchBody
+	};
+}
+
+/**
+ * The answers of a Telegram bot in the chat (ADR-0016, addendum of 2026-10-01): the same texts as
+ * app/pb_hooks/lib/channel-telegram.js (tests/unit/web-connections.test.mjs compares them).
+ */
+export const TELEGRAM_CONFIRMATION = 'Im Eingang gespeichert';
+export const TELEGRAM_NO_MATCH = 'Kein Stichwort erkannt – nicht gespeichert';
+
+/** Names of the two switches of a Telegram connection, each with the text the bot sends. */
+export const TELEGRAM_REPLY_SAVED_LABEL = `Bestätigung senden („${TELEGRAM_CONFIRMATION}“)`;
+export const TELEGRAM_REPLY_NO_MATCH_LABEL = `Hinweis bei fehlendem Stichwort senden („${TELEGRAM_NO_MATCH}“)`;
+
+/** The honest note next to the switches: the answers are messages in the chat. */
+export const TELEGRAM_REPLIES_HINT =
+	'Der Bot schreibt diese Antworten in den Chat; in Gruppen sehen sie alle Mitglieder.';
+
+/** A change of one of the two answers of a Telegram bot. */
+export type TelegramRepliesChange = { replySaved: boolean } | { replyNoMatch: boolean };
+
+/** What the flag says after a switch of the answers changed (named after the connection). */
+export function telegramRepliesAnnouncement(label: string, change: TelegramRepliesChange): string {
+	const name = `„${label}“`;
+	if ('replySaved' in change) {
+		return change.replySaved
+			? `${name} bestätigt gespeicherte Nachrichten im Chat.`
+			: `${name} bestätigt gespeicherte Nachrichten nicht mehr im Chat.`;
+	}
+	return change.replyNoMatch
+		? `${name} antwortet auf Nachrichten ohne Stichwort.`
+		: `${name} antwortet nicht mehr auf Nachrichten ohne Stichwort.`;
 }
 
 /** Shown at a connection without keywords (ADR-0020 section 4); neutral, not an error. */

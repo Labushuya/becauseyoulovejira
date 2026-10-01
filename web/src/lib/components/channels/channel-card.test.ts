@@ -11,6 +11,7 @@ import type { ResolvedPathname } from '$app/types';
 import { CARD_STATUS } from '$lib/domain/channel-card';
 import {
 	MAIL_INBOX_HINT,
+	TELEGRAM_REPLIES_HINT,
 	lastResultText,
 	type Connection,
 	type MailHelperStatus,
@@ -53,6 +54,7 @@ function connection(overrides: Partial<Connection> = {}): Connection {
 		lastError: '',
 		lastHint: '',
 		keywords: ['todo', 'ticket'],
+		replySaved: true,
 		replyNoMatch: true,
 		mailProvider: '',
 		mailUser: '',
@@ -72,7 +74,8 @@ function callbacks() {
 		onpause: vi.fn(),
 		ondelete: vi.fn(),
 		onsetup: vi.fn(),
-		onscan: vi.fn()
+		onscan: vi.fn(),
+		onreplies: vi.fn()
 	};
 }
 
@@ -304,7 +307,7 @@ describe('channel card', () => {
 					mailUser: 'anna@web.de'
 				}),
 				onkeywords: vi.fn(async () => null),
-				onreply: vi.fn(),
+				onreplies: vi.fn(),
 				onmatchbody: vi.fn(),
 				onsetup: vi.fn(),
 				onclose: vi.fn()
@@ -581,10 +584,48 @@ describe('full scan of an inbox on the card (ADR-0020, addendum 3)', () => {
 	});
 });
 
+describe('answers of a Telegram bot on the card (ADR-0016, addendum of 2026-10-01)', () => {
+	const BOT = {
+		id: 'conn-bot',
+		type: 'telegram' as const,
+		label: 'Bot',
+		secretEnv: 'BYL_TELEGRAM_TOKEN',
+		allowlistEnv: 'BYL_TELEGRAM_ALLOWED_IDS'
+	};
+
+	it('shows both answers as switches in the details, with the honest hint', async () => {
+		const { article, onreplies } = renderCard(connection({ ...BOT, replySaved: false }));
+		const details = await openDetails(article, 'Bot');
+		const group = details.getByRole('group', { name: 'Antworten im Chat' });
+		expect(within(group).getByText(TELEGRAM_REPLIES_HINT)).toBeTruthy();
+		const saved = within(group).getByRole<HTMLInputElement>('switch', {
+			name: /^Bestätigung senden/
+		});
+		const reply = within(group).getByRole<HTMLInputElement>('switch', {
+			name: /^Hinweis bei fehlendem Stichwort senden/
+		});
+		expect(saved.checked).toBe(false);
+		expect(reply.checked).toBe(true);
+		await fireEvent.click(saved);
+		expect(onreplies).toHaveBeenLastCalledWith({ replySaved: true });
+		await fireEvent.click(reply);
+		expect(onreplies).toHaveBeenLastCalledWith({ replyNoMatch: false });
+		// The former text row is gone; the switch says the same.
+		expect(details.queryByText('Ohne Stichwort')).toBeNull();
+	});
+
+	it('has no such switches on other kinds', async () => {
+		const { article } = renderCard(connection());
+		const details = await openDetails(article, 'Kalender');
+		expect(details.queryByRole('group', { name: 'Antworten im Chat' })).toBeNull();
+		expect(details.queryByRole('switch')).toBeNull();
+	});
+});
+
 describe('channel edit modal', () => {
-	it('is a modal M named after the connection with keywords, switch, variables and "Schließen"', async () => {
+	it('is a modal M named after the connection with keywords, switches, variables and "Schließen"', async () => {
 		const onclose = vi.fn();
-		const onreply = vi.fn();
+		const onreplies = vi.fn();
 		render(ChannelEditModal, {
 			props: {
 				connection: connection({
@@ -594,7 +635,7 @@ describe('channel edit modal', () => {
 					allowlistEnv: 'BYL_TELEGRAM_ALLOWED_IDS'
 				}),
 				onkeywords: vi.fn(async () => null),
-				onreply,
+				onreplies,
 				onmatchbody: vi.fn(),
 				onsetup: vi.fn(),
 				onclose
@@ -605,12 +646,27 @@ describe('channel edit modal', () => {
 		expect(scope.getByRole('list', { name: 'Stichwörter von „Bot“' })).toBeTruthy();
 		expect(scope.getByText('BYL_TELEGRAM_TOKEN')).toBeTruthy();
 		expect(scope.getByText('BYL_TELEGRAM_ALLOWED_IDS')).toBeTruthy();
-		// A switch after Apple HIG (ADR-0029, G-5): a checkbox with role="switch", name left.
-		const reply = scope.getByRole<HTMLInputElement>('switch', { name: /ohne Stichwort antworten/ });
-		expect(reply.getAttribute('type')).toBe('checkbox');
-		expect(reply.closest('label')?.firstElementChild?.tagName).toBe('SPAN');
+		// Both answers of the bot as switches after Apple HIG (ADR-0029, G-5; ADR-0016, addendum of
+		// 2026-10-01): checkboxes with role="switch", name left, on by default, in a described group.
+		const group = scope.getByRole('group', { name: 'Antworten im Chat' });
+		expect(group.getAttribute('aria-describedby')).toBe(
+			scope.getByText(TELEGRAM_REPLIES_HINT).getAttribute('id')
+		);
+		const saved = scope.getByRole<HTMLInputElement>('switch', {
+			name: 'Bestätigung senden („Im Eingang gespeichert“)'
+		});
+		const reply = scope.getByRole<HTMLInputElement>('switch', {
+			name: 'Hinweis bei fehlendem Stichwort senden („Kein Stichwort erkannt – nicht gespeichert“)'
+		});
+		for (const control of [saved, reply]) {
+			expect(control.getAttribute('type')).toBe('checkbox');
+			expect(control.checked).toBe(true);
+			expect(control.closest('label')?.firstElementChild?.tagName).toBe('SPAN');
+		}
+		await fireEvent.click(saved);
+		expect(onreplies).toHaveBeenLastCalledWith({ replySaved: false });
 		await fireEvent.click(reply);
-		expect(onreply).toHaveBeenCalledWith(false);
+		expect(onreplies).toHaveBeenLastCalledWith({ replyNoMatch: false });
 		const close = scope.getAllByRole('button', { name: 'Schließen' });
 		expect(close.length).toBeGreaterThanOrEqual(2);
 		expect(scope.queryByRole('button', { name: 'Abbrechen' })).toBeNull();
@@ -624,7 +680,7 @@ describe('channel edit modal', () => {
 			props: {
 				connection: connection({ type: 'mail', label: 'Web.de', matchBody: false }),
 				onkeywords: vi.fn(async () => null),
-				onreply: vi.fn(),
+				onreplies: vi.fn(),
 				onmatchbody,
 				onsetup: vi.fn(),
 				onclose: vi.fn()
@@ -637,7 +693,7 @@ describe('channel edit modal', () => {
 		});
 		expect(search.checked).toBe(false);
 		expect(dialog.queryByRole('checkbox', { name: /durchsuchen/ })).toBeNull();
-		expect(dialog.queryByRole('switch', { name: /ohne Stichwort antworten/ })).toBeNull();
+		expect(dialog.queryByRole('group', { name: 'Antworten im Chat' })).toBeNull();
 		await fireEvent.click(search);
 
 		expect(onmatchbody).toHaveBeenCalledExactlyOnceWith(true);

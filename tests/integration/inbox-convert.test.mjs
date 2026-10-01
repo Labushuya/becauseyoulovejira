@@ -235,8 +235,8 @@ describe('deleting', () => {
 	it('keeps the item the ticket came from: it cannot be deleted (ADR-0031 section 3)', async () => {
 		const item = await createItem(owner);
 		const ticket = await owner.ticket({ source_item: item.id });
-		// The deleteRule hides it from the owner; the hook refuses it to the superuser as well.
-		expect((await rejectionOf(owner.client.collection('inbox_items').delete(item.id))).status).toBe(404);
+		// The deleteRule refuses the owner; the hook refuses the superuser as well and says why.
+		expect((await rejectionOf(owner.client.collection('inbox_items').delete(item.id))).status).toBe(403);
 		expect(await rejectionOf(superuser.collection('inbox_items').delete(item.id))).toEqual({
 			status: 400,
 			codes: { ticket: 'validation_inbox_item_linked' }
@@ -245,9 +245,15 @@ describe('deleting', () => {
 		expect(after.source_item).toBe(item.id);
 		expect(after.source).toBe('eml');
 
-		// Once the ticket is gone, the item protects nothing any more.
+		// Once the ticket is gone, the item is back in the inbox and still not deletable: its
+		// fingerprint keeps the same mail out (ADR-0014, addendum of 2026-10-01).
 		await owner.client.collection('tickets').delete(ticket.id);
-		await owner.client.collection('inbox_items').delete(item.id);
-		expect((await rejectionOf(itemOf(item.id))).status).toBe(404);
+		expect((await itemOf(item.id)).state).toBe('new');
+		expect((await rejectionOf(owner.client.collection('inbox_items').delete(item.id))).status).toBe(403);
+		expect(await rejectionOf(superuser.collection('inbox_items').delete(item.id))).toEqual({
+			status: 400,
+			codes: { state: 'validation_inbox_item_delete' }
+		});
+		expect((await itemOf(item.id)).id).toBe(item.id);
 	});
 });

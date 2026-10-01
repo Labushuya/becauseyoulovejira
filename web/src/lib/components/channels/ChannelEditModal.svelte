@@ -3,24 +3,27 @@
 		KEYWORD_SEARCH_TEXT,
 		MAIL_INBOX_HINT,
 		NO_KEYWORDS_WARNING,
-		type Connection
+		type Connection,
+		type TelegramRepliesChange
 	} from '$lib/domain/connections';
 	import { MAIL_MATCH_BODY_LABEL } from '$lib/domain/keywords';
 	import SectionMessage from '../guidance/SectionMessage.svelte';
 	import KeywordEditor from '../KeywordEditor.svelte';
 	import Modal from '../overlay/Modal.svelte';
+	import TelegramReplySwitches from './TelegramReplySwitches.svelte';
 
 	// "‹Name› bearbeiten" (ADR-0026 section 3, plan EH-3): a modal of size M with the keywords of the
-	// connection, its switch (Telegram: answer to messages without keyword; mailbox: search headers
-	// and the whole text) and the names of its variables, read only, with the way to the setup. Every change
-	// is saved at once, so the footer says "Schließen" (ADR-0025 section 3); results go out as flags.
-	// The switches are switches after Apple HIG (ADR-0029, G-5): a single emphasised setting, a row
-	// with the name left and the switch right, drawn by base.css through role="switch".
+	// connection, its switches (Telegram: the confirmation and the answer to messages without
+	// keyword, ADR-0016 addendum of 2026-10-01; mailbox: search headers and the whole text) and the
+	// names of its variables, read only, with the way to the setup. Every change is saved at once,
+	// so the footer says "Schließen" (ADR-0025 section 3); results go out as flags. The switches are
+	// switches after Apple HIG (ADR-0029, G-5): a single emphasised setting, a row with the name
+	// left and the switch right, drawn by base.css through role="switch".
 	let {
 		connection,
 		message = null,
 		onkeywords,
-		onreply,
+		onreplies,
 		onmatchbody,
 		onsetup,
 		onclose
@@ -29,7 +32,8 @@
 		/** Error of the last switch (inline). */
 		message?: string | null;
 		onkeywords: (next: string[], announcement: string) => Promise<string | null>;
-		onreply: (replyNoMatch: boolean) => void;
+		/** Telegram: a switch of the answers of the bot changed. */
+		onreplies: (change: TelegramRepliesChange) => Promise<void>;
 		onmatchbody: (matchBody: boolean) => void;
 		/** Closes the modal and shows the setup of this kind. */
 		onsetup: () => void;
@@ -49,17 +53,7 @@
 			onsave={onkeywords}
 		/>
 		{#if connection.type === 'telegram'}
-			<label class="setting">
-				<span>
-					Auf Nachrichten ohne Stichwort antworten („Kein Stichwort erkannt – nicht gespeichert“)
-				</span>
-				<input
-					type="checkbox"
-					role="switch"
-					checked={connection.replyNoMatch}
-					onchange={(event) => onreply(event.currentTarget.checked)}
-				/>
-			</label>
+			<TelegramReplySwitches {connection} onchange={onreplies} />
 		{/if}
 		{#if connection.type === 'mail'}
 			<SectionMessage tone="info" compact>{MAIL_INBOX_HINT}</SectionMessage>

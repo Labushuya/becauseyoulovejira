@@ -32,11 +32,13 @@ onRecordUpdate(function (e) {
   });
 }, 'inbox_items');
 
-// The source of a ticket cannot be deleted (ADR-0031 section 3); the deleteRule of the migration
-// 1790201800 says the same once it has run.
+// No inbox item can be deleted through the Record API, not even by a superuser in the admin UI
+// (ADR-0014, addendum of 2026-10-01; ADR-0031 section 3): discarding keeps its fingerprint as a
+// block against the same object. The hook always refuses and so never calls e.next(); the
+// deleteRule null of the migration 1790202800 refuses app users before it. Deletes of the server
+// itself ($app.delete, the trash, migrations) do not pass this hook.
 onRecordDeleteRequest(function (e) {
-  require(`${__hooks}/lib/inbox-service.js`).guardDelete(e.app, e.record);
-  e.next();
+  require(`${__hooks}/lib/inbox-service.js`).refuseDelete(e.app, e.record);
 }, 'inbox_items');
 
 // Discarded items lose their content after 30 days (OF-E4-6, E4 plan package 24); fingerprint and

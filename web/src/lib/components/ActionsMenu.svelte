@@ -29,6 +29,7 @@
 <script lang="ts">
 	import { isHttpsUrl } from '$lib/guidance/links';
 	import { OPEN_MENU_EVENT, type MenuRequest } from '$lib/overlay/context-menu';
+	import NewTabHint from './guidance/NewTabHint.svelte';
 	import Popover from './overlay/Popover.svelte';
 
 	// The menu "•••" (ADR-0025 section 5, APG menu button): a symbol button that opens a popover of
@@ -139,7 +140,7 @@
 						height="12"
 						aria-hidden="true"
 						focusable="false"><path d="M9 3h4v4M13 3L7.5 8.5M11.5 9.5v3.5h-8.5v-8.5h3.5" /></svg
-					> <span class="visually-hidden">(öffnet in neuem Tab)</span></a
+					><NewTabHint /></a
 				>
 				<!-- eslint-enable svelte/no-navigation-without-resolve -->
 			{:else}

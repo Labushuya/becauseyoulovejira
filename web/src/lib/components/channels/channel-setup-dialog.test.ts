@@ -36,6 +36,7 @@ function calendar(overrides: Partial<Connection> = {}): Connection {
 		lastError: '',
 		lastHint: '',
 		keywords: [],
+		replySaved: true,
 		replyNoMatch: true,
 		mailProvider: '',
 		mailUser: '',

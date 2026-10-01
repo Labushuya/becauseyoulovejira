@@ -95,13 +95,43 @@ describe('connection-rules.js', () => {
 		});
 	});
 
-	it('reads keywords and the answer switch, tolerant of missing values', () => {
+	it('accepts the switch of the confirmation for Telegram only, as true or false (ADR-0016, addendum of 2026-10-01)', () => {
+		for (const value of [true, false]) {
+			expect(
+				rules.settingsViolation('telegram', { allowed_env: 'BYL_IDS', reply_saved: value, reply_no_match: value }, secrets, keywords),
+				String(value)
+			).toBe('');
+		}
+		for (const value of ['nein', 0, 1, null, {}]) {
+			expect(
+				rules.settingsViolation('telegram', { allowed_env: 'BYL_IDS', reply_saved: value }, secrets, keywords),
+				JSON.stringify(value)
+			).toEqual({ field: 'settings', code: 'validation_connection_settings', message: 'Unbekannte Einstellung.' });
+		}
+		for (const type of ['calendar', 'mail', 'notion']) {
+			const base = type === 'mail' ? { provider: 'webde', user: 'anna@web.de' } : {};
+			expect(rules.settingsViolation(type, { ...base, reply_saved: true }, secrets, keywords), type).toMatchObject({
+				code: 'validation_connection_settings'
+			});
+		}
+	});
+
+	it('reads keywords and the answer switches, tolerant of missing values', () => {
 		expect(rules.keywordsOf({ keywords: [' todo ', 1] }, keywords)).toEqual(['todo']);
 		expect(rules.keywordsOf(null, keywords)).toEqual([]);
 		expect(rules.keywordsOf({}, keywords)).toEqual([]);
 		expect(rules.repliesWithoutMatch(null)).toBe(true);
 		expect(rules.repliesWithoutMatch({ reply_no_match: true })).toBe(true);
 		expect(rules.repliesWithoutMatch({ reply_no_match: false })).toBe(false);
+		// Both default to on; a connection from before the switch has no value (data of before).
+		for (const settings of [null, '', [], {}, { allowed_env: 'BYL_IDS', keywords: ['todo'] }, { reply_saved: 'x' }]) {
+			expect(rules.repliesOnSave(settings), JSON.stringify(settings)).toBe(true);
+			expect(rules.repliesWithoutMatch(settings), JSON.stringify(settings)).toBe(true);
+		}
+		expect(rules.repliesOnSave({ reply_saved: true })).toBe(true);
+		expect(rules.repliesOnSave({ reply_saved: false })).toBe(false);
+		expect(rules.repliesOnSave({ reply_saved: false, reply_no_match: true })).toBe(false);
+		expect(rules.repliesWithoutMatch({ reply_saved: false, reply_no_match: true })).toBe(true);
 	});
 
 	it('keeps kind and server fields on update', () => {

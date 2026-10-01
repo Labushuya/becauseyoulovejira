@@ -161,6 +161,21 @@ describe('connections: create and guard', () => {
 			keywords: ['todo', 'zu erledigen'],
 			reply_no_match: false
 		});
+		// The confirmation of a saved entry is a switch as well (ADR-0016, addendum of 2026-10-01).
+		const quiet = await owner.pb
+			.collection('connections')
+			.update(record.id, { settings: { ...record.settings, reply_saved: false } });
+		expect(quiet.settings).toMatchObject({ reply_saved: false, reply_no_match: false });
+		for (const value of ['nein', 0, null]) {
+			expect(
+				(await codesOf(owner.pb.collection('connections').update(record.id, { settings: { allowed_env: 'BYL_TEST_ALLOWED', reply_saved: value } })))
+					.codes,
+				JSON.stringify(value)
+			).toEqual({ settings: 'validation_connection_settings' });
+		}
+		expect((await codesOf(calendar(owner, { settings: { reply_saved: false } }))).codes).toEqual({
+			settings: 'validation_connection_settings'
+		});
 		const tooMany = Array.from({ length: 51 }, (_, i) => `k${i}`);
 		for (const keywords of ['todo', [3], ['x'.repeat(101)], tooMany]) {
 			expect((await codesOf(calendar(owner, { settings: { keywords } }))).codes).toEqual({
@@ -279,11 +294,23 @@ describe('data layer of the web app', () => {
 		});
 		expect(await getSecretStatus(fresh.pb, created.id)).toEqual({ secret: true, allowlist: false });
 		expect((await listConnections(fresh.pb)).map((item) => item.id)).toEqual([created.id]);
-		expect(created).toMatchObject({ keywords: [], replyNoMatch: true });
-		const saved = await saveConnectionSettings(fresh.pb, created, { keywords: [' todo ', '#byl'], replyNoMatch: false });
-		expect(saved).toMatchObject({ keywords: ['todo', '#byl'], replyNoMatch: false, allowlistEnv: 'BYL_TEST_UNSET' });
+		expect(created).toMatchObject({ keywords: [], replySaved: true, replyNoMatch: true });
+		const saved = await saveConnectionSettings(fresh.pb, created, {
+			keywords: [' todo ', '#byl'],
+			replySaved: true,
+			replyNoMatch: false,
+			matchBody: false
+		});
+		expect(saved).toMatchObject({ keywords: ['todo', '#byl'], replySaved: true, replyNoMatch: false, allowlistEnv: 'BYL_TEST_UNSET' });
+		// The confirmation is stored only while it is off (ADR-0016, addendum of 2026-10-01).
+		expect((await fresh.pb.collection('connections').getOne(created.id)).settings).not.toHaveProperty('reply_saved');
+		const quiet = await saveConnectionSettings(fresh.pb, created, { ...saved, replySaved: false });
+		expect(quiet).toMatchObject({ replySaved: false, replyNoMatch: false, keywords: ['todo', '#byl'] });
+		expect((await fresh.pb.collection('connections').getOne(created.id)).settings).toMatchObject({ reply_saved: false });
+		expect(await saveConnectionSettings(fresh.pb, created, { ...quiet, replySaved: true })).toMatchObject({ replySaved: true });
+		expect((await fresh.pb.collection('connections').getOne(created.id)).settings).not.toHaveProperty('reply_saved');
 		await expect(
-			saveConnectionSettings(fresh.pb, created, { keywords: ['x'.repeat(101)], replyNoMatch: true })
+			saveConnectionSettings(fresh.pb, created, { keywords: ['x'.repeat(101)], replySaved: true, replyNoMatch: true, matchBody: false })
 		).rejects.toMatchObject({ kind: 'validation', fields: { settings: expect.anything() } });
 		expect(await setConnectionEnabled(fresh.pb, created.id, false)).toMatchObject({ enabled: false, keywords: ['todo', '#byl'] });
 		await deleteConnection(fresh.pb, created.id);

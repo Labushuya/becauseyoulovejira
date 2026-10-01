@@ -1,6 +1,7 @@
 // The connections of the web app (web/src/lib/domain/connections.ts) against the hook modules:
 // the same name pattern for variables, only kinds a user may create (E4 plan, package 10) and the
-// same check of mailboxes (package 22), and the suggestions per mail provider (package 13).
+// same check of mailboxes (package 22), the suggestions per mail provider (package 13) and the
+// texts of the Telegram bot (ADR-0016, addendum of 2026-10-01).
 
 import { describe, expect, it } from 'vitest';
 import { loadHookLib } from '../support/hook-lib.mjs';
@@ -10,6 +11,8 @@ import {
 	MAIL_PROVIDER_SECRET_NAMES,
 	MAIL_USER_MAX_LENGTH,
 	SECRET_NAME_PATTERN,
+	TELEGRAM_CONFIRMATION,
+	TELEGRAM_NO_MATCH,
 	emptyConnectionDraft,
 	isMailUser,
 	isSecretName,
@@ -18,6 +21,7 @@ import {
 
 const secrets = loadHookLib('secrets.js');
 const rules = loadHookLib('connection-rules.js');
+const telegram = loadHookLib('channel-telegram.js');
 
 describe('web connections against the hooks', () => {
 	it('uses the name pattern of secrets.js', () => {
@@ -36,6 +40,11 @@ describe('web connections against the hooks', () => {
 		expect(MAIL_USER_MAX_LENGTH).toBe(rules.MAIL_USER_MAX_LENGTH);
 		const names = ['anna@web.de', 'anna', '', ' ', 'a b', 'a\tb', 'a\u0000', 'a\u007f', 'x'.repeat(254), 'x'.repeat(255), 'ä@ü.de'];
 		for (const name of names) expect(isMailUser(name), JSON.stringify(name)).toBe(rules.isMailUser(name));
+	});
+
+	it('names the answers of the Telegram bot with the texts it sends (ADR-0016, addendum of 2026-10-01)', () => {
+		expect(TELEGRAM_CONFIRMATION).toBe(telegram.CONFIRMATION);
+		expect(TELEGRAM_NO_MATCH).toBe(telegram.NO_MATCH);
 	});
 });
 

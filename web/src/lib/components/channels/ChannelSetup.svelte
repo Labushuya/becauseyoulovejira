@@ -25,7 +25,10 @@
 		KEYWORD_SEARCH_TEXT,
 		NO_KEYWORDS_WARNING,
 		runResultText,
-		type Connection
+		settingsDraftOf,
+		telegramRepliesAnnouncement,
+		type Connection,
+		type TelegramRepliesChange
 	} from '$lib/domain/connections';
 	import { checkText } from '$lib/domain/notion';
 	import type { ConnectionsStore } from '$lib/stores/connections.svelte';
@@ -41,6 +44,7 @@
 	import SecretValueField from './SecretValueField.svelte';
 	import SetupCheck from './SetupCheck.svelte';
 	import SetupConnectForm from './SetupConnectForm.svelte';
+	import TelegramReplySwitches from './TelegramReplySwitches.svelte';
 
 	// Setup assistant (ADR-0026 section 4, plan EH-5 §3.7/§3.8/§3.11): a modal L "‹Dienst›
 	// einrichten" with the stepper at the top of the content, one step at a time and the footer
@@ -49,8 +53,9 @@
 	// shown comes from facts of the server (setupProgress), the step looked at last from
 	// sessionStorage (only its number). "Weiter" is never locked; an open check of an earlier step
 	// is named at the top of the next one. While the assistant is open it watches its connection
-	// through realtime, so a run of the server shows without polling. Nothing is dirty: creating and
-	// keywords save at once, a typed value is dropped on purpose when the modal closes. Notion
+	// through realtime, so a run of the server shows without polling. Nothing is dirty: creating,
+	// keywords and the switches of the Telegram answers (last step, ADR-0016 addendum of 2026-10-01)
+	// save at once, a typed value is dropped on purpose when the modal closes. Notion
 	// (ADR-0041) ends with "Verbindung prüfen"; its result offers "Listen übernehmen …", which closes
 	// the assistant and opens the import dialog (no dialog from a dialog).
 	let {
@@ -224,7 +229,7 @@
 		hold();
 		const result = await store.saveSettings(
 			connection.id,
-			{ keywords, replyNoMatch: connection.replyNoMatch, matchBody: connection.matchBody },
+			{ ...settingsDraftOf(connection), keywords },
 			announcement
 		);
 		if (result.ok) return null;
@@ -233,6 +238,25 @@
 			Object.values(result.fields)[0] ??
 			'Die Stichwörter ließen sich nicht speichern.'
 		);
+	}
+
+	/** Telegram: error of the last switch of the answers in the chat (inline). */
+	let repliesError = $state<string | null>(null);
+
+	async function saveReplies(change: TelegramRepliesChange) {
+		if (connection === null) return;
+		hold();
+		repliesError = null;
+		const result = await store.saveSettings(
+			connection.id,
+			{ ...settingsDraftOf(connection), ...change },
+			telegramRepliesAnnouncement(connection.label, change)
+		);
+		if (!result.ok)
+			repliesError =
+				result.message ??
+				Object.values(result.fields)[0] ??
+				'Die Einstellung ließ sich nicht speichern.';
 	}
 
 	let runError = $state<string | null>(null);
@@ -555,6 +579,10 @@
 				emptyText={NO_KEYWORDS_WARNING}
 				onsave={saveKeywords}
 			/>
+			<TelegramReplySwitches {connection} onchange={saveReplies} />
+			{#if repliesError !== null}
+				<SectionMessage tone="error" compact live>{repliesError}</SectionMessage>
+			{/if}
 		{/if}
 		{@render runBlock()}
 	{/if}

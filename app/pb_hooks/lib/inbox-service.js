@@ -26,6 +26,8 @@ var MESSAGES = {
   validation_inbox_primary_source:
     'Die Hauptquelle bleibt bei dem Ticket, das aus ihr entstanden ist; sie lässt sich weder lösen noch verschieben.',
   validation_inbox_item_linked: 'Dieser Eintrag ist die Quelle eines Tickets und lässt sich nicht löschen.',
+  validation_inbox_item_delete:
+    'Eingangseinträge lassen sich nicht löschen, nur verwerfen. So bleibt die Sperre gegen erneutes Eintreffen erhalten.',
   validation_invalid_url: 'Nur http- und https-Adressen.',
   validation_required: 'Pflichtfeld.',
   validation_scope_mismatch: 'Verknüpfter Datensatz nicht gefunden oder in einem anderen Bereich.',
@@ -376,13 +378,17 @@ function recordLinkChange(txApp, record, change) {
   );
 }
 
-// onRecordDeleteRequest (ADR-0031 section 3): the source of a ticket is never deleted through
-// the API, neither a linked item nor the main source. Works before the migration of the
-// deleteRule and for superusers too.
-function guardDelete(app, record) {
+// onRecordDeleteRequest (ADR-0014, addendum of 2026-10-01; ADR-0031 section 3): no inbox item is
+// deleted through the API, also not by a superuser in the admin UI and also before the migration
+// 1790202800. Deleting would take its fingerprint, and the same object would come in again; the
+// app discards instead (tombstone). Always throws: the source of a ticket (a linked item or the
+// main source) names that reason, every other item the general one. Deletes of the server itself
+// ($app.delete, the trash, migrations) do not pass the request hook.
+function refuseDelete(app, record) {
   if (record.getString('ticket') !== '' || isPrimarySource(app, record.id)) {
     throw fail('ticket', 'validation_inbox_item_linked');
   }
+  throw fail('state', 'validation_inbox_item_delete');
 }
 
 // Ticket create, before e.next() (ADR-0014 section 2): with `source_item` the item must exist in
@@ -564,7 +570,7 @@ module.exports = {
   guardClientUpdate: guardClientUpdate,
   prepareUpdate: prepareUpdate,
   recordLinkChange: recordLinkChange,
-  guardDelete: guardDelete,
+  refuseDelete: refuseDelete,
   prepareConversion: prepareConversion,
   completeConversion: completeConversion,
   SOURCE_HANDLING_KEY: SOURCE_HANDLING_KEY,

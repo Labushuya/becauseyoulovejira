@@ -281,3 +281,14 @@ Der Hinweis am Feld nennt den Verlauf. Die Systemsteuerung ist als gleichwertige
   - **Nicht eingesetzt:** der `TagPicker` (Tags eines Tickets: wenige, und die Eingabe arbeitet mit der Rücktaste am sichtbaren Ende der Liste), die Tabelle „Aufgaben“ (hat schon „+N“ nach [ADR-0030](0030-spalten-breiten-und-kompakte-zeilen.md) §6), die Tag-Verwaltung unter „Einstellungen → Tags“ (eine Tabelle mit Umbenennen und Löschen je Zeile, keine Chips) und die Filter-Popover (Radios mit Suchfeld ab 10 Einträgen).
 
 **Alternativen:** schon ab 9 Einträgen kürzen (verworfen, siehe oben); die ganze Liste in einem Popover (verworfen: ein Overlay mehr, und ein Popover aus einem Dialog wäre für den Editor ein Fremdkörper); nur die Zahl zeigen und für alles den Dialog öffnen (verworfen: genau das bemängelte der Nutzer als unübersichtlich bzw. nicht einsehbar).
+
+## Nachtrag (2026-10-01): Leerzeichen vor „(öffnet in neuem Tab)“
+
+**Befund:** `ExternalLink` (§6) schrieb den verborgenen Zusatz als `<span class="visually-hidden"> (öffnet in neuem Tab)</span>`. Svelte 5 entfernt Leerraum am Anfang des Inhalts eines Elements; der Link hieß damit „myaccount.google.com(öffnet in neuem Tab)“. Die Tests prüften den Namen mit `\s*` und merkten es nicht. Dasselbe galt für „Mehr zur Kurzsyntax“ der Schnellerfassung. Das Menü „•••“ (AM-5, Einträge `external`) umging es mit einem Leerraum zwischen zwei Tags, der nur zufällig stehen blieb.
+
+**Entscheidung:** Ein Baustein `components/guidance/NewTabHint.svelte` schreibt den Zusatz für alle drei Stellen: ein Leerzeichen als eigener Textknoten des Links, als Ausdruck `{' '}` geschrieben (Svelte behält ihn), dann `<span class="visually-hidden">(öffnet in neuem Tab)</span>`. Der Umweg im Menü entfällt. Gründe gegen die Alternativen:
+
+- **Leerzeichen als Ausdruck im verborgenen Span:** Der Text stimmt dann zwar, aber die Berechnung des Namens kürzt Leerraum am Rand eines Kindelements (so `dom-accessibility-api` der Tests; der verborgene Span ist absolut positioniert, also ein eigener Block, in dem ein führendes Leerzeichen auch im Layout wegfällt). Als Textknoten des Links selbst gehört es in jeder Berechnung zum Namen.
+- **Abstand per CSS** (`margin`, `padding`): erzeugt kein Zeichen, also weder im Namen noch im kopierten oder vorgelesenen Text ein Leerzeichen.
+
+Sichtbar ist höchstens ein Leerzeichen am Ende des Links; an allen heutigen Stellen steht der Link als Flex- oder Grid-Element oder am Ende seines Absatzes, dort fällt es am Zeilenende weg. Komponententests prüfen den genauen Namen „myaccount.google.com (öffnet in neuem Tab)“, den Textknoten und die Einträge des Menüs.

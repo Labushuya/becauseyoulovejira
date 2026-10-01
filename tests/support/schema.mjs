@@ -342,13 +342,15 @@ export const EXPECTED_RULES = {
 		updateRule: OWNED_RULES.updateRule + LIVE,
 		deleteRule: OWNED + LIVE
 	},
-	// The source of a ticket is not deletable (ADR-0031 section 3, 1790201800).
+	// No inbox item is deletable through the API (ADR-0014, addendum of 2026-10-01, 1790202800;
+	// before it only the source of a ticket, ADR-0031 section 3, 1790201800); the hook refuses
+	// superusers as well.
 	inbox_items: {
 		...OWNED_RULES,
 		listRule: OWNED + LIVE_ITEM,
 		viewRule: OWNED + LIVE_ITEM,
 		updateRule: OWNED_RULES.updateRule + LIVE_ITEM,
-		deleteRule: `${OWNED} && ticket = ""`
+		deleteRule: null
 	},
 	connections: OWNED_RULES,
 	comments: {

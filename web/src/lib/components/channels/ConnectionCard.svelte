@@ -12,13 +12,15 @@
 		type Connection,
 		type MailHelperStatus,
 		type RunResult,
-		type SecretStatus
+		type SecretStatus,
+		type TelegramRepliesChange
 	} from '$lib/domain/connections';
 	import { formatBerlinDateTime } from '$lib/domain/format';
 	import { connectionAnchor } from '$lib/domain/sync-all';
 	import { helpHref } from '$lib/settings-sections';
 	import ChipList from '../ChipList.svelte';
 	import ChannelCard, { type CardAction } from './ChannelCard.svelte';
+	import TelegramReplySwitches from './TelegramReplySwitches.svelte';
 
 	// Card of a connection that fetches by itself: Google Calendar, Telegram and the mailboxes
 	// Web.de and Gmail (ADR-0016, ADR-0020; since the plan kanal-karten KK-2 a configuration of the
@@ -26,8 +28,10 @@
 	// "Jetzt abrufen", "Fortsetzen", "Einrichtung fortsetzen", during the full scan of an inbox
 	// "Durchsuchen abbrechen", while a fetch runs "Wird abgerufen …". The menu "•••" holds the rest
 	// (mailbox selection, keywords and switches, pausing, the scan, the setup, the help, deleting),
-	// the details the former meta lines. The card carries the anchor `#verbindung-<id>`, the target
-	// of "Zur Karte" in the flag of "Alle Kanäle jetzt abrufen".
+	// the details the former meta lines; a Telegram bot shows its two answers in the chat there as
+	// switches (ADR-0016, addendum of 2026-10-01), an action of that entry at the entry. The card
+	// carries the anchor `#verbindung-<id>`, the target of "Zur Karte" in the flag of "Alle Kanäle
+	// jetzt abrufen".
 	let {
 		connection,
 		secretStatus,
@@ -41,7 +45,8 @@
 		onpause,
 		ondelete,
 		onsetup,
-		onscan = () => undefined
+		onscan = () => undefined,
+		onreplies
 	}: {
 		connection: Connection;
 		/** State of the variables; null while unknown. */
@@ -65,6 +70,8 @@
 		onsetup: () => void;
 		/** Mailbox: starts the full scan of the inbox again or cancels it. */
 		onscan?: (action: 'start' | 'cancel') => void;
+		/** Telegram: a switch of the answers of the bot in the details changed. */
+		onreplies: (change: TelegramRepliesChange) => Promise<void>;
 	} = $props();
 
 	const clock = minuteClock();
@@ -181,16 +188,6 @@
 					/>
 				</dd>
 			</div>
-			{#if connection.type === 'telegram'}
-				<div>
-					<dt>Ohne Stichwort</dt>
-					<dd>
-						{connection.replyNoMatch
-							? 'antwortet „Kein Stichwort erkannt – nicht gespeichert“'
-							: 'antwortet nicht'}
-					</dd>
-				</div>
-			{/if}
 			{#if mail}
 				<div>
 					<dt>Durchsucht</dt>
@@ -222,5 +219,8 @@
 				</div>
 			{/if}
 		</dl>
+		{#if connection.type === 'telegram'}
+			<TelegramReplySwitches {connection} compact onchange={onreplies} />
+		{/if}
 	{/snippet}
 </ChannelCard>

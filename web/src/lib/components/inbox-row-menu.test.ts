@@ -492,8 +492,9 @@ describe('menu "•••" of a row of the inbox: sources and copies (AM-5)', ()
 		});
 
 		expect(link.tagName).toBe('A');
-		// The hidden part of the name says where it opens, as ExternalLink does.
-		expect(link.textContent?.trim()).toBe(LINK_ENTRY);
+		// The hidden part of the name says where it opens, as ExternalLink does, with its own space
+		// (ADR-0026, addendum of 2026-10-01).
+		expect(link.textContent).toBe(LINK_ENTRY);
 		expect(link.querySelector('.visually-hidden')?.textContent).toBe('(öffnet in neuem Tab)');
 		expect(link.getAttribute('href')).toBe('https://example.com/artikel');
 		expect(link.getAttribute('target')).toBe('_blank');

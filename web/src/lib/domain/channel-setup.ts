@@ -555,8 +555,8 @@ const TELEGRAM_STEPS: readonly SetupStep[] = [
 		links: [],
 		commands: [],
 		more: [
-			'Jede gespeicherte Nachricht beantwortet der Bot mit „Im Eingang gespeichert“. Auf Nachrichten ohne Stichwort antwortet er „Kein Stichwort erkannt – nicht gespeichert“ (abschaltbar an der Karte im Menü „•••“ unter „Stichwörter und Einstellungen …“).',
-			'Telegram hält Nachrichten für den Bot höchstens 24 Stunden bereit; läuft die App länger nicht, gehen sie verloren.'
+			'Jede gespeicherte Nachricht beantwortet der Bot mit „Im Eingang gespeichert“, eine Nachricht ohne Stichwort mit „Kein Stichwort erkannt – nicht gespeichert“. Beide Antworten schaltest du hier ab oder später an der Karte (unter „Details“ oder im Menü „•••“ unter „Stichwörter und Einstellungen …“).',
+			'Telegram hält Nachrichten für den Bot höchstens 24 Stunden bereit; läuft die App länger nicht, gehen sie verloren. Ohne Bestätigung siehst du im Chat nicht, ob eine Nachricht angekommen ist; dann zeigt es nur der Eingang.'
 		],
 		checked: true
 	}

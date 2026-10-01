@@ -113,3 +113,22 @@ Neue Felder an `tickets`:
 - „Umgewandelt ist endgültig“ gilt nur noch für die Hauptquelle. Ein verknüpfter Eintrag lässt sich lösen (`converted` → `new` ohne Ticket).
 - „Einem bestehenden Ticket zuordnen“ ändert das Ticket weiter nicht, schreibt aber einen Verlaufseintrag `source_link`.
 - Anders als in §2 lässt sich ein Eintrag mit Ticket oder als Hauptquelle nicht mehr löschen. `tickets.source_item` wird deshalb nicht mehr über das Löschen des Eintrags geleert.
+
+## Nachtrag (2026-10-01): Kein Eintrag lässt sich über die API löschen
+
+**Befund.** Seit dem Nachtrag oben schützte die `deleteRule` (`… && ticket = ""`, Migration `1790201800_inbox_items_delete_guard.js`) nur Quellen. Einen Eintrag ohne Ticket (neu, verworfen, gelöst) konnte sein Besitzer über die Record-API löschen, ein Superuser auch in der Verwaltung `/_/`, die die Regeln umgeht. Mit dem Datensatz verschwand sein Fingerprint und damit die Sperre aus §3 („Verworfen ist ein Tombstone“, [ADR-0037](0037-papierkorb.md) §6 und Alternativen): Dieselbe Mail, derselbe Termin oder dieselbe Nachricht kam beim nächsten Abruf, bei der Vollsuche des Posteingangs oder als Datei wieder. Die Oberfläche bietet nur Verwerfen und Wiederherstellen an; die SPA ruft für `inbox_items` kein Löschen auf (geprüft: `web/src/lib/data` löscht nur Kommentare, Verbindungen, Zugangsschlüssel, Projekte, Regeln, Tags und Tickets), ebenso wenig der Mail-Hilfsprozess und die Erweiterung für WhatsApp Web.
+
+**Entscheidung.**
+
+- **Regel:** Die Migration `1790202800_inbox_items_no_delete.js` setzt `deleteRule = null`. Ein App-Konto bekommt 403 („Only superusers can perform this action.“), ob es den Eintrag gibt oder nicht. Der Rückweg stellt die Regel von `1790201800` wieder her; der Rollback-Test belegt das mit Daten.
+- **Hook:** `onRecordDeleteRequest` von `inbox_items` (`refuseDelete` in `lib/inbox-service.js`) lehnt jedes Löschen über die Record-API ab, auch für Superuser über API und Verwaltung und schon vor der Migration (dann erreicht der Besitzer einen freien Eintrag noch über die alte Regel). Er ruft `e.next()` nie auf. Eine Quelle nennt weiter `validation_inbox_item_linked`; jeder andere Eintrag antwortet 400 mit `validation_inbox_item_delete` am Feld `state`: „Eingangseinträge lassen sich nicht löschen, nur verwerfen. So bleibt die Sperre gegen erneutes Eintreffen erhalten.“ Die Verwaltung zeigt diesen Text.
+- **Wege des Servers bleiben:** Request-Hooks laufen nur für Anfragen an die Record-API. `$app.delete` bzw. `txApp.delete` in Hooks, Jobs und Migrationen und das Entfernen der ganzen Collection im Rückweg von `1790201200` laufen am Hook vorbei; ein Integrationstest löscht einen Eintrag über eine Test-Route mit `$app.delete` (`tests/fixtures/pb_hooks/inbox-internal-delete.pb.js`). Heute löscht kein Weg des Servers einen Eintrag: Die Bereinigung `byl-inbox-cleanup` und der Papierkorb (endgültiges Löschen, „Papierkorb leeren“, Aufbewahrung, Rückweg seiner Migration) ändern Einträge nur zu Tombstones, die Kanäle legen an. Die Relationen auf `inbox_items` haben kein Cascade-Delete.
+- **Realtime:** Ein `delete`-Ereignis eines Eintrags kommt damit nur noch vom Papierkorb, wenn er Quellen mit ihrem Ticket verbirgt („Quellen verwerfen“, [ADR-0037](0037-papierkorb.md) §3); die Tests der Ereignisse nutzen diesen Weg.
+
+**Alternativen.**
+
+- **Nur die Regel:** verworfen, weil die Verwaltung die Regeln umgeht.
+- **Löschen in Verwerfen umdeuten** (204 und `discarded`, wie das Löschen eines Tickets in den Papierkorb führt): verworfen. Die App hat keinen Löschweg, der so umgedeutet werden müsste, und in der Verwaltung wäre ein „gelöschter“, aber weiter sichtbarer Datensatz irreführend.
+- **Fingerprint beim Löschen in eine eigene Collection retten:** verworfen; mehr Schema für einen Weg, den niemand braucht. Verworfene Einträge werden nach 30 Tagen ohnehin geleert (§3).
+
+**Folgen.** §2 „Wird ein Eintrag gelöscht, leert PocketBase `tickets.source_item`“ gilt nur noch für Wege des Servers. Ein unerwünschter Eintrag wird verworfen; sein Inhalt verschwindet nach 30 Tagen, die Sperre bleibt. Beides wirkt nach dem nächsten Neustart (Hook und Migration).

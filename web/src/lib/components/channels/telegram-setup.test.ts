@@ -1,14 +1,16 @@
 // Component tests of the Telegram assistant (ADR-0026 section 4, plan EH-6 §3.7/§3.13): six steps,
 // the restart checks token and IDs, "Chat freigeben" reads the chat ID from the hint of a run and
 // builds the finished command, the ID is no secret (an open field, no clipboard warning), and the
-// check turns to "Kein fremder Chat mehr gemeldet" after the next run through realtime. The data
-// layer is a fake; the store, the stepper and the modal are real.
+// check turns to "Kein fremder Chat mehr gemeldet" after the next run through realtime; the last step
+// holds the switches of the answers of the bot (ADR-0016, addendum of 2026-10-01). The data layer
+// is a fake; the store, the stepper and the modal are real.
 
 import { fireEvent, render, screen, within } from '@testing-library/svelte';
 import { tick } from 'svelte';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { DataError } from '$lib/data/errors';
 import type { RecordChange } from '$lib/data/realtime';
-import type { Connection, SecretStatus } from '$lib/domain/connections';
+import { TELEGRAM_REPLIES_HINT, type Connection, type SecretStatus } from '$lib/domain/connections';
 import { ConnectionsStore, type ConnectionsData } from '$lib/stores/connections.svelte';
 import { FlagStore } from '$lib/stores/flags.svelte';
 import ChannelsViewHarness from '$lib/test/ChannelsViewHarness.svelte';
@@ -32,6 +34,7 @@ function bot(overrides: Partial<Connection> = {}): Connection {
 		lastError: '',
 		lastHint: '',
 		keywords: [],
+		replySaved: true,
 		replyNoMatch: true,
 		mailProvider: '',
 		mailUser: '',
@@ -189,5 +192,44 @@ describe('Telegram assistant (EH-6)', () => {
 		expect(within(dialog).getByRole('textbox', { name: 'Neues Stichwort' })).toBeTruthy();
 		expect(within(dialog).getByRole('button', { name: 'Jetzt abrufen' })).toBeTruthy();
 		expect(within(dialog).getByText(/todo Test/)).toBeTruthy();
+	});
+
+	it('offers both answers of the bot as switches in the last step (ADR-0016, addendum of 2026-10-01)', async () => {
+		const { dialog, data } = await open(
+			bot({ lastRunAt: '2026-09-26 10:30:00.000Z', lastOkAt: '2026-09-26 10:30:00.000Z' }),
+			{ secret: true, allowlist: true }
+		);
+		data.saveSettings.mockImplementation(async (current, settings) => ({
+			...current,
+			...settings
+		}));
+		const group = within(within(dialog).getByRole('group', { name: 'Antworten im Chat' }));
+		expect(group.getByText(TELEGRAM_REPLIES_HINT)).toBeTruthy();
+		const saved = group.getByRole<HTMLInputElement>('switch', { name: /^Bestätigung senden/ });
+		const reply = group.getByRole<HTMLInputElement>('switch', {
+			name: /^Hinweis bei fehlendem Stichwort senden/
+		});
+		expect([saved.checked, reply.checked]).toEqual([true, true]);
+
+		await fireEvent.click(saved);
+		await vi.waitFor(() =>
+			expect(data.saveSettings).toHaveBeenCalledWith(expect.objectContaining({ id: ID }), {
+				keywords: [],
+				replySaved: false,
+				replyNoMatch: true,
+				matchBody: false
+			})
+		);
+		await vi.waitFor(() => expect(saved.checked).toBe(false));
+		// The assistant stays at its step.
+		expect(heading(dialog).textContent).toMatch(/^Schritt 6 von 6/);
+
+		// A refused change says why and shows the saved value again.
+		data.saveSettings.mockRejectedValueOnce(new DataError('server', { status: 500 }));
+		await fireEvent.click(reply);
+		await vi.waitFor(() =>
+			expect(within(dialog).getByText(/Der Server hat mit einem Fehler geantwortet/)).toBeTruthy()
+		);
+		await vi.waitFor(() => expect(reply.checked).toBe(true));
 	});
 });

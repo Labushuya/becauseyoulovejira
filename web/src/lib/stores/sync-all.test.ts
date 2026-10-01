@@ -23,6 +23,7 @@ function connection(id: string, label: string, overrides: Partial<Connection> = 
 		lastError: '',
 		lastHint: '',
 		keywords: ['todo'],
+		replySaved: true,
 		replyNoMatch: true,
 		mailProvider: '',
 		mailUser: '',

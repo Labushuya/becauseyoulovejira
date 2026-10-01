@@ -2,9 +2,10 @@
 // getUpdates without webhook (the server is not reachable from the internet), only messages of
 // allowed chats with a keyword of the connection become inbox entries, each gets the confirmation
 // "Im Eingang gespeichert", messages without keyword get "Kein Stichwort erkannt – nicht
-// gespeichert" unless switched off, and the offset moves only after saving
-// (lib/channel-telegram.js). Called by channel-runner.js, which holds the lock and
-// cleans errors (the bot token is part of every request URL). CommonJS module, ES5 only, Goja
+// gespeichert"; each answer can be switched off per connection (settings reply_saved and
+// reply_no_match, both on by default, ADR-0016, addendum of 2026-10-01), and the offset moves
+// only after saving (lib/channel-telegram.js). Called by channel-runner.js, which holds the lock
+// and cleans errors (the bot token is part of every request URL). CommonJS module, ES5 only, Goja
 // runtime only.
 'use strict';
 
@@ -94,6 +95,7 @@ function run(app, record, values) {
       draftWithConnection.original = '';
       return service.ingest(app, owner, draftWithConnection).kind;
     },
+    replySaved: rules.repliesOnSave(settings),
     confirm: function (chatId, messageId) {
       reply(values.secret, chatId, messageId, telegram.CONFIRMATION);
     }

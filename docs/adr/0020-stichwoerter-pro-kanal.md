@@ -155,3 +155,7 @@ Ein reiner Algorithmus, zweimal implementiert und per Paritätstest abgeglichen:
 **Leistung (Abschätzung für 5 000 Mails, 5 Stichwörter):** 10 Blöcke mit je einem Abruf der Kopfzeilen (etwa 0,5 bis 1 KB je Mail, zusammen wenige MB) und 5 `UID SEARCH`; geladen werden nur die Kandidaten. Im Rückfall werden alle Mails bis 10 MB geladen, bei einem typischen Posteingang mehrere hundert MB; deshalb nur blockweise und nur, wenn der Server die Suche ablehnt.
 
 `byl-mail.exe` geht auf 0.7.0.
+
+## Nachtrag 4 (2026-10-01): Bestätigung des Bots abschaltbar
+
+Neben `reply_no_match` (§3) kennt eine Telegram-Verbindung `reply_saved`: ob der Bot einen gespeicherten Eintrag mit „Im Eingang gespeichert“ bestätigt. Beide sind standardmäßig an, ein fehlender Wert gilt als an, und beide stehen als Schalter an Karte, Dialog und Assistent. Einzelheiten und Korrekturen zum Abschnitt „Telegram“: [ADR-0016](0016-kanal-architektur-und-mail.md) §2, Nachtrag mit Korrekturvermerk vom 2026-10-01.

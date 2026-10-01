@@ -378,8 +378,62 @@ describe('HK-1 hooks before the delete guard migration', () => {
 			filter: superuser.filter('ticket = {:id} && field = "source_link"', { id: ticket.id })
 		});
 		expect(history).toHaveLength(2);
-		await items.delete(item.id);
-		await expect(items.getOne(item.id)).rejects.toMatchObject({ status: 404 });
+		// Since the addendum of 2026-10-01 to ADR-0014 the hook refuses a free item as well.
+		const free = await items.delete(item.id).catch((error) => error);
+		expect(free?.status).toBe(400);
+		expect(free?.response?.data?.state?.code).toBe('validation_inbox_item_delete');
+		expect((await items.getOne(item.id)).state).toBe('new');
+	});
+});
+
+// The instance of the user after the merge of the delete lock (ADR-0014, addendum of 2026-10-01),
+// before its next start: the deleteRule still lets the owner reach a free item, the hook alone
+// refuses every delete, for the owner and the superuser, and leaves the item in place.
+describe('hooks before the migration of the delete lock of inbox items (ADR-0014, addendum of 2026-10-01)', () => {
+	const NO_DELETE_MIGRATION = '1790202800_inbox_items_no_delete.js';
+	let before;
+	let who;
+	let superuser;
+
+	beforeAll(async () => {
+		before = await startPocketBase({ migrationFilter: (name) => name < NO_DELETE_MIGRATION });
+		superuser = new PocketBase(before.url);
+		superuser.autoCancellation(false);
+		await superuser.collection('_superusers').authWithPassword(before.email, before.password);
+		const email = `user-${randomBytes(12).toString('hex')}@example.com`;
+		const password = randomBytes(24).toString('base64url');
+		const id = (await superuser.collection('users').create({ email, password, passwordConfirm: password })).id;
+		who = new PocketBase(before.url);
+		who.autoCancellation(false);
+		await who.collection('users').authWithPassword(email, password);
+		who.userId = id;
+	}, 60_000);
+
+	afterAll(async () => {
+		await before?.stop();
+	});
+
+	it('has the deleteRule of the sources still', async () => {
+		const collection = await superuser.collections.getOne('inbox_items');
+		expect(collection.deleteRule).toContain('ticket = ""');
+	});
+
+	it('refuses to delete a new and a discarded item through the hook alone', async () => {
+		const items = who.collection('inbox_items');
+		const fresh = await items.create({ owner: who.userId, channel: 'manual', kind: 'todo', title: 'Neu' });
+		const discarded = await items.create({ owner: who.userId, channel: 'manual', kind: 'todo', title: 'Weg' });
+		await items.update(discarded.id, { state: 'discarded' });
+		for (const item of [fresh, discarded]) {
+			for (const client of [who, superuser]) {
+				const refused = await client
+					.collection('inbox_items')
+					.delete(item.id)
+					.catch((error) => error);
+				expect(refused?.status, item.title).toBe(400);
+				expect(refused?.response?.data?.state?.code, item.title).toBe('validation_inbox_item_delete');
+			}
+			expect((await items.getOne(item.id)).id).toBe(item.id);
+		}
 	});
 });
 
