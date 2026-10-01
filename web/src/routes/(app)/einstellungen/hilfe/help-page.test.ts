@@ -158,6 +158,10 @@ describe('help page (EH-9)', () => {
 		);
 		expect(text(section)).toContain('Umschalt+F10 oder die Kontextmenü-Taste');
 		expect(text(section)).toContain('mit Strg+Rechtsklick');
+		// The menus of the other tables (AM-4).
+		expect(text(section)).toContain(
+			'Auch Papierkorb, Eingang, die Liste der Projekte und die Wiederholungen haben am Ende jeder Zeile „•••“'
+		);
 		// Duplicating (ADR-0045): the question, the status, sub-tasks, comments, the source, the result.
 		expect(text(section)).toContain('„Duplizieren …“ (im Menü „•••“');
 		expect(text(section)).toContain('„Erledigt“ gibt es dabei nicht');

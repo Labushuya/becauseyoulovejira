@@ -41,34 +41,12 @@
 		return result;
 	}
 
-	async function archive(current: Project, archived: boolean) {
-		const result = await route.editor.setProjectArchived(current, archived);
-		if (result.ok) {
-			route.notify(
-				archived
-					? `Projekt „${current.name}“ archiviert.`
-					: `Projekt „${current.name}“ aus dem Archiv geholt.`
-			);
-		}
-		return result;
-	}
-
-	/** "Mit Oberprojekt zurückholen": the parent first, because the hook keeps the child below it. */
-	async function restoreWithParent(current: Project, archivedParent: Project) {
-		const first = await route.editor.setProjectArchived(archivedParent, false);
-		if (!first.ok) return first;
-		const result = await route.editor.setProjectArchived(current, false);
-		if (result.ok) {
-			route.notify(`Projekt „${current.name}“ mit „${archivedParent.name}“ aus dem Archiv geholt.`);
-		}
-		return result;
-	}
-
+	// Archiving, "Mit Oberprojekt zurückholen" and deleting come from the route with their flags; the
+	// menu "•••" of a row of the list runs the same (plan aktionsmenues, AM-4).
 	async function remove(current: Project) {
 		removing = current;
-		const result = await route.editor.deleteProject(current);
-		if (result.ok) route.notify(`Projekt „${current.name}“ gelöscht.`);
-		else removing = null;
+		const result = await route.remove(current);
+		if (!result.ok) removing = null;
 		return result;
 	}
 </script>
@@ -96,9 +74,9 @@
 			projectHrefOf={(other) => projectHref(other.id, page.url)}
 			newSubProjectHref={newSubProjectHref(current.id, page.url)}
 			onsave={(draft) => save(current, draft)}
-			onarchive={(archived) => archive(current, archived)}
+			onarchive={(archived) => route.archive(current, archived)}
 			onrestorewithparent={archivedParent
-				? () => restoreWithParent(current, archivedParent)
+				? () => route.restoreWithParent(current, archivedParent)
 				: undefined}
 			ondelete={() => remove(current)}
 			ondeleted={() => goto(back)}

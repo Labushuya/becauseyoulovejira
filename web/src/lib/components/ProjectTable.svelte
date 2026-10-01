@@ -10,7 +10,9 @@
 		type ProjectSort,
 		type ProjectSortKey
 	} from '$lib/domain/project-view';
+	import { rowMenus } from '$lib/overlay/context-menu';
 	import { getColumnPrefs } from '$lib/stores/column-prefs.svelte';
+	import ActionsMenu, { type MenuAction } from './ActionsMenu.svelte';
 	import { ColumnFit } from './table/column-fit.svelte';
 	import ResizableHeader from './table/ResizableHeader.svelte';
 
@@ -28,13 +30,16 @@
 	// aria-expanded says the state) in the name cell;
 	// a sub project is indented inside the name cell, so the columns and their widths stay as
 	// ADR-0030 says, and it says "Unterprojekt von Haus," to screen readers. A parent that only
-	// stands as context of a search match is dimmed and says so.
+	// stands as context of a search match is dimmed and says so. Every row ends with the menu "•••"
+	// (plan aktionsmenues, AM-4; the entries come from the view), which a right click on the row or
+	// Shift+F10 open as well (AM-3, rowMenus); its column sorts nothing.
 	let {
 		rows,
 		activeOf,
 		totalOf,
 		newOf,
 		hrefOf,
+		menuOf,
 		activeId = null,
 		sort = null,
 		searching = false,
@@ -53,6 +58,8 @@
 		newOf: (project: Project) => number;
 		/** Address of the project panel. */
 		hrefOf: (project: Project) => ResolvedPathname;
+		/** The entries of the menu "•••" of a row. */
+		menuOf: (project: Project) => readonly MenuAction[];
 		/** Project shown in the panel; its row is marked as current. */
 		activeId?: string | null;
 		/** Column sort of the URL; null: by name. */
@@ -95,7 +102,7 @@
 </script>
 
 <div class="frame" bind:this={frame}>
-	<table>
+	<table {@attach rowMenus}>
 		<caption
 			>{caption}{#if columnFit.fit.autoHidden.length > 0}<span class="caption-more"
 					>{MORE_COLUMNS_HINT}</span
@@ -111,41 +118,47 @@
 		</colgroup>
 		<thead>
 			<tr>
-				<!-- Every column sorts; its ID is the sort key (T-5). -->
+				<!-- Every column but the actions sorts; its ID is the sort key (T-5). -->
 				{#each columnFit.shownColumns as column (column.id)}
 					{@const key = column.id as ProjectSortKey}
 					{@const sorted = sort?.key === key ? sort : null}
 					{@const direction = sorted === null ? null : projectSortDirection(sorted)}
-					<ResizableHeader {column} fit={columnFit} ariaSort={direction ?? undefined}>
-						<button
-							class="sort"
-							class:sorted={sorted !== null}
-							type="button"
-							onclick={() => onsort(key)}
-						>
-							<span aria-hidden="true">{column.label}</span>
-							<span class="visually-hidden">
-								Nach {PROJECT_COLUMN_LABELS[key]} sortieren{sorted === null
-									? ''
-									: `, sortiert: ${projectSortOrderLabel(sorted)}`}
-							</span>
-							<svg
-								class="sort-icon"
-								data-direction={direction ?? 'none'}
-								viewBox="0 0 12 12"
-								aria-hidden="true"
-								focusable="false"
+					{#if column.id === 'actions'}
+						<ResizableHeader {column} fit={columnFit}>
+							<span class="visually-hidden">{column.label}</span>
+						</ResizableHeader>
+					{:else}
+						<ResizableHeader {column} fit={columnFit} ariaSort={direction ?? undefined}>
+							<button
+								class="sort"
+								class:sorted={sorted !== null}
+								type="button"
+								onclick={() => onsort(key)}
 							>
-								{#if direction === 'ascending'}
-									<path d="M6 2.5v7M3 5.5l3-3 3 3" />
-								{:else if direction === 'descending'}
-									<path d="M6 2.5v7M3 6.5l3 3 3-3" />
-								{:else}
-									<path d="M3.5 4.5L6 2l2.5 2.5M3.5 7.5L6 10l2.5-2.5" />
-								{/if}
-							</svg>
-						</button>
-					</ResizableHeader>
+								<span aria-hidden="true">{column.label}</span>
+								<span class="visually-hidden">
+									Nach {PROJECT_COLUMN_LABELS[key]} sortieren{sorted === null
+										? ''
+										: `, sortiert: ${projectSortOrderLabel(sorted)}`}
+								</span>
+								<svg
+									class="sort-icon"
+									data-direction={direction ?? 'none'}
+									viewBox="0 0 12 12"
+									aria-hidden="true"
+									focusable="false"
+								>
+									{#if direction === 'ascending'}
+										<path d="M6 2.5v7M3 5.5l3-3 3 3" />
+									{:else if direction === 'descending'}
+										<path d="M6 2.5v7M3 6.5l3 3 3-3" />
+									{:else}
+										<path d="M3.5 4.5L6 2l2.5 2.5M3.5 7.5L6 10l2.5-2.5" />
+									{/if}
+								</svg>
+							</button>
+						</ResizableHeader>
+					{/if}
 				{/each}
 			</tr>
 		</thead>
@@ -186,6 +199,7 @@
 								class="title-link"
 								href={hrefOf(project)}
 								data-project-id={project.id}
+								data-row-link
 								aria-current={project.id === activeId ? 'page' : undefined}>{project.name}</a
 							>
 							{#if row.context}
@@ -232,6 +246,15 @@
 							{/if}
 						</td>
 					{/if}
+					<td class="actions" data-col="actions">
+						<ActionsMenu
+							label={`Weitere Aktionen für „${project.name}“`}
+							buttonLabel={`Weitere Aktionen für „${project.name}“`}
+							buttonTitle="Weitere Aktionen"
+							buttonClass="button-icon row-menu"
+							items={menuOf(project)}
+						/>
+					</td>
 				</tr>
 			{/each}
 		</tbody>
@@ -411,5 +434,11 @@
 	.number.fresh {
 		font-weight: 600;
 		color: var(--color-brand-text);
+	}
+
+	/* The menu "•••" of the row (AM-4) in 3.5rem, at the small control height of base.css. */
+	.actions {
+		padding-block: 0.25rem;
+		text-align: right;
 	}
 </style>

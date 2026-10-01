@@ -65,4 +65,11 @@ describe('tables without sideways scrolling', () => {
 		);
 		expect(MORE_COLUMNS_HINT).toBe(' · Weitere Spalten im Panel');
 	});
+
+	// Every table has the menu "•••" in its rows and opens it with a right click and Shift+F10
+	// (plan aktionsmenues, AM-2 to AM-4): one way for all five, lib/overlay/context-menu.ts.
+	it.each(tables)('%s ends its rows with the menu "•••" and its context menu', (_path, source) => {
+		expect(source).toContain('<table {@attach rowMenus}>');
+		expect(source).toContain('buttonClass="button-icon row-menu"');
+	});
 });

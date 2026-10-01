@@ -12,18 +12,24 @@
 		type TrashItem
 	} from '$lib/domain/trash';
 	import { TRASH_TABLE } from '$lib/domain/columns';
+	import { rowMenus } from '$lib/overlay/context-menu';
 	import { getColumnPrefs } from '$lib/stores/column-prefs.svelte';
+	import ActionsMenu, { type MenuAction } from './ActionsMenu.svelte';
 	import { ColumnFit } from './table/column-fit.svelte';
 	import ResizableHeader from './table/ResizableHeader.svelte';
 	import TrashNeedQuestion from './TrashNeedQuestion.svelte';
 
 	// Table "Papierkorb" (ADR-0037 §9): Auswahl, Key, Titel (link to the read-only preview), Projekt
 	// (from the snapshot, "(gelöscht)" when it is gone), Gelöscht am, Von, the days until it is
-	// deleted for good and the actions "Wiederherstellen" and "Endgültig löschen …". The selection
-	// follows the rules of the ticket table (plan BI-2): Shift+click for a range, the head checkbox
-	// for every row. A restore that needs a choice shows its question inline below the row. Like
-	// every table it never scrolls sideways (ADR-0030); in a narrow frame Von, Gelöscht am, Projekt
-	// and the days give way in this order.
+	// deleted for good and the actions: "Wiederherstellen" as a symbol, the frequent way, and the
+	// menu "•••" of the row (plan aktionsmenues, AM-4) with "Vorschau öffnen", "Wiederherstellen"
+	// and "Endgültig löschen …", which has no symbol of its own any more (rare and destructive, it
+	// waits behind the menu instead of next to "Wiederherstellen"). A right click on a row or
+	// Shift+F10 open the same menu (AM-3, rowMenus). The selection follows the rules of the ticket
+	// table (plan BI-2): Shift+click for a range, the head checkbox for every row. A restore that
+	// needs a choice shows its question inline below the row. Like every table it never scrolls
+	// sideways (ADR-0030); in a narrow frame Von, Gelöscht am, Projekt and the days give way in this
+	// order.
 	let {
 		items,
 		selection,
@@ -86,10 +92,30 @@
 		rangeHeld = false;
 		onselection(clickRow(selection, id, on, order, range));
 	}
+
+	/** The entries of the menu "•••" of a row (AM-4); a running restore locks them. */
+	function menuOf(item: TrashItem, busy: boolean): MenuAction[] {
+		return [
+			{ label: 'Vorschau öffnen', href: hrefOf(item.id) },
+			{
+				label: 'Wiederherstellen',
+				separated: true,
+				busy,
+				onselect: () => onrestore(item.id, {})
+			},
+			{
+				label: 'Endgültig löschen …',
+				dialog: true,
+				separated: true,
+				locked: busy,
+				onselect: () => onpurge(item)
+			}
+		];
+	}
 </script>
 
 <div class="frame" bind:this={frame}>
-	<table>
+	<table {@attach rowMenus}>
 		<caption
 			>{CAPTION}{#if columnFit.fit.autoHidden.length > 0}<span class="caption-more"
 					>{MORE_COLUMNS_HINT}</span
@@ -162,6 +188,7 @@
 							<a
 								class="title-link"
 								href={hrefOf(item.id)}
+								data-row-link
 								title={item.title.length >= LONG_TITLE ? item.title : undefined}
 								aria-current={item.id === activeId ? 'page' : undefined}>{item.title}</a
 							>
@@ -195,35 +222,29 @@
 						<td class="date" data-col="left">{daysLeftText(item.daysLeft)}</td>
 					{/if}
 					<td class="actions" data-col="actions">
-						<button
-							class="button-icon"
-							type="button"
-							aria-label={`${item.key} wiederherstellen`}
-							title="Wiederherstellen"
-							aria-disabled={busy ? 'true' : undefined}
-							onclick={() => {
-								if (!busy) onrestore(item.id, {});
-							}}
-						>
-							<svg viewBox="0 0 16 16" aria-hidden="true" focusable="false">
-								<path d="M3 8a5 5 0 1 0 1.46-3.54M3 2.75v2.5h2.5" />
-							</svg>
-						</button>
-						<button
-							class="button-icon"
-							type="button"
-							aria-label={`${item.key} endgültig löschen …`}
-							title="Endgültig löschen …"
-							aria-haspopup="dialog"
-							aria-disabled={busy ? 'true' : undefined}
-							onclick={() => {
-								if (!busy) onpurge(item);
-							}}
-						>
-							<svg viewBox="0 0 16 16" aria-hidden="true" focusable="false">
-								<path d="M3 4.5h10M6.5 4.5V3h3v1.5M4.5 4.5l.75 9h5.5l.75-9" />
-							</svg>
-						</button>
+						<span class="action-group">
+							<button
+								class="button-icon"
+								type="button"
+								aria-label={`${item.key} wiederherstellen`}
+								title="Wiederherstellen"
+								aria-disabled={busy ? 'true' : undefined}
+								onclick={() => {
+									if (!busy) onrestore(item.id, {});
+								}}
+							>
+								<svg viewBox="0 0 16 16" aria-hidden="true" focusable="false">
+									<path d="M3 8a5 5 0 1 0 1.46-3.54M3 2.75v2.5h2.5" />
+								</svg>
+							</button>
+							<ActionsMenu
+								label={`Weitere Aktionen für ${item.key}`}
+								buttonLabel={`Weitere Aktionen für ${item.key}`}
+								buttonTitle="Weitere Aktionen"
+								buttonClass="button-icon row-menu"
+								items={menuOf(item, busy)}
+							/>
+						</span>
 					</td>
 				</tr>
 				{#if need}
@@ -379,9 +400,20 @@
 		font-variant-numeric: tabular-nums;
 	}
 
+	/*
+	 * "Wiederherstellen" and the menu "•••" in the 5rem of the column (ADR-0030, Nachtrag 5): a
+	 * narrower padding, the menu at the small control height of base.css (`.row-menu`).
+	 */
 	.actions {
+		padding-inline: 0.5rem;
 		text-align: right;
 		white-space: nowrap;
+	}
+
+	.action-group {
+		display: inline-flex;
+		gap: 0.5rem;
+		align-items: center;
 	}
 
 	.actions svg {

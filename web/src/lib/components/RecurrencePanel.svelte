@@ -13,6 +13,7 @@
 		isWaiting,
 		nextTicketText,
 		openBlockText,
+		ruleDeleteText,
 		ruleStateLabel,
 		sameRhythm,
 		type BacklogChoice,
@@ -174,6 +175,8 @@
 	let confirmingDelete = $state(false);
 	let deleting = $state(false);
 	let deleteError = $state<string | null>(null);
+	/** Keys of the open tickets, which stay as normal ones when the rule is deleted. */
+	const openKeys = $derived(openTickets.map((open) => open.key));
 	let confirmingDiscard = $state(false);
 
 	let heading = $state<HTMLElement>();
@@ -534,14 +537,7 @@
 			deleteError = null;
 		}}
 	>
-		<p>
-			Bestehende Tickets bleiben erhalten. „{rule.title}“ erzeugt danach keine Tickets mehr{openTickets.length ===
-			1
-				? `; ${openTickets[0]?.key} bleibt als normales Ticket offen`
-				: openTickets.length > 1
-					? `; ${openTickets.map((open) => open.key).join(', ')} bleiben als normale Tickets offen`
-					: ''}.
-		</p>
+		<p>{ruleDeleteText(rule.title, openKeys)}</p>
 	</ConfirmDialog>
 {/if}
 

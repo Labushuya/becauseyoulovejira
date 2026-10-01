@@ -375,6 +375,20 @@ export function openInstancesOf(
 		.map((ticket) => ({ id: ticket.id, key: ticket.key, title: ticket.title }));
 }
 
+/**
+ * The question "Regel löschen?" (ADR-0023 section 7: its tickets stay), in the panel and from the
+ * menu "•••" of a row (plan aktionsmenues, AM-4): which open tickets stay as normal ones.
+ */
+export function ruleDeleteText(title: string, openKeys: readonly string[]): string {
+	const open =
+		openKeys.length === 1
+			? `; ${openKeys[0]} bleibt als normales Ticket offen`
+			: openKeys.length > 1
+				? `; ${openKeys.join(', ')} bleiben als normale Tickets offen`
+				: '';
+	return `Bestehende Tickets bleiben erhalten. „${title}“ erzeugt danach keine Tickets mehr${open}.`;
+}
+
 /** Label of the way out of a refused reopening. */
 export const REOPEN_DETACHED_LABEL = 'Als normales Ticket wieder öffnen (aus der Serie lösen)';
 

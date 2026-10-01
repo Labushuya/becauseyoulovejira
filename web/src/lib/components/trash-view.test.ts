@@ -172,7 +172,12 @@ describe('view "Papierkorb"', () => {
 
 	it('deletes for good only after a confirmation that says it cannot be undone, without red', async () => {
 		const { data } = await showView();
-		await fireEvent.click(screen.getByRole('button', { name: 'HAUS-1 endgültig löschen …' }));
+		// Since AM-4 in the menu "•••" of the row, no longer as a symbol of its own.
+		expect(screen.queryByRole('button', { name: 'HAUS-1 endgültig löschen …' })).toBeNull();
+		const row = screen.getByRole('link', { name: 'Dach reparieren' }).closest('tr') as HTMLElement;
+		await fireEvent.click(
+			within(row).getByRole('menuitem', { name: 'Endgültig löschen …', hidden: true })
+		);
 		await tick();
 		const dialog = screen.getByRole('dialog', { name: 'HAUS-1 endgültig löschen?' });
 		expect(within(dialog).getByText(/Das lässt sich nicht rückgängig machen\./)).toBeTruthy();

@@ -3,7 +3,9 @@
 	import type { CalendarDate } from '$lib/domain/berlin-date';
 	import { MORE_COLUMNS_HINT } from '$lib/domain/labels';
 	import { projectChoiceLabel, projectPath } from '$lib/domain/project-tree';
+	import { rowMenus } from '$lib/overlay/context-menu';
 	import { getColumnPrefs } from '$lib/stores/column-prefs.svelte';
+	import ActionsMenu, { type MenuAction } from './ActionsMenu.svelte';
 	import { ColumnFit } from './table/column-fit.svelte';
 	import ResizableHeader from './table/ResizableHeader.svelte';
 	import {
@@ -26,8 +28,10 @@
 	// sentence as title; recommendation 2), Offene Tickets (every key with a link to its panel, the
 	// number in front when there are several; plan "Wiederholungen verständlich machen",
 	// recommendation 7), Projekt, Zustand ("Aktiv", "Pausiert" or "Wartet" as text with an icon)
-	// and the action "Pausieren"
-	// or "Fortsetzen". The store keeps the order:
+	// and the menu "•••" of the row (plan aktionsmenues, AM-4): "Regel öffnen", the oldest open
+	// ticket, "Pausieren" or "Fortsetzen" (before AM-4 a symbol of its own in the row, now only
+	// here: pausing is rare, and the menu names it in words) and "Löschen …"; a right click on the
+	// row or Shift+F10 open it as well (AM-3, rowMenus). The store keeps the order:
 	// active rules first, then by the next ticket. The row of the rule in the panel is marked
 	// (colour plus a bar at its start, aria-current on the link). The table never scrolls sideways
 	// (package UI-6b): fitColumns (ADR-0030, package SP-5) fits the columns into the measured
@@ -45,7 +49,8 @@
 		activeId = null,
 		busyId = null,
 		columnFit = new ColumnFit(getColumnPrefs('recurrences')),
-		ontoggle
+		ontoggle,
+		ondelete
 	}: {
 		/** Rules in the order to show. */
 		rules: readonly RecurrenceRule[];
@@ -66,6 +71,8 @@
 		columnFit?: ColumnFit;
 		/** "Pausieren" or "Fortsetzen" of a row; the view runs it and reports a refusal as a flag. */
 		ontoggle: (rule: RecurrenceRule) => void;
+		/** "Löschen …" of a row; the view asks first. Without it the menu has no such entry. */
+		ondelete?: (rule: RecurrenceRule) => void;
 	} = $props();
 
 	const CAPTION = 'Wiederholungen · aktive zuerst, dann nach nächstem Ticket';
@@ -84,10 +91,43 @@
 	function rhythmOf(rule: RecurrenceRule): string {
 		return recurrenceText(ruleParams(rule)) || 'Kein Rhythmus';
 	}
+
+	/** The entries of the menu "•••" of a row (AM-4); a running pause locks them. */
+	function menuOf(rule: RecurrenceRule, open: readonly OpenInstance[] | undefined): MenuAction[] {
+		const entries: MenuAction[] = [{ label: 'Regel öffnen', href: hrefOf(rule) }];
+		const oldest = open?.[0];
+		if (oldest !== undefined) {
+			entries.push({
+				label:
+					open?.length === 1
+						? `Zum offenen Ticket ${oldest.key}`
+						: `Zum ältesten offenen Ticket ${oldest.key}`,
+				href: ticketHrefOf(oldest.id)
+			});
+		}
+		const busy = busyId === rule.id;
+		entries.push({
+			label: rule.active ? 'Pausieren' : 'Fortsetzen',
+			separated: true,
+			busy,
+			onselect: () => ontoggle(rule)
+		});
+		if (ondelete) {
+			const remove = ondelete;
+			entries.push({
+				label: 'Löschen …',
+				dialog: true,
+				separated: true,
+				locked: busy,
+				onselect: () => remove(rule)
+			});
+		}
+		return entries;
+	}
 </script>
 
 <div class="frame" bind:this={frame}>
-	<table>
+	<table {@attach rowMenus}>
 		<caption
 			>{CAPTION}{#if columnFit.fit.autoHidden.length > 0}<span class="caption-more"
 					>{MORE_COLUMNS_HINT}</span
@@ -132,6 +172,7 @@
 								class="title-link"
 								href={hrefOf(rule)}
 								data-rule-id={rule.id}
+								data-row-link
 								title={rule.title.length >= LONG_TITLE ? rule.title : undefined}
 								aria-current={rule.id === activeId ? 'page' : undefined}>{rule.title}</a
 							>
@@ -201,26 +242,18 @@
 							tone={waiting ? 'neutral' : rule.active ? 'brand' : 'muted'}
 						/>
 					</td>
-					<td class="actions" data-col="actions">
-						<button
-							class="button-icon"
-							type="button"
-							aria-label={`${rule.active ? 'Pausieren' : 'Fortsetzen'}: ${rule.title}`}
-							title={rule.active ? 'Pausieren' : 'Fortsetzen'}
-							aria-disabled={busyId === rule.id ? 'true' : undefined}
-							aria-busy={busyId === rule.id ? 'true' : undefined}
-							onclick={() => {
-								if (busyId !== rule.id) ontoggle(rule);
-							}}
-						>
-							<svg viewBox="0 0 16 16" aria-hidden="true" focusable="false">
-								{#if rule.active}
-									<path d="M6 4v8M10 4v8" />
-								{:else}
-									<path d="M5.5 3.5l7 4.5-7 4.5z" />
-								{/if}
-							</svg>
-						</button>
+					<td
+						class="actions"
+						data-col="actions"
+						aria-busy={busyId === rule.id ? 'true' : undefined}
+					>
+						<ActionsMenu
+							label={`Weitere Aktionen für „${rule.title}“`}
+							buttonLabel={`Weitere Aktionen für „${rule.title}“`}
+							buttonTitle="Weitere Aktionen"
+							buttonClass="button-icon row-menu"
+							items={menuOf(rule, open)}
+						/>
 					</td>
 				</tr>
 			{/each}
@@ -375,17 +408,8 @@
 		white-space: nowrap;
 	}
 
+	/* The menu "•••" of the row (AM-4) in 3.5rem, at the small control height of base.css. */
 	.actions {
 		text-align: right;
-	}
-
-	.actions svg {
-		width: 1rem;
-		height: 1rem;
-		fill: none;
-		stroke: currentColor;
-		stroke-width: 1.5;
-		stroke-linecap: round;
-		stroke-linejoin: round;
 	}
 </style>

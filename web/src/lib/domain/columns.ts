@@ -169,7 +169,9 @@ export const TICKET_TABLE: TableSpec = table(
 
 /**
  * "Eingang": selection (only for new entries), Art, Titel, Quelle, Quelldatum, arrival, actions.
- * The arrival (or handling) date gives way first, then Quelle, Art and Quelldatum.
+ * The arrival (or handling) date gives way first, then Quelle, Art and Quelldatum. The actions
+ * hold "Umwandeln" and "Verwerfen" (or what a handled entry offers) and since AM-4 the menu "•••":
+ * 15rem instead of 13 (ADR-0030, Nachtrag 5).
  */
 export const INBOX_TABLE: TableSpec = table('inbox', [
 	fixed('select', 'Auswahl', 2.5),
@@ -178,24 +180,28 @@ export const INBOX_TABLE: TableSpec = table('inbox', [
 	column('source', 'Quelle', { width: 7, min: 4, max: 12, hideRank: 2 }),
 	column('source-date', 'Quelldatum', { width: 6, min: 5, max: 9, hideRank: 4 }),
 	column('arrival', 'Eingang', { width: 6, min: 5, max: 9, hideRank: 1 }),
-	fixed('actions', 'Aktionen', 13)
+	fixed('actions', 'Aktionen', 15)
 ]);
 
-/** "Projekte": Code, Name, aktiv, gesamt, neu, archiviert; the numbers give way from the right. */
+/**
+ * "Projekte": Code, Name, aktiv, gesamt, neu, archiviert, actions; the numbers give way from the
+ * right. The actions are the menu "•••" of the row since AM-4 (ADR-0030, Nachtrag 5).
+ */
 export const PROJECT_TABLE: TableSpec = table('projects', [
 	column('code', 'Code', { width: 6, min: 4, max: 8, required: true }),
 	flexible('name', 'Name', 10),
 	column('active', 'aktiv', { width: 5, min: 4, max: 7, hideRank: 4 }),
 	column('total', 'gesamt', { width: 5.5, min: 4, max: 8, hideRank: 3 }),
 	column('new', 'neu', { width: 5, min: 3.5, max: 7, hideRank: 2 }),
-	column('archived', 'archiviert', { width: 6.5, min: 5, max: 9, hideRank: 1 })
+	column('archived', 'archiviert', { width: 6.5, min: 5, max: 9, hideRank: 1 }),
+	fixed('actions', 'Aktionen', 3.5)
 ]);
 
 /**
- * "Wiederholungen": Titel, Rhythmus, Nächstes Ticket, Offene Tickets, Projekt, Zustand, action.
- * Projekt gives way first, then Offene Tickets, Nächstes Ticket and Rhythmus. "Offene Tickets"
- * may hold several keys and grows further (plan "Wiederholungen verständlich machen",
- * recommendation 7).
+ * "Wiederholungen": Titel, Rhythmus, Nächstes Ticket, Offene Tickets, Projekt, Zustand, actions
+ * (since AM-4 the menu "•••" instead of the symbol "Pausieren", in the same 3.5rem). Projekt gives
+ * way first, then Offene Tickets, Nächstes Ticket and Rhythmus. "Offene Tickets" may hold several
+ * keys and grows further (plan "Wiederholungen verständlich machen", recommendation 7).
  */
 export const RECURRENCE_TABLE: TableSpec = table('recurrences', [
 	flexible('title', 'Titel', 10),
@@ -209,8 +215,8 @@ export const RECURRENCE_TABLE: TableSpec = table('recurrences', [
 
 /**
  * "Papierkorb" (ADR-0037): selection, Key, Titel, Projekt, Gelöscht am, Von, the days until it is
- * deleted for good, actions (restore, delete for good). "Von" gives way first, then the date,
- * Projekt and the days.
+ * deleted for good, actions ("Wiederherstellen" and since AM-4 the menu "•••" with "Endgültig
+ * löschen …", in the same 5rem). "Von" gives way first, then the date, Projekt and the days.
  */
 export const TRASH_TABLE: TableSpec = table('trash', [
 	fixed('select', 'Auswahl', 2.5),

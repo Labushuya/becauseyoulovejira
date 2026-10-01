@@ -545,6 +545,12 @@
 						Browsers bekommst du mit <kbd>Strg</kbd>+Rechtsklick, in Eingabefeldern, auf markiertem
 						Text und auf anderen Links.
 					</li>
+					<li>
+						Auch Papierkorb, Eingang, die Liste der Projekte und die Wiederholungen haben am Ende
+						jeder Zeile „•••“ mit dem, was dort geht: etwa „Endgültig löschen …“ im Papierkorb, „Mit
+						Ticket verknüpfen …“ im Eingang, „Archivieren“ bei Projekten und „Pausieren“ bei
+						Wiederholungen.
+					</li>
 				</ul>
 			</details>
 			<details>

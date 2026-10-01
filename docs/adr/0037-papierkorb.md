@@ -1,6 +1,6 @@
 # ADR-0037: Papierkorb für Tickets: weiches Löschen, Unsichtbarkeit über die API-Regeln, Wiederherstellen und Aufbewahrung
 
-- **Status:** Angenommen und umgesetzt: §1 bis §8 serverseitig in PB-1 (#151), die Oberfläche (§9) in PB-2, nach [docs/plan/papierkorb.md](../plan/papierkorb.md); manuelle Browser-Prüfungen stehen im Test-Manifest
+- **Status:** Angenommen und umgesetzt: §1 bis §8 serverseitig in PB-1 (#151), die Oberfläche (§9) in PB-2, nach [docs/plan/papierkorb.md](../plan/papierkorb.md); manuelle Browser-Prüfungen stehen im Test-Manifest; §9 (Aktionen der Zeile) geändert durch den Nachtrag „Aktionsmenüs“ (2026-10-01)
 - **Datum:** 2026-09-28
 - **Entscheidung durch:** Nutzer (Auftrag „Offene Reste“, Teil B: Papierkorb), Advisor (Produktentscheidungen: Umfang, Gruppen, Quellen, Keys, Rückgängig, Aufbewahrung 7/30/90/nie, Rückweg), Executor (Architektur und Einzelheiten)
 - **Ändert:** [ADR-0031](0031-herkunft-sichern.md) Nachtrag B (Quellen beim Löschen), [ADR-0023](0023-lebenszyklus-von-regeln-und-instanzen.md) §6 und [ADR-0022](0022-erzeugung-von-instanzen.md) §5 (Index), [ADR-0033](0033-unteraufgaben.md) (Löschen mit Unteraufgaben), [ADR-0036](0036-sammelbearbeitung-inline-und-oeffnungsmodus.md) §4 (Rückgängig nach „Löschen“); jeweils mit Nachtrag
@@ -90,3 +90,8 @@
 - Neue Lesepfade der SPA sind ohne Zutun abgesichert. Neue Hook-Abfragen über andere Felder als die geleerten Relationen müssen `trashRules.isTrashed` bzw. `deleted_at = ''` beachten (Plan §3.2).
 - Tickets im Papierkorb halten ihren Key und ihre Tags fest (ein Tag, das nur sie tragen, wechselt den Bereich nicht; relevant erst mit Haushalten, E7).
 - Neustart nötig (Migration); bis dahin löschen alle Wege wie vorher endgültig.
+
+## Nachtrag (2026-10-01, Plan „Aktionsmenüs“, AM-3 und AM-4)
+
+- **Zeile der Tabelle (ändert §9):** „Endgültig löschen …“ steht seit AM-4 im Menü „•••“ der Zeile, nach „Vorschau öffnen“ und „Wiederherstellen“ und einer Linie, nicht mehr als eigenes Symbol; „Wiederherstellen“ bleibt sichtbar. Ein Rechtsklick auf die Zeile oder Umschalt+F10 öffnen dasselbe Menü. Die Frage „… endgültig löschen?“, die Leiste der gewählten Zeilen und die Vorschau bleiben unverändert. Gründe: [ADR-0036](0036-sammelbearbeitung-inline-und-oeffnungsmodus.md), Nachtrag „Zeilenmenüs der übrigen Tabellen“.
+- **Sammel-Leiste der Aufgaben:** Der Knopf „Löschen …“ heißt seit AM-3 „In den Papierkorb …“ wie die Frage und das Flag (§9 „Löschdialoge“).

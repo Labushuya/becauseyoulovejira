@@ -147,6 +147,37 @@ export function aggregateCounts(
 }
 
 /**
+ * Whether a project may be deleted: the hook refuses it while tickets use it (archiving is the way
+ * then) or while it has sub projects (ADR-0034 section 3). `total` counts its tickets with those of
+ * its sub projects; unknown (null) is no. The panel and the menu "•••" of a row (plan
+ * aktionsmenues, AM-4) ask the same.
+ */
+export function canDeleteProject(total: number | null, subProjects: readonly unknown[]): boolean {
+	return total === 0 && subProjects.length === 0;
+}
+
+/** Names for a sentence: "Haus", "Haus und Garten", "Haus, Garten und Keller". */
+export function projectNames(projects: readonly Pick<ProjectRef, 'name'>[]): string {
+	const list = projects.map((project) => project.name);
+	if (list.length <= 1) return list.join('');
+	return `${list.slice(0, -1).join(', ')} und ${list.at(-1)}`;
+}
+
+/** The question before archiving a project whose active sub projects go with it (ADR-0034). */
+export function archiveWithSubProjectsText(active: readonly Pick<ProjectRef, 'name'>[]): string {
+	const count =
+		active.length === 1
+			? 'Archiviert auch 1 Unterprojekt:'
+			: `Archiviert auch ${active.length} Unterprojekte:`;
+	return `${count} ${projectNames(active)}. Zurückholen geht später für jedes einzeln.`;
+}
+
+/** The question before deleting a project, which only goes without tickets. */
+export function deleteProjectText(project: Pick<ProjectRef, 'name' | 'code'>): string {
+	return `„${project.name}“ (${project.code}) hat keine Tickets. Das Projekt wird endgültig gelöscht; das lässt sich nicht rückgängig machen.`;
+}
+
+/**
  * IDs a project filter takes in (ADR-0034 section 6): the project and, unless `withSubProjects`
  * is off, its sub projects. The same set as the server expression
  * `project = p || project.parent = p` of the done tickets.

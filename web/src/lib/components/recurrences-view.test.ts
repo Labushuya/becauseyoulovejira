@@ -129,6 +129,12 @@ const titles = () =>
 		.getAllByRole('rowheader')
 		.map((cell) => cell.textContent?.trim());
 
+/** An entry of the menu "•••" of the row of a rule (AM-4); jsdom shows popovers as hidden. */
+function entry(title: string, name: string): HTMLElement {
+	const row = screen.getByRole('link', { name: title }).closest('tr') as HTMLElement;
+	return within(row).getByRole('menuitem', { name, hidden: true });
+}
+
 beforeEach(() => {
 	document.body.innerHTML = '';
 });
@@ -204,14 +210,14 @@ describe('RecurrencesView', () => {
 			);
 		const { flags } = await show(RULES, {}, { setActive });
 
-		await fireEvent.click(screen.getByRole('button', { name: 'Pausieren: Blumen' }));
+		await fireEvent.click(entry('Blumen', 'Pausieren'));
 		await vi.waitFor(() =>
 			expect(flags.flags.map((flag) => flag.title)).toEqual(['Regel pausiert.'])
 		);
 		// Paused rules follow the active ones, again by their next ticket.
 		expect(titles()).toEqual(['Müll rausbringen', 'Steuer', 'Blumen']);
 
-		await fireEvent.click(screen.getByRole('button', { name: 'Fortsetzen: Steuer' }));
+		await fireEvent.click(entry('Steuer', 'Fortsetzen'));
 		await vi.waitFor(() => expect(flags.flags).toHaveLength(2));
 		expect(flags.flags[0]).toMatchObject({
 			tone: 'error',

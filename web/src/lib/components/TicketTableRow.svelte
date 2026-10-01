@@ -736,8 +736,8 @@
 
 	/*
 	 * Check mark, "Öffnen" and the menu "•••" in 5.5rem (ADR-0030, addendum of plan aktionsmenues):
-	 * a narrower padding, and the button of the menu at the small control height, so the row
-	 * keeps its height.
+	 * a narrower padding; base.css gives the button of the menu the small control height
+	 * (`.row-menu`), so the row keeps its height.
 	 */
 	.actions {
 		padding-inline: 0.5rem;
@@ -747,11 +747,6 @@
 		display: inline-flex;
 		gap: 0.5rem;
 		align-items: center;
-	}
-
-	.action-group :global(.row-menu) {
-		width: var(--control-height-s);
-		height: var(--control-height-s);
 	}
 
 	.open {

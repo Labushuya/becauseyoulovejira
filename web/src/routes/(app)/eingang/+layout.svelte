@@ -99,6 +99,11 @@
 		linkItems = chosenItems();
 	}
 
+	/** "Mit Ticket verknüpfen …" from the menu "•••" of one row (plan aktionsmenues, AM-4). */
+	function openLinkOne({ id, title, scope }: InboxItemSummary) {
+		linkItems = [{ id, title, scope }];
+	}
+
 	function chosenItems(): Pick<
 		InboxItemSummary,
 		'id' | 'title' | 'kind' | 'channel' | 'sourceDate' | 'scope'
@@ -269,6 +274,7 @@
 			bind:selected
 			onbulk={openBulk}
 			onlink={openLink}
+			onlinkitem={openLinkOne}
 			onclipboard={fromClipboard}
 			{clipboardHint}
 		>
