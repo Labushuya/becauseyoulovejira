@@ -5,6 +5,11 @@ app/pocketbase.exe
 app/byl-mail.exe
 app/byl-mail.exe.old-*
 helpers/mail/dist/
+# Backup helper (ADR-0046), and sealed backups wherever a target folder points
+app/byl-backup.exe
+app/byl-backup.exe.old-*
+helpers/backup/dist/
+*.tar.age
 # Build of the browser extension for WhatsApp Web (ADR-0038), loaded unpacked from here
 app/erweiterung-whatsapp-web/
 app/*pb_data*/

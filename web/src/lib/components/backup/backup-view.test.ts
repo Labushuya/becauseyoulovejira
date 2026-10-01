@@ -1,0 +1,252 @@
+// Page "Einstellungen → Sicherung" (ADR-0046) in jsdom with the real store and fake data: the hint
+// for a server that is not on Windows, the state and its warnings (red only for real errors), "Jetzt
+// sichern", the target folder with its field error, the passphrase checked before sending and
+// emptied after saving, the switch of the access data with its hint about the environment
+// variables, the generations and the lists of backups.
+
+import { fireEvent, render, screen, within } from '@testing-library/svelte';
+import { tick } from 'svelte';
+import { describe, expect, it, vi } from 'vitest';
+import type { BackupAnswer } from '$lib/data/backup';
+import { parseOverview, type BackupOverview } from '$lib/domain/backup';
+import { BackupStore, type BackupData } from '$lib/stores/backup.svelte';
+import BackupView from './BackupView.svelte';
+
+function overview(overrides: Record<string, unknown> = {}): BackupOverview {
+	const parsed = parseOverview({
+		appDir: 'C:\\Apps\\app',
+		settings: { target: 'E:\\Sicherung', daily: 7, weekly: 4, monthly: 6, credentials: true },
+		passphrase: 'set',
+		helper: true,
+		variables: ['BYL_TELEGRAM_TOKEN', 'BYL_WEBDE_PASSWORD'],
+		target: {
+			path: 'E:\\Sicherung',
+			reachable: true,
+			problem: null,
+			freeBytes: 5 * 1024 ** 3,
+			sameDrive: false
+		},
+		local: [
+			{
+				name: 'byl-20261001-100000.zip',
+				at: '2026-10-01T10:00:00.000Z',
+				bytes: 2 * 1024 ** 2,
+				ours: true
+			},
+			{ name: 'handarbeit.zip', at: '2026-09-01T10:00:00.000Z', bytes: 1024, ours: false }
+		],
+		sealed: [
+			{ name: 'byl-20261001-100000.tar.age', at: '2026-10-01T10:00:00.000Z', bytes: 3 * 1024 ** 2 }
+		],
+		last: {
+			backup: {
+				at: '2026-10-01T10:00:00.000Z',
+				name: 'byl-20261001-100000.zip',
+				bytes: 2 * 1024 ** 2
+			},
+			backupError: null,
+			export: null,
+			exportProblem: null
+		},
+		nextBackupAt: '2026-10-02T10:00:00.000Z',
+		warnings: [],
+		...overrides
+	});
+	if (parsed === null) throw new Error('not an overview');
+	return parsed;
+}
+
+const ok = <T>(value: T): BackupAnswer<T> => ({ kind: 'ok', value });
+
+async function show(
+	data: Partial<BackupData> = {},
+	platform: 'windows' | 'linux' = 'windows',
+	first = overview()
+) {
+	const full: BackupData = {
+		overview: vi.fn(async () => ok(first)),
+		run: vi.fn(async () =>
+			ok({ overview: first, result: { backup: 'byl-x.zip', backupError: '', export: null } })
+		),
+		saveSettings: vi.fn(async (settings) =>
+			ok(overview({ settings: { ...settings, target: settings.target || null } }))
+		),
+		savePassphrase: vi.fn(async () => ok(first)),
+		...data
+	};
+	const flags = { show: vi.fn(() => 'flag'), dismiss: vi.fn() };
+	const store = new BackupStore(full, { ensureValid: () => true, logout: vi.fn() }, flags);
+	if (platform === 'windows') await store.load();
+	render(BackupView, { props: { store, platform } });
+	await tick();
+	return { store, data: full, flags };
+}
+
+describe('page Sicherung', () => {
+	it('shows only a hint for a server that is not on Windows', async () => {
+		const { data } = await show({}, 'linux');
+		expect(screen.getByText('Nur für einen Server unter Windows')).toBeTruthy();
+		expect(screen.queryByRole('button', { name: 'Jetzt sichern' })).toBeNull();
+		expect(data.overview).not.toHaveBeenCalled();
+	});
+
+	it('shows the state of the backups and the backups here and in the target', async () => {
+		await show();
+		const state = within(screen.getByRole('region', { name: 'Zustand' }));
+		expect(state.getByText('01.10.2026 12:00 · 2,0 MB')).toBeTruthy();
+		expect(state.getByText('01.10.2026 12:00 · 3,0 MB')).toBeTruthy();
+		expect(state.getByText('etwa 02.10.2026 12:00')).toBeTruthy();
+		expect(state.getByText('7 tägliche, 4 wöchentliche, 6 monatliche')).toBeTruthy();
+		const list = within(screen.getByRole('region', { name: 'Sicherungen' }));
+		expect(list.getByText('Generation')).toBeTruthy();
+		expect(list.getByText('Andere Sicherung (bleibt)')).toBeTruthy();
+		expect(list.getByText('byl-20261001-100000.tar.age')).toBeTruthy();
+	});
+
+	it('shows warnings without red and real errors in red', async () => {
+		await show(
+			{},
+			'windows',
+			overview({
+				warnings: [
+					{
+						code: 'target-lag',
+						tone: 'warning',
+						since: '2026-09-28T10:00:00.000Z',
+						reason: 'unreachable'
+					},
+					{ code: 'export-failed', tone: 'error', since: null, reason: 'helper' }
+				]
+			})
+		);
+		const lag = screen
+			.getByText('Das Zielverzeichnis ist länger nicht aktuell')
+			.closest('[data-tone]');
+		expect(lag?.getAttribute('data-tone')).toBe('warning');
+		const failed = screen
+			.getByText('Die Kopie ins Zielverzeichnis ist gescheitert')
+			.closest('[data-tone]');
+		expect(failed?.getAttribute('data-tone')).toBe('error');
+	});
+
+	it('backs up now; the other changes wait meanwhile', async () => {
+		let release: () => void = () => undefined;
+		const { data } = await show({
+			run: vi.fn(
+				() =>
+					new Promise<Awaited<ReturnType<BackupData['run']>>>((done) => {
+						release = () =>
+							done(
+								ok({ overview: overview(), result: { backup: 'b', backupError: '', export: null } })
+							);
+					})
+			)
+		});
+		const button = screen.getByRole('button', { name: 'Jetzt sichern' });
+		await fireEvent.click(button);
+		expect(button.getAttribute('aria-busy')).toBe('true');
+		const save = screen.getByRole('button', { name: 'Zielverzeichnis speichern' });
+		expect(save.getAttribute('aria-disabled')).toBe('true');
+		await fireEvent.click(save);
+		expect(data.saveSettings).not.toHaveBeenCalled();
+		release();
+		await vi.waitFor(() => expect(button.getAttribute('aria-busy')).toBe('false'));
+	});
+
+	it('saves the target folder and shows a refusal at the field', async () => {
+		const { data } = await show({
+			saveSettings: vi.fn(async () => ({ kind: 'invalid', problem: 'missing' }) as const)
+		});
+		const field = screen.getByLabelText(
+			'Ordner für die verschlüsselten Sicherungen'
+		) as HTMLInputElement;
+		expect(field.value).toBe('E:\\Sicherung');
+		await fireEvent.input(field, { target: { value: 'F:\\USB\\Sicherung' } });
+		await fireEvent.click(screen.getByRole('button', { name: 'Zielverzeichnis speichern' }));
+		await vi.waitFor(() => expect(field.getAttribute('aria-invalid')).toBe('true'));
+		expect(data.saveSettings).toHaveBeenCalledWith(
+			expect.objectContaining({ target: 'F:\\USB\\Sicherung' }),
+			expect.anything()
+		);
+		const error = document.getElementById(
+			field.getAttribute('aria-describedby')?.split(' ')[0] ?? ''
+		);
+		expect(error?.textContent).toContain('Den Ordner gibt es nicht');
+	});
+
+	it('checks the passphrase before sending and empties the fields after saving', async () => {
+		const { data } = await show();
+		expect(
+			screen.getByText(
+				'Bewahre die Passphrase in deinem Passwort-Manager auf – ohne sie lässt sich die Sicherung nicht öffnen.'
+			)
+		).toBeTruthy();
+		const first = screen.getByLabelText('Neue Passphrase') as HTMLInputElement;
+		const second = screen.getByLabelText('Passphrase wiederholen') as HTMLInputElement;
+		expect(first.type).toBe('password');
+		await fireEvent.input(first, { target: { value: 'richtig Pferd Batterie' } });
+		await fireEvent.input(second, { target: { value: 'richtig Pferd' } });
+		await fireEvent.click(screen.getByRole('button', { name: 'Passphrase ändern' }));
+		expect(data.savePassphrase).not.toHaveBeenCalled();
+		expect(second.getAttribute('aria-invalid')).toBe('true');
+		expect(screen.getByText('Die beiden Eingaben stimmen nicht überein.')).toBeTruthy();
+
+		await fireEvent.input(second, { target: { value: 'richtig Pferd Batterie' } });
+		await fireEvent.click(screen.getByRole('button', { name: 'Passphrase ändern' }));
+		await vi.waitFor(() => expect(first.value).toBe(''));
+		expect(second.value).toBe('');
+		expect(data.savePassphrase).toHaveBeenCalledWith(
+			'richtig Pferd Batterie',
+			'richtig Pferd Batterie',
+			expect.anything()
+		);
+	});
+
+	it('switches the access data and says where they come from', async () => {
+		const { data } = await show();
+		const toggle = screen.getByRole('switch', {
+			name: 'Zugangsdaten mitsichern'
+		}) as HTMLInputElement;
+		expect(toggle.checked).toBe(true);
+		const hint = document.getElementById(toggle.getAttribute('aria-describedby') ?? '');
+		expect(hint?.textContent).toContain('Windows-Umgebungsvariablen BYL_*');
+		expect(screen.getByText('BYL_WEBDE_PASSWORD')).toBeTruthy();
+		await fireEvent.click(toggle);
+		await vi.waitFor(() =>
+			expect(data.saveSettings).toHaveBeenCalledWith(
+				expect.objectContaining({ credentials: false }),
+				expect.anything()
+			)
+		);
+	});
+
+	it('checks the generations before saving', async () => {
+		const { data } = await show();
+		const daily = screen.getByLabelText('Tägliche (1–30)') as HTMLInputElement;
+		await fireEvent.input(daily, { target: { value: '0' } });
+		await fireEvent.click(screen.getByRole('button', { name: 'Aufbewahrung speichern' }));
+		expect(data.saveSettings).not.toHaveBeenCalled();
+		expect(daily.getAttribute('aria-invalid')).toBe('true');
+		await fireEvent.input(daily, { target: { value: '3' } });
+		await fireEvent.click(screen.getByRole('button', { name: 'Aufbewahrung speichern' }));
+		await vi.waitFor(() =>
+			expect(data.saveSettings).toHaveBeenCalledWith(
+				expect.objectContaining({ daily: 3, weekly: 4, monthly: 6 }),
+				expect.anything()
+			)
+		);
+	});
+
+	it('names a missing helper and a target on the same drive', async () => {
+		await show(
+			{},
+			'windows',
+			overview({
+				helper: false,
+				target: { path: 'C:\\S', reachable: true, problem: null, freeBytes: null, sameDrive: true }
+			})
+		);
+		expect(screen.getByText('byl-backup.exe fehlt')).toBeTruthy();
+		expect(screen.getByText(/liegt auf demselben Laufwerk wie die App/)).toBeTruthy();
+	});
+});

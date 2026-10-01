@@ -111,7 +111,10 @@ describe('child processes of the tests', () => {
 	});
 });
 
-/** Code files of the tests: tests/, the test files and helpers of web, mail helper and extension. */
+/**
+ * Code files of the tests: tests/, the test files and helpers of web, mail helper, backup helper
+ * and extension.
+ */
 function testCodeFiles() {
 	const list = (dir, pattern) =>
 		readdirSync(join(ROOT_DIR, dir), { recursive: true })
@@ -123,6 +126,7 @@ function testCodeFiles() {
 		...list('web/src', /(\.test\.ts|\/lib\/test\/.+\.ts)$/),
 		...list('helpers/mail/src', /\.test\.ts$/),
 		...list('helpers/mail/test', code),
+		...list('helpers/backup/src', /\.test\.ts$/),
 		...list('extensions/whatsapp-web/src', /\.test\.ts$/)
 	];
 }

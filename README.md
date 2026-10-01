@@ -85,13 +85,14 @@ becauseyoulovejira/
   app/                    Portabler Laufzeitordner (wird kopiert/gesichert)
     pocketbase.exe        Binary (gitignored, via scripts/fetch-pocketbase.mjs; unter Linux app/pocketbase)
     byl-mail.exe          Mail-Hilfsprozess (gitignored, via scripts/build-mail-helper.ps1)
+    byl-backup.exe        Hilfsprogramm der Sicherung, verschlüsselt mit age (gitignored, via scripts/build-backup-helper.ps1)
     pb_hooks/             *.pb.js Hooks, lib/*.js reine CommonJS-Module
     pb_migrations/        Handgeschriebene JS-Migrationen
     pb_public/            Frontend-Build (gitignored)
     pb_data/              Daten und Backups (gitignored, niemals committen)
     logs/                 Server- und Hilfsprozess-Ausgabe, Log der Steuerung (gitignored)
     run/                  Zustand der laufenden Instanz und Adresse für die Landing-Seite (gitignored)
-    byl-config.json       Nur wenn der Port geändert wurde: {"port": …} (gitignored)
+    byl-config.json       Port und Einstellungen der Sicherung, nur wenn geändert (gitignored)
     start.bat             Starten (öffnet den Browser)
     start-hidden.vbs      Starten ohne Fenster (Ziel der Autostart-Verknüpfung)
     becauseyoulovejira.html  Einstieg per Doppelklick (prüft den Server, öffnet die App)
@@ -105,6 +106,7 @@ becauseyoulovejira/
     erweiterung-whatsapp-web/  Browser-Erweiterung für WhatsApp Web zum entpackten Laden (gitignored)
   web/                    SvelteKit-Quellcode (Build → web/build, veröffentlicht nach ../app/pb_public), Tests unter src/**/*.test.ts
   helpers/mail/           Mail-Hilfsprozess in TypeScript (Build → ../../app/byl-mail.exe), Tests unter src/*.test.ts
+  helpers/backup/         Hilfsprogramm der Sicherung in TypeScript (Build → ../../app/byl-backup.exe), Tests unter src/*.test.ts
   extensions/whatsapp-web/  Browser-Erweiterung in TypeScript (Build → ../../app/erweiterung-whatsapp-web), Tests unter src/*.test.ts
   scripts/                Build-/Setup-Skripte (PowerShell unter Windows; PocketBase-Abruf und Binary-Namen in Node)
   tests/                  Vitest-Tests (Hooks, Regeln, Login- und SPA-Integration)
@@ -193,6 +195,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File app\byl-control.ps1 help
 | `port` bzw. `port <Zahl>` | Port anzeigen bzw. umstellen |
 | `autostart-on`, `autostart-off`, `reset-admin` | wie die gleichnamigen `.bat`-Dateien |
 | `mail-restart` | beendet den eigenen Mail-Hilfsprozess geordnet und startet ihn wieder, wenn ein Postfach eingeschaltet ist |
+| `backup-info`, `backup-configure "<Ordner>"`, `backup-passphrase`, `backup-export <Sicherung>` | Sicherung: Zustand, Zielverzeichnis einstellen, Passphrase festlegen (fragt zweimal verdeckt), eine Sicherung verschlüsselt ins Ziel kopieren (siehe [Backup und Wiederherstellung](#backup-und-wiederherstellung)) |
 
 Exit-Codes: 0 erledigt (bei `status`: läuft und ist aktuell), 1 Fehler, 2 Einrichtung offen, 3 läuft nicht, 4 Port belegt, 5 App antwortet nicht, 6 Neustart nötig.
 
@@ -259,13 +262,18 @@ Admin- und App-Konto dürfen dieselbe E-Mail-Adresse haben. Es bleiben trotzdem 
 
 ### Backup und Wiederherstellung
 
-Details und Begründung: [ADR-0003](docs/adr/0003-pb-data-und-backups.md).
+Details und Begründung: [ADR-0046](docs/adr/0046-sicherung-pruefung-wiederherstellen.md) (vorher [ADR-0003](docs/adr/0003-pb-data-und-backups.md)). Alles Einstellbare steht unter **Einstellungen → Sicherung** (nur auf dem Rechner der App, nur für das zuerst angelegte App-Konto).
 
-- **Automatisch:** Alle 4 Stunden zur vollen Stunde (Cron in **UTC**, `0 */4 * * *`), solange der Server läuft. Die letzten **12** automatischen Backups werden aufbewahrt, als ZIP in `app\pb_data\backups\`. Ein Backup ist im laufenden Betrieb konsistent.
-- **Manuell:** Im Admin-Bereich `http://127.0.0.1:8090/_/` unter **Settings → Backups → Initialize new backup**, etwa vor Updates. Dort lassen sich Backups auch herunterladen.
-- **Wichtig:** Die Backups liegen auf derselben Platte wie die Daten. Kopiere `app\pb_data\backups\` regelmäßig zusätzlich an einen anderen Ort (externe Platte, Cloud-Ordner).
-- **Größe:** Originaldateien im Eingang (Mails mit Anhängen bis 25 MB je Datei, Seitenkopien bis 2 MB) stecken in jedem Backup. Zwölf aufbewahrte Backups vervielfachen das; behalte den freien Platz im Blick. Seit der Grenze von 25 MB statt 10 MB (ADR-0031, Nachtrag D) können Backups deshalb spürbar größer werden.
-- **Umzug:** `stop.bat`, dann den ganzen Ordner `app\` kopieren; die Backups wandern mit.
+- **Automatisch, einmal am Tag:** Solange die App läuft, sichert sie, sobald die letzte Sicherung einen Tag alt ist, also auch wenige Minuten nach dem Start, wenn der Rechner aus war. Die Sicherung ist ein ZIP von `pb_data` (konsistent im laufenden Betrieb) in `app\pb_data\backups\` und heißt `byl-<Datum>-<Uhrzeit>.zip` (UTC). **„Jetzt sichern“** auf der Seite sichert sofort, etwa vor einem Update.
+- **Generationen:** Behalten werden die neueste Sicherung jedes der letzten **7 Tage**, jeder der letzten **4 Wochen** und jedes der letzten **6 Monate** (änderbar unter „Aufbewahrung“); ältere löscht die App. Andere ZIP-Dateien in `pb_data\backups` (Sicherungen aus der Verwaltung, die automatischen von PocketBase vor dieser Version) bleiben, bis du sie in der Verwaltung löschst.
+- **Zielverzeichnis (außer Haus):** Gib unter „Zielverzeichnis“ einen Ordner auf einem anderen Laufwerk an: USB-Platte, zweites Laufwerk, eine Freigabe deines NAS (`\\NAS\Freigabe\Ordner`) oder einen Ordner, den ein Cloud-Dienst synchronisiert. Pfad am einfachsten aus der Adresszeile des Explorers kopieren. Die App prüft, ob es den Ordner gibt, ob sie hineinschreiben darf, ob genug Platz frei ist und dass er nicht im Ordner `app` liegt. Jede neue Sicherung kommt **verschlüsselt** dorthin (`byl-<Datum>-<Uhrzeit>.tar.age`), mit denselben Generationen. Ist die Platte abgezogen, sagt die Seite das; die App holt die Kopie nach, sobald der Ordner wieder erreichbar ist.
+- **Passphrase:** Ohne sie entsteht im Zielverzeichnis nichts. Zweimal eingeben; die App legt sie für die unbeaufsichtigten Sicherungen verschlüsselt und an dein Windows-Konto gebunden ab (DPAPI, unter `%LOCALAPPDATA%\becauseyoulovejira\`, nie im Ordner `app`). **Bewahre die Passphrase in deinem Passwort-Manager auf – ohne sie lässt sich die Sicherung nicht öffnen.** Änderst du sie, nutzen neue Sicherungen die neue; ältere bleiben mit der alten lesbar.
+- **Zugangsdaten mitsichern** (Standard an): Die verschlüsselten Sicherungen im Zielverzeichnis enthalten dann auch die Werte deiner Windows-Umgebungsvariablen `BYL_*` (Kalender-Adresse, Bot-Token, Postfach-Passwörter …), gelesen aus deinem Konto, nicht aus der App. In die Sicherungen im Ordner `app` kommen sie nie.
+- **Format:** [age](https://age-encryption.org) mit Passphrase um ein tar-Archiv mit `pb_data.zip`, `byl-config.json`, `manifest.json` und gegebenenfalls `zugangsdaten.json`. Im Notfall öffnet das offizielle Programm `age` eine Sicherung auch ohne die App (`age --decrypt --output sicherung.tar <Datei>`, dann `tar -xf sicherung.tar`); `LIESMICH.txt` im Archiv beschreibt die Schritte.
+- **Warnungen:** Ist die letzte Sicherung älter als 36 Stunden, liegt das Zielverzeichnis länger zurück oder ist etwas gescheitert, zeigt die Seite das, und beim Öffnen der App erscheint ein Hinweis „Die Sicherung braucht deine Aufmerksamkeit.“
+- **Größe:** Originaldateien im Eingang (Mails mit Anhängen bis 25 MB je Datei, Seitenkopien bis 2 MB) stecken in jeder Sicherung; die Generationen vervielfachen das. Behalte den freien Platz im Blick.
+- **Von Hand:** `byl-control.ps1 backup-configure "<Ordner>"`, `backup-passphrase` (fragt zweimal verdeckt), `backup-info` und `backup-export <byl-….zip>` im Ordner `app`.
+- **Umzug:** `stop.bat`, dann den ganzen Ordner `app\` kopieren; die Sicherungen in `pb_data\backups` wandern mit. Die Passphrase legst du auf dem neuen Rechner neu fest.
 
 **Wiederherstellen (nur manuell):** Die Wiederherstellung über das Admin-UI unterstützt PocketBase unter Windows nicht. Manuelle Schritte, PowerShell im Ordner `app` (Datum und Backup-Namen anpassen):
 
@@ -292,11 +300,11 @@ Danach anmelden und die Daten prüfen; es gelten die Konten und Passwörter zum 
 
 Google Calendar und Telegram holt die App selbst ab, Postfächer der Mail-Hilfsprozess `byl-mail.exe`, solange die App läuft; aus Notion übernimmst du Listen nur auf Anstoß. Eingerichtet werden sie unter **Einstellungen → Kanäle** (Zahnrad oben rechts, `http://127.0.0.1:8090/einstellungen/kanaele`); in den Anleitungen unten steht dafür kurz **Kanäle**. Jeder Kanal ist dort eine Karte gleichen Aufbaus: oben der Zustand (**Verbunden**, **Pausiert**, **Fehler**, **Einrichtung offen**, **Neustart nötig**, während eines Abrufs **Wird abgerufen**), darunter eine Zeile wie „Zuletzt abgerufen vor 5 Min. · 3 neu“ und ein Knopf für den nächsten Schritt (etwa **Jetzt abrufen**, **Listen übernehmen …** oder **Einrichtung fortsetzen**). Das Menü **•••** enthält alles Weitere: **Stichwörter und Einstellungen …** (Stichwörter und Schalter), bei Postfächern **Aus dem Postfach wählen …**, Pausieren bzw. Fortsetzen, **Umbenennen …**, Einrichtung, Hilfe und Löschen. **Umbenennen …** macht den Namen oben in der Karte zum Textfeld (Enter speichert, Esc bricht ab; nicht leer, höchstens 100 Zeichen, ein Name, den schon eine andere Verbindung trägt, ist mit Hinweis erlaubt); es ändert nur den Namen, nie Abruf, Zugangsdaten oder Stichwörter, und der neue Name steht sofort überall, auch in anderen Tabs, im Eingang bei „Quelle“ und in den Quellen eines Tickets (etwa „Postfach · Gmail Arbeit“). Eigener Eingang, WhatsApp Web, Dateien und Bookmarklet haben feste Namen. **Details** klappt Stichwörter, die Schalter der Antworten eines Telegram-Bots, Postfach, Hilfsprozess, bisher übernommene Listen, Zugangsschlüssel und den letzten Fehler auf. Die Stichwörter stehen dort als Liste; bei mehr als 10 zeigt sie zuerst 8 und **+ N weitere** (aufgeklappt **Weniger anzeigen**), ab 21 kommt ein Filterfeld dazu, das Groß-/Kleinschreibung und Umlaute nicht unterscheidet. Dieselbe Liste steht in den Dialogen, in denen du Stichwörter bearbeitest; nach dem Hinzufügen klappt sie auf, damit du das neue Stichwort siehst. Neue Verbindungen kommen über **Kanal hinzufügen**: Für Google Calendar, Telegram, Web.de und Gmail führt ein **Einrichtungsassistent** in sechs Schritten durch Verbindung, Variable, Neustart, Stichwörter und ersten Abruf und prüft unterwegs, was die App sehen kann, für Notion durch Integration, Token, Neustart, Freigabe und Prüfung; die Adresse `?einrichten=<art>&verbindung=<id>` öffnet ihn nach dem Neustart an der richtigen Stelle, ebenso **Einrichtung fortsetzen** an der Karte. Für Proton gibt es eine kurze Anleitung über `.eml`-Dateien. Im Schritt „Variable setzen“ kannst du den Wert optional in ein Feld einsetzen und den fertigen Befehl kopieren: Der Wert bleibt im Browserfenster, wird nie gespeichert oder gesendet und nach dem Kopieren geleert. Windows merkt sich Kopiertes im Zwischenablage-Verlauf (Win+V), falls er eingeschaltet ist; der Weg über die Systemsteuerung (zweiter Reiter) kommt ohne Zwischenablage aus. Die Abschnitte unten beschreiben dieselben Schritte zum Nachlesen. Details: [ADR-0016](docs/adr/0016-kanal-architektur-und-mail.md), [ADR-0018](docs/adr/0018-secrets.md).
 
-- **Zugangsdaten nur als Windows-Variable:** Geheime Kalenderadresse, Bot-Token und erlaubte IDs stehen als Umgebungsvariablen deines Windows-Kontos, deren Name mit `BYL_` beginnt (Großbuchstaben, Ziffern, `_`). Die App speichert nur den Namen, nie den Wert. So stehen die Werte weder in `pb_data` noch in Backups oder Kopien von `app\`.
+- **Zugangsdaten nur als Windows-Variable:** Geheime Kalenderadresse, Bot-Token und erlaubte IDs stehen als Umgebungsvariablen deines Windows-Kontos, deren Name mit `BYL_` beginnt (Großbuchstaben, Ziffern, `_`). Die App speichert nur den Namen, nie den Wert. So stehen die Werte weder in `pb_data` noch in den Sicherungen in `app\pb_data\backups` oder Kopien von `app\`; nur die verschlüsselten Sicherungen im Zielverzeichnis nehmen sie mit, wenn „Zugangsdaten mitsichern“ an ist (siehe [Backup und Wiederherstellung](#backup-und-wiederherstellung)).
 - **Variable setzen:** Eingabeaufforderung öffnen (Windows-Taste, `cmd`) und `setx NAME "Wert"` eingeben, etwa `setx BYL_TELEGRAM_TOKEN "123456789:AA…"`. Alternativ: Windows-Taste, „Umgebungsvariablen“, dann **Umgebungsvariablen für dieses Konto bearbeiten** → **Benutzervariablen** → **Neu…**.
 - **Danach neu starten:** `neu-starten.bat`. Es erkennt die neue oder geänderte Variable, startet neu und liest dabei alle `BYL_*`-Variablen frisch aus deinem Benutzerkonto (Werte werden dafür nicht gespeichert, siehe [ADR-0039](docs/adr/0039-betriebsskripte.md) §5). Die Verbindung zeigt dann „Zugangsdaten gesetzt.“, sonst nennt sie die fehlende Variable.
 - **Ändern oder entfernen:** `setx` mit neuem Wert bzw. die Variable in der Systemsteuerung löschen (oder `reg delete HKCU\Environment /v NAME /f`), dann neu starten.
-- **Umzug:** Auf einem anderen Rechner fehlen die Variablen; lege sie dort neu an.
+- **Umzug:** Auf einem anderen Rechner fehlen die Variablen; lege sie dort neu an (oder hole sie aus einer verschlüsselten Sicherung mit Zugangsdaten zurück).
 - **In der App:** Dieselbe Erklärung steht unter **Einstellungen → Hilfe → Kanäle und Zugangsdaten**; die Seite **Kanäle** verlinkt sie mit „Wie funktionieren die Zugangsdaten?“.
 - **Server nicht unter Windows:** Die App fragt den Server nach seinem System (`GET /api/byl/host`). Läuft er unter Linux oder in einem Container, steht über den Windows-Anleitungen ein Hinweis: dieselben `BYL_*`-Variablen gehören dann in die Umgebung des Server-Prozesses bzw. in die Umgebungsdatei des Containers, danach den Server neu starten bzw. den Container neu erstellen. Übersteuern lässt sich die Erkennung mit `BYL_HOST_PLATFORM` (`windows`, `linux`, `container`). Anleitungen mit Befehlen für Linux gehören zum Server auf dem Raspberry Pi ([Plan Plattformen](docs/plan/plattformen.md), Stufe S3); der Plattform-Ausbau ist zurückgestellt (siehe [Roadmap](#roadmap)).
 - Fehlermeldungen einer Verbindung zeigen nie den Wert. Adressen werden auf Schema und Rechner gekürzt, Tokens durch `***` ersetzt.
@@ -701,10 +709,11 @@ npm run check   # svelte-check / TypeScript
 npm run lint    # Prettier + ESLint
 npm run build   # Frontend-Build nach web/build, ohne Lücke veröffentlicht nach app/pb_public (ADR-0040)
 powershell -ExecutionPolicy Bypass -File scripts\build-mail-helper.ps1   # app\byl-mail.exe bauen und ohne Node prüfen
+powershell -ExecutionPolicy Bypass -File scripts\build-backup-helper.ps1 # app\byl-backup.exe bauen und ohne Node prüfen
 npm test        # Vitest: Unit-, Hilfsprozess- und Integrationstests, danach die web-Tests
 ```
 
-Die CI ([`.github/workflows/ci.yml`](.github/workflows/ci.yml)) läuft bei jedem Pull Request auf `main`, einmal wöchentlich auf `main` und auf Wunsch per „Run workflow“, jeweils mit zwei Jobs. Der Pflicht-Check „Check, lint, build and test“ läuft auf einem Windows-Runner: Node.js 24, `scripts\fetch-pocketbase.ps1`, dann `scripts\build.ps1`. Der zweite Pflicht-Check „Linux build and test“ macht dasselbe auf `ubuntu-latest` mit dem Linux-Binary von PocketBase (`node scripts/fetch-pocketbase.mjs`, dann check, lint, Build, `node helpers/mail/build.mjs` und `npm test`); die Tests der Windows-Betriebsschicht (Windows PowerShell, `byl-functions.ps1`) laufen nur unter Windows ([Plan Plattformen](docs/plan/plattformen.md), Stufe S0). Ein neuer Push in denselben PR bricht den laufenden Durchgang ab. PRs, die nur Markdown-Dateien oder Dateien unter `docs/` ändern (außer `docs/test-manifest.html`, das ein Test liest), überspringen beide Jobs; die Pflicht-Checks gelten dann als bestanden. Dependabot hält npm-Pakete und Actions aktuell; Major-Sprünge von `typescript` und `@types/node` schlägt er nicht vor, sie werden bewusst separat geprüft.
+Die CI ([`.github/workflows/ci.yml`](.github/workflows/ci.yml)) läuft bei jedem Pull Request auf `main`, einmal wöchentlich auf `main` und auf Wunsch per „Run workflow“, jeweils mit zwei Jobs. Der Pflicht-Check „Check, lint, build and test“ läuft auf einem Windows-Runner: Node.js 24, `scripts\fetch-pocketbase.ps1`, dann `scripts\build.ps1`. Der zweite Pflicht-Check „Linux build and test“ macht dasselbe auf `ubuntu-latest` mit dem Linux-Binary von PocketBase (`node scripts/fetch-pocketbase.mjs`, dann check, lint, Build, `node helpers/mail/build.mjs`, `node helpers/backup/build.mjs` und `npm test`); die Tests der Windows-Betriebsschicht (Windows PowerShell, `byl-functions.ps1`) laufen nur unter Windows ([Plan Plattformen](docs/plan/plattformen.md), Stufe S0). Ein neuer Push in denselben PR bricht den laufenden Durchgang ab. PRs, die nur Markdown-Dateien oder Dateien unter `docs/` ändern (außer `docs/test-manifest.html`, das ein Test liest), überspringen beide Jobs; die Pflicht-Checks gelten dann als bestanden. Dependabot hält npm-Pakete und Actions aktuell; Major-Sprünge von `typescript` und `@types/node` schlägt er nicht vor, sie werden bewusst separat geprüft.
 
 ### Tests
 
@@ -714,10 +723,11 @@ Die CI ([`.github/workflows/ci.yml`](.github/workflows/ci.yml)) läuft bei jedem
 | `tests/integration/` | gegen Wegwerf-PocketBase-Instanzen: Migrationen (hin, zurück und Hooks vor der Migration), API-Regeln, Hooks, Login, gesperrte Mail-Abläufe, Admin-Reset, SPA-Fallback, Backup-Wiederherstellung, Datenzugriff und Realtime des Frontends (`web/src/lib/data`), Eingang, Kanäle gegen lokale Fake-Server (Kalender, Telegram), Ingest-Route, Postfach-Auswahl und Bereinigung |
 | `web/src/**/*.test.ts` | Frontend: Domänenlogik, Stores, Unit- und Komponententests (jsdom) |
 | `helpers/mail/src/*.test.ts` | Mail-Hilfsprozess gegen einen kleinen IMAP-Server im Test (`helpers/mail/test/fake-imap.ts`, nur `127.0.0.1`): nur lesende Befehle, Cursor, Stichwörter, Fehler; dazu `tests/integration/mail-*.test.mjs` mit PocketBase und dem gebauten `byl-mail.exe` ohne Node |
+| `helpers/backup/src/*.test.ts` | Hilfsprogramm der Sicherung: tar-Behälter, Versiegeln und Öffnen mit age, falsche Passphrase, veränderte und abgeschnittene Dateien, offizielle Testvektoren von age; dazu `tests/integration/backup-*.test.mjs` (gebautes `byl-backup.exe` ohne Node, tar des Systems, Sicherungen einer Wegwerf-Instanz und einer Wegwerf-Kopie des Ordners `app` mit Zielverzeichnis) |
 
 ```powershell
 npm run test:unit          # nur reine Logik, ohne PocketBase
-npm run test:helper        # Mail-Hilfsprozess gegen den Test-IMAP-Server
+npm run test:helper        # Mail-Hilfsprozess gegen den Test-IMAP-Server, Hilfsprogramm der Sicherung
 npm run test:integration   # gegen eine Wegwerf-PocketBase-Instanz
 npm run test:web           # Frontend: Unit- und Komponententests (jsdom)
 ```

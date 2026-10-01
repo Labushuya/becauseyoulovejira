@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { untrack } from 'svelte';
 	import { afterNavigate, goto } from '$app/navigation';
+	import { resolve } from '$app/paths';
 	import { page } from '$app/state';
 	import { auth } from '$lib/auth.svelte';
 	import AppHeader from '$lib/components/AppHeader.svelte';
@@ -33,7 +34,9 @@
 	import { HostStore, setHostStore } from '$lib/stores/host.svelte';
 	import { getNotifyStore } from '$lib/attention-notify.svelte';
 	import { ackAttention } from '$lib/data/attention';
+	import { fetchBackupAttention } from '$lib/data/backup';
 	import { AttentionStore, attentionSource } from '$lib/stores/attention.svelte';
+	import { BackupAttention } from '$lib/stores/backup-attention';
 	import { FlagStore, setFlagStore } from '$lib/stores/flags.svelte';
 	import { getTabContext } from '$lib/tab-presence';
 	import { InboxStore, inboxData, setInboxStore } from '$lib/stores/inbox.svelte';
@@ -225,6 +228,18 @@
 	$effect(() => untrack(() => inbox.connect(live)));
 	$effect(() => untrack(() => sources.connect(live)));
 
+	// Backups that need attention (ADR-0046, ADR-0035): one quiet flag after the sign-in and when the
+	// app is opened again (below), only for a real warning.
+	const backupAttention = new BackupAttention({
+		check: () => fetchBackupAttention(pb),
+		flags,
+		open: () => void goto(resolve('/einstellungen/sicherung'))
+	});
+	$effect(() => {
+		if (auth.userId === null) return;
+		untrack(() => void backupAttention.announce());
+	});
+
 	// Opened again (ADR-0035 section 5): start.bat, the landing page or stop.bat send a message on
 	// byl/attention; this tab confirms it and shows a flag, the title blinks while it is hidden. A
 	// second tab of this browser asks over the BroadcastChannel of the root layout.
@@ -236,7 +251,10 @@
 		flags,
 		blink: () => tabContext?.blinker.start(),
 		notify: () => void notifyStore.notify(),
-		opened: () => rules.announceWaiting(openWaiting)
+		opened: () => {
+			rules.announceWaiting(openWaiting);
+			void backupAttention.announce();
+		}
 	});
 	$effect(() => untrack(() => notifyStore.connect()));
 	$effect(() => untrack(() => attention.connect(attentionSource(pb))));

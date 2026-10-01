@@ -21,19 +21,24 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
 	{ id: 'tickets', label: 'Tickets', href: resolve('/einstellungen/tickets') },
 	{ id: 'darstellung', label: 'Darstellung', href: resolve('/einstellungen/darstellung') },
 	{ id: 'konto', label: 'Konto', href: resolve('/einstellungen/konto') },
+	// Backups, target folder and passphrase (ADR-0046), only for a server on Windows.
+	{ id: 'sicherung', label: 'Sicherung', href: resolve('/einstellungen/sicherung') },
 	// Operation of the app from the dashboard (ADR-0043), only for a server on Windows.
 	{ id: 'system', label: 'System', href: resolve('/einstellungen/system') },
 	{ id: 'hilfe', label: 'Hilfe', href: resolve('/einstellungen/hilfe') }
 ];
 
+/** Pages that drive the scripts of the folder app under Windows (ADR-0043, ADR-0046). */
+const WINDOWS_ONLY = ['sicherung', 'system'];
+
 /**
- * The pages the navigation lists for a server on `platform`: "System" drives the scripts of the
- * folder app under Windows, so it is left out for Linux and containers (ADR-0043).
+ * The pages the navigation lists for a server on `platform`: "Sicherung" and "System" drive the
+ * scripts of the folder app under Windows, so they are left out for Linux and containers.
  */
 export function visibleSettingsSections(platform: HostPlatform): readonly SettingsSection[] {
 	return platform === 'windows'
 		? SETTINGS_SECTIONS
-		: SETTINGS_SECTIONS.filter((section) => section.id !== 'system');
+		: SETTINGS_SECTIONS.filter((section) => !WINDOWS_ONLY.includes(section.id));
 }
 
 /** Start of the settings area; it forwards to the first page. */
