@@ -1,12 +1,13 @@
 // Store of the page "Einstellungen → Sicherung" (ADR-0046) with fake data: the state and its
 // refusals, the target folder with its field error, the generations, the switch of the access
-// data, the passphrase (checked before sending) and "Jetzt sichern" with its flags; one change at a
-// time, nothing after the page went.
+// data, the passphrase (checked before sending), "Jetzt sichern" and "Prüfen" with their flags and
+// the question for the passphrase of a sealed backup; one change at a time, nothing after the page
+// went.
 
 import { describe, expect, it, vi } from 'vitest';
 import type { BackupAnswer } from '$lib/data/backup';
 import { DataError } from '$lib/data/errors';
-import { parseOverview, type BackupOverview } from '$lib/domain/backup';
+import { parseOverview, type BackupOverview, type VerifyResult } from '$lib/domain/backup';
 import { BackupStore, type BackupData } from './backup.svelte';
 
 function overview(overrides: Record<string, unknown> = {}): BackupOverview {
@@ -45,9 +46,23 @@ function setup(data: Partial<BackupData> = {}) {
 			ok(overview({ settings: { ...settings, target: settings.target || null } }))
 		),
 		savePassphrase: vi.fn(async () => ok(overview({ passphrase: 'set' }))),
+		verify: vi.fn(async () => ok({ overview: overview(), result: verified() })),
 		...data
 	};
 	return { store: new BackupStore(full, session, flags), data: full, flags, session };
+}
+
+function verified(overrides: Partial<VerifyResult> = {}): VerifyResult {
+	return {
+		ok: true,
+		reason: '',
+		encrypted: true,
+		createdUtc: '2026-10-01T10:00:00Z',
+		variables: [],
+		counts: { tickets: 12, users: 1 },
+		files: { expected: 3, missing: 0, examples: [] },
+		...overrides
+	};
 }
 
 describe('BackupStore: state', () => {
@@ -215,6 +230,98 @@ describe('BackupStore: changes', () => {
 		expect(store.busy).toBeNull();
 		await store.saveTarget('E:\\S');
 		expect(store.actionMessage?.message.title).toBe('Eine Aktion läuft gerade');
+	});
+
+	it('checks a backup and names what came out in a flag', async () => {
+		type VerifyAnswer = Awaited<ReturnType<BackupData['verify']>>;
+		let release: (value: VerifyAnswer) => void = () => undefined;
+		const { store, data, flags } = setup({
+			verify: vi.fn(() => new Promise<VerifyAnswer>((done) => (release = done)))
+		});
+		await store.load();
+		const checking = store.verify({ source: 'local', name: 'byl-20261001-100000.zip' });
+		expect(store.busy).toBe('verify');
+		expect(store.verifying).toEqual({ source: 'local', name: 'byl-20261001-100000.zip' });
+		release(ok({ overview: overview(), result: verified({ encrypted: false }) }));
+		await checking;
+		expect(store.verifying).toBeNull();
+		expect(data.verify).toHaveBeenCalledWith(
+			{ source: 'local', name: 'byl-20261001-100000.zip' },
+			expect.objectContaining({ signal: expect.any(AbortSignal) })
+		);
+		expect(flags.show).toHaveBeenLastCalledWith({
+			tone: 'success',
+			title: 'Sicherung geprüft: in Ordnung.',
+			description: '12 Tickets, 3 Originaldateien.'
+		});
+
+		data.verify = vi.fn(async () =>
+			ok({
+				overview: overview(),
+				result: verified({
+					ok: false,
+					reason: 'files',
+					files: { expected: 3, missing: 1, examples: ['inbox_items/abc'] }
+				})
+			})
+		);
+		await store.verify({ source: 'local', name: 'byl-20261001-100000.zip' });
+		expect(flags.show).toHaveBeenLastCalledWith({
+			tone: 'error',
+			title: 'Die Prüfung der Sicherung ist gescheitert.',
+			description: 'In der Sicherung fehlen Originaldateien.'
+		});
+		expect(store.passphraseRequest).toBeNull();
+	});
+
+	it('asks for the passphrase of a sealed backup the stored one does not open, and sends it once', async () => {
+		const sealed = { source: 'target', name: 'byl-20260101-100000.tar.age' } as const;
+		const verify = vi
+			.fn<BackupData['verify']>()
+			.mockResolvedValueOnce(
+				ok({ overview: overview(), result: verified({ ok: false, reason: 'passphrase' }) })
+			)
+			.mockResolvedValueOnce(
+				ok({ overview: overview(), result: verified({ ok: false, reason: 'passphrase' }) })
+			)
+			.mockResolvedValueOnce(ok({ overview: overview(), result: verified() }));
+		const { store, flags } = setup({ verify });
+		await store.load();
+		await store.verify(sealed);
+		expect(store.passphraseRequest).toEqual({ ...sealed, reason: 'passphrase' });
+		expect(flags.show).not.toHaveBeenCalled();
+
+		await store.verify(sealed, 'die alte Passphrase');
+		expect(verify).toHaveBeenLastCalledWith(
+			{ ...sealed, passphrase: 'die alte Passphrase' },
+			expect.anything()
+		);
+		expect(store.passphraseRequest).toEqual({ ...sealed, reason: 'passphrase' });
+
+		await store.verify(sealed, 'die richtige Passphrase');
+		expect(store.passphraseRequest).toBeNull();
+		expect(flags.show).toHaveBeenLastCalledWith(
+			expect.objectContaining({ tone: 'success', title: 'Sicherung geprüft: in Ordnung.' })
+		);
+
+		verify.mockResolvedValueOnce(
+			ok({ overview: overview(), result: verified({ ok: false, reason: 'no-passphrase' }) })
+		);
+		await store.verify(sealed);
+		expect(store.passphraseRequest?.reason).toBe('no-passphrase');
+		store.cancelPassphraseRequest();
+		expect(store.passphraseRequest).toBeNull();
+	});
+
+	it('names a refused check next to the actions', async () => {
+		const { store } = setup({
+			verify: vi.fn(async () => ({ kind: 'denied', reason: 'rate' }) as const)
+		});
+		await store.load();
+		await store.verify({ source: 'local', name: 'x.zip' });
+		expect(store.actionMessage?.tone).toBe('warning');
+		expect(store.verifying).toBeNull();
+		expect(store.busy).toBeNull();
 	});
 
 	it('ends its requests when the page goes', async () => {

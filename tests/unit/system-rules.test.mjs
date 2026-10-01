@@ -26,6 +26,7 @@ describe('whitelist', () => {
 			'backup-export',
 			'backup-info',
 			'backup-passphrase',
+			'backup-verify',
 			'doctor',
 			'logs',
 			'mail-restart',

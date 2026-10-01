@@ -195,7 +195,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File app\byl-control.ps1 help
 | `port` bzw. `port <Zahl>` | Port anzeigen bzw. umstellen |
 | `autostart-on`, `autostart-off`, `reset-admin` | wie die gleichnamigen `.bat`-Dateien |
 | `mail-restart` | beendet den eigenen Mail-Hilfsprozess geordnet und startet ihn wieder, wenn ein Postfach eingeschaltet ist |
-| `backup-info`, `backup-configure "<Ordner>"`, `backup-passphrase`, `backup-export <Sicherung>` | Sicherung: Zustand, Zielverzeichnis einstellen, Passphrase festlegen (fragt zweimal verdeckt), eine Sicherung verschlüsselt ins Ziel kopieren (siehe [Backup und Wiederherstellung](#backup-und-wiederherstellung)) |
+| `backup-info`, `backup-configure "<Ordner>"`, `backup-passphrase`, `backup-export <Sicherung>`, `backup-verify <Sicherung>` | Sicherung: Zustand, Zielverzeichnis einstellen, Passphrase festlegen (fragt zweimal verdeckt), eine Sicherung verschlüsselt ins Ziel kopieren, eine Sicherung prüfen (Name in `pb_data\backups` oder im Zielverzeichnis, oder ein voller Pfad; siehe [Backup und Wiederherstellung](#backup-und-wiederherstellung)) |
 
 Exit-Codes: 0 erledigt (bei `status`: läuft und ist aktuell), 1 Fehler, 2 Einrichtung offen, 3 läuft nicht, 4 Port belegt, 5 App antwortet nicht, 6 Neustart nötig.
 
@@ -270,9 +270,10 @@ Details und Begründung: [ADR-0046](docs/adr/0046-sicherung-pruefung-wiederherst
 - **Passphrase:** Ohne sie entsteht im Zielverzeichnis nichts. Zweimal eingeben; die App legt sie für die unbeaufsichtigten Sicherungen verschlüsselt und an dein Windows-Konto gebunden ab (DPAPI, unter `%LOCALAPPDATA%\becauseyoulovejira\`, nie im Ordner `app`). **Bewahre die Passphrase in deinem Passwort-Manager auf – ohne sie lässt sich die Sicherung nicht öffnen.** Änderst du sie, nutzen neue Sicherungen die neue; ältere bleiben mit der alten lesbar.
 - **Zugangsdaten mitsichern** (Standard an): Die verschlüsselten Sicherungen im Zielverzeichnis enthalten dann auch die Werte deiner Windows-Umgebungsvariablen `BYL_*` (Kalender-Adresse, Bot-Token, Postfach-Passwörter …), gelesen aus deinem Konto, nicht aus der App. In die Sicherungen im Ordner `app` kommen sie nie.
 - **Format:** [age](https://age-encryption.org) mit Passphrase um ein tar-Archiv mit `pb_data.zip`, `byl-config.json`, `manifest.json` und gegebenenfalls `zugangsdaten.json`. Im Notfall öffnet das offizielle Programm `age` eine Sicherung auch ohne die App (`age --decrypt --output sicherung.tar <Datei>`, dann `tar -xf sicherung.tar`); `LIESMICH.txt` im Archiv beschreibt die Schritte.
-- **Warnungen:** Ist die letzte Sicherung älter als 36 Stunden, liegt das Zielverzeichnis länger zurück oder ist etwas gescheitert, zeigt die Seite das, und beim Öffnen der App erscheint ein Hinweis „Die Sicherung braucht deine Aufmerksamkeit.“
+- **Prüfung:** Einmal in der Woche öffnet die App die neueste Sicherung (zuerst die im Zielverzeichnis) so, als müsste sie sie wiederherstellen: entschlüsseln, in einen Ordner unter `%TEMP%` entpacken, die Datenbank prüfen (`PRAGMA integrity_check`), nachsehen, ob jede Originaldatei des Eingangs darin steckt, und sie mit einer Probe-Instanz von PocketBase auf einem freien Port starten und zählen; danach ist alles wieder weg. **„Jetzt prüfen“** tut das sofort, **„Prüfen“** an einer Sicherung der Liste für genau diese. Das Ergebnis steht unter „Letzte Prüfung“. Stammt eine Sicherung von vor einem Wechsel der Passphrase, fragt die Seite direkt darunter nach ihrer Passphrase (sie wird nicht gespeichert).
+- **Warnungen:** Ist die letzte Sicherung älter als 36 Stunden, liegt das Zielverzeichnis länger zurück oder ist etwas gescheitert (auch eine Prüfung), zeigt die Seite das, und beim Öffnen der App erscheint ein Hinweis „Die Sicherung braucht deine Aufmerksamkeit.“
 - **Größe:** Originaldateien im Eingang (Mails mit Anhängen bis 25 MB je Datei, Seitenkopien bis 2 MB) stecken in jeder Sicherung; die Generationen vervielfachen das. Behalte den freien Platz im Blick.
-- **Von Hand:** `byl-control.ps1 backup-configure "<Ordner>"`, `backup-passphrase` (fragt zweimal verdeckt), `backup-info` und `backup-export <byl-….zip>` im Ordner `app`.
+- **Von Hand:** `byl-control.ps1 backup-configure "<Ordner>"`, `backup-passphrase` (fragt zweimal verdeckt), `backup-info`, `backup-export <byl-….zip>` und `backup-verify <byl-….zip, byl-….tar.age oder voller Pfad>` im Ordner `app`.
 - **Umzug:** `stop.bat`, dann den ganzen Ordner `app\` kopieren; die Sicherungen in `pb_data\backups` wandern mit. Die Passphrase legst du auf dem neuen Rechner neu fest.
 
 **Wiederherstellen (nur manuell):** Die Wiederherstellung über das Admin-UI unterstützt PocketBase unter Windows nicht. Manuelle Schritte, PowerShell im Ordner `app` (Datum und Backup-Namen anpassen):
@@ -294,7 +295,7 @@ Copy-Item -LiteralPath .\pb_data.vor-restore-2026-09-24\backups -Destination .\p
 .\start.bat
 ```
 
-Danach anmelden und die Daten prüfen; es gelten die Konten und Passwörter zum Zeitpunkt des Backups. Erst wenn alles stimmt, `pb_data.vor-restore-…` löschen. Schritt 3 ist durch den Integrationstest `tests/integration/backup-restore.test.mjs` belegt (Backup per API, `Expand-Archive` in einen neuen Datenordner, Start, Ticket, Key und Login vorhanden).
+Danach anmelden und die Daten prüfen; es gelten die Konten und Passwörter zum Zeitpunkt des Backups. Erst wenn alles stimmt, `pb_data.vor-restore-…` löschen. Schritt 3 ist durch den Integrationstest `tests/integration/backup-restore.test.mjs` belegt (Backup per API, `Expand-Archive` in einen neuen Datenordner, Start, Ticket, Key, Originaldatei des Eingangs und Login vorhanden).
 
 ### Kanäle und Zugangsdaten
 
@@ -723,7 +724,7 @@ Die CI ([`.github/workflows/ci.yml`](.github/workflows/ci.yml)) läuft bei jedem
 | `tests/integration/` | gegen Wegwerf-PocketBase-Instanzen: Migrationen (hin, zurück und Hooks vor der Migration), API-Regeln, Hooks, Login, gesperrte Mail-Abläufe, Admin-Reset, SPA-Fallback, Backup-Wiederherstellung, Datenzugriff und Realtime des Frontends (`web/src/lib/data`), Eingang, Kanäle gegen lokale Fake-Server (Kalender, Telegram), Ingest-Route, Postfach-Auswahl und Bereinigung |
 | `web/src/**/*.test.ts` | Frontend: Domänenlogik, Stores, Unit- und Komponententests (jsdom) |
 | `helpers/mail/src/*.test.ts` | Mail-Hilfsprozess gegen einen kleinen IMAP-Server im Test (`helpers/mail/test/fake-imap.ts`, nur `127.0.0.1`): nur lesende Befehle, Cursor, Stichwörter, Fehler; dazu `tests/integration/mail-*.test.mjs` mit PocketBase und dem gebauten `byl-mail.exe` ohne Node |
-| `helpers/backup/src/*.test.ts` | Hilfsprogramm der Sicherung: tar-Behälter, Versiegeln und Öffnen mit age, falsche Passphrase, veränderte und abgeschnittene Dateien, offizielle Testvektoren von age; dazu `tests/integration/backup-*.test.mjs` (gebautes `byl-backup.exe` ohne Node, tar des Systems, Sicherungen einer Wegwerf-Instanz und einer Wegwerf-Kopie des Ordners `app` mit Zielverzeichnis) |
+| `helpers/backup/src/*.test.ts` | Hilfsprogramm der Sicherung: tar-Behälter, Versiegeln und Öffnen mit age, falsche Passphrase, veränderte und abgeschnittene Dateien, offizielle Testvektoren von age, Prüfung einer Datenbank (Integrität, Zählungen, fehlende Originaldateien); dazu `tests/integration/backup-*.test.mjs` (gebautes `byl-backup.exe` ohne Node, tar des Systems, Sicherungen einer Wegwerf-Instanz und einer Wegwerf-Kopie des Ordners `app` mit Zielverzeichnis, Prüfungen mit Probe-Instanz) |
 
 ```powershell
 npm run test:unit          # nur reine Logik, ohne PocketBase

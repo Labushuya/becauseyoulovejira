@@ -2,13 +2,14 @@
 // for a server that is not on Windows, the state and its warnings (red only for real errors), "Jetzt
 // sichern", the target folder with its field error, the passphrase checked before sending and
 // emptied after saving, the switch of the access data with its hint about the environment
-// variables, the generations and the lists of backups.
+// variables, the generations, the lists of backups, the last check, "Jetzt prüfen", "Prüfen" and
+// the passphrase asked for below a sealed backup.
 
 import { fireEvent, render, screen, within } from '@testing-library/svelte';
 import { tick } from 'svelte';
 import { describe, expect, it, vi } from 'vitest';
 import type { BackupAnswer } from '$lib/data/backup';
-import { parseOverview, type BackupOverview } from '$lib/domain/backup';
+import { parseOverview, type BackupOverview, type VerifyResult } from '$lib/domain/backup';
 import { BackupStore, type BackupData } from '$lib/stores/backup.svelte';
 import BackupView from './BackupView.svelte';
 
@@ -58,6 +59,19 @@ function overview(overrides: Record<string, unknown> = {}): BackupOverview {
 
 const ok = <T>(value: T): BackupAnswer<T> => ({ kind: 'ok', value });
 
+function verified(overrides: Partial<VerifyResult> = {}): VerifyResult {
+	return {
+		ok: true,
+		reason: '',
+		encrypted: true,
+		createdUtc: '2026-10-01T10:00:00Z',
+		variables: [],
+		counts: { tickets: 12 },
+		files: { expected: 3, missing: 0, examples: [] },
+		...overrides
+	};
+}
+
 async function show(
 	data: Partial<BackupData> = {},
 	platform: 'windows' | 'linux' = 'windows',
@@ -72,6 +86,7 @@ async function show(
 			ok(overview({ settings: { ...settings, target: settings.target || null } }))
 		),
 		savePassphrase: vi.fn(async () => ok(first)),
+		verify: vi.fn(async () => ok({ overview: first, result: verified() })),
 		...data
 	};
 	const flags = { show: vi.fn(() => 'flag'), dismiss: vi.fn() };
@@ -235,6 +250,101 @@ describe('page Sicherung', () => {
 				expect.anything()
 			)
 		);
+	});
+
+	it('shows the last check and checks the newest backup in the target now', async () => {
+		const { data } = await show(
+			{},
+			'windows',
+			overview({
+				last: {
+					backup: null,
+					backupError: null,
+					export: null,
+					exportProblem: null,
+					verify: {
+						at: '2026-10-01T11:00:00.000Z',
+						name: 'byl-20261001-100000.tar.age',
+						source: 'target',
+						ok: true,
+						reason: '',
+						counts: { tickets: 12 },
+						files: { expected: 3, missing: 0, examples: [] }
+					}
+				}
+			})
+		);
+		const state = within(screen.getByRole('region', { name: 'Zustand' }));
+		expect(
+			state.getByText(
+				'01.10.2026 13:00 · Sicherung im Zielverzeichnis in Ordnung (12 Tickets, 3 Originaldateien)'
+			)
+		).toBeTruthy();
+		await fireEvent.click(screen.getByRole('button', { name: 'Jetzt prüfen' }));
+		await vi.waitFor(() =>
+			expect(data.verify).toHaveBeenCalledWith(
+				{ source: 'target', name: 'byl-20261001-100000.tar.age' },
+				expect.anything()
+			)
+		);
+	});
+
+	it('checks a single backup and asks below a sealed one for its passphrase', async () => {
+		const verify = vi
+			.fn<BackupData['verify']>()
+			.mockResolvedValueOnce(ok({ overview: overview(), result: verified({ encrypted: false }) }))
+			.mockResolvedValueOnce(
+				ok({ overview: overview(), result: verified({ ok: false, reason: 'passphrase' }) })
+			)
+			.mockResolvedValueOnce(ok({ overview: overview(), result: verified() }));
+		await show({ verify });
+		const list = within(screen.getByRole('region', { name: 'Sicherungen' }));
+		await fireEvent.click(
+			list.getByRole('button', { name: 'Sicherung vom 01.10.2026 12:00 im Ordner app prüfen' })
+		);
+		await vi.waitFor(() =>
+			expect(verify).toHaveBeenLastCalledWith(
+				{ source: 'local', name: 'byl-20261001-100000.zip' },
+				expect.anything()
+			)
+		);
+
+		const sealed = list.getByRole('button', {
+			name: 'Sicherung vom 01.10.2026 12:00 im Zielverzeichnis prüfen'
+		});
+		await fireEvent.click(sealed);
+		const field = (await list.findByLabelText('Passphrase dieser Sicherung')) as HTMLInputElement;
+		expect(field.type).toBe('password');
+		expect(field.getAttribute('aria-invalid')).toBe('true');
+		await vi.waitFor(() => expect(document.activeElement).toBe(field));
+		const message = document.getElementById(field.getAttribute('aria-describedby') ?? '');
+		expect(message?.textContent).toContain('Die Passphrase passt nicht zu dieser Sicherung.');
+
+		await fireEvent.input(field, { target: { value: 'die alte Passphrase' } });
+		await fireEvent.click(list.getByRole('button', { name: 'Mit dieser Passphrase prüfen' }));
+		await vi.waitFor(() => expect(list.queryByLabelText('Passphrase dieser Sicherung')).toBeNull());
+		expect(verify).toHaveBeenLastCalledWith(
+			{ source: 'target', name: 'byl-20261001-100000.tar.age', passphrase: 'die alte Passphrase' },
+			expect.anything()
+		);
+	});
+
+	it('gives the focus back to "Prüfen" when the question for the passphrase is cancelled', async () => {
+		await show({
+			verify: vi.fn(async () =>
+				ok({ overview: overview(), result: verified({ ok: false, reason: 'no-passphrase' }) })
+			)
+		});
+		const list = within(screen.getByRole('region', { name: 'Sicherungen' }));
+		const sealed = list.getByRole('button', {
+			name: 'Sicherung vom 01.10.2026 12:00 im Zielverzeichnis prüfen'
+		});
+		await fireEvent.click(sealed);
+		const field = await list.findByLabelText('Passphrase dieser Sicherung');
+		expect(field.getAttribute('aria-invalid')).toBeNull();
+		await fireEvent.click(list.getByRole('button', { name: 'Abbrechen' }));
+		await vi.waitFor(() => expect(document.activeElement).toBe(sealed));
+		expect(list.queryByLabelText('Passphrase dieser Sicherung')).toBeNull();
 	});
 
 	it('names a missing helper and a target on the same drive', async () => {

@@ -597,7 +597,7 @@ describe('status, reload, logs and doctor (ADR-0039 sections 5 to 7, BS-2)', () 
 		const main = control().slice(control().lastIndexOf('try {'));
 		expect(main).toContain(
 			"if (@('start', 'stop', 'restart', 'reload', 'port', 'autostart-on', 'autostart-off', 'mail-restart', 'reset-admin',\r\n" +
-				"        'backup-configure', 'backup-passphrase', 'backup-export') -contains $Command) {"
+				"        'backup-configure', 'backup-passphrase', 'backup-export', 'backup-verify') -contains $Command) {"
 		);
 		const write = functionBody(control(), 'Write-ControlLog');
 		expect(write).toContain('Invoke-LogRotation -Path $path -LimitBytes $BylControlLogLimitBytes');
@@ -693,7 +693,7 @@ describe('commands of the backup (ADR-0046)', () => {
 	it('gives byl-backup.exe its parameters only on standard input, without the BYL_* variables', () => {
 		const helper = functionBody(control(), 'Invoke-BackupHelper');
 		expect(helper).toContain('$startInfo.Arguments = $Command');
-		expect(helper).toContain("[ValidateSet('seal', 'open')]");
+		expect(helper).toContain("[ValidateSet('seal', 'open', 'check')]");
 		expect(helper).toMatch(/if \(\[string\]\$name -like 'BYL_\*' -or \[string\]\$name -like 'NODE_\*'\) \{ \$startInfo\.EnvironmentVariables\.Remove\(\$name\) \}/);
 		expect(helper).toContain('$process.StandardInput.BaseStream.Write($bytes, 0, $bytes.Length)');
 	});
@@ -705,6 +705,35 @@ describe('commands of the backup (ADR-0046)', () => {
 		);
 		expect(exported.indexOf('Invoke-BackupHelper -Command seal')).toBeGreaterThan(exported.indexOf('$secrets = '));
 		expect(functionBody(control(), 'Invoke-BackupInfo')).toContain('Select-BylSecretVariable -Variables (Get-BylVariableScope).User).Keys');
+	});
+
+	it('checks a backup with a throwaway server: superuser first, no hooks, random port, never the BYL_* variables', () => {
+		const source = control();
+		const start = functionBody(source, 'Start-PocketBaseProcess');
+		expect(start).toMatch(/if \(\[string\]\$name -like 'BYL_\*'\) \{ \$startInfo\.EnvironmentVariables\.Remove\(\$name\) \}/);
+		expect(start).toContain('$startInfo.RedirectStandardOutput = $true');
+		const check = functionBody(source, 'Invoke-ThrowawayCheck');
+		// CLAUDE.md §11.2: the superuser exists before the server starts; hooks from an empty folder.
+		const upsert = 'Get-AdminUpsertArgument -AppDir $AppDir -Email $email -Password $password -DataDir $DataDir -HooksDir $hooks';
+		expect(check.indexOf(upsert)).toBeGreaterThan(0);
+		expect(check.indexOf(upsert)).toBeLessThan(check.indexOf('serve --http=127.0.0.1:$port $common'));
+		expect(check).toMatch(/if \(\$upsert\.ExitCode -ne 0\) \{ return \$failed \}/);
+		expect(check).toContain('"--hooksDir=$hooks"');
+		expect(check).toContain('$port = Get-FreeLoopbackPort');
+		expect(check).toMatch(/finally \{[\s\S]*?\$server\.Kill\(\)/);
+		expect(functionBody(source, 'Get-FreeLoopbackPort')).toContain('@($BylDefaultPort, 8091, 8099, $BylPort) -notcontains $port');
+		// The work folder lies under Temp and is removed only when it is one of the checks.
+		const remove = functionBody(source, 'Remove-WorkFolder');
+		expect(remove).toContain("[System.IO.Path]::Combine([System.IO.Path]::GetTempPath(), 'byl-pruefung-')");
+		expect(remove).toContain('if (-not $Path.StartsWith($prefix, [System.StringComparison]::OrdinalIgnoreCase)) { return }');
+		const verify = functionBody(source, 'Invoke-BackupVerify');
+		expect(verify).toMatch(/finally \{\s*\$passphrase = \$null\s*Remove-WorkFolder -Path \$work\s*\}/);
+		expect(verify).not.toMatch(/LogDetail = [^\r\n]*\$passphrase|Show-Message[^\r\n]*\$passphrase/i);
+		// Names never leave their folder: a name of the app only matches a pattern without separators.
+		const resolve = functionBody(source, 'Resolve-BackupFile');
+		expect(resolve).toContain("if ($Name -notmatch $LocalBackupNamePattern) { return & $fail 'name' }");
+		expect(resolve).toContain("if ($Name -notmatch $BylSealedBackupPattern) { return & $fail 'name' }");
+		expect(source).toContain("$LocalBackupNamePattern = '^[A-Za-z0-9@._-]{1,200}\\.zip$'");
 	});
 });
 

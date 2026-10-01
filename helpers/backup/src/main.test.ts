@@ -1,10 +1,12 @@
-// The command line of byl-backup.exe (ADR-0046 §3): one JSON line per call, parameters only on
-// standard input, the values of the access data only on request, exit codes 0, 1 and 2.
+// The command line of byl-backup.exe (ADR-0046 §3 and §6): one JSON line per call, parameters only
+// on standard input, the values of the access data only on request, the check of a data folder,
+// exit codes 0, 1 and 2.
 
 import { randomBytes } from 'node:crypto';
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { DatabaseSync } from 'node:sqlite';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { seal } from './bundle';
 import { main, readInput, selfTest } from './main';
@@ -44,6 +46,9 @@ describe('byl-backup command line', () => {
 		await expect(readInput(stdin('kein json'))).rejects.toMatchObject({ reason: 'input' });
 		await expect(readInput(stdin(`{"a":"${'x'.repeat(1024 * 1024)}"}`))).rejects.toMatchObject({ reason: 'input' });
 		expect(await readInput(stdin('{"a":"ä"}'))).toEqual({ a: 'ä' });
+		// Windows PowerShell in a UTF-8 console closes the input with a byte order mark.
+		expect(await readInput(stdin('{"a":"ä"}﻿'))).toEqual({ a: 'ä' });
+		expect(await readInput(stdin('﻿{"a":1}\r\n'))).toEqual({ a: 1 });
 		const missing = await run(['seal'], '{"data":"x"}');
 		expect(missing.code).toBe(1);
 		expect(JSON.parse(missing.lines[0] ?? '')).toMatchObject({ ok: false, reason: 'input' });
@@ -71,10 +76,32 @@ describe('byl-backup command line', () => {
 		expect(JSON.parse(wrong.lines[0] ?? '')).toMatchObject({ ok: false, reason: 'passphrase' });
 	});
 
+	it('checks an unpacked data folder and refuses one without data.db', async () => {
+		const db = new DatabaseSync(join(dir, 'data.db'));
+		db.exec(`
+			CREATE TABLE _collections (id TEXT, name TEXT, type TEXT, fields TEXT);
+			CREATE TABLE tickets (id TEXT);
+			INSERT INTO _collections VALUES ('pbc_tickets', 'tickets', 'base', '[]');
+			INSERT INTO tickets VALUES ('ticket00000001');
+		`);
+		db.close();
+		const checked = await run(['check'], JSON.stringify({ dir }));
+		expect(checked.code).toBe(0);
+		expect(JSON.parse(checked.lines[0] ?? '')).toEqual({
+			ok: true,
+			integrity: ['ok'],
+			counts: { tickets: 1 },
+			files: { expected: 0, missing: 0, examples: [] }
+		});
+		const missing = await run(['check'], JSON.stringify({ dir: join(dir, 'leer') }));
+		expect(missing.code).toBe(1);
+		expect(JSON.parse(missing.lines[0] ?? '')).toMatchObject({ ok: false, reason: 'missing' });
+	});
+
 	it('passes its self-test without network', async () => {
 		expect(await selfTest()).toEqual({
 			ok: true,
-			checks: { roundTrip: true, secrets: true, manifest: true, wrongPassphrase: true }
+			checks: { roundTrip: true, secrets: true, manifest: true, wrongPassphrase: true, sqlite: true }
 		});
 	});
 });

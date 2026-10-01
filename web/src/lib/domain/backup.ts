@@ -1,6 +1,6 @@
 // Page "Einstellungen → Sicherung" (ADR-0046): what the server reports about the backups (settings,
-// passphrase, target folder, backups here and in the target, last runs, warnings), the checks of
-// the forms and the German texts. The limits of the generations are the same as in
+// passphrase, target folder, backups here and in the target, last runs and checks, warnings), the
+// checks of the forms and the German texts. The limits of the generations are the same as in
 // app/pb_hooks/lib/backup-rules.js and byl-functions.ps1 (parity test). Pure module: no requests,
 // no runes.
 
@@ -72,7 +72,8 @@ export const WARNING_CODES = [
 	'backup-failed',
 	'target-lag',
 	'export-failed',
-	'no-passphrase'
+	'no-passphrase',
+	'verify-failed'
 ] as const;
 export type WarningCode = (typeof WARNING_CODES)[number];
 
@@ -87,6 +88,42 @@ export interface LastRun {
 	at: string;
 	name: string | null;
 	bytes: number | null;
+}
+
+/** Where a backup lies: pb_data\backups ('local') or the target folder ('target', sealed). */
+export type BackupSource = 'local' | 'target';
+
+/** Originals a check expected and missed; examples as "collection/record", never file names. */
+export interface VerifyFiles {
+	expected: number;
+	missing: number;
+	examples: string[];
+}
+
+/** The last check of a backup (ADR-0046 §6). */
+export interface VerifyRun {
+	at: string;
+	name: string;
+	source: BackupSource;
+	ok: boolean;
+	/** Why it failed (VERIFY_REASON_TEXTS); '' when it is in order. */
+	reason: string;
+	/** Records per collection, counted by the throwaway server. */
+	counts: Record<string, number> | null;
+	files: VerifyFiles | null;
+}
+
+/** The result of "Prüfen" in the answer. */
+export interface VerifyResult {
+	ok: boolean;
+	reason: string;
+	encrypted: boolean;
+	/** When the sealed backup was made (its manifest); null for a backup here. */
+	createdUtc: string | null;
+	/** Names of the access data it holds (never values). */
+	variables: string[];
+	counts: Record<string, number> | null;
+	files: VerifyFiles | null;
 }
 
 export interface BackupOverview {
@@ -105,6 +142,7 @@ export interface BackupOverview {
 		backupError: { at: string; message: string } | null;
 		export: LastRun | null;
 		exportProblem: { at: string; reason: string; since: string | null } | null;
+		verify: VerifyRun | null;
 	};
 	nextBackupAt: string | null;
 	warnings: BackupWarning[];
@@ -167,6 +205,40 @@ function parseRun(raw: unknown): LastRun | null {
 	return { at: textOf(raw.at), name: textOf(raw.name) || null, bytes: count(raw.bytes) };
 }
 
+function parseCounts(raw: unknown): Record<string, number> | null {
+	if (!isRecord(raw)) return null;
+	const counts: Record<string, number> = {};
+	for (const [name, value] of Object.entries(raw)) {
+		const number = count(value);
+		if (/^[a-z_]{1,60}$/.test(name) && number !== null) counts[name] = number;
+	}
+	return counts;
+}
+
+function parseVerifyFiles(raw: unknown): VerifyFiles | null {
+	if (!isRecord(raw)) return null;
+	return {
+		expected: count(raw.expected) ?? 0,
+		missing: count(raw.missing) ?? 0,
+		examples: Array.isArray(raw.examples)
+			? raw.examples.filter((entry): entry is string => typeof entry === 'string').slice(0, 10)
+			: []
+	};
+}
+
+function parseVerifyRun(raw: unknown): VerifyRun | null {
+	if (!isRecord(raw) || textOf(raw.at) === '' || textOf(raw.name) === '') return null;
+	return {
+		at: textOf(raw.at),
+		name: textOf(raw.name),
+		source: raw.source === 'target' ? 'target' : 'local',
+		ok: raw.ok === true,
+		reason: raw.ok === true ? '' : textOf(raw.reason) || 'failed',
+		counts: parseCounts(raw.counts),
+		files: parseVerifyFiles(raw.files)
+	};
+}
+
 /** The answer of GET /api/byl/backup (and of the changes), or null. */
 export function parseOverview(raw: unknown): BackupOverview | null {
 	if (!isRecord(raw) || !isRecord(raw.settings) || !isRecord(raw.last)) return null;
@@ -224,7 +296,8 @@ export function parseOverview(raw: unknown): BackupOverview | null {
 			backup: parseRun(last.backup),
 			backupError,
 			export: parseRun(last.export),
-			exportProblem
+			exportProblem,
+			verify: parseVerifyRun(last.verify)
 		},
 		nextBackupAt: textOf(raw.nextBackupAt) || null,
 		warnings
@@ -247,6 +320,93 @@ export function parseRunResult(raw: unknown): RunResult | null {
 		backupError: textOf(result.backupError),
 		export: exported
 	};
+}
+
+/** The result of "Prüfen" in the answer, or null. */
+export function parseVerifyResult(raw: unknown): VerifyResult | null {
+	if (!isRecord(raw) || !isRecord(raw.result) || !isRecord(raw.result.verify)) return null;
+	const verify = raw.result.verify;
+	return {
+		ok: verify.ok === true,
+		reason: verify.ok === true ? '' : textOf(verify.reason) || 'failed',
+		encrypted: verify.encrypted === true,
+		createdUtc: textOf(verify.createdUtc) || null,
+		variables: Array.isArray(verify.variables)
+			? verify.variables.filter(
+					(name): name is string => typeof name === 'string' && /^BYL_[A-Z0-9_]{1,60}$/.test(name)
+				)
+			: [],
+		counts: parseCounts(verify.counts),
+		files: parseVerifyFiles(verify.files)
+	};
+}
+
+/**
+ * The backup "Jetzt prüfen" checks: the newest copy in the target folder (what a new machine
+ * would get), else the newest backup here, the app's own first; like the weekly check of the cron.
+ */
+export function newestToVerify(
+	overview: BackupOverview
+): { source: BackupSource; name: string } | null {
+	const sealed = overview.sealed[0];
+	if (sealed !== undefined) return { source: 'target', name: sealed.name };
+	const local = overview.local.find((file) => file.ours === true) ?? overview.local[0];
+	return local === undefined ? null : { source: 'local', name: local.name };
+}
+
+/** Why a check failed, in the words of the page. */
+export const VERIFY_REASON_TEXTS: Readonly<Record<string, string>> = {
+	name: 'Diese Sicherung kennt die App nicht.',
+	missing: 'Die Sicherung gibt es nicht (mehr).',
+	unreachable: 'Das Zielverzeichnis ist nicht erreichbar.',
+	'no-passphrase': 'Für die verschlüsselte Sicherung fehlt die Passphrase.',
+	passphrase: 'Die Passphrase passt nicht zu dieser Sicherung.',
+	format: 'Die Datei ist keine Sicherung der App.',
+	damaged: 'Die Sicherung ist beschädigt oder unvollständig.',
+	zip: 'Das ZIP der Sicherung lässt sich nicht entpacken.',
+	'no-db': 'In der Sicherung fehlt die Datenbank.',
+	integrity: 'Die Datenbank in der Sicherung ist beschädigt.',
+	files: 'In der Sicherung fehlen Originaldateien.',
+	start: 'Mit der Sicherung ließ sich keine Probe-Instanz starten.',
+	space: 'Für die Prüfung ist im Temp-Ordner zu wenig Platz frei.',
+	helper: 'byl-backup.exe fehlt oder antwortet nicht; scripts\\build.ps1 baut es.',
+	failed: 'Die Prüfung ließ sich nicht ausführen.'
+};
+
+export function verifyReasonText(reason: string): string {
+	return VERIFY_REASON_TEXTS[reason] ?? VERIFY_REASON_TEXTS.failed ?? '';
+}
+
+/** "12 Tickets, 3 Originaldateien" of a check that got that far, else ''. */
+export function verifyCountsText(check: {
+	counts: Record<string, number> | null;
+	files: VerifyFiles | null;
+}): string {
+	const parts: string[] = [];
+	const tickets = check.counts?.tickets;
+	if (tickets !== undefined) parts.push(tickets === 1 ? '1 Ticket' : `${tickets} Tickets`);
+	if (check.files !== null) {
+		const { expected, missing } = check.files;
+		parts.push(
+			missing > 0
+				? `${missing} von ${expected} Originaldateien fehlen`
+				: expected === 1
+					? '1 Originaldatei'
+					: `${expected} Originaldateien`
+		);
+	}
+	return parts.join(', ');
+}
+
+/** The row "Letzte Prüfung": when, which backup and what came out. */
+export function verifyText(run: VerifyRun | null): string {
+	if (run === null) return 'Noch keine';
+	const where = run.source === 'target' ? 'im Zielverzeichnis' : 'im Ordner app';
+	const counts = verifyCountsText(run);
+	const outcome = run.ok
+		? `in Ordnung${counts === '' ? '' : ` (${counts})`}`
+		: `gescheitert: ${verifyReasonText(run.reason)}`;
+	return `${formatPointInTime(run.at)} · Sicherung ${where} ${outcome}`;
 }
 
 /** What the page says about a target folder the control script refused. */
@@ -368,6 +528,11 @@ export function warningText(warning: BackupWarning): { title: string; text: stri
 			return {
 				title: 'Die Kopie ins Zielverzeichnis ist gescheitert',
 				text: exportReasonText(warning.reason)
+			};
+		case 'verify-failed':
+			return {
+				title: 'Die letzte Prüfung einer Sicherung ist gescheitert',
+				text: `${verifyReasonText(warning.reason)} Unter „Sicherungen“ lässt sich jede Sicherung einzeln prüfen; „Jetzt sichern“ legt eine neue an.`
 			};
 		default:
 			return {

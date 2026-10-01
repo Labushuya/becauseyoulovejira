@@ -1,16 +1,22 @@
 // Page "Einstellungen → Sicherung" (ADR-0046): the answers of the server in the shape of the page,
-// the checks of the forms and the texts of warnings, runs and free space.
+// the checks of the forms and the texts of warnings, runs, checks and free space.
 
 import { describe, expect, it } from 'vitest';
 import {
 	exportReasonText,
 	freeText,
 	keepProblem,
+	newestToVerify,
 	parseOverview,
 	parseRunResult,
+	parseVerifyResult,
 	passphraseProblem,
 	runText,
-	warningText
+	verifyCountsText,
+	verifyReasonText,
+	verifyText,
+	warningText,
+	type BackupOverview
 } from './backup';
 
 const RAW = {
@@ -36,7 +42,16 @@ const RAW = {
 		backup: { at: '2026-10-01T10:00:00.000Z', name: 'byl-20261001-100000.zip', bytes: 2048 },
 		backupError: null,
 		export: { at: '2026-10-01T10:00:01.000Z', name: 'byl-20261001-100000.tar.age', bytes: 4096 },
-		exportProblem: null
+		exportProblem: null,
+		verify: {
+			at: '2026-10-01T11:00:00.000Z',
+			name: 'byl-20261001-100000.tar.age',
+			source: 'target',
+			ok: false,
+			reason: 'files',
+			counts: { tickets: 12, 'drop table': 1, users: -1 },
+			files: { expected: 3, missing: 1, examples: ['inbox_items/abc', 7] }
+		}
 	},
 	nextBackupAt: '2026-10-02T10:00:00.000Z',
 	warnings: [
@@ -61,8 +76,69 @@ describe('answers of the server', () => {
 		});
 		expect(overview?.local).toEqual(RAW.local.slice(0, 2));
 		expect(overview?.last.backup).toEqual(RAW.last.backup);
+		expect(overview?.last.verify).toEqual({
+			at: '2026-10-01T11:00:00.000Z',
+			name: 'byl-20261001-100000.tar.age',
+			source: 'target',
+			ok: false,
+			reason: 'files',
+			counts: { tickets: 12 },
+			files: { expected: 3, missing: 1, examples: ['inbox_items/abc'] }
+		});
+		expect(parseOverview({ ...RAW, last: { ...RAW.last, verify: null } })?.last.verify).toBeNull();
 		expect(parseOverview(null)).toBeNull();
 		expect(parseOverview({ settings: {} })).toBeNull();
+	});
+
+	it('reads the result of "Prüfen"', () => {
+		expect(
+			parseVerifyResult({
+				result: {
+					verify: {
+						ok: true,
+						reason: 'files',
+						encrypted: true,
+						createdUtc: '2026-10-01T10:00:00Z',
+						variables: ['BYL_A', 'x'],
+						counts: { tickets: 2 },
+						files: { expected: 0, missing: 0, examples: [] }
+					}
+				}
+			})
+		).toEqual({
+			ok: true,
+			reason: '',
+			encrypted: true,
+			createdUtc: '2026-10-01T10:00:00Z',
+			variables: ['BYL_A'],
+			counts: { tickets: 2 },
+			files: { expected: 0, missing: 0, examples: [] }
+		});
+		expect(parseVerifyResult({ result: { verify: { ok: false } } })).toMatchObject({
+			ok: false,
+			reason: 'failed',
+			counts: null,
+			files: null
+		});
+		expect(parseVerifyResult({ result: {} })).toBeNull();
+	});
+
+	it('checks the newest copy in the target first, else the newest own backup here', () => {
+		const overview = parseOverview(RAW) as BackupOverview;
+		expect(newestToVerify(overview)).toEqual({
+			source: 'target',
+			name: 'byl-20261001-100000.tar.age'
+		});
+		expect(newestToVerify({ ...overview, sealed: [] })).toEqual({
+			source: 'local',
+			name: 'byl-20261001-100000.zip'
+		});
+		const other = overview.local[1];
+		expect(newestToVerify({ ...overview, sealed: [], local: other ? [other] : [] })).toEqual({
+			source: 'local',
+			name: 'handarbeit.zip'
+		});
+		expect(newestToVerify({ ...overview, sealed: [], local: [] })).toBeNull();
 	});
 
 	it('falls back to defaults for settings out of their limits', () => {
@@ -135,6 +211,36 @@ describe('texts', () => {
 			warningText({ code: 'no-passphrase', tone: 'warning', since: null, reason: 'missing' }).title
 		).toBe('Keine Passphrase für das Zielverzeichnis');
 		expect(exportReasonText('erfunden')).toBe(exportReasonText('failed'));
+		expect(
+			warningText({ code: 'verify-failed', tone: 'error', since: null, reason: 'integrity' })
+		).toEqual({
+			title: 'Die letzte Prüfung einer Sicherung ist gescheitert',
+			text: 'Die Datenbank in der Sicherung ist beschädigt. Unter „Sicherungen“ lässt sich jede Sicherung einzeln prüfen; „Jetzt sichern“ legt eine neue an.'
+		});
+	});
+
+	it('names the last check and what it counted', () => {
+		expect(verifyText(null)).toBe('Noch keine');
+		const run = {
+			at: '2026-10-01T11:00:00.000Z',
+			name: 'byl-20261001-100000.zip',
+			source: 'local' as const,
+			ok: true,
+			reason: '',
+			counts: { tickets: 1 },
+			files: { expected: 1, missing: 0, examples: [] }
+		};
+		expect(verifyText(run)).toBe(
+			'01.10.2026 13:00 · Sicherung im Ordner app in Ordnung (1 Ticket, 1 Originaldatei)'
+		);
+		expect(verifyText({ ...run, source: 'target', ok: false, reason: 'passphrase' })).toBe(
+			'01.10.2026 13:00 · Sicherung im Zielverzeichnis gescheitert: Die Passphrase passt nicht zu dieser Sicherung.'
+		);
+		expect(
+			verifyCountsText({ counts: { tickets: 4 }, files: { expected: 5, missing: 2, examples: [] } })
+		).toBe('4 Tickets, 2 von 5 Originaldateien fehlen');
+		expect(verifyCountsText({ counts: null, files: null })).toBe('');
+		expect(verifyReasonText('erfunden')).toBe(verifyReasonText('failed'));
 	});
 
 	it('names runs and free space', () => {

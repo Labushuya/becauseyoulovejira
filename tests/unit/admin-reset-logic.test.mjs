@@ -57,6 +57,7 @@ foreach ($entry in $in.credentials.PSObject.Properties) {
 $result.checks = $checks
 $result.quoted = @($in.arguments | ForEach-Object { ConvertTo-ProcessArgument -Value $_ })
 $result.upsert = Get-AdminUpsertArgument -AppDir $in.appDir -Email 'admin@example.com' -Password '-geheim mit Leer\'
+$result.throwaway = Get-AdminUpsertArgument -AppDir $in.appDir -Email 'p@example.invalid' -Password 'Pzufall' -DataDir 'C:\Temp\byl-pruefung-1\pb_data' -HooksDir 'C:\Temp\byl-pruefung-1\hooks'
 $result.limits = @{ min = $BylAdminPasswordMinLength; max = $BylAdminPasswordMaxBytes }
 $result | ConvertTo-Json -Depth 4 -Compress
 `;
@@ -131,6 +132,20 @@ describe('Get-AdminUpsertArgument', () => {
 			'--',
 			'admin@example.com',
 			'-geheim mit Leer\\'
+		]);
+	});
+
+	it('takes the copy of a backup and an empty hooks folder for the throwaway server of a check (ADR-0046)', () => {
+		expect(parseCommandLine(result.throwaway)).toEqual([
+			'superuser',
+			'upsert',
+			'--dir=C:\\Temp\\byl-pruefung-1\\pb_data',
+			'--hooksDir=C:\\Temp\\byl-pruefung-1\\hooks',
+			`--migrationsDir=${APP}\\pb_migrations`,
+			'--automigrate=false',
+			'--',
+			'p@example.invalid',
+			'Pzufall'
 		]);
 	});
 });
