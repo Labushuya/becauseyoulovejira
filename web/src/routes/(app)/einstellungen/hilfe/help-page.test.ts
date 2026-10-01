@@ -134,6 +134,7 @@ describe('help page (EH-9)', () => {
 			'Wie ändere ich Spalten und ihre Breite?',
 			'Wie arbeite ich mit Unteraufgaben?',
 			'Wie hole ich ein gelöschtes Ticket zurück?',
+			'Was steht im Menü „•••“ eines Tickets?',
 			'Wie dupliziere ich ein Ticket?',
 			'Wie gliedere ich ein Projekt in Unterprojekte?',
 			'Wie formatiere ich Beschreibungen und Kommentare?',
@@ -144,8 +145,12 @@ describe('help page (EH-9)', () => {
 		expect(text(section)).toContain('höchstens einen angepinnten Kommentar');
 		expect(text(section)).toContain('„Weiterlesen“');
 		expect(section.querySelectorAll('details[open]')).toHaveLength(0);
+		// The menu "•••" of a ticket (plan aktionsmenues): entries, keyboard, copying the link.
+		expect(text(section)).toContain('„Link kopieren“, „Duplizieren …“ und „In den Papierkorb …“');
+		expect(text(section)).toContain('die Pfeiltasten wählen');
+		expect(text(section)).toContain('„Link kopiert“');
 		// Duplicating (ADR-0045): the question, the status, sub-tasks, comments, the source, the result.
-		expect(text(section)).toContain('„Duplizieren …“');
+		expect(text(section)).toContain('„Duplizieren …“ (im Menü „•••“');
 		expect(text(section)).toContain('„Erledigt“ gibt es dabei nicht');
 		expect(text(section)).toContain('„Kopiert aus HAUS-12“');
 		expect(text(section)).toContain('„Kopie der Herkunft übernehmen“');

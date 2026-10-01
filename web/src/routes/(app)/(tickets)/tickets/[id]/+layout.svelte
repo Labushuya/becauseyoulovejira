@@ -2,10 +2,10 @@
 	import { untrack } from 'svelte';
 	import { beforeNavigate, goto } from '$app/navigation';
 	import { page } from '$app/state';
+	import DuplicateDialog from '$lib/components/DuplicateDialog.svelte';
 	import ConfirmDialog from '$lib/components/overlay/ConfirmDialog.svelte';
 	import RecurrenceSummary from '$lib/components/RecurrenceSummary.svelte';
 	import TicketActivity from '$lib/components/TicketActivity.svelte';
-	import TicketDuplicate from '$lib/components/TicketDuplicate.svelte';
 	import TicketPanel from '$lib/components/TicketPanel.svelte';
 	import TicketParentField from '$lib/components/TicketParentField.svelte';
 	import TicketSources from '$lib/components/TicketSources.svelte';
@@ -14,6 +14,7 @@
 	import { parentOf } from '$lib/domain/subtasks';
 	import type { Ticket } from '$lib/domain/ticket';
 	import { getCatalogStore } from '$lib/stores/catalog.svelte';
+	import { SILENT_FLAGS, findFlagStore } from '$lib/stores/flags.svelte';
 	import { getInboxStore } from '$lib/stores/inbox.svelte';
 	import { getRecurrenceStore } from '$lib/stores/recurrence.svelte';
 	import { getTicketActivityStore } from '$lib/stores/ticket-activity.svelte';
@@ -49,6 +50,8 @@
 	const modeStore = findTicketOpenMode();
 	const recentTickets = findRecentTickets();
 	const duplicates = findTicketDuplicateStore();
+	// "Link kopiert" of the menu "•••" (plan aktionsmenues).
+	const flags = findFlagStore() ?? SILENT_FLAGS;
 	// The parent of a sub-task for its path (ADR-0033), as the list knows it.
 	const parent = $derived(
 		detail.state === 'ready' && detail.ticket
@@ -179,6 +182,22 @@
 	<title>{detail.ticket ? `${detail.ticket.key} · ` : ''}becauseyoulovejira</title>
 </svelte:head>
 
+{#snippet duplicateQuestion(ticket: Ticket, close: () => void)}
+	{#if duplicates !== null}
+		<DuplicateDialog
+			{ticket}
+			store={duplicates}
+			projects={catalog.activeProjects}
+			sources={sourceStore.ticketId === ticket.id ? sourceStore.items : []}
+			commentCount={comments.ticketId === ticket.id ? comments.comments.length : 0}
+			subtaskCount={tickets.progressOf(ticket.id).total}
+			parentKey={ticket.parentId ? (parent?.key ?? null) : null}
+			onopen={openTicket}
+			onclose={close}
+		/>
+	{/if}
+{/snippet}
+
 {#if !fullView}
 	<TicketPanel
 		store={detail}
@@ -192,21 +211,9 @@
 		{parent}
 		parentHref={parent ? links.href(parent.id, page.url) : null}
 		subtaskCount={tickets.progressOf(id).total}
+		duplicate={duplicates === null ? undefined : duplicateQuestion}
+		{flags}
 	>
-		{#snippet duplicate(ticket: Ticket)}
-			{#if duplicates !== null}
-				<TicketDuplicate
-					{ticket}
-					store={duplicates}
-					projects={catalog.activeProjects}
-					sources={sourceStore.ticketId === ticket.id ? sourceStore.items : []}
-					commentCount={comments.ticketId === ticket.id ? comments.comments.length : 0}
-					subtaskCount={tickets.progressOf(ticket.id).total}
-					parentKey={ticket.parentId ? (parent?.key ?? null) : null}
-					onopen={openTicket}
-				/>
-			{/if}
-		{/snippet}
 		{#snippet parentField(ticket: Ticket)}
 			<TicketParentField
 				store={detail}

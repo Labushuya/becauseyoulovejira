@@ -188,6 +188,14 @@ export function ticketHref(id: string, url: URL): ResolvedPathname {
 }
 
 /**
+ * Address of a ticket to pass on ("Link kopieren", plan aktionsmenues): absolute, the panel of the
+ * ticket without the state of the list, so it opens the same ticket in any tab.
+ */
+export function ticketShareUrl(id: string, origin: string): string {
+	return new URL(resolve(`/tickets/${encodeURIComponent(id)}`), origin).href;
+}
+
+/**
  * Path of the full view of a ticket (ADR-0025 section 7) with the query of `url`, so closing it
  * returns to the panel over the same list.
  */

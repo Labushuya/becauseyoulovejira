@@ -1,6 +1,6 @@
 # ADR-0045: Ticket duplizieren: Abfrage im Dialog, eine Route in einer Transaktion, Kopie der Herkunft als eigener Eingangseintrag
 
-- **Status:** Angenommen und umgesetzt: Server und Datenschicht in DU-1 (#192), Oberfläche in DU-2 nach [docs/plan/duplizieren.md](../plan/duplizieren.md); die manuelle Browser-Prüfung steht im Test-Manifest
+- **Status:** Angenommen und umgesetzt: Server und Datenschicht in DU-1 (#192), Oberfläche in DU-2 (#193) nach [docs/plan/duplizieren.md](../plan/duplizieren.md); die manuelle Browser-Prüfung steht im Test-Manifest. §1 (Einstieg) geändert durch den Nachtrag „Aktionsmenüs“ (2026-10-01)
 - **Datum:** 2026-10-01
 - **Entscheidung durch:** Nutzer (Wunsch vom 2026-10-01, wörtlich: „Ich möchte die Möglichkeit haben, jedes Ticket zu duplizieren – nicht zwangsläufig mit Quelle (manuell abfragen wie Duplikat erstellt werden soll).“), Advisor (Einstieg, Felder der Abfrage und ihre Vorbelegung, Pflicht-Status, Quelle mit Fallback, Atomarität, Verlauf, Rechte, Papierkorb), Executor (Machbarkeit der Kopie, Serverweg, Kommentare, Einzelheiten)
 - **Ergänzt:** [ADR-0031](0031-herkunft-sichern.md) (Nachtrag F: Kopie der Herkunft), [ADR-0033](0033-unteraufgaben.md) (Nachtrag: Unteraufgaben beim Duplizieren)
@@ -83,3 +83,14 @@ Machbar und umgesetzt; der Fallback (b′, nur ein Verweis in der Beschreibung) 
 - Neue Module `lib/duplicate-rules.js` (rein) und `lib/duplicate-service.js`, die Route in `tickets.pb.js`, `copyFingerprintKey` in `lib/inbox-fingerprint.js` und `copySource` in `lib/inbox-service.js`. Keine Migration; **Neustart nötig** für die Hooks (`neu-starten.bat`), die Oberfläche nach F5.
 - Texte der Codes gleich in `web/src/lib/domain/duplicate.ts` (Paritätstest).
 - CLAUDE.md §5 und §7, README und Hilfe beschreiben das Duplizieren.
+
+## Nachtrag (2026-10-01, Plan „Aktionsmenüs“, AM-1): Einstieg über das Menü „•••“
+
+**Anlass:** Nutzerentscheidung vom 2026-10-01: ein Aktionsmenü „•••“, „beides, aber vorrangig für das Ticket selbst“ ([Plan](../plan/aktionsmenues.md)). Damit entfällt der Grund, aus dem §1 und die Alternative „‚Duplizieren …‘ in einem neuen Menü ‚•••‘ im Kopf“ das Menü verworfen hatten: Es ist jetzt der Ort aller Aktionen eines Tickets, nicht ein Menü nur für diese eine.
+
+**Entscheidung** (ersetzt in §1 den ersten Punkt; §2 bis §6 bleiben):
+
+- **„Duplizieren …“** steht im Menü „•••“ („Weitere Aktionen“) im Kopf von Panel und Vollansicht, zwischen „Link kopieren“ und „In den Papierkorb …“, nur mit dem `TicketDuplicateStore` des `(app)`-Layouts. Der Symbolknopf mit den zwei Blättern (`TicketDuplicate`) entfällt; als Symbole bleiben im Kopf nur „Vollansicht“ bzw. „Im Seitenpanel öffnen“ und ×.
+- **Abfrage unverändert:** im Panel das Modal M, in der Vollansicht derselbe Inhalt eingebettet oben im Inhalt (`InlineDialog`, ADR-0025 Nachtrag 16); „Duplizieren …“ und „In den Papierkorb …“ schließen einander. Der Fokus liegt nach der Wahl im Menü auf „•••“, also kehrt er nach „Abbrechen“ und Esc dorthin zurück. Der Eintrag meldet im Panel `aria-haspopup="dialog"`, in der Vollansicht nichts, weil er dort keinen Dialog öffnet.
+- **Tabelle:** Die Aussage aus §1, die Tabelle habe kein Zeilenmenü, gilt bis zum Paket AM-2 des Plans; mit ihm kommt „Duplizieren …“ auch dort ins Menü einer Zeile.
+- **Tests:** `ticket-actions.test.ts` (Menü), `ticket-panel.test.ts` (Panel und Vollansicht), `ticket-duplicate.test.ts` (Abfrage); Manifest BYL-E6-740 bis BYL-E6-742.

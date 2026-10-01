@@ -1,33 +1,21 @@
 <script lang="ts" module>
-	import type { ResolvedPathname } from '$app/types';
 	import type { CardStatus } from '$lib/domain/channel-card';
+	import type { MenuAction } from '../ActionsMenu.svelte';
 
-	/** An action of a card: its main button or an entry of the menu "•••". */
-	export interface CardAction {
-		/** Visible text, e.g. "Jetzt abrufen" or "Löschen …". */
-		label: string;
-		/** Runs the action; not called while `busy` or `locked`. */
-		onselect?: () => void;
-		/** A link instead of a button: an assistant, the help, another page. */
-		href?: ResolvedPathname;
+	/**
+	 * An action of a card: its main button or an entry of the menu "•••" (`separated` only there).
+	 */
+	export interface CardAction extends MenuAction {
 		/** The link opens an assistant in the address: keep focus and scroll, replace the entry. */
 		inPlace?: boolean;
-		/** Opens a dialog. */
-		dialog?: boolean;
-		/** The action runs (aria-busy); the button waits. */
-		busy?: boolean;
-		/** Not possible now (aria-disabled). */
-		locked?: boolean;
-		/** Menu only: a line before the entry, e.g. before "Löschen …". */
-		separated?: boolean;
 	}
 </script>
 
 <script lang="ts">
 	import type { Snippet } from 'svelte';
+	import ActionsMenu from '../ActionsMenu.svelte';
 	import Lozenge from '../guidance/Lozenge.svelte';
 	import SectionMessage from '../guidance/SectionMessage.svelte';
-	import Popover from '../overlay/Popover.svelte';
 	import ChannelIcon, { type ChannelIconKind } from './ChannelIcon.svelte';
 
 	// The one building block of every card on the page "Kanäle" (ADR-0026, addendum of 2026-09-30,
@@ -174,54 +162,11 @@
 					</button>
 				{/if}
 				{#if menu.length > 0}
-					<Popover
-						kind="menu"
+					<ActionsMenu
 						label={`Weitere Aktionen für ${title}`}
-						placement="bottom-end"
-						buttonClass="button-icon"
 						buttonLabel={`Weitere Aktionen für ${title}`}
-					>
-						{#snippet button()}
-							<svg
-								class="dots"
-								viewBox="0 0 16 16"
-								width="16"
-								height="16"
-								aria-hidden="true"
-								focusable="false"
-							>
-								<circle cx="3.5" cy="8" r="1.1" />
-								<circle cx="8" cy="8" r="1.1" />
-								<circle cx="12.5" cy="8" r="1.1" />
-							</svg>
-						{/snippet}
-						{#snippet children({ close })}
-							{#each menu as item (item.label)}
-								{#if item.separated}
-									<div role="separator"></div>
-								{/if}
-								{#if item.href !== undefined}
-									<a role="menuitem" tabindex="-1" href={item.href} onclick={close}>{item.label}</a>
-								{:else}
-									<button
-										type="button"
-										role="menuitem"
-										tabindex="-1"
-										aria-haspopup={item.dialog ? 'dialog' : undefined}
-										aria-disabled={item.busy || item.locked ? 'true' : undefined}
-										aria-busy={item.busy ? 'true' : undefined}
-										onclick={() => {
-											if (item.busy || item.locked) return;
-											close();
-											run(item);
-										}}
-									>
-										{item.label}
-									</button>
-								{/if}
-							{/each}
-						{/snippet}
-					</Popover>
+						items={menu}
+					/>
 				{/if}
 			</span>
 		{/if}
@@ -294,10 +239,6 @@
 		gap: 0.25rem;
 		align-items: center;
 		margin-left: auto;
-	}
-
-	.dots {
-		fill: currentColor;
 	}
 
 	.toggle {

@@ -1,7 +1,8 @@
-// "Duplizieren …" (ADR-0045): the button in the header, the question as a modal M in the side
-// panel and inline inside a modal (the full view), the required status, what is taken over, the
-// source, the series hint, refusals at their field and opening the duplicate. The store runs for
-// real on a fake data layer.
+// "Duplizieren …" (ADR-0045): the question as a modal M in the side panel and inline inside a
+// modal (the full view), the required status, what is taken over, the source, the series hint,
+// refusals at their field and opening the duplicate. The store runs for real on a fake data layer.
+// The entry in the menu "•••" of the header is covered in ticket-actions.test.ts and
+// ticket-panel.test.ts (plan aktionsmenues).
 
 import { fireEvent, render, screen, within } from '@testing-library/svelte';
 import { tick } from 'svelte';
@@ -15,7 +16,6 @@ import { TicketDuplicateStore } from '$lib/stores/ticket-duplicate.svelte';
 import InModalHarness from '$lib/test/InModalHarness.svelte';
 import { useOverlayStubs } from '$lib/test/overlay-stubs';
 import DuplicateDialog from './DuplicateDialog.svelte';
-import TicketDuplicate from './TicketDuplicate.svelte';
 
 useOverlayStubs();
 
@@ -128,49 +128,6 @@ function renderDialog(setup: Setup = {}) {
 
 const submit = () => fireEvent.click(screen.getByRole('button', { name: 'Duplizieren' }));
 const statusGroup = () => screen.getByRole('radiogroup', { name: 'Status des Duplikats' });
-
-describe('button "Duplizieren …"', () => {
-	it('opens the question as a modal M in the side panel and gives the focus back', async () => {
-		const { store } = storeOf();
-		render(TicketDuplicate, {
-			props: { ticket: ticket(), store, projects: [HOUSE], onopen: vi.fn() }
-		});
-		const button = screen.getByRole('button', { name: 'Duplizieren …' });
-		expect(button.getAttribute('title')).toBe('Duplizieren …');
-		expect(button.getAttribute('aria-haspopup')).toBe('dialog');
-		button.focus();
-		await fireEvent.click(button);
-		const dialog = screen.getByRole('dialog', { name: 'HAUS-12 duplizieren' });
-		await tick();
-		expect(document.activeElement).toBe(within(dialog).getByLabelText('Titel'));
-		await fireEvent.click(within(dialog).getByRole('button', { name: 'Abbrechen' }));
-		await tick();
-		expect(screen.queryByRole('dialog')).toBeNull();
-		await vi.waitFor(() => expect(document.activeElement).toBe(button));
-	});
-
-	it('only asks its owner in the full view and says whether the question is shown', async () => {
-		const { store } = storeOf();
-		const onask = vi.fn();
-		render(TicketDuplicate, {
-			props: {
-				ticket: ticket(),
-				store,
-				projects: [HOUSE],
-				onopen: vi.fn(),
-				inline: true,
-				asking: true,
-				onask
-			}
-		});
-		const button = screen.getByRole('button', { name: 'Duplizieren …' });
-		expect(button.getAttribute('aria-haspopup')).toBeNull();
-		expect(button.getAttribute('aria-expanded')).toBe('true');
-		await fireEvent.click(button);
-		expect(onask).toHaveBeenCalledOnce();
-		expect(screen.queryByRole('dialog')).toBeNull();
-	});
-});
 
 describe('the question "Wie soll das Duplikat entstehen?"', () => {
 	it('starts with "(Kopie)", every field of the ticket checked, the project chosen and no status', () => {

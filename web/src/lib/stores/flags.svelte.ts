@@ -191,7 +191,12 @@ export class FlagStore implements FlagSink {
 	}
 }
 
-const [getFlagStore, setFlagStore] = createContext<FlagStore>();
+const [getFlagStore, setFlagStore, hasFlagStore] = createContext<FlagStore>();
 
 /** Flags of the app, set by the app layout. */
 export { getFlagStore, setFlagStore };
+
+/** The flags of the app layout, or null outside of it (tests of a single route). */
+export function findFlagStore(): FlagStore | null {
+	return hasFlagStore() ? getFlagStore() : null;
+}

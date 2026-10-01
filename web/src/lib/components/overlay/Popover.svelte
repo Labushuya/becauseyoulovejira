@@ -21,6 +21,7 @@
 		returnFocus,
 		buttonTitle,
 		buttonKeyshortcuts,
+		trigger = $bindable(),
 		children
 	}: {
 		kind: 'menu' | 'panel';
@@ -47,6 +48,8 @@
 		buttonTitle?: string;
 		/** aria-keyshortcuts of the button. */
 		buttonKeyshortcuts?: string;
+		/** The button, e.g. for the focus after an area the menu opened closes (plan AM). */
+		trigger?: HTMLButtonElement;
 		/** Content; `close` hides the popover and returns the focus to the button. */
 		children: Snippet<[{ close: () => void }]>;
 	} = $props();
@@ -57,7 +60,6 @@
 	const FOCUSABLE =
 		'input:not([disabled]), button:not([disabled]), select:not([disabled]), textarea:not([disabled]), a[href], [tabindex]:not([tabindex="-1"])';
 
-	let trigger = $state<HTMLButtonElement>();
 	let popover = $state<HTMLElement>();
 	let expanded = $state(false);
 

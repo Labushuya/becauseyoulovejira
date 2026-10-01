@@ -1,6 +1,6 @@
 # ADR-0036: Gemerkter Öffnungsmodus, Sammelbearbeitung mit Rückgängig und Inline-Bearbeitung in der Tabelle
 
-- **Status:** Angenommen und umgesetzt: §1 in BI-1 (#148), §2 bis §5 in BI-2 (#149), §6 in BI-3, nach [docs/plan/bulk-inline-ansicht.md](../plan/bulk-inline-ansicht.md); manuelle Browser-Prüfungen stehen im Test-Manifest; §5 gilt seit [ADR-0041](0041-notion-listen-uebernehmen.md) auch für Notion-Einträge (Nachtrag)
+- **Status:** Angenommen und umgesetzt: §1 in BI-1 (#148), §2 bis §5 in BI-2 (#149), §6 in BI-3, nach [docs/plan/bulk-inline-ansicht.md](../plan/bulk-inline-ansicht.md); manuelle Browser-Prüfungen stehen im Test-Manifest; §5 gilt seit [ADR-0041](0041-notion-listen-uebernehmen.md) auch für Notion-Einträge (Nachtrag); Nachtrag „Aktionsmenüs“ (2026-10-01): Menü „•••“ im Kopf von Panel und Vollansicht
 - **Datum:** 2026-09-28
 - **Entscheidung durch:** Nutzer (Arbeitspaket „Bulk & Inline & Ansicht“: Öffnungsmodus wie in Jira, Auswahlspalte mit Sammelaktionen und Rückgängig, Inline-Bearbeitung in Zellen), Advisor (Umfang, Reihenfolge, Anforderungen an die Architektur), Executor (Einzelheiten, Wahl der Architektur)
 - **Präzisiert:** [ADR-0025](0025-ui-konsistenz-overlay-system.md) §7 (Vollansicht „über dem Panel“, Schließen „zurück ins Panel“), siehe dort Nachtrag 15; [ADR-0030](0030-spalten-breiten-und-kompakte-zeilen.md) (Auswahlspalte der Aufgaben, Nachtrag 2); [ADR-0029](0029-glas-materialien.md) §1 (Sammel-Aktionsleiste auf Glas)
@@ -114,3 +114,13 @@
 - **Umwandeln:** `eventDueDate` in `domain/inbox.ts` nimmt neben `kind = event` auch `channel = notion` mit gesetztem `source_date`. „Gesammelt umwandeln“ zeigt die Checkbox „Datum des Termins als Fälligkeit“ auch bei gewählten Notion-Einträgen mit Datum; der Hinweis nennt dann „Einträge mit Datum aus Terminen oder aus Notion“. Die Checkbox bleibt aus, bis der Nutzer sie setzt (P-5).
 - **Sammelaktion „Datum der Quelle übernehmen“:** `listSourceEventDates` fragt `(kind = event || channel = notion)` ab; der Grund beim Überspringen heißt „Die Hauptquelle ist kein Termin und kein Notion-Eintrag mit Datum.“. Maßgeblich bleibt das Berliner Kalenderdatum, belegt in `tests/integration/web-data-bulk.test.mjs`.
 - Mail, Nachricht, Chat und Link bleiben ausgenommen.
+
+## Nachtrag (2026-10-01, Plan „Aktionsmenüs“): Menü „•••“ im Kopf des Tickets
+
+Nutzerentscheidung vom 2026-10-01: Aktionsmenüs „•••“, „beides, aber vorrangig für das Ticket selbst“ ([Plan](../plan/aktionsmenues.md)).
+
+**AM-1, Kopf von Panel und Vollansicht** (präzisiert §1 „Der Knopf“; der Öffnungsmodus bleibt unverändert):
+
+- Im Kopf stehen als Symbole nur noch die häufigen, an ihren Platz gebundenen Aktionen: „Vollansicht öffnen“ im Panel bzw. „Im Seitenpanel öffnen“ in der Vollansicht, jeweils direkt vor dem ×, und davor das Menü „•••“ („Weitere Aktionen“) mit „Link kopieren“, „Duplizieren …“ ([ADR-0045](0045-ticket-duplizieren.md), Nachtrag) und „In den Papierkorb …“ ([ADR-0037](0037-papierkorb.md), bisher der Textknopf „Löschen …“). „Im Seitenpanel öffnen“ steht also „nach ‚•••‘“ statt „nach ‚Löschen …‘“.
+- Nur die zwei Knöpfe des Kopfs merken den Modus, wie bisher. Die Einträge des Menüs ändern ihn nicht.
+- „Link kopieren“ kopiert die Adresse `/tickets/<id>` ohne den Zustand der Liste (absolut); sie öffnet das Panel. Ein direkter Aufruf ändert den gemerkten Modus nicht (§1).

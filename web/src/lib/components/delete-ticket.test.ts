@@ -2,8 +2,9 @@
 // trash): the dialog names the key and says that the ticket goes into the trash with comments and
 // history, starts on "Abbrechen", Escape and "Abbrechen" keep the ticket (and the panel),
 // confirming moves it exactly once and offers "Rückgängig", a failure shows in the dialog. Since
-// UI-3 the dialog is the confirmation of ADR-0025 section 4; jsdom has no showModal(), the shared
-// stubs stand in.
+// UI-3 the dialog is the confirmation of ADR-0025 section 4; since AM-1 (plan aktionsmenues) it
+// opens from "In den Papierkorb …" in the menu "•••" of the header, and the focus returns to the
+// button of the menu. jsdom has no showModal() and no popovers, the shared stubs stand in.
 
 import { fireEvent, render, screen, within } from '@testing-library/svelte';
 import { tick } from 'svelte';
@@ -93,14 +94,27 @@ async function renderPanel(overrides: Partial<Ticket> = {}, sourceCount = 0, sub
 	return { store, data, list, trash, onclose, ondeleted };
 }
 
-function deleteButton() {
-	return screen.getByRole('button', { name: 'Löschen …' });
+/** The button of the menu "•••" in the header (plan aktionsmenues). */
+function menuButton() {
+	return screen.getByRole('button', { name: 'Weitere Aktionen' });
 }
 
-/** Opens the question like a browser does: the clicked button has the focus (UI-6: the modal returns it). */
+/** "In den Papierkorb …" in the menu; jsdom shows popovers as hidden. */
+function deleteEntry() {
+	const menu = document.getElementById(menuButton().getAttribute('aria-controls') ?? '');
+	if (menu === null) throw new Error('No menu');
+	return within(menu).getByRole('menuitem', { name: 'In den Papierkorb …', hidden: true });
+}
+
+/**
+ * Opens the question like a browser does: the menu opens from its focused button, and choosing
+ * the entry puts the focus back on that button before the dialog opens (the modal returns it).
+ */
 async function openDialog() {
-	deleteButton().focus();
-	await fireEvent.click(deleteButton());
+	menuButton().focus();
+	await fireEvent.click(menuButton());
+	await tick();
+	await fireEvent.click(deleteEntry());
 	await tick();
 	await tick();
 	return screen.getByRole('dialog', { name: 'TASK-12 in den Papierkorb verschieben?' });
@@ -114,7 +128,8 @@ function textOf(dialog: HTMLElement): string {
 describe('deleting a ticket', () => {
 	it('asks with the key and says that the ticket goes into the trash (ADR-0037)', async () => {
 		await renderPanel();
-		expect(deleteButton().getAttribute('aria-haspopup')).toBe('dialog');
+		expect(deleteEntry().getAttribute('aria-haspopup')).toBe('dialog');
+		expect(screen.queryByRole('button', { name: 'Löschen …' })).toBeNull();
 
 		const dialog = await openDialog();
 
@@ -155,10 +170,10 @@ describe('deleting a ticket', () => {
 		await fireEvent.click(within(dialog).getByRole('button', { name: 'Abbrechen' }));
 		await tick();
 
-		expect((dialog as HTMLDialogElement).open).toBe(false);
+		expect(screen.queryByRole('dialog')).toBeNull();
 		expect(data.delete).not.toHaveBeenCalled();
 		expect(ondeleted).not.toHaveBeenCalled();
-		expect(document.activeElement).toBe(deleteButton());
+		expect(document.activeElement).toBe(menuButton());
 	});
 
 	it('cancels with Escape without closing the panel', async () => {
@@ -173,7 +188,7 @@ describe('deleting a ticket', () => {
 
 		expect(key).toBe(false);
 		expect(onclose).not.toHaveBeenCalled();
-		expect((dialog as HTMLDialogElement).open).toBe(false);
+		expect(screen.queryByRole('dialog')).toBeNull();
 		expect(data.delete).not.toHaveBeenCalled();
 	});
 
@@ -199,7 +214,7 @@ describe('deleting a ticket', () => {
 			'TASK-12 in den Papierkorb verschoben.'
 		);
 		expect(list.announce).not.toHaveBeenCalled();
-		expect((dialog as HTMLDialogElement).open).toBe(false);
+		expect(dialog.isConnected).toBe(false);
 	});
 
 	it('announces a delete for good before the migration of the trash (no move)', async () => {
