@@ -33,6 +33,10 @@ var LIMITS = Object.freeze({
   treeRequests: 100,
   treeBlocks: 5000,
   treeDepth: 8,
+  // "Unterseiten einbeziehen" (ADR-0041, addendum of 2026-10-01): at most so many sub-pages, down to
+  // this level below the chosen page; they share the requests and blocks of reading the page.
+  subpages: 50,
+  subpageDepth: 3,
   // Page content of one row ("Seiteninhalt als Kopie mitnehmen"): requests, blocks, characters.
   contentRequests: 40,
   contentBlocks: 500,
@@ -46,12 +50,13 @@ var LIMITS = Object.freeze({
   retryAfterMaxSeconds: 30,
   // Time limit of one request to Notion.
   timeoutSeconds: 30,
-  // Time limits of one request of the app (ADR-0041, addendum 2026-09-30): no request to Notion
-  // starts later than routeSeconds after it came in (the limit of each one shrinks to what is left,
-  // and no wait for a repetition goes beyond it), and an import starts no new entry after
-  // importSeconds; the rest goes back as `pending` and comes again in the next request. So every
-  // request ends after about 90 s, far below the 5 minutes of the PocketBase server and of Firefox;
-  // the browser waits up to 150 s.
+  // Time limits of one request of the app (ADR-0041, addenda 2026-09-30 and 2026-10-01): no request
+  // to Notion starts later than routeSeconds after it came in (the limit of each one shrinks to what
+  // is left, and no wait for a repetition goes beyond it), and an import starts no new entry later
+  // than importSeconds after its source is read; the rest goes back as `pending` and comes again in
+  // the next request. So every request ends after about 120 s at most (90 s of reading, then
+  // entries of the inbox only), below the 150 s of the browser and the 5 minutes of the PocketBase
+  // server and of Firefox.
   routeSeconds: 90,
   importSeconds: 30,
   responseBytes: 20 * 1024 * 1024,
@@ -756,17 +761,28 @@ function collectText(blocks) {
 /**
  * The points of the lists of a page (to-do, bulleted and numbered) as entries, with their nested
  * points and other children as their text. Lists inside toggles, columns, callouts, quotes and
- * synced blocks count as well; sub-pages and databases are sources of their own. The heading
- * or toggle above a point names its section. `page`: { url } of the page.
+ * synced blocks count as well; sub-pages and databases are sources of their own (sub-pages join
+ * only with "Unterseiten einbeziehen", see collectSubpages). The heading or toggle above a point
+ * names its section. `page`: { url, section } of the page; `section` (optional) is the path of a
+ * sub-page and comes before every section ("Unterseite › Einkauf").
  * Returns { entries, empty } (empty: points without text, left out).
  */
 function pointEntries(blocks, page, berlin, markdown) {
   var result = { entries: [], empty: 0 };
-  walkPoints(isArray(blocks) ? blocks : [], '', page, berlin, markdown, result);
+  var prefix = isObject(page) ? trim(page.section) : '';
+  walkPoints(isArray(blocks) ? blocks : [], prefix, prefix, page, berlin, markdown, result);
   return result;
 }
 
-function walkPoints(blocks, section, page, berlin, markdown, result) {
+// A section below the path of a sub-page: "Unterseite › Einkauf"; without a path the name alone.
+function sectionOf(prefix, name) {
+  if (prefix === '') {
+    return name;
+  }
+  return name === '' ? prefix : prefix + ' › ' + name;
+}
+
+function walkPoints(blocks, section, prefix, page, berlin, markdown, result) {
   var current = section;
   for (var i = 0; i < blocks.length; i++) {
     var block = blocks[i];
@@ -785,15 +801,108 @@ function walkPoints(blocks, section, page, berlin, markdown, result) {
       continue;
     }
     if (HEADING_TYPES.indexOf(type) !== -1) {
-      current = trim(markdown.plainText(payload.rich_text).replace(/\s+/g, ' '));
-      walkPoints(isArray(block.children) ? block.children : [], current, page, berlin, markdown, result);
+      current = sectionOf(prefix, trim(markdown.plainText(payload.rich_text).replace(/\s+/g, ' ')));
+      walkPoints(isArray(block.children) ? block.children : [], current, prefix, page, berlin, markdown, result);
       continue;
     }
     if (CONTAINER_TYPES.indexOf(type) !== -1) {
       var named = type === 'toggle' ? trim(markdown.plainText(payload.rich_text).replace(/\s+/g, ' ')) : '';
-      walkPoints(isArray(block.children) ? block.children : [], named === '' ? current : named, page, berlin, markdown, result);
+      walkPoints(
+        isArray(block.children) ? block.children : [],
+        named === '' ? current : sectionOf(prefix, named),
+        prefix,
+        page,
+        berlin,
+        markdown,
+        result
+      );
     }
   }
+}
+
+/**
+ * The sub-pages in the block tree of a page (child_page blocks, also inside toggles, columns and
+ * the content of points), in the order of the page: [{ id, title }]. A sub-page without an ID is
+ * left out.
+ */
+function childPagesOf(blocks) {
+  var result = [];
+  collectChildPages(isArray(blocks) ? blocks : [], result);
+  return result;
+}
+
+function collectChildPages(blocks, result) {
+  for (var i = 0; i < blocks.length; i++) {
+    var block = blocks[i];
+    if (!isObject(block)) {
+      continue;
+    }
+    if (block.type === 'child_page') {
+      var id = normalizeId(block.id);
+      var payload = isObject(block.child_page) ? block.child_page : {};
+      if (id !== '') {
+        result.push({ id: id, title: trim(text(payload.title).replace(/\s+/g, ' ')) || UNTITLED });
+      }
+      continue;
+    }
+    if (isArray(block.children)) {
+      collectChildPages(block.children, result);
+    }
+  }
+}
+
+/**
+ * "Unterseiten einbeziehen" (ADR-0041, addendum of 2026-10-01): the sub-pages of a page with lists,
+ * breadth first, each read with `readTree(id)` (its blocks, or a thrown failure), up to
+ * LIMITS.subpages pages and LIMITS.subpageDepth levels below the page. A sub-page the integration
+ * does not see (`options.isHidden(error)`, 404 or 403) is left out and counted; every other failure
+ * goes on to the caller. `options.stopped()` says that the requests or blocks shared with the page
+ * are used up. A page is read once, also when it appears twice.
+ * Returns { pages: [{ id, title, section, blocks }], hidden, truncated }; `section` is the path
+ * "Unterseite › Kind".
+ */
+function collectSubpages(rootId, rootBlocks, readTree, options) {
+  var seen = {};
+  seen[normalizeId(rootId)] = true;
+  var queue = [];
+  var result = { pages: [], hidden: 0, truncated: false };
+
+  function enqueue(blocks, path, level) {
+    var found = childPagesOf(blocks);
+    for (var i = 0; i < found.length; i++) {
+      if (seen[found[i].id]) {
+        continue;
+      }
+      if (level > LIMITS.subpageDepth) {
+        result.truncated = true;
+        return;
+      }
+      seen[found[i].id] = true;
+      queue.push({ id: found[i].id, title: found[i].title, path: path.concat([found[i].title]), level: level });
+    }
+  }
+
+  enqueue(rootBlocks, [], 1);
+  while (queue.length > 0) {
+    if (result.pages.length + result.hidden >= LIMITS.subpages || options.stopped()) {
+      result.truncated = true;
+      break;
+    }
+    var next = queue.shift();
+    var blocks;
+    try {
+      blocks = readTree(next.id);
+    } catch (err) {
+      if (options.isHidden(err)) {
+        result.hidden += 1;
+        continue;
+      }
+      throw err;
+    }
+    result.pages.push({ id: next.id, title: next.title, section: next.path.join(' › '), blocks: blocks });
+    enqueue(blocks, next.path, next.level + 1);
+  }
+  return result;
 }
 
 /** Whether the page content is read further below `block`: everything but sub-pages and databases. */
@@ -875,6 +984,10 @@ function metaOf(entry, source, options, content) {
       notion.section = text(entry.section).slice(0, 200);
     }
   }
+  // "Unterseiten einbeziehen" of the last import, for "Erneut abrufen" (pages only).
+  if (source.type === 'page' && options.subpages === true) {
+    notion.subpages = true;
+  }
   var meta = { notion: notion };
   if (entry.date !== null && entry.date.allDay) {
     meta.all_day = true;
@@ -904,8 +1017,8 @@ function utf8Length(value) {
 
 /**
  * The validated body of the preview and import routes: { source: { type, id }, date_property,
- * skip_done, copy_content, refs }. Returns { ok: true, value } or { ok: false, message }.
- * `refs` is required only when `withRefs` is set.
+ * skip_done, copy_content, subpages, refs }. Returns { ok: true, value } or { ok: false, message }.
+ * `refs` is required only when `withRefs` is set; `subpages` counts for pages only.
  */
 function parseRequest(body, withRefs) {
   var input = isObject(body) ? body : {};
@@ -927,6 +1040,7 @@ function parseRequest(body, withRefs) {
     dateProperty: dateProperty,
     skipDone: input.skip_done !== false,
     copyContent: input.copy_content === true && type === 'data_source',
+    subpages: input.subpages === true && type === 'page',
     refs: []
   };
   if (withRefs) {
@@ -980,6 +1094,8 @@ module.exports = {
   isRowDone: isRowDone,
   rowEntry: rowEntry,
   pointEntries: pointEntries,
+  childPagesOf: childPagesOf,
+  collectSubpages: collectSubpages,
   isPoint: isPoint,
   descendForPoints: descendForPoints,
   descendForContent: descendForContent,

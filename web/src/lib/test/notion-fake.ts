@@ -19,12 +19,16 @@ export const EMPTY_PREVIEW: NotionPreview = {
 	items: [],
 	truncated: false,
 	blankPoints: 0,
+	subpages: 0,
+	hiddenSubpages: 0,
 	limits: {
 		maxRows: 1000,
 		importBatch: 100,
 		contentBlocks: 500,
 		contentChars: 50_000,
-		treeBlocks: 5000
+		treeBlocks: 5000,
+		subpages: 50,
+		subpageDepth: 3
 	}
 };
 

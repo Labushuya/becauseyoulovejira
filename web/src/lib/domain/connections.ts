@@ -66,6 +66,19 @@ export const DEFAULT_SECRET_NAMES: Readonly<Record<ConnectionType, string>> = Ob
 });
 export const DEFAULT_ALLOWLIST_NAME = 'BYL_TELEGRAM_ALLOWED_IDS';
 
+/**
+ * The suggested name of a variable that no connection uses yet: `base`, else `base_2`, `base_3`
+ * and so on (ADR-0041, addendum of 2026-10-01). Following the assistant for a second connection of
+ * a kind must not overwrite the secret of the first one with `setx`.
+ */
+export function freeVariableName(base: string, taken: readonly string[]): string {
+	const used = new Set(taken);
+	if (!used.has(base)) return base;
+	let number = 2;
+	while (used.has(`${base}_${number}`)) number += 1;
+	return `${base}_${number}`;
+}
+
 export const LABEL_MAX_LENGTH = 100;
 
 export interface Connection {

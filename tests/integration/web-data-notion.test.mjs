@@ -1,8 +1,8 @@
 // Data layer of the Notion import (web/src/lib/data/notion.ts, ADR-0041, plan NI-2) against a
 // disposable PocketBase in the test mode and the fake of the Notion API: a user creates the
 // connection through the Record API, then check, sources, preview, import and the summary come
-// back in the shapes of the SPA; refusals and errors of Notion as outcomes, an unknown connection
-// as DataError.
+// back in the shapes of the SPA, also with "Unterseiten einbeziehen" (addendum of 2026-10-01);
+// refusals and errors of Notion as outcomes, an unknown connection as DataError.
 
 import { randomBytes } from 'node:crypto';
 import PocketBase from 'pocketbase';
@@ -73,14 +73,28 @@ describe('data layer of the Notion import', () => {
 	}, 30_000);
 
 	it('previews, imports and sums up in the shapes of the SPA', async () => {
-		const preview = await previewNotion(pb, connection.id, { type: 'data_source', id: DATA_SOURCE_ID }, null);
+		const preview = await previewNotion(pb, connection.id, {
+			source: { type: 'data_source', id: DATA_SOURCE_ID },
+			dateProperty: null,
+			subpages: false
+		});
 		expect(preview.kind).toBe('ok');
 		expect(preview.value).toMatchObject({
 			dateProperties: ['Fällig', 'Erinnerung'],
 			dateProperty: 'Fällig',
 			truncated: false,
 			blankPoints: 0,
-			limits: { maxRows: 1000, importBatch: 100, contentBlocks: 500, contentChars: 50000, treeBlocks: 5000 }
+			subpages: 0,
+			hiddenSubpages: 0,
+			limits: {
+				maxRows: 1000,
+				importBatch: 100,
+				contentBlocks: 500,
+				contentChars: 50000,
+				treeBlocks: 5000,
+				subpages: 50,
+				subpageDepth: 3
+			}
 		});
 		expect(preview.value.items[0]).toMatchObject({
 			ref: id(4, 1),
@@ -95,7 +109,8 @@ describe('data layer of the Notion import', () => {
 			refs: [id(4, 1), id(4, 3)],
 			skipDone: true,
 			copyContent: false,
-			dateProperty: null
+			dateProperty: null,
+			subpages: false
 		});
 		expect(done).toEqual({
 			kind: 'ok',
@@ -118,9 +133,29 @@ describe('data layer of the Notion import', () => {
 				count: 1,
 				last: expect.any(String),
 				dateProperty: 'Fällig',
-				copyContent: false
+				copyContent: false,
+				subpages: false
 			}
 		]);
+	}, 30_000);
+
+	it('sends "Unterseiten einbeziehen" and reads what the preview says about the sub-pages', async () => {
+		const page = { type: 'page', id: PAGE_ID };
+		const preview = await previewNotion(pb, connection.id, { source: page, dateProperty: null, subpages: true });
+		expect(preview.kind).toBe('ok');
+		expect(preview.value).toMatchObject({ subpages: 2, hiddenSubpages: 1 });
+		expect(preview.value.items.at(-1)).toMatchObject({ title: 'Silikon erneuern', section: 'Unterseite › Tiefer › Bad' });
+		const taken = await importNotion(pb, connection.id, {
+			source: page,
+			refs: [id(3, 44)],
+			skipDone: true,
+			copyContent: false,
+			dateProperty: null,
+			subpages: true
+		});
+		expect(taken).toMatchObject({ kind: 'ok', value: { counts: { created: 1 } } });
+		const imports = await listNotionImports(pb, connection.id);
+		expect(imports.find((source) => source.id === PAGE_ID)).toMatchObject({ type: 'page', count: 1, subpages: true });
 	}, 30_000);
 
 	it('answers refusals and errors of Notion as outcomes, an unknown connection as DataError', async () => {
@@ -129,7 +164,8 @@ describe('data layer of the Notion import', () => {
 			refs: [],
 			skipDone: true,
 			copyContent: false,
-			dateProperty: null
+			dateProperty: null,
+			subpages: false
 		});
 		expect(refused).toEqual({
 			kind: 'error',
@@ -137,7 +173,11 @@ describe('data layer of the Notion import', () => {
 			reason: '',
 			partial: null
 		});
-		const hidden = await previewNotion(pb, connection.id, { type: 'page', id: id(2, 2) }, null);
+		const hidden = await previewNotion(pb, connection.id, {
+			source: { type: 'page', id: id(2, 2) },
+			dateProperty: null,
+			subpages: false
+		});
 		expect(hidden).toMatchObject({ kind: 'error', reason: 'source' });
 		expect(hidden.message).toContain('(404)');
 		await expect(checkNotion(pb, 'kein000000000000')).rejects.toMatchObject({ kind: 'not_found' });

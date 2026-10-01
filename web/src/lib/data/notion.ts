@@ -21,6 +21,7 @@ import {
 	type NotionOutcome,
 	type NotionPreview,
 	type NotionPreviewItem,
+	type NotionPreviewRequest,
 	type NotionSource,
 	type NotionSourceList
 } from '../domain/notion';
@@ -183,7 +184,8 @@ export function listNotionImports(
 					count: count(raw.count),
 					last: textOf(raw.last) || null,
 					dateProperty: textOf(raw.date_property),
-					copyContent: raw.copy_content === true
+					copyContent: raw.copy_content === true,
+					subpages: raw.subpages === true
 				}
 			];
 		});
@@ -197,7 +199,9 @@ function toLimits(raw: unknown): NotionLimits {
 		importBatch: count(raw.import_batch) || NOTION_DEFAULT_LIMITS.importBatch,
 		contentBlocks: count(raw.content_blocks) || NOTION_DEFAULT_LIMITS.contentBlocks,
 		contentChars: count(raw.content_chars) || NOTION_DEFAULT_LIMITS.contentChars,
-		treeBlocks: count(raw.tree_blocks) || NOTION_DEFAULT_LIMITS.treeBlocks
+		treeBlocks: count(raw.tree_blocks) || NOTION_DEFAULT_LIMITS.treeBlocks,
+		subpages: count(raw.subpages) || NOTION_DEFAULT_LIMITS.subpages,
+		subpageDepth: count(raw.subpage_depth) || NOTION_DEFAULT_LIMITS.subpageDepth
 	};
 }
 
@@ -219,16 +223,19 @@ function toPreviewItem(raw: Record<string, unknown>): NotionPreviewItem | null {
 	};
 }
 
-/** The entries of one source with their state in the inbox; saves nothing. */
+/**
+ * The entries of one source with their state in the inbox; saves nothing. A page with `subpages`
+ * brings the points of its sub-pages as well (ADR-0041, addendum of 2026-10-01).
+ */
 export function previewNotion(
 	pb: PocketBase,
 	id: string,
-	source: NotionImportRequest['source'],
-	dateProperty: string | null,
+	{ source, dateProperty, subpages }: NotionPreviewRequest,
 	{ signal }: RequestOptions = {}
 ): Promise<NotionOutcome<NotionPreview>> {
 	const body: Record<string, unknown> = { source };
 	if (dateProperty !== null) body.date_property = dateProperty;
+	if (subpages) body.subpages = true;
 	return notionCall(
 		signal,
 		(limit) =>
@@ -257,6 +264,8 @@ export function previewNotion(
 					.filter((item): item is NotionPreviewItem => item !== null),
 				truncated: result.truncated === true,
 				blankPoints: count(result.empty),
+				subpages: count(result.subpages),
+				hiddenSubpages: count(result.subpages_hidden),
 				limits: toLimits(result.limits)
 			};
 		}
@@ -302,6 +311,7 @@ export async function importNotion(
 		copy_content: request.copyContent
 	};
 	if (request.dateProperty !== null) body.date_property = request.dateProperty;
+	if (request.subpages) body.subpages = true;
 	const { result, failure } = await ask(signal, (limit) =>
 		pb.send<Record<string, unknown>>(routeOf(id, 'import'), {
 			method: 'POST',

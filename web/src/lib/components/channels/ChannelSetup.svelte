@@ -24,6 +24,7 @@
 	import {
 		KEYWORD_SEARCH_TEXT,
 		NO_KEYWORDS_WARNING,
+		freeVariableName,
 		runResultText,
 		settingsDraftOf,
 		telegramRepliesAnnouncement,
@@ -97,7 +98,17 @@
 		connection,
 		secretStatus: connection === null ? null : store.status(connection.id)
 	});
-	const variable = $derived(connection?.secretEnv ?? defaultVariable(kind));
+	/**
+	 * Before the connection exists, a name no connection uses yet, so `setx` for a second one does
+	 * not overwrite the secret of the first (ADR-0041, addendum of 2026-10-01).
+	 */
+	const variable = $derived(
+		connection?.secretEnv ??
+			freeVariableName(
+				defaultVariable(kind),
+				store.connections.map((item) => item.secretEnv)
+			)
+	);
 	/** Telegram: name of the variable with the allowed IDs. */
 	const allowlist = $derived(connection?.allowlistEnv || DEFAULT_ALLOWLIST);
 	/** Names of the variables in the commands; no secrets. */
