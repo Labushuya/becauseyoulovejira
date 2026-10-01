@@ -55,8 +55,8 @@ interface LinkedRecord {
 
 /**
  * Number of sources of the given tickets (ADR-0031, addendum B): every entry with one of them as
- * `ticket`, for the question of "Löschen …". One request over all linked entries (only their
- * ticket), because a filter over a list of IDs cannot be built from constants.
+ * `ticket`, for the question of "In den Papierkorb …". One request over all linked entries (only
+ * their ticket), because a filter over a list of IDs cannot be built from constants.
  */
 export function countTicketSources(
 	pb: PocketBase,

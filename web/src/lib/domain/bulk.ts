@@ -29,8 +29,8 @@ export type FieldAction =
 
 /**
  * Every bulk action. "Erledigen" takes the blocking sub-tasks along or not (ADR-0033 section 2);
- * "Löschen" cannot be undone and asks about the sources like deleting one ticket (ADR-0031,
- * addendum B).
+ * "In den Papierkorb …" (`delete`) moves to the trash and asks about the sources like moving one
+ * ticket (ADR-0031, addendum B; ADR-0037).
  */
 export type BulkAction =
 	| FieldAction
@@ -180,7 +180,8 @@ export function actionLabel(action: BulkAction): string {
 		case 'complete':
 			return 'Erledigen';
 		case 'delete':
-			return 'Löschen';
+			// Named like the button "In den Papierkorb …" and its question (plan aktionsmenues, AM-3).
+			return 'In den Papierkorb verschieben';
 	}
 }
 

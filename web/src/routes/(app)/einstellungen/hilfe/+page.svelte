@@ -538,6 +538,13 @@
 						öffnen“ und „In Vollansicht öffnen“: Sie öffnen das Ticket genau so, ohne zu ändern, wie
 						Zeilen sonst öffnen. Ein Klick auf „•••“ öffnet die Zeile nicht.
 					</li>
+					<li>
+						Ein Rechtsklick auf eine Zeile öffnet dasselbe Menü an der Maus, mit der Tastatur
+						<kbd>Umschalt</kbd>+<kbd>F10</kbd> oder die Kontextmenü-Taste in der Zeile, in der du
+						gerade bist. Die Zeile öffnet sich dabei nicht und wird nicht ausgewählt. Das Menü des
+						Browsers bekommst du mit <kbd>Strg</kbd>+Rechtsklick, in Eingabefeldern, auf markiertem
+						Text und auf anderen Links.
+					</li>
 				</ul>
 			</details>
 			<details>

@@ -163,7 +163,8 @@ describe('helpers', () => {
 
 	it('names actions and results', () => {
 		expect(actionLabel({ kind: 'tags', mode: 'remove', tagIds: [] })).toBe('Tags entfernen');
-		expect(actionLabel({ kind: 'delete', sources: 'inbox' })).toBe('Löschen');
+		// Named like the button "In den Papierkorb …" of the bar (plan aktionsmenues, AM-3).
+		expect(actionLabel({ kind: 'delete', sources: 'inbox' })).toBe('In den Papierkorb verschieben');
 		expect(resultTitle({ changed: 1, skipped: 0, unchanged: 0, failed: 0 }, 'erledigt')).toBe(
 			'1 Ticket erledigt.'
 		);

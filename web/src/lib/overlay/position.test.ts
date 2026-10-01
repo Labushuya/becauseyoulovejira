@@ -1,8 +1,10 @@
 // Placement of popovers (ADR-0025 section 5; plan UI-Konsistenz, package UI-2): start and end
-// alignment with a gap of 4 px, flip above the button, clamping to the viewport with 8 px.
+// alignment with a gap of 4 px, flip above the button, clamping to the viewport with 8 px. A
+// context menu at the pointer (plan aktionsmenues, AM-3): corner at the pointer, flipping to the
+// left and upwards at the edges, clamping as before.
 
 import { describe, expect, it } from 'vitest';
-import { place, POPOVER_GAP, VIEWPORT_MARGIN, type Rect } from './position';
+import { place, placeAtPoint, POPOVER_GAP, VIEWPORT_MARGIN, type Rect } from './position';
 
 const VIEWPORT = { width: 1200, height: 800 };
 
@@ -66,5 +68,69 @@ describe('place', () => {
 		);
 
 		expect(position.left).toBe(VIEWPORT_MARGIN);
+	});
+});
+
+describe('placeAtPoint', () => {
+	const MENU = { width: 180, height: 150 };
+
+	it('puts the top left corner of the menu at the pointer, without a gap', () => {
+		expect(placeAtPoint({ x: 300, y: 200 }, MENU, VIEWPORT)).toEqual({
+			top: 200,
+			left: 300,
+			maxHeight: 800 - VIEWPORT_MARGIN - 200,
+			side: 'bottom'
+		});
+	});
+
+	it('flips to the left of the pointer near the right edge', () => {
+		const position = placeAtPoint({ x: 1150, y: 200 }, MENU, VIEWPORT);
+
+		expect(position.left).toBe(1150 - 180);
+		expect(position.top).toBe(200);
+	});
+
+	it('flips above the pointer near the bottom edge', () => {
+		const position = placeAtPoint({ x: 300, y: 700 }, MENU, VIEWPORT);
+
+		expect(position.side).toBe('top');
+		expect(position.top).toBe(700 - 150);
+		expect(position.maxHeight).toBe(700 - VIEWPORT_MARGIN);
+		expect(position.left).toBe(300);
+	});
+
+	it('flips both ways in the bottom right corner', () => {
+		const position = placeAtPoint({ x: 1190, y: 790 }, MENU, VIEWPORT);
+
+		expect(position).toEqual({ top: 790 - 150, left: 1190 - 180, maxHeight: 782, side: 'top' });
+	});
+
+	it('stays right of the pointer when the left side has even less room, clamped to the edge', () => {
+		const position = placeAtPoint({ x: 150, y: 100 }, MENU, { width: 300, height: 600 });
+
+		// 142 px to the left and 142 px to the right: no flip, clamped to 300 - 8 - 180.
+		expect(position.left).toBe(112);
+	});
+
+	it('keeps the menu inside the viewport at its very edges', () => {
+		expect(placeAtPoint({ x: 0, y: 0 }, MENU, VIEWPORT)).toMatchObject({
+			top: 0,
+			left: VIEWPORT_MARGIN,
+			side: 'bottom'
+		});
+		const wide = placeAtPoint(
+			{ x: 100, y: 50 },
+			{ width: 400, height: 50 },
+			{ width: 300, height: 600 }
+		);
+		expect(wide.left).toBe(VIEWPORT_MARGIN);
+	});
+
+	it('limits the height to the room of the side with more space', () => {
+		const position = placeAtPoint({ x: 300, y: 300 }, { width: 180, height: 900 }, VIEWPORT);
+
+		expect(position.side).toBe('bottom');
+		expect(position.top).toBe(300);
+		expect(position.maxHeight).toBe(800 - VIEWPORT_MARGIN - 300);
 	});
 });

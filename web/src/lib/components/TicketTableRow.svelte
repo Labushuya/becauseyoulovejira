@@ -57,7 +57,9 @@
 	// With `edit` (plan BI-3, ADR-0036 §6) priority, status, project, tags and due date are buttons
 	// that edit the value in a small popover; a click in those cells never opens the ticket. With
 	// `menu` (plan aktionsmenues, AM-2) the actions end with the menu "•••" of the ticket, after
-	// "Öffnen"; a click on it or in the menu never opens the row either.
+	// "Öffnen"; a click on it or in the menu never opens the row either. The title link and
+	// "Öffnen" open the row itself (data-row-link): a right click on them opens the menu of the
+	// row, not the one of the browser (AM-3, the table handles it).
 	let {
 		ticket,
 		nested = false,
@@ -345,6 +347,7 @@
 			<a
 				class="title-link"
 				{href}
+				data-row-link
 				title={ticket.title.length >= LONG_TITLE ? ticket.title : undefined}
 				aria-current={active ? 'page' : undefined}>{ticket.title}</a
 			>
@@ -485,7 +488,7 @@
 		<span class="action-group">
 			<DoneToggle key={ticket.key} {checked} {pending} onchange={ontoggle} />
 			<!-- Mouse only: the title link does the same for keyboard and screen readers. -->
-			<a class="open" {href} tabindex="-1" aria-hidden="true" title="Öffnen">
+			<a class="open" {href} tabindex="-1" aria-hidden="true" title="Öffnen" data-row-link>
 				<svg viewBox="0 0 16 16" width="14" height="14" focusable="false">
 					<path
 						d="M6 3.5h-2.5v9h9V10M9 3h4v4M13 3l-6 6"

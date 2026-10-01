@@ -1,6 +1,12 @@
 <script lang="ts">
 	import { tick, type Snippet } from 'svelte';
-	import { place, type Placement } from '$lib/overlay/position';
+	import {
+		place,
+		placeAtPoint,
+		type Placement,
+		type Position,
+		type VirtualAnchor
+	} from '$lib/overlay/position';
 
 	// Popover building block (ADR-0025 section 5): a button and a native popover="auto" in the top
 	// layer. The browser brings light dismiss (click outside, Escape) and "one at a time"; the
@@ -8,6 +14,9 @@
 	// it at the same spot. Two kinds: "menu" (role menu, arrow keys, a choice closes) and "panel"
 	// (non-modal dialog with a name, e.g. a fieldset of radios). On opening the focus moves into
 	// the popover; Escape and a choice return it to the button, leaving it with Tab closes.
+	// Opened by code (`open`), it may stand at a virtual anchor instead (plan aktionsmenues, AM-3):
+	// at the pointer of a right click (placeAtPoint) or below another element; the focus then goes
+	// back to the element that had it before, if there was one.
 	let {
 		kind,
 		label,
@@ -62,6 +71,14 @@
 
 	let popover = $state<HTMLElement>();
 	let expanded = $state(false);
+	/**
+	 * Where `open` put the popover instead of below the button: the pointer, kept as its distance
+	 * to the button so the popover follows its row while the page scrolls, or another element.
+	 * A click on the button opens it at the button again.
+	 */
+	let anchor: { dx: number; dy: number } | { element: HTMLElement } | null = null;
+	/** The element focused before `open`; the focus goes back there instead of the button. */
+	let returnTarget: HTMLElement | null = null;
 
 	function items(): HTMLElement[] {
 		return popover ? [...popover.querySelectorAll<HTMLElement>(MENU_ITEMS)] : [];
@@ -69,12 +86,17 @@
 
 	function position() {
 		if (!popover || !trigger) return;
-		const at = place(
-			trigger.getBoundingClientRect(),
-			{ width: popover.offsetWidth, height: popover.scrollHeight },
-			{ width: window.innerWidth, height: window.innerHeight },
-			placement
-		);
+		const size = { width: popover.offsetWidth, height: popover.scrollHeight };
+		const viewport = { width: window.innerWidth, height: window.innerHeight };
+		let at: Position;
+		if (anchor !== null && 'dx' in anchor) {
+			const button = trigger.getBoundingClientRect();
+			at = placeAtPoint({ x: button.left + anchor.dx, y: button.top + anchor.dy }, size, viewport);
+		} else if (anchor !== null && anchor.element.isConnected) {
+			at = place(anchor.element.getBoundingClientRect(), size, viewport, 'bottom-start');
+		} else {
+			at = place(trigger.getBoundingClientRect(), size, viewport, placement);
+		}
 		popover.style.top = `${at.top}px`;
 		popover.style.left = `${at.left}px`;
 		popover.style.maxHeight = `${at.maxHeight}px`;
@@ -91,17 +113,41 @@
 		(target ?? popover).focus();
 	}
 
-	/** Hides the popover; `focusBack` puts the focus back on the button (or `returnFocus`). */
+	/**
+	 * Hides the popover; `focusBack` puts the focus back on the element focused before `open`, the
+	 * button or `returnFocus`.
+	 */
 	function hide(focusBack: boolean) {
+		const before = returnTarget?.isConnected ? returnTarget : null;
+		returnTarget = null;
 		if (popover && expanded && typeof popover.hidePopover === 'function') popover.hidePopover();
-		if (focusBack) (returnFocus?.() ?? trigger)?.focus();
+		if (focusBack) (before ?? returnFocus?.() ?? trigger)?.focus();
 	}
 
 	const close = () => hide(true);
 
-	/** Opens the popover by code, as a click on the button would (e.g. Ctrl+K in the editor). */
-	export function open(): void {
-		if (popover && !expanded && typeof popover.showPopover === 'function') popover.showPopover();
+	/**
+	 * Opens the popover by code, as a click on the button would (e.g. Ctrl+K in the editor), or at
+	 * `at` (a right click, Shift+F10; AM-3). Open already, it moves there. `returnTo` gets the focus
+	 * back when it closes.
+	 */
+	export function open(at: VirtualAnchor | null = null, returnTo: HTMLElement | null = null): void {
+		if (!popover || !trigger) return;
+		if (at !== null && 'point' in at) {
+			const button = trigger.getBoundingClientRect();
+			anchor = { dx: at.point.x - button.left, dy: at.point.y - button.top };
+		} else {
+			anchor = at;
+		}
+		returnTarget = returnTo;
+		if (expanded) position();
+		else if (typeof popover.showPopover === 'function') popover.showPopover();
+	}
+
+	/** A click on the button opens the popover at the button, whatever `open` chose before. */
+	function onbuttonclick() {
+		anchor = null;
+		returnTarget = null;
 	}
 
 	// aria-expanded follows the toggle event explicitly: not every browser (and not jsdom) derives
@@ -187,6 +233,7 @@
 	title={buttonTitle}
 	aria-keyshortcuts={buttonKeyshortcuts}
 	bind:this={trigger}
+	onclick={onbuttonclick}
 >
 	{@render button()}
 </button>

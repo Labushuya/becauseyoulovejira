@@ -1,6 +1,6 @@
 # ADR-0025: UI-Konsistenz – ein Overlay-System, Theme-Umschalter und angeglichene Projekt-UI
 
-- **Status:** Angenommen; §2 („Kein Schatten-Token“) teilweise ersetzt durch [ADR-0029](0029-glas-materialien.md), siehe Nachtrag 13; §11 präzisiert durch [ADR-0030](0030-spalten-breiten-und-kompakte-zeilen.md), siehe Nachtrag 14; §7 präzisiert durch [ADR-0036](0036-sammelbearbeitung-inline-und-oeffnungsmodus.md), siehe Nachtrag 15; §3 und §4 („kein Dialog aus einem Dialog“) präzisiert durch Nachtrag 16
+- **Status:** Angenommen; §2 („Kein Schatten-Token“) teilweise ersetzt durch [ADR-0029](0029-glas-materialien.md), siehe Nachtrag 13; §11 präzisiert durch [ADR-0030](0030-spalten-breiten-und-kompakte-zeilen.md), siehe Nachtrag 14; §7 präzisiert durch [ADR-0036](0036-sammelbearbeitung-inline-und-oeffnungsmodus.md), siehe Nachtrag 15; §3 und §4 („kein Dialog aus einem Dialog“) präzisiert durch Nachtrag 16; §5 (Positionierung) ergänzt durch den Nachtrag „Rechtsklick“ in [ADR-0036](0036-sammelbearbeitung-inline-und-oeffnungsmodus.md): ein Popover öffnet per Code auch am Mauszeiger oder unter einem anderen Element
 - **Datum:** 2026-09-25
 - **Entscheidung durch:** Nutzer (Fragen 1 bis 4 in Abschnitt 9, 2026-09-25), Advisor (übrige Festlegungen)
 - **Ersetzt teilweise:** [ADR-0010](0010-layout-nach-task-board.md) §1 (Reihenfolge der Leisten, 5 s „Rückgängig“ in der Zeile) und §2 (Aufbau des Detail-Panels, Vollansicht)
