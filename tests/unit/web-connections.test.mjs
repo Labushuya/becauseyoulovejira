@@ -1,12 +1,15 @@
 // The connections of the web app (web/src/lib/domain/connections.ts) against the hook modules:
 // the same name pattern for variables, only kinds a user may create (E4 plan, package 10) and the
-// same check of mailboxes (package 22), the suggestions per mail provider (package 13) and the
-// texts of the Telegram bot (ADR-0016, addendum of 2026-10-01).
+// same check of mailboxes (package 22), the suggestions per mail provider (package 13), the
+// texts of the Telegram bot (ADR-0016, addendum of 2026-10-01) and the check of a new name with
+// its texts (ADR-0026, addendum KK-3).
 
 import { describe, expect, it } from 'vitest';
 import { loadHookLib } from '../support/hook-lib.mjs';
 import {
+	CONNECTION_LABEL_MESSAGES,
 	CONNECTION_TYPES,
+	LABEL_MAX_LENGTH,
 	MAIL_PROVIDERS,
 	MAIL_PROVIDER_SECRET_NAMES,
 	MAIL_USER_MAX_LENGTH,
@@ -16,6 +19,7 @@ import {
 	emptyConnectionDraft,
 	isMailUser,
 	isSecretName,
+	labelError,
 	withMailProvider
 } from '../../web/src/lib/domain/connections.ts';
 
@@ -45,6 +49,17 @@ describe('web connections against the hooks', () => {
 	it('names the answers of the Telegram bot with the texts it sends (ADR-0016, addendum of 2026-10-01)', () => {
 		expect(TELEGRAM_CONFIRMATION).toBe(telegram.CONFIRMATION);
 		expect(TELEGRAM_NO_MATCH).toBe(telegram.NO_MATCH);
+	});
+
+	it('checks a new name like the hook and says it with its texts (ADR-0026, addendum KK-3)', () => {
+		expect(LABEL_MAX_LENGTH).toBe(rules.LABEL_MAX_LENGTH);
+		for (const [code, message] of Object.entries(CONNECTION_LABEL_MESSAGES)) {
+			expect(message, code).toBe(rules.MESSAGES[code]);
+		}
+		for (const label of ['Gmail', '', '  ', 'x'.repeat(100), ` ${'x'.repeat(100)} `, 'x'.repeat(101)]) {
+			const hook = rules.labelViolation(label);
+			expect(labelError(label), JSON.stringify(label)).toBe(hook === '' ? null : hook.message);
+		}
 	});
 });
 

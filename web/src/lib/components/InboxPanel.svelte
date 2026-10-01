@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { toDataError } from '$lib/data/errors';
+	import { withConnectionName } from '$lib/domain/connections';
 	import { formatBerlinDateTime } from '$lib/domain/format';
 	import {
 		CHANNEL_LABELS,
@@ -15,6 +16,7 @@
 	import { notionOriginText } from '$lib/domain/notion';
 	import { itemSuggestion, suggestionFormValues } from '$lib/domain/rrule';
 	import type { TicketSummary } from '$lib/domain/ticket';
+	import { findConnectionNames } from '$lib/stores/connection-names.svelte';
 	import type { InboxStore } from '$lib/stores/inbox.svelte';
 	import type { RecurrenceStore } from '$lib/stores/recurrence.svelte';
 	import type { TicketPickerSource } from '$lib/stores/ticket-picker.svelte';
@@ -130,11 +132,19 @@
 			? null
 			: itemSuggestion(item, today)
 	);
+	// Names of the connections (ADR-0026, addendum KK-3); outside the (app) layout none.
+	const connectionNames = findConnectionNames();
 	const details = $derived.by((): [string, string][] => {
 		if (item === null) return [];
 		const rows: [string, string][] = [
 			['Art', KIND_LABELS[item.kind]],
-			['Quelle', CHANNEL_LABELS[item.channel]],
+			[
+				'Quelle',
+				withConnectionName(
+					CHANNEL_LABELS[item.channel],
+					connectionNames?.nameOf(item.connectionId) ?? null
+				)
+			],
 			['Zustand', stateLabel(item)],
 			['Von', metaText(item, 'from') || metaText(item, 'sender')],
 			['An', metaText(item, 'to')],

@@ -15,6 +15,13 @@ var CREATABLE_TYPES = ['calendar', 'telegram', 'mail', 'notion'];
 var MAIL_PROVIDERS = ['webde', 'gmail'];
 var MAIL_USER_MAX_LENGTH = 254;
 
+// Name of a connection (`label`, max 100 since the migration 1790201400). Renaming changes only
+// the name (ADR-0026, addendum KK-3; ADR-0016, addendum of 2026-10-01): a client request that
+// changes `label` must leave these fields and the server fields as they are. `settings_json` is
+// the stored JSON text of `settings`, so a rewritten value with the same content counts as a change.
+var LABEL_MAX_LENGTH = 100;
+var RENAME_KEEPS = ['type', 'enabled', 'secret_env', 'settings_json', 'owner', 'household'];
+
 // Keys of `settings` per kind. Only names of variables, never values (ADR-0018 section 2), the
 // keywords (ADR-0020 section 3) and, for Telegram, the two answers of the bot in the chat: the
 // confirmation of a saved entry and the hint for a message without keyword (ADR-0016, addendum of
@@ -33,7 +40,10 @@ var MESSAGES = {
   validation_connection_settings: 'Unbekannte Einstellung.',
   validation_secret_name: 'Nur BYL_ mit Großbuchstaben, Ziffern und _ (höchstens 64 Zeichen).',
   validation_mail_provider: 'Diesen Mail-Anbieter gibt es nicht.',
-  validation_mail_user: 'Benutzername des Postfachs (meist die E-Mail-Adresse), ohne Leerzeichen, höchstens 254 Zeichen.'
+  validation_mail_user: 'Benutzername des Postfachs (meist die E-Mail-Adresse), ohne Leerzeichen, höchstens 254 Zeichen.',
+  validation_connection_label: 'Bitte einen Namen eingeben.',
+  validation_connection_label_max: 'Höchstens 100 Zeichen.',
+  validation_connection_rename_only: 'Beim Umbenennen ändert sich nur der Name; andere Einstellungen bitte getrennt speichern.'
 };
 
 function text(value) {
@@ -161,6 +171,41 @@ function updateViolation(before, after, secrets, keywords) {
   return settingsViolation(text(after.type), after.settings, secrets, keywords);
 }
 
+/** The name as it is stored: without white space at its ends. */
+function normalizeLabel(label) {
+  return text(label).replace(/^\s+|\s+$/g, '');
+}
+
+/** The name of a connection: not empty after trimming, at most LABEL_MAX_LENGTH characters. */
+function labelViolation(label) {
+  var value = normalizeLabel(label);
+  if (value === '') {
+    return failure('label', 'validation_connection_label');
+  }
+  if (value.length > LABEL_MAX_LENGTH) {
+    return failure('label', 'validation_connection_label_max');
+  }
+  return '';
+}
+
+/**
+ * Client update that changes the name: nothing else may change with it (fetching, access data,
+ * keywords, cursor and the rest stay as they are). `before`/`after` like `values` of
+ * updateViolation, with `label` and the fields of RENAME_KEEPS as strings.
+ */
+function renameViolation(before, after) {
+  if (text(before.label) === text(after.label)) {
+    return '';
+  }
+  var fields = RENAME_KEEPS.concat(SERVER_FIELDS);
+  for (var i = 0; i < fields.length; i++) {
+    if (text(before[fields[i]]) !== text(after[fields[i]])) {
+      return failure(fields[i] === 'settings_json' ? 'settings' : fields[i], 'validation_connection_rename_only');
+    }
+  }
+  return '';
+}
+
 /** The keywords of a connection (ADR-0020): invalid or missing entries count as none. */
 function keywordsOf(settings, keywords) {
   return isPlainObject(settings) ? keywords.listOf(settings.keywords) : [];
@@ -219,10 +264,15 @@ module.exports = {
   CREATABLE_TYPES: CREATABLE_TYPES,
   MAIL_PROVIDERS: MAIL_PROVIDERS,
   MAIL_USER_MAX_LENGTH: MAIL_USER_MAX_LENGTH,
+  LABEL_MAX_LENGTH: LABEL_MAX_LENGTH,
+  RENAME_KEEPS: RENAME_KEEPS,
   MESSAGES: MESSAGES,
   settingsViolation: settingsViolation,
   createViolation: createViolation,
   updateViolation: updateViolation,
+  normalizeLabel: normalizeLabel,
+  labelViolation: labelViolation,
+  renameViolation: renameViolation,
   variableNames: variableNames,
   secretStatus: secretStatus,
   keywordsOf: keywordsOf,

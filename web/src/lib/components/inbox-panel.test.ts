@@ -7,7 +7,10 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { DataError } from '$lib/data/errors';
 import type { InboxItem } from '$lib/domain/inbox';
 import type { TicketSummary } from '$lib/domain/ticket';
+import { ConnectionNamesStore } from '$lib/stores/connection-names.svelte';
 import { InboxStore, type InboxData } from '$lib/stores/inbox.svelte';
+import { LiveHealth } from '$lib/stores/live-health.svelte';
+import ConnectionNamesHarness from '$lib/test/ConnectionNamesHarness.svelte';
 import { RecurrenceStore, type RecurrenceData } from '$lib/stores/recurrence.svelte';
 import { TicketSourcesStore, type TicketSourcesData } from '$lib/stores/ticket-sources.svelte';
 import { useOverlayStubs } from '$lib/test/overlay-stubs';
@@ -43,7 +46,9 @@ function setup(
 	item: InboxItem | Error = entry(),
 	tickets: TicketSummary[] = [],
 	/** Further props, e.g. the recurrence store of package 6. */
-	extra: Record<string, unknown> = {}
+	extra: Record<string, unknown> = {},
+	/** Names of the connections as the (app) layout provides them (KK-3). */
+	names: ConnectionNamesStore | null = null
 ) {
 	const data = {
 		listNew: vi.fn<InboxData['listNew']>(async () => []),
@@ -90,15 +95,9 @@ function setup(
 	} satisfies InboxData;
 	const store = new InboxStore(data, { ensureValid: () => true, logout: vi.fn() });
 	const onclose = vi.fn();
-	render(InboxPanel, {
-		props: {
-			id: ID,
-			store,
-			openTickets: tickets,
-			onclose,
-			...extra
-		}
-	});
+	const props = { id: ID, store, openTickets: tickets, onclose, ...extra };
+	if (names === null) render(InboxPanel, { props });
+	else render(ConnectionNamesHarness, { props: { names, component: InboxPanel, props } });
 	return { store, data, onclose };
 }
 
@@ -130,6 +129,25 @@ describe('inbox panel', () => {
 		expect(screen.queryByRole('link', { name: 'Schließen' })).toBeNull();
 		await fireEvent.click(screen.getByRole('button', { name: 'Panel schließen' }));
 		expect(onclose).toHaveBeenCalledOnce();
+	});
+
+	it('names the connection of the entry in "Quelle" (KK-3)', async () => {
+		const names = new ConnectionNamesStore(
+			{
+				list: async () => [{ id: 'conn00000000003', label: 'Gmail Arbeit' }],
+				subscribe: async () => async () => undefined,
+				reconnected: async () => async () => undefined
+			},
+			{ ensureValid: () => true, logout: vi.fn() },
+			{ health: new LiveHealth() }
+		);
+		await names.load();
+		setup(entry({ channel: 'mail', connectionId: 'conn00000000003' }), [], {}, names);
+		await screen.findByRole('heading', { name: 'Rechnung September' });
+		const details = within(screen.getByRole('complementary'));
+		expect(
+			details.getByText('Quelle', { selector: 'dt' }).nextElementSibling?.textContent?.trim()
+		).toBe('Postfach · Gmail Arbeit');
 	});
 
 	it('shows the text as sanitised Markdown', async () => {

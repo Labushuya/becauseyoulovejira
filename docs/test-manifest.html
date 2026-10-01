@@ -20,6 +20,7 @@
     --warn: #7a4e08;
     --warn-subtle: #fbf0dc;
     --danger: #a13a40;
+    --danger-subtle: #f8e9e9;
     --radius: 12px;
     --radius-sm: 8px;
   }
@@ -29,7 +30,7 @@
       --border: #26353a; --text: #e3ecee; --text-muted: #8da1a6;
       --primary: #07838f; --primary-text: #9fdce2; --primary-subtle: #123a3f;
       --ok: #4bb8c2; --ok-subtle: #123a3f;
-      --warn: #f2c77a; --warn-subtle: #3a2c12; --danger: #eaa0a0;
+      --warn: #f2c77a; --warn-subtle: #3a2c12; --danger: #eaa0a0; --danger-subtle: #3b1e21;
     }
   }
   * { box-sizing: border-box; }
@@ -46,7 +47,14 @@
   .stand { margin: 0 0 4px; font-size: 0.95rem; }
   .deferred-line { margin: 0; font-size: 0.88rem; color: var(--text-muted); }
   .deferred-line b { color: var(--text); }
-  .noscript { background: var(--warn-subtle); border: 1px solid var(--warn); border-radius: var(--radius-sm); padding: 8px 12px; }
+  .howto {
+    margin: 0 0 10px; padding: 8px 12px; font-size: 0.95rem; background: var(--primary-subtle);
+    border-left: 4px solid var(--primary); border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+  }
+  .noscript, .storage-problem { background: var(--warn-subtle); border: 1px solid var(--warn); border-radius: var(--radius-sm); padding: 8px 12px; }
+  .storage-problem { margin: 8px 0 0; font-size: 0.9rem; }
+  .sr-only { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
+  .offscreen { position: fixed; top: 0; left: -9999px; }
   a { color: var(--primary-text); }
   a:focus-visible, summary:focus-visible, .table-wrap:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
 
@@ -63,6 +71,17 @@
   .case-list { list-style: none; margin: 6px 0 4px; padding: 0 0 0 4px; font-size: 0.88rem; }
   .case-list li { margin: 2px 0; }
   .case-id { font-family: ui-monospace, "Cascadia Mono", Consolas, monospace; font-size: 0.8rem; font-weight: 700; margin-right: 6px; }
+  .toggle { display: inline-flex; gap: 6px; align-items: center; margin: 0 0 6px; font-size: 0.85rem; cursor: pointer; }
+  .toggle input { margin: 0; accent-color: var(--primary); }
+  .failed-block {
+    margin: 6px 0 10px; padding: 8px 12px; background: var(--danger-subtle);
+    border: 1px solid var(--danger); border-left-width: 4px; border-radius: var(--radius-sm);
+  }
+  .failed-block h3 { margin: 0; color: var(--danger); }
+  .mark, .badge.res-passed, .badge.res-failed { font-size: 0.68rem; font-weight: 700; padding: 1px 7px; border-radius: 999px; border: 1px solid; }
+  .mark { margin-left: 4px; }
+  .mark-passed, .badge.res-passed { color: var(--primary-text); background: var(--primary-subtle); border-color: var(--primary); }
+  .mark-failed, .badge.res-failed { color: var(--danger); background: var(--danger-subtle); border-color: var(--danger); }
   .table-wrap { overflow-x: auto; margin-top: 8px; }
   table.packages { width: 100%; border-collapse: collapse; font-size: 0.8rem; }
   table.packages th, table.packages td { text-align: left; vertical-align: top; padding: 5px 6px; border-bottom: 1px solid var(--border); }
@@ -95,8 +114,9 @@
     position: sticky; top: 0; z-index: 10; background: var(--bg);
     padding: 10px 0; border-bottom: 1px solid var(--border); margin-bottom: 16px;
   }
-  .progress-track { height: 10px; background: var(--surface-sunken); border-radius: 999px; overflow: hidden; }
+  .progress-track { display: flex; height: 10px; background: var(--surface-sunken); border-radius: 999px; overflow: hidden; }
   .progress-fill { height: 100%; background: var(--ok); width: 0%; transition: width 0.2s; }
+  .progress-fill.failed { background: var(--danger); }
   .progress-meta { display: flex; justify-content: space-between; align-items: center; margin-top: 6px; font-size: 0.85rem; color: var(--text-muted); gap: 8px; flex-wrap: wrap; }
   .actions { display: flex; gap: 8px; flex-wrap: wrap; }
   .filters { display: flex; gap: 12px; flex-wrap: wrap; margin-top: 8px; font-size: 0.85rem; }
@@ -112,7 +132,14 @@
   button.act:hover { border-color: var(--primary); color: var(--primary-text); }
   button.act.primary { background: var(--primary); color: #fff; border-color: var(--primary); }
   button.act.primary:hover { opacity: 0.9; color: #fff; }
-  button.act:focus-visible, .filters select:focus-visible, .item-cb:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
+  button.act:focus-visible, .filters select:focus-visible, .toggle input:focus-visible, .segmented input:focus-visible,
+  .copy-fallback textarea:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
+  .copy-fallback { margin-top: 8px; font-size: 0.85rem; }
+  .copy-fallback label { display: block; margin-bottom: 4px; font-weight: 600; }
+  .copy-fallback textarea {
+    width: 100%; max-height: 30vh; resize: vertical; border: 1px solid var(--border); border-radius: var(--radius-sm);
+    background: var(--surface); color: var(--text); padding: 6px 8px; font-family: ui-monospace, "Cascadia Mono", Consolas, monospace; font-size: 0.8rem;
+  }
 
   section.block { margin-bottom: 26px; }
   .block-head { display: flex; align-items: baseline; gap: 10px; margin: 0 0 4px; }
@@ -125,20 +152,18 @@
     border-radius: var(--radius); padding: 12px 14px; margin-bottom: 10px; scroll-margin-top: 150px;
   }
   .item:target, .item:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
-  .item.done { border-color: var(--ok); background: var(--ok-subtle); }
+  .item.passed { border-color: var(--ok); background: var(--ok-subtle); }
+  .item.failed { border-color: var(--danger); background: var(--danger-subtle); box-shadow: inset 4px 0 0 var(--danger); }
   .item.planned { border-style: dashed; }
-  .item-top { display: flex; gap: 10px; align-items: flex-start; }
-  .item-cb { width: 22px; height: 22px; flex-shrink: 0; margin-top: 2px; accent-color: var(--ok); cursor: pointer; }
-  .item-cb-spacer { width: 22px; flex-shrink: 0; }
-  .item-body { flex: 1; min-width: 0; }
   .item-id { font-size: 0.7rem; font-weight: 700; color: var(--text-muted); letter-spacing: 0.03em; display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
   .badge { font-size: 0.68rem; font-weight: 700; padding: 1px 7px; border-radius: 999px; border: 1px solid var(--border); color: var(--text-muted); background: var(--surface); }
-  .badge.st-bestanden, .badge.st-bestaetigt { color: var(--primary-text); background: var(--primary-subtle); border-color: var(--primary); }
+  .badge.st-bestanden { color: var(--primary-text); background: var(--primary-subtle); border-color: var(--primary); }
   .badge.st-offen { color: var(--warn); background: var(--warn-subtle); border-color: var(--warn); }
   .badge.st-geplant { border-style: dashed; }
   .badge.st-zurueck { border-style: dashed; background: var(--surface-sunken); }
   .badge.st-nz { background: var(--surface-sunken); }
   .item-title { font-weight: 600; margin: 1px 0 4px; }
+  .item-confirmed { margin: 0 0 4px; font-size: 0.85rem; font-weight: 600; color: var(--primary-text); }
   .item-pre { margin: 4px 0 0; font-size: 0.88rem; color: var(--text-muted); }
   .item-pre b { color: var(--text); }
   .item-steps { margin: 6px 0 0; padding-left: 18px; font-size: 0.9rem; }
@@ -151,6 +176,18 @@
   .expect b { color: var(--primary-text); }
   .refs { margin: 8px 0 0; padding-left: 18px; font-size: 0.82rem; }
   .refs li { margin: 1px 0; overflow-wrap: anywhere; }
+  .verdict { margin: 10px 0 0; padding: 0; border: 0; min-width: 0; }
+  .verdict legend { padding: 0; margin-bottom: 3px; font-size: 0.75rem; font-weight: 600; color: var(--text-muted); }
+  .segmented { display: inline-flex; flex-wrap: wrap; background: var(--bg); border: 1px solid var(--border); border-radius: var(--radius-sm); overflow: hidden; }
+  .segmented label { display: inline-flex; gap: 6px; align-items: center; padding: 5px 12px; font-size: 0.85rem; font-weight: 600; cursor: pointer; border-right: 1px solid var(--border); }
+  .segmented label:last-child { border-right: 0; }
+  .segmented input { margin: 0; accent-color: var(--primary); }
+  .segmented label:has(input:checked) { background: var(--surface-sunken); }
+  .segmented label.seg-passed:has(input:checked) { background: var(--ok-subtle); color: var(--primary-text); }
+  .segmented label.seg-failed:has(input:checked) { background: var(--danger-subtle); color: var(--danger); }
+  .verdict-hint { margin: 4px 0 0; font-size: 0.85rem; font-weight: 600; color: var(--warn); }
+  .verdict-hint:empty { margin: 0; }
+  .stale-note { margin: 8px 0 0; padding: 6px 10px; font-size: 0.85rem; background: var(--warn-subtle); border: 1px dashed var(--warn); border-radius: var(--radius-sm); }
   .note-wrap { margin-top: 10px; }
   .note-wrap label { display: block; font-size: 0.75rem; color: var(--text-muted); margin-bottom: 3px; font-weight: 600; }
   textarea.note {
@@ -169,11 +206,11 @@
     :root {
       --bg: #ffffff; --surface: #ffffff; --surface-sunken: #eceff0; --border: #b8c4c6;
       --text: #000000; --text-muted: #3a4649; --primary: #07838f; --primary-text: #055c65; --primary-subtle: #ddf0f2;
-      --ok: #07838f; --ok-subtle: #ffffff; --warn: #7a4e08; --warn-subtle: #ffffff;
+      --ok: #07838f; --ok-subtle: #ffffff; --warn: #7a4e08; --warn-subtle: #ffffff; --danger: #a13a40; --danger-subtle: #ffffff;
     }
     .wrap { max-width: none; padding: 0; }
     .progress-bar { position: static; }
-    .actions, .filters, .toast { display: none !important; }
+    .actions, .filters, .toast, .howto, .toggle, .verdict, .copy-fallback { display: none !important; }
     .note-wrap:has(textarea.note:placeholder-shown) { display: none; }
     .item, table.packages tr { break-inside: avoid; }
   }
@@ -184,8 +221,11 @@
   <header class="top">
     <h1>becauseyoulovejira — Test-Manifest</h1>
     <p class="subtitle">Automatisierte Tests bereichsweise zusammengefasst, manuelle Prüfpunkte aus den Plänen an einem Ort.</p>
+    <p class="howto">So meldest du Ergebnisse: Fälle prüfen → ‚Ergebnis kopieren‘ → Text an Claude im Chat schicken.</p>
     <p class="stand" id="stand"></p>
+    <p class="stand" id="mine"></p>
     <p class="deferred-line" id="deferred"></p>
+    <p class="storage-problem" id="storage-problem" role="alert" hidden></p>
     <noscript>
       <p class="noscript">Stand, Übersichten und Fälle entstehen per JavaScript aus den Daten im Block <code>manifest-data</code> dieser Datei. Bitte JavaScript für diese Datei zulassen oder den Quelltext ansehen (Strg+U).</p>
     </noscript>
@@ -201,14 +241,16 @@
       <li>Für die Live-Tests ein zweites Browserfenster mit demselben Konto öffnen (Fenster A und B).</li>
       <li>Prüfungen zu Erststart, Admin-Reset und Wiederherstellung in einer <b>Kopie</b> von <code>app\</code> durchführen, nie mit den echten Daten.</li>
     </ul>
-    Hake jeden bestätigten manuellen Punkt ab und trage Abweichungen ins Notizfeld ein.
+    Setze bei jedem manuellen Fall dein Ergebnis („bestanden“ oder „fehlgeschlagen“) und beschreibe Abweichungen in der Notiz.
   </div>
 
   <div class="legend">
     <h2>Legende</h2>
     <dl>
-      <dt><span class="badge st-bestanden">bestanden</span></dt><dd>automatisiert, im letzten vollständigen Lauf von <code>scripts\build.ps1</code> grün</dd>
-      <dt><span class="badge st-offen">offen</span></dt><dd>manuell, noch nicht vom Nutzer bestätigt (das Häkchen setzt lokal „bestätigt“)</dd>
+      <dt><span class="badge st-bestanden">bestanden</span></dt><dd>automatisiert und im letzten vollständigen Lauf von <code>scripts\build.ps1</code> grün, oder manuell vom Nutzer bestätigt (mit Datum am Fall)</dd>
+      <dt><span class="badge st-offen">offen</span></dt><dd>manuell, im Repo noch nicht bestätigt; dein Ergebnis setzt du am Fall, es bleibt in diesem Browser</dd>
+      <dt><span class="badge res-passed">von dir: bestanden</span> <span class="badge res-failed">von dir: fehlgeschlagen</span></dt><dd>deine Eingabe, noch nicht ins Repo übertragen; „Ergebnis kopieren“ meldet sie</dd>
+      <dt>Veraltet</dt><dd>deine Eingabe passt nicht mehr: Der Fall ist inzwischen im Repo bestanden, oder Titel, Schritte bzw. Erwartung haben sich geändert. Sie wird nicht mitkopiert.</dd>
       <dt><span class="badge st-geplant">geplant</span></dt><dd>Arbeitspaket noch nicht umgesetzt; es gelten die Akzeptanzkriterien aus dem Plan</dd>
       <dt><span class="badge st-zurueck">zurückgestellt</span></dt><dd>wartet auf eine Entscheidung des Nutzers (siehe „Zurückgestellt“ oben), jetzt nicht prüfen</dd>
       <dt><span class="badge st-nz">nicht zutreffend</span></dt><dd>entfällt für diesen Stand</dd>
@@ -217,12 +259,13 @@
   </div>
 
   <div class="progress-bar">
-    <div class="progress-track"><div class="progress-fill" id="fill"></div></div>
+    <div class="progress-track"><div class="progress-fill" id="fill"></div><div class="progress-fill failed" id="fill-failed"></div></div>
     <div class="progress-meta">
-      <span id="count" aria-live="polite">0 / 0 manuelle Prüfungen bestätigt</span>
+      <span id="count" aria-live="polite"></span>
       <span class="actions">
-        <button type="button" class="act primary" id="copy-open">Offene + Notizen kopieren</button>
+        <button type="button" class="act primary" id="copy-result">Ergebnis kopieren</button>
         <button type="button" class="act" id="copy-all">Alles kopieren</button>
+        <button type="button" class="act" id="drop-stale" hidden>Veraltete Einträge entfernen</button>
         <button type="button" class="act" id="reset">Zurücksetzen</button>
       </span>
     </div>
@@ -246,15 +289,30 @@
           <option value="nicht zutreffend">nicht zutreffend</option>
         </select>
       </label>
+      <label for="filter-result">Deine Eingabe
+        <select id="filter-result">
+          <option value="">alle</option>
+          <option value="unchecked">noch nicht geprüft</option>
+          <option value="passed">bestanden</option>
+          <option value="failed">fehlgeschlagen</option>
+          <option value="note">mit Notiz</option>
+        </select>
+      </label>
       <span id="visible-count"></span>
+    </div>
+    <div class="copy-fallback" id="copy-fallback" hidden>
+      <label for="copy-text">Die Zwischenablage ließ sich nicht beschreiben. Markiere den Text (Strg+A) und kopiere ihn (Strg+C):</label>
+      <textarea id="copy-text" rows="6" readonly></textarea>
+      <button type="button" class="act" id="copy-close">Schließen</button>
     </div>
   </div>
 
   <div id="manifest"></div>
 
   <footer class="foot">
-    Häkchen und Notizen werden automatisch im Browser gespeichert (localStorage). „Kopieren“ legt eine Markdown-Übersicht
-    in die Zwischenablage. Pflege: Jedes Arbeitspaket bekommt einen Eintrag in <code>pakete</code> und trägt seine Fälle ein
+    Ergebnisse und Notizen speichert nur dieser Browser (localStorage, Schlüssel <code>byl-test-manifest-v2</code>); die Daten
+    der Seite ändern sie nie. „Ergebnis kopieren“ und „Alles kopieren“ legen Text in die Zwischenablage.
+    Pflege: Jedes Arbeitspaket bekommt einen Eintrag in <code>pakete</code> und trägt seine Fälle ein
     (Anleitung im Kommentar über den Daten); <code>tests/unit/test-manifest.test.mjs</code> prüft die Datei.
   </footer>
 </div>
@@ -276,13 +334,14 @@
      Neues Paket: einen Eintrag am Ende von pakete anlegen und seine Fälle in blocks eintragen, meta.stand und meta.commit nachziehen.
      Punkt: id, title, art[] (unit|komponente|integration|manuell), status (bestanden|offen|geplant|zurückgestellt|nicht zutreffend;
      „offen“ nur mit manuellem Anteil), pre (Vorbedingung), steps[] (Schritte bzw. Akzeptanzkriterien bei „geplant“), expect,
-     tests[] ("Pfad" oder "Pfad::Testname"). -->
+     tests[] ("Pfad" oder "Pfad::Testname"), optional bestaetigt { datum (JJJJ-MM-TT), durch („Nutzer“) }: ein manueller Fall,
+     den der Nutzer im Prüfmodus als bestanden gemeldet hat; dann status „bestanden“ (CLAUDE.md §12). -->
 <script type="application/json" id="manifest-data">
 {
   "meta": {
     "projekt": "becauseyoulovejira",
     "stand": "2026-10-01",
-    "commit": "3358f29"
+    "commit": "7855810"
   },
   "bereiche": [
     { "id": "betrieb", "titel": "Betrieb: Start, Stopp, Skripte und Daten" },
@@ -450,12 +509,13 @@
     { "id": "T-4", "vorhaben": "Test-Härtung", "titel": "Gemeinsame Testinstanz ohne parallele Prozess-Last", "bereich": "entwicklung", "quelle": "Fehlerbericht", "datum": "2026-10-01", "plan": "test-haertung.md", "faelle": ["BYL-E6-840..BYL-E6-841"] },
     { "id": "BK-1", "vorhaben": "Sicherung, Prüfung, Wiederherstellen", "titel": "Generationen, Zielverzeichnis mit age, Zugangsdaten und Seite „Sicherung“", "bereich": "betrieb", "quelle": "Nutzerentscheidung", "datum": "2026-10-01", "adr": ["0046-sicherung-pruefung-wiederherstellen.md", "0003-pb-data-und-backups.md, Nachtrag", "0039-betriebsskripte.md, Nachtrag BK-1", "0043-system-seite.md, Nachtrag BK-1"], "plan": "sicherung.md", "faelle": ["BYL-E6-880..BYL-E6-898"],
       "vermerk": "Entscheidungen: Zielverzeichnis frei wählbar, Zugangsdaten verschlüsselt mitsichern (mit Hinweis auf ENV)." },
-    { "id": "BK-2", "vorhaben": "Sicherung, Prüfung, Wiederherstellen", "titel": "Prüfung mit Wegwerf-Instanz, wöchentlich und „Jetzt prüfen“", "bereich": "betrieb", "quelle": "Nutzerentscheidung", "datum": "2026-10-01", "adr": ["0046-sicherung-pruefung-wiederherstellen.md"], "plan": "sicherung.md", "faelle": ["BYL-E6-900..BYL-E6-907"] },
+    { "id": "KK-3", "vorhaben": "Kanal-Karten", "titel": "Kanäle umbenennen", "bereich": "eingang", "quelle": "Nutzerwunsch", "datum": "2026-10-01", "adr": ["0026-einstellungsbereich-und-hinweis-bausteine.md, Nachtrag KK-3", "0016-kanal-architektur-und-mail.md, Nachtrag „Name einer Verbindung“"], "plan": "kanal-karten.md", "faelle": ["BYL-E6-850..BYL-E6-854"] },
+    { "id": "BK-2", "vorhaben": "Sicherung, Prüfung, Wiederherstellen", "titel": "Prüfung mit Wegwerf-Instanz, wöchentlich und „Jetzt prüfen“", "bereich": "betrieb", "quelle": "Nutzerentscheidung", "datum": "2026-10-01", "adr": ["0046-sicherung-pruefung-wiederherstellen.md", "0039-betriebsskripte.md, Nachtrag BK-2", "0043-system-seite.md, Nachtrag BK-2"], "plan": "sicherung.md", "faelle": ["BYL-E6-900..BYL-E6-907"] },
     { "id": "querschnitt", "vorhaben": "Querschnitt", "titel": "Testumgebung, Regeln der Datenschicht, Hook-Module und dieses Manifest", "bereich": "entwicklung", "faelle": ["BYL-X-001..BYL-X-004"] }
   ],
   "zurueckgestellt": [
-    { "id": "plattform-ausbau", "titel": "Plattform-Ausbau S2 bis S6", "quelle": "Nutzerentscheidung", "datum": "2026-09-28", "adr": ["0028-plattform-strategie.md, Nachtrag"], "plan": "plattformen.md", "faelle": ["BYL-E6-362", "BYL-E6-366"],
-      "vermerk": "Raspberry Pi mit Docker und Traefik, Tailscale, Android-APK, Tray und Installer, iOS und macOS, Push und Erinnerungen. Die Prüfungen von S0 auf einem Linux-Rechner bzw. für einen Linux-Server warten mit." },
+    { "id": "plattform-ausbau", "titel": "Plattform-Ausbau S2 bis S6", "quelle": "Nutzerentscheidung", "datum": "2026-09-28", "adr": ["0028-plattform-strategie.md, Nachtrag"], "plan": "plattformen.md", "faelle": ["BYL-E6-362"],
+      "vermerk": "Raspberry Pi mit Docker und Traefik, Tailscale, Android-APK, Tray und Installer, iOS und macOS, Push und Erinnerungen. Die Prüfung von S0 auf einem echten Linux-Rechner wartet mit." },
     { "id": "semver", "titel": "SemVer und Releases", "quelle": "Nutzerentscheidung", "datum": "2026-09-28", "adr": ["0028-plattform-strategie.md, Nachtrag"], "plan": "plattformen.md", "faelle": [],
       "vermerk": "Release-Automatisierung mit release-please-Token, Tags und GitHub Releases; der Nutzer entscheidet, wann die Version dafür bereit ist." }
   ],
@@ -3224,7 +3284,7 @@
           "pre": "domain/host-platform.ts rein, HostPlatformNote mit HostStore (Harness) in jsdom, data/host.ts gegen die Wegwerf-Instanz.", "steps": ["npm run test:web", "npm run test:integration"],
           "expect": "Die Antwort der Route wird streng gelesen, alles andere ist Windows. Unter Windows und außerhalb des (app)-Layouts erscheint nichts; für linux bzw. container erscheint nach dem Laden eine Hinweis-Box mit Titel (Überschrift mit verstecktem „Hinweis:“, ohne Live-Rolle) und den Texten zu Umgebung bzw. Umgebungsdatei, Neustart bzw. docker compose up -d. Die Antwort einer abgebrochenen Anfrage verwirft der Store; die Datenschicht liefert ohne Anmeldung windows.",
           "tests": ["web/src/lib/domain/host-platform.test.ts", "web/src/lib/components/guidance/host-platform-note.test.ts", "tests/integration/host-route.test.mjs::reaches the SPA through the data layer"] },
-        { "id": "BYL-E6-366", "title": "Hinweis im Browser bei einem Server unter Linux (S0-3)", "art": ["manuell"], "status": "zurückgestellt",
+        { "id": "BYL-E6-366", "title": "Hinweis im Browser bei einem Server unter Linux (S0-3)", "art": ["manuell"], "status": "offen",
           "pre": "Build von main in app\\ und Neustart (stop.bat, dann start.bat), damit die Route da ist. Der Linux-Fall wird unter Windows über die Übersteuerung BYL_HOST_PLATFORM nachgestellt (ändert nur die Texte).", "steps": ["Einstellungen → Kanäle, einen Einrichtungsassistenten und Einstellungen → Hilfe („Kanäle und Zugangsdaten“, „Betrieb“) öffnen.", "In der Eingabeaufforderung setx BYL_HOST_PLATFORM \"linux\", dann stop.bat und start.bat; dieselben Stellen öffnen, mit NVDA die Hinweis-Box lesen.", "Variable wieder entfernen (Systemsteuerung oder reg delete HKCU\\Environment /v BYL_HOST_PLATFORM /f), dann stop.bat und start.bat."],
           "expect": "Ohne Variable sieht alles aus wie vorher, ohne neue Box. Mit linux steht an allen vier Stellen die Box „Dein Server läuft unter Linux“ über der Windows-Anleitung, gut lesbar in hell und dunkel; NVDA liest „Hinweis:“ und den Titel als Überschrift. Nach dem Entfernen ist die Box wieder weg.",
           "tests": [] }
@@ -3515,7 +3575,7 @@
       ]
     },
     {
-      "tag": "E6", "name": "Kanal-Karten", "desc": "Spec des Nutzers vom 2026-09-30 (docs/plan/kanal-karten.md, Nachträge zu ADR-0026): Mauszeiger „gesperrt“ und „beschäftigt“ app-weit und Fuß der Modals (KK-1), ein Baustein für alle Kanal-Karten (KK-2). IDs ab BYL-E6-620.",
+      "tag": "E6", "name": "Kanal-Karten", "desc": "Spec des Nutzers vom 2026-09-30 (docs/plan/kanal-karten.md, Nachträge zu ADR-0026): Mauszeiger „gesperrt“ und „beschäftigt“ app-weit und Fuß der Modals (KK-1), ein Baustein für alle Kanal-Karten (KK-2); Nutzerwunsch vom 2026-10-01: Kanäle umbenennen (KK-3, Nachträge zu ADR-0026 und ADR-0016). IDs ab BYL-E6-620, KK-3 ab BYL-E6-850.",
       "items": [
         { "id": "BYL-E6-620", "title": "Mauszeiger: gesperrt „nicht erlaubt“, beschäftigt nur mit aria-busy (KK-1)", "art": ["unit", "komponente"], "status": "bestanden",
           "pre": "base.css und der Stil jeder Komponente statisch gelesen; SelectionBar in jsdom (ADR-0026, Nachtrag vom 2026-09-30).", "steps": ["npm run test:web"],
@@ -3552,6 +3612,26 @@
         { "id": "BYL-E6-628", "title": "Kanal-Karten mit Tastatur und NVDA (KK-2)", "art": ["manuell"], "status": "offen",
           "pre": "Wie BYL-E6-627; NVDA mit Firefox.", "steps": ["Mit Tab durch eine Karte gehen, „Details“ mit Leertaste auf- und zuklappen.", "Das Menü „•••“ mit Enter öffnen, mit Pfeiltasten wandern, mit Esc schließen, einen Eintrag mit Enter wählen.", "Über „Alle Kanäle jetzt abrufen“ und das Flag „Zur Karte …“ zu einer Karte springen."],
           "expect": "Die Reihenfolge ist Hauptknopf, „Details“, „•••“, dann die Details; NVDA liest „Jetzt abrufen: Kalender“, „Details: Kalender, reduziert/erweitert“ und „Weitere Aktionen für Kalender, Menü“, den Zustand als Text (etwa „Verbunden“) und die Infozeile. Esc im Menü gibt den Fokus an „•••“ zurück. Der Sprung „Zur Karte …“ setzt den Fokus auf die Karte.",
+          "tests": [] },
+        { "id": "BYL-E6-850", "title": "Name einer Verbindung: Prüfung und „nur der Name“ in Hook und SPA (KK-3)", "art": ["unit"], "status": "bestanden",
+          "pre": "Reine Regeln app/pb_hooks/lib/connection-rules.js und web/src/lib/domain/connections.ts.", "steps": ["npm run test:unit", "npm run test:web"],
+          "expect": "Ein Name ist nach dem Kürzen von Leerraum am Rand nicht leer und höchstens 100 Zeichen lang („Bitte einen Namen eingeben.“, „Höchstens 100 Zeichen.“), gespeichert ohne diesen Leerraum. Ändert eine Anfrage den Namen, darf sie weder Art, Schalter, Variable, Einstellungen (als JSON-Text), Besitzer, Bereich noch ein Feld des Servers ändern (validation_connection_rename_only am geänderten Feld); ohne neuen Namen gilt die Regel nicht. Grenze und Texte der SPA gleichen denen des Hooks. Ein Name einer anderen Verbindung (ohne Groß-/Kleinschreibung) bekommt den neutralen Hinweis, das Flag heißt „„Gmail“ heißt jetzt „Gmail Arbeit“.“, und „Postfach · Gmail Arbeit“ nennt den Kanal mit dem Namen, bei gleichem Wort nur einmal.",
+          "tests": ["tests/unit/connection-rules.test.mjs::checks the name: not empty after trimming, at most 100 characters (KK-3)", "tests/unit/connection-rules.test.mjs::lets a new name come only alone: nothing else changes with it (KK-3)", "tests/unit/web-connections.test.mjs::checks a new name like the hook and says it with its texts (ADR-0026, addendum KK-3)", "web/src/lib/domain/connection-name.test.ts"] },
+        { "id": "BYL-E6-851", "title": "Umbenennen gegen PocketBase: nur der Name, Ablehnungen, Rechte, Realtime (KK-3)", "art": ["integration"], "status": "bestanden",
+          "pre": "Eigene Wegwerf-Instanz von tests/integration/connections.test.mjs mit erfundenen Zugangsdaten; weitere Nutzer, ein Haushalt mit zwei Mitgliedern.", "steps": ["npm run test:integration"],
+          "expect": "Der Besitzer benennt eine Verbindung mit „  Familienchat  “ um: gespeichert „Familienchat“, Art, Schalter, Variable, Einstellungen, Cursor, letzte Läufe, Hinweis, Besitzer, Bereich und Scope bleiben gleich. Leer und nur Leerzeichen: validation_connection_label, 101 Zeichen: validation_connection_label_max, auch beim Anlegen; Name zusammen mit Schalter, Variable oder Einstellungen: 400 validation_connection_rename_only am anderen Feld, der Name bleibt. Der Superuser bleibt frei. Ein Mitglied des Haushalts darf eine Verbindung des Haushalts umbenennen, ein Fremder bekommt 404. Ein Abo der Verbindung bekommt den neuen Namen. Die Datenschicht sendet nur label, meldet Feldfehler mit dem Text des Hooks und liefert die Namen aller Verbindungen samt Realtime (umbenannt, gelöscht).",
+          "tests": ["tests/integration/connections.test.mjs::changes only the name: fetching, access data, keywords and cursor stay", "tests/integration/connections.test.mjs::refuses an empty or too long name and a rename that changes anything else", "tests/integration/connections.test.mjs::allows renaming to whoever may edit the connection, also in a household", "tests/integration/connections.test.mjs::sends the new name to every open tab of the owner at once", "tests/integration/connections.test.mjs::renames a connection and follows the names through realtime (KK-3)", "tests/integration/connections.test.mjs::lets the owner change label, switch and variable, but not kind or server fields"] },
+        { "id": "BYL-E6-852", "title": "Umbenennen in der Karte: Menü, Feld, Enter und Esc, Feldfehler, Hinweis, anderer Tab (KK-3)", "art": ["komponente"], "status": "bestanden",
+          "pre": "Seite „Deine Verbindungen“ mit echtem ConnectionsStore auf Fakes; die Karten aller Arten der Inventur.", "steps": ["npm run test:web"],
+          "expect": "Jede Karte einer Verbindung hat „Umbenennen …“ im Menü direkt vor „Einrichtung ansehen“ (Notion nach „Verbindung prüfen“), ohne aria-haspopup; eigener Eingang, WhatsApp Web und Dateien haben es nicht. Das Feld „Neuer Name für „Google Kalender““ hat den Fokus und den Namen markiert; Enter speichert nur den Namen (keine anderen Daten), das Flag nennt alt und neu, die Karte heißt neu, der Fokus geht an „•••“. Esc und „Abbrechen“ senden nichts. Leer und zu lang: Feldfehler mit aria-invalid und aria-describedby, beim Tippen weg; ein Name einer anderen Verbindung: neutraler Hinweis per aria-describedby; gleicher Name: kein Speichern. Eine Ablehnung des Servers steht am Feld. Ein Name aus einem anderen Tab kommt per Realtime an; die Seite beobachtet jede Verbindung.",
+          "tests": ["web/src/lib/components/connections-page.test.ts::renaming in the card (ADR-0026, addendum KK-3)", "web/src/lib/components/channels/channel-cards-inventory.test.ts::offers \"Umbenennen …\" on the cards of connections only (KK-3)", "web/src/lib/components/channels/notion.test.ts::shows the imported sources and offers import, check and \"Erneut abrufen\", no run and no pause", "web/src/routes/(app)/einstellungen/hilfe/help-page.test.ts::describes the channel cards"] },
+        { "id": "BYL-E6-853", "title": "Name der Verbindung im Eingang und in den Quellen, sofort nach dem Umbenennen (KK-3)", "art": ["unit", "komponente"], "status": "bestanden",
+          "pre": "ConnectionNamesStore mit Fakes; Panel eines Eintrags und Quellen eines Tickets unter einem Harness mit den Namen.", "steps": ["npm run test:web"],
+          "expect": "Der Store kennt die Namen nach dem Laden, folgt Umbenennen, Anlegen und Löschen per Realtime, lädt nach einer Wiederverbindung neu, leert sich beim Ende und meldet nur eine abgelaufene Sitzung ab. Das Panel nennt „Quelle: Postfach · Gmail Arbeit“, die Quellen „Telegram · Familienchat“ und nach einem Umbenennen ohne Neuladen „Telegram · Familie Beispiel“; Einträge ohne Verbindung nennen nur den Kanal.",
+          "tests": ["web/src/lib/stores/connection-names.test.ts", "web/src/lib/components/inbox-panel.test.ts::names the connection of the entry in \"Quelle\" (KK-3)", "web/src/lib/components/ticket-sources.test.ts::names the connection of a source and follows a rename at once (KK-3)"] },
+        { "id": "BYL-E6-854", "title": "Umbenennen aller Kartenarten im Browser (manuell, KK-3)", "art": ["manuell"], "status": "offen",
+          "pre": "Build von main in app\\ (scripts\\build.ps1) und neu-starten.bat (geänderte Hooks); Verbindungen Google Calendar, Telegram, Web.de oder Gmail und Notion mit je einem Eintrag im Eingang, einer davon als Quelle an einem Ticket; zwei Tabs; Chrome oder Edge und Firefox, NVDA mit Firefox, ein schmales Fenster (etwa 400 px).", "steps": ["An jeder Verbindungskarte „•••“ → „Umbenennen …“, einen neuen Namen tippen, Enter.", "Einmal mit Esc und einmal mit „Abbrechen“ abbrechen; einmal leer lassen, einmal den Namen einer anderen Verbindung wählen.", "Im zweiten Tab die Seite „Kanäle“, den Eingang mit dem Eintrag und das Ticket mit der Quelle offen lassen und beobachten.", "An eigenem Eingang, WhatsApp Web, Dateien und Bookmarklet das Menü „•••“ öffnen.", "Danach „Jetzt abrufen“ bzw. „Listen übernehmen …“ an einer umbenannten Karte."],
+          "expect": "Der Name wird in der Kopfzeile zum Feld, ohne Dialog; Enter speichert, Esc und „Abbrechen“ lassen alles, der Fokus steht danach auf „•••“; NVDA liest „Neuer Name für „…“, Eingabefeld“ und den Fehler bzw. Hinweis. Leer: roter Feldfehler mit Symbol; gleicher Name einer anderen Verbindung: grauer Hinweis, Speichern geht. Im zweiten Tab stehen Kartenname, „Quelle“ im Panel und der Kanal in den Quellen sofort mit dem neuen Namen. Die Sonderkarten haben kein „Umbenennen …“. Abruf, Stichwörter und Zugangsdaten arbeiten unverändert. Schmal bricht das Feld mit den Knöpfen um, nichts ragt heraus.",
           "tests": [] }
       ]
     },
@@ -3768,11 +3848,22 @@
 
 <script id="manifest-logic">
 // ── Auswertung ──────────────────────────────────────────────────────────────
-// Reine Funktionen ohne DOM: Stand, Paket-Tabelle und offene manuelle Prüfungen entstehen aus den Daten,
-// nie von Hand. tests/unit/test-manifest.test.mjs führt diesen Block in node:vm aus und zählt unabhängig nach.
+// Reine Funktionen ohne DOM: Stand, Paket-Tabelle, offene manuelle Prüfungen und der Prüfmodus entstehen aus den Daten
+// und den Eingaben, nie von Hand. tests/unit/test-manifest.test.mjs führt diesen Block in node:vm aus und zählt unabhängig nach.
 function caseKey(id) {
   const match = /^(BYL-(?:E\d|X))-(\d{3})$/.exec(id);
   return match ? { prefix: match[1], number: Number(match[2]) } : null;
+}
+
+function casesById(data) {
+  const byId = {};
+  for (const block of data.blocks) for (const item of block.items) byId[item.id] = item;
+  return byId;
+}
+
+// Offen mit manuellem Anteil: Nur solche Fälle prüft der Nutzer im Prüfmodus.
+function isOpenManualCase(item) {
+  return item.status === "offen" && item.art.includes("manuell");
 }
 
 // Fälle eines Pakets: einzelne IDs oder Bereiche „BYL-E6-100..BYL-E6-105“ über die vorhandenen IDs, in der Reihenfolge der Datei.
@@ -3809,9 +3900,7 @@ function idRangeLabel(ids) {
 function manifestSummary(data) {
   const cases = data.blocks.flatMap((block) => block.items);
   const ids = cases.map((item) => item.id);
-  const byId = {};
-  for (const item of cases) byId[item.id] = item;
-  const isOpenManual = (item) => item.status === "offen" && item.art.includes("manuell");
+  const byId = casesById(data);
   const countStatus = (items, status) => items.filter((item) => item.status === status).length;
 
   const packages = data.pakete.map((paket) => {
@@ -3821,7 +3910,7 @@ function manifestSummary(data) {
       caseIds,
       idRange: idRangeLabel(caseIds),
       passed: countStatus(items, "bestanden"),
-      openManual: items.filter(isOpenManual).map((item) => item.id),
+      openManual: items.filter(isOpenManualCase).map((item) => item.id),
       planned: countStatus(items, "geplant"),
       deferred: countStatus(items, "zurückgestellt"),
       notApplicable: countStatus(items, "nicht zutreffend")
@@ -3835,14 +3924,14 @@ function manifestSummary(data) {
   }));
   // Fehlt ein Fall in pakete (der Test verbietet das), bleibt er trotzdem sichtbar.
   const listed = new Set(openByArea.flatMap((area) => area.caseIds));
-  const unlisted = cases.filter((item) => isOpenManual(item) && !listed.has(item.id)).map((item) => item.id);
+  const unlisted = cases.filter((item) => isOpenManualCase(item) && !listed.has(item.id)).map((item) => item.id);
   if (unlisted.length > 0) openByArea.push({ id: "", title: "Ohne Paket oder Bereich", caseIds: unlisted });
 
   return {
     totals: {
       cases: cases.length,
       passed: countStatus(cases, "bestanden"),
-      openManual: cases.filter(isOpenManual).length,
+      openManual: cases.filter(isOpenManualCase).length,
       planned: countStatus(cases, "geplant"),
       deferred: countStatus(cases, "zurückgestellt"),
       notApplicable: countStatus(cases, "nicht zutreffend")
@@ -3852,6 +3941,247 @@ function manifestSummary(data) {
     deferredIds: cases.filter((item) => item.status === "zurückgestellt").map((item) => item.id)
   };
 }
+
+// ── Prüfmodus ───────────────────────────────────────────────────────────────
+// Eingaben des Nutzers liegen nur im localStorage seines Browsers, nie in den Daten oben. Je Fall-ID:
+// { result: "passed" | "failed" | null, note, commit, at, hash }. commit und at nennen Stand und Zeitpunkt der letzten
+// Änderung (Ortszeit mit Abstand zu UTC), hash den Fingerabdruck der Beschreibung, für die die Eingabe gilt.
+const RESULT_VALUES = ["passed", "failed"];
+const RESULT_LABELS = { passed: "bestanden", failed: "fehlgeschlagen" };
+
+// Fingerabdruck von Titel, Schritten und Erwartung (FNV-1a, 32 Bit, hex), ohne Krypto-API, die unter file:// fehlen kann.
+function caseFingerprint(item) {
+  const text = JSON.stringify([item.title, item.steps, item.expect]);
+  let hash = 0x811c9dc5;
+  for (let index = 0; index < text.length; index++) hash = Math.imul(hash ^ text.charCodeAt(index), 0x01000193);
+  return (hash >>> 0).toString(16).padStart(8, "0");
+}
+
+// Ortszeit als ISO 8601 mit Abstand zu UTC, etwa „2026-10-01T14:05:09+02:00“.
+function localIsoString(date) {
+  const pad = (number) => String(number).padStart(2, "0");
+  const offset = -date.getTimezoneOffset();
+  return date.getFullYear() + "-" + pad(date.getMonth() + 1) + "-" + pad(date.getDate())
+    + "T" + pad(date.getHours()) + ":" + pad(date.getMinutes()) + ":" + pad(date.getSeconds())
+    + (offset < 0 ? "-" : "+") + pad(Math.floor(Math.abs(offset) / 60)) + ":" + pad(Math.abs(offset) % 60);
+}
+
+// „2026-10-01T14:05:09+02:00“ → „2026-10-01 14:05“.
+function stampLabel(at) {
+  return typeof at === "string" && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(at) ? at.slice(0, 10) + " " + at.slice(11, 16) : "unbekannt";
+}
+
+// Eine gespeicherte Eingabe in fester Form; ohne Ergebnis und ohne Notiz bleibt nichts (null).
+function normalizeEntry(value) {
+  if (value === null || typeof value !== "object" || Array.isArray(value)) return null;
+  const entry = {
+    result: RESULT_VALUES.includes(value.result) ? value.result : null,
+    note: typeof value.note === "string" ? value.note : "",
+    commit: typeof value.commit === "string" ? value.commit : null,
+    at: typeof value.at === "string" ? value.at : null,
+    hash: typeof value.hash === "string" ? value.hash : null
+  };
+  return entry.result === null && entry.note.trim() === "" ? null : entry;
+}
+
+function parseStoredObject(raw) {
+  try {
+    const value = JSON.parse(raw);
+    return value !== null && typeof value === "object" && !Array.isArray(value) ? value : null;
+  } catch (error) {
+    return null;
+  }
+}
+
+// Eingaben aus den gespeicherten Texten von v2 und v1 (null = Schlüssel fehlt). Gibt es v2, gilt nur v2; sonst wird v1
+// übernommen (migrated: v2 jetzt schreiben). unreadable: Der gelesene Text war kein JSON-Objekt. Nur Fall-IDs zählen.
+function readResults(rawV2, rawV1, data) {
+  const present = (raw) => typeof raw === "string";
+  if (!present(rawV2) && !present(rawV1)) return { results: {}, migrated: false, unreadable: false };
+  const stored = parseStoredObject(present(rawV2) ? rawV2 : rawV1);
+  if (stored === null) return { results: {}, migrated: false, unreadable: true };
+  if (!present(rawV2)) return { results: migrateResultsV1(stored, data), migrated: true, unreadable: false };
+  const results = {};
+  for (const id of Object.keys(stored)) {
+    const entry = caseKey(id) === null ? null : normalizeEntry(stored[id]);
+    if (entry !== null) results[id] = entry;
+  }
+  return { results, migrated: false, unreadable: false };
+}
+
+// v1 speicherte { done, note }: done → "passed", die Notiz bleibt. v1 merkte sich die Beschreibung nicht, also gilt die
+// Eingabe der heutigen (hash); commit und at sind unbekannt. Einträge zu entfernten Fällen bleiben und sind veraltet.
+function migrateResultsV1(legacy, data) {
+  const byId = casesById(data);
+  const results = {};
+  for (const id of Object.keys(legacy)) {
+    const old = legacy[id];
+    if (caseKey(id) === null || old === null || typeof old !== "object") continue;
+    const entry = normalizeEntry({ result: old.done === true ? "passed" : null, note: old.note });
+    if (entry === null) continue;
+    entry.hash = byId[id] ? caseFingerprint(byId[id]) : null;
+    results[id] = entry;
+  }
+  return results;
+}
+
+// Warum eine Eingabe veraltet ist, sonst null: Fall entfernt; Ergebnis zu einem Fall, der nicht mehr offen und manuell
+// ist (meist ins Repo als bestanden übernommen); Titel, Schritte oder Erwartung geändert.
+function staleReason(entry, item) {
+  if (!item) return "removed";
+  if (entry.result !== null && !isOpenManualCase(item)) return item.status === "bestanden" ? "adopted" : "status";
+  if (entry.hash !== caseFingerprint(item)) return "changed";
+  return null;
+}
+
+function staleText(reason, entry, item) {
+  const what = (entry.result === null ? "Notiz" : RESULT_LABELS[entry.result]) + (entry.at ? " vom " + stampLabel(entry.at) : "");
+  const why = {
+    removed: "Den Fall gibt es nicht mehr.",
+    adopted: "Der Fall steht inzwischen im Repo als bestanden.",
+    status: "Der Fall hat inzwischen den Status „" + (item ? item.status : "") + "“.",
+    changed: "Titel, Schritte oder Erwartung haben sich seitdem geändert; bitte neu prüfen."
+  }[reason];
+  return "Veraltet: Deine Eingabe (" + what + ") wird nicht mehr mitkopiert. " + why;
+}
+
+// Gültige und veraltete Eingaben und die Zahlen der offenen manuellen Fälle mit deinen Ergebnissen, in der Reihenfolge der Fälle.
+function reviewSummary(data, results) {
+  const byId = casesById(data);
+  const valid = {};
+  const staleIds = [];
+  for (const id of Object.keys(results).sort()) {
+    if (staleReason(results[id], byId[id]) === null) valid[id] = results[id];
+    else staleIds.push(id);
+  }
+  const cases = data.blocks.flatMap((block) => block.items);
+  const idsWith = (test) => cases.filter((item) => valid[item.id] !== undefined && test(valid[item.id])).map((item) => item.id);
+  const passedIds = idsWith((entry) => entry.result === "passed");
+  const failedIds = idsWith((entry) => entry.result === "failed");
+  const openManual = cases.filter(isOpenManualCase).length;
+  return {
+    valid,
+    staleIds,
+    passedIds,
+    failedIds,
+    noteIds: idsWith((entry) => entry.note.trim() !== ""),
+    totals: { openManual, passed: passedIds.length, failed: failedIds.length, unchecked: openManual - passedIds.length - failedIds.length }
+  };
+}
+
+// „Offene manuelle Prüfungen“ mit deinen Ergebnissen: Fehlgeschlagene als eigener Block oben, geprüfte Fälle in den
+// Bereichen ausgeblendet (hideChecked) oder markiert (marks je ID); Bereiche ohne sichtbaren Fall entfallen.
+function reviewOverview(summary, review, hideChecked) {
+  const resultOf = (id) => (review.valid[id] === undefined ? null : review.valid[id].result);
+  const marks = {};
+  const areas = summary.openByArea.map((area) => {
+    const caseIds = hideChecked ? area.caseIds.filter((id) => resultOf(id) === null) : area.caseIds.slice();
+    for (const id of caseIds) if (resultOf(id) !== null) marks[id] = resultOf(id);
+    return { id: area.id, title: area.title, caseIds, checked: area.caseIds.filter((id) => resultOf(id) !== null).length };
+  });
+  return { failedIds: review.failedIds.slice(), areas: areas.filter((area) => area.caseIds.length > 0), marks };
+}
+
+// Filter der Fallliste: Art und Status aus den Daten und deine Eingabe („unchecked“: offener manueller Fall ohne gültiges Ergebnis).
+function matchesFilters(filters, item, review) {
+  const entry = review.valid[item.id] === undefined ? null : review.valid[item.id];
+  const result = entry === null ? null : entry.result;
+  const byInput = {
+    "": true,
+    unchecked: isOpenManualCase(item) && result === null,
+    passed: result === "passed",
+    failed: result === "failed",
+    note: entry !== null && entry.note.trim() !== ""
+  }[filters.result || ""];
+  return (!filters.art || item.art.includes(filters.art)) && (!filters.status || item.status === filters.status) && byInput === true;
+}
+
+// Eingabe nach einer Änderung von result oder note durch den Nutzer, null, wenn nichts bleibt. Sie gilt danach der heutigen
+// Beschreibung (hash, commit, at neu). War sie veraltet, fällt ihr altes Ergebnis weg (die Seite zeigt es schon nicht mehr),
+// die Notiz bleibt.
+function changedEntry(previous, item, change, commit, at) {
+  const fresh = previous !== null && staleReason(previous, item) === null;
+  const kept = fresh ? previous.result : null;
+  return normalizeEntry({
+    result: "result" in change ? change.result : kept,
+    note: "note" in change ? change.note : previous === null ? "" : previous.note,
+    commit,
+    at,
+    hash: caseFingerprint(item)
+  });
+}
+
+function withoutStale(results, data) {
+  const byId = casesById(data);
+  const kept = {};
+  const removedIds = [];
+  for (const id of Object.keys(results).sort()) {
+    if (staleReason(results[id], byId[id]) === null) kept[id] = results[id];
+    else removedIds.push(id);
+  }
+  return { results: kept, removedIds };
+}
+
+function noteLines(note, indent) {
+  const lines = note.trim().split(/\r?\n/);
+  return [indent + "Notiz: " + lines[0]].concat(lines.slice(1).map((line) => indent + "  " + line));
+}
+
+function reportHead(title, data, review, copiedAt) {
+  const totals = review.totals;
+  return [
+    "# " + title,
+    "Commit: " + data.meta.commit + " (Stand " + data.meta.stand + ")",
+    "Kopiert: " + stampLabel(copiedAt),
+    "Geprüft: " + totals.passed + " bestanden, " + totals.failed + " fehlgeschlagen, " + totals.unchecked + " offen",
+    ""
+  ];
+}
+
+// Text für „Ergebnis kopieren“: Kopf, dann „Fehlgeschlagen“ (mit Notiz), „Bestanden“ (nur IDs) und „Notizen“ (übrige
+// gültige Eingaben mit Notiz). Veraltete Eingaben fehlen.
+function resultReport(data, results, copiedAt) {
+  const byId = casesById(data);
+  const review = reviewSummary(data, results);
+  const lines = reportHead("Test-Ergebnis becauseyoulovejira", data, review, copiedAt);
+  lines.push("## Fehlgeschlagen (" + review.failedIds.length + ")");
+  if (review.failedIds.length === 0) lines.push("keine");
+  for (const id of review.failedIds) {
+    const entry = review.valid[id];
+    lines.push("- " + id + " — " + byId[id].title, "  Geprüft: " + stampLabel(entry.at) + (entry.commit ? ", Commit " + entry.commit : ""));
+    lines.push(...(entry.note.trim() === "" ? ["  Notiz: –"] : noteLines(entry.note, "  ")));
+  }
+  lines.push("", "## Bestanden (" + review.passedIds.length + ")", review.passedIds.length === 0 ? "keine" : review.passedIds.join(", "));
+  const noteIds = review.noteIds.filter((id) => review.valid[id].result !== "failed");
+  lines.push("", "## Notizen (" + noteIds.length + ")");
+  if (noteIds.length === 0) lines.push("keine");
+  for (const id of noteIds) {
+    const entry = review.valid[id];
+    lines.push("- " + id + " — " + byId[id].title + (entry.result === null ? "" : " (" + RESULT_LABELS[entry.result] + ")"));
+    lines.push(...noteLines(entry.note, "  "));
+  }
+  return lines.join("\n") + "\n";
+}
+
+// Text für „Alles kopieren“: jeder Fall mit deinem Ergebnis bzw. seinem Status im Repo, nach Blöcken. Veraltete Eingaben fehlen.
+function fullReport(data, results, copiedAt) {
+  const review = reviewSummary(data, results);
+  const lines = reportHead("Test-Manifest becauseyoulovejira, alle Fälle", data, review, copiedAt);
+  lines.push("Legende: [x] bestanden, [!] fehlgeschlagen, [ ] offen (deine Eingaben); (…) Status im Repo", "");
+  for (const block of data.blocks) {
+    lines.push("## [" + block.tag + "] " + block.name);
+    for (const item of block.items) {
+      const entry = review.valid[item.id] === undefined ? null : review.valid[item.id];
+      const confirmed = item.bestaetigt ? ", manuell bestätigt am " + item.bestaetigt.datum : "";
+      const mark = !isOpenManualCase(item) ? "(" + item.status + confirmed + ")"
+        : entry === null || entry.result === null ? "[ ]" : entry.result === "passed" ? "[x]" : "[!]";
+      lines.push("- " + mark + " " + item.id + " — " + item.title);
+      if (entry !== null && entry.note.trim() !== "") lines.push(...noteLines(entry.note, "  "));
+    }
+    lines.push("");
+  }
+  return lines.join("\n");
+}
 </script>
 
 <script>
@@ -3859,18 +4189,55 @@ function manifestSummary(data) {
 const DATA = JSON.parse(document.getElementById("manifest-data").textContent);
 const SUMMARY = manifestSummary(DATA);
 const BLOCKS = DATA.blocks;
-const CASE_TITLES = Object.fromEntries(BLOCKS.flatMap((block) => block.items.map((it) => [it.id, it.title])));
-const STORAGE_KEY = "byl-test-manifest-v1";
+const CASES = casesById(DATA);
+// Eingaben des Prüfmodus (Block manifest-logic). v1 ({ done, note }) wird beim ersten Laden übernommen und bleibt liegen,
+// bis „Zurücksetzen“ ihn löscht; die Daten der Seite ändert keine Eingabe.
+const STORAGE_KEY = "byl-test-manifest-v2";
+const LEGACY_STORAGE_KEY = "byl-test-manifest-v1";
+const STORAGE_FAILED = "Eingaben ließen sich nicht speichern (localStorage gesperrt oder voll). Kopiere dein Ergebnis, bevor du die Seite schließt.";
+const FAILED_HINT = "Bitte beschreibe in der Notiz, was abweicht (freiwillig, hilft beim Beheben).";
 const ART_LABELS = { unit: "Unit", komponente: "Komponente", integration: "Integration", manuell: "Manuell" };
 const STATUS_CLASS = { "bestanden": "st-bestanden", "offen": "st-offen", "geplant": "st-geplant", "zurückgestellt": "st-zurueck", "nicht zutreffend": "st-nz" };
-let state = {};
-try { state = JSON.parse(localStorage.getItem(STORAGE_KEY) || "{}"); } catch (e) { state = {}; }
-
 const manifestEl = document.getElementById("manifest");
-const manualIds = [];
 const meta = DATA.meta;
+let results = loadResults();
+let review = reviewSummary(DATA, results);
+let toastTimer = null;
 renderHead();
+renderMine();
 renderOverview();
+
+function loadResults() {
+  let loaded;
+  try {
+    loaded = readResults(localStorage.getItem(STORAGE_KEY), localStorage.getItem(LEGACY_STORAGE_KEY), DATA);
+  } catch (error) {
+    showStorageProblem("Dieser Browser lässt die Seite nichts speichern (localStorage gesperrt). Eingaben gehen beim Schließen verloren; kopiere dein Ergebnis vorher.");
+    return {};
+  }
+  if (loaded.unreadable) showStorageProblem("Gespeicherte Eingaben ließen sich nicht lesen. Die Seite beginnt leer und ersetzt sie bei deiner nächsten Eingabe.");
+  if (loaded.migrated) writeResults(loaded.results);
+  return loaded.results;
+}
+
+function writeResults(value) {
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(value));
+  } catch (error) {
+    showStorageProblem(STORAGE_FAILED);
+  }
+}
+
+function showStorageProblem(text) {
+  const problem = document.getElementById("storage-problem");
+  problem.textContent = text;
+  problem.hidden = false;
+}
+
+// Text nur bei einer Änderung setzen, damit Live-Regionen nichts wiederholen.
+function setText(element, text) {
+  if (element.textContent !== text) element.textContent = text;
+}
 
 // Kurzer Stand und Zeile „Zurückgestellt“, beides aus den Daten gerechnet.
 function renderHead() {
@@ -3892,13 +4259,17 @@ function renderHead() {
   deferredEl.hidden = topics.length === 0;
 }
 
+// Zweite Kopfzeile: deine Ergebnisse zu den offenen manuellen Fällen.
+function renderMine() {
+  const totals = review.totals;
+  const stale = review.staleIds.length;
+  document.getElementById("mine").innerHTML =
+    `Von dir geprüft: <b>${totals.passed} bestanden</b>, <b>${totals.failed} fehlgeschlagen</b>, ${totals.unchecked} offen`
+    + (stale ? ` · ${stale} ${stale === 1 ? "veraltete Eingabe" : "veraltete Eingaben"} (nicht mitkopiert)` : "");
+}
+
 // Offene manuelle Prüfungen nach Bereichen und die Tabelle „Etappen und Pakete“.
 function renderOverview() {
-  const areas = SUMMARY.openByArea.map((area) => `
-      <details class="area">
-        <summary>${escapeHtml(area.title)} <span class="count">(${area.caseIds.length})</span></summary>
-        ${caseList(area.caseIds)}
-      </details>`).join("");
   const deferred = SUMMARY.deferredIds.length === 0 ? "" : `
       <h3>Zurückgestellt <span class="count">(${SUMMARY.deferredIds.length})</span></h3>
       <p class="hint">Erst prüfen, wenn der Nutzer das Thema freigibt (siehe „Zurückgestellt“ oben).</p>
@@ -3907,7 +4278,8 @@ function renderOverview() {
     <section class="panel" aria-labelledby="open-title">
       <h2 id="open-title">Offene manuelle Prüfungen <span class="count">(${SUMMARY.totals.openManual})</span></h2>
       <p class="hint">Nach Bereichen; jede ID springt zur Beschreibung des Falls.</p>
-      ${areas || '<p class="hint">Keine offenen manuellen Prüfungen.</p>'}
+      <label class="toggle"><input type="checkbox" id="hide-checked" checked /> Von dir geprüfte Fälle ausblenden</label>
+      <div id="open-lists"></div>
       ${deferred}
     </section>
     <section class="panel" aria-labelledby="packages-title">
@@ -3917,11 +4289,36 @@ function renderOverview() {
         <div class="table-wrap" role="region" aria-labelledby="packages-title" tabindex="0">${packageTable()}</div>
       </details>
     </section>`;
+  document.getElementById("hide-checked").addEventListener("change", renderOpenLists);
+  renderOpenLists();
+}
+
+// Listen der offenen Prüfungen mit deinen Ergebnissen; aufgeklappte Bereiche bleiben beim Neuzeichnen offen.
+function renderOpenLists() {
+  const container = document.getElementById("open-lists");
+  const opened = new Set(Array.from(container.querySelectorAll("details[open]"), (details) => details.dataset.area));
+  const view = reviewOverview(SUMMARY, review, document.getElementById("hide-checked").checked);
+  const failed = view.failedIds.length === 0 ? "" : `
+      <div class="failed-block">
+        <h3>Fehlgeschlagen <span class="count">(${view.failedIds.length})</span></h3>
+        <p class="hint">Von dir als fehlgeschlagen markiert; „Ergebnis kopieren“ meldet sie mit deiner Notiz.</p>
+        ${caseList(view.failedIds)}
+      </div>`;
+  const areas = view.areas.map((area) => `
+      <details class="area" data-area="${escapeHtml(area.id)}"${opened.has(area.id) ? " open" : ""}>
+        <summary>${escapeHtml(area.title)} <span class="count">(${area.caseIds.length}${area.checked ? ` · ${area.checked} von dir geprüft` : ""})</span></summary>
+        ${caseList(area.caseIds, view.marks)}
+      </details>`).join("");
+  const empty = SUMMARY.totals.openManual === 0 ? "Keine offenen manuellen Prüfungen." : "Alle offenen manuellen Prüfungen hast du geprüft.";
+  container.innerHTML = failed + (areas || `<p class="hint">${empty}</p>`);
 }
 
 function caseLink(id) { return `<a class="case-id" href="#item-${escapeHtml(id)}">${escapeHtml(id)}</a>`; }
-function caseList(ids) {
-  return `<ul class="case-list">${ids.map((id) => `<li>${caseLink(id)}${escapeHtml(CASE_TITLES[id])}</li>`).join("")}</ul>`;
+function caseList(ids, marks = {}) {
+  return `<ul class="case-list">${ids.map((id) => {
+    const mark = marks[id] ? ` <span class="mark mark-${marks[id]}">${RESULT_LABELS[marks[id]]}</span>` : "";
+    return `<li>${caseLink(id)}${escapeHtml(CASES[id].title)}${mark}</li>`;
+  }).join("")}</ul>`;
 }
 // "0022-erzeugung-von-instanzen.md, Nachtrag 9" → Link „ADR-0022 Nachtrag 9“ auf docs/adr.
 function adrLinks(refs) {
@@ -3973,11 +4370,6 @@ function packageRow(paket) {
     </tr>`;
 }
 
-function isManual(it) { return it.art.includes("manuell") && it.status === "offen"; }
-function shownStatus(it) {
-  if (isManual(it) && state[it.id] && state[it.id].done) return { text: "bestätigt", cls: "st-bestaetigt" };
-  return { text: it.status, cls: STATUS_CLASS[it.status] || "" };
-}
 function refHtml(ref) {
   const [file, name] = ref.split("::");
   return `<li><code>${escapeHtml(file)}</code>${name ? " — " + escapeHtml(name) : ""}</li>`;
@@ -3996,87 +4388,123 @@ for (const block of BLOCKS) {
   sec.appendChild(desc);
 
   for (const it of block.items) {
-    const manual = isManual(it);
-    if (manual) manualIds.push(it.id);
     const item = document.createElement("div");
     item.className = "item" + (it.status === "geplant" ? " planned" : "");
     item.id = "item-" + it.id;
     item.tabIndex = -1;
-    item.dataset.art = it.art.join(" ");
-    item.dataset.status = it.status;
+    item.dataset.id = it.id;
 
-    const checked = manual && !!(state[it.id] && state[it.id].done);
-    if (checked) item.classList.add("done");
-
-    const st = shownStatus(it);
+    const id = escapeHtml(it.id);
     const artHtml = it.art.map(a => `<span class="badge">${escapeHtml(ART_LABELS[a] || a)}</span>`).join("");
     const stepsHtml = (it.steps || []).map(s => `<li>${escapeHtml(s)}</li>`).join("");
     const stepsLabel = it.status === "geplant" ? "Akzeptanzkriterien" : "Schritte";
     const refsHtml = (it.tests || []).length
       ? `<p class="item-sub">Testdateien</p><ul class="refs">${it.tests.map(refHtml).join("")}</ul>` : "";
-    const cbHtml = manual
-      ? `<input type="checkbox" class="item-cb" ${checked ? "checked" : ""} data-id="${escapeHtml(it.id)}" aria-label="${escapeHtml(it.id)} bestätigt" />`
-      : `<span class="item-cb-spacer" aria-hidden="true"></span>`;
+    const confirmedHtml = it.bestaetigt
+      ? `<p class="item-confirmed">Manuell bestätigt durch ${escapeHtml(it.bestaetigt.durch)} am ${escapeHtml(it.bestaetigt.datum)}</p>` : "";
+    // Drei Zustände als native Radiogruppe: Tab erreicht die Gruppe, Pfeiltasten wählen.
+    const verdictHtml = !isOpenManualCase(it) ? "" : `
+      <fieldset class="verdict">
+        <legend>Dein Ergebnis<span class="sr-only"> für ${id}</span></legend>
+        <div class="segmented">${[["", "open", "offen"], ["passed", "passed", "bestanden"], ["failed", "failed", "fehlgeschlagen"]].map(([value, cls, label]) =>
+          `<label class="seg-${cls}"><input type="radio" name="result-${id}" value="${value}" data-id="${id}" /> ${label}</label>`).join("")}</div>
+        <p class="verdict-hint" id="hint-${id}" data-role="failed-hint" aria-live="polite"></p>
+      </fieldset>`;
+    const stored = results[it.id];
 
     item.innerHTML = `
-      <div class="item-top">
-        ${cbHtml}
-        <div class="item-body">
-          <div class="item-id">${escapeHtml(it.id)} ${artHtml}<span class="badge ${st.cls}" data-role="status">${escapeHtml(st.text)}</span></div>
-          <div class="item-title">${escapeHtml(it.title)}</div>
-          <p class="item-pre"><b>Vorbedingung:</b> ${escapeHtml(it.pre)}</p>
-          <p class="item-sub">${stepsLabel}</p>
-          <ol class="item-steps">${stepsHtml}</ol>
-          <div class="expect"><b>${it.status === "geplant" ? "Hinweis" : "Erwartung"}:</b> ${escapeHtml(it.expect)}</div>
-          ${refsHtml}
-          <div class="note-wrap">
-            <label for="note-${escapeHtml(it.id)}">Notiz / Abweichung</label>
-            <textarea class="note" id="note-${escapeHtml(it.id)}" data-id="${escapeHtml(it.id)}" placeholder="Alles wie erwartet? Sonst hier notieren …">${escapeHtml(state[it.id] && state[it.id].note ? state[it.id].note : "")}</textarea>
-          </div>
-        </div>
+      <div class="item-id">${id} ${artHtml}<span class="badge ${STATUS_CLASS[it.status] || ""}">${escapeHtml(it.status)}</span><span data-role="result" hidden></span></div>
+      <div class="item-title">${escapeHtml(it.title)}</div>
+      ${confirmedHtml}
+      <p class="item-pre"><b>Vorbedingung:</b> ${escapeHtml(it.pre)}</p>
+      <p class="item-sub">${stepsLabel}</p>
+      <ol class="item-steps">${stepsHtml}</ol>
+      <div class="expect"><b>${it.status === "geplant" ? "Hinweis" : "Erwartung"}:</b> ${escapeHtml(it.expect)}</div>
+      ${refsHtml}
+      ${verdictHtml}
+      <p class="stale-note" data-role="stale" hidden></p>
+      <div class="note-wrap">
+        <label for="note-${id}">Notiz / Abweichung</label>
+        <textarea class="note" id="note-${id}" data-id="${id}"${verdictHtml ? ` aria-describedby="hint-${id}"` : ""} placeholder="Alles wie erwartet? Sonst hier notieren …">${escapeHtml(stored ? stored.note : "")}</textarea>
       </div>`;
+    syncItem(it, item);
     sec.appendChild(item);
   }
   manifestEl.appendChild(sec);
 }
 
+// Zeigt am Fall dein gültiges Ergebnis (Rahmen, Etikett, Radiogruppe), den Hinweis bei „fehlgeschlagen“ ohne Notiz und ob
+// deine Eingabe veraltet ist. Die Notiz selbst bleibt unberührt, damit Tippen nicht gestört wird.
+function syncItem(it, element = document.getElementById("item-" + it.id)) {
+  const stored = results[it.id] || null;
+  const entry = review.valid[it.id] || null;
+  const result = entry === null ? null : entry.result;
+  element.classList.toggle("passed", result === "passed");
+  element.classList.toggle("failed", result === "failed");
+  const badge = element.querySelector('[data-role="result"]');
+  badge.hidden = result === null;
+  badge.className = result === null ? "" : "badge res-" + result;
+  badge.textContent = result === null ? "" : "von dir: " + RESULT_LABELS[result];
+  for (const radio of element.querySelectorAll('input[type="radio"]')) radio.checked = radio.value === (result || "");
+  const hint = element.querySelector('[data-role="failed-hint"]');
+  if (hint) setText(hint, result === "failed" && entry.note.trim() === "" ? FAILED_HINT : "");
+  const reason = stored === null ? null : staleReason(stored, it);
+  const staleNote = element.querySelector('[data-role="stale"]');
+  staleNote.hidden = reason === null;
+  setText(staleNote, reason === null ? "" : staleText(reason, stored, it));
+}
+
 // ── Interaktion ───────────────────────────────────────────────────────────
 manifestEl.addEventListener("change", (e) => {
-  const cb = e.target.closest(".item-cb");
-  if (cb) {
-    const id = cb.dataset.id;
-    ensure(id).done = cb.checked;
-    const el = document.getElementById("item-" + id);
-    el.classList.toggle("done", cb.checked);
-    const badge = el.querySelector('[data-role="status"]');
-    badge.textContent = cb.checked ? "bestätigt" : "offen";
-    badge.className = "badge " + (cb.checked ? "st-bestaetigt" : "st-offen");
-    save();
-    updateProgress();
-  }
+  const radio = e.target.closest('input[type="radio"][data-id]');
+  if (radio && radio.checked) record(radio.dataset.id, { result: radio.value || null });
 });
 manifestEl.addEventListener("input", (e) => {
-  const ta = e.target.closest(".note");
-  if (ta) { ensure(ta.dataset.id).note = ta.value; save(); }
+  const note = e.target.closest("textarea.note");
+  if (note) record(note.dataset.id, { note: note.value });
 });
-document.getElementById("copy-open").addEventListener("click", () => copyExport(true));
-document.getElementById("copy-all").addEventListener("click", () => copyExport(false));
+document.getElementById("copy-result").addEventListener("click", () => copyText(resultReport(DATA, results, localIsoString(new Date())), "Ergebnis"));
+document.getElementById("copy-all").addEventListener("click", () => copyText(fullReport(DATA, results, localIsoString(new Date())), "Alle Fälle"));
+document.getElementById("drop-stale").addEventListener("click", dropStale);
 document.getElementById("reset").addEventListener("click", resetAll);
-document.getElementById("filter-art").addEventListener("change", applyFilters);
-document.getElementById("filter-status").addEventListener("change", applyFilters);
+document.getElementById("copy-close").addEventListener("click", () => {
+  document.getElementById("copy-fallback").hidden = true;
+  document.getElementById("copy-result").focus();
+});
+for (const filter of ["filter-art", "filter-status", "filter-result"]) document.getElementById(filter).addEventListener("change", applyFilters);
 
-function ensure(id) { if (!state[id]) state[id] = { done: false, note: "" }; return state[id]; }
-function save() { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); }
+// Eine Eingabe übernehmen und alles nachziehen, was davon abhängt. Die Filter rechnen erst beim nächsten Wechsel neu,
+// damit der Fall unter dem Fokus nicht verschwindet.
+function record(id, change) {
+  const entry = changedEntry(results[id] || null, CASES[id], change, meta.commit, localIsoString(new Date()));
+  if (entry === null) delete results[id];
+  else results[id] = entry;
+  writeResults(results);
+  refresh([CASES[id]]);
+}
+
+function refresh(changed) {
+  review = reviewSummary(DATA, results);
+  for (const it of changed) syncItem(it);
+  renderMine();
+  renderProgress();
+  renderOpenLists();
+  renderStaleButton();
+}
+
 function escapeHtml(s) { return String(s).replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c])); }
 
 function applyFilters() {
-  const art = document.getElementById("filter-art").value;
-  const status = document.getElementById("filter-status").value;
+  const filters = {
+    art: document.getElementById("filter-art").value,
+    status: document.getElementById("filter-status").value,
+    result: document.getElementById("filter-result").value
+  };
   let visible = 0;
   document.querySelectorAll("section.block").forEach(sec => {
     let any = false;
     sec.querySelectorAll(".item").forEach(el => {
-      const show = (!art || el.dataset.art.split(" ").includes(art)) && (!status || el.dataset.status === status);
+      const show = matchesFilters(filters, CASES[el.dataset.id], review);
       el.hidden = !show;
       if (show) { any = true; visible++; }
     });
@@ -4085,13 +4513,22 @@ function applyFilters() {
   document.getElementById("visible-count").textContent = `${visible} Fälle sichtbar`;
 }
 
-function updateProgress() {
-  const done = manualIds.filter(id => state[id] && state[id].done).length;
-  const total = manualIds.length;
-  document.getElementById("count").textContent = `${done} / ${total} manuelle Prüfungen bestätigt`;
-  document.getElementById("fill").style.width = total ? (done / total * 100) + "%" : "0%";
+function renderProgress() {
+  const totals = review.totals;
+  setText(document.getElementById("count"),
+    `${totals.passed + totals.failed} / ${totals.openManual} manuelle Prüfungen geprüft: ${totals.passed} bestanden, ${totals.failed} fehlgeschlagen`);
+  const share = (count) => (totals.openManual ? (count / totals.openManual) * 100 : 0) + "%";
+  document.getElementById("fill").style.width = share(totals.passed);
+  document.getElementById("fill-failed").style.width = share(totals.failed);
 }
-updateProgress();
+
+function renderStaleButton() {
+  const button = document.getElementById("drop-stale");
+  button.hidden = review.staleIds.length === 0;
+  setText(button, `Veraltete Einträge entfernen (${review.staleIds.length})`);
+}
+renderProgress();
+renderStaleButton();
 applyFilters();
 
 // ── Sprungmarken ────────────────────────────────────────────────────────────
@@ -4101,8 +4538,7 @@ function revealTarget(hash) {
   try { target = hash.length > 1 ? document.getElementById(decodeURIComponent(hash.slice(1))) : null; } catch (e) { target = null; }
   if (!target) return null;
   if (target.closest("[hidden]")) {
-    document.getElementById("filter-art").value = "";
-    document.getElementById("filter-status").value = "";
+    for (const filter of ["filter-art", "filter-status", "filter-result"]) document.getElementById(filter).value = "";
     applyFilters();
   }
   for (let details = target.closest("details"); details; details = details.parentElement.closest("details")) details.open = true;
@@ -4138,71 +4574,67 @@ window.addEventListener("afterprint", () => {
   });
 });
 
-// ── Export (Markdown → Zwischenablage) ──────────────────────────────────────
-function buildMarkdown(onlyOpen = false) {
-  const done = manualIds.filter(id => state[id] && state[id].done).length;
-  const lines = [];
-  lines.push("# becauseyoulovejira — Test-Ergebnis");
-  lines.push("");
-  lines.push(`Stand ${meta.stand} (Commit ${meta.commit}): ${done} / ${manualIds.length} manuelle Prüfungen bestätigt`);
-  if (onlyOpen) lines.push("_Gefiltert: nur offene manuelle Punkte und Punkte mit Notiz_");
-  lines.push("");
-  let bodyCount = 0;
-  for (const block of BLOCKS) {
-    const blockLines = [];
-    for (const it of block.items) {
-      const st = state[it.id] || {};
-      const note = (st.note || "").trim();
-      const manual = isManual(it);
-      // Im Filter-Modus: nur offene manuelle Punkte und Punkte mit Notiz.
-      if (onlyOpen && !note && !(manual && !st.done)) continue;
-      const box = manual ? (st.done ? "[x]" : "[ ]") : `(${it.status})`;
-      blockLines.push(`- ${box} **${it.id}** — ${it.title}`);
-      if (note) {
-        for (const nl of note.split("\n")) blockLines.push(`    - Notiz: ${nl}`);
-      }
-    }
-    if (blockLines.length === 0) continue;
-    lines.push(`## [${block.tag}] ${block.name}`);
-    lines.push(...blockLines);
-    lines.push("");
-    bodyCount += blockLines.length;
-  }
-  if (bodyCount === 0) {
-    lines.push("Alle manuellen Punkte bestätigt, keine offenen Hinweise.");
-    lines.push("");
-  }
-  return lines.join("\n");
-}
-
-function copyExport(onlyOpen = false) {
-  const md = buildMarkdown(onlyOpen);
-  const fallback = () => {
-    const ta = document.createElement("textarea");
-    ta.value = md; document.body.appendChild(ta); ta.select();
-    try { document.execCommand("copy"); showToast("In die Zwischenablage kopiert"); }
-    catch (e) { showToast("Kopieren nicht möglich — Text manuell markieren"); }
-    document.body.removeChild(ta);
+// ── Kopieren, Aufräumen, Zurücksetzen ───────────────────────────────────────
+// Text in die Zwischenablage; geht beides nicht (Clipboard-API, execCommand), steht er zum Markieren unter den Filtern.
+function copyText(text, label) {
+  const copied = () => {
+    document.getElementById("copy-fallback").hidden = true;
+    showToast(label + " in die Zwischenablage kopiert");
+  };
+  const manual = () => {
+    const area = document.getElementById("copy-text");
+    area.value = text;
+    document.getElementById("copy-fallback").hidden = false;
+    area.focus();
+    area.select();
+    showToast("Kopieren nicht möglich – bitte den Text unter den Filtern markieren und kopieren");
   };
   if (navigator.clipboard && navigator.clipboard.writeText) {
-    navigator.clipboard.writeText(md).then(() => showToast("In die Zwischenablage kopiert"), fallback);
-  } else { fallback(); }
+    navigator.clipboard.writeText(text).then(copied, () => (legacyCopy(text) ? copied() : manual()));
+  } else if (legacyCopy(text)) copied();
+  else manual();
+}
+
+// Alter Weg über eine markierte Textfläche außerhalb des Bildes; der Fokus kehrt danach zurück.
+function legacyCopy(text) {
+  const active = document.activeElement;
+  const area = document.createElement("textarea");
+  area.value = text;
+  area.readOnly = true;
+  area.className = "offscreen";
+  document.body.appendChild(area);
+  area.select();
+  let copied = false;
+  try { copied = document.execCommand("copy"); } catch (e) { copied = false; }
+  document.body.removeChild(area);
+  if (active && active !== document.body) active.focus();
+  return copied;
+}
+
+function dropStale() {
+  const count = review.staleIds.length;
+  if (count === 0 || !confirm(`${count} veraltete ${count === 1 ? "Eingabe" : "Eingaben"} entfernen? Ergebnisse und Notizen dazu gehen verloren.`)) return;
+  const outcome = withoutStale(results, DATA);
+  results = outcome.results;
+  writeResults(results);
+  const changed = outcome.removedIds.filter((id) => CASES[id]).map((id) => CASES[id]);
+  for (const it of changed) document.getElementById("note-" + it.id).value = "";
+  refresh(changed);
+  // Der Knopf verschwindet jetzt; der Fokus bleibt in der Leiste.
+  document.getElementById("copy-result").focus();
+  showToast(`${outcome.removedIds.length} veraltete ${outcome.removedIds.length === 1 ? "Eingabe" : "Eingaben"} entfernt`);
 }
 
 function resetAll() {
-  if (!confirm("Alle Häkchen und Notizen zurücksetzen?")) return;
-  state = {}; save();
-  document.querySelectorAll(".item-cb").forEach(cb => {
-    cb.checked = false;
-    const badge = document.getElementById("item-" + cb.dataset.id).querySelector('[data-role="status"]');
-    badge.textContent = "offen"; badge.className = "badge st-offen";
-  });
-  document.querySelectorAll(".note").forEach(ta => ta.value = "");
-  document.querySelectorAll(".item").forEach(el => el.classList.remove("done"));
-  updateProgress();
+  if (!confirm("Alle Ergebnisse und Notizen dieser Seite zurücksetzen? Das lässt sich nicht rückgängig machen.")) return;
+  results = {};
+  writeResults(results);
+  try { localStorage.removeItem(LEGACY_STORAGE_KEY); } catch (e) { showStorageProblem(STORAGE_FAILED); }
+  document.querySelectorAll("textarea.note").forEach((note) => { note.value = ""; });
+  refresh(Object.values(CASES));
+  showToast("Ergebnisse und Notizen zurückgesetzt");
 }
 
-let toastTimer = null;
 function showToast(msg) {
   const t = document.getElementById("toast");
   t.textContent = msg; t.classList.add("show");

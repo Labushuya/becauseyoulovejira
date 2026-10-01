@@ -84,22 +84,23 @@
 		return cardMessage !== null && cardMessage.id === connection.id ? cardMessage.text : null;
 	}
 
-	// The cards of mailboxes follow their connection through realtime while the page is open, so
-	// the progress of the full scan of the inbox shows as the mail helper reports it (ADR-0020,
-	// addendum 3; no polling, CLAUDE.md §7). One subscription per mailbox, ended with the page.
-	const mailIds = $derived(
-		store.connections
-			.filter((connection) => connection.type === 'mail')
-			.map((connection) => connection.id)
-			.join(',')
-	);
+	// Every card follows its connection through realtime while the page is open: the progress of
+	// the full scan of an inbox shows as the mail helper reports it (ADR-0020, addendum 3), and a
+	// name changed in another tab shows at once (ADR-0026, addendum KK-3); no polling (CLAUDE.md
+	// §7). One subscription per connection, ended with the page.
+	const watchedIds = $derived(store.connections.map((connection) => connection.id).join(','));
 	$effect(() => {
-		const ids = mailIds === '' ? [] : mailIds.split(',');
+		const ids = watchedIds === '' ? [] : watchedIds.split(',');
 		const stops = ids.map((id) => store.watch(id));
 		return () => {
 			for (const stop of stops) stop();
 		};
 	});
+
+	/** Names of the other connections, for the note about a name that is taken (KK-3). */
+	function othersOf(connection: Connection): string[] {
+		return store.connections.filter((item) => item.id !== connection.id).map((item) => item.label);
+	}
 
 	async function scan(connection: Connection, action: 'start' | 'cancel') {
 		cardMessage = null;
@@ -263,6 +264,8 @@
 									deleteError = null;
 									pendingDelete = connection;
 								}}
+								onrename={(label) => store.rename(connection.id, label)}
+								others={othersOf(connection)}
 							/>
 						{:else}
 							<ConnectionCard
@@ -286,6 +289,8 @@
 								onsetup={() => onsetup(connection)}
 								onscan={(action) => void scan(connection, action)}
 								onreplies={(change) => saveReplies(connection, change, 'card')}
+								onrename={(label) => store.rename(connection.id, label)}
+								others={othersOf(connection)}
 							/>
 						{/if}
 					</li>

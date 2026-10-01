@@ -23,12 +23,18 @@ function jsonOf(record, field) {
   }
 }
 
-// Field values as the pure rules read them.
+// Field values as the pure rules read them; `settings_json` is the stored text of `settings`, for
+// the rule that renaming changes nothing else.
 function valuesOf(record) {
   var values = {
     type: record.getString('type'),
+    label: record.getString('label'),
+    enabled: record.getString('enabled'),
+    owner: record.getString('owner'),
+    household: record.getString('household'),
     secret_env: record.getString('secret_env'),
-    settings: jsonOf(record, 'settings')
+    settings: jsonOf(record, 'settings'),
+    settings_json: record.getString('settings')
   };
   for (var i = 0; i < rules.SERVER_FIELDS.length; i++) {
     // An empty JSON field (scan) reads as "null"; a missing field (before its migration) as ''.
@@ -49,22 +55,35 @@ function guardCreate(e) {
   if (e.hasSuperuserAuth()) {
     return;
   }
-  throwIf(rules.createViolation(valuesOf(e.record), secrets, keywords));
+  var values = valuesOf(e.record);
+  throwIf(rules.createViolation(values, secrets, keywords) || rules.labelViolation(values.label));
 }
 
-// onRecordUpdateRequest; a superuser may set every field.
+// onRecordUpdateRequest; a superuser may set every field. A new name comes alone (ADR-0026,
+// addendum KK-3): the request may change nothing else with it.
 function guardUpdate(e) {
   if (e.hasSuperuserAuth()) {
     return;
   }
-  throwIf(rules.updateViolation(valuesOf(e.record.original()), valuesOf(e.record), secrets, keywords));
+  var before = valuesOf(e.record.original());
+  var after = valuesOf(e.record);
+  throwIf(
+    rules.updateViolation(before, after, secrets, keywords) ||
+      rules.labelViolation(after.label) ||
+      rules.renameViolation(before, after)
+  );
 }
 
-// onRecordCreate/onRecordUpdate before e.next(), for every save: the scope, and a changed source
-// starts over (new variable, bot, calendar or mailbox): cursor, error, hint and the full scan of
-// the inbox are cleared (the mark of the migration 1790201700 stays for its rollback).
+// onRecordCreate/onRecordUpdate before e.next(), for every save: the scope, the name without white
+// space at its ends, and a changed source starts over (new variable, bot, calendar or mailbox):
+// cursor, error, hint and the full scan of the inbox are cleared (the mark of the migration
+// 1790201700 stays for its rollback).
 function prepareSave(record, isNew) {
   record.set('scope', ticketKey.scopeOf(record.getString('owner'), record.getString('household')));
+  var label = rules.normalizeLabel(record.getString('label'));
+  if (label !== record.getString('label')) {
+    record.set('label', label);
+  }
   if (isNew) {
     return;
   }

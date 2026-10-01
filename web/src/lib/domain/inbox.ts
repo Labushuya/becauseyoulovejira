@@ -182,6 +182,12 @@ export interface InboxItemSummary {
 	 * (ADR-0031, ADR-0042). The data layer always sets it; objects built by hand may leave it out.
 	 */
 	scope?: string;
+	/**
+	 * The connection that brought the entry (calendar, Telegram, mailbox, Notion); missing for
+	 * entries without one and after the connection was deleted. Panel and sources name it with the
+	 * name of the connection (ADR-0026, addendum KK-3).
+	 */
+	connectionId?: string;
 	created: string;
 	updated: string;
 }

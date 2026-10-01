@@ -132,7 +132,9 @@ async function connectionCard(
 			ondelete: vi.fn(),
 			onsetup: vi.fn(),
 			onscan: vi.fn(),
-			onreplies: vi.fn()
+			onreplies: vi.fn(),
+			// As on the page (ADR-0026, addendum KK-3).
+			onrename: vi.fn(async () => null)
 		}
 	});
 	return screen.getByRole('article', { name: value.label });
@@ -186,7 +188,8 @@ async function notionCard(
 			onchanged: vi.fn(),
 			onpause: vi.fn(),
 			onsetup: vi.fn(),
-			ondelete: vi.fn()
+			ondelete: vi.fn(),
+			onrename: vi.fn(async () => null)
 		}
 	});
 	const article = screen.getByRole('article', { name: value.label });
@@ -772,6 +775,23 @@ describe('inventory of the channel cards (KK-2)', () => {
 			expect(missing).toEqual([]);
 		}
 	);
+
+	it('offers "Umbenennen …" on the cards of connections only (KK-3)', async () => {
+		const label = (items: HTMLElement[]) => items.map((item) => clean(item.textContent));
+		for (const value of [connection(), NOTION]) {
+			const article =
+				value.type === 'notion' ? await notionCard(value) : await connectionCard(value);
+			expect(label(menuItems(article)), value.label).toContain('Umbenennen …');
+			document.body.innerHTML = '';
+		}
+		// Fixed ways of the app without a name of their own (ADR-0026, addendum KK-3).
+		for (const render of [() => ownInboxCard(keysStore(KEYS)), whatsAppWebCard, filesCard]) {
+			const article = await render();
+			expect(label(menuItems(article))).not.toContain('Umbenennen …');
+			expect(article.querySelector('form.rename')).toBeNull();
+			document.body.innerHTML = '';
+		}
+	});
 
 	it('covers every kind of card on the page "Kanäle"', () => {
 		expect([...new Set(CASES.map((item) => item.card))]).toEqual([

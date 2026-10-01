@@ -19,7 +19,7 @@
 	import { connectionAnchor } from '$lib/domain/sync-all';
 	import { helpHref } from '$lib/settings-sections';
 	import ChipList from '../ChipList.svelte';
-	import ChannelCard, { type CardAction } from './ChannelCard.svelte';
+	import ChannelCard, { type CardAction, type CardRename } from './ChannelCard.svelte';
 	import TelegramReplySwitches from './TelegramReplySwitches.svelte';
 
 	// Card of a connection that fetches by itself: Google Calendar, Telegram and the mailboxes
@@ -31,7 +31,8 @@
 	// the details the former meta lines; a Telegram bot shows its two answers in the chat there as
 	// switches (ADR-0016, addendum of 2026-10-01), an action of that entry at the entry. The card
 	// carries the anchor `#verbindung-<id>`, the target of "Zur Karte" in the flag of "Alle Kanäle
-	// jetzt abrufen".
+	// jetzt abrufen". With `onrename` the menu offers "Umbenennen …" in the card (ADR-0026,
+	// addendum KK-3).
 	let {
 		connection,
 		secretStatus,
@@ -46,7 +47,9 @@
 		ondelete,
 		onsetup,
 		onscan = () => undefined,
-		onreplies
+		onreplies,
+		onrename,
+		others = []
 	}: {
 		connection: Connection;
 		/** State of the variables; null while unknown. */
@@ -72,8 +75,16 @@
 		onscan?: (action: 'start' | 'cancel') => void;
 		/** Telegram: a switch of the answers of the bot in the details changed. */
 		onreplies: (change: TelegramRepliesChange) => Promise<void>;
+		/** Saves a new name; resolves to the error text or null (KK-3). Without it, no renaming. */
+		onrename?: (label: string) => Promise<string | null>;
+		/** Names of the other connections, for the note about a name that is taken. */
+		others?: readonly string[];
 	} = $props();
 
+	let card = $state<ReturnType<typeof ChannelCard>>();
+	const rename = $derived<CardRename | null>(
+		onrename === undefined ? null : { others, save: onrename }
+	);
 	const clock = minuteClock();
 	const mail = $derived(connection.type === 'mail');
 	const scan = $derived(mail ? (connection.scan ?? null) : null);
@@ -139,6 +150,9 @@
 		if (health.pick && connection.enabled) {
 			entries.push({ label: 'Posteingang neu durchsuchen', onselect: () => onscan('start') });
 		}
+		if (rename !== null) {
+			entries.push({ label: 'Umbenennen …', onselect: () => void card?.startRename() });
+		}
 		if (health.action !== 'setup') {
 			entries.push({ label: 'Einrichtung ansehen', onselect: () => onsetup() });
 		}
@@ -149,6 +163,7 @@
 </script>
 
 <ChannelCard
+	bind:this={card}
 	{icon}
 	title={connection.label}
 	subtitle={kindLine}
@@ -161,6 +176,7 @@
 	{message}
 	{primary}
 	{menu}
+	{rename}
 	anchor={connectionAnchor(connection.id)}
 >
 	{#snippet details()}

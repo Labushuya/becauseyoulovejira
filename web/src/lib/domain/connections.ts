@@ -352,6 +352,58 @@ export const MAIL_USER_MESSAGE =
 
 export type ConnectionDraftField = 'label' | 'secretEnv' | 'allowlistEnv' | 'mailUser';
 
+/**
+ * Texts of the name of a connection (ADR-0026, addendum KK-3), word for word those of the hook
+ * (MESSAGES in app/pb_hooks/lib/connection-rules.js, parity test web-connections.test.mjs).
+ */
+export const CONNECTION_LABEL_MESSAGES = Object.freeze({
+	validation_connection_label: 'Bitte einen Namen eingeben.',
+	validation_connection_label_max: 'Höchstens 100 Zeichen.',
+	validation_connection_rename_only:
+		'Beim Umbenennen ändert sich nur der Name; andere Einstellungen bitte getrennt speichern.'
+});
+
+/** Error of a new name: empty after trimming, or longer than LABEL_MAX_LENGTH; null if fine. */
+export function labelError(label: string): string | null {
+	const value = label.trim();
+	if (value === '') return CONNECTION_LABEL_MESSAGES.validation_connection_label;
+	return value.length > LABEL_MAX_LENGTH
+		? CONNECTION_LABEL_MESSAGES.validation_connection_label_max
+		: null;
+}
+
+/** Neutral note while the new name equals that of another connection (allowed, KK-3). */
+export const SAME_LABEL_HINT =
+	'Eine andere Verbindung heißt auch so. Das ist erlaubt; ein eindeutiger Name hilft beim Wiederfinden.';
+
+/** SAME_LABEL_HINT when `label` equals one of `others` (case and white space at the ends aside). */
+export function sameLabelHint(label: string, others: readonly string[]): string | null {
+	const value = label.trim().toLowerCase();
+	if (value === '') return null;
+	return others.some((other) => other.trim().toLowerCase() === value) ? SAME_LABEL_HINT : null;
+}
+
+/** Flag after renaming: „Gmail“ heißt jetzt „Gmail Arbeit“. */
+export function renamedText(before: string, after: string): string {
+	return `„${before}“ heißt jetzt „${after}“.`;
+}
+
+/** The name of a connection as the inbox and the sources of a ticket show it (KK-3). */
+export interface ConnectionName {
+	id: string;
+	label: string;
+}
+
+/**
+ * The channel of an entry with the name of its connection, e.g. "Mail · Gmail Arbeit"; the channel
+ * alone without a name or when the name says nothing more ("Notion" of a connection "Notion").
+ */
+export function withConnectionName(channel: string, name: string | null): string {
+	const value = name?.trim() ?? '';
+	if (value === '' || value.toLowerCase() === channel.toLowerCase()) return channel;
+	return `${channel} · ${value}`;
+}
+
 /** Field errors of the form; empty if the draft is fine. */
 export function connectionDraftErrors(
 	draft: ConnectionDraft

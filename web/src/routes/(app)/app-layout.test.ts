@@ -51,7 +51,9 @@ const mocks = vi.hoisted(() => {
 			// Messages of start.bat, the landing page and stop.bat (ADR-0035 section 5).
 			attention: vi.fn(subscribe('byl/attention')),
 			// Changes of the trash (ADR-0037).
-			trash: vi.fn(subscribe('byl/trash'))
+			trash: vi.fn(subscribe('byl/trash')),
+			// Names of the connections for inbox and sources (ADR-0026, addendum KK-3).
+			connections: vi.fn(subscribe('connections'))
 		},
 		goto: vi.fn(async () => {
 			calls.push('goto');
@@ -198,6 +200,15 @@ vi.mock('$lib/stores/catalog.svelte', async (importOriginal) => ({
 		}
 	})
 }));
+// Names of the connections for inbox and sources (ADR-0026, addendum KK-3): none in these tests.
+vi.mock('$lib/stores/connection-names.svelte', async (importOriginal) => ({
+	...(await importOriginal<object>()),
+	connectionNamesData: () => ({
+		list: async () => [],
+		subscribe: mocks.live.connections,
+		reconnected: mocks.live.reconnected
+	})
+}));
 
 function ticket(id: string, status: TicketSummary['status'] = 'open'): TicketSummary {
 	return {
@@ -272,15 +283,17 @@ describe('app layout', () => {
 
 	it('subscribes to tickets, the catalog, the inbox, the rules, the attention messages and reconnections while shown and ends them when it goes away', async () => {
 		const { unmount } = await renderLayout();
-		await vi.waitFor(() => expect(mocks.subscribed).toHaveLength(17));
+		await vi.waitFor(() => expect(mocks.subscribed).toHaveLength(19));
 
 		// The list follows all tickets, the catalog all projects and tags (E3 plan, T-16), the
 		// inbox all entries (E4 plan, T-4) and so do the sources of the open ticket (ADR-0031), the
 		// rules all rules (E5 plan, T-7); list, panel, activity, catalog, inbox, sources and rules
 		// each reconcile after a reconnect. The hint of start.bat listens on byl/attention and drops
 		// the flag "beendet" after a reconnect (ADR-0035 section 5). The trash reads its list again
-		// on byl/trash and after a reconnect (ADR-0037).
+		// on byl/trash and after a reconnect (ADR-0037). The names of the connections follow their
+		// renames and load again after a reconnect (ADR-0026, addendum KK-3).
 		expect([...mocks.subscribed].sort()).toEqual([
+			'PB_CONNECT',
 			'PB_CONNECT',
 			'PB_CONNECT',
 			'PB_CONNECT',
@@ -292,6 +305,7 @@ describe('app layout', () => {
 			'PB_CONNECT',
 			'byl/attention',
 			'byl/trash',
+			'connections',
 			'inbox',
 			'inbox',
 			'projects',
@@ -305,6 +319,7 @@ describe('app layout', () => {
 		expect(mocks.live.inbox).toHaveBeenCalledTimes(2);
 		expect(mocks.live.rules).toHaveBeenCalledOnce();
 		expect(mocks.live.trash).toHaveBeenCalledOnce();
+		expect(mocks.live.connections).toHaveBeenCalledOnce();
 		// The catalog tries to load once when the layout is shown.
 		expect(mocks.auth.ensureValid).toHaveBeenCalled();
 
