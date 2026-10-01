@@ -13,7 +13,10 @@
  *   output  - the route reads the JSON line of the command. Only for commands that start no
  *             process that outlives them: such a process would inherit the pipe, and the route
  *             would wait for its end (ADR-0039, limits),
- *   changes - an action that changes something: POST, audit entry, one at a time.
+ *   changes - an action that changes something: POST, audit entry, one at a time,
+ *   input   - the route gives the command a JSON object on standard input (never arguments),
+ *   backup  - a command of the page "Sicherung" (ADR-0046): its own routes in backup.pb.js run it;
+ *             /api/byl/system/actions/{action} refuses it like an unknown name.
  */
 var LOG_LINES = 200;
 var ACTIONS = {
@@ -23,7 +26,11 @@ var ACTIONS = {
   restart: { method: 'POST', args: ['restart', '-Detach', '-Quiet'], output: false, changes: true },
   'mail-restart': { method: 'POST', args: ['mail-restart', '-Quiet'], output: false, changes: true },
   'autostart-on': { method: 'POST', args: ['autostart-on', '-Quiet'], output: false, changes: true },
-  'autostart-off': { method: 'POST', args: ['autostart-off', '-Quiet'], output: false, changes: true }
+  'autostart-off': { method: 'POST', args: ['autostart-off', '-Quiet'], output: false, changes: true },
+  'backup-info': { method: 'GET', args: ['backup-info', '-Json'], output: true, changes: false, backup: true },
+  'backup-configure': { method: 'POST', args: ['backup-configure', '-Json'], output: true, changes: true, input: true, backup: true },
+  'backup-passphrase': { method: 'POST', args: ['backup-passphrase', '-Json'], output: true, changes: true, input: true, backup: true },
+  'backup-export': { method: 'POST', args: ['backup-export', '-Json'], output: true, changes: true, input: true, backup: true }
 };
 
 // Windows PowerShell 5.1 below the system folder, never a name looked up in PATH; the script is the
