@@ -1,4 +1,5 @@
 $ErrorActionPreference = 'Stop'
+. (Join-Path $PSScriptRoot 'build-functions.ps1')
 
 # Builds the backup helper app\byl-backup.exe (ADR-0046 section 3): a single executable application
 # of Node 24 with the bundled helpers\backup, like the mail helper (scripts\build-mail-helper.ps1).
@@ -57,10 +58,13 @@ function Invoke-WithoutNode {
 
 Push-Location $helperDir
 try {
-    if (-not (Test-Path 'node_modules')) {
-        Write-Host 'Installing backup helper dependencies...'
-        npm ci
-        if ($LASTEXITCODE -ne 0) { exit 1 }
+    # npm ci if node_modules is missing or older than the lockfile (scripts\build-functions.ps1).
+    try {
+        [void](Update-BylDependency -Root $rootDir -Folder 'helpers/backup')
+    }
+    catch {
+        Write-Host $_.Exception.Message -ForegroundColor Red
+        exit 1
     }
     Write-Host 'Building byl-backup.exe...'
     node build.mjs

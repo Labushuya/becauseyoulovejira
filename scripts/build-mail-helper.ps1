@@ -1,4 +1,5 @@
 $ErrorActionPreference = 'Stop'
+. (Join-Path $PSScriptRoot 'build-functions.ps1')
 
 # Builds the mail helper app\byl-mail.exe (E4 plan package 11, ADR-0016 section 5): a single
 # executable application of Node 24 with the bundled helpers\mail. The executable is checked
@@ -55,10 +56,13 @@ function Invoke-WithoutNode {
 
 Push-Location $helperDir
 try {
-    if (-not (Test-Path 'node_modules')) {
-        Write-Host 'Installing mail helper dependencies...'
-        npm ci
-        if ($LASTEXITCODE -ne 0) { exit 1 }
+    # npm ci if node_modules is missing or older than the lockfile (scripts\build-functions.ps1).
+    try {
+        [void](Update-BylDependency -Root $rootDir -Folder 'helpers/mail')
+    }
+    catch {
+        Write-Host $_.Exception.Message -ForegroundColor Red
+        exit 1
     }
     Write-Host 'Building byl-mail.exe...'
     node build.mjs

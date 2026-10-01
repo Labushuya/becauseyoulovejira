@@ -1,6 +1,6 @@
 # ADR-0040: Veröffentlichen ohne Unterbrechung – Build im Staging-Ordner, Austausch ohne Lücke, alte Module bleiben, Hinweis auf die neue Version
 
-- **Status:** Angenommen und umgesetzt (Fehlerbehebung, [Plan](../plan/deploy-ohne-unterbrechung.md))
+- **Status:** Angenommen und umgesetzt (Fehlerbehebung, [Plan](../plan/deploy-ohne-unterbrechung.md)). Nachtrag RS-2 (Build und Abhängigkeiten, [Plan Robuste Skripte](../plan/robuste-skripte.md)).
 - **Datum:** 2026-09-29
 - **Entscheidung durch:** Advisor (Arbeitshypothese, Maßnahmen), Executor (Nachweis im Browser, Umsetzung, Einzelheiten)
 - **Bezug:** [ADR-0007](0007-realtime-und-sitzungspflege.md) (`LiveUpdateNotice` als Vorbild), [ADR-0009](0009-fehlerfarbe.md) (kein Rot für Hinweise), [ADR-0025](0025-ui-konsistenz-overlay-system.md) (Bestätigung „Änderungen verwerfen?“), [ADR-0026](0026-einstellungsbereich-und-hinweis-bausteine.md) §2 (`SectionMessage`), [ADR-0035](0035-start-einstieg-und-offene-tabs.md) §1 und §8 (Landing-Seite, installierte App, Service Worker), [ADR-0039](0039-betriebsskripte.md) (Fingerabdruck liest `_app/version.json`; Hooks wirken erst nach einem Neustart)
@@ -74,3 +74,11 @@ Im Live-Ordner wird nur über `scripts\build.ps1` bzw. das Root-`npm run build` 
 - Der Fingerabdruck des Steuerskripts (ADR-0039) liest weiter `_app/version.json` und `index.html`; ein neuer Build heißt dort weiter „nur neu laden (F5)“, der neue Hook einmal „Neustart nötig“.
 - `app/pb_public` enthält zusätzlich `_app/builds.json` und die Dateien älterer Builds; Sicherung per Ordnerkopie bleibt möglich.
 - Offene Punkte: die manuellen Prüfungen BYL-E6-484 und BYL-E6-485 im Test-Manifest.
+
+## Nachtrag (2026-10-01, [Plan Robuste Skripte](../plan/robuste-skripte.md), RS-2): Build und Abhängigkeiten
+
+- **Befund:** `scripts\build.ps1` und die Builds der Hilfsprogramme riefen `npm ci` nur, wenn `node_modules` fehlte. Nach einem Update einer Abhängigkeit oder einem Merge von `main` baute und testete der Build mit den Versionen des alten Lockfiles; im Live-Ordner veröffentlichte er so ein Frontend aus alten Paketen.
+- **Entscheidung:** Nach jedem erfolgreichen `npm ci` liegt der SHA-256 des `package-lock.json` in `node_modules\.byl-lockfile.sha256` (`scripts\build-functions.ps1`). Jeder Build prüft alle Ordner mit eigenem Lockfile (Root, `web`, `helpers/mail`, `helpers/backup`, `extensions/whatsapp-web`) und ruft `npm ci`, wenn `node_modules` fehlt, die Prüfsumme fehlt oder abweicht; die Ausgabe nennt den Grund je Ordner. `npm ci` löscht `node_modules` zuerst, ein gescheitertes Installieren hinterlässt keine Prüfsumme. `build-mail-helper.ps1` und `build-backup-helper.ps1` nutzen dieselbe Funktion. Der Austausch ohne Lücke (§1) bleibt unverändert: Erst nach den Abhängigkeiten folgen check, lint und `npm run build`.
+- **Install-Skripte:** Das einzige Install-Skript aller Abhängigkeiten ist das `postinstall` von esbuild (in `helpers/mail`, `helpers/backup`, `extensions/whatsapp-web`). Es ist dort per `"allowScripts": { "esbuild": true }` freigegeben (npm 11: heute ein Hinweis, künftig eine Sperre für nicht freigegebene Skripte), nach Name, weil der Code von esbuild bei jedem Build ohnehin läuft und eine Freigabe je Version mit jedem Update verloren ginge.
+- **`npm audit`:** Die drei Meldungen in `web` (niedrig, `cookie` < 0.7.0 über SvelteKit 2) lassen sich nur mit SvelteKit 3 beheben (Major); die SPA hat keinen Server von SvelteKit und setzt keine Cookies, sie sind also nicht ausnutzbar. Begründung im Plan.
+- Belegt in `tests/unit/build-dependencies.test.mjs` (Zustände aus Prüfsumme und Ordnern in Windows PowerShell, Reihenfolge im Build, Prüfsumme erst nach erfolgreichem `npm ci`, Freigabe nur für esbuild).

@@ -8,8 +8,10 @@ import { DataError, withDataErrors } from './errors';
 import type { RequestOptions } from './options';
 import type { Unsubscribe } from './realtime';
 import { PRIORITIES, STATUSES, type Priority, type Status } from '../domain/status';
+import { optionsOf, type ResolveAction, type TrashDependency } from '../domain/trash-dependencies';
 import {
 	parseRetention,
+	type EmptyResult,
 	type RestoreOptions,
 	type RestoreResult,
 	type SkipReason,
@@ -92,11 +94,46 @@ export function toTrashItem(value: unknown): TrashItem | null {
 		project,
 		recurring: value.recurring,
 		children: value.children,
+		// Missing before the restart that brings the rule (ADR-0047): nothing blocks then.
+		dependencies: typeof value.dependencies === 'number' ? value.dependencies : 0,
 		deletedAt: deletedAt as string,
 		deletedBy: deletedBy as string,
 		updated: updated as string,
 		daysLeft: days
 	};
+}
+
+/**
+ * One dependency of the decision help, or null when it does not have the expected shape. The
+ * options come from the rule of the SPA (the same as the hook, parity test).
+ */
+export function toDependency(value: unknown): TrashDependency | null {
+	if (!isRecord(value)) return null;
+	const ticket = text(value.ticket);
+	const key = text(value.key);
+	const title = text(value.title);
+	if (ticket === null || key === null || title === null) return null;
+	if (value.kind === 'ticket') {
+		const status = STATUSES.find((entry) => entry === value.status);
+		const openBlocking = typeof value.open_blocking === 'number' ? value.open_blocking : 0;
+		if (status === undefined || typeof value.subtask !== 'boolean') return null;
+		const base = { kind: 'ticket' as const, subtask: value.subtask, openBlocking };
+		return { ...base, ticket, key, title, status, options: optionsOf(base) };
+	}
+	const item = text(value.item);
+	const channel = text(value.channel);
+	const scope = text(value.scope);
+	if (
+		value.kind !== 'source' ||
+		item === null ||
+		channel === null ||
+		scope === null ||
+		typeof value.primary !== 'boolean'
+	) {
+		return null;
+	}
+	const base = { kind: 'source' as const, primary: value.primary };
+	return { ...base, item, ticket, key, title, channel, scope, options: optionsOf(base) };
 }
 
 function toPreview(value: unknown): TrashPreview {
@@ -123,7 +160,12 @@ function toPreview(value: unknown): TrashPreview {
 		sources: {
 			handling: sources.handling === 'discard' ? 'discard' : 'inbox',
 			count: sources.count
-		}
+		},
+		dependencyList: Array.isArray(value.dependency_list)
+			? value.dependency_list
+					.map(toDependency)
+					.filter((entry): entry is TrashDependency => entry !== null)
+			: []
 	};
 }
 
@@ -205,13 +247,20 @@ export function getTrashPreview(
 export function restoreFromTrash(
 	pb: PocketBase,
 	id: string,
-	{ signal, expectedUpdated, project, detachSeries }: RequestOptions & RestoreOptions = {}
+	{
+		signal,
+		expectedUpdated,
+		project,
+		detachSeries,
+		detachParent
+	}: RequestOptions & RestoreOptions = {}
 ): Promise<RestoreResult> {
 	return withDataErrors(signal, async () => {
 		const body: Json = {};
 		if (expectedUpdated !== undefined) body.expected_updated = expectedUpdated;
 		if (project !== undefined) body.project = project;
 		if (detachSeries) body.detach_series = true;
+		if (detachParent) body.detach_parent = true;
 		const answer: unknown = await pb.send(`${TRASH_ROUTE}/${encodeURIComponent(id)}/restore`, {
 			method: 'POST',
 			body,
@@ -232,12 +281,43 @@ export function purgeFromTrash(
 	});
 }
 
-/** "Papierkorb leeren": the number of tickets deleted for good. */
-export function emptyTrash(pb: PocketBase, { signal }: RequestOptions = {}): Promise<number> {
+/**
+ * The decisions of the decision help for the dependencies of a ticket in the trash (ADR-0047), in
+ * one request; the preview afterwards.
+ */
+export function resolveTrash(
+	pb: PocketBase,
+	id: string,
+	actions: readonly ResolveAction[],
+	{ signal }: RequestOptions = {}
+): Promise<TrashPreview> {
+	return withDataErrors(signal, async () => {
+		const answer: unknown = await pb.send(`${TRASH_ROUTE}/${encodeURIComponent(id)}/resolve`, {
+			method: 'POST',
+			body: { actions },
+			signal
+		});
+		return toPreview(answer);
+	});
+}
+
+/**
+ * "Papierkorb leeren": the number of tickets deleted for good and the blocked tickets that stay
+ * (ADR-0047; a server before the restart names none).
+ */
+export function emptyTrash(pb: PocketBase, { signal }: RequestOptions = {}): Promise<EmptyResult> {
 	return withDataErrors(signal, async () => {
 		const answer: unknown = await pb.send(`${TRASH_ROUTE}/empty`, { method: 'POST', signal });
 		if (!isRecord(answer) || typeof answer.purged !== 'number') throw invalid();
-		return answer.purged;
+		const blocked = Array.isArray(answer.blocked) ? answer.blocked.filter(isRecord) : [];
+		return {
+			purged: answer.purged,
+			blocked: blocked.map((entry) => ({
+				id: String(entry.id),
+				key: String(entry.key),
+				count: typeof entry.count === 'number' ? entry.count : 0
+			}))
+		};
 	});
 }
 

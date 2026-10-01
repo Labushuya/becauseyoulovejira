@@ -10,7 +10,6 @@ var source = require(__hooks + '/lib/source.js');
 var rules = require(__hooks + '/lib/inbox-rules.js');
 var fingerprints = require(__hooks + '/lib/inbox-fingerprint.js');
 var trashRules = require(__hooks + '/lib/trash-rules.js');
-var cleanup = require(__hooks + '/lib/inbox-cleanup.js');
 
 var INBOX = 'inbox_items';
 
@@ -457,8 +456,8 @@ function sourcesOfDeletedTicket(txApp, ticket) {
  * tombstone that keeps its fingerprint), without ticket and with source_meta.ticket_deleted =
  * { key, at }. Nothing is deleted with the ticket. Returns the number of settled items.
  * `options` (trash, ADR-0037): `ticket` also notes the ID of the ticket in the trash, `silent`
- * writes no history entry, `purge` (a ticket deleted for good from the trash) removes text and
- * original file of a discarded source at once, like the cleanup after 30 days.
+ * writes no history entry. A ticket of the trash is deleted for good only without bound sources
+ * (ADR-0047), so this settles none then.
  */
 function settleSourcesOfDeletedTicket(txApp, ids, handling, key, options) {
   var opts = options || {};
@@ -473,9 +472,6 @@ function settleSourcesOfDeletedTicket(txApp, ids, handling, key, options) {
     item.set('state', mode === 'discard' ? 'discarded' : 'new');
     item.set('ticket', '');
     item.set('source_meta', rules.deletedTicketMeta(metaOf(item), key, at, opts.ticket));
-    if (mode === 'discard' && opts.purge) {
-      purgeContent(item);
-    }
     if (opts.silent) {
       item.set(SILENT_KEY, true);
     }
@@ -483,25 +479,6 @@ function settleSourcesOfDeletedTicket(txApp, ids, handling, key, options) {
     settled += 1;
   }
   return settled;
-}
-
-// Text, details and original file of a discarded source go at once (ADR-0037 §6); PocketBase
-// deletes the removed file after the save.
-function purgeContent(item) {
-  var values = cleanup.purgedValues(
-    { title: item.getString('title'), body: item.getString('body'), meta: metaOf(item), original: item.getString('original') },
-    rules,
-    cleanup.TRASH_PURGED_BODY
-  );
-  if (values === null) {
-    return;
-  }
-  item.set('title', values.title);
-  item.set('body', values.body);
-  item.set('source_meta', values.meta);
-  if (values.clearOriginal) {
-    item.set('original', '');
-  }
 }
 
 // Storage key of the original file of an entry ('' without one).
@@ -576,6 +553,8 @@ module.exports = {
   SOURCE_HANDLING_KEY: SOURCE_HANDLING_KEY,
   SILENT_KEY: SILENT_KEY,
   COPY_OF_KEY: COPY_OF_KEY,
+  ACTOR_KEY: ACTOR_KEY,
+  SOURCE_LINK_FIELD: SOURCE_LINK_FIELD,
   findById: findById,
   sourcesOfDeletedTicket: sourcesOfDeletedTicket,
   settleSourcesOfDeletedTicket: settleSourcesOfDeletedTicket,

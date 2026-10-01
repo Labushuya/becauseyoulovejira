@@ -93,20 +93,17 @@ onRecordDeleteRequest(function (e) {
 // back to the inbox or are discarded in the same transaction, never deleted and never left as
 // converted items without a ticket (ADR-0031, addendum B). Every way to delete gives them back to
 // the inbox unless the route below asks to discard them. Since the trash this runs when a ticket
-// is deleted for good (the trash cleared its series already); its discarded sources then lose
-// their content at once (ADR-0037).
+// is deleted for good (the trash cleared its series already), and since ADR-0047 only for a group
+// without bound sources, so there is nothing to settle then.
 onRecordDelete(function (e) {
   var recurrence = require(`${__hooks}/lib/recurrence-service.js`);
   var inbox = require(`${__hooks}/lib/inbox-service.js`);
-  var trash = require(`${__hooks}/lib/trash-service.js`);
   require(`${__hooks}/lib/transaction.js`).inTransaction(e, function (txApp) {
     recurrence.prepareTicketDelete(txApp, e.record, Date.now());
     var sources = inbox.sourcesOfDeletedTicket(txApp, e.record);
     e.next();
     var handling = e.record.get(inbox.SOURCE_HANDLING_KEY);
-    inbox.settleSourcesOfDeletedTicket(txApp, sources, handling ? String(handling) : '', e.record.getString('key'), {
-      purge: !!e.record.get(trash.PURGE_KEY)
-    });
+    inbox.settleSourcesOfDeletedTicket(txApp, sources, handling ? String(handling) : '', e.record.getString('key'));
   });
 }, 'tickets');
 

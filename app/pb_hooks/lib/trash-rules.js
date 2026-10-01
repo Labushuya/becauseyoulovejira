@@ -28,7 +28,15 @@ var MESSAGES = {
     'Das Projekt gibt es nicht mehr oder es hat einen anderen Code. Bitte ein Zielprojekt wählen.',
   validation_trash_project_invalid: 'Dieses Projekt ist nicht verfügbar.',
   validation_trash_series_conflict: 'Die Serie hat schon ein offenes Ticket.',
-  validation_trash_source_handling: 'Unbekannte Behandlung der Quellen: erlaubt sind „inbox“ und „discard“.'
+  validation_trash_source_handling: 'Unbekannte Behandlung der Quellen: erlaubt sind „inbox“ und „discard“.',
+  // Deleting for good only after the dependencies are resolved (ADR-0047, lib/trash-dependencies.js).
+  validation_trash_blocked:
+    'Das Ticket hat noch offene Abhängigkeiten (nicht erledigte Tickets oder Quellen). Erst entscheiden, was mit ihnen geschieht; dann lässt es sich endgültig löschen.',
+  validation_trash_resolve_empty: 'Bitte mindestens eine Entscheidung wählen.',
+  validation_trash_resolve_action: 'Unbekannte Entscheidung: erlaubt sind „complete“, „inbox“, „discard“ und „move“.',
+  validation_trash_resolve_target: 'Das ist keine offene Abhängigkeit dieses Tickets mehr.',
+  validation_trash_resolve_primary:
+    'Die Hauptquelle bleibt bei ihrem Ticket; sie geht nur zurück in den Eingang oder wird verworfen.'
 };
 
 function isEmpty(value) {
@@ -104,10 +112,23 @@ function isDue(deletedAt, days, now, berlinTime) {
   return date !== null && berlinTime.berlinToday(now) >= date;
 }
 
+function idList(value) {
+  var list = [];
+  if (Object.prototype.toString.call(value) === '[object Array]') {
+    for (var i = 0; i < value.length; i++) {
+      if (typeof value[i] === 'string' && value[i] !== '') {
+        list.push(value[i]);
+      }
+    }
+  }
+  return list;
+}
+
 /**
  * The snapshot of tickets.trash as a plain object with every key (empty values when missing):
  * { project, project_code, parent, recurrence, occurrence, source_item, sources: { handling,
- * items } }.
+ * items, returned } }. `returned` (ADR-0047): sources discarded with the ticket that the decision
+ * help gave back to the inbox one by one; a restore links them again like `items` of 'inbox'.
  */
 function readSnapshot(value) {
   var raw = value;
@@ -122,14 +143,6 @@ function readSnapshot(value) {
     raw = {};
   }
   var sources = raw.sources && typeof raw.sources === 'object' ? raw.sources : {};
-  var items = [];
-  if (Object.prototype.toString.call(sources.items) === '[object Array]') {
-    for (var i = 0; i < sources.items.length; i++) {
-      if (typeof sources.items[i] === 'string' && sources.items[i] !== '') {
-        items.push(sources.items[i]);
-      }
-    }
-  }
   return {
     project: text(raw.project),
     project_code: text(raw.project_code),
@@ -139,9 +152,18 @@ function readSnapshot(value) {
     source_item: text(raw.source_item),
     sources: {
       handling: SOURCE_HANDLINGS.indexOf(sources.handling) !== -1 ? sources.handling : 'inbox',
-      items: items
+      items: idList(sources.items),
+      returned: idList(sources.returned)
     }
   };
+}
+
+/**
+ * The sources a restore links again (ADR-0037 §6): all of the snapshot when they went back to the
+ * inbox with the ticket, else those the decision help gave back one by one (ADR-0047).
+ */
+function returnedSources(snapshot) {
+  return snapshot.sources.handling === 'inbox' ? snapshot.sources.items : snapshot.sources.returned;
 }
 
 /**
@@ -228,6 +250,7 @@ module.exports = {
   daysLeft: daysLeft,
   isDue: isDue,
   readSnapshot: readSnapshot,
+  returnedSources: returnedSources,
   projectDecision: projectDecision,
   targetViolation: targetViolation,
   reattachesParent: reattachesParent,

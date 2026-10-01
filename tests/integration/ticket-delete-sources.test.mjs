@@ -2,8 +2,9 @@
 // the sources are never deleted and never left as converted items without a ticket. Every way to
 // delete moves the ticket to the trash and gives the sources back to the inbox; the route "Ticket
 // löschen mit Quellenbehandlung" can keep them with the ticket instead ("Quellen verwerfen"),
-// hidden until it is restored or deleted for good, when they become tombstones that keep the
-// fingerprint. Everything runs atomically.
+// hidden until it is restored; since ADR-0047 they block deleting it for good until the decision
+// help gives them back or discards them (a discarded entry keeps the fingerprint). Everything runs
+// atomically.
 
 import { beforeAll, describe, expect, it } from 'vitest';
 import { createClient, rejectionOf, statusOf, superuserClient } from '../support/api.mjs';
@@ -31,6 +32,8 @@ const link = (who, itemId, ticketId) =>
 const deleteWith = (client, ticketId, sources) =>
 	client.send(`/api/byl/tickets/${ticketId}/delete`, { method: 'POST', body: { sources } });
 const purge = (client, ticketId) => client.send(`/api/byl/trash/${ticketId}/purge`, { method: 'POST' });
+const resolve = (client, ticketId, actions) =>
+	client.send(`/api/byl/trash/${ticketId}/resolve`, { method: 'POST', body: { actions } });
 const inTrash = async (ticketId) => (await superuser.collection('tickets').getOne(ticketId)).deleted_at !== '';
 
 /** A ticket made from one item with a second item linked to it. */
@@ -102,17 +105,23 @@ describe('route "Ticket löschen mit Quellenbehandlung"', () => {
 		}
 	});
 
-	it('keeps the sources with "discard" until the ticket is deleted for good: a tombstone that keeps the fingerprint', async () => {
+	it('keeps the sources with "discard" with the ticket; deleting for good waits until they are discarded, which keeps the fingerprint', async () => {
 		const { ticket, main, linked } = await ticketWithSources();
 		await deleteWith(owner.client, ticket.id, 'discard');
 		for (const before of [main, linked]) {
 			expect(await itemOf(before.id)).toMatchObject({ state: 'converted', ticket: ticket.id });
 			expect(await statusOf(owner.client.collection('inbox_items').getOne(before.id))).toBe(404);
 		}
+		expect((await rejectionOf(purge(owner.client, ticket.id))).codes).toEqual({ id: 'validation_trash_blocked' });
+		await resolve(owner.client, ticket.id, [
+			{ action: 'complete', ticket: ticket.id },
+			{ action: 'discard', item: main.id },
+			{ action: 'discard', item: linked.id }
+		]);
 		await purge(owner.client, ticket.id);
 		for (const before of [main, linked]) {
 			const after = await itemOf(before.id);
-			expect(after).toMatchObject({ state: 'discarded', ticket: '', fingerprint: before.fingerprint, original: '' });
+			expect(after).toMatchObject({ state: 'discarded', ticket: '', fingerprint: before.fingerprint });
 			expect(after.handled_at).not.toBe('');
 		}
 		const again = await rejectionOf(createItem(owner, { source_ref: linked.source_ref, title: linked.title }));
@@ -167,6 +176,10 @@ describe('route "Ticket löschen mit Quellenbehandlung"', () => {
 		expect((await rejectionOf(deleteWith(s.c, ticket.id, 'discard'))).status).toBe(404);
 		await deleteWith(s.b, ticket.id, 'discard');
 		expect(await statusOf(s.a.collection('inbox_items').getOne(item.id))).toBe(404);
+		await resolve(s.a, ticket.id, [
+			{ action: 'complete', ticket: ticket.id },
+			{ action: 'discard', item: item.id }
+		]);
 		await purge(s.a, ticket.id);
 		expect((await s.a.collection('inbox_items').getOne(item.id)).state).toBe('discarded');
 	});

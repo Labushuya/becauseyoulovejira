@@ -2,7 +2,13 @@
 	import { resolve } from '$app/paths';
 	import { EMPTY_SELECTION, keepShown, type Selection } from '$lib/domain/selection';
 	import type { ProjectRef } from '$lib/domain/ticket';
-	import { retentionText, type TrashItem } from '$lib/domain/trash';
+	import {
+		BLOCKED_RETENTION,
+		chosenBlockedText,
+		emptyText,
+		retentionText,
+		type TrashItem
+	} from '$lib/domain/trash';
 	import { restartNeeded } from '$lib/guidance/texts';
 	import { getColumnPrefs } from '$lib/stores/column-prefs.svelte';
 	import type { TrashStore } from '$lib/stores/trash.svelte';
@@ -24,7 +30,9 @@
 	// glass bar as there) offers "Wiederherstellen" and "Endgültig löschen …". Deleting for good
 	// always asks first, says that it cannot be undone, and is no red button (ADR-0009, CLAUDE.md
 	// §8). A restore that needs a choice asks inline in its row. The result of an action (notes of
-	// restores, failures) stands above the table until the next one.
+	// restores, failures) stands above the table until the next one. Blocked tickets (ADR-0047)
+	// can be filtered with "Nur blockierte"; deleting for good and emptying say beforehand that
+	// they stay until their dependencies are decided in the preview.
 	let {
 		store,
 		projects,
@@ -53,11 +61,21 @@
 	let asking = $state<
 		{ kind: 'one'; item: TrashItem } | { kind: 'many' } | { kind: 'empty' } | null
 	>(null);
+	/** Filter "Nur blockierte" (ADR-0047). */
+	let onlyBlocked = $state(false);
 
-	const items = $derived(store.items);
+	const blockedCount = $derived(store.blockedCount);
+	const items = $derived(
+		onlyBlocked ? store.items.filter((item) => item.dependencies > 0) : store.items
+	);
 	const order = $derived(items.map((item) => item.id));
 	const chosen = $derived(selection.ids.filter((id) => order.includes(id)));
-	const countLabel = $derived(items.length === 1 ? '1 Ticket' : `${items.length} Tickets`);
+	const chosenBlocked = $derived(
+		items.filter((item) => chosen.includes(item.id) && item.dependencies > 0).length
+	);
+	const countLabel = $derived(
+		store.items.length === 1 ? '1 Ticket' : `${store.items.length} Tickets`
+	);
 
 	// Rows that left the trash (restored, deleted, by another tab) leave the selection too.
 	$effect(() => {
@@ -92,7 +110,7 @@
 	<SectionBar
 		title="Papierkorb"
 		{headingId}
-		count={store.state === 'ready' ? items.length : null}
+		count={store.state === 'ready' ? store.items.length : null}
 		{countLabel}
 		bind:heading
 	>
@@ -100,7 +118,13 @@
 			<ViewSwitch current="trash" {inboxCount} {projectsNewCount} />
 		{/snippet}
 		{#snippet end()}
-			{#if store.state === 'ready' && items.length > 0}
+			{#if store.state === 'ready' && (blockedCount > 0 || onlyBlocked)}
+				<label class="switch">
+					<input type="checkbox" role="switch" bind:checked={onlyBlocked} />
+					Nur blockierte ({blockedCount})
+				</label>
+			{/if}
+			{#if store.state === 'ready' && store.items.length > 0}
 				<button
 					class="button-secondary"
 					type="button"
@@ -135,9 +159,10 @@
 	{:else}
 		<p class="retention">
 			{retentionText(store.retention)}
+			{#if blockedCount > 0}{BLOCKED_RETENTION}{/if}
 			<a href={resolve('/einstellungen/tickets')}>Aufbewahrung ändern</a>
 		</p>
-		{#if items.length === 0}
+		{#if store.items.length === 0}
 			<EmptyState
 				title="Der Papierkorb ist leer"
 				description="Gelöschte Tickets landen hier und lassen sich wiederherstellen."
@@ -145,6 +170,18 @@
 			>
 				{#snippet primary()}
 					<a class="button-primary" href={resolve('/')}>Zu den Aufgaben</a>
+				{/snippet}
+			</EmptyState>
+		{:else if items.length === 0}
+			<EmptyState
+				title="Keine blockierten Tickets"
+				description="Über alle Abhängigkeiten ist entschieden."
+				size="compact"
+			>
+				{#snippet secondary()}
+					<button class="button-subtle" type="button" onclick={() => (onlyBlocked = false)}>
+						Alle zeigen
+					</button>
 				{/snippet}
 			</EmptyState>
 		{:else}
@@ -251,13 +288,15 @@
 >
 	<p>
 		{#if asking?.kind === 'empty'}
-			Alle {tickets(items.length)} im Papierkorb werden mit ihren Unteraufgaben, Kommentaren und dem Verlauf
-			gelöscht.
+			{emptyText(store.items.length, blockedCount)}
+		{:else if asking?.kind === 'many' && chosenBlocked > 0}
+			Die Tickets werden mit ihren Unteraufgaben, Kommentaren und dem Verlauf gelöscht. {chosenBlockedText(
+				chosenBlocked
+			)}
 		{:else}
 			Das Ticket wird mit seinen Unteraufgaben, Kommentaren und dem Verlauf gelöscht.
 		{/if}
-		Das lässt sich nicht rückgängig machen. Quellen, die mit dem Ticket verworfen wurden, bleiben leer
-		im Eingang unter „Verworfen“.
+		Das lässt sich nicht rückgängig machen.
 	</p>
 </ConfirmDialog>
 
@@ -270,6 +309,15 @@
 		margin-bottom: 0.75rem;
 		font-size: var(--font-size-control);
 		color: var(--color-text-muted);
+	}
+
+	.switch {
+		display: inline-flex;
+		gap: 0.375rem;
+		align-items: center;
+		font-size: var(--font-size-body);
+		color: var(--color-text-muted);
+		cursor: pointer;
 	}
 
 	.failures ul,

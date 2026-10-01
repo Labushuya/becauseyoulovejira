@@ -216,11 +216,16 @@ describe('single paths of the bulk actions', () => {
 
 	it('deletes with the chosen handling of the sources', async () => {
 		const main = await createItem(owner);
-		const ticket = await owner.ticket({ source_item: main.id });
-		// Into the trash (ADR-0037): the discarded source stays with the ticket until it goes for good.
+		const ticket = await owner.ticket({ source_item: main.id, status: 'done' });
+		// Into the trash (ADR-0037): the discarded source stays with the ticket and blocks deleting it
+		// for good until the decision help discards it (ADR-0047).
 		const moved = await deleteTicket(owner.client, ticket.id, { sources: 'discard' });
 		expect(moved).toMatchObject({ id: ticket.id, tickets: [{ id: ticket.id, key: ticket.key }] });
 		expect(await superuser.collection('inbox_items').getOne(main.id)).toMatchObject({ state: 'converted', ticket: ticket.id });
+		await owner.client.send(`/api/byl/trash/${ticket.id}/resolve`, {
+			method: 'POST',
+			body: { actions: [{ action: 'discard', item: main.id }] }
+		});
 		await owner.client.send(`/api/byl/trash/${ticket.id}/purge`, { method: 'POST' });
 		expect((await superuser.collection('inbox_items').getOne(main.id)).state).toBe('discarded');
 	});

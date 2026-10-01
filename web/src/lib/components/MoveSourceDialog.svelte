@@ -1,4 +1,4 @@
-<script lang="ts">
+<script lang="ts" generics="T">
 	import type { InboxItemSummary } from '$lib/domain/inbox';
 	import { alreadyLinkedReason, blockTicket, sameScope } from '$lib/domain/ticket-picker';
 	import type { TicketSummary } from '$lib/domain/ticket';
@@ -7,7 +7,7 @@
 		type TicketPickerSource
 	} from '$lib/stores/ticket-picker.svelte';
 	import { insideModal } from '$lib/overlay/modal-context';
-	import type { TicketSourcesStore } from '$lib/stores/ticket-sources.svelte';
+	import type { SourceActionResult } from '$lib/stores/ticket-sources.svelte';
 	import ErrorIcon from './ErrorIcon.svelte';
 	import InlineDialog from './InlineDialog.svelte';
 	import Modal from './overlay/Modal.svelte';
@@ -19,7 +19,9 @@
 	// ticket stays visible but cannot be chosen, tickets of another area neither. The main source
 	// never gets here (the callers show why instead). A refusal stays in the dialog. Inside a modal
 	// (the full view) the same form unfolds inline where the owner renders it (ADR-0025 section 3,
-	// addendum 16).
+	// addendum 16). The move itself is the store's: the sources of a live ticket
+	// (TicketSourcesStore) or, for a source of a ticket in the trash, the decision help of the
+	// trash (ADR-0047), whose route moves it.
 	let {
 		item,
 		current,
@@ -32,14 +34,19 @@
 		item: Pick<InboxItemSummary, 'id' | 'title' | 'scope'>;
 		/** The ticket the entry belongs to now. */
 		current: { id: string; key: string };
-		store: TicketSourcesStore;
+		store: {
+			move(
+				item: Pick<InboxItemSummary, 'id' | 'title'>,
+				ticket: TicketSummary
+			): Promise<SourceActionResult<T>>;
+		};
 		/** Tickets of the picker; the (app) layout provides them. */
 		picker?: TicketPickerSource;
 		/** Inline only: where the focus goes on closing when the opener is gone. */
 		returnFocus?: () => HTMLElement | null | undefined;
 		onclose: () => void;
-		/** The entry after the move. */
-		onmoved?: (item: InboxItemSummary) => void;
+		/** What the store answers after the move (the entry, or the preview of the trash). */
+		onmoved?: (value: T) => void;
 	} = $props();
 
 	const fromContext = findTicketPickerSource();

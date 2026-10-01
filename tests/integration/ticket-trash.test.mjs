@@ -1,7 +1,9 @@
 // Trash for tickets (ADR-0037, package PB-1) against an own disposable PocketBase: its daily run
 // with a test clock (tests/fixtures/pb_hooks/trash-clock.pb.js) does not reach the tickets of
 // other test files. Every way to delete moves a ticket with its sub-tickets to the trash; the API
-// rules hide it everywhere, the trash routes read, restore and delete it for good.
+// rules hide it everywhere, the trash routes read, restore and delete it for good. Since ADR-0047
+// every way to delete for good (route, emptying, daily run, admin UI) refuses or skips a group with
+// dependencies, and the decision help resolves them.
 
 import { randomBytes } from 'node:crypto';
 import PocketBase from 'pocketbase';
@@ -494,11 +496,12 @@ describe('series (ADR-0037 §5, ADR-0022/0023)', () => {
 });
 
 describe('deleting for good (ADR-0037 §8 and §9)', () => {
-	it('deletes a group with history, comments and read rows; discarded sources become empty tombstones', async () => {
-		const { ticket, main, linked } = await ticketWithSources();
-		const child = await owner.ticket({ parent: ticket.id });
+	it('deletes a done group with history, comments and read rows; sources given back stay in the inbox', async () => {
+		const { ticket, main, linked } = await ticketWithSources(owner, { status: 'done' });
+		const child = await owner.ticket({ parent: ticket.id, status: 'done' });
 		const comment = await owner.pb.collection('comments').create({ ticket: ticket.id, author: owner.id, body: 'Weg' });
-		await deleteWith(owner, ticket.id, 'discard');
+		await owner.pb.collection('ticket_reads').create({ user: owner.id, ticket: ticket.id });
+		await deleteWith(owner, ticket.id, 'inbox');
 
 		await purge(owner, ticket.id);
 		for (const id of [ticket.id, child.id]) {
@@ -507,29 +510,27 @@ describe('deleting for good (ADR-0037 §8 and §9)', () => {
 		expect(await statusOf(stored('comments', comment.id))).toBe(404);
 		expect(await historyOf(ticket.id)).toEqual([]);
 		for (const item of [main, linked]) {
-			const tombstone = await owner.pb.collection('inbox_items').getOne(item.id);
-			expect(tombstone).toMatchObject({ state: 'discarded', ticket: '', original: '' });
-			expect(tombstone.body).toBe('_Inhalt gelöscht: Das Ticket wurde endgültig gelöscht._');
-			expect(tombstone.fingerprint).toBe((await stored('inbox_items', item.id)).fingerprint);
+			expect(await owner.pb.collection('inbox_items').getOne(item.id)).toMatchObject({ state: 'new', ticket: '' });
 		}
 		expect(await statusOf(purge(owner, ticket.id))).toBe(404);
 	});
 
 	it('empties only the own trash', async () => {
-		const mine = await owner.ticket();
-		const theirs = await other.ticket();
-		await owner.pb.collection('tickets').delete(mine.id);
+		const user = await createUser();
+		const mine = await user.ticket({ status: 'done' });
+		const theirs = await other.ticket({ status: 'done' });
+		await user.pb.collection('tickets').delete(mine.id);
 		await other.pb.collection('tickets').delete(theirs.id);
-		const { purged } = await route(owner, '/api/byl/trash/empty', {});
-		expect(purged).toBeGreaterThanOrEqual(1);
-		expect((await trashOf(owner)).items).toEqual([]);
+		const { purged, blocked } = await route(user, '/api/byl/trash/empty', {});
+		expect({ purged, blocked }).toEqual({ purged: 1, blocked: [] });
+		expect((await trashOf(user)).items).toEqual([]);
 		expect(await statusOf(stored('tickets', mine.id))).toBe(404);
 		expect((await stored('tickets', theirs.id)).deleted_at).not.toBe('');
 	});
 
 	it('deletes after the retention of the owner, daily and idempotent', async () => {
 		const user = await createUser();
-		const ticket = await user.ticket();
+		const ticket = await user.ticket({ status: 'done' });
 		await user.pb.collection('tickets').delete(ticket.id);
 		const deletedAt = (await stored('tickets', ticket.id)).deleted_at;
 		const day = (offset) => new Date(Date.parse(deletedAt.replace(' ', 'T')) + offset * 86_400_000).toISOString();
@@ -555,9 +556,210 @@ describe('deleting for good (ADR-0037 §8 and §9)', () => {
 	});
 
 	it('deletes a ticket of the trash for good through the admin UI', async () => {
-		const ticket = await owner.ticket();
+		const ticket = await owner.ticket({ status: 'done' });
 		await owner.pb.collection('tickets').delete(ticket.id);
 		await superuser.collection('tickets').delete(ticket.id);
 		expect(await statusOf(stored('tickets', ticket.id))).toBe(404);
+	});
+});
+
+describe('dependencies before deleting for good (ADR-0047)', () => {
+	const resolve = (who, id, actions) => route(who, `/api/byl/trash/${id}/resolve`, { actions });
+
+	/** An open ticket with an open sub-task, a done one, and both sources discarded with it. */
+	async function blockedGroup(who = owner) {
+		const { ticket, main, linked } = await ticketWithSources(who);
+		const open = await who.ticket({ parent: ticket.id });
+		const done = await who.ticket({ parent: ticket.id, status: 'done' });
+		await deleteWith(who, ticket.id, 'discard');
+		return { ticket, open, done, main, linked };
+	}
+
+	it('counts and lists the dependencies with the options our rules allow', async () => {
+		const { ticket, open, main, linked } = await blockedGroup();
+		expect((await trashOf(owner)).items.find((item) => item.id === ticket.id).dependencies).toBe(4);
+		const { dependency_list: list } = await previewOf(owner, ticket.id);
+		expect(list.map((entry) => [entry.kind, entry.ticket, entry.item ?? '', entry.options])).toEqual([
+			['ticket', ticket.id, '', ['complete_children', 'restore']],
+			['ticket', open.id, '', ['complete', 'restore', 'detach']],
+			['source', ticket.id, main.id, ['inbox', 'discard']],
+			['source', ticket.id, linked.id, ['inbox', 'discard', 'move']]
+		]);
+		expect(list[2]).toMatchObject({ primary: true, key: ticket.key, channel: 'telegram', scope: `u:${owner.id}` });
+		// A sub-task of a group has none of its own: its group decides.
+		expect((await previewOf(owner, open.id)).dependency_list).toEqual([]);
+	});
+
+	it('refuses "Endgültig löschen" with the list and changes nothing', async () => {
+		const { ticket, open, linked } = await blockedGroup();
+		const refused = await rejection(purge(owner, ticket.id));
+		expect(refused.status).toBe(400);
+		expect(refused.codes).toEqual({ id: 'validation_trash_blocked' });
+		expect(refused.params.id).toMatchObject({ key: ticket.key, ticket: ticket.id, count: 4, tickets: 2, sources: 2 });
+		expect(refused.params.id.dependencies.map((entry) => entry.kind)).toEqual(['ticket', 'ticket', 'source', 'source']);
+		for (const id of [ticket.id, open.id]) {
+			expect((await stored('tickets', id)).deleted_at).not.toBe('');
+		}
+		expect(await stored('inbox_items', linked.id)).toMatchObject({ state: 'converted', ticket: ticket.id });
+		// The admin UI deletes nothing blocked either.
+		expect((await rejection(superuser.collection('tickets').delete(ticket.id))).codes).toEqual({ id: 'validation_trash_blocked' });
+		expect((await stored('tickets', ticket.id)).id).toBe(ticket.id);
+	});
+
+	it('blocks a done ticket for an open sub-task and for a source discarded with it', async () => {
+		const parent = await owner.ticket({ status: 'done' });
+		await owner.ticket({ parent: parent.id });
+		await deleteWith(owner, parent.id, 'inbox');
+		expect((await rejection(purge(owner, parent.id))).params.id).toMatchObject({ tickets: 1, sources: 0 });
+
+		const { ticket } = await ticketWithSources(owner, { status: 'done' });
+		await deleteWith(owner, ticket.id, 'discard');
+		expect((await rejection(purge(owner, ticket.id))).params.id).toMatchObject({ tickets: 0, sources: 2 });
+	});
+
+	it('keeps blocked tickets when emptying the trash and names them', async () => {
+		const user = await createUser();
+		const free = await user.ticket({ status: 'done' });
+		const open = await user.ticket();
+		await user.pb.collection('tickets').delete(free.id);
+		await user.pb.collection('tickets').delete(open.id);
+		const result = await route(user, '/api/byl/trash/empty', {});
+		expect(result).toEqual({ purged: 1, blocked: [{ id: open.id, key: open.key, count: 1 }] });
+		expect((await trashOf(user)).items.map((item) => item.id)).toEqual([open.id]);
+	});
+
+	it('lets the daily run skip blocked tickets until they are decided', async () => {
+		const user = await createUser();
+		const ticket = await user.ticket();
+		await user.pb.collection('tickets').delete(ticket.id);
+		await user.pb.collection('users').update(user.id, { trash_retention: '7' });
+		const deletedAt = (await stored('tickets', ticket.id)).deleted_at;
+		const later = new Date(Date.parse(deletedAt.replace(' ', 'T')) + 9 * 86_400_000).toISOString();
+
+		const kept = await runTrash(later);
+		expect(kept.blocked).toBeGreaterThanOrEqual(1);
+		expect((await stored('tickets', ticket.id)).deleted_at).not.toBe('');
+		expect((await trashOf(user)).items[0]).toMatchObject({ id: ticket.id, dependencies: 1 });
+
+		await resolve(user, ticket.id, [{ action: 'complete', ticket: ticket.id }]);
+		await runTrash(later);
+		expect(await statusOf(stored('tickets', ticket.id))).toBe(404);
+	});
+
+	it('marks done in the trash with the rules of sub-tasks and the history of the user', async () => {
+		const { ticket, open, done } = await blockedGroup();
+		const refused = await rejection(resolve(owner, ticket.id, [{ action: 'complete', ticket: ticket.id }]));
+		expect(refused.codes).toEqual({ status: 'validation_parent_open_children' });
+		expect(refused.params.status).toMatchObject({ count: 1, keys: [open.key] });
+		expect((await stored('tickets', ticket.id)).status).toBe('open');
+
+		const after = await resolve(owner, ticket.id, [{ action: 'complete', ticket: ticket.id, complete_children: true }]);
+		expect(after.dependency_list.map((entry) => entry.kind)).toEqual(['source', 'source']);
+		for (const id of [ticket.id, open.id]) {
+			const ticketNow = await stored('tickets', id);
+			expect(ticketNow).toMatchObject({ status: 'done' });
+			expect(ticketNow.completed_at).not.toBe('');
+			expect(ticketNow.deleted_at).not.toBe('');
+			expect((await historyOf(id)).at(-1)).toMatchObject({ field: 'status', new_value: 'done', user: owner.id });
+		}
+		expect((await stored('tickets', done.id)).status).toBe('done');
+		// Still hidden from every read of the client.
+		expect(await statusOf(owner.pb.collection('tickets').getOne(ticket.id))).toBe(404);
+	});
+
+	it('gives sources back, discards or moves them, but never moves the main source', async () => {
+		const { ticket, main, linked } = await blockedGroup();
+		const target = await owner.ticket();
+
+		const primary = await rejection(resolve(owner, ticket.id, [{ action: 'move', item: main.id, target: target.id }]));
+		expect(primary.codes).toEqual({ actions: 'validation_trash_resolve_primary' });
+		const trashed = await rejection(resolve(owner, ticket.id, [{ action: 'move', item: linked.id, target: ticket.id }]));
+		expect(trashed.codes).toEqual({ actions: 'validation_trash_resolve_target' });
+		const foreign = await other.ticket();
+		const scope = await rejection(resolve(owner, ticket.id, [{ action: 'move', item: linked.id, target: foreign.id }]));
+		expect(scope.codes).toEqual({ ticket: 'validation_scope_mismatch' });
+		expect((await rejection(resolve(owner, ticket.id, []))).codes).toEqual({ actions: 'validation_trash_resolve_empty' });
+		expect((await rejection(resolve(owner, ticket.id, [{ action: 'delete', item: main.id }]))).codes).toEqual({
+			actions: 'validation_trash_resolve_action'
+		});
+		expect(await stored('inbox_items', linked.id)).toMatchObject({ state: 'converted', ticket: ticket.id });
+
+		await resolve(owner, ticket.id, [{ action: 'move', item: linked.id, target: target.id }]);
+		expect(await owner.pb.collection('inbox_items').getOne(linked.id)).toMatchObject({ state: 'converted', ticket: target.id });
+		const movedTo = (await historyOf(ticket.id)).find((entry) => entry.field === 'source_link' && entry.old_value.includes('moved_to'));
+		expect(JSON.parse(movedTo.old_value)).toMatchObject({ item: linked.id, moved_to: { ticket: target.id, key: target.key } });
+		const movedFrom = (await historyOf(target.id)).find((entry) => entry.field === 'source_link');
+		expect(JSON.parse(movedFrom.new_value)).toMatchObject({ item: linked.id, moved_from: { ticket: ticket.id } });
+
+		const after = await resolve(owner, ticket.id, [{ action: 'discard', item: main.id }]);
+		expect(after.dependency_list.filter((entry) => entry.kind === 'source')).toEqual([]);
+		const discarded = await owner.pb.collection('inbox_items').getOne(main.id);
+		expect(discarded).toMatchObject({ state: 'discarded', ticket: '' });
+		expect(discarded.source_meta.ticket_deleted).toMatchObject({ key: ticket.key, ticket: ticket.id });
+		expect(discarded.title).toBe(main.title);
+		expect((await stored('tickets', ticket.id)).source_item).toBe('');
+		expect((await historyOf(ticket.id)).at(-1)).toMatchObject({ field: 'source_link', new_value: '', user: owner.id });
+		// The same entry twice: no longer a dependency.
+		expect((await rejection(resolve(owner, ticket.id, [{ action: 'inbox', item: main.id }]))).codes).toEqual({
+			actions: 'validation_trash_resolve_target'
+		});
+	});
+
+	it('links sources given back one by one again on restore, the main source as main source', async () => {
+		const { ticket, main, linked } = await blockedGroup();
+		await resolve(owner, ticket.id, [
+			{ action: 'inbox', item: main.id },
+			{ action: 'inbox', item: linked.id }
+		]);
+		for (const item of [main, linked]) {
+			expect(await owner.pb.collection('inbox_items').getOne(item.id)).toMatchObject({ state: 'new', ticket: '' });
+		}
+		expect((await stored('tickets', ticket.id)).trash.sources.returned).toEqual([main.id, linked.id]);
+		const result = await restore(owner, ticket.id);
+		expect(result.sources_skipped).toEqual([]);
+		expect((await owner.pb.collection('tickets').getOne(ticket.id)).source_item).toBe(main.id);
+		for (const item of [main, linked]) {
+			expect(await owner.pb.collection('inbox_items').getOne(item.id)).toMatchObject({ state: 'converted', ticket: ticket.id });
+		}
+	});
+
+	it('restores a sub-task of a group on its own and leaves the group in the trash', async () => {
+		const { ticket, open } = await blockedGroup();
+		expect((await rejection(restore(owner, open.id))).codes).toEqual({ id: 'validation_trash_group_member' });
+		const result = await restore(owner, open.id, { detach_parent: true });
+		expect(result).toMatchObject({ id: open.id, parent_detached: true });
+		expect(await owner.pb.collection('tickets').getOne(open.id)).toMatchObject({ parent: '', deleted_at: '' });
+		expect((await historyOf(open.id)).filter((entry) => entry.field === 'parent').at(-1)).toMatchObject({
+			old_value: ticket.id,
+			new_value: ''
+		});
+		const preview = await previewOf(owner, ticket.id);
+		expect(preview.children).toBe(1);
+		expect(preview.dependency_list.filter((entry) => entry.kind === 'ticket').map((entry) => entry.ticket)).toEqual([ticket.id]);
+	});
+
+	it('deletes for good once everything is decided in one request', async () => {
+		const { ticket, open, done, main, linked } = await blockedGroup();
+		await resolve(owner, ticket.id, [
+			{ action: 'complete', ticket: open.id },
+			{ action: 'complete', ticket: ticket.id },
+			{ action: 'discard', item: main.id },
+			{ action: 'inbox', item: linked.id }
+		]);
+		expect((await previewOf(owner, ticket.id)).dependency_list).toEqual([]);
+		await purge(owner, ticket.id);
+		for (const id of [ticket.id, open.id, done.id]) {
+			expect(await statusOf(stored('tickets', id))).toBe(404);
+		}
+		expect(await owner.pb.collection('inbox_items').getOne(main.id)).toMatchObject({ state: 'discarded' });
+		expect(await owner.pb.collection('inbox_items').getOne(linked.id)).toMatchObject({ state: 'new', ticket: '' });
+	});
+
+	it('answers 404 for a foreign ticket and refuses a sub-task of a group', async () => {
+		const { ticket, open } = await blockedGroup();
+		expect(await statusOf(resolve(other, ticket.id, [{ action: 'complete', ticket: open.id }]))).toBe(404);
+		expect((await rejection(resolve(owner, open.id, [{ action: 'complete', ticket: open.id }]))).codes).toEqual({
+			id: 'validation_trash_group_member'
+		});
 	});
 });

@@ -94,8 +94,9 @@ describe('parent', () => {
 	it('takes the sub-tickets along to the trash; one deleted on its own leaves its parent', async () => {
 		const owner = await createOwner(s.superuser);
 		const tickets = owner.client.collection('tickets');
-		const parent = await owner.ticket();
-		const child = await owner.ticket({ parent: parent.id });
+		// Done, so nothing blocks deleting the group for good (ADR-0047).
+		const parent = await owner.ticket({ status: 'done' });
+		const child = await owner.ticket({ parent: parent.id, status: 'done' });
 		const single = await owner.ticket({ parent: parent.id });
 		// A sub-ticket deleted on its own leaves its parent (ADR-0037 §4) ...
 		await tickets.delete(single.id);

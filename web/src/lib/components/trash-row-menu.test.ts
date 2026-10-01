@@ -38,6 +38,7 @@ function item(id: string): TrashItem {
 		project: null,
 		recurring: false,
 		children: 0,
+		dependencies: 0,
 		deletedAt: '2026-09-28 10:00:00.000Z',
 		deletedBy: 'user00000000001',
 		updated: '2026-09-28 10:00:00.000Z',
@@ -61,8 +62,9 @@ async function showView(overrides: Partial<TrashData> = {}) {
 		list: vi.fn(async () => ({ items: [item(A), item(B)], retention: '30' as const })),
 		preview: vi.fn(),
 		restore: vi.fn(async (id: string) => ({ id, ...RESTORED })),
+		resolve: vi.fn(),
 		purge: vi.fn(async () => undefined),
-		purgeAll: vi.fn(async () => 2),
+		purgeAll: vi.fn(async () => ({ purged: 2, blocked: [] })),
 		saveRetention: vi.fn(async (value) => value),
 		...overrides
 	};
