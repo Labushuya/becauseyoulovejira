@@ -138,6 +138,16 @@ describe('page Sicherung', () => {
 		expect(list.getByText('byl-20261001-100000.tar.age')).toBeTruthy();
 	});
 
+	it('links the Notfallkarte and the help for an emergency', async () => {
+		await show();
+		expect(screen.getByRole('link', { name: 'Notfallkarte' }).getAttribute('href')).toBe(
+			'/notfallkarte'
+		);
+		expect(
+			screen.getByRole('link', { name: 'Hilfe unter „Sicherung & Notfall“' }).getAttribute('href')
+		).toBe('/einstellungen/hilfe#sicherung');
+	});
+
 	it('shows warnings without red and real errors in red', async () => {
 		await show(
 			{},

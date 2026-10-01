@@ -2,6 +2,12 @@
 	import { resolve } from '$app/paths';
 	import { page } from '$app/state';
 	import CodeBlock from '$lib/components/guidance/CodeBlock.svelte';
+	import {
+		EMERGENCY_CONTENTS,
+		EMERGENCY_LOSSES,
+		EMERGENCY_MANUAL,
+		EMERGENCY_STEPS
+	} from '$lib/domain/backup';
 	import { KEY_PLACEHOLDER, ingestExamples } from '$lib/domain/inbox-keys';
 	import HostPlatformNote from '$lib/components/guidance/HostPlatformNote.svelte';
 	import RecurrenceHelp from '$lib/components/help/RecurrenceHelp.svelte';
@@ -18,7 +24,8 @@
 	// scrolls sideways (table-columns.test.ts stays for the real tables). The section IDs are the
 	// anchors of helpHref(), used by the shortcuts modal, the quick entry and "Kanäle". The section
 	// "Wiederholungen" (plan "Wiederholungen verständlich machen") explains rules with examples the
-	// engine computes; the form, the overview and the rule panel link to it.
+	// engine computes; the form, the overview and the rule panel link to it. The section "Sicherung &
+	// Notfall" (ADR-0046 §8) takes the steps for a new machine from the one source of the Notfallkarte.
 
 	// Examples of the own inbox (ADR-0038) with the address of this app and the key as placeholder.
 	const examples = $derived(ingestExamples(page.url.origin));
@@ -855,17 +862,65 @@
 			<div class="row">
 				<dt>Sichern und umziehen</dt>
 				<dd>
-					Die App ist der Ordner <code>app</code>: Kopieren sichert sie. Automatisch sichert die App
-					einmal am Tag in <code>app\pb_data\backups</code> und, wenn eingerichtet, verschlüsselt in
-					ein Zielverzeichnis auf einem anderen Laufwerk; einmal in der Woche prüft sie, ob sich die
-					neueste Sicherung öffnen und starten lässt. Alles dazu unter
-					<a href={resolve('/einstellungen/sicherung')}>Einstellungen → Sicherung</a>. Zurückholen
-					geht dort an jeder Sicherung mit „Wiederherstellen …“ oder mit
-					<code>app\wiederherstellen.bat</code>; die bisherigen Daten bleiben sieben Tage als
-					Sicherheitskopie im Ordner <code>app</code>.
+					Die App ist der Ordner <code>app</code>: Kopieren sichert und zieht sie um, aber erst nach
+					<code>stop.bat</code> – während die App läuft, schreibt sie in ihre Datenbank, und eine
+					Kopie wäre halb fertig. Automatisch sichert die App einmal am Tag in
+					<code>app\pb_data\backups</code> und, wenn eingerichtet, verschlüsselt in ein
+					Zielverzeichnis auf einem anderen Laufwerk; mehr unter
+					<a href="#sicherung">Sicherung & Notfall</a>.
 				</dd>
 			</div>
 		</dl>
+	</section>
+
+	<section id="sicherung" aria-labelledby="sicherung-title">
+		<h3 id="sicherung-title">Sicherung & Notfall</h3>
+		<p>
+			Die App sichert einmal am Tag in <code>app\pb_data\backups</code> und, mit Zielverzeichnis und
+			Passphrase, verschlüsselt auf ein anderes Laufwerk; einmal in der Woche prüft sie die neueste
+			Sicherung. Alles dazu unter
+			<a href={resolve('/einstellungen/sicherung')}>Einstellungen → Sicherung</a>.
+		</p>
+		<h4>Einrichten</h4>
+		<ol>
+			<li>
+				Ein Zielverzeichnis auf einem anderen Laufwerk angeben: USB-Platte, NAS-Freigabe oder ein
+				Ordner, den ein Cloud-Dienst synchronisiert.
+			</li>
+			<li>
+				Eine Passphrase festlegen. Bewahre die Passphrase in deinem Passwort-Manager auf – ohne sie
+				lässt sich die Sicherung nicht öffnen.
+			</li>
+			<li>„Jetzt sichern“, danach „Jetzt prüfen“.</li>
+			<li>
+				Die <a href={resolve('/notfallkarte')}>Notfallkarte</a> drucken und neben die USB-Platte legen.
+			</li>
+		</ol>
+		<h4>Wiederherstellen</h4>
+		<p>
+			An einer Sicherung „Wiederherstellen …“ oder <code>app\wiederherstellen.bat</code>. Die App
+			prüft die Sicherung zuerst, fragt nach den Zugangsdaten und dem Wort WIEDERHERSTELLEN, legt
+			die jetzigen Daten sieben Tage als Sicherheitskopie in den Ordner <code>app</code> und geht zurück,
+			wenn sie mit der Sicherung nicht startet.
+		</p>
+		<h4>Neuer Rechner, Schritt für Schritt</h4>
+		<ol>
+			{#each EMERGENCY_STEPS as step (step.title)}
+				<li><strong>{step.title}:</strong> {step.text}</li>
+			{/each}
+		</ol>
+		<h4>Ohne die App öffnen</h4>
+		<p>
+			Mit dem Programm age (age-encryption.org) und tar von Windows, in einer Eingabeaufforderung:
+		</p>
+		<CodeBlock code={EMERGENCY_MANUAL.join('\n')} label="Sicherung ohne die App öffnen" />
+		<p>{EMERGENCY_CONTENTS}</p>
+		<h4>Was verloren gehen kann</h4>
+		<ul>
+			{#each EMERGENCY_LOSSES as loss (loss)}
+				<li>{loss}</li>
+			{/each}
+		</ul>
 	</section>
 </div>
 

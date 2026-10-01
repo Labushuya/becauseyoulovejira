@@ -563,6 +563,77 @@ export function restoreDoneText(state: RestoreState): string {
 	return parts.join(' ');
 }
 
+/** One step of the emergency plan (ADR-0046 §8): what to do, and how. */
+export interface EmergencyStep {
+	title: string;
+	text: string;
+}
+
+/**
+ * The emergency plan for a new machine, the same words in the help "Sicherung & Notfall", on the
+ * Notfallkarte and in the README. No secret appears here or on the card.
+ */
+export const EMERGENCY_STEPS: readonly EmergencyStep[] = [
+	{
+		title: 'App holen',
+		text: 'Den Ordner app einer aktuellen Version auf den neuen Rechner legen, etwa nach C:\\becauseyoulovejira\\app (aus einer Kopie, einem Release oder mit scripts\\build.ps1 gebaut).'
+	},
+	{
+		title: 'Sicherung bereitlegen',
+		text: 'Das Zielverzeichnis erreichbar machen (USB-Platte anschließen, NAS-Freigabe verbinden oder den Cloud-Ordner synchronisieren lassen) und die neueste Datei byl-<Datum>-<Uhrzeit>.tar.age suchen.'
+	},
+	{
+		title: 'wiederherstellen.bat',
+		text: 'app\\wiederherstellen.bat doppelklicken und den vollen Pfad dieser Datei eingeben (im Explorer: Umschalt + Rechtsklick → „Als Pfad kopieren“).'
+	},
+	{
+		title: 'Passphrase',
+		text: 'Die Passphrase aus deinem Passwort-Manager eingeben. Die Prüfung meldet danach Tickets und Originaldateien.'
+	},
+	{
+		title: 'Zugangsdaten zurückschreiben',
+		text: 'Die Liste nennt die Namen der BYL_*-Variablen in der Sicherung; „f“ schreibt die fehlenden in die Windows-Umgebungsvariablen deines Kontos. Dann WIEDERHERSTELLEN eintippen: Die App startet mit dem Stand der Sicherung, in einem neuen Ordner ohne byl-config.json auch mit ihren Einstellungen (Port, Zielverzeichnis, Aufbewahrung). Auf Wunsch die Passphrase für künftige Sicherungen speichern.'
+	},
+	{
+		title: 'neu-starten.bat',
+		text: 'Setzt du Zugangsdaten später von Hand (setx) oder änderst sie, danach neu-starten.bat doppelklicken.'
+	},
+	{
+		title: 'Autostart',
+		text: 'autostart-an.bat doppelklicken, wenn die App bei der Anmeldung starten soll.'
+	},
+	{
+		title: 'Web-App',
+		text: 'Die App im Browser öffnen, anmelden und in Chrome oder Edge wieder als App installieren.'
+	},
+	{
+		title: 'Erweiterung für WhatsApp Web',
+		text: 'Die Erweiterung aus app\\erweiterung-whatsapp-web neu laden, unter Kanäle → Eigener Eingang einen neuen Zugangsschlüssel erzeugen und eintragen, den alten widerrufen. Die App kennt Schlüssel nur als Prüfwert.'
+	},
+	{
+		title: 'Sicherung prüfen',
+		text: 'Unter Einstellungen → Sicherung Zielverzeichnis (Laufwerksbuchstabe!) und Passphrase kontrollieren, dann „Jetzt sichern“ und „Jetzt prüfen“.'
+	}
+];
+
+/** What an emergency can cost, even with a backup. */
+export const EMERGENCY_LOSSES: readonly string[] = [
+	'Alles seit der letzten Sicherung (die App sichert einmal am Tag, nur solange sie läuft).',
+	'Ohne Passphrase die Sicherungen im Zielverzeichnis; ohne Zielverzeichnis alles, was nur auf dem kaputten Rechner lag.',
+	'Was nicht in einer Sicherung steckt: die installierte Web-App, die Browser-Erweiterung und ihr Schlüssel, die Autostart-Verknüpfung, Anmeldungen und die Darstellung des Browsers (Farbe, Modus, Glas).',
+	'Zugangsdaten, wenn „Zugangsdaten mitsichern“ aus war: Sie müssen neu beschafft und mit setx gesetzt werden.'
+];
+
+/** A sealed backup opened without the app, with age (age-encryption.org) and tar of Windows. */
+export const EMERGENCY_MANUAL: readonly string[] = [
+	'age --decrypt --output sicherung.tar byl-<Datum>-<Uhrzeit>.tar.age',
+	'tar -xf sicherung.tar'
+];
+
+/** What a sealed backup holds once it is opened without the app. */
+export const EMERGENCY_CONTENTS =
+	'Darin liegen pb_data.zip (die Daten), byl-config.json, manifest.json, LIESMICH.txt und gegebenenfalls zugangsdaten.json mit den Werten im Klartext; diese Datei danach löschen.';
+
 /** What the page says about a target folder the control script refused. */
 export const TARGET_PROBLEM_TEXTS: Readonly<
 	Record<TargetProblem | 'keep' | 'credentials' | 'target', string>

@@ -69,7 +69,9 @@ export const HELP_SECTIONS = [
 	// Notion (ADR-0041): linked from its card and its import dialog.
 	{ id: 'notion', label: 'Notion' },
 	{ id: 'fragen', label: 'Häufige Fragen' },
-	{ id: 'betrieb', label: 'Betrieb' }
+	{ id: 'betrieb', label: 'Betrieb' },
+	// Backups and the emergency plan (ADR-0046 §8): linked from the page "Sicherung".
+	{ id: 'sicherung', label: 'Sicherung & Notfall' }
 ] as const;
 
 export type HelpSection = (typeof HELP_SECTIONS)[number]['id'];
