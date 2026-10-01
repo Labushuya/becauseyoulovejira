@@ -246,7 +246,8 @@ describe('the pin and the trash (ADR-0044 section 2, ADR-0037)', () => {
 		const ticket = await createTicket(a.client, draft());
 		const comment = await createComment(a.client, ticket.id, 'Wichtig');
 		await createComment(a.client, ticket.id, 'Noch einer');
-		await updateTicket(a.client, ticket.id, { pinnedComment: comment.id });
+		// Done, so nothing blocks deleting it for good (ADR-0047).
+		await updateTicket(a.client, ticket.id, { pinnedComment: comment.id, status: 'done' });
 		await deleteTicket(a.client, ticket.id, { sources: 'inbox' });
 
 		await purgeFromTrash(a.client, ticket.id);

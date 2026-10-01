@@ -57,17 +57,17 @@ function sameMeta(a, b) {
   return true;
 }
 
-// Text of a source that stayed with a ticket in the trash ("Quellen verwerfen") once the ticket is
-// deleted for good (ADR-0037 §6): the same tombstone at once, with its own reason.
+// Text of a source that stayed with a ticket in the trash ("Quellen verwerfen") and was emptied
+// when the ticket was deleted for good (ADR-0037 §6). Since ADR-0047 a ticket of the trash goes
+// for good only without bound sources, so no new tombstone gets it; existing ones count as cleaned.
 var TRASH_PURGED_BODY = '_Inhalt gelöscht: Das Ticket wurde endgültig gelöscht._';
 
 /**
  * The cleaned values of a discarded item { title, body, meta, original } (meta parsed, original
  * the file name or ''), or null if the item is cleaned already (with either text). Returns
- * { title, body, meta, clearOriginal }; `body` is PURGED_BODY unless another text is passed.
+ * { title, body, meta, clearOriginal } with `body` PURGED_BODY.
  */
-function purgedValues(item, inboxRules, body) {
-  var purgedBody = body === undefined ? PURGED_BODY : body;
+function purgedValues(item, inboxRules) {
   var title = inboxRules.truncate(String(item.title || ''), PURGED_TITLE_MAX_LENGTH);
   var meta = keptMeta(item.meta);
   var clearOriginal = String(item.original || '') !== '';
@@ -79,7 +79,7 @@ function purgedValues(item, inboxRules, body) {
   if (unchanged) {
     return null;
   }
-  return { title: title, body: purgedBody, meta: meta, clearOriginal: clearOriginal };
+  return { title: title, body: PURGED_BODY, meta: meta, clearOriginal: clearOriginal };
 }
 
 module.exports = {

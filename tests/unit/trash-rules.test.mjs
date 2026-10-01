@@ -64,15 +64,24 @@ describe('snapshot', () => {
 			recurrence: '',
 			occurrence: '',
 			source_item: '',
-			sources: { handling: 'inbox', items: [] }
+			sources: { handling: 'inbox', items: [], returned: [] }
 		};
 		for (const raw of ['', 'null', '[]', '{', null, undefined, 42, []]) {
 			expect(rules.readSnapshot(raw), String(raw)).toEqual(empty);
 		}
 		expect(
-			rules.readSnapshot('{"project":"p1","project_code":"HAUS","sources":{"handling":"discard","items":["i1","",3,"i2"]}}')
-		).toEqual({ ...empty, project: 'p1', project_code: 'HAUS', sources: { handling: 'discard', items: ['i1', 'i2'] } });
+			rules.readSnapshot(
+				'{"project":"p1","project_code":"HAUS","sources":{"handling":"discard","items":["i1","",3,"i2"],"returned":["i2",null]}}'
+			)
+		).toEqual({ ...empty, project: 'p1', project_code: 'HAUS', sources: { handling: 'discard', items: ['i1', 'i2'], returned: ['i2'] } });
 		expect(rules.readSnapshot({ sources: { handling: 'delete' } }).sources.handling).toBe('inbox');
+	});
+
+	it('links again on restore what went back to the inbox: all with the ticket, else one by one (ADR-0047)', () => {
+		const inbox = rules.readSnapshot({ sources: { handling: 'inbox', items: ['i1', 'i2'], returned: ['x'] } });
+		expect(rules.returnedSources(inbox)).toEqual(['i1', 'i2']);
+		const discard = rules.readSnapshot({ sources: { handling: 'discard', items: ['i1', 'i2'], returned: ['i2'] } });
+		expect(rules.returnedSources(discard)).toEqual(['i2']);
 	});
 });
 
@@ -141,11 +150,14 @@ describe('sources of a ticket deleted for good', () => {
 		expect(inboxRules.deletedTicketMeta({}, 'HAUS-1', 'now', '')).toEqual({ ticket_deleted: { key: 'HAUS-1', at: 'now' } });
 	});
 
-	it('empties them at once with its own text, which the daily cleanup counts as cleaned', () => {
-		const item = { title: 'Mail', body: 'Text', meta: { keyword: 'todo', from: 'a@example.com' }, original: 'mail.eml' };
-		const purged = cleanup.purgedValues(item, inboxRules, cleanup.TRASH_PURGED_BODY);
-		expect(purged).toEqual({ title: 'Mail', body: cleanup.TRASH_PURGED_BODY, meta: { keyword: 'todo' }, clearOriginal: true });
-		const tombstone = { title: purged.title, body: purged.body, meta: purged.meta, original: '' };
+	it('counts the tombstones the trash emptied before ADR-0047 as cleaned', () => {
+		const tombstone = { title: 'Mail', body: cleanup.TRASH_PURGED_BODY, meta: { keyword: 'todo' }, original: '' };
 		expect(cleanup.purgedValues(tombstone, inboxRules)).toBeNull();
+		expect(cleanup.purgedValues({ ...tombstone, original: 'mail.eml' }, inboxRules)).toEqual({
+			title: 'Mail',
+			body: cleanup.PURGED_BODY,
+			meta: { keyword: 'todo' },
+			clearOriginal: true
+		});
 	});
 });

@@ -2,11 +2,12 @@
 // with its notes and the inline questions (target project, leaving the series) that keep the
 // choices made so far, deleting for good one by one, for the chosen rows and all at once, the
 // retention, "Rückgängig" after deleting in the panel with expected_updated, and reading again
-// when the server reports a change. Fake data layer; flags recorded.
+// when the server reports a change; since ADR-0047 blocked tickets (refused, kept when emptying)
+// and the decisions of the decision help. Fake data layer; flags recorded.
 
 import { describe, expect, it, vi } from 'vitest';
 import { DataError } from '$lib/data/errors';
-import type { RestoreResult, TrashItem } from '$lib/domain/trash';
+import type { RestoreResult, TrashItem, TrashPreview } from '$lib/domain/trash';
 import type { FlagInput, FlagSink } from './flags.svelte';
 import { TrashStore, needOf, type TrashData, type TrashLive } from './trash.svelte';
 
@@ -21,6 +22,7 @@ function item(id: string, overrides: Partial<TrashItem> = {}): TrashItem {
 		project: null,
 		recurring: false,
 		children: 0,
+		dependencies: 0,
 		deletedAt: '2026-09-28 10:00:00.000Z',
 		deletedBy: 'user00000000001',
 		updated: '2026-09-28 10:00:00.000Z',
@@ -86,8 +88,9 @@ function setup(overrides: Partial<TrashData> = {}, items = [item(A), item(B)]) {
 		list: vi.fn(async () => ({ items, retention: '30' as const })),
 		preview: vi.fn(),
 		restore: vi.fn(async (id: string) => result(id)),
+		resolve: vi.fn(),
 		purge: vi.fn(async () => undefined),
-		purgeAll: vi.fn(async () => items.length),
+		purgeAll: vi.fn(async () => ({ purged: items.length, blocked: [] })),
 		saveRetention: vi.fn(async (retention) => retention),
 		...overrides
 	};
@@ -244,6 +247,102 @@ describe('TrashStore: deleting for good', () => {
 		expect(await store.purgeAll()).toBe(true);
 		expect(store.items).toEqual([]);
 		expect(shown.at(-1)?.title).toBe('Papierkorb geleert (2 Tickets).');
+	});
+
+	it('keeps blocked tickets when emptying and names them (ADR-0047)', async () => {
+		const purgeAll = vi.fn(async () => ({
+			purged: 1,
+			blocked: [{ id: B, key: 'TASK-b', count: 2 }]
+		}));
+		const { store, shown } = setup({ purgeAll }, [item(A), item(B, { dependencies: 2 })]);
+		await store.reload();
+		expect(store.blockedCount).toBe(1);
+		expect(await store.purgeAll()).toBe(true);
+		expect(store.items.map((entry) => entry.id)).toEqual([B]);
+		expect(shown.at(-1)).toMatchObject({
+			tone: 'success',
+			title: 'Papierkorb geleert (1 Ticket).',
+			description: '1 blockiertes Ticket bleibt: TASK-b. Bitte in der Vorschau entscheiden.'
+		});
+
+		purgeAll.mockResolvedValueOnce({ purged: 0, blocked: [{ id: B, key: 'TASK-b', count: 2 }] });
+		await store.purgeAll();
+		expect(shown.at(-1)).toMatchObject({ tone: 'info', title: 'Nichts gelöscht.' });
+	});
+
+	it('names the dependencies when deleting for good is refused (ADR-0047)', async () => {
+		const purge = vi.fn(async () => {
+			throw new DataError('validation', {
+				status: 400,
+				fields: {
+					id: { code: 'validation_trash_blocked', message: 'Abhängigkeiten.', params: { count: 3 } }
+				}
+			});
+		});
+		const { store, shown } = setup({ purge });
+		await store.reload();
+		expect(await store.purge(A)).toBe(false);
+		expect(store.items.map((entry) => entry.id)).toEqual([A, B]);
+		expect(shown.at(-1)).toMatchObject({
+			tone: 'error',
+			title:
+				'TASK-a wurde nicht gelöscht. Es hat noch 3 Abhängigkeiten. Bitte in der Vorschau entscheiden.'
+		});
+	});
+});
+
+describe('TrashStore: decision help (ADR-0047)', () => {
+	function preview(id: string, dependencies: TrashPreview['dependencyList'] = []): TrashPreview {
+		return {
+			...item(id, { status: 'done', updated: '2026-09-28 12:00:00.000Z' }),
+			description: '',
+			tags: [],
+			subtasks: [],
+			group: '',
+			sources: { handling: 'discard', count: 0 },
+			dependencyList: dependencies
+		};
+	}
+
+	it('sends the decisions, updates the row and says what happened', async () => {
+		const resolve = vi.fn(async (id: string) => preview(id));
+		const { store, data, shown } = setup({ resolve }, [item(A, { dependencies: 1 }), item(B)]);
+		await store.reload();
+		const actions = [{ action: 'complete' as const, ticket: A }];
+		const result = await store.resolve(A, actions);
+		expect(result).toMatchObject({ ok: true, value: { id: A } });
+		expect(data.resolve).toHaveBeenCalledWith(A, actions);
+		expect(store.find(A)).toMatchObject({
+			status: 'done',
+			dependencies: 0,
+			updated: '2026-09-28 12:00:00.000Z'
+		});
+		expect(store.blockedCount).toBe(0);
+		expect(shown.at(-1)).toMatchObject({ tone: 'success', title: 'Als erledigt markiert.' });
+	});
+
+	it('shows a refusal as a flag, except for a move, whose dialog shows it', async () => {
+		const refusal = () =>
+			new DataError('validation', {
+				status: 400,
+				fields: { ticket: { code: 'validation_scope_mismatch', message: 'Nicht verfügbar.' } }
+			});
+		const resolve = vi.fn(async () => {
+			throw refusal();
+		});
+		const { store, shown } = setup({ resolve });
+		await store.reload();
+		expect(await store.resolve(A, [{ action: 'discard', item: 'item1' }])).toEqual({
+			ok: false,
+			message: 'Nicht verfügbar.'
+		});
+		expect(shown.at(-1)).toMatchObject({ tone: 'error' });
+		const flags = shown.length;
+		expect(await store.resolve(A, [{ action: 'move', item: 'item1', target: 'x' }])).toEqual({
+			ok: false,
+			message: 'Nicht verfügbar.'
+		});
+		expect(shown).toHaveLength(flags);
 	});
 });
 

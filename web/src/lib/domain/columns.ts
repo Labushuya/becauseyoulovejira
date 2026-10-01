@@ -214,14 +214,17 @@ export const RECURRENCE_TABLE: TableSpec = table('recurrences', [
 ]);
 
 /**
- * "Papierkorb" (ADR-0037): selection, Key, Titel, Projekt, Gelöscht am, Von, the days until it is
- * deleted for good, actions ("Wiederherstellen" and since AM-4 the menu "•••" with "Endgültig
- * löschen …", in the same 5rem). "Von" gives way first, then the date, Projekt and the days.
+ * "Papierkorb" (ADR-0037): selection, Key, Titel, Status (with "Blockiert (N)", ADR-0047),
+ * Projekt, Gelöscht am, Von, the days until it is deleted for good, actions ("Wiederherstellen"
+ * and since AM-4 the menu "•••" with "Endgültig löschen …", in the same 5rem). "Von" gives way
+ * first, then the date, Projekt, the days and the status.
  */
 export const TRASH_TABLE: TableSpec = table('trash', [
 	fixed('select', 'Auswahl', 2.5),
 	column('key', 'Key', { width: 6, min: 4, max: 8, required: true }),
 	flexible('title', 'Titel', 10),
+	// Status and "Blockiert (N)" (ADR-0047): gives way last.
+	column('status', 'Status', { width: 9, min: 6, max: 14, hideRank: 5 }),
 	column('project', 'Projekt', { width: 8, min: 4, max: 16, hideRank: 3 }),
 	column('deleted', 'Gelöscht am', { width: 7, min: 5.5, max: 10, hideRank: 2 }),
 	column('by', 'Von', { width: 6, min: 4, max: 10, hideRank: 1 }),

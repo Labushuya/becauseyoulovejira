@@ -149,6 +149,7 @@ describe('help page (EH-9)', () => {
 			'Wie ändere ich Spalten und ihre Breite?',
 			'Wie arbeite ich mit Unteraufgaben?',
 			'Wie hole ich ein gelöschtes Ticket zurück?',
+			'Warum lässt sich ein Ticket im Papierkorb nicht endgültig löschen?',
 			'Was steht im Menü „•••“ eines Tickets?',
 			'Wie dupliziere ich ein Ticket?',
 			'Wie gliedere ich ein Projekt in Unterprojekte?',
@@ -168,6 +169,9 @@ describe('help page (EH-9)', () => {
 		expect(text(section)).toContain('höchstens einen angepinnten Kommentar');
 		expect(text(section)).toContain('„Weiterlesen“');
 		expect(section.querySelectorAll('details[open]')).toHaveLength(0);
+		// Deleting for good only after the dependencies are decided (ADR-0047).
+		expect(text(section)).toContain('und keine Quelle hängt mehr daran');
+		expect(text(section)).toContain('die Hauptquelle bleibt bei ihrem Ticket');
 		// The menu "•••" of a ticket (plan aktionsmenues): entries, keyboard, copying the link.
 		expect(text(section)).toContain('„Link kopieren“, „Duplizieren …“ und „In den Papierkorb …“');
 		expect(text(section)).toContain('die Pfeiltasten wählen');

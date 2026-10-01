@@ -6,15 +6,18 @@
 	import { clickRow, headState, toggleAll, type Selection } from '$lib/domain/selection';
 	import type { ProjectRef } from '$lib/domain/ticket';
 	import {
-		daysLeftText,
+		purgeText,
 		type RestoreNeed,
 		type RestoreOptions,
 		type TrashItem
 	} from '$lib/domain/trash';
+	import { blockedLabel, blockedName } from '$lib/domain/trash-dependencies';
 	import { TRASH_TABLE } from '$lib/domain/columns';
 	import { rowMenus } from '$lib/overlay/context-menu';
 	import { getColumnPrefs } from '$lib/stores/column-prefs.svelte';
 	import ActionsMenu, { type MenuAction } from './ActionsMenu.svelte';
+	import Lozenge from './guidance/Lozenge.svelte';
+	import StatusPill from './StatusPill.svelte';
 	import { ColumnFit } from './table/column-fit.svelte';
 	import ResizableHeader from './table/ResizableHeader.svelte';
 	import TrashNeedQuestion from './TrashNeedQuestion.svelte';
@@ -28,8 +31,10 @@
 	// Shift+F10 open the same menu (AM-3, rowMenus). The selection follows the rules of the ticket
 	// table (plan BI-2): Shift+click for a range, the head checkbox for every row. A restore that
 	// needs a choice shows its question inline below the row. Like every table it never scrolls
-	// sideways (ADR-0030); in a narrow frame Von, Gelöscht am, Projekt and the days give way in this
-	// order.
+	// sideways (ADR-0030); in a narrow frame Von, Gelöscht am, Projekt, the days and the status give
+	// way in this order. A ticket with dependencies (ADR-0047) shows "Blockiert (N)" next to its
+	// status, waits for a decision instead of the retention, and its menu leads to the decision
+	// help of the preview instead of "Endgültig löschen …".
 	let {
 		items,
 		selection,
@@ -93,7 +98,10 @@
 		onselection(clickRow(selection, id, on, order, range));
 	}
 
-	/** The entries of the menu "•••" of a row (AM-4); a running restore locks them. */
+	/**
+	 * The entries of the menu "•••" of a row (AM-4); a running restore locks them. A blocked ticket
+	 * leads to its decision help instead of "Endgültig löschen …" (ADR-0047).
+	 */
 	function menuOf(item: TrashItem, busy: boolean): MenuAction[] {
 		return [
 			{ label: 'Vorschau öffnen', href: hrefOf(item.id) },
@@ -103,13 +111,15 @@
 				busy,
 				onselect: () => onrestore(item.id, {})
 			},
-			{
-				label: 'Endgültig löschen …',
-				dialog: true,
-				separated: true,
-				locked: busy,
-				onselect: () => onpurge(item)
-			}
+			item.dependencies > 0
+				? { label: 'Abhängigkeiten auflösen', separated: true, href: hrefOf(item.id) }
+				: {
+						label: 'Endgültig löschen …',
+						dialog: true,
+						separated: true,
+						locked: busy,
+						onselect: () => onpurge(item)
+					}
 		];
 	}
 </script>
@@ -201,6 +211,18 @@
 							>
 						{/if}
 					</th>
+					{#if shown.has('status')}
+						<td class="status" data-col="status">
+							<span class="status-group">
+								<StatusPill status={item.status} />
+								{#if item.dependencies > 0}
+									<span title={blockedName(item.dependencies)}>
+										<Lozenge label={blockedLabel(item.dependencies)} icon="warning" />
+									</span>
+								{/if}
+							</span>
+						</td>
+					{/if}
 					{#if shown.has('project')}
 						<td class="text" data-col="project">
 							{#if item.project === null}
@@ -219,7 +241,7 @@
 						<td class="text" data-col="by">{personLabel(item.deletedBy, selfId)}</td>
 					{/if}
 					{#if shown.has('left')}
-						<td class="date" data-col="left">{daysLeftText(item.daysLeft)}</td>
+						<td class="date" data-col="left">{purgeText(item.daysLeft, item.dependencies)}</td>
 					{/if}
 					<td class="actions" data-col="actions">
 						<span class="action-group">
@@ -394,6 +416,13 @@
 	.date {
 		font-size: var(--font-size-control);
 		white-space: nowrap;
+	}
+
+	.status-group {
+		display: inline-flex;
+		flex-wrap: wrap;
+		gap: 0.25rem;
+		align-items: center;
 	}
 
 	.date {

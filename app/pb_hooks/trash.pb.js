@@ -30,7 +30,8 @@ routerAdd(
   $apis.requireAuth('users')
 );
 
-// "Wiederherstellen" and "Rückgängig": JSON { expected_updated?, project?, detach_series? }.
+// "Wiederherstellen" and "Rückgängig": JSON { expected_updated?, project?, detach_series?,
+// detach_parent? } (detach_parent: a sub-task of a group alone, ADR-0047).
 routerAdd(
   'POST',
   '/api/byl/trash/{id}/restore',
@@ -42,7 +43,21 @@ routerAdd(
   $apis.requireAuth('users')
 );
 
-// "Endgültig löschen" of one ticket with its sub-tickets.
+// Decision help (ADR-0047): JSON { actions: [...] } for the dependencies of a group; answers the
+// preview afterwards.
+routerAdd(
+  'POST',
+  '/api/byl/trash/{id}/resolve',
+  function (e) {
+    var service = require(`${__hooks}/lib/trash-service.js`);
+    service.assertReady(e.app);
+    return e.json(200, service.resolve(e, e.request.pathValue('id')));
+  },
+  $apis.requireAuth('users')
+);
+
+// "Endgültig löschen" of one ticket with its sub-tickets; 400 validation_trash_blocked with the
+// dependencies while the group is blocked (ADR-0047).
 routerAdd(
   'POST',
   '/api/byl/trash/{id}/purge',
@@ -55,20 +70,22 @@ routerAdd(
   $apis.requireAuth('users')
 );
 
-// "Papierkorb leeren": { purged } (number of tickets, sub-tickets included).
+// "Papierkorb leeren": { purged, blocked } (number of tickets, sub-tickets included; the blocked
+// groups that stay, [{ id, key, count }], ADR-0047).
 routerAdd(
   'POST',
   '/api/byl/trash/empty',
   function (e) {
     var service = require(`${__hooks}/lib/trash-service.js`);
     service.assertReady(e.app);
-    return e.json(200, { purged: service.empty(e) });
+    return e.json(200, service.empty(e));
   },
   $apis.requireAuth('users')
 );
 
 // Daily at 11:45 UTC, after the cleanup of the inbox, when the app usually runs (ADR-0037 §8);
-// the start catches up (recurrence-service runStartup). Idempotent, never throws.
+// the start catches up (recurrence-service runStartup). Blocked groups stay (ADR-0047).
+// Idempotent, never throws.
 cronAdd('byl-trash-purge', '45 11 * * *', function () {
   try {
     require(`${__hooks}/lib/trash-service.js`).purgeDue($app, Date.now());

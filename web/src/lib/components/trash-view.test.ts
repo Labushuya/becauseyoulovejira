@@ -50,6 +50,7 @@ function item(id: string, overrides: Partial<TrashItem> = {}): TrashItem {
 		project: id === A ? { id: 'p1', code: 'HAUS', name: 'Haus', exists: false } : null,
 		recurring: false,
 		children: id === A ? 2 : 0,
+		dependencies: 0,
 		deletedAt: '2026-09-28 10:00:00.000Z',
 		deletedBy: SELF,
 		updated: '2026-09-28 10:00:00.000Z',
@@ -86,8 +87,9 @@ async function showView(overrides: Partial<TrashData> = {}, items = [item(A), it
 			seriesDetached: [],
 			sourcesSkipped: []
 		})),
+		resolve: vi.fn(),
 		purge: vi.fn(async () => undefined),
-		purgeAll: vi.fn(async () => items.length),
+		purgeAll: vi.fn(async () => ({ purged: items.length, blocked: [] })),
 		saveRetention: vi.fn(async (value) => value),
 		...overrides
 	};
@@ -213,6 +215,51 @@ describe('view "Papierkorb"', () => {
 	});
 });
 
+describe('blocked tickets in the view (ADR-0047)', () => {
+	const blocked = () => [item(A, { dependencies: 3, daysLeft: 0 }), item(B, { status: 'done' })];
+
+	it('shows the status, "Blockiert (N)" and that the retention waits', async () => {
+		await showView({}, blocked());
+		const rows = screen.getAllByRole('row').slice(1);
+		const first = within(rows[0] as HTMLElement);
+		expect(first.getByText('Offen')).toBeTruthy();
+		expect(first.getByText('Blockiert (3)')).toBeTruthy();
+		expect(first.getByText('nicht, solange blockiert')).toBeTruthy();
+		expect(within(rows[1] as HTMLElement).getByText('Erledigt')).toBeTruthy();
+		expect(within(rows[1] as HTMLElement).queryByText(/Blockiert/)).toBeNull();
+		expect(screen.getByText(/Blockierte Tickets nicht, solange/)).toBeTruthy();
+	});
+
+	it('leads a blocked row to the decision help instead of "Endgültig löschen …"', async () => {
+		await showView({}, blocked());
+		const row = screen.getByRole('link', { name: 'Dach reparieren' }).closest('tr') as HTMLElement;
+		expect(
+			within(row).queryByRole('menuitem', { name: 'Endgültig löschen …', hidden: true })
+		).toBeNull();
+		const help = within(row).getByRole('menuitem', {
+			name: 'Abhängigkeiten auflösen',
+			hidden: true
+		});
+		expect(help.getAttribute('href')).toBe(`/papierkorb/${A}`);
+	});
+
+	it('filters the blocked tickets and says what stays when emptying', async () => {
+		await showView({}, blocked());
+		const filter = screen.getByRole('switch', { name: 'Nur blockierte (1)' });
+		await fireEvent.click(filter);
+		expect(screen.getAllByRole('row').slice(1)).toHaveLength(1);
+		expect(screen.queryByText('Keller')).toBeNull();
+		await fireEvent.click(screen.getByRole('button', { name: 'Papierkorb leeren …' }));
+		await tick();
+		const dialog = screen.getByRole('dialog', { name: 'Papierkorb leeren?' });
+		expect(
+			within(dialog).getByText(
+				/1 Ticket ohne offene Abhängigkeiten wird .* 1 blockiertes Ticket bleibt, bis du in der Vorschau/
+			)
+		).toBeTruthy();
+	});
+});
+
 describe('preview of a ticket in the trash', () => {
 	const preview: TrashPreview = {
 		...item(A),
@@ -220,7 +267,8 @@ describe('preview of a ticket in the trash', () => {
 		tags: [{ id: 't1', name: 'bau' }],
 		subtasks: [{ id: 'c1', key: 'HAUS-2', title: 'Ziegel', status: 'done' }],
 		group: '',
-		sources: { handling: 'discard', count: 2 }
+		sources: { handling: 'discard', count: 2 },
+		dependencyList: []
 	};
 
 	it('shows the ticket read-only with its sub-tasks, sources and actions', async () => {
@@ -233,6 +281,8 @@ describe('preview of a ticket in the trash', () => {
 				projects: PROJECTS,
 				need: null,
 				onrestore,
+				onresolve: vi.fn(),
+				ondetach: vi.fn(),
 				onpurge,
 				ondismissneed: vi.fn(),
 				onclose: vi.fn()
@@ -257,6 +307,8 @@ describe('preview of a ticket in the trash', () => {
 				projects: PROJECTS,
 				need: { kind: 'series', key: 'TASK-9', ticketId: 'x' },
 				onrestore: vi.fn(),
+				onresolve: vi.fn(),
+				ondetach: vi.fn(),
 				onpurge: vi.fn(),
 				ondismissneed: vi.fn(),
 				onclose: vi.fn()
@@ -280,6 +332,7 @@ describe('links to tickets in the trash', () => {
 				throw new DataError('not_found', { status: 404 });
 			}),
 			restore: vi.fn(),
+			resolve: vi.fn(),
 			purge: vi.fn(),
 			purgeAll: vi.fn(),
 			saveRetention: vi.fn()
@@ -304,6 +357,7 @@ describe('links to tickets in the trash', () => {
 				throw new DataError('not_found', { status: 404 });
 			}),
 			restore: vi.fn(),
+			resolve: vi.fn(),
 			purge: vi.fn(),
 			purgeAll: vi.fn(),
 			saveRetention: vi.fn()
