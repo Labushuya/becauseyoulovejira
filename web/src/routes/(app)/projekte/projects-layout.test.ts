@@ -13,6 +13,10 @@ import { CatalogStore } from '$lib/stores/catalog.svelte';
 import type { CatalogEditorData } from '$lib/stores/catalog-editor';
 import { FlagStore } from '$lib/stores/flags.svelte';
 import { TicketListStore } from '$lib/stores/ticket-list.svelte';
+import {
+	TicketRowActionsStore,
+	type TicketRowActionsData
+} from '$lib/stores/ticket-row-actions.svelte';
 import { useOverlayStubs } from '$lib/test/overlay-stubs';
 import ProjectRouteHarness from '$lib/test/ProjectRouteHarness.svelte';
 
@@ -105,8 +109,9 @@ async function show(
 	child: 'neu' | 'project' | null = null,
 	{
 		projects = [HOUSE, EMPTY],
-		open = [openTicket(HOUSE.id)]
-	}: { projects?: Project[]; open?: TicketSummary[] } = {}
+		open = [openTicket(HOUSE.id)],
+		rowData = null
+	}: { projects?: Project[]; open?: TicketSummary[]; rowData?: TicketRowActionsData | null } = {}
 ) {
 	const url = new URL(path, 'http://localhost:3000');
 	mocks.page.url = url;
@@ -165,10 +170,13 @@ async function show(
 	mocks.tickets = tickets;
 	mocks.flags = flags;
 	mocks.editorData = editorData;
-	render(ProjectRouteHarness, { props: { child } });
+	// The menu "•••" of the open tickets, as below the (app) layout (ADR-0034, addendum).
+	const rowActions =
+		rowData === null ? null : new TicketRowActionsStore(rowData, session, tickets, null, flags);
+	render(ProjectRouteHarness, { props: { child, rowActions } });
 	await vi.waitFor(() => expect(tickets.openState).toBe('ready'));
 	await tick();
-	return { catalog, flags, editorData };
+	return { catalog, flags, editorData, tickets };
 }
 
 const flagTitles = (flags: FlagStore) => flags.flags.map((flag) => flag.title);
@@ -381,5 +389,118 @@ describe('project view route: sub projects (ADR-0034)', () => {
 			[HOUSE.id, false],
 			[GARDEN.id, false]
 		]);
+	});
+});
+
+describe('project view route: open tickets in the panel (ADR-0034, addendum)', () => {
+	const GARDEN: Project = {
+		id: 'proj00000000011',
+		name: 'Garten',
+		code: 'GART',
+		archived: false,
+		updated: T0,
+		parentId: HOUSE.id
+	};
+	const CELLAR: Project = {
+		id: 'proj00000000012',
+		name: 'Keller',
+		code: 'KELL',
+		archived: true,
+		updated: T0,
+		parentId: HOUSE.id
+	};
+	const ROOF: Project = { ...CELLAR, id: 'proj00000000013', name: 'Dach', code: 'DACH' };
+
+	function numbered(projectId: string, code: string, count: number, from = 1): TicketSummary[] {
+		return Array.from({ length: count }, (_, index) => ({
+			...openTicket(projectId, `t${projectId.slice(-2)}${String(from + index).padStart(12, '0')}`),
+			key: `${code}-${from + index}`,
+			title: `Aufgabe ${from + index}`
+		}));
+	}
+
+	const section = () => screen.getByRole('region', { name: 'Offene Tickets' });
+
+	it('lists the open tickets of the project after the form, with the limit and the link', async () => {
+		await show('/projekte/proj00000000001', 'project', { open: numbered(HOUSE.id, 'HAUS', 12) });
+
+		const panel = screen.getByRole('complementary', { name: 'Haus' });
+		expect(panel.contains(section())).toBe(true);
+		const form = panel.querySelector('form') as HTMLElement;
+		expect(form.compareDocumentPosition(section()) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+		const list = within(section()).getByRole('list', { name: 'Offene Tickets von „Haus“' });
+		expect(within(list).getAllByRole('listitem')).toHaveLength(10);
+		expect(
+			within(section())
+				.getByRole('link', { name: 'Alle 12 in Aufgaben öffnen' })
+				.getAttribute('href')
+		).toBe(`/?projekt=${HOUSE.id}`);
+		expect(within(list).getByRole('link', { name: 'HAUS-1 Aufgabe 1' }).getAttribute('href')).toBe(
+			`/tickets/${numbered(HOUSE.id, 'HAUS', 1)[0]!.id}?projekt=${HOUSE.id}`
+		);
+	});
+
+	it('groups a parent: its own tickets, then every sub project below it', async () => {
+		await show('/projekte/proj00000000001', 'project', {
+			projects: [HOUSE, EMPTY, GARDEN, CELLAR, ROOF],
+			open: [
+				...numbered(HOUSE.id, 'HAUS', 1),
+				...numbered(GARDEN.id, 'GART', 2),
+				...numbered(CELLAR.id, 'KELL', 1)
+			]
+		});
+
+		const headings = within(section())
+			.getAllByRole('heading', { level: 4 })
+			.map((heading) => heading.textContent?.replace(/\s+/g, ' ').trim());
+		// An archived sub project only while it has open tickets ("Dach" has none).
+		expect(headings).toEqual(['Haus', 'Haus › Garten GART', 'Haus › Keller KELL (archiviert)']);
+		expect(
+			within(section())
+				.getAllByRole('list')
+				.map((list) => list.getAttribute('aria-label'))
+		).toEqual([
+			'Offene Tickets direkt in „Haus“',
+			'Offene Tickets von „Garten“',
+			'Offene Tickets von „Keller“'
+		]);
+		const garden = within(section()).getByRole('list', { name: 'Offene Tickets von „Garten“' });
+		expect(within(garden).getAllByRole('listitem')).toHaveLength(2);
+		expect(garden.closest('section')?.classList.contains('sub')).toBe(true);
+	});
+
+	it('asks the question of the menu of an entry once, as a dialog of the layout', async () => {
+		const [item] = numbered(HOUSE.id, 'HAUS', 1);
+		const rowData: TicketRowActionsData = {
+			get: vi.fn<TicketRowActionsData['get']>(),
+			sources: vi.fn(async () => []),
+			commentCount: vi.fn(async () => 0),
+			delete: vi.fn(async () => null)
+		};
+		const { tickets } = await show('/projekte/proj00000000001', 'project', {
+			open: [item!],
+			rowData
+		});
+		const list = within(section()).getByRole('list', { name: 'Offene Tickets von „Haus“' });
+		const button = within(list).getByRole('button', { name: 'Weitere Aktionen für HAUS-1' });
+		button.focus();
+		await fireEvent.click(button);
+		const menu = document.getElementById(button.getAttribute('aria-controls') ?? '') as HTMLElement;
+		await fireEvent.click(
+			within(menu).getByRole('menuitem', { name: 'In den Papierkorb …', hidden: true })
+		);
+
+		const dialog = await screen.findByRole('dialog', {
+			name: 'HAUS-1 in den Papierkorb verschieben?'
+		});
+		expect(screen.getAllByRole('dialog')).toHaveLength(1);
+		await fireEvent.click(within(dialog).getByRole('button', { name: 'In den Papierkorb' }));
+		await vi.waitFor(() =>
+			expect(rowData.delete).toHaveBeenCalledExactlyOnceWith(item!.id, 'inbox')
+		);
+		await vi.waitFor(() => expect(tickets.open).toEqual([]));
+		expect(
+			within(section()).getByRole('heading', { level: 4, name: 'Keine offenen Tickets' })
+		).toBeTruthy();
 	});
 });

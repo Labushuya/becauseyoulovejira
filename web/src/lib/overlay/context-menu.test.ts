@@ -3,7 +3,13 @@
 // takes over (cells, buttons, check boxes, the link of the row itself); which keys open it.
 
 import { afterEach, describe, expect, it } from 'vitest';
-import { isMenuKey, keepsBrowserMenu, ROW_LINK_ATTRIBUTE } from './context-menu';
+import {
+	isMenuKey,
+	keepsBrowserMenu,
+	OPEN_MENU_EVENT,
+	ROW_LINK_ATTRIBUTE,
+	rowMenus
+} from './context-menu';
 
 const NONE = { ctrlKey: false, touch: false, onSelection: false };
 
@@ -88,5 +94,43 @@ describe('isMenuKey', () => {
 		expect(key({ key: 'Enter', shiftKey: true })).toBe(false);
 		expect(key({ key: 'F10', shiftKey: true, altKey: true })).toBe(false);
 		expect(key({ key: 'ContextMenu', metaKey: true })).toBe(false);
+	});
+});
+
+describe('rowMenus', () => {
+	// The open tickets below a row of the project list (ADR-0034, addendum "Offene Tickets in
+	// Projekten") stand in a row of their own, whose entries are menu rows with their own "•••".
+	it('opens only the menu of the row itself, never one of a row nested in it', () => {
+		document.body.innerHTML =
+			'<table><tbody>' +
+			'<tr><td class="code">HAUS</td><td><button class="row-menu" data-menu="project">•••</button></td></tr>' +
+			'<tr><td class="well"><p class="beside">Offene Tickets</p><ul>' +
+			`<li data-menu-row><a href="/tickets/1" class="entry" ${ROW_LINK_ATTRIBUTE}>HAUS-1</a>` +
+			'<button class="row-menu" data-menu="entry">•••</button></li>' +
+			'</ul></td></tr>' +
+			'</tbody></table>';
+		const table = document.querySelector('table') as HTMLElement;
+		const cleanup = rowMenus(table);
+		const asked: string[] = [];
+		for (const button of document.querySelectorAll<HTMLElement>('.row-menu')) {
+			button.addEventListener(OPEN_MENU_EVENT, (event) => {
+				asked.push(button.dataset.menu ?? '');
+				event.preventDefault();
+			});
+		}
+		const rightClick = (selector: string) => {
+			const event = new MouseEvent('contextmenu', { bubbles: true, cancelable: true });
+			at(selector).dispatchEvent(event);
+			return event.defaultPrevented;
+		};
+
+		expect(rightClick('.entry')).toBe(true);
+		expect(rightClick('.code')).toBe(true);
+		expect(asked).toEqual(['entry', 'project']);
+		// Beside the entries, in the row that holds them: the menu of the browser.
+		expect(rightClick('.beside')).toBe(false);
+		expect(rightClick('.well')).toBe(false);
+		expect(asked).toEqual(['entry', 'project']);
+		cleanup?.();
 	});
 });
