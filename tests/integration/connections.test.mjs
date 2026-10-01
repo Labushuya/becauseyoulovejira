@@ -10,9 +10,12 @@ import {
 	createConnection,
 	deleteConnection,
 	getSecretStatus,
+	listConnectionNames,
 	listConnections,
+	renameConnection,
 	saveConnectionSettings,
-	setConnectionEnabled
+	setConnectionEnabled,
+	subscribeConnectionNames
 } from '../../web/src/lib/data/connections.ts';
 
 const CALENDAR_VALUE = `http://127.0.0.1:9/private-${randomBytes(12).toString('hex')}/basic.ics`;
@@ -194,8 +197,8 @@ describe('connections: create and guard', () => {
 	it('lets the owner change label, switch and variable, but not kind or server fields', async () => {
 		const record = await calendar(owner);
 		const connections = owner.pb.collection('connections');
-		const updated = await connections.update(record.id, { label: 'Privat', enabled: false });
-		expect(updated).toMatchObject({ label: 'Privat', enabled: false });
+		expect(await connections.update(record.id, { label: 'Privat' })).toMatchObject({ label: 'Privat' });
+		expect(await connections.update(record.id, { enabled: false })).toMatchObject({ label: 'Privat', enabled: false });
 		expect((await codesOf(connections.update(record.id, { type: 'telegram' }))).codes).toEqual({
 			type: 'validation_connection_immutable'
 		});
@@ -216,6 +219,73 @@ describe('connections: create and guard', () => {
 		expect(renamed).toMatchObject({ cursor: '', last_error: '', last_hint: '' });
 		const same = await owner.pb.collection('connections').update(record.id, { label: 'Bot' });
 		expect(same.cursor).toBe('');
+	});
+});
+
+describe('connections: renaming (ADR-0026, addendum KK-3)', () => {
+	it('changes only the name: fetching, access data, keywords and cursor stay', async () => {
+		const record = await telegram(owner, { settings: { allowed_env: 'BYL_TEST_ALLOWED', keywords: ['todo'], reply_no_match: false } });
+		await superuser.collection('connections').update(record.id, {
+			cursor: '41',
+			last_run_at: '2026-10-01 08:00:00.000Z',
+			last_ok_at: '2026-10-01 08:00:00.000Z',
+			last_hint: 'Hinweis'
+		});
+		const before = await owner.pb.collection('connections').getOne(record.id);
+		const renamed = await owner.pb.collection('connections').update(record.id, { label: '  Familienchat  ' });
+		expect(renamed.label).toBe('Familienchat');
+		for (const field of ['type', 'enabled', 'secret_env', 'settings', 'cursor', 'last_run_at', 'last_ok_at', 'last_error', 'last_hint', 'running_since', 'owner', 'household', 'scope']) {
+			expect(renamed[field], field).toEqual(before[field]);
+		}
+	});
+
+	it('refuses an empty or too long name and a rename that changes anything else', async () => {
+		const record = await calendar(owner, { settings: { keywords: ['termin'] } });
+		const connections = owner.pb.collection('connections');
+		for (const label of ['', '   ']) {
+			expect((await codesOf(connections.update(record.id, { label }))).codes).toEqual({ label: 'validation_connection_label' });
+		}
+		expect((await codesOf(connections.update(record.id, { label: 'x'.repeat(101) }))).codes).toEqual({
+			label: 'validation_connection_label_max'
+		});
+		expect(await connections.update(record.id, { label: `  ${'y'.repeat(100)}  ` })).toMatchObject({ label: 'y'.repeat(100) });
+		for (const [change, field] of [
+			[{ enabled: false }, 'enabled'],
+			[{ secret_env: 'BYL_TEST_OTHER' }, 'secret_env'],
+			[{ settings: { keywords: [] } }, 'settings']
+		]) {
+			const answer = await codesOf(connections.update(record.id, { label: 'Neu', ...change }));
+			expect(answer, field).toEqual({ status: 400, codes: { [field]: 'validation_connection_rename_only' } });
+		}
+		expect((await connections.getOne(record.id)).label).toBe('y'.repeat(100));
+		// Creating checks the name the same way.
+		expect((await codesOf(calendar(owner, { label: ' ' }))).codes).toEqual({ label: 'validation_connection_label' });
+		// The administration stays free.
+		expect(await superuser.collection('connections').update(record.id, { label: 'Admin', enabled: false })).toMatchObject({
+			label: 'Admin',
+			enabled: false
+		});
+	});
+
+	it('allows renaming to whoever may edit the connection, also in a household', async () => {
+		const [member, outsider] = [await user(), await user()];
+		const household = await superuser.collection('households').create({ name: `H ${randomBytes(4).toString('hex')}` });
+		for (const who of [owner, member]) {
+			await superuser.collection('household_members').create({ household: household.id, user: who.id, role: 'member' });
+		}
+		const shared = await calendar(owner, { household: household.id });
+		expect(await member.pb.collection('connections').update(shared.id, { label: 'Familie' })).toMatchObject({ label: 'Familie' });
+		expect((await codesOf(outsider.pb.collection('connections').update(shared.id, { label: 'Fremd' }))).status).toBe(404);
+		expect((await superuser.collection('connections').getOne(shared.id)).label).toBe('Familie');
+	});
+
+	it('sends the new name to every open tab of the owner at once', async () => {
+		const record = await calendar(owner);
+		const events = [];
+		const unsubscribe = await owner.pb.collection('connections').subscribe(record.id, (event) => events.push(event));
+		await owner.pb.collection('connections').update(record.id, { label: 'Arbeit' });
+		await expect.poll(() => events.map((event) => event.record.label), { timeout: 5_000 }).toContain('Arbeit');
+		await unsubscribe();
 	});
 });
 
@@ -318,5 +388,31 @@ describe('data layer of the web app', () => {
 		await expect(
 			createConnection(fresh.pb, { type: 'calendar', label: 'x', secretEnv: 'PATH', allowlistEnv: '' })
 		).rejects.toMatchObject({ kind: 'validation', fields: { secret_env: expect.anything() } });
+	});
+
+	it('renames a connection and follows the names through realtime (KK-3)', async () => {
+		const fresh = await user();
+		const bot = await createConnection(fresh.pb, {
+			type: 'telegram',
+			label: 'Bot',
+			secretEnv: 'BYL_TEST_TOKEN',
+			allowlistEnv: 'BYL_TEST_ALLOWED'
+		});
+		const changes = [];
+		const unsubscribe = await subscribeConnectionNames(fresh.pb, (change) => changes.push(change));
+		const renamed = await renameConnection(fresh.pb, bot.id, ' Familienchat ');
+		expect(renamed).toMatchObject({ id: bot.id, label: 'Familienchat', secretEnv: 'BYL_TEST_TOKEN', allowlistEnv: 'BYL_TEST_ALLOWED' });
+		await expect
+			.poll(() => changes, { timeout: 5_000 })
+			.toContainEqual({ action: 'update', record: { id: bot.id, label: 'Familienchat' } });
+		await expect(renameConnection(fresh.pb, bot.id, '   ')).rejects.toMatchObject({
+			kind: 'validation',
+			fields: { label: { code: 'validation_connection_label', message: 'Bitte einen Namen eingeben.' } }
+		});
+		expect(await listConnectionNames(fresh.pb)).toEqual([{ id: bot.id, label: 'Familienchat' }]);
+		await deleteConnection(fresh.pb, bot.id);
+		await expect.poll(() => changes, { timeout: 5_000 }).toContainEqual({ action: 'delete', id: bot.id });
+		await unsubscribe();
+		expect(await listConnectionNames(fresh.pb)).toEqual([]);
 	});
 });

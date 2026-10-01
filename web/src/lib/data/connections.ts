@@ -9,6 +9,7 @@ import {
 	mailScanOf,
 	type Connection,
 	type ConnectionDraft,
+	type ConnectionName,
 	type ConnectionSettingsDraft,
 	type MailHelperStatus,
 	type RunResult,
@@ -221,6 +222,68 @@ export function saveConnectionSettings(
 			);
 		return toConnection(record);
 	});
+}
+
+/**
+ * Renames a connection (ADR-0026, addendum KK-3). Sends only the name: the hook refuses a request
+ * that changes anything else with it and stores the name without white space at its ends.
+ */
+export function renameConnection(
+	pb: PocketBase,
+	id: string,
+	label: string,
+	{ signal }: RequestOptions = {}
+): Promise<Connection> {
+	return withDataErrors(signal, async () => {
+		const record = await pb
+			.collection(CONNECTIONS)
+			.update<ConnectionRecord>(id, { label: label.trim() }, { fields: CONNECTION_FIELDS, signal });
+		return toConnection(record);
+	});
+}
+
+/** Only ID and name: what the inbox and the sources of a ticket need of a connection (KK-3). */
+const NAME_FIELDS = 'id,label';
+
+interface ConnectionNameRecord {
+	id: string;
+	label: string;
+}
+
+function toConnectionName(record: ConnectionNameRecord): ConnectionName {
+	return { id: record.id, label: typeof record.label === 'string' ? record.label : '' };
+}
+
+/** The names of every visible connection, oldest first. */
+export function listConnectionNames(
+	pb: PocketBase,
+	{ signal }: RequestOptions = {}
+): Promise<ConnectionName[]> {
+	return withDataErrors(signal, async () => {
+		const records = await pb
+			.collection(CONNECTIONS)
+			.getFullList<ConnectionNameRecord>({ fields: NAME_FIELDS, sort: 'created,id', signal });
+		return records.map(toConnectionName);
+	});
+}
+
+/** Realtime: the names of every visible connection as they are created, renamed and deleted. */
+export function subscribeConnectionNames(
+	pb: PocketBase,
+	onChange: (change: RecordChange<ConnectionName>) => void
+): Promise<Unsubscribe> {
+	return pb.collection(CONNECTIONS).subscribe<ConnectionNameRecord>(
+		'*',
+		(event) => {
+			if (event.action === 'delete') {
+				onChange({ action: 'delete', id: event.record.id });
+				return;
+			}
+			if (event.action !== 'create' && event.action !== 'update') return;
+			onChange({ action: event.action, record: toConnectionName(event.record) });
+		},
+		{ fields: NAME_FIELDS }
+	);
 }
 
 /** Switches a connection on or off. */

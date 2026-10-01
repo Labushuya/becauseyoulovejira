@@ -57,6 +57,7 @@ function fakes(items: Connection[], status: SecretStatus = { secret: false, allo
 			calendar({ id: NEW_ID, label: draft.label, secretEnv: draft.secretEnv })
 		),
 		setEnabled: vi.fn<ConnectionsData['setEnabled']>(),
+		rename: vi.fn<ConnectionsData['rename']>(),
 		saveSettings: vi.fn<ConnectionsData['saveSettings']>(async (current, settings) => ({
 			...current,
 			keywords: settings.keywords

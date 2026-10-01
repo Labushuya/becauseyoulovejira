@@ -292,3 +292,36 @@ Der Hinweis am Feld nennt den Verlauf. Die Systemsteuerung ist als gleichwertige
 - **Abstand per CSS** (`margin`, `padding`): erzeugt kein Zeichen, also weder im Namen noch im kopierten oder vorgelesenen Text ein Leerzeichen.
 
 Sichtbar ist höchstens ein Leerzeichen am Ende des Links; an allen heutigen Stellen steht der Link als Flex- oder Grid-Element oder am Ende seines Absatzes, dort fällt es am Zeilenende weg. Komponententests prüfen den genauen Namen „myaccount.google.com (öffnet in neuem Tab)“, den Textknoten und die Einträge des Menüs.
+
+## Nachtrag (2026-10-01, Plan „Kanal-Karten“, KK-3): Kanäle umbenennen
+
+**Anlass:** Nutzerwunsch: „Es sollte auch möglich sein, Kanäle nachträglich jederzeit umbenennen zu können.“ Bisher legte nur der Schritt „Verbinden“ des Assistenten den Namen einer Verbindung (`connections.label`) fest. Danach ließ er sich nur noch in der Verwaltung von PocketBase ändern.
+
+**Entscheidung** (ergänzt KK-2 Punkte 1 und 4; Advisor und Executor):
+
+- **Wo:** Im Menü „•••“ jeder Karte einer Verbindung (Google Calendar, Telegram, Web.de, Gmail, Notion) steht „Umbenennen …“ vor „Einrichtung ansehen“.
+  - Es öffnet keinen Dialog: Der Name in der Kopfzeile wird zum Textfeld (Name „Neuer Name für „Gmail““, Text markiert), daneben „Speichern“ und „Abbrechen“.
+  - Enter speichert, Esc bricht ab und wird verbraucht. Danach steht der Fokus wieder auf „•••“.
+  - Während des Speicherns ist das Formular `aria-busy`. Die Überschrift der Karte bleibt verborgen im DOM, damit die Karte ihren Namen behält.
+  - Baustein: `ChannelCard` mit der Eigenschaft `rename` (`CardRename`: Namen der anderen Verbindungen, `save`). Die Konfiguration ruft `startRename()` der Karte aus ihrem Menü auf.
+- **Prüfung:**
+  - Der Name darf nach dem Kürzen von Leerraum am Rand nicht leer sein und höchstens 100 Zeichen haben (das Feld `label` hat `max: 100` seit der Migration `1790201400`).
+  - Verstöße sind Feldfehler nach ADR-0009 (`aria-invalid`, Text mit Symbol per `aria-describedby`), mit den Texten des Hooks (`CONNECTION_LABEL_MESSAGES`, Paritätstest).
+  - Ein Name, den eine andere Verbindung schon trägt (ohne Groß-/Kleinschreibung), ist erlaubt. Ein neutraler Hinweis sagt es, nicht rot: „Eine andere Verbindung heißt auch so. Das ist erlaubt; ein eindeutiger Name hilft beim Wiederfinden.“
+  - Ein unveränderter Name schließt das Feld ohne Anfrage. Erfolg meldet das Flag „„Gmail“ heißt jetzt „Gmail Arbeit“.“
+- **Server:** siehe [ADR-0016](0016-kanal-architektur-und-mail.md), Nachtrag vom 2026-10-01 „Name einer Verbindung“. Ändert eine Anfrage den Namen, darf sie nichts anderes ändern; Rechte wie beim Bearbeiten.
+- **Sofort überall:**
+  - Die Seite „Kanäle“ folgt jetzt jeder ihrer Verbindungen per Realtime (bisher nur den Postfächern). Ein Name aus einem anderen Tab erscheint gleich.
+  - Eingang (Zeile „Quelle“ im Panel) und Quellen am Ticket nennen bei Einträgen mit Verbindung deren Namen, etwa „Postfach · Gmail Arbeit“ (`withConnectionName`; bei gleichem Wort nur einmal, etwa „Notion“).
+  - Dafür lädt der `ConnectionNamesStore` des `(app)`-Layouts ID und Namen der sichtbaren Verbindungen einmal je Sitzung. Er folgt Umbenennen, Anlegen und Löschen per Realtime (nur `id` und `label`) und lädt nach einer Wiederverbindung neu. Die Datenschicht liefert dazu `connectionId` an jedem Eintrag.
+  - Nicht betroffen: die Chips und Filter „Quelle“ (Familien nach [ADR-0019](0019-kanal-filter-und-gruppierung.md), keine Namen), die Hilfe und ihre Verweise (feste Abschnitte je Art) und die Einträge selbst (kein kopierter Name, nichts zu migrieren).
+- **Nicht umbenennbar:** „Eigener Eingang (API)“, „WhatsApp Web (Browser-Erweiterung)“, „Dateien hereinziehen“ und das Bookmarklet.
+  - Sie sind keine Verbindungen, sondern feste Wege der App, je einer, ohne gespeicherten Namen.
+  - Ihre Einträge tragen den Namen ihres Kanals („Eigener Eingang (API)“, „WhatsApp Web“, „Mail-Datei“, „Kalenderdatei“, „WhatsApp“), der auch in Chips, Filtern, Hilfe und Assistent steht.
+  - Ein eigener Name bräuchte ein neues Feld (Migration) und stünde neben diesen festen Namen. Die Zugangsschlüssel des eigenen Eingangs haben schon je einen Namen.
+
+**Alternativen:**
+- Umbenennen im Dialog „Stichwörter und Einstellungen …“ (verworfen: Notion hat diesen Dialog nicht, und der Wunsch zielt auf die Karte).
+- Eigene Route `…/rename` (verworfen: Die Record-API mit Update-Regel und Hook reicht, und die Regel „nur der Name“ gilt dann für jeden Weg).
+- Doppelte Namen ablehnen (verworfen: zwei Postfächer „Gmail“ sind legitim, ein Hinweis genügt).
+- Namen auch in Chips und Filtern (verworfen: Die Filter arbeiten mit Familien; ein Filter je Verbindung wäre eine eigene Entscheidung zu ADR-0019).

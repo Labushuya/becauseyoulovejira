@@ -120,9 +120,18 @@
 			„Fehler“, „Einrichtung offen“ oder „Neustart nötig“), darunter eine Zeile wie „Zuletzt
 			abgerufen vor 5 Min. · 3 neu“ und ein Knopf für den nächsten Schritt, etwa „Jetzt abrufen“
 			oder „Einrichtung fortsetzen“. Alles Weitere steht im Menü „•••“ (Stichwörter, Pausieren,
-			Einrichtung, Hilfe, Löschen), Einzelheiten wie Stichwörter, Postfach, Hilfsprozess und letzter
-			Fehler unter „Details“. Lange Listen von Stichwörtern zeigen dort zuerst 8 und „+ N weitere“,
-			ab 21 Stichwörtern mit einem Filterfeld.
+			Umbenennen, Einrichtung, Hilfe, Löschen), Einzelheiten wie Stichwörter, Postfach, Hilfsprozess
+			und letzter Fehler unter „Details“. Lange Listen von Stichwörtern zeigen dort zuerst 8 und „+
+			N weitere“, ab 21 Stichwörtern mit einem Filterfeld.
+		</p>
+		<p>
+			„Umbenennen …“ macht den Namen oben in der Karte zum Textfeld: <kbd>Enter</kbd> oder
+			„Speichern“ übernimmt ihn, <kbd>Esc</kbd> oder „Abbrechen“ lässt ihn, wie er war. Er darf nicht
+			leer sein und höchstens 100 Zeichen haben; heißt schon eine andere Verbindung so, sagt die Karte
+			das, erlaubt es aber. Umbenennen ändert nur den Namen, nie Abruf, Zugangsdaten oder Stichwörter.
+			Der neue Name steht sofort überall, auch in anderen Tabs, im Eingang bei „Quelle“ und in den Quellen
+			eines Tickets (etwa „Postfach · Gmail Arbeit“). Eigener Eingang, WhatsApp Web, Dateien und Bookmarklet
+			haben feste Namen.
 		</p>
 		<HostPlatformNote headingLevel={4} />
 		<h4>Zugangsdaten als Windows-Variable setzen</h4>

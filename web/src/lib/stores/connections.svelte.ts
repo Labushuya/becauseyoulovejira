@@ -1,11 +1,12 @@
 // Connections on the page "Kanäle" (E4 plan, packages 10, 15, 20 and 23; ADR-0006). Loaded when the page opens and
 // after every own action; the state of the variables comes from the server per connection. The
-// list has no realtime subscription (the page offers "Aktualisieren" for the result of a
-// background run); only the setup assistant watches its one connection while it is open
+// list has no realtime subscription (the page offers "Aktualisieren" for new connections and the
+// result of a background run); the setup assistant watches its one connection while it is open
 // (`watch`, plan EH-5 §3.8), so the first run shows without polling. With a mailbox in the list the
 // store also asks whether the mail helper runs (package A, item 4), so the card says it honestly.
-// The page "Kanäle" watches its mailboxes the same way, so the progress of the full scan of an
-// inbox (ADR-0020, addendum 3) shows as it happens; `scan` starts or cancels it.
+// The page "Kanäle" watches each of its connections the same way, so the progress of the full
+// scan of an inbox (ADR-0020, addendum 3) and a name changed in another tab (ADR-0026, addendum
+// KK-3) show as they happen; `scan` starts or cancels the scan, `rename` renames.
 
 import type PocketBase from 'pocketbase';
 import { SvelteMap } from 'svelte/reactivity';
@@ -18,6 +19,7 @@ import {
 	importFromMailbox,
 	listConnections,
 	listMailbox,
+	renameConnection,
 	runConnection,
 	saveConnectionSettings,
 	scanConnection,
@@ -28,6 +30,8 @@ import type { RecordChange, Unsubscribe } from '$lib/data/realtime';
 import { toDataError } from '$lib/data/errors';
 import type { RequestOptions } from '$lib/data/options';
 import {
+	labelError,
+	renamedText,
 	runResultText,
 	scanResultText,
 	type Connection,
@@ -55,6 +59,8 @@ export interface ConnectionsData {
 	list(options: RequestOptions): Promise<Connection[]>;
 	create(draft: ConnectionDraft): Promise<Connection>;
 	setEnabled(id: string, enabled: boolean): Promise<Connection>;
+	/** Changes only the name (ADR-0026, addendum KK-3). */
+	rename(id: string, label: string): Promise<Connection>;
 	saveSettings(connection: Connection, settings: ConnectionSettingsDraft): Promise<Connection>;
 	remove(id: string): Promise<void>;
 	secretStatus(id: string, options: RequestOptions): Promise<SecretStatus>;
@@ -82,6 +88,7 @@ export function connectionsData(pb: PocketBase): ConnectionsData {
 		list: (options) => listConnections(pb, options),
 		create: (draft) => createConnection(pb, draft),
 		setEnabled: (id, enabled) => setConnectionEnabled(pb, id, enabled),
+		rename: (id, label) => renameConnection(pb, id, label),
 		saveSettings: (connection, settings) => saveConnectionSettings(pb, connection, settings),
 		remove: (id) => deleteConnection(pb, id),
 		secretStatus: (id, options) => getSecretStatus(pb, id, options),
@@ -297,6 +304,26 @@ export class ConnectionsStore {
 			this.#items.set(id, updated);
 			this.#notify(`„${updated.label}“ ${enabled ? 'läuft wieder' : 'ist pausiert'}.`);
 		});
+	}
+
+	/**
+	 * "Umbenennen …" of a card (ADR-0026, addendum KK-3): stores the new name, nothing else; the
+	 * flag names the old and the new one. The same name again sends nothing. Resolves to the error
+	 * text for the field, or null once the name is saved (or the session ended).
+	 */
+	async rename(id: string, label: string): Promise<string | null> {
+		const current = this.#items.get(id);
+		if (current === undefined) return null;
+		const invalid = labelError(label);
+		if (invalid !== null) return invalid;
+		if (label.trim() === current.label) return null;
+		const result = await this.#act(async () => {
+			const updated = await this.#data.rename(id, label);
+			this.#items.set(id, updated);
+			this.#notify(renamedText(current.label, updated.label));
+		});
+		if (result.ok) return null;
+		return result.fields.label ?? Object.values(result.fields)[0] ?? result.message ?? null;
 	}
 
 	/**

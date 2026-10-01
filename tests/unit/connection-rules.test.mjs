@@ -146,6 +146,63 @@ describe('connection-rules.js', () => {
 		});
 	});
 
+	it('checks the name: not empty after trimming, at most 100 characters (KK-3)', () => {
+		expect(rules.LABEL_MAX_LENGTH).toBe(100);
+		expect(rules.labelViolation('Gmail Arbeit')).toBe('');
+		expect(rules.labelViolation(`  ${'a'.repeat(100)}  `)).toBe('');
+		for (const label of ['', '   ', '\t\n', undefined, null]) {
+			expect(rules.labelViolation(label), JSON.stringify(label)).toEqual({
+				field: 'label',
+				code: 'validation_connection_label',
+				message: 'Bitte einen Namen eingeben.'
+			});
+		}
+		expect(rules.labelViolation('a'.repeat(101))).toEqual({
+			field: 'label',
+			code: 'validation_connection_label_max',
+			message: 'Höchstens 100 Zeichen.'
+		});
+		expect(rules.normalizeLabel('  Gmail  Arbeit \n')).toBe('Gmail  Arbeit');
+	});
+
+	it('lets a new name come only alone: nothing else changes with it (KK-3)', () => {
+		const before = {
+			...base,
+			...empty,
+			label: 'Kalender',
+			enabled: 'true',
+			owner: 'u1',
+			household: '',
+			settings_json: '{"keywords":["todo"]}',
+			cursor: '41'
+		};
+		expect(rules.renameViolation(before, { ...before, label: 'Familie' })).toBe('');
+		// Without a new name the rule does not apply (switches, keywords, variables alone).
+		expect(rules.renameViolation(before, { ...before, enabled: 'false' })).toBe('');
+		const changes = {
+			type: 'telegram',
+			enabled: 'false',
+			secret_env: 'BYL_OTHER',
+			settings_json: '{"keywords":[]}',
+			owner: 'u2',
+			household: 'h1',
+			cursor: '0'
+		};
+		for (const [field, value] of Object.entries(changes)) {
+			expect(rules.renameViolation(before, { ...before, label: 'Familie', [field]: value }), field).toEqual({
+				field: field === 'settings_json' ? 'settings' : field,
+				code: 'validation_connection_rename_only',
+				message: rules.MESSAGES.validation_connection_rename_only
+			});
+		}
+		for (const field of rules.SERVER_FIELDS) {
+			expect(rules.renameViolation(before, { ...before, label: 'Familie', [field]: 'x' })).toMatchObject({
+				field,
+				code: 'validation_connection_rename_only'
+			});
+		}
+	});
+
 	it('reports only whether the variables are set', () => {
 		const env = { BYL_BOT: 'token-value', BYL_IDS: '1,2' };
 		const getenv = (name) => env[name] ?? '';

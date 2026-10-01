@@ -10,14 +10,15 @@
 	import { helpHref } from '$lib/settings-sections';
 	import type { NotionStore } from '$lib/stores/notion.svelte';
 	import ExternalLink from '../guidance/ExternalLink.svelte';
-	import ChannelCard, { type CardAction } from './ChannelCard.svelte';
+	import ChannelCard, { type CardAction, type CardRename } from './ChannelCard.svelte';
 
 	// Card of a Notion connection (ADR-0041 §9, plan notion-import NI-2; since the plan kanal-karten
 	// KK-2 a configuration of the building block ChannelCard): Notion fetches nothing by itself, so
 	// the main button opens the import dialog ("Listen übernehmen …"). "Verbindung prüfen" asks
 	// Notion with the token (menu "•••"). The details list the sources taken over so far (from the
 	// inbox, no request to Notion), each with "Erneut abrufen", which takes only entries that are
-	// not in the inbox yet. No "Pausieren" and no keywords: the user chooses what comes in.
+	// not in the inbox yet. No "Pausieren" and no keywords: the user chooses what comes in. With
+	// `onrename` the menu offers "Umbenennen …" in the card (ADR-0026, addendum KK-3).
 	let {
 		connection,
 		secretStatus,
@@ -27,7 +28,9 @@
 		onchanged,
 		onpause,
 		onsetup,
-		ondelete
+		ondelete,
+		onrename,
+		others = []
 	}: {
 		connection: Connection;
 		/** State of the variable; null while unknown. */
@@ -43,8 +46,16 @@
 		onpause: (enabled: boolean) => void;
 		onsetup: () => void;
 		ondelete: () => void;
+		/** Saves a new name; resolves to the error text or null (KK-3). Without it, no renaming. */
+		onrename?: (label: string) => Promise<string | null>;
+		/** Names of the other connections, for the note about a name that is taken. */
+		others?: readonly string[];
 	} = $props();
 
+	let card = $state<ReturnType<typeof ChannelCard>>();
+	const rename = $derived<CardRename | null>(
+		onrename === undefined ? null : { others, save: onrename }
+	);
 	const clock = minuteClock();
 	const connectionId = $derived(connection.id);
 	// The sources taken over so far come with the card, from the inbox of the server.
@@ -101,6 +112,9 @@
 		if (health.action === 'run') {
 			entries.push({ label: 'Verbindung prüfen', onselect: () => void check() });
 		}
+		if (rename !== null) {
+			entries.push({ label: 'Umbenennen …', onselect: () => void card?.startRename() });
+		}
 		if (health.action !== 'setup') {
 			entries.push({ label: 'Einrichtung ansehen', onselect: () => onsetup() });
 		}
@@ -111,6 +125,7 @@
 </script>
 
 <ChannelCard
+	bind:this={card}
 	icon="notion"
 	title={connection.label}
 	subtitle="Notion · Listen übernehmen, nur lesend"
@@ -120,6 +135,7 @@
 	message={message ?? refetchError}
 	{primary}
 	{menu}
+	{rename}
 	anchor={connectionAnchor(connection.id)}
 >
 	{#snippet details()}
