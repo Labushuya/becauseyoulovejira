@@ -2,12 +2,16 @@
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
 	import ErrorIcon from '$lib/components/ErrorIcon.svelte';
+	import ProjectOpenTickets from '$lib/components/ProjectOpenTickets.svelte';
 	import ProjectPanel from '$lib/components/ProjectPanel.svelte';
 	import Drawer from '$lib/components/overlay/Drawer.svelte';
 	import type { Project, ProjectDraft } from '$lib/domain/project';
 	import { parentChoices } from '$lib/domain/project-tree';
 	import { getProjectRoute } from '$lib/project-route';
 	import { getCatalogStore } from '$lib/stores/catalog.svelte';
+	import { findTicketDuplicateStore } from '$lib/stores/ticket-duplicate.svelte';
+	import { getTicketListStore } from '$lib/stores/ticket-list.svelte';
+	import { findTicketRowActions } from '$lib/stores/ticket-row-actions.svelte';
 	import {
 		newSubProjectHref,
 		projectHref,
@@ -19,9 +23,14 @@
 	// project comes from the catalog, so live changes show at once. While it is being deleted the
 	// panel keeps the last known project, so it does not turn into "nicht gefunden" before the
 	// navigation back to the tiles. Sub projects (ADR-0034, UP-4): the panel gets the parent, the
-	// choices of "Oberprojekt", the sub projects and "Mit Oberprojekt zurückholen".
+	// choices of "Oberprojekt", the sub projects and "Mit Oberprojekt zurückholen". The section
+	// "Offene Tickets" (ADR-0034, addendum "Offene Tickets in Projekten") lists the open tickets of
+	// the list store; the questions of their menu open in the layout.
 	const route = getProjectRoute();
 	const catalog = getCatalogStore();
+	const tickets = getTicketListStore();
+	const rowActions = findTicketRowActions();
+	const duplicates = findTicketDuplicateStore() !== null;
 	const id = $derived(page.params.id ?? '');
 	const back = $derived(projectsViewHref(page.url));
 
@@ -81,7 +90,21 @@
 			ondelete={() => remove(current)}
 			ondeleted={() => goto(back)}
 			onclose={() => goto(back)}
-		/>
+		>
+			{#snippet openTickets(headingOf)}
+				<ProjectOpenTickets
+					project={current}
+					{subProjects}
+					tickets={tickets.open}
+					today={tickets.today}
+					loading={tickets.openState === 'idle' || tickets.openState === 'loading'}
+					failed={tickets.openState === 'error'}
+					{rowActions}
+					{duplicates}
+					returnFocus={headingOf}
+				/>
+			{/snippet}
+		</ProjectPanel>
 	{/key}
 {:else}
 	<Drawer labelledby="project-missing" onclose={() => goto(back)}>

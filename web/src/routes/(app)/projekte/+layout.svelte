@@ -1,20 +1,26 @@
 <script lang="ts">
 	import { untrack } from 'svelte';
+	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
 	import { auth } from '$lib/auth.svelte';
 	import ProjectsView from '$lib/components/ProjectsView.svelte';
+	import TicketRowDialogs from '$lib/components/TicketRowDialogs.svelte';
 	import ViewWithPanel from '$lib/components/ViewWithPanel.svelte';
 	import { countActiveByProject, type Project } from '$lib/domain/project';
 	import { aggregateCounts, type ProjectCounts } from '$lib/domain/project-tree';
+	import { parentOf } from '$lib/domain/subtasks';
 	import { pb } from '$lib/pocketbase';
 	import { setProjectRoute } from '$lib/project-route';
 	import { CatalogEditor, catalogEditorData } from '$lib/stores/catalog-editor';
 	import { getCatalogStore } from '$lib/stores/catalog.svelte';
 	import { getFlagStore } from '$lib/stores/flags.svelte';
 	import { getInboxStore } from '$lib/stores/inbox.svelte';
+	import { ticketLinks } from '$lib/stores/open-mode.svelte';
 	import { ProjectStatsStore, projectStatsData } from '$lib/stores/project-stats.svelte';
 	import { liveSource } from '$lib/stores/realtime';
+	import { findTicketDuplicateStore } from '$lib/stores/ticket-duplicate.svelte';
 	import { getTicketListStore } from '$lib/stores/ticket-list.svelte';
+	import { findTicketRowActions } from '$lib/stores/ticket-row-actions.svelte';
 
 	// Project view (E3 plan, T-3 and package 14; ADR-0025 section 10, package UI-8; user request
 	// after EH-4): the list or the tiles on the left, the project panel (/projekte/neu,
@@ -22,12 +28,19 @@
 	// numbers "gesamt" live only while the view is shown; leaving it ends their subscription. Editor,
 	// numbers and flags reach the panels through ProjectRoute. The numbers of a parent include its
 	// sub projects (ADR-0034 section 6, UP-6); the panel names its own ones as "davon direkt".
+	// The open tickets in the list and in the panel (ADR-0034, addendum "Offene Tickets in
+	// Projekten") come from the list store and end with the menu "•••" of the ticket rows; its
+	// questions open here, once for the list and the panel.
 	let { children } = $props();
 
 	const tickets = getTicketListStore();
 	const catalog = getCatalogStore();
 	const inbox = getInboxStore();
 	const flags = getFlagStore();
+	// The menu "•••" of the open tickets (plan aktionsmenues, AM-2); only inside the (app) layout.
+	const rowActions = findTicketRowActions();
+	const duplicates = findTicketDuplicateStore();
+	const links = ticketLinks();
 	const stats = new ProjectStatsStore(projectStatsData(pb), auth);
 	const editor = new CatalogEditor(catalogEditorData(pb), auth, catalog);
 
@@ -123,7 +136,21 @@
 			{activeId}
 			{creating}
 			inboxCount={inbox.newCount}
+			{rowActions}
+			duplicates={duplicates !== null}
 		/>
 	{/snippet}
 	{@render children()}
 </ViewWithPanel>
+
+<!-- The questions of the menu "•••" of an open ticket, from the list or the panel. -->
+{#if rowActions}
+	<TicketRowDialogs
+		{rowActions}
+		{duplicates}
+		projects={catalog.activeProjects}
+		subtaskCountOf={(id) => tickets.progressOf(id).total}
+		parentKeyOf={(ticket) => parentOf(ticket, (id) => tickets.find(id))?.key ?? null}
+		onopen={(id) => void goto(links.path(id))}
+	/>
+{/if}

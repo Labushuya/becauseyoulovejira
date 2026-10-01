@@ -85,11 +85,21 @@ function onSelectedText(target: Element): boolean {
 	return selection.containsNode(target, true);
 }
 
-/** The button "•••" of the row (or tile) around `target`, null outside a row with a menu. */
+const MENU_ROW = `tr, [${MENU_ROW_ATTRIBUTE}]`;
+
+/**
+ * The button "•••" of the row (or tile) around `target`, null outside a row with a menu. Only a
+ * button of that row itself counts, not one of a row nested in it: the open tickets below a row of
+ * the project list stand in a row of their own, whose entries have their own menus (ADR-0034,
+ * addendum "Offene Tickets in Projekten"), and a click beside them keeps the browser menu.
+ */
 function rowMenuOf(target: Element): HTMLElement | null {
-	return (
-		target.closest(`tr, [${MENU_ROW_ATTRIBUTE}]`)?.querySelector<HTMLElement>(ROW_MENU) ?? null
-	);
+	const row = target.closest(MENU_ROW);
+	if (row === null) return null;
+	for (const button of row.querySelectorAll<HTMLElement>(ROW_MENU)) {
+		if (button.closest(MENU_ROW) === row) return button;
+	}
+	return null;
 }
 
 /** Asks the menu of `trigger` to open; false if no menu answered. */

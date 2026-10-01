@@ -40,10 +40,11 @@ export function listHref(url: URL): ResolvedPathname {
 
 /**
  * Tickets of a project (E3 plan, T-12): the list filtered by the project, nothing else set, so
- * the filter bar shows it as chosen.
+ * the filter bar shows it as chosen. `subProjects` false leaves its sub projects out
+ * (`unterprojekte=0`, ADR-0034 §6), so the list holds the own tickets of a parent only.
  */
-export function projectTicketsHref(projectId: string): ResolvedPathname {
-	const query = serializeListQuery({ ...EMPTY_LIST_QUERY, project: projectId });
+export function projectTicketsHref(projectId: string, subProjects = true): ResolvedPathname {
+	const query = serializeListQuery({ ...EMPTY_LIST_QUERY, project: projectId, subProjects });
 	return `${resolve('/')}${query}` as ResolvedPathname;
 }
 
