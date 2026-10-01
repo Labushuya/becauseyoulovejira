@@ -24,8 +24,10 @@
 	} from '$lib/domain/recurrence-rule';
 	import {
 		DEFAULT_TEMPLATE_STATUS,
+		subtasksWithoutTitle,
 		templateChanges,
 		templateOf,
+		trimmedSubtasks,
 		type RuleTemplate,
 		type TemplateStatus
 	} from '$lib/domain/series-template';
@@ -55,7 +57,8 @@
 	// never changes the open ticket, a new rhythm makes the hook compute the next ticket again
 	// (ADR-0023 section 5). Field errors stand at their field, among them the one of "Fortsetzen"
 	// with an archived project (ADR-0023 section 8); Escape and × ask before unsaved input is lost.
-	// The owner navigates; the store shows the flags.
+	// The owner navigates; the store shows the flags. Since WV-3 the template has the list
+	// "Unteraufgaben" (after its migration, `subtasksAvailable`).
 	let {
 		rule = null,
 		today,
@@ -65,6 +68,7 @@
 		openTickets = [],
 		eachAvailable = false,
 		statusAvailable = false,
+		subtasksAvailable = false,
 		ticketHrefOf,
 		oncreatetag,
 		onsave,
@@ -90,6 +94,8 @@
 		eachAvailable?: boolean;
 		/** Offer "Status beim Anlegen" and send it (plan WV, RecurrenceStore.statusReady). */
 		statusAvailable?: boolean;
+		/** Offer the sub-tasks of the template and send them (plan WV-3, RecurrenceStore.subtasksReady). */
+		subtasksAvailable?: boolean;
 		ticketHrefOf: (ticketId: string) => ResolvedPathname;
 		/** Existing or new tag for a typed name (E3 plan, T-14). */
 		oncreatetag: (name: string) => Promise<EnsureTagResult>;
@@ -111,14 +117,21 @@
 
 	/** Fields of the template, by the names of the server. */
 	type TemplateErrorField =
-		'title' | 'description' | 'project' | 'tags' | 'priority' | 'initial_status';
+		| 'title'
+		| 'description'
+		| 'project'
+		| 'tags'
+		| 'priority'
+		| 'initial_status'
+		| 'template_subtasks';
 	const TEMPLATE_ERROR_FIELDS: readonly string[] = [
 		'title',
 		'description',
 		'project',
 		'tags',
 		'priority',
-		'initial_status'
+		'initial_status',
+		'template_subtasks'
 	];
 
 	const uid = $props.id();
@@ -139,7 +152,8 @@
 					projectId: null,
 					tagIds: [],
 					priority: DEFAULT_PRIORITY,
-					initialStatus: DEFAULT_TEMPLATE_STATUS
+					initialStatus: DEFAULT_TEMPLATE_STATUS,
+					subtasks: []
 				}
 			: templateOf(source);
 	}
@@ -167,6 +181,8 @@
 	let saved = $state({ template: initialTemplate, values: copyValues(initialValues) });
 
 	let fieldErrors = $state<Partial<Record<TemplateErrorField, string>>>({});
+	/** Rows of the list of sub-tasks without a title (checked before sending). */
+	let invalidSubtasks = $state<number[]>([]);
 	let rhythmErrors = $state<Partial<Record<RecurrenceFormField, string>>>({});
 	let message = $state<string | null>(null);
 	let stateError = $state<string | null>(null);
@@ -243,7 +259,9 @@
 			// to "Folgetickets starten mit" (ADR-0022 addendum 9).
 			...(statusAvailable && {
 				initial_status: askStatus && chosenStatus !== '' ? chosenStatus : template.initialStatus
-			})
+			}),
+			// The whole list, only for a server after its migration (plan WV-3).
+			...(subtasksAvailable && { template_subtasks: trimmedSubtasks(template.subtasks) })
 		};
 		return withRhythm ? { ...draft, ...formParams(values) } : draft;
 	}
@@ -256,8 +274,13 @@
 			...(template.title.trim() === '' && { title: 'Bitte einen Titel eingeben.' }),
 			...(askStatus && chosenStatus === '' && { initial_status: INITIAL_STATUS_REQUIRED })
 		};
+		invalidSubtasks = subtasksAvailable ? subtasksWithoutTitle(template.subtasks) : [];
 		rhythmErrors = formErrors(values);
-		if (Object.keys(fieldErrors).length > 0 || Object.keys(rhythmErrors).length > 0) {
+		if (
+			Object.keys(fieldErrors).length > 0 ||
+			invalidSubtasks.length > 0 ||
+			Object.keys(rhythmErrors).length > 0
+		) {
 			await focusFirstError();
 			return;
 		}
@@ -265,7 +288,8 @@
 		const sentTemplate: RuleTemplate = {
 			...template,
 			title: template.title.trim(),
-			tagIds: [...template.tagIds]
+			tagIds: [...template.tagIds],
+			subtasks: trimmedSubtasks(template.subtasks)
 		};
 		const sentValues = copyValues(values);
 		try {
@@ -464,6 +488,8 @@
 				{currentProject}
 				{busy}
 				statusAvailable={statusAvailable && !askStatus}
+				{subtasksAvailable}
+				{invalidSubtasks}
 				{oncreatetag}
 				onprojectchosen={() => {
 					stateError = null;

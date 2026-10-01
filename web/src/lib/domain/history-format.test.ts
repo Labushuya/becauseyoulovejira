@@ -128,6 +128,26 @@ describe('describeHistoryEntry', () => {
 		);
 	});
 
+	it('names the sub-tasks a ticket of a series got from the template (ADR-0022 addendum 10)', () => {
+		const note = entry({
+			field: 'recurrence_subtasks',
+			oldValue: 'rule00000000001',
+			newValue: JSON.stringify({ count: 3, tickets: ['a', 'b', 'c'] }),
+			user: ''
+		});
+		expect(describeHistoryEntry(note, lookups, ME)).toMatchObject({
+			actor: RECURRENCE_ACTOR,
+			text: '3 Unteraufgaben aus der Vorlage angelegt'
+		});
+		const one = JSON.stringify({ count: 1, tickets: ['a'] });
+		expect(describeHistoryEntry({ ...note, newValue: one }, lookups, ME).text).toBe(
+			'1 Unteraufgabe aus der Vorlage angelegt'
+		);
+		expect(describeHistoryEntry({ ...note, newValue: 'kaputt' }, lookups, ME).text).toBe(
+			'Unteraufgaben aus der Vorlage angelegt'
+		);
+	});
+
 	it.each<[string, Partial<HistoryEntry>, string]>([
 		['creation', { field: 'created', newValue: 'TASK-12' }, 'hat das Ticket angelegt (TASK-12)'],
 		['creation without key', { field: 'created' }, 'hat das Ticket angelegt'],

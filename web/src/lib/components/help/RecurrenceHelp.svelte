@@ -203,13 +203,25 @@
 			(„Folgetickets starten mit“: „Offen“, „Wie dieses Ticket“ oder ein anderer Status), ohne
 			Vorauswahl; ohne Wahl lässt sich die Regel nicht anlegen. Ansehen und ändern kannst du die
 			Vorlage am Ticket unter „Wiederholt sich“ („Künftige Tickets“, „Bearbeiten“) oder im Panel der
-			Regel unter „Wiederholungen“. Unteraufgaben, Kommentare und Quellen gehen nicht mit.
+			Regel unter „Wiederholungen“. Kommentare und Quellen gehen nicht mit.
+		</li>
+		<li>
+			Unteraufgaben legst du in der Vorlage fest (Liste „Unteraufgaben“, höchstens 20, je mit Titel
+			und Priorität, sortierbar). Jedes neue Ticket der Serie bekommt sie als neue, offene
+			Unteraufgaben ohne Fälligkeit, auch beim Nachholen und mit „Jeden Termin einzeln anlegen“. Am
+			Ticket füllt „Unteraufgaben dieses Tickets übernehmen“ die Liste mit seinen Unteraufgaben
+			(„Ergänzen“ oder „Ersetzen“, wenn schon welche darin stehen); von selbst kommen sie nicht in
+			die Vorlage. Änderungen gelten nur für künftige Tickets. Nimmt das Wiedereröffnen des zuletzt
+			erledigten Tickets ein unberührtes Folgeticket zurück, gehen seine Unteraufgaben mit; hast du
+			eine davon geändert, kommentiert, entfernt oder eine hinzugefügt, ist es nicht mehr unberührt.
 		</li>
 		<li>
 			Änderst du Titel, Beschreibung, Priorität, Projekt oder Tags eines offenen Tickets der Serie,
 			gilt das zuerst nur für dieses Ticket. Ein Hinweis bietet „Auch für künftige Tickets
-			übernehmen“ an, auch nach einer Änderung in der Tabelle oder für mehrere Tickets. Status und
-			Fälligkeit gehören immer nur zum einzelnen Ticket.
+			übernehmen“ an, auch nach einer Änderung in der Tabelle oder für mehrere Tickets. Dasselbe
+			gilt, wenn du einem offenen Ticket der Serie eine Unteraufgabe hinzufügst; Entfernen oder
+			Umbenennen einer Unteraufgabe änderst du dagegen direkt in der Vorlage. Status und Fälligkeit
+			gehören immer nur zum einzelnen Ticket.
 		</li>
 		<li>
 			Eine Rückfrage beim Entstehen eines Tickets gibt es nicht: Folgetickets entstehen im

@@ -14,6 +14,7 @@ import {
 	RECURRENCE_MESSAGES,
 	backlogOf,
 	SKIPPED_FIELD,
+	SUBTASKS_FIELD,
 	openInstanceMessage,
 	parseSkipped,
 	reopenOlderMessage
@@ -21,8 +22,11 @@ import {
 import {
 	DEFAULT_TEMPLATE_STATUS,
 	TEMPLATE_STATUSES,
-	templateStatusOf
+	TEMPLATE_SUBTASKS_MAX,
+	templateStatusOf,
+	templateSubtasksOf
 } from '../../web/src/lib/domain/series-template.ts';
+import { PRIORITIES } from '../../web/src/lib/domain/status.ts';
 
 const hook = loadHookLib('recurrence.js');
 const hookRules = loadHookLib('recurrence-rules.js');
@@ -147,6 +151,15 @@ describe('recurrence: web app against the hooks', () => {
 		expect({ ...RECURRENCE_MESSAGES }).toEqual(hookRecurrence);
 		expect(openInstanceMessage('HAUS-12')).toBe(hookRules.openInstanceMessage('HAUS-12'));
 		expect(reopenOlderMessage('HAUS-12')).toBe(hookRules.reopenOlderMessage('HAUS-12'));
+	});
+
+	it('reads the sub-tasks of a template like the hook stores them (plan WV-3)', () => {
+		expect(TEMPLATE_SUBTASKS_MAX).toBe(hookRules.TEMPLATE_SUBTASKS_MAX);
+		expect(SUBTASKS_FIELD).toBe(hookRules.SUBTASKS_FIELD);
+		expect([...PRIORITIES]).toEqual(hookRules.SUBTASK_PRIORITIES);
+		// What the hook stores, the SPA reads unchanged.
+		const stored = hookRules.templateSubtasksCheck([{ title: ' A ', priority: 'high' }, { title: 'B' }]).value;
+		expect(templateSubtasksOf(stored)).toEqual(stored);
 	});
 
 	it('offers the statuses for "Status beim Anlegen" the hook accepts, "Offen" by default (plan WV)', () => {

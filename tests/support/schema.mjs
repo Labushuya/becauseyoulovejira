@@ -118,7 +118,9 @@ export const EXPECTED_COLLECTIONS = {
 			// "Jeden Termin einzeln anlegen" (plan OR-5, migration 1790202200).
 			each_occurrence: bool(),
 			// "Status beim Anlegen" (plan WV, migration 1790202500): every status but done.
-			initial_status: select(['backlog', 'open', 'in_progress', 'waiting'], false)
+			initial_status: select(['backlog', 'open', 'in_progress', 'waiting'], false),
+			// Sub-tasks of the template (plan WV-3, migration 1790202700), checked by the hook.
+			template_subtasks: { type: 'json', required: false, maxSize: 40000 }
 		},
 		indexes: [
 			'CREATE INDEX idx_recurrence_rules_owner ON recurrence_rules (owner)',

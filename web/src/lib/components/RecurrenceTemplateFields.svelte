@@ -3,7 +3,8 @@
 	import {
 		TEMPLATE_STATUSES,
 		isTemplateStatus,
-		type RuleTemplate
+		type RuleTemplate,
+		type TicketSubtask
 	} from '$lib/domain/series-template';
 	import { isPriority } from '$lib/domain/status';
 	import {
@@ -19,13 +20,16 @@
 	import RichTextEditor from './RichTextEditor.svelte';
 	import StatusSelect from './StatusSelect.svelte';
 	import TagPicker from './TagPicker.svelte';
+	import TemplateSubtaskList from './TemplateSubtaskList.svelte';
 
 	// Fields of the template of a rule (plan WV): title, priority, "Status beim Anlegen", project,
-	// tags and description. The rule panel (/wiederholungen) and the inline editor at the ticket
-	// ("Wiederholt sich" → "Bearbeiten") use the same fields. `values` is replaced as a whole on
-	// every change, so a binding through getter and setter (a draft in a store) works as well.
-	// The status is offered only after its migration (`statusAvailable`); every status but
-	// "Erledigt" (ADR-0022 addendum 8).
+	// tags, description and since WV-3 the list "Unteraufgaben". The rule panel (/wiederholungen)
+	// and the inline editor at the ticket ("Wiederholt sich" → "Bearbeiten") use the same fields.
+	// `values` is replaced as a whole on every change, so a binding through getter and setter (a
+	// draft in a store) works as well. The status is offered only after its migration
+	// (`statusAvailable`); every status but "Erledigt" (ADR-0022 addendum 8). The sub-tasks only
+	// after theirs (`subtasksAvailable`, ADR-0022 addendum 10); at a ticket with sub-tasks the list
+	// can take them over (`ticketSubtasks`).
 	let {
 		values = $bindable(),
 		tagText = $bindable(''),
@@ -36,6 +40,9 @@
 		currentProject = null,
 		busy = false,
 		statusAvailable = false,
+		subtasksAvailable = false,
+		ticketSubtasks = [],
+		invalidSubtasks = [],
 		oncreatetag,
 		onprojectchosen
 	}: {
@@ -45,7 +52,16 @@
 		titleInput?: HTMLInputElement;
 		/** Field errors, by the field names of the server. */
 		errors?: Partial<
-			Record<'title' | 'description' | 'priority' | 'project' | 'tags' | 'initial_status', string>
+			Record<
+				| 'title'
+				| 'description'
+				| 'priority'
+				| 'project'
+				| 'tags'
+				| 'initial_status'
+				| 'template_subtasks',
+				string
+			>
 		>;
 		/** Projects that can be chosen (the active ones). */
 		projects: readonly ProjectRef[];
@@ -56,6 +72,12 @@
 		busy?: boolean;
 		/** The server knows "Status beim Anlegen" (after its migration). */
 		statusAvailable?: boolean;
+		/** The server knows the sub-tasks of the template (after their migration, plan WV-3). */
+		subtasksAvailable?: boolean;
+		/** Sub-tasks of the ticket the template is edited at ("Unteraufgaben dieses Tickets übernehmen"). */
+		ticketSubtasks?: readonly TicketSubtask[];
+		/** Rows of the list the owner refused for a missing title. */
+		invalidSubtasks?: readonly number[];
 		/** Existing or new tag for a typed name (E3 plan, T-14). */
 		oncreatetag: (name: string) => Promise<EnsureTagResult>;
 		/** A project was chosen (the owner may clear a refusal that named it). */
@@ -220,6 +242,16 @@
 	<p class="field-error" id={ids.description}>
 		<ErrorIcon /><span>{errors.description}</span>
 	</p>
+{/if}
+
+{#if subtasksAvailable}
+	<TemplateSubtaskList
+		bind:subtasks={() => values.subtasks, (subtasks) => (values = { ...values, subtasks })}
+		{ticketSubtasks}
+		invalidRows={invalidSubtasks}
+		error={errors.template_subtasks ?? null}
+		{busy}
+	/>
 {/if}
 
 <style>

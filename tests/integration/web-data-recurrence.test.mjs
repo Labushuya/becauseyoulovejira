@@ -29,6 +29,7 @@ import {
   initialStatusReady,
   listRules,
   setRuleActive,
+  templateSubtasksReady,
   updateRule,
 } from "../../web/src/lib/data/recurrence.ts";
 import {
@@ -586,5 +587,64 @@ describe("web data layer: from every way a rule starts to the next ticket (plan 
     await updateTicket(owner.client, second.id, { status: "done" });
     const [third] = await openOf(owner, rule.id);
     expect(third).toMatchObject({ priority: "high", status: "open" });
+  });
+});
+
+// Plan WV-3 (ADR-0022 addendum 10): the list "Unteraufgaben" of the template through the data
+// layer, as the rule panel and the editor at the ticket send it.
+describe("web data layer: the sub-tasks of the template (plan WV-3)", () => {
+  it("knows the list after the migration, sends and reads it, and names a refusal at the field", async () => {
+    const owner = await createOwner(await superuserClient());
+    expect(await templateSubtasksReady(owner.client)).toBe(true);
+    const today = berlinToday(Date.now());
+    const rule = await createRule(
+      owner.client,
+      draft({
+        freq: "daily",
+        weekdays: [],
+        anchor: today,
+        lead_days: 0,
+        template_subtasks: [
+          { title: " Entkalken ", priority: "high" },
+          { title: "Filter wechseln", priority: "medium" },
+        ],
+      }),
+    );
+    expect(rule.templateSubtasks).toEqual([
+      { title: "Entkalken", priority: "high" },
+      { title: "Filter wechseln", priority: "medium" },
+    ]);
+    expect((await listRules(owner.client)).find((entry) => entry.id === rule.id)?.templateSubtasks).toEqual(
+      rule.templateSubtasks,
+    );
+    // The first ticket of the new rule came at once, with its sub-tasks.
+    const [first] = await owner.client.collection("tickets").getFullList({
+      filter: owner.client.filter("recurrence = {:rule}", { rule: rule.id }),
+    });
+    const children = await owner.client.collection("tickets").getFullList({
+      filter: owner.client.filter("parent = {:id}", { id: first.id }),
+      sort: "created",
+    });
+    expect(children.map(({ title, priority, status }) => ({ title, priority, status }))).toEqual([
+      { title: "Entkalken", priority: "high", status: "open" },
+      { title: "Filter wechseln", priority: "medium", status: "open" },
+    ]);
+
+    // "Auch für künftige Tickets übernehmen" after "Unteraufgabe hinzufügen": the whole list.
+    const taken = await updateRule(owner.client, rule.id, {
+      template_subtasks: [...rule.templateSubtasks, { title: "Deckel putzen", priority: "low" }],
+    });
+    expect(taken.templateSubtasks.map((entry) => entry.title)).toEqual(["Entkalken", "Filter wechseln", "Deckel putzen"]);
+
+    const refused = await dataErrorOf(
+      updateRule(owner.client, rule.id, {
+        template_subtasks: Array.from({ length: 21 }, (_value, index) => ({ title: `S${index}`, priority: "low" })),
+      }),
+    );
+    expect(refused.fields.template_subtasks).toMatchObject({
+      code: "validation_recurrence_subtasks_max",
+      message: "Die Vorlage hat höchstens 20 Unteraufgaben.",
+    });
+    await setRuleActive(owner.client, rule.id, false);
   });
 });

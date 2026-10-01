@@ -700,7 +700,9 @@ const EACH_RULE_FIELDS = ['each_occurrence'];
 const EACH_TICKET_FIELDS = ['occurrence'];
 // "Status beim Anlegen" (plan WV, 1790202500), which every earlier test runs along as well.
 const STATUS_RULE_FIELDS = ['initial_status'];
-const LATER_RULE_FIELDS = [...EACH_RULE_FIELDS, ...STATUS_RULE_FIELDS];
+// The sub-tasks of the template (plan WV-3, 1790202700), which every earlier test runs along as well.
+const SUBTASKS_RULE_FIELDS = ['template_subtasks'];
+const LATER_RULE_FIELDS = [...EACH_RULE_FIELDS, ...STATUS_RULE_FIELDS, ...SUBTASKS_RULE_FIELDS];
 // Fields of the later migration of the trash (ADR-0037, 1790202300), which every earlier test runs
 // along as well.
 const TRASH_TICKET_FIELDS = ['deleted_at', 'deleted_by', 'trash'];
@@ -735,8 +737,8 @@ function withoutFields(rows, fields) {
 /**
  * A snapshot without the columns of "Jeden Termin einzeln anlegen" (plan OR-5, migration
  * 1790202200), of the trash (ADR-0037, 1790202300), of "Status beim Anlegen" (plan WV,
- * 1790202500) and of the pinned comment (ADR-0044, 1790202600): the tests of earlier migrations
- * run them along with `up`.
+ * 1790202500), of the pinned comment (ADR-0044, 1790202600) and of the sub-tasks of the template
+ * (plan WV-3, 1790202700): the tests of earlier migrations run them along with `up`.
  */
 function withoutLater(snap) {
 	return {
@@ -794,6 +796,12 @@ function withoutStatusField(collection) {
 	return { ...collection, fields: collection.fields.filter((field) => !STATUS_RULE_FIELDS.includes(field.name)) };
 }
 
+/** A collection without the field of the sub-tasks of the template (plan WV-3, 1790202700). */
+function withoutSubtasksField(collection) {
+	if (collection.name !== 'recurrence_rules') return collection;
+	return { ...collection, fields: collection.fields.filter((field) => !SUBTASKS_RULE_FIELDS.includes(field.name)) };
+}
+
 /** A collection without the field and index of the pinned comment (ADR-0044, 1790202600). */
 function withoutPinField(collection) {
 	if (collection.name !== 'tickets') return collection;
@@ -807,8 +815,8 @@ function withoutPinField(collection) {
 /**
  * A collection without the fields, indexes and rule conditions of the migrations 1790202200
  * (plan OR-5), 1790202300 (trash, ADR-0037), 1790202500 (plan WV), 1790202600 (pinned comment,
- * ADR-0044) and without the channels of 1790202400 (own inbox, ADR-0038; its collection leaves
- * with `withoutLaterCollections`).
+ * ADR-0044), 1790202700 (plan WV-3) and without the channels of 1790202400 (own inbox, ADR-0038;
+ * its collection leaves with `withoutLaterCollections`).
  */
 function withoutLaterSchema(collection) {
 	const plain = withoutOwnInboxChannels(withoutTrashRules(collection));
@@ -959,6 +967,7 @@ const TRASH_MIGRATION = '1790202300_tickets_trash.js';
 const OWN_INBOX_MIGRATION = '1790202400_inbox_keys.js';
 const STATUS_MIGRATION = '1790202500_recurrence_initial_status.js';
 const PIN_MIGRATION = '1790202600_tickets_pinned_comment.js';
+const SUBTASKS_MIGRATION = '1790202700_recurrence_template_subtasks.js';
 
 describe('migration rollback of "Jeden Termin einzeln anlegen" (plan OR-5)', () => {
 	const ticketsOf = (dataDir) =>
@@ -1005,14 +1014,16 @@ describe('migration rollback of "Jeden Termin einzeln anlegen" (plan OR-5)', () 
 		async () => {
 			// The trash (ADR-0037, 1790202300) follows and runs along; it adds deleted_at = '' to the
 			// condition of the index. The own inbox (ADR-0038, 1790202400), "Status beim Anlegen"
-			// (plan WV, 1790202500) and the pinned comment (ADR-0044, 1790202600) run along as well.
+			// (plan WV, 1790202500), the pinned comment (ADR-0044, 1790202600) and the sub-tasks of the
+			// template (plan WV-3, 1790202700) run along as well.
 			const fromEach = MIGRATION_FILES.slice(MIGRATION_FILES.indexOf(EACH_MIGRATION));
 			expect(fromEach).toEqual([
 				EACH_MIGRATION,
 				TRASH_MIGRATION,
 				OWN_INBOX_MIGRATION,
 				STATUS_MIGRATION,
-				PIN_MIGRATION
+				PIN_MIGRATION,
+				SUBTASKS_MIGRATION
 			]);
 
 			await withTempDataDir(async ({ dataDir, args }) => {
@@ -1143,10 +1154,17 @@ describe('migration rollback of the trash (ADR-0037)', () => {
 	it(
 		'adds the fields, the index condition and the rule conditions without changing a row, and deletes the trash on the way back',
 		async () => {
-			// The own inbox (ADR-0038, 1790202400), "Status beim Anlegen" (plan WV, 1790202500) and the
-			// pinned comment (ADR-0044, 1790202600) follow and run along; they change no row here.
+			// The own inbox (ADR-0038, 1790202400), "Status beim Anlegen" (plan WV, 1790202500), the
+			// pinned comment (ADR-0044, 1790202600) and the sub-tasks of the template (plan WV-3,
+			// 1790202700) follow and run along; they change no row here.
 			const fromTrash = MIGRATION_FILES.slice(MIGRATION_FILES.indexOf(TRASH_MIGRATION));
-			expect(fromTrash).toEqual([TRASH_MIGRATION, OWN_INBOX_MIGRATION, STATUS_MIGRATION, PIN_MIGRATION]);
+			expect(fromTrash).toEqual([
+				TRASH_MIGRATION,
+				OWN_INBOX_MIGRATION,
+				STATUS_MIGRATION,
+				PIN_MIGRATION,
+				SUBTASKS_MIGRATION
+			]);
 
 			await withTempDataDir(async ({ dataDir, args }) => {
 				await migrate(args, 'up');
@@ -1234,10 +1252,11 @@ describe('migration rollback of the own inbox (ADR-0038)', () => {
 	it(
 		'adds the keys and the two channels without changing a row, and keeps the content of new entries on the way back',
 		async () => {
-			// "Status beim Anlegen" (plan WV, 1790202500) and the pinned comment (ADR-0044, 1790202600)
-			// follow and run along; they change no row.
+			// "Status beim Anlegen" (plan WV, 1790202500), the pinned comment (ADR-0044, 1790202600)
+			// and the sub-tasks of the template (plan WV-3, 1790202700) follow and run along; they
+			// change no row.
 			const fromOwn = MIGRATION_FILES.slice(MIGRATION_FILES.indexOf(OWN_INBOX_MIGRATION));
-			expect(fromOwn).toEqual([OWN_INBOX_MIGRATION, STATUS_MIGRATION, PIN_MIGRATION]);
+			expect(fromOwn).toEqual([OWN_INBOX_MIGRATION, STATUS_MIGRATION, PIN_MIGRATION, SUBTASKS_MIGRATION]);
 
 			await withTempDataDir(async ({ dataDir, args }) => {
 				await migrate(args, 'up');
@@ -1262,6 +1281,7 @@ describe('migration rollback of the own inbox (ADR-0038)', () => {
 						.map(withoutOwnInboxChannels)
 						.map(withoutStatusField)
 						.map(withoutPinField)
+						.map(withoutSubtasksField)
 				).toEqual(schemaBefore);
 
 				// Entries, a ticket, keyword lists and a key of the own inbox, then back.
@@ -1339,9 +1359,11 @@ describe('migration rollback of "Status beim Anlegen" (plan WV, ADR-0022 addendu
 	it(
 		'adds the field without changing a row, and the tickets made with it keep their status on the way back',
 		async () => {
-			// The pinned comment (ADR-0044, 1790202600) follows and runs along; it changes no row.
+			// The pinned comment (ADR-0044, 1790202600) and the sub-tasks of the template (plan WV-3,
+			// 1790202700) follow and run along; they change no row.
 			const fromStatus = MIGRATION_FILES.slice(MIGRATION_FILES.indexOf(STATUS_MIGRATION));
-			expect(fromStatus).toEqual([STATUS_MIGRATION, PIN_MIGRATION]);
+			expect(fromStatus).toEqual([STATUS_MIGRATION, PIN_MIGRATION, SUBTASKS_MIGRATION]);
+			const ruleFields = [...STATUS_RULE_FIELDS, ...SUBTASKS_RULE_FIELDS];
 
 			await withTempDataDir(async ({ dataDir, args }) => {
 				await migrate(args, 'up');
@@ -1361,11 +1383,14 @@ describe('migration rollback of "Status beim Anlegen" (plan WV, ADR-0022 addendu
 					maxSelect: 1
 				});
 				expect(
-					withoutTimestamps(readDataDir(dataDir).collections).map(withoutStatusField).map(withoutPinField)
+					withoutTimestamps(readDataDir(dataDir).collections)
+						.map(withoutStatusField)
+						.map(withoutPinField)
+						.map(withoutSubtasksField)
 				).toEqual(schemaBefore);
 				// No row changes: the rule of before has an empty status, which the hooks read as "open".
 				const migrated = withDatabase(dataDir, snapshot);
-				expect(withoutFields(migrated.recurrence_rules, STATUS_RULE_FIELDS)).toEqual(before.recurrence_rules);
+				expect(withoutFields(migrated.recurrence_rules, ruleFields)).toEqual(before.recurrence_rules);
 				expect(migrated.recurrence_rules.map((rule) => rule.initial_status)).toEqual(['']);
 				expect(withoutFields(migrated.tickets, PIN_TICKET_FIELDS)).toEqual(before.tickets);
 				// "done" is no value of the field.
@@ -1384,7 +1409,7 @@ describe('migration rollback of "Status beim Anlegen" (plan WV, ADR-0022 addendu
 				const reverted = withDatabase(dataDir, snapshot);
 				// The field goes with its value; the rule makes "open" tickets again (the hooks read no
 				// field), the ticket made meanwhile stays "waiting".
-				expect(reverted.recurrence_rules).toEqual(withoutFields(withStatus.recurrence_rules, STATUS_RULE_FIELDS));
+				expect(reverted.recurrence_rules).toEqual(withoutFields(withStatus.recurrence_rules, ruleFields));
 				expect(reverted.tickets).toEqual(withoutFields(withStatus.tickets, PIN_TICKET_FIELDS));
 				expect(reverted.tickets.map((ticket) => ticket.status)).toEqual(['done', 'waiting']);
 
@@ -1420,8 +1445,9 @@ describe('migration rollback of the pinned comment (ADR-0044)', () => {
 	it(
 		'adds the relation and its index without changing a row, and drops only the pins on the way back',
 		async () => {
+			// The sub-tasks of the template (plan WV-3, 1790202700) follow and run along; no row changes.
 			const fromPin = MIGRATION_FILES.slice(MIGRATION_FILES.indexOf(PIN_MIGRATION));
-			expect(fromPin).toEqual([PIN_MIGRATION]);
+			expect(fromPin).toEqual([PIN_MIGRATION, SUBTASKS_MIGRATION]);
 
 			await withTempDataDir(async ({ dataDir, args }) => {
 				await migrate(args, 'up');
@@ -1445,7 +1471,9 @@ describe('migration rollback of the pinned comment (ADR-0044)', () => {
 				});
 				// The exact statement is checked by assertSchema.
 				expect(ticketsOf(dataDir).indexes.filter((index) => PIN_INDEX.test(index))).toHaveLength(1);
-				expect(withoutTimestamps(readDataDir(dataDir).collections).map(withoutPinField)).toEqual(schemaBefore);
+				expect(
+					withoutTimestamps(readDataDir(dataDir).collections).map(withoutPinField).map(withoutSubtasksField)
+				).toEqual(schemaBefore);
 				// No row changes: every ticket starts without a pin.
 				const migrated = withDatabase(dataDir, snapshot);
 				expect(withoutFields(migrated.tickets, PIN_TICKET_FIELDS)).toEqual(before.tickets);
@@ -1468,6 +1496,94 @@ describe('migration rollback of the pinned comment (ADR-0044)', () => {
 				expect(appliedFiles(await migrate(args, 'up'), 'Applied')).toEqual(fromPin);
 				assertSchema(readDataDir(dataDir).collections);
 				expect(withDatabase(dataDir, snapshot).tickets.map((ticket) => ticket.pinned_comment)).toEqual(['', '']);
+			});
+		},
+		60_000
+	);
+});
+
+describe('migration rollback of the sub-tasks of the template (plan WV-3, ADR-0022 addendum 10)', () => {
+	const OWNER = 'user00000000001';
+	const SCOPE = 'u:user00000000001';
+	const day = (date) => `${date} 00:00:00.000Z`;
+	const subtasksField = (dataDir) =>
+		readDataDir(dataDir)
+			.collections.find((collection) => collection.name === 'recurrence_rules')
+			.fields.find((field) => field.name === 'template_subtasks');
+	const insertTicket = (db, id, number, title, parent) =>
+		db
+			.prepare(
+				'INSERT INTO tickets (id, number, key, title, status, priority, due, recurrence, parent, scope, owner, created, updated) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+			)
+			.run(id, number, `TASK-${number}`, title, 'open', 'medium', parent === '' ? day('2026-10-05') : '', parent === '' ? 'rule00000000001' : '', parent, SCOPE, OWNER, STAMP, STAMP);
+
+	/** A rule with its open ticket, as before the field. */
+	function insertData(db) {
+		db.prepare('INSERT INTO users (id, email, tokenKey, password, created, updated) VALUES (?, ?, ?, ?, ?, ?)').run(OWNER, 'eins@example.invalid', 'tk1', 'hash', STAMP, STAMP);
+		db.prepare(
+			'INSERT INTO recurrence_rules (id, title, priority, mode, freq, interval, weekdays, anchor, lead_days, next_due, active, initial_status, scope, owner, created, updated) ' +
+				'VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+		).run('rule00000000001', 'Kaffeemaschine', 'high', 'calendar', 'weekly', 1, '["MO"]', day('2026-09-21'), 3, day('2026-10-12'), 1, 'open', SCOPE, OWNER, STAMP, STAMP);
+		insertTicket(db, 'ticket000000001', 1, 'Kaffeemaschine', '');
+	}
+
+	it(
+		'adds the field without changing a row, and the sub-tasks made with it stay on the way back',
+		async () => {
+			const fromSubtasks = MIGRATION_FILES.slice(MIGRATION_FILES.indexOf(SUBTASKS_MIGRATION));
+			expect(fromSubtasks).toEqual([SUBTASKS_MIGRATION]);
+
+			await withTempDataDir(async ({ dataDir, args }) => {
+				await migrate(args, 'up');
+				await migrate(args, 'down', String(fromSubtasks.length));
+				expect(subtasksField(dataDir)).toBeUndefined();
+				withDatabase(dataDir, insertData);
+				const before = withDatabase(dataDir, snapshot);
+				const schemaBefore = withoutTimestamps(readDataDir(dataDir).collections);
+
+				const up = await migrate(args, 'up');
+				expect(appliedFiles(up, 'Applied')).toEqual(fromSubtasks);
+				assertSchema(readDataDir(dataDir).collections);
+				expect(subtasksField(dataDir)).toMatchObject({ type: 'json', required: false, maxSize: 40000 });
+				expect(withoutTimestamps(readDataDir(dataDir).collections).map(withoutSubtasksField)).toEqual(schemaBefore);
+				// No row changes: the rule of before has no sub-tasks (null, which the hooks read as none).
+				const migrated = withDatabase(dataDir, snapshot);
+				expect(withoutFields(migrated.recurrence_rules, SUBTASKS_RULE_FIELDS)).toEqual(before.recurrence_rules);
+				expect(migrated.recurrence_rules.map((rule) => rule.template_subtasks)).toEqual([null]);
+				expect(migrated.tickets).toEqual(before.tickets);
+
+				// The template gets sub-tasks, and the next ticket was made with them.
+				withDatabase(dataDir, (db) => {
+					db.prepare('UPDATE recurrence_rules SET template_subtasks = ? WHERE id = ?').run(
+						JSON.stringify([
+							{ title: 'Entkalken', priority: 'high' },
+							{ title: 'Filter wechseln', priority: 'medium' }
+						]),
+						'rule00000000001'
+					);
+					insertTicket(db, 'ticket000000002', 2, 'Entkalken', 'ticket000000001');
+					insertTicket(db, 'ticket000000003', 3, 'Filter wechseln', 'ticket000000001');
+				});
+				const withSubtasks = withDatabase(dataDir, snapshot);
+
+				const down = await migrate(args, 'down', String(fromSubtasks.length));
+				expect(appliedFiles(down, 'Reverted')).toEqual([...fromSubtasks].reverse());
+				expect(withoutTimestamps(readDataDir(dataDir).collections)).toEqual(schemaBefore);
+				// The field goes with its value; the rule makes tickets without sub-tasks again, the
+				// tickets and sub-tasks made meanwhile stay as they are.
+				const reverted = withDatabase(dataDir, snapshot);
+				expect(reverted.recurrence_rules).toEqual(withoutFields(withSubtasks.recurrence_rules, SUBTASKS_RULE_FIELDS));
+				expect(reverted.recurrence_rules).toEqual(before.recurrence_rules);
+				expect(reverted.tickets).toEqual(withSubtasks.tickets);
+				expect(reverted.tickets.map((ticket) => [ticket.title, ticket.parent])).toEqual([
+					['Kaffeemaschine', ''],
+					['Entkalken', 'ticket000000001'],
+					['Filter wechseln', 'ticket000000001']
+				]);
+
+				expect(appliedFiles(await migrate(args, 'up'), 'Applied')).toEqual(fromSubtasks);
+				assertSchema(readDataDir(dataDir).collections);
+				expect(withDatabase(dataDir, snapshot).recurrence_rules.map((rule) => rule.template_subtasks)).toEqual([null]);
 			});
 		},
 		60_000
