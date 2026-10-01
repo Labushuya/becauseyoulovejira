@@ -42,7 +42,7 @@ describe('GET /api/byl/host with BYL_HOST_PLATFORM', () => {
 
 	beforeAll(async () => {
 		instance = await startPocketBase({ env: { BYL_HOST_PLATFORM: 'container' } });
-	}, 30_000);
+	});
 
 	afterAll(async () => {
 		await instance?.stop();

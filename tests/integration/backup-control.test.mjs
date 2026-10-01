@@ -36,6 +36,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { spawnSyncClean } from '../support/clean-env.mjs';
 import { POCKETBASE_EXE } from '../support/pocketbase-harness.mjs';
 import { POWERSHELL_EXE, runPowerShellJson } from '../support/powershell.mjs';
+import { LOG_WRITE_MS, scaled } from '../support/timing.mjs';
 
 const ROOT_DIR = resolve(fileURLToPath(new URL('../..', import.meta.url)));
 const APP_DIR = join(ROOT_DIR, 'app');
@@ -43,7 +44,7 @@ const TEMP_ROOT = join(ROOT_DIR, '.tmp');
 const BACKUP_HELPER = join(ROOT_DIR, 'helpers', 'backup', 'dist', 'byl-backup.exe');
 const FIXTURE_HOOKS = join(ROOT_DIR, 'tests', 'fixtures', 'pb_hooks');
 const RESERVED_PORTS = new Set([8090, 8091, 8099]);
-const COMMAND_TIMEOUT_MS = 60_000;
+const COMMAND_TIMEOUT_MS = scaled(60_000);
 const MINUTE = 60 * 1000;
 const DAY = 24 * 60 * MINUTE;
 
@@ -83,7 +84,7 @@ function call(method, path, { token, origin, headers = {}, body } = {}) {
 				path,
 				method,
 				agent: false,
-				timeout: 120_000,
+				timeout: scaled(120_000),
 				headers: {
 					...(token ? { Authorization: token } : {}),
 					...(origin ? { Origin: origin } : {}),
@@ -168,7 +169,7 @@ function openSealed(file, passphrase, secrets = false) {
 		input: JSON.stringify({ file, out, passphrase, secrets }),
 		encoding: 'utf8',
 		windowsHide: true,
-		timeout: 120_000
+		timeout: scaled(120_000)
 	});
 	return { out, code: result.status, answer: JSON.parse(result.stdout.trim().split('\n').pop()) };
 }
@@ -275,7 +276,7 @@ beforeAll(async () => {
 	const upsert = spawnSyncClean(
 		join(dir, 'pocketbase.exe'),
 		['superuser', 'upsert', `--dir=${join(dir, 'pb_data')}`, `--hooksDir=${join(dir, 'pb_hooks')}`, `--migrationsDir=${join(dir, 'pb_migrations')}`, '--automigrate=false', email, password],
-		{ encoding: 'utf8', windowsHide: true, timeout: 60_000 }
+		{ encoding: 'utf8', windowsHide: true, timeout: scaled(60_000) }
 	);
 	if (upsert.status !== 0) throw new Error(`superuser upsert failed (exit code ${upsert.status})`);
 	copy = { dir, port, startup, secrets, target };
@@ -290,7 +291,7 @@ beforeAll(async () => {
 	if (ticket.status !== 200) throw new Error(`ticket not created (${ticket.status})`);
 	original = await createOriginal();
 	if (!/^mail_\w+\.eml$/.test(original.original)) throw new Error('original file not kept');
-}, 180_000);
+});
 
 afterAll(() => {
 	if (copy) control('stop');
@@ -302,10 +303,10 @@ afterAll(() => {
 		}
 	}
 	if (base) rmSync(base, { recursive: true, force: true, maxRetries: 10, retryDelay: 500 });
-}, 120_000);
+});
 
 // The cases build on each other and run in this order.
-const CASE_TIMEOUT = { timeout: 120_000 };
+const CASE_TIMEOUT = { timeout: scaled(120_000) };
 
 describe('backups with a target folder on a disposable copy (ADR-0046)', CASE_TIMEOUT, () => {
 	it('shows the state without a target and without a passphrase, and only names of variables', async () => {
@@ -561,13 +562,25 @@ describe('backups with a target folder on a disposable copy (ADR-0046)', CASE_TI
 	});
 
 	it('writes audit entries and log lines without values', async () => {
+		// PocketBase writes its log in batches, 3 s after the last new entry: the entries of the cases
+		// right before may not be there yet. Wait until the last of them are (plan robuste-skripte RS-3).
 		const filter = encodeURIComponent("message ~ 'byl-backup:'");
-		const answer = await call('GET', `/api/logs?filter=${filter}&perPage=500&sort=created`, { token: superuserToken });
-		const entries = answer.body.items ?? [];
+		const audited = ['backup-configure', 'backup-passphrase', 'backup-run', 'backup-verify'];
+		const refusal = (entry) => entry.message === 'byl-backup: Anfrage abgelehnt' && entry.data.reason === 'owner';
+		let entries = [];
+		await expect
+			.poll(
+				async () => {
+					const answer = await call('GET', `/api/logs?filter=${filter}&perPage=500&sort=created`, { token: superuserToken });
+					entries = answer.body.items ?? [];
+					const done = entries.filter((entry) => entry.message === 'byl-backup: Aktion ausgeführt').map((entry) => entry.data.action);
+					return audited.every((action) => done.includes(action)) && entries.some(refusal);
+				},
+				{ timeout: LOG_WRITE_MS, interval: 250 }
+			)
+			.toBe(true);
 		const actions = entries.filter((entry) => entry.message === 'byl-backup: Aktion ausgeführt');
-		expect(actions.map((entry) => entry.data.action)).toEqual(
-			expect.arrayContaining(['backup-configure', 'backup-passphrase', 'backup-run', 'backup-verify'])
-		);
+		expect(actions.map((entry) => entry.data.action)).toEqual(expect.arrayContaining(audited));
 		for (const entry of actions) expect(entry.data.user).toBe(owner.id);
 		expect(entries).toContainEqual(
 			expect.objectContaining({ message: 'byl-backup: Anfrage abgelehnt', data: expect.objectContaining({ reason: 'owner', user: other.id }) })

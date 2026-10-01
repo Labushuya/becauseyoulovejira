@@ -28,6 +28,14 @@ describe('normalizeTitle and truncate', () => {
 		expect(rules.normalizeBody('z'.repeat(100_001))).toHaveLength(100_000);
 		expect(rules.normalizeBody('kurz')).toBe('kurz');
 	});
+
+	it('keeps line breaks of the body as LF, also from the CRLF of a form upload (RS-3)', () => {
+		expect(rules.normalizeBody('Hallo Anna,\r\n\r\nViele Grüße\r\nJürgen\rEnde\n')).toBe('Hallo Anna,\n\nViele Grüße\nJürgen\nEnde\n');
+		expect(rules.normalizeBody(null)).toBe('');
+		// The limit counts the text with LF: a CRLF no longer costs one character per line.
+		const lines = Array.from({ length: 50_000 }, () => 'x').join('\r\n');
+		expect(rules.normalizeBody(lines)).toBe(Array.from({ length: 50_000 }, () => 'x').join('\n'));
+	});
 });
 
 describe('isAllowedSourceUrl', () => {

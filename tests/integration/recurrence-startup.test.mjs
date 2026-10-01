@@ -11,6 +11,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { loadHookLib } from '../support/hook-lib.mjs';
 import { startPocketBase } from '../support/pocketbase-harness.mjs';
 import { FAIL_TICKET_INSERT } from '../support/scenario.mjs';
+import { scaled } from '../support/timing.mjs';
 import { addDays, berlinToday } from '../../web/src/lib/domain/berlin-date.ts';
 import { after, latestOnOrBefore } from '../../web/src/lib/domain/recurrence.ts';
 
@@ -52,7 +53,7 @@ async function probes() {
 }
 
 function writeRows(table, id, values) {
-	const db = new DatabaseSync(join(instance.dataDir, 'data.db'), { timeout: 10_000 });
+	const db = new DatabaseSync(join(instance.dataDir, 'data.db'), { timeout: scaled(10_000) });
 	try {
 		const columns = Object.keys(values);
 		db.prepare(`UPDATE ${table} SET ${columns.map((column) => `${column} = ?`).join(', ')} WHERE id = ?`).run(
@@ -74,7 +75,7 @@ beforeAll(async () => {
 		.collection('users')
 		.create({ email, password, passwordConfirm: password });
 	user = { id: record.id, email, password };
-}, 60_000);
+});
 
 afterAll(async () => {
 	await instance?.stop();
@@ -91,7 +92,7 @@ describe('start of the app (ADR-0022 section 4)', () => {
 		// Every later start sees the schema already in onBootstrap.
 		await instance.restart();
 		expect(await probes()).toEqual({ bootstrap: true, serve: true, request: true });
-	}, 60_000);
+	});
 
 	it('creates a missed ticket at the start, exactly once', async () => {
 		const pb = await owner();
@@ -123,7 +124,7 @@ describe('start of the app (ADR-0022 section 4)', () => {
 		expect(
 			await again.collection('tickets').getFullList({ filter: again.filter('recurrence = {:rule}', { rule: rule.id }) })
 		).toHaveLength(1);
-	}, 60_000);
+	});
 
 	it('cleans discarded inbox items at the start', async () => {
 		const pb = await owner();
@@ -136,7 +137,7 @@ describe('start of the app (ADR-0022 section 4)', () => {
 		await instance.restart();
 		const cleaned = await (await owner()).collection('inbox_items').getOne(item.id);
 		expect(cleaned.body).toBe(cleanup.PURGED_BODY);
-	}, 60_000);
+	});
 
 	it('starts even when a rule and the cleanup fail', async () => {
 		const pb = await owner();
@@ -165,5 +166,5 @@ describe('start of the app (ADR-0022 section 4)', () => {
 		expect(stored.last_hint).toMatch(/^Ticket nicht erzeugt: /);
 		expect(dateOf(stored.next_due)).toBe(today());
 		expect((await su.collection('inbox_items').getOne(broken.id)).body).toBe('Inhalt');
-	}, 60_000);
+	});
 });

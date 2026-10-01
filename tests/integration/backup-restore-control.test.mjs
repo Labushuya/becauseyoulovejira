@@ -33,6 +33,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { spawnSyncClean } from '../support/clean-env.mjs';
 import { POCKETBASE_EXE } from '../support/pocketbase-harness.mjs';
 import { POWERSHELL_EXE, runPowerShellJson } from '../support/powershell.mjs';
+import { scaled } from '../support/timing.mjs';
 
 const ROOT_DIR = resolve(fileURLToPath(new URL('../..', import.meta.url)));
 const APP_DIR = join(ROOT_DIR, 'app');
@@ -40,7 +41,7 @@ const TEMP_ROOT = join(ROOT_DIR, '.tmp');
 const BACKUP_HELPER = join(ROOT_DIR, 'helpers', 'backup', 'dist', 'byl-backup.exe');
 const FIXTURE_HOOKS = join(ROOT_DIR, 'tests', 'fixtures', 'pb_hooks');
 const RESERVED_PORTS = new Set([8090, 8091, 8099]);
-const COMMAND_TIMEOUT_MS = 180_000;
+const COMMAND_TIMEOUT_MS = scaled(180_000);
 const DAY = 24 * 60 * 60 * 1000;
 const CONFIRM = 'WIEDERHERSTELLEN';
 // The codes of the console breaks of a stop end a line of byl-control.log (ADR-0039 T-3).
@@ -83,7 +84,7 @@ function call(port, method, path, { token, origin, body } = {}) {
 				path,
 				method,
 				agent: false,
-				timeout: 60_000,
+				timeout: scaled(60_000),
 				headers: {
 					...(token ? { Authorization: token } : {}),
 					...(origin ? { Origin: origin } : {}),
@@ -266,7 +267,7 @@ beforeAll(async () => {
 	const upsert = spawnSyncClean(
 		join(copy.dir, 'pocketbase.exe'),
 		['superuser', 'upsert', `--dir=${join(copy.dir, 'pb_data')}`, `--hooksDir=${join(copy.dir, 'pb_hooks')}`, `--migrationsDir=${join(copy.dir, 'pb_migrations')}`, '--automigrate=false', email, password],
-		{ encoding: 'utf8', windowsHide: true, timeout: 60_000 }
+		{ encoding: 'utf8', windowsHide: true, timeout: scaled(60_000) }
 	);
 	if (upsert.status !== 0) throw new Error(`superuser upsert failed (exit code ${upsert.status})`);
 	const started = control(copy, ['start']);
@@ -295,7 +296,7 @@ beforeAll(async () => {
 	sealedName = made.body.export.file;
 	// After the backup: what a restore takes back.
 	await createTicket('Nach der Sicherung');
-}, 240_000);
+}, scaled(240_000));
 
 afterAll(() => {
 	for (const target of [copy, fresh]) {
@@ -309,10 +310,10 @@ afterAll(() => {
 		}
 	}
 	if (base) rmSync(base, { recursive: true, force: true, maxRetries: 10, retryDelay: 500 });
-}, 180_000);
+});
 
 // The cases build on each other and run in this order.
-const CASE_TIMEOUT = { timeout: 300_000 };
+const CASE_TIMEOUT = { timeout: scaled(300_000) };
 
 describe('restore on disposable copies (ADR-0046 §7)', CASE_TIMEOUT, () => {
 	it('refuses a restore without the word, with an unknown choice or name, from other accounts and through the page System', async () => {
@@ -431,7 +432,7 @@ describe('restore on disposable copies (ADR-0046 §7)', CASE_TIMEOUT, () => {
 				}
 				return final !== null;
 			},
-			240_000,
+			scaled(240_000),
 			3000
 		);
 		expect(ended).toBe(true);

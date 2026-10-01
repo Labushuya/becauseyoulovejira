@@ -7,6 +7,7 @@ import { randomBytes } from 'node:crypto';
 import PocketBase from 'pocketbase';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { pocketBaseUrl } from '../support/api.mjs';
+import { writtenLogs } from '../support/logs.mjs';
 import { startPocketBase } from '../support/pocketbase-harness.mjs';
 import { createConnection, listConnections } from '../../web/src/lib/data/connections.ts';
 
@@ -89,7 +90,7 @@ beforeAll(async () => {
 	owner = await user();
 	other = await user();
 	mailbox = await mail(owner);
-}, 60_000);
+});
 
 afterAll(async () => {
 	await instance?.stop();
@@ -481,7 +482,8 @@ describe('mail connections of the web app (package 22)', () => {
 	});
 
 	it('never shows the token or the password in the log or the console', async () => {
-		expectNoValues(JSON.stringify(await superuser.send('/api/logs', { query: { perPage: 500 } })));
+		// All entries, once PocketBase has written those of the cases before (it writes in batches).
+		expectNoValues(JSON.stringify(await writtenLogs(superuser)));
 		expectNoValues(instance.output());
 	});
 });

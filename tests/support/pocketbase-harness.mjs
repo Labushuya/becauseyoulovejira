@@ -14,6 +14,7 @@ import { fileURLToPath } from 'node:url';
 import { setTimeout as delay } from 'node:timers/promises';
 import { executableName } from '../../scripts/platform.mjs';
 import { spawnClean, spawnSyncClean } from './clean-env.mjs';
+import { SERVER_READY_MS, scaled } from './timing.mjs';
 
 const ROOT_DIR = resolve(fileURLToPath(new URL('../..', import.meta.url)));
 // app/pocketbase.exe on Windows, app/pocketbase on Linux (ADR-0028, plan plattformen S0).
@@ -26,10 +27,12 @@ const TASKKILL_EXE = join(process.env.SystemRoot ?? 'C:\\Windows', 'System32', '
 
 const TEMP_PREFIX = 'byl-test-';
 const RESERVED_PORTS = new Set([8090, 8099]);
-const HEALTH_TIMEOUT_MS = 20_000;
+// The server is polled until /api/health answers; the limit is only a bound for a server that
+// never comes up (tests/support/timing.mjs: about 1 s alone, up to 45 s with a full load beside).
+const HEALTH_TIMEOUT_MS = SERVER_READY_MS;
 const HEALTH_REQUEST_TIMEOUT_MS = 1_000;
 const KILL_ATTEMPTS = 3;
-const KILL_WAIT_MS = 3_000;
+const KILL_WAIT_MS = scaled(3_000);
 const OUTPUT_LIMIT = 64 * 1024;
 const INSTALLER_MARKER = 'pbinstal';
 const EXIT_SIGNALS = ['SIGINT', 'SIGTERM', 'SIGBREAK', 'SIGHUP'];

@@ -40,7 +40,7 @@ beforeAll(async () => {
 	pb.autoCancellation(false);
 	await pb.collection('users').authWithPassword(email, password);
 	connection = await createConnection(pb, emptyConnectionDraft('notion'));
-}, 60_000);
+});
 
 afterAll(async () => {
 	await fake?.close();
@@ -70,7 +70,7 @@ describe('data layer of the Notion import', () => {
 			['page', 'Wochenplan']
 		]);
 		expect(listed.value.truncated).toBe(false);
-	}, 30_000);
+	});
 
 	it('previews, imports and sums up in the shapes of the SPA', async () => {
 		const preview = await previewNotion(pb, connection.id, {
@@ -137,7 +137,7 @@ describe('data layer of the Notion import', () => {
 				subpages: false
 			}
 		]);
-	}, 30_000);
+	});
 
 	it('sends "Unterseiten einbeziehen" and reads what the preview says about the sub-pages', async () => {
 		const page = { type: 'page', id: PAGE_ID };
@@ -156,7 +156,7 @@ describe('data layer of the Notion import', () => {
 		expect(taken).toMatchObject({ kind: 'ok', value: { counts: { created: 1 } } });
 		const imports = await listNotionImports(pb, connection.id);
 		expect(imports.find((source) => source.id === PAGE_ID)).toMatchObject({ type: 'page', count: 1, subpages: true });
-	}, 30_000);
+	});
 
 	it('answers refusals and errors of Notion as outcomes, an unknown connection as DataError', async () => {
 		const refused = await importNotion(pb, connection.id, {
@@ -181,5 +181,5 @@ describe('data layer of the Notion import', () => {
 		expect(hidden).toMatchObject({ kind: 'error', reason: 'source' });
 		expect(hidden.message).toContain('(404)');
 		await expect(checkNotion(pb, 'kein000000000000')).rejects.toMatchObject({ kind: 'not_found' });
-	}, 30_000);
+	});
 });

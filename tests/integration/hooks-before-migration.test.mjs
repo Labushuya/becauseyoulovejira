@@ -5,6 +5,7 @@
 import { randomBytes } from 'node:crypto';
 import PocketBase from 'pocketbase';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { writtenLogs } from '../support/logs.mjs';
 import { startPocketBase } from '../support/pocketbase-harness.mjs';
 import { createInboxKey, listInboxKeys } from '../../web/src/lib/data/inbox-keys.ts';
 import { createProject, listProjects, updateProject } from '../../web/src/lib/data/projects.ts';
@@ -33,6 +34,9 @@ function newClient() {
 	return pb;
 }
 
+/** Log entries of the server itself (hooks, jobs), without those of the requests. */
+const jobEntries = (entries) => entries.filter((entry) => entry.data?.type !== 'request');
+
 beforeAll(async () => {
 	instance = await startPocketBase({
 		migrationFilter: (name) => name < E4_FIRST_MIGRATION,
@@ -46,7 +50,7 @@ beforeAll(async () => {
 		.id;
 	client = newClient();
 	await client.collection('users').authWithPassword(email, password);
-}, 60_000);
+});
 
 afterAll(async () => {
 	await instance?.stop();
@@ -149,7 +153,10 @@ describe('E4 hooks on the schema before the E4 migrations', () => {
 			headers: { Authorization: superuser.authStore.token }
 		});
 		expect(cron.status).toBe(204);
-		const logs = JSON.stringify(await superuser.send('/api/logs', { query: { perPage: 200 } }));
+		// The job runs in the background and PocketBase writes its log in batches: read the log once
+		// a request after the job is written, so an entry of the job would be there too. Only the
+		// entries of the server count; the request that started the job names it in its address.
+		const logs = JSON.stringify(jobEntries(await writtenLogs(superuser)));
 		expect(logs).not.toMatch(/byl-calendar/);
 	});
 
@@ -161,7 +168,7 @@ describe('E4 hooks on the schema before the E4 migrations', () => {
 			headers: { Authorization: superuser.authStore.token }
 		});
 		expect(cron.status).toBe(204);
-		const logs = JSON.stringify(await superuser.send('/api/logs', { query: { perPage: 200 } }));
+		const logs = JSON.stringify(jobEntries(await writtenLogs(superuser)));
 		expect(logs).not.toMatch(/byl-inbox-cleanup|verworfen/);
 	});
 
@@ -204,7 +211,7 @@ describe('package 21 hooks before the migration of the import keywords', () => {
 		who.autoCancellation(false);
 		await who.collection('users').authWithPassword(email, password);
 		who.userId = id;
-	}, 60_000);
+	});
 
 	afterAll(async () => {
 		await before?.stop();
@@ -256,7 +263,7 @@ describe('E5 hooks before the E5 migrations', () => {
 		who.autoCancellation(false);
 		await who.collection('users').authWithPassword(email, password);
 		who.userId = id;
-	}, 60_000);
+	});
 
 	afterAll(async () => {
 		await before?.stop();
@@ -345,7 +352,7 @@ describe('HK-1 hooks before the delete guard migration', () => {
 		who.autoCancellation(false);
 		await who.collection('users').authWithPassword(email, password);
 		who.userId = id;
-	}, 60_000);
+	});
 
 	afterAll(async () => {
 		await before?.stop();
@@ -407,7 +414,7 @@ describe('hooks before the migration of the delete lock of inbox items (ADR-0014
 		who.autoCancellation(false);
 		await who.collection('users').authWithPassword(email, password);
 		who.userId = id;
-	}, 60_000);
+	});
 
 	afterAll(async () => {
 		await before?.stop();
@@ -454,7 +461,7 @@ describe('HK-6 hooks before the migration of the orphaned sources', () => {
 		who.autoCancellation(false);
 		await who.collection('users').authWithPassword(email, password);
 		who.userId = id;
-	}, 60_000);
+	});
 
 	afterAll(async () => {
 		await before?.stop();
@@ -493,7 +500,7 @@ describe('UP-1 hooks before the migration of the sub projects (ADR-0034)', () =>
 		who.autoCancellation(false);
 		await who.collection('users').authWithPassword(email, password);
 		who.userId = id;
-	}, 60_000);
+	});
 
 	afterAll(async () => {
 		await before?.stop();
@@ -551,7 +558,7 @@ describe('HK-8 hooks before the migration of the 25 MB originals', () => {
 		who.autoCancellation(false);
 		await who.collection('users').authWithPassword(email, password);
 		who.userId = id;
-	}, 60_000);
+	});
 
 	afterAll(async () => {
 		await before?.stop();
@@ -598,7 +605,7 @@ describe('OR-5 hooks before the migration of "Jeden Termin einzeln anlegen"', ()
 		who.autoCancellation(false);
 		await who.collection('users').authWithPassword(email, password);
 		who.userId = id;
-	}, 60_000);
+	});
 
 	afterAll(async () => {
 		await before?.stop();
@@ -681,7 +688,7 @@ describe('PB-1 hooks before the migration of the trash (ADR-0037)', () => {
 		who.autoCancellation(false);
 		await who.collection('users').authWithPassword(email, password);
 		who.userId = id;
-	}, 60_000);
+	});
 
 	afterAll(async () => {
 		await before?.stop();
@@ -744,7 +751,7 @@ describe('EI-1 hooks before the migration of the own inbox (ADR-0038)', () => {
 		who.autoCancellation(false);
 		await who.collection('users').authWithPassword(email, password);
 		who.userId = id;
-	}, 60_000);
+	});
 
 	afterAll(async () => {
 		await before?.stop();
@@ -785,7 +792,7 @@ describe('WV hooks before the migration of "Status beim Anlegen"', () => {
 		who.autoCancellation(false);
 		await who.collection('users').authWithPassword(email, password);
 		who.userId = id;
-	}, 60_000);
+	});
 
 	afterAll(async () => {
 		await before?.stop();
@@ -860,7 +867,7 @@ describe('WV-3 hooks before the migration of the sub-tasks of the template', () 
 		who.autoCancellation(false);
 		await who.collection('users').authWithPassword(email, password);
 		who.userId = id;
-	}, 60_000);
+	});
 
 	afterAll(async () => {
 		await before?.stop();
@@ -944,7 +951,7 @@ describe('KO-1 hooks before the migration of the pinned comment (ADR-0044)', () 
 		who = new PocketBase(before.url);
 		who.autoCancellation(false);
 		await who.collection('users').authWithPassword(email, password);
-	}, 60_000);
+	});
 
 	afterAll(async () => {
 		await before?.stop();

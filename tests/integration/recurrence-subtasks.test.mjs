@@ -37,7 +37,7 @@ beforeAll(async () => {
 	const pb = client();
 	await pb.collection('users').authWithPassword(email, password);
 	owner = { id: record.id, pb };
-}, 60_000);
+});
 
 afterAll(async () => {
 	await instance?.stop();
@@ -295,7 +295,7 @@ describe('generation with the sub-tasks of the template (ADR-0022 addendum 10)',
 			// The sub-task belongs to no series and has no date of the series.
 			expect(children[0]).toMatchObject({ recurrence: '', occurrence: '' });
 		}
-	}, 60_000);
+	});
 
 	it('gives the one catch-up ticket of missed dates the sub-tasks', async () => {
 		const rule = await createRule({ anchor: '2050-06-01', template_subtasks: [{ title: 'Lüften' }] });
@@ -402,7 +402,7 @@ describe('reopening with sub-tasks from the template (ADR-0023 section 3, addend
 			expect((await tickets().getOne(series.first.id)).status, name).toBe('done');
 			expect((await openOf(series.rule.id)).map((ticket) => ticket.id), name).toEqual([series.followUp.id]);
 		}
-	}, 60_000);
+	});
 });
 
 describe('duplicating a ticket of a series with sub-tasks from the template (ADR-0045)', () => {
