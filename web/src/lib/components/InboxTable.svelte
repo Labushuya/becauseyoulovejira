@@ -15,17 +15,21 @@
 	import { type InboxQuery } from '$lib/domain/inbox-query';
 	import { MORE_COLUMNS_HINT } from '$lib/domain/labels';
 	import { SOURCE_FAMILY_CHIPS, SOURCE_FAMILY_LABELS, type SourceFamily } from '$lib/domain/source';
+	import { canLeaveTicket, canSavePage, isMainSource } from '$lib/domain/sources';
 	import type { TicketSummary } from '$lib/domain/ticket';
 	import { rowMenus } from '$lib/overlay/context-menu';
 	import { getColumnPrefs } from '$lib/stores/column-prefs.svelte';
 	import type { FlagSink } from '$lib/stores/flags.svelte';
 	import { INBOX_UNAVAILABLE_MESSAGE, type InboxStore } from '$lib/stores/inbox.svelte';
+	import type { TicketPickerSource } from '$lib/stores/ticket-picker.svelte';
+	import type { TicketSourcesStore } from '$lib/stores/ticket-sources.svelte';
 	import { captureHref, convertHref, inboxItemHref, withInboxQuery } from '$lib/ticket-links';
 	import ActionsMenu, { type MenuAction } from './ActionsMenu.svelte';
 	import ChipGroup from './ChipGroup.svelte';
 	import ColumnsPopover from './ColumnsPopover.svelte';
 	import EmptyState from './guidance/EmptyState.svelte';
 	import SectionMessage from './guidance/SectionMessage.svelte';
+	import MoveSourceDialog from './MoveSourceDialog.svelte';
 	import SectionBar from './SectionBar.svelte';
 	import { ColumnFit } from './table/column-fit.svelte';
 	import ResizableHeader from './table/ResizableHeader.svelte';
@@ -48,13 +52,18 @@
 	// Linked entries (ADR-0031, addendum C) carry the row mark in the accent colour and the chip
 	// "→ HAUS-12", a link to their ticket; the chip "Zustand" offers "Neu" (default), "Verknüpft",
 	// "Verworfen" and "Alle". Every row ends with the menu "•••" (plan aktionsmenues, AM-4), after
-	// the buttons the triage needs often, which stay: "Öffnen", then by state "Umwandeln …", "Mit
-	// Ticket verknüpfen …" and "Verwerfen", "Wiederherstellen" or the ticket, and "Originaldatei
-	// herunterladen" where there is one. A right click on a row or Shift+F10 open the same menu
-	// (AM-3, rowMenus); the browser keeps its menu on the other links of a row.
+	// the buttons the triage needs often, which stay: "Öffnen" and "Link der Quelle öffnen" (an https
+	// address, new tab), then by state "Umwandeln …", "Mit Ticket verknüpfen …" and "Verwerfen",
+	// "Wiederherstellen" or the ticket with "Anderem Ticket zuordnen …" and "Lösen" (never for the
+	// main source, ADR-0031 addendum A), last "Seiteninhalt sichern" and "Originaldatei
+	// herunterladen" where they apply (AM-5; the rules shared with panel and ticket in
+	// domain/sources.ts). A right click on a row or Shift+F10 open the same menu (AM-3, rowMenus);
+	// the browser keeps its menu on the other links of a row.
 	let {
 		store,
 		flags,
+		sources = null,
+		picker,
 		openTickets,
 		activeId = null,
 		selected = $bindable([]),
@@ -70,6 +79,13 @@
 		store: InboxStore;
 		/** Flags of the app, for failed row actions. */
 		flags: FlagSink;
+		/**
+		 * Sources of tickets (ADR-0031): "Anderem Ticket zuordnen …" and "Lösen" of a linked entry; the
+		 * (app) layout provides it. Without it the menu offers neither.
+		 */
+		sources?: TicketSourcesStore | null;
+		/** Tickets of the picker of "Anderem Ticket zuordnen …" (ADR-0042); else from the context. */
+		picker?: TicketPickerSource;
 		/** Open tickets of the list store, for the hint on possible duplicates. */
 		openTickets: readonly TicketSummary[];
 		/** Entry shown in the panel; its row is marked as current. */
@@ -190,20 +206,73 @@
 		return [...(root?.querySelectorAll<HTMLElement>('tbody tr[data-item-id] a.title-link') ?? [])];
 	}
 
+	/** Position of the row of an entry among the rows, -1 without one. */
+	function rowIndex(id: string): number {
+		return titleLinks().findIndex((link) => link.closest('tr')?.dataset.itemId === id);
+	}
+
+	/** The row of an entry left: the focus goes to the row at its place, else the last, else the heading. */
+	async function focusNear(id: string, index: number) {
+		await tick();
+		const links = titleLinks().filter((link) => link.closest('tr')?.dataset.itemId !== id);
+		const next = links[Math.min(index, links.length - 1)];
+		(next ?? heading)?.focus();
+	}
+
 	/** After "Verwerfen" the focus goes to the next row, else the previous one, else the heading. */
 	async function discard(item: InboxItemSummary) {
-		const before = titleLinks();
-		const index = before.findIndex((link) => link.closest('tr')?.dataset.itemId === item.id);
+		const index = rowIndex(item.id);
 		const result = await store.discard(item.id);
 		if (!result.ok) {
 			fail(result.message);
 			return;
 		}
 		selected = selected.filter((entry) => entry !== item.id);
+		await focusNear(item.id, index);
+	}
+
+	/**
+	 * "Lösen" of a linked entry from the menu of its row (ADR-0031 section 2), like in the panel: the
+	 * store shows the flag of success or failure. Released, the entry leaves the view "Verknüpft";
+	 * the focus then goes to the next row, as after "Verwerfen".
+	 */
+	async function release(item: InboxItemSummary) {
+		if (sources === null) return;
+		const index = rowIndex(item.id);
+		const result = await sources.release(item);
+		if (!result.ok) return;
 		await tick();
-		const links = titleLinks().filter((link) => link.closest('tr')?.dataset.itemId !== item.id);
-		const next = links[Math.min(index, links.length - 1)];
-		(next ?? heading)?.focus();
+		if (rowIndex(item.id) === -1) await focusNear(item.id, index);
+	}
+
+	/** Entry of the dialog "Anderem Ticket zuordnen …" (ADR-0031 addendum A), null while closed. */
+	let moving = $state<InboxItemSummary | null>(null);
+	/** The ticket the entry of the dialog belongs to now. */
+	const movingFrom = $derived(
+		moving !== null && moving.ticketId !== null && moving.ticket?.id === moving.ticketId
+			? { id: moving.ticketId, key: moving.ticket.key }
+			: null
+	);
+
+	/** Entry whose page is being saved from the menu of its row (one at a time). */
+	let saving = $state<string | null>(null);
+
+	/**
+	 * "Seiteninhalt sichern" of a row (ADR-0031 section 6), as in the panel: the store shows the flag
+	 * of success, the entry changes through its realtime event. A refusal becomes an error flag
+	 * with the reason of the server, as for every failed row action.
+	 */
+	async function savePage(item: InboxItemSummary) {
+		if (saving !== null) return;
+		saving = item.id;
+		try {
+			const result = await store.savePage(item);
+			if (!result.ok && result.message !== null) {
+				fail(`Seite von „${item.title}“ ließ sich nicht sichern: ${result.message}`);
+			}
+		} finally {
+			saving = null;
+		}
 	}
 
 	async function act(action: () => Promise<{ ok: boolean; message?: string | null }>) {
@@ -227,10 +296,17 @@
 		}
 	}
 
-	/** The entries of the menu "•••" of a row (AM-4), by the state of the entry. */
+	/**
+	 * The entries of the menu "•••" of a row (AM-4, AM-5), by the state of the entry: what opens it,
+	 * what changes its state, what keeps its copy. Each only where the panel offers it.
+	 */
 	function menuOf(item: InboxItemSummary, ticketKey: string | null): MenuAction[] {
 		const pending = store.isPending(item.id);
 		const entries: MenuAction[] = [{ label: 'Öffnen', href: inboxItemHref(item.id, page.url) }];
+		// The address of the source, outside the app: ActionsMenu takes only https (ExternalLink).
+		if (item.sourceUrl !== '') {
+			entries.push({ label: 'Link der Quelle öffnen', external: item.sourceUrl });
+		}
 		if (item.state === 'new') {
 			entries.push({ label: 'Umwandeln …', href: convertHref(item.id), separated: true });
 			if (onlinkitem) {
@@ -255,6 +331,29 @@
 				label: ticketKey === null ? 'Ticket öffnen' : `Ticket ${ticketKey} öffnen`,
 				href: links.path(item.ticketId),
 				separated: true
+			});
+			// Never for the main source of the ticket (ADR-0031 addendum A); the panel says why.
+			if (sources !== null && canLeaveTicket(item, isMainSource(item))) {
+				const changing = sources.isPending(item.id);
+				entries.push(
+					{
+						label: 'Anderem Ticket zuordnen …',
+						dialog: true,
+						locked: changing,
+						onselect: () => (moving = item)
+					},
+					{ label: 'Lösen', busy: changing, onselect: () => void release(item) }
+				);
+			}
+		}
+		// A web link without its page has no original file yet: at most one of the two.
+		if (canSavePage(item)) {
+			entries.push({
+				label: 'Seiteninhalt sichern',
+				separated: true,
+				busy: saving === item.id,
+				locked: saving !== item.id && (saving !== null || pending),
+				onselect: () => void savePage(item)
 			});
 		}
 		if (item.original !== '') {
@@ -574,7 +673,11 @@
 							<td
 								class="actions"
 								data-col="actions"
-								aria-busy={downloading === item.id ? 'true' : undefined}
+								aria-busy={downloading === item.id ||
+								saving === item.id ||
+								(sources?.isPending(item.id) ?? false)
+									? 'true'
+									: undefined}
 							>
 								<span class="action-group">
 									{#if item.state === 'new'}
@@ -641,6 +744,17 @@
 		</button>
 	{/if}
 </section>
+
+<!-- "Anderem Ticket zuordnen …" of a row (AM-5), the dialog of the panel; the list is no modal. -->
+{#if moving !== null && movingFrom !== null && sources !== null}
+	<MoveSourceDialog
+		item={{ id: moving.id, title: moving.title, scope: moving.scope }}
+		current={movingFrom}
+		store={sources}
+		{picker}
+		onclose={() => (moving = null)}
+	/>
+{/if}
 
 <style>
 	.inbox-table {

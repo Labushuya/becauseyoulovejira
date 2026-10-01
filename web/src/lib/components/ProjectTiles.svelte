@@ -2,22 +2,29 @@
 	import type { ResolvedPathname } from '$app/types';
 	import type { Project } from '$lib/domain/project';
 	import type { ProjectRow } from '$lib/domain/project-view';
+	import { rowMenus } from '$lib/overlay/context-menu';
+	import ActionsMenu, { type MenuAction } from './ActionsMenu.svelte';
 
 	// Project tiles (E3 plan, T-12 and package 14; ADR-0010 section 1; ADR-0025 section 10, package
 	// UI-8): a responsive grid in the given order (by name). Each tile is one link that opens the
 	// project panel, like a row of the tables, with name, code and "N aktiv · M gesamt" (and "K neu",
 	// ADR-0015); the project in the panel is marked with aria-current and a frame in the brand colour
-	// (not only colour: also the bar at its start). "Tickets anzeigen" stands in the panel. Archived
-	// projects say so in words. While a number is unknown the tile shows "–".
+	// (not only colour: also the bar at its start). Archived projects say so in words. While a number
+	// is unknown the tile shows "–".
 	// Sub projects (ADR-0034, UP-3): a parent with sub projects gets a section of the full width with
 	// its tile, a button to fold them (aria-expanded) and an indented grid of their tiles, each with
 	// the overline "in Haus". The rows come from the view (the same tree and folding as the list).
+	// Every tile has the menu "•••" of the rows of the list in its corner, next to its link (plan
+	// aktionsmenues, AM-5; the entries come from the view). A right click on a tile, Shift+F10 and
+	// the context menu key on its link open it as in the tables (rowMenus, the tile is a menu row);
+	// a click on the tile still opens the panel.
 	let {
 		rows,
 		activeOf,
 		totalOf,
 		newOf = () => 0,
 		hrefOf,
+		menuOf,
 		activeId = null,
 		ontoggle = () => undefined,
 		aggregatedOf = () => false
@@ -32,6 +39,8 @@
 		newOf?: (project: Project) => number;
 		/** Address of the project panel. */
 		hrefOf: (project: Project) => ResolvedPathname;
+		/** The entries of the menu "•••" of a tile, the same as of a row of the list. */
+		menuOf: (project: Project) => readonly MenuAction[];
 		/** Project shown in the panel. */
 		activeId?: string | null;
 		/** Folds or unfolds the sub projects of a parent. */
@@ -68,6 +77,7 @@
 		class:context={row.context}
 		href={hrefOf(project)}
 		data-project-id={project.id}
+		data-row-link
 		aria-current={project.id === activeId ? 'page' : undefined}
 	>
 		{#if row.depth === 1 && project.parent}
@@ -96,16 +106,26 @@
 			{/if}
 		</span>
 	</a>
+	<!-- Next to the link, never in it (no button inside a link); the corner of the tile. -->
+	<span class="tile-menu">
+		<ActionsMenu
+			label={`Weitere Aktionen für „${project.name}“`}
+			buttonLabel={`Weitere Aktionen für „${project.name}“`}
+			buttonTitle="Weitere Aktionen"
+			buttonClass="button-icon row-menu"
+			items={menuOf(project)}
+		/>
+	</span>
 {/snippet}
 
-<ul class="tiles">
+<ul class="tiles" {@attach rowMenus}>
 	{#each groups as group (group.row.project.id)}
 		{@const project = group.row.project}
 		{#if group.row.childCount > 0}
 			{@const count =
 				group.row.childCount === 1 ? '1 Unterprojekt' : `${group.row.childCount} Unterprojekte`}
 			<li class="family">
-				<div class="tile" class:current={project.id === activeId}>
+				<div class="tile" class:current={project.id === activeId} data-menu-row>
 					{@render tile(group.row)}
 				</div>
 				<!-- The name starts with the visible count; aria-expanded says whether they show. -->
@@ -124,7 +144,7 @@
 				{#if group.children.length > 0}
 					<ul class="sub-tiles" aria-label={`Unterprojekte von ${project.name}`}>
 						{#each group.children as child (child.project.id)}
-							<li class="tile" class:current={child.project.id === activeId}>
+							<li class="tile" class:current={child.project.id === activeId} data-menu-row>
 								{@render tile(child)}
 							</li>
 						{/each}
@@ -132,7 +152,7 @@
 				{/if}
 			</li>
 		{:else}
-			<li class="tile" class:current={project.id === activeId}>
+			<li class="tile" class:current={project.id === activeId} data-menu-row>
 				{@render tile(group.row)}
 			</li>
 		{/if}
@@ -180,10 +200,18 @@
 
 	/* Same surface as the KPI tiles: radius, line and padding (ADR-0025 section 10). */
 	.tile {
+		position: relative;
 		min-width: 0;
 		background: var(--color-surface);
 		border: 1px solid var(--color-line);
 		border-radius: var(--radius-surface);
+	}
+
+	/* The menu "•••" (AM-5) in the top right corner, at the small height of the rows (base.css). */
+	.tile-menu {
+		position: absolute;
+		top: 0.5rem;
+		right: 0.5rem;
 	}
 
 	.tile:hover {
@@ -195,11 +223,12 @@
 		border-color: var(--color-brand);
 	}
 
+	/* Room on the right for the menu, so no text runs below it. */
 	.tile-link {
 		display: grid;
 		gap: 0.5rem;
 		height: 100%;
-		padding: 0.75rem 1rem;
+		padding: 0.75rem 2.5rem 0.75rem 1rem;
 		color: var(--color-text);
 		text-decoration: none;
 		border-radius: var(--radius-surface);

@@ -9,6 +9,12 @@
 		onselect?: () => void;
 		/** A link instead of a button: another view, an assistant, the help. */
 		href?: ResolvedPathname;
+		/**
+		 * A link to an outside page instead, by the rules of ExternalLink (ADR-0026 section 6): only
+		 * an https address, in a new tab without opener and referrer, with the symbol "outside" and
+		 * "(öffnet in neuem Tab)" in its name. An entry with another address is left out.
+		 */
+		external?: string;
 		/** Opens a dialog. */
 		dialog?: boolean;
 		/** The action runs (aria-busy); the entry waits. */
@@ -21,6 +27,7 @@
 </script>
 
 <script lang="ts">
+	import { isHttpsUrl } from '$lib/guidance/links';
 	import { OPEN_MENU_EVENT, type MenuRequest } from '$lib/overlay/context-menu';
 	import Popover from './overlay/Popover.svelte';
 
@@ -58,6 +65,11 @@
 	} = $props();
 
 	let menu = $state<ReturnType<typeof Popover>>();
+
+	/** The entries shown: an outside page only with an https address, like ExternalLink. */
+	const shown = $derived(
+		items.filter((item) => item.external === undefined || isHttpsUrl(item.external))
+	);
 
 	function run(item: MenuAction, close: () => void) {
 		if (item.busy || item.locked) return;
@@ -105,12 +117,31 @@
 		</svg>
 	{/snippet}
 	{#snippet children({ close })}
-		{#each items as item (item.label)}
+		{#each shown as item (item.label)}
 			{#if item.separated}
 				<div role="separator"></div>
 			{/if}
 			{#if item.href !== undefined}
 				<a role="menuitem" tabindex="-1" href={item.href} onclick={close}>{item.label}</a>
+			{:else if item.external !== undefined}
+				<!-- eslint-disable svelte/no-navigation-without-resolve -- an outside https page, not a route of the app -->
+				<a
+					role="menuitem"
+					tabindex="-1"
+					href={item.external}
+					target="_blank"
+					rel="noopener noreferrer"
+					onclick={close}
+					>{item.label}<svg
+						class="outside"
+						viewBox="0 0 16 16"
+						width="12"
+						height="12"
+						aria-hidden="true"
+						focusable="false"><path d="M9 3h4v4M13 3L7.5 8.5M11.5 9.5v3.5h-8.5v-8.5h3.5" /></svg
+					> <span class="visually-hidden">(öffnet in neuem Tab)</span></a
+				>
+				<!-- eslint-enable svelte/no-navigation-without-resolve -->
 			{:else}
 				<button
 					type="button"
@@ -131,5 +162,16 @@
 <style>
 	.dots {
 		fill: currentColor;
+	}
+
+	/* The symbol "outside" of ExternalLink after the text of an entry to an outside page. */
+	.outside {
+		flex: none;
+		margin-left: 0.375rem;
+		fill: none;
+		stroke: currentColor;
+		stroke-width: 1.5;
+		stroke-linecap: round;
+		stroke-linejoin: round;
 	}
 </style>

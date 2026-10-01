@@ -69,7 +69,7 @@
 	// "Unterprojekt anlegen" (an active top-level project), and with `actions` "Archivieren", "Aus
 	// dem Archiv holen" or "Mit Oberprojekt zurückholen" and "Löschen …" (only without tickets and
 	// sub projects). Archiving with active sub projects and deleting ask first, as in the panel; the
-	// list is no modal, so they are dialogs. The tiles have no menu.
+	// list is no modal, so they are dialogs. Every tile has the same menu (AM-5), from `menuOf`.
 	let {
 		catalog,
 		tickets,
@@ -393,7 +393,7 @@
 		askError = null;
 	}
 
-	/** The entries of the menu "•••" of a row of the list (AM-4). */
+	/** The entries of the menu "•••" of a row of the list (AM-4) and of a tile (AM-5). */
 	function menuOf(project: Project): MenuAction[] {
 		const entries: MenuAction[] = [
 			{ label: 'Öffnen', href: projectHref(project.id, page.url) },
@@ -578,6 +578,7 @@
 					{newOf}
 					{aggregatedOf}
 					hrefOf={(project) => projectHref(project.id, page.url)}
+					{menuOf}
 					ontoggle={toggleFolded}
 				/>
 			{/if}
@@ -621,7 +622,7 @@
 	{/if}
 </section>
 
-<!-- The questions of the menu of a row (AM-4), the same as in the panel; the list is no modal. -->
+<!-- The questions of the menu of a row or tile (AM-4, AM-5), as in the panel; the view is no modal. -->
 {#if asking?.kind === 'archive'}
 	{@const project = asking.project}
 	<ConfirmDialog
