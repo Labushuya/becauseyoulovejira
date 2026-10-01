@@ -39,7 +39,7 @@ beforeAll(async () => {
 		},
 		{ BYL_FUNCTIONS: FUNCTIONS_FILE }
 	);
-}, 60_000);
+});
 
 describe('Test-InstallerPending', () => {
 	it('reports a working token as pending setup', () => {

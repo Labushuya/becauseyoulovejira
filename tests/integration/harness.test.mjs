@@ -61,5 +61,5 @@ describe('disposable PocketBase instance', () => {
 			delete process.env[canary];
 			await instance?.stop();
 		}
-	}, 60_000);
+	});
 });

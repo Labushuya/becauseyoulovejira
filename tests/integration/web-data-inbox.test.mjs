@@ -359,14 +359,27 @@ describe('mail files (E4 plan, package 8)', () => {
 				}
 			}
 		});
-		// The form upload with the original turns the line breaks of the text into CRLF.
-		expect(outcome.item.body.replace(/\r\n/g, '\n')).toBe(
+		// The form upload with the original sends the text with CRLF; the hook keeps it with LF (RS-3).
+		expect(outcome.item.body).toBe(
 			'Hallo Anna,\n\nanbei der Prüfbericht für März.\n\nViele Grüße\nJürgen\n\n_2 Anhänge, nur in der Originaldatei._'
 		);
 		expect(outcome.item.original).toMatch(/\.eml$/);
 		const response = await fetch(await originalFileUrl(fresh.client, outcome.item));
 		expect(response.status).toBe(200);
 		expect(Buffer.from(await response.arrayBuffer())).toEqual(readFileSync(new URL(name, EML)));
+	});
+
+	it('stores the text of an upload with original like the same entry without file, with LF (RS-3)', async () => {
+		const draft = await readDraft('alternative-inline-attachment.eml');
+		const withFile = await createItem((await createOwner(superuser)).client, draft);
+		const { original, ...withoutOriginal } = draft;
+		expect(original).toBeInstanceOf(File);
+		const withoutFile = await createItem((await createOwner(superuser)).client, withoutOriginal);
+		expect(withFile).toMatchObject({ kind: 'created', item: { original: expect.stringMatching(/\.eml$/) } });
+		expect(withoutFile).toMatchObject({ kind: 'created', item: { original: '' } });
+		expect(withFile.item.body).toBe(withoutFile.item.body);
+		expect(withFile.item.body).toContain('\n');
+		expect(withFile.item.body).not.toContain('\r');
 	});
 });
 

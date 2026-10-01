@@ -71,7 +71,7 @@ beforeAll(async () => {
 			firstReset = resetAdmin(appDir, first.email, first.password);
 		}
 	});
-}, 90_000);
+});
 
 afterAll(async () => {
 	await instance?.stop();

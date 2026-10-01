@@ -27,7 +27,7 @@ beforeAll(async () => {
 	who = new PocketBase(instance.url);
 	who.autoCancellation(false);
 	await who.collection('users').authWithPassword(email, password);
-}, 60_000);
+});
 
 afterAll(async () => {
 	await instance?.stop();

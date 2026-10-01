@@ -31,6 +31,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { spawnSyncClean } from '../support/clean-env.mjs';
 import { POCKETBASE_EXE } from '../support/pocketbase-harness.mjs';
 import { POWERSHELL_EXE, runPowerShellJson } from '../support/powershell.mjs';
+import { LOG_WRITE_MS, scaled } from '../support/timing.mjs';
 
 const ROOT_DIR = resolve(fileURLToPath(new URL('../..', import.meta.url)));
 const APP_DIR = join(ROOT_DIR, 'app');
@@ -38,7 +39,7 @@ const TEMP_ROOT = join(ROOT_DIR, '.tmp');
 const MAIL_HELPER = join(ROOT_DIR, 'helpers', 'mail', 'dist', 'byl-mail.exe');
 // 8090 and 8091: app and mail helper of the user; 8099: spikes.
 const RESERVED_PORTS = new Set([8090, 8091, 8099]);
-const COMMAND_TIMEOUT_MS = 60_000;
+const COMMAND_TIMEOUT_MS = scaled(60_000);
 
 // Invented values: the switch for disposable copies, the ingest token of the copy (so its server has
 // the ingest route and mail-restart can start a helper) and a secret that must never leave a log.
@@ -72,7 +73,7 @@ function call(method, path, { token, origin, host, headers = {}, body } = {}) {
 				path,
 				method,
 				agent: false,
-				timeout: 90_000,
+				timeout: scaled(90_000),
 				headers: {
 					...(token ? { Authorization: token } : {}),
 					...(origin ? { Origin: origin } : {}),
@@ -225,7 +226,7 @@ beforeAll(async () => {
 	const upsert = spawnSyncClean(
 		join(dir, 'pocketbase.exe'),
 		['superuser', 'upsert', `--dir=${join(dir, 'pb_data')}`, `--hooksDir=${join(dir, 'pb_hooks')}`, `--migrationsDir=${join(dir, 'pb_migrations')}`, '--automigrate=false', email, password],
-		{ encoding: 'utf8', windowsHide: true, timeout: 60_000 }
+		{ encoding: 'utf8', windowsHide: true, timeout: scaled(60_000) }
 	);
 	if (upsert.status !== 0) throw new Error(`superuser upsert failed (exit code ${upsert.status})`);
 	copy = { dir, port, startup };
@@ -235,7 +236,7 @@ beforeAll(async () => {
 	// The account created first owns the instance (ADR-0043 §3).
 	owner = await createUser();
 	other = await createUser();
-}, 180_000);
+});
 
 afterAll(() => {
 	if (copy) control('stop');
@@ -247,10 +248,10 @@ afterAll(() => {
 		}
 	}
 	if (base) rmSync(base, { recursive: true, force: true, maxRetries: 10, retryDelay: 500 });
-}, 120_000);
+});
 
 // The cases build on each other and run in this order; some start and stop real processes.
-const CASE_TIMEOUT = { timeout: 120_000 };
+const CASE_TIMEOUT = { timeout: scaled(120_000) };
 
 describe('page System on a disposable copy (ADR-0043)', CASE_TIMEOUT, () => {
 	it('answers the status of its own instance from byl-control.ps1 status -Json', async () => {
@@ -404,9 +405,9 @@ describe('page System on a disposable copy (ADR-0043)', CASE_TIMEOUT, () => {
 
 		// The server that started the process ends in order: a hard stop would come only after the
 		// 15 s of the console break (ADR-0039 §4).
-		expect(await until(() => !servers().some((process) => process.pid === before.pid), 60_000)).toBe(true);
+		expect(await until(() => !servers().some((process) => process.pid === before.pid), scaled(60_000))).toBe(true);
 		expect(Date.now() - started).toBeLessThan(14_000);
-		expect(await until(async () => servers().length === 1 && (await healthy()), 60_000)).toBe(true);
+		expect(await until(async () => servers().length === 1 && (await healthy()), scaled(60_000))).toBe(true);
 		const [after] = servers();
 		expect(after.pid).not.toBe(before.pid);
 		expect(JSON.parse(readFileSync(join(copy.dir, 'run', 'byl.state.json'), 'utf8')).pid).toBe(after.pid);
@@ -418,7 +419,7 @@ describe('page System on a disposable copy (ADR-0043)', CASE_TIMEOUT, () => {
 			` restart exit=0 pid=${after.pid} port=${copy.port} break=-?\\d+(,-?\\d+)*\\r$`,
 			'm'
 		);
-		expect(await until(() => finished.test(log()), 30_000)).toBe(true);
+		expect(await until(() => finished.test(log()), scaled(30_000))).toBe(true);
 		expect(log()).toMatch(/ restart exit=0 detached=\d+\r$/m);
 		expect(helpers()).toHaveLength(1);
 
@@ -428,14 +429,17 @@ describe('page System on a disposable copy (ADR-0043)', CASE_TIMEOUT, () => {
 
 	it('writes an audit entry per action and refusal: who, when, what, without values', async () => {
 		// PocketBase writes its log in batches; the entries of the stopped server were written when
-		// it ended in order.
+		// it ended in order, those of the new one follow. Wait for every expected entry.
 		const filter = encodeURIComponent("message ~ 'byl-system:'");
+		const audited = ['autostart-on', 'autostart-off', 'mail-restart', 'restart'];
 		let entries = [];
 		const found = await until(async () => {
 			const answer = await call('GET', `/api/logs?filter=${filter}&perPage=500&sort=created`, { token: superuserToken });
 			entries = answer.body.items ?? [];
-			return entries.some((entry) => entry.data.action === 'restart' && entry.message === 'byl-system: Aktion ausgeführt');
-		}, 20_000);
+			const done = entries.filter((entry) => entry.message === 'byl-system: Aktion ausgeführt').map((entry) => entry.data.action);
+			const refused = entries.filter((entry) => entry.message === 'byl-system: Anfrage abgelehnt').map((entry) => entry.data.reason);
+			return audited.every((action) => done.includes(action)) && refused.includes('owner') && refused.includes('busy');
+		}, LOG_WRITE_MS);
 		expect(found).toBe(true);
 		const done = entries.filter((entry) => entry.message === 'byl-system: Aktion ausgeführt');
 		expect(done.map((entry) => entry.data.action)).toEqual(

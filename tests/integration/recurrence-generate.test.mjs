@@ -36,7 +36,7 @@ beforeAll(async () => {
 	const pb = client();
 	await pb.collection('users').authWithPassword(email, password);
 	owner = { id: record.id, pb };
-}, 60_000);
+});
 
 afterAll(async () => {
 	await instance?.stop();
@@ -496,7 +496,7 @@ describe('completing, reopening and releasing instances (ADR-0023 sections 2, 3 
 		}
 		expect(differing).toEqual([]);
 		expect(await instancesOf(rule.id)).toHaveLength(61);
-	}, 60_000);
+	});
 
 	it('removes an untouched follow-up when the instance is reopened (calendar)', async () => {
 		const ticket = await tickets().create({ owner: owner.id, title: 'Täglich', due: today() });

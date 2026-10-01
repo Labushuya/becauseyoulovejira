@@ -102,7 +102,7 @@ describe('Notion: 45 rows in blocks', () => {
 
 	beforeAll(async () => {
 		server = await serve();
-	}, 60_000);
+	});
 
 	afterAll(async () => {
 		await server?.instance.stop();
@@ -136,7 +136,7 @@ describe('Notion: 45 rows in blocks', () => {
 		expect(again.outcome.counts).toEqual({ created: 0, duplicates: 45, skipped: 0, failed: 0 });
 		expect(again.outcome.results.every((result) => result.message === 'Schon im Eingang.')).toBe(true);
 		expect(await inboxCount(who)).toBe(45);
-	}, 60_000);
+	});
 
 	it('goes on block by block with a slow Notion', async () => {
 		const who = await server.user();
@@ -151,7 +151,7 @@ describe('Notion: 45 rows in blocks', () => {
 			expect(block.ms).toBeLessThan(10_000);
 		}
 		expect(await inboxCount(who)).toBe(45);
-	}, 60_000);
+	});
 
 	it('waits after 429 with a short Retry-After and stops with a German message after a long one', async () => {
 		const who = await server.user();
@@ -175,7 +175,7 @@ describe('Notion: 45 rows in blocks', () => {
 		const retried = await run(who, refs, { size: 10 });
 		expect(retried.outcome.counts).toEqual({ created: 25, duplicates: 20, skipped: 0, failed: 0 });
 		expect(await inboxCount(who)).toBe(45);
-	}, 60_000);
+	});
 });
 
 describe('Notion: time limits of a request', () => {
@@ -184,7 +184,7 @@ describe('Notion: time limits of a request', () => {
 	beforeAll(async () => {
 		// Only in the test mode: new entries for 1.5 s, requests to Notion for 3 s per request.
 		server = await serve({ BYL_TEST_NOTION_TIMING: '1500,3000' });
-	}, 60_000);
+	});
 
 	afterAll(async () => {
 		await server?.instance.stop();
@@ -207,7 +207,7 @@ describe('Notion: time limits of a request', () => {
 		expect(rest.outcome.counts.created).toBe(first.value.pending.length);
 		expect(rest.outcome.requests).toBeGreaterThan(1);
 		expect(await inboxCount(who)).toBe(10);
-	}, 60_000);
+	});
 
 	it('calls a Notion that answers too late slow, within the time of the request', async () => {
 		const who = await server.user();
@@ -224,7 +224,7 @@ describe('Notion: time limits of a request', () => {
 
 		const preview = await previewNotion(who.pb, who.id, { source: SOURCE, dateProperty: null, subpages: false });
 		expect(preview).toEqual({ kind: 'error', message: TOO_SLOW, reason: 'source' });
-	}, 60_000);
+	});
 });
 
 describe('Notion: several sources in one run and "Alle erneut abrufen"', () => {
@@ -232,7 +232,7 @@ describe('Notion: several sources in one run and "Alle erneut abrufen"', () => {
 
 	beforeAll(async () => {
 		server = await serve();
-	}, 60_000);
+	});
 
 	afterAll(async () => {
 		await server?.instance.stop();
@@ -278,7 +278,7 @@ describe('Notion: several sources in one run and "Alle erneut abrufen"', () => {
 			[PAGE_ID, 8]
 		]);
 		expect(await inboxCount(who)).toBe(23);
-	}, 60_000);
+	});
 
 	it('takes only new entries of every imported source, with the options of its last import', async () => {
 		const who = await server.user();
@@ -335,7 +335,7 @@ describe('Notion: several sources in one run and "Alle erneut abrufen"', () => {
 			[0, null]
 		]);
 		expect(imports).toBe(0);
-	}, 60_000);
+	});
 
 	it('stops after the current block and starts no further source', async () => {
 		const who = await server.user();
@@ -361,5 +361,5 @@ describe('Notion: several sources in one run and "Alle erneut abrufen"', () => {
 		expect(outcome.results[0]).toMatchObject({ title: 'Wochenplan', counts: { created: 5 }, error: null, open: 0 });
 		expect(outcome.skipped).toEqual([DATA_SOURCE_ID]);
 		expect(imports).toBe(1);
-	}, 60_000);
+	});
 });

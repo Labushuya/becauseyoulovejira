@@ -85,6 +85,8 @@ async function loadOldModule() {
 	while (Atomics.load(flag, 0) === 0) {
 		const [page, old] = await Promise.all([loadPage(), loadOldModule()]);
 		requests += 1;
+		// The first answer: the load runs, the main thread may publish.
+		if (requests === 1) parentPort.postMessage({ started: true });
 		if (page.page) {
 			pageFailures.push(page.page);
 			inARow += 1;
@@ -105,12 +107,19 @@ describe('publishing while PocketBase serves the folder', () => {
 		await publish({ from: build('b0'), to: publicDir });
 		const stop = new SharedArrayBuffer(4);
 		const worker = new Worker(LOAD, { eval: true, workerData: { url: instance.url, stop } });
-		const result = new Promise((resolve, reject) => {
-			worker.once('message', resolve);
-			worker.once('error', reject);
+		const messages = [];
+		const waiting = [];
+		const failed = new Promise((resolve, reject) => worker.once('error', reject));
+		worker.on('message', (message) => {
+			messages.push(message);
+			for (const wake of waiting.splice(0)) wake();
 		});
-		// Let the load start before the first publish.
-		await new Promise((resolve) => setTimeout(resolve, 300));
+		const nextMessage = async () => {
+			while (messages.length === 0) await Promise.race([new Promise((resolve) => waiting.push(resolve)), failed]);
+			return messages.shift();
+		};
+		// The load runs before the first publish: wait for its first answer instead of a fixed pause.
+		expect(await nextMessage()).toEqual({ started: true });
 
 		const stats = [];
 		for (let index = 1; index <= 5; index += 1) {
@@ -118,7 +127,7 @@ describe('publishing while PocketBase serves the folder', () => {
 			await new Promise((resolve) => setTimeout(resolve, 100));
 		}
 		Atomics.store(new Int32Array(stop), 0, 1);
-		const { pageFailures, moduleFailures, mostInARow, requests, seen } = await result;
+		const { pageFailures, moduleFailures, mostInARow, requests, seen } = await nextMessage();
 		await worker.terminate();
 
 		// Modules never fail: new ones exist before index.html names them, old ones stay.
@@ -133,5 +142,5 @@ describe('publishing while PocketBase serves the folder', () => {
 		expect(stats.map((entry) => entry.version)).toEqual(['b1', 'b2', 'b3', 'b4', 'b5']);
 		const index = await (await fetch(`${instance.url}/`)).text();
 		expect(index).toContain('start.b5.js');
-	}, 60_000);
+	});
 });

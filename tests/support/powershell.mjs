@@ -6,6 +6,7 @@
 
 import { join } from 'node:path';
 import { spawnSyncClean } from './clean-env.mjs';
+import { scaled } from './timing.mjs';
 
 export const POWERSHELL_EXE = join(
 	process.env.SystemRoot ?? 'C:\\Windows',
@@ -31,7 +32,7 @@ export function runPowerShellJson(script, input, env = {}) {
 		{
 			encoding: 'utf8',
 			windowsHide: true,
-			timeout: 60_000,
+			timeout: scaled(60_000),
 			env: { ...env, BYL_TEST_INPUT: JSON.stringify(input) }
 		}
 	);

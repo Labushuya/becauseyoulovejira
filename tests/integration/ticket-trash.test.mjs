@@ -54,7 +54,7 @@ beforeAll(async () => {
 	await superuser.collection('_superusers').authWithPassword(instance.email, instance.password);
 	owner = await createUser();
 	other = await createUser();
-}, 60_000);
+});
 
 afterAll(async () => {
 	await instance?.stop();

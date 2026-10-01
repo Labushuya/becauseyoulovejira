@@ -39,8 +39,12 @@ function normalizeTitle(value) {
   return truncate(text(value).replace(/\s+/g, ' ').replace(/^ | $/g, ''), TITLE_MAX_LENGTH);
 }
 
+// Line breaks as LF, then cut to BODY_MAX_LENGTH. A browser (and Node) sends the fields of a form
+// upload with CRLF (multipart/form-data, HTML standard), so an entry with an original file got its
+// text with CRLF, the same entry through JSON with LF; a ticket made from it mixed both and lost
+// one character of its limit per line (plan robuste-skripte RS-3).
 function normalizeBody(value) {
-  return truncate(value, BODY_MAX_LENGTH);
+  return truncate(text(value).replace(/\r\n?/g, '\n'), BODY_MAX_LENGTH);
 }
 
 // Only http(s) links are stored (E4 plan, section 3); an empty value is allowed.

@@ -12,6 +12,7 @@ import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { spawnSyncClean } from '../support/clean-env.mjs';
+import { scaled } from '../support/timing.mjs';
 import { executableName } from '../../scripts/platform.mjs';
 import { fileHeader, padding, readTar, trailer } from '../../helpers/backup/src/tar.ts';
 
@@ -51,14 +52,14 @@ function helper(args, input, after = '') {
 		input: input === undefined ? '' : JSON.stringify(input) + after,
 		encoding: 'utf8',
 		windowsHide: true,
-		timeout: 120_000
+		timeout: scaled(120_000)
 	});
 	if (result.error) throw result.error;
 	return { code: result.status, stdout: result.stdout, stderr: result.stderr };
 }
 
 function tar(args, cwd) {
-	const result = spawnSyncClean(TAR, args, { cwd, encoding: 'utf8', windowsHide: true, timeout: 60_000 });
+	const result = spawnSyncClean(TAR, args, { cwd, encoding: 'utf8', windowsHide: true, timeout: scaled(60_000) });
 	if (result.error) throw result.error;
 	expect(result.status, `${TAR} ${args.join(' ')}: ${result.stderr}`).toBe(0);
 	return result.stdout;

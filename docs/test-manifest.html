@@ -341,7 +341,7 @@
   "meta": {
     "projekt": "becauseyoulovejira",
     "stand": "2026-10-02",
-    "commit": "11c2511"
+    "commit": "b92d088"
   },
   "bereiche": [
     { "id": "betrieb", "titel": "Betrieb: Start, Stopp, Skripte und Daten" },
@@ -522,6 +522,8 @@
     { "id": "SPE-1", "vorhaben": "Speicher und Abhängigkeiten beim Löschen", "titel": "Papierkorb: erst entscheiden, dann endgültig löschen, mit Entscheidungshilfe und Hinweis", "bereich": "papierkorb", "quelle": "Nutzerentscheidung", "datum": "2026-10-01", "adr": ["0047-speicher-und-abhaengigkeiten-beim-loeschen.md", "0037-papierkorb.md"], "plan": "speicher.md", "faelle": ["BYL-E6-1000..BYL-E6-1008"] },
     { "id": "RS-2", "vorhaben": "Robuste Skripte und Wartung", "titel": "build.ps1 installiert nach geändertem Lockfile neu, Install-Skript nur für esbuild, npm audit geprüft", "bereich": "entwicklung", "quelle": "Befund", "datum": "2026-10-01", "adr": ["0040-veroeffentlichen-ohne-unterbrechung.md, Nachtrag RS-2"], "plan": "robuste-skripte.md", "faelle": ["BYL-E6-975..BYL-E6-977"],
       "vermerk": "npm audit in web: 3 niedrige Meldungen (cookie über SvelteKit 2), nur mit SvelteKit 3 behebbar, nicht ausnutzbar; Begründung im Plan." },
+    { "id": "RS-3", "vorhaben": "Robuste Skripte und Wartung", "titel": "Tests robust gegen Last: Logs erst nach dem Schreiben, zentrale Zeitgrenzen, Prozess-Tests zuletzt und zu viert; Text mit LF", "bereich": "entwicklung", "quelle": "Fehlerbericht", "datum": "2026-10-02", "plan": "robuste-skripte.md", "faelle": ["BYL-E6-978..BYL-E6-982"],
+      "vermerk": "Mit dem Abwarten des Logs sah eine Prüfung erstmals Einträge ihres eigenen Falls; der Hook für CRLF wirkt nach dem nächsten Neustart." },
     { "id": "SPE-2", "vorhaben": "Speicher und Abhängigkeiten beim Löschen", "titel": "Seite „Einstellungen → Speicher“: messen beim Aufruf, größte Einträge, aufräumen mit Vorschau", "bereich": "einstellungen", "quelle": "Nutzerwunsch", "datum": "2026-10-02", "adr": ["0047-speicher-und-abhaengigkeiten-beim-loeschen.md", "0043-system-seite.md"], "plan": "speicher.md", "faelle": ["BYL-E6-1010..BYL-E6-1018"] },
     { "id": "querschnitt", "vorhaben": "Querschnitt", "titel": "Testumgebung, Regeln der Datenschicht, Hook-Module und dieses Manifest", "bereich": "entwicklung", "faelle": ["BYL-X-001..BYL-X-004"] }
   ],
@@ -4088,7 +4090,7 @@
       ]
     },
     {
-      "tag": "Alle", "name": "Robuste Skripte und Wartung", "desc": "Nutzerwunsch vom 2026-10-01 („alle Skripte so gestaltet …, dass sie Probleme abfangen und klar mit dem User kommunizieren was zu tun ist“) und Wartung (docs/plan/robuste-skripte.md): Build und Abhängigkeiten (RS-2). IDs ab BYL-E6-975.",
+      "tag": "Alle", "name": "Robuste Skripte und Wartung", "desc": "Nutzerwunsch vom 2026-10-01 („alle Skripte so gestaltet …, dass sie Probleme abfangen und klar mit dem User kommunizieren was zu tun ist“) und Wartung (docs/plan/robuste-skripte.md): Build und Abhängigkeiten (RS-2), Tests unter Last (RS-3). IDs ab BYL-E6-975.",
       "items": [
         { "id": "BYL-E6-975", "title": "npm ci nach geändertem Lockfile (build.ps1 und Builds der Hilfsprogramme)", "art": ["unit"], "status": "bestanden",
           "pre": "–", "steps": ["npm run test:unit"],
@@ -4101,7 +4103,27 @@
         { "id": "BYL-E6-977", "title": "build.ps1 nach einem Update mit neuem Lockfile (manuell)", "art": ["manuell"], "status": "offen",
           "pre": "Repo mit einem früheren Build (node_modules vorhanden).", "steps": ["Ein Update ziehen, das ein package-lock.json ändert (etwa ein Merge eines Dependabot-PRs), dann powershell -ExecutionPolicy Bypass -File scripts\\build.ps1 ausführen.", "Die Zeilen „Dependencies of …“ am Anfang lesen.", "build.ps1 gleich noch einmal ausführen."],
           "expect": "Beim ersten Lauf steht für den geänderten Ordner „package-lock.json changed since the last install, installing (npm ci)“ (beim ersten Build nach diesem Paket für alle Ordner „installed without a lockfile marker“), für die übrigen „up to date“; keine Warnung „install scripts not yet covered by allowScripts“. Der zweite Lauf meldet überall „up to date“ und endet mit „Build complete!“.",
-          "tests": [] }
+          "tests": [] },
+        { "id": "BYL-E6-978", "title": "Zentrale Zeitgrenzen und eigene letzte Gruppe der Tests mit Prozessen (RS-3)", "art": ["unit"], "status": "bestanden",
+          "pre": "–", "steps": ["npm run test:unit"],
+          "expect": "tests/support/timing.mjs nimmt BECAUSEYOULOVEJIRA_TEST_TIME_SCALE nur von 1 bis 10 (sonst 1) und skaliert damit alle Grenzen: /api/health im Harness 90 s, Test 60 s, Hook 180 s, Log 30 s. Höchstens vier Dateien mit Prozessen gleichzeitig (Prozessoren minus eins); das Projekt integration-processes läuft als letzte Gruppe mit diesen Grenzen, die gemeinsame Instanz behält 15 s und 30 s.",
+          "tests": ["tests/unit/test-timing.test.mjs::takes the factor of the machine from 1 to 10, else 1", "tests/unit/test-timing.test.mjs::leaves room for a full load beside the run and scales every limit", "tests/unit/test-timing.test.mjs::runs at most four files with processes at a time, one fewer than the processors", "tests/unit/test-timing.test.mjs::the harness waits for /api/health as long as the central limit allows", "tests/unit/test-groups.test.mjs::runs the shared instance first and alone, everything else afterwards"] },
+        { "id": "BYL-E6-979", "title": "Keine festen Zeitgrenzen und kein Log von der ersten Seite (statisch, RS-3)", "art": ["unit"], "status": "bestanden",
+          "pre": "–", "steps": ["npm run test:unit"],
+          "expect": "Keine Datei mit eigenen Prozessen setzt eine feste Zahl als Grenze eines Tests, Hooks, einer Anfrage oder eines Kindprozesses, nur scaled(…) oder die Vorgaben; kein Integrationstest liest /api/logs mehr nur mit perPage, sondern über tests/support/logs.mjs.",
+          "tests": ["tests/unit/test-timing.test.mjs::no file with processes sets a fixed time limit of its own, only scaled() ones", "tests/unit/test-timing.test.mjs::reads the log of PocketBase for a check only once it is written, and all of it"] },
+        { "id": "BYL-E6-980", "title": "Audit-Einträge und Logs ohne Werte erst nach dem Schreiben geprüft (RS-3)", "art": ["integration"], "status": "bestanden",
+          "pre": "app\\pocketbase.exe, app\\byl-mail.exe und app\\byl-backup.exe gebaut.", "steps": ["npm run test:integration"],
+          "expect": "Die Audit-Tests von Sicherung und System fragen ab, bis alle erwarteten Einträge geschrieben sind, und prüfen dann unverändert (Aktionen, Konto, Ablehnungen, keine Werte). Die Prüfungen „kein Wert im Log“ lesen alle Einträge, nachdem eine eigene markierte Anfrage geschrieben ist; „der Cron schreibt nichts“ prüft die Einträge des Servers ohne die der Anfrage, die den Lauf auslöst.",
+          "tests": ["tests/integration/backup-control.test.mjs::writes audit entries and log lines without values", "tests/integration/system-control.test.mjs::writes an audit entry per action and refusal: who, when, what, without values", "tests/integration/hooks-before-migration.test.mjs::answers \"Jetzt abrufen\" with the hint and lets the calendar job do nothing", "tests/integration/hooks-before-migration.test.mjs::lets the cleanup of discarded items do nothing without the inbox (package 24)", "tests/integration/channel-telegram.test.mjs::never writes the token to the log or the console", "tests/integration/channel-calendar.test.mjs::never writes the secret address to the log or the console", "tests/integration/connections.test.mjs::keeps values out of lists, records and realtime events", "tests/integration/ingest-route.test.mjs::never shows the token or the password in the log or the console", "tests/integration/mail-ingest.test.mjs::never shows the token or the password", "tests/integration/mailbox-route.test.mjs::never sends anything but ID and limit to the helper and never shows the token", "tests/integration/notion-import.test.mjs::shows the token in no answer, stored error or log", "tests/integration/inbox-cleanup.test.mjs::is idempotent and does not let one failing item stop the others"] },
+        { "id": "BYL-E6-981", "title": "Text eines Eingangseintrags mit Originaldatei mit LF (RS-3)", "art": ["unit", "integration"], "status": "bestanden",
+          "pre": "app\\pocketbase.exe vorhanden.", "steps": ["npm run test:unit", "npm run test:integration"],
+          "expect": "normalizeBody macht aus CRLF und CR ein LF, bevor es auf 100 000 Zeichen kürzt; ein Eintrag aus einer Mail-Datei mit Originaldatei (Formular-Upload mit CRLF) hat denselben Text wie derselbe Eintrag ohne Datei, ohne CR.",
+          "tests": ["tests/unit/inbox-rules.test.mjs::keeps line breaks of the body as LF, also from the CRLF of a form upload (RS-3)", "tests/integration/web-data-inbox.test.mjs::stores the text of an upload with original like the same entry without file, with LF (RS-3)", "tests/integration/web-data-inbox.test.mjs::keeps a mail with alternative parts, inline image and attachment with its original (BYL-E6-942)"] },
+        { "id": "BYL-E6-982", "title": "Tests mit Prozessen unter künstlicher Last, Wiederholungslauf (RS-3)", "art": ["integration"], "status": "bestanden",
+          "pre": "Windows, Worktree mit der Änderung, alle Hilfsprogramme gebaut (scripts\\build.ps1).", "steps": ["Daneben 8 Worker-Threads mit Dauerschleife starten, dann npx vitest run --project integration-processes; dreimal.", "Zum Vergleich einmal mit der Konfiguration von vorher."],
+          "expect": "Mit der Änderung dreimal alle 36 Dateien und 408 Fälle grün (177 bis 248 s); vorher unter derselben Last mindestens 13 Dateien rot mit „Hook timed out“. Bei 16 Threads Last helfen die Grenzen mit BECAUSEYOULOVEJIRA_TEST_TIME_SCALE (Plan robuste-skripte §4).",
+          "tests": ["tests/integration/spa-fallback.test.mjs", "tests/integration/web-app.test.mjs", "tests/integration/control-script.test.mjs", "tests/integration/mail-helper-process.test.mjs", "tests/integration/web-publish.test.mjs::always answers with a complete build whose modules load, old tabs included", "tests/integration/backup-restore.test.mjs"] }
       ]
     },
     {

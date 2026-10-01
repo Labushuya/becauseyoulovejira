@@ -11,6 +11,7 @@ import { randomBytes } from 'node:crypto';
 import PocketBase from 'pocketbase';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { startFakeNotion, FAKE_NOTION_VERSION } from '../support/fake-notion.mjs';
+import { writtenLogs } from '../support/logs.mjs';
 import { startPocketBase } from '../support/pocketbase-harness.mjs';
 import { DATA_SOURCE_ID, DATABASE_ID, HIDDEN_PAGE_ID, PAGE_ID, TOKEN, id, workspace } from '../fixtures/notion/workspace.mjs';
 
@@ -102,7 +103,7 @@ beforeAll(async () => {
 	await superuser.collection('_superusers').authWithPassword(instance.email, instance.password);
 	owner = await user();
 	other = await user();
-}, 60_000);
+});
 
 afterAll(async () => {
 	await fake?.close();
@@ -153,7 +154,7 @@ describe('Notion: Verbindung prüfen and sources', () => {
 		}
 		expect((await check(owner, conn)).body.shared).toBe(true);
 		expect((await owner.pb.collection('connections').getOne(conn.id)).last_hint).toBe('');
-	}, 30_000);
+	});
 
 	it('names a missing variable and asks nothing', async () => {
 		const conn = await connection(owner, 'BYL_NOTION_NICHT_GESETZT');
@@ -186,7 +187,7 @@ describe('Notion: Verbindung prüfen and sources', () => {
 		const narrowed = await sources(owner, conn, 'woche');
 		expect(narrowed.body.sources.map((source) => source.title)).toEqual(['Wochenplan']);
 		expect(fake.requests.filter((request) => request.path === '/v1/search').at(-1).body.query).toBe('woche');
-	}, 30_000);
+	});
 
 	it('keeps the connection of another user and other kinds to themselves', async () => {
 		const conn = await connection(owner);
@@ -235,7 +236,7 @@ describe('Notion: preview', () => {
 		});
 		// Five rows with a page size of three: the query was paginated.
 		expect(fake.requests.filter((request) => request.path.endsWith('/query'))).toHaveLength(2);
-	}, 30_000);
+	});
 
 	it('takes another date property or none on request and refuses an unknown one', async () => {
 		const conn = await connection(owner);
@@ -246,7 +247,7 @@ describe('Notion: preview', () => {
 		expect(none.body.items.every((item) => item.source_date === '')).toBe(true);
 		const unknown = await preview(owner, conn, { source: dataSource, date_property: 'Gibt es nicht' });
 		expect(unknown.status).toBe(400);
-	}, 30_000);
+	});
 
 	it('shows the points of the lists of a page with their sections, nested points as text', async () => {
 		const conn = await connection(owner);
@@ -266,7 +267,7 @@ describe('Notion: preview', () => {
 		// Without "Unterseiten einbeziehen" the sub-page is a source of its own and not read.
 		expect(fake.requests.some((request) => request.path.includes(BLOCK(11)))).toBe(false);
 		expect(result.body).toMatchObject({ subpages: 0, subpages_hidden: 0 });
-	}, 30_000);
+	});
 
 	it('reads the sub-pages of a page on request, down the levels, and counts those it does not see', async () => {
 		const conn = await connection(owner);
@@ -297,7 +298,7 @@ describe('Notion: preview', () => {
 		const rows = await preview(owner, conn, { source: dataSource, subpages: true });
 		expect(rows.body).toMatchObject({ status: 'ok', subpages: 0, subpages_hidden: 0 });
 		expect((await owner.pb.collection('connections').getOne(conn.id)).last_error).toBe('');
-	}, 30_000);
+	});
 
 	it('reports a page that is not shared as a problem of the source, not of the connection', async () => {
 		const conn = await connection(owner);
@@ -324,7 +325,7 @@ describe('Notion: preview', () => {
 		expect(result.body.items).toHaveLength(5);
 		expect(Date.now() - started).toBeGreaterThanOrEqual(1000);
 		expect(fake.requests.filter((request) => request.path.endsWith('/query'))).toHaveLength(3);
-	}, 30_000);
+	});
 
 	it('gives up after repeated 429 with a German message and keeps the connection state', async () => {
 		const conn = await connection(owner);
@@ -386,7 +387,7 @@ describe('Notion: import into the inbox', () => {
 				'- **Wichtig:** ja'
 			].join('\n')
 		);
-	}, 30_000);
+	});
 
 	it('takes only new entries again ("Erneut abrufen") and a done one when asked', async () => {
 		const again = await importItems(who, conn, { source: dataSource, refs: [ROW(1), ROW(2), ROW(3), ROW(4), ROW(5)], skip_done: false });
@@ -394,7 +395,7 @@ describe('Notion: import into the inbox', () => {
 		expect(again.body.items.find((item) => item.ref === ROW(1))).toMatchObject({ status: 'duplicate', message: 'Schon im Eingang.', state: 'new' });
 		const shown = await preview(who, conn, { source: dataSource });
 		expect(shown.body.items.every((item) => item.state === 'new')).toBe(true);
-	}, 30_000);
+	});
 
 	it('copies the page content of a row as Markdown after the properties', async () => {
 		const copier = await user();
@@ -417,7 +418,7 @@ describe('Notion: import into the inbox', () => {
 		const json = await original.json();
 		expect(json).toMatchObject({ notion_version: '2026-03-11', source: { id: DATA_SOURCE_ID }, page: { id: ROW(5) } });
 		expect(json.content.map((block) => block.type)).toEqual(['heading_3', 'to_do', 'to_do', 'paragraph']);
-	}, 30_000);
+	});
 
 	it('takes points of a page as to-dos with their nested points and keeps discarded ones away', async () => {
 		const result = await importItems(who, conn, { source: page, refs: [BLOCK(2), BLOCK(3), BLOCK(4), BLOCK(8)], skip_done: true });
@@ -435,7 +436,7 @@ describe('Notion: import into the inbox', () => {
 		expect(shown.body.items.find((item) => item.ref === BLOCK(2))).toMatchObject({ state: 'discarded', message: 'Schon verworfen.' });
 		const again = await importItems(who, conn, { source: page, refs: [BLOCK(2)] });
 		expect(again.body.items[0]).toMatchObject({ status: 'duplicate', message: 'Schon verworfen.', state: 'discarded' });
-	}, 30_000);
+	});
 
 	it('takes points of sub-pages into the source of the page only on request and remembers that', async () => {
 		const reader = await user();
@@ -456,7 +457,7 @@ describe('Notion: import into the inbox', () => {
 		// "Erneut abrufen" takes the option of the last import.
 		const listed = await imports(reader, own);
 		expect(listed.body.imports.map((entry) => [entry.id, entry.type, entry.count, entry.subpages])).toEqual([[PAGE_ID, 'page', 2, true]]);
-	}, 30_000);
+	});
 
 	it('names entries that are gone from the source and refuses too many or no refs', async () => {
 		const gone = await importItems(who, conn, { source: page, refs: [id(3, 999)] });
@@ -464,7 +465,7 @@ describe('Notion: import into the inbox', () => {
 		expect((await importItems(who, conn, { source: page, refs: [] })).status).toBe(400);
 		const many = Array.from({ length: 101 }, (_, index) => id(3, 1000 + index));
 		expect((await importItems(who, conn, { source: page, refs: many })).status).toBe(400);
-	}, 30_000);
+	});
 
 	it('sums up the imported sources for "Erneut abrufen" without asking Notion', async () => {
 		fake.clear();
@@ -491,10 +492,11 @@ describe('Notion: only reading, never the token', () => {
 		for (const request of fake.requests) {
 			expect(READS.some((pattern) => pattern.test(`${request.method} ${request.path}`)), `${request.method} ${request.path}`).toBe(true);
 		}
-	}, 60_000);
+	});
 
 	it('shows the token in no answer, stored error or log', async () => {
-		const logs = JSON.stringify(await superuser.send('/api/logs', { query: { perPage: 500 } }));
+		// All entries, once PocketBase has written those of the cases before (it writes in batches).
+		const logs = JSON.stringify(await writtenLogs(superuser));
 		const records = JSON.stringify(await superuser.collection('connections').getFullList());
 		for (const text of [responses, logs, records, instance.output()]) {
 			expect(text).not.toContain(TOKEN);

@@ -11,6 +11,7 @@ import { createServer } from 'node:http';
 import { createServer as createNetServer } from 'node:net';
 import PocketBase from 'pocketbase';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
+import { writtenLogs } from '../support/logs.mjs';
 import { startPocketBase } from '../support/pocketbase-harness.mjs';
 import { FakeImapServer, fakeMail } from '../../helpers/mail/test/fake-imap.ts';
 import { PollGate, ScanControl } from '../../helpers/mail/src/gate.ts';
@@ -108,7 +109,7 @@ beforeAll(async () => {
 		settings: { provider: 'webde', user: imap.user, keywords: ['todo'] }
 	});
 	await startHelper();
-}, 60_000);
+});
 
 afterAll(async () => {
 	await stopHelper();
@@ -430,7 +431,8 @@ describe('mail helper stopped, restarted or with another token', () => {
 		]);
 		await startHelper();
 		const everything = [
-			JSON.stringify(await superuser.send('/api/logs', { query: { perPage: 500 } })),
+			// All entries, once PocketBase has written those of the cases before (it writes in batches).
+			JSON.stringify(await writtenLogs(superuser)),
 			instance.output(),
 			lines.join('\n')
 		].join('\n');

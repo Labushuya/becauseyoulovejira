@@ -11,6 +11,8 @@ import PocketBase from 'pocketbase';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { startPocketBase } from '../support/pocketbase-harness.mjs';
 import { loadHookLib } from '../support/hook-lib.mjs';
+import { allLogEntries } from '../support/logs.mjs';
+import { LOG_WRITE_MS, scaled } from '../support/timing.mjs';
 
 const cleanup = loadHookLib('inbox-cleanup.js');
 const TOKEN = randomBytes(24).toString('base64');
@@ -46,7 +48,7 @@ function daysAgo(days) {
 
 /** Writes columns of inbox_items directly, as if the item had been discarded earlier. */
 function writeRow(id, values) {
-	const db = new DatabaseSync(join(instance.dataDir, 'data.db'), { timeout: 10_000 });
+	const db = new DatabaseSync(join(instance.dataDir, 'data.db'), { timeout: scaled(10_000) });
 	try {
 		const columns = Object.keys(values);
 		db.prepare(`UPDATE inbox_items SET ${columns.map((column) => `${column} = ?`).join(', ')} WHERE id = ?`).run(
@@ -115,7 +117,7 @@ beforeAll(async () => {
 		secret_env: 'BYL_TEST_MAIL_PASSWORD',
 		settings: { provider: 'webde', user: 'anna@example.com', keywords: ['todo'] }
 	});
-}, 60_000);
+});
 
 afterAll(async () => {
 	await instance?.stop();
@@ -183,7 +185,7 @@ describe('cleanup of discarded items after 30 days (OF-E4-6)', () => {
 		const before = await owner.pb.collection('inbox_items').getOne(mail.id);
 		await runCleanup();
 		await expect
-			.poll(async () => (await owner.pb.collection('inbox_items').getOne(mail.id)).body, { timeout: 10_000 })
+			.poll(async () => (await owner.pb.collection('inbox_items').getOne(mail.id)).body, { timeout: scaled(10_000) })
 			.toBe(cleanup.PURGED_BODY);
 
 		const cleanedMail = await owner.pb.collection('inbox_items').getOne(mail.id);
@@ -228,7 +230,7 @@ describe('cleanup of discarded items after 30 days (OF-E4-6)', () => {
 		await discard(owner, mail, 40);
 		await runCleanup();
 		await expect
-			.poll(async () => (await owner.pb.collection('inbox_items').getOne(mail.id)).body, { timeout: 10_000 })
+			.poll(async () => (await owner.pb.collection('inbox_items').getOne(mail.id)).body, { timeout: scaled(10_000) })
 			.toBe(cleanup.PURGED_BODY);
 
 		const form = new FormData();
@@ -285,14 +287,12 @@ describe('cleanup of discarded items after 30 days (OF-E4-6)', () => {
 
 		await runCleanup();
 		await expect
-			.poll(async () => (await owner.pb.collection('inbox_items').getOne(good.id)).body, { timeout: 10_000 })
+			.poll(async () => (await owner.pb.collection('inbox_items').getOne(good.id)).body, { timeout: scaled(10_000) })
 			.toBe(cleanup.PURGED_BODY);
 		expect((await superuser.collection('inbox_items').getOne(broken.id)).body).toBe('Text');
-		await expect
-			.poll(async () => JSON.stringify(await superuser.send('/api/logs', { query: { perPage: 500 } })), {
-				timeout: 10_000
-			})
-			.toMatch(/verworfenen Eintrag nicht bereinigt/);
+		// PocketBase writes its log in batches; all entries, not only the oldest page.
+		const skipped = superuser.filter('message ~ {:text}', { text: 'verworfenen Eintrag nicht bereinigt' });
+		await expect.poll(async () => (await allLogEntries(superuser, skipped)).length, { timeout: LOG_WRITE_MS }).toBeGreaterThan(0);
 
 		const cleaned = await owner.pb.collection('inbox_items').getOne(good.id);
 		await runCleanup();

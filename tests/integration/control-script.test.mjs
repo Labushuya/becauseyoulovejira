@@ -39,13 +39,14 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { credentialNames, spawnSyncClean, visibleNames } from '../support/clean-env.mjs';
 import { POCKETBASE_EXE } from '../support/pocketbase-harness.mjs';
 import { POWERSHELL_EXE, runPowerShellJson } from '../support/powershell.mjs';
+import { scaled } from '../support/timing.mjs';
 
 const ROOT_DIR = resolve(fileURLToPath(new URL('../..', import.meta.url)));
 const APP_DIR = join(ROOT_DIR, 'app');
 const TEMP_ROOT = join(ROOT_DIR, '.tmp');
 const PROBE_HOOK = join(ROOT_DIR, 'tests', 'fixtures', 'pb_hooks', 'environment-probe.pb.js');
 const RESERVED_PORTS = new Set([8090, 8099]);
-const COMMAND_TIMEOUT_MS = 60_000;
+const COMMAND_TIMEOUT_MS = scaled(60_000);
 
 // The only variables of every call: the switch for disposable copies and an invented marker. The
 // same for all calls, so the start fingerprint of the variables stays the same between them.
@@ -98,7 +99,7 @@ function makeCopy(name, port) {
 			email,
 			password
 		],
-		{ encoding: 'utf8', windowsHide: true, timeout: 60_000 }
+		{ encoding: 'utf8', windowsHide: true, timeout: scaled(60_000) }
 	);
 	if (upsert.status !== 0) throw new Error(`superuser upsert failed in ${dir} (exit code ${upsert.status})`);
 	return { dir, port, email, password };
@@ -152,7 +153,7 @@ const serversOf = (copy) => servers().filter((server) => server.path.toLowerCase
  */
 function healthy(port) {
 	return new Promise((resolvePromise) => {
-		const request = get({ host: '127.0.0.1', port, path: '/api/health', agent: false, timeout: 2000 }, (response) => {
+		const request = get({ host: '127.0.0.1', port, path: '/api/health', agent: false, timeout: scaled(2000) }, (response) => {
 			response.resume();
 			resolvePromise(response.statusCode === 200);
 		});
@@ -209,7 +210,7 @@ beforeAll(async () => {
 	while (portB === portA) portB = await freePort();
 	copies.a = makeCopy('Kopie A', portA);
 	copies.b = makeCopy('KopieB', portB);
-}, 120_000);
+});
 
 afterAll(() => {
 	delete process.env[CANARY];
@@ -221,11 +222,11 @@ afterAll(() => {
 		}
 	}
 	if (base) rmSync(base, { recursive: true, force: true, maxRetries: 10, retryDelay: 500 });
-}, 60_000);
+});
 
 // A case starts and stops real servers, some twice (about 7 s each on a CI runner): more time than
-// the 15 s of the integration project.
-const CASE_TIMEOUT = { timeout: 120_000 };
+// the 60 s of a test with processes.
+const CASE_TIMEOUT = { timeout: scaled(120_000) };
 
 // The cases build on each other and run in this order (tests of one file run one after another).
 describe('byl-control.ps1 on disposable copies (BS-1)', CASE_TIMEOUT, () => {
