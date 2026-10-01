@@ -722,7 +722,7 @@ npm run test:integration   # gegen eine Wegwerf-PocketBase-Instanz
 npm run test:web           # Frontend: Unit- und Komponententests (jsdom)
 ```
 
-**Test-Manifest:** Alle Testfälle stehen in [`docs/test-manifest.html`](docs/test-manifest.html) (lokal im Browser öffnen, funktioniert offline): automatisierte Tests bereichsweise mit Verweis auf die Testdateien, die manuellen Prüfpunkte aus den Plänen zum Abhaken und die geplanten Pakete. Jedes Arbeitspaket pflegt es mit; `tests/unit/test-manifest.test.mjs` prüft, dass es zu den Testdateien passt.
+**Test-Manifest:** Alle Testfälle stehen in [`docs/test-manifest.html`](docs/test-manifest.html) (lokal im Browser öffnen, funktioniert offline): oben der Stand mit den Zahlen, die offenen manuellen Prüfungen nach Bereichen und die Tabelle „Etappen und Pakete“, darunter die automatisierten Tests bereichsweise mit Verweis auf die Testdateien und die manuellen Prüfpunkte aus den Plänen zum Abhaken. Jedes Arbeitspaket pflegt es mit (ein Eintrag in `pakete` plus seine Fälle); `tests/unit/test-manifest.test.mjs` prüft, dass es zu den Testdateien passt und die Zahlen stimmen.
 
 `npm test` im Root führt erst die Root-Tests (Unit und Integration) und danach die web-Tests aus. **Vorher muss der Frontend-Build existieren** (`npm run build` nach `app/pb_public`), sonst schlägt der SPA-Fallback-Test mit einem Hinweis fehl. Die Integrationstests brauchen außerdem `app/pocketbase.exe` (Quickstart, Schritt 1). Die Start-Skripte selbst werden von den Tests nie ausgeführt; die Tests der Start-Logik rufen nur die Funktionen in Windows PowerShell auf (`-NoProfile -ExecutionPolicy Bypass`).
 

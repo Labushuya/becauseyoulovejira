@@ -39,10 +39,40 @@
     font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
     line-height: 1.55; font-size: 16px;
   }
-  .wrap { max-width: 860px; margin: 0 auto; padding: 20px 16px 120px; }
-  header.top { margin-bottom: 20px; }
+  .wrap { max-width: 960px; margin: 0 auto; padding: 20px 16px 120px; }
+  header.top { margin-bottom: 16px; }
   h1 { font-size: 1.6rem; margin: 0 0 4px; letter-spacing: -0.02em; }
-  .subtitle { color: var(--text-muted); font-size: 0.95rem; margin: 0 0 16px; }
+  .subtitle { color: var(--text-muted); font-size: 0.95rem; margin: 0 0 8px; }
+  .stand { margin: 0 0 4px; font-size: 0.95rem; }
+  .deferred-line { margin: 0; font-size: 0.88rem; color: var(--text-muted); }
+  .deferred-line b { color: var(--text); }
+  .noscript { background: var(--warn-subtle); border: 1px solid var(--warn); border-radius: var(--radius-sm); padding: 8px 12px; }
+  a { color: var(--primary-text); }
+  a:focus-visible, summary:focus-visible, .table-wrap:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
+
+  .panel {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: var(--radius); padding: 12px 16px; margin-bottom: 16px;
+  }
+  .panel h2 { margin: 0 0 4px; font-size: 1.05rem; }
+  .panel h3 { margin: 12px 0 2px; font-size: 0.95rem; }
+  .panel .hint { margin: 0 0 8px; font-size: 0.85rem; color: var(--text-muted); }
+  .count, .muted { color: var(--text-muted); font-weight: 400; }
+  .area { border-top: 1px solid var(--border); padding: 6px 0; }
+  .area summary { cursor: pointer; font-weight: 600; font-size: 0.92rem; }
+  .case-list { list-style: none; margin: 6px 0 4px; padding: 0 0 0 4px; font-size: 0.88rem; }
+  .case-list li { margin: 2px 0; }
+  .case-id { font-family: ui-monospace, "Cascadia Mono", Consolas, monospace; font-size: 0.8rem; font-weight: 700; margin-right: 6px; }
+  .table-wrap { overflow-x: auto; margin-top: 8px; }
+  table.packages { width: 100%; border-collapse: collapse; font-size: 0.8rem; }
+  table.packages th, table.packages td { text-align: left; vertical-align: top; padding: 5px 6px; border-bottom: 1px solid var(--border); }
+  table.packages thead th { font-size: 0.75rem; color: var(--text-muted); border-bottom: 2px solid var(--border); }
+  table.packages th.group { background: var(--surface-sunken); font-size: 0.85rem; padding-top: 7px; padding-bottom: 7px; }
+  table.packages th[scope="row"] { font-weight: 400; min-width: 14rem; }
+  table.packages .num { text-align: right; font-variant-numeric: tabular-nums; }
+  table.packages .case-id { margin-right: 4px; }
+  .package-id { font-family: ui-monospace, "Cascadia Mono", Consolas, monospace; font-weight: 700; margin-right: 4px; }
+  .package-note { display: block; margin-top: 2px; color: var(--text-muted); }
 
   .pre {
     background: var(--warn-subtle); border: 1px solid var(--warn);
@@ -92,8 +122,9 @@
 
   .item {
     background: var(--surface); border: 1px solid var(--border);
-    border-radius: var(--radius); padding: 12px 14px; margin-bottom: 10px;
+    border-radius: var(--radius); padding: 12px 14px; margin-bottom: 10px; scroll-margin-top: 150px;
   }
+  .item:target, .item:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
   .item.done { border-color: var(--ok); background: var(--ok-subtle); }
   .item.planned { border-style: dashed; }
   .item-top { display: flex; gap: 10px; align-items: flex-start; }
@@ -105,6 +136,7 @@
   .badge.st-bestanden, .badge.st-bestaetigt { color: var(--primary-text); background: var(--primary-subtle); border-color: var(--primary); }
   .badge.st-offen { color: var(--warn); background: var(--warn-subtle); border-color: var(--warn); }
   .badge.st-geplant { border-style: dashed; }
+  .badge.st-zurueck { border-style: dashed; background: var(--surface-sunken); }
   .badge.st-nz { background: var(--surface-sunken); }
   .item-title { font-weight: 600; margin: 1px 0 4px; }
   .item-pre { margin: 4px 0 0; font-size: 0.88rem; color: var(--text-muted); }
@@ -132,36 +164,57 @@
   .toast { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); background: var(--text); color: var(--bg); padding: 10px 18px; border-radius: 999px; font-size: 0.9rem; font-weight: 600; opacity: 0; transition: opacity 0.2s; pointer-events: none; z-index: 50; }
   .toast.show { opacity: 1; }
   [hidden] { display: none !important; }
+
+  @media print {
+    :root {
+      --bg: #ffffff; --surface: #ffffff; --surface-sunken: #eceff0; --border: #b8c4c6;
+      --text: #000000; --text-muted: #3a4649; --primary: #07838f; --primary-text: #055c65; --primary-subtle: #ddf0f2;
+      --ok: #07838f; --ok-subtle: #ffffff; --warn: #7a4e08; --warn-subtle: #ffffff;
+    }
+    .wrap { max-width: none; padding: 0; }
+    .progress-bar { position: static; }
+    .actions, .filters, .toast { display: none !important; }
+    .note-wrap:has(textarea.note:placeholder-shown) { display: none; }
+    .item, table.packages tr { break-inside: avoid; }
+  }
 </style>
 </head>
 <body>
 <div class="wrap">
   <header class="top">
     <h1>becauseyoulovejira — Test-Manifest</h1>
-    <p class="subtitle" id="stand">Etappen E1, E1.1, E2, E3, E4, E5 (umgesetzt, Browser-Prüfung offen) und E6 UI-Konsistenz (umgesetzt, manuelle Prüfungen offen, dazu Projektliste nach Nutzerwunsch) sowie Einstellungen und Hilfe (umgesetzt, EH-0 bis EH-13, manuelle Prüfungen offen) · automatisierte Tests bereichsweise zusammengefasst · manuelle Prüfpunkte aus den Plänen an einem Ort</p>
-
-    <div class="pre">
-      <h2>Voraussetzung für die manuellen Prüfungen (kein Testschritt)</h2>
-      <ul>
-        <li>Der aktuelle Build liegt in <code>app\pb_public</code> (<code>powershell -ExecutionPolicy Bypass -File scripts\build.ps1</code> komplett grün).</li>
-        <li>Die App läuft (<code>app\start.bat</code>), im Browser einmal <b>F5</b> drücken und mit dem App-Konto anmelden. Nach neuen Migrationen oder einer neuen <code>byl-mail.exe</code> vorher einmal <code>app\stop.bat</code> und <code>app\start.bat</code>.</li>
-        <li>Für die Live-Tests ein zweites Browserfenster mit demselben Konto öffnen (Fenster A und B).</li>
-        <li>Prüfungen zu Erststart, Admin-Reset und Wiederherstellung in einer <b>Kopie</b> von <code>app\</code> durchführen, nie mit den echten Daten.</li>
-      </ul>
-      Hake jeden bestätigten manuellen Punkt ab und trage Abweichungen ins Notizfeld ein.
-    </div>
-
-    <div class="legend">
-      <h2>Legende</h2>
-      <dl>
-        <dt><span class="badge st-bestanden">bestanden</span></dt><dd>automatisiert, im letzten vollständigen Lauf von <code>scripts\build.ps1</code> grün</dd>
-        <dt><span class="badge st-offen">offen</span></dt><dd>manuell, noch nicht vom Nutzer bestätigt (das Häkchen setzt lokal „bestätigt“)</dd>
-        <dt><span class="badge st-geplant">geplant</span></dt><dd>Arbeitspaket noch nicht umgesetzt; es gelten die Akzeptanzkriterien aus dem Plan</dd>
-        <dt><span class="badge st-nz">nicht zutreffend</span></dt><dd>entfällt für diesen Stand</dd>
-        <dt><span class="badge">Unit</span> <span class="badge">Komponente</span> <span class="badge">Integration</span> <span class="badge">Manuell</span></dt><dd>Art: reine Logik · Svelte-Komponente mit jsdom · gegen eine Wegwerf-Instanz · von Hand im Browser bzw. unter Windows</dd>
-      </dl>
-    </div>
+    <p class="subtitle">Automatisierte Tests bereichsweise zusammengefasst, manuelle Prüfpunkte aus den Plänen an einem Ort.</p>
+    <p class="stand" id="stand"></p>
+    <p class="deferred-line" id="deferred"></p>
+    <noscript>
+      <p class="noscript">Stand, Übersichten und Fälle entstehen per JavaScript aus den Daten im Block <code>manifest-data</code> dieser Datei. Bitte JavaScript für diese Datei zulassen oder den Quelltext ansehen (Strg+U).</p>
+    </noscript>
   </header>
+
+  <div id="overview"></div>
+
+  <div class="pre">
+    <h2>Voraussetzung für die manuellen Prüfungen (kein Testschritt)</h2>
+    <ul>
+      <li>Der aktuelle Build liegt in <code>app\pb_public</code> (<code>powershell -ExecutionPolicy Bypass -File scripts\build.ps1</code> komplett grün).</li>
+      <li>Die App läuft (<code>app\start.bat</code>), im Browser einmal <b>F5</b> drücken und mit dem App-Konto anmelden. Nach neuen Migrationen oder einer neuen <code>byl-mail.exe</code> vorher einmal <code>app\stop.bat</code> und <code>app\start.bat</code>.</li>
+      <li>Für die Live-Tests ein zweites Browserfenster mit demselben Konto öffnen (Fenster A und B).</li>
+      <li>Prüfungen zu Erststart, Admin-Reset und Wiederherstellung in einer <b>Kopie</b> von <code>app\</code> durchführen, nie mit den echten Daten.</li>
+    </ul>
+    Hake jeden bestätigten manuellen Punkt ab und trage Abweichungen ins Notizfeld ein.
+  </div>
+
+  <div class="legend">
+    <h2>Legende</h2>
+    <dl>
+      <dt><span class="badge st-bestanden">bestanden</span></dt><dd>automatisiert, im letzten vollständigen Lauf von <code>scripts\build.ps1</code> grün</dd>
+      <dt><span class="badge st-offen">offen</span></dt><dd>manuell, noch nicht vom Nutzer bestätigt (das Häkchen setzt lokal „bestätigt“)</dd>
+      <dt><span class="badge st-geplant">geplant</span></dt><dd>Arbeitspaket noch nicht umgesetzt; es gelten die Akzeptanzkriterien aus dem Plan</dd>
+      <dt><span class="badge st-zurueck">zurückgestellt</span></dt><dd>wartet auf eine Entscheidung des Nutzers (siehe „Zurückgestellt“ oben), jetzt nicht prüfen</dd>
+      <dt><span class="badge st-nz">nicht zutreffend</span></dt><dd>entfällt für diesen Stand</dd>
+      <dt><span class="badge">Unit</span> <span class="badge">Komponente</span> <span class="badge">Integration</span> <span class="badge">Manuell</span></dt><dd>Art: reine Logik · Svelte-Komponente mit jsdom · gegen eine Wegwerf-Instanz · von Hand im Browser bzw. unter Windows</dd>
+    </dl>
+  </div>
 
   <div class="progress-bar">
     <div class="progress-track"><div class="progress-fill" id="fill"></div></div>
@@ -189,6 +242,7 @@
           <option value="bestanden">bestanden</option>
           <option value="offen">offen</option>
           <option value="geplant">geplant</option>
+          <option value="zurückgestellt">zurückgestellt</option>
           <option value="nicht zutreffend">nicht zutreffend</option>
         </select>
       </label>
@@ -200,22 +254,207 @@
 
   <footer class="foot">
     Häkchen und Notizen werden automatisch im Browser gespeichert (localStorage). „Kopieren“ legt eine Markdown-Übersicht
-    in die Zwischenablage. Pflege: Jedes Arbeitspaket aktualisiert diese Datei; <code>tests/unit/test-manifest.test.mjs</code> prüft sie.
+    in die Zwischenablage. Pflege: Jedes Arbeitspaket bekommt einen Eintrag in <code>pakete</code> und trägt seine Fälle ein
+    (Anleitung im Kommentar über den Daten); <code>tests/unit/test-manifest.test.mjs</code> prüft die Datei.
   </footer>
 </div>
 <div class="toast" id="toast" role="status"></div>
 
 <!-- Manifest-Daten: JSON, damit tests/unit/test-manifest.test.mjs sie ohne Browser prüfen kann.
-     Punkt: id, title, art[] (unit|komponente|integration|manuell), status (bestanden|offen|geplant|nicht zutreffend),
-     pre (Vorbedingung), steps[] (Schritte bzw. Akzeptanzkriterien bei „geplant“), expect, tests[] ("Pfad" oder "Pfad::Testname"). -->
+     Die Seite rechnet Stand, Zahlen, Paket-Tabelle und offene manuelle Prüfungen selbst aus diesen Daten (Block manifest-logic);
+     von Hand gepflegt werden nur die Einträge, nie ein Fließtext im Kopf.
+     meta: projekt, stand (Datum JJJJ-MM-TT), commit. Nichts weiter.
+     bereiche: Bereiche, nach denen die offenen manuellen Prüfungen gruppiert sind (id, titel), in der Reihenfolge der Anzeige.
+     pakete: ein Eintrag je Arbeitspaket, in der Reihenfolge der Umsetzung:
+       id (eindeutig, z. B. „G-1“), vorhaben (Überschrift der Gruppe in der Tabelle), titel, bereich (id aus bereiche),
+       faelle (IDs oder Bereiche wie „BYL-E6-100..BYL-E6-105“; jeder Fall gehört zu genau einem Paket),
+       optional quelle (Nutzerentscheidung, Nutzerwunsch, Fehlerbericht, …), datum (JJJJ-MM-TT),
+       adr (Dateinamen unter docs/adr, ggf. mit Zusatz: „0022-erzeugung-von-instanzen.md, Nachtrag 9“), plan (Dateiname unter docs/plan),
+       vermerk (kurz; Pflicht, wenn das Paket keine Fälle hat).
+     zurueckgestellt: Themen, die auf eine Entscheidung des Nutzers warten (id, titel, quelle, datum, adr, plan, vermerk);
+       faelle nennt genau die Fälle mit dem Status „zurückgestellt“.
+     Neues Paket: einen Eintrag am Ende von pakete anlegen und seine Fälle in blocks eintragen, meta.stand und meta.commit nachziehen.
+     Punkt: id, title, art[] (unit|komponente|integration|manuell), status (bestanden|offen|geplant|zurückgestellt|nicht zutreffend;
+     „offen“ nur mit manuellem Anteil), pre (Vorbedingung), steps[] (Schritte bzw. Akzeptanzkriterien bei „geplant“), expect,
+     tests[] ("Pfad" oder "Pfad::Testname"). -->
 <script type="application/json" id="manifest-data">
 {
   "meta": {
     "projekt": "becauseyoulovejira",
     "stand": "2026-10-01",
-    "commit": "734db5d",
-    "etappe": "E0 bis E4 abgeschlossen (E4: Pakete 1 bis 11, 13 bis 17, 19 bis 24; Paket 12 entfällt, Paket 18 ersetzt durch den Notion-Import nach ADR-0041); E5 abgeschlossen (Pakete 1 bis 7: BYL-E5-001 bis BYL-E5-007 bestanden, Browser-Prüfung BYL-E5-008 offen); E6 UI-Konsistenz vorgezogen und umgesetzt (UI-0 bis UI-9 und UI-6b: BYL-E6-001 bis BYL-E6-028; Projektliste und Tags in den Einstellungen nach Nutzerwunsch: BYL-E6-065 bis BYL-E6-067); E6 Einstellungen und Hilfe umgesetzt (EH-0 bis EH-13: BYL-E6-029 bis BYL-E6-059, manuelle Browser-Prüfungen offen); Akzent-Themes nach ADR-0027 (Nutzerwunsch): Tokens und Tests BYL-E6-068 bis BYL-E6-070, Auswahl BYL-E6-071 bis BYL-E6-073, Sichtprüfung BYL-E6-074 offen; Testfeedback Paket A: stop.bat BYL-E6-075 (manuell BYL-E6-076 offen), Stichwörter bei Mail BYL-E6-077 bis BYL-E6-079 (manuell BYL-E6-080 offen), Stichwort-Eingabe BYL-E6-081 (manuell BYL-E6-082 offen), manueller Abruf BYL-E6-083 bis BYL-E6-086 (manuell BYL-E6-087 offen), Farbthemes nach dem Nachtrag zu ADR-0027 BYL-E6-088 (manuell BYL-E6-089 offen), Checkboxen und Radios BYL-E6-090 (manuell BYL-E6-091 offen); Plattform-Strategie nach ADR-0028 (docs/plan/plattformen.md, Testfälle mit der jeweiligen Stufe), Stufe S0 ab BYL-E6-360: Skripte und Linux-CI S0-1 BYL-E6-360 und BYL-E6-361 (manuell BYL-E6-362 offen), Server-System S0-2 BYL-E6-363 und BYL-E6-364, Hinweis über den Anleitungen S0-3 BYL-E6-365 (manuell BYL-E6-366 offen); Glas-Materialien nach ADR-0029 (docs/plan/e6-glas.md, IDs ab BYL-E6-100): G-1 BYL-E6-100 und BYL-E6-101 (manuell BYL-E6-102 offen), G-3 BYL-E6-103 und BYL-E6-104 (manuell BYL-E6-105 offen), G-2 BYL-E6-106 (manuell BYL-E6-107 offen), G-4 BYL-E6-108 (manuell BYL-E6-109 offen), G-5 BYL-E6-110 (manuell BYL-E6-111 offen), G-6 BYL-E6-112 (manuell BYL-E6-113 offen); „Jetzt abrufen“ im Assistenten der Postfächer BYL-E6-114 (manuell BYL-E6-115 offen); Mail über den ganzen Posteingang (Nutzerentscheidung 2026-09-27, IDs ab BYL-E6-120): Kopfzeilen und ganzer Text BYL-E6-120, Vollsuche BYL-E6-121 bis BYL-E6-123 (manuell BYL-E6-124 offen), Karte BYL-E6-125 (manuell BYL-E6-126 offen); Spalten nach ADR-0030 (Nutzerwunsch, docs/plan/e6-spalten.md, IDs ab BYL-E6-140): Unterbau SP-1 BYL-E6-140, Aufgaben-Tabelle SP-2 BYL-E6-141 (manuell BYL-E6-142 offen), Menü „Spalten“ SP-3 BYL-E6-143 (manuell BYL-E6-144 offen), kompakte Zeilen SP-4 BYL-E6-145 (manuell BYL-E6-146 offen), übrige Tabellen SP-5 BYL-E6-147 (manuell BYL-E6-148 offen), Tag-Eingabe im Ticket BYL-E6-149 (manuell BYL-E6-150 offen), Switches im Kanal-Dialog BYL-E6-151; Herkunft sichern nach ADR-0031 (Nutzerentscheidung, docs/plan/herkunft.md, IDs ab BYL-E6-160): Verknüpfen, Lösen und Löschschutz HK-1 BYL-E6-160 und BYL-E6-161, Quellen und Verknüpfen in der Oberfläche HK-2 BYL-E6-162 (manuell BYL-E6-163 offen), große Mails ohne Originaldatei HK-3 BYL-E6-164 und BYL-E6-165 (manuell BYL-E6-166 offen), Seitenkopie mit SSRF-Schutz HK-4 BYL-E6-167 bis BYL-E6-169 (manuell BYL-E6-170 offen); Folgeauftrag (Nachtrag zu ADR-0031, IDs ab BYL-E6-180): Umhängen HK-5 BYL-E6-180 und BYL-E6-181 (manuell BYL-E6-182 offen), Löschen eines Tickets mit Quellen HK-6 BYL-E6-183 bis BYL-E6-185 (manuell BYL-E6-186 offen), Hervorhebung und Filter HK-7 BYL-E6-187 (manuell BYL-E6-188 offen), Originaldateien bis 25 MB HK-8 BYL-E6-189 (manuell BYL-E6-190 offen); Editor nach ADR-0032 (Nutzerentscheidung 2026-09-28, docs/plan/editor.md, IDs ab BYL-E6-200): Spike RT-0 abgeschlossen (Weg B), Anzeige RT-1 BYL-E6-200 (manuell BYL-E6-201 offen), Abhaken mit Schutz vor Überschreiben RT-2 BYL-E6-202 bis BYL-E6-204 (manuell BYL-E6-205 offen), Stufe B ab BYL-E6-241: Editor für die Beschreibung RT-3 BYL-E6-241 (manuell BYL-E6-242 offen), „/“-Menü und Link RT-4 BYL-E6-243 (manuell BYL-E6-244 offen), Einfügen RT-5 BYL-E6-245 (manuell BYL-E6-246 offen), Kommentare und Formulare RT-6 BYL-E6-247 (manuell BYL-E6-248 offen); Unteraufgaben nach ADR-0033 (Nutzerentscheidung 2026-09-28, docs/plan/unteraufgaben.md, IDs ab BYL-E6-220): Sperre beim Erledigen und Wiederholungen im Hook UA-1 BYL-E6-220 und BYL-E6-221, Abschnitt „Unteraufgaben“ und Pfad UA-2 BYL-E6-222 (manuell BYL-E6-223 offen), übergeordnetes Ticket, Switch und Löschen inline UA-3 BYL-E6-224 (manuell BYL-E6-225 offen), Frage beim Erledigen UA-4 BYL-E6-226 (manuell BYL-E6-227 offen), Tabelle mit Fortschritt, Einrücken und Spalte „Übergeordnet“ UA-5 BYL-E6-228 (manuell BYL-E6-229 offen), Verwerfen-Frage der Vollansicht inline BYL-E6-240; Unterprojekte nach ADR-0034 (Nutzerentscheidung 2026-09-28, docs/plan/unterprojekte.md, IDs ab BYL-E6-260): Hook, Kaskade und Löschsperre UP-1 BYL-E6-260, Migration mit Rollback und vor dem Neustart UP-1 BYL-E6-261, Katalog und Datenschicht UP-2 BYL-E6-262, Liste und Kacheln als Baum UP-3 BYL-E6-263 (manuell BYL-E6-264 offen), Projekt-Panel UP-4 BYL-E6-265 (manuell BYL-E6-266 offen), Auswahl, Filter, Tabelle und Brotkrumen UP-5 BYL-E6-267 (manuell BYL-E6-268 offen), aggregierte Zahlen und Hilfe UP-6 BYL-E6-269 (manuell BYL-E6-270 offen); Start und Fenster nach ADR-0035 (Nutzerentscheidung 2026-09-28, docs/plan/start-fenster.md, IDs ab BYL-E6-280): Routen für Präsenz und Hinweis SF-1 BYL-E6-280, Landing per Datei SF-2 BYL-E6-281 (manuell BYL-E6-282 offen), Hinweis im Tab und zweiter Tab SF-3 BYL-E6-283 (manuell BYL-E6-284 offen), start.bat und stop.bat SF-4 BYL-E6-285 (manuell BYL-E6-286 offen), installierbare Web-App (S1) SF-5 BYL-E6-287 (manuell BYL-E6-288 offen), Windows-Benachrichtigung als Opt-in SF-6 BYL-E6-289 (manuell BYL-E6-290 offen); Offene Reste Teil A (Nutzerentscheidungen 2026-09-28, docs/plan/offene-reste.md, IDs ab BYL-E6-300): Tests für mehrere Wochentage OR-1 BYL-E6-300, Filter und Gruppe „wiederkehrend“ OR-2 BYL-E6-301 (manuell BYL-E6-302 offen), zwei Ebenen OR-3 BYL-E6-303 (manuell BYL-E6-304 offen), Wiederholen beim Anlegen OR-4 BYL-E6-305 (manuell BYL-E6-306 offen), jeden Termin einzeln OR-5 BYL-E6-307 und BYL-E6-308 (manuell BYL-E6-309 offen); Bulk, Inline und Ansicht nach ADR-0036 (docs/plan/bulk-inline-ansicht.md, IDs ab BYL-E6-320): Öffnungsmodus BI-1 BYL-E6-320 (manuell BYL-E6-321 offen), Auswahl und Sammelaktionen BI-2 BYL-E6-322 bis BYL-E6-324 (manuell BYL-E6-325 offen), Bearbeiten in Zellen BI-3 BYL-E6-326 (manuell BYL-E6-327 offen); Papierkorb nach ADR-0037 (docs/plan/papierkorb.md, IDs ab BYL-E6-330): Datenmodell, Hooks, Lesepfade und Aufbewahrung PB-1 BYL-E6-330 bis BYL-E6-333, Oberfläche PB-2 BYL-E6-334 bis BYL-E6-337 (manuell BYL-E6-338 offen); Wiederholungen verständlich machen (Spec vom 2026-09-28, docs/plan/wiederholungen-klarheit.md, IDs ab BYL-E6-340): Wiedereröffnen und zusammengefasste Termine WK-1 BYL-E6-340 und BYL-E6-341 (manuell BYL-E6-342 offen), Rückstand, offene Tickets und Start-Hinweis WK-2 BYL-E6-343 bis BYL-E6-345 (manuell BYL-E6-346 offen), „Nächstes Ticket“ und Vorschau WK-3 BYL-E6-347 und BYL-E6-348 (manuell BYL-E6-349 offen), Hilfe mit Beispielen aus der Rechenlogik und Doku WK-4 BYL-E6-350 und BYL-E6-351 (manuell BYL-E6-352 offen); Layout-Überlauf von Formular-Controls (Fehlerbericht vom 2026-09-28, docs/plan/layout-ueberlauf.md, IDs ab BYL-E6-380): Basisregeln BYL-E6-380, title des Projekts BYL-E6-381 (manuell BYL-E6-382 offen); eindeutige Hinweis-ID am Projektfeld (a11y-Fehler, IDs ab BYL-E6-390): BYL-E6-390; Aufräumpaket (IDs ab BYL-E6-400): Doku- und Manifest-Hygiene AR-1 mit Klickwege-Prüfung (manuell BYL-E6-400 offen) und CI/Ruleset BYL-X-005, erneuter Versuch gescheiterter Realtime-Abos mit Hinweis AR-2 BYL-E6-401 und BYL-E6-402 (manuell BYL-E6-403 offen), zurückgeholte Tickets mit Lesezeilen BYL-E6-404 (manuell BYL-E6-405 offen), Linux-Job als Pflicht-Check AR-3 BYL-E6-406; Eigener Eingang und WhatsApp Web nach ADR-0038 (Nutzerentscheidung 2026-09-28, docs/plan/eigener-eingang-whatsapp-web.md, IDs ab BYL-E6-420): Eingang mit Zugangsschlüssel EI-1 BYL-E6-420 bis BYL-E6-424 (manuell BYL-E6-425 offen), Browser-Erweiterung EI-2 BYL-E6-426 bis BYL-E6-429, Karte, Assistent und Hilfe WhatsApp Web EI-3 BYL-E6-430 bis BYL-E6-432 (manuell BYL-E6-433 bis BYL-E6-438 offen); Betriebsskripte nach ADR-0039 (docs/plan/betriebsskripte.md, IDs ab BYL-E6-440): Kern, Port und geordnetes Beenden BS-1 BYL-E6-440 bis BYL-E6-444 (manuell BYL-E6-445 bis BYL-E6-447 offen), Fingerabdruck, reload, status, open, logs und doctor BS-2 BYL-E6-448 bis BYL-E6-450 (manuell BYL-E6-451 und BYL-E6-452 offen), Doppelklick-Dateien, Texte und Hilfe BS-3 BYL-E6-453 und BYL-E6-454 (manuell BYL-E6-455 bis BYL-E6-459 offen); Breite des Titels nach ADR-0030 Nachtrag 3 (Nutzerwunsch 2026-09-29, IDs ab BYL-E6-460): BYL-E6-460 und BYL-E6-461 (manuell BYL-E6-462 offen); Veröffentlichen ohne Unterbrechung nach ADR-0040 (Fehlerbehebung 2026-09-29, docs/plan/deploy-ohne-unterbrechung.md, IDs ab BYL-E6-480): Veröffentlichen, Cache-Control, Fehlerseiten und Hinweis BYL-E6-480 bis BYL-E6-483 (manuell BYL-E6-484 und BYL-E6-485 offen); Test-Härtung (docs/plan/test-haertung.md, IDs ab BYL-E6-500): Kindprozesse der Tests ohne Zugangsdaten T-1 BYL-E6-500 bis BYL-E6-502, stabile Tests statt gelegentlich roter T-2 BYL-E6-503 bis BYL-E6-505, geordnetes Beenden unter Last T-3 BYL-E6-680 bis BYL-E6-682; Notion-Import nach ADR-0041 (Nutzerentscheidung 2026-09-29: nur lesend, Kopien, nur auf Anstoß; docs/plan/notion-import.md, IDs ab BYL-E6-520): Server NI-1 BYL-E6-520 bis BYL-E6-528, Oberfläche NI-2 BYL-E6-529 bis BYL-E6-538 (manuell BYL-E6-539 bis BYL-E6-547 offen); Rückmeldung beim Notion-Import (Fehlerbehebung 2026-09-30, Nachtrag zu ADR-0041, IDs ab BYL-E6-560): Blöcke, Fortschritt, Ergebnis und Zeitgrenzen BYL-E6-560 bis BYL-E6-565 (manuell BYL-E6-566 offen); Auswahl-Listen nach ADR-0042 (Nutzer-Beobachtung 2026-09-30, docs/plan/auswahl-listen.md, IDs ab BYL-E6-600): Baustein TicketPicker und Fundstellen AL-1 BYL-E6-600 bis BYL-E6-605 (manuell BYL-E6-610 bis BYL-E6-612 offen), Ticket-Link im Editor und Projekt der Schnellerfassung AL-2 BYL-E6-606 bis BYL-E6-608 (manuell BYL-E6-613 und BYL-E6-614 offen); Wiederholungen: Werte von Folgetickets (Nutzerbericht 2026-09-30, docs/plan/wiederholungen-vorlage.md, IDs ab BYL-E6-580): Befund, Status beim Anlegen, Vorlage am Ticket und „Auch für künftige Tickets übernehmen“ WV BYL-E6-580 bis BYL-E6-585 (manuell BYL-E6-586 bis BYL-E6-588 offen); Status beim Anlegen abfragen (Nutzerentscheidung 2026-09-30, ADR-0022 Nachtrag 9, IDs ab BYL-E6-660): WV-2 BYL-E6-660 bis BYL-E6-663 (manuell BYL-E6-664 offen); Unteraufgaben in der Vorlage (Nutzerentscheidung 2026-10-01, ADR-0022 Nachtrag 10, IDs ab BYL-E6-800): WV-3 BYL-E6-800 bis BYL-E6-806 (manuell BYL-E6-807 und BYL-E6-808 offen); kein Dialog aus einem Dialog (ADR-0025 Nachtrag 16, IDs ab BYL-E6-670): KD BYL-E6-670 bis BYL-E6-673 (manuell BYL-E6-674 offen); Kanal-Karten (Spec des Nutzers vom 2026-09-30, docs/plan/kanal-karten.md, IDs ab BYL-E6-620): Mauszeiger und Fuß der Modals KK-1 BYL-E6-620 und BYL-E6-621 (manuell BYL-E6-622 offen), ein Baustein für alle Kanal-Karten KK-2 BYL-E6-623 bis BYL-E6-626 (manuell BYL-E6-627 und BYL-E6-628 offen); System-Seite nach ADR-0043 (Nutzerwunsch 2026-09-30, docs/plan/system-seite.md, IDs ab BYL-E6-640): Routen, Steuerskript, Oberfläche und losgelöster Neustart SY-1 BYL-E6-640 bis BYL-E6-648 (manuell BYL-E6-650 bis BYL-E6-656 offen); Kommentare und Listen nach ADR-0044 (Spec des Nutzers vom 2026-09-30, docs/plan/kommentare-und-listen.md, IDs ab BYL-E6-700): Pin auf dem Server KO-1 BYL-E6-700 bis BYL-E6-703, Oberfläche der Kommentare KO-2 BYL-E6-704 bis BYL-E6-707 (manuell BYL-E6-708 offen), lange Chip-Listen der Kanal-Karten und des Stichwort-Editors KL BYL-E6-710 bis BYL-E6-713 (manuell BYL-E6-714 offen); Ticket duplizieren nach ADR-0045 (Nutzerwunsch vom 2026-10-01, docs/plan/duplizieren.md, IDs ab BYL-E6-720): Route in einer Transaktion, Quellkopie und Datenschicht DU-1 BYL-E6-720 bis BYL-E6-724, Oberfläche DU-2 BYL-E6-725 bis BYL-E6-728 (manuell BYL-E6-729 offen); Aktionsmenüs (Nutzerentscheidung vom 2026-10-01, docs/plan/aktionsmenues.md, IDs ab BYL-E6-740): Menü „•••“ im Ticket AM-1 BYL-E6-740 und BYL-E6-741 (manuell BYL-E6-742 offen), Zeilenmenü der Tabelle und Spalte „Aktionen“ AM-2 BYL-E6-743 bis BYL-E6-745 (manuell BYL-E6-746 offen); Folgepunkte der Aktionsmenüs (Nutzerentscheidung vom 2026-10-01, IDs ab BYL-E6-760): Rechtsklick, Tastatur und Sammel-Leiste AM-3 BYL-E6-760 bis BYL-E6-763 (manuell BYL-E6-764 offen), Zeilenmenüs von Papierkorb, Eingang, Projekten und Wiederholungen AM-4 BYL-E6-765 bis BYL-E6-769 (manuell BYL-E6-770 offen); Ergänzungen der Aktionsmenüs (Nutzerentscheidung vom 2026-10-01, „Mögliche Ergänzungen umsetzen“, IDs ab BYL-E6-780): Quellen und Seitenkopie im Zeilenmenü des Eingangs und Menü der Projektkacheln AM-5 BYL-E6-780 bis BYL-E6-782 (manuell BYL-E6-783 offen); Plattform-Ausbau S2 bis S6 sowie SemVer und Releases zurückgestellt auf Nutzerentscheidung (2026-09-28)"
+    "commit": "aff2446"
   },
+  "bereiche": [
+    { "id": "betrieb", "titel": "Betrieb: Start, Stopp, Skripte und Daten" },
+    { "id": "konten", "titel": "Anmeldung und Konten" },
+    { "id": "aufgaben", "titel": "Aufgaben, Projekte und Tabellen" },
+    { "id": "ticket", "titel": "Ticket: Panel, Vollansicht, Editor und Kommentare" },
+    { "id": "wiederholungen", "titel": "Wiederholungen" },
+    { "id": "eingang", "titel": "Eingang, Kanäle und Herkunft" },
+    { "id": "papierkorb", "titel": "Löschen und Papierkorb" },
+    { "id": "live", "titel": "Live-Aktualisierung" },
+    { "id": "darstellung", "titel": "Darstellung, Bedienung und Barrierefreiheit" },
+    { "id": "einstellungen", "titel": "Einstellungen, Assistenten und Hilfe" },
+    { "id": "entwicklung", "titel": "Entwicklung, Tests und CI" },
+    { "id": "daten", "titel": "Datenmodell und Server-Regeln" }
+  ],
+  "pakete": [
+    { "id": "E0", "vorhaben": "E0 Gerüst (abgeschlossen)", "titel": "Gerüst", "bereich": "entwicklung", "quelle": "Roadmap", "faelle": [],
+      "vermerk": "Ohne eigene Testfälle: Ordner, Build, Lint und Testumgebung prüfen die Fälle von E1 und der Querschnitt." },
+    { "id": "E1-harness", "vorhaben": "E1 Datenmodell, Hooks und Auth mit E1.1 (abgeschlossen)", "titel": "Test-Harness", "bereich": "entwicklung", "quelle": "Roadmap", "adr": ["0004-teststrategie-hooks-migrationen.md"], "plan": "e1.md", "faelle": ["BYL-E1-001..BYL-E1-003"] },
+    { "id": "E1-start", "vorhaben": "E1 Datenmodell, Hooks und Auth mit E1.1 (abgeschlossen)", "titel": "Start, Stopp und Erststart", "bereich": "betrieb", "quelle": "Roadmap", "plan": "e1.md", "faelle": ["BYL-E1-010..BYL-E1-025"] },
+    { "id": "E1-konten", "vorhaben": "E1 Datenmodell, Hooks und Auth mit E1.1 (abgeschlossen)", "titel": "Konten und Login (mit E2-Plan Paket 2)", "bereich": "konten", "quelle": "Roadmap", "plan": "e1.md", "faelle": ["BYL-E1-030..BYL-E1-035", "BYL-E2-001..BYL-E2-004"] },
+    { "id": "E1.1-admin-reset", "vorhaben": "E1 Datenmodell, Hooks und Auth mit E1.1 (abgeschlossen)", "titel": "Admin-Reset", "bereich": "betrieb", "quelle": "Roadmap", "adr": ["0002-erststart-und-superuser.md, Nachtrag"], "plan": "e1.md", "faelle": ["BYL-E1-040..BYL-E1-044"] },
+    { "id": "E1.1-mail-sperre", "vorhaben": "E1 Datenmodell, Hooks und Auth mit E1.1 (abgeschlossen)", "titel": "Mail-Sperre", "bereich": "konten", "quelle": "Roadmap", "plan": "e1.md", "faelle": ["BYL-E1-050..BYL-E1-053"] },
+    { "id": "E1-backup", "vorhaben": "E1 Datenmodell, Hooks und Auth mit E1.1 (abgeschlossen)", "titel": "Backup und Restore", "bereich": "betrieb", "quelle": "Roadmap", "adr": ["0003-pb-data-und-backups.md"], "faelle": ["BYL-E1-060..BYL-E1-064"] },
+    { "id": "E1-datenmodell", "vorhaben": "E1 Datenmodell, Hooks und Auth mit E1.1 (abgeschlossen)", "titel": "Datenmodell und API-Regeln", "bereich": "daten", "quelle": "Roadmap", "plan": "e1.md", "faelle": ["BYL-E1-070..BYL-E1-080"] },
+    { "id": "E1-nummern", "vorhaben": "E1 Datenmodell, Hooks und Auth mit E1.1 (abgeschlossen)", "titel": "Ticketnummern", "bereich": "daten", "quelle": "Roadmap", "plan": "e1.md", "faelle": ["BYL-E1-090..BYL-E1-097"] },
+    { "id": "E1-verlauf", "vorhaben": "E1 Datenmodell, Hooks und Auth mit E1.1 (abgeschlossen)", "titel": "Verlauf und Guards", "bereich": "daten", "quelle": "Roadmap", "plan": "e1.md", "faelle": ["BYL-E1-100..BYL-E1-106"] },
+    { "id": "E2-liste", "vorhaben": "E2 Liste, Detail, Kommentare und Realtime (abgeschlossen)", "titel": "Ticketliste", "bereich": "aufgaben", "quelle": "Roadmap", "plan": "e2.md", "faelle": ["BYL-E2-010..BYL-E2-022"] },
+    { "id": "E2-panel", "vorhaben": "E2 Liste, Detail, Kommentare und Realtime (abgeschlossen)", "titel": "Detail-Panel", "bereich": "ticket", "quelle": "Roadmap", "plan": "e2.md", "faelle": ["BYL-E2-030..BYL-E2-039"] },
+    { "id": "E2-neu", "vorhaben": "E2 Liste, Detail, Kommentare und Realtime (abgeschlossen)", "titel": "Neues Ticket", "bereich": "ticket", "quelle": "Roadmap", "plan": "e2.md", "faelle": ["BYL-E2-040..BYL-E2-043"] },
+    { "id": "E2-kommentare", "vorhaben": "E2 Liste, Detail, Kommentare und Realtime (abgeschlossen)", "titel": "Kommentare", "bereich": "ticket", "quelle": "Roadmap", "plan": "e2.md", "faelle": ["BYL-E2-050..BYL-E2-053"] },
+    { "id": "E2-verlauf", "vorhaben": "E2 Liste, Detail, Kommentare und Realtime (abgeschlossen)", "titel": "Verlauf-UI", "bereich": "ticket", "quelle": "Roadmap", "plan": "e2.md", "faelle": ["BYL-E2-060..BYL-E2-064"] },
+    { "id": "E2-loeschen", "vorhaben": "E2 Liste, Detail, Kommentare und Realtime (abgeschlossen)", "titel": "Löschen (seit ADR-0037 in den Papierkorb)", "bereich": "papierkorb", "quelle": "Roadmap", "adr": ["0037-papierkorb.md"], "plan": "e2.md", "faelle": ["BYL-E2-070..BYL-E2-074"] },
+    { "id": "E2-realtime", "vorhaben": "E2 Liste, Detail, Kommentare und Realtime (abgeschlossen)", "titel": "Realtime", "bereich": "live", "quelle": "Roadmap", "adr": ["0007-realtime-und-sitzungspflege.md"], "plan": "e2.md", "faelle": ["BYL-E2-080..BYL-E2-089"] },
+    { "id": "E2-a11y", "vorhaben": "E2 Liste, Detail, Kommentare und Realtime (abgeschlossen)", "titel": "Barrierefreiheit, Tastatur und Darstellung", "bereich": "darstellung", "quelle": "Roadmap", "plan": "e2.md", "faelle": ["BYL-E2-090..BYL-E2-095"] },
+    { "id": "E3-domaene", "vorhaben": "E3 Übersicht und Ordnung (abgeschlossen)", "titel": "Domäne und Katalog (Pakete 1 bis 4)", "bereich": "aufgaben", "quelle": "Roadmap", "plan": "e3.md", "faelle": ["BYL-E3-001..BYL-E3-013"] },
+    { "id": "E3-oberflaeche", "vorhaben": "E3 Übersicht und Ordnung (abgeschlossen)", "titel": "Oberfläche (Pakete 5 bis 14)", "bereich": "aufgaben", "quelle": "Roadmap", "plan": "e3.md", "faelle": ["BYL-E3-014..BYL-E3-072"] },
+    { "id": "E4", "vorhaben": "E4 Eingang und Kanäle (abgeschlossen)", "titel": "Eingang und Kanäle", "bereich": "eingang", "quelle": "Roadmap", "plan": "e4.md", "faelle": ["BYL-E4-001..BYL-E4-040"],
+      "vermerk": "Pakete 1 bis 11, 13 bis 17 und 19 bis 24; Paket 12 entfällt, Paket 18 ersetzt durch den Notion-Import nach ADR-0041. BYL-E4-020 und BYL-E4-021 (Proton Bridge) entfallen nach P-8." },
+    { "id": "E5", "vorhaben": "E5 Wiederkehrende Aufgaben (abgeschlossen)", "titel": "Wiederkehrende Aufgaben (Pakete 1 bis 7)", "bereich": "wiederholungen", "quelle": "Roadmap", "adr": ["0021-regelmodell-wiederkehrende-aufgaben.md", "0022-erzeugung-von-instanzen.md", "0023-lebenszyklus-von-regeln-und-instanzen.md", "0024-serien-aus-kalendern.md"], "plan": "e5.md", "faelle": ["BYL-E5-001..BYL-E5-008"] },
+    { "id": "UI", "vorhaben": "E6 UI-Konsistenz (vorgezogen und umgesetzt)", "titel": "Overlay-System, Theme-Umschalter und Projekt-UI (UI-0 bis UI-9 und UI-6b)", "bereich": "darstellung", "quelle": "Roadmap", "adr": ["0025-ui-konsistenz-overlay-system.md"], "plan": "e6-ui.md", "faelle": ["BYL-E6-001..BYL-E6-028"] },
+    { "id": "UI-projektliste", "vorhaben": "E6 UI-Konsistenz (vorgezogen und umgesetzt)", "titel": "Projektliste und Tags in den Einstellungen", "bereich": "aufgaben", "quelle": "Nutzerwunsch", "datum": "2026-09-26", "plan": "e6-ui.md", "faelle": ["BYL-E6-065..BYL-E6-067"] },
+    { "id": "EH", "vorhaben": "E6 Einstellungen und Hilfe (umgesetzt)", "titel": "Einstellungsbereich, Hinweis-Bausteine, Assistenten, Hilfe und Tour (EH-0 bis EH-13)", "bereich": "einstellungen", "quelle": "Roadmap", "adr": ["0026-einstellungsbereich-und-hinweis-bausteine.md"], "plan": "e6-einstellungen.md", "faelle": ["BYL-E6-029..BYL-E6-059"] },
+    { "id": "akzent-tokens", "vorhaben": "Akzent-Themes", "titel": "Tokens und Tests", "bereich": "darstellung", "quelle": "Nutzerwunsch", "adr": ["0027-akzent-themes.md"], "faelle": ["BYL-E6-068..BYL-E6-070"] },
+    { "id": "akzent-auswahl", "vorhaben": "Akzent-Themes", "titel": "Auswahl", "bereich": "darstellung", "quelle": "Nutzerwunsch", "adr": ["0027-akzent-themes.md"], "faelle": ["BYL-E6-071..BYL-E6-073"] },
+    { "id": "akzent-sicht", "vorhaben": "Akzent-Themes", "titel": "Sichtprüfung", "bereich": "darstellung", "quelle": "Nutzerwunsch", "adr": ["0027-akzent-themes.md"], "faelle": ["BYL-E6-074"] },
+    { "id": "A-stop", "vorhaben": "Testfeedback Paket A", "titel": "stop.bat", "bereich": "betrieb", "quelle": "Testfeedback", "faelle": ["BYL-E6-075..BYL-E6-076"] },
+    { "id": "A-mail-stichwoerter", "vorhaben": "Testfeedback Paket A", "titel": "Stichwörter bei Mail", "bereich": "eingang", "quelle": "Testfeedback", "faelle": ["BYL-E6-077..BYL-E6-080"] },
+    { "id": "A-stichwort-eingabe", "vorhaben": "Testfeedback Paket A", "titel": "Stichwort-Eingabe", "bereich": "eingang", "quelle": "Testfeedback", "faelle": ["BYL-E6-081..BYL-E6-082"] },
+    { "id": "A-abruf", "vorhaben": "Testfeedback Paket A", "titel": "Manueller Abruf", "bereich": "eingang", "quelle": "Testfeedback", "faelle": ["BYL-E6-083..BYL-E6-087"] },
+    { "id": "A-farbthemes", "vorhaben": "Testfeedback Paket A", "titel": "Farbthemes nach dem Nachtrag zu ADR-0027", "bereich": "darstellung", "quelle": "Testfeedback", "adr": ["0027-akzent-themes.md, Nachtrag"], "faelle": ["BYL-E6-088..BYL-E6-089"] },
+    { "id": "A-checkboxen", "vorhaben": "Testfeedback Paket A", "titel": "Checkboxen und Radios", "bereich": "darstellung", "quelle": "Testfeedback", "faelle": ["BYL-E6-090..BYL-E6-091"] },
+    { "id": "S0-1", "vorhaben": "Plattform-Strategie, Stufe S0 (Testfälle mit der jeweiligen Stufe)", "titel": "Skripte und Linux-CI", "bereich": "entwicklung", "adr": ["0028-plattform-strategie.md"], "plan": "plattformen.md", "faelle": ["BYL-E6-360..BYL-E6-362"] },
+    { "id": "S0-2", "vorhaben": "Plattform-Strategie, Stufe S0 (Testfälle mit der jeweiligen Stufe)", "titel": "Server-System", "bereich": "betrieb", "adr": ["0028-plattform-strategie.md"], "plan": "plattformen.md", "faelle": ["BYL-E6-363..BYL-E6-364"] },
+    { "id": "S0-3", "vorhaben": "Plattform-Strategie, Stufe S0 (Testfälle mit der jeweiligen Stufe)", "titel": "Hinweis über den Anleitungen", "bereich": "betrieb", "adr": ["0028-plattform-strategie.md"], "plan": "plattformen.md", "faelle": ["BYL-E6-365..BYL-E6-366"] },
+    { "id": "G-1", "vorhaben": "Glas-Materialien", "titel": "Fundament: Tokens, Umschaltpunkt und Kontrast", "bereich": "darstellung", "quelle": "Nutzerentscheidung", "datum": "2026-09-27", "adr": ["0029-glas-materialien.md"], "plan": "e6-glas.md", "faelle": ["BYL-E6-100..BYL-E6-102"] },
+    { "id": "G-3", "vorhaben": "Glas-Materialien", "titel": "Schalter „Transparenz“", "bereich": "darstellung", "quelle": "Nutzerentscheidung", "datum": "2026-09-27", "adr": ["0029-glas-materialien.md"], "plan": "e6-glas.md", "faelle": ["BYL-E6-103..BYL-E6-105"] },
+    { "id": "G-2", "vorhaben": "Glas-Materialien", "titel": "Glas der Overlays", "bereich": "darstellung", "quelle": "Nutzerentscheidung", "datum": "2026-09-27", "adr": ["0029-glas-materialien.md"], "plan": "e6-glas.md", "faelle": ["BYL-E6-106..BYL-E6-107"] },
+    { "id": "G-4", "vorhaben": "Glas-Materialien", "titel": "Knöpfe, Umschalter, Suchfeld und Radien", "bereich": "darstellung", "quelle": "Nutzerentscheidung", "datum": "2026-09-27", "adr": ["0029-glas-materialien.md"], "plan": "e6-glas.md", "faelle": ["BYL-E6-108..BYL-E6-109"] },
+    { "id": "G-5", "vorhaben": "Glas-Materialien", "titel": "Switch nach HIG", "bereich": "darstellung", "quelle": "Nutzerentscheidung", "datum": "2026-09-27", "adr": ["0029-glas-materialien.md"], "plan": "e6-glas.md", "faelle": ["BYL-E6-110..BYL-E6-111"] },
+    { "id": "G-6", "vorhaben": "Glas-Materialien", "titel": "Einstellungs-Sidebar, Typografie und Hilfe", "bereich": "darstellung", "quelle": "Nutzerentscheidung", "datum": "2026-09-27", "adr": ["0029-glas-materialien.md"], "plan": "e6-glas.md", "faelle": ["BYL-E6-112..BYL-E6-113"] },
+    { "id": "postfach-abrufen", "vorhaben": "Postfach-Assistent", "titel": "„Jetzt abrufen“ im Assistenten der Postfächer", "bereich": "eingang", "faelle": ["BYL-E6-114..BYL-E6-115"] },
+    { "id": "mail-kopfzeilen", "vorhaben": "Mail über den ganzen Posteingang", "titel": "Kopfzeilen und ganzer Text", "bereich": "eingang", "quelle": "Nutzerentscheidung", "datum": "2026-09-27", "faelle": ["BYL-E6-120"] },
+    { "id": "mail-vollsuche", "vorhaben": "Mail über den ganzen Posteingang", "titel": "Vollsuche", "bereich": "eingang", "quelle": "Nutzerentscheidung", "datum": "2026-09-27", "faelle": ["BYL-E6-121..BYL-E6-124"] },
+    { "id": "mail-karte", "vorhaben": "Mail über den ganzen Posteingang", "titel": "Karte", "bereich": "eingang", "quelle": "Nutzerentscheidung", "datum": "2026-09-27", "faelle": ["BYL-E6-125..BYL-E6-126"] },
+    { "id": "SP-1", "vorhaben": "Spalten", "titel": "Unterbau", "bereich": "aufgaben", "quelle": "Nutzerwunsch", "adr": ["0030-spalten-breiten-und-kompakte-zeilen.md"], "plan": "e6-spalten.md", "faelle": ["BYL-E6-140"] },
+    { "id": "SP-2", "vorhaben": "Spalten", "titel": "Aufgaben-Tabelle", "bereich": "aufgaben", "quelle": "Nutzerwunsch", "adr": ["0030-spalten-breiten-und-kompakte-zeilen.md"], "plan": "e6-spalten.md", "faelle": ["BYL-E6-141..BYL-E6-142"] },
+    { "id": "SP-3", "vorhaben": "Spalten", "titel": "Menü „Spalten“", "bereich": "aufgaben", "quelle": "Nutzerwunsch", "adr": ["0030-spalten-breiten-und-kompakte-zeilen.md"], "plan": "e6-spalten.md", "faelle": ["BYL-E6-143..BYL-E6-144"] },
+    { "id": "SP-4", "vorhaben": "Spalten", "titel": "Kompakte Zeilen", "bereich": "aufgaben", "quelle": "Nutzerwunsch", "adr": ["0030-spalten-breiten-und-kompakte-zeilen.md"], "plan": "e6-spalten.md", "faelle": ["BYL-E6-145..BYL-E6-146"] },
+    { "id": "SP-5", "vorhaben": "Spalten", "titel": "Übrige Tabellen", "bereich": "aufgaben", "quelle": "Nutzerwunsch", "adr": ["0030-spalten-breiten-und-kompakte-zeilen.md"], "plan": "e6-spalten.md", "faelle": ["BYL-E6-147..BYL-E6-148"] },
+    { "id": "tag-eingabe", "vorhaben": "Spalten", "titel": "Tag-Eingabe im Ticket", "bereich": "ticket", "quelle": "Nutzerwunsch", "adr": ["0030-spalten-breiten-und-kompakte-zeilen.md"], "plan": "e6-spalten.md", "faelle": ["BYL-E6-149..BYL-E6-150"] },
+    { "id": "kanal-switches", "vorhaben": "Spalten", "titel": "Switches im Kanal-Dialog", "bereich": "darstellung", "quelle": "Nutzerwunsch", "adr": ["0030-spalten-breiten-und-kompakte-zeilen.md"], "plan": "e6-spalten.md", "faelle": ["BYL-E6-151"] },
+    { "id": "HK-1", "vorhaben": "Herkunft sichern", "titel": "Verknüpfen, Lösen und Löschschutz", "bereich": "eingang", "quelle": "Nutzerentscheidung", "adr": ["0031-herkunft-sichern.md"], "plan": "herkunft.md", "faelle": ["BYL-E6-160..BYL-E6-161"] },
+    { "id": "HK-2", "vorhaben": "Herkunft sichern", "titel": "Quellen und Verknüpfen in der Oberfläche", "bereich": "eingang", "quelle": "Nutzerentscheidung", "adr": ["0031-herkunft-sichern.md"], "plan": "herkunft.md", "faelle": ["BYL-E6-162..BYL-E6-163"] },
+    { "id": "HK-3", "vorhaben": "Herkunft sichern", "titel": "Große Mails ohne Originaldatei", "bereich": "eingang", "quelle": "Nutzerentscheidung", "adr": ["0031-herkunft-sichern.md"], "plan": "herkunft.md", "faelle": ["BYL-E6-164..BYL-E6-166"] },
+    { "id": "HK-4", "vorhaben": "Herkunft sichern", "titel": "Seitenkopie mit SSRF-Schutz", "bereich": "eingang", "quelle": "Nutzerentscheidung", "adr": ["0031-herkunft-sichern.md"], "plan": "herkunft.md", "faelle": ["BYL-E6-167..BYL-E6-170"] },
+    { "id": "HK-5", "vorhaben": "Herkunft sichern: Folgeauftrag", "titel": "Umhängen", "bereich": "eingang", "quelle": "Folgeauftrag", "adr": ["0031-herkunft-sichern.md, Nachtrag"], "plan": "herkunft.md", "faelle": ["BYL-E6-180..BYL-E6-182"] },
+    { "id": "HK-6", "vorhaben": "Herkunft sichern: Folgeauftrag", "titel": "Löschen eines Tickets mit Quellen", "bereich": "eingang", "quelle": "Folgeauftrag", "adr": ["0031-herkunft-sichern.md, Nachtrag"], "plan": "herkunft.md", "faelle": ["BYL-E6-183..BYL-E6-186"] },
+    { "id": "HK-7", "vorhaben": "Herkunft sichern: Folgeauftrag", "titel": "Hervorhebung und Filter", "bereich": "eingang", "quelle": "Folgeauftrag", "adr": ["0031-herkunft-sichern.md, Nachtrag"], "plan": "herkunft.md", "faelle": ["BYL-E6-187..BYL-E6-188"] },
+    { "id": "HK-8", "vorhaben": "Herkunft sichern: Folgeauftrag", "titel": "Originaldateien bis 25 MB", "bereich": "eingang", "quelle": "Folgeauftrag", "adr": ["0031-herkunft-sichern.md, Nachtrag"], "plan": "herkunft.md", "faelle": ["BYL-E6-189..BYL-E6-190"] },
+    { "id": "RT-0", "vorhaben": "Editor, Stufe A", "titel": "Spike", "bereich": "ticket", "quelle": "Nutzerentscheidung", "datum": "2026-09-28", "adr": ["0032-editor-tiptap-markdown.md"], "plan": "editor.md", "faelle": [],
+      "vermerk": "Abgeschlossen (Weg B); ein Spike ohne eigene Testfälle." },
+    { "id": "RT-1", "vorhaben": "Editor, Stufe A", "titel": "Anzeige", "bereich": "ticket", "quelle": "Nutzerentscheidung", "datum": "2026-09-28", "adr": ["0032-editor-tiptap-markdown.md"], "plan": "editor.md", "faelle": ["BYL-E6-200..BYL-E6-201"] },
+    { "id": "RT-2", "vorhaben": "Editor, Stufe A", "titel": "Abhaken mit Schutz vor Überschreiben", "bereich": "ticket", "quelle": "Nutzerentscheidung", "datum": "2026-09-28", "adr": ["0032-editor-tiptap-markdown.md"], "plan": "editor.md", "faelle": ["BYL-E6-202..BYL-E6-205"] },
+    { "id": "RT-3", "vorhaben": "Editor, Stufe B", "titel": "Editor für die Beschreibung", "bereich": "ticket", "quelle": "Nutzerentscheidung", "datum": "2026-09-28", "adr": ["0032-editor-tiptap-markdown.md"], "plan": "editor.md", "faelle": ["BYL-E6-241..BYL-E6-242"] },
+    { "id": "RT-4", "vorhaben": "Editor, Stufe B", "titel": "„/“-Menü und Link", "bereich": "ticket", "quelle": "Nutzerentscheidung", "datum": "2026-09-28", "adr": ["0032-editor-tiptap-markdown.md"], "plan": "editor.md", "faelle": ["BYL-E6-243..BYL-E6-244"] },
+    { "id": "RT-5", "vorhaben": "Editor, Stufe B", "titel": "Einfügen", "bereich": "ticket", "quelle": "Nutzerentscheidung", "datum": "2026-09-28", "adr": ["0032-editor-tiptap-markdown.md"], "plan": "editor.md", "faelle": ["BYL-E6-245..BYL-E6-246"] },
+    { "id": "RT-6", "vorhaben": "Editor, Stufe B", "titel": "Kommentare und Formulare", "bereich": "ticket", "quelle": "Nutzerentscheidung", "datum": "2026-09-28", "adr": ["0032-editor-tiptap-markdown.md"], "plan": "editor.md", "faelle": ["BYL-E6-247..BYL-E6-248"] },
+    { "id": "UA-1", "vorhaben": "Unteraufgaben", "titel": "Sperre beim Erledigen und Wiederholungen im Hook", "bereich": "ticket", "quelle": "Nutzerentscheidung", "datum": "2026-09-28", "adr": ["0033-unteraufgaben.md"], "plan": "unteraufgaben.md", "faelle": ["BYL-E6-220..BYL-E6-221"] },
+    { "id": "UA-2", "vorhaben": "Unteraufgaben", "titel": "Abschnitt „Unteraufgaben“ und Pfad", "bereich": "ticket", "quelle": "Nutzerentscheidung", "datum": "2026-09-28", "adr": ["0033-unteraufgaben.md"], "plan": "unteraufgaben.md", "faelle": ["BYL-E6-222..BYL-E6-223"] },
+    { "id": "UA-3", "vorhaben": "Unteraufgaben", "titel": "Übergeordnetes Ticket, Switch und Löschen inline", "bereich": "ticket", "quelle": "Nutzerentscheidung", "datum": "2026-09-28", "adr": ["0033-unteraufgaben.md"], "plan": "unteraufgaben.md", "faelle": ["BYL-E6-224..BYL-E6-225"] },
+    { "id": "UA-4", "vorhaben": "Unteraufgaben", "titel": "Frage beim Erledigen", "bereich": "ticket", "quelle": "Nutzerentscheidung", "datum": "2026-09-28", "adr": ["0033-unteraufgaben.md"], "plan": "unteraufgaben.md", "faelle": ["BYL-E6-226..BYL-E6-227"] },
+    { "id": "UA-5", "vorhaben": "Unteraufgaben", "titel": "Tabelle mit Fortschritt, Einrücken und Spalte „Übergeordnet“", "bereich": "aufgaben", "quelle": "Nutzerentscheidung", "datum": "2026-09-28", "adr": ["0033-unteraufgaben.md"], "plan": "unteraufgaben.md", "faelle": ["BYL-E6-228..BYL-E6-229"] },
+    { "id": "vollansicht-verwerfen", "vorhaben": "Unteraufgaben", "titel": "Verwerfen-Frage der Vollansicht inline", "bereich": "ticket", "quelle": "Nutzerentscheidung", "datum": "2026-09-28", "adr": ["0033-unteraufgaben.md"], "plan": "unteraufgaben.md", "faelle": ["BYL-E6-240"] },
+    { "id": "UP-1", "vorhaben": "Unterprojekte", "titel": "Hook, Kaskade und Löschsperre; Migration mit Rollback und vor dem Neustart", "bereich": "aufgaben", "quelle": "Nutzerentscheidung", "datum": "2026-09-28", "adr": ["0034-unterprojekte.md"], "plan": "unterprojekte.md", "faelle": ["BYL-E6-260..BYL-E6-261"] },
+    { "id": "UP-2", "vorhaben": "Unterprojekte", "titel": "Katalog und Datenschicht", "bereich": "aufgaben", "quelle": "Nutzerentscheidung", "datum": "2026-09-28", "adr": ["0034-unterprojekte.md"], "plan": "unterprojekte.md", "faelle": ["BYL-E6-262"] },
+    { "id": "UP-3", "vorhaben": "Unterprojekte", "titel": "Liste und Kacheln als Baum", "bereich": "aufgaben", "quelle": "Nutzerentscheidung", "datum": "2026-09-28", "adr": ["0034-unterprojekte.md"], "plan": "unterprojekte.md", "faelle": ["BYL-E6-263..BYL-E6-264"] },
+    { "id": "UP-4", "vorhaben": "Unterprojekte", "titel": "Projekt-Panel", "bereich": "aufgaben", "quelle": "Nutzerentscheidung", "datum": "2026-09-28", "adr": ["0034-unterprojekte.md"], "plan": "unterprojekte.md", "faelle": ["BYL-E6-265..BYL-E6-266"] },
+    { "id": "UP-5", "vorhaben": "Unterprojekte", "titel": "Auswahl, Filter, Tabelle und Brotkrumen", "bereich": "aufgaben", "quelle": "Nutzerentscheidung", "datum": "2026-09-28", "adr": ["0034-unterprojekte.md"], "plan": "unterprojekte.md", "faelle": ["BYL-E6-267..BYL-E6-268"] },
+    { "id": "UP-6", "vorhaben": "Unterprojekte", "titel": "Aggregierte Zahlen und Hilfe", "bereich": "aufgaben", "quelle": "Nutzerentscheidung", "datum": "2026-09-28", "adr": ["0034-unterprojekte.md"], "plan": "unterprojekte.md", "faelle": ["BYL-E6-269..BYL-E6-270"] },
+    { "id": "SF-1", "vorhaben": "Start und Fenster", "titel": "Routen für Präsenz und Hinweis", "bereich": "betrieb", "quelle": "Nutzerentscheidung", "datum": "2026-09-28", "adr": ["0035-start-einstieg-und-offene-tabs.md"], "plan": "start-fenster.md", "faelle": ["BYL-E6-280"] },
+    { "id": "SF-2", "vorhaben": "Start und Fenster", "titel": "Landing per Datei", "bereich": "betrieb", "quelle": "Nutzerentscheidung", "datum": "2026-09-28", "adr": ["0035-start-einstieg-und-offene-tabs.md"], "plan": "start-fenster.md", "faelle": ["BYL-E6-281..BYL-E6-282"] },
+    { "id": "SF-3", "vorhaben": "Start und Fenster", "titel": "Hinweis im Tab und zweiter Tab", "bereich": "betrieb", "quelle": "Nutzerentscheidung", "datum": "2026-09-28", "adr": ["0035-start-einstieg-und-offene-tabs.md"], "plan": "start-fenster.md", "faelle": ["BYL-E6-283..BYL-E6-284"] },
+    { "id": "SF-4", "vorhaben": "Start und Fenster", "titel": "start.bat und stop.bat", "bereich": "betrieb", "quelle": "Nutzerentscheidung", "datum": "2026-09-28", "adr": ["0035-start-einstieg-und-offene-tabs.md"], "plan": "start-fenster.md", "faelle": ["BYL-E6-285..BYL-E6-286"] },
+    { "id": "SF-5", "vorhaben": "Start und Fenster", "titel": "Installierbare Web-App (S1)", "bereich": "betrieb", "quelle": "Nutzerentscheidung", "datum": "2026-09-28", "adr": ["0035-start-einstieg-und-offene-tabs.md"], "plan": "start-fenster.md", "faelle": ["BYL-E6-287..BYL-E6-288"] },
+    { "id": "SF-6", "vorhaben": "Start und Fenster", "titel": "Windows-Benachrichtigung als Opt-in", "bereich": "betrieb", "quelle": "Nutzerentscheidung", "datum": "2026-09-28", "adr": ["0035-start-einstieg-und-offene-tabs.md"], "plan": "start-fenster.md", "faelle": ["BYL-E6-289..BYL-E6-290"] },
+    { "id": "OR-1", "vorhaben": "Offene Reste Teil A", "titel": "Tests für mehrere Wochentage", "bereich": "wiederholungen", "quelle": "Nutzerentscheidungen", "datum": "2026-09-28", "plan": "offene-reste.md", "faelle": ["BYL-E6-300"] },
+    { "id": "OR-2", "vorhaben": "Offene Reste Teil A", "titel": "Filter und Gruppe „wiederkehrend“", "bereich": "aufgaben", "quelle": "Nutzerentscheidungen", "datum": "2026-09-28", "plan": "offene-reste.md", "faelle": ["BYL-E6-301..BYL-E6-302"] },
+    { "id": "OR-3", "vorhaben": "Offene Reste Teil A", "titel": "Zwei Ebenen", "bereich": "aufgaben", "quelle": "Nutzerentscheidungen", "datum": "2026-09-28", "plan": "offene-reste.md", "faelle": ["BYL-E6-303..BYL-E6-304"] },
+    { "id": "OR-4", "vorhaben": "Offene Reste Teil A", "titel": "Wiederholen beim Anlegen", "bereich": "wiederholungen", "quelle": "Nutzerentscheidungen", "datum": "2026-09-28", "plan": "offene-reste.md", "faelle": ["BYL-E6-305..BYL-E6-306"] },
+    { "id": "OR-5", "vorhaben": "Offene Reste Teil A", "titel": "Jeden Termin einzeln", "bereich": "wiederholungen", "quelle": "Nutzerentscheidungen", "datum": "2026-09-28", "plan": "offene-reste.md", "faelle": ["BYL-E6-307..BYL-E6-309"] },
+    { "id": "BI-1", "vorhaben": "Bulk, Inline und Ansicht", "titel": "Öffnungsmodus", "bereich": "ticket", "adr": ["0036-sammelbearbeitung-inline-und-oeffnungsmodus.md"], "plan": "bulk-inline-ansicht.md", "faelle": ["BYL-E6-320..BYL-E6-321"] },
+    { "id": "BI-2", "vorhaben": "Bulk, Inline und Ansicht", "titel": "Auswahl und Sammelaktionen", "bereich": "aufgaben", "adr": ["0036-sammelbearbeitung-inline-und-oeffnungsmodus.md"], "plan": "bulk-inline-ansicht.md", "faelle": ["BYL-E6-322..BYL-E6-325"] },
+    { "id": "BI-3", "vorhaben": "Bulk, Inline und Ansicht", "titel": "Bearbeiten in Zellen", "bereich": "aufgaben", "adr": ["0036-sammelbearbeitung-inline-und-oeffnungsmodus.md"], "plan": "bulk-inline-ansicht.md", "faelle": ["BYL-E6-326..BYL-E6-327"] },
+    { "id": "PB-1", "vorhaben": "Papierkorb", "titel": "Datenmodell, Hooks, Lesepfade und Aufbewahrung", "bereich": "papierkorb", "adr": ["0037-papierkorb.md"], "plan": "papierkorb.md", "faelle": ["BYL-E6-330..BYL-E6-333"] },
+    { "id": "PB-2", "vorhaben": "Papierkorb", "titel": "Oberfläche", "bereich": "papierkorb", "adr": ["0037-papierkorb.md"], "plan": "papierkorb.md", "faelle": ["BYL-E6-334..BYL-E6-338"] },
+    { "id": "WK-1", "vorhaben": "Wiederholungen verständlich machen", "titel": "Wiedereröffnen und zusammengefasste Termine", "bereich": "wiederholungen", "quelle": "Spec", "datum": "2026-09-28", "adr": ["0022-erzeugung-von-instanzen.md, Nachträge", "0023-lebenszyklus-von-regeln-und-instanzen.md, Nachträge"], "plan": "wiederholungen-klarheit.md", "faelle": ["BYL-E6-340..BYL-E6-342"] },
+    { "id": "WK-2", "vorhaben": "Wiederholungen verständlich machen", "titel": "Rückstand, offene Tickets und Start-Hinweis", "bereich": "wiederholungen", "quelle": "Spec", "datum": "2026-09-28", "adr": ["0022-erzeugung-von-instanzen.md, Nachträge", "0023-lebenszyklus-von-regeln-und-instanzen.md, Nachträge"], "plan": "wiederholungen-klarheit.md", "faelle": ["BYL-E6-343..BYL-E6-346"] },
+    { "id": "WK-3", "vorhaben": "Wiederholungen verständlich machen", "titel": "„Nächstes Ticket“ und Vorschau", "bereich": "wiederholungen", "quelle": "Spec", "datum": "2026-09-28", "adr": ["0022-erzeugung-von-instanzen.md, Nachträge", "0023-lebenszyklus-von-regeln-und-instanzen.md, Nachträge"], "plan": "wiederholungen-klarheit.md", "faelle": ["BYL-E6-347..BYL-E6-349"] },
+    { "id": "WK-4", "vorhaben": "Wiederholungen verständlich machen", "titel": "Hilfe mit Beispielen aus der Rechenlogik und Doku", "bereich": "wiederholungen", "quelle": "Spec", "datum": "2026-09-28", "adr": ["0022-erzeugung-von-instanzen.md, Nachträge", "0023-lebenszyklus-von-regeln-und-instanzen.md, Nachträge"], "plan": "wiederholungen-klarheit.md", "faelle": ["BYL-E6-350..BYL-E6-352"] },
+    { "id": "layout-basis", "vorhaben": "Layout-Überlauf von Formular-Controls", "titel": "Basisregeln", "bereich": "darstellung", "quelle": "Fehlerbericht", "datum": "2026-09-28", "plan": "layout-ueberlauf.md", "faelle": ["BYL-E6-380"] },
+    { "id": "layout-title", "vorhaben": "Layout-Überlauf von Formular-Controls", "titel": "title des Projekts", "bereich": "darstellung", "quelle": "Fehlerbericht", "datum": "2026-09-28", "plan": "layout-ueberlauf.md", "faelle": ["BYL-E6-381..BYL-E6-382"] },
+    { "id": "hinweis-id", "vorhaben": "Hinweis-ID am Projektfeld", "titel": "Eindeutige Hinweis-ID am Projektfeld", "bereich": "darstellung", "quelle": "a11y-Fehler", "faelle": ["BYL-E6-390"] },
+    { "id": "AR-1", "vorhaben": "Aufräumpaket", "titel": "Doku- und Manifest-Hygiene mit Klickwege-Prüfung; CI und Ruleset", "bereich": "entwicklung", "datum": "2026-09-28", "faelle": ["BYL-E6-400", "BYL-X-005"] },
+    { "id": "AR-2", "vorhaben": "Aufräumpaket", "titel": "Erneuter Versuch gescheiterter Realtime-Abos mit Hinweis; zurückgeholte Tickets mit Lesezeilen", "bereich": "live", "datum": "2026-09-28", "faelle": ["BYL-E6-401..BYL-E6-405"] },
+    { "id": "AR-3", "vorhaben": "Aufräumpaket", "titel": "Linux-Job als Pflicht-Check", "bereich": "entwicklung", "datum": "2026-09-28", "faelle": ["BYL-E6-406"] },
+    { "id": "EI-1", "vorhaben": "Eigener Eingang und WhatsApp Web", "titel": "Eingang mit Zugangsschlüssel", "bereich": "eingang", "quelle": "Nutzerentscheidung", "datum": "2026-09-28", "adr": ["0038-eigener-eingang-und-whatsapp-web.md"], "plan": "eigener-eingang-whatsapp-web.md", "faelle": ["BYL-E6-420..BYL-E6-425"] },
+    { "id": "EI-2", "vorhaben": "Eigener Eingang und WhatsApp Web", "titel": "Browser-Erweiterung", "bereich": "eingang", "quelle": "Nutzerentscheidung", "datum": "2026-09-28", "adr": ["0038-eigener-eingang-und-whatsapp-web.md"], "plan": "eigener-eingang-whatsapp-web.md", "faelle": ["BYL-E6-426..BYL-E6-429"] },
+    { "id": "EI-3", "vorhaben": "Eigener Eingang und WhatsApp Web", "titel": "Karte, Assistent und Hilfe WhatsApp Web", "bereich": "eingang", "quelle": "Nutzerentscheidung", "datum": "2026-09-28", "adr": ["0038-eigener-eingang-und-whatsapp-web.md"], "plan": "eigener-eingang-whatsapp-web.md", "faelle": ["BYL-E6-430..BYL-E6-438"] },
+    { "id": "BS-1", "vorhaben": "Betriebsskripte", "titel": "Kern, Port und geordnetes Beenden", "bereich": "betrieb", "adr": ["0039-betriebsskripte.md"], "plan": "betriebsskripte.md", "faelle": ["BYL-E6-440..BYL-E6-447"] },
+    { "id": "BS-2", "vorhaben": "Betriebsskripte", "titel": "Fingerabdruck, reload, status, open, logs und doctor", "bereich": "betrieb", "adr": ["0039-betriebsskripte.md"], "plan": "betriebsskripte.md", "faelle": ["BYL-E6-448..BYL-E6-452"] },
+    { "id": "BS-3", "vorhaben": "Betriebsskripte", "titel": "Doppelklick-Dateien, Texte und Hilfe", "bereich": "betrieb", "adr": ["0039-betriebsskripte.md"], "plan": "betriebsskripte.md", "faelle": ["BYL-E6-453..BYL-E6-459"] },
+    { "id": "titelbreite", "vorhaben": "Breite des Titels", "titel": "Breite des Titels", "bereich": "aufgaben", "quelle": "Nutzerwunsch", "datum": "2026-09-29", "adr": ["0030-spalten-breiten-und-kompakte-zeilen.md, Nachtrag 3"], "faelle": ["BYL-E6-460..BYL-E6-462"] },
+    { "id": "deploy", "vorhaben": "Veröffentlichen ohne Unterbrechung", "titel": "Veröffentlichen, Cache-Control, Fehlerseiten und Hinweis", "bereich": "betrieb", "quelle": "Fehlerbehebung", "datum": "2026-09-29", "adr": ["0040-veroeffentlichen-ohne-unterbrechung.md"], "plan": "deploy-ohne-unterbrechung.md", "faelle": ["BYL-E6-480..BYL-E6-485"] },
+    { "id": "T-1", "vorhaben": "Test-Härtung", "titel": "Kindprozesse der Tests ohne Zugangsdaten", "bereich": "entwicklung", "plan": "test-haertung.md", "faelle": ["BYL-E6-500..BYL-E6-502"] },
+    { "id": "T-2", "vorhaben": "Test-Härtung", "titel": "Stabile Tests statt gelegentlich roter", "bereich": "entwicklung", "plan": "test-haertung.md", "faelle": ["BYL-E6-503..BYL-E6-505"] },
+    { "id": "T-3", "vorhaben": "Test-Härtung", "titel": "Geordnetes Beenden unter Last", "bereich": "entwicklung", "plan": "test-haertung.md", "faelle": ["BYL-E6-680..BYL-E6-682"] },
+    { "id": "NI-1", "vorhaben": "Notion-Import (nur lesend, Kopien, nur auf Anstoß)", "titel": "Server", "bereich": "eingang", "quelle": "Nutzerentscheidung", "datum": "2026-09-29", "adr": ["0041-notion-listen-uebernehmen.md"], "plan": "notion-import.md", "faelle": ["BYL-E6-520..BYL-E6-528"] },
+    { "id": "NI-2", "vorhaben": "Notion-Import (nur lesend, Kopien, nur auf Anstoß)", "titel": "Oberfläche", "bereich": "eingang", "quelle": "Nutzerentscheidung", "datum": "2026-09-29", "adr": ["0041-notion-listen-uebernehmen.md"], "plan": "notion-import.md", "faelle": ["BYL-E6-529..BYL-E6-547"] },
+    { "id": "notion-rueckmeldung", "vorhaben": "Rückmeldung beim Notion-Import", "titel": "Blöcke, Fortschritt, Ergebnis und Zeitgrenzen", "bereich": "eingang", "quelle": "Fehlerbehebung", "datum": "2026-09-30", "adr": ["0041-notion-listen-uebernehmen.md, Nachtrag"], "faelle": ["BYL-E6-560..BYL-E6-566"] },
+    { "id": "AL-1", "vorhaben": "Auswahl-Listen", "titel": "Baustein TicketPicker und Fundstellen", "bereich": "ticket", "quelle": "Nutzer-Beobachtung", "datum": "2026-09-30", "adr": ["0042-tickets-und-projekte-aus-listen-waehlen.md"], "plan": "auswahl-listen.md", "faelle": ["BYL-E6-600..BYL-E6-605", "BYL-E6-610..BYL-E6-612"] },
+    { "id": "AL-2", "vorhaben": "Auswahl-Listen", "titel": "Ticket-Link im Editor und Projekt der Schnellerfassung", "bereich": "ticket", "quelle": "Nutzer-Beobachtung", "datum": "2026-09-30", "adr": ["0042-tickets-und-projekte-aus-listen-waehlen.md"], "plan": "auswahl-listen.md", "faelle": ["BYL-E6-606..BYL-E6-608", "BYL-E6-613..BYL-E6-614"] },
+    { "id": "WV", "vorhaben": "Wiederholungen: Werte von Folgetickets", "titel": "Befund, Status beim Anlegen, Vorlage am Ticket und „Auch für künftige Tickets übernehmen“", "bereich": "wiederholungen", "quelle": "Nutzerbericht", "datum": "2026-09-30", "adr": ["0022-erzeugung-von-instanzen.md, Nachtrag 8", "0023-lebenszyklus-von-regeln-und-instanzen.md, Nachtrag 6", "0024-serien-aus-kalendern.md, Nachtrag 3"], "plan": "wiederholungen-vorlage.md", "faelle": ["BYL-E6-580..BYL-E6-588"] },
+    { "id": "WV-2", "vorhaben": "Wiederholungen: Status beim Anlegen abfragen", "titel": "Status beim Anlegen abfragen", "bereich": "wiederholungen", "quelle": "Nutzerentscheidung", "datum": "2026-09-30", "adr": ["0022-erzeugung-von-instanzen.md, Nachtrag 9"], "plan": "wiederholungen-vorlage.md", "faelle": ["BYL-E6-660..BYL-E6-664"] },
+    { "id": "WV-3", "vorhaben": "Wiederholungen: Unteraufgaben in der Vorlage", "titel": "Unteraufgaben in der Vorlage", "bereich": "wiederholungen", "quelle": "Nutzerentscheidung", "datum": "2026-10-01", "adr": ["0022-erzeugung-von-instanzen.md, Nachtrag 10"], "plan": "wiederholungen-vorlage.md", "faelle": ["BYL-E6-800..BYL-E6-808"] },
+    { "id": "KD", "vorhaben": "Kein Dialog aus einem Dialog", "titel": "Kein Dialog aus einem Dialog", "bereich": "ticket", "quelle": "Befund", "datum": "2026-09-30", "adr": ["0025-ui-konsistenz-overlay-system.md, Nachtrag 16"], "faelle": ["BYL-E6-670..BYL-E6-674"] },
+    { "id": "KK-1", "vorhaben": "Kanal-Karten", "titel": "Mauszeiger und Fuß der Modals", "bereich": "darstellung", "quelle": "Spec des Nutzers", "datum": "2026-09-30", "adr": ["0026-einstellungsbereich-und-hinweis-bausteine.md, Nachträge"], "plan": "kanal-karten.md", "faelle": ["BYL-E6-620..BYL-E6-622"] },
+    { "id": "KK-2", "vorhaben": "Kanal-Karten", "titel": "Ein Baustein für alle Kanal-Karten", "bereich": "eingang", "quelle": "Spec des Nutzers", "datum": "2026-09-30", "adr": ["0026-einstellungsbereich-und-hinweis-bausteine.md, Nachträge"], "plan": "kanal-karten.md", "faelle": ["BYL-E6-623..BYL-E6-628"] },
+    { "id": "SY-1", "vorhaben": "System-Seite", "titel": "Routen, Steuerskript, Oberfläche und losgelöster Neustart", "bereich": "betrieb", "quelle": "Nutzerwunsch", "datum": "2026-09-30", "adr": ["0043-system-seite.md"], "plan": "system-seite.md", "faelle": ["BYL-E6-640..BYL-E6-648", "BYL-E6-650..BYL-E6-656"] },
+    { "id": "KO-1", "vorhaben": "Kommentare und Listen", "titel": "Pin auf dem Server", "bereich": "ticket", "quelle": "Spec des Nutzers", "datum": "2026-09-30", "adr": ["0044-kommentare-reihenfolge-anpinnen-einklappen.md"], "plan": "kommentare-und-listen.md", "faelle": ["BYL-E6-700..BYL-E6-703"] },
+    { "id": "KO-2", "vorhaben": "Kommentare und Listen", "titel": "Oberfläche der Kommentare", "bereich": "ticket", "quelle": "Spec des Nutzers", "datum": "2026-09-30", "adr": ["0044-kommentare-reihenfolge-anpinnen-einklappen.md"], "plan": "kommentare-und-listen.md", "faelle": ["BYL-E6-704..BYL-E6-708"] },
+    { "id": "KL", "vorhaben": "Kommentare und Listen", "titel": "Lange Chip-Listen der Kanal-Karten und des Stichwort-Editors", "bereich": "eingang", "quelle": "Spec des Nutzers", "datum": "2026-09-30", "adr": ["0044-kommentare-reihenfolge-anpinnen-einklappen.md", "0026-einstellungsbereich-und-hinweis-bausteine.md, Nachtrag KL"], "plan": "kommentare-und-listen.md", "faelle": ["BYL-E6-710..BYL-E6-714"] },
+    { "id": "DU-1", "vorhaben": "Ticket duplizieren", "titel": "Route in einer Transaktion, Quellkopie und Datenschicht", "bereich": "ticket", "quelle": "Nutzerwunsch", "datum": "2026-10-01", "adr": ["0045-ticket-duplizieren.md"], "plan": "duplizieren.md", "faelle": ["BYL-E6-720..BYL-E6-724"] },
+    { "id": "DU-2", "vorhaben": "Ticket duplizieren", "titel": "Oberfläche", "bereich": "ticket", "quelle": "Nutzerwunsch", "datum": "2026-10-01", "adr": ["0045-ticket-duplizieren.md"], "plan": "duplizieren.md", "faelle": ["BYL-E6-725..BYL-E6-729"] },
+    { "id": "AM-1", "vorhaben": "Aktionsmenüs", "titel": "Menü „•••“ im Ticket", "bereich": "ticket", "quelle": "Nutzerentscheidung", "datum": "2026-10-01", "adr": ["0045-ticket-duplizieren.md, Nachtrag", "0036-sammelbearbeitung-inline-und-oeffnungsmodus.md, Nachtrag"], "plan": "aktionsmenues.md", "faelle": ["BYL-E6-740..BYL-E6-742"] },
+    { "id": "AM-2", "vorhaben": "Aktionsmenüs", "titel": "Zeilenmenü der Tabelle und Spalte „Aktionen“", "bereich": "aufgaben", "quelle": "Nutzerentscheidung", "datum": "2026-10-01", "adr": ["0045-ticket-duplizieren.md, Nachtrag", "0036-sammelbearbeitung-inline-und-oeffnungsmodus.md, Nachtrag"], "plan": "aktionsmenues.md", "faelle": ["BYL-E6-743..BYL-E6-746"] },
+    { "id": "AM-3", "vorhaben": "Folgepunkte der Aktionsmenüs", "titel": "Rechtsklick, Tastatur und Sammel-Leiste", "bereich": "aufgaben", "quelle": "Nutzerentscheidung", "datum": "2026-10-01", "adr": ["0036-sammelbearbeitung-inline-und-oeffnungsmodus.md, Nachtrag „Rechtsklick“"], "plan": "aktionsmenues.md", "faelle": ["BYL-E6-760..BYL-E6-764"] },
+    { "id": "AM-4", "vorhaben": "Folgepunkte der Aktionsmenüs", "titel": "Zeilenmenüs von Papierkorb, Eingang, Projekten und Wiederholungen", "bereich": "aufgaben", "quelle": "Nutzerentscheidung", "datum": "2026-10-01", "adr": ["0036-sammelbearbeitung-inline-und-oeffnungsmodus.md, Nachtrag", "0030-spalten-breiten-und-kompakte-zeilen.md, Nachtrag 5"], "plan": "aktionsmenues.md", "faelle": ["BYL-E6-765..BYL-E6-770"] },
+    { "id": "AM-5", "vorhaben": "Ergänzungen der Aktionsmenüs", "titel": "Quellen und Seitenkopie im Zeilenmenü des Eingangs und Menü der Projektkacheln", "bereich": "aufgaben", "quelle": "Nutzerentscheidung", "datum": "2026-10-01", "adr": ["0036-sammelbearbeitung-inline-und-oeffnungsmodus.md, Nachtrag „Ergänzungen in Eingang und Kacheln“", "0031-herkunft-sichern.md, Nachtrag G"], "plan": "aktionsmenues.md", "faelle": ["BYL-E6-780..BYL-E6-783"],
+      "vermerk": "Entscheidung: „Mögliche Ergänzungen umsetzen“." },
+    { "id": "telegram-antworten", "vorhaben": "Telegram-Antworten, Lösch-Sperre und neuer Tab", "titel": "Antworten des Telegram-Bots je Verbindung abschaltbar", "bereich": "eingang", "quelle": "Nutzerentscheidung", "datum": "2026-10-01", "adr": ["0016-kanal-architektur-und-mail.md, Nachtrag mit Korrekturvermerk"], "faelle": ["BYL-E6-820..BYL-E6-822", "BYL-E6-825"],
+      "vermerk": "Entscheidung: „abschaltbar, Standard an“; keine Migration." },
+    { "id": "loesch-sperre", "vorhaben": "Telegram-Antworten, Lösch-Sperre und neuer Tab", "titel": "Kein Eingangseintrag lässt sich über die API löschen", "bereich": "eingang", "quelle": "Befund", "datum": "2026-10-01", "adr": ["0014-datenmodell-eingang.md, Nachtrag", "0031-herkunft-sichern.md, Nachtrag H", "0037-papierkorb.md, Nachtrag"], "faelle": ["BYL-E6-823", "BYL-E6-826"] },
+    { "id": "neuer-tab", "vorhaben": "Telegram-Antworten, Lösch-Sperre und neuer Tab", "titel": "Leerzeichen vor „(öffnet in neuem Tab)“", "bereich": "darstellung", "adr": ["0026-einstellungsbereich-und-hinweis-bausteine.md, Nachtrag"], "faelle": ["BYL-E6-824", "BYL-E6-827"] },
+    { "id": "querschnitt", "vorhaben": "Querschnitt", "titel": "Testumgebung, Regeln der Datenschicht, Hook-Module und dieses Manifest", "bereich": "entwicklung", "faelle": ["BYL-X-001..BYL-X-004"] }
+  ],
+  "zurueckgestellt": [
+    { "id": "plattform-ausbau", "titel": "Plattform-Ausbau S2 bis S6", "quelle": "Nutzerentscheidung", "datum": "2026-09-28", "adr": ["0028-plattform-strategie.md, Nachtrag"], "plan": "plattformen.md", "faelle": ["BYL-E6-362", "BYL-E6-366"],
+      "vermerk": "Raspberry Pi mit Docker und Traefik, Tailscale, Android-APK, Tray und Installer, iOS und macOS, Push und Erinnerungen. Die Prüfungen von S0 auf einem Linux-Rechner bzw. für einen Linux-Server warten mit." },
+    { "id": "semver", "titel": "SemVer und Releases", "quelle": "Nutzerentscheidung", "datum": "2026-09-28", "adr": ["0028-plattform-strategie.md, Nachtrag"], "plan": "plattformen.md", "faelle": [],
+      "vermerk": "Release-Automatisierung mit release-please-Token, Tags und GitHub Releases; der Nutzer entscheidet, wann die Version dafür bereit ist." }
+  ],
   "blocks": [
     {
       "tag": "E1", "name": "Test-Harness", "desc": "Wegwerf-PocketBase für die Integrationstests (E1-Plan, Paket 1; ADR-0004).",
@@ -2965,7 +3204,7 @@
           "pre": "Job „Linux build and test“ in .github/workflows/ci.yml auf ubuntu-latest: PocketBase-Linux-Binary per node scripts/fetch-pocketbase.mjs, byl-mail per node helpers/mail/build.mjs.", "steps": ["Pull Request öffnen, beide Jobs abwarten."],
           "expect": "check, lint, Build und alle Tests laufen unter Linux grün, auch die Integrationstests mit der Wegwerf-Instanz (Beenden per SIGKILL statt taskkill) und der Mail-Hilfsprozess ohne Node im PATH. Die Tests der Windows-Betriebsschicht (Windows PowerShell, byl-functions.ps1, Expand-Archive) laufen nur unter Windows (vitest.config.mjs, skipIf).",
           "tests": ["tests/integration/harness.test.mjs", "tests/integration/mail-helper-process.test.mjs"] },
-        { "id": "BYL-E6-362", "title": "PocketBase-Abruf auf einem echten Linux-Rechner (S0-1)", "art": ["manuell"], "status": "offen",
+        { "id": "BYL-E6-362", "title": "PocketBase-Abruf auf einem echten Linux-Rechner (S0-1)", "art": ["manuell"], "status": "zurückgestellt",
           "pre": "Linux-Rechner mit Node 24 (z. B. der Raspberry Pi vor Stufe S3), Klon des Repos.", "steps": ["node scripts/fetch-pocketbase.mjs ausführen.", "./app/pocketbase --version ausführen.", "Das Skript noch einmal ausführen."],
           "expect": "Das Archiv der Architektur (linux_arm64 bzw. linux_armv7) wird geladen und geprüft, app/pocketbase ist ausführbar und meldet 0.40.4; der zweite Lauf lädt nichts.",
           "tests": [] },
@@ -2981,7 +3220,7 @@
           "pre": "domain/host-platform.ts rein, HostPlatformNote mit HostStore (Harness) in jsdom, data/host.ts gegen die Wegwerf-Instanz.", "steps": ["npm run test:web", "npm run test:integration"],
           "expect": "Die Antwort der Route wird streng gelesen, alles andere ist Windows. Unter Windows und außerhalb des (app)-Layouts erscheint nichts; für linux bzw. container erscheint nach dem Laden eine Hinweis-Box mit Titel (Überschrift mit verstecktem „Hinweis:“, ohne Live-Rolle) und den Texten zu Umgebung bzw. Umgebungsdatei, Neustart bzw. docker compose up -d. Die Antwort einer abgebrochenen Anfrage verwirft der Store; die Datenschicht liefert ohne Anmeldung windows.",
           "tests": ["web/src/lib/domain/host-platform.test.ts", "web/src/lib/components/guidance/host-platform-note.test.ts", "tests/integration/host-route.test.mjs::reaches the SPA through the data layer"] },
-        { "id": "BYL-E6-366", "title": "Hinweis im Browser bei einem Server unter Linux (S0-3)", "art": ["manuell"], "status": "offen",
+        { "id": "BYL-E6-366", "title": "Hinweis im Browser bei einem Server unter Linux (S0-3)", "art": ["manuell"], "status": "zurückgestellt",
           "pre": "Build von main in app\\ und Neustart (stop.bat, dann start.bat), damit die Route da ist. Der Linux-Fall wird unter Windows über die Übersteuerung BYL_HOST_PLATFORM nachgestellt (ändert nur die Texte).", "steps": ["Einstellungen → Kanäle, einen Einrichtungsassistenten und Einstellungen → Hilfe („Kanäle und Zugangsdaten“, „Betrieb“) öffnen.", "In der Eingabeaufforderung setx BYL_HOST_PLATFORM \"linux\", dann stop.bat und start.bat; dieselben Stellen öffnen, mit NVDA die Hinweis-Box lesen.", "Variable wieder entfernen (Systemsteuerung oder reg delete HKCU\\Environment /v BYL_HOST_PLATFORM /f), dann stop.bat und start.bat."],
           "expect": "Ohne Variable sieht alles aus wie vorher, ohne neue Box. Mit linux steht an allen vier Stellen die Box „Dein Server läuft unter Linux“ über der Windows-Anleitung, gut lesbar in hell und dunkel; NVDA liest „Hinweis:“ und den Titel als Überschrift. Nach dem Entfernen ist die Box wieder weg.",
           "tests": [] }
@@ -3390,7 +3629,7 @@
           "tests": ["tests/unit/hooks-lib-constraints.test.mjs"] },
         { "id": "BYL-X-004", "title": "Test-Manifest konsistent", "art": ["unit"], "status": "bestanden",
           "pre": "–", "steps": ["npm run test:unit"],
-          "expect": "Diese Datei ist wohlgeformt und offline nutzbar, IDs eindeutig, alle referenzierten Testdateien und -namen existieren, jede Testdatei ist referenziert, keine Reste der Vorlage.",
+          "expect": "Diese Datei ist wohlgeformt und offline nutzbar, IDs eindeutig, alle referenzierten Testdateien und -namen existieren, jede Testdatei ist referenziert, keine Reste der Vorlage. Jeder Fall gehört zu genau einem Paket, jedes Paket hat Fälle oder einen Vermerk, ADR und Plan existieren, zurückgestellte Fälle stehen unter genau einem Thema, der Kopf hat keinen Fließtext über 300 Zeichen, und die Zahlen, die die Seite selbst rechnet (Stand, Pakete, offene manuelle Prüfungen je Bereich), stimmen mit einer unabhängigen Zählung überein.",
           "tests": ["tests/unit/test-manifest.test.mjs"] },
         { "id": "BYL-X-005", "title": "CI und Ruleset für main", "art": ["unit", "manuell"], "status": "bestanden",
           "pre": ".github/workflows/ci.yml mit dem Job „Detect code changes“, Ruleset „main“ nach .github/rulesets/main.json auf GitHub aktiv. Statisch geprüft von tests/unit/ci-ruleset.test.mjs, auf GitHub nur lesend per gh belegt.", "steps": ["npm run test:unit", "Einen PR öffnen, der nur eine Datei unter docs/ (nicht docs/test-manifest.html) oder eine Markdown-Datei ändert: „Detect code changes“ meldet „Code changed: false“, „Check, lint, build and test“ und (seit AR-3 ebenfalls Pflicht) „Linux build and test“ stehen auf „übersprungen“, und gh pr merge --squash geht durch.", "Einen PR mit Code oder mit docs/test-manifest.html öffnen: der Build läuft; zwei schnelle Pushes hintereinander brechen den ersten Durchgang ab.", "Einen Merge ohne Squash, einen Push direkt auf main und einen Merge bei rotem Check versuchen: alle drei lehnt GitHub ab."],
@@ -3402,21 +3641,212 @@
 }
 </script>
 
+<script id="manifest-logic">
+// ── Auswertung ──────────────────────────────────────────────────────────────
+// Reine Funktionen ohne DOM: Stand, Paket-Tabelle und offene manuelle Prüfungen entstehen aus den Daten,
+// nie von Hand. tests/unit/test-manifest.test.mjs führt diesen Block in node:vm aus und zählt unabhängig nach.
+function caseKey(id) {
+  const match = /^(BYL-(?:E\d|X))-(\d{3})$/.exec(id);
+  return match ? { prefix: match[1], number: Number(match[2]) } : null;
+}
+
+// Fälle eines Pakets: einzelne IDs oder Bereiche „BYL-E6-100..BYL-E6-105“ über die vorhandenen IDs, in der Reihenfolge der Datei.
+function packageCaseIds(refs, ids) {
+  const ranges = refs.map((ref) => ref.split("..").map(caseKey));
+  return ids.filter((id) => {
+    const key = caseKey(id);
+    return refs.some((ref, index) => {
+      const [from, to] = ranges[index];
+      if (to === undefined) return ref === id;
+      return key !== null && from !== null && to !== null && key.prefix === from.prefix
+        && key.number >= from.number && key.number <= to.number;
+    });
+  });
+}
+
+// „BYL-E6-600–605, 610–612, BYL-X-005“: zusammenhängende Nummern als Spanne, Präfix nur beim Wechsel.
+function idRangeLabel(ids) {
+  const runs = [];
+  for (const id of ids.slice().sort()) {
+    const key = caseKey(id);
+    if (key === null) continue;
+    const last = runs[runs.length - 1];
+    if (last && last.prefix === key.prefix && last.to + 1 === key.number) last.to = key.number;
+    else runs.push({ prefix: key.prefix, from: key.number, to: key.number });
+  }
+  const pad = (number) => String(number).padStart(3, "0");
+  return runs.map((run, index) => {
+    const prefix = index > 0 && runs[index - 1].prefix === run.prefix ? "" : run.prefix + "-";
+    return prefix + pad(run.from) + (run.to > run.from ? "–" + pad(run.to) : "");
+  }).join(", ");
+}
+
+function manifestSummary(data) {
+  const cases = data.blocks.flatMap((block) => block.items);
+  const ids = cases.map((item) => item.id);
+  const byId = {};
+  for (const item of cases) byId[item.id] = item;
+  const isOpenManual = (item) => item.status === "offen" && item.art.includes("manuell");
+  const countStatus = (items, status) => items.filter((item) => item.status === status).length;
+
+  const packages = data.pakete.map((paket) => {
+    const caseIds = packageCaseIds(paket.faelle, ids);
+    const items = caseIds.map((id) => byId[id]);
+    return Object.assign({}, paket, {
+      caseIds,
+      idRange: idRangeLabel(caseIds),
+      passed: countStatus(items, "bestanden"),
+      openManual: items.filter(isOpenManual).map((item) => item.id),
+      planned: countStatus(items, "geplant"),
+      deferred: countStatus(items, "zurückgestellt"),
+      notApplicable: countStatus(items, "nicht zutreffend")
+    });
+  });
+
+  const openByArea = data.bereiche.map((area) => ({
+    id: area.id,
+    title: area.titel,
+    caseIds: packages.filter((paket) => paket.bereich === area.id).flatMap((paket) => paket.openManual)
+  }));
+  // Fehlt ein Fall in pakete (der Test verbietet das), bleibt er trotzdem sichtbar.
+  const listed = new Set(openByArea.flatMap((area) => area.caseIds));
+  const unlisted = cases.filter((item) => isOpenManual(item) && !listed.has(item.id)).map((item) => item.id);
+  if (unlisted.length > 0) openByArea.push({ id: "", title: "Ohne Paket oder Bereich", caseIds: unlisted });
+
+  return {
+    totals: {
+      cases: cases.length,
+      passed: countStatus(cases, "bestanden"),
+      openManual: cases.filter(isOpenManual).length,
+      planned: countStatus(cases, "geplant"),
+      deferred: countStatus(cases, "zurückgestellt"),
+      notApplicable: countStatus(cases, "nicht zutreffend")
+    },
+    packages,
+    openByArea: openByArea.filter((area) => area.caseIds.length > 0),
+    deferredIds: cases.filter((item) => item.status === "zurückgestellt").map((item) => item.id)
+  };
+}
+</script>
+
 <script>
 // ── Rendering ───────────────────────────────────────────────────────────────
 const DATA = JSON.parse(document.getElementById("manifest-data").textContent);
+const SUMMARY = manifestSummary(DATA);
 const BLOCKS = DATA.blocks;
+const CASE_TITLES = Object.fromEntries(BLOCKS.flatMap((block) => block.items.map((it) => [it.id, it.title])));
 const STORAGE_KEY = "byl-test-manifest-v1";
 const ART_LABELS = { unit: "Unit", komponente: "Komponente", integration: "Integration", manuell: "Manuell" };
-const STATUS_CLASS = { "bestanden": "st-bestanden", "offen": "st-offen", "geplant": "st-geplant", "nicht zutreffend": "st-nz" };
+const STATUS_CLASS = { "bestanden": "st-bestanden", "offen": "st-offen", "geplant": "st-geplant", "zurückgestellt": "st-zurueck", "nicht zutreffend": "st-nz" };
 let state = {};
 try { state = JSON.parse(localStorage.getItem(STORAGE_KEY) || "{}"); } catch (e) { state = {}; }
 
 const manifestEl = document.getElementById("manifest");
 const manualIds = [];
 const meta = DATA.meta;
-document.getElementById("stand").textContent =
-  `Stand ${meta.stand} · Commit ${meta.commit} · ${meta.etappe}`;
+renderHead();
+renderOverview();
+
+// Kurzer Stand und Zeile „Zurückgestellt“, beides aus den Daten gerechnet.
+function renderHead() {
+  const totals = SUMMARY.totals;
+  const parts = [`${totals.passed} bestanden`, `${totals.openManual} offen (manuell)`];
+  if (totals.planned) parts.push(`${totals.planned} geplant`);
+  if (totals.deferred) parts.push(`${totals.deferred} zurückgestellt`);
+  if (totals.notApplicable) parts.push(`${totals.notApplicable} nicht zutreffend`);
+  document.getElementById("stand").innerHTML =
+    `Stand <b>${escapeHtml(meta.stand)}</b> · Commit <code>${escapeHtml(meta.commit)}</code> · <b>${totals.cases} Fälle</b>: ${parts.join(", ")}`;
+
+  const topics = DATA.zurueckgestellt.map((topic) => {
+    const origin = [topic.quelle, topic.datum ? "vom " + topic.datum : ""].filter(Boolean).join(" ");
+    const refs = adrLinks(topic.adr).concat(planLink(topic.plan, "Plan ") || []).join(", ");
+    return `${escapeHtml(topic.titel)} (${escapeHtml(origin)}${refs ? "; " + refs : ""})`;
+  });
+  const deferredEl = document.getElementById("deferred");
+  deferredEl.innerHTML = `<b>Zurückgestellt:</b> ${topics.join(" · ")}`;
+  deferredEl.hidden = topics.length === 0;
+}
+
+// Offene manuelle Prüfungen nach Bereichen und die Tabelle „Etappen und Pakete“.
+function renderOverview() {
+  const areas = SUMMARY.openByArea.map((area) => `
+      <details class="area">
+        <summary>${escapeHtml(area.title)} <span class="count">(${area.caseIds.length})</span></summary>
+        ${caseList(area.caseIds)}
+      </details>`).join("");
+  const deferred = SUMMARY.deferredIds.length === 0 ? "" : `
+      <h3>Zurückgestellt <span class="count">(${SUMMARY.deferredIds.length})</span></h3>
+      <p class="hint">Erst prüfen, wenn der Nutzer das Thema freigibt (siehe „Zurückgestellt“ oben).</p>
+      ${caseList(SUMMARY.deferredIds)}`;
+  document.getElementById("overview").innerHTML = `
+    <section class="panel" aria-labelledby="open-title">
+      <h2 id="open-title">Offene manuelle Prüfungen <span class="count">(${SUMMARY.totals.openManual})</span></h2>
+      <p class="hint">Nach Bereichen; jede ID springt zur Beschreibung des Falls.</p>
+      ${areas || '<p class="hint">Keine offenen manuellen Prüfungen.</p>'}
+      ${deferred}
+    </section>
+    <section class="panel" aria-labelledby="packages-title">
+      <h2 id="packages-title">Etappen und Pakete</h2>
+      <details>
+        <summary>Tabelle aller ${SUMMARY.packages.length} Pakete</summary>
+        <div class="table-wrap" role="region" aria-labelledby="packages-title" tabindex="0">${packageTable()}</div>
+      </details>
+    </section>`;
+}
+
+function caseLink(id) { return `<a class="case-id" href="#item-${escapeHtml(id)}">${escapeHtml(id)}</a>`; }
+function caseList(ids) {
+  return `<ul class="case-list">${ids.map((id) => `<li>${caseLink(id)}${escapeHtml(CASE_TITLES[id])}</li>`).join("")}</ul>`;
+}
+// "0022-erzeugung-von-instanzen.md, Nachtrag 9" → Link „ADR-0022 Nachtrag 9“ auf docs/adr.
+function adrLinks(refs) {
+  return (refs || []).map((ref) => {
+    const cut = ref.indexOf(", ");
+    const file = cut < 0 ? ref : ref.slice(0, cut);
+    const label = "ADR-" + file.slice(0, 4) + (cut < 0 ? "" : " " + ref.slice(cut + 2));
+    return `<a href="adr/${encodeURI(file)}">${escapeHtml(label)}</a>`;
+  });
+}
+function planLink(file, prefix = "") {
+  return file ? `<a href="plan/${encodeURI(file)}">${escapeHtml(prefix + file.replace(/\.md$/, ""))}</a>` : "";
+}
+
+function packageTable() {
+  const groups = [];
+  for (const paket of SUMMARY.packages) {
+    const last = groups[groups.length - 1];
+    if (last && last.title === paket.vorhaben) last.packages.push(paket);
+    else groups.push({ title: paket.vorhaben, packages: [paket] });
+  }
+  const bodies = groups.map((group) => {
+    const first = group.packages.flatMap((paket) => paket.caseIds).sort()[0];
+    const from = first ? ` <span class="count">· IDs ab ${escapeHtml(first)}</span>` : "";
+    return `<tbody><tr><th scope="rowgroup" colspan="7" class="group">${escapeHtml(group.title)}${from}</th></tr>${group.packages.map(packageRow).join("")}</tbody>`;
+  }).join("");
+  return `<table class="packages" aria-labelledby="packages-title">
+    <thead><tr><th scope="col">Paket</th><th scope="col">Herkunft</th><th scope="col">ADR</th><th scope="col">Plan</th><th scope="col">Fälle</th><th scope="col" class="num">bestanden</th><th scope="col">offen (manuell)</th></tr></thead>
+    ${bodies}</table>`;
+}
+
+function packageRow(paket) {
+  const extra = [];
+  if (paket.planned) extra.push(`${paket.planned} geplant`);
+  if (paket.deferred) extra.push(`${paket.deferred} zurückgestellt`);
+  if (paket.notApplicable) extra.push(`${paket.notApplicable} nicht zutreffend`);
+  const cases = paket.caseIds.length === 0 ? "–"
+    : `${escapeHtml(paket.idRange)} <span class="count">(${paket.caseIds.length}${extra.length ? ", davon " + extra.join(", ") : ""})</span>`;
+  const origin = [paket.quelle, paket.datum].filter(Boolean).map(escapeHtml).join("<br>") || "–";
+  const note = paket.vermerk ? `<span class="package-note">${escapeHtml(paket.vermerk)}</span>` : "";
+  return `<tr id="paket-${escapeHtml(paket.id)}">
+      <th scope="row"><span class="package-id">${escapeHtml(paket.id)}</span> ${escapeHtml(paket.titel)}${note}</th>
+      <td>${origin}</td>
+      <td>${adrLinks(paket.adr).join("<br>") || "–"}</td>
+      <td>${planLink(paket.plan) || "–"}</td>
+      <td>${cases}</td>
+      <td class="num">${paket.passed}</td>
+      <td>${paket.openManual.map(caseLink).join(" ") || "–"}</td>
+    </tr>`;
+}
 
 function isManual(it) { return it.art.includes("manuell") && it.status === "offen"; }
 function shownStatus(it) {
@@ -3446,6 +3876,7 @@ for (const block of BLOCKS) {
     const item = document.createElement("div");
     item.className = "item" + (it.status === "geplant" ? " planned" : "");
     item.id = "item-" + it.id;
+    item.tabIndex = -1;
     item.dataset.art = it.art.join(" ");
     item.dataset.status = it.status;
 
@@ -3537,6 +3968,50 @@ function updateProgress() {
 }
 updateProgress();
 applyFilters();
+
+// ── Sprungmarken ────────────────────────────────────────────────────────────
+// Ein Link auf einen Fall oder ein Paket zeigt das Ziel auch dann, wenn ein Filter oder ein zugeklappter Bereich es verbirgt.
+function revealTarget(hash) {
+  let target = null;
+  try { target = hash.length > 1 ? document.getElementById(decodeURIComponent(hash.slice(1))) : null; } catch (e) { target = null; }
+  if (!target) return null;
+  if (target.closest("[hidden]")) {
+    document.getElementById("filter-art").value = "";
+    document.getElementById("filter-status").value = "";
+    applyFilters();
+  }
+  for (let details = target.closest("details"); details; details = details.parentElement.closest("details")) details.open = true;
+  return target;
+}
+document.addEventListener("click", (e) => {
+  const link = e.target.closest('a[href^="#"]');
+  if (link) revealTarget(link.getAttribute("href"));
+});
+window.addEventListener("hashchange", () => {
+  const target = revealTarget(location.hash);
+  if (!target) return;
+  target.scrollIntoView();
+  target.focus({ preventScroll: true });
+});
+if (location.hash) {
+  const target = revealTarget(location.hash);
+  if (target) target.scrollIntoView();
+}
+
+// ── Druck ───────────────────────────────────────────────────────────────────
+// Zum Drucken öffnen sich alle zugeklappten Bereiche, danach schließen sie sich wieder.
+window.addEventListener("beforeprint", () => {
+  document.querySelectorAll("details:not([open])").forEach((details) => {
+    details.dataset.printOpened = "";
+    details.open = true;
+  });
+});
+window.addEventListener("afterprint", () => {
+  document.querySelectorAll("details[data-print-opened]").forEach((details) => {
+    details.open = false;
+    delete details.dataset.printOpened;
+  });
+});
 
 // ── Export (Markdown → Zwischenablage) ──────────────────────────────────────
 function buildMarkdown(onlyOpen = false) {
