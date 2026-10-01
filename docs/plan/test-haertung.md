@@ -1,6 +1,6 @@
 # Plan: Test-Härtung
 
-- **Stand:** umgesetzt: T-1 (#175, Testkopien und Test-Server ohne Zugangsdaten), T-2 (drei gelegentlich rote Tests deterministisch, dazu ein gleich gebauter Fall) und T-3 (geordnetes Beenden unter Last, Manifest ab `BYL-E6-680`).
+- **Stand:** umgesetzt: T-1 (#175, Testkopien und Test-Server ohne Zugangsdaten), T-2 (drei gelegentlich rote Tests deterministisch, dazu ein gleich gebauter Fall), T-3 (geordnetes Beenden unter Last, Manifest ab `BYL-E6-680`) und T-4 (gemeinsame Testinstanz ohne parallele Prozess-Last, Manifest ab `BYL-E6-840`).
 - **Grundlage:** [ADR-0018](../adr/0018-secrets.md) (Zugangsdaten als `BYL_*`-Variablen, Nachtrag), [ADR-0039](../adr/0039-betriebsskripte.md) (Steuerskript, Nachtrag „Testkopien ohne Zugangsdaten“), [ADR-0004](../adr/0004-teststrategie-hooks-migrationen.md) (Wegwerf-Instanzen); [CLAUDE.md](../../CLAUDE.md) §3, §11, §12.
 - **Einordnung:** Auftrag vom 2026-09-29. Manifest-IDs ab `BYL-E6-500`, Paketkürzel `T`.
 
@@ -49,10 +49,37 @@ Grundlage: die letzten gut 40 CI-Läufe (`gh run list`, `gh run view --log-faile
 
 **Nicht geändert, geprüft:** Die Ports der Kopien kommen vom System (`listen(0)`, ohne 8090 und 8099) und sind für die Dauer der Datei belegt; zwischen Stopp und Neustart derselben Kopie könnte ein anderer Test denselben Port bekommen, das trat in keinem Lauf auf und hätte eine andere Meldung (Exit 4). Prozesse werden nur über ihren Programmpfad unter `.tmp\byl-ctl-*` gezählt und in `afterAll` beendet.
 
-## 4. Entscheidungen und Befunde
+## 4. T-4: Gemeinsame Testinstanz ohne parallele Prozess-Last
+
+Auftrag vom 2026-10-01: `tests/integration/inbox-link.test.mjs` › release › „never releases the main source of a ticket“ lief im Windows-Job von #201 (Lauf 36873584489, Versuch 1) in die Zeitgrenze von 15 s, lokal und unter Linux grün.
+
+**Befund (nur lesend: `gh run view --log`, Läufe vom 2026-09-28 bis 2026-10-01):**
+
+- **Ein hängender Schritt, keine lange Gesamtlaufzeit.** Der Fall brauchte 15.008 ms. Er macht vier einfache Anfragen an die gemeinsame Wegwerf-Instanz des Laufs (Eintrag anlegen, Ticket mit `source_item`, Lösen, Lesen). Die 18 anderen Fälle derselben Datei brauchten 14 bis 416 ms, darunter „never moves the main source …“ mit denselben ersten Schritten in 28 ms. Gleich danach liefen die nächsten Fälle wieder in Millisekunden.
+- **Keine Last auf der Instanz selbst.** Im Zeitfenster (14:10:05 bis 14:10:20 UTC) nutzte keine andere Datei die gemeinsame Instanz. Parallel liefen nur Dateien mit eigenen Prozessen: `channel-calendar`, `mail-ingest`, `channel-telegram` und `system-route` (je eigene PocketBase), `control-script` endete 0,7 s vor Beginn des Falls (PowerShell, Kopien von `pocketbase.exe`). Cron-Läufe der Instanz zu dieser Zeit (`byl-telegram`) tun ohne Variablen nichts.
+- **Wiederkehrendes Muster, nur unter Windows.** In den 37 erfolgreichen CI-Läufen vom 2026-09-28 bis 2026-10-01 (beide Jobs) brauchten sonst schnelle Fälle der gemeinsamen Instanz elfmal 4,8 bis 9,8 s (etwa `inbox-link` 9.782 ms und 6.322 ms, `web-data-projects` 8.236 ms, `ticket-subtasks` 8.250 ms, `inbox-convert` 6.939 ms, `ticket-keys` 6.767 ms), alle im Windows-Job, nie unter Linux. Jedes Mal lief parallel mindestens eine Datei, die Prozesse startet: `control-script` (sechsmal), `mail-helper-process` (viermal), `admin-reset` mit `backup-restore`, `migrations-rollback`, `notion-import-blocks` (je einmal). Unter Linux laufen die PowerShell-Dateien nicht.
+- **Ursache:** Die gemeinsame PocketBase (eine einzige Schreibverbindung zu SQLite, WAL) stand unter der Last paralleler Testdateien auf dem Windows-Runner (vier Kerne) für einzelne Anfragen mehrere Sekunden still: Start von PowerShell, Kopien von `pocketbase.exe` und `byl-mail.exe`, Migrationen in frischen Datenordnern, also Prozessstarts, Plattenzugriffe und die Prüfung neuer Programmdateien. Einmal reichte das über 15 s. Der Test selbst wartet auf nichts Zeitabhängiges; lokal (16 logische Prozessoren) blieb der langsamste Fall der Instanz in drei Läufen unter 4,1 s (`web-filter-parity`).
+
+**Fix (deterministisch über die Reihenfolge, keine Erwartung gelockert, keine Zeitgrenze erhöht):** Die Integrationstests laufen in zwei Gruppen (`sequence.groupOrder` von Vitest, `tests/support/test-groups.mjs`).
+
+| Gruppe | Projekt | Inhalt |
+|---|---|---|
+| 0, zuerst und allein | `integration` | Dateien, die nur die gemeinsame Instanz nutzen (35 Dateien, 441 Fälle) |
+| 1, danach | `unit`, `helper`, `integration-processes` | Unit- und Hilfsprozess-Tests und jede Integrationsdatei, die eigene Prozesse startet (eigene PocketBase, `migrate`, PowerShell, `byl-mail.exe`) |
+
+- Eine Datei startet Prozesse, wenn sie den Harness (`pocketbase-harness.mjs`), `powershell.mjs` oder `clean-env.mjs` importiert; anders darf Testcode keine Prozesse starten (T-1). So landet eine neue Datei ohne Liste in der richtigen Gruppe; `tests/unit/test-groups.test.mjs` prüft Einordnung und Konfiguration.
+- Beide Integrationsprojekte haben die gemeinsame Instanz (`global-setup.mjs`), weil einige Dateien mit eigenen Servern sie zusätzlich nutzen (`harness`, `host-route`, `ingest-route`, `installer-check`).
+- `npm run test:integration` startet beide Projekte.
+- **Zeitgrenzen:** 15 s je Fall und 30 s je Hook bleiben. Allein in ihrer Gruppe brauchte der langsamste Fall der gemeinsamen Instanz (`web-filter-parity`, viele Tickets je Fall) in 28 lokalen Läufen 3,5 bis 6,0 s, die Fälle aller anderen Dateien höchstens 2,2 s; die Gruppe allein dauert lokal etwa 21 s. 15 s lassen das Zweieinhalbfache Luft und liegen unter den Stillständen von bis zu 15 s, die sonst ein Fehler verdecken würde. Dateien mit Prozessen haben wie bisher eigene Grenzen je Fall (120 s für das Steuerskript).
+- **Kosten:** Die Gruppen überlappen nicht mehr. Lokal (16 logische Prozessoren) dauern die Root-Tests 99 bis 107 s statt 81 bis 83 s, weil die Dateien der gemeinsamen Instanz nun nur einander begegnen und die Prozess-Dateien danach gemeinsam laufen.
+
+**Beleg:** siehe Entscheidungen (Wiederholungsläufe lokal und Windows-Job dieses PR).
+
+## 5. Entscheidungen und Befunde
 
 | Datum | Paket | Befund bzw. Entscheidung |
 |---|---|---|
 | 2026-09-29 | T-1 | Umgebungsvariable statt Parameter von `byl-control.ps1`: Sie gehört zur Umgebung des Tests, erscheint nicht in `help` und bleibt mit der bereinigten Umgebung beisammen. Ein Prüfwert im Benutzerbereich hätte den Pfad über das Konto auch in der CI belegt, hätte aber auf dem Entwicklungsrechner ins Konto des Nutzers geschrieben; belegt wird er stattdessen über die Positivprobe (ohne Isolation entfernte `Sync-BylEnvironment` die Testwerte) und lokal über die echten Namen im Konto. |
 | 2026-09-30 | T-3 | Ein zweiter Versuch statt mehrerer: Bei unabhängigen, vorübergehenden Fehlern des Senders sinkt die Wahrscheinlichkeit damit auf ihr Quadrat, und der schlimmste Fall (Sender hängt zweimal) bleibt bei gut 90 s statt Minuten. „Nicht gesendet“ wartet nur bis zu 1 s auf den Prozess (er kann trotzdem enden, und ein vorübergehender Fehler kommt nicht sofort wieder), „unklar“ die ganze Frist, weil der Bruch angekommen sein kann; beides fragt den Prozess ab und kehrt sofort zurück, wenn er endet. Eine Fehlerinjektion im Steuerskript (Umgebungsvariable nur für Tests) wurde verworfen: Sie wäre ein Pfad nur für Tests im Betriebsskript; die Entscheidungen belegen die Fakes in `control-logic.test.mjs`, die echten Wege die Integrationstests. Lokal ließ sich der rote Lauf nicht nachstellen. Wiederholungsbeleg mit der Änderung: `control-script.test.mjs` 20-mal hintereinander grün (je 90 bis 97 s) unter 12 zusätzlichen PowerShell-Prozessen mit Dauerlast auf 16 logischen Prozessoren; bei 28 solchen Prozessen wurde schon der Harness nicht in 20 s gesund, das ist keine Aussage über den Stopp. |
+| 2026-10-01 | T-4 | Trennung in der Zeit statt längerer Grenzen oder Wiederholungen: Ein höheres Zeitlimit verdeckte nur den Stillstand, ein `retry` würde Schreibanfragen doppelt senden, und ein Abschalten der Synchronisierung von SQLite nur in Tests wäre ein Pfad nur für Tests im Server. Die Einordnung folgt den Importen, weil Testcode nur über diese drei Module Prozesse starten kann (T-1); so braucht eine neue Datei keine Liste. Lokal ließ sich der Stillstand nicht nachstellen (drei Läufe mit alter Einteilung: langsamster Fall der Instanz 3,3 bis 4,0 s). Wiederholungsbeleg mit der Änderung: 28 Läufe der Root-Tests (`npx vitest run`), alle 441 Fälle der gemeinsamen Instanz (35 Dateien) in jedem Lauf grün, darunter „never releases the main source of a ticket“; der langsamste dieser Fälle je Lauf 3,5 bis 6,0 s. 26 Läufe ganz grün; der erste scheiterte am Manifest, das während des Laufs noch ergänzt wurde, und zwei Läufe hatten Fehler in Dateien mit eigenen Prozessen, als alle Läufe des Rechners deutlich langsamer waren (129 bis 154 s statt etwa 103 s; welche Fälle, hielt das Messskript nicht fest). Die folgenden acht Läufe mit festgehaltenen Fehlern waren alle grün. |
 | 2026-09-29 | T-2 | Die planmäßigen Cron-Läufe der Testinstanzen bleiben an: Sie abzuschalten hieße, Hooks nur für Tests umzuschreiben. Die Tests vertragen sie (Sperre, `logOnce`, Warten auf das Schreiben der Logs). Linux ließ sich lokal nicht nachstellen (kein WSL); der Fix im Präsenztest hängt nicht vom System ab. |
