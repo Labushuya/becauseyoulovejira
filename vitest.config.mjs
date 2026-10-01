@@ -1,4 +1,6 @@
+import { fileURLToPath } from 'node:url';
 import { configDefaults, defineConfig } from 'vitest/config';
+import { integrationGroups } from './tests/support/test-groups.mjs';
 
 // Tests of the Windows operation layer run only on Windows (ADR-0028, plan plattformen S0): they
 // call Windows PowerShell 5.1 with app/byl-functions.ps1 or the Expand-Archive restore of the
@@ -27,15 +29,47 @@ function exclude(project) {
 		: [...configDefaults.exclude, ...WINDOWS_ONLY[project]];
 }
 
+// Integration tests in two groups (plan test-haertung T-4, tests/support/test-groups.mjs): first,
+// alone, the files that only use the shared disposable instance of the run; then the files that
+// start processes of their own (PocketBase servers, migrate, PowerShell, byl-mail.exe), together
+// with the unit and helper tests. Under load on the Windows runner single requests of the first
+// kind stalled for seconds while files of the second kind ran next to them.
+const GROUPS = integrationGroups(fileURLToPath(new URL('.', import.meta.url)), 'tests/integration');
+
+// Common to both integration projects. Each gets the shared instance of global-setup.mjs (files of
+// the second group use it next to their own servers). Node 24 ships EventSource only behind the
+// flag; the PocketBase SDK needs it for realtime subscriptions (OF-13: no polyfill dependency). The
+// experimental warning is muted. 15 s per test: alone in their group, the slowest test of the
+// shared instance (web-filter-parity) took at most 6 s in 28 local runs (plan test-haertung T-4);
+// the files with processes set longer limits per test where they need them (120 s for the control
+// script).
+const INTEGRATION = {
+	environment: 'node',
+	globalSetup: ['tests/support/global-setup.mjs'],
+	execArgv: ['--experimental-eventsource', '--disable-warning=UNDICI-ES'],
+	testTimeout: 15_000,
+	hookTimeout: 30_000
+};
+
 export default defineConfig({
 	test: {
 		projects: [
 			{
 				test: {
+					...INTEGRATION,
+					name: 'integration',
+					include: GROUPS.shared,
+					exclude: exclude('integration'),
+					sequence: { groupOrder: 0 }
+				}
+			},
+			{
+				test: {
 					name: 'unit',
 					include: ['tests/unit/**/*.test.{js,mjs,ts}'],
 					exclude: exclude('unit'),
-					environment: 'node'
+					environment: 'node',
+					sequence: { groupOrder: 1 }
 				}
 			},
 			{
@@ -44,21 +78,17 @@ export default defineConfig({
 					name: 'helper',
 					include: ['helpers/mail/src/**/*.test.ts'],
 					environment: 'node',
-					testTimeout: 20_000
+					testTimeout: 20_000,
+					sequence: { groupOrder: 1 }
 				}
 			},
 			{
 				test: {
-					name: 'integration',
-					include: ['tests/integration/**/*.test.{js,mjs,ts}'],
+					...INTEGRATION,
+					name: 'integration-processes',
+					include: GROUPS.processes,
 					exclude: exclude('integration'),
-					environment: 'node',
-					globalSetup: ['tests/support/global-setup.mjs'],
-					// Node 24 ships EventSource only behind this flag; the PocketBase SDK needs it for
-					// realtime subscriptions (OF-13: no polyfill dependency). The experimental warning is muted.
-					execArgv: ['--experimental-eventsource', '--disable-warning=UNDICI-ES'],
-					testTimeout: 15_000,
-					hookTimeout: 30_000
+					sequence: { groupOrder: 1 }
 				}
 			}
 		]
