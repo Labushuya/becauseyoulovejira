@@ -95,3 +95,7 @@
 
 - **Zeile der Tabelle (ändert §9):** „Endgültig löschen …“ steht seit AM-4 im Menü „•••“ der Zeile, nach „Vorschau öffnen“ und „Wiederherstellen“ und einer Linie, nicht mehr als eigenes Symbol; „Wiederherstellen“ bleibt sichtbar. Ein Rechtsklick auf die Zeile oder Umschalt+F10 öffnen dasselbe Menü. Die Frage „… endgültig löschen?“, die Leiste der gewählten Zeilen und die Vorschau bleiben unverändert. Gründe: [ADR-0036](0036-sammelbearbeitung-inline-und-oeffnungsmodus.md), Nachtrag „Zeilenmenüs der übrigen Tabellen“.
 - **Sammel-Leiste der Aufgaben:** Der Knopf „Löschen …“ heißt seit AM-3 „In den Papierkorb …“ wie die Frage und das Flag (§9 „Löschdialoge“).
+
+## Nachtrag (2026-10-01): Quellen bleiben Tombstones, auch gegen die API
+
+§6 und die Alternative „Verworfene Quellen beim endgültigen Löschen als Datensatz löschen“ halten den Fingerprint verworfener Quellen fest, damit dasselbe Objekt nicht wiederkommt. Über die Record-API und die Verwaltung ließ sich ein freier Eintrag trotzdem löschen. Seit dem Nachtrag vom 2026-10-01 zu [ADR-0014](0014-datenmodell-eingang.md) lehnen `deleteRule = null` (Migration `1790202800`) und `onRecordDeleteRequest` von `inbox_items` jedes Löschen über die API ab, auch für Superuser. Der Papierkorb ist nicht betroffen: Er ändert Einträge nur (zurück in den Eingang, verborgen, Tombstone) und läuft über die Wege des Servers, nie über die Record-API von `inbox_items`. Seine `delete`-Ereignisse für verborgene Quellen (§3 „Realtime“) bleiben; ein hartes Löschen eines Eintrags über die API gibt es nicht mehr.
