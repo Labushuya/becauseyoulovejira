@@ -1,6 +1,6 @@
 # ADR-0037: Papierkorb für Tickets: weiches Löschen, Unsichtbarkeit über die API-Regeln, Wiederherstellen und Aufbewahrung
 
-- **Status:** Angenommen und umgesetzt: §1 bis §8 serverseitig in PB-1 (#151), die Oberfläche (§9) in PB-2, nach [docs/plan/papierkorb.md](../plan/papierkorb.md); manuelle Browser-Prüfungen stehen im Test-Manifest; §9 (Aktionen der Zeile) geändert durch den Nachtrag „Aktionsmenüs“ (2026-10-01)
+- **Status:** Angenommen und umgesetzt: §1 bis §8 serverseitig in PB-1 (#151), die Oberfläche (§9) in PB-2, nach [docs/plan/papierkorb.md](../plan/papierkorb.md); manuelle Browser-Prüfungen stehen im Test-Manifest; §9 (Aktionen der Zeile) geändert durch den Nachtrag „Aktionsmenüs“ (2026-10-01); §2, §4, §6, §8 und §9 geändert durch [ADR-0047](0047-speicher-und-abhaengigkeiten-beim-loeschen.md) (Nachtrag „Erst entscheiden, dann endgültig löschen“, SPE-1)
 - **Datum:** 2026-09-28
 - **Entscheidung durch:** Nutzer (Auftrag „Offene Reste“, Teil B: Papierkorb), Advisor (Produktentscheidungen: Umfang, Gruppen, Quellen, Keys, Rückgängig, Aufbewahrung 7/30/90/nie, Rückweg), Executor (Architektur und Einzelheiten)
 - **Ändert:** [ADR-0031](0031-herkunft-sichern.md) Nachtrag B (Quellen beim Löschen), [ADR-0023](0023-lebenszyklus-von-regeln-und-instanzen.md) §6 und [ADR-0022](0022-erzeugung-von-instanzen.md) §5 (Index), [ADR-0033](0033-unteraufgaben.md) (Löschen mit Unteraufgaben), [ADR-0036](0036-sammelbearbeitung-inline-und-oeffnungsmodus.md) §4 (Rückgängig nach „Löschen“); jeweils mit Nachtrag
@@ -99,3 +99,13 @@
 ## Nachtrag (2026-10-01): Quellen bleiben Tombstones, auch gegen die API
 
 §6 und die Alternative „Verworfene Quellen beim endgültigen Löschen als Datensatz löschen“ halten den Fingerprint verworfener Quellen fest, damit dasselbe Objekt nicht wiederkommt. Über die Record-API und die Verwaltung ließ sich ein freier Eintrag trotzdem löschen. Seit dem Nachtrag vom 2026-10-01 zu [ADR-0014](0014-datenmodell-eingang.md) lehnen `deleteRule = null` (Migration `1790202800`) und `onRecordDeleteRequest` von `inbox_items` jedes Löschen über die API ab, auch für Superuser. Der Papierkorb ist nicht betroffen: Er ändert Einträge nur (zurück in den Eingang, verborgen, Tombstone) und läuft über die Wege des Servers, nie über die Record-API von `inbox_items`. Seine `delete`-Ereignisse für verborgene Quellen (§3 „Realtime“) bleiben; ein hartes Löschen eines Eintrags über die API gibt es nicht mehr.
+
+## Nachtrag (2026-10-01, [ADR-0047](0047-speicher-und-abhaengigkeiten-beim-loeschen.md), SPE-1): Erst entscheiden, dann endgültig löschen
+
+Nutzerentscheidung: „Verweigern von Löschung, erst Abhängigkeiten auflösen (mit Entscheidungs-Auswahlhilfe aller verknüpften Quellen oder alternative Lösung, wenn Verstoß gegen unsere Regeln).“
+
+- **Ändert §2 und §8:** Jeder Weg zum endgültigen Löschen („Endgültig löschen“, „Papierkorb leeren“, der Cron `byl-trash-purge`, das Löschen eines Tickets im Papierkorb durch einen Superuser) nimmt nur noch Gruppen ohne Abhängigkeiten: kein Ticket der Gruppe offen, keine Quelle mehr an einem Ticket der Gruppe. Die manuellen Wege lehnen mit `validation_trash_blocked` und der Liste ab, „Papierkorb leeren“ lässt blockierte liegen und nennt sie, der Cron überspringt und zählt sie. Geprüft wird in der Transaktion des Löschens.
+- **Ändert §6:** Weil Quellen, die mit dem Ticket verworfen wurden, das endgültige Löschen blockieren, werden sie nicht mehr beim endgültigen Löschen geleert. Die Entscheidungshilfe gibt sie zurück in den Eingang, verwirft sie (gewöhnlicher verworfener Eintrag, die Bereinigung leert ihn nach 30 Tagen) oder hängt eine verknüpfte Quelle an ein anderes Ticket; die Hauptquelle nie.
+- **Ändert §4:** Eine Unteraufgabe einer Gruppe lässt sich mit `detach_parent` allein als eigenständiges Ticket wiederherstellen („Lösen und als eigenständiges Ticket wiederherstellen“).
+- **Ändert §9:** Spalte „Status“ mit „Blockiert (N)“, Filter „Nur blockierte“, „nicht, solange blockiert“ statt der Resttage, „Abhängigkeiten auflösen“ statt „Endgültig löschen …“ im Menü einer blockierten Zeile, Abschnitt „Abhängigkeiten“ in der Vorschau, Hinweis beim Öffnen, wenn abgelaufene Tickets auf eine Entscheidung warten.
+- Einzelheiten, Routen und Alternativen in ADR-0047.

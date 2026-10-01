@@ -277,9 +277,10 @@ describe('web data layer: tickets', () => {
 
 	it('moves a ticket to the trash, and deleting it for good takes its comments and history', async () => {
 		const ticket = await createTicket(a.client, draft());
-		await updateTicket(a.client, ticket.id, { title: 'geändert' });
+		// Done, so nothing blocks deleting it for good (ADR-0047).
+		await updateTicket(a.client, ticket.id, { title: 'geändert', status: 'done' });
 		await a.client.collection('comments').create({ ticket: ticket.id, author: a.id, body: 'x' });
-		expect((await historyOf(superuser, ticket.id)).length).toBe(2);
+		expect((await historyOf(superuser, ticket.id)).length).toBe(3);
 
 		await deleteTicket(a.client, ticket.id);
 		expect((await dataErrorOf(getTicket(a.client, ticket.id))).kind).toBe('not_found');

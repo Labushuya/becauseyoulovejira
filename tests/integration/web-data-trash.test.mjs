@@ -1,7 +1,8 @@
 // Data layer of the trash in the SPA (ADR-0037, plan PB-2) against PocketBase: the move answered
 // by the delete route, the list and the preview, restoring with and without expected_updated,
 // the refusal that asks for a target project, deleting for good, emptying, the retention of the
-// account and the realtime hint byl/trash. Node 24 provides EventSource only with
+// account and the realtime hint byl/trash; since ADR-0047 the dependencies, the decisions of the
+// decision help and a sub-task restored on its own. Node 24 provides EventSource only with
 // --experimental-eventsource, which vitest.config.mjs passes to the integration workers.
 
 import { beforeAll, describe, expect, it } from 'vitest';
@@ -13,6 +14,7 @@ import {
 	getTrashPreview,
 	listTrash,
 	purgeFromTrash,
+	resolveTrash,
 	restoreFromTrash,
 	saveTrashRetention,
 	subscribeTrash
@@ -81,19 +83,48 @@ describe('web data layer: trash', () => {
 
 	it('deletes for good, empties, and saves the retention of the account', async () => {
 		const owner = await createOwner(superuser);
-		const first = await owner.ticket();
-		const second = await owner.ticket();
+		const first = await owner.ticket({ status: 'done' });
+		const second = await owner.ticket({ status: 'done' });
 		await deleteTicket(owner.client, first.id, { sources: 'inbox' });
 		await deleteTicket(owner.client, second.id, { sources: 'discard' });
 
 		await purgeFromTrash(owner.client, first.id);
 		expect((await listTrash(owner.client)).items.map((item) => item.id)).toEqual([second.id]);
-		expect(await emptyTrash(owner.client)).toBe(1);
+		expect(await emptyTrash(owner.client)).toEqual({ purged: 1, blocked: [] });
 		expect((await listTrash(owner.client)).items).toEqual([]);
 
 		expect(await saveTrashRetention(owner.client, owner.id, 'never')).toBe('never');
 		expect((await listTrash(owner.client)).retention).toBe('never');
 		expect(await kindOf(saveTrashRetention(owner.client, owner.id, '14'))).toBe('validation');
+	});
+
+	it('reads the dependencies, resolves them and restores a sub-task on its own (ADR-0047)', async () => {
+		const owner = await createOwner(superuser);
+		const parent = await owner.ticket();
+		const child = await owner.ticket({ parent: parent.id });
+		const other = await owner.ticket({ parent: parent.id });
+		await deleteTicket(owner.client, parent.id, { sources: 'inbox' });
+
+		expect((await listTrash(owner.client)).items[0]).toMatchObject({ id: parent.id, dependencies: 3 });
+		const preview = await getTrashPreview(owner.client, parent.id);
+		expect(preview.dependencyList.map((entry) => [entry.kind, entry.ticket, entry.options])).toEqual([
+			['ticket', parent.id, ['complete_children', 'restore']],
+			['ticket', child.id, ['complete', 'restore', 'detach']],
+			['ticket', other.id, ['complete', 'restore', 'detach']]
+		]);
+		const refused = await purgeFromTrash(owner.client, parent.id).catch((error) => error);
+		expect(refused.fields.id).toMatchObject({ code: 'validation_trash_blocked', params: { count: 3 } });
+		expect(await emptyTrash(owner.client)).toEqual({ purged: 0, blocked: [{ id: parent.id, key: parent.key, count: 3 }] });
+
+		const restored = await restoreFromTrash(owner.client, other.id, { detachParent: true });
+		expect(restored).toMatchObject({ id: other.id, parentDetached: true });
+		const after = await resolveTrash(owner.client, parent.id, [
+			{ action: 'complete', ticket: child.id },
+			{ action: 'complete', ticket: parent.id }
+		]);
+		expect(after).toMatchObject({ id: parent.id, status: 'done', dependencies: 0, dependencyList: [] });
+		await purgeFromTrash(owner.client, parent.id);
+		expect((await listTrash(owner.client)).items).toEqual([]);
 	});
 
 	it('hears byl/trash when the own trash changes', async () => {

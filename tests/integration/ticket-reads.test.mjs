@@ -66,9 +66,10 @@ describe('ticket_reads rules', () => {
 	});
 
 	it('goes with its ticket', async () => {
+		// Done, so nothing blocks deleting it for good (ADR-0047).
 		const ticket = await s.a
 			.collection('tickets')
-			.create(ownedPayload('tickets', s.ids.a));
+			.create({ ...ownedPayload('tickets', s.ids.a), status: 'done' });
 		const row = await read(s.a, s.ids.a, ticket.id);
 		// In the trash (ADR-0037) the row stays, hidden; deleting for good takes it along.
 		await s.a.collection('tickets').delete(ticket.id);

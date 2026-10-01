@@ -16,6 +16,7 @@ async function showPage(overrides: Partial<TrashData> = {}) {
 		list: vi.fn(async () => ({ items: [], retention: saved })),
 		preview: vi.fn(),
 		restore: vi.fn(),
+		resolve: vi.fn(),
 		purge: vi.fn(),
 		purgeAll: vi.fn(),
 		saveRetention: vi.fn(async (value) => (saved = value)),
