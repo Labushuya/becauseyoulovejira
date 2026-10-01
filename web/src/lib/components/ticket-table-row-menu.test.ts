@@ -2,8 +2,11 @@
 // actions, named after its ticket, with both ways to open it, "Link kopieren", "Duplizieren …"
 // and "In den Papierkorb …"; a click on it never opens the row, its questions are the dialogs of
 // the panel (the table is no modal), and the row waits while a question loads. The keyboard of the
-// menu itself is covered in ticket-actions.test.ts. List store, row actions and the store of
-// "Duplizieren …" run for real on fake data layers; navigation and page state are mocked.
+// menu itself is covered in ticket-actions.test.ts. AM-3: a right click, Shift+F10 or the context
+// menu key open the same menu at the pointer or the focused element, never the row; the browser
+// keeps its menu with Ctrl, for touch, on selected text and in the fields of the cell editors.
+// List store, row actions and the store of "Duplizieren …" run for real on fake data layers;
+// navigation and page state are mocked.
 
 import { fireEvent, render, screen, within } from '@testing-library/svelte';
 import { tick } from 'svelte';
@@ -336,5 +339,194 @@ describe('menu "•••" of a row (AM-2)', () => {
 		await showTable({ path: '/?gruppe=status' });
 		expect(menuButton('TASK-1')).toBeTruthy();
 		expect(menuButton('TASK-2')).toBeTruthy();
+	});
+});
+
+describe('context menu of a row (AM-3)', () => {
+	function cell(id: string, column: string): HTMLElement {
+		return rowOf(id).querySelector(`[data-col="${column}"]`) as HTMLElement;
+	}
+
+	function titleLink(id = ID): HTMLElement {
+		return rowOf(id).querySelector('a.title-link') as HTMLElement;
+	}
+
+	function isOpen(key = 'TASK-1'): boolean {
+		return menuButton(key).getAttribute('aria-expanded') === 'true';
+	}
+
+	/** Right click like a browser on Windows: the menu event comes after the button is released. */
+	async function rightClick(target: Element, init: MouseEventInit = {}): Promise<boolean> {
+		const kept = await fireEvent.contextMenu(target, { button: 2, ...init });
+		await tick();
+		return kept;
+	}
+
+	it('opens the menu of the row at the pointer instead of the one of the browser', async () => {
+		await showTable();
+		const kept = await rightClick(cell(ID, 'key'), { clientX: 300, clientY: 200 });
+
+		expect(kept).toBe(false);
+		expect(isOpen()).toBe(true);
+		expect(isOpen('TASK-2')).toBe(false);
+		const menu = menuOf(menuButton());
+		expect(menu.style.top).toBe('200px');
+		expect(menu.style.left).toBe('300px');
+		// The same menu as "•••", with the focus on its first entry.
+		expect(document.activeElement?.textContent?.trim()).toBe('Im Seitenpanel öffnen');
+		expect(menu.contains(document.activeElement)).toBe(true);
+	});
+
+	it('neither opens nor chooses the row on a right click', async () => {
+		await showTable();
+		for (const column of ['key', 'title', 'select', 'actions', 'priority']) {
+			await rightClick(cell(ID, column), { clientX: 120, clientY: 80 });
+			expect(isOpen(), column).toBe(true);
+			await fireEvent.keyDown(document.activeElement as Element, { key: 'Escape' });
+		}
+
+		expect(mocks.goto).not.toHaveBeenCalled();
+		const select = within(rowOf(ID)).getByRole<HTMLInputElement>('checkbox', {
+			name: 'TASK-1 auswählen'
+		});
+		expect(select.checked).toBe(false);
+		expect(rowOf(ID).classList.contains('selected')).toBe(false);
+	});
+
+	it('opens it on the links that open the row itself, not on other links', async () => {
+		await showTable();
+		expect(await rightClick(titleLink(), { clientX: 10, clientY: 10 })).toBe(false);
+		expect(isOpen()).toBe(true);
+		await fireEvent.keyDown(document.activeElement as Element, { key: 'Escape' });
+
+		const open = rowOf(ID).querySelector('a.open') as HTMLElement;
+		expect(await rightClick(open)).toBe(false);
+		expect(isOpen()).toBe(true);
+		await fireEvent.keyDown(document.activeElement as Element, { key: 'Escape' });
+
+		// A link inside the open menu is a real link with the menu of the browser.
+		await rightClick(cell(ID, 'key'));
+		const entry = within(menuOf(menuButton())).getByRole('menuitem', {
+			name: 'In Vollansicht öffnen',
+			hidden: true
+		});
+		expect(await rightClick(entry)).toBe(true);
+	});
+
+	it('leaves the browser menu with Ctrl, for touch and on selected text', async () => {
+		await showTable();
+		expect(await rightClick(cell(ID, 'key'), { ctrlKey: true })).toBe(true);
+		expect(isOpen()).toBe(false);
+
+		await fireEvent.pointerDown(cell(ID, 'key'), { pointerType: 'touch' });
+		expect(await rightClick(cell(ID, 'key'))).toBe(true);
+		expect(isOpen()).toBe(false);
+		await fireEvent.pointerDown(cell(ID, 'key'), { pointerType: 'mouse' });
+
+		const selection = vi.spyOn(document, 'getSelection').mockReturnValue({
+			isCollapsed: false,
+			toString: () => 'Fenster',
+			containsNode: (node: Node) => titleLink().contains(node)
+		} as unknown as Selection);
+		expect(await rightClick(titleLink())).toBe(true);
+		expect(isOpen()).toBe(false);
+		// Selected text elsewhere does not stop the menu on another cell.
+		expect(await rightClick(cell(ID, 'key'))).toBe(false);
+		expect(isOpen()).toBe(true);
+		selection.mockRestore();
+	});
+
+	it('leaves the browser menu in the fields of a cell editor and outside the rows', async () => {
+		await showTable();
+		const tags = within(rowOf(ID)).getByRole('button', { name: /^Tags von TASK-1/ });
+		tags.focus();
+		await tick();
+		const input = within(cell(ID, 'tags')).getByRole('combobox', { hidden: true });
+
+		expect(await rightClick(input)).toBe(true);
+		expect(await fireEvent.keyDown(input, { key: 'F10', shiftKey: true })).toBe(true);
+		expect(isOpen()).toBe(false);
+
+		const head = document.querySelector('thead th') as HTMLElement;
+		expect(await rightClick(head)).toBe(true);
+	});
+
+	it('opens with Shift+F10 below the focused element and gives the focus back with Escape', async () => {
+		await showTable();
+		const link = titleLink();
+		vi.spyOn(link, 'getBoundingClientRect').mockReturnValue({
+			x: 200,
+			y: 100,
+			top: 100,
+			left: 200,
+			bottom: 120,
+			right: 320,
+			width: 120,
+			height: 20,
+			toJSON: () => ({})
+		});
+		link.focus();
+
+		const kept = await fireEvent.keyDown(link, { key: 'F10', shiftKey: true });
+		await tick();
+
+		expect(kept).toBe(false);
+		expect(isOpen()).toBe(true);
+		const menu = menuOf(menuButton());
+		expect(menu.style.top).toBe('124px');
+		expect(menu.style.left).toBe('200px');
+		expect(document.activeElement?.textContent?.trim()).toBe('Im Seitenpanel öffnen');
+
+		await fireEvent.keyDown(document.activeElement as Element, { key: 'Escape' });
+		expect(isOpen()).toBe(false);
+		expect(document.activeElement).toBe(link);
+		expect(mocks.goto).not.toHaveBeenCalled();
+	});
+
+	it('opens with the context menu key from a cell of the row', async () => {
+		await showTable();
+		const priority = within(rowOf(OTHER)).getByRole('button', { name: /^Priorität von TASK-2/ });
+		priority.focus();
+
+		expect(await fireEvent.keyDown(priority, { key: 'ContextMenu' })).toBe(false);
+		await tick();
+		expect(isOpen('TASK-2')).toBe(true);
+		expect(isOpen('TASK-1')).toBe(false);
+
+		await fireEvent.keyDown(document.activeElement as Element, { key: 'Escape' });
+		expect(document.activeElement).toBe(priority);
+	});
+
+	it('runs an entry from the context menu like from "•••"', async () => {
+		const { rowData } = await showTable();
+		await rightClick(cell(ID, 'due'), { clientX: 40, clientY: 40 });
+		await fireEvent.click(
+			within(menuOf(menuButton())).getByRole('menuitem', {
+				name: 'In den Papierkorb …',
+				hidden: true
+			})
+		);
+		await vi.advanceTimersByTimeAsync(0);
+		await tick();
+
+		expect(rowData.sources).toHaveBeenCalledWith(ID);
+		const dialog = screen.getByRole('dialog', { name: 'TASK-1 in den Papierkorb verschieben?' });
+		// Nothing had the focus before the right click: "Abbrechen" gives it to "•••" of the row.
+		await fireEvent.click(within(dialog).getByRole('button', { name: 'Abbrechen' }));
+		await tick();
+		expect(document.activeElement).toBe(menuButton());
+	});
+
+	it('opens at the button again after a right click when "•••" is clicked', async () => {
+		await showTable();
+		await rightClick(cell(ID, 'key'), { clientX: 300, clientY: 200 });
+		await fireEvent.keyDown(document.activeElement as Element, { key: 'Escape' });
+		expect(document.activeElement).toBe(menuButton());
+
+		await fireEvent.click(menuButton());
+		await tick();
+
+		// Below the button (jsdom measures it at 0, 0): 4 px gap, no longer at the pointer.
+		expect(menuOf(menuButton()).style.top).toBe('4px');
 	});
 });

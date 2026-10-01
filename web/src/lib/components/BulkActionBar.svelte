@@ -22,11 +22,12 @@
 
 	// Bar of the bulk actions (plan BI-2, ADR-0036 §3): it appears with at least one chosen row,
 	// names their number and offers "Fälligkeit …", "Priorität", "Status", "Projekt …", "Tags …",
-	// "Erledigen", "Löschen …" and "Auswahl aufheben". The glass bar itself is SelectionBar, shared
-	// with the trash (ADR-0037). Priority and status are menus that
+	// "Erledigen", "In den Papierkorb …" (before AM-3 "Löschen …", now named like the menu "•••"
+	// and the question, plan aktionsmenues) and "Auswahl aufheben". The glass bar itself is
+	// SelectionBar, shared with the trash (ADR-0037). Priority and status are menus that
 	// apply at once; the rest asks in a modal. "Erledigen" asks only when chosen tickets have open
-	// blocking sub-tasks (ADR-0033 section 2), "Löschen …" always, with the choice for the sources
-	// (ADR-0031, addendum B) and the note on the trash (ADR-0037). While an action runs, a
+	// blocking sub-tasks (ADR-0033 section 2), "In den Papierkorb …" always, with the choice for the
+	// sources (ADR-0031, addendum B) and the note on the trash (ADR-0037). While an action runs, a
 	// progress bar replaces the buttons; the result lists every ticket that failed (as an error)
 	// or was skipped (neutral).
 	let {
@@ -61,7 +62,7 @@
 	let project = $state('');
 	let withChildren = $state(true);
 	let sources = $state<SourceHandling>('inbox');
-	/** Sources of the chosen tickets for "Löschen …"; null while unknown. */
+	/** Sources of the chosen tickets for "In den Papierkorb …"; null while unknown. */
 	let sourceCount = $state<number | null>(null);
 	let bar = $state<HTMLElement>();
 
@@ -184,7 +185,7 @@
 		</button>
 		<button class="button-secondary" type="button" onclick={complete}>Erledigen</button>
 		<button class="button-secondary" type="button" onclick={() => void askDelete()}>
-			Löschen …
+			In den Papierkorb …
 		</button>
 	{/snippet}
 </SelectionBar>

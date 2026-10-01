@@ -21,6 +21,7 @@
 </script>
 
 <script lang="ts">
+	import { OPEN_MENU_EVENT, type MenuRequest } from '$lib/overlay/context-menu';
 	import Popover from './overlay/Popover.svelte';
 
 	// The menu "•••" (ADR-0025 section 5, APG menu button): a symbol button that opens a popover of
@@ -28,7 +29,10 @@
 	// Home and End, Enter and Space run an entry, Escape and Tab close) and returns the focus to the
 	// button; an entry closes the menu before it runs, so a dialog it opens gives the focus back to
 	// the button as well. Used by the cards of the page "Kanäle" (ADR-0026, addendum KK-2) and by the
-	// actions of a ticket in its header and in the rows of the table (plan aktionsmenues).
+	// actions of a ticket in its header and in the rows of the tables (plan aktionsmenues). In a row
+	// (the class `row-menu` on the button) a right click or Shift+F10 opens the same menu at the
+	// pointer or the focused element (AM-3): the rows ask through OPEN_MENU_EVENT on the button
+	// (lib/overlay/context-menu.ts), and the focus goes back to where it was.
 	let {
 		label,
 		buttonLabel,
@@ -53,14 +57,39 @@
 		trigger?: HTMLButtonElement;
 	} = $props();
 
+	let menu = $state<ReturnType<typeof Popover>>();
+
 	function run(item: MenuAction, close: () => void) {
 		if (item.busy || item.locked) return;
 		close();
 		item.onselect?.();
 	}
+
+	// A row asks its menu to open at the pointer or the focused element (AM-3).
+	$effect(() => {
+		const button = trigger;
+		if (!button) return;
+		const onrequest = (event: Event) => {
+			if (!(event instanceof CustomEvent) || menu === undefined) return;
+			const request = event.detail as MenuRequest;
+			event.preventDefault();
+			menu.open(request.anchor, request.returnTo);
+		};
+		button.addEventListener(OPEN_MENU_EVENT, onrequest);
+		return () => button.removeEventListener(OPEN_MENU_EVENT, onrequest);
+	});
 </script>
 
-<Popover kind="menu" {label} {placement} {buttonClass} {buttonLabel} {buttonTitle} bind:trigger>
+<Popover
+	kind="menu"
+	{label}
+	{placement}
+	{buttonClass}
+	{buttonLabel}
+	{buttonTitle}
+	bind:trigger
+	bind:this={menu}
+>
 	{#snippet button()}
 		<svg
 			class="dots"

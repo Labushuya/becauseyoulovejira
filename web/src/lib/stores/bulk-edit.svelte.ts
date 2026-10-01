@@ -1,6 +1,6 @@
 // Bulk actions of the ticket table (plan BI-2, ADR-0036 §3 and §4): the chosen tickets are
 // changed one by one through the same data functions as a single change (Record API, route of
-// "Löschen"), at most BULK_CONCURRENCY at a time. So every hook rule applies unchanged: keys on a
+// "In den Papierkorb …"), at most BULK_CONCURRENCY at a time. So every hook rule applies unchanged: keys on a
 // new project, the history with the acting user, the lock of open sub-tasks, the next ticket of a
 // series. The store shows the progress, keeps the result with a reason per ticket (partial success
 // is possible) and offers "Rückgängig" in the flag for field changes and "Erledigen". A field change
@@ -53,7 +53,7 @@ export interface BulkEditData {
 	restore(id: string, expectedUpdated: string): Promise<void>;
 	/** Dates of the events the tickets were converted from, by ticket ID. */
 	sourceDates(): Promise<Map<string, CalendarDate>>;
-	/** Number of sources of the tickets, for the question of "Löschen …". */
+	/** Number of sources of the tickets, for the question of "In den Papierkorb …". */
 	sourceCount(ticketIds: readonly string[]): Promise<number>;
 }
 
@@ -202,7 +202,7 @@ export class BulkEditStore {
 		return this.#undo !== null;
 	}
 
-	/** Number of sources of the tickets, for the question of "Löschen …"; null if unknown. */
+	/** Number of sources of the tickets, for the question of "In den Papierkorb …"; null if unknown. */
 	async sourceCount(ids: readonly string[]): Promise<number | null> {
 		if (!this.#session.ensureValid()) return null;
 		try {
@@ -423,8 +423,8 @@ export class BulkEditStore {
 	}
 
 	/**
-	 * "Löschen" (ADR-0031, addendum B; ADR-0037): each ticket moves to the trash with its sub-tasks,
-	 * the sources as chosen. "Rückgängig" restores them from the trash with expected_updated.
+	 * "In den Papierkorb …" (ADR-0031, addendum B; ADR-0037): each ticket moves to the trash with
+	 * its sub-tasks, the sources as chosen. "Rückgängig" restores them from the trash with expected_updated.
 	 * Parents go first, so their chosen sub-tasks move along as their group (one entry to undo); a
 	 * sub-task found in the trash already (404) counts as moved.
 	 */

@@ -37,6 +37,7 @@
 		withListQuery,
 		withShowDone
 	} from '$lib/ticket-links';
+	import { rowMenus } from '$lib/overlay/context-menu';
 	import { getQuickCaptureOpener } from '$lib/quick-capture-context';
 	import { ticketLinks } from '$lib/stores/open-mode.svelte';
 	import {
@@ -93,7 +94,9 @@
 	// they do not change), "Link kopieren", "Duplizieren …" (with `duplicates`) and "In den
 	// Papierkorb …". The table is no modal, so their questions open as the dialogs of the panel;
 	// a click on "•••" or in the menu never opens the row. A ticket moved to the trash while its
-	// panel is open closes the panel.
+	// panel is open closes the panel. A right click on a row, Shift+F10 or the context menu key
+	// open the same menu at the pointer or the focused element (AM-3, rowMenus); the browser keeps
+	// its menu in fields, on selected text, on other links, with Ctrl and for touch.
 	let {
 		store,
 		catalog,
@@ -664,7 +667,7 @@
 
 	{#if hasOpenRows || showDone}
 		<div class="frame" bind:this={frame}>
-			<table>
+			<table {@attach rowMenus}>
 				<caption id={ids.caption}>
 					Tickets<span class="caption-order">
 						· {query.sort === null

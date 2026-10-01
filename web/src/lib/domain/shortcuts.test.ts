@@ -5,6 +5,7 @@
 import { describe, expect, it } from 'vitest';
 import appHeader from '$lib/components/AppHeader.svelte?raw';
 import helpMenu from '$lib/components/help/HelpMenu.svelte?raw';
+import { isMenuKey } from '$lib/overlay/context-menu';
 import { isHelpKey, isQuickCaptureKey } from './keyboard';
 import {
 	HELP_KEYSHORTCUTS,
@@ -87,6 +88,16 @@ describe('shortcuts', () => {
 			expect(isQuickCaptureKey(eventOf(combination))).toBe(true);
 		expect(keysText(quick)).toBe('c oder Strg+K');
 		expect(ariaOf(quick.keys)).toBe(QUICK_CAPTURE_KEYSHORTCUTS);
+	});
+
+	it('lists the keys that open the menu of a row (plan aktionsmenues, AM-3)', () => {
+		const rowMenu = shortcutById('row-menu');
+		expect(rowMenu.context).toBe('list');
+		for (const combination of rowMenu.keys) {
+			const names = combination.map((name) => (name === 'Kontextmenü' ? 'ContextMenu' : name));
+			expect(isMenuKey(eventOf(names))).toBe(true);
+		}
+		expect(keysText(rowMenu)).toBe('Umschalt+F10 oder Kontextmenü');
 	});
 
 	it('lists the key the help handler takes', () => {

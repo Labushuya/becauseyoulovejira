@@ -303,7 +303,9 @@ describe('bar of the bulk actions (plan BI-2)', () => {
 	it('moves to the trash after a question naming it, with the choice for the sources (ADR-0037)', async () => {
 		const { run } = await showTable([ticket(1), ticket(2)], { sourceCount: vi.fn(async () => 2) });
 		await fireEvent.click(headBox());
-		await fireEvent.click(screen.getByRole('button', { name: 'Löschen …' }));
+		// Named like the menu "•••" and the question since AM-3 (before: "Löschen …").
+		expect(screen.queryByRole('button', { name: 'Löschen …' })).toBeNull();
+		await fireEvent.click(screen.getByRole('button', { name: 'In den Papierkorb …' }));
 
 		const dialog = screen.getByRole('dialog', { name: '2 Tickets in den Papierkorb verschieben?' });
 		expect(

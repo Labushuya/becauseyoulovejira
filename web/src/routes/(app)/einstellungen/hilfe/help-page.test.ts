@@ -152,6 +152,12 @@ describe('help page (EH-9)', () => {
 		// The menu of a row of the table (AM-2): both ways to open, the row does not open.
 		expect(text(section)).toContain('„Im Seitenpanel öffnen“ und „In Vollansicht öffnen“');
 		expect(text(section)).toContain('Ein Klick auf „•••“ öffnet die Zeile nicht.');
+		// The right click and its keys (AM-3), and how to reach the menu of the browser.
+		expect(text(section)).toContain(
+			'Ein Rechtsklick auf eine Zeile öffnet dasselbe Menü an der Maus'
+		);
+		expect(text(section)).toContain('Umschalt+F10 oder die Kontextmenü-Taste');
+		expect(text(section)).toContain('mit Strg+Rechtsklick');
 		// Duplicating (ADR-0045): the question, the status, sub-tasks, comments, the source, the result.
 		expect(text(section)).toContain('„Duplizieren …“ (im Menü „•••“');
 		expect(text(section)).toContain('„Erledigt“ gibt es dabei nicht');

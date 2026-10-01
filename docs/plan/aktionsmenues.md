@@ -1,9 +1,9 @@
 # Plan „Aktionsmenüs“
 
-- **Stand:** AM-1 umgesetzt (2026-10-01, #194, nur Oberfläche: Build, dann F5; kein Neustart). AM-2 umgesetzt (2026-10-01, Branch `feat/table-row-menu`, nur Oberfläche: Build, dann F5; kein Neustart). Offen sind die manuellen Browser-Prüfungen BYL-E6-742 und BYL-E6-746.
-- **Grundlage:** Nutzerentscheidung vom 2026-10-01 auf die Frage, ob es in der Tabelle ein Zeilenmenü „•••“ (Öffnen, Duplizieren, Löschen) geben soll oder der Knopf im Ticket reicht: „beides, aber vorrangig für das Ticket selbst“. Vorgaben des Advisors: Reihenfolge AM-1 (Ticket) vor AM-2 (Tabelle), Einträge, Kopf entschlacken wie in Jira, keine Funktion verloren, Tests für Maus und Tastatur, Doku.
-- **Entscheidungen:** Nachtrag in [ADR-0045](../adr/0045-ticket-duplizieren.md) (Einstieg über das Menü), Nachtrag in [ADR-0036](../adr/0036-sammelbearbeitung-inline-und-oeffnungsmodus.md) (Kopf von Panel und Vollansicht; Zeilenmenü), Nachtrag 4 in [ADR-0030](../adr/0030-spalten-breiten-und-kompakte-zeilen.md) (Breite der Spalte „Aktionen“). Das Menü selbst folgt [ADR-0025](../adr/0025-ui-konsistenz-overlay-system.md) §5 (Popover der Art `menu`, „später Aktionsmenüs“).
-- **Einordnung:** Manifest-Block „Aktionsmenüs“ ab `BYL-E6-740`. Keine Migration, keine Hooks.
+- **Stand:** AM-1 umgesetzt (2026-10-01, #194, nur Oberfläche: Build, dann F5; kein Neustart). AM-2 umgesetzt (2026-10-01, #195, nur Oberfläche: Build, dann F5; kein Neustart). AM-3 umgesetzt (2026-10-01, Branch `feat/row-context-menu`, nur Oberfläche: Build, dann F5; kein Neustart). Offen sind AM-4 und die manuellen Browser-Prüfungen BYL-E6-742, BYL-E6-746 und BYL-E6-764.
+- **Grundlage:** Nutzerentscheidung vom 2026-10-01 auf die Frage, ob es in der Tabelle ein Zeilenmenü „•••“ (Öffnen, Duplizieren, Löschen) geben soll oder der Knopf im Ticket reicht: „beides, aber vorrangig für das Ticket selbst“. Vorgaben des Advisors: Reihenfolge AM-1 (Ticket) vor AM-2 (Tabelle), Einträge, Kopf entschlacken wie in Jira, keine Funktion verloren, Tests für Maus und Tastatur, Doku. Für AM-3 und AM-4 die Nutzerentscheidung vom 2026-10-01 zu den Folgepunkten in §4: „Alle Verbesserungen einpflegen“.
+- **Entscheidungen:** Nachtrag in [ADR-0045](../adr/0045-ticket-duplizieren.md) (Einstieg über das Menü), Nachträge in [ADR-0036](../adr/0036-sammelbearbeitung-inline-und-oeffnungsmodus.md) (Kopf von Panel und Vollansicht; Zeilenmenü; Rechtsklick und Sammel-Leiste), Nachtrag 4 in [ADR-0030](../adr/0030-spalten-breiten-und-kompakte-zeilen.md) (Breite der Spalte „Aktionen“). Das Menü selbst folgt [ADR-0025](../adr/0025-ui-konsistenz-overlay-system.md) §5 (Popover der Art `menu`, „später Aktionsmenüs“), seit AM-3 mit virtuellem Anker.
+- **Einordnung:** Manifest-Block „Aktionsmenüs“ ab `BYL-E6-740`, AM-3 und AM-4 ab `BYL-E6-760`. Keine Migration, keine Hooks.
 
 ## 1. Pakete
 
@@ -11,6 +11,8 @@
 |---|---|---|
 | AM-1 | Menü „•••“ im Kopf von Panel und Vollansicht: „Link kopieren“, „Duplizieren …“, „In den Papierkorb …“; der Kopf behält als Symbole nur „Vollansicht“ bzw. „Im Seitenpanel öffnen“ und ×; gemeinsamer Baustein `ActionsMenu` (auch für die Kanal-Karten) | umgesetzt |
 | AM-2 | Zeilenmenü „•••“ in der Spalte „Aktionen“ der Tabelle „Aufgaben“ nach „Öffnen“: „Im Seitenpanel öffnen“, „In Vollansicht öffnen“, „Link kopieren“, „Duplizieren …“, „In den Papierkorb …“; Spalte „Aktionen“ 5,5 statt 4rem | umgesetzt |
+| AM-3 | Sammel-Leiste „In den Papierkorb …“ statt „Löschen …“; Rechtsklick auf eine Zeile von „Aufgaben“ öffnet das Zeilenmenü am Mauszeiger, Umschalt+F10 und die Kontextmenü-Taste am fokussierten Element; Regeln für das Menü des Browsers | umgesetzt |
+| AM-4 | Zeilenmenüs mit Rechtsklick auch in „Papierkorb“, „Eingang“, „Projekte“ und „Wiederholungen“, nur mit vorhandenen Aktionen; Spalten nach ADR-0030 | geplant |
 
 ## 2. AM-1: Menü im Ticket
 
@@ -80,13 +82,14 @@
 
 ### 3.4 Andere Tabellen
 
+- Stand von AM-2 (seit der Nutzerentscheidung zu §4 überholt, siehe AM-4):
 - **Papierkorb:** Seine Zeilen haben schon sichtbar „Wiederherstellen“ und „Endgültig löschen …“; ein Menü brächte keinen neuen Weg, nur einen zweiten Ort. Nicht ergänzt.
 - **Eingang:** Die Aktionen der Zeile stehen schon als Knöpfe in einer breiten Spalte (13rem); „Umwandeln“, „Verknüpfen“ usw. sind eigene Abläufe des Eingangs, nicht die eines Tickets. Nicht ergänzt.
 - **Projekte, Wiederholungen:** keine Aktionen in der Zeile, alles im Panel. Nicht ergänzt; ein Menü dort wäre neuer Umfang.
 
 ### 3.5 Rechtsklick
 
-- **Nicht umgesetzt.** Ein Kontextmenü an der Zeile müsste das Menü an der Stelle des Zeigers zeigen (der `Popover` platziert nur am Knopf) und das Menü des Browsers ersetzen (Link öffnen, kopieren, untersuchen). Das ist kein kleiner, sauberer Schritt; siehe §4.
+- Stand von AM-2: nicht umgesetzt, weil der `Popover` nur am Knopf platzierte und das Menü des Browsers ersetzt werden müsste. Umgesetzt mit AM-3 (§5).
 
 ### 3.6 Tests
 
@@ -95,8 +98,38 @@
 - Angepasst: `domain/columns.test.ts`, `components/ticket-table-columns.test.ts`, `components/columns-popover.test.ts` (Breite der Spalte „Aktionen“), `components/delete-ticket.test.ts` (gemeinsame Funktion), Hilfe.
 - Manuell BYL-E6-746: Browser, Tastatur und NVDA.
 
-## 4. Offene Punkte
+## 4. Folgepunkte
 
-- **Sammel-Leiste:** Sie heißt weiter „Löschen …“ (Frage und Flag sagen schon „in den Papierkorb“). Angleichen an „In den Papierkorb …“ ist ein eigener kleiner Schritt mit den Tests der Leiste; nicht Teil dieses Auftrags.
-- **Rechtsklick auf eine Zeile** (§3.5): Folgepunkt, falls gewünscht; braucht eine Platzierung des Popovers am Zeiger.
-- **Andere Tabellen** (§3.4): keine Zeilenmenüs, solange es dort keine Aktionen eines Tickets gibt.
+Nutzerentscheidung vom 2026-10-01: „Alle Verbesserungen einpflegen“.
+
+- [x] **Sammel-Leiste:** „In den Papierkorb …“ statt „Löschen …“ (AM-3, §5.1).
+- [x] **Rechtsklick auf eine Zeile:** öffnet das Zeilenmenü am Zeiger, dazu Umschalt+F10 und die Kontextmenü-Taste (AM-3, §5.2).
+- [ ] **Andere Tabellen:** Zeilenmenüs in „Papierkorb“, „Eingang“, „Projekte“ und „Wiederholungen“ (AM-4).
+
+## 5. AM-3: Sammel-Leiste und Rechtsklick
+
+Entscheidung und Gründe: [ADR-0036](../adr/0036-sammelbearbeitung-inline-und-oeffnungsmodus.md), Nachtrag „Rechtsklick“.
+
+### 5.1 Sammel-Leiste
+
+- Der Knopf heißt „In den Papierkorb …“ wie der Eintrag der Menüs. Die Frage („2 Tickets in den Papierkorb verschieben?“, „In den Papierkorb“, Aufbewahrung, Quellen-Wahl) und das Flag („… in den Papierkorb verschoben.“ mit „Rückgängig“) sagten das schon; geprüft und unverändert. Der Fortschritt hieß „Löschen: 3 von 12 Tickets“ und heißt jetzt „In den Papierkorb verschieben: 3 von 12 Tickets“ (`actionLabel`).
+
+### 5.2 Rechtsklick und Tastatur
+
+| Auslöser | Ort des Menüs | Fokus danach |
+|---|---|---|
+| Rechtsklick auf eine Zeile (Zelle, Titel, „Öffnen“, Auswahl, Häkchen, „•••“) | obere linke Ecke am Zeiger; rechts zu wenig Platz: links vom Zeiger, unten zu wenig: darüber, sonst ins Fenster geklemmt | erster Eintrag; nach Esc oder einer Wahl zurück an das Element, das ihn vorher hatte, sonst an „•••“ der Zeile |
+| Umschalt+F10 oder Kontextmenü-Taste, Fokus in einer Zeile | unter dem fokussierten Element (wie unter einem Knopf, mit Flip und Klemmen); auf „•••“ wie ein Klick darauf | erster Eintrag; danach zurück an das fokussierte Element |
+| Klick auf „•••“ nach einem Rechtsklick | wieder unter dem Knopf | wie bisher |
+
+- **Menü des Browsers** bleibt mit Strg (überall), bei Touch, auf markiertem Text unter dem Zeiger, in Popovern (Editoren der Zellen, das offene Menü mit seinen echten Links), in Feldern zum Tippen und auf echten Links außer dem Link der Zeile selbst (`data-row-link`: Titel und „Öffnen“). Gründe im Nachtrag der ADR.
+- **Kein Öffnen, keine Auswahl:** Ein Rechtsklick ist kein `click`; die Zeile und die Auswahl reagieren nicht darauf. Kopf der Tabelle, Gruppenköpfe und die Zeile „Weitere laden“ behalten das Menü des Browsers.
+- **Unterbau:** `placeAtPoint` (`lib/overlay/position.ts`), `Popover.open(anchor, returnTo)` mit virtuellem Anker (Zeiger als Abstand zum Knopf, damit das Menü beim Scrollen der Zeile folgt, oder ein Element), `ActionsMenu` hört auf `byl-open-menu` an seinem Knopf, `rowMenus` (`lib/overlay/context-menu.ts`) hängt einmal an der Tabelle und findet in der Zeile den Knopf `.row-menu`. Unter macOS und Linux öffnet das Menü erst nach dem Loslassen der Taste, weil das Light-Dismiss sonst gleich wieder schlösse.
+
+### 5.3 Tests
+
+- `overlay/position.test.ts`: Ecke am Zeiger, Flip nach links und oben, beide in der Ecke, Klemmen, Höhe.
+- `overlay/context-menu.test.ts`: Zellen, Knöpfe und Checkboxen bekommen das Zeilenmenü, der Link der Zeile auch; andere Links, Felder, Selects, `contenteditable`, Popover, Strg, Touch und Markierung behalten das Browser-Menü; Umschalt+F10 und Kontextmenü-Taste, nicht F10 allein, nicht mit Alt oder Meta.
+- `components/ticket-table-row-menu.test.ts` (AM-3): Rechtsklick öffnet am Zeiger (Position), Fokus im Menü, kein Öffnen und keine Auswahl in allen Zellen, Links der Zeile ja und Links im Menü nein, Strg, Touch und Markierung, Feld eines Zellen-Editors und Kopf, Umschalt+F10 unter dem Element mit Fokus zurück, Kontextmenü-Taste in einer Zelle, eine Aktion aus dem Kontextmenü, danach wieder unter „•••“.
+- `components/ticket-table-selection.test.ts` und `domain/bulk.test.ts`: „In den Papierkorb …“ statt „Löschen …“, Fortschritt.
+- Manuell BYL-E6-764: Browser (auch die Ränder des Fensters), Tastatur und NVDA.
