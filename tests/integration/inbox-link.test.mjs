@@ -1,7 +1,7 @@
 // Sources of a ticket (ADR-0031 sections 1 to 3, package HK-1): linking an inbox item to any
 // ticket of its scope and releasing it again go through the record API; the hook writes the
-// history of the ticket in the same transaction. The main source is never released, and the
-// source of a ticket is never deleted.
+// history of the ticket in the same transaction. The main source is never released, and no item is
+// deleted through the API (since the addendum of 2026-10-01 to ADR-0014 not even a free one).
 
 import { beforeAll, describe, expect, it } from 'vitest';
 import { rejectionOf, superuserClient } from '../support/api.mjs';
@@ -287,7 +287,9 @@ describe('delete guard', () => {
 		const ticket = await owner.ticket();
 		const item = await createItem(owner);
 		await link(owner, item.id, ticket.id);
-		expect((await rejectionOf(owner.client.collection('inbox_items').delete(item.id))).status).toBe(404);
+		// No app user may delete an item (deleteRule null, ADR-0014 addendum of 2026-10-01); the hook
+		// tells the superuser why a source stays.
+		expect((await rejectionOf(owner.client.collection('inbox_items').delete(item.id))).status).toBe(403);
 		expect(await rejectionOf(superuser.collection('inbox_items').delete(item.id))).toEqual({
 			status: 400,
 			codes: { ticket: 'validation_inbox_item_linked' }
@@ -295,7 +297,7 @@ describe('delete guard', () => {
 		expect((await itemOf(item.id)).ticket).toBe(ticket.id);
 	});
 
-	it('still deletes new, discarded and released items', async () => {
+	it('refuses to delete new, discarded and released items as well, also to a superuser (ADR-0014, addendum of 2026-10-01)', async () => {
 		const ticket = await owner.ticket();
 		const fresh = await createItem(owner);
 		const discarded = await createItem(owner);
@@ -304,8 +306,28 @@ describe('delete guard', () => {
 		await link(owner, released.id, ticket.id);
 		await release(owner, released.id);
 		for (const item of [fresh, discarded, released]) {
-			await owner.client.collection('inbox_items').delete(item.id);
-			expect((await rejectionOf(itemOf(item.id))).status).toBe(404);
+			const refused = await rejectionOf(owner.client.collection('inbox_items').delete(item.id));
+			expect(refused.status, item.title).toBe(403);
+			// A superuser (API or admin UI) gets the reason: discard instead, the block stays.
+			const error = await superuser.collection('inbox_items').delete(item.id).catch((failure) => failure);
+			expect(error?.status, item.title).toBe(400);
+			expect(error?.response?.data?.state?.code).toBe('validation_inbox_item_delete');
+			expect(error?.response?.message).toBe(
+				'Eingangseinträge lassen sich nicht löschen, nur verwerfen. So bleibt die Sperre gegen erneutes Eintreffen erhalten.'
+			);
+			expect((await itemOf(item.id)).fingerprint).toBe(item.fingerprint);
 		}
+		// Another user gets the same answer as the owner, so it says nothing about the item.
+		expect((await rejectionOf(other.client.collection('inbox_items').delete(fresh.id))).status).toBe(403);
+		// The discarded item keeps blocking the same message.
+		expect((await rejectionOf(createItem(owner, { source_ref: discarded.source_ref }))).codes).toEqual({
+			fingerprint: 'validation_inbox_duplicate'
+		});
+	});
+
+	it('leaves deletes of the server itself alone ($app.delete, ADR-0014 addendum of 2026-10-01)', async () => {
+		const item = await createItem(owner);
+		await superuser.send(`/api/byl-test/inbox/${item.id}/delete`, { method: 'POST' });
+		expect((await rejectionOf(itemOf(item.id))).status).toBe(404);
 	});
 });

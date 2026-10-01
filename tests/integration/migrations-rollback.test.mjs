@@ -352,6 +352,12 @@ describe('migration rollback of the full inbox scan (ADR-0020, addendum 3)', () 
 });
 
 const DELETE_GUARD_MIGRATION = '1790201800_inbox_items_delete_guard.js';
+// No inbox item deletable through the API (ADR-0014, addendum of 2026-10-01); every test from the
+// delete guard on runs it along.
+const NO_DELETE_MIGRATION = '1790202800_inbox_items_no_delete.js';
+
+const inboxDeleteRuleOf = (dataDir) =>
+	readDataDir(dataDir).collections.find((collection) => collection.name === 'inbox_items').deleteRule;
 
 describe('migration rollback of the delete guard of sources (ADR-0031 section 3)', () => {
 	it(
@@ -359,13 +365,17 @@ describe('migration rollback of the delete guard of sources (ADR-0031 section 3)
 		async () => {
 			const fromGuard = MIGRATION_FILES.slice(MIGRATION_FILES.indexOf(DELETE_GUARD_MIGRATION));
 			expect(fromGuard[0]).toBe(DELETE_GUARD_MIGRATION);
-			const deleteRuleOf = (dataDir) =>
-				readDataDir(dataDir).collections.find((collection) => collection.name === 'inbox_items').deleteRule;
+			const fromNoDelete = MIGRATION_FILES.slice(MIGRATION_FILES.indexOf(NO_DELETE_MIGRATION));
+			expect(fromNoDelete[0]).toBe(NO_DELETE_MIGRATION);
+			const deleteRuleOf = inboxDeleteRuleOf;
 
 			await withTempDataDir(async ({ dataDir, args }) => {
 				await migrate(args, 'up');
+				// The latest state: null (1790202800); below it the guard of this migration.
+				expect(deleteRuleOf(dataDir)).toBeNull();
+				await migrate(args, 'down', String(fromNoDelete.length));
 				const guarded = deleteRuleOf(dataDir);
-				await migrate(args, 'down', String(fromGuard.length));
+				await migrate(args, 'down', String(fromGuard.length - fromNoDelete.length));
 				const before = deleteRuleOf(dataDir);
 				expect(guarded).toBe(`${before} && ticket = ""`);
 
@@ -395,7 +405,7 @@ describe('migration rollback of the delete guard of sources (ADR-0031 section 3)
 
 				const up = await migrate(args, 'up');
 				expect(appliedFiles(up, 'Applied')).toEqual(fromGuard);
-				expect(deleteRuleOf(dataDir)).toBe(guarded);
+				expect(deleteRuleOf(dataDir)).toBeNull();
 				expect(withoutLater(withDatabase(dataDir, snapshot))).toEqual(rows);
 
 				const down = await migrate(args, 'down', String(fromGuard.length));
@@ -404,7 +414,72 @@ describe('migration rollback of the delete guard of sources (ADR-0031 section 3)
 				expect(withDatabase(dataDir, snapshot)).toEqual(rows);
 
 				expect(appliedFiles(await migrate(args, 'up'), 'Applied')).toEqual(fromGuard);
-				expect(deleteRuleOf(dataDir)).toBe(guarded);
+				expect(deleteRuleOf(dataDir)).toBeNull();
+			});
+		},
+		60_000
+	);
+});
+
+describe('migration rollback of the delete lock of inbox items (ADR-0014, addendum of 2026-10-01)', () => {
+	it(
+		'sets the deleteRule of inbox_items to null and back to the guard of the sources, and keeps every row',
+		async () => {
+			const fromNoDelete = MIGRATION_FILES.slice(MIGRATION_FILES.indexOf(NO_DELETE_MIGRATION));
+			expect(fromNoDelete[0]).toBe(NO_DELETE_MIGRATION);
+
+			await withTempDataDir(async ({ dataDir, args }) => {
+				await migrate(args, 'up');
+				const schemaAfter = withoutTimestamps(readDataDir(dataDir).collections);
+				expect(inboxDeleteRuleOf(dataDir)).toBeNull();
+
+				const firstDown = await migrate(args, 'down', String(fromNoDelete.length));
+				expect(appliedFiles(firstDown, 'Reverted')).toEqual([...fromNoDelete].reverse());
+				const guarded = inboxDeleteRuleOf(dataDir);
+				expect(guarded).toMatch(/^@request\.auth\.id != "" && \(owner = @request\.auth\.id \|\| .*\) && ticket = ""$/);
+				// Nothing else of the schema changes: only this one rule.
+				const schemaBefore = withoutTimestamps(readDataDir(dataDir).collections);
+				const withRule = (collections, rule) =>
+					collections.map((collection) => (collection.name === 'inbox_items' ? { ...collection, deleteRule: rule } : collection));
+				expect(withRule(schemaBefore, null)).toEqual(withRule(schemaAfter, null));
+
+				// A ticket with its main source, a linked, a new and a discarded item.
+				withDatabase(dataDir, (db) => {
+					db.prepare('INSERT INTO users (id, email, tokenKey, password, created, updated) VALUES (?, ?, ?, ?, ?, ?)').run(
+						'user00000000001',
+						'eins@example.invalid',
+						'tk1',
+						'hash',
+						STAMP,
+						STAMP
+					);
+					const item = db.prepare(
+						'INSERT INTO inbox_items (id, channel, kind, title, body, fingerprint, state, ticket, handled_at, scope, owner, created, updated) ' +
+							'VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+					);
+					item.run('item00000000001', 'eml', 'mail', 'Hauptquelle', 'Text', 'f1', 'converted', 'ticket000000001', STAMP, 'u:user00000000001', 'user00000000001', STAMP, STAMP);
+					item.run('item00000000002', 'telegram', 'message', 'Verknüpft', '', 'f2', 'converted', 'ticket000000001', STAMP, 'u:user00000000001', 'user00000000001', STAMP, STAMP);
+					item.run('item00000000003', 'manual', 'todo', 'Neu', '', 'f3', 'new', '', '', 'u:user00000000001', 'user00000000001', STAMP, STAMP);
+					item.run('item00000000004', 'link', 'link', 'Verworfen', '', 'f4', 'discarded', '', STAMP, 'u:user00000000001', 'user00000000001', STAMP, STAMP);
+					db.prepare(
+						'INSERT INTO tickets (id, number, key, title, status, priority, source, source_item, scope, owner, created, updated) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+					).run('ticket000000001', 1, 'TASK-1', 'Mit Quellen', 'open', 'medium', 'eml', 'item00000000001', 'u:user00000000001', 'user00000000001', STAMP, STAMP);
+				});
+				const rows = withDatabase(dataDir, snapshot);
+
+				const up = await migrate(args, 'up');
+				expect(appliedFiles(up, 'Applied')).toEqual(fromNoDelete);
+				expect(inboxDeleteRuleOf(dataDir)).toBeNull();
+				expect(withDatabase(dataDir, snapshot)).toEqual(rows);
+
+				const down = await migrate(args, 'down', String(fromNoDelete.length));
+				expect(appliedFiles(down, 'Reverted')).toEqual([...fromNoDelete].reverse());
+				expect(inboxDeleteRuleOf(dataDir)).toBe(guarded);
+				expect(withDatabase(dataDir, snapshot)).toEqual(rows);
+
+				expect(appliedFiles(await migrate(args, 'up'), 'Applied')).toEqual(fromNoDelete);
+				expect(inboxDeleteRuleOf(dataDir)).toBeNull();
+				expect(withoutTimestamps(readDataDir(dataDir).collections)).toEqual(schemaAfter);
 			});
 		},
 		60_000
@@ -805,13 +880,23 @@ function withoutPinField(collection) {
 }
 
 /**
+ * inbox_items with the deleteRule of the sources (1790201800: the rule of the own records and
+ * `ticket = ""`) instead of the delete lock (null, 1790202800, ADR-0014 addendum of 2026-10-01).
+ */
+function withoutDeleteLock(collection) {
+	if (collection.name !== 'inbox_items' || collection.deleteRule !== null) return collection;
+	return { ...collection, deleteRule: `${withoutTrashRules(collection).listRule} && ticket = ""` };
+}
+
+/**
  * A collection without the fields, indexes and rule conditions of the migrations 1790202200
  * (plan OR-5), 1790202300 (trash, ADR-0037), 1790202500 (plan WV), 1790202600 (pinned comment,
- * ADR-0044) and without the channels of 1790202400 (own inbox, ADR-0038; its collection leaves
- * with `withoutLaterCollections`).
+ * ADR-0044), 1790202800 (delete lock of inbox items, ADR-0014 addendum of 2026-10-01) and without
+ * the channels of 1790202400 (own inbox, ADR-0038; its collection leaves with
+ * `withoutLaterCollections`).
  */
 function withoutLaterSchema(collection) {
-	const plain = withoutOwnInboxChannels(withoutTrashRules(collection));
+	const plain = withoutDeleteLock(withoutOwnInboxChannels(withoutTrashRules(collection)));
 	if (collection.name === 'tickets') {
 		return {
 			...plain,
@@ -1005,14 +1090,16 @@ describe('migration rollback of "Jeden Termin einzeln anlegen" (plan OR-5)', () 
 		async () => {
 			// The trash (ADR-0037, 1790202300) follows and runs along; it adds deleted_at = '' to the
 			// condition of the index. The own inbox (ADR-0038, 1790202400), "Status beim Anlegen"
-			// (plan WV, 1790202500) and the pinned comment (ADR-0044, 1790202600) run along as well.
+			// (plan WV, 1790202500), the pinned comment (ADR-0044, 1790202600) and the delete lock of
+			// inbox items (ADR-0014 addendum, 1790202800) run along as well.
 			const fromEach = MIGRATION_FILES.slice(MIGRATION_FILES.indexOf(EACH_MIGRATION));
 			expect(fromEach).toEqual([
 				EACH_MIGRATION,
 				TRASH_MIGRATION,
 				OWN_INBOX_MIGRATION,
 				STATUS_MIGRATION,
-				PIN_MIGRATION
+				PIN_MIGRATION,
+				NO_DELETE_MIGRATION
 			]);
 
 			await withTempDataDir(async ({ dataDir, args }) => {
@@ -1143,10 +1230,17 @@ describe('migration rollback of the trash (ADR-0037)', () => {
 	it(
 		'adds the fields, the index condition and the rule conditions without changing a row, and deletes the trash on the way back',
 		async () => {
-			// The own inbox (ADR-0038, 1790202400), "Status beim Anlegen" (plan WV, 1790202500) and the
-			// pinned comment (ADR-0044, 1790202600) follow and run along; they change no row here.
+			// The own inbox (ADR-0038, 1790202400), "Status beim Anlegen" (plan WV, 1790202500), the
+			// pinned comment (ADR-0044, 1790202600) and the delete lock of inbox items (ADR-0014
+			// addendum, 1790202800) follow and run along; they change no row here.
 			const fromTrash = MIGRATION_FILES.slice(MIGRATION_FILES.indexOf(TRASH_MIGRATION));
-			expect(fromTrash).toEqual([TRASH_MIGRATION, OWN_INBOX_MIGRATION, STATUS_MIGRATION, PIN_MIGRATION]);
+			expect(fromTrash).toEqual([
+				TRASH_MIGRATION,
+				OWN_INBOX_MIGRATION,
+				STATUS_MIGRATION,
+				PIN_MIGRATION,
+				NO_DELETE_MIGRATION
+			]);
 
 			await withTempDataDir(async ({ dataDir, args }) => {
 				await migrate(args, 'up');
@@ -1170,7 +1264,8 @@ describe('migration rollback of the trash (ADR-0037)', () => {
 				expect(withoutFields(migrated.users, TRASH_USER_FIELDS)).toEqual(before.users);
 				expect(migrated.inbox_items).toEqual(before.inbox_items);
 				for (const [name, rules] of Object.entries(ruleSet(dataDir))) {
-					expect(withoutTrashRules({ ...rules }), name).toEqual(rulesBefore[name]);
+					const { name: collectionName, ...plain } = withoutDeleteLock(withoutTrashRules({ name, ...rules }));
+					expect(plain, collectionName).toEqual(rulesBefore[name]);
 				}
 
 				// The parent with its sub-ticket in the trash, its source kept with it ("Quellen verwerfen").
@@ -1234,10 +1329,11 @@ describe('migration rollback of the own inbox (ADR-0038)', () => {
 	it(
 		'adds the keys and the two channels without changing a row, and keeps the content of new entries on the way back',
 		async () => {
-			// "Status beim Anlegen" (plan WV, 1790202500) and the pinned comment (ADR-0044, 1790202600)
-			// follow and run along; they change no row.
+			// "Status beim Anlegen" (plan WV, 1790202500), the pinned comment (ADR-0044, 1790202600)
+			// and the delete lock of inbox items (ADR-0014 addendum, 1790202800) follow and run along;
+			// they change no row.
 			const fromOwn = MIGRATION_FILES.slice(MIGRATION_FILES.indexOf(OWN_INBOX_MIGRATION));
-			expect(fromOwn).toEqual([OWN_INBOX_MIGRATION, STATUS_MIGRATION, PIN_MIGRATION]);
+			expect(fromOwn).toEqual([OWN_INBOX_MIGRATION, STATUS_MIGRATION, PIN_MIGRATION, NO_DELETE_MIGRATION]);
 
 			await withTempDataDir(async ({ dataDir, args }) => {
 				await migrate(args, 'up');
@@ -1262,6 +1358,7 @@ describe('migration rollback of the own inbox (ADR-0038)', () => {
 						.map(withoutOwnInboxChannels)
 						.map(withoutStatusField)
 						.map(withoutPinField)
+						.map(withoutDeleteLock)
 				).toEqual(schemaBefore);
 
 				// Entries, a ticket, keyword lists and a key of the own inbox, then back.
@@ -1339,9 +1436,10 @@ describe('migration rollback of "Status beim Anlegen" (plan WV, ADR-0022 addendu
 	it(
 		'adds the field without changing a row, and the tickets made with it keep their status on the way back',
 		async () => {
-			// The pinned comment (ADR-0044, 1790202600) follows and runs along; it changes no row.
+			// The pinned comment (ADR-0044, 1790202600) and the delete lock of inbox items (ADR-0014
+			// addendum, 1790202800) follow and run along; they change no row.
 			const fromStatus = MIGRATION_FILES.slice(MIGRATION_FILES.indexOf(STATUS_MIGRATION));
-			expect(fromStatus).toEqual([STATUS_MIGRATION, PIN_MIGRATION]);
+			expect(fromStatus).toEqual([STATUS_MIGRATION, PIN_MIGRATION, NO_DELETE_MIGRATION]);
 
 			await withTempDataDir(async ({ dataDir, args }) => {
 				await migrate(args, 'up');
@@ -1361,7 +1459,10 @@ describe('migration rollback of "Status beim Anlegen" (plan WV, ADR-0022 addendu
 					maxSelect: 1
 				});
 				expect(
-					withoutTimestamps(readDataDir(dataDir).collections).map(withoutStatusField).map(withoutPinField)
+					withoutTimestamps(readDataDir(dataDir).collections)
+						.map(withoutStatusField)
+						.map(withoutPinField)
+						.map(withoutDeleteLock)
 				).toEqual(schemaBefore);
 				// No row changes: the rule of before has an empty status, which the hooks read as "open".
 				const migrated = withDatabase(dataDir, snapshot);
@@ -1420,8 +1521,10 @@ describe('migration rollback of the pinned comment (ADR-0044)', () => {
 	it(
 		'adds the relation and its index without changing a row, and drops only the pins on the way back',
 		async () => {
+			// The delete lock of inbox items (ADR-0014 addendum, 1790202800) follows and runs along; it
+			// changes no row.
 			const fromPin = MIGRATION_FILES.slice(MIGRATION_FILES.indexOf(PIN_MIGRATION));
-			expect(fromPin).toEqual([PIN_MIGRATION]);
+			expect(fromPin).toEqual([PIN_MIGRATION, NO_DELETE_MIGRATION]);
 
 			await withTempDataDir(async ({ dataDir, args }) => {
 				await migrate(args, 'up');
@@ -1445,7 +1548,9 @@ describe('migration rollback of the pinned comment (ADR-0044)', () => {
 				});
 				// The exact statement is checked by assertSchema.
 				expect(ticketsOf(dataDir).indexes.filter((index) => PIN_INDEX.test(index))).toHaveLength(1);
-				expect(withoutTimestamps(readDataDir(dataDir).collections).map(withoutPinField)).toEqual(schemaBefore);
+				expect(
+					withoutTimestamps(readDataDir(dataDir).collections).map(withoutPinField).map(withoutDeleteLock)
+				).toEqual(schemaBefore);
 				// No row changes: every ticket starts without a pin.
 				const migrated = withDatabase(dataDir, snapshot);
 				expect(withoutFields(migrated.tickets, PIN_TICKET_FIELDS)).toEqual(before.tickets);

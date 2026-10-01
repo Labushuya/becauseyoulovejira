@@ -25,7 +25,7 @@ import {
 } from '../../web/src/lib/data/inbox.ts';
 import { getImportKeywords, saveImportKeywords } from '../../web/src/lib/data/import-keywords.ts';
 import { subscribeInboxItems } from '../../web/src/lib/data/realtime.ts';
-import { createTicket, getTicket, listOpenTickets } from '../../web/src/lib/data/tickets.ts';
+import { createTicket, deleteTicket, getTicket, listOpenTickets } from '../../web/src/lib/data/tickets.ts';
 import { bookmarkletValues } from '../../web/src/lib/domain/bookmarklet.ts';
 import {
 	EMPTY_CAPTURE_INPUT,
@@ -551,11 +551,14 @@ describe('sources of a ticket (ADR-0031, HK-2)', () => {
 describe('realtime', () => {
 	it('delivers created, updated and deleted entries of the user as domain records', async () => {
 		const changes = [];
+		const ticket = await createTicket(owner.client, ticketDraft());
 		const stop = await subscribeInboxItems(owner.client, (change) => changes.push(change));
 		try {
 			const item = await created(owner.client, mail());
-			await discardItem(owner.client, item.id);
-			await owner.client.collection('inbox_items').delete(item.id);
+			await assignToTicket(owner.client, item.id, ticket.id);
+			// No entry is deleted through the API (ADR-0014, addendum of 2026-10-01): a source that
+			// goes with its ticket into the trash ("Quellen verwerfen") leaves with a delete event.
+			await deleteTicket(owner.client, ticket.id, { sources: 'discard' });
 			await created(other.client, mail());
 
 			const deadline = Date.now() + EVENT_TIMEOUT_MS;
@@ -566,7 +569,7 @@ describe('realtime', () => {
 			expect(changes.map((change) => change.action)).toEqual(['create', 'update', 'delete']);
 			expect(changes[0].record).toMatchObject({ id: item.id, state: 'new' });
 			expect(changes[0].record).not.toHaveProperty('body');
-			expect(changes[1].record).toMatchObject({ id: item.id, state: 'discarded' });
+			expect(changes[1].record).toMatchObject({ id: item.id, state: 'converted', ticketId: ticket.id });
 			expect(changes[2]).toEqual({ action: 'delete', id: item.id });
 		} finally {
 			await stop();

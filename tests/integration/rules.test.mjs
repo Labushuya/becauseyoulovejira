@@ -57,11 +57,14 @@ describe.each(OWNED_COLLECTIONS)('%s', (collection) => {
 
 	it('returns 404 on view, update and delete of records outside the own scopes', async () => {
 		const other = s.b.collection(collection);
+		// Inbox items cannot be deleted through the API at all (deleteRule null, ADR-0014 addendum
+		// of 2026-10-01): every app user gets 403, which says nothing about the record either.
+		const deleteRefused = collection === 'inbox_items' ? 403 : 404;
 		expect(await statusOf(other.getOne(rec.aPrivate.id))).toBe(404);
 		expect(await statusOf(other.update(rec.aPrivate.id, {}))).toBe(404);
-		expect(await statusOf(other.delete(rec.aPrivate.id))).toBe(404);
+		expect(await statusOf(other.delete(rec.aPrivate.id))).toBe(deleteRefused);
 		expect(await statusOf(s.c.collection(collection).getOne(rec.aH1.id))).toBe(404);
-		expect(await statusOf(s.c.collection(collection).delete(rec.aH1.id))).toBe(404);
+		expect(await statusOf(s.c.collection(collection).delete(rec.aH1.id))).toBe(deleteRefused);
 		expect(await statusOf(s.a.collection(collection).getOne(rec.cH2.id))).toBe(404);
 		expect(await statusOf(s.a.collection(collection).update(rec.cH2.id, {}))).toBe(404);
 
@@ -137,6 +140,12 @@ describe.each(OWNED_COLLECTIONS)('%s', (collection) => {
 	it('lets the owner update and delete own records', async () => {
 		const record = await create(s.a, s.ids.a);
 		expect(await statusOf(s.a.collection(collection).update(record.id, {}))).toBe(200);
+		if (collection === 'inbox_items') {
+			// An inbox item is discarded, never deleted (ADR-0014, addendum of 2026-10-01).
+			expect(await statusOf(s.a.collection(collection).delete(record.id))).toBe(403);
+			expect((await s.superuser.collection(collection).getOne(record.id)).id).toBe(record.id);
+			return;
+		}
 		expect(await statusOf(s.a.collection(collection).delete(record.id))).toBe(200);
 		if (collection === 'tickets') {
 			// Deleting moves a ticket to the trash (ADR-0037): hidden for everyone, kept for the trash.
