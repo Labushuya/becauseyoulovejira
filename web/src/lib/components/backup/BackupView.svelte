@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { resolve } from '$app/paths';
 	import SectionMessage from '$lib/components/guidance/SectionMessage.svelte';
 	import {
 		newestToVerify,
@@ -10,6 +11,7 @@
 	} from '$lib/domain/backup';
 	import type { HostPlatform } from '$lib/domain/host-platform';
 	import { formatPointInTime } from '$lib/domain/system';
+	import { helpHref } from '$lib/settings-sections';
 	import { backupDenialNotice, type BackupStore } from '$lib/stores/backup.svelte';
 	import BackupList from './BackupList.svelte';
 	import BackupPassphrase from './BackupPassphrase.svelte';
@@ -61,6 +63,11 @@
 		letzte Sicherung älter als einen Tag ist. Die Sicherungen liegen im Ordner
 		<code>app\pb_data\backups</code> und, wenn du ein Zielverzeichnis einrichtest, zusätzlich verschlüsselt
 		dort.
+	</p>
+	<p class="intro">
+		Für den Notfall: die <a href={resolve('/notfallkarte')}>Notfallkarte</a> drucken und neben die
+		Platte legen; die Schritte für einen neuen Rechner stehen auch in der
+		<a href={helpHref('sicherung')}>Hilfe unter „Sicherung & Notfall“</a>.
 	</p>
 
 	{#if store.restoreProgress !== null}

@@ -1,8 +1,15 @@
 // Page "Einstellungen → Sicherung" (ADR-0046): the answers of the server in the shape of the page,
-// the checks of the forms and the texts of warnings, runs, checks, restores and free space.
+// the checks of the forms and the texts of warnings, runs, checks, restores and free space, and the
+// emergency plan of the help and the Notfallkarte (§8).
 
+import { existsSync, readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import {
+	EMERGENCY_CONTENTS,
+	EMERGENCY_LOSSES,
+	EMERGENCY_MANUAL,
+	EMERGENCY_STEPS,
 	exportReasonText,
 	freeText,
 	keepProblem,
@@ -329,5 +336,58 @@ describe('restore (BK-3)', () => {
 		expect(restoreDoneText(state)).toBe(
 			'Die Daten sind auf dem Stand von byl-20261001-080000.tar.age. Die bisherigen liegen 7 Tage im Ordner app als pb_data.vor-wiederherstellung-20261001-095900. Zugangsdaten zurückgeschrieben: BYL_A. Einige Zugangsdaten ließen sich nicht zurückschreiben.'
 		);
+	});
+});
+
+describe('emergency plan (BK-4)', () => {
+	const ROOT = join(import.meta.dirname, '..', '..', '..', '..');
+	const all = [
+		...EMERGENCY_STEPS.flatMap((step) => [step.title, step.text]),
+		...EMERGENCY_LOSSES,
+		...EMERGENCY_MANUAL,
+		EMERGENCY_CONTENTS
+	].join('\n');
+
+	it('goes from getting the app over the restore to a checked backup, each step once', () => {
+		const titles = EMERGENCY_STEPS.map((step) => step.title);
+		expect(new Set(titles).size).toBe(titles.length);
+		expect(titles[0]).toBe('App holen');
+		expect(titles.at(-1)).toBe('Sicherung prüfen');
+		expect(titles.indexOf('wiederherstellen.bat')).toBeLessThan(titles.indexOf('Passphrase'));
+		expect(titles.indexOf('Passphrase')).toBeLessThan(titles.indexOf('neu-starten.bat'));
+		expect(titles.indexOf('neu-starten.bat')).toBeLessThan(titles.indexOf('Autostart'));
+	});
+
+	it('names only scripts that lie in the folder app', () => {
+		const scripts = new Set(all.match(/[a-z-]+\.bat/g));
+		expect([...scripts].sort()).toEqual([
+			'autostart-an.bat',
+			'neu-starten.bat',
+			'wiederherstellen.bat'
+		]);
+		for (const script of scripts) expect(existsSync(join(ROOT, 'app', script)), script).toBe(true);
+		expect(existsSync(join(ROOT, 'app', 'erweiterung-whatsapp-web'))).toBe(true);
+	});
+
+	it('opens a backup without the app and names the files of the helper', () => {
+		expect(EMERGENCY_MANUAL[0]).toMatch(/^age --decrypt --output sicherung\.tar byl-.+\.tar\.age$/);
+		expect(EMERGENCY_MANUAL[1]).toBe('tar -xf sicherung.tar');
+		const bundle = readFileSync(join(ROOT, 'helpers', 'backup', 'src', 'bundle.ts'), 'utf8');
+		for (const name of [
+			'pb_data.zip',
+			'byl-config.json',
+			'manifest.json',
+			'LIESMICH.txt',
+			'zugangsdaten.json'
+		]) {
+			expect(bundle, name).toContain(`'${name}'`);
+			expect(EMERGENCY_CONTENTS, name).toContain(name);
+		}
+	});
+
+	it('names no variable and no value, only the pattern BYL_*', () => {
+		expect(all).toContain('BYL_*');
+		expect(all).not.toMatch(/BYL_[A-Z]/);
+		expect(all).not.toMatch(/=/);
 	});
 });

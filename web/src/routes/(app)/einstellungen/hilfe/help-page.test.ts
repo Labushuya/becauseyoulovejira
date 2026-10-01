@@ -1,11 +1,18 @@
-// Settings "Hilfe" (plan EH-9, §3.10): jump links to eight sections, the shortcuts of every context
+// Settings "Hilfe" (plan EH-9, §3.10): jump links to ten sections, the shortcuts of every context
 // from the one source, the short syntax with its tokens, the access data moved here from "Kanäle",
-// the own inbox with examples and WhatsApp Web (ADR-0038), the frequent questions as <details> and
-// the operation of the app. No table (description lists).
+// the own inbox with examples and WhatsApp Web (ADR-0038), the frequent questions as <details>, the
+// operation of the app and the backups with the emergency plan (ADR-0046 §8). No table
+// (description lists).
 
 import { render, screen, within } from '@testing-library/svelte';
 import { describe, expect, it } from 'vitest';
 import { page } from '$app/state';
+import {
+	EMERGENCY_LOSSES,
+	EMERGENCY_MANUAL,
+	EMERGENCY_STEPS,
+	PASSPHRASE_TEXTS
+} from '$lib/domain/backup';
 import { RESTART_NEEDED } from '$lib/guidance/texts';
 import { HELP_SECTIONS, SETTINGS_SECTIONS, helpHref } from '$lib/settings-sections';
 import Page from './+page.svelte';
@@ -27,7 +34,7 @@ describe('help page (EH-9)', () => {
 		}
 	});
 
-	it('jumps to nine sections that exist on the page', () => {
+	it('jumps to ten sections that exist on the page', () => {
 		const { container } = render(Page);
 
 		const jump = within(screen.getByRole('navigation', { name: 'Auf dieser Seite' }));
@@ -41,7 +48,8 @@ describe('help page (EH-9)', () => {
 			'WhatsApp Web',
 			'Notion',
 			'Häufige Fragen',
-			'Betrieb'
+			'Betrieb',
+			'Sicherung & Notfall'
 		]);
 		for (const link of links) {
 			const id = link.getAttribute('href')?.slice(1) ?? '';
@@ -416,5 +424,34 @@ describe('help page (EH-9)', () => {
 				.getByRole('link', { name: 'Kanäle → Notion (Listen übernehmen) → Einrichten' })
 				.getAttribute('href')
 		).toBe('/einstellungen/kanaele?einrichten=notion');
+	});
+
+	it('explains the backups and the emergency plan for a new machine, from the source of the Notfallkarte (ADR-0046)', () => {
+		render(Page);
+		const section = screen.getByRole('region', { name: 'Sicherung & Notfall' });
+		const content = text(section);
+		expect(content).toContain(PASSPHRASE_TEXTS.keep);
+		expect(content).toContain('app\\wiederherstellen.bat');
+		expect(content).toContain('WIEDERHERSTELLEN');
+		const steps = within(section)
+			.getAllByRole('listitem')
+			.map((item) => text(item));
+		for (const step of EMERGENCY_STEPS) {
+			expect(
+				steps.some((item) => item.includes(step.text)),
+				step.title
+			).toBe(true);
+		}
+		for (const loss of EMERGENCY_LOSSES) expect(content, loss).toContain(loss);
+		for (const command of EMERGENCY_MANUAL) expect(content, command).toContain(command);
+		expect(within(section).getByRole('link', { name: 'Notfallkarte' }).getAttribute('href')).toBe(
+			'/notfallkarte'
+		);
+	});
+
+	it('copies and moves the app only after stop.bat', () => {
+		render(Page);
+		const section = screen.getByRole('region', { name: 'Betrieb' });
+		expect(text(section)).toContain('Kopieren sichert und zieht sie um, aber erst nach stop.bat');
 	});
 });
