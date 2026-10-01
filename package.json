@@ -14,7 +14,7 @@
 		"test:integration": "vitest run --project integration",
 		"test:web": "npm --prefix web test",
 		"test:extension": "npm --prefix extensions/whatsapp-web test",
-		"check": "npm --prefix web run check && npm --prefix helpers/mail run check && npm --prefix extensions/whatsapp-web run check",
+		"check": "npm --prefix web run check && npm --prefix helpers/mail run check && npm --prefix helpers/backup run check && npm --prefix extensions/whatsapp-web run check",
 		"lint": "npm --prefix web run lint && npm --prefix extensions/whatsapp-web run lint",
 		"format": "npm --prefix web run format",
 		"build": "npm --prefix web run build && node scripts/publish-web.mjs && npm --prefix extensions/whatsapp-web run build"

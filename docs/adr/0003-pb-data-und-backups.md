@@ -1,6 +1,6 @@
 # ADR-0003: Speicherort von `pb_data` und Backup-Strategie
 
-- **Status:** Angenommen
+- **Status:** Angenommen; §2 und §6 ersetzt durch [ADR-0046](0046-sicherung-pruefung-wiederherstellen.md) (Nachtrag unten)
 - **Datum:** 2026-09-24
 - **Entscheidung durch:** Advisor
 
@@ -46,3 +46,10 @@ Befunde für PocketBase 0.40.4 (Quelltext `core/backup*.go`, `core/settings_mode
 - Negativ: Wiederherstellen unter Windows geht nur manuell bei gestopptem Server.
 - `app/` wächst um bis zu zwölf ZIP-Backups. Bei einer Ticket-Datenbank sind das wenige MB.
 - Die Cron-Zeiten gelten in UTC. Für ein Raster „alle vier Stunden“ spielt das keine Rolle. Zeitkritische Cron-Jobs (wiederkehrende Aufgaben, E4) berücksichtigen [ADR-0005](0005-zeitzone-europe-berlin.md).
+
+## Nachtrag (2026-10-01, [ADR-0046](0046-sicherung-pruefung-wiederherstellen.md), BK-1): Die App sichert selbst, mit Generationen und verschlüsselt außer Haus
+
+- **§2 ist ersetzt:** Die App sichert einmal am Tag selbst (Cron `byl-backup`, `lib/backup-service.js`, Name `byl-<Zeitstempel>.zip`) und behält Generationen (7 täglich, 4 wöchentlich, 6 monatlich, änderbar). Die Migration `1790203000_backups_own_schedule.js` schaltet das automatische Backup von PocketBase ab, solange es noch den Zeitplan dieser ADR hat; ihr Rückweg stellt ihn wieder her. Die bisherigen `@auto_pb_backup_*`-Dateien bleiben liegen, bis sie in der Verwaltung gelöscht werden.
+- **§6 ist ersetzt:** Eine Kopie außer Haus macht die App selbst, verschlüsselt (age mit Passphrase) in ein frei wählbares Zielverzeichnis, auf Wunsch mit den Werten der `BYL_*`-Variablen (Einstellungen → Sicherung).
+- **§4 (Wiederherstellen):** Die Schritte von Hand bleiben gültig, bis das Wiederherstellen per Skript und App kommt (ADR-0046 §7, Paket BK-3); danach ersetzt es sie.
+- §1, §3, §5 und §7 gelten weiter. Die Konsequenz „Backups liegen auf demselben Datenträger“ gilt nur noch ohne Zielverzeichnis.

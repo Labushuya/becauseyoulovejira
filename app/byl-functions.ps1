@@ -93,6 +93,43 @@ function ConvertTo-BylConfigText {
     return "{`r`n  `"port`": $Port`r`n}`r`n"
 }
 
+function Merge-BylConfigText {
+    # Text of byl-config.json from the current text $Text with a new $Port and/or new backup
+    # settings $Backup (ConvertFrom-BylBackupConfig shape); what is not given stays as it was. The
+    # file holds only these two settings: the port (ADR-0039 section 2) and the backup (ADR-0046).
+    param(
+        [AllowNull()][AllowEmptyString()][string]$Text,
+        [AllowNull()][object]$Port,
+        [AllowNull()][object]$Backup
+    )
+
+    $current = $null
+    try {
+        if (-not [string]::IsNullOrWhiteSpace($Text)) { $current = $Text | ConvertFrom-Json }
+    }
+    catch {
+        $current = $null
+    }
+    if ($null -ne $current -and $current -isnot [System.Management.Automation.PSCustomObject]) { $current = $null }
+    if ($null -eq $Port -and $null -ne $current -and $null -ne $current.PSObject.Properties['port'] -and (Test-PortNumber $current.port)) {
+        $Port = [int]$current.port
+    }
+    if ($null -eq $Backup) {
+        $parsed = ConvertFrom-BylBackupConfig -Text $Text
+        if ($parsed.Present) { $Backup = $parsed }
+    }
+    $parts = New-Object System.Collections.Generic.List[string]
+    if ($null -ne $Port) { $parts.Add("  `"port`": $([int]$Port)") }
+    if ($null -ne $Backup) {
+        $target = if ([string]::IsNullOrEmpty($Backup.Target)) { 'null' } else { ConvertTo-Json -InputObject ([string]$Backup.Target) -Compress }
+        $credentials = if ($Backup.Credentials) { 'true' } else { 'false' }
+        $parts.Add(("  `"backup`": {{`r`n    `"target`": {0},`r`n    `"daily`": {1},`r`n    `"weekly`": {2},`r`n    `"monthly`": {3},`r`n    `"credentials`": {4}`r`n  }}" -f
+                $target, [int]$Backup.Daily, [int]$Backup.Weekly, [int]$Backup.Monthly, $credentials))
+    }
+    if ($parts.Count -eq 0) { return "{`r`n}`r`n" }
+    return "{`r`n" + ($parts -join ",`r`n") + "`r`n}`r`n"
+}
+
 function Find-NextFreePort {
     # The next port after $Start that $IsFree accepts (param($Port) -> $true if nothing listens),
     # at most $Attempts ports; skips $Skip (8099 is kept for spikes, CLAUDE.md section 11). $null if
@@ -113,6 +150,28 @@ function Find-NextFreePort {
     }
     return $null
 }
+
+# --- Backup (ADR-0046) -------------------------------------------------------------------------
+# Constants here; the functions follow at the end of this file (ConvertFrom-BylBackupConfig ...).
+
+# The helper that seals (encrypts) and opens backups; next to pocketbase.exe, gitignored.
+$BylBackupHelperName = 'byl-backup.exe'
+# Backups of the app itself in pb_data\backups (UTC time stamp); other ZIP files there (manual
+# backups of the admin UI, the former automatic ones) are never touched.
+$BylLocalBackupPattern = '^byl-\d{8}-\d{6}\.zip$'
+# Sealed backups in the target folder, same stamp as the local backup they come from.
+$BylSealedBackupPattern = '^byl-\d{8}-\d{6}\.tar\.age$'
+# Generations kept (GFS), defaults and limits; the same numbers as lib/backup-rules.js.
+$BylBackupKeep = [ordered]@{
+    daily   = [pscustomobject]@{ Default = 7; Min = 1; Max = 30 }
+    weekly  = [pscustomobject]@{ Default = 4; Min = 0; Max = 12 }
+    monthly = [pscustomobject]@{ Default = 6; Min = 0; Max = 24 }
+}
+$BylBackupTargetMaxLength = 240
+$BylPassphraseMinLength = 12
+$BylPassphraseMaxBytes = 1024
+# Free space a target needs at least, besides the size of the backup itself.
+$BylBackupReserveBytes = 200MB
 
 # --- Runtime files (ADR-0039 section 3) --------------------------------------------------------
 
@@ -1687,4 +1746,125 @@ function Resolve-BrowserAction {
     catch {
         return 'Open'
     }
+}
+
+function ConvertFrom-BylBackupConfig {
+    # Backups (ADR-0046; constants under "Backup" at the top of this file).
+    # Backup settings from the text of byl-config.json: Target ($null without one), Daily, Weekly,
+    # Monthly (defaults outside the limits) and Credentials (on unless switched off), Present (the
+    # file has a backup section). Never throws: a broken file is the business of the port check.
+    param([AllowNull()][AllowEmptyString()][string]$Text)
+
+    $result = [pscustomobject]@{
+        Present     = $false
+        Target      = $null
+        Daily       = $BylBackupKeep.daily.Default
+        Weekly      = $BylBackupKeep.weekly.Default
+        Monthly     = $BylBackupKeep.monthly.Default
+        Credentials = $true
+    }
+    try {
+        $value = if ([string]::IsNullOrWhiteSpace($Text)) { $null } else { $Text | ConvertFrom-Json }
+    }
+    catch {
+        return $result
+    }
+    if ($null -eq $value -or $value -isnot [System.Management.Automation.PSCustomObject] -or $null -eq $value.PSObject.Properties['backup']) {
+        return $result
+    }
+    $backup = $value.backup
+    if ($null -eq $backup -or $backup -isnot [System.Management.Automation.PSCustomObject]) { return $result }
+    $result.Present = $true
+    if ($null -ne $backup.PSObject.Properties['target'] -and $backup.target -is [string] -and $backup.target.Trim() -ne '') {
+        $result.Target = $backup.target.Trim()
+    }
+    foreach ($name in @($BylBackupKeep.Keys)) {
+        $property = $backup.PSObject.Properties[$name]
+        $limit = $BylBackupKeep[$name]
+        if ($null -ne $property -and ($property.Value -is [int] -or $property.Value -is [long]) -and $property.Value -ge $limit.Min -and $property.Value -le $limit.Max) {
+            $result.($name.Substring(0, 1).ToUpperInvariant() + $name.Substring(1)) = [int]$property.Value
+        }
+    }
+    if ($null -ne $backup.PSObject.Properties['credentials'] -and $backup.credentials -is [bool]) { $result.Credentials = $backup.credentials }
+    return $result
+}
+
+function Test-BylBackupTarget {
+    # Whether $Path can be a target folder of backups: a full path (drive letter, colon and
+    # backslash, or \\server\share\...),
+    # without "." or ".." parts and characters Windows does not allow, at most
+    # $BylBackupTargetMaxLength characters, and not inside the app folder (a copy of the folder would
+    # take the backups along, a lost disk both). $null if it can, otherwise 'Format', 'TooLong' or
+    # 'InsideApp'. Existence, write access and space are checked by the caller.
+    param([AllowNull()][AllowEmptyString()][string]$Path, [Parameter(Mandatory = $true)][string]$AppDir)
+
+    if ([string]::IsNullOrWhiteSpace($Path)) { return 'Format' }
+    $value = $Path.Trim()
+    if ($value.Length -gt $BylBackupTargetMaxLength) { return 'TooLong' }
+    if ($value -notmatch '^(?:[A-Za-z]:\\|\\\\[^\\/:*?"<>|]+\\[^\\/:*?"<>|]+)') { return 'Format' }
+    $rest = if ($value -match '^[A-Za-z]:\\') { $value.Substring(3) } else { $value.Substring(2) }
+    if ($rest -match '[/:*?"<>|]' -or $rest -match '[\x00-\x1f]') { return 'Format' }
+    foreach ($part in ($rest -split '\\')) {
+        if ($part -eq '.' -or $part -eq '..') { return 'Format' }
+    }
+    $folder = $value.TrimEnd('\') + '\'
+    $app = $AppDir.TrimEnd('\') + '\'
+    if ($folder.StartsWith($app, [System.StringComparison]::OrdinalIgnoreCase)) { return 'InsideApp' }
+    return $null
+}
+
+function Test-BylPassphrase {
+    # $null for a usable passphrase, otherwise 'Mismatch', 'TooShort' (fewer than
+    # $BylPassphraseMinLength characters), 'TooLong' (more than $BylPassphraseMaxBytes bytes in
+    # UTF-8) or 'Character' (control characters). Spaces and every other character are fine.
+    param([AllowNull()][AllowEmptyString()][string]$Passphrase, [AllowNull()][AllowEmptyString()][string]$Confirmation)
+
+    if ($Passphrase -cne $Confirmation) { return 'Mismatch' }
+    if ([string]::IsNullOrEmpty($Passphrase) -or $Passphrase.Length -lt $BylPassphraseMinLength) { return 'TooShort' }
+    if ([System.Text.Encoding]::UTF8.GetByteCount($Passphrase) -gt $BylPassphraseMaxBytes) { return 'TooLong' }
+    if ($Passphrase -match '[\x00-\x1f\x7f]') { return 'Character' }
+    return $null
+}
+
+function Get-BylPassphrasePath {
+    # File of the passphrase of this app folder under $BaseDir (%LOCALAPPDATA%\becauseyoulovejira):
+    # outside the app folder and pb_data, so no copy and no backup takes it along, and one per app
+    # folder (SHA-256 of the full path in lower case), so two copies never share a passphrase.
+    param([Parameter(Mandatory = $true)][string]$AppDir, [Parameter(Mandatory = $true)][string]$BaseDir)
+
+    $bytes = [System.Text.Encoding]::UTF8.GetBytes($AppDir.TrimEnd('\').ToLowerInvariant())
+    $id = (Get-BytesHash -Bytes $bytes).Substring(0, 16)
+    return [System.IO.Path]::Combine($BaseDir, "sicherung-$id.passphrase")
+}
+
+function Select-BylSecretVariable {
+    # The BYL_* variables of $Variables (name -> value) a backup takes along, sorted by name: valid
+    # names (ADR-0018) with a value, without the switches of the tests (BYL_TEST_*).
+    param([AllowNull()][System.Collections.IDictionary]$Variables)
+
+    $result = [ordered]@{}
+    if ($null -eq $Variables) { return $result }
+    foreach ($name in (@($Variables.Keys) | ForEach-Object { [string]$_ } | Sort-Object)) {
+        if ($name -cnotmatch $BylSecretNamePattern -or $name.StartsWith('BYL_TEST_')) { continue }
+        $value = [string]$Variables[$name]
+        if ($value -ne '') { $result[$name] = $value }
+    }
+    return $result
+}
+
+function Get-BylSealedName {
+    # Name of the sealed backup of the local backup $LocalName (byl-<stamp>.zip -> byl-<stamp>.tar.age).
+    param([Parameter(Mandatory = $true)][string]$LocalName)
+
+    if ($LocalName -notmatch $BylLocalBackupPattern) { throw "not a backup of the app: $LocalName" }
+    return $LocalName.Substring(0, $LocalName.Length - 4) + '.tar.age'
+}
+
+function Get-BylBackupSpaceVerdict {
+    # Whether $FreeBytes on the target suffice for a backup of $NeededBytes: 'Ok', or 'Low' when
+    # less than the backup plus $BylBackupReserveBytes is free.
+    param([Parameter(Mandatory = $true)][double]$FreeBytes, [double]$NeededBytes = 0)
+
+    if ($FreeBytes -lt ($NeededBytes + $BylBackupReserveBytes)) { return 'Low' }
+    return 'Ok'
 }

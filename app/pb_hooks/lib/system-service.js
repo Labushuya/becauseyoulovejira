@@ -53,11 +53,14 @@ function fileExists(path) {
   }
 }
 
-/** Answer of a refusal; every refusal is logged with action, reason, user and address. */
-function refuse(e, name, reason, retryAfterSeconds) {
+/**
+ * Answer of a refusal; every refusal is logged with action, reason, user and address. `area` names
+ * the page in the audit entry: 'byl-system' (default) or 'byl-backup' (ADR-0046).
+ */
+function refuse(e, name, reason, retryAfterSeconds, area) {
   e.app
     .logger()
-    .warn('byl-system: Anfrage abgelehnt', 'action', String(name), 'reason', reason, 'user', userOf(e), 'ip', String(e.remoteIP()));
+    .warn((area || 'byl-system') + ': Anfrage abgelehnt', 'action', String(name), 'reason', reason, 'user', userOf(e), 'ip', String(e.remoteIP()));
   if (retryAfterSeconds) {
     e.response.header().set('Retry-After', String(retryAfterSeconds));
   }
@@ -76,13 +79,38 @@ function takeRate(e, kind) {
   return result;
 }
 
+/** Whether the server runs under Windows (the rule of GET /api/byl/host). */
+function onWindows() {
+  var args = argsOfServer();
+  return hostPlatform.hostPlatform($os.getenv(hostPlatform.ENV), args.length > 0 ? args[0] : '') === 'windows';
+}
+
+/**
+ * The folder of the app when this server is its own instance (ADR-0043 §4: program, data folder
+ * and control script of one folder app, Windows); '' otherwise. Instances of the tests and of
+ * development never run a command.
+ */
+function ownAppDir() {
+  if (!onWindows()) {
+    return '';
+  }
+  var appDir = rules.appDirOf(__hooks);
+  if (appDir === '' || !rules.isOwnInstance(argsOfServer(), appDir) || !fileExists(rules.scriptPath(appDir))) {
+    return '';
+  }
+  return appDir;
+}
+
 /**
  * The checks of every route, in order; returns { refused, retryAfterSeconds } or the context
- * { appDir } of the own instance.
+ * { appDir } of the own instance. `options.kind` sets the rate limit ('read' or 'change', default
+ * after the whitelist entry of `name`); `options.local` skips the check of the own instance for a
+ * route that runs no command (appDir is then '').
  */
-function check(e, name, method) {
+function check(e, name, method, options) {
+  var opts = options || {};
   var args = argsOfServer();
-  if (hostPlatform.hostPlatform($os.getenv(hostPlatform.ENV), args.length > 0 ? args[0] : '') !== 'windows') {
+  if (!onWindows()) {
     return { refused: 'platform' };
   }
   var proxy = [];
@@ -100,12 +128,16 @@ function check(e, name, method) {
   if (user === '' || user !== ownerId(e.app)) {
     return { refused: 'owner' };
   }
-  var rate = takeRate(e, rules.action(name).changes ? 'change' : 'read');
+  var kind = opts.kind || (rules.action(name).changes ? 'change' : 'read');
+  var rate = takeRate(e, kind);
   if (!rate.allowed) {
     return { refused: 'rate', retryAfterSeconds: rate.retryAfterSeconds };
   }
-  var appDir = rules.appDirOf(__hooks);
-  if (appDir === '' || !rules.isOwnInstance(args, appDir) || !fileExists(rules.scriptPath(appDir))) {
+  if (opts.local) {
+    return { appDir: '' };
+  }
+  var appDir = ownAppDir();
+  if (appDir === '') {
     return { refused: 'unavailable' };
   }
   return { appDir: appDir };
@@ -113,16 +145,24 @@ function check(e, name, method) {
 
 /**
  * Runs the whitelisted command `name` of the control script and returns its exit code and, for
- * commands with `output`, the JSON line it printed. Throws if Windows PowerShell does not start.
+ * commands with `output`, the JSON line it printed. A command with `input` gets `input` as one
+ * JSON object on standard input (UTF-8), never as arguments. Throws if Windows PowerShell does not
+ * start.
  */
-function run(appDir, name) {
+function run(appDir, name, input) {
+  var spec = rules.action(name);
   var line = rules.commandLine(appDir, name, $os.getenv('SystemRoot'));
   var cmd = $os.cmd.apply(null, [line.program].concat(line.args));
   cmd.dir = appDir;
   var output = '';
-  if (rules.action(name).output) {
+  if (spec.output) {
+    var stdin = spec.input ? cmd.stdinPipe() : null;
     var pipe = cmd.stdoutPipe();
     cmd.start();
+    if (stdin !== null) {
+      stdin.write(toBytes(JSON.stringify(input || {})));
+      stdin.close();
+    }
     output = toString(pipe, MAX_OUTPUT_BYTES);
     try {
       cmd.wait();
@@ -142,9 +182,9 @@ function run(appDir, name) {
 }
 
 /** The parsed JSON line of the command `name`, or null if it did not start or printed none. */
-function runJson(appDir, name) {
+function runJson(appDir, name, input) {
   try {
-    return JSON.parse(String(run(appDir, name).output));
+    return JSON.parse(String(run(appDir, name, input).output));
   } catch (err) {
     return null;
   }
@@ -224,7 +264,7 @@ function claim(store, now) {
 /** POST /api/byl/system/actions/{name}: restart, mail-restart, autostart-on, autostart-off. */
 function act(e, name) {
   var spec = rules.action(name);
-  if (spec === null || !spec.changes) {
+  if (spec === null || !spec.changes || spec.backup === true) {
     return refuse(e, name, 'unknown');
   }
   var context = check(e, name, 'POST');
@@ -263,5 +303,12 @@ function act(e, name) {
 
 module.exports = {
   read: read,
-  act: act
+  act: act,
+  // Shared with the page "Sicherung" (lib/backup-service.js, ADR-0046): the same checks, refusals,
+  // owner and commands of the control script.
+  check: check,
+  refuse: refuse,
+  ownAppDir: ownAppDir,
+  runJson: runJson,
+  userOf: userOf
 };

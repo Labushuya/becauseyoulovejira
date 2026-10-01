@@ -39,7 +39,7 @@ describe('schema migrations', () => {
 		});
 	});
 
-	it('enables automatic backups every four hours, keeping 12 (ADR-0003)', async () => {
+	it('leaves the backups to the app: the automatic backup of PocketBase is off (ADR-0003, ADR-0046)', async () => {
 		const superuser = await superuserClient();
 		const settings = await superuser.settings.getAll();
 		expect(settings.backups).toMatchObject(EXPECTED_BACKUPS);

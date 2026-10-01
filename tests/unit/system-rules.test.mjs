@@ -18,10 +18,14 @@ const OWN_ARGS = [
 ];
 
 describe('whitelist', () => {
-	it('knows exactly seven actions, each with fixed arguments', () => {
+	it('knows exactly seven actions of the page and the commands of the backup, each with fixed arguments', () => {
 		expect(Object.keys(rules.ACTIONS).sort()).toEqual([
 			'autostart-off',
 			'autostart-on',
+			'backup-configure',
+			'backup-export',
+			'backup-info',
+			'backup-passphrase',
 			'doctor',
 			'logs',
 			'mail-restart',
@@ -31,10 +35,21 @@ describe('whitelist', () => {
 		expect(rules.ACTIONS.status).toEqual({ method: 'GET', args: ['status', '-Json'], output: true, changes: false });
 		expect(rules.ACTIONS.restart).toEqual({ method: 'POST', args: ['restart', '-Detach', '-Quiet'], output: false, changes: true });
 		expect(rules.ACTIONS.logs.args).toEqual(['logs', '-Json', '-Lines', '200']);
+		// ADR-0046: the commands of the backup take their parameters on standard input only.
+		expect(rules.ACTIONS['backup-export']).toEqual({
+			method: 'POST',
+			args: ['backup-export', '-Json'],
+			output: true,
+			changes: true,
+			input: true,
+			backup: true
+		});
 		for (const [name, spec] of Object.entries(rules.ACTIONS)) {
 			// Commands that start processes never have their output read (the pipe would be inherited).
 			if (['restart', 'mail-restart'].includes(name)) expect(spec.output, name).toBe(false);
 			expect(spec.method, name).toBe(spec.changes ? 'POST' : 'GET');
+			expect(spec.backup === true, name).toBe(name.startsWith('backup-'));
+			expect(spec.args.every((arg) => /^-?[A-Za-z]+(-[a-z]+)?$|^\d+$/.test(arg)), name).toBe(true);
 		}
 	});
 

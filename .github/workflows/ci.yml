@@ -82,6 +82,7 @@ jobs:
             package-lock.json
             web/package-lock.json
             helpers/mail/package-lock.json
+            helpers/backup/package-lock.json
             extensions/whatsapp-web/package-lock.json
 
       - name: Cache PocketBase binary
@@ -126,6 +127,7 @@ jobs:
             package-lock.json
             web/package-lock.json
             helpers/mail/package-lock.json
+            helpers/backup/package-lock.json
             extensions/whatsapp-web/package-lock.json
 
       - name: Cache PocketBase binary
@@ -142,6 +144,7 @@ jobs:
           npm ci
           npm --prefix web ci
           npm --prefix helpers/mail ci
+          npm --prefix helpers/backup ci
           npm --prefix extensions/whatsapp-web ci
 
       - name: Check
@@ -160,6 +163,10 @@ jobs:
       # helpers/mail/dist/byl-mail for the process tests of the mail helper.
       - name: Build mail helper
         run: node helpers/mail/build.mjs
+
+      # helpers/backup/dist/byl-backup for the process tests of the backup helper (ADR-0046).
+      - name: Build backup helper
+        run: node helpers/backup/build.mjs
 
       - name: Test
         run: npm test

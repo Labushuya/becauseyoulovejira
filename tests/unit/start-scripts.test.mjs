@@ -595,7 +595,10 @@ describe('status, reload, logs and doctor (ADR-0039 sections 5 to 7, BS-2)', () 
 
 	it('logs changing commands only, with numbers and fixed words, never the admin e-mail', () => {
 		const main = control().slice(control().lastIndexOf('try {'));
-		expect(main).toContain("if (@('start', 'stop', 'restart', 'reload', 'port', 'autostart-on', 'autostart-off', 'mail-restart', 'reset-admin') -contains $Command) {");
+		expect(main).toContain(
+			"if (@('start', 'stop', 'restart', 'reload', 'port', 'autostart-on', 'autostart-off', 'mail-restart', 'reset-admin',\r\n" +
+				"        'backup-configure', 'backup-passphrase', 'backup-export') -contains $Command) {"
+		);
 		const write = functionBody(control(), 'Write-ControlLog');
 		expect(write).toContain('Invoke-LogRotation -Path $path -LimitBytes $BylControlLogLimitBytes');
 		expect(write).toContain('[System.IO.File]::AppendAllText($path');
@@ -666,6 +669,42 @@ describe('commands of the page System (ADR-0043)', () => {
 		const secrets = functionBody(control(), 'Get-LogSecretValue');
 		expect(secrets).toContain('$scope = Get-BylVariableScope');
 		expect(secrets).not.toMatch(/Write-|Show-Message|Out-|Add-Content|Set-Content/);
+	});
+});
+
+describe('commands of the backup (ADR-0046)', () => {
+	it('keeps the passphrase only with DPAPI for this account, outside the app folder, never printed', () => {
+		const source = control();
+		const save = functionBody(source, 'Save-StoredPassphrase');
+		expect(save).toContain("[System.Security.Cryptography.ProtectedData]::Protect($bytes, $PassphraseEntropy, 'CurrentUser')");
+		expect(save).toContain('[Array]::Clear($bytes, 0, $bytes.Length)');
+		const file = functionBody(source, 'Get-PassphraseFile');
+		expect(file).toMatch(/if \(\$IsolatedEnvironment\) \{[\s\S]*?'BYL_TEST_SECRET_DIR'[\s\S]*?\}\s*else \{[\s\S]*?GetFolderPath\('LocalApplicationData'\)/);
+		// The only place that names the folder of the account.
+		expect(source.match(/LocalApplicationData/g)).toHaveLength(1);
+		const set = functionBody(source, 'Invoke-BackupPassphrase');
+		expect(set).toContain("Read-Secret -Prompt 'Passphrase wiederholen'");
+		expect(set).not.toMatch(/Write-Host \$passphrase|Show-Message[^\r\n]*\$passphrase|LogDetail = [^\r\n]*\$passphrase/i);
+		for (const name of ['Invoke-BackupPassphrase', 'Invoke-BackupExport', 'Invoke-BackupHelper']) {
+			expect(functionBody(source, name), name).not.toMatch(/Out-File|Set-Content|Add-Content/);
+		}
+	});
+
+	it('gives byl-backup.exe its parameters only on standard input, without the BYL_* variables', () => {
+		const helper = functionBody(control(), 'Invoke-BackupHelper');
+		expect(helper).toContain('$startInfo.Arguments = $Command');
+		expect(helper).toContain("[ValidateSet('seal', 'open')]");
+		expect(helper).toMatch(/if \(\[string\]\$name -like 'BYL_\*' -or \[string\]\$name -like 'NODE_\*'\) \{ \$startInfo\.EnvironmentVariables\.Remove\(\$name\) \}/);
+		expect(helper).toContain('$process.StandardInput.BaseStream.Write($bytes, 0, $bytes.Length)');
+	});
+
+	it('takes the access data of a backup from the account only through Get-BylVariableScope, and only when switched on', () => {
+		const exported = functionBody(control(), 'Invoke-BackupExport');
+		expect(exported).toContain(
+			'$secrets = if ($settings.Credentials) { Select-BylSecretVariable -Variables (Get-BylVariableScope).User } else { [ordered]@{} }'
+		);
+		expect(exported.indexOf('Invoke-BackupHelper -Command seal')).toBeGreaterThan(exported.indexOf('$secrets = '));
+		expect(functionBody(control(), 'Invoke-BackupInfo')).toContain('Select-BylSecretVariable -Variables (Get-BylVariableScope).User).Keys');
 	});
 });
 

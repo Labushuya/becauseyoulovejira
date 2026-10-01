@@ -396,7 +396,13 @@ export const EXPECTED_USERS_RULES = {
 
 /** PocketBase 0.40.4 defaults, restored by the down migrations. */
 export const DEFAULT_USERS_RULES = { ...EXPECTED_USERS_RULES, createRule: '', deleteRule: 'id = @request.auth.id' };
-export const EXPECTED_BACKUPS = { cron: '0 */4 * * *', cronMaxKeep: 12 };
+/**
+ * The automatic backup of PocketBase after all migrations: off since the backups of the app took
+ * over (ADR-0046, 1790203000), with the number kept of ADR-0003 (1790200800) that no longer matters.
+ */
+export const EXPECTED_BACKUPS = { cron: '', cronMaxKeep: 12 };
+/** The schedule of ADR-0003 (1790200800), until 1790203000 switches it off. */
+export const ADR_0003_BACKUPS = { cron: '0 */4 * * *', cronMaxKeep: 12 };
 export const DEFAULT_BACKUPS = { cron: '', cronMaxKeep: 3 };
 
 /** Removes quoting and whitespace differences (addIndex() quotes names with backticks). */
