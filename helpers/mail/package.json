@@ -11,11 +11,11 @@
 		"check": "tsc --noEmit -p ."
 	},
 	"dependencies": {
-		"imapflow": "^2.0.6",
+		"imapflow": "^2.1.2",
 		"postal-mime": "^3.0.1"
 	},
 	"devDependencies": {
-		"@types/node": "^24.13.6",
+		"@types/node": "^24.19.0",
 		"esbuild": "^0.28.2",
 		"postject": "^1.0.0-alpha.6",
 		"typescript": "^6.0.3"
