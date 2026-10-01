@@ -90,6 +90,9 @@
 	} from '$lib/stores/ticket-picker.svelte';
 	import { BulkEditStore, bulkEditData, setBulkEditStore } from '$lib/stores/bulk-edit.svelte';
 	import { TrashStore, setTrashStore, trashData, trashLive } from '$lib/stores/trash.svelte';
+	import { TrashAttention } from '$lib/stores/trash-attention';
+	import { listTrash } from '$lib/data/trash';
+	import { waitingCount } from '$lib/domain/trash';
 	import { inboxItemHref, recurrenceHref, recurrencesHref } from '$lib/ticket-links';
 
 	// Shell of every signed-in page (E2 plan, T-4). The root layout renders it only with a
@@ -235,9 +238,18 @@
 		flags,
 		open: () => void goto(resolve('/einstellungen/sicherung'))
 	});
+	// Tickets of the trash that wait for a decision (ADR-0047, ADR-0035): the same quiet flag.
+	const trashAttention = new TrashAttention({
+		waiting: async () => waitingCount((await listTrash(pb)).items),
+		flags,
+		open: () => void goto(resolve('/papierkorb'))
+	});
 	$effect(() => {
 		if (auth.userId === null) return;
-		untrack(() => void backupAttention.announce());
+		untrack(() => {
+			void backupAttention.announce();
+			void trashAttention.announce();
+		});
 	});
 
 	// Opened again (ADR-0035 section 5): start.bat, the landing page or stop.bat send a message on
@@ -254,6 +266,7 @@
 		opened: () => {
 			rules.announceWaiting(openWaiting);
 			void backupAttention.announce();
+			void trashAttention.announce();
 		}
 	});
 	$effect(() => untrack(() => notifyStore.connect()));

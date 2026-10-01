@@ -570,6 +570,18 @@
 				</p>
 			</details>
 			<details>
+				<summary>Warum lässt sich ein Ticket im Papierkorb nicht endgültig löschen?</summary>
+				<p>
+					Endgültig gelöscht wird nur, was nicht mehr gebraucht wird: das Ticket und seine
+					Unteraufgaben sind erledigt, und keine Quelle hängt mehr daran. Sonst steht in der Zeile
+					„Blockiert“, und auch die Aufbewahrung löscht es nicht. In der Vorschau unter
+					„Abhängigkeiten“ entscheidest du: offene Tickets als erledigt markieren oder
+					wiederherstellen, eine Unteraufgabe auch als eigenes Ticket, Quellen zurück in den
+					Eingang, verwerfen oder einem anderen Ticket zuordnen (die Hauptquelle bleibt bei ihrem
+					Ticket). Danach geht „Endgültig löschen …“.
+				</p>
+			</details>
+			<details>
 				<summary>Was steht im Menü „•••“ eines Tickets?</summary>
 				<ul>
 					<li>

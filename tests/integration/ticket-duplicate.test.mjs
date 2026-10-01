@@ -396,10 +396,18 @@ describe('the source of the duplicate', () => {
 		const again = await rejectionOf(importAgain(owner, messageId));
 		expect(again.codes).toEqual({ fingerprint: 'validation_inbox_duplicate' });
 
-		// The duplicate goes to the trash with its source discarded, and for good: the copy becomes a
-		// tombstone of its own. A new import still meets the original entry.
-		await owner.client.send(`/api/byl/tickets/${first.id}/delete`, { method: 'POST', body: { sources: 'discard' } });
-		await owner.client.send(`/api/byl/trash/${first.id}/purge`, { method: 'POST' });
+		// The duplicate goes to the trash with its source discarded, and for good once it is done and
+		// the copy is discarded (ADR-0047): the copy is a tombstone of its own. A new import still meets
+		// the original entry.
+		const forGood = async (ticketId, itemId) => {
+			await owner.client.send(`/api/byl/tickets/${ticketId}/delete`, { method: 'POST', body: { sources: 'discard' } });
+			await owner.client.send(`/api/byl/trash/${ticketId}/resolve`, {
+				method: 'POST',
+				body: { actions: [{ action: 'complete', ticket: ticketId }, { action: 'discard', item: itemId }] }
+			});
+			await owner.client.send(`/api/byl/trash/${ticketId}/purge`, { method: 'POST' });
+		};
+		await forGood(first.id, first.source);
 		expect(await itemOf(first.source)).toMatchObject({ state: 'discarded', fingerprint: copies[0].fingerprint });
 		let failure;
 		try {
@@ -409,9 +417,8 @@ describe('the source of the duplicate', () => {
 		}
 		expect(failure.response.data.fingerprint.params).toMatchObject({ item: item.id, ticketKey: ticket.key });
 
-		// The original goes for good with its sources discarded: its tombstone still blocks.
-		await owner.client.send(`/api/byl/tickets/${ticket.id}/delete`, { method: 'POST', body: { sources: 'discard' } });
-		await owner.client.send(`/api/byl/trash/${ticket.id}/purge`, { method: 'POST' });
+		// The original goes for good with its source discarded: its tombstone still blocks.
+		await forGood(ticket.id, item.id);
 		failure = undefined;
 		try {
 			await importAgain(owner, messageId);

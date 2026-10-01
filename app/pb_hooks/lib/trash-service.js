@@ -15,9 +15,14 @@
 // reach realtime clients (PocketBase checks the rules with the new state), so after the commit
 // broadcastRemoved sends the same "delete" event a hard delete would have sent, and the topic
 // byl/trash tells open tabs of the owners to read the trash again.
+//
+// Deleting for good only takes a group without dependencies (ADR-0047, pure rule in
+// lib/trash-dependencies.js): every way to delete for good checks it in its own transaction, and
+// the decision help (resolve, restore with detach_parent) settles the dependencies first.
 'use strict';
 
 var rules = require(__hooks + '/lib/trash-rules.js');
+var dependencyRules = require(__hooks + '/lib/trash-dependencies.js');
 var berlinTime = require(__hooks + '/lib/berlin-time.js');
 var errors = require(__hooks + '/lib/errors.js');
 var ticketKey = require(__hooks + '/lib/ticket-key.js');
@@ -26,11 +31,8 @@ var history = require(__hooks + '/lib/history.js');
 var TICKETS = 'tickets';
 var INBOX = 'inbox_items';
 
-// Transient record keys: TRASH_OP_KEY marks a write of the trash (the ticket hooks only call
-// e.next()), PURGE_KEY a delete for good (the delete hook removes the content of discarded
-// sources at once).
+// Transient record key of a write of the trash (the ticket hooks only call e.next()).
 var TRASH_OP_KEY = '@trash_op';
-var PURGE_KEY = '@trash_purge';
 
 // Realtime topic that tells the tabs of the owners that the trash changed (no data).
 var TOPIC = 'byl/trash';
@@ -313,8 +315,9 @@ function moveToTrash(app, id, handling, actor) {
  * onRecordDeleteRequest of tickets once the trash exists: every way to delete through the Record
  * API moves the ticket to the trash, its sources back to the inbox (the safe default of HK-6),
  * and answers 204 like a delete. A ticket that is in the trash already (only a superuser sees
- * one, in the admin UI) is deleted for good with its group. The handler answers itself instead
- * of calling e.next(): e.next() would run the hard delete of PocketBase.
+ * one, in the admin UI) is deleted for good with its group, unless it is blocked (ADR-0047: the
+ * refusal names the dependencies). The handler answers itself instead of calling e.next():
+ * e.next() would run the hard delete of PocketBase.
  */
 function deleteRequest(e) {
   if (isTrashed(e.record)) {
@@ -323,7 +326,10 @@ function deleteRequest(e) {
       var root = findById(txApp, TICKETS, e.record.id);
       if (root) {
         viewers = viewersOf(txApp, root);
-        purgeGroup(txApp, root);
+        var outcome = purgeGroup(txApp, root);
+        if (outcome.dependencies.length > 0) {
+          throw blockedFailure(root, outcome.dependencies);
+        }
       }
     });
     notifyTrash(e.app, viewers);
@@ -343,15 +349,70 @@ function groupOf(txApp, root) {
   );
 }
 
-// Loads a ticket of the trash the request may see; a sub-ticket of a group is refused (it comes
-// back with its parent).
-function trashedRoot(e, txApp, id) {
+/**
+ * The dependencies of a group of the trash (ADR-0047): its tickets that are not done and the
+ * inbox entries still bound to one of them (sources discarded with the ticket; those given back
+ * to the inbox are free). `members` as groupOf returns them.
+ */
+function dependenciesOfGroup(app, members) {
+  var tickets = [];
+  var sources = [];
+  for (var i = 0; i < members.length; i++) {
+    var member = members[i];
+    tickets.push({
+      id: member.id,
+      key: member.getString('key'),
+      title: member.getString('title'),
+      status: member.getString('status'),
+      blocks: member.getBool('blocks_parent')
+    });
+    var bound = app.findRecordsByFilter(INBOX, 'ticket = {:id}', 'created,id', 0, 0, { id: member.id });
+    for (var j = 0; j < bound.length; j++) {
+      sources.push({
+        id: bound[j].id,
+        ticket: member.id,
+        title: bound[j].getString('title'),
+        channel: bound[j].getString('channel'),
+        scope: bound[j].getString('scope'),
+        primary: member.getString('source_item') === bound[j].id
+      });
+    }
+  }
+  return dependencyRules.dependenciesOf({ tickets: tickets, sources: sources });
+}
+
+// The refusal of a way to delete for good while the group is blocked (ADR-0047), with the list.
+function blockedFailure(root, dependencies) {
+  var counts = dependencyRules.countsOf(dependencies);
+  return fail('id', 'validation_trash_blocked', {
+    key: root.getString('key'),
+    ticket: root.id,
+    count: counts.total,
+    tickets: counts.tickets,
+    sources: counts.sources,
+    dependencies: dependencies
+  });
+}
+
+// Loads a ticket of the trash the request may see (also a sub-ticket of a group).
+function trashedTicket(e, txApp, id) {
   var ticket = findById(txApp, TICKETS, id);
   if (!ticket || !isTrashed(ticket) || !txApp.canAccessRecord(ticket, e.requestInfo(), VISIBLE_RULE)) {
     throw new NotFoundError('Ticket nicht im Papierkorb.');
   }
+  return ticket;
+}
+
+function groupMemberFailure(ticket) {
+  return fail('id', 'validation_trash_group_member', { parent: ticket.getString('parent') });
+}
+
+// Loads a ticket of the trash the request may see; a sub-ticket of a group is refused (it comes
+// back with its parent).
+function trashedRoot(e, txApp, id) {
+  var ticket = trashedTicket(e, txApp, id);
   if (ticket.getString('parent') !== '') {
-    throw fail('id', 'validation_trash_group_member', { parent: ticket.getString('parent') });
+    throw groupMemberFailure(ticket);
   }
   return ticket;
 }
@@ -441,21 +502,20 @@ function seriesPlan(txApp, member, snapshot, detach) {
   return { series: true, note: '' };
 }
 
-// Sources given back to the inbox: which ones come back ({ item, skip }).
+// Sources given back to the inbox (with the ticket or one by one, ADR-0047): which ones come back
+// ({ item, skip }).
 function sourcePlan(txApp, member, snapshot) {
   var plan = [];
-  if (snapshot.sources.handling !== 'inbox') {
-    return plan;
-  }
-  for (var i = 0; i < snapshot.sources.items.length; i++) {
-    var item = findById(txApp, INBOX, snapshot.sources.items[i]);
+  var ids = rules.returnedSources(snapshot);
+  for (var i = 0; i < ids.length; i++) {
+    var item = findById(txApp, INBOX, ids[i]);
     var skip = rules.sourceSkip(
       item
         ? { state: item.getString('state'), ticket: item.getString('ticket'), scope: item.getString('scope') }
         : null,
       member.getString('scope')
     );
-    plan.push({ id: snapshot.sources.items[i], item: item, skip: skip });
+    plan.push({ id: ids[i], item: item, skip: skip });
   }
   return plan;
 }
@@ -468,7 +528,8 @@ function restoreOne(txApp, member, isRoot, plan, actor, result) {
   var before = service.historyValues(member);
   before.project = snapshot.project;
   before.recurrence = snapshot.recurrence;
-  before.parent = isRoot ? snapshot.parent : member.getString('parent');
+  // A sub-task of a group restored on its own leaves its parent in the trash (ADR-0047).
+  before.parent = isRoot && !plan.detached ? snapshot.parent : member.getString('parent');
 
   var mainBack = false;
   for (var s = 0; s < plan.sources.length; s++) {
@@ -540,13 +601,16 @@ function restoreOne(txApp, member, isRoot, plan, actor, result) {
  * Restores a ticket of the trash with its group (ADR-0037 §4 to §7). Body: expected_updated
  * (refuses if the ticket changed since, "Rückgängig"), project (target when the project is gone
  * or has another code: '' for none, else an active project of the scope), detach_series (restore
- * instances as normal tickets when their series has an open ticket). Everything is checked
- * before the first write; the writes run in one transaction. Returns the result for the SPA.
+ * instances as normal tickets when their series has an open ticket), detach_parent (a sub-task of
+ * a group alone, as a ticket of its own: "Lösen und als eigenständiges Ticket wiederherstellen",
+ * ADR-0047; without it a sub-task of a group is refused). Everything is checked before the first
+ * write; the writes run in one transaction. Returns the result for the SPA.
  */
 function restore(e, id) {
   var body = e.requestInfo().body || {};
   var actor = actorOf(e);
   var detach = body.detach_series === true || body.detach_series === 'true';
+  var detachParent = body.detach_parent === true || body.detach_parent === 'true';
   var result = {
     id: id,
     key: '',
@@ -560,11 +624,15 @@ function restore(e, id) {
   };
   var members = [];
   e.app.runInTransaction(function (txApp) {
-    var root = trashedRoot(e, txApp, id);
+    var root = trashedTicket(e, txApp, id);
+    var detaching = root.getString('parent') !== '';
+    if (detaching && !detachParent) {
+      throw groupMemberFailure(root);
+    }
     if (body.expected_updated !== undefined && body.expected_updated !== null && String(body.expected_updated) !== root.getString('updated')) {
       throw fail('id', 'validation_trash_stale');
     }
-    members = groupOf(txApp, root);
+    members = detaching ? [root] : groupOf(txApp, root);
     var target = targetOf(txApp, body, root.getString('scope'));
     var plans = [];
     for (var i = 0; i < members.length; i++) {
@@ -574,11 +642,13 @@ function restore(e, id) {
         project: projectPlan(txApp, members[i], snapshot, target),
         series: seriesPlan(txApp, members[i], snapshot, detach),
         sources: sourcePlan(txApp, members[i], snapshot),
-        reattach: false
+        reattach: false,
+        detached: detaching
       });
     }
+    result.parent_detached = detaching;
     var rootSnapshot = plans[0].snapshot;
-    if (rootSnapshot.parent !== '') {
+    if (!detaching && rootSnapshot.parent !== '') {
       var parent = findById(txApp, TICKETS, rootSnapshot.parent);
       plans[0].reattach =
         members.length === 1 &&
@@ -606,25 +676,35 @@ function restore(e, id) {
 // --- Deleting for good ------------------------------------------------------------------------
 
 // Deletes a group for good inside a transaction: sub-tickets first, each through the delete hook
-// of tickets.pb.js with the discarded sources emptied at once (PURGE_KEY). Returns the count.
+// of tickets.pb.js (history, comments and read rows go with it). A blocked group stays untouched
+// (ADR-0047): the dependencies are read in the same transaction as the delete, so no source is
+// bound to a deleted ticket. Returns { purged, dependencies } (the count of deleted tickets, the
+// dependencies of a blocked group).
 function purgeGroup(txApp, root) {
-  var inbox = require(__hooks + '/lib/inbox-service.js');
   var members = groupOf(txApp, root);
+  var dependencies = dependenciesOfGroup(txApp, members);
+  if (dependencyRules.isBlocked(dependencies)) {
+    return { purged: 0, dependencies: dependencies };
+  }
   for (var i = members.length - 1; i >= 0; i--) {
-    members[i].set(inbox.SOURCE_HANDLING_KEY, 'discard');
-    members[i].set(PURGE_KEY, true);
     txApp.delete(members[i]);
   }
-  return members.length;
+  return { purged: members.length, dependencies: [] };
 }
 
-/** "Endgültig löschen" of one ticket of the trash with its group (ADR-0037 §8). */
+/**
+ * "Endgültig löschen" of one ticket of the trash with its group (ADR-0037 §8); refused with the
+ * list of dependencies while the group is blocked (ADR-0047).
+ */
 function purge(e, id) {
   var viewers = [];
   e.app.runInTransaction(function (txApp) {
     var root = trashedRoot(e, txApp, id);
     viewers = viewersOf(txApp, root);
-    purgeGroup(txApp, root);
+    var outcome = purgeGroup(txApp, root);
+    if (outcome.dependencies.length > 0) {
+      throw blockedFailure(root, outcome.dependencies);
+    }
   });
   notifyTrash(e.app, viewers);
 }
@@ -642,10 +722,14 @@ function visibleRoots(app, userId) {
   return listOf(app.findRecordsByFilter(TICKETS, filter, '-deleted_at,-id', 0, 0, params));
 }
 
-/** "Papierkorb leeren": every group of the trash the user sees, each in its own transaction. */
+/**
+ * "Papierkorb leeren": every group of the trash the user sees, each in its own transaction. A
+ * blocked group stays (ADR-0047). Returns { purged, blocked: [{ id, key, count }] }.
+ */
 function empty(e) {
   var roots = visibleRoots(e.app, e.auth.id);
   var purged = 0;
+  var blocked = [];
   var viewers = [e.auth.id];
   for (var i = 0; i < roots.length; i++) {
     e.app.runInTransaction(function (txApp) {
@@ -657,12 +741,16 @@ function empty(e) {
             viewers.push(ids[v]);
           }
         }
-        purged += purgeGroup(txApp, root);
+        var outcome = purgeGroup(txApp, root);
+        purged += outcome.purged;
+        if (outcome.dependencies.length > 0) {
+          blocked.push({ id: root.id, key: root.getString('key'), count: outcome.dependencies.length });
+        }
       }
     });
   }
   notifyTrash(e.app, viewers);
-  return purged;
+  return { purged: purged, blocked: blocked };
 }
 
 function retentionOf(app, cache, ownerId) {
@@ -675,11 +763,13 @@ function retentionOf(app, cache, ownerId) {
 
 /**
  * Daily run (ADR-0037 §8): deletes for good every group whose retention (of its owner) ran out.
- * Idempotent; each group in its own transaction, a failing one is logged and the others go on.
- * Never throws. Returns { checked, purged, failed, unavailable }.
+ * A blocked group stays and is counted (ADR-0047: "Blockiert – Entscheidung nötig"; the trash
+ * shows it, the app reminds of it). Idempotent; each group in its own transaction, a failing one
+ * is logged and the others go on. Never throws. Returns { checked, purged, blocked, failed,
+ * unavailable }.
  */
 function purgeDue(app, nowMs) {
-  var result = { checked: 0, purged: 0, failed: 0, unavailable: false };
+  var result = { checked: 0, purged: 0, blocked: 0, failed: 0, unavailable: false };
   if (!trashReady(app)) {
     result.unavailable = true;
     return result;
@@ -708,8 +798,13 @@ function purgeDue(app, nowMs) {
         app.runInTransaction(function (txApp) {
           var root = findById(txApp, TICKETS, candidate.id);
           if (root && isTrashed(root) && root.getString('parent') === '') {
+            var outcome = purgeGroup(txApp, root);
+            if (outcome.dependencies.length > 0) {
+              result.blocked += 1;
+              return;
+            }
             viewers = viewers.concat(viewersOf(txApp, root));
-            result.purged += purgeGroup(txApp, root);
+            result.purged += outcome.purged;
           }
         });
       } catch (err) {
@@ -725,7 +820,151 @@ function purgeDue(app, nowMs) {
     app.logger().info('Papierkorb: abgelaufene Tickets endgültig gelöscht', 'tickets', result.purged, 'failed', result.failed);
     notifyTrash(app, viewers);
   }
+  if (result.blocked > 0) {
+    app.logger().info('Papierkorb: abgelaufene Tickets blockiert – Entscheidung nötig', 'tickets', result.blocked);
+  }
   return result;
+}
+
+// --- Resolving dependencies (ADR-0047) ------------------------------------------------------
+
+// "Als erledigt markieren" of a ticket of the trash: status done and completed_at like the ticket
+// hook, the history entry with the acting user. The ticket hooks skip tickets of the trash, so the
+// trash writes both itself.
+function markDone(txApp, ticket, actor) {
+  var service = require(__hooks + '/lib/ticket-service.js');
+  var before = service.historyValues(ticket);
+  ticket.set('status', 'done');
+  ticket.set('completed_at', new Date().toISOString());
+  ticket.set(TRASH_OP_KEY, true);
+  txApp.save(ticket);
+  var changes = history.diff(before, service.historyValues(ticket));
+  for (var i = 0; i < changes.length; i++) {
+    historyEntry(txApp, ticket.id, changes[i].field, changes[i].old_value, changes[i].new_value, actor);
+  }
+}
+
+// The rules of ADR-0033 §2 in the trash: the first ticket of a group with open blocking sub-tasks
+// is done only together with them (complete_children), never leaving them open.
+function completeMember(txApp, ticket, members, withChildren, actor) {
+  if (ticket.getString('status') === 'done') {
+    return;
+  }
+  var ticketRules = require(__hooks + '/lib/ticket-rules.js');
+  var children = [];
+  for (var i = 0; i < members.length; i++) {
+    var child = members[i];
+    if (child.getString('parent') === ticket.id && child.getBool('blocks_parent') && child.getString('status') !== 'done') {
+      children.push(child);
+    }
+  }
+  var decision = ticketRules.completionDecision({
+    wasDone: false,
+    isDone: true,
+    openBlocking: children.length,
+    force: false,
+    completeChildren: withChildren
+  });
+  if (decision === 'refuse') {
+    var keys = [];
+    for (var k = 0; k < children.length && k < 5; k++) {
+      keys.push(children[k].getString('key'));
+    }
+    var code = 'validation_parent_open_children';
+    throw errors.fieldFailure('status', code, ticketRules.SUBTASK_MESSAGES[code], { count: children.length, keys: keys });
+  }
+  if (decision === 'complete_children') {
+    for (var c = 0; c < children.length; c++) {
+      markDone(txApp, children[c], actor);
+    }
+  }
+  markDone(txApp, ticket, actor);
+}
+
+// "Zurück in den Eingang" or "Verwerfen" of a source bound to a ticket of the trash. The main
+// source leaves `source_item` first (it stays in the snapshot when it went back to the inbox, so a
+// restore links it again as main source); the entry gets the note of the ticket in the trash like
+// every source of a deleted ticket, and the ticket a history entry "Quelle gelöst".
+function releaseSource(txApp, ticket, itemId, mode, actor) {
+  var inbox = require(__hooks + '/lib/inbox-service.js');
+  var inboxRules = require(__hooks + '/lib/inbox-rules.js');
+  var item = findById(txApp, INBOX, itemId);
+  var primary = ticket.getString('source_item') === itemId;
+  if (primary || mode === 'inbox') {
+    var snapshot = rules.readSnapshot(ticket.getString('trash'));
+    if (mode === 'inbox') {
+      snapshot.sources.returned.push(itemId);
+      if (primary) {
+        snapshot.source_item = itemId;
+      }
+    }
+    if (primary) {
+      ticket.set('source_item', '');
+    }
+    ticket.set('trash', snapshot);
+    ticket.set(TRASH_OP_KEY, true);
+    txApp.save(ticket);
+  }
+  inbox.settleSourcesOfDeletedTicket(txApp, [itemId], mode, ticket.getString('key'), { ticket: ticket.id, silent: true });
+  var value = inboxRules.sourceLinkValue({ id: itemId, channel: item.getString('channel'), title: item.getString('title') });
+  historyEntry(txApp, ticket.id, inbox.SOURCE_LINK_FIELD, value, '', actor);
+}
+
+// "Anderem Ticket zuordnen …" of a source that is not the main source: the inbox hook checks the
+// target (a live ticket of the same scope) and writes the history of both tickets.
+function moveSource(txApp, itemId, target, actor) {
+  var inbox = require(__hooks + '/lib/inbox-service.js');
+  var item = findById(txApp, INBOX, itemId);
+  item.set('ticket', target);
+  item.set(inbox.ACTOR_KEY, actor);
+  txApp.save(item);
+}
+
+/**
+ * POST /api/byl/trash/{id}/resolve (ADR-0047): the decisions of the decision help for the
+ * dependencies of a group of the trash, in one transaction; the list is checked against the
+ * dependencies before the first write (lib/trash-dependencies.js actionsViolation). Body
+ * { actions: [{ action: 'complete', ticket, complete_children? } | { action: 'inbox' |
+ * 'discard', item } | { action: 'move', item, target }] }. Returns the preview afterwards.
+ */
+function resolve(e, id) {
+  var body = e.requestInfo().body || {};
+  var actor = actorOf(e);
+  var viewers = [];
+  e.app.runInTransaction(function (txApp) {
+    var root = trashedRoot(e, txApp, id);
+    var members = groupOf(txApp, root);
+    var dependencies = dependenciesOfGroup(txApp, members);
+    var byId = {};
+    var ids = [];
+    for (var i = 0; i < members.length; i++) {
+      byId[members[i].id] = members[i];
+      ids.push(members[i].id);
+    }
+    var violation = dependencyRules.actionsViolation(body.actions, dependencies, ids);
+    if (violation) {
+      throw fail('actions', violation.code, { index: violation.index });
+    }
+    var owners = {};
+    for (var d = 0; d < dependencies.length; d++) {
+      if (dependencies[d].kind === 'source') {
+        owners[dependencies[d].item] = dependencies[d].ticket;
+      }
+    }
+    for (var a = 0; a < body.actions.length; a++) {
+      var action = body.actions[a];
+      if (action.action === 'complete') {
+        completeMember(txApp, byId[String(action.ticket)], members, action.complete_children === true, actor);
+      } else if (action.action === 'move') {
+        moveSource(txApp, String(action.item), String(action.target), actor);
+      } else {
+        releaseSource(txApp, byId[owners[String(action.item)]], String(action.item), action.action, actor);
+      }
+    }
+    viewers = viewersOf(txApp, root);
+  });
+  notifyTrash(e.app, viewers);
+  return preview(e, id);
 }
 
 // --- Reading --------------------------------------------------------------------------------
@@ -743,6 +982,13 @@ function projectInfo(app, snapshot) {
   };
 }
 
+// The dependencies of a ticket of the trash as the list and the preview show them (ADR-0047): those
+// of its group; a sub-task of a group has none of its own (its group decides).
+function shownDependencies(app, ticket) {
+  return ticket.getString('parent') === '' ? dependenciesOfGroup(app, groupOf(app, ticket)) : [];
+}
+
+// Fields of the list and the preview; `dependencies` counts what blocks deleting for good.
 function summaryOf(app, ticket, cache, nowMs) {
   var snapshot = rules.readSnapshot(ticket.getString('trash'));
   var days = retentionOf(app, cache, ticket.getString('owner'));
@@ -757,6 +1003,7 @@ function summaryOf(app, ticket, cache, nowMs) {
     project: projectInfo(app, snapshot),
     recurring: snapshot.recurrence !== '',
     children: children.length,
+    dependencies: shownDependencies(app, ticket).length,
     deleted_at: ticket.getString('deleted_at'),
     deleted_by: ticket.getString('deleted_by'),
     updated: ticket.getString('updated'),
@@ -807,13 +1054,19 @@ function preview(e, id) {
   summary.tags = tags;
   summary.subtasks = children;
   summary.group = ticket.getString('parent');
-  summary.sources = { handling: snapshot.sources.handling, count: snapshot.sources.items.length };
+  // Sources discarded with the ticket count while they are bound to it; the decision help may
+  // have given some back or moved them meanwhile (ADR-0047).
+  var count =
+    snapshot.sources.handling === 'discard'
+      ? e.app.findRecordsByFilter(INBOX, 'ticket = {:id}', '', 0, 0, { id: ticket.id }).length
+      : snapshot.sources.items.length;
+  summary.sources = { handling: snapshot.sources.handling, count: count };
+  summary.dependency_list = shownDependencies(e.app, ticket);
   return summary;
 }
 
 module.exports = {
   TRASH_OP_KEY: TRASH_OP_KEY,
-  PURGE_KEY: PURGE_KEY,
   TOPIC: TOPIC,
   VISIBLE_RULE: VISIBLE_RULE,
   trashReady: trashReady,
@@ -824,6 +1077,7 @@ module.exports = {
   moveToTrash: moveToTrash,
   deleteRequest: deleteRequest,
   restore: restore,
+  resolve: resolve,
   purge: purge,
   empty: empty,
   purgeDue: purgeDue,

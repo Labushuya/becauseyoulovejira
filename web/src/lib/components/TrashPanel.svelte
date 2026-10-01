@@ -5,14 +5,18 @@
 	import { personLabel } from '$lib/domain/people';
 	import type { ProjectRef } from '$lib/domain/ticket';
 	import {
+		blockedRetentionText,
 		daysLeftText,
 		type RestoreNeed,
 		type RestoreOptions,
 		type TrashPreview
 	} from '$lib/domain/trash';
+	import type { ResolveAction } from '$lib/domain/trash-dependencies';
+	import type { SourceActionResult } from '$lib/stores/ticket-sources.svelte';
 	import Markdown from './Markdown.svelte';
 	import Drawer from './overlay/Drawer.svelte';
 	import { trashItemHref } from '$lib/ticket-links';
+	import TrashDependencies from './TrashDependencies.svelte';
 	import TrashNeedQuestion from './TrashNeedQuestion.svelte';
 
 	// Read-only preview of a ticket in the trash (ADR-0037 §9), on the side panel next to the table:
@@ -20,14 +24,18 @@
 	// sub-tasks of its group and what happens to its sources, when and by whom it was deleted and
 	// when it goes for good. The footer offers "Wiederherstellen" and "Endgültig löschen …"; a
 	// sub-task of a group has none (it comes back with its parent). A restore that needs a choice
-	// asks inline, like in the row.
+	// asks inline, like in the row. A blocked ticket (ADR-0047) shows the decision help right below
+	// its fields; "Endgültig löschen …" stays locked until nothing blocks it.
 	let {
 		preview,
 		selfId,
 		projects,
 		need,
+		needKey,
 		busy = false,
 		onrestore,
+		onresolve,
+		ondetach,
 		onpurge,
 		ondismissneed,
 		onclose
@@ -36,8 +44,14 @@
 		selfId: string | null;
 		projects: readonly ProjectRef[];
 		need: RestoreNeed | null;
+		/** Key of the ticket the need is about, when it is a sub-task restored on its own. */
+		needKey?: string;
 		busy?: boolean;
 		onrestore: (options: RestoreOptions) => void;
+		/** The decisions of the decision help (ADR-0047). */
+		onresolve: (actions: readonly ResolveAction[]) => Promise<SourceActionResult<TrashPreview>>;
+		/** A sub-task of the group alone, as a ticket of its own. */
+		ondetach: (ticketId: string) => void;
 		/** "Endgültig löschen …": the owner asks before. */
 		onpurge: () => void;
 		ondismissneed: () => void;
@@ -46,6 +60,8 @@
 
 	const uid = $props.id();
 	const titleId = `${uid}-title`;
+	const blockedId = `${uid}-blocked`;
+	const blocked = $derived(preview.dependencyList.length > 0);
 	const due = $derived.by(() => {
 		const date = preview.due.slice(0, 10);
 		return isCalendarDate(date) ? date : null;
@@ -92,7 +108,9 @@
 		</div>
 		<div class="row">
 			<dt>Endgültig gelöscht</dt>
-			<dd>{daysLeftText(preview.daysLeft)}</dd>
+			<dd>
+				{blocked ? blockedRetentionText(preview.daysLeft) : daysLeftText(preview.daysLeft)}
+			</dd>
 		</div>
 		{#if preview.sources.count > 0}
 			<div class="row">
@@ -112,6 +130,15 @@
 			Diese Unteraufgabe kommt mit ihrem übergeordneten Ticket zurück.
 			<a href={trashItemHref(preview.group)}>Übergeordnetes Ticket ansehen</a>
 		</p>
+	{:else}
+		<TrashDependencies
+			rootKey={preview.key}
+			dependencies={preview.dependencyList}
+			{busy}
+			{onresolve}
+			onrestore={() => onrestore({})}
+			{ondetach}
+		/>
 	{/if}
 
 	<section class="part" aria-labelledby={`${uid}-description`}>
@@ -139,7 +166,7 @@
 
 	{#if need}
 		<TrashNeedQuestion
-			key={preview.key}
+			key={needKey ?? preview.key}
 			{need}
 			{projects}
 			{busy}
@@ -150,14 +177,20 @@
 
 	{#snippet footer()}
 		{#if preview.group === ''}
+			{#if blocked}
+				<span id={blockedId} class="visually-hidden">Erst über die Abhängigkeiten entscheiden.</span
+				>
+			{/if}
 			<button
 				class="button-secondary"
 				type="button"
 				aria-haspopup="dialog"
-				aria-disabled={busy ? 'true' : undefined}
+				aria-disabled={busy || blocked ? 'true' : undefined}
 				aria-busy={busy ? 'true' : undefined}
+				aria-describedby={blocked ? blockedId : undefined}
+				title={blocked ? 'Erst über die Abhängigkeiten entscheiden.' : undefined}
 				onclick={() => {
-					if (!busy) onpurge();
+					if (!busy && !blocked) onpurge();
 				}}
 			>
 				Endgültig löschen …

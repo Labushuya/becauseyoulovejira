@@ -16,6 +16,7 @@ import {
 	getTrashPreview,
 	listTrash,
 	purgeFromTrash,
+	resolveTrash,
 	restoreFromTrash,
 	saveTrashRetention,
 	subscribeTrash
@@ -24,7 +25,9 @@ import {
 	DEFAULT_RETENTION,
 	RETENTION_LABELS,
 	TRASH_CODES,
+	blockedReason,
 	restoreNotes,
+	type EmptyResult,
 	type RestoreNeed,
 	type RestoreOptions,
 	type RestoreResult,
@@ -32,6 +35,7 @@ import {
 	type TrashPreview,
 	type TrashRetention
 } from '$lib/domain/trash';
+import { resolvedText, type ResolveAction } from '$lib/domain/trash-dependencies';
 import { SILENT_FLAGS, type FlagSink } from './flags.svelte';
 import { hold } from './realtime';
 import type { SessionGuard } from './ticket-list.svelte';
@@ -44,8 +48,10 @@ export interface TrashData {
 	list(signal?: AbortSignal): Promise<{ items: TrashItem[]; retention: TrashRetention }>;
 	preview(id: string, signal?: AbortSignal): Promise<TrashPreview>;
 	restore(id: string, options: RestoreOptions): Promise<RestoreResult>;
+	/** The decisions of the decision help (ADR-0047); the preview afterwards. */
+	resolve(id: string, actions: readonly ResolveAction[]): Promise<TrashPreview>;
 	purge(id: string): Promise<void>;
-	purgeAll(): Promise<number>;
+	purgeAll(): Promise<EmptyResult>;
 	saveRetention(retention: TrashRetention): Promise<TrashRetention>;
 }
 
@@ -60,6 +66,7 @@ export function trashData(pb: PocketBase, userId: () => string | null): TrashDat
 		list: (signal) => listTrash(pb, { signal }),
 		preview: (id, signal) => getTrashPreview(pb, id, { signal }),
 		restore: (id, options) => restoreFromTrash(pb, id, options),
+		resolve: (id, actions) => resolveTrash(pb, id, actions),
 		purge: (id) => purgeFromTrash(pb, id),
 		purgeAll: () => emptyTrash(pb),
 		saveRetention: (retention) => {
@@ -126,6 +133,11 @@ export function needOf(error: DataError): RestoreNeed | null {
 function reasonOf(error: DataError): string | null {
 	if (error.kind === 'aborted' || error.kind === 'session') return null;
 	if (error.kind === 'not_found') return 'Nicht mehr im Papierkorb.';
+	const blocked = error.fields.id;
+	if (blocked?.code === TRASH_CODES.blocked) {
+		const count = blocked.params?.count;
+		return blockedReason(typeof count === 'number' ? count : 1);
+	}
 	const field = Object.values(error.fields)[0];
 	return field?.message ?? error.message;
 }
@@ -365,6 +377,52 @@ export class TrashStore {
 		}
 	}
 
+	/**
+	 * The decisions of the decision help for the dependencies of a ticket (ADR-0047), in one
+	 * request: done, back to the inbox, discarded, to another ticket. Returns the preview
+	 * afterwards or the reason of a refusal: an error flag shows it, except for a move, whose
+	 * dialog ("Anderem Ticket zuordnen …") shows it itself.
+	 */
+	async resolve(
+		id: string,
+		actions: readonly ResolveAction[]
+	): Promise<{ ok: true; value: TrashPreview } | { ok: false; message: string | null }> {
+		if (this.#busy.has(id) || this.#progress !== null || !this.#session.ensureValid()) {
+			return { ok: false, message: null };
+		}
+		this.#busy.add(id);
+		const key = this.find(id)?.key ?? '';
+		try {
+			const preview = await this.#data.resolve(id, actions);
+			this.#items = this.#items.map((item) =>
+				item.id === id
+					? {
+							...item,
+							status: preview.status,
+							updated: preview.updated,
+							dependencies: preview.dependencyList.length
+						}
+					: item
+			);
+			this.#flags.show({ tone: 'success', title: resolvedText(actions, preview.key) });
+			return { ok: true, value: preview };
+		} catch (error) {
+			const failure = toDataError(error);
+			if (failure.kind === 'session') this.#session.logout();
+			const reason = reasonOf(failure);
+			if (reason !== null && !actions.some((action) => action.action === 'move')) {
+				this.#flags.show({
+					tone: 'error',
+					title: `Die Entscheidung für ${key || 'das Ticket'} wurde nicht übernommen. ${reason}`
+				});
+			}
+			if (failure.kind === 'not_found') this.#remove([id]);
+			return { ok: false, message: reason };
+		} finally {
+			this.#busy.delete(id);
+		}
+	}
+
 	/** "Endgültig löschen" of one ticket with its group; the caller asked before. */
 	async purge(id: string): Promise<boolean> {
 		if (this.#busy.has(id) || this.#progress !== null || !this.#session.ensureValid()) return false;
@@ -471,16 +529,37 @@ export class TrashStore {
 		this.#flags.show({ tone: 'success', title: `${tickets(done.length)} ${verb}.${open}` });
 	}
 
-	/** "Papierkorb leeren"; the caller asked before. */
+	/** Tickets of the trash that wait for a decision (ADR-0047). */
+	get blockedCount(): number {
+		return this.#items.filter((item) => item.dependencies > 0).length;
+	}
+
+	/**
+	 * "Papierkorb leeren"; the caller asked before. Blocked tickets stay (ADR-0047); the flag
+	 * names them.
+	 */
 	async purgeAll(): Promise<boolean> {
 		if (this.#progress !== null || !this.#session.ensureValid()) return false;
 		this.#progress = { label: 'Papierkorb leeren', total: 1, done: 0 };
 		try {
-			const purged = await this.#data.purgeAll();
-			this.#items = [];
+			const { purged, blocked } = await this.#data.purgeAll();
+			const stay = blocked.map((entry) => entry.id);
+			this.#items = this.#items.filter((item) => stay.includes(item.id));
 			this.#needs.clear();
 			this.#result = null;
-			this.#flags.show({ tone: 'success', title: `Papierkorb geleert (${tickets(purged)}).` });
+			const kept =
+				blocked.length === 0
+					? undefined
+					: `${blocked.length === 1 ? '1 blockiertes Ticket bleibt' : `${blocked.length} blockierte Tickets bleiben`}: ${blocked.map((entry) => entry.key).join(', ')}. Bitte in der Vorschau entscheiden.`;
+			this.#flags.show(
+				purged === 0 && kept !== undefined
+					? { tone: 'info', title: 'Nichts gelöscht.', description: kept }
+					: {
+							tone: 'success',
+							title: `Papierkorb geleert (${tickets(purged)}).`,
+							...(kept !== undefined && { description: kept })
+						}
+			);
 			return true;
 		} catch (error) {
 			const failure = toDataError(error);

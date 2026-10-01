@@ -16,8 +16,10 @@ const html = readFileSync(new URL(MANIFEST_PATH, ROOT), 'utf8');
 
 const ARTS = ['unit', 'komponente', 'integration', 'manuell'];
 const STATUSES = ['bestanden', 'offen', 'geplant', 'zurückgestellt', 'nicht zutreffend'];
-const ID_PATTERN = /^BYL-(E\d|X)-\d{3}$/;
-const RANGE_PATTERN = /^(BYL-(?:E\d|X))-(\d{3})\.\.(BYL-(?:E\d|X))-(\d{3})$/;
+// Three or four digits: the numbers of E6 passed 999 (BYL-E6-1000 ff., plan speicher); a range
+// compares them as numbers, never as text.
+const ID_PATTERN = /^BYL-(E\d|X)-\d{3,4}$/;
+const RANGE_PATTERN = /^(BYL-(?:E\d|X))-(\d{3,4})\.\.(BYL-(?:E\d|X))-(\d{3,4})$/;
 const DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 const ADR_PATTERN = /^(\d{4}-[a-z0-9-]+\.md)(, .+)?$/;
 const META_KEYS = ['commit', 'projekt', 'stand'];
@@ -79,8 +81,8 @@ function expandRefs(refs, ids) {
 			const range = RANGE_PATTERN.exec(ref);
 			if (!range) return ref === id;
 			const cut = id.lastIndexOf('-');
-			const [prefix, number] = [id.slice(0, cut), id.slice(cut + 1)];
-			return prefix === range[1] && number >= range[2] && number <= range[4];
+			const [prefix, number] = [id.slice(0, cut), Number(id.slice(cut + 1))];
+			return prefix === range[1] && number >= Number(range[2]) && number <= Number(range[4]);
 		})
 	);
 }
@@ -270,7 +272,7 @@ describe('work packages in docs/test-manifest.html', () => {
 					continue;
 				}
 				expect(range[1], `${paket.id}: ${ref} stays within one prefix`).toBe(range[3]);
-				expect(range[2] < range[4], `${paket.id}: ${ref} ascends`).toBe(true);
+				expect(Number(range[2]) < Number(range[4]), `${paket.id}: ${ref} ascends`).toBe(true);
 				expect(caseIds.has(`${range[1]}-${range[2]}`), `${paket.id}: start of ${ref}`).toBe(true);
 				expect(caseIds.has(`${range[3]}-${range[4]}`), `${paket.id}: end of ${ref}`).toBe(true);
 			}
@@ -405,6 +407,25 @@ describe('summary computed by docs/test-manifest.html', () => {
 			{ id: '', title: 'Ohne Paket oder Bereich', caseIds: ['BYL-E6-006'] }
 		]);
 		expect(summary.deferredIds).toEqual(['BYL-E6-005']);
+	});
+
+	it('takes four-digit IDs as numbers in ranges and labels', () => {
+		const item = (id) => ({ id, title: id, art: ['unit'], status: 'bestanden', pre: '–', steps: ['–'], expect: '–', tests: [] });
+		const ids = ['BYL-E6-998', 'BYL-E6-999', 'BYL-E6-1000', 'BYL-E6-1001', 'BYL-E6-1003', 'BYL-E6-1100'];
+		const data = {
+			meta: {},
+			bereiche: [{ id: 'a', titel: 'Bereich A' }],
+			zurueckgestellt: [],
+			pakete: [{ id: 'P', vorhaben: 'V', titel: 'T', bereich: 'a', faelle: ['BYL-E6-999..BYL-E6-1003'] }],
+			blocks: [{ tag: 'E6', name: 'B', desc: '', items: ids.map(item) }]
+		};
+		const { packages } = pageSummary(data);
+		expect(packages[0].caseIds).toEqual(['BYL-E6-999', 'BYL-E6-1000', 'BYL-E6-1001', 'BYL-E6-1003']);
+		expect(packages[0].idRange).toBe('BYL-E6-999–1001, 1003');
+		expect(expandRefs(['BYL-E6-999..BYL-E6-1003'], ids)).toEqual(packages[0].caseIds);
+		expect(ID_PATTERN.test('BYL-E6-1000')).toBe(true);
+		expect(ID_PATTERN.test('BYL-E6-10000')).toBe(false);
+		expect(ID_PATTERN.test('BYL-E6-99')).toBe(false);
 	});
 });
 
