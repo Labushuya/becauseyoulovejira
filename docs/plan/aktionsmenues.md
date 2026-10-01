@@ -1,8 +1,8 @@
 # Plan „Aktionsmenüs“
 
-- **Stand:** AM-1 umgesetzt (2026-10-01, Branch `feat/ticket-actions-menu`, nur Oberfläche: Build, dann F5; kein Neustart). AM-2 geplant. Offen ist die manuelle Browser-Prüfung BYL-E6-742.
+- **Stand:** AM-1 umgesetzt (2026-10-01, #194, nur Oberfläche: Build, dann F5; kein Neustart). AM-2 umgesetzt (2026-10-01, Branch `feat/table-row-menu`, nur Oberfläche: Build, dann F5; kein Neustart). Offen sind die manuellen Browser-Prüfungen BYL-E6-742 und BYL-E6-746.
 - **Grundlage:** Nutzerentscheidung vom 2026-10-01 auf die Frage, ob es in der Tabelle ein Zeilenmenü „•••“ (Öffnen, Duplizieren, Löschen) geben soll oder der Knopf im Ticket reicht: „beides, aber vorrangig für das Ticket selbst“. Vorgaben des Advisors: Reihenfolge AM-1 (Ticket) vor AM-2 (Tabelle), Einträge, Kopf entschlacken wie in Jira, keine Funktion verloren, Tests für Maus und Tastatur, Doku.
-- **Entscheidungen:** Nachtrag in [ADR-0045](../adr/0045-ticket-duplizieren.md) (Einstieg über das Menü), Nachtrag in [ADR-0036](../adr/0036-sammelbearbeitung-inline-und-oeffnungsmodus.md) (Kopf von Panel und Vollansicht; mit AM-2 das Zeilenmenü), mit AM-2 ein Nachtrag in [ADR-0030](../adr/0030-spalten-breiten-und-kompakte-zeilen.md) (Breite der Spalte „Aktionen“). Das Menü selbst folgt [ADR-0025](../adr/0025-ui-konsistenz-overlay-system.md) §5 (Popover der Art `menu`, „später Aktionsmenüs“).
+- **Entscheidungen:** Nachtrag in [ADR-0045](../adr/0045-ticket-duplizieren.md) (Einstieg über das Menü), Nachtrag in [ADR-0036](../adr/0036-sammelbearbeitung-inline-und-oeffnungsmodus.md) (Kopf von Panel und Vollansicht; Zeilenmenü), Nachtrag 4 in [ADR-0030](../adr/0030-spalten-breiten-und-kompakte-zeilen.md) (Breite der Spalte „Aktionen“). Das Menü selbst folgt [ADR-0025](../adr/0025-ui-konsistenz-overlay-system.md) §5 (Popover der Art `menu`, „später Aktionsmenüs“).
 - **Einordnung:** Manifest-Block „Aktionsmenüs“ ab `BYL-E6-740`. Keine Migration, keine Hooks.
 
 ## 1. Pakete
@@ -10,7 +10,7 @@
 | Paket | Inhalt | Stand |
 |---|---|---|
 | AM-1 | Menü „•••“ im Kopf von Panel und Vollansicht: „Link kopieren“, „Duplizieren …“, „In den Papierkorb …“; der Kopf behält als Symbole nur „Vollansicht“ bzw. „Im Seitenpanel öffnen“ und ×; gemeinsamer Baustein `ActionsMenu` (auch für die Kanal-Karten) | umgesetzt |
-| AM-2 | Zeilenmenü „•••“ in der Spalte „Aktionen“ der Tabelle „Aufgaben“ neben „Öffnen“: „Im Seitenpanel öffnen“, „In Vollansicht öffnen“, „Link kopieren“, „Duplizieren …“, „In den Papierkorb …“; breitere Spalte „Aktionen“ | geplant |
+| AM-2 | Zeilenmenü „•••“ in der Spalte „Aktionen“ der Tabelle „Aufgaben“ nach „Öffnen“: „Im Seitenpanel öffnen“, „In Vollansicht öffnen“, „Link kopieren“, „Duplizieren …“, „In den Papierkorb …“; Spalte „Aktionen“ 5,5 statt 4rem | umgesetzt |
 
 ## 2. AM-1: Menü im Ticket
 
@@ -48,11 +48,54 @@
 - `components/delete-ticket.test.ts` (aus dem Menü, Fokus zurück auf „•••“), `components/ticket-panel.test.ts` (Kopf nur mit „•••“, „Vollansicht öffnen“ und ×; „Duplizieren …“ aus dem Menü im Panel mit Fokus zurück; Vollansicht: Kopf mit „•••“, „Im Seitenpanel öffnen“, ×, „In den Papierkorb …“ und „Duplizieren …“ eingebettet, schließen einander, Esc, Fokus zurück), `components/ticket-duplicate.test.ts` (Abfrage ohne den alten Knopf), `components/channels/*` (Karten auf dem gemeinsamen Baustein), Hilfe (`help-page.test.ts`).
 - Manuell BYL-E6-742: Browser, Tastatur und NVDA.
 
-## 3. AM-2: Zeilenmenü in der Tabelle (geplant)
+## 3. AM-2: Zeilenmenü in der Tabelle
 
-- „•••“ in der Spalte „Aktionen“ jeder Zeile von „Aufgaben“ neben „Öffnen“ (das Symbol bleibt), mit „Im Seitenpanel öffnen“, „In Vollansicht öffnen“, „Link kopieren“, „Duplizieren …“ (Modal, die Tabelle ist kein Modal-Kontext) und „In den Papierkorb …“ (dieselbe Bestätigung mit Quellen-Wahl und „Rückgängig“).
-- Der Zeilenklick bleibt; ein Klick auf „•••“ oder ins Menü öffnet die Zeile nicht. Einzelheiten, Spaltenbreite und Tests folgen mit dem Paket.
+### 3.1 Einstieg und Einträge
+
+- **Ort:** „•••“ am Ende der Spalte „Aktionen“ jeder Zeile von „Aufgaben“, nach dem Häkchen und „Öffnen“ (das Symbol bleibt, nur für die Maus wie bisher). Derselbe Baustein `TicketActions` wie im Kopf, mit `open`; der Knopf heißt „Weitere Aktionen für HAUS-12“ (jede Zeile hat einen, `title` „Weitere Aktionen“), das Menü ebenso. In Gruppen, im Abschnitt „Erledigt“ und bei Unteraufgaben steht er gleich.
+
+| Eintrag | Wirkung |
+|---|---|
+| „Im Seitenpanel öffnen“ | Link auf `/tickets/<id>` mit dem Zustand der Liste |
+| „In Vollansicht öffnen“ | Link auf `/tickets/<id>/voll` mit dem Zustand der Liste |
+| „Link kopieren“ (Linie davor) | wie im Ticket (`copyTicketLink`, Flag „Link kopiert“) |
+| „Duplizieren …“ | nur mit `TicketDuplicateStore`: `DuplicateDialog` als Modal M, danach öffnet sich das Duplikat im gemerkten Modus |
+| „In den Papierkorb …“ (Linie davor) | `TicketDelete` als Bestätigung mit Quellen-Wahl, danach Flag mit „Rückgängig“; ist das Ticket im Panel offen, schließt sich das Panel |
+
+- **Gemerkter Modus:** Die zwei Links öffnen unabhängig vom gemerkten Modus und merken nichts; nur die Knöpfe im Ticket setzen ihn ([ADR-0036](../adr/0036-sammelbearbeitung-inline-und-oeffnungsmodus.md) §1). Begründung: Der Modus ist eine Vorliebe, die der Nutzer im Ticket ausdrücklich wählt; ein Eintrag im Zeilenmenü ist ein einmaliger anderer Weg („diesmal groß“), wie ein Mittelklick. Würde er merken, stellte ein Ausflug in die Vollansicht still alle Zeilen um. Strg-, Umschalt- und Mittelklick öffnen die Links wie jeden Link in einem neuen Tab.
+- **Dialoge als Modal:** Die Tabelle ist kein Modal-Kontext (ADR-0025 Nachtrag 16), also öffnen „Duplizieren …“ und „In den Papierkorb …“ dieselben Dialoge wie im Panel; `reportNestedModal` bleibt grün (ein Dialog). Sie stehen in `TicketTable` außerhalb der Tabelle; der Modal gibt den Fokus an „•••“ der Zeile zurück, ist die Zeile weg (in den Papierkorb), an die Zeile an derselben Stelle bzw. die Überschrift der Ansicht.
+- **Daten der Dialoge:** Eine Zeile kennt nur die Zusammenfassung ihres Tickets. Der `TicketRowActionsStore` (`stores/ticket-row-actions.svelte.ts`, im `(app)`-Layout) lädt nach der Wahl erst, was die Frage braucht: für „Duplizieren …“ Ticket (Beschreibung, Hauptquelle), Quellen und Zahl der Kommentare, für „In den Papierkorb …“ die Quellen (ihre Zahl). Solange trägt die Zelle „Aktionen“ der Zeile `aria-busy` (Warte-Zeiger nach ADR-0026, Nachtrag KK-1), eine zweite Wahl wartet; ein Fehler beim Laden ist ein Fehler-Flag „HAUS-12 konnte nicht geladen werden.“ mit Grund (404: „Das Ticket gibt es nicht mehr, oder es liegt im Papierkorb.“). Unteraufgaben und übergeordnetes Ticket kommen aus der Liste wie im Panel.
+- **Papierkorb wie im Panel:** Das Verschieben ist eine gemeinsame Funktion `moveTicketToTrash` (`stores/trash-move.ts`), die auch der `TicketDetailStore` nutzt: Route mit Quellen-Wahl, Zeile aus der Liste, Flag mit „Rückgängig“ über den `TrashStore`, ein schon fehlendes Ticket (404) zählt als verschoben.
+
+### 3.2 Zeilenklick, Auswahl, Zellen, Gruppen, Tastatur
+
+- Der Zeilenklick bleibt: Er öffnet das Ticket im gemerkten Modus. „•••“ ist ein Knopf und das Menü ein Popover; beides ignoriert die Zeile schon (`CONTROLS` mit `button` und `[popover]`), also öffnet ein Klick darauf oder auf einen Eintrag nie die Zeile und ändert die Auswahl nicht.
+- Die Auswahlspalte, die Zellen zum Bearbeiten und das Häkchen bleiben unverändert; Esc im Menü wird vom Popover verbraucht und hebt die Auswahl nicht auf.
+- Tastatur: „•••“ ist ein Tab-Stopp der Zeile nach dem Häkchen (das Symbol „Öffnen“ bleibt `tabindex="-1"`); das Menü bedient sich wie im Ticket (APG „Menu Button“).
+
+### 3.3 Spaltenbreite
+
+- Die Spalte „Aktionen“ der Aufgaben wird 5,5rem statt 4rem breit (Häkchen 1rem, „Öffnen“ 14 px, „•••“ in `--control-height-s`, je 0,5rem Abstand, 0,5rem Innenabstand links und rechts); der Knopf hat die kleine Höhe, damit die Zeile nicht höher wird. Die Schwellen beim Ausweichen steigen um 1,5rem (Erstellt 64,5, Tags 58,5, Projekt 50,5, Fällig 42,5rem); „Tabellen scrollen nie seitlich“ und die Reihenfolge bleiben ([ADR-0030](../adr/0030-spalten-breiten-und-kompakte-zeilen.md), Nachtrag 4).
+
+### 3.4 Andere Tabellen
+
+- **Papierkorb:** Seine Zeilen haben schon sichtbar „Wiederherstellen“ und „Endgültig löschen …“; ein Menü brächte keinen neuen Weg, nur einen zweiten Ort. Nicht ergänzt.
+- **Eingang:** Die Aktionen der Zeile stehen schon als Knöpfe in einer breiten Spalte (13rem); „Umwandeln“, „Verknüpfen“ usw. sind eigene Abläufe des Eingangs, nicht die eines Tickets. Nicht ergänzt.
+- **Projekte, Wiederholungen:** keine Aktionen in der Zeile, alles im Panel. Nicht ergänzt; ein Menü dort wäre neuer Umfang.
+
+### 3.5 Rechtsklick
+
+- **Nicht umgesetzt.** Ein Kontextmenü an der Zeile müsste das Menü an der Stelle des Zeigers zeigen (der `Popover` platziert nur am Knopf) und das Menü des Browsers ersetzen (Link öffnen, kopieren, untersuchen). Das ist kein kleiner, sauberer Schritt; siehe §4.
+
+### 3.6 Tests
+
+- `stores/ticket-row-actions.test.ts`: Laden je Frage, eine Zeile zur Zeit, Fehler-Flags (404, Server), Sitzung, Verschieben mit Quellen-Wahl und „Rückgängig“, 404 als verschoben, nichts ohne Frage.
+- `components/ticket-table-row-menu.test.ts`: Knopf nach „Öffnen“ mit Namen je Ticket und als Tab-Stopp, Einträge mit Links samt Zustand der Liste und Linien, ohne Store kein „Duplizieren …“, kein Öffnen und keine Auswahl beim Klick, „Link kopiert“, Papierkorb mit Bestätigung, Quellen und „Rückgängig“ (Zeile weg), Panel des Tickets schließt, „Abbrechen“ mit Fokus zurück, „Duplizieren …“ als einziger Dialog mit Fokus zurück, Warten der Zeile (`aria-busy`), Gruppen.
+- Angepasst: `domain/columns.test.ts`, `components/ticket-table-columns.test.ts`, `components/columns-popover.test.ts` (Breite der Spalte „Aktionen“), `components/delete-ticket.test.ts` (gemeinsame Funktion), Hilfe.
+- Manuell BYL-E6-746: Browser, Tastatur und NVDA.
 
 ## 4. Offene Punkte
 
 - **Sammel-Leiste:** Sie heißt weiter „Löschen …“ (Frage und Flag sagen schon „in den Papierkorb“). Angleichen an „In den Papierkorb …“ ist ein eigener kleiner Schritt mit den Tests der Leiste; nicht Teil dieses Auftrags.
+- **Rechtsklick auf eine Zeile** (§3.5): Folgepunkt, falls gewünscht; braucht eine Platzierung des Popovers am Zeiger.
+- **Andere Tabellen** (§3.4): keine Zeilenmenüs, solange es dort keine Aktionen eines Tickets gibt.

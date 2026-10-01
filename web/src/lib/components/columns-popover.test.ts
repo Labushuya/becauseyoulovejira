@@ -265,7 +265,7 @@ describe('menu "Spalten" (ADR-0030)', () => {
 
 	it('changes the width of the title from the keyboard, the way of its grip (Nachtrag 3)', async () => {
 		await showTable();
-		resize(table().parentElement as HTMLElement, 1200);
+		resize(table().parentElement as HTMLElement, 1224);
 		await vi.advanceTimersByTimeAsync(0);
 		const menu = await openMenu();
 		const row = menuButton(menu, 'Spalte Titel breiter').closest('.row') as HTMLElement;
@@ -333,7 +333,7 @@ describe('menu "Spalten" (ADR-0030)', () => {
 
 	it('keeps columns hidden for lack of space checked and says why', async () => {
 		await showTable();
-		resize(table().parentElement as HTMLElement, 800);
+		resize(table().parentElement as HTMLElement, 840);
 		await vi.advanceTimersByTimeAsync(0);
 		const menu = await openMenu();
 

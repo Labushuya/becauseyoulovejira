@@ -12,7 +12,9 @@
 	import { findFirstStepsStore } from '$lib/stores/first-steps.svelte';
 	import { getInboxStore } from '$lib/stores/inbox.svelte';
 	import { getRecurrenceStore } from '$lib/stores/recurrence.svelte';
+	import { findTicketDuplicateStore } from '$lib/stores/ticket-duplicate.svelte';
 	import { getTicketListStore } from '$lib/stores/ticket-list.svelte';
+	import { findTicketRowActions } from '$lib/stores/ticket-row-actions.svelte';
 	import { getTourStarter } from '$lib/tour/tour-context';
 
 	// KPI tiles, filter bar, table and panel area (E2 plan, T-4; E3 plan, T-3 and packages 5, 10
@@ -28,6 +30,9 @@
 	const rules = getRecurrenceStore();
 	// Bulk actions on the chosen rows (plan BI-2); only inside the (app) layout.
 	const bulk = findBulkEditStore() ?? undefined;
+	// The menu "•••" of every row (plan aktionsmenues, AM-2) and its "Duplizieren …" (ADR-0045).
+	const rowActions = findTicketRowActions() ?? undefined;
+	const duplicates = findTicketDuplicateStore();
 	// "Erste Schritte" below the empty state (plan EH-12); only inside the (app) layout.
 	const firstSteps = findFirstStepsStore();
 	// The tour of the (app) layout (EH-13); with it "Erste Schritte" offers "Kurze Einführung".
@@ -72,6 +77,8 @@
 			{creating}
 			inboxCount={inbox.newCount}
 			{bulk}
+			{rowActions}
+			{duplicates}
 			recurrenceTextOf={(ticket) => rules.textOf(ticket.recurrenceId)}
 		>
 			{#snippet tools()}

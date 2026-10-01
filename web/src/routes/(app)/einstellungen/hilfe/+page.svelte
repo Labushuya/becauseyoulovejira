@@ -533,6 +533,11 @@
 						links sagt „Link kopiert“. Der Link öffnet das Ticket im Seitenpanel, auch in einem
 						anderen Tab.
 					</li>
+					<li>
+						In der Tabelle „Aufgaben“ steht dasselbe Menü am Ende jeder Zeile, dazu „Im Seitenpanel
+						öffnen“ und „In Vollansicht öffnen“: Sie öffnen das Ticket genau so, ohne zu ändern, wie
+						Zeilen sonst öffnen. Ein Klick auf „•••“ öffnet die Zeile nicht.
+					</li>
 				</ul>
 			</details>
 			<details>

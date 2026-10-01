@@ -84,7 +84,7 @@ Machbar und umgesetzt; der Fallback (b′, nur ein Verweis in der Beschreibung) 
 - Texte der Codes gleich in `web/src/lib/domain/duplicate.ts` (Paritätstest).
 - CLAUDE.md §5 und §7, README und Hilfe beschreiben das Duplizieren.
 
-## Nachtrag (2026-10-01, Plan „Aktionsmenüs“, AM-1): Einstieg über das Menü „•••“
+## Nachtrag (2026-10-01, Plan „Aktionsmenüs“, AM-1 und AM-2): Einstieg über das Menü „•••“
 
 **Anlass:** Nutzerentscheidung vom 2026-10-01: ein Aktionsmenü „•••“, „beides, aber vorrangig für das Ticket selbst“ ([Plan](../plan/aktionsmenues.md)). Damit entfällt der Grund, aus dem §1 und die Alternative „‚Duplizieren …‘ in einem neuen Menü ‚•••‘ im Kopf“ das Menü verworfen hatten: Es ist jetzt der Ort aller Aktionen eines Tickets, nicht ein Menü nur für diese eine.
 
@@ -92,5 +92,5 @@ Machbar und umgesetzt; der Fallback (b′, nur ein Verweis in der Beschreibung) 
 
 - **„Duplizieren …“** steht im Menü „•••“ („Weitere Aktionen“) im Kopf von Panel und Vollansicht, zwischen „Link kopieren“ und „In den Papierkorb …“, nur mit dem `TicketDuplicateStore` des `(app)`-Layouts. Der Symbolknopf mit den zwei Blättern (`TicketDuplicate`) entfällt; als Symbole bleiben im Kopf nur „Vollansicht“ bzw. „Im Seitenpanel öffnen“ und ×.
 - **Abfrage unverändert:** im Panel das Modal M, in der Vollansicht derselbe Inhalt eingebettet oben im Inhalt (`InlineDialog`, ADR-0025 Nachtrag 16); „Duplizieren …“ und „In den Papierkorb …“ schließen einander. Der Fokus liegt nach der Wahl im Menü auf „•••“, also kehrt er nach „Abbrechen“ und Esc dorthin zurück. Der Eintrag meldet im Panel `aria-haspopup="dialog"`, in der Vollansicht nichts, weil er dort keinen Dialog öffnet.
-- **Tabelle:** Die Aussage aus §1, die Tabelle habe kein Zeilenmenü, gilt bis zum Paket AM-2 des Plans; mit ihm kommt „Duplizieren …“ auch dort ins Menü einer Zeile.
-- **Tests:** `ticket-actions.test.ts` (Menü), `ticket-panel.test.ts` (Panel und Vollansicht), `ticket-duplicate.test.ts` (Abfrage); Manifest BYL-E6-740 bis BYL-E6-742.
+- **Tabelle (seit AM-2, ersetzt den zweiten Punkt von §1):** „Duplizieren …“ steht auch im Menü „•••“ jeder Zeile der Tabelle „Aufgaben“. Die Tabelle ist kein Modal, also ist die Abfrage dort das Modal M des Panels. Weil eine Zeile nur die Zusammenfassung ihres Tickets kennt, lädt der `TicketRowActionsStore` vorher Ticket, Quellen und Zahl der Kommentare (Fehler als Flag); danach gilt §2 bis §6 unverändert. Weiter keine Sammelaktion.
+- **Tests:** `ticket-actions.test.ts` (Menü), `ticket-panel.test.ts` (Panel und Vollansicht), `ticket-duplicate.test.ts` (Abfrage), `ticket-table-row-menu.test.ts` und `ticket-row-actions.test.ts` (Zeile); Manifest BYL-E6-740 bis BYL-E6-746.

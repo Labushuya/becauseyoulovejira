@@ -1,22 +1,29 @@
 <script lang="ts">
+	import type { ResolvedPathname } from '$app/types';
 	import { copyTicketLink } from '$lib/copy-link';
 	import type { FlagSink } from '$lib/stores/flags.svelte';
 	import { ticketShareUrl } from '$lib/ticket-links';
 	import ActionsMenu, { type MenuAction } from './ActionsMenu.svelte';
 
-	// The actions of a ticket in the menu "•••" (plan aktionsmenues, AM-1): "Link kopieren",
-	// "Duplizieren …" (ADR-0045, only where its store is there) and, after a line, "In den Papierkorb …"
-	// (ADR-0037). In the header of the side panel the two last ones open a dialog; the full view is a
-	// modal and opens none (ADR-0025 addendum 16), so there (`inline`) the owner unfolds the question
-	// in its content and gives the focus back to the button of the menu afterwards (`trigger`). The
-	// frequent actions bound to their place stay symbol buttons next to it: "Vollansicht" or "Im
-	// Seitenpanel öffnen" and ×.
+	// The actions of a ticket in the menu "•••" (plan aktionsmenues): "Link kopieren", "Duplizieren …"
+	// (ADR-0045, only where its store is there) and, after a line, "In den Papierkorb …" (ADR-0037).
+	// AM-1, the header of the side panel and the full view: in the panel the two last ones open a
+	// dialog; the full view is a modal and opens none (ADR-0025 addendum 16), so there (`inline`) the
+	// owner unfolds the question in its content and gives the focus back to the button of the menu
+	// afterwards (`trigger`). The frequent actions bound to their place stay symbol buttons next to
+	// it: "Vollansicht" or "Im Seitenpanel öffnen" and ×. AM-2, a row of the table: `open` puts
+	// "Im Seitenpanel öffnen" and "In Vollansicht öffnen" first, links that open the ticket that way
+	// whatever way is remembered, and remember nothing (ADR-0036 §1: only the buttons in the ticket
+	// do); the button names its ticket, because every row has one.
 	let {
 		ticket,
 		flags,
 		inline = false,
+		open = null,
 		onduplicate = null,
 		ondelete,
+		buttonLabel = 'Weitere Aktionen',
+		buttonClass,
 		trigger = $bindable()
 	}: {
 		ticket: { id: string; key: string };
@@ -24,17 +31,30 @@
 		flags: FlagSink;
 		/** Full view: the entries unfold a question in the content instead of a dialog. */
 		inline?: boolean;
+		/** A row of the table: the addresses of the panel and the full view of the ticket. */
+		open?: { panel: ResolvedPathname; full: ResolvedPathname } | null;
 		/** "Duplizieren …"; null leaves the entry out. */
 		onduplicate?: (() => void) | null;
 		/** "In den Papierkorb …". */
 		ondelete: () => void;
+		/** Name of the button; a row names its ticket ("Weitere Aktionen für HAUS-12"). */
+		buttonLabel?: string;
+		/** Classes of the button, `.button-icon` by default. */
+		buttonClass?: string;
 		/** The button of the menu. */
 		trigger?: HTMLButtonElement;
 	} = $props();
 
 	const items = $derived.by((): MenuAction[] => [
+		...(open === null
+			? []
+			: [
+					{ label: 'Im Seitenpanel öffnen', href: open.panel },
+					{ label: 'In Vollansicht öffnen', href: open.full }
+				]),
 		{
 			label: 'Link kopieren',
+			separated: open !== null,
 			onselect: () =>
 				void copyTicketLink(ticket.key, ticketShareUrl(ticket.id, window.location.origin), flags)
 		},
@@ -47,8 +67,9 @@
 
 <ActionsMenu
 	label={`Weitere Aktionen für ${ticket.key}`}
-	buttonLabel="Weitere Aktionen"
+	{buttonLabel}
 	buttonTitle="Weitere Aktionen"
+	{buttonClass}
 	{items}
 	bind:trigger
 />

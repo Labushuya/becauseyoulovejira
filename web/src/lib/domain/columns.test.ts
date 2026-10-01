@@ -291,9 +291,10 @@ describe('fitColumns', () => {
 
 	// Thresholds of the container queries before ADR-0030 and with the default widths now. A fixed
 	// table layout needs real widths for key, status and actions, so they move by up to 2.5rem. The
-	// selection of the tickets (plan BI-2) adds its 2.5rem on top of that.
+	// selection of the tickets (plan BI-2) adds its 2.5rem on top of that, the menu "•••" of a row
+	// (plan aktionsmenues, AM-2) another 1.5rem.
 	it.each([
-		[TICKET_TABLE, { created: [60, 63], tags: [52, 57], project: [44, 49], due: [36, 41] }],
+		[TICKET_TABLE, { created: [60, 64.5], tags: [52, 58.5], project: [44, 50.5], due: [36, 42.5] }],
 		[
 			INBOX_TABLE,
 			{ arrival: [52, 50.5], source: [46, 44.5], kind: [40, 37.5], 'source-date': [34, 31.5] }
@@ -309,13 +310,13 @@ describe('fitColumns', () => {
 			const actual = threshold(table, id);
 			expect(Math.abs(actual - now), `${table.id}/${id}: ${actual}rem`).toBeLessThanOrEqual(1);
 			const label = `${table.id}/${id} against ${before}rem`;
-			const selection = table === TICKET_TABLE ? 2.5 : 0;
-			expect(Math.abs(actual - selection - before), label).toBeLessThanOrEqual(2.5);
+			const added = table === TICKET_TABLE ? 2.5 + 1.5 : 0;
+			expect(Math.abs(actual - added - before), label).toBeLessThanOrEqual(2.5);
 		}
 	});
 
-	it('hides "Erstellt" and "Tags" of the tickets at 800 px and names them as hidden for space', () => {
-		const fit = fitColumns(800, TICKET_TABLE.columns, NONE);
+	it('hides "Erstellt" and "Tags" of the tickets at 840 px and names them as hidden for space', () => {
+		const fit = fitColumns(840, TICKET_TABLE.columns, NONE);
 		expect(fit.autoHidden).toEqual(['created', 'tags']);
 		expect(fit.visible).toEqual([
 			'select',
@@ -327,14 +328,20 @@ describe('fitColumns', () => {
 			'due',
 			'actions'
 		]);
-		expect(fit.flexWidth).toBe(800 - 40 - 96 - 64 - 104 - 128 - 128 - 64);
+		expect(fit.flexWidth).toBe(840 - 40 - 96 - 64 - 104 - 128 - 128 - 88);
+		// 800 px, enough before the menu "•••" of the rows, now leaves "Projekt" out as well.
+		expect(fitColumns(800, TICKET_TABLE.columns, NONE).autoHidden).toEqual([
+			'created',
+			'tags',
+			'project'
+		]);
 	});
 
 	it('hides earlier when the user made columns wider, and keeps their widths', () => {
 		const wide: ColumnPrefs = { widths: { tags: 320 }, hidden: ['parent', 'source'] };
 		const before = threshold(TICKET_TABLE, 'created');
 		expect(threshold(TICKET_TABLE, 'created', wide)).toBeGreaterThan(before);
-		// All columns need 1200 px with the wide tags instead of 1008 px (selection included).
+		// All columns need 1224 px with the wide tags instead of 1032 px (selection included).
 		const fit = fitColumns(1240, TICKET_TABLE.columns, wide);
 		expect(fit.widths.tags).toBe(320);
 		expect(fit.autoHidden).toEqual([]);
@@ -375,8 +382,8 @@ describe('fitColumns', () => {
 		expect(fit.widths.key).toBeLessThan(128);
 		expect(fit.widths.status).toBeLessThan(160);
 		expect(fit.flexWidth).toBeGreaterThanOrEqual(10 * REM);
-		// Below the sum of the minimums the title gives up its minimum.
-		const narrow = fitColumns(300, TICKET_TABLE.columns, NONE);
+		// Below the sum of the minimums the title gives up its minimum (the others need 312 px).
+		const narrow = fitColumns(320, TICKET_TABLE.columns, NONE);
 		expect(narrow.widths.key).toBe(spec(TICKET_TABLE, 'key').min);
 		expect(narrow.flexWidth).toBeLessThan(10 * REM);
 	});
@@ -384,8 +391,8 @@ describe('fitColumns', () => {
 
 describe('width of the title (ADR-0030 Nachtrag 3)', () => {
 	const columns = TICKET_TABLE.columns;
-	/** The default widths of the shown tickets columns: 848 px besides the title. */
-	const OTHERS = 40 + 96 + 64 + 104 + 128 + 128 + 128 + 96 + 64;
+	/** The default widths of the shown tickets columns: 872 px besides the title. */
+	const OTHERS = 40 + 96 + 64 + 104 + 128 + 128 + 128 + 96 + 88;
 	const withTitle = (title: number, hidden = NONE.hidden): ColumnPrefs => ({
 		widths: { title },
 		hidden
@@ -418,7 +425,7 @@ describe('width of the title (ADR-0030 Nachtrag 3)', () => {
 		}
 		// Fixed columns keep their width; the widest room (Tags) gets the most.
 		expect(fit.widths.select).toBe(40);
-		expect(fit.widths.actions).toBe(64);
+		expect(fit.widths.actions).toBe(88);
 		expect((fit.widths.tags as number) - 128).toBeGreaterThan((fit.widths.key as number) - 96);
 	});
 
@@ -426,7 +433,7 @@ describe('width of the title (ADR-0030 Nachtrag 3)', () => {
 		const fit = fitColumns(3000, columns, withTitle(240));
 		expect(fit.widths.tags).toBe(320);
 		expect(fit.widths.project).toBe(256);
-		expect(fit.flexWidth).toBe(3000 - (40 + 128 + 96 + 160 + 256 + 320 + 192 + 144 + 64));
+		expect(fit.flexWidth).toBe(3000 - (40 + 128 + 96 + 160 + 256 + 320 + 192 + 144 + 88));
 	});
 
 	it('lets a wide title give way first when the frame is narrower, without hiding a column', () => {
@@ -450,8 +457,8 @@ describe('width of the title (ADR-0030 Nachtrag 3)', () => {
 	});
 
 	it('bounds the title by the room of the others: minimum and maximum', () => {
-		// 352 px of rest at 1200 px; the others can give 272 px and take 552 px.
-		expect(flexibleBounds(1200, columns, NONE)).toEqual({ min: 160, max: 624 });
+		// 328 px of rest at 1200 px; the others can give 272 px and take 552 px.
+		expect(flexibleBounds(1200, columns, NONE)).toEqual({ min: 160, max: 600 });
 		// On a very wide frame the others reach their maximum first: the title stays wide.
 		expect(flexibleBounds(3000, columns, NONE)).toEqual({ min: 960, max: 960 });
 		// Not measured: the bounds of the column.
@@ -470,11 +477,11 @@ describe('width of the title (ADR-0030 Nachtrag 3)', () => {
 		expect(fit.flexWidth).toBe(500);
 		expect(fit.autoHidden).toEqual([]);
 
-		// Wider than the others allow: the grip stops at 624 px, nothing gives way.
+		// Wider than the others allow: the grip stops at 600 px, nothing gives way.
 		const most = resizeColumn(1200, columns, NONE, 'title', 2000);
-		expect(most.widths.title).toBe(624);
+		expect(most.widths.title).toBe(600);
 		expect(most.widths.key).toBe(spec(TICKET_TABLE, 'key').min);
-		expect(fitColumns(1200, columns, most)).toMatchObject({ flexWidth: 624, autoHidden: [] });
+		expect(fitColumns(1200, columns, most)).toMatchObject({ flexWidth: 600, autoHidden: [] });
 	});
 
 	it('makes the title narrower without touching the stored widths of the others', () => {

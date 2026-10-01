@@ -23,7 +23,7 @@ import {
 } from '$lib/data/tickets';
 import { toggleTask } from '$lib/markdown';
 import { PIN_FLAGS, type CommentPinControl } from '$lib/domain/comments';
-import { deletedWithSourcesText, type SourceHandling } from '$lib/domain/sources';
+import type { SourceHandling } from '$lib/domain/sources';
 import { isCalendarDate } from '$lib/domain/berlin-date';
 import { NO_SERIES, type SeriesChangeSink } from '$lib/domain/series-template';
 import { isPriority, isStatus, type Status } from '$lib/domain/status';
@@ -44,6 +44,14 @@ import {
 	type CompletedChild,
 	type SessionGuard
 } from './ticket-list.svelte';
+import {
+	moveTicketToTrash,
+	type DeleteResult,
+	type DeleteSources,
+	type TrashUndo
+} from './trash-move';
+
+export type { DeleteResult, DeleteSources, TrashUndo };
 
 /** Fields editable in the panel (E2 plan, section 2; E3 plan, T-13). */
 export type EditableField = 'title' | 'description' | 'status' | 'priority' | 'due' | 'project';
@@ -91,20 +99,6 @@ export interface TicketDetailData {
 	 */
 	delete(id: string, sources: SourceHandling): Promise<TrashMove | null>;
 }
-
-/** What the store needs of the trash: the flag with "Rückgängig" after a move (ADR-0037 §7). */
-export interface TrashUndo {
-	offerUndo(move: TrashMove, title: string): void;
-}
-
-/** Sources of the ticket to delete and what happens to them (ADR-0031, addendum B). */
-export interface DeleteSources {
-	count: number;
-	handling: SourceHandling;
-}
-
-/** Outcome of deleting the ticket; a failure carries a message unless nothing is to be shown. */
-export type DeleteResult = { ok: true; key: string } | { ok: false; message: string | null };
 
 /** Outcome of ticking a task; a failure carries a message unless nothing is to be shown. */
 export type TaskResult = { ok: true } | { ok: false; message: string | null };
@@ -938,30 +932,20 @@ export class TicketDetailStore implements CommentPinControl {
 	async deleteTicket(sources?: DeleteSources): Promise<DeleteResult> {
 		const ticket = this.#ticket;
 		if (ticket === null) return { ok: false, message: null };
-		if (!this.#session.ensureValid()) return { ok: false, message: null };
+		// Its delete event is the own one, not a deletion elsewhere.
 		this.#deletingId = ticket.id;
-		let move: TrashMove | null = null;
-		try {
-			move = await this.#data.delete(ticket.id, sources?.handling ?? 'inbox');
-		} catch (error) {
-			if (this.#deletingId === ticket.id) this.#deletingId = null;
-			const failure = toDataError(error);
-			if (failure.kind === 'session') this.#session.logout();
-			if (failure.kind === 'session' || failure.kind === 'aborted') {
-				return { ok: false, message: null };
-			}
-			if (failure.kind !== 'not_found') return { ok: false, message: failure.message };
-		}
-		this.#list.remove(ticket.id);
-		const text = deletedWithSourcesText(
-			ticket.key,
-			sources?.count ?? 0,
-			sources?.handling ?? 'inbox',
-			move !== null
+		const result = await moveTicketToTrash(
+			{
+				delete: (id, handling) => this.#data.delete(id, handling),
+				session: this.#session,
+				list: this.#list,
+				trash: this.#trash
+			},
+			ticket,
+			sources
 		);
-		if (move !== null && this.#trash !== null) this.#trash.offerUndo(move, text);
-		else this.#list.announce(text);
-		return { ok: true, key: ticket.key };
+		if (!result.ok && this.#deletingId === ticket.id) this.#deletingId = null;
+		return result;
 	}
 
 	/** Empties the store, ends the subscription and aborts a running request. */

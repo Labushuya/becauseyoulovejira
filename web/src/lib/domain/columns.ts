@@ -161,7 +161,8 @@ export const TICKET_TABLE: TableSpec = table(
 		column('tags', 'Tags', { width: 8, min: 4, max: 20, hideRank: 2 }),
 		column('due', 'Fällig', { width: 8, min: 5, max: 12, hideRank: 4 }),
 		column('created', 'Erstellt', { width: 6, min: 5, max: 9, hideRank: 1 }),
-		fixed('actions', 'Aktionen', 4)
+		// Check mark, "Öffnen" and the menu "•••" of the row (plan aktionsmenues, AM-2).
+		fixed('actions', 'Aktionen', 5.5)
 	],
 	[{ id: NEST_SUBTASKS, label: 'Unteraufgaben einrücken', default: true }]
 );

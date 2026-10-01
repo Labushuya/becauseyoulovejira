@@ -19,13 +19,21 @@
 	} from '$lib/domain/labels';
 	import { hasFilters, parseListQuery, resetFilters } from '$lib/domain/list-query';
 	import { nextSort, sortDirection, type SortKey } from '$lib/domain/ordering';
+	import { parentOf } from '$lib/domain/subtasks';
 	import type { TicketSummary } from '$lib/domain/ticket';
 	import type { CatalogStore } from '$lib/stores/catalog.svelte';
 	import { getColumnPrefs } from '$lib/stores/column-prefs.svelte';
+	import { SILENT_FLAGS } from '$lib/stores/flags.svelte';
+	import type { TicketDuplicateStore } from '$lib/stores/ticket-duplicate.svelte';
 	import type { TicketListStore } from '$lib/stores/ticket-list.svelte';
+	import type { TicketRowActionsStore } from '$lib/stores/ticket-row-actions.svelte';
+	import type { DeleteResult, DeleteSources } from '$lib/stores/trash-move';
 	import {
 		NEW_TICKET_LINK_ID,
+		fullViewHref,
+		listHref,
 		newTicketHref,
+		ticketHref,
 		withListQuery,
 		withShowDone
 	} from '$lib/ticket-links';
@@ -43,6 +51,7 @@
 	import BulkActionBar from './BulkActionBar.svelte';
 	import ColumnsPopover from './ColumnsPopover.svelte';
 	import CompletionDialog from './CompletionDialog.svelte';
+	import DuplicateDialog from './DuplicateDialog.svelte';
 	import ErrorIcon from './ErrorIcon.svelte';
 	import EmptyState from './guidance/EmptyState.svelte';
 	import GroupPopover from './GroupPopover.svelte';
@@ -51,6 +60,8 @@
 	import { ColumnFit, cellsOf } from './table/column-fit.svelte';
 	import { naturalWidth } from './table/measure';
 	import ResizableHeader from './table/ResizableHeader.svelte';
+	import TicketActions from './TicketActions.svelte';
+	import TicketDelete from './TicketDelete.svelte';
 	import TicketTableRow from './TicketTableRow.svelte';
 	import ViewSwitch from './ViewSwitch.svelte';
 
@@ -77,6 +88,12 @@
 	// the head checkbox all rows that pass the filters (also in folded groups), indeterminate when
 	// only some are chosen. A filter change keeps only rows that are still shown; Escape in the
 	// table clears the selection. With `bulk` the bar of the bulk actions stands above the table.
+	// Menu of a row (plan aktionsmenues, AM-2): with `rowActions` every row ends with "•••" after
+	// "Öffnen": the ticket in the panel or the full view (links, whatever way is remembered, which
+	// they do not change), "Link kopieren", "Duplizieren …" (with `duplicates`) and "In den
+	// Papierkorb …". The table is no modal, so their questions open as the dialogs of the panel;
+	// a click on "•••" or in the menu never opens the row. A ticket moved to the trash while its
+	// panel is open closes the panel.
 	let {
 		store,
 		catalog,
@@ -85,6 +102,8 @@
 		inboxCount = null,
 		recurrenceTextOf = () => '',
 		bulk,
+		rowActions,
+		duplicates = null,
 		tools,
 		emptyExtra
 	}: {
@@ -100,6 +119,10 @@
 		recurrenceTextOf?: (ticket: TicketSummary) => string;
 		/** Bulk actions on the chosen rows (plan BI-2); without it the bar is not shown. */
 		bulk?: BulkEditStore;
+		/** The menu "•••" of every row (plan aktionsmenues, AM-2); without it the rows have none. */
+		rowActions?: TicketRowActionsStore;
+		/** "Duplizieren …" in the menu of a row (ADR-0045); null leaves the entry out. */
+		duplicates?: TicketDuplicateStore | null;
 		/**
 		 * KPI tiles and filter bar, below the section bar: the switch "Aufgaben | Projekte |
 		 * Eingang" stands at the same place in every view (ADR-0025 section 10, package UI-8).
@@ -376,6 +399,17 @@
 		});
 	});
 
+	/** The dialog a row asked for in its menu "•••" (plan aktionsmenues, AM-2). */
+	const rowDialog = $derived(rowActions?.dialog ?? null);
+
+	/** "In den Papierkorb …" of a row; the panel of that ticket closes afterwards. */
+	async function moveRowToTrash(ticketId: string, sources?: DeleteSources): Promise<DeleteResult> {
+		if (!rowActions) return { ok: false, message: null };
+		const result = await rowActions.deleteTicket(sources);
+		if (result.ok && ticketId === activeId) await goto(listHref(page.url));
+		return result;
+	}
+
 	/** Whether the form "Neues Ticket" was open. */
 	let wasCreating = false;
 
@@ -421,9 +455,24 @@
 				save: (patch) => store.changeField(ticket.id, patch),
 				createTag: (name) => catalog.ensureTag(name)
 			}}
+			menu={rowActions ? rowMenu : undefined}
+			menuBusy={rowActions?.isPreparing(ticket.id) ?? false}
 			ontoggle={(done) => store.setDone(ticket.id, done)}
 		/>
 	{/each}
+{/snippet}
+
+<!-- The menu "•••" of a row (plan aktionsmenues, AM-2). -->
+{#snippet rowMenu(ticket: TicketSummary)}
+	<TicketActions
+		{ticket}
+		flags={rowActions?.flags ?? SILENT_FLAGS}
+		open={{ panel: ticketHref(ticket.id, page.url), full: fullViewHref(ticket.id, page.url) }}
+		buttonLabel={`Weitere Aktionen für ${ticket.key}`}
+		buttonClass="button-icon row-menu"
+		onduplicate={duplicates === null ? null : () => void rowActions?.choose('duplicate', ticket)}
+		ondelete={() => void rowActions?.choose('delete', ticket)}
+	/>
 {/snippet}
 
 <!-- Head of a group: a disclosure button with the label and the number (plan OR-3). -->
@@ -756,6 +805,30 @@
 		</div>
 	{/if}
 </section>
+
+<!-- The questions of the menu of a row (plan aktionsmenues, AM-2): the table is no modal, so
+     they open as dialogs, and the modal gives the focus back to "•••" (or the heading). -->
+{#if rowDialog?.kind === 'duplicate' && duplicates !== null}
+	<DuplicateDialog
+		ticket={rowDialog.ticket}
+		projects={catalog.activeProjects}
+		sources={rowDialog.sources}
+		commentCount={rowDialog.commentCount}
+		subtaskCount={store.progressOf(rowDialog.ticket.id).total}
+		parentKey={parentOf(rowDialog.ticket, (id) => store.find(id))?.key ?? null}
+		store={duplicates}
+		onopen={(id) => void goto(links.href(id, page.url))}
+		onclose={() => rowActions?.close()}
+	/>
+{:else if rowDialog?.kind === 'delete'}
+	<TicketDelete
+		ticket={rowDialog.ticket}
+		remove={(sources) => moveRowToTrash(rowDialog.ticket.id, sources)}
+		onclose={() => rowActions?.close()}
+		sourceCount={rowDialog.sourceCount}
+		subtaskCount={store.progressOf(rowDialog.ticket.id).total}
+	/>
+{/if}
 
 <!-- The check mark of a ticket with open blocking sub-tasks asks first (ADR-0033 section 2). -->
 {#if store.completion}

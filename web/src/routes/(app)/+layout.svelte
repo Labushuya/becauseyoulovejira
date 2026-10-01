@@ -69,6 +69,11 @@
 	} from '$lib/stores/ticket-list.svelte';
 	import { TicketOpenModeStore, setTicketOpenMode } from '$lib/stores/open-mode.svelte';
 	import {
+		TicketRowActionsStore,
+		setTicketRowActions,
+		ticketRowActionsData
+	} from '$lib/stores/ticket-row-actions.svelte';
+	import {
 		RecentTicketsStore,
 		setRecentTickets,
 		setTicketPickerSource,
@@ -154,6 +159,11 @@
 	);
 	// "Ticket duplizieren" (ADR-0045): one request, the result as a flag with the way back.
 	setTicketDuplicateStore(new TicketDuplicateStore(ticketDuplicateData(pb), auth, flags));
+	// The menu "•••" of a row of the table (plan aktionsmenues, AM-2): its dialogs load what they
+	// need first; moving to the trash offers "Rückgängig" like the panel.
+	setTicketRowActions(
+		new TicketRowActionsStore(ticketRowActionsData(pb), auth, tickets, trash, flags)
+	);
 	// Bulk actions on the chosen rows of the table (plan BI-2, ADR-0036 §3): one request per ticket
 	// through the Record API, results and "Rückgängig" as flags.
 	const bulk = setBulkEditStore(new BulkEditStore(bulkEditData(pb), auth, tickets, flags, rules));

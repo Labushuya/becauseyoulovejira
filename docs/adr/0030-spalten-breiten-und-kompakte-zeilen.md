@@ -1,6 +1,6 @@
 # ADR-0030: Spaltenbreiten, Ein- und Ausblenden und kompakte Zeilen in Tabellen
 
-- **Status:** Angenommen und umgesetzt in den Paketen SP-1 bis SP-5 nach [docs/plan/e6-spalten.md](../plan/e6-spalten.md) (#98 bis #101 und der PR von SP-5); manuelle Browser-Prüfungen stehen im Test-Manifest; Nachtrag 2026-09-28 (Spalte „Übergeordnet“ und Schalter der Tabelle, [ADR-0033](0033-unteraufgaben.md)); Nachtrag 2 (Auswahlspalte); Nachtrag 3 2026-09-29 (Breite des Titels)
+- **Status:** Angenommen und umgesetzt in den Paketen SP-1 bis SP-5 nach [docs/plan/e6-spalten.md](../plan/e6-spalten.md) (#98 bis #101 und der PR von SP-5); manuelle Browser-Prüfungen stehen im Test-Manifest; Nachtrag 2026-09-28 (Spalte „Übergeordnet“ und Schalter der Tabelle, [ADR-0033](0033-unteraufgaben.md)); Nachtrag 2 (Auswahlspalte); Nachtrag 3 2026-09-29 (Breite des Titels); Nachtrag 4 2026-10-01 (Spalte „Aktionen“ mit dem Zeilenmenü)
 - **Datum:** 2026-09-27
 - **Entscheidung durch:** Nutzer (Wunsch „Spalten ziehen, ein- und ausblenden, kompakte Zeilen wie in Jira“, Reihenfolge „Spalten zuerst“), Advisor (Konzept „Spalten“), Executor (Breiten, Schwellen, Einzelheiten)
 - **Präzisiert:** [ADR-0025](0025-ui-konsistenz-overlay-system.md) §11 (Ausblenden per Container-Queries) und [ADR-0010](0010-layout-nach-task-board.md) §1 (Popover „Spalten“ ab E6). „Tabellen scrollen nie seitlich“ und die Reihenfolge beim Ausblenden bleiben.
@@ -147,3 +147,13 @@ Nutzerwunsch: „Ich möchte zudem, dass ich auch die Spalte ‚Titel‘ in ihre
 
 - `ColumnPrefsStore.setWidth` ist durch `setWidths` (mehrere Breiten auf einmal) und `clearWidth` ersetzt; `ColumnFit` führt jede Breitenänderung über `resizeColumn` und hält beim Ziehen die ganze Vorschau (`live`). Das Menü „Spalten“ bekommt den `ColumnFit` statt Store und `autoHidden`.
 - Tests: `columns.test.ts` (Verteilung, Grenzen, Fenster, ausgeblendete Spalten, Altdaten), `column-prefs.test.ts`, `ticket-table-columns.test.ts` (Griff) und `columns-popover.test.ts` (Tastatur); Manifest BYL-E6-460 bis BYL-E6-462.
+
+## Nachtrag 4 (2026-10-01): Spalte „Aktionen“ der Aufgaben mit dem Zeilenmenü
+
+Mit dem Zeilenmenü „•••“ ([Plan Aktionsmenüs](../plan/aktionsmenues.md) AM-2, [ADR-0036](0036-sammelbearbeitung-inline-und-oeffnungsmodus.md), Nachtrag) trägt die Spalte „Aktionen“ der Aufgaben drei Bedienelemente: das Häkchen, „Öffnen“ und „•••“. Der Text oben bleibt, soweit hier nichts anderes steht.
+
+- **Breite:** fest **5,5rem** statt 4rem (Pflicht, ohne Griff, nicht im Menü „Spalten“, wie bisher). Darin: Häkchen 1rem, „Öffnen“ 14 px, „•••“ als `.button-icon` in `--control-height-s` (1,5rem, damit die Zeile nicht höher wird als mit der Auswahl), je 0,5rem Abstand und 0,5rem Innenabstand links und rechts statt 0,75rem. Keine neuen Tokens.
+- **Schwellen** (Tabelle §2, Nachtrag 2): Sie steigen um 1,5rem auf Erstellt 64,5, Tags 58,5, Projekt 50,5 und Fällig 42,5rem; die Reihenfolge beim Ausweichen und „Tabellen scrollen nie seitlich“ bleiben, die Mindestbreite des Titels (10rem) auch. Bei 800 px Rahmen weicht jetzt zusätzlich „Projekt“ (vorher nur Erstellt und Tags); ab 840 px steht es wieder.
+- **Gespeicherte Vorlieben** ändern sich nicht: Pflichtspalten stehen nie in `widths` oder `hidden`. Eine gespeicherte Titelbreite (Nachtrag 3) gilt weiter; ihr Höchstwert beim Ziehen sinkt um die 1,5rem, die die Spalte mehr braucht.
+- **Alternative verworfen:** 6rem mit dem bisherigen Innenabstand (0,5rem mehr Platz, der nur leer stünde) und ein Menü statt des Symbols „Öffnen“ (das Symbol bleibt nach Vorgabe; der Titel-Link und der Zeilenklick öffnen ohnehin).
+- Tests: `columns.test.ts` (Schwellen, Beispiele bei 840 und 800 px, Grenzen des Titels), `ticket-table-columns.test.ts`, `columns-popover.test.ts`; Manifest BYL-E6-745.
