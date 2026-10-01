@@ -7,7 +7,8 @@
 // (ADR-0025 section 8; E5 plan, package 5); refusals come back as EditResult for their place.
 // The template of a rule (plan WV, ADR-0023 addendum 6): the draft of its inline editor at the
 // ticket lives here like the drafts of a ticket (panel and full view share it), and after a change
-// of an open ticket of a series the store offers "Auch für künftige Tickets übernehmen" in a flag.
+// of an open ticket of a series, or a sub-task added to it (plan WV-3), the store offers "Auch für
+// künftige Tickets übernehmen" in a flag.
 
 import type PocketBase from 'pocketbase';
 import { createContext } from 'svelte';
@@ -23,25 +24,32 @@ import {
 	initialStatusReady,
 	listRules,
 	setRuleActive,
+	templateSubtasksReady,
 	updateRule,
 	type RuleDraft
 } from '$lib/data/recurrence';
 import {
 	DEFAULT_TEMPLATE_STATUS,
 	OFFER_ACTION,
+	ONE_TICKET_CHANGED,
 	appliedTitle,
 	offerDescription,
 	offerTitle,
+	subtaskOffer,
+	subtaskOfferDescription,
 	templateBody,
 	templateChanges,
 	templateOf,
 	templateOffers,
 	ticketTemplate,
+	trimmedSubtasks,
 	type RuleTemplate,
 	type SeriesChange,
 	type SeriesChangeSink,
+	type SeriesParent,
 	type TemplateOffer,
-	type TemplateStatus
+	type TemplateStatus,
+	type TemplateSubtask
 } from '$lib/domain/series-template';
 import { compareTitles } from '$lib/domain/ordering';
 import type { CalendarDate } from '$lib/domain/berlin-date';
@@ -123,6 +131,11 @@ export interface RecurrenceData {
 	 * offered.
 	 */
 	initialStatusReady?(options: RequestOptions): Promise<boolean>;
+	/**
+	 * Whether the server knows the sub-tasks of the template (plan WV-3); without it (tests) the
+	 * list is not offered.
+	 */
+	templateSubtasksReady?(options: RequestOptions): Promise<boolean>;
 }
 
 export function recurrenceData(pb: PocketBase): RecurrenceData {
@@ -130,6 +143,7 @@ export function recurrenceData(pb: PocketBase): RecurrenceData {
 		listRules: (options) => listRules(pb, options),
 		eachOccurrenceReady: (options) => eachOccurrenceReady(pb, options),
 		initialStatusReady: (options) => initialStatusReady(pb, options),
+		templateSubtasksReady: (options) => templateSubtasksReady(pb, options),
 		createRule: (draft, ticket) => createRule(pb, draft, ticket),
 		updateRule: (id, patch) => updateRule(pb, id, patch),
 		setActive: (id, active) => setRuleActive(pb, id, active),
@@ -176,6 +190,7 @@ const FORM_FIELDS = [
 	'lead_days',
 	'each_occurrence',
 	'initial_status',
+	'template_subtasks',
 	'ticket'
 ];
 
@@ -197,10 +212,17 @@ export class RecurrenceStore implements SeriesChangeSink {
 	#eachReady = $state(false);
 	/** The server knows "Status beim Anlegen" (after its migration, plan WV). */
 	#statusReady = $state(false);
+	/** The server knows the sub-tasks of the template (after its migration, plan WV-3). */
+	#subtasksReady = $state(false);
 	/** Draft of the template edited at a ticket, null while none is edited. */
 	#templateDraft = $state<TemplateDraft | null>(null);
 	/** The flag offering "Auch für künftige Tickets übernehmen", while it is shown. */
 	#templateOffer: string | null = null;
+	/**
+	 * The sub-tasks the flag offers (plan WV-3), while it is shown: a further sub-task added to a
+	 * ticket of the same rule joins them instead of replacing them.
+	 */
+	#subtaskOffer: { flag: string; ruleId: string; subtasks: TemplateSubtask[] } | null = null;
 
 	#list = $derived([...this.#rules.values()].sort(byNextTicket));
 	/** "Wiederholen…" handed over to the panel of one ticket, taken once (`takeOffer`). */
@@ -241,6 +263,14 @@ export class RecurrenceStore implements SeriesChangeSink {
 	 */
 	get statusReady(): boolean {
 		return this.#state === 'ready' && this.#statusReady;
+	}
+
+	/**
+	 * Whether the list "Unteraufgaben" of the template is offered (plan WV-3): only once the server
+	 * knows it; before the next start of the app the forms leave it out and nothing offers it.
+	 */
+	get subtasksReady(): boolean {
+		return this.#state === 'ready' && this.#subtasksReady;
 	}
 
 	ruleById(id: string | null | undefined): RecurrenceRule | null {
@@ -539,9 +569,11 @@ export class RecurrenceStore implements SeriesChangeSink {
 		const patch = templateChanges(templateOf(rule), {
 			...draft.template,
 			title: draft.template.title.trim(),
-			tagIds: draft.template.tagIds.filter(keepTag)
+			tagIds: draft.template.tagIds.filter(keepTag),
+			subtasks: trimmedSubtasks(draft.template.subtasks)
 		});
 		if (!this.statusReady) delete patch.initial_status;
+		if (!this.subtasksReady) delete patch.template_subtasks;
 		if (Object.keys(patch).length === 0) {
 			this.#templateDraft = null;
 			return { ok: true, value: rule };
@@ -579,6 +611,53 @@ export class RecurrenceStore implements SeriesChangeSink {
 		return id;
 	}
 
+	/**
+	 * After the user added a sub-task to an open ticket of a series ("Unteraufgabe hinzufügen", plan
+	 * WV-3): the info flag "Nur dieses Ticket geändert." with "Auch für künftige Tickets übernehmen",
+	 * which adds it to the list of the template. A further sub-task of the same series joins the
+	 * shown offer; another offer replaces it. Nothing to offer (a done ticket, no series, the
+	 * template has the title already or is full, before the migration): no flag, null.
+	 */
+	offerSubtask(parent: SeriesParent, subtask: TemplateSubtask): string | null {
+		if (!this.subtasksReady) return null;
+		const shown = this.#subtaskOffer;
+		const earlier =
+			shown !== null && shown.flag === this.#templateOffer && shown.ruleId === parent.recurrenceId
+				? shown.subtasks
+				: [];
+		const offer = subtaskOffer(parent, [...earlier, subtask], (id) => this.ruleById(id));
+		if (offer === null) return null;
+		if (this.#templateOffer !== null) this.#flags.dismiss(this.#templateOffer);
+		const id = this.#flags.show({
+			tone: 'info',
+			title: ONE_TICKET_CHANGED,
+			description: subtaskOfferDescription(offer),
+			action: {
+				label: OFFER_ACTION,
+				run: () => void this.#applySubtasks(parent, offer.subtasks)
+			},
+			onclose: () => {
+				if (this.#templateOffer === id) this.#templateOffer = null;
+				if (this.#subtaskOffer?.flag === id) this.#subtaskOffer = null;
+			}
+		});
+		this.#templateOffer = id;
+		this.#subtaskOffer = { flag: id, ruleId: offer.ruleId, subtasks: offer.subtasks };
+		return id;
+	}
+
+	/**
+	 * The action of the sub-task offer: the template as it is now plus the offered sub-tasks it does
+	 * not have yet (it may have changed since the flag appeared); one flag for the result.
+	 */
+	async #applySubtasks(parent: SeriesParent, subtasks: readonly TemplateSubtask[]): Promise<void> {
+		const rule = this.ruleById(parent.recurrenceId);
+		if (rule === null) return;
+		const offer = subtaskOffer(parent, subtasks, (id) => this.ruleById(id));
+		if (offer === null) this.#notify(appliedTitle([rule]));
+		else await this.#applyOffers([offer]);
+	}
+
 	/** Withdraws an offer whose changes were undone ("Rückgängig" of a bulk action). */
 	withdrawTemplateOffer(id: string): void {
 		if (id !== this.#templateOffer) return;
@@ -587,9 +666,11 @@ export class RecurrenceStore implements SeriesChangeSink {
 	}
 
 	/** The action of the offer: each rule gets its fields; one flag for the result. */
-	async #applyOffers(offers: readonly TemplateOffer[]): Promise<void> {
+	async #applyOffers(
+		offers: readonly Pick<TemplateOffer, 'ruleId' | 'title' | 'patch'>[]
+	): Promise<void> {
 		if (!this.#session.ensureValid()) return;
-		const applied: TemplateOffer[] = [];
+		const applied: Pick<TemplateOffer, 'title'>[] = [];
 		for (const offer of offers) {
 			try {
 				this.upsert(await this.#data.updateRule(offer.ruleId, offer.patch));
@@ -616,6 +697,7 @@ export class RecurrenceStore implements SeriesChangeSink {
 		this.#offer = null;
 		this.#waitingFlag = null;
 		this.#templateOffer = null;
+		this.#subtaskOffer = null;
 		this.#templateDraft = null;
 		this.#rules.clear();
 		this.#deleted.clear();
@@ -623,6 +705,7 @@ export class RecurrenceStore implements SeriesChangeSink {
 		this.#error = null;
 		this.#eachReady = false;
 		this.#statusReady = false;
+		this.#subtasksReady = false;
 	}
 
 	/** Success flag of an action; the flag group announces it (role status). */
@@ -667,6 +750,8 @@ export class RecurrenceStore implements SeriesChangeSink {
 			if (controller.signal.aborted) return;
 			this.#statusReady = await this.#probe('initialStatusReady', controller.signal);
 			if (controller.signal.aborted) return;
+			this.#subtasksReady = await this.#probe('templateSubtasksReady', controller.signal);
+			if (controller.signal.aborted) return;
 			this.#state = 'ready';
 		} catch (error) {
 			if (controller.signal.aborted) return;
@@ -709,7 +794,7 @@ export class RecurrenceStore implements SeriesChangeSink {
 	 * it cannot tell (old schema, a failed probe, no probe in tests).
 	 */
 	async #probe(
-		name: 'eachOccurrenceReady' | 'initialStatusReady',
+		name: 'eachOccurrenceReady' | 'initialStatusReady' | 'templateSubtasksReady',
 		signal: AbortSignal
 	): Promise<boolean> {
 		const probe = this.#data[name]?.bind(this.#data);

@@ -6,7 +6,8 @@
 
 import { PRIORITY_LABELS, STATUS_LABELS } from './labels';
 import type { RecurrenceRule } from './recurrence-rule';
-import type { Priority } from './status';
+import { joinWords } from './recurrence-text';
+import { isPriority, type Priority } from './status';
 import { DEFAULT_PRIORITY, type TicketSummary } from './ticket';
 
 /**
@@ -28,6 +29,33 @@ export function templateStatusOf(value: unknown): TemplateStatus {
 	return isTemplateStatus(value) ? value : DEFAULT_TEMPLATE_STATUS;
 }
 
+/**
+ * One sub-task of the template (plan WV-3, ADR-0022 addendum 10): every next ticket of the series
+ * gets it as a new, open sub-task with this title and priority.
+ */
+export interface TemplateSubtask {
+	title: string;
+	priority: Priority;
+}
+
+/** At most so many sub-tasks per template; the same limit as TEMPLATE_SUBTASKS_MAX of the hook. */
+export const TEMPLATE_SUBTASKS_MAX = 20;
+
+/**
+ * The sub-tasks of a stored template (`template_subtasks`): entries with a title, the priority
+ * "Mittel" when it is missing; anything else (no list, broken entries) is left out. [] before the
+ * migration of the field.
+ */
+export function templateSubtasksOf(value: unknown): TemplateSubtask[] {
+	if (!Array.isArray(value)) return [];
+	return value.flatMap((entry: unknown) => {
+		if (typeof entry !== 'object' || entry === null) return [];
+		const { title, priority } = entry as { title?: unknown; priority?: unknown };
+		if (typeof title !== 'string' || title.trim() === '') return [];
+		return [{ title, priority: isPriority(priority) ? priority : DEFAULT_PRIORITY }];
+	});
+}
+
 /** What every next ticket of a rule gets. */
 export interface RuleTemplate {
 	title: string;
@@ -36,12 +64,14 @@ export interface RuleTemplate {
 	tagIds: string[];
 	priority: Priority;
 	initialStatus: TemplateStatus;
+	/** Sub-tasks every next ticket gets (plan WV-3); [] without any or before their migration. */
+	subtasks: TemplateSubtask[];
 }
 
 /** The template of a rule as the server applies it: no priority means "Mittel" (ADR-0022 §2). */
 export function templateOf(
 	rule: Pick<RecurrenceRule, 'title' | 'description' | 'projectId' | 'tagIds' | 'priority'> &
-		Partial<Pick<RecurrenceRule, 'initialStatus'>>
+		Partial<Pick<RecurrenceRule, 'initialStatus' | 'templateSubtasks'>>
 ): RuleTemplate {
 	return {
 		title: rule.title,
@@ -49,14 +79,21 @@ export function templateOf(
 		projectId: rule.projectId,
 		tagIds: [...rule.tagIds],
 		priority: rule.priority ?? DEFAULT_PRIORITY,
-		initialStatus: templateStatusOf(rule.initialStatus)
+		initialStatus: templateStatusOf(rule.initialStatus),
+		subtasks: copySubtasks(rule.templateSubtasks ?? [])
 	};
+}
+
+function copySubtasks(subtasks: readonly TemplateSubtask[]): TemplateSubtask[] {
+	return subtasks.map(({ title, priority }) => ({ title, priority }));
 }
 
 /**
  * A ticket as the template of a new rule ("Wiederholen…", "Neues Ticket" with "Wiederholen", a
  * series from a calendar): a snapshot of its values. The status the next tickets start with is
- * what the user chose (ADR-0022 addendum 9: asked, never taken silently from the ticket).
+ * what the user chose (ADR-0022 addendum 9: asked, never taken silently from the ticket). Its
+ * sub-tasks do not come along on their own; "Unteraufgaben dieses Tickets übernehmen" in the
+ * template at the ticket takes them over (plan WV-3).
  */
 export function ticketTemplate(
 	ticket: Pick<TicketSummary, 'title' | 'projectId' | 'tagIds' | 'priority'> & {
@@ -70,7 +107,8 @@ export function ticketTemplate(
 		projectId: ticket.projectId,
 		tagIds: [...ticket.tagIds],
 		priority: ticket.priority,
-		initialStatus
+		initialStatus,
+		subtasks: []
 	};
 }
 
@@ -120,22 +158,42 @@ export interface TemplateBody {
 	tags?: string[];
 	priority?: Priority;
 	initial_status?: TemplateStatus;
+	template_subtasks?: TemplateSubtask[];
 }
 
-/** The whole template as request body. */
-export function templateBody(template: RuleTemplate): Required<TemplateBody> {
+/**
+ * The whole template as request body. The sub-tasks only when there are some: a new rule from a
+ * ticket has none, and a server before their migration would not know the field.
+ */
+export function templateBody(
+	template: RuleTemplate
+): Required<Omit<TemplateBody, 'template_subtasks'>> & Pick<TemplateBody, 'template_subtasks'> {
 	return {
 		title: template.title,
 		description: template.description,
 		project: template.projectId,
 		tags: [...template.tagIds],
 		priority: template.priority,
-		initial_status: template.initialStatus
+		initial_status: template.initialStatus,
+		...(template.subtasks.length > 0 && { template_subtasks: copySubtasks(template.subtasks) })
 	};
 }
 
 function sameList(a: readonly string[], b: readonly string[]): boolean {
 	return a.length === b.length && a.every((value, index) => value === b[index]);
+}
+
+/** Whether two lists of sub-tasks are the same, in the same order. */
+export function sameSubtasks(
+	a: readonly TemplateSubtask[],
+	b: readonly TemplateSubtask[]
+): boolean {
+	return (
+		a.length === b.length &&
+		a.every(
+			(entry, index) => entry.title === b[index]?.title && entry.priority === b[index]?.priority
+		)
+	);
 }
 
 /**
@@ -150,7 +208,108 @@ export function templateChanges(before: RuleTemplate, after: RuleTemplate): Temp
 	if (!sameList(before.tagIds, after.tagIds)) body.tags = [...after.tagIds];
 	if (before.priority !== after.priority) body.priority = after.priority;
 	if (before.initialStatus !== after.initialStatus) body.initial_status = after.initialStatus;
+	if (!sameSubtasks(before.subtasks, after.subtasks)) {
+		body.template_subtasks = copySubtasks(after.subtasks);
+	}
 	return body;
+}
+
+// --- The list "Unteraufgaben" of the template (plan WV-3) ---------------------------------------
+
+/** The list with its titles trimmed, as it is saved (the hook trims as well). */
+export function trimmedSubtasks(subtasks: readonly TemplateSubtask[]): TemplateSubtask[] {
+	return subtasks.map(({ title, priority }) => ({ title: title.trim(), priority }));
+}
+
+/** Indexes of entries without a title: the form refuses them before sending. */
+export function subtasksWithoutTitle(subtasks: readonly TemplateSubtask[]): number[] {
+	return subtasks.flatMap((entry, index) => (entry.title.trim() === '' ? [index] : []));
+}
+
+/** The list with one entry moved from `from` to `to` (both within the list); else unchanged. */
+export function moveSubtask(
+	subtasks: readonly TemplateSubtask[],
+	from: number,
+	to: number
+): TemplateSubtask[] {
+	const list = copySubtasks(subtasks);
+	if (from === to || from < 0 || to < 0 || from >= list.length || to >= list.length) return list;
+	const [entry] = list.splice(from, 1);
+	if (entry !== undefined) list.splice(to, 0, entry);
+	return list;
+}
+
+/** A sub-task of the ticket as "Unteraufgaben dieses Tickets übernehmen" reads it. */
+export type TicketSubtask = Pick<TicketSummary, 'id' | 'title' | 'priority' | 'created'>;
+
+/**
+ * The sub-tasks of a ticket as entries of the template, in the order they were made (open and
+ * done ones: the template is the checklist of every next ticket).
+ */
+export function subtasksOfTicket(children: readonly TicketSubtask[]): TemplateSubtask[] {
+	return [...children]
+		.sort((a, b) =>
+			a.created !== b.created ? (a.created < b.created ? -1 : 1) : a.id < b.id ? -1 : 1
+		)
+		.map((child) => ({ title: child.title, priority: child.priority }));
+}
+
+/** Titles compared without case and outer spaces: "Filter wechseln" is " filter Wechseln". */
+function sameTitle(a: string, b: string): boolean {
+	return a.trim().toLowerCase() === b.trim().toLowerCase();
+}
+
+/** Result of taking over the sub-tasks of the ticket into the list. */
+export interface TakenSubtasks {
+	subtasks: TemplateSubtask[];
+	/** How many entries were added. */
+	added: number;
+	/** How many were left out because the list had them already (same title). */
+	known: number;
+	/** How many did not fit (more than TEMPLATE_SUBTASKS_MAX). */
+	cut: number;
+}
+
+/**
+ * "Unteraufgaben dieses Tickets übernehmen": `replace` puts the sub-tasks of the ticket in place of
+ * the list, otherwise they are added after it, without one the list has already (same title).
+ * Never more than TEMPLATE_SUBTASKS_MAX; what does not fit is counted.
+ */
+export function takeSubtasks(
+	current: readonly TemplateSubtask[],
+	incoming: readonly TemplateSubtask[],
+	replace: boolean
+): TakenSubtasks {
+	const base = replace ? [] : copySubtasks(current);
+	const fresh = replace
+		? copySubtasks(incoming)
+		: incoming.filter((entry) => !base.some((known) => sameTitle(known.title, entry.title)));
+	const room = Math.max(0, TEMPLATE_SUBTASKS_MAX - base.length);
+	const added = copySubtasks(fresh.slice(0, room));
+	return {
+		subtasks: [...base, ...added],
+		added: added.length,
+		known: incoming.length - fresh.length,
+		cut: fresh.length - added.length
+	};
+}
+
+/** "3 Unteraufgaben übernommen." with what was left out, for the polite status of the list. */
+export function takenText(taken: TakenSubtasks): string {
+	const parts = [`${subtaskCountText(taken.added)} übernommen.`];
+	if (taken.known > 0) {
+		parts.push(
+			taken.known === 1
+				? '1 stand schon in der Liste.'
+				: `${taken.known} standen schon in der Liste.`
+		);
+	}
+	if (taken.cut > 0) {
+		parts.push(
+			`${taken.cut} ${taken.cut === 1 ? 'passte' : 'passten'} nicht mehr (höchstens ${TEMPLATE_SUBTASKS_MAX}).`
+		);
+	}
+	return parts.join(' ');
 }
 
 /** Names for the line of a template; null for a project or tag the catalog does not know. */
@@ -160,9 +319,10 @@ export interface TemplateNames {
 }
 
 /**
- * "Priorität Hoch · Projekt Haus · Tags Garten, Müll · Status beim Anlegen Offen", the line
- * "Künftige Tickets: …" at the ticket. Without the migration of the status (`withStatus` false)
- * the status is left out, because every ticket then starts "open".
+ * "Priorität Hoch · Projekt Haus · Tags Garten, Müll · Status beim Anlegen Offen · 3 Unteraufgaben",
+ * the line "Künftige Tickets: …" at the ticket. Without the migration of the status (`withStatus`
+ * false) the status is left out, because every ticket then starts "open"; sub-tasks only when the
+ * template has some (plan WV-3).
  */
 export function templateSummary(
 	template: RuleTemplate,
@@ -175,7 +335,13 @@ export function templateSummary(
 	const tags = template.tagIds.flatMap((id) => names.tag(id) ?? []);
 	parts.push(tags.length === 0 ? 'ohne Tags' : `Tags ${tags.join(', ')}`);
 	if (withStatus) parts.push(`Status beim Anlegen ${STATUS_LABELS[template.initialStatus]}`);
+	if (template.subtasks.length > 0) parts.push(subtaskCountText(template.subtasks.length));
 	return parts.join(' · ');
+}
+
+/** "1 Unteraufgabe" or "3 Unteraufgaben". */
+export function subtaskCountText(count: number): string {
+	return count === 1 ? '1 Unteraufgabe' : `${count} Unteraufgaben`;
 }
 
 // --- Changes of an open ticket of a series (ADR-0023 addendum 6) -------------------------------
@@ -316,10 +482,13 @@ function offerFor(rule: RecurrenceRule, changes: readonly SeriesChange[]): Templ
 /** Label of the action of the flag. */
 export const OFFER_ACTION = 'Auch für künftige Tickets übernehmen';
 
+/** Title of an offer about one ticket, also after a sub-task was added to it (plan WV-3). */
+export const ONE_TICKET_CHANGED = 'Nur dieses Ticket geändert.';
+
 /** "Nur dieses Ticket geändert." or, after a bulk action, "Nur diese 3 Tickets geändert." */
 export function offerTitle(offers: readonly TemplateOffer[]): string {
 	const count = offers.reduce((sum, offer) => sum + offer.keys.length, 0);
-	return count === 1 ? 'Nur dieses Ticket geändert.' : `Nur diese ${count} Tickets geändert.`;
+	return count === 1 ? ONE_TICKET_CHANGED : `Nur diese ${count} Tickets geändert.`;
 }
 
 /**
@@ -335,24 +504,77 @@ export function offerDescription(offers: readonly TemplateOffer[]): string {
 }
 
 /** Success flag of the action: "Vorlage von „Müll“ übernommen." or "Vorlagen von 2 Serien …". */
-export function appliedTitle(offers: readonly TemplateOffer[]): string {
+export function appliedTitle(offers: readonly Pick<TemplateOffer, 'title'>[]): string {
 	return offers.length === 1
 		? `Vorlage von „${offers[0]?.title ?? ''}“ übernommen.`
 		: `Vorlagen von ${offers.length} Serien übernommen.`;
 }
 
+// --- A sub-task added to an open ticket of a series (plan WV-3) --------------------------------
+
+/** The ticket a sub-task was added to, as the offer needs it. */
+export type SeriesParent = Pick<TicketSummary, 'key' | 'status' | 'recurrenceId'>;
+
+/** What "Auch für künftige Tickets übernehmen" adds to the template of one rule. */
+export interface SubtaskOffer {
+	ruleId: string;
+	/** Title of the rule, for the flags. */
+	title: string;
+	/** The sub-tasks to add, in the order they were added. */
+	subtasks: TemplateSubtask[];
+	/** The whole list of the template with them. */
+	patch: { template_subtasks: TemplateSubtask[] };
+}
+
+/**
+ * The offer after sub-tasks were added to an open ticket of a series (only "added": removing or
+ * renaming one at the ticket offers nothing, the template is edited for that): the sub-tasks the
+ * template does not have yet (same title), as many as fit (TEMPLATE_SUBTASKS_MAX). Null for a done
+ * ticket, a ticket without a series, an unknown rule, nothing new or a full template.
+ */
+export function subtaskOffer(
+	parent: SeriesParent,
+	added: readonly TemplateSubtask[],
+	ruleById: (id: string) => RecurrenceRule | null
+): SubtaskOffer | null {
+	if (!parent.recurrenceId || parent.status === 'done') return null;
+	const rule = ruleById(parent.recurrenceId);
+	if (rule === null) return null;
+	const taken = takeSubtasks(rule.templateSubtasks ?? [], added, false);
+	if (taken.added === 0) return null;
+	return {
+		ruleId: rule.id,
+		title: rule.title,
+		subtasks: taken.subtasks.slice(taken.subtasks.length - taken.added),
+		patch: { template_subtasks: taken.subtasks }
+	};
+}
+
+/**
+ * "Künftige Tickets von „Müll“ bekommen die Unteraufgabe „Filter wechseln“ nicht." or, for several,
+ * "… die Unteraufgaben „Filter wechseln“ und „Deckel putzen“ nicht."
+ */
+export function subtaskOfferDescription(offer: SubtaskOffer): string {
+	const titles = joinWords(offer.subtasks.map((entry) => `„${entry.title}“`));
+	const what = offer.subtasks.length === 1 ? 'die Unteraufgabe' : 'die Unteraufgaben';
+	return `Künftige Tickets von „${offer.title}“ bekommen ${what} ${titles} nicht.`;
+}
+
 /**
  * What the ticket stores need of the rules: the offer after a change of tickets of a series (an
- * info flag with the action; its ID, or null when there is nothing to offer), and withdrawing it
- * when the change was undone ("Rückgängig" of a bulk action).
+ * info flag with the action; its ID, or null when there is nothing to offer), the offer after a
+ * sub-task was added to an open ticket of a series (plan WV-3), and withdrawing an offer when the
+ * change was undone ("Rückgängig" of a bulk action).
  */
 export interface SeriesChangeSink {
 	offerTemplate(changes: readonly SeriesChange[]): string | null;
+	offerSubtask(parent: SeriesParent, subtask: TemplateSubtask): string | null;
 	withdrawTemplateOffer(id: string): void;
 }
 
 /** No offers (tests and views without rules). */
 export const NO_SERIES: SeriesChangeSink = {
 	offerTemplate: () => null,
+	offerSubtask: () => null,
 	withdrawTemplateOffer: () => undefined
 };

@@ -46,7 +46,7 @@ const mocks = vi.hoisted(() => ({
 		markRead: vi.fn(async () => undefined),
 		upsert: vi.fn()
 	},
-	rules: { state: 'ready', statusReady: false, repeatCreated: vi.fn() }
+	rules: { state: 'ready', statusReady: false, subtasksReady: false, repeatCreated: vi.fn() }
 }));
 
 vi.mock('$app/navigation', () => ({ goto: mocks.goto }));
@@ -918,7 +918,7 @@ describe('new ticket from a calendar series (E5 plan, package 6; ADR-0024 sectio
 describe('new ticket: repeat right away (plan OR-4)', () => {
 	const RULE = { id: 'rule00000000010' };
 
-	async function openPlain(state = 'ready', statusReady = false) {
+	async function openPlain(state = 'ready', statusReady = false, subtasksReady = false) {
 		mocks.page.url = new URL('http://localhost:3000/tickets/neu');
 		mocks.detail.create.mockReset();
 		mocks.detail.create.mockResolvedValue({ ok: true, ticket: CREATED });
@@ -927,6 +927,7 @@ describe('new ticket: repeat right away (plan OR-4)', () => {
 		mocks.goto.mockClear();
 		mocks.rules.state = state;
 		mocks.rules.statusReady = statusReady;
+		mocks.rules.subtasksReady = subtasksReady;
 		mocks.rules.repeatCreated.mockReset();
 		mocks.rules.repeatCreated.mockResolvedValue(RULE);
 		const { release } = catalog();
@@ -1055,6 +1056,17 @@ describe('new ticket: repeat right away (plan OR-4)', () => {
 	it('offers no section before the migration of E5', async () => {
 		await openPlain('unavailable');
 		expect(screen.queryByRole('button', { name: 'Wiederholen' })).toBeNull();
+	});
+
+	// Plan WV-3: sub-tasks for every next ticket are set later at the ticket ("Wiederholt sich").
+	it('names where the sub-tasks of the next tickets are set, after their migration', async () => {
+		await openPlain('ready', true, true);
+		await fireEvent.click(disclosure());
+		expect(
+			within(section()).getByText(
+				/Ändern kannst du das danach am Ticket unter „Wiederholt sich“, dort auch Unteraufgaben, die jedes künftige Ticket bekommt\./
+			)
+		).toBeTruthy();
 	});
 
 	// ADR-0022 addendum 9: the open section asks with which status the next tickets start; "Wie

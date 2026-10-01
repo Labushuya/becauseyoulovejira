@@ -419,3 +419,77 @@ describe('RecurrencePanel: a rule', () => {
 		expect(source).not.toMatch(/<dialog\b|window\.confirm|class="notice/);
 	});
 });
+
+// Plan WV-3 (ADR-0022 addendum 10): the list "Unteraufgaben" of the template in the rule panel.
+describe('RecurrencePanel: the sub-tasks of the template (plan WV-3)', () => {
+	it('creates a new rule with its list, after checking every title', async () => {
+		const props = show(null, { subtasksAvailable: true });
+		await fireEvent.input(screen.getByLabelText('Titel'), { target: { value: 'Kaffeemaschine' } });
+		const list = screen.getByRole('group', { name: 'Unteraufgaben' });
+		// No ticket here: nothing to take over.
+		expect(
+			within(list).queryByRole('button', { name: 'Unteraufgaben dieses Tickets übernehmen' })
+		).toBeNull();
+		await fireEvent.click(within(list).getByRole('button', { name: 'Unteraufgabe hinzufügen' }));
+		await fireEvent.click(within(list).getByRole('button', { name: 'Unteraufgabe hinzufügen' }));
+		await fireEvent.input(within(list).getByLabelText('Titel der Unteraufgabe 1'), {
+			target: { value: ' Entkalken ' }
+		});
+		await fireEvent.change(within(list).getByLabelText('Priorität der Unteraufgabe 1'), {
+			target: { value: 'high' }
+		});
+		await fireEvent.click(screen.getByRole('button', { name: 'Anlegen' }));
+		await tick();
+		// The second row has no title: nothing is sent, the row says why and has the focus.
+		expect(props.onsave).not.toHaveBeenCalled();
+		const empty = within(list).getByLabelText('Titel der Unteraufgabe 2');
+		expect(empty.getAttribute('aria-invalid')).toBe('true');
+		await vi.waitFor(() => expect(document.activeElement).toBe(empty));
+
+		await fireEvent.input(empty, { target: { value: 'Filter wechseln' } });
+		await fireEvent.click(screen.getByRole('button', { name: 'Anlegen' }));
+		await vi.waitFor(() => expect(props.onsave).toHaveBeenCalledTimes(1));
+		expect(props.onsave.mock.calls[0]?.[0]).toMatchObject({
+			title: 'Kaffeemaschine',
+			template_subtasks: [
+				{ title: 'Entkalken', priority: 'high' },
+				{ title: 'Filter wechseln', priority: 'medium' }
+			]
+		});
+	});
+
+	it('shows the list of a rule, counts a change as unsaved input and shows a refusal at the list', async () => {
+		const onsave = vi.fn<(draft: Partial<RuleDraft>) => Promise<SaveResult>>(async () => ({
+			ok: false,
+			message: null,
+			fields: { template_subtasks: 'Die Vorlage hat höchstens 20 Unteraufgaben.' }
+		}));
+		const props = show(rule({ templateSubtasks: [{ title: 'Entkalken', priority: 'high' }] }), {
+			subtasksAvailable: true,
+			onsave
+		});
+		const list = screen.getByRole('group', { name: 'Unteraufgaben' });
+		expect(within(list).getByLabelText<HTMLInputElement>('Titel der Unteraufgabe 1').value).toBe(
+			'Entkalken'
+		);
+		await fireEvent.click(within(list).getByRole('button', { name: '„Entkalken“ entfernen' }));
+		await fireEvent.click(screen.getByRole('button', { name: 'Speichern' }));
+		await vi.waitFor(() => expect(onsave).toHaveBeenCalledTimes(1));
+		expect(onsave.mock.calls[0]?.[0]).toMatchObject({ template_subtasks: [] });
+		await vi.waitFor(() =>
+			expect(within(list).getByText('Die Vorlage hat höchstens 20 Unteraufgaben.')).toBeTruthy()
+		);
+		// Unsaved: Escape asks before the change is lost.
+		await fireEvent.keyDown(screen.getByLabelText('Titel'), { key: 'Escape' });
+		expect(screen.getByRole('dialog', { name: 'Änderungen verwerfen?' })).toBeTruthy();
+		expect(props.onclose).not.toHaveBeenCalled();
+	});
+
+	it('leaves the list out and sends none before the migration', async () => {
+		const props = show(rule());
+		expect(screen.queryByRole('group', { name: 'Unteraufgaben' })).toBeNull();
+		await fireEvent.click(screen.getByRole('button', { name: 'Speichern' }));
+		await vi.waitFor(() => expect(props.onsave).toHaveBeenCalledTimes(1));
+		expect(props.onsave.mock.calls[0]?.[0]).not.toHaveProperty('template_subtasks');
+	});
+});

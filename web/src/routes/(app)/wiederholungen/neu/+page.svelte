@@ -37,6 +37,7 @@
 		today={tickets.today}
 		eachAvailable={store.eachReady}
 		statusAvailable={store.statusReady}
+		subtasksAvailable={store.subtasksReady}
 		projects={catalog.activeProjects}
 		tags={catalog.tags}
 		projectById={(id) => catalog.projectById(id)}

@@ -771,7 +771,8 @@ describe('RecurrenceStore: the template of a series (plan WV)', () => {
 			projectId: null,
 			tagIds: ['tag000000000001'],
 			priority: 'medium',
-			initialStatus: 'open'
+			initialStatus: 'open',
+			subtasks: []
 		});
 		if (template === undefined) return;
 		expect(store.templateDirty).toBe(false);
@@ -800,5 +801,171 @@ describe('RecurrenceStore: the template of a series (plan WV)', () => {
 		store.editTemplate('rule00000000001');
 		store.cancelTemplate();
 		expect(store.templateDraft).toBeNull();
+	});
+});
+
+// Plan WV-3 (ADR-0022 addendum 10): the sub-tasks of the template and the offer after a sub-task
+// was added to an open ticket of a series.
+describe('RecurrenceStore: the sub-tasks of the template (plan WV-3)', () => {
+	function flagLog() {
+		const flags: (FlagInput & { id: string; dismissed: boolean })[] = [];
+		const sink: FlagSink = {
+			show: (input) => {
+				const id = `flag-${flags.length + 1}`;
+				flags.push({ ...input, id, dismissed: false });
+				return id;
+			},
+			dismiss: (id) => {
+				const flag = flags.find((entry) => entry.id === id);
+				if (flag !== undefined && !flag.dismissed) {
+					flag.dismissed = true;
+					flag.onclose?.();
+				}
+			}
+		};
+		return { sink, flags };
+	}
+
+	const parent = { key: 'TASK-3', status: 'open' as const, recurrenceId: 'rule00000000001' };
+	const ready = (data: RecurrenceData): RecurrenceData => ({
+		...data,
+		templateSubtasksReady: vi.fn(async () => true)
+	});
+
+	it('knows the sub-tasks of the template only after their migration', async () => {
+		const after = new RecurrenceStore(ready(fakeData([])), session());
+		expect(after.subtasksReady).toBe(false);
+		await after.load();
+		expect(after.subtasksReady).toBe(true);
+		for (const probe of [async () => false, async () => Promise.reject(new Error('x'))]) {
+			const before = new RecurrenceStore(
+				{ ...fakeData([]), templateSubtasksReady: vi.fn(probe) },
+				session()
+			);
+			await before.load();
+			expect(before.subtasksReady).toBe(false);
+		}
+		after.reset();
+		expect(after.subtasksReady).toBe(false);
+	});
+
+	it('saves the list of the draft trimmed, and only once the server knows it', async () => {
+		const data = fakeData([rule({ templateSubtasks: [{ title: 'Alt', priority: 'low' }] })]);
+		const store = new RecurrenceStore(ready(data), session());
+		await store.load();
+		store.editTemplate('rule00000000001');
+		const template = store.templateDraft?.template;
+		expect(template?.subtasks).toEqual([{ title: 'Alt', priority: 'low' }]);
+		if (template === undefined) return;
+		store.setTemplateDraft(
+			{
+				...template,
+				subtasks: [
+					{ title: ' Neu ', priority: 'high' },
+					{ title: 'Alt', priority: 'low' }
+				]
+			},
+			''
+		);
+		expect(store.templateDirty).toBe(true);
+		await store.saveTemplate();
+		expect(data.updateRule).toHaveBeenCalledExactlyOnceWith('rule00000000001', {
+			template_subtasks: [
+				{ title: 'Neu', priority: 'high' },
+				{ title: 'Alt', priority: 'low' }
+			]
+		});
+
+		const before = fakeData([rule()]);
+		const old = new RecurrenceStore(before, session());
+		await old.load();
+		old.editTemplate('rule00000000001');
+		const draft = old.templateDraft?.template;
+		if (draft === undefined) return;
+		old.setTemplateDraft({ ...draft, subtasks: [{ title: 'X', priority: 'low' }] }, '');
+		await old.saveTemplate();
+		expect(before.updateRule).not.toHaveBeenCalled();
+	});
+
+	it('offers a sub-task added to an open ticket of a series, joins the next one and writes the list', async () => {
+		const data = fakeData([
+			rule({ templateSubtasks: [{ title: 'Filter wechseln', priority: 'medium' }] })
+		]);
+		const log = flagLog();
+		const store = new RecurrenceStore(ready(data), session(), log.sink);
+		await store.load();
+
+		const first = store.offerSubtask(parent, { title: 'Deckel putzen', priority: 'high' });
+		expect(log.flags[0]).toMatchObject({
+			id: first,
+			tone: 'info',
+			title: 'Nur dieses Ticket geändert.',
+			description: 'Künftige Tickets von „Müll“ bekommen die Unteraufgabe „Deckel putzen“ nicht.',
+			action: { label: 'Auch für künftige Tickets übernehmen' }
+		});
+		// The next sub-task of the same series joins the offer shown, in a new flag.
+		const second = store.offerSubtask(parent, { title: 'Entkalken', priority: 'low' });
+		expect(log.flags.find((flag) => flag.id === first)?.dismissed).toBe(true);
+		const flag = log.flags.find((entry) => entry.id === second);
+		expect(flag?.description).toBe(
+			'Künftige Tickets von „Müll“ bekommen die Unteraufgaben „Deckel putzen“ und „Entkalken“ nicht.'
+		);
+		flag?.action?.run();
+		await vi.waitFor(() => expect(data.updateRule).toHaveBeenCalledTimes(1));
+		expect(data.updateRule).toHaveBeenCalledWith('rule00000000001', {
+			template_subtasks: [
+				{ title: 'Filter wechseln', priority: 'medium' },
+				{ title: 'Deckel putzen', priority: 'high' },
+				{ title: 'Entkalken', priority: 'low' }
+			]
+		});
+		await vi.waitFor(() =>
+			expect(log.flags.at(-1)).toMatchObject({
+				tone: 'success',
+				title: 'Vorlage von „Müll“ übernommen.'
+			})
+		);
+	});
+
+	it('offers nothing for a known title, a done ticket, no series or before the migration', async () => {
+		const log = flagLog();
+		const store = new RecurrenceStore(
+			ready(fakeData([rule({ templateSubtasks: [{ title: 'Filter', priority: 'medium' }] })])),
+			session(),
+			log.sink
+		);
+		await store.load();
+		expect(store.offerSubtask(parent, { title: 'filter', priority: 'high' })).toBeNull();
+		expect(
+			store.offerSubtask({ ...parent, status: 'done' }, { title: 'Neu', priority: 'high' })
+		).toBeNull();
+		expect(
+			store.offerSubtask({ ...parent, recurrenceId: null }, { title: 'Neu', priority: 'high' })
+		).toBeNull();
+		const before = new RecurrenceStore(fakeData([rule()]), session(), log.sink);
+		await before.load();
+		expect(before.offerSubtask(parent, { title: 'Neu', priority: 'high' })).toBeNull();
+		expect(log.flags).toEqual([]);
+	});
+
+	it('replaces an offer of changed fields and starts a new list after the flag is gone', async () => {
+		const data = fakeData([rule()]);
+		const log = flagLog();
+		const store = new RecurrenceStore(ready(data), session(), log.sink);
+		await store.load();
+		const fields = store.offerTemplate([
+			{
+				before: ticket({ recurring: true, recurrenceId: 'rule00000000001', priority: 'medium' }),
+				after: ticket({ recurring: true, recurrenceId: 'rule00000000001', priority: 'urgent' })
+			}
+		]);
+		const first = store.offerSubtask(parent, { title: 'A', priority: 'medium' });
+		expect(log.flags.find((flag) => flag.id === fields)?.dismissed).toBe(true);
+		// The flag went (8 s or ×): the next sub-task is offered alone.
+		log.sink.dismiss(first ?? '');
+		const next = store.offerSubtask(parent, { title: 'B', priority: 'medium' });
+		expect(log.flags.find((flag) => flag.id === next)?.description).toBe(
+			'Künftige Tickets von „Müll“ bekommen die Unteraufgabe „B“ nicht.'
+		);
 	});
 });

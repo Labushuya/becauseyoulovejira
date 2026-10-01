@@ -306,6 +306,24 @@ describe('help page (EH-9)', () => {
 		}
 	});
 
+	// Plan WV-3 (ADR-0022 addendum 10): "Unteraufgaben werden nicht kopiert" is replaced.
+	it('explains the sub-tasks of the template, how they are taken over and what reopening does', () => {
+		render(Page);
+		const content = text(screen.getByRole('region', { name: 'Wiederholungen' }));
+		for (const phrase of [
+			'Kommentare und Quellen gehen nicht mit.',
+			'Unteraufgaben legst du in der Vorlage fest (Liste „Unteraufgaben“, höchstens 20, je mit Titel und Priorität, sortierbar).',
+			'Jedes neue Ticket der Serie bekommt sie als neue, offene Unteraufgaben ohne Fälligkeit, auch beim Nachholen und mit „Jeden Termin einzeln anlegen“.',
+			'„Unteraufgaben dieses Tickets übernehmen“',
+			'„Ergänzen“ oder „Ersetzen“',
+			'Nimmt das Wiedereröffnen des zuletzt erledigten Tickets ein unberührtes Folgeticket zurück, gehen seine Unteraufgaben mit',
+			'wenn du einem offenen Ticket der Serie eine Unteraufgabe hinzufügst; Entfernen oder Umbenennen einer Unteraufgabe änderst du dagegen direkt in der Vorlage.'
+		]) {
+			expect(content, phrase).toContain(phrase);
+		}
+		expect(content).not.toContain('Unteraufgaben, Kommentare und Quellen gehen nicht mit.');
+	});
+
 	it('explains the own inbox with examples for PowerShell and curl, the key as placeholder (ADR-0038)', () => {
 		render(Page);
 		const section = screen.getByRole('region', { name: 'Eigener Eingang (API)' });

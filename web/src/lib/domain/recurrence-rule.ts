@@ -24,7 +24,7 @@ import {
 } from './recurrence';
 import { formatCalendarDate } from './format';
 import { dayLabel, joinWords, recurrenceTextInSentence, shortDate } from './recurrence-text';
-import type { TemplateStatus } from './series-template';
+import type { TemplateStatus, TemplateSubtask } from './series-template';
 import type { Priority } from './status';
 
 /** A rule as the data layer maps it (ADR-0021 section 1). */
@@ -62,6 +62,12 @@ export interface RecurrenceRule {
 	 * built by hand stay valid (absent counts as "open").
 	 */
 	initialStatus?: TemplateStatus;
+	/**
+	 * Sub-tasks of the template (plan WV-3, ADR-0022 addendum 10): every next ticket gets them as
+	 * new, open sub-tasks; [] before the migration. Optional so that rules built by hand stay valid
+	 * (absent counts as none).
+	 */
+	templateSubtasks?: TemplateSubtask[];
 	created: string;
 	updated: string;
 }
@@ -248,7 +254,14 @@ export const RECURRENCE_MESSAGES: Readonly<Record<string, string>> = Object.free
 		'Von dieser Serie ist schon ein anderes Ticket offen, und dieses Ticket ist nicht das zuletzt erledigte. Du kannst es als normales Ticket wieder öffnen (aus der Serie lösen).',
 	validation_recurrence_initial_status:
 		'Als „Status beim Anlegen“ geht jeder Status außer „Erledigt“.',
-	validation_recurrence_initial_status_required: INITIAL_STATUS_REQUIRED
+	validation_recurrence_initial_status_required: INITIAL_STATUS_REQUIRED,
+	validation_recurrence_subtasks: 'Die Unteraufgaben der Vorlage sind ungültig.',
+	validation_recurrence_subtasks_max: 'Die Vorlage hat höchstens 20 Unteraufgaben.',
+	validation_recurrence_subtask_title: 'Jede Unteraufgabe der Vorlage braucht einen Titel.',
+	validation_recurrence_subtask_title_max:
+		'Der Titel einer Unteraufgabe hat höchstens 200 Zeichen.',
+	validation_recurrence_subtask_priority:
+		'Bitte für jede Unteraufgabe eine gültige Priorität wählen.'
 });
 
 /**
@@ -446,6 +459,30 @@ export function skippedText(skipped: SkippedDates, today?: CalendarDate): string
 		.join(', ');
 	const rest = skipped.more || skipped.count > skipped.dates.length ? ' …' : '';
 	return `${amount} übersprungen (${listed}${rest})`;
+}
+
+// --- Sub-tasks from the template (plan WV-3, ADR-0022 addendum 10) -----------------------------
+
+/** History field of the note; the same as SUBTASKS_FIELD of the hook. */
+export const SUBTASKS_FIELD = 'recurrence_subtasks';
+
+/**
+ * "3 Unteraufgaben aus der Vorlage angelegt": the note of a ticket of a series about the sub-tasks
+ * it got from the template (value `{ count, tickets }` as the hook writes it).
+ */
+export function subtasksNoteText(value: string): string {
+	let count: unknown;
+	try {
+		count = (JSON.parse(value) as { count?: unknown } | null)?.count;
+	} catch {
+		count = undefined;
+	}
+	if (typeof count !== 'number' || !Number.isInteger(count) || count < 1) {
+		return 'Unteraufgaben aus der Vorlage angelegt';
+	}
+	return count === 1
+		? '1 Unteraufgabe aus der Vorlage angelegt'
+		: `${count} Unteraufgaben aus der Vorlage angelegt`;
 }
 
 /**

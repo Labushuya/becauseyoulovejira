@@ -66,6 +66,7 @@
 		repeat = false,
 		eachAvailable = false,
 		statusAvailable = false,
+		subtasksAvailable = false,
 		today = null,
 		tags = [],
 		oncreatetag = async () => ({ ok: false, message: null }),
@@ -89,6 +90,8 @@
 		eachAvailable?: boolean;
 		/** Ask "Folgetickets starten mit" in the section (RecurrenceStore.statusReady). */
 		statusAvailable?: boolean;
+		/** Name the sub-tasks of the template in the hint (plan WV-3, RecurrenceStore.subtasksReady). */
+		subtasksAvailable?: boolean;
 		/** Berlin date of today, for the preview of the section "Wiederholung". */
 		today?: CalendarDate | null;
 		/** Tags that can be chosen (the catalog). */
@@ -499,7 +502,9 @@
 						<p class="hint">
 							Künftige Tickets bekommen Titel, Beschreibung, Priorität, Projekt und Tags aus diesem
 							Formular{statusAvailable ? '; den Status wählst du hier' : ''}. Ändern kannst du das
-							danach am Ticket unter „Wiederholt sich“.
+							danach am Ticket unter „Wiederholt sich“{subtasksAvailable
+								? ', dort auch Unteraufgaben, die jedes künftige Ticket bekommt'
+								: ''}.
 						</p>
 						{#if statusAvailable}
 							<InitialStatusChoice

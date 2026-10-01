@@ -9,6 +9,7 @@ import {
 	type RecurrenceRule
 } from '$lib/domain/recurrence-rule';
 import type { Project } from '$lib/domain/project';
+import type { TicketSubtask } from '$lib/domain/series-template';
 import type { Tag } from '$lib/domain/tag';
 import type { HistoryEntry, Ticket } from '$lib/domain/ticket';
 import { CatalogStore } from '$lib/stores/catalog.svelte';
@@ -96,7 +97,9 @@ async function setup(
 	/** Open tickets of the series (recommendation 6). */
 	openTickets: OpenInstance[] = [],
 	/** Inside an open modal, as in the full view (ADR-0025 addendum 16). */
-	inModal = false
+	inModal = false,
+	/** Sub-tasks of the ticket (plan WV-3, "Unteraufgaben dieses Tickets übernehmen"). */
+	subtasks: TicketSubtask[] = []
 ) {
 	const fake: RecurrenceData = {
 		listRules: vi.fn(async () => rules),
@@ -132,7 +135,16 @@ async function setup(
 	);
 	await catalog.load();
 	const onticket = vi.fn();
-	const props = { ticket: item, store, catalog, today: TODAY, history, openTickets, onticket };
+	const props = {
+		ticket: item,
+		store,
+		catalog,
+		today: TODAY,
+		history,
+		openTickets,
+		subtasks,
+		onticket
+	};
 	if (inModal) render(InModalHarness, { props: { component: RecurrenceSummary, props } });
 	else render(RecurrenceSummary, { props });
 	return { fake, store, onticket, flagTitles };
@@ -688,6 +700,124 @@ describe('RecurrenceSummary: "Folgetickets starten mit" in "Wiederholen…" (ADR
 		await fireEvent.click(screen.getByRole('button', { name: 'Regel bearbeiten' }));
 		const dialog = screen.getByRole('dialog', { name: 'Regel bearbeiten' });
 		expect(within(dialog).queryByRole('radiogroup')).toBeNull();
+	});
+});
+
+// Plan WV-3 (ADR-0022 addendum 10): the list "Unteraufgaben" in the template at the ticket, also in
+// the full view without a dialog from the dialog, with "Unteraufgaben dieses Tickets übernehmen".
+describe('RecurrenceSummary: the sub-tasks of the template (plan WV-3)', () => {
+	const inSeries = () => ticket({ recurring: true, recurrenceId: 'rule00000000001' });
+	const ready = { templateSubtasksReady: vi.fn(async () => true) };
+	const children: TicketSubtask[] = [
+		{
+			id: 'ticket000000012',
+			title: 'Filter wechseln',
+			priority: 'low',
+			created: '2026-09-02 10:00:00.000Z'
+		},
+		{
+			id: 'ticket000000011',
+			title: 'Entkalken',
+			priority: 'high',
+			created: '2026-09-01 10:00:00.000Z'
+		}
+	];
+
+	it('names the sub-tasks in the line and offers the list only after their migration', async () => {
+		const series = rule({
+			templateSubtasks: [
+				{ title: 'Entkalken', priority: 'high' },
+				{ title: 'Filter wechseln', priority: 'medium' }
+			]
+		});
+		await setup(inSeries(), [series], ready);
+		expect(
+			screen.getByText(
+				'Künftige Tickets: Priorität Mittel · ohne Projekt · ohne Tags · 2 Unteraufgaben'
+			)
+		).toBeTruthy();
+		await fireEvent.click(screen.getByRole('button', { name: 'Vorlage bearbeiten' }));
+		const list = screen.getByRole('group', { name: 'Unteraufgaben' });
+		expect(within(list).getByLabelText<HTMLInputElement>('Titel der Unteraufgabe 2').value).toBe(
+			'Filter wechseln'
+		);
+	});
+
+	it('leaves the list out before the migration', async () => {
+		await setup(inSeries(), [rule()]);
+		await fireEvent.click(screen.getByRole('button', { name: 'Vorlage bearbeiten' }));
+		expect(screen.queryByRole('group', { name: 'Unteraufgaben' })).toBeNull();
+	});
+
+	it('takes over the sub-tasks of the ticket inline in the full view and saves the list', async () => {
+		const updateRule = vi.fn(async (id: string, patch: object) => ({
+			...rule(),
+			...patch,
+			id,
+			updated: '2026-09-02 10:00:00.000Z'
+		}));
+		const series = rule({ templateSubtasks: [{ title: 'Filter wechseln', priority: 'medium' }] });
+		const { flagTitles } = await setup(
+			inSeries(),
+			[series],
+			{ ...ready, updateRule },
+			undefined,
+			[],
+			[],
+			true,
+			children
+		);
+		await fireEvent.click(screen.getByRole('button', { name: 'Vorlage bearbeiten' }));
+		const form = screen.getByRole('form', { name: 'Vorlage der künftigen Tickets' });
+		const list = within(form).getByRole('group', { name: 'Unteraufgaben' });
+		// Only the full view is a dialog; the question stands in the list.
+		await fireEvent.click(
+			within(list).getByRole('button', { name: 'Unteraufgaben dieses Tickets übernehmen' })
+		);
+		expect(screen.getAllByRole('dialog')).toEqual([
+			screen.getByRole('dialog', { name: 'Vollansicht' })
+		]);
+		await fireEvent.click(within(list).getByRole('button', { name: 'Ergänzen' }));
+		// "Filter wechseln" is there already; "Entkalken" comes with its priority.
+		await fireEvent.click(
+			within(list).getByRole('button', { name: '„Entkalken“ nach oben verschieben' })
+		);
+		await fireEvent.click(within(form).getByRole('button', { name: 'Vorlage speichern' }));
+
+		await vi.waitFor(() => expect(screen.queryByRole('form')).toBeNull());
+		expect(updateRule).toHaveBeenCalledExactlyOnceWith('rule00000000001', {
+			template_subtasks: [
+				{ title: 'Entkalken', priority: 'high' },
+				{ title: 'Filter wechseln', priority: 'medium' }
+			]
+		});
+		expect(flagTitles).toEqual([
+			'Vorlage gespeichert. Sie gilt für die künftigen Tickets der Serie.'
+		]);
+	});
+
+	it('refuses a row without a title before sending and keeps the editor', async () => {
+		const { fake } = await setup(inSeries(), [rule()], ready);
+		await fireEvent.click(screen.getByRole('button', { name: 'Vorlage bearbeiten' }));
+		const list = screen.getByRole('group', { name: 'Unteraufgaben' });
+		await fireEvent.click(within(list).getByRole('button', { name: 'Unteraufgabe hinzufügen' }));
+		await fireEvent.click(screen.getByRole('button', { name: 'Vorlage speichern' }));
+		expect(fake.updateRule).not.toHaveBeenCalled();
+		const title = within(list).getByLabelText('Titel der Unteraufgabe 1');
+		expect(title.getAttribute('aria-invalid')).toBe('true');
+		await vi.waitFor(() => expect(document.activeElement).toBe(title));
+		expect(within(list).getByText('Bitte einen Titel eingeben.')).toBeTruthy();
+		expect(screen.getByRole('form', { name: 'Vorlage der künftigen Tickets' })).toBeTruthy();
+	});
+
+	it('says in "Wiederholen…" that the sub-tasks of the ticket do not come along on their own', async () => {
+		await setup(ticket(), [], ready, undefined, [], [], false, children);
+		await fireEvent.click(screen.getByRole('button', { name: 'Wiederholen…' }));
+		expect(
+			within(screen.getByRole('dialog')).getByText(
+				/Unteraufgaben kommen nicht von selbst mit; übernimm sie dort mit „Unteraufgaben dieses Tickets übernehmen“\./
+			)
+		).toBeTruthy();
 	});
 });
 

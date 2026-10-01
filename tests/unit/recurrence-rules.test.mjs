@@ -503,6 +503,92 @@ describe('reopening an instance (ADR-0023 section 3; package 3)', () => {
 		expect(rules.isDirectPredecessor(completedAt, completedAt)).toBe(true);
 		expect(rules.isDirectPredecessor(completedAt, '2026-09-25 10:00:00.001Z')).toBe(false);
 	});
+
+	// Plan WV-3 (ADR-0023 addendum 8): the sub-tasks from the template belong to "untouched".
+	it('counts the sub-tasks from the template as untouched only while they are the ones made, unchanged', () => {
+		const child = (id, overrides = {}) => ({
+			id,
+			created: '2026-09-25 10:00:00.201Z',
+			updated: '2026-09-25 10:00:00.201Z',
+			comments: 0,
+			...overrides
+		});
+		expect(rules.subtasksUntouched([], [])).toBe(true);
+		expect(rules.subtasksUntouched(['a', 'b'], [child('a'), child('b')])).toBe(true);
+		// Changed, commented, one gone (trash, other parent, deleted), one added, one swapped.
+		expect(rules.subtasksUntouched(['a', 'b'], [child('a', { updated: '2026-09-25 10:05:00.000Z' }), child('b')])).toBe(false);
+		expect(rules.subtasksUntouched(['a', 'b'], [child('a'), child('b', { comments: 1 })])).toBe(false);
+		expect(rules.subtasksUntouched(['a', 'b'], [child('a')])).toBe(false);
+		expect(rules.subtasksUntouched(['a'], [child('a'), child('c')])).toBe(false);
+		expect(rules.subtasksUntouched([], [child('c')])).toBe(false);
+		expect(rules.subtasksUntouched(['a', 'b'], [child('a'), child('c')])).toBe(false);
+	});
+
+	it('reads the note of the sub-tasks a ticket got from the template', () => {
+		expect(rules.SUBTASKS_FIELD).toBe('recurrence_subtasks');
+		expect(rules.subtasksNoteIds(JSON.stringify({ count: 2, tickets: ['a', 'b'] }))).toEqual(['a', 'b']);
+		for (const value of ['', null, undefined, 'kaputt', '{}', '{"tickets":"a"}', '[]']) {
+			expect(rules.subtasksNoteIds(value), String(value)).toEqual([]);
+		}
+		expect(rules.subtasksNoteIds(JSON.stringify({ tickets: ['a', 3, null] }))).toEqual(['a']);
+	});
+});
+
+describe('the sub-tasks of the template (plan WV-3, ADR-0022 addendum 10)', () => {
+	it('reads empty as the empty list and normalizes the entries', () => {
+		for (const value of [undefined, null, '']) {
+			expect(rules.templateSubtasksCheck(value), String(value)).toEqual({ value: [], code: '', index: -1 });
+		}
+		expect(
+			rules.templateSubtasksCheck([
+				{ title: ' Filter wechseln ', priority: 'high', extra: 1 },
+				{ title: 'Deckel putzen', priority: '' },
+				{ title: 'Entkalken' }
+			])
+		).toEqual({
+			value: [
+				{ title: 'Filter wechseln', priority: 'high' },
+				{ title: 'Deckel putzen', priority: 'medium' },
+				{ title: 'Entkalken', priority: 'medium' }
+			],
+			code: '',
+			index: -1
+		});
+		expect(rules.TEMPLATE_SUBTASKS_MAX).toBe(20);
+		expect(rules.TEMPLATE_SUBTASK_TITLE_MAX).toBe(200);
+		expect(rules.SUBTASK_PRIORITIES).toEqual(['low', 'medium', 'high', 'urgent']);
+		expect(rules.DEFAULT_SUBTASK_PRIORITY).toBe('medium');
+	});
+
+	it('names the first problem and its entry', () => {
+		const check = (value) => {
+			const { code, index } = rules.templateSubtasksCheck(value);
+			return [code, index];
+		};
+		const many = (count) => Array.from({ length: count }, (_value, index) => ({ title: `S${index}` }));
+		expect(check(many(20))).toEqual(['', -1]);
+		expect(check(many(21))).toEqual(['validation_recurrence_subtasks_max', -1]);
+		expect(check({ title: 'A' })).toEqual(['validation_recurrence_subtasks', -1]);
+		expect(check('A')).toEqual(['validation_recurrence_subtasks', -1]);
+		expect(check([{ title: 'A' }, null])).toEqual(['validation_recurrence_subtasks', 1]);
+		expect(check([['A']])).toEqual(['validation_recurrence_subtasks', 0]);
+		expect(check([{ title: 'A' }, { title: '  ' }])).toEqual(['validation_recurrence_subtask_title', 1]);
+		expect(check([{ title: 7 }])).toEqual(['validation_recurrence_subtask_title', 0]);
+		expect(check([{ title: 'x'.repeat(200) }])).toEqual(['', -1]);
+		// Characters as PocketBase counts them: a surrogate pair is one.
+		expect(check([{ title: '🧹'.repeat(200) }])).toEqual(['', -1]);
+		expect(check([{ title: 'x'.repeat(201) }])).toEqual(['validation_recurrence_subtask_title_max', 0]);
+		expect(check([{ title: 'A', priority: 'sofort' }])).toEqual(['validation_recurrence_subtask_priority', 0]);
+		for (const code of [
+			'validation_recurrence_subtasks',
+			'validation_recurrence_subtasks_max',
+			'validation_recurrence_subtask_title',
+			'validation_recurrence_subtask_title_max',
+			'validation_recurrence_subtask_priority'
+		]) {
+			expect(rules.MESSAGES[code], code).toBeTruthy();
+		}
+	});
 });
 
 describe('missed dates made into one ticket (ADR-0022 addendum 4)', () => {

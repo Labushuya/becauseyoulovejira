@@ -679,7 +679,8 @@ export class TicketListStore {
 	/**
 	 * "Unteraufgabe hinzufügen" (ADR-0033 section 4): a sub-task of `parent` with the title, in the
 	 * project and with the tags of the parent, status and priority by default. It joins the list at
-	 * once and counts as read, like every ticket created one by one (ADR-0015 section 3). A failure
+	 * once and counts as read, like every ticket created one by one (ADR-0015 section 3). For an open
+	 * ticket of a series the rules offer to add it to the template as well (plan WV-3). A failure
 	 * comes back with the message of the field that failed.
 	 */
 	async addSubtask(parent: TicketSummary, title: string): Promise<SubtaskResult> {
@@ -700,6 +701,7 @@ export class TicketListStore {
 			});
 			this.upsert(ticket);
 			void this.markRead(ticket);
+			this.#series.offerSubtask(parent, { title: ticket.title, priority: ticket.priority });
 			return { ok: true, ticket };
 		} catch (error) {
 			const failure = toDataError(error);
