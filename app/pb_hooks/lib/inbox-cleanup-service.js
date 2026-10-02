@@ -82,5 +82,7 @@ function clean(app, record) {
 }
 
 module.exports = {
-  run: run
+  run: run,
+  // "Verworfene jetzt leeren" of the page "Speicher" (ADR-0047 §6) empties the same way.
+  clean: clean
 };

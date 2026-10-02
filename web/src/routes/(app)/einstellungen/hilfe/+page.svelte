@@ -934,6 +934,45 @@
 			{/each}
 		</ul>
 	</section>
+
+	<section id="speicher" aria-labelledby="speicher-title">
+		<h3 id="speicher-title">Speicher</h3>
+		<p>
+			Unter <a href={resolve('/einstellungen/speicher')}>Einstellungen → Speicher</a> siehst du, was die
+			App belegt, gemessen in dem Moment, in dem du die Seite öffnest oder „Neu messen“ wählst: die Datenbank
+			mit ihrem freien Teil, die Originaldateien des Eingangs danach, wozu sie gehören (neu, an offenen
+			oder erledigten Tickets, verworfen, im Papierkorb), die größten Einträge mit ihrem Ticket, die Sicherungen
+			hier und im Zielverzeichnis, Sicherheitskopien, Logs, Programmdateien und den freien Platz.
+		</p>
+		<h4>Aufräumen</h4>
+		<ul>
+			<li>
+				<strong>Datenbank verdichten</strong> gibt freien Platz in der Datenbank an das Laufwerk zurück;
+				die App wartet dabei kurz.
+			</li>
+			<li>
+				<strong>Liegengebliebenes aufräumen</strong> löscht Programmreste nach Updates und Sicherheitskopien,
+				die älter als sieben Tage sind, und auf Wunsch die alten automatischen Sicherungen von PocketBase.
+				Die Sicherungen der App bleiben.
+			</li>
+			<li>
+				<strong>Verworfene jetzt leeren</strong> leert Text und Originaldatei verworfener Einträge sofort
+				statt nach 30 Tagen; der Eintrag bleibt als Sperre, damit dieselbe Mail nicht noch einmal hereinkommt.
+				Quellen, die noch an Tickets im Papierkorb hängen, sind nicht dabei; über sie entscheidest du
+				im Papierkorb.
+			</li>
+		</ul>
+		<p>
+			Originaldateien an Quellen löscht die Seite nicht einzeln: Sie belegen, woher ein Ticket
+			kommt. Tickets und ihre Daten gehen über den <a href={trashHref()}>Papierkorb</a>, und
+			endgültig nur, wenn nichts mehr offen ist (siehe „Warum lässt sich ein Ticket im Papierkorb
+			nicht endgültig löschen?“).
+		</p>
+		<p>
+			Programmdateien, Sicherheitskopien, Logs und den freien Platz zeigt die Seite nur, wenn die
+			App unter Windows aus ihrem Ordner <code>app</code> läuft; auf anderen Servern den Rest.
+		</p>
+	</section>
 </div>
 
 <style>

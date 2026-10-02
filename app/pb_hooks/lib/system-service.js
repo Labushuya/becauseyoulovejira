@@ -105,12 +105,13 @@ function ownAppDir() {
  * The checks of every route, in order; returns { refused, retryAfterSeconds } or the context
  * { appDir } of the own instance. `options.kind` sets the rate limit ('read' or 'change', default
  * after the whitelist entry of `name`); `options.local` skips the check of the own instance for a
- * route that runs no command (appDir is then '').
+ * route that runs no command (appDir is then ''); `options.anyPlatform` skips the check of Windows
+ * for a route that works on every server (the page "Speicher", ADR-0047 §6).
  */
 function check(e, name, method, options) {
   var opts = options || {};
   var args = argsOfServer();
-  if (!onWindows()) {
+  if (!opts.anyPlatform && !onWindows()) {
     return { refused: 'platform' };
   }
   var proxy = [];
