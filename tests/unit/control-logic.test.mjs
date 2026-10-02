@@ -550,7 +550,13 @@ $result.tailShort = Get-LogTailLines -Text "only" -Count 5
 $result.tailEmpty = (Get-LogTailLines -Text $null).Count
 
 $others = @(Select-OtherServerProcess -Process @($in.processes) -AppDir $in.appDir)
-$result.others = @($others | ForEach-Object { @{ pid = $_.ProcessId; port = $_.Port; sameFolder = $_.SameFolder } })
+$result.others = @($others | ForEach-Object { [ordered]@{ pid = $_.ProcessId; port = $_.Port; sameFolder = $_.SameFolder; testInstance = $_.TestInstance } })
+$result.development = @(foreach ($path in @($in.developmentPaths)) { Test-DevelopmentPath -Path $path })
+$result.summary = @(
+    Get-TestInstanceSummary -Server @($others | Where-Object { $_.TestInstance })
+    Get-TestInstanceSummary -Server @([pscustomobject]@{ Port = 53300 })
+    Get-TestInstanceSummary -Server @([pscustomobject]@{ Port = $null }, [pscustomobject]@{ Port = $null })
+)
 $result | ConvertTo-Json -Depth 6 -Compress
 `;
 
@@ -570,7 +576,20 @@ describe('start fingerprint, reload, status and logs (ADR-0039 sections 5 and 6)
 					{ ProcessId: 3, Name: 'pocketbase.exe', ExecutablePath: `${APP}\\pocketbase.exe`, CommandLine: `"${APP}\\pocketbase.exe" serve --http=127.0.0.1:53211 --dir=C:\\Temp\\byl-test-1\\pb_data` },
 					{ ProcessId: 4, Name: 'pocketbase.exe', ExecutablePath: 'D:\\copy\\app\\pocketbase.exe', CommandLine: '"D:\\copy\\app\\pocketbase.exe" migrate up' },
 					{ ProcessId: 5, Name: 'node.exe', ExecutablePath: 'C:\\node\\node.exe', CommandLine: 'node serve' },
-					{ ProcessId: 6, Name: 'pocketbase.exe', ExecutablePath: null, CommandLine: null }
+					{ ProcessId: 6, Name: 'pocketbase.exe', ExecutablePath: null, CommandLine: null },
+					// RS-4: a worktree of an agent and a disposable copy of the tests are test instances.
+					{ ProcessId: 7, Name: 'pocketbase.exe', ExecutablePath: 'H:\\DEV\\github\\BYL-Worktree-rs\\app\\pocketbase.exe', CommandLine: '"H:\\DEV\\github\\BYL-Worktree-rs\\app\\pocketbase.exe" serve --http=127.0.0.1:53300 --dir=C:\\Temp\\x' },
+					{ ProcessId: 8, Name: 'pocketbase.exe', ExecutablePath: 'D:\\repo\\.tmp\\byl-ctl-1\\Kopie A\\app\\pocketbase.exe', CommandLine: '"D:\\repo\\.tmp\\byl-ctl-1\\Kopie A\\app\\pocketbase.exe" serve --http=127.0.0.1:53301 --dir=D:\\repo\\.tmp\\byl-ctl-1\\Kopie A\\app\\pb_data' }
+				],
+				developmentPaths: [
+					'H:\\DEV\\github\\byl-worktree-speicher\\app\\pocketbase.exe',
+					'C:\\x\\byl-worktree\\app\\pocketbase.exe',
+					'D:/repo/.tmp/copy/app/pocketbase.exe',
+					'D:\\Sicherung\\app\\pocketbase.exe',
+					'D:\\my-byl-worktree\\app\\pocketbase.exe',
+					'D:\\repo\\.tmpx\\app\\pocketbase.exe',
+					'D:\\repo\\tmp\\app\\pocketbase.exe',
+					''
 				],
 				reload: [
 					{ name: 'stopped', server: 'Stopped', verdict: 'Current', force: false },
@@ -662,8 +681,20 @@ describe('start fingerprint, reload, status and logs (ADR-0039 sections 5 and 6)
 
 	it('reports other servers (another copy, a test instance) and leaves out the own one', () => {
 		expect(fp.others).toEqual([
-			{ pid: 2, port: 8091, sameFolder: false },
-			{ pid: 3, port: 53211, sameFolder: true }
+			{ pid: 2, port: 8091, sameFolder: false, testInstance: false },
+			{ pid: 3, port: 53211, sameFolder: true, testInstance: true },
+			{ pid: 7, port: 53300, sameFolder: false, testInstance: true },
+			{ pid: 8, port: 53301, sameFolder: false, testInstance: true }
+		]);
+	});
+
+	it('takes servers from a worktree or a disposable copy of the tests as test instances, in one line (RS-4)', () => {
+		// A folder on the way named byl-worktree… or .tmp, in any case; nothing else.
+		expect(fp.development).toEqual([true, true, true, false, false, false, false, false]);
+		expect(fp.summary).toEqual([
+			'3 Test-Instanzen (Entwicklung) auf Port 53211, 53300, 53301',
+			'1 Test-Instanz (Entwicklung) auf Port 53300',
+			'2 Test-Instanzen (Entwicklung)'
 		]);
 	});
 });

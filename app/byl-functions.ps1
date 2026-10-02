@@ -681,11 +681,27 @@ function Select-AppProcess {
     }
 }
 
+function Test-DevelopmentPath {
+    # Whether $Path lies in a working copy for development or tests (plan robuste-skripte RS-4): a
+    # folder on the way whose name starts with byl-worktree (a git worktree of an agent) or is .tmp
+    # (the disposable copies of the tests). A server from there is a test instance, not a second
+    # installation of the user.
+    param([AllowNull()][AllowEmptyString()][string]$Path)
+
+    if ([string]::IsNullOrEmpty($Path)) { return $false }
+    foreach ($part in ($Path -split '[\\/]')) {
+        if ($part -like 'byl-worktree*' -or $part -eq '.tmp') { return $true }
+    }
+    return $false
+}
+
 function Select-OtherServerProcess {
     # PocketBase servers ("serve") that are not the own instance: a copy of the app in another
     # folder or a test instance. Only reported (status, doctor), never stopped. Returns ProcessId,
-    # ExecutablePath, Port ($null if not on 127.0.0.1) and SameFolder (the program of this folder
-    # with another data folder, e.g. the test harness).
+    # ExecutablePath, Port ($null if not on 127.0.0.1), SameFolder (the program of this folder
+    # with another data folder, e.g. the test harness) and TestInstance (SameFolder, or a program
+    # in a worktree or a disposable copy, Test-DevelopmentPath): status and the page System fold
+    # test instances into one line, a real second installation stays visible.
     param([AllowNull()][object[]]$Process, [Parameter(Mandatory = $true)][string]$AppDir)
 
     $ownIds = @(Select-AppProcess -Process $Process -AppDir $AppDir | ForEach-Object { [int]$_.ProcessId })
@@ -695,13 +711,27 @@ function Select-OtherServerProcess {
         $name = if ($path) { [System.IO.Path]::GetFileName($path) } else { [string]$candidate.Name }
         if (-not [string]::Equals($name, 'pocketbase.exe', [System.StringComparison]::OrdinalIgnoreCase)) { continue }
         if ((Get-ProcessArgument -Process $candidate) -cnotcontains 'serve') { continue }
+        $sameFolder = Test-FileInFolder -Path $path -Folder $AppDir
         [pscustomobject]@{
             ProcessId      = [int]$candidate.ProcessId
             ExecutablePath = if ($path) { $path } else { $null }
             Port           = Get-ServerProcessPort -Process $candidate
-            SameFolder     = Test-FileInFolder -Path $path -Folder $AppDir
+            SameFolder     = $sameFolder
+            TestInstance   = $sameFolder -or (Test-DevelopmentPath -Path $path)
         }
     }
+}
+
+function Get-TestInstanceSummary {
+    # "1 Test-Instanz (Entwicklung) auf Port 53211" or "3 Test-Instanzen (Entwicklung) auf Port
+    # 53211, 53212": the test instances of Select-OtherServerProcess in one line (status, doctor).
+    param([AllowNull()][AllowEmptyCollection()][object[]]$Server)
+
+    $list = @(@($Server) | Where-Object { $null -ne $_ })
+    $noun = if ($list.Count -eq 1) { 'Test-Instanz' } else { 'Test-Instanzen' }
+    $ports = @($list | Where-Object { $null -ne $_.Port } | ForEach-Object { [int]$_.Port } | Sort-Object -Unique)
+    $where = if ($ports.Count -gt 0) { ' auf Port ' + ($ports -join ', ') } else { '' }
+    return "$($list.Count) $noun (Entwicklung)$where"
 }
 
 function Resolve-PortState {

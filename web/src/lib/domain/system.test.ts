@@ -13,6 +13,7 @@ import {
 	backgroundRunText,
 	denialOf,
 	formatPointInTime,
+	groupOtherServers,
 	mailText,
 	otherServerText,
 	parseDoctor,
@@ -22,6 +23,7 @@ import {
 	restartNeeded,
 	sizeText,
 	stateText,
+	testInstancesText,
 	verdictText,
 	type BackgroundProblem,
 	type ScriptProblemReport,
@@ -137,16 +139,56 @@ describe('parseOverview', () => {
 		const parsed = overview({
 			restartReasons: ['hooks', 'mystery', 'migrations'] as SystemStatus['restartReasons'],
 			otherServers: [
-				{ pid: 7, path: 'D:\\Kopie\\app\\pocketbase.exe', port: 8091, sameFolder: false },
+				{
+					pid: 7,
+					path: 'D:\\Kopie\\app\\pocketbase.exe',
+					port: 8091,
+					sameFolder: false,
+					testInstance: false
+				},
 				'kein Server' as unknown as SystemStatus['otherServers'][number]
 			],
 			autostart: 'sometimes' as SystemStatus['autostart']
 		});
 		expect(parsed.status.restartReasons).toEqual(['hooks', 'migrations']);
 		expect(parsed.status.otherServers).toEqual([
-			{ pid: 7, path: 'D:\\Kopie\\app\\pocketbase.exe', port: 8091, sameFolder: false }
+			{
+				pid: 7,
+				path: 'D:\\Kopie\\app\\pocketbase.exe',
+				port: 8091,
+				sameFolder: false,
+				testInstance: false
+			}
 		]);
 		expect(parsed.status.autostart).toBe('off');
+	});
+
+	it('folds test instances and keeps a second installation apart (RS-4)', () => {
+		const servers = overview({
+			otherServers: [
+				{
+					pid: 1,
+					path: 'H:\\x\\byl-worktree-a\\app\\pocketbase.exe',
+					port: 53300,
+					sameFolder: false,
+					testInstance: true
+				},
+				{
+					pid: 2,
+					path: 'D:\\Kopie\\app\\pocketbase.exe',
+					port: 8091,
+					sameFolder: false,
+					testInstance: false
+				},
+				// A script from before RS-4 names only sameFolder.
+				{ pid: 3, path: 'C:\\Apps\\app\\pocketbase.exe', port: 53211, sameFolder: true }
+			] as unknown as SystemStatus['otherServers']
+		}).status.otherServers;
+		const { copies, tests } = groupOtherServers(servers);
+		expect(copies.map((server) => server.pid)).toEqual([2]);
+		expect(tests.map((server) => server.pid)).toEqual([1, 3]);
+		expect(testInstancesText(1)).toBe('1 Test-Instanz (Entwicklung)');
+		expect(testInstancesText(tests.length)).toBe('2 Test-Instanzen (Entwicklung)');
 	});
 
 	it.each([
@@ -327,12 +369,22 @@ describe('texts', () => {
 				pid: 7,
 				path: 'D:\\Kopie\\app\\pocketbase.exe',
 				port: 8091,
-				sameFolder: false
+				sameFolder: false,
+				testInstance: false
 			})
 		).toBe('Andere Kopie auf Port 8091 · D:\\Kopie\\app\\pocketbase.exe');
-		expect(otherServerText({ pid: 7, path: '', port: null, sameFolder: true })).toBe(
-			'Testinstanz dieses Ordners auf andere Adresse'
-		);
+		expect(
+			otherServerText({ pid: 7, path: '', port: null, sameFolder: true, testInstance: true })
+		).toBe('Test-Instanz dieses Ordners auf andere Adresse');
+		expect(
+			otherServerText({
+				pid: 8,
+				path: 'H:\\x\\byl-worktree-a\\app\\pocketbase.exe',
+				port: 53300,
+				sameFolder: false,
+				testInstance: true
+			})
+		).toBe('Test-Instanz auf Port 53300 · H:\\x\\byl-worktree-a\\app\\pocketbase.exe');
 		expect(sizeText(0)).toBe('0 KB');
 		expect(sizeText(1)).toBe('1 KB');
 		expect(sizeText(2048)).toBe('2 KB');

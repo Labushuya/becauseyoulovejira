@@ -595,3 +595,32 @@ describe('byl-control.ps1: problems with cause, steps and the command to copy (R
 		expect(result.output).not.toMatch(/ist entweder falsch geschrieben|is not recognized/);
 	});
 });
+
+// Plan robuste-skripte RS-4: the copies of this file lie below .tmp, so for each other they are test
+// instances. Other servers of the machine (the harness of other files, an installation of the user)
+// may show up as well; the cases look only at the server of copy A.
+describe('byl-control.ps1: test instances folded in status and doctor (RS-4)', CASE_TIMEOUT, () => {
+	it('names a running copy below .tmp as a test instance, in one line of status and doctor', () => {
+		expect(control(copies.a, 'start').code).toBe(0);
+		try {
+			const [serverA] = serversOf(copies.a);
+			const json = status(copies.b);
+			expect(json.data.otherServers.find((server) => server.pid === serverA.pid)).toEqual({
+				pid: serverA.pid,
+				path: join(copies.a.dir, 'pocketbase.exe'),
+				port: copies.a.port,
+				sameFolder: false,
+				testInstance: true
+			});
+			const shown = control(copies.b, 'status');
+			expect(shown.output).toMatch(new RegExp(`  Entwicklung:  \\d+ Test-Instanz(en)? \\(Entwicklung\\) auf Port [\\d, ]*\\b${copies.a.port}\\b[\\d, ]* aus Worktrees und Testkopien; bleiben unber`));
+			expect(shown.output).not.toContain(`(PID ${serverA.pid})`);
+			const doctor = JSON.parse(control(copies.b, 'doctor', '-Json').output.trim());
+			const copiesChecks = doctor.checks.filter((check) => check.name === 'copies');
+			expect(copiesChecks.filter((check) => check.text.includes(`(PID ${serverA.pid})`))).toEqual([]);
+			expect(copiesChecks.some((check) => /^\d+ Test-Instanz(en)? \(Entwicklung\) auf Port /.test(check.text) && check.text.includes(String(copies.a.port)))).toBe(true);
+		} finally {
+			expect(control(copies.a, 'stop').code).toBe(0);
+		}
+	});
+});

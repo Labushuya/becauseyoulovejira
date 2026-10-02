@@ -36,6 +36,11 @@ export interface OtherServer {
 	port: number | null;
 	/** The program of this folder with another data folder (a test instance). */
 	sameFolder: boolean;
+	/**
+	 * A test instance: this program with another data folder, or a program in a worktree
+	 * (…\byl-worktree…\) or a disposable copy of the tests (…\.tmp\). Folded on the page (RS-4).
+	 */
+	testInstance: boolean;
 }
 
 export const PROBLEM_LEVELS = ['error', 'warning'] as const;
@@ -332,7 +337,8 @@ function parseStatus(raw: unknown): SystemStatus | null {
 			pid: count(server.pid),
 			path: textOf(server.path),
 			port: count(server.port),
-			sameFolder: server.sameFolder === true
+			sameFolder: server.sameFolder === true,
+			testInstance: server.testInstance === true || server.sameFolder === true
 		})),
 		autostart: oneOf(AUTOSTART_STATES, raw.autostart) ? raw.autostart : 'off',
 		backgroundProblem: parseBackgroundProblem(raw.backgroundProblem)
@@ -495,11 +501,32 @@ export const AUTOSTART_TEXTS: Readonly<Record<AutostartState, string>> = {
 	other: 'Zeigt auf einen anderen Ordner'
 };
 
-/** "Port 8091 · C:\…\pocketbase.exe" for another copy of the app. */
+function otherServerKind(server: OtherServer): string {
+	if (server.sameFolder) return 'Test-Instanz dieses Ordners';
+	return server.testInstance ? 'Test-Instanz' : 'Andere Kopie';
+}
+
+/** "Andere Kopie auf Port 8091 · C:\…\pocketbase.exe" for another copy of the app. */
 export function otherServerText(server: OtherServer): string {
 	const where = server.port === null ? 'andere Adresse' : `Port ${server.port}`;
-	const kind = server.sameFolder ? 'Testinstanz dieses Ordners' : 'Andere Kopie';
+	const kind = otherServerKind(server);
 	return server.path === '' ? `${kind} auf ${where}` : `${kind} auf ${where} · ${server.path}`;
+}
+
+/** Real second installations (shown) and test instances (folded), in the order of the script. */
+export function groupOtherServers(servers: readonly OtherServer[]): {
+	copies: OtherServer[];
+	tests: OtherServer[];
+} {
+	return {
+		copies: servers.filter((server) => !server.testInstance),
+		tests: servers.filter((server) => server.testInstance)
+	};
+}
+
+/** "1 Test-Instanz (Entwicklung)" or "3 Test-Instanzen (Entwicklung)". */
+export function testInstancesText(count: number): string {
+	return `${count} ${count === 1 ? 'Test-Instanz' : 'Test-Instanzen'} (Entwicklung)`;
 }
 
 /** Size of a log file as "12 KB" (at least 1 KB for a file with content). */

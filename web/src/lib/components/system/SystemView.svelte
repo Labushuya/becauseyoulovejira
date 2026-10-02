@@ -8,10 +8,12 @@
 		RESTART_REASON_LABELS,
 		RESTART_TEXTS,
 		backgroundRunText,
+		groupOtherServers,
 		mailText,
 		otherServerText,
 		restartNeeded,
 		stateText,
+		testInstancesText,
 		verdictText
 	} from '$lib/domain/system';
 	import type { SystemStore } from '$lib/stores/system.svelte';
@@ -40,6 +42,9 @@
 	);
 	const needed = $derived(status !== null && restartNeeded(status));
 	const mail = $derived(overview === null ? null : mailText(overview));
+	// Another installation stays visible; test instances (worktrees, copies of the tests) are folded
+	// into "N Test-Instanzen (Entwicklung)" (plan robuste-skripte RS-4).
+	const others = $derived(groupOtherServers(status?.otherServers ?? []));
 	const restartHint = $derived.by(() => {
 		if (status === null) return '';
 		if (status.state === 'unhealthy') return 'Nötig: Der Server antwortet nicht.';
@@ -162,11 +167,23 @@
 				<div class="row">
 					<dt>Andere Kopien</dt>
 					<dd>
-						<ul class="others">
-							{#each status.otherServers as server, index (`${server.pid}-${index}`)}
-								<li>{otherServerText(server)}</li>
-							{/each}
-						</ul>
+						{#if others.copies.length > 0}
+							<ul class="others">
+								{#each others.copies as server, index (`${server.pid}-${index}`)}
+									<li>{otherServerText(server)}</li>
+								{/each}
+							</ul>
+						{/if}
+						{#if others.tests.length > 0}
+							<details class="tests">
+								<summary>{testInstancesText(others.tests.length)}</summary>
+								<ul class="others">
+									{#each others.tests as server, index (`${server.pid}-${index}`)}
+										<li>{otherServerText(server)}</li>
+									{/each}
+								</ul>
+							</details>
+						{/if}
 						<span class="hint">Nur ein Hinweis; sie bleiben unberührt.</span>
 					</dd>
 				</div>
@@ -348,6 +365,14 @@
 		display: grid;
 		gap: 0.125rem;
 		list-style: none;
+	}
+
+	.tests summary {
+		cursor: pointer;
+	}
+
+	.tests[open] summary {
+		margin-bottom: 0.25rem;
 	}
 
 	.details summary {
