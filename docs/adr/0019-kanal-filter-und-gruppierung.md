@@ -71,3 +71,7 @@ Die in §4 angekündigte Spalte gibt es seit Paket SP-3 ([ADR-0030](0030-spalten
 ## Nachtrag (2026-09-29): Familie „Notion“ nach ADR-0041
 
 Den Kanal `notion` gibt es seit Paket NI-1 ([ADR-0041](0041-notion-listen-uebernehmen.md)): Einträge werden aus Datenbanken und Seiten in Notion übernommen, ein daraus umgewandeltes Ticket trägt `tickets.source = notion`. Seit NI-2 steht die Familie „Notion“ deshalb als Chip in der Gruppe „Quelle“ (`SOURCE_FAMILY_CHIPS`, Eingang und Tickets), wie in §1 vorgesehen. Filter, Gruppierung, Spalte und Symbol folgen §2 bis §4 unverändert.
+
+## Nachtrag (2026-10-02): Familie „GitHub“ nach ADR-0050
+
+Der Kanal `github` ([ADR-0050](0050-github-kanal-und-beobachtete-quellen.md)) bringt geänderte Dateien, Pull Requests und Releases beobachteter Repositorys. Sie passen in keine Familie von §1: Ein geänderter Changelog ist kein Web-Link, den der Nutzer gemerkt hat, und keine Nachricht. Deshalb gibt es die siebte Familie **„GitHub“** (Wert `github` in der Adresse, Symbol „aus GitHub“ mit einer eigenen Zeichnung zweier Fassungen an einem Zweig, kein Logo) mit genau diesem Kanal, als Chip in Eingang und Tickets nach „Notion“. Filter, Gruppierung, Spalte und Symbol folgen §2 bis §4 unverändert; der Filter des Servers für erledigte Tickets bleibt bei höchstens vier Kanälen je Familie.

@@ -149,6 +149,22 @@ describe('own inbox (api, whatsapp-web; ADR-0038)', () => {
 	});
 });
 
+describe('GitHub (ADR-0050)', () => {
+	it('keeps one entry per repository, path and blob of a watched file', () => {
+		const file = { channel: 'github', source_ref: 'file:octo/roadmap:CHANGELOG.md', meta: { github: { version: 'abc' } } };
+		expect(keyOf(file)).toBe('github|file:octo/roadmap:CHANGELOG.md|abc');
+		expect(keyOf({ ...file, title: 'anders', body: 'anders' })).toBe(keyOf(file));
+		expect(keyOf({ ...file, meta: { github: { version: 'def' } } })).not.toBe(keyOf(file));
+		expect(keyOf({ ...file, meta: { github: { version: 'removed-abc' } } })).not.toBe(keyOf(file));
+	});
+
+	it('keeps one entry per pull request or release by its node ID', () => {
+		expect(keyOf({ channel: 'github', source_ref: 'PR_kwDO1', meta: { github: { version: '' } } })).toBe('github|PR_kwDO1|');
+		expect(keyOf({ channel: 'github', source_ref: 'PR_kwDO1' })).toBe('github|PR_kwDO1|');
+		expect(fp.fingerprintKey({ channel: 'github', source_ref: '' }, 'r')).toEqual({ key: '', missing: 'source_ref' });
+	});
+});
+
 describe('escaping and hashing', () => {
 	it('keeps part lists with "|" apart', () => {
 		const a = keyOf({ channel: 'ics', source_ref: 'a|b', meta: { recurrence_id: 'c' } });

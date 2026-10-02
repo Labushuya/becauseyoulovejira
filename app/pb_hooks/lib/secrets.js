@@ -16,6 +16,10 @@ var URL_PATTERN = /\b([a-zA-Z][a-zA-Z0-9+.\-]*):\/\/(?:[^\s\/?#@"'<>]*@)?([^\s\/
 var TELEGRAM_TOKEN = /\b\d{5,}:[A-Za-z0-9_\-]{30,}\b/g;
 // Token of a Notion integration ("ntn_…", older ones "secret_…"; ADR-0041).
 var NOTION_TOKEN = /\b(?:ntn|secret)_[A-Za-z0-9]{30,}\b/g;
+// Tokens of GitHub (ADR-0050): fine-grained personal access tokens ("github_pat_…"), classic ones
+// ("ghp_…") and the other kinds GitHub issues (OAuth "gho_", user and server "ghu_"/"ghs_",
+// refresh "ghr_").
+var GITHUB_TOKEN = /\b(?:github_pat_[A-Za-z0-9_]{20,}|gh[pousr]_[A-Za-z0-9]{20,})\b/g;
 
 function text(value) {
   return value === undefined || value === null ? '' : String(value);
@@ -44,7 +48,8 @@ function escapeRegExp(value) {
  * Error text without secrets, for connections.last_error and the log (ADR-0018 section 5): every
  * value in `secrets` becomes "***" (also URL-encoded), every URL is cut to scheme and host (the
  * iCal address and the Telegram address ".../bot<token>/..." carry the secret in the path),
- * Telegram and Notion tokens are replaced anywhere, and the text is cut to 1 000 characters.
+ * Telegram, Notion and GitHub tokens are replaced anywhere, and the text is cut to 1 000
+ * characters.
  */
 function redact(message, secrets) {
   var result = text(message);
@@ -64,6 +69,7 @@ function redact(message, secrets) {
   });
   result = result.replace(TELEGRAM_TOKEN, REPLACEMENT);
   result = result.replace(NOTION_TOKEN, REPLACEMENT);
+  result = result.replace(GITHUB_TOKEN, REPLACEMENT);
   if (result.length > MAX_MESSAGE_LENGTH) {
     result = result.slice(0, MAX_MESSAGE_LENGTH - 1) + '…';
   }

@@ -36,6 +36,32 @@ describe('connection-rules.js', () => {
 		expect(rules.sourceIdentity('notion', 'BYL_NOTION_TOKEN', {})).toBe('BYL_NOTION_TOKEN\n');
 	});
 
+	it('checks GitHub settings through github-rules.js and runs GitHub without its token (ADR-0050)', () => {
+		const github = loadHookLib('github-rules.js');
+		const before = { ...empty, type: 'github', secret_env: 'BYL_GITHUB_TOKEN', settings: null };
+		const after = { ...before, settings: { interval: 30, repos: [{ repo: 'octo/roadmap', paths: ['CHANGELOG*'] }] } };
+		expect(rules.updateViolation(before, after, secrets, keywords, github)).toBe('');
+		expect(rules.updateViolation(before, { ...after, settings: { keywords: ['todo'] } }, secrets, keywords, github)).toMatchObject({
+			field: 'settings',
+			code: 'validation_github_settings'
+		});
+		expect(rules.updateViolation(before, { ...after, settings: { repos: [{ repo: 'octo' }] } }, secrets, keywords, github)).toMatchObject({
+			code: 'validation_github_repo'
+		});
+		// Without the rules of GitHub a GitHub connection takes no settings at all.
+		expect(rules.settingsViolation('github', {}, secrets, keywords)).toMatchObject({ code: 'validation_connection_settings' });
+		// Until the interface offers it, only the superuser creates one (plan beobachtete-quellen, GH-1).
+		expect(rules.CREATABLE_TYPES).not.toContain('github');
+		expect(rules.requiresSecret('github')).toBe(false);
+		for (const type of rules.CREATABLE_TYPES) expect(rules.requiresSecret(type), type).toBe(true);
+		// The state of the channel is a field of the server: a client never writes it.
+		expect(rules.SERVER_FIELDS).toContain('watch');
+		expect(rules.updateViolation(before, { ...before, watch: '{"repos":{}}' }, secrets, keywords, github)).toMatchObject({
+			field: 'watch',
+			code: 'validation_connection_server_field'
+		});
+	});
+
 	it('refuses unknown kinds, server fields and invalid names', () => {
 		expect(rules.createViolation({ ...base, ...empty, type: 'slack' }, secrets, keywords)).toMatchObject({
 			field: 'type',

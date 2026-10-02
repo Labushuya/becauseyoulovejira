@@ -62,6 +62,16 @@ describe('secrets.js: redact', () => {
 		expect(secrets.redact('secret_key und ntn_kurz bleiben', [])).toBe('secret_key und ntn_kurz bleiben');
 	});
 
+	it('removes tokens of GitHub from plain text (ADR-0050), not ordinary words', () => {
+		// Invented and built from parts, so no scanner takes them for real tokens.
+		const fine = 'github' + '_pat_' + '11ERFUNDEN0' + 'Beispiel0NurFuerTests_' + 'x'.repeat(40);
+		const classic = 'gh' + 'p_' + 'Erfunden0Beispiel0NurFuerTests012345';
+		const oauth = 'gh' + 'o_' + 'Erfunden0Beispiel0NurFuerTests012345';
+		const server = 'gh' + 's_' + 'Erfunden0Beispiel0NurFuerTests012345';
+		expect(secrets.redact(`Bearer ${fine}, ${classic}, ${oauth}, ${server}`, [])).toBe('Bearer ***, ***, ***, ***');
+		expect(secrets.redact('github_pat_kurz, ghp_kurz und github.com bleiben', [])).toBe('github_pat_kurz, ghp_kurz und github.com bleiben');
+	});
+
 	it('replaces every listed value, also URL-encoded, but not very short ones', () => {
 		const password = 'geheim&passwort';
 		expect(secrets.redact(`login failed for ${password} (${encodeURIComponent(password)})`, [password])).toBe(

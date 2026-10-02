@@ -4,7 +4,8 @@
 // lock per connection over `running_since` (stale after 10 minutes), a timeout for every request
 // well below the interval, a size limit, and errors that are cleaned before they are stored or
 // logged and never thrown, so one connection cannot stop the others. Without its variables a
-// connection does nothing and logs that once per start of the server.
+// connection does nothing and logs that once per start of the server; only GitHub runs without its
+// token as well (public repositories, ADR-0050). GitHub keeps its own state in `watch` (hidden).
 // CommonJS module, ES5 only, Goja runtime only.
 'use strict';
 
@@ -51,6 +52,9 @@ function channelOf(type) {
   if (type === 'telegram') {
     return require(__hooks + '/lib/channel-telegram-run.js');
   }
+  if (type === 'github') {
+    return require(__hooks + '/lib/github-service.js');
+  }
   return null;
 }
 
@@ -70,7 +74,8 @@ function values(record) {
     return $os.getenv(name);
   };
   var result = { secret: secrets.read(names.secret, getenv), allowlist: '', missing: [] };
-  if (result.secret === '') {
+  // GitHub runs without its token too (public repositories, ADR-0050 §1).
+  if (result.secret === '' && rules.requiresSecret(record.getString('type'))) {
     result.missing.push(names.secret);
   }
   if (record.getString('type') === 'telegram') {
@@ -96,14 +101,24 @@ function lock(app, id, now) {
   return acquired;
 }
 
-// Stores the result of a run and frees the lock. `outcome.cursor`/`outcome.hint` only when set.
+// Whether the connections have the field watch (migration 1790203200 has run).
+function hasWatchField(record) {
+  try {
+    return !!record.collection().fields.getByName('watch');
+  } catch (err) {
+    return false;
+  }
+}
+
+// Stores the result of a run and frees the lock. `outcome.cursor`/`outcome.hint`/`outcome.watch`
+// only when set; a run that a rate limit stopped (`outcome.limited`) is no good run.
 function finish(app, id, outcome, error) {
   var record = app.findRecordById(COLLECTION, id);
   var stamp = berlin.toPocketBaseDate(Date.now());
   record.set('running_since', '');
   record.set('last_run_at', stamp);
   record.set('last_error', error);
-  if (error === '') {
+  if (error === '' && !outcome.limited) {
     record.set('last_ok_at', stamp);
   }
   if (outcome.cursor !== undefined) {
@@ -111,6 +126,9 @@ function finish(app, id, outcome, error) {
   }
   if (outcome.hint !== undefined) {
     record.set('last_hint', outcome.hint);
+  }
+  if (outcome.watch !== undefined && hasWatchField(record)) {
+    record.set('watch', outcome.watch);
   }
   app.save(record);
 }
@@ -124,9 +142,12 @@ function label(record) {
  * error, missing }; `unmatched` counts what no keyword matched and what was therefore not saved
  * (ADR-0020):
  * status "ok", "error", "running" (another run holds the lock), "missing" (variables not set),
- * "disabled" or "unsupported". `error` is cleaned; `missing` lists names of variables only.
+ * "disabled", "unsupported" or, for GitHub, "limited" (a rate limit holds; with `until` and
+ * `hint`). `error` is cleaned; `missing` lists names of variables only. GitHub counts in `updated`
+ * the entries whose status followed their source (ADR-0050 §5). `options` go to the channel (the
+ * cron of GitHub passes its clock as `now`).
  */
-function runConnection(app, record) {
+function runConnection(app, record, options) {
   var result = {
     status: 'ok',
     created: 0,
@@ -168,7 +189,7 @@ function runConnection(app, record) {
   var hidden = [access.secret, access.allowlist];
   var outcome;
   try {
-    outcome = channel.run(app, record, access) || {};
+    outcome = channel.run(app, record, access, options || {}) || {};
   } catch (err) {
     outcome = { error: String(err && err.message ? err.message : err) };
   }
@@ -189,6 +210,13 @@ function runConnection(app, record) {
   result.skipped = outcome.skipped || 0;
   result.failed = outcome.failed || 0;
   result.unmatched = outcome.unmatched || 0;
+  // A rate limit of GitHub stopped the run (ADR-0050 §6): no error of the user; the hint says when
+  // the next run may ask again.
+  if (error === '' && outcome.limited) {
+    result.status = 'limited';
+    result.until = new Date(outcome.limited).toISOString();
+    result.hint = secrets.redact(outcome.hint || '', hidden);
+  }
   return result;
 }
 

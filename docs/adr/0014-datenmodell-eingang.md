@@ -136,3 +136,12 @@ Neue Felder an `tickets`:
 ## Nachtrag (2026-10-02, [ADR-0049](0049-zielprojekt-je-eingangsweg.md)): Zielprojekt eines Eintrags
 
 §1 bekommt ein Feld: **`target_project`** (Relation auf `projects`, höchstens eins, optional, kein Cascade, Index `idx_inbox_items_target_project`, Migration `1790203100_inbox_target_project.js`), das Projekt, das der Eintrag beim Eintreffen von seinem Weg bekam (Verbindung, eigener Eingang, WhatsApp Web, Dateien). Es setzt nur der Hook beim Anlegen, für Clients ist es unveränderlich wie `channel` (`validation_inbox_immutable`); ein mitgesendeter Wert wird überschrieben. Umwandeln belegt das Projekt damit vor, wenn es aktiv ist (§4). Wird das Projekt gelöscht, leert PocketBase das Feld, und der Hook vermerkt `source_meta.target_gone`. Die Bereinigung verworfener Einträge (§3) lässt das Feld stehen. Einzelheiten, Gründe und die Vorbereitung für Repository und Ordner: [ADR-0049](0049-zielprojekt-je-eingangsweg.md).
+
+## Nachtrag (2026-10-02, [ADR-0050](0050-github-kanal-und-beobachtete-quellen.md)): GitHub und der Status beobachteter Quellen
+
+§1 bekommt mit der Migration `1790203200_github_channel.js`:
+
+- den Kanal **`github`** (auch in `tickets.source`) und die Arten **`change`** („Änderung“: eine Fassung einer beobachteten Datei, neu oder gelöscht), **`pull_request`** und **`release`**;
+- das Feld **`watch`** (JSON, höchstens 2 000 Byte): der Status einer beobachteten Quelle, etwa „seit Import erneut geändert“ oder „PR gemergt“. Es setzt nur der Server (beim Anlegen über den flüchtigen Schlüssel `@watch`, danach beim Abruf), für Clients ist es unveränderlich (`IMMUTABLE_FIELDS`); ein Ticket ändert sich damit nie ([ADR-0031](0031-herkunft-sichern.md), Nachtrag I).
+
+§3 bekommt die Familie GitHub: `github|` + `source_ref` + `|` + Fassung. `source_ref` ist bei einer Datei `file:<owner/repo klein>:<pfad>` und die Fassung ihr Blob-SHA (bei einer gelöschten `removed-` und der letzte Blob), bei Pull Request und Release die Node-ID von GitHub mit leerer Fassung. So kommt jede Fassung bzw. jeder PR einmal, und ein verworfener bleibt draußen.

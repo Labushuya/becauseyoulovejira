@@ -198,7 +198,7 @@ describe('migration rollback', () => {
 				const up = await migrate(args, 'up');
 				expect(appliedFiles(up, 'Applied')).toEqual(fromConnections);
 				const migrated = withDatabase(dataDir, snapshot);
-				expect(migrated.inbox_items.map(({ connection, target_project, ...rest }) => rest)).toEqual(before.inbox_items);
+				expect(migrated.inbox_items.map(({ connection, target_project, watch, ...rest }) => rest)).toEqual(before.inbox_items);
 				expect(migrated.inbox_items.map((item) => item.connection)).toEqual(['', '']);
 				expect(migrated.connections).toEqual([]);
 
@@ -312,8 +312,9 @@ describe('migration rollback of the full inbox scan (ADR-0020, addendum 3)', () 
 					mail00000000003: null,
 					cal000000000004: null
 				});
-				// Nothing else changes, not even `updated` (the target project of ADR-0049 runs along empty).
-				expect(withoutFields(migrated.connections, ['settings', 'scan', ...TARGET_FIELDS])).toEqual(
+				// Nothing else changes, not even `updated` (the target project of ADR-0049 and the state of
+				// the GitHub channel, ADR-0050, run along empty).
+				expect(withoutFields(migrated.connections, ['settings', 'scan', ...LATER_ITEM_FIELDS])).toEqual(
 					withoutFields(before.connections, ['settings'])
 				);
 
@@ -481,11 +482,13 @@ describe('migration rollback of the delete lock of inbox items (ADR-0014, addend
 				const guarded = inboxDeleteRuleOf(dataDir);
 				expect(guarded).toMatch(/^@request\.auth\.id != "" && \(owner = @request\.auth\.id \|\| .*\) && ticket = ""$/);
 				// Nothing else of the schema changes: only this one rule (the target project of ADR-0049,
-				// 1790203100, runs along).
+				// 1790203100, and the GitHub channel of ADR-0050, 1790203200, run along).
 				const schemaBefore = withoutTimestamps(readDataDir(dataDir).collections);
 				const withRule = (collections, rule) =>
 					collections.map((collection) => (collection.name === 'inbox_items' ? { ...collection, deleteRule: rule } : collection));
-				expect(withRule(schemaBefore, null)).toEqual(withRule(schemaAfter, null).map(withoutTargetFields));
+				expect(withRule(schemaBefore, null)).toEqual(
+					withRule(schemaAfter, null).map(withoutTargetFields).map(withoutGithubChannel)
+				);
 
 				// A ticket with its main source, a linked, a new and a discarded item.
 				withDatabase(dataDir, (db) => {
@@ -585,9 +588,9 @@ describe('migration rollback of the orphaned sources (ADR-0031, addendum B)', ()
 				// Everything else is untouched, the text and the fingerprint of the orphans as well.
 				const before = byId(rows);
 				for (const id of ['item00000000003', 'item00000000004', 'item00000000005']) {
-					expect(withoutFields([items[id]], TARGET_FIELDS)[0]).toEqual(before[id]);
+					expect(withoutFields([items[id]], LATER_ITEM_FIELDS)[0]).toEqual(before[id]);
 				}
-				expect(withoutFields(after.inbox_items, ['state', 'handled_at', 'source_meta', ...TARGET_FIELDS])).toEqual(
+				expect(withoutFields(after.inbox_items, ['state', 'handled_at', 'source_meta', ...LATER_ITEM_FIELDS])).toEqual(
 					withoutFields(rows.inbox_items, ['state', 'handled_at', 'source_meta'])
 				);
 				expect(withoutFields(after.tickets, LATER_TICKET_FIELDS)).toEqual(rows.tickets);
@@ -832,6 +835,15 @@ const TARGET_FIELDS = ['target_project'];
 const TARGET_USER_FIELDS = ['inbox_targets'];
 const TARGET_INDEX = /idx_inbox_items_target_project/;
 const LATER_USER_FIELDS = [...TRASH_USER_FIELDS, ...TARGET_USER_FIELDS];
+// The GitHub channel (ADR-0050, 1790203200), which every earlier test runs along as well: a new
+// value of inbox_items.channel, tickets.source and connections.type, three kinds of entries and a
+// JSON field `watch` at inbox_items and connections.
+const GITHUB_MIGRATION = '1790203200_github_channel.js';
+const GITHUB_FIELDS = ['watch'];
+const GITHUB_CHANNEL = 'github';
+const GITHUB_KINDS = ['change', 'pull_request', 'release'];
+// Columns of inbox_items and connections that later migrations add (target project, watch).
+const LATER_ITEM_FIELDS = [...TARGET_FIELDS, ...GITHUB_FIELDS];
 // Conditions the trash appends to the API rules (1790202300).
 const TRASH_RULE_SUFFIXES = [
 	' && deleted_at = ""',
@@ -860,16 +872,16 @@ function withoutFields(rows, fields) {
  * A snapshot without the columns of "Jeden Termin einzeln anlegen" (plan OR-5, migration
  * 1790202200), of the trash (ADR-0037, 1790202300), of "Status beim Anlegen" (plan WV,
  * 1790202500), of the pinned comment (ADR-0044, 1790202600), of the sub-tasks of the template
- * (plan WV-3, 1790202700) and of the target project (ADR-0049, 1790203100): the tests of earlier
- * migrations run them along with `up`.
+ * (plan WV-3, 1790202700), of the target project (ADR-0049, 1790203100) and of the GitHub channel
+ * (ADR-0050, 1790203200): the tests of earlier migrations run them along with `up`.
  */
 function withoutLater(snap) {
 	return {
 		...snap,
 		users: snap.users === null ? null : withoutFields(snap.users, LATER_USER_FIELDS),
 		tickets: snap.tickets === null ? null : withoutFields(snap.tickets, LATER_TICKET_FIELDS),
-		inbox_items: snap.inbox_items === null ? null : withoutFields(snap.inbox_items, TARGET_FIELDS),
-		connections: snap.connections === null ? null : withoutFields(snap.connections, TARGET_FIELDS),
+		inbox_items: snap.inbox_items === null ? null : withoutFields(snap.inbox_items, LATER_ITEM_FIELDS),
+		connections: snap.connections === null ? null : withoutFields(snap.connections, LATER_ITEM_FIELDS),
 		recurrence_rules: snap.recurrence_rules === null ? null : withoutFields(snap.recurrence_rules, LATER_RULE_FIELDS)
 	};
 }
@@ -895,7 +907,9 @@ function withoutTrashRules(collection) {
 // inbox_items.channel and tickets.source.
 const OWN_INBOX_COLLECTION = 'inbox_keys';
 const OWN_INBOX_CHANNELS = ['api', 'whatsapp-web'];
-const CHANNELS_BEFORE_OWN_INBOX = CHANNELS.filter((channel) => !OWN_INBOX_CHANNELS.includes(channel));
+const CHANNELS_BEFORE_OWN_INBOX = CHANNELS.filter(
+	(channel) => !OWN_INBOX_CHANNELS.includes(channel) && channel !== GITHUB_CHANNEL
+);
 
 /** The collections without those that later migrations create (inbox_keys, 1790202400). */
 function withoutLaterCollections(collections) {
@@ -951,6 +965,29 @@ function withoutTargetFields(collection) {
 }
 
 /**
+ * A collection without what the GitHub channel adds (ADR-0050, 1790203200): the value "github" of
+ * inbox_items.channel, tickets.source and connections.type, its three kinds of entries and the
+ * field `watch` of inbox_items and connections.
+ */
+function withoutGithubChannel(collection) {
+	if (!['inbox_items', 'tickets', 'connections'].includes(collection.name)) return collection;
+	return {
+		...collection,
+		fields: collection.fields
+			.filter((field) => collection.name === 'tickets' || !GITHUB_FIELDS.includes(field.name))
+			.map((field) => {
+				if (['channel', 'source', 'type'].includes(field.name)) {
+					return { ...field, values: field.values.filter((value) => value !== GITHUB_CHANNEL) };
+				}
+				if (field.name === 'kind') {
+					return { ...field, values: field.values.filter((value) => !GITHUB_KINDS.includes(value)) };
+				}
+				return field;
+			})
+	};
+}
+
+/**
  * inbox_items with the deleteRule of the sources (1790201800: the rule of the own records and
  * `ticket = ""`) instead of the delete lock (null, 1790202800, ADR-0014 addendum of 2026-10-01).
  */
@@ -963,11 +1000,14 @@ function withoutDeleteLock(collection) {
  * A collection without the fields, indexes and rule conditions of the migrations 1790202200
  * (plan OR-5), 1790202300 (trash, ADR-0037), 1790202500 (plan WV), 1790202600 (pinned comment,
  * ADR-0044), 1790202700 (plan WV-3), 1790202800 (delete lock of inbox items, ADR-0014 addendum of
- * 2026-10-01), 1790203100 (target project, ADR-0049) and without the channels of 1790202400 (own
- * inbox, ADR-0038; its collection leaves with `withoutLaterCollections`).
+ * 2026-10-01), 1790203100 (target project, ADR-0049), 1790203200 (GitHub channel, ADR-0050) and
+ * without the channels of 1790202400 (own inbox, ADR-0038; its collection leaves with
+ * `withoutLaterCollections`).
  */
 function withoutLaterSchema(collection) {
-	const plain = withoutTargetFields(withoutDeleteLock(withoutOwnInboxChannels(withoutTrashRules(collection))));
+	const plain = withoutGithubChannel(
+		withoutTargetFields(withoutDeleteLock(withoutOwnInboxChannels(withoutTrashRules(collection))))
+	);
 	if (collection.name === 'tickets') {
 		return {
 			...plain,
@@ -1162,8 +1202,8 @@ describe('migration rollback of "Jeden Termin einzeln anlegen" (plan OR-5)', () 
 			// condition of the index. The own inbox (ADR-0038, 1790202400), "Status beim Anlegen"
 			// (plan WV, 1790202500), the pinned comment (ADR-0044, 1790202600), the sub-tasks of the
 			// template (plan WV-3, 1790202700), the delete lock of inbox items (ADR-0014 addendum,
-			// 1790202800), the backup schedule (ADR-0046, 1790203000) and the target project (ADR-0049,
-			// 1790203100) run along as well.
+			// 1790202800), the backup schedule (ADR-0046, 1790203000), the target project (ADR-0049,
+			// 1790203100) and the GitHub channel (ADR-0050, 1790203200) run along as well.
 			const fromEach = MIGRATION_FILES.slice(MIGRATION_FILES.indexOf(EACH_MIGRATION));
 			expect(fromEach).toEqual([
 				EACH_MIGRATION,
@@ -1174,7 +1214,8 @@ describe('migration rollback of "Jeden Termin einzeln anlegen" (plan OR-5)', () 
 				SUBTASKS_MIGRATION,
 				NO_DELETE_MIGRATION,
 				BACKUP_SCHEDULE_MIGRATION,
-				TARGET_MIGRATION
+				TARGET_MIGRATION,
+				GITHUB_MIGRATION
 			]);
 
 			await withTempDataDir(async ({ dataDir, args }) => {
@@ -1307,8 +1348,8 @@ describe('migration rollback of the trash (ADR-0037)', () => {
 			// The own inbox (ADR-0038, 1790202400), "Status beim Anlegen" (plan WV, 1790202500), the
 			// pinned comment (ADR-0044, 1790202600), the sub-tasks of the template (plan WV-3,
 			// 1790202700), the delete lock of inbox items (ADR-0014 addendum, 1790202800) and the
-			// backup schedule (ADR-0046, 1790203000) and the target project (ADR-0049, 1790203100) follow
-			// and run along; they change no row here.
+			// backup schedule (ADR-0046, 1790203000), the target project (ADR-0049, 1790203100) and the
+			// GitHub channel (ADR-0050, 1790203200) follow and run along; they change no row here.
 			const fromTrash = MIGRATION_FILES.slice(MIGRATION_FILES.indexOf(TRASH_MIGRATION));
 			expect(fromTrash).toEqual([
 				TRASH_MIGRATION,
@@ -1318,7 +1359,8 @@ describe('migration rollback of the trash (ADR-0037)', () => {
 				SUBTASKS_MIGRATION,
 				NO_DELETE_MIGRATION,
 				BACKUP_SCHEDULE_MIGRATION,
-				TARGET_MIGRATION
+				TARGET_MIGRATION,
+				GITHUB_MIGRATION
 			]);
 
 			await withTempDataDir(async ({ dataDir, args }) => {
@@ -1341,7 +1383,7 @@ describe('migration rollback of the trash (ADR-0037)', () => {
 				);
 				expect(migrated.tickets.map(({ deleted_at, deleted_by }) => deleted_at + deleted_by)).toEqual(['', '', '']);
 				expect(withoutFields(migrated.users, LATER_USER_FIELDS)).toEqual(before.users);
-				expect(withoutFields(migrated.inbox_items, TARGET_FIELDS)).toEqual(before.inbox_items);
+				expect(withoutFields(migrated.inbox_items, LATER_ITEM_FIELDS)).toEqual(before.inbox_items);
 				for (const [name, rules] of Object.entries(ruleSet(dataDir))) {
 					const { name: collectionName, ...plain } = withoutDeleteLock(withoutTrashRules({ name, ...rules }));
 					expect(plain, collectionName).toEqual(rulesBefore[name]);
@@ -1409,8 +1451,9 @@ describe('migration rollback of the own inbox (ADR-0038)', () => {
 		async () => {
 			// "Status beim Anlegen" (plan WV, 1790202500), the pinned comment (ADR-0044, 1790202600)
 			// the sub-tasks of the template (plan WV-3, 1790202700), the delete lock of inbox items
-			// (ADR-0014 addendum, 1790202800), the backup schedule (ADR-0046, 1790203000) and the
-			// target project (ADR-0049, 1790203100) follow and run along; they change no row.
+			// (ADR-0014 addendum, 1790202800), the backup schedule (ADR-0046, 1790203000), the target
+			// project (ADR-0049, 1790203100) and the GitHub channel (ADR-0050, 1790203200) follow and run
+			// along; they change no row.
 			const fromOwn = MIGRATION_FILES.slice(MIGRATION_FILES.indexOf(OWN_INBOX_MIGRATION));
 			expect(fromOwn).toEqual([
 				OWN_INBOX_MIGRATION,
@@ -1419,7 +1462,8 @@ describe('migration rollback of the own inbox (ADR-0038)', () => {
 				SUBTASKS_MIGRATION,
 				NO_DELETE_MIGRATION,
 				BACKUP_SCHEDULE_MIGRATION,
-				TARGET_MIGRATION
+				TARGET_MIGRATION,
+				GITHUB_MIGRATION
 			]);
 
 			await withTempDataDir(async ({ dataDir, args }) => {
@@ -1435,16 +1479,16 @@ describe('migration rollback of the own inbox (ADR-0038)', () => {
 				expect(appliedFiles(up, 'Applied')).toEqual(fromOwn);
 				assertSchema(readDataDir(dataDir).collections);
 				expect(channelValues(dataDir)).toEqual({
-					inbox_items: [...OLD_VALUES, 'api', 'whatsapp-web'],
-					tickets: [...OLD_VALUES, 'api', 'whatsapp-web']
+					inbox_items: [...OLD_VALUES, 'api', 'whatsapp-web', GITHUB_CHANNEL],
+					tickets: [...OLD_VALUES, 'api', 'whatsapp-web', GITHUB_CHANNEL]
 				});
 				const migratedOwn = withDatabase(dataDir, snapshot);
 				expect({
 					...migratedOwn,
 					tickets: withoutFields(migratedOwn.tickets, PIN_TICKET_FIELDS),
 					users: withoutFields(migratedOwn.users, TARGET_USER_FIELDS),
-					inbox_items: withoutFields(migratedOwn.inbox_items, TARGET_FIELDS),
-					connections: withoutFields(migratedOwn.connections, TARGET_FIELDS)
+					inbox_items: withoutFields(migratedOwn.inbox_items, LATER_ITEM_FIELDS),
+					connections: withoutFields(migratedOwn.connections, LATER_ITEM_FIELDS)
 				}).toEqual(before);
 				expect(
 					withoutLaterCollections(withoutTimestamps(readDataDir(dataDir).collections))
@@ -1454,6 +1498,7 @@ describe('migration rollback of the own inbox (ADR-0038)', () => {
 						.map(withoutSubtasksField)
 						.map(withoutDeleteLock)
 						.map(withoutTargetFields)
+						.map(withoutGithubChannel)
 				).toEqual(schemaBefore);
 
 				// Entries, a ticket, keyword lists and a key of the own inbox, then back.
@@ -1485,7 +1530,7 @@ describe('migration rollback of the own inbox (ADR-0038)', () => {
 				const reverted = withDatabase(dataDir, snapshot);
 				const items = Object.fromEntries(reverted.inbox_items.map((row) => [row.id, row]));
 				const itemsBefore = Object.fromEntries(
-					withoutFields(withNew.inbox_items, TARGET_FIELDS).map((row) => [row.id, row])
+					withoutFields(withNew.inbox_items, LATER_ITEM_FIELDS).map((row) => [row.id, row])
 				);
 				expect(items.item00000000001).toEqual(itemsBefore.item00000000001);
 				expect(items.item00000000002).toEqual({ ...itemsBefore.item00000000002, channel: 'whatsapp' });
@@ -1542,7 +1587,8 @@ describe('migration rollback of "Status beim Anlegen" (plan WV, ADR-0022 addendu
 				SUBTASKS_MIGRATION,
 				NO_DELETE_MIGRATION,
 				BACKUP_SCHEDULE_MIGRATION,
-				TARGET_MIGRATION
+				TARGET_MIGRATION,
+				GITHUB_MIGRATION
 			]);
 			const ruleFields = [...STATUS_RULE_FIELDS, ...SUBTASKS_RULE_FIELDS];
 
@@ -1570,6 +1616,7 @@ describe('migration rollback of "Status beim Anlegen" (plan WV, ADR-0022 addendu
 						.map(withoutSubtasksField)
 						.map(withoutDeleteLock)
 						.map(withoutTargetFields)
+						.map(withoutGithubChannel)
 				).toEqual(schemaBefore);
 				// No row changes: the rule of before has an empty status, which the hooks read as "open".
 				const migrated = withDatabase(dataDir, snapshot);
@@ -1636,7 +1683,8 @@ describe('migration rollback of the pinned comment (ADR-0044)', () => {
 				SUBTASKS_MIGRATION,
 				NO_DELETE_MIGRATION,
 				BACKUP_SCHEDULE_MIGRATION,
-				TARGET_MIGRATION
+				TARGET_MIGRATION,
+				GITHUB_MIGRATION
 			]);
 
 			await withTempDataDir(async ({ dataDir, args }) => {
@@ -1667,6 +1715,7 @@ describe('migration rollback of the pinned comment (ADR-0044)', () => {
 						.map(withoutSubtasksField)
 						.map(withoutDeleteLock)
 						.map(withoutTargetFields)
+						.map(withoutGithubChannel)
 				).toEqual(schemaBefore);
 				// No row changes: every ticket starts without a pin.
 				const migrated = withDatabase(dataDir, snapshot);
@@ -1726,7 +1775,13 @@ describe('migration rollback of the sub-tasks of the template (plan WV-3, ADR-00
 			// The delete lock of inbox items (ADR-0014 addendum, 1790202800) and the backup schedule
 			// (ADR-0046, 1790203000) follow and run along; they change no row.
 			const fromSubtasks = MIGRATION_FILES.slice(MIGRATION_FILES.indexOf(SUBTASKS_MIGRATION));
-			expect(fromSubtasks).toEqual([SUBTASKS_MIGRATION, NO_DELETE_MIGRATION, BACKUP_SCHEDULE_MIGRATION, TARGET_MIGRATION]);
+			expect(fromSubtasks).toEqual([
+				SUBTASKS_MIGRATION,
+				NO_DELETE_MIGRATION,
+				BACKUP_SCHEDULE_MIGRATION,
+				TARGET_MIGRATION,
+				GITHUB_MIGRATION
+			]);
 
 			await withTempDataDir(async ({ dataDir, args }) => {
 				await migrate(args, 'up');
@@ -1745,6 +1800,7 @@ describe('migration rollback of the sub-tasks of the template (plan WV-3, ADR-00
 						.map(withoutSubtasksField)
 						.map(withoutDeleteLock)
 						.map(withoutTargetFields)
+						.map(withoutGithubChannel)
 				).toEqual(schemaBefore);
 				// No row changes: the rule of before has no sub-tasks (null, which the hooks read as none).
 				const migrated = withDatabase(dataDir, snapshot);
@@ -1816,8 +1872,9 @@ describe('migration rollback of the target project (ADR-0049)', () => {
 	it(
 		'adds the fields and the index without changing a row, and drops only the targets on the way back',
 		async () => {
+			// The GitHub channel (ADR-0050, 1790203200) follows and runs along; it changes no row.
 			const fromTarget = MIGRATION_FILES.slice(MIGRATION_FILES.indexOf(TARGET_MIGRATION));
-			expect(fromTarget).toEqual([TARGET_MIGRATION]);
+			expect(fromTarget).toEqual([TARGET_MIGRATION, GITHUB_MIGRATION]);
 
 			await withTempDataDir(async ({ dataDir, args }) => {
 				await migrate(args, 'up');
@@ -1845,11 +1902,13 @@ describe('migration rollback of the target project (ADR-0049)', () => {
 				expect(fieldOf(dataDir, 'users', 'inbox_targets')).toMatchObject({ type: 'json', required: false, maxSize: 2000 });
 				// The exact statement is checked by assertSchema.
 				expect(collectionOf(dataDir, 'inbox_items').indexes.filter((index) => TARGET_INDEX.test(index))).toHaveLength(1);
-				expect(withoutTimestamps(readDataDir(dataDir).collections).map(withoutTargetFields)).toEqual(schemaBefore);
+				expect(
+					withoutTimestamps(readDataDir(dataDir).collections).map(withoutTargetFields).map(withoutGithubChannel)
+				).toEqual(schemaBefore);
 				// No row changes: entries and connections of before have no target, users none either.
 				const migrated = withDatabase(dataDir, snapshot);
 				expect(withoutLater(migrated)).toEqual(withoutLater(before));
-				expect(withoutFields(migrated.inbox_items, TARGET_FIELDS)).toEqual(before.inbox_items);
+				expect(withoutFields(migrated.inbox_items, LATER_ITEM_FIELDS)).toEqual(before.inbox_items);
 				expect(migrated.inbox_items.map((item) => item.target_project)).toEqual(['', '']);
 				expect(migrated.connections.map((connection) => connection.target_project)).toEqual(['']);
 				expect(migrated.users.map((user) => user.inbox_targets)).toEqual([null]);
@@ -1866,12 +1925,121 @@ describe('migration rollback of the target project (ADR-0049)', () => {
 				expect(appliedFiles(down, 'Reverted')).toEqual([...fromTarget].reverse());
 				expect(withoutTimestamps(readDataDir(dataDir).collections)).toEqual(schemaBefore);
 				const reverted = withDatabase(dataDir, snapshot);
-				expect(reverted.inbox_items).toEqual(withoutFields(withTargets.inbox_items, TARGET_FIELDS));
+				expect(reverted.inbox_items).toEqual(withoutFields(withTargets.inbox_items, LATER_ITEM_FIELDS));
 				expect(reverted).toEqual(before);
 
 				expect(appliedFiles(await migrate(args, 'up'), 'Applied')).toEqual(fromTarget);
 				assertSchema(readDataDir(dataDir).collections);
 				expect(withDatabase(dataDir, snapshot).inbox_items.map((item) => item.target_project)).toEqual(['', '']);
+			});
+		}
+	);
+});
+
+describe('migration rollback of the GitHub channel (ADR-0050)', () => {
+	const OWNER = 'user00000000001';
+	const SCOPE = 'u:user00000000001';
+	const collectionOf = (dataDir, name) =>
+		readDataDir(dataDir).collections.find((collection) => collection.name === name);
+	const fieldOf = (dataDir, collection, name) =>
+		collectionOf(dataDir, collection)?.fields.find((field) => field.name === name);
+	const valuesOf = (dataDir) => ({
+		channel: fieldOf(dataDir, 'inbox_items', 'channel').values,
+		kind: fieldOf(dataDir, 'inbox_items', 'kind').values,
+		source: fieldOf(dataDir, 'tickets', 'source').values,
+		type: fieldOf(dataDir, 'connections', 'type').values
+	});
+
+	/** A user, a calendar connection with an entry and a ticket, as before the GitHub channel. */
+	function insertData(db) {
+		db.prepare('INSERT INTO users (id, email, tokenKey, password, created, updated) VALUES (?, ?, ?, ?, ?, ?)').run(OWNER, 'eins@example.invalid', 'tk1', 'hash', STAMP, STAMP);
+		db.prepare(
+			'INSERT INTO connections (id, type, label, enabled, secret_env, settings, scope, owner, created, updated) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+		).run('connection00001', 'calendar', 'Kalender', 1, 'BYL_KALENDER', '{"keywords":["todo"]}', SCOPE, OWNER, STAMP, STAMP);
+		db.prepare(
+			'INSERT INTO inbox_items (id, channel, kind, title, source_ref, fingerprint, state, connection, scope, owner, created, updated) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+		).run('item00000000001', 'calendar', 'event', 'Müll', 'uid-1', 'f1', 'new', 'connection00001', SCOPE, OWNER, STAMP, STAMP);
+		db.prepare(
+			'INSERT INTO tickets (id, number, key, title, status, priority, source, scope, owner, created, updated) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+		).run('ticket000000001', 1, 'TASK-1', 'Alt', 'open', 'medium', 'calendar', SCOPE, OWNER, STAMP, STAMP);
+	}
+
+	it(
+		'adds the values and the fields without changing a row; on the way back GitHub entries become web links and GitHub connections go',
+		async () => {
+			const fromGithub = MIGRATION_FILES.slice(MIGRATION_FILES.indexOf(GITHUB_MIGRATION));
+			expect(fromGithub).toEqual([GITHUB_MIGRATION]);
+
+			await withTempDataDir(async ({ dataDir, args }) => {
+				await migrate(args, 'up');
+				await migrate(args, 'down', String(fromGithub.length));
+				expect(fieldOf(dataDir, 'inbox_items', 'watch')).toBeUndefined();
+				expect(fieldOf(dataDir, 'connections', 'watch')).toBeUndefined();
+				const valuesBefore = valuesOf(dataDir);
+				expect(valuesBefore.channel).not.toContain(GITHUB_CHANNEL);
+				expect(valuesBefore.type).toEqual(['calendar', 'telegram', 'notion', 'mail']);
+				withDatabase(dataDir, insertData);
+				const before = withDatabase(dataDir, snapshot);
+				const schemaBefore = withoutTimestamps(readDataDir(dataDir).collections);
+
+				const up = await migrate(args, 'up');
+				expect(appliedFiles(up, 'Applied')).toEqual(fromGithub);
+				assertSchema(readDataDir(dataDir).collections);
+				expect(valuesOf(dataDir)).toEqual({
+					channel: [...valuesBefore.channel, GITHUB_CHANNEL],
+					kind: [...valuesBefore.kind, ...GITHUB_KINDS],
+					source: [...valuesBefore.source, GITHUB_CHANNEL],
+					type: [...valuesBefore.type, GITHUB_CHANNEL]
+				});
+				expect(fieldOf(dataDir, 'inbox_items', 'watch')).toMatchObject({ type: 'json', required: false, maxSize: 2000 });
+				expect(fieldOf(dataDir, 'connections', 'watch')).toMatchObject({ type: 'json', required: false, hidden: true, maxSize: 1048576 });
+				expect(withoutTimestamps(readDataDir(dataDir).collections).map(withoutGithubChannel)).toEqual(schemaBefore);
+				// No row changes: entries and connections of before have no status and no state.
+				const migrated = withDatabase(dataDir, snapshot);
+				expect({
+					...migrated,
+					inbox_items: withoutFields(migrated.inbox_items, GITHUB_FIELDS),
+					connections: withoutFields(migrated.connections, GITHUB_FIELDS)
+				}).toEqual(before);
+				expect(migrated.inbox_items.map((item) => item.watch)).toEqual([null]);
+				expect(migrated.connections.map((connection) => connection.watch)).toEqual([null]);
+
+				// A GitHub connection with its entries and a ticket from one, then back.
+				withDatabase(dataDir, (db) => {
+					db.prepare(
+						'INSERT INTO connections (id, type, label, enabled, secret_env, settings, watch, scope, owner, created, updated) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+					).run('connection00002', 'github', 'GitHub', 1, 'BYL_GITHUB_TOKEN', '{"repos":[{"repo":"octo/roadmap"}]}', '{"repos":{}}', SCOPE, OWNER, STAMP, STAMP);
+					const item = db.prepare(
+						'INSERT INTO inbox_items (id, channel, kind, title, source_url, source_ref, fingerprint, state, connection, watch, scope, owner, created, updated) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+					);
+					item.run('item00000000002', 'github', 'change', 'CHANGELOG.md in octo/roadmap geändert', 'https://github.com/octo/roadmap/blob/a/CHANGELOG.md', 'file:octo/roadmap:CHANGELOG.md', 'f2', 'new', 'connection00002', '{"kind":"file","state":"current"}', SCOPE, OWNER, STAMP, STAMP);
+					item.run('item00000000003', 'github', 'pull_request', 'PR #1 in octo/roadmap: Plan', 'https://github.com/octo/roadmap/pull/1', 'PR_x', 'f3', 'converted', 'connection00002', '{"kind":"pull","state":"merged"}', SCOPE, OWNER, STAMP, STAMP);
+					item.run('item00000000004', 'github', 'release', 'Release v1 in octo/roadmap', 'https://github.com/octo/roadmap/releases/tag/v1', 'RE_x', 'f4', 'discarded', 'connection00002', null, SCOPE, OWNER, STAMP, STAMP);
+					db.prepare(
+						'INSERT INTO tickets (id, number, key, title, status, priority, source, source_item, scope, owner, created, updated) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+					).run('ticket000000002', 2, 'TASK-2', 'Aus dem PR', 'open', 'medium', 'github', 'item00000000003', SCOPE, OWNER, STAMP, STAMP);
+					db.prepare('UPDATE inbox_items SET ticket = ? WHERE id = ?').run('ticket000000002', 'item00000000003');
+				});
+				const withGithub = withDatabase(dataDir, snapshot);
+
+				const down = await migrate(args, 'down', String(fromGithub.length));
+				expect(appliedFiles(down, 'Reverted')).toEqual([...fromGithub].reverse());
+				expect(withoutTimestamps(readDataDir(dataDir).collections)).toEqual(schemaBefore);
+				const reverted = withDatabase(dataDir, snapshot);
+				const items = Object.fromEntries(reverted.inbox_items.map((row) => [row.id, row]));
+				const itemsBefore = Object.fromEntries(withoutFields(withGithub.inbox_items, GITHUB_FIELDS).map((row) => [row.id, row]));
+				expect(items.item00000000001).toEqual(before.inbox_items[0]);
+				for (const id of ['item00000000002', 'item00000000003', 'item00000000004']) {
+					expect(items[id], id).toEqual({ ...itemsBefore[id], channel: 'link', kind: 'link', connection: '' });
+				}
+				const tickets = Object.fromEntries(reverted.tickets.map((row) => [row.id, row]));
+				expect(tickets.ticket000000001).toEqual(before.tickets[0]);
+				expect(tickets.ticket000000002).toEqual({ ...withGithub.tickets[1], source: 'link' });
+				expect(reverted.connections).toEqual(before.connections);
+				expect(reverted.users).toEqual(before.users);
+
+				expect(appliedFiles(await migrate(args, 'up'), 'Applied')).toEqual(fromGithub);
+				assertSchema(readDataDir(dataDir).collections);
 			});
 		}
 	);

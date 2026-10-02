@@ -178,3 +178,12 @@ Der Text oben bleibt. Seit Paket 1 der beobachteten Quellen („Standardprojekt 
 - **Prüfung (Request-Hook, nur für App-Konten):** Ein neues Ziel muss ein aktives Projekt im Bereich der Verbindung sein (`validation_target_project_missing`, `validation_target_project_archived`); ein unverändertes, inzwischen archiviertes Ziel bleibt gültig. Die Regel „Umbenennen ändert nur den Namen“ (Nachtrag vom 2026-10-01) schließt das Ziel ein (`RENAME_KEEPS`).
 - **Kein Einfluss auf den Abruf:** `sourceIdentity`, Cursor, Vollsuche und `settings` bleiben unberührt; das Ziel ist keine Quelle.
 - **Datenschicht der SPA:** `setConnectionTarget` sendet nur `target_project`; `Connection.targetProjectId` und `targetReady` (das Feld ist dem Server bekannt).
+
+## Nachtrag (2026-10-02, [ADR-0050](0050-github-kanal-und-beobachtete-quellen.md)): GitHub als weiterer HTTP-Kanal im Hook
+
+Der Text oben bleibt. Seit Paket 2 der beobachteten Quellen (Nutzerentscheidung vom 2026-10-01) ist **GitHub** ein dritter HTTP-Kanal im Hook (§1, Tabelle „Im Hook per Cron“), nur lesend:
+
+- **Konfiguration:** `connections.type = github`; `settings` hält das Intervall und die Repositorys mit beobachteten Pfaden, Ereignissen und Zielprojekt (ADR-0050 §2), `secret_env` den Namen der Variablen des Tokens (Vorschlag `BYL_GITHUB_TOKEN`). Neu ist das versteckte JSON-Feld `connections.watch` mit dem Stand des Kanals (ETags, Blob-SHA, Marken), das nur der Server schreibt (`SERVER_FIELDS`); die API liefert es nie aus.
+- **Cron:** `byl-github` jede Minute; jede Verbindung läuft, wenn ihr Intervall (5 bis 60 Minuten, Standard 15) vorbei ist und kein Rate-Limit von GitHub gilt. „Jetzt abrufen“ und „Alle Kanäle jetzt abrufen“ nutzen die gemeinsame Route und Laufsperre; `runConnection` kennt dafür den Zustand `limited` (mit `until` und `hint`).
+- **Abweichungen von §2 „Grenzen“:** 20 s je Anfrage und 60 s je Lauf statt 30 s je Anfrage; der Rest folgt im nächsten Lauf. Der Token ist **optional** (`connection-rules.requiresSecret`): Ohne ihn liest die Verbindung öffentliche Repositorys, statt „fehlt“ zu melden.
+- **Kein Schreibzugriff:** Der Client kennt nur `GET` (ADR-0050 §1); Webhooks bleiben ausgeschlossen (Alternativen oben).

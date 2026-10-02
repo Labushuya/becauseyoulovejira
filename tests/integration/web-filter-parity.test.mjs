@@ -72,6 +72,9 @@ function channelDraft(channel) {
 			return { ...draft, sourceRef: `skript-${suffix}` };
 		case 'whatsapp-web':
 			return { ...draft, kind: 'message', sourceRef: `wa:${suffix}` };
+		// GitHub (ADR-0050): a pull request by its node ID.
+		case 'github':
+			return { ...draft, kind: 'pull_request', sourceRef: `PR_${suffix}` };
 		default:
 			return draft;
 	}
