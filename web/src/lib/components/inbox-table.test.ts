@@ -163,6 +163,12 @@ async function table() {
 	return within(await screen.findByRole('table'));
 }
 
+/** Target of the last navigation. */
+function lastTarget(): string {
+	const call = mocks.goto.mock.calls.at(-1) as unknown[] | undefined;
+	return String(call?.[0]);
+}
+
 beforeEach(() => {
 	mocks.goto.mockClear();
 	mocks.page.url = new URL('http://localhost:3000/eingang');
@@ -696,8 +702,7 @@ describe('target project of the entries (ADR-0049)', () => {
 			expect(screen.getByText('Keine Einträge für diese Filter')).toBeTruthy()
 		);
 		await fireEvent.click(screen.getByRole('button', { name: 'Filter zurücksetzen' }));
-		const target = mocks.goto.mock.calls.at(-1)?.[0] as unknown as URL;
-		expect(String(target)).not.toMatch(/zielprojekt/);
+		expect(lastTarget()).not.toMatch(/zielprojekt/);
 	});
 
 	it('groups the rows by target project in the order of the tree, "Ohne Zielprojekt" last', async () => {
@@ -726,7 +731,7 @@ describe('target project of the entries (ADR-0049)', () => {
 		const toggle = screen.getByRole('switch', { name: 'Nach Zielprojekt gruppieren' });
 		expect((toggle as HTMLInputElement).checked).toBe(true);
 		await fireEvent.click(toggle);
-		expect(String(mocks.goto.mock.calls.at(-1)?.[0])).not.toMatch(/gruppe=/);
+		expect(lastTarget()).not.toMatch(/gruppe=/);
 	});
 
 	it('lets the server filter the handled entries by the target project', async () => {

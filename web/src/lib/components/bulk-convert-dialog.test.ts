@@ -386,7 +386,7 @@ describe('bulk convert dialog: target projects of the entries (ADR-0049)', () =>
 		await fireEvent.click(dialog.getByRole('button', { name: '4 Einträge umwandeln' }));
 		await vi.waitFor(() => expect(data.createTicket).toHaveBeenCalledTimes(4));
 		const projects = data.createTicket.mock.calls.map(([draft, origin]) => [
-			origin.sourceItem,
+			'sourceItem' in origin ? origin.sourceItem : null,
 			draft.project
 		]);
 		expect(projects).toEqual([
