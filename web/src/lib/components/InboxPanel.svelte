@@ -13,6 +13,7 @@
 		type InboxItemSummary
 	} from '$lib/domain/inbox';
 	import type { CalendarDate } from '$lib/domain/berlin-date';
+	import { folderMetaText } from '$lib/domain/folders';
 	import { githubMetaText } from '$lib/domain/github';
 	import { notionOriginText } from '$lib/domain/notion';
 	import { WATCH_LABELS, WATCH_LOZENGES, watchText } from '$lib/domain/watch';
@@ -20,6 +21,7 @@
 	import { TARGET_LABEL, targetOfItem, targetText } from '$lib/domain/target-project';
 	import type { ProjectRef, TicketSummary } from '$lib/domain/ticket';
 	import { findConnectionNames } from '$lib/stores/connection-names.svelte';
+	import { findFolderViewer, type FileViewNote } from '$lib/stores/folder-view.svelte';
 	import type { InboxStore } from '$lib/stores/inbox.svelte';
 	import type { RecurrenceStore } from '$lib/stores/recurrence.svelte';
 	import type { TicketPickerSource } from '$lib/stores/ticket-picker.svelte';
@@ -63,7 +65,9 @@
 	// ticket keeps only "Ticket öffnen" and says why it stays. The copy of a source made for a
 	// duplicate names the ticket it came from ("Kopie aus HAUS-12", ADR-0031 addendum F).
 	// The row "Zielprojekt" names the project the entry got from its way (ADR-0049), archived or
-	// deleted ones as such.
+	// deleted ones as such. An entry of a watched folder (ADR-0051 §6) is a reference: "Ansehen" and
+	// "Herunterladen" ask the server for the current file; why nothing opened (gone, moved out of the
+	// folders) stands neutral at the entry.
 	let {
 		id,
 		store,
@@ -164,6 +168,9 @@
 			// GitHub (ADR-0050): the repository and the watched file.
 			['Repository', githubMetaText(item, 'repo')],
 			['Datei', githubMetaText(item, 'path')],
+			// Folders (ADR-0051): the watched folder and the path of the file below it.
+			['Ordner', folderMetaText(item, 'folder')],
+			['Datei im Ordner', folderMetaText(item, 'path')],
 			['Stichwort', metaText(item, 'keyword')],
 			['Quelldatum', sourceDateText(item)],
 			['Eingang', formatBerlinDateTime(item.created)],
@@ -179,6 +186,7 @@
 		loadState = 'loading';
 		loadError = null;
 		message = null;
+		viewNote = null;
 		store.fetch(current, { signal: controller.signal }).then(
 			(entry) => {
 				if (controller.signal.aborted) return;
@@ -210,6 +218,16 @@
 		const result = await action();
 		if (result.ok) update(result.item);
 		else message = result.message;
+	}
+
+	// "Ansehen" of a file of a folder (ADR-0051 §6); outside the (app) layout there is none.
+	const viewer = findFolderViewer();
+	let viewNote = $state<FileViewNote | null>(null);
+
+	async function view(entry: InboxItem, download: boolean) {
+		if (viewer === null) return;
+		message = null;
+		viewNote = await viewer.open(entry.id, { download });
 	}
 
 	async function download(entry: InboxItem) {
@@ -256,6 +274,20 @@
 </script>
 
 {#snippet entryActions(entry: InboxItem)}
+	{#if entry.channel === 'folder' && viewer !== null}
+		<button
+			class="button-secondary"
+			type="button"
+			aria-busy={viewer.isBusy(entry.id) ? 'true' : undefined}
+			onclick={() => void view(entry, false)}>Ansehen</button
+		>
+		<button
+			class="button-secondary"
+			type="button"
+			aria-busy={viewer.isBusy(entry.id) ? 'true' : undefined}
+			onclick={() => void view(entry, true)}>Herunterladen</button
+		>
+	{/if}
 	{#if entry.original !== ''}
 		<button
 			class="button-secondary"
@@ -354,6 +386,9 @@
 		<div aria-live="polite">
 			{#if message}
 				<p class="alert-error"><ErrorIcon /><span>{message}</span></p>
+			{/if}
+			{#if viewNote !== null}
+				<SectionMessage tone={viewNote.tone} compact>{viewNote.text}</SectionMessage>
 			{/if}
 		</div>
 

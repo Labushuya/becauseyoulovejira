@@ -1,7 +1,15 @@
 <script lang="ts" module>
 	/** Entries of the catalog "Kanal hinzufügen" (plan §3.4); the IDs are those of the assistant (EH-5). */
 	export type CatalogEntry =
-		'kalender' | 'telegram' | 'webde' | 'gmail' | 'github' | 'notion' | 'proton' | 'whatsapp-web';
+		| 'kalender'
+		| 'telegram'
+		| 'webde'
+		| 'gmail'
+		| 'github'
+		| 'ordner'
+		| 'notion'
+		| 'proton'
+		| 'whatsapp-web';
 </script>
 
 <script lang="ts">
@@ -18,7 +26,7 @@
 	// its assistant or guide (?einrichten=<art>, EH-5 to EH-7), so a middle click works too; the link
 	// replaces the history entry, like closing the assistant does. Notion (ADR-0041) fetches nothing
 	// by itself; its tile says "Import". GitHub (ADR-0050) watches repositories like the services
-	// above, read only.
+	// above, read only, and so do the folders of this machine (ADR-0051).
 	let {
 		connections,
 		heading = $bindable(),
@@ -74,6 +82,13 @@
 			text: 'Roadmaps, Changelogs, Pull Requests und Releases deiner Repositorys, nur lesend, alle 15 Minuten.',
 			icon: 'github',
 			exists: (connection) => connection.type === 'github'
+		},
+		{
+			id: 'ordner',
+			name: 'Ordner',
+			text: 'Neue und geänderte Dateien in Ordnern dieses Rechners, nur lesend, alle 5 Minuten.',
+			icon: 'folder',
+			exists: (connection) => connection.type === 'folder'
 		}
 	];
 </script>

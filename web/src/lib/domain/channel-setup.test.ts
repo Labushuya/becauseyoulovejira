@@ -630,3 +630,83 @@ describe('GitHub (ADR-0050 §7)', () => {
 		expect(setupComplete('github', watched({ lastRunAt: OK, lastOkAt: OK }, true, []))).toBe(false);
 	});
 });
+
+describe('folders (ADR-0051 §7)', () => {
+	const FOLDER = {
+		path: 'C:\\Daten\\Projekte',
+		subfolders: true,
+		types: [],
+		exclude: [],
+		target: null,
+		reportChanges: true
+	};
+	function folders(overrides: Partial<Connection> = {}, list = [FOLDER]): SetupFacts {
+		return {
+			connection: connection({
+				label: 'Projekte',
+				secretEnv: '',
+				folders: { interval: 5, folders: list },
+				...overrides
+			}),
+			secretStatus: null
+		};
+	}
+	const OK = '2026-10-02 10:00:00.000Z';
+
+	it('guides through the path, the folder, the target project and the first check, without a variable', () => {
+		const steps = setupSteps('ordner');
+		expect(steps.map((step) => step.id)).toEqual(['path', 'connect', 'target', 'first-run']);
+		expect(steps.flatMap((step) => step.commands)).toEqual([]);
+		expect(steps[0]!.actions.join(' ')).toMatch(/Explorer.*Adressleiste.*Strg\+C/);
+		expect(steps[1]).toMatchObject({ label: 'Ordner', checked: true });
+		expect(SETUP_KINDS).toContain('ordner');
+		expect(GUIDE_KINDS).not.toContain('ordner');
+		expect(defaultVariable('ordner')).toBe('');
+		expect(setupTargetOf(new URLSearchParams('einrichten=ordner'))).toEqual({
+			kind: 'ordner',
+			connectionId: null
+		});
+		expect(setupKindOf({ type: 'folder', mailProvider: '' })).toBe('ordner');
+		expect(matchesSetupKind({ type: 'folder', mailProvider: '' }, 'ordner')).toBe(true);
+		expect(matchesSetupKind({ type: 'github', mailProvider: '' }, 'ordner')).toBe(false);
+	});
+
+	it('follows the facts: the folder, then the first check', () => {
+		expect(setupProgress('ordner', NONE)).toBe(0);
+		expect(stepCheck('ordner', 'connect', NONE)).toEqual({
+			tone: 'open',
+			text: 'Noch keine Verbindung angelegt.'
+		});
+		expect(stepCheck('ordner', 'first-run', NONE)).toEqual({
+			tone: 'open',
+			text: 'Erst die Verbindung anlegen.'
+		});
+		const fresh = folders();
+		expect(setupProgress('ordner', fresh)).toBe(3);
+		expect(stepCheck('ordner', 'connect', fresh)).toEqual({
+			tone: 'done',
+			text: 'Verbindung „Projekte“ mit 1 Ordner angelegt.'
+		});
+		expect(
+			stepCheck('ordner', 'connect', folders({}, [FOLDER, { ...FOLDER, path: 'D:\\X' }]))
+		).toEqual({ tone: 'done', text: 'Verbindung „Projekte“ mit 2 Ordnern angelegt.' });
+		expect(stepCheck('ordner', 'connect', folders({}, []))).toEqual({
+			tone: 'warning',
+			text: 'Verbindung „Projekte“ angelegt, noch ohne Ordner.'
+		});
+		expect(setupProgress('ordner', folders({}, []))).toBe(0);
+		expect(stepCheck('ordner', 'first-run', fresh)).toEqual({
+			tone: 'open',
+			text: 'Noch nicht geprüft.'
+		});
+		const checked = folders({ lastRunAt: OK, lastOkAt: OK });
+		expect(setupComplete('ordner', checked)).toBe(true);
+		expect(stepCheck('ordner', 'first-run', checked)).toEqual({
+			tone: 'done',
+			text: 'Ordner geprüft, zuletzt 02.10.2026 12:00.'
+		});
+		const failed = folders({ lastRunAt: OK, lastError: 'Unerwarteter Fehler.' });
+		expect(stepCheck('ordner', 'first-run', failed)?.tone).toBe('error');
+		expect(setupComplete('ordner', failed)).toBe(false);
+	});
+});

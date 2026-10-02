@@ -1,12 +1,24 @@
 // Status of a watched source (ADR-0050 §5, ADR-0031 addendum I): an entry whose source a channel
-// keeps watching (today a version of a file and a pull request on GitHub) says whether its copy
-// still matches the source. Only shown: the ticket never changes, and nothing of it is an error
-// (ADR-0009), so no tone is red. Pure; the data layer reads inbox_items.watch with watchOf.
+// keeps watching (a version of a file and a pull request on GitHub, a file in a watched folder,
+// ADR-0051 §5) says whether it still matches the source. Only shown: the ticket never changes, and
+// nothing of it is an error (ADR-0009), so no tone is red. Pure; the data layer reads
+// inbox_items.watch with watchOf.
 
 import { formatBerlinDateTime } from './format';
 
 export type WatchStatus =
 	| { kind: 'file'; state: 'current' | 'changed' | 'gone'; since: string | null }
+	| {
+			kind: 'file';
+			state: 'moved';
+			since: string | null;
+			/** New path below the folder of a moved or renamed file (ADR-0051 §5). */
+			to: string;
+			/** Name of that folder. */
+			folder: string;
+			/** Whether the content differs from the entry as well. */
+			changed: boolean;
+	  }
 	| { kind: 'pull'; state: 'open' | 'merged' | 'closed'; since: string | null };
 
 const FILE_STATES = ['current', 'changed', 'gone'] as const;
@@ -24,6 +36,16 @@ export function watchOf(value: unknown): WatchStatus | null {
 	if (typeof value !== 'object' || value === null || Array.isArray(value)) return null;
 	const raw = value as Record<string, unknown>;
 	if (raw.kind === 'file') {
+		if (raw.state === 'moved' && typeof raw.to === 'string' && raw.to !== '') {
+			return {
+				kind: 'file',
+				state: 'moved',
+				since: sinceOf(raw.since),
+				to: raw.to,
+				folder: typeof raw.folder === 'string' ? raw.folder : '',
+				changed: raw.changed === true
+			};
+		}
 		const state = FILE_STATES.find((entry) => entry === raw.state);
 		return state === undefined ? null : { kind: 'file', state, since: sinceOf(raw.since) };
 	}
@@ -39,6 +61,7 @@ export const WATCH_LABELS = Object.freeze({
 	current: 'Unverändert',
 	changed: 'Seit Import geändert',
 	gone: 'Nicht mehr vorhanden',
+	moved: 'Verschoben',
 	open: 'PR offen',
 	merged: 'PR gemergt',
 	closed: 'PR geschlossen'
@@ -49,6 +72,7 @@ export const WATCH_LOZENGES = Object.freeze({
 	current: { tone: 'muted', icon: 'check' },
 	changed: { tone: 'neutral', icon: 'refresh' },
 	gone: { tone: 'neutral', icon: 'warning' },
+	moved: { tone: 'neutral', icon: 'refresh' },
 	open: { tone: 'neutral', icon: 'pending' },
 	merged: { tone: 'brand', icon: 'check' },
 	closed: { tone: 'muted', icon: 'pause' }
@@ -61,8 +85,8 @@ export const WATCH_LOZENGES = Object.freeze({
 >);
 
 /**
- * The status in a sentence, e.g. "Seit Import erneut geändert (am 03.10.2026, 14:05)" or
- * "PR gemergt (am …)".
+ * The status in a sentence, e.g. "Seit Import erneut geändert (am 03.10.2026, 14:05)",
+ * "Verschoben nach „Archiv/Bericht.pdf“ (am …)" or "PR gemergt (am …)".
  */
 export function watchText(watch: WatchStatus): string {
 	const at = watch.since === null ? '' : ` (am ${formatBerlinDateTime(watch.since)})`;
@@ -73,6 +97,8 @@ export function watchText(watch: WatchStatus): string {
 			return `Seit Import erneut geändert${watch.since === null ? '' : ` (zuletzt am ${formatBerlinDateTime(watch.since)})`}`;
 		case 'gone':
 			return `Nicht mehr vorhanden${watch.since === null ? '' : ` (seit ${formatBerlinDateTime(watch.since)})`}`;
+		case 'moved':
+			return `Verschoben nach „${watch.to}“${watch.folder === '' ? '' : ` in „${watch.folder}“`}${at}${watch.changed ? ', seit Import auch geändert' : ''}`;
 		case 'open':
 			return 'PR offen';
 		case 'merged':

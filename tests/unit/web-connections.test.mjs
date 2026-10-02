@@ -17,11 +17,13 @@ import {
 	SECRET_NAME_PATTERN,
 	TELEGRAM_CONFIRMATION,
 	TELEGRAM_NO_MATCH,
+	connectionDraftErrors,
 	emptyConnectionDraft,
 	freeVariableName,
 	isMailUser,
 	isSecretName,
 	labelError,
+	usesSecret,
 	withMailProvider
 } from '../../web/src/lib/domain/connections.ts';
 
@@ -39,6 +41,17 @@ describe('web connections against the hooks', () => {
 
 	it('offers exactly the kinds the hook accepts', () => {
 		expect([...CONNECTION_TYPES]).toEqual([...rules.CREATABLE_TYPES]);
+	});
+
+	it('asks for a variable exactly where the hook wants one: folders have none (ADR-0051 §1)', () => {
+		for (const type of CONNECTION_TYPES) {
+			expect(usesSecret(type), type).toBe(!rules.SECRETLESS_TYPES.includes(type));
+			const draft = emptyConnectionDraft(type);
+			const hook = rules.secretViolation(type, draft.secretEnv, secrets);
+			expect(connectionDraftErrors(draft).secretEnv === undefined, type).toBe(hook === '');
+		}
+		// The form of a folder has no field for it; a name sent anyway is refused by the hook.
+		expect(rules.secretViolation('folder', 'BYL_ORDNER', secrets)).toMatchObject({ code: 'validation_connection_secret_none' });
 	});
 
 	it('knows the same mail providers and user names', () => {
