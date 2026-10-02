@@ -6,5 +6,6 @@ rem dann ein Hinweis). Laeuft die App schon, startet nichts doppelt. Beim Erstst
 rem PocketBase die Einrichtung selbst; dann erscheint nur ein Hinweis. Logik: byl-control.ps1 start.
 "%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -ExecutionPolicy Bypass -File "%~dp0byl-control.ps1" start
 set "BYL_EXIT=%ERRORLEVEL%"
+if not "%BYL_EXIT%"=="0" call "%~dp0byl-pruefen.bat" %BYL_EXIT%
 if not "%BYL_EXIT%"=="0" pause
 exit /b %BYL_EXIT%

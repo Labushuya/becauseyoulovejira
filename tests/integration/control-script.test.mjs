@@ -27,6 +27,7 @@ import {
 	openSync,
 	readFileSync,
 	realpathSync,
+	renameSync,
 	rmSync,
 	writeFileSync
 } from 'node:fs';
@@ -78,7 +79,7 @@ async function freePort() {
 function makeCopy(name, port) {
 	const dir = join(base, name, 'app');
 	mkdirSync(join(dir, 'pb_public'), { recursive: true });
-	for (const file of ['byl-control.ps1', 'byl-functions.ps1']) copyFileSync(join(APP_DIR, file), join(dir, file));
+	for (const file of ['byl-control.ps1', 'byl-functions.ps1', 'byl-problems.ps1', 'byl-pruefen.bat']) copyFileSync(join(APP_DIR, file), join(dir, file));
 	copyFileSync(POCKETBASE_EXE, join(dir, 'pocketbase.exe'));
 	cpSync(join(APP_DIR, 'pb_hooks'), join(dir, 'pb_hooks'), { recursive: true });
 	copyFileSync(PROBE_HOOK, join(dir, 'pb_hooks', 'environment-probe.pb.js'));
@@ -163,6 +164,8 @@ function healthy(port) {
 }
 
 const readState = (copy) => JSON.parse(readFileSync(join(copy.dir, 'run', 'byl.state.json'), 'utf8'));
+
+const escapeRegExp = (text) => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
 /** logs\byl-control.log of a copy (one line per changing command), '' without one. */
 function controlLog(copy) {
@@ -269,9 +272,16 @@ describe('byl-control.ps1 on disposable copies (BS-1)', CASE_TIMEOUT, () => {
 		const [serverA] = serversOf(copies.a);
 		const result = control(copies.b, 'start');
 		expect(result.code, result.output).toBe(4);
-		expect(result.output).toContain(`Port ${copies.a.port} auf 127.0.0.1 ist belegt durch pocketbase.exe (PID ${serverA.pid})`);
-		expect(result.output).toContain(join(copies.a.dir, 'pocketbase.exe'));
-		expect(result.output).toMatch(/byl-control\.ps1" port \d+/);
+		// The entry port-busy of the catalog (ADR-0048): who uses the port, cause, steps, the command
+		// with the real path of this copy, and the log.
+		expect(result.output).toContain(`Problem:   Port ${copies.a.port} auf 127.0.0.1 ist belegt; becauseyoulovejira startet dort nicht.`);
+		expect(result.output).toContain(`Belegt durch pocketbase.exe (PID ${serverA.pid}): ${join(copies.a.dir, 'pocketbase.exe')}`);
+		expect(result.output).toContain('  Ursache:   ');
+		expect(result.output).toContain("  So geht's: 1. ");
+		expect(result.output).toContain('Befehl zum Kopieren:');
+		expect(result.output).toMatch(new RegExp(`powershell -NoProfile -ExecutionPolicy Bypass -File "${escapeRegExp(join(copies.b.dir, 'byl-control.ps1'))}" port \\d+\\r?\\n`));
+		expect(result.output).toContain(`  Details:   ${join(copies.b.dir, 'logs', 'byl-control.log')}`);
+		expect(controlLog(copies.b)).toMatch(/ start exit=4 problem=port-busy\r$/m);
 		expect(serversOf(copies.b)).toEqual([]);
 		expect(serversOf(copies.a)).toEqual([serverA]);
 	});
@@ -441,5 +451,147 @@ describe('byl-control.ps1: status, reload, open, logs and doctor (BS-2)', CASE_T
 		expect(control(copies.a, 'logs', 'unbekannt').code).toBe(1);
 		expect(control(copies.a, 'logs', '-Follow').code).toBe(1);
 		expect(control(copies.a, 'stop').code).toBe(0);
+	});
+});
+
+/** A listener of this test process on 127.0.0.1:<port> (another program on the port). */
+async function occupy(port) {
+	const server = createServer();
+	await new Promise((done) => server.listen(port, '127.0.0.1', done));
+	return () => new Promise((done) => server.close(done));
+}
+
+/**
+ * A .bat file of a copy through cmd.exe as a double click starts it, also from a folder with & in
+ * its name (cmd /s /c ""<file>" <args>"; never a wrapper that starts or stops something).
+ */
+function batch(file, ...args) {
+	const line = `""${file}"${args.map((arg) => ` ${arg}`).join('')}"`;
+	const result = spawnSyncClean(join(process.env.SystemRoot ?? 'C:\\Windows', 'System32', 'cmd.exe'), ['/d', '/s', '/c', line], {
+		encoding: 'latin1',
+		windowsHide: true,
+		windowsVerbatimArguments: true,
+		timeout: COMMAND_TIMEOUT_MS,
+		stdio: ['ignore', 'pipe', 'pipe'],
+		env: CONTROL_ENV
+	});
+	if (result.error) throw result.error;
+	return { code: result.status, output: result.stdout + result.stderr };
+}
+
+// Plan robuste-skripte RS-1 (ADR-0048): problems from the catalog, with the real paths of the copy.
+describe('byl-control.ps1: problems with cause, steps and the command to copy (RS-1)', CASE_TIMEOUT, () => {
+	it('names an unknown command with the list of commands and the help to copy, and logs only its code', () => {
+		const result = control(copies.a, 'strat');
+		expect(result.code).toBe(1);
+		expect(result.output).toContain('Problem:   Unbekannter Befehl');
+		expect(result.output).toContain('  Ursache:   byl-control.ps1 kennt nur diese Befehle: start, stop,');
+		expect(result.output).toContain(`"${join(copies.a.dir, 'byl-control.ps1')}" help`);
+		expect(controlLog(copies.a)).toMatch(/ unbekannt exit=1 problem=command-unknown\r$/m);
+		expect(controlLog(copies.a)).not.toContain('strat');
+	});
+
+	it('reports a missing pocketbase.exe with the folder and the log, and without a command outside the repository', () => {
+		const exe = join(copies.b.dir, 'pocketbase.exe');
+		renameSync(exe, `${exe}.weg`);
+		try {
+			const result = control(copies.b, 'start');
+			expect(result.code).toBe(1);
+			expect(result.output).toContain('Problem:   pocketbase.exe fehlt im Ordner');
+			expect(result.output).toContain(copies.b.dir);
+			expect(result.output).toContain('scripts\\fetch-pocketbase.ps1');
+			// The copy lies in no checkout of the repository: no command with a path that is not there.
+			expect(result.output).not.toContain('Befehl zum Kopieren');
+			expect(result.output).toContain(`  Details:   ${join(copies.b.dir, 'logs', 'byl-control.log')}`);
+			expect(controlLog(copies.b)).toMatch(/ start exit=1 problem=pocketbase-missing\r$/m);
+		} finally {
+			renameSync(`${exe}.weg`, exe);
+		}
+	});
+
+	it('starts without the interface but says so, with the hint of the catalog', async () => {
+		const index = join(copies.b.dir, 'pb_public', 'index.html');
+		const page = readFileSync(index);
+		rmSync(index);
+		try {
+			const result = control(copies.b, 'start');
+			expect(result.code, result.output).toBe(0);
+			expect(result.output).toContain('! Hinweis:   Die Oberfl');
+			expect(result.output).toContain('pb_public\\index.html');
+			expect(await healthy(copies.b.port)).toBe(true);
+			expect(control(copies.b, 'stop').code).toBe(0);
+		} finally {
+			writeFileSync(index, page);
+		}
+	});
+
+	it('keeps an error of a run without window for status -Json and shows it once in the next console run', async () => {
+		const release = await occupy(copies.b.port);
+		try {
+			// restart as the page System starts it: in the background, after its caller ended.
+			const gone = spawnSyncClean(process.execPath, ['-e', ''], { windowsHide: true });
+			const result = control(copies.b, 'restart', '-Quiet', '-WaitForProcess', String(gone.pid));
+			expect(result.code, result.output).toBe(4);
+			const kept = JSON.parse(readFileSync(join(copies.b.dir, 'run', 'hintergrund-problem.json'), 'utf8'));
+			expect(kept).toMatchObject({ run: 'restart', report: { code: 'port-busy', level: 'error', exitCode: 4 } });
+			expect(Date.parse(kept.atUtc)).not.toBeNaN();
+			expect(kept.report.remedy.command).toContain(`"${join(copies.b.dir, 'byl-control.ps1')}" port `);
+			const json = status(copies.b);
+			expect(json.code).toBe(3);
+			expect(json.data.backgroundProblem).toMatchObject({ run: 'restart', report: { code: 'port-busy' } });
+			// status -Json leaves it; a run in a console window shows it once and removes it.
+			expect(existsSync(join(copies.b.dir, 'run', 'hintergrund-problem.json'))).toBe(true);
+			const shown = control(copies.b, 'status');
+			expect(shown.output).toContain('Hinweis: Beim letzten Lauf ohne Fenster (restart, ');
+			expect(shown.output).toContain(`Problem:   Port ${copies.b.port} auf 127.0.0.1 ist belegt`);
+			expect(existsSync(join(copies.b.dir, 'run', 'hintergrund-problem.json'))).toBe(false);
+			expect(status(copies.b).data.backgroundProblem).toBeNull();
+		} finally {
+			await release();
+		}
+	});
+
+	it('a run without window that went well removes a kept problem', () => {
+		writeFileSync(
+			join(copies.b.dir, 'run', 'hintergrund-problem.json'),
+			JSON.stringify({ atUtc: new Date().toISOString(), run: 'start', report: { code: 'health-timeout', level: 'error', exitCode: 5, problem: 'alt', remedy: { steps: ['x'], command: '' } } })
+		);
+		const gone = spawnSyncClean(process.execPath, ['-e', ''], { windowsHide: true });
+		const result = control(copies.b, 'restart', '-Quiet', '-WaitForProcess', String(gone.pid));
+		expect(result.code, result.output).toBe(0);
+		expect(existsSync(join(copies.b.dir, 'run', 'hintergrund-problem.json'))).toBe(false);
+		expect(control(copies.b, 'stop').code).toBe(0);
+	});
+
+	it('answers -Json with the entry of the catalog: code and remedy', () => {
+		const result = control(copies.a, 'logs', 'unbekannt', '-Json');
+		expect(result.code).toBe(1);
+		const answer = JSON.parse(result.output.trim());
+		expect(Object.keys(answer)).toEqual(['ok', 'code', 'level', 'exitCode', 'problem', 'facts', 'cause', 'remedy', 'log']);
+		expect(answer).toMatchObject({
+			ok: false,
+			code: 'logs-unknown',
+			level: 'error',
+			exitCode: 1,
+			remedy: { command: `powershell -NoProfile -ExecutionPolicy Bypass -File "${join(copies.a.dir, 'byl-control.ps1')}" logs` },
+			log: join(copies.a.dir, 'logs', 'byl-control.log')
+		});
+		expect(answer.remedy.steps.length).toBeGreaterThan(0);
+	});
+
+	it('byl-pruefen.bat says nothing when the script runs, and shows the entry script-blocked when it cannot', () => {
+		expect(batch(join(copies.a.dir, 'byl-pruefen.bat'), '1')).toEqual({ code: 0, output: '' });
+		expect(batch(join(copies.a.dir, 'byl-pruefen.bat'), '4')).toEqual({ code: 0, output: '' });
+		// A copy without byl-functions.ps1 and byl-problems.ps1: PowerShell cannot run the script. Its
+		// folder has & and ' in the name: cmd shows them as text, the command doubles the '.
+		const broken = join(base, "Pruefung & Co's", 'app');
+		mkdirSync(broken, { recursive: true });
+		for (const file of ['byl-control.ps1', 'byl-pruefen.bat']) copyFileSync(join(APP_DIR, file), join(broken, file));
+		const result = batch(join(broken, 'byl-pruefen.bat'), '1');
+		expect(result.code, result.output).toBe(1);
+		expect(result.output).toContain('X Problem:   byl-control.ps1 konnte nicht ausgefuehrt werden.');
+		expect(result.output).toContain(`             Ordner: ${broken}\\`);
+		expect(result.output).toContain(`powershell -NoProfile -Command "Get-ChildItem -LiteralPath '${broken.replaceAll("'", "''")}\\' | Unblock-File"`);
+		expect(result.output).not.toMatch(/ist entweder falsch geschrieben|is not recognized/);
 	});
 });

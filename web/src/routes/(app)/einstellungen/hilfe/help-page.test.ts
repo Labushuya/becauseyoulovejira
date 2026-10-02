@@ -1,8 +1,8 @@
 // Settings "Hilfe" (plan EH-9, §3.10): jump links to eleven sections, the shortcuts of every context
 // from the one source, the short syntax with its tokens, the access data moved here from "Kanäle",
 // the own inbox with examples and WhatsApp Web (ADR-0038), the frequent questions as <details>, the
-// operation of the app, the backups with the emergency plan (ADR-0046 §8) and the storage
-// (ADR-0047 §6). No table (description lists).
+// operation of the app with the frequent problems of the scripts (ADR-0048), the backups with the
+// emergency plan (ADR-0046 §8) and the storage (ADR-0047 §6). No table (description lists).
 
 import { render, screen, within } from '@testing-library/svelte';
 import { describe, expect, it } from 'vitest';
@@ -13,6 +13,7 @@ import {
 	EMERGENCY_STEPS,
 	PASSPHRASE_TEXTS
 } from '$lib/domain/backup';
+import { SCRIPT_PROBLEMS } from '$lib/domain/script-problems';
 import { RESTART_NEEDED } from '$lib/guidance/texts';
 import { HELP_SECTIONS, SETTINGS_SECTIONS, helpHref } from '$lib/settings-sections';
 import Page from './+page.svelte';
@@ -472,6 +473,30 @@ describe('help page (EH-9)', () => {
 		render(Page);
 		const section = screen.getByRole('region', { name: 'Betrieb' });
 		expect(text(section)).toContain('Kopieren sichert und zieht sie um, aber erst nach stop.bat');
+	});
+
+	it('lists the frequent problems of the scripts in the words of their catalog (ADR-0048)', () => {
+		render(Page);
+		const section = screen.getByRole('region', { name: 'Betrieb' });
+		expect(
+			within(section).getByRole('heading', { name: 'Probleme mit den Skripten', level: 4 })
+		).toBeTruthy();
+		const problems = [...section.querySelectorAll('.script-problems details')];
+		expect(
+			problems.map((details) => text(details.querySelector('summary') as Element).trim())
+		).toEqual(SCRIPT_PROBLEMS.map((problem) => problem.question));
+		// The port of this app in the text, the free port as placeholder of the command.
+		const busy = problems.find(
+			(details) =>
+				text(details.querySelector('summary') as Element).trim() === 'Der Port ist belegt'
+		);
+		expect(busy).toBeDefined();
+		const port = page.url.port || '8090';
+		const content = text(busy as Element);
+		expect(content).toContain(`Port ${port} auf 127.0.0.1 ist belegt`);
+		expect(content).toContain('byl-control.ps1 port');
+		expect(content).toContain('freier Port');
+		expect(text(section)).toContain('(J/N)');
 	});
 
 	it('explains the page "Speicher", its actions and what it never deletes (ADR-0047)', () => {

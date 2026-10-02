@@ -144,7 +144,7 @@ beforeAll(async () => {
 	expect(base.toLowerCase().startsWith(APP_DIR.toLowerCase())).toBe(false);
 	const dir = join(base, 'Kopie Speicher', 'app');
 	mkdirSync(join(dir, 'pb_public'), { recursive: true });
-	for (const file of ['byl-control.ps1', 'byl-functions.ps1']) copyFileSync(join(APP_DIR, file), join(dir, file));
+	for (const file of ['byl-control.ps1', 'byl-functions.ps1', 'byl-problems.ps1']) copyFileSync(join(APP_DIR, file), join(dir, file));
 	copyFileSync(POCKETBASE_EXE, join(dir, 'pocketbase.exe'));
 	cpSync(join(APP_DIR, 'pb_hooks'), join(dir, 'pb_hooks'), { recursive: true });
 	cpSync(join(APP_DIR, 'pb_migrations'), join(dir, 'pb_migrations'), { recursive: true });

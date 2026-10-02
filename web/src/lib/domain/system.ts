@@ -38,6 +38,36 @@ export interface OtherServer {
 	sameFolder: boolean;
 }
 
+export const PROBLEM_LEVELS = ['error', 'warning'] as const;
+export type ProblemLevel = (typeof PROBLEM_LEVELS)[number];
+
+/**
+ * An entry of the catalog of the scripts (app/byl-problems.ps1, ADR-0048) as the control script
+ * reports it: what went wrong, why, and what helps, with the real paths of this machine.
+ */
+export interface ScriptProblemReport {
+	code: string;
+	level: ProblemLevel;
+	exitCode: number;
+	problem: string;
+	/** Lines of this case under the problem, e.g. who uses the port. */
+	facts: string[];
+	cause: string;
+	/** Steps and the command to copy ('' without one). */
+	remedy: { steps: string[]; command: string };
+	/** The log with the details, '' without one. */
+	log: string;
+}
+
+/** The error of the last run without window (autostart, restart or restore from the app). */
+export interface BackgroundProblem {
+	/** When it happened (ISO 8601, UTC), null if unknown. */
+	atUtc: string | null;
+	/** The command of the run: start, restart, restore … */
+	run: string;
+	report: ScriptProblemReport;
+}
+
 export interface SystemStatus {
 	state: SystemState;
 	pid: number | null;
@@ -54,6 +84,7 @@ export interface SystemStatus {
 	mailHelperPid: number | null;
 	otherServers: OtherServer[];
 	autostart: AutostartState;
+	backgroundProblem: BackgroundProblem | null;
 }
 
 export interface SystemOverview {
@@ -70,6 +101,8 @@ export interface DoctorCheck {
 	name: string;
 	level: DoctorLevel;
 	text: string;
+	/** The entry of the catalog for a check that found a problem, else null. */
+	report: ScriptProblemReport | null;
 }
 
 export interface DoctorResult {
@@ -242,6 +275,38 @@ function oneOf<T extends string>(list: readonly T[], value: unknown): value is T
 	return typeof value === 'string' && (list as readonly string[]).includes(value);
 }
 
+function texts(value: unknown): string[] {
+	return Array.isArray(value)
+		? value.filter((item): item is string => typeof item === 'string' && item !== '')
+		: [];
+}
+
+/** An entry of the catalog of the scripts as the server passes it on, or null. */
+export function parseProblemReport(raw: unknown): ScriptProblemReport | null {
+	if (!isRecord(raw) || !oneOf(PROBLEM_LEVELS, raw.level)) return null;
+	const code = textOf(raw.code);
+	const problem = textOf(raw.problem);
+	if (code === '' || problem === '') return null;
+	const remedy = isRecord(raw.remedy) ? raw.remedy : {};
+	return {
+		code,
+		level: raw.level,
+		exitCode: count(raw.exitCode) ?? 1,
+		problem,
+		facts: texts(raw.facts),
+		cause: textOf(raw.cause),
+		remedy: { steps: texts(remedy.steps), command: textOf(remedy.command) },
+		log: textOf(raw.log)
+	};
+}
+
+function parseBackgroundProblem(raw: unknown): BackgroundProblem | null {
+	if (!isRecord(raw)) return null;
+	const report = parseProblemReport(raw.report);
+	if (report === null) return null;
+	return { atUtc: textOf(raw.atUtc) || null, run: textOf(raw.run), report };
+}
+
 function parseStatus(raw: unknown): SystemStatus | null {
 	if (!isRecord(raw)) return null;
 	const port = count(raw.port);
@@ -269,7 +334,8 @@ function parseStatus(raw: unknown): SystemStatus | null {
 			port: count(server.port),
 			sameFolder: server.sameFolder === true
 		})),
-		autostart: oneOf(AUTOSTART_STATES, raw.autostart) ? raw.autostart : 'off'
+		autostart: oneOf(AUTOSTART_STATES, raw.autostart) ? raw.autostart : 'off',
+		backgroundProblem: parseBackgroundProblem(raw.backgroundProblem)
 	};
 }
 
@@ -292,13 +358,18 @@ export function parseOverview(raw: unknown): SystemOverview | null {
 /** The answer of GET /api/byl/system/doctor, or null. */
 export function parseDoctor(raw: unknown): DoctorResult | null {
 	if (!isRecord(raw) || !Array.isArray(raw.checks)) return null;
-	const checks = raw.checks
-		.filter(isRecord)
-		.flatMap((check): DoctorCheck[] =>
-			oneOf(DOCTOR_LEVELS, check.level) && typeof check.text === 'string'
-				? [{ name: textOf(check.name), level: check.level, text: check.text }]
-				: []
-		);
+	const checks = raw.checks.filter(isRecord).flatMap((check): DoctorCheck[] =>
+		oneOf(DOCTOR_LEVELS, check.level) && typeof check.text === 'string'
+			? [
+					{
+						name: textOf(check.name),
+						level: check.level,
+						text: check.text,
+						report: parseProblemReport(check.report)
+					}
+				]
+			: []
+	);
 	return { ok: raw.ok === true, checks };
 }
 
@@ -356,6 +427,22 @@ export function stateText(status: SystemStatus): string {
 		default:
 			return 'Läuft nicht';
 	}
+}
+
+/** The runs without window whose error the control script keeps (ADR-0048 §4), in words. */
+const BACKGROUND_RUNS: ReadonlyMap<string, string> = new Map([
+	['start', 'Start ohne Fenster (Autostart)'],
+	['restart', 'Neustart aus der App'],
+	['restore', 'Wiederherstellung aus der App']
+]);
+
+/** "Start ohne Fenster (Autostart) am 02.10.2026 07:00": which run failed and when. */
+export function backgroundRunText(problem: BackgroundProblem): string {
+	const run =
+		BACKGROUND_RUNS.get(problem.run) ??
+		(problem.run === '' ? 'Lauf ohne Fenster' : `Lauf ohne Fenster (${problem.run})`);
+	const when = formatPointInTime(problem.atUtc);
+	return when === '' ? run : `${run} am ${when}`;
 }
 
 /** Whether a restart is needed now: an update waits for it, or the server does not answer. */

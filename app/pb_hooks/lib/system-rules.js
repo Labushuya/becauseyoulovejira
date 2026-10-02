@@ -84,6 +84,8 @@ var RESTART_REASONS = ['unknown', 'server', 'migrations', 'hooks', 'port', 'envi
 var AUTOSTART = ['on', 'off', 'other'];
 var DOCTOR_LEVELS = ['ok', 'warning', 'error', 'info'];
 var LOG_SETS = ['server', 'mail', 'skript'];
+// Levels of an entry of the catalog of the scripts (app/byl-problems.ps1, ADR-0048).
+var PROBLEM_LEVELS = ['error', 'warning'];
 
 function text(value) {
   return typeof value === 'string' ? value.replace(/^\s+|\s+$/g, '') : '';
@@ -313,6 +315,63 @@ function otherServer(value) {
   };
 }
 
+/** The strings of a list, each masked like a log line; [] for anything else. */
+function maskedTexts(value) {
+  var result = [];
+  var listed = value instanceof Array ? value : [];
+  for (var i = 0; i < listed.length; i++) {
+    if (typeof listed[i] === 'string' && listed[i] !== '') {
+      result.push(maskLogLine(listed[i]));
+    }
+  }
+  return result;
+}
+
+/**
+ * An entry of the catalog of the scripts as the control script reports it (ADR-0048: code, level,
+ * exitCode, problem, facts, cause, remedy with steps and the command to copy, log), or null. The
+ * texts lose e-mail addresses and tokens like a log line; the command and the log are paths of this
+ * machine and stay as they are.
+ */
+function problemView(raw) {
+  if (!isRecord(raw) || text(raw.code) === '' || !oneOf(PROBLEM_LEVELS, raw.level) || text(raw.problem) === '') {
+    return null;
+  }
+  var remedy = isRecord(raw.remedy) ? raw.remedy : {};
+  return {
+    code: text(raw.code),
+    level: raw.level,
+    exitCode: isCount(raw.exitCode) ? raw.exitCode : 1,
+    problem: maskLogLine(raw.problem),
+    facts: maskedTexts(raw.facts),
+    cause: typeof raw.cause === 'string' ? maskLogLine(raw.cause) : '',
+    remedy: {
+      steps: maskedTexts(remedy.steps),
+      command: typeof remedy.command === 'string' ? remedy.command : ''
+    },
+    log: typeof raw.log === 'string' ? raw.log : ''
+  };
+}
+
+/**
+ * The error of the last run without window (status -Json, run\hintergrund-problem.json: time,
+ * command and entry), or null.
+ */
+function backgroundProblemView(raw) {
+  if (!isRecord(raw)) {
+    return null;
+  }
+  var report = problemView(raw.report);
+  if (report === null) {
+    return null;
+  }
+  return {
+    atUtc: typeof raw.atUtc === 'string' && raw.atUtc !== '' ? raw.atUtc : null,
+    run: text(raw.run),
+    report: report
+  };
+}
+
 /**
  * The status of the control script (status -Json, ADR-0039 §5) in the shape of the route, or null
  * if the answer is not one. Unknown fields are dropped.
@@ -356,11 +415,15 @@ function statusView(raw) {
     mailHelperPid: countOrNull(raw.mailHelperPid),
     portOwner: owner,
     otherServers: others,
-    autostart: oneOf(AUTOSTART, raw.autostart) ? raw.autostart : 'off'
+    autostart: oneOf(AUTOSTART, raw.autostart) ? raw.autostart : 'off',
+    backgroundProblem: backgroundProblemView(raw.backgroundProblem)
   };
 }
 
-/** The checks of doctor -Json (ADR-0039 §7) in the shape of the route, or null. */
+/**
+ * The checks of doctor -Json (ADR-0039 §7) in the shape of the route, or null; a check that found a
+ * problem carries its entry of the catalog (report), the others null.
+ */
 function doctorView(raw) {
   if (!isRecord(raw) || !(raw.checks instanceof Array)) {
     return null;
@@ -369,7 +432,12 @@ function doctorView(raw) {
   for (var i = 0; i < raw.checks.length; i++) {
     var check = raw.checks[i];
     if (isRecord(check) && oneOf(DOCTOR_LEVELS, check.level) && typeof check.text === 'string') {
-      checks.push({ name: typeof check.name === 'string' ? check.name : '', level: check.level, text: check.text });
+      checks.push({
+        name: typeof check.name === 'string' ? check.name : '',
+        level: check.level,
+        text: check.text,
+        report: problemView(check.report)
+      });
     }
   }
   return { ok: raw.ok === true, checks: checks };
@@ -473,6 +541,7 @@ module.exports = {
   isOwnInstance: isOwnInstance,
   rateStep: rateStep,
   restartPending: restartPending,
+  problemView: problemView,
   statusView: statusView,
   doctorView: doctorView,
   logsView: logsView,

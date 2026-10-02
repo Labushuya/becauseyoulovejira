@@ -8,5 +8,6 @@ rem sie. Logik: byl-control.ps1 reload (mit -Force: immer neu starten).
 rem Die Meldung bleibt 5 Sekunden stehen (Taste beendet sofort), bei Fehlern bis zu einem Tastendruck.
 "%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -ExecutionPolicy Bypass -File "%~dp0byl-control.ps1" reload
 set "BYL_EXIT=%ERRORLEVEL%"
+if not "%BYL_EXIT%"=="0" call "%~dp0byl-pruefen.bat" %BYL_EXIT%
 if "%BYL_EXIT%"=="0" (timeout /t 5 2>nul) else (pause)
 exit /b %BYL_EXIT%

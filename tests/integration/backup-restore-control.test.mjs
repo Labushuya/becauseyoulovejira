@@ -228,7 +228,7 @@ function makeCopy(name, { port, config = true }) {
 	const startup = join(base, name, 'startup');
 	const secrets = join(base, name, 'geheim');
 	for (const folder of [join(dir, 'pb_public'), startup, secrets]) mkdirSync(folder, { recursive: true });
-	for (const file of ['byl-control.ps1', 'byl-functions.ps1']) copyFileSync(join(APP_DIR, file), join(dir, file));
+	for (const file of ['byl-control.ps1', 'byl-functions.ps1', 'byl-problems.ps1']) copyFileSync(join(APP_DIR, file), join(dir, file));
 	copyFileSync(POCKETBASE_EXE, join(dir, 'pocketbase.exe'));
 	copyFileSync(BACKUP_HELPER, join(dir, 'byl-backup.exe'));
 	cpSync(join(APP_DIR, 'pb_hooks'), join(dir, 'pb_hooks'), { recursive: true });
@@ -350,7 +350,8 @@ describe('restore on disposable copies (ADR-0046 §7)', CASE_TIMEOUT, () => {
 			input: { source: 'target', name: sealedName, passphrase: WRONG_PASSPHRASE, confirm: CONFIRM }
 		});
 		expect(result.code, result.output).toBe(1);
-		expect(result.answer).toEqual({ ok: false, reason: 'passphrase', name: sealedName });
+		expect(result.answer).toMatchObject({ ok: false, reason: 'passphrase', name: sealedName, report: { code: 'backup-passphrase', exitCode: 1 } });
+		expect(Object.keys(result.answer).sort()).toEqual(['name', 'ok', 'reason', 'report']);
 		expect(serversOf(copy).map((entry) => entry.pid)).toEqual([before.pid]);
 		expect(await ticketTitles(copy.port)).toEqual(['Nach der Sicherung', 'Vor der Sicherung']);
 		expect(safetyCopies(copy)).toEqual([]);
@@ -400,7 +401,8 @@ describe('restore on disposable copies (ADR-0046 §7)', CASE_TIMEOUT, () => {
 			input: { source: 'target', name: sealedName, confirm: CONFIRM, credentials: 'all' }
 		});
 		expect(result.code, result.output).toBe(1);
-		expect(result.answer).toEqual({ ok: false, reason: 'start', rolledBack: true, name: sealedName });
+		expect(result.answer).toMatchObject({ ok: false, reason: 'start', rolledBack: true, name: sealedName, report: { code: 'restore-start' } });
+		expect(Object.keys(result.answer).sort()).toEqual(['name', 'ok', 'reason', 'report', 'rolledBack']);
 		expect(await healthy(copy.port)).toBe(true);
 		expect(await ticketTitles(copy.port)).toEqual(['Nach der Wiederherstellung', 'Vor der Sicherung']);
 		expect(safetyCopies(copy)).toEqual(safetyBefore);

@@ -7,6 +7,7 @@
 		DENIAL_TEXTS,
 		RESTART_REASON_LABELS,
 		RESTART_TEXTS,
+		backgroundRunText,
 		mailText,
 		otherServerText,
 		restartNeeded,
@@ -14,6 +15,7 @@
 		verdictText
 	} from '$lib/domain/system';
 	import type { SystemStore } from '$lib/stores/system.svelte';
+	import ScriptProblemDetails from './ScriptProblemDetails.svelte';
 	import SystemDoctor from './SystemDoctor.svelte';
 	import SystemLogs from './SystemLogs.svelte';
 
@@ -21,7 +23,10 @@
 	// actions of the control script, without "Beenden". The .bat files in the folder app keep
 	// working; this page only adds a way from the dashboard. A server that is not on Windows gets
 	// the hint instead (the scripts are for Windows, the platforms are deferred). Actions wait for
-	// each other; their buttons stay focusable (aria-disabled), so the focus stays where it was.
+	// each other; their buttons stay focusable (aria-disabled), so the focus stays where it was. An
+	// error of the last run without window (autostart, restart or restore from the app) stands above
+	// the state with its entry of the catalog of the scripts (ADR-0048 §4), as a warning: the app
+	// runs again by now, the error is one of the past run.
 	let { store, platform }: { store: SystemStore; platform: HostPlatform } = $props();
 
 	const uid = $props.id();
@@ -105,6 +110,18 @@
 	{:else if store.restartPhase === 'not-started'}
 		<SectionMessage tone="error" live title={RESTART_TEXTS.notStartedTitle}>
 			{RESTART_TEXTS.notStarted}
+		</SectionMessage>
+	{/if}
+	{#if status.backgroundProblem !== null}
+		<SectionMessage tone="warning" title="Problem beim letzten Lauf ohne Fenster">
+			<p>
+				{backgroundRunText(status.backgroundProblem)}: {status.backgroundProblem.report.problem}
+			</p>
+			<ScriptProblemDetails report={status.backgroundProblem.report} />
+			<p class="hint">
+				Der Hinweis verschwindet, sobald becauseyoulovejira wieder ohne Fehler startet oder du
+				status.bat im Ordner <code>app</code> ausführst.
+			</p>
 		</SectionMessage>
 	{/if}
 

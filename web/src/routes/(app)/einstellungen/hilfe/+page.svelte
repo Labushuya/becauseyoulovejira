@@ -11,6 +11,7 @@
 	import { KEY_PLACEHOLDER, ingestExamples } from '$lib/domain/inbox-keys';
 	import HostPlatformNote from '$lib/components/guidance/HostPlatformNote.svelte';
 	import RecurrenceHelp from '$lib/components/help/RecurrenceHelp.svelte';
+	import ScriptProblemsHelp from '$lib/components/help/ScriptProblemsHelp.svelte';
 	import ShortcutList from '$lib/components/help/ShortcutList.svelte';
 	import { PRIORITY_NUMBERS, PRIORITY_WORDS } from '$lib/domain/quick-syntax';
 	import { RESTART_NEEDED } from '$lib/guidance/texts';
@@ -26,6 +27,8 @@
 	// "Wiederholungen" (plan "Wiederholungen verständlich machen") explains rules with examples the
 	// engine computes; the form, the overview and the rule panel link to it. The section "Sicherung &
 	// Notfall" (ADR-0046 §8) takes the steps for a new machine from the one source of the Notfallkarte.
+	// "Betrieb" ends with the frequent problems of the scripts in the words of their catalog
+	// (ADR-0048, ScriptProblemsHelp).
 
 	// Examples of the own inbox (ADR-0038) with the address of this app and the key as placeholder.
 	const examples = $derived(ingestExamples(page.url.origin));
@@ -842,10 +845,13 @@
 			<div class="row">
 				<dt>Wenn es hakt</dt>
 				<dd>
-					Ist der Port belegt, nennt <code>start.bat</code> das Programm und einen freien Port.
-					Antwortet die App nicht, hilft <code>neu-starten.bat</code>. Die Prüfung
-					<code>byl-control.ps1 doctor</code> zeigt fehlende Dateien, Schreibrechte, Plattenplatz und
-					andere laufende Kopien.
+					Jedes Skript sagt bei einem Problem, was passiert ist, die wahrscheinliche Ursache und die
+					Schritte, die helfen, mit einem Befehl zum Kopieren; das Fenster bleibt dann offen. Ist es
+					sicher, bietet es an, das Problem selbst zu lösen („Soll ich …? (J/N)“). Scheitert ein
+					Lauf ohne Fenster (Autostart, Neustart oder Wiederherstellung aus der App), zeigt das
+					nächste Skript im Fenster das Problem einmal; läuft die App, steht es auch unter
+					Einstellungen → System. Die Prüfung <code>byl-control.ps1 doctor</code> zeigt fehlende Dateien,
+					Schreibrechte, Plattenplatz und andere laufende Kopien. Die häufigsten Probleme stehen unten.
 				</dd>
 			</div>
 			<div class="row">
@@ -883,6 +889,8 @@
 				</dd>
 			</div>
 		</dl>
+		<h4 id="betrieb-probleme">Probleme mit den Skripten</h4>
+		<ScriptProblemsHelp origin={page.url.origin} port={page.url.port || '8090'} />
 	</section>
 
 	<section id="sicherung" aria-labelledby="sicherung-title">

@@ -23,9 +23,9 @@ const WRAPPERS = {
 	'admin-zuruecksetzen.bat': 'reset-admin',
 	'wiederherstellen.bat': 'restore'
 };
-const APP_SCRIPTS = [...Object.keys(WRAPPERS), 'start-hidden.vbs', 'byl-control.ps1', 'byl-functions.ps1'];
+const APP_SCRIPTS = [...Object.keys(WRAPPERS), 'byl-pruefen.bat', 'start-hidden.vbs', 'byl-control.ps1', 'byl-functions.ps1', 'byl-problems.ps1'];
 const POWERSHELL_FILES = [
-	...['byl-control.ps1', 'byl-functions.ps1'].map((name) => join(APP_DIR, name)),
+	...['byl-control.ps1', 'byl-functions.ps1', 'byl-problems.ps1'].map((name) => join(APP_DIR, name)),
 	...readdirSync(SCRIPTS_DIR)
 		.filter((name) => name.endsWith('.ps1'))
 		.map((name) => join(SCRIPTS_DIR, name))
@@ -38,6 +38,8 @@ const STOP_CLOSE_LINE = 'if "%BYL_EXIT%"=="0" (timeout /t 5 2>nul) else (pause)'
 const read = (name) => readFileSync(join(APP_DIR, name), 'utf8').replace(/^﻿/, '');
 const control = () => read('byl-control.ps1');
 const functions = () => read('byl-functions.ps1');
+/** The main part of byl-control.ps1: from the call of the command to the end. */
+const mainBlock = () => control().slice(control().indexOf('$exitCode = $BylExitError\r\ntry {'));
 
 /** Body of a PowerShell function, up to the next top-level function. */
 function functionBody(source, name) {
@@ -74,14 +76,18 @@ describe('wrappers', () => {
 		expect(source).toContain('WScript.ScriptFullName');
 		expect(source).toContain('"byl-control.ps1"');
 		expect(source).toMatch(/" -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File "/);
-		expect(source).toContain('" start -Hidden"');
-		expect(source).toMatch(/shell\.Run\(command, 0, True\)/);
+		expect(source).toContain('code = shell.Run(prefix & " start -Hidden", 0, True)');
+		// Only a code that is none of the script asks "help" whether PowerShell can run it at all.
+		expect(source).toContain('If code = 1 Or code < 0 Or code > 6 Then\r\n    If shell.Run(prefix & " help", 0, True) <> 0 Then ShowProblem');
+		expect(source).toMatch(/WScript\.Quit code\r\n$/);
 	});
 
-	it('every command of a wrapper is a command of byl-control.ps1', () => {
-		const set = control().match(/\[ValidateSet\(([^)]*)\)\]\r\n\s*\[string\]\$Command = 'help'/)[1];
+	it('every command of a wrapper is a command of byl-control.ps1, checked by the script itself', () => {
+		const set = control().match(/\$BylCommands = @\(([^)]*)\)/)[1];
 		const commands = [...set.matchAll(/'([a-z-]+)'/g)].map((match) => match[1]);
 		for (const command of [...Object.values(WRAPPERS), 'restart', 'port', 'help']) expect(commands).toContain(command);
+		expect(control()).toContain("[Parameter(Position = 0)][string]$Command = 'help',");
+		expect(mainBlock()).toContain("if ($BylCommands -notcontains $Command) {\r\n        $exitCode = Write-BylProblem -Code 'command-unknown'");
 	});
 
 	it.each(APP_SCRIPTS)('%s has CRLF line endings', (name) => {
@@ -90,15 +96,15 @@ describe('wrappers', () => {
 		expect(raw.replace(/\r\n/g, '')).not.toContain('\n');
 	});
 
-	it.each([...Object.keys(WRAPPERS), 'start-hidden.vbs', 'byl-functions.ps1'])(
+	it.each([...Object.keys(WRAPPERS), 'byl-pruefen.bat', 'start-hidden.vbs', 'byl-functions.ps1'])(
 		'%s is plain ASCII (cmd and WSH read the ANSI code page)',
 		(name) => {
 			expect(readFileSync(join(APP_DIR, name), 'utf8')).toMatch(/^[\x00-\x7F]*$/);
 		}
 	);
 
-	it('byl-control.ps1 has a UTF-8 BOM (Windows PowerShell 5.1 reads BOM-less files as ANSI)', () => {
-		expect(readFileSync(join(APP_DIR, 'byl-control.ps1'))[0]).toBe(0xef);
+	it.each(['byl-control.ps1', 'byl-problems.ps1'])('%s has a UTF-8 BOM (Windows PowerShell 5.1 reads BOM-less files as ANSI)', (name) => {
+		expect([...readFileSync(join(APP_DIR, name)).subarray(0, 3)]).toEqual([0xef, 0xbb, 0xbf]);
 	});
 
 	it.each(APP_SCRIPTS)('%s has no absolute paths and no credentials', (name) => {
@@ -155,7 +161,7 @@ describe('address and port (ADR-0039 section 2)', () => {
 	it('reads the port from byl-config.json only and binds only to the loopback address', () => {
 		expect(functions()).toContain("$BylConfigName = 'byl-config.json'");
 		expect(functionBody(functions(), 'Get-ServerArgumentString')).toContain("'serve --http=127.0.0.1:{0} ");
-		const main = control().slice(control().lastIndexOf('try {'));
+		const main = mainBlock();
 		expect(main).toContain('$config = Get-Config');
 		expect(main).toContain('Set-BylAddress -Port $config.Port');
 		expect(control()).not.toMatch(/BYL_PORT/);
@@ -168,11 +174,12 @@ describe('address and port (ADR-0039 section 2)', () => {
 	});
 
 	it('names the program on a busy port and suggests a free port with the command to switch', () => {
-		const text = functionBody(control(), 'Get-PortBusyText');
+		const text = functionBody(control(), 'Write-PortBusy');
 		expect(text).toContain('$PortState.ExecutablePath');
 		expect(text).toContain('Find-NextFreePort -Start $Port -IsFree { param($Candidate) Test-PortFree -Port $Candidate }');
-		expect(text).toContain('$ControlCall port $next');
-		expect(text).not.toMatch(/Stop-Process|Kill\(/);
+		// The command "{control} port {next}" of the catalog; switching only after a yes in a console.
+		expect(text).toContain("return Write-BylProblem -Code 'port-busy' -Values @{ port = $Port; next = $next } -Facts @($owner) -Fix {");
+		expect(text).not.toMatch(/Stop-Process|Kill\(|Invoke-StopCore/);
 	});
 
 	it('writes the address of the landing page at start, stop and port', () => {
@@ -208,7 +215,7 @@ describe('start', () => {
 		const start = functionBody(control(), 'Invoke-Start');
 		expect(start.indexOf('Get-Look')).toBeLessThan(start.indexOf('Start-Server'));
 		expect(start).toContain('Resolve-StartAction -ServerState $look.ServerState -PortState $look.PortState.State -Force $Force.IsPresent');
-		expect(startBranch('PortBusy')).toMatch(/return \$BylExitPortBusy/);
+		expect(startBranch('PortBusy')).toContain('return Write-PortBusy -Port $Config.Port -PortState $look.PortState');
 		expect(startBranch('PortBusy')).not.toMatch(/Stop-|Invoke-StopCore/);
 		const look = functionBody(control(), 'Get-Look');
 		expect(look).toContain('Select-AppProcess -Process $processes -AppDir $AppDir');
@@ -218,10 +225,12 @@ describe('start', () => {
 		expect(functions()).toMatch(/Get-CimInstance -ClassName Win32_Process/);
 	});
 
-	it('starts nothing twice: a running instance only opens the browser, an unhealthy one needs -Force', () => {
+	it('starts nothing twice: a running instance only opens the browser, an unhealthy one needs -Force or a yes', () => {
 		expect(startBranch('Open')).not.toMatch(/Start-Server|Start-Process -FilePath \$exe/);
-		expect(startBranch('Unhealthy')).toMatch(/return \$BylExitUnhealthy/);
-		expect(startBranch('Unhealthy')).not.toMatch(/Invoke-StopCore|Start-Server/);
+		// Without -Force it restarts only in its offer, after a yes in a console window (ADR-0048).
+		const unhealthy = startBranch('Unhealthy');
+		expect(unhealthy).toContain("return Write-BylProblem -Code 'app-unhealthy'");
+		expect(unhealthy.slice(0, unhealthy.indexOf('-Fix {'))).not.toMatch(/Invoke-StopCore|Start-Server/);
 		expect(startBranch('Restart')).toMatch(/Invoke-StopCore -Config \$Config[\s\S]*Start-Server -Port \$Config\.Port/);
 	});
 
@@ -323,7 +332,7 @@ describe('start', () => {
 		expect(init).toMatch(/Test-IngestTokenNeeded -HelperExists \(Test-Path -LiteralPath \$helper -PathType Leaf\)/);
 		expect(init).toContain("[Environment]::SetEnvironmentVariable($BylIngestTokenName, (New-IngestTokenValue), 'User')");
 		// The only output is a hint with the type of the exception, never a value.
-		expect(init.match(/Write-\w+|Show-Message|Out-\w+|Add-Content|Set-Content/g)).toEqual(['Write-Status']);
+		expect(init.match(/Write-\w+|Show-Message|Out-\w+|Add-Content|Set-Content/g)).toEqual(['Write-BylProblem']);
 		expect(init).not.toMatch(/\$current\b[^\n]*Write|Write[^\n]*\$current|Exception\.Message/);
 	});
 
@@ -477,7 +486,7 @@ describe('stop', () => {
 	});
 
 	it('status.bat always waits for a key, so the status stays readable', () => {
-		expect(read('status.bat')).toMatch(/set "BYL_EXIT=%ERRORLEVEL%"\r\npause\r\nexit \/b %BYL_EXIT%/);
+		expect(read('status.bat')).toMatch(/set "BYL_EXIT=%ERRORLEVEL%"\r\n.*byl-pruefen\.bat.*\r\npause\r\nexit \/b %BYL_EXIT%/);
 	});
 
 	it('stops only processes chosen by Select-AppProcess, by process id', () => {
@@ -506,7 +515,7 @@ describe('stop', () => {
 		expect(control()).toMatch(/\$StopGraceSeconds = 15\b/);
 		expect(control()).toMatch(/\$BreakSenderSeconds = 30\b/);
 		expect(functionBody(control(), 'Write-ControlLog')).toContain("break=\" + ($script:BreakCodes -join ',')");
-		expect(functionBody(control(), 'Invoke-StopCore')).toContain('Warnung: Nicht rechtzeitig geordnet beendet, daher hart beendet: ');
+		expect(functionBody(control(), 'Invoke-StopCore')).toContain("[void](Write-BylProblem -Code 'hard-stop' -Values @{ name = $forced -join ', ' })");
 		const send = functionBody(control(), 'Send-ConsoleBreak');
 		expect(send).toContain('Get-ConsoleBreakCommand -ProcessId $ProcessId');
 		expect(send).toContain('$startInfo.CreateNoWindow = $true');
@@ -593,7 +602,7 @@ describe('status, reload, logs and doctor (ADR-0039 sections 5 to 7, BS-2)', () 
 	it('prints JSON only with -Json, as one line on standard output, and nothing else then', () => {
 		for (const name of ['Invoke-Status', 'Invoke-Doctor']) {
 			const body = functionBody(control(), name);
-			expect(body, name).toMatch(/if \(\$Json\) \{[\s\S]*?Write-JsonLine \([\s\S]*?ConvertTo-Json -Depth 4 -Compress\)\s*return \$code/);
+			expect(body, name).toMatch(/if \(\$Json\) \{[\s\S]*?Write-JsonLine \([\s\S]*?ConvertTo-Json -Depth \d -Compress\)\s*return \$code/);
 		}
 		const logs = functionBody(control(), 'Invoke-Logs');
 		expect(logs).toMatch(/if \(\$Json\) \{[\s\S]*?Write-JsonLine \(Get-LogsJson [^\r\n]*\)\s*return \$BylExitOk/);
@@ -614,10 +623,9 @@ describe('status, reload, logs and doctor (ADR-0039 sections 5 to 7, BS-2)', () 
 		expect(functions()).toContain('$BylExitRestartNeeded = 6');
 	});
 
-	it('logs changing commands only, with numbers and fixed words, never the admin e-mail', () => {
-		const main = control().slice(control().lastIndexOf('try {'));
-		expect(main).toContain(
-			"if (@('start', 'stop', 'restart', 'reload', 'port', 'autostart-on', 'autostart-off', 'mail-restart', 'reset-admin',\r\n" +
+	it('logs changing commands and errors only, with numbers and fixed words, never the admin e-mail', () => {
+		expect(mainBlock()).toContain(
+			"if ($script:ProblemError -or @('start', 'stop', 'restart', 'reload', 'port', 'autostart-on', 'autostart-off', 'mail-restart', 'reset-admin',\r\n" +
 				"        'backup-configure', 'backup-passphrase', 'backup-export', 'backup-verify', 'restore') -contains $Command) {"
 		);
 		const write = functionBody(control(), 'Write-ControlLog');
@@ -632,7 +640,7 @@ describe('status, reload, logs and doctor (ADR-0039 sections 5 to 7, BS-2)', () 
 	it('shows logs read-only and follows one log only', () => {
 		const logs = functionBody(control(), 'Invoke-Logs');
 		expect(logs).toContain("Get-Content -LiteralPath $path -Tail $Lines -Wait | Out-Host");
-		expect(logs).toMatch(/if \(\$name -eq 'alle'\) \{[\s\S]*?-Follow folgt genau einem Log/);
+		expect(logs).toMatch(/if \(\$name -eq 'alle'\) \{\s*return Write-BylProblem -Code 'logs-follow-one'/);
 		expect(logs).not.toMatch(/Remove-Item|WriteAll|Delete\(|Set-Content|Clear-Content/);
 	});
 
@@ -659,8 +667,7 @@ describe('commands of the page System (ADR-0043)', () => {
 		expect(detached).toMatch(/Start-Process -FilePath \$powershell -ArgumentList \$arguments -WorkingDirectory \$AppDir -WindowStyle Hidden -PassThru/);
 		expect(detached).not.toMatch(/-Redirect|-NoNewWindow|Invoke-StopCore|Stop-/);
 		expect(detached).toContain("[System.IO.Path]::Combine($env:SystemRoot, 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe')");
-		const main = control().slice(control().lastIndexOf('try {'));
-		expect(main).toMatch(/if \(\(\$Detach -or \$WaitForProcess -gt 0\) -and @\('restart', 'restore'\) -notcontains \$Command\) \{/);
+		expect(mainBlock()).toMatch(/if \(\(\$Detach -or \$WaitForProcess -gt 0\) -and @\('restart', 'restore'\) -notcontains \$Command\) \{/);
 	});
 
 	it('mail-restart stops only the own mail helper, in order, and starts it again', () => {
@@ -669,7 +676,7 @@ describe('commands of the page System (ADR-0043)', () => {
 		expect(mail).toContain("Stop-OwnProcess -Candidates $helpers -Name 'byl-mail.exe'");
 		expect(mail.indexOf('Stop-OwnProcess')).toBeLessThan(mail.indexOf('\n    Start-MailHelper\r'));
 		expect(mail).not.toMatch(/Select-AppProcess|Invoke-StopCore|Stop-Process/);
-		expect(mail).toContain('return $BylExitNotRunning');
+		expect(mail).toContain("return Write-BylProblem -Code 'mail-not-running' -Fix { Invoke-Start -Config $Config }");
 	});
 
 	it('an isolated test copy never uses the startup folder of the account for the autostart', () => {
@@ -808,7 +815,7 @@ describe('commands of the backup (ADR-0046)', () => {
 
 describe('admin reset', () => {
 	it('admin-zuruecksetzen.bat always pauses, so the result stays readable', () => {
-		expect(read('admin-zuruecksetzen.bat')).toMatch(/set "BYL_EXIT=%ERRORLEVEL%"\r\npause\r\nexit \/b %BYL_EXIT%/);
+		expect(read('admin-zuruecksetzen.bat')).toMatch(/set "BYL_EXIT=%ERRORLEVEL%"\r\n.*byl-pruefen\.bat.*\r\npause\r\nexit \/b %BYL_EXIT%/);
 	});
 
 	it('reads the password twice as SecureString and frees the unmanaged copy with ZeroFreeBSTR', () => {

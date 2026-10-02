@@ -830,6 +830,29 @@ function Format-ControlLogLine {
     return $line
 }
 
+# An unexpected error in byl-control.log: its message is cut to this length.
+$BylErrorMessageMax = 300
+
+function Format-ControlErrorLine {
+    # The second line of byl-control.log after an unexpected error (ADR-0048): UTC time, command,
+    # type of the exception, place in the script and its message on one line, without the values in
+    # $Secrets (Protect-LogText) and without e-mail addresses, cut to $BylErrorMessageMax characters.
+    # These lines are what a person sends to Claude (catalog entry "unexpected").
+    param(
+        [Parameter(Mandatory = $true)][DateTime]$TimeUtc,
+        [Parameter(Mandatory = $true)][string]$Command,
+        [AllowEmptyString()][string]$ErrorType = '',
+        [AllowEmptyString()][string]$Position = '',
+        [AllowNull()][AllowEmptyString()][string]$Message = '',
+        [AllowEmptyCollection()][AllowNull()][string[]]$Secrets = @()
+    )
+
+    $text = Protect-LogText -Text (([string]$Message -replace '[\r\n]+', ' ').Trim()) -Secrets $Secrets
+    $text = [regex]::Replace($text, '[\w.+-]+@[\w-]+(\.[\w-]+)+', '***')
+    if ($text.Length -gt $BylErrorMessageMax) { $text = $text.Substring(0, $BylErrorMessageMax - 3) + '...' }
+    return '{0} {1} error type={2} at={3} message="{4}"' -f $TimeUtc.ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ssZ'), $Command, $ErrorType, $Position, $text
+}
+
 function Get-LogTailLines {
     # The last $Count non-empty lines of $Text.
     param([AllowNull()][AllowEmptyString()][string]$Text, [int]$Count = 20)
