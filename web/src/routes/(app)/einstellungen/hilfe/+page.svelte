@@ -428,6 +428,105 @@
 		</ul>
 	</section>
 
+	<section id="github" aria-labelledby="github-title">
+		<h3 id="github-title">GitHub</h3>
+		<p>
+			Der Kanal GitHub beobachtet Repositorys: Roadmaps, Changelogs und andere gewählte Dateien,
+			Pull Requests und Releases. Die App liest nur; sie schreibt nie etwas nach GitHub, keinen
+			Kommentar, keinen Status, keine Änderung. Eingerichtet wird unter
+			<a href={channelSetupHref({ kind: 'github', connectionId: null })}
+				>Kanäle → GitHub → Einrichten</a
+			>.
+		</p>
+		<h4>Token anlegen (nur lesend)</h4>
+		<p>
+			Öffentliche Repositorys liest die App auch ohne Token, dann mit höchstens 60 Anfragen je
+			Stunde. Für private Repositorys (und 5.000 Anfragen je Stunde) brauchst du ein „Fine-grained
+			personal access token“:
+		</p>
+		<ol>
+			<li>
+				Auf github.com oben rechts auf dein Profilbild klicken, dann „Settings“ → links ganz unten
+				„Developer settings“ → „Personal access tokens“ → „Fine-grained tokens“ → „Generate new
+				token“.
+			</li>
+			<li>
+				„Token name“ etwa <code>becauseyoulovejira</code>, bei „Expiration“ eine Frist, bei
+				„Resource owner“ dein Konto oder die Organisation der Repositorys.
+			</li>
+			<li>
+				„Repository access“: „Only select repositories“ und die Repositorys auswählen, die die App
+				beobachten soll.
+			</li>
+			<li>
+				„Permissions“ → Rechte für Repositorys: „Contents“ und „Pull requests“ auf „Read-only“.
+				„Metadata“ steht von selbst auf „Read-only“. Sonst nichts.
+			</li>
+			<li>
+				„Generate token“, dann das Token (beginnt mit <code>github_pat_</code>) kopieren; GitHub
+				zeigt es nur einmal.
+			</li>
+			<li>
+				Das Token als Windows-Variable setzen, Vorschlag <code>BYL_GITHUB_TOKEN</code>, und
+				<code>neu-starten.bat</code> im Ordner <code>app</code> doppelklicken.
+			</li>
+		</ol>
+		<h4>Repositorys und was ankommt</h4>
+		<ul>
+			<li>
+				Repositorys trägst du im Assistenten oder an der Karte mit „Repository hinzufügen …“ ein,
+				als
+				<code>Besitzer/Name</code> oder mit der Adresse. Je Repository wählst du die Ereignisse (Dateiänderungen
+				auf dem Standard-Branch, Pull Requests, Releases), die beobachteten Pfade und auf Wunsch ein eigenes
+				Zielprojekt.
+			</li>
+			<li>
+				Pfade sind Muster ab dem Hauptordner, vorbelegt <code>ROADMAP*</code>,
+				<code>CHANGELOG*</code>, <code>README*</code> und <code>docs/**/roadmap*</code>;
+				<code>*</code> steht für beliebige Zeichen eines Namens, <code>**</code> für beliebig viele
+				Ordner. Groß- und Kleinschreibung zählt nicht. Alle Markdown-Dateien unter <code>docs</code> schaltest
+				du mit einem Häkchen dazu.
+			</li>
+			<li>
+				Ändert sich eine beobachtete Datei, kommt ein Eintrag „CHANGELOG.md in besitzer/repo
+				geändert“ mit Commits, Autoren, Zeilen (+/−), Vergleichs-Link, einem kurzen Diff-Auszug und
+				dem neuen Inhalt als Kopie (bis 2 MB). Neue und gelöschte Dateien kommen auch.
+			</li>
+			<li>
+				Je Pull Request und Release kommt ein Eintrag. Der erste Abruf merkt sich nur den Stand:
+				Dateien und Releases von vorher kommen nicht, offene Pull Requests schon (höchstens 20),
+				geschlossene nie.
+			</li>
+			<li>
+				Stichwörter gibt es bei GitHub nicht: Übernommen wird alles aus den gewählten Pfaden und
+				Ereignissen.
+			</li>
+		</ul>
+		<h4>Status der Quelle</h4>
+		<p>
+			Einträge aus GitHub zeigen im Eingang und unter „Quellen“ eines Tickets, ob ihre Quelle sich
+			seitdem geändert hat: „Unverändert“, „Seit Import geändert“ oder „Nicht mehr vorhanden“ bei
+			einer Datei, „PR offen“, „PR gemergt“ oder „PR geschlossen“ bei einem Pull Request. Das ist
+			nur eine Anzeige: Das Ticket ändert sich dadurch nie.
+		</p>
+		<h4>Gut zu wissen</h4>
+		<ul>
+			<li>
+				Die App ruft alle 15 Minuten ab (an der Karte 5 bis 60 Minuten), „Jetzt abrufen“ sofort. Sie
+				fragt GitHub mit ETag; unveränderte Antworten zählen nicht gegen das Anfragelimit.
+			</li>
+			<li>
+				Erreicht sie das Anfragelimit, wartet sie bis zur Freigabe und sagt an der Karte, ab wann
+				sie wieder abruft. Das ist kein Fehler.
+			</li>
+			<li>
+				Das Token bleibt in der Variablen auf diesem Rechner; die App schickt es nur an GitHub und
+				zeigt es nirgends. Widerrufen: unter „Fine-grained tokens“ beim Token „Revoke“, dann die
+				Variable löschen und die App neu starten.
+			</li>
+		</ul>
+	</section>
+
 	<section id="fragen" aria-labelledby="fragen-title">
 		<h3 id="fragen-title">Häufige Fragen</h3>
 		<div class="faq">

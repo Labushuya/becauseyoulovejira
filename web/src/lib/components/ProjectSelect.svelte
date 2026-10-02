@@ -23,6 +23,7 @@
 		errorId,
 		hintId,
 		hint = 'Beim Wechsel bekommt das Ticket einen neuen Key.',
+		noneLabel = 'Kein Projekt',
 		onchoose
 	}: {
 		id: string;
@@ -40,6 +41,8 @@
 		hintId: string;
 		/** Text of the hint below the select, rendered here with `hintId`. */
 		hint?: string;
+		/** Text of the empty choice, e.g. "Wie die Verbindung" for a repository of GitHub. */
+		noneLabel?: string;
 		onchoose: (value: string) => void;
 	} = $props();
 
@@ -70,7 +73,7 @@
 	{disabled}
 	onchange={(event) => onchoose(event.currentTarget.value)}
 >
-	<option value="" selected={value === ''}>Kein Projekt</option>
+	<option value="" selected={value === ''}>{noneLabel}</option>
 	{#each projects as project (project.id)}
 		<option value={project.id} selected={value === project.id}>
 			{projectChoiceLabel(project)}

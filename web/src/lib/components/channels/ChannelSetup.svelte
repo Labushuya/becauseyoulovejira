@@ -31,10 +31,13 @@
 		type Connection,
 		type TelegramRepliesChange
 	} from '$lib/domain/connections';
+	import { checkSummary } from '$lib/domain/github';
 	import { checkText } from '$lib/domain/notion';
 	import type { ProjectRef } from '$lib/domain/ticket';
 	import type { ConnectionsStore } from '$lib/stores/connections.svelte';
+	import type { GitHubStore } from '$lib/stores/github.svelte';
 	import type { NotionStore } from '$lib/stores/notion.svelte';
+	import ErrorIcon from '../ErrorIcon.svelte';
 	import KeywordEditor from '../KeywordEditor.svelte';
 	import CodeBlock from '../guidance/CodeBlock.svelte';
 	import ExternalLink from '../guidance/ExternalLink.svelte';
@@ -44,6 +47,7 @@
 	import Tabs from '../guidance/Tabs.svelte';
 	import Modal from '../overlay/Modal.svelte';
 	import CardTargetProject from './CardTargetProject.svelte';
+	import GitHubSetupRepos from './GitHubSetupRepos.svelte';
 	import SecretValueField from './SecretValueField.svelte';
 	import SetupCheck from './SetupCheck.svelte';
 	import SetupConnectForm from './SetupConnectForm.svelte';
@@ -62,12 +66,16 @@
 	// (ADR-0041) ends with "Verbindung prüfen"; its result offers "Listen übernehmen …", which closes
 	// the assistant and opens the import dialog (no dialog from a dialog). The optional step
 	// "Zielprojekt" (ADR-0049) right after "Verbinden" holds the target project of the new entries;
-	// it saves at once like the card.
+	// it saves at once like the card. GitHub (ADR-0050 §7) creates its connection with the first
+	// repository; the same step then lists the repositories and adds more inline, and the assistant
+	// ends with "Verbindung prüfen", which asks GitHub for the token, the rate limit and every
+	// repository.
 	let {
 		kind,
 		connectionId,
 		store,
 		notion,
+		github,
 		projects = [],
 		onconnection,
 		onimport,
@@ -79,6 +87,8 @@
 		store: ConnectionsStore;
 		/** Notion import: "Verbindung prüfen" of the last step. */
 		notion: NotionStore;
+		/** GitHub: "Verbindung prüfen" of the last step. */
+		github: GitHubStore;
 		/** Every project of the catalog, archived ones included (the step "Zielprojekt"). */
 		projects?: readonly ProjectRef[];
 		/** A connection was created; the owner writes its ID into the address. */
@@ -337,6 +347,27 @@
 		// The check line reads the facts of the server; realtime brings them, this is the fallback.
 		await store.refresh(connection.id);
 	}
+
+	/** GitHub: answer of "Verbindung prüfen" on this page, null before the first. */
+	const githubCheck = $derived(connection === null ? null : github.lastCheck(connection.id));
+	const githubChecking = $derived(connection !== null && github.isChecking(connection.id));
+	const githubSummary = $derived(
+		githubCheck === null
+			? null
+			: githubCheck.kind === 'ok'
+				? checkSummary(githubCheck.check)
+				: { tone: 'error' as const, text: githubCheck.message }
+	);
+
+	async function checkGitHub() {
+		if (connection === null) return;
+		hold();
+		await github.check(connection.id, connection.label, { announce: false });
+		await store.refresh(connection.id);
+	}
+
+	/** Checking and its answer, per kind (Notion or GitHub). */
+	const checkingNow = $derived(kind === 'github' ? githubChecking : notionChecking);
 </script>
 
 {#snippet links(entry: SetupStep)}
@@ -439,6 +470,15 @@
 	{#if entry.id === 'connect'}
 		{#if connection === null}
 			<SetupConnectForm {kind} {store} oncreated={created} />
+		{:else if kind === 'github'}
+			{@const current = connection}
+			<GitHubSetupRepos
+				connection={current}
+				onsave={(settings, announcement) => {
+					hold();
+					return store.saveGitHub(current.id, settings, announcement);
+				}}
+			/>
 		{:else if mailbox}
 			<KeywordEditor
 				keywords={connection.keywords}
@@ -556,14 +596,42 @@
 				<button
 					class="button-secondary"
 					type="button"
-					aria-busy={notionChecking}
-					aria-disabled={notionChecking}
-					onclick={() => void checkNotion()}
+					aria-busy={checkingNow}
+					aria-disabled={checkingNow}
+					onclick={() => void (kind === 'github' ? checkGitHub() : checkNotion())}
 				>
-					{notionChecking ? 'Wird geprüft …' : 'Verbindung prüfen'}
+					{checkingNow ? 'Wird geprüft …' : 'Verbindung prüfen'}
 				</button>
 			</div>
-			{#if notionCheck !== null}
+			{#if kind === 'github'}
+				{#if githubSummary !== null}
+					<SectionMessage
+						tone={githubSummary.tone}
+						title={githubSummary.tone === 'success' ? 'Verbindung steht' : undefined}
+						compact={githubSummary.tone !== 'success'}
+						live
+						headingLevel={4}
+					>
+						{githubSummary.text}
+					</SectionMessage>
+				{/if}
+				{#if githubCheck?.kind === 'ok' && githubCheck.check.repos.length > 0}
+					<ul class="checked-repos" aria-label="Repositorys">
+						{#each githubCheck.check.repos as repo (repo.repo)}
+							<li class:failed={!repo.ok}>
+								{#if !repo.ok}<ErrorIcon />{/if}
+								<span>
+									{repo.name}{repo.ok
+										? repo.private
+											? ': erreichbar (privat)'
+											: ': erreichbar'
+										: `: ${repo.message}`}
+								</span>
+							</li>
+						{/each}
+					</ul>
+				{/if}
+			{:else if notionCheck !== null}
 				{#if notionCheck.kind === 'ok'}
 					<SectionMessage
 						tone={notionCheck.value.shared ? 'success' : 'info'}
@@ -849,6 +917,24 @@
 	.hint {
 		font-size: 0.8125rem;
 		color: var(--color-text-muted);
+	}
+
+	.checked-repos {
+		display: grid;
+		gap: 0.25rem;
+		padding: 0;
+		list-style: none;
+	}
+
+	.checked-repos li {
+		display: flex;
+		gap: 0.25rem;
+		align-items: flex-start;
+		overflow-wrap: anywhere;
+	}
+
+	.checked-repos li.failed {
+		color: var(--color-danger);
 	}
 
 	/* "Später fortsetzen" stands on the left, away from "Zurück" and "Weiter". */

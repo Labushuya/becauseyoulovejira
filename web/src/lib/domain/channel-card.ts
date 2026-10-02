@@ -64,6 +64,21 @@ export function connectionInfo(
 	return result === null ? last : `${last} · ${result}`;
 }
 
+/**
+ * Info line of a GitHub connection (ADR-0050 §7), e.g. "3 Repositorys · Zuletzt abgerufen vor
+ * 5 Min. · 1 neu"; without a repository "Noch kein Repository".
+ */
+export function githubInfo(
+	connection: Pick<Connection, 'type' | 'lastRunAt' | 'lastError' | 'scan' | 'github'>,
+	lastRun: RunResult | null,
+	now: number
+): string {
+	const repos = connection.github?.repos.length ?? 0;
+	if (repos === 0) return 'Noch kein Repository';
+	const count = repos === 1 ? '1 Repository' : `${repos} Repositorys`;
+	return `${count} · ${connectionInfo(connection, lastRun, now)}`;
+}
+
 /** Info line of a Notion connection, e.g. "8 Einträge aus 2 Quellen übernommen · zuletzt …". */
 export function notionInfo(
 	imports: readonly NotionImportedSource[] | null,

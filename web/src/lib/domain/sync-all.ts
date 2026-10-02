@@ -46,7 +46,8 @@ const PROBLEMS: readonly RunResult['status'][] = ['error', 'unavailable', 'missi
 /**
  * Flag after all switched-on connections ran: the new entries in the title ("3 neue", "keine
  * neuen"), every connection in the description. A failed run makes an error flag with the first
- * connection that failed; a helper that does not run or missing variables stay neutral.
+ * connection that failed; a helper that does not run or missing variables stay neutral. A rate
+ * limit of GitHub (ADR-0050 §6) is no problem: what came before it counts, the flag is neutral.
  */
 export function syncSummary(entries: readonly SyncEntry[]): SyncSummary {
 	if (entries.length === 0) {
@@ -57,19 +58,21 @@ export function syncSummary(entries: readonly SyncEntry[]): SyncSummary {
 			problem: null
 		};
 	}
+	const counted = (status: RunResult['status']) => status === 'ok' || status === 'limited';
 	const created = entries.reduce(
-		(sum, entry) => sum + (entry.result.status === 'ok' ? entry.result.created : 0),
+		(sum, entry) => sum + (counted(entry.result.status) ? entry.result.created : 0),
 		0
 	);
 	const problems = entries.filter((entry) => PROBLEMS.includes(entry.result.status));
 	const failed = entries.some((entry) => entry.result.status === 'error');
+	const limited = entries.some((entry) => entry.result.status === 'limited');
 	const channels = entries.length === 1 ? '1 Kanal' : `${entries.length} Kanäle`;
 	const title =
 		problems.length === 0
 			? `${channels} abgerufen: ${newCountText(created)}.`
 			: `${channels} abgerufen: ${newCountText(created)}, ${problems.length} mit Problem.`;
 	return {
-		tone: failed ? 'error' : problems.length > 0 ? 'info' : 'success',
+		tone: failed ? 'error' : problems.length > 0 || limited ? 'info' : 'success',
 		title,
 		description: entries
 			.map((entry) => runResultText(entry.connection.label, entry.result))

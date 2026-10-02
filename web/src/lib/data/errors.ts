@@ -5,6 +5,7 @@
 import { PIN_MESSAGES } from '../domain/comments';
 import { CONNECTION_LABEL_MESSAGES } from '../domain/connections';
 import { DUPLICATE_MESSAGES } from '../domain/duplicate';
+import { GITHUB_MESSAGES } from '../domain/github';
 import { INBOX_KEY_MESSAGES } from '../domain/inbox-keys';
 import { PROJECT_PARENT_MESSAGES } from '../domain/project-tree';
 import {
@@ -13,6 +14,7 @@ import {
 	reopenOlderMessage
 } from '../domain/recurrence-rule';
 import { SUBTASK_MESSAGES, openChildrenMessage } from '../domain/subtasks';
+import { TARGET_MESSAGES } from '../domain/target-project';
 import { TRASH_MESSAGES } from '../domain/trash';
 
 export type DataErrorKind =
@@ -94,7 +96,10 @@ const FIELD_MESSAGES: Readonly<Record<string, string>> = Object.freeze({
 	// The pinned comment (ADR-0044), the same texts as the hook.
 	...PIN_MESSAGES,
 	// "Ticket duplizieren" (ADR-0045), the same texts as the hook.
-	...DUPLICATE_MESSAGES
+	...DUPLICATE_MESSAGES,
+	// Target projects (ADR-0049) and the GitHub channel (ADR-0050), the same texts as the hooks.
+	...TARGET_MESSAGES,
+	...GITHUB_MESSAGES
 });
 
 /** Texts that depend on the field as well, keyed by `<field>:<code>`; they win over the above. */

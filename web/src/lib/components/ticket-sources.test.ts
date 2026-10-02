@@ -142,6 +142,36 @@ describe('TicketSources', () => {
 		expect(link.textContent).toContain('Nur Adresse');
 	});
 
+	it('shows the status of a watched source of GitHub next to its copy (ADR-0050 §5)', async () => {
+		const pull = item('pull00000000001', {
+			channel: 'github',
+			kind: 'pull_request',
+			title: 'PR #7 in octo-org/roadmap: Roadmap Q4',
+			sourceUrl: 'https://github.com/octo-org/roadmap/pull/7',
+			watch: { kind: 'pull', state: 'merged', since: '2026-10-02T12:05:00.000Z' }
+		});
+		const file = item('file00000000001', {
+			channel: 'github',
+			kind: 'change',
+			title: 'CHANGELOG.md in octo-org/roadmap geändert',
+			original: 'changelog_abc.md',
+			watch: { kind: 'file', state: 'current', since: null }
+		});
+		await setup([pull, file, CHAT]);
+		const rows = within(screen.getByRole('region', { name: 'Quellen' })).getAllByRole('listitem');
+		const rowOf = (title: string) => rows.find((row) => row.textContent?.includes(title));
+		const pullRow = rowOf('PR #7 in octo-org/roadmap');
+		expect(pullRow?.textContent).toContain('GitHub');
+		expect(pullRow?.textContent).toContain('PR gemergt');
+		expect(pullRow?.textContent).toContain('PR gemergt (am 02.10.2026 14:05)');
+		const fileRow = rowOf('CHANGELOG.md in octo-org/roadmap geändert');
+		expect(fileRow?.textContent).toContain('Vollständig');
+		expect(fileRow?.textContent).toContain('Unverändert');
+		// A source nobody watches shows no status; nothing of it is red.
+		expect(rowOf('Nachricht chat00000000001')?.textContent).not.toMatch(/Unverändert|PR /);
+		expect(document.querySelector('[data-tone="danger"]')).toBeNull();
+	});
+
 	it('names the connection of a source and follows a rename at once (KK-3)', async () => {
 		let emit: (change: RecordChange<ConnectionName>) => void = () => undefined;
 		const names = new ConnectionNamesStore(

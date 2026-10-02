@@ -715,6 +715,7 @@ describe('channel catalog', () => {
 			'Telegram-Bot',
 			'Web.de',
 			'Gmail',
+			'GitHub',
 			'Proton Mail',
 			'Notion (Listen übernehmen)',
 			'WhatsApp Web'
@@ -726,7 +727,12 @@ describe('channel catalog', () => {
 		expect(within(tiles[1]!).getByText('Nicht eingerichtet')).toBeTruthy();
 		expect(within(tiles[2]!).getByText('Nicht eingerichtet')).toBeTruthy();
 		expect(within(tiles[3]!).queryByText('Nicht eingerichtet')).toBeNull();
-		expect(within(tiles[4]!).getByText('Per Datei')).toBeTruthy();
+		// GitHub (ADR-0050) watches repositories like the services above and has its assistant.
+		expect(within(tiles[4]!).getByText('Nicht eingerichtet')).toBeTruthy();
+		expect(catalog.getByRole('link', { name: 'Einrichten: GitHub' }).getAttribute('href')).toBe(
+			'/einstellungen/kanaele?einrichten=github'
+		);
+		expect(within(tiles[5]!).getByText('Per Datei')).toBeTruthy();
 
 		// Since EH-5 to EH-7 every tile links to its assistant or guide (a middle click works too).
 		expect(catalog.getByRole('link', { name: 'Einrichten: Web.de' }).getAttribute('href')).toBe(
@@ -736,12 +742,12 @@ describe('channel catalog', () => {
 			'/einstellungen/kanaele?einrichten=proton'
 		);
 		// Notion (ADR-0041) only imports on request: the tile says so and leads to its assistant.
-		expect(within(tiles[5]!).getByText('Import')).toBeTruthy();
+		expect(within(tiles[6]!).getByText('Import')).toBeTruthy();
 		expect(catalog.getByRole('link', { name: 'Einrichten: Notion' }).getAttribute('href')).toBe(
 			'/einstellungen/kanaele?einrichten=notion'
 		);
 		// The browser extension for WhatsApp Web (ADR-0038) has no connection.
-		expect(within(tiles[6]!).getByText('Erweiterung')).toBeTruthy();
+		expect(within(tiles[7]!).getByText('Erweiterung')).toBeTruthy();
 		expect(
 			catalog.getByRole('link', { name: 'Einrichten: WhatsApp Web' }).getAttribute('href')
 		).toBe('/einstellungen/kanaele?einrichten=whatsapp-web');

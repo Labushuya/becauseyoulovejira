@@ -56,7 +56,10 @@ async function user() {
 	return { id: record.id, pb };
 }
 
-/** A GitHub connection of `who`; created by the superuser until the interface offers the kind (GH-2). */
+/**
+ * A GitHub connection of `who`, created by the superuser with any settings; the way of a user
+ * through the interface is web-data-github.test.mjs (GH-2).
+ */
 function connection(who, settings, data = {}) {
 	return superuser.collection('connections').create({
 		owner: who.id,

@@ -22,6 +22,7 @@ import {
 	renameConnection,
 	runConnection,
 	saveConnectionSettings,
+	saveGitHubSettings,
 	scanConnection,
 	setConnectionEnabled,
 	setConnectionTarget,
@@ -43,6 +44,7 @@ import {
 	type ScanResult,
 	type SecretStatus
 } from '$lib/domain/connections';
+import type { GitHubSettings } from '$lib/domain/github';
 import {
 	importSummary,
 	type MailboxImportResult,
@@ -67,6 +69,8 @@ export interface ConnectionsData {
 	/** Changes only the target project of the new entries (ADR-0049); null takes it away. */
 	setTarget(id: string, projectId: string | null): Promise<Connection>;
 	saveSettings(connection: Connection, settings: ConnectionSettingsDraft): Promise<Connection>;
+	/** Interval and repositories of a GitHub connection (ADR-0050 §2), written whole. */
+	saveGitHub(id: string, settings: GitHubSettings): Promise<Connection>;
 	remove(id: string): Promise<void>;
 	secretStatus(id: string, options: RequestOptions): Promise<SecretStatus>;
 	run(id: string): Promise<RunResult>;
@@ -96,6 +100,7 @@ export function connectionsData(pb: PocketBase): ConnectionsData {
 		rename: (id, label) => renameConnection(pb, id, label),
 		setTarget: (id, projectId) => setConnectionTarget(pb, id, projectId),
 		saveSettings: (connection, settings) => saveConnectionSettings(pb, connection, settings),
+		saveGitHub: (id, settings) => saveGitHubSettings(pb, id, settings),
 		remove: (id) => deleteConnection(pb, id),
 		secretStatus: (id, options) => getSecretStatus(pb, id, options),
 		run: (id) => runConnection(pb, id),
@@ -370,6 +375,26 @@ export class ConnectionsStore {
 			this.#items.set(id, updated);
 			this.#notify(announcement);
 		});
+	}
+
+	/**
+	 * Saves the interval and the repositories of a GitHub connection (ADR-0050 §2): add, change or
+	 * remove a repository, change the interval. `announcement` is the text of the flag. Resolves to
+	 * the error text of the server, or null once it is saved (or the session ended).
+	 */
+	async saveGitHub(
+		id: string,
+		settings: GitHubSettings,
+		announcement: string
+	): Promise<string | null> {
+		if (!this.#items.has(id)) return null;
+		const result = await this.#act(async () => {
+			const updated = await this.#data.saveGitHub(id, settings);
+			this.#items.set(id, updated);
+			this.#notify(announcement);
+		});
+		if (result.ok) return null;
+		return result.fields.settings ?? Object.values(result.fields)[0] ?? result.message ?? null;
 	}
 
 	async remove(id: string): Promise<ConnectionActionResult> {

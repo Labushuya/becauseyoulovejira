@@ -82,6 +82,11 @@ export function copyNote(
 			if (notion === 'truncated') {
 				return 'Der Inhalt ist nur bis zur Grenze je Seite übernommen. Vollständig steht er in Notion.';
 			}
+			if (item.channel === 'github') {
+				// ADR-0050 §3 and §4: a pull request or release is its text; a file without a copy was too
+				// large, no text or one of too many changes at once.
+				return 'Gespeichert ist der Text des Eintrags. Den vollständigen Stand zeigt der Link zu GitHub.';
+			}
 			return 'Gespeichert ist nur der Text. Bilder, Dateien und Anhänge der Quelle sind nicht Teil der Kopie.';
 	}
 }

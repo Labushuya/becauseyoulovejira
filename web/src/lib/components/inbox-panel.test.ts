@@ -150,6 +150,39 @@ describe('inbox panel', () => {
 		).toBe('Postfach · Gmail Arbeit');
 	});
 
+	it('shows the repository, the file and the status of a watched source of GitHub (ADR-0050 §5)', async () => {
+		setup(
+			entry({
+				channel: 'github',
+				kind: 'change',
+				title: 'CHANGELOG.md in octo-org/roadmap geändert',
+				sourceMeta: { github: { kind: 'file', repo: 'octo-org/roadmap', path: 'CHANGELOG.md' } },
+				original: 'changelog_abc.md',
+				watch: { kind: 'file', state: 'changed', since: '2026-10-02T12:05:00.000Z' }
+			})
+		);
+		await screen.findByRole('heading', { name: 'CHANGELOG.md in octo-org/roadmap geändert' });
+		const details = within(screen.getByRole('complementary'));
+		const row = (label: string) => details.getByText(label, { selector: 'dt' }).nextElementSibling;
+		expect(row('Quelle')?.textContent?.trim()).toBe('GitHub');
+		expect(row('Art')?.textContent?.trim()).toBe('Änderung');
+		expect(row('Repository')?.textContent?.trim()).toBe('octo-org/roadmap');
+		expect(row('Datei')?.textContent?.trim()).toBe('CHANGELOG.md');
+		const status = within(row('Status der Quelle') as HTMLElement);
+		expect(status.getByText('Seit Import geändert')).toBeTruthy();
+		expect(
+			status.getByText('Seit Import erneut geändert (zuletzt am 02.10.2026 14:05)')
+		).toBeTruthy();
+		// Only shown: no tone of an error.
+		expect(row('Status der Quelle')?.querySelector('[data-tone="danger"]')).toBeNull();
+	});
+
+	it('shows no status for an entry without a watched source', async () => {
+		setup();
+		await screen.findByRole('heading', { name: 'Rechnung September' });
+		expect(screen.queryByText('Status der Quelle')).toBeNull();
+	});
+
 	it('shows the text as sanitised Markdown', async () => {
 		setup();
 		const body = await screen.findByRole('region', { name: 'Text' });

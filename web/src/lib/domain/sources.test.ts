@@ -89,6 +89,17 @@ describe('copyCompleteness', () => {
 		).toBe('text');
 	});
 
+	it('calls a file of GitHub complete with its copy, else points to GitHub (ADR-0050 §3)', () => {
+		const file = item({ channel: 'github', kind: 'change', original: 'changelog_abc.md' });
+		expect(copyCompleteness(file)).toBe('complete');
+		expect(copyNote(file)).toBeNull();
+		const pull = item({ channel: 'github', kind: 'pull_request' });
+		expect(copyCompleteness(pull)).toBe('text');
+		expect(copyNote(pull)).toBe(
+			'Gespeichert ist der Text des Eintrags. Den vollständigen Stand zeigt der Link zu GitHub.'
+		);
+	});
+
 	it('calls a Notion entry complete only with its whole content (ADR-0041 §5)', () => {
 		const notion = (content: string, original = 'notion_abc.json') =>
 			item({ channel: 'notion', original, sourceMeta: { notion: { content } } });

@@ -6,6 +6,7 @@ import { describe, expect, it } from 'vitest';
 import {
 	CARD_STATUS,
 	connectionInfo,
+	githubInfo,
 	inboxKeysInfo,
 	inboxKeysStatus,
 	notionInfo,
@@ -103,6 +104,31 @@ describe('info lines of the cards', () => {
 		expect(connectionInfo({ ...mail, scan: { ...scan, state: 'done' } }, null, NOW)).toBe(
 			'Zuletzt abgerufen vor 5 Min. · ohne Fehler'
 		);
+	});
+
+	it('counts the repositories of GitHub before the last run (ADR-0050 §7)', () => {
+		const repo = {
+			repo: 'octo-org/roadmap',
+			paths: ['CHANGELOG*'],
+			events: { files: true, pulls: true, releases: true },
+			target: null
+		};
+		const github = { ...calendar, type: 'github' as const, github: { interval: 15, repos: [] } };
+		expect(githubInfo(github, null, NOW)).toBe('Noch kein Repository');
+		expect(githubInfo({ ...github, github: { interval: 15, repos: [repo] } }, null, NOW)).toBe(
+			'1 Repository · Noch nie abgerufen'
+		);
+		const two = {
+			...github,
+			lastRunAt: '2026-09-30 09:55:00.000Z',
+			github: { interval: 15, repos: [repo, { ...repo, repo: 'octo-org/site' }] }
+		};
+		expect(githubInfo(two, RUN, NOW)).toBe(
+			'2 Repositorys · Zuletzt abgerufen vor 5 Min. · 3 neu, 1 schon vorhanden'
+		);
+		expect(
+			githubInfo(two, { ...RUN, status: 'limited', hint: 'Anfragelimit erreicht.' }, NOW)
+		).toBe('2 Repositorys · Zuletzt abgerufen vor 5 Min. · Anfragelimit erreicht');
 	});
 
 	it('names what Notion took over', () => {

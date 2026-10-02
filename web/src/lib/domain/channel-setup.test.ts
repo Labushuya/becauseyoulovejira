@@ -529,3 +529,104 @@ describe('Notion (ADR-0041, plan notion-import NI-2)', () => {
 		expect(stepCheck('notion', 'check', shared)?.tone).toBe('done');
 	});
 });
+
+describe('GitHub (ADR-0050 §7)', () => {
+	const REPO = {
+		repo: 'octo-org/roadmap',
+		paths: ['CHANGELOG*'],
+		events: { files: true, pulls: true, releases: true },
+		target: null
+	};
+	function watched(overrides: Partial<Connection> = {}, secret = true, repos = [REPO]): SetupFacts {
+		return {
+			connection: connection({
+				label: 'GitHub',
+				secretEnv: 'BYL_GITHUB_TOKEN',
+				github: { interval: 15, repos },
+				...overrides
+			}),
+			secretStatus: { secret, allowlist: null }
+		};
+	}
+	const OK = '2026-10-02 10:00:00.000Z';
+
+	it('guides through token, variable, restart, repositories, target project and check', () => {
+		const steps = setupSteps('github');
+		expect(steps.map((step) => step.id)).toEqual([
+			'pat',
+			'variable',
+			'restart',
+			'connect',
+			'target',
+			'check'
+		]);
+		expect(SETUP_KINDS).toContain('github');
+		expect(GUIDE_KINDS).not.toContain('github');
+		expect(defaultVariable('github')).toBe('BYL_GITHUB_TOKEN');
+		expect(setupTargetOf(new URLSearchParams('einrichten=github'))).toEqual({
+			kind: 'github',
+			connectionId: null
+		});
+		expect(setupKindOf({ type: 'github', mailProvider: '' })).toBe('github');
+		const actions = steps[0]!.actions.join(' ');
+		// The exact click path of GitHub (fine-grained, selected repositories, read only).
+		expect(actions).toMatch(/Profilbild.*„Settings“/);
+		expect(actions).toMatch(
+			/„Developer settings“.*„Personal access tokens“ → „Fine-grained tokens“/
+		);
+		expect(actions).toMatch(/„Generate new token“/);
+		expect(actions).toMatch(/„Only select repositories“/);
+		expect(actions).toMatch(/„Contents“ und „Pull requests“ auf „Read-only“/);
+		expect(actions).toMatch(/„Metadata“ steht automatisch auf „Read-only“/);
+		expect(actions).toMatch(/github_pat_/);
+		expect(steps[0]!.links.map((link) => link.href)).toEqual([
+			'https://github.com/settings/personal-access-tokens'
+		]);
+		expect(steps[1]!.commands[0]!.placeholders.wert).toEqual({ label: 'Token', secret: true });
+		// The token is optional: the restart has no check of its own.
+		expect(steps[2]!.checked).toBe(false);
+		expect(steps[3]).toMatchObject({ label: 'Repositorys', checked: true });
+	});
+
+	it('follows the facts: repositories, then the check of the server', () => {
+		expect(setupProgress('github', NONE)).toBe(0);
+		expect(stepCheck('github', 'restart', NONE)).toBeNull();
+		expect(stepCheck('github', 'connect', NONE)).toEqual({
+			tone: 'open',
+			text: 'Noch keine Verbindung angelegt.'
+		});
+		const fresh = watched();
+		expect(setupProgress('github', fresh)).toBe(5);
+		expect(stepCheck('github', 'connect', fresh)).toEqual({
+			tone: 'done',
+			text: 'Verbindung „GitHub“ mit 1 Repository angelegt.'
+		});
+		expect(stepCheck('github', 'restart', fresh)).toEqual({
+			tone: 'done',
+			text: 'Die App sieht BYL_GITHUB_TOKEN.'
+		});
+		// Without the token the app reads public repositories; the step says so, without a warning.
+		expect(stepCheck('github', 'restart', watched({}, false))).toEqual({
+			tone: 'open',
+			text: 'Die App sieht BYL_GITHUB_TOKEN noch nicht; ohne Token liest sie nur öffentliche Repositorys.'
+		});
+		expect(stepCheck('github', 'connect', watched({}, true, []))).toEqual({
+			tone: 'warning',
+			text: 'Verbindung „GitHub“ angelegt, noch ohne Repository.'
+		});
+		expect(stepCheck('github', 'check', fresh)).toEqual({
+			tone: 'open',
+			text: 'Noch nicht geprüft.'
+		});
+		const checked = watched({ lastRunAt: OK, lastOkAt: OK });
+		expect(setupComplete('github', checked)).toBe(true);
+		expect(stepCheck('github', 'check', checked)).toEqual({
+			tone: 'done',
+			text: 'GitHub antwortet und die App liest die eingetragenen Repositorys, zuletzt 02.10.2026 12:00.'
+		});
+		expect(setupComplete('github', watched({ lastRunAt: OK, lastOkAt: OK }, false))).toBe(true);
+		const refused = watched({ lastRunAt: OK, lastError: 'GitHub lehnt den Token ab (401).' });
+		expect(stepCheck('github', 'check', refused)?.tone).toBe('error');
+		expect(setupComplete('github', watched({ lastRunAt: OK, lastOkAt: OK }, true, []))).toBe(false);
+	});
+});

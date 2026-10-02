@@ -30,6 +30,7 @@ import { FlagStore } from '$lib/stores/flags.svelte';
 import { ImportKeywordsStore, type ImportKeywordsData } from '$lib/stores/import-keywords.svelte';
 import { EMPTY_IMPORT_KEYWORDS } from '$lib/domain/keywords';
 import ChannelsViewHarness from '$lib/test/ChannelsViewHarness.svelte';
+import { githubStoreOf } from '$lib/test/github-fake';
 import { notionStoreOf } from '$lib/test/notion-fake';
 import { useOverlayStubs } from '$lib/test/overlay-stubs';
 import ChannelsView from './ChannelsView.svelte';
@@ -110,6 +111,10 @@ function setup(items: Connection[] = [CAL, BOT], statuses: Record<string, Secret
 			replySaved: settings.replySaved,
 			replyNoMatch: settings.replyNoMatch,
 			matchBody: settings.matchBody
+		})),
+		saveGitHub: vi.fn<ConnectionsData['saveGitHub']>(async (id, settings) => ({
+			...(items.find((item) => item.id === id) as Connection),
+			github: settings
 		})),
 		remove: vi.fn<ConnectionsData['remove']>(async () => undefined),
 		secretStatus: vi.fn<ConnectionsData['secretStatus']>(
@@ -229,7 +234,14 @@ function renderCards(store: ConnectionsStore) {
 	const onadd = vi.fn();
 	const onsetup = vi.fn();
 	render(ConnectionsSection, {
-		props: { store, notion: notionStoreOf(), onadd, onsetup, onimport: vi.fn() }
+		props: {
+			store,
+			notion: notionStoreOf(),
+			github: githubStoreOf(),
+			onadd,
+			onsetup,
+			onimport: vi.fn()
+		}
 	});
 	return { onadd, onsetup };
 }
@@ -264,6 +276,7 @@ function renderView(store: ConnectionsStore) {
 			captureUrl: 'http://127.0.0.1:8090/eingang/neu',
 			connections: store,
 			notion: notionStoreOf(),
+			github: githubStoreOf(),
 			onsetupchange
 		}
 	});
@@ -462,6 +475,7 @@ describe('connections section', () => {
 			props: {
 				store,
 				notion: notionStoreOf(),
+				github: githubStoreOf(),
 				onadd: vi.fn(),
 				onsetup: vi.fn(),
 				onimport: vi.fn()
@@ -495,6 +509,7 @@ describe('channels view: variables', () => {
 				captureUrl: 'http://127.0.0.1:8090/eingang/neu',
 				connections: store,
 				notion: notionStoreOf(),
+				github: githubStoreOf(),
 				onsetupchange: vi.fn()
 			}
 		});
@@ -891,6 +906,7 @@ describe('Postfächer (E4 plan, package 22)', () => {
 				captureUrl: 'http://127.0.0.1:8090/eingang/neu',
 				connections: store,
 				notion: notionStoreOf(),
+				github: githubStoreOf(),
 				importKeywords,
 				onsetupchange: vi.fn()
 			}

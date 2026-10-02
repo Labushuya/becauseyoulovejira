@@ -73,6 +73,7 @@ function connectionsOf(item: Connection) {
 			targetProjectId: projectId
 		})),
 		saveSettings: vi.fn<ConnectionsData['saveSettings']>(),
+		saveGitHub: vi.fn<ConnectionsData['saveGitHub']>(),
 		remove: vi.fn<ConnectionsData['remove']>(),
 		secretStatus: vi.fn<ConnectionsData['secretStatus']>(async () => ({
 			secret: true,

@@ -71,6 +71,8 @@ export const HELP_SECTIONS = [
 	{ id: 'whatsapp-web', label: 'WhatsApp Web' },
 	// Notion (ADR-0041): linked from its card and its import dialog.
 	{ id: 'notion', label: 'Notion' },
+	// GitHub (ADR-0050): linked from its card and its assistant.
+	{ id: 'github', label: 'GitHub' },
 	{ id: 'fragen', label: 'Häufige Fragen' },
 	{ id: 'betrieb', label: 'Betrieb' },
 	// Backups and the emergency plan (ADR-0046 §8): linked from the page "Sicherung".

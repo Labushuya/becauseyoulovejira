@@ -9,8 +9,9 @@
 // watch (JSON, hidden: what the GitHub channel knows of its repositories, ADR-0050) the same way.
 var SERVER_FIELDS = ['cursor', 'last_run_at', 'last_ok_at', 'last_error', 'last_hint', 'running_since', 'scan', 'watch'];
 
-// Kinds a user can set up. Notion only imports lists on request (ADR-0041, since NI-2).
-var CREATABLE_TYPES = ['calendar', 'telegram', 'mail', 'notion'];
+// Kinds a user can set up. Notion only imports lists on request (ADR-0041, since NI-2); GitHub
+// watches repositories read only (ADR-0050, since GH-2).
+var CREATABLE_TYPES = ['calendar', 'telegram', 'mail', 'notion', 'github'];
 
 // Kinds that also run without their secret: GitHub reads public repositories without a token
 // (ADR-0050 §1, 60 requests per hour).

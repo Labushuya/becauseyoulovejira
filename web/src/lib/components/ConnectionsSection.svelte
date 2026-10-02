@@ -14,9 +14,11 @@
 		CONNECTIONS_UNAVAILABLE_MESSAGE,
 		type ConnectionsStore
 	} from '$lib/stores/connections.svelte';
+	import type { GitHubStore } from '$lib/stores/github.svelte';
 	import type { NotionStore } from '$lib/stores/notion.svelte';
 	import ChannelEditModal from './channels/ChannelEditModal.svelte';
 	import ConnectionCard from './channels/ConnectionCard.svelte';
+	import GitHubCard from './channels/GitHubCard.svelte';
 	import NotionCard from './channels/NotionCard.svelte';
 	import EmptyState from './guidance/EmptyState.svelte';
 	import SectionMessage from './guidance/SectionMessage.svelte';
@@ -31,10 +33,12 @@
 	// at once. Access data are Windows user variables; the app stores only their names (ADR-0018).
 	// New connections come from the catalog below (ChannelCatalog). A Notion connection (ADR-0041)
 	// has its own configuration: it fetches nothing by itself and opens the import dialog. Every
-	// card has the target project of its new entries in its details (ADR-0049).
+	// card has the target project of its new entries in its details (ADR-0049). A GitHub connection
+	// (ADR-0050) keeps its repositories in its card: add, change, remove, the interval.
 	let {
 		store,
 		notion,
+		github,
 		projects = [],
 		onadd,
 		onsetup,
@@ -43,6 +47,8 @@
 		store: ConnectionsStore;
 		/** Notion import (ADR-0041) for the cards of Notion connections. */
 		notion: NotionStore;
+		/** Details and "Verbindung prüfen" of the cards of GitHub connections (ADR-0050). */
+		github: GitHubStore;
 		/** Every project of the catalog, archived ones included (target projects, ADR-0049). */
 		projects?: readonly ProjectRef[];
 		/** "Kanal hinzufügen" of the empty state: to the catalog. */
@@ -239,7 +245,7 @@
 				icon="channels"
 				headingLevel={4}
 				title="Noch kein Kanal verbunden"
-				description="Verbinde einen Kalender, einen Telegram-Bot oder ein Postfach, oder übernimm Listen aus Notion. Die Einrichtung dauert etwa fünf Minuten."
+				description="Verbinde einen Kalender, einen Telegram-Bot oder ein Postfach, übernimm Listen aus Notion oder beobachte Repositorys auf GitHub. Die Einrichtung dauert etwa fünf Minuten."
 			>
 				{#snippet primary()}
 					<button class="button-primary" type="button" onclick={onadd}>Kanal hinzufügen</button>
@@ -250,7 +256,8 @@
 				Solange die App läuft, ruft Google Calendar alle 15 Minuten ab, Telegram jede Minute und ein
 				Postfach alle 5 Minuten; „Aktualisieren“ zeigt das Ergebnis. „Jetzt abrufen“ holt sofort ab,
 				auch bei einem Postfach. Wie weit ein Posteingang durchsucht ist, zeigt seine Karte von
-				selbst. Notion ruft nie von selbst ab: Listen übernimmst du an seiner Karte.
+				selbst. Notion ruft nie von selbst ab: Listen übernimmst du an seiner Karte. GitHub ruft
+				alle 15 Minuten ab, einstellbar an der Karte.
 			</p>
 			<ul class="grid">
 				{#each store.connections as connection (connection.id)}
@@ -269,6 +276,28 @@
 									deleteError = null;
 									pendingDelete = connection;
 								}}
+								onrename={(label) => store.rename(connection.id, label)}
+								ontarget={(project) => store.setTarget(connection.id, project)}
+								{projects}
+								others={othersOf(connection)}
+							/>
+						{:else if connection.type === 'github'}
+							<GitHubCard
+								{connection}
+								secretStatus={store.status(connection.id)}
+								{github}
+								running={store.isRunning(connection.id)}
+								lastRun={store.lastRun(connection.id)}
+								message={messageOf(connection)}
+								onrun={() => void runNow(connection)}
+								onpause={(enabled) => void setEnabled(connection, enabled)}
+								onsetup={() => onsetup(connection)}
+								ondelete={() => {
+									deleteError = null;
+									pendingDelete = connection;
+								}}
+								onsave={(settings, announcement) =>
+									store.saveGitHub(connection.id, settings, announcement)}
 								onrename={(label) => store.rename(connection.id, label)}
 								ontarget={(project) => store.setTarget(connection.id, project)}
 								{projects}

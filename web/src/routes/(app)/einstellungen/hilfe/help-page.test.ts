@@ -1,6 +1,7 @@
-// Settings "Hilfe" (plan EH-9, §3.10): jump links to eleven sections, the shortcuts of every context
+// Settings "Hilfe" (plan EH-9, §3.10): jump links to twelve sections, the shortcuts of every context
 // from the one source, the short syntax with its tokens, the access data moved here from "Kanäle",
-// the own inbox with examples and WhatsApp Web (ADR-0038), the frequent questions as <details>, the
+// the own inbox with examples and WhatsApp Web (ADR-0038), Notion (ADR-0041) and GitHub (ADR-0050)
+// with the steps of the token, the frequent questions as <details>, the
 // operation of the app with the frequent problems of the scripts (ADR-0048), the backups with the
 // emergency plan (ADR-0046 §8) and the storage (ADR-0047 §6). No table (description lists).
 
@@ -35,7 +36,7 @@ describe('help page (EH-9)', () => {
 		}
 	});
 
-	it('jumps to eleven sections that exist on the page', () => {
+	it('jumps to the sections that exist on the page, twelve since GitHub', () => {
 		const { container } = render(Page);
 
 		const jump = within(screen.getByRole('navigation', { name: 'Auf dieser Seite' }));
@@ -48,6 +49,7 @@ describe('help page (EH-9)', () => {
 			'Eigener Eingang (API)',
 			'WhatsApp Web',
 			'Notion',
+			'GitHub',
 			'Häufige Fragen',
 			'Betrieb',
 			'Sicherung & Notfall',
@@ -457,6 +459,42 @@ describe('help page (EH-9)', () => {
 				.getByRole('link', { name: 'Kanäle → Notion (Listen übernehmen) → Einrichten' })
 				.getAttribute('href')
 		).toBe('/einstellungen/kanaele?einrichten=notion');
+	});
+
+	it('explains GitHub: read only, the steps of the token, paths, first run and status (ADR-0050)', () => {
+		render(Page);
+		const section = screen.getByRole('region', { name: 'GitHub' });
+		const content = text(section);
+		for (const phrase of [
+			'Die App liest nur',
+			'schreibt nie etwas nach GitHub',
+			'„Settings“ → links ganz unten „Developer settings“ → „Personal access tokens“ → „Fine-grained tokens“ → „Generate new token“',
+			'„Only select repositories“',
+			'„Contents“ und „Pull requests“ auf „Read-only“',
+			'„Metadata“ steht von selbst auf „Read-only“',
+			'github_pat_',
+			'BYL_GITHUB_TOKEN',
+			'neu-starten.bat',
+			'60 Anfragen je Stunde',
+			'ROADMAP*',
+			'docs/**/roadmap*',
+			'Der erste Abruf merkt sich nur den Stand',
+			'höchstens 20',
+			'Stichwörter gibt es bei GitHub nicht',
+			'„Seit Import geändert“',
+			'„PR gemergt“',
+			'Das Ticket ändert sich dadurch nie',
+			'5 bis 60 Minuten',
+			'ETag'
+		]) {
+			expect(content, phrase).toContain(phrase);
+		}
+		expect(
+			within(section)
+				.getByRole('link', { name: 'Kanäle → GitHub → Einrichten' })
+				.getAttribute('href')
+		).toBe('/einstellungen/kanaele?einrichten=github');
+		expect(section.querySelectorAll('table')).toHaveLength(0);
 	});
 
 	it('explains the backups and the emergency plan for a new machine, from the source of the Notfallkarte (ADR-0046)', () => {

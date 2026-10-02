@@ -4,6 +4,7 @@
 	import type { Connection } from '$lib/domain/connections';
 	import type { ProjectRef } from '$lib/domain/ticket';
 	import type { ConnectionsStore } from '$lib/stores/connections.svelte';
+	import type { GitHubStore } from '$lib/stores/github.svelte';
 	import type { ImportKeywordsStore } from '$lib/stores/import-keywords.svelte';
 	import type { InboxKeysStore } from '$lib/stores/inbox-keys.svelte';
 	import type { InboxTargetsStore } from '$lib/stores/inbox-targets.svelte';
@@ -35,11 +36,13 @@
 	// plan kanal-karten KK-2 every card of the page stands on the building block ChannelCard. Every
 	// card that brings entries has their target project in its details and the assistants ask for
 	// it in an optional step (ADR-0049): connections keep it themselves, the own inbox, WhatsApp
-	// Web and the files per user (`inboxTargets`).
+	// Web and the files per user (`inboxTargets`). GitHub (ADR-0050) has its assistant (ChannelSetup)
+	// and its card with the repositories, their details and "Verbindung prüfen" (`github`).
 	let {
 		captureUrl,
 		connections,
 		notion,
+		github,
 		importKeywords = null,
 		inboxKeys = null,
 		inboxTargets = null,
@@ -53,6 +56,8 @@
 		connections: ConnectionsStore;
 		/** Notion import (ADR-0041): check, sources, preview, import, "Erneut abrufen". */
 		notion: NotionStore;
+		/** GitHub (ADR-0050): details of the cards and "Verbindung prüfen". */
+		github: GitHubStore;
 		/**
 		 * Keywords of the file imports, for the numbers on the files card, and of the channels of the
 		 * own inbox (ADR-0038).
@@ -108,6 +113,7 @@
 	<ConnectionsSection
 		store={connections}
 		{notion}
+		{github}
 		{projects}
 		onadd={focusCatalog}
 		onsetup={showSetup}
@@ -162,6 +168,7 @@
 				connectionId={setup.connectionId}
 				store={connections}
 				{notion}
+				{github}
 				{projects}
 				onconnection={(id) => onsetupchange({ kind: setup?.kind ?? 'kalender', connectionId: id })}
 				onimport={(connection) => {

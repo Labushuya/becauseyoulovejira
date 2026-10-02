@@ -12,6 +12,7 @@
 		type CopyCompleteness
 	} from '$lib/domain/sources';
 	import type { Ticket } from '$lib/domain/ticket';
+	import { WATCH_LABELS, WATCH_LOZENGES, watchText } from '$lib/domain/watch';
 	import { findConnectionNames } from '$lib/stores/connection-names.svelte';
 	import type { TicketPickerSource } from '$lib/stores/ticket-picker.svelte';
 	import type { TicketSourcesStore } from '$lib/stores/ticket-sources.svelte';
@@ -34,7 +35,9 @@
 	// the main source stays and says why. Both open a modal in the side panel; in the full view
 	// (itself a modal) they unfold inline: "Quelle hinzufügen …" below the heading, "Anderem Ticket
 	// zuordnen …" below its entry (ADR-0025 section 3, addendum 16). The copy of a source made for a
-	// duplicate says where it came from ("Kopie aus HAUS-12", ADR-0031 addendum F).
+	// duplicate says where it came from ("Kopie aus HAUS-12", ADR-0031 addendum F). A source a
+	// channel keeps watching (GitHub, ADR-0050 §5, ADR-0031 addendum I) shows its status as a
+	// second lozenge: whether the file changed since, or where the pull request stands.
 	let {
 		ticket,
 		store,
@@ -161,6 +164,20 @@
 							icon={LOZENGES[copy].icon}
 							tone={LOZENGES[copy].tone}
 						/>
+						{#if item.watch !== undefined}
+							<!-- Status of the watched source (ADR-0050 §5): only shown, the ticket never changes. -->
+							{@const watch = item.watch}
+							<p class="watch">
+								<Lozenge
+									label={WATCH_LABELS[watch.state]}
+									icon={WATCH_LOZENGES[watch.state].icon}
+									tone={WATCH_LOZENGES[watch.state].tone}
+								/>
+								{#if watch.since !== null}
+									<span class="origin">{watchText(watch)}</span>
+								{/if}
+							</p>
+						{/if}
 						{#if main}
 							<p class="origin">
 								Bleibt bei diesem Ticket, weil es aus ihr entstanden ist: kein Lösen, kein anderes
@@ -359,6 +376,13 @@
 		font-size: var(--font-size-small);
 		color: var(--color-text-muted);
 		overflow-wrap: anywhere;
+	}
+
+	.watch {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 0.125rem 0.5rem;
+		align-items: center;
 	}
 
 	.actions {
