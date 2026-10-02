@@ -19,6 +19,7 @@
 		type FolderDraftField
 	} from '$lib/domain/folders';
 	import {
+		AUTO_HINT,
 		EMPTY_GITHUB_SETTINGS,
 		emptyRepoDraft,
 		repoDraftErrors,
@@ -38,8 +39,9 @@
 	// saves at once, so there is nothing to discard; field errors of the client and the server stand
 	// at the field. It replaces the former modal "Verbindung anlegen". The variable is preset to a
 	// name no connection uses yet, like the steps before (ADR-0041, addendum of 2026-10-01). GitHub
-	// (ADR-0050 §7) creates its connection with the first repository, so the step asks for it too.
-	// A folder connection (ADR-0051 §7) has no variable and comes with its first folder, whose path
+	// (ADR-0050 §7) creates its connection with the first repository, so the step asks for it too,
+	// or with "Alle meine Repositorys beobachten" (addendum of 2026-10-02), then the first repository
+	// is optional. A folder connection (ADR-0051 §7) has no variable and comes with its first folder, whose path
 	// follows the system of the server (the server checks it on the disk).
 	let {
 		kind,
@@ -56,7 +58,8 @@
 		label: `${uid}-label`,
 		secret: `${uid}-secret`,
 		allowlist: `${uid}-allowlist`,
-		user: `${uid}-user`
+		user: `${uid}-user`,
+		auto: `${uid}-auto`
 	};
 
 	function initialDraft(): ConnectionDraft {
@@ -72,8 +75,9 @@
 	const platform = $derived(folderPlatformOf(host?.platform ?? DEFAULT_HOST_PLATFORM));
 
 	let draft = $state<ConnectionDraft>(initialDraft());
-	/** GitHub: the first repository. */
+	/** GitHub: the first repository, optional with "Alle meine Repositorys". */
 	let repo = $state<GitHubRepoDraft>(emptyRepoDraft());
+	let auto = $state(false);
 	/** Folders: the first folder. */
 	let folder = $state<FolderDraft>(emptyFolderDraft());
 	let submitted = $state(false);
@@ -83,8 +87,10 @@
 
 	const github = $derived(draft.type === 'github');
 	const folders = $derived(draft.type === 'folder');
+	/** GitHub: no first repository, because "Alle meine Repositorys" brings them. */
+	const withoutRepo = $derived(auto && repo.input.trim() === '');
 	const repoErrors = $derived<Partial<Record<RepoDraftField, string>>>(
-		submitted && github ? repoDraftErrors(repo, EMPTY_GITHUB_SETTINGS, null) : {}
+		submitted && github && !withoutRepo ? repoDraftErrors(repo, EMPTY_GITHUB_SETTINGS, null) : {}
 	);
 	const folderErrors = $derived<Partial<Record<FolderDraftField, string>>>(
 		submitted && folders ? folderDraftErrors(folder, platform, EMPTY_FOLDER_SETTINGS, null) : {}
@@ -114,7 +120,11 @@
 		formMessage = null;
 		serverFields = {};
 		if (Object.keys(connectionDraftErrors(draft)).length > 0) return;
-		if (github && Object.keys(repoDraftErrors(repo, EMPTY_GITHUB_SETTINGS, null)).length > 0) {
+		if (
+			github &&
+			!withoutRepo &&
+			Object.keys(repoDraftErrors(repo, EMPTY_GITHUB_SETTINGS, null)).length > 0
+		) {
 			return;
 		}
 		if (
@@ -126,7 +136,7 @@
 		saving = true;
 		const result = await store.create(
 			github
-				? { ...draft, githubRepo: repoFromDraft(repo) }
+				? { ...draft, githubRepo: withoutRepo ? null : repoFromDraft(repo), githubAuto: auto }
 				: folders
 					? { ...draft, folder: folderFromDraft(folder, platform) }
 					: draft
@@ -218,7 +228,16 @@
 		<p class="note">
 			Ohne Token liest die App nur öffentliche Repositorys; die Variable kannst du später setzen.
 		</p>
-		<GitHubRepoFields bind:draft={repo} errors={repoErrors} />
+		<div class="field">
+			<label class="check">
+				<input type="checkbox" bind:checked={auto} aria-describedby={ids.auto} />
+				Alle meine Repositorys beobachten (braucht ein Token)
+			</label>
+			<p class="note" id={ids.auto}>
+				{AUTO_HINT} Dann ist das erste Repository unten freiwillig.
+			</p>
+		</div>
+		<GitHubRepoFields bind:draft={repo} errors={repoErrors} nameOptional={auto} />
 	{/if}
 	{#if folders}
 		<FolderFields bind:draft={folder} errors={folderErrors} {platform} />
@@ -251,13 +270,21 @@
 		color: var(--color-text-muted);
 	}
 
-	input {
+	input:not([type='checkbox'], [type='radio']) {
 		width: 100%;
 		max-width: 100%;
 		padding: 0.375rem 0.5rem;
 		background: var(--color-surface);
 		border: 1px solid var(--color-text-muted);
 		border-radius: var(--radius-control);
+	}
+
+	.check {
+		display: flex;
+		gap: 0.5rem;
+		align-items: center;
+		font-size: var(--font-size-body);
+		color: var(--color-text);
 	}
 
 	.note {

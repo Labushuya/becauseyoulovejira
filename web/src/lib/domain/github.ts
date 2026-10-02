@@ -1,10 +1,13 @@
 // GitHub channel in the web app (ADR-0050, plan beobachtete-quellen GH-2). Pure: the settings of a
-// connection (repositories with watched paths, events and target project, interval), the checks of
-// the form, the details of the card from GET /api/byl/connections/{id}/github and the answer of
-// "Verbindung prüfen". The names, patterns, limits and defaults mirror
-// app/pb_hooks/lib/github-rules.js (tests/unit/web-github.test.mjs compares both).
+// connection (repositories with watched paths, events and target project, interval, since the
+// addendum of 2026-10-02 "Alle meine Repositorys" and its exclusions), the checks of the form, the
+// details of the card from GET /api/byl/connections/{id}/github, the list of the repositories of
+// the token (GET …/github/repos) and the answer of "Verbindung prüfen". The names, patterns, limits,
+// defaults and texts mirror app/pb_hooks/lib/github-rules.js (tests/unit/web-github.test.mjs
+// compares both).
 
 import { formatBerlinDateTime } from './format';
+import { normalizeSearch, searchWords } from './ticket-picker';
 
 /** Watched paths a new repository starts with (ADR-0050 §2). */
 export const GITHUB_DEFAULT_PATHS: readonly string[] = Object.freeze([
@@ -39,7 +42,10 @@ export const GITHUB_LIMITS = Object.freeze({
 	pathLength: 200,
 	intervalDefault: 15,
 	intervalMin: 5,
-	intervalMax: 60
+	intervalMax: 60,
+	/** "Alle meine Repositorys": at most this many come in automatically, this many excluded. */
+	autoRepos: 50,
+	excludes: 100
 });
 
 /** Intervals the card offers (minutes); the server takes every whole number from 5 to 60. */
@@ -58,8 +64,27 @@ export const GITHUB_MESSAGES: Readonly<Record<string, string>> = Object.freeze({
 	validation_github_paths:
 		'Pfade als Liste von höchstens 20 Mustern, je bis 200 Zeichen, etwa „CHANGELOG*“ oder „docs/**/*.md“; ohne „/“ am Anfang, ohne „..“, ohne [ ] { } !.',
 	validation_github_events: 'Ereignisse nur „files“, „pulls“ und „releases“, je an oder aus.',
-	validation_github_target: 'Zielprojekt als ID eines Projekts oder leer.'
+	validation_github_target: 'Zielprojekt als ID eines Projekts oder leer.',
+	validation_github_auto: '„Alle meine Repositorys beobachten“ ist an oder aus.',
+	validation_github_exclude:
+		'Ausgeschlossene Repositorys als Liste von höchstens 100 Namen „Besitzer/Name“, jeder einmal.'
 });
+
+/** The hint of a run with "Alle meine Repositorys" but without a token (AUTO_NO_TOKEN of the hook). */
+export const AUTO_NO_TOKEN =
+	'„Alle meine Repositorys“ braucht ein Token: Ohne Token nennt GitHub keine Liste deiner Repositorys. Die eingetragenen Repositorys ruft die App weiter ab.';
+
+/** Why a repository left "Alle meine Repositorys" (AUTO_REASONS of the hook). */
+export const AUTO_REASONS: Readonly<Record<GitHubAutoReason, string>> = Object.freeze({
+	archived: 'archiviert',
+	fork: 'Fork',
+	other: 'nicht mehr deins',
+	gone: 'nicht mehr da',
+	excluded: 'ausgeschlossen',
+	limit: 'über der Grenze von 50'
+});
+
+export type GitHubAutoReason = 'archived' | 'fork' | 'other' | 'gone' | 'excluded' | 'limit';
 
 const OWNER = /^[A-Za-z0-9][A-Za-z0-9-]{0,38}$/;
 const NAME = /^[A-Za-z0-9._-]{1,100}$/;
@@ -80,12 +105,19 @@ export interface GitHubRepoSettings {
 export interface GitHubSettings {
 	/** Minutes between two runs of the cron. */
 	interval: number;
+	/** The entered repositories, each with its own settings. */
 	repos: readonly GitHubRepoSettings[];
+	/** "Alle meine Repositorys beobachten" (addendum of 2026-10-02), off by default. */
+	auto: boolean;
+	/** Repositories "Alle meine Repositorys" leaves out ("Besitzer/Name"). */
+	exclude: readonly string[];
 }
 
 export const EMPTY_GITHUB_SETTINGS: GitHubSettings = Object.freeze({
 	interval: GITHUB_LIMITS.intervalDefault,
-	repos: []
+	repos: [],
+	auto: false,
+	exclude: []
 });
 
 /** Whether `value` is "owner/name" of a repository (no address, no ".git"). */
@@ -198,6 +230,14 @@ export function githubSettingsOf(settings: unknown): GitHubSettings {
 			target: typeof entry.target === 'string' && RECORD_ID.test(entry.target) ? entry.target : null
 		});
 	}
+	const exclude: string[] = [];
+	const excluded = new Set<string>();
+	for (const name of Array.isArray(value.exclude) ? value.exclude : []) {
+		if (exclude.length >= GITHUB_LIMITS.excludes) break;
+		if (!isRepoName(name) || excluded.has(repoKey(name))) continue;
+		excluded.add(repoKey(name));
+		exclude.push(name);
+	}
 	return {
 		interval:
 			typeof interval === 'number' &&
@@ -206,11 +246,17 @@ export function githubSettingsOf(settings: unknown): GitHubSettings {
 			interval <= GITHUB_LIMITS.intervalMax
 				? interval
 				: GITHUB_LIMITS.intervalDefault,
-		repos
+		repos,
+		auto: value.auto === true,
+		exclude
 	};
 }
 
-/** The JSON the server stores in connections.settings. */
+/**
+ * The JSON the server stores in connections.settings. "Alle meine Repositorys" and its exclusions
+ * go along only when set, so saving the other settings also works against the hooks of before the
+ * addendum (until the next restart of the app), which do not know the keys.
+ */
 export function githubSettingsValue(settings: GitHubSettings): Record<string, unknown> {
 	return {
 		interval: settings.interval,
@@ -219,11 +265,16 @@ export function githubSettingsValue(settings: GitHubSettings): Record<string, un
 			paths: [...repo.paths],
 			events: { ...repo.events },
 			target: repo.target ?? ''
-		}))
+		})),
+		...(settings.auto ? { auto: true } : {}),
+		...(settings.exclude.length > 0 ? { exclude: [...settings.exclude] } : {})
 	};
 }
 
-/** The settings with `repo` added at the end or, with the same key, in place of the old one. */
+/**
+ * The settings with `repo` added at the end or, with the same key, in place of the old one. An
+ * entered repository is no longer excluded.
+ */
 export function withRepo(settings: GitHubSettings, repo: GitHubRepoSettings): GitHubSettings {
 	const key = repoKey(repo.repo);
 	const index = settings.repos.findIndex((entry) => repoKey(entry.repo) === key);
@@ -231,7 +282,28 @@ export function withRepo(settings: GitHubSettings, repo: GitHubRepoSettings): Gi
 		index === -1
 			? [...settings.repos, repo]
 			: settings.repos.map((entry, at) => (at === index ? repo : entry));
-	return { ...settings, repos };
+	return { ...withoutExcluded(settings, key), repos };
+}
+
+/** The settings with every one of `repos` added (see withRepo). */
+export function withRepos(
+	settings: GitHubSettings,
+	repos: readonly GitHubRepoSettings[]
+): GitHubSettings {
+	return repos.reduce((current, repo) => withRepo(current, repo), settings);
+}
+
+/** The settings with `name` left out of "Alle meine Repositorys". */
+export function withExcluded(settings: GitHubSettings, name: string): GitHubSettings {
+	const key = repoKey(name);
+	if (settings.exclude.some((entry) => repoKey(entry) === key)) return settings;
+	return { ...settings, exclude: [...settings.exclude, name] };
+}
+
+/** The settings with the exclusion of the repository `key` taken back. */
+export function withoutExcluded(settings: GitHubSettings, key: string): GitHubSettings {
+	if (!settings.exclude.some((entry) => repoKey(entry) === key)) return settings;
+	return { ...settings, exclude: settings.exclude.filter((entry) => repoKey(entry) !== key) };
 }
 
 /** The settings without the repository `key`. */
@@ -342,6 +414,162 @@ export function repoFromDraft(draft: GitHubRepoDraft): GitHubRepoSettings {
 	};
 }
 
+export const CHOOSE_MESSAGE =
+	'Bitte ein Repository aus der Liste wählen oder als „Besitzer/Name“ eintragen.';
+
+/** Too many repositories at once for the entered ones of a connection. */
+export function addMaxMessage(free: number): string {
+	const left = free <= 0 ? 'keins mehr frei' : free === 1 ? 'noch 1 frei' : `noch ${free} frei`;
+	return `Höchstens ${GITHUB_LIMITS.repos} eingetragene Repositorys je Verbindung (${left}). Alle eigenen beobachtet „Alle meine Repositorys beobachten“.`;
+}
+
+/**
+ * Errors of "Repository hinzufügen …" with the list of the token (addendum of 2026-10-02): the
+ * repositories chosen from the list (`chosen`, "Besitzer/Name") and a typed one, if any. One of
+ * them is needed, a typed one must be a name or address, none may be entered already, and together
+ * they stay within the limit of entered repositories. Paths and events as in repoDraftErrors.
+ * `listed`: the form shows a list to choose from (the message for nothing names it).
+ */
+export function addDraftErrors(
+	draft: GitHubRepoDraft,
+	chosen: readonly string[],
+	settings: GitHubSettings,
+	listed = false
+): Partial<Record<RepoDraftField, string>> {
+	const errors: Partial<Record<RepoDraftField, string>> = {};
+	const typed = draft.input.trim();
+	const name = typed === '' ? '' : parseRepo(typed);
+	if (typed === '' && chosen.length === 0) {
+		errors.repo = listed ? CHOOSE_MESSAGE : REPO_MESSAGE;
+	} else if (typed !== '' && name === '') {
+		errors.repo = REPO_MESSAGE;
+	} else {
+		const keys = [...chosen, ...(name === '' ? [] : [name])].map(repoKey);
+		const entered = new Set(settings.repos.map((entry) => repoKey(entry.repo)));
+		if (new Set(keys).size !== keys.length || keys.some((key) => entered.has(key))) {
+			errors.repo = REPO_DUPLICATE_MESSAGE;
+		} else if (settings.repos.length + keys.length > GITHUB_LIMITS.repos) {
+			errors.repo = addMaxMessage(GITHUB_LIMITS.repos - settings.repos.length);
+		}
+	}
+	const paths = pathsError(draft);
+	if (paths !== null) errors.paths = paths;
+	if (!GITHUB_EVENTS.some((event) => draft.events[event])) errors.events = EVENTS_MESSAGE;
+	return errors;
+}
+
+/** The repositories the form adds: the chosen ones, then the typed one, each with the fields. */
+export function reposFromAddDraft(
+	draft: GitHubRepoDraft,
+	chosen: readonly string[]
+): GitHubRepoSettings[] {
+	const typed = draft.input.trim() === '' ? [] : [parseRepo(draft.input)];
+	return [...chosen, ...typed].map((repo) => ({
+		repo,
+		paths: draftPaths(draft),
+		events: { ...draft.events },
+		target: draft.target
+	}));
+}
+
+// --- The repositories of the token (GET /api/byl/connections/{id}/github/repos) ----------------
+
+/** How a repository of the list stands at the connection. */
+export type GitHubChoiceState = 'entered' | 'auto' | 'excluded' | '';
+
+export interface GitHubRepoChoice {
+	repo: string;
+	key: string;
+	private: boolean;
+	archived: boolean;
+	fork: boolean;
+	/** Owned by an organization. */
+	org: boolean;
+	/** Owned by the account of the token (archived and forks included). */
+	own: boolean;
+	state: GitHubChoiceState;
+}
+
+export interface GitHubRepoList {
+	/** `no_token`: GitHub names no list without a token; `limited`/`error` may keep a list of before. */
+	status: 'ok' | 'no_token' | 'limited' | 'error';
+	message: string;
+	/** Account of the token. */
+	login: string;
+	/** When the server read the list (ISO), null without one. */
+	at: string | null;
+	/** More than ten pages: the rest is not listed. */
+	more: boolean;
+	repos: GitHubRepoChoice[];
+}
+
+/** The answer of the route, read strictly. */
+export function githubRepoListOf(value: unknown): GitHubRepoList {
+	const raw = isPlainObject(value) ? value : {};
+	const status =
+		raw.status === 'ok' ||
+		raw.status === 'no_token' ||
+		raw.status === 'limited' ||
+		raw.status === 'error'
+			? raw.status
+			: 'error';
+	const repos: GitHubRepoChoice[] = [];
+	const seen = new Set<string>();
+	for (const entry of Array.isArray(raw.repos) ? raw.repos : []) {
+		if (!isPlainObject(entry) || !isRepoName(entry.repo) || seen.has(repoKey(entry.repo))) continue;
+		seen.add(repoKey(entry.repo));
+		const state = entry.state;
+		repos.push({
+			repo: entry.repo,
+			key: repoKey(entry.repo),
+			private: entry.private === true,
+			archived: entry.archived === true,
+			fork: entry.fork === true,
+			org: entry.org === true,
+			own: entry.own === true,
+			state: state === 'entered' || state === 'auto' || state === 'excluded' ? state : ''
+		});
+	}
+	return {
+		status,
+		message: text(raw.message),
+		login: text(raw.login),
+		at: isoText(raw.at),
+		more: raw.more === true,
+		repos
+	};
+}
+
+/**
+ * The choices that match a filter: every word in the name, without case, accents and umlaut dots
+ * (the normalization of the TicketPicker, ADR-0042 §2). Own repositories first, then the others,
+ * each in the order of the list.
+ */
+export function filterRepoChoices(
+	choices: readonly GitHubRepoChoice[],
+	query: string
+): GitHubRepoChoice[] {
+	const words = searchWords(query);
+	const matching = choices.filter((choice) => {
+		const name = normalizeSearch(choice.repo);
+		return words.every((word) => name.includes(word));
+	});
+	return [...matching.filter((choice) => choice.own), ...matching.filter((choice) => !choice.own)];
+}
+
+/** What the list says about a repository besides its name, e.g. "privat, Fork". */
+export function choiceNote(choice: GitHubRepoChoice): string {
+	const parts: string[] = [];
+	if (choice.state === 'entered') parts.push('schon eingetragen');
+	if (choice.state === 'auto') parts.push('wird automatisch beobachtet');
+	if (choice.state === 'excluded') parts.push('ausgeschlossen');
+	if (choice.private) parts.push('privat');
+	if (choice.archived) parts.push('archiviert');
+	if (choice.fork) parts.push('Fork');
+	if (choice.org) parts.push('Organisation');
+	return parts.join(', ');
+}
+
 /**
  * A detail of an entry of GitHub from its `source_meta.github` (repository, path of a file), ''
  * when missing or not text.
@@ -389,6 +617,8 @@ export interface GitHubRelease {
 export interface GitHubRepoSummary {
 	repo: string;
 	key: string;
+	/** Watched by "Alle meine Repositorys" with the defaults, not entered. */
+	auto: boolean;
 	url: string;
 	branch: string;
 	private: boolean;
@@ -418,14 +648,42 @@ export interface GitHubRate {
 	reset: string;
 }
 
+/** A repository that left "Alle meine Repositorys", and why. */
+export interface GitHubAutoRemoval {
+	repo: string;
+	reason: GitHubAutoReason;
+}
+
+/** How "Alle meine Repositorys" stands (addendum of 2026-10-02). */
+export interface GitHubAutoDetails {
+	enabled: boolean;
+	/** Account of the token, '' before the first list. */
+	login: string;
+	/** When the server read the list (ISO), null before. */
+	at: string | null;
+	/** Repositories watched automatically, and own ones beyond the limit of 50. */
+	count: number;
+	more: number;
+	/** The last change of the automatic set and when (ISO). */
+	added: string[];
+	removed: GitHubAutoRemoval[];
+	changedAt: string | null;
+	/** Why the list could not be read last time, '' without a problem. */
+	error: string;
+	excluded: string[];
+}
+
 export interface GitHubDetails {
 	/** The server sees a token. */
 	authenticated: boolean;
 	interval: number;
+	/** The watched repositories: entered ones, then the automatic ones. */
 	repos: GitHubRepoSummary[];
 	/** A rate limit holds until then (ISO). */
 	limit: { until: string; kind: 'primary' | 'secondary' } | null;
 	rate: GitHubRate | null;
+	/** null while the server does not know "Alle meine Repositorys" (before the restart). */
+	auto: GitHubAutoDetails | null;
 }
 
 function text(value: unknown): string {
@@ -485,6 +743,7 @@ export function githubDetailsOf(value: unknown): GitHubDetails {
 		repos.push({
 			repo: entry.repo,
 			key: repoKey(text(entry.key) || entry.repo),
+			auto: entry.auto === true,
 			url: /^https:\/\/github\.com\//.test(text(entry.url))
 				? text(entry.url)
 				: `https://github.com/${entry.repo}`,
@@ -518,9 +777,81 @@ export function githubDetailsOf(value: unknown): GitHubDetails {
 		interval,
 		repos,
 		limit,
-		rate: rateOf(raw.rate)
+		rate: rateOf(raw.rate),
+		auto: autoOf(raw.auto)
 	};
 }
+
+function isAutoReason(value: string): value is GitHubAutoReason {
+	return Object.keys(AUTO_REASONS).includes(value);
+}
+
+function namesOf(value: unknown): string[] {
+	return Array.isArray(value) ? value.filter((name): name is string => isRepoName(name)) : [];
+}
+
+function autoOf(value: unknown): GitHubAutoDetails | null {
+	if (!isPlainObject(value)) return null;
+	const removed: GitHubAutoRemoval[] = [];
+	for (const entry of Array.isArray(value.removed) ? value.removed : []) {
+		if (!isPlainObject(entry) || !isRepoName(entry.repo)) continue;
+		const reason = text(entry.reason);
+		if (isAutoReason(reason)) removed.push({ repo: entry.repo, reason });
+	}
+	return {
+		enabled: value.enabled === true,
+		login: text(value.login),
+		at: isoText(value.at),
+		count: count(value.count),
+		more: count(value.more),
+		added: namesOf(value.added),
+		removed,
+		changedAt: isoText(value.changedAt),
+		error: text(value.error),
+		excluded: namesOf(value.excluded)
+	};
+}
+
+/**
+ * "12 Repositorys von @anna, Liste vom 02.10.2026 10:05" with the ones over the limit; before the
+ * first list "Die Liste deiner Repositorys holt der nächste Abruf."
+ */
+export function autoText(auto: GitHubAutoDetails): string {
+	if (auto.at === null) return 'Die Liste deiner Repositorys holt der nächste Abruf.';
+	const repos = auto.count === 1 ? '1 Repository' : `${auto.count} Repositorys`;
+	const who = auto.login === '' ? '' : ` von @${auto.login}`;
+	const more =
+		auto.more > 0 ? `; ${auto.more} weitere über der Grenze von ${GITHUB_LIMITS.autoRepos}` : '';
+	return `${repos}${who}${more}, Liste vom ${formatBerlinDateTime(auto.at)}`;
+}
+
+/** The last change of the automatic set, e.g. "02.10.2026 10:05: neu anna/a; nicht mehr anna/b (archiviert)"; null without one. */
+export function autoChangeText(auto: GitHubAutoDetails): string | null {
+	if (auto.changedAt === null || (auto.added.length === 0 && auto.removed.length === 0))
+		return null;
+	const parts: string[] = [];
+	if (auto.added.length > 0) parts.push(`neu ${shortList(auto.added)}`);
+	if (auto.removed.length > 0) {
+		parts.push(
+			`nicht mehr ${shortList(auto.removed.map((entry) => `${entry.repo} (${AUTO_REASONS[entry.reason]})`))}`
+		);
+	}
+	return `${formatBerlinDateTime(auto.changedAt)}: ${parts.join('; ')}`;
+}
+
+function shortList(names: readonly string[]): string {
+	const shown = names.slice(0, 5);
+	const more = names.length - shown.length;
+	return `${shown.join(', ')}${more > 0 ? ` und ${more} weitere` : ''}`;
+}
+
+/** What "Alle meine Repositorys beobachten" does, below the switch of the card and the assistant. */
+export const AUTO_HINT =
+	'Alle Repositorys deines Kontos, die das Token lesen darf, mit den Standard-Einstellungen; ohne Forks, archivierte und die von Organisationen. Neue kommen von selbst dazu, archivierte und gelöschte fallen weg; die Liste holt die App höchstens stündlich neu. Einzelne kannst du anpassen oder ausschließen.';
+
+/** The switch without a token. */
+export const AUTO_TOKEN_NEEDED =
+	'Braucht ein Token: Ohne Token nennt GitHub keine Liste deiner Repositorys.';
 
 const ACTION_WORDS: Readonly<Record<GitHubChange['action'], string>> = Object.freeze({
 	changed: 'geändert',

@@ -372,6 +372,8 @@ export interface ConnectionDraft {
 	mailUser: string;
 	/** GitHub only: the first repository, which the assistant adds with the connection (ADR-0050). */
 	githubRepo?: GitHubRepoSettings | null;
+	/** GitHub only: "Alle meine Repositorys beobachten" from the start (addendum of 2026-10-02). */
+	githubAuto?: boolean;
 	/** Folders only: the first folder, which the dialog adds with the connection (ADR-0051). */
 	folder?: FolderConfig | null;
 }

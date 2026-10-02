@@ -5,6 +5,7 @@
 
 import { describe, expect, it } from 'vitest';
 import {
+	CHOOSE_MESSAGE,
 	EMPTY_GITHUB_SETTINGS,
 	EVENTS_MESSAGE,
 	GITHUB_DEFAULT_PATHS,
@@ -15,14 +16,21 @@ import {
 	REPO_MESSAGE,
 	REPOS_MAX_MESSAGE,
 	accessText,
+	addDraftErrors,
+	addMaxMessage,
+	autoChangeText,
+	autoText,
 	checkSummary,
+	choiceNote,
 	draftPaths,
 	emptyRepoDraft,
 	eventsText,
 	filesText,
+	filterRepoChoices,
 	githubCheckOf,
 	githubDetailsOf,
 	githubMetaText,
+	githubRepoListOf,
 	githubSettingsOf,
 	githubSettingsValue,
 	intervalText,
@@ -36,7 +44,11 @@ import {
 	repoDraftErrors,
 	repoDraftOf,
 	repoFromDraft,
+	reposFromAddDraft,
+	withExcluded,
 	withRepo,
+	withRepos,
+	withoutExcluded,
 	withoutRepo,
 	type GitHubRepoSettings,
 	type GitHubSettings
@@ -151,7 +163,10 @@ describe('the form of a repository', () => {
 	});
 
 	it('checks the name, duplicates, the number of repositories and the events', () => {
-		const settings: GitHubSettings = { interval: 15, repos: [repo('octo-org/roadmap')] };
+		const settings: GitHubSettings = {
+			...EMPTY_GITHUB_SETTINGS,
+			repos: [repo('octo-org/roadmap')]
+		};
 		expect(repoDraftErrors({ ...emptyRepoDraft(), input: 'nope' }, settings, null)).toEqual({
 			repo: REPO_MESSAGE
 		});
@@ -163,7 +178,7 @@ describe('the form of a repository', () => {
 			{}
 		);
 		const full: GitHubSettings = {
-			interval: 15,
+			...EMPTY_GITHUB_SETTINGS,
 			repos: Array.from({ length: 20 }, (_, index) => repo(`octo/r${index}`))
 		};
 		expect(repoDraftErrors({ ...emptyRepoDraft(), input: 'octo/new' }, full, null)).toEqual({
@@ -227,7 +242,9 @@ describe('settings of a connection', () => {
 					target: HAUS
 				}),
 				repo('octo-org/site')
-			]
+			],
+			auto: false,
+			exclude: []
 		});
 		expect(githubSettingsOf({ interval: 4 }).interval).toBe(15);
 		expect(githubSettingsOf({ interval: 61 }).interval).toBe(15);
@@ -235,7 +252,7 @@ describe('settings of a connection', () => {
 	});
 
 	it('stores the target as an empty text without one', () => {
-		expect(githubSettingsValue({ interval: 15, repos: [repo('octo/a')] })).toEqual({
+		expect(githubSettingsValue({ ...EMPTY_GITHUB_SETTINGS, repos: [repo('octo/a')] })).toEqual({
 			interval: 15,
 			repos: [
 				{
@@ -248,12 +265,34 @@ describe('settings of a connection', () => {
 		});
 	});
 
+	it('stores "Alle meine Repositorys" and its exclusions only when set (addendum of 2026-10-02)', () => {
+		expect(githubSettingsOf({ auto: true, exclude: ['anna/alt', 'bad', 'ANNA/ALT'] })).toEqual({
+			...EMPTY_GITHUB_SETTINGS,
+			auto: true,
+			exclude: ['anna/alt']
+		});
+		expect(githubSettingsOf({ auto: 'ja' }).auto).toBe(false);
+		const value = githubSettingsValue({ ...EMPTY_GITHUB_SETTINGS, auto: true, exclude: ['a/b'] });
+		expect(value).toEqual({ interval: 15, repos: [], auto: true, exclude: ['a/b'] });
+		// Off and without exclusions the keys stay away (hooks of before the restart know them not).
+		expect(Object.keys(githubSettingsValue(EMPTY_GITHUB_SETTINGS))).toEqual(['interval', 'repos']);
+	});
+
 	it('adds, replaces and removes a repository by its key', () => {
 		const one = withRepo(EMPTY_GITHUB_SETTINGS, repo('octo/a'));
 		const two = withRepo(one, repo('octo/b'));
 		const changed = withRepo(two, repo('OCTO/A', { target: HAUS }));
 		expect(changed.repos.map((entry) => entry.repo)).toEqual(['OCTO/A', 'octo/b']);
 		expect(withoutRepo(changed, 'octo/a').repos.map((entry) => entry.repo)).toEqual(['octo/b']);
+	});
+
+	it('excludes and takes back, and entering a repository takes back its exclusion', () => {
+		const excluded = withExcluded(withExcluded(EMPTY_GITHUB_SETTINGS, 'anna/a'), 'ANNA/A');
+		expect(excluded.exclude).toEqual(['anna/a']);
+		expect(withoutExcluded(excluded, 'anna/a').exclude).toEqual([]);
+		const entered = withRepos(excluded, [repo('Anna/A'), repo('anna/b')]);
+		expect(entered.repos.map((entry) => entry.repo)).toEqual(['Anna/A', 'anna/b']);
+		expect(entered.exclude).toEqual([]);
 	});
 
 	it('says events and intervals in words', () => {
@@ -418,5 +457,134 @@ describe('details of an entry', () => {
 		expect(githubMetaText(item, 'path')).toBe('CHANGELOG.md');
 		expect(githubMetaText({ sourceMeta: {} }, 'repo')).toBe('');
 		expect(githubMetaText({ sourceMeta: { github: { repo: 3 } } }, 'repo')).toBe('');
+	});
+});
+
+describe('the repositories of the token and "Alle meine Repositorys" (addendum of 2026-10-02)', () => {
+	const LIST = githubRepoListOf({
+		status: 'ok',
+		message: '',
+		login: 'anna',
+		at: '2026-10-02 10:00:00.000Z',
+		more: false,
+		repos: [
+			{ repo: 'octo-org/Team', org: true, own: false, private: true, state: '' },
+			{ repo: 'anna/Roadmap', own: true, state: 'entered' },
+			{ repo: 'anna/Strasse', own: true, fork: true, state: 'auto' },
+			{ repo: 'anna/alt', own: true, archived: true, state: 'excluded' },
+			{ repo: 'bad name' },
+			{ repo: 'anna/roadmap', own: true },
+			{ repo: 'ben/x', state: 'weird' }
+		]
+	});
+
+	it('reads the list strictly', () => {
+		expect(LIST).toMatchObject({ status: 'ok', login: 'anna', at: '2026-10-02T10:00:00.000Z' });
+		expect(LIST.repos.map((choice) => [choice.repo, choice.state])).toEqual([
+			['octo-org/Team', ''],
+			['anna/Roadmap', 'entered'],
+			['anna/Strasse', 'auto'],
+			['anna/alt', 'excluded'],
+			['ben/x', '']
+		]);
+		expect(LIST.repos[0]).toMatchObject({ key: 'octo-org/team', org: true, private: true });
+		expect(githubRepoListOf({ status: 'no_token', message: 'Ohne Token …' })).toEqual({
+			status: 'no_token',
+			message: 'Ohne Token …',
+			login: '',
+			at: null,
+			more: false,
+			repos: []
+		});
+		expect(githubRepoListOf(null).status).toBe('error');
+	});
+
+	it('filters like the TicketPicker and puts own repositories first', () => {
+		expect(filterRepoChoices(LIST.repos, '').map((choice) => choice.repo)).toEqual([
+			'anna/Roadmap',
+			'anna/Strasse',
+			'anna/alt',
+			'octo-org/Team',
+			'ben/x'
+		]);
+		// Typed with ß and capitals, found in "Strasse".
+		expect(filterRepoChoices(LIST.repos, 'STRAẞE').map((choice) => choice.repo)).toEqual([
+			'anna/Strasse'
+		]);
+		expect(filterRepoChoices(LIST.repos, 'straße').map((choice) => choice.repo)).toEqual([
+			'anna/Strasse'
+		]);
+		expect(filterRepoChoices(LIST.repos, 'anna road').map((choice) => choice.repo)).toEqual([
+			'anna/Roadmap'
+		]);
+		expect(choiceNote(LIST.repos[0]!)).toBe('privat, Organisation');
+		expect(choiceNote(LIST.repos[1]!)).toBe('schon eingetragen');
+		expect(choiceNote(LIST.repos[2]!)).toBe('wird automatisch beobachtet, Fork');
+		expect(choiceNote(LIST.repos[3]!)).toBe('ausgeschlossen, archiviert');
+	});
+
+	it('checks several chosen repositories and a typed one together', () => {
+		const settings = { ...EMPTY_GITHUB_SETTINGS, repos: [repo('anna/roadmap')] };
+		const draft = emptyRepoDraft();
+		expect(addDraftErrors(draft, [], settings, true)).toEqual({ repo: CHOOSE_MESSAGE });
+		expect(addDraftErrors(draft, [], settings, false)).toEqual({ repo: REPO_MESSAGE });
+		expect(addDraftErrors({ ...draft, input: 'nope' }, ['anna/a'], settings, true)).toEqual({
+			repo: REPO_MESSAGE
+		});
+		expect(addDraftErrors(draft, ['anna/a', 'ANNA/A'], settings, true)).toEqual({
+			repo: REPO_DUPLICATE_MESSAGE
+		});
+		expect(addDraftErrors(draft, ['Anna/Roadmap'], settings, true)).toEqual({
+			repo: REPO_DUPLICATE_MESSAGE
+		});
+		const many = Array.from({ length: 20 }, (_, index) => `anna/r${index}`);
+		expect(addDraftErrors(draft, many, settings, true).repo).toBe(addMaxMessage(19));
+		expect(addMaxMessage(19)).toBe(
+			'Höchstens 20 eingetragene Repositorys je Verbindung (noch 19 frei). Alle eigenen beobachtet „Alle meine Repositorys beobachten“.'
+		);
+		const fine = { ...draft, input: 'https://github.com/octo/public', pathsText: 'CHANGELOG*' };
+		expect(addDraftErrors(fine, ['anna/a', 'anna/b'], settings, true)).toEqual({});
+		expect(reposFromAddDraft(fine, ['anna/a']).map((entry) => [entry.repo, entry.paths])).toEqual([
+			['anna/a', ['CHANGELOG*']],
+			['octo/public', ['CHANGELOG*']]
+		]);
+	});
+
+	it('reads the state of the option in the details and says it in words', () => {
+		const details = githubDetailsOf({
+			repos: [{ repo: 'anna/a', auto: true }],
+			auto: {
+				enabled: true,
+				login: 'anna',
+				at: '2026-10-02 10:00:00.000Z',
+				count: 12,
+				more: 3,
+				added: ['anna/neu', 'bad'],
+				removed: [
+					{ repo: 'anna/alt', reason: 'archived' },
+					{ repo: 'anna/x', reason: 'nope' }
+				],
+				changedAt: '2026-10-02 10:00:00.000Z',
+				error: '',
+				excluded: ['anna/raus']
+			}
+		});
+		expect(details.repos[0]?.auto).toBe(true);
+		const auto = details.auto!;
+		expect(auto).toMatchObject({ enabled: true, count: 12, more: 3, excluded: ['anna/raus'] });
+		expect(auto.added).toEqual(['anna/neu']);
+		expect(auto.removed).toEqual([{ repo: 'anna/alt', reason: 'archived' }]);
+		expect(autoText(auto)).toBe(
+			'12 Repositorys von @anna; 3 weitere über der Grenze von 50, Liste vom 02.10.2026 12:00'
+		);
+		expect(autoChangeText(auto)).toBe(
+			'02.10.2026 12:00: neu anna/neu; nicht mehr anna/alt (archiviert)'
+		);
+		expect(autoText({ ...auto, at: null })).toBe(
+			'Die Liste deiner Repositorys holt der nächste Abruf.'
+		);
+		expect(autoChangeText({ ...auto, added: [], removed: [] })).toBeNull();
+		// A server of before the addendum names no option.
+		expect(githubDetailsOf({}).auto).toBeNull();
 	});
 });

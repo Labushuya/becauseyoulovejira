@@ -66,17 +66,24 @@ export function connectionInfo(
 
 /**
  * Info line of a GitHub connection (ADR-0050 §7), e.g. "3 Repositorys · Zuletzt abgerufen vor
- * 5 Min. · 1 neu"; without a repository "Noch kein Repository".
+ * 5 Min. · 1 neu"; without a repository "Noch kein Repository". With "Alle meine Repositorys"
+ * (addendum of 2026-10-02) `watched` counts every watched repository from the details, e.g.
+ * "12 Repositorys · …"; before the details "Alle meine Repositorys · …".
  */
 export function githubInfo(
 	connection: Pick<Connection, 'type' | 'lastRunAt' | 'lastError' | 'scan' | 'github'>,
 	lastRun: RunResult | null,
-	now: number
+	now: number,
+	watched: number | null = null
 ): string {
+	const plural = (count: number) => (count === 1 ? '1 Repository' : `${count} Repositorys`);
+	if (connection.github?.auto === true) {
+		const count = watched === null ? 'Alle meine Repositorys' : plural(watched);
+		return `${count} · ${connectionInfo(connection, lastRun, now)}`;
+	}
 	const repos = connection.github?.repos.length ?? 0;
 	if (repos === 0) return 'Noch kein Repository';
-	const count = repos === 1 ? '1 Repository' : `${repos} Repositorys`;
-	return `${count} · ${connectionInfo(connection, lastRun, now)}`;
+	return `${plural(repos)} · ${connectionInfo(connection, lastRun, now)}`;
 }
 
 /**

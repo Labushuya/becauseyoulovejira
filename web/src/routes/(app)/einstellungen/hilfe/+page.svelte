@@ -2,6 +2,8 @@
 	import { resolve } from '$app/paths';
 	import { page } from '$app/state';
 	import CodeBlock from '$lib/components/guidance/CodeBlock.svelte';
+	import ExternalLink from '$lib/components/guidance/ExternalLink.svelte';
+	import { GITHUB_TOKEN_TEMPLATE_URL } from '$lib/domain/channel-setup';
 	import {
 		EMERGENCY_CONTENTS,
 		EMERGENCY_LOSSES,
@@ -448,19 +450,23 @@
 			<li>
 				Auf github.com oben rechts auf dein Profilbild klicken, dann „Settings“ → links ganz unten
 				„Developer settings“ → „Personal access tokens“ → „Fine-grained tokens“ → „Generate new
-				token“.
+				token“. Schneller geht es mit dem
+				<ExternalLink href={GITHUB_TOKEN_TEMPLATE_URL}>vorbelegten Token-Formular</ExternalLink>
+				(Name, 90 Tage, nur lesend).
 			</li>
 			<li>
 				„Token name“ etwa <code>becauseyoulovejira</code>, bei „Expiration“ eine Frist, bei
-				„Resource owner“ dein Konto oder die Organisation der Repositorys.
+				„Resource owner“ dein Konto.
 			</li>
 			<li>
-				„Repository access“: „Only select repositories“ und die Repositorys auswählen, die die App
-				beobachten soll.
+				„Repository access“, zwei gleichwertige Wege: „All repositories“ (einfach: das Token darf
+				alle deine Repositorys nur lesen; welche die App beobachtet, legst du in der App fest) oder
+				„Only select repositories“ (strenger: nur die Repositorys, die du dort auswählst).
 			</li>
 			<li>
-				„Permissions“ → Rechte für Repositorys: „Contents“ und „Pull requests“ auf „Read-only“.
-				„Metadata“ steht von selbst auf „Read-only“. Sonst nichts.
+				„Permissions“ → Rechte für Repositorys: „Contents“ und „Pull requests“ auf „Read-only“ (in
+				der aktuellen Ansicht über „Add permissions“ bzw. das Suchfeld). „Metadata“ steht von selbst
+				auf „Read-only“. Sonst nichts.
 			</li>
 			<li>
 				„Generate token“, dann das Token (beginnt mit <code>github_pat_</code>) kopieren; GitHub
@@ -471,14 +477,31 @@
 				<code>neu-starten.bat</code> im Ordner <code>app</code> doppelklicken.
 			</li>
 		</ol>
+		<p>
+			Der Unterschied ist die Reichweite des Tokens: Mit „All repositories“ könnte jemand, der das
+			Token bekommt, alle deine Repositorys lesen, auch private und künftige; mit „Only select
+			repositories“ nur die gewählten. Ändern oder schreiben kann das Token in beiden Fällen nichts.
+			Repositorys einer Organisation brauchen ein eigenes Token mit der Organisation als „Resource
+			owner“.
+		</p>
 		<h4>Repositorys und was ankommt</h4>
 		<ul>
 			<li>
-				Repositorys trägst du im Assistenten oder an der Karte mit „Repository hinzufügen …“ ein,
-				als
-				<code>Besitzer/Name</code> oder mit der Adresse. Je Repository wählst du die Ereignisse (Dateiänderungen
-				auf dem Standard-Branch, Pull Requests, Releases), die beobachteten Pfade und auf Wunsch ein eigenes
-				Zielprojekt.
+				„Repository hinzufügen …“ (an der Karte und im Assistenten) zeigt mit Token die Liste der
+				Repositorys, die das Token lesen darf: mehrere ankreuzen, mit dem Feld darüber filtern;
+				schon eingetragene sind markiert. Fremde öffentliche Repositorys trägst du als
+				<code>Besitzer/Name</code> oder mit der Adresse ein; ohne Token ist das der einzige Weg. Je Repository
+				wählst du die Ereignisse (Dateiänderungen auf dem Standard-Branch, Pull Requests, Releases), die
+				beobachteten Pfade und auf Wunsch ein eigenes Zielprojekt.
+			</li>
+			<li>
+				„Alle meine Repositorys beobachten“ (Schalter in den Details der Karte, Standard aus,
+				braucht ein Token) nimmt alle Repositorys deines Kontos mit den Standard-Einstellungen, ohne
+				Forks, archivierte und die von Organisationen, höchstens 50. Neue kommen von selbst dazu,
+				archivierte und gelöschte fallen weg; die Karte sagt es. Die Liste holt die App höchstens
+				stündlich neu, mit ETag. Ein einzelnes passt du mit „Anpassen …“ an oder nimmst es mit
+				„Ausschließen …“ heraus; die erste Erfassung bringt auch hier keine Flut, nicht einmal
+				offene Pull Requests.
 			</li>
 			<li>
 				Pfade sind Muster ab dem Hauptordner, vorbelegt <code>ROADMAP*</code>,

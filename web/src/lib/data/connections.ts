@@ -153,13 +153,14 @@ export function listConnections(
 /**
  * The settings of a new connection. A mailbox searches headers and the whole text from the start
  * (match_body on by default, user decision of 2026-09-27). GitHub starts with the default interval
- * and the first repository of the assistant, if any (ADR-0050 §2), a folder connection with the
- * default interval and its first folder (ADR-0051 §2).
+ * and the first repository of the assistant, if any (ADR-0050 §2), and "Alle meine Repositorys"
+ * when chosen (addendum of 2026-10-02), a folder connection with the default interval and its
+ * first folder (ADR-0051 §2).
  */
 function settingsOf(
 	draft: Pick<
 		ConnectionDraft,
-		'type' | 'allowlistEnv' | 'mailProvider' | 'mailUser' | 'githubRepo' | 'folder'
+		'type' | 'allowlistEnv' | 'mailProvider' | 'mailUser' | 'githubRepo' | 'githubAuto' | 'folder'
 	>
 ): Record<string, unknown> {
 	if (draft.type === 'telegram') return { allowed_env: draft.allowlistEnv.trim() };
@@ -170,7 +171,8 @@ function settingsOf(
 		const repo = draft.githubRepo ?? null;
 		return githubSettingsValue({
 			...EMPTY_GITHUB_SETTINGS,
-			repos: repo === null ? [] : [repo]
+			repos: repo === null ? [] : [repo],
+			auto: draft.githubAuto === true
 		});
 	}
 	if (draft.type === 'folder') {

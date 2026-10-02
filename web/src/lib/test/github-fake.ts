@@ -3,16 +3,46 @@
 // valid, so tests of the page "Kanäle" that do not look at GitHub get an inert store.
 
 import { vi } from 'vitest';
-import type { GitHubCheck, GitHubDetails } from '$lib/domain/github';
+import type {
+	GitHubAutoDetails,
+	GitHubCheck,
+	GitHubDetails,
+	GitHubRepoList
+} from '$lib/domain/github';
 import { FlagStore } from '$lib/stores/flags.svelte';
 import { GitHubStore, type GitHubData } from '$lib/stores/github.svelte';
+
+/** "Alle meine Repositorys" switched off, on a server that knows it. */
+export const AUTO_OFF: GitHubAutoDetails = {
+	enabled: false,
+	login: '',
+	at: null,
+	count: 0,
+	more: 0,
+	added: [],
+	removed: [],
+	changedAt: null,
+	error: '',
+	excluded: []
+};
 
 export const EMPTY_DETAILS: GitHubDetails = {
 	authenticated: true,
 	interval: 15,
 	repos: [],
 	limit: null,
-	rate: null
+	rate: null,
+	auto: AUTO_OFF
+};
+
+/** A list of the token without repositories. */
+export const EMPTY_LIST: GitHubRepoList = {
+	status: 'ok',
+	message: '',
+	login: 'octo',
+	at: '2026-10-02T10:00:00.000Z',
+	more: false,
+	repos: []
 };
 
 export const OK_CHECK: GitHubCheck = {
@@ -28,7 +58,8 @@ export const OK_CHECK: GitHubCheck = {
 export function fakeGitHubData() {
 	return {
 		details: vi.fn<GitHubData['details']>(async () => EMPTY_DETAILS),
-		check: vi.fn<GitHubData['check']>(async () => OK_CHECK)
+		check: vi.fn<GitHubData['check']>(async () => OK_CHECK),
+		repos: vi.fn<GitHubData['repos']>(async () => EMPTY_LIST)
 	} satisfies GitHubData;
 }
 
