@@ -3,7 +3,9 @@
 // the German messages of its errors, the rate limit, which watched files changed, the entries of
 // the inbox (a changed file with commits, line counts, a short diff and a copy of the new content,
 // a pull request, a release) and the status a watched source shows (ADR-0050 §5: only shown, a
-// ticket never changes). GitHub is only read: no function here or in github-client.js writes.
+// ticket never changes). Since the addendum of 2026-10-02 also the list of the repositories the
+// token may read and "Alle meine Repositorys": which of them a run watches and what changed.
+// GitHub is only read: no function here or in github-client.js writes.
 // CommonJS module, ES5 only, no dependencies; the callers pass berlin-time.js as `berlin`
 // (Goja runtime and Vitest load the module the same way).
 'use strict';
@@ -68,7 +70,18 @@ var LIMITS = Object.freeze({
   secondaryWaitSeconds: 60,
   secondaryMaxSeconds: 900,
   // Length of source_ref of an entry (schema of inbox_items).
-  refLength: 500
+  refLength: 500,
+  // "Alle meine Repositorys" (ADR-0050, addendum of 2026-10-02): at most this many repositories
+  // come in automatically (the most recently pushed first), at most this many may be excluded,
+  // the list of the token has at most this many pages of 100 and is read again after this many
+  // minutes (with ETag), on request at most once per this many seconds.
+  autoRepos: 50,
+  excludes: 100,
+  listPages: 10,
+  listMinutes: 60,
+  listRefreshSeconds: 60,
+  // Repositories named in the hint and the details of a change of the automatic set.
+  autoNames: 5
 });
 
 var MESSAGES = {
@@ -79,7 +92,21 @@ var MESSAGES = {
   validation_github_repo_duplicate: 'Dieses Repository ist schon eingetragen.',
   validation_github_paths: 'Pfade als Liste von höchstens 20 Mustern, je bis 200 Zeichen, etwa „CHANGELOG*“ oder „docs/**/*.md“; ohne „/“ am Anfang, ohne „..“, ohne [ ] { } !.',
   validation_github_events: 'Ereignisse nur „files“, „pulls“ und „releases“, je an oder aus.',
-  validation_github_target: 'Zielprojekt als ID eines Projekts oder leer.'
+  validation_github_target: 'Zielprojekt als ID eines Projekts oder leer.',
+  validation_github_auto: '„Alle meine Repositorys beobachten“ ist an oder aus.',
+  validation_github_exclude: 'Ausgeschlossene Repositorys als Liste von höchstens 100 Namen „Besitzer/Name“, jeder einmal.'
+};
+
+// Texts of "Alle meine Repositorys" and of the list of the token (the same words in domain/github.ts).
+var AUTO_NO_TOKEN = '„Alle meine Repositorys“ braucht ein Token: Ohne Token nennt GitHub keine Liste deiner Repositorys. Die eingetragenen Repositorys ruft die App weiter ab.';
+var LIST_NO_TOKEN = 'Ohne Token nennt GitHub keine Liste deiner Repositorys. Trag das Repository als „Besitzer/Name“ ein; öffentliche gehen auch ohne Token.';
+var AUTO_REASONS = {
+  archived: 'archiviert',
+  fork: 'Fork',
+  other: 'nicht mehr deins',
+  gone: 'nicht mehr da',
+  excluded: 'ausgeschlossen',
+  limit: 'über der Grenze von 50'
 };
 
 var OWNER = /^[A-Za-z0-9][A-Za-z0-9-]{0,38}$/;
@@ -281,8 +308,23 @@ function settingsViolation(settings) {
   }
   var keys = keysOf(value);
   for (var i = 0; i < keys.length; i++) {
-    if (keys[i] !== 'interval' && keys[i] !== 'repos') {
+    if (['interval', 'repos', 'auto', 'exclude'].indexOf(keys[i]) === -1) {
       return failure('validation_github_settings');
+    }
+  }
+  if (value.auto !== undefined && typeof value.auto !== 'boolean') {
+    return failure('validation_github_auto');
+  }
+  if (value.exclude !== undefined) {
+    if (!isArray(value.exclude) || value.exclude.length > LIMITS.excludes) {
+      return failure('validation_github_exclude');
+    }
+    var excluded = {};
+    for (var x = 0; x < value.exclude.length; x++) {
+      if (!isRepoName(value.exclude[x]) || hasOwn(excluded, repoKey(value.exclude[x]))) {
+        return failure('validation_github_exclude');
+      }
+      excluded[repoKey(value.exclude[x])] = true;
     }
   }
   if (value.interval !== undefined) {
@@ -334,9 +376,10 @@ function settingsViolation(settings) {
 }
 
 /**
- * The settings as the channel reads them: { interval, repos: [{ repo, key, paths, events, target }] }
- * with the defaults for missing values; invalid repositories are left out (the hook refuses them
- * on save, so this only matters for repaired records).
+ * The settings as the channel reads them: { interval, repos: [{ repo, key, paths, events, target }],
+ * auto, exclude: [name] } with the defaults for missing values; invalid repositories are left out
+ * (the hook refuses them on save, so this only matters for repaired records). `auto` is "Alle meine
+ * Repositorys beobachten" (off by default), `exclude` the repositories it leaves out.
  */
 function settingsOf(settings) {
   var value = isPlainObject(settings) ? settings : {};
@@ -346,8 +389,18 @@ function settingsOf(settings) {
       typeof interval === 'number' && interval % 1 === 0 && interval >= LIMITS.intervalMin && interval <= LIMITS.intervalMax
         ? interval
         : LIMITS.intervalDefault,
-    repos: []
+    repos: [],
+    auto: value.auto === true,
+    exclude: []
   };
+  var excludeList = isArray(value.exclude) ? value.exclude : [];
+  var excluded = {};
+  for (var x = 0; x < excludeList.length && result.exclude.length < LIMITS.excludes; x++) {
+    if (isRepoName(excludeList[x]) && !hasOwn(excluded, repoKey(excludeList[x]))) {
+      excluded[repoKey(excludeList[x])] = true;
+      result.exclude.push(excludeList[x]);
+    }
+  }
   var list = isArray(value.repos) ? value.repos : [];
   var seen = {};
   for (var i = 0; i < list.length && result.repos.length < LIMITS.repos; i++) {
@@ -1150,9 +1203,333 @@ function later(a, b) {
   return first >= second ? isoOf(a) : isoOf(b);
 }
 
+// --- Repositories of the token and "Alle meine Repositorys" (ADR-0050, addendum of 2026-10-02) ---
+
 /**
- * The state of the channel in connections.watch, read safely: { repos: { key: state }, limit }.
- * Anything broken counts as nothing known yet (the next run reads the base again, without a flood).
+ * A repository of GET /user/repos as the channel keeps it: { name, owner, org, private, archived,
+ * fork, pushed }; null for anything it cannot read.
+ */
+function listEntryOf(json) {
+  if (!isPlainObject(json) || !isRepoName(json.full_name)) {
+    return null;
+  }
+  var owner = isPlainObject(json.owner) ? json.owner : {};
+  return {
+    name: json.full_name,
+    owner: OWNER.test(text(owner.login)) ? text(owner.login) : json.full_name.split('/')[0],
+    org: owner.type === 'Organization',
+    private: json.private === true,
+    archived: json.archived === true,
+    fork: json.fork === true,
+    pushed: isoOf(json.pushed_at)
+  };
+}
+
+// An entry of a stored list, read safely; null for anything broken.
+function storedEntryOf(value) {
+  if (!isPlainObject(value) || !isRepoName(value.name)) {
+    return null;
+  }
+  return {
+    name: value.name,
+    owner: OWNER.test(text(value.owner)) ? text(value.owner) : value.name.split('/')[0],
+    org: value.org === true,
+    private: value.private === true,
+    archived: value.archived === true,
+    fork: value.fork === true,
+    pushed: isoOf(value.pushed)
+  };
+}
+
+/**
+ * The list of the repositories the token may read, as stored in connections.watch: { at, login,
+ * etag_user, pages: [{ etag, next, repos }], more }; null when there is none or it is broken (the
+ * next read starts anew).
+ */
+function listOf(value) {
+  if (!isPlainObject(value) || !isArray(value.pages) || isNaN(msOf(value.at))) {
+    return null;
+  }
+  var pages = [];
+  for (var i = 0; i < value.pages.length && i < LIMITS.listPages; i++) {
+    var page = value.pages[i];
+    if (!isPlainObject(page) || !isArray(page.repos)) {
+      return null;
+    }
+    var repos = [];
+    for (var r = 0; r < page.repos.length; r++) {
+      var entry = storedEntryOf(page.repos[r]);
+      if (entry !== null) {
+        repos.push(entry);
+      }
+    }
+    pages.push({ etag: text(page.etag), next: text(page.next), repos: repos });
+  }
+  return {
+    at: isoOf(value.at),
+    login: OWNER.test(text(value.login)) ? text(value.login) : '',
+    etag_user: text(value.etag_user),
+    pages: pages,
+    more: value.more === true
+  };
+}
+
+/** Whether the list must be read again: there is none, or it is older than LIMITS.listMinutes. */
+function listDue(list, now) {
+  var at = list === null ? NaN : msOf(list.at);
+  return isNaN(at) || at > now || now - at >= LIMITS.listMinutes * 60 * 1000;
+}
+
+/** Whether a request may read the list again now: at most once per LIMITS.listRefreshSeconds. */
+function listRefreshable(list, now) {
+  var at = list === null ? NaN : msOf(list.at);
+  return isNaN(at) || at > now || now - at >= LIMITS.listRefreshSeconds * 1000;
+}
+
+/** Every repository of the list once (GitHub ignores case), in the order of the list. */
+function listRepos(list) {
+  var repos = [];
+  if (list === null) {
+    return repos;
+  }
+  var seen = {};
+  for (var p = 0; p < list.pages.length; p++) {
+    for (var r = 0; r < list.pages[p].repos.length; r++) {
+      var entry = list.pages[p].repos[r];
+      if (!hasOwn(seen, repoKey(entry.name))) {
+        seen[repoKey(entry.name)] = true;
+        repos.push(entry);
+      }
+    }
+  }
+  return repos;
+}
+
+/**
+ * Why a repository of the list is not one of "Alle meine Repositorys": '' (it is), 'other' (it
+ * belongs to an organization or another account), 'archived' or 'fork'. Own means: the account of
+ * the token owns it.
+ */
+function autoReason(entry, login) {
+  if (entry.org || login === '' || entry.owner.toLowerCase() !== login.toLowerCase()) {
+    return 'other';
+  }
+  if (entry.archived) {
+    return 'archived';
+  }
+  return entry.fork ? 'fork' : '';
+}
+
+/** A repository that "Alle meine Repositorys" watches: the defaults of a new repository (§2). */
+function autoConfig(name) {
+  return {
+    repo: name,
+    key: repoKey(name),
+    paths: DEFAULT_PATHS.slice(),
+    events: { files: true, pulls: true, releases: true },
+    target: '',
+    auto: true
+  };
+}
+
+function pushedMs(entry) {
+  var ms = msOf(entry.pushed);
+  return isNaN(ms) ? 0 : ms;
+}
+
+function keySet(names) {
+  var set = {};
+  for (var i = 0; i < names.length; i++) {
+    set[repoKey(names[i])] = true;
+  }
+  return set;
+}
+
+/**
+ * The repositories a run watches: the entered ones of the settings (their own settings win), then,
+ * with `auto` and a list, every own repository of the list (no organization, no fork, not
+ * archived) that is neither entered nor excluded, the most recently pushed first, at most
+ * LIMITS.autoRepos. Without a list (no token, nothing read yet) only the entered ones.
+ * Returns { repos: [config], auto: [name], more }.
+ */
+function effectiveRepos(settings, list) {
+  var result = { repos: settings.repos.slice(), auto: [], more: 0 };
+  if (!settings.auto || list === null) {
+    return result;
+  }
+  var taken = {};
+  for (var i = 0; i < settings.repos.length; i++) {
+    taken[settings.repos[i].key] = true;
+  }
+  var excluded = keySet(settings.exclude);
+  var candidates = [];
+  var all = listRepos(list);
+  for (var c = 0; c < all.length; c++) {
+    var key = repoKey(all[c].name);
+    if (autoReason(all[c], list.login) === '' && !hasOwn(taken, key) && !hasOwn(excluded, key)) {
+      candidates.push(all[c]);
+    }
+  }
+  candidates.sort(function (a, b) {
+    var newer = pushedMs(b) - pushedMs(a);
+    if (newer !== 0) {
+      return newer;
+    }
+    return repoKey(a.name) < repoKey(b.name) ? -1 : repoKey(a.name) > repoKey(b.name) ? 1 : 0;
+  });
+  for (var k = 0; k < candidates.length && k < LIMITS.autoRepos; k++) {
+    result.repos.push(autoConfig(candidates[k].name));
+    result.auto.push(candidates[k].name);
+  }
+  result.more = Math.max(0, candidates.length - LIMITS.autoRepos);
+  return result;
+}
+
+// Why a repository left the automatic set: 'excluded', 'archived', 'fork', 'other', 'gone' (not in
+// the list any more) or 'limit' (still own, but beyond LIMITS.autoRepos).
+function removedReason(name, settings, list) {
+  var key = repoKey(name);
+  if (hasOwn(keySet(settings.exclude), key)) {
+    return 'excluded';
+  }
+  var all = listRepos(list);
+  for (var i = 0; i < all.length; i++) {
+    if (repoKey(all[i].name) === key) {
+      var reason = autoReason(all[i], list === null ? '' : list.login);
+      return reason === '' ? 'limit' : reason;
+    }
+  }
+  return 'gone';
+}
+
+/**
+ * The change of the automatic set between two runs: { added: [name], removed: [{ repo, reason }] }.
+ * `before` are the names of the last run. A repository that is entered now is no removal: the app
+ * still watches it, with its own settings.
+ */
+function autoChanges(before, after, settings, list) {
+  var was = keySet(before);
+  var now = keySet(after);
+  var entered = {};
+  for (var e = 0; e < settings.repos.length; e++) {
+    entered[settings.repos[e].key] = true;
+  }
+  var changes = { added: [], removed: [] };
+  for (var a = 0; a < after.length; a++) {
+    if (!hasOwn(was, repoKey(after[a]))) {
+      changes.added.push(after[a]);
+    }
+  }
+  for (var b = 0; b < before.length; b++) {
+    var key = repoKey(before[b]);
+    if (!hasOwn(now, key) && !hasOwn(entered, key)) {
+      changes.removed.push({ repo: before[b], reason: removedReason(before[b], settings, list) });
+    }
+  }
+  return changes;
+}
+
+// "a, b, c und 2 weitere".
+function namesText(names) {
+  var shown = names.slice(0, LIMITS.autoNames);
+  var more = names.length - shown.length;
+  return shown.join(', ') + (more > 0 ? ' und ' + more + ' weitere' : '');
+}
+
+/**
+ * The neutral hint of a run that switched "Alle meine Repositorys" on (`first`) or whose automatic
+ * set changed; '' without a change.
+ */
+function autoHint(changes, first) {
+  if (first) {
+    var count = changes.added.length;
+    if (count === 0) {
+      return 'Alle meine Repositorys: Das Token nennt keine eigenen Repositorys (ohne Forks, archivierte und die von Organisationen).';
+    }
+    return 'Alle meine Repositorys: ' + (count === 1 ? '1 Repository wird' : count + ' Repositorys werden') + ' jetzt beobachtet.';
+  }
+  var parts = [];
+  if (changes.added.length > 0) {
+    parts.push('neu beobachtet ' + namesText(changes.added));
+  }
+  if (changes.removed.length > 0) {
+    var removed = [];
+    for (var r = 0; r < changes.removed.length; r++) {
+      removed.push(changes.removed[r].repo + ' (' + AUTO_REASONS[changes.removed[r].reason] + ')');
+    }
+    parts.push('nicht mehr beobachtet ' + namesText(removed));
+  }
+  return parts.length === 0 ? '' : 'Alle meine Repositorys: ' + parts.join('; ') + '.';
+}
+
+/**
+ * The state of "Alle meine Repositorys" in connections.watch, read safely: { names, at, added,
+ * removed, error } (the automatic set of the last run, when it last changed and how), null for
+ * none.
+ */
+function autoStateOf(value) {
+  if (!isPlainObject(value) || !isArray(value.names)) {
+    return null;
+  }
+  var names = [];
+  for (var i = 0; i < value.names.length; i++) {
+    if (isRepoName(value.names[i])) {
+      names.push(value.names[i]);
+    }
+  }
+  var added = [];
+  var addedList = isArray(value.added) ? value.added : [];
+  for (var a = 0; a < addedList.length; a++) {
+    if (isRepoName(addedList[a])) {
+      added.push(addedList[a]);
+    }
+  }
+  var removed = [];
+  var removedList = isArray(value.removed) ? value.removed : [];
+  for (var r = 0; r < removedList.length; r++) {
+    var entry = removedList[r];
+    if (isPlainObject(entry) && isRepoName(entry.repo) && hasOwn(AUTO_REASONS, entry.reason)) {
+      removed.push({ repo: entry.repo, reason: entry.reason });
+    }
+  }
+  return { names: names, at: isoOf(value.at), added: added, removed: removed, error: text(value.error) };
+}
+
+/**
+ * The repositories of the list for the dialog "Repository hinzufügen …": [{ repo, private,
+ * archived, fork, org, own, state }], `state` 'entered' (in the settings), 'auto' (watched by "Alle
+ * meine Repositorys"), 'excluded' or ''.
+ */
+function listChoices(list, settings) {
+  var effective = effectiveRepos(settings, list);
+  var auto = keySet(effective.auto);
+  var entered = {};
+  for (var e = 0; e < settings.repos.length; e++) {
+    entered[settings.repos[e].key] = true;
+  }
+  var excluded = keySet(settings.exclude);
+  var all = listRepos(list);
+  var choices = [];
+  for (var i = 0; i < all.length; i++) {
+    var key = repoKey(all[i].name);
+    choices.push({
+      repo: all[i].name,
+      private: all[i].private,
+      archived: all[i].archived,
+      fork: all[i].fork,
+      org: all[i].org,
+      own: autoReason(all[i], list.login) !== 'other',
+      state: hasOwn(entered, key) ? 'entered' : hasOwn(auto, key) ? 'auto' : hasOwn(excluded, key) ? 'excluded' : ''
+    });
+  }
+  return choices;
+}
+
+/**
+ * The state of the channel in connections.watch, read safely: { repos: { key: state }, limit, list,
+ * auto } (`list` the repositories of the token, `auto` the last automatic set; both null without
+ * one). Anything broken counts as nothing known yet (the next run reads the base again, without a
+ * flood).
  */
 function stateOf(value) {
   var parsed = value;
@@ -1163,10 +1540,12 @@ function stateOf(value) {
       parsed = null;
     }
   }
-  var state = { repos: {}, limit: null };
+  var state = { repos: {}, limit: null, list: null, auto: null };
   if (!isPlainObject(parsed)) {
     return state;
   }
+  state.list = listOf(parsed.list);
+  state.auto = autoStateOf(parsed.auto);
   if (isPlainObject(parsed.repos)) {
     var keys = keysOf(parsed.repos);
     for (var i = 0; i < keys.length; i++) {
@@ -1191,8 +1570,9 @@ function limitUntil(state, now) {
 
 /**
  * The details of one repository for its card (ADR-0050 §7), from its settings and stored state:
- * { repo, key, url, branch, private, paths, events, target, files, filesMore, truncated,
- *   lastChange, openPulls, openPullsMore, lastRelease, checkedAt, okAt, error }.
+ * { repo, key, auto, url, branch, private, paths, events, target, files, filesMore, truncated,
+ *   lastChange, openPulls, openPullsMore, lastRelease, checkedAt, okAt, error }; `auto` marks one
+ *   that "Alle meine Repositorys" watches.
  */
 function repoSummary(config, state) {
   var stored = isPlainObject(state) ? state : {};
@@ -1200,6 +1580,7 @@ function repoSummary(config, state) {
   return {
     repo: text(stored.name) || config.repo,
     key: config.key,
+    auto: config.auto === true,
     url: webUrl(text(stored.name) || config.repo),
     branch: text(stored.branch),
     private: stored.private === true,
@@ -1280,5 +1661,20 @@ module.exports = {
   later: later,
   stateOf: stateOf,
   limitUntil: limitUntil,
-  repoSummary: repoSummary
+  repoSummary: repoSummary,
+  AUTO_NO_TOKEN: AUTO_NO_TOKEN,
+  LIST_NO_TOKEN: LIST_NO_TOKEN,
+  AUTO_REASONS: AUTO_REASONS,
+  listEntryOf: listEntryOf,
+  listOf: listOf,
+  listDue: listDue,
+  listRefreshable: listRefreshable,
+  listRepos: listRepos,
+  autoReason: autoReason,
+  autoConfig: autoConfig,
+  effectiveRepos: effectiveRepos,
+  autoChanges: autoChanges,
+  autoHint: autoHint,
+  autoStateOf: autoStateOf,
+  listChoices: listChoices
 };

@@ -1,6 +1,7 @@
 // Fake of the GitHub REST API for the tests of the GitHub channel (ADR-0050), only on 127.0.0.1.
 // It knows exactly the reading endpoints of the app (repository, branch, tree, blob, commits of a
-// path, compare, pull requests, releases, user, rate limit) and answers everything else, and every
+// path, compare, pull requests, releases, user, the repositories of the user by affiliation, rate
+// limit) and answers everything else, and every
 // method but GET, with 404, so a writing request would show in the log and fail. Like GitHub it
 // checks the token (a wrong one: 401; none: public repositories only, a private one is 404), the
 // API version and the User-Agent, paginates with Link headers, answers If-None-Match with 304 for
@@ -17,6 +18,8 @@ import { createHash } from 'node:crypto';
 import { createServer } from 'node:http';
 
 export const FAKE_GITHUB_VERSION = '2022-11-28';
+/** The account of the valid token (GET /user); its repositories are the "own" ones. */
+export const FAKE_GITHUB_LOGIN = 'anna';
 
 const sha1 = (text) => createHash('sha1').update(text).digest('hex');
 /** The blob SHA git gives a content. */
@@ -78,6 +81,7 @@ export async function startFakeGitHub(options) {
 	const methods = new Set();
 	const repos = new Map();
 	let injections = [];
+	let granted = null;
 	let delayMs = 0;
 	let clock = Math.ceil(Date.now() / 1000) * 1000 + 60_000;
 	const limits = { token: options.limits?.token ?? 5000, anonymous: options.limits?.anonymous ?? 60 };
@@ -105,8 +109,14 @@ export async function startFakeGitHub(options) {
 	}
 
 	const api = {
-		/** A repository with a first commit of `files` ({ path: content }). */
-		addRepo(name, { files = {}, private: isPrivate = false, branch = 'main', empty = false } = {}) {
+		/**
+		 * A repository with a first commit of `files` ({ path: content }). `org` makes its owner an
+		 * organization; `fork` and `archived` mark it like GitHub. The user of the token is LOGIN.
+		 */
+		addRepo(
+			name,
+			{ files = {}, private: isPrivate = false, branch = 'main', empty = false, org = false, fork = false, archived = false } = {}
+		) {
 			const [owner, short] = name.split('/');
 			ids += 1;
 			const repo = {
@@ -114,8 +124,11 @@ export async function startFakeGitHub(options) {
 				node_id: `R_fake${ids}`,
 				name: short,
 				owner,
+				owner_type: org ? 'Organization' : 'User',
 				full_name: name,
 				private: isPrivate,
+				fork,
+				archived,
 				default_branch: branch,
 				commits: [],
 				pulls: [],
@@ -151,6 +164,22 @@ export async function startFakeGitHub(options) {
 		/** Renames the default branch (the old name answers 404). */
 		renameBranch(name, branch) {
 			repoOf(name).default_branch = branch;
+		},
+		/** Archives a repository (or takes it out of the archive with `false`). */
+		archive(name, archived = true) {
+			repoOf(name).archived = archived;
+		},
+		/** Deletes a repository: every request about it answers 404. */
+		removeRepo(name) {
+			repoOf(name);
+			repos.delete(name.toLowerCase());
+		},
+		/**
+		 * Like a fine-grained token with "Only select repositories": GET /user/repos lists only these
+		 * (null: every repository, like "All repositories" or a classic token).
+		 */
+		grantOnly(names) {
+			granted = names === null ? null : new Set(names.map((name) => name.toLowerCase()));
 		},
 		openPull(name, { title = 'Neuer PR', body = '', login = 'ben', draft = false, head = 'feature', date } = {}) {
 			const repo = repoOf(name);
@@ -296,7 +325,38 @@ export async function startFakeGitHub(options) {
 		}
 		if (path === '/user') {
 			if (!authorized) return send(response, 401, { message: 'Requires authentication' });
-			return send(response, 200, { login: 'anna', id: 1, type: 'User' });
+			return send(response, 200, { login: FAKE_GITHUB_LOGIN, id: 1, type: 'User' });
+		}
+		if (path === '/user/repos') {
+			// The repositories of the token by affiliation (owner, collaborator, organization_member;
+			// default all three), sorted by full_name, paginated like every list.
+			if (!authorized) return send(response, 401, { message: 'Requires authentication' });
+			const wanted = (url.searchParams.get('affiliation') ?? 'owner,collaborator,organization_member').split(',');
+			const affiliation = (repo) =>
+				repo.owner_type === 'Organization'
+					? 'organization_member'
+					: repo.owner.toLowerCase() === FAKE_GITHUB_LOGIN
+						? 'owner'
+						: 'collaborator';
+			const list = [...repos.values()]
+				.filter((repo) => wanted.includes(affiliation(repo)))
+				.filter((repo) => granted === null || granted.has(repo.full_name.toLowerCase()))
+				.sort((a, b) => (a.full_name.toLowerCase() < b.full_name.toLowerCase() ? -1 : 1))
+				.map((repo) => ({
+					id: repo.id,
+					node_id: repo.node_id,
+					name: repo.name,
+					full_name: repo.full_name,
+					private: repo.private,
+					owner: { login: repo.owner, type: repo.owner_type },
+					fork: repo.fork,
+					archived: repo.archived,
+					default_branch: repo.default_branch,
+					pushed_at: repo.commits.length === 0 ? null : headOf(repo).date,
+					html_url: `https://github.com/${repo.full_name}`
+				}));
+			const result = page(list, url);
+			return send(response, 200, result.items, { ...context.headers, ...result.headers });
 		}
 		if (!(match = /^\/repos\/([^/]+)\/([^/]+)(\/.*)?$/.exec(path))) return send(response, 404, { message: 'Not Found' });
 		const repo = repos.get(`${decodeURIComponent(match[1])}/${decodeURIComponent(match[2])}`.toLowerCase());
@@ -309,7 +369,8 @@ export async function startFakeGitHub(options) {
 				name: repo.name,
 				full_name: repo.full_name,
 				private: repo.private,
-				archived: false,
+				fork: repo.fork,
+				archived: repo.archived,
 				default_branch: repo.default_branch,
 				html_url: `https://github.com/${repo.full_name}`
 			});

@@ -154,7 +154,24 @@ describe('settings of a connection', () => {
 		]);
 		expect(rules.settingsOf({ interval: 60 }).interval).toBe(60);
 		expect(rules.settingsOf({ interval: 99 }).interval).toBe(15);
-		expect(rules.settingsOf(null)).toEqual({ interval: 15, repos: [] });
+		expect(rules.settingsOf(null)).toEqual({ interval: 15, repos: [], auto: false, exclude: [] });
+	});
+
+	it('takes "Alle meine Repositorys" and its exclusions (addendum of 2026-10-02)', () => {
+		const code = (settings) => rules.settingsViolation(settings)?.code ?? '';
+		expect(code({ auto: true, exclude: ['anna/alt', 'Anna/Notes'] })).toBe('');
+		expect(code({ auto: false, exclude: [] })).toBe('');
+		for (const auto of ['true', 1, null]) expect(code({ auto }), String(auto)).toBe('validation_github_auto');
+		expect(code({ exclude: 'anna/alt' })).toBe('validation_github_exclude');
+		expect(code({ exclude: ['anna'] })).toBe('validation_github_exclude');
+		expect(code({ exclude: ['anna/alt', 'ANNA/ALT'] })).toBe('validation_github_exclude');
+		expect(code({ exclude: Array.from({ length: 101 }, (_, i) => `anna/r${i}`) })).toBe('validation_github_exclude');
+		expect(rules.settingsViolation({ auto: 'x' }).message).toBe(rules.MESSAGES.validation_github_auto);
+		expect(rules.settingsOf({ auto: true, exclude: ['anna/alt', 'bad', 'Anna/Alt', 'anna/b'] })).toMatchObject({
+			auto: true,
+			exclude: ['anna/alt', 'anna/b']
+		});
+		expect(rules.settingsOf({ auto: 'yes' }).auto).toBe(false);
 	});
 
 	it('names the repositories whose target is new', () => {
@@ -454,11 +471,13 @@ describe('status of a watched source (ADR-0050 §5)', () => {
 
 describe('state of the channel and details of the card', () => {
 	it('reads the stored state safely', () => {
-		expect(rules.stateOf('')).toEqual({ repos: {}, limit: null });
-		expect(rules.stateOf('{broken')).toEqual({ repos: {}, limit: null });
+		expect(rules.stateOf('')).toEqual({ repos: {}, limit: null, list: null, auto: null });
+		expect(rules.stateOf('{broken')).toEqual({ repos: {}, limit: null, list: null, auto: null });
 		expect(rules.stateOf({ repos: { 'a/b': { head: 'x' }, bad: 3 }, limit: { until: 5, kind: 'primary' } })).toEqual({
 			repos: { 'a/b': { head: 'x' } },
-			limit: { until: 5, kind: 'primary' }
+			limit: { until: 5, kind: 'primary' },
+			list: null,
+			auto: null
 		});
 		expect(rules.limitUntil({ limit: { until: 50 } }, 10)).toBe(50);
 		expect(rules.limitUntil({ limit: { until: 5 } }, 10)).toBe(0);
@@ -466,7 +485,8 @@ describe('state of the channel and details of the card', () => {
 
 	it('sums up a repository for its card', () => {
 		const config = rules.settingsOf({ repos: [{ repo: 'octo/roadmap' }] }).repos[0];
-		expect(rules.repoSummary(config, undefined)).toMatchObject({ repo: 'octo/roadmap', url: 'https://github.com/octo/roadmap', files: 0, openPulls: null, lastRelease: null, error: '' });
+		expect(rules.repoSummary(config, undefined)).toMatchObject({ repo: 'octo/roadmap', auto: false, url: 'https://github.com/octo/roadmap', files: 0, openPulls: null, lastRelease: null, error: '' });
+		expect(rules.repoSummary(rules.autoConfig('anna/notes'), undefined)).toMatchObject({ repo: 'anna/notes', auto: true, target: '' });
 		const summary = rules.repoSummary(config, {
 			name: 'Octo/Roadmap',
 			branch: 'main',
@@ -496,5 +516,156 @@ describe('state of the channel and details of the card', () => {
 		expect(rules.isMarkdownName('a/README.markdown')).toBe(true);
 		expect(rules.isMarkdownName('README')).toBe(false);
 		expect(rules.looksBinary('ab\u0000c')).toBe(true);
+	});
+});
+
+describe('repositories of the token and "Alle meine Repositorys" (addendum of 2026-10-02)', () => {
+	const json = (full_name, { type = 'User', archived = false, fork = false, priv = false, pushed = '2026-10-01T10:00:00Z' } = {}) => ({
+		full_name,
+		owner: { login: full_name.split('/')[0], type },
+		private: priv,
+		archived,
+		fork,
+		pushed_at: pushed
+	});
+	const listOf = (entries, login = 'anna') =>
+		rules.listOf({
+			at: '2026-10-02T10:00:00.000Z',
+			login,
+			etag_user: 'W/"u"',
+			pages: [{ etag: 'W/"1"', next: '', repos: entries.map((entry) => rules.listEntryOf(entry)) }],
+			more: false
+		});
+	const settings = (value) => rules.settingsOf(value);
+
+	it('reads an entry of GET /user/repos and a stored list safely', () => {
+		expect(rules.listEntryOf(json('anna/notes', { priv: true }))).toEqual({
+			name: 'anna/notes',
+			owner: 'anna',
+			org: false,
+			private: true,
+			archived: false,
+			fork: false,
+			pushed: '2026-10-01T10:00:00.000Z'
+		});
+		expect(rules.listEntryOf(json('octo-org/site', { type: 'Organization' })).org).toBe(true);
+		expect(rules.listEntryOf({ full_name: 'bad name' })).toBeNull();
+		expect(rules.listEntryOf(null)).toBeNull();
+		expect(rules.listOf(null)).toBeNull();
+		expect(rules.listOf({ at: 'x', pages: [] })).toBeNull();
+		expect(rules.listOf({ at: '2026-10-02T10:00:00Z', pages: [{ repos: 'x' }] })).toBeNull();
+		const list = rules.listOf({ at: '2026-10-02T10:00:00Z', login: 'anna', pages: [{ etag: 'e', next: '/user/repos?page=2', repos: [{ name: 'anna/a' }, { name: 'bad' }] }] });
+		expect(list).toMatchObject({ at: '2026-10-02T10:00:00.000Z', login: 'anna', more: false, pages: [{ etag: 'e', next: '/user/repos?page=2' }] });
+		expect(list.pages[0].repos.map((entry) => entry.name)).toEqual(['anna/a']);
+	});
+
+	it('reads the list again after an hour, on request at most once a minute', () => {
+		const list = listOf([]);
+		const at = Date.parse('2026-10-02T10:00:00Z');
+		expect(rules.listDue(null, at)).toBe(true);
+		expect(rules.listDue(list, at + 59 * 60 * 1000)).toBe(false);
+		expect(rules.listDue(list, at + 60 * 60 * 1000)).toBe(true);
+		expect(rules.listDue(list, at - 1000)).toBe(true);
+		expect(rules.listRefreshable(list, at + 30 * 1000)).toBe(false);
+		expect(rules.listRefreshable(list, at + 60 * 1000)).toBe(true);
+		expect(rules.listRefreshable(null, at)).toBe(true);
+	});
+
+	it('watches own repositories only: no organization, no other account, no fork, nothing archived', () => {
+		expect(rules.autoReason(rules.listEntryOf(json('anna/a')), 'anna')).toBe('');
+		expect(rules.autoReason(rules.listEntryOf(json('Anna/b')), 'ANNA')).toBe('');
+		expect(rules.autoReason(rules.listEntryOf(json('anna/c', { archived: true })), 'anna')).toBe('archived');
+		expect(rules.autoReason(rules.listEntryOf(json('anna/d', { fork: true })), 'anna')).toBe('fork');
+		expect(rules.autoReason(rules.listEntryOf(json('octo-org/e', { type: 'Organization' })), 'anna')).toBe('other');
+		expect(rules.autoReason(rules.listEntryOf(json('ben/f')), 'anna')).toBe('other');
+		expect(rules.autoReason(rules.listEntryOf(json('anna/g')), '')).toBe('other');
+	});
+
+	it('watches the entered repositories, then the own ones with the defaults, most recently pushed first', () => {
+		const list = listOf([
+			json('anna/alt', { pushed: '2026-01-01T00:00:00Z' }),
+			json('anna/neu', { pushed: '2026-10-01T00:00:00Z' }),
+			json('anna/eingetragen'),
+			json('anna/raus'),
+			json('anna/archiv', { archived: true }),
+			json('anna/fork', { fork: true }),
+			json('octo-org/site', { type: 'Organization' })
+		]);
+		const value = settings({ auto: true, exclude: ['Anna/Raus'], repos: [{ repo: 'anna/eingetragen', paths: ['X*'] }, { repo: 'octo/fremd' }] });
+		const effective = rules.effectiveRepos(value, list);
+		expect(effective.repos.map((config) => [config.repo, config.auto === true])).toEqual([
+			['anna/eingetragen', false],
+			['octo/fremd', false],
+			['anna/neu', true],
+			['anna/alt', true]
+		]);
+		expect(effective.repos[0].paths).toEqual(['X*']);
+		expect(effective.repos[2]).toEqual({ repo: 'anna/neu', key: 'anna/neu', paths: ['ROADMAP*', 'CHANGELOG*', 'README*', 'docs/**/roadmap*'], events: { files: true, pulls: true, releases: true }, target: '', auto: true });
+		expect(effective.auto).toEqual(['anna/neu', 'anna/alt']);
+		expect(effective.more).toBe(0);
+		// Off, or without a list: only the entered ones.
+		expect(rules.effectiveRepos(settings({ ...value, auto: false }), list).repos).toHaveLength(2);
+		expect(rules.effectiveRepos(value, null).repos).toHaveLength(2);
+	});
+
+	it('takes at most 50 automatically and counts the rest', () => {
+		const list = listOf(Array.from({ length: 53 }, (_, i) => json(`anna/r${String(i).padStart(2, '0')}`, { pushed: `2026-09-${String((i % 28) + 1).padStart(2, '0')}T00:00:00Z` })));
+		const effective = rules.effectiveRepos(settings({ auto: true }), list);
+		expect(effective.auto).toHaveLength(50);
+		expect(effective.more).toBe(3);
+		expect(rules.LIMITS.autoRepos).toBe(50);
+	});
+
+	it('names what changed and why a repository left: archived, excluded, gone, entered is no removal', () => {
+		const list = listOf([json('anna/a'), json('anna/b', { archived: true }), json('anna/c'), json('anna/e')]);
+		const value = settings({ auto: true, exclude: ['anna/c'], repos: [{ repo: 'anna/e' }] });
+		const after = rules.effectiveRepos(value, list).auto;
+		expect(after).toEqual(['anna/a']);
+		const changes = rules.autoChanges(['anna/b', 'anna/c', 'anna/d', 'anna/e', 'anna/f'], after, value, list);
+		expect(changes).toEqual({
+			added: ['anna/a'],
+			removed: [
+				{ repo: 'anna/b', reason: 'archived' },
+				{ repo: 'anna/c', reason: 'excluded' },
+				{ repo: 'anna/d', reason: 'gone' },
+				{ repo: 'anna/f', reason: 'gone' }
+			]
+		});
+		expect(rules.autoHint(changes, false)).toBe(
+			'Alle meine Repositorys: neu beobachtet anna/a; nicht mehr beobachtet anna/b (archiviert), anna/c (ausgeschlossen), anna/d (nicht mehr da), anna/f (nicht mehr da).'
+		);
+		expect(rules.autoHint({ added: [], removed: [] }, false)).toBe('');
+		expect(rules.autoHint({ added: ['anna/a', 'anna/b'], removed: [] }, true)).toBe('Alle meine Repositorys: 2 Repositorys werden jetzt beobachtet.');
+		expect(rules.autoHint({ added: [], removed: [] }, true)).toMatch(/^Alle meine Repositorys: Das Token nennt keine eigenen Repositorys/);
+		const many = Array.from({ length: 7 }, (_, i) => `anna/n${i}`);
+		expect(rules.autoHint({ added: many, removed: [] }, false)).toBe('Alle meine Repositorys: neu beobachtet anna/n0, anna/n1, anna/n2, anna/n3, anna/n4 und 2 weitere.');
+	});
+
+	it('marks the choices of the list: entered, automatic, excluded, own', () => {
+		const list = listOf([json('anna/a'), json('anna/b'), json('anna/c'), json('octo-org/d', { type: 'Organization', priv: true }), json('anna/e', { fork: true })]);
+		const choices = rules.listChoices(list, settings({ auto: true, exclude: ['anna/c'], repos: [{ repo: 'anna/b' }] }));
+		expect(choices.map((choice) => [choice.repo, choice.state, choice.own])).toEqual([
+			['anna/a', 'auto', true],
+			['anna/b', 'entered', true],
+			['anna/c', 'excluded', true],
+			['octo-org/d', '', false],
+			['anna/e', '', true]
+		]);
+		expect(choices[3]).toMatchObject({ org: true, private: true, fork: false, archived: false });
+		expect(rules.listChoices(list, settings({}))[0].state).toBe('');
+	});
+
+	it('reads the state of the automatic set safely', () => {
+		expect(rules.autoStateOf(null)).toBeNull();
+		expect(rules.autoStateOf({ names: ['anna/a', 'bad'], at: '2026-10-02T10:00:00Z', added: ['anna/a', 3], removed: [{ repo: 'anna/b', reason: 'archived' }, { repo: 'anna/c', reason: 'nope' }], error: 'x' })).toEqual({
+			names: ['anna/a'],
+			at: '2026-10-02T10:00:00.000Z',
+			added: ['anna/a'],
+			removed: [{ repo: 'anna/b', reason: 'archived' }],
+			error: 'x'
+		});
+		const stored = rules.stateOf({ list: { at: '2026-10-02T10:00:00Z', login: 'anna', pages: [] }, auto: { names: [] } });
+		expect(stored.list).toMatchObject({ login: 'anna', pages: [] });
+		expect(stored.auto).toMatchObject({ names: [] });
 	});
 });

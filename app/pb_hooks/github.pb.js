@@ -1,6 +1,7 @@
 /// <reference path="../pb_data/types.d.ts" />
 // GitHub channel (ADR-0050, plan beobachtete-quellen, package 2): watched repositories, read only.
-// The logic lives in lib/github-service.js (runs, cron, check, details), the rules in
+// The logic lives in lib/github-service.js (runs, cron, check, details, the list of the
+// repositories of the token), the rules in
 // lib/github-rules.js and the client (GET only) in lib/github-client.js. "Jetzt abrufen" runs a
 // connection through the common route /api/byl/connections/{id}/run (channels.pb.js). Before the
 // migration 1790203200 no connection of the kind exists: the cron does nothing, the routes answer
@@ -43,6 +44,23 @@ routerAdd(
       throw new NotFoundError();
     }
     return e.json(200, require(`${__hooks}/lib/github-service.js`).check(e.app, record));
+  },
+  $apis.requireAuth('users')
+);
+
+// The repositories the token may read, for "Repository hinzufügen …" (ADR-0050, addendum of
+// 2026-10-02): from the stored list (at most an hour old), else read again with ETag; refresh=1
+// reads again at most once a minute. Without a token "no_token"; never shows the token.
+routerAdd(
+  'GET',
+  '/api/byl/connections/{id}/github/repos',
+  function (e) {
+    var record = require(`${__hooks}/lib/connection-service.js`).visibleConnection(e, e.request.pathValue('id'));
+    if (!record || record.getString('type') !== 'github') {
+      throw new NotFoundError();
+    }
+    var refresh = String(e.request.url.query().get('refresh') || '') === '1';
+    return e.json(200, require(`${__hooks}/lib/github-service.js`).repoList(e.app, record, { refresh: refresh }));
   },
   $apis.requireAuth('users')
 );
