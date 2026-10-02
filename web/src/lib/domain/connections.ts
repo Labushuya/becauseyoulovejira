@@ -1,13 +1,21 @@
 // Connections of the channels (ADR-0016 section 2, ADR-0018, ADR-0020; E4 plan packages 10, 13, 20 and 22;
-// Notion since ADR-0041, GitHub since ADR-0050).
+// Notion since ADR-0041, GitHub since ADR-0050, folders since ADR-0051).
 // Pure: types, labels and the checks of the form. Access data are Windows user environment variables; a
 // connection stores only their names. The name pattern mirrors app/pb_hooks/lib/secrets.js
 // and the mail settings mirror app/pb_hooks/lib/connection-rules.js
 // (tests/unit/web-connections.test.mjs compares both).
 
+import type { FolderConfig, FolderSettings } from './folders';
 import { GITHUB_SECRET_NAME, type GitHubRepoSettings, type GitHubSettings } from './github';
 
-export const CONNECTION_TYPES = ['calendar', 'telegram', 'mail', 'notion', 'github'] as const;
+export const CONNECTION_TYPES = [
+	'calendar',
+	'telegram',
+	'mail',
+	'notion',
+	'github',
+	'folder'
+] as const;
 export type ConnectionType = (typeof CONNECTION_TYPES)[number];
 
 export const CONNECTION_TYPE_LABELS: Readonly<Record<ConnectionType, string>> = Object.freeze({
@@ -15,7 +23,8 @@ export const CONNECTION_TYPE_LABELS: Readonly<Record<ConnectionType, string>> = 
 	telegram: 'Telegram-Bot',
 	mail: 'Postfach (IMAP)',
 	notion: 'Notion',
-	github: 'GitHub'
+	github: 'GitHub',
+	folder: 'Ordner'
 });
 
 /**
@@ -28,15 +37,20 @@ export function fetchesAutomatically(type: ConnectionType): boolean {
 
 /**
  * Whether a kind takes keywords (ADR-0020). Notion imports what the user chooses (ADR-0041 §5), and
- * for GitHub the chosen paths and events are the filter (ADR-0020, addendum 5).
+ * for GitHub and folders the choice is the filter (ADR-0020, addenda 5 and 6).
  */
 export function usesKeywords(type: ConnectionType): boolean {
-	return type !== 'notion' && type !== 'github';
+	return type !== 'notion' && type !== 'github' && type !== 'folder';
 }
 
 /** Whether a kind runs without its secret too: GitHub reads public repositories (ADR-0050 §1). */
 export function secretOptional(type: ConnectionType): boolean {
 	return type === 'github';
+}
+
+/** Whether a kind has access data at all: folders on this machine have none (ADR-0051 §1). */
+export function usesSecret(type: ConnectionType): boolean {
+	return type !== 'folder';
 }
 
 /** Mail providers; host, port and TLS follow from the provider in byl-mail.exe (ADR-0016 section 4). */
@@ -79,7 +93,9 @@ export const DEFAULT_SECRET_NAMES: Readonly<Record<ConnectionType, string>> = Ob
 	telegram: 'BYL_TELEGRAM_TOKEN',
 	mail: MAIL_PROVIDER_SECRET_NAMES.webde,
 	notion: 'BYL_NOTION_TOKEN',
-	github: GITHUB_SECRET_NAME
+	github: GITHUB_SECRET_NAME,
+	// Folders have no access data (ADR-0051 §1).
+	folder: ''
 });
 export const DEFAULT_ALLOWLIST_NAME = 'BYL_TELEGRAM_ALLOWED_IDS';
 
@@ -134,6 +150,11 @@ export interface Connection {
 	 * for other kinds. The data layer always sets it; objects built by hand may leave it out.
 	 */
 	github?: GitHubSettings | null;
+	/**
+	 * Folders: interval and folders with their filters and target project (ADR-0051 §2); null for
+	 * other kinds. The data layer always sets it; objects built by hand may leave it out.
+	 */
+	folders?: FolderSettings | null;
 	runningSince: string | null;
 	/**
 	 * Target project of the new entries (ADR-0049), null without one. The data layer always sets
@@ -336,7 +357,9 @@ export const KEYWORD_SEARCH_TEXT: Readonly<Record<ConnectionType, string>> = Obj
 	mail: 'Gesucht wird in Betreff und Absender (Name und Adresse), mit „Betreff, Absender, Kopfzeilen und Text durchsuchen“ (Standard) auch in den Kopfzeilen (An, Cc, Antwort an, Liste, Organisation) und im ganzen Text. Neue Stichwörter gelten auch für ältere Mails im Posteingang.',
 	notion: 'Notion hat keine Stichwörter: Übernommen wird nur, was du im Import auswählst.',
 	github:
-		'GitHub hat keine Stichwörter: Übernommen wird, was die beobachteten Pfade und Ereignisse eines Repositorys treffen.'
+		'GitHub hat keine Stichwörter: Übernommen wird, was die beobachteten Pfade und Ereignisse eines Repositorys treffen.',
+	folder:
+		'Ordner haben keine Stichwörter: Übernommen wird, was Dateitypen und Ausschlüsse eines Ordners treffen.'
 });
 
 export interface ConnectionDraft {
@@ -349,6 +372,8 @@ export interface ConnectionDraft {
 	mailUser: string;
 	/** GitHub only: the first repository, which the assistant adds with the connection (ADR-0050). */
 	githubRepo?: GitHubRepoSettings | null;
+	/** Folders only: the first folder, which the dialog adds with the connection (ADR-0051). */
+	folder?: FolderConfig | null;
 }
 
 export function isConnectionType(value: unknown): value is ConnectionType {
@@ -461,7 +486,10 @@ export function connectionDraftErrors(
 	const label = draft.label.trim();
 	if (label === '') errors.label = 'Pflichtfeld.';
 	else if (label.length > LABEL_MAX_LENGTH) errors.label = 'Höchstens 100 Zeichen.';
-	if (!isSecretName(draft.secretEnv.trim())) errors.secretEnv = SECRET_NAME_MESSAGE;
+	// Folders have no access data (ADR-0051 §1): the name stays empty.
+	if (usesSecret(draft.type) && !isSecretName(draft.secretEnv.trim())) {
+		errors.secretEnv = SECRET_NAME_MESSAGE;
+	}
 	if (draft.type === 'telegram' && !isSecretName(draft.allowlistEnv.trim())) {
 		errors.allowlistEnv = SECRET_NAME_MESSAGE;
 	}

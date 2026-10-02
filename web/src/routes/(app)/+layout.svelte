@@ -30,6 +30,7 @@
 		setConnectionNames
 	} from '$lib/stores/connection-names.svelte';
 	import { FirstStepsStore, localStore, setFirstStepsStore } from '$lib/stores/first-steps.svelte';
+	import { FolderViewer, folderViewData, setFolderViewer } from '$lib/stores/folder-view.svelte';
 	import { fetchHostPlatform } from '$lib/data/host';
 	import { HostStore, setHostStore } from '$lib/stores/host.svelte';
 	import { getNotifyStore } from '$lib/attention-notify.svelte';
@@ -189,6 +190,9 @@
 	const sources = setTicketSourcesStore(
 		new TicketSourcesStore(ticketSourcesData(pb), auth, flags, (item) => inbox.upsert(item))
 	);
+	// "Ansehen" of a file of a watched folder (ADR-0051 §6): the panel of an entry and the sources of
+	// a ticket open the current file through it.
+	setFolderViewer(new FolderViewer(folderViewData(pb), auth));
 	// Names of the connections for the inbox and the sources (ADR-0026, addendum KK-3): loaded once
 	// per session, renames arrive through realtime.
 	const connectionNames = setConnectionNames(

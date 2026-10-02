@@ -68,6 +68,7 @@ function fakes(items: Connection[], status: SecretStatus = { secret: false, allo
 			keywords: settings.keywords
 		})),
 		saveGitHub: vi.fn<ConnectionsData['saveGitHub']>(),
+		saveFolders: vi.fn<ConnectionsData['saveFolders']>(),
 		remove: vi.fn<ConnectionsData['remove']>(),
 		secretStatus: vi.fn<ConnectionsData['secretStatus']>(async () => status),
 		run: vi.fn<ConnectionsData['run']>(async () => ({

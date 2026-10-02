@@ -5,6 +5,7 @@
 import { PIN_MESSAGES } from '../domain/comments';
 import { CONNECTION_LABEL_MESSAGES } from '../domain/connections';
 import { DUPLICATE_MESSAGES } from '../domain/duplicate';
+import { FOLDER_MESSAGES } from '../domain/folders';
 import { GITHUB_MESSAGES } from '../domain/github';
 import { INBOX_KEY_MESSAGES } from '../domain/inbox-keys';
 import { PROJECT_PARENT_MESSAGES } from '../domain/project-tree';
@@ -97,9 +98,12 @@ const FIELD_MESSAGES: Readonly<Record<string, string>> = Object.freeze({
 	...PIN_MESSAGES,
 	// "Ticket duplizieren" (ADR-0045), the same texts as the hook.
 	...DUPLICATE_MESSAGES,
-	// Target projects (ADR-0049) and the GitHub channel (ADR-0050), the same texts as the hooks.
+	// Target projects (ADR-0049), the GitHub channel (ADR-0050) and the folders (ADR-0051), the same
+	// texts as the hooks.
 	...TARGET_MESSAGES,
-	...GITHUB_MESSAGES
+	...GITHUB_MESSAGES,
+	...FOLDER_MESSAGES,
+	validation_connection_secret_none: 'Diese Verbindungsart braucht keine Zugangsdaten.'
 });
 
 /** Texts that depend on the field as well, keyed by `<field>:<code>`; they win over the above. */

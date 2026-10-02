@@ -32,7 +32,9 @@ describe('watchOf', () => {
 			{},
 			{ kind: 'file', state: 'merged' },
 			{ kind: 'pull', state: 'current' },
-			{ kind: 'release', state: 'open' }
+			{ kind: 'release', state: 'open' },
+			{ kind: 'file', state: 'moved' },
+			{ kind: 'file', state: 'moved', to: '' }
 		]) {
 			expect(watchOf(value), JSON.stringify(value)).toBeNull();
 		}
@@ -40,6 +42,34 @@ describe('watchOf', () => {
 			kind: 'file',
 			state: 'gone',
 			since: null
+		});
+	});
+
+	it('reads a moved or renamed file of a folder with where it went (ADR-0051 §5)', () => {
+		expect(
+			watchOf({
+				kind: 'file',
+				state: 'moved',
+				since: '2026-10-02T12:05:00.000Z',
+				to: 'Archiv/Bericht.pdf',
+				folder: 'Projekte',
+				changed: true
+			})
+		).toEqual({
+			kind: 'file',
+			state: 'moved',
+			since: '2026-10-02T12:05:00.000Z',
+			to: 'Archiv/Bericht.pdf',
+			folder: 'Projekte',
+			changed: true
+		});
+		expect(watchOf({ kind: 'file', state: 'moved', to: 'a.pdf', folder: 3 })).toEqual({
+			kind: 'file',
+			state: 'moved',
+			since: null,
+			to: 'a.pdf',
+			folder: '',
+			changed: false
 		});
 	});
 });
@@ -67,5 +97,24 @@ describe('the status in words', () => {
 			'PR gemergt (am 02.10.2026 14:05)'
 		);
 		expect(watchText({ kind: 'pull', state: 'closed', since: null })).toBe('PR geschlossen');
+	});
+
+	it('says where a file of a folder went, neutral and without red', () => {
+		expect(WATCH_LABELS.moved).toBe('Verschoben');
+		expect(WATCH_LOZENGES.moved.tone).toBe('neutral');
+		const moved = {
+			kind: 'file' as const,
+			state: 'moved' as const,
+			since: '2026-10-02T12:05:00.000Z',
+			to: 'Archiv/Bericht.pdf',
+			folder: 'Projekte',
+			changed: false
+		};
+		expect(watchText(moved)).toBe(
+			'Verschoben nach „Archiv/Bericht.pdf“ in „Projekte“ (am 02.10.2026 14:05)'
+		);
+		expect(watchText({ ...moved, since: null, folder: '', changed: true })).toBe(
+			'Verschoben nach „Archiv/Bericht.pdf“, seit Import auch geändert'
+		);
 	});
 });

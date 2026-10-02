@@ -96,7 +96,10 @@ async function user() {
 	return { id: record.id, pb };
 }
 
-/** A folder connection of `who`, created by the superuser (OD-1: users create it with OD-2). */
+/**
+ * A folder connection of `who`, created by the superuser (without the checks of a client; users
+ * create one since OD-2, see "refuses access data …").
+ */
 function connection(who, folders, data = {}) {
 	return superuser.collection('connections').create({
 		owner: who.id,
@@ -496,9 +499,16 @@ describe('unreachable folders, target projects and settings', () => {
 		const stored = (await superuser.collection('connections').getOne(conn.id)).watch;
 		await owner.pb.collection('connections').update(conn.id, { watch: { folders: {} } });
 		expect((await superuser.collection('connections').getOne(conn.id)).watch).toEqual(stored);
+		// Users create one since OD-2: without a variable, with a folder checked on the disk.
+		const fresh = { owner: owner.id, type: 'folder', label: 'Neu', enabled: true };
 		await expect(
-			owner.pb.collection('connections').create({ owner: owner.id, type: 'folder', label: 'Neu', enabled: true, secret_env: '', settings: {} })
-		).rejects.toMatchObject({ response: { data: { type: { code: 'validation_connection_type' } } } });
+			owner.pb.collection('connections').create({ ...fresh, secret_env: 'BYL_ORDNER', settings: {} })
+		).rejects.toMatchObject({ response: { data: { secret_env: { code: 'validation_connection_secret_none' } } } });
+		await expect(
+			owner.pb.collection('connections').create({ ...fresh, secret_env: '', settings: { folders: [{ path: join(base, 'gibt-es-nicht') }] } })
+		).rejects.toMatchObject({ response: { data: { settings: { code: 'validation_folder_missing' } } } });
+		const created = await owner.pb.collection('connections').create({ ...fresh, secret_env: '', settings: { folders: [{ path: folder('neu') }] } });
+		expect(created).toMatchObject({ type: 'folder', secret_env: '' });
 	});
 
 	it('answers 404 for the details of connections of others and of other kinds', async () => {

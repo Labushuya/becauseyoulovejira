@@ -12,7 +12,9 @@ import { FlagStore } from '$lib/stores/flags.svelte';
 import { LiveHealth } from '$lib/stores/live-health.svelte';
 import { TicketSourcesStore, type TicketSourcesData } from '$lib/stores/ticket-sources.svelte';
 import { alreadyLinkedReason } from '$lib/domain/ticket-picker';
+import { FolderViewer, type FileOpener } from '$lib/stores/folder-view.svelte';
 import ConnectionNamesHarness from '$lib/test/ConnectionNamesHarness.svelte';
+import FolderViewerHarness from '$lib/test/FolderViewerHarness.svelte';
 import InModalHarness from '$lib/test/InModalHarness.svelte';
 import { useOverlayStubs } from '$lib/test/overlay-stubs';
 import { fakePickerSource, pickerTicket } from '$lib/test/ticket-picker-fake';
@@ -170,6 +172,78 @@ describe('TicketSources', () => {
 		// A source nobody watches shows no status; nothing of it is red.
 		expect(rowOf('Nachricht chat00000000001')?.textContent).not.toMatch(/Unverändert|PR /);
 		expect(document.querySelector('[data-tone="danger"]')).toBeNull();
+	});
+
+	it('shows a file of a folder as a reference and opens its current version (ADR-0051 §6)', async () => {
+		const file = item('file00000000002', {
+			channel: 'folder',
+			kind: 'file',
+			title: 'Neue Datei: Angebot.pdf',
+			sourceRef: 'C:\\Daten\\Projekte\\Angebot.pdf',
+			watch: {
+				kind: 'file',
+				state: 'moved',
+				since: '2026-10-02T12:05:00.000Z',
+				to: 'Archiv/Angebot.pdf',
+				folder: 'Projekte',
+				changed: false
+			}
+		});
+		const data = {
+			list: vi.fn<TicketSourcesData['list']>(async () => [file]),
+			link: vi.fn<TicketSourcesData['link']>(),
+			release: vi.fn<TicketSourcesData['release']>(),
+			originalUrl: vi.fn<TicketSourcesData['originalUrl']>()
+		} satisfies TicketSourcesData;
+		const store = new TicketSourcesStore(
+			data,
+			{ ensureValid: () => true, logout: vi.fn() },
+			new FlagStore()
+		);
+		store.open(TICKET.id, TICKET.sourceItem);
+		const open = vi.fn<FileOpener>(() => false);
+		const viewer = new FolderViewer(
+			{
+				view: async () => ({
+					kind: 'ok',
+					view: {
+						name: 'Angebot.pdf',
+						path: 'Archiv/Angebot.pdf',
+						folder: 'Projekte',
+						size: 10,
+						modified: '',
+						inline: true,
+						url: 'http://127.0.0.1:8090/api/byl/folders/items/file00000000002/file?token=t'
+					}
+				})
+			},
+			{ ensureValid: () => true, logout: vi.fn() },
+			open
+		);
+		render(FolderViewerHarness, {
+			props: {
+				viewer,
+				component: TicketSources,
+				props: { ticket: TICKET, store, candidates: [], picker: PICKER.source }
+			}
+		});
+		const section = within(await screen.findByRole('region', { name: 'Quellen' }));
+		const row = await vi.waitFor(() => section.getByRole('listitem'));
+		expect(row.textContent).toContain('Ordner');
+		expect(row.textContent).toContain('Verweis');
+		expect(row.textContent).toContain('Verschoben nach „Archiv/Angebot.pdf“ in „Projekte“');
+		expect(within(row).queryByRole('button', { name: /Originaldatei/ })).toBeNull();
+		const button = within(row).getByRole('button', {
+			name: 'Datei von „Neue Datei: Angebot.pdf“ öffnen'
+		});
+		expect(button.className).toContain('button-icon');
+		await fireEvent.click(button);
+		await vi.waitFor(() =>
+			expect(open).toHaveBeenCalledWith(expect.stringContaining('?token=t'), true)
+		);
+		// A blocked tab is said neutrally, with the way out.
+		const note = await screen.findByText(/^Der Browser hat den neuen Tab blockiert/);
+		expect(note.closest('[data-tone]')?.getAttribute('data-tone')).toBe('info');
 	});
 
 	it('names the connection of a source and follows a rename at once (KK-3)', async () => {

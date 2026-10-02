@@ -10,15 +10,17 @@
 		| 'api'
 		| 'whatsapp-web'
 		| 'notion'
-		| 'github';
+		| 'github'
+		| 'folder';
 </script>
 
 <script lang="ts">
 	// Symbol of a channel in a tinted tile (Clean-Room, plan §3.12): a calendar sheet, a paper plane,
 	// an envelope with "@", an envelope with a lock for Proton, a file, a bookmark, a key with code
 	// brackets for the own inbox, a speech bubble in a browser window for WhatsApp Web (ADR-0038),
-	// a page with ticked lines for the lists of Notion (ADR-0041) and two versions on a branch for
-	// GitHub (ADR-0050). No logos of Google, Telegram, Web.de, Proton, WhatsApp, Notion or GitHub.
+	// a page with ticked lines for the lists of Notion (ADR-0041), two versions on a branch for
+	// GitHub (ADR-0050) and a folder with an eye for the watched folders (ADR-0051). No logos of
+	// Google, Telegram, Web.de, Proton, WhatsApp, Notion or GitHub.
 	// Decorative: the name of the channel stands next to it.
 	let { kind }: { kind: ChannelIconKind } = $props();
 </script>
@@ -52,6 +54,10 @@
 				d="M3.5 3.75a1.5 1.5 0 1 0 3 0 1.5 1.5 0 0 0-3 0zM3.5 12.25a1.5 1.5 0 1 0 3 0 1.5 1.5 0 0 0-3 0zM9.5 6.25a1.5 1.5 0 1 0 3 0 1.5 1.5 0 0 0-3 0z"
 			/>
 			<path d="M5 5.25v5.5M11 7.75c0 2.5-6 1.5-6 3" />
+		{:else if kind === 'folder'}
+			<path d="M1.75 12.75V3.5h4l1.5 1.75h7v7.5z" />
+			<path d="M5 9.25c1.75-2.25 4.25-2.25 6 0-1.75 2.25-4.25 2.25-6 0z" />
+			<path d="M7.6 9.25a.4.4 0 1 0 .8 0 .4.4 0 0 0-.8 0z" />
 		{:else}
 			<path d="M4 2h8v12l-4-3-4 3z" />
 			<path d="M8 5v3.5M6.5 7l1.5 1.5L9.5 7" />
