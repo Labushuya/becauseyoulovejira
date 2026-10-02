@@ -8,7 +8,7 @@
 
 import { createContext, tick } from 'svelte';
 import { afterNavigate, beforeNavigate } from '$app/navigation';
-import { isTicketRoute, type AreaTicketHost } from './ticket-host';
+import { isTicketRoute, type OriginTicketHost } from './ticket-host';
 
 interface Left {
 	/** Record ID of the ticket that was left. */
@@ -27,10 +27,10 @@ interface End {
 }
 
 export class TicketReturn {
-	readonly #host: AreaTicketHost;
+	readonly #host: OriginTicketHost;
 	#left = $state.raw<Left | null>(null);
 
-	constructor(host: AreaTicketHost) {
+	constructor(host: OriginTicketHost) {
 		this.#host = host;
 	}
 
@@ -76,10 +76,11 @@ export class TicketReturn {
 const [getTicketReturn, setTicketReturn, hasTicketReturn] = createContext<TicketReturn>();
 
 /**
- * Follows the navigations of the layout of an area and hands the way back to its pages. Call
- * during the initialisation of the layout.
+ * Follows the navigations of the layout of an area (or of the calendar, whose rules and entries a
+ * ticket replaces as well) and hands the way back to its pages. Call during the initialisation of
+ * the layout.
  */
-export function followTicketReturn(host: AreaTicketHost): TicketReturn {
+export function followTicketReturn(host: OriginTicketHost): TicketReturn {
 	const state = setTicketReturn(new TicketReturn(host));
 	beforeNavigate(({ from, to }) => state.follow(from, to));
 	afterNavigate(() => void state.returnToView());

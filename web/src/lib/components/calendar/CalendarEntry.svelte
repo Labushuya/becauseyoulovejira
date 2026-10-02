@@ -31,7 +31,6 @@
 	import { projectPath } from '$lib/domain/project-tree';
 	import type { ProjectRef } from '$lib/domain/ticket';
 	import type { TicketRowActionsStore } from '$lib/stores/ticket-row-actions.svelte';
-	import { inboxItemHref, recurrenceHref } from '$lib/ticket-links';
 	import ColorMark from '../ColorMark.svelte';
 	import PriorityIcon from '../PriorityIcon.svelte';
 	import StatusPill from '../StatusPill.svelte';
@@ -44,7 +43,9 @@
 	// clock and say "überfällig", never red (ADR-0009); done ones are muted with a check mark;
 	// planned dates are pale and dashed and say when their ticket appears; entries of the inbox are
 	// muted with their symbol. A ticket opens next to the calendar in the remembered way (`href`), a
-	// planned date its rule, an entry of the inbox the inbox. With `rowActions` a ticket ends with the
+	// planned date its rule and an entry of the inbox the entry, both next to the calendar too
+	// (`ruleHref`, `itemHref`; ADR-0054 §8), marked while their panel is open. Their links name the
+	// rule or the entry for the focus after closing. With `rowActions` a ticket ends with the
 	// menu "•••" of the rows of "Aufgaben" (plan aktionsmenues); the entry is a menu row, so a right
 	// click or Shift+F10 open it where the owner attached rowMenus. In the cells of the grid the
 	// entries are no stops of Tab (`tabbable` false): the arrow keys of the grid reach them. An open
@@ -56,6 +57,8 @@
 		today,
 		projectOf,
 		href,
+		ruleHref,
+		itemHref,
 		open,
 		rowActions = null,
 		duplicates = false,
@@ -73,6 +76,10 @@
 		projectOf: (projectId: string | null) => ProjectRef | null;
 		/** Panel or full view of a ticket next to the calendar, in the remembered way. */
 		href: (ticketId: string) => ResolvedPathname;
+		/** Panel of a rule next to the calendar (a planned date). */
+		ruleHref: (ruleId: string) => ResolvedPathname;
+		/** Panel of an inbox entry next to the calendar (a date of the inbox). */
+		itemHref: (itemId: string) => ResolvedPathname;
 		/** Addresses of "Im Seitenpanel öffnen" and "In Vollansicht öffnen" in the menu. */
 		open: (ticketId: string) => { panel: ResolvedPathname; full: ResolvedPathname };
 		/** The menu "•••" of a ticket; without it the entry has none. */
@@ -82,7 +89,7 @@
 		/** A stop of Tab; false in the cells of the grid. */
 		tabbable?: boolean;
 		look?: EntryLook;
-		/** The ticket is open in the panel next to the calendar. */
+		/** The ticket, rule or entry is open in the panel next to the calendar. */
 		active?: boolean;
 		/** The due date as text (the group "Überfällig" of the agenda). */
 		dueLabel?: boolean;
@@ -213,11 +220,13 @@
 		{/if}
 	</li>
 {:else if entry.kind === 'planned'}
-	<li class="entry planned {look}">
+	<li class="entry planned {look}" class:active>
 		<a
 			class="link"
-			href={recurrenceHref(entry.planned.ruleId)}
+			href={ruleHref(entry.planned.ruleId)}
 			{tabindex}
+			data-calendar-rule={entry.planned.ruleId}
+			aria-current={active ? 'true' : undefined}
 			title={`Geplant: ${title}, ${appears}`}
 		>
 			{@render mark()}
@@ -244,11 +253,13 @@
 	</li>
 {:else}
 	{@const item = entry.item}
-	<li class="entry inbox {look}">
+	<li class="entry inbox {look}" class:active>
 		<a
 			class="link"
-			href={inboxItemHref(item.id)}
+			href={itemHref(item.id)}
 			{tabindex}
+			data-calendar-item={item.id}
+			aria-current={active ? 'true' : undefined}
 			title={`Termin im Eingang: ${title} (${CHANNEL_LABELS[item.channel]})`}
 		>
 			{@render mark()}

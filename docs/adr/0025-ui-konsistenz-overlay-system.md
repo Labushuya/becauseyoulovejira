@@ -212,6 +212,7 @@ Präzisiert §6 („× und Esc führen zur Liste mit der aktuellen Query“) und
 - **Vollansicht:** bleibt im Bereich (`…/tickets/<id>/voll`), ersetzt das Panel wie in Nachtrag 15 und führt beim Schließen zur Herkunft bzw. zur Ansicht.
 - `ViewWithPanel` nennt seine Teile (`data-view-part` „list“ und „panel“), damit der Rückweg den Link findet, der das Ticket geöffnet hat; der Fokus geht seit KX-2 dorthin zurück (im Panel der Herkunft statt auf dessen Überschrift), ohne Link auf die Überschrift.
 - **„Änderungen verwerfen?“ beim Ersetzen (seit KX-2):** Ersetzt ein Link ein Projekt- oder Regel-Panel mit ungespeicherten Eingaben, fragt das Panel **inline** oben im Inhalt (wie die Vollansicht, `TicketLeaveQuestion`), nicht mit der Bestätigung aus §4: Der Link kann aus einem Dialog kommen (ein Duplikat, das sich öffnet), und kein Dialog öffnet aus einem Dialog (Nachtrag 16). × und Esc der Panels fragen weiter mit der Bestätigung aus §4.
+- **Kalender (seit KX-3, ADR-0054 §8):** Auch neben dem Kalender stehen jetzt das Panel einer Regel und eines Eintrags in der einen Panel-Spalte; ein Ticket aus ihnen ersetzt sie wie in den Bereichen (`von=regel-<id>` bzw. `von=eintrag-<id>`), × führt zurück zur Regel bzw. zum Eintrag und von dort zum Kalender. Weiterhin kein Stapeln.
 
 ## Alternativen
 

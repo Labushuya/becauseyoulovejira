@@ -34,7 +34,13 @@
 	import type { TicketRowActionsStore } from '$lib/stores/ticket-row-actions.svelte';
 	import { helpHref } from '$lib/settings-sections';
 	import { CALENDAR_HOST } from '$lib/ticket-host';
-	import { calendarFullViewHref, calendarTicketHref, withCalendarQuery } from '$lib/ticket-links';
+	import {
+		calendarFullViewHref,
+		calendarItemHref,
+		calendarRuleHref,
+		calendarTicketHref,
+		withCalendarQuery
+	} from '$lib/ticket-links';
 	import ErrorIcon from '../ErrorIcon.svelte';
 	import FilterBar from '../FilterBar.svelte';
 	import SectionMessage from '../guidance/SectionMessage.svelte';
@@ -56,7 +62,9 @@
 	// switch the view and what this device remembers. A ticket opens next to the calendar in the
 	// remembered way (TicketHost); closing its panel returns the focus to its entry. In month and week
 	// an open ticket moves to another day (K-2, ADR-0053 §12): the grid asks, the list store saves
-	// with `expected_updated` and shows the flag with "Rückgängig".
+	// with `expected_updated` and shows the flag with "Rückgängig". A planned date opens its rule and
+	// a date of the inbox its entry next to the calendar too (ADR-0054 §8), marked like a ticket, and
+	// closing those panels returns the focus to their entry.
 	let {
 		tickets,
 		catalog,
@@ -67,6 +75,8 @@
 		rowActions = null,
 		duplicates = false,
 		activeId = null,
+		activeRuleId = null,
+		activeItemId = null,
 		inboxCount = null
 	}: {
 		tickets: TicketListStore;
@@ -81,6 +91,10 @@
 		duplicates?: boolean;
 		/** Ticket shown in the panel next to the calendar. */
 		activeId?: string | null;
+		/** Rule shown in the panel next to the calendar (ADR-0054 §8). */
+		activeRuleId?: string | null;
+		/** Inbox entry shown in the panel next to the calendar (ADR-0054 §8). */
+		activeItemId?: string | null;
 		/** New inbox entries for the switch. */
 		inboxCount?: number | null;
 	} = $props();
@@ -171,18 +185,43 @@
 		return active === null || active === document.body;
 	}
 
-	/** Ticket whose panel was shown last. */
-	let shownId: string | null = null;
+	/** What the panel shows: a ticket, a rule or an entry (ADR-0054 §8), as "kind:id". */
+	const shownKey = $derived(
+		activeId !== null
+			? `ticket:${activeId}`
+			: activeRuleId !== null
+				? `rule:${activeRuleId}`
+				: activeItemId !== null
+					? `item:${activeItemId}`
+					: null
+	);
+	/** The panel shown last. */
+	let lastShown: string | null = null;
+
+	/** The entry of what a panel showed: a ticket, the first date of a rule, a date of an entry. */
+	function entryOfShown(key: string): HTMLElement | null {
+		const [kind, id = ''] = key.split(':');
+		if (kind === 'ticket') return CALENDAR_HOST.entryOf(id);
+		const attribute = kind === 'rule' ? 'data-calendar-rule' : 'data-calendar-item';
+		return (
+			[...document.querySelectorAll<HTMLElement>(`[${attribute}]`)].find(
+				(entry) => entry.getAttribute(attribute) === id
+			) ?? null
+		);
+	}
 
 	// Closing the panel (×, Escape, browser back) returns the focus to the entry of its ticket, or to
-	// the heading if the entry is gone (like the rows of "Aufgaben").
+	// the heading if the entry is gone (like the rows of "Aufgaben"). A rule or an entry gives it back
+	// only when no other panel follows (a ticket it opened takes the focus itself).
 	$effect(() => {
-		const previous = shownId;
-		shownId = activeId;
-		if (previous === null || previous === activeId) return;
+		const previous = lastShown;
+		const current = shownKey;
+		lastShown = current;
+		if (previous === null || previous === current) return;
+		if (!previous.startsWith('ticket:') && current !== null) return;
 		void tick().then(() => {
 			if (!focusLost()) return;
-			(CALENDAR_HOST.entryOf(previous) ?? heading)?.focus();
+			(entryOfShown(previous) ?? heading)?.focus();
 		});
 	});
 </script>
@@ -194,6 +233,8 @@
 		{today}
 		projectOf={(projectId) => (projectId === null ? null : catalog.projectById(projectId))}
 		href={ticketHref}
+		ruleHref={(ruleId) => calendarRuleHref(ruleId, page.url)}
+		itemHref={(itemId) => calendarItemHref(itemId, page.url)}
 		open={(ticketId) => ({
 			panel: calendarTicketHref(ticketId, page.url),
 			full: calendarFullViewHref(ticketId, page.url)
@@ -206,7 +247,11 @@
 		move={pending ? null : (place.move ?? null)}
 		moving={place.moving ?? false}
 		{pending}
-		active={entry.kind === 'ticket' && entry.ticket.id === activeId}
+		active={entry.kind === 'ticket'
+			? entry.ticket.id === activeId
+			: entry.kind === 'planned'
+				? entry.planned.ruleId === activeRuleId
+				: entry.item.id === activeItemId}
 	/>
 {/snippet}
 

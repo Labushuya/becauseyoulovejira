@@ -1,12 +1,13 @@
 // Unit tests of the way back from a ticket to the place it was opened from (ADR-0054 §7, KX-2):
 // which navigations count as the way back, the link the panel of the origin focuses when it opens,
-// the focus back in the view (the link, else the heading, only when the focus is lost), and the
-// layout that follows its navigations. Navigation is mocked; the DOM is jsdom.
+// the focus back in the view (the link, else the heading, only when the focus is lost), the layout
+// that follows its navigations, and the same next to the calendar, where a ticket replaces a rule or
+// an inbox entry (ADR-0054 §8). Navigation is mocked; the DOM is jsdom.
 
 import { render } from '@testing-library/svelte';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import TicketReturnHarness from '$lib/test/TicketReturnHarness.svelte';
-import { PROJECTS_HOST } from './ticket-host';
+import { CALENDAR_HOST, CALENDAR_RULE_ROUTE, PROJECTS_HOST } from './ticket-host';
 import { TicketReturn } from './ticket-return.svelte';
 
 type Callback = (navigation: unknown) => void;
@@ -116,5 +117,44 @@ describe('way back from a ticket (ADR-0054 §7)', () => {
 		mocks.before[0]?.({ from: fromTicket(), to: toView() });
 		mocks.after[0]?.({ from: fromTicket(), to: toView() });
 		await vi.waitFor(() => expect(document.activeElement?.textContent).toBe('Ansicht'));
+	});
+});
+
+describe('way back from a ticket next to the calendar (ADR-0054 §8)', () => {
+	const RULE = 'rule00000000001';
+	const calendarTicket = (query: string) =>
+		end(`/kalender/tickets/${TICKET}${query}`, CALENDAR_HOST.panelRoute, TICKET);
+
+	function calendar() {
+		document.body.innerHTML = `
+			<h2 tabindex="-1" data-view-heading>Kalender</h2>
+			<div data-view-part="list"><a href="/" data-calendar-ticket="${TICKET}">Eintrag</a></div>
+			<div data-view-part="panel"><a href="/" data-ticket-link="${TICKET}">Regel</a></div>`;
+	}
+
+	it('names the link of the ticket in the rule it replaced', () => {
+		calendar();
+		const ret = new TicketReturn(CALENDAR_HOST);
+		ret.follow(
+			calendarTicket(`?ansicht=woche&von=regel-${RULE}`),
+			end(`/kalender/wiederholungen/${RULE}?ansicht=woche`, CALENDAR_RULE_ROUTE, RULE)
+		);
+		expect(ret.focusTarget()?.textContent).toBe('Regel');
+
+		// Another rule is no way back.
+		ret.follow(
+			calendarTicket(`?von=regel-${RULE}`),
+			end('/kalender/wiederholungen/rule00000000002', CALENDAR_RULE_ROUTE, 'rule00000000002')
+		);
+		expect(ret.focusTarget()).toBeNull();
+	});
+
+	it('gives the focus back in the calendar to the entry of the ticket', async () => {
+		calendar();
+		const ret = new TicketReturn(CALENDAR_HOST);
+		ret.follow(calendarTicket('?ansicht=woche'), end('/kalender?ansicht=woche', '/(app)/kalender'));
+		expect(ret.focusTarget()).toBeNull();
+		await ret.returnToView();
+		expect(document.activeElement?.textContent).toBe('Eintrag');
 	});
 });

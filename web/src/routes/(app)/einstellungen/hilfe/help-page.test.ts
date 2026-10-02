@@ -246,6 +246,11 @@ describe('help page (EH-9)', () => {
 		expect(text(section)).toContain('Der Fokus steht danach wieder auf dem Link');
 		expect(text(section)).toContain('fragt es vorher oben im Panel „Änderungen verwerfen?“');
 		expect(text(section)).toContain('Links auf Tickets in Beschreibungen und Kommentaren');
+		// The calendar and the quick entry (KX-3, ADR-0054 §8).
+		expect(text(section)).toContain('nimmt das Ticket dessen Platz ein, auch im Kalender');
+		expect(text(section)).toContain(
+			'„Ticket ansehen“ nach der Schnellerfassung öffnet das neue Ticket in der Ansicht, in der du gerade bist'
+		);
 		// Open tickets of a project (ADR-0034, addendum): the disclosure, limit, link, remembered rows.
 		expect(text(section)).toContain('der Pfeil vor dem Code eine Zeile auf');
 		expect(text(section)).toContain('„Alle 12 in Aufgaben öffnen“');
@@ -326,6 +331,10 @@ describe('help page (EH-9)', () => {
 		expect(content).toMatch(/Seitenpanel oder Vollansicht/);
 		expect(content).toMatch(/Punkte statt Titel/);
 		expect(content).toMatch(/Bild auf/);
+		// Rules and entries next to the calendar (ADR-0054 §8).
+		expect(content).toMatch(/öffnet die Regel neben dem Kalender/);
+		expect(content).toMatch(/öffnet den Eintrag neben dem Kalender/);
+		expect(content).toMatch(/das Schließen führt zurück zur Regel bzw\. zum Eintrag/);
 	});
 
 	it('explains moving a due date: mouse, menu or "m", undo, series and touch (ADR-0053 §12)', () => {

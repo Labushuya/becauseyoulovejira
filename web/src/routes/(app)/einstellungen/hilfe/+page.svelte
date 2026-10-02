@@ -134,13 +134,18 @@
 			<li>
 				<strong>Künftige Wiederholungen</strong> blass und gestrichelt: Termine einer Regel, für die es
 				noch kein Ticket gibt, mit „erscheint am …“. Pausierte Regeln zeigt der Kalender nicht. Ein Klick
-				öffnet die Regel.
+				öffnet die Regel neben dem Kalender.
 			</li>
 			<li>
 				<strong>Termine im Eingang</strong> gedämpft: neue Einträge mit Datum aus Kalendern und Notion,
-				die noch nicht umgewandelt sind. Ein Klick öffnet den Eintrag im Eingang.
+				die noch nicht umgewandelt sind. Ein Klick öffnet den Eintrag neben dem Kalender.
 			</li>
 		</ul>
+		<p>
+			Regel und Eintrag bleiben dabei im Kalender, so wie ein Ticket: Ein Ticket, das du dort
+			öffnest, nimmt ihren Platz ein, und das Schließen führt zurück zur Regel bzw. zum Eintrag,
+			danach zum Kalender mit Ansicht, Tag und Filtern.
+		</p>
 		<p>
 			Unter „Ebenen“ blendest du jede dieser Arten ein und aus; das merkt sich dieses Gerät. Die
 			Filter sind die von „Aufgaben“ ohne „Fällig“ und Suche. Ein Projekt zeigt auch die Termine des
@@ -875,9 +880,13 @@
 					</li>
 					<li>
 						Ist dort gerade ein Projekt, ein Eintrag oder eine Regel offen, nimmt das Ticket dessen
-						Platz ein. Das Schließen (× oder <kbd>Esc</kbd>) führt genau dorthin zurück, sonst zur
-						Ansicht. Auch die Vollansicht bleibt an diesem Ort. Der Fokus steht danach wieder auf
-						dem Link, mit dem du das Ticket geöffnet hast.
+						Platz ein, auch im Kalender. Das Schließen (× oder <kbd>Esc</kbd>) führt genau dorthin
+						zurück, sonst zur Ansicht. Auch die Vollansicht bleibt an diesem Ort. Der Fokus steht
+						danach wieder auf dem Link, mit dem du das Ticket geöffnet hast.
+					</li>
+					<li>
+						„Ticket ansehen“ nach der Schnellerfassung öffnet das neue Ticket in der Ansicht, in der
+						du gerade bist; aus den Einstellungen und dem Papierkorb in „Aufgaben“.
 					</li>
 					<li>
 						Hast du im Panel eines Projekts oder einer Regel etwas geändert und nicht gespeichert,

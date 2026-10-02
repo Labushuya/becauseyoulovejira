@@ -128,6 +128,10 @@ describe('lastViewLabel', () => {
 		// The calendar and a ticket next to it (ADR-0053).
 		['/kalender?ansicht=woche', 'Zurück zum Kalender'],
 		['/kalender/tickets/unknown00000001', 'Zurück zum Ticket'],
+		// A rule and an entry next to the calendar (ADR-0054 §8).
+		['/kalender/wiederholungen/rule00000000001?ansicht=monat', 'Zurück zur Regel'],
+		['/kalender/eingang/item00000000001', 'Zurück zum Eintrag'],
+		['/kalender/tickets/unknown00000001?von=regel-rule00000000001', 'Zurück zum Ticket'],
 		// Tickets in the areas (ADR-0054), rules and the trash (before: "Zurück zu Aufgaben").
 		['/projekte/tickets/unknown00000001?von=proj00000000001', 'Zurück zum Ticket'],
 		['/eingang/tickets/unknown00000001', 'Zurück zum Ticket'],

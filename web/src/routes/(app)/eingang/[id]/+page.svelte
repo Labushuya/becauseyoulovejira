@@ -1,43 +1,10 @@
 <script lang="ts">
-	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
-	import InboxPanel from '$lib/components/InboxPanel.svelte';
-	import { getCatalogStore } from '$lib/stores/catalog.svelte';
-	import { getInboxStore } from '$lib/stores/inbox.svelte';
-	import { getRecurrenceStore } from '$lib/stores/recurrence.svelte';
-	import { getTicketListStore } from '$lib/stores/ticket-list.svelte';
-	import { getTicketSourcesStore } from '$lib/stores/ticket-sources.svelte';
+	import InboxItemRoute from '$lib/components/InboxItemRoute.svelte';
 	import { inboxHref } from '$lib/ticket-links';
-	import { findTicketReturn } from '$lib/ticket-return.svelte';
 
-	// Panel of one inbox entry (/eingang/<record id>, E4 plan T-3); a reload opens the same panel.
-	// Back from a ticket it replaced (ADR-0054), the focus goes to the link of that ticket.
-	const inbox = getInboxStore();
-	const tickets = getTicketListStore();
-	const rules = getRecurrenceStore();
-	const sources = getTicketSourcesStore();
-	const ticketReturn = findTicketReturn();
-	// Projects of the catalog name the target project of the entry (ADR-0049).
-	const catalog = getCatalogStore();
-	const id = $derived(page.params.id ?? '');
-	const back = $derived(inboxHref(page.url));
-	const title = $derived(inbox.find(id)?.title);
+	// Panel of one inbox entry (/eingang/<record id>, E4 plan T-3); the parts live in InboxItemRoute,
+	// which the calendar shares (/kalender/eingang/<id>, ADR-0054 §8).
 </script>
 
-<svelte:head>
-	<title>{title ? `${title} · ` : ''}Eingang · becauseyoulovejira</title>
-</svelte:head>
-
-{#key id}
-	<InboxPanel
-		{id}
-		store={inbox}
-		openTickets={tickets.open}
-		projects={catalog.projects}
-		recurrence={rules}
-		today={tickets.today}
-		{sources}
-		onclose={() => goto(back)}
-		initialFocus={() => ticketReturn?.focusTarget() ?? null}
-	/>
-{/key}
+<InboxItemRoute back={inboxHref(page.url)} section="Eingang" />

@@ -1,9 +1,9 @@
 # Plan „Tickets im Kontext“
 
-- **Stand:** KX-1 umgesetzt (2026-10-02, #233), KX-2 umgesetzt (2026-10-02, Branch `feat/kx-2-ticket-return`); nur Oberfläche: Build, dann F5, kein Neustart. KX-3 folgt. Offen sind die manuellen Prüfungen (Test-Manifest, Block „Tickets im Kontext“).
+- **Stand:** KX-1 umgesetzt (2026-10-02, #233), KX-2 umgesetzt (2026-10-02, #234), KX-3 umgesetzt (2026-10-02, #235); nur Oberfläche: Build, dann F5, kein Neustart. Offen sind die manuellen Prüfungen (Test-Manifest, Block „Tickets im Kontext“).
 - **Grundlage:** Nutzerwunsch „Tickets sollen auch aus ihrem Bezug heraus geöffnet werden können … aus dem Projektbereich heraus und wo es sonst noch auftreten könnte“; Option C mit „Alle Empfehlungen so umsetzen“ (2026-10-02).
 - **Entscheidungen:** [ADR-0054](../adr/0054-tickets-im-kontext-oeffnen.md); Nachträge zu [ADR-0025](../adr/0025-ui-konsistenz-overlay-system.md) (17), [ADR-0034](../adr/0034-unterprojekte.md), [ADR-0037](../adr/0037-papierkorb.md), [ADR-0042](../adr/0042-tickets-und-projekte-aus-listen-waehlen.md) und [ADR-0053](../adr/0053-kalenderansicht.md).
-- **Einordnung:** Manifest-Block „Tickets im Kontext“ ab `BYL-E6-1300` (KX-1 `BYL-E6-1300` bis `BYL-E6-1311`, manuell `BYL-E6-1310` und `BYL-E6-1311`; KX-2 `BYL-E6-1320` bis `BYL-E6-1330`, manuell `BYL-E6-1329` und `BYL-E6-1330`). Keine Migration, keine Hooks.
+- **Einordnung:** Manifest-Block „Tickets im Kontext“ ab `BYL-E6-1300` (KX-1 `BYL-E6-1300` bis `BYL-E6-1311`, manuell `BYL-E6-1310` und `BYL-E6-1311`; KX-2 `BYL-E6-1320` bis `BYL-E6-1330`, manuell `BYL-E6-1329` und `BYL-E6-1330`; KX-3 `BYL-E6-1340` bis `BYL-E6-1346`, manuell `BYL-E6-1346`). Keine Migration, keine Hooks.
 
 ## 1. Pakete
 
@@ -11,7 +11,7 @@
 |---|---|---|
 | KX-1 | Gastgeber für Projekte, Eingang und Wiederholungen; Routen-Hüllen `…/tickets/[id]` und `…/voll`; Herkunft als `von`, das Ticket ersetzt das offene Panel, × zur Herkunft; `ticketLinks().path` folgt dem Gastgeber; Markierung der Ansichten nur mit eigenen IDs; Projekte ohne `listUrl`; Projektpfad zum Projekt-Panel; Papierkorb mit „Öffnen“ im Flag | umgesetzt |
 | KX-2 | Fokus zurück auf den auslösenden Link; Links auf Tickets in Beschreibung und Kommentaren im Kontext; „Änderungen verwerfen?“ inline in Projekt- und Regel-Panel beim Ersetzen; „Gesammelt umwandeln“ schließt sich beim Klick; „Zurück zu …“ in den Einstellungen | umgesetzt |
-| KX-3 | Kalender: geplante Termine und Termine des Eingangs neben dem Kalender (falls sauber einbindbar, sonst Folgepunkt); „Ticket ansehen“ der Schnellerfassung im Kontext | offen |
+| KX-3 | Kalender: geplante Termine und Termine des Eingangs neben dem Kalender (falls sauber einbindbar, sonst Folgepunkt); „Ticket ansehen“ der Schnellerfassung im Kontext | umgesetzt (sauber einbindbar, §7) |
 
 ## 2. Routen und Gastgeber (KX-1)
 
@@ -74,3 +74,30 @@
 | angepasst | `inbox-table.test.ts`, `recurrences-layout.test.ts`, `help-page.test.ts` | `data-ticket-link`, Hilfe |
 
 Manuell: Fokus und Screenreader beim Rückweg; Fragen beim Ersetzen, Links in Texten, „Gesammelt umwandeln“, „Zurück zu …“ (Test-Manifest `BYL-E6-1329`, `BYL-E6-1330`).
+
+## 7. KX-3: Kalender und Schnellerfassung
+
+**Bewertung:** Regel- und Eingangs-Panel lassen sich sauber einbinden. `RecurrencePanel` und `InboxPanel` hängen nur an den Stores des `(app)`-Layouts und an Props; die Teile ihrer Routen liegen jetzt in `RuleRoute` und `InboxItemRoute` (`back`, `section`), die `/wiederholungen/<id>`, `/eingang/<id>` und die neuen Routen des Kalenders teilen. Kein Folgepunkt nötig.
+
+| Stelle | vorher | nachher |
+|---|---|---|
+| Geplanter Termin im Kalender | `/wiederholungen/<regel>` (Bereich „Wiederholungen“) | `/kalender/wiederholungen/<regel>?<Kalender>` neben dem Kalender, Termine markiert |
+| Termin des Eingangs im Kalender | `/eingang/<eintrag>` (Bereich „Eingang“) | `/kalender/eingang/<eintrag>?<Kalender>` neben dem Kalender, Termin markiert |
+| Ticket aus Regel bzw. Eintrag neben dem Kalender | (gab es nicht; im Bereich `…?von=<id>`) | `/kalender/tickets/<id>?<Kalender>&von=regel-<regel>` bzw. `von=eintrag-<eintrag>`; × zurück zur Regel bzw. zum Eintrag, Fokus auf dem Link dort |
+| × von Regel bzw. Eintrag neben dem Kalender | – | `/kalender?<Kalender>`, Fokus auf den (ersten) Termin |
+| „Ticket ansehen“ der Schnellerfassung | `openMode.path` → `/tickets/<id>` („Aufgaben“) | `ticketHrefIn`: in der Ansicht der aktuellen Route mit ihrem Zustand und an Stelle eines offenen Panels; aus Einstellungen und Papierkorb weiter `/tickets/<id>` |
+| „Zurück zu …“ in den Einstellungen | `/kalender/…`: „Zurück zum Kalender“ | Regel bzw. Eintrag neben dem Kalender: „Zurück zur Regel“, „Zurück zum Eintrag“ |
+
+- **Herkunft im Kalender:** zwei Arten, deshalb `von=regel-<id>` bzw. `von=eintrag-<id>` (`calendarOriginFrom`, streng: auf `/kalender/wiederholungen/<id>` bzw. `/kalender/eingang/<id>` diese, auf einem Ticket genau ein `von` dieser Form). `CALENDAR_HOST` ist ein `OriginTicketHost` wie die Bereiche; `entryOf(id, url)` findet mit Herkunft den Link im Panel.
+- **Kalender-Layout:** `followTicketReturn(CALENDAR_HOST)`; `activeId` nur auf den Routen eines Tickets, `activeRuleId` bzw. `activeItemId` auf denen von Regel bzw. Eintrag; Panel-Spalte für alle drei.
+
+| Art | Datei | Inhalt |
+|---|---|---|
+| Unit | `web/src/lib/ticket-host.test.ts` | Herkunft im Kalender (beide Arten, strenge Form), Adressen mit Zustand, Rückweg, Link im Panel, `ticketHrefIn` je Route und ohne Ansicht |
+| Unit | `web/src/lib/ticket-return.test.ts` | Rückweg zur Regel neben dem Kalender, Fokus im Kalender |
+| Komponente | `web/src/lib/components/calendar/calendar-view.test.ts` | Links der Termine neben den Kalender, Markierung, Fokus nach dem Schließen, kein Fokus, wenn ein Ticket folgt |
+| Route | `web/src/routes/(app)/kalender/kalender-layout.test.ts` (`CalendarRouteHarness` mit echter Regel- und Eintrags-Route) | Regel und Eintrag neben dem Kalender, Markierung, Titel, Ticket-Link der Regel mit `von=regel-…`, × zum Kalender mit Zustand |
+| Unit | `last-view.test.ts` | „Zurück zur Regel“, „Zurück zum Eintrag“ neben dem Kalender |
+| angepasst | `help-page.test.ts` | Hilfe Kalender und „Wo öffnet sich ein Ticket?“ |
+
+Manuell: Regel und Eintrag neben dem Kalender, Ticket an ihrer Stelle und zurück mit Fokus, „Ticket ansehen“ in verschiedenen Ansichten (Test-Manifest `BYL-E6-1346`).

@@ -19,17 +19,28 @@
 	import { getTicketListStore } from '$lib/stores/ticket-list.svelte';
 	import { findTicketRowActions } from '$lib/stores/ticket-row-actions.svelte';
 	import type { DeleteResult, DeleteSources } from '$lib/stores/trash-move';
-	import { CALENDAR_HOST, setTicketHost } from '$lib/ticket-host';
+	import {
+		CALENDAR_HOST,
+		CALENDAR_ITEM_ROUTE,
+		CALENDAR_RULE_ROUTE,
+		isTicketRoute,
+		setTicketHost
+	} from '$lib/ticket-host';
+	import { followTicketReturn } from '$lib/ticket-return.svelte';
 
 	// View "Kalender" (ADR-0053, plan kalender): the calendar on the left, the panel of a ticket
 	// (/kalender/tickets/<id>) on the right like next to "Aufgaben", the full view over it. The host
 	// in the context makes every ticket link below it stay in the calendar (ADR-0053 §6). The open
 	// tickets, rules and new inbox entries come from the stores of the app layout, which follow them
 	// live; done tickets of the shown period and what this device remembers live with this layout.
-	// The questions of the menu "•••" of a ticket open here, like in the projects.
+	// The questions of the menu "•••" of a ticket open here, like in the projects. A planned date
+	// opens its rule and a date of the inbox its entry next to the calendar as well
+	// (/kalender/wiederholungen/<id>, /kalender/eingang/<id>; ADR-0054 §8); a ticket opened from them
+	// replaces that panel, and × with the focus leads back (followTicketReturn).
 	let { children } = $props();
 
 	setTicketHost(CALENDAR_HOST);
+	followTicketReturn(CALENDAR_HOST);
 
 	const tickets = getTicketListStore();
 	const catalog = getCatalogStore();
@@ -41,8 +52,20 @@
 	const done = new CalendarDoneStore(calendarDoneData(pb), auth);
 	const prefs = new CalendarPrefsStore(window);
 
-	const activeId = $derived(page.params.id ?? null);
-	const withPanel = $derived(page.route.id === CALENDAR_HOST.panelRoute);
+	/** The shown ticket, rule or entry; each marks its own entries only. */
+	const shownId = (routeId: string) =>
+		page.route.id === routeId ? (page.params.id ?? null) : null;
+	const activeId = $derived(
+		isTicketRoute(CALENDAR_HOST, page.route.id) ? (page.params.id ?? null) : null
+	);
+	const activeRuleId = $derived(shownId(CALENDAR_RULE_ROUTE));
+	const activeItemId = $derived(shownId(CALENDAR_ITEM_ROUTE));
+	// One panel column for a ticket, a rule or an entry; the full view replaces it.
+	const withPanel = $derived(
+		page.route.id === CALENDAR_HOST.panelRoute ||
+			page.route.id === CALENDAR_RULE_ROUTE ||
+			page.route.id === CALENDAR_ITEM_ROUTE
+	);
 
 	// The open tickets, also when the app starts here; the done ones follow the shown period.
 	$effect(() => untrack(() => tickets.loadOpen()));
@@ -70,6 +93,8 @@
 			{rowActions}
 			duplicates={duplicates !== null}
 			{activeId}
+			{activeRuleId}
+			{activeItemId}
 			inboxCount={inbox.newCount}
 		/>
 	{/snippet}

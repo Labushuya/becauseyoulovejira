@@ -94,6 +94,7 @@
 	import { TrashAttention } from '$lib/stores/trash-attention';
 	import { listTrash } from '$lib/data/trash';
 	import { waitingCount } from '$lib/domain/trash';
+	import { ticketHrefIn } from '$lib/ticket-host';
 	import { inboxItemHref, recurrenceHref, recurrencesHref } from '$lib/ticket-links';
 
 	// Shell of every signed-in page (E2 plan, T-4). The root layout renders it only with a
@@ -291,6 +292,9 @@
 	};
 	// Empty states offer "Schnellerfassung (c)" through the context (plan EH-11).
 	setQuickCaptureOpener(() => (quickOpen = true));
+	/** "Ticket ansehen" after the quick entry: in the view the user is in (ADR-0054 §8). */
+	const capturedTicketHref = (id: string) =>
+		ticketHrefIn(id, page.route.id, page.url, openMode.effective);
 
 	// "Erste Schritte" (plan EH-12): the steps are marked where the app sees them. Opening the quick
 	// entry counts as trying it; an open ticket and a project are read from the stores here, a
@@ -394,7 +398,7 @@
 		tags={catalog.tags}
 		onsave={(entry, target) => saveQuickEntry(entry, target, quickDeps)}
 		onclose={() => (quickOpen = false)}
-		resultHref={(target, id) => (target === 'ticket' ? openMode.path(id) : inboxItemHref(id))}
+		resultHref={(target, id) => (target === 'ticket' ? capturedTicketHref(id) : inboxItemHref(id))}
 	/>
 {/if}
 
