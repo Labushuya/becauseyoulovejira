@@ -253,6 +253,62 @@ describe('channel card building block (KK-2)', () => {
 		expect(main.hasAttribute('data-sveltekit-keepfocus')).toBe(true);
 		expect(main.hasAttribute('data-sveltekit-replacestate')).toBe(true);
 	});
+
+	// Overflow while renaming (docs/plan/layout-ueberlauf.md §6). jsdom lays nothing out (every
+	// width is 0) and the tests load no component CSS, so this test checks the structure the layout
+	// relies on: the header is marked while renaming (it wraps, the lozenge moves below), the field
+	// comes first and the buttons form their own group in the form (they wrap below the field). The
+	// widths were measured in Edge headless; no-control-overflow.test.ts keeps the CSS rules.
+	it('renames a long name in a header that wraps: field first, the buttons as their own group', async () => {
+		const long = 'A'.repeat(100);
+		const save = vi.fn(async () => null);
+		const { component } = render(ChannelCard, {
+			props: {
+				icon: 'calendar',
+				title: long,
+				subtitle: 'Google Calendar',
+				status: CARD_STATUS.connected,
+				info: 'Noch nie abgerufen',
+				primary: { label: 'Jetzt abrufen', onselect: vi.fn() },
+				menu: [{ label: 'Pausieren', onselect: vi.fn() }],
+				rename: { others: [], save }
+			}
+		});
+		const article = screen.getByRole('article', { name: long });
+		const header = article.querySelector('header') as HTMLElement;
+		expect(header.classList.contains('renaming')).toBe(false);
+
+		await component.startRename();
+		expect(header.classList.contains('renaming')).toBe(true);
+		const field = within(article).getByRole('textbox', {
+			name: `Neuer Name für „${long}“`
+		}) as HTMLInputElement;
+		expect(field.value).toBe(long);
+		// No fixed width: the field takes the room of the row (CSS), not a number of characters.
+		expect(field.hasAttribute('size')).toBe(false);
+		const form = field.closest('form') as HTMLFormElement;
+		const group = within(article).getByRole('button', { name: 'Speichern' })
+			.parentElement as HTMLElement;
+		expect(group.classList.contains('rename-actions')).toBe(true);
+		expect(
+			within(group)
+				.getAllByRole('button')
+				.map((button) => button.textContent?.trim())
+		).toEqual(['Speichern', 'Abbrechen']);
+		expect([...form.children].indexOf(field)).toBe(1);
+		expect([...form.children].indexOf(group)).toBe(2);
+		// The lozenge stays the last part of the header; the names in between may shrink.
+		expect(header.lastElementChild?.textContent).toContain('Verbunden');
+		// The card keeps its name for screen readers while the field is open.
+		expect(
+			within(article).getByRole('heading', { level: 4, name: long, hidden: true })
+		).toBeTruthy();
+
+		await fireEvent.keyDown(field, { key: 'Escape' });
+		await vi.waitFor(() => expect(header.classList.contains('renaming')).toBe(false));
+		expect(within(article).getByRole('heading', { level: 4, name: long })).toBeTruthy();
+		expect(save).not.toHaveBeenCalled();
+	});
 });
 
 describe('channel card', () => {
