@@ -10,6 +10,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { DataError } from '$lib/data/errors';
 import type { InboxItemSummary } from '$lib/domain/inbox';
 import type { InboxQuery } from '$lib/domain/inbox-query';
+import type { Project } from '$lib/domain/project';
 import type { TicketSummary } from '$lib/domain/ticket';
 import { FLAG_DURATION_MS, FlagStore } from '$lib/stores/flags.svelte';
 import { InboxStore, type InboxData } from '$lib/stores/inbox.svelte';
@@ -76,6 +77,8 @@ function setup(
 		onlink?: () => void;
 		/** Entries of the paged views instead of the one default entry. */
 		handled?: InboxItemSummary[];
+		/** Projects of the catalog (target projects, ADR-0049). */
+		projects?: Project[];
 	} = {}
 ) {
 	const data = {
@@ -122,11 +125,24 @@ function setup(
 		}))
 	} satisfies InboxData;
 	const flags = new FlagStore();
-	const store = new InboxStore(data, { ensureValid: () => true, logout: vi.fn() }, flags);
+	const projects = options.projects ?? [];
+	const store = new InboxStore(
+		data,
+		{ ensureValid: () => true, logout: vi.fn() },
+		flags,
+		() => projects
+	);
 	store.activate(options.query ?? { source: null, state: 'new' });
 	const onbulk = vi.fn();
 	const view = render(InboxTable, {
-		props: { store, flags, openTickets: options.tickets ?? [], onbulk, onlink: options.onlink }
+		props: {
+			store,
+			flags,
+			openTickets: options.tickets ?? [],
+			projects,
+			onbulk,
+			onlink: options.onlink
+		}
 	});
 	// The flags of the app layout (ADR-0025 section 8).
 	render(FlagGroup, { props: { store: flags } });
@@ -575,10 +591,11 @@ describe('columns of the inbox (ADR-0030, package SP-5)', () => {
 
 		const col = screen.getByRole('table').querySelector('col[data-column="kind"]') as HTMLElement;
 		expect(col.style.width).toBe('128px');
+		// "Zielprojekt" (ADR-0049) is off by default and stays so.
 		expect(JSON.parse(localStorage.getItem('byl-columns-inbox') ?? '')).toEqual({
 			v: 1,
 			widths: { kind: 128 },
-			hidden: []
+			hidden: ['target']
 		});
 	});
 
@@ -590,5 +607,137 @@ describe('columns of the inbox (ADR-0030, package SP-5)', () => {
 		expect(title.querySelector('.title-clamp a.title-link')).not.toBeNull();
 		const bar = document.querySelector('.section-bar') as HTMLElement;
 		expect(within(bar).getByRole('button', { name: 'Spalten' })).toBeTruthy();
+	});
+
+	it('shows the column "Zielprojekt" once switched on in the menu (ADR-0049)', async () => {
+		localStorage.setItem(
+			'byl-columns-inbox',
+			JSON.stringify({ v: 1, widths: {}, hidden: [], shown: ['target'] })
+		);
+		setup({
+			items: [
+				item('item00000000005', { targetProjectId: HAUS.id, created: '2026-09-25 09:00:00.000Z' }),
+				A
+			],
+			projects: [HAUS]
+		});
+		await table();
+		expect(marks()).toContain('target');
+		const cells = screen.getByRole('table').querySelectorAll<HTMLElement>('td[data-col="target"]');
+		expect([...cells].map((cell) => cell.textContent?.trim())).toEqual([
+			'Haus (HAUS)',
+			'–kein Zielprojekt'
+		]);
+	});
+});
+
+const HAUS: Project = {
+	id: 'haus00000000001',
+	name: 'Haus',
+	code: 'HAUS',
+	archived: false,
+	parentId: null,
+	updated: '2026-10-01 10:00:00.000Z'
+};
+const GARTEN: Project = {
+	id: 'garten000000001',
+	name: 'Garten',
+	code: 'GART',
+	archived: false,
+	parentId: HAUS.id,
+	parent: { id: HAUS.id, name: 'Haus', code: 'HAUS' },
+	updated: '2026-10-01 10:00:00.000Z'
+};
+
+describe('target project of the entries (ADR-0049)', () => {
+	const WITH_TARGETS = [
+		item('item00000000001', { title: 'Haus-Eintrag', targetProjectId: HAUS.id }),
+		item('item00000000002', { title: 'Garten-Eintrag', targetProjectId: GARTEN.id }),
+		item('item00000000003', { title: 'Ohne Ziel', targetProjectId: null })
+	];
+	const titles = () =>
+		screen.getAllByRole('rowheader').map((header) => header.textContent?.trim() ?? '');
+
+	it('offers filter and grouping only once the server knows the field', async () => {
+		setup({ items: [item('item00000000001', { withoutTargetField: true })] });
+		await table();
+		expect(screen.queryByRole('button', { name: /^Zielprojekt:/ })).toBeNull();
+		expect(screen.queryByRole('switch', { name: 'Nach Zielprojekt gruppieren' })).toBeNull();
+	});
+
+	it('filters the new entries by a project with its sub projects, or without a target', async () => {
+		const first = setup({
+			items: WITH_TARGETS,
+			projects: [HAUS, GARTEN],
+			query: { source: null, state: 'new', target: HAUS.id }
+		});
+		await table();
+		expect(titles()).toEqual(['Garten-Eintrag', 'Haus-Eintrag']);
+		expect(screen.getByRole('button', { name: /^Zielprojekt: Haus \(HAUS\)/ })).toBeTruthy();
+		first.view.unmount();
+		document.body.innerHTML = '';
+
+		setup({
+			items: WITH_TARGETS,
+			projects: [HAUS, GARTEN],
+			query: { source: null, state: 'new', target: 'ohne' }
+		});
+		await table();
+		expect(titles()).toEqual(['Ohne Ziel']);
+	});
+
+	it('says that no entry matches and resets source and target together', async () => {
+		setup({
+			items: [WITH_TARGETS[2]!],
+			projects: [HAUS, GARTEN],
+			query: { source: null, state: 'new', target: HAUS.id }
+		});
+		await vi.waitFor(() =>
+			expect(screen.getByText('Keine Einträge für diese Filter')).toBeTruthy()
+		);
+		await fireEvent.click(screen.getByRole('button', { name: 'Filter zurücksetzen' }));
+		const target = mocks.goto.mock.calls.at(-1)?.[0] as unknown as URL;
+		expect(String(target)).not.toMatch(/zielprojekt/);
+	});
+
+	it('groups the rows by target project in the order of the tree, "Ohne Zielprojekt" last', async () => {
+		setup({
+			items: WITH_TARGETS,
+			projects: [GARTEN, HAUS],
+			query: { source: null, state: 'new', grouped: true }
+		});
+		await table();
+		const groups = screen
+			.getAllByRole('rowgroup')
+			.filter((group) => group.tagName === 'TBODY')
+			.map((group) => [
+				within(group)
+					.getAllByRole('rowheader')
+					.map((header) => header.textContent?.trim() ?? '')
+			]);
+		expect(groups).toEqual([
+			[['Haus (HAUS)1 Eintrag', 'Haus-Eintrag']],
+			[['Haus › Garten (GART)1 Eintrag', 'Garten-Eintrag']],
+			[['Ohne Zielprojekt1 Eintrag', 'Ohne Ziel']]
+		]);
+		expect(screen.getByRole('table').querySelector('caption')?.textContent).toMatch(
+			/nach Zielprojekt gruppiert/
+		);
+		const toggle = screen.getByRole('switch', { name: 'Nach Zielprojekt gruppieren' });
+		expect((toggle as HTMLInputElement).checked).toBe(true);
+		await fireEvent.click(toggle);
+		expect(String(mocks.goto.mock.calls.at(-1)?.[0])).not.toMatch(/gruppe=/);
+	});
+
+	it('lets the server filter the handled entries by the target project', async () => {
+		const { data } = setup({
+			items: WITH_TARGETS,
+			projects: [HAUS, GARTEN],
+			query: { source: null, state: 'converted', target: HAUS.id }
+		});
+		await vi.waitFor(() => expect(data.listHandled).toHaveBeenCalled());
+		expect(data.listHandled.mock.calls.at(-1)?.[2]).toMatchObject({
+			target: { project: HAUS.id }
+		});
 	});
 });

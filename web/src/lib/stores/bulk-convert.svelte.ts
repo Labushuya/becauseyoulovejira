@@ -41,6 +41,11 @@ export interface BulkDefaults {
 	 * start as due date; other entries stay without one. Off by default (P-5).
 	 */
 	dueFromEvent?: boolean;
+	/**
+	 * "Zielprojekt des Eintrags verwenden" (ADR-0049 §4): entry ID to its active target project,
+	 * which wins over `project`; entries without one get `project`.
+	 */
+	targets?: Readonly<Record<string, string>>;
 }
 
 export type BulkResult =
@@ -133,7 +138,7 @@ export class BulkConverter {
 					status: defaults.status,
 					priority: defaults.priority,
 					due: defaults.dueFromEvent === true ? eventDueDate(item) : null,
-					project: defaults.project,
+					project: defaults.targets?.[entry.id] ?? defaults.project,
 					tags: [...defaults.tags]
 				},
 				{ sourceItem: entry.id }

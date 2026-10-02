@@ -8,6 +8,7 @@
 		type TelegramRepliesChange
 	} from '$lib/domain/connections';
 	import { cardAnchorOf } from '$lib/domain/sync-all';
+	import type { ProjectRef } from '$lib/domain/ticket';
 	import { RESTART_NEEDED } from '$lib/guidance/texts';
 	import {
 		CONNECTIONS_UNAVAILABLE_MESSAGE,
@@ -29,10 +30,12 @@
 	// deleting; "Stichwörter und Einstellungen …" opens a modal with keywords and switches that save
 	// at once. Access data are Windows user variables; the app stores only their names (ADR-0018).
 	// New connections come from the catalog below (ChannelCatalog). A Notion connection (ADR-0041)
-	// has its own configuration: it fetches nothing by itself and opens the import dialog.
+	// has its own configuration: it fetches nothing by itself and opens the import dialog. Every
+	// card has the target project of its new entries in its details (ADR-0049).
 	let {
 		store,
 		notion,
+		projects = [],
 		onadd,
 		onsetup,
 		onimport
@@ -40,6 +43,8 @@
 		store: ConnectionsStore;
 		/** Notion import (ADR-0041) for the cards of Notion connections. */
 		notion: NotionStore;
+		/** Every project of the catalog, archived ones included (target projects, ADR-0049). */
+		projects?: readonly ProjectRef[];
 		/** "Kanal hinzufügen" of the empty state: to the catalog. */
 		onadd: () => void;
 		/** Shows the setup of the kind of a connection. */
@@ -265,6 +270,8 @@
 									pendingDelete = connection;
 								}}
 								onrename={(label) => store.rename(connection.id, label)}
+								ontarget={(project) => store.setTarget(connection.id, project)}
+								{projects}
 								others={othersOf(connection)}
 							/>
 						{:else}
@@ -290,6 +297,8 @@
 								onscan={(action) => void scan(connection, action)}
 								onreplies={(change) => saveReplies(connection, change, 'card')}
 								onrename={(label) => store.rename(connection.id, label)}
+								ontarget={(project) => store.setTarget(connection.id, project)}
+								{projects}
 								others={othersOf(connection)}
 							/>
 						{/if}

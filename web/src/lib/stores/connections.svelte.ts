@@ -24,6 +24,7 @@ import {
 	saveConnectionSettings,
 	scanConnection,
 	setConnectionEnabled,
+	setConnectionTarget,
 	subscribeConnection
 } from '$lib/data/connections';
 import type { RecordChange, Unsubscribe } from '$lib/data/realtime';
@@ -48,6 +49,8 @@ import {
 	type MailboxMail,
 	type MailboxOutcome
 } from '$lib/domain/mailbox';
+import { targetSavedText } from '$lib/domain/target-project';
+import type { ProjectRef } from '$lib/domain/ticket';
 import { SILENT_FLAGS, type FlagSink, type FlagTone } from './flags.svelte';
 import type { LoadState, SessionGuard } from './ticket-list.svelte';
 import { restartNeeded } from '$lib/guidance/texts';
@@ -61,6 +64,8 @@ export interface ConnectionsData {
 	setEnabled(id: string, enabled: boolean): Promise<Connection>;
 	/** Changes only the name (ADR-0026, addendum KK-3). */
 	rename(id: string, label: string): Promise<Connection>;
+	/** Changes only the target project of the new entries (ADR-0049); null takes it away. */
+	setTarget(id: string, projectId: string | null): Promise<Connection>;
 	saveSettings(connection: Connection, settings: ConnectionSettingsDraft): Promise<Connection>;
 	remove(id: string): Promise<void>;
 	secretStatus(id: string, options: RequestOptions): Promise<SecretStatus>;
@@ -89,6 +94,7 @@ export function connectionsData(pb: PocketBase): ConnectionsData {
 		create: (draft) => createConnection(pb, draft),
 		setEnabled: (id, enabled) => setConnectionEnabled(pb, id, enabled),
 		rename: (id, label) => renameConnection(pb, id, label),
+		setTarget: (id, projectId) => setConnectionTarget(pb, id, projectId),
 		saveSettings: (connection, settings) => saveConnectionSettings(pb, connection, settings),
 		remove: (id) => deleteConnection(pb, id),
 		secretStatus: (id, options) => getSecretStatus(pb, id, options),
@@ -324,6 +330,28 @@ export class ConnectionsStore {
 		});
 		if (result.ok) return null;
 		return result.fields.label ?? Object.values(result.fields)[0] ?? result.message ?? null;
+	}
+
+	/**
+	 * "Zielprojekt" of a card (ADR-0049): stores the target project of the new entries, nothing
+	 * else; the entries of before keep theirs. The flag names the connection and the project. The
+	 * same project again sends nothing. Resolves to the error text for the field, or null once it
+	 * is saved (or the session ended).
+	 */
+	async setTarget(id: string, project: ProjectRef | null): Promise<string | null> {
+		const current = this.#items.get(id);
+		if (current === undefined) return null;
+		const projectId = project?.id ?? null;
+		if ((current.targetProjectId ?? null) === projectId) return null;
+		const result = await this.#act(async () => {
+			const updated = await this.#data.setTarget(id, projectId);
+			this.#items.set(id, updated);
+			this.#notify(targetSavedText(updated.label, project));
+		});
+		if (result.ok) return null;
+		return (
+			result.fields.target_project ?? Object.values(result.fields)[0] ?? result.message ?? null
+		);
 	}
 
 	/**

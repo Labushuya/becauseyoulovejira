@@ -228,3 +228,18 @@ describe('BulkConverter: "Datum des Termins als Fälligkeit" (plan BI-2)', () =>
 		expect(data.createTicket.mock.calls.map(([draft]) => draft.due)).toEqual(['2026-11-20', null]);
 	});
 });
+
+describe('BulkConverter: target projects of the entries (ADR-0049)', () => {
+	it('gives an entry its target project and the others the project of the defaults', async () => {
+		const { converter, data } = setup();
+		await converter.run(ITEMS, {
+			...DEFAULTS,
+			targets: { item00000000002: 'proj00000000009' }
+		});
+		expect(data.createTicket.mock.calls.map(([draft]) => draft.project)).toEqual([
+			'proj00000000001',
+			'proj00000000009',
+			'proj00000000001'
+		]);
+	});
+});

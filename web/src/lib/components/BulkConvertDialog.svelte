@@ -2,6 +2,7 @@
 	import { tick } from 'svelte';
 	import { eventDueDate, type InboxItemSummary } from '$lib/domain/inbox';
 	import { isPriority, isStatus, type Priority, type Status } from '$lib/domain/status';
+	import { bulkTargets } from '$lib/domain/target-project';
 	import {
 		DEFAULT_PRIORITY,
 		DEFAULT_STATUS,
@@ -28,20 +29,29 @@
 	// BI-2) gives each event the date of its start, and since ADR-0041 each Notion entry its date.
 	// On the modal building block (ADR-0025 section 3, size M): while the run goes on nothing
 	// closes, and Escape keeps its own rule "Nach diesem Eintrag anhalten" (plan UI-4).
+	// Target projects (ADR-0049 §4): among chosen entries with an active target project the
+	// checkbox "Zielprojekt des Eintrags verwenden" (on) gives each its own; the project of the
+	// dialog then holds for the others, and the hint names entries whose target is archived or
+	// deleted (they get the project of the dialog).
 	let {
 		items,
 		converter,
 		projects = [],
+		catalogProjects = projects,
 		tags = [],
 		oncreatetag = async () => ({ ok: false, message: null }),
 		onclose
 	}: {
 		/** Chosen new entries, in the order of the table. */
 		items: readonly (Pick<InboxItemSummary, 'id' | 'title'> &
-			Partial<Pick<InboxItemSummary, 'kind' | 'channel' | 'sourceDate'>>)[];
+			Partial<
+				Pick<InboxItemSummary, 'kind' | 'channel' | 'sourceDate' | 'targetProjectId' | 'sourceMeta'>
+			>)[];
 		converter: BulkConverter;
 		/** Projects that can be chosen (the active ones). */
 		projects?: readonly ProjectRef[];
+		/** Every project of the catalog, archived ones included: the state of the target projects. */
+		catalogProjects?: readonly ProjectRef[];
 		/** Tags that can be chosen (the catalog). */
 		tags?: readonly TagRef[];
 		oncreatetag?: (name: string) => Promise<EnsureTagResult>;
@@ -62,7 +72,9 @@
 		tags: `${uid}-tags`,
 		tagsError: `${uid}-tags-error`,
 		eventDue: `${uid}-event-due`,
-		eventDueHint: `${uid}-event-due-hint`
+		eventDueHint: `${uid}-event-due-hint`,
+		useTargets: `${uid}-use-targets`,
+		useTargetsHint: `${uid}-use-targets-hint`
 	};
 
 	let status = $state<Status>(DEFAULT_STATUS);
@@ -72,8 +84,37 @@
 	let tagText = $state('');
 	let tagError = $state<string | null>(null);
 	let dueFromEvent = $state(false);
+	/** "Zielprojekt des Eintrags verwenden": on, the user may switch it off. */
+	let useTargets = $state(true);
 	/** The run has started; the form gives way to progress and results. */
 	let started = $state(false);
+	/** Active target projects of the chosen entries and the number of unusable ones. */
+	const targets = $derived(
+		bulkTargets(
+			items.map((item) => ({
+				id: item.id,
+				targetProjectId: item.targetProjectId ?? null,
+				sourceMeta: item.sourceMeta ?? {}
+			})),
+			catalogProjects
+		)
+	);
+	const withTargets = $derived(targets.active > 0 && useTargets);
+	/** Entries whose target project is archived or deleted: it is not taken over (ADR-0049 §4). */
+	const unusableHint = $derived(
+		targets.unusable === 0
+			? ''
+			: targets.unusable === 1
+				? '1 Eintrag hat ein archiviertes oder gelöschtes Zielprojekt; es wird nicht übernommen, der Eintrag bekommt das Projekt unten.'
+				: `${targets.unusable} Einträge haben ein archiviertes oder gelöschtes Zielprojekt; es wird nicht übernommen, sie bekommen das Projekt unten.`
+	);
+	const targetsHint = $derived(
+		`${
+			targets.active === 1
+				? '1 Eintrag hat ein Zielprojekt'
+				: `${targets.active} Einträge haben ein Zielprojekt`
+		}; die übrigen bekommen das Projekt unten.${unusableHint === '' ? '' : ` ${unusableHint}`}`
+	);
 
 	let closeButton = $state<HTMLButtonElement>();
 
@@ -125,7 +166,8 @@
 			priority,
 			project: project === '' ? null : project,
 			tags: tagIds,
-			dueFromEvent: events > 0 && dueFromEvent
+			dueFromEvent: events > 0 && dueFromEvent,
+			...(withTargets ? { targets: targets.targets } : {})
 		});
 		await tick();
 		closeButton?.focus();
@@ -209,6 +251,20 @@
 					/>
 				</div>
 			</div>
+			{#if targets.active > 0}
+				<div class="check">
+					<input
+						id={ids.useTargets}
+						type="checkbox"
+						bind:checked={useTargets}
+						aria-describedby={ids.useTargetsHint}
+					/>
+					<label for={ids.useTargets}>Zielprojekt des Eintrags verwenden</label>
+					<p class="hint" id={ids.useTargetsHint}>{targetsHint}</p>
+				</div>
+			{:else if unusableHint !== ''}
+				<p class="hint">{unusableHint}</p>
+			{/if}
 			<div class="field">
 				<label for={ids.project}>Projekt</label>
 				<ProjectSelect
@@ -218,6 +274,9 @@
 					error={null}
 					errorId={`${ids.project}-error`}
 					hintId={ids.projectHint}
+					hint={withTargets
+						? 'Gilt für Einträge ohne Zielprojekt. Beim Wechsel bekommt das Ticket einen neuen Key.'
+						: undefined}
 					onchoose={(value) => (project = value)}
 				/>
 			</div>

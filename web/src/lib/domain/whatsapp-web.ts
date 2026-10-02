@@ -10,12 +10,14 @@ import type { InboxKey } from './inbox-keys';
 /** Folder of the build relative to the app, when the server does not name it (before a restart). */
 export const EXTENSION_FOLDER = 'app\\erweiterung-whatsapp-web';
 
+/** The steps; "Zielprojekt" (ADR-0049) is optional and never holds the assistant up. */
 export const WHATSAPP_WEB_STEPS = [
 	{ id: 'key', label: 'Schlüssel' },
 	{ id: 'load', label: 'Erweiterung laden' },
 	{ id: 'enter', label: 'Schlüssel eintragen' },
 	{ id: 'test', label: 'Testen' },
-	{ id: 'keywords', label: 'Stichwörter' }
+	{ id: 'keywords', label: 'Stichwörter' },
+	{ id: 'target', label: 'Zielprojekt' }
 ] as const;
 
 export type WhatsAppWebStep = (typeof WHATSAPP_WEB_STEPS)[number]['id'];
@@ -96,6 +98,8 @@ export interface WhatsAppWebFacts {
 export function stepDone(step: WhatsAppWebStep, facts: WhatsAppWebFacts): boolean {
 	if (step === 'key') return facts.keys > 0;
 	if (step === 'keywords') return facts.keywords > 0;
+	// Optional (ADR-0049): the app does not ask whether a target was chosen; firstOpenStep skips it.
+	if (step === 'target') return false;
 	// Loaded, entered and tested show only together: the extension used the key.
 	return facts.used;
 }
@@ -109,8 +113,13 @@ export function whatsappStepStates(facts: WhatsAppWebFacts, current: number): St
 	});
 }
 
-/** The step the assistant opens at: the first the app does not see as done. */
+/**
+ * The step the assistant opens at: the first the app does not see as done, the optional
+ * "Zielprojekt" left out; with every other step done the last one.
+ */
 export function firstOpenStep(facts: WhatsAppWebFacts): number {
-	const index = WHATSAPP_WEB_STEPS.findIndex((step) => !stepDone(step.id, facts));
+	const index = WHATSAPP_WEB_STEPS.findIndex(
+		(step) => step.id !== 'target' && !stepDone(step.id, facts)
+	);
 	return index === -1 ? WHATSAPP_WEB_STEPS.length - 1 : index;
 }

@@ -18,16 +18,19 @@
 		whatsappStepStates,
 		type Browser
 	} from '$lib/domain/whatsapp-web';
+	import type { ProjectRef } from '$lib/domain/ticket';
 	import { RESTART_NEEDED } from '$lib/guidance/texts';
 	import { helpHref } from '$lib/settings-sections';
 	import type { ImportKeywordsStore } from '$lib/stores/import-keywords.svelte';
 	import type { InboxKeysStore } from '$lib/stores/inbox-keys.svelte';
+	import type { InboxTargetsStore } from '$lib/stores/inbox-targets.svelte';
 	import CodeBlock from '../guidance/CodeBlock.svelte';
 	import SectionMessage from '../guidance/SectionMessage.svelte';
 	import Stepper from '../guidance/Stepper.svelte';
 	import Tabs from '../guidance/Tabs.svelte';
 	import KeywordEditor from '../KeywordEditor.svelte';
 	import Modal from '../overlay/Modal.svelte';
+	import CardTargetProject from './CardTargetProject.svelte';
 	import InboxKeyCreateForm from './InboxKeyCreateForm.svelte';
 	import SetupCheck from './SetupCheck.svelte';
 
@@ -35,17 +38,23 @@
 	// EI-3): modal L with the stepper, one step at a time, like the assistants of the connections.
 	// Schlüssel erzeugen → Erweiterung laden (Edge and Chrome, folder of the build) → Schlüssel
 	// eintragen → Testen (the app sees "zuletzt benutzt" of the key after "Verbindung testen" in the
-	// extension) → Stichwörter. A new key stays in this component until the modal closes, so the
-	// step "Schlüssel eintragen" can offer it again; it is never stored.
+	// extension) → Stichwörter → Zielprojekt (optional, ADR-0049). A new key stays in this component
+	// until the modal closes, so the step "Schlüssel eintragen" can offer it again; it is never stored.
 	let {
 		inboxKeys,
 		importKeywords = null,
+		inboxTargets = null,
+		projects = [],
 		extension = null,
 		appUrl,
 		onclose
 	}: {
 		inboxKeys: InboxKeysStore;
 		importKeywords?: ImportKeywordsStore | null;
+		/** Target projects of the cards without a connection (ADR-0049). */
+		inboxTargets?: InboxTargetsStore | null;
+		/** Every project of the catalog, archived ones included. */
+		projects?: readonly ProjectRef[];
 		/** Folder and version of the build, null when the server does not know the route yet. */
 		extension?: ExtensionInfo | null;
 		/** Address of the app for the settings of the extension, e.g. http://127.0.0.1:8090. */
@@ -239,6 +248,23 @@
 						braucht ein Update und tut bis dahin nichts.
 					</li>
 				</ul>
+			{:else if step.id === 'target'}
+				<p>
+					Optional: Neue Einträge aus WhatsApp Web bekommen dieses Projekt, und beim Umwandeln ist
+					es vorbelegt. Ohne Zielprojekt bleibt das Projekt beim Umwandeln leer; ändern kannst du es
+					jederzeit an der Karte.
+				</p>
+				{#if inboxTargets !== null && (inboxTargets.state === 'ready' || inboxTargets.state === 'unavailable')}
+					<CardTargetProject
+						id={`${uid}-target`}
+						name="WhatsApp Web"
+						entries="Neue Einträge aus WhatsApp Web"
+						value={inboxTargets.targets['whatsapp-web'] || null}
+						{projects}
+						ready={inboxTargets.state === 'ready'}
+						onsave={(project) => inboxTargets.save('whatsapp-web', project, 'WhatsApp Web')}
+					/>
+				{/if}
 			{:else}
 				<p>
 					„In den Eingang“ an einer Nachricht übernimmt sie immer. Mit dem Schalter „Automatisch

@@ -100,6 +100,10 @@ function setup(items: Connection[] = [CAL, BOT], statuses: Record<string, Secret
 			...(items.find((item) => item.id === id) as Connection),
 			label: label.trim()
 		})),
+		setTarget: vi.fn<ConnectionsData['setTarget']>(async (id, projectId) => ({
+			...(items.find((item) => item.id === id) as Connection),
+			targetProjectId: projectId
+		})),
 		saveSettings: vi.fn<ConnectionsData['saveSettings']>(async (current, settings) => ({
 			...current,
 			keywords: settings.keywords,

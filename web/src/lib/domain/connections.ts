@@ -113,6 +113,16 @@ export interface Connection {
 	/** Mail: state of the full scan of the inbox (ADR-0020, addendum 3); null before the first. */
 	scan?: MailScan | null;
 	runningSince: string | null;
+	/**
+	 * Target project of the new entries (ADR-0049), null without one. The data layer always sets
+	 * it; objects built by hand may leave it out.
+	 */
+	targetProjectId?: string | null;
+	/**
+	 * Whether the server knows the target project (migration 1790203100); until then the card shows
+	 * the restart hint instead of the setting. Absent counts as known.
+	 */
+	targetReady?: boolean;
 	created: string;
 	updated: string;
 }

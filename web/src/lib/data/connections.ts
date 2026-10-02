@@ -42,6 +42,8 @@ export const CONNECTION_FIELDS = [
 	'last_hint',
 	'running_since',
 	'scan',
+	// Target project of the new entries (ADR-0049); missing before the migration 1790203100.
+	'target_project',
 	'created',
 	'updated'
 ].join(',');
@@ -60,6 +62,8 @@ export interface ConnectionRecord {
 	running_since: string;
 	/** State of the full scan of a mailbox; missing before the migration 1790201700. */
 	scan?: unknown;
+	/** Target project (ADR-0049); missing before the migration 1790203100. */
+	target_project?: string;
 	created: string;
 	updated: string;
 }
@@ -110,6 +114,8 @@ export function toConnection(record: ConnectionRecord): Connection {
 		...mail,
 		scan: record.type === 'mail' ? mailScanOf(record.scan) : null,
 		runningSince: record.running_since || null,
+		targetProjectId: record.target_project || null,
+		targetReady: record.target_project !== undefined,
 		created: record.created,
 		updated: record.updated
 	};
@@ -238,6 +244,29 @@ export function renameConnection(
 		const record = await pb
 			.collection(CONNECTIONS)
 			.update<ConnectionRecord>(id, { label: label.trim() }, { fields: CONNECTION_FIELDS, signal });
+		return toConnection(record);
+	});
+}
+
+/**
+ * Sets the target project of a connection (ADR-0049): its new entries get it, the entries of
+ * before keep theirs. Sends only the field; the hook accepts only an active project of the area of
+ * the connection (`validation_target_project_*`). `projectId` null takes it away.
+ */
+export function setConnectionTarget(
+	pb: PocketBase,
+	id: string,
+	projectId: string | null,
+	{ signal }: RequestOptions = {}
+): Promise<Connection> {
+	return withDataErrors(signal, async () => {
+		const record = await pb
+			.collection(CONNECTIONS)
+			.update<ConnectionRecord>(
+				id,
+				{ target_project: projectId ?? '' },
+				{ fields: CONNECTION_FIELDS, signal }
+			);
 		return toConnection(record);
 	});
 }

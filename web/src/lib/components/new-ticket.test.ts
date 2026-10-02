@@ -686,6 +686,52 @@ describe('new ticket from the inbox (E4 plan, package 3)', () => {
 		expect(mocks.tickets.announce).toHaveBeenCalledWith('Ticket HAUS-4 angelegt.');
 	});
 
+	it('chooses the target project of the entry in advance, and the user can change it (ADR-0049)', async () => {
+		const { store, release } = catalog();
+		release();
+		await vi.waitFor(() => expect(store.state).toBe('ready'));
+		openFor(entry({ targetProjectId: HOUSE.id }));
+		mocks.detail.create.mockResolvedValueOnce({ ok: true, ticket: CREATED });
+		await vi.waitFor(() =>
+			expect(screen.getByLabelText<HTMLSelectElement>('Projekt').value).toBe(HOUSE.id)
+		);
+		expect(
+			screen.getByText(
+				'Vorbelegt mit dem Zielprojekt „Haushalt (HAUS)“ des Eingangswegs; du kannst es ändern.'
+			)
+		).toBeTruthy();
+		await fireEvent.change(screen.getByLabelText('Projekt'), { target: { value: CAR.id } });
+		await fireEvent.click(createButton());
+		await vi.waitFor(() =>
+			expect(mocks.detail.create).toHaveBeenCalledWith(
+				expect.objectContaining({ project: CAR.id }),
+				{ sourceItem: ITEM_ID }
+			)
+		);
+	});
+
+	it('chooses no archived or deleted target project and says why (ADR-0049)', async () => {
+		const { store, release } = catalog();
+		release();
+		await vi.waitFor(() => expect(store.state).toBe('ready'));
+		openFor(entry({ targetProjectId: OLD.id }));
+		await vi.waitFor(() =>
+			expect(
+				screen.getByText('Das Zielprojekt „Altbau (ALT)“ ist archiviert und wird nicht vorbelegt.')
+			).toBeTruthy()
+		);
+		expect(screen.getByLabelText<HTMLSelectElement>('Projekt').value).toBe('');
+		cleanup();
+
+		openFor(entry({ targetProjectId: null, sourceMeta: { target_gone: true } }));
+		await vi.waitFor(() =>
+			expect(
+				screen.getByText('Das Zielprojekt dieses Eintrags wurde gelöscht und wird nicht vorbelegt.')
+			).toBeTruthy()
+		);
+		expect(screen.getByLabelText<HTMLSelectElement>('Projekt').value).toBe('');
+	});
+
 	it('takes the Berlin date of the source as due date on "Als Fälligkeit übernehmen"', async () => {
 		openFor(entry());
 		mocks.detail.create.mockResolvedValueOnce({ ok: true, ticket: CREATED });

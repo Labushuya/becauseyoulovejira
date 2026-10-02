@@ -68,6 +68,10 @@ function connectionsOf(item: Connection) {
 			...item,
 			label: label.trim()
 		})),
+		setTarget: vi.fn<ConnectionsData['setTarget']>(async (_id, projectId) => ({
+			...item,
+			targetProjectId: projectId
+		})),
 		saveSettings: vi.fn<ConnectionsData['saveSettings']>(),
 		remove: vi.fn<ConnectionsData['remove']>(),
 		secretStatus: vi.fn<ConnectionsData['secretStatus']>(async () => ({
@@ -232,6 +236,7 @@ describe('Notion card', () => {
 		expect(items()).toEqual([
 			'Verbindung prüfen',
 			'Alle erneut abrufen',
+			'Zielprojekt …',
 			'Umbenennen …',
 			'Einrichtung ansehen',
 			'Hilfe',
@@ -1041,7 +1046,7 @@ describe('Notion assistant', () => {
 		expect(
 			dialog.getByRole('heading', {
 				level: 3,
-				name: /^Schritt 5 von 6: Seiten und Datenbanken freigeben/
+				name: /^Schritt 6 von 7: Seiten und Datenbanken freigeben/
 			})
 		).toBeTruthy();
 		expect(dialog.getByText(/„•••“ klicken, dann auf „Verbindungen“/)).toBeTruthy();
@@ -1059,7 +1064,7 @@ describe('Notion assistant', () => {
 			}
 		});
 		const dialog = within(await screen.findByRole('dialog', { name: 'Notion einrichten' }));
-		const heading = () => dialog.getByRole('heading', { level: 3, name: /^Schritt \d von 6/ });
+		const heading = () => dialog.getByRole('heading', { level: 3, name: /^Schritt \d von 7/ });
 		while (!/Token als Windows-Variable setzen/.test(heading().textContent ?? '')) {
 			await fireEvent.click(dialog.getByRole('button', { name: 'Weiter' }));
 		}

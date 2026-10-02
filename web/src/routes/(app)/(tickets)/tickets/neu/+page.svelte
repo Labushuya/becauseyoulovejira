@@ -9,6 +9,7 @@
 	import { parseListQuery } from '$lib/domain/list-query';
 	import { joinedSeries, type RepeatRequest } from '$lib/domain/recurrence-rule';
 	import { itemSuggestion } from '$lib/domain/rrule';
+	import { targetOfItem, targetPrefill } from '$lib/domain/target-project';
 	import type { TicketDraft } from '$lib/domain/ticket';
 	import { getCatalogStore } from '$lib/stores/catalog.svelte';
 	import { getInboxStore } from '$lib/stores/inbox.svelte';
@@ -29,6 +30,8 @@
 	// ID and is ignored by the form). New tags come from the catalog, which reuses existing names.
 	// With ?aus=<inbox entry> (E4 plan, T-3 and T-5) the form comes filled from the entry, the
 	// server converts the entry together with the ticket, and "Abbrechen" returns to the entry.
+	// The target project of the entry (ADR-0049 §4) is chosen in advance unless it is archived or
+	// deleted; the catalog says which.
 	// A calendar series may bring a rule (E5 plan, package 6; ADR-0024 section 1), and since plan
 	// OR-4 every new ticket can repeat from the start (section "Wiederholen", once the rules are
 	// available): after the ticket the rule is created with it as its instance; if that fails, the
@@ -121,6 +124,7 @@
 			projects={catalog.activeProjects}
 			tags={catalog.tags}
 			prefill={ticketPrefill(source.item)}
+			target={targetPrefill(targetOfItem(source.item, catalog.projects))}
 			sourceLabel={CHANNEL_LABELS[source.item.channel]}
 			suggestion={rules.state === 'unavailable' ? null : itemSuggestion(source.item, tickets.today)}
 			repeat={rules.state !== 'unavailable'}

@@ -8,11 +8,13 @@
 	import { fetchExtensionInfo, type ExtensionInfo } from '$lib/data/extension';
 	import { setupTargetOf, type SetupTarget } from '$lib/domain/channel-setup';
 	import { pb } from '$lib/pocketbase';
+	import { getCatalogStore } from '$lib/stores/catalog.svelte';
 	import { ConnectionsStore, connectionsData } from '$lib/stores/connections.svelte';
 	import { findFirstStepsStore } from '$lib/stores/first-steps.svelte';
 	import { getFlagStore } from '$lib/stores/flags.svelte';
 	import { ImportKeywordsStore, importKeywordsData } from '$lib/stores/import-keywords.svelte';
 	import { InboxKeysStore, inboxKeysData } from '$lib/stores/inbox-keys.svelte';
+	import { InboxTargetsStore, inboxTargetsData } from '$lib/stores/inbox-targets.svelte';
 	import { NotionStore, notionData } from '$lib/stores/notion.svelte';
 	import { channelSetupHref } from '$lib/ticket-links';
 
@@ -32,6 +34,10 @@
 	const inboxKeys = new InboxKeysStore(inboxKeysData(pb), auth, flags);
 	// Notion import (ADR-0041): its cards load what was imported, the dialog asks Notion.
 	const notion = new NotionStore(notionData(pb), auth, flags);
+	// Target projects of the cards without a connection (ADR-0049); the projects of the catalog name
+	// the targets of every card.
+	const inboxTargets = new InboxTargetsStore(inboxTargetsData(pb), auth, flags);
+	const catalog = getCatalogStore();
 	// Folder of the built extension for WhatsApp Web, for its assistant (ADR-0038 §4).
 	let extension = $state<ExtensionInfo | null>(null);
 	const setup = $derived(setupTargetOf(page.url.searchParams));
@@ -45,6 +51,7 @@
 			void connections.load();
 			void importKeywords.load();
 			void inboxKeys.load();
+			void inboxTargets.load();
 		});
 		const controller = new AbortController();
 		void fetchExtensionInfo(pb, { signal: controller.signal }).then((info) => {
@@ -55,6 +62,7 @@
 			connections.reset();
 			importKeywords.reset();
 			inboxKeys.reset();
+			inboxTargets.reset();
 			notion.reset();
 		};
 	});
@@ -77,6 +85,8 @@
 	{notion}
 	{importKeywords}
 	{inboxKeys}
+	{inboxTargets}
+	projects={catalog.projects}
 	{extension}
 	{setup}
 	onsetupchange={changeSetup}

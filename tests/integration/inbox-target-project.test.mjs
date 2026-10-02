@@ -9,6 +9,9 @@ import { randomBytes } from 'node:crypto';
 import { beforeAll, describe, expect, it } from 'vitest';
 import { pocketBaseUrl, rejectionOf, superuserClient } from '../support/api.mjs';
 import { createOwner, uniqueCode, uniqueSuffix } from '../support/scenario.mjs';
+import { listConnections, setConnectionTarget } from '../../web/src/lib/data/connections.ts';
+import { getItem, listHandledItems, listNewItems } from '../../web/src/lib/data/inbox.ts';
+import { getInboxTargets, saveInboxTargets } from '../../web/src/lib/data/inbox-targets.ts';
 
 let superuser;
 let owner;
@@ -324,5 +327,54 @@ describe('filter of the inbox', () => {
 			.collection('inbox_items')
 			.getFullList({ filter: other.client.filter('target_project = {:p}', { p: haus.id }) });
 		expect(foreign).toEqual([]);
+	});
+});
+
+describe('data layer of the web app', () => {
+	it('reads the target of entries and filters handled ones on the server', async () => {
+		const pb = owner.client;
+		const haus = await owner.project(uniqueCode());
+		const garten = await owner.project(uniqueCode(), { parent: haus.id });
+		const inHaus = await entry(owner, { connection: (await calendar(owner, { target_project: haus.id })).id });
+		const inGarten = await entry(owner, { connection: (await calendar(owner, { target_project: garten.id })).id });
+		const without = await entry(owner);
+		const items = owner.client.collection('inbox_items');
+		for (const item of [inHaus, inGarten, without]) await items.update(item.id, { state: 'discarded' });
+
+		const fresh = await entry(owner, { connection: (await calendar(owner, { target_project: haus.id })).id });
+		const listed = (await listNewItems(pb)).find((item) => item.id === fresh.id);
+		expect(listed).toMatchObject({ targetProjectId: haus.id });
+		expect(listed).not.toHaveProperty('withoutTargetField');
+		expect((await getItem(pb, without.id)).targetProjectId).toBeNull();
+
+		const page = async (target) =>
+			(await listHandledItems(pb, 'discarded', 1, { perPage: 200, target })).items.map((item) => item.id);
+		const project = await page({ project: haus.id });
+		expect(project).toEqual(expect.arrayContaining([inHaus.id, inGarten.id]));
+		expect(project).not.toContain(without.id);
+		expect(await page({ project: garten.id })).toEqual([inGarten.id]);
+		const none = await page({ project: null });
+		expect(none).toContain(without.id);
+		expect(none).not.toContain(inHaus.id);
+		expect(await page(null)).toEqual(expect.arrayContaining([inHaus.id, inGarten.id, without.id]));
+	});
+
+	it('sets the target of a connection and the targets of the cards, and reads them back', async () => {
+		const pb = owner.client;
+		const haus = await owner.project(uniqueCode());
+		const connection = await calendar(owner);
+		const saved = await setConnectionTarget(pb, connection.id, haus.id);
+		expect(saved).toMatchObject({ id: connection.id, targetProjectId: haus.id, targetReady: true });
+		expect((await listConnections(pb)).find((item) => item.id === connection.id)?.targetProjectId).toBe(haus.id);
+		expect((await setConnectionTarget(pb, connection.id, null)).targetProjectId).toBeNull();
+
+		expect(await getInboxTargets(pb)).toEqual({ api: '', 'whatsapp-web': '', files: '' });
+		expect(await saveInboxTargets(pb, { api: '', 'whatsapp-web': haus.id, files: haus.id })).toEqual({
+			api: '',
+			'whatsapp-web': haus.id,
+			files: haus.id
+		});
+		expect(await getInboxTargets(pb)).toEqual({ api: '', 'whatsapp-web': haus.id, files: haus.id });
+		await saveInboxTargets(pb, { api: '', 'whatsapp-web': '', files: '' });
 	});
 });

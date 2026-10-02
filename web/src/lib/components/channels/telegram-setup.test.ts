@@ -57,6 +57,7 @@ async function open(
 		create: vi.fn<ConnectionsData['create']>(),
 		setEnabled: vi.fn<ConnectionsData['setEnabled']>(),
 		rename: vi.fn<ConnectionsData['rename']>(),
+		setTarget: vi.fn<ConnectionsData['setTarget']>(),
 		saveSettings: vi.fn<ConnectionsData['saveSettings']>(),
 		remove: vi.fn<ConnectionsData['remove']>(),
 		secretStatus: vi.fn<ConnectionsData['secretStatus']>(async () => status),
@@ -106,7 +107,7 @@ async function open(
 }
 
 const heading = (dialog: HTMLElement) =>
-	within(dialog).getByRole('heading', { level: 3, name: /^Schritt \d von 6/ });
+	within(dialog).getByRole('heading', { level: 3, name: /^Schritt \d von 7/ });
 
 afterEach(() => {
 	document.body.innerHTML = '';
@@ -116,7 +117,7 @@ afterEach(() => {
 describe('Telegram assistant (EH-6)', () => {
 	it('waits at "Neu starten" until the app sees the token and the IDs', async () => {
 		const { dialog } = await open(bot(), { secret: true, allowlist: false });
-		expect(heading(dialog).textContent).toMatch(/^Schritt 4 von 6: App neu starten/);
+		expect(heading(dialog).textContent).toMatch(/^Schritt 5 von 7: App neu starten/);
 		expect(
 			within(dialog).getByText('Die App sieht BYL_TELEGRAM_ALLOWED_IDS noch nicht.')
 		).toBeTruthy();
@@ -125,7 +126,7 @@ describe('Telegram assistant (EH-6)', () => {
 
 	it('reads the chat ID from the run and builds the finished command with an open field', async () => {
 		const { dialog, data } = await open(bot(), { secret: true, allowlist: true });
-		expect(heading(dialog).textContent).toMatch(/^Schritt 5 von 6: Deinen Chat freigeben/);
+		expect(heading(dialog).textContent).toMatch(/^Schritt 6 von 7: Deinen Chat freigeben/);
 
 		await fireEvent.click(within(dialog).getByRole('button', { name: 'Jetzt abrufen' }));
 		await vi.waitFor(() => expect(data.run).toHaveBeenCalledWith(ID));
@@ -161,7 +162,7 @@ describe('Telegram assistant (EH-6)', () => {
 			bot({ lastRunAt: '2026-09-26 10:00:00.000Z', lastHint: HINT }),
 			{ secret: true, allowlist: true }
 		);
-		expect(heading(dialog).textContent).toMatch(/^Schritt 5 von 6/);
+		expect(heading(dialog).textContent).toMatch(/^Schritt 6 von 7/);
 		// The assistant and, since KK-3, the card on the page follow the connection.
 		await vi.waitFor(() => expect(listeners.length).toBe(2));
 		// The user stays at the step (a choice holds it; without one the assistant follows the facts).
@@ -189,7 +190,7 @@ describe('Telegram assistant (EH-6)', () => {
 			{ secret: true, allowlist: true }
 		);
 		expect(heading(dialog).textContent).toMatch(
-			/^Schritt 6 von 6: Stichwörter festlegen und testen/
+			/^Schritt 7 von 7: Stichwörter festlegen und testen/
 		);
 		expect(within(dialog).getByRole('textbox', { name: 'Neues Stichwort' })).toBeTruthy();
 		expect(within(dialog).getByRole('button', { name: 'Jetzt abrufen' })).toBeTruthy();
@@ -224,7 +225,7 @@ describe('Telegram assistant (EH-6)', () => {
 		);
 		await vi.waitFor(() => expect(saved.checked).toBe(false));
 		// The assistant stays at its step.
-		expect(heading(dialog).textContent).toMatch(/^Schritt 6 von 6/);
+		expect(heading(dialog).textContent).toMatch(/^Schritt 7 von 7/);
 
 		// A refused change says why and shows the saved value again.
 		data.saveSettings.mockRejectedValueOnce(new DataError('server', { status: 500 }));

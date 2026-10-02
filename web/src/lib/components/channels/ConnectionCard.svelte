@@ -17,8 +17,10 @@
 	} from '$lib/domain/connections';
 	import { formatBerlinDateTime } from '$lib/domain/format';
 	import { connectionAnchor } from '$lib/domain/sync-all';
+	import type { ProjectRef } from '$lib/domain/ticket';
 	import { helpHref } from '$lib/settings-sections';
 	import ChipList from '../ChipList.svelte';
+	import CardTargetProject from './CardTargetProject.svelte';
 	import ChannelCard, { type CardAction, type CardRename } from './ChannelCard.svelte';
 	import TelegramReplySwitches from './TelegramReplySwitches.svelte';
 
@@ -32,7 +34,8 @@
 	// switches (ADR-0016, addendum of 2026-10-01), an action of that entry at the entry. The card
 	// carries the anchor `#verbindung-<id>`, the target of "Zur Karte" in the flag of "Alle Kanäle
 	// jetzt abrufen". With `onrename` the menu offers "Umbenennen …" in the card (ADR-0026,
-	// addendum KK-3).
+	// addendum KK-3), with `ontarget` the details hold "Zielprojekt" and the menu "Zielprojekt …"
+	// leads there (ADR-0049).
 	let {
 		connection,
 		secretStatus,
@@ -49,6 +52,8 @@
 		onscan = () => undefined,
 		onreplies,
 		onrename,
+		ontarget,
+		projects = [],
 		others = []
 	}: {
 		connection: Connection;
@@ -77,10 +82,19 @@
 		onreplies: (change: TelegramRepliesChange) => Promise<void>;
 		/** Saves a new name; resolves to the error text or null (KK-3). Without it, no renaming. */
 		onrename?: (label: string) => Promise<string | null>;
+		/**
+		 * Saves the target project of the new entries (ADR-0049); resolves to the error text or null.
+		 * Without it, the card has no setting.
+		 */
+		ontarget?: (project: ProjectRef | null) => Promise<string | null>;
+		/** Every project of the catalog, archived ones included (the target project). */
+		projects?: readonly ProjectRef[];
 		/** Names of the other connections, for the note about a name that is taken. */
 		others?: readonly string[];
 	} = $props();
 
+	const uid = $props.id();
+	const targetId = `${uid}-target`;
 	let card = $state<ReturnType<typeof ChannelCard>>();
 	const rename = $derived<CardRename | null>(
 		onrename === undefined ? null : { others, save: onrename }
@@ -146,6 +160,9 @@
 			dialog: true,
 			onselect: () => onedit()
 		});
+		if (ontarget !== undefined && connection.targetReady !== false) {
+			entries.push({ label: 'Zielprojekt …', onselect: () => void card?.showDetails(targetId) });
+		}
 		if (connection.enabled) entries.push({ label: 'Pausieren', onselect: () => onpause(false) });
 		if (health.pick && connection.enabled) {
 			entries.push({ label: 'Posteingang neu durchsuchen', onselect: () => onscan('start') });
@@ -235,6 +252,17 @@
 				</div>
 			{/if}
 		</dl>
+		{#if ontarget !== undefined}
+			<CardTargetProject
+				id={targetId}
+				name={connection.label}
+				entries="Neue Einträge dieser Verbindung"
+				value={connection.targetProjectId ?? null}
+				{projects}
+				ready={connection.targetReady !== false}
+				onsave={ontarget}
+			/>
+		{/if}
 		{#if connection.type === 'telegram'}
 			<TelegramReplySwitches {connection} compact onchange={onreplies} />
 		{/if}

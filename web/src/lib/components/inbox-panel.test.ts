@@ -212,6 +212,28 @@ describe('inbox panel', () => {
 		expect(screen.queryByText('Stichwort', { selector: 'dt' })).toBeNull();
 	});
 
+	it('names the target project of the entry, an archived and a deleted one as such (ADR-0049)', async () => {
+		const projects = [
+			{ id: 'haus00000000001', name: 'Haus', code: 'HAUS', archived: false },
+			{ id: 'alt000000000001', name: 'Alt', code: 'ALT', archived: true }
+		];
+		const text = () =>
+			screen
+				.queryByText('Zielprojekt', { selector: 'dt' })
+				?.nextElementSibling?.textContent?.trim();
+		for (const [overrides, expected] of [
+			[{ targetProjectId: 'haus00000000001' }, 'Haus (HAUS)'],
+			[{ targetProjectId: 'alt000000000001' }, 'Alt (ALT), archiviert'],
+			[{ targetProjectId: null, sourceMeta: { target_gone: true } }, 'gelöscht'],
+			[{ targetProjectId: null }, undefined]
+		] as const) {
+			setup(entry(overrides), [], { projects });
+			await screen.findByRole('heading', { name: 'Rechnung September' });
+			expect(text(), JSON.stringify(overrides)).toBe(expected);
+			cleanup();
+		}
+	});
+
 	it('links a converted entry to its ticket', async () => {
 		setup(
 			entry({

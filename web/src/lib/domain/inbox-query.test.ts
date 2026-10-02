@@ -3,25 +3,49 @@
 
 import { describe, expect, it } from 'vitest';
 import { INBOX_CHANNELS } from './inbox';
-import { DEFAULT_INBOX_QUERY, parseInboxQuery, serializeInboxQuery } from './inbox-query';
+import {
+	DEFAULT_INBOX_QUERY,
+	parseInboxQuery,
+	serializeInboxQuery,
+	type InboxQuery
+} from './inbox-query';
 import { SOURCE_FAMILIES, SOURCE_FAMILY_CHIPS, channelsOf, sourceFamily } from './source';
 
 const parse = (search: string) => parseInboxQuery(new URLSearchParams(search));
+/** A query with the defaults of the target project and the grouping (ADR-0049). */
+const query = (values: Partial<InboxQuery>): InboxQuery => ({ ...DEFAULT_INBOX_QUERY, ...values });
+const HAUS = 'haus00000000001';
 
 describe('parseInboxQuery', () => {
 	it('reads source family and state', () => {
 		expect(parse('')).toEqual(DEFAULT_INBOX_QUERY);
-		expect(parse('quelle=mail&zustand=verworfen')).toEqual({ source: 'mail', state: 'discarded' });
-		expect(parse('quelle=kalender&zustand=verknuepft')).toEqual({
-			source: 'calendar',
-			state: 'converted'
-		});
-		expect(parse('quelle=manuell&zustand=neu')).toEqual({ source: 'manual', state: 'new' });
-		expect(parse('zustand=alle')).toEqual({ source: null, state: 'all' });
+		expect(parse('quelle=mail&zustand=verworfen')).toEqual(
+			query({ source: 'mail', state: 'discarded' })
+		);
+		expect(parse('quelle=kalender&zustand=verknuepft')).toEqual(
+			query({ source: 'calendar', state: 'converted' })
+		);
+		expect(parse('quelle=manuell&zustand=neu')).toEqual(query({ source: 'manual', state: 'new' }));
+		expect(parse('zustand=alle')).toEqual(query({ source: null, state: 'all' }));
 	});
 
 	it('still reads the value "umgewandelt" of addresses before HK-7', () => {
-		expect(parse('zustand=umgewandelt')).toEqual({ source: null, state: 'converted' });
+		expect(parse('zustand=umgewandelt')).toEqual(query({ source: null, state: 'converted' }));
+	});
+
+	it('reads the target project and the grouping by it (ADR-0049)', () => {
+		expect(parse(`zielprojekt=${HAUS}`)).toEqual(query({ target: HAUS }));
+		expect(parse('zielprojekt=ohne&gruppe=zielprojekt')).toEqual(
+			query({ target: 'ohne', grouped: true })
+		);
+		for (const search of [
+			'zielprojekt=Haus',
+			'zielprojekt=',
+			`zielprojekt=${HAUS}&zielprojekt=ohne`
+		]) {
+			expect(parse(search).target, search).toBeNull();
+		}
+		expect(parse('gruppe=projekt').grouped).toBe(false);
 	});
 
 	it('ignores unknown, empty and repeated values', () => {
@@ -46,17 +70,28 @@ describe('serializeInboxQuery', () => {
 	});
 
 	it('keeps unknown parameters in front and replaces its own ones', () => {
-		const base = new URLSearchParams('zustand=neu&x=1&quelle=mail&y=2');
+		const base = new URLSearchParams('zustand=neu&x=1&quelle=mail&y=2&zielprojekt=ohne');
 		expect(serializeInboxQuery({ source: null, state: 'discarded' }, base)).toBe(
 			'?x=1&y=2&zustand=verworfen'
 		);
 	});
 
+	it('writes the target project and the grouping after the chips (ADR-0049)', () => {
+		expect(serializeInboxQuery(query({ source: 'mail', target: HAUS, grouped: true }))).toBe(
+			`?quelle=mail&zielprojekt=${HAUS}&gruppe=zielprojekt`
+		);
+		expect(serializeInboxQuery(query({ target: 'Haus' }))).toBe('');
+	});
+
 	it('round-trips every combination', () => {
 		for (const source of [null, ...SOURCE_FAMILIES]) {
 			for (const state of ['new', 'discarded', 'converted', 'all'] as const) {
-				const query = { source, state };
-				expect(parse(serializeInboxQuery(query).slice(1))).toEqual(query);
+				for (const target of [null, 'ohne', HAUS]) {
+					for (const grouped of [false, true]) {
+						const value = { source, state, target, grouped };
+						expect(parse(serializeInboxQuery(value).slice(1))).toEqual(value);
+					}
+				}
 			}
 		}
 	});

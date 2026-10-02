@@ -3,13 +3,16 @@
 	import { inboxKeysInfo, inboxKeysStatus } from '$lib/domain/channel-card';
 	import { formatBerlinDateTime } from '$lib/domain/format';
 	import type { InboxKey } from '$lib/domain/inbox-keys';
+	import type { ProjectRef } from '$lib/domain/ticket';
 	import { RESTART_NEEDED } from '$lib/guidance/texts';
 	import { helpHref } from '$lib/settings-sections';
 	import type { ImportKeywordsStore } from '$lib/stores/import-keywords.svelte';
 	import type { InboxKeysStore } from '$lib/stores/inbox-keys.svelte';
+	import type { InboxTargetsStore } from '$lib/stores/inbox-targets.svelte';
 	import ChipList from '../ChipList.svelte';
 	import ConfirmDialog from '../overlay/ConfirmDialog.svelte';
 	import Modal from '../overlay/Modal.svelte';
+	import CardTargetProject from './CardTargetProject.svelte';
 	import ChannelCard, { type CardAction } from './ChannelCard.svelte';
 	import ChannelKeywordsModal from './ChannelKeywordsModal.svelte';
 	import InboxKeyCreateForm from './InboxKeyCreateForm.svelte';
@@ -20,17 +23,33 @@
 	// "api" for entries of the mode "auto" and the help in the menu "•••", and in the details the
 	// keys with name, start, creation, last use and "Widerrufen …" each, and the keywords as a list
 	// of chips (ADR-0026, addendum KL). The state says whether a program has used a key yet. The way
-	// to use a key stands in the help.
+	// to use a key stands in the help. The target project of the entries of the channel "api"
+	// (ADR-0049, per user like the keywords, for every key) stands in the details; "Zielprojekt …" in
+	// the menu leads there.
 	let {
 		store,
-		importKeywords = null
+		importKeywords = null,
+		inboxTargets = null,
+		projects = []
 	}: {
 		store: InboxKeysStore;
 		importKeywords?: ImportKeywordsStore | null;
+		/** Target projects of the cards without a connection (ADR-0049). */
+		inboxTargets?: InboxTargetsStore | null;
+		/** Every project of the catalog, archived ones included. */
+		projects?: readonly ProjectRef[];
 	} = $props();
 
 	const TITLE = 'Eigener Eingang (API)';
+	const uid = $props.id();
+	const targetId = `${uid}-target`;
+	let card = $state<ReturnType<typeof ChannelCard>>();
 	const clock = minuteClock();
+	/** The target is known (ready) or waits for the restart (unavailable); else the row is left out. */
+	const targetShown = $derived(
+		inboxTargets !== null &&
+			(inboxTargets.state === 'ready' || inboxTargets.state === 'unavailable')
+	);
 
 	let creating = $state(false);
 	let editingKeywords = $state(false);
@@ -80,6 +99,9 @@
 				onselect: () => (editingKeywords = true)
 			});
 		}
+		if (inboxTargets?.state === 'ready') {
+			entries.push({ label: 'Zielprojekt …', onselect: () => void card?.showDetails(targetId) });
+		}
 		entries.push({ label: 'Hilfe', href: helpHref('eigener-eingang') });
 		return entries;
 	});
@@ -100,6 +122,7 @@
 </script>
 
 <ChannelCard
+	bind:this={card}
 	icon="api"
 	title={TITLE}
 	subtitle="Für eigene Skripte und die Erweiterung für WhatsApp Web"
@@ -160,6 +183,17 @@
 					</dd>
 				</div>
 			</dl>
+		{/if}
+		{#if targetShown && inboxTargets !== null}
+			<CardTargetProject
+				id={targetId}
+				name={TITLE}
+				entries="Neue Einträge über die API"
+				value={inboxTargets.targets.api || null}
+				{projects}
+				ready={inboxTargets.state === 'ready'}
+				onsave={(project) => inboxTargets.save('api', project, TITLE)}
+			/>
 		{/if}
 	{/snippet}
 </ChannelCard>

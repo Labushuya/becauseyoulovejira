@@ -121,6 +121,16 @@
 		action.onselect?.();
 	}
 
+	/**
+	 * Opens the details and puts the focus on one of their controls, e.g. the select of
+	 * "Zielprojekt …" in the menu (ADR-0049): the setting lives in the details, the menu leads there.
+	 */
+	export async function showDetails(focusId: string): Promise<void> {
+		open = true;
+		await tick();
+		document.getElementById(focusId)?.focus();
+	}
+
 	/** "Umbenennen …": the name in the header becomes a field with the current name chosen. */
 	export async function startRename(): Promise<void> {
 		if (rename === null || renaming) return;

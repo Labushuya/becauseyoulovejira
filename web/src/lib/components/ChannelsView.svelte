@@ -2,9 +2,11 @@
 	import type { ExtensionInfo } from '$lib/data/extension';
 	import { setupKindOf, type SetupTarget } from '$lib/domain/channel-setup';
 	import type { Connection } from '$lib/domain/connections';
+	import type { ProjectRef } from '$lib/domain/ticket';
 	import type { ConnectionsStore } from '$lib/stores/connections.svelte';
 	import type { ImportKeywordsStore } from '$lib/stores/import-keywords.svelte';
 	import type { InboxKeysStore } from '$lib/stores/inbox-keys.svelte';
+	import type { InboxTargetsStore } from '$lib/stores/inbox-targets.svelte';
 	import type { NotionStore } from '$lib/stores/notion.svelte';
 	import { channelSetupHref } from '$lib/ticket-links';
 	import BookmarkletCard from './channels/BookmarkletCard.svelte';
@@ -30,13 +32,18 @@
 	// WhatsApp Web with its assistant (WhatsAppWebSetup, ?einrichten=whatsapp-web). Since NI-2
 	// (ADR-0041) the import dialog of Notion opens from its card or, after "Verbindung prüfen", from
 	// the last step of its assistant: the assistant closes first, no dialog from a dialog. Since the
-	// plan kanal-karten KK-2 every card of the page stands on the building block ChannelCard.
+	// plan kanal-karten KK-2 every card of the page stands on the building block ChannelCard. Every
+	// card that brings entries has their target project in its details and the assistants ask for
+	// it in an optional step (ADR-0049): connections keep it themselves, the own inbox, WhatsApp
+	// Web and the files per user (`inboxTargets`).
 	let {
 		captureUrl,
 		connections,
 		notion,
 		importKeywords = null,
 		inboxKeys = null,
+		inboxTargets = null,
+		projects = [],
 		extension = null,
 		setup = null,
 		onsetupchange
@@ -56,6 +63,10 @@
 		 * WhatsApp Web are not shown.
 		 */
 		inboxKeys?: InboxKeysStore | null;
+		/** Target projects of the own inbox, WhatsApp Web and the files (ADR-0049). */
+		inboxTargets?: InboxTargetsStore | null;
+		/** Every project of the catalog, archived ones included (target projects, ADR-0049). */
+		projects?: readonly ProjectRef[];
 		/** Folder of the built extension for WhatsApp Web, null while unknown. */
 		extension?: ExtensionInfo | null;
 		/** Assistant in the address, null without one. */
@@ -97,6 +108,7 @@
 	<ConnectionsSection
 		store={connections}
 		{notion}
+		{projects}
 		onadd={focusCatalog}
 		onsetup={showSetup}
 		onimport={(connection) => (importing = connection)}
@@ -106,12 +118,14 @@
 		<h3 id={ownId}>Selbst hereinbringen</h3>
 		<div class="own-cards">
 			<BookmarkletCard {captureUrl} />
-			<FilesCard {importKeywords} />
+			<FilesCard {importKeywords} {inboxTargets} {projects} />
 			{#if inboxKeys !== null}
-				<OwnInboxCard store={inboxKeys} {importKeywords} />
+				<OwnInboxCard store={inboxKeys} {importKeywords} {inboxTargets} {projects} />
 				<WhatsAppWebCard
 					{importKeywords}
 					{inboxKeys}
+					{inboxTargets}
+					{projects}
 					{extension}
 					setupHref={channelSetupHref({ kind: 'whatsapp-web', connectionId: null })}
 				/>
@@ -134,6 +148,8 @@
 			<WhatsAppWebSetup
 				{inboxKeys}
 				{importKeywords}
+				{inboxTargets}
+				{projects}
 				{extension}
 				appUrl={new URL(captureUrl).origin}
 				onclose={() => onsetupchange(null)}
@@ -146,6 +162,7 @@
 				connectionId={setup.connectionId}
 				store={connections}
 				{notion}
+				{projects}
 				onconnection={(id) => onsetupchange({ kind: setup?.kind ?? 'kalender', connectionId: id })}
 				onimport={(connection) => {
 					onsetupchange(null);

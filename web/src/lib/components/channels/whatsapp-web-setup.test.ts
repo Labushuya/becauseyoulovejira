@@ -8,9 +8,12 @@ import { describe, expect, it, vi } from 'vitest';
 import type { ResolvedPathname } from '$app/types';
 import type { CreatedInboxKey, InboxKey } from '$lib/domain/inbox-keys';
 import { EMPTY_IMPORT_KEYWORDS } from '$lib/domain/keywords';
+import { EMPTY_TARGETS } from '$lib/domain/target-project';
+import type { ProjectRef } from '$lib/domain/ticket';
 import { FlagStore } from '$lib/stores/flags.svelte';
 import { ImportKeywordsStore, type ImportKeywordsData } from '$lib/stores/import-keywords.svelte';
 import { InboxKeysStore, type InboxKeysData } from '$lib/stores/inbox-keys.svelte';
+import { InboxTargetsStore, type InboxTargetsData } from '$lib/stores/inbox-targets.svelte';
 import { useOverlayStubs } from '$lib/test/overlay-stubs';
 import WhatsAppWebCard from './WhatsAppWebCard.svelte';
 import WhatsAppWebSetup from './WhatsAppWebSetup.svelte';
@@ -54,6 +57,9 @@ function stores(keys: InboxKey[] = [], keywords: string[] = []) {
 	};
 }
 
+/** A project of the catalog for the step "Zielprojekt" (ADR-0049). */
+const HAUS: ProjectRef = { id: 'haus00000000001', name: 'Haus', code: 'HAUS', archived: false };
+
 async function openSetup(
 	keys: InboxKey[] = [],
 	extension = { folder: FOLDER, built: true, version: '0.1.0' }
@@ -61,11 +67,23 @@ async function openSetup(
 	const all = stores(keys);
 	await all.inboxKeys.load();
 	await all.importKeywords.load();
+	const targetData = {
+		load: vi.fn<InboxTargetsData['load']>(async () => EMPTY_TARGETS),
+		save: vi.fn<InboxTargetsData['save']>(async (targets) => targets)
+	} satisfies InboxTargetsData;
+	const inboxTargets = new InboxTargetsStore(
+		targetData,
+		{ ensureValid: () => true, logout: vi.fn() },
+		new FlagStore()
+	);
+	await inboxTargets.load();
 	const onclose = vi.fn();
 	render(WhatsAppWebSetup, {
 		props: {
 			inboxKeys: all.inboxKeys,
 			importKeywords: all.importKeywords,
+			inboxTargets,
+			projects: [HAUS],
 			extension,
 			appUrl: 'http://127.0.0.1:8090',
 			onclose
@@ -73,6 +91,7 @@ async function openSetup(
 	});
 	return {
 		...all,
+		targetData,
 		onclose,
 		dialog: screen.getByRole('dialog', { name: 'WhatsApp Web einrichten' })
 	};
@@ -167,10 +186,10 @@ describe('WhatsAppWebSetup', () => {
 	it('walks through key, folder, entering and the check of the connection', async () => {
 		const { dialog, data, setListed, inboxKeys } = await openSetup();
 		const stepper = within(dialog).getByRole('navigation', { name: 'Schritte der Einrichtung' });
-		const stepButtons = () => within(stepper).getAllByRole('button', { name: /^Schritt \d von 5/ });
-		expect(stepButtons()).toHaveLength(5);
+		const stepButtons = () => within(stepper).getAllByRole('button', { name: /^Schritt \d von 6/ });
+		expect(stepButtons()).toHaveLength(6);
 		expect(
-			within(dialog).getByRole('heading', { name: 'Schritt 1 von 5: Schlüssel' })
+			within(dialog).getByRole('heading', { name: 'Schritt 1 von 6: Schlüssel' })
 		).toBeTruthy();
 
 		// 1: a key named "WhatsApp Web", shown with "Kopieren".
@@ -184,7 +203,7 @@ describe('WhatsAppWebSetup', () => {
 		// 2: the folder of the build and the ways for Edge and Chrome.
 		await next(dialog);
 		expect(
-			within(dialog).getByRole('heading', { name: 'Schritt 2 von 5: Erweiterung laden' })
+			within(dialog).getByRole('heading', { name: 'Schritt 2 von 6: Erweiterung laden' })
 		).toBe(document.activeElement);
 		expect(
 			within(dialog).getByRole('region', { name: 'Ordner der Erweiterung' }).textContent
@@ -230,13 +249,13 @@ describe('WhatsAppWebSetup', () => {
 	});
 
 	it('edits the keywords of WhatsApp Web and says honestly what the extension is', async () => {
-		const { dialog, keywordData, onclose } = await openSetup();
+		const { dialog, keywordData, targetData, onclose } = await openSetup();
 		const stepper = within(dialog).getByRole('navigation', { name: 'Schritte der Einrichtung' });
 		await fireEvent.click(
-			within(stepper).getByRole('button', { name: /^Schritt 5 von 5: Stichwörter/ })
+			within(stepper).getByRole('button', { name: /^Schritt 5 von 6: Stichwörter/ })
 		);
 		expect(
-			within(dialog).getByRole('heading', { name: 'Schritt 5 von 5: Stichwörter' })
+			within(dialog).getByRole('heading', { name: 'Schritt 5 von 6: Stichwörter' })
 		).toBeTruthy();
 		const content = (dialog.textContent ?? '').replace(/\s+/g, ' ');
 		expect(content).toContain('Inoffiziell');
@@ -247,6 +266,17 @@ describe('WhatsAppWebSetup', () => {
 			expect(keywordData.save).toHaveBeenCalledWith(
 				expect.objectContaining({ 'whatsapp-web': { keywords: ['#byl'], matchBody: false } })
 			)
+		);
+
+		// Optional last step (ADR-0049): the target project of the new entries, saved at once.
+		await next(dialog);
+		expect(
+			within(dialog).getByRole('heading', { name: 'Schritt 6 von 6: Zielprojekt' })
+		).toBeTruthy();
+		const select = within(dialog).getByRole('combobox', { name: 'Zielprojekt von „WhatsApp Web“' });
+		await fireEvent.change(select, { target: { value: HAUS.id } });
+		await waitFor(() =>
+			expect(targetData.save).toHaveBeenCalledWith({ api: '', 'whatsapp-web': HAUS.id, files: '' })
 		);
 		await fireEvent.click(within(dialog).getByRole('button', { name: 'Fertig' }));
 		await waitFor(() => expect(onclose).toHaveBeenCalled());
@@ -276,7 +306,7 @@ describe('WhatsAppWebSetup', () => {
 			}
 		]);
 		expect(
-			within(dialog).getByRole('heading', { name: 'Schritt 2 von 5: Erweiterung laden' })
+			within(dialog).getByRole('heading', { name: 'Schritt 2 von 6: Erweiterung laden' })
 		).toBeTruthy();
 	});
 });
