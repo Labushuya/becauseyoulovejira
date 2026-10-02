@@ -1,26 +1,42 @@
 // Connections of the channels (ADR-0016 section 2, ADR-0018, ADR-0020; E4 plan packages 10, 13, 20 and 22;
-// Notion since ADR-0041).
+// Notion since ADR-0041, GitHub since ADR-0050).
 // Pure: types, labels and the checks of the form. Access data are Windows user environment variables; a
 // connection stores only their names. The name pattern mirrors app/pb_hooks/lib/secrets.js
 // and the mail settings mirror app/pb_hooks/lib/connection-rules.js
 // (tests/unit/web-connections.test.mjs compares both).
 
-export const CONNECTION_TYPES = ['calendar', 'telegram', 'mail', 'notion'] as const;
+import { GITHUB_SECRET_NAME, type GitHubRepoSettings, type GitHubSettings } from './github';
+
+export const CONNECTION_TYPES = ['calendar', 'telegram', 'mail', 'notion', 'github'] as const;
 export type ConnectionType = (typeof CONNECTION_TYPES)[number];
 
 export const CONNECTION_TYPE_LABELS: Readonly<Record<ConnectionType, string>> = Object.freeze({
 	calendar: 'Google Calendar',
 	telegram: 'Telegram-Bot',
 	mail: 'Postfach (IMAP)',
-	notion: 'Notion'
+	notion: 'Notion',
+	github: 'GitHub'
 });
 
 /**
- * Whether a kind fetches by itself and through "Jetzt abrufen" (ADR-0016) and takes keywords.
- * Notion only imports lists on request (ADR-0041): no run, no keywords.
+ * Whether a kind fetches by itself and through "Jetzt abrufen" (ADR-0016). Notion only imports
+ * lists on request (ADR-0041): no run.
  */
 export function fetchesAutomatically(type: ConnectionType): boolean {
 	return type !== 'notion';
+}
+
+/**
+ * Whether a kind takes keywords (ADR-0020). Notion imports what the user chooses (ADR-0041 §5), and
+ * for GitHub the chosen paths and events are the filter (ADR-0020, addendum 5).
+ */
+export function usesKeywords(type: ConnectionType): boolean {
+	return type !== 'notion' && type !== 'github';
+}
+
+/** Whether a kind runs without its secret too: GitHub reads public repositories (ADR-0050 §1). */
+export function secretOptional(type: ConnectionType): boolean {
+	return type === 'github';
 }
 
 /** Mail providers; host, port and TLS follow from the provider in byl-mail.exe (ADR-0016 section 4). */
@@ -62,7 +78,8 @@ export const DEFAULT_SECRET_NAMES: Readonly<Record<ConnectionType, string>> = Ob
 	calendar: 'BYL_GOOGLE_CALENDAR_URL',
 	telegram: 'BYL_TELEGRAM_TOKEN',
 	mail: MAIL_PROVIDER_SECRET_NAMES.webde,
-	notion: 'BYL_NOTION_TOKEN'
+	notion: 'BYL_NOTION_TOKEN',
+	github: GITHUB_SECRET_NAME
 });
 export const DEFAULT_ALLOWLIST_NAME = 'BYL_TELEGRAM_ALLOWED_IDS';
 
@@ -112,6 +129,11 @@ export interface Connection {
 	matchBody: boolean;
 	/** Mail: state of the full scan of the inbox (ADR-0020, addendum 3); null before the first. */
 	scan?: MailScan | null;
+	/**
+	 * GitHub: interval and repositories with paths, events and target project (ADR-0050 §2); null
+	 * for other kinds. The data layer always sets it; objects built by hand may leave it out.
+	 */
+	github?: GitHubSettings | null;
 	runningSince: string | null;
 	/**
 	 * Target project of the new entries (ADR-0049), null without one. The data layer always sets
@@ -312,7 +334,9 @@ export const KEYWORD_SEARCH_TEXT: Readonly<Record<ConnectionType, string>> = Obj
 	calendar: 'Gesucht wird in Titel und Beschreibung der Termine.',
 	telegram: 'Gesucht wird im Text der Nachricht bzw. in der Bildunterschrift.',
 	mail: 'Gesucht wird in Betreff und Absender (Name und Adresse), mit „Betreff, Absender, Kopfzeilen und Text durchsuchen“ (Standard) auch in den Kopfzeilen (An, Cc, Antwort an, Liste, Organisation) und im ganzen Text. Neue Stichwörter gelten auch für ältere Mails im Posteingang.',
-	notion: 'Notion hat keine Stichwörter: Übernommen wird nur, was du im Import auswählst.'
+	notion: 'Notion hat keine Stichwörter: Übernommen wird nur, was du im Import auswählst.',
+	github:
+		'GitHub hat keine Stichwörter: Übernommen wird, was die beobachteten Pfade und Ereignisse eines Repositorys treffen.'
 });
 
 export interface ConnectionDraft {
@@ -323,6 +347,8 @@ export interface ConnectionDraft {
 	/** Mail only. */
 	mailProvider: MailProvider;
 	mailUser: string;
+	/** GitHub only: the first repository, which the assistant adds with the connection (ADR-0050). */
+	githubRepo?: GitHubRepoSettings | null;
 }
 
 export function isConnectionType(value: unknown): value is ConnectionType {
@@ -469,11 +495,15 @@ export function secretStatusText(
 /**
  * Answer of "Jetzt abrufen" (E4 plan, package 15): the counts of the run or why it did not run.
  * "unavailable": the mail helper that fetches a mailbox does not run (package A, item 4).
+ * "limited": a rate limit of GitHub holds (ADR-0050 §6); no error of the user, `hint` says until
+ * when.
  */
 export interface RunResult {
-	status: 'ok' | 'error' | 'running' | 'missing' | 'disabled' | 'unsupported' | 'unavailable';
+	status:
+		'ok' | 'error' | 'running' | 'missing' | 'disabled' | 'unsupported' | 'unavailable' | 'limited';
 	created: number;
 	duplicates: number;
+	/** Entries that followed their source: a changed event, the status of a watched source. */
 	updated: number;
 	skipped: number;
 	failed: number;
@@ -483,6 +513,8 @@ export interface RunResult {
 	error: string;
 	/** Names of the variables that are not set. */
 	missing: string[];
+	/** "limited": the neutral hint of the server with the time of the next run. */
+	hint?: string;
 }
 
 /** Counts of a good run, e.g. "3 neu, 1 schon vorhanden". */
@@ -514,6 +546,8 @@ export function runResultText(label: string, result: RunResult): string {
 			return `${name}: Diese Art ruft noch nicht ab.`;
 		case 'unavailable':
 			return `${name}: ${result.error}`;
+		case 'limited':
+			return `${name}: ${result.hint || 'GitHub bremst gerade die Anfragen; der nächste Abruf folgt später.'}`;
 	}
 }
 
@@ -541,6 +575,8 @@ export function lastResultText(
 				return 'ruft nicht ab';
 			case 'unavailable':
 				return 'Hilfsprozess läuft nicht';
+			case 'limited':
+				return 'Anfragelimit erreicht';
 		}
 	}
 	if (connection.lastRunAt === null) return null;

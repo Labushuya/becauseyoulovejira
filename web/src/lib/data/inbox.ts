@@ -17,6 +17,7 @@ import {
 	type InboxTicketRef,
 	type ListedView
 } from '../domain/inbox';
+import { watchOf } from '../domain/watch';
 import { DATA_ERROR_MESSAGES, DataError, isDataError, toDataError, withDataErrors } from './errors';
 import { currentUserId, type RequestOptions } from './options';
 
@@ -45,6 +46,8 @@ export const INBOX_LIST_FIELDS = [
 	'connection',
 	// The project the entry got from its way (ADR-0049); missing before the migration 1790203100.
 	'target_project',
+	// Status of a watched source (ADR-0050 §5); missing before the migration 1790203200.
+	'watch',
 	'created',
 	'updated',
 	// The ticket of a converted or linked entry (ADR-0031, addendum): key and title for the chip and
@@ -80,6 +83,8 @@ export interface InboxRecord {
 	connection?: string;
 	/** Missing while the server has not run the migration 1790203100 (ADR-0049). */
 	target_project?: string;
+	/** Status of a watched source (ADR-0050 §5); missing before the migration 1790203200. */
+	watch?: unknown;
 	created: string;
 	updated: string;
 	expand?: { ticket?: InboxTicketRecord };
@@ -115,6 +120,7 @@ export function toInboxItemSummary(record: InboxRecord): InboxItemSummary {
 	if (!isInboxChannel(record.channel)) throw new RangeError(`Unknown channel: ${record.channel}`);
 	if (!isInboxKind(record.kind)) throw new RangeError(`Unknown kind: ${record.kind}`);
 	if (!isInboxState(record.state)) throw new RangeError(`Unknown state: ${record.state}`);
+	const watch = watchOf(record.watch);
 	return {
 		id: record.id,
 		channel: record.channel,
@@ -133,6 +139,7 @@ export function toInboxItemSummary(record: InboxRecord): InboxItemSummary {
 		...(record.connection ? { connectionId: record.connection } : {}),
 		targetProjectId: record.target_project || null,
 		...(record.target_project === undefined ? { withoutTargetField: true } : {}),
+		...(watch === null ? {} : { watch }),
 		created: record.created,
 		updated: record.updated
 	};

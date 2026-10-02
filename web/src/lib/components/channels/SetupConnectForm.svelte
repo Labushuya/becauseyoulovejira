@@ -8,14 +8,24 @@
 		type Connection,
 		type ConnectionDraft
 	} from '$lib/domain/connections';
+	import {
+		EMPTY_GITHUB_SETTINGS,
+		emptyRepoDraft,
+		repoDraftErrors,
+		repoFromDraft,
+		type GitHubRepoDraft,
+		type RepoDraftField
+	} from '$lib/domain/github';
 	import type { ConnectionsStore } from '$lib/stores/connections.svelte';
 	import ErrorIcon from '../ErrorIcon.svelte';
+	import GitHubRepoFields from './GitHubRepoFields.svelte';
 
 	// Step "Verbinden" of the assistant (ADR-0026 section 4, plan EH-5 §3.7): name of the connection
 	// and the names of its variables, preset for the service; never a value (ADR-0018). Creating
 	// saves at once, so there is nothing to discard; field errors of the client and the server stand
 	// at the field. It replaces the former modal "Verbindung anlegen". The variable is preset to a
-	// name no connection uses yet, like the steps before (ADR-0041, addendum of 2026-10-01).
+	// name no connection uses yet, like the steps before (ADR-0041, addendum of 2026-10-01). GitHub
+	// (ADR-0050 §7) creates its connection with the first repository, so the step asks for it too.
 	let {
 		kind,
 		store,
@@ -43,11 +53,17 @@
 	}
 
 	let draft = $state<ConnectionDraft>(initialDraft());
+	/** GitHub: the first repository. */
+	let repo = $state<GitHubRepoDraft>(emptyRepoDraft());
 	let submitted = $state(false);
 	let saving = $state(false);
 	let serverFields = $state<Record<string, string>>({});
 	let formMessage = $state<string | null>(null);
 
+	const github = $derived(draft.type === 'github');
+	const repoErrors = $derived<Partial<Record<RepoDraftField, string>>>(
+		submitted && github ? repoDraftErrors(repo, EMPTY_GITHUB_SETTINGS, null) : {}
+	);
 	const clientErrors = $derived(submitted ? connectionDraftErrors(draft) : {});
 	const errors = $derived({
 		label: clientErrors.label ?? serverFields.label,
@@ -61,7 +77,7 @@
 			? 'Name der Variablen für die iCal-Adresse'
 			: draft.type === 'mail'
 				? 'Name der Variablen für das Passwort'
-				: draft.type === 'notion'
+				: draft.type === 'notion' || draft.type === 'github'
 					? 'Name der Variablen für das Token'
 					: 'Name der Variablen für das Bot-Token'
 	);
@@ -73,15 +89,21 @@
 		formMessage = null;
 		serverFields = {};
 		if (Object.keys(connectionDraftErrors(draft)).length > 0) return;
+		if (github && Object.keys(repoDraftErrors(repo, EMPTY_GITHUB_SETTINGS, null)).length > 0) {
+			return;
+		}
 		saving = true;
-		const result = await store.create(draft);
+		const result = await store.create(
+			github ? { ...draft, githubRepo: repoFromDraft(repo) } : draft
+		);
 		saving = false;
 		if (result.ok) {
 			oncreated(result.connection);
 			return;
 		}
 		serverFields = { ...result.fields };
-		formMessage = result.message;
+		// GitHub: a refused repository (name, patterns, events) comes as an error of the settings.
+		formMessage = result.message ?? (github ? (result.fields.settings ?? null) : null);
 	}
 </script>
 
@@ -154,6 +176,12 @@
 			{@render fieldError(ids.allowlist, errors.allowlistEnv)}
 		</div>
 	{/if}
+	{#if github}
+		<p class="note">
+			Ohne Token liest die App nur öffentliche Repositorys; die Variable kannst du später setzen.
+		</p>
+		<GitHubRepoFields bind:draft={repo} errors={repoErrors} />
+	{/if}
 	{#if formMessage !== null}
 		<p class="alert-error" role="alert"><ErrorIcon /><span>{formMessage}</span></p>
 	{/if}
@@ -189,5 +217,10 @@
 		background: var(--color-surface);
 		border: 1px solid var(--color-text-muted);
 		border-radius: var(--radius-control);
+	}
+
+	.note {
+		font-size: var(--font-size-small);
+		color: var(--color-text-muted);
 	}
 </style>

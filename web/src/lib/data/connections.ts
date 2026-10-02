@@ -16,6 +16,12 @@ import {
 	type ScanResult,
 	type SecretStatus
 } from '../domain/connections';
+import {
+	EMPTY_GITHUB_SETTINGS,
+	githubSettingsOf,
+	githubSettingsValue,
+	type GitHubSettings
+} from '../domain/github';
 import { keywordListOf } from '../domain/keywords';
 import {
 	MAILBOX_IMPORT_BATCH,
@@ -113,6 +119,7 @@ export function toConnection(record: ConnectionRecord): Connection {
 		replyNoMatch: settingsRecord(record.settings).reply_no_match !== false,
 		...mail,
 		scan: record.type === 'mail' ? mailScanOf(record.scan) : null,
+		github: record.type === 'github' ? githubSettingsOf(record.settings) : null,
 		runningSince: record.running_since || null,
 		targetProjectId: record.target_project || null,
 		targetReady: record.target_project !== undefined,
@@ -138,14 +145,22 @@ export function listConnections(
 
 /**
  * The settings of a new connection. A mailbox searches headers and the whole text from the start
- * (match_body on by default, user decision of 2026-09-27).
+ * (match_body on by default, user decision of 2026-09-27). GitHub starts with the default interval
+ * and the first repository of the assistant, if any (ADR-0050 §2).
  */
 function settingsOf(
-	draft: Pick<ConnectionDraft, 'type' | 'allowlistEnv' | 'mailProvider' | 'mailUser'>
-): Record<string, string | boolean> {
+	draft: Pick<ConnectionDraft, 'type' | 'allowlistEnv' | 'mailProvider' | 'mailUser' | 'githubRepo'>
+): Record<string, unknown> {
 	if (draft.type === 'telegram') return { allowed_env: draft.allowlistEnv.trim() };
 	if (draft.type === 'mail') {
 		return { provider: draft.mailProvider, user: draft.mailUser.trim(), match_body: true };
+	}
+	if (draft.type === 'github') {
+		const repo = draft.githubRepo ?? null;
+		return githubSettingsValue({
+			...EMPTY_GITHUB_SETTINGS,
+			repos: repo === null ? [] : [repo]
+		});
 	}
 	return {};
 }
@@ -176,7 +191,7 @@ export function createConnection(
 
 /** The whole `settings` of a connection with new keywords and switches. */
 function settingsValue(
-	connection: Pick<Connection, 'type' | 'allowlistEnv' | 'mailProvider' | 'mailUser'>,
+	connection: Pick<Connection, 'type' | 'allowlistEnv' | 'mailProvider' | 'mailUser' | 'github'>,
 	settings: ConnectionSettingsDraft
 ): Record<string, unknown> {
 	const keywords = settings.keywords.map((keyword) => keyword.trim());
@@ -203,6 +218,9 @@ function settingsValue(
 		case 'notion':
 			// No keywords: the user chooses what to import (ADR-0041); the hook refuses any key.
 			return {};
+		case 'github':
+			// No keywords either (ADR-0050): the repositories go along unchanged.
+			return githubSettingsValue(connection.github ?? EMPTY_GITHUB_SETTINGS);
 	}
 }
 
@@ -213,7 +231,10 @@ function settingsValue(
  */
 export function saveConnectionSettings(
 	pb: PocketBase,
-	connection: Pick<Connection, 'id' | 'type' | 'allowlistEnv' | 'mailProvider' | 'mailUser'>,
+	connection: Pick<
+		Connection,
+		'id' | 'type' | 'allowlistEnv' | 'mailProvider' | 'mailUser' | 'github'
+	>,
 	settings: ConnectionSettingsDraft,
 	{ signal }: RequestOptions = {}
 ): Promise<Connection> {
@@ -224,6 +245,29 @@ export function saveConnectionSettings(
 			.update<ConnectionRecord>(
 				connection.id,
 				{ settings: value },
+				{ fields: CONNECTION_FIELDS, signal }
+			);
+		return toConnection(record);
+	});
+}
+
+/**
+ * Saves the interval and the repositories of a GitHub connection (ADR-0050 §2), `settings` whole.
+ * The hook checks names, patterns, events and the target project of each repository
+ * (`validation_github_*`, `validation_target_project_*`).
+ */
+export function saveGitHubSettings(
+	pb: PocketBase,
+	id: string,
+	settings: GitHubSettings,
+	{ signal }: RequestOptions = {}
+): Promise<Connection> {
+	return withDataErrors(signal, async () => {
+		const record = await pb
+			.collection(CONNECTIONS)
+			.update<ConnectionRecord>(
+				id,
+				{ settings: githubSettingsValue(settings) },
 				{ fields: CONNECTION_FIELDS, signal }
 			);
 		return toConnection(record);
@@ -366,7 +410,8 @@ const RUN_STATUSES = [
 	'missing',
 	'disabled',
 	'unsupported',
-	'unavailable'
+	'unavailable',
+	'limited'
 ] as const;
 
 const HELPER_STATES = ['running', 'stopped', 'refused', 'outdated'] as const;
@@ -419,7 +464,8 @@ export function runConnection(
 			error: typeof result.error === 'string' ? result.error : '',
 			missing: Array.isArray(result.missing)
 				? result.missing.filter((name): name is string => typeof name === 'string')
-				: []
+				: [],
+			...(status === 'limited' && typeof result.hint === 'string' ? { hint: result.hint } : {})
 		};
 	});
 }

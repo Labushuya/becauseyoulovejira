@@ -165,6 +165,35 @@ describe('channelHealth', () => {
 		});
 	});
 
+	it('runs GitHub without its token: a neutral hint, no open setup, no keywords (ADR-0050)', () => {
+		const github = {
+			...BASE,
+			type: 'github' as const,
+			secretEnv: 'BYL_GITHUB_TOKEN',
+			keywords: []
+		};
+		expect(channelHealth(github, SET, false)).toMatchObject({
+			state: 'ok',
+			hint: null,
+			action: 'run'
+		});
+		expect(channelHealth(github, UNSET, false)).toMatchObject({
+			state: 'ok',
+			tone: 'brand',
+			hint: {
+				tone: 'info',
+				text: expect.stringMatching(/^Ohne Token: nur öffentliche Repositorys/)
+			},
+			action: 'run'
+		});
+		// The hint of the last run (e.g. the rate limit) goes first, also without the token.
+		const limit = 'Anfragelimit von GitHub erreicht; der nächste Abruf folgt ab 14:00.';
+		expect(channelHealth({ ...github, lastHint: limit }, UNSET, false).hint).toEqual({
+			tone: 'info',
+			text: limit
+		});
+	});
+
 	it('skips the check of the variables while their state is unknown', () => {
 		expect(channelHealth(BASE, null, false).state).toBe('ok');
 		expect(channelHealth({ ...BASE, lastError: 'x' }, null, false).state).toBe('error');

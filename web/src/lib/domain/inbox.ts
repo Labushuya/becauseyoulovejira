@@ -6,6 +6,7 @@ import { isCalendarDate, type CalendarDate } from './berlin-date';
 import { berlinDateOf, formatBerlinDateTime, formatCalendarDate } from './format';
 import { isPriority, type Priority } from './status';
 import { DESCRIPTION_MAX_LENGTH, TITLE_MAX_LENGTH, type TicketSummary } from './ticket';
+import type { WatchStatus } from './watch';
 
 /**
  * Ways into the inbox; also the values of `tickets.source`. "api" and "whatsapp-web" come through
@@ -209,6 +210,11 @@ export interface InboxItemSummary {
 	 * migration waits for the next start. Only the data layer sets it.
 	 */
 	withoutTargetField?: boolean;
+	/**
+	 * Status of the watched source (ADR-0050 §5): whether the copy still matches the file, or where
+	 * the pull request stands. Only the server sets it; missing for entries without one.
+	 */
+	watch?: WatchStatus;
 	created: string;
 	updated: string;
 }

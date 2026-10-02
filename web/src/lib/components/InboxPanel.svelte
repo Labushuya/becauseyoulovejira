@@ -13,7 +13,9 @@
 		type InboxItemSummary
 	} from '$lib/domain/inbox';
 	import type { CalendarDate } from '$lib/domain/berlin-date';
+	import { githubMetaText } from '$lib/domain/github';
 	import { notionOriginText } from '$lib/domain/notion';
+	import { WATCH_LABELS, WATCH_LOZENGES, watchText } from '$lib/domain/watch';
 	import { itemSuggestion, suggestionFormValues } from '$lib/domain/rrule';
 	import { TARGET_LABEL, targetOfItem, targetText } from '$lib/domain/target-project';
 	import type { ProjectRef, TicketSummary } from '$lib/domain/ticket';
@@ -159,6 +161,9 @@
 			['Chat', metaText(item, 'chat')],
 			// Notion (ADR-0041): the page or database and the section above the point.
 			['Aus', notionOriginText(item)],
+			// GitHub (ADR-0050): the repository and the watched file.
+			['Repository', githubMetaText(item, 'repo')],
+			['Datei', githubMetaText(item, 'path')],
 			['Stichwort', metaText(item, 'keyword')],
 			['Quelldatum', sourceDateText(item)],
 			['Eingang', formatBerlinDateTime(item.created)],
@@ -437,6 +442,21 @@
 					</dd>
 				</div>
 			{/if}
+			{#if item.watch !== undefined}
+				<!-- Status of the watched source (ADR-0050 §5): only shown, the entry never changes. -->
+				{@const watch = item.watch}
+				<div>
+					<dt>Status der Quelle</dt>
+					<dd class="watch">
+						<Lozenge
+							label={WATCH_LABELS[watch.state]}
+							icon={WATCH_LOZENGES[watch.state].icon}
+							tone={WATCH_LOZENGES[watch.state].tone}
+						/>
+						<span>{watchText(watch)}</span>
+					</dd>
+				</div>
+			{/if}
 			{#if item.sourceUrl !== ''}
 				<div>
 					<dt>Link</dt>
@@ -587,6 +607,13 @@
 
 	dd {
 		overflow-wrap: anywhere;
+	}
+
+	.watch {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 0.25rem 0.5rem;
+		align-items: center;
 	}
 
 	dd a {

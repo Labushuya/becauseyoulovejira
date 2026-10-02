@@ -8,13 +8,15 @@
 import { CARD_STATUS } from './channel-card';
 import {
 	NO_KEYWORDS_WARNING,
-	fetchesAutomatically,
 	mailHelperText,
+	secretOptional,
 	secretStatusText,
+	usesKeywords,
 	type Connection,
 	type MailHelperStatus,
 	type SecretStatus
 } from './connections';
+import { NO_TOKEN_HINT } from './github';
 
 export type ChannelHealthState = 'running' | 'paused' | 'unset' | 'error' | 'restart' | 'ok';
 
@@ -92,7 +94,10 @@ function baseHealth(
 		};
 	}
 	const secret = secretStatusText(connection, secretStatus);
-	if (secret !== null && !secret.ok) {
+	// GitHub reads public repositories without its token (ADR-0050 §1): a missing token is no open
+	// setup, only a hint (below).
+	const tokenless = secret !== null && !secret.ok && secretOptional(connection.type);
+	if (secret !== null && !secret.ok && !tokenless) {
 		return {
 			state: 'unset',
 			...CARD_STATUS.setup,
@@ -121,10 +126,11 @@ function baseHealth(
 	}
 	// The hint of the last run wins over the missing keywords: it may carry the chat ID Telegram
 	// needs for the allowlist; the details still say "Stichwörter: keine".
-	// Notion has no keywords (ADR-0041): the user chooses what to import.
+	// Notion and GitHub have no keywords (ADR-0041, ADR-0050): the choice is the filter.
 	let hint: ChannelHealth['hint'] = null;
 	if (connection.lastHint !== '') hint = { tone: 'info', text: connection.lastHint };
-	else if (connection.keywords.length === 0 && fetchesAutomatically(connection.type)) {
+	else if (tokenless) hint = { tone: 'info', text: NO_TOKEN_HINT };
+	else if (connection.keywords.length === 0 && usesKeywords(connection.type)) {
 		hint = { tone: 'warning', text: NO_KEYWORDS_WARNING };
 	}
 	return {

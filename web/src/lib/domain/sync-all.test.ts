@@ -72,6 +72,29 @@ describe('sync-all texts', () => {
 		expect(summary.description).toMatch(/„Kalender“ ruft gerade ab/);
 	});
 
+	it('counts what came before a rate limit of GitHub and stays neutral (ADR-0050 §6)', () => {
+		const GITHUB = { id: 'conn00000000003', label: 'GitHub' };
+		const summary = syncSummary([
+			{ connection: CAL, result: { ...OK, created: 1 } },
+			{
+				connection: GITHUB,
+				result: {
+					...OK,
+					status: 'limited',
+					created: 2,
+					hint: 'Anfragelimit von GitHub erreicht; der nächste Abruf folgt ab 14:00.'
+				}
+			}
+		]);
+		expect(summary).toEqual({
+			tone: 'info',
+			title: '2 Kanäle abgerufen: 3 neue.',
+			description:
+				'„Kalender“: 1 neu. „GitHub“: Anfragelimit von GitHub erreicht; der nächste Abruf folgt ab 14:00.',
+			problem: null
+		});
+	});
+
 	it('says when no connection is switched on', () => {
 		expect(syncSummary([])).toMatchObject({ tone: 'info', problem: null });
 	});

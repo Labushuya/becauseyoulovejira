@@ -50,10 +50,14 @@ describe('connection-rules.js', () => {
 		});
 		// Without the rules of GitHub a GitHub connection takes no settings at all.
 		expect(rules.settingsViolation('github', {}, secrets, keywords)).toMatchObject({ code: 'validation_connection_settings' });
-		// Until the interface offers it, only the superuser creates one (plan beobachtete-quellen, GH-1).
-		expect(rules.CREATABLE_TYPES).not.toContain('github');
+		// A user creates one since the interface offers it (plan beobachtete-quellen, GH-2), with its
+		// first repository.
+		expect(rules.CREATABLE_TYPES).toContain('github');
+		expect(rules.createViolation({ ...after, label: 'GitHub' }, secrets, keywords, github)).toBe('');
 		expect(rules.requiresSecret('github')).toBe(false);
-		for (const type of rules.CREATABLE_TYPES) expect(rules.requiresSecret(type), type).toBe(true);
+		for (const type of rules.CREATABLE_TYPES.filter((type) => type !== 'github')) {
+			expect(rules.requiresSecret(type), type).toBe(true);
+		}
 		// The state of the channel is a field of the server: a client never writes it.
 		expect(rules.SERVER_FIELDS).toContain('watch');
 		expect(rules.updateViolation(before, { ...before, watch: '{"repos":{}}' }, secrets, keywords, github)).toMatchObject({

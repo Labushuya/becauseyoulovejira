@@ -59,6 +59,7 @@ async function open(
 		rename: vi.fn<ConnectionsData['rename']>(),
 		setTarget: vi.fn<ConnectionsData['setTarget']>(),
 		saveSettings: vi.fn<ConnectionsData['saveSettings']>(),
+		saveGitHub: vi.fn<ConnectionsData['saveGitHub']>(),
 		remove: vi.fn<ConnectionsData['remove']>(),
 		secretStatus: vi.fn<ConnectionsData['secretStatus']>(async () => status),
 		run: vi.fn<ConnectionsData['run']>(async () => ({

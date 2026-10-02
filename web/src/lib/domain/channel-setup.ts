@@ -15,6 +15,7 @@ import { formatBerlinDateTime } from './format';
  * assistant, for Proton (no automatic fetch, three short steps) the guide as a modal M, for
  * WhatsApp Web the assistant of the browser extension (no connection; domain/whatsapp-web.ts).
  * Notion (ADR-0041) has an assistant with a connection, but it only imports lists on request.
+ * GitHub (ADR-0050) watches repositories read only; its token is optional.
  */
 export const SETUP_KINDS = [
 	'kalender',
@@ -22,6 +23,7 @@ export const SETUP_KINDS = [
 	'webde',
 	'gmail',
 	'notion',
+	'github',
 	'proton',
 	'whatsapp-web'
 ] as const;
@@ -69,6 +71,7 @@ export function connectionTypeOf(kind: SetupKind): {
 	if (kind === 'kalender') return { type: 'calendar', provider: '' };
 	if (kind === 'telegram') return { type: 'telegram', provider: '' };
 	if (kind === 'notion') return { type: 'notion', provider: '' };
+	if (kind === 'github') return { type: 'github', provider: '' };
 	if (kind === 'gmail') return { type: 'mail', provider: 'gmail' };
 	return { type: 'mail', provider: 'webde' };
 }
@@ -88,10 +91,12 @@ export function setupKindOf(connection: Pick<Connection, 'type' | 'mailProvider'
 	if (connection.type === 'calendar') return 'kalender';
 	if (connection.type === 'telegram') return 'telegram';
 	if (connection.type === 'notion') return 'notion';
+	if (connection.type === 'github') return 'github';
 	return connection.mailProvider === 'gmail' ? 'gmail' : 'webde';
 }
 
 export type SetupStepId =
+	| 'pat'
 	| 'bot'
 	| 'token'
 	| 'chat'
@@ -699,6 +704,118 @@ const NOTION_STEPS: readonly SetupStep[] = [
 ];
 
 /**
+ * GitHub (ADR-0050 §7): a fine-grained token that only reads, set as variable, a restart, the
+ * repositories (they create the connection), the optional target project and "Verbindung prüfen".
+ * The token is optional (public repositories), so the restart has no check line of its own; the
+ * last step says whether the app sees it. Stand der Klickwege: 2026-10.
+ */
+const GITHUB_STEPS: readonly SetupStep[] = [
+	{
+		id: 'pat',
+		label: 'Token anlegen',
+		title: 'Token auf GitHub anlegen (nur lesend)',
+		intro:
+			'Ein „Fine-grained personal access token“ erlaubt der App, die gewählten Repositorys zu lesen, und sonst nichts. Öffentliche Repositorys gehen auch ohne Token, dann mit höchstens 60 Anfragen je Stunde.',
+		actions: [
+			'Auf github.com oben rechts auf dein Profilbild klicken, dann auf „Settings“.',
+			'Links ganz unten „Developer settings“ wählen, dann „Personal access tokens“ → „Fine-grained tokens“ und „Generate new token“.',
+			'Bei „Token name“ „becauseyoulovejira“ eintragen, bei „Expiration“ eine Frist wählen (etwa 90 Tage) und bei „Resource owner“ dein Konto bzw. die Organisation der Repositorys.',
+			'Unter „Repository access“ „Only select repositories“ wählen und die Repositorys auswählen, die die App beobachten soll.',
+			'Unter „Permissions“ bei den Rechten für Repositorys („Repository permissions“, in neueren Ansichten „Add permissions“ → „Repositories“) „Contents“ und „Pull requests“ auf „Read-only“ stellen. „Metadata“ steht automatisch auf „Read-only“. Sonst nichts.',
+			'„Generate token“ klicken und das Token kopieren; es beginnt mit github_pat_, und GitHub zeigt es nur einmal.'
+		],
+		links: [
+			{
+				href: 'https://github.com/settings/personal-access-tokens',
+				text: 'github.com: Fine-grained tokens'
+			}
+		],
+		commands: [],
+		more: [
+			'Ohne Token diesen und die nächsten zwei Schritte überspringen: Die App liest dann nur öffentliche Repositorys.',
+			'Organisationen können fine-grained Tokens sperren oder erst nach Freigabe zulassen; dann steht das Token auf „pending“, bis jemand mit Admin-Rechten zustimmt.',
+			'Widerrufen: unter „Fine-grained tokens“ beim Token „Revoke“; danach die Variable löschen und die App neu starten.'
+		],
+		checked: false
+	},
+	{
+		id: 'variable',
+		label: 'Token setzen',
+		title: 'Token als Windows-Variable setzen',
+		intro:
+			'Das Token kommt in eine Variable deines Windows-Kontos; die App speichert nur ihren Namen und schickt das Token nur an GitHub.',
+		actions: [],
+		links: [],
+		commands: [
+			{
+				label: 'Befehl für die Eingabeaufforderung',
+				template: 'setx {{variable}} "{{wert}}"',
+				placeholders: {
+					variable: { label: 'Variable', secret: false },
+					wert: { label: 'Token', secret: true }
+				},
+				value: 'wert',
+				copyable: true
+			}
+		],
+		more: ['Der Befehl bleibt im Verlauf dieses Fensters, bis du es schließt.'],
+		checked: false
+	},
+	{
+		id: 'restart',
+		label: 'Neu starten',
+		title: 'App neu starten',
+		intro:
+			'Die App sieht neue Variablen erst nach einem Neustart. Im Ordner app neu-starten.bat doppelklicken; es erkennt die neue Variable und startet die App neu.',
+		actions: [],
+		links: [],
+		commands: [
+			{
+				label: 'Diese Datei doppelklicken',
+				template: 'app\\neu-starten.bat',
+				placeholders: {},
+				copyable: false
+			}
+		],
+		more: [
+			'Ohne Token überspringst du diesen Schritt.',
+			'Ob die App das Token sieht, zeigt der letzte Schritt „Prüfen“.'
+		],
+		checked: false
+	},
+	{
+		id: 'connect',
+		label: 'Repositorys',
+		title: 'Repositorys hinzufügen',
+		intro:
+			'Gib der Verbindung einen Namen und trag das erste Repository ein; weitere fügst du hier oder später an der Karte hinzu. Vorbelegt sind Roadmaps, Changelogs und READMEs.',
+		actions: [],
+		links: [],
+		commands: [],
+		more: [
+			'Der erste Abruf merkt sich den Stand als Ausgangspunkt. Einträge entstehen erst bei Änderungen; nur offene Pull Requests kommen gleich mit (höchstens 20).',
+			'Muster beginnen im Hauptordner des Repositorys: * steht für beliebige Zeichen eines Namens, ** für beliebig viele Ordner (docs/**/roadmap*). Groß- und Kleinschreibung zählen nicht.'
+		],
+		checked: true
+	},
+	{
+		id: 'check',
+		label: 'Prüfen',
+		title: 'Verbindung prüfen',
+		intro:
+			'„Verbindung prüfen“ fragt GitHub, wem das Token gehört, wie viele Anfragen übrig sind und ob jedes Repository erreichbar ist. Danach ruft die App alle 15 Minuten ab, „Jetzt abrufen“ an der Karte sofort.',
+		actions: [],
+		links: [],
+		commands: [],
+		more: [
+			'Die App schreibt nie etwas nach GitHub: keinen Kommentar, keinen Status, keine Änderung.',
+			'Ändert sich eine beobachtete Datei, kommt ein Pull Request oder ein Release, steht ein Eintrag im Eingang; frühere Einträge zeigen, ob sich ihre Quelle seitdem geändert hat.'
+		],
+		checked: true
+	}
+];
+
+/**
  * The optional step "Zielprojekt" (ADR-0049, ADR-0026 addendum ZP): right after the connection is
  * created, before its first entries can come, so they get the project already. It never holds the
  * assistant up: done as soon as the connection exists, chosen or not.
@@ -730,7 +847,8 @@ const STEPS: Readonly<Partial<Record<SetupKind, readonly SetupStep[]>>> = {
 	telegram: withTargetStep(TELEGRAM_STEPS),
 	webde: withTargetStep(WEBDE_STEPS),
 	gmail: withTargetStep(GMAIL_STEPS),
-	notion: withTargetStep(NOTION_STEPS)
+	notion: withTargetStep(NOTION_STEPS),
+	github: withTargetStep(GITHUB_STEPS)
 };
 
 /** Name of the variable a new connection of the kind suggests. */
@@ -739,6 +857,7 @@ export function defaultVariable(kind: SetupKind): string {
 	if (kind === 'gmail') return 'BYL_GMAIL_PASSWORD';
 	if (kind === 'telegram') return 'BYL_TELEGRAM_TOKEN';
 	if (kind === 'notion') return 'BYL_NOTION_TOKEN';
+	if (kind === 'github') return 'BYL_GITHUB_TOKEN';
 	return 'BYL_GOOGLE_CALENDAR_URL';
 }
 
@@ -763,6 +882,7 @@ export const SETUP_TITLES: Readonly<Record<SetupKind, string>> = Object.freeze({
 	webde: 'Web.de',
 	gmail: 'Gmail',
 	notion: 'Notion',
+	github: 'GitHub',
 	proton: 'Proton Mail',
 	'whatsapp-web': 'WhatsApp Web'
 });
@@ -786,6 +906,7 @@ export interface SetupFacts {
 		| 'lastOkAt'
 		| 'lastError'
 		| 'lastHint'
+		| 'github'
 	> | null;
 	secretStatus: SecretStatus | null;
 }
@@ -796,7 +917,8 @@ function checkHolds(kind: SetupKind, id: SetupStepId, facts: SetupFacts): boolea
 	if (connection === null) return false;
 	switch (id) {
 		case 'connect':
-			return true;
+			// GitHub: the connection reads nothing before its first repository (ADR-0050 §7).
+			return kind !== 'github' || (connection.github?.repos.length ?? 0) > 0;
 		case 'restart':
 			// Telegram needs both variables: the token and the allowed IDs.
 			return (
@@ -904,6 +1026,18 @@ export function stepCheck(kind: SetupKind, id: SetupStepId, facts: SetupFacts): 
 	switch (id) {
 		case 'connect':
 			if (connection === null) return { tone: 'open', text: 'Noch keine Verbindung angelegt.' };
+			if (kind === 'github') {
+				const repos = connection.github?.repos.length ?? 0;
+				return repos === 0
+					? {
+							tone: 'warning',
+							text: `Verbindung „${connection.label}“ angelegt, noch ohne Repository.`
+						}
+					: {
+							tone: 'done',
+							text: `Verbindung „${connection.label}“ mit ${repos === 1 ? '1 Repository' : `${repos} Repositorys`} angelegt.`
+						};
+			}
 			if (isMailKind(kind) && connection.keywords.length === 0) {
 				return {
 					tone: 'warning',
@@ -912,6 +1046,17 @@ export function stepCheck(kind: SetupKind, id: SetupStepId, facts: SetupFacts): 
 			}
 			return { tone: 'done', text: `Verbindung „${connection.label}“ angelegt.` };
 		case 'restart': {
+			// GitHub: the token is optional and the connection comes after this step; without it there
+			// is nothing to check yet.
+			if (kind === 'github') {
+				if (connection === null || secretStatus === null) return null;
+				return secretStatus.secret
+					? { tone: 'done', text: `Die App sieht ${connection.secretEnv}.` }
+					: {
+							tone: 'open',
+							text: `Die App sieht ${connection.secretEnv} noch nicht; ohne Token liest sie nur öffentliche Repositorys.`
+						};
+			}
 			if (connection === null) return { tone: 'open', text: 'Erst die Verbindung anlegen.' };
 			if (secretStatus === null) {
 				return {
@@ -996,7 +1141,10 @@ export function stepCheck(kind: SetupKind, id: SetupStepId, facts: SetupFacts): 
 			if (connection.lastHint !== '') return { tone: 'warning', text: connection.lastHint };
 			return {
 				tone: 'done',
-				text: `Notion antwortet und die Integration sieht freigegebene Seiten, zuletzt ${formatBerlinDateTime(connection.lastOkAt)}.`
+				text:
+					kind === 'github'
+						? `GitHub antwortet und die App liest die eingetragenen Repositorys, zuletzt ${formatBerlinDateTime(connection.lastOkAt)}.`
+						: `Notion antwortet und die Integration sieht freigegebene Seiten, zuletzt ${formatBerlinDateTime(connection.lastOkAt)}.`
 			};
 		}
 		default:
