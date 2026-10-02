@@ -162,7 +162,23 @@
 			<li><kbd>Bild auf</kbd> und <kbd>Bild ab</kbd>: einen Monat bzw. eine Woche weiter.</li>
 			<li><kbd>Enter</kbd> führt in die Einträge des Tages, <kbd>Esc</kbd> zurück zum Tag.</li>
 			<li><kbd>Umschalt</kbd>+<kbd>F10</kbd> öffnet das Menü eines Tickets.</li>
+			<li><kbd>m</kbd> auf einem offenen Ticket verschiebt seine Fälligkeit (siehe unten).</li>
 		</ul>
+		<h4>Fälligkeit verschieben</h4>
+		<p>
+			Im Monat und in der Woche ziehst du ein offenes Ticket mit der Maus auf einen anderen Tag; das
+			setzt seine Fälligkeit. Ohne Maus wählst du im Menü des Tickets „Fälligkeit verschieben …“
+			oder drückst <kbd>m</kbd>: Dann wählst du den Tag mit den Pfeiltasten (auch in anderen
+			Monaten) oder tippst bzw. klickst ihn an, <kbd>Enter</kbd> setzt ihn, <kbd>Esc</kbd> oder „Abbrechen“
+			lassen alles, wie es war. Danach meldet sich „Fälligkeit von HAUS-12 auf 09.10.2026 gesetzt.“ mit
+			„Rückgängig“.
+		</p>
+		<p>
+			Erledigte Tickets, künftige Wiederholungen und Termine im Eingang bleiben, wo sie sind. Bei
+			einem Ticket einer Serie verschiebt sich nur dieses Ticket, nicht die Serie. Hat jemand das
+			Ticket inzwischen geändert, etwa in einem anderen Tab, wird nichts überschrieben, und eine
+			Meldung sagt es. Auf Touch-Geräten scrollt das Ziehen die Seite; dort geht es über das Menü.
+		</p>
 	</section>
 
 	<section id="zugangsdaten" aria-labelledby="zugangsdaten-title">

@@ -1,13 +1,16 @@
-// Unit tests of the calendar (ADR-0053, plan kalender, K-1): the state in the URL, what the device
-// remembers, ISO weeks and periods, the keys of the grid, the labels, and the entries of the days
-// with the filters of "Aufgaben", the layers, the group "Überfällig" and "+N weitere".
+// Unit tests of the calendar (ADR-0053, plan kalender, K-1 and K-2): the state in the URL, what the
+// device remembers, ISO weeks and periods, the keys of the grid, the labels, the entries of the days
+// with the filters of "Aufgaben", the layers, the group "Überfällig" and "+N weitere", and which
+// entries may move with which instructions.
 
 import { describe, expect, it } from 'vitest';
 import {
 	AGENDA_DAYS,
+	CALENDAR_MOVE_KEY,
 	CALENDAR_PARAMS,
 	DEFAULT_LAYERS,
 	MONTH_DAY_LIMIT,
+	SERIES_MOVE_HINT,
 	calendarDateOf,
 	calendarListQuery,
 	dayCellLabel,
@@ -19,9 +22,11 @@ import {
 	gridMove,
 	inPeriod,
 	inboxMatches,
+	isMovable,
 	isoWeekOf,
 	mondayOf,
 	moreLabel,
+	moveInstructions,
 	overdueEntries,
 	parseCalendarQuery,
 	parseLayers,
@@ -453,5 +458,40 @@ describe('group "Überfällig" of the agenda', () => {
 		expect(overdueEntries(open, filter({ project: HOUSE }), TODAY)).toHaveLength(2);
 		expect(overdueEntries(open, filter({}, ['planned']), TODAY)).toEqual([]);
 		expect(overdueEntries(open, filter({ status: 'done' }), TODAY)).toEqual([]);
+	});
+});
+
+describe('moving a due date (K-2)', () => {
+	it('lets only open tickets move, overdue ones included', () => {
+		const open = ticket('2026-10-06');
+		const overdue = ticket('2026-09-20');
+		const done = ticket('2026-10-08', { status: 'done' });
+		const days = entriesByDay(
+			OCTOBER,
+			{
+				open: [open],
+				done: [done],
+				planned: [planned('2026-10-12')],
+				inbox: [item('2026-10-13 07:00:00.000Z')]
+			},
+			filter({}, ['open', 'done', 'planned', 'inbox'])
+		);
+		const all = [...days.values()].flat();
+		expect(all).toHaveLength(4);
+		const movable = all.filter(isMovable);
+		expect(movable.map((entry) => entry.key)).toEqual([`ticket:${open.id}`]);
+		const [late] = overdueEntries([overdue], filter(), TODAY);
+		expect(late !== undefined && isMovable(late)).toBe(true);
+	});
+
+	it('says how to move, with the keyboard or the mouse, and notes a ticket of a series', () => {
+		expect(moveInstructions('HAUS-12', 'keyboard', false)).toBe(
+			'Fälligkeit von HAUS-12 verschieben: Tag mit den Pfeiltasten wählen oder anklicken, Enter setzt die Fälligkeit, Esc bricht ab.'
+		);
+		expect(moveInstructions('HAUS-12', 'pointer', true)).toBe(
+			'Fälligkeit von HAUS-12 verschieben: Auf einen Tag ziehen und loslassen, Esc bricht ab. Nur dieses Ticket, die Serie verschiebt sich nicht.'
+		);
+		expect(SERIES_MOVE_HINT).toContain('verschiebt die Serie nicht');
+		expect(CALENDAR_MOVE_KEY).toBe('m');
 	});
 });

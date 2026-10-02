@@ -6,7 +6,7 @@ import { describe, expect, it } from 'vitest';
 import appHeader from '$lib/components/AppHeader.svelte?raw';
 import helpMenu from '$lib/components/help/HelpMenu.svelte?raw';
 import { isMenuKey } from '$lib/overlay/context-menu';
-import { gridMove } from './calendar';
+import { CALENDAR_MOVE_KEY, gridMove } from './calendar';
 import { isHelpKey, isQuickCaptureKey } from './keyboard';
 import {
 	HELP_KEYSHORTCUTS,
@@ -120,6 +120,13 @@ describe('shortcuts', () => {
 			}
 		}
 		expect(keysText(shortcutById('calendar-enter'))).toBe('Enter oder F2');
+	});
+
+	it('lists the key that moves a due date in the grid (ADR-0053 §12)', () => {
+		const move = shortcutById('calendar-move');
+		expect(move.context).toBe('calendar');
+		expect(move.keys).toEqual([[CALENDAR_MOVE_KEY]]);
+		expect(keysText(move)).toBe('m');
 	});
 
 	it('lists the key the help handler takes', () => {

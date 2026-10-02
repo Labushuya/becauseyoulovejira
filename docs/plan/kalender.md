@@ -1,16 +1,16 @@
 # Plan „Kalender“
 
-- **Stand:** K-1 umgesetzt (2026-10-02, Branch `feat/kalender-grundansicht`, nur Oberfläche: Build, dann F5; kein Neustart). K-2 (Verschieben per Ziehen) folgt direkt danach. Offen sind die manuellen Prüfungen von K-1 (Test-Manifest, Block „Kalender“).
+- **Stand:** K-1 umgesetzt (2026-10-02, PR #230), K-2 umgesetzt (2026-10-02, Branch `feat/kalender-verschieben`); beides nur Oberfläche: Build, dann F5, kein Neustart. Offen sind die manuellen Prüfungen beider Pakete (Test-Manifest, Block „Kalender“).
 - **Grundlage:** Nutzerwunsch („zusätzliche Kalenderansicht wie in Google Kalender mit verschiedenen Ansichten, man sieht, was wann ansteht; Tickets und Projekte farbig, die dann auch im Kalender so angezeigt werden“), Freigabe der Empfehlungen am 2026-10-02 („Alle Empfehlungen so umsetzen“): nur Datum ohne Uhrzeit, Farben aus dem Paket „Farben“ ([ADR-0052](../adr/0052-farben-fuer-projekte-und-tickets.md), vorher fertig), Verschieben per Ziehen als zweiter Schritt, beide Zusatz-Ebenen (künftige Wiederholungen, Termine im Eingang).
 - **Entscheidungen:** [ADR-0053](../adr/0053-kalenderansicht.md).
-- **Einordnung:** Manifest-Block „Kalender“ ab `BYL-E6-1250` (K-1 `BYL-E6-1250` bis `BYL-E6-1267`, manuell `BYL-E6-1264` bis `BYL-E6-1267`; K-2 ab `BYL-E6-1270`). Keine Migration, keine Hooks.
+- **Einordnung:** Manifest-Block „Kalender“ ab `BYL-E6-1250` (K-1 `BYL-E6-1250` bis `BYL-E6-1267`, manuell `BYL-E6-1264` bis `BYL-E6-1267`; K-2 `BYL-E6-1270` bis `BYL-E6-1283`, manuell `BYL-E6-1280` bis `BYL-E6-1283`). Keine Migration, keine Hooks.
 
 ## 1. Pakete
 
 | Paket | Inhalt | Stand |
 |---|---|---|
 | K-1 | Hauptansicht „Kalender“ mit Monat, Woche und Agenda, Ebenen (offene und erledigte Tickets, künftige Wiederholungen, Termine im Eingang), Filter von „Aufgaben“, Zustand in URL und Gerät, Tickets im gemerkten Modus neben dem Kalender, Zeilenmenü mit Rechtsklick, APG-Grid, schmale Fenster, Hilfe, README | umgesetzt |
-| K-2 | Verschieben per Ziehen (Monat und Woche) und per Tastatur bzw. Menü „Fälligkeit verschieben …“, Speichern mit `expected_updated`, Flag mit „Rückgängig“, Hinweis bei Serientickets, Touch-Entscheidung | geplant |
+| K-2 | Verschieben per Ziehen (Monat und Woche) und per Tastatur bzw. Menü „Fälligkeit verschieben …“, Speichern mit `expected_updated`, Flag mit „Rückgängig“, Hinweis bei Serientickets, Touch-Entscheidung | umgesetzt |
 
 ## 2. K-1: Bausteine
 
@@ -75,9 +75,34 @@ Ein Monat mit diesen Daten rendert in jsdom samt Laden der Stores in etwa 100 ms
 
 Ansichten im Browser, Ebenen, Filter, Tastatur und Screenreader, Farben in allen Themes, schmale Fenster, Panel und Vollansicht neben dem Kalender, Realtime in zwei Tabs, Leistung mit vielen Tickets (Test-Manifest, Block „Kalender“).
 
-## 8. K-2: Verschieben (geplant)
+## 8. K-2: Fälligkeit verschieben (umgesetzt, Einzelheiten in ADR-0053 §12)
 
-- Ziehen eines offenen Tickets im Monat bzw. in der Woche auf einen anderen Tag setzt die Fälligkeit über den bestehenden Speicherweg mit `expected_updated`; danach ein Flag „Fälligkeit von KEY auf <Datum> gesetzt.“ mit „Rückgängig“.
-- Tastatur ohne Ziehen: Ticket fokussieren, „m“ bzw. Menü „Fälligkeit verschieben …“, Tag mit den Pfeiltasten wählen, Enter bestätigt, Esc bricht ab.
-- Serientickets: Hinweis, dass sich die Serie nicht verschiebt. Erledigte Tickets, geplante Termine und Termine des Eingangs sind nicht ziehbar.
-- Touch: nur ohne Konflikt mit dem Scrollen, sonst nicht (Begründung in der ADR).
+| Teil | Datei |
+|---|---|
+| Was sich verschiebt, Taste, Schwelle, Texte (rein) | `web/src/lib/domain/calendar.ts` (`isMovable`, `CALENDAR_MOVE_KEY`, `DRAG_THRESHOLD_PX`, `moveInstructions`, `SERIES_MOVE_HINT`) |
+| Speichern, Flag, „Rückgängig“, Konflikt | `web/src/lib/stores/ticket-list.svelte.ts` (`moveDue`; `TicketListData.update` mit `expectedUpdated`) |
+| Ziehen, Tastatur, Klick auf den Tag, Statuszeile | `web/src/lib/components/calendar/CalendarGrid.svelte` |
+| Eintrag (`data-movable`, `draggable="false"`, `aria-keyshortcuts`, beschäftigt), Platz eines Eintrags (`EntryPlace`) | `web/src/lib/components/calendar/CalendarEntry.svelte` |
+| Menüeintrag „Fälligkeit verschieben …“ | `web/src/lib/components/TicketActions.svelte` (`onmovedue`) |
+| Kürzel, Hilfe | `shortcuts.ts` (`calendar-move`), Hilfe `#kalender` („Fälligkeit verschieben“) |
+
+- **Maus:** offenes Ticket im Monat bzw. in der Woche auf einen anderen Tag des Zeitraums ziehen (ab 5 px, Esc bricht ab, der Klick danach öffnet nichts); der Tag unter dem Zeiger und das Ticket tragen einen gestrichelten Rahmen, die Statuszeile unter dem Raster sagt, was geschieht.
+- **Ohne Maus:** „m“ auf dem Ticket oder „Fälligkeit verschieben …“ im Menü; Fokus auf dem Tag des Tickets, die Tasten des Rasters wählen (auch in anderen Zeiträumen), Enter oder ein Klick bzw. Tippen auf einen Tag setzt, Esc oder „Abbrechen“ lassen es. Danach Fokus auf dem Ticket am neuen Tag.
+- **Speichern:** `moveDue` mit `expected_updated`; Flag „Fälligkeit von KEY auf TT.MM.JJJJ gesetzt.“ mit „Rückgängig“ (wieder mit `expected_updated`); bei Serientickets zusätzlich „Die Fälligkeit eines Tickets der Serie zu verschieben, verschiebt die Serie nicht.“; ein inzwischen geändertes Ticket bleibt mit einem Fehler-Flag.
+- **Nicht verschiebbar:** erledigte Tickets, geplante Termine, Termine des Eingangs; nichts in der Agenda.
+- **Touch und Stift ziehen nicht** (Konflikt mit dem Scrollen und dem Kontextmenü, ADR-0053 §12); dort führt das Menü zum selben Ziel.
+
+### Tests (K-2)
+
+| Art | Datei | Inhalt |
+|---|---|---|
+| Unit | `web/src/lib/domain/calendar.test.ts` | nur offene Tickets verschiebbar (auch überfällige), Texte der Statuszeile |
+| Unit | `web/src/lib/stores/ticket-move-due.test.ts` | Speichern mit `expected_updated`, Flag, „Rückgängig“, Serienticket, Konflikt beim Verschieben und beim Zurücksetzen, zweites Verschieben, was nicht gesendet wird, andere Ablehnung |
+| Komponente | `web/src/lib/components/calendar/calendar-move.test.ts` | Ziehen mit Rahmen, Statuszeile und „Rückgängig“; Schwelle, Esc, Klick nach dem Ziehen; nicht ziehbar (erledigt, geplant, Eingang, Touch); „m“, Tasten, Enter, Esc, „Abbrechen“, anderer Zeitraum; Menü und Klick auf den Tag; Serienticket; Konflikt; Agenda |
+| Komponente | `web/src/lib/components/ticket-actions.test.ts` | „Fälligkeit verschieben …“ nach den Wegen zum Öffnen |
+| Integration | `tests/integration/web-data-calendar.test.mjs` | Fälligkeit mit `expected_updated`, Ablehnung einer älteren Grundlage, „Rückgängig“; die Regel eines Serientickets bleibt |
+| angepasst | `calendar-view.test.ts`, `shortcuts.test.ts`, `help-page.test.ts` | Menü mit dem neuen Eintrag, Kürzel „m“, Hilfe |
+
+### Manuelle Prüfungen (K-2)
+
+Ziehen mit der Maus im Browser, Tastatur und Screenreader beim Verschieben, Touch (Scrollen, Menü und Tippen), Konflikt mit zwei Tabs und Serienticket (Test-Manifest `BYL-E6-1280` bis `BYL-E6-1283`).
