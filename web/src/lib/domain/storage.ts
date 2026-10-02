@@ -372,6 +372,15 @@ export function previewText(entries: readonly ({ count: number; bytes: number } 
 	return `Betrifft ${countText(total, 'Eintrag', 'Einträge')}.`;
 }
 
+/**
+ * What "Verworfene jetzt leeren" leaves out by the rule of ADR-0047 §1: files of sources still bound
+ * to tickets in the trash; '' when there are none. The decision help of the trash settles them.
+ */
+export function boundToTrashText(entry: { count: number; bytes: number }): string {
+	if (entry.count === 0) return '';
+	return `Nicht dabei: ${countText(entry)} an Quellen von Tickets im Papierkorb. Über sie entscheidest du dort unter „Abhängigkeiten auflösen“.`;
+}
+
 /** Texts of the actions. */
 export const ACTION_TEXTS = Object.freeze({
 	vacuum: {

@@ -193,4 +193,29 @@ describe('actions of the page "Speicher"', () => {
 		await vi.waitFor(() => expect(screen.getByText('Es läuft schon eine Aktion')).toBeTruthy());
 		expect(act).toHaveBeenCalledWith('discarded', [], expect.anything());
 	});
+
+	it('names the sources bound to tickets in the trash it leaves out, with the way to decide', async () => {
+		await show();
+		const actions = screen.getByRole('region', { name: 'Aufräumen' });
+		expect(
+			within(actions).getByText(
+				/Nicht dabei: 1 Datei, 5 MB an Quellen von Tickets im Papierkorb\. Über sie entscheidest du dort unter „Abhängigkeiten auflösen“\./
+			)
+		).toBeTruthy();
+		expect(
+			within(actions).getByRole('link', { name: 'Im Papierkorb entscheiden' }).getAttribute('href')
+		).toBe('/papierkorb');
+	});
+
+	it('says nothing about bound sources when no ticket in the trash keeps one', async () => {
+		const files = storageAnswer().files as Record<string, unknown>;
+		const categories = files.categories as Record<string, unknown>;
+		await show(
+			overviewOf({
+				files: { ...files, categories: { ...categories, trash: { count: 0, bytes: 0 } } }
+			})
+		);
+		expect(screen.queryByText(/Nicht dabei:/)).toBeNull();
+		expect(screen.queryByRole('link', { name: 'Im Papierkorb entscheiden' })).toBeNull();
+	});
 });

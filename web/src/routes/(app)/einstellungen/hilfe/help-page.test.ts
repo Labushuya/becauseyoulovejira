@@ -487,6 +487,9 @@ describe('help page (EH-9)', () => {
 		}
 		expect(content).toContain('Originaldateien an Quellen löscht die Seite nicht einzeln');
 		expect(content).toContain('Die Sicherungen der App bleiben.');
+		expect(content).toContain(
+			'Quellen, die noch an Tickets im Papierkorb hängen, sind nicht dabei; über sie entscheidest du im Papierkorb.'
+		);
 		expect(
 			within(section).getByRole('link', { name: 'Einstellungen → Speicher' }).getAttribute('href')
 		).toBe('/einstellungen/speicher');

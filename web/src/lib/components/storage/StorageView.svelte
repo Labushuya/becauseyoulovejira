@@ -15,6 +15,7 @@
 		LEFTOVER_LABELS,
 		PARTIAL_NOTICE,
 		belongsText,
+		boundToTrashText,
 		bytesText,
 		countText,
 		databaseText,
@@ -58,6 +59,9 @@
 		if (target === null) return 'Kein Zielverzeichnis eingestellt';
 		return target === 'unreachable' ? 'Gerade nicht erreichbar' : summaryText(target);
 	});
+	const boundText = $derived(
+		overview === null ? '' : boundToTrashText(overview.files.categories.trash)
+	);
 	const webText = $derived.by(() => {
 		const web = overview?.program?.web;
 		if (web === undefined) return '';
@@ -356,6 +360,12 @@
 				{ACTION_TEXTS.discarded.text}
 				{previewText([overview.actions.discarded])}
 			</p>
+			{#if boundText !== ''}
+				<p class="hint">
+					{boundText}
+					<a href={trashHref()}>Im Papierkorb entscheiden</a>
+				</p>
+			{/if}
 			<button
 				class="button-secondary"
 				type="button"

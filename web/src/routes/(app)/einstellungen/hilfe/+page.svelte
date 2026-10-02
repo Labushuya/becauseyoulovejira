@@ -958,6 +958,8 @@
 			<li>
 				<strong>Verworfene jetzt leeren</strong> leert Text und Originaldatei verworfener Einträge sofort
 				statt nach 30 Tagen; der Eintrag bleibt als Sperre, damit dieselbe Mail nicht noch einmal hereinkommt.
+				Quellen, die noch an Tickets im Papierkorb hängen, sind nicht dabei; über sie entscheidest du
+				im Papierkorb.
 			</li>
 		</ul>
 		<p>

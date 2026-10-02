@@ -6,6 +6,7 @@ import { describe, expect, it } from 'vitest';
 import { storageAnswer } from '$lib/test/storage-answer';
 import {
 	belongsText,
+	boundToTrashText,
 	bytesText,
 	countText,
 	databaseText,
@@ -123,5 +124,12 @@ describe('words of the page', () => {
 		expect(denialText('owner').title).toBe('Nur für das erste Konto');
 		expect(denialText('loopback').title).toBe('Nur auf dem Rechner der App');
 		expect(denialText('script').title).toBe('Der Speicher ließ sich nicht messen');
+	});
+
+	it('names the files bound to tickets in the trash that an action leaves out', () => {
+		expect(boundToTrashText({ count: 2, bytes: 3 * 1024 ** 2 })).toBe(
+			'Nicht dabei: 2 Dateien, 3 MB an Quellen von Tickets im Papierkorb. Über sie entscheidest du dort unter „Abhängigkeiten auflösen“.'
+		);
+		expect(boundToTrashText({ count: 0, bytes: 0 })).toBe('');
 	});
 });
