@@ -23,6 +23,7 @@
 	import { findTicketRowActions } from '$lib/stores/ticket-row-actions.svelte';
 	import type { DeleteResult, DeleteSources } from '$lib/stores/trash-move';
 	import { PROJECTS_HOST, isTicketRoute, setTicketHost } from '$lib/ticket-host';
+	import { followTicketReturn } from '$lib/ticket-return.svelte';
 
 	// Project view (E3 plan, T-3 and package 14; ADR-0025 section 10, package UI-8; user request
 	// after EH-4): the list or the tiles on the left, the project panel (/projekte/neu,
@@ -35,10 +36,12 @@
 	// questions open here, once for the list and the panel. Tickets open in the projects
 	// (/projekte/tickets/<id>, …/voll; ADR-0054): the host in the context makes every ticket link
 	// below stay here; a ticket takes the panel column and replaces the project panel it came from,
-	// whose project stays marked in the view (never the ID of a ticket).
+	// whose project stays marked in the view (never the ID of a ticket). Closing it gives the focus
+	// back to the link that opened it (followTicketReturn, KX-2).
 	let { children } = $props();
 
 	setTicketHost(PROJECTS_HOST);
+	followTicketReturn(PROJECTS_HOST);
 
 	const tickets = getTicketListStore();
 	const catalog = getCatalogStore();

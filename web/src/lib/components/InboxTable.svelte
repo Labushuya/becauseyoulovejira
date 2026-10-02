@@ -448,7 +448,7 @@
 		<p class="duplicate">
 			<span class="duplicate-label">Mögliches Duplikat:</span>
 			{#if ticket !== undefined}
-				<a href={links.path(ticket.id)}>{ticket.key}</a>
+				<a href={links.path(ticket.id)} data-ticket-link={ticket.id}>{ticket.key}</a>
 				<button
 					class="text-button"
 					type="button"
@@ -571,12 +571,13 @@
 					<a
 						class="ticket-chip"
 						href={links.path(linkedTicket.id)}
+						data-ticket-link={linkedTicket.id}
 						title={`${linkedTicket.key} · ${linkedTicket.title}`}
 						aria-label={`Ticket ${linkedTicket.key} öffnen: „${item.title}“`}
 						>→ <span class="ticket-key">{linkedTicket.key}</span></a
 					>
 				{:else if item.ticketId !== null}
-					<a class="action" href={links.path(item.ticketId)}
+					<a class="action" href={links.path(item.ticketId)} data-ticket-link={item.ticketId}
 						>Ticket ansehen<span class="visually-hidden">: „{item.title}“</span></a
 					>
 				{/if}

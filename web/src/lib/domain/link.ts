@@ -26,6 +26,11 @@ export function ticketLinkHref(id: string): string {
 	return `/tickets/${id}`;
 }
 
+/** The record ID of a stored link to a ticket (`/tickets/<id>`), null for any other address. */
+export function ticketIdOfLink(href: string | null): string | null {
+	return href !== null && TICKET_LINK.test(href) ? href.slice('/tickets/'.length) : null;
+}
+
 /** The address to store for what the user typed, or why it cannot be a link. */
 export function checkLink(input: string): LinkCheck {
 	const value = input.trim();

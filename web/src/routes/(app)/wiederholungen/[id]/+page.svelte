@@ -10,6 +10,7 @@
 	import { getTicketListStore } from '$lib/stores/ticket-list.svelte';
 	import { recurrencesHref } from '$lib/ticket-links';
 	import { ticketLinks } from '$lib/stores/open-mode.svelte';
+	import { findTicketReturn } from '$lib/ticket-return.svelte';
 
 	// Ticket links open the panel or the full view, as the user last chose (plan BI-1).
 	const links = ticketLinks();
@@ -18,7 +19,9 @@
 	// the same panel. The rule comes from the store, so live changes (a ticket created by the
 	// server, a pause for an archived project) show at once. While it is being deleted the panel
 	// keeps the last known rule, so it does not turn into "nicht gefunden" before the navigation
-	// back to the overview.
+	// back to the overview. Back from a ticket it replaced (ADR-0054), the focus goes to the link of
+	// that ticket.
+	const ticketReturn = findTicketReturn();
 	const store = getRecurrenceStore();
 	const catalog = getCatalogStore();
 	const tickets = getTicketListStore();
@@ -64,6 +67,7 @@
 			ondelete={() => remove(current)}
 			ondeleted={() => goto(recurrencesHref())}
 			onclose={() => goto(recurrencesHref())}
+			initialFocus={() => ticketReturn?.focusTarget() ?? null}
 		/>
 	{/key}
 {:else}

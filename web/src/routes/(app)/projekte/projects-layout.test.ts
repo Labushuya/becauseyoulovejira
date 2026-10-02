@@ -48,10 +48,18 @@ const mocks = vi.hoisted(() => ({
 	flags: null as unknown,
 	editorData: null as unknown,
 	// The done tickets a project counts ("gesamt"), asked per project ID.
-	countDone: vi.fn<(projectId: string) => Promise<number>>(async () => 0)
+	countDone: vi.fn<(projectId: string) => Promise<number>>(async () => 0),
+	before: [] as ((navigation: unknown) => void)[],
+	after: [] as ((navigation: unknown) => void)[]
 }));
 
-vi.mock('$app/navigation', () => ({ goto: mocks.goto }));
+// The way back from a ticket (ADR-0054) and the question of the project panel follow navigations;
+// the tests call their callbacks like SvelteKit.
+vi.mock('$app/navigation', () => ({
+	goto: mocks.goto,
+	beforeNavigate: (callback: (navigation: unknown) => void) => mocks.before.push(callback),
+	afterNavigate: (callback: (navigation: unknown) => void) => mocks.after.push(callback)
+}));
 vi.mock('$app/state', () => ({ page: mocks.page }));
 // The editor and the numbers check the session before every request.
 vi.mock('$lib/auth.svelte', () => ({ auth: { ensureValid: () => true, logout: vi.fn() } }));
@@ -176,10 +184,10 @@ async function show(
 	// The menu "•••" of the open tickets, as below the (app) layout (ADR-0034, addendum).
 	const rowActions =
 		rowData === null ? null : new TicketRowActionsStore(rowData, session, tickets, null, flags);
-	render(ProjectRouteHarness, { props: { child, rowActions } });
+	const view = render(ProjectRouteHarness, { props: { child, rowActions } });
 	await vi.waitFor(() => expect(tickets.openState).toBe('ready'));
 	await tick();
-	return { catalog, flags, editorData, tickets };
+	return { catalog, flags, editorData, tickets, view };
 }
 
 const flagTitles = (flags: FlagStore) => flags.flags.map((flag) => flag.title);
@@ -187,6 +195,9 @@ const flagTitles = (flags: FlagStore) => flags.flags.map((flag) => flag.title);
 beforeEach(() => {
 	mocks.goto.mockClear();
 	mocks.countDone.mockClear();
+	mocks.before.length = 0;
+	mocks.after.length = 0;
+	localStorage.clear();
 	document.body.innerHTML = '';
 });
 
@@ -564,5 +575,55 @@ describe('project view route: tickets in the projects (ADR-0054)', () => {
 		await fireEvent.click(within(dialog).getByRole('button', { name: 'In den Papierkorb' }));
 
 		await vi.waitFor(() => expect(mocks.goto).toHaveBeenCalledWith(`/projekte/${HOUSE.id}`));
+	});
+
+	/** A navigation from the ticket to `path`, through the callbacks of layout and panels. */
+	function leaveTicket(from: string, to: string, routeId: string, id?: string) {
+		const params: Record<string, string> = id === undefined ? {} : { id };
+		const navigation = {
+			type: 'goto',
+			from: {
+				url: new URL(from, 'http://localhost:3000'),
+				route: { id: '/(app)/projekte/tickets/[id]' },
+				params: { id: TICKET }
+			},
+			to: {
+				url: new URL(to, 'http://localhost:3000'),
+				route: { id: routeId },
+				params
+			},
+			cancel: vi.fn()
+		};
+		for (const callback of [...mocks.before]) callback(navigation);
+		mocks.page.url = navigation.to.url;
+		mocks.page.params = navigation.to.params;
+		mocks.page.route = { id: routeId };
+		return navigation;
+	}
+
+	it('× of a ticket from the project panel gives the focus back to its link there (KX-2)', async () => {
+		const { view } = await show(`/projekte/tickets/${TICKET}?von=${HOUSE.id}`, 'ticket');
+		leaveTicket(
+			`/projekte/tickets/${TICKET}?von=${HOUSE.id}`,
+			`/projekte/${HOUSE.id}`,
+			'/(app)/projekte/[id]',
+			HOUSE.id
+		);
+		await view.rerender({ child: 'project' });
+		const panel = screen.getByRole('complementary', { name: 'Haus' });
+		const link = within(panel).getByRole('link', { name: 'HAUS-1 Dach' });
+		await vi.waitFor(() => expect(document.activeElement).toBe(link));
+	});
+
+	it('× of a ticket from the list gives the focus back to its link in the list (KX-2)', async () => {
+		localStorage.setItem('byl-projects-tickets', JSON.stringify([HOUSE.id]));
+		const { view } = await show(`/projekte/tickets/${TICKET}`, 'ticket');
+		const link = screen.getByRole('link', { name: 'HAUS-1 Dach' });
+		expect(link.getAttribute('data-ticket-link')).toBe(TICKET);
+		const navigation = leaveTicket(`/projekte/tickets/${TICKET}`, '/projekte', '/(app)/projekte');
+		await view.rerender({ child: null });
+		(document.activeElement as HTMLElement | null)?.blur();
+		for (const callback of mocks.after) callback(navigation);
+		await vi.waitFor(() => expect(document.activeElement).toBe(link));
 	});
 });

@@ -32,7 +32,8 @@ export function isViewPath(pathname: string): boolean {
 
 /**
  * Label of the way back for a checked address: the view, or the open panel ("Zurück zu BYL-12",
- * "Zurück zum Eintrag"). `ticketKey` finds the key of a ticket in the list, if it is loaded.
+ * "Zurück zum Eintrag", "Zurück zur Regel"), a ticket in any place it opens (ADR-0054).
+ * `ticketKey` finds the key of a ticket in the list, if it is loaded.
  */
 export function lastViewLabel(
 	href: string,
@@ -43,17 +44,25 @@ export function lastViewLabel(
 	const projects = resolve('/projekte');
 	const inbox = resolve('/eingang');
 	const calendar = resolve('/kalender');
-	// A ticket next to the list or next to the calendar (ADR-0053 §6).
-	const ticket = new RegExp(`^(?:${tickets}|${calendar}/tickets)/([^/]+)/?$`).exec(pathname)?.[1];
+	const rules = resolve('/wiederholungen');
+	const trash = resolve('/papierkorb');
+	const within = (base: string) => pathname === base || pathname.startsWith(`${base}/`);
+	// A ticket next to the list, the calendar (ADR-0053 §6) or in an area (ADR-0054).
+	const areas = [calendar, projects, inbox, rules].map((base) => `${base}/tickets`).join('|');
+	const ticket = new RegExp(`^(?:${tickets}|${areas})/([^/]+)/?$`).exec(pathname)?.[1];
 	if (ticket !== undefined && ticket !== 'neu') {
 		const key = ticketKey(decodeURIComponent(ticket));
 		return key ? `Zurück zu ${key}` : 'Zurück zum Ticket';
 	}
-	if (pathname === calendar || pathname.startsWith(`${calendar}/`)) return 'Zurück zum Kalender';
-	if (pathname === projects || pathname.startsWith(`${projects}/`)) return 'Zurück zu Projekte';
+	if (within(calendar)) return 'Zurück zum Kalender';
+	if (within(projects)) return 'Zurück zu Projekte';
 	const entry = new RegExp(`^${inbox}/([^/]+)/?$`).exec(pathname)?.[1];
 	if (entry !== undefined && entry !== 'neu') return 'Zurück zum Eintrag';
-	if (pathname === inbox || pathname.startsWith(`${inbox}/`)) return 'Zurück zum Eingang';
+	if (within(inbox)) return 'Zurück zum Eingang';
+	const rule = new RegExp(`^${rules}/([^/]+)/?$`).exec(pathname)?.[1];
+	if (rule !== undefined && rule !== 'neu') return 'Zurück zur Regel';
+	if (within(rules)) return 'Zurück zu Wiederholungen';
+	if (within(trash)) return 'Zurück zum Papierkorb';
 	return 'Zurück zu Aufgaben';
 }
 

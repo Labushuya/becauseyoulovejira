@@ -32,7 +32,9 @@
 	// Target projects (ADR-0049 §4): among chosen entries with an active target project the
 	// checkbox "Zielprojekt des Eintrags verwenden" (on) gives each its own; the project of the
 	// dialog then holds for the others, and the hint names entries whose target is archived or
-	// deleted (they get the project of the dialog).
+	// deleted (they get the project of the dialog). A new ticket opens in the inbox (ADR-0054); a
+	// plain click on its link closes the dialog first, like the quick entry, so dialog and ticket
+	// never stand on each other (ADR-0025 addendum 16). A new tab leaves the dialog as it is.
 	let {
 		items,
 		converter,
@@ -61,6 +63,14 @@
 
 	// Ticket links open the panel or the full view, as the user last chose (plan BI-1).
 	const links = ticketLinks();
+
+	/** A plain click on a new ticket: the dialog closes, the link opens the ticket. */
+	function openTicket(event: MouseEvent) {
+		if (event.button !== 0 || event.ctrlKey || event.metaKey || event.shiftKey || event.altKey) {
+			return;
+		}
+		onclose();
+	}
 
 	const uid = $props.id();
 	const ids = {
@@ -327,7 +337,10 @@
 				<ul>
 					{#each converter.results as result (result.id)}
 						{#if result.ok}
-							<li><a href={links.path(result.ticketId)}>{result.key}</a> {result.title}</li>
+							<li>
+								<a href={links.path(result.ticketId)} onclick={openTicket}>{result.key}</a>
+								{result.title}
+							</li>
 						{/if}
 					{/each}
 				</ul>

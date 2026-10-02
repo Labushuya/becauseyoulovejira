@@ -156,6 +156,26 @@ describe('bulk convert dialog', () => {
 		expect(onclose).toHaveBeenCalledOnce();
 	});
 
+	it('closes when a new ticket is opened, so dialog and ticket never stand on each other', async () => {
+		const { onclose } = show();
+		await tick();
+		const dialog = within(screen.getByRole('dialog'));
+		await fireEvent.click(dialog.getByRole('button', { name: '3 Einträge umwandeln' }));
+		await vi.waitFor(() => expect(dialog.getByRole('link', { name: 'HAUS-1' })).toBeTruthy());
+		const link = dialog.getByRole('link', { name: 'HAUS-1' });
+		// jsdom navigates on its own; the dialog only has to close.
+		const stay = (event: Event) => event.preventDefault();
+		document.addEventListener('click', stay);
+
+		// A new tab (Strg, mittlere Taste) leaves the dialog as it is.
+		await fireEvent.click(link, { ctrlKey: true });
+		await fireEvent.click(link, { button: 1 });
+		expect(onclose).not.toHaveBeenCalled();
+		await fireEvent.click(link);
+		expect(onclose).toHaveBeenCalledOnce();
+		document.removeEventListener('click', stay);
+	});
+
 	it('closes on "Abbrechen" and Escape before the run', async () => {
 		const { onclose, data } = show();
 		await tick();

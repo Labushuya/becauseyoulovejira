@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { tick, untrack } from 'svelte';
+	import { beforeNavigate, goto } from '$app/navigation';
 	import type { ResolvedPathname } from '$app/types';
 	import type { RuleDraft } from '$lib/data/recurrence';
 	import type { CalendarDate } from '$lib/domain/berlin-date';
@@ -35,6 +36,7 @@
 	import type { EditResult } from '$lib/stores/catalog-editor';
 	import type { EnsureTagResult } from '$lib/stores/catalog.svelte';
 	import { helpHref } from '$lib/settings-sections';
+	import { appHref } from '$lib/ticket-links';
 	import ErrorIcon from './ErrorIcon.svelte';
 	import Lozenge from './guidance/Lozenge.svelte';
 	import SectionMessage from './guidance/SectionMessage.svelte';
@@ -44,6 +46,7 @@
 	import RecurrenceBacklogQuestion from './RecurrenceBacklogQuestion.svelte';
 	import RecurrenceForm from './RecurrenceForm.svelte';
 	import RecurrenceTemplateFields from './RecurrenceTemplateFields.svelte';
+	import TicketLeaveQuestion from './TicketLeaveQuestion.svelte';
 
 	// Panel of a rule (E5 plan, T-6 and package 5) on the side panel building block, like the
 	// project panel (UI-8): "Neue Regel" under /wiederholungen/neu and a rule under
@@ -58,7 +61,10 @@
 	// (ADR-0023 section 5). Field errors stand at their field, among them the one of "Fortsetzen"
 	// with an archived project (ADR-0023 section 8); Escape and × ask before unsaved input is lost.
 	// The owner navigates; the store shows the flags. Since WV-3 the template has the list
-	// "Unteraufgaben" (after its migration, `subtasksAvailable`).
+	// "Unteraufgaben" (after its migration, `subtasksAvailable`). Tickets in the rules (ADR-0054): a
+	// link that replaces the panel (a ticket, another rule, another view) asks "Änderungen
+	// verwerfen?" inline at the top while input is unsaved, never as a dialog; back from a ticket
+	// the focus goes to its link (`initialFocus`).
 	let {
 		rule = null,
 		today,
@@ -78,7 +84,8 @@
 		ondelete,
 		onsaved,
 		ondeleted,
-		onclose
+		onclose,
+		initialFocus = null
 	}: {
 		/** Rule of the panel; null for "Neue Regel". */
 		rule?: RecurrenceRule | null;
@@ -116,6 +123,11 @@
 		ondeleted?: () => void;
 		/** × and Escape (after the question about unsaved input). */
 		onclose: () => void;
+		/**
+		 * Where the focus goes when the panel opens instead of its title: the link of the ticket the
+		 * user came back from (ADR-0054 §7); null or no element keeps the title.
+		 */
+		initialFocus?: (() => HTMLElement | null) | null;
 	} = $props();
 
 	/** Fields of the template, by the names of the server. */
@@ -217,11 +229,42 @@
 		templateChanged || rhythmChanged || tagText.trim() !== '' || (askStatus && chosenStatus !== '')
 	);
 
-	// Focus when the panel opens: the title for "Neue Regel", else the heading (ADR-0025 section 6).
+	// Focus when the panel opens: the title for "Neue Regel", else the heading (ADR-0025 section 6),
+	// or the link of the ticket the user came back from (ADR-0054 §7).
 	$effect(() => {
 		const target = creating ? titleInput : heading;
-		if (target) untrack(() => target.focus());
+		if (target) untrack(() => (creating ? target : (initialFocus?.() ?? target)).focus());
 	});
+
+	/** A link that replaces the panel, held up by the question (ADR-0054 §7). */
+	let leaving = $state<{ url: URL; delta: number | undefined } | null>(null);
+	/** Set when the panel is left on purpose ("Verwerfen", deleting): no question then. */
+	let discarding = false;
+
+	// Unsaved input asks before a link replaces the panel, inline, because the link may come from a
+	// dialog and no dialog opens from a dialog (ADR-0025 addendum 16). Saving (also the new rule,
+	// which then gets its own panel) and changes of the query only pass.
+	beforeNavigate((navigation) => {
+		const to = navigation.to;
+		if (discarding || busy || deleting || navigation.type === 'leave' || to === null) return;
+		if (!to.route.id?.startsWith('/(app)/')) return;
+		if (navigation.from !== null && to.url.pathname === navigation.from.url.pathname) return;
+		if (!dirty) return;
+		navigation.cancel();
+		leaving = {
+			url: to.url,
+			delta: navigation.type === 'popstate' ? navigation.delta : undefined
+		};
+	});
+
+	async function discardAndLeave() {
+		const target = leaving;
+		leaving = null;
+		if (target === null) return;
+		discarding = true;
+		if (target.delta !== undefined && target.delta !== 0) history.go(target.delta);
+		else await goto(appHref(target.url));
+	}
 
 	function close() {
 		if (busy || deleting) return;
@@ -358,6 +401,7 @@
 		deleting = false;
 		if (result.ok) {
 			confirmingDelete = false;
+			discarding = true;
 			ondeleted?.();
 		} else if (result.message !== null) {
 			deleteError = result.message;
@@ -405,6 +449,15 @@
 		{rule === null ? 'Neue Regel' : rule.title}
 	</h2>
 
+	{#if leaving}
+		<TicketLeaveQuestion
+			title={creating ? 'Neue Regel verwerfen?' : 'Änderungen verwerfen?'}
+			text="Die Eingaben gehen verloren."
+			onstay={() => (leaving = null)}
+			ondiscard={() => void discardAndLeave()}
+		/>
+	{/if}
+
 	{#if rule !== null}
 		{@const current = rule}
 		{@const waiting = isWaiting(current)}
@@ -433,7 +486,9 @@
 					<ul class="open-list">
 						{#each openTickets as open (open.id)}
 							<li>
-								<a class="key-link" href={ticketHrefOf(open.id)}>{open.key}</a>
+								<a class="key-link" href={ticketHrefOf(open.id)} data-ticket-link={open.id}
+									>{open.key}</a
+								>
 								<span class="open-title">{open.title}</span>
 							</li>
 						{/each}
@@ -443,7 +498,11 @@
 				<p class="open">
 					Offenes Ticket:
 					{#if openTickets[0]}
-						<a class="key-link" href={ticketHrefOf(openTickets[0].id)}>{openTickets[0].key}</a>
+						<a
+							class="key-link"
+							href={ticketHrefOf(openTickets[0].id)}
+							data-ticket-link={openTickets[0].id}>{openTickets[0].key}</a
+						>
 						<span class="open-title">{openTickets[0].title}</span>
 					{:else}
 						keins
@@ -583,6 +642,7 @@
 	cancelLabel="Weiter bearbeiten"
 	onconfirm={() => {
 		confirmingDiscard = false;
+		discarding = true;
 		onclose();
 	}}
 	oncancel={() => (confirmingDiscard = false)}

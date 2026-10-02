@@ -1,11 +1,23 @@
 // Markdown.svelte with tasks (ADR-0032 section 6, RT-2): without `ontoggletask` the checkboxes stay
 // disabled; with it they can be ticked, are locked and busy while a change is saved, go back when
-// saving fails, and are locked with a reason while `taskHint` is set.
+// saving fails, and are locked with a reason while `taskHint` is set. Links to tickets open where
+// the text stands (ADR-0054 §7): a plain click goes through the host, a modifier, another button or
+// another link stays with the browser.
 
 import { fireEvent, render, screen } from '@testing-library/svelte';
 import { tick } from 'svelte';
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import TicketHostHarness from '$lib/test/TicketHostHarness.svelte';
+import { INBOX_HOST } from '$lib/ticket-host';
 import Markdown from './Markdown.svelte';
+
+const mocks = vi.hoisted(() => ({
+	goto: vi.fn(async () => undefined),
+	page: { url: new URL('http://localhost:3000/eingang/item00000000001?quelle=mail') }
+}));
+
+vi.mock('$app/navigation', () => ({ goto: mocks.goto }));
+vi.mock('$app/state', () => ({ page: mocks.page }));
 
 const SOURCE = '- [ ] Milch\n- [x] Brot\n\n1. [ ] nummeriert';
 
@@ -103,5 +115,63 @@ describe('Markdown: tasks', () => {
 
 		expect(box('eins').checked).toBe(true);
 		expect(box('zwei').disabled).toBe(false);
+	});
+});
+
+describe('Markdown: links to tickets (ADR-0054 §7)', () => {
+	const TICKET = 'abc123def456ghi';
+	const LINKS = `Siehe [HAUS-1](/tickets/${TICKET}) und [Seite](https://example.com/).`;
+	/** Whether each click reached the document taken (default prevented) by the text. */
+	let taken: boolean[] = [];
+	// After the handler of the text: records the click and keeps jsdom from navigating.
+	const record = (event: MouseEvent) => {
+		taken.push(event.defaultPrevented);
+		event.preventDefault();
+	};
+
+	beforeEach(() => {
+		taken = [];
+		mocks.goto.mockClear();
+		document.addEventListener('click', record);
+	});
+
+	afterEach(() => document.removeEventListener('click', record));
+
+	function show() {
+		render(TicketHostHarness, {
+			props: { host: INBOX_HOST, component: Markdown, props: { source: LINKS } }
+		});
+	}
+
+	it('opens a link to a ticket where the text stands with a plain click; the stored link stays', async () => {
+		show();
+		const link = screen.getByRole('link', { name: 'HAUS-1' });
+		await fireEvent.click(link);
+
+		expect(mocks.goto).toHaveBeenCalledExactlyOnceWith(
+			`/eingang/tickets/${TICKET}?quelle=mail&von=item00000000001`
+		);
+		expect(taken).toEqual([true]);
+		expect(link.getAttribute('href')).toBe(`/tickets/${TICKET}`);
+	});
+
+	it.each([
+		['Strg', { ctrlKey: true }],
+		['Cmd', { metaKey: true }],
+		['Umschalt', { shiftKey: true }],
+		['Alt', { altKey: true }],
+		['die mittlere Taste', { button: 1 }]
+	])('leaves a click with %s to the browser (a new tab, /tickets/<id>)', async (_name, init) => {
+		show();
+		await fireEvent.click(screen.getByRole('link', { name: 'HAUS-1' }), init);
+		expect(mocks.goto).not.toHaveBeenCalled();
+		expect(taken).toEqual([false]);
+	});
+
+	it('leaves other links alone', async () => {
+		show();
+		await fireEvent.click(screen.getByRole('link', { name: 'Seite' }));
+		expect(mocks.goto).not.toHaveBeenCalled();
+		expect(taken).toEqual([false]);
 	});
 });

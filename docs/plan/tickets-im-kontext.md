@@ -1,16 +1,16 @@
 # Plan „Tickets im Kontext“
 
-- **Stand:** KX-1 umgesetzt (2026-10-02, Branch `feat/kx-1-ticket-hosts`); nur Oberfläche: Build, dann F5, kein Neustart. KX-2 und KX-3 folgen. Offen sind die manuellen Prüfungen (Test-Manifest, Block „Tickets im Kontext“).
+- **Stand:** KX-1 umgesetzt (2026-10-02, #233), KX-2 umgesetzt (2026-10-02, Branch `feat/kx-2-ticket-return`); nur Oberfläche: Build, dann F5, kein Neustart. KX-3 folgt. Offen sind die manuellen Prüfungen (Test-Manifest, Block „Tickets im Kontext“).
 - **Grundlage:** Nutzerwunsch „Tickets sollen auch aus ihrem Bezug heraus geöffnet werden können … aus dem Projektbereich heraus und wo es sonst noch auftreten könnte“; Option C mit „Alle Empfehlungen so umsetzen“ (2026-10-02).
-- **Entscheidungen:** [ADR-0054](../adr/0054-tickets-im-kontext-oeffnen.md); Nachträge zu [ADR-0025](../adr/0025-ui-konsistenz-overlay-system.md) (17), [ADR-0034](../adr/0034-unterprojekte.md), [ADR-0037](../adr/0037-papierkorb.md) und [ADR-0053](../adr/0053-kalenderansicht.md).
-- **Einordnung:** Manifest-Block „Tickets im Kontext“ ab `BYL-E6-1300` (KX-1 `BYL-E6-1300` bis `BYL-E6-1311`, manuell `BYL-E6-1310` und `BYL-E6-1311`). Keine Migration, keine Hooks.
+- **Entscheidungen:** [ADR-0054](../adr/0054-tickets-im-kontext-oeffnen.md); Nachträge zu [ADR-0025](../adr/0025-ui-konsistenz-overlay-system.md) (17), [ADR-0034](../adr/0034-unterprojekte.md), [ADR-0037](../adr/0037-papierkorb.md), [ADR-0042](../adr/0042-tickets-und-projekte-aus-listen-waehlen.md) und [ADR-0053](../adr/0053-kalenderansicht.md).
+- **Einordnung:** Manifest-Block „Tickets im Kontext“ ab `BYL-E6-1300` (KX-1 `BYL-E6-1300` bis `BYL-E6-1311`, manuell `BYL-E6-1310` und `BYL-E6-1311`; KX-2 `BYL-E6-1320` bis `BYL-E6-1330`, manuell `BYL-E6-1329` und `BYL-E6-1330`). Keine Migration, keine Hooks.
 
 ## 1. Pakete
 
 | Paket | Inhalt | Stand |
 |---|---|---|
 | KX-1 | Gastgeber für Projekte, Eingang und Wiederholungen; Routen-Hüllen `…/tickets/[id]` und `…/voll`; Herkunft als `von`, das Ticket ersetzt das offene Panel, × zur Herkunft; `ticketLinks().path` folgt dem Gastgeber; Markierung der Ansichten nur mit eigenen IDs; Projekte ohne `listUrl`; Projektpfad zum Projekt-Panel; Papierkorb mit „Öffnen“ im Flag | umgesetzt |
-| KX-2 | Fokus zurück auf den auslösenden Link; Links auf Tickets in Beschreibung und Kommentaren im Kontext; „Änderungen verwerfen?“ inline in Projekt- und Regel-Panel beim Ersetzen; „Gesammelt umwandeln“ schließt sich beim Klick; „Zurück zu …“ in den Einstellungen | offen |
+| KX-2 | Fokus zurück auf den auslösenden Link; Links auf Tickets in Beschreibung und Kommentaren im Kontext; „Änderungen verwerfen?“ inline in Projekt- und Regel-Panel beim Ersetzen; „Gesammelt umwandeln“ schließt sich beim Klick; „Zurück zu …“ in den Einstellungen | umgesetzt |
 | KX-3 | Kalender: geplante Termine und Termine des Eingangs neben dem Kalender (falls sauber einbindbar, sonst Folgepunkt); „Ticket ansehen“ der Schnellerfassung im Kontext | offen |
 
 ## 2. Routen und Gastgeber (KX-1)
@@ -52,3 +52,25 @@
 ## 5. Manuelle Prüfungen (KX-1)
 
 Öffnen, Ersetzen und Zurück in allen drei Bereichen mit Panel und gemerkter Vollansicht, Deep-Link und F5, schmale Fenster; Papierkorb mit „Öffnen“, Projektpfad, die globalen Ausnahmen (Test-Manifest `BYL-E6-1310`, `BYL-E6-1311`).
+
+## 6. KX-2: Rückweg, Fragen und Links in Texten
+
+| Stelle | vorher | nachher |
+|---|---|---|
+| Fokus nach × bzw. Esc eines Tickets in einem Bereich | Überschrift des Panels der Herkunft bzw. verloren | der auslösende Link (Panel der Herkunft, sonst Ansicht), ohne Link die Überschrift (`followTicketReturn`, `initialFocus`) |
+| Link ersetzt ein Projekt- oder Regel-Panel mit ungespeicherten Eingaben | Eingaben gingen still verloren | inline „Änderungen verwerfen?“ (bzw. „Neues Projekt verwerfen?“, „Neue Regel verwerfen?“) oben im Panel |
+| Link auf ein Ticket in Beschreibung, Kommentar, „Kopiert aus …“, Vorschau im Papierkorb | Router nach `/tickets/<id>` („Aufgaben“, Panel) | Klick ohne Zusatztaste: `ticketLinks().href(id, page.url)` im Kontext und gemerkten Modus; gespeichert und für neue Tabs `/tickets/<id>` |
+| „Angelegte Tickets“ in „Gesammelt umwandeln“ | Modal blieb offen, Ticket darunter | das Modal schließt sich beim Klick (ohne Zusatztaste) |
+| „Zurück zu …“ in den Einstellungen | Wiederholungen und Papierkorb: „Zurück zu Aufgaben“ | „Zurück zu Wiederholungen“, „Zurück zur Regel“, „Zurück zum Papierkorb“; Tickets der Bereiche „Zurück zu KEY“ |
+
+| Art | Datei | Inhalt |
+|---|---|---|
+| Unit | `web/src/lib/ticket-return.test.ts` (`TicketReturnHarness`) | welche Navigation der Rückweg ist, Link im Panel bzw. in der Ansicht, Fokus in der Ansicht nur bei verlorenem Fokus, das Layout folgt seinen Navigationen |
+| Route | `web/src/routes/(app)/projekte/projects-layout.test.ts` | × aus dem Projekt-Panel bzw. aus der Liste: Fokus auf dem Link |
+| Komponente | `project-panel.test.ts`, `recurrence-panel.test.ts`, `inbox-panel.test.ts` | Fokus beim Öffnen auf dem Link; Frage inline, „Verwerfen“, „Weiter bearbeiten“, Esc, Zurück im Browser, ohne Frage bei Query, Speichern, × und Löschen |
+| Komponente | `markdown-view.test.ts` | Klick auf einen Link zu einem Ticket im Kontext, mit Zusatztaste oder mittlerer Taste und auf anderen Links nicht |
+| Komponente | `bulk-convert-dialog.test.ts` | schließt sich beim Öffnen eines Tickets, nicht für einen neuen Tab |
+| Unit | `last-view.test.ts` | Texte von „Zurück zu …“ |
+| angepasst | `inbox-table.test.ts`, `recurrences-layout.test.ts`, `help-page.test.ts` | `data-ticket-link`, Hilfe |
+
+Manuell: Fokus und Screenreader beim Rückweg; Fragen beim Ersetzen, Links in Texten, „Gesammelt umwandeln“, „Zurück zu …“ (Test-Manifest `BYL-E6-1329`, `BYL-E6-1330`).

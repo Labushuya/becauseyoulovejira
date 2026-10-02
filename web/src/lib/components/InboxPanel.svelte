@@ -67,7 +67,8 @@
 	// The row "Zielprojekt" names the project the entry got from its way (ADR-0049), archived or
 	// deleted ones as such. An entry of a watched folder (ADR-0051 §6) is a reference: "Ansehen" and
 	// "Herunterladen" ask the server for the current file; why nothing opened (gone, moved out of the
-	// folders) stands neutral at the entry.
+	// folders) stands neutral at the entry. Tickets open in the inbox instead of the entry (ADR-0054);
+	// back from one, the focus goes to its link once the entry is loaded (`initialFocus`).
 	let {
 		id,
 		store,
@@ -77,7 +78,8 @@
 		today = null,
 		sources = null,
 		picker,
-		onclose
+		onclose,
+		initialFocus = null
 	}: {
 		id: string;
 		store: InboxStore;
@@ -95,6 +97,11 @@
 		picker?: TicketPickerSource;
 		/** × and Escape: back to the list with the chips of the URL. */
 		onclose: () => void;
+		/**
+		 * Where the focus goes once the entry is loaded instead of its title: the link of the ticket
+		 * the user came back from (ADR-0054 §7); null or no element keeps the title.
+		 */
+		initialFocus?: (() => HTMLElement | null) | null;
 	} = $props();
 
 	// Ticket links open the panel or the full view, as the user last chose (plan BI-1).
@@ -192,7 +199,7 @@
 				if (controller.signal.aborted) return;
 				loaded = entry;
 				loadState = 'ready';
-				queueMicrotask(() => heading?.focus());
+				queueMicrotask(() => (initialFocus?.() ?? heading)?.focus());
 			},
 			(error: unknown) => {
 				if (controller.signal.aborted) return;
@@ -345,7 +352,11 @@
 			class="belongs-actions"
 			aria-busy={sources !== null && sources.isPending(entry.id) ? 'true' : undefined}
 		>
-			<a class="button-secondary entry-action" href={links.path(ticketId)}>Ticket öffnen</a>
+			<a
+				class="button-secondary entry-action"
+				href={links.path(ticketId)}
+				data-ticket-link={ticketId}>Ticket öffnen</a
+			>
 			{#if sources !== null && canLeaveTicket(entry, isMainSource(entry))}
 				<button
 					class="button-secondary"
@@ -400,8 +411,9 @@
 			<SectionMessage tone="info" compact>
 				Kopie aus
 				{#if copied.ticket !== null}
-					<a href={links.path(copied.ticket)}>{copied.key}</a>{:else}{copied.key}{/if}: beim
-				Duplizieren als eigener Eintrag angelegt; die Quelle des Originals ist unverändert.
+					<a href={links.path(copied.ticket)} data-ticket-link={copied.ticket}>{copied.key}</a
+					>{:else}{copied.key}{/if}: beim Duplizieren als eigener Eintrag angelegt; die Quelle des
+				Originals ist unverändert.
 			</SectionMessage>
 		{/if}
 
@@ -439,7 +451,9 @@
 				<ul>
 					{#each duplicates.tickets as ticket (ticket.id)}
 						<li>
-							<a href={links.path(ticket.id)}>{ticket.key} {ticket.title}</a>
+							<a href={links.path(ticket.id)} data-ticket-link={ticket.id}
+								>{ticket.key} {ticket.title}</a
+							>
 							<button
 								class="text-button"
 								type="button"
@@ -514,6 +528,7 @@
 					<a
 						class="button-secondary entry-action"
 						href={links.path(target.id)}
+						data-ticket-link={target.id}
 						onclick={(event) => {
 							// A new tab or window opens the ticket without the dialog.
 							if (event.button !== 0 || event.ctrlKey || event.metaKey || event.shiftKey) return;

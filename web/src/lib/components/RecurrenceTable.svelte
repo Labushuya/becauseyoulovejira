@@ -211,6 +211,7 @@
 									{#if index > 0}<span aria-hidden="true">,&nbsp;</span>{/if}<a
 										class="key-link"
 										href={ticketHrefOf(ticket.id)}
+										data-ticket-link={ticket.id}
 										title={ticket.title}>{ticket.key}</a
 									>
 								{/each}
