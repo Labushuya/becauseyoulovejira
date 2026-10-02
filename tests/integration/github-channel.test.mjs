@@ -7,8 +7,9 @@
 // earlier entries, new patterns without a flood, pull requests and their status (the ticket stays
 // as it is), releases, pagination, target projects of repository and connection, the checks of the
 // settings, rate limits, errors of repository and connection, public repositories without a token,
-// "Verbindung prüfen", the cron and the time of a run; GitHub is only read (GET) and the token never
-// shows.
+// "Verbindung prüfen", the cron and the time of a run, since the addendum of 2026-10-02 the list of
+// the repositories of the token and "Alle meine Repositorys"; GitHub is only read (GET) and the
+// token never shows.
 
 import { randomBytes } from 'node:crypto';
 import PocketBase from 'pocketbase';
@@ -542,6 +543,165 @@ describe('cron and the time of a run', () => {
 		expect(fake.requests.some((request) => request.path.startsWith('/repos/octo/slow-b'))).toBe(false);
 		expect(await run(owner, conn)).toMatchObject({ status: 'ok' });
 		expect((await details(owner, conn)).repos.map((repo) => repo.files)).toEqual([4, 4]);
+	});
+});
+
+describe('repositories of the token and "Alle meine Repositorys" (addendum of 2026-10-02)', () => {
+	const repos = async (who, conn, refresh = false) => (await call(who, 'GET', `${conn.id}/github/repos${refresh ? '?refresh=1' : ''}`)).body;
+	const hint = async (conn) => (await owner.pb.collection('connections').getOne(conn.id)).last_hint;
+	/** The cron of this block runs only `keep`: every other GitHub connection rests. */
+	const restOthers = async (keep) => {
+		for (const record of await superuser.collection('connections').getFullList({ filter: 'type = "github" && enabled = true' })) {
+			if (record.id !== keep?.id) await superuser.collection('connections').update(record.id, { enabled: false });
+		}
+	};
+	let auto;
+
+	beforeAll(async () => {
+		await restOthers(null);
+		fake.addRepo('anna/roadmap', { files: FILES });
+		fake.addRepo('anna/notes', { files: FILES, private: true });
+		fake.addRepo('anna/alt', { files: FILES, archived: true });
+		fake.addRepo('anna/gabel', { files: FILES, fork: true });
+		fake.addRepo('octo-org/team', { files: FILES, org: true, private: true });
+		// More than one page of 100, from another account.
+		for (let i = 0; i < 101; i += 1) fake.addRepo(`ben/r${String(i).padStart(3, '0')}`, { empty: true });
+	});
+
+	it('lists the repositories of the token over every page and marks entered, automatic and excluded ones', async () => {
+		const conn = await connection(owner, { repos: [{ repo: 'anna/notes' }], exclude: ['anna/roadmap'] });
+		const list = await repos(owner, conn);
+		expect(list).toMatchObject({ status: 'ok', message: '', login: 'anna', more: false });
+		const byName = new Map(list.repos.map((entry) => [entry.repo, entry]));
+		expect(byName.get('anna/notes')).toEqual({ repo: 'anna/notes', private: true, archived: false, fork: false, org: false, own: true, state: 'entered' });
+		expect(byName.get('anna/roadmap')).toMatchObject({ own: true, state: 'excluded' });
+		expect(byName.get('anna/alt')).toMatchObject({ archived: true, own: true, state: '' });
+		expect(byName.get('anna/gabel')).toMatchObject({ fork: true, own: true });
+		expect(byName.get('octo-org/team')).toMatchObject({ org: true, own: false, private: true });
+		expect(byName.get('ben/r100')).toMatchObject({ own: false });
+		expect(byName.has('octo/roadmap')).toBe(true);
+		const lists = fake.requests.filter((request) => request.path === '/user/repos');
+		expect(lists.length).toBeGreaterThan(1);
+		expect(lists.every((request) => request.authorized && request.query.affiliation === 'owner,collaborator,organization_member' && request.query.per_page === '100')).toBe(true);
+		expect(fake.requests.some((request) => request.path === '/user')).toBe(true);
+		// Within the hour the stored list answers, even with refresh=1 (at most once a minute).
+		fake.clear();
+		expect((await repos(owner, conn)).repos).toHaveLength(list.repos.length);
+		expect((await repos(owner, conn, true)).repos).toHaveLength(list.repos.length);
+		expect(fake.requests).toEqual([]);
+		// The list stays in the server.
+		expect(await owner.pb.collection('connections').getOne(conn.id)).not.toHaveProperty('watch');
+	});
+
+	it('names no list without a token and an error of the token without the token', async () => {
+		const none = await connection(owner, {}, { secret_env: 'BYL_GITHUB_NONE' });
+		expect(await repos(owner, none)).toMatchObject({ status: 'no_token', message: expect.stringMatching(/^Ohne Token nennt GitHub keine Liste/), repos: [] });
+		const wrong = await connection(owner, {}, { secret_env: 'BYL_GITHUB_WRONG' });
+		expect(await repos(owner, wrong)).toMatchObject({ status: 'error', message: expect.stringContaining('(401)'), repos: [] });
+		expect((await call(other, 'GET', `${none.id}/github/repos`)).status).toBe(404);
+	});
+
+	it('lists only the granted repositories of a fine-grained token with "Only select repositories"', async () => {
+		fake.grantOnly(['anna/roadmap', 'anna/notes']);
+		try {
+			const conn = await connection(owner, {});
+			expect((await repos(owner, conn)).repos.map((entry) => entry.repo)).toEqual(['anna/notes', 'anna/roadmap']);
+		} finally {
+			fake.grantOnly(null);
+		}
+	});
+
+	it('watches every own repository with the defaults, without a flood: no fork, nothing archived, no organization', async () => {
+		fake.openPull('anna/roadmap', { title: 'Offen von vorher' });
+		auto = await connection(owner, { auto: true });
+		expect(await run(owner, auto)).toMatchObject({ status: 'ok', created: 0, error: '' });
+		expect(await itemsOf(owner, auto)).toEqual([]);
+		expect(await hint(auto)).toBe('Alle meine Repositorys: 2 Repositorys werden jetzt beobachtet.');
+		const summary = await details(owner, auto);
+		expect(summary.repos.map((entry) => [entry.repo, entry.auto])).toEqual([
+			['anna/notes', true],
+			['anna/roadmap', true]
+		]);
+		expect(summary.repos.every((entry) => entry.files === 4 && entry.target === '' && entry.events.files && entry.paths.includes('CHANGELOG*'))).toBe(true);
+		expect(summary.repos.find((entry) => entry.repo === 'anna/roadmap').openPulls).toBe(1);
+		expect(summary.auto).toMatchObject({ enabled: true, login: 'anna', count: 2, more: 0, added: ['anna/notes', 'anna/roadmap'], removed: [], error: '', excluded: [] });
+		// Unchanged: the next run asks conditionally and changes nothing.
+		fake.clear();
+		expect(await run(owner, auto)).toMatchObject({ status: 'ok', created: 0 });
+		expect(await hint(auto)).toBe('');
+		expect(fake.requests.some((request) => request.path.startsWith('/user'))).toBe(false);
+		// After the base, a new pull request comes in as usual.
+		fake.openPull('anna/roadmap', { title: 'Neu nach der Basis' });
+		expect(await run(owner, auto)).toMatchObject({ created: 1 });
+		expect((await itemsOf(owner, auto)).map((item) => item.title)).toEqual(['PR #2 in anna/roadmap: Neu nach der Basis']);
+	});
+
+	it('reads the list again after an hour with ETag: new repositories come, archived and deleted ones go, with a hint', async () => {
+		await restOthers(auto);
+		const before = fake.rate('token').remaining;
+		fake.clear();
+		await cron(Date.now() + 2 * 60 * 60 * 1000);
+		// Unchanged list: every page and the user answered 304, none counted.
+		const listed = fake.requests.filter((request) => request.path === '/user' || request.path === '/user/repos');
+		expect(listed.length).toBeGreaterThan(1);
+		expect(listed.every((request) => request.conditional && request.status === 304)).toBe(true);
+		expect(fake.rate('token').remaining).toBe(before);
+
+		fake.addRepo('anna/neu', { files: FILES });
+		fake.archive('anna/notes');
+		fake.clear();
+		await cron(Date.now() + 4 * 60 * 60 * 1000);
+		expect(await hint(auto)).toBe('Alle meine Repositorys: neu beobachtet anna/neu; nicht mehr beobachtet anna/notes (archiviert).');
+		const summary = await details(owner, auto);
+		expect(summary.repos.map((entry) => entry.repo).sort()).toEqual(['anna/neu', 'anna/roadmap']);
+		expect(summary.auto).toMatchObject({ count: 2, added: ['anna/neu'], removed: [{ repo: 'anna/notes', reason: 'archived' }] });
+		// The new repository starts with a base, no entry.
+		expect((await itemsOf(owner, auto)).map((item) => item.title)).toEqual(['PR #2 in anna/roadmap: Neu nach der Basis']);
+
+		fake.removeRepo('anna/neu');
+		await cron(Date.now() + 6 * 60 * 60 * 1000);
+		expect(await hint(auto)).toBe('Alle meine Repositorys: nicht mehr beobachtet anna/neu (nicht mehr da).');
+	});
+
+	it('lets single repositories be set on their own or excluded', async () => {
+		await owner.pb.collection('connections').update(auto.id, {
+			settings: { auto: true, repos: [{ repo: 'anna/roadmap', paths: ['CHANGELOG*'], events: { files: true, pulls: false, releases: false }, target: '' }] }
+		});
+		await run(owner, auto);
+		let summary = await details(owner, auto);
+		expect(summary.repos).toHaveLength(1);
+		expect(summary.repos[0]).toMatchObject({ repo: 'anna/roadmap', auto: false, paths: ['CHANGELOG*'], events: { files: true, pulls: false, releases: false } });
+		// Entering a watched repository is no removal: no hint.
+		expect(await hint(auto)).toBe('');
+
+		await owner.pb.collection('connections').update(auto.id, { settings: { auto: true, exclude: ['anna/roadmap'] } });
+		await run(owner, auto);
+		summary = await details(owner, auto);
+		expect(summary.repos).toEqual([]);
+		expect(summary.auto).toMatchObject({ count: 0, excluded: ['anna/roadmap'] });
+		expect(await hint(auto)).toBe('');
+		const list = await repos(owner, auto);
+		expect(list.repos.find((entry) => entry.repo === 'anna/roadmap').state).toBe('excluded');
+	});
+
+	it('needs a token: without one only the entered repositories, with a neutral hint', async () => {
+		fake.addRepo('anna/offen', { files: FILES });
+		const conn = await connection(owner, { auto: true, repos: [{ repo: 'anna/offen' }] }, { secret_env: 'BYL_GITHUB_NONE' });
+		fake.clear();
+		expect(await run(owner, conn)).toMatchObject({ status: 'ok', error: '' });
+		expect(await hint(conn)).toMatch(/^„Alle meine Repositorys“ braucht ein Token/);
+		expect(fake.requests.some((request) => request.path.startsWith('/user'))).toBe(false);
+		expect((await details(owner, conn)).repos.map((entry) => entry.repo)).toEqual(['anna/offen']);
+	});
+
+	it('refuses bad values of the option with their codes', async () => {
+		const attempt = (settings) => owner.pb.collection('connections').update(auto.id, { settings });
+		for (const [settings, code] of [
+			[{ auto: 'ja' }, 'validation_github_auto'],
+			[{ exclude: ['kein name'] }, 'validation_github_exclude']
+		]) {
+			await expect(attempt(settings), code).rejects.toMatchObject({ status: 400, response: { data: { settings: { code } } } });
+		}
 	});
 });
 

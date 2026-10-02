@@ -224,6 +224,54 @@ function listAll(ctx, path) {
   }
 }
 
+// Every repository the token may read: own ones, ones it works on and the ones of its
+// organizations (GET /user/repos; a fine-grained token gives only what it was granted).
+var LIST_PATH = '/user/repos?affiliation=owner,collaborator,organization_member&sort=full_name&per_page=';
+
+/**
+ * Reads the list of the repositories the token may read (ADR-0050, addendum of 2026-10-02): the
+ * account of the token (GET /user, for "own") and every page of GET /user/repos, at most
+ * LIMITS.listPages. Each request is conditional with the ETag of the list of before, so an
+ * unchanged list costs no request of the rate limit. Returns the list as stored in
+ * connections.watch (rules.listOf); failures go up like every request of a run.
+ */
+function fetchList(gh, previous, now) {
+  var before = previous || { login: '', etag_user: '', pages: [] };
+  var user = gh.get('/user', { etag: before.login === '' ? '' : before.etag_user });
+  var login = user.status === 304 ? before.login : isPlainObject(user.json) ? text(user.json.login) : '';
+  var pages = [];
+  var more = false;
+  var path = LIST_PATH + rules.LIMITS.perPage;
+  for (var i = 0; i < rules.LIMITS.listPages; i++) {
+    var old = isPlainObject(before.pages[i]) ? before.pages[i] : null;
+    var answer = gh.get(path, { etag: old === null ? '' : old.etag });
+    var page;
+    if (answer.status === 304 && old !== null) {
+      page = old;
+    } else {
+      var repos = [];
+      var items = isArray(answer.json) ? answer.json : [];
+      for (var r = 0; r < items.length; r++) {
+        var entry = rules.listEntryOf(items[r]);
+        if (entry !== null) {
+          repos.push(entry);
+        }
+      }
+      page = { etag: answer.etag, next: answer.next, repos: repos };
+    }
+    pages.push(page);
+    if (page.next === '') {
+      break;
+    }
+    if (i === rules.LIMITS.listPages - 1) {
+      more = true;
+      break;
+    }
+    path = page.next;
+  }
+  return rules.listOf({ at: iso(now), login: login, etag_user: user.etag || before.etag_user, pages: pages, more: more });
+}
+
 /** Commits that changed `path` since the stored head, newest first (without the stored head). */
 function commitsOf(ctx, name, path, head, since, base) {
   var query =
@@ -460,7 +508,10 @@ function processPulls(ctx, config, state) {
   var pulls = isPlainObject(state.pulls) ? state.pulls : null;
   if (pulls === null) {
     // First run: the newest update is the mark; the open pull requests come in (at most 20, the
-    // newest), the closed ones of before never (no old load).
+    // newest), the closed ones of before never (no old load). A repository of "Alle meine
+    // Repositorys" takes no entry on its first run: the user did not choose it on its own, and
+    // switching the option on must not pour the open pull requests of dozens of repositories into
+    // the inbox (ADR-0050, addendum of 2026-10-02); known entries still follow their state.
     var first = ctx.gh.get(list);
     var firstList = isArray(first.json) ? first.json : [];
     var mark = '';
@@ -470,7 +521,7 @@ function processPulls(ctx, config, state) {
     var current = listAll(ctx, open);
     for (var o = 0; o < current.items.length && o < rules.LIMITS.firstPulls; o++) {
       if (isPlainObject(current.items[o])) {
-        takePull(ctx, config, name, current.items[o], true);
+        takePull(ctx, config, name, current.items[o], config.auto !== true);
       }
     }
     state.pulls = { etag: first.etag, since: mark || iso(ctx.now), base_at: mark || iso(ctx.now) };
@@ -637,9 +688,10 @@ function processRepo(ctx, config, state) {
   return problems;
 }
 
-function hintOf(stop, errors, pending, configured, authenticated, limit) {
+function hintOf(stop, errors, pending, configured, authenticated, limit, auto) {
   if (configured === 0) {
-    return 'Noch kein Repository eingetragen.';
+    // With "Alle meine Repositorys" the hint of the automatic set says why there is none.
+    return auto ? '' : 'Noch kein Repository eingetragen.';
   }
   if (stop === 'limit' && limit) {
     return rules.limitHint(limit, authenticated, berlin);
@@ -674,12 +726,6 @@ function run(app, record, access, options) {
     outcome.hint = rules.limitHint(state.limit, token !== '', berlin);
     return outcome;
   }
-  var repos = {};
-  for (var c = 0; c < settings.repos.length; c++) {
-    var known = state.repos[settings.repos[c].key];
-    repos[settings.repos[c].key] = isPlainObject(known) ? known : {};
-  }
-  state.repos = repos;
   var testMode = app.store().get(rules.TEST_MODE_KEY) === true;
   var deadline = now + rules.runMsOf(testMode, $os.getenv(rules.TEST_TIMING_ENV));
   var backoff = state.limit && typeof state.limit.backoff === 'number' ? state.limit.backoff : 0;
@@ -701,8 +747,38 @@ function run(app, record, access, options) {
   var limit = null;
   var errors = 0;
   var pending = 0;
-  for (var i = 0; i < settings.repos.length; i++) {
-    var config = settings.repos[i];
+  // "Alle meine Repositorys" (addendum of 2026-10-02): the list of the token is read again once it
+  // is an hour old (conditional, so an unchanged list costs nothing); a failure that ends the run
+  // ends it here, any other keeps the list of before and is said in the hint.
+  var useList = settings.auto && token !== '';
+  var autoError = '';
+  if (useList && rules.listDue(state.list, gate)) {
+    try {
+      state.list = fetchList(ctx.gh, state.list, now);
+    } catch (err) {
+      var listKind = fatalKind(err, variable);
+      if (listKind === 'limit') {
+        stop = 'limit';
+        limit = { until: err.until, kind: err.limitKind, backoff: err.limitKind === 'secondary' ? backoff + 1 : 0 };
+      } else if (listKind === 'deadline') {
+        stop = 'deadline';
+      } else if (listKind === 'connection') {
+        stop = 'connection';
+        outcome.error = messageOf(err, variable);
+      } else {
+        autoError = 'Die Liste deiner Repositorys ließ sich nicht lesen: ' + messageOf(err, variable);
+      }
+    }
+  }
+  var effective = rules.effectiveRepos(settings, useList ? state.list : null);
+  var repos = {};
+  for (var c = 0; c < effective.repos.length; c++) {
+    var known = state.repos[effective.repos[c].key];
+    repos[effective.repos[c].key] = isPlainObject(known) ? known : {};
+  }
+  state.repos = repos;
+  for (var i = 0; i < effective.repos.length; i++) {
+    var config = effective.repos[i];
     var repoState = state.repos[config.key];
     if (stop !== '') {
       pending += 1;
@@ -743,11 +819,32 @@ function run(app, record, access, options) {
     }
     repoState.checked_at = iso(Date.now());
   }
+  var autoNote = settings.auto && token === '' ? rules.AUTO_NO_TOKEN : '';
+  if (!settings.auto) {
+    state.auto = null;
+  } else if (useList && state.list !== null) {
+    // The automatic set and what changed since the last run (switched on just now: everything new).
+    var first = state.auto === null;
+    var changes = rules.autoChanges(first ? [] : state.auto.names, effective.auto, settings, state.list);
+    var changed = first || changes.added.length > 0 || changes.removed.length > 0;
+    state.auto = {
+      names: effective.auto,
+      at: changed ? iso(now) : state.auto.at,
+      added: changed ? changes.added : state.auto.added,
+      removed: changed ? changes.removed : state.auto.removed,
+      error: autoError
+    };
+    autoNote = changed ? rules.autoHint(changes, first) : '';
+  }
+  if (autoError !== '') {
+    autoNote = autoNote === '' ? autoError : autoNote + ' ' + autoError;
+  }
   state.limit = limit;
   state.rate = ctx.gh.rate();
   state.authenticated = token !== '';
   outcome.watch = state;
-  outcome.hint = stop === 'connection' ? '' : hintOf(stop, errors, pending, settings.repos.length, token !== '', limit);
+  var hint = stop === 'connection' ? '' : hintOf(stop, errors, pending, effective.repos.length, token !== '', limit, settings.auto);
+  outcome.hint = stop === 'connection' || autoNote === '' ? hint : hint === '' ? autoNote : hint + ' ' + autoNote;
   if (limit !== null) {
     outcome.limited = limit.until;
   }
@@ -792,25 +889,48 @@ function tokenOf(record) {
   });
 }
 
+/** The repositories a connection watches now: entered ones and, with a token, the automatic ones. */
+function watchedOf(settings, state, token) {
+  return rules.effectiveRepos(settings, settings.auto && token !== '' ? state.list : null);
+}
+
 /**
  * The details of the repositories of a connection for its card (ADR-0050 §7), from its settings and
- * the stored state, without a request to GitHub: { authenticated, interval, repos, limit, rate }.
+ * the stored state, without a request to GitHub: { authenticated, interval, repos, limit, rate,
+ * auto }. `repos` are the watched ones (entered, then automatic); `auto` says how "Alle meine
+ * Repositorys" stands (addendum of 2026-10-02): { enabled, login, at, count, more, added, removed,
+ * changedAt, error, excluded }. Its presence tells the card that the hooks know the option.
  */
 function summary(record) {
   var settings = rules.settingsOf(jsonOf(record, 'settings'));
   var state = hasWatchField(record) ? rules.stateOf(record.getString('watch')) : rules.stateOf(null);
+  var token = tokenOf(record);
+  var effective = watchedOf(settings, state, token);
   var repos = [];
-  for (var i = 0; i < settings.repos.length; i++) {
-    repos.push(rules.repoSummary(settings.repos[i], state.repos[settings.repos[i].key]));
+  for (var i = 0; i < effective.repos.length; i++) {
+    repos.push(rules.repoSummary(effective.repos[i], state.repos[effective.repos[i].key]));
   }
   var now = Date.now();
   var until = rules.limitUntil(state, now);
+  var auto = state.auto;
   return {
-    authenticated: tokenOf(record) !== '',
+    authenticated: token !== '',
     interval: settings.interval,
     repos: repos,
     limit: until > 0 ? { until: iso(until), kind: state.limit.kind } : null,
-    rate: isPlainObject(state.rate) && state.rate.limit > 0 ? state.rate : null
+    rate: isPlainObject(state.rate) && state.rate.limit > 0 ? state.rate : null,
+    auto: {
+      enabled: settings.auto,
+      login: state.list === null ? '' : state.list.login,
+      at: state.list === null ? '' : state.list.at,
+      count: effective.auto.length,
+      more: effective.more,
+      added: auto === null ? [] : auto.added,
+      removed: auto === null ? [] : auto.removed,
+      changedAt: auto === null ? '' : auto.at,
+      error: auto === null ? '' : auto.error,
+      excluded: settings.exclude
+    }
   };
 }
 
@@ -823,7 +943,9 @@ function summary(record) {
 function check(app, record) {
   var token = tokenOf(record);
   var variable = record.getString('secret_env');
-  var settings = rules.settingsOf(jsonOf(record, 'settings'));
+  var state = hasWatchField(record) ? rules.stateOf(record.getString('watch')) : rules.stateOf(null);
+  // The watched repositories: the entered ones and those of "Alle meine Repositorys".
+  var watched = watchedOf(rules.settingsOf(jsonOf(record, 'settings')), state, token).repos;
   var testMode = app.store().get(rules.TEST_MODE_KEY) === true;
   var gh = client.create(app, token, Date.now() + rules.runMsOf(testMode, $os.getenv(rules.TEST_TIMING_ENV)), 0);
   var result = { status: 'ok', authenticated: token !== '', login: '', rate: null, repos: [], message: '' };
@@ -842,8 +964,8 @@ function check(app, record) {
         reset: typeof core.reset === 'number' ? iso(core.reset * 1000) : ''
       };
     }
-    for (var i = 0; i < settings.repos.length; i++) {
-      var config = settings.repos[i];
+    for (var i = 0; i < watched.length; i++) {
+      var config = watched[i];
       try {
         var info = gh.get(repoPath(config.repo));
         result.repos.push({
@@ -889,10 +1011,79 @@ function check(app, record) {
   return result;
 }
 
+// Stores a list read by the route below in connections.watch, on the record as it is now (a run
+// that holds the lock writes its own state at its end; its list is at most an hour older).
+function saveList(app, id, list) {
+  try {
+    var fresh = app.findRecordById(COLLECTION, id);
+    var state = rules.stateOf(fresh.getString('watch'));
+    state.list = list;
+    fresh.set('watch', state);
+    app.save(fresh);
+  } catch (err) {
+    app.logger().warn('byl-github: Liste der Repositorys nicht gespeichert', 'connection', id, 'error', secrets.redact(String(err), []));
+  }
+}
+
+/**
+ * The repositories the token may read, for "Repository hinzufügen …" (ADR-0050, addendum of
+ * 2026-10-02): from the stored list while it is younger than an hour, else read again
+ * (conditional, then stored); `options.refresh` reads again at most once a minute. Without a token
+ * GitHub names no list. Returns { status: 'ok' | 'no_token' | 'limited' | 'error', message, login,
+ * at, more, repos: [{ repo, private, archived, fork, org, own, state }] }; a failure keeps the list
+ * of before. Never shows the token.
+ */
+function repoList(app, record, options) {
+  var token = tokenOf(record);
+  var result = { status: 'ok', message: '', login: '', at: '', more: false, repos: [] };
+  if (token === '') {
+    result.status = 'no_token';
+    result.message = rules.LIST_NO_TOKEN;
+    return result;
+  }
+  var variable = record.getString('secret_env');
+  var settings = rules.settingsOf(jsonOf(record, 'settings'));
+  var state = hasWatchField(record) ? rules.stateOf(record.getString('watch')) : rules.stateOf(null);
+  var list = state.list;
+  var now = Date.now();
+  var refresh = options && options.refresh === true && rules.listRefreshable(list, now);
+  if (rules.listDue(list, now) || refresh) {
+    var held = rules.limitUntil(state, now);
+    if (held > 0) {
+      result.status = 'limited';
+      result.message = rules.limitHint(state.limit, true, berlin);
+    } else {
+      var testMode = app.store().get(rules.TEST_MODE_KEY) === true;
+      var gh = client.create(app, token, now + rules.runMsOf(testMode, $os.getenv(rules.TEST_TIMING_ENV)), 0);
+      try {
+        list = fetchList(gh, list, now);
+        saveList(app, record.id, list);
+      } catch (err) {
+        if (fatalKind(err, variable) === 'limit') {
+          result.status = 'limited';
+          result.message = rules.limitHint({ until: err.until, kind: err.limitKind }, true, berlin);
+        } else {
+          result.status = 'error';
+          result.message = messageOf(err, variable);
+        }
+      }
+    }
+  }
+  if (list !== null) {
+    result.login = list.login;
+    result.at = list.at;
+    result.more = list.more;
+    result.repos = rules.listChoices(list, settings);
+  }
+  result.message = secrets.redact(result.message, [token]);
+  return result;
+}
+
 module.exports = {
   run: run,
   runDue: runDue,
   summary: summary,
   check: check,
+  repoList: repoList,
   requiresSecret: connectionRules.requiresSecret
 };

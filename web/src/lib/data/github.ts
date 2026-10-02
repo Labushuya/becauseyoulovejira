@@ -9,8 +9,10 @@ import type PocketBase from 'pocketbase';
 import {
 	githubCheckOf,
 	githubDetailsOf,
+	githubRepoListOf,
 	type GitHubCheck,
-	type GitHubDetails
+	type GitHubDetails,
+	type GitHubRepoList
 } from '../domain/github';
 import { withDataErrors } from './errors';
 import type { RequestOptions } from './options';
@@ -41,5 +43,25 @@ export function checkGitHub(
 	return withDataErrors(signal, async () => {
 		const result = await pb.send<unknown>(routeOf(id, 'check'), { method: 'POST', signal });
 		return githubCheckOf(result);
+	});
+}
+
+/**
+ * The repositories the token may read, for "Repository hinzufügen …" (ADR-0050, addendum of
+ * 2026-10-02): the server reads them at most hourly with ETag; `refresh` asks it to read again
+ * (at most once a minute). Without a token the answer is `no_token` with an empty list.
+ */
+export function listGitHubRepos(
+	pb: PocketBase,
+	id: string,
+	{ refresh = false, signal }: RequestOptions & { refresh?: boolean } = {}
+): Promise<GitHubRepoList> {
+	return withDataErrors(signal, async () => {
+		const result = await pb.send<unknown>(routeOf(id, 'repos'), {
+			method: 'GET',
+			query: refresh ? { refresh: '1' } : {},
+			signal
+		});
+		return githubRepoListOf(result);
 	});
 }

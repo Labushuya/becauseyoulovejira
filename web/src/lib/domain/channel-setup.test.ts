@@ -6,6 +6,7 @@
 import { describe, expect, it } from 'vitest';
 import {
 	CHAT_COMMAND,
+	GITHUB_TOKEN_TEMPLATE_URL,
 	GUIDE_KINDS,
 	PROTON_LINK,
 	PROTON_STEPS,
@@ -26,6 +27,7 @@ import {
 	type SetupFacts
 } from './channel-setup';
 import { NO_KEYWORDS_WARNING, type Connection } from './connections';
+import { EMPTY_GITHUB_SETTINGS } from './github';
 
 const ID = 'conn00000000001';
 
@@ -542,7 +544,7 @@ describe('GitHub (ADR-0050 §7)', () => {
 			connection: connection({
 				label: 'GitHub',
 				secretEnv: 'BYL_GITHUB_TOKEN',
-				github: { interval: 15, repos },
+				github: { ...EMPTY_GITHUB_SETTINGS, repos },
 				...overrides
 			}),
 			secretStatus: { secret, allowlist: null }
@@ -569,19 +571,38 @@ describe('GitHub (ADR-0050 §7)', () => {
 		});
 		expect(setupKindOf({ type: 'github', mailProvider: '' })).toBe('github');
 		const actions = steps[0]!.actions.join(' ');
-		// The exact click path of GitHub (fine-grained, selected repositories, read only).
+		// The exact click path of GitHub (fine-grained, read only); since the addendum of 2026-10-02
+		// two equal ways for the repositories, and the difference said honestly.
 		expect(actions).toMatch(/Profilbild.*„Settings“/);
 		expect(actions).toMatch(
 			/„Developer settings“.*„Personal access tokens“ → „Fine-grained tokens“/
 		);
 		expect(actions).toMatch(/„Generate new token“/);
-		expect(actions).toMatch(/„Only select repositories“/);
+		expect(actions).toMatch(
+			/„All repositories“ \(einfach: das Token darf alle deine Repositorys nur lesen; welche die App beobachtet, legst du in der App fest\) oder „Only select repositories“ \(strenger/
+		);
 		expect(actions).toMatch(/„Contents“ und „Pull requests“ auf „Read-only“/);
+		expect(actions).toMatch(/„Add permissions“/);
 		expect(actions).toMatch(/„Metadata“ steht automatisch auf „Read-only“/);
 		expect(actions).toMatch(/github_pat_/);
+		expect(steps[0]!.more.join(' ')).toMatch(
+			/Der Unterschied ist die Reichweite des Tokens: Mit „All repositories“ .* auch private und künftige; mit „Only select repositories“ nur die gewählten\. Ändern oder schreiben kann das Token in beiden Fällen nichts\./
+		);
 		expect(steps[0]!.links.map((link) => link.href)).toEqual([
-			'https://github.com/settings/personal-access-tokens'
+			'https://github.com/settings/personal-access-tokens',
+			GITHUB_TOKEN_TEMPLATE_URL
 		]);
+		// The prefilled form: name, 90 days, Contents and Pull requests read only, nothing else.
+		const template = new URL(GITHUB_TOKEN_TEMPLATE_URL);
+		expect(template.origin + template.pathname).toBe(
+			'https://github.com/settings/personal-access-tokens/new'
+		);
+		expect(Object.fromEntries(template.searchParams)).toEqual({
+			name: 'becauseyoulovejira',
+			expires_in: '90',
+			contents: 'read',
+			pull_requests: 'read'
+		});
 		expect(steps[1]!.commands[0]!.placeholders.wert).toEqual({ label: 'Token', secret: true });
 		// The token is optional: the restart has no check of its own.
 		expect(steps[2]!.checked).toBe(false);
@@ -628,6 +649,26 @@ describe('GitHub (ADR-0050 §7)', () => {
 		const refused = watched({ lastRunAt: OK, lastError: 'GitHub lehnt den Token ab (401).' });
 		expect(stepCheck('github', 'check', refused)?.tone).toBe('error');
 		expect(setupComplete('github', watched({ lastRunAt: OK, lastOkAt: OK }, true, []))).toBe(false);
+		// "Alle meine Repositorys" (addendum of 2026-10-02) needs no entered repository.
+		const auto = watched(
+			{ github: { ...EMPTY_GITHUB_SETTINGS, auto: true }, lastRunAt: OK, lastOkAt: OK },
+			true,
+			[]
+		);
+		expect(stepCheck('github', 'connect', auto)).toEqual({
+			tone: 'done',
+			text: 'Verbindung „GitHub“ angelegt; sie beobachtet alle deine Repositorys.'
+		});
+		expect(setupComplete('github', auto)).toBe(true);
+		expect(
+			stepCheck(
+				'github',
+				'connect',
+				watched({ github: { ...EMPTY_GITHUB_SETTINGS, auto: true, repos: [REPO] } })
+			)?.text
+		).toBe(
+			'Verbindung „GitHub“ angelegt; sie beobachtet alle deine Repositorys und 1 eingetragenes.'
+		);
 	});
 });
 

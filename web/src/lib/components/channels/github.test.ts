@@ -11,8 +11,10 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { DataError } from '$lib/data/errors';
 import type { Connection, SecretStatus } from '$lib/domain/connections';
 import {
+	EMPTY_GITHUB_SETTINGS,
 	GITHUB_DEFAULT_PATHS,
 	type GitHubDetails,
+	type GitHubRepoList,
 	type GitHubRepoSettings,
 	type GitHubSettings
 } from '$lib/domain/github';
@@ -20,7 +22,14 @@ import type { ProjectRef } from '$lib/domain/ticket';
 import { ConnectionsStore, type ConnectionsData } from '$lib/stores/connections.svelte';
 import { FlagStore } from '$lib/stores/flags.svelte';
 import ChannelsViewHarness from '$lib/test/ChannelsViewHarness.svelte';
-import { EMPTY_DETAILS, OK_CHECK, fakeGitHubData, githubStoreOf } from '$lib/test/github-fake';
+import {
+	AUTO_OFF,
+	EMPTY_DETAILS,
+	EMPTY_LIST,
+	OK_CHECK,
+	fakeGitHubData,
+	githubStoreOf
+} from '$lib/test/github-fake';
 import { useOverlayStubs } from '$lib/test/overlay-stubs';
 
 useOverlayStubs();
@@ -59,7 +68,7 @@ function githubConnection(
 		mailProvider: '',
 		mailUser: '',
 		matchBody: false,
-		github: { interval: 15, repos },
+		github: { ...EMPTY_GITHUB_SETTINGS, repos },
 		runningSince: null,
 		created: '2026-10-02 09:00:00.000Z',
 		updated: '2026-10-02 10:00:00.000Z',
@@ -74,6 +83,7 @@ const DETAILS: GitHubDetails = {
 		{
 			repo: 'octo-org/roadmap',
 			key: 'octo-org/roadmap',
+			auto: false,
 			url: 'https://github.com/octo-org/roadmap',
 			branch: 'main',
 			private: true,
@@ -114,10 +124,17 @@ function connectionsOf(
 	const data = {
 		list: vi.fn<ConnectionsData['list']>(async () => (current === null ? [] : [current])),
 		create: vi.fn<ConnectionsData['create']>(async (draft) => {
-			current = githubConnection(
-				{ label: draft.label.trim(), secretEnv: draft.secretEnv, lastRunAt: null, lastOkAt: null },
-				draft.githubRepo ? [draft.githubRepo] : []
-			);
+			current = githubConnection({
+				label: draft.label.trim(),
+				secretEnv: draft.secretEnv,
+				lastRunAt: null,
+				lastOkAt: null,
+				github: {
+					...EMPTY_GITHUB_SETTINGS,
+					repos: draft.githubRepo ? [draft.githubRepo] : [],
+					auto: draft.githubAuto === true
+				}
+			});
 			return current;
 		}),
 		setEnabled: vi.fn<ConnectionsData['setEnabled']>(),
@@ -168,13 +185,15 @@ async function open(
 	item: Connection = githubConnection(),
 	{
 		status = { secret: true, allowlist: null },
-		details = DETAILS
-	}: { status?: SecretStatus; details?: GitHubDetails } = {}
+		details = DETAILS,
+		list = EMPTY_LIST
+	}: { status?: SecretStatus; details?: GitHubDetails; list?: GitHubRepoList } = {}
 ) {
 	const flags = new FlagStore();
 	const connections = connectionsOf(item, status, flags);
 	const data = fakeGitHubData();
 	data.details.mockImplementation(async () => details);
+	data.repos.mockImplementation(async () => list);
 	const github = githubStoreOf(data, flags);
 	await connections.store.load();
 	render(ChannelsViewHarness, {
@@ -311,7 +330,7 @@ describe('GitHub card', () => {
 		await fireEvent.click(dialog.getByRole('button', { name: 'Hinzufügen' }));
 		await vi.waitFor(() =>
 			expect(connections.data.saveGitHub).toHaveBeenCalledWith(ID, {
-				interval: 15,
+				...EMPTY_GITHUB_SETTINGS,
 				repos: [
 					repo('octo-org/roadmap', {
 						paths: ['CHANGELOG*'],
@@ -343,7 +362,7 @@ describe('GitHub card', () => {
 		await fireEvent.click(dialog.getByRole('button', { name: 'Speichern' }));
 		await vi.waitFor(() =>
 			expect(connections.data.saveGitHub).toHaveBeenLastCalledWith(ID, {
-				interval: 15,
+				...EMPTY_GITHUB_SETTINGS,
 				repos: [repo('octo-org/roadmap', { paths: [...GITHUB_DEFAULT_PATHS, 'docs/**/*.md'] })]
 			})
 		);
@@ -356,7 +375,7 @@ describe('GitHub card', () => {
 		);
 		await fireEvent.click(question.getByRole('button', { name: 'Entfernen' }));
 		await vi.waitFor(() =>
-			expect(connections.data.saveGitHub).toHaveBeenLastCalledWith(ID, { interval: 15, repos: [] })
+			expect(connections.data.saveGitHub).toHaveBeenLastCalledWith(ID, EMPTY_GITHUB_SETTINGS)
 		);
 	});
 
@@ -366,6 +385,7 @@ describe('GitHub card', () => {
 		await fireEvent.change(card.getByLabelText('Abruf'), { target: { value: '30' } });
 		await vi.waitFor(() =>
 			expect(connections.data.saveGitHub).toHaveBeenCalledWith(ID, {
+				...EMPTY_GITHUB_SETTINGS,
 				interval: 30,
 				repos: [repo('octo-org/roadmap')]
 			})
@@ -459,8 +479,17 @@ describe('GitHub assistant', () => {
 		const dialog = within(await screen.findByRole('dialog', { name: 'GitHub einrichten' }));
 		const heading = () => dialog.getByRole('heading', { level: 3, name: /^Schritt \d von 6/ });
 		expect(heading().textContent).toMatch(/Token auf GitHub anlegen \(nur lesend\)/);
-		expect(dialog.getByText(/„Only select repositories“/)).toBeTruthy();
+		// Two equal ways for the repositories of the token, the difference said honestly.
+		expect(
+			dialog.getByText(
+				/„All repositories“ \(einfach: .*\) oder „Only select repositories“ \(strenger/
+			)
+		).toBeTruthy();
+		expect(dialog.getByText(/^Der Unterschied ist die Reichweite des Tokens/)).toBeTruthy();
 		expect(dialog.getByText(/„Contents“ und „Pull requests“ auf „Read-only“/)).toBeTruthy();
+		expect(dialog.getByRole('link', { name: /neues Token, vorbelegt/ }).getAttribute('href')).toBe(
+			'https://github.com/settings/personal-access-tokens/new?name=becauseyoulovejira&expires_in=90&contents=read&pull_requests=read'
+		);
 		await fireEvent.click(dialog.getByRole('button', { name: 'Weiter' }));
 		expect(heading().textContent).toMatch(/Token als Windows-Variable setzen/);
 		expect(dialog.getAllByText(/BYL_GITHUB_TOKEN/).length).toBeGreaterThan(0);
@@ -503,7 +532,7 @@ describe('GitHub assistant', () => {
 		await fireEvent.click(dialog.getByRole('button', { name: 'Repository hinzufügen' }));
 		await vi.waitFor(() =>
 			expect(connections.data.saveGitHub).toHaveBeenCalledWith(ID, {
-				interval: 15,
+				...EMPTY_GITHUB_SETTINGS,
 				repos: [repo('octo-org/roadmap'), repo('octo-org/site')]
 			})
 		);
@@ -549,5 +578,400 @@ describe('GitHub assistant', () => {
 			checked.getByText('octo-org/site: Repository nicht gefunden oder ohne Zugriff.')
 		).toBeTruthy();
 		await tick();
+	});
+
+	it('creates the connection with "Alle meine Repositorys" and no first repository', async () => {
+		const connections = connectionsOf(null);
+		await connections.store.load();
+		render(ChannelsViewHarness, {
+			props: {
+				connections: connections.store,
+				github: githubStoreOf(),
+				setup: { kind: 'github', connectionId: null },
+				onchange: vi.fn()
+			}
+		});
+		const dialog = within(await screen.findByRole('dialog', { name: 'GitHub einrichten' }));
+		for (let step = 0; step < 3; step += 1) {
+			await fireEvent.click(dialog.getByRole('button', { name: 'Weiter' }));
+		}
+		await fireEvent.input(dialog.getByLabelText('Bezeichnung (Pflichtfeld)'), {
+			target: { value: 'Meine' }
+		});
+		await fireEvent.click(dialog.getByLabelText(/^Alle meine Repositorys beobachten/));
+		// The first repository is optional now.
+		expect(dialog.getByLabelText('Oder ein Repository eintippen')).toBeTruthy();
+		await fireEvent.click(dialog.getByRole('button', { name: 'Verbindung anlegen' }));
+		await vi.waitFor(() =>
+			expect(connections.data.create).toHaveBeenCalledWith(
+				expect.objectContaining({ type: 'github', githubRepo: null, githubAuto: true })
+			)
+		);
+		// The step offers the switch, on, and the form for more.
+		const region = within(await dialog.findByRole('region', { name: 'Beobachtete Repositorys' }));
+		expect(
+			(
+				region.getByRole('switch', {
+					name: 'Alle meine Repositorys beobachten'
+				}) as HTMLInputElement
+			).checked
+		).toBe(true);
+		expect(
+			region.getByText('Kein Repository eingetragen; die App beobachtet alle deine eigenen.')
+		).toBeTruthy();
+	});
+
+	it('names the restart when the hooks of before refuse "Alle meine Repositorys"', async () => {
+		const connections = connectionsOf(null);
+		connections.data.create.mockRejectedValueOnce(
+			new DataError('validation', {
+				status: 400,
+				fields: {
+					settings: {
+						code: 'validation_github_settings',
+						message: 'Unbekannte Einstellung des GitHub-Kanals.'
+					}
+				}
+			})
+		);
+		await connections.store.load();
+		render(ChannelsViewHarness, {
+			props: {
+				connections: connections.store,
+				github: githubStoreOf(),
+				setup: { kind: 'github', connectionId: null },
+				onchange: vi.fn()
+			}
+		});
+		const dialog = within(await screen.findByRole('dialog', { name: 'GitHub einrichten' }));
+		for (let step = 0; step < 3; step += 1) {
+			await fireEvent.click(dialog.getByRole('button', { name: 'Weiter' }));
+		}
+		await fireEvent.input(dialog.getByLabelText('Bezeichnung (Pflichtfeld)'), {
+			target: { value: 'Meine' }
+		});
+		await fireEvent.click(dialog.getByLabelText(/^Alle meine Repositorys beobachten/));
+		await fireEvent.click(dialog.getByRole('button', { name: 'Verbindung anlegen' }));
+		await vi.waitFor(() =>
+			expect(
+				dialog.getByText(
+					/^„Alle meine Repositorys beobachten“ ist nach dem nächsten Neustart verfügbar/
+				)
+			).toBeTruthy()
+		);
+		expect(dialog.queryByText('Unbekannte Einstellung des GitHub-Kanals.')).toBeNull();
+	});
+});
+
+describe('repositories of the token and "Alle meine Repositorys" (addendum of 2026-10-02)', () => {
+	const LIST: GitHubRepoList = {
+		...EMPTY_LIST,
+		login: 'anna',
+		repos: [
+			{
+				repo: 'anna/notes',
+				key: 'anna/notes',
+				private: true,
+				archived: false,
+				fork: false,
+				org: false,
+				own: true,
+				state: ''
+			},
+			{
+				repo: 'anna/roadmap',
+				key: 'anna/roadmap',
+				private: false,
+				archived: false,
+				fork: false,
+				org: false,
+				own: true,
+				state: ''
+			},
+			{
+				repo: 'octo-org/roadmap',
+				key: 'octo-org/roadmap',
+				private: true,
+				archived: false,
+				fork: false,
+				org: true,
+				own: false,
+				state: 'entered'
+			}
+		]
+	};
+
+	async function openAdd(card: ReturnType<typeof within>) {
+		const { trigger, menu } = cardMenu(card);
+		await fireEvent.click(trigger);
+		await fireEvent.click(
+			menu.getByRole('menuitem', { name: 'Repository hinzufügen …', hidden: true })
+		);
+		return within(screen.getByRole('dialog', { name: 'Repository zu „GitHub“ hinzufügen' }));
+	}
+
+	it('offers the repositories of the token: several at once, entered ones locked, typing stays', async () => {
+		const { card, connections, data, flags } = await open(githubConnection(), { list: LIST });
+		const dialog = await openAdd(card);
+		await vi.waitFor(() =>
+			expect(dialog.getByRole('checkbox', { name: /anna\/notes/ })).toBeTruthy()
+		);
+		expect(data.repos).toHaveBeenCalledWith(ID, expect.objectContaining({ refresh: false }));
+		const group = within(dialog.getByRole('group', { name: 'Aus deinen Repositorys wählen' }));
+		// Own repositories first; the entered one is checked and locked.
+		expect(group.getAllByRole('checkbox').map((box) => box.closest('label')?.textContent)).toEqual([
+			expect.stringContaining('anna/notes'),
+			expect.stringContaining('anna/roadmap'),
+			expect.stringContaining('octo-org/roadmap')
+		]);
+		const entered = group.getByRole('checkbox', { name: /octo-org\/roadmap/ }) as HTMLInputElement;
+		expect(entered.checked).toBe(true);
+		expect(entered.getAttribute('aria-disabled')).toBe('true');
+		expect(entered.closest('label')?.textContent).toContain(
+			'schon eingetragen, privat, Organisation'
+		);
+		await fireEvent.click(entered);
+		expect(entered.checked).toBe(true);
+		// Typing is the other way, optional with a list.
+		expect(dialog.getByLabelText('Oder ein Repository eintippen')).toBeTruthy();
+		await fireEvent.click(dialog.getByRole('button', { name: 'Hinzufügen' }));
+		expect(dialog.getByText(/^Bitte ein Repository aus der Liste wählen/)).toBeTruthy();
+
+		await fireEvent.click(group.getByRole('checkbox', { name: /anna\/notes/ }));
+		await fireEvent.click(group.getByRole('checkbox', { name: /anna\/roadmap/ }));
+		await fireEvent.click(dialog.getByLabelText('Releases'));
+		await fireEvent.click(dialog.getByRole('button', { name: 'Hinzufügen' }));
+		const events = { files: true, pulls: true, releases: false };
+		await vi.waitFor(() =>
+			expect(connections.data.saveGitHub).toHaveBeenCalledWith(ID, {
+				...EMPTY_GITHUB_SETTINGS,
+				repos: [
+					repo('octo-org/roadmap'),
+					repo('anna/notes', { events }),
+					repo('anna/roadmap', { events })
+				]
+			})
+		);
+		expect(flags.flags.map((flag) => flag.title)).toContain(
+			'2 Repositorys zu „GitHub“ hinzugefügt.'
+		);
+		await vi.waitFor(() => expect(connections.data.run).toHaveBeenCalledWith(ID));
+	});
+
+	it('filters the list and reads it again on request', async () => {
+		const many: GitHubRepoList = {
+			...LIST,
+			repos: Array.from({ length: 12 }, (_, index) => ({
+				...LIST.repos[0]!,
+				repo: `anna/projekt-${index}`,
+				key: `anna/projekt-${index}`
+			}))
+		};
+		const { card, data } = await open(githubConnection(), { list: many });
+		const dialog = await openAdd(card);
+		const filter = await vi.waitFor(() =>
+			dialog.getByRole('searchbox', { name: 'Repositorys filtern' })
+		);
+		await fireEvent.input(filter, { target: { value: 'PROJEKT-1' } });
+		const group = within(dialog.getByRole('group', { name: 'Aus deinen Repositorys wählen' }));
+		expect(
+			group.getAllByRole('checkbox').map((box) => box.closest('label')?.textContent?.trim())
+		).toEqual(['anna/projekt-1 privat', 'anna/projekt-10 privat', 'anna/projekt-11 privat']);
+		expect(group.getByText('3 von 12')).toBeTruthy();
+		// Esc empties the filter first and stays in the dialog.
+		await fireEvent.keyDown(filter, { key: 'Escape' });
+		expect((filter as HTMLInputElement).value).toBe('');
+		expect(screen.getByRole('dialog', { name: 'Repository zu „GitHub“ hinzufügen' })).toBeTruthy();
+		await fireEvent.click(dialog.getByRole('button', { name: 'Liste neu laden' }));
+		await vi.waitFor(() =>
+			expect(data.repos).toHaveBeenLastCalledWith(ID, expect.objectContaining({ refresh: true }))
+		);
+	});
+
+	it('says why there is no list: no token, or a server before the restart', async () => {
+		const { card } = await open(githubConnection(), {
+			status: { secret: false, allowlist: null },
+			details: { ...DETAILS, authenticated: false },
+			list: {
+				...EMPTY_LIST,
+				status: 'no_token',
+				message:
+					'Ohne Token nennt GitHub keine Liste deiner Repositorys. Trag das Repository als „Besitzer/Name“ ein; öffentliche gehen auch ohne Token.'
+			}
+		});
+		const dialog = await openAdd(card);
+		await vi.waitFor(() =>
+			expect(
+				dialog.getByText(/^Ohne Token nennt GitHub keine Liste deiner Repositorys/)
+			).toBeTruthy()
+		);
+		expect(dialog.getByLabelText('Repository (Pflichtfeld)')).toBeTruthy();
+		expect(dialog.queryByRole('button', { name: 'Liste neu laden' })).toBeNull();
+		await fireEvent.click(dialog.getByRole('button', { name: 'Hinzufügen' }));
+		expect(dialog.getByText(/^Bitte ein Repository als „Besitzer\/Name“/)).toBeTruthy();
+	});
+
+	it('names the restart when the server does not know the list yet', async () => {
+		const { card, data } = await open();
+		data.repos.mockImplementation(async () => {
+			throw new DataError('not_found', { status: 404 });
+		});
+		const dialog = await openAdd(card);
+		await vi.waitFor(() =>
+			expect(
+				dialog.getByText(/^Die Liste deiner Repositorys ist nach dem nächsten Neustart verfügbar/)
+			).toBeTruthy()
+		);
+		expect(dialog.getByLabelText('Repository (Pflichtfeld)')).toBeTruthy();
+	});
+
+	it('switches "Alle meine Repositorys" on at once and runs once', async () => {
+		const { card, connections, flags } = await open();
+		await fireEvent.click(card.getByRole('button', { name: 'Details: GitHub' }));
+		const toggle = (await vi.waitFor(() =>
+			card.getByRole('switch', { name: 'Alle meine Repositorys beobachten' })
+		)) as HTMLInputElement;
+		expect(toggle.checked).toBe(false);
+		expect(
+			card.getByText(/^Alle Repositorys deines Kontos, die das Token lesen darf/)
+		).toBeTruthy();
+		await fireEvent.click(toggle);
+		await vi.waitFor(() =>
+			expect(connections.data.saveGitHub).toHaveBeenCalledWith(ID, {
+				...EMPTY_GITHUB_SETTINGS,
+				repos: [repo('octo-org/roadmap')],
+				auto: true
+			})
+		);
+		expect(flags.flags.map((flag) => flag.title)).toContain(
+			'„GitHub“ beobachtet jetzt alle deine Repositorys.'
+		);
+		await vi.waitFor(() => expect(connections.data.run).toHaveBeenCalledWith(ID));
+	});
+
+	it('locks the switch without a token and says why', async () => {
+		const { card, connections } = await open(githubConnection(), {
+			status: { secret: false, allowlist: null },
+			details: { ...DETAILS, authenticated: false }
+		});
+		await fireEvent.click(card.getByRole('button', { name: 'Details: GitHub' }));
+		const toggle = await vi.waitFor(() =>
+			card.getByRole('switch', { name: 'Alle meine Repositorys beobachten' })
+		);
+		expect(toggle.getAttribute('aria-disabled')).toBe('true');
+		expect(card.getByText(/^Braucht ein Token: Ohne Token nennt GitHub keine Liste/)).toBeTruthy();
+		await fireEvent.click(toggle);
+		expect(connections.data.saveGitHub).not.toHaveBeenCalled();
+	});
+
+	it('shows the automatic repositories with "Anpassen …", "Ausschließen …" and the excluded ones', async () => {
+		const automatic = {
+			...DETAILS.repos[0]!,
+			repo: 'anna/notes',
+			key: 'anna/notes',
+			auto: true,
+			url: 'https://github.com/anna/notes',
+			private: false,
+			paths: [...GITHUB_DEFAULT_PATHS]
+		};
+		const item = githubConnection({
+			github: {
+				...EMPTY_GITHUB_SETTINGS,
+				repos: [repo('octo-org/roadmap')],
+				auto: true,
+				exclude: ['anna/alt']
+			}
+		});
+		const { card, connections } = await open(item, {
+			details: {
+				...DETAILS,
+				repos: [...DETAILS.repos, automatic],
+				auto: {
+					...AUTO_OFF,
+					enabled: true,
+					login: 'anna',
+					at: '2026-10-02T08:00:00.000Z',
+					count: 1,
+					added: ['anna/notes'],
+					removed: [{ repo: 'anna/alt', reason: 'excluded' }],
+					changedAt: '2026-10-02T08:00:00.000Z',
+					excluded: ['anna/alt']
+				}
+			}
+		});
+		await vi.waitFor(() =>
+			expect(card.getByText(/^2 Repositorys · Zuletzt abgerufen/)).toBeTruthy()
+		);
+		await fireEvent.click(card.getByRole('button', { name: 'Details: GitHub' }));
+		expect(card.getByText('1 Repository von @anna, Liste vom 02.10.2026 10:00')).toBeTruthy();
+		expect(
+			card.getByText(
+				'Zuletzt geändert 02.10.2026 10:00: neu anna/notes; nicht mehr anna/alt (ausgeschlossen)'
+			)
+		).toBeTruthy();
+		const repos = within(card.getByRole('region', { name: 'Repositorys von „GitHub“' }));
+		expect(repos.getAllByText('Automatisch')).toHaveLength(1);
+		expect(repos.getByRole('button', { name: 'Einstellungen …: octo-org/roadmap' })).toBeTruthy();
+
+		// "Anpassen …" makes it an entered repository with its own settings.
+		await fireEvent.click(repos.getByRole('button', { name: 'Anpassen …: anna/notes' }));
+		const adjust = within(screen.getByRole('dialog', { name: 'Repository anna/notes einstellen' }));
+		await fireEvent.click(adjust.getByLabelText('Releases'));
+		await fireEvent.click(adjust.getByRole('button', { name: 'Speichern' }));
+		await vi.waitFor(() =>
+			expect(connections.data.saveGitHub).toHaveBeenLastCalledWith(ID, {
+				...EMPTY_GITHUB_SETTINGS,
+				repos: [
+					repo('octo-org/roadmap'),
+					repo('anna/notes', { events: { files: true, pulls: true, releases: false } })
+				],
+				auto: true,
+				exclude: ['anna/alt']
+			})
+		);
+		await vi.waitFor(() =>
+			expect(screen.queryByRole('dialog', { name: 'Repository anna/notes einstellen' })).toBeNull()
+		);
+	});
+
+	it('excludes an automatic repository after a question and takes an excluded one back', async () => {
+		const automatic = {
+			...DETAILS.repos[0]!,
+			repo: 'anna/notes',
+			key: 'anna/notes',
+			auto: true,
+			url: 'https://github.com/anna/notes'
+		};
+		const item = githubConnection({
+			github: { ...EMPTY_GITHUB_SETTINGS, auto: true, exclude: ['anna/alt'] }
+		});
+		const { card, connections } = await open(item, {
+			details: { ...DETAILS, repos: [automatic], auto: { ...AUTO_OFF, enabled: true } }
+		});
+		await fireEvent.click(card.getByRole('button', { name: 'Details: GitHub' }));
+		const repos = within(card.getByRole('region', { name: 'Repositorys von „GitHub“' }));
+		await fireEvent.click(await repos.findByRole('button', { name: 'anna/notes ausschließen …' }));
+		const question = within(
+			screen.getByRole('dialog', { name: 'anna/notes nicht mehr automatisch beobachten?' })
+		);
+		expect(question.getByText(/Unter „Ausgeschlossen“ holst du es zurück/)).toBeTruthy();
+		await fireEvent.click(question.getByRole('button', { name: 'Ausschließen' }));
+		await vi.waitFor(() =>
+			expect(connections.data.saveGitHub).toHaveBeenLastCalledWith(ID, {
+				...EMPTY_GITHUB_SETTINGS,
+				auto: true,
+				exclude: ['anna/alt', 'anna/notes']
+			})
+		);
+		await fireEvent.click(repos.getByRole('button', { name: 'Wieder aufnehmen: anna/alt' }));
+		await vi.waitFor(() =>
+			expect(connections.data.saveGitHub).toHaveBeenLastCalledWith(ID, {
+				...EMPTY_GITHUB_SETTINGS,
+				auto: true,
+				exclude: ['anna/notes']
+			})
+		);
+		// With the option on, "Jetzt abrufen" stays the main button without an entered repository.
+		expect(card.getByRole('button', { name: 'Jetzt abrufen: GitHub' })).toBeTruthy();
 	});
 });

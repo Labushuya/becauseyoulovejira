@@ -21,11 +21,17 @@
 		draft = $bindable(),
 		errors = {},
 		fixedName = false,
+		nameOptional = false,
 		projects = null
 	}: {
 		draft: GitHubRepoDraft;
 		errors?: Partial<Record<RepoDraftField, string>>;
 		fixedName?: boolean;
+		/**
+		 * The name is one way among others (a list to choose from, "Alle meine Repositorys"): the
+		 * field is optional and says so (ADR-0050, addendum of 2026-10-02).
+		 */
+		nameOptional?: boolean;
 		/** Every project of the catalog for the own target project; null leaves the field out. */
 		projects?: readonly ProjectRef[] | null;
 	} = $props();
@@ -65,20 +71,24 @@
 		<p class="name">Repository: <strong>{draft.input}</strong></p>
 	{:else}
 		<div class="field">
-			<label for={ids.repo}>Repository (Pflichtfeld)</label>
+			<label for={ids.repo}>
+				{nameOptional ? 'Oder ein Repository eintippen' : 'Repository (Pflichtfeld)'}
+			</label>
 			<input
 				id={ids.repo}
 				type="text"
 				maxlength="300"
 				spellcheck="false"
 				autocomplete="off"
-				aria-required="true"
+				aria-required={nameOptional ? undefined : 'true'}
 				aria-invalid={errors.repo ? 'true' : undefined}
 				aria-describedby={describedBy(ids.repoHint, errors.repo !== undefined && ids.repoError)}
 				bind:value={draft.input}
 			/>
 			<p class="hint" id={ids.repoHint}>
-				„Besitzer/Name“ oder die Adresse auf github.com, etwa octo-org/roadmap.
+				{nameOptional
+					? '„Besitzer/Name“ oder die Adresse auf github.com, auch fremde öffentliche Repositorys.'
+					: '„Besitzer/Name“ oder die Adresse auf github.com, etwa octo-org/roadmap.'}
 			</p>
 			{#if errors.repo}
 				<p class="field-error" id={ids.repoError}><ErrorIcon /><span>{errors.repo}</span></p>

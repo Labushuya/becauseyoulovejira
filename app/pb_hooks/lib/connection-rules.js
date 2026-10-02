@@ -42,13 +42,14 @@ var RENAME_KEEPS = ['type', 'enabled', 'secret_env', 'settings_json', 'owner', '
 // 2026-10-01). Notion has none: the user chooses what to import, so no keyword applies (ADR-0041 §5).
 // GitHub has the interval of its runs and its repositories with watched paths, events and target
 // project; no keywords: the chosen paths and events are the filter (ADR-0050 §8, ADR-0020 addendum 5).
+// Since the addendum of 2026-10-02 to ADR-0050 also "Alle meine Repositorys" and its exclusions.
 // Folders the same with the interval and the folders with their filters (ADR-0051 §8).
 var SETTINGS_KEYS = {
   calendar: ['keywords'],
   telegram: ['allowed_env', 'keywords', 'reply_saved', 'reply_no_match'],
   mail: ['provider', 'user', 'keywords', 'match_body'],
   notion: [],
-  github: ['interval', 'repos'],
+  github: ['interval', 'repos', 'auto', 'exclude'],
   folder: ['interval', 'folders']
 };
 

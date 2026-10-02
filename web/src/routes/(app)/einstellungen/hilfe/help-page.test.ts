@@ -544,6 +544,34 @@ describe('help page (EH-9)', () => {
 		expect(section.querySelectorAll('table')).toHaveLength(0);
 	});
 
+	it('explains the two ways of the token, the list and "Alle meine Repositorys" (ADR-0050, addendum of 2026-10-02)', () => {
+		render(Page);
+		const section = screen.getByRole('region', { name: 'GitHub' });
+		const content = text(section);
+		for (const phrase of [
+			'„Repository access“, zwei gleichwertige Wege: „All repositories“ (einfach: das Token darf alle deine Repositorys nur lesen; welche die App beobachtet, legst du in der App fest) oder „Only select repositories“ (strenger',
+			'Der Unterschied ist die Reichweite des Tokens',
+			'auch private und künftige',
+			'Ändern oder schreiben kann das Token in beiden Fällen nichts',
+			'„Add permissions“',
+			'mehrere ankreuzen',
+			'ohne Token ist das der einzige Weg',
+			'„Alle meine Repositorys beobachten“',
+			'ohne Forks, archivierte und die von Organisationen, höchstens 50',
+			'höchstens stündlich neu, mit ETag',
+			'„Ausschließen …“'
+		]) {
+			expect(content, phrase).toContain(phrase);
+		}
+		expect(
+			within(section)
+				.getByRole('link', { name: /^vorbelegten Token-Formular/ })
+				.getAttribute('href')
+		).toBe(
+			'https://github.com/settings/personal-access-tokens/new?name=becauseyoulovejira&expires_in=90&contents=read&pull_requests=read'
+		);
+	});
+
 	it('explains the folders: read only, references, paths, filters, first run, viewing and limits (ADR-0051)', () => {
 		render(Page);
 		const section = screen.getByRole('region', { name: 'Ordner' });

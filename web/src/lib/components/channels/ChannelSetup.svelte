@@ -487,6 +487,7 @@
 			{@const current = connection}
 			<GitHubSetupRepos
 				connection={current}
+				{github}
 				onsave={(settings, announcement) => {
 					hold();
 					return store.saveGitHub(current.id, settings, announcement);

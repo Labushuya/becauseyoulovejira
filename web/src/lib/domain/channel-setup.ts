@@ -709,10 +709,20 @@ const NOTION_STEPS: readonly SetupStep[] = [
 ];
 
 /**
+ * The form of GitHub for a new fine-grained token, prefilled with name, 90 days and the two
+ * read-only rights (URL parameters of the GitHub docs "Managing your personal access tokens";
+ * the access to repositories cannot be prefilled, the user chooses it there).
+ */
+export const GITHUB_TOKEN_TEMPLATE_URL =
+	'https://github.com/settings/personal-access-tokens/new?name=becauseyoulovejira&expires_in=90&contents=read&pull_requests=read';
+
+/**
  * GitHub (ADR-0050 §7): a fine-grained token that only reads, set as variable, a restart, the
  * repositories (they create the connection), the optional target project and "Verbindung prüfen".
  * The token is optional (public repositories), so the restart has no check line of its own; the
- * last step says whether the app sees it. Stand der Klickwege: 2026-10.
+ * last step says whether the app sees it. Since the addendum of 2026-10-02 the token may read all
+ * repositories of the account or only selected ones, two equal ways; which ones the app watches is
+ * set in the app. Stand der Klickwege: 2026-10 (GitHub Docs, Permissions-Ansicht seit 2025-08).
  */
 const GITHUB_STEPS: readonly SetupStep[] = [
 	{
@@ -720,25 +730,31 @@ const GITHUB_STEPS: readonly SetupStep[] = [
 		label: 'Token anlegen',
 		title: 'Token auf GitHub anlegen (nur lesend)',
 		intro:
-			'Ein „Fine-grained personal access token“ erlaubt der App, die gewählten Repositorys zu lesen, und sonst nichts. Öffentliche Repositorys gehen auch ohne Token, dann mit höchstens 60 Anfragen je Stunde.',
+			'Ein „Fine-grained personal access token“ erlaubt der App, deine Repositorys zu lesen, und sonst nichts. Öffentliche Repositorys gehen auch ohne Token, dann mit höchstens 60 Anfragen je Stunde.',
 		actions: [
 			'Auf github.com oben rechts auf dein Profilbild klicken, dann auf „Settings“.',
-			'Links ganz unten „Developer settings“ wählen, dann „Personal access tokens“ → „Fine-grained tokens“ und „Generate new token“.',
-			'Bei „Token name“ „becauseyoulovejira“ eintragen, bei „Expiration“ eine Frist wählen (etwa 90 Tage) und bei „Resource owner“ dein Konto bzw. die Organisation der Repositorys.',
-			'Unter „Repository access“ „Only select repositories“ wählen und die Repositorys auswählen, die die App beobachten soll.',
-			'Unter „Permissions“ bei den Rechten für Repositorys („Repository permissions“, in neueren Ansichten „Add permissions“ → „Repositories“) „Contents“ und „Pull requests“ auf „Read-only“ stellen. „Metadata“ steht automatisch auf „Read-only“. Sonst nichts.',
+			'Links ganz unten „Developer settings“ wählen, dann „Personal access tokens“ → „Fine-grained tokens“ und „Generate new token“. Schneller geht es mit dem vorbelegten Formular unten (Name, 90 Tage, nur lesend).',
+			'Bei „Token name“ „becauseyoulovejira“ eintragen, bei „Expiration“ eine Frist wählen (etwa 90 Tage) und bei „Resource owner“ dein Konto.',
+			'Unter „Repository access“ einen der beiden Wege wählen: „All repositories“ (einfach: das Token darf alle deine Repositorys nur lesen; welche die App beobachtet, legst du in der App fest) oder „Only select repositories“ (strenger: nur die Repositorys, die du dort auswählst).',
+			'Unter „Permissions“ bei den Rechten für Repositorys „Contents“ und „Pull requests“ auf „Read-only“ stellen (in der aktuellen Ansicht fügst du sie über „Add permissions“ bzw. das Suchfeld hinzu, in älteren stehen sie unter „Repository permissions“). „Metadata“ steht automatisch auf „Read-only“. Sonst nichts.',
 			'„Generate token“ klicken und das Token kopieren; es beginnt mit github_pat_, und GitHub zeigt es nur einmal.'
 		],
 		links: [
 			{
 				href: 'https://github.com/settings/personal-access-tokens',
 				text: 'github.com: Fine-grained tokens'
+			},
+			{
+				href: GITHUB_TOKEN_TEMPLATE_URL,
+				text: 'github.com: neues Token, vorbelegt (nur lesend, 90 Tage)'
 			}
 		],
 		commands: [],
 		more: [
+			'Der Unterschied ist die Reichweite des Tokens: Mit „All repositories“ könnte jemand, der das Token bekommt, alle deine Repositorys lesen, auch private und künftige; mit „Only select repositories“ nur die gewählten. Ändern oder schreiben kann das Token in beiden Fällen nichts.',
+			'Mit „Only select repositories“ sieht die App ein neues Repository erst, wenn du es beim Token ergänzt. Mit „All repositories“ kann die App alle eigenen von selbst beobachten („Alle meine Repositorys beobachten“).',
 			'Ohne Token diesen und die nächsten zwei Schritte überspringen: Die App liest dann nur öffentliche Repositorys.',
-			'Organisationen können fine-grained Tokens sperren oder erst nach Freigabe zulassen; dann steht das Token auf „pending“, bis jemand mit Admin-Rechten zustimmt.',
+			'Repositorys einer Organisation brauchen ein eigenes Token mit der Organisation als „Resource owner“; Organisationen können solche Tokens sperren oder erst nach Freigabe zulassen („pending“, bis jemand mit Admin-Rechten zustimmt).',
 			'Widerrufen: unter „Fine-grained tokens“ beim Token „Revoke“; danach die Variable löschen und die App neu starten.'
 		],
 		checked: false
@@ -793,12 +809,13 @@ const GITHUB_STEPS: readonly SetupStep[] = [
 		label: 'Repositorys',
 		title: 'Repositorys hinzufügen',
 		intro:
-			'Gib der Verbindung einen Namen und trag das erste Repository ein; weitere fügst du hier oder später an der Karte hinzu. Vorbelegt sind Roadmaps, Changelogs und READMEs.',
+			'Gib der Verbindung einen Namen und trag das erste Repository ein, oder wähle „Alle meine Repositorys beobachten“; weitere fügst du hier oder später an der Karte hinzu, aus der Liste deiner Repositorys oder per Name. Vorbelegt sind Roadmaps, Changelogs und READMEs.',
 		actions: [],
 		links: [],
 		commands: [],
 		more: [
-			'Der erste Abruf merkt sich den Stand als Ausgangspunkt. Einträge entstehen erst bei Änderungen; nur offene Pull Requests kommen gleich mit (höchstens 20).',
+			'Der erste Abruf merkt sich den Stand als Ausgangspunkt. Einträge entstehen erst bei Änderungen; nur offene Pull Requests eines eingetragenen Repositorys kommen gleich mit (höchstens 20), bei „Alle meine Repositorys“ keine.',
+			'„Alle meine Repositorys beobachten“ braucht ein Token und nimmt alle eigenen Repositorys deines Kontos mit den Standard-Einstellungen, ohne Forks, archivierte und die von Organisationen; neue kommen von selbst dazu.',
 			'Muster beginnen im Hauptordner des Repositorys: * steht für beliebige Zeichen eines Namens, ** für beliebig viele Ordner (docs/**/roadmap*). Groß- und Kleinschreibung zählen nicht.'
 		],
 		checked: true
@@ -988,8 +1005,10 @@ function checkHolds(kind: SetupKind, id: SetupStepId, facts: SetupFacts): boolea
 	switch (id) {
 		case 'connect':
 			// GitHub and folders read nothing before their first repository or folder (ADR-0050 §7,
-			// ADR-0051 §7).
-			if (kind === 'github') return (connection.github?.repos.length ?? 0) > 0;
+			// ADR-0051 §7); GitHub also with "Alle meine Repositorys" (ADR-0050, addendum of 2026-10-02).
+			if (kind === 'github') {
+				return (connection.github?.repos.length ?? 0) > 0 || connection.github?.auto === true;
+			}
 			return kind !== 'ordner' || (connection.folders?.folders.length ?? 0) > 0;
 		case 'restart':
 			// Telegram needs both variables: the token and the allowed IDs.
@@ -1100,6 +1119,12 @@ export function stepCheck(kind: SetupKind, id: SetupStepId, facts: SetupFacts): 
 			if (connection === null) return { tone: 'open', text: 'Noch keine Verbindung angelegt.' };
 			if (kind === 'github') {
 				const repos = connection.github?.repos.length ?? 0;
+				if (connection.github?.auto === true) {
+					return {
+						tone: 'done',
+						text: `Verbindung „${connection.label}“ angelegt; sie beobachtet alle deine Repositorys${repos === 0 ? '' : ` und ${repos === 1 ? '1 eingetragenes' : `${repos} eingetragene`}`}.`
+					};
+				}
 				return repos === 0
 					? {
 							tone: 'warning',

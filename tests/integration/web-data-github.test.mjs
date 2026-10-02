@@ -20,10 +20,11 @@ import {
 	saveGitHubSettings
 } from '../../web/src/lib/data/connections.ts';
 import { DataError } from '../../web/src/lib/data/errors.ts';
-import { checkGitHub, getGitHubDetails } from '../../web/src/lib/data/github.ts';
+import { checkGitHub, getGitHubDetails, listGitHubRepos } from '../../web/src/lib/data/github.ts';
 import { listNewItems } from '../../web/src/lib/data/inbox.ts';
 import { emptyConnectionDraft } from '../../web/src/lib/domain/connections.ts';
 import {
+	EMPTY_GITHUB_SETTINGS,
 	GITHUB_DEFAULT_PATHS,
 	GITHUB_MESSAGES,
 	githubSettingsOf
@@ -54,6 +55,11 @@ function repo(name, overrides = {}) {
 		target: null,
 		...overrides
 	};
+}
+
+/** Settings of a connection: the defaults with `value` (interval, repos, auto, exclude). */
+function settings(value) {
+	return { ...EMPTY_GITHUB_SETTINGS, ...value };
 }
 
 beforeAll(async () => {
@@ -103,14 +109,14 @@ describe('data layer of the GitHub channel', () => {
 
 	it('adds a repository with its own target project and another interval', async () => {
 		const project = await pb.collection('projects').create({ owner: ownerId, name: 'Haus', code: 'HAUS' });
-		const saved = await saveGitHubSettings(pb, connection.id, {
+		const saved = await saveGitHubSettings(pb, connection.id, settings({
 			interval: 30,
 			repos: [repo('octo/roadmap'), repo('octo/site', { paths: ['CHANGELOG*'], target: project.id })]
-		});
-		expect(saved.github).toEqual({
+		}));
+		expect(saved.github).toEqual(settings({
 			interval: 30,
 			repos: [repo('octo/roadmap'), repo('octo/site', { paths: ['CHANGELOG*'], target: project.id })]
-		});
+		}));
 		// What the server stores reads back the same.
 		const stored = await pb.collection('connections').getOne(connection.id);
 		expect(githubSettingsOf(stored.settings)).toEqual(saved.github);
@@ -120,8 +126,8 @@ describe('data layer of the GitHub channel', () => {
 	it('says refusals of the hook with the texts of the interface', async () => {
 		const archived = await pb.collection('projects').create({ owner: ownerId, name: 'Alt', code: 'ALT' });
 		await pb.collection('projects').update(archived.id, { archived: true });
-		const refusal = (settings) =>
-			saveGitHubSettings(pb, connection.id, settings).then(
+		const refusal = (value) =>
+			saveGitHubSettings(pb, connection.id, settings(value)).then(
 				() => null,
 				(error) => error
 			);
@@ -217,5 +223,38 @@ describe('data layer of the GitHub channel', () => {
 		});
 		await expect(getGitHubDetails(pb, calendar.id)).rejects.toMatchObject({ kind: 'not_found' });
 		await expect(checkGitHub(pb, calendar.id)).rejects.toMatchObject({ kind: 'not_found' });
+		await expect(listGitHubRepos(pb, calendar.id)).rejects.toMatchObject({ kind: 'not_found' });
+	});
+
+	it('lists the repositories of the token and watches all own ones (addendum of 2026-10-02)', async () => {
+		fake.addRepo('anna/notizen', { files: FILES });
+		fake.addRepo('anna/archiv', { files: FILES, archived: true });
+		const auto = await createConnection(pb, {
+			...emptyConnectionDraft('github'),
+			label: 'Alle',
+			secretEnv: 'BYL_GITHUB_TOKEN',
+			githubRepo: null,
+			githubAuto: true
+		});
+		expect(auto.github).toEqual(settings({ auto: true }));
+		const list = await listGitHubRepos(pb, auto.id);
+		expect(list).toMatchObject({ status: 'ok', login: 'anna', more: false });
+		expect(list.at).toMatch(/Z$/);
+		const byName = new Map(list.repos.map((choice) => [choice.repo, choice]));
+		expect(byName.get('anna/notizen')).toMatchObject({ own: true, archived: false, state: 'auto' });
+		expect(byName.get('anna/archiv')).toMatchObject({ own: true, archived: true, state: '' });
+		expect(byName.get('octo/roadmap')).toMatchObject({ own: false, private: true, state: '' });
+		expect((await listGitHubRepos(pb, auto.id, { refresh: true })).repos).toHaveLength(list.repos.length);
+
+		expect(await runConnection(pb, auto.id)).toMatchObject({ status: 'ok', created: 0 });
+		const details = await getGitHubDetails(pb, auto.id);
+		expect(details.repos.map((entry) => [entry.repo, entry.auto])).toEqual([['anna/notizen', true]]);
+		expect(details.auto).toMatchObject({ enabled: true, login: 'anna', count: 1, added: ['anna/notizen'] });
+
+		const saved = await saveGitHubSettings(pb, auto.id, settings({ auto: true, exclude: ['anna/notizen'] }));
+		expect(saved.github).toEqual(settings({ auto: true, exclude: ['anna/notizen'] }));
+		expect((await listGitHubRepos(pb, auto.id)).repos.find((choice) => choice.repo === 'anna/notizen')?.state).toBe('excluded');
+		const refused = await saveGitHubSettings(pb, auto.id, settings({ exclude: ['kein name'] })).catch((error) => error);
+		expect(refused.fields.settings.message).toBe(GITHUB_MESSAGES.validation_github_exclude);
 	});
 });

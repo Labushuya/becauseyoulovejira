@@ -7,6 +7,8 @@
 import { describe, expect, it } from 'vitest';
 import { loadHookLib } from '../support/hook-lib.mjs';
 import {
+	AUTO_NO_TOKEN,
+	AUTO_REASONS,
 	GITHUB_DEFAULT_PATHS,
 	GITHUB_DOCS_PATH,
 	GITHUB_EVENTS,
@@ -30,7 +32,7 @@ describe('web GitHub against the hooks', () => {
 		expect([...GITHUB_DEFAULT_PATHS]).toEqual(rules.DEFAULT_PATHS);
 		expect([GITHUB_DOCS_PATH]).toEqual(rules.OPTIONAL_PATHS);
 		expect([...GITHUB_EVENTS]).toEqual(rules.EVENTS);
-		for (const key of ['repos', 'paths', 'pathLength', 'intervalDefault', 'intervalMin', 'intervalMax']) {
+		for (const key of ['repos', 'paths', 'pathLength', 'intervalDefault', 'intervalMin', 'intervalMax', 'autoRepos', 'excludes']) {
 			expect(GITHUB_LIMITS[key], key).toBe(rules.LIMITS[key]);
 		}
 		expect(GITHUB_SECRET_NAME).toBe(rules.DEFAULT_SECRET_ENV);
@@ -38,6 +40,11 @@ describe('web GitHub against the hooks', () => {
 
 	it('words the codes of the hook the same', () => {
 		expect(GITHUB_MESSAGES).toEqual(rules.MESSAGES);
+	});
+
+	it('words "Alle meine Repositorys" the same (addendum of 2026-10-02)', () => {
+		expect(AUTO_NO_TOKEN).toBe(rules.AUTO_NO_TOKEN);
+		expect(AUTO_REASONS).toEqual(rules.AUTO_REASONS);
 	});
 
 	it('reads names and addresses of repositories the same', () => {
@@ -117,12 +124,17 @@ describe('web GitHub against the hooks', () => {
 					'octo-org/x'
 				]
 			},
-			{ repos: Array.from({ length: 25 }, (_, index) => ({ repo: `octo/r${index}` })) }
+			{ repos: Array.from({ length: 25 }, (_, index) => ({ repo: `octo/r${index}` })) },
+			{ auto: true, exclude: ['anna/alt', 'ANNA/ALT', 'bad', 'anna/b'] },
+			{ auto: 'ja', exclude: 'anna/alt' },
+			{ auto: false, exclude: Array.from({ length: 105 }, (_, index) => `anna/r${index}`) }
 		];
 		for (const value of samples) {
 			const web = githubSettingsOf(value);
 			const hook = rules.settingsOf(value);
 			expect(web.interval, JSON.stringify(value)).toBe(hook.interval);
+			expect(web.auto, JSON.stringify(value)).toBe(hook.auto);
+			expect([...web.exclude], JSON.stringify(value)).toEqual(hook.exclude);
 			expect(
 				web.repos.map((entry) => ({ ...entry, key: repoKey(entry.repo), target: entry.target ?? '' })),
 				JSON.stringify(value)

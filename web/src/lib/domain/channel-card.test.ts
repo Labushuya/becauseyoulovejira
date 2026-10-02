@@ -15,6 +15,7 @@ import {
 	whatsAppWebStatus
 } from './channel-card';
 import type { RunResult } from './connections';
+import { EMPTY_GITHUB_SETTINGS } from './github';
 import type { NotionImportedSource } from './notion';
 
 /** 12:00 in Berlin (summer time). */
@@ -114,15 +115,15 @@ describe('info lines of the cards', () => {
 			events: { files: true, pulls: true, releases: true },
 			target: null
 		};
-		const github = { ...calendar, type: 'github' as const, github: { interval: 15, repos: [] } };
+		const github = { ...calendar, type: 'github' as const, github: EMPTY_GITHUB_SETTINGS };
 		expect(githubInfo(github, null, NOW)).toBe('Noch kein Repository');
-		expect(githubInfo({ ...github, github: { interval: 15, repos: [repo] } }, null, NOW)).toBe(
-			'1 Repository · Noch nie abgerufen'
-		);
+		expect(
+			githubInfo({ ...github, github: { ...EMPTY_GITHUB_SETTINGS, repos: [repo] } }, null, NOW)
+		).toBe('1 Repository · Noch nie abgerufen');
 		const two = {
 			...github,
 			lastRunAt: '2026-09-30 09:55:00.000Z',
-			github: { interval: 15, repos: [repo, { ...repo, repo: 'octo-org/site' }] }
+			github: { ...EMPTY_GITHUB_SETTINGS, repos: [repo, { ...repo, repo: 'octo-org/site' }] }
 		};
 		expect(githubInfo(two, RUN, NOW)).toBe(
 			'2 Repositorys · Zuletzt abgerufen vor 5 Min. · 3 neu, 1 schon vorhanden'
@@ -130,6 +131,14 @@ describe('info lines of the cards', () => {
 		expect(
 			githubInfo(two, { ...RUN, status: 'limited', hint: 'Anfragelimit erreicht.' }, NOW)
 		).toBe('2 Repositorys · Zuletzt abgerufen vor 5 Min. · Anfragelimit erreicht');
+		// "Alle meine Repositorys" (addendum of 2026-10-02): the count of the details, before them
+		// the name of the option; never "Noch kein Repository".
+		const auto = { ...github, github: { ...EMPTY_GITHUB_SETTINGS, auto: true } };
+		expect(githubInfo(auto, null, NOW)).toBe('Alle meine Repositorys · Noch nie abgerufen');
+		expect(githubInfo(auto, null, NOW, 12)).toBe('12 Repositorys · Noch nie abgerufen');
+		expect(githubInfo(two, null, NOW, 7)).toBe(
+			'2 Repositorys · Zuletzt abgerufen vor 5 Min. · ohne Fehler'
+		);
 	});
 
 	it('counts the folders and says when they were checked last (ADR-0051 §7)', () => {
