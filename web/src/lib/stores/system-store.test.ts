@@ -114,7 +114,10 @@ describe('SystemStore: checks and logs', () => {
 	it('runs "Umgebung prüfen" and loads the logs on request', async () => {
 		const { store, data } = setup({
 			doctor: vi.fn(async () =>
-				ok({ ok: false, checks: [{ name: 'disk', level: 'error' as const, text: '80 MB frei' }] })
+				ok({
+					ok: false,
+					checks: [{ name: 'disk', level: 'error' as const, text: '80 MB frei', report: null }]
+				})
 			),
 			logs: vi.fn(async () => ok({ lines: 200, logs: [{ name: 'server' as const, files: [] }] }))
 		});
@@ -124,7 +127,10 @@ describe('SystemStore: checks and logs', () => {
 		await running;
 		expect(store.doctor).toEqual({
 			state: 'ready',
-			value: { ok: false, checks: [{ name: 'disk', level: 'error', text: '80 MB frei' }] },
+			value: {
+				ok: false,
+				checks: [{ name: 'disk', level: 'error', text: '80 MB frei', report: null }]
+			},
 			message: null
 		});
 		await store.loadLogs();

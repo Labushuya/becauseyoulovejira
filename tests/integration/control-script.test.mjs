@@ -461,11 +461,16 @@ async function occupy(port) {
 	return () => new Promise((done) => server.close(done));
 }
 
-/** A .bat file of a copy through cmd.exe (never a wrapper that starts or stops something). */
+/**
+ * A .bat file of a copy through cmd.exe as a double click starts it, also from a folder with & in
+ * its name (cmd /s /c ""<file>" <args>"; never a wrapper that starts or stops something).
+ */
 function batch(file, ...args) {
-	const result = spawnSyncClean(join(process.env.SystemRoot ?? 'C:\\Windows', 'System32', 'cmd.exe'), ['/d', '/c', file, ...args], {
+	const line = `""${file}"${args.map((arg) => ` ${arg}`).join('')}"`;
+	const result = spawnSyncClean(join(process.env.SystemRoot ?? 'C:\\Windows', 'System32', 'cmd.exe'), ['/d', '/s', '/c', line], {
 		encoding: 'latin1',
 		windowsHide: true,
+		windowsVerbatimArguments: true,
 		timeout: COMMAND_TIMEOUT_MS,
 		stdio: ['ignore', 'pipe', 'pipe'],
 		env: CONTROL_ENV
@@ -530,7 +535,7 @@ describe('byl-control.ps1: problems with cause, steps and the command to copy (R
 			const kept = JSON.parse(readFileSync(join(copies.b.dir, 'run', 'hintergrund-problem.json'), 'utf8'));
 			expect(kept).toMatchObject({ run: 'restart', report: { code: 'port-busy', level: 'error', exitCode: 4 } });
 			expect(Date.parse(kept.atUtc)).not.toBeNaN();
-			expect(kept.report.command).toContain(`"${join(copies.b.dir, 'byl-control.ps1')}" port `);
+			expect(kept.report.remedy.command).toContain(`"${join(copies.b.dir, 'byl-control.ps1')}" port `);
 			const json = status(copies.b);
 			expect(json.code).toBe(3);
 			expect(json.data.backgroundProblem).toMatchObject({ run: 'restart', report: { code: 'port-busy' } });
@@ -549,7 +554,7 @@ describe('byl-control.ps1: problems with cause, steps and the command to copy (R
 	it('a run without window that went well removes a kept problem', () => {
 		writeFileSync(
 			join(copies.b.dir, 'run', 'hintergrund-problem.json'),
-			JSON.stringify({ atUtc: new Date().toISOString(), run: 'start', report: { code: 'health-timeout', level: 'error', exitCode: 5, problem: 'alt', steps: ['x'] } })
+			JSON.stringify({ atUtc: new Date().toISOString(), run: 'start', report: { code: 'health-timeout', level: 'error', exitCode: 5, problem: 'alt', remedy: { steps: ['x'], command: '' } } })
 		);
 		const gone = spawnSyncClean(process.execPath, ['-e', ''], { windowsHide: true });
 		const result = control(copies.b, 'restart', '-Quiet', '-WaitForProcess', String(gone.pid));
@@ -558,29 +563,35 @@ describe('byl-control.ps1: problems with cause, steps and the command to copy (R
 		expect(control(copies.b, 'stop').code).toBe(0);
 	});
 
-	it('answers -Json with the entry of the catalog as report', () => {
+	it('answers -Json with the entry of the catalog: code and remedy', () => {
 		const result = control(copies.a, 'logs', 'unbekannt', '-Json');
 		expect(result.code).toBe(1);
 		const answer = JSON.parse(result.output.trim());
+		expect(Object.keys(answer)).toEqual(['ok', 'code', 'level', 'exitCode', 'problem', 'facts', 'cause', 'remedy', 'log']);
 		expect(answer).toMatchObject({
 			ok: false,
+			code: 'logs-unknown',
+			level: 'error',
 			exitCode: 1,
-			report: { code: 'logs-unknown', level: 'error', exitCode: 1, command: `powershell -NoProfile -ExecutionPolicy Bypass -File "${join(copies.a.dir, 'byl-control.ps1')}" logs` }
+			remedy: { command: `powershell -NoProfile -ExecutionPolicy Bypass -File "${join(copies.a.dir, 'byl-control.ps1')}" logs` },
+			log: join(copies.a.dir, 'logs', 'byl-control.log')
 		});
-		expect(answer.report.steps.length).toBeGreaterThan(0);
+		expect(answer.remedy.steps.length).toBeGreaterThan(0);
 	});
 
 	it('byl-pruefen.bat says nothing when the script runs, and shows the entry script-blocked when it cannot', () => {
 		expect(batch(join(copies.a.dir, 'byl-pruefen.bat'), '1')).toEqual({ code: 0, output: '' });
 		expect(batch(join(copies.a.dir, 'byl-pruefen.bat'), '4')).toEqual({ code: 0, output: '' });
-		// A copy without byl-functions.ps1 and byl-problems.ps1: PowerShell cannot run the script.
-		const broken = join(base, 'Pruefung', 'app');
+		// A copy without byl-functions.ps1 and byl-problems.ps1: PowerShell cannot run the script. Its
+		// folder has & and ' in the name: cmd shows them as text, the command doubles the '.
+		const broken = join(base, "Pruefung & Co's", 'app');
 		mkdirSync(broken, { recursive: true });
 		for (const file of ['byl-control.ps1', 'byl-pruefen.bat']) copyFileSync(join(APP_DIR, file), join(broken, file));
 		const result = batch(join(broken, 'byl-pruefen.bat'), '1');
-		expect(result.code).toBe(1);
+		expect(result.code, result.output).toBe(1);
 		expect(result.output).toContain('X Problem:   byl-control.ps1 konnte nicht ausgefuehrt werden.');
 		expect(result.output).toContain(`             Ordner: ${broken}\\`);
-		expect(result.output).toContain(`powershell -NoProfile -Command "Get-ChildItem -LiteralPath '${broken}\\' | Unblock-File"`);
+		expect(result.output).toContain(`powershell -NoProfile -Command "Get-ChildItem -LiteralPath '${broken.replaceAll("'", "''")}\\' | Unblock-File"`);
+		expect(result.output).not.toMatch(/ist entweder falsch geschrieben|is not recognized/);
 	});
 });

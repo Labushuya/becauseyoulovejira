@@ -1,13 +1,19 @@
 // Page "Einstellungen → System" (ADR-0043) in jsdom with the real store and fake data: the hint for
 // a server that is not on Windows, the refusals, the state with the PID only in the details, the
 // restart with its question and progress, the mail helper, the autostart switch, "Umgebung prüfen"
-// and the logs. Buttons of actions stay focusable while one runs (aria-disabled).
+// with what to do, the error of a run without window (ADR-0048) and the logs. Buttons of actions
+// stay focusable while one runs (aria-disabled).
 
 import { fireEvent, render, screen, within } from '@testing-library/svelte';
 import { tick } from 'svelte';
 import { describe, expect, it, vi } from 'vitest';
 import type { SystemAnswer } from '$lib/data/system';
-import { parseOverview, type SystemOverview, type SystemStatus } from '$lib/domain/system';
+import {
+	parseOverview,
+	type ScriptProblemReport,
+	type SystemOverview,
+	type SystemStatus
+} from '$lib/domain/system';
 import { SystemStore, type SystemData } from '$lib/stores/system.svelte';
 import { useOverlayStubs } from '$lib/test/overlay-stubs';
 import SystemView from './SystemView.svelte';
@@ -39,6 +45,22 @@ function overview(status: Partial<SystemStatus> = {}, running = false): SystemOv
 }
 
 const ok = <T>(value: T): SystemAnswer<T> => ({ kind: 'ok', value });
+
+// An entry of the catalog of the scripts as the server passes it on (ADR-0048).
+const REPORT: ScriptProblemReport = {
+	code: 'port-busy',
+	level: 'error',
+	exitCode: 4,
+	problem: 'Port 8090 auf 127.0.0.1 ist belegt; becauseyoulovejira startet dort nicht.',
+	facts: ['Belegt durch node.exe (PID 77): C:\\Tools\\node.exe'],
+	cause: 'Ein anderes Programm nutzt die Adresse der App.',
+	remedy: {
+		steps: ['Das andere Programm beenden.', 'Oder den Port umstellen (Befehl unten).'],
+		command:
+			'powershell -NoProfile -ExecutionPolicy Bypass -File "C:\\Apps\\becauseyoulovejira\\app\\byl-control.ps1" port 8091'
+	},
+	log: 'C:\\Apps\\becauseyoulovejira\\app\\logs\\byl-control.log'
+};
 
 async function show(data: Partial<SystemData> = {}, platform: 'windows' | 'linux' = 'windows') {
 	const full: SystemData = {
@@ -232,12 +254,18 @@ describe('page System', () => {
 				ok({
 					ok: false,
 					checks: [
-						{ name: 'web', level: 'ok' as const, text: 'Oberfläche gebaut (pb_public)' },
-						{ name: 'disk', level: 'error' as const, text: '80 MB frei auf C:\\' },
+						{
+							name: 'web',
+							level: 'ok' as const,
+							text: 'Oberfläche gebaut (pb_public)',
+							report: null
+						},
+						{ name: 'disk', level: 'error' as const, text: '80 MB frei auf C:\\', report: null },
 						{
 							name: 'autostart',
 							level: 'warning' as const,
-							text: 'Autostart zeigt auf einen anderen Ordner'
+							text: 'Autostart zeigt auf einen anderen Ordner',
+							report: null
 						}
 					]
 				})
@@ -259,6 +287,64 @@ describe('page System', () => {
 			expect(items[index]?.querySelector('[data-tone]')?.getAttribute('data-tone')).toBe(tone);
 		});
 		expect(screen.getByText('1 Fehler gefunden.')).toBeTruthy();
+		expect(screen.queryByText('Was tun?')).toBeNull();
+	});
+
+	it('opens what to do for a check that found a problem: cause, steps, command and log', async () => {
+		await show({
+			doctor: vi.fn(async () =>
+				ok({
+					ok: false,
+					checks: [
+						{ name: 'port', level: 'error' as const, text: 'Port 8090 belegt', report: REPORT }
+					]
+				})
+			)
+		});
+		await fireEvent.click(screen.getByRole('button', { name: 'Umgebung prüfen' }));
+		const list = await screen.findByRole('list', { name: 'Ergebnis der Prüfung' });
+		const details = within(list).getByText('Was tun?').closest('details') as HTMLDetailsElement;
+		expect(details.open).toBe(false);
+		const content = (details.textContent ?? '').replace(/\s+/g, ' ');
+		expect(content).toContain('Belegt durch node.exe (PID 77): C:\\Tools\\node.exe');
+		expect(content).toContain('Ursache: Ein anderes Programm nutzt die Adresse der App.');
+		expect(
+			within(details)
+				.getAllByRole('listitem', { hidden: true })
+				.map((item) => item.textContent)
+		).toEqual(
+			expect.arrayContaining([
+				'Das andere Programm beenden.',
+				'Oder den Port umstellen (Befehl unten).'
+			])
+		);
+		expect(content).toContain(REPORT.remedy.command);
+		expect(content).toContain(`Details: ${REPORT.log}`);
+	});
+
+	it('shows the error of the last run without window as a warning with its entry', async () => {
+		await show({
+			status: vi.fn(async () =>
+				ok(
+					overview({
+						backgroundProblem: { atUtc: '2026-10-02T05:00:00Z', run: 'start', report: REPORT }
+					})
+				)
+			)
+		});
+		const title = screen.getByRole('heading', { name: /Problem beim letzten Lauf ohne Fenster/ });
+		const message = title.closest('[data-tone]') as HTMLElement;
+		expect(message.getAttribute('data-tone')).toBe('warning');
+		const content = (message.textContent ?? '').replace(/\s+/g, ' ');
+		expect(content).toContain(
+			'Start ohne Fenster (Autostart) am 02.10.2026 07:00: Port 8090 auf 127.0.0.1 ist belegt'
+		);
+		expect(content).toContain(REPORT.remedy.command);
+		expect(within(message).getByRole('button', { name: /Kopieren/ })).toBeTruthy();
+		expect(content).toMatch(/verschwindet, sobald becauseyoulovejira wieder ohne Fehler startet/);
+		document.body.innerHTML = '';
+		await show();
+		expect(screen.queryByText(/Problem beim letzten Lauf ohne Fenster/)).toBeNull();
 	});
 
 	it('shows the logs one at a time, as text in a region the keyboard reaches, and reads them again', async () => {

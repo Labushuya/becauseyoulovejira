@@ -1,7 +1,7 @@
 // Page "Einstellungen → System" (ADR-0043), pure part: the answers of the routes are read
-// strictly, the refusals get their reason, the texts of state, verdict and mail helper, the
-// Berlin time of the control script, and the reasons of a restart in the same words as status.bat
-// (byl-control.ps1).
+// strictly (with the entries of the catalog of the scripts, ADR-0048), the refusals get their
+// reason, the texts of state, verdict, mail helper and a run without window, the Berlin time of the
+// control script, and the reasons of a restart in the same words as status.bat (byl-control.ps1).
 
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
@@ -10,6 +10,7 @@ import {
 	DENIAL_TEXTS,
 	RESTART_REASONS,
 	RESTART_REASON_LABELS,
+	backgroundRunText,
 	denialOf,
 	formatPointInTime,
 	mailText,
@@ -17,13 +18,32 @@ import {
 	parseDoctor,
 	parseLogs,
 	parseOverview,
+	parseProblemReport,
 	restartNeeded,
 	sizeText,
 	stateText,
 	verdictText,
+	type BackgroundProblem,
+	type ScriptProblemReport,
 	type SystemOverview,
 	type SystemStatus
 } from './system';
+
+// An entry of the catalog of the scripts as the server passes it on (ADR-0048).
+const REPORT: ScriptProblemReport = {
+	code: 'port-busy',
+	level: 'error',
+	exitCode: 4,
+	problem: 'Port 8090 auf 127.0.0.1 ist belegt; becauseyoulovejira startet dort nicht.',
+	facts: [],
+	cause: 'Ein anderes Programm nutzt die Adresse der App.',
+	remedy: {
+		steps: ['Das andere Programm beenden.', 'Oder den Port umstellen (Befehl unten).'],
+		command:
+			'powershell -NoProfile -ExecutionPolicy Bypass -File "C:\\Apps\\becauseyoulovejira\\app\\byl-control.ps1" port 8091'
+	},
+	log: 'C:\\Apps\\becauseyoulovejira\\app\\logs\\byl-control.log'
+};
 
 const STATUS = {
 	state: 'running',
@@ -70,10 +90,47 @@ describe('parseOverview', () => {
 				reload: false,
 				mailHelperPid: null,
 				otherServers: [],
-				autostart: 'off'
+				autostart: 'off',
+				backgroundProblem: null
 			},
 			mail: { installed: true, running: false, blocker: '' }
 		});
+	});
+
+	it('reads the error of the last run without window with its entry of the catalog (ADR-0048)', () => {
+		const parsed = overview({
+			backgroundProblem: {
+				atUtc: '2026-10-02T05:00:00.0000000Z',
+				run: 'start',
+				report: { ...REPORT, extra: 'weg' } as ScriptProblemReport
+			}
+		});
+		expect(parsed.status.backgroundProblem).toEqual({
+			atUtc: '2026-10-02T05:00:00.0000000Z',
+			run: 'start',
+			report: REPORT
+		});
+		expect(backgroundRunText(parsed.status.backgroundProblem as BackgroundProblem)).toBe(
+			'Start ohne Fenster (Autostart) am 02.10.2026 07:00'
+		);
+		const without = overview({
+			backgroundProblem: { atUtc: null, run: 'kaputt', report: { ...REPORT, level: 'laut' } }
+		} as unknown as Partial<SystemStatus>);
+		expect(without.status.backgroundProblem).toBeNull();
+	});
+
+	it('names the run without window in words, also an unknown one', () => {
+		const at = (run: string, atUtc: string | null = null): BackgroundProblem => ({
+			atUtc,
+			run,
+			report: REPORT
+		});
+		expect(backgroundRunText(at('restart', '2026-10-02T10:30:00Z'))).toBe(
+			'Neustart aus der App am 02.10.2026 12:30'
+		);
+		expect(backgroundRunText(at('restore'))).toBe('Wiederherstellung aus der App');
+		expect(backgroundRunText(at('constructor'))).toBe('Lauf ohne Fenster (constructor)');
+		expect(backgroundRunText(at(''))).toBe('Lauf ohne Fenster');
 	});
 
 	it('keeps only known reasons, servers and values', () => {
@@ -103,22 +160,52 @@ describe('parseOverview', () => {
 	});
 });
 
+describe('parseProblemReport', () => {
+	it('reads an entry of the catalog with code and remedy, and drops what is no text', () => {
+		expect(
+			parseProblemReport({
+				...REPORT,
+				facts: ['Belegt durch node.exe (PID 7)', 3, ''],
+				remedy: { steps: ['Eins.', null, 'Zwei.'], command: 42 },
+				extra: 'weg'
+			})
+		).toEqual({
+			...REPORT,
+			facts: ['Belegt durch node.exe (PID 7)'],
+			remedy: { steps: ['Eins.', 'Zwei.'], command: '' }
+		});
+		expect(parseProblemReport({ ...REPORT, exitCode: -1, remedy: null })).toMatchObject({
+			exitCode: 1,
+			remedy: { steps: [], command: '' }
+		});
+	});
+
+	it.each([
+		['no object', null],
+		['no code', { ...REPORT, code: '' }],
+		['unknown level', { ...REPORT, level: 'info' }],
+		['no problem', { ...REPORT, problem: '' }]
+	])('refuses %s', (_name, raw) => {
+		expect(parseProblemReport(raw)).toBeNull();
+	});
+});
+
 describe('parseDoctor and parseLogs', () => {
-	it('reads the checks and drops unknown levels', () => {
+	it('reads the checks with the entry of a found problem and drops unknown levels', () => {
 		expect(
 			parseDoctor({
 				ok: false,
 				checks: [
 					{ name: 'web', level: 'ok', text: 'Oberfläche gebaut (pb_public)' },
-					{ name: 'disk', level: 'error', text: '80 MB frei auf C:\\' },
+					{ name: 'disk', level: 'error', text: '80 MB frei auf C:\\', report: REPORT },
 					{ name: 'x', level: 'loud', text: 'nie' }
 				]
 			})
 		).toEqual({
 			ok: false,
 			checks: [
-				{ name: 'web', level: 'ok', text: 'Oberfläche gebaut (pb_public)' },
-				{ name: 'disk', level: 'error', text: '80 MB frei auf C:\\' }
+				{ name: 'web', level: 'ok', text: 'Oberfläche gebaut (pb_public)', report: null },
+				{ name: 'disk', level: 'error', text: '80 MB frei auf C:\\', report: REPORT }
 			]
 		});
 		expect(parseDoctor({ ok: true })).toBeNull();

@@ -68,7 +68,7 @@ $BylProblemCatalog = [ordered]@{
         Cause   = 'Der Ordner app ist schreibgeschützt, die Datei ist gerade gesperrt, oder das Laufwerk ist voll.'
         Steps   = @(
             'Die Prüfung ausführen (Befehl unten) und beheben, was sie als Fehler nennt.'
-            'Danach den Befehl erneut ausführen.'
+            'Danach den ursprünglichen Befehl erneut ausführen.'
         )
         Command = '{control} doctor'
         Offer   = ''
@@ -1259,7 +1259,7 @@ $BylProblemCatalog = [ordered]@{
         Steps   = @(
             'Node.js 24 installieren (nodejs.org) oder den Ordner mit node.exe vorn in den PATH nehmen.'
             'Liegt Node.js schon auf diesem Rechner, nimmt der Befehl unten seinen Ordner für dieses PowerShell-Fenster in den PATH.'
-            'Danach den Befehl erneut ausführen.'
+            'Danach das Skript in diesem Fenster erneut starten.'
         )
         Command = '$env:Path = "{nodeDir};$env:Path"'
         Offer   = ''
@@ -1708,8 +1708,9 @@ function Test-BylYes {
 }
 
 function ConvertTo-BylProblemData {
-    # A report for the JSON of -Json and of run\hintergrund-problem.json (fields code, level,
-    # exitCode, problem, facts, cause, steps, command, log): the app reads the same words.
+    # A report for the JSON of -Json and of run\hintergrund-problem.json: code, level, exitCode,
+    # problem, facts, cause, remedy (steps and the command to copy, '' without one) and log. The app
+    # reads the same words.
     param([Parameter(Mandatory = $true)][object]$Report)
 
     return [ordered]@{
@@ -1719,8 +1720,10 @@ function ConvertTo-BylProblemData {
         problem  = ([string]$Report.Problem).Replace($BylProblemNoBreak, ' ')
         facts    = @($Report.Facts)
         cause    = ([string]$Report.Cause).Replace($BylProblemNoBreak, ' ')
-        steps    = @(foreach ($step in @($Report.Steps)) { ([string]$step).Replace($BylProblemNoBreak, ' ') })
-        command  = $Report.Command
+        remedy   = [ordered]@{
+            steps   = @(foreach ($step in @($Report.Steps)) { ([string]$step).Replace($BylProblemNoBreak, ' ') })
+            command = $Report.Command
+        }
         log      = $Report.Log
     }
 }
@@ -1731,22 +1734,28 @@ function ConvertFrom-BylProblemData {
     param([AllowNull()][object]$Data)
 
     if ($null -eq $Data -or $Data -isnot [System.Management.Automation.PSCustomObject]) { return $null }
-    $field = { param($Name) $property = $Data.PSObject.Properties[$Name]; if ($null -eq $property) { $null } else { $property.Value } }
-    $code = [string](& $field 'code')
-    $level = [string](& $field 'level')
-    $problem = [string](& $field 'problem')
+    $field = {
+        param($Object, $Name)
+        if ($Object -isnot [System.Management.Automation.PSCustomObject]) { return $null }
+        $property = $Object.PSObject.Properties[$Name]
+        if ($null -eq $property) { $null } else { $property.Value }
+    }
+    $code = [string](& $field $Data 'code')
+    $level = [string](& $field $Data 'level')
+    $problem = [string](& $field $Data 'problem')
     if ($code -eq '' -or $problem -eq '' -or @('error', 'warning') -notcontains $level) { return $null }
-    $exit = & $field 'exitCode'
+    $exit = & $field $Data 'exitCode'
+    $remedy = & $field $Data 'remedy'
     return [pscustomobject]@{
         Code    = $code
         Level   = $level
         Exit    = if ($exit -is [int] -or $exit -is [long]) { [int]$exit } else { 1 }
         Problem = $problem
-        Facts   = @(@(& $field 'facts') | Where-Object { $_ -is [string] -and $_ -ne '' })
-        Cause   = [string](& $field 'cause')
-        Steps   = @(@(& $field 'steps') | Where-Object { $_ -is [string] -and $_ -ne '' })
-        Command = [string](& $field 'command')
+        Facts   = @(@(& $field $Data 'facts') | Where-Object { $_ -is [string] -and $_ -ne '' })
+        Cause   = [string](& $field $Data 'cause')
+        Steps   = @(@(& $field $remedy 'steps') | Where-Object { $_ -is [string] -and $_ -ne '' })
+        Command = [string](& $field $remedy 'command')
         Offer   = ''
-        Log     = [string](& $field 'log')
+        Log     = [string](& $field $Data 'log')
     }
 }

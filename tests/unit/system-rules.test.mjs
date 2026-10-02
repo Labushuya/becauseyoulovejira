@@ -255,25 +255,77 @@ describe('answers', () => {
 			mailHelperPid: null,
 			portOwner: null,
 			otherServers: [{ pid: 9, path: 'D:\\Kopie\\app\\pocketbase.exe', port: 8090, sameFolder: false }],
-			autostart: 'other'
+			autostart: 'other',
+			backgroundProblem: null
 		});
 		expect(rules.statusView({ ...STATUS, state: 'weg' })).toBeNull();
 		expect(rules.statusView(null)).toBeNull();
 		expect(rules.statusView([])).toBeNull();
 	});
 
-	it('passes the checks of doctor -Json on', () => {
+	// An entry of the catalog of the scripts as byl-control.ps1 reports it (ADR-0048).
+	const REPORT = {
+		code: 'port-busy',
+		level: 'error',
+		exitCode: 4,
+		problem: 'Port 8095 auf 127.0.0.1 ist belegt; becauseyoulovejira startet dort nicht.',
+		facts: ['Belegt durch node.exe (PID 77): C:\\Tools\\node.exe', 3, ''],
+		cause: 'Ein anderes Programm von anna@example.com nutzt die Adresse.',
+		remedy: {
+			steps: ['Das andere Programm beenden.', 'Oder den Port umstellen (Befehl unten).', null],
+			command: 'powershell -NoProfile -ExecutionPolicy Bypass -File "C:\\Apps\\app\\byl-control.ps1" port 8096'
+		},
+		log: 'C:\\Apps\\app\\logs\\byl-control.log',
+		extra: 'weg'
+	};
+
+	it('passes an entry of the catalog on, with code and remedy, and masks its texts like a log line', () => {
+		expect(rules.problemView(REPORT)).toEqual({
+			code: 'port-busy',
+			level: 'error',
+			exitCode: 4,
+			problem: 'Port 8095 auf 127.0.0.1 ist belegt; becauseyoulovejira startet dort nicht.',
+			facts: ['Belegt durch node.exe (PID 77): C:\\Tools\\node.exe'],
+			cause: 'Ein anderes Programm von ***@example.com nutzt die Adresse.',
+			remedy: {
+				steps: ['Das andere Programm beenden.', 'Oder den Port umstellen (Befehl unten).'],
+				command: 'powershell -NoProfile -ExecutionPolicy Bypass -File "C:\\Apps\\app\\byl-control.ps1" port 8096'
+			},
+			log: 'C:\\Apps\\app\\logs\\byl-control.log'
+		});
+		expect(rules.problemView({ ...REPORT, remedy: 'x' }).remedy).toEqual({ steps: [], command: '' });
+		for (const broken of [null, 'x', { ...REPORT, code: ' ' }, { ...REPORT, level: 'laut' }, { ...REPORT, problem: '' }]) {
+			expect(rules.problemView(broken)).toBeNull();
+		}
+	});
+
+	it('passes the error of the last run without window on, only with a valid entry', () => {
+		const view = rules.statusView({ ...STATUS, backgroundProblem: { atUtc: '2026-10-02T05:00:00.0000000Z', run: 'start', report: REPORT } });
+		expect(view.backgroundProblem).toEqual({ atUtc: '2026-10-02T05:00:00.0000000Z', run: 'start', report: rules.problemView(REPORT) });
+		expect(rules.statusView({ ...STATUS, backgroundProblem: { atUtc: '', run: 'restart', report: REPORT } }).backgroundProblem.atUtc).toBeNull();
+		expect(rules.statusView({ ...STATUS, backgroundProblem: { run: 'start', report: { code: 'x' } } }).backgroundProblem).toBeNull();
+		expect(rules.statusView({ ...STATUS, backgroundProblem: 'x' }).backgroundProblem).toBeNull();
+	});
+
+	it('passes the checks of doctor -Json on, a found problem with its entry', () => {
 		expect(
 			rules.doctorView({
 				appDir: APP,
 				ok: true,
 				checks: [
 					{ name: 'web', level: 'ok', text: 'Oberfläche gebaut (pb_public)' },
+					{ name: 'port', level: 'error', text: 'Port belegt', code: 'port-busy', report: REPORT },
 					{ name: 'x', level: 'laut', text: 'nie' },
 					'kaputt'
 				]
 			})
-		).toEqual({ ok: true, checks: [{ name: 'web', level: 'ok', text: 'Oberfläche gebaut (pb_public)' }] });
+		).toEqual({
+			ok: true,
+			checks: [
+				{ name: 'web', level: 'ok', text: 'Oberfläche gebaut (pb_public)', report: null },
+				{ name: 'port', level: 'error', text: 'Port belegt', report: rules.problemView(REPORT) }
+			]
+		});
 		expect(rules.doctorView({ ok: true })).toBeNull();
 	});
 

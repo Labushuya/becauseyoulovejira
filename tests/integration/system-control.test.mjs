@@ -269,10 +269,35 @@ describe('page System on a disposable copy (ADR-0043)', CASE_TIMEOUT, () => {
 			restartReasons: [],
 			reload: false,
 			mailHelperPid: null,
-			autostart: 'off'
+			autostart: 'off',
+			backgroundProblem: null
 		});
 		expect(Date.parse(answer.body.status.startedUtc)).not.toBeNaN();
 		expect(answer.body.mail).toEqual({ installed: false, running: false, blocker: 'not-installed' });
+	});
+
+	it('names the error of the last run without window with its entry of the catalog (ADR-0048)', async () => {
+		const kept = join(copy.dir, 'run', 'hintergrund-problem.json');
+		const report = {
+			code: 'port-busy',
+			level: 'error',
+			exitCode: 4,
+			problem: `Port ${copy.port} auf 127.0.0.1 ist belegt; becauseyoulovejira startet dort nicht.`,
+			facts: [],
+			cause: 'Ein anderes Programm nutzt die Adresse der App.',
+			remedy: { steps: ['Das andere Programm beenden.'], command: `powershell -NoProfile -ExecutionPolicy Bypass -File "${join(copy.dir, 'byl-control.ps1')}" port 8091` },
+			log: join(copy.dir, 'logs', 'byl-control.log')
+		};
+		writeFileSync(kept, JSON.stringify({ atUtc: '2026-10-02T05:00:00.0000000Z', run: 'start', report }));
+		try {
+			const answer = await app('GET', '/api/byl/system');
+			expect(answer.status).toBe(200);
+			expect(answer.body.status.backgroundProblem).toEqual({ atUtc: '2026-10-02T05:00:00.0000000Z', run: 'start', report });
+			// status -Json only reads it; the page shows it until a run removes it.
+			expect(existsSync(kept)).toBe(true);
+		} finally {
+			rmSync(kept, { force: true });
+		}
 	});
 
 	it('refuses an account that does not own the instance', async () => {
@@ -300,9 +325,9 @@ describe('page System on a disposable copy (ADR-0043)', CASE_TIMEOUT, () => {
 		expect(answer.body.ok).toBe(true);
 		expect(answer.body.checks).toEqual(
 			expect.arrayContaining([
-				{ name: 'web', level: 'ok', text: 'Oberfläche gebaut (pb_public)' },
-				{ name: 'instance', level: 'ok', text: expect.stringMatching(/^läuft \(PID \d+, Port \d+\)$/) },
-				{ name: 'autostart', level: 'info', text: 'Autostart aus' }
+				{ name: 'web', level: 'ok', text: 'Oberfläche gebaut (pb_public)', report: null },
+				{ name: 'instance', level: 'ok', text: expect.stringMatching(/^läuft \(PID \d+, Port \d+\)$/), report: null },
+				{ name: 'autostart', level: 'info', text: 'Autostart aus', report: null }
 			])
 		);
 	});

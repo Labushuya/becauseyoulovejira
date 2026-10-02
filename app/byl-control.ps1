@@ -288,13 +288,15 @@ function Write-BylProblem {
     # Reports the problem $Code of the catalog byl-problems.ps1 and returns its exit code:
     #   console        the block of Format-BylProblem; with $Fix and an offer of the entry it asks
     #                  (Test-ConsoleQuestion) and returns the exit code of $Fix after a yes;
-    #   -Json          an error as the one JSON line { ok, exitCode, report }, a hint not at all;
+    #   -Json          an error as the one JSON line { ok: false, code, level, exitCode, problem,
+    #                  facts, cause, remedy: { steps, command }, log }, a hint not at all;
     #   -Hidden        an error as a message box (autostart, no console), a hint not at all;
     #   no console     (-Hidden or -WaitForProcess) an error also in run\hintergrund-problem.json.
     # $Facts are lines of this case under the problem (who uses a port, the last lines of a log).
     # The code goes into the line of byl-control.log. $Fix runs in the scope of the caller.
-    # $Answer: the JSON answer of a backup command (ok, reason, …); with -Json it gets the report and
-    # is the line that is written, whatever the level.
+    # $Answer: the JSON answer of a backup command (ok, reason, problem, … of ADR-0046); with -Json it
+    # gets the same fields as report (its own field problem names a reason) and is the line that is
+    # written, whatever the level.
     param(
         [Parameter(Mandatory = $true)][string]$Code,
         [System.Collections.IDictionary]$Values = @{},
@@ -314,7 +316,10 @@ function Write-BylProblem {
             Write-JsonLine (ConvertTo-Json -InputObject $Answer -Depth 6 -Compress)
         }
         elseif ($problemIsError) {
-            Write-JsonLine (ConvertTo-Json -InputObject ([ordered]@{ ok = $false; exitCode = $problemReport.Exit; report = ConvertTo-BylProblemData -Report $problemReport }) -Depth 4 -Compress)
+            $answerLine = [ordered]@{ ok = $false }
+            $problemData = ConvertTo-BylProblemData -Report $problemReport
+            foreach ($key in @($problemData.Keys)) { $answerLine[$key] = $problemData[$key] }
+            Write-JsonLine (ConvertTo-Json -InputObject $answerLine -Depth 4 -Compress)
         }
         return $problemReport.Exit
     }

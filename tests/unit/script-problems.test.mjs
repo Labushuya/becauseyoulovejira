@@ -9,6 +9,7 @@ import { readdirSync, readFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { beforeAll, describe, expect, it } from 'vitest';
+import { SCRIPT_PROBLEMS, commandTemplate, fillText, helpValues } from '../../web/src/lib/domain/script-problems.ts';
 import { runPowerShellJson } from '../support/powershell.mjs';
 
 const ROOT_DIR = resolve(fileURLToPath(new URL('../..', import.meta.url)));
@@ -126,6 +127,35 @@ describe('the catalog (app/byl-problems.ps1)', () => {
 		]);
 		for (const code of CODES) expect(used.has(code), `${code} is used nowhere`).toBe(true);
 		for (const [, code] of sources.matchAll(/-Code '([a-z0-9-]+)'/g)) expect(CODES, code).toContain(code);
+	});
+});
+
+describe('the help page "Betrieb" (web/src/lib/domain/script-problems.ts)', () => {
+	it('shows every entry with a question, word for word and in the order of the catalog', () => {
+		const expected = Object.entries(CATALOG)
+			.filter(([, entry]) => entry.faq !== '')
+			.map(([code, entry]) => ({ code, question: entry.faq, level: entry.level, problem: entry.problem, cause: entry.cause, steps: entry.steps, command: entry.command }));
+		expect(expected.length).toBeGreaterThan(15);
+		expect(SCRIPT_PROBLEMS).toEqual(expected);
+	});
+
+	it('names the frequent problems of the order: blocked script, port, start, stop, DPAPI, disk, autostart, backup', () => {
+		const codes = SCRIPT_PROBLEMS.map((problem) => problem.code);
+		for (const code of ['script-blocked', 'port-busy', 'health-timeout', 'pocketbase-missing', 'stop-failed', 'dpapi-start', 'disk-low', 'autostart-write', 'backup-target-unreachable', 'backup-passphrase', 'backup-damaged', 'unexpected']) {
+			expect(codes).toContain(code);
+		}
+	});
+
+	it('fills what the page knows and leaves a placeholder of the machine to the reader', () => {
+		const values = helpValues('http://127.0.0.1:8095', '8095');
+		const busy = SCRIPT_PROBLEMS.find((problem) => problem.code === 'port-busy');
+		expect(fillText(busy.problem, values)).toBe('Port 8095 auf 127.0.0.1 ist belegt; becauseyoulovejira startet dort nicht.');
+		expect(commandTemplate(busy.command, values)).toBe('powershell -NoProfile -ExecutionPolicy Bypass -File .\\byl-control.ps1 port {{next}}');
+		expect(fillText('{gibt-es-nicht} {next}', values)).toBe('{gibt-es-nicht} …');
+		// Every command of the page is complete, but for the placeholders the reader fills in.
+		for (const problem of SCRIPT_PROBLEMS) {
+			expect(commandTemplate(problem.command, values), problem.code).not.toMatch(/\{\{(?!next\}\})/);
+		}
 	});
 });
 
@@ -257,7 +287,7 @@ $result.ask = [ordered]@{
 $result.yes = @(foreach ($answer in @('j', 'J', ' ja ', 'Y', 'yes', 'n', '', 'nein', 'jj')) { Test-BylYes -Answer $answer })
 $result.ascii = ConvertTo-BylAscii -Text ([string][char]0x00D7 + ' Gr' + [char]0x00F6 + [char]0x00DF + 'e ' + [char]0x201E + 'x' + [char]0x201C + ' ' + [char]0x2013 + ' ' + [char]0x2026 + ' ' + [char]0x2192 + ' ' + [char]0x2603)
 $result.errorLine = Format-ControlErrorLine -TimeUtc ([DateTime]::new(2026, 10, 2, 1, 2, 3, [DateTimeKind]::Utc)) -Command 'start' -ErrorType 'System.IO.IOException' -Position 'byl-control.ps1:12' -Message ("Zeile 1" + [char]13 + [char]10 + "Wert-sehr-geheim an max@example.com " + ('x' * 400)) -Secrets @('Wert-sehr-geheim')
-$result.bat = @(Format-BylProblem -Report (Get-BylProblemReport -Code 'script-blocked' -Values @{ appq = '%~dp0' } -Facts @('Ordner: %~dp0')) -Ascii)
+$result.bat = @(Format-BylProblem -Report (Get-BylProblemReport -Code 'script-blocked' -Values @{ appq = '!BYL_DIRQ!' } -Facts @('Ordner: !BYL_DIR!')) -Ascii)
 $result.vbs = @(Format-BylProblem -Report (Get-BylProblemReport -Code 'script-blocked-hidden' -Values @{ app = '{app}' }) -Ascii)
 # ASCII only on standard output, whatever the code page of the console.
 [regex]::Replace((ConvertTo-Json -InputObject $result -Depth 6 -Compress), '[^\x00-\x7F]', { param($match) '\u{0:x4}' -f [int][char]$match.Value })`,
@@ -314,18 +344,20 @@ $result.vbs = @(Format-BylProblem -Report (Get-BylProblemReport -Code 'script-bl
 		expect(out.unknown.lines[0]).toBe('\u00d7 Problem:   Unerwarteter Fehler: unbekannter Code des Fehlerkatalogs: gibt-es-nicht');
 	});
 
-	it('keeps the same words in JSON and reads them back', () => {
+	it('keeps the same words in JSON, with code and remedy, and reads them back', () => {
+		expect(Object.keys(out.busyData)).toEqual(['code', 'level', 'exitCode', 'problem', 'facts', 'cause', 'remedy', 'log']);
 		expect(out.busyData).toMatchObject({
 			code: 'port-busy',
 			level: 'error',
 			exitCode: 4,
 			problem: 'Port 8090 auf 127.0.0.1 ist belegt; becauseyoulovejira startet dort nicht.',
 			facts: [FACT],
-			command: `powershell -NoProfile -ExecutionPolicy Bypass -File "${APP}\\byl-control.ps1" port 8091`,
+			remedy: { command: `powershell -NoProfile -ExecutionPolicy Bypass -File "${APP}\\byl-control.ps1" port 8091` },
 			log: LOG
 		});
 		expect(JSON.stringify(out.busyData)).not.toContain('\u00a0');
-		expect(out.busyData.steps).toHaveLength(2);
+		expect(Object.keys(out.busyData.remedy)).toEqual(['steps', 'command']);
+		expect(out.busyData.remedy.steps).toHaveLength(2);
 		expect(out.roundTrip).toEqual(out.busy);
 		expect(out.notData).toBe(true);
 	});
