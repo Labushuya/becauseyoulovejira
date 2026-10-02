@@ -18,7 +18,7 @@
 	import { PRIORITY_NUMBERS, PRIORITY_WORDS } from '$lib/domain/quick-syntax';
 	import { RESTART_NEEDED } from '$lib/guidance/texts';
 	import { HELP_SECTIONS } from '$lib/settings-sections';
-	import { channelSetupHref, trashHref } from '$lib/ticket-links';
+	import { calendarHref, channelSetupHref, trashHref } from '$lib/ticket-links';
 
 	// Settings "Hilfe" (ADR-0026 section 7, plan EH-9 §3.10): jump links, the keyboard shortcuts from
 	// the one source, the short syntax of the quick entry, how the access data work (moved here from
@@ -115,6 +115,72 @@
 	<section id="wiederholungen" aria-labelledby="wiederholungen-title">
 		<h3 id="wiederholungen-title">Wiederholungen</h3>
 		<RecurrenceHelp />
+	</section>
+
+	<section id="kalender" aria-labelledby="kalender-title">
+		<h3 id="kalender-title">Kalender</h3>
+		<p>
+			Der <a href={calendarHref()}>Kalender</a> zeigt, was wann ansteht: als Monat, als Woche oder als
+			Agenda. Es gibt nur Tage, keine Uhrzeiten; jeder Eintrag gilt für den ganzen Tag. „Heute“, die Pfeile
+			davor und danach und die Wahl der Ansicht stehen über dem Kalender; Ansicht, Tag und Filter stehen
+			in der Adresse, und die zuletzt gewählte Ansicht merkt sich dieses Gerät.
+		</p>
+		<h4>Was im Kalender steht</h4>
+		<ul>
+			<li>
+				<strong>Tickets</strong> an ihrem Fälligkeitstag. Überfällige sind fett, mit einer Uhr und „überfällig“,
+				nie rot. Erledigte zeigt die Ebene „Erledigte Tickets“ gedämpft mit Häkchen.
+			</li>
+			<li>
+				<strong>Künftige Wiederholungen</strong> blass und gestrichelt: Termine einer Regel, für die es
+				noch kein Ticket gibt, mit „erscheint am …“. Pausierte Regeln zeigt der Kalender nicht. Ein Klick
+				öffnet die Regel.
+			</li>
+			<li>
+				<strong>Termine im Eingang</strong> gedämpft: neue Einträge mit Datum aus Kalendern und Notion,
+				die noch nicht umgewandelt sind. Ein Klick öffnet den Eintrag im Eingang.
+			</li>
+		</ul>
+		<p>
+			Unter „Ebenen“ blendest du jede dieser Arten ein und aus; das merkt sich dieses Gerät. Die
+			Filter sind die von „Aufgaben“ ohne „Fällig“ und Suche. Ein Projekt zeigt auch die Termine des
+			Eingangs mit diesem Zielprojekt; Status, Priorität, Tag und „Wiederkehrend“ blenden die
+			Termine des Eingangs aus, weil sie keine haben.
+		</p>
+		<p>
+			Die Farbe eines Tickets steht als Streifen vor dem Titel, wie in „Aufgaben“. Ein Tag zeigt im
+			Monat höchstens vier Einträge; „+N weitere“ öffnet die Liste des Tages. Ein Klick auf ein
+			Ticket öffnet es neben dem Kalender, so wie du Tickets zuletzt geöffnet hast (Seitenpanel oder
+			Vollansicht); ein Rechtsklick öffnet sein Menü. In einem schmalen Fenster startet der Kalender
+			mit der Agenda, und der Monat zeigt Punkte statt Titel.
+		</p>
+		<h4>Mit der Tastatur</h4>
+		<ul>
+			<li>
+				Im Monat und in der Woche: die Pfeiltasten von Tag zu Tag, <kbd>Pos1</kbd> und
+				<kbd>Ende</kbd>
+				zum Anfang und Ende der Woche (mit <kbd>Strg</kbd> des Monats).
+			</li>
+			<li><kbd>Bild auf</kbd> und <kbd>Bild ab</kbd>: einen Monat bzw. eine Woche weiter.</li>
+			<li><kbd>Enter</kbd> führt in die Einträge des Tages, <kbd>Esc</kbd> zurück zum Tag.</li>
+			<li><kbd>Umschalt</kbd>+<kbd>F10</kbd> öffnet das Menü eines Tickets.</li>
+			<li><kbd>m</kbd> auf einem offenen Ticket verschiebt seine Fälligkeit (siehe unten).</li>
+		</ul>
+		<h4>Fälligkeit verschieben</h4>
+		<p>
+			Im Monat und in der Woche ziehst du ein offenes Ticket mit der Maus auf einen anderen Tag; das
+			setzt seine Fälligkeit. Ohne Maus wählst du im Menü des Tickets „Fälligkeit verschieben …“
+			oder drückst <kbd>m</kbd>: Dann wählst du den Tag mit den Pfeiltasten (auch in anderen
+			Monaten) oder tippst bzw. klickst ihn an, <kbd>Enter</kbd> setzt ihn, <kbd>Esc</kbd> oder „Abbrechen“
+			lassen alles, wie es war. Danach meldet sich „Fälligkeit von HAUS-12 auf 09.10.2026 gesetzt.“ mit
+			„Rückgängig“.
+		</p>
+		<p>
+			Erledigte Tickets, künftige Wiederholungen und Termine im Eingang bleiben, wo sie sind. Bei
+			einem Ticket einer Serie verschiebt sich nur dieses Ticket, nicht die Serie. Hat jemand das
+			Ticket inzwischen geändert, etwa in einem anderen Tab, wird nichts überschrieben, und eine
+			Meldung sagt es. Auf Touch-Geräten scrollt das Ziehen die Seite; dort geht es über das Menü.
+		</p>
 	</section>
 
 	<section id="zugangsdaten" aria-labelledby="zugangsdaten-title">
@@ -923,6 +989,28 @@
 						„Alle aufklappen“ und „Alle zuklappen“ über der Liste öffnen bzw. schließen alle Zeilen.
 						Welche Zeilen offen sind, merkt sich dieser Browser. Das Panel eines Projekts zeigt
 						dieselbe Liste unter „Offene Tickets“, die Kacheln zählen sie als „aktiv“.
+					</li>
+				</ul>
+			</details>
+			<details>
+				<summary>Wie färbe ich Projekte und Tickets?</summary>
+				<ul>
+					<li>
+						Im Panel eines Projekts wählst du unter „Farbe“ eine der zehn Farben (Violett, Indigo,
+						Blau, Himmelblau, Türkis, Grün, Oliv, Senf, Braun, Grau) und speicherst. Alle Tickets
+						des Projekts zeigen sie; ein Unterprojekt ohne eigene Farbe zeigt die seines
+						Oberprojekts („Wie Oberprojekt“).
+					</li>
+					<li>
+						Ein Ticket hat standardmäßig „Wie Projekt“. Unter „Farbe“ im Ticket, in „Neues Ticket“
+						oder mit „Farbe“ in der Leiste mehrerer gewählter Tickets gibst du ihm eine eigene, die
+						vorgeht. Eine Wiederholung gibt ihre Farbe den nächsten Tickets, „Duplizieren …“ nimmt
+						sie mit; jede Änderung steht im Verlauf.
+					</li>
+					<li>
+						Die Farbe ist ein Zusatz: ein Streifen am Anfang der Zeile in „Aufgaben“, ein Punkt vor
+						dem Namen in Projekten, Listen und im Kopf eines Tickets. Ihr Name steht beim Zeigen mit
+						der Maus und für Screenreader immer dabei. Rot gibt es nicht, es bleibt für Fehler.
 					</li>
 				</ul>
 			</details>

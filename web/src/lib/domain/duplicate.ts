@@ -23,6 +23,8 @@ export interface DuplicateTake {
 	subtasks: boolean;
 	/** Copies of the comments with the note "Kopiert aus …". */
 	comments: boolean;
+	/** The own color of the ticket (ADR-0052); without it the copy shows the color of its project. */
+	color: boolean;
 }
 
 export interface DuplicateRequest {
@@ -77,7 +79,8 @@ export function duplicateRequestBody(request: DuplicateRequest): Record<string, 
 		due: request.take.due,
 		parent: request.take.parent,
 		subtasks: request.take.subtasks,
-		comments: request.take.comments
+		comments: request.take.comments,
+		color: request.take.color
 	};
 }
 
@@ -136,7 +139,10 @@ export function duplicateTitle(title: string): string {
 	return `${base.slice(0, room).trimEnd()}…${DUPLICATE_TITLE_SUFFIX}`;
 }
 
-/** What the question takes over at first: the fields of the ticket, not sub-tasks and comments. */
+/**
+ * What the question takes over at first: the fields of the ticket with its color (ADR-0052), not
+ * sub-tasks and comments.
+ */
 export const DEFAULT_TAKE: Readonly<DuplicateTake> = Object.freeze({
 	description: true,
 	priority: true,
@@ -144,7 +150,8 @@ export const DEFAULT_TAKE: Readonly<DuplicateTake> = Object.freeze({
 	due: true,
 	parent: true,
 	subtasks: false,
-	comments: false
+	comments: false,
+	color: true
 });
 
 /** The answers of the question "Wie soll das Duplikat entstehen?". */

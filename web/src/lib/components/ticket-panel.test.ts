@@ -800,6 +800,81 @@ describe('ticket panel: project (E3 plan, T-13)', () => {
 	});
 });
 
+describe('ticket panel: color (ADR-0052)', () => {
+	const BLUE_HOUSE: Project = { ...HOUSE, color: 'blau' };
+
+	async function renderColored(initial: Ticket) {
+		const catalog = catalogOf([BLUE_HOUSE]);
+		await vi.waitFor(() => expect(catalog.state).toBe('ready'));
+		return renderPanel(initial, { catalog });
+	}
+
+	const group = () => screen.getByRole('radiogroup', { name: 'Farbe' });
+	const mark = () => document.querySelector<HTMLElement>('.color-mark');
+
+	it('shows the color in the header and offers the own color after the project, "Wie Projekt (Blau)" first', async () => {
+		await renderColored(ticket({ projectId: HOUSE.id, project: BLUE_HOUSE, color: null }));
+		expect(mark()?.getAttribute('title')).toBe('Farbe Blau, vom Projekt „Haushalt“');
+		expect(mark()?.closest('header')).not.toBeNull();
+		const radios = within(group()).getAllByRole<HTMLInputElement>('radio');
+		expect(radios.map((radio) => radio.labels?.[0]?.textContent?.trim())).toEqual([
+			'Wie Projekt (Blau)',
+			'Violett',
+			'Indigo',
+			'Blau',
+			'Himmelblau',
+			'Türkis',
+			'Grün',
+			'Oliv',
+			'Senf',
+			'Braun',
+			'Grau'
+		]);
+		expect(
+			within(group()).getByRole<HTMLInputElement>('radio', { name: 'Wie Projekt (Blau)' }).checked
+		).toBe(true);
+	});
+
+	it('saves an own color at once and back to "wie Projekt" as null', async () => {
+		const { data } = await renderColored(
+			ticket({ projectId: HOUSE.id, project: BLUE_HOUSE, color: null })
+		);
+		await fireEvent.click(within(group()).getByRole('radio', { name: 'Grün' }));
+		await vi.waitFor(() => expect(data.update).toHaveBeenCalledWith(ID, { color: 'gruen' }));
+		await vi.waitFor(() => expect(mark()?.getAttribute('title')).toBe('Farbe Grün'));
+		expect(within(group()).getByRole<HTMLInputElement>('radio', { name: 'Grün' }).checked).toBe(
+			true
+		);
+
+		await fireEvent.click(within(group()).getByRole('radio', { name: 'Wie Projekt (Blau)' }));
+		await vi.waitFor(() => expect(data.update).toHaveBeenLastCalledWith(ID, { color: null }));
+	});
+
+	it('shows a refusal of the server at the group', async () => {
+		const { data } = await renderColored(ticket({ color: null }));
+		data.update.mockRejectedValueOnce(
+			new DataError('validation', {
+				status: 400,
+				fields: { color: { code: 'validation_invalid_value', message: 'Ungültiger Wert.' } }
+			})
+		);
+		await fireEvent.click(within(group()).getByRole('radio', { name: 'Senf' }));
+		const error = await screen.findByText('Ungültiger Wert.');
+		expect(group().getAttribute('aria-describedby')).toContain(error.closest('p')?.id);
+		// The stored value shows again: "Wie Projekt (keine)" without a project.
+		expect(
+			within(group()).getByRole<HTMLInputElement>('radio', { name: 'Wie Projekt (keine)' }).checked
+		).toBe(true);
+	});
+
+	it('offers no color and shows none while the server does not know the field', async () => {
+		await renderColored(ticket({ projectId: HOUSE.id, project: BLUE_HOUSE }));
+		expect(screen.queryByRole('radiogroup', { name: 'Farbe' })).toBeNull();
+		// The project knows its color, so the header still shows it.
+		expect(mark()?.getAttribute('title')).toBe('Farbe Blau, vom Projekt „Haushalt“');
+	});
+});
+
 describe('ticket panel: tags (E3 plan, T-14)', () => {
 	const GARDEN: Tag = {
 		id: 'tag000000000001',
@@ -1543,6 +1618,17 @@ describe('ticket route: full view (ADR-0025 section 7, UI-7)', () => {
 	it('shows no card "Quelle" for a ticket without source', async () => {
 		const { dialog } = await renderFullView();
 		expect(within(dialog).queryByRole('region', { name: 'Quelle' })).toBeNull();
+	});
+
+	it('shows the color of the ticket before the title of the header, outside of its name (ADR-0052)', async () => {
+		const { dialog } = await renderFullView(ticket({ color: 'violett' }));
+		const mark = dialog.querySelector<HTMLElement>('header .color-mark');
+		expect(mark?.getAttribute('title')).toBe('Farbe Violett');
+		expect(within(mark as HTMLElement).getByText('Farbe Violett')).toBeTruthy();
+		// The dialog keeps its name; the field "Farbe" stands in the card "Details".
+		expect(dialog.getAttribute('aria-labelledby')).toBe(dialog.querySelector('h2')?.id);
+		const details = within(within(dialog).getByRole('region', { name: 'Details' }));
+		expect(details.getByRole<HTMLInputElement>('radio', { name: 'Violett' }).checked).toBe(true);
 	});
 
 	it('edits the fields like the panel', async () => {

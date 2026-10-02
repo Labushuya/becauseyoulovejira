@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { inheritLabel, projectColorOf } from '$lib/domain/colors';
 	import { STATUS_LABELS } from '$lib/domain/labels';
 	import {
 		TEMPLATE_STATUSES,
@@ -14,6 +15,7 @@
 		type TagRef
 	} from '$lib/domain/ticket';
 	import type { EnsureTagResult } from '$lib/stores/catalog.svelte';
+	import ColorChoice from './ColorChoice.svelte';
 	import ErrorIcon from './ErrorIcon.svelte';
 	import PrioritySelect from './PrioritySelect.svelte';
 	import ProjectSelect from './ProjectSelect.svelte';
@@ -29,7 +31,8 @@
 	// draft in a store) works as well. The status is offered only after its migration
 	// (`statusAvailable`); every status but "Erledigt" (ADR-0022 addendum 8). The sub-tasks only
 	// after theirs (`subtasksAvailable`, ADR-0022 addendum 10); at a ticket with sub-tasks the list
-	// can take them over (`ticketSubtasks`).
+	// can take them over (`ticketSubtasks`). The color of the next tickets after the project, "Wie
+	// Projekt (Blau)" first, after its migration (`colorsAvailable`, ADR-0052).
 	let {
 		values = $bindable(),
 		tagText = $bindable(''),
@@ -41,6 +44,7 @@
 		busy = false,
 		statusAvailable = false,
 		subtasksAvailable = false,
+		colorsAvailable = false,
 		ticketSubtasks = [],
 		invalidSubtasks = [],
 		oncreatetag,
@@ -59,7 +63,8 @@
 				| 'project'
 				| 'tags'
 				| 'initial_status'
-				| 'template_subtasks',
+				| 'template_subtasks'
+				| 'color',
 				string
 			>
 		>;
@@ -74,6 +79,8 @@
 		statusAvailable?: boolean;
 		/** The server knows the sub-tasks of the template (after their migration, plan WV-3). */
 		subtasksAvailable?: boolean;
+		/** The server knows the color of the template (after its migration, ADR-0052). */
+		colorsAvailable?: boolean;
 		/** Sub-tasks of the ticket the template is edited at ("Unteraufgaben dieses Tickets übernehmen"). */
 		ticketSubtasks?: readonly TicketSubtask[];
 		/** Rows of the list the owner refused for a missing title. */
@@ -96,10 +103,22 @@
 		projectError: `${uid}-project-error`,
 		tags: `${uid}-tags`,
 		tagsError: `${uid}-tags-error`,
+		color: `${uid}-color`,
+		colorError: `${uid}-color-error`,
 		description: `${uid}-description-error`
 	};
 
 	let tagError = $state<string | null>(null);
+
+	/** The color of the next tickets without an own one: of the project of the template. */
+	const inherited = $derived.by(() => {
+		const id = values.projectId;
+		if (id === null) return null;
+		const project =
+			projects.find((choice) => choice.id === id) ??
+			(currentProject?.id === id ? currentProject : null);
+		return projectColorOf(project)?.color ?? null;
+	});
 
 	const chosenTags = $derived(
 		values.tagIds.flatMap((tagId) => {
@@ -209,6 +228,21 @@
 	{/if}
 </div>
 
+{#if colorsAvailable}
+	<div class="field">
+		<span class="label" id={ids.color}>Farbe</span>
+		<ColorChoice
+			value={values.color}
+			inheritLabel={inheritLabel('ticket', inherited)}
+			{inherited}
+			labelledby={ids.color}
+			error={errors.color ?? null}
+			errorId={ids.colorError}
+			onchoose={(color) => (values = { ...values, color })}
+		/>
+	</div>
+{/if}
+
 <div class="field">
 	<label for={ids.tags}>Tags</label>
 	<TagPicker
@@ -268,7 +302,8 @@
 		gap: 0.75rem 1rem;
 	}
 
-	label {
+	label,
+	.label {
 		font-size: var(--font-size-control);
 		font-weight: 500;
 		color: var(--color-text-muted);

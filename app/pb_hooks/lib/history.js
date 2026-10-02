@@ -7,7 +7,8 @@
 'use strict';
 
 // Business fields of tickets that are recorded on change; the pinned comment since ADR-0044
-// (pinned, released, replaced; the values are comment IDs).
+// (pinned, released, replaced; the values are comment IDs), the own color since ADR-0052 (keys of
+// the palette, '' for "wie Projekt"; before its migration the field reads as '' and changes nothing).
 var TRACKED_FIELDS = Object.freeze([
   'title',
   'description',
@@ -21,7 +22,8 @@ var TRACKED_FIELDS = Object.freeze([
   'recurrence',
   'key',
   'household',
-  'pinned_comment'
+  'pinned_comment',
+  'color'
 ]);
 
 // Multi-value fields: order does not matter, stored as sorted JSON array.

@@ -2,7 +2,14 @@
 	import { resolve } from '$app/paths';
 	import { page } from '$app/state';
 	import { findTrashStore } from '$lib/stores/trash.svelte';
-	import { inboxHref, listHref, projectsHref, recurrencesHref, trashHref } from '$lib/ticket-links';
+	import {
+		calendarHref,
+		inboxHref,
+		listHref,
+		projectsHref,
+		recurrencesHref,
+		trashHref
+	} from '$lib/ticket-links';
 
 	// Switch "Aufgaben | Projekte | Eingang | Wiederholungen" in the section bar of the views (E3
 	// plan, T-3 and package 14; E4 plan, package 3; E5 plan, T-6 and package 5; ADR-0010 section
@@ -15,13 +22,14 @@
 	// (ADR-0026 section 1) no view is current: current is null, and all links lead to the plain views.
 	// After the segments stands the quiet link "Papierkorb" (ADR-0037 §9) with the number of tickets
 	// in it, from the store of the (app) layout; it is no segment, so it does not compete with the
-	// views.
+	// views. "Kalender" (ADR-0053) comes last among the views and keeps its view, date and filters
+	// while the calendar is shown.
 	let {
 		current,
 		inboxCount = null,
 		projectsNewCount = 0
 	}: {
-		current: 'tasks' | 'projects' | 'inbox' | 'recurrences' | 'trash' | null;
+		current: 'tasks' | 'projects' | 'inbox' | 'recurrences' | 'calendar' | 'trash' | null;
 		/** New inbox entries; null while not loaded (no number is shown). */
 		inboxCount?: number | null;
 		/** New tickets in projects (ADR-0015 section 5); 0 shows no number. */
@@ -32,6 +40,7 @@
 	const trashCount = $derived(trash?.count ?? null);
 	const tasksHref = $derived(current === 'tasks' ? listHref(page.url) : resolve('/'));
 	const inboxLink = $derived(current === 'inbox' ? inboxHref(page.url) : inboxHref());
+	const calendarLink = $derived(current === 'calendar' ? calendarHref(page.url) : calendarHref());
 </script>
 
 <nav class="view-switch" aria-label="Ansicht">
@@ -74,6 +83,12 @@
 				<path d="M3.25 1.75v3h3M12.75 14.25v-3h-3" />
 			</svg>
 			Wiederholungen
+		</a>
+		<a href={calendarLink} aria-current={current === 'calendar' ? 'page' : undefined}>
+			<svg viewBox="0 0 16 16" aria-hidden="true" focusable="false">
+				<path d="M2.5 4.5h11v9h-11zM2.5 7.5h11M5.5 2.5v3M10.5 2.5v3" />
+			</svg>
+			Kalender
 		</a>
 	</div>
 	<a

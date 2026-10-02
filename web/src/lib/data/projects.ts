@@ -3,6 +3,7 @@
 // The hooks set the scope and guard code, scope and deletion (E1 plan, OF-6 and OF-14).
 
 import type PocketBase from 'pocketbase';
+import { colorOf, type ProjectColor } from '../domain/colors';
 import type { Project, ProjectDraft, ProjectPatch } from '../domain/project';
 import type { Status } from '../domain/status';
 import type { ProjectRef } from '../domain/ticket';
@@ -18,23 +19,33 @@ export interface ProjectRecord {
 	archived: boolean;
 	/** Parent project (ADR-0034); absent while the server lacks the field (before the restart). */
 	parent?: string;
+	/** Color (ADR-0052), '' for none; absent while the server lacks the field (before the restart). */
+	color?: string;
 	updated?: string;
 }
 
 /**
- * Fields of the catalog (T-16), with `updated` for the order of events and `parent` (ADR-0034).
- * A server without `parent` simply leaves it out of the answer.
+ * Fields of the catalog (T-16), with `updated` for the order of events, `parent` (ADR-0034) and
+ * `color` (ADR-0052). A server without `parent` or `color` simply leaves them out of the answer.
  */
-export const PROJECT_FIELDS = 'id,name,code,archived,parent,updated';
+export const PROJECT_FIELDS = 'id,name,code,archived,parent,color,updated';
 
-/** Project as referenced by a ticket (expanded relation). */
+/** Project as referenced by a ticket (expanded relation), with its color when the server knows it. */
 export function toProjectRef(record: ProjectRecord): ProjectRef {
-	return { id: record.id, name: record.name, code: record.code, archived: record.archived };
+	const ref: ProjectRef = {
+		id: record.id,
+		name: record.name,
+		code: record.code,
+		archived: record.archived
+	};
+	if (record.color !== undefined) ref.color = colorOf(record.color);
+	return ref;
 }
 
 /**
  * Project of the catalog; throws without `updated` (then the fields were wrong). Without the
- * field `parent` the server has not run the migration of ADR-0034 yet (`withoutParentField`).
+ * field `parent` the server has not run the migration of ADR-0034 yet (`withoutParentField`),
+ * without `color` the one of ADR-0052 (`withoutColorField`).
  */
 export function toProject(record: ProjectRecord): Project {
 	if (typeof record.updated !== 'string') throw new RangeError('Project without updated');
@@ -44,12 +55,18 @@ export function toProject(record: ProjectRecord): Project {
 		parentId: record.parent ? record.parent : null
 	};
 	if (record.parent === undefined) project.withoutParentField = true;
+	if (record.color === undefined) project.withoutColorField = true;
 	return project;
 }
 
 /** Body field of the parent: '' for none; nothing when the draft leaves the parent as it is. */
 function parentBody(parentId: string | null | undefined): { parent?: string } {
 	return parentId === undefined ? {} : { parent: parentId ?? '' };
+}
+
+/** Body field of the color: '' for none; nothing when the draft leaves the color as it is. */
+function colorBody(color: ProjectColor | null | undefined): { color?: string } {
+	return color === undefined ? {} : { color: color ?? '' };
 }
 
 /** Projects visible to the signed-in user, archived ones included, sorted by code. */
@@ -64,7 +81,8 @@ export function listProjects(pb: PocketBase, { signal }: RequestOptions = {}): P
 
 /**
  * Creates a private project of the signed-in user; `household` stays empty (E7). With `parentId`
- * it becomes a sub project (ADR-0034); the hook checks the parent.
+ * it becomes a sub project (ADR-0034); the hook checks the parent. With `color` it gets a color of
+ * the palette (ADR-0052); PocketBase checks the value.
  */
 export function createProject(
 	pb: PocketBase,
@@ -74,19 +92,24 @@ export function createProject(
 	return withDataErrors(signal, async () => {
 		const owner = currentUserId(pb.authStore.record);
 		if (owner === null) throw new DataError('session');
-		const record = await pb
-			.collection(PROJECTS)
-			.create<ProjectRecord>(
-				{ owner, name: draft.name, code: draft.code, ...parentBody(draft.parentId) },
-				{ fields: PROJECT_FIELDS, signal }
-			);
+		const record = await pb.collection(PROJECTS).create<ProjectRecord>(
+			{
+				owner,
+				name: draft.name,
+				code: draft.code,
+				...parentBody(draft.parentId),
+				...colorBody(draft.color)
+			},
+			{ fields: PROJECT_FIELDS, signal }
+		);
 		return toProject(record);
 	});
 }
 
 /**
- * Sends only the given fields (name, code, parent); the hook keeps the code of a project in use
- * and checks the parent (ADR-0034). `parentId: null` releases a sub project.
+ * Sends only the given fields (name, code, parent, color); the hook keeps the code of a project in
+ * use and checks the parent (ADR-0034). `parentId: null` releases a sub project, `color: null`
+ * removes the color (ADR-0052).
  */
 export function updateProject(
 	pb: PocketBase,
@@ -95,7 +118,10 @@ export function updateProject(
 	{ signal }: RequestOptions = {}
 ): Promise<Project> {
 	return withDataErrors(signal, async () => {
-		const body: Record<string, string> = { ...parentBody(patch.parentId) };
+		const body: Record<string, string> = {
+			...parentBody(patch.parentId),
+			...colorBody(patch.color)
+		};
 		if (patch.name !== undefined) body.name = patch.name;
 		if (patch.code !== undefined) body.code = patch.code;
 		const record = await pb

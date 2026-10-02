@@ -4,6 +4,7 @@
 
 import type PocketBase from 'pocketbase';
 import { addDays, type CalendarDate } from '../domain/berlin-date';
+import { colorOf } from '../domain/colors';
 import {
 	duplicateRequestBody,
 	toDuplicateOutcome,
@@ -64,6 +65,8 @@ export const TICKET_LIST_FIELDS = [
 	'source',
 	// Area of the ticket, for the rules of the ticket picker (ADR-0042).
 	'scope',
+	// Own color (ADR-0052); unknown to the server before the migration 1790203400.
+	'color',
 	'completed_at',
 	'created',
 	'updated',
@@ -71,6 +74,7 @@ export const TICKET_LIST_FIELDS = [
 	'expand.project.name',
 	'expand.project.code',
 	'expand.project.archived',
+	'expand.project.color',
 	'expand.tags.id',
 	'expand.tags.name',
 	'expand.parent.id',
@@ -105,6 +109,8 @@ export interface TicketRecord {
 	/** Pinned comment, '' without one; missing before the migration 1790202600 (ADR-0044). */
 	pinned_comment?: string;
 	scope?: string;
+	/** Own color, '' for "wie Projekt"; missing before the migration 1790203400 (ADR-0052). */
+	color?: string;
 	completed_at: string;
 	created: string;
 	updated: string;
@@ -140,6 +146,8 @@ export function toTicketSummary(record: TicketRecord): TicketSummary {
 			: null,
 		source: isInboxChannel(record.source) ? record.source : null,
 		...(record.scope ? { scope: record.scope } : {}),
+		// Left out while the server does not know the field yet (before the restart, ADR-0052).
+		...(record.color !== undefined ? { color: colorOf(record.color) } : {}),
 		completedAt: record.completed_at || null,
 		created: record.created,
 		updated: record.updated
@@ -180,6 +188,8 @@ function patchBody(patch: TicketPatch): PatchBody {
 	if (patch.blocksParent !== undefined) body.blocks_parent = patch.blocksParent;
 	// Pins a comment of the ticket, '' releases the pin (ADR-0044); the hook checks the comment.
 	if (patch.pinnedComment !== undefined) body.pinned_comment = patch.pinnedComment ?? '';
+	// '' is "wie Projekt" (ADR-0052); PocketBase checks the key of the palette.
+	if (patch.color !== undefined) body.color = patch.color ?? '';
 	// The only change a client may make to the series: leaving it (ADR-0023 section 1).
 	if (patch.detachSeries === true) body.recurrence = '';
 	return body;
@@ -511,6 +521,56 @@ export function listDoneTickets(
 	});
 }
 
+/** Done tickets of the calendar per page (ADR-0053 §5). */
+export const CALENDAR_DONE_PAGE_SIZE = 200;
+
+/** Days of the calendar: the first and the last one shown, both included. */
+export interface DueRange {
+	from: CalendarDate;
+	to: CalendarDate;
+}
+
+/** Done tickets due within a range of days, both included. */
+const DONE_DUE_RANGE_FILTER = [
+	'status = {:doneStatus}',
+	'due >= {:firstDayOfPeriod}',
+	'due <= {:lastDayOfPeriod}'
+].join(' && ');
+
+/**
+ * One page of the done tickets due in the shown period of the calendar (ADR-0053 §5), by due date,
+ * then most recently completed. Without the filters of the list: the calendar filters them in the
+ * client like the open tickets, so a change of a filter needs no request. `hasMore` is true when the
+ * page was full.
+ */
+export function listDoneTicketsDue(
+	pb: PocketBase,
+	range: DueRange,
+	page: number,
+	{ signal }: RequestOptions = {}
+): Promise<TicketChoicePage> {
+	return withDataErrors(signal, async () => {
+		const result = await pb
+			.collection(TICKETS)
+			.getList<TicketRecord>(page, CALENDAR_DONE_PAGE_SIZE, {
+				filter: pb.filter(DONE_DUE_RANGE_FILTER, {
+					doneStatus: 'done' satisfies Status,
+					firstDayOfPeriod: fromDueInput(range.from),
+					lastDayOfPeriod: fromDueInput(range.to)
+				}),
+				sort: 'due,-completed_at,-id',
+				fields: TICKET_LIST_FIELDS,
+				expand: TICKET_EXPAND,
+				skipTotal: true,
+				signal
+			});
+		return {
+			items: result.items.map(toTicketSummary),
+			hasMore: result.items.length === CALENDAR_DONE_PAGE_SIZE
+		};
+	});
+}
+
 export function getTicket(pb: PocketBase, id: string, { signal }: RequestOptions = {}) {
 	return withDataErrors(signal, async (): Promise<Ticket> => {
 		const record = await pb.collection(TICKETS).getOne<TicketRecord>(id, {
@@ -552,7 +612,9 @@ export function createTicket(
 				project: draft.project ?? '',
 				tags: [...(draft.tags ?? [])],
 				// A sub-task (ADR-0033); the hook checks level and scope of the parent.
-				...(draft.parent ? { parent: draft.parent } : {})
+				...(draft.parent ? { parent: draft.parent } : {}),
+				// An own color (ADR-0052); without one the ticket shows the color of its project.
+				...(draft.color ? { color: draft.color } : {})
 			},
 			{ fields: TICKET_DETAIL_FIELDS, expand: TICKET_EXPAND, signal }
 		);

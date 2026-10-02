@@ -17,6 +17,7 @@ import {
 	DEFAULT_USERS_RULES,
 	EXPECTED_BACKUPS,
 	EXPECTED_COLLECTIONS,
+	PROJECT_COLORS,
 	RULE_NAMES,
 	assertSchema,
 	readDataDir
@@ -653,9 +654,12 @@ describe('migration rollback of the 25 MB originals (ADR-0031, addendum D)', () 
 							return { ...plain, fields: plain.fields.filter((field) => field.name !== 'original') };
 						}
 						if (collection.name === 'projects') {
+							// The colors (ADR-0052) add a field to projects as well.
 							return {
 								...collection,
-								fields: collection.fields.filter((field) => field.name !== 'parent'),
+								fields: collection.fields.filter(
+									(field) => field.name !== 'parent' && !COLOR_FIELDS.includes(field.name)
+								),
 								indexes: collection.indexes.filter((index) => !/idx_projects_parent/.test(index))
 							};
 						}
@@ -751,8 +755,11 @@ describe('migration rollback of the sub projects (ADR-0034)', () => {
 				assertSchema(readDataDir(dataDir).collections);
 				expect(others(dataDir)).toEqual(otherCollections);
 				withDatabase(dataDir, (db) => {
-					// Existing projects stay top-level; nothing else changes.
-					expect(projectRows(db)).toEqual(before.projects.map((row) => ({ ...row, parent: '' })));
+					// Existing projects stay top-level; nothing else changes (the colors of ADR-0052 run
+					// along and add an empty value).
+					expect(projectRows(db)).toEqual(
+						before.projects.map((row) => ({ ...row, parent: '', color: '' }))
+					);
 					expect(withoutFields(snapshot(db).tickets, LATER_TICKET_FIELDS)).toEqual(before.tickets);
 					expect(counterRows(db)).toEqual(before.counters);
 					// The hierarchy that is lost on the way back.
@@ -774,7 +781,9 @@ describe('migration rollback of the sub projects (ADR-0034)', () => {
 
 				expect(appliedFiles(await migrate(args, 'up'), 'Applied')).toEqual(fromParent);
 				withDatabase(dataDir, (db) => {
-					expect(projectRows(db)).toEqual(before.projects.map((row) => ({ ...row, parent: '' })));
+					expect(projectRows(db)).toEqual(
+						before.projects.map((row) => ({ ...row, parent: '', color: '' }))
+					);
 				});
 			});
 		}
@@ -796,18 +805,23 @@ function withDatabase(dataDir, fn) {
 	}
 }
 
-/** Rows of the tables the E4 and E5 migrations touch; a missing table gives null. */
+/**
+ * Rows of the tables the E4 and E5 migrations touch; a missing table gives null. Without the column
+ * of the colors (ADR-0052, 1790203400): every earlier test runs that migration along, and it only
+ * adds an empty value; its own test reads the column itself (colorRows).
+ */
 function snapshot(db) {
 	const exists = (table) =>
 		db.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?").get(table) !== undefined;
 	const rows = (table) => (exists(table) ? db.prepare(`SELECT * FROM ${table} ORDER BY id`).all() : null);
+	const withoutColor = (list) => (list === null ? null : withoutFields(list, COLOR_FIELDS));
 	return {
 		users: rows('users'),
-		tickets: rows('tickets'),
+		tickets: withoutColor(rows('tickets')),
 		inbox_items: rows('inbox_items'),
 		ticket_reads: rows('ticket_reads'),
 		connections: rows('connections'),
-		recurrence_rules: rows('recurrence_rules')
+		recurrence_rules: withoutColor(rows('recurrence_rules'))
 	};
 }
 
@@ -820,14 +834,29 @@ const EACH_TICKET_FIELDS = ['occurrence'];
 const STATUS_RULE_FIELDS = ['initial_status'];
 // The sub-tasks of the template (plan WV-3, 1790202700), which every earlier test runs along as well.
 const SUBTASKS_RULE_FIELDS = ['template_subtasks'];
-const LATER_RULE_FIELDS = [...EACH_RULE_FIELDS, ...STATUS_RULE_FIELDS, ...SUBTASKS_RULE_FIELDS];
+// The colors of projects and tickets (ADR-0052, 1790203400), which every earlier test runs along as
+// well: one select field `color` at projects, tickets and recurrence_rules.
+const COLOR_MIGRATION = '1790203400_colors.js';
+const COLOR_FIELDS = ['color'];
+const COLOR_COLLECTIONS = ['projects', 'tickets', 'recurrence_rules'];
+const LATER_RULE_FIELDS = [
+	...EACH_RULE_FIELDS,
+	...STATUS_RULE_FIELDS,
+	...SUBTASKS_RULE_FIELDS,
+	...COLOR_FIELDS
+];
 // Fields of the later migration of the trash (ADR-0037, 1790202300), which every earlier test runs
 // along as well.
 const TRASH_TICKET_FIELDS = ['deleted_at', 'deleted_by', 'trash'];
 const TRASH_USER_FIELDS = ['trash_retention'];
 // The pinned comment (ADR-0044, 1790202600), which every earlier test runs along as well.
 const PIN_TICKET_FIELDS = ['pinned_comment'];
-const LATER_TICKET_FIELDS = [...EACH_TICKET_FIELDS, ...TRASH_TICKET_FIELDS, ...PIN_TICKET_FIELDS];
+const LATER_TICKET_FIELDS = [
+	...EACH_TICKET_FIELDS,
+	...TRASH_TICKET_FIELDS,
+	...PIN_TICKET_FIELDS,
+	...COLOR_FIELDS
+];
 // The target project of the ways into the inbox (ADR-0049, 1790203100), which every earlier test
 // runs along as well: a relation at inbox_items and connections, a JSON field at users.
 const TARGET_MIGRATION = '1790203100_inbox_target_project.js';
@@ -970,12 +999,20 @@ function withoutTargetFields(collection) {
 	};
 }
 
+/** A collection without the field of the colors (ADR-0052, 1790203400). */
+function withoutColorFields(collection) {
+	if (!COLOR_COLLECTIONS.includes(collection.name)) return collection;
+	return { ...collection, fields: collection.fields.filter((field) => !COLOR_FIELDS.includes(field.name)) };
+}
+
 /**
  * A collection without what the folder channel adds (ADR-0051, 1790203300): the value "folder" of
  * inbox_items.channel, tickets.source and connections.type, the kind "file", secret_env required
- * again and 1 MB for connections.watch.
+ * again and 1 MB for connections.watch; and without the colors that follow it (withoutColorFields),
+ * since every test that runs the one along runs the other as well.
  */
-function withoutFolderChannel(collection) {
+function withoutFolderChannel(input) {
+	const collection = withoutColorFields(input);
 	if (!['inbox_items', 'tickets', 'connections'].includes(collection.name)) return collection;
 	return {
 		...collection,
@@ -1245,7 +1282,8 @@ describe('migration rollback of "Jeden Termin einzeln anlegen" (plan OR-5)', () 
 				BACKUP_SCHEDULE_MIGRATION,
 				TARGET_MIGRATION,
 				GITHUB_MIGRATION,
-				FOLDER_MIGRATION
+				FOLDER_MIGRATION,
+				COLOR_MIGRATION
 			]);
 
 			await withTempDataDir(async ({ dataDir, args }) => {
@@ -1391,7 +1429,8 @@ describe('migration rollback of the trash (ADR-0037)', () => {
 				BACKUP_SCHEDULE_MIGRATION,
 				TARGET_MIGRATION,
 				GITHUB_MIGRATION,
-				FOLDER_MIGRATION
+				FOLDER_MIGRATION,
+				COLOR_MIGRATION
 			]);
 
 			await withTempDataDir(async ({ dataDir, args }) => {
@@ -1495,7 +1534,8 @@ describe('migration rollback of the own inbox (ADR-0038)', () => {
 				BACKUP_SCHEDULE_MIGRATION,
 				TARGET_MIGRATION,
 				GITHUB_MIGRATION,
-				FOLDER_MIGRATION
+				FOLDER_MIGRATION,
+				COLOR_MIGRATION
 			]);
 
 			await withTempDataDir(async ({ dataDir, args }) => {
@@ -1621,7 +1661,8 @@ describe('migration rollback of "Status beim Anlegen" (plan WV, ADR-0022 addendu
 				BACKUP_SCHEDULE_MIGRATION,
 				TARGET_MIGRATION,
 				GITHUB_MIGRATION,
-				FOLDER_MIGRATION
+				FOLDER_MIGRATION,
+				COLOR_MIGRATION
 			]);
 			const ruleFields = [...STATUS_RULE_FIELDS, ...SUBTASKS_RULE_FIELDS];
 
@@ -1718,7 +1759,8 @@ describe('migration rollback of the pinned comment (ADR-0044)', () => {
 				BACKUP_SCHEDULE_MIGRATION,
 				TARGET_MIGRATION,
 				GITHUB_MIGRATION,
-				FOLDER_MIGRATION
+				FOLDER_MIGRATION,
+				COLOR_MIGRATION
 			]);
 
 			await withTempDataDir(async ({ dataDir, args }) => {
@@ -1815,7 +1857,8 @@ describe('migration rollback of the sub-tasks of the template (plan WV-3, ADR-00
 				BACKUP_SCHEDULE_MIGRATION,
 				TARGET_MIGRATION,
 				GITHUB_MIGRATION,
-				FOLDER_MIGRATION
+				FOLDER_MIGRATION,
+				COLOR_MIGRATION
 			]);
 
 			await withTempDataDir(async ({ dataDir, args }) => {
@@ -1909,7 +1952,7 @@ describe('migration rollback of the target project (ADR-0049)', () => {
 		async () => {
 			// The GitHub channel (ADR-0050, 1790203200) follows and runs along; it changes no row.
 			const fromTarget = MIGRATION_FILES.slice(MIGRATION_FILES.indexOf(TARGET_MIGRATION));
-			expect(fromTarget).toEqual([TARGET_MIGRATION, GITHUB_MIGRATION, FOLDER_MIGRATION]);
+			expect(fromTarget).toEqual([TARGET_MIGRATION, GITHUB_MIGRATION, FOLDER_MIGRATION, COLOR_MIGRATION]);
 
 			await withTempDataDir(async ({ dataDir, args }) => {
 				await migrate(args, 'up');
@@ -2004,7 +2047,7 @@ describe('migration rollback of the GitHub channel (ADR-0050)', () => {
 		async () => {
 			// The folder channel (ADR-0051, 1790203300) follows and runs along; it changes no row.
 			const fromGithub = MIGRATION_FILES.slice(MIGRATION_FILES.indexOf(GITHUB_MIGRATION));
-			expect(fromGithub).toEqual([GITHUB_MIGRATION, FOLDER_MIGRATION]);
+			expect(fromGithub).toEqual([GITHUB_MIGRATION, FOLDER_MIGRATION, COLOR_MIGRATION]);
 
 			await withTempDataDir(async ({ dataDir, args }) => {
 				await migrate(args, 'up');
@@ -2113,8 +2156,9 @@ describe('migration rollback of the folder channel (ADR-0051)', () => {
 	it(
 		'adds the values, makes the variable optional and gives the state more room without changing a row; on the way back folder entries become manual ones and folder connections go',
 		async () => {
+			// The colors (ADR-0052, 1790203400) follow and run along; they change no row.
 			const fromFolder = MIGRATION_FILES.slice(MIGRATION_FILES.indexOf(FOLDER_MIGRATION));
-			expect(fromFolder).toEqual([FOLDER_MIGRATION]);
+			expect(fromFolder).toEqual([FOLDER_MIGRATION, COLOR_MIGRATION]);
 
 			await withTempDataDir(async ({ dataDir, args }) => {
 				await migrate(args, 'up');
@@ -2177,6 +2221,98 @@ describe('migration rollback of the folder channel (ADR-0051)', () => {
 
 				expect(appliedFiles(await migrate(args, 'up'), 'Applied')).toEqual(fromFolder);
 				assertSchema(readDataDir(dataDir).collections);
+			});
+		}
+	);
+});
+
+describe('migration rollback of the colors (ADR-0052)', () => {
+	const OWNER = 'user00000000001';
+	const SCOPE = 'u:user00000000001';
+	const colorField = (dataDir, name) =>
+		readDataDir(dataDir)
+			.collections.find((collection) => collection.name === name)
+			?.fields.find((field) => field.name === 'color');
+	const projectRows = (db) => db.prepare('SELECT * FROM projects ORDER BY id').all();
+	/** The rows of the three collections with a color, the column included (snapshot leaves it out). */
+	const rows = (db) =>
+		Object.fromEntries(
+			COLOR_COLLECTIONS.map((table) => [table, db.prepare(`SELECT * FROM ${table} ORDER BY id`).all()])
+		);
+	const withoutColorColumns = (data) =>
+		Object.fromEntries(Object.entries(data).map(([table, list]) => [table, withoutFields(list, COLOR_FIELDS)]));
+
+	/** A project with a sub project, a rule and two tickets, as before the colors. */
+	function insertData(db) {
+		db.prepare('INSERT INTO users (id, email, tokenKey, password, created, updated) VALUES (?, ?, ?, ?, ?, ?)').run(OWNER, 'eins@example.invalid', 'tk1', 'hash', STAMP, STAMP);
+		const project = db.prepare(
+			'INSERT INTO projects (id, name, code, archived, parent, owner, household, scope, created, updated) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+		);
+		project.run('project00000001', 'Haus', 'HAUS', 0, '', OWNER, '', SCOPE, STAMP, STAMP);
+		project.run('project00000002', 'Garten', 'GART', 0, 'project00000001', OWNER, '', SCOPE, STAMP, STAMP);
+		db.prepare(
+			'INSERT INTO recurrence_rules (id, title, priority, mode, freq, interval, weekdays, anchor, lead_days, next_due, active, project, scope, owner, created, updated) ' +
+				'VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+		).run('rule00000000001', 'Rasen', 'medium', 'calendar', 'weekly', 1, '["SA"]', '2026-09-26 00:00:00.000Z', 3, '2026-10-03 00:00:00.000Z', 1, 'project00000002', SCOPE, OWNER, STAMP, STAMP);
+		const ticket = db.prepare(
+			'INSERT INTO tickets (id, number, key, title, status, priority, project, recurrence, scope, owner, created, updated) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+		);
+		ticket.run('ticket000000001', 1, 'HAUS-1', 'Dach', 'open', 'high', 'project00000001', '', SCOPE, OWNER, STAMP, STAMP);
+		ticket.run('ticket000000002', 1, 'GART-1', 'Rasen', 'open', 'medium', 'project00000002', 'rule00000000001', SCOPE, OWNER, STAMP, STAMP);
+	}
+
+	it(
+		'adds a select field of the palette to projects, tickets and rules without changing a row; the way back loses only the colors',
+		async () => {
+			const fromColor = MIGRATION_FILES.slice(MIGRATION_FILES.indexOf(COLOR_MIGRATION));
+			expect(fromColor).toEqual([COLOR_MIGRATION]);
+
+			await withTempDataDir(async ({ dataDir, args }) => {
+				await migrate(args, 'up');
+				await migrate(args, 'down', String(fromColor.length));
+				for (const name of COLOR_COLLECTIONS) expect(colorField(dataDir, name), name).toBeUndefined();
+				withDatabase(dataDir, insertData);
+				const before = withDatabase(dataDir, rows);
+				const schemaBefore = withoutTimestamps(readDataDir(dataDir).collections);
+
+				const up = await migrate(args, 'up');
+				expect(appliedFiles(up, 'Applied')).toEqual(fromColor);
+				assertSchema(readDataDir(dataDir).collections);
+				for (const name of COLOR_COLLECTIONS) {
+					expect(colorField(dataDir, name), name).toMatchObject({
+						type: 'select',
+						required: false,
+						values: PROJECT_COLORS,
+						maxSelect: 1
+					});
+				}
+				// No red in the palette (ADR-0009, ADR-0052).
+				expect(PROJECT_COLORS.join(' ')).not.toMatch(/rot|red|orange|pink|rosa/);
+				expect(withoutTimestamps(readDataDir(dataDir).collections).map(withoutColorFields)).toEqual(schemaBefore);
+				// No row changes: data of before has no color.
+				const migrated = withDatabase(dataDir, rows);
+				expect(withoutColorColumns(migrated)).toEqual(before);
+				expect(migrated.projects.map((row) => row.color)).toEqual(['', '']);
+				expect(migrated.tickets.map((row) => row.color)).toEqual(['', '']);
+				expect(migrated.recurrence_rules.map((row) => row.color)).toEqual(['']);
+
+				// Colors set meanwhile go on the way back, nothing else does.
+				withDatabase(dataDir, (db) => {
+					db.prepare('UPDATE projects SET color = ? WHERE id = ?').run('blau', 'project00000001');
+					db.prepare('UPDATE tickets SET color = ? WHERE id = ?').run('gruen', 'ticket000000002');
+					db.prepare('UPDATE recurrence_rules SET color = ? WHERE id = ?').run('senf', 'rule00000000001');
+				});
+				const colored = withDatabase(dataDir, rows);
+
+				const down = await migrate(args, 'down', String(fromColor.length));
+				expect(appliedFiles(down, 'Reverted')).toEqual([...fromColor].reverse());
+				expect(withoutTimestamps(readDataDir(dataDir).collections)).toEqual(schemaBefore);
+				expect(withDatabase(dataDir, rows)).toEqual(withoutColorColumns(colored));
+				expect(withDatabase(dataDir, rows)).toEqual(before);
+
+				expect(appliedFiles(await migrate(args, 'up'), 'Applied')).toEqual(fromColor);
+				assertSchema(readDataDir(dataDir).collections);
+				expect(withDatabase(dataDir, projectRows).map((row) => row.color)).toEqual(['', '']);
 			});
 		}
 	);

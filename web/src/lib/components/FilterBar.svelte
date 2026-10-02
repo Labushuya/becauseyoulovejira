@@ -38,13 +38,18 @@
 	// Sub projects (ADR-0034, UP-5): the projects stand in tree order as "Haus › Garten (GART)"; a
 	// project takes its sub projects in, and the checkbox "Unterprojekte einbeziehen" below the
 	// choices switches that off (`unterprojekte=0`). It is locked without sub projects.
+	// The calendar (ADR-0053 §3) uses the same bar with the same parameters, without "Fällig" (its
+	// grid is the axis of the due date) and without the search (the server answers it for the list).
 	let {
 		catalog,
+		calendar = false,
 		searchBusy = false,
 		searchError = null,
 		onretrysearch = () => undefined
 	}: {
 		catalog: CatalogStore;
+		/** The bar of the calendar: without "Fällig" and the search. */
+		calendar?: boolean;
 		/** A changed search waits for its pause or its answer. */
 		searchBusy?: boolean;
 		/** Failure of the search; the table then shows the tickets without search. */
@@ -189,13 +194,15 @@
 		value={query.priority}
 		onchange={(value: Priority | null) => setFilter('priority', value)}
 	/>
-	<ChipGroup
-		legend="Fällig"
-		name={`${uid}-due`}
-		options={dueOptions}
-		value={query.due}
-		onchange={(value: DueFilter | null) => setFilter('due', value)}
-	/>
+	{#if !calendar}
+		<ChipGroup
+			legend="Fällig"
+			name={`${uid}-due`}
+			options={dueOptions}
+			value={query.due}
+			onchange={(value: DueFilter | null) => setFilter('due', value)}
+		/>
+	{/if}
 	<ChipGroup
 		legend="Quelle"
 		name={`${uid}-source`}
@@ -212,34 +219,36 @@
 	/>
 
 	<div class="selects">
-		<div class="search-field">
-			<label for={ids.search}>
-				<svg viewBox="0 0 16 16" aria-hidden="true" focusable="false">
-					<circle cx="7" cy="7" r="4.25" />
-					<path d="M10.25 10.25L13.5 13.5" />
-				</svg>
-				<span class="visually-hidden">Suche</span>
-			</label>
-			<input
-				id={ids.search}
-				type="search"
-				autocomplete="off"
-				spellcheck="false"
-				placeholder="Titel, Beschreibung oder Key"
-				maxlength={SEARCH_MAX_LENGTH}
-				value={searchValue}
-				aria-busy={searchBusy}
-				aria-describedby={searchError === null
-					? ids.searchHint
-					: `${ids.searchError} ${ids.searchHint}`}
-				oninput={(event) => void search(event.currentTarget.value)}
-				onkeydown={onSearchKeydown}
-				onblur={() => (typed = null)}
-			/>
-			<span class="visually-hidden" id={ids.searchHint}>
-				Die Suche beginnt ab {SEARCH_MIN_LENGTH} Zeichen.
-			</span>
-		</div>
+		{#if !calendar}
+			<div class="search-field">
+				<label for={ids.search}>
+					<svg viewBox="0 0 16 16" aria-hidden="true" focusable="false">
+						<circle cx="7" cy="7" r="4.25" />
+						<path d="M10.25 10.25L13.5 13.5" />
+					</svg>
+					<span class="visually-hidden">Suche</span>
+				</label>
+				<input
+					id={ids.search}
+					type="search"
+					autocomplete="off"
+					spellcheck="false"
+					placeholder="Titel, Beschreibung oder Key"
+					maxlength={SEARCH_MAX_LENGTH}
+					value={searchValue}
+					aria-busy={searchBusy}
+					aria-describedby={searchError === null
+						? ids.searchHint
+						: `${ids.searchError} ${ids.searchHint}`}
+					oninput={(event) => void search(event.currentTarget.value)}
+					onkeydown={onSearchKeydown}
+					onblur={() => (typed = null)}
+				/>
+				<span class="visually-hidden" id={ids.searchHint}>
+					Die Suche beginnt ab {SEARCH_MIN_LENGTH} Zeichen.
+				</span>
+			</div>
+		{/if}
 
 		<FilterPopover
 			legend="Projekt"

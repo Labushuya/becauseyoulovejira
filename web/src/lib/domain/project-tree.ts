@@ -29,7 +29,7 @@ export const PROJECT_PARENT_MESSAGES: Readonly<Record<string, string>> = Object.
 export const PATH_SEPARATOR = ' › ';
 
 /** What the tree needs of a project: the reference and the stored parent ID. */
-export type TreeProject = Pick<ProjectRef, 'id' | 'name' | 'code' | 'archived'> & {
+export type TreeProject = Pick<ProjectRef, 'id' | 'name' | 'code' | 'archived' | 'color'> & {
 	/** Stored parent ID; null or absent for a top-level project. */
 	parentId?: string | null;
 };
@@ -37,7 +37,8 @@ export type TreeProject = Pick<ProjectRef, 'id' | 'name' | 'code' | 'archived'> 
 /**
  * The projects with their parent resolved (`parent`), in the given order. The parent must be in
  * the list; otherwise the project counts as top-level. A top-level project is returned as it is
- * (same object, no `parent`), a sub project as a copy with `parent`.
+ * (same object, no `parent`), a sub project as a copy with `parent`, which carries the color of the
+ * parent as well (ADR-0052: a sub project without its own shows it).
  */
 export function resolveParents<T extends TreeProject>(
 	projects: readonly T[]
@@ -46,7 +47,9 @@ export function resolveParents<T extends TreeProject>(
 	return projects.map((project) => {
 		const parent = project.parentId ? byId.get(project.parentId) : undefined;
 		if (parent === undefined || parent.id === project.id) return project;
-		return { ...project, parent: { id: parent.id, name: parent.name, code: parent.code } };
+		const ref: ProjectParentRef = { id: parent.id, name: parent.name, code: parent.code };
+		if (parent.color !== undefined) ref.color = parent.color;
+		return { ...project, parent: ref };
 	});
 }
 

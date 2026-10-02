@@ -50,6 +50,7 @@ function trim(value) {
  *   project      the project of the duplicate ('' for none); the ticket hook checks it
  *   source       'none' (also when missing) or 'copy'
  *   description, priority, tags, due, parent, subtasks, comments: what to take over (flags)
+ *   color        the own color of the ticket (flag, ADR-0052; a client of before sends none)
  */
 function parseRequest(body) {
   var input = body && typeof body === 'object' ? body : {};
@@ -80,23 +81,25 @@ function parseRequest(body) {
       due: isTrueFlag(input.due),
       parent: isTrueFlag(input.parent),
       subtasks: isTrueFlag(input.subtasks),
-      comments: isTrueFlag(input.comments)
+      comments: isTrueFlag(input.comments),
+      color: isTrueFlag(input.color)
     }
   };
 }
 
 /**
  * Fields taken from a ticket into its copy (plain values in, plain values out): `ticket`
- * { description, priority, tags, due }. What is not taken over gets the default of a new ticket
- * ('' and [], the hook sets priority "medium"). The duplicate and its new sub-tickets use the same
- * choice, each with its own values.
+ * { description, priority, tags, due, color }. What is not taken over gets the default of a new
+ * ticket ('' and [], the hook sets priority "medium"; no color means "wie Projekt"). The duplicate
+ * and its new sub-tickets use the same choice, each with its own values.
  */
 function takenValues(ticket, options) {
   return {
     description: options.description ? text(ticket.description) : '',
     priority: options.priority ? text(ticket.priority) : '',
     tags: options.tags && ticket.tags ? ticket.tags.slice() : [],
-    due: options.due ? text(ticket.due) : ''
+    due: options.due ? text(ticket.due) : '',
+    color: options.color ? text(ticket.color) : ''
   };
 }
 

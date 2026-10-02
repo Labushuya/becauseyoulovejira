@@ -368,3 +368,59 @@ describe('ticket table row: source (E4 plan, package 9; ADR-0019 section 4)', ()
 		expect(cell(row, 'title').querySelector('.source-icon')).toBeNull();
 	});
 });
+
+describe('ticket table row: color (ADR-0052)', () => {
+	const HOUSE: ProjectRef = {
+		id: 'p1',
+		name: 'Haus',
+		code: 'HAUS',
+		archived: false,
+		color: 'blau'
+	};
+	const GARDEN: ProjectRef = {
+		id: 'p2',
+		name: 'Garten',
+		code: 'GART',
+		archived: false,
+		color: null,
+		parent: { id: 'p1', name: 'Haus', code: 'HAUS', color: 'blau' }
+	};
+	const stripeOf = (element: HTMLElement) =>
+		element.querySelector<HTMLElement>('.color-mark.stripe');
+
+	it('shows the color of the project as a stripe at the start of the selection cell, named', () => {
+		const { row } = renderRow({ projectId: 'p1' }, { project: HOUSE, onselect: vi.fn() });
+		const select = cell(row, 'select');
+		const stripe = stripeOf(select);
+		expect(stripe?.dataset.color).toBe('blau');
+		expect(stripe?.getAttribute('title')).toBe('Farbe Blau, vom Projekt „Haus“');
+		expect(within(select).getByText('Farbe Blau, vom Projekt „Haus“')).toBeTruthy();
+		// The checkbox keeps its name; the key cell has no second mark, the row no other color.
+		expect(within(select).getByRole('checkbox', { name: 'TASK-3 auswählen' })).toBeTruthy();
+		expect(stripeOf(cell(row, 'key'))).toBeNull();
+		expect(row.querySelectorAll('.color-mark')).toHaveLength(1);
+	});
+
+	it('shows an own color before the one of the project, and the color of the parent project', () => {
+		const own = renderRow(
+			{ projectId: 'p1', color: 'gruen' },
+			{ project: HOUSE, onselect: vi.fn() }
+		);
+		expect(stripeOf(cell(own.row, 'select'))?.getAttribute('title')).toBe('Farbe Grün');
+		document.body.innerHTML = '';
+		const inherited = renderRow({ projectId: 'p2' }, { project: GARDEN, onselect: vi.fn() });
+		expect(stripeOf(cell(inherited.row, 'select'))?.getAttribute('title')).toBe(
+			'Farbe Blau, vom Oberprojekt „Haus“'
+		);
+	});
+
+	it('has no stripe without a color, and marks the key cell of a row without selection', () => {
+		const plain = renderRow({}, { onselect: vi.fn() });
+		expect(plain.row.querySelector('.color-mark')).toBeNull();
+		document.body.innerHTML = '';
+		const single = renderRow({ projectId: 'p1' }, { project: HOUSE });
+		const key = cell(single.row, 'key');
+		expect(stripeOf(key)?.dataset.color).toBe('blau');
+		expect(within(key).getByText('Farbe Blau, vom Projekt „Haus“')).toBeTruthy();
+	});
+});

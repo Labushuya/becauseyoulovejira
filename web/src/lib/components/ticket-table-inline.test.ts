@@ -62,7 +62,11 @@ function ticket(overrides: Partial<TicketSummary> = {}): TicketSummary {
 	};
 }
 
-async function showTable(open: TicketSummary[], update?: TicketListData['update']) {
+async function showTable(
+	open: TicketSummary[],
+	update?: TicketListData['update'],
+	projects: Project[] = [HOUSE]
+) {
 	mocks.page.url = new URL('/', 'http://localhost:3000');
 	const saved = vi.fn(
 		update ??
@@ -96,7 +100,7 @@ async function showTable(open: TicketSummary[], update?: TicketListData['update'
 	const store = new TicketListStore(data, SESSION, { flags });
 	const catalog = new CatalogStore(
 		{
-			listProjects: vi.fn(async () => [HOUSE]),
+			listProjects: vi.fn(async () => projects),
 			listTags: vi.fn(async () => [GARDEN]),
 			createTag: vi.fn()
 		},
@@ -215,6 +219,17 @@ describe('editing cells in place (plan BI-3)', () => {
 
 		expect(update).toHaveBeenCalledExactlyOnceWith(ID, { project: HOUSE.id });
 		expect(cellButton(/^Projekt von HAUS-1: Haushalt \(HAUS\), ändern$/)).toBeTruthy();
+	});
+
+	it('shows the color of every project in its menu, named by the project (ADR-0052)', async () => {
+		const car: Project = { ...HOUSE, id: 'proj00000000002', name: 'Auto', code: 'AUTO' };
+		await showTable([ticket()], undefined, [{ ...HOUSE, color: 'tuerkis' }, car]);
+		await openCell(/^Projekt von TASK-1/);
+		const house = screen.getByRole('menuitemradio', { hidden: true, name: 'Haushalt (HAUS)' });
+		expect(house.querySelector('.color-mark')?.getAttribute('title')).toBe('Farbe Türkis');
+		expect(house.querySelector('.color-mark')?.getAttribute('aria-hidden')).toBe('true');
+		const plain = screen.getByRole('menuitemradio', { hidden: true, name: 'Auto (AUTO)' });
+		expect(plain.querySelector('.color-mark')).toBeNull();
 	});
 
 	it('sets and clears the due date in its form', async () => {

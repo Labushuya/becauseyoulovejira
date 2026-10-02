@@ -117,6 +117,8 @@ export class CatalogStore {
 	#activeProjects = $derived(treeOrder(this.#projectList.filter((project) => !project.archived)));
 	/** The server knows `projects.parent` (ADR-0034 section 5); true while no project says no. */
 	#hierarchyReady = $derived(!this.#projectList.some((project) => project.withoutParentField));
+	/** The server knows the colors (ADR-0052, migration 1790203400); true while no project says no. */
+	#colorsReady = $derived(!this.#projectList.some((project) => project.withoutColorField));
 	#tagList = $derived([...this.#tags.map.values()].sort(byTagName));
 	#lookups = $derived(historyLookups(this.#projectList, this.#tagList));
 
@@ -147,6 +149,14 @@ export class CatalogStore {
 	 */
 	get hierarchyReady(): boolean {
 		return this.#hierarchyReady;
+	}
+
+	/**
+	 * Whether colors are available (ADR-0052): false while the server has not run their migration
+	 * yet (the panels then show the restart hint instead of the field "Farbe").
+	 */
+	get colorsReady(): boolean {
+		return this.#colorsReady;
 	}
 
 	/** Sub projects of a project by name, archived ones included (ADR-0034). */

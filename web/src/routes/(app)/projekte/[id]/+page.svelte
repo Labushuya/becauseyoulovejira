@@ -79,6 +79,7 @@
 			parentChoices={choices}
 			{subProjects}
 			hierarchyReady={catalog.hierarchyReady}
+			colorsReady={catalog.colorsReady}
 			projectsHref={back}
 			projectHrefOf={(other) => projectHref(other.id, page.url)}
 			newSubProjectHref={newSubProjectHref(current.id, page.url)}

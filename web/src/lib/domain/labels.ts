@@ -37,7 +37,8 @@ export const HISTORY_FIELD_LABELS: Readonly<Record<string, string>> = Object.fre
 	recurrence: 'Wiederholung',
 	key: 'Key',
 	household: 'Haushalt',
-	pinned_comment: 'Angepinnter Kommentar'
+	pinned_comment: 'Angepinnter Kommentar',
+	color: 'Farbe'
 });
 
 /** Label of a history field; an unknown field shows its technical name instead of nothing. */

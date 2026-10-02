@@ -42,11 +42,14 @@ export function lastViewLabel(
 	const tickets = `${resolve('/')}tickets`;
 	const projects = resolve('/projekte');
 	const inbox = resolve('/eingang');
-	const ticket = new RegExp(`^${tickets}/([^/]+)/?$`).exec(pathname)?.[1];
+	const calendar = resolve('/kalender');
+	// A ticket next to the list or next to the calendar (ADR-0053 §6).
+	const ticket = new RegExp(`^(?:${tickets}|${calendar}/tickets)/([^/]+)/?$`).exec(pathname)?.[1];
 	if (ticket !== undefined && ticket !== 'neu') {
 		const key = ticketKey(decodeURIComponent(ticket));
 		return key ? `Zurück zu ${key}` : 'Zurück zum Ticket';
 	}
+	if (pathname === calendar || pathname.startsWith(`${calendar}/`)) return 'Zurück zum Kalender';
 	if (pathname === projects || pathname.startsWith(`${projects}/`)) return 'Zurück zu Projekte';
 	const entry = new RegExp(`^${inbox}/([^/]+)/?$`).exec(pathname)?.[1];
 	if (entry !== undefined && entry !== 'neu') return 'Zurück zum Eintrag';

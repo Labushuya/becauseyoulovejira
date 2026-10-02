@@ -50,6 +50,11 @@ export const INBOX_KINDS = [
 ];
 /** Kinds of connections; "github" since migration 1790203200 (ADR-0050), "folder" since 1790203300 (ADR-0051). */
 export const CONNECTION_TYPES = ['calendar', 'telegram', 'notion', 'mail', 'github', 'folder'];
+/**
+ * The palette of projects and tickets (ADR-0052, migration 1790203400), written out literally; the
+ * same keys as PROJECT_COLORS of web/src/lib/domain/colors.ts (tests/integration/colors.test.mjs).
+ */
+export const PROJECT_COLORS = ['violett', 'indigo', 'blau', 'himmel', 'tuerkis', 'gruen', 'oliv', 'senf', 'braun', 'grau'];
 export const INBOX_STATES = ['new', 'converted', 'discarded'];
 
 const text = (options = {}) => ({ type: 'text', required: false, max: 0, pattern: '', ...options });
@@ -98,7 +103,9 @@ export const EXPECTED_COLLECTIONS = {
 			scope: text({ required: true }),
 			...timestamps(),
 			// Sub projects (ADR-0034, migration 1790202100): one level, checked by the hook.
-			parent: relation('projects')
+			parent: relation('projects'),
+			// Color of the palette (ADR-0052, migration 1790203400), empty for none.
+			color: select(PROJECT_COLORS, false)
 		},
 		indexes: [
 			'CREATE UNIQUE INDEX idx_projects_scope_code ON projects (scope, code)',
@@ -142,7 +149,9 @@ export const EXPECTED_COLLECTIONS = {
 			// "Status beim Anlegen" (plan WV, migration 1790202500): every status but done.
 			initial_status: select(['backlog', 'open', 'in_progress', 'waiting'], false),
 			// Sub-tasks of the template (plan WV-3, migration 1790202700), checked by the hook.
-			template_subtasks: { type: 'json', required: false, maxSize: 40000 }
+			template_subtasks: { type: 'json', required: false, maxSize: 40000 },
+			// Color of the next tickets (ADR-0052, migration 1790203400), empty for "wie Projekt".
+			color: select(PROJECT_COLORS, false)
 		},
 		indexes: [
 			'CREATE INDEX idx_recurrence_rules_owner ON recurrence_rules (owner)',
@@ -177,7 +186,9 @@ export const EXPECTED_COLLECTIONS = {
 			deleted_by: relation('users'),
 			trash: { type: 'json', required: false, maxSize: 20000 },
 			// The pinned comment (ADR-0044, migration 1790202600): one per ticket.
-			pinned_comment: relation('comments')
+			pinned_comment: relation('comments'),
+			// Own color (ADR-0052, migration 1790203400), empty for "wie Projekt".
+			color: select(PROJECT_COLORS, false)
 		},
 		indexes: [
 			'CREATE UNIQUE INDEX idx_tickets_scope_key ON tickets (scope, key)',

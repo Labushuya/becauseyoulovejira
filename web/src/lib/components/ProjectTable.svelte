@@ -1,6 +1,7 @@
 <script lang="ts">
 	import type { Snippet } from 'svelte';
 	import type { ResolvedPathname } from '$app/types';
+	import { colorText, projectColorOf } from '$lib/domain/colors';
 	import { MORE_COLUMNS_HINT } from '$lib/domain/labels';
 	import type { Project } from '$lib/domain/project';
 	import {
@@ -14,6 +15,7 @@
 	import { rowMenus } from '$lib/overlay/context-menu';
 	import { getColumnPrefs } from '$lib/stores/column-prefs.svelte';
 	import ActionsMenu, { type MenuAction } from './ActionsMenu.svelte';
+	import ColorMark from './ColorMark.svelte';
 	import { ColumnFit } from './table/column-fit.svelte';
 	import ResizableHeader from './table/ResizableHeader.svelte';
 
@@ -40,7 +42,8 @@
 	// followed by a row of the full width with the list of the view, indented like the name of its
 	// row, so a sub project shows its own tickets below it. The columns stay as ADR-0030 says; only
 	// open rows render their list. The focus stays on the button (APG "Disclosure"); the list follows
-	// it in the reading order.
+	// it in the reading order. The color of a project (ADR-0052: its own, else of its parent) is a dot
+	// before the name, named for screen readers after it.
 	let {
 		rows,
 		activeOf,
@@ -191,6 +194,7 @@
 				{@const fresh = newOf(project)}
 				{@const aggregated = aggregatedOf(project)}
 				{@const open = ticketList !== undefined && ticketsOpen(project)}
+				{@const color = projectColorOf(project)}
 				<tr
 					class="row"
 					class:active={project.id === activeId}
@@ -241,6 +245,8 @@
 							{#if row.depth === 1 && project.parent}
 								<span class="visually-hidden">Unterprojekt von {project.parent.name},</span>
 							{/if}
+							{#if color}<span class="name-color"><ColorMark shown={color} named={false} /></span
+								>{/if}
 							<a
 								class="title-link"
 								href={hrefOf(project)}
@@ -248,6 +254,7 @@
 								data-row-link
 								aria-current={project.id === activeId ? 'page' : undefined}>{project.name}</a
 							>
+							{#if color}<span class="visually-hidden">, {colorText(color)}</span>{/if}
 							{#if row.context}
 								<span class="visually-hidden">(passt nicht zur Suche, Kontext)</span>
 							{/if}
@@ -481,6 +488,12 @@
 
 	.child .name-cell {
 		padding-left: 1.75rem;
+	}
+
+	/* The dot of the color (ADR-0052) in the middle of the name. */
+	.name-color {
+		display: flex;
+		align-self: center;
 	}
 
 	/* A smaller icon button than the default, so the row keeps its height. */

@@ -3,6 +3,7 @@
 // appear as "(gelöscht)". Descriptions are returned as plain text for a collapsible detail and
 // never rendered as Markdown.
 
+import { COLOR_LABELS, isProjectColor } from './colors';
 import { duplicateHistoryText } from './duplicate';
 import { formatCalendarDate, formatBerlinDateTime } from './format';
 import { CHANNEL_LABELS, isInboxChannel } from './inbox';
@@ -76,6 +77,12 @@ function statusText(value: string): string {
 
 function priorityText(value: string): string {
 	return isPriority(value) ? PRIORITY_LABELS[value] : orEmpty(value);
+}
+
+/** Own color of a ticket (ADR-0052): its name, '' as "wie Projekt". */
+function colorName(value: string): string {
+	if (value === '') return 'wie Projekt';
+	return isProjectColor(value) ? COLOR_LABELS[value] : value;
 }
 
 /** Stored due value as `TT.MM.JJJJ`; an unexpected value is shown as stored. */
@@ -271,6 +278,8 @@ function describe(entry: HistoryEntry, lookups: HistoryLookups, selfId: string |
 			return sourceLinkText(oldValue, newValue);
 		case 'pinned_comment':
 			return pinText(oldValue, newValue, lookups, selfId);
+		case 'color':
+			return change('Farbe', colorName(oldValue), colorName(newValue));
 		case 'duplicate':
 			// ADR-0045 §6: the duplicate names its original, the original its duplicate.
 			return duplicateHistoryText(newValue);

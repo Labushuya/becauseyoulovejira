@@ -161,6 +161,32 @@ describe('the question "Wie soll das Duplikat entstehen?"', () => {
 		expect(statusGroup().getAttribute('aria-required')).toBe('true');
 	});
 
+	it('takes the own color over unless unchecked, and offers it only when the server knows it (ADR-0052)', async () => {
+		const { data } = renderDialog({ ticket: ticket({ color: 'blau' }) });
+		const take = screen.getByRole('group', { name: 'Übernehmen' });
+		const color = within(take).getByRole<HTMLInputElement>('checkbox', { name: 'Farbe: Blau' });
+		expect(color.checked).toBe(true);
+		await fireEvent.click(color);
+		await fireEvent.click(within(statusGroup()).getByRole('radio', { name: 'Offen' }));
+		await submit();
+		await vi.waitFor(() => expect(data.duplicate).toHaveBeenCalledOnce());
+		expect(data.duplicate.mock.calls[0]?.[1].take.color).toBe(false);
+	});
+
+	it('names "wie Projekt" without an own color', () => {
+		renderDialog({ ticket: ticket({ color: null }) });
+		const take = screen.getByRole('group', { name: 'Übernehmen' });
+		expect(
+			within(take).getByRole<HTMLInputElement>('checkbox', { name: 'Farbe: wie Projekt' }).checked
+		).toBe(true);
+	});
+
+	it('has no color to take over while the server does not know it', () => {
+		renderDialog();
+		const take = screen.getByRole('group', { name: 'Übernehmen' });
+		expect(within(take).queryByRole('checkbox', { name: /Farbe/ })).toBeNull();
+	});
+
 	it('sends nothing without a status, marks the group and moves the focus to it', async () => {
 		const { data } = renderDialog();
 		await submit();
@@ -200,7 +226,8 @@ describe('the question "Wie soll das Duplikat entstehen?"', () => {
 				due: true,
 				parent: true,
 				subtasks: true,
-				comments: true
+				comments: true,
+				color: true
 			},
 			source: 'none'
 		});

@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { tick } from 'svelte';
 	import { toDataError } from '$lib/data/errors';
+	import { colorText, ticketColorOf } from '$lib/domain/colors';
 	import { NO_PROJECT } from '$lib/domain/list-query';
 	import { projectChoiceLabel, projectPath } from '$lib/domain/project-tree';
 	import type { ProjectRef, TicketSummary } from '$lib/domain/ticket';
@@ -16,6 +17,7 @@
 		type PickerRule
 	} from '$lib/domain/ticket-picker';
 	import type { TicketPickerSource } from '$lib/stores/ticket-picker.svelte';
+	import ColorMark from './ColorMark.svelte';
 	import DueLabel from './DueLabel.svelte';
 	import ErrorIcon from './ErrorIcon.svelte';
 	import StatusPill from './StatusPill.svelte';
@@ -24,7 +26,8 @@
 	// Ticket picker (ADR-0042): one building block wherever a ticket is chosen. A combobox after the
 	// WAI-ARIA pattern "combobox with listbox popup" whose list opens on focus or click without
 	// typing: first the recently viewed or changed tickets, then the open ones grouped by project
-	// ("Haus › Garten"), each with key, title, status, due date and the dot for "neu". Typing
+	// ("Haus › Garten"), each with key, title, status, due date, the dot for "neu" and a short bar
+	// of its color (ADR-0052, a bar so it never looks like the dot; named after the title). Typing
 	// narrows over key and title without case and accents, several words must all match. The chips
 	// "Nur offene" (on) and "Projekt" narrow further; without "Nur offene" the done tickets follow,
 	// page by page from the server. At most PICKER_PAGE entries at first, the last option "Mehr
@@ -461,6 +464,7 @@
 					{#each group.entries as entry (entry.ticket.id)}
 						{@const index = entries.indexOf(entry)}
 						{@const ticket = entry.ticket}
+						{@const color = ticketColorOf(ticket, source.projectOf(ticket))}
 						<!-- Options are never focused: the keyboard works on the field
 						     (aria-activedescendant), the click is for the mouse. -->
 						<!-- svelte-ignore a11y_click_events_have_key_events -->
@@ -478,8 +482,12 @@
 								{#if source.isNew(ticket)}
 									<span class="new" title="Neu"></span><span class="visually-hidden">Neu: </span>
 								{/if}
+								{#if color}<span class="color-bar"
+										><ColorMark shown={color} kind="stripe" named={false} /></span
+									>{/if}
 								<span class="key">{ticket.key}</span>
 								<span class="title">{ticket.title}</span>
+								{#if color}<span class="visually-hidden">, {colorText(color)}</span>{/if}
 								{#if value?.id === ticket.id}
 									<svg class="check" viewBox="0 0 16 16" aria-hidden="true" focusable="false">
 										<path d="M3.5 8.5l3 3 6-7" />
@@ -646,6 +654,14 @@
 		font-family: var(--font-mono);
 		font-size: var(--font-size-small);
 		color: var(--color-brand-text);
+	}
+
+	/* The color of the ticket (ADR-0052): a short bar as high as the key, in its middle. */
+	.color-bar {
+		display: flex;
+		flex: none;
+		align-self: center;
+		height: 0.875rem;
 	}
 
 	.title {

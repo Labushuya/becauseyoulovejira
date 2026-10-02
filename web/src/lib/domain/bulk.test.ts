@@ -123,6 +123,25 @@ describe('planStep: other fields', () => {
 			type: 'unchanged'
 		});
 	});
+
+	it('sets and removes the own color only when it differs (ADR-0052)', () => {
+		expect(planStep(ticket({ color: null }), { kind: 'color', value: 'blau' })).toEqual({
+			type: 'change',
+			patch: { color: 'blau' }
+		});
+		expect(planStep(ticket({ color: 'blau' }), { kind: 'color', value: 'blau' })).toEqual({
+			type: 'unchanged'
+		});
+		expect(planStep(ticket({ color: 'blau' }), { kind: 'color', value: null })).toEqual({
+			type: 'change',
+			patch: { color: null }
+		});
+		// Before the restart the ticket knows no color: "Wie Projekt" changes nothing.
+		expect(planStep(ticket(), { kind: 'color', value: null })).toEqual({ type: 'unchanged' });
+		expect(actionLabel({ kind: 'color', value: 'blau' })).toBe('Farbe ändern');
+		expect(restorePatch(ticket({ color: 'senf' }), { color: 'blau' })).toEqual({ color: 'senf' });
+		expect(restorePatch(ticket(), { color: 'blau' })).toEqual({ color: null });
+	});
 });
 
 describe('restorePatch', () => {

@@ -58,8 +58,11 @@ export type EditResult<T> =
 	| { ok: true; value: T }
 	| { ok: false; message: string | null; fields: Readonly<Record<string, string>> };
 
-/** Form fields of the project panel (with the parent, ADR-0034) and of renaming a tag. */
-const PROJECT_FIELDS = ['name', 'code', 'parent'] as const;
+/**
+ * Form fields of the project panel (with the parent, ADR-0034, and the color, ADR-0052) and of
+ * renaming a tag.
+ */
+const PROJECT_FIELDS = ['name', 'code', 'parent', 'color'] as const;
 const TAG_FIELDS = ['name'] as const;
 
 function invalid<T>(fields: Record<string, string>): EditResult<T> {
@@ -94,7 +97,8 @@ export class CatalogEditor {
 
 	/**
 	 * "Neues Projekt": name trimmed, code in capitals (T-11); with a parent it becomes a sub project
-	 * (ADR-0034). Without a parent nothing about it is sent, so it works before the restart.
+	 * (ADR-0034), with a color it gets it (ADR-0052). Without a parent or a color nothing about them
+	 * is sent, so it works before the restart.
 	 */
 	async createProject(draft: ProjectDraft): Promise<EditResult<Project>> {
 		const normalized: ProjectDraft = {
@@ -102,6 +106,7 @@ export class CatalogEditor {
 			code: normalizeProjectCode(draft.code)
 		};
 		if (draft.parentId) normalized.parentId = draft.parentId;
+		if (draft.color) normalized.color = draft.color;
 		const problems = draftProblems(normalized);
 		if (Object.keys(problems).length > 0) return invalid(problems);
 		return this.#run(PROJECT_FIELDS, async () => {
@@ -112,8 +117,8 @@ export class CatalogEditor {
 	}
 
 	/**
-	 * Saves name, code and parent of a project (ADR-0034); sends only what changed, nothing if
-	 * nothing did. A draft without `parentId` leaves the parent as it is.
+	 * Saves name, code, parent (ADR-0034) and color (ADR-0052) of a project; sends only what changed,
+	 * nothing if nothing did. A draft without `parentId` or `color` leaves it as it is.
 	 */
 	async updateProject(project: Project, draft: ProjectDraft): Promise<EditResult<Project>> {
 		const normalized = { name: draft.name.trim(), code: normalizeProjectCode(draft.code) };
@@ -124,6 +129,9 @@ export class CatalogEditor {
 		if (normalized.code !== project.code) patch.code = normalized.code;
 		if (draft.parentId !== undefined && (draft.parentId ?? null) !== (project.parentId ?? null)) {
 			patch.parentId = draft.parentId ?? null;
+		}
+		if (draft.color !== undefined && (draft.color ?? null) !== (project.color ?? null)) {
+			patch.color = draft.color ?? null;
 		}
 		if (Object.keys(patch).length === 0) return { ok: true, value: project };
 		return this.#run(PROJECT_FIELDS, async () => {

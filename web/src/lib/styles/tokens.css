@@ -14,6 +14,9 @@
  *   this set.
  * - The accent selectors carry one attribute more than the mode selectors, so they win in every
  *   mode regardless of order.
+ * - The palette of projects and tickets (--project-color-<key>, ADR-0052) stands in the four mode
+ *   blocks only: it is the same in every theme, lighter in dark mode, and holds its contrast and its
+ *   distance from the error color in each of them (project-colors.test.ts).
  */
 
 :root {
@@ -35,6 +38,22 @@
 	--swatch-rubin: #86133f;
 	--swatch-smaragd: #0a5c34;
 	--swatch-kupfer: #8a4a24;
+
+	/*
+	 * Colors of projects and tickets (ADR-0052): a fixed palette for stripes and dots, the same in
+	 * every theme; at least 3 : 1 on surface, background, accent surface and glass of every theme,
+	 * and apart from the error color of every theme (project-colors.test.ts). No red.
+	 */
+	--project-color-violett: #8a569e;
+	--project-color-indigo: #394085;
+	--project-color-blau: #1364b2;
+	--project-color-himmel: #1b87a4;
+	--project-color-tuerkis: #2a847d;
+	--project-color-gruen: #3d7740;
+	--project-color-oliv: #717d2d;
+	--project-color-senf: #9c7a22;
+	--project-color-braun: #644c27;
+	--project-color-grau: #646e76;
 
 	/* Errors only (ADR-0009): text, icon, invalid field border / message background */
 	--color-danger: #a13a40;
@@ -161,6 +180,18 @@
 		--swatch-smaragd: #167a47;
 		--swatch-kupfer: #d38b5d;
 
+		/* Colors of projects and tickets (ADR-0052), lighter on the dark surfaces */
+		--project-color-violett: #b2a1e6;
+		--project-color-indigo: #667fd6;
+		--project-color-blau: #61a2e5;
+		--project-color-himmel: #8dd0e9;
+		--project-color-tuerkis: #6ecbc2;
+		--project-color-gruen: #70af71;
+		--project-color-oliv: #b1bd65;
+		--project-color-senf: #e7c263;
+		--project-color-braun: #9c865f;
+		--project-color-grau: #97a2aa;
+
 		/* Errors only (ADR-0009): text, icon, invalid field border / message background */
 		--color-danger: #eaa0a0;
 		--color-danger-soft-bg: #3b1e21;
@@ -223,6 +254,18 @@
 	--swatch-smaragd: #0a5c34;
 	--swatch-kupfer: #8a4a24;
 
+	/* Colors of projects and tickets (ADR-0052) */
+	--project-color-violett: #8a569e;
+	--project-color-indigo: #394085;
+	--project-color-blau: #1364b2;
+	--project-color-himmel: #1b87a4;
+	--project-color-tuerkis: #2a847d;
+	--project-color-gruen: #3d7740;
+	--project-color-oliv: #717d2d;
+	--project-color-senf: #9c7a22;
+	--project-color-braun: #644c27;
+	--project-color-grau: #646e76;
+
 	/* Errors only (ADR-0009): text, icon, invalid field border / message background */
 	--color-danger: #a13a40;
 	--color-danger-soft-bg: #f8e9e9;
@@ -283,6 +326,18 @@
 	--swatch-rubin: #c62a66;
 	--swatch-smaragd: #167a47;
 	--swatch-kupfer: #d38b5d;
+
+	/* Colors of projects and tickets (ADR-0052), lighter on the dark surfaces */
+	--project-color-violett: #b2a1e6;
+	--project-color-indigo: #667fd6;
+	--project-color-blau: #61a2e5;
+	--project-color-himmel: #8dd0e9;
+	--project-color-tuerkis: #6ecbc2;
+	--project-color-gruen: #70af71;
+	--project-color-oliv: #b1bd65;
+	--project-color-senf: #e7c263;
+	--project-color-braun: #9c865f;
+	--project-color-grau: #97a2aa;
 
 	/* Errors only (ADR-0009): text, icon, invalid field border / message background */
 	--color-danger: #eaa0a0;

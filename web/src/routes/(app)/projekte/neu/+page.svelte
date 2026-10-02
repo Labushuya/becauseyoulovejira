@@ -35,6 +35,7 @@
 	parentChoices={choices}
 	{initialParentId}
 	hierarchyReady={catalog.hierarchyReady}
+	colorsReady={catalog.colorsReady}
 	onsave={save}
 	onsaved={(project) => goto(projectHref(project.id, page.url), { replaceState: true })}
 	onclose={() => goto(projectsViewHref(page.url))}

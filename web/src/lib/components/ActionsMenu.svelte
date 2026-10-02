@@ -46,6 +46,7 @@
 		buttonLabel,
 		buttonTitle,
 		buttonClass = 'button-icon',
+		buttonTabindex,
 		placement = 'bottom-end',
 		items,
 		trigger = $bindable()
@@ -58,6 +59,8 @@
 		buttonTitle?: string;
 		/** Classes of the button: `.button-icon`, plus one the owner sizes (a row of a table). */
 		buttonClass?: string;
+		/** -1: the button is no stop of Tab (a cell of the calendar grid, ADR-0053 §8). */
+		buttonTabindex?: -1;
 		placement?: 'bottom-start' | 'bottom-end';
 		/** The entries, in this order. */
 		items: readonly MenuAction[];
@@ -100,6 +103,7 @@
 	{buttonClass}
 	{buttonLabel}
 	{buttonTitle}
+	{buttonTabindex}
 	bind:trigger
 	bind:this={menu}
 >

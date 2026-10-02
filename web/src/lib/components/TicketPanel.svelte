@@ -1,12 +1,14 @@
 <script lang="ts">
 	import type { Snippet } from 'svelte';
 	import type { ResolvedPathname } from '$app/types';
+	import { ticketColorOf } from '$lib/domain/colors';
 	import type { ParentRef, Ticket } from '$lib/domain/ticket';
 	import type { CatalogStore } from '$lib/stores/catalog.svelte';
 	import { SILENT_FLAGS, type FlagSink } from '$lib/stores/flags.svelte';
 	import type { TicketDetailStore } from '$lib/stores/ticket-detail.svelte';
 	import { ticketPathSteps } from '$lib/ticket-links';
 	import Breadcrumbs from './Breadcrumbs.svelte';
+	import ColorMark from './ColorMark.svelte';
 	import Drawer from './overlay/Drawer.svelte';
 	import EditableTitle from './EditableTitle.svelte';
 	import ErrorIcon from './ErrorIcon.svelte';
@@ -28,11 +30,13 @@
 	// "Unteraufgaben" (ADR-0033) through `subtasks`, the question of "Duplizieren …" (ADR-0045)
 	// through `duplicate`. A sub-task shows its path "HAUS-12 › HAUS-15" with a link to the parent
 	// in the header instead of the key alone; a ticket in a sub project starts it with "Haus ›
-	// Garten" (ADR-0034), linking to the list filtered by the project.
+	// Garten" (ADR-0034), linking to the list filtered by the project. A dot in front shows the
+	// color of the ticket with its name (ADR-0052).
 	let {
 		store,
 		catalog,
 		listHref,
+		listLabel = 'Zur Liste',
 		fullViewHref = null,
 		onfullview,
 		onclose,
@@ -54,6 +58,8 @@
 		catalog: CatalogStore;
 		/** Link back to the list with the current query. */
 		listHref: ResolvedPathname;
+		/** Text of that link: "Zur Liste", next to the calendar "Zum Kalender" (ADR-0053). */
+		listLabel?: string;
 		/** Address of the full view (UI-7). */
 		fullViewHref?: ResolvedPathname | null;
 		/** A click on "Vollansicht": the owner remembers the choice (plan BI-1). */
@@ -99,6 +105,8 @@
 	let focusedFor: string | null = null;
 
 	const ticket = $derived(store.ticket);
+	/** Color of the ticket: its own, else of its project or the parent of that (ADR-0052). */
+	const shown = $derived(ticket === null ? null : ticketColorOf(ticket, catalog.projectOf(ticket)));
 	/** "Haus › Garten › HAUS-12 › GART-3" (ADR-0033, ADR-0034); empty for a plain ticket. */
 	const path = $derived(
 		ticket === null
@@ -127,11 +135,16 @@
 	{onfullview}
 >
 	{#snippet context()}
-		{#if store.state === 'ready' && ticket && path.length > 0}
-			<Breadcrumbs label="Pfad des Tickets" items={path} />
-		{:else}
-			<span class="key">{ticket?.key ?? ''}</span>
-		{/if}
+		<div class="context-line">
+			{#if store.state === 'ready' && shown}
+				<ColorMark {shown} />
+			{/if}
+			{#if store.state === 'ready' && ticket && path.length > 0}
+				<Breadcrumbs label="Pfad des Tickets" items={path} />
+			{:else}
+				<span class="key">{ticket?.key ?? ''}</span>
+			{/if}
+		</div>
 	{/snippet}
 	{#snippet actions()}
 		{#if store.state === 'ready' && ticket}
@@ -163,14 +176,14 @@
 			<h2 id={headingId} tabindex="-1" bind:this={messageHeading}>Ticket nicht gefunden</h2>
 			<p>Das Ticket gibt es nicht, oder es ist für dich nicht sichtbar.</p>
 			<TrashNotice id={store.id} />
-			<a href={listHref}>Zur Liste</a>
+			<a href={listHref}>{listLabel}</a>
 		</div>
 	{:else if store.state === 'deleted'}
 		<div class="message">
 			<h2 id={headingId} tabindex="-1" bind:this={messageHeading}>Dieses Ticket wurde gelöscht.</h2>
 			<p>Es wurde an anderer Stelle gelöscht.</p>
 			<TrashNotice id={store.id} />
-			<a href={listHref}>Zur Liste</a>
+			<a href={listHref}>{listLabel}</a>
 		</div>
 	{:else if store.state === 'error'}
 		<div class="message">
@@ -202,6 +215,14 @@
 </Drawer>
 
 <style>
+	/* The dot of the color stands before the path or the key (ADR-0052). */
+	.context-line {
+		display: flex;
+		gap: 0.375rem;
+		align-items: center;
+		min-width: 0;
+	}
+
 	.key {
 		font-family: var(--font-mono);
 		font-size: var(--font-size-control);
