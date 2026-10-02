@@ -1,6 +1,6 @@
 # Plan Robuste Skripte und Wartung: Fehlerkatalog, Abhängigkeiten, Tests unter Last, Test-Instanzen
 
-- **Stand:** umgesetzt: RS-2 (#216, Build und Abhängigkeiten), RS-3 (Tests unter Last). RS-1 (Fehlerkatalog der Skripte) und RS-4 (System-Seite und Manifest-Pflege) folgen, je ein PR.
+- **Stand:** umgesetzt: RS-2 (#216, Build und Abhängigkeiten), RS-3 (#219, Tests unter Last), RS-1 (Fehlerkatalog der Skripte, [ADR-0048](../adr/0048-fehlerkatalog-der-skripte.md)). RS-4 (System-Seite und Manifest-Pflege) folgt als eigener PR.
 - **Grundlage:**
   - [ADR-0039](../adr/0039-betriebsskripte.md) (Steuerskript, Exit-Codes), [ADR-0040](../adr/0040-veroeffentlichen-ohne-unterbrechung.md) (Build, Nachtrag „Build und Abhängigkeiten“), [ADR-0043](../adr/0043-system-seite.md) (Seite „System“, andere Kopien), [ADR-0046](../adr/0046-sicherung-pruefung-wiederherstellen.md) (Sicherung), [ADR-0035](../adr/0035-start-einstieg-und-offene-tabs.md) (Start, Hinweise beim Öffnen)
   - [Plan Betriebsskripte](betriebsskripte.md), [Plan Sicherung](sicherung.md), [Plan Test-Härtung](test-haertung.md)
@@ -19,7 +19,7 @@
 |---|---|---|
 | RS-2 | `build.ps1` installiert neu, wenn sich ein Lockfile geändert hat (Prüfsumme je Ordner in `node_modules`), die Hilfsprogramm-Builds ebenso; Install-Skript von esbuild über `allowScripts` freigegeben; `npm audit` und Dependabot geprüft. Nachtrag ADR-0040 | BYL-E6-975 bis BYL-E6-977 |
 | RS-3 | Tests robust gegen Last: Logs von PocketBase erst nach dem Schreiben lesen (`tests/support/logs.mjs`), zentrale, gemessene und skalierbare Zeitgrenzen (`tests/support/timing.mjs`), die Dateien mit Prozessen zuletzt und höchstens zu viert, Bereitschaft abfragen statt fester Pause; Nebenbefund CRLF im Text eines Eingangseintrags | BYL-E6-978 bis BYL-E6-982 |
-| RS-1 | Fehlerkatalog aller Skripte: einheitliches Format mit Ursache, Schritten und Befehl mit echten Pfaden, Angebot zum Selbstlösen, offenes Fenster bei Fehlern, Hinweis nach Fehlern im Hintergrund, Hilfe-Seite „Betrieb“ als FAQ, neue ADR | folgt |
+| RS-1 | Fehlerkatalog aller Skripte (`app\byl-problems.ps1`, 112 Einträge): einheitliches Format mit Ursache, Schritten und Befehl mit echten Pfaden, Angebot zum Selbstlösen, offenes Fenster bei Fehlern (`byl-pruefen.bat`), Fehler im Hintergrund gemerkt und gezeigt (nächster Lauf, Seite „System“), `-Json` mit `code` und `remedy`, Hilfe „Betrieb“ als FAQ. [ADR-0048](../adr/0048-fehlerkatalog-der-skripte.md), Nachträge ADR-0039, ADR-0040, ADR-0043 | BYL-E6-983 bis BYL-E6-992 |
 | RS-4 | Seite „System“ und `status`: Test-Instanzen aus Entwicklung und Tests eingeklappt; Test-Manifest: Paket für den Prüfmodus (#204), Text von BYL-X-004, `meta.commit`. Nachtrag ADR-0043 | folgt |
 
 ## 3. RS-2: Build und Abhängigkeiten
@@ -86,7 +86,59 @@
 - **Bewertung: ein Fehler.** Die Anzeige (markdown-it) verträgt beides, Duplikate hängen nicht am Text (Fingerprint aus Message-ID usw.). Aber ein Ticket aus dem Eintrag (`ticketPrefill`) mischte die LF der Kopfzeilen mit den CRLF des Textes, das Bearbeiten im Editor schreibt LF zurück (der Verlauf sähe eine Änderung jeder Zeile), und die Grenze von 100 000 Zeichen zählte jedes CR mit: ein langer Text wurde früher abgeschnitten.
 - **Umsetzung:** an einer Stelle, im Hook: `normalizeBody` in `lib/inbox-rules.js` macht aus CRLF und CR ein LF, bevor gekürzt wird (alle Kanäle legen über `inbox-service.js` an). Regressionstests: Unit (`inbox-rules.test.mjs`) und Integration gegen die Wegwerf-Instanz (`web-data-inbox.test.mjs`: Eintrag mit und ohne Datei gleich, ohne CR). Bestehende Einträge bleiben, wie sie sind (keine Migration: sie werden richtig angezeigt). Wirkt nach einem Neustart der App.
 
-## 5. Entscheidungen und Befunde
+## 5. RS-1: Fehlerkatalog der Skripte
+
+Entscheidung und Format in [ADR-0048](../adr/0048-fehlerkatalog-der-skripte.md). Hier die Inventur: jeder Fehlerweg mit seinem Eintrag (Code), nach Skript. Mit `*` auch in der Hilfe „Betrieb“, mit `J/N` mit Angebot zum Selbstlösen im Fenster, mit `(H)` ein Hinweis (der Befehl geht weiter).
+
+| Skript bzw. Befehl | Fehlerwege und Einträge |
+|---|---|
+| alle `.bat`-Dateien, `start-hidden.vbs` | PowerShell kann `byl-control.ps1` nicht ausführen (Richtlinie, gesperrter Download, fehlende oder beschädigte Datei): `script-blocked`*, ohne Fenster `script-blocked-hidden` |
+| `byl-control.ps1`, alle Befehle | `byl-config.json` kein JSON (`config-json`*, J/N) oder ungültiger Port (`config-port`*, J/N), nicht schreibbar (`config-write`); unbekannter Befehl (`command-unknown`); `-Detach` bzw. `-WaitForProcess` bei einem anderen Befehl (`detach-only`); Befehl braucht ein Fenster (`console-needed`); Eingabe der App kein gültiges JSON (`input-invalid`); jeder andere Fehler `unexpected`* (Log und Befehl für dessen letzte 50 Zeilen) |
+| `start.bat`, `start`, Autostart | `pocketbase.exe` fehlt (`pocketbase-missing`*), Ordner unvollständig (`app-incomplete`), Ordner nicht beschreibbar (`folder-not-writable`*), Oberfläche fehlt (`web-missing`*, H), PocketBase startet nicht oder beendet sich sofort (`pocketbase-start`, `pocketbase-exited`*), keine Antwort auf `/api/health` in der Frist (`health-timeout`*), Port belegt (`port-busy`*, J/N), läuft, antwortet aber nicht (`app-unhealthy`*, J/N), startende Instanz verschwindet (`start-vanished`); Hinweise: Zustand oder Adresse nicht schreibbar (`state-write`, `state-delete`, `address-write`), DPAPI nicht verfügbar (`dpapi-start`*), Zugang des Mail-Hilfsprozesses (`ingest-token`), Mail-Hilfsprozess startet nicht (`mail-helper-start`*), wenig, sehr wenig oder unbekannter Platz (`disk-low`*, `disk-critical`, `disk-unknown`), Autostart zeigt auf einen anderen Ordner (`autostart-other`) |
+| `stop.bat`, `neu-starten.bat`, `restart`, `reload`, `open` | App läuft nicht (`not-running`, J/N), lässt sich nicht beenden (`stop-failed`*), hart beendet (`hard-stop`, H), Port danach noch belegt (`port-still-busy`), Neustart im Hintergrund startet nicht (`detach-failed`) |
+| `mail-restart` | App läuft nicht (`mail-not-running`, J/N), Mail-Hilfsprozess endet nicht (`mail-stop-failed`) |
+| `logs` | unbekanntes Log (`logs-unknown`), `-Follow` mit `-Json` oder mehreren Logs (`logs-follow-json`, `logs-follow-one`), Log gibt es noch nicht (`log-missing`) |
+| `port` | ungültige Zahl (`port-invalid`) |
+| `autostart-an.bat`, `autostart-aus.bat` | Testkopie ohne Testordner (`autostart-test`), `start-hidden.vbs` fehlt (`autostart-vbs-missing`), Startup-Ordner nicht schreibbar (`autostart-write`*), Verknüpfung nicht entfernbar (`autostart-remove`) |
+| `admin-zuruecksetzen.bat` | E-Mail ungültig, Passwörter verschieden, zu kurz, zu lang, unerlaubtes Zeichen (`admin-email`, `admin-password-*`), Datenbank gesperrt, Zeitüberschreitung, PocketBase lehnt ab (`admin-locked`, `admin-timeout`, `admin-failed`) |
+| Sicherung (`backup-*`, Seite „Sicherung“) | Zielverzeichnis ungültig, zu lang, im Ordner `app`, nicht erreichbar*, nicht beschreibbar, zu wenig Platz (`backup-target-*`), Aufbewahrung ungültig (`backup-keep`), kein Ziel (`backup-no-target`); Passphrase fehlt*, unlesbar, verschieden, zu kurz, zu lang, unerlaubtes Zeichen, DPAPI nicht verfügbar, nicht speicherbar* (`passphrase-*`, nach einer Wiederherstellung `passphrase-save-later`, H); Name ungültig oder Sicherung fehlt (`backup-name`, `backup-missing`), `byl-backup.exe` fehlt oder antwortet nicht (`backup-helper`*), Versiegeln scheitert (`backup-seal`) |
+| `backup-verify`, `wiederherstellen.bat`, `restore` | Passphrase falsch (`backup-passphrase`*) oder fehlt (`backup-no-passphrase`), kein bekanntes Format, beschädigt (`backup-format`, `backup-damaged`*), ZIP, Datenbank, Integrität, Dateien (`backup-zip`, `backup-no-db`, `backup-integrity`, `backup-files`), Wegwerf-Server startet nicht (`backup-start`), Platz in Temp (`backup-temp-space`); Rückfrage ohne Wort, Wahl der Zugangsdaten, abgebrochen (`restore-confirm`, `restore-credentials`, `restore-cancel`), Auftrag ungültig (`restore-input`), Platz (`restore-space`), App endet nicht (`restore-stop`), Tausch scheitert (`restore-swap`), losgelöster Lauf startet nicht (`restore-detach`), App startet danach nicht, Rückweg (`restore-start`*); Einstellungen bzw. Zugangsdaten nicht übernommen (`restore-config`, `restore-credential`, beide H) |
+| `scripts\build.ps1`, `build-mail-helper.ps1`, `build-backup-helper.ps1` | Node fehlt (`node-missing`, mit gefundenem Node-Ordner), falsche oder zu alte Version (`node-version`, `node-old`), npm fehlt (`npm-missing`), Lockfile fehlt (`lockfile-missing`), `npm ci` scheitert (`npm-ci`), check, lint, build oder test scheitert (`build-step`, mit Befehl zum Wiederholen), Hilfsprogramm baut, prüft oder installiert nicht (`helper-build`, `helper-check`, `helper-install`), sonst `build-unexpected` |
+| `scripts\fetch-pocketbase.ps1` | Netz oder Download (`pocketbase-download`), Prüfsumme (`pocketbase-checksum`), Schreiben (`pocketbase-write`), Version (`pocketbase-version`), System (`pocketbase-platform`) |
+
+**Beispiel aus `byl-pruefen.bat`** (Ordner mit `&` und `'` im Namen, Ausgabe des Integrationstests, gekürzt):
+
+```
+X Problem:   byl-control.ps1 konnte nicht ausgefuehrt werden.
+             Ordner: C:\…\Pruefung & Co's\app\
+  Ursache:   Eine Richtlinie fuer PowerShell-Skripte blockiert es, oder Dateien im Ordner app fehlen
+             oder sind beschaedigt.
+  So geht's: 1. Pruefen, ob byl-control.ps1, byl-functions.ps1 und byl-problems.ps1 im Ordner app
+                liegen.
+             2. Stammt der Ordner aus einem Download (ZIP): die Dateien entsperren (Befehl unten).
+             …
+             Befehl zum Kopieren:
+               powershell -NoProfile -Command "Get-ChildItem -LiteralPath 'C:\…\Pruefung & Co''s\app\' | Unblock-File"
+```
+
+**Beispiel aus `build.ps1`** (Node nicht im `PATH`):
+
+```
+× Problem:   Node.js wurde nicht gefunden (PATH).
+  Ursache:   Node.js 24 ist nicht installiert, oder sein Ordner steht nicht im PATH dieses Fensters.
+  So geht's: 1. Node.js 24 installieren (nodejs.org) oder den Ordner mit node.exe vorn in den PATH
+                nehmen.
+             2. Liegt Node.js schon auf diesem Rechner, nimmt der Befehl unten seinen Ordner für
+                dieses PowerShell-Fenster in den PATH.
+             3. Danach das Skript in diesem Fenster erneut starten.
+             Befehl zum Kopieren:
+               $env:Path = "C:\…\tools\node;$env:Path"
+```
+
+- **Fund bei der Umsetzung:** `byl-pruefen.bat` setzte den Ordner zuerst direkt in `echo` ein; ein `&` im Pfad (etwa „Max & Anna“) hätte cmd den Rest als Befehl ausführen lassen. Der Ordner wird jetzt nur verzögert erweitert (`!BYL_DIR!`), `'` für PowerShell verdoppelt; der Integrationstest läuft in einem Ordner mit `&` und `'`.
+- **Tests:** statisch, Unit (Windows PowerShell) und Integration gegen Wegwerf-Kopien unter `.tmp` auf Zufallsports (BYL-E6-983 bis BYL-E6-989), drei manuelle Fälle (BYL-E6-990 bis BYL-E6-992).
+
+## 6. Entscheidungen und Befunde
 
 | Datum | Paket | Befund bzw. Entscheidung |
 |---|---|---|
@@ -96,4 +148,8 @@
 | 2026-10-02 | RS-3 | Längere, aber begründete und skalierbare Grenzen statt fester; dazu weniger eigene Parallelität. Eine Wiederholung fehlgeschlagener Fälle (`retry`) wurde verworfen: Sie sendete schreibende Anfragen doppelt und verdeckte echte Stillstände. Ein höheres Limit für die gemeinsame Instanz auch nicht: Die Gruppe läuft allein (T-4), ihr Limit von 15 s fängt Stillstände ab. |
 | 2026-10-02 | RS-3 | Die Marke von `writtenLogs` ist eine Anfrage an `/api/health` mit eigenem Parameter: Sie braucht keine Rechte, ändert nichts, und PocketBase protokolliert sie wie jede Anfrage (gemessen: geschrieben nach gut 3 s, mit 404- und anderen Anfragen davor). Weil das Log der Reihe nach geschrieben wird, ist mit ihr alles davor geschrieben. Ein Lauf eines Cron-Jobs im Hintergrund kann theoretisch später schreiben; die Marke kommt nach seiner Anfrage und mindestens 3 s Bündeln, das reicht für die Jobs, die hier nichts tun. |
 | 2026-10-02 | RS-3 | Höchstens vier Dateien mit Prozessen zugleich: Bei zwölf zugleich wurde jeder Start unter Last ein Mehrfaches langsamer (Messung §4), bei vier blieb der Lauf ohne Last bei gut drei Minuten. Der Windows-Runner hat vier Prozessoren und hatte schon vorher drei Worker. |
+| 2026-10-02 | RS-1 | Katalog als `.ps1` mit Zeichenketten in einfachen Anführungszeichen, nicht als JSON: geladen wie `byl-functions.ps1`, ohne eigenen Leser; ist er beschädigt, fängt `byl-pruefen.bat` das ab. |
+| 2026-10-02 | RS-1 | Fehlerzeichen `×` (U+00D7) statt U+2716: Das schwere Kreuz fehlt in den Schriften der Konsole von Windows 10 (Consolas, Lucida Console, Courier New, geprüft mit `GlyphTypeface`); `.bat` und `.vbs` bleiben ASCII mit `X`. |
+| 2026-10-02 | RS-1 | `-Json`: ein Fehler antwortet flach mit `code` und `remedy` (Schritte und Befehl) neben Problem, Ursache und Log; die Antworten der Sicherung tragen denselben Eintrag als `report`, weil ihr Feld `problem` seit ADR-0046 einen Kurzgrund nennt. |
+| 2026-10-02 | RS-1 | Die Seite „System“ zeigt einen Fehler im Hintergrund als Warnung ohne eigenen Knopf zum Ausblenden: Er verschwindet mit dem nächsten Lauf ohne Fenster, der gelingt, oder dem nächsten Lauf im Fenster; ein Knopf bräuchte einen weiteren Befehl in der Whitelist. |
 | 2026-10-02 | RS-3 | Ziel ist ein grüner Lauf neben einem zweiten Build (8 Threads, belegt dreimal). Bei voller Last daneben (16 Threads auf 16 Prozessoren) hilft der Faktor `BECAUSEYOULOVEJIRA_TEST_TIME_SCALE=3`; was dann noch scheitert, sind Grenzen des Produkts (14 s des Beendens) und einzelne Abfragen in Fällen. Diese bleiben bewusst so: Eine Grenze des Produkts im Test zu lockern hieße, ein langsames Beenden nicht mehr zu bemerken. Wer so parallel arbeitet, startet die Tests mit dem Faktor oder nacheinander. |
