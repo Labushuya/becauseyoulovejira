@@ -2,8 +2,9 @@
 // weeks and full dates, the entries of the layers with project, color and "überfällig", "+N
 // weitere", the keyboard of the grid, the views and the period in the URL, the layers remembered on
 // this device, the filters of "Aufgaben", the agenda with "Überfällig", a narrow month as marks, the
-// menu "•••" of a ticket with right click and Shift+F10, the focus after the panel closed, and a
-// month with 2 000 open tickets. Navigation and page state are mocked; the stores run with fakes.
+// menu "•••" of a ticket with right click and Shift+F10, the focus after the panel closed, rules and
+// inbox entries opening next to the calendar (ADR-0054 §8), and a month with 2 000 open tickets.
+// Navigation and page state are mocked; the stores run with fakes.
 
 import { fireEvent, render, screen, within } from '@testing-library/svelte';
 import { tick } from 'svelte';
@@ -157,6 +158,8 @@ interface Setup {
 	inbox?: InboxItemSummary[];
 	withMenu?: boolean;
 	activeId?: string | null;
+	activeRuleId?: string | null;
+	activeItemId?: string | null;
 }
 
 async function show(path = '/kalender', setup: Setup = {}) {
@@ -208,7 +211,9 @@ async function show(path = '/kalender', setup: Setup = {}) {
 			done,
 			prefs,
 			rowActions,
-			activeId: setup.activeId ?? null
+			activeId: setup.activeId ?? null,
+			activeRuleId: setup.activeRuleId ?? null,
+			activeItemId: setup.activeItemId ?? null
 		}
 	});
 	await vi.waitFor(() => expect(tickets.openState).toBe('ready'));
@@ -271,23 +276,29 @@ describe('month as a grid', () => {
 		expect(names[1]).toContain('Projekt Büro, Farbe Grün');
 	});
 
-	it('shows planned dates of the rules and dated entries of the inbox, muted, with their links', async () => {
-		await show('/kalender', {
+	it('shows planned dates of the rules and dated entries of the inbox, muted, opening next to it', async () => {
+		const appointment = item('2026-10-08 07:00:00.000Z', { title: 'Zahnarzt' });
+		await show('/kalender?ansicht=monat&datum=2026-10-15', {
 			rules: [rule()],
-			inbox: [item('2026-10-08 07:00:00.000Z', { title: 'Zahnarzt' })]
+			inbox: [appointment]
 		});
 
 		const planned = within(cell(/^Montag, 12\. Oktober 2026, 1 Eintrag/)).getByRole('link');
 		expect(planned.textContent?.replace(/\s+/g, ' ').trim()).toBe(
 			'Geplant: Müll rausbringen , erscheint am 09.10. , Projekt Büro'
 		);
-		expect(planned.getAttribute('href')).toBe('/wiederholungen/rule00000000001');
+		// The rule and the entry open next to the calendar with its state (ADR-0054 §8).
+		expect(planned.getAttribute('href')).toBe(
+			'/kalender/wiederholungen/rule00000000001?ansicht=monat&datum=2026-10-15'
+		);
 		expect(planned.closest('li')?.classList.contains('planned')).toBe(true);
-		const appointment = within(cell(/^Donnerstag, 8\. Oktober 2026, 1 Eintrag/)).getByRole('link');
-		expect(appointment.textContent?.replace(/\s+/g, ' ').trim()).toBe(
+		const date = within(cell(/^Donnerstag, 8\. Oktober 2026, 1 Eintrag/)).getByRole('link');
+		expect(date.textContent?.replace(/\s+/g, ' ').trim()).toBe(
 			'Termin im Eingang: Zahnarzt , Kalenderdatei'
 		);
-		expect(appointment.getAttribute('href')).toMatch(/^\/eingang\/i/);
+		expect(date.getAttribute('href')).toBe(
+			`/kalender/eingang/${appointment.id}?ansicht=monat&datum=2026-10-15`
+		);
 	});
 
 	it(`shows ${MONTH_DAY_LIMIT} entries of a day at most and the rest behind "+N weitere"`, async () => {
@@ -545,5 +556,47 @@ describe('menu of a ticket and the panel', () => {
 
 		await view.rerender({ activeId: null });
 		await vi.waitFor(() => expect(document.activeElement).toBe(link));
+	});
+});
+
+describe('rules and entries of the inbox next to the calendar (ADR-0054 §8)', () => {
+	const plannedLink = () => within(cell(/^Montag, 12\. Oktober 2026, 1 Eintrag/)).getByRole('link');
+
+	it('marks the planned dates of the rule in the panel and gives one the focus when it closes', async () => {
+		const { view } = await show('/kalender', { rules: [rule()], activeRuleId: 'rule00000000001' });
+		const link = plannedLink();
+		expect(link.getAttribute('aria-current')).toBe('true');
+		expect(link.closest('li')?.classList.contains('active')).toBe(true);
+		expect(link.getAttribute('data-calendar-rule')).toBe('rule00000000001');
+
+		await view.rerender({ activeRuleId: null });
+		expect(link.getAttribute('aria-current')).toBeNull();
+		// The first planned date of the rule in the month gets the focus.
+		await vi.waitFor(() =>
+			expect(document.activeElement?.getAttribute('data-calendar-rule')).toBe('rule00000000001')
+		);
+	});
+
+	it('marks the date of the entry in the panel and gives it the focus when it closes', async () => {
+		const appointment = item('2026-10-08 07:00:00.000Z');
+		const { view } = await show('/kalender', {
+			inbox: [appointment],
+			activeItemId: appointment.id
+		});
+		const link = within(cell(/^Donnerstag, 8\. Oktober 2026, 1 Eintrag/)).getByRole('link');
+		expect(link.getAttribute('aria-current')).toBe('true');
+
+		await view.rerender({ activeItemId: null });
+		await vi.waitFor(() => expect(document.activeElement).toBe(link));
+	});
+
+	it('leaves the focus to a ticket that replaces the rule in the panel', async () => {
+		const { view } = await show('/kalender', { rules: [rule()], activeRuleId: 'rule00000000001' });
+
+		await view.rerender({ activeRuleId: null, activeId: 't00000000000099' });
+		await tick();
+		await tick();
+		expect(document.activeElement).toBe(document.body);
+		expect(plannedLink().getAttribute('aria-current')).toBeNull();
 	});
 });

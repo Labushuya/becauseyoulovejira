@@ -54,6 +54,13 @@ export function lastViewLabel(
 		const key = ticketKey(decodeURIComponent(ticket));
 		return key ? `Zurück zu ${key}` : 'Zurück zum Ticket';
 	}
+	// A rule or an entry next to the calendar (ADR-0054 §8) is named like in its own area.
+	const nextToCalendar = new RegExp(`^${calendar}/(wiederholungen|eingang)/[^/]+/?$`).exec(
+		pathname
+	)?.[1];
+	if (nextToCalendar !== undefined) {
+		return nextToCalendar === 'eingang' ? 'Zurück zum Eintrag' : 'Zurück zur Regel';
+	}
 	if (within(calendar)) return 'Zurück zum Kalender';
 	if (within(projects)) return 'Zurück zu Projekte';
 	const entry = new RegExp(`^${inbox}/([^/]+)/?$`).exec(pathname)?.[1];

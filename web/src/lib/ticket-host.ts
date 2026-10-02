@@ -8,6 +8,8 @@
 // sub-task or a duplicate opens there too. Without a host in the context the list is the host.
 // In an area the ticket takes the one panel column: it replaces the panel of the project, entry or
 // rule it was opened from, which the address names as `von`, and × leads back there (ADR-0054 §2).
+// The calendar shows rules and inbox entries next to it as well; a ticket replaces them the same
+// way, with `von=regel-<id>` or `von=eintrag-<id>` (ADR-0054 §8).
 
 import { createContext } from 'svelte';
 import type { ResolvedPathname } from '$app/types';
@@ -15,8 +17,9 @@ import type { OpenMode } from './domain/open-mode';
 import {
 	areaBackHref,
 	areaTicketHref,
+	calendarBackHref,
 	calendarFullViewHref,
-	calendarHref,
+	calendarOriginFrom,
 	calendarTicketHref,
 	fullViewHref,
 	fullViewPath,
@@ -66,21 +69,47 @@ export const LIST_HOST: TicketHost = Object.freeze({
 			?.querySelector<HTMLElement>('a.title-link') ?? null
 });
 
+/** A host whose ticket can replace another panel next to its view (ADR-0054): it names that panel. */
+export interface OriginTicketHost extends TicketHost {
+	/** The panel the ticket at `url` replaced (in the calendar with its kind), or null. */
+	origin(url: URL): string | null;
+}
+
 /** Attribute of the link of a ticket in the calendar, with its record ID. */
 export const CALENDAR_TICKET_ATTRIBUTE = 'data-calendar-ticket';
 
-/** The calendar (ADR-0053): its entries of tickets. */
-export const CALENDAR_HOST: TicketHost = Object.freeze({
+/** Route IDs of a rule and of an inbox entry next to the calendar (ADR-0054 §8). */
+export const CALENDAR_RULE_ROUTE = '/(app)/kalender/wiederholungen/[id]';
+export const CALENDAR_ITEM_ROUTE = '/(app)/kalender/eingang/[id]';
+
+/**
+ * The calendar (ADR-0053): its entries of tickets. A ticket opened from the panel of a rule or an
+ * entry next to the calendar replaces it, and × leads back there (ADR-0054 §8).
+ */
+export const CALENDAR_HOST: OriginTicketHost = Object.freeze({
 	panelRoute: '/(app)/kalender/tickets/[id]',
 	fullRoute: '/(app)/kalender/tickets/[id]/voll',
 	backLabel: 'Zum Kalender',
-	view: (url: URL) => calendarHref(url),
+	view: calendarBackHref,
 	panel: calendarTicketHref,
 	full: calendarFullViewHref,
-	entryOf: (id: string) =>
-		[...document.querySelectorAll<HTMLElement>(`[${CALENDAR_TICKET_ATTRIBUTE}]`)].find(
-			(entry) => entry.getAttribute(CALENDAR_TICKET_ATTRIBUTE) === id
-		) ?? null
+	origin: (url: URL) => {
+		const origin = calendarOriginFrom(url);
+		return origin === null ? null : `${origin.kind}-${origin.id}`;
+	},
+	entryOf: (id: string, url?: URL) => {
+		const inPanel =
+			url !== undefined && calendarOriginFrom(url) !== null
+				? ticketLinkIn(viewPart('panel'), id)
+				: null;
+		return (
+			inPanel ??
+			[...document.querySelectorAll<HTMLElement>(`[${CALENDAR_TICKET_ATTRIBUTE}]`)].find(
+				(entry) => entry.getAttribute(CALENDAR_TICKET_ATTRIBUTE) === id
+			) ??
+			null
+		);
+	}
 });
 
 /** Attribute of a link that opens a ticket in an area (ADR-0054 §3), with its record ID. */
@@ -106,10 +135,8 @@ export interface AreaPage {
 	readonly url: URL;
 }
 
-/** A host of an area: it also knows the panel a ticket replaced. */
-export interface AreaTicketHost extends TicketHost {
-	/** The project, entry or rule whose panel the ticket at `url` replaced, or null. */
-	origin(url: URL): string | null;
+/** A host of an area: the panel a ticket replaced is a project, an entry or a rule. */
+export interface AreaTicketHost extends OriginTicketHost {
 	/**
 	 * What the view marks (ADR-0054 §4): the project, entry or rule of its panel, or, while a
 	 * ticket replaced that panel, the one it came from. Never the ID of a ticket: the effects of
@@ -165,6 +192,37 @@ export const RECURRENCES_HOST = areaHost('wiederholungen', 'Zu den Wiederholunge
 /** Whether `routeId` is the panel or the full view of a ticket below `host`. */
 export function isTicketRoute(host: TicketHost, routeId: string | null | undefined): boolean {
 	return routeId === host.panelRoute || routeId === host.fullRoute;
+}
+
+/** The host of the view a route belongs to; null where there is no view for tickets. */
+function hostOfRoute(routeId: string | null | undefined): TicketHost | null {
+	const views: readonly [string, TicketHost][] = [
+		['/(app)/(tickets)', LIST_HOST],
+		['/(app)/kalender', CALENDAR_HOST],
+		['/(app)/projekte', PROJECTS_HOST],
+		['/(app)/eingang', INBOX_HOST],
+		['/(app)/wiederholungen', RECURRENCES_HOST]
+	];
+	const found = views.find(
+		([base]) => routeId === base || (routeId?.startsWith(`${base}/`) ?? false)
+	);
+	return found === undefined ? null : found[1];
+}
+
+/**
+ * A ticket link made outside of the views (the quick entry of the (app) layout, ADR-0054 §8): in
+ * the view of `routeId` with the state of `url`, in place of an open panel, in the way `mode`; where
+ * there is no view for tickets (settings, trash) the list without its state.
+ */
+export function ticketHrefIn(
+	id: string,
+	routeId: string | null | undefined,
+	url: URL,
+	mode: OpenMode
+): ResolvedPathname {
+	const host = hostOfRoute(routeId);
+	if (host === null) return mode === 'full' ? fullViewPath(id) : ticketPath(id);
+	return mode === 'full' ? host.full(id, url) : host.panel(id, url);
 }
 
 const [getTicketHost, setTicketHost, hasTicketHost] = createContext<TicketHost>();

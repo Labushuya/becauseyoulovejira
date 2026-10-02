@@ -170,22 +170,89 @@ export function trashItemHref(id: string): ResolvedPathname {
 	return resolve(`/papierkorb/${encodeURIComponent(id)}`) as ResolvedPathname;
 }
 
+/** A panel next to the calendar a ticket can replace (ADR-0054 §8): a rule or an inbox entry. */
+export interface CalendarOrigin {
+	kind: 'regel' | 'eintrag';
+	id: string;
+}
+
+const CALENDAR_ORIGIN = /^(regel|eintrag)-([a-z0-9]{15})$/;
+
+/** The query of `url` without the origin of a ticket, as "?…" or ""; else unchanged. */
+function calendarQuery(url: URL): string {
+	if (!url.searchParams.has(ORIGIN_PARAM)) return url.search;
+	const params = new URLSearchParams(url.search);
+	params.delete(ORIGIN_PARAM);
+	const search = params.toString();
+	return search === '' ? '' : `?${search}`;
+}
+
+/**
+ * The panel next to the calendar a ticket replaces (ADR-0054 §8): on the panel of a rule or an
+ * entry (`/kalender/wiederholungen/<id>`, `/kalender/eingang/<id>`) that one, on a ticket next to
+ * the calendar its parameter `von` (`regel-<id>` or `eintrag-<id>`); else none.
+ */
+export function calendarOriginFrom(url: URL): CalendarOrigin | null {
+	const panel = new RegExp(
+		`^${resolve('/kalender')}/(wiederholungen|eingang)/([a-z0-9]{15})$`
+	).exec(url.pathname);
+	if (panel !== null) {
+		return { kind: panel[1] === 'wiederholungen' ? 'regel' : 'eintrag', id: panel[2] ?? '' };
+	}
+	const values = url.searchParams.getAll(ORIGIN_PARAM);
+	const value = CALENDAR_ORIGIN.exec(values.length === 1 ? (values[0] ?? '') : '');
+	return value === null
+		? null
+		: { kind: value[1] === 'regel' ? 'regel' : 'eintrag', id: value[2] ?? '' };
+}
+
+/** The query of a ticket next to the calendar: the state of `url` and the panel it replaces. */
+function calendarTicketQuery(url: URL): string {
+	const origin = calendarOriginFrom(url);
+	const query = calendarQuery(url);
+	if (origin === null) return query;
+	const value = `${ORIGIN_PARAM}=${origin.kind}-${origin.id}`;
+	return query === '' ? `?${value}` : `${query}&${value}`;
+}
+
 /**
  * The calendar (ADR-0053) with the state of `url` (view, date and the filters of the list); without
  * `url` the plain calendar, which shows the view this device remembers.
  */
 export function calendarHref(url?: URL): ResolvedPathname {
-	return `${resolve('/kalender')}${url?.search ?? ''}` as ResolvedPathname;
+	return `${resolve('/kalender')}${url === undefined ? '' : calendarQuery(url)}` as ResolvedPathname;
 }
 
-/** Panel of a ticket next to the calendar, with the state of `url` (ADR-0053 §6). */
+/** Panel of a rule next to the calendar, with the state of `url` (ADR-0054 §8). */
+export function calendarRuleHref(id: string, url: URL): ResolvedPathname {
+	return `${resolve(`/kalender/wiederholungen/${encodeURIComponent(id)}`)}${calendarQuery(url)}` as ResolvedPathname;
+}
+
+/** Panel of an inbox entry next to the calendar, with the state of `url` (ADR-0054 §8). */
+export function calendarItemHref(id: string, url: URL): ResolvedPathname {
+	return `${resolve(`/kalender/eingang/${encodeURIComponent(id)}`)}${calendarQuery(url)}` as ResolvedPathname;
+}
+
+/** Way back of a ticket next to the calendar: the rule or entry it replaced, else the calendar. */
+export function calendarBackHref(url: URL): ResolvedPathname {
+	const origin = calendarOriginFrom(url);
+	if (origin === null) return calendarHref(url);
+	return origin.kind === 'regel'
+		? calendarRuleHref(origin.id, url)
+		: calendarItemHref(origin.id, url);
+}
+
+/**
+ * Panel of a ticket next to the calendar, with the state of `url` (ADR-0053 §6) and the panel of a
+ * rule or entry it replaces (ADR-0054 §8).
+ */
 export function calendarTicketHref(id: string, url: URL): ResolvedPathname {
-	return `${resolve(`/kalender/tickets/${encodeURIComponent(id)}`)}${url.search}` as ResolvedPathname;
+	return `${resolve(`/kalender/tickets/${encodeURIComponent(id)}`)}${calendarTicketQuery(url)}` as ResolvedPathname;
 }
 
-/** Full view of a ticket over the calendar, with the state of `url`. */
+/** Full view of a ticket over the calendar, with the state of `url` and its origin. */
 export function calendarFullViewHref(id: string, url: URL): ResolvedPathname {
-	return `${resolve(`/kalender/tickets/${encodeURIComponent(id)}/voll`)}${url.search}` as ResolvedPathname;
+	return `${resolve(`/kalender/tickets/${encodeURIComponent(id)}/voll`)}${calendarTicketQuery(url)}` as ResolvedPathname;
 }
 
 /** The current path with view and date of the calendar; filters and other parameters stay. */

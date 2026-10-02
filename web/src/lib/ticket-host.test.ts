@@ -1,7 +1,9 @@
 // Unit tests of the hosts of a ticket (ADR-0053 §6, ADR-0054): the addresses of the areas projects,
 // inbox and rules with the state of their view and the panel a ticket replaced (`von`), the way
 // back, the link that gets the focus afterwards, and `ticketLinks()`, whose `path` follows the host
-// (the current address) and leads to "Aufgaben" without state from places without one.
+// (the current address) and leads to "Aufgaben" without state from places without one. Next to the
+// calendar a ticket replaces a rule or an inbox entry (`von=regel-<id>`, `von=eintrag-<id>`), and
+// "Ticket ansehen" of the quick entry opens in the view of the route (ADR-0054 §8).
 
 import { render, screen } from '@testing-library/svelte';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -9,14 +11,23 @@ import { TicketOpenModeStore } from '$lib/stores/open-mode.svelte';
 import TicketLinksHarness from '$lib/test/TicketLinksHarness.svelte';
 import {
 	CALENDAR_HOST,
+	CALENDAR_RULE_ROUTE,
 	INBOX_HOST,
 	LIST_HOST,
 	PROJECTS_HOST,
 	RECURRENCES_HOST,
 	isTicketRoute,
+	ticketHrefIn,
 	ticketLinkIn
 } from './ticket-host';
-import { ORIGIN_PARAM, ticketOriginFrom } from './ticket-links';
+import {
+	ORIGIN_PARAM,
+	calendarHref,
+	calendarItemHref,
+	calendarOriginFrom,
+	calendarRuleHref,
+	ticketOriginFrom
+} from './ticket-links';
 
 const mocks = vi.hoisted(() => ({
 	page: { url: new URL('http://localhost:3000/') }
@@ -214,5 +225,123 @@ describe('ticketLinks() below a host', () => {
 			props: { id: ID, url: at('/kalender'), host: CALENDAR_HOST, openMode: openMode(false) }
 		});
 		expect(hrefOf('path')).toBe(`/kalender/tickets/${ID}?ansicht=woche`);
+	});
+
+	it('replaces a rule next to the calendar with its ticket', () => {
+		mocks.page.url = at(`/kalender/wiederholungen/${RULE}?ansicht=woche`);
+		render(TicketLinksHarness, {
+			props: { id: ID, url: at('/kalender'), host: CALENDAR_HOST, openMode: openMode(false) }
+		});
+		expect(hrefOf('path')).toBe(`/kalender/tickets/${ID}?ansicht=woche&von=regel-${RULE}`);
+	});
+});
+
+describe('calendar: rules and inbox entries next to it (ADR-0054 §8)', () => {
+	it('names the rule or entry of the panel, or the one a ticket replaced, as the origin', () => {
+		expect(calendarOriginFrom(at(`/kalender/wiederholungen/${RULE}?ansicht=woche`))).toEqual({
+			kind: 'regel',
+			id: RULE
+		});
+		expect(calendarOriginFrom(at(`/kalender/eingang/${ITEM}`))).toEqual({
+			kind: 'eintrag',
+			id: ITEM
+		});
+		expect(calendarOriginFrom(at(`/kalender/tickets/${ID}?von=regel-${RULE}`))).toEqual({
+			kind: 'regel',
+			id: RULE
+		});
+		expect(CALENDAR_HOST.origin(at(`/kalender/tickets/${ID}?von=eintrag-${ITEM}`))).toBe(
+			`eintrag-${ITEM}`
+		);
+	});
+
+	it('names none for the calendar, a ticket of it or a value of another form', () => {
+		expect(calendarOriginFrom(at('/kalender?ansicht=woche'))).toBeNull();
+		expect(calendarOriginFrom(at(`/kalender/tickets/${ID}`))).toBeNull();
+		expect(calendarOriginFrom(at(`/kalender/tickets/${ID}?von=${RULE}`))).toBeNull();
+		expect(calendarOriginFrom(at(`/kalender/tickets/${ID}?von=projekt-${PROJECT}`))).toBeNull();
+		expect(
+			calendarOriginFrom(at(`/kalender/tickets/${ID}?von=regel-${RULE}&von=regel-${RULE}`))
+		).toBeNull();
+		expect(CALENDAR_HOST.origin(at(`/kalender/tickets/${ID}`))).toBeNull();
+	});
+
+	it('opens rules, entries and their tickets with the state of the calendar', () => {
+		const rule = at(`/kalender/wiederholungen/${RULE}?ansicht=woche&prio=high`);
+		expect(CALENDAR_HOST.panel(ID, rule)).toBe(
+			`/kalender/tickets/${ID}?ansicht=woche&prio=high&von=regel-${RULE}`
+		);
+		expect(CALENDAR_HOST.full(ID, at(`/kalender/eingang/${ITEM}`))).toBe(
+			`/kalender/tickets/${ID}/voll?von=eintrag-${ITEM}`
+		);
+		// Another ticket from a ticket keeps the panel it replaced; a rule or entry does not take it.
+		const ticket = at(`/kalender/tickets/other0000000001?ansicht=woche&von=regel-${RULE}`);
+		expect(CALENDAR_HOST.panel(ID, ticket)).toBe(
+			`/kalender/tickets/${ID}?ansicht=woche&von=regel-${RULE}`
+		);
+		expect(calendarRuleHref(RULE, ticket)).toBe(`/kalender/wiederholungen/${RULE}?ansicht=woche`);
+		expect(calendarItemHref(ITEM, at('/kalender?datum=2026-10-08'))).toBe(
+			`/kalender/eingang/${ITEM}?datum=2026-10-08`
+		);
+	});
+
+	it('leads back from a ticket to the rule or entry it replaced, else to the calendar', () => {
+		expect(CALENDAR_HOST.view(at(`/kalender/tickets/${ID}?ansicht=woche&von=regel-${RULE}`))).toBe(
+			`/kalender/wiederholungen/${RULE}?ansicht=woche`
+		);
+		expect(CALENDAR_HOST.view(at(`/kalender/tickets/${ID}/voll?von=eintrag-${ITEM}`))).toBe(
+			`/kalender/eingang/${ITEM}`
+		);
+		expect(CALENDAR_HOST.view(at(`/kalender/tickets/${ID}?ansicht=woche`))).toBe(
+			'/kalender?ansicht=woche'
+		);
+		expect(calendarHref(at(`/kalender/eingang/${ITEM}?ansicht=agenda`))).toBe(
+			'/kalender?ansicht=agenda'
+		);
+	});
+
+	it('finds the link of the ticket in the panel it came from, else its entry in the calendar', () => {
+		document.body.innerHTML = `
+			<div data-view-part="list"><a href="/" data-calendar-ticket="${ID}">Kalender</a></div>
+			<div data-view-part="panel"><a href="/" data-ticket-link="${ID}">Regel</a></div>`;
+		const fromRule = at(`/kalender/tickets/${ID}?von=regel-${RULE}`);
+		expect(CALENDAR_HOST.entryOf(ID, fromRule)?.textContent).toBe('Regel');
+		expect(CALENDAR_HOST.entryOf(ID, at(`/kalender/tickets/${ID}`))?.textContent).toBe('Kalender');
+		expect(CALENDAR_HOST.entryOf(ID)?.textContent).toBe('Kalender');
+	});
+});
+
+describe('ticketHrefIn: "Ticket ansehen" of the quick entry (ADR-0054 §8)', () => {
+	it('opens the ticket in the view of the route, in place of its panel, in the way asked', () => {
+		expect(ticketHrefIn(ID, '/(app)/(tickets)', at('/?status=open'), 'panel')).toBe(
+			`/tickets/${ID}?status=open`
+		);
+		const rule = at(`/kalender/wiederholungen/${RULE}?ansicht=woche`);
+		expect(ticketHrefIn(ID, CALENDAR_RULE_ROUTE, rule, 'panel')).toBe(
+			`/kalender/tickets/${ID}?ansicht=woche&von=regel-${RULE}`
+		);
+		expect(ticketHrefIn(ID, '/(app)/projekte/[id]', at(`/projekte/${PROJECT}`), 'full')).toBe(
+			`/projekte/tickets/${ID}/voll?von=${PROJECT}`
+		);
+		expect(ticketHrefIn(ID, '/(app)/eingang', at('/eingang?quelle=mail'), 'panel')).toBe(
+			`/eingang/tickets/${ID}?quelle=mail`
+		);
+		const ticket = at(`/wiederholungen/tickets/other0000000001?von=${RULE}`);
+		expect(ticketHrefIn(ID, RECURRENCES_HOST.panelRoute, ticket, 'panel')).toBe(
+			`/wiederholungen/tickets/${ID}?von=${RULE}`
+		);
+	});
+
+	it('leads to "Aufgaben" without state outside of the views', () => {
+		const settings = at('/einstellungen/konto?x=1');
+		expect(ticketHrefIn(ID, '/(app)/einstellungen/konto', settings, 'panel')).toBe(
+			`/tickets/${ID}`
+		);
+		expect(ticketHrefIn(ID, '/(app)/papierkorb/[id]', at('/papierkorb/x'), 'full')).toBe(
+			`/tickets/${ID}/voll`
+		);
+		expect(ticketHrefIn(ID, null, at('/'), 'panel')).toBe(`/tickets/${ID}`);
+		// A route that only starts like a view is none of it.
+		expect(ticketHrefIn(ID, '/(app)/kalenderx', at('/kalenderx'), 'panel')).toBe(`/tickets/${ID}`);
 	});
 });
