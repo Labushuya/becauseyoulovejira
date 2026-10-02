@@ -127,7 +127,16 @@ describe('lastViewLabel', () => {
 		['/eingang/item0000000000001?zustand=verworfen', 'Zurück zum Eintrag'],
 		// The calendar and a ticket next to it (ADR-0053).
 		['/kalender?ansicht=woche', 'Zurück zum Kalender'],
-		['/kalender/tickets/unknown00000001', 'Zurück zum Ticket']
+		['/kalender/tickets/unknown00000001', 'Zurück zum Ticket'],
+		// Tickets in the areas (ADR-0054), rules and the trash (before: "Zurück zu Aufgaben").
+		['/projekte/tickets/unknown00000001?von=proj00000000001', 'Zurück zum Ticket'],
+		['/eingang/tickets/unknown00000001', 'Zurück zum Ticket'],
+		['/wiederholungen/tickets/unknown00000001', 'Zurück zum Ticket'],
+		['/wiederholungen', 'Zurück zu Wiederholungen'],
+		['/wiederholungen/neu', 'Zurück zu Wiederholungen'],
+		['/wiederholungen/rule00000000001', 'Zurück zur Regel'],
+		['/papierkorb', 'Zurück zum Papierkorb'],
+		['/papierkorb/ticket00000000a', 'Zurück zum Papierkorb']
 	])('labels %s as "%s"', (href, label) => {
 		expect(lastViewLabel(href)).toBe(label);
 	});
@@ -136,5 +145,8 @@ describe('lastViewLabel', () => {
 		const keyOf = (id: string) => (id === 'abc123def456ghi' ? 'BYL-12' : null);
 		expect(lastViewLabel('/tickets/abc123def456ghi?status=open', keyOf)).toBe('Zurück zu BYL-12');
 		expect(lastViewLabel('/kalender/tickets/abc123def456ghi', keyOf)).toBe('Zurück zu BYL-12');
+		expect(lastViewLabel('/projekte/tickets/abc123def456ghi?q=Haus', keyOf)).toBe(
+			'Zurück zu BYL-12'
+		);
 	});
 });

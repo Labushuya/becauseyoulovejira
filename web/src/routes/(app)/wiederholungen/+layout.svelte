@@ -9,6 +9,7 @@
 	import { getRecurrenceStore } from '$lib/stores/recurrence.svelte';
 	import { getTicketListStore } from '$lib/stores/ticket-list.svelte';
 	import { RECURRENCES_HOST, setTicketHost } from '$lib/ticket-host';
+	import { followTicketReturn } from '$lib/ticket-return.svelte';
 
 	// Overview "Wiederholungen" (E5 plan, T-6 and package 5): the table of the rules on the left, the
 	// rule panel (/wiederholungen/neu, /wiederholungen/<id>) on the right, like projects, tickets and
@@ -16,10 +17,12 @@
 	// them live; the open tickets of the list store give the column "Offenes Ticket". Tickets open in
 	// the rules (/wiederholungen/tickets/<id>, …/voll; ADR-0054): the host in the context makes every
 	// ticket link below stay here; a ticket takes the panel column and replaces the rule it came
-	// from, whose row stays marked (never the ID of a ticket).
+	// from, whose row stays marked (never the ID of a ticket). Closing it gives the focus back to
+	// the link that opened it (followTicketReturn, KX-2).
 	let { children } = $props();
 
 	setTicketHost(RECURRENCES_HOST);
+	followTicketReturn(RECURRENCES_HOST);
 
 	const store = getRecurrenceStore();
 	const tickets = getTicketListStore();

@@ -242,6 +242,10 @@ describe('help page (EH-9)', () => {
 		expect(text(section)).toContain('Bewusst nach „Aufgaben“ führen „Link kopieren“');
 		expect(text(section)).toContain('bleibst du im Papierkorb, und die Meldung unten links bietet');
 		expect(text(section)).toContain('öffnet es hier unter „Projekte“');
+		// The way back with the focus, the question of the panels and links in texts (KX-2).
+		expect(text(section)).toContain('Der Fokus steht danach wieder auf dem Link');
+		expect(text(section)).toContain('fragt es vorher oben im Panel „Änderungen verwerfen?“');
+		expect(text(section)).toContain('Links auf Tickets in Beschreibungen und Kommentaren');
 		// Open tickets of a project (ADR-0034, addendum): the disclosure, limit, link, remembered rows.
 		expect(text(section)).toContain('der Pfeil vor dem Code eine Zeile auf');
 		expect(text(section)).toContain('„Alle 12 in Aufgaben öffnen“');

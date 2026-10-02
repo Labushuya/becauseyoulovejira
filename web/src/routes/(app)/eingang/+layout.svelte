@@ -40,6 +40,7 @@
 	import { readWhatsAppFile } from '$lib/whatsapp-file';
 	import { ticketLinks } from '$lib/stores/open-mode.svelte';
 	import { INBOX_HOST, setTicketHost } from '$lib/ticket-host';
+	import { followTicketReturn } from '$lib/ticket-return.svelte';
 
 	// Inbox view (E4 plan, T-3 and package 3): the table with the chips of the URL on the left, the
 	// panel of an entry (/eingang/<id>) on the right, like the ticket view (ADR-0010 section 1).
@@ -48,10 +49,12 @@
 	// failed (the drop zone and the dialogs name the reasons). Tickets open in the inbox
 	// (/eingang/tickets/<id>, …/voll; ADR-0054): the host in the context makes every ticket link
 	// below stay here; a ticket takes the panel column and replaces the entry it came from, whose
-	// row stays marked (never the ID of a ticket).
+	// row stays marked (never the ID of a ticket). Closing it gives the focus back to the link that
+	// opened it (followTicketReturn, KX-2).
 	let { children } = $props();
 
 	setTicketHost(INBOX_HOST);
+	followTicketReturn(INBOX_HOST);
 
 	// Ticket links open the panel or the full view, as the user last chose (plan BI-1).
 	const links = ticketLinks();

@@ -1,6 +1,6 @@
 # ADR-0042: Tickets und Projekte immer aus einer Liste wählen: ein Auswahl-Baustein für Tickets, Listen für Projekte
 
-- **Status:** Angenommen und umgesetzt in den Paketen AL-1 (#180: §1, §2, §4) und AL-2 (§3, §5) nach [docs/plan/auswahl-listen.md](../plan/auswahl-listen.md); manuelle Browser-Prüfungen stehen im Test-Manifest; Nachtrag vom 2026-10-01 (derselbe Datenweg für die offenen Tickets der Projekte)
+- **Status:** Angenommen und umgesetzt in den Paketen AL-1 (#180: §1, §2, §4) und AL-2 (§3, §5) nach [docs/plan/auswahl-listen.md](../plan/auswahl-listen.md); manuelle Browser-Prüfungen stehen im Test-Manifest; Nachtrag vom 2026-10-01 (derselbe Datenweg für die offenen Tickets der Projekte); Nachtrag vom 2026-10-02 (Links auf Tickets öffnen im Kontext, [ADR-0054](0054-tickets-im-kontext-oeffnen.md))
 - **Datum:** 2026-09-30
 - **Entscheidung durch:** Nutzer (Beobachtung „Selektion von Projekten oder Tickets per reiner manueller Eingabe grauenhaft (was, wenn ich die Ticket-Nummer nicht weiß?) – Einfache Auflistung für User“), Advisor (Anforderungen an den Baustein), Executor (Datenweg, Einzelheiten)
 - **Präzisiert:** [ADR-0025](0025-ui-konsistenz-overlay-system.md) §5 (eine weitere Combobox auf `SuggestionList`), [ADR-0031](0031-herkunft-sichern.md) §7 (Ticketsuche beim Verknüpfen), [ADR-0033](0033-unteraufgaben.md) §4 (Auswahl des übergeordneten Tickets), [ADR-0008](0008-markdown-rendering-und-sanitizing.md) (App-Links auf Tickets, AL-2)
@@ -59,3 +59,7 @@ Wo ein Projekt nur eingetippt werden konnte (Schnellerfassung), steht `ProjectSe
 ## Nachtrag (2026-10-01): Derselbe Datenweg für die offenen Tickets der Projekte
 
 Die offenen Tickets in der Projektansicht und im Projekt-Panel ([ADR-0034](0034-unterprojekte.md), Nachtrag „Offene Tickets in Projekten“) nehmen denselben Weg wie §4: die offenen Tickets des `TicketListStore` (`loadOpen()` lädt sie einmal, Realtime hält sie aktuell), gruppiert und sortiert im Client (`domain/project-tickets.ts`), ohne eigene Anfrage. Erledigte braucht die Projektansicht nicht, Tickets im Papierkorb kommen nie an.
+
+## Nachtrag (2026-10-02, [ADR-0054](0054-tickets-im-kontext-oeffnen.md)): Links auf Tickets öffnen im Kontext
+
+Ergänzt §5. Gespeichert bleibt genau `/tickets/<id>` (unabhängig von Port, Adresse und Ort des Schreibens; Editor, Anzeige und Server prüfen diese Form). Geändert ist nur, wohin ein Klick in der Anzeige führt: `Markdown.svelte` fängt einen Klick ohne Zusatztaste mit der linken Taste auf einen solchen Link ab und öffnet das Ticket dort, wo der Text steht (unter „Projekte“, im Eingang, unter „Wiederholungen“, im Kalender, sonst in „Aufgaben“), im gemerkten Modus. Mit Strg, Umschalt, Alt, Cmd oder der mittleren Taste bleibt der Link, wie er ist, und ein neuer Tab öffnet `/tickets/<id>`.

@@ -404,6 +404,21 @@ describe('inbox panel', () => {
 		const link = await screen.findByRole('link', { name: 'Ticket öffnen' });
 		// ADR-0054: the ticket stays in the inbox, with its chips and the entry as the way back.
 		expect(link.getAttribute('href')).toBe(`/eingang/tickets/${ticket.id}?quelle=mail&von=${ID}`);
+		expect(link.getAttribute('data-ticket-link')).toBe(ticket.id);
+	});
+
+	it('gives the focus to the link of the ticket the user came back from once loaded', async () => {
+		setup(
+			entry({
+				state: 'converted',
+				ticketId: 'tick00000000001',
+				handledAt: '2026-09-25 09:00:00.000Z'
+			}),
+			[],
+			{ initialFocus: () => document.querySelector('[data-ticket-link="tick00000000001"]') }
+		);
+		const link = await screen.findByRole('link', { name: 'Ticket öffnen' });
+		await vi.waitFor(() => expect(document.activeElement).toBe(link));
 	});
 
 	it('hints at a possible duplicate and assigns the entry to the ticket', async () => {

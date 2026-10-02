@@ -876,7 +876,17 @@
 					<li>
 						Ist dort gerade ein Projekt, ein Eintrag oder eine Regel offen, nimmt das Ticket dessen
 						Platz ein. Das Schließen (× oder <kbd>Esc</kbd>) führt genau dorthin zurück, sonst zur
-						Ansicht. Auch die Vollansicht bleibt an diesem Ort.
+						Ansicht. Auch die Vollansicht bleibt an diesem Ort. Der Fokus steht danach wieder auf
+						dem Link, mit dem du das Ticket geöffnet hast.
+					</li>
+					<li>
+						Hast du im Panel eines Projekts oder einer Regel etwas geändert und nicht gespeichert,
+						fragt es vorher oben im Panel „Änderungen verwerfen?“.
+					</li>
+					<li>
+						Links auf Tickets in Beschreibungen und Kommentaren (auch „Kopiert aus HAUS-12“) öffnen
+						ebenfalls dort, wo der Text steht. Mit <kbd>Strg</kbd>, <kbd>Umschalt</kbd> oder der mittleren
+						Maustaste öffnen sie wie jeder Link einen neuen Tab.
 					</li>
 					<li>
 						Der Pfad „Haus › Garten“ oben im Ticket öffnet das Projekt. Bewusst nach „Aufgaben“

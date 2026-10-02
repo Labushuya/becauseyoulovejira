@@ -3,11 +3,12 @@
 // state, open ticket and neutral hint, saving the template without the rhythm (the next ticket
 // stays) and a new rhythm with it, field errors of the server at their field (also for
 // "Fortsetzen" with an archived project), "Löschen …" with the confirmation and the question
-// about unsaved input.
+// about unsaved input, inline when a link replaces the panel (ADR-0054 §7), and the focus on the
+// link of a ticket the user came back from.
 
 import { fireEvent, render, screen, within } from '@testing-library/svelte';
 import { tick } from 'svelte';
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { ResolvedPathname } from '$app/types';
 import type { RuleDraft } from '$lib/data/recurrence';
 import { CATCH_UP_ASK_HINT, type RecurrenceRule } from '$lib/domain/recurrence-rule';
@@ -21,6 +22,36 @@ import source from './RecurrencePanel.svelte?raw';
 const TODAY = '2026-09-25';
 const HOUSE: ProjectRef = { id: 'proj00000000001', name: 'Haus', code: 'HAUS', archived: false };
 const OLD: ProjectRef = { id: 'proj00000000002', name: 'Alt', code: 'ALT', archived: true };
+
+const navigation = vi.hoisted(() => ({
+	guards: [] as ((navigation: unknown) => void)[],
+	goto: vi.fn(async () => undefined)
+}));
+
+vi.mock('$app/navigation', () => ({
+	beforeNavigate: (guard: (navigation: unknown) => void) => navigation.guards.push(guard),
+	goto: navigation.goto
+}));
+
+afterEach(() => {
+	navigation.guards.length = 0;
+	navigation.goto.mockClear();
+});
+
+/** Runs the guards of the panel like SvelteKit before a link from the rule to `path`. */
+function navigate(path: string) {
+	const nav = {
+		type: 'link',
+		from: { url: new URL('http://localhost:3000/wiederholungen/rule00000000001') },
+		to: {
+			url: new URL(path, 'http://localhost:3000'),
+			route: { id: '/(app)/wiederholungen/tickets/[id]' }
+		},
+		cancel: vi.fn()
+	};
+	for (const guard of navigation.guards) guard(nav);
+	return nav;
+}
 
 useOverlayStubs();
 
@@ -429,6 +460,49 @@ describe('RecurrencePanel: a rule', () => {
 		await fireEvent.keyDown(title, { key: 'Escape' });
 		expect(screen.getByRole('dialog', { name: 'Änderungen verwerfen?' })).toBeTruthy();
 		expect(props.onclose).not.toHaveBeenCalled();
+	});
+
+	it('asks inline before a link replaces it with unsaved input (ADR-0054 §7)', async () => {
+		show(rule());
+		const ticket = '/wiederholungen/tickets/ticket000000001?von=rule00000000001';
+		// Its open ticket names itself for the way back.
+		expect(screen.getByRole('link', { name: 'TASK-7' }).getAttribute('data-ticket-link')).toBe(
+			'ticket000000001'
+		);
+		expect(navigate(ticket).cancel).not.toHaveBeenCalled();
+
+		await fireEvent.input(screen.getByLabelText('Titel'), { target: { value: 'Anders' } });
+		expect(navigate(ticket).cancel).toHaveBeenCalledOnce();
+		await tick();
+		const question = screen.getByRole('group', { name: 'Änderungen verwerfen?' });
+		expect(screen.queryByRole('dialog')).toBeNull();
+		expect(document.activeElement).toBe(
+			within(question).getByRole('button', { name: 'Weiter bearbeiten' })
+		);
+		await fireEvent.click(within(question).getByRole('button', { name: 'Verwerfen' }));
+		expect(navigation.goto).toHaveBeenCalledExactlyOnceWith(ticket);
+	});
+
+	it('lets "Neue Regel" pass when saving opens the new rule', async () => {
+		const props = show(null, {
+			statusAvailable: true,
+			onsaved: vi.fn(() => {
+				expect(navigate('/wiederholungen/rule00000000009').cancel).not.toHaveBeenCalled();
+			})
+		});
+		await fireEvent.input(screen.getByLabelText('Titel'), { target: { value: 'Blumen' } });
+		await fireEvent.click(screen.getByRole('radio', { name: /^Offen/ }));
+		await fireEvent.click(screen.getByRole('button', { name: 'Anlegen' }));
+		await vi.waitFor(() => expect(props.onsaved).toHaveBeenCalledOnce());
+		expect(screen.queryByRole('group', { name: 'Neue Regel verwerfen?' })).toBeNull();
+	});
+
+	it('opens with the focus on the link of the ticket the user came back from', async () => {
+		show(rule(), {
+			initialFocus: () => screen.getByRole('link', { name: 'TASK-7' })
+		});
+		await tick();
+		expect(document.activeElement).toBe(screen.getByRole('link', { name: 'TASK-7' }));
 	});
 
 	it('links to the help with the examples in a new tab', () => {

@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { tick, untrack, type Snippet } from 'svelte';
+	import { beforeNavigate, goto } from '$app/navigation';
 	import type { ResolvedPathname } from '$app/types';
 	import { inheritLabel, type ProjectColor } from '$lib/domain/colors';
 	import {
@@ -20,12 +21,14 @@
 	} from '$lib/domain/project-tree';
 	import { restartNeeded } from '$lib/guidance/texts';
 	import type { EditResult } from '$lib/stores/catalog-editor';
+	import { appHref } from '$lib/ticket-links';
 	import Breadcrumbs from './Breadcrumbs.svelte';
 	import ColorChoice from './ColorChoice.svelte';
 	import ErrorIcon from './ErrorIcon.svelte';
 	import SectionMessage from './guidance/SectionMessage.svelte';
 	import ConfirmDialog from './overlay/ConfirmDialog.svelte';
 	import Drawer from './overlay/Drawer.svelte';
+	import TicketLeaveQuestion from './TicketLeaveQuestion.svelte';
 
 	// Project panel (ADR-0025 section 10, decision 4 of the user; plan UI-Konsistenz, package UI-8)
 	// on the side panel building block, instead of the project dialog: "Neues Projekt" under
@@ -48,7 +51,9 @@
 	// Open tickets (ADR-0034, addendum "Offene Tickets in Projekten"): the section "Offene Tickets"
 	// after the form, with the content of the route (`openTickets`, the compact list of the project
 	// and of its sub projects); its heading takes the focus when the focused entry leaves an emptied
-	// list.
+	// list. Tickets in the projects (ADR-0054): a link that replaces the panel (a ticket, another
+	// project, another view) asks "Änderungen verwerfen?" inline at the top while input is unsaved,
+	// never as a dialog; back from a ticket the focus goes to its link (`initialFocus`).
 	let {
 		project = null,
 		active = null,
@@ -72,7 +77,8 @@
 		onsaved,
 		ondeleted,
 		onclose,
-		openTickets
+		openTickets,
+		initialFocus = null
 	}: {
 		/** Project of the panel; null for "Neues Projekt". */
 		project?: Project | null;
@@ -125,6 +131,11 @@
 		 * focus to that heading.
 		 */
 		openTickets?: Snippet<[() => HTMLElement | undefined]>;
+		/**
+		 * Where the focus goes when the panel opens instead of its title: the link of the ticket the
+		 * user came back from (ADR-0054 §7); null or no element keeps the title.
+		 */
+		initialFocus?: (() => HTMLElement | null) | null;
 	} = $props();
 
 	const uid = $props.id();
@@ -227,11 +238,42 @@
 	let parentSelect = $state<HTMLSelectElement>();
 	let colorField = $state<HTMLElement>();
 
-	// Focus when the panel opens: the name for "Neues Projekt", else the title (ADR-0025 section 6).
+	// Focus when the panel opens: the name for "Neues Projekt", else the title (ADR-0025 section 6),
+	// or the link of the ticket the user came back from (ADR-0054 §7).
 	$effect(() => {
 		const target = creating ? nameInput : heading;
-		if (target) untrack(() => target.focus());
+		if (target) untrack(() => (creating ? target : (initialFocus?.() ?? target)).focus());
 	});
+
+	/** A link that replaces the panel, held up by the question (ADR-0054 §7). */
+	let leaving = $state<{ url: URL; delta: number | undefined } | null>(null);
+	/** Set when the panel is left on purpose ("Verwerfen", deleting): no question then. */
+	let discarding = false;
+
+	// Unsaved input asks before a link replaces the panel, inline, because the link may come from a
+	// dialog (a duplicate that opens) and no dialog opens from a dialog (ADR-0025 addendum 16). Like
+	// the ticket: changes of the query only (search, sort) keep the panel and pass.
+	beforeNavigate((navigation) => {
+		const to = navigation.to;
+		if (discarding || busy || navigation.type === 'leave' || to === null) return;
+		if (!to.route.id?.startsWith('/(app)/')) return;
+		if (navigation.from !== null && to.url.pathname === navigation.from.url.pathname) return;
+		if (!dirty) return;
+		navigation.cancel();
+		leaving = {
+			url: to.url,
+			delta: navigation.type === 'popstate' ? navigation.delta : undefined
+		};
+	});
+
+	async function discardAndLeave() {
+		const target = leaving;
+		leaving = null;
+		if (target === null) return;
+		discarding = true;
+		if (target.delta !== undefined && target.delta !== 0) history.go(target.delta);
+		else await goto(appHref(target.url));
+	}
 
 	function number(value: number | null): string {
 		return value === null ? '–' : String(value);
@@ -341,6 +383,7 @@
 		deleting = false;
 		if (result.ok) {
 			confirmingDelete = false;
+			discarding = true;
 			ondeleted?.();
 		} else if (result.message !== null) {
 			deleteError = result.message;
@@ -392,6 +435,15 @@
 	<h2 id={ids.heading} tabindex="-1" bind:this={heading}>
 		{project ? project.name : 'Neues Projekt'}
 	</h2>
+
+	{#if leaving}
+		<TicketLeaveQuestion
+			title={creating ? 'Neues Projekt verwerfen?' : 'Änderungen verwerfen?'}
+			text="Die Eingaben gehen verloren."
+			onstay={() => (leaving = null)}
+			ondiscard={() => void discardAndLeave()}
+		/>
+	{/if}
 
 	{#if project}
 		<div class="summary">
@@ -686,6 +738,7 @@
 	cancelLabel="Weiter bearbeiten"
 	onconfirm={() => {
 		confirmingDiscard = false;
+		discarding = true;
 		onclose();
 	}}
 	oncancel={() => (confirmingDiscard = false)}

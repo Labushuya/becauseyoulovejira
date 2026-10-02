@@ -1,5 +1,9 @@
 <script lang="ts">
+	import { goto } from '$app/navigation';
+	import { page } from '$app/state';
+	import { ticketIdOfLink } from '$lib/domain/link';
 	import { renderMarkdown } from '$lib/markdown';
+	import { ticketLinks } from '$lib/stores/open-mode.svelte';
 
 	// Rendered Markdown (ADR-0008). The only raw HTML output of the app; it shows nothing but the output
 	// of renderMarkdown, which parses without raw HTML and sanitizes the result.
@@ -8,6 +12,10 @@
 	// second raw HTML output). While a change is saved, the ticked box is aria-busy and every box is locked
 	// with aria-disabled, like the check mark of a row; with `taskHint` they are locked and say why.
 	// The look comes from lib/styles/prose.css, shared with the editor (plan editor section 3.3).
+	// Links to a ticket of the app (`/tickets/<id>`, ADR-0042 §5) open where the text stands, in the
+	// remembered way (ADR-0054 §7): one click handler on the container takes a plain click with the
+	// main button (Enter on a link is such a click) and goes through `ticketLinks()`. With a modifier
+	// or another button the link stays as stored, which a new tab and the server understand.
 	let {
 		source,
 		ontoggletask,
@@ -22,6 +30,7 @@
 
 	const uid = $props.id();
 	const hintId = `${uid}-task-hint`;
+	const links = ticketLinks();
 
 	const html = $derived(renderMarkdown(source));
 
@@ -74,9 +83,23 @@
 		pending = null;
 		if (!saved && box.isConnected) box.checked = !checked;
 	}
+
+	/** A plain click on a link to a ticket opens it in the current place (ADR-0054 §7). */
+	function onclick(event: MouseEvent) {
+		if (event.defaultPrevented || event.button !== 0) return;
+		if (event.ctrlKey || event.metaKey || event.shiftKey || event.altKey) return;
+		const link = event.target instanceof Element ? event.target.closest('a') : null;
+		if (link === null || container === undefined || !container.contains(link)) return;
+		const id = ticketIdOfLink(link.getAttribute('href'));
+		if (id === null) return;
+		event.preventDefault();
+		void goto(links.href(id, page.url));
+	}
 </script>
 
-<div class="markdown prose" bind:this={container} {onchange}>
+<!-- The clicks come from the links inside (Enter on a link is a click), which stay reachable. -->
+<!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
+<div class="markdown prose" bind:this={container} {onchange} {onclick}>
 	<!-- eslint-disable-next-line svelte/no-at-html-tags -- sanitized by renderMarkdown (ADR-0008) -->
 	{@html html}
 </div>

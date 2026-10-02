@@ -18,6 +18,7 @@
 		projectTicketsHref,
 		projectsViewHref
 	} from '$lib/ticket-links';
+	import { findTicketReturn } from '$lib/ticket-return.svelte';
 
 	// Panel of one project (/projekte/<record id>, package UI-8); a reload opens the same panel. The
 	// project comes from the catalog, so live changes show at once. While it is being deleted the
@@ -25,8 +26,10 @@
 	// navigation back to the tiles. Sub projects (ADR-0034, UP-4): the panel gets the parent, the
 	// choices of "Oberprojekt", the sub projects and "Mit Oberprojekt zurückholen". The section
 	// "Offene Tickets" (ADR-0034, addendum "Offene Tickets in Projekten") lists the open tickets of
-	// the list store; the questions of their menu open in the layout.
+	// the list store; the questions of their menu open in the layout. Back from a ticket it
+	// replaced (ADR-0054), the focus goes to the link of that ticket.
 	const route = getProjectRoute();
+	const ticketReturn = findTicketReturn();
 	const catalog = getCatalogStore();
 	const tickets = getTicketListStore();
 	const rowActions = findTicketRowActions();
@@ -91,6 +94,7 @@
 			ondelete={() => remove(current)}
 			ondeleted={() => goto(back)}
 			onclose={() => goto(back)}
+			initialFocus={() => ticketReturn?.focusTarget() ?? null}
 		>
 			{#snippet openTickets(headingOf)}
 				<ProjectOpenTickets

@@ -3,11 +3,12 @@
 // the header, the form (code suggestion from the name, checks before sending, field errors of the
 // server at the field), the numbers with "Tickets anzeigen", "Archivieren" / "Aus dem Archiv
 // holen", "Löschen …" only without tickets with the confirmation, and the question about unsaved
-// input on × and Escape.
+// input on × and Escape, inline when a link replaces the panel (ADR-0054 §7), and the focus on the
+// link of a ticket the user came back from.
 
 import { fireEvent, render, screen, within } from '@testing-library/svelte';
 import { tick } from 'svelte';
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { ResolvedPathname } from '$app/types';
 import type { Project, ProjectDraft } from '$lib/domain/project';
 import { CatalogStore } from '$lib/stores/catalog.svelte';
@@ -25,6 +26,21 @@ const HOUSE: Project = {
 	updated: T0
 };
 
+const navigation = vi.hoisted(() => ({
+	guards: [] as ((navigation: unknown) => void)[],
+	goto: vi.fn(async () => undefined)
+}));
+
+vi.mock('$app/navigation', () => ({
+	beforeNavigate: (guard: (navigation: unknown) => void) => navigation.guards.push(guard),
+	goto: navigation.goto
+}));
+
+afterEach(() => {
+	navigation.guards.length = 0;
+	navigation.goto.mockClear();
+});
+
 useOverlayStubs();
 
 type SaveResult = EditResult<Project>;
@@ -38,6 +54,7 @@ function show(
 		ondelete: () => Promise<EditResult<void>>;
 		active: number | null;
 		fresh: number;
+		initialFocus: () => HTMLElement | null;
 	}> = {}
 ) {
 	const props = {
@@ -74,6 +91,29 @@ const codeField = () => screen.getByRole<HTMLInputElement>('textbox', { name: 'C
 
 async function type(field: HTMLInputElement, value: string) {
 	await fireEvent.input(field, { target: { value } });
+}
+
+/** A navigation as `beforeNavigate` gets it, from the panel of HAUS to `path`. */
+function leaveTo(path: string, overrides: Record<string, unknown> = {}) {
+	const to = new URL(path, 'http://localhost:3000');
+	const ticket = /^\/projekte\/tickets\//.test(to.pathname);
+	return {
+		type: 'link',
+		from: { url: new URL(`http://localhost:3000/projekte/${HOUSE.id}`) },
+		to: {
+			url: to,
+			route: { id: ticket ? '/(app)/projekte/tickets/[id]' : '/(app)/projekte/[id]' }
+		},
+		cancel: vi.fn(),
+		...overrides
+	};
+}
+
+/** Runs the guards of the panel like SvelteKit before a navigation; returns the navigation. */
+function navigate(path: string, overrides: Record<string, unknown> = {}) {
+	const nav = leaveTo(path, overrides);
+	for (const guard of navigation.guards) guard(nav);
+	return nav;
 }
 
 describe('project panel: creating', () => {
@@ -677,5 +717,121 @@ describe('project panel: sub projects (ADR-0034, UP-4)', () => {
 			expect(screen.queryByRole('radiogroup', { name: 'Farbe' })).toBeNull();
 			expect(screen.getByText(/Farben sind nach dem nächsten Neustart verfügbar/)).toBeTruthy();
 		});
+	});
+});
+
+describe('project panel: replaced by a link (ADR-0054 §7)', () => {
+	const TICKET = '/projekte/tickets/abc123def456ghi?von=proj00000000001';
+
+	it('opens with the focus on the link of the ticket the user came back from', async () => {
+		const link = document.createElement('a');
+		link.href = '/';
+		link.textContent = 'HAUS-1 Dach';
+		document.body.append(link);
+		show(HOUSE, 0, { initialFocus: () => link });
+		await tick();
+		expect(document.activeElement).toBe(link);
+		link.remove();
+	});
+
+	it('keeps the focus on the title without such a link', async () => {
+		show(HOUSE, 0, { initialFocus: () => null });
+		await tick();
+		expect(document.activeElement).toBe(screen.getByRole('heading', { level: 2, name: 'Haus' }));
+	});
+
+	it('asks inline before a link replaces it with unsaved input; "Verwerfen" goes on', async () => {
+		show(HOUSE, 0);
+		await type(nameField(), 'Wohnung');
+
+		const held = navigate(TICKET);
+		expect(held.cancel).toHaveBeenCalledOnce();
+		await tick();
+		const question = screen.getByRole('group', { name: 'Änderungen verwerfen?' });
+		expect(within(question).getByText('Die Eingaben gehen verloren.')).toBeTruthy();
+		// Inline, no dialog (the link may come from one, ADR-0025 addendum 16).
+		expect(screen.queryByRole('dialog')).toBeNull();
+		expect(document.activeElement).toBe(
+			within(question).getByRole('button', { name: 'Weiter bearbeiten' })
+		);
+
+		await fireEvent.click(within(question).getByRole('button', { name: 'Verwerfen' }));
+		expect(navigation.goto).toHaveBeenCalledExactlyOnceWith(TICKET);
+		// The navigation it starts again passes.
+		expect(navigate(TICKET).cancel).not.toHaveBeenCalled();
+	});
+
+	it('stays with "Weiter bearbeiten" and Escape, the input kept', async () => {
+		const { props } = show(HOUSE, 0);
+		await type(nameField(), 'Wohnung');
+
+		navigate(TICKET);
+		await tick();
+		await fireEvent.click(screen.getByRole('button', { name: 'Weiter bearbeiten' }));
+		expect(screen.queryByRole('group', { name: 'Änderungen verwerfen?' })).toBeNull();
+		expect(nameField().value).toBe('Wohnung');
+
+		navigate(TICKET);
+		await tick();
+		await fireEvent.keyDown(screen.getByRole('button', { name: 'Weiter bearbeiten' }), {
+			key: 'Escape'
+		});
+		expect(screen.queryByRole('group', { name: 'Änderungen verwerfen?' })).toBeNull();
+		// Escape answers the question and does not close the panel.
+		expect(props.onclose).not.toHaveBeenCalled();
+		expect(navigation.goto).not.toHaveBeenCalled();
+	});
+
+	it('goes back or forward with "Verwerfen" for the buttons of the browser', async () => {
+		const go = vi.spyOn(history, 'go').mockImplementation(() => undefined);
+		show(HOUSE, 0);
+		await type(nameField(), 'Wohnung');
+
+		navigate('/projekte', { type: 'popstate', delta: -1 });
+		await tick();
+		await fireEvent.click(screen.getByRole('button', { name: 'Verwerfen' }));
+		expect(go).toHaveBeenCalledExactlyOnceWith(-1);
+		expect(navigation.goto).not.toHaveBeenCalled();
+		go.mockRestore();
+	});
+
+	it('names "Neues Projekt" in its question', async () => {
+		show();
+		await type(nameField(), 'Garten');
+		navigate(TICKET);
+		await tick();
+		expect(screen.getByRole('group', { name: 'Neues Projekt verwerfen?' })).toBeTruthy();
+	});
+
+	it('lets a navigation pass without input, for the query only, after × and after deleting', async () => {
+		const { props } = show(HOUSE, 0);
+		expect(navigate(TICKET).cancel).not.toHaveBeenCalled();
+
+		await type(nameField(), 'Wohnung');
+		expect(navigate(`/projekte/${HOUSE.id}?sort=name`).cancel).not.toHaveBeenCalled();
+		expect(
+			navigate('https://example.com/', {
+				to: { url: new URL('https://example.com/'), route: { id: null } }
+			}).cancel
+		).not.toHaveBeenCalled();
+
+		// × asks with its own confirmation; after "Verwerfen" the way back passes.
+		await fireEvent.click(screen.getByRole('button', { name: 'Panel schließen' }));
+		await fireEvent.click(
+			within(screen.getByRole('dialog', { name: 'Änderungen verwerfen?' })).getByRole('button', {
+				name: 'Verwerfen'
+			})
+		);
+		expect(props.onclose).toHaveBeenCalledOnce();
+		expect(navigate('/projekte').cancel).not.toHaveBeenCalled();
+	});
+
+	it('lets the way back pass after deleting', async () => {
+		const { props } = show(HOUSE, 0);
+		await type(nameField(), 'Wohnung');
+		await fireEvent.click(screen.getByRole('button', { name: 'Löschen …' }));
+		await fireEvent.click(screen.getByRole('button', { name: 'Endgültig löschen' }));
+		await vi.waitFor(() => expect(props.ondeleted).toHaveBeenCalledOnce());
+		expect(navigate('/projekte').cancel).not.toHaveBeenCalled();
 	});
 });

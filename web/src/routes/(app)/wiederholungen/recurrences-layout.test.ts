@@ -30,7 +30,12 @@ const mocks = vi.hoisted(() => ({
 	flags: null as unknown
 }));
 
-vi.mock('$app/navigation', () => ({ goto: mocks.goto }));
+// The way back from a ticket (ADR-0054) and the question of the rule panel follow navigations.
+vi.mock('$app/navigation', () => ({
+	goto: mocks.goto,
+	beforeNavigate: vi.fn(),
+	afterNavigate: vi.fn()
+}));
 vi.mock('$app/state', () => ({ page: mocks.page }));
 vi.mock('$lib/stores/recurrence.svelte', async (importOriginal) => ({
 	...(await importOriginal<object>()),
@@ -282,9 +287,10 @@ describe('route /wiederholungen: tickets in the rules (ADR-0054)', () => {
 				.getAttribute('href')
 		).toBe(`/wiederholungen/tickets/${TICKET}?von=${RULE}`);
 		const table = screen.getByRole('table');
-		expect(within(table).getByRole('link', { name: 'TASK-7' }).getAttribute('href')).toBe(
-			`/wiederholungen/tickets/${TICKET}?von=${RULE}`
-		);
+		const key = within(table).getByRole('link', { name: 'TASK-7' });
+		expect(key.getAttribute('href')).toBe(`/wiederholungen/tickets/${TICKET}?von=${RULE}`);
+		// The link names its ticket for the way back (KX-2).
+		expect(key.getAttribute('data-ticket-link')).toBe(TICKET);
 	});
 
 	it('opens a ticket of the table without a rule panel as a deep link', async () => {

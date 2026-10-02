@@ -520,6 +520,8 @@ describe('inbox table', () => {
 		const view = await table();
 		const chip = await view.findByRole('link', { name: 'Ticket HAUS-9 öffnen: „Alt“' });
 		expect(chip.getAttribute('href')).toBe('/tickets/tick00000000009');
+		// The chip names its ticket for the way back from it (ADR-0054 §7).
+		expect(chip.getAttribute('data-ticket-link')).toBe('tick00000000009');
 		expect(chip.textContent?.replace(/\s+/g, ' ').trim()).toBe('→ HAUS-9');
 		expect(chip.getAttribute('title')).toBe('HAUS-9 · Steuer');
 		expect(chip.className).toContain('ticket-chip');
