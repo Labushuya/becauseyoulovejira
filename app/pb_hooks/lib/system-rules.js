@@ -307,11 +307,14 @@ function otherServer(value) {
   if (!isRecord(value)) {
     return null;
   }
+  // A test instance (worktree, disposable copy of the tests, this program with another data
+  // folder) is folded on the page (RS-4); a script from before names only sameFolder.
   return {
     pid: countOrNull(value.pid),
     path: typeof value.path === 'string' ? value.path : '',
     port: countOrNull(value.port),
-    sameFolder: value.sameFolder === true
+    sameFolder: value.sameFolder === true,
+    testInstance: value.testInstance === true || value.sameFolder === true
   };
 }
 

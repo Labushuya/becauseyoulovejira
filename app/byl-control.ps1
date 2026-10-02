@@ -1003,8 +1003,9 @@ function Show-PreStartNotice {
     if ($null -ne $free -and (Get-DiskVerdict -FreeBytes $free) -ne 'Ok') {
         [void](Write-BylProblem -Code 'disk-low' -Values @{ free = '{0:N0}' -f ($free / 1MB) })
     }
+    # Test instances (worktrees, disposable copies of the tests) are no concern of a start (RS-4).
     foreach ($other in @(Select-OtherServerProcess -Process $Processes -AppDir $AppDir)) {
-        if ($other.SameFolder) { continue }
+        if ($other.TestInstance) { continue }
         $where = if ($null -ne $other.Port) { "Port $($other.Port)" } else { 'eine andere Adresse' }
         Write-Notice "Hinweis: Eine andere Kopie läuft auf $where (PID $($other.ProcessId), $($other.ExecutablePath)); sie bleibt unberührt."
     }
@@ -1460,7 +1461,7 @@ function Invoke-Status {
             reloadReasons  = @($data.Comparison.Reload)
             mailHelperPid  = $data.MailHelperId
             portOwner      = $data.PortOwner
-            otherServers   = @($data.Others | ForEach-Object { [ordered]@{ pid = $_.ProcessId; path = $_.ExecutablePath; port = $_.Port; sameFolder = $_.SameFolder } })
+            otherServers   = @($data.Others | ForEach-Object { [ordered]@{ pid = $_.ProcessId; path = $_.ExecutablePath; port = $_.Port; sameFolder = $_.SameFolder; testInstance = $_.TestInstance } })
             autostart      = $data.Autostart
             backgroundProblem = if ($null -ne $background) {
                 [ordered]@{ atUtc = $background.AtUtc; run = $background.Run; report = ConvertTo-BylProblemData -Report $background.Report }
@@ -1496,11 +1497,13 @@ function Invoke-Status {
     $autostart = switch ($data.Autostart) { 'on' { 'an' } 'other' { 'zeigt auf einen anderen Ordner (autostart-an.bat hier erneut ausführen)' } default { 'aus' } }
     & $label 'Autostart:' $autostart
     & $label 'Ordner:' $AppDir
-    foreach ($other in $data.Others) {
-        $kind = if ($other.SameFolder) { 'Testinstanz dieses Ordners mit anderem Datenordner' } else { 'andere Kopie' }
+    # A real second installation by itself, test instances in one line (RS-4).
+    foreach ($other in @($data.Others | Where-Object { -not $_.TestInstance })) {
         $where = if ($null -ne $other.Port) { "Port $($other.Port)" } else { 'andere Adresse' }
-        Write-Host "  Hinweis: $kind auf $where (PID $($other.ProcessId)) $($other.ExecutablePath); bleibt unberührt."
+        Write-Host "  Hinweis: andere Kopie auf $where (PID $($other.ProcessId)) $($other.ExecutablePath); bleibt unberührt."
     }
+    $tests = @($data.Others | Where-Object { $_.TestInstance })
+    if ($tests.Count -gt 0) { & $label 'Entwicklung:' "$(Get-TestInstanceSummary -Server $tests) aus Worktrees und Testkopien; bleiben unberührt" }
     if ($code -eq $BylExitNotRunning) { Write-Host 'Starten: start.bat doppelklicken.' }
     elseif ($code -eq $BylExitUnhealthy) { Write-Host 'Neu starten: neu-starten.bat doppelklicken.' }
     elseif ($code -eq $BylExitRestartNeeded) { Write-Host 'Neustart: neu-starten.bat doppelklicken.' }
@@ -1798,11 +1801,13 @@ function Invoke-Doctor {
     }
     $others = @(Select-OtherServerProcess -Process $look.Processes -AppDir $AppDir)
     if ($others.Count -eq 0) { & $add 'copies' 'ok' 'keine andere Kopie läuft' }
-    foreach ($other in $others) {
-        $kind = if ($other.SameFolder) { 'Testinstanz dieses Ordners' } else { 'andere Kopie' }
+    # A real second installation by itself, test instances in one line (RS-4).
+    foreach ($other in @($others | Where-Object { -not $_.TestInstance })) {
         $where = if ($null -ne $other.Port) { "Port $($other.Port)" } else { 'andere Adresse' }
-        & $add 'copies' 'info' "$kind auf $where (PID $($other.ProcessId)) $($other.ExecutablePath); bleibt unberührt"
+        & $add 'copies' 'info' "andere Kopie auf $where (PID $($other.ProcessId)) $($other.ExecutablePath); bleibt unberührt"
     }
+    $tests = @($others | Where-Object { $_.TestInstance })
+    if ($tests.Count -gt 0) { & $add 'copies' 'info' "$(Get-TestInstanceSummary -Server $tests) aus Worktrees und Testkopien; bleiben unberührt" }
     $helper = [System.IO.File]::Exists([System.IO.Path]::Combine($AppDir, $BylMailHelperName))
     $token = -not [string]::IsNullOrWhiteSpace([string](Get-BylVariableScope).User[$BylIngestTokenName])
     $mailText = if (-not $helper) { 'byl-mail.exe nicht vorhanden (nur für Postfächer nötig)' }

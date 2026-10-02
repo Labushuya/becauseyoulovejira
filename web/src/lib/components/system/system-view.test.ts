@@ -111,7 +111,13 @@ describe('page System', () => {
 					overview({
 						configuredPort: 8091,
 						otherServers: [
-							{ pid: 9, path: 'D:\\Kopie\\app\\pocketbase.exe', port: 8092, sameFolder: false }
+							{
+								pid: 9,
+								path: 'D:\\Kopie\\app\\pocketbase.exe',
+								port: 8092,
+								sameFolder: false,
+								testInstance: false
+							}
 						]
 					})
 				)
@@ -140,6 +146,56 @@ describe('page System', () => {
 		const details = screen.getByText('Technische Angaben').closest('details');
 		expect(details?.open).toBe(false);
 		expect(within(details as HTMLElement).getByText('4321')).toBeTruthy();
+		expect(screen.queryByText(/Test-Instanz/)).toBeNull();
+	});
+
+	it('folds test instances into one line and keeps a second installation visible (RS-4)', async () => {
+		const server = (pid: number, path: string, testInstance: boolean) => ({
+			pid,
+			path,
+			port: 53000 + pid,
+			sameFolder: false,
+			testInstance
+		});
+		await show({
+			status: vi.fn(async () =>
+				ok(
+					overview({
+						otherServers: [
+							server(1, 'H:\\x\\byl-worktree-a\\app\\pocketbase.exe', true),
+							server(2, 'D:\\Kopie\\app\\pocketbase.exe', false),
+							server(3, 'H:\\x\\repo\\.tmp\\byl-ctl-1\\Kopie A\\app\\pocketbase.exe', true)
+						]
+					})
+				)
+			)
+		});
+		const state = within(screen.getByRole('region', { name: 'Zustand' }));
+		const row = state.getByText('Andere Kopien').nextElementSibling as HTMLElement;
+		const visible = [...row.querySelectorAll(':scope > ul > li')].map((item) => item.textContent);
+		expect(visible).toEqual(['Andere Kopie auf Port 53002 · D:\\Kopie\\app\\pocketbase.exe']);
+		const folded = within(row).getByText('2 Test-Instanzen (Entwicklung)').closest('details');
+		expect(folded?.open).toBe(false);
+		expect(
+			[...(folded as HTMLElement).querySelectorAll('li')].map((item) => item.textContent)
+		).toEqual([
+			'Test-Instanz auf Port 53001 · H:\\x\\byl-worktree-a\\app\\pocketbase.exe',
+			'Test-Instanz auf Port 53003 · H:\\x\\repo\\.tmp\\byl-ctl-1\\Kopie A\\app\\pocketbase.exe'
+		]);
+		document.body.innerHTML = '';
+		await show({
+			status: vi.fn(async () =>
+				ok(
+					overview({
+						otherServers: [server(4, 'H:\\x\\byl-worktree-b\\app\\pocketbase.exe', true)]
+					})
+				)
+			)
+		});
+		const only = within(screen.getByRole('region', { name: 'Zustand' }));
+		const onlyRow = only.getByText('Andere Kopien').nextElementSibling as HTMLElement;
+		expect(onlyRow.querySelector(':scope > ul')).toBeNull();
+		expect(within(onlyRow).getByText('1 Test-Instanz (Entwicklung)')).toBeTruthy();
 	});
 
 	it('offers the restart as the main action only when it is needed', async () => {

@@ -254,13 +254,29 @@ describe('answers', () => {
 			reload: true,
 			mailHelperPid: null,
 			portOwner: null,
-			otherServers: [{ pid: 9, path: 'D:\\Kopie\\app\\pocketbase.exe', port: 8090, sameFolder: false }],
+			otherServers: [{ pid: 9, path: 'D:\\Kopie\\app\\pocketbase.exe', port: 8090, sameFolder: false, testInstance: false }],
 			autostart: 'other',
 			backgroundProblem: null
 		});
 		expect(rules.statusView({ ...STATUS, state: 'weg' })).toBeNull();
 		expect(rules.statusView(null)).toBeNull();
 		expect(rules.statusView([])).toBeNull();
+	});
+
+	it('passes test instances on as such, also from a script that names only sameFolder (RS-4)', () => {
+		const servers = rules.statusView({
+			...STATUS,
+			otherServers: [
+				{ pid: 1, path: 'H:\\x\\byl-worktree-a\\app\\pocketbase.exe', port: 53300, sameFolder: false, testInstance: true },
+				{ pid: 2, path: 'D:\\Kopie\\app\\pocketbase.exe', port: 8091, sameFolder: false, testInstance: 'ja' },
+				{ pid: 3, path: 'C:\\Apps\\app\\pocketbase.exe', port: 53211, sameFolder: true }
+			]
+		}).otherServers;
+		expect(servers.map((server) => [server.pid, server.testInstance])).toEqual([
+			[1, true],
+			[2, false],
+			[3, true]
+		]);
 	});
 
 	// An entry of the catalog of the scripts as byl-control.ps1 reports it (ADR-0048).
