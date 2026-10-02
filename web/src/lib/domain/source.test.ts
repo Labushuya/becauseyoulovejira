@@ -24,7 +24,8 @@ describe('source families', () => {
 			calendar: ['ics', 'calendar'],
 			chat: ['whatsapp', 'telegram', 'whatsapp-web'],
 			notion: ['notion'],
-			github: ['github']
+			github: ['github'],
+			folder: ['folder']
 		});
 		expect(SOURCE_FAMILIES.flatMap(channelsOf).sort()).toEqual([...INBOX_CHANNELS].sort());
 	});
@@ -44,12 +45,15 @@ describe('source families', () => {
 			calendar: 'Kalender',
 			chat: 'Chat',
 			notion: 'Notion',
-			github: 'GitHub'
+			github: 'GitHub',
+			folder: 'Ordner'
 		});
 		const values = Object.values(SOURCE_FAMILY_VALUES);
 		expect(new Set(values).size).toBe(values.length);
+		expect(SOURCE_FAMILY_VALUES.folder).toBe('ordner');
 		expect(SOURCE_FAMILY_SYMBOL_TEXT.mail).toBe('aus Mail');
 		expect(SOURCE_FAMILY_SYMBOL_TEXT.github).toBe('aus GitHub');
+		expect(SOURCE_FAMILY_SYMBOL_TEXT.folder).toBe('aus Ordner');
 		expect(SOURCE_FAMILY_CHIPS).toEqual([
 			'manual',
 			'link',
@@ -57,7 +61,8 @@ describe('source families', () => {
 			'calendar',
 			'chat',
 			'notion',
-			'github'
+			'github',
+			'folder'
 		]);
 	});
 });

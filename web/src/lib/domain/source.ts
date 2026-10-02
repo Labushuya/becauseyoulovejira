@@ -13,13 +13,14 @@ export const SOURCE_FAMILIES = [
 	'calendar',
 	'chat',
 	'notion',
-	'github'
+	'github',
+	'folder'
 ] as const;
 export type SourceFamily = (typeof SOURCE_FAMILIES)[number];
 
 /**
  * Families offered as chips; Notion since its import exists (ADR-0019 section 1, ADR-0041), GitHub
- * since its channel (ADR-0050, ADR-0019 addendum).
+ * since its channel (ADR-0050, ADR-0019 addendum), folders since theirs (ADR-0051).
  */
 export const SOURCE_FAMILY_CHIPS: readonly SourceFamily[] = Object.freeze([
 	'manual',
@@ -28,7 +29,8 @@ export const SOURCE_FAMILY_CHIPS: readonly SourceFamily[] = Object.freeze([
 	'calendar',
 	'chat',
 	'notion',
-	'github'
+	'github',
+	'folder'
 ]);
 
 export const SOURCE_FAMILY_LABELS: Readonly<Record<SourceFamily, string>> = Object.freeze({
@@ -38,7 +40,8 @@ export const SOURCE_FAMILY_LABELS: Readonly<Record<SourceFamily, string>> = Obje
 	calendar: 'Kalender',
 	chat: 'Chat',
 	notion: 'Notion',
-	github: 'GitHub'
+	github: 'GitHub',
+	folder: 'Ordner'
 });
 
 /** Values of the URL parameter `quelle` (ADR-0019 section 1). */
@@ -49,7 +52,8 @@ export const SOURCE_FAMILY_VALUES: Readonly<Record<SourceFamily, string>> = Obje
 	calendar: 'kalender',
 	chat: 'chat',
 	notion: 'notion',
-	github: 'github'
+	github: 'github',
+	folder: 'ordner'
 });
 
 const FAMILY_OF: Readonly<Record<InboxChannel, SourceFamily>> = Object.freeze({
@@ -68,7 +72,9 @@ const FAMILY_OF: Readonly<Record<InboxChannel, SourceFamily>> = Object.freeze({
 	api: 'manual',
 	'whatsapp-web': 'chat',
 	// Watched repositories (ADR-0050): changed files, pull requests and releases.
-	github: 'github'
+	github: 'github',
+	// Watched folders on this machine (ADR-0051): files as references.
+	folder: 'folder'
 });
 
 /**
@@ -82,7 +88,8 @@ export const SOURCE_FAMILY_SYMBOL_TEXT: Readonly<Record<SourceFamily, string>> =
 	calendar: 'aus Kalender',
 	chat: 'aus Chat',
 	notion: 'aus Notion',
-	github: 'aus GitHub'
+	github: 'aus GitHub',
+	folder: 'aus Ordner'
 });
 
 /** Family of a source; no source (tickets before E4) counts as "manual" (ADR-0019). */

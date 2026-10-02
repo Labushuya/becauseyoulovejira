@@ -1,9 +1,9 @@
 # Plan „Beobachtete Quellen“: Standardprojekt je Verbindung, GitHub-Kanal, Ordner-Kanal
 
-- **Stand:** Paket 1 „Standardprojekt je Verbindung“ umgesetzt (ZP-1, 2026-10-02, Branch `feat/standardprojekt-je-verbindung`; Migration und Hooks: **Neustart nötig**, `neu-starten.bat`). Paket 2 „GitHub-Kanal“ umgesetzt: GH-1 (Server, Abruf, Status; 2026-10-02, Branch `feat/github-kanal-abruf`; Migration, Hooks und Cron: **Neustart nötig**) und GH-2 (Karte, Repositorys, Assistent, Statusanzeige, Hilfe; 2026-10-02, Branch `feat/github-kanal-oberflaeche`; Hook-Änderung: **Neustart nötig**). Paket 3 (Ordner) ist noch nicht begonnen.
+- **Stand:** Paket 1 „Standardprojekt je Verbindung“ umgesetzt (ZP-1, 2026-10-02, Branch `feat/standardprojekt-je-verbindung`; Migration und Hooks: **Neustart nötig**, `neu-starten.bat`). Paket 2 „GitHub-Kanal“ umgesetzt: GH-1 (Server, Abruf, Status; 2026-10-02, Branch `feat/github-kanal-abruf`; Migration, Hooks und Cron: **Neustart nötig**) und GH-2 (Karte, Repositorys, Assistent, Statusanzeige, Hilfe; 2026-10-02, Branch `feat/github-kanal-oberflaeche`; Hook-Änderung: **Neustart nötig**). Paket 3 „Ordner-Kanal“: OD-1 (Server, Erkennung, Route zum Ansehen; 2026-10-02, Branch `feat/ordner-kanal-erkennung`; Migration, Hooks und Cron: **Neustart nötig**), OD-2 (Oberfläche) folgt.
 - **Grundlage:** Spec „Standardprojekt je Verbindung, GitHub-Kanal, Ordner-Kanal (beobachtete Quellen)“, vom Nutzer am 2026-10-01 freigegeben, mit seinen Antworten: Ordner nur zur Einsicht mit Verweis auf die Datei, GitHub als ein Kanal mit Repositories in der Karte, Statusanzeige an der Quelle nur als Anzeige, Reihenfolge (1) Standardprojekt, (2) GitHub, (3) Ordner.
-- **Entscheidungen:** [ADR-0049](../adr/0049-zielprojekt-je-eingangsweg.md) (Paket 1), Nachträge zu [ADR-0014](../adr/0014-datenmodell-eingang.md), [ADR-0016](../adr/0016-kanal-architektur-und-mail.md), [ADR-0026](../adr/0026-einstellungsbereich-und-hinweis-bausteine.md) (ZP) und [ADR-0030](../adr/0030-spalten-breiten-und-kompakte-zeilen.md) (Nachtrag 6). Paket 2: [ADR-0050](../adr/0050-github-kanal-und-beobachtete-quellen.md) „GitHub-Kanal und beobachtete Quellen“ (eine ADR mit Abschnitten; das Konzept „beobachtete Quelle“ steht dort in §5 und gilt auch für Paket 3) mit Nachträgen zu 0014, 0016, 0018, 0019, 0020 (Nachtrag 5), 0031 (Nachtrag I) und 0049. Für Paket 3 folgt die ADR „Ordner-Kanal“ (Verweis statt Kopie als bewusste Ausnahme).
-- **Einordnung:** Manifest-Paket `ZP-1`, Block „Standardprojekt je Verbindung“ mit `BYL-E6-1100` bis `BYL-E6-1110`; Pakete `GH-1` (`BYL-E6-1120` bis `BYL-E6-1130`) und `GH-2` (ab `BYL-E6-1131`), Block „GitHub-Kanal“.
+- **Entscheidungen:** [ADR-0049](../adr/0049-zielprojekt-je-eingangsweg.md) (Paket 1), Nachträge zu [ADR-0014](../adr/0014-datenmodell-eingang.md), [ADR-0016](../adr/0016-kanal-architektur-und-mail.md), [ADR-0026](../adr/0026-einstellungsbereich-und-hinweis-bausteine.md) (ZP) und [ADR-0030](../adr/0030-spalten-breiten-und-kompakte-zeilen.md) (Nachtrag 6). Paket 2: [ADR-0050](../adr/0050-github-kanal-und-beobachtete-quellen.md) „GitHub-Kanal und beobachtete Quellen“ (eine ADR mit Abschnitten; das Konzept „beobachtete Quelle“ steht dort in §5 und gilt auch für Paket 3) mit Nachträgen zu 0014, 0016, 0018, 0019, 0020 (Nachtrag 5), 0031 (Nachtrag I) und 0049. Paket 3: [ADR-0051](../adr/0051-ordner-kanal-verweise-statt-kopien.md) „Ordner-Kanal – Verweise statt Kopien“ mit Nachträgen zu 0014, 0016, 0020 (Nachtrag 6), 0031 (Nachtrag J), 0043, 0049 und 0050.
+- **Einordnung:** Manifest-Paket `ZP-1`, Block „Standardprojekt je Verbindung“ mit `BYL-E6-1100` bis `BYL-E6-1110`; Pakete `GH-1` (`BYL-E6-1120` bis `BYL-E6-1130`) und `GH-2` (ab `BYL-E6-1131`), Block „GitHub-Kanal“; Pakete `OD-1` (ab `BYL-E6-1150`) und `OD-2`, Block „Ordner-Kanal“.
 
 ## 1. Grundsatz der Spec
 
@@ -16,7 +16,7 @@
 |---|---|---|
 | 1 | Standardprojekt je Verbindung: Zielprojekt an jeder Karte, Einträge merken es sich, Umwandeln belegt vor, Filter und Gruppierung im Eingang | umgesetzt |
 | 2 | GitHub-Kanal: ein Kanal mit Token (nur lesend), Repositories in der Karte mit beobachteten Pfaden, Ereignissen und Zielprojekt je Repository, Abruf per Cron mit ETag, Änderungserkennung per Blob-SHA, PRs und Releases, Statusanzeige | umgesetzt (GH-1, GH-2) |
-| 3 | Ordner-Kanal: mehrere Ordner je Verbindung mit Filtern und Zielprojekt je Ordner, Polling mit Größe, Zeit und SHA-256, Einträge als Verweis, sichere Route zum Ansehen, Statusanzeige | offen |
+| 3 | Ordner-Kanal: mehrere Ordner je Verbindung mit Filtern und Zielprojekt je Ordner, Polling mit Größe, Zeit und SHA-256, Einträge als Verweis, sichere Route zum Ansehen, Statusanzeige | OD-1 umgesetzt, OD-2 offen |
 
 ## 3. Paket 1: Standardprojekt je Verbindung
 
@@ -108,10 +108,46 @@ Rückweg: Einträge und Tickets aus GitHub werden Web-Links (`link`), GitHub-Ver
 - Gelöschte Releases erkennen (bräuchte das Lesen aller Seiten je Lauf).
 - Umbenannte Repositorys: Einträge behalten den alten Schlüssel; erst ein Eintrag mit dem neuen Namen ersetzt den Eintrag in den Einstellungen.
 
-## 6. Paket 3: Ordner-Kanal (aus der Spec, noch nicht geplant)
+## 6. Paket 3: Ordner-Kanal
 
-- Kanal „Ordner“ mit mehreren Ordnern je Verbindung: absoluter Pfad, Unterordner ja/nein, Dateityp-Filter, Ausschlussmuster (Standard `*.tmp`, `~$*`, `.git/**`, `node_modules/**`, `Thumbs.db`, `desktop.ini`), Zielprojekt (§4), „Änderungen melden“ (Standard an).
-- Polling (etwa alle 5 Minuten) mit `$os.readDir`/`stat` oder Gleichwertigem aus der JSVM (zu prüfen), Schnellprüfung über Größe und Zeit, SHA-256 bis etwa 200 MB, Umbenennen per gleichem Hash optional.
-- Einträge nur mit Metadaten und Verweis (keine Kopie), Route zum Ansehen der aktuellen Datei nur für den Besitzer (Regel wie die Seite „System“, [ADR-0043](../adr/0043-system-seite.md)) und nur innerhalb der Ordner (Traversal, Symlinks, Junctions, kanonische Pfade), klare Meldung bei fehlender Datei.
-- **Hinweis für den Pi/Docker-Betrieb** ([ADR-0028](../adr/0028-plattform-strategie.md), zurückgestellt): Der Kanal funktioniert nur, weil Server und Dateien auf demselben Rechner liegen; im Container müsste der Ordner eingebunden werden. Netzlaufwerke nur nach Prüfung.
-- Tests mit Ordner-Fixtures in Temp-Verzeichnissen und Sicherheitstests der Route.
+Entscheidungen und Gründe: [ADR-0051](../adr/0051-ordner-kanal-verweise-statt-kopien.md). Zwei Teilpakete, je ein PR: **OD-1** Server, Erkennung, Status und Route zum Ansehen (keine Oberfläche außer der Familie „Ordner“ in Chips und Symbol); **OD-2** Karte mit Ordnern, Dialog eines Ordners, „Vorhandene Dateien übernehmen“, Statusanzeige mit „Ansehen“ in Eingang und Ticket, Hilfe „Ordner“, README.
+
+### 6.1 Datenmodell (Migration `1790203300_folder_channel.js`)
+
+| Feld | Art | Inhalt |
+|---|---|---|
+| `connections.type` | Wert `folder` | der Kanal |
+| `inbox_items.channel`, `tickets.source` | Wert `folder` | Einträge und Tickets aus Ordnern |
+| `inbox_items.kind` | Wert `file` | eine Datei eines beobachteten Ordners (Änderungen: `change`) |
+| `connections.secret_env` | nicht mehr Pflicht | ein Ordner hat keine Zugangsdaten; der Hook verlangt für jede andere Art weiter einen Namen |
+| `connections.watch` | 8 MB statt 1 MB | Stand je Ordner: Dateien mit Größe, Zeit und SHA-256 |
+| `connections.settings` (Ordner) | JSON | `interval` (1 bis 60, Standard 5) und `folders` (höchstens 10: `path`, `subfolders`, `types`, `exclude`, `target`, `report_changes`) |
+
+Rückweg: Einträge und Tickets aus Ordnern werden manuelle (`todo` statt `file`), Ordner-Verbindungen fallen weg (ihre Einträge verlieren nur die Verbindung), `secret_env` ist wieder Pflicht, `watch` hält 1 MB (Rollback-Test mit Daten).
+
+### 6.2 Server (OD-1)
+
+- `lib/folder-rules.js` (rein): Pfade je Plattform (`parseFolderPath`, `relativeOf`, `isRelative`, Windows-Namen, Laufwerk, UNC, Gerätepfade), Ausschlussmuster und Typen (`excludeMatcher`, `isWatched`), Einstellungen (`settingsViolation`, `settingsOf`, `addedFolders`, `changedTargets`), Fälligkeit (`isDue`), Grenzen (`LIMITS`, `limitsOf` im Testmodus), Art eines Eintrags im Ordner (`entryKind`: Datei, Ordner, Link, Sonderdatei; `isOffline`), Vergleich (`scanDiff`), Fassungen (`versionOf`), Verschieben (`matchMoves`), Status (`fileWatch`, `movedWatch`), Einträge (`fileDraft`), Stand und Karte (`stateOf`, `stableJson`, `folderSummary`, `runHint`), Antwort der Route (`contentOf`, `contentDisposition`, `fileRefusal`), Hash-Helfer (`HASH_SCRIPT`, `encodedCommand`, `asciiJson`, Auswertung).
+- `lib/folder-hash.js`: SHA-256 bis 16 MB im Server (`toString` über `os.Root`), bis 200 MB mit dem Helfer des Systems (Windows PowerShell mit festem Skript bzw. `sha256sum`).
+- `lib/folder-service.js`: `run` (Lauf je Verbindung: Ordner listen ohne Links und ohne den Ordner der App, vergleichen, hashen, Verschiebungen über alle Ordner, Einträge, Status, Stand nur bei Änderung), `runDue` (Cron), `summary` (Details der Karte), `existing` und `adopt` („Vorhandene Dateien übernehmen“), `assertNewFolders` (Prüfung neuer Ordner auf der Platte), `itemInfo` und `serveFile` (Ansehen).
+- `folders.pb.js`: Cron `byl-folders` (jede Minute, nicht im Testmodus), `GET /api/byl/connections/{id}/folders`, `GET …/folders/existing?folder=<ID>`, `POST …/folders/adopt`, `GET /api/byl/folders/items/{id}` und `GET …/{id}/file`. „Jetzt prüfen“ über die gemeinsame Route `…/run`.
+- Weitere Änderungen: `connection-rules.js` (`folder` in `SETTINGS_KEYS`, `SECRETLESS_TYPES`, `secretViolation`, Prüfung der Einstellungen über die Regeln der Ordner), `connection-service.js` (`guardFolders`: Platte und Ziel je Ordner), `channel-runner.js` (Art `folder`), `inbox-fingerprint.js` (Familie), `source.js` (Kanal, Art), `system-rules.js` (Rate-Limit `file`). `CREATABLE_TYPES` nimmt `folder` mit OD-2 auf; bis dahin legt nur der Superuser eine Verbindung an (Tests).
+
+### 6.3 Oberfläche (OD-2)
+
+- **Domain (rein):** `domain/folders.ts` (Spiegel von `folder-rules.js`: Pfade, Muster, Typen, Grenzen, Texte der Codes, Einstellungen, Formular eines Ordners, Details), `domain/watch.ts` (Zustand `moved`), `domain/sources.ts` (Kopie-Status „Verweis“), `connections.ts` (Art `folder` ohne Variable), `channel-card.ts`, `channel-health.ts`, `sync-all.ts`.
+- **Daten und Stores:** `data/folders.ts` (Details, Vorhandene, Übernehmen, Ansehen), `data/connections.ts` (Einstellungen der Ordner), `stores/folders.svelte.ts`.
+- **Karte** `FolderCard` auf `ChannelCard` mit Ordnern in den Details, **Dialog** `FolderDialog` (Modal M), **Übernehmen** `FolderExistingDialog` (Modal L, Auswahl mit Vorschau), **Statusanzeige** mit „Ansehen“ in `InboxPanel` und `TicketSources`, Kachel „Ordner“ im Katalog, Symbol, Hilfe „Ordner“, README.
+
+### 6.4 Tests
+
+- Unit: `tests/unit/folder-rules.test.mjs`, `tests/unit/folder-readonly.test.mjs` (nur lesend, statisch), `connection-rules.test.mjs`, `inbox-fingerprint.test.mjs`, `system-rules.test.mjs`, `source.test.mjs` (über `support/schema.mjs`).
+- Integration: `tests/integration/folder-channel.test.mjs` (Ersterfassung ohne Flut, neue Datei als Verweis mit Angaben, Änderung mit und ohne „Änderungen melden“, Dedup je Pfad und Hash, nur berührt, Rückkehr zu einer früheren Fassung, gelöscht, umbenannt und verschoben mit und ohne Hash, mehrdeutige Kopien, Ticket unverändert, Typen, Unterordner, eigene Ausschlüsse, Hash im Server und per Helfer, Datei über der Hash-Grenze, Grenze der Dateien, neue Einträge je Lauf, unerreichbarer Ordner ohne „gelöscht“, Zielprojekt je Ordner, Prüfung neuer Ordner auf der Platte samt Junction, Kurzname und Ordner der App, keine Variable, Details, Vorhandene übernehmen, Cron, Ordner unverändert, kein Pfad im Log) und `tests/integration/folder-file-route.test.mjs` (Sicherheit der Route), `migrations-rollback.test.mjs`, `web-filter-parity.test.mjs`.
+- Kleinere Grenzen nur im Testmodus über `BYL_TEST_FOLDER_LIMITS` (JSON, nie größer als die echten); Ordner nur in Temp-Verzeichnissen der Tests, nie Ordner des Nutzers.
+- Manuell (OD-2): echten Ordner hinzufügen, Datei ändern, PDF ansehen, Datei löschen bzw. verschieben.
+
+### 6.5 Hinweise und Folgepunkte
+
+- **Pi/Docker-Betrieb** ([ADR-0028](../adr/0028-plattform-strategie.md), zurückgestellt): Der Kanal funktioniert nur, weil Server und Dateien auf demselben Rechner liegen. Im Container müssen die Ordner als Volume eingebunden werden, und in der Karte steht dann der Pfad im Container (etwa `/daten/projekte`). Der Hash-Helfer ist dort `sha256sum` (BusyBox oder coreutils im Image).
+- **Netzlaufwerke** sind erlaubt (UNC und verbundene Laufwerke): Ein getrenntes Laufwerk ist ein Fehler des Ordners ohne „gelöscht“ für seine Dateien; ein hängendes Laufwerk hält einen Lauf bis zur Zeitgrenze des Systems auf (ADR-0051, Grenzen).
+- Folgepunkte: ein Ordner-Dialog des Systems (der Browser kennt keinen Pfad); Ereignisse des Dateisystems statt Polling (bräuchte einen Hilfsprozess); Ansehen weiterer Typen inline (Office) nur über einen Betrachter ohne Ausführung.

@@ -11,7 +11,8 @@ const WEEKDAYS = ['MO', 'TU', 'WE', 'TH', 'FR', 'SA', 'SU'];
 /**
  * Ways into the inbox and values of tickets.source (ADR-0014), written out literally; "api" and
  * "whatsapp-web" since the own inbox (ADR-0038, migration 1790202400), "github" since the GitHub
- * channel (ADR-0050, migration 1790203200).
+ * channel (ADR-0050, migration 1790203200), "folder" since the folder channel (ADR-0051, migration
+ * 1790203300).
  */
 export const CHANNELS = [
 	'manual',
@@ -27,9 +28,13 @@ export const CHANNELS = [
 	'notion',
 	'api',
 	'whatsapp-web',
-	'github'
+	'github',
+	'folder'
 ];
-/** Kinds of entries; the last three since the GitHub channel (ADR-0050, migration 1790203200). */
+/**
+ * Kinds of entries; "change", "pull_request" and "release" since the GitHub channel (ADR-0050,
+ * migration 1790203200), "file" since the folder channel (ADR-0051, migration 1790203300).
+ */
 export const INBOX_KINDS = [
 	'todo',
 	'task',
@@ -40,10 +45,11 @@ export const INBOX_KINDS = [
 	'link',
 	'change',
 	'pull_request',
-	'release'
+	'release',
+	'file'
 ];
-/** Kinds of connections; "github" since migration 1790203200 (ADR-0050). */
-export const CONNECTION_TYPES = ['calendar', 'telegram', 'notion', 'mail', 'github'];
+/** Kinds of connections; "github" since migration 1790203200 (ADR-0050), "folder" since 1790203300 (ADR-0051). */
+export const CONNECTION_TYPES = ['calendar', 'telegram', 'notion', 'mail', 'github', 'folder'];
 export const INBOX_STATES = ['new', 'converted', 'discarded'];
 
 const text = (options = {}) => ({ type: 'text', required: false, max: 0, pattern: '', ...options });
@@ -226,7 +232,8 @@ export const EXPECTED_COLLECTIONS = {
 			type: select(CONNECTION_TYPES, true),
 			label: text({ required: true, max: 100 }),
 			enabled: bool(),
-			secret_env: text({ required: true, max: 64, pattern: '^BYL_[A-Z0-9_]{1,60}$' }),
+			// Optional since the folder channel, which has no access data (ADR-0051, migration 1790203300).
+			secret_env: text({ max: 64, pattern: '^BYL_[A-Z0-9_]{1,60}$' }),
 			settings: { type: 'json', required: false, maxSize: 20000 },
 			cursor: text({ max: 200 }),
 			last_run_at: date(),
@@ -238,8 +245,9 @@ export const EXPECTED_COLLECTIONS = {
 			scan: { type: 'json', required: false, maxSize: 2000 },
 			// Target project of the entries of the connection (ADR-0049, migration 1790203100).
 			target_project: relation('projects'),
-			// What the GitHub channel knows of its repositories, hidden (ADR-0050, migration 1790203200).
-			watch: { type: 'json', required: false, hidden: true, maxSize: 1048576 },
+			// What the GitHub channel knows of its repositories, hidden (ADR-0050, migration 1790203200);
+			// up to 8 MB since the folder channel keeps its folders there (ADR-0051, migration 1790203300).
+			watch: { type: 'json', required: false, hidden: true, maxSize: 8388608 },
 			...ownership(),
 			...timestamps()
 		},

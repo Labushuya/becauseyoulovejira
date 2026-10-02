@@ -165,6 +165,24 @@ describe('GitHub (ADR-0050)', () => {
 	});
 });
 
+describe('folders (ADR-0051)', () => {
+	it('keeps one entry per file (by its key) and version, whatever the spelling of the path', () => {
+		const file = {
+			channel: 'folder',
+			source_ref: 'C:\\Daten\\Projekte\\Angebot.pdf',
+			meta: { folder: { file_key: 'c:\\daten\\projekte\\angebot.pdf', version: 'sha256:abc' } }
+		};
+		// "\" inside a part is escaped as "\\" (like "|").
+		expect(keyOf(file)).toBe('folder|c:\\\\daten\\\\projekte\\\\angebot.pdf|sha256:abc');
+		expect(keyOf({ ...file, source_ref: 'C:\\DATEN\\Projekte\\Angebot.pdf', title: 'anders' })).toBe(keyOf(file));
+		expect(keyOf({ ...file, meta: { folder: { ...file.meta.folder, version: 'sha256:def' } } })).not.toBe(keyOf(file));
+		expect(keyOf({ ...file, meta: { folder: { ...file.meta.folder, file_key: 'c:\\daten\\anders.pdf' } } })).not.toBe(keyOf(file));
+		// Without a key the reference itself counts.
+		expect(keyOf({ channel: 'folder', source_ref: '/home/anna/a.txt', meta: { folder: { version: 'size:1:2' } } })).toBe('folder|/home/anna/a.txt|size:1:2');
+		expect(fp.fingerprintKey({ channel: 'folder', source_ref: '' }, 'r')).toEqual({ key: '', missing: 'source_ref' });
+	});
+});
+
 describe('escaping and hashing', () => {
 	it('keeps part lists with "|" apart', () => {
 		const a = keyOf({ channel: 'ics', source_ref: 'a|b', meta: { recurrence_id: 'c' } });

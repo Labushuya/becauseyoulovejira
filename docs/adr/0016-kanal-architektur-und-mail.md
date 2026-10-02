@@ -187,3 +187,12 @@ Der Text oben bleibt. Seit Paket 2 der beobachteten Quellen (Nutzerentscheidung 
 - **Cron:** `byl-github` jede Minute; jede Verbindung läuft, wenn ihr Intervall (5 bis 60 Minuten, Standard 15) vorbei ist und kein Rate-Limit von GitHub gilt. „Jetzt abrufen“ und „Alle Kanäle jetzt abrufen“ nutzen die gemeinsame Route und Laufsperre; `runConnection` kennt dafür den Zustand `limited` (mit `until` und `hint`).
 - **Abweichungen von §2 „Grenzen“:** 20 s je Anfrage und 60 s je Lauf statt 30 s je Anfrage; der Rest folgt im nächsten Lauf. Der Token ist **optional** (`connection-rules.requiresSecret`): Ohne ihn liest die Verbindung öffentliche Repositorys, statt „fehlt“ zu melden.
 - **Kein Schreibzugriff:** Der Client kennt nur `GET` (ADR-0050 §1); Webhooks bleiben ausgeschlossen (Alternativen oben).
+
+## Nachtrag (2026-10-02, [ADR-0051](0051-ordner-kanal-verweise-statt-kopien.md)): Ordner als Kanal im Hook ohne Zugangsdaten
+
+Der Ordner-Kanal läuft wie die HTTP-Kanäle im Hook (§2), liest aber keinen Dienst, sondern Ordner auf diesem Rechner:
+
+- **Konfiguration:** `connections.type = folder`; `settings` hält das Intervall (1 bis 60 Minuten, Standard 5) und höchstens 10 Ordner mit Unterordnern, Typen, Ausschlüssen, Zielprojekt und „Änderungen melden“ (ADR-0051 §2). **`secret_env` bleibt leer:** Die Migration `1790203300_folder_channel.js` macht das Feld optional, der Hook verlangt für `folder` einen leeren Namen und für jede andere Art weiter einen gültigen (`connection-rules.secretViolation`). Der Stand je Ordner liegt im versteckten Feld `connections.watch`, das dafür 8 MB statt 1 MB hält.
+- **Cron und Laufsperre:** Cron `byl-folders` jede Minute, eine Verbindung läuft nach ihrem Intervall; „Jetzt prüfen“ und „Alle Kanäle jetzt abrufen“ nutzen die gemeinsame Route und Laufsperre (`runConnection`, Art `folder` in `channel-runner.js`).
+- **Abweichungen von §2 „Grenzen“:** keine Anfrage ins Netz, dafür 30 s je Lauf, 20 000 Einträge je Ordner, 2 000 beobachtete Dateien je Ordner, 200 Hashes und 2 GB je Lauf, 100 neue Einträge je Lauf (ADR-0051 §4). Ein Fehler eines Ordners steht in seinen Details, nicht in `last_error`, und nie mit Pfad im Log.
+- **Kein Schreibzugriff:** Der Kanal schreibt, verschiebt und löscht nichts in den Ordnern (ADR-0051 §1).

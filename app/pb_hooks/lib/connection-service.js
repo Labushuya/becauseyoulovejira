@@ -54,20 +54,27 @@ function throwIf(violation) {
   }
 }
 
+// The rules of the settings of a folder connection for the platform of this server (ADR-0051).
+function folderRules() {
+  return require(__hooks + '/lib/folder-service.js').settingsRules();
+}
+
 // onRecordCreateRequest; a superuser may set every field (tests, repairs in the admin UI).
 function guardCreate(e) {
   if (e.hasSuperuserAuth()) {
     return;
   }
   var values = valuesOf(e.record);
-  throwIf(rules.createViolation(values, secrets, keywords, github) || rules.labelViolation(values.label));
+  throwIf(rules.createViolation(values, secrets, keywords, github, folderRules()) || rules.labelViolation(values.label));
   targets.guardConnection(e, true);
   guardRepoTargets(e, null, values);
+  guardFolders(e, null, values);
 }
 
 // onRecordUpdateRequest; a superuser may set every field. A new name comes alone (ADR-0026,
 // addendum KK-3): the request may change nothing else with it. A new target project must be an
-// active project of the area of the connection (ADR-0049), also the one of a repository of GitHub.
+// active project of the area of the connection (ADR-0049), also the one of a repository of GitHub
+// or of a folder.
 function guardUpdate(e) {
   if (e.hasSuperuserAuth()) {
     return;
@@ -75,12 +82,29 @@ function guardUpdate(e) {
   var before = valuesOf(e.record.original());
   var after = valuesOf(e.record);
   throwIf(
-    rules.updateViolation(before, after, secrets, keywords, github) ||
+    rules.updateViolation(before, after, secrets, keywords, github, folderRules()) ||
       rules.labelViolation(after.label) ||
       rules.renameViolation(before, after)
   );
   targets.guardConnection(e, false);
   guardRepoTargets(e, before, after);
+  guardFolders(e, before, after);
+}
+
+// A folder that is new in the settings of a folder connection (ADR-0051 §2) must exist on this
+// machine, be readable, be reached without links and lie outside the app; its target project like
+// the one of a repository (ADR-0049 §3). Folders that stay are not checked again.
+function guardFolders(e, before, after) {
+  if (after.type !== 'folder') {
+    return;
+  }
+  var service = require(__hooks + '/lib/folder-service.js');
+  service.assertNewFolders(e.app, before === null ? null : before.settings, after.settings);
+  var changed = service.changedTargets(before === null ? null : before.settings, after.settings);
+  var scope = ticketKey.scopeOf(after.owner, after.household);
+  for (var i = 0; i < changed.length; i++) {
+    targets.assertChoosable(e.app, 'settings', changed[i].target, scope);
+  }
 }
 
 // The target project of a repository of a GitHub connection (ADR-0049 §3, ADR-0050 §2) lives as an

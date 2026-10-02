@@ -236,3 +236,13 @@ Nutzerentscheidung vom 2026-10-01 („Statusanzeige an der Quelle (nur Anzeige, 
 - **Nur Anzeige:** Der Status ändert weder den Text noch die Originaldatei des Eintrags noch das Ticket (kein Feld, kein Verlauf, kein `updated`). „Quelle prüfen“ mit erneutem Abruf und Vergleich (Alternativen oben) bleibt verworfen: Der Kanal aktualisiert den Status bei seinem regulären Abruf, nicht auf Knopfdruck am Eintrag.
 - **Nur der Server schreibt ihn** (beim Anlegen über `@watch`, danach beim Abruf); für Clients ist er unveränderlich (`IMMUTABLE_FIELDS`). Die Kopie einer Quelle beim Duplizieren (Nachtrag F) übernimmt ihn und folgt ihm wie das Original.
 - **Anzeige** im Panel des Eintrags (Zeile „Status der Quelle“) und im Abschnitt „Quellen“ eines Tickets als `Lozenge` neben dem Kopie-Status (§5), auch bei umgewandelten und verknüpften Einträgen. Nie rot: Eine geänderte oder gelöschte Quelle ist kein Fehler ([ADR-0009](0009-fehlerfarbe.md)).
+
+## Nachtrag J (2026-10-02, [ADR-0051](0051-ordner-kanal-verweise-statt-kopien.md)): Ordner-Quellen sind Verweise, keine Kopien – eine bewusste Ausnahme
+
+Nutzerentscheidung vom 2026-10-01 („direktes Ansehen öffnet ‚Link‘ zur Datei (setzt Datei voraus)“). §1 bis §7 gelten weiter für alle anderen Kanäle; für Einträge aus beobachteten Ordnern gilt stattdessen:
+
+- **Verweis statt Kopie:** Der Eintrag hält nur die Angaben der Fassung (Name, Pfad im Ordner, Ordner, Größe, Änderungszeit, Typ, Hash) und den Pfad der Datei (`source_ref`), keine Originaldatei und keinen Inhalt. „Ansehen“ öffnet die **aktuelle** Datei über eine geschützte Route und setzt voraus, dass es sie gibt; fehlt sie, sagt die App das klar.
+- **Begründung:** Eine Kopie widerspräche dem ausdrücklichen Wunsch (Link auf die Datei), verdoppelte große Dateien in `pb_data` und in jeder Sicherung und wäre nach der nächsten Änderung veraltet. Was das kostet: Ist die Datei gelöscht, ist ihr Inhalt für die App verloren; der Status zeigt „nicht mehr vorhanden“ (Nachtrag I).
+- **Der Verweis folgt der Datei:** Verschiebt oder benennt der Nutzer sie um, erkennt der Kanal das (gleicher Hash, ohne Hash gleiche Größe und Zeit) und setzt den Pfad der Einträge um; Status „verschoben nach …“. Der Text des Eintrags bleibt eingefroren.
+- **Kopie-Status** in Panel und Quellen eines Tickets: „Verweis“ statt „Vollständig“, „Nur Text“ usw. (§5); „Ansehen“ und „Herunterladen“ statt „Originaldatei … herunterladen“ (mit OD-2).
+- **Duplizieren mit Kopie der Herkunft** (Nachtrag F) kopiert auch hier den Eintrag, also den Verweis samt Status; eine Datei wird nie kopiert.

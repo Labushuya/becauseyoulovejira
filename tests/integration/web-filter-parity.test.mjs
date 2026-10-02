@@ -75,6 +75,9 @@ function channelDraft(channel) {
 		// GitHub (ADR-0050): a pull request by its node ID.
 		case 'github':
 			return { ...draft, kind: 'pull_request', sourceRef: `PR_${suffix}` };
+		// Folders (ADR-0051): a file by its path.
+		case 'folder':
+			return { ...draft, kind: 'file', sourceRef: `/srv/ordner/${suffix}.pdf` };
 		default:
 			return draft;
 	}

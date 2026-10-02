@@ -66,6 +66,33 @@ describe('connection-rules.js', () => {
 		});
 	});
 
+	it('checks folder settings through the rules of the folders and takes no access data for folders (ADR-0051)', () => {
+		const folderRules = loadHookLib('folder-rules.js');
+		const folder = { settingsViolation: (value) => folderRules.settingsViolation(value, 'windows') };
+		const before = { ...empty, type: 'folder', secret_env: '', settings: null };
+		const after = { ...before, settings: { interval: 10, folders: [{ path: 'C:\\Daten\\Projekte', types: ['pdf'] }] } };
+		expect(rules.updateViolation(before, after, secrets, keywords, null, folder)).toBe('');
+		expect(rules.updateViolation(before, { ...after, settings: { keywords: ['todo'] } }, secrets, keywords, null, folder)).toMatchObject({
+			field: 'settings',
+			code: 'validation_folder_settings'
+		});
+		expect(rules.updateViolation(before, { ...after, settings: { folders: [{ path: 'Daten' }] } }, secrets, keywords, null, folder)).toMatchObject({
+			code: 'validation_folder_path'
+		});
+		// Without the rules of the folders a folder connection takes no settings at all.
+		expect(rules.settingsViolation('folder', {}, secrets, keywords)).toMatchObject({ code: 'validation_connection_settings' });
+		// No variable: an empty name, never one of BYL_.
+		expect(rules.updateViolation(before, { ...after, secret_env: 'BYL_ORDNER' }, secrets, keywords, null, folder)).toMatchObject({
+			field: 'secret_env',
+			code: 'validation_connection_secret_none'
+		});
+		expect(rules.secretViolation('calendar', '', secrets)).toMatchObject({ code: 'validation_secret_name' });
+		expect(rules.SECRETLESS_TYPES).toEqual(['folder']);
+		expect(rules.requiresSecret('folder')).toBe(false);
+		// Users create one with the interface of OD-2; until then only the superuser (tests).
+		expect(rules.CREATABLE_TYPES).not.toContain('folder');
+	});
+
 	it('refuses unknown kinds, server fields and invalid names', () => {
 		expect(rules.createViolation({ ...base, ...empty, type: 'slack' }, secrets, keywords)).toMatchObject({
 			field: 'type',

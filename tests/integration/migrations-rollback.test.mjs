@@ -842,6 +842,12 @@ const GITHUB_MIGRATION = '1790203200_github_channel.js';
 const GITHUB_FIELDS = ['watch'];
 const GITHUB_CHANNEL = 'github';
 const GITHUB_KINDS = ['change', 'pull_request', 'release'];
+// The folder channel (ADR-0051, 1790203300), which every earlier test runs along as well: a new
+// value of inbox_items.channel, tickets.source and connections.type, the kind "file", an optional
+// connections.secret_env and room for 8 MB in connections.watch.
+const FOLDER_MIGRATION = '1790203300_folder_channel.js';
+const FOLDER_CHANNEL = 'folder';
+const FOLDER_KIND = 'file';
 // Columns of inbox_items and connections that later migrations add (target project, watch).
 const LATER_ITEM_FIELDS = [...TARGET_FIELDS, ...GITHUB_FIELDS];
 // Conditions the trash appends to the API rules (1790202300).
@@ -908,7 +914,7 @@ function withoutTrashRules(collection) {
 const OWN_INBOX_COLLECTION = 'inbox_keys';
 const OWN_INBOX_CHANNELS = ['api', 'whatsapp-web'];
 const CHANNELS_BEFORE_OWN_INBOX = CHANNELS.filter(
-	(channel) => !OWN_INBOX_CHANNELS.includes(channel) && channel !== GITHUB_CHANNEL
+	(channel) => !OWN_INBOX_CHANNELS.includes(channel) && channel !== GITHUB_CHANNEL && channel !== FOLDER_CHANNEL
 );
 
 /** The collections without those that later migrations create (inbox_keys, 1790202400). */
@@ -965,11 +971,34 @@ function withoutTargetFields(collection) {
 }
 
 /**
+ * A collection without what the folder channel adds (ADR-0051, 1790203300): the value "folder" of
+ * inbox_items.channel, tickets.source and connections.type, the kind "file", secret_env required
+ * again and 1 MB for connections.watch.
+ */
+function withoutFolderChannel(collection) {
+	if (!['inbox_items', 'tickets', 'connections'].includes(collection.name)) return collection;
+	return {
+		...collection,
+		fields: collection.fields.map((field) => {
+			if (['channel', 'source', 'type'].includes(field.name)) {
+				return { ...field, values: field.values.filter((value) => value !== FOLDER_CHANNEL) };
+			}
+			if (field.name === 'kind') return { ...field, values: field.values.filter((value) => value !== FOLDER_KIND) };
+			if (collection.name === 'connections' && field.name === 'secret_env') return { ...field, required: true };
+			if (collection.name === 'connections' && field.name === 'watch') return { ...field, maxSize: 1048576 };
+			return field;
+		})
+	};
+}
+
+/**
  * A collection without what the GitHub channel adds (ADR-0050, 1790203200): the value "github" of
  * inbox_items.channel, tickets.source and connections.type, its three kinds of entries and the
- * field `watch` of inbox_items and connections.
+ * field `watch` of inbox_items and connections; and without what the folder channel adds after it
+ * (withoutFolderChannel), since every test that runs the one along runs the other as well.
  */
-function withoutGithubChannel(collection) {
+function withoutGithubChannel(input) {
+	const collection = withoutFolderChannel(input);
 	if (!['inbox_items', 'tickets', 'connections'].includes(collection.name)) return collection;
 	return {
 		...collection,
@@ -1215,7 +1244,8 @@ describe('migration rollback of "Jeden Termin einzeln anlegen" (plan OR-5)', () 
 				NO_DELETE_MIGRATION,
 				BACKUP_SCHEDULE_MIGRATION,
 				TARGET_MIGRATION,
-				GITHUB_MIGRATION
+				GITHUB_MIGRATION,
+				FOLDER_MIGRATION
 			]);
 
 			await withTempDataDir(async ({ dataDir, args }) => {
@@ -1360,7 +1390,8 @@ describe('migration rollback of the trash (ADR-0037)', () => {
 				NO_DELETE_MIGRATION,
 				BACKUP_SCHEDULE_MIGRATION,
 				TARGET_MIGRATION,
-				GITHUB_MIGRATION
+				GITHUB_MIGRATION,
+				FOLDER_MIGRATION
 			]);
 
 			await withTempDataDir(async ({ dataDir, args }) => {
@@ -1463,7 +1494,8 @@ describe('migration rollback of the own inbox (ADR-0038)', () => {
 				NO_DELETE_MIGRATION,
 				BACKUP_SCHEDULE_MIGRATION,
 				TARGET_MIGRATION,
-				GITHUB_MIGRATION
+				GITHUB_MIGRATION,
+				FOLDER_MIGRATION
 			]);
 
 			await withTempDataDir(async ({ dataDir, args }) => {
@@ -1479,8 +1511,8 @@ describe('migration rollback of the own inbox (ADR-0038)', () => {
 				expect(appliedFiles(up, 'Applied')).toEqual(fromOwn);
 				assertSchema(readDataDir(dataDir).collections);
 				expect(channelValues(dataDir)).toEqual({
-					inbox_items: [...OLD_VALUES, 'api', 'whatsapp-web', GITHUB_CHANNEL],
-					tickets: [...OLD_VALUES, 'api', 'whatsapp-web', GITHUB_CHANNEL]
+					inbox_items: [...OLD_VALUES, 'api', 'whatsapp-web', GITHUB_CHANNEL, FOLDER_CHANNEL],
+					tickets: [...OLD_VALUES, 'api', 'whatsapp-web', GITHUB_CHANNEL, FOLDER_CHANNEL]
 				});
 				const migratedOwn = withDatabase(dataDir, snapshot);
 				expect({
@@ -1588,7 +1620,8 @@ describe('migration rollback of "Status beim Anlegen" (plan WV, ADR-0022 addendu
 				NO_DELETE_MIGRATION,
 				BACKUP_SCHEDULE_MIGRATION,
 				TARGET_MIGRATION,
-				GITHUB_MIGRATION
+				GITHUB_MIGRATION,
+				FOLDER_MIGRATION
 			]);
 			const ruleFields = [...STATUS_RULE_FIELDS, ...SUBTASKS_RULE_FIELDS];
 
@@ -1684,7 +1717,8 @@ describe('migration rollback of the pinned comment (ADR-0044)', () => {
 				NO_DELETE_MIGRATION,
 				BACKUP_SCHEDULE_MIGRATION,
 				TARGET_MIGRATION,
-				GITHUB_MIGRATION
+				GITHUB_MIGRATION,
+				FOLDER_MIGRATION
 			]);
 
 			await withTempDataDir(async ({ dataDir, args }) => {
@@ -1780,7 +1814,8 @@ describe('migration rollback of the sub-tasks of the template (plan WV-3, ADR-00
 				NO_DELETE_MIGRATION,
 				BACKUP_SCHEDULE_MIGRATION,
 				TARGET_MIGRATION,
-				GITHUB_MIGRATION
+				GITHUB_MIGRATION,
+				FOLDER_MIGRATION
 			]);
 
 			await withTempDataDir(async ({ dataDir, args }) => {
@@ -1874,7 +1909,7 @@ describe('migration rollback of the target project (ADR-0049)', () => {
 		async () => {
 			// The GitHub channel (ADR-0050, 1790203200) follows and runs along; it changes no row.
 			const fromTarget = MIGRATION_FILES.slice(MIGRATION_FILES.indexOf(TARGET_MIGRATION));
-			expect(fromTarget).toEqual([TARGET_MIGRATION, GITHUB_MIGRATION]);
+			expect(fromTarget).toEqual([TARGET_MIGRATION, GITHUB_MIGRATION, FOLDER_MIGRATION]);
 
 			await withTempDataDir(async ({ dataDir, args }) => {
 				await migrate(args, 'up');
@@ -1967,8 +2002,9 @@ describe('migration rollback of the GitHub channel (ADR-0050)', () => {
 	it(
 		'adds the values and the fields without changing a row; on the way back GitHub entries become web links and GitHub connections go',
 		async () => {
+			// The folder channel (ADR-0051, 1790203300) follows and runs along; it changes no row.
 			const fromGithub = MIGRATION_FILES.slice(MIGRATION_FILES.indexOf(GITHUB_MIGRATION));
-			expect(fromGithub).toEqual([GITHUB_MIGRATION]);
+			expect(fromGithub).toEqual([GITHUB_MIGRATION, FOLDER_MIGRATION]);
 
 			await withTempDataDir(async ({ dataDir, args }) => {
 				await migrate(args, 'up');
@@ -1986,13 +2022,14 @@ describe('migration rollback of the GitHub channel (ADR-0050)', () => {
 				expect(appliedFiles(up, 'Applied')).toEqual(fromGithub);
 				assertSchema(readDataDir(dataDir).collections);
 				expect(valuesOf(dataDir)).toEqual({
-					channel: [...valuesBefore.channel, GITHUB_CHANNEL],
-					kind: [...valuesBefore.kind, ...GITHUB_KINDS],
-					source: [...valuesBefore.source, GITHUB_CHANNEL],
-					type: [...valuesBefore.type, GITHUB_CHANNEL]
+					channel: [...valuesBefore.channel, GITHUB_CHANNEL, FOLDER_CHANNEL],
+					kind: [...valuesBefore.kind, ...GITHUB_KINDS, FOLDER_KIND],
+					source: [...valuesBefore.source, GITHUB_CHANNEL, FOLDER_CHANNEL],
+					type: [...valuesBefore.type, GITHUB_CHANNEL, FOLDER_CHANNEL]
 				});
 				expect(fieldOf(dataDir, 'inbox_items', 'watch')).toMatchObject({ type: 'json', required: false, maxSize: 2000 });
-				expect(fieldOf(dataDir, 'connections', 'watch')).toMatchObject({ type: 'json', required: false, hidden: true, maxSize: 1048576 });
+				// 1 MB with the GitHub channel, 8 MB since the folder channel.
+				expect(fieldOf(dataDir, 'connections', 'watch')).toMatchObject({ type: 'json', required: false, hidden: true, maxSize: 8388608 });
 				expect(withoutTimestamps(readDataDir(dataDir).collections).map(withoutGithubChannel)).toEqual(schemaBefore);
 				// No row changes: entries and connections of before have no status and no state.
 				const migrated = withDatabase(dataDir, snapshot);
@@ -2039,6 +2076,106 @@ describe('migration rollback of the GitHub channel (ADR-0050)', () => {
 				expect(reverted.users).toEqual(before.users);
 
 				expect(appliedFiles(await migrate(args, 'up'), 'Applied')).toEqual(fromGithub);
+				assertSchema(readDataDir(dataDir).collections);
+			});
+		}
+	);
+});
+
+describe('migration rollback of the folder channel (ADR-0051)', () => {
+	const OWNER = 'user00000000001';
+	const SCOPE = 'u:user00000000001';
+	const collectionOf = (dataDir, name) =>
+		readDataDir(dataDir).collections.find((collection) => collection.name === name);
+	const fieldOf = (dataDir, collection, name) =>
+		collectionOf(dataDir, collection)?.fields.find((field) => field.name === name);
+	const valuesOf = (dataDir) => ({
+		channel: fieldOf(dataDir, 'inbox_items', 'channel').values,
+		kind: fieldOf(dataDir, 'inbox_items', 'kind').values,
+		source: fieldOf(dataDir, 'tickets', 'source').values,
+		type: fieldOf(dataDir, 'connections', 'type').values
+	});
+
+	/** A user, a GitHub connection with an entry and a ticket from it, as before the folder channel. */
+	function insertData(db) {
+		db.prepare('INSERT INTO users (id, email, tokenKey, password, created, updated) VALUES (?, ?, ?, ?, ?, ?)').run(OWNER, 'eins@example.invalid', 'tk1', 'hash', STAMP, STAMP);
+		db.prepare(
+			'INSERT INTO connections (id, type, label, enabled, secret_env, settings, watch, scope, owner, created, updated) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+		).run('connection00001', 'github', 'GitHub', 1, 'BYL_GITHUB_TOKEN', '{"repos":[{"repo":"octo/roadmap"}]}', '{"repos":{}}', SCOPE, OWNER, STAMP, STAMP);
+		db.prepare(
+			'INSERT INTO inbox_items (id, channel, kind, title, source_ref, fingerprint, state, connection, watch, scope, owner, created, updated) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+		).run('item00000000001', 'github', 'change', 'CHANGELOG.md in octo/roadmap geändert', 'file:octo/roadmap:CHANGELOG.md', 'f1', 'new', 'connection00001', '{"kind":"file","state":"current"}', SCOPE, OWNER, STAMP, STAMP);
+		db.prepare(
+			'INSERT INTO tickets (id, number, key, title, status, priority, source, scope, owner, created, updated) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+		).run('ticket000000001', 1, 'TASK-1', 'Alt', 'open', 'medium', 'github', SCOPE, OWNER, STAMP, STAMP);
+	}
+
+	it(
+		'adds the values, makes the variable optional and gives the state more room without changing a row; on the way back folder entries become manual ones and folder connections go',
+		async () => {
+			const fromFolder = MIGRATION_FILES.slice(MIGRATION_FILES.indexOf(FOLDER_MIGRATION));
+			expect(fromFolder).toEqual([FOLDER_MIGRATION]);
+
+			await withTempDataDir(async ({ dataDir, args }) => {
+				await migrate(args, 'up');
+				await migrate(args, 'down', String(fromFolder.length));
+				const valuesBefore = valuesOf(dataDir);
+				expect(valuesBefore.channel).not.toContain(FOLDER_CHANNEL);
+				expect(valuesBefore.type).toEqual(['calendar', 'telegram', 'notion', 'mail', 'github']);
+				expect(fieldOf(dataDir, 'connections', 'secret_env')).toMatchObject({ required: true });
+				expect(fieldOf(dataDir, 'connections', 'watch')).toMatchObject({ maxSize: 1048576 });
+				withDatabase(dataDir, insertData);
+				const before = withDatabase(dataDir, snapshot);
+				const schemaBefore = withoutTimestamps(readDataDir(dataDir).collections);
+
+				const up = await migrate(args, 'up');
+				expect(appliedFiles(up, 'Applied')).toEqual(fromFolder);
+				assertSchema(readDataDir(dataDir).collections);
+				expect(valuesOf(dataDir)).toEqual({
+					channel: [...valuesBefore.channel, FOLDER_CHANNEL],
+					kind: [...valuesBefore.kind, FOLDER_KIND],
+					source: [...valuesBefore.source, FOLDER_CHANNEL],
+					type: [...valuesBefore.type, FOLDER_CHANNEL]
+				});
+				expect(fieldOf(dataDir, 'connections', 'secret_env')).toMatchObject({ required: false, pattern: '^BYL_[A-Z0-9_]{1,60}$' });
+				expect(fieldOf(dataDir, 'connections', 'watch')).toMatchObject({ hidden: true, maxSize: 8388608 });
+				expect(withoutTimestamps(readDataDir(dataDir).collections).map(withoutFolderChannel)).toEqual(schemaBefore);
+				// No row changes.
+				expect(withDatabase(dataDir, snapshot)).toEqual(before);
+
+				// A folder connection without a variable, its entries and a ticket from one, then back.
+				withDatabase(dataDir, (db) => {
+					db.prepare(
+						'INSERT INTO connections (id, type, label, enabled, secret_env, settings, watch, scope, owner, created, updated) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+					).run('connection00002', 'folder', 'Ordner', 1, '', '{"folders":[{"path":"C:\\\\Daten"}]}', '{"folders":{}}', SCOPE, OWNER, STAMP, STAMP);
+					const item = db.prepare(
+						'INSERT INTO inbox_items (id, channel, kind, title, source_ref, fingerprint, state, connection, watch, scope, owner, created, updated) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+					);
+					item.run('item00000000002', 'folder', 'file', 'Neue Datei: a.pdf', 'C:\\Daten\\a.pdf', 'f2', 'new', 'connection00002', '{"kind":"file","state":"current"}', SCOPE, OWNER, STAMP, STAMP);
+					item.run('item00000000003', 'folder', 'change', 'Datei geändert: a.pdf', 'C:\\Daten\\a.pdf', 'f3', 'converted', 'connection00002', '{"kind":"file","state":"moved","to":"b/a.pdf"}', SCOPE, OWNER, STAMP, STAMP);
+					db.prepare(
+						'INSERT INTO tickets (id, number, key, title, status, priority, source, source_item, scope, owner, created, updated) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+					).run('ticket000000002', 2, 'TASK-2', 'Aus dem Ordner', 'open', 'medium', 'folder', 'item00000000003', SCOPE, OWNER, STAMP, STAMP);
+					db.prepare('UPDATE inbox_items SET ticket = ? WHERE id = ?').run('ticket000000002', 'item00000000003');
+				});
+				const withFolder = withDatabase(dataDir, snapshot);
+
+				const down = await migrate(args, 'down', String(fromFolder.length));
+				expect(appliedFiles(down, 'Reverted')).toEqual([...fromFolder].reverse());
+				expect(withoutTimestamps(readDataDir(dataDir).collections)).toEqual(schemaBefore);
+				const reverted = withDatabase(dataDir, snapshot);
+				const items = Object.fromEntries(reverted.inbox_items.map((row) => [row.id, row]));
+				const itemsBefore = Object.fromEntries(withFolder.inbox_items.map((row) => [row.id, row]));
+				expect(items.item00000000001).toEqual(before.inbox_items[0]);
+				expect(items.item00000000002).toEqual({ ...itemsBefore.item00000000002, channel: 'manual', kind: 'todo', connection: '' });
+				expect(items.item00000000003).toEqual({ ...itemsBefore.item00000000003, channel: 'manual', connection: '' });
+				const tickets = Object.fromEntries(reverted.tickets.map((row) => [row.id, row]));
+				expect(tickets.ticket000000001).toEqual(before.tickets[0]);
+				expect(tickets.ticket000000002).toEqual({ ...withFolder.tickets[1], source: 'manual' });
+				expect(reverted.connections).toEqual(before.connections);
+				expect(reverted.users).toEqual(before.users);
+
+				expect(appliedFiles(await migrate(args, 'up'), 'Applied')).toEqual(fromFolder);
 				assertSchema(readDataDir(dataDir).collections);
 			});
 		}

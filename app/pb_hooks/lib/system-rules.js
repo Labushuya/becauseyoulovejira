@@ -65,10 +65,12 @@ var REFUSALS = {
   script: { status: 502, message: 'Das Steuerskript hat nicht wie erwartet geantwortet.' }
 };
 
-// Fixed windows per user: reading (status, doctor, logs) and actions.
+// Fixed windows per user: reading (status, doctor, logs) and actions; "Ansehen" of a file of a
+// watched folder (ADR-0051 §6) with a window of its own, one request to ask and one for the file.
 var RATE_LIMITS = {
   read: { limit: 30, windowMs: 60000 },
-  change: { limit: 10, windowMs: 60000 }
+  change: { limit: 10, windowMs: 60000 },
+  file: { limit: 120, windowMs: 60000 }
 };
 // After a restart was started, another one waits this long (the server is gone by then).
 var RESTART_PENDING_MS = 90000;

@@ -164,6 +164,18 @@ function fingerprintKey(item, newId) {
     var github = meta.github && typeof meta.github === 'object' ? meta.github : {};
     return { key: join(['github', ref, trim(github.version)]) };
   }
+  // Folders (ADR-0051 §3): a version of a file by its path (`meta.folder.file_key`, the path in the
+  // form that compares, lower case under Windows; else source_ref) and its version
+  // (`meta.folder.version`, SHA-256 or size and time). The same version of the same file comes in
+  // once, also through a second connection or a second folder that holds it; a discarded one stays
+  // out (tombstone).
+  if (channel === 'folder') {
+    if (ref === '') {
+      return { key: '', missing: 'source_ref' };
+    }
+    var folder = meta.folder && typeof meta.folder === 'object' ? meta.folder : {};
+    return { key: join(['folder', trim(folder.file_key) || ref, trim(folder.version)]) };
+  }
   if (contains(MANUAL_CHANNELS, channel)) {
     return { key: join(['manual', text(newId)]) };
   }
