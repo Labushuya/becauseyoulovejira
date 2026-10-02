@@ -351,3 +351,15 @@ Sichtbar ist höchstens ein Leerzeichen am Ende des Links; an allen heutigen Ste
 - **§4 Assistent:** sechs Schritte (Token anlegen, Token setzen, Neu starten, Repositorys, Zielprojekt (optional), Prüfen). „Repositorys“ legt die Verbindung mit dem ersten Repository an und gilt erst mit mindestens einem Repository als erledigt.
 
 **Alternativen:** Eine Verbindung je Repository (verworfen: die Spec will einen Kanal, und Token, Intervall und Limit gelten für alle); ein eigener Bereich „Repositorys“ außerhalb der Karte (verworfen: KK-2 hält alles einer Verbindung in ihrer Karte); das Zielprojekt je Repository als sofort speichernde Auswahl in den Details (verworfen: „Kein Projekt“ hieße dort „wie die Verbindung“ und stünde neben der Auswahl der Verbindung; im Dialog ist die Bedeutung eindeutig).
+
+## Nachtrag (2026-10-02, Fehlerbericht zu KK-3): Umbenennen ohne seitlichen Überlauf
+
+**Anlass:** Fehlerbericht des Nutzers nach dem Test des GitHub-Kanals: Beim Umbenennen einer Karte scrollte die Seite seitlich („massiver Overflow-x“, alle Karten mit eigenem Namen). Ursache und Messung: [Plan Layout-Überlauf](../plan/layout-ueberlauf.md) §6. Kurz: Die Karte war ein Grid mit einer impliziten `auto`-Spalte; beim Umbenennen hatte der Kopf aus Symbol, Feld mit Knöpfen und Lozenge 402 px Mindestbreite, die Spalte wuchs mit, und mit ihr jede Zeile der Karte.
+
+**Entscheidung** (ergänzt KK-2 „Gestaltung“ und KK-3 „Wo“; Advisor und Executor):
+
+- **Die Karte wächst nie über ihre Breite:** Karte und Details sind eine Spalte `minmax(0, 1fr)`; was nicht passt, bricht um.
+- **Kopf beim Umbenennen:** Das Feld nimmt die Breite der Zeile. „Speichern“ und „Abbrechen“ stehen daneben, auf schmalen Karten darunter, auf sehr schmalen untereinander. Passen Feld und Lozenge nicht nebeneinander, steht die Lozenge unter dem Feld; ohne Umbenennen bleibt der Kopf eine Zeile wie bisher.
+- **Regel für alle Komponenten** ([CLAUDE.md](../../CLAUDE.md) §8 „Breite von Formular-Controls“): Eine Flex-Zeile mit Textfeld, Select oder Textarea und Knöpfen bricht um, ebenso eine Gruppe von Textknöpfen darin; statisch geprüft in `no-control-overflow.test.ts`.
+
+**Alternativen:** Umbenennen in einem Dialog (verworfen: KK-3 hat bewusst keinen Dialog, und der Fehler lag nicht im Ort, sondern im Layout); die Lozenge während des Umbenennens ausblenden (verworfen: der Zustand der Karte ginge verloren, und die Knöpfe allein liefen auf schmalen Karten weiter über); eine feste Breite des Feldes (verworfen: genau das verbietet §8, und lange Namen bräuchten sie trotzdem nicht).

@@ -341,7 +341,7 @@
   "meta": {
     "projekt": "becauseyoulovejira",
     "stand": "2026-10-02",
-    "commit": "db1b4aa"
+    "commit": "a36d3a1"
   },
   "bereiche": [
     { "id": "betrieb", "titel": "Betrieb: Start, Stopp, Skripte und Daten" },
@@ -539,6 +539,8 @@
       "vermerk": "Paket 2, Teil 2 von 2. Anlegen einer GitHub-Verbindung geht erst nach einem Neustart der App (neu-starten.bat, Hooks von GH-1 und GH-2)." },
     { "id": "OD-1", "vorhaben": "Beobachtete Quellen", "titel": "Ordner-Kanal, Server: Ordner nur lesend beobachten, Erkennung mit Größe, Zeit und SHA-256, Verschieben, Einträge als Verweise mit Status, „Ansehen“ der aktuellen Datei nur für den Besitzer", "bereich": "eingang", "quelle": "Nutzerentscheidung", "datum": "2026-10-02", "adr": ["0051-ordner-kanal-verweise-statt-kopien.md", "0014-datenmodell-eingang.md, Nachtrag ADR-0051", "0016-kanal-architektur-und-mail.md, Nachtrag ADR-0051", "0020-stichwoerter-pro-kanal.md, Nachtrag 6", "0031-herkunft-sichern.md, Nachtrag J", "0043-system-seite.md, Nachtrag OD-1", "0049-zielprojekt-je-eingangsweg.md, Nachtrag ADR-0051", "0050-github-kanal-und-beobachtete-quellen.md, Nachtrag ADR-0051"], "plan": "beobachtete-quellen.md", "faelle": ["BYL-E6-1150..BYL-E6-1162"],
       "vermerk": "Paket 3, Teil 1 von 2 (Oberfläche folgt mit OD-2, dort die manuellen Fälle). Migration, Hooks und Cron wirken erst nach einem Neustart der App (neu-starten.bat)." },
+    { "id": "layout-karten", "vorhaben": "Layout-Überlauf von Formular-Controls", "titel": "Umbenennen in Kanal-Karten ohne seitlichen Überlauf; Flex-Zeilen mit Feld und Knöpfen brechen um", "bereich": "darstellung", "quelle": "Fehlerbericht", "datum": "2026-10-02", "adr": ["0026-einstellungsbereich-und-hinweis-bausteine.md, Nachtrag vom 2026-10-02"], "plan": "layout-ueberlauf.md", "faelle": ["BYL-E6-1180..BYL-E6-1183"],
+      "vermerk": "Nur der Build der SPA, kein Neustart. Die Fälle stehen im Block „Layout-Überlauf“." },
     { "id": "querschnitt", "vorhaben": "Querschnitt", "titel": "Testumgebung, Regeln der Datenschicht, Hook-Module und dieses Manifest", "bereich": "entwicklung", "faelle": ["BYL-X-001..BYL-X-004"] }
   ],
   "zurueckgestellt": [
@@ -3074,6 +3076,22 @@
         { "id": "BYL-E6-382", "title": "Lange Projektnamen in allen Formularen im Browser", "art": ["manuell"], "status": "offen",
           "pre": "Build von main in app\\ (kein Neustart nötig), F5; Unterprojekt mit langem Namen, z. B. „Gesundheit › Christa und die ganze Familie (CHRS)“, einem Ticket zugeordnet; Chrome, Firefox und Opera GX; Fensterbreite ab 1024 px (Panel eingebettet) und etwa 360 px (Gerätemodus).", "steps": ["Ticket im Seitenpanel und in der Vollansicht öffnen, Feld „Projekt“ ansehen und mit der Maus darauf zeigen.", "„Neues Ticket“, Sammelaktion „Projekt …“, „Gesammelt umwandeln“ im Eingang, Erfassen mit Projektfeld, Regel-Panel einer Wiederholung und das Zielprojekt im Papierkorb (Wiederherstellen eines Tickets, dessen Projekt fehlt) mit dem Unterprojekt öffnen.", "In der Tabelle „Aufgaben“ die Zelle „Projekt“ bearbeiten (Popover) und den Filter „Projekt“ öffnen.", "Einstellungen → Kanäle, Tags und Darstellung sowie die Projektkacheln bei 360 px ansehen."],
           "expect": "Kein Select, Eingabefeld, Popover und keine Kachel ragt über seinen Container oder das Fenster hinaus, nichts scrollt seitlich. Ein zu langer Wert endet mit „…“, der Tooltip (title) zeigt die ganze Beschriftung; NVDA liest den ganzen Wert. Im Popover der Zelle brechen lange Einträge um. Die Auswahlliste des Selects zeigt die Optionen ungekürzt.",
+          "tests": [] },
+        { "id": "BYL-E6-1180", "title": "Flex-Zeilen mit Feld und Knöpfen brechen um; Kanal-Karte als eine Spalte, die nicht wächst", "art": ["unit"], "status": "bestanden",
+          "pre": "Markup und Styles aller Komponenten statisch gelesen (jsdom misst kein Layout; Fehlerbericht vom 2026-10-02, docs/plan/layout-ueberlauf.md §6).", "steps": ["npm run test:web"],
+          "expect": "Jede Flex-Zeile einer Komponente, die ein Textfeld, Select oder eine Textarea zusammen mit Knöpfen hält, bricht um (flex-wrap: wrap oder flex-flow … wrap), ebenso eine Gruppe von mindestens zwei Textknöpfen darin; Gruppen aus Symbolknöpfen dürfen beisammen bleiben. ChannelCard legt Karte und Details als eine Spalte minmax(0, 1fr) an, Kopf, Formular und Knopfgruppe des Umbenennens brechen um, der Name schrumpft (min-width: 0). Mit dem Stand vor dem Fix schlägt der Test fehl.",
+          "tests": ["web/src/lib/no-control-overflow.test.ts::lets its rows of fields and buttons wrap", "web/src/lib/no-control-overflow.test.ts::finds the rows that do not wrap", "web/src/lib/no-control-overflow.test.ts::lays the card and its details out in one column that cannot grow beyond the card", "web/src/lib/no-control-overflow.test.ts::lets the header wrap, so the field of renaming does not push the lozenge out"] },
+        { "id": "BYL-E6-1181", "title": "Umbenennen eines langen Namens: Kopf markiert, Feld zuerst, Knöpfe als eigene Gruppe", "art": ["komponente"], "status": "bestanden",
+          "pre": "ChannelCard in jsdom mit einem Namen aus 100 Zeichen ohne Leerzeichen und der Lozenge „Verbunden“.", "steps": ["npm run test:web"],
+          "expect": "„Umbenennen …“ (startRename) markiert den Kopf mit renaming; das Feld hält den ganzen Namen, hat kein size und steht im Formular vor der Gruppe „Speichern“, „Abbrechen“; die Lozenge bleibt das letzte Teil des Kopfs, die Überschrift bleibt für Screenreader. Esc schließt das Feld ohne Anfrage, der Kopf ist wieder unmarkiert.",
+          "tests": ["web/src/lib/components/channels/channel-card.test.ts::renames a long name in a header that wraps: field first, the buttons as their own group"] },
+        { "id": "BYL-E6-1182", "title": "Umbenennen in allen Kartenarten im schmalen Fenster (etwa 360 px)", "art": ["manuell"], "status": "offen",
+          "pre": "Build des Fixes in app\\ (kein Neustart nötig), F5; Verbindungen Google Calendar, Telegram, ein Postfach, Notion und GitHub (je eine reicht, eingerichtet oder nicht); Chrome, Firefox und Opera GX im Gerätemodus mit 360 px Breite.", "steps": ["Einstellungen → Kanäle öffnen.", "An jeder Karte einer Verbindung „•••“ → „Umbenennen …“ wählen und das Feld ansehen; mit Esc schließen.", "Dasselbe mit dem längsten Zustand („Einrichtung offen“) und während „Wird abgerufen“."],
+          "expect": "Die Seite scrollt nie seitlich, keine Karte ragt aus dem Raster. Das Feld geht über die volle Breite neben dem Symbol, „Speichern“ und „Abbrechen“ stehen darunter, die Lozenge darunter; Fehlertext und Hinweis zu einem vergebenen Namen brechen um. Nach Esc sieht der Kopf aus wie vorher.",
+          "tests": [] },
+        { "id": "BYL-E6-1183", "title": "Lange Namen ohne Leerzeichen beim Umbenennen und in den Details, breites Fenster", "art": ["manuell"], "status": "offen",
+          "pre": "Wie BYL-E6-1182, Fenster ab 1280 px; ein Projekt mit langem Namen als Zielprojekt; bei GitHub ein Repository.", "steps": ["An jeder Karte einer Verbindung „Umbenennen …“, einen Namen aus 100 Zeichen ohne Leerzeichen eingeben und speichern.", "Die Karte erneut umbenennen (Feld mit dem langen Namen).", "„Details“ aufklappen: Zielprojekt, bei GitHub „Abruf“, die Repositorys mit Pfaden und „Einstellungen …“; „Stichwörter und Einstellungen …“ einer Verbindung öffnen und ein langes Stichwort tippen.", "Den Namen zurücksetzen."],
+          "expect": "Der lange Name bricht in der Überschrift um, das Feld zeigt ihn gekürzt mit Ende per Pfeiltasten erreichbar; nichts ragt über die Karte, die Seite scrollt nicht seitlich, die Nachbarkarten bleiben gleich breit. Details und Dialoge bleiben in ihrer Breite.",
           "tests": [] }
       ]
     },

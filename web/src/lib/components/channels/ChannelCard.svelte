@@ -192,7 +192,7 @@
 	aria-labelledby={headingId}
 	aria-busy={busy ? 'true' : undefined}
 >
-	<header class="head">
+	<header class="head" class:renaming>
 		<ChannelIcon kind={icon} />
 		<div class="names">
 			{#if renaming}
@@ -332,8 +332,15 @@
 </article>
 
 <style>
+	/*
+	 * One column that never grows beyond the card (docs/plan/layout-ueberlauf.md §6, ADR-0030: no
+	 * horizontal scrolling). An implicit column is "auto", and grid items have min-width: auto, so
+	 * the widest min-content of a row (the header while renaming: field, buttons and lozenge side
+	 * by side) used to widen every row of the card and the page.
+	 */
 	.channel-card {
 		display: grid;
+		grid-template-columns: minmax(0, 1fr);
 		gap: 0.75rem;
 		min-width: 0;
 		padding: 1rem;
@@ -342,15 +349,24 @@
 		border-radius: var(--radius-surface);
 	}
 
+	/*
+	 * The name shrinks (flex-basis 0, min-width 0), so the header stays one row; only a lozenge
+	 * wider than the card, or the field of renaming, moves the lozenge to a row of its own.
+	 */
 	.head {
 		display: flex;
+		flex-wrap: wrap;
 		gap: 0.75rem;
 		align-items: flex-start;
 	}
 
 	.names {
-		flex: 1;
+		flex: 1 1 0%;
 		min-width: 0;
+	}
+
+	.renaming .names {
+		flex-basis: 12rem;
 	}
 
 	h4 {
@@ -365,7 +381,11 @@
 		overflow-wrap: anywhere;
 	}
 
-	/* Renaming in the header (KK-3): the field takes the width of the name, the buttons follow. */
+	/*
+	 * Renaming in the header (KK-3): the field takes the width of the name, the buttons follow on
+	 * the same row while there is room, below it on a narrow card, and each below the other on a
+	 * very narrow one.
+	 */
 	.rename {
 		display: flex;
 		flex-wrap: wrap;
@@ -386,7 +406,8 @@
 	}
 
 	.rename-actions {
-		display: inline-flex;
+		display: flex;
+		flex-wrap: wrap;
 		gap: 0.25rem;
 	}
 
@@ -454,6 +475,7 @@
 	/* The details of every card look alike: rows of name and value, lists, short text. */
 	.details {
 		display: grid;
+		grid-template-columns: minmax(0, 1fr);
 		gap: 0.75rem;
 		padding-top: 0.75rem;
 		font-size: var(--font-size-control);
