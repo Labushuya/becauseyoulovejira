@@ -17,7 +17,14 @@ var INBOX = 'inbox_items';
 
 // Set once on create; a client update that changes them is rejected (ADR-0014 section 1). The
 // target project is the one the entry got when it came in (ADR-0049 §2): only the server sets it.
-var IMMUTABLE_FIELDS = ['channel', 'source_ref', 'source_date', 'fingerprint', 'original', 'target_project'];
+// The status of a watched source (ADR-0050 §5) is written by the server only, too.
+var IMMUTABLE_FIELDS = ['channel', 'source_ref', 'source_date', 'fingerprint', 'original', 'target_project', 'watch'];
+
+// Field of the status of a watched source (ADR-0050 §5, migration 1790203200) and the transient
+// record key with which a channel of the server gives a new entry its first status; a client
+// cannot send a field name with "@", and whatever it sends as `watch` on create is dropped.
+var WATCH_FIELD = 'watch';
+var WATCH_KEY = '@watch';
 
 var MESSAGES = {
   validation_inbox_duplicate: 'Dieser Eintrag ist schon vorhanden.',
@@ -88,6 +95,15 @@ function applyScope(record) {
   return scope;
 }
 
+// Whether the collection of a record has the field, i.e. its migration has run.
+function hasField(record, name) {
+  try {
+    return !!record.collection().fields.getByName(name);
+  } catch (err) {
+    return false;
+  }
+}
+
 // source_meta as a plain object ({} when empty or not an object).
 function metaOf(record) {
   var raw = record.getString('source_meta');
@@ -99,6 +115,20 @@ function metaOf(record) {
     return value && typeof value === 'object' ? value : {};
   } catch (err) {
     return {};
+  }
+}
+
+// The status of a watched source (ADR-0050 §5) as a plain object, null without one.
+function watchOf(record) {
+  var raw = record.getString(WATCH_FIELD);
+  if (raw === '' || raw === 'null') {
+    return null;
+  }
+  try {
+    var value = JSON.parse(raw);
+    return value && typeof value === 'object' ? value : null;
+  } catch (err) {
+    return null;
   }
 }
 
@@ -131,6 +161,10 @@ function prepareRecord(record) {
   record.set('state', 'new');
   record.set('ticket', '');
   record.set('handled_at', '');
+  if (hasField(record, WATCH_FIELD)) {
+    var watch = record.get(WATCH_KEY);
+    record.set(WATCH_FIELD, watch ? watch : null);
+  }
 
   var url = record.getString('source_url');
   if (!rules.isAllowedSourceUrl(url)) {
@@ -196,10 +230,13 @@ function findByFingerprint(txApp, scope, fingerprint) {
 
 /**
  * Creates a private inbox item of `owner` from a draft of a channel that runs in the server (the
- * .ics route, the calendar feed, the Telegram bot, the mail helper). The draft has the fields of
- * inbox_items: { channel, kind, title, body, source_url, source_ref, source_date, meta, original,
- * originalName, originalFile, connection }; `original` is the text of the original file,
- * `originalFile` an uploaded file (the mail helper), taken as it is.
+ * .ics route, the calendar feed, the Telegram bot, the mail helper, GitHub). The draft has the
+ * fields of inbox_items: { channel, kind, title, body, source_url, source_ref, source_date, meta,
+ * original, originalName, originalFile, connection, target, watch }; `original` is the text of the
+ * original file, `originalFile` an uploaded file (the mail helper) or a file the channel built,
+ * taken as it is. `target` is a target project the channel resolved itself (the target of a
+ * repository, ADR-0049 §3; absent: the target of the connection), `watch` the first status of a
+ * watched source (ADR-0050 §5).
  * Returns { kind: 'created', item } or { kind: 'duplicate', item } with the existing record, so a
  * channel counts duplicates instead of failing (ADR-0014 section 3). Validation errors throw.
  * Runs in its own transaction; the record hook repeats the check as a safety net.
@@ -240,6 +277,12 @@ function draftRecord(app, owner, draft) {
   record.set('source_meta', draft.meta || {});
   if (draft.connection) {
     record.set('connection', draft.connection);
+  }
+  if (draft.target !== undefined && draft.target !== null) {
+    record.set(targetRules.GIVEN_KEY, draft.target);
+  }
+  if (draft.watch) {
+    record.set(WATCH_KEY, draft.watch);
   }
   return record;
 }
@@ -521,6 +564,13 @@ function copySource(txApp, item, target) {
   copy.set('source_meta', target.meta);
   copy.set(COPY_OF_KEY, item.getString('fingerprint'));
   copy.set(targetRules.GIVEN_KEY, item.getString(targetRules.FIELD));
+  // A watched source (ADR-0050 §5) keeps its status; the channel follows the copy like the original.
+  if (hasField(item, WATCH_FIELD)) {
+    var watch = watchOf(item);
+    if (watch !== null) {
+      copy.set(WATCH_KEY, watch);
+    }
+  }
   var key = originalFileKey(item);
   if (key === '') {
     txApp.save(copy);
@@ -552,7 +602,10 @@ function originalFileExists(app, item) {
 
 module.exports = {
   IMMUTABLE_FIELDS: IMMUTABLE_FIELDS,
+  WATCH_FIELD: WATCH_FIELD,
   metaOf: metaOf,
+  watchOf: watchOf,
+  hasField: hasField,
   prepareCreate: prepareCreate,
   ingest: ingest,
   lookup: lookup,

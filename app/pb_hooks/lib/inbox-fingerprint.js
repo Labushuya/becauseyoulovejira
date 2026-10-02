@@ -153,6 +153,17 @@ function fingerprintKey(item, newId) {
     }
     return { key: join([channel, ref]) };
   }
+  // GitHub (ADR-0050 §3 and §4): a pull request or release by its node ID (source_ref), a version
+  // of a watched file by repository and path (source_ref "file:<repository>:<path>") plus its blob
+  // (`meta.github.version`, for a removed file "removed-" and the last blob). The same version comes
+  // in once, also through a second connection; a discarded one stays out (tombstone).
+  if (channel === 'github') {
+    if (ref === '') {
+      return { key: '', missing: 'source_ref' };
+    }
+    var github = meta.github && typeof meta.github === 'object' ? meta.github : {};
+    return { key: join(['github', ref, trim(github.version)]) };
+  }
   if (contains(MANUAL_CHANNELS, channel)) {
     return { key: join(['manual', text(newId)]) };
   }

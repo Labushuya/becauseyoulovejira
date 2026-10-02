@@ -1,14 +1,20 @@
 // Pure rules of the connections (ADR-0016 section 2, ADR-0018, ADR-0020; E4 plan packages 10 and
-// 20). CommonJS module, ES5 only, no dependencies but secrets.js and keywords.js, which the caller
-// passes in (Goja runtime and Vitest load the module the same way).
+// 20). CommonJS module, ES5 only, no dependencies but secrets.js, keywords.js and, for GitHub,
+// github-rules.js, which the caller passes in (Goja runtime and Vitest load the module the same
+// way).
 'use strict';
 
 // Written by the server only (runner and hooks); a client change is refused. scan (JSON, state of
-// the full scan of an inbox, ADR-0020 addendum 3) arrives as its JSON text, "null" when empty.
-var SERVER_FIELDS = ['cursor', 'last_run_at', 'last_ok_at', 'last_error', 'last_hint', 'running_since', 'scan'];
+// the full scan of an inbox, ADR-0020 addendum 3) arrives as its JSON text, "null" when empty;
+// watch (JSON, hidden: what the GitHub channel knows of its repositories, ADR-0050) the same way.
+var SERVER_FIELDS = ['cursor', 'last_run_at', 'last_ok_at', 'last_error', 'last_hint', 'running_since', 'scan', 'watch'];
 
 // Kinds a user can set up. Notion only imports lists on request (ADR-0041, since NI-2).
 var CREATABLE_TYPES = ['calendar', 'telegram', 'mail', 'notion'];
+
+// Kinds that also run without their secret: GitHub reads public repositories without a token
+// (ADR-0050 §1, 60 requests per hour).
+var SECRET_OPTIONAL_TYPES = ['github'];
 
 // Mail providers (ADR-0016 section 4): host, port and TLS follow from the provider in the mail
 // helper; the connection stores only the provider and the user name (E4 plan packages 11, 13 and 22).
@@ -27,11 +33,14 @@ var RENAME_KEEPS = ['type', 'enabled', 'secret_env', 'settings_json', 'owner', '
 // keywords (ADR-0020 section 3) and, for Telegram, the two answers of the bot in the chat: the
 // confirmation of a saved entry and the hint for a message without keyword (ADR-0016, addendum of
 // 2026-10-01). Notion has none: the user chooses what to import, so no keyword applies (ADR-0041 §5).
+// GitHub has the interval of its runs and its repositories with watched paths, events and target
+// project; no keywords: the chosen paths and events are the filter (ADR-0050 §8, ADR-0020 addendum 5).
 var SETTINGS_KEYS = {
   calendar: ['keywords'],
   telegram: ['allowed_env', 'keywords', 'reply_saved', 'reply_no_match'],
   mail: ['provider', 'user', 'keywords', 'match_body'],
-  notion: []
+  notion: [],
+  github: ['interval', 'repos']
 };
 
 var MESSAGES = {
@@ -66,10 +75,14 @@ function isOptionalSwitch(value) {
 
 /**
  * Checks `settings` of a connection of `type`. `settings` is the parsed JSON (null for empty).
- * Returns '' or { field, code, message }.
+ * `github` is github-rules.js, which checks the repositories of a GitHub connection; without it a
+ * GitHub connection takes no settings. Returns '' or { field, code, message }.
  */
-function settingsViolation(type, settings, secrets, keywords) {
+function settingsViolation(type, settings, secrets, keywords, github) {
   var value = settings === null || settings === undefined || settings === '' ? {} : settings;
+  if (type === 'github') {
+    return github ? github.settingsViolation(value) : failure('settings', 'validation_connection_settings');
+  }
   if (!isPlainObject(value)) {
     return failure('settings', 'validation_connection_settings');
   }
@@ -135,9 +148,10 @@ function mailSettingsOf(settings) {
 
 /**
  * Client create (onRecordCreateRequest): the kind must be available, the server fields empty and
- * the settings valid. `values` maps field names to their string value (settings parsed).
+ * the settings valid. `values` maps field names to their string value (settings parsed); `github`
+ * as for settingsViolation.
  */
-function createViolation(values, secrets, keywords) {
+function createViolation(values, secrets, keywords, github) {
   if (CREATABLE_TYPES.indexOf(text(values.type)) === -1) {
     return failure('type', 'validation_connection_type');
   }
@@ -149,14 +163,14 @@ function createViolation(values, secrets, keywords) {
   if (!secrets.isValidName(values.secret_env)) {
     return failure('secret_env', 'validation_secret_name');
   }
-  return settingsViolation(text(values.type), values.settings, secrets, keywords);
+  return settingsViolation(text(values.type), values.settings, secrets, keywords, github);
 }
 
 /**
  * Client update (onRecordUpdateRequest): kind and server fields unchanged, settings valid.
  * `before`/`after` like `values` of createViolation.
  */
-function updateViolation(before, after, secrets, keywords) {
+function updateViolation(before, after, secrets, keywords, github) {
   if (text(before.type) !== text(after.type)) {
     return failure('type', 'validation_connection_immutable');
   }
@@ -169,7 +183,12 @@ function updateViolation(before, after, secrets, keywords) {
   if (!secrets.isValidName(after.secret_env)) {
     return failure('secret_env', 'validation_secret_name');
   }
-  return settingsViolation(text(after.type), after.settings, secrets, keywords);
+  return settingsViolation(text(after.type), after.settings, secrets, keywords, github);
+}
+
+/** Whether a connection of `type` runs only with its secret (GitHub reads public repositories without). */
+function requiresSecret(type) {
+  return SECRET_OPTIONAL_TYPES.indexOf(type) === -1;
 }
 
 /** The name as it is stored: without white space at its ends. */
@@ -263,6 +282,7 @@ function secretStatus(type, secretEnv, settings, secrets, getenv) {
 module.exports = {
   SERVER_FIELDS: SERVER_FIELDS,
   CREATABLE_TYPES: CREATABLE_TYPES,
+  SECRET_OPTIONAL_TYPES: SECRET_OPTIONAL_TYPES,
   MAIL_PROVIDERS: MAIL_PROVIDERS,
   MAIL_USER_MAX_LENGTH: MAIL_USER_MAX_LENGTH,
   LABEL_MAX_LENGTH: LABEL_MAX_LENGTH,
@@ -271,6 +291,7 @@ module.exports = {
   settingsViolation: settingsViolation,
   createViolation: createViolation,
   updateViolation: updateViolation,
+  requiresSecret: requiresSecret,
   normalizeLabel: normalizeLabel,
   labelViolation: labelViolation,
   renameViolation: renameViolation,

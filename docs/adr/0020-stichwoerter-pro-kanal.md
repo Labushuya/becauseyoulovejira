@@ -159,3 +159,10 @@ Ein reiner Algorithmus, zweimal implementiert und per Paritätstest abgeglichen:
 ## Nachtrag 4 (2026-10-01): Bestätigung des Bots abschaltbar
 
 Neben `reply_no_match` (§3) kennt eine Telegram-Verbindung `reply_saved`: ob der Bot einen gespeicherten Eintrag mit „Im Eingang gespeichert“ bestätigt. Beide sind standardmäßig an, ein fehlender Wert gilt als an, und beide stehen als Schalter an Karte, Dialog und Assistent. Einzelheiten und Korrekturen zum Abschnitt „Telegram“: [ADR-0016](0016-kanal-architektur-und-mail.md) §2, Nachtrag mit Korrekturvermerk vom 2026-10-01.
+
+## Nachtrag 5 (2026-10-02, [ADR-0050](0050-github-kanal-und-beobachtete-quellen.md)): GitHub ohne Stichwörter – die Auswahl ist der Filter
+
+Der GitHub-Kanal ist ein automatischer Kanal (§4), hat aber **keine Stichwörter**. Übernommen wird alles, was die Auswahl der Verbindung trifft: die beobachteten Pfade (Globs je Repository) für Dateiänderungen, dazu Pull Requests und Releases, je Repository ein- und ausschaltbar.
+
+- **Begründung:** Die Stichwörter von §1 bis §4 trennen aus einem Strom, den der Nutzer nicht auswählt (jede Mail des Posteingangs, jede Nachricht an den Bot, jeder Termin des Kalenders), die Arbeit vom Rest. Bei GitHub wählt der Nutzer die Quelle selbst und eng: genau diese Repositorys, genau diese Dateien („ROADMAP*“, „CHANGELOG*“ …), genau diese Ereignisse. Ein zusätzliches Stichwort in einem Changelog oder einem PR-Titel würde gerade die Änderungen verbergen, um die es dem Nutzer geht („sehen, was sich in Roadmaps, Changelogs, etc. geändert hat“), und eine weitere Liste pflegen lassen, ohne etwas zu filtern, was die Auswahl nicht schon filtert.
+- **Folgen:** `connection-rules.js` lässt für `github` keine `keywords` zu (`validation_github_settings`); ein Lauf zählt nie „ohne Stichwort“ (`unmatched` bleibt 0); die Karte zeigt keine Warnung „Keine Stichwörter“ und keinen Stichwort-Editor. Die Flut, vor der Stichwörter sonst schützen, verhindert hier die Ersterfassung ohne Einträge (ADR-0050 §3 und §4).

@@ -10,7 +10,8 @@ const PRIORITIES = ['low', 'medium', 'high', 'urgent'];
 const WEEKDAYS = ['MO', 'TU', 'WE', 'TH', 'FR', 'SA', 'SU'];
 /**
  * Ways into the inbox and values of tickets.source (ADR-0014), written out literally; "api" and
- * "whatsapp-web" since the own inbox (ADR-0038, migration 1790202400).
+ * "whatsapp-web" since the own inbox (ADR-0038, migration 1790202400), "github" since the GitHub
+ * channel (ADR-0050, migration 1790203200).
  */
 export const CHANNELS = [
 	'manual',
@@ -25,9 +26,24 @@ export const CHANNELS = [
 	'telegram',
 	'notion',
 	'api',
-	'whatsapp-web'
+	'whatsapp-web',
+	'github'
 ];
-export const INBOX_KINDS = ['todo', 'task', 'project_task', 'mail', 'event', 'message', 'link'];
+/** Kinds of entries; the last three since the GitHub channel (ADR-0050, migration 1790203200). */
+export const INBOX_KINDS = [
+	'todo',
+	'task',
+	'project_task',
+	'mail',
+	'event',
+	'message',
+	'link',
+	'change',
+	'pull_request',
+	'release'
+];
+/** Kinds of connections; "github" since migration 1790203200 (ADR-0050). */
+export const CONNECTION_TYPES = ['calendar', 'telegram', 'notion', 'mail', 'github'];
 export const INBOX_STATES = ['new', 'converted', 'discarded'];
 
 const text = (options = {}) => ({ type: 'text', required: false, max: 0, pattern: '', ...options });
@@ -192,6 +208,8 @@ export const EXPECTED_COLLECTIONS = {
 			connection: relation('connections'),
 			// The project the entry got from its way (ADR-0049, migration 1790203100).
 			target_project: relation('projects'),
+			// Status of a watched source, written by the server only (ADR-0050, migration 1790203200).
+			watch: { type: 'json', required: false, maxSize: 2000 },
 			scope: text({ required: true }),
 			...ownership(),
 			...timestamps()
@@ -205,7 +223,7 @@ export const EXPECTED_COLLECTIONS = {
 	},
 	connections: {
 		fields: {
-			type: select(['calendar', 'telegram', 'notion', 'mail'], true),
+			type: select(CONNECTION_TYPES, true),
 			label: text({ required: true, max: 100 }),
 			enabled: bool(),
 			secret_env: text({ required: true, max: 64, pattern: '^BYL_[A-Z0-9_]{1,60}$' }),
@@ -220,6 +238,8 @@ export const EXPECTED_COLLECTIONS = {
 			scan: { type: 'json', required: false, maxSize: 2000 },
 			// Target project of the entries of the connection (ADR-0049, migration 1790203100).
 			target_project: relation('projects'),
+			// What the GitHub channel knows of its repositories, hidden (ADR-0050, migration 1790203200).
+			watch: { type: 'json', required: false, hidden: true, maxSize: 1048576 },
 			...ownership(),
 			...timestamps()
 		},

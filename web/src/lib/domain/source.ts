@@ -6,17 +6,29 @@
 
 import type { InboxChannel } from './inbox';
 
-export const SOURCE_FAMILIES = ['manual', 'link', 'mail', 'calendar', 'chat', 'notion'] as const;
+export const SOURCE_FAMILIES = [
+	'manual',
+	'link',
+	'mail',
+	'calendar',
+	'chat',
+	'notion',
+	'github'
+] as const;
 export type SourceFamily = (typeof SOURCE_FAMILIES)[number];
 
-/** Families offered as chips; Notion since its import exists (ADR-0019 section 1, ADR-0041). */
+/**
+ * Families offered as chips; Notion since its import exists (ADR-0019 section 1, ADR-0041), GitHub
+ * since its channel (ADR-0050, ADR-0019 addendum).
+ */
 export const SOURCE_FAMILY_CHIPS: readonly SourceFamily[] = Object.freeze([
 	'manual',
 	'link',
 	'mail',
 	'calendar',
 	'chat',
-	'notion'
+	'notion',
+	'github'
 ]);
 
 export const SOURCE_FAMILY_LABELS: Readonly<Record<SourceFamily, string>> = Object.freeze({
@@ -25,7 +37,8 @@ export const SOURCE_FAMILY_LABELS: Readonly<Record<SourceFamily, string>> = Obje
 	mail: 'Mail',
 	calendar: 'Kalender',
 	chat: 'Chat',
-	notion: 'Notion'
+	notion: 'Notion',
+	github: 'GitHub'
 });
 
 /** Values of the URL parameter `quelle` (ADR-0019 section 1). */
@@ -35,7 +48,8 @@ export const SOURCE_FAMILY_VALUES: Readonly<Record<SourceFamily, string>> = Obje
 	mail: 'mail',
 	calendar: 'kalender',
 	chat: 'chat',
-	notion: 'notion'
+	notion: 'notion',
+	github: 'github'
 });
 
 const FAMILY_OF: Readonly<Record<InboxChannel, SourceFamily>> = Object.freeze({
@@ -52,7 +66,9 @@ const FAMILY_OF: Readonly<Record<InboxChannel, SourceFamily>> = Object.freeze({
 	notion: 'notion',
 	// The own inbox (ADR-0038): own scripts bring in by hand, the extension brings chats.
 	api: 'manual',
-	'whatsapp-web': 'chat'
+	'whatsapp-web': 'chat',
+	// Watched repositories (ADR-0050): changed files, pull requests and releases.
+	github: 'github'
 });
 
 /**
@@ -65,7 +81,8 @@ export const SOURCE_FAMILY_SYMBOL_TEXT: Readonly<Record<SourceFamily, string>> =
 	mail: 'aus Mail',
 	calendar: 'aus Kalender',
 	chat: 'aus Chat',
-	notion: 'aus Notion'
+	notion: 'aus Notion',
+	github: 'aus GitHub'
 });
 
 /** Family of a source; no source (tickets before E4) counts as "manual" (ADR-0019). */

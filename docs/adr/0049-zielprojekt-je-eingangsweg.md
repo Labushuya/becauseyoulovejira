@@ -95,3 +95,12 @@ Das Modell trennt **Einstellen** (am Weg) und **Merken** (am Eintrag). Für GitH
 - Die Assistenten der Verbindungen haben sieben Schritte (sechs Pflicht, ein optionaler); [ADR-0026](0026-einstellungsbereich-und-hinweis-bausteine.md) §4 bekommt dafür den Nachtrag ZP.
 - Tests: `tests/integration/inbox-target-project.test.mjs` (Zuweisung je Weg, nur neue, unveränderlich, Prüfungen, Archiv, Löschung, Kopie, Filter, Datenschicht), `migrations-rollback.test.mjs`, Komponententests von Karten, Assistenten, Umwandeln, Eingang und Panel. Manifest ab BYL-E6-1100.
 - CLAUDE.md §5 und §7, README und Hilfe („Kanäle und Zugangsdaten“) nennen das Zielprojekt.
+
+## Nachtrag (2026-10-02, [ADR-0050](0050-github-kanal-und-beobachtete-quellen.md)): Zielprojekt je Repository
+
+§3 ist für GitHub umgesetzt, ohne dass sich an Feld, Filter, Gruppierung, Spalte, Vorbelegung oder den Regeln für Archiv und Löschung etwas ändert:
+
+- **Speicherort:** in `connections.settings.repos[].target` (ID oder leer), neben Pfaden und Ereignissen des Repositorys. Begründung: Ein Repository ist eine Einstellung seiner Verbindung (ADR-0050 §2); eine eigene Sammlung mit Relation brächte Regeln, Negativtests und Realtime für höchstens 20 Zeilen, und die Auflösung prüft eine ID in JSON ohnehin auf Existenz und Bereich (§3).
+- **Prüfung beim Speichern** (`connection-service.guardRepoTargets`, nur für App-Konten): Ein Ziel, das für sein Repository neu ist, muss ein aktives Projekt im Bereich der Verbindung sein (`validation_target_project_missing`, `validation_target_project_archived` am Feld `settings`); ein unverändertes, inzwischen archiviertes bleibt gültig, wie beim Ziel der Verbindung (§7).
+- **Auflösung: Einheit vor Verbindung.** Der Kanal gibt das Ziel des Repositorys über `@target_project` (Stufe 1) weiter, solange das Projekt im Bereich der Verbindung existiert; ohne eigenes Ziel und bei einem gelöschten Ziel gibt er nichts weiter, und Stufe 2 nimmt das Ziel der Verbindung. Ein gelöschtes Projekt bleibt als ID in den Einstellungen stehen (PocketBase leert JSON nicht); die Karte nennt es „gibt es nicht mehr“.
+- **Paket 3 (Ordner)** übernimmt dasselbe Muster je Ordner.

@@ -8,6 +8,7 @@ var secrets = require(__hooks + '/lib/secrets.js');
 var rules = require(__hooks + '/lib/connection-rules.js');
 var keywords = require(__hooks + '/lib/keywords.js');
 var targets = require(__hooks + '/lib/target-project-service.js');
+var github = require(__hooks + '/lib/github-rules.js');
 
 var COLLECTION = 'connections';
 var UNAVAILABLE = 'Die Verbindungen stehen nach dem nächsten Neustart der App bereit (neu-starten.bat).';
@@ -59,13 +60,14 @@ function guardCreate(e) {
     return;
   }
   var values = valuesOf(e.record);
-  throwIf(rules.createViolation(values, secrets, keywords) || rules.labelViolation(values.label));
+  throwIf(rules.createViolation(values, secrets, keywords, github) || rules.labelViolation(values.label));
   targets.guardConnection(e, true);
+  guardRepoTargets(e, null, values);
 }
 
 // onRecordUpdateRequest; a superuser may set every field. A new name comes alone (ADR-0026,
 // addendum KK-3): the request may change nothing else with it. A new target project must be an
-// active project of the area of the connection (ADR-0049).
+// active project of the area of the connection (ADR-0049), also the one of a repository of GitHub.
 function guardUpdate(e) {
   if (e.hasSuperuserAuth()) {
     return;
@@ -73,11 +75,30 @@ function guardUpdate(e) {
   var before = valuesOf(e.record.original());
   var after = valuesOf(e.record);
   throwIf(
-    rules.updateViolation(before, after, secrets, keywords) ||
+    rules.updateViolation(before, after, secrets, keywords, github) ||
       rules.labelViolation(after.label) ||
       rules.renameViolation(before, after)
   );
   targets.guardConnection(e, false);
+  guardRepoTargets(e, before, after);
+}
+
+// The target project of a repository of a GitHub connection (ADR-0049 §3, ADR-0050 §2) lives as an
+// ID in its settings: a target that is new for its repository must be an active project of the area
+// of the connection, like the target of the connection itself. One that stays (also archived)
+// passes.
+function guardRepoTargets(e, before, after) {
+  if (after.type !== 'github') {
+    return;
+  }
+  var changed = github.changedTargets(before === null ? null : before.settings, after.settings);
+  if (changed.length === 0) {
+    return;
+  }
+  var scope = ticketKey.scopeOf(after.owner, after.household);
+  for (var i = 0; i < changed.length; i++) {
+    targets.assertChoosable(e.app, 'settings', changed[i].target, scope);
+  }
 }
 
 // onRecordCreate/onRecordUpdate before e.next(), for every save: the scope, the name without white

@@ -129,5 +129,9 @@ function guardUserTargets(e, isCreate) {
 module.exports = {
   applyToNewItem: applyToNewItem,
   guardConnection: guardConnection,
-  guardUserTargets: guardUserTargets
+  guardUserTargets: guardUserTargets,
+  // For a way with its own units (a repository of GitHub, ADR-0049 §3): their targets are checked
+  // and resolved the same way.
+  assertChoosable: assertChoosable,
+  projectFacts: projectFacts
 };

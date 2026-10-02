@@ -23,7 +23,8 @@ describe('source families', () => {
 			mail: ['eml', 'mail'],
 			calendar: ['ics', 'calendar'],
 			chat: ['whatsapp', 'telegram', 'whatsapp-web'],
-			notion: ['notion']
+			notion: ['notion'],
+			github: ['github']
 		});
 		expect(SOURCE_FAMILIES.flatMap(channelsOf).sort()).toEqual([...INBOX_CHANNELS].sort());
 	});
@@ -42,11 +43,21 @@ describe('source families', () => {
 			mail: 'Mail',
 			calendar: 'Kalender',
 			chat: 'Chat',
-			notion: 'Notion'
+			notion: 'Notion',
+			github: 'GitHub'
 		});
 		const values = Object.values(SOURCE_FAMILY_VALUES);
 		expect(new Set(values).size).toBe(values.length);
 		expect(SOURCE_FAMILY_SYMBOL_TEXT.mail).toBe('aus Mail');
-		expect(SOURCE_FAMILY_CHIPS).toEqual(['manual', 'link', 'mail', 'calendar', 'chat', 'notion']);
+		expect(SOURCE_FAMILY_SYMBOL_TEXT.github).toBe('aus GitHub');
+		expect(SOURCE_FAMILY_CHIPS).toEqual([
+			'manual',
+			'link',
+			'mail',
+			'calendar',
+			'chat',
+			'notion',
+			'github'
+		]);
 	});
 });

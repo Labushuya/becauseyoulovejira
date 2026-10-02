@@ -9,7 +9,7 @@ import { DESCRIPTION_MAX_LENGTH, TITLE_MAX_LENGTH, type TicketSummary } from './
 
 /**
  * Ways into the inbox; also the values of `tickets.source`. "api" and "whatsapp-web" come through
- * the own inbox with an access key (ADR-0038).
+ * the own inbox with an access key (ADR-0038), "github" from watched repositories (ADR-0050).
  */
 export const INBOX_CHANNELS = [
 	'manual',
@@ -24,11 +24,15 @@ export const INBOX_CHANNELS = [
 	'telegram',
 	'notion',
 	'api',
-	'whatsapp-web'
+	'whatsapp-web',
+	'github'
 ] as const;
 export type InboxChannel = (typeof INBOX_CHANNELS)[number];
 
-/** Kind of object: steers presets and the symbol only, never a ticket type (ADR-0012). */
+/**
+ * Kind of object: steers presets and the symbol only, never a ticket type (ADR-0012). The last
+ * three are the entries of GitHub: a watched file changed, a pull request, a release (ADR-0050).
+ */
 export const INBOX_KINDS = [
 	'todo',
 	'task',
@@ -36,7 +40,10 @@ export const INBOX_KINDS = [
 	'mail',
 	'event',
 	'message',
-	'link'
+	'link',
+	'change',
+	'pull_request',
+	'release'
 ] as const;
 export type InboxKind = (typeof INBOX_KINDS)[number];
 
@@ -110,7 +117,8 @@ export const CHANNEL_LABELS: Readonly<Record<InboxChannel, string>> = Object.fre
 	telegram: 'Telegram',
 	notion: 'Notion',
 	api: 'Eigener Eingang (API)',
-	'whatsapp-web': 'WhatsApp Web'
+	'whatsapp-web': 'WhatsApp Web',
+	github: 'GitHub'
 });
 
 export const KIND_LABELS: Readonly<Record<InboxKind, string>> = Object.freeze({
@@ -120,7 +128,10 @@ export const KIND_LABELS: Readonly<Record<InboxKind, string>> = Object.freeze({
 	mail: 'Mail',
 	event: 'Termin',
 	message: 'Nachricht',
-	link: 'Web-Link'
+	link: 'Web-Link',
+	change: 'Änderung',
+	pull_request: 'Pull Request',
+	release: 'Release'
 });
 
 export const STATE_LABELS: Readonly<Record<InboxState, string>> = Object.freeze({

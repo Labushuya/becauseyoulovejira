@@ -1,9 +1,9 @@
 # Plan „Beobachtete Quellen“: Standardprojekt je Verbindung, GitHub-Kanal, Ordner-Kanal
 
-- **Stand:** Paket 1 „Standardprojekt je Verbindung“ umgesetzt (ZP-1, 2026-10-02, Branch `feat/standardprojekt-je-verbindung`; Migration und Hooks: **Neustart nötig**, `neu-starten.bat`). Die Pakete 2 (GitHub) und 3 (Ordner) sind noch nicht begonnen.
+- **Stand:** Paket 1 „Standardprojekt je Verbindung“ umgesetzt (ZP-1, 2026-10-02, Branch `feat/standardprojekt-je-verbindung`; Migration und Hooks: **Neustart nötig**, `neu-starten.bat`). Paket 2 „GitHub-Kanal“: GH-1 (Server, Abruf, Status) umgesetzt (2026-10-02, Branch `feat/github-kanal-abruf`; Migration, Hooks und Cron: **Neustart nötig**), GH-2 (Oberfläche, Assistent) folgt. Paket 3 (Ordner) ist noch nicht begonnen.
 - **Grundlage:** Spec „Standardprojekt je Verbindung, GitHub-Kanal, Ordner-Kanal (beobachtete Quellen)“, vom Nutzer am 2026-10-01 freigegeben, mit seinen Antworten: Ordner nur zur Einsicht mit Verweis auf die Datei, GitHub als ein Kanal mit Repositories in der Karte, Statusanzeige an der Quelle nur als Anzeige, Reihenfolge (1) Standardprojekt, (2) GitHub, (3) Ordner.
-- **Entscheidungen:** [ADR-0049](../adr/0049-zielprojekt-je-eingangsweg.md) (Paket 1), Nachträge zu [ADR-0014](../adr/0014-datenmodell-eingang.md), [ADR-0016](../adr/0016-kanal-architektur-und-mail.md), [ADR-0026](../adr/0026-einstellungsbereich-und-hinweis-bausteine.md) (ZP) und [ADR-0030](../adr/0030-spalten-breiten-und-kompakte-zeilen.md) (Nachtrag 6). Für die Pakete 2 und 3 folgen eigene ADRs („Beobachtete Quellen (Verweis und Status, nur Anzeige)“, „GitHub-Kanal“, „Ordner-Kanal“ oder eine ADR mit Abschnitten) samt Nachträgen zu 0016, 0020 und 0031.
-- **Einordnung:** Manifest-Paket `ZP-1`, Block „Standardprojekt je Verbindung“ mit `BYL-E6-1100` bis `BYL-E6-1110`.
+- **Entscheidungen:** [ADR-0049](../adr/0049-zielprojekt-je-eingangsweg.md) (Paket 1), Nachträge zu [ADR-0014](../adr/0014-datenmodell-eingang.md), [ADR-0016](../adr/0016-kanal-architektur-und-mail.md), [ADR-0026](../adr/0026-einstellungsbereich-und-hinweis-bausteine.md) (ZP) und [ADR-0030](../adr/0030-spalten-breiten-und-kompakte-zeilen.md) (Nachtrag 6). Paket 2: [ADR-0050](../adr/0050-github-kanal-und-beobachtete-quellen.md) „GitHub-Kanal und beobachtete Quellen“ (eine ADR mit Abschnitten; das Konzept „beobachtete Quelle“ steht dort in §5 und gilt auch für Paket 3) mit Nachträgen zu 0014, 0016, 0018, 0019, 0020 (Nachtrag 5), 0031 (Nachtrag I) und 0049. Für Paket 3 folgt die ADR „Ordner-Kanal“ (Verweis statt Kopie als bewusste Ausnahme).
+- **Einordnung:** Manifest-Paket `ZP-1`, Block „Standardprojekt je Verbindung“ mit `BYL-E6-1100` bis `BYL-E6-1110`; Pakete `GH-1` und `GH-2`, Block „GitHub-Kanal“ ab `BYL-E6-1120`.
 
 ## 1. Grundsatz der Spec
 
@@ -15,7 +15,7 @@
 | Paket | Inhalt | Stand |
 |---|---|---|
 | 1 | Standardprojekt je Verbindung: Zielprojekt an jeder Karte, Einträge merken es sich, Umwandeln belegt vor, Filter und Gruppierung im Eingang | umgesetzt |
-| 2 | GitHub-Kanal: ein Kanal mit Token (nur lesend), Repositories in der Karte mit beobachteten Pfaden, Ereignissen und Zielprojekt je Repository, Abruf per Cron mit ETag, Änderungserkennung per Blob-SHA, PRs und Releases, Statusanzeige | offen |
+| 2 | GitHub-Kanal: ein Kanal mit Token (nur lesend), Repositories in der Karte mit beobachteten Pfaden, Ereignissen und Zielprojekt je Repository, Abruf per Cron mit ETag, Änderungserkennung per Blob-SHA, PRs und Releases, Statusanzeige | GH-1 umgesetzt, GH-2 in Arbeit |
 | 3 | Ordner-Kanal: mehrere Ordner je Verbindung mit Filtern und Zielprojekt je Ordner, Polling mit Größe, Zeit und SHA-256, Einträge als Verweis, sichere Route zum Ansehen, Statusanzeige | offen |
 
 ## 3. Paket 1: Standardprojekt je Verbindung
@@ -61,15 +61,50 @@ Gründe (Relation statt `source_meta`, eigenes Feld statt `settings`, je Nutzer 
 - **Ziel je Einheit:** Repository bzw. Ordner bekommen ein eigenes Zielprojekt in ihrer Konfiguration (in den `settings` der Verbindung oder einer eigenen Sammlung, Entscheidung im jeweiligen Paket). Der Kanal löst beim Anlegen „Einheit vor Verbindung“ auf und reicht das Ergebnis über den flüchtigen Schlüssel `@target_project` an `inbox-service.ingest` bzw. den Datensatz weiter (Stufe 1 der Reihenfolge, wie heute die Kopie einer Quelle). Feld, Filter, Gruppierung, Spalte, Vorbelegung und die Regeln für Archiv und Löschung bleiben unverändert; ein Ziel als ID in JSON prüft die Auflösung ohnehin auf Existenz und Bereich.
 - **Karte:** Die Details einer GitHub- bzw. Ordner-Karte zeigen je Einheit eine Zeile mit `CardTargetProject` (derselbe Baustein); „Zielprojekt …“ im Menü der Karte bleibt das Ziel der Verbindung als Rückfall.
 
-## 5. Paket 2: GitHub-Kanal (aus der Spec, noch nicht geplant)
+## 5. Paket 2: GitHub-Kanal
 
-- Ein Kanal „GitHub“ mit Konto bzw. Token (Fine-grained PAT nur lesend: Metadata, Contents, Pull requests; öffentliche Repos ohne Token), Variable `BYL_GITHUB_TOKEN` nach [ADR-0018](../adr/0018-secrets.md); Token nie in Logs oder Antworten (`secrets.redact` um `github_pat_…` und `ghp_…` erweitern).
-- Repositories in der Karte: Zielprojekt (§4), beobachtete Pfade als Glob-Liste (vorbelegt `ROADMAP*`, `CHANGELOG*`, `README*`, `docs/**/roadmap*`, optional `docs/**/*.md`), Ereignisse (Dateiänderungen auf dem Default-Branch, PRs, Releases; Standard an).
-- Abruf per Cron (15 Minuten, einstellbar 5 bis 60) und „Jetzt abrufen“, nur `GET` bzw. GraphQL-Queries, ETag mit `If-None-Match`, Rate-Limit-Kopfzeilen, 403/429 sauber.
-- Änderungserkennung per Blob-SHA je Datei, Eintrag „CHANGELOG.md in owner/repo geändert“ mit Commits, Autoren, Datum, Zeilenstatistik, Compare-Link und Kopie des neuen Inhalts (Grenze wie Seitenkopie); Dedup je (Repo, Pfad, Blob-SHA); neue und gelöschte Dateien.
-- PRs und Releases je ein Eintrag (Dedup über die Node-ID), Statusanzeige an Quelle und Ticket nur als Anzeige.
-- Stichwort-Regel: Auswahl der Pfade und Ereignisse ist der Filter (Nachtrag zu [ADR-0020](../adr/0020-stichwoerter-pro-kanal.md)).
-- Tests mit einem Fake-GitHub-Server (wie Fake-Notion), Rate-Limit- und ETag-Fälle, keine echten Tokens.
+Entscheidungen und Gründe: [ADR-0050](../adr/0050-github-kanal-und-beobachtete-quellen.md). Zwei Teilpakete, je ein PR: **GH-1** Server, Abruf und Status (keine Oberfläche außer der Familie „GitHub“ in Chips und Symbol); **GH-2** Karte, Repositorys in der Karte, Assistent, Statusanzeige in Eingang und Ticket, Hilfe, README.
+
+### 5.1 Datenmodell (Migration `1790203200_github_channel.js`)
+
+| Feld | Art | Inhalt |
+|---|---|---|
+| `connections.type` | Wert `github` | der Kanal |
+| `inbox_items.channel`, `tickets.source` | Wert `github` | Einträge und Tickets aus GitHub |
+| `inbox_items.kind` | Werte `change`, `pull_request`, `release` | Fassung einer beobachteten Datei, Pull Request, Release |
+| `inbox_items.watch` | JSON, höchstens 2 000 Byte | Status einer beobachteten Quelle (nur der Server, nur Anzeige) |
+| `connections.watch` | JSON, `hidden`, höchstens 1 MB | Stand des Kanals je Repository (ETags, Blob-SHA, Marken, Zahlen) und Rate-Limit |
+| `connections.settings` (GitHub) | JSON | `interval` (5 bis 60, Standard 15) und `repos` (höchstens 20: `repo`, `paths`, `events`, `target`) |
+
+Rückweg: Einträge und Tickets aus GitHub werden Web-Links (`link`), GitHub-Verbindungen fallen weg (ihre Einträge verlieren nur die Verbindung), die Felder gehen (Rollback-Test mit Daten).
+
+### 5.2 Server (GH-1)
+
+- `lib/github-rules.js` (rein): fester Host und Testmodus, Namen von Repositorys (`parseRepo` liest auch Adressen von github.com), Globs (`patternRegExp`, `watchedFiles`), Einstellungen (`settingsViolation`, `settingsOf`, `changedTargets`), Fälligkeit des Crons (`isDue`), Rate-Limit (`rateOf`, `limitOf`, `exhaustedUntil`, `limitHint`), Folgeseiten (`nextLink`, `pathOfLink`), Fehlertexte (`failureOf`), Änderungen (`fileChanges`, `matcherOf`), Einträge (`fileDraft` mit Diff-Auszug und Kopie, `pullDraft`, `releaseDraft`), Status (`fileWatch`, `pullWatch`), Stand (`stateOf`, `repoSummary`).
+- `lib/github-client.js`: nur `GET`, bedingt mit ETag, liest das Rate-Limit jeder Antwort, stoppt bei `remaining: 0`, wirft bei 403/429 als Rate-Limit, Zeitgrenze je Anfrage aus der Frist des Laufs.
+- `lib/github-service.js`: `run` (ein Lauf: je Repository Daten, Dateien, PRs, Releases; Stand je Teil nur mit Erfolg; Einträge über `inbox-service.ingest` mit Ziel des Repositorys und erstem Status; Status früherer Einträge über `source_ref`), `runDue` (Cron), `summary` (Details der Karte), `check` („Verbindung prüfen“).
+- `github.pb.js`: Cron `byl-github` (jede Minute, nicht im Testmodus), `GET /api/byl/connections/{id}/github`, `POST …/github/check`. „Jetzt abrufen“ über die gemeinsame Route `…/run` (`channel-runner.js`: GitHub ohne Token, Stand `watch`, Zustand `limited`).
+- Weitere Änderungen: `connection-rules.js` (`github` in `SETTINGS_KEYS`, `watch` in `SERVER_FIELDS`, `requiresSecret`), `connection-service.js` (Ziel je Repository prüfen), `target-project-service.js` (`assertChoosable`, `projectFacts` exportiert), `inbox-service.js` (`watch`, `@watch`, `draft.target`, Kopie behält den Status), `inbox-fingerprint.js` (Familie GitHub), `secrets.js` (Token von GitHub), `source.js` (Kanal und Arten). `CREATABLE_TYPES` nimmt `github` erst mit GH-2 auf; bis dahin legt nur der Superuser eine Verbindung an (Tests).
+
+### 5.3 Oberfläche (GH-2)
+
+- **Karte** `GitHubCard` (`ChannelCard`): Zustand, Infozeile, Hinweis (ohne Token, Rate-Limit, Fehler einzelner Repositorys), Hauptknopf „Jetzt abrufen“ bzw. „Repository hinzufügen …“, Menü „•••“ mit „Repository hinzufügen …“, „Verbindung prüfen“, „Zielprojekt …“, „Pausieren“, „Umbenennen …“, „Einrichtung ansehen“, „Hilfe“, „Löschen …“. Details: Letzter Abruf, Zugang, Anfragelimit, Abruf-Intervall, Zielprojekt der Verbindung und je Repository die Angaben aus `GET …/github` mit „Einstellungen …“ und „Entfernen …“.
+- **Repository-Formular** (`GitHubRepoForm`): Name oder Adresse, beobachtete Pfade (Liste mit Vorbelegung, Option `docs/**/*.md`), Ereignisse, Zielprojekt; in der Karte als Modal M, im Assistenten eingebettet (kein Dialog aus dem Dialog).
+- **Assistent** `?einrichten=github`: Token anlegen → Token setzen → Neu starten → Repositorys hinzufügen (legt die Verbindung an) → Zielprojekt (optional) → Verbindung prüfen.
+- **Statusanzeige:** `domain/watch.ts` (Texte), Datenschicht liest `watch`; `InboxPanel` (Zeile „Status der Quelle“), `TicketSources` (`Lozenge`).
+- **Katalog**, „Alle Kanäle jetzt abrufen“ (Zustand `limited` neutral), Hilfe „GitHub“, README.
+
+### 5.4 Tests
+
+- Unit: `tests/unit/github-rules.test.mjs`, `tests/unit/github-readonly.test.mjs` (nur GET, statisch), `secrets.test.mjs`, `inbox-fingerprint.test.mjs`, `connection-rules.test.mjs`, `source.test.mjs` (über `support/schema.mjs`).
+- Integration: `tests/integration/github-channel.test.mjs` gegen `tests/support/fake-github.mjs` (Ersterfassung ohne Flut, 304, Änderung mit Kopie und Diff, Status, neue und gelöschte Dateien, neue Muster, PRs mit Ticket unverändert, Releases, Paginierung, Zielprojekt je Repository, Einstellungen, Rate-Limit primär und sekundär, Fehler, ohne Token, „Verbindung prüfen“, Cron über `tests/fixtures/pb_hooks/github-cron.pb.js`, Zeit eines Laufs, nur GET, kein Token), `migrations-rollback.test.mjs`, `web-filter-parity.test.mjs` (Kanal `github`).
+- GH-2: Komponententests der Karte, des Formulars, des Assistenten und der Statusanzeige; manuelle Fälle mit echtem Repository und PAT.
+
+### 5.5 Folgepunkte
+
+- Issues, fehlgeschlagene Workflows und Dependabot als Ereignisse (ADR-0050 §4: nicht minimal, weitere Rechte und eigene Auswahl nötig).
+- Gelöschte Releases erkennen (bräuchte das Lesen aller Seiten je Lauf).
+- Umbenannte Repositorys: Einträge behalten den alten Schlüssel; erst ein Eintrag mit dem neuen Namen ersetzt den Eintrag in den Einstellungen.
 
 ## 6. Paket 3: Ordner-Kanal (aus der Spec, noch nicht geplant)
 
