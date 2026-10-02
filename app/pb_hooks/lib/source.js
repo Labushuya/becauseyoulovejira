@@ -2,8 +2,9 @@
 // Pure CommonJS module, ES5 only, no dependencies (Goja runtime and Vitest).
 // The lists are written out literally in the migrations 1790201200_create_inbox_items.js and
 // 1790201210_tickets_source.js (since 1790202400_inbox_keys.js with "api" and "whatsapp-web",
-// since 1790203200_github_channel.js with "github" and the kinds of its entries);
-// tests/unit/source.test.mjs keeps them equal.
+// since 1790203200_github_channel.js with "github" and the kinds of its entries, since
+// 1790203300_folder_channel.js with "folder" and "file"); tests/unit/source.test.mjs keeps them
+// equal.
 'use strict';
 
 // Ways into the inbox (inbox_items.channel) and at the same time the values of tickets.source.
@@ -23,12 +24,15 @@ var CHANNELS = Object.freeze([
   'api',
   'whatsapp-web',
   // Watched repositories on GitHub, read only (ADR-0050).
-  'github'
+  'github',
+  // Watched folders on this machine, read only, entries as references (ADR-0051).
+  'folder'
 ]);
 
 // Kind of object; steers only presets and the symbol in the inbox, never a ticket type
 // (ADR-0012). "change", "pull_request" and "release" are the entries of the GitHub channel: a
-// watched file changed, a pull request, a release (ADR-0050).
+// watched file changed, a pull request, a release (ADR-0050). "file" is a file of a watched folder
+// (ADR-0051), whose changes are "change" as well.
 var KINDS = Object.freeze([
   'todo',
   'task',
@@ -39,7 +43,8 @@ var KINDS = Object.freeze([
   'link',
   'change',
   'pull_request',
-  'release'
+  'release',
+  'file'
 ]);
 
 var STATES = Object.freeze(['new', 'converted', 'discarded']);

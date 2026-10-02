@@ -10,7 +10,8 @@ import type { WatchStatus } from './watch';
 
 /**
  * Ways into the inbox; also the values of `tickets.source`. "api" and "whatsapp-web" come through
- * the own inbox with an access key (ADR-0038), "github" from watched repositories (ADR-0050).
+ * the own inbox with an access key (ADR-0038), "github" from watched repositories (ADR-0050),
+ * "folder" from watched folders on this machine (ADR-0051).
  */
 export const INBOX_CHANNELS = [
 	'manual',
@@ -26,13 +27,15 @@ export const INBOX_CHANNELS = [
 	'notion',
 	'api',
 	'whatsapp-web',
-	'github'
+	'github',
+	'folder'
 ] as const;
 export type InboxChannel = (typeof INBOX_CHANNELS)[number];
 
 /**
- * Kind of object: steers presets and the symbol only, never a ticket type (ADR-0012). The last
- * three are the entries of GitHub: a watched file changed, a pull request, a release (ADR-0050).
+ * Kind of object: steers presets and the symbol only, never a ticket type (ADR-0012). "change",
+ * "pull_request" and "release" are the entries of GitHub: a watched file changed, a pull request, a
+ * release (ADR-0050); "file" a file of a watched folder, whose changes are "change" (ADR-0051).
  */
 export const INBOX_KINDS = [
 	'todo',
@@ -44,7 +47,8 @@ export const INBOX_KINDS = [
 	'link',
 	'change',
 	'pull_request',
-	'release'
+	'release',
+	'file'
 ] as const;
 export type InboxKind = (typeof INBOX_KINDS)[number];
 
@@ -119,7 +123,8 @@ export const CHANNEL_LABELS: Readonly<Record<InboxChannel, string>> = Object.fre
 	notion: 'Notion',
 	api: 'Eigener Eingang (API)',
 	'whatsapp-web': 'WhatsApp Web',
-	github: 'GitHub'
+	github: 'GitHub',
+	folder: 'Ordner'
 });
 
 export const KIND_LABELS: Readonly<Record<InboxKind, string>> = Object.freeze({
@@ -132,7 +137,8 @@ export const KIND_LABELS: Readonly<Record<InboxKind, string>> = Object.freeze({
 	link: 'Web-Link',
 	change: 'Änderung',
 	pull_request: 'Pull Request',
-	release: 'Release'
+	release: 'Release',
+	file: 'Datei'
 });
 
 export const STATE_LABELS: Readonly<Record<InboxState, string>> = Object.freeze({

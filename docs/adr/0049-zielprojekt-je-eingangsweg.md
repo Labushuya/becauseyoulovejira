@@ -104,3 +104,11 @@ Das Modell trennt **Einstellen** (am Weg) und **Merken** (am Eintrag). Für GitH
 - **Prüfung beim Speichern** (`connection-service.guardRepoTargets`, nur für App-Konten): Ein Ziel, das für sein Repository neu ist, muss ein aktives Projekt im Bereich der Verbindung sein (`validation_target_project_missing`, `validation_target_project_archived` am Feld `settings`); ein unverändertes, inzwischen archiviertes bleibt gültig, wie beim Ziel der Verbindung (§7).
 - **Auflösung: Einheit vor Verbindung.** Der Kanal gibt das Ziel des Repositorys über `@target_project` (Stufe 1) weiter, solange das Projekt im Bereich der Verbindung existiert; ohne eigenes Ziel und bei einem gelöschten Ziel gibt er nichts weiter, und Stufe 2 nimmt das Ziel der Verbindung. Ein gelöschtes Projekt bleibt als ID in den Einstellungen stehen (PocketBase leert JSON nicht); die Karte nennt es „gibt es nicht mehr“.
 - **Paket 3 (Ordner)** übernimmt dasselbe Muster je Ordner.
+
+## Nachtrag (2026-10-02, [ADR-0051](0051-ordner-kanal-verweise-statt-kopien.md)): Zielprojekt je Ordner
+
+§3 ist für den Ordner-Kanal umgesetzt, ebenfalls ohne Änderung an Feld, Filter, Gruppierung, Spalte, Vorbelegung oder den Regeln für Archiv und Löschung:
+
+- **Speicherort:** `connections.settings.folders[].target` (ID oder leer), neben Pfad, Unterordnern, Typen, Ausschlüssen und „Änderungen melden“ des Ordners; Begründung wie beim Repository (ADR-0051 §2).
+- **Prüfung beim Speichern** (`connection-service.guardFolders`, nur für App-Konten): Ein Ziel, das für seinen Ordner neu ist, muss ein aktives Projekt im Bereich der Verbindung sein (`validation_target_project_missing`, `validation_target_project_archived`); ein unverändertes, inzwischen archiviertes bleibt gültig.
+- **Auflösung: Ordner vor Verbindung** über `@target_project`, solange das Projekt im Bereich existiert; sonst gilt das Ziel der Verbindung. Auch Einträge aus „Vorhandene Dateien übernehmen“ bekommen das Ziel ihres Ordners.

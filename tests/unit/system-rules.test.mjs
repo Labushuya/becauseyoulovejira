@@ -210,8 +210,12 @@ describe('rate limit', () => {
 		expect(rules.rateStep(full, 4000, rule).allowed).toBe(true);
 	});
 
-	it('limits reading and actions per user and minute', () => {
-		expect(rules.RATE_LIMITS).toEqual({ read: { limit: 30, windowMs: 60_000 }, change: { limit: 10, windowMs: 60_000 } });
+	it('limits reading, actions and files of watched folders (ADR-0051) per user and minute', () => {
+		expect(rules.RATE_LIMITS).toEqual({
+			read: { limit: 30, windowMs: 60_000 },
+			change: { limit: 10, windowMs: 60_000 },
+			file: { limit: 120, windowMs: 60_000 }
+		});
 	});
 
 	it('refuses a second restart while one runs', () => {

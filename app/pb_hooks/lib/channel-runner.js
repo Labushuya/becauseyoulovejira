@@ -5,8 +5,8 @@
 // well below the interval, a size limit, and errors that are cleaned before they are stored or
 // logged and never thrown, so one connection cannot stop the others. Without its variables a
 // connection does nothing and logs that once per start of the server; only GitHub runs without its
-// token as well (public repositories, ADR-0050). GitHub keeps its own state in `watch` (hidden).
-// CommonJS module, ES5 only, Goja runtime only.
+// token as well (public repositories, ADR-0050), and folders have none (ADR-0051). GitHub and the
+// folders keep their own state in `watch` (hidden). CommonJS module, ES5 only, Goja runtime only.
 'use strict';
 
 var secrets = require(__hooks + '/lib/secrets.js');
@@ -54,6 +54,9 @@ function channelOf(type) {
   }
   if (type === 'github') {
     return require(__hooks + '/lib/github-service.js');
+  }
+  if (type === 'folder') {
+    return require(__hooks + '/lib/folder-service.js');
   }
   return null;
 }

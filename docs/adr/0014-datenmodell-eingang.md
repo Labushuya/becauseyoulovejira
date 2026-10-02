@@ -145,3 +145,9 @@ Neue Felder an `tickets`:
 - das Feld **`watch`** (JSON, höchstens 2 000 Byte): der Status einer beobachteten Quelle, etwa „seit Import erneut geändert“ oder „PR gemergt“. Es setzt nur der Server (beim Anlegen über den flüchtigen Schlüssel `@watch`, danach beim Abruf), für Clients ist es unveränderlich (`IMMUTABLE_FIELDS`); ein Ticket ändert sich damit nie ([ADR-0031](0031-herkunft-sichern.md), Nachtrag I).
 
 §3 bekommt die Familie GitHub: `github|` + `source_ref` + `|` + Fassung. `source_ref` ist bei einer Datei `file:<owner/repo klein>:<pfad>` und die Fassung ihr Blob-SHA (bei einer gelöschten `removed-` und der letzte Blob), bei Pull Request und Release die Node-ID von GitHub mit leerer Fassung. So kommt jede Fassung bzw. jeder PR einmal, und ein verworfener bleibt draußen.
+
+## Nachtrag (2026-10-02, [ADR-0051](0051-ordner-kanal-verweise-statt-kopien.md)): Ordner als Verweise
+
+§1 bekommt mit der Migration `1790203300_folder_channel.js` den Kanal **`folder`** (auch in `tickets.source`) und die Art **`file`** (eine Datei eines beobachteten Ordners; ihre Änderungen tragen die Art `change` von GitHub). Ein solcher Eintrag ist ein **Verweis**, keine Kopie: `source_ref` ist der absolute Pfad der Datei (er folgt ihr, wenn sie verschoben oder umbenannt wird), `source_url` und `original` bleiben leer, `source_meta.folder` hält die Angaben der Fassung (ADR-0051 §3, [ADR-0031](0031-herkunft-sichern.md) Nachtrag J). Den Status zeigt `watch` wie bei GitHub, dazu `moved`.
+
+§3 bekommt die Familie Ordner: `folder|` + Schlüssel der Datei (`source_meta.folder.file_key`, der Pfad in der vergleichbaren Form, unter Windows klein; ohne ihn `source_ref`) + `|` + Fassung (`sha256:<hex>` oder `size:<Bytes>:<ms>`). Dieselbe Fassung derselben Datei kommt einmal, auch über einen zweiten Ordner oder eine zweite Verbindung; eine verworfene bleibt draußen.

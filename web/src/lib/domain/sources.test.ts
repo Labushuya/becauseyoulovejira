@@ -55,7 +55,8 @@ describe('copyCompleteness', () => {
 			notion: 'text',
 			api: 'text',
 			'whatsapp-web': 'text',
-			github: 'text'
+			github: 'text',
+			folder: 'text'
 		};
 		for (const channel of INBOX_CHANNELS) {
 			expect(copyCompleteness(item({ channel })), channel).toBe(expected[channel]);

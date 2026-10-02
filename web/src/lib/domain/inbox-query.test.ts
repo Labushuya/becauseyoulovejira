@@ -113,7 +113,8 @@ describe('source families', () => {
 			'notion',
 			'manual',
 			'chat',
-			'github'
+			'github',
+			'folder'
 		]);
 		expect(sourceFamily(null)).toBe('manual');
 	});
@@ -127,7 +128,7 @@ describe('source families', () => {
 		}
 	});
 
-	it('offers Notion as chip since its import exists (ADR-0041), GitHub since its channel (ADR-0050)', () => {
+	it('offers Notion as chip since its import exists (ADR-0041), GitHub and folders since their channels (ADR-0050, ADR-0051)', () => {
 		expect(SOURCE_FAMILY_CHIPS).toEqual([
 			'manual',
 			'link',
@@ -135,7 +136,8 @@ describe('source families', () => {
 			'calendar',
 			'chat',
 			'notion',
-			'github'
+			'github',
+			'folder'
 		]);
 	});
 });
