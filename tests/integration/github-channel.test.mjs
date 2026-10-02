@@ -7,8 +7,9 @@
 // earlier entries, new patterns without a flood, pull requests and their status (the ticket stays
 // as it is), releases, pagination, target projects of repository and connection, the checks of the
 // settings, rate limits, errors of repository and connection, public repositories without a token,
-// "Verbindung prüfen", the cron and the time of a run; GitHub is only read (GET) and the token never
-// shows.
+// "Verbindung prüfen", the cron and the time of a run, since the addendum of 2026-10-02 the list of
+// the repositories of the token and "Alle meine Repositorys"; GitHub is only read (GET) and the
+// token never shows.
 
 import { randomBytes } from 'node:crypto';
 import PocketBase from 'pocketbase';

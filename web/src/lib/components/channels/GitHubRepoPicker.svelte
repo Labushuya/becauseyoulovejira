@@ -120,10 +120,12 @@
 							}}
 							onchange={(event) => toggle(choice, event.currentTarget.checked)}
 						/>
-						<span class="name">{choice.repo}</span>
-						{#if note !== ''}
-							<span class="info">{note}</span>
-						{/if}
+						<span class="text">
+							<span class="name">{choice.repo}</span>
+							{#if note !== ''}
+								<span class="info">{note}</span>
+							{/if}
+						</span>
 					</label>
 				</li>
 			{/each}
@@ -196,15 +198,23 @@
 		border-block: 1px solid var(--color-line);
 	}
 
+	/* The check box beside the text; a long name wraps within its column, the note follows it. */
 	.choice {
-		display: flex;
-		flex-wrap: wrap;
-		gap: 0.125rem 0.5rem;
-		align-items: center;
-		min-width: 0;
-		padding: 0.25rem 0.25rem;
+		display: grid;
+		grid-template-columns: auto minmax(0, 1fr);
+		gap: 0.5rem;
+		align-items: baseline;
+		padding: 0.25rem;
 		font-size: var(--font-size-body);
 		cursor: pointer;
+	}
+
+	.text {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 0 0.5rem;
+		align-items: baseline;
+		min-width: 0;
 	}
 
 	.name {
