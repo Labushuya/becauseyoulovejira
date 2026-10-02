@@ -197,6 +197,32 @@ describe('RecurrencePanel: a rule', () => {
 		expect(screen.queryByLabelText('Status beim Anlegen')).toBeNull();
 	});
 
+	it('offers the color of the next tickets after its migration, "Wie Projekt" with the color of the project (ADR-0052)', async () => {
+		const blue: ProjectRef = { ...HOUSE, color: 'blau' };
+		const props = show(rule({ projectId: HOUSE.id, color: null }), {
+			colorsAvailable: true,
+			projects: [blue],
+			projectById: (id: string) => (id === HOUSE.id ? blue : null)
+		});
+		const group = screen.getByRole('radiogroup', { name: 'Farbe' });
+		expect(
+			within(group).getByRole<HTMLInputElement>('radio', { name: 'Wie Projekt (Blau)' }).checked
+		).toBe(true);
+		await fireEvent.click(within(group).getByRole('radio', { name: 'Grün' }));
+		await fireEvent.click(screen.getByRole('button', { name: 'Speichern' }));
+		await vi.waitFor(() => expect(props.onsave).toHaveBeenCalledTimes(1));
+		expect(props.onsave.mock.calls[0]?.[0]).toMatchObject({ color: 'gruen' });
+	});
+
+	it('leaves the color out and sends none before its migration', async () => {
+		const props = show(rule());
+		expect(screen.queryByRole('radiogroup', { name: 'Farbe' })).toBeNull();
+		await fireEvent.input(screen.getByLabelText('Titel'), { target: { value: 'Müll (blau)' } });
+		await fireEvent.click(screen.getByRole('button', { name: 'Speichern' }));
+		await vi.waitFor(() => expect(props.onsave).toHaveBeenCalledTimes(1));
+		expect(props.onsave.mock.calls[0]?.[0]).not.toHaveProperty('color');
+	});
+
 	// Plan WV (ADR-0022 addendum 8).
 	it('offers "Status beim Anlegen" after its migration, every status but "Erledigt"', async () => {
 		const props = show(rule({ initialStatus: 'waiting' }), { statusAvailable: true });

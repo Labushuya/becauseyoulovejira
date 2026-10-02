@@ -52,14 +52,24 @@ function stringList(values) {
   return list;
 }
 
-// The values of a ticket that a copy may take over.
+// The values of a ticket that a copy may take over; the color reads as '' before its migration
+// (ADR-0052).
 function takeableValues(ticket) {
   return {
     description: ticket.getString('description'),
     priority: ticket.getString('priority'),
     tags: stringList(ticket.getStringSlice('tags')),
-    due: ticket.getString('due')
+    due: ticket.getString('due'),
+    color: ticket.getString('color')
   };
+}
+
+// Sets the own color of a copy (ADR-0052); none means "wie Projekt", so nothing is set then.
+function withColor(fields, color) {
+  if (color !== '') {
+    fields.color = color;
+  }
+  return fields;
 }
 
 // The signed-in app user of the request (the route requires one).
@@ -144,7 +154,7 @@ function saveDuplicate(txApp, original, options, context) {
   } else {
     fields.source = 'manual';
   }
-  return saveTicket(txApp, fields, context.actor);
+  return saveTicket(txApp, withColor(fields, taken.color), context.actor);
 }
 
 // New, open sub-tickets of the duplicate, one per sub-ticket of the original (also done ones), in
@@ -164,20 +174,23 @@ function saveSubtasks(txApp, original, duplicate, options, actor) {
     var taken = rules.takenValues(takeableValues(child), options);
     var saved = saveTicket(
       txApp,
-      {
-        owner: duplicate.getString('owner'),
-        household: duplicate.getString('household'),
-        title: child.getString('title'),
-        description: taken.description,
-        status: 'open',
-        priority: taken.priority,
-        due: taken.due,
-        project: duplicate.getString('project'),
-        tags: taken.tags,
-        parent: duplicate.id,
-        blocks_parent: child.getBool('blocks_parent'),
-        source: 'manual'
-      },
+      withColor(
+        {
+          owner: duplicate.getString('owner'),
+          household: duplicate.getString('household'),
+          title: child.getString('title'),
+          description: taken.description,
+          status: 'open',
+          priority: taken.priority,
+          due: taken.due,
+          project: duplicate.getString('project'),
+          tags: taken.tags,
+          parent: duplicate.id,
+          blocks_parent: child.getBool('blocks_parent'),
+          source: 'manual'
+        },
+        taken.color
+      ),
       actor
     );
     created.push({ id: saved.id, key: saved.getString('key') });

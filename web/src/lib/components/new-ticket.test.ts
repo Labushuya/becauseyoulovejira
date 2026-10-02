@@ -372,6 +372,49 @@ describe('new ticket route', () => {
 	});
 });
 
+describe('new ticket: color (ADR-0052)', () => {
+	const BLUE_HOUSE: Project = { ...HOUSE, color: 'blau' };
+	const group = () => screen.getByRole('radiogroup', { name: 'Farbe' });
+	const radio = (name: string) => within(group()).getByRole<HTMLInputElement>('radio', { name });
+
+	it('starts with "Wie Projekt", follows the chosen project and creates with an own color', async () => {
+		const { oncreate } = renderForm(undefined, {
+			projects: [BLUE_HOUSE, CAR],
+			colorsAvailable: true
+		});
+		expect(radio('Wie Projekt (keine)').checked).toBe(true);
+		await fireEvent.change(screen.getByLabelText('Projekt'), { target: { value: HOUSE.id } });
+		expect(radio('Wie Projekt (Blau)').checked).toBe(true);
+
+		await fireEvent.input(titleField(), { target: { value: 'Neu' } });
+		await fireEvent.click(radio('Indigo'));
+		await fireEvent.click(createButton());
+		expect(oncreate.mock.calls[0]?.[0]).toMatchObject({ project: HOUSE.id, color: 'indigo' });
+	});
+
+	it('sends no color for "Wie Projekt" and asks before a chosen color is lost', async () => {
+		const { oncreate, oncancel } = renderForm(undefined, {
+			projects: [HOUSE],
+			colorsAvailable: true
+		});
+		await fireEvent.click(radio('Senf'));
+		await fireEvent.click(screen.getByRole('button', { name: 'Abbrechen' }));
+		expect(await discardQuestion()).not.toBeNull();
+		expect(oncancel).not.toHaveBeenCalled();
+		await answer('Weiter bearbeiten');
+
+		await fireEvent.click(radio('Wie Projekt (keine)'));
+		await fireEvent.input(titleField(), { target: { value: 'Neu' } });
+		await fireEvent.click(createButton());
+		expect(oncreate.mock.calls[0]?.[0]).not.toHaveProperty('color');
+	});
+
+	it('offers no color while the server does not know it', () => {
+		renderForm(undefined, { projects: [HOUSE] });
+		expect(screen.queryByRole('radiogroup', { name: 'Farbe' })).toBeNull();
+	});
+});
+
 describe('new ticket: project (E3 plan, T-13)', () => {
 	function projectField() {
 		return screen.getByLabelText<HTMLSelectElement>('Projekt');

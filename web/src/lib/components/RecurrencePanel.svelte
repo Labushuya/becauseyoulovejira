@@ -69,6 +69,7 @@
 		eachAvailable = false,
 		statusAvailable = false,
 		subtasksAvailable = false,
+		colorsAvailable = false,
 		ticketHrefOf,
 		oncreatetag,
 		onsave,
@@ -96,6 +97,8 @@
 		statusAvailable?: boolean;
 		/** Offer the sub-tasks of the template and send them (plan WV-3, RecurrenceStore.subtasksReady). */
 		subtasksAvailable?: boolean;
+		/** Offer the color of the template and send it (ADR-0052, CatalogStore.colorsReady). */
+		colorsAvailable?: boolean;
 		ticketHrefOf: (ticketId: string) => ResolvedPathname;
 		/** Existing or new tag for a typed name (E3 plan, T-14). */
 		oncreatetag: (name: string) => Promise<EnsureTagResult>;
@@ -123,7 +126,8 @@
 		| 'tags'
 		| 'priority'
 		| 'initial_status'
-		| 'template_subtasks';
+		| 'template_subtasks'
+		| 'color';
 	const TEMPLATE_ERROR_FIELDS: readonly string[] = [
 		'title',
 		'description',
@@ -131,7 +135,8 @@
 		'tags',
 		'priority',
 		'initial_status',
-		'template_subtasks'
+		'template_subtasks',
+		'color'
 	];
 
 	const uid = $props.id();
@@ -153,7 +158,8 @@
 					tagIds: [],
 					priority: DEFAULT_PRIORITY,
 					initialStatus: DEFAULT_TEMPLATE_STATUS,
-					subtasks: []
+					subtasks: [],
+					color: null
 				}
 			: templateOf(source);
 	}
@@ -261,7 +267,9 @@
 				initial_status: askStatus && chosenStatus !== '' ? chosenStatus : template.initialStatus
 			}),
 			// The whole list, only for a server after its migration (plan WV-3).
-			...(subtasksAvailable && { template_subtasks: trimmedSubtasks(template.subtasks) })
+			...(subtasksAvailable && { template_subtasks: trimmedSubtasks(template.subtasks) }),
+			// The color of the next tickets, only for a server after its migration (ADR-0052).
+			...(colorsAvailable && { color: template.color })
 		};
 		return withRhythm ? { ...draft, ...formParams(values) } : draft;
 	}
@@ -489,6 +497,7 @@
 				{busy}
 				statusAvailable={statusAvailable && !askStatus}
 				{subtasksAvailable}
+				{colorsAvailable}
 				{invalidSubtasks}
 				{oncreatetag}
 				onprojectchosen={() => {

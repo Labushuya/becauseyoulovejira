@@ -4,6 +4,7 @@
 // the template and the rhythm.
 
 import type PocketBase from 'pocketbase';
+import { colorOf, type ProjectColor } from '../domain/colors';
 import { toDueInput } from '../domain/ticket';
 import { isPriority, type Priority } from '../domain/status';
 import {
@@ -49,6 +50,7 @@ export const RULE_FIELDS = [
 	'each_occurrence',
 	'initial_status',
 	'template_subtasks',
+	'color',
 	'created',
 	'updated'
 ].join(',');
@@ -77,6 +79,8 @@ export interface RuleRecord {
 	initial_status?: string;
 	/** Sub-tasks of the template (plan WV-3); absent before its migration, null for older rules. */
 	template_subtasks?: unknown;
+	/** Color of the template (ADR-0052), '' for "wie Projekt"; absent before its migration. */
+	color?: string;
 	created: string;
 	updated: string;
 }
@@ -107,6 +111,8 @@ export function toRecurrenceRule(record: RuleRecord): RecurrenceRule {
 		eachOccurrence: record.each_occurrence === true,
 		initialStatus: templateStatusOf(record.initial_status),
 		templateSubtasks: templateSubtasksOf(record.template_subtasks),
+		// Left out while the server does not know the field yet (before the restart, ADR-0052).
+		...(record.color !== undefined ? { color: colorOf(record.color) } : {}),
 		created: record.created,
 		updated: record.updated
 	};
@@ -143,12 +149,15 @@ export interface RuleDraft {
 	 * it, and the hook refuses more than 20 or an entry without a title.
 	 */
 	template_subtasks?: TemplateSubtask[];
+	/** Color of the template (ADR-0052), null for "wie Projekt"; a server before its migration ignores it. */
+	color?: ProjectColor | null;
 }
 
 function draftBody(draft: Partial<RuleDraft>): Record<string, unknown> {
 	const body: Record<string, unknown> = { ...draft };
 	if (draft.project !== undefined) body.project = draft.project ?? '';
 	if (draft.priority !== undefined) body.priority = draft.priority ?? '';
+	if (draft.color !== undefined) body.color = draft.color ?? '';
 	return body;
 }
 

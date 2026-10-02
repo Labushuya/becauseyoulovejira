@@ -8,10 +8,12 @@
 		projectTicketsLabel,
 		sliceProjectTickets
 	} from '$lib/domain/project-tickets';
-	import type { TicketSummary } from '$lib/domain/ticket';
+	import { colorText, ticketColorOf } from '$lib/domain/colors';
+	import type { ProjectRef, TicketSummary } from '$lib/domain/ticket';
 	import { ticketLinks } from '$lib/stores/open-mode.svelte';
 	import type { TicketRowActionsStore } from '$lib/stores/ticket-row-actions.svelte';
 	import { fullViewHref, projectTicketsHref, ticketHref } from '$lib/ticket-links';
+	import ColorMark from './ColorMark.svelte';
 	import DueLabel from './DueLabel.svelte';
 	import ErrorIcon from './ErrorIcon.svelte';
 	import EmptyState from './guidance/EmptyState.svelte';
@@ -32,7 +34,8 @@
 	// open it where the owner attached rowMenus. The entries never scroll sideways (ADR-0030): the
 	// details wrap below key and title when the line gets narrow. If the entry with the focus leaves
 	// the list (done or moved to the trash elsewhere, realtime), the focus goes to the entry now at
-	// its place, else to `returnFocus`.
+	// its place, else to `returnFocus`. A dot before the key shows the color of the ticket (ADR-0052:
+	// its own, else of the project or its parent), named after the title.
 	let {
 		project,
 		tickets,
@@ -46,7 +49,8 @@
 		limit = PROJECT_TICKETS_LIMIT,
 		returnFocus
 	}: {
-		project: { id: string; name: string };
+		/** The project as the catalog resolves it: its color and its parent (ADR-0052). */
+		project: Pick<ProjectRef, 'id' | 'name' | 'color' | 'parent'>;
 		/** The open tickets of the project, ordered (openTicketsOf, openTicketsByProject). */
 		tickets: readonly TicketSummary[];
 		/** Berlin date of the due labels (from the list store, so they change at midnight). */
@@ -120,6 +124,7 @@
 {:else}
 	<ul class="tickets" aria-label={label} bind:this={list}>
 		{#each slice.shown as ticket (ticket.id)}
+			{@const color = ticketColorOf(ticket, project)}
 			<li class="ticket" data-menu-row={rowActions ? '' : undefined}>
 				<a
 					class="link"
@@ -127,8 +132,10 @@
 					data-row-link
 					title={ticket.title.length >= LONG_TITLE ? ticket.title : undefined}
 				>
+					{#if color}<ColorMark shown={color} named={false} />{/if}
 					<span class="key">{ticket.key}</span>
 					<span class="title">{ticket.title}</span>
+					{#if color}<span class="visually-hidden">, {colorText(color)}</span>{/if}
 				</a>
 				<span class="details">
 					<span class="status-cell"

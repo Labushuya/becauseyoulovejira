@@ -28,6 +28,7 @@
 	import { goto } from '$app/navigation';
 	import type { ResolvedPathname } from '$app/types';
 	import type { CalendarDate } from '$lib/domain/berlin-date';
+	import { projectColorOf, ticketColorOf, type ShownColor } from '$lib/domain/colors';
 	import { berlinDateOf, formatBerlinDateTime, formatCalendarDate } from '$lib/domain/format';
 	import { projectChoiceLabel, projectPath } from '$lib/domain/project-tree';
 	import { SOURCE_FAMILY_LABELS, sourceFamily } from '$lib/domain/source';
@@ -35,6 +36,7 @@
 	import type { ParentRef, ProjectRef, TagRef, TicketSummary } from '$lib/domain/ticket';
 	import { PRIORITY_LABELS, STATUS_LABELS } from '$lib/domain/labels';
 	import { PRIORITIES, STATUSES } from '$lib/domain/status';
+	import ColorMark from './ColorMark.svelte';
 	import DoneToggle from './DoneToggle.svelte';
 	import DueLabel from './DueLabel.svelte';
 	import PriorityIcon from './PriorityIcon.svelte';
@@ -59,7 +61,10 @@
 	// `menu` (plan aktionsmenues, AM-2) the actions end with the menu "•••" of the ticket, after
 	// "Öffnen"; a click on it or in the menu never opens the row either. The title link and
 	// "Öffnen" open the row itself (data-row-link): a right click on them opens the menu of the
-	// row, not the one of the browser (AM-3, the table handles it).
+	// row, not the one of the browser (AM-3, the table handles it). The color of the ticket
+	// (ADR-0052: its own, else of its project or the parent of that) is a stripe at the start of the
+	// first cell, apart from the bar of the open row at the very edge, with its name for screen
+	// readers; the row keeps its height.
 	let {
 		ticket,
 		nested = false,
@@ -177,6 +182,7 @@
 	);
 
 	const done = $derived(ticket.status === 'done');
+	const shownColor = $derived(ticketColorOf(ticket, project));
 	/** Name of the recurring symbol: "Wiederkehrend: jeden Montag", or only "wiederkehrend". */
 	const recurringLabel = $derived(
 		recurrenceText === '' ? 'wiederkehrend' : `Wiederkehrend: ${recurrenceText}`
@@ -199,8 +205,14 @@
 	}
 </script>
 
-<!-- One choice of a cell menu (plan BI-3): the current value is checked, by mark and weight. -->
-{#snippet menuChoice(checked: boolean, text: string, onchoose: () => void)}
+<!-- One choice of a cell menu (plan BI-3): the current value is checked, by mark and weight. A
+     project shows its color as a dot (ADR-0052); its name is the text of the choice. -->
+{#snippet menuChoice(
+	checked: boolean,
+	text: string,
+	onchoose: () => void,
+	color: ShownColor | null = null
+)}
 	<button
 		class="item"
 		class:checked
@@ -210,7 +222,9 @@
 		tabindex="-1"
 		onclick={onchoose}
 	>
-		<span class="mark" aria-hidden="true">{checked ? '✓' : ''}</span>{text}
+		<span class="mark" aria-hidden="true">{checked ? '✓' : ''}</span>{#if color}<span
+				class="choice-color"><ColorMark shown={color} named={false} /></span
+			>{/if}{text}
 	</button>
 {/snippet}
 
@@ -218,6 +232,12 @@
 	{#if project}
 		<!-- A sub project shows its path "Haus › Garten" (ADR-0034); the title adds the code. -->
 		<span title={projectChoiceLabel(project)}>{projectPath(project)}</span>
+	{/if}
+{/snippet}
+
+{#snippet colorStripe()}
+	{#if shownColor}
+		<span class="color-slot"><ColorMark shown={shownColor} kind="stripe" /></span>
 	{/if}
 {/snippet}
 
@@ -255,6 +275,7 @@
 	{#if onselect && shows('select')}
 		<!-- The whole cell is the label: a click anywhere in it chooses, never opens the ticket. -->
 		<td class="select" data-col="select" onpointerdown={(event) => (rangeHeld = event.shiftKey)}>
+			{@render colorStripe()}
 			<label class="select-hit">
 				<input
 					type="checkbox"
@@ -271,7 +292,9 @@
 		</td>
 	{/if}
 	<td class="key" data-col="key">
-		{#if isNew}<span class="new-dot" title="Neu"><span class="visually-hidden">neu,</span></span
+		{#if !(onselect && shows('select'))}{@render colorStripe()}{/if}{#if isNew}<span
+				class="new-dot"
+				title="Neu"><span class="visually-hidden">neu,</span></span
 			>{/if}{ticket.key}
 	</td>
 	{#if shows('priority')}
@@ -409,8 +432,11 @@
 							choose(close, { project: null })
 						)}
 						{#each edit.projects as choice (choice.id)}
-							{@render menuChoice(choice.id === ticket.projectId, projectChoiceLabel(choice), () =>
-								choose(close, { project: choice.id })
+							{@render menuChoice(
+								choice.id === ticket.projectId,
+								projectChoiceLabel(choice),
+								() => choose(close, { project: choice.id }),
+								projectColorOf(choice)
 							)}
 						{/each}
 					{/snippet}
@@ -547,6 +573,10 @@
 		width: 1.25em;
 	}
 
+	.choice-color {
+		margin-right: 0.375rem;
+	}
+
 	.item.checked {
 		font-weight: 600;
 	}
@@ -569,6 +599,24 @@
 	/* Second, non-colour mark of the open row: a bar at its start. */
 	.row.active > :first-child {
 		box-shadow: inset 3px 0 0 var(--color-brand);
+	}
+
+	/*
+	 * The color of the ticket (ADR-0052): a stripe of 0.25rem at the start of the first cell, 3px
+	 * after the bar of the open row, as high as the row less its padding, so the row keeps its height
+	 * with one or two lines of title.
+	 */
+	.select,
+	.key {
+		position: relative;
+	}
+
+	.color-slot {
+		position: absolute;
+		top: 0.375rem;
+		bottom: 0.375rem;
+		left: 0.375rem;
+		display: flex;
 	}
 
 	/* Fixed widths (ADR-0030): what does not fit is cut off inside its cell, never beside it. */

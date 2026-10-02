@@ -1,6 +1,6 @@
 # ADR-0027: Akzent-Themes (Petrol, Rubin, Smaragd, Kupfer; ursprünglich mit Purpur und Honig)
 
-- **Status:** Angenommen; geändert durch den Nachtrag vom 2026-09-27 (Purpur entfällt, Honig wird Kupfer, Rubin und Smaragd dunkler). Die Abschnitte 1 bis 6 beschreiben den Stand vom 2026-09-26; wo der Nachtrag abweicht, gilt er. §1 („keine Verläufe, keine Glas-Optik, keine Schatten“) ist durch [ADR-0029](0029-glas-materialien.md) teilweise ersetzt (zweiter Nachtrag vom 2026-09-27).
+- **Status:** Angenommen; geändert durch den Nachtrag vom 2026-09-27 (Purpur entfällt, Honig wird Kupfer, Rubin und Smaragd dunkler). Die Abschnitte 1 bis 6 beschreiben den Stand vom 2026-09-26; wo der Nachtrag abweicht, gilt er. §1 („keine Verläufe, keine Glas-Optik, keine Schatten“) ist durch [ADR-0029](0029-glas-materialien.md) teilweise ersetzt (zweiter Nachtrag vom 2026-09-27). Nachtrag vom 2026-10-02: Palette für Projekte und Tickets neben dem Akzent ([ADR-0052](0052-farben-fuer-projekte-und-tickets.md)).
 - **Datum:** 2026-09-26
 - **Entscheidung durch:** Nutzer (vier weitere Akzentfarben, Petrol bleibt Standard, 2026-09-26), Advisor (Regel „genau eine Akzentfarbe je Theme“, Anpassung von CLAUDE.md §8 und Nachtrag zu ADR-0010), Executor (Farbwerte, Lösung der Rubin-/Fehlerfarben-Frage)
 - **Ergänzt:** [ADR-0009](0009-fehlerfarbe.md) (Fehlerfarbe, siehe dort den Nachtrag), [ADR-0010](0010-layout-nach-task-board.md) §3 (siehe dort den Nachtrag), [ADR-0025](0025-ui-konsistenz-overlay-system.md) §10 (Hell/Dunkel bleibt unabhängig)
@@ -224,3 +224,12 @@ Weitere Abstände (ΔE2000): Smaragd zu Petrol 25,9 (hell) und 23,9 (dunkel), al
 - Materialien, Füllungen, Trennlinien und Schatten sind neutral und in allen Themes gleich; sie stehen nur in den vier Modus-Blöcken. Der Hintergrund-Verlauf nutzt die vorhandene Akzentfläche `--color-brand-soft-bg`. Es braucht **kein neues Akzent-Token**; geprüft für die vier Themes dieses Stands.
 - `glass-contrast.test.ts` rechnet alle Themes aus `ACCENT_THEMES` × vier Modus-Blöcke × zwei Materialien gegen jede Farbe der Palette als Hintergrund; alle Texte erreichen 4,5 : 1.
 - Der Fokusring wechselt auf `--color-brand-text`, weil `--color-brand` im Dunkelmodus auf Glas und auf dem Verlauf die 3 : 1 nicht sicher hält (Petrol, Rubin, Smaragd).
+
+## Nachtrag (2026-10-02): Palette für Projekte und Tickets ([ADR-0052](0052-farben-fuer-projekte-und-tickets.md))
+
+Mit den Farben für Projekte und Tickets gibt es neben dem einen Akzent eine **Palette von zehn Kategorie-Farben**. Sie ist kein zweiter Akzent: Sie gehört den Daten des Nutzers (welches Projekt, welches Ticket), nie der Bedienung, und erscheint nur als Streifen oder Punkt, nie als Fläche, Knopf, Rahmen eines Zustands oder Text. Die Regel „genau eine Akzentfarbe je Theme“ aus §1 bleibt damit unverändert; Rot bleibt den Fehlern (ADR-0009).
+
+- **Tokens:** `--project-color-<schlüssel>` (`violett`, `indigo`, `blau`, `himmel`, `tuerkis`, `gruen`, `oliv`, `senf`, `braun`, `grau`) nur in den vier Modus-Blöcken, wie die neutralen Tokens; die Theme-Blöcke setzen weiter genau die Akzent-Tokens aus §2 (`tokens.test.ts` unverändert). Im Dunkeln sind die Töne heller.
+- **Geprüft für alle Themes aus `ACCENT_THEMES` × vier Varianten** in `project-colors.test.ts`: jede Farbe mindestens 3 : 1 (WCAG 1.4.11) auf Fläche, Hintergrund, Akzentfläche des Themes und Glas (regular und thick über Seite und Verlauf, thick über dem Schleier); Abstand ΔE2000 ≥ 20 zur Fehlerfarbe des Themes wie die Akzente (§5); je zwei Farben ≥ 12 voneinander. `glass-contrast.test.ts` nimmt die zehn Farben als weitere Hintergründe unter Glas; alle Texte halten 4,5 : 1.
+- **Abgrenzung zum Akzent:** Türkis ähnelt im Petrol-Theme dem Akzent. Deshalb sitzt der Streifen einer Zeile 3 px neben dem Akzentbalken der geöffneten Zeile statt an seiner Stelle, und der Kurzbalken in Auswahllisten ist ein Balken, kein Punkt wie „neu“.
+- Die Werte und die kleinsten Messwerte stehen in ADR-0052 §1.

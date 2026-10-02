@@ -1,6 +1,6 @@
 # ADR-0022: Erzeugung der Tickets aus Regeln: Zeitpunkt, Cron, Nachholen beim Start, keine Duplikate
 
-- **Status:** Angenommen (2026-09-26: Der Nutzer hat die Empfehlungen zu OF-E5-1 bis OF-E5-5 bestätigt; umgesetzt in E5, siehe Nachtrag am Ende)
+- **Status:** Angenommen (2026-09-26: Der Nutzer hat die Empfehlungen zu OF-E5-1 bis OF-E5-5 bestätigt; umgesetzt in E5, siehe Nachtrag am Ende); Nachtrag 11 (2026-10-02): Farbe in der Vorlage ([ADR-0052](0052-farben-fuer-projekte-und-tickets.md))
 - **Datum:** 2026-09-25
 - **Entscheidung durch:** Advisor
 - **Ergänzt:** CLAUDE.md §6, [ADR-0005](0005-zeitzone-europe-berlin.md) (Zeitzone, Cron in UTC), [ADR-0021](0021-regelmodell-wiederkehrende-aufgaben.md) (Regelmodell)
@@ -221,3 +221,13 @@ Nutzerentscheidung vom 2026-10-01 („Ja, so umsetzen“): Die Vorlage bekommt e
 - **Zeitstempel und Notiz:** Jede Unteraufgabe bekommt `created` = `updated` per `setRaw` (Nachtrag zu §2: sonst hielte „unberührt“ sie für bearbeitet), die i-te eine Millisekunde nach dem Folgeticket plus i, damit die Liste die Reihenfolge der Vorlage behält (die Unteraufgaben sortieren nach Anlage). Am Folgeticket steht der Verlaufseintrag `recurrence_subtasks` (ohne Nutzer, `old_value` die Regel, `new_value` `{ count, tickets }` mit den IDs der erzeugten Unteraufgaben); wie `recurrence_skipped` (Nachtrag 4) ändert er `updated` des Folgetickets nicht. Die SPA zeigt ihn als „3 Unteraufgaben aus der Vorlage angelegt“ mit „Wiederholung“ als Urheber. Er ist die Grundlage von „unberührt“ ([ADR-0023](0023-lebenszyklus-von-regeln-und-instanzen.md) Nachtrag 8).
 - **Vor der Migration** (`templateSubtasksReady`): Die Hooks lesen kein Feld, kein Ticket bekommt Unteraufgaben, ein gesendetes `template_subtasks` verwirft PocketBase (`hooks-before-migration.test.mjs`); die SPA fragt das Feld über einen Filter ab (`templateSubtasksReady` in `data/recurrence.ts`, 400 vor der Migration) und zeigt die Liste erst danach (`RecurrenceStore.subtasksReady`). **Neustart nötig** (`neu-starten.bat`).
 - Belegt in `recurrence-subtasks.test.mjs` (Prüfen, Erzeugen, Schalter-Modus mit 20 Tickets je Lauf, Nachholen, nur künftige Tickets, Atomarität, unberührt, Duplizieren), `recurrence-rules.test.mjs`, `web-recurrence.test.mjs`, `migrations-rollback.test.mjs`, `hooks-before-migration.test.mjs` und `web-data-recurrence.test.mjs`.
+
+## Nachtrag 11 (2026-10-02, [ADR-0052](0052-farben-fuer-projekte-und-tickets.md)): Farbe in der Vorlage
+
+Mit den Farben für Projekte und Tickets (Nutzerentscheidung vom 2026-10-02) hat die Vorlage eine Farbe. Der Rest dieses ADR bleibt.
+
+- **Feld:** `recurrence_rules.color`, Select-Feld mit den Schlüsseln der Palette, nicht Pflicht (Migration `1790203400_colors.js`); leer heißt „wie Projekt“.
+- **Erzeugen:** `newInstance` setzt die Farbe der Vorlage als eigene Farbe des neuen Tickets, auch beim Nachholen und mit „Jeden Termin einzeln anlegen“; ohne Farbe bleibt das Feld leer, das Ticket zeigt dann die Farbe seines Projekts. Die Farbe ist keine Änderung des Tickets (nur „created“ im Verlauf), „unberührt“ ([ADR-0023](0023-lebenszyklus-von-regeln-und-instanzen.md) §3) gilt unverändert. Unteraufgaben der Vorlage bekommen keine eigene Farbe.
+- **Vorlage aus einem Ticket:** „Wiederholen…“ und „Neues Ticket“ mit „Wiederholen“ übernehmen die eigene Farbe des Tickets (`ticketTemplate`); ändert der Nutzer die Farbe eines offenen Serientickets, bietet das Info-Flag „Auch für künftige Tickets übernehmen“ sie wie die übrigen Felder an (`TEMPLATE_FIELDS`). Die Zeile „Künftige Tickets“ nennt „· Farbe Blau“, Regel-Panel und Bearbeiten am Ticket haben die Wahl „Farbe“ mit „Wie Projekt (Blau)“.
+- **Vor der Migration:** Die Hooks lesen eine leere Farbe und setzen nichts; die SPA bietet die Wahl erst an, wenn der Katalog die Farben kennt (`CatalogStore.colorsReady`).
+- Belegt in `recurrence-generate.test.mjs` (Farbe der Vorlage am neuen Ticket), `series-template.test.ts`, `recurrence-panel.test.ts` und `colors.test.mjs`.

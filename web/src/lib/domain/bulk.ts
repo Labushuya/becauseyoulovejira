@@ -4,6 +4,7 @@
 // exactly like one done in the panel.
 
 import { addDays, type CalendarDate } from './berlin-date';
+import type { ProjectColor } from './colors';
 import type { Priority, Status } from './status';
 import type { TicketPatch, TicketSummary } from './ticket';
 
@@ -19,13 +20,17 @@ export type DueAction =
 	| { kind: 'due'; mode: 'clear' }
 	| { kind: 'due'; mode: 'source' };
 
-/** A change of fields; every one of them offers "Rückgängig". */
+/**
+ * A change of fields; every one of them offers "Rückgängig". `color` null is "wie Projekt"
+ * (ADR-0052).
+ */
 export type FieldAction =
 	| DueAction
 	| { kind: 'priority'; value: Priority }
 	| { kind: 'status'; value: Status }
 	| { kind: 'project'; projectId: string | null }
-	| { kind: 'tags'; mode: 'add' | 'remove'; tagIds: readonly string[] };
+	| { kind: 'tags'; mode: 'add' | 'remove'; tagIds: readonly string[] }
+	| { kind: 'color'; value: ProjectColor | null };
 
 /**
  * Every bulk action. "Erledigen" takes the blocking sub-tasks along or not (ADR-0033 section 2);
@@ -131,6 +136,10 @@ export function planStep(
 				? { type: 'unchanged' }
 				: { type: 'change', patch: { tags } };
 		}
+		case 'color':
+			return (ticket.color ?? null) === action.value
+				? { type: 'unchanged' }
+				: { type: 'change', patch: { color: action.value } };
 	}
 }
 
@@ -145,6 +154,7 @@ export function restorePatch(before: TicketSummary, patch: TicketPatch): TicketP
 	if ('status' in patch) restore.status = before.status;
 	if ('project' in patch) restore.project = before.projectId;
 	if ('tags' in patch) restore.tags = [...before.tagIds];
+	if ('color' in patch) restore.color = before.color ?? null;
 	return restore;
 }
 
@@ -177,6 +187,8 @@ export function actionLabel(action: BulkAction): string {
 			return 'Projekt ändern';
 		case 'tags':
 			return action.mode === 'add' ? 'Tags hinzufügen' : 'Tags entfernen';
+		case 'color':
+			return 'Farbe ändern';
 		case 'complete':
 			return 'Erledigen';
 		case 'delete':

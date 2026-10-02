@@ -1,6 +1,6 @@
 # ADR-0045: Ticket duplizieren: Abfrage im Dialog, eine Route in einer Transaktion, Kopie der Herkunft als eigener Eingangseintrag
 
-- **Status:** Angenommen und umgesetzt: Server und Datenschicht in DU-1 (#192), Oberfläche in DU-2 (#193) nach [docs/plan/duplizieren.md](../plan/duplizieren.md); die manuelle Browser-Prüfung steht im Test-Manifest. §1 (Einstieg) geändert durch den Nachtrag „Aktionsmenüs“ (2026-10-01)
+- **Status:** Angenommen und umgesetzt: Server und Datenschicht in DU-1 (#192), Oberfläche in DU-2 (#193) nach [docs/plan/duplizieren.md](../plan/duplizieren.md); die manuelle Browser-Prüfung steht im Test-Manifest. §1 (Einstieg) geändert durch den Nachtrag „Aktionsmenüs“ (2026-10-01); Nachtrag 2026-10-02: Farbe im Duplikat ([ADR-0052](0052-farben-fuer-projekte-und-tickets.md))
 - **Datum:** 2026-10-01
 - **Entscheidung durch:** Nutzer (Wunsch vom 2026-10-01, wörtlich: „Ich möchte die Möglichkeit haben, jedes Ticket zu duplizieren – nicht zwangsläufig mit Quelle (manuell abfragen wie Duplikat erstellt werden soll).“), Advisor (Einstieg, Felder der Abfrage und ihre Vorbelegung, Pflicht-Status, Quelle mit Fallback, Atomarität, Verlauf, Rechte, Papierkorb), Executor (Machbarkeit der Kopie, Serverweg, Kommentare, Einzelheiten)
 - **Ergänzt:** [ADR-0031](0031-herkunft-sichern.md) (Nachtrag F: Kopie der Herkunft), [ADR-0033](0033-unteraufgaben.md) (Nachtrag: Unteraufgaben beim Duplizieren)
@@ -94,3 +94,12 @@ Machbar und umgesetzt; der Fallback (b′, nur ein Verweis in der Beschreibung) 
 - **Abfrage unverändert:** im Panel das Modal M, in der Vollansicht derselbe Inhalt eingebettet oben im Inhalt (`InlineDialog`, ADR-0025 Nachtrag 16); „Duplizieren …“ und „In den Papierkorb …“ schließen einander. Der Fokus liegt nach der Wahl im Menü auf „•••“, also kehrt er nach „Abbrechen“ und Esc dorthin zurück. Der Eintrag meldet im Panel `aria-haspopup="dialog"`, in der Vollansicht nichts, weil er dort keinen Dialog öffnet.
 - **Tabelle (seit AM-2, ersetzt den zweiten Punkt von §1):** „Duplizieren …“ steht auch im Menü „•••“ jeder Zeile der Tabelle „Aufgaben“. Die Tabelle ist kein Modal, also ist die Abfrage dort das Modal M des Panels. Weil eine Zeile nur die Zusammenfassung ihres Tickets kennt, lädt der `TicketRowActionsStore` vorher Ticket, Quellen und Zahl der Kommentare (Fehler als Flag); danach gilt §2 bis §6 unverändert. Weiter keine Sammelaktion.
 - **Tests:** `ticket-actions.test.ts` (Menü), `ticket-panel.test.ts` (Panel und Vollansicht), `ticket-duplicate.test.ts` (Abfrage), `ticket-table-row-menu.test.ts` und `ticket-row-actions.test.ts` (Zeile); Manifest BYL-E6-740 bis BYL-E6-746.
+
+## Nachtrag (2026-10-02, [ADR-0052](0052-farben-fuer-projekte-und-tickets.md)): Farbe im Duplikat
+
+Mit den Farben für Projekte und Tickets ist die eigene Farbe ein Feld des Tickets wie die Priorität. §2 bis §6 bleiben, ergänzt um:
+
+- **Abfrage:** Unter „Übernehmen“ steht nach der Fälligkeit „Farbe: Blau“ bzw. „Farbe: wie Projekt“, angehakt (`DEFAULT_TAKE.color`), sobald der Server das Feld kennt; wie bei den anderen Feldern auch ohne eigene Farbe, weil dieselbe Wahl für die Unteraufgaben gilt.
+- **Route:** Schalter `color` (`parseRequest`, `takenValues`); das Duplikat und seine neuen Unteraufgaben bekommen jeweils ihre eigene Farbe. Ohne Schalter oder ohne eigene Farbe zeigt die Kopie die Farbe ihres Projekts. Ein Client ohne den Schalter (älterer Stand im offenen Tab) übernimmt keine Farbe.
+- **Vor der Migration** liest der Dienst eine leere Farbe und setzt nichts.
+- **Tests:** `duplicate-rules.test.mjs`, `colors.test.mjs` (Route mit Unteraufgaben), `ticket-duplicate.test.ts`, `duplicate.test.ts`.

@@ -45,6 +45,8 @@
 		projectById(id: string): ProjectRef | null;
 		tagById(id: string): TagRef | null;
 		ensureTag(name: string): Promise<EnsureTagResult>;
+		/** The server knows the colors (ADR-0052); without it the template offers none. */
+		readonly colorsReady?: boolean;
 	}
 
 	// Recurrence of the ticket in the panel (E5 plan, package 4). A ticket in a series shows
@@ -190,7 +192,8 @@
 		| 'project'
 		| 'tags'
 		| 'initial_status'
-		| 'template_subtasks';
+		| 'template_subtasks'
+		| 'color';
 	const TEMPLATE_ERRORS: readonly string[] = [
 		'title',
 		'description',
@@ -198,7 +201,8 @@
 		'project',
 		'tags',
 		'initial_status',
-		'template_subtasks'
+		'template_subtasks',
+		'color'
 	];
 	let templateErrors = $state<Partial<Record<TemplateError, string>>>({});
 	/** Rows of the list of sub-tasks without a title (checked before sending). */
@@ -363,6 +367,7 @@
 							busy={templateBusy}
 							statusAvailable={store.statusReady}
 							subtasksAvailable={store.subtasksReady}
+							colorsAvailable={catalog.colorsReady ?? false}
 							ticketSubtasks={subtasks}
 							{invalidSubtasks}
 							oncreatetag={(name) => catalog.ensureTag(name)}

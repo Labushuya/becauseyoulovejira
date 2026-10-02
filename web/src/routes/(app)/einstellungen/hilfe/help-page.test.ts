@@ -172,6 +172,7 @@ describe('help page (EH-9)', () => {
 			'Wie dupliziere ich ein Ticket?',
 			'Wie gliedere ich ein Projekt in Unterprojekte?',
 			'Wie sehe ich die offenen Tickets eines Projekts?',
+			'Wie färbe ich Projekte und Tickets?',
 			'Wie formatiere ich Beschreibungen und Kommentare?',
 			'Wie ordne ich Kommentare und hebe einen hervor?'
 		]);
@@ -224,6 +225,11 @@ describe('help page (EH-9)', () => {
 		expect(text(section)).toContain('„Unterprojekte einbeziehen“');
 		expect(text(section)).toContain('„davon direkt“');
 		expect(text(section)).toContain('„Mit Oberprojekt zurückholen“');
+		// Colors (ADR-0052): the palette, inheritance, the own color first, never color alone, no red.
+		expect(text(section)).toContain('„Wie Oberprojekt“');
+		expect(text(section)).toContain('standardmäßig „Wie Projekt“');
+		expect(text(section)).toContain('Ihr Name steht beim Zeigen mit der Maus und für Screenreader');
+		expect(text(section)).toContain('Rot gibt es nicht, es bleibt für Fehler.');
 		// Open tickets of a project (ADR-0034, addendum): the disclosure, limit, link, remembered rows.
 		expect(text(section)).toContain('der Pfeil vor dem Code eine Zeile auf');
 		expect(text(section)).toContain('„Alle 12 in Aufgaben öffnen“');

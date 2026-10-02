@@ -131,6 +131,37 @@ describe('ticket picker', () => {
 		expect(groupNames()).toEqual(['Zuletzt angesehen oder bearbeitet', 'Haus › Garten']);
 	});
 
+	it('shows the color of every ticket as a short bar, named after the title (ADR-0052)', async () => {
+		const house: ProjectRef = { ...HAUS, color: 'blau' };
+		const garden: ProjectRef = {
+			...GARTEN,
+			color: null,
+			parent: { ...GARTEN.parent!, color: 'blau' }
+		};
+		const own = pickerTicket({
+			key: 'HAUS-20',
+			title: 'Fenster',
+			projectId: HAUS.id,
+			color: 'oliv'
+		});
+		const plain = pickerTicket({ key: 'TASK-21', title: 'Ohne' });
+		const { source } = fakePickerSource({ open: [APPLES, own, plain], projects: [house, garden] });
+		const { input } = renderPicker(source);
+		await fireEvent.click(input);
+		const option = (key: string) =>
+			options().find((entry) => entry.querySelector('.key')?.textContent === key) as HTMLElement;
+		const bar = (key: string) => option(key).querySelector<HTMLElement>('.color-mark.stripe');
+		expect(bar('GART-3')?.getAttribute('title')).toBe('Farbe Blau, vom Oberprojekt „Haus“');
+		expect(bar('GART-3')?.getAttribute('aria-hidden')).toBe('true');
+		// The name follows the title in the text of the option.
+		const named = (key: string) =>
+			option(key).querySelector('.title ~ .visually-hidden')?.textContent;
+		expect(named('GART-3')).toBe(', Farbe Blau, vom Oberprojekt „Haus“');
+		expect(bar('HAUS-20')?.dataset.color).toBe('oliv');
+		expect(named('HAUS-20')).toBe(', Farbe Oliv');
+		expect(bar('TASK-21')).toBeNull();
+	});
+
 	it('filters over key and title without case and umlaut dots, several words with AND', async () => {
 		const pears = pickerTicket({ key: 'GART-4', title: 'Birnen ernten', projectId: GARTEN.id });
 		const { source } = fakePickerSource({

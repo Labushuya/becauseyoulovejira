@@ -1,6 +1,6 @@
 # ADR-0034: Unterprojekte als Gliederung der Projekte: eine Ebene, eigener Code, Archiv-Kaskade, keine Epics
 
-- **Status:** Angenommen und umgesetzt in den Paketen UP-1 bis UP-6 nach [docs/plan/unterprojekte.md](../plan/unterprojekte.md) (#130 bis #135); manuelle Browser-Prüfungen stehen im Test-Manifest; Nachtrag „Offene Tickets in Projekten“ (2026-10-01, Paket PT-1 nach [docs/plan/projekte-tickets.md](../plan/projekte-tickets.md))
+- **Status:** Angenommen und umgesetzt in den Paketen UP-1 bis UP-6 nach [docs/plan/unterprojekte.md](../plan/unterprojekte.md) (#130 bis #135); manuelle Browser-Prüfungen stehen im Test-Manifest; Nachtrag „Offene Tickets in Projekten“ (2026-10-01, Paket PT-1 nach [docs/plan/projekte-tickets.md](../plan/projekte-tickets.md)); Nachtrag „Farben“ (2026-10-02, [ADR-0052](0052-farben-fuer-projekte-und-tickets.md))
 - **Datum:** 2026-09-28
 - **Entscheidung durch:** Nutzer (Freigabe der Unterprojekte mit einer Ebene, eigenem Code, Brotkrumen, Filter mit Unterprojekten, aggregierten Zahlen, Archiv-Kaskade und Löschsperre am 2026-09-28), Advisor (Konzept „Unterprojekte“), Executor (Prüfregeln, Spike, Einzelheiten)
 - **Präzisiert:** [ADR-0012](0012-plain-ticketing.md) (Nachtrag, der Text bleibt), [ADR-0013](0013-filter-suche-sortierung-gruppierung.md) §3 und §4 (Filter „Projekt“ mit Unterprojekten, Parameter `unterprojekte`)
@@ -125,3 +125,16 @@ Unterprojekte haben keinen Status, keinen Fortschritt, keine Laufzeit und keine 
 - **Zustand je Tab:** Vorgabe ist das Gerät.
 
 **Konsequenzen:** keine Migration, kein Neustart, nur die Oberfläche (Build, dann F5). Die Fragen „Duplizieren …“ und „In den Papierkorb …“ eines Zeilenmenüs zeigt der gemeinsame Baustein `TicketRowDialogs` (aus `TicketTable` herausgelöst). Tests und Manifest: BYL-E6-960 bis BYL-E6-971. CLAUDE.md §7, README und Hilfe sind nachgezogen.
+
+## Nachtrag (2026-10-02): Farben ([ADR-0052](0052-farben-fuer-projekte-und-tickets.md))
+
+**Anlass:** Farben für Projekte und Tickets (Nutzerentscheidung vom 2026-10-02). §1 bis §7 bleiben; Unterprojekte sind weiter reine Gliederung.
+
+**Entscheidung:**
+
+- **Vererbung:** Ein Unterprojekt ohne eigene Farbe zeigt die Farbe seines Oberprojekts, seine Tickets ebenso (Ticket → Projekt → Oberprojekt → keine, `ticketColorOf`). Eine eigene Farbe des Unterprojekts geht vor. Wegen der einen Ebene (§1) gibt es keine längere Kette.
+- **Gespeichert** wird nur die eigene Farbe (`projects.color`, leer = keine); die geerbte rechnet die SPA aus dem Katalog (`resolveParents` trägt die Farbe des Oberprojekts mit), so folgt eine neue Farbe des Oberprojekts sofort allen Unterprojekten und Tickets, ohne dass sich ein Datensatz ändert. Umhängen eines Unterprojekts ändert seine gezeigte Farbe, nie einen Key.
+- **Projekt-Panel:** Das Feld „Farbe“ nach „Oberprojekt“ zeigt bei einem Unterprojekt zuerst „Wie Oberprojekt (Blau)“ nach dem im Formular gewählten Oberprojekt, bei einem obersten Projekt „Keine“. Liste und Kacheln zeigen einen Punkt vor dem Namen, beim Unterprojekt mit „vom Oberprojekt „Haus““ im Namen der Farbe.
+- **Zahlen, Filter und Archiv** bleiben unberührt; die Farbe ist reine Anzeige.
+
+**Tests:** `domain/colors.test.ts`, `stores/catalog.test.ts`, `components/project-panel.test.ts`, `components/colors.test.ts`.

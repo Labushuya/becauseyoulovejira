@@ -1,6 +1,7 @@
 // Projects (E3 plan, T-11). Pure. The code rule mirrors app/pb_hooks/lib/ticket-key.js
 // (tests/unit/web-project-code.test.mjs keeps both equal); the hooks stay authoritative.
 
+import type { ProjectColor } from './colors';
 import type { ProjectRef, TicketSummary } from './ticket';
 
 /** Project of the catalog: the reference plus `updated`, so older events can be ignored. */
@@ -17,6 +18,11 @@ export interface Project extends ProjectRef {
 	 * waits for the next start (ADR-0034 section 5). Only the data layer sets it.
 	 */
 	withoutParentField?: boolean;
+	/**
+	 * The server does not know `projects.color` yet (ADR-0052, before the restart after the
+	 * migration): the choice of the color is not offered. Only the data layer sets it.
+	 */
+	withoutColorField?: boolean;
 }
 
 /** Key prefix of tickets without a project; not allowed as project code (E1 plan, OF-14). */
@@ -41,6 +47,11 @@ export interface ProjectDraft {
 	 * nothing before the migration).
 	 */
 	parentId?: string | null;
+	/**
+	 * Color of the project (ADR-0052): a key of the palette, null for none, absent to leave it as it
+	 * is (and to send nothing before the migration).
+	 */
+	color?: ProjectColor | null;
 }
 
 export type ProjectPatch = Partial<ProjectDraft>;

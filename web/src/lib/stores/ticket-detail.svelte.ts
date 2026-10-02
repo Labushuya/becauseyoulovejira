@@ -25,6 +25,7 @@ import { toggleTask } from '$lib/markdown';
 import { PIN_FLAGS, type CommentPinControl } from '$lib/domain/comments';
 import type { SourceHandling } from '$lib/domain/sources';
 import { isCalendarDate } from '$lib/domain/berlin-date';
+import { isProjectColor } from '$lib/domain/colors';
 import { NO_SERIES, type SeriesChangeSink } from '$lib/domain/series-template';
 import { isPriority, isStatus, type Status } from '$lib/domain/status';
 import { openBlocking, type CompletionChoice } from '$lib/domain/subtasks';
@@ -53,8 +54,9 @@ import {
 
 export type { DeleteResult, DeleteSources, TrashUndo };
 
-/** Fields editable in the panel (E2 plan, section 2; E3 plan, T-13). */
-export type EditableField = 'title' | 'description' | 'status' | 'priority' | 'due' | 'project';
+/** Fields editable in the panel (E2 plan, section 2; E3 plan, T-13), the color since ADR-0052. */
+export type EditableField =
+	'title' | 'description' | 'status' | 'priority' | 'due' | 'project' | 'color';
 
 /**
  * Fields with their own saving state and error: the editable ones plus the tags (T-14), the parent
@@ -62,8 +64,8 @@ export type EditableField = 'title' | 'description' | 'status' | 'priority' | 'd
  */
 export type FieldKey = EditableField | 'tags' | 'parent' | 'blocksParent';
 
-/** Fields that save at once when chosen (T-7, T-13). */
-export type ChoiceField = 'status' | 'priority' | 'project';
+/** Fields that save at once when chosen (T-7, T-13; the color since ADR-0052). */
+export type ChoiceField = 'status' | 'priority' | 'project' | 'color';
 
 /**
  * idle: no ticket; loading; ready; not_found: unknown or foreign ID; error: loading failed;
@@ -115,7 +117,8 @@ const DRAFT_FIELDS: readonly (keyof TicketDraft)[] = [
 	'priority',
 	'due',
 	'project',
-	'tags'
+	'tags',
+	'color'
 ];
 
 /** The part of the list store the panel updates, so the list shows a change at once. */
@@ -156,10 +159,11 @@ export function ticketDetailData(pb: PocketBase): TicketDetailData {
 	};
 }
 
-/** Current value of a field as the text of its control ('' for no due date or project). */
+/** Current value of a field as the text of its control ('' for no due date, project or color). */
 function fieldText(ticket: Ticket, field: EditableField): string {
 	if (field === 'due') return ticket.due ?? '';
 	if (field === 'project') return ticket.projectId ?? '';
+	if (field === 'color') return ticket.color ?? '';
 	return ticket[field];
 }
 
@@ -186,6 +190,10 @@ function patchFor(field: EditableField, draft: string): PatchResult {
 			return RECORD_ID.test(draft)
 				? { patch: { project: draft } }
 				: { error: INVALID_VALUE_MESSAGE };
+		case 'color':
+			// '' is "wie Projekt" (ADR-0052).
+			if (draft === '') return { patch: { color: null } };
+			return isProjectColor(draft) ? { patch: { color: draft } } : { error: INVALID_VALUE_MESSAGE };
 	}
 }
 

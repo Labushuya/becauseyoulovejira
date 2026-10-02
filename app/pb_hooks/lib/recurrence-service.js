@@ -566,6 +566,12 @@ function newInstance(txApp, rule, due, occurrence) {
   ticket.set('tags', listOf(rule.getStringSlice('tags')));
   ticket.set('priority', rule.getString('priority') || 'medium');
   ticket.set('status', rules.initialStatusOf(rule.getString('initial_status')));
+  // The color of the template (ADR-0052); empty means "wie Projekt" and before its migration the
+  // field reads as '', so nothing is set.
+  var color = rule.getString('color');
+  if (color !== '') {
+    ticket.set('color', color);
+  }
   ticket.set('due', rules.storedDateOf(due));
   ticket.set('blocks_parent', true);
   ticket.set('recurrence', rule.id);

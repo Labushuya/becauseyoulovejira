@@ -1,6 +1,6 @@
 # ADR-0036: Gemerkter Öffnungsmodus, Sammelbearbeitung mit Rückgängig und Inline-Bearbeitung in der Tabelle
 
-- **Status:** Angenommen und umgesetzt: §1 in BI-1 (#148), §2 bis §5 in BI-2 (#149), §6 in BI-3, nach [docs/plan/bulk-inline-ansicht.md](../plan/bulk-inline-ansicht.md); manuelle Browser-Prüfungen stehen im Test-Manifest; §5 gilt seit [ADR-0041](0041-notion-listen-uebernehmen.md) auch für Notion-Einträge (Nachtrag); Nachtrag „Aktionsmenüs“ (2026-10-01): Menü „•••“ im Kopf von Panel und Vollansicht und in den Zeilen der Tabelle; Nachtrag „Rechtsklick“ (2026-10-01, AM-3): Rechtsklick und Umschalt+F10 öffnen das Zeilenmenü, die Sammel-Leiste sagt „In den Papierkorb …“; Nachtrag „Zeilenmenüs der übrigen Tabellen“ (2026-10-01, AM-4): Papierkorb, Eingang, Projekte und Wiederholungen; Nachtrag „Ergänzungen in Eingang und Kacheln“ (2026-10-01, AM-5): Quellen und Seitenkopie im Zeilenmenü des Eingangs, Menü der Projektkacheln
+- **Status:** Angenommen und umgesetzt: §1 in BI-1 (#148), §2 bis §5 in BI-2 (#149), §6 in BI-3, nach [docs/plan/bulk-inline-ansicht.md](../plan/bulk-inline-ansicht.md); manuelle Browser-Prüfungen stehen im Test-Manifest; §5 gilt seit [ADR-0041](0041-notion-listen-uebernehmen.md) auch für Notion-Einträge (Nachtrag); Nachtrag „Aktionsmenüs“ (2026-10-01): Menü „•••“ im Kopf von Panel und Vollansicht und in den Zeilen der Tabelle; Nachtrag „Rechtsklick“ (2026-10-01, AM-3): Rechtsklick und Umschalt+F10 öffnen das Zeilenmenü, die Sammel-Leiste sagt „In den Papierkorb …“; Nachtrag „Zeilenmenüs der übrigen Tabellen“ (2026-10-01, AM-4): Papierkorb, Eingang, Projekte und Wiederholungen; Nachtrag „Ergänzungen in Eingang und Kacheln“ (2026-10-01, AM-5): Quellen und Seitenkopie im Zeilenmenü des Eingangs, Menü der Projektkacheln; Nachtrag 2026-10-02: Sammelaktion „Farbe“, keine Zelle ([ADR-0052](0052-farben-fuer-projekte-und-tickets.md))
 - **Datum:** 2026-09-28
 - **Entscheidung durch:** Nutzer (Arbeitspaket „Bulk & Inline & Ansicht“: Öffnungsmodus wie in Jira, Auswahlspalte mit Sammelaktionen und Rückgängig, Inline-Bearbeitung in Zellen), Advisor (Umfang, Reihenfolge, Anforderungen an die Architektur), Executor (Einzelheiten, Wahl der Architektur)
 - **Präzisiert:** [ADR-0025](0025-ui-konsistenz-overlay-system.md) §7 (Vollansicht „über dem Panel“, Schließen „zurück ins Panel“), siehe dort Nachtrag 15; [ADR-0030](0030-spalten-breiten-und-kompakte-zeilen.md) (Auswahlspalte der Aufgaben, Nachtrag 2); [ADR-0029](0029-glas-materialien.md) §1 (Sammel-Aktionsleiste auf Glas)
@@ -210,3 +210,14 @@ Nutzerentscheidung vom 2026-10-01: Aktionsmenüs „•••“, „beides, abe
 - **Ein eigener Knopf je Kachel ohne Menü** (etwa „Archivieren“): zweiter Ort mit eigenen Regeln. Verworfen zugunsten derselben Einträge wie in der Liste.
 
 **Tests:** `domain/sources.test.ts`, `components/inbox-row-menu.test.ts`, `components/project-row-menu.test.ts`, `components/project-tiles.test.ts`, Hilfe; Manifest BYL-E6-780 bis BYL-E6-783 ([Plan](../plan/aktionsmenues.md) §7).
+
+## Nachtrag (2026-10-02, [ADR-0052](0052-farben-fuer-projekte-und-tickets.md)): Sammelaktion „Farbe“, keine Zelle
+
+**Anlass:** Farben für Projekte und Tickets; der Advisor ließ offen, ob die Tabelle eine Zelle oder eine Sammelaktion „Farbe …“ bekommt, „wenn das schlank in die bestehenden Muster passt“.
+
+**Entscheidung:**
+
+- **Sammelaktion „Farbe“** in der Leiste der Auswahl nach „Projekt …“, sobald der Server das Feld kennt: ein Menü wie „Priorität“ (§3: Popover `menu`, sofort ausgeführt) mit „Wie Projekt“ (entfernt die eigene Farbe) und den zehn Farben mit Punkt und Namen. `FieldAction` `{ kind: 'color', value }`, `planStep` (unverändert, wenn das Ticket die Farbe schon hat), `restorePatch` für „Rückgängig“, Bezeichnung „Farbe ändern“. Je Ticket eine Anfrage über die Record-API wie jede Feldänderung (§3), der Verlauf schreibt „Farbe: …“; bei Serientickets bietet das Flag „Auch für künftige Tickets übernehmen“ (ADR-0023 Nachtrag 6).
+- **Keine bearbeitbare Zelle:** eine Spalte „Farbe“ bräuchte Breite, Schwelle und Rang nach [ADR-0030](0030-spalten-breiten-und-kompakte-zeilen.md), und der Streifen am Anfang der Zeile zeigt die Farbe schon. Einzelne Tickets färbt man im Panel, in der Vollansicht oder per Auswahl eines Tickets. Das Menü der Zelle „Projekt“ zeigt vor jedem Projekt dessen Farbe als Punkt.
+
+**Tests:** `domain/bulk.test.ts`, `components/ticket-table-selection.test.ts`, `components/ticket-table-inline.test.ts`.

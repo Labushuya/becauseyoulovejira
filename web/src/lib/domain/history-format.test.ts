@@ -332,6 +332,21 @@ describe('pinned comment in the history (ADR-0044)', () => {
 	});
 });
 
+describe('color in the history (ADR-0052)', () => {
+	it('names setting, changing and clearing the own color; empty is "wie Projekt"', () => {
+		expect(text({ field: 'color', oldValue: '', newValue: 'blau' })).toBe(
+			'Farbe: wie Projekt → Blau'
+		);
+		expect(text({ field: 'color', oldValue: 'blau', newValue: 'himmel' })).toBe(
+			'Farbe: Blau → Himmelblau'
+		);
+		expect(text({ field: 'color', oldValue: 'tuerkis', newValue: '' })).toBe(
+			'Farbe: Türkis → wie Projekt'
+		);
+		expect(text({ field: 'color', oldValue: 'alt', newValue: 'grau' })).toBe('Farbe: alt → Grau');
+	});
+});
+
 describe('duplicate in the history (ADR-0045)', () => {
 	const duplicateText = (newValue: string) => text({ field: 'duplicate', newValue });
 

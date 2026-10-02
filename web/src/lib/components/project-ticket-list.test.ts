@@ -70,6 +70,30 @@ afterEach(() => {
 	document.body.innerHTML = '';
 });
 
+describe('open tickets of a project: color (ADR-0052)', () => {
+	it('shows the color of every ticket as a dot before the key, named after the title', () => {
+		const own = ticket({ key: 'HAUS-1', title: 'Dach prüfen', color: 'gruen' });
+		const inherited = ticket({ key: 'HAUS-2', title: 'Keller räumen' });
+		show({ project: { ...HOUSE, color: 'blau' }, tickets: [own, inherited] });
+		const [first, second] = links();
+		expect(first?.querySelector('.color-mark.dot')?.getAttribute('title')).toBe('Farbe Grün');
+		expect(first?.querySelector('.color-mark')?.getAttribute('aria-hidden')).toBe('true');
+		// The name follows the title inside the link.
+		const named = (link: HTMLElement | undefined) =>
+			link?.querySelector('.title ~ .visually-hidden')?.textContent;
+		expect(named(first)).toBe(', Farbe Grün');
+		expect(second?.querySelector('.color-mark')?.getAttribute('title')).toBe(
+			'Farbe Blau, vom Projekt „Haus“'
+		);
+		expect(named(second)).toBe(', Farbe Blau, vom Projekt „Haus“');
+	});
+
+	it('shows no dot without a color', () => {
+		show({ tickets: [ticket({ key: 'HAUS-3', title: 'Ohne' })] });
+		expect(links()[0]?.querySelector('.color-mark')).toBeNull();
+	});
+});
+
 describe('open tickets of a project', () => {
 	it('lists key and title as one link, status, priority and due date of every ticket', () => {
 		const first = ticket({

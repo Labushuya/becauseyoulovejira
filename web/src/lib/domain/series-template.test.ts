@@ -104,7 +104,8 @@ describe('templates of rules and tickets', () => {
 			tagIds: ['tag000000000001'],
 			priority: 'medium',
 			initialStatus: 'open',
-			subtasks: []
+			subtasks: [],
+			color: null
 		});
 		expect(templateOf(rule({ initialStatus: 'backlog' })).initialStatus).toBe('backlog');
 		// Plan WV-3: the sub-tasks of the template, as copies.
@@ -112,6 +113,8 @@ describe('templates of rules and tickets', () => {
 		const template = templateOf(rule({ templateSubtasks: subtasks }));
 		expect(template.subtasks).toEqual(subtasks);
 		expect(template.subtasks[0]).not.toBe(subtasks[0]);
+		// ADR-0052: the color of the next tickets.
+		expect(templateOf(rule({ color: 'gruen' })).color).toBe('gruen');
 	});
 
 	it('takes every value of a ticket into a new template, the status as the user chose it', () => {
@@ -133,9 +136,11 @@ describe('templates of rules and tickets', () => {
 			priority: 'high',
 			initialStatus: 'waiting',
 			// Plan WV-3: the sub-tasks of the ticket never come along on their own.
-			subtasks: []
+			subtasks: [],
+			color: null
 		});
-		// Without sub-tasks the body leaves the field out (a server before the migration ignores it).
+		// Without sub-tasks and color the body leaves the fields out (a server before the
+		// migrations ignores them).
 		expect(templateBody(template)).toEqual({
 			title: 'Steuer',
 			description: 'Belege',
@@ -149,6 +154,10 @@ describe('templates of rules and tickets', () => {
 				.template_subtasks
 		).toEqual([{ title: 'Belege sortieren', priority: 'low' }]);
 		expect(ticketTemplate(ticket, 'in_progress').initialStatus).toBe('in_progress');
+		// ADR-0052: the own color of the ticket comes along and goes in the body.
+		const colored = ticketTemplate({ ...ticket, color: 'senf' }, 'open');
+		expect(colored.color).toBe('senf');
+		expect(templateBody(colored).color).toBe('senf');
 	});
 
 	it('offers "Offen" and the status of the ticket first, the other statuses below, "Erledigt" never', () => {
@@ -211,6 +220,9 @@ describe('templates of rules and tickets', () => {
 		).toEqual({
 			template_subtasks: [list[0], { title: 'B', priority: 'urgent' }]
 		});
+		// ADR-0052: a new color, and back to "wie Projekt" as null.
+		expect(templateChanges(before, { ...before, color: 'tuerkis' })).toEqual({ color: 'tuerkis' });
+		expect(templateChanges({ ...before, color: 'tuerkis' }, before)).toEqual({ color: null });
 	});
 
 	it('says what the next tickets get in one line', () => {
@@ -244,6 +256,10 @@ describe('templates of rules and tickets', () => {
 				false
 			)
 		).toBe('Priorität Mittel · ohne Projekt · Tags Garten · 3 Unteraufgaben');
+		// ADR-0052: the color, only when the template has one.
+		expect(templateSummary(templateOf(rule({ color: 'braun' })), NAMES, false)).toBe(
+			'Priorität Mittel · ohne Projekt · Tags Garten · Farbe Braun'
+		);
 	});
 });
 
@@ -414,6 +430,23 @@ describe('changes of an open ticket of a series', () => {
 		).toEqual([]);
 		// An unknown rule is left out.
 		expect(templateOffers([change({}, { priority: 'high' })], () => null)).toEqual([]);
+	});
+
+	it('offers a new own color for the template, never one the server does not know (ADR-0052)', () => {
+		expect(changedTemplateFields(change({ color: null }, { color: 'violett' }))).toEqual(['color']);
+		// Before the restart the field is unknown on both sides: nothing changed.
+		expect(changedTemplateFields(change({}, { priority: 'high' }))).toEqual(['priority']);
+		const offers = templateOffers([change({ color: null }, { color: 'violett' })], () => rule());
+		expect(offers[0]).toMatchObject({ fields: ['color'], patch: { color: 'violett' } });
+		expect(offerDescription(offers)).toBe(
+			'Künftige Tickets von „Müll“ kommen weiter mit der bisherigen Vorlage (Farbe).'
+		);
+		// The template has the color already: nothing to offer.
+		expect(
+			templateOffers([change({ color: null }, { color: 'violett' })], () =>
+				rule({ color: 'violett' })
+			)
+		).toEqual([]);
 	});
 
 	it('takes tags over as their change, once per rule, in the order of the template', () => {

@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { tick, untrack, type Snippet } from 'svelte';
 	import type { ResolvedPathname } from '$app/types';
+	import { inheritLabel, type ProjectColor } from '$lib/domain/colors';
 	import {
 		PROJECT_CODE_MAX_LENGTH,
 		PROJECT_NAME_MAX_LENGTH,
@@ -20,6 +21,7 @@
 	import { restartNeeded } from '$lib/guidance/texts';
 	import type { EditResult } from '$lib/stores/catalog-editor';
 	import Breadcrumbs from './Breadcrumbs.svelte';
+	import ColorChoice from './ColorChoice.svelte';
 	import ErrorIcon from './ErrorIcon.svelte';
 	import SectionMessage from './guidance/SectionMessage.svelte';
 	import ConfirmDialog from './overlay/ConfirmDialog.svelte';
@@ -40,6 +42,9 @@
 	// the breadcrumbs "Projekte › Haus › Garten" of a sub project, the question before archiving a
 	// project with active sub projects (they go with it) and "Mit Oberprojekt zurückholen" for a
 	// sub project below an archived parent. A project with sub projects cannot be deleted.
+	// Color (ADR-0052): the field "Farbe" after "Oberprojekt", saved with the form; "Keine" for a
+	// top-level project, "Wie Oberprojekt (Blau)" for a sub project, whose tickets then show the color
+	// of the parent; the restart hint before the migration (`colorsReady`).
 	// Open tickets (ADR-0034, addendum "Offene Tickets in Projekten"): the section "Offene Tickets"
 	// after the form, with the content of the route (`openTickets`, the compact list of the project
 	// and of its sub projects); its heading takes the focus when the focused entry leaves an emptied
@@ -55,6 +60,7 @@
 		parentChoices = [],
 		subProjects = [],
 		hierarchyReady = true,
+		colorsReady = true,
 		initialParentId = null,
 		projectsHref = null,
 		projectHrefOf = null,
@@ -91,6 +97,8 @@
 		subProjects?: readonly Project[];
 		/** False while the server lacks projects.parent (before the restart, ADR-0034 section 5). */
 		hierarchyReady?: boolean;
+		/** False while the server lacks projects.color (before the restart, ADR-0052). */
+		colorsReady?: boolean;
 		/** "Unterprojekt anlegen": the parent chosen in advance for a new project. */
 		initialParentId?: string | null;
 		/** First step of the breadcrumbs ("Projekte"). */
@@ -131,6 +139,9 @@
 		parent: `${uid}-parent`,
 		parentHint: `${uid}-parent-hint`,
 		parentError: `${uid}-parent-error`,
+		color: `${uid}-color`,
+		colorHint: `${uid}-color-hint`,
+		colorError: `${uid}-color-error`,
 		subProjects: `${uid}-sub-projects`,
 		openTickets: `${uid}-open-tickets`,
 		archive: `${uid}-archive`
@@ -142,7 +153,9 @@
 	let typedCode = $state<string | null>(null);
 	/** Chosen parent ('' for none); null until the user chooses, so the stored one shows. */
 	let chosenParent = $state<string | null>(null);
-	let fieldErrors = $state<{ name?: string; code?: string; parent?: string }>({});
+	/** Chosen color (null for none); undefined until the user chooses, so the stored one shows. */
+	let chosenColor = $state<ProjectColor | null | undefined>(undefined);
+	let fieldErrors = $state<{ name?: string; code?: string; parent?: string; color?: string }>({});
 	let message = $state<string | null>(null);
 	let busy = $state(false);
 	let confirmingDelete = $state(false);
@@ -177,6 +190,16 @@
 		return chosen ? projectChoiceLabel(chosen) : undefined;
 	});
 	const activeSubProjects = $derived(subProjects.filter((sub) => !sub.archived));
+	const storedColor = $derived(project?.color ?? null);
+	const colorValue = $derived(chosenColor === undefined ? storedColor : chosenColor);
+	/** The parent as chosen in the form: a sub project without its own color shows its color. */
+	const colorParent = $derived(
+		parentValue === ''
+			? null
+			: (parentChoices.find((choice) => choice.id === parentValue) ??
+					(parent !== null && parent.id === parentValue ? parent : null))
+	);
+	const inheritedColor = $derived(colorParent?.color ?? null);
 	/** A sub project below an archived parent comes back only together with it. */
 	const restoreNeedsParent = $derived(project?.archived === true && parent?.archived === true);
 	/** Tickets of the project itself; `total` of a parent includes its sub projects (UP-6). */
@@ -193,7 +216,8 @@
 	const dirty = $derived(
 		(typedName !== null && typedName.trim() !== (project?.name ?? '')) ||
 			(typedCode !== null && typedCode !== (project?.code ?? '')) ||
-			(chosenParent !== null && chosenParent !== storedParent)
+			(chosenParent !== null && chosenParent !== storedParent) ||
+			(chosenColor !== undefined && chosenColor !== storedColor)
 	);
 
 	let heading = $state<HTMLElement>();
@@ -201,6 +225,7 @@
 	let nameInput = $state<HTMLInputElement>();
 	let codeInput = $state<HTMLInputElement>();
 	let parentSelect = $state<HTMLSelectElement>();
+	let colorField = $state<HTMLElement>();
 
 	// Focus when the panel opens: the name for "Neues Projekt", else the title (ADR-0025 section 6).
 	$effect(() => {
@@ -244,12 +269,15 @@
 		} else if (hierarchyReady && creating && parentValue !== '') {
 			draft.parentId = parentValue;
 		}
+		// The color goes along only when it changed (ADR-0052); before the restart never.
+		if (colorsReady && colorValue !== storedColor) draft.color = colorValue;
 		const result = await run(() => onsave(draft));
 		if (result === null) return;
 		if (result.ok) {
 			typedName = null;
 			typedCode = null;
 			chosenParent = null;
+			chosenColor = undefined;
 			onsaved?.(result.value);
 			return;
 		}
@@ -257,6 +285,7 @@
 		if (fieldErrors.name) nameInput?.focus();
 		else if (fieldErrors.code) codeInput?.focus();
 		else if (fieldErrors.parent) parentSelect?.focus();
+		else if (fieldErrors.color) colorField?.querySelector<HTMLElement>('input:checked')?.focus();
 	}
 
 	async function archive(
@@ -491,10 +520,35 @@
 				</p>
 			</div>
 		{/if}
+
+		{#if colorsReady}
+			<div class="field" bind:this={colorField}>
+				<span class="label" id={ids.color}>Farbe</span>
+				<ColorChoice
+					value={colorValue}
+					inheritLabel={inheritLabel(
+						colorParent === null ? 'project' : 'sub-project',
+						inheritedColor
+					)}
+					inherited={inheritedColor}
+					labelledby={ids.color}
+					describedby={ids.colorHint}
+					error={fieldErrors.color ?? null}
+					errorId={ids.colorError}
+					onchoose={(value) => (chosenColor = value)}
+				/>
+				<p class="hint" id={ids.colorHint}>
+					Seine Tickets zeigen die Farbe als Streifen, eigene Farben von Tickets gehen vor.
+					{#if colorParent === null}Unterprojekte ohne eigene Farbe übernehmen sie.{/if}
+				</p>
+			</div>
+		{/if}
 	</form>
 
 	{#if !hierarchyReady}
 		<SectionMessage tone="info" compact>{restartNeeded('Unterprojekte sind')}</SectionMessage>
+	{:else if !colorsReady}
+		<SectionMessage tone="info" compact>{restartNeeded('Farben sind')}</SectionMessage>
 	{/if}
 
 	<div aria-live="assertive">
@@ -717,7 +771,8 @@
 		gap: 0.25rem;
 	}
 
-	label {
+	label,
+	.label {
 		font-size: var(--font-size-control);
 		font-weight: 600;
 	}

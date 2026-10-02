@@ -575,4 +575,107 @@ describe('project panel: sub projects (ADR-0034, UP-4)', () => {
 		).toBeTruthy();
 		expect(screen.getByText(/neu-starten\.bat im Ordner app/)).toBeTruthy();
 	});
+
+	describe('color (ADR-0052)', () => {
+		const BLUE_HOUSE: Project = { ...HOUSE, color: 'blau' };
+		const colorGroup = () => screen.getByRole('radiogroup', { name: 'Farbe' });
+		const choice = (name: string) =>
+			within(colorGroup()).getByRole<HTMLInputElement>('radio', { name });
+
+		it('offers "Keine" and the palette with their names; the choice goes along with "Speichern"', async () => {
+			const props = showPanel({ project: CAR });
+			const names = within(colorGroup())
+				.getAllByRole<HTMLInputElement>('radio')
+				.map((radio) => radio.labels?.[0]?.textContent?.trim());
+			expect(names).toEqual([
+				'Keine',
+				'Violett',
+				'Indigo',
+				'Blau',
+				'Himmelblau',
+				'Türkis',
+				'Grün',
+				'Oliv',
+				'Senf',
+				'Braun',
+				'Grau'
+			]);
+			expect(choice('Keine').checked).toBe(true);
+			expect(colorGroup().getAttribute('aria-describedby')).toBeTruthy();
+
+			await fireEvent.click(choice('Türkis'));
+			await fireEvent.click(screen.getByRole('button', { name: 'Speichern' }));
+			expect(props.onsave).toHaveBeenCalledExactlyOnceWith({
+				name: 'Auto',
+				code: 'AUTO',
+				color: 'tuerkis'
+			});
+		});
+
+		it('asks before a chosen color is lost and sends "Keine" as null', async () => {
+			const props = showPanel({ project: { ...CAR, color: 'senf' } });
+			expect(choice('Senf').checked).toBe(true);
+			await fireEvent.click(choice('Keine'));
+			await fireEvent.click(screen.getByRole('button', { name: 'Panel schließen' }));
+			expect(screen.getByRole('dialog', { name: 'Änderungen verwerfen?' })).toBeTruthy();
+			expect(props.onclose).not.toHaveBeenCalled();
+			await fireEvent.click(screen.getByRole('button', { name: 'Weiter bearbeiten' }));
+			await fireEvent.click(screen.getByRole('button', { name: 'Speichern' }));
+			expect(props.onsave).toHaveBeenCalledExactlyOnceWith({
+				name: 'Auto',
+				code: 'AUTO',
+				color: null
+			});
+		});
+
+		it('lets a sub project take the color of its parent: "Wie Oberprojekt (Blau)"', async () => {
+			const props = showPanel({
+				project: { ...GARDEN, parent: { ...GARDEN.parent, color: 'blau' } },
+				parent: BLUE_HOUSE,
+				parentChoices: [CAR, BLUE_HOUSE]
+			});
+			expect(choice('Wie Oberprojekt (Blau)').checked).toBe(true);
+			// The parent chosen in the form names the color.
+			await fireEvent.change(parentField(), { target: { value: CAR.id } });
+			expect(choice('Wie Oberprojekt (keine)')).toBeTruthy();
+			await fireEvent.change(parentField(), { target: { value: '' } });
+			expect(choice('Keine')).toBeTruthy();
+			expect(props.onsave).not.toHaveBeenCalled();
+		});
+
+		it('creates a project with a color and none without a choice', async () => {
+			const props = showPanel({ project: null });
+			await type(nameField(), 'Werkstatt');
+			await fireEvent.click(choice('Grau'));
+			await fireEvent.click(screen.getByRole('button', { name: 'Anlegen' }));
+			expect(props.onsave).toHaveBeenCalledExactlyOnceWith({
+				name: 'Werkstatt',
+				code: 'WERK',
+				color: 'grau'
+			});
+		});
+
+		it('shows a refusal of the server at the field', async () => {
+			showPanel({
+				project: CAR,
+				onsave: vi.fn(async (): Promise<SaveResult> => ({
+					ok: false,
+					message: null,
+					fields: { color: 'Wert ungültig.' }
+				}))
+			});
+			await fireEvent.click(choice('Oliv'));
+			await fireEvent.click(screen.getByRole('button', { name: 'Speichern' }));
+			expect(
+				await within(colorGroup().parentElement as HTMLElement).findByText('Wert ungültig.')
+			).toBeTruthy();
+			expect(document.activeElement).toBe(choice('Oliv'));
+		});
+
+		it('shows the restart hint instead of the field before the migration', () => {
+			showPanel({ project: CAR, colorsReady: false });
+			expect(screen.queryByRole('radiogroup', { name: 'Farbe' })).toBeNull();
+			expect(screen.getByText(/Farben sind nach dem nächsten Neustart verfügbar/)).toBeTruthy();
+		});
+	});
 });

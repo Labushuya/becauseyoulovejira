@@ -16,11 +16,12 @@ const BASE = {
 	recurrence: '',
 	key: 'ABC-1',
 	household: '',
-	pinned_comment: ''
+	pinned_comment: '',
+	color: ''
 };
 
 describe('TRACKED_FIELDS', () => {
-	it('matches the whitelist of the E1 plan (OF-12) plus the pinned comment (ADR-0044)', () => {
+	it('matches the whitelist of the E1 plan (OF-12) plus the pinned comment (ADR-0044) and the color (ADR-0052)', () => {
 		expect([...TRACKED_FIELDS]).toEqual([
 			'title',
 			'description',
@@ -34,9 +35,22 @@ describe('TRACKED_FIELDS', () => {
 			'recurrence',
 			'key',
 			'household',
-			'pinned_comment'
+			'pinned_comment',
+			'color'
 		]);
 		expect(Object.isFrozen(TRACKED_FIELDS)).toBe(true);
+	});
+
+	it('records setting, changing and clearing the own color of a ticket (ADR-0052)', () => {
+		expect(diff(BASE, { ...BASE, color: 'blau' })).toEqual([
+			{ field: 'color', old_value: '', new_value: 'blau' }
+		]);
+		expect(diff({ ...BASE, color: 'blau' }, { ...BASE, color: 'gruen' })).toEqual([
+			{ field: 'color', old_value: 'blau', new_value: 'gruen' }
+		]);
+		expect(diff({ ...BASE, color: 'gruen' }, BASE)).toEqual([
+			{ field: 'color', old_value: 'gruen', new_value: '' }
+		]);
 	});
 
 	it('records pinning, replacing and releasing a comment (ADR-0044)', () => {
