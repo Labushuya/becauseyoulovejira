@@ -25,6 +25,7 @@ import {
 	type CalendarImportSummary,
 	type CreateItemOutcome,
 	type HandledItemPage,
+	type HandledTarget,
 	type PageCopyOutcome
 } from '$lib/data/inbox';
 import type { RequestOptions } from '$lib/data/options';
@@ -41,7 +42,9 @@ import {
 	type SoftDuplicates
 } from '$lib/domain/inbox';
 import { DEFAULT_INBOX_QUERY, type InboxQuery } from '$lib/domain/inbox-query';
+import type { TreeProject } from '$lib/domain/project-tree';
 import { channelsOf, sourceFamily } from '$lib/domain/source';
+import { NO_TARGET, matchesTarget } from '$lib/domain/target-project';
 import type { TicketSummary } from '$lib/domain/ticket';
 import { SILENT_FLAGS, type FlagSink } from './flags.svelte';
 import { hold, type LiveSource } from './realtime';
@@ -60,7 +63,11 @@ export interface InboxData {
 	listHandled(
 		state: ListedView,
 		page: number,
-		options: RequestOptions & { channels: readonly InboxChannel[] | null }
+		options: RequestOptions & {
+			channels: readonly InboxChannel[] | null;
+			/** Filter "Zielprojekt" of the server (ADR-0049); null or absent for every entry. */
+			target?: HandledTarget;
+		}
 	): Promise<HandledItemPage>;
 	get(id: string, options: RequestOptions): Promise<InboxItem>;
 	create(draft: InboxDraft): Promise<CreateItemOutcome>;
@@ -108,13 +115,18 @@ export type CalendarImportResult =
 export type InboxActionResult =
 	{ ok: true; item: InboxItemSummary } | { ok: false; message: string | null };
 
+/** Whether two queries load the same entries (the grouping only arranges them). */
 function sameQuery(a: InboxQuery, b: InboxQuery): boolean {
-	return a.source === b.source && a.state === b.state;
+	return a.source === b.source && a.state === b.state && (a.target ?? null) === (b.target ?? null);
 }
+
+/** Projects of the catalog for the filter "Zielprojekt" (sub projects, ADR-0034 §6). */
+export type InboxProjects = () => readonly TreeProject[];
 
 export class InboxStore {
 	readonly #data: InboxData;
 	readonly #session: SessionGuard;
+	readonly #projects: InboxProjects;
 
 	readonly #new = new SvelteMap<string, InboxItemSummary>();
 	readonly #handled = new SvelteMap<string, InboxItemSummary>();
@@ -145,18 +157,45 @@ export class InboxStore {
 	#handledList = $derived(
 		[...this.#handled.values()].sort(this.#query.state === 'all' ? compareNewest : compareHandled)
 	);
+	/**
+	 * The server does not know the target project yet (ADR-0049): a loaded entry lacks the field.
+	 * The filter "Zielprojekt" then counts as not set.
+	 */
+	#targetsMissing = $derived(
+		[...this.#new.values(), ...this.#handled.values()].some(
+			(item) => item.withoutTargetField === true
+		)
+	);
 	#visible = $derived.by(() => {
 		const query = this.#query;
 		if (query.state !== 'new') return this.#handledList;
+		const target = this.#targetFilter(query);
+		const projects = target === null ? [] : this.#projects();
 		return this.#newList.filter(
-			(item) => query.source === null || sourceFamily(item.channel) === query.source
+			(item) =>
+				(query.source === null || sourceFamily(item.channel) === query.source) &&
+				matchesTarget(item, target, projects)
 		);
 	});
 
-	constructor(data: InboxData, session: SessionGuard, flags: FlagSink = SILENT_FLAGS) {
+	constructor(
+		data: InboxData,
+		session: SessionGuard,
+		flags: FlagSink = SILENT_FLAGS,
+		projects: InboxProjects = () => []
+	) {
 		this.#data = data;
 		this.#session = session;
 		this.#flags = flags;
+		this.#projects = projects;
+	}
+
+	/**
+	 * Whether the server knows the target project of the entries (ADR-0049): at least one entry is
+	 * loaded and none lacks the field. Filter, grouping and column of the target wait for it.
+	 */
+	get targetsReady(): boolean {
+		return !this.#targetsMissing && this.#new.size + this.#handled.size > 0;
 	}
 
 	/** Every new entry, newest first. */
@@ -543,7 +582,8 @@ export class InboxStore {
 				pages.push(
 					await this.#data.listHandled(handledState, page, {
 						...options,
-						channels: this.#channels(query)
+						channels: this.#channels(query),
+						target: this.#targetParam(query)
 					})
 				);
 			}
@@ -631,6 +671,18 @@ export class InboxStore {
 		return query.source === null ? null : channelsOf(query.source);
 	}
 
+	/** The filter "Zielprojekt" that applies: none while the server lacks the field (ADR-0049). */
+	#targetFilter(query: InboxQuery): string | null {
+		return this.#targetsMissing ? null : (query.target ?? null);
+	}
+
+	/** The filter "Zielprojekt" for the server filter of handled entries, null for all. */
+	#targetParam(query: InboxQuery): HandledTarget {
+		const target = this.#targetFilter(query);
+		if (target === null) return null;
+		return { project: target === NO_TARGET ? null : target };
+	}
+
 	/** Merges a loaded snapshot into `map`: new ones in, changed ones replaced, missing ones out. */
 	#merge(
 		map: SvelteMap<string, InboxItemSummary>,
@@ -663,6 +715,8 @@ export class InboxStore {
 		if (query.state === 'new' || this.#handledLoad !== 'ready') return false;
 		if (query.state !== 'all' && query.state !== item.state) return false;
 		if (query.source !== null && sourceFamily(item.channel) !== query.source) return false;
+		const target = this.#targetFilter(query);
+		if (!matchesTarget(item, target, target === null ? [] : this.#projects())) return false;
 		if (this.#handled.has(item.id) || !this.#handledHasMore) return true;
 		const last = this.#handledList.at(-1);
 		const compare = query.state === 'all' ? compareNewest : compareHandled;
@@ -712,7 +766,8 @@ export class InboxStore {
 		try {
 			const result = await this.#data.listHandled(state, page, {
 				signal: controller.signal,
-				channels: this.#channels(query)
+				channels: this.#channels(query),
+				target: this.#targetParam(query)
 			});
 			if (controller.signal.aborted) return;
 			if (first) this.#handled.clear();

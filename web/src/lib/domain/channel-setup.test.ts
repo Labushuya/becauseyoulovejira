@@ -22,6 +22,7 @@ import {
 	setupTargetOf,
 	stepCheck,
 	stepStates,
+	TARGET_STEP,
 	type SetupFacts
 } from './channel-setup';
 import { NO_KEYWORDS_WARNING, type Connection } from './connections';
@@ -108,17 +109,32 @@ describe('address of the assistant', () => {
 
 describe('step data', () => {
 	it.each(SETUP_KINDS.filter((kind) => !GUIDE_KINDS.includes(kind)))(
-		'%s has 3 to 6 steps with short labels',
+		'%s has 3 to 6 steps with short labels, and the optional "Zielprojekt" after "Verbinden"',
 		(kind) => {
 			const steps = setupSteps(kind);
-			expect(steps.length).toBeGreaterThanOrEqual(3);
-			expect(steps.length).toBeLessThanOrEqual(6);
+			const required = steps.filter((step) => step.id !== 'target');
+			expect(required.length).toBeGreaterThanOrEqual(3);
+			expect(required.length).toBeLessThanOrEqual(6);
+			// ADR-0026, addendum ZP (ADR-0049): one optional step more, right after "Verbinden".
+			const connect = steps.findIndex((step) => step.id === 'connect');
+			expect(steps[connect + 1]).toBe(TARGET_STEP);
+			expect(steps.filter((step) => step.id === 'target')).toHaveLength(1);
 			for (const step of steps) {
 				expect(step.label.split(' ').length, step.label).toBeLessThanOrEqual(2);
 				expect(step.intro.split(/(?<=[.!?])\s/).length, step.id).toBeLessThanOrEqual(2);
 			}
 		}
 	);
+
+	it('never holds the assistant up at "Zielprojekt"', () => {
+		expect(TARGET_STEP).toMatchObject({ label: 'Zielprojekt', checked: false });
+		expect(TARGET_STEP.title).toMatch(/optional/);
+		expect(stepCheck('kalender', 'target', CREATED)).toBeNull();
+		// Without a connection it is open, with one done, chosen or not.
+		expect(stepStates('kalender', NONE, 0)[1]).toBe('open');
+		expect(stepStates('kalender', CREATED, 2)[1]).toBe('done');
+		expect(openCheckBefore('kalender', CREATED, 2)).toBeNull();
+	});
 
 	it.each(SETUP_KINDS)('%s links only to fixed https addresses', (kind) => {
 		for (const step of setupSteps(kind)) {
@@ -144,6 +160,7 @@ describe('step data', () => {
 		const steps = setupSteps('kalender');
 		expect(steps.map((step) => step.label)).toEqual([
 			'Verbinden',
+			'Zielprojekt',
 			'Adresse holen',
 			'Variable setzen',
 			'Neu starten',
@@ -161,12 +178,14 @@ describe('step data', () => {
 });
 
 describe('progress from the facts of the server', () => {
+	// The optional "Zielprojekt" (index 1) is done once the connection exists, so the assistant
+	// opens behind it.
 	it.each([
 		['without a connection', NONE, 0],
-		['with a connection whose variable the app does not see', CREATED, 1],
-		['once the app sees the variable', VISIBLE, 4],
-		['with keywords', WITH_KEYWORDS, 5],
-		['after a good run (all done: the last step)', RUN, 5]
+		['with a connection whose variable the app does not see', CREATED, 2],
+		['once the app sees the variable', VISIBLE, 5],
+		['with keywords', WITH_KEYWORDS, 6],
+		['after a good run (all done: the last step)', RUN, 6]
 	])('%s', (_name, facts, step) => {
 		expect(setupProgress('kalender', facts)).toBe(step);
 	});
@@ -179,15 +198,16 @@ describe('progress from the facts of the server', () => {
 			connection: connection({ ...RUN.connection, lastError: 'HTTP 404' })
 		};
 		expect(setupComplete('kalender', failed)).toBe(false);
-		expect(setupProgress('kalender', failed)).toBe(5);
+		expect(setupProgress('kalender', failed)).toBe(6);
 	});
 
 	it('treats an unknown state of the variable as not seen', () => {
-		expect(setupProgress('kalender', { ...VISIBLE, secretStatus: null })).toBe(1);
+		expect(setupProgress('kalender', { ...VISIBLE, secretStatus: null })).toBe(2);
 	});
 
 	it('shows done, current, open and a warning for a passed step whose check is open', () => {
-		expect(stepStates('kalender', CREATED, 1)).toEqual([
+		expect(stepStates('kalender', CREATED, 2)).toEqual([
+			'done',
 			'done',
 			'current',
 			'open',
@@ -195,7 +215,8 @@ describe('progress from the facts of the server', () => {
 			'open',
 			'open'
 		]);
-		expect(stepStates('kalender', CREATED, 4)).toEqual([
+		expect(stepStates('kalender', CREATED, 5)).toEqual([
+			'done',
 			'done',
 			'done',
 			'done',
@@ -203,7 +224,8 @@ describe('progress from the facts of the server', () => {
 			'current',
 			'open'
 		]);
-		expect(stepStates('kalender', WITH_KEYWORDS, 5)).toEqual([
+		expect(stepStates('kalender', WITH_KEYWORDS, 6)).toEqual([
+			'done',
 			'done',
 			'done',
 			'done',
@@ -214,13 +236,13 @@ describe('progress from the facts of the server', () => {
 	});
 
 	it('names the first open check before the current step', () => {
-		expect(openCheckBefore('kalender', CREATED, 3)).toBeNull();
-		expect(openCheckBefore('kalender', CREATED, 4)).toEqual({
-			index: 3,
+		expect(openCheckBefore('kalender', CREATED, 4)).toBeNull();
+		expect(openCheckBefore('kalender', CREATED, 5)).toEqual({
+			index: 4,
 			text: 'Die App sieht BYL_GOOGLE_CALENDAR_URL noch nicht.'
 		});
-		expect(openCheckBefore('kalender', VISIBLE, 5)).toEqual({
-			index: 4,
+		expect(openCheckBefore('kalender', VISIBLE, 6)).toEqual({
+			index: 5,
 			text: NO_KEYWORDS_WARNING
 		});
 		expect(openCheckBefore('kalender', NONE, 2)).toEqual({
@@ -279,7 +301,15 @@ describe('mailboxes (plan EH-7)', () => {
 	it.each([
 		[
 			'webde',
-			['Abruf erlauben', 'Passwort', 'Variable setzen', 'Verbinden', 'Neu starten', 'Erster Abruf']
+			[
+				'Abruf erlauben',
+				'Passwort',
+				'Variable setzen',
+				'Verbinden',
+				'Zielprojekt',
+				'Neu starten',
+				'Erster Abruf'
+			]
 		],
 		[
 			'gmail',
@@ -288,11 +318,12 @@ describe('mailboxes (plan EH-7)', () => {
 				'App-Passwort',
 				'Variable setzen',
 				'Verbinden',
+				'Zielprojekt',
 				'Neu starten',
 				'Erster Abruf'
 			]
 		]
-	] as const)('guides %s through six steps', (kind, labels) => {
+	] as const)('guides %s through six steps and the optional target project', (kind, labels) => {
 		expect(setupSteps(kind).map((step) => step.label)).toEqual(labels);
 		expect(defaultVariable(kind)).toBe(
 			kind === 'gmail' ? 'BYL_GMAIL_PASSWORD' : 'BYL_WEBDE_PASSWORD'
@@ -310,8 +341,9 @@ describe('mailboxes (plan EH-7)', () => {
 
 	it('counts the steps before "Verbinden" as done once the mailbox is connected', () => {
 		expect(setupProgress('webde', NONE)).toBe(0);
-		expect(setupProgress('webde', mail({}, false))).toBe(4);
-		expect(stepStates('webde', mail({}, false), 4)).toEqual([
+		expect(setupProgress('webde', mail({}, false))).toBe(5);
+		expect(stepStates('webde', mail({}, false), 5)).toEqual([
+			'done',
 			'done',
 			'done',
 			'done',
@@ -319,7 +351,7 @@ describe('mailboxes (plan EH-7)', () => {
 			'current',
 			'open'
 		]);
-		expect(setupProgress('webde', mail({}))).toBe(5);
+		expect(setupProgress('webde', mail({}))).toBe(6);
 	});
 
 	it('is done after the first run of the helper, which sets the last run and no error', () => {
@@ -383,6 +415,7 @@ describe('Telegram (plan EH-6)', () => {
 			'Bot anlegen',
 			'Token setzen',
 			'Verbinden',
+			'Zielprojekt',
 			'Neu starten',
 			'Chat freigeben',
 			'Test'
@@ -398,7 +431,7 @@ describe('Telegram (plan EH-6)', () => {
 	});
 
 	it('needs both variables after the restart', () => {
-		expect(setupProgress('telegram', bot({}, false))).toBe(3);
+		expect(setupProgress('telegram', bot({}, false))).toBe(4);
 		expect(stepCheck('telegram', 'restart', bot({}, false))).toEqual({
 			tone: 'open',
 			text: 'Die App sieht BYL_TELEGRAM_ALLOWED_IDS noch nicht.'
@@ -410,20 +443,20 @@ describe('Telegram (plan EH-6)', () => {
 	});
 
 	it('names a chat that is not allowed and is done once no foreign chat is reported', () => {
-		expect(setupProgress('telegram', bot({}))).toBe(4);
+		expect(setupProgress('telegram', bot({}))).toBe(5);
 		expect(stepCheck('telegram', 'chat', bot({}))?.tone).toBe('open');
 		const foreign = bot({ lastRunAt: '2026-09-26 10:00:00.000Z', lastHint: HINT });
 		expect(stepCheck('telegram', 'chat', foreign)).toEqual({
 			tone: 'open',
 			text: 'Nachricht aus einem Chat, der noch nicht freigegeben ist (Chat-ID 424242).'
 		});
-		expect(setupProgress('telegram', foreign)).toBe(4);
+		expect(setupProgress('telegram', foreign)).toBe(5);
 		const allowed = bot({ lastRunAt: '2026-09-26 10:30:00.000Z', lastHint: '' });
 		expect(stepCheck('telegram', 'chat', allowed)).toEqual({
 			tone: 'done',
 			text: 'Kein fremder Chat mehr gemeldet.'
 		});
-		expect(setupProgress('telegram', allowed)).toBe(5);
+		expect(setupProgress('telegram', allowed)).toBe(6);
 	});
 
 	it('is done after a good run with a keyword', () => {
@@ -455,6 +488,7 @@ describe('Notion (ADR-0041, plan notion-import NI-2)', () => {
 			'integration',
 			'variable',
 			'connect',
+			'target',
 			'restart',
 			'share',
 			'check'
@@ -468,14 +502,14 @@ describe('Notion (ADR-0041, plan notion-import NI-2)', () => {
 		expect(integration.actions.join(' ')).toMatch(/„Update content“, „Insert content“/);
 		expect(steps[1]!.commands[0]!.template).toBe('setx {{variable}} "{{wert}}"');
 		expect(steps[1]!.commands[0]!.placeholders.wert).toEqual({ label: 'Token', secret: true });
-		expect(steps[4]!.actions.join(' ')).toMatch(/„•••“.*„Verbindungen“/);
+		expect(steps[5]!.actions.join(' ')).toMatch(/„•••“.*„Verbindungen“/);
 		expect(GUIDE_KINDS).not.toContain('notion');
 	});
 
 	it('follows the facts: variable, restart, then the check of the server', () => {
 		expect(setupProgress('notion', NONE)).toBe(0);
-		expect(setupProgress('notion', page({}, false))).toBe(3);
-		expect(setupProgress('notion', page())).toBe(4);
+		expect(setupProgress('notion', page({}, false))).toBe(4);
+		expect(setupProgress('notion', page())).toBe(5);
 		expect(stepCheck('notion', 'check', page())).toEqual({
 			tone: 'open',
 			text: 'Noch nicht geprüft.'
@@ -483,7 +517,7 @@ describe('Notion (ADR-0041, plan notion-import NI-2)', () => {
 		// Notion answered, but the integration sees no page yet: "Freigeben" is still open.
 		const hint = 'Die Integration sieht noch keine Seite. In Notion …';
 		const unshared = page({ lastRunAt: OK, lastOkAt: OK, lastHint: hint });
-		expect(setupProgress('notion', unshared)).toBe(4);
+		expect(setupProgress('notion', unshared)).toBe(5);
 		expect(stepCheck('notion', 'check', unshared)).toEqual({ tone: 'warning', text: hint });
 		const refused = page({ lastRunAt: OK, lastError: 'Notion lehnt den Token ab (401).' });
 		expect(stepCheck('notion', 'check', refused)).toEqual({

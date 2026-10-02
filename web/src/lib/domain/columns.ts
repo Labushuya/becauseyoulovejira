@@ -168,16 +168,25 @@ export const TICKET_TABLE: TableSpec = table(
 );
 
 /**
- * "Eingang": selection (only for new entries), Art, Titel, Quelle, Quelldatum, arrival, actions.
- * The arrival (or handling) date gives way first, then Quelle, Art and Quelldatum. The actions
- * hold "Umwandeln" and "Verwerfen" (or what a handled entry offers) and since AM-4 the menu "•••":
- * 15rem instead of 13 (ADR-0030, Nachtrag 5).
+ * "Eingang": selection (only for new entries), Art, Titel, Quelle, Zielprojekt, Quelldatum,
+ * arrival, actions. The arrival (or handling) date gives way first, then Quelle, Art and
+ * Quelldatum. The actions hold "Umwandeln" and "Verwerfen" (or what a handled entry offers) and
+ * since AM-4 the menu "•••": 15rem instead of 13 (ADR-0030, Nachtrag 5). "Zielprojekt" (ADR-0049
+ * §5) came later: off by default (`optIn`) and the first to give way, so the thresholds stay.
  */
 export const INBOX_TABLE: TableSpec = table('inbox', [
 	fixed('select', 'Auswahl', 2.5),
 	column('kind', 'Art', { width: 6, min: 4, max: 10, hideRank: 3 }),
 	flexible('title', 'Titel', 10),
 	column('source', 'Quelle', { width: 7, min: 4, max: 12, hideRank: 2 }),
+	column('target', 'Zielprojekt', {
+		width: 8,
+		min: 4,
+		max: 16,
+		hideRank: 0,
+		hiddenByDefault: true,
+		optIn: true
+	}),
 	column('source-date', 'Quelldatum', { width: 6, min: 5, max: 9, hideRank: 4 }),
 	column('arrival', 'Eingang', { width: 6, min: 5, max: 9, hideRank: 1 }),
 	fixed('actions', 'Aktionen', 15)

@@ -168,3 +168,13 @@ Siehe Tabelle in Abschnitt 4. Außerdem verworfen:
 - Proton braucht keinen Code im Hilfsprozess; der Weg über `.eml` bekommt eine Anleitung in der README.
 - Der Hilfsprozess öffnet einen lokalen Port (nur `127.0.0.1`, mit Token) für die Postfach-Auswahl. Ist der Port belegt, meldet der Hilfsprozess das im Protokoll und die Route mit 503; der Abruf läuft davon unabhängig weiter.
 - Neue Abhängigkeiten nur im Hilfsprozess (`imapflow`, `postal-mime`, als Dev-Werkzeug `esbuild`, `postject`) und in der SPA (`postal-mime`).
+
+## Nachtrag (2026-10-02, [ADR-0049](0049-zielprojekt-je-eingangsweg.md)): Zielprojekt einer Verbindung
+
+Der Text oben bleibt. Seit Paket 1 der beobachteten Quellen („Standardprojekt je Verbindung“, Spec vom 2026-10-01) gilt für §2 „Konfiguration“ zusätzlich:
+
+- **Neues Feld `connections.target_project`** (Relation auf `projects`, höchstens eins, optional, Migration `1790203100_inbox_target_project.js`). Es steht neben `settings`, nicht darin: `settings` prüft der Hook je Art mit festen Schlüsseln (Notion hat keine), die Dialoge schreiben es als Ganzes, und der Mail-Hilfsprozess liest es. Für ein eigenes Feld ändert sich daran nichts, und PocketBase leert es, wenn das Projekt gelöscht wird.
+- **Wirkung:** Jeder neue Eintrag dieser Verbindung (Kalender, Bot, Postfach über die Ingest-Route, Notion-Import) bekommt beim Speichern das Ziel als `inbox_items.target_project`, gesetzt nur vom Modell-Hook des Eingangs; die Kanäle selbst ändern sich nicht. Eine Änderung an der Verbindung gilt nur für neue Einträge. Eine Verbindung ohne Ziel gibt keins weiter, auch nicht das einer Karte ohne Verbindung.
+- **Prüfung (Request-Hook, nur für App-Konten):** Ein neues Ziel muss ein aktives Projekt im Bereich der Verbindung sein (`validation_target_project_missing`, `validation_target_project_archived`); ein unverändertes, inzwischen archiviertes Ziel bleibt gültig. Die Regel „Umbenennen ändert nur den Namen“ (Nachtrag vom 2026-10-01) schließt das Ziel ein (`RENAME_KEEPS`).
+- **Kein Einfluss auf den Abruf:** `sourceIdentity`, Cursor, Vollsuche und `settings` bleiben unberührt; das Ziel ist keine Quelle.
+- **Datenschicht der SPA:** `setConnectionTarget` sendet nur `target_project`; `Connection.targetProjectId` und `targetReady` (das Feld ist dem Server bekannt).

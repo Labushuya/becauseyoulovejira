@@ -30,7 +30,8 @@ describe('steps', () => {
 			'load',
 			'enter',
 			'test',
-			'keywords'
+			'keywords',
+			'target'
 		]);
 		for (const step of WHATSAPP_WEB_STEPS) {
 			expect(step.label.split(' ').length, step.label).toBeLessThanOrEqual(2);
@@ -71,12 +72,14 @@ describe('progress', () => {
 		expect(firstOpenStep({ keys: 0, used: false, keywords: 0 })).toBe(0);
 		expect(firstOpenStep({ keys: 1, used: false, keywords: 0 })).toBe(1);
 		expect(firstOpenStep({ keys: 1, used: true, keywords: 0 })).toBe(4);
-		expect(firstOpenStep({ keys: 1, used: true, keywords: 2 })).toBe(4);
+		// The optional "Zielprojekt" (ADR-0049) never holds it up; with all else done it is the last.
+		expect(firstOpenStep({ keys: 1, used: true, keywords: 2 })).toBe(5);
 	});
 
 	it('marks done steps, and the keywords as open question once the extension is connected', () => {
 		expect(whatsappStepStates({ keys: 0, used: false, keywords: 0 }, 0)).toEqual([
 			'current',
+			'open',
 			'open',
 			'open',
 			'open',
@@ -87,14 +90,16 @@ describe('progress', () => {
 			'done',
 			'done',
 			'current',
-			'warning'
+			'warning',
+			'open'
 		]);
 		expect(whatsappStepStates({ keys: 1, used: true, keywords: 3 }, 0)).toEqual([
 			'current',
 			'done',
 			'done',
 			'done',
-			'done'
+			'done',
+			'open'
 		]);
 	});
 });

@@ -14,8 +14,17 @@
 	} from '$lib/domain/inbox';
 	import { type InboxQuery } from '$lib/domain/inbox-query';
 	import { MORE_COLUMNS_HINT } from '$lib/domain/labels';
+	import type { Project } from '$lib/domain/project';
+	import { projectChoiceLabel, treeOrder } from '$lib/domain/project-tree';
 	import { SOURCE_FAMILY_CHIPS, SOURCE_FAMILY_LABELS, type SourceFamily } from '$lib/domain/source';
 	import { canLeaveTicket, canSavePage, isMainSource } from '$lib/domain/sources';
+	import {
+		NO_TARGET,
+		TARGET_LABEL,
+		groupByTarget,
+		targetOfItem,
+		targetText
+	} from '$lib/domain/target-project';
 	import type { TicketSummary } from '$lib/domain/ticket';
 	import { rowMenus } from '$lib/overlay/context-menu';
 	import { getColumnPrefs } from '$lib/stores/column-prefs.svelte';
@@ -27,6 +36,7 @@
 	import ActionsMenu, { type MenuAction } from './ActionsMenu.svelte';
 	import ChipGroup from './ChipGroup.svelte';
 	import ColumnsPopover from './ColumnsPopover.svelte';
+	import FilterPopover from './FilterPopover.svelte';
 	import EmptyState from './guidance/EmptyState.svelte';
 	import SectionMessage from './guidance/SectionMessage.svelte';
 	import MoveSourceDialog from './MoveSourceDialog.svelte';
@@ -59,12 +69,18 @@
 	// herunterladen" where they apply (AM-5; the rules shared with panel and ticket in
 	// domain/sources.ts). A right click on a row or Shift+F10 open the same menu (AM-3, rowMenus);
 	// the browser keeps its menu on the other links of a row.
+	// The target project of the entries (ADR-0049 §5): the filter "Zielprojekt" next to the chips (a
+	// project with its sub projects, or "Ohne Zielprojekt"), the switch "Nach Zielprojekt gruppieren"
+	// (a group of rows per project with its path as heading, "Ohne Zielprojekt" last) and the column
+	// "Zielprojekt" in the menu "Spalten", off by default and the first to give way (ADR-0030). All
+	// three wait until the server knows the field (`store.targetsReady`).
 	let {
 		store,
 		flags,
 		sources = null,
 		picker,
 		openTickets,
+		projects = [],
 		activeId = null,
 		selected = $bindable([]),
 		projectsNewCount = 0,
@@ -88,6 +104,8 @@
 		picker?: TicketPickerSource;
 		/** Open tickets of the list store, for the hint on possible duplicates. */
 		openTickets: readonly TicketSummary[];
+		/** Every visible project of the catalog, archived ones included (target projects, ADR-0049). */
+		projects?: readonly Project[];
 		/** Entry shown in the panel; its row is marked as current. */
 		activeId?: string | null;
 		/** IDs of the chosen new entries. */
@@ -136,6 +154,24 @@
 
 	const query = $derived(store.query);
 	const showsNew = $derived(query.state === 'new');
+	/** The server knows the target project (ADR-0049): filter, grouping and column are offered. */
+	const targetsReady = $derived(store.targetsReady);
+	const target = $derived(targetsReady ? (query.target ?? null) : null);
+	const grouped = $derived(targetsReady && query.grouped === true);
+	const filtered = $derived(query.source !== null || target !== null);
+	const targetOptions = $derived([
+		{ value: NO_TARGET, label: 'Ohne Zielprojekt' },
+		...treeOrder(projects.filter((project) => !project.archived)).map((project) => ({
+			value: project.id,
+			label: projectChoiceLabel(project)
+		})),
+		...treeOrder(projects.filter((project) => project.archived)).map((project) => ({
+			value: project.id,
+			label: projectChoiceLabel(project),
+			section: 'Archiviert'
+		}))
+	]);
+	const groupSwitchId = `${uid}-group-target`;
 	/** New entries and the view "Alle" are ordered by arrival, the others by their handling. */
 	const byArrival = $derived(query.state === 'new' || query.state === 'all');
 	const rows = $derived(store.visible);
@@ -153,21 +189,30 @@
 		rows.length === 1 ? '1 Eintrag' : `${rows.length}${store.handledHasMore ? '+' : ''} Einträge`
 	);
 	const caption = $derived(
-		showsNew
-			? 'Eingang · neu, neueste zuerst'
-			: query.state === 'all'
-				? 'Eingang · alle, neueste zuerst'
-				: query.state === 'discarded'
-					? 'Eingang · verworfen, zuletzt verworfene zuerst'
-					: 'Eingang · verknüpft, zuletzt verknüpfte zuerst'
+		`${
+			showsNew
+				? 'Eingang · neu, neueste zuerst'
+				: query.state === 'all'
+					? 'Eingang · alle, neueste zuerst'
+					: query.state === 'discarded'
+						? 'Eingang · verworfen, zuletzt verworfene zuerst'
+						: 'Eingang · verknüpft, zuletzt verknüpfte zuerst'
+		}${grouped ? ', nach Zielprojekt gruppiert' : ''}`
+	);
+	/** The rows in groups by target project, or one group without heading. */
+	const groups = $derived(
+		grouped ? groupByTarget(rows, projects) : [{ key: '', label: '', items: [...rows] }]
 	);
 
 	let root = $state<HTMLElement>();
 	let heading = $state<HTMLElement>();
 
-	// Columns (ADR-0030): the selection exists only for new entries.
+	// Columns (ADR-0030): the selection exists only for new entries, the target project only once the
+	// server knows it (ADR-0049).
 	const columnFit = new ColumnFit(getColumnPrefs('inbox'), () =>
-		showsNew ? INBOX_TABLE.columns : INBOX_TABLE.columns.filter((column) => column.id !== 'select')
+		INBOX_TABLE.columns.filter(
+			(column) => (showsNew || column.id !== 'select') && (targetsReady || column.id !== 'target')
+		)
 	);
 	const shown = $derived(columnFit.shown);
 	let frame = $state<HTMLElement>();
@@ -187,8 +232,9 @@
 		await goto(withInboxQuery(page.url, next), { keepFocus: true, noScroll: true });
 	}
 
-	async function clearSource() {
-		await navigate({ ...query, source: null });
+	/** "Filter zurücksetzen": source and target project; state and grouping stay. */
+	async function clearFilters() {
+		await navigate({ ...query, source: null, target: null });
 		heading?.focus();
 	}
 
@@ -419,6 +465,133 @@
 	{/if}
 {/snippet}
 
+{#snippet row(item: InboxItemSummary)}
+	{@const pending = store.isPending(item.id)}
+	{@const sourceDate = sourceDateOf(item)}
+	{@const arrival = byArrival ? item.created : (item.handledAt ?? item.created)}
+	{@const linkedTicket =
+		item.state === 'converted' && item.ticket?.id === item.ticketId ? item.ticket : null}
+	<tr
+		class="row"
+		class:active={item.id === activeId}
+		class:linked={item.state === 'converted' && item.ticketId !== null}
+		data-item-id={item.id}
+	>
+		{#if shown.has('select')}
+			<td class="select" data-col="select">
+				<input
+					type="checkbox"
+					aria-label={`Eintrag „${item.title}“ auswählen`}
+					checked={selected.includes(item.id)}
+					onchange={(event) => toggle(item.id, event.currentTarget.checked)}
+				/>
+			</td>
+		{/if}
+		{#if shown.has('kind')}
+			<td class="kind" data-col="kind">{KIND_LABELS[item.kind]}</td>
+		{/if}
+		<th class="title" scope="row" data-col="title">
+			<!-- At most two lines, cut off only visually (ADR-0030 section 6). -->
+			<div class="title-clamp">
+				<a
+					class="title-link"
+					href={inboxItemHref(item.id, page.url)}
+					data-row-link
+					title={item.title.length >= LONG_TITLE ? item.title : undefined}
+					aria-current={item.id === activeId ? 'page' : undefined}>{item.title}</a
+				>
+			</div>
+			{#if item.state === 'new'}
+				{@render duplicateHint(item)}
+			{/if}
+		</th>
+		{#if shown.has('source')}
+			<td class="source" data-col="source">{CHANNEL_LABELS[item.channel]}</td>
+		{/if}
+		{#if shown.has('target')}
+			{@const targetLabel = targetText(targetOfItem(item, projects))}
+			<td class="target" data-col="target" title={targetLabel || undefined}>
+				{#if targetLabel !== ''}
+					{targetLabel}
+				{:else}
+					<span aria-hidden="true">–</span><span class="visually-hidden">kein Zielprojekt</span>
+				{/if}
+			</td>
+		{/if}
+		{#if shown.has('source-date')}
+			<td class="date" data-col="source-date">
+				{#if sourceDate !== null}
+					<time datetime={sourceDate.date} title={sourceDate.title}>{sourceDate.text}</time>
+				{:else}
+					<span aria-hidden="true">–</span><span class="visually-hidden">kein Datum</span>
+				{/if}
+			</td>
+		{/if}
+		{#if shown.has('arrival')}
+			<td class="date" data-col="arrival">
+				<time datetime={berlinDateOf(arrival)} title={formatBerlinDateTime(arrival)}>
+					{formatCalendarDate(berlinDateOf(arrival))}
+				</time>
+			</td>
+		{/if}
+		<td
+			class="actions"
+			data-col="actions"
+			aria-busy={downloading === item.id ||
+			saving === item.id ||
+			(sources?.isPending(item.id) ?? false)
+				? 'true'
+				: undefined}
+		>
+			<span class="action-group">
+				{#if item.state === 'new'}
+					<a class="action primary" href={convertHref(item.id)}
+						>Umwandeln<span class="visually-hidden">: „{item.title}“</span></a
+					>
+					<button
+						class="action"
+						type="button"
+						disabled={pending}
+						aria-busy={pending ? 'true' : undefined}
+						onclick={() => discard(item)}
+					>
+						Verwerfen<span class="visually-hidden">: „{item.title}“</span>
+					</button>
+				{:else if item.state === 'discarded'}
+					<button
+						class="action"
+						type="button"
+						disabled={pending}
+						aria-busy={pending ? 'true' : undefined}
+						onclick={() => act(() => store.restore(item.id))}
+					>
+						Wiederherstellen<span class="visually-hidden">: „{item.title}“</span>
+					</button>
+				{:else if linkedTicket !== null}
+					<a
+						class="ticket-chip"
+						href={links.path(linkedTicket.id)}
+						title={`${linkedTicket.key} · ${linkedTicket.title}`}
+						aria-label={`Ticket ${linkedTicket.key} öffnen: „${item.title}“`}
+						>→ <span class="ticket-key">{linkedTicket.key}</span></a
+					>
+				{:else if item.ticketId !== null}
+					<a class="action" href={links.path(item.ticketId)}
+						>Ticket ansehen<span class="visually-hidden">: „{item.title}“</span></a
+					>
+				{/if}
+				<ActionsMenu
+					label={`Weitere Aktionen für „${item.title}“`}
+					buttonLabel={`Weitere Aktionen für „${item.title}“`}
+					buttonTitle="Weitere Aktionen"
+					buttonClass="button-icon row-menu"
+					items={menuOf(item, linkedTicket?.key ?? null)}
+				/>
+			</span>
+		</td>
+	</tr>
+{/snippet}
+
 <section class="inbox-table" aria-labelledby={ids.heading} bind:this={root}>
 	<SectionBar
 		title="Eingang"
@@ -487,6 +660,27 @@
 			all={null}
 			onchange={(value: InboxView | null) => navigate({ ...query, state: value ?? 'new' })}
 		/>
+		{#if targetsReady}
+			<div class="target-tools">
+				<FilterPopover
+					legend={TARGET_LABEL}
+					name={`${uid}-target`}
+					options={targetOptions}
+					value={target}
+					onchange={(value) => navigate({ ...query, target: value })}
+				/>
+				<label class="group-switch" for={groupSwitchId}>
+					<span>Nach Zielprojekt gruppieren</span>
+					<input
+						id={groupSwitchId}
+						type="checkbox"
+						role="switch"
+						checked={grouped}
+						onchange={(event) => navigate({ ...query, grouped: event.currentTarget.checked })}
+					/>
+				</label>
+			</div>
+		{/if}
 	</div>
 
 	{@render tools?.()}
@@ -517,15 +711,17 @@
 	{:else if !showsNew && store.handledLoad === 'error' && store.handledError}
 		{@render failure(store.handledError)}
 	{:else if ready && rows.length === 0 && !store.handledHasMore}
-		{#if query.source !== null}
+		{#if filtered}
 			<EmptyState
 				size="narrow"
 				icon="search"
 				title="Keine Einträge für diese Filter"
-				description="Andere Quellen wählen oder den Filter zurücksetzen."
+				description={target === null
+					? 'Andere Quellen wählen oder den Filter zurücksetzen.'
+					: 'Andere Quellen oder ein anderes Zielprojekt wählen oder die Filter zurücksetzen.'}
 			>
 				{#snippet primary()}
-					<button class="button-primary" type="button" onclick={clearSource}>
+					<button class="button-primary" type="button" onclick={clearFilters}>
 						Filter zurücksetzen
 					</button>
 				{/snippet}
@@ -608,126 +804,24 @@
 						{/each}
 					</tr>
 				</thead>
-				<tbody>
-					{#each rows as item (item.id)}
-						{@const pending = store.isPending(item.id)}
-						{@const sourceDate = sourceDateOf(item)}
-						{@const arrival = byArrival ? item.created : (item.handledAt ?? item.created)}
-						{@const linkedTicket =
-							item.state === 'converted' && item.ticket?.id === item.ticketId ? item.ticket : null}
-						<tr
-							class="row"
-							class:active={item.id === activeId}
-							class:linked={item.state === 'converted' && item.ticketId !== null}
-							data-item-id={item.id}
-						>
-							{#if shown.has('select')}
-								<td class="select" data-col="select">
-									<input
-										type="checkbox"
-										aria-label={`Eintrag „${item.title}“ auswählen`}
-										checked={selected.includes(item.id)}
-										onchange={(event) => toggle(item.id, event.currentTarget.checked)}
-									/>
-								</td>
-							{/if}
-							{#if shown.has('kind')}
-								<td class="kind" data-col="kind">{KIND_LABELS[item.kind]}</td>
-							{/if}
-							<th class="title" scope="row" data-col="title">
-								<!-- At most two lines, cut off only visually (ADR-0030 section 6). -->
-								<div class="title-clamp">
-									<a
-										class="title-link"
-										href={inboxItemHref(item.id, page.url)}
-										data-row-link
-										title={item.title.length >= LONG_TITLE ? item.title : undefined}
-										aria-current={item.id === activeId ? 'page' : undefined}>{item.title}</a
+				{#each groups as group (group.key)}
+					<tbody>
+						{#if grouped}
+							<tr class="group-head">
+								<th scope="rowgroup" colspan={columnFit.shownColumns.length}>
+									{group.label}<span class="group-count"
+										>{group.items.length === 1
+											? '1 Eintrag'
+											: `${group.items.length} Einträge`}</span
 									>
-								</div>
-								{#if item.state === 'new'}
-									{@render duplicateHint(item)}
-								{/if}
-							</th>
-							{#if shown.has('source')}
-								<td class="source" data-col="source">{CHANNEL_LABELS[item.channel]}</td>
-							{/if}
-							{#if shown.has('source-date')}
-								<td class="date" data-col="source-date">
-									{#if sourceDate !== null}
-										<time datetime={sourceDate.date} title={sourceDate.title}
-											>{sourceDate.text}</time
-										>
-									{:else}
-										<span aria-hidden="true">–</span><span class="visually-hidden">kein Datum</span>
-									{/if}
-								</td>
-							{/if}
-							{#if shown.has('arrival')}
-								<td class="date" data-col="arrival">
-									<time datetime={berlinDateOf(arrival)} title={formatBerlinDateTime(arrival)}>
-										{formatCalendarDate(berlinDateOf(arrival))}
-									</time>
-								</td>
-							{/if}
-							<td
-								class="actions"
-								data-col="actions"
-								aria-busy={downloading === item.id ||
-								saving === item.id ||
-								(sources?.isPending(item.id) ?? false)
-									? 'true'
-									: undefined}
-							>
-								<span class="action-group">
-									{#if item.state === 'new'}
-										<a class="action primary" href={convertHref(item.id)}
-											>Umwandeln<span class="visually-hidden">: „{item.title}“</span></a
-										>
-										<button
-											class="action"
-											type="button"
-											disabled={pending}
-											aria-busy={pending ? 'true' : undefined}
-											onclick={() => discard(item)}
-										>
-											Verwerfen<span class="visually-hidden">: „{item.title}“</span>
-										</button>
-									{:else if item.state === 'discarded'}
-										<button
-											class="action"
-											type="button"
-											disabled={pending}
-											aria-busy={pending ? 'true' : undefined}
-											onclick={() => act(() => store.restore(item.id))}
-										>
-											Wiederherstellen<span class="visually-hidden">: „{item.title}“</span>
-										</button>
-									{:else if linkedTicket !== null}
-										<a
-											class="ticket-chip"
-											href={links.path(linkedTicket.id)}
-											title={`${linkedTicket.key} · ${linkedTicket.title}`}
-											aria-label={`Ticket ${linkedTicket.key} öffnen: „${item.title}“`}
-											>→ <span class="ticket-key">{linkedTicket.key}</span></a
-										>
-									{:else if item.ticketId !== null}
-										<a class="action" href={links.path(item.ticketId)}
-											>Ticket ansehen<span class="visually-hidden">: „{item.title}“</span></a
-										>
-									{/if}
-									<ActionsMenu
-										label={`Weitere Aktionen für „${item.title}“`}
-										buttonLabel={`Weitere Aktionen für „${item.title}“`}
-										buttonTitle="Weitere Aktionen"
-										buttonClass="button-icon row-menu"
-										items={menuOf(item, linkedTicket?.key ?? null)}
-									/>
-								</span>
-							</td>
-						</tr>
-					{/each}
-				</tbody>
+								</th>
+							</tr>
+						{/if}
+						{#each group.items as item (item.id)}
+							{@render row(item)}
+						{/each}
+					</tbody>
+				{/each}
 			</table>
 		</div>
 	{/if}
@@ -766,6 +860,38 @@
 		flex-wrap: wrap;
 		gap: 0.5rem 1.5rem;
 		margin-bottom: 0.75rem;
+	}
+
+	/* Filter "Zielprojekt" and the switch of the grouping (ADR-0049 §5), one block in the chips. */
+	.target-tools {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 0.5rem 1rem;
+		align-items: center;
+	}
+
+	.group-switch {
+		display: inline-flex;
+		gap: 0.5rem;
+		align-items: center;
+		font-size: var(--font-size-control);
+	}
+
+	/* Heading of a group of rows by target project. */
+	.group-head th {
+		padding: 0.5rem 0.75rem 0.25rem;
+		font-size: var(--font-size-control);
+		font-weight: 600;
+		text-align: left;
+		color: var(--color-text);
+		background: var(--fill-control);
+		border-bottom: 1px solid var(--color-line);
+	}
+
+	.group-count {
+		margin-left: 0.5rem;
+		font-weight: 400;
+		color: var(--color-text-muted);
 	}
 
 	.capture {
@@ -933,6 +1059,7 @@
 
 	.kind,
 	.source,
+	.target,
 	.date {
 		font-size: var(--font-size-control);
 		color: var(--color-text-muted);

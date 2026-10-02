@@ -12,10 +12,12 @@
 		type NotionImportedSource
 	} from '$lib/domain/notion';
 	import { connectionAnchor } from '$lib/domain/sync-all';
+	import type { ProjectRef } from '$lib/domain/ticket';
 	import { helpHref } from '$lib/settings-sections';
 	import type { NotionStore } from '$lib/stores/notion.svelte';
 	import ErrorIcon from '../ErrorIcon.svelte';
 	import ExternalLink from '../guidance/ExternalLink.svelte';
+	import CardTargetProject from './CardTargetProject.svelte';
 	import ChannelCard, { type CardAction, type CardRename } from './ChannelCard.svelte';
 
 	// Card of a Notion connection (ADR-0041 §9, plan notion-import NI-2; since the plan kanal-karten
@@ -27,7 +29,8 @@
 	// abrufen" (menu, ADR-0041 addendum of 2026-10-01) does that for every source, one after the
 	// other: the info line names the source with a bar, the main button stops after the current
 	// block. No "Pausieren" and no keywords: the user chooses what comes in. With `onrename` the
-	// menu offers "Umbenennen …" in the card (ADR-0026, addendum KK-3).
+	// menu offers "Umbenennen …" in the card (ADR-0026, addendum KK-3), with `ontarget` the details
+	// hold "Zielprojekt" for the entries of the next imports and the menu leads there (ADR-0049).
 	let {
 		connection,
 		secretStatus,
@@ -39,6 +42,8 @@
 		onsetup,
 		ondelete,
 		onrename,
+		ontarget,
+		projects = [],
 		others = []
 	}: {
 		connection: Connection;
@@ -57,10 +62,16 @@
 		ondelete: () => void;
 		/** Saves a new name; resolves to the error text or null (KK-3). Without it, no renaming. */
 		onrename?: (label: string) => Promise<string | null>;
+		/** Saves the target project of new entries (ADR-0049); without it, the card has no setting. */
+		ontarget?: (project: ProjectRef | null) => Promise<string | null>;
+		/** Every project of the catalog, archived ones included (the target project). */
+		projects?: readonly ProjectRef[];
 		/** Names of the other connections, for the note about a name that is taken. */
 		others?: readonly string[];
 	} = $props();
 
+	const uid = $props.id();
+	const targetId = `${uid}-target`;
 	let card = $state<ReturnType<typeof ChannelCard>>();
 	const rename = $derived<CardRename | null>(
 		onrename === undefined ? null : { others, save: onrename }
@@ -146,6 +157,9 @@
 				entries.push({ label: 'Alle erneut abrufen', onselect: () => void refetchAll() });
 			}
 		}
+		if (ontarget !== undefined && connection.targetReady !== false) {
+			entries.push({ label: 'Zielprojekt …', onselect: () => void card?.showDetails(targetId) });
+		}
 		if (rename !== null) {
 			entries.push({ label: 'Umbenennen …', onselect: () => void card?.startRename() });
 		}
@@ -181,6 +195,17 @@
 				<dd>{lastRunText}</dd>
 			</div>
 		</dl>
+		{#if ontarget !== undefined}
+			<CardTargetProject
+				id={targetId}
+				name={connection.label}
+				entries="Einträge der nächsten Übernahmen"
+				value={connection.targetProjectId ?? null}
+				{projects}
+				ready={connection.targetReady !== false}
+				onsave={ontarget}
+			/>
+		{/if}
 		{#if imports === null}
 			<p class="note">Übernommene Listen werden geladen …</p>
 		{:else if imports.length === 0}

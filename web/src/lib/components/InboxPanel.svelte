@@ -15,7 +15,8 @@
 	import type { CalendarDate } from '$lib/domain/berlin-date';
 	import { notionOriginText } from '$lib/domain/notion';
 	import { itemSuggestion, suggestionFormValues } from '$lib/domain/rrule';
-	import type { TicketSummary } from '$lib/domain/ticket';
+	import { TARGET_LABEL, targetOfItem, targetText } from '$lib/domain/target-project';
+	import type { ProjectRef, TicketSummary } from '$lib/domain/ticket';
 	import { findConnectionNames } from '$lib/stores/connection-names.svelte';
 	import type { InboxStore } from '$lib/stores/inbox.svelte';
 	import type { RecurrenceStore } from '$lib/stores/recurrence.svelte';
@@ -59,10 +60,13 @@
 	// addendum) with "Ticket öffnen", "Anderem Ticket zuordnen …" and "Lösen"; the main source of a
 	// ticket keeps only "Ticket öffnen" and says why it stays. The copy of a source made for a
 	// duplicate names the ticket it came from ("Kopie aus HAUS-12", ADR-0031 addendum F).
+	// The row "Zielprojekt" names the project the entry got from its way (ADR-0049), archived or
+	// deleted ones as such.
 	let {
 		id,
 		store,
 		openTickets,
+		projects = [],
 		recurrence = null,
 		today = null,
 		sources = null,
@@ -73,6 +77,8 @@
 		store: InboxStore;
 		/** Open tickets, for the hint on possible duplicates and the suggestion of a series. */
 		openTickets: readonly TicketSummary[];
+		/** Every project of the catalog, archived ones included: the target project (ADR-0049). */
+		projects?: readonly ProjectRef[];
 		/** Recurrence rules; without them (or before the E5 migration) no suggestion is shown. */
 		recurrence?: RecurrenceStore | null;
 		/** Berlin date of today, for the start of a suggested rule. */
@@ -145,6 +151,7 @@
 					connectionNames?.nameOf(item.connectionId) ?? null
 				)
 			],
+			[TARGET_LABEL, targetText(targetOfItem(item, projects))],
 			['Zustand', stateLabel(item)],
 			['Von', metaText(item, 'from') || metaText(item, 'sender')],
 			['An', metaText(item, 'to')],

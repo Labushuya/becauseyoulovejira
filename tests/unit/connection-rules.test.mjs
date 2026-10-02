@@ -186,7 +186,9 @@ describe('connection-rules.js', () => {
 			settings_json: '{"keywords":[]}',
 			owner: 'u2',
 			household: 'h1',
-			cursor: '0'
+			cursor: '0',
+			// The target project stays out of a rename as well (ADR-0049).
+			target_project: 'abcdefghijklmno'
 		};
 		for (const [field, value] of Object.entries(changes)) {
 			expect(rules.renameViolation(before, { ...before, label: 'Familie', [field]: value }), field).toEqual({

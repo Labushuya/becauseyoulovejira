@@ -55,6 +55,7 @@ async function open(
 		create: vi.fn<ConnectionsData['create']>(),
 		setEnabled: vi.fn<ConnectionsData['setEnabled']>(),
 		rename: vi.fn<ConnectionsData['rename']>(),
+		setTarget: vi.fn<ConnectionsData['setTarget']>(),
 		saveSettings: vi.fn<ConnectionsData['saveSettings']>(async (current, settings) => ({
 			...current,
 			keywords: settings.keywords
@@ -94,7 +95,7 @@ async function open(
 }
 
 const heading = (dialog: HTMLElement) =>
-	within(dialog).getByRole('heading', { level: 3, name: /^Schritt \d von 6/ });
+	within(dialog).getByRole('heading', { level: 3, name: /^Schritt \d von 7/ });
 
 beforeEach(() => {
 	localStorage.clear();
@@ -109,7 +110,7 @@ describe('mailbox assistant (EH-7)', () => {
 	it('opens Web.de at "Abruf erlauben" with the link to the provider', async () => {
 		await open([], { kind: 'webde', connectionId: null });
 		const dialog = screen.getByRole('dialog', { name: 'Web.de einrichten' });
-		expect(heading(dialog).textContent?.trim()).toBe('Schritt 1 von 6: Abruf per IMAP erlauben');
+		expect(heading(dialog).textContent?.trim()).toBe('Schritt 1 von 7: Abruf per IMAP erlauben');
 		expect(
 			within(dialog)
 				.getByRole('link', { name: /web\.de/ })
@@ -127,8 +128,9 @@ describe('mailbox assistant (EH-7)', () => {
 			}
 		);
 		const dialog = screen.getByRole('dialog', { name: 'Web.de einrichten' });
-		// The steps before "Verbinden" count as done once the mailbox exists; restart is open.
-		expect(heading(dialog).textContent).toMatch(/^Schritt 5 von 6: App neu starten/);
+		// The steps before "Verbinden" and the optional "Zielprojekt" (ADR-0049) count as done once
+		// the mailbox exists; restart is open.
+		expect(heading(dialog).textContent).toMatch(/^Schritt 6 von 7: App neu starten/);
 		await fireEvent.click(within(dialog).getByRole('button', { name: /Verbinden, erledigt/ }));
 		expect(
 			within(dialog).getByText(`Verbindung „Web.de“ angelegt. ${NO_KEYWORDS_WARNING}`)
@@ -149,7 +151,7 @@ describe('mailbox assistant (EH-7)', () => {
 			connectionId: ID
 		});
 		const dialog = screen.getByRole('dialog', { name: 'Web.de einrichten' });
-		expect(heading(dialog).textContent).toMatch(/^Schritt 6 von 6: Auf den ersten Abruf warten/);
+		expect(heading(dialog).textContent).toMatch(/^Schritt 7 von 7: Auf den ersten Abruf warten/);
 		expect(
 			within(dialog).getByText('Warte auf den ersten Abruf (spätestens 5 Minuten) …')
 		).toBeTruthy();

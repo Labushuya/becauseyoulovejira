@@ -324,3 +324,100 @@ describe('bulk convert dialog: "Datum des Termins als Fälligkeit" (plan BI-2)',
 		expect(screen.queryByRole('checkbox', { name: 'Datum des Termins als Fälligkeit' })).toBeNull();
 	});
 });
+
+describe('bulk convert dialog: target projects of the entries (ADR-0049)', () => {
+	const GARDEN: ProjectRef = {
+		id: 'proj00000000002',
+		name: 'Garten',
+		code: 'GART',
+		archived: false
+	};
+	const OLD: ProjectRef = { id: 'proj00000000003', name: 'Alt', code: 'ALT', archived: true };
+	const WITH_TARGETS = [
+		{ id: 'item00000000001', title: 'Eins', targetProjectId: GARDEN.id, sourceMeta: {} },
+		{ id: 'item00000000002', title: 'Zwei', targetProjectId: OLD.id, sourceMeta: {} },
+		{ id: 'item00000000003', title: 'Drei', targetProjectId: null, sourceMeta: {} },
+		{
+			id: 'item00000000004',
+			title: 'Vier',
+			targetProjectId: null,
+			sourceMeta: { target_gone: true }
+		}
+	];
+
+	function showTargets(items: typeof WITH_TARGETS) {
+		const data = {
+			get: vi.fn<BulkConvertData['get']>(async (id) => entry(id)),
+			createTicket: vi.fn<BulkConvertData['createTicket']>(async () => ticket(1))
+		} satisfies BulkConvertData;
+		const converter = new BulkConverter(
+			data,
+			{ ensureValid: () => true, logout: vi.fn() },
+			{ upsertTicket: vi.fn(), markConverted: vi.fn() }
+		);
+		render(BulkConvertDialog, {
+			props: {
+				items,
+				converter,
+				projects: [HOUSE, GARDEN],
+				catalogProjects: [HOUSE, GARDEN, OLD],
+				tags: [],
+				onclose: vi.fn()
+			}
+		});
+		return { data, dialog: within(screen.getByRole('dialog')) };
+	}
+
+	it('gives each entry its active target, the others the project of the dialog, and says so', async () => {
+		const { data, dialog } = showTargets(WITH_TARGETS);
+		await tick();
+		const check = dialog.getByRole<HTMLInputElement>('checkbox', {
+			name: 'Zielprojekt des Eintrags verwenden'
+		});
+		expect(check.checked).toBe(true);
+		expect(
+			dialog.getByText(
+				'1 Eintrag hat ein Zielprojekt; die übrigen bekommen das Projekt unten. 2 Einträge haben ein archiviertes oder gelöschtes Zielprojekt; es wird nicht übernommen, sie bekommen das Projekt unten.'
+			)
+		).toBeTruthy();
+		expect(dialog.getByText(/^Gilt für Einträge ohne Zielprojekt/)).toBeTruthy();
+
+		await fireEvent.change(dialog.getByLabelText('Projekt'), { target: { value: HOUSE.id } });
+		await fireEvent.click(dialog.getByRole('button', { name: '4 Einträge umwandeln' }));
+		await vi.waitFor(() => expect(data.createTicket).toHaveBeenCalledTimes(4));
+		const projects = data.createTicket.mock.calls.map(([draft, origin]) => [
+			'sourceItem' in origin ? origin.sourceItem : null,
+			draft.project
+		]);
+		expect(projects).toEqual([
+			['item00000000001', GARDEN.id],
+			['item00000000002', HOUSE.id],
+			['item00000000003', HOUSE.id],
+			['item00000000004', HOUSE.id]
+		]);
+	});
+
+	it('takes the project of the dialog for every entry once switched off', async () => {
+		const { data, dialog } = showTargets(WITH_TARGETS.slice(0, 1));
+		await tick();
+		await fireEvent.click(
+			dialog.getByRole('checkbox', { name: 'Zielprojekt des Eintrags verwenden' })
+		);
+		await fireEvent.click(dialog.getByRole('button', { name: '1 Eintrag umwandeln' }));
+		await vi.waitFor(() => expect(data.createTicket).toHaveBeenCalledTimes(1));
+		expect(data.createTicket.mock.calls[0]?.[0].project).toBeNull();
+	});
+
+	it('names an unusable target without a checkbox when no entry has an active one', async () => {
+		const { dialog } = showTargets(WITH_TARGETS.slice(1, 2));
+		await tick();
+		expect(
+			dialog.queryByRole('checkbox', { name: 'Zielprojekt des Eintrags verwenden' })
+		).toBeNull();
+		expect(
+			dialog.getByText(
+				'1 Eintrag hat ein archiviertes oder gelöschtes Zielprojekt; es wird nicht übernommen, der Eintrag bekommt das Projekt unten.'
+			)
+		).toBeTruthy();
+	});
+});

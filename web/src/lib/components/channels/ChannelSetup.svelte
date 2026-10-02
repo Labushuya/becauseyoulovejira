@@ -32,6 +32,7 @@
 		type TelegramRepliesChange
 	} from '$lib/domain/connections';
 	import { checkText } from '$lib/domain/notion';
+	import type { ProjectRef } from '$lib/domain/ticket';
 	import type { ConnectionsStore } from '$lib/stores/connections.svelte';
 	import type { NotionStore } from '$lib/stores/notion.svelte';
 	import KeywordEditor from '../KeywordEditor.svelte';
@@ -42,6 +43,7 @@
 	import Stepper from '../guidance/Stepper.svelte';
 	import Tabs from '../guidance/Tabs.svelte';
 	import Modal from '../overlay/Modal.svelte';
+	import CardTargetProject from './CardTargetProject.svelte';
 	import SecretValueField from './SecretValueField.svelte';
 	import SetupCheck from './SetupCheck.svelte';
 	import SetupConnectForm from './SetupConnectForm.svelte';
@@ -58,12 +60,15 @@
 	// keywords and the switches of the Telegram answers (last step, ADR-0016 addendum of 2026-10-01)
 	// save at once, a typed value is dropped on purpose when the modal closes. Notion
 	// (ADR-0041) ends with "Verbindung prüfen"; its result offers "Listen übernehmen …", which closes
-	// the assistant and opens the import dialog (no dialog from a dialog).
+	// the assistant and opens the import dialog (no dialog from a dialog). The optional step
+	// "Zielprojekt" (ADR-0049) right after "Verbinden" holds the target project of the new entries;
+	// it saves at once like the card.
 	let {
 		kind,
 		connectionId,
 		store,
 		notion,
+		projects = [],
 		onconnection,
 		onimport,
 		onclose
@@ -74,6 +79,8 @@
 		store: ConnectionsStore;
 		/** Notion import: "Verbindung prüfen" of the last step. */
 		notion: NotionStore;
+		/** Every project of the catalog, archived ones included (the step "Zielprojekt"). */
+		projects?: readonly ProjectRef[];
 		/** A connection was created; the owner writes its ID into the address. */
 		onconnection: (id: string) => void;
 		/** Closes the assistant and opens the import dialog of a Notion connection. */
@@ -440,6 +447,24 @@
 				emptyText={NO_KEYWORDS_WARNING}
 				onsave={saveKeywords}
 			/>
+		{/if}
+	{:else if entry.id === 'target'}
+		{#if connection !== null}
+			{@const current = connection}
+			<CardTargetProject
+				id={`${uid}-target`}
+				name={current.label}
+				entries="Neue Einträge dieser Verbindung"
+				value={current.targetProjectId ?? null}
+				{projects}
+				ready={current.targetReady !== false}
+				onsave={(project) => {
+					hold();
+					return store.setTarget(current.id, project);
+				}}
+			/>
+		{:else}
+			<p class="hint">Erst die Verbindung anlegen; danach wählst du hier ihr Zielprojekt.</p>
 		{/if}
 	{:else if entry.id === 'variable' || entry.id === 'token'}
 		<Tabs

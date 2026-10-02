@@ -106,7 +106,8 @@ export type SetupStepId =
 	| 'share'
 	| 'check'
 	| 'keywords'
-	| 'first-run';
+	| 'first-run'
+	| 'target';
 
 /** A placeholder of a command; secret values are masked in the display. */
 export interface SetupPlaceholder {
@@ -697,12 +698,39 @@ const NOTION_STEPS: readonly SetupStep[] = [
 	}
 ];
 
+/**
+ * The optional step "Zielprojekt" (ADR-0049, ADR-0026 addendum ZP): right after the connection is
+ * created, before its first entries can come, so they get the project already. It never holds the
+ * assistant up: done as soon as the connection exists, chosen or not.
+ */
+export const TARGET_STEP: SetupStep = {
+	id: 'target',
+	label: 'Zielprojekt',
+	title: 'Zielprojekt wählen (optional)',
+	intro:
+		'Neue Einträge dieser Verbindung bekommen dieses Projekt, und beim Umwandeln ist es vorbelegt. Ohne Zielprojekt bleibt das Projekt beim Umwandeln leer; ändern kannst du es jederzeit an der Karte.',
+	actions: [],
+	links: [],
+	commands: [],
+	more: [
+		'Es gilt nur für neue Einträge: Was schon im Eingang ist, behält sein Zielprojekt.',
+		'Ein archiviertes oder gelöschtes Zielprojekt wird beim Umwandeln nicht vorbelegt; der Hinweis am Projekt sagt es.'
+	],
+	checked: false
+};
+
+/** The steps with "Zielprojekt" right after "Verbinden". */
+function withTargetStep(steps: readonly SetupStep[]): readonly SetupStep[] {
+	const at = steps.findIndex((step) => step.id === 'connect');
+	return at === -1 ? steps : [...steps.slice(0, at + 1), TARGET_STEP, ...steps.slice(at + 1)];
+}
+
 const STEPS: Readonly<Partial<Record<SetupKind, readonly SetupStep[]>>> = {
-	kalender: CALENDAR_STEPS,
-	telegram: TELEGRAM_STEPS,
-	webde: WEBDE_STEPS,
-	gmail: GMAIL_STEPS,
-	notion: NOTION_STEPS
+	kalender: withTargetStep(CALENDAR_STEPS),
+	telegram: withTargetStep(TELEGRAM_STEPS),
+	webde: withTargetStep(WEBDE_STEPS),
+	gmail: withTargetStep(GMAIL_STEPS),
+	notion: withTargetStep(NOTION_STEPS)
 };
 
 /** Name of the variable a new connection of the kind suggests. */
@@ -823,6 +851,8 @@ function satisfied(kind: SetupKind, index: number, facts: SetupFacts): boolean {
 	const steps = setupSteps(kind);
 	const step = steps[index];
 	if (step === undefined) return false;
+	// The optional "Zielprojekt" never holds the assistant up (ADR-0049).
+	if (step.id === 'target') return facts.connection !== null;
 	if (step.checked) return checkHolds(kind, step.id, facts);
 	const next = steps.findIndex((entry, at) => at > index && entry.checked);
 	const checked = steps[next];

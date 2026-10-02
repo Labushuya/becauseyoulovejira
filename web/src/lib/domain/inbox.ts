@@ -188,6 +188,16 @@ export interface InboxItemSummary {
 	 * name of the connection (ADR-0026, addendum KK-3).
 	 */
 	connectionId?: string;
+	/**
+	 * Project the entry got from its way into the inbox when it came in (ADR-0049), null without
+	 * one. The data layer always sets it; objects built by hand may leave it out.
+	 */
+	targetProjectId?: string | null;
+	/**
+	 * The server does not know `inbox_items.target_project` yet: the app runs the new interface, the
+	 * migration waits for the next start. Only the data layer sets it.
+	 */
+	withoutTargetField?: boolean;
 	created: string;
 	updated: string;
 }

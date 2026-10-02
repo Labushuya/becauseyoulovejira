@@ -132,3 +132,7 @@ Neue Felder an `tickets`:
 - **Fingerprint beim Löschen in eine eigene Collection retten:** verworfen; mehr Schema für einen Weg, den niemand braucht. Verworfene Einträge werden nach 30 Tagen ohnehin geleert (§3).
 
 **Folgen.** §2 „Wird ein Eintrag gelöscht, leert PocketBase `tickets.source_item`“ gilt nur noch für Wege des Servers. Ein unerwünschter Eintrag wird verworfen; sein Inhalt verschwindet nach 30 Tagen, die Sperre bleibt. Beides wirkt nach dem nächsten Neustart (Hook und Migration).
+
+## Nachtrag (2026-10-02, [ADR-0049](0049-zielprojekt-je-eingangsweg.md)): Zielprojekt eines Eintrags
+
+§1 bekommt ein Feld: **`target_project`** (Relation auf `projects`, höchstens eins, optional, kein Cascade, Index `idx_inbox_items_target_project`, Migration `1790203100_inbox_target_project.js`), das Projekt, das der Eintrag beim Eintreffen von seinem Weg bekam (Verbindung, eigener Eingang, WhatsApp Web, Dateien). Es setzt nur der Hook beim Anlegen, für Clients ist es unveränderlich wie `channel` (`validation_inbox_immutable`); ein mitgesendeter Wert wird überschrieben. Umwandeln belegt das Projekt damit vor, wenn es aktiv ist (§4). Wird das Projekt gelöscht, leert PocketBase das Feld, und der Hook vermerkt `source_meta.target_gone`. Die Bereinigung verworfener Einträge (§3) lässt das Feld stehen. Einzelheiten, Gründe und die Vorbereitung für Repository und Ordner: [ADR-0049](0049-zielprojekt-je-eingangsweg.md).

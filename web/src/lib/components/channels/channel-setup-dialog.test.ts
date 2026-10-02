@@ -12,6 +12,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { RecordChange } from '$lib/data/realtime';
 import { SETX_WAY_KEY, setupStepKey, type SetupTarget } from '$lib/domain/channel-setup';
 import type { Connection, SecretStatus } from '$lib/domain/connections';
+import type { ProjectRef } from '$lib/domain/ticket';
 import { ConnectionsStore, type ConnectionsData } from '$lib/stores/connections.svelte';
 import { FlagStore } from '$lib/stores/flags.svelte';
 import ChannelsViewHarness from '$lib/test/ChannelsViewHarness.svelte';
@@ -58,6 +59,10 @@ function fakes(items: Connection[], status: SecretStatus = { secret: false, allo
 		),
 		setEnabled: vi.fn<ConnectionsData['setEnabled']>(),
 		rename: vi.fn<ConnectionsData['rename']>(),
+		setTarget: vi.fn<ConnectionsData['setTarget']>(async (id, projectId) => ({
+			...(items.find((item) => item.id === id) as Connection),
+			targetProjectId: projectId
+		})),
 		saveSettings: vi.fn<ConnectionsData['saveSettings']>(async (current, settings) => ({
 			...current,
 			keywords: settings.keywords
@@ -99,6 +104,12 @@ function fakes(items: Connection[], status: SecretStatus = { secret: false, allo
 	return { data, store, flags, listeners, unsubscribe };
 }
 
+/** Projects of the catalog for the step "Zielprojekt" (ADR-0049). */
+const PROJECTS: ProjectRef[] = [
+	{ id: 'haus00000000001', name: 'Haus', code: 'HAUS', archived: false },
+	{ id: 'alt000000000001', name: 'Alt', code: 'ALT', archived: true }
+];
+
 async function open(
 	items: Connection[],
 	setup: SetupTarget,
@@ -107,14 +118,16 @@ async function open(
 	const context = fakes(items, status);
 	await context.store.load();
 	const onchange = vi.fn();
-	render(ChannelsViewHarness, { props: { connections: context.store, setup, onchange } });
+	render(ChannelsViewHarness, {
+		props: { connections: context.store, projects: PROJECTS, setup, onchange }
+	});
 	await tick();
 	await tick();
 	return { ...context, onchange };
 }
 
 const dialog = () => within(screen.getByRole('dialog', { name: 'Google Calendar einrichten' }));
-const stepHeading = () => dialog().getByRole('heading', { level: 3, name: /^Schritt \d von 6/ });
+const stepHeading = () => dialog().getByRole('heading', { level: 3, name: /^Schritt \d von 7/ });
 
 beforeEach(() => {
 	localStorage.clear();
@@ -133,7 +146,7 @@ describe('setup assistant: frame and address', () => {
 		const box = screen.getByRole('dialog', { name: 'Google Calendar einrichten' });
 		expect(box.classList.contains('size-l')).toBe(true);
 		expect(dialog().getByRole('navigation', { name: 'Schritte der Einrichtung' })).toBeTruthy();
-		expect(stepHeading().textContent?.trim()).toBe('Schritt 1 von 6: Verbindung anlegen');
+		expect(stepHeading().textContent?.trim()).toBe('Schritt 1 von 7: Verbindung anlegen');
 		expect(
 			dialog()
 				.getByRole('button', { name: /Verbinden, aktuell/ })
@@ -171,20 +184,50 @@ describe('setup assistant: frame and address', () => {
 			expect(dialog().getByText('Verbindung „Google Calendar“ angelegt.')).toBeTruthy()
 		);
 		// Still the first step: the assistant does not jump under the pointer.
-		expect(stepHeading().textContent).toMatch(/^Schritt 1 von 6/);
+		expect(stepHeading().textContent).toMatch(/^Schritt 1 von 7/);
 	});
 
 	it('says when the connection of the address is gone', async () => {
 		await open([], { kind: 'kalender', connectionId: ID });
 		expect(dialog().getByText(/Diese Verbindung gibt es nicht mehr/)).toBeTruthy();
-		expect(stepHeading().textContent).toMatch(/^Schritt 1 von 6/);
+		expect(stepHeading().textContent).toMatch(/^Schritt 1 von 7/);
+	});
+});
+
+describe('setup assistant: the optional target project (ADR-0049)', () => {
+	it('asks for it right after "Verbinden" and saves the choice at once', async () => {
+		const { data, store } = await open([calendar()], { kind: 'kalender', connectionId: ID });
+		await fireEvent.click(dialog().getByRole('button', { name: /Zielprojekt, erledigt/ }));
+		expect(stepHeading().textContent?.trim()).toBe(
+			'Schritt 2 von 7: Zielprojekt wählen (optional)'
+		);
+		const select = dialog().getByRole('combobox', { name: 'Zielprojekt von „Kalender“' });
+		// Only active projects can be chosen.
+		expect(
+			within(select)
+				.getAllByRole('option')
+				.map((option) => option.textContent?.trim())
+		).toEqual(['Kein Projekt', 'Haus (HAUS)']);
+		await fireEvent.change(select, { target: { value: 'haus00000000001' } });
+		await vi.waitFor(() => expect(data.setTarget).toHaveBeenCalledWith(ID, 'haus00000000001'));
+		await vi.waitFor(() => expect(store.connections[0]?.targetProjectId).toBe('haus00000000001'));
+		// The step stays while the fact changes.
+		expect(stepHeading().textContent).toMatch(/^Schritt 2 von 7/);
+	});
+
+	it('asks to create the connection first', async () => {
+		await open([], { kind: 'kalender', connectionId: null });
+		await fireEvent.click(dialog().getByRole('button', { name: 'Weiter' }));
+		expect(stepHeading().textContent).toMatch(/^Schritt 2 von 7: Zielprojekt/);
+		expect(dialog().getByText(/Erst die Verbindung anlegen/)).toBeTruthy();
+		expect(dialog().queryByRole('combobox')).toBeNull();
 	});
 });
 
 describe('setup assistant: progress from the server', () => {
 	it('opens at "Adresse holen" while the app does not see the variable', async () => {
 		await open([calendar()], { kind: 'kalender', connectionId: ID });
-		expect(stepHeading().textContent?.trim()).toBe('Schritt 2 von 6: Geheime iCal-Adresse holen');
+		expect(stepHeading().textContent?.trim()).toBe('Schritt 3 von 7: Geheime iCal-Adresse holen');
 		const link = dialog().getByRole('link', { name: /calendar\.google\.com/ });
 		expect(link.getAttribute('href')).toBe('https://calendar.google.com');
 		expect(link.getAttribute('rel')).toBe('noopener noreferrer');
@@ -196,33 +239,33 @@ describe('setup assistant: progress from the server', () => {
 			{ kind: 'kalender', connectionId: ID },
 			{ secret: true, allowlist: null }
 		);
-		expect(stepHeading().textContent?.trim()).toBe('Schritt 5 von 6: Stichwörter festlegen');
+		expect(stepHeading().textContent?.trim()).toBe('Schritt 6 von 7: Stichwörter festlegen');
 	});
 
 	it('opens at a later step looked at in this tab, but never before the facts', async () => {
-		sessionStorage.setItem(setupStepKey(ID), '3');
+		sessionStorage.setItem(setupStepKey(ID), '4');
 		await open([calendar()], { kind: 'kalender', connectionId: ID });
-		expect(stepHeading().textContent).toMatch(/^Schritt 4 von 6/);
-		expect(sessionStorage.getItem(setupStepKey(ID))).toBe('3');
+		expect(stepHeading().textContent).toMatch(/^Schritt 5 von 7/);
+		expect(sessionStorage.getItem(setupStepKey(ID))).toBe('4');
 	});
 
 	it('never locks "Weiter" and names an open check of an earlier step', async () => {
 		await open([calendar()], { kind: 'kalender', connectionId: ID });
 
-		for (let step = 2; step < 5; step += 1) {
+		for (let step = 3; step < 6; step += 1) {
 			await fireEvent.click(dialog().getByRole('button', { name: 'Weiter' }));
 		}
-		expect(stepHeading().textContent).toMatch(/^Schritt 5 von 6/);
+		expect(stepHeading().textContent).toMatch(/^Schritt 6 von 7/);
 		expect(document.activeElement).toBe(stepHeading());
-		expect(sessionStorage.getItem(setupStepKey(ID))).toBe('4');
+		expect(sessionStorage.getItem(setupStepKey(ID))).toBe('5');
 		expect(
 			dialog().getByText(
-				/Schritt 4 ist noch offen: Die App sieht BYL_GOOGLE_CALENDAR_URL noch nicht\./
+				/Schritt 5 ist noch offen: Die App sieht BYL_GOOGLE_CALENDAR_URL noch nicht\./
 			)
 		).toBeTruthy();
 		expect(dialog().getByRole('button', { name: /Neu starten, Prüfung offen/ })).toBeTruthy();
-		await fireEvent.click(dialog().getByRole('button', { name: 'Zu Schritt 4' }));
-		expect(stepHeading().textContent).toMatch(/^Schritt 4 von 6: App neu starten/);
+		await fireEvent.click(dialog().getByRole('button', { name: 'Zu Schritt 5' }));
+		expect(stepHeading().textContent).toMatch(/^Schritt 5 von 7: App neu starten/);
 		expect(document.activeElement).toBe(stepHeading());
 	});
 });
@@ -266,7 +309,7 @@ describe('setup assistant: steps', () => {
 			expect(dialog().getByText('Die App sieht BYL_GOOGLE_CALENDAR_URL.')).toBeTruthy()
 		);
 		// The step stays while the fact changes.
-		expect(stepHeading().textContent).toMatch(/^Schritt 4 von 6/);
+		expect(stepHeading().textContent).toMatch(/^Schritt 5 von 7/);
 	});
 
 	it('saves keywords at once in the step', async () => {
@@ -288,7 +331,7 @@ describe('setup assistant: steps', () => {
 			{ kind: 'kalender', connectionId: ID },
 			{ secret: true, allowlist: null }
 		);
-		expect(stepHeading().textContent).toMatch(/^Schritt 6 von 6: Ersten Abruf starten/);
+		expect(stepHeading().textContent).toMatch(/^Schritt 7 von 7: Ersten Abruf starten/);
 		expect(dialog().getByRole('button', { name: 'Fertig' })).toBeTruthy();
 
 		await fireEvent.click(dialog().getByRole('button', { name: 'Jetzt abrufen' }));
@@ -339,12 +382,13 @@ describe('setup assistant: steps', () => {
 				.getAllByRole('heading', { level: 3 })
 				.map((heading) => heading.textContent?.trim())
 		).toEqual([
-			'Schritt 1 von 6: Verbindung anlegen',
-			'Schritt 2 von 6: Geheime iCal-Adresse holen',
-			'Schritt 3 von 6: Adresse als Windows-Variable setzen',
-			'Schritt 4 von 6: App neu starten',
-			'Schritt 5 von 6: Stichwörter festlegen',
-			'Schritt 6 von 6: Ersten Abruf starten'
+			'Schritt 1 von 7: Verbindung anlegen',
+			'Schritt 2 von 7: Zielprojekt wählen (optional)',
+			'Schritt 3 von 7: Geheime iCal-Adresse holen',
+			'Schritt 4 von 7: Adresse als Windows-Variable setzen',
+			'Schritt 5 von 7: App neu starten',
+			'Schritt 6 von 7: Stichwörter festlegen',
+			'Schritt 7 von 7: Ersten Abruf starten'
 		]);
 		expect(dialog().queryByRole('status', { name: /Geprüft/ })).toBeNull();
 	});

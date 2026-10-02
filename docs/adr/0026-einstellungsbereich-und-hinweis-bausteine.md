@@ -325,3 +325,15 @@ Sichtbar ist höchstens ein Leerzeichen am Ende des Links; an allen heutigen Ste
 - Eigene Route `…/rename` (verworfen: Die Record-API mit Update-Regel und Hook reicht, und die Regel „nur der Name“ gilt dann für jeden Weg).
 - Doppelte Namen ablehnen (verworfen: zwei Postfächer „Gmail“ sind legitim, ein Hinweis genügt).
 - Namen auch in Chips und Filtern (verworfen: Die Filter arbeiten mit Familien; ein Filter je Verbindung wäre eine eigene Entscheidung zu ADR-0019).
+
+## Nachtrag (2026-10-02, [ADR-0049](0049-zielprojekt-je-eingangsweg.md), ZP): Zielprojekt in Karte und Assistent
+
+**Anlass:** Paket 1 der beobachteten Quellen („Standardprojekt je Verbindung“): Jede Karte, die Einträge bringt, bekommt ein optionales Zielprojekt; einzustellen in der Karte (Menü „•••“ und Details) und im Assistenten als optionaler Schritt.
+
+**Entscheidung** (ergänzt KK-2 Punkte 4 und 5 und §4; Advisor und Executor):
+
+- **Details:** Die Zeile „Zielprojekt“ (Baustein `CardTargetProject`) steht in den Details von Google Calendar, Telegram, Postfächern, Notion, eigenem Eingang, WhatsApp Web und Dateien, mit `ProjectSelect` (nur aktive Projekte, ein archiviertes Ziel bleibt als „(archiviert)“ sichtbar). Eine Wahl speichert sofort wie die Felder eines Tickets; Fehler am Feld, Erfolg als Flag. Der Hinweis darunter sagt, wer das Projekt bekommt, dass es nur für neue Einträge gilt, und warum ein archiviertes oder gelöschtes Ziel nichts bewirkt. Vor der Migration nennt die Zeile den Neustart.
+- **Menü „•••“:** „Zielprojekt …“ (nach den Stichwörtern) klappt die Details auf und setzt den Fokus auf das Feld (`ChannelCard.showDetails`). Kein Dialog: Die Einstellung lebt an einem Ort, das Menü führt hin, wie „Umbenennen …“ zum Feld im Kopf führt.
+- **§4 Assistent, „höchstens 6 Schritte je Dienst“ präzisiert:** höchstens sechs Pflichtschritte und dazu der optionale Schritt „Zielprojekt“ (Titel „Zielprojekt wählen (optional)“). Bei Verbindungen steht er direkt nach „Verbinden“, damit schon die ersten Einträge das Ziel bekommen; er gilt als erledigt, sobald die Verbindung existiert, hält also nie auf, und der Fortschritt aus den Serverdaten springt über ihn. Bei WhatsApp Web ist er der letzte Schritt (Einträge kommen erst nach der Einrichtung der Erweiterung). Der eigene Eingang hat weiter keinen Assistenten. Das Bookmarklet bekommt keine Einstellung: Beim Erfassen wählt der Nutzer das Projekt selbst.
+
+**Alternativen:** Ein Dialog „Zielprojekt“ aus dem Menü (verworfen: zwei Orte für dieselbe Einstellung, und die Details zeigen den Wert ohnehin); der optionale Teil im Schritt „Verbinden“ statt eines eigenen Schritts (verworfen: im Stepper unsichtbar, die Vorgabe verlangt einen Schritt); der Schritt am Ende (verworfen: erste Einträge kämen ohne Ziel).

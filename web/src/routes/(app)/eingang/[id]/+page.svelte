@@ -2,6 +2,7 @@
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
 	import InboxPanel from '$lib/components/InboxPanel.svelte';
+	import { getCatalogStore } from '$lib/stores/catalog.svelte';
 	import { getInboxStore } from '$lib/stores/inbox.svelte';
 	import { getRecurrenceStore } from '$lib/stores/recurrence.svelte';
 	import { getTicketListStore } from '$lib/stores/ticket-list.svelte';
@@ -13,6 +14,8 @@
 	const tickets = getTicketListStore();
 	const rules = getRecurrenceStore();
 	const sources = getTicketSourcesStore();
+	// Projects of the catalog name the target project of the entry (ADR-0049).
+	const catalog = getCatalogStore();
 	const id = $derived(page.params.id ?? '');
 	const back = $derived(inboxHref(page.url));
 	const title = $derived(inbox.find(id)?.title);
@@ -27,6 +30,7 @@
 		{id}
 		store={inbox}
 		openTickets={tickets.open}
+		projects={catalog.projects}
 		recurrence={rules}
 		today={tickets.today}
 		{sources}

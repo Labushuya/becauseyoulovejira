@@ -178,8 +178,9 @@
 	// Bulk actions on the chosen rows of the table (plan BI-2, ADR-0036 §3): one request per ticket
 	// through the Record API, results and "Rückgängig" as flags.
 	const bulk = setBulkEditStore(new BulkEditStore(bulkEditData(pb), auth, tickets, flags, rules));
-	// The inbox (E4 plan, T-4): new entries in full, for the view and the count at the switch.
-	const inbox = setInboxStore(new InboxStore(inboxData(pb), auth, flags));
+	// The inbox (E4 plan, T-4): new entries in full, for the view and the count at the switch. The
+	// filter "Zielprojekt" takes the sub projects of the catalog in (ADR-0049).
+	const inbox = setInboxStore(new InboxStore(inboxData(pb), auth, flags, () => catalog.projects));
 	const activity = setTicketActivityStore(
 		new TicketActivityStore(ticketActivityData(pb), auth, () => auth.userId)
 	);

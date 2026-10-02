@@ -75,7 +75,11 @@
 	let selected = $state<string[]>([]);
 	/** Entries of the open dialog, null while it is closed. */
 	let bulkItems = $state<
-		Pick<InboxItemSummary, 'id' | 'title' | 'kind' | 'channel' | 'sourceDate'>[] | null
+		| Pick<
+				InboxItemSummary,
+				'id' | 'title' | 'kind' | 'channel' | 'sourceDate' | 'targetProjectId' | 'sourceMeta'
+		  >[]
+		| null
 	>(null);
 
 	// Follows the chips of the URL (reload, back and forward included). untrack: only the URL
@@ -106,17 +110,19 @@
 
 	function chosenItems(): Pick<
 		InboxItemSummary,
-		'id' | 'title' | 'kind' | 'channel' | 'sourceDate' | 'scope'
+		'id' | 'title' | 'kind' | 'channel' | 'sourceDate' | 'scope' | 'targetProjectId' | 'sourceMeta'
 	>[] {
 		return inbox.visible
 			.filter((item) => item.state === 'new' && selected.includes(item.id))
-			.map(({ id, title, kind, channel, sourceDate, scope }) => ({
+			.map(({ id, title, kind, channel, sourceDate, scope, targetProjectId, sourceMeta }) => ({
 				id,
 				title,
 				kind,
 				channel,
 				sourceDate,
-				scope
+				scope,
+				targetProjectId,
+				sourceMeta
 			}));
 	}
 
@@ -270,6 +276,7 @@
 			{flags}
 			{sources}
 			openTickets={tickets.open}
+			projects={catalog.projects}
 			{activeId}
 			projectsNewCount={tickets.newInProjects}
 			bind:selected
@@ -337,6 +344,7 @@
 		items={bulkItems}
 		{converter}
 		projects={catalog.activeProjects}
+		catalogProjects={catalog.projects}
 		tags={catalog.tags}
 		oncreatetag={(name) => catalog.ensureTag(name)}
 		onclose={closeBulk}

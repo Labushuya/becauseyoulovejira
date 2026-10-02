@@ -3,6 +3,7 @@
 	import type { CalendarDate } from '$lib/domain/berlin-date';
 	import { berlinDateOf, formatBerlinDateTime } from '$lib/domain/format';
 	import type { TicketPrefill } from '$lib/domain/inbox';
+	import type { TargetPrefill } from '$lib/domain/target-project';
 	import {
 		INITIAL_STATUS_REQUIRED,
 		defaultFormValues,
@@ -57,10 +58,13 @@
 	// A calendar series (E5 plan, package 6; ADR-0024 section 1) shows its rhythm with "Als
 	// Wiederholung übernehmen"; that click opens the section with the suggested values. A series the
 	// rules cannot express gets a neutral hint. Nothing is set without a click (P-5).
+	// An entry from a way with a target project (ADR-0049 §4) brings that project, unless it is
+	// archived or deleted; the hint below "Projekt" says which and why.
 	let {
 		projects = [],
 		initialProject = null,
 		prefill = null,
+		target = null,
 		sourceLabel = null,
 		suggestion = null,
 		repeat = false,
@@ -80,6 +84,8 @@
 		initialProject?: string | null;
 		/** Values of an inbox entry (E4 plan, T-5); read once when the form opens. */
 		prefill?: TicketPrefill | null;
+		/** Target project of the entry (ADR-0049 §4), from the catalog as it loads. */
+		target?: TargetPrefill | null;
 		/** Way the entry came in, e.g. "Mail-Datei", shown under the heading. */
 		sourceLabel?: string | null;
 		/** Suggestion from the RRULE of the entry (rrule.ts); null without a series. */
@@ -176,7 +182,13 @@
 	/** The section is offered with rules available (or with a suggestion) and a known date. */
 	const canRepeat = $derived(today !== null && (repeat || ruleSuggestion !== null));
 
-	const wantedProject = $derived(preset?.project ?? initialProject);
+	// The target project of the way the entry came (ADR-0049 §4); a preset of the user wins. It
+	// follows a late catalog like the default project.
+	const wantedProject = $derived(preset?.project ?? target?.project ?? initialProject);
+	/** Hint below "Projekt": why the target project is (not) chosen in advance, unless a preset won. */
+	const projectHint = $derived(
+		(preset?.project ?? null) === null ? (target?.hint ?? undefined) : undefined
+	);
 	const defaultProject = $derived(
 		wantedProject !== null && projects.some((entry) => entry.id === wantedProject)
 			? wantedProject
@@ -534,6 +546,7 @@
 				error={fieldErrors.project ?? null}
 				errorId={ids.projectError}
 				hintId={ids.projectHint}
+				hint={projectHint}
 				onchoose={(value) => (chosenProject = value)}
 			/>
 			{#if fieldErrors.project}

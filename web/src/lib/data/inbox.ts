@@ -43,6 +43,8 @@ export const INBOX_LIST_FIELDS = [
 	'scope',
 	// The connection that brought the entry: panel and sources name it (ADR-0026, addendum KK-3).
 	'connection',
+	// The project the entry got from its way (ADR-0049); missing before the migration 1790203100.
+	'target_project',
 	'created',
 	'updated',
 	// The ticket of a converted or linked entry (ADR-0031, addendum): key and title for the chip and
@@ -76,6 +78,8 @@ export interface InboxRecord {
 	handled_at: string;
 	scope?: string;
 	connection?: string;
+	/** Missing while the server has not run the migration 1790203100 (ADR-0049). */
+	target_project?: string;
 	created: string;
 	updated: string;
 	expand?: { ticket?: InboxTicketRecord };
@@ -127,6 +131,8 @@ export function toInboxItemSummary(record: InboxRecord): InboxItemSummary {
 		handledAt: record.handled_at || null,
 		...(record.scope ? { scope: record.scope } : {}),
 		...(record.connection ? { connectionId: record.connection } : {}),
+		targetProjectId: record.target_project || null,
+		...(record.target_project === undefined ? { withoutTargetField: true } : {}),
 		created: record.created,
 		updated: record.updated
 	};
@@ -195,9 +201,31 @@ const HANDLED_FILTER = [
 const MAX_FAMILY_CHANNELS = 3;
 
 /**
+ * Filter "Zielprojekt" of the server (ADR-0049 §5): with `{:target}` a project with its sub
+ * projects (one level, ADR-0034 §6), the same set as `matchesTarget` of domain/target-project.ts;
+ * with an empty `{:target}` the entries without a target. Joined only with a target
+ * (handledExpression), because a server before the migration 1790203100 refuses the field.
+ */
+const HANDLED_TARGET_FILTER = [
+	'(({:target} = "" && target_project = "") || ({:target} != "" && (target_project = {:target} || target_project.parent = {:target})))'
+].join(' && ');
+
+/**
+ * The filter "Zielprojekt" of a list: a project (with its sub projects), `project: null` for the
+ * entries without a target; null for every entry.
+ */
+export type HandledTarget = { project: string | null } | null;
+
+/** Expression of the handled entries: HANDLED_FILTER, with a target also its clause. */
+function handledExpression(query: { target: HandledTarget }): string {
+	return query.target === null ? HANDLED_FILTER : `${HANDLED_FILTER} && ${HANDLED_TARGET_FILTER}`;
+}
+
+/**
  * One page of converted or discarded entries, most recently handled first, or of every entry
  * (view "Alle", ADR-0031 addendum C), newest first; with `channels` only those of these channels
- * (the chip "Quelle"), filtered by the server so the pages stay full.
+ * (the chip "Quelle") and with `target` only those of a target project or without one, filtered
+ * by the server so the pages stay full.
  */
 export function listHandledItems(
 	pb: PocketBase,
@@ -206,21 +234,28 @@ export function listHandledItems(
 	{
 		signal,
 		perPage = HANDLED_PAGE_SIZE,
-		channels = null
-	}: RequestOptions & { perPage?: number; channels?: readonly InboxChannel[] | null } = {}
+		channels = null,
+		target = null
+	}: RequestOptions & {
+		perPage?: number;
+		channels?: readonly InboxChannel[] | null;
+		target?: HandledTarget;
+	} = {}
 ): Promise<HandledItemPage> {
 	return withDataErrors(signal, async () => {
 		if (channels !== null && channels.length > MAX_FAMILY_CHANNELS) {
 			throw new RangeError('Too many channels for the filter');
 		}
+		const handled = { target };
 		const result = await pb.collection(INBOX).getList<InboxRecord>(page, perPage, {
-			filter: pb.filter(HANDLED_FILTER, {
+			filter: pb.filter(handledExpression(handled), {
 				every: state === 'all' ? '1' : '',
 				state: state === 'all' ? '' : state,
 				all: channels === null ? '1' : '',
 				c1: channels?.[0] ?? '',
 				c2: channels?.[1] ?? '',
-				c3: channels?.[2] ?? ''
+				c3: channels?.[2] ?? '',
+				target: target?.project ?? ''
 			}),
 			sort: state === 'all' ? '-created,-id' : '-handled_at,-created,-id',
 			fields: INBOX_LIST_FIELDS,
