@@ -1,6 +1,6 @@
 # Plan „Tickets im Kontext“
 
-- **Stand:** KX-1 umgesetzt (2026-10-02, #233), KX-2 umgesetzt (2026-10-02, #234), KX-3 umgesetzt (2026-10-02, Branch `feat/kx-3-calendar-context`); nur Oberfläche: Build, dann F5, kein Neustart. Offen sind die manuellen Prüfungen (Test-Manifest, Block „Tickets im Kontext“).
+- **Stand:** KX-1 umgesetzt (2026-10-02, #233), KX-2 umgesetzt (2026-10-02, #234), KX-3 umgesetzt (2026-10-02, #235); nur Oberfläche: Build, dann F5, kein Neustart. Offen sind die manuellen Prüfungen (Test-Manifest, Block „Tickets im Kontext“).
 - **Grundlage:** Nutzerwunsch „Tickets sollen auch aus ihrem Bezug heraus geöffnet werden können … aus dem Projektbereich heraus und wo es sonst noch auftreten könnte“; Option C mit „Alle Empfehlungen so umsetzen“ (2026-10-02).
 - **Entscheidungen:** [ADR-0054](../adr/0054-tickets-im-kontext-oeffnen.md); Nachträge zu [ADR-0025](../adr/0025-ui-konsistenz-overlay-system.md) (17), [ADR-0034](../adr/0034-unterprojekte.md), [ADR-0037](../adr/0037-papierkorb.md), [ADR-0042](../adr/0042-tickets-und-projekte-aus-listen-waehlen.md) und [ADR-0053](../adr/0053-kalenderansicht.md).
 - **Einordnung:** Manifest-Block „Tickets im Kontext“ ab `BYL-E6-1300` (KX-1 `BYL-E6-1300` bis `BYL-E6-1311`, manuell `BYL-E6-1310` und `BYL-E6-1311`; KX-2 `BYL-E6-1320` bis `BYL-E6-1330`, manuell `BYL-E6-1329` und `BYL-E6-1330`; KX-3 `BYL-E6-1340` bis `BYL-E6-1346`, manuell `BYL-E6-1346`). Keine Migration, keine Hooks.
