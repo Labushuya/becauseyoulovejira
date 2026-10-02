@@ -6,6 +6,7 @@ import { describe, expect, it } from 'vitest';
 import appHeader from '$lib/components/AppHeader.svelte?raw';
 import helpMenu from '$lib/components/help/HelpMenu.svelte?raw';
 import { isMenuKey } from '$lib/overlay/context-menu';
+import { gridMove } from './calendar';
 import { isHelpKey, isQuickCaptureKey } from './keyboard';
 import {
 	HELP_KEYSHORTCUTS,
@@ -69,6 +70,7 @@ describe('shortcuts', () => {
 		expect(SHORTCUT_CONTEXTS.map((context) => context.label)).toEqual([
 			'Überall',
 			'Liste',
+			'Kalender',
 			'Panel',
 			'Dialoge',
 			'Editor'
@@ -98,6 +100,26 @@ describe('shortcuts', () => {
 			expect(isMenuKey(eventOf(names))).toBe(true);
 		}
 		expect(keysText(rowMenu)).toBe('Umschalt+F10 oder Kontextmenü');
+	});
+
+	it('lists the keys the grid of the calendar takes (ADR-0053)', () => {
+		const KEYS: Record<string, string[]> = {
+			Pfeiltasten: ['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'],
+			Pos1: ['Home'],
+			Ende: ['End'],
+			'Bild auf': ['PageUp'],
+			'Bild ab': ['PageDown']
+		};
+		const moves = ['calendar-days', 'calendar-week-ends', 'calendar-period'].map(shortcutById);
+		for (const shortcut of moves) {
+			expect(shortcut.context).toBe('calendar');
+			for (const [name] of shortcut.keys) {
+				for (const key of KEYS[name ?? ''] ?? []) {
+					expect(gridMove('month', '2026-10-14', key), `${name}: ${key}`).not.toBeNull();
+				}
+			}
+		}
+		expect(keysText(shortcutById('calendar-enter'))).toBe('Enter oder F2');
 	});
 
 	it('lists the key the help handler takes', () => {

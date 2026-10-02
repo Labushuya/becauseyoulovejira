@@ -4,11 +4,12 @@
 // shortcuts.test.ts checks the global entries against them.
 
 /** Where a shortcut works, in the order of the help. */
-export type ShortcutContext = 'everywhere' | 'list' | 'panel' | 'dialogs' | 'editor';
+export type ShortcutContext = 'everywhere' | 'list' | 'calendar' | 'panel' | 'dialogs' | 'editor';
 
 export const SHORTCUT_CONTEXTS: readonly { id: ShortcutContext; label: string }[] = [
 	{ id: 'everywhere', label: 'Überall' },
 	{ id: 'list', label: 'Liste' },
+	{ id: 'calendar', label: 'Kalender' },
 	{ id: 'panel', label: 'Panel' },
 	{ id: 'dialogs', label: 'Dialoge' },
 	{ id: 'editor', label: 'Editor' }
@@ -88,6 +89,32 @@ export const SHORTCUTS: readonly Shortcut[] = [
 		context: 'list',
 		keys: [['Strg', 'V']],
 		action: 'In der Eingangsansicht außerhalb von Feldern: Text aus der Zwischenablage übernehmen'
+	},
+	// The grid of month and week (ADR-0053 §8); CalendarGrid.svelte takes these keys with gridMove
+	// of domain/calendar.ts.
+	{
+		id: 'calendar-days',
+		context: 'calendar',
+		keys: [['Pfeiltasten']],
+		action: 'Im Monat oder in der Woche: zum Tag davor, danach, eine Woche früher oder später'
+	},
+	{
+		id: 'calendar-week-ends',
+		context: 'calendar',
+		keys: [['Pos1'], ['Ende']],
+		action: 'Zum Montag bzw. Sonntag der Woche; mit Strg zum ersten bzw. letzten Tag des Monats'
+	},
+	{
+		id: 'calendar-period',
+		context: 'calendar',
+		keys: [['Bild auf'], ['Bild ab']],
+		action: 'Zum selben Tag im Monat bzw. in der Woche davor oder danach'
+	},
+	{
+		id: 'calendar-enter',
+		context: 'calendar',
+		keys: [['Enter'], ['F2']],
+		action: 'In die Einträge des Tages wechseln; dort Pfeil hoch und runter, Esc zurück zum Tag'
 	},
 	{
 		id: 'close-panel',

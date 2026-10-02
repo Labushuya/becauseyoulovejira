@@ -1,7 +1,7 @@
-// Component tests for the switch "Aufgaben | Projekte | Eingang | Wiederholungen" (E3 plan, T-3 and
-// package 14; E5 plan, package 5; ADR-0010 section 5): a navigation with one link per view,
-// aria-current on the current view, the list state kept while the list is shown. Page state is
-// mocked.
+// Component tests for the switch "Aufgaben | Projekte | Eingang | Wiederholungen | Kalender" (E3
+// plan, T-3 and package 14; E5 plan, package 5; ADR-0010 section 5; ADR-0053): a navigation with
+// one link per view, aria-current on the current view, the list state kept while the list is
+// shown, the state of the calendar while the calendar is shown. Page state is mocked.
 
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -17,7 +17,7 @@ const mocks = vi.hoisted(() => ({ page: { url: new URL('http://localhost:3000/')
 vi.mock('$app/state', () => ({ page: mocks.page }));
 
 function show(
-	current: 'tasks' | 'projects' | 'inbox' | 'recurrences' | 'trash',
+	current: 'tasks' | 'projects' | 'inbox' | 'recurrences' | 'calendar' | 'trash',
 	path: string,
 	inboxCount: number | null = null
 ) {
@@ -27,7 +27,7 @@ function show(
 }
 
 describe('view switch', () => {
-	it('is a navigation with four views and the trash, and marks the list as current', () => {
+	it('is a navigation with five views and the trash, and marks the list as current', () => {
 		const nav = show('tasks', '/tickets/abc123def456ghi?status=open&sort=titel');
 
 		const links = nav.getAllByRole('link');
@@ -36,6 +36,7 @@ describe('view switch', () => {
 			'Projekte',
 			'Eingang',
 			'Wiederholungen',
+			'Kalender',
 			'Papierkorb'
 		]);
 		const tasks = nav.getByRole('link', { name: 'Aufgaben' });
@@ -57,6 +58,7 @@ describe('view switch', () => {
 			false,
 			false,
 			false,
+			false,
 			false
 		]);
 		expect(links.map((link) => link.getAttribute('href'))).toEqual([
@@ -64,6 +66,7 @@ describe('view switch', () => {
 			'/projekte',
 			'/eingang',
 			'/wiederholungen',
+			'/kalender',
 			'/papierkorb'
 		]);
 		expect(nav.getByRole('link', { name: 'Eingang (2 neu)' })).toBeTruthy();
@@ -104,6 +107,18 @@ describe('view switch', () => {
 		expect(screen.getByRole('link', { name: 'Projekte (2 neu)' }).getAttribute('href')).toBe(
 			'/projekte'
 		);
+	});
+
+	it('marks the calendar as current and keeps its view, day and filters (ADR-0053)', () => {
+		const nav = show('calendar', '/kalender/tickets/abc123def456ghi?prio=high&ansicht=woche');
+
+		const calendar = nav.getByRole('link', { name: 'Kalender' });
+		expect(calendar.getAttribute('aria-current')).toBe('page');
+		expect(calendar.getAttribute('href')).toBe('/kalender?prio=high&ansicht=woche');
+		expect(nav.getByRole('link', { name: 'Aufgaben' }).getAttribute('href')).toBe('/');
+		document.body.innerHTML = '';
+		const other = show('tasks', '/?prio=high');
+		expect(other.getByRole('link', { name: 'Kalender' }).getAttribute('href')).toBe('/kalender');
 	});
 
 	it('marks the overview "Wiederholungen" as current (E5 plan, package 5)', () => {

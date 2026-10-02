@@ -124,7 +124,10 @@ describe('lastViewLabel', () => {
 		['/projekte/proj00000000001?archiviert=1', 'Zurück zu Projekte'],
 		['/eingang', 'Zurück zum Eingang'],
 		['/eingang/neu', 'Zurück zum Eingang'],
-		['/eingang/item0000000000001?zustand=verworfen', 'Zurück zum Eintrag']
+		['/eingang/item0000000000001?zustand=verworfen', 'Zurück zum Eintrag'],
+		// The calendar and a ticket next to it (ADR-0053).
+		['/kalender?ansicht=woche', 'Zurück zum Kalender'],
+		['/kalender/tickets/unknown00000001', 'Zurück zum Ticket']
 	])('labels %s as "%s"', (href, label) => {
 		expect(lastViewLabel(href)).toBe(label);
 	});
@@ -132,5 +135,6 @@ describe('lastViewLabel', () => {
 	it('names the key of an open ticket if the list knows it', () => {
 		const keyOf = (id: string) => (id === 'abc123def456ghi' ? 'BYL-12' : null);
 		expect(lastViewLabel('/tickets/abc123def456ghi?status=open', keyOf)).toBe('Zurück zu BYL-12');
+		expect(lastViewLabel('/kalender/tickets/abc123def456ghi', keyOf)).toBe('Zurück zu BYL-12');
 	});
 });

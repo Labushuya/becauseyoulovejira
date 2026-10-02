@@ -30,6 +30,7 @@
 		returnFocus,
 		buttonTitle,
 		buttonKeyshortcuts,
+		buttonTabindex,
 		trigger = $bindable(),
 		children
 	}: {
@@ -57,6 +58,11 @@
 		buttonTitle?: string;
 		/** aria-keyshortcuts of the button. */
 		buttonKeyshortcuts?: string;
+		/**
+		 * -1 takes the button out of the order of Tab, e.g. in a cell of the calendar grid, which the
+		 * arrow keys reach (ADR-0053 §8); default: the order of the document.
+		 */
+		buttonTabindex?: -1;
 		/** The button, e.g. for the focus after an area the menu opened closes (plan AM). */
 		trigger?: HTMLButtonElement;
 		/** Content; `close` hides the popover and returns the focus to the button. */
@@ -232,6 +238,7 @@
 	aria-label={buttonLabel}
 	title={buttonTitle}
 	aria-keyshortcuts={buttonKeyshortcuts}
+	tabindex={buttonTabindex}
 	bind:this={trigger}
 	onclick={onbuttonclick}
 >

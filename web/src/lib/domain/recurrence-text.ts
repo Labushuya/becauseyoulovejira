@@ -31,7 +31,8 @@ export const WEEKDAY_SHORT: Readonly<Record<Weekday, string>> = Object.freeze({
 	SU: 'So'
 });
 
-const MONTH_NAMES = [
+/** Names of the months, January first (also for the calendar, ADR-0053). */
+export const MONTH_NAMES = [
 	'Januar',
 	'Februar',
 	'März',

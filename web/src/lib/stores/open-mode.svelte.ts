@@ -16,6 +16,7 @@ import {
 	type OpenMode
 } from '$lib/domain/open-mode';
 import { PANEL_EMBEDDED_QUERY } from '$lib/overlay/panel-host.svelte';
+import { findTicketHost } from '$lib/ticket-host';
 import { fullViewHref, fullViewPath, ticketHref, ticketPath } from '$lib/ticket-links';
 
 type ModeStorage = Pick<Storage, 'getItem' | 'setItem' | 'removeItem'>;
@@ -126,15 +127,18 @@ export function findTicketOpenMode(): TicketOpenModeStore | null {
 /**
  * Links to tickets for a component: in the remembered mode inside the (app) layout, the panel
  * outside it. Call during component initialisation; the functions read the mode when called, so a
- * template that uses them follows a new choice.
+ * template that uses them follows a new choice. `href` keeps the view of the component: below the
+ * calendar the panel and the full view open next to it (ADR-0053 §6, `TicketHost`), elsewhere next
+ * to the list. `path` (a link without the state of a view) always leads to the list.
  */
 export function ticketLinks(): {
 	href: (id: string, url: URL) => ResolvedPathname;
 	path: (id: string) => ResolvedPathname;
 } {
 	const store = findTicketOpenMode();
+	const host = findTicketHost();
 	return {
-		href: (id, url) => store?.href(id, url) ?? ticketHref(id, url),
+		href: (id, url) => (store?.effective === 'full' ? host.full(id, url) : host.panel(id, url)),
 		path: (id) => store?.path(id) ?? ticketPath(id)
 	};
 }
