@@ -1,6 +1,6 @@
 # Plan Robuste Skripte und Wartung: Fehlerkatalog, Abhängigkeiten, Tests unter Last, Test-Instanzen
 
-- **Stand:** umgesetzt: RS-2 (#216, Build und Abhängigkeiten), RS-3 (#219, Tests unter Last), RS-1 (Fehlerkatalog der Skripte, [ADR-0048](../adr/0048-fehlerkatalog-der-skripte.md)). RS-4 (System-Seite und Manifest-Pflege) folgt als eigener PR.
+- **Stand:** umgesetzt: RS-2 (#216, Build und Abhängigkeiten), RS-3 (#219, Tests unter Last), RS-1 (#220, Fehlerkatalog der Skripte, [ADR-0048](../adr/0048-fehlerkatalog-der-skripte.md)), RS-4 (Test-Instanzen eingeklappt, Manifest-Pflege). Alle vier Pakete umgesetzt.
 - **Grundlage:**
   - [ADR-0039](../adr/0039-betriebsskripte.md) (Steuerskript, Exit-Codes), [ADR-0040](../adr/0040-veroeffentlichen-ohne-unterbrechung.md) (Build, Nachtrag „Build und Abhängigkeiten“), [ADR-0043](../adr/0043-system-seite.md) (Seite „System“, andere Kopien), [ADR-0046](../adr/0046-sicherung-pruefung-wiederherstellen.md) (Sicherung), [ADR-0035](../adr/0035-start-einstieg-und-offene-tabs.md) (Start, Hinweise beim Öffnen)
   - [Plan Betriebsskripte](betriebsskripte.md), [Plan Sicherung](sicherung.md), [Plan Test-Härtung](test-haertung.md)
@@ -20,7 +20,7 @@
 | RS-2 | `build.ps1` installiert neu, wenn sich ein Lockfile geändert hat (Prüfsumme je Ordner in `node_modules`), die Hilfsprogramm-Builds ebenso; Install-Skript von esbuild über `allowScripts` freigegeben; `npm audit` und Dependabot geprüft. Nachtrag ADR-0040 | BYL-E6-975 bis BYL-E6-977 |
 | RS-3 | Tests robust gegen Last: Logs von PocketBase erst nach dem Schreiben lesen (`tests/support/logs.mjs`), zentrale, gemessene und skalierbare Zeitgrenzen (`tests/support/timing.mjs`), die Dateien mit Prozessen zuletzt und höchstens zu viert, Bereitschaft abfragen statt fester Pause; Nebenbefund CRLF im Text eines Eingangseintrags | BYL-E6-978 bis BYL-E6-982 |
 | RS-1 | Fehlerkatalog aller Skripte (`app\byl-problems.ps1`, 112 Einträge): einheitliches Format mit Ursache, Schritten und Befehl mit echten Pfaden, Angebot zum Selbstlösen, offenes Fenster bei Fehlern (`byl-pruefen.bat`), Fehler im Hintergrund gemerkt und gezeigt (nächster Lauf, Seite „System“), `-Json` mit `code` und `remedy`, Hilfe „Betrieb“ als FAQ. [ADR-0048](../adr/0048-fehlerkatalog-der-skripte.md), Nachträge ADR-0039, ADR-0040, ADR-0043 | BYL-E6-983 bis BYL-E6-992 |
-| RS-4 | Seite „System“ und `status`: Test-Instanzen aus Entwicklung und Tests eingeklappt; Test-Manifest: Paket für den Prüfmodus (#204), Text von BYL-X-004, `meta.commit`. Nachtrag ADR-0043 | folgt |
+| RS-4 | Seite „System“, `status` und `doctor`: Test-Instanzen aus Entwicklung und Tests (`…\byl-worktree…\`, `…\.tmp\`, dieses Programm mit anderem Datenordner) eingeklappt bzw. in einer Zeile; Test-Manifest: Paket für den Prüfmodus (#204) mit manuellem Fall, Text von BYL-X-004, `meta.commit`. Nachtrag ADR-0043 | BYL-E6-993 bis BYL-E6-996 |
 
 ## 3. RS-2: Build und Abhängigkeiten
 
@@ -138,7 +138,21 @@ X Problem:   byl-control.ps1 konnte nicht ausgefuehrt werden.
 - **Fund bei der Umsetzung:** `byl-pruefen.bat` setzte den Ordner zuerst direkt in `echo` ein; ein `&` im Pfad (etwa „Max & Anna“) hätte cmd den Rest als Befehl ausführen lassen. Der Ordner wird jetzt nur verzögert erweitert (`!BYL_DIR!`), `'` für PowerShell verdoppelt; der Integrationstest läuft in einem Ordner mit `&` und `'`.
 - **Tests:** statisch, Unit (Windows PowerShell) und Integration gegen Wegwerf-Kopien unter `.tmp` auf Zufallsports (BYL-E6-983 bis BYL-E6-989), drei manuelle Fälle (BYL-E6-990 bis BYL-E6-992).
 
-## 6. Entscheidungen und Befunde
+## 6. RS-4: Test-Instanzen und Manifest-Pflege
+
+### Test-Instanzen eingeklappt
+
+- **Befund:** Während Builds und Tests (Worktrees der Agenten, Wegwerf-Kopien unter `.tmp`, der Harness mit dem Programm dieses Ordners) listeten die Seite „System“, `status` und `doctor` jeden dieser Server als „andere Kopie“; eine echte zweite Installation ging darin unter, und der Start meldete jede einzeln.
+- **Umsetzung:** `Select-OtherServerProcess` nennt je Server `TestInstance`: dieses Programm mit anderem Datenordner (`SameFolder`) oder ein Programm unter einem Ordner `byl-worktree…` oder `.tmp` (`Test-DevelopmentPath`, nur ganze Ordnernamen, Groß- und Kleinschreibung egal). `status` zeigt echte Kopien einzeln und Test-Instanzen in einer Zeile „Entwicklung: N Test-Instanzen (Entwicklung) auf Port …“ (`Get-TestInstanceSummary`), `doctor` ebenso als eine Prüfung, der Start erwähnt sie nicht. `status -Json` hat `testInstance`; die Route reicht es weiter (ein Skript von vorher mit nur `sameFolder` zählt als Test-Instanz), die Seite zeigt echte Kopien sichtbar und Test-Instanzen zugeklappt als „N Test-Instanzen (Entwicklung)“.
+- **Grenze:** Erkannt wird am Pfad. Eine Installation des Nutzers in einem Ordner `.tmp` oder `byl-worktree…` erschiene als Test-Instanz; sie bleibt in der Liste sichtbar und unberührt.
+
+### Manifest-Pflege
+
+- **Prüfmodus (#204):** Das Paket fehlte in `pakete` (der PR hatte bewusst keine Daten geändert, um parallele Pakete nicht zu stören). Nachgetragen als „manifest-pruefmodus“ mit dem manuellen Fall BYL-E6-996 (Bedienung in echten Browsern, die #204 nicht selbst prüfen konnte); die automatische Prüfung bleibt BYL-X-004.
+- **BYL-X-004:** Die Erwartung nennt jetzt auch den Prüfmodus (Übernahme v1 → v2, veraltete Eingaben, Text von „Ergebnis kopieren“, Filter, Zeitstempel, Bedienung in jsdom), `bestaetigt` und vierstellige IDs.
+- **`meta.commit`** auf den Stand von `main` nach RS-1.
+
+## 7. Entscheidungen und Befunde
 
 | Datum | Paket | Befund bzw. Entscheidung |
 |---|---|---|
@@ -152,4 +166,5 @@ X Problem:   byl-control.ps1 konnte nicht ausgefuehrt werden.
 | 2026-10-02 | RS-1 | Fehlerzeichen `×` (U+00D7) statt U+2716: Das schwere Kreuz fehlt in den Schriften der Konsole von Windows 10 (Consolas, Lucida Console, Courier New, geprüft mit `GlyphTypeface`); `.bat` und `.vbs` bleiben ASCII mit `X`. |
 | 2026-10-02 | RS-1 | `-Json`: ein Fehler antwortet flach mit `code` und `remedy` (Schritte und Befehl) neben Problem, Ursache und Log; die Antworten der Sicherung tragen denselben Eintrag als `report`, weil ihr Feld `problem` seit ADR-0046 einen Kurzgrund nennt. |
 | 2026-10-02 | RS-1 | Die Seite „System“ zeigt einen Fehler im Hintergrund als Warnung ohne eigenen Knopf zum Ausblenden: Er verschwindet mit dem nächsten Lauf ohne Fenster, der gelingt, oder dem nächsten Lauf im Fenster; ein Knopf bräuchte einen weiteren Befehl in der Whitelist. |
+| 2026-10-02 | RS-4 | Test-Instanzen am Pfad erkennen (`byl-worktree…`, `.tmp`, dieses Programm mit anderem Datenordner), im Skript statt in der Seite: `status` und `doctor` brauchen dieselbe Einteilung, und die Seite bekommt sie als `testInstance` fertig. Zugeklappt statt ausgeblendet: Sie laufen wirklich und bleiben nachprüfbar. |
 | 2026-10-02 | RS-3 | Ziel ist ein grüner Lauf neben einem zweiten Build (8 Threads, belegt dreimal). Bei voller Last daneben (16 Threads auf 16 Prozessoren) hilft der Faktor `BECAUSEYOULOVEJIRA_TEST_TIME_SCALE=3`; was dann noch scheitert, sind Grenzen des Produkts (14 s des Beendens) und einzelne Abfragen in Fällen. Diese bleiben bewusst so: Eine Grenze des Produkts im Test zu lockern hieße, ein langsames Beenden nicht mehr zu bemerken. Wer so parallel arbeitet, startet die Tests mit dem Faktor oder nacheinander. |
