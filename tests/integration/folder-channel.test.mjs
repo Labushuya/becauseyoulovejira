@@ -42,10 +42,21 @@ let instance;
 let superuser;
 let owner;
 let other;
-// Times of change of the files: a month ago, a minute apart, so "now" of a run is always later.
-let clock = Date.now() - 30 * 24 * 3600 * 1000;
+// Times of change of the files: a month ago, a minute apart, so "now" of a run is always later; in
+// whole seconds, so every file system keeps them exactly.
+let clock = Math.floor((Date.now() - 30 * 24 * 3600 * 1000) / 1000) * 1000;
 
 const sha256 = (content) => createHash('sha256').update(content).digest('hex');
+
+/** The time of change of a file in whole milliseconds, cut off like the server (Go's UnixMilli). */
+const mtimeOf = (path) => Number(statSync(path, { bigint: true }).mtimeNs / 1_000_000n);
+
+/**
+ * Log entries of the app itself: its messages and its own routes. The requests of this test to the
+ * Record API carry paths in their filter, which PocketBase logs with the address.
+ */
+const appLogs = (logs) =>
+	logs.filter((entry) => entry.data?.type !== 'request' || String(entry.data?.url ?? '').startsWith('/api/byl'));
 
 /** A project code of capital letters only. */
 const code = () => [...randomBytes(5)].map((byte) => 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'[byte % 26]).join('');
@@ -213,7 +224,7 @@ describe('first run, new files and changes', () => {
 		expect(second).toMatchObject({ kind: 'change', title: 'Datei geändert: angebot.pdf', watch: { kind: 'file', state: 'current' } });
 		expect(second.source_meta.folder).toMatchObject({ action: 'changed', version: `sha256:${sha256('Fassung 2')}` });
 		expect(first.watch).toMatchObject({ kind: 'file', state: 'changed' });
-		expect(first.watch.since).toBe(new Date(statSync(path).mtimeMs).toISOString());
+		expect(first.watch.since).toBe(new Date(mtimeOf(path)).toISOString());
 
 		// Only the time changes: same content, no entry, no status change.
 		clock += 61_000;
@@ -367,7 +378,7 @@ describe('filters, switches and hashes', () => {
 		const [mediumItem] = await itemByRef(owner, mediumPath);
 		expect(mediumItem.source_meta.folder.version).toBe(`sha256:${sha256(medium)}`);
 		const [largeItem] = await itemByRef(owner, largePath);
-		expect(largeItem.source_meta.folder.version).toBe(`size:${large.length}:${statSync(largePath).mtimeMs}`);
+		expect(largeItem.source_meta.folder.version).toBe(`size:${large.length}:${mtimeOf(largePath)}`);
 		expect(largeItem.body).toContain('- Größe: 100 KB (102.400 Byte)');
 	});
 });
@@ -558,9 +569,11 @@ describe('cron, read only and logs', () => {
 	});
 
 	it('writes no path of a folder into the log', async () => {
-		const logs = await writtenLogs(superuser);
+		const logs = appLogs(await writtenLogs(superuser));
+		expect(logs.some((entry) => String(entry.data?.url ?? '').startsWith('/api/byl/connections/'))).toBe(true);
 		const text = JSON.stringify(logs);
 		expect(text).not.toContain(base);
 		expect(text).not.toContain(base.replace(/\\/g, '\\\\'));
+		expect(text).not.toContain(encodeURIComponent(base));
 	});
 });

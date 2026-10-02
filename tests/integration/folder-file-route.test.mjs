@@ -306,7 +306,12 @@ describe('only the owner, from this machine, from the app itself', () => {
 		for (const entry of refusals) {
 			expect(Object.keys(entry.data).sort()).toEqual(['item', 'reason', 'user']);
 		}
-		const text = JSON.stringify(logs);
+		// Only the app itself: the requests of this test to the Record API carry paths in their filter,
+		// which PocketBase logs with the address.
+		const own = logs.filter(
+			(entry) => entry.data?.type !== 'request' || String(entry.data?.url ?? '').startsWith('/api/byl')
+		);
+		const text = JSON.stringify(own);
 		expect(text).not.toContain(base);
 		expect(text).not.toContain(base.replace(/\\/g, '\\\\'));
 		expect(text).not.toContain('geheim');
