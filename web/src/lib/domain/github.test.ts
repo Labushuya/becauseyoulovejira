@@ -588,9 +588,10 @@ describe('the repositories of the token and "Alle meine Repositorys" (addendum o
 		expect(autoChangeText({ ...auto, added: [], removed: [] })).toBeNull();
 		// A server of before the addendum names no option, and refuses the key as unknown.
 		expect(githubDetailsOf({}).auto).toBeNull();
-		expect(isAutoUnknown(GITHUB_MESSAGES.validation_github_settings, true)).toBe(true);
-		expect(isAutoUnknown(GITHUB_MESSAGES.validation_github_settings, false)).toBe(false);
-		expect(isAutoUnknown(GITHUB_MESSAGES.validation_github_paths, true)).toBe(false);
+		const unknown = GITHUB_MESSAGES.validation_github_settings ?? null;
+		expect(isAutoUnknown(unknown, true)).toBe(true);
+		expect(isAutoUnknown(unknown, false)).toBe(false);
+		expect(isAutoUnknown(GITHUB_MESSAGES.validation_github_paths ?? null, true)).toBe(false);
 		expect(isAutoUnknown(null, true)).toBe(false);
 	});
 });
