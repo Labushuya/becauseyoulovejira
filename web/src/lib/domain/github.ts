@@ -853,6 +853,15 @@ export const AUTO_HINT =
 export const AUTO_TOKEN_NEEDED =
 	'Braucht ein Token: Ohne Token nennt GitHub keine Liste deiner Repositorys.';
 
+/**
+ * Whether a refusal of the settings with "Alle meine Repositorys" comes from hooks of before the
+ * addendum (they know no key `auto` and answer validation_github_settings); the interface then
+ * names the restart instead of "Unbekannte Einstellung".
+ */
+export function isAutoUnknown(error: string | null, auto: boolean): boolean {
+	return auto && error === GITHUB_MESSAGES.validation_github_settings;
+}
+
 const ACTION_WORDS: Readonly<Record<GitHubChange['action'], string>> = Object.freeze({
 	changed: 'geändert',
 	added: 'neu',

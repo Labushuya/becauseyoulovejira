@@ -8,6 +8,7 @@
 		addDraftErrors,
 		emptyRepoDraft,
 		eventsText,
+		isAutoUnknown,
 		repoKey,
 		reposFromAddDraft,
 		withRepos,
@@ -17,7 +18,7 @@
 		type GitHubSettings,
 		type RepoDraftField
 	} from '$lib/domain/github';
-	import type { GitHubStore } from '$lib/stores/github.svelte';
+	import { GITHUB_AUTO_UNAVAILABLE_MESSAGE, type GitHubStore } from '$lib/stores/github.svelte';
 	import ErrorIcon from '../ErrorIcon.svelte';
 	import ConfirmDialog from '../overlay/ConfirmDialog.svelte';
 	import GitHubRepoFields from './GitHubRepoFields.svelte';
@@ -115,6 +116,7 @@
 		} finally {
 			saving = false;
 		}
+		if (isAutoUnknown(error, on)) error = GITHUB_AUTO_UNAVAILABLE_MESSAGE;
 		if (error !== null) input.checked = settings.auto;
 	}
 

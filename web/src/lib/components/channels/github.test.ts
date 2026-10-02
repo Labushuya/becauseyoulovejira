@@ -620,6 +620,47 @@ describe('GitHub assistant', () => {
 			region.getByText('Kein Repository eingetragen; die App beobachtet alle deine eigenen.')
 		).toBeTruthy();
 	});
+
+	it('names the restart when the hooks of before refuse "Alle meine Repositorys"', async () => {
+		const connections = connectionsOf(null);
+		connections.data.create.mockRejectedValueOnce(
+			new DataError('validation', {
+				status: 400,
+				fields: {
+					settings: {
+						code: 'validation_github_settings',
+						message: 'Unbekannte Einstellung des GitHub-Kanals.'
+					}
+				}
+			})
+		);
+		await connections.store.load();
+		render(ChannelsViewHarness, {
+			props: {
+				connections: connections.store,
+				github: githubStoreOf(),
+				setup: { kind: 'github', connectionId: null },
+				onchange: vi.fn()
+			}
+		});
+		const dialog = within(await screen.findByRole('dialog', { name: 'GitHub einrichten' }));
+		for (let step = 0; step < 3; step += 1) {
+			await fireEvent.click(dialog.getByRole('button', { name: 'Weiter' }));
+		}
+		await fireEvent.input(dialog.getByLabelText('Bezeichnung (Pflichtfeld)'), {
+			target: { value: 'Meine' }
+		});
+		await fireEvent.click(dialog.getByLabelText(/^Alle meine Repositorys beobachten/));
+		await fireEvent.click(dialog.getByRole('button', { name: 'Verbindung anlegen' }));
+		await vi.waitFor(() =>
+			expect(
+				dialog.getByText(
+					/^„Alle meine Repositorys beobachten“ ist nach dem nächsten Neustart verfügbar/
+				)
+			).toBeTruthy()
+		);
+		expect(dialog.queryByText('Unbekannte Einstellung des GitHub-Kanals.')).toBeNull();
+	});
 });
 
 describe('repositories of the token and "Alle meine Repositorys" (addendum of 2026-10-02)', () => {

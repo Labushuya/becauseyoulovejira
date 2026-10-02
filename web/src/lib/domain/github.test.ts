@@ -10,6 +10,7 @@ import {
 	EVENTS_MESSAGE,
 	GITHUB_DEFAULT_PATHS,
 	GITHUB_DOCS_PATH,
+	GITHUB_MESSAGES,
 	PATHS_EMPTY_MESSAGE,
 	PATHS_MAX_MESSAGE,
 	REPO_DUPLICATE_MESSAGE,
@@ -34,6 +35,7 @@ import {
 	githubSettingsOf,
 	githubSettingsValue,
 	intervalText,
+	isAutoUnknown,
 	isPattern,
 	lastChangeText,
 	openPullsText,
@@ -584,7 +586,11 @@ describe('the repositories of the token and "Alle meine Repositorys" (addendum o
 			'Die Liste deiner Repositorys holt der nächste Abruf.'
 		);
 		expect(autoChangeText({ ...auto, added: [], removed: [] })).toBeNull();
-		// A server of before the addendum names no option.
+		// A server of before the addendum names no option, and refuses the key as unknown.
 		expect(githubDetailsOf({}).auto).toBeNull();
+		expect(isAutoUnknown(GITHUB_MESSAGES.validation_github_settings, true)).toBe(true);
+		expect(isAutoUnknown(GITHUB_MESSAGES.validation_github_settings, false)).toBe(false);
+		expect(isAutoUnknown(GITHUB_MESSAGES.validation_github_paths, true)).toBe(false);
+		expect(isAutoUnknown(null, true)).toBe(false);
 	});
 });

@@ -40,6 +40,11 @@ export const GITHUB_UNAVAILABLE_MESSAGE = restartNeeded('Die Details von GitHub 
 /** Shown while the server does not know the list of the token yet (before the restart). */
 export const GITHUB_LIST_UNAVAILABLE_MESSAGE = restartNeeded('Die Liste deiner Repositorys ist');
 
+/** Shown when hooks of before the restart refuse "Alle meine Repositorys beobachten". */
+export const GITHUB_AUTO_UNAVAILABLE_MESSAGE = restartNeeded(
+	'„Alle meine Repositorys beobachten“ ist'
+);
+
 /** The list of the repositories of the token: loading, loaded, or why not. */
 export type GitHubRepoListState =
 	| { kind: 'loading' }

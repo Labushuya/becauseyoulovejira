@@ -23,6 +23,7 @@
 		eventsText,
 		filesText,
 		intervalText,
+		isAutoUnknown,
 		lastChangeText,
 		openPullsText,
 		rateText,
@@ -40,7 +41,7 @@
 	import { connectionAnchor } from '$lib/domain/sync-all';
 	import type { ProjectRef } from '$lib/domain/ticket';
 	import { helpHref } from '$lib/settings-sections';
-	import type { GitHubStore } from '$lib/stores/github.svelte';
+	import { GITHUB_AUTO_UNAVAILABLE_MESSAGE, type GitHubStore } from '$lib/stores/github.svelte';
 	import ChipList from '../ChipList.svelte';
 	import ErrorIcon from '../ErrorIcon.svelte';
 	import ExternalLink from '../guidance/ExternalLink.svelte';
@@ -235,6 +236,7 @@
 				: `„${connection.label}“ beobachtet nur noch die eingetragenen Repositorys.`
 		);
 		savingAuto = false;
+		if (isAutoUnknown(actionError, on)) actionError = GITHUB_AUTO_UNAVAILABLE_MESSAGE;
 		// A refusal leaves the switch where the saved value is.
 		if (actionError !== null) input.checked = settings.auto;
 		else if (on && health.action === 'run') onrun();

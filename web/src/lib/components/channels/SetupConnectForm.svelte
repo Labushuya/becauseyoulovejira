@@ -22,6 +22,7 @@
 		AUTO_HINT,
 		EMPTY_GITHUB_SETTINGS,
 		emptyRepoDraft,
+		isAutoUnknown,
 		repoDraftErrors,
 		repoFromDraft,
 		type GitHubRepoDraft,
@@ -29,6 +30,7 @@
 	} from '$lib/domain/github';
 	import { DEFAULT_HOST_PLATFORM } from '$lib/domain/host-platform';
 	import type { ConnectionsStore } from '$lib/stores/connections.svelte';
+	import { GITHUB_AUTO_UNAVAILABLE_MESSAGE } from '$lib/stores/github.svelte';
 	import { findHostStore } from '$lib/stores/host.svelte';
 	import ErrorIcon from '../ErrorIcon.svelte';
 	import FolderFields from './FolderFields.svelte';
@@ -148,8 +150,10 @@
 		}
 		serverFields = { ...result.fields };
 		// GitHub and folders: a refused repository or folder (a path that is not there, patterns)
-		// comes as an error of the settings.
+		// comes as an error of the settings; hooks of before the restart know no "Alle meine
+		// Repositorys".
 		formMessage = result.message ?? (github || folders ? (result.fields.settings ?? null) : null);
+		if (github && isAutoUnknown(formMessage, auto)) formMessage = GITHUB_AUTO_UNAVAILABLE_MESSAGE;
 	}
 </script>
 
