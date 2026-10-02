@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { tick } from 'svelte';
 	import { ticketCount, type BulkAction } from '$lib/domain/bulk';
+	import { COLOR_LABELS, PROJECT_COLORS } from '$lib/domain/colors';
 	import { PRIORITY_LABELS, STATUS_LABELS } from '$lib/domain/labels';
 	import type { SourceHandling } from '$lib/domain/sources';
 	import { PRIORITIES, STATUSES } from '$lib/domain/status';
@@ -9,6 +10,7 @@
 	import type { CatalogStore } from '$lib/stores/catalog.svelte';
 	import BulkDueDialog from './BulkDueDialog.svelte';
 	import BulkTagsDialog from './BulkTagsDialog.svelte';
+	import ColorMark from './ColorMark.svelte';
 	import ErrorIcon from './ErrorIcon.svelte';
 	import SectionMessage from './guidance/SectionMessage.svelte';
 	import ConfirmDialog from './overlay/ConfirmDialog.svelte';
@@ -21,11 +23,12 @@
 	import { findTrashStore } from '$lib/stores/trash.svelte';
 
 	// Bar of the bulk actions (plan BI-2, ADR-0036 §3): it appears with at least one chosen row,
-	// names their number and offers "Fälligkeit …", "Priorität", "Status", "Projekt …", "Tags …",
-	// "Erledigen", "In den Papierkorb …" (before AM-3 "Löschen …", now named like the menu "•••"
-	// and the question, plan aktionsmenues) and "Auswahl aufheben". The glass bar itself is
-	// SelectionBar, shared with the trash (ADR-0037). Priority and status are menus that
-	// apply at once; the rest asks in a modal. "Erledigen" asks only when chosen tickets have open
+	// names their number and offers "Fälligkeit …", "Priorität", "Status", "Projekt …", since
+	// ADR-0052 "Farbe" (after the migration), "Tags …", "Erledigen", "In den Papierkorb …" (before
+	// AM-3 "Löschen …", now named like the menu "•••" and the question, plan aktionsmenues) and
+	// "Auswahl aufheben". The glass bar itself is SelectionBar, shared with the trash (ADR-0037).
+	// Priority, status and color are menus that apply at once ("Wie Projekt" removes an own color);
+	// the rest asks in a modal. "Erledigen" asks only when chosen tickets have open
 	// blocking sub-tasks (ADR-0033 section 2), "In den Papierkorb …" always, with the choice for the
 	// sources (ADR-0031, addendum B) and the note on the trash (ADR-0037). While an action runs, a
 	// progress bar replaces the buttons; the result lists every ticket that failed (as an error)
@@ -180,6 +183,36 @@
 		>
 			Projekt …
 		</button>
+		{#if catalog.colorsReady}
+			<Popover kind="menu" label="Farbe setzen" buttonClass="button-secondary">
+				{#snippet button()}Farbe{/snippet}
+				{#snippet children({ close })}
+					{#each [null, ...PROJECT_COLORS] as value (value ?? '')}
+						<button
+							class="item"
+							type="button"
+							role="menuitem"
+							tabindex="-1"
+							onclick={() => {
+								close();
+								void run({ kind: 'color', value });
+							}}
+						>
+							{#if value === null}
+								Wie Projekt
+							{:else}
+								<span class="choice-color"
+									><ColorMark
+										shown={{ color: value, origin: 'own', from: null }}
+										named={false}
+									/></span
+								>{COLOR_LABELS[value]}
+							{/if}
+						</button>
+					{/each}
+				{/snippet}
+			</Popover>
+		{/if}
 		<button class="button-secondary" type="button" onclick={() => (dialog = 'tags')}>
 			Tags …
 		</button>
@@ -346,5 +379,10 @@
 		gap: 0.5rem;
 		align-items: center;
 		font-size: var(--font-size-body);
+	}
+
+	/* The dot before the name of a color in the menu "Farbe" (ADR-0052). */
+	.choice-color {
+		margin-right: 0.5rem;
 	}
 </style>

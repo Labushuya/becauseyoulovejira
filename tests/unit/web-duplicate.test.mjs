@@ -18,7 +18,9 @@ const take = {
 	due: false,
 	parent: false,
 	subtasks: true,
-	comments: false
+	comments: false,
+	// The own color (ADR-0052).
+	color: true
 };
 
 describe('texts of the codes of "Ticket duplizieren" (web/src/lib/domain/duplicate.ts)', () => {

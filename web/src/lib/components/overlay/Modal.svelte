@@ -29,6 +29,7 @@
 		discardText = 'Der nicht gespeicherte Text geht verloren.',
 		onclose,
 		onbusyescape,
+		titleLead,
 		headerActions,
 		footer,
 		children
@@ -54,6 +55,11 @@
 		 * entry). Without it Escape does nothing while busy.
 		 */
 		onbusyescape?: () => void;
+		/**
+		 * A mark before the title, outside of the name of the dialog (the color of the ticket in the
+		 * full view, ADR-0052).
+		 */
+		titleLead?: Snippet;
 		headerActions?: Snippet;
 		/** Buttons of the footer; `close` is "Abbrechen"/"Schließen" under the closing rules. */
 		footer?: Snippet<[{ close: () => void }]>;
@@ -235,7 +241,14 @@
 	{#if open}
 		<div class="frame">
 			<header class="head">
-				<h2 id={titleId}>{title}</h2>
+				{#if titleLead}
+					<div class="title-line">
+						{@render titleLead()}
+						<h2 id={titleId}>{title}</h2>
+					</div>
+				{:else}
+					<h2 id={titleId}>{title}</h2>
+				{/if}
 				<div class="head-actions">
 					{@render headerActions?.()}
 					<button
@@ -367,6 +380,13 @@
 		font-size: 1rem;
 		font-weight: 600;
 		overflow-wrap: anywhere;
+	}
+
+	.title-line {
+		display: flex;
+		gap: 0.5rem;
+		align-items: center;
+		min-width: 0;
 	}
 
 	.head-actions {

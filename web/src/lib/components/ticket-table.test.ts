@@ -749,6 +749,24 @@ describe('ticket table: grouping (E3 plan, package 13)', () => {
 		expect(screen.getByRole('rowgroup', { name: 'Ohne Projekt, 1 Ticket' })).toBeTruthy();
 	});
 
+	it('shows the color of a project before the name of its group and as stripe of its rows (ADR-0052)', async () => {
+		const colored: Project = { ...HOUSE, color: 'blau' };
+		const items = [ticket({ projectId: HOUSE.id, project: colored }), ticket()];
+		await showTable(fakeData(items), '/?status=open&gruppe=projekt', { projects: [colored] });
+		await vi.advanceTimersByTimeAsync(0);
+
+		// The name of the group stays the name of the project; the dot is named by it.
+		const group = screen.getByRole('rowgroup', { name: 'Haushalt, 1 Ticket' });
+		const mark = group.querySelector('.group-head .color-mark');
+		expect(mark?.getAttribute('title')).toBe('Farbe Blau');
+		expect(mark?.getAttribute('aria-hidden')).toBe('true');
+		expect(group.querySelector('tr.row .color-mark.stripe')?.getAttribute('title')).toBe(
+			'Farbe Blau, vom Projekt „Haushalt“'
+		);
+		const without = screen.getByRole('rowgroup', { name: 'Ohne Projekt, 1 Ticket' });
+		expect(without.querySelector('.color-mark')).toBeNull();
+	});
+
 	it('follows a change of the URL and leaves the section "Erledigt" ungrouped', async () => {
 		const open = ticket({ due: '2026-09-20' });
 		const later = ticket();

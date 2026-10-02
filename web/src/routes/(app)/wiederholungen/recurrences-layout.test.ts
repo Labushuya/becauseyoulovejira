@@ -203,12 +203,14 @@ describe('route /wiederholungen', () => {
 		});
 		await fireEvent.click(within(panel).getByRole('button', { name: 'Speichern' }));
 		await vi.waitFor(() => expect(flagTitles(flags)).toEqual(['Regel gespeichert.']));
+		// The color of the template goes along once the server knows it (ADR-0052).
 		expect(data.updateRule).toHaveBeenCalledWith('rule00000000001', {
 			title: 'Müll (gelb)',
 			description: '',
 			project: null,
 			tags: [],
-			priority: 'medium'
+			priority: 'medium',
+			color: null
 		});
 
 		await fireEvent.click(within(panel).getByRole('button', { name: 'Pausieren' }));

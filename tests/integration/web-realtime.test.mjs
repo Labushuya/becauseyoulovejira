@@ -295,19 +295,53 @@ describe('web data layer: realtime', () => {
 		await delay(QUIET_PERIOD_MS);
 
 		expect(created.record).toEqual(project);
-		// Since ADR-0034 with the stored parent (null for a top-level project).
+		// Since ADR-0034 with the stored parent (null for a top-level project), since ADR-0052 with
+		// the color (null for none).
 		expect(Object.keys(created.record).sort()).toEqual([
 			'archived',
 			'code',
+			'color',
 			'id',
 			'name',
 			'parentId',
 			'updated'
 		]);
 		expect(created.record.parentId).toBeNull();
+		expect(created.record.color).toBeNull();
 		expect(renamed.record).toMatchObject({ id: project.id, name: 'Dachboden', code });
 		expect(archived.record.updated >= renamed.record.updated).toBe(true);
 		expect(other.changes.filter((change) => idOf(change) === project.id)).toEqual([]);
+	});
+
+	it('delivers a new color of a project and of a ticket to every tab (ADR-0052)', async () => {
+		const projectEvents = collector();
+		const ticketEvents = collector();
+		await subscribe(subscribeProjects(first, projectEvents.onChange));
+		await subscribe(subscribeTickets(first, ticketEvents.onChange));
+		const project = await createProject(second, { name: 'Garage', code: uniqueCode() });
+		const ticket = await createTicket(second, draft({ project: project.id }));
+
+		await updateProject(second, project.id, { color: 'tuerkis' });
+		const colored = await projectEvents.waitFor(
+			(change) => change.action === 'update' && change.record.color === 'tuerkis',
+			'project color'
+		);
+		await updateTicket(second, ticket.id, { color: 'senf' });
+		const own = await ticketEvents.waitFor(
+			(change) => change.action === 'update' && change.record.color === 'senf',
+			'ticket color'
+		);
+		await updateTicket(second, ticket.id, { color: null });
+		const back = await ticketEvents.waitFor(
+			(change) =>
+				change.action === 'update' && change.record.id === ticket.id && change.record.color === null,
+			'ticket color removed'
+		);
+
+		expect(colored.record).toMatchObject({ id: project.id, color: 'tuerkis' });
+		expect(own.record).toMatchObject({ id: ticket.id, color: 'senf' });
+		// The expanded project carries its color as well (a fallback while the catalog loads).
+		expect(back.record.project).toMatchObject({ id: project.id, color: 'tuerkis' });
 	});
 
 	it('delivers tag changes of a second client, none to a foreign user', async () => {

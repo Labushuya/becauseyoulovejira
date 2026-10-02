@@ -41,6 +41,7 @@ describe('the question', () => {
 			take: { ...DEFAULT_TAKE },
 			source: 'none'
 		});
+		// The own color is a field of the ticket as well (ADR-0052).
 		expect(DEFAULT_TAKE).toEqual({
 			description: true,
 			priority: true,
@@ -48,7 +49,8 @@ describe('the question', () => {
 			due: true,
 			parent: true,
 			subtasks: false,
-			comments: false
+			comments: false,
+			color: true
 		});
 		// An archived project takes no tickets: none at first.
 		expect(initialDuplicateForm({ title: 'Rasen', projectId: 'old' }, ['p1']).project).toBe('');

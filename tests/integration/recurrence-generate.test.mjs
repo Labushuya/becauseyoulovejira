@@ -140,6 +140,18 @@ describe('generation by the clock (ADR-0022 sections 2 and 3)', () => {
 		expect(await instancesOf(rule.id)).toHaveLength(1);
 	});
 
+	it('gives the new ticket the color of the template, none without one (ADR-0052)', async () => {
+		const colored = await createRule({ anchor: '2036-05-01', color: 'senf' });
+		const plain = await createRule({ anchor: '2036-05-01' });
+		expect((await run('2036-05-01T12:00:00Z')).created).toBe(2);
+		const [withColor] = await instancesOf(colored.id);
+		const [without] = await instancesOf(plain.id);
+		expect(withColor.color).toBe('senf');
+		expect(without.color).toBe('');
+		// The color of the template is no change of the ticket: only "created" in its history.
+		expect((await historyOf(withColor.id)).map((entry) => entry.field)).toEqual(['created']);
+	});
+
 	it('creates exactly one ticket with the latest missed date after 3 weeks and after 2 years', async () => {
 		const params = { mode: 'calendar', freq: 'weekly', weekdays: ['MO'], anchor: '2031-01-06' };
 		const weeks = await createRule(params);

@@ -13,6 +13,7 @@
 	let {
 		title,
 		onclose,
+		lead,
 		actions,
 		main,
 		side
@@ -20,6 +21,8 @@
 		/** Title of the dialog, e.g. "TASK-3 · Steuer abgeben". */
 		title: string;
 		onclose: () => void;
+		/** A mark before the title, e.g. the color of the ticket (ADR-0052). */
+		lead?: Snippet;
 		/** Actions of the header before the ×, e.g. "Löschen …". */
 		actions?: Snippet;
 		/** Left column: title, description, comments and history. */
@@ -29,7 +32,7 @@
 	} = $props();
 </script>
 
-<Modal open size="xl" {title} headerActions={actions} onclose={() => onclose()}>
+<Modal open size="xl" {title} titleLead={lead} headerActions={actions} onclose={() => onclose()}>
 	<div class="full-view">
 		<div class="main">
 			{@render main()}

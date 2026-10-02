@@ -216,6 +216,46 @@ describe('bar of the bulk actions (plan BI-2)', () => {
 		]);
 	});
 
+	it('sets or removes the own color of the chosen rows from the menu "Farbe" (ADR-0052)', async () => {
+		const { run } = await showTable([ticket(1), ticket(2)]);
+		await choose('TASK-2');
+
+		const colorMenu = () => {
+			const button = screen.getByRole('button', { name: 'Farbe' });
+			return {
+				button,
+				menu: within(document.getElementById(button.getAttribute('aria-controls') ?? '')!)
+			};
+		};
+		const { button, menu } = colorMenu();
+		await fireEvent.click(button);
+		const entries = menu
+			.getAllByRole('menuitem', { hidden: true })
+			.map((entry) => entry.textContent?.trim());
+		expect(entries).toEqual([
+			'Wie Projekt',
+			'Violett',
+			'Indigo',
+			'Blau',
+			'Himmelblau',
+			'Türkis',
+			'Grün',
+			'Oliv',
+			'Senf',
+			'Braun',
+			'Grau'
+		]);
+		await fireEvent.click(menu.getByRole('menuitem', { hidden: true, name: 'Türkis' }));
+		expect(run).toHaveBeenLastCalledWith({ kind: 'color', value: 'tuerkis' }, ['t00000000000002']);
+
+		// After the run the bar offers its actions again; "Wie Projekt" removes the own color.
+		await vi.waitFor(() => expect(screen.getByRole('button', { name: 'Farbe' })).toBeTruthy());
+		const again = colorMenu();
+		await fireEvent.click(again.button);
+		await fireEvent.click(again.menu.getByRole('menuitem', { hidden: true, name: 'Wie Projekt' }));
+		expect(run).toHaveBeenLastCalledWith({ kind: 'color', value: null }, ['t00000000000002']);
+	});
+
 	it('asks for a date in "Fälligkeit …" and keeps a wrong number at its field', async () => {
 		const { run } = await showTable([ticket(1)]);
 		await choose('TASK-1');

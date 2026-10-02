@@ -772,7 +772,8 @@ describe('RecurrenceStore: the template of a series (plan WV)', () => {
 			tagIds: ['tag000000000001'],
 			priority: 'medium',
 			initialStatus: 'open',
-			subtasks: []
+			subtasks: [],
+			color: null
 		});
 		if (template === undefined) return;
 		expect(store.templateDirty).toBe(false);

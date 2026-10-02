@@ -175,6 +175,38 @@ describe('CatalogEditor: projects', () => {
 	});
 });
 
+describe('CatalogEditor: colors (ADR-0052)', () => {
+	it('sends the color only when it is set or changes, null to remove it, a refusal at the field', async () => {
+		const { editor, data } = await setup();
+		await editor.createProject({ name: 'Garten', code: 'GART', color: 'gruen' });
+		expect(data.createProject).toHaveBeenLastCalledWith({
+			name: 'Garten',
+			code: 'GART',
+			color: 'gruen'
+		});
+		await editor.createProject({ name: 'Keller', code: 'KELL', color: null });
+		expect(data.createProject).toHaveBeenLastCalledWith({ name: 'Keller', code: 'KELL' });
+
+		const colored: Project = { ...HOUSE, color: 'blau' };
+		await editor.updateProject(colored, { name: 'Haus', code: 'HAUS', color: 'blau' });
+		await editor.updateProject(colored, { name: 'Haus', code: 'HAUS' });
+		expect(data.updateProject).not.toHaveBeenCalled();
+		await editor.updateProject(colored, { name: 'Haus', code: 'HAUS', color: null });
+		expect(data.updateProject).toHaveBeenLastCalledWith(HOUSE.id, { color: null });
+
+		data.updateProject.mockRejectedValueOnce(
+			validation({ color: { code: 'validation_invalid_value', message: 'Ungültiger Wert.' } })
+		);
+		expect(
+			await editor.updateProject(colored, { name: 'Haus', code: 'HAUS', color: 'senf' })
+		).toEqual({
+			ok: false,
+			message: null,
+			fields: { color: 'Ungültiger Wert.' }
+		});
+	});
+});
+
 describe('CatalogEditor: sub projects (ADR-0034)', () => {
 	it('creates a sub project with its parent and sends no parent without one', async () => {
 		const { editor, data } = await setup();

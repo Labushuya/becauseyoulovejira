@@ -4,6 +4,7 @@
 // section 2); the checks give the same codes as the hook (lib/recurrence.js).
 
 import { isCalendarDate, type CalendarDate } from './berlin-date';
+import type { ProjectColor } from './colors';
 import {
 	DEFAULT_LEAD_DAYS,
 	LAST_DAY,
@@ -68,6 +69,12 @@ export interface RecurrenceRule {
 	 * (absent counts as none).
 	 */
 	templateSubtasks?: TemplateSubtask[];
+	/**
+	 * Color of the template (ADR-0052): the next tickets get it as their own color; null for "wie
+	 * Projekt", absent before the migration (then nothing is offered). Optional so that rules built by
+	 * hand stay valid.
+	 */
+	color?: ProjectColor | null;
 	created: string;
 	updated: string;
 }

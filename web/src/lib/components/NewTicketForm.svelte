@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { tick, untrack } from 'svelte';
 	import type { CalendarDate } from '$lib/domain/berlin-date';
+	import { inheritLabel, projectColorOf, type ProjectColor } from '$lib/domain/colors';
 	import { berlinDateOf, formatBerlinDateTime } from '$lib/domain/format';
 	import type { TicketPrefill } from '$lib/domain/inbox';
 	import type { TargetPrefill } from '$lib/domain/target-project';
@@ -26,6 +27,7 @@
 	} from '$lib/domain/ticket';
 	import type { EnsureTagResult } from '$lib/stores/catalog.svelte';
 	import type { CreateResult } from '$lib/stores/ticket-detail.svelte';
+	import ColorChoice from './ColorChoice.svelte';
 	import ErrorIcon from './ErrorIcon.svelte';
 	import InitialStatusChoice from './InitialStatusChoice.svelte';
 	import RichTextEditor from './RichTextEditor.svelte';
@@ -59,7 +61,9 @@
 	// Wiederholung übernehmen"; that click opens the section with the suggested values. A series the
 	// rules cannot express gets a neutral hint. Nothing is set without a click (P-5).
 	// An entry from a way with a target project (ADR-0049 §4) brings that project, unless it is
-	// archived or deleted; the hint below "Projekt" says which and why.
+	// archived or deleted; the hint below "Projekt" says which and why. After the migration of the
+	// colors (`colorsAvailable`, ADR-0052) the field "Farbe" follows the project, "Wie Projekt" with
+	// the color of the chosen project first and chosen.
 	let {
 		projects = [],
 		initialProject = null,
@@ -71,6 +75,7 @@
 		eachAvailable = false,
 		statusAvailable = false,
 		subtasksAvailable = false,
+		colorsAvailable = false,
 		today = null,
 		tags = [],
 		oncreatetag = async () => ({ ok: false, message: null }),
@@ -98,6 +103,8 @@
 		statusAvailable?: boolean;
 		/** Name the sub-tasks of the template in the hint (plan WV-3, RecurrenceStore.subtasksReady). */
 		subtasksAvailable?: boolean;
+		/** Offer the own color of the ticket (ADR-0052, CatalogStore.colorsReady). */
+		colorsAvailable?: boolean;
 		/** Berlin date of today, for the preview of the section "Wiederholung". */
 		today?: CalendarDate | null;
 		/** Tags that can be chosen (the catalog). */
@@ -131,6 +138,8 @@
 		project: `${uid}-project`,
 		projectHint: `${uid}-project-hint`,
 		projectError: `${uid}-project-error`,
+		color: `${uid}-color`,
+		colorError: `${uid}-color-error`,
 		tags: `${uid}-tags`,
 		tagsError: `${uid}-tags-error`,
 		description: `${uid}-description-error`,
@@ -156,6 +165,8 @@
 	let description = $state(initialDescription);
 	/** Project chosen by the user; null until then, so a late catalog still sets the default. */
 	let chosenProject = $state<string | null>(null);
+	/** Own color (ADR-0052); null is "wie Projekt". */
+	let color = $state<ProjectColor | null>(null);
 	let tagIds = $state<string[]>([...initialTagIds]);
 	let tagText = $state('');
 	let tagError = $state<string | null>(null);
@@ -195,6 +206,10 @@
 			: ''
 	);
 	const project = $derived(chosenProject ?? defaultProject);
+	/** The color the ticket shows without an own one: of the chosen project or its parent. */
+	const inherited = $derived(
+		projectColorOf(projects.find((entry) => entry.id === project) ?? null)?.color ?? null
+	);
 	/** Chosen tags from the catalog; a new tag is in it before it is chosen. */
 	const chosenTags = $derived(
 		tagIds.flatMap((tagId) => {
@@ -212,6 +227,7 @@
 			status !== DEFAULT_STATUS ||
 			priority !== initialPriority ||
 			project !== defaultProject ||
+			color !== null ||
 			tagIds.join(',') !== initialTagIds.join(',') ||
 			tagText.trim() !== '' ||
 			repeatOpen
@@ -251,7 +267,9 @@
 				due: due === '' ? null : (due as CalendarDate),
 				project: project === '' ? null : project,
 				// Only tags the catalog knows: a preset may name a tag deleted since.
-				tags: chosenTags.map((tag) => tag.id)
+				tags: chosenTags.map((tag) => tag.id),
+				// Only an own color goes along (ADR-0052); none is "wie Projekt".
+				...(colorsAvailable && color !== null && { color })
 			},
 			rhythm === null
 				? null
@@ -556,6 +574,21 @@
 			{/if}
 		</div>
 
+		{#if colorsAvailable}
+			<div class="field">
+				<span class="label" id={ids.color}>Farbe</span>
+				<ColorChoice
+					value={color}
+					inheritLabel={inheritLabel('ticket', inherited)}
+					{inherited}
+					labelledby={ids.color}
+					error={fieldErrors.color ?? null}
+					errorId={ids.colorError}
+					onchoose={(value) => (color = value)}
+				/>
+			</div>
+		{/if}
+
 		<div class="field">
 			<label for={ids.tags}>Tags</label>
 			<TagPicker
@@ -637,7 +670,8 @@
 		gap: 0.75rem 1rem;
 	}
 
-	label {
+	label,
+	.label {
 		font-size: var(--font-size-control);
 		font-weight: 500;
 		color: var(--color-text-muted);

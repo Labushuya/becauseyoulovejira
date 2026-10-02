@@ -20,7 +20,8 @@ describe('parseRequest', () => {
 			due: true,
 			parent: true,
 			subtasks: true,
-			comments: true
+			comments: true,
+			color: true
 		});
 		expect(options).toEqual({
 			title: 'Kopie',
@@ -33,13 +34,21 @@ describe('parseRequest', () => {
 			due: true,
 			parent: true,
 			subtasks: true,
-			comments: true
+			comments: true,
+			color: true
 		});
 	});
 
 	it('takes over nothing and copies no source unless asked', () => {
 		const { options } = rules.parseRequest(valid);
-		expect(options).toMatchObject({ project: '', source: 'none', description: false, subtasks: false, comments: false });
+		expect(options).toMatchObject({
+			project: '',
+			source: 'none',
+			description: false,
+			subtasks: false,
+			comments: false,
+			color: false
+		});
 		expect(rules.parseRequest({ ...valid, source: null }).options.source).toBe('none');
 	});
 
@@ -90,16 +99,33 @@ describe('parseRequest', () => {
 });
 
 describe('takenValues', () => {
-	const ticket = { description: 'Text', priority: 'high', tags: ['t1', 't2'], due: '2026-10-05 00:00:00.000Z' };
+	const ticket = {
+		description: 'Text',
+		priority: 'high',
+		tags: ['t1', 't2'],
+		due: '2026-10-05 00:00:00.000Z',
+		color: 'blau'
+	};
 
 	it('takes the chosen fields and leaves the others to the defaults of a new ticket', () => {
-		expect(rules.takenValues(ticket, { description: true, priority: true, tags: true, due: true })).toEqual(ticket);
-		expect(rules.takenValues(ticket, { description: false, priority: false, tags: false, due: false })).toEqual({
+		expect(rules.takenValues(ticket, { description: true, priority: true, tags: true, due: true, color: true })).toEqual(
+			ticket
+		);
+		expect(
+			rules.takenValues(ticket, { description: false, priority: false, tags: false, due: false, color: false })
+		).toEqual({
 			description: '',
 			priority: '',
 			tags: [],
-			due: ''
+			due: '',
+			color: ''
 		});
+	});
+
+	it('takes the own color only when asked; without one the copy shows the color of its project (ADR-0052)', () => {
+		expect(rules.takenValues(ticket, { color: true }).color).toBe('blau');
+		expect(rules.takenValues(ticket, {}).color).toBe('');
+		expect(rules.takenValues({ ...ticket, color: '' }, { color: true }).color).toBe('');
 	});
 
 	it('copies the list of tags', () => {

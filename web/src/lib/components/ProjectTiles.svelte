@@ -1,9 +1,11 @@
 <script lang="ts">
 	import type { ResolvedPathname } from '$app/types';
+	import { colorText, projectColorOf } from '$lib/domain/colors';
 	import type { Project } from '$lib/domain/project';
 	import type { ProjectRow } from '$lib/domain/project-view';
 	import { rowMenus } from '$lib/overlay/context-menu';
 	import ActionsMenu, { type MenuAction } from './ActionsMenu.svelte';
+	import ColorMark from './ColorMark.svelte';
 
 	// Project tiles (E3 plan, T-12 and package 14; ADR-0010 section 1; ADR-0025 section 10, package
 	// UI-8): a responsive grid in the given order (by name). Each tile is one link that opens the
@@ -17,7 +19,8 @@
 	// Every tile has the menu "•••" of the rows of the list in its corner, next to its link (plan
 	// aktionsmenues, AM-5; the entries come from the view). A right click on a tile, Shift+F10 and
 	// the context menu key on its link open it as in the tables (rowMenus, the tile is a menu row);
-	// a click on the tile still opens the panel.
+	// a click on the tile still opens the panel. The color of a project (ADR-0052) is a dot before
+	// its name, named for screen readers after the code.
 	let {
 		rows,
 		activeOf,
@@ -71,6 +74,7 @@
 	{@const total = totalOf(project)}
 	{@const fresh = newOf(project)}
 	{@const aggregated = aggregatedOf(project)}
+	{@const color = projectColorOf(project)}
 	<a
 		class="tile-link"
 		class:archived={project.archived}
@@ -84,8 +88,10 @@
 			<span class="overline">in {project.parent.name}</span>
 		{/if}
 		<span class="head">
+			{#if color}<span class="head-color"><ColorMark shown={color} named={false} /></span>{/if}
 			<span class="name">{project.name}</span>
 			<span class="code">{project.code}</span>
+			{#if color}<span class="visually-hidden">, {colorText(color)}</span>{/if}
 		</span>
 		{#if project.archived}
 			<span class="badge">Archiviert</span>
@@ -264,6 +270,12 @@
 	.name {
 		font-weight: 600;
 		overflow-wrap: anywhere;
+	}
+
+	/* The dot of the color (ADR-0052) in the middle of the line of the name. */
+	.head-color {
+		display: flex;
+		align-self: center;
 	}
 
 	.code {

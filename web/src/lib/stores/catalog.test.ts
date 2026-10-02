@@ -454,6 +454,23 @@ describe('CatalogStore: sub projects (ADR-0034)', () => {
 		await before.store.load();
 		expect(before.store.hierarchyReady).toBe(false);
 	});
+
+	it('says whether the server knows colors yet and gives a sub project the color of its parent (ADR-0052)', async () => {
+		const ready = setup([{ ...HOUSE, color: 'blau' }, GARDEN_PROJECT]);
+		const live = new FakeLive();
+		cleanups.push(ready.store.connect(live.source));
+		await ready.store.load();
+		await flush();
+		expect(ready.store.colorsReady).toBe(true);
+		expect(ready.store.projectById(GARDEN_PROJECT.id)?.parent?.color).toBe('blau');
+		// A new color of the parent reaches its sub projects live.
+		live.project({ action: 'update', record: { ...HOUSE, color: 'gruen', updated: T1 } });
+		expect(ready.store.projectById(GARDEN_PROJECT.id)?.parent?.color).toBe('gruen');
+
+		const before = setup([{ ...HOUSE, withoutColorField: true }, CAR]);
+		await before.store.load();
+		expect(before.store.colorsReady).toBe(false);
+	});
 });
 
 describe('CatalogStore: realtime', () => {

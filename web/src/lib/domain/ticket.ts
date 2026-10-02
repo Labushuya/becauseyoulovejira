@@ -2,6 +2,7 @@
 // layer (web/src/lib/data) maps PocketBase records to these types.
 
 import { isCalendarDate, type CalendarDate } from './berlin-date';
+import type { ProjectColor } from './colors';
 import type { InboxChannel } from './inbox';
 import type { Priority, Status } from './status';
 
@@ -15,6 +16,8 @@ export interface ProjectParentRef {
 	id: string;
 	name: string;
 	code: string;
+	/** Color of the parent (ADR-0052); a sub project without its own shows it. */
+	color?: ProjectColor | null;
 }
 
 /** Project as shown next to a ticket (expanded relation). */
@@ -28,6 +31,8 @@ export interface ProjectRef {
 	 * top-level project and for the expanded relation of a ticket.
 	 */
 	parent?: ProjectParentRef | null;
+	/** Own color of the project (ADR-0052), null without one; absent before the migration. */
+	color?: ProjectColor | null;
 }
 
 /** Tag as shown next to a ticket (expanded relation). */
@@ -86,6 +91,11 @@ export interface TicketSummary {
 	 * migration, which count as "manual" (ADR-0019).
 	 */
 	source: InboxChannel | null;
+	/**
+	 * Own color (ADR-0052), null for "wie Projekt". Left out while the server does not know the
+	 * field (before the restart after the migration): the color is not offered then.
+	 */
+	color?: ProjectColor | null;
 	/** UTC timestamp of PocketBase (`YYYY-MM-DD HH:MM:SS.sssZ`), null unless done. */
 	completedAt: string | null;
 	/** UTC timestamps of PocketBase; they sort as text. */
@@ -119,6 +129,8 @@ export interface TicketDraft {
 	tags: string[];
 	/** The ticket this one is a sub-task of (ADR-0033); left out or null for a top-level ticket. */
 	parent?: string | null;
+	/** Own color (ADR-0052); left out or null for "wie Projekt". */
+	color?: ProjectColor | null;
 }
 
 /**

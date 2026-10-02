@@ -1,8 +1,10 @@
 <script lang="ts">
 	import { tick, type Snippet } from 'svelte';
+	import { colorOf, inheritLabel, projectColorOf } from '$lib/domain/colors';
 	import type { Ticket } from '$lib/domain/ticket';
 	import type { CatalogStore } from '$lib/stores/catalog.svelte';
 	import type { TicketDetailStore } from '$lib/stores/ticket-detail.svelte';
+	import ColorChoice from './ColorChoice.svelte';
 	import DueInput from './DueInput.svelte';
 	import ErrorIcon from './ErrorIcon.svelte';
 	import PrioritySelect from './PrioritySelect.svelte';
@@ -18,6 +20,8 @@
 	// at once, with the field errors of the server at their field. Project and tags come from the
 	// catalog; a new tag is taken from the catalog, which reuses an existing name. The row
 	// "Übergeordnet" of sub-tasks (ADR-0033) comes in through `parentRow` as two cells of the grid.
+	// The own color (ADR-0052) after the project, "Wie Projekt (Blau)" first, saves at once like the
+	// project; only when the server knows the field.
 	let {
 		store,
 		catalog,
@@ -41,11 +45,16 @@
 		due: `${uid}-due`,
 		project: `${uid}-project`,
 		projectHint: `${uid}-project-hint`,
+		color: `${uid}-color`,
 		tags: `${uid}-tags`
 	};
 	const errorIdOf = (field: string) => `${uid}-${field}-error`;
 
 	const ticketTags = $derived(catalog.tagsOf(ticket));
+	/** The color without an own one: of the project, else of its parent (ADR-0052). */
+	const inherited = $derived(projectColorOf(catalog.projectOf(ticket))?.color ?? null);
+	/** Only when the server knows the field (it answers with it after the migration). */
+	const colorShown = $derived(catalog.colorsReady && ticket.color !== undefined);
 
 	/** New tag from the picker: an existing one in another spelling or a new one, then assigned. */
 	async function createTag(name: string): Promise<boolean> {
@@ -161,6 +170,22 @@
 		/>
 		{@render fieldError('project')}
 	</div>
+
+	{#if colorShown}
+		<span class="term" id={ids.color}>Farbe</span>
+		<div class="control">
+			<ColorChoice
+				value={colorOf(store.value('color'))}
+				inheritLabel={inheritLabel('ticket', inherited)}
+				{inherited}
+				labelledby={ids.color}
+				busy={store.isSaving('color')}
+				error={store.fieldError('color')}
+				errorId={errorIdOf('color')}
+				onchoose={(value) => store.choose('color', value ?? '')}
+			/>
+		</div>
+	{/if}
 
 	<label for={ids.tags}>Tags</label>
 	<div class="control">

@@ -3,6 +3,7 @@
 	import { SvelteSet } from 'svelte/reactivity';
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
+	import { projectColorOf, type ShownColor } from '$lib/domain/colors';
 	import { NEST_SUBTASKS, TICKET_TABLE } from '$lib/domain/columns';
 	import { arrangeRows } from '$lib/domain/subtasks';
 	import {
@@ -11,6 +12,7 @@
 		writeCollapsedGroups,
 		type GroupNode
 	} from '$lib/domain/grouping';
+	import { NO_PROJECT } from '$lib/domain/list-query';
 	import {
 		MORE_COLUMNS_HINT,
 		SORT_COLUMN_LABELS,
@@ -50,6 +52,7 @@
 	} from '$lib/domain/selection';
 	import type { BulkEditStore } from '$lib/stores/bulk-edit.svelte';
 	import BulkActionBar from './BulkActionBar.svelte';
+	import ColorMark from './ColorMark.svelte';
 	import ColumnsPopover from './ColumnsPopover.svelte';
 	import CompletionDialog from './CompletionDialog.svelte';
 	import ErrorIcon from './ErrorIcon.svelte';
@@ -237,6 +240,16 @@
 	/** Open tickets of a group (a just checked row still stands in it but does not count). */
 	function openCount(group: GroupNode<TicketSummary>): number {
 		return group.tickets.filter((ticket) => ticket.status !== 'done').length;
+	}
+
+	/**
+	 * Color of a group "Nach Projekt" (ADR-0052): the one of its project, else of the parent; the
+	 * label of the group names the project, so the dot needs no text of its own.
+	 */
+	function groupColorOf(group: GroupNode<TicketSummary>, level: 1 | 2): ShownColor | null {
+		const grouping = level === 1 ? query.grouping : query.subGrouping;
+		if (grouping !== 'project' || group.key === NO_PROJECT) return null;
+		return projectColorOf(catalog.projectById(group.key));
 	}
 
 	/** Row that last had the focus, to restore it when that row moves or disappears. */
@@ -478,6 +491,7 @@
 {#snippet groupHead(group: GroupNode<TicketSummary>, id: string, level: 1 | 2)}
 	{@const count = openCount(group)}
 	{@const folded = collapsed.has(group.path)}
+	{@const color = groupColorOf(group, level)}
 	<tr class="section-head group-head" class:level-2={level === 2}>
 		<th scope="rowgroup" colspan={fit.visible.length} {id}>
 			<button
@@ -490,6 +504,7 @@
 				<svg class="fold" viewBox="0 0 12 12" aria-hidden="true" focusable="false">
 					<path d={folded ? 'M4.5 3l3 3-3 3' : 'M3 4.5l3 3 3-3'} />
 				</svg>
+				{#if color}<ColorMark shown={color} named={false} />{/if}
 				{group.label}<span class="group-count"
 					><span aria-hidden="true">{count}</span><span class="visually-hidden"
 						>, {count === 1 ? '1 Ticket' : `${count} Tickets`}</span

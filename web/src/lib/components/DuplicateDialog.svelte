@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { tick, untrack } from 'svelte';
+	import { COLOR_LABELS } from '$lib/domain/colors';
 	import {
 		copySourceHint,
 		duplicateFormErrors,
@@ -23,8 +24,9 @@
 	import ProjectSelect from './ProjectSelect.svelte';
 
 	// "Wie soll das Duplikat entstehen?" (ADR-0045 §2): title with "(Kopie)", what the duplicate
-	// takes over (the fields of the ticket checked, sub-tasks and comments not; the project with
-	// ProjectSelect), the status as a required choice without an answer in advance (the building
+	// takes over (the fields of the ticket checked, since ADR-0052 its own color as well, sub-tasks
+	// and comments not; the project with ProjectSelect), the status as a required choice without an
+	// answer in advance (the building
 	// block of "Folgetickets starten mit") and, when the original has sources, whether the duplicate
 	// gets a copy of its main source. A series never comes along; the dialog says so. In the side
 	// panel a modal M; inside a modal (the full view) the same form stands inline (InlineDialog,
@@ -216,6 +218,12 @@
 				<input type="checkbox" bind:checked={answers.take.due} />
 				Fälligkeit: {ticket.due === null ? 'keine' : formatCalendarDate(ticket.due)}
 			</label>
+			{#if ticket.color !== undefined}
+				<label class="choice">
+					<input type="checkbox" bind:checked={answers.take.color} />
+					Farbe: {ticket.color === null ? 'wie Projekt' : COLOR_LABELS[ticket.color]}
+				</label>
+			{/if}
 			{#if parentKey !== null}
 				<label class="choice">
 					<input type="checkbox" bind:checked={answers.take.parent} />

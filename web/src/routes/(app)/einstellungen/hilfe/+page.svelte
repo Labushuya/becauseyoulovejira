@@ -904,6 +904,28 @@
 				</ul>
 			</details>
 			<details>
+				<summary>Wie färbe ich Projekte und Tickets?</summary>
+				<ul>
+					<li>
+						Im Panel eines Projekts wählst du unter „Farbe“ eine der zehn Farben (Violett, Indigo,
+						Blau, Himmelblau, Türkis, Grün, Oliv, Senf, Braun, Grau) und speicherst. Alle Tickets
+						des Projekts zeigen sie; ein Unterprojekt ohne eigene Farbe zeigt die seines
+						Oberprojekts („Wie Oberprojekt“).
+					</li>
+					<li>
+						Ein Ticket hat standardmäßig „Wie Projekt“. Unter „Farbe“ im Ticket, in „Neues Ticket“
+						oder mit „Farbe“ in der Leiste mehrerer gewählter Tickets gibst du ihm eine eigene, die
+						vorgeht. Eine Wiederholung gibt ihre Farbe den nächsten Tickets, „Duplizieren …“ nimmt
+						sie mit; jede Änderung steht im Verlauf.
+					</li>
+					<li>
+						Die Farbe ist ein Zusatz: ein Streifen am Anfang der Zeile in „Aufgaben“, ein Punkt vor
+						dem Namen in Projekten, Listen und im Kopf eines Tickets. Ihr Name steht beim Zeigen mit
+						der Maus und für Screenreader immer dabei. Rot gibt es nicht, es bleibt für Fehler.
+					</li>
+				</ul>
+			</details>
+			<details>
 				<summary>Wie formatiere ich Beschreibungen und Kommentare?</summary>
 				<ul>
 					<li>

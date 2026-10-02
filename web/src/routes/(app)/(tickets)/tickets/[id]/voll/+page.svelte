@@ -3,6 +3,7 @@
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
 	import Breadcrumbs from '$lib/components/Breadcrumbs.svelte';
+	import ColorMark from '$lib/components/ColorMark.svelte';
 	import DuplicateDialog from '$lib/components/DuplicateDialog.svelte';
 	import EditableTitle from '$lib/components/EditableTitle.svelte';
 	import FullView from '$lib/components/overlay/FullView.svelte';
@@ -17,6 +18,7 @@
 	import TicketParentField from '$lib/components/TicketParentField.svelte';
 	import TicketSources from '$lib/components/TicketSources.svelte';
 	import TicketSubtasks from '$lib/components/TicketSubtasks.svelte';
+	import { ticketColorOf } from '$lib/domain/colors';
 	import { openInstancesOf } from '$lib/domain/recurrence-rule';
 	import { parentOf } from '$lib/domain/subtasks';
 	import { getCatalogStore } from '$lib/stores/catalog.svelte';
@@ -70,6 +72,8 @@
 	const headingId = `${uid}-title`;
 	const id = $derived(page.params.id ?? '');
 	const ticket = $derived(detail.state === 'ready' ? detail.ticket : null);
+	/** Color of the ticket before the title of the header (ADR-0052). */
+	const shown = $derived(ticket === null ? null : ticketColorOf(ticket, catalog.projectOf(ticket)));
 	const parent = $derived(
 		ticket === null ? null : parentOf(ticket, (parentId) => tickets.find(parentId))
 	);
@@ -145,6 +149,11 @@
 
 {#if ticket}
 	<FullView title={`${ticket.key} · ${ticket.title}`} onclose={close}>
+		{#snippet lead()}
+			{#if shown}
+				<ColorMark {shown} />
+			{/if}
+		{/snippet}
 		{#snippet actions()}
 			<TicketActions
 				{ticket}
