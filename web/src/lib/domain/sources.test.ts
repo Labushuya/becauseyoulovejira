@@ -56,7 +56,7 @@ describe('copyCompleteness', () => {
 			api: 'text',
 			'whatsapp-web': 'text',
 			github: 'text',
-			folder: 'text'
+			folder: 'reference'
 		};
 		for (const channel of INBOX_CHANNELS) {
 			expect(copyCompleteness(item({ channel })), channel).toBe(expected[channel]);
@@ -101,6 +101,16 @@ describe('copyCompleteness', () => {
 		);
 	});
 
+	it('calls a file of a folder a reference, no copy, whatever it carries (ADR-0051 §1)', () => {
+		const file = item({ channel: 'folder', kind: 'file', sourceRef: 'C:\\Daten\\a.pdf' });
+		expect(copyCompleteness(file)).toBe('reference');
+		expect(copyCompleteness({ ...file, original: 'x.pdf' })).toBe('reference');
+		expect(COPY_LABELS.reference).toBe('Verweis');
+		expect(copyNote(file)).toBe(
+			'Verweis auf die Datei im Ordner, keine Kopie: „Ansehen“ öffnet ihre aktuelle Fassung. Gespeichert sind nur Name, Pfad, Größe, Zeit, Typ und Prüfsumme.'
+		);
+	});
+
 	it('calls a Notion entry complete only with its whole content (ADR-0041 §5)', () => {
 		const notion = (content: string, original = 'notion_abc.json') =>
 			item({ channel: 'notion', original, sourceMeta: { notion: { content } } });
@@ -136,7 +146,8 @@ describe('copyCompleteness', () => {
 			'Vollständig',
 			'Nur Text',
 			'Nur Adresse',
-			'Ohne Originaldatei (zu groß)'
+			'Ohne Originaldatei (zu groß)',
+			'Verweis'
 		]);
 	});
 });

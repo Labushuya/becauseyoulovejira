@@ -17,6 +17,12 @@ import {
 	type SecretStatus
 } from '../domain/connections';
 import {
+	EMPTY_FOLDER_SETTINGS,
+	folderSettingsOf,
+	folderSettingsValue,
+	type FolderSettings
+} from '../domain/folders';
+import {
 	EMPTY_GITHUB_SETTINGS,
 	githubSettingsOf,
 	githubSettingsValue,
@@ -120,6 +126,7 @@ export function toConnection(record: ConnectionRecord): Connection {
 		...mail,
 		scan: record.type === 'mail' ? mailScanOf(record.scan) : null,
 		github: record.type === 'github' ? githubSettingsOf(record.settings) : null,
+		folders: record.type === 'folder' ? folderSettingsOf(record.settings) : null,
 		runningSince: record.running_since || null,
 		targetProjectId: record.target_project || null,
 		targetReady: record.target_project !== undefined,
@@ -146,10 +153,14 @@ export function listConnections(
 /**
  * The settings of a new connection. A mailbox searches headers and the whole text from the start
  * (match_body on by default, user decision of 2026-09-27). GitHub starts with the default interval
- * and the first repository of the assistant, if any (ADR-0050 §2).
+ * and the first repository of the assistant, if any (ADR-0050 §2), a folder connection with the
+ * default interval and its first folder (ADR-0051 §2).
  */
 function settingsOf(
-	draft: Pick<ConnectionDraft, 'type' | 'allowlistEnv' | 'mailProvider' | 'mailUser' | 'githubRepo'>
+	draft: Pick<
+		ConnectionDraft,
+		'type' | 'allowlistEnv' | 'mailProvider' | 'mailUser' | 'githubRepo' | 'folder'
+	>
 ): Record<string, unknown> {
 	if (draft.type === 'telegram') return { allowed_env: draft.allowlistEnv.trim() };
 	if (draft.type === 'mail') {
@@ -160,6 +171,13 @@ function settingsOf(
 		return githubSettingsValue({
 			...EMPTY_GITHUB_SETTINGS,
 			repos: repo === null ? [] : [repo]
+		});
+	}
+	if (draft.type === 'folder') {
+		const folder = draft.folder ?? null;
+		return folderSettingsValue({
+			...EMPTY_FOLDER_SETTINGS,
+			folders: folder === null ? [] : [folder]
 		});
 	}
 	return {};
@@ -180,7 +198,8 @@ export function createConnection(
 				type: draft.type,
 				label: draft.label.trim(),
 				enabled: true,
-				secret_env: draft.secretEnv.trim(),
+				// Folders have no access data: the hook wants an empty name (ADR-0051 §1).
+				secret_env: draft.type === 'folder' ? '' : draft.secretEnv.trim(),
 				settings: settingsOf(draft)
 			},
 			{ fields: CONNECTION_FIELDS, signal }
@@ -191,7 +210,10 @@ export function createConnection(
 
 /** The whole `settings` of a connection with new keywords and switches. */
 function settingsValue(
-	connection: Pick<Connection, 'type' | 'allowlistEnv' | 'mailProvider' | 'mailUser' | 'github'>,
+	connection: Pick<
+		Connection,
+		'type' | 'allowlistEnv' | 'mailProvider' | 'mailUser' | 'github' | 'folders'
+	>,
 	settings: ConnectionSettingsDraft
 ): Record<string, unknown> {
 	const keywords = settings.keywords.map((keyword) => keyword.trim());
@@ -221,6 +243,9 @@ function settingsValue(
 		case 'github':
 			// No keywords either (ADR-0050): the repositories go along unchanged.
 			return githubSettingsValue(connection.github ?? EMPTY_GITHUB_SETTINGS);
+		case 'folder':
+			// No keywords (ADR-0051 §8): the folders go along unchanged.
+			return folderSettingsValue(connection.folders ?? EMPTY_FOLDER_SETTINGS);
 	}
 }
 
@@ -233,7 +258,7 @@ export function saveConnectionSettings(
 	pb: PocketBase,
 	connection: Pick<
 		Connection,
-		'id' | 'type' | 'allowlistEnv' | 'mailProvider' | 'mailUser' | 'github'
+		'id' | 'type' | 'allowlistEnv' | 'mailProvider' | 'mailUser' | 'github' | 'folders'
 	>,
 	settings: ConnectionSettingsDraft,
 	{ signal }: RequestOptions = {}
@@ -268,6 +293,29 @@ export function saveGitHubSettings(
 			.update<ConnectionRecord>(
 				id,
 				{ settings: githubSettingsValue(settings) },
+				{ fields: CONNECTION_FIELDS, signal }
+			);
+		return toConnection(record);
+	});
+}
+
+/**
+ * Saves the interval and the folders of a folder connection (ADR-0051 §2), `settings` whole. The hook
+ * checks paths, types, patterns and the target project of each folder, a new folder also on the disk
+ * (`validation_folder_*`, `validation_target_project_*`).
+ */
+export function saveFolderSettings(
+	pb: PocketBase,
+	id: string,
+	settings: FolderSettings,
+	{ signal }: RequestOptions = {}
+): Promise<Connection> {
+	return withDataErrors(signal, async () => {
+		const record = await pb
+			.collection(CONNECTIONS)
+			.update<ConnectionRecord>(
+				id,
+				{ settings: folderSettingsValue(settings) },
 				{ fields: CONNECTION_FIELDS, signal }
 			);
 		return toConnection(record);

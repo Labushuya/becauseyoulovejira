@@ -6,6 +6,7 @@ import { describe, expect, it } from 'vitest';
 import {
 	CARD_STATUS,
 	connectionInfo,
+	folderInfo,
 	githubInfo,
 	inboxKeysInfo,
 	inboxKeysStatus,
@@ -129,6 +130,30 @@ describe('info lines of the cards', () => {
 		expect(
 			githubInfo(two, { ...RUN, status: 'limited', hint: 'Anfragelimit erreicht.' }, NOW)
 		).toBe('2 Repositorys · Zuletzt abgerufen vor 5 Min. · Anfragelimit erreicht');
+	});
+
+	it('counts the folders and says when they were checked last (ADR-0051 §7)', () => {
+		const folder = {
+			path: 'C:\\Daten\\Projekte',
+			subfolders: true,
+			types: [],
+			exclude: [],
+			target: null,
+			reportChanges: true
+		};
+		const folders = { lastRunAt: null, lastError: '', folders: { interval: 5, folders: [] } };
+		expect(folderInfo(folders, null, NOW)).toBe('Noch kein Ordner');
+		expect(folderInfo({ ...folders, folders: null }, null, NOW)).toBe('Noch kein Ordner');
+		const two = {
+			...folders,
+			lastRunAt: '2026-09-30 09:55:00.000Z',
+			folders: { interval: 5, folders: [folder, { ...folder, path: 'D:\\Archiv' }] }
+		};
+		expect(folderInfo({ ...two, lastRunAt: null }, null, NOW)).toBe('2 Ordner · Noch nie geprüft');
+		expect(folderInfo(two, null, NOW)).toBe('2 Ordner · Zuletzt geprüft vor 5 Min. · ohne Fehler');
+		expect(folderInfo(two, RUN, NOW)).toBe(
+			'2 Ordner · Zuletzt geprüft vor 5 Min. · 3 neu, 1 schon vorhanden'
+		);
 	});
 
 	it('names what Notion took over', () => {

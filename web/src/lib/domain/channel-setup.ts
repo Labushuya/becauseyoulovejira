@@ -15,7 +15,8 @@ import { formatBerlinDateTime } from './format';
  * assistant, for Proton (no automatic fetch, three short steps) the guide as a modal M, for
  * WhatsApp Web the assistant of the browser extension (no connection; domain/whatsapp-web.ts).
  * Notion (ADR-0041) has an assistant with a connection, but it only imports lists on request.
- * GitHub (ADR-0050) watches repositories read only; its token is optional.
+ * GitHub (ADR-0050) watches repositories read only; its token is optional. Folders (ADR-0051)
+ * watch folders of this machine read only and need no access data.
  */
 export const SETUP_KINDS = [
 	'kalender',
@@ -24,6 +25,7 @@ export const SETUP_KINDS = [
 	'gmail',
 	'notion',
 	'github',
+	'ordner',
 	'proton',
 	'whatsapp-web'
 ] as const;
@@ -72,6 +74,7 @@ export function connectionTypeOf(kind: SetupKind): {
 	if (kind === 'telegram') return { type: 'telegram', provider: '' };
 	if (kind === 'notion') return { type: 'notion', provider: '' };
 	if (kind === 'github') return { type: 'github', provider: '' };
+	if (kind === 'ordner') return { type: 'folder', provider: '' };
 	if (kind === 'gmail') return { type: 'mail', provider: 'gmail' };
 	return { type: 'mail', provider: 'webde' };
 }
@@ -92,6 +95,7 @@ export function setupKindOf(connection: Pick<Connection, 'type' | 'mailProvider'
 	if (connection.type === 'telegram') return 'telegram';
 	if (connection.type === 'notion') return 'notion';
 	if (connection.type === 'github') return 'github';
+	if (connection.type === 'folder') return 'ordner';
 	return connection.mailProvider === 'gmail' ? 'gmail' : 'webde';
 }
 
@@ -112,7 +116,8 @@ export type SetupStepId =
 	| 'check'
 	| 'keywords'
 	| 'first-run'
-	| 'target';
+	| 'target'
+	| 'path';
 
 /** A placeholder of a command; secret values are masked in the display. */
 export interface SetupPlaceholder {
@@ -816,6 +821,66 @@ const GITHUB_STEPS: readonly SetupStep[] = [
 ];
 
 /**
+ * Folders (ADR-0051 §7): no access data, so no variable and no restart. The first step shows where
+ * the full path of a folder comes from, the second creates the connection with its first folder
+ * (the server checks the path on the disk), the optional target project follows, and the last step
+ * runs the first check, which only takes the base. Stand der Klickwege: 2026-10.
+ */
+const FOLDER_STEPS: readonly SetupStep[] = [
+	{
+		id: 'path',
+		label: 'Pfad kopieren',
+		title: 'Pfad des Ordners kopieren',
+		intro:
+			'Die App braucht den vollständigen Pfad des Ordners, so wie ihn der Rechner kennt, auf dem sie läuft. Am einfachsten kopierst du ihn im Explorer.',
+		actions: [
+			'Im Explorer den Ordner öffnen, den die App beobachten soll.',
+			'Oben in die Adressleiste klicken: Sie zeigt jetzt den vollständigen Pfad, etwa C:\\Daten\\Projekte.',
+			'Mit Strg+C kopieren; im nächsten Schritt fügst du ihn mit Strg+V ein.'
+		],
+		links: [],
+		commands: [],
+		more: [
+			'Eine Freigabe im Netz geht auch, etwa \\\\NAS\\Projekte; ein verbundenes Laufwerk wie Z: nur, solange es verbunden ist.',
+			'Läuft die App unter Linux oder in einem Container, gilt der Pfad dort, etwa /home/anna/Projekte; im Container muss der Ordner eingebunden sein.'
+		],
+		checked: false
+	},
+	{
+		id: 'connect',
+		label: 'Ordner',
+		title: 'Ordner hinzufügen',
+		intro:
+			'Gib der Verbindung einen Namen und trag den ersten Ordner mit seinem vollständigen Pfad ein; weitere fügst du hier oder später an der Karte hinzu. Die App liest die Ordner nur: Sie ändert, verschiebt und löscht nichts.',
+		actions: [],
+		links: [],
+		commands: [],
+		more: [
+			'Den Pfad kopierst du im Explorer aus der Adressleiste, etwa „C:\\Daten\\Projekte“ oder eine Freigabe wie „\\\\NAS\\Projekte“; unter Linux etwa „/home/anna/Projekte“.',
+			'Ausgeschlossen sind von Anfang an temporäre Dateien (*.tmp, ~$*), .git, node_modules, Thumbs.db und desktop.ini. Dateitypen schränken auf Endungen ein, etwa pdf, docx.',
+			'Verknüpfungen (Symlinks, Junctions) folgt die App nicht, und den Ordner der App selbst beobachtet sie nicht.'
+		],
+		checked: true
+	},
+	{
+		id: 'first-run',
+		label: 'Prüfen',
+		title: 'Ordner zum ersten Mal prüfen',
+		intro:
+			'„Jetzt prüfen“ liest die Ordner ein und merkt sich den Stand als Ausgangspunkt: Dateien, die schon da sind, kommen nicht in den Eingang. Danach prüft die App alle 5 Minuten; neue und geänderte Dateien stehen im Eingang, als Verweis auf die Datei, nicht als Kopie.',
+		actions: [],
+		links: [],
+		commands: [],
+		more: [
+			'Dateien von vorher holst du an der Karte mit „Vorhandene Dateien übernehmen …“, ausgewählt Datei für Datei.',
+			'„Ansehen“ an einem Eintrag öffnet die aktuelle Datei: PDF, Bilder und Text im Browser, alles andere als Download. Ist die Datei nicht mehr da, sagt der Eintrag es.',
+			'Gespeichert werden nur Name, Pfad, Größe, Zeit und Typ einer Datei, nie ihr Inhalt.'
+		],
+		checked: true
+	}
+];
+
+/**
  * The optional step "Zielprojekt" (ADR-0049, ADR-0026 addendum ZP): right after the connection is
  * created, before its first entries can come, so they get the project already. It never holds the
  * assistant up: done as soon as the connection exists, chosen or not.
@@ -848,7 +913,8 @@ const STEPS: Readonly<Partial<Record<SetupKind, readonly SetupStep[]>>> = {
 	webde: withTargetStep(WEBDE_STEPS),
 	gmail: withTargetStep(GMAIL_STEPS),
 	notion: withTargetStep(NOTION_STEPS),
-	github: withTargetStep(GITHUB_STEPS)
+	github: withTargetStep(GITHUB_STEPS),
+	ordner: withTargetStep(FOLDER_STEPS)
 };
 
 /** Name of the variable a new connection of the kind suggests. */
@@ -858,6 +924,8 @@ export function defaultVariable(kind: SetupKind): string {
 	if (kind === 'telegram') return 'BYL_TELEGRAM_TOKEN';
 	if (kind === 'notion') return 'BYL_NOTION_TOKEN';
 	if (kind === 'github') return 'BYL_GITHUB_TOKEN';
+	// Folders have no access data (ADR-0051 §1).
+	if (kind === 'ordner') return '';
 	return 'BYL_GOOGLE_CALENDAR_URL';
 }
 
@@ -883,6 +951,7 @@ export const SETUP_TITLES: Readonly<Record<SetupKind, string>> = Object.freeze({
 	gmail: 'Gmail',
 	notion: 'Notion',
 	github: 'GitHub',
+	ordner: 'Ordner',
 	proton: 'Proton Mail',
 	'whatsapp-web': 'WhatsApp Web'
 });
@@ -907,6 +976,7 @@ export interface SetupFacts {
 		| 'lastError'
 		| 'lastHint'
 		| 'github'
+		| 'folders'
 	> | null;
 	secretStatus: SecretStatus | null;
 }
@@ -917,8 +987,10 @@ function checkHolds(kind: SetupKind, id: SetupStepId, facts: SetupFacts): boolea
 	if (connection === null) return false;
 	switch (id) {
 		case 'connect':
-			// GitHub: the connection reads nothing before its first repository (ADR-0050 §7).
-			return kind !== 'github' || (connection.github?.repos.length ?? 0) > 0;
+			// GitHub and folders read nothing before their first repository or folder (ADR-0050 §7,
+			// ADR-0051 §7).
+			if (kind === 'github') return (connection.github?.repos.length ?? 0) > 0;
+			return kind !== 'ordner' || (connection.folders?.folders.length ?? 0) > 0;
 		case 'restart':
 			// Telegram needs both variables: the token and the allowed IDs.
 			return (
@@ -1038,6 +1110,18 @@ export function stepCheck(kind: SetupKind, id: SetupStepId, facts: SetupFacts): 
 							text: `Verbindung „${connection.label}“ mit ${repos === 1 ? '1 Repository' : `${repos} Repositorys`} angelegt.`
 						};
 			}
+			if (kind === 'ordner') {
+				const folders = connection.folders?.folders.length ?? 0;
+				return folders === 0
+					? {
+							tone: 'warning',
+							text: `Verbindung „${connection.label}“ angelegt, noch ohne Ordner.`
+						}
+					: {
+							tone: 'done',
+							text: `Verbindung „${connection.label}“ mit ${folders} Ordner${folders === 1 ? '' : 'n'} angelegt.`
+						};
+			}
 			if (isMailKind(kind) && connection.keywords.length === 0) {
 				return {
 					tone: 'warning',
@@ -1110,6 +1194,17 @@ export function stepCheck(kind: SetupKind, id: SetupStepId, facts: SetupFacts): 
 		}
 		case 'first-run': {
 			if (connection === null) return { tone: 'open', text: 'Erst die Verbindung anlegen.' };
+			if (kind === 'ordner') {
+				if (connection.lastError !== '') {
+					return { tone: 'error', text: `Letzte Prüfung fehlgeschlagen: ${connection.lastError}` };
+				}
+				return connection.lastOkAt === null
+					? { tone: 'open', text: 'Noch nicht geprüft.' }
+					: {
+							tone: 'done',
+							text: `Ordner geprüft, zuletzt ${formatBerlinDateTime(connection.lastOkAt)}.`
+						};
+			}
 			if (connection.lastError !== '') {
 				return { tone: 'error', text: `Letzter Abruf fehlgeschlagen: ${connection.lastError}` };
 			}

@@ -351,3 +351,17 @@ Sichtbar ist höchstens ein Leerzeichen am Ende des Links; an allen heutigen Ste
 - **§4 Assistent:** sechs Schritte (Token anlegen, Token setzen, Neu starten, Repositorys, Zielprojekt (optional), Prüfen). „Repositorys“ legt die Verbindung mit dem ersten Repository an und gilt erst mit mindestens einem Repository als erledigt.
 
 **Alternativen:** Eine Verbindung je Repository (verworfen: die Spec will einen Kanal, und Token, Intervall und Limit gelten für alle); ein eigener Bereich „Repositorys“ außerhalb der Karte (verworfen: KK-2 hält alles einer Verbindung in ihrer Karte); das Zielprojekt je Repository als sofort speichernde Auswahl in den Details (verworfen: „Kein Projekt“ hieße dort „wie die Verbindung“ und stünde neben der Auswahl der Verbindung; im Dialog ist die Bedeutung eindeutig).
+
+## Nachtrag (2026-10-02, [ADR-0051](0051-ordner-kanal-verweise-statt-kopien.md), OD-2): Karte und Assistent der Ordner
+
+**Anlass:** Paket 3 der beobachteten Quellen: ein Kanal „Ordner“, dessen Ordner wie die Repositorys von GitHub in der Karte verwaltet werden.
+
+**Entscheidung** (ergänzt KK-2, KL, KK-3, ZP, GH-2 und §4; Executor; Einzelheiten in ADR-0051 §7 mit Nachtrag OD-2):
+
+- **Dasselbe Muster wie GitHub:** `FolderCard` konfiguriert `ChannelCard`; die Ordner stehen als Liste in den Details mit ihren Angaben (Dateien, letzte Änderung, Prüfung, Unterordner, Typen und Ausschlüsse als `ChipList`, Zielprojekt, „Änderungen melden“) und ihren Aktionen „Einstellungen …“, „Vorhandene Dateien übernehmen …“ und dem benannten Symbolknopf „… entfernen …“ mit Rückfrage. Intervall als sofort speichernde Auswahl; Hinzufügen und Ändern im Modal M, im Assistenten inline.
+- **Menü in der Reihenfolge der Spec:** „Ordner hinzufügen …“, „Jetzt prüfen“ (nur wenn nicht Hauptknopf), „Zielprojekt …“, „Umbenennen …“, „Pausieren“, „Hilfe“, „Löschen …“. Kein „Einrichtung ansehen“: Ohne Variable und Neustart gibt es nach dem Anlegen nichts einzurichten, was die Karte nicht selbst kann.
+- **Ohne Zugangsdaten nie „Einrichtung offen“:** Die Karte fragt keinen Zustand einer Variablen ab; ein nicht erreichbarer Ordner ist eine Warnung an diesem Ordner, kein Zustand der Karte.
+- **§4 Assistent:** vier Schritte (Pfad kopieren, Ordner, Zielprojekt (optional), Prüfen). „Pfad kopieren“ hat keine Prüfung und gilt als erledigt, sobald die Verbindung einen Ordner hat; „Ordner“ legt die Verbindung mit dem ersten Ordner an und gilt erst mit mindestens einem Ordner als erledigt; „Prüfen“ nach einem Lauf ohne Fehler. Der Hinweis auf Linux-Server über den Variablen entfällt (keine Variablen), der Schritt „Pfad kopieren“ nennt Linux und Container selbst.
+- **Katalog:** Kachel „Ordner“ mit eigenem Symbol (Ordner mit Auge, keine Marke).
+
+**Alternativen:** Ein Ordner-Auswahldialog des Browsers (verworfen: der Browser verrät keinen absoluten Pfad, und der Server liest, nicht der Browser); eine Verbindung je Ordner (verworfen wie bei GitHub: Intervall und Zielprojekt gelten für alle, Verschieben zwischen Ordnern einer Verbindung wird erkannt).

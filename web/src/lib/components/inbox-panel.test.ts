@@ -11,6 +11,9 @@ import { ConnectionNamesStore } from '$lib/stores/connection-names.svelte';
 import { InboxStore, type InboxData } from '$lib/stores/inbox.svelte';
 import { LiveHealth } from '$lib/stores/live-health.svelte';
 import ConnectionNamesHarness from '$lib/test/ConnectionNamesHarness.svelte';
+import FolderViewerHarness from '$lib/test/FolderViewerHarness.svelte';
+import type { FileViewOutcome } from '$lib/data/folders';
+import { FolderViewer, type FileOpener, type FolderViewData } from '$lib/stores/folder-view.svelte';
 import { RecurrenceStore, type RecurrenceData } from '$lib/stores/recurrence.svelte';
 import { TicketSourcesStore, type TicketSourcesData } from '$lib/stores/ticket-sources.svelte';
 import { useOverlayStubs } from '$lib/test/overlay-stubs';
@@ -48,7 +51,9 @@ function setup(
 	/** Further props, e.g. the recurrence store of package 6. */
 	extra: Record<string, unknown> = {},
 	/** Names of the connections as the (app) layout provides them (KK-3). */
-	names: ConnectionNamesStore | null = null
+	names: ConnectionNamesStore | null = null,
+	/** "Ansehen" of files of folders as the (app) layout provides it (ADR-0051 §6). */
+	viewer: FolderViewer | null = null
 ) {
 	const data = {
 		listNew: vi.fn<InboxData['listNew']>(async () => []),
@@ -96,10 +101,44 @@ function setup(
 	const store = new InboxStore(data, { ensureValid: () => true, logout: vi.fn() });
 	const onclose = vi.fn();
 	const props = { id: ID, store, openTickets: tickets, onclose, ...extra };
-	if (names === null) render(InboxPanel, { props });
+	if (viewer !== null) {
+		render(FolderViewerHarness, { props: { viewer, component: InboxPanel, props } });
+	} else if (names === null) render(InboxPanel, { props });
 	else render(ConnectionNamesHarness, { props: { names, component: InboxPanel, props } });
 	return { store, data, onclose };
 }
+
+/** "Ansehen" with a fake route and a fake opener of the browser. */
+function folderViewer(outcome: () => Promise<FileViewOutcome>) {
+	const data = { view: vi.fn<FolderViewData['view']>(outcome) };
+	const open = vi.fn<FileOpener>(() => true);
+	return {
+		data,
+		open,
+		viewer: new FolderViewer(data, { ensureValid: () => true, logout: vi.fn() }, open)
+	};
+}
+
+const FILE_ITEM = {
+	channel: 'folder' as const,
+	kind: 'file' as const,
+	title: 'Neue Datei: Angebot.pdf',
+	body: 'Neue Datei im Ordner „Projekte“.',
+	sourceUrl: '',
+	sourceRef: 'C:\\Daten\\Projekte\\2026\\Angebot.pdf',
+	sourceMeta: {
+		folder: {
+			root: 'C:\\Daten\\Projekte',
+			folder: 'Projekte',
+			path: '2026/Angebot.pdf',
+			name: 'Angebot.pdf',
+			size: 2048,
+			type: 'pdf'
+		}
+	},
+	original: '',
+	watch: { kind: 'file' as const, state: 'current' as const, since: null }
+};
 
 afterEach(() => {
 	vi.restoreAllMocks();
@@ -175,6 +214,65 @@ describe('inbox panel', () => {
 		).toBeTruthy();
 		// Only shown: no tone of an error.
 		expect(row('Status der Quelle')?.querySelector('[data-tone="danger"]')).toBeNull();
+	});
+
+	it('shows a file of a folder as a reference and opens its current version (ADR-0051 §6)', async () => {
+		const view = {
+			name: 'Angebot.pdf',
+			path: '2026/Angebot.pdf',
+			folder: 'Projekte',
+			size: 2048,
+			modified: '2026-10-02T08:00:00.000Z',
+			inline: true,
+			url: 'http://127.0.0.1:8090/api/byl/folders/items/item00000000001/file?token=t'
+		};
+		const { data, open, viewer } = folderViewer(async () => ({ kind: 'ok', view }));
+		setup(entry(FILE_ITEM), [], {}, null, viewer);
+		await screen.findByRole('heading', { name: 'Neue Datei: Angebot.pdf' });
+		const details = within(screen.getByRole('complementary'));
+		const row = (label: string) => details.getByText(label, { selector: 'dt' }).nextElementSibling;
+		expect(row('Quelle')?.textContent?.trim()).toBe('Ordner');
+		expect(row('Art')?.textContent?.trim()).toBe('Datei');
+		expect(row('Ordner')?.textContent?.trim()).toBe('Projekte');
+		expect(row('Datei im Ordner')?.textContent?.trim()).toBe('2026/Angebot.pdf');
+		expect(row('Kopie')?.textContent?.trim()).toBe('Verweis');
+		expect(row('Status der Quelle')?.textContent).toContain('Unverändert');
+		expect(screen.getByText(/^Verweis auf die Datei im Ordner, keine Kopie/)).toBeTruthy();
+		// No original file to download: the file stays in the folder.
+		expect(screen.queryByRole('button', { name: 'Originaldatei herunterladen' })).toBeNull();
+
+		await fireEvent.click(screen.getByRole('button', { name: 'Ansehen' }));
+		await vi.waitFor(() => expect(open).toHaveBeenCalledWith(view.url, true));
+		expect(data.view).toHaveBeenCalledWith(ID);
+		await fireEvent.click(screen.getByRole('button', { name: 'Herunterladen' }));
+		await vi.waitFor(() => expect(open).toHaveBeenLastCalledWith(`${view.url}&download=1`, false));
+	});
+
+	it('says neutrally that a file is gone, and a failed request as an error', async () => {
+		const { viewer } = folderViewer(async () => ({
+			kind: 'refused',
+			reason: 'missing',
+			message: 'Die Datei ist nicht mehr vorhanden.'
+		}));
+		setup(entry(FILE_ITEM), [], {}, null, viewer);
+		await fireEvent.click(await screen.findByRole('button', { name: 'Ansehen' }));
+		const note = await screen.findByText('Die Datei ist nicht mehr vorhanden.');
+		expect(note.closest('[data-tone]')?.getAttribute('data-tone')).toBe('info');
+		cleanup();
+
+		const failing = folderViewer(async () => {
+			throw new DataError('network');
+		});
+		setup(entry(FILE_ITEM), [], {}, null, failing.viewer);
+		await fireEvent.click(await screen.findByRole('button', { name: 'Ansehen' }));
+		await vi.waitFor(() => expect(document.querySelector('[data-tone="error"]')).not.toBeNull());
+		expect(failing.open).not.toHaveBeenCalled();
+	});
+
+	it('offers no "Ansehen" outside the (app) layout', async () => {
+		setup(entry(FILE_ITEM));
+		await screen.findByRole('heading', { name: 'Neue Datei: Angebot.pdf' });
+		expect(screen.queryByRole('button', { name: 'Ansehen' })).toBeNull();
 	});
 
 	it('shows no status for an entry without a watched source', async () => {

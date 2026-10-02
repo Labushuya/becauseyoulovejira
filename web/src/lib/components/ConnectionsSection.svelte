@@ -14,10 +14,12 @@
 		CONNECTIONS_UNAVAILABLE_MESSAGE,
 		type ConnectionsStore
 	} from '$lib/stores/connections.svelte';
+	import type { FoldersStore } from '$lib/stores/folders.svelte';
 	import type { GitHubStore } from '$lib/stores/github.svelte';
 	import type { NotionStore } from '$lib/stores/notion.svelte';
 	import ChannelEditModal from './channels/ChannelEditModal.svelte';
 	import ConnectionCard from './channels/ConnectionCard.svelte';
+	import FolderCard from './channels/FolderCard.svelte';
 	import GitHubCard from './channels/GitHubCard.svelte';
 	import NotionCard from './channels/NotionCard.svelte';
 	import EmptyState from './guidance/EmptyState.svelte';
@@ -34,11 +36,13 @@
 	// New connections come from the catalog below (ChannelCatalog). A Notion connection (ADR-0041)
 	// has its own configuration: it fetches nothing by itself and opens the import dialog. Every
 	// card has the target project of its new entries in its details (ADR-0049). A GitHub connection
-	// (ADR-0050) keeps its repositories in its card: add, change, remove, the interval.
+	// (ADR-0050) keeps its repositories in its card: add, change, remove, the interval. A folder
+	// connection (ADR-0051) keeps its folders the same way and takes files of before on request.
 	let {
 		store,
 		notion,
 		github,
+		folders,
 		projects = [],
 		onadd,
 		onsetup,
@@ -49,6 +53,8 @@
 		notion: NotionStore;
 		/** Details and "Verbindung prüfen" of the cards of GitHub connections (ADR-0050). */
 		github: GitHubStore;
+		/** Details and the files of before of the cards of folder connections (ADR-0051). */
+		folders: FoldersStore;
 		/** Every project of the catalog, archived ones included (target projects, ADR-0049). */
 		projects?: readonly ProjectRef[];
 		/** "Kanal hinzufügen" of the empty state: to the catalog. */
@@ -245,7 +251,7 @@
 				icon="channels"
 				headingLevel={4}
 				title="Noch kein Kanal verbunden"
-				description="Verbinde einen Kalender, einen Telegram-Bot oder ein Postfach, übernimm Listen aus Notion oder beobachte Repositorys auf GitHub. Die Einrichtung dauert etwa fünf Minuten."
+				description="Verbinde einen Kalender, einen Telegram-Bot oder ein Postfach, übernimm Listen aus Notion oder beobachte Repositorys auf GitHub und Ordner auf diesem Rechner. Die Einrichtung dauert etwa fünf Minuten."
 			>
 				{#snippet primary()}
 					<button class="button-primary" type="button" onclick={onadd}>Kanal hinzufügen</button>
@@ -257,7 +263,7 @@
 				Postfach alle 5 Minuten; „Aktualisieren“ zeigt das Ergebnis. „Jetzt abrufen“ holt sofort ab,
 				auch bei einem Postfach. Wie weit ein Posteingang durchsucht ist, zeigt seine Karte von
 				selbst. Notion ruft nie von selbst ab: Listen übernimmst du an seiner Karte. GitHub ruft
-				alle 15 Minuten ab, einstellbar an der Karte.
+				alle 15 Minuten ab, Ordner prüft die App alle 5 Minuten; beides stellst du an der Karte ein.
 			</p>
 			<ul class="grid">
 				{#each store.connections as connection (connection.id)}
@@ -298,6 +304,27 @@
 								}}
 								onsave={(settings, announcement) =>
 									store.saveGitHub(connection.id, settings, announcement)}
+								onrename={(label) => store.rename(connection.id, label)}
+								ontarget={(project) => store.setTarget(connection.id, project)}
+								{projects}
+								others={othersOf(connection)}
+							/>
+						{:else if connection.type === 'folder'}
+							<FolderCard
+								{connection}
+								{folders}
+								running={store.isRunning(connection.id)}
+								lastRun={store.lastRun(connection.id)}
+								message={messageOf(connection)}
+								onrun={() => void runNow(connection)}
+								onpause={(enabled) => void setEnabled(connection, enabled)}
+								onsetup={() => onsetup(connection)}
+								ondelete={() => {
+									deleteError = null;
+									pendingDelete = connection;
+								}}
+								onsave={(settings, announcement) =>
+									store.saveFolders(connection.id, settings, announcement)}
 								onrename={(label) => store.rename(connection.id, label)}
 								ontarget={(project) => store.setTarget(connection.id, project)}
 								{projects}
@@ -384,10 +411,17 @@
 		if (!deleting) pendingDelete = null;
 	}}
 >
-	<p>
-		Die App ruft dann nichts mehr ab. Einträge, die schon im Eingang sind, bleiben. Die
-		Windows-Variable löschst du selbst, falls du sie nicht mehr brauchst.
-	</p>
+	{#if pendingDelete?.type === 'folder'}
+		<p>
+			Die App prüft dann keinen dieser Ordner mehr. Einträge, die schon im Eingang sind, bleiben;
+			die Dateien in den Ordnern bleiben unberührt.
+		</p>
+	{:else}
+		<p>
+			Die App ruft dann nichts mehr ab. Einträge, die schon im Eingang sind, bleiben. Die
+			Windows-Variable löschst du selbst, falls du sie nicht mehr brauchst.
+		</p>
+	{/if}
 </ConfirmDialog>
 
 <style>

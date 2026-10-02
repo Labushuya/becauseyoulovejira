@@ -36,7 +36,7 @@ describe('help page (EH-9)', () => {
 		}
 	});
 
-	it('jumps to the sections that exist on the page, twelve since GitHub', () => {
+	it('jumps to the sections that exist on the page, thirteen since the folders', () => {
 		const { container } = render(Page);
 
 		const jump = within(screen.getByRole('navigation', { name: 'Auf dieser Seite' }));
@@ -50,6 +50,7 @@ describe('help page (EH-9)', () => {
 			'WhatsApp Web',
 			'Notion',
 			'GitHub',
+			'Ordner',
 			'Häufige Fragen',
 			'Betrieb',
 			'Sicherung & Notfall',
@@ -494,6 +495,46 @@ describe('help page (EH-9)', () => {
 				.getByRole('link', { name: 'Kanäle → GitHub → Einrichten' })
 				.getAttribute('href')
 		).toBe('/einstellungen/kanaele?einrichten=github');
+		expect(section.querySelectorAll('table')).toHaveLength(0);
+	});
+
+	it('explains the folders: read only, references, paths, filters, first run, viewing and limits (ADR-0051)', () => {
+		render(Page);
+		const section = screen.getByRole('region', { name: 'Ordner' });
+		const content = text(section);
+		for (const phrase of [
+			'Die App liest nur',
+			'Verweis',
+			'nicht als Kopie',
+			'Zugangsdaten braucht es keine',
+			'C:\\Daten\\Projekte',
+			'\\\\NAS\\Projekte',
+			'/home/anna/Projekte',
+			'*.tmp',
+			'node_modules/**',
+			'Verknüpfungen (Symlinks, Junctions) folgt die App nicht',
+			'Höchstens 10 Ordner je Verbindung',
+			'Der erste Lauf merkt sich nur den Stand',
+			'„Vorhandene Dateien übernehmen …“',
+			'„Datei geändert: …“',
+			'Stichwörter gibt es bei Ordnern nicht',
+			'PDF, Bilder und Text im Browser',
+			'nur im Browser auf diesem Rechner, nur für dich',
+			'„Verschoben“',
+			'Das Ticket ändert sich dadurch nie',
+			'1 bis 60 Minuten',
+			'200 MB',
+			'2.000 Dateien',
+			'100 neue',
+			'nie ihr Inhalt'
+		]) {
+			expect(content, phrase).toContain(phrase);
+		}
+		expect(
+			within(section)
+				.getByRole('link', { name: 'Kanäle → Ordner → Einrichten' })
+				.getAttribute('href')
+		).toBe('/einstellungen/kanaele?einrichten=ordner');
 		expect(section.querySelectorAll('table')).toHaveLength(0);
 	});
 

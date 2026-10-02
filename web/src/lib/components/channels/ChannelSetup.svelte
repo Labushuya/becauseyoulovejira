@@ -31,11 +31,14 @@
 		type Connection,
 		type TelegramRepliesChange
 	} from '$lib/domain/connections';
+	import { folderPlatformOf } from '$lib/domain/folders';
 	import { checkSummary } from '$lib/domain/github';
+	import { DEFAULT_HOST_PLATFORM } from '$lib/domain/host-platform';
 	import { checkText } from '$lib/domain/notion';
 	import type { ProjectRef } from '$lib/domain/ticket';
 	import type { ConnectionsStore } from '$lib/stores/connections.svelte';
 	import type { GitHubStore } from '$lib/stores/github.svelte';
+	import { findHostStore } from '$lib/stores/host.svelte';
 	import type { NotionStore } from '$lib/stores/notion.svelte';
 	import ErrorIcon from '../ErrorIcon.svelte';
 	import KeywordEditor from '../KeywordEditor.svelte';
@@ -47,6 +50,7 @@
 	import Tabs from '../guidance/Tabs.svelte';
 	import Modal from '../overlay/Modal.svelte';
 	import CardTargetProject from './CardTargetProject.svelte';
+	import FolderSetupList from './FolderSetupList.svelte';
 	import GitHubSetupRepos from './GitHubSetupRepos.svelte';
 	import SecretValueField from './SecretValueField.svelte';
 	import SetupCheck from './SetupCheck.svelte';
@@ -69,7 +73,8 @@
 	// it saves at once like the card. GitHub (ADR-0050 §7) creates its connection with the first
 	// repository; the same step then lists the repositories and adds more inline, and the assistant
 	// ends with "Verbindung prüfen", which asks GitHub for the token, the rate limit and every
-	// repository.
+	// repository. Folders (ADR-0051 §7) have no variable: the connection comes with its first folder,
+	// the same step adds more, and the last one runs the first check ("Jetzt prüfen").
 	let {
 		kind,
 		connectionId,
@@ -138,6 +143,10 @@
 	 * the run route to fetch at once, and "Hilfsprozess prüfen".
 	 */
 	const mailbox = $derived(kind === 'webde' || kind === 'gmail');
+	/** Folders: no variables; a run is a check of the folders. */
+	const folders = $derived(kind === 'ordner');
+	const host = findHostStore();
+	const platform = $derived(folderPlatformOf(host?.platform ?? DEFAULT_HOST_PLATFORM));
 
 	function session(): Storage | null {
 		try {
@@ -435,13 +444,17 @@
 				aria-disabled={running}
 				onclick={() => void runNow()}
 			>
-				{running ? 'Wird abgerufen …' : 'Jetzt abrufen'}
+				{#if folders}
+					{running ? 'Wird geprüft …' : 'Jetzt prüfen'}
+				{:else}
+					{running ? 'Wird abgerufen …' : 'Jetzt abrufen'}
+				{/if}
 			</button>
 		</div>
 		{#if lastRun !== null}
 			<SectionMessage
 				tone={lastRun.status === 'ok' ? 'success' : lastRun.status === 'error' ? 'error' : 'info'}
-				title={lastRun.status === 'ok' ? 'Abgerufen' : undefined}
+				title={lastRun.status === 'ok' ? (folders ? 'Geprüft' : 'Abgerufen') : undefined}
 				compact={lastRun.status !== 'ok'}
 				live
 				headingLevel={4}
@@ -477,6 +490,16 @@
 				onsave={(settings, announcement) => {
 					hold();
 					return store.saveGitHub(current.id, settings, announcement);
+				}}
+			/>
+		{:else if folders}
+			{@const current = connection}
+			<FolderSetupList
+				connection={current}
+				{platform}
+				onsave={(settings, announcement) => {
+					hold();
+					return store.saveFolders(current.id, settings, announcement);
 				}}
 			/>
 		{:else if mailbox}
@@ -743,7 +766,9 @@
 				Diese Verbindung gibt es nicht mehr. Im ersten Schritt legst du eine neue an.
 			</SectionMessage>
 		{/if}
-		<HostPlatformNote />
+		{#if !folders}
+			<HostPlatformNote />
+		{/if}
 
 		{#if overview}
 			<div class="overview">

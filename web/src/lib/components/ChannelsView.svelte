@@ -4,6 +4,7 @@
 	import type { Connection } from '$lib/domain/connections';
 	import type { ProjectRef } from '$lib/domain/ticket';
 	import type { ConnectionsStore } from '$lib/stores/connections.svelte';
+	import type { FoldersStore } from '$lib/stores/folders.svelte';
 	import type { GitHubStore } from '$lib/stores/github.svelte';
 	import type { ImportKeywordsStore } from '$lib/stores/import-keywords.svelte';
 	import type { InboxKeysStore } from '$lib/stores/inbox-keys.svelte';
@@ -37,12 +38,15 @@
 	// card that brings entries has their target project in its details and the assistants ask for
 	// it in an optional step (ADR-0049): connections keep it themselves, the own inbox, WhatsApp
 	// Web and the files per user (`inboxTargets`). GitHub (ADR-0050) has its assistant (ChannelSetup)
-	// and its card with the repositories, their details and "Verbindung prüfen" (`github`).
+	// and its card with the repositories, their details and "Verbindung prüfen" (`github`). Folders
+	// (ADR-0051) have their assistant too and a card with the folders, their details and the files of
+	// before (`folders`).
 	let {
 		captureUrl,
 		connections,
 		notion,
 		github,
+		folders,
 		importKeywords = null,
 		inboxKeys = null,
 		inboxTargets = null,
@@ -58,6 +62,8 @@
 		notion: NotionStore;
 		/** GitHub (ADR-0050): details of the cards and "Verbindung prüfen". */
 		github: GitHubStore;
+		/** Folders (ADR-0051): details of the cards and "Vorhandene Dateien übernehmen". */
+		folders: FoldersStore;
 		/**
 		 * Keywords of the file imports, for the numbers on the files card, and of the channels of the
 		 * own inbox (ADR-0038).
@@ -114,6 +120,7 @@
 		store={connections}
 		{notion}
 		{github}
+		{folders}
 		{projects}
 		onadd={focusCatalog}
 		onsetup={showSetup}
