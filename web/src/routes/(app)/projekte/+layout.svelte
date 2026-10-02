@@ -21,6 +21,8 @@
 	import { findTicketDuplicateStore } from '$lib/stores/ticket-duplicate.svelte';
 	import { getTicketListStore } from '$lib/stores/ticket-list.svelte';
 	import { findTicketRowActions } from '$lib/stores/ticket-row-actions.svelte';
+	import type { DeleteResult, DeleteSources } from '$lib/stores/trash-move';
+	import { PROJECTS_HOST, isTicketRoute, setTicketHost } from '$lib/ticket-host';
 
 	// Project view (E3 plan, T-3 and package 14; ADR-0025 section 10, package UI-8; user request
 	// after EH-4): the list or the tiles on the left, the project panel (/projekte/neu,
@@ -30,8 +32,13 @@
 	// sub projects (ADR-0034 section 6, UP-6); the panel names its own ones as "davon direkt".
 	// The open tickets in the list and in the panel (ADR-0034, addendum "Offene Tickets in
 	// Projekten") come from the list store and end with the menu "•••" of the ticket rows; its
-	// questions open here, once for the list and the panel.
+	// questions open here, once for the list and the panel. Tickets open in the projects
+	// (/projekte/tickets/<id>, …/voll; ADR-0054): the host in the context makes every ticket link
+	// below stay here; a ticket takes the panel column and replaces the project panel it came from,
+	// whose project stays marked in the view (never the ID of a ticket).
 	let { children } = $props();
+
+	setTicketHost(PROJECTS_HOST);
 
 	const tickets = getTicketListStore();
 	const catalog = getCatalogStore();
@@ -44,8 +51,11 @@
 	const stats = new ProjectStatsStore(projectStatsData(pb), auth);
 	const editor = new CatalogEditor(catalogEditorData(pb), auth, catalog);
 
-	const activeId = $derived(page.params.id ?? null);
-	const withPanel = $derived(page.route.id !== '/(app)/projekte');
+	/** A ticket is shown in the panel or in the full view (ADR-0054). */
+	const ticketShown = $derived(isTicketRoute(PROJECTS_HOST, page.route.id));
+	/** Project of the panel, or the one the shown ticket came from. */
+	const activeId = $derived(PROJECTS_HOST.activeIn(page));
+	const withPanel = $derived(PROJECTS_HOST.panelShown(page.route.id));
 	const creating = $derived(page.route.id === '/(app)/projekte/neu');
 	const activeCounts = $derived(
 		tickets.openState === 'ready' ? countActiveByProject(tickets.open) : null
@@ -120,6 +130,16 @@
 	// "aktiv" counts the open tickets of the list store, also when the app starts here.
 	$effect(() => untrack(() => tickets.loadOpen()));
 	$effect(() => untrack(() => stats.connect(liveSource(pb))));
+
+	/** "In den Papierkorb …" of an open ticket; the panel of that ticket closes afterwards. */
+	async function moveToTrash(ticketId: string, sources?: DeleteSources): Promise<DeleteResult> {
+		if (rowActions === null) return { ok: false, message: null };
+		const result = await rowActions.deleteTicket(sources);
+		if (result.ok && ticketShown && ticketId === page.params.id) {
+			await goto(PROJECTS_HOST.view(page.url));
+		}
+		return result;
+	}
 </script>
 
 <ViewWithPanel {withPanel}>
@@ -151,6 +171,7 @@
 		projects={catalog.activeProjects}
 		subtaskCountOf={(id) => tickets.progressOf(id).total}
 		parentKeyOf={(ticket) => parentOf(ticket, (id) => tickets.find(id))?.key ?? null}
-		onopen={(id) => void goto(links.path(id))}
+		onopen={(id) => void goto(links.href(id, page.url))}
+		{moveToTrash}
 	/>
 {/if}

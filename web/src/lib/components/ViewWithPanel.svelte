@@ -16,7 +16,8 @@
 	//   the blanket behind it; the view and the header are inert, and a click on the blanket closes
 	//   like the × of the panel.
 	// The panel slides in only when it opens, not when it changes to another entry (data-entering
-	// for the Drawer).
+	// for the Drawer). Both parts name themselves (data-view-part "list" and "panel"), so the way
+	// back from a ticket finds the link that opened it in the right one (ADR-0054, TicketHost).
 	let {
 		withPanel,
 		list,
@@ -75,7 +76,7 @@
 	class:covering
 	data-panel-mode={withPanel ? (covering ? 'overlay' : 'embedded') : undefined}
 >
-	<div class="list" inert={covering}>
+	<div class="list" inert={covering} data-view-part="list">
 		{@render list()}
 	</div>
 	{#if covering}
@@ -85,6 +86,7 @@
 	<div
 		class="panel"
 		class:open={withPanel}
+		data-view-part="panel"
 		data-entering={entering ? '' : undefined}
 		onanimationend={() => (entering = false)}
 	>

@@ -34,8 +34,9 @@
 	// BI-1): while it is shown, the panel is not mounted, so the two never stand at the same time,
 	// also not after back or forward. A reload opens the same panel or full view. Links to other
 	// tickets follow the remembered way to open them (panel or full view). The same layout stands
-	// next to the calendar (/kalender/tickets/<id>, ADR-0053 §6): the host of the context names the
-	// addresses and the view the panel closes to.
+	// next to the calendar (/kalender/tickets/<id>, ADR-0053 §6) and in the projects, the inbox and
+	// the rules (ADR-0054): the host of the context names the addresses and the way back the panel
+	// closes to (in an area the panel the ticket replaced).
 	let { children }: { children: Snippet } = $props();
 
 	const host = findTicketHost();

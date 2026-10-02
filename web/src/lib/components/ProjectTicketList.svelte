@@ -12,7 +12,8 @@
 	import type { ProjectRef, TicketSummary } from '$lib/domain/ticket';
 	import { ticketLinks } from '$lib/stores/open-mode.svelte';
 	import type { TicketRowActionsStore } from '$lib/stores/ticket-row-actions.svelte';
-	import { fullViewHref, projectTicketsHref, ticketHref } from '$lib/ticket-links';
+	import { findTicketHost } from '$lib/ticket-host';
+	import { projectTicketsHref } from '$lib/ticket-links';
 	import ColorMark from './ColorMark.svelte';
 	import DueLabel from './DueLabel.svelte';
 	import ErrorIcon from './ErrorIcon.svelte';
@@ -26,9 +27,10 @@
 	// with a name; each entry shows key and title (one link, it opens the ticket in the remembered
 	// way, ADR-0036 §1), status, priority and due date. At most PROJECT_TICKETS_LIMIT entries, in
 	// the order of the domain (due date, then priority); then "Alle N in Aufgaben öffnen", the list
-	// filtered by the project. Links keep that filter, so closing the ticket shows the tickets of
-	// the project. A parent lists only its own tickets (`ownOnly`; its sub projects list theirs),
-	// and its link leaves the sub projects out. No editing, no selection, no filters: that is what
+	// filtered by the project. A ticket opens in the projects (ADR-0054, the host of the layout):
+	// next to the list, or instead of the project panel, which × of the ticket brings back. A parent
+	// lists only its own tickets (`ownOnly`; its sub projects list theirs), and its link to
+	// "Aufgaben" leaves the sub projects out. No editing, no selection, no filters: that is what
 	// "Aufgaben" is for. With `rowActions` every entry ends with the menu "•••" of the rows of
 	// "Aufgaben" (plan aktionsmenues, AM-2); an entry is a menu row, so a right click or Shift+F10
 	// open it where the owner attached rowMenus. The entries never scroll sideways (ADR-0030): the
@@ -73,14 +75,13 @@
 	} = $props();
 
 	const links = ticketLinks();
+	const host = findTicketHost();
 	/** Titles from this length name themselves on hover; the line clamp may cut them (ADR-0030). */
 	const LONG_TITLE = 60;
 
 	const slice = $derived(sliceProjectTickets(tickets, limit));
 	const label = $derived(projectTicketsLabel(project.name, ownOnly));
 	const allHref = $derived(projectTicketsHref(project.id, !ownOnly));
-	/** The list of the project in "Aufgaben", whose query the links of the tickets keep. */
-	const listUrl = $derived(new URL(allHref, page.url));
 
 	let list = $state<HTMLElement>();
 	/** The focused element of an entry before the list changes, and the place of its entry. */
@@ -128,8 +129,9 @@
 			<li class="ticket" data-menu-row={rowActions ? '' : undefined}>
 				<a
 					class="link"
-					href={links.href(ticket.id, listUrl)}
+					href={links.href(ticket.id, page.url)}
 					data-row-link
+					data-ticket-link={ticket.id}
 					title={ticket.title.length >= LONG_TITLE ? ticket.title : undefined}
 				>
 					{#if color}<ColorMark shown={color} named={false} />{/if}
@@ -155,8 +157,8 @@
 								{ticket}
 								flags={actions.flags}
 								open={{
-									panel: ticketHref(ticket.id, listUrl),
-									full: fullViewHref(ticket.id, listUrl)
+									panel: host.panel(ticket.id, page.url),
+									full: host.full(ticket.id, page.url)
 								}}
 								buttonLabel={`Weitere Aktionen für ${ticket.key}`}
 								buttonClass="button-icon row-menu"

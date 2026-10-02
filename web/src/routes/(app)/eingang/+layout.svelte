@@ -39,13 +39,19 @@
 	import { getTicketSourcesStore } from '$lib/stores/ticket-sources.svelte';
 	import { readWhatsAppFile } from '$lib/whatsapp-file';
 	import { ticketLinks } from '$lib/stores/open-mode.svelte';
+	import { INBOX_HOST, setTicketHost } from '$lib/ticket-host';
 
 	// Inbox view (E4 plan, T-3 and package 3): the table with the chips of the URL on the left, the
 	// panel of an entry (/eingang/<id>) on the right, like the ticket view (ADR-0010 section 1).
 	// "Gesammelt umwandeln" opens a modal dialog; its tickets join the list at once. Results of
 	// imports and conversions go out as flags (ADR-0025 section 8): success, or neutral when a part
-	// failed (the drop zone and the dialogs name the reasons).
+	// failed (the drop zone and the dialogs name the reasons). Tickets open in the inbox
+	// (/eingang/tickets/<id>, …/voll; ADR-0054): the host in the context makes every ticket link
+	// below stay here; a ticket takes the panel column and replaces the entry it came from, whose
+	// row stays marked (never the ID of a ticket).
 	let { children } = $props();
+
+	setTicketHost(INBOX_HOST);
 
 	// Ticket links open the panel or the full view, as the user last chose (plan BI-1).
 	const links = ticketLinks();
@@ -56,8 +62,9 @@
 	const flags = getFlagStore();
 	const sources = getTicketSourcesStore();
 	const query = $derived(parseInboxQuery(page.url.searchParams));
-	const activeId = $derived(page.params.id ?? null);
-	const withPanel = $derived(page.route.id !== '/(app)/eingang');
+	/** Entry of the panel, or the one the shown ticket came from (ADR-0054). */
+	const activeId = $derived(INBOX_HOST.activeIn(page));
+	const withPanel = $derived(INBOX_HOST.panelShown(page.route.id));
 
 	const converter = new BulkConverter(bulkConvertData(pb), auth, {
 		upsertTicket: (ticket) => tickets.upsert(ticket),

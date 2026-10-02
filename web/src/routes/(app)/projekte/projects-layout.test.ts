@@ -46,7 +46,9 @@ const mocks = vi.hoisted(() => ({
 	catalog: null as unknown,
 	tickets: null as unknown,
 	flags: null as unknown,
-	editorData: null as unknown
+	editorData: null as unknown,
+	// The done tickets a project counts ("gesamt"), asked per project ID.
+	countDone: vi.fn<(projectId: string) => Promise<number>>(async () => 0)
 }));
 
 vi.mock('$app/navigation', () => ({ goto: mocks.goto }));
@@ -75,7 +77,7 @@ vi.mock('$lib/stores/catalog-editor', async (importOriginal) => ({
 }));
 vi.mock('$lib/stores/project-stats.svelte', async (importOriginal) => ({
 	...(await importOriginal<object>()),
-	projectStatsData: () => ({ countDone: async () => 0 })
+	projectStatsData: () => ({ countDone: mocks.countDone })
 }));
 vi.mock('$lib/stores/realtime', async (importOriginal) => ({
 	...(await importOriginal<object>()),
@@ -104,9 +106,17 @@ function openTicket(projectId: string, id = 't00000000000001'): TicketSummary {
 	};
 }
 
+/** Route IDs of the children: a project, "Neues Projekt", a ticket and its full view (ADR-0054). */
+const CHILD_ROUTES = {
+	neu: '/(app)/projekte/neu',
+	project: '/(app)/projekte/[id]',
+	ticket: '/(app)/projekte/tickets/[id]',
+	full: '/(app)/projekte/tickets/[id]/voll'
+} as const;
+
 async function show(
 	path: string,
-	child: 'neu' | 'project' | null = null,
+	child: keyof typeof CHILD_ROUTES | null = null,
 	{
 		projects = [HOUSE, EMPTY],
 		open = [openTicket(HOUSE.id)],
@@ -115,16 +125,9 @@ async function show(
 ) {
 	const url = new URL(path, 'http://localhost:3000');
 	mocks.page.url = url;
-	const id = /^\/projekte\/([a-z0-9]{15})$/.exec(url.pathname)?.[1];
+	const id = /^\/projekte\/(?:tickets\/)?([a-z0-9]{15})(?:\/voll)?$/.exec(url.pathname)?.[1];
 	mocks.page.params = id ? { id } : {};
-	mocks.page.route = {
-		id:
-			child === 'neu'
-				? '/(app)/projekte/neu'
-				: child === 'project'
-					? '/(app)/projekte/[id]'
-					: '/(app)/projekte'
-	};
+	mocks.page.route = { id: child === null ? '/(app)/projekte' : CHILD_ROUTES[child] };
 	const session = { ensureValid: () => true, logout: vi.fn() };
 	const catalog = new CatalogStore(
 		{ listProjects: async () => projects, listTags: async () => [], createTag: vi.fn() },
@@ -183,6 +186,7 @@ const flagTitles = (flags: FlagStore) => flags.flags.map((flag) => flag.title);
 
 beforeEach(() => {
 	mocks.goto.mockClear();
+	mocks.countDone.mockClear();
 	document.body.innerHTML = '';
 });
 
@@ -435,8 +439,9 @@ describe('project view route: open tickets in the panel (ADR-0034, addendum)', (
 				.getByRole('link', { name: 'Alle 12 in Aufgaben öffnen' })
 				.getAttribute('href')
 		).toBe(`/?projekt=${HOUSE.id}`);
+		// The ticket opens in the projects instead of the project panel (ADR-0054).
 		expect(within(list).getByRole('link', { name: 'HAUS-1 Aufgabe 1' }).getAttribute('href')).toBe(
-			`/tickets/${numbered(HOUSE.id, 'HAUS', 1)[0]!.id}?projekt=${HOUSE.id}`
+			`/projekte/tickets/${numbered(HOUSE.id, 'HAUS', 1)[0]!.id}?von=${HOUSE.id}`
 		);
 	});
 
@@ -502,5 +507,62 @@ describe('project view route: open tickets in the panel (ADR-0034, addendum)', (
 		expect(
 			within(section()).getByRole('heading', { level: 4, name: 'Keine offenen Tickets' })
 		).toBeTruthy();
+	});
+});
+
+describe('project view route: tickets in the projects (ADR-0054)', () => {
+	const TICKET = 't00000000000001';
+	const projectLink = () => screen.getByRole('link', { name: /^Haus/ });
+
+	it('shows a ticket instead of the project panel and marks the project it came from', async () => {
+		await show(`/projekte/tickets/${TICKET}?von=${HOUSE.id}`, 'ticket');
+
+		expect(screen.getByRole('complementary', { name: 'Panel des Tickets' })).toBeTruthy();
+		expect(screen.queryByRole('complementary', { name: 'Haus' })).toBeNull();
+		expect((document.querySelector('.view') as HTMLElement).dataset.panelMode).toBe('embedded');
+		expect(projectLink().getAttribute('aria-current')).toBe('page');
+		// The view only ever gets the ID of a project, never the one of the ticket.
+		await vi.waitFor(() => expect(mocks.countDone).toHaveBeenCalled());
+		expect(mocks.countDone.mock.calls.map(([id]) => id)).not.toContain(TICKET);
+	});
+
+	it('marks no project for a ticket opened from the list', async () => {
+		await show(`/projekte/tickets/${TICKET}`, 'ticket');
+		expect((document.querySelector('.view') as HTMLElement).dataset.panelMode).toBe('embedded');
+		expect(projectLink().hasAttribute('aria-current')).toBe(false);
+		expect(mocks.countDone.mock.calls.map(([id]) => id)).not.toContain(TICKET);
+	});
+
+	it('has no panel column while the full view of a ticket is shown (ADR-0036 §1)', async () => {
+		await show(`/projekte/tickets/${TICKET}/voll?von=${HOUSE.id}`, 'full');
+		expect(document.querySelector('.view')?.hasAttribute('data-panel-mode')).toBe(false);
+		expect(projectLink().getAttribute('aria-current')).toBe('page');
+	});
+
+	it('closes the ticket when its entry in the list goes to the trash, back to the project', async () => {
+		const rowData: TicketRowActionsData = {
+			get: vi.fn<TicketRowActionsData['get']>(),
+			sources: vi.fn(async () => []),
+			commentCount: vi.fn(async () => 0),
+			delete: vi.fn(async () => null)
+		};
+		await show(`/projekte/tickets/${TICKET}?von=${HOUSE.id}`, 'ticket', { rowData });
+		await fireEvent.click(screen.getByRole('button', { name: 'Offene Tickets von „Haus“' }));
+		const list = await screen.findByRole('list', { name: 'Offene Tickets von „Haus“' });
+		expect(within(list).getByRole('link', { name: 'HAUS-1 Dach' }).getAttribute('href')).toBe(
+			`/projekte/tickets/${TICKET}?von=${HOUSE.id}`
+		);
+		const button = within(list).getByRole('button', { name: 'Weitere Aktionen für HAUS-1' });
+		await fireEvent.click(button);
+		const menu = document.getElementById(button.getAttribute('aria-controls') ?? '') as HTMLElement;
+		await fireEvent.click(
+			within(menu).getByRole('menuitem', { name: 'In den Papierkorb …', hidden: true })
+		);
+		const dialog = await screen.findByRole('dialog', {
+			name: 'HAUS-1 in den Papierkorb verschieben?'
+		});
+		await fireEvent.click(within(dialog).getByRole('button', { name: 'In den Papierkorb' }));
+
+		await vi.waitFor(() => expect(mocks.goto).toHaveBeenCalledWith(`/projekte/${HOUSE.id}`));
 	});
 });

@@ -1196,8 +1196,12 @@ describe('ticket route: sub-tasks (ADR-0033)', () => {
 				.getAllByRole('listitem')
 				.map((item) => item.textContent?.trim())
 		).toEqual(['Haus', 'Garten', 'HAUS-12', 'GART-3']);
+		// The projects lead to their panels (ADR-0054 §6), not to "Aufgaben" with a filter.
 		expect(within(path).getByRole('link', { name: 'Haus' }).getAttribute('href')).toBe(
-			`/?projekt=${house.id}`
+			`/projekte/${house.id}`
+		);
+		expect(within(path).getByRole('link', { name: 'Garten' }).getAttribute('href')).toBe(
+			`/projekte/${garden.id}`
 		);
 		expect(within(path).getByRole('link', { name: 'Garten' }).getAttribute('title')).toBe(
 			'Haus › Garten (GART)'

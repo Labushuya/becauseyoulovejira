@@ -1,9 +1,10 @@
 // Component tests for the compact list of the open tickets of a project (ADR-0034, addendum
 // "Offene Tickets in Projekten"; plan projekte-tickets): a named list with key and title as one
 // link, status, priority and due date; at most ten, then "Alle N in Aufgaben öffnen"; a ticket
-// opens in the remembered way with the list of its project behind it; empty, loading and failed;
-// the menu "•••" of the ticket rows with its context menu; the focus when the focused entry
-// leaves. Page state is mocked; the open-mode and row-action stores run for real on fakes.
+// opens in the remembered way in the projects (ADR-0054), with the state of the project view and
+// the project panel it replaces; empty, loading and failed; the menu "•••" of the ticket rows with
+// its context menu; the focus when the focused entry leaves. Page state is mocked; the open-mode
+// and row-action stores run for real on fakes.
 
 import { fireEvent, render, screen, within } from '@testing-library/svelte';
 import { tick } from 'svelte';
@@ -17,6 +18,7 @@ import {
 } from '$lib/stores/ticket-row-actions.svelte';
 import { useOverlayStubs } from '$lib/test/overlay-stubs';
 import ProjectTicketListHarness from '$lib/test/ProjectTicketListHarness.svelte';
+import { PROJECTS_HOST } from '$lib/ticket-host';
 
 const mocks = vi.hoisted(() => ({
 	page: { url: new URL('http://localhost:3000/projekte?q=Haus') }
@@ -57,7 +59,7 @@ function ticket(overrides: Partial<TicketSummary> = {}): TicketSummary {
 
 function show(props: Record<string, unknown> = {}) {
 	return render(ProjectTicketListHarness, {
-		props: { project: HOUSE, tickets: [], today: TODAY, ...props }
+		props: { project: HOUSE, tickets: [], today: TODAY, host: PROJECTS_HOST, ...props }
 	});
 }
 
@@ -68,6 +70,7 @@ const links = (name?: string) =>
 
 afterEach(() => {
 	document.body.innerHTML = '';
+	mocks.page.url = new URL('http://localhost:3000/projekte?q=Haus');
 });
 
 describe('open tickets of a project: color (ADR-0052)', () => {
@@ -149,22 +152,32 @@ describe('open tickets of a project', () => {
 		expect(screen.queryByRole('link', { name: /in Aufgaben öffnen/ })).toBeNull();
 	});
 
-	it('opens a ticket in the remembered way, with the tickets of the project behind it', async () => {
+	it('opens a ticket in the remembered way in the projects, with the state of the view', async () => {
 		const item = ticket();
 		const openMode = new TicketOpenModeStore(null);
 		show({ tickets: [item], openMode });
 
-		// The search of the project view ("q") never reaches the list of the tickets.
-		expect(links()[0]?.getAttribute('href')).toBe(`/tickets/${item.id}?projekt=${HOUSE.id}`);
+		// The search of the project view ("q") stays the search of the projects (ADR-0054).
+		expect(links()[0]?.getAttribute('href')).toBe(`/projekte/tickets/${item.id}?q=Haus`);
+		expect(links()[0]?.getAttribute('data-ticket-link')).toBe(item.id);
 		openMode.choose('full');
 		await tick();
-		expect(links()[0]?.getAttribute('href')).toBe(`/tickets/${item.id}/voll?projekt=${HOUSE.id}`);
+		expect(links()[0]?.getAttribute('href')).toBe(`/projekte/tickets/${item.id}/voll?q=Haus`);
+	});
+
+	it('names the project panel it replaces as the way back (von)', () => {
+		mocks.page.url = new URL(`http://localhost:3000/projekte/${HOUSE.id}?q=Haus`);
+		const item = ticket();
+		show({ tickets: [item] });
+		expect(links()[0]?.getAttribute('href')).toBe(
+			`/projekte/tickets/${item.id}?q=Haus&von=${HOUSE.id}`
+		);
 	});
 
 	it('opens in the panel outside the (app) layout', () => {
 		const item = ticket();
 		show({ tickets: [item] });
-		expect(links()[0]?.getAttribute('href')).toBe(`/tickets/${item.id}?projekt=${HOUSE.id}`);
+		expect(links()[0]?.getAttribute('href')).toBe(`/projekte/tickets/${item.id}?q=Haus`);
 	});
 
 	it('says when there are none, while loading and when loading failed', async () => {
@@ -219,7 +232,7 @@ describe('menu "•••" of an open ticket', () => {
 	const menuOf = (button: HTMLElement) =>
 		document.getElementById(button.getAttribute('aria-controls') ?? '') as HTMLElement;
 
-	it('ends every entry with the menu of the ticket rows, its links keep the project', () => {
+	it('ends every entry with the menu of the ticket rows, its links stay in the projects', () => {
 		const item = ticket({ key: 'HAUS-7' });
 		const { store } = rowActions();
 		show({ tickets: [item], rowActions: store, duplicates: true });
@@ -234,8 +247,8 @@ describe('menu "•••" of an open ticket', () => {
 			'Duplizieren …',
 			'In den Papierkorb …'
 		]);
-		expect(items[0]?.getAttribute('href')).toBe(`/tickets/${item.id}?projekt=${HOUSE.id}`);
-		expect(items[1]?.getAttribute('href')).toBe(`/tickets/${item.id}/voll?projekt=${HOUSE.id}`);
+		expect(items[0]?.getAttribute('href')).toBe(`/projekte/tickets/${item.id}?q=Haus`);
+		expect(items[1]?.getAttribute('href')).toBe(`/projekte/tickets/${item.id}/voll?q=Haus`);
 	});
 
 	it('leaves out "Duplizieren …" without its store and has no menu without the row actions', () => {

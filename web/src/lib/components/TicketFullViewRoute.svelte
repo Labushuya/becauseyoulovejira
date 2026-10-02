@@ -49,8 +49,9 @@
 	// about unsaved text when a link leaves the ticket (the layout holds the navigation). Its
 	// "Duplizieren …" unfolds the question at the same place (ADR-0045 §2); the duplicate then opens
 	// in the remembered way (ADR-0036 §1). Closing a question gives the focus back to the menu.
-	// Over the calendar (/kalender/tickets/<id>/voll, ADR-0053 §6) the host of the context names the
-	// addresses, and closing gives the focus to the entry of the ticket in the calendar.
+	// Over the calendar (/kalender/tickets/<id>/voll, ADR-0053 §6) and in the areas projects, inbox
+	// and rules (ADR-0054) the host of the context names the addresses, and closing gives the focus
+	// to the entry of the ticket there: in an area to the panel it came from, else to the view.
 
 	const host = findTicketHost();
 	const detail = getTicketDetailStore();
@@ -121,9 +122,11 @@
 	 */
 	async function close() {
 		if (openMode?.wide ?? true) {
-			await goto(host.view(page.url), { noScroll: true });
+			const from = page.url;
+			const ticketId = id;
+			await goto(host.view(from), { noScroll: true });
 			await tick();
-			host.entryOf(id)?.focus();
+			host.entryOf(ticketId, from)?.focus();
 			return;
 		}
 		await goto(host.panel(id, page.url), { noScroll: true });

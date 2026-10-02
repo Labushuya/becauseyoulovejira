@@ -171,6 +171,7 @@ describe('help page (EH-9)', () => {
 			'Wie arbeite ich mit Unteraufgaben?',
 			'Wie hole ich ein gelöschtes Ticket zurück?',
 			'Warum lässt sich ein Ticket im Papierkorb nicht endgültig löschen?',
+			'Wo öffnet sich ein Ticket?',
 			'Was steht im Menü „•••“ eines Tickets?',
 			'Wie dupliziere ich ein Ticket?',
 			'Wie gliedere ich ein Projekt in Unterprojekte?',
@@ -233,6 +234,14 @@ describe('help page (EH-9)', () => {
 		expect(text(section)).toContain('standardmäßig „Wie Projekt“');
 		expect(text(section)).toContain('Ihr Name steht beim Zeigen mit der Maus und für Screenreader');
 		expect(text(section)).toContain('Rot gibt es nicht, es bleibt für Fehler.');
+		// Tickets open where they are clicked (ADR-0054): the areas, the panel they replace, the
+		// path, what leads to "Aufgaben" on purpose, and the trash that keeps the user.
+		expect(text(section)).toContain('nimmt das Ticket dessen Platz ein');
+		expect(text(section)).toContain('führt genau dorthin zurück, sonst zur Ansicht');
+		expect(text(section)).toContain('Der Pfad „Haus › Garten“ oben im Ticket öffnet das Projekt.');
+		expect(text(section)).toContain('Bewusst nach „Aufgaben“ führen „Link kopieren“');
+		expect(text(section)).toContain('bleibst du im Papierkorb, und die Meldung unten links bietet');
+		expect(text(section)).toContain('öffnet es hier unter „Projekte“');
 		// Open tickets of a project (ADR-0034, addendum): the disclosure, limit, link, remembered rows.
 		expect(text(section)).toContain('der Pfeil vor dem Code eine Zeile auf');
 		expect(text(section)).toContain('„Alle 12 in Aufgaben öffnen“');
