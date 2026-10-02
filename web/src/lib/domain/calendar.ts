@@ -1,9 +1,10 @@
-// Calendar view (ADR-0053, plan docs/plan/kalender.md, package K-1). Pure: the state of the view in
-// the URL, the view and the layers this device remembers, the periods with ISO weeks, the moves of
-// the keyboard in the grid, the labels, and the entries of every day: tickets by due date, the
-// planned dates of the rules (calendar-plan.ts) and the dated entries of the inbox, narrowed by the
-// filters of "Aufgaben" (list-query.ts, filter.ts). Only calendar dates in Berlin (ADR-0005), never
-// times: every entry lasts the whole day. No loop runs over more days than the shown period.
+// Calendar view (ADR-0053, plan docs/plan/kalender.md, packages K-1 and K-2). Pure: the state of the
+// view in the URL, the view and the layers this device remembers, the periods with ISO weeks, the
+// moves of the keyboard in the grid, the labels, and the entries of every day: tickets by due date,
+// the planned dates of the rules (calendar-plan.ts) and the dated entries of the inbox, narrowed by
+// the filters of "Aufgaben" (list-query.ts, filter.ts); then which entries may move to another day
+// and the texts of moving. Only calendar dates in Berlin (ADR-0005), never times: every entry lasts
+// the whole day. No loop runs over more days than the shown period.
 
 import { addDays, isCalendarDate, parseCalendarDate, type CalendarDate } from './berlin-date';
 import type { PlannedOccurrence } from './calendar-plan';
@@ -619,4 +620,44 @@ export function entryCountText(count: number): string {
  */
 export function dayCellLabel(date: CalendarDate, today: CalendarDate, count: number): string {
 	return `${fullDateLabel(date)}${date === today ? ', heute' : ''}, ${entryCountText(count)}`;
+}
+
+// --- Moving a due date (K-2) ----------------------------------------------------------------------
+
+/** Key on a ticket of the grid that starts moving its due date (ADR-0053 §12). */
+export const CALENDAR_MOVE_KEY = 'm';
+
+/** Pixels a pressed mouse moves before it drags an entry; less stays a click. */
+export const DRAG_THRESHOLD_PX = 5;
+
+/**
+ * Note of the flag after moving the due date of a ticket of a series: only this ticket moves, the
+ * rule keeps its dates (ADR-0023; the help of "Wiederholungen" says the same).
+ */
+export const SERIES_MOVE_HINT =
+	'Die Fälligkeit eines Tickets der Serie zu verschieben, verschiebt die Serie nicht.';
+
+/**
+ * An entry whose day may change: an open ticket. Done tickets keep the day they were due, a planned
+ * date follows its rule, an entry of the inbox is no ticket yet.
+ */
+export function isMovable(entry: CalendarEntry): boolean {
+	return entry.kind === 'ticket' && !entry.done;
+}
+
+/**
+ * What to do while a due date moves, for the status line of the grid: with the keyboard (or after
+ * the menu) the arrow keys or a click choose the day, with the mouse the day under it.
+ */
+export function moveInstructions(
+	key: string,
+	how: 'keyboard' | 'pointer',
+	recurring: boolean
+): string {
+	const steps =
+		how === 'keyboard'
+			? 'Tag mit den Pfeiltasten wählen oder anklicken, Enter setzt die Fälligkeit, Esc bricht ab.'
+			: 'Auf einen Tag ziehen und loslassen, Esc bricht ab.';
+	const series = recurring ? ' Nur dieses Ticket, die Serie verschiebt sich nicht.' : '';
+	return `Fälligkeit von ${key} verschieben: ${steps}${series}`;
 }

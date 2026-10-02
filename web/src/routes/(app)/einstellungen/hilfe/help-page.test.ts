@@ -315,6 +315,23 @@ describe('help page (EH-9)', () => {
 		expect(content).toMatch(/Bild auf/);
 	});
 
+	it('explains moving a due date: mouse, menu or "m", undo, series and touch (ADR-0053 §12)', () => {
+		const { container } = render(Page);
+		const section = container.querySelector<HTMLElement>('section#kalender')!;
+		const content = text(section);
+		expect(
+			within(section)
+				.getAllByRole('heading', { level: 4 })
+				.map((heading) => heading.textContent?.trim())
+		).toContain('Fälligkeit verschieben');
+		expect(content).toMatch(/ziehst du ein offenes Ticket mit der Maus auf einen anderen Tag/);
+		expect(content).toMatch(/„Fälligkeit verschieben …“ oder drückst m/);
+		expect(content).toMatch(/„Rückgängig“/);
+		expect(content).toMatch(/verschiebt sich nur dieses Ticket, nicht die Serie/);
+		expect(content).toMatch(/wird nichts überschrieben/);
+		expect(content).toMatch(/Touch-Geräten scrollt das Ziehen die Seite; dort geht es über/);
+	});
+
 	// Plan "Wiederholungen verständlich machen", part A: the dates come from the engine
 	// (tests/unit/recurrence-examples.test.mjs checks them against the hook).
 	it('explains recurrences with the examples the engine computes, without a year', () => {

@@ -2,11 +2,15 @@
 	import { tick, type Snippet } from 'svelte';
 	import type { CalendarDate } from '$lib/domain/berlin-date';
 	import {
+		CALENDAR_MOVE_KEY,
+		DRAG_THRESHOLD_PX,
 		MONTH_DAY_LIMIT,
 		WEEK_DAY_LIMIT,
 		dayCellLabel,
 		gridMove,
 		inPeriod,
+		isMovable,
+		moveInstructions,
 		sliceDay,
 		weekLabel,
 		type CalendarEntry,
@@ -17,6 +21,7 @@
 	import { WEEKDAY_NAMES, WEEKDAY_SHORT } from '$lib/domain/recurrence-text';
 	import { rowMenus } from '$lib/overlay/context-menu';
 	import { remPx } from '../table/chip-measure';
+	import type { EntryLook, EntryPlace } from './CalendarEntry.svelte';
 	import CalendarMore from './CalendarMore.svelte';
 
 	// Month and week as a grid (ADR-0053 §3 and §8; APG grid and date picker): a row per ISO week
@@ -29,6 +34,15 @@
 	// WEEK_DAY_LIMIT) entries at most, the rest behind "+N weitere". Below 6rem per day a month shows
 	// marks instead of titles (each still a link with its full name). Only the period is rendered;
 	// the grid never scrolls sideways (ADR-0030): its columns share the width.
+	//
+	// Moving a due date (K-2, ADR-0053 §12), only for open tickets and only with `onmove`: the mouse
+	// drags an entry onto another day of the period (from DRAG_THRESHOLD_PX on, Escape cancels; less
+	// stays a click). Touch and pen do not drag, they scroll; they use the menu. The key "m" on an
+	// entry or "Fälligkeit verschieben …" in its menu start moving without a mouse: the focus goes to
+	// the day of the ticket, the keys of the grid choose the new one (into other periods as well),
+	// Enter or a click on a day sets it, Escape or "Abbrechen" cancel. The status line below says how
+	// and notes that a ticket of a series moves alone. `onmove` saves; afterwards the focus is on the
+	// entry at its new day (keyboard), or where it was (mouse).
 	let {
 		view,
 		period,
@@ -36,7 +50,8 @@
 		days,
 		titleId,
 		entry,
-		onoutside
+		onoutside,
+		onmove = null
 	}: {
 		view: GridView;
 		period: CalendarPeriod;
@@ -44,10 +59,12 @@
 		days: ReadonlyMap<CalendarDate, readonly CalendarEntry[]>;
 		/** The heading of the period, which names the grid. */
 		titleId: string;
-		/** One entry: its look, a stop of Tab (not in a cell, in the list of a day), with due date. */
-		entry: Snippet<[CalendarEntry, 'dot' | 'line' | 'block' | 'row', boolean, boolean]>;
+		/** One entry at its place: look, stop of Tab, how it moves. */
+		entry: Snippet<[CalendarEntry, EntryPlace]>;
 		/** The keyboard left the period: show the period around this day. */
 		onoutside: (date: CalendarDate) => void;
+		/** Saves the new due date of a ticket, true when saved; null: nothing moves. */
+		onmove?: ((ticketId: string, date: CalendarDate) => Promise<boolean>) | null;
 	} = $props();
 
 	/** Narrower days than this show marks instead of titles (a narrow month, ADR-0053 §7). */
@@ -63,7 +80,7 @@
 			(width - WEEK_COLUMN_REM * remPx()) / 7 < COMPACT_DAY_REM * remPx()
 	);
 	const limit = $derived(view === 'month' ? MONTH_DAY_LIMIT : WEEK_DAY_LIMIT);
-	const look = $derived(view === 'week' ? 'block' : compact ? 'dot' : 'line');
+	const look = $derived<EntryLook>(view === 'week' ? 'block' : compact ? 'dot' : 'line');
 
 	$effect(() => {
 		const element = grid;
@@ -88,6 +105,21 @@
 
 	const current = $derived(focused !== null && inPeriod(period, focused) ? focused : defaultDay());
 
+	/** A due date that moves: the ticket, its day, and whether the mouse drags it. */
+	interface Move {
+		id: string;
+		key: string;
+		from: CalendarDate;
+		recurring: boolean;
+		pointer: boolean;
+	}
+
+	let moving = $state<Move | null>(null);
+	/** The day under the dragging mouse; null outside the days. */
+	let dropDay = $state<CalendarDate | null>(null);
+	/** The day a move would set: under the mouse, else the day with the focus. */
+	const target = $derived(moving === null ? null : moving.pointer ? dropDay : current);
+
 	/** Set when the keyboard asked for another period: its day gets the focus once it is shown. */
 	let refocus = false;
 
@@ -102,6 +134,13 @@
 		return grid?.querySelector<HTMLElement>(`[role="gridcell"][data-date="${date}"]`) ?? null;
 	}
 
+	/** The day of the cell around `target` in this grid, null elsewhere. */
+	function dayAt(target: EventTarget | null): CalendarDate | null {
+		if (!(target instanceof Element)) return null;
+		const cell = target.closest<HTMLElement>('[role="gridcell"]');
+		return cell !== null && grid?.contains(cell) ? (cell.dataset.date ?? null) : null;
+	}
+
 	/**
 	 * The things to reach inside a cell: the links of its entries and "+N weitere", in their order;
 	 * not the entries in the popover of the day, which has its own order of Tab.
@@ -112,6 +151,82 @@
 				':scope > .entries > li > a[href], :scope > button.calendar-more'
 			)
 		];
+	}
+
+	/** The link of a ticket in the cell of a day, else the cell, else the cell with the focus. */
+	function focusEntry(ticketId: string, date: CalendarDate) {
+		const cell = cellOf(date);
+		const link = cell?.querySelector<HTMLElement>(
+			`:scope > .entries > li > a[data-calendar-ticket="${ticketId}"]`
+		);
+		(link ?? cell ?? cellOf(current))?.focus();
+	}
+
+	/** Where an entry stands and how it moves (only an open ticket, only with `onmove`). */
+	function placeOf(
+		item: CalendarEntry,
+		date: CalendarDate,
+		itemLook: EntryLook,
+		tabbable: boolean
+	): EntryPlace {
+		const ticketId = item.kind === 'ticket' ? item.ticket.id : null;
+		const movable = onmove !== null && ticketId !== null && isMovable(item);
+		return {
+			look: itemLook,
+			tabbable,
+			move: movable ? () => startMove(ticketId, date) : null,
+			moving: ticketId !== null && moving?.id === ticketId
+		};
+	}
+
+	/** The move of a ticket on a day, null if it is not there or cannot move. */
+	function moveOf(ticketId: string, from: CalendarDate, pointer: boolean): Move | null {
+		const found = days
+			.get(from)
+			?.find((item) => item.kind === 'ticket' && item.ticket.id === ticketId);
+		if (found?.kind !== 'ticket' || !isMovable(found)) return null;
+		const { key, recurring } = found.ticket;
+		return { id: ticketId, key, from, recurring, pointer };
+	}
+
+	/** Keyboard or menu: the day of the ticket gets the focus, the keys of the grid choose another. */
+	function startMove(ticketId: string, from: CalendarDate) {
+		if (onmove === null) return;
+		const move = moveOf(ticketId, from, false);
+		if (move === null) return;
+		moving = move;
+		focused = from;
+		void tick().then(() => cellOf(from)?.focus());
+	}
+
+	/**
+	 * Ends moving: saves the day unless it is none or the same; with the keyboard the focus then goes
+	 * to the entry at its day (the new one when saved).
+	 */
+	async function finishMove(date: CalendarDate | null) {
+		const move = moving;
+		moving = null;
+		dropDay = null;
+		if (move === null) return;
+		let saved = false;
+		if (date !== null && date !== move.from && onmove !== null) {
+			saved = await onmove(move.id, date);
+		}
+		if (move.pointer) return;
+		const day = saved && date !== null ? date : move.from;
+		focused = day;
+		await tick();
+		focusEntry(move.id, day);
+	}
+
+	function moveFocus(next: CalendarDate) {
+		focused = next;
+		if (inPeriod(period, next)) {
+			void tick().then(() => cellOf(next)?.focus());
+			return;
+		}
+		refocus = true;
+		onoutside(next);
 	}
 
 	function onfocusin(event: FocusEvent) {
@@ -128,6 +243,22 @@
 		if (!(target instanceof HTMLElement)) return;
 		const cell = target.closest<HTMLElement>('[role="gridcell"]');
 		if (cell === null || !grid?.contains(cell)) return;
+		if (moving !== null) {
+			if (!moving.pointer) onMoveKey(event, cell);
+			return;
+		}
+		if (
+			event.key.toLowerCase() === CALENDAR_MOVE_KEY &&
+			!event.ctrlKey &&
+			target.matches('a[data-movable]')
+		) {
+			const ticketId = target.dataset.calendarTicket;
+			const from = cell.dataset.date;
+			if (ticketId === undefined || from === undefined) return;
+			event.preventDefault();
+			startMove(ticketId, from);
+			return;
+		}
 		if (target === cell) {
 			onCellKey(event, cell);
 			return;
@@ -159,25 +290,150 @@
 		const next = gridMove(view, cell.dataset.date ?? current, event.key, event.ctrlKey);
 		if (next === null) return;
 		event.preventDefault();
-		focused = next;
-		if (inPeriod(period, next)) {
-			void tick().then(() => cellOf(next)?.focus());
+		moveFocus(next);
+	}
+
+	/** While moving with the keyboard: the keys of the grid choose the day, Enter sets it. */
+	function onMoveKey(event: KeyboardEvent, cell: HTMLElement) {
+		if (event.key === 'Escape') {
+			event.preventDefault();
+			event.stopPropagation();
+			void finishMove(null);
 			return;
 		}
-		refocus = true;
-		onoutside(next);
+		if (event.key === 'Enter') {
+			event.preventDefault();
+			void finishMove(cell.dataset.date ?? null);
+			return;
+		}
+		if (event.shiftKey) return;
+		const next = gridMove(view, cell.dataset.date ?? current, event.key, event.ctrlKey);
+		if (next === null) return;
+		event.preventDefault();
+		moveFocus(next);
+	}
+
+	/** A pressed mouse on a movable entry, before and while it drags. */
+	interface Press {
+		ticketId: string;
+		from: CalendarDate;
+		x: number;
+		y: number;
+		pointerId: number;
+		/** Escape ended the drag; the release must not open the entry. */
+		cancelled: boolean;
+	}
+
+	let press: Press | null = null;
+	/** The click after a drag opens nothing (a drop on the own entry would open the ticket). */
+	let swallowClick = false;
+	const CAPTURE = { capture: true } as const;
+
+	function endPress() {
+		if (press === null) return;
+		press = null;
+		window.removeEventListener('pointermove', onpointermove, CAPTURE);
+		window.removeEventListener('pointerup', onpointerup, CAPTURE);
+		window.removeEventListener('pointercancel', onpointercancel, CAPTURE);
+		window.removeEventListener('keydown', ondragkey, CAPTURE);
+	}
+
+	// The grid leaves while the mouse is pressed: no listener stays behind.
+	$effect(() => () => endPress());
+
+	function onpointerdown(event: PointerEvent) {
+		if (onmove === null || moving !== null || press !== null) return;
+		// Only the mouse drags: touch and pen scroll the page (ADR-0053 §12).
+		if (event.pointerType !== 'mouse' || event.button !== 0) return;
+		if (event.ctrlKey || event.shiftKey || event.altKey || event.metaKey) return;
+		const link =
+			event.target instanceof Element ? event.target.closest<HTMLElement>('a[data-movable]') : null;
+		// Not from the list of a day: its popover lies over the days.
+		if (link === null || link.closest('[popover]') !== null) return;
+		const ticketId = link.dataset.calendarTicket;
+		const from = dayAt(link);
+		if (ticketId === undefined || from === null) return;
+		const { clientX: x, clientY: y, pointerId } = event;
+		press = { ticketId, from, x, y, pointerId, cancelled: false };
+		window.addEventListener('pointermove', onpointermove, CAPTURE);
+		window.addEventListener('pointerup', onpointerup, CAPTURE);
+		window.addEventListener('pointercancel', onpointercancel, CAPTURE);
+		window.addEventListener('keydown', ondragkey, CAPTURE);
+	}
+
+	function onpointermove(event: PointerEvent) {
+		const held = press;
+		if (held === null || held.cancelled || event.pointerId !== held.pointerId) return;
+		if (moving === null) {
+			if (Math.hypot(event.clientX - held.x, event.clientY - held.y) < DRAG_THRESHOLD_PX) return;
+			const move = moveOf(held.ticketId, held.from, true);
+			if (move === null) {
+				endPress();
+				return;
+			}
+			moving = move;
+			window.getSelection()?.removeAllRanges();
+		}
+		dropDay = dayAt(event.target);
+	}
+
+	function onpointerup(event: PointerEvent) {
+		const held = press;
+		if (held === null || event.pointerId !== held.pointerId) return;
+		const dragged = moving?.pointer === true;
+		endPress();
+		if (!dragged && !held.cancelled) return;
+		swallowClick = true;
+		setTimeout(() => (swallowClick = false), 0);
+		if (dragged) void finishMove(dayAt(event.target));
+	}
+
+	function onpointercancel(event: PointerEvent) {
+		const held = press;
+		if (held === null || event.pointerId !== held.pointerId) return;
+		const dragged = moving?.pointer === true;
+		endPress();
+		if (dragged) void finishMove(null);
+	}
+
+	/** Escape while the mouse drags: back to where it was. */
+	function ondragkey(event: KeyboardEvent) {
+		if (event.key !== 'Escape' || press === null || moving?.pointer !== true) return;
+		event.preventDefault();
+		event.stopPropagation();
+		press.cancelled = true;
+		void finishMove(null);
+	}
+
+	/** After a drag no click; while moving with the keyboard a click on a day sets it. */
+	function onclickcapture(event: MouseEvent) {
+		if (swallowClick) {
+			event.preventDefault();
+			event.stopPropagation();
+			return;
+		}
+		if (moving === null || moving.pointer) return;
+		if (event.target instanceof Element && event.target.closest('[popover]') !== null) return;
+		const day = dayAt(event.target);
+		if (day === null) return;
+		event.preventDefault();
+		event.stopPropagation();
+		void finishMove(day);
 	}
 </script>
 
 <div
 	class="grid {view}"
 	class:compact
+	class:dragging={moving?.pointer === true}
 	role="grid"
 	aria-labelledby={titleId}
 	tabindex="-1"
 	bind:this={grid}
 	{onkeydown}
 	{onfocusin}
+	{onpointerdown}
+	{onclickcapture}
 	{@attach rowMenus}
 >
 	<div class="row head" role="row">
@@ -202,6 +458,7 @@
 					class="day"
 					class:outside={period.month !== null && !date.startsWith(period.month)}
 					class:today={date === today}
+					class:target={target === date}
 					role="gridcell"
 					tabindex={date === current ? 0 : -1}
 					aria-label={dayCellLabel(date, today, list.length)}
@@ -212,7 +469,7 @@
 					{#if slice.shown.length > 0}
 						<ul class="entries">
 							{#each slice.shown as item (item.key)}
-								{@render entry(item, look, false, false)}
+								{@render entry(item, placeOf(item, date, look, false))}
 							{/each}
 						</ul>
 					{/if}
@@ -220,7 +477,7 @@
 						<CalendarMore {date} more={slice.more} total={list.length}>
 							{#snippet entries()}
 								{#each list as item (item.key)}
-									{@render entry(item, 'row', true, false)}
+									{@render entry(item, placeOf(item, date, 'row', true))}
 								{/each}
 							{/snippet}
 						</CalendarMore>
@@ -229,6 +486,19 @@
 			{/each}
 		</div>
 	{/each}
+</div>
+
+<div class="move-line" class:shown={moving !== null}>
+	<p class="move-text" role="status">
+		{moving === null
+			? ''
+			: moveInstructions(moving.key, moving.pointer ? 'pointer' : 'keyboard', moving.recurring)}
+	</p>
+	{#if moving !== null && !moving.pointer}
+		<button class="button-secondary" type="button" onclick={() => void finishMove(null)}>
+			Abbrechen
+		</button>
+	{/if}
 </div>
 
 <style>
@@ -291,6 +561,24 @@
 		outline-offset: -2px;
 	}
 
+	/* The day a move would set: dashed frame on the accent surface (not color alone). */
+	.day.target {
+		background: var(--color-brand-soft-bg);
+		outline: 2px dashed var(--color-brand-text);
+		outline-offset: -2px;
+	}
+
+	.day.target:focus-visible {
+		outline-style: solid;
+	}
+
+	/* The mouse drags: no text selection, the hand closed. */
+	.dragging,
+	.dragging :global(*) {
+		cursor: grabbing;
+		user-select: none;
+	}
+
 	.number {
 		align-self: flex-start;
 		min-width: 1.5rem;
@@ -339,5 +627,30 @@
 
 	.compact .row {
 		grid-template-columns: 1.5rem repeat(7, minmax(0, 1fr));
+	}
+
+	/*
+	 * How a due date moves, at the bottom of the window while the grid is in view. Without a move the
+	 * line is only its empty status (no height), so the announcement of the next move is heard.
+	 */
+	.move-line.shown {
+		position: sticky;
+		bottom: 0.75rem;
+		display: flex;
+		flex-wrap: wrap;
+		gap: 0.5rem 1rem;
+		align-items: center;
+		margin-top: 0.75rem;
+		padding: 0.5rem 0.75rem;
+		color: var(--color-brand-soft-text);
+		background: var(--color-brand-soft-bg);
+		border: 1px solid var(--color-brand);
+		border-radius: var(--radius-surface);
+	}
+
+	.move-text {
+		flex: 1 1 16rem;
+		margin: 0;
+		font-size: var(--font-size-control);
 	}
 </style>

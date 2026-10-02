@@ -41,7 +41,7 @@
 	import SectionBar from '../SectionBar.svelte';
 	import ViewSwitch from '../ViewSwitch.svelte';
 	import CalendarAgenda from './CalendarAgenda.svelte';
-	import CalendarEntryItem from './CalendarEntry.svelte';
+	import CalendarEntryItem, { type EntryPlace } from './CalendarEntry.svelte';
 	import CalendarGrid from './CalendarGrid.svelte';
 	import CalendarLayers from './CalendarLayers.svelte';
 
@@ -54,7 +54,9 @@
 	// from the new entries of the inbox store. Only the period is computed and rendered. "Heute",
 	// before and after change the day of the URL (with a history entry, like the filters), the view
 	// switch the view and what this device remembers. A ticket opens next to the calendar in the
-	// remembered way (TicketHost); closing its panel returns the focus to its entry.
+	// remembered way (TicketHost); closing its panel returns the focus to its entry. In month and week
+	// an open ticket moves to another day (K-2, ADR-0053 §12): the grid asks, the list store saves
+	// with `expected_updated` and shows the flag with "Rückgängig".
 	let {
 		tickets,
 		catalog,
@@ -185,12 +187,8 @@
 	});
 </script>
 
-{#snippet entryItem(
-	entry: CalendarEntry,
-	look: 'dot' | 'line' | 'block' | 'row',
-	tabbable: boolean,
-	dueLabel: boolean
-)}
+{#snippet entryItem(entry: CalendarEntry, place: EntryPlace)}
+	{@const pending = entry.kind === 'ticket' && tickets.isPending(entry.ticket.id)}
 	<CalendarEntryItem
 		{entry}
 		{today}
@@ -202,9 +200,12 @@
 		})}
 		{rowActions}
 		{duplicates}
-		{tabbable}
-		{look}
-		{dueLabel}
+		tabbable={place.tabbable}
+		look={place.look}
+		dueLabel={place.dueLabel ?? false}
+		move={pending ? null : (place.move ?? null)}
+		moving={place.moving ?? false}
+		{pending}
 		active={entry.kind === 'ticket' && entry.ticket.id === activeId}
 	/>
 {/snippet}
@@ -301,6 +302,7 @@
 			{titleId}
 			entry={entryItem}
 			onoutside={(date) => void navigate({ date })}
+			onmove={(ticketId, date) => tickets.moveDue(ticketId, date)}
 		/>
 	{/if}
 </section>

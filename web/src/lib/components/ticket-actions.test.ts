@@ -75,6 +75,34 @@ describe('menu "•••" of a ticket (AM-1)', () => {
 		expect(entries()).toEqual(['Link kopieren', 'In den Papierkorb …']);
 	});
 
+	it('adds "Fälligkeit verschieben …" in the calendar, after the ways to open, and runs it', async () => {
+		const onmovedue = vi.fn();
+		const { trigger, menu, entries, entry } = renderMenu({
+			onmovedue,
+			open: {
+				panel: '/kalender/tickets/ticket000000012',
+				full: '/kalender/tickets/ticket000000012/voll'
+			}
+		});
+		expect(entries()).toEqual([
+			'Im Seitenpanel öffnen',
+			'In Vollansicht öffnen',
+			'Fälligkeit verschieben …',
+			'Link kopieren',
+			'Duplizieren …',
+			'In den Papierkorb …'
+		]);
+		const lines = within(menu).getAllByRole('separator', { hidden: true });
+		expect(lines[0]?.nextElementSibling).toBe(entry('Fälligkeit verschieben …'));
+		// It asks for the day in the calendar, not in a dialog.
+		expect(entry('Fälligkeit verschieben …').getAttribute('aria-haspopup')).toBeNull();
+
+		await open(trigger);
+		await fireEvent.click(entry('Fälligkeit verschieben …'));
+		expect(onmovedue).toHaveBeenCalledOnce();
+		expect(trigger.getAttribute('aria-expanded')).toBe('false');
+	});
+
 	it('announces no dialog in the full view, where the entries unfold a question inline', () => {
 		const { entry } = renderMenu({ inline: true });
 		expect(entry('Duplizieren …').getAttribute('aria-haspopup')).toBeNull();

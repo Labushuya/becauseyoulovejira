@@ -14,12 +14,14 @@
 	// it: "Vollansicht" or "Im Seitenpanel öffnen" and ×. AM-2, a row of the table: `open` puts
 	// "Im Seitenpanel öffnen" and "In Vollansicht öffnen" first, links that open the ticket that way
 	// whatever way is remembered, and remember nothing (ADR-0036 §1: only the buttons in the ticket
-	// do); the button names its ticket, because every row has one.
+	// do); the button names its ticket, because every row has one. In the grid of the calendar an open
+	// ticket adds "Fälligkeit verschieben …" (`onmovedue`, ADR-0053 §12), which then asks for the day.
 	let {
 		ticket,
 		flags,
 		inline = false,
 		open = null,
+		onmovedue = null,
 		onduplicate = null,
 		ondelete,
 		buttonLabel = 'Weitere Aktionen',
@@ -34,6 +36,8 @@
 		inline?: boolean;
 		/** A row of the table: the addresses of the panel and the full view of the ticket. */
 		open?: { panel: ResolvedPathname; full: ResolvedPathname } | null;
+		/** "Fälligkeit verschieben …" (calendar); null leaves the entry out. */
+		onmovedue?: (() => void) | null;
 		/** "Duplizieren …"; null leaves the entry out. */
 		onduplicate?: (() => void) | null;
 		/** "In den Papierkorb …". */
@@ -55,9 +59,12 @@
 					{ label: 'Im Seitenpanel öffnen', href: open.panel },
 					{ label: 'In Vollansicht öffnen', href: open.full }
 				]),
+		...(onmovedue === null
+			? []
+			: [{ label: 'Fälligkeit verschieben …', separated: open !== null, onselect: onmovedue }]),
 		{
 			label: 'Link kopieren',
-			separated: open !== null,
+			separated: open !== null && onmovedue === null,
 			onselect: () =>
 				void copyTicketLink(ticket.key, ticketShareUrl(ticket.id, window.location.origin), flags)
 		},

@@ -9,12 +9,14 @@
 	} from '$lib/domain/calendar';
 	import { rowMenus } from '$lib/overlay/context-menu';
 	import EmptyState from '../guidance/EmptyState.svelte';
+	import type { EntryPlace } from './CalendarEntry.svelte';
 
 	// Agenda (ADR-0053 §3): the days of the period with entries as a list, from its first day on
 	// (today by default), each under its full date; above them, while the period holds today, the
 	// group "Überfällig" with the open tickets due before it, oldest first, each with its due date.
 	// A list, no grid: Tab goes from entry to entry, and every ticket has its menu "•••" with the
-	// right click and Shift+F10 of the rows (rowMenus).
+	// right click and Shift+F10 of the rows (rowMenus). Due dates move in the grid only (§12): a list
+	// has no days to choose from.
 	let {
 		period,
 		today,
@@ -29,7 +31,7 @@
 		/** The group "Überfällig"; empty without it. */
 		overdue: readonly CalendarEntry[];
 		titleId: string;
-		entry: Snippet<[CalendarEntry, 'dot' | 'line' | 'block' | 'row', boolean, boolean]>;
+		entry: Snippet<[CalendarEntry, EntryPlace]>;
 	} = $props();
 
 	const uid = $props.id();
@@ -49,7 +51,7 @@
 			</h4>
 			<ul class="entries">
 				{#each overdue as item (item.key)}
-					{@render entry(item, 'row', true, true)}
+					{@render entry(item, { look: 'row', tabbable: true, dueLabel: true })}
 				{/each}
 			</ul>
 		</section>
@@ -61,7 +63,7 @@
 			</h4>
 			<ul class="entries">
 				{#each list as item (item.key)}
-					{@render entry(item, 'row', true, false)}
+					{@render entry(item, { look: 'row', tabbable: true })}
 				{/each}
 			</ul>
 		</section>

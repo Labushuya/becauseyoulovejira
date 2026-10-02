@@ -523,6 +523,7 @@ describe('menu of a ticket and the panel', () => {
 		expect(entries.map((entry) => entry.textContent?.trim())).toEqual([
 			'Im Seitenpanel öffnen',
 			'In Vollansicht öffnen',
+			'Fälligkeit verschieben …',
 			'Link kopieren',
 			'In den Papierkorb …'
 		]);

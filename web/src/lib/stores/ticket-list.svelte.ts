@@ -22,10 +22,13 @@ import {
 	searchOpenTicketIds,
 	setTicketDone,
 	updateTicket,
+	type DescriptionGuard,
 	type DoneFilter,
 	type DoneTicketPage
 } from '$lib/data/tickets';
 import { berlinToday, msUntilNextBerlinMidnight, type CalendarDate } from '$lib/domain/berlin-date';
+import { SERIES_MOVE_HINT } from '$lib/domain/calendar';
+import { formatCalendarDate } from '$lib/domain/format';
 import { NO_SUB_PROJECTS, matchesFilter, type SubProjectsOf } from '$lib/domain/filter';
 import { groupTicketLevels, type GroupNode } from '$lib/domain/grouping';
 import { countKpis, type Kpis } from '$lib/domain/kpis';
@@ -88,7 +91,8 @@ export interface TicketListData {
 	searchOpen(search: string, options: RequestOptions): Promise<string[]>;
 	/** `completion` answers the question about open blocking sub-tasks (ADR-0033 section 2). */
 	setDone(id: string, done: boolean, completion?: CompletionChoice): Promise<TicketSummary>;
-	update(id: string, patch: TicketPatch): Promise<TicketSummary>;
+	/** `expectedUpdated` refuses the change if the ticket changed since (ADR-0032 section 6). */
+	update(id: string, patch: TicketPatch, options?: DescriptionGuard): Promise<TicketSummary>;
 }
 
 /** Session checks before and after requests (ADR-0006 section 4); `auth` provides both. */
@@ -106,7 +110,7 @@ export function ticketListData(pb: PocketBase): TicketListData {
 		listDone: (page, options) => listDoneTickets(pb, page, options),
 		searchOpen: (search, options) => searchOpenTicketIds(pb, search, options),
 		setDone: (id, done, completion) => setTicketDone(pb, id, done, { completion }),
-		update: (id, patch) => updateTicket(pb, id, patch)
+		update: (id, patch, options) => updateTicket(pb, id, patch, options)
 	};
 }
 
@@ -136,6 +140,9 @@ export type SubtaskResult =
 
 /** Key of a read row that is known only from the answer "already read" (no row ID). */
 const LOCAL_READ = 'local:';
+
+/** Code of the hook for a change based on an older `updated` (ADR-0032 section 6). */
+const STALE_CODE = 'validation_description_stale';
 
 /** A sub-task completed together with its parent, and its status before (ADR-0033 section 2). */
 export interface CompletedChild {
@@ -275,6 +282,8 @@ export class TicketListStore {
 	readonly #subtasks = new SvelteMap<string, TicketSummary>();
 	/** Just checked tickets whose flag still offers "Rückgängig", keyed by ticket ID. */
 	readonly #undoable = new SvelteMap<string, Undoable>();
+	/** Flags of moved due dates whose "Rückgängig" still stands, keyed by ticket ID. */
+	readonly #movedDue = new SvelteMap<string, string>();
 	readonly #flags: FlagSink;
 	readonly #series: SeriesChangeSink;
 	/** Target state of running check mark requests, keyed by ticket ID. */
@@ -970,6 +979,97 @@ export class TicketListStore {
 	}
 
 	/**
+	 * Moves the due date of an open ticket (calendar, ADR-0053 §12): the same Record API as the
+	 * panel, sent with `expected_updated`, so a ticket changed meanwhile (another tab, the rules) is
+	 * not overwritten; an error flag says so, and realtime brings the newer state. There is no
+	 * optimistic value: the entry moves with the answer. Saved, the flag "Fälligkeit von KEY auf
+	 * TT.MM.JJJJ gesetzt." offers "Rückgängig", which restores the date before, again with
+	 * `expected_updated`; for a ticket of a series it adds that the series does not move. A second
+	 * move of the ticket closes the flag of the first. Resolves to true when saved.
+	 */
+	async moveDue(id: string, due: CalendarDate): Promise<boolean> {
+		const ticket = this.find(id);
+		if (ticket === null || ticket.status === 'done' || ticket.due === due) return false;
+		if (this.#pending.has(id) || !this.#session.ensureValid()) return false;
+		const saved = await this.#saveDue(ticket, due, 'gesetzt');
+		if (saved === null) return false;
+		this.#dropMovedDue(id);
+		const previous = ticket.due;
+		const flagId = this.#flags.show({
+			tone: 'success',
+			title: `Fälligkeit von ${saved.key} auf ${formatCalendarDate(due)} gesetzt.`,
+			...(saved.recurring && { description: SERIES_MOVE_HINT }),
+			action: { label: 'Rückgängig', run: () => void this.#undoDue(saved, previous) },
+			onclose: () => {
+				if (this.#movedDue.get(id) === flagId) this.#movedDue.delete(id);
+			}
+		});
+		this.#movedDue.set(id, flagId);
+		return true;
+	}
+
+	/** "Rückgängig" of a moved due date: the date before, unless the ticket changed since. */
+	async #undoDue(saved: TicketSummary, previous: CalendarDate | null): Promise<void> {
+		this.#movedDue.delete(saved.id);
+		if (this.#pending.has(saved.id) || !this.#session.ensureValid()) return;
+		const restored = await this.#saveDue(saved, previous, 'zurückgesetzt');
+		if (restored === null) return;
+		this.#flags.show({
+			tone: 'success',
+			title:
+				previous === null
+					? `Fälligkeit von ${restored.key} wieder entfernt.`
+					: `Fälligkeit von ${restored.key} wieder auf ${formatCalendarDate(previous)} gesetzt.`
+		});
+	}
+
+	/**
+	 * Saves a due date based on `ticket` (its `updated` as `expected_updated`); the answer replaces
+	 * the ticket. A refusal comes as an error flag and resolves to null.
+	 */
+	async #saveDue(
+		ticket: TicketSummary,
+		due: CalendarDate | null,
+		verb: 'gesetzt' | 'zurückgesetzt'
+	): Promise<TicketSummary | null> {
+		const id = ticket.id;
+		this.#pending.set(id, false);
+		try {
+			const saved = await this.#data.update(id, { due }, { expectedUpdated: ticket.updated });
+			this.upsert(saved);
+			return saved;
+		} catch (error) {
+			const failure = toDataError(error);
+			const fields = Object.values(failure.fields);
+			const field = fields[0];
+			if (fields.some((entry) => entry.code === STALE_CODE)) {
+				this.#flags.show({
+					tone: 'error',
+					title: `Fälligkeit von ${ticket.key} nicht ${verb}: Das Ticket wurde inzwischen geändert.`
+				});
+			} else if (failure.kind === 'validation' && field !== undefined) {
+				this.#flags.show({
+					tone: 'error',
+					title: `Fälligkeit von ${ticket.key} konnte nicht ${verb} werden. ${field.message}`
+				});
+			} else {
+				this.#fail(error, `Fälligkeit von ${ticket.key} konnte nicht ${verb} werden.`);
+			}
+			return null;
+		} finally {
+			this.#pending.delete(id);
+		}
+	}
+
+	/** Closes the flag of a moved due date, whose "Rückgängig" would now be refused. */
+	#dropMovedDue(id: string): void {
+		const flagId = this.#movedDue.get(id);
+		if (flagId === undefined) return;
+		this.#movedDue.delete(id);
+		this.#flags.dismiss(flagId);
+	}
+
+	/**
 	 * "Rückgängig" of the flag after checking: restores the exact previous status (OF-E2-3), then
 	 * that of every sub-task completed along (ADR-0033 section 2), one after another. A sub-task that
 	 * fails is named in an error flag; the others are restored.
@@ -1141,6 +1241,7 @@ export class TicketListStore {
 		this.#touched = null;
 		this.#deleted.clear();
 		for (const id of [...this.#undoable.keys()]) this.#dropUndo(id);
+		for (const id of [...this.#movedDue.keys()]) this.#dropMovedDue(id);
 		this.#open.clear();
 		this.#done.clear();
 		this.#subtasks.clear();

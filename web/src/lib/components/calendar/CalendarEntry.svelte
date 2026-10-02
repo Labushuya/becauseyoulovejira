@@ -1,7 +1,28 @@
+<script lang="ts" module>
+	/**
+	 * "dot" a mark only (narrow months), "line" one line (month), "block" key and title (week), "row"
+	 * key, title, project, status and priority (agenda and the list of a day).
+	 */
+	export type EntryLook = 'dot' | 'line' | 'block' | 'row';
+
+	/** Where an entry stands, as the grid or the agenda render it (the snippet `entry`). */
+	export interface EntryPlace {
+		look: EntryLook;
+		/** A stop of Tab; false in the cells of the grid. */
+		tabbable: boolean;
+		/** The due date as text (the group "Überfällig" of the agenda). */
+		dueLabel?: boolean;
+		/** Starts moving the due date of the ticket (grid of month and week, K-2); null: not here. */
+		move?: (() => void) | null;
+		/** The due date of this ticket is moving: the entry is marked as the one that moves. */
+		moving?: boolean;
+	}
+</script>
+
 <script lang="ts">
 	import type { ResolvedPathname } from '$app/types';
 	import type { CalendarDate } from '$lib/domain/berlin-date';
-	import type { CalendarEntry } from '$lib/domain/calendar';
+	import { CALENDAR_MOVE_KEY, type CalendarEntry } from '$lib/domain/calendar';
 	import { plannedAppearsText } from '$lib/domain/calendar-plan';
 	import { colorText, ticketColorOf, type ShownColor } from '$lib/domain/colors';
 	import { relativeDue } from '$lib/domain/due-label';
@@ -26,9 +47,10 @@
 	// planned date its rule, an entry of the inbox the inbox. With `rowActions` a ticket ends with the
 	// menu "•••" of the rows of "Aufgaben" (plan aktionsmenues); the entry is a menu row, so a right
 	// click or Shift+F10 open it where the owner attached rowMenus. In the cells of the grid the
-	// entries are no stops of Tab (`tabbable` false): the arrow keys of the grid reach them.
-	// `look`: "dot" a mark only (narrow months), "line" one line (month), "block" key and title (week),
-	// "row" key, title, project, status and priority (agenda and the list of a day).
+	// entries are no stops of Tab (`tabbable` false): the arrow keys of the grid reach them. An open
+	// ticket of the grid may move to another day (`move`, K-2): its link carries `data-movable` for the
+	// mouse and the key "m" of the grid, the native dragging of the link is off, and the menu has
+	// "Fälligkeit verschieben …". While its due date is saved the entry is busy (`pending`).
 	let {
 		entry,
 		today,
@@ -40,7 +62,10 @@
 		tabbable = true,
 		look = 'line',
 		active = false,
-		dueLabel = false
+		dueLabel = false,
+		move = null,
+		moving = false,
+		pending = false
 	}: {
 		entry: CalendarEntry;
 		today: CalendarDate;
@@ -56,11 +81,17 @@
 		duplicates?: boolean;
 		/** A stop of Tab; false in the cells of the grid. */
 		tabbable?: boolean;
-		look?: 'dot' | 'line' | 'block' | 'row';
+		look?: EntryLook;
 		/** The ticket is open in the panel next to the calendar. */
 		active?: boolean;
 		/** The due date as text (the group "Überfällig" of the agenda). */
 		dueLabel?: boolean;
+		/** Starts moving the due date of the ticket; null: it cannot move here. */
+		move?: (() => void) | null;
+		/** The due date of this ticket is moving. */
+		moving?: boolean;
+		/** Its new due date is being saved. */
+		pending?: boolean;
 	} = $props();
 
 	/** Titles from this length name themselves on hover; one line may cut them. */
@@ -116,7 +147,10 @@
 		class:done={entry.done}
 		class:overdue={entry.overdue}
 		class:active
+		class:moving
+		class:pending
 		data-menu-row={rowActions ? '' : undefined}
+		aria-busy={pending ? 'true' : undefined}
 	>
 		<a
 			class="link"
@@ -124,6 +158,9 @@
 			{tabindex}
 			data-row-link
 			data-calendar-ticket={ticket.id}
+			data-movable={move === null ? undefined : ''}
+			draggable={move === null ? undefined : 'false'}
+			aria-keyshortcuts={move === null ? undefined : CALENDAR_MOVE_KEY.toUpperCase()}
 			aria-current={active ? 'true' : undefined}
 			title={look === 'dot' || title.length >= LONG_TITLE ? `${ticket.key} ${title}` : undefined}
 		>
@@ -168,6 +205,7 @@
 					buttonLabel={`Weitere Aktionen für ${ticket.key}`}
 					buttonClass="button-icon row-menu"
 					buttonTabindex={tabbable ? undefined : -1}
+					onmovedue={move}
 					onduplicate={duplicates ? () => void actions.choose('duplicate', ticket) : null}
 					ondelete={() => void actions.choose('delete', ticket)}
 				/>
@@ -325,6 +363,23 @@
 	/* Overdue: bold in the color of the text, with the clock (ADR-0009: never red). */
 	.overdue .link {
 		font-weight: 600;
+	}
+
+	/* The ticket whose due date moves: dashed frame on the accent surface, not color alone. */
+	.moving .link {
+		color: var(--color-brand-soft-text);
+		background: var(--color-brand-soft-bg);
+		outline: 2px dashed var(--color-brand-text);
+		outline-offset: -2px;
+	}
+
+	/* Its new due date is being saved: muted, the busy pointer only with aria-busy (ADR-0026). */
+	.pending .link {
+		color: var(--color-text-muted);
+	}
+
+	.entry[aria-busy='true'] .link {
+		cursor: progress;
 	}
 
 	/* Done: muted, with the check mark; the stripe keeps its full color (3 : 1, ADR-0052). */

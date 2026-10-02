@@ -792,6 +792,7 @@ Der **Kalender** (`/kalender`, im Umschalter nach „Wiederholungen“) zeigt, w
 - **Farben:** Die Farbe eines Tickets bzw. seines Projekts steht als Streifen vor dem Titel, mit ihrem Namen für Screenreader (siehe [Farben](#farben)).
 - **Tickets öffnen:** Ein Klick öffnet das Ticket **neben dem Kalender**, so wie du Tickets zuletzt geöffnet hast (Seitenpanel oder Vollansicht); Schließen führt zurück in den Kalender. Rechtsklick, Umschalt+F10 oder „•••“ öffnen das Menü des Tickets wie in „Aufgaben“.
 - **Tastatur:** Im Monat und in der Woche wandern die Pfeiltasten von Tag zu Tag, `Pos1`/`Ende` zum Anfang bzw. Ende der Woche (mit `Strg` des Monats), `Bild auf`/`Bild ab` einen Monat bzw. eine Woche weiter; `Enter` führt in die Einträge des Tages, `Escape` zurück.
+- **Fälligkeit verschieben:** Im Monat und in der Woche ein offenes Ticket mit der Maus auf einen anderen Tag ziehen. Ohne Maus: `m` auf dem Ticket oder „Fälligkeit verschieben …“ in seinem Menü, dann den Tag mit den Pfeiltasten wählen oder antippen, `Enter` setzt, `Escape` oder „Abbrechen“ lassen es. Gespeichert wird mit `expected_updated` (ein inzwischen geändertes Ticket wird nicht überschrieben, eine Meldung sagt es); danach „Fälligkeit von HAUS-12 auf 09.10.2026 gesetzt.“ mit „Rückgängig“. Bei einem Ticket einer Serie verschiebt sich nur dieses Ticket, nicht die Serie. Erledigte Tickets, künftige Wiederholungen und Termine im Eingang lassen sich nicht verschieben; mit Touch wird nicht gezogen (das Ziehen scrollt), dort geht es über das Menü.
 - **Schmale Fenster:** Unter etwa 640 px beginnt der Kalender mit der Agenda; ein Monat in einem schmalen Bereich zeigt Punkte statt Titel.
 
 ### Erfassen, Schnellerfassung und Zwischenablage
@@ -830,6 +831,7 @@ Der **Kalender** (`/kalender`, im Umschalter nach „Wiederholungen“) zeigt, w
 | `Strg+V` | in der Eingangsansicht (außerhalb von Feldern): Text aus der Zwischenablage übernehmen |
 | `Pfeil links/rechts`, `Pos1`, `Ende` | zwischen den Reitern „Kommentare“ und „Verlauf“ wechseln |
 | `Pfeiltasten`, `Pos1`, `Ende`, `Bild auf`, `Bild ab` | im Kalender (Monat, Woche): Tag, Woche, Anfang und Ende der Woche (mit `Strg` des Monats), Zeitraum davor bzw. danach; `Enter` bzw. `F2` in die Einträge des Tages, `Escape` zurück |
+| `m` | im Kalender auf einem offenen Ticket: Fälligkeit verschieben; Tag mit den Pfeiltasten wählen, `Enter` setzt, `Escape` bricht ab |
 
 In der App steht dieselbe Liste unter **Einstellungen → Hilfe** (auch über das Menü **?** in der Kopfzeile), zusammen mit der Kurzsyntax, häufigen Fragen und dem Betrieb. Maßgeblich ist die Liste in der App (`web/src/lib/domain/shortcuts.ts`).
 

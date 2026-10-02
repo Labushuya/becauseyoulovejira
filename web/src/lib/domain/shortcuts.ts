@@ -3,6 +3,8 @@
 // Pure data; the handlers stay where they are (keyboard.ts for the global keys) and
 // shortcuts.test.ts checks the global entries against them.
 
+import { CALENDAR_MOVE_KEY } from './calendar';
+
 /** Where a shortcut works, in the order of the help. */
 export type ShortcutContext = 'everywhere' | 'list' | 'calendar' | 'panel' | 'dialogs' | 'editor';
 
@@ -90,8 +92,8 @@ export const SHORTCUTS: readonly Shortcut[] = [
 		keys: [['Strg', 'V']],
 		action: 'In der Eingangsansicht außerhalb von Feldern: Text aus der Zwischenablage übernehmen'
 	},
-	// The grid of month and week (ADR-0053 §8); CalendarGrid.svelte takes these keys with gridMove
-	// of domain/calendar.ts.
+	// The grid of month and week (ADR-0053 §8 and §12); CalendarGrid.svelte takes these keys with
+	// gridMove and CALENDAR_MOVE_KEY of domain/calendar.ts.
 	{
 		id: 'calendar-days',
 		context: 'calendar',
@@ -115,6 +117,13 @@ export const SHORTCUTS: readonly Shortcut[] = [
 		context: 'calendar',
 		keys: [['Enter'], ['F2']],
 		action: 'In die Einträge des Tages wechseln; dort Pfeil hoch und runter, Esc zurück zum Tag'
+	},
+	{
+		id: 'calendar-move',
+		context: 'calendar',
+		keys: [[CALENDAR_MOVE_KEY]],
+		action:
+			'Auf einem offenen Ticket: seine Fälligkeit verschieben; Tag mit den Pfeiltasten wählen, Enter setzt, Esc bricht ab'
 	},
 	{
 		id: 'close-panel',
