@@ -748,5 +748,9 @@ module.exports = {
   notice: notice,
   runNow: runNow,
   saveSettings: saveSettings,
-  savePassphrase: savePassphrase
+  savePassphrase: savePassphrase,
+  // Read by the page "Speicher" (lib/storage-service.js, ADR-0047 §6): the target folder and its
+  // sealed backups.
+  readSettings: readSettings,
+  listSealed: listSealed
 };

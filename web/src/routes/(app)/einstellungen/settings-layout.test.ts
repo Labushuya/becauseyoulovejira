@@ -101,6 +101,7 @@ describe('settings layout', () => {
 			['Darstellung', '/einstellungen/darstellung'],
 			['Konto', '/einstellungen/konto'],
 			['Sicherung', '/einstellungen/sicherung'],
+			['Speicher', '/einstellungen/speicher'],
 			['System', '/einstellungen/system'],
 			['Hilfe', '/einstellungen/hilfe']
 		]);
@@ -123,6 +124,8 @@ describe('settings layout', () => {
 			const nav = within(screen.getByRole('navigation', { name: 'Einstellungen' }));
 			expect(nav.queryByRole('link', { name: 'System' }) !== null).toBe(listed);
 			expect(nav.queryByRole('link', { name: 'Sicherung' }) !== null).toBe(listed);
+			// "Speicher" on every server, with what it can measure there (ADR-0047 §6).
+			expect(nav.getByRole('link', { name: 'Speicher' })).toBeTruthy();
 			expect(nav.getByRole('link', { name: 'Hilfe' })).toBeTruthy();
 		}
 	);

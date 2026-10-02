@@ -1,6 +1,6 @@
 # ADR-0043: Seite „Einstellungen → System“ – Betrieb aus dem Dashboard über feste Befehle des Steuerskripts, losgelöster Neustart, nur Besitzer, nur dieser Rechner
 
-- **Status:** Angenommen und umgesetzt (SY-1, [Plan](../plan/system-seite.md)). Manuelle Prüfungen stehen im Test-Manifest (BYL-E6-650 bis BYL-E6-656). Nachtrag BK-1 ([ADR-0046](0046-sicherung-pruefung-wiederherstellen.md): die Seite „Sicherung“ nutzt dieselben Prüfungen). Nachtrag BK-2 (Prüfen einer Sicherung). Nachtrag BK-3 (Wiederherstellen als losgelöster Lauf). Nachtrag RS-1 (Problem im Hintergrund und „Was tun?“, [ADR-0048](0048-fehlerkatalog-der-skripte.md)).
+- **Status:** Angenommen und umgesetzt (SY-1, [Plan](../plan/system-seite.md)). Manuelle Prüfungen stehen im Test-Manifest (BYL-E6-650 bis BYL-E6-656). Nachtrag BK-1 ([ADR-0046](0046-sicherung-pruefung-wiederherstellen.md): die Seite „Sicherung“ nutzt dieselben Prüfungen). Nachtrag BK-2 (Prüfen einer Sicherung). Nachtrag BK-3 (Wiederherstellen als losgelöster Lauf). Nachtrag SPE-2 ([ADR-0047](0047-speicher-und-abhaengigkeiten-beim-loeschen.md): die Seite „Speicher“ nutzt dieselben Prüfungen, auch außerhalb von Windows). Nachtrag RS-1 (Problem im Hintergrund und „Was tun?“, [ADR-0048](0048-fehlerkatalog-der-skripte.md)).
 - **Datum:** 2026-09-30
 - **Entscheidung durch:** Nutzer (Wunsch „Einpflegen von Triggern von .bat Dateien per Einstellungen? … Ausführung wäre eine unheimliche Erleichterung, da alles aus Dashboard heraus“, Freigabe der Spec „ja, ohne Beenden“, 2026-09-30), Advisor (Umfang, Sicherheitsrahmen, Tests), Executor (Recherche, Festlegung des Besitzers, Umsetzung, Einzelheiten)
 - **Ergänzt:** [ADR-0039](0039-betriebsskripte.md) (Nachtrag dort: `mail-restart`, `restart -Detach`, `logs -Json`, Autostart-Ordner der Testkopien), [ADR-0026](0026-einstellungsbereich-und-hinweis-bausteine.md) §1 (neue Unterseite)
@@ -120,6 +120,12 @@ Jede Route prüft in dieser Reihenfolge; die erste Ablehnung antwortet mit `{ st
 - **Whitelist:** `backup-restore` (`restore -Detach -Quiet`, Merkmal `backup`, `input`, **ohne gelesene Ausgabe** wie `restart`: Der Befehl startet einen Prozess, der den Server überdauert). `run` gibt seitdem auch einem Befehl ohne Ausgabe seine Eingabe per `stdinPipe`, ohne ihm eine Pipe für die Ausgabe zu geben. Die Antwort des Befehls ist der Zustand in `run\wiederherstellung.json` (`started` oder `failed` mit Grund), den die Route nach seinem Ende liest: 202 mit der Zeit des Zustands, 400 `invalid` mit dem Grund, sonst `script`.
 - **Route** `POST /api/byl/backup/restore` mit denselben Prüfungen, dem Wort `WIEDERHERSTELLEN` und der Wahl für die Zugangsdaten; nicht neben „Jetzt sichern“, einer Prüfung oder einer laufenden Wiederherstellung (409 `busy`). `GET /api/byl/backup/restore` (lesend, ohne Steuerskript) nennt den Stand auch während und nach dem Neustart, den die Wiederherstellung auslöst. Wie beim Neustart (§3) überdauert der losgelöste Prozess den Server, der ihn gestartet hat; er beendet ihn geordnet und startet ihn wieder.
 - Belegt in `system-rules.test.mjs` und `backup-restore-control.test.mjs`.
+
+## Nachtrag (2026-10-02, [ADR-0047](0047-speicher-und-abhaengigkeiten-beim-loeschen.md), SPE-2): Die Seite „Speicher“ nutzt dieselben Prüfungen, auch außerhalb von Windows
+
+- `GET /api/byl/storage` und `POST /api/byl/storage/actions/{vacuum|leftovers|discarded}` rufen `check` aus `lib/system-service.js` mit `local` (kein Steuerskript nötig) und der neuen Option `anyPlatform`: Windows wird nicht verlangt, alle anderen Prüfungen bleiben (dieser Rechner, Host und `Origin`, Besitzer, Rate-Limit). Ablehnungen wie hier mit `refuse`, Audit unter „byl-storage“.
+- Das Steuerskript ruft die Seite nur für die eigene Instanz (`ownAppDir`) und nur mit `doctor` (Prüfung `disk`, freier Platz); alles Übrige liest der Server selbst.
+- Belegt in `storage-route.test.mjs` und, für die eigene Instanz einer Kopie des Ordners, `storage-control.test.mjs`.
 
 ## Nachtrag (2026-10-02, [ADR-0048](0048-fehlerkatalog-der-skripte.md), RS-1): Problem im Hintergrund und „Was tun?“
 

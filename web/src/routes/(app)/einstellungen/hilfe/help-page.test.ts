@@ -1,8 +1,8 @@
-// Settings "Hilfe" (plan EH-9, §3.10): jump links to ten sections, the shortcuts of every context
+// Settings "Hilfe" (plan EH-9, §3.10): jump links to eleven sections, the shortcuts of every context
 // from the one source, the short syntax with its tokens, the access data moved here from "Kanäle",
 // the own inbox with examples and WhatsApp Web (ADR-0038), the frequent questions as <details>, the
-// operation of the app with the frequent problems of the scripts (ADR-0048) and the backups with
-// the emergency plan (ADR-0046 §8). No table (description lists).
+// operation of the app with the frequent problems of the scripts (ADR-0048), the backups with the
+// emergency plan (ADR-0046 §8) and the storage (ADR-0047 §6). No table (description lists).
 
 import { render, screen, within } from '@testing-library/svelte';
 import { describe, expect, it } from 'vitest';
@@ -35,7 +35,7 @@ describe('help page (EH-9)', () => {
 		}
 	});
 
-	it('jumps to ten sections that exist on the page', () => {
+	it('jumps to eleven sections that exist on the page', () => {
 		const { container } = render(Page);
 
 		const jump = within(screen.getByRole('navigation', { name: 'Auf dieser Seite' }));
@@ -50,7 +50,8 @@ describe('help page (EH-9)', () => {
 			'Notion',
 			'Häufige Fragen',
 			'Betrieb',
-			'Sicherung & Notfall'
+			'Sicherung & Notfall',
+			'Speicher'
 		]);
 		for (const link of links) {
 			const id = link.getAttribute('href')?.slice(1) ?? '';
@@ -496,5 +497,29 @@ describe('help page (EH-9)', () => {
 		expect(content).toContain('byl-control.ps1 port');
 		expect(content).toContain('freier Port');
 		expect(text(section)).toContain('(J/N)');
+	});
+
+	it('explains the page "Speicher", its actions and what it never deletes (ADR-0047)', () => {
+		render(Page);
+		const section = screen.getByRole('region', { name: 'Speicher' });
+		const content = text(section);
+		for (const action of [
+			'Datenbank verdichten',
+			'Liegengebliebenes aufräumen',
+			'Verworfene jetzt leeren'
+		]) {
+			expect(within(section).getByText(action).tagName, action).toBe('STRONG');
+		}
+		expect(content).toContain('Originaldateien an Quellen löscht die Seite nicht einzeln');
+		expect(content).toContain('Die Sicherungen der App bleiben.');
+		expect(content).toContain(
+			'Quellen, die noch an Tickets im Papierkorb hängen, sind nicht dabei; über sie entscheidest du im Papierkorb.'
+		);
+		expect(
+			within(section).getByRole('link', { name: 'Einstellungen → Speicher' }).getAttribute('href')
+		).toBe('/einstellungen/speicher');
+		expect(within(section).getByRole('link', { name: 'Papierkorb' }).getAttribute('href')).toBe(
+			'/papierkorb'
+		);
 	});
 });
