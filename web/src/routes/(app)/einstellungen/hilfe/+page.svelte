@@ -129,10 +129,10 @@
 			Jeder Kanal hat dort eine Karte gleichen Aufbaus: oben der Zustand („Verbunden“, „Pausiert“,
 			„Fehler“, „Einrichtung offen“ oder „Neustart nötig“), darunter eine Zeile wie „Zuletzt
 			abgerufen vor 5 Min. · 3 neu“ und ein Knopf für den nächsten Schritt, etwa „Jetzt abrufen“
-			oder „Einrichtung fortsetzen“. Alles Weitere steht im Menü „•••“ (Stichwörter, Pausieren,
-			Umbenennen, Einrichtung, Hilfe, Löschen), Einzelheiten wie Stichwörter, Postfach, Hilfsprozess
-			und letzter Fehler unter „Details“. Lange Listen von Stichwörtern zeigen dort zuerst 8 und „+
-			N weitere“, ab 21 Stichwörtern mit einem Filterfeld.
+			oder „Einrichtung fortsetzen“. Alles Weitere steht im Menü „•••“ (Stichwörter, Zielprojekt,
+			Pausieren, Umbenennen, Einrichtung, Hilfe, Löschen), Einzelheiten wie Stichwörter,
+			Zielprojekt, Postfach, Hilfsprozess und letzter Fehler unter „Details“. Lange Listen von
+			Stichwörtern zeigen dort zuerst 8 und „+ N weitere“, ab 21 Stichwörtern mit einem Filterfeld.
 		</p>
 		<p>
 			„Umbenennen …“ macht den Namen oben in der Karte zum Textfeld: <kbd>Enter</kbd> oder
@@ -142,6 +142,14 @@
 			Der neue Name steht sofort überall, auch in anderen Tabs, im Eingang bei „Quelle“ und in den Quellen
 			eines Tickets (etwa „Postfach · Gmail Arbeit“). Eigener Eingang, WhatsApp Web, Dateien und Bookmarklet
 			haben feste Namen.
+		</p>
+		<p>
+			Das „Zielprojekt“ einer Karte ist das Projekt, zu dem ihre Einträge meist gehören, etwa
+			„Arbeit“ für das Arbeitspostfach. Du wählst es unter „Details“ (oder über „Zielprojekt …“ im
+			Menü „•••“, bei neuen Verbindungen auch im Assistenten); es speichert sofort. Ein neuer
+			Eintrag merkt es sich beim Eintreffen, eine spätere Änderung gilt also nur für neue Einträge.
+			Beim Umwandeln ist es vorbelegt, und du kannst es ändern; ein archiviertes oder gelöschtes
+			Projekt wird nicht vorbelegt. Im Eingang filterst und gruppierst du nach Zielprojekt.
 		</p>
 		<HostPlatformNote headingLevel={4} />
 		<h4>Zugangsdaten als Windows-Variable setzen</h4>

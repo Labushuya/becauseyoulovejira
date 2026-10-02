@@ -135,6 +135,19 @@ describe('help page (EH-9)', () => {
 		);
 	});
 
+	it('explains the target project of a card: where it is set, only new entries, prefill (ADR-0049)', () => {
+		render(Page);
+		const content = text(screen.getByRole('region', { name: 'Kanäle und Zugangsdaten' }));
+		expect(content).toMatch(/Menü „•••“ \(Stichwörter, Zielprojekt,/);
+		expect(content).toMatch(
+			/Du wählst es unter „Details“ \(oder über „Zielprojekt …“ im\s+Menü „•••“/
+		);
+		expect(content).toMatch(/eine spätere Änderung gilt also nur für neue Einträge/);
+		expect(content).toMatch(/Beim Umwandeln ist es vorbelegt, und du kannst es ändern/);
+		expect(content).toMatch(/archiviertes oder gelöschtes\s+Projekt wird nicht vorbelegt/);
+		expect(content).toMatch(/Im Eingang filterst und gruppierst du nach Zielprojekt/);
+	});
+
 	it('answers the frequent questions in folded details', () => {
 		const { container } = render(Page);
 		const section = screen.getByRole('region', { name: 'Häufige Fragen' });
