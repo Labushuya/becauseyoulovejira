@@ -204,7 +204,7 @@ beforeAll(async () => {
 	mkdirSync(join(dir, 'pb_public'), { recursive: true });
 	mkdirSync(startup);
 	// start-hidden.vbs only as the target of the test shortcut; it never runs.
-	for (const file of ['byl-control.ps1', 'byl-functions.ps1', 'start-hidden.vbs']) copyFileSync(join(APP_DIR, file), join(dir, file));
+	for (const file of ['byl-control.ps1', 'byl-functions.ps1', 'byl-problems.ps1', 'start-hidden.vbs']) copyFileSync(join(APP_DIR, file), join(dir, file));
 	copyFileSync(POCKETBASE_EXE, join(dir, 'pocketbase.exe'));
 	cpSync(join(APP_DIR, 'pb_hooks'), join(dir, 'pb_hooks'), { recursive: true });
 	cpSync(join(APP_DIR, 'pb_migrations'), join(dir, 'pb_migrations'), { recursive: true });

@@ -1466,7 +1466,7 @@ $BylProblemCatalog = [ordered]@{
 $BylProblemErrorMark = [string][char]0x00D7
 $BylProblemWarningMark = '!'
 # Lines wrap before this width (a console window has 120 columns); commands, facts and the path of
-# the log never wrap, so they can be copied as they are. A value in a text (a path with spaces)
+# the log never wrap, so they can be copied as they are. A path in a text (a value with \ or /)
 # never breaks either: Expand-BylProblemText joins its words with no-break spaces, which
 # Format-BylProblem and ConvertTo-BylProblemData turn back into spaces.
 $BylProblemWidth = 100
@@ -1488,7 +1488,7 @@ function Get-BylProblemPlaceholder {
 function Expand-BylProblemText {
     # $Text with every placeholder {name} replaced by $Values[name]; a missing or empty value
     # becomes an ellipsis, so a text never shows a bare placeholder. With -KeepTogether the spaces of
-    # a value become no-break spaces (texts that wrap, see $BylProblemNoBreak).
+    # a path become no-break spaces (texts that wrap, see $BylProblemNoBreak).
     param([AllowNull()][AllowEmptyString()][string]$Text, [System.Collections.IDictionary]$Values = @{}, [switch]$KeepTogether)
 
     $source = [string]$Text
@@ -1499,7 +1499,7 @@ function Expand-BylProblemText {
         $name = $match.Groups[1].Value
         $value = if ($Values.Contains($name)) { [string]$Values[$name] } else { '' }
         if ($value -eq '') { $value = [string][char]0x2026 }
-        if ($KeepTogether) { $value = $value.Replace(' ', $BylProblemNoBreak) }
+        if ($KeepTogether -and $value -match '[\\/]') { $value = $value.Replace(' ', $BylProblemNoBreak) }
         [void]$result.Append($value)
         $last = $match.Index + $match.Length
     }

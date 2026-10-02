@@ -251,7 +251,7 @@ beforeAll(async () => {
 	// the cases see only their own work folders, not those of other files running at the same time.
 	temp = join(base, 'temp');
 	for (const folder of [join(dir, 'pb_public'), startup, secrets, target, temp]) mkdirSync(folder, { recursive: true });
-	for (const file of ['byl-control.ps1', 'byl-functions.ps1']) copyFileSync(join(APP_DIR, file), join(dir, file));
+	for (const file of ['byl-control.ps1', 'byl-functions.ps1', 'byl-problems.ps1']) copyFileSync(join(APP_DIR, file), join(dir, file));
 	copyFileSync(POCKETBASE_EXE, join(dir, 'pocketbase.exe'));
 	copyFileSync(BACKUP_HELPER, join(dir, 'byl-backup.exe'));
 	cpSync(join(APP_DIR, 'pb_hooks'), join(dir, 'pb_hooks'), { recursive: true });
@@ -508,7 +508,10 @@ describe('backups with a target folder on a disposable copy (ADR-0046)', CASE_TI
 		expect(JSON.parse(byPath.output.trim().split('\n').pop())).toMatchObject({ ok: true, encrypted: true, name: sealed });
 		const unknown = control('backup-verify', 'byl-20200101-000000.zip', '-Json');
 		expect(unknown.code).toBe(1);
-		expect(JSON.parse(unknown.output.trim().split('\n').pop())).toEqual({ ok: false, reason: 'missing', name: '' });
+		// The reason for the app, and the entry of the catalog with what to do (ADR-0048).
+		const missing = JSON.parse(unknown.output.trim().split('\n').pop());
+		expect(missing).toMatchObject({ ok: false, reason: 'missing', name: '', report: { code: 'backup-missing', level: 'error', exitCode: 1 } });
+		expect(Object.keys(missing).sort()).toEqual(['name', 'ok', 'reason', 'report']);
 	});
 
 	it('names a wrong passphrase, refuses unknown names and asks for attention after a failed check', async () => {
