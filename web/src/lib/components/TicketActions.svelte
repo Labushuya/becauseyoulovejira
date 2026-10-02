@@ -24,6 +24,7 @@
 		ondelete,
 		buttonLabel = 'Weitere Aktionen',
 		buttonClass,
+		buttonTabindex,
 		trigger = $bindable()
 	}: {
 		ticket: { id: string; key: string };
@@ -41,6 +42,8 @@
 		buttonLabel?: string;
 		/** Classes of the button, `.button-icon` by default. */
 		buttonClass?: string;
+		/** -1: the button is no stop of Tab (an entry of the calendar grid, ADR-0053 §8). */
+		buttonTabindex?: -1;
 		/** The button of the menu. */
 		trigger?: HTMLButtonElement;
 	} = $props();
@@ -70,6 +73,7 @@
 	{buttonLabel}
 	buttonTitle="Weitere Aktionen"
 	{buttonClass}
+	{buttonTabindex}
 	{items}
 	bind:trigger
 />

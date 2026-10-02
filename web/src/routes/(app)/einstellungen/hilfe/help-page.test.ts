@@ -36,7 +36,7 @@ describe('help page (EH-9)', () => {
 		}
 	});
 
-	it('jumps to the sections that exist on the page, thirteen since the folders', () => {
+	it('jumps to the sections that exist on the page, fourteen since the calendar', () => {
 		const { container } = render(Page);
 
 		const jump = within(screen.getByRole('navigation', { name: 'Auf dieser Seite' }));
@@ -45,6 +45,7 @@ describe('help page (EH-9)', () => {
 			'Tastaturkürzel',
 			'Kurzsyntax',
 			'Wiederholungen',
+			'Kalender',
 			'Kanäle und Zugangsdaten',
 			'Eigener Eingang (API)',
 			'WhatsApp Web',
@@ -60,7 +61,8 @@ describe('help page (EH-9)', () => {
 			const id = link.getAttribute('href')?.slice(1) ?? '';
 			const section = container.querySelector(`section#${id}`);
 			expect(section, id).not.toBeNull();
-			expect(screen.getByRole('region', { name: link.textContent?.trim() })).toBe(section);
+			// "Kalender" names the group of its keys in "Tastaturkürzel" as well.
+			expect(screen.getAllByRole('region', { name: link.textContent?.trim() })).toContain(section);
 		}
 		expect(container.querySelectorAll('table')).toHaveLength(0);
 	});
@@ -72,8 +74,9 @@ describe('help page (EH-9)', () => {
 			within(section)
 				.getAllByRole('heading', { level: 4 })
 				.map((heading) => heading.textContent?.trim())
-		).toEqual(['Überall', 'Liste', 'Panel', 'Dialoge', 'Editor']);
+		).toEqual(['Überall', 'Liste', 'Kalender', 'Panel', 'Dialoge', 'Editor']);
 		expect(text(section)).toMatch(/Schnellerfassung öffnen/);
+		expect(text(section)).toMatch(/In die Einträge des Tages wechseln/);
 		expect(text(section)).toMatch(/Kommentare“ und „Verlauf/);
 		expect(text(section)).toMatch(/Zur Formatierungsleiste/);
 	});
@@ -290,6 +293,26 @@ describe('help page (EH-9)', () => {
 		const admin = within(section).getByRole('link', { name: /Verwaltung/ });
 		expect(admin.getAttribute('href')).toBe('/_/');
 		expect(admin.getAttribute('rel')).toBe('external');
+	});
+
+	it('explains the calendar: views, layers, filters, colors, opening and the keys (ADR-0053)', () => {
+		const { container } = render(Page);
+		const section = container.querySelector<HTMLElement>('section#kalender')!;
+		expect(section.getAttribute('aria-labelledby')).toBe('kalender-title');
+		const content = text(section);
+		expect(helpHref('kalender')).toBe('/einstellungen/hilfe#kalender');
+		expect(within(section).getByRole('link', { name: 'Kalender' }).getAttribute('href')).toBe(
+			'/kalender'
+		);
+		expect(content).toMatch(/als Monat, als Woche oder als Agenda/);
+		expect(content).toMatch(/keine Uhrzeiten/);
+		expect(content).toMatch(/„überfällig“, nie rot/);
+		expect(content).toMatch(/Pausierte Regeln zeigt der Kalender nicht/);
+		expect(content).toMatch(/noch nicht umgewandelt/);
+		expect(content).toMatch(/„\+N weitere“/);
+		expect(content).toMatch(/Seitenpanel oder Vollansicht/);
+		expect(content).toMatch(/Punkte statt Titel/);
+		expect(content).toMatch(/Bild auf/);
 	});
 
 	// Plan "Wiederholungen verständlich machen", part A: the dates come from the engine

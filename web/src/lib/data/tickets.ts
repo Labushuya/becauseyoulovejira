@@ -521,6 +521,56 @@ export function listDoneTickets(
 	});
 }
 
+/** Done tickets of the calendar per page (ADR-0053 §5). */
+export const CALENDAR_DONE_PAGE_SIZE = 200;
+
+/** Days of the calendar: the first and the last one shown, both included. */
+export interface DueRange {
+	from: CalendarDate;
+	to: CalendarDate;
+}
+
+/** Done tickets due within a range of days, both included. */
+const DONE_DUE_RANGE_FILTER = [
+	'status = {:doneStatus}',
+	'due >= {:firstDayOfPeriod}',
+	'due <= {:lastDayOfPeriod}'
+].join(' && ');
+
+/**
+ * One page of the done tickets due in the shown period of the calendar (ADR-0053 §5), by due date,
+ * then most recently completed. Without the filters of the list: the calendar filters them in the
+ * client like the open tickets, so a change of a filter needs no request. `hasMore` is true when the
+ * page was full.
+ */
+export function listDoneTicketsDue(
+	pb: PocketBase,
+	range: DueRange,
+	page: number,
+	{ signal }: RequestOptions = {}
+): Promise<TicketChoicePage> {
+	return withDataErrors(signal, async () => {
+		const result = await pb
+			.collection(TICKETS)
+			.getList<TicketRecord>(page, CALENDAR_DONE_PAGE_SIZE, {
+				filter: pb.filter(DONE_DUE_RANGE_FILTER, {
+					doneStatus: 'done' satisfies Status,
+					firstDayOfPeriod: fromDueInput(range.from),
+					lastDayOfPeriod: fromDueInput(range.to)
+				}),
+				sort: 'due,-completed_at,-id',
+				fields: TICKET_LIST_FIELDS,
+				expand: TICKET_EXPAND,
+				skipTotal: true,
+				signal
+			});
+		return {
+			items: result.items.map(toTicketSummary),
+			hasMore: result.items.length === CALENDAR_DONE_PAGE_SIZE
+		};
+	});
+}
+
 export function getTicket(pb: PocketBase, id: string, { signal }: RequestOptions = {}) {
 	return withDataErrors(signal, async (): Promise<Ticket> => {
 		const record = await pb.collection(TICKETS).getOne<TicketRecord>(id, {

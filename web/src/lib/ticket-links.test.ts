@@ -5,6 +5,9 @@ import { EMPTY_LIST_QUERY } from './domain/list-query';
 import {
 	FULL_VIEW_LINK,
 	appHref,
+	calendarFullViewHref,
+	calendarHref,
+	calendarTicketHref,
 	captureHref,
 	channelSetupHref,
 	convertFrom,
@@ -25,6 +28,7 @@ import {
 	showDoneFrom,
 	ticketHref,
 	ticketPath,
+	withCalendarQuery,
 	withInboxQuery,
 	withListQuery,
 	withShowArchived,
@@ -202,5 +206,22 @@ describe('setup links (plan EH-5)', () => {
 			'/einstellungen/kanaele?einrichten=kalender&verbindung=conn00000000001'
 		);
 		expect(channelSetupHref(null)).toBe('/einstellungen/kanaele');
+	});
+});
+
+describe('calendar links (ADR-0053)', () => {
+	it('keeps view, day and filters into the panel and back, and sets view and day alone', () => {
+		const calendar = at('/kalender?prio=high&ansicht=woche&datum=2026-10-05');
+		expect(calendarHref()).toBe('/kalender');
+		expect(calendarHref(calendar)).toBe('/kalender?prio=high&ansicht=woche&datum=2026-10-05');
+		expect(calendarTicketHref('abc123def456ghi', calendar)).toBe(
+			'/kalender/tickets/abc123def456ghi?prio=high&ansicht=woche&datum=2026-10-05'
+		);
+		expect(calendarFullViewHref('abc123def456ghi', calendar)).toBe(
+			'/kalender/tickets/abc123def456ghi/voll?prio=high&ansicht=woche&datum=2026-10-05'
+		);
+		expect(withCalendarQuery(calendar, { view: 'agenda', date: null })).toBe(
+			'/kalender?prio=high&ansicht=agenda'
+		);
 	});
 });

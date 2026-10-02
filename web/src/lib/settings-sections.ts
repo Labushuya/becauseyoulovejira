@@ -64,6 +64,8 @@ export const HELP_SECTIONS = [
 	{ id: 'kurzsyntax', label: 'Kurzsyntax' },
 	// Plan "Wiederholungen verständlich machen": linked from the form, the overview and the rule.
 	{ id: 'wiederholungen', label: 'Wiederholungen' },
+	// The calendar (ADR-0053): views, layers, filters and keys.
+	{ id: 'kalender', label: 'Kalender' },
 	{ id: 'zugangsdaten', label: 'Kanäle und Zugangsdaten' },
 	// Own inbox (ADR-0038): linked from its card on "Kanäle".
 	{ id: 'eigener-eingang', label: 'Eigener Eingang (API)' },

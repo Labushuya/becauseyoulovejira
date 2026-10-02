@@ -16,7 +16,7 @@
 	import { PRIORITY_NUMBERS, PRIORITY_WORDS } from '$lib/domain/quick-syntax';
 	import { RESTART_NEEDED } from '$lib/guidance/texts';
 	import { HELP_SECTIONS } from '$lib/settings-sections';
-	import { channelSetupHref, trashHref } from '$lib/ticket-links';
+	import { calendarHref, channelSetupHref, trashHref } from '$lib/ticket-links';
 
 	// Settings "Hilfe" (ADR-0026 section 7, plan EH-9 §3.10): jump links, the keyboard shortcuts from
 	// the one source, the short syntax of the quick entry, how the access data work (moved here from
@@ -113,6 +113,56 @@
 	<section id="wiederholungen" aria-labelledby="wiederholungen-title">
 		<h3 id="wiederholungen-title">Wiederholungen</h3>
 		<RecurrenceHelp />
+	</section>
+
+	<section id="kalender" aria-labelledby="kalender-title">
+		<h3 id="kalender-title">Kalender</h3>
+		<p>
+			Der <a href={calendarHref()}>Kalender</a> zeigt, was wann ansteht: als Monat, als Woche oder als
+			Agenda. Es gibt nur Tage, keine Uhrzeiten; jeder Eintrag gilt für den ganzen Tag. „Heute“, die Pfeile
+			davor und danach und die Wahl der Ansicht stehen über dem Kalender; Ansicht, Tag und Filter stehen
+			in der Adresse, und die zuletzt gewählte Ansicht merkt sich dieses Gerät.
+		</p>
+		<h4>Was im Kalender steht</h4>
+		<ul>
+			<li>
+				<strong>Tickets</strong> an ihrem Fälligkeitstag. Überfällige sind fett, mit einer Uhr und „überfällig“,
+				nie rot. Erledigte zeigt die Ebene „Erledigte Tickets“ gedämpft mit Häkchen.
+			</li>
+			<li>
+				<strong>Künftige Wiederholungen</strong> blass und gestrichelt: Termine einer Regel, für die es
+				noch kein Ticket gibt, mit „erscheint am …“. Pausierte Regeln zeigt der Kalender nicht. Ein Klick
+				öffnet die Regel.
+			</li>
+			<li>
+				<strong>Termine im Eingang</strong> gedämpft: neue Einträge mit Datum aus Kalendern und Notion,
+				die noch nicht umgewandelt sind. Ein Klick öffnet den Eintrag im Eingang.
+			</li>
+		</ul>
+		<p>
+			Unter „Ebenen“ blendest du jede dieser Arten ein und aus; das merkt sich dieses Gerät. Die
+			Filter sind die von „Aufgaben“ ohne „Fällig“ und Suche. Ein Projekt zeigt auch die Termine des
+			Eingangs mit diesem Zielprojekt; Status, Priorität, Tag und „Wiederkehrend“ blenden die
+			Termine des Eingangs aus, weil sie keine haben.
+		</p>
+		<p>
+			Die Farbe eines Tickets steht als Streifen vor dem Titel, wie in „Aufgaben“. Ein Tag zeigt im
+			Monat höchstens vier Einträge; „+N weitere“ öffnet die Liste des Tages. Ein Klick auf ein
+			Ticket öffnet es neben dem Kalender, so wie du Tickets zuletzt geöffnet hast (Seitenpanel oder
+			Vollansicht); ein Rechtsklick öffnet sein Menü. In einem schmalen Fenster startet der Kalender
+			mit der Agenda, und der Monat zeigt Punkte statt Titel.
+		</p>
+		<h4>Mit der Tastatur</h4>
+		<ul>
+			<li>
+				Im Monat und in der Woche: die Pfeiltasten von Tag zu Tag, <kbd>Pos1</kbd> und
+				<kbd>Ende</kbd>
+				zum Anfang und Ende der Woche (mit <kbd>Strg</kbd> des Monats).
+			</li>
+			<li><kbd>Bild auf</kbd> und <kbd>Bild ab</kbd>: einen Monat bzw. eine Woche weiter.</li>
+			<li><kbd>Enter</kbd> führt in die Einträge des Tages, <kbd>Esc</kbd> zurück zum Tag.</li>
+			<li><kbd>Umschalt</kbd>+<kbd>F10</kbd> öffnet das Menü eines Tickets.</li>
+		</ul>
 	</section>
 
 	<section id="zugangsdaten" aria-labelledby="zugangsdaten-title">

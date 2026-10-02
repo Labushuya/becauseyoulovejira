@@ -12,6 +12,7 @@ import {
 	serializeListQuery,
 	type ListQuery
 } from './domain/list-query';
+import { replaceCalendarQuery, type CalendarQuery } from './domain/calendar';
 import { SETUP_PARAMS, type SetupTarget } from './domain/channel-setup';
 import { connectionAnchor } from './domain/sync-all';
 import { parseInboxQuery, serializeInboxQuery, type InboxQuery } from './domain/inbox-query';
@@ -162,6 +163,29 @@ export function trashHref(): ResolvedPathname {
 /** Read-only preview of a ticket in the trash, addressed by record ID. */
 export function trashItemHref(id: string): ResolvedPathname {
 	return resolve(`/papierkorb/${encodeURIComponent(id)}`) as ResolvedPathname;
+}
+
+/**
+ * The calendar (ADR-0053) with the state of `url` (view, date and the filters of the list); without
+ * `url` the plain calendar, which shows the view this device remembers.
+ */
+export function calendarHref(url?: URL): ResolvedPathname {
+	return `${resolve('/kalender')}${url?.search ?? ''}` as ResolvedPathname;
+}
+
+/** Panel of a ticket next to the calendar, with the state of `url` (ADR-0053 §6). */
+export function calendarTicketHref(id: string, url: URL): ResolvedPathname {
+	return `${resolve(`/kalender/tickets/${encodeURIComponent(id)}`)}${url.search}` as ResolvedPathname;
+}
+
+/** Full view of a ticket over the calendar, with the state of `url`. */
+export function calendarFullViewHref(id: string, url: URL): ResolvedPathname {
+	return `${resolve(`/kalender/tickets/${encodeURIComponent(id)}/voll`)}${url.search}` as ResolvedPathname;
+}
+
+/** The current path with view and date of the calendar; filters and other parameters stay. */
+export function withCalendarQuery(url: URL, query: CalendarQuery): ResolvedPathname {
+	return `${url.pathname}${replaceCalendarQuery(url.searchParams, query)}${url.hash}` as ResolvedPathname;
 }
 
 /** Panel "Neue Regel" (E5 plan, T-6). */

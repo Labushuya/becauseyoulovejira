@@ -36,6 +36,7 @@
 		store,
 		catalog,
 		listHref,
+		listLabel = 'Zur Liste',
 		fullViewHref = null,
 		onfullview,
 		onclose,
@@ -57,6 +58,8 @@
 		catalog: CatalogStore;
 		/** Link back to the list with the current query. */
 		listHref: ResolvedPathname;
+		/** Text of that link: "Zur Liste", next to the calendar "Zum Kalender" (ADR-0053). */
+		listLabel?: string;
 		/** Address of the full view (UI-7). */
 		fullViewHref?: ResolvedPathname | null;
 		/** A click on "Vollansicht": the owner remembers the choice (plan BI-1). */
@@ -173,14 +176,14 @@
 			<h2 id={headingId} tabindex="-1" bind:this={messageHeading}>Ticket nicht gefunden</h2>
 			<p>Das Ticket gibt es nicht, oder es ist für dich nicht sichtbar.</p>
 			<TrashNotice id={store.id} />
-			<a href={listHref}>Zur Liste</a>
+			<a href={listHref}>{listLabel}</a>
 		</div>
 	{:else if store.state === 'deleted'}
 		<div class="message">
 			<h2 id={headingId} tabindex="-1" bind:this={messageHeading}>Dieses Ticket wurde gelöscht.</h2>
 			<p>Es wurde an anderer Stelle gelöscht.</p>
 			<TrashNotice id={store.id} />
-			<a href={listHref}>Zur Liste</a>
+			<a href={listHref}>{listLabel}</a>
 		</div>
 	{:else if store.state === 'error'}
 		<div class="message">
