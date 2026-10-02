@@ -214,6 +214,16 @@ describe('the scripts report problems only through the catalog', () => {
 		expect(lines[set + 1]).toBe('if not "%BYL_EXIT%"=="0" call "%~dp0byl-pruefen.bat" %BYL_EXIT%');
 	});
 
+	it('every disposable copy of the tests takes the catalog along with the control script', () => {
+		const dir = join(ROOT_DIR, 'tests', 'integration');
+		const copies = readdirSync(dir)
+			.filter((name) => name.endsWith('.mjs'))
+			.flatMap((name) => read(join(dir, name)).split(/\r?\n/).map((line) => [name, line]))
+			.filter(([, line]) => /copyFileSync/.test(line) && line.includes("'byl-control.ps1'") && line.includes("'byl-functions.ps1'"));
+		expect(copies.length).toBeGreaterThan(4);
+		for (const [name, line] of copies) expect(line, name).toContain("'byl-problems.ps1'");
+	});
+
 	it('byl-pruefen.bat leaves the codes of the script alone and asks "help" otherwise', () => {
 		const source = read(join(APP_DIR, 'byl-pruefen.bat'));
 		expect(source).toContain('for %%c in (2 3 4 5 6) do if "%BYL_CODE%"=="%%c" exit /b 0');
