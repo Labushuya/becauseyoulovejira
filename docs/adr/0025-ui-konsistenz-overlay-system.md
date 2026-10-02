@@ -1,6 +1,6 @@
 # ADR-0025: UI-Konsistenz – ein Overlay-System, Theme-Umschalter und angeglichene Projekt-UI
 
-- **Status:** Angenommen; §2 („Kein Schatten-Token“) teilweise ersetzt durch [ADR-0029](0029-glas-materialien.md), siehe Nachtrag 13; §11 präzisiert durch [ADR-0030](0030-spalten-breiten-und-kompakte-zeilen.md), siehe Nachtrag 14; §7 präzisiert durch [ADR-0036](0036-sammelbearbeitung-inline-und-oeffnungsmodus.md), siehe Nachtrag 15; §3 und §4 („kein Dialog aus einem Dialog“) präzisiert durch Nachtrag 16; §5 (Positionierung) ergänzt durch den Nachtrag „Rechtsklick“ in [ADR-0036](0036-sammelbearbeitung-inline-und-oeffnungsmodus.md): ein Popover öffnet per Code auch am Mauszeiger oder unter einem anderen Element
+- **Status:** Angenommen; §2 („Kein Schatten-Token“) teilweise ersetzt durch [ADR-0029](0029-glas-materialien.md), siehe Nachtrag 13; §11 präzisiert durch [ADR-0030](0030-spalten-breiten-und-kompakte-zeilen.md), siehe Nachtrag 14; §7 präzisiert durch [ADR-0036](0036-sammelbearbeitung-inline-und-oeffnungsmodus.md), siehe Nachtrag 15; §3 und §4 („kein Dialog aus einem Dialog“) präzisiert durch Nachtrag 16; §6 und §7 (Schließen eines Tickets in Projekten, Eingang und Wiederholungen) präzisiert durch Nachtrag 17 ([ADR-0054](0054-tickets-im-kontext-oeffnen.md)); §5 (Positionierung) ergänzt durch den Nachtrag „Rechtsklick“ in [ADR-0036](0036-sammelbearbeitung-inline-und-oeffnungsmodus.md): ein Popover öffnet per Code auch am Mauszeiger oder unter einem anderen Element
 - **Datum:** 2026-09-25
 - **Entscheidung durch:** Nutzer (Fragen 1 bis 4 in Abschnitt 9, 2026-09-25), Advisor (übrige Festlegungen)
 - **Ersetzt teilweise:** [ADR-0010](0010-layout-nach-task-board.md) §1 (Reihenfolge der Leisten, 5 s „Rückgängig“ in der Zeile) und §2 (Aufbau des Detail-Panels, Vollansicht)
@@ -202,6 +202,15 @@ Keine weiteren Fundstellen: Die übrigen Modals (Assistenten, Importe, Stichwör
 **Absicherung (Wächter statt statischer Liste):** `Modal.svelte` meldet, wenn es in einem Modal-Kontext geöffnet wird (beim Einhängen schon offen oder später geöffnet): `reportNestedModal` wirft im Testmodus von Vite (`NestedModalError` mit beiden Titeln) und schreibt in der App nur einen festen Text ohne Titel in die Konsole des Browsers, damit keine Inhalte eines Tickets dort landen und der Nutzer nie festsitzt (das Modal geht dann trotzdem auf). Dadurch schlägt **jeder** Komponententest fehl, der eine solche Stelle erreicht, auch künftige, ohne eine Liste pflegen zu müssen. Belegt in `modal-context.test.ts` (Werfen, Loggen, geschlossenes Modal darf im offenen stehen, offen beim Einhängen und später geöffnet werden abgelehnt) und für die Fundstellen in `ticket-panel.test.ts` (echte Vollansicht: genau ein Dialog, Bereich im Abschnitt, Fokus, Esc, Kommentar-Frage), `recurrence-summary.test.ts` und `ticket-sources.test.ts` (Komponenten in einem offenen Modal, `InModalHarness`).
 
 **Verworfen:** ein statischer Test über die Importe (die Komponenten importieren ihre Modals zu Recht für das Panel; er hätte eine gepflegte Ausnahmeliste gebraucht und dynamische Zusammensetzung über Snippets nicht gesehen); ein Modal, das sich in einem Modal selbst einbettet (hätte jede künftige Stelle unbemerkt eingebettet, auch große Dialoge in die schmale Spalte der Vollansicht, und die Regel verdeckt statt sichtbar gemacht); ein zusätzliches Merken ungespeicherter Eingaben der eingebetteten Formulare für die Frage beim Verlassen (ihre Modals fragen auch nicht; ein eigener Weg ohne Nutzen gegenüber „Abbrechen“).
+
+### 17. Nachtrag (2026-10-02, [ADR-0054](0054-tickets-im-kontext-oeffnen.md)): Ein Panel, das Ticket ersetzt das Panel seiner Herkunft
+
+Präzisiert §6 („× und Esc führen zur Liste mit der aktuellen Query“) und §7, ohne Nutzerentscheidung 1 aufzuheben. Anlass: Tickets öffnen seit ADR-0054 in Projekten, Eingang und Wiederholungen neben der Ansicht.
+
+- **Weiterhin ein Seitenpanel zugleich:** Jede Ansicht hat eine Panel-Spalte (`ViewWithPanel`), `PanelHost` merkt sich eine Schließ-Funktion, die Stores des Tickets gibt es einmal. Öffnet ein Ticket aus dem Panel eines Projekts, Eintrags oder einer Regel, **ersetzt** es dieses Panel (kein Stapeln, kein zweites Panel); die Adresse nennt die Herkunft (`von`).
+- **Schließen:** × und Esc des Tickets führen **zur Herkunft** (dem ersetzten Panel), ohne Herkunft zur Ansicht mit ihrem Zustand. Für die Panels von Projekt, Eintrag und Regel selbst gilt §6 unverändert.
+- **Vollansicht:** bleibt im Bereich (`…/tickets/<id>/voll`), ersetzt das Panel wie in Nachtrag 15 und führt beim Schließen zur Herkunft bzw. zur Ansicht.
+- `ViewWithPanel` nennt seine Teile (`data-view-part` „list“ und „panel“), damit der Rückweg den Link findet, der das Ticket geöffnet hat.
 
 ## Alternativen
 

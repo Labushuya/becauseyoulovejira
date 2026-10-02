@@ -848,8 +848,9 @@
 					Gelöschte Tickets („In den Papierkorb …“ im Menü „•••“ des Tickets) liegen im
 					<a href={trashHref()}>Papierkorb</a> (Link neben dem Umschalter der Ansichten). Dort stellst
 					du ein Ticket mit „Wiederherstellen“ wieder her, samt Key, Unteraufgaben und Quellen; direkt
-					nach dem Löschen geht das auch mit „Rückgängig“ unten links. Nach 30 Tagen löscht die App es
-					endgültig; die Frist stellst du unter „Einstellungen → Tickets“ ein.
+					nach dem Löschen geht das auch mit „Rückgängig“ unten links. Nach dem Wiederherstellen bleibst
+					du im Papierkorb, und die Meldung unten links bietet „Öffnen“. Nach 30 Tagen löscht die App
+					es endgültig; die Frist stellst du unter „Einstellungen → Tickets“ ein.
 				</p>
 			</details>
 			<details>
@@ -863,6 +864,26 @@
 					Eingang, verwerfen oder einem anderen Ticket zuordnen (die Hauptquelle bleibt bei ihrem
 					Ticket). Danach geht „Endgültig löschen …“.
 				</p>
+			</details>
+			<details>
+				<summary>Wo öffnet sich ein Ticket?</summary>
+				<ul>
+					<li>
+						Dort, wo du es anklickst: in „Aufgaben“ neben der Liste, im Kalender, unter „Projekte“,
+						im Eingang und unter „Wiederholungen“ jeweils neben der Ansicht, im Seitenpanel oder in
+						der Vollansicht, so wie du Tickets zuletzt geöffnet hast.
+					</li>
+					<li>
+						Ist dort gerade ein Projekt, ein Eintrag oder eine Regel offen, nimmt das Ticket dessen
+						Platz ein. Das Schließen (× oder <kbd>Esc</kbd>) führt genau dorthin zurück, sonst zur
+						Ansicht. Auch die Vollansicht bleibt an diesem Ort.
+					</li>
+					<li>
+						Der Pfad „Haus › Garten“ oben im Ticket öffnet das Projekt. Bewusst nach „Aufgaben“
+						führen „Link kopieren“ (die Adresse taugt für jeden Tab), „Alle 12 in Aufgaben öffnen“,
+						„Tickets anzeigen“, der Name der App und „Neues Ticket“.
+					</li>
+				</ul>
 			</details>
 			<details>
 				<summary>Was steht im Menü „•••“ eines Tickets?</summary>
@@ -981,9 +1002,11 @@
 					</li>
 					<li>
 						Es stehen höchstens 10 Tickets da; bei mehr führt „Alle 12 in Aufgaben öffnen“ zu
-						„Aufgaben“ mit dem Projekt als Filter. Ein Klick auf ein Ticket öffnet es, wie du
-						Tickets zuletzt geöffnet hast (Panel oder Vollansicht); „•••“ und der Rechtsklick bieten
-						dasselbe Menü wie in „Aufgaben“. Bearbeitet wird im Ticket oder in „Aufgaben“.
+						„Aufgaben“ mit dem Projekt als Filter. Ein Klick auf ein Ticket öffnet es hier unter
+						„Projekte“, wie du Tickets zuletzt geöffnet hast (Panel oder Vollansicht); aus dem Panel
+						eines Projekts nimmt es dessen Platz ein, und das Schließen führt zum Projekt zurück.
+						„•••“ und der Rechtsklick bieten dasselbe Menü wie in „Aufgaben“. Bearbeitet wird im
+						Ticket oder in „Aufgaben“.
 					</li>
 					<li>
 						„Alle aufklappen“ und „Alle zuklappen“ über der Liste öffnen bzw. schließen alle Zeilen.

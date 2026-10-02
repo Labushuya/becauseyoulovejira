@@ -16,10 +16,12 @@
 
 	// Preview of one ticket in the trash (/papierkorb/<record id>, ADR-0037 §9), read-only. It loads
 	// through the trash route and again when the trash changes (another tab restored or deleted it).
-	// "Wiederherstellen" leads to the restored ticket; "Endgültig löschen …" asks first and leads
-	// back to the table. The decision help of a blocked ticket (ADR-0047) answers with the preview
-	// afterwards; a sub-task restored on its own leaves the preview of its group in place, and a
-	// choice its restore needs (target project) asks in the same inline question.
+	// "Wiederherstellen" keeps the user in the trash (ADR-0054 §7): back to the table, and the flag
+	// "KEY wiederhergestellt." offers "Öffnen", which opens the ticket in "Aufgaben" in the
+	// remembered way. "Endgültig löschen …" asks first and leads back to the table. The decision
+	// help of a blocked ticket (ADR-0047) answers with the preview afterwards; a sub-task restored on
+	// its own leaves the preview of its group in place, and a choice its restore needs (target
+	// project) asks in the same inline question.
 	const store = getTrashStore();
 	const catalog = getCatalogStore();
 	const links = ticketLinks();
@@ -59,8 +61,8 @@
 			await detach(detaching.id, options);
 			return;
 		}
-		const result = await store.restore(id, options);
-		if (result !== null) await goto(links.path(result.id));
+		const result = await store.restore(id, options, (ticketId) => void goto(links.path(ticketId)));
+		if (result !== null) await goto(trashHref());
 	}
 
 	async function resolve(actions: readonly ResolveAction[]) {

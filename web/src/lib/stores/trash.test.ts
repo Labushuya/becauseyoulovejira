@@ -172,6 +172,20 @@ describe('TrashStore: restoring', () => {
 			'HAUS-1 heißt jetzt GART-4.',
 			'Die Quelle „Mail“ blieb im Eingang: inzwischen verworfen.'
 		]);
+		expect(shown.at(-1)?.action).toBeUndefined();
+	});
+
+	it('offers "Öffnen" in the flag; the user stays in the trash (ADR-0054 §7)', async () => {
+		const { store, shown } = setup();
+		await store.reload();
+		const open = vi.fn();
+		await store.restore(A, {}, open);
+		const flag = shown.at(-1);
+		expect(flag).toMatchObject({ tone: 'success', title: 'TASK-a wiederhergestellt.' });
+		expect(flag?.action?.label).toBe('Öffnen');
+		expect(open).not.toHaveBeenCalled();
+		flag?.action?.run();
+		expect(open).toHaveBeenCalledExactlyOnceWith(A);
 	});
 
 	it('asks inline for a target project and a way out of the series, keeping earlier choices', async () => {

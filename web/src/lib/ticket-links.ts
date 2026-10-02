@@ -59,9 +59,9 @@ export interface PathStep {
 
 /**
  * Path of a ticket (ADR-0033 section 4, ADR-0034): a ticket in a sub project starts with
- * "Haus › Garten" (links to the list filtered by the project), a sub-task names its parent (link
- * `parent.href`), then the own key. Empty when the ticket has neither; the header then shows the
- * key alone.
+ * "Haus › Garten" (links to the panels of the projects, ADR-0054 §6), a sub-task names its parent
+ * (link `parent.href`), then the own key. Empty when the ticket has neither; the header then shows
+ * the key alone.
  */
 export function ticketPathSteps(
 	key: string,
@@ -72,12 +72,12 @@ export function ticketPathSteps(
 		? [
 				{
 					label: project.parent.name,
-					href: projectTicketsHref(project.parent.id),
+					href: projectPanelPath(project.parent.id),
 					title: `${project.parent.name} (${project.parent.code})`
 				},
 				{
 					label: project.name,
-					href: projectTicketsHref(project.id),
+					href: projectPanelPath(project.id),
 					title: projectChoiceLabel(project)
 				}
 			]
@@ -118,6 +118,11 @@ export function projectsViewHref(url: URL): ResolvedPathname {
 /** Panel of a project (ADR-0025 section 10, UI-8) with the switch of `url`. */
 export function projectHref(id: string, url: URL): ResolvedPathname {
 	return `${resolve(`/projekte/${encodeURIComponent(id)}`)}${projectViewQuery(url)}` as ResolvedPathname;
+}
+
+/** Panel of a project without the state of the project view (the path in the header of a ticket). */
+export function projectPanelPath(id: string): ResolvedPathname {
+	return resolve(`/projekte/${encodeURIComponent(id)}`) as ResolvedPathname;
 }
 
 /** Panel "Neues Projekt" (UI-8) with the switch of `url`. */
@@ -186,6 +191,76 @@ export function calendarFullViewHref(id: string, url: URL): ResolvedPathname {
 /** The current path with view and date of the calendar; filters and other parameters stay. */
 export function withCalendarQuery(url: URL, query: CalendarQuery): ResolvedPathname {
 	return `${url.pathname}${replaceCalendarQuery(url.searchParams, query)}${url.hash}` as ResolvedPathname;
+}
+
+/** Areas in which a ticket opens next to their own view (ADR-0054): projects, inbox and rules. */
+export type TicketArea = 'projekte' | 'eingang' | 'wiederholungen';
+
+/**
+ * Query parameter of the panel a ticket replaced in its area (ADR-0054 §2): the record ID of the
+ * project, the inbox entry or the rule it was opened from. × and Escape of the ticket lead there.
+ */
+export const ORIGIN_PARAM = 'von';
+
+const RECORD_ID = /^[a-z0-9]{15}$/;
+
+/** The state of the view of an area in `url` (search, sort, layout, chips); the rules have none. */
+function areaState(area: TicketArea, url: URL): URLSearchParams {
+	if (area === 'projekte') return new URLSearchParams(projectViewQuery(url));
+	if (area === 'eingang') {
+		return new URLSearchParams(serializeInboxQuery(parseInboxQuery(url.searchParams)));
+	}
+	return new URLSearchParams();
+}
+
+/**
+ * The panel a ticket of `area` replaces (ADR-0054 §2): on the panel of a project, an entry or a
+ * rule (`/projekte/<id>`) that one, on a ticket of the area the parameter `von`. Null elsewhere
+ * (the view, "Neues Projekt", "Erfassen", a link from outside) and for a value that is no record ID.
+ */
+export function ticketOriginFrom(area: TicketArea, url: URL): string | null {
+	const prefix = `${resolve(`/${area}`)}/`;
+	if (url.pathname.startsWith(prefix)) {
+		const rest = url.pathname.slice(prefix.length);
+		if (RECORD_ID.test(rest)) return rest;
+	}
+	const values = url.searchParams.getAll(ORIGIN_PARAM);
+	const value = values.length === 1 ? (values[0] ?? '') : '';
+	return RECORD_ID.test(value) ? value : null;
+}
+
+/**
+ * Panel of a ticket in `area` (with `full` its full view), with the state of the view of `url` and
+ * the panel the ticket replaces as `von` (ADR-0054 §2).
+ */
+export function areaTicketHref(
+	area: TicketArea,
+	id: string,
+	url: URL,
+	full = false
+): ResolvedPathname {
+	const params = areaState(area, url);
+	const origin = ticketOriginFrom(area, url);
+	if (origin !== null) params.set(ORIGIN_PARAM, origin);
+	const search = params.toString();
+	const path = full
+		? resolve(`/${area}/tickets/${encodeURIComponent(id)}/voll`)
+		: resolve(`/${area}/tickets/${encodeURIComponent(id)}`);
+	return `${path}${search === '' ? '' : `?${search}`}` as ResolvedPathname;
+}
+
+/**
+ * The way back from a ticket in `area` (ADR-0054 §2): the panel of the project, entry or rule it
+ * replaced, else the view, each with the state of the view of `url`.
+ */
+export function areaBackHref(area: TicketArea, url: URL): ResolvedPathname {
+	const origin = ticketOriginFrom(area, url);
+	if (origin === null) {
+		if (area === 'projekte') return projectsViewHref(url);
+		return area === 'eingang' ? inboxHref(url) : recurrencesHref();
+	}
+	if (area === 'projekte') return projectHref(origin, url);
+	return area === 'eingang' ? inboxItemHref(origin, url) : recurrenceHref(origin);
 }
 
 /** Panel "Neue Regel" (E5 plan, T-6). */
@@ -296,12 +371,15 @@ export function withoutConvert(url: URL): URL {
 	return next;
 }
 
-/** Path of the panel of a ticket without any list state (links from the inbox). */
+/**
+ * Path of the panel of a ticket without any list state: the stored form of a link to a ticket
+ * (ADR-0042 §5) and the way into "Aufgaben" from places without a view of their own (trash).
+ */
 export function ticketPath(id: string): ResolvedPathname {
 	return resolve(`/tickets/${encodeURIComponent(id)}`);
 }
 
-/** Path of the full view of a ticket without any list state (links from inbox and rules). */
+/** Path of the full view of a ticket without any list state (see `ticketPath`). */
 export function fullViewPath(id: string): ResolvedPathname {
 	return resolve(`/tickets/${encodeURIComponent(id)}/voll`) as ResolvedPathname;
 }

@@ -15,13 +15,14 @@
 	// layout with the tiles and, as its child page, the panel of a project or "Neues Projekt", as
 	// SvelteKit renders it. With `rowActions` (and `duplicates`) the open tickets of the projects
 	// get the menu "•••" of the ticket rows, as below the (app) layout (ADR-0034, addendum "Offene
-	// Tickets in Projekten").
+	// Tickets in Projekten"). For /projekte/tickets/<id> and its full view (ADR-0054) a stand-in for
+	// the panel of the ticket; the route of the ticket has tests of its own.
 	let {
 		child = null,
 		rowActions = null,
 		duplicates = null
 	}: {
-		child?: 'neu' | 'project' | null;
+		child?: 'neu' | 'project' | 'ticket' | 'full' | null;
 		rowActions?: TicketRowActionsStore | null;
 		duplicates?: TicketDuplicateStore | null;
 	} = $props();
@@ -37,5 +38,7 @@
 		<NewProjectPage />
 	{:else if child === 'project'}
 		<ProjectPage />
+	{:else if child === 'ticket'}
+		<aside aria-label="Panel des Tickets">Panel</aside>
 	{/if}
 </ProjectsLayout>

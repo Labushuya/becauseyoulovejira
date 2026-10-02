@@ -336,9 +336,14 @@ export class TrashStore {
 	/**
 	 * Restores one ticket with its group. A refusal that needs a choice (target project, leaving
 	 * the series) becomes the inline question of the row; the choices made so far go along with the
-	 * next try. Any other failure is an error flag. Returns the result, or null.
+	 * next try. Any other failure is an error flag. With `open` the flag offers „Öffnen“, which opens
+	 * the restored ticket (ADR-0054 §7): the user stays in the trash. Returns the result, or null.
 	 */
-	async restore(id: string, options: RestoreOptions = {}): Promise<RestoreResult | null> {
+	async restore(
+		id: string,
+		options: RestoreOptions = {},
+		open?: (ticketId: string) => void
+	): Promise<RestoreResult | null> {
 		if (this.#busy.has(id) || this.#progress !== null || !this.#session.ensureValid()) return null;
 		this.#busy.add(id);
 		const key = this.find(id)?.key ?? '';
@@ -352,7 +357,8 @@ export class TrashStore {
 			this.#flags.show({
 				tone: 'success',
 				title: `${result.key} wiederhergestellt.`,
-				...(notes.length > 0 && { description: notes.join(' ') })
+				...(notes.length > 0 && { description: notes.join(' ') }),
+				...(open !== undefined && { action: { label: 'Öffnen', run: () => open(result.id) } })
 			});
 			return result;
 		} catch (error) {

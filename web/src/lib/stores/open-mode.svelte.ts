@@ -7,6 +7,7 @@
 // storage event.
 
 import { createContext } from 'svelte';
+import { page } from '$app/state';
 import type { ResolvedPathname } from '$app/types';
 import {
 	OPEN_MODE_STORAGE_KEY,
@@ -127,9 +128,10 @@ export function findTicketOpenMode(): TicketOpenModeStore | null {
 /**
  * Links to tickets for a component: in the remembered mode inside the (app) layout, the panel
  * outside it. Call during component initialisation; the functions read the mode when called, so a
- * template that uses them follows a new choice. `href` keeps the view of the component: below the
- * calendar the panel and the full view open next to it (ADR-0053 §6, `TicketHost`), elsewhere next
- * to the list. `path` (a link without the state of a view) always leads to the list.
+ * template that uses them follows a new choice. Both keep the place of the component (ADR-0054):
+ * below the calendar or in an area the panel and the full view open there (`TicketHost`), with the
+ * panel they replace. `href` takes the state of `url`; `path` takes the current address, and from
+ * a place without a host (the trash) it leads to the list without its state.
  */
 export function ticketLinks(): {
 	href: (id: string, url: URL) => ResolvedPathname;
@@ -137,9 +139,12 @@ export function ticketLinks(): {
 } {
 	const store = findTicketOpenMode();
 	const host = findTicketHost();
+	const mode = (): OpenMode => store?.effective ?? 'panel';
+	const href = (id: string, url: URL) =>
+		mode() === 'full' ? host.full(id, url) : host.panel(id, url);
 	return {
-		href: (id, url) => (store?.effective === 'full' ? host.full(id, url) : host.panel(id, url)),
-		path: (id) => store?.path(id) ?? ticketPath(id)
+		href,
+		path: (id) => host.path?.(id, mode()) ?? href(id, page.url)
 	};
 }
 

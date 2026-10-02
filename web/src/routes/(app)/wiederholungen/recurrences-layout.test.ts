@@ -101,23 +101,24 @@ function instance(): TicketSummary {
 	};
 }
 
+/** Route IDs of the children: a rule, "Neue Regel", a ticket and its full view (ADR-0054). */
+const CHILD_ROUTES = {
+	neu: '/(app)/wiederholungen/neu',
+	rule: '/(app)/wiederholungen/[id]',
+	ticket: '/(app)/wiederholungen/tickets/[id]',
+	full: '/(app)/wiederholungen/tickets/[id]/voll'
+} as const;
+
 async function show(
 	path: string,
-	child: 'neu' | 'rule' | null = null,
+	child: keyof typeof CHILD_ROUTES | null = null,
 	rules: RecurrenceRule[] | null = [rule()]
 ) {
 	const url = new URL(path, 'http://localhost:3000');
 	mocks.page.url = url;
-	const id = /^\/wiederholungen\/([a-z0-9]{15})$/.exec(url.pathname)?.[1];
+	const id = /^\/wiederholungen\/(?:tickets\/)?([a-z0-9]{15})(?:\/voll)?$/.exec(url.pathname)?.[1];
 	mocks.page.params = id ? { id } : {};
-	mocks.page.route = {
-		id:
-			child === 'neu'
-				? '/(app)/wiederholungen/neu'
-				: child === 'rule'
-					? '/(app)/wiederholungen/[id]'
-					: '/(app)/wiederholungen'
-	};
+	mocks.page.route = { id: child === null ? '/(app)/wiederholungen' : CHILD_ROUTES[child] };
 	const session = { ensureValid: () => true, logout: vi.fn() };
 	const flags = new FlagStore();
 	const data = {
@@ -264,5 +265,52 @@ describe('route /wiederholungen', () => {
 			within(panel).getByText(/Wiederholungen sind nach dem nächsten Neustart verfügbar/)
 		).toBeTruthy();
 		expect(within(panel).queryByRole('button', { name: 'Anlegen' })).toBeNull();
+	});
+});
+
+describe('route /wiederholungen: tickets in the rules (ADR-0054)', () => {
+	const RULE = 'rule00000000001';
+	const TICKET = 'ticket000000001';
+	const ruleLink = () => screen.getByRole('link', { name: 'Müll rausbringen' });
+
+	it('opens the open tickets of the table and of the rule panel in the rules', async () => {
+		await show(`/wiederholungen/${RULE}`, 'rule');
+		const panel = screen.getByRole('complementary', { name: 'Müll rausbringen' });
+		expect(
+			within(panel)
+				.getByRole('link', { name: /TASK-7/ })
+				.getAttribute('href')
+		).toBe(`/wiederholungen/tickets/${TICKET}?von=${RULE}`);
+		const table = screen.getByRole('table');
+		expect(within(table).getByRole('link', { name: 'TASK-7' }).getAttribute('href')).toBe(
+			`/wiederholungen/tickets/${TICKET}?von=${RULE}`
+		);
+	});
+
+	it('opens a ticket of the table without a rule panel as a deep link', async () => {
+		await show('/wiederholungen');
+		const table = screen.getByRole('table');
+		expect(within(table).getByRole('link', { name: 'TASK-7' }).getAttribute('href')).toBe(
+			`/wiederholungen/tickets/${TICKET}`
+		);
+	});
+
+	it('shows a ticket instead of the rule panel and marks the rule it came from', async () => {
+		await show(`/wiederholungen/tickets/${TICKET}?von=${RULE}`, 'ticket');
+		expect(screen.getByRole('complementary', { name: 'Panel des Tickets' })).toBeTruthy();
+		expect(screen.queryByRole('complementary', { name: 'Müll rausbringen' })).toBeNull();
+		expect((document.querySelector('.view') as HTMLElement).dataset.panelMode).toBe('embedded');
+		expect(ruleLink().getAttribute('aria-current')).toBe('page');
+	});
+
+	it('marks no rule for a deep link', async () => {
+		await show(`/wiederholungen/tickets/${TICKET}`, 'ticket');
+		expect(ruleLink().hasAttribute('aria-current')).toBe(false);
+	});
+
+	it('has no panel column while the full view of a ticket is shown (ADR-0036 §1)', async () => {
+		await show(`/wiederholungen/tickets/${TICKET}/voll?von=${RULE}`, 'full');
+		expect(document.querySelector('.view')?.hasAttribute('data-panel-mode')).toBe(false);
+		expect(ruleLink().getAttribute('aria-current')).toBe('page');
 	});
 });

@@ -1,6 +1,6 @@
 # ADR-0034: Unterprojekte als Gliederung der Projekte: eine Ebene, eigener Code, Archiv-Kaskade, keine Epics
 
-- **Status:** Angenommen und umgesetzt in den Paketen UP-1 bis UP-6 nach [docs/plan/unterprojekte.md](../plan/unterprojekte.md) (#130 bis #135); manuelle Browser-Prüfungen stehen im Test-Manifest; Nachtrag „Offene Tickets in Projekten“ (2026-10-01, Paket PT-1 nach [docs/plan/projekte-tickets.md](../plan/projekte-tickets.md)); Nachtrag „Farben“ (2026-10-02, [ADR-0052](0052-farben-fuer-projekte-und-tickets.md))
+- **Status:** Angenommen und umgesetzt in den Paketen UP-1 bis UP-6 nach [docs/plan/unterprojekte.md](../plan/unterprojekte.md) (#130 bis #135); manuelle Browser-Prüfungen stehen im Test-Manifest; Nachtrag „Offene Tickets in Projekten“ (2026-10-01, Paket PT-1 nach [docs/plan/projekte-tickets.md](../plan/projekte-tickets.md)); Nachtrag „Farben“ (2026-10-02, [ADR-0052](0052-farben-fuer-projekte-und-tickets.md)); Nachtrag „Tickets öffnen unter „Projekte““ (2026-10-02, [ADR-0054](0054-tickets-im-kontext-oeffnen.md))
 - **Datum:** 2026-09-28
 - **Entscheidung durch:** Nutzer (Freigabe der Unterprojekte mit einer Ebene, eigenem Code, Brotkrumen, Filter mit Unterprojekten, aggregierten Zahlen, Archiv-Kaskade und Löschsperre am 2026-09-28), Advisor (Konzept „Unterprojekte“), Executor (Prüfregeln, Spike, Einzelheiten)
 - **Präzisiert:** [ADR-0012](0012-plain-ticketing.md) (Nachtrag, der Text bleibt), [ADR-0013](0013-filter-suche-sortierung-gruppierung.md) §3 und §4 (Filter „Projekt“ mit Unterprojekten, Parameter `unterprojekte`)
@@ -138,3 +138,11 @@ Unterprojekte haben keinen Status, keinen Fortschritt, keine Laufzeit und keine 
 - **Zahlen, Filter und Archiv** bleiben unberührt; die Farbe ist reine Anzeige.
 
 **Tests:** `domain/colors.test.ts`, `stores/catalog.test.ts`, `components/project-panel.test.ts`, `components/colors.test.ts`.
+
+## Nachtrag (2026-10-02): Tickets öffnen unter „Projekte“ ([ADR-0054](0054-tickets-im-kontext-oeffnen.md))
+
+**Anlass:** Nutzerwunsch, Tickets aus ihrem Bezug heraus zu öffnen (Freigabe vom 2026-10-02). Ändert im Nachtrag „Offene Tickets in Projekten“ den Punkt „Ein Klick öffnet das Ticket im gemerkten Modus, mit dem Projekt als Zustand der Liste dahinter“; alles andere bleibt.
+
+- Ein Klick auf ein offenes Ticket (Zeile der Liste oder Abschnitt „Offene Tickets“ im Panel) und die Einträge „Im Seitenpanel öffnen“ und „In Vollansicht öffnen“ seines Menüs öffnen es **unter „Projekte“** (`/projekte/tickets/<id>`, `…/voll`), mit dem Zustand der Projektansicht. Aus dem Projekt-Panel ersetzt das Ticket das Panel; × führt zum Projekt zurück (`von`, ADR-0054 §2). Ein Duplikat öffnet ebenfalls dort.
+- „Alle N in Aufgaben öffnen“ (mit `unterprojekte=0` beim Oberprojekt) und „Tickets anzeigen“ führen weiter in die gefilterte Liste von „Aufgaben“.
+- Der Pfad „Haus › Garten“ im Kopf eines Tickets öffnet das Projekt-Panel statt der gefilterten Liste (ADR-0054 §5).

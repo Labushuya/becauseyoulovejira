@@ -32,14 +32,16 @@
 	// §8). A restore that needs a choice asks inline in its row. The result of an action (notes of
 	// restores, failures) stands above the table until the next one. Blocked tickets (ADR-0047)
 	// can be filtered with "Nur blockierte"; deleting for good and emptying say beforehand that
-	// they stay until their dependencies are decided in the preview.
+	// they stay until their dependencies are decided in the preview. "Wiederherstellen" of a row
+	// keeps the user here; with `onopen` its flag offers "Öffnen" (ADR-0054 §7).
 	let {
 		store,
 		projects,
 		selfId,
 		activeId = null,
 		inboxCount = null,
-		projectsNewCount = 0
+		projectsNewCount = 0,
+		onopen
 	}: {
 		store: TrashStore;
 		/** Active projects, targets of a restore that needs one. */
@@ -49,6 +51,8 @@
 		activeId?: string | null;
 		inboxCount?: number | null;
 		projectsNewCount?: number;
+		/** "Öffnen" in the flag of a restored ticket. */
+		onopen?: (ticketId: string) => void;
 	} = $props();
 
 	const uid = $props.id();
@@ -231,7 +235,7 @@
 				hrefOf={trashItemHref}
 				needOf={(id) => store.needOf(id)}
 				isBusy={(id) => store.isBusy(id)}
-				onrestore={(id, options) => void store.restore(id, options)}
+				onrestore={(id, options) => void store.restore(id, options, onopen)}
 				onpurge={(item) => (asking = { kind: 'one', item })}
 				ondismissneed={(id) => store.dismissNeed(id)}
 			/>

@@ -1,6 +1,6 @@
 # ADR-0037: Papierkorb für Tickets: weiches Löschen, Unsichtbarkeit über die API-Regeln, Wiederherstellen und Aufbewahrung
 
-- **Status:** Angenommen und umgesetzt: §1 bis §8 serverseitig in PB-1 (#151), die Oberfläche (§9) in PB-2, nach [docs/plan/papierkorb.md](../plan/papierkorb.md); manuelle Browser-Prüfungen stehen im Test-Manifest; §9 (Aktionen der Zeile) geändert durch den Nachtrag „Aktionsmenüs“ (2026-10-01); §2, §4, §6, §8 und §9 geändert durch [ADR-0047](0047-speicher-und-abhaengigkeiten-beim-loeschen.md) (Nachtrag „Erst entscheiden, dann endgültig löschen“, SPE-1)
+- **Status:** Angenommen und umgesetzt: §1 bis §8 serverseitig in PB-1 (#151), die Oberfläche (§9) in PB-2, nach [docs/plan/papierkorb.md](../plan/papierkorb.md); manuelle Browser-Prüfungen stehen im Test-Manifest; §9 (Aktionen der Zeile) geändert durch den Nachtrag „Aktionsmenüs“ (2026-10-01); §2, §4, §6, §8 und §9 geändert durch [ADR-0047](0047-speicher-und-abhaengigkeiten-beim-loeschen.md) (Nachtrag „Erst entscheiden, dann endgültig löschen“, SPE-1); §9 („Wiederherstellen“ der Vorschau) geändert durch [ADR-0054](0054-tickets-im-kontext-oeffnen.md) (Nachtrag vom 2026-10-02)
 - **Datum:** 2026-09-28
 - **Entscheidung durch:** Nutzer (Auftrag „Offene Reste“, Teil B: Papierkorb), Advisor (Produktentscheidungen: Umfang, Gruppen, Quellen, Keys, Rückgängig, Aufbewahrung 7/30/90/nie, Rückweg), Executor (Architektur und Einzelheiten)
 - **Ändert:** [ADR-0031](0031-herkunft-sichern.md) Nachtrag B (Quellen beim Löschen), [ADR-0023](0023-lebenszyklus-von-regeln-und-instanzen.md) §6 und [ADR-0022](0022-erzeugung-von-instanzen.md) §5 (Index), [ADR-0033](0033-unteraufgaben.md) (Löschen mit Unteraufgaben), [ADR-0036](0036-sammelbearbeitung-inline-und-oeffnungsmodus.md) §4 (Rückgängig nach „Löschen“); jeweils mit Nachtrag
@@ -109,3 +109,7 @@ Nutzerentscheidung: „Verweigern von Löschung, erst Abhängigkeiten auflösen 
 - **Ändert §4:** Eine Unteraufgabe einer Gruppe lässt sich mit `detach_parent` allein als eigenständiges Ticket wiederherstellen („Lösen und als eigenständiges Ticket wiederherstellen“).
 - **Ändert §9:** Spalte „Status“ mit „Blockiert (N)“, Filter „Nur blockierte“, „nicht, solange blockiert“ statt der Resttage, „Abhängigkeiten auflösen“ statt „Endgültig löschen …“ im Menü einer blockierten Zeile, Abschnitt „Abhängigkeiten“ in der Vorschau, Hinweis beim Öffnen, wenn abgelaufene Tickets auf eine Entscheidung warten.
 - Einzelheiten, Routen und Alternativen in ADR-0047.
+
+## Nachtrag (2026-10-02, [ADR-0054](0054-tickets-im-kontext-oeffnen.md)): „Wiederherstellen“ bleibt im Papierkorb
+
+Ändert in §9 den Punkt der Vorschau „„Wiederherstellen“ führt zum Ticket“: Wer mehrere Tickets zurückholt, soll nicht jedes Mal den Papierkorb verlassen. „Wiederherstellen“ in der Vorschau schließt die Vorschau und lässt den Nutzer in der Tabelle; in der Vorschau wie in der Zeile bietet das Flag „KEY wiederhergestellt.“ die Aktion **„Öffnen“**, die das Ticket in „Aufgaben“ im gemerkten Modus öffnet (der Papierkorb hat keine Ansicht für Tickets, ADR-0054 §1). Die Sammel-Leiste und „Rückgängig“ nach dem Verschieben bleiben, wie sie sind.

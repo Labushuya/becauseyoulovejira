@@ -18,7 +18,14 @@ import { RecurrenceStore, type RecurrenceData } from '$lib/stores/recurrence.sve
 import { TicketSourcesStore, type TicketSourcesData } from '$lib/stores/ticket-sources.svelte';
 import { useOverlayStubs } from '$lib/test/overlay-stubs';
 import { fakePickerSource, pickerTicket } from '$lib/test/ticket-picker-fake';
+import TicketHostHarness from '$lib/test/TicketHostHarness.svelte';
+import { INBOX_HOST, type TicketHost } from '$lib/ticket-host';
 import InboxPanel from './InboxPanel.svelte';
+
+// The address of the panel of the entry; links of the host of the inbox read it (ADR-0054).
+vi.mock('$app/state', () => ({
+	page: { url: new URL('http://localhost:3000/eingang/item00000000001?quelle=mail') }
+}));
 
 useOverlayStubs();
 
@@ -53,7 +60,9 @@ function setup(
 	/** Names of the connections as the (app) layout provides them (KK-3). */
 	names: ConnectionNamesStore | null = null,
 	/** "Ansehen" of files of folders as the (app) layout provides it (ADR-0051 §6). */
-	viewer: FolderViewer | null = null
+	viewer: FolderViewer | null = null,
+	/** The host of the inbox layout (ADR-0054); without it the links lead to "Aufgaben". */
+	host: TicketHost | null = null
 ) {
 	const data = {
 		listNew: vi.fn<InboxData['listNew']>(async () => []),
@@ -101,7 +110,9 @@ function setup(
 	const store = new InboxStore(data, { ensureValid: () => true, logout: vi.fn() });
 	const onclose = vi.fn();
 	const props = { id: ID, store, openTickets: tickets, onclose, ...extra };
-	if (viewer !== null) {
+	if (host !== null) {
+		render(TicketHostHarness, { props: { host, component: InboxPanel, props } });
+	} else if (viewer !== null) {
 		render(FolderViewerHarness, { props: { viewer, component: InboxPanel, props } });
 	} else if (names === null) render(InboxPanel, { props });
 	else render(ConnectionNamesHarness, { props: { names, component: InboxPanel, props } });
@@ -378,6 +389,21 @@ describe('inbox panel', () => {
 		);
 		expect(screen.getByText('Gehört zu einem Ticket')).toBeTruthy();
 		expect(screen.queryByRole('button', { name: 'Verwerfen' })).toBeNull();
+	});
+
+	it('opens the ticket in the inbox instead of the entry, which × of the ticket brings back', async () => {
+		const ticket = { id: 'tick00000000001', key: 'HAUS-4', title: 'Rechnung' } as TicketSummary;
+		setup(
+			entry({ state: 'converted', ticketId: ticket.id, handledAt: '2026-09-25 09:00:00.000Z' }),
+			[ticket],
+			{},
+			null,
+			null,
+			INBOX_HOST
+		);
+		const link = await screen.findByRole('link', { name: 'Ticket öffnen' });
+		// ADR-0054: the ticket stays in the inbox, with its chips and the entry as the way back.
+		expect(link.getAttribute('href')).toBe(`/eingang/tickets/${ticket.id}?quelle=mail&von=${ID}`);
 	});
 
 	it('hints at a possible duplicate and assigns the entry to the ticket', async () => {
