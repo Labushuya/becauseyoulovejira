@@ -19,8 +19,9 @@ var MAIL_USER_MAX_LENGTH = 254;
 // the name (ADR-0026, addendum KK-3; ADR-0016, addendum of 2026-10-01): a client request that
 // changes `label` must leave these fields and the server fields as they are. `settings_json` is
 // the stored JSON text of `settings`, so a rewritten value with the same content counts as a change.
+// The target project (ADR-0049) is a setting of its own and stays as well.
 var LABEL_MAX_LENGTH = 100;
-var RENAME_KEEPS = ['type', 'enabled', 'secret_env', 'settings_json', 'owner', 'household'];
+var RENAME_KEEPS = ['type', 'enabled', 'secret_env', 'settings_json', 'owner', 'household', 'target_project'];
 
 // Keys of `settings` per kind. Only names of variables, never values (ADR-0018 section 2), the
 // keywords (ADR-0020 section 3) and, for Telegram, the two answers of the bot in the chat: the

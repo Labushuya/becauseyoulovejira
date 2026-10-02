@@ -190,6 +190,8 @@ export const EXPECTED_COLLECTIONS = {
 			ticket: relation('tickets'),
 			handled_at: date(),
 			connection: relation('connections'),
+			// The project the entry got from its way (ADR-0049, migration 1790203100).
+			target_project: relation('projects'),
 			scope: text({ required: true }),
 			...ownership(),
 			...timestamps()
@@ -197,7 +199,8 @@ export const EXPECTED_COLLECTIONS = {
 		indexes: [
 			'CREATE UNIQUE INDEX idx_inbox_items_scope_fingerprint ON inbox_items (scope, fingerprint)',
 			'CREATE INDEX idx_inbox_items_owner_state ON inbox_items (owner, state)',
-			'CREATE INDEX idx_inbox_items_ticket ON inbox_items (ticket)'
+			'CREATE INDEX idx_inbox_items_ticket ON inbox_items (ticket)',
+			'CREATE INDEX idx_inbox_items_target_project ON inbox_items (target_project)'
 		]
 	},
 	connections: {
@@ -215,6 +218,8 @@ export const EXPECTED_COLLECTIONS = {
 			running_since: date(),
 			scope: text({ required: true }),
 			scan: { type: 'json', required: false, maxSize: 2000 },
+			// Target project of the entries of the connection (ADR-0049, migration 1790203100).
+			target_project: relation('projects'),
 			...ownership(),
 			...timestamps()
 		},

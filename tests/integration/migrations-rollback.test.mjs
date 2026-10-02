@@ -156,7 +156,9 @@ describe('migration rollback', () => {
 				]);
 				// The base line of "new" (ADR-0015) is the only value an existing row gets; the keyword
 				// lists of the file imports (package 21) stay empty.
-				expect(migrated.users.map(({ unread_since, import_keywords, trash_retention, ...rest }) => rest)).toEqual(before.users);
+				expect(
+					migrated.users.map(({ unread_since, import_keywords, trash_retention, inbox_targets, ...rest }) => rest)
+				).toEqual(before.users);
 				expect(migrated.users.map((user) => user.import_keywords)).toEqual([null]);
 				for (const user of migrated.users) {
 					expect(user.unread_since).toMatch(/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\.\d{3}Z$/);
@@ -196,7 +198,7 @@ describe('migration rollback', () => {
 				const up = await migrate(args, 'up');
 				expect(appliedFiles(up, 'Applied')).toEqual(fromConnections);
 				const migrated = withDatabase(dataDir, snapshot);
-				expect(migrated.inbox_items.map(({ connection, ...rest }) => rest)).toEqual(before.inbox_items);
+				expect(migrated.inbox_items.map(({ connection, target_project, ...rest }) => rest)).toEqual(before.inbox_items);
 				expect(migrated.inbox_items.map((item) => item.connection)).toEqual(['', '']);
 				expect(migrated.connections).toEqual([]);
 
@@ -237,7 +239,9 @@ describe('migration rollback', () => {
 				const up = await migrate(args, 'up');
 				expect(appliedFiles(up, 'Applied')).toEqual(fromKeywords);
 				const migrated = withDatabase(dataDir, snapshot);
-				expect(migrated.users.map(({ import_keywords, trash_retention, ...rest }) => rest)).toEqual(before.users);
+				expect(migrated.users.map(({ import_keywords, trash_retention, inbox_targets, ...rest }) => rest)).toEqual(
+					before.users
+				);
 				expect(migrated.users.map((user) => user.import_keywords)).toEqual([null, null]);
 
 				// Lists for one user, then back down: the other columns stay as they were.
@@ -308,8 +312,8 @@ describe('migration rollback of the full inbox scan (ADR-0020, addendum 3)', () 
 					mail00000000003: null,
 					cal000000000004: null
 				});
-				// Nothing else changes, not even `updated`.
-				expect(withoutFields(migrated.connections, ['settings', 'scan'])).toEqual(
+				// Nothing else changes, not even `updated` (the target project of ADR-0049 runs along empty).
+				expect(withoutFields(migrated.connections, ['settings', 'scan', ...TARGET_FIELDS])).toEqual(
 					withoutFields(before.connections, ['settings'])
 				);
 
@@ -476,11 +480,12 @@ describe('migration rollback of the delete lock of inbox items (ADR-0014, addend
 				expect(appliedFiles(firstDown, 'Reverted')).toEqual([...fromNoDelete].reverse());
 				const guarded = inboxDeleteRuleOf(dataDir);
 				expect(guarded).toMatch(/^@request\.auth\.id != "" && \(owner = @request\.auth\.id \|\| .*\) && ticket = ""$/);
-				// Nothing else of the schema changes: only this one rule.
+				// Nothing else of the schema changes: only this one rule (the target project of ADR-0049,
+				// 1790203100, runs along).
 				const schemaBefore = withoutTimestamps(readDataDir(dataDir).collections);
 				const withRule = (collections, rule) =>
 					collections.map((collection) => (collection.name === 'inbox_items' ? { ...collection, deleteRule: rule } : collection));
-				expect(withRule(schemaBefore, null)).toEqual(withRule(schemaAfter, null));
+				expect(withRule(schemaBefore, null)).toEqual(withRule(schemaAfter, null).map(withoutTargetFields));
 
 				// A ticket with its main source, a linked, a new and a discarded item.
 				withDatabase(dataDir, (db) => {
@@ -509,7 +514,7 @@ describe('migration rollback of the delete lock of inbox items (ADR-0014, addend
 				const up = await migrate(args, 'up');
 				expect(appliedFiles(up, 'Applied')).toEqual(fromNoDelete);
 				expect(inboxDeleteRuleOf(dataDir)).toBeNull();
-				expect(withDatabase(dataDir, snapshot)).toEqual(rows);
+				expect(withoutLater(withDatabase(dataDir, snapshot))).toEqual(withoutLater(rows));
 
 				const down = await migrate(args, 'down', String(fromNoDelete.length));
 				expect(appliedFiles(down, 'Reverted')).toEqual([...fromNoDelete].reverse());
@@ -580,9 +585,9 @@ describe('migration rollback of the orphaned sources (ADR-0031, addendum B)', ()
 				// Everything else is untouched, the text and the fingerprint of the orphans as well.
 				const before = byId(rows);
 				for (const id of ['item00000000003', 'item00000000004', 'item00000000005']) {
-					expect(items[id]).toEqual(before[id]);
+					expect(withoutFields([items[id]], TARGET_FIELDS)[0]).toEqual(before[id]);
 				}
-				expect(withoutFields(after.inbox_items, ['state', 'handled_at', 'source_meta'])).toEqual(
+				expect(withoutFields(after.inbox_items, ['state', 'handled_at', 'source_meta', ...TARGET_FIELDS])).toEqual(
 					withoutFields(rows.inbox_items, ['state', 'handled_at', 'source_meta'])
 				);
 				expect(withoutFields(after.tickets, LATER_TICKET_FIELDS)).toEqual(rows.tickets);
@@ -820,6 +825,13 @@ const TRASH_USER_FIELDS = ['trash_retention'];
 // The pinned comment (ADR-0044, 1790202600), which every earlier test runs along as well.
 const PIN_TICKET_FIELDS = ['pinned_comment'];
 const LATER_TICKET_FIELDS = [...EACH_TICKET_FIELDS, ...TRASH_TICKET_FIELDS, ...PIN_TICKET_FIELDS];
+// The target project of the ways into the inbox (ADR-0049, 1790203100), which every earlier test
+// runs along as well: a relation at inbox_items and connections, a JSON field at users.
+const TARGET_MIGRATION = '1790203100_inbox_target_project.js';
+const TARGET_FIELDS = ['target_project'];
+const TARGET_USER_FIELDS = ['inbox_targets'];
+const TARGET_INDEX = /idx_inbox_items_target_project/;
+const LATER_USER_FIELDS = [...TRASH_USER_FIELDS, ...TARGET_USER_FIELDS];
 // Conditions the trash appends to the API rules (1790202300).
 const TRASH_RULE_SUFFIXES = [
 	' && deleted_at = ""',
@@ -847,14 +859,17 @@ function withoutFields(rows, fields) {
 /**
  * A snapshot without the columns of "Jeden Termin einzeln anlegen" (plan OR-5, migration
  * 1790202200), of the trash (ADR-0037, 1790202300), of "Status beim Anlegen" (plan WV,
- * 1790202500), of the pinned comment (ADR-0044, 1790202600) and of the sub-tasks of the template
- * (plan WV-3, 1790202700): the tests of earlier migrations run them along with `up`.
+ * 1790202500), of the pinned comment (ADR-0044, 1790202600), of the sub-tasks of the template
+ * (plan WV-3, 1790202700) and of the target project (ADR-0049, 1790203100): the tests of earlier
+ * migrations run them along with `up`.
  */
 function withoutLater(snap) {
 	return {
 		...snap,
-		users: snap.users === null ? null : withoutFields(snap.users, TRASH_USER_FIELDS),
+		users: snap.users === null ? null : withoutFields(snap.users, LATER_USER_FIELDS),
 		tickets: snap.tickets === null ? null : withoutFields(snap.tickets, LATER_TICKET_FIELDS),
+		inbox_items: snap.inbox_items === null ? null : withoutFields(snap.inbox_items, TARGET_FIELDS),
+		connections: snap.connections === null ? null : withoutFields(snap.connections, TARGET_FIELDS),
 		recurrence_rules: snap.recurrence_rules === null ? null : withoutFields(snap.recurrence_rules, LATER_RULE_FIELDS)
 	};
 }
@@ -922,6 +937,19 @@ function withoutPinField(collection) {
 	};
 }
 
+/** A collection without the fields and the index of the target project (ADR-0049, 1790203100). */
+function withoutTargetFields(collection) {
+	if (collection.name === 'users') {
+		return { ...collection, fields: collection.fields.filter((field) => !TARGET_USER_FIELDS.includes(field.name)) };
+	}
+	if (collection.name !== 'inbox_items' && collection.name !== 'connections') return collection;
+	return {
+		...collection,
+		fields: collection.fields.filter((field) => !TARGET_FIELDS.includes(field.name)),
+		indexes: collection.indexes.filter((index) => !TARGET_INDEX.test(index))
+	};
+}
+
 /**
  * inbox_items with the deleteRule of the sources (1790201800: the rule of the own records and
  * `ticket = ""`) instead of the delete lock (null, 1790202800, ADR-0014 addendum of 2026-10-01).
@@ -935,11 +963,11 @@ function withoutDeleteLock(collection) {
  * A collection without the fields, indexes and rule conditions of the migrations 1790202200
  * (plan OR-5), 1790202300 (trash, ADR-0037), 1790202500 (plan WV), 1790202600 (pinned comment,
  * ADR-0044), 1790202700 (plan WV-3), 1790202800 (delete lock of inbox items, ADR-0014 addendum of
- * 2026-10-01) and without the channels of 1790202400 (own inbox, ADR-0038; its collection leaves
- * with `withoutLaterCollections`).
+ * 2026-10-01), 1790203100 (target project, ADR-0049) and without the channels of 1790202400 (own
+ * inbox, ADR-0038; its collection leaves with `withoutLaterCollections`).
  */
 function withoutLaterSchema(collection) {
-	const plain = withoutDeleteLock(withoutOwnInboxChannels(withoutTrashRules(collection)));
+	const plain = withoutTargetFields(withoutDeleteLock(withoutOwnInboxChannels(withoutTrashRules(collection))));
 	if (collection.name === 'tickets') {
 		return {
 			...plain,
@@ -953,7 +981,7 @@ function withoutLaterSchema(collection) {
 		return { ...plain, fields: collection.fields.filter((field) => !LATER_RULE_FIELDS.includes(field.name)) };
 	}
 	if (collection.name === 'users') {
-		return { ...plain, fields: collection.fields.filter((field) => !TRASH_USER_FIELDS.includes(field.name)) };
+		return { ...plain, fields: collection.fields.filter((field) => !LATER_USER_FIELDS.includes(field.name)) };
 	}
 	return plain;
 }
@@ -1004,7 +1032,7 @@ describe('migration rollback of E5 (package 2)', () => {
 				const migrated = withDatabase(dataDir, snapshot);
 				expect(withoutFields(migrated.tickets, LATER_TICKET_FIELDS)).toEqual(before.tickets);
 				expect(migrated.tickets.every((ticket) => ticket.occurrence === '' && ticket.deleted_at === '')).toBe(true);
-				expect(withoutFields(migrated.users, TRASH_USER_FIELDS)).toEqual(before.users);
+				expect(withoutFields(migrated.users, LATER_USER_FIELDS)).toEqual(before.users);
 				// The base fields stay, except that a rule without a rhythm is paused.
 				expect(withoutFields(migrated.recurrence_rules, [...E5_RULE_FIELDS, 'active'])).toEqual(
 					withoutFields(before.recurrence_rules, ['active'])
@@ -1134,7 +1162,8 @@ describe('migration rollback of "Jeden Termin einzeln anlegen" (plan OR-5)', () 
 			// condition of the index. The own inbox (ADR-0038, 1790202400), "Status beim Anlegen"
 			// (plan WV, 1790202500), the pinned comment (ADR-0044, 1790202600), the sub-tasks of the
 			// template (plan WV-3, 1790202700), the delete lock of inbox items (ADR-0014 addendum,
-			// 1790202800) and the backup schedule (ADR-0046, 1790203000) run along as well.
+			// 1790202800), the backup schedule (ADR-0046, 1790203000) and the target project (ADR-0049,
+			// 1790203100) run along as well.
 			const fromEach = MIGRATION_FILES.slice(MIGRATION_FILES.indexOf(EACH_MIGRATION));
 			expect(fromEach).toEqual([
 				EACH_MIGRATION,
@@ -1144,7 +1173,8 @@ describe('migration rollback of "Jeden Termin einzeln anlegen" (plan OR-5)', () 
 				PIN_MIGRATION,
 				SUBTASKS_MIGRATION,
 				NO_DELETE_MIGRATION,
-				BACKUP_SCHEDULE_MIGRATION
+				BACKUP_SCHEDULE_MIGRATION,
+				TARGET_MIGRATION
 			]);
 
 			await withTempDataDir(async ({ dataDir, args }) => {
@@ -1277,7 +1307,8 @@ describe('migration rollback of the trash (ADR-0037)', () => {
 			// The own inbox (ADR-0038, 1790202400), "Status beim Anlegen" (plan WV, 1790202500), the
 			// pinned comment (ADR-0044, 1790202600), the sub-tasks of the template (plan WV-3,
 			// 1790202700), the delete lock of inbox items (ADR-0014 addendum, 1790202800) and the
-			// backup schedule (ADR-0046, 1790203000) follow and run along; they change no row here.
+			// backup schedule (ADR-0046, 1790203000) and the target project (ADR-0049, 1790203100) follow
+			// and run along; they change no row here.
 			const fromTrash = MIGRATION_FILES.slice(MIGRATION_FILES.indexOf(TRASH_MIGRATION));
 			expect(fromTrash).toEqual([
 				TRASH_MIGRATION,
@@ -1286,7 +1317,8 @@ describe('migration rollback of the trash (ADR-0037)', () => {
 				PIN_MIGRATION,
 				SUBTASKS_MIGRATION,
 				NO_DELETE_MIGRATION,
-				BACKUP_SCHEDULE_MIGRATION
+				BACKUP_SCHEDULE_MIGRATION,
+				TARGET_MIGRATION
 			]);
 
 			await withTempDataDir(async ({ dataDir, args }) => {
@@ -1308,8 +1340,8 @@ describe('migration rollback of the trash (ADR-0037)', () => {
 					before.tickets
 				);
 				expect(migrated.tickets.map(({ deleted_at, deleted_by }) => deleted_at + deleted_by)).toEqual(['', '', '']);
-				expect(withoutFields(migrated.users, TRASH_USER_FIELDS)).toEqual(before.users);
-				expect(migrated.inbox_items).toEqual(before.inbox_items);
+				expect(withoutFields(migrated.users, LATER_USER_FIELDS)).toEqual(before.users);
+				expect(withoutFields(migrated.inbox_items, TARGET_FIELDS)).toEqual(before.inbox_items);
 				for (const [name, rules] of Object.entries(ruleSet(dataDir))) {
 					const { name: collectionName, ...plain } = withoutDeleteLock(withoutTrashRules({ name, ...rules }));
 					expect(plain, collectionName).toEqual(rulesBefore[name]);
@@ -1377,8 +1409,8 @@ describe('migration rollback of the own inbox (ADR-0038)', () => {
 		async () => {
 			// "Status beim Anlegen" (plan WV, 1790202500), the pinned comment (ADR-0044, 1790202600)
 			// the sub-tasks of the template (plan WV-3, 1790202700), the delete lock of inbox items
-			// (ADR-0014 addendum, 1790202800) and the backup schedule (ADR-0046, 1790203000) follow
-			// and run along; they change no row.
+			// (ADR-0014 addendum, 1790202800), the backup schedule (ADR-0046, 1790203000) and the
+			// target project (ADR-0049, 1790203100) follow and run along; they change no row.
 			const fromOwn = MIGRATION_FILES.slice(MIGRATION_FILES.indexOf(OWN_INBOX_MIGRATION));
 			expect(fromOwn).toEqual([
 				OWN_INBOX_MIGRATION,
@@ -1386,7 +1418,8 @@ describe('migration rollback of the own inbox (ADR-0038)', () => {
 				PIN_MIGRATION,
 				SUBTASKS_MIGRATION,
 				NO_DELETE_MIGRATION,
-				BACKUP_SCHEDULE_MIGRATION
+				BACKUP_SCHEDULE_MIGRATION,
+				TARGET_MIGRATION
 			]);
 
 			await withTempDataDir(async ({ dataDir, args }) => {
@@ -1406,7 +1439,13 @@ describe('migration rollback of the own inbox (ADR-0038)', () => {
 					tickets: [...OLD_VALUES, 'api', 'whatsapp-web']
 				});
 				const migratedOwn = withDatabase(dataDir, snapshot);
-				expect({ ...migratedOwn, tickets: withoutFields(migratedOwn.tickets, PIN_TICKET_FIELDS) }).toEqual(before);
+				expect({
+					...migratedOwn,
+					tickets: withoutFields(migratedOwn.tickets, PIN_TICKET_FIELDS),
+					users: withoutFields(migratedOwn.users, TARGET_USER_FIELDS),
+					inbox_items: withoutFields(migratedOwn.inbox_items, TARGET_FIELDS),
+					connections: withoutFields(migratedOwn.connections, TARGET_FIELDS)
+				}).toEqual(before);
 				expect(
 					withoutLaterCollections(withoutTimestamps(readDataDir(dataDir).collections))
 						.map(withoutOwnInboxChannels)
@@ -1414,6 +1453,7 @@ describe('migration rollback of the own inbox (ADR-0038)', () => {
 						.map(withoutPinField)
 						.map(withoutSubtasksField)
 						.map(withoutDeleteLock)
+						.map(withoutTargetFields)
 				).toEqual(schemaBefore);
 
 				// Entries, a ticket, keyword lists and a key of the own inbox, then back.
@@ -1444,7 +1484,9 @@ describe('migration rollback of the own inbox (ADR-0038)', () => {
 				expect(withoutTimestamps(readDataDir(dataDir).collections)).toEqual(schemaBefore);
 				const reverted = withDatabase(dataDir, snapshot);
 				const items = Object.fromEntries(reverted.inbox_items.map((row) => [row.id, row]));
-				const itemsBefore = Object.fromEntries(withNew.inbox_items.map((row) => [row.id, row]));
+				const itemsBefore = Object.fromEntries(
+					withoutFields(withNew.inbox_items, TARGET_FIELDS).map((row) => [row.id, row])
+				);
 				expect(items.item00000000001).toEqual(itemsBefore.item00000000001);
 				expect(items.item00000000002).toEqual({ ...itemsBefore.item00000000002, channel: 'whatsapp' });
 				expect(items.item00000000003).toEqual({ ...itemsBefore.item00000000003, channel: 'manual' });
@@ -1499,7 +1541,8 @@ describe('migration rollback of "Status beim Anlegen" (plan WV, ADR-0022 addendu
 				PIN_MIGRATION,
 				SUBTASKS_MIGRATION,
 				NO_DELETE_MIGRATION,
-				BACKUP_SCHEDULE_MIGRATION
+				BACKUP_SCHEDULE_MIGRATION,
+				TARGET_MIGRATION
 			]);
 			const ruleFields = [...STATUS_RULE_FIELDS, ...SUBTASKS_RULE_FIELDS];
 
@@ -1526,6 +1569,7 @@ describe('migration rollback of "Status beim Anlegen" (plan WV, ADR-0022 addendu
 						.map(withoutPinField)
 						.map(withoutSubtasksField)
 						.map(withoutDeleteLock)
+						.map(withoutTargetFields)
 				).toEqual(schemaBefore);
 				// No row changes: the rule of before has an empty status, which the hooks read as "open".
 				const migrated = withDatabase(dataDir, snapshot);
@@ -1587,7 +1631,13 @@ describe('migration rollback of the pinned comment (ADR-0044)', () => {
 			// (ADR-0014 addendum, 1790202800) and the backup schedule (ADR-0046, 1790203000) follow and
 			// run along; no row changes.
 			const fromPin = MIGRATION_FILES.slice(MIGRATION_FILES.indexOf(PIN_MIGRATION));
-			expect(fromPin).toEqual([PIN_MIGRATION, SUBTASKS_MIGRATION, NO_DELETE_MIGRATION, BACKUP_SCHEDULE_MIGRATION]);
+			expect(fromPin).toEqual([
+				PIN_MIGRATION,
+				SUBTASKS_MIGRATION,
+				NO_DELETE_MIGRATION,
+				BACKUP_SCHEDULE_MIGRATION,
+				TARGET_MIGRATION
+			]);
 
 			await withTempDataDir(async ({ dataDir, args }) => {
 				await migrate(args, 'up');
@@ -1616,6 +1666,7 @@ describe('migration rollback of the pinned comment (ADR-0044)', () => {
 						.map(withoutPinField)
 						.map(withoutSubtasksField)
 						.map(withoutDeleteLock)
+						.map(withoutTargetFields)
 				).toEqual(schemaBefore);
 				// No row changes: every ticket starts without a pin.
 				const migrated = withDatabase(dataDir, snapshot);
@@ -1675,7 +1726,7 @@ describe('migration rollback of the sub-tasks of the template (plan WV-3, ADR-00
 			// The delete lock of inbox items (ADR-0014 addendum, 1790202800) and the backup schedule
 			// (ADR-0046, 1790203000) follow and run along; they change no row.
 			const fromSubtasks = MIGRATION_FILES.slice(MIGRATION_FILES.indexOf(SUBTASKS_MIGRATION));
-			expect(fromSubtasks).toEqual([SUBTASKS_MIGRATION, NO_DELETE_MIGRATION, BACKUP_SCHEDULE_MIGRATION]);
+			expect(fromSubtasks).toEqual([SUBTASKS_MIGRATION, NO_DELETE_MIGRATION, BACKUP_SCHEDULE_MIGRATION, TARGET_MIGRATION]);
 
 			await withTempDataDir(async ({ dataDir, args }) => {
 				await migrate(args, 'up');
@@ -1690,7 +1741,10 @@ describe('migration rollback of the sub-tasks of the template (plan WV-3, ADR-00
 				assertSchema(readDataDir(dataDir).collections);
 				expect(subtasksField(dataDir)).toMatchObject({ type: 'json', required: false, maxSize: 40000 });
 				expect(
-					withoutTimestamps(readDataDir(dataDir).collections).map(withoutSubtasksField).map(withoutDeleteLock)
+					withoutTimestamps(readDataDir(dataDir).collections)
+						.map(withoutSubtasksField)
+						.map(withoutDeleteLock)
+						.map(withoutTargetFields)
 				).toEqual(schemaBefore);
 				// No row changes: the rule of before has no sub-tasks (null, which the hooks read as none).
 				const migrated = withDatabase(dataDir, snapshot);
@@ -1730,6 +1784,94 @@ describe('migration rollback of the sub-tasks of the template (plan WV-3, ADR-00
 				expect(appliedFiles(await migrate(args, 'up'), 'Applied')).toEqual(fromSubtasks);
 				assertSchema(readDataDir(dataDir).collections);
 				expect(withDatabase(dataDir, snapshot).recurrence_rules.map((rule) => rule.template_subtasks)).toEqual([null]);
+			});
+		}
+	);
+});
+
+describe('migration rollback of the target project (ADR-0049)', () => {
+	const OWNER = 'user00000000001';
+	const SCOPE = 'u:user00000000001';
+	const collectionOf = (dataDir, name) =>
+		readDataDir(dataDir).collections.find((collection) => collection.name === name);
+	const fieldOf = (dataDir, collection, name) =>
+		collectionOf(dataDir, collection)?.fields.find((field) => field.name === name);
+
+	/** A project, a connection and two entries of it, as before the target project. */
+	function insertData(db) {
+		db.prepare('INSERT INTO users (id, email, tokenKey, password, created, updated) VALUES (?, ?, ?, ?, ?, ?)').run(OWNER, 'eins@example.invalid', 'tk1', 'hash', STAMP, STAMP);
+		db.prepare(
+			'INSERT INTO projects (id, name, code, archived, owner, household, scope, created, updated) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)'
+		).run('project00000001', 'Haus', 'HAUS', 0, OWNER, '', SCOPE, STAMP, STAMP);
+		db.prepare(
+			'INSERT INTO connections (id, type, label, enabled, secret_env, settings, scope, owner, created, updated) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+		).run('connection00001', 'calendar', 'Kalender', 1, 'BYL_KALENDER', '{"keywords":["todo"]}', SCOPE, OWNER, STAMP, STAMP);
+		const item = db.prepare(
+			'INSERT INTO inbox_items (id, channel, kind, title, source_ref, fingerprint, state, connection, scope, owner, created, updated) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+		);
+		item.run('item00000000001', 'calendar', 'event', 'Müll', 'uid-1', 'f1', 'new', 'connection00001', SCOPE, OWNER, STAMP, STAMP);
+		item.run('item00000000002', 'eml', 'mail', 'Rechnung', '<a@example.com>', 'f2', 'discarded', '', SCOPE, OWNER, STAMP, STAMP);
+	}
+
+	it(
+		'adds the fields and the index without changing a row, and drops only the targets on the way back',
+		async () => {
+			const fromTarget = MIGRATION_FILES.slice(MIGRATION_FILES.indexOf(TARGET_MIGRATION));
+			expect(fromTarget).toEqual([TARGET_MIGRATION]);
+
+			await withTempDataDir(async ({ dataDir, args }) => {
+				await migrate(args, 'up');
+				await migrate(args, 'down', String(fromTarget.length));
+				expect(fieldOf(dataDir, 'inbox_items', 'target_project')).toBeUndefined();
+				expect(fieldOf(dataDir, 'connections', 'target_project')).toBeUndefined();
+				expect(fieldOf(dataDir, 'users', 'inbox_targets')).toBeUndefined();
+				withDatabase(dataDir, insertData);
+				const before = withDatabase(dataDir, snapshot);
+				const schemaBefore = withoutTimestamps(readDataDir(dataDir).collections);
+
+				const up = await migrate(args, 'up');
+				expect(appliedFiles(up, 'Applied')).toEqual(fromTarget);
+				assertSchema(readDataDir(dataDir).collections);
+				const projects = collectionOf(dataDir, 'projects');
+				for (const collection of ['inbox_items', 'connections']) {
+					expect(fieldOf(dataDir, collection, 'target_project'), collection).toMatchObject({
+						type: 'relation',
+						required: false,
+						collectionId: projects.id,
+						cascadeDelete: false,
+						maxSelect: 1
+					});
+				}
+				expect(fieldOf(dataDir, 'users', 'inbox_targets')).toMatchObject({ type: 'json', required: false, maxSize: 2000 });
+				// The exact statement is checked by assertSchema.
+				expect(collectionOf(dataDir, 'inbox_items').indexes.filter((index) => TARGET_INDEX.test(index))).toHaveLength(1);
+				expect(withoutTimestamps(readDataDir(dataDir).collections).map(withoutTargetFields)).toEqual(schemaBefore);
+				// No row changes: entries and connections of before have no target, users none either.
+				const migrated = withDatabase(dataDir, snapshot);
+				expect(withoutLater(migrated)).toEqual(withoutLater(before));
+				expect(withoutFields(migrated.inbox_items, TARGET_FIELDS)).toEqual(before.inbox_items);
+				expect(migrated.inbox_items.map((item) => item.target_project)).toEqual(['', '']);
+				expect(migrated.connections.map((connection) => connection.target_project)).toEqual(['']);
+				expect(migrated.users.map((user) => user.inbox_targets)).toEqual([null]);
+
+				// Targets are set, then back: only the columns go, every other value stays.
+				withDatabase(dataDir, (db) => {
+					db.prepare('UPDATE connections SET target_project = ? WHERE id = ?').run('project00000001', 'connection00001');
+					db.prepare('UPDATE inbox_items SET target_project = ? WHERE id = ?').run('project00000001', 'item00000000001');
+					db.prepare('UPDATE users SET inbox_targets = ? WHERE id = ?').run('{"files":"project00000001"}', OWNER);
+				});
+				const withTargets = withDatabase(dataDir, snapshot);
+
+				const down = await migrate(args, 'down', String(fromTarget.length));
+				expect(appliedFiles(down, 'Reverted')).toEqual([...fromTarget].reverse());
+				expect(withoutTimestamps(readDataDir(dataDir).collections)).toEqual(schemaBefore);
+				const reverted = withDatabase(dataDir, snapshot);
+				expect(reverted.inbox_items).toEqual(withoutFields(withTargets.inbox_items, TARGET_FIELDS));
+				expect(reverted).toEqual(before);
+
+				expect(appliedFiles(await migrate(args, 'up'), 'Applied')).toEqual(fromTarget);
+				assertSchema(readDataDir(dataDir).collections);
+				expect(withDatabase(dataDir, snapshot).inbox_items.map((item) => item.target_project)).toEqual(['', '']);
 			});
 		}
 	);

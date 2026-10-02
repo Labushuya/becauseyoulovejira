@@ -10,11 +10,14 @@ var source = require(__hooks + '/lib/source.js');
 var rules = require(__hooks + '/lib/inbox-rules.js');
 var fingerprints = require(__hooks + '/lib/inbox-fingerprint.js');
 var trashRules = require(__hooks + '/lib/trash-rules.js');
+var targetRules = require(__hooks + '/lib/target-project-rules.js');
+var targets = require(__hooks + '/lib/target-project-service.js');
 
 var INBOX = 'inbox_items';
 
-// Set once on create; a client update that changes them is rejected (ADR-0014 section 1).
-var IMMUTABLE_FIELDS = ['channel', 'source_ref', 'source_date', 'fingerprint', 'original'];
+// Set once on create; a client update that changes them is rejected (ADR-0014 section 1). The
+// target project is the one the entry got when it came in (ADR-0049 §2): only the server sets it.
+var IMMUTABLE_FIELDS = ['channel', 'source_ref', 'source_date', 'fingerprint', 'original', 'target_project'];
 
 var MESSAGES = {
   validation_inbox_duplicate: 'Dieser Eintrag ist schon vorhanden.',
@@ -168,12 +171,15 @@ function prepareRecord(record) {
   return { scope: scope, fingerprint: result.fingerprint };
 }
 
-// onRecordCreate before e.next(): prepareRecord plus the duplicate check in the scope.
+// onRecordCreate before e.next(): prepareRecord plus the duplicate check in the scope, then the
+// target project of the way the entry came (ADR-0049 §2). Every way into the inbox saves here: the
+// Record API of the browser and inbox-service.ingest of the server.
 function prepareCreate(txApp, record) {
   var prepared = prepareRecord(record);
   if (prepared.fingerprint !== '') {
     assertNoDuplicate(txApp, prepared.scope, prepared.fingerprint);
   }
+  targets.applyToNewItem(txApp, record);
 }
 
 function findByFingerprint(txApp, scope, fingerprint) {
@@ -311,6 +317,11 @@ function prepareUpdate(txApp, record) {
     if (cleared) {
       record.set('source_meta', cleared);
     }
+  }
+  // Only PocketBase empties the target project, when the project is deleted (ADR-0049 §2: clients
+  // cannot change it, the server never clears it); the entry notes that it had one.
+  if (original.getString(targetRules.FIELD) !== '' && record.getString(targetRules.FIELD) === '') {
+    record.set('source_meta', targetRules.withTargetGone(metaOf(record)));
   }
 
   var action = rules.handledAtAction(before, after);
@@ -496,7 +507,8 @@ function originalFileKey(item) {
  * counts of a connection stay those of its channel. Its fingerprint derives from the original
  * entry (COPY_OF_KEY), so the duplicate check of the original is neither blocked nor answered by
  * it. The caller checked that the original file exists; the file is copied in the storage without
- * reading it into memory.
+ * reading it into memory. The copy keeps the target project of the original (ADR-0049 §2): it came
+ * by the same way, and converting it again chooses the same project in advance.
  */
 function copySource(txApp, item, target) {
   var copy = new Record(txApp.findCollectionByNameOrId(INBOX));
@@ -508,6 +520,7 @@ function copySource(txApp, item, target) {
   }
   copy.set('source_meta', target.meta);
   copy.set(COPY_OF_KEY, item.getString('fingerprint'));
+  copy.set(targetRules.GIVEN_KEY, item.getString(targetRules.FIELD));
   var key = originalFileKey(item);
   if (key === '') {
     txApp.save(copy);

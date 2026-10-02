@@ -7,6 +7,7 @@ var errors = require(__hooks + '/lib/errors.js');
 var secrets = require(__hooks + '/lib/secrets.js');
 var rules = require(__hooks + '/lib/connection-rules.js');
 var keywords = require(__hooks + '/lib/keywords.js');
+var targets = require(__hooks + '/lib/target-project-service.js');
 
 var COLLECTION = 'connections';
 var UNAVAILABLE = 'Die Verbindungen stehen nach dem nächsten Neustart der App bereit (neu-starten.bat).';
@@ -34,7 +35,9 @@ function valuesOf(record) {
     household: record.getString('household'),
     secret_env: record.getString('secret_env'),
     settings: jsonOf(record, 'settings'),
-    settings_json: record.getString('settings')
+    settings_json: record.getString('settings'),
+    // '' before the migration 1790203100 (ADR-0049).
+    target_project: record.getString('target_project')
   };
   for (var i = 0; i < rules.SERVER_FIELDS.length; i++) {
     // An empty JSON field (scan) reads as "null"; a missing field (before its migration) as ''.
@@ -57,10 +60,12 @@ function guardCreate(e) {
   }
   var values = valuesOf(e.record);
   throwIf(rules.createViolation(values, secrets, keywords) || rules.labelViolation(values.label));
+  targets.guardConnection(e, true);
 }
 
 // onRecordUpdateRequest; a superuser may set every field. A new name comes alone (ADR-0026,
-// addendum KK-3): the request may change nothing else with it.
+// addendum KK-3): the request may change nothing else with it. A new target project must be an
+// active project of the area of the connection (ADR-0049).
 function guardUpdate(e) {
   if (e.hasSuperuserAuth()) {
     return;
@@ -72,6 +77,7 @@ function guardUpdate(e) {
       rules.labelViolation(after.label) ||
       rules.renameViolation(before, after)
   );
+  targets.guardConnection(e, false);
 }
 
 // onRecordCreate/onRecordUpdate before e.next(), for every save: the scope, the name without white
