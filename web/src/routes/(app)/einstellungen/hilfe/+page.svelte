@@ -527,6 +527,90 @@
 		</ul>
 	</section>
 
+	<section id="ordner" aria-labelledby="ordner-title">
+		<h3 id="ordner-title">Ordner</h3>
+		<p>
+			Der Kanal Ordner beobachtet Ordner auf dem Rechner, auf dem die App läuft, auch Freigaben im
+			Netz. Neue und geänderte Dateien kommen als Einträge in den Eingang, und zwar als
+			<strong>Verweis</strong> auf die Datei, nicht als Kopie. Die App liest nur: Sie ändert,
+			verschiebt und löscht keine Datei. Eingerichtet wird unter
+			<a href={channelSetupHref({ kind: 'ordner', connectionId: null })}
+				>Kanäle → Ordner → Einrichten</a
+			>; Zugangsdaten braucht es keine.
+		</p>
+		<h4>Ordner eintragen</h4>
+		<ul>
+			<li>
+				Den vollständigen Pfad aus der Adressleiste des Explorers kopieren, etwa
+				<code>C:\Daten\Projekte</code> oder <code>\\NAS\Projekte</code>; läuft der Server unter
+				Linux, etwa <code>/home/anna/Projekte</code>. Die App prüft, ob es den Ordner gibt und ob
+				sie ihn lesen darf.
+			</li>
+			<li>
+				Je Ordner wählst du, ob Unterordner dazugehören, welche Dateitypen zählen (Endungen wie
+				<code>pdf, docx</code>; leer für alle) und welche Dateien wegfallen. Vorbelegt sind
+				<code>*.tmp</code>, <code>~$*</code>, <code>.git/**</code>, <code>node_modules/**</code>,
+				<code>Thumbs.db</code> und <code>desktop.ini</code>. Dazu ein eigenes Zielprojekt und ob
+				Änderungen gemeldet werden.
+			</li>
+			<li>
+				Verknüpfungen (Symlinks, Junctions) folgt die App nicht, und den Ordner der App selbst
+				beobachtet sie nicht. Höchstens 10 Ordner je Verbindung.
+			</li>
+		</ul>
+		<h4>Was ankommt</h4>
+		<ul>
+			<li>
+				Der erste Lauf merkt sich nur den Stand: Dateien von vorher kommen nicht in den Eingang.
+				Einzelne davon holst du an der Karte mit „Vorhandene Dateien übernehmen …“.
+			</li>
+			<li>
+				Danach kommt je neue Datei ein Eintrag „Neue Datei: …“ mit Name, Pfad, Größe, Zeit und Typ.
+				Ändert sich eine beobachtete Datei, kommt „Datei geändert: …“, für denselben Stand nur
+				einmal; das lässt sich je Ordner abschalten.
+			</li>
+			<li>
+				Stichwörter gibt es bei Ordnern nicht: Übernommen wird, was Dateitypen und Ausschlüsse
+				treffen.
+			</li>
+		</ul>
+		<h4>Ansehen und Status</h4>
+		<ul>
+			<li>
+				„Ansehen“ an einem Eintrag öffnet die aktuelle Fassung der Datei: PDF, Bilder und Text im
+				Browser, alles andere als Download. Das geht nur im Browser auf diesem Rechner, nur für dich
+				und nur für Dateien in den eingetragenen Ordnern. Ist die Datei nicht mehr da, sagt der
+				Eintrag es.
+			</li>
+			<li>
+				Die Statusanzeige zeigt „Unverändert“, „Seit Import geändert“, „Nicht mehr vorhanden“ oder
+				„Verschoben“ (eine umbenannte oder verschobene Datei erkennt die App am gleichen Inhalt).
+				Das ist nur eine Anzeige: Das Ticket ändert sich dadurch nie.
+			</li>
+		</ul>
+		<h4>Gut zu wissen</h4>
+		<ul>
+			<li>
+				Die App prüft alle 5 Minuten (an der Karte 1 bis 60 Minuten), „Jetzt prüfen“ sofort. Sie
+				vergleicht Größe und Änderungszeit und berechnet bei einer Änderung eine Prüfsumme, für
+				Dateien bis 200 MB.
+			</li>
+			<li>
+				Je Ordner beobachtet sie höchstens 2.000 Dateien und legt je Lauf höchstens 100 neue
+				Einträge an; der Rest folgt beim nächsten Lauf. Die Karte sagt, wenn eine Grenze erreicht
+				ist.
+			</li>
+			<li>
+				Ist ein Ordner nicht erreichbar (etwa ein getrenntes Netzlaufwerk), sagt die Karte es; die
+				bisherigen Einträge bleiben, bis er wieder da ist.
+			</li>
+			<li>
+				Gespeichert werden nur Name, Pfad, Größe, Zeit, Typ und Prüfsumme einer Datei, nie ihr
+				Inhalt; auch das Protokoll enthält keine Pfade.
+			</li>
+		</ul>
+	</section>
+
 	<section id="fragen" aria-labelledby="fragen-title">
 		<h3 id="fragen-title">Häufige Fragen</h3>
 		<div class="faq">

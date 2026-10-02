@@ -12,6 +12,7 @@
 	import { ConnectionsStore, connectionsData } from '$lib/stores/connections.svelte';
 	import { findFirstStepsStore } from '$lib/stores/first-steps.svelte';
 	import { getFlagStore } from '$lib/stores/flags.svelte';
+	import { FoldersStore, foldersData } from '$lib/stores/folders.svelte';
 	import { GitHubStore, githubData } from '$lib/stores/github.svelte';
 	import { ImportKeywordsStore, importKeywordsData } from '$lib/stores/import-keywords.svelte';
 	import { InboxKeysStore, inboxKeysData } from '$lib/stores/inbox-keys.svelte';
@@ -37,6 +38,8 @@
 	const notion = new NotionStore(notionData(pb), auth, flags);
 	// GitHub (ADR-0050): its cards load their details, "Verbindung prüfen" asks GitHub in the server.
 	const github = new GitHubStore(githubData(pb), auth, flags);
+	// Folders (ADR-0051): their cards load their details and take files of before into the inbox.
+	const folders = new FoldersStore(foldersData(pb), auth, flags);
 	// Target projects of the cards without a connection (ADR-0049); the projects of the catalog name
 	// the targets of every card.
 	const inboxTargets = new InboxTargetsStore(inboxTargetsData(pb), auth, flags);
@@ -68,6 +71,7 @@
 			inboxTargets.reset();
 			notion.reset();
 			github.reset();
+			folders.reset();
 		};
 	});
 
@@ -88,6 +92,7 @@
 	{connections}
 	{notion}
 	{github}
+	{folders}
 	{importKeywords}
 	{inboxKeys}
 	{inboxTargets}

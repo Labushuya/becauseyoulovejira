@@ -30,6 +30,7 @@ import { FlagStore } from '$lib/stores/flags.svelte';
 import { ImportKeywordsStore, type ImportKeywordsData } from '$lib/stores/import-keywords.svelte';
 import { EMPTY_IMPORT_KEYWORDS } from '$lib/domain/keywords';
 import ChannelsViewHarness from '$lib/test/ChannelsViewHarness.svelte';
+import { foldersStoreOf } from '$lib/test/folders-fake';
 import { githubStoreOf } from '$lib/test/github-fake';
 import { notionStoreOf } from '$lib/test/notion-fake';
 import { useOverlayStubs } from '$lib/test/overlay-stubs';
@@ -115,6 +116,10 @@ function setup(items: Connection[] = [CAL, BOT], statuses: Record<string, Secret
 		saveGitHub: vi.fn<ConnectionsData['saveGitHub']>(async (id, settings) => ({
 			...(items.find((item) => item.id === id) as Connection),
 			github: settings
+		})),
+		saveFolders: vi.fn<ConnectionsData['saveFolders']>(async (id, settings) => ({
+			...(items.find((item) => item.id === id) as Connection),
+			folders: settings
 		})),
 		remove: vi.fn<ConnectionsData['remove']>(async () => undefined),
 		secretStatus: vi.fn<ConnectionsData['secretStatus']>(
@@ -238,6 +243,7 @@ function renderCards(store: ConnectionsStore) {
 			store,
 			notion: notionStoreOf(),
 			github: githubStoreOf(),
+			folders: foldersStoreOf(),
 			onadd,
 			onsetup,
 			onimport: vi.fn()
@@ -277,6 +283,7 @@ function renderView(store: ConnectionsStore) {
 			connections: store,
 			notion: notionStoreOf(),
 			github: githubStoreOf(),
+			folders: foldersStoreOf(),
 			onsetupchange
 		}
 	});
@@ -476,6 +483,7 @@ describe('connections section', () => {
 				store,
 				notion: notionStoreOf(),
 				github: githubStoreOf(),
+				folders: foldersStoreOf(),
 				onadd: vi.fn(),
 				onsetup: vi.fn(),
 				onimport: vi.fn()
@@ -510,6 +518,7 @@ describe('channels view: variables', () => {
 				connections: store,
 				notion: notionStoreOf(),
 				github: githubStoreOf(),
+				folders: foldersStoreOf(),
 				onsetupchange: vi.fn()
 			}
 		});
@@ -907,6 +916,7 @@ describe('Postfächer (E4 plan, package 22)', () => {
 				connections: store,
 				notion: notionStoreOf(),
 				github: githubStoreOf(),
+				folders: foldersStoreOf(),
 				importKeywords,
 				onsetupchange: vi.fn()
 			}

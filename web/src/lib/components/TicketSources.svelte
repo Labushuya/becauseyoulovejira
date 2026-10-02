@@ -14,6 +14,7 @@
 	import type { Ticket } from '$lib/domain/ticket';
 	import { WATCH_LABELS, WATCH_LOZENGES, watchText } from '$lib/domain/watch';
 	import { findConnectionNames } from '$lib/stores/connection-names.svelte';
+	import { findFolderViewer, type FileViewNote } from '$lib/stores/folder-view.svelte';
 	import type { TicketPickerSource } from '$lib/stores/ticket-picker.svelte';
 	import type { TicketSourcesStore } from '$lib/stores/ticket-sources.svelte';
 	import { insideModal } from '$lib/overlay/modal-context';
@@ -37,7 +38,9 @@
 	// zuordnen …" below its entry (ADR-0025 section 3, addendum 16). The copy of a source made for a
 	// duplicate says where it came from ("Kopie aus HAUS-12", ADR-0031 addendum F). A source a
 	// channel keeps watching (GitHub, ADR-0050 §5, ADR-0031 addendum I) shows its status as a
-	// second lozenge: whether the file changed since, or where the pull request stands.
+	// second lozenge: whether the file changed since, or where the pull request stands. A file of a
+	// watched folder (ADR-0051 §6) is a reference: its icon button opens the current file, and why
+	// it did not open (gone, moved out of the folders) stands neutral above the list.
 	let {
 		ticket,
 		store,
@@ -71,8 +74,19 @@
 		complete: { icon: 'check', tone: 'brand' },
 		text: { icon: 'info', tone: 'neutral' },
 		address: { icon: 'info', tone: 'neutral' },
-		too_large: { icon: 'warning', tone: 'neutral' }
+		too_large: { icon: 'warning', tone: 'neutral' },
+		reference: { icon: 'info', tone: 'neutral' }
 	};
+
+	// "Ansehen" of a file of a folder; outside the (app) layout there is none.
+	const viewer = findFolderViewer();
+	let viewNote = $state<FileViewNote | null>(null);
+
+	async function openFile(item: InboxItemSummary) {
+		if (viewer === null) return;
+		message = null;
+		viewNote = await viewer.open(item.id);
+	}
 
 	const items = $derived(store.ticketId === ticket.id ? store.items : []);
 
@@ -110,6 +124,9 @@
 	<div aria-live="polite">
 		{#if message}
 			<p class="alert-error"><ErrorIcon /><span>{message}</span></p>
+		{/if}
+		{#if viewNote !== null}
+			<SectionMessage tone={viewNote.tone} compact>{viewNote.text}</SectionMessage>
 		{/if}
 	</div>
 
@@ -189,6 +206,26 @@
 						<a class="view" href={inboxItemHref(item.id)} aria-label={`„${item.title}“ ansehen`}>
 							Ansehen
 						</a>
+						{#if item.channel === 'folder' && viewer !== null}
+							<button
+								class="button-icon"
+								type="button"
+								aria-label={`Datei von „${item.title}“ öffnen`}
+								title="Aktuelle Datei öffnen"
+								aria-busy={viewer.isBusy(item.id) ? 'true' : undefined}
+								onclick={() => void openFile(item)}
+							>
+								<svg
+									viewBox="0 0 16 16"
+									width="16"
+									height="16"
+									aria-hidden="true"
+									focusable="false"
+								>
+									<path d="M9 2.5h4.5V7M13.5 2.5 7.5 8.5M11.5 9.5v4h-9v-9h4" />
+								</svg>
+							</button>
+						{/if}
 						{#if item.original !== ''}
 							<button
 								class="button-icon"

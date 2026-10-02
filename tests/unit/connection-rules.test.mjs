@@ -55,9 +55,10 @@ describe('connection-rules.js', () => {
 		expect(rules.CREATABLE_TYPES).toContain('github');
 		expect(rules.createViolation({ ...after, label: 'GitHub' }, secrets, keywords, github)).toBe('');
 		expect(rules.requiresSecret('github')).toBe(false);
-		for (const type of rules.CREATABLE_TYPES.filter((type) => type !== 'github')) {
+		for (const type of rules.CREATABLE_TYPES.filter((type) => !rules.SECRET_OPTIONAL_TYPES.includes(type))) {
 			expect(rules.requiresSecret(type), type).toBe(true);
 		}
+		expect(rules.SECRET_OPTIONAL_TYPES).toEqual(['github', 'folder']);
 		// The state of the channel is a field of the server: a client never writes it.
 		expect(rules.SERVER_FIELDS).toContain('watch');
 		expect(rules.updateViolation(before, { ...before, watch: '{"repos":{}}' }, secrets, keywords, github)).toMatchObject({
@@ -89,8 +90,13 @@ describe('connection-rules.js', () => {
 		expect(rules.secretViolation('calendar', '', secrets)).toMatchObject({ code: 'validation_secret_name' });
 		expect(rules.SECRETLESS_TYPES).toEqual(['folder']);
 		expect(rules.requiresSecret('folder')).toBe(false);
-		// Users create one with the interface of OD-2; until then only the superuser (tests).
-		expect(rules.CREATABLE_TYPES).not.toContain('folder');
+		// Users create one since the interface offers it (OD-2), with its first folder and no variable.
+		expect(rules.CREATABLE_TYPES).toContain('folder');
+		expect(rules.createViolation({ ...after, label: 'Ordner' }, secrets, keywords, null, folder)).toBe('');
+		expect(rules.createViolation({ ...after, label: 'Ordner', secret_env: 'BYL_ORDNER' }, secrets, keywords, null, folder)).toMatchObject({
+			field: 'secret_env',
+			code: 'validation_connection_secret_none'
+		});
 	});
 
 	it('refuses unknown kinds, server fields and invalid names', () => {

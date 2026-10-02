@@ -12,14 +12,18 @@ import {
 import { formatBerlinDateTime } from './format';
 import { notionContentOf } from './notion';
 
-/** What the copy of a source holds (ADR-0031 section 5). */
-export type CopyCompleteness = 'complete' | 'text' | 'address' | 'too_large';
+/**
+ * What the copy of a source holds (ADR-0031 section 5); a file of a watched folder is a reference,
+ * no copy (ADR-0031, addendum J).
+ */
+export type CopyCompleteness = 'complete' | 'text' | 'address' | 'too_large' | 'reference';
 
 export const COPY_LABELS: Readonly<Record<CopyCompleteness, string>> = Object.freeze({
 	complete: 'Vollständig',
 	text: 'Nur Text',
 	address: 'Nur Adresse',
-	too_large: 'Ohne Originaldatei (zu groß)'
+	too_large: 'Ohne Originaldatei (zu groß)',
+	reference: 'Verweis'
 });
 
 /** Channels whose item is the original itself: typed or pasted by the user. */
@@ -41,6 +45,7 @@ export const ORIGINAL_OMITTED_TOO_LARGE = 'too_large';
 export function copyCompleteness(
 	item: Pick<InboxItemSummary, 'channel' | 'original' | 'sourceMeta'>
 ): CopyCompleteness {
+	if (item.channel === 'folder') return 'reference';
 	if (item.sourceMeta.original_omitted === ORIGINAL_OMITTED_TOO_LARGE) return 'too_large';
 	const notion = notionContentOf(item);
 	if (notion !== null && notion !== 'complete') return 'text';
@@ -65,6 +70,8 @@ export function copyNote(
 	switch (copyCompleteness(item)) {
 		case 'complete':
 			return null;
+		case 'reference':
+			return 'Verweis auf die Datei im Ordner, keine Kopie: „Ansehen“ öffnet ihre aktuelle Fassung. Gespeichert sind nur Name, Pfad, Größe, Zeit, Typ und Prüfsumme.';
 		case 'too_large': {
 			const size = sizeText(item.sourceMeta.original_size);
 			if (notion !== null) {

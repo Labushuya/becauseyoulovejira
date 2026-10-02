@@ -4,10 +4,20 @@
 		connectionDraftErrors,
 		emptyConnectionDraft,
 		freeVariableName,
+		usesSecret,
 		withMailProvider,
 		type Connection,
 		type ConnectionDraft
 	} from '$lib/domain/connections';
+	import {
+		EMPTY_FOLDER_SETTINGS,
+		emptyFolderDraft,
+		folderDraftErrors,
+		folderFromDraft,
+		folderPlatformOf,
+		type FolderDraft,
+		type FolderDraftField
+	} from '$lib/domain/folders';
 	import {
 		EMPTY_GITHUB_SETTINGS,
 		emptyRepoDraft,
@@ -16,8 +26,11 @@
 		type GitHubRepoDraft,
 		type RepoDraftField
 	} from '$lib/domain/github';
+	import { DEFAULT_HOST_PLATFORM } from '$lib/domain/host-platform';
 	import type { ConnectionsStore } from '$lib/stores/connections.svelte';
+	import { findHostStore } from '$lib/stores/host.svelte';
 	import ErrorIcon from '../ErrorIcon.svelte';
+	import FolderFields from './FolderFields.svelte';
 	import GitHubRepoFields from './GitHubRepoFields.svelte';
 
 	// Step "Verbinden" of the assistant (ADR-0026 section 4, plan EH-5 §3.7): name of the connection
@@ -26,6 +39,8 @@
 	// at the field. It replaces the former modal "Verbindung anlegen". The variable is preset to a
 	// name no connection uses yet, like the steps before (ADR-0041, addendum of 2026-10-01). GitHub
 	// (ADR-0050 §7) creates its connection with the first repository, so the step asks for it too.
+	// A folder connection (ADR-0051 §7) has no variable and comes with its first folder, whose path
+	// follows the system of the server (the server checks it on the disk).
 	let {
 		kind,
 		store,
@@ -48,21 +63,31 @@
 		const { type, provider } = connectionTypeOf(kind);
 		const empty = emptyConnectionDraft(type);
 		const draft = type === 'mail' && provider !== '' ? withMailProvider(empty, provider) : empty;
+		if (!usesSecret(type)) return draft;
 		const taken = store.connections.map((connection) => connection.secretEnv);
 		return { ...draft, secretEnv: freeVariableName(draft.secretEnv, taken) };
 	}
 
+	const host = findHostStore();
+	const platform = $derived(folderPlatformOf(host?.platform ?? DEFAULT_HOST_PLATFORM));
+
 	let draft = $state<ConnectionDraft>(initialDraft());
 	/** GitHub: the first repository. */
 	let repo = $state<GitHubRepoDraft>(emptyRepoDraft());
+	/** Folders: the first folder. */
+	let folder = $state<FolderDraft>(emptyFolderDraft());
 	let submitted = $state(false);
 	let saving = $state(false);
 	let serverFields = $state<Record<string, string>>({});
 	let formMessage = $state<string | null>(null);
 
 	const github = $derived(draft.type === 'github');
+	const folders = $derived(draft.type === 'folder');
 	const repoErrors = $derived<Partial<Record<RepoDraftField, string>>>(
 		submitted && github ? repoDraftErrors(repo, EMPTY_GITHUB_SETTINGS, null) : {}
+	);
+	const folderErrors = $derived<Partial<Record<FolderDraftField, string>>>(
+		submitted && folders ? folderDraftErrors(folder, platform, EMPTY_FOLDER_SETTINGS, null) : {}
 	);
 	const clientErrors = $derived(submitted ? connectionDraftErrors(draft) : {});
 	const errors = $derived({
@@ -92,9 +117,19 @@
 		if (github && Object.keys(repoDraftErrors(repo, EMPTY_GITHUB_SETTINGS, null)).length > 0) {
 			return;
 		}
+		if (
+			folders &&
+			Object.keys(folderDraftErrors(folder, platform, EMPTY_FOLDER_SETTINGS, null)).length > 0
+		) {
+			return;
+		}
 		saving = true;
 		const result = await store.create(
-			github ? { ...draft, githubRepo: repoFromDraft(repo) } : draft
+			github
+				? { ...draft, githubRepo: repoFromDraft(repo) }
+				: folders
+					? { ...draft, folder: folderFromDraft(folder, platform) }
+					: draft
 		);
 		saving = false;
 		if (result.ok) {
@@ -102,8 +137,9 @@
 			return;
 		}
 		serverFields = { ...result.fields };
-		// GitHub: a refused repository (name, patterns, events) comes as an error of the settings.
-		formMessage = result.message ?? (github ? (result.fields.settings ?? null) : null);
+		// GitHub and folders: a refused repository or folder (a path that is not there, patterns)
+		// comes as an error of the settings.
+		formMessage = result.message ?? (github || folders ? (result.fields.settings ?? null) : null);
 	}
 </script>
 
@@ -144,21 +180,23 @@
 			{@render fieldError(ids.user, errors.mailUser)}
 		</div>
 	{/if}
-	<div class="field">
-		<label for={ids.secret}>{secretLabel} (Pflichtfeld)</label>
-		<input
-			id={ids.secret}
-			type="text"
-			maxlength="64"
-			spellcheck="false"
-			autocomplete="off"
-			aria-required="true"
-			aria-invalid={errors.secretEnv ? 'true' : undefined}
-			aria-describedby={errors.secretEnv ? `${ids.secret}-error` : undefined}
-			bind:value={draft.secretEnv}
-		/>
-		{@render fieldError(ids.secret, errors.secretEnv)}
-	</div>
+	{#if !folders}
+		<div class="field">
+			<label for={ids.secret}>{secretLabel} (Pflichtfeld)</label>
+			<input
+				id={ids.secret}
+				type="text"
+				maxlength="64"
+				spellcheck="false"
+				autocomplete="off"
+				aria-required="true"
+				aria-invalid={errors.secretEnv ? 'true' : undefined}
+				aria-describedby={errors.secretEnv ? `${ids.secret}-error` : undefined}
+				bind:value={draft.secretEnv}
+			/>
+			{@render fieldError(ids.secret, errors.secretEnv)}
+		</div>
+	{/if}
 	{#if draft.type === 'telegram'}
 		<div class="field">
 			<label for={ids.allowlist}>Name der Variablen für die erlaubten IDs (Pflichtfeld)</label>
@@ -181,6 +219,9 @@
 			Ohne Token liest die App nur öffentliche Repositorys; die Variable kannst du später setzen.
 		</p>
 		<GitHubRepoFields bind:draft={repo} errors={repoErrors} />
+	{/if}
+	{#if folders}
+		<FolderFields bind:draft={folder} errors={folderErrors} {platform} />
 	{/if}
 	{#if formMessage !== null}
 		<p class="alert-error" role="alert"><ErrorIcon /><span>{formMessage}</span></p>

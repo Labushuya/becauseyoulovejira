@@ -22,6 +22,7 @@ import {
 	renameConnection,
 	runConnection,
 	saveConnectionSettings,
+	saveFolderSettings,
 	saveGitHubSettings,
 	scanConnection,
 	setConnectionEnabled,
@@ -36,6 +37,7 @@ import {
 	renamedText,
 	runResultText,
 	scanResultText,
+	usesSecret,
 	type Connection,
 	type ConnectionDraft,
 	type ConnectionSettingsDraft,
@@ -44,6 +46,7 @@ import {
 	type ScanResult,
 	type SecretStatus
 } from '$lib/domain/connections';
+import type { FolderSettings } from '$lib/domain/folders';
 import type { GitHubSettings } from '$lib/domain/github';
 import {
 	importSummary,
@@ -71,6 +74,8 @@ export interface ConnectionsData {
 	saveSettings(connection: Connection, settings: ConnectionSettingsDraft): Promise<Connection>;
 	/** Interval and repositories of a GitHub connection (ADR-0050 §2), written whole. */
 	saveGitHub(id: string, settings: GitHubSettings): Promise<Connection>;
+	/** Interval and folders of a folder connection (ADR-0051 §2), written whole. */
+	saveFolders(id: string, settings: FolderSettings): Promise<Connection>;
 	remove(id: string): Promise<void>;
 	secretStatus(id: string, options: RequestOptions): Promise<SecretStatus>;
 	run(id: string): Promise<RunResult>;
@@ -101,6 +106,7 @@ export function connectionsData(pb: PocketBase): ConnectionsData {
 		setTarget: (id, projectId) => setConnectionTarget(pb, id, projectId),
 		saveSettings: (connection, settings) => saveConnectionSettings(pb, connection, settings),
 		saveGitHub: (id, settings) => saveGitHubSettings(pb, id, settings),
+		saveFolders: (id, settings) => saveFolderSettings(pb, id, settings),
 		remove: (id) => deleteConnection(pb, id),
 		secretStatus: (id, options) => getSecretStatus(pb, id, options),
 		run: (id) => runConnection(pb, id),
@@ -193,7 +199,9 @@ export class ConnectionsStore {
 			const probe = items.some((item) => item.type === 'mail')
 				? this.#loadHelper(options)
 				: Promise.resolve();
-			await Promise.all([...items.map((item) => this.#loadStatus(item.id, options)), probe]);
+			// Folders have no variables to ask for (ADR-0051 §1).
+			const secretful = items.filter((item) => usesSecret(item.type));
+			await Promise.all([...secretful.map((item) => this.#loadStatus(item.id, options)), probe]);
 		} catch (error) {
 			const failure = toDataError(error, controller.signal);
 			if (failure.kind === 'aborted') return;
@@ -239,7 +247,7 @@ export class ConnectionsStore {
 			created = connection;
 			this.#items.set(connection.id, connection);
 			this.#notify(`Verbindung „${connection.label}“ angelegt.`);
-			await this.#loadStatus(connection.id, {});
+			if (usesSecret(connection.type)) await this.#loadStatus(connection.id, {});
 		});
 		if (!result.ok) return result;
 		return created === null
@@ -390,6 +398,27 @@ export class ConnectionsStore {
 		if (!this.#items.has(id)) return null;
 		const result = await this.#act(async () => {
 			const updated = await this.#data.saveGitHub(id, settings);
+			this.#items.set(id, updated);
+			this.#notify(announcement);
+		});
+		if (result.ok) return null;
+		return result.fields.settings ?? Object.values(result.fields)[0] ?? result.message ?? null;
+	}
+
+	/**
+	 * Saves the interval and the folders of a folder connection (ADR-0051 §2): add, change or remove a
+	 * folder, change the interval. The hook checks a new folder on the disk. `announcement` is the
+	 * text of the flag. Resolves to the error text of the server, or null once it is saved (or the
+	 * session ended).
+	 */
+	async saveFolders(
+		id: string,
+		settings: FolderSettings,
+		announcement: string
+	): Promise<string | null> {
+		if (!this.#items.has(id)) return null;
+		const result = await this.#act(async () => {
+			const updated = await this.#data.saveFolders(id, settings);
 			this.#items.set(id, updated);
 			this.#notify(announcement);
 		});

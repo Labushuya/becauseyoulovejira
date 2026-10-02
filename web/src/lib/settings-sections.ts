@@ -73,6 +73,8 @@ export const HELP_SECTIONS = [
 	{ id: 'notion', label: 'Notion' },
 	// GitHub (ADR-0050): linked from its card and its assistant.
 	{ id: 'github', label: 'GitHub' },
+	// Folders (ADR-0051): linked from their card.
+	{ id: 'ordner', label: 'Ordner' },
 	{ id: 'fragen', label: 'Häufige Fragen' },
 	{ id: 'betrieb', label: 'Betrieb' },
 	// Backups and the emergency plan (ADR-0046 §8): linked from the page "Sicherung".

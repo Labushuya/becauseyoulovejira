@@ -79,6 +79,25 @@ export function githubInfo(
 	return `${count} · ${connectionInfo(connection, lastRun, now)}`;
 }
 
+/**
+ * Info line of a folder connection (ADR-0051 §7), e.g. "2 Ordner · Zuletzt geprüft vor 3 Min. ·
+ * 1 neu"; without a folder "Noch kein Ordner".
+ */
+export function folderInfo(
+	connection: Pick<Connection, 'lastRunAt' | 'lastError' | 'folders'>,
+	lastRun: RunResult | null,
+	now: number
+): string {
+	const folders = connection.folders?.folders.length ?? 0;
+	if (folders === 0) return 'Noch kein Ordner';
+	const last =
+		connection.lastRunAt === null
+			? 'Noch nie geprüft'
+			: `Zuletzt geprüft ${relativeTime(connection.lastRunAt, now)}`;
+	const result = lastResultText(connection, lastRun);
+	return `${folders} Ordner · ${result === null ? last : `${last} · ${result}`}`;
+}
+
 /** Info line of a Notion connection, e.g. "8 Einträge aus 2 Quellen übernommen · zuletzt …". */
 export function notionInfo(
 	imports: readonly NotionImportedSource[] | null,
