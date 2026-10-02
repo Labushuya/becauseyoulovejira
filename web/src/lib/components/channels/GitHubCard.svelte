@@ -17,6 +17,7 @@
 		GITHUB_INTERVALS,
 		GITHUB_LIMITS,
 		accessText,
+		addMaxMessage,
 		autoChangeText,
 		autoText,
 		eventsText,
@@ -522,6 +523,7 @@
 									type="button"
 									aria-haspopup="dialog"
 									aria-disabled={entry.auto && !canAdd ? 'true' : undefined}
+									title={entry.auto && !canAdd ? addMaxMessage(0) : undefined}
 									onclick={() => {
 										if (entry.auto && !canAdd) return;
 										actionError = null;
