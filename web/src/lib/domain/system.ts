@@ -18,6 +18,7 @@ export const RESTART_REASONS = [
 	'migrations',
 	'hooks',
 	'port',
+	'hosts',
 	'environment',
 	'mailHelper'
 ] as const;
@@ -167,6 +168,7 @@ export const RESTART_REASON_LABELS: Readonly<Record<RestartReason, string>> = {
 	migrations: 'neue oder geänderte Migration',
 	hooks: 'geänderte Server-Logik (pb_hooks)',
 	port: 'anderer Port eingestellt (byl-config.json)',
+	hosts: 'andere zusätzliche Adressen eingestellt (byl-config.json)',
 	environment: 'BYL_*-Variable angelegt, geändert oder entfernt',
 	mailHelper: 'neuer Mail-Hilfsprozess (byl-mail.exe)'
 };

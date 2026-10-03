@@ -57,3 +57,12 @@ Das Datenmodell der [CLAUDE.md §5](../../CLAUDE.md#5-datenmodell) ist bereits d
 - Neben dem PC kann ein dauerhaft laufender Raspberry Pi den Server stellen, dort mit PocketBase als Container ohne veröffentlichten Port. Je Datenbestand läuft genau ein Server.
 - Neben `tailscale serve` ist HTTPS über Traefik im eigenen Netz ein zweiter Weg. Die Voraussetzungen aus §3 (Proxy-Header, Superuser nur lokal, Rate Limiter, `--origins`) gelten für beide.
 - Mehrgeräte für einen Nutzer sind Stufe S2 im [Plattform-Plan](../plan/plattformen.md); die Haushalte (§4) bleiben E7 mit eigener Freigabe.
+
+## Nachtrag 2026-10-03: Härtung schon im lokalen Betrieb ([ADR-0055](0055-sicherheits-haertung.md), SH-1)
+
+Drei Voraussetzungen aus §3 gelten seit SH-1 schon jetzt, weil jede Webseite im Browser des Nutzers Anfragen an `127.0.0.1` schicken kann:
+
+- **Rate Limiting:** Die Migration `1790203500_security_hardening.js` schaltet `rateLimits` ein (Stufe „Normal“: 10 Anmeldungen je Minute und Collection, 300 Anfragen ohne Konto je 10 s, angemeldete Anfragen ohne Grenze).
+- **Superuser-Schutz:** `superuserIPs` = `127.0.0.1`, `::1` (dieselbe Migration statt `pocketbase superuser ips`). Hinter einem Proxy (§3) braucht es weiter `trustedProxy.headers`, sonst erscheint jeder Zugriff als `127.0.0.1`.
+- **CORS:** `--origins` nennt die eigenen Adressen (`http://127.0.0.1:<Port>`, `http://localhost:<Port>`) und jeden zusätzlichen Host aus `byl-config.json` als `https://<Host>` (ADR-0055 §3). Für die Tailnet-Origin trägt man später dort den Namen ein.
+- Dazu prüft ein Guard vor jeder Anfrage den `Host` (ADR-0055 §2): Erreichbar ist die App nur unter ihren eigenen Adressen und den zusätzlichen Hosts.

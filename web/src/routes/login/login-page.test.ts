@@ -177,7 +177,10 @@ describe('submitting', () => {
 	});
 
 	it.each([
-		[429, 'Zu viele Anmeldeversuche. Bitte kurz warten und erneut versuchen.'],
+		[
+			429,
+			'Zu viele Anmeldeversuche. Zum Schutz vor Rateversuchen ist die Anmeldung kurz gesperrt. Bitte ein paar Minuten warten und dann erneut versuchen.'
+		],
 		[500, 'Der Server hat mit einem Fehler geantwortet. Bitte später erneut versuchen.'],
 		[503, 'Der Server hat mit einem Fehler geantwortet. Bitte später erneut versuchen.']
 	])('shows an own message for %i, independent of the account', async (status, text) => {

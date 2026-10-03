@@ -270,7 +270,7 @@ describe('one address for everything (ADR-0039 section 2)', () => {
 			port: 8091
 		});
 		expect(result.address.helperArgs).toBe('run --url=http://127.0.0.1:8091');
-		expect(result.address.serverArgs).toMatch(/^serve --http=127\.0\.0\.1:8091 /);
+		expect(result.address.serverArgs).toMatch(/^serve --http=127\.0\.0\.1:8091 --origins=http:\/\/127\.0\.0\.1:8091,http:\/\/localhost:8091 /);
 		expect(result.address.attentionSend).toBe('http://127.0.0.1:8091/api/byl/attention?reason=stop');
 	});
 
@@ -488,9 +488,13 @@ try {
     $result.fingerprintKeys = @($base.Keys)
     $result.fingerprintShape = @{
         server = $base.server -match '^\d+:\d+$'; migrations = $base.migrations -match '^[0-9a-f]{64}$'
-        hooks = $base.hooks -match '^[0-9a-f]{64}$'; port = $base.port; environment = $base.environment -match '^[0-9a-f]{64}$'
+        hooks = $base.hooks -match '^[0-9a-f]{64}$'; port = $base.port; hosts = $base.hosts; environment = $base.environment -match '^[0-9a-f]{64}$'
         mailHelper = $base.mailHelper; web = $base.web -match '^[0-9a-f]{64}$'
     }
+    # A state file of before ADR-0055 has no part "hosts": without further hosts nothing changed.
+    $before = [ordered]@{}
+    foreach ($part in $base.Keys) { if ($part -ne 'hosts') { $before[$part] = $base[$part] } }
+    $result.withoutHostsPart = (Compare-BylFingerprint -Started $before -Current $base).Verdict
     $result.same = (Compare-BylFingerprint -Started $base -Current (& $take)).Verdict
     $result.readmeIgnored = $base.migrations -eq (Get-BylFingerprint -AppDir $app -Port 8090 -EnvironmentHash $hash).migrations
 
@@ -502,6 +506,7 @@ try {
     & $write 'pb_migrations\2_b.js' 'migrate(2)'
     $changes.migrations = Compare-BylFingerprint -Started $base -Current (& $take)
     $changes.port = Compare-BylFingerprint -Started $base -Current (Get-BylFingerprint -AppDir $app -Port 8091 -EnvironmentHash $hash)
+    $changes.hosts = Compare-BylFingerprint -Started $base -Current (Get-BylFingerprint -AppDir $app -Port 8090 -Hosts @('rechner.tailnet.ts.net') -EnvironmentHash $hash)
     $changes.environment = Compare-BylFingerprint -Started $base -Current (Get-BylFingerprint -AppDir $app -Port 8090 -EnvironmentHash (Get-EnvironmentHash -Entries @('BYL_TOKEN=secret-2', 'BYL_A=a') -Key $key))
     & $write 'byl-mail.exe' 'helper'
     $changes.all = Compare-BylFingerprint -Started $base -Current (& $take)
@@ -622,17 +627,19 @@ describe('start fingerprint, reload, status and logs (ADR-0039 sections 5 and 6)
 	});
 
 	it('fingerprints what the server loads, without values', () => {
-		expect(fp.fingerprintKeys).toEqual(['server', 'migrations', 'hooks', 'port', 'environment', 'mailHelper', 'web']);
+		expect(fp.fingerprintKeys).toEqual(['server', 'migrations', 'hooks', 'port', 'hosts', 'environment', 'mailHelper', 'web']);
 		expect(fp.fingerprintShape).toEqual({
 			server: true,
 			migrations: true,
 			hooks: true,
 			port: '8090',
+			hosts: '',
 			environment: true,
 			mailHelper: '',
 			web: true
 		});
 		expect(fp.same).toBe('Current');
+		expect(fp.withoutHostsPart).toBe('Current');
 		expect(fp.readmeIgnored).toBe(true);
 		expect(fp.stateFingerprint).toBe('Current');
 		expect(fp.stateKey).toBe('AQID+/8=');
@@ -645,6 +652,7 @@ describe('start fingerprint, reload, status and logs (ADR-0039 sections 5 and 6)
 		expect(pick(fp.changes.hooks)).toEqual({ verdict: 'Restart', restart: ['hooks'], reload: ['web'] });
 		expect(pick(fp.changes.migrations)).toEqual({ verdict: 'Restart', restart: ['migrations', 'hooks'], reload: ['web'] });
 		expect(pick(fp.changes.port).restart).toEqual(['migrations', 'hooks', 'port']);
+		expect(pick(fp.changes.hosts).restart).toEqual(['migrations', 'hooks', 'hosts']);
 		expect(pick(fp.changes.environment).restart).toEqual(['migrations', 'hooks', 'environment']);
 		expect(pick(fp.changes.all).restart).toEqual(['migrations', 'hooks', 'mailHelper']);
 		expect(pick(fp.changes.unknown)).toEqual({ verdict: 'Restart', restart: ['unknown'], reload: [] });

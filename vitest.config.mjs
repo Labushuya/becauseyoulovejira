@@ -11,6 +11,7 @@ const WINDOWS_ONLY = {
 		'tests/unit/admin-reset-logic.test.mjs',
 		'tests/unit/backup-control-logic.test.mjs',
 		'tests/unit/control-logic.test.mjs',
+		'tests/unit/security-control-logic.test.mjs',
 		'tests/unit/start-browser.test.mjs',
 		'tests/unit/start-logic.test.mjs',
 		'tests/unit/system-control-logic.test.mjs'

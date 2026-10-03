@@ -1159,8 +1159,9 @@ var INLINE_TYPES = {
 };
 // Shown as plain text: the browser never renders them as a page (no script, no style).
 var TEXT_TYPES = ['txt', 'md', 'markdown', 'csv', 'tsv', 'log', 'json', 'xml', 'yaml', 'yml', 'ini', 'cfg', 'conf', 'toml'];
-// For text and images: no script, no plugin, no request elsewhere, a page of its own origin.
-var SANDBOX_POLICY = "default-src 'none'; img-src 'self'; style-src 'unsafe-inline'; sandbox";
+// For text and images: no script, no plugin, no request elsewhere, a page of its own origin, in no
+// frame (the route replaces the frame-ancestors of every answer, ADR-0055 §4).
+var SANDBOX_POLICY = "default-src 'none'; img-src 'self'; style-src 'unsafe-inline'; frame-ancestors 'none'; sandbox";
 
 /**
  * How the file route answers for a file name (ADR-0051 §6): { type, inline, policy }. PDF and

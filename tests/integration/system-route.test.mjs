@@ -168,16 +168,18 @@ describe.skipIf(!WINDOWS)('routes of the page System on a server under Windows: 
 	});
 
 	it('refuse a foreign Host (DNS rebinding) and another port', async () => {
+		// Since ADR-0055 the guard of every request (security.pb.js) refuses them before the route;
+		// the own check of the route (isOwnHost, unit tests of system-rules) stays behind it.
 		const port = Number(new URL(windows.url).port);
 		for (const host of [`evil.example:${port}`, `127.0.0.1:${port + 1}`, `127.0.0.1.nip.io:${port}`]) {
 			const read = await call(windows, 'GET', '/api/byl/system', { token: accounts.owner.token, host });
-			expect([read.status, read.body.reason], host).toEqual([403, 'origin']);
+			expect([read.status, read.body.reason], host).toEqual([403, 'host']);
 			const act = await call(windows, 'POST', '/api/byl/system/actions/restart', {
 				token: accounts.owner.token,
 				host,
 				origin: `http://${host}`
 			});
-			expect([act.status, act.body.reason], host).toEqual([403, 'origin']);
+			expect([act.status, act.body.reason], host).toEqual([403, 'host']);
 		}
 	});
 

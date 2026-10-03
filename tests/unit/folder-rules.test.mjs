@@ -426,6 +426,8 @@ describe('the file route', () => {
 		}
 		for (const name of ['a.png', 'a.txt', 'a.html']) {
 			expect(rules.contentOf(name).policy, name).toMatch(/default-src 'none'.*sandbox$/);
+			// It replaces the CSP of the guard, so it forbids frames itself (ADR-0055 §4).
+			expect(rules.contentOf(name).policy, name).toContain("frame-ancestors 'none'");
 		}
 	});
 

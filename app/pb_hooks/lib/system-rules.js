@@ -82,7 +82,7 @@ var RESTART_KEY = 'byl.system.restart-at';
 
 var STATES = ['running', 'starting', 'unhealthy', 'stopped'];
 var VERDICTS = ['current', 'reload', 'restart'];
-var RESTART_REASONS = ['unknown', 'server', 'migrations', 'hooks', 'port', 'environment', 'mailHelper'];
+var RESTART_REASONS = ['unknown', 'server', 'migrations', 'hooks', 'port', 'hosts', 'environment', 'mailHelper'];
 var AUTOSTART = ['on', 'off', 'other'];
 var DOCTOR_LEVELS = ['ok', 'warning', 'error', 'info'];
 var LOG_SETS = ['server', 'mail', 'skript'];
@@ -539,6 +539,7 @@ module.exports = {
   commandLine: commandLine,
   refusal: refusal,
   isLocal: isLocal,
+  flagValue: flagValue,
   listenPort: listenPort,
   isOwnHost: isOwnHost,
   isSameOrigin: isSameOrigin,

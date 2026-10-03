@@ -93,14 +93,89 @@ function ConvertTo-BylConfigText {
     return "{`r`n  `"port`": $Port`r`n}`r`n"
 }
 
+# --- Further hosts and CORS origins (ADR-0055 section 3) ----------------------------------------
+
+# Hosts besides this machine under which the app may be reached later, only over HTTPS through a
+# proxy such as Tailscale (ADR-0001 section 3): byl-config.json {"security": {"hosts": [...]}},
+# empty by default. A host is a DNS name with at least one dot and an optional port; IP addresses,
+# single names (localhost) and anything else are left out. Same rule as normalizeExtraHost in
+# pb_hooks/lib/security-rules.js (parity test).
+$BylExtraHostsMax = 10
+$BylExtraHostPattern = '^(?=.{1,253}(?::[0-9]{1,5})?$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z](?:[a-z0-9-]{0,61}[a-z0-9])?(?::([0-9]{1,5}))?$'
+
+function ConvertTo-BylExtraHost {
+    # $Text trimmed and in lower case if it is a valid further host, otherwise $null.
+    param([AllowNull()][AllowEmptyString()][string]$Text)
+
+    if ($null -eq $Text) { return $null }
+    $value = $Text.Trim().ToLowerInvariant()
+    $match = [regex]::Match($value, $BylExtraHostPattern)
+    if (-not $match.Success) { return $null }
+    if ($match.Groups[1].Success) {
+        $port = [int]$match.Groups[1].Value
+        if ($port -lt 1 -or $port -gt 65535) { return $null }
+    }
+    return $value
+}
+
+function ConvertFrom-BylSecurityConfig {
+    # Further hosts from the text of byl-config.json: Present (the file has a section "security")
+    # and Hosts (the valid entries of security.hosts in lower case, without duplicates, at most
+    # $BylExtraHostsMax). Never throws: invalid entries are left out, so a typing error can only
+    # allow less, never more; a broken file is the business of the port check.
+    param([AllowNull()][AllowEmptyString()][string]$Text)
+
+    $result = [pscustomobject]@{ Present = $false; Hosts = [string[]]@() }
+    try {
+        $value = if ([string]::IsNullOrWhiteSpace($Text)) { $null } else { $Text | ConvertFrom-Json }
+    }
+    catch {
+        return $result
+    }
+    if ($null -eq $value -or $value -isnot [System.Management.Automation.PSCustomObject] -or $null -eq $value.PSObject.Properties['security']) {
+        return $result
+    }
+    $security = $value.security
+    if ($null -eq $security -or $security -isnot [System.Management.Automation.PSCustomObject]) { return $result }
+    $result.Present = $true
+    $property = $security.PSObject.Properties['hosts']
+    if ($null -eq $property -or $null -eq $property.Value) { return $result }
+    $names = New-Object System.Collections.Generic.List[string]
+    foreach ($entry in @($property.Value)) {
+        if ($entry -isnot [string]) { continue }
+        $name = ConvertTo-BylExtraHost -Text $entry
+        if ($null -ne $name -and -not $names.Contains($name) -and $names.Count -lt $BylExtraHostsMax) { $names.Add($name) }
+    }
+    $result.Hosts = [string[]]$names.ToArray()
+    return $result
+}
+
+function Get-BylOrigins {
+    # CORS origins of the server (--origins, ADR-0055 section 3): the app on this machine under
+    # 127.0.0.1 and localhost with $Port, then every further host over HTTPS. PocketBase allows "*"
+    # without the flag. The browser extension needs no origin (host_permissions), the landing page
+    # per file:// gets its answers from the guard of pb_hooks (security.pb.js).
+    param([Parameter(Mandatory = $true)][int]$Port, [AllowNull()][AllowEmptyCollection()][string[]]$Hosts = @())
+
+    $origins = New-Object System.Collections.Generic.List[string]
+    $origins.Add("http://127.0.0.1:$Port")
+    $origins.Add("http://localhost:$Port")
+    foreach ($name in @($Hosts)) {
+        if (-not [string]::IsNullOrEmpty($name)) { $origins.Add("https://$name") }
+    }
+    return ($origins -join ',')
+}
+
 function Merge-BylConfigText {
-    # Text of byl-config.json from the current text $Text with a new $Port and/or new backup
-    # settings $Backup (ConvertFrom-BylBackupConfig shape); what is not given stays as it was. The
-    # file holds only these two settings: the port (ADR-0039 section 2) and the backup (ADR-0046).
+    # Text of byl-config.json from the current text $Text with a new $Port, new backup settings
+    # $Backup (ConvertFrom-BylBackupConfig shape) and/or new further hosts $Hosts (an empty list
+    # removes them); what is not given stays as it was. The file holds only these settings: the
+    # port (ADR-0039 section 2), the backup (ADR-0046) and the further hosts (ADR-0055).
     param(
         [AllowNull()][AllowEmptyString()][string]$Text,
         [AllowNull()][object]$Port,
-        [AllowNull()][object]$Backup
+        [AllowNull()][object]$Backup,
+        [AllowNull()][AllowEmptyCollection()][string[]]$Hosts
     )
 
     $current = $null
@@ -125,6 +200,18 @@ function Merge-BylConfigText {
         $credentials = if ($Backup.Credentials) { 'true' } else { 'false' }
         $parts.Add(("  `"backup`": {{`r`n    `"target`": {0},`r`n    `"daily`": {1},`r`n    `"weekly`": {2},`r`n    `"monthly`": {3},`r`n    `"credentials`": {4}`r`n  }}" -f
                 $target, [int]$Backup.Daily, [int]$Backup.Weekly, [int]$Backup.Monthly, $credentials))
+    }
+    if (-not $PSBoundParameters.ContainsKey('Hosts')) {
+        $Hosts = (ConvertFrom-BylSecurityConfig -Text $Text).Hosts
+    }
+    $kept = New-Object System.Collections.Generic.List[string]
+    foreach ($entry in @($Hosts)) {
+        $name = ConvertTo-BylExtraHost -Text $entry
+        if ($null -ne $name -and -not $kept.Contains($name) -and $kept.Count -lt $BylExtraHostsMax) { $kept.Add($name) }
+    }
+    if ($kept.Count -gt 0) {
+        $list = ($kept | ForEach-Object { ConvertTo-Json -InputObject ([string]$_) -Compress }) -join ', '
+        $parts.Add("  `"security`": {`r`n    `"hosts`": [$list]`r`n  }")
     }
     if ($parts.Count -eq 0) { return "{`r`n}`r`n" }
     return "{`r`n" + ($parts -join ",`r`n") + "`r`n}`r`n"
@@ -311,7 +398,7 @@ function Resolve-StateMatch {
 # Parts whose change needs a restart of PocketBase, and parts that only need a reload (F5) of the
 # open tabs. PocketBase 0.40.4 does not reload pb_hooks on Windows ("--hooksWatch ... has no effect
 # on Windows"), runs new migrations only at the start and serves pb_public fresh at every request.
-$BylRestartParts = @('server', 'migrations', 'hooks', 'port', 'environment', 'mailHelper')
+$BylRestartParts = @('server', 'migrations', 'hooks', 'port', 'hosts', 'environment', 'mailHelper')
 $BylReloadParts = @('web')
 
 function Get-BytesHash {
@@ -410,10 +497,12 @@ function Get-EnvironmentHash {
 
 function Get-BylFingerprint {
     # Start fingerprint of the app folder: what a server started now would load. $EnvironmentHash is
-    # Get-EnvironmentHash of the BYL_* variables ('' if it cannot be built).
+    # Get-EnvironmentHash of the BYL_* variables ('' if it cannot be built); $Hosts the further hosts
+    # of byl-config.json (ADR-0055), '' without any, also in a state file of before.
     param(
         [Parameter(Mandatory = $true)][string]$AppDir,
         [Parameter(Mandatory = $true)][int]$Port,
+        [AllowNull()][AllowEmptyCollection()][string[]]$Hosts = @(),
         [AllowEmptyString()][string]$EnvironmentHash = ''
     )
 
@@ -422,6 +511,7 @@ function Get-BylFingerprint {
         migrations  = Get-FolderHash -Folder ([System.IO.Path]::Combine($AppDir, 'pb_migrations'))
         hooks       = Get-FolderHash -Folder ([System.IO.Path]::Combine($AppDir, 'pb_hooks')) -Recurse
         port        = [string]$Port
+        hosts       = (@($Hosts) | Where-Object { -not [string]::IsNullOrEmpty($_) }) -join ','
         environment = $EnvironmentHash
         mailHelper  = Get-FileStamp -Path ([System.IO.Path]::Combine($AppDir, $BylMailHelperName))
         web         = Get-WebBuildId -AppDir $AppDir
@@ -944,14 +1034,15 @@ function Get-ServerLogPath {
 }
 
 function Get-ServerArgumentString {
-    # Arguments for pocketbase.exe (CLAUDE.md sections 3 and 9): only 127.0.0.1:<Port>, data,
-    # hooks, migrations and web build from the app folder, --automigrate=false, never --dev. Paths
-    # are quoted (spaces, #); Windows paths cannot contain double quotes.
-    param([Parameter(Mandatory = $true)][string]$AppDir, [int]$Port = $BylPort)
+    # Arguments for pocketbase.exe (CLAUDE.md sections 3 and 9): only 127.0.0.1:<Port>, CORS only
+    # for the own origins and the further hosts $Hosts (Get-BylOrigins, ADR-0055), data, hooks,
+    # migrations and web build from the app folder, --automigrate=false, never --dev. Paths are
+    # quoted (spaces, #); Windows paths cannot contain double quotes, origins contain no spaces.
+    param([Parameter(Mandatory = $true)][string]$AppDir, [int]$Port = $BylPort, [AllowNull()][AllowEmptyCollection()][string[]]$Hosts = @())
 
     $folder = { param([string]$Name) [System.IO.Path]::Combine($AppDir, $Name) }
-    return ('serve --http=127.0.0.1:{0} --dir="{1}" --hooksDir="{2}" --migrationsDir="{3}" --publicDir="{4}" --automigrate=false --indexFallback=true' -f
-        $Port, (& $folder 'pb_data'), (& $folder 'pb_hooks'), (& $folder 'pb_migrations'), (& $folder 'pb_public'))
+    return ('serve --http=127.0.0.1:{0} --origins={1} --dir="{2}" --hooksDir="{3}" --migrationsDir="{4}" --publicDir="{5}" --automigrate=false --indexFallback=true' -f
+        $Port, (Get-BylOrigins -Port $Port -Hosts $Hosts), (& $folder 'pb_data'), (& $folder 'pb_hooks'), (& $folder 'pb_migrations'), (& $folder 'pb_public'))
 }
 
 function Get-AutostartShortcut {

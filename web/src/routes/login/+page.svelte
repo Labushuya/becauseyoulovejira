@@ -9,7 +9,9 @@
 	// attempts and server errors do not depend on the account (E2 plan, T-18).
 	const MESSAGES: Record<LoginFailure, string> = {
 		rejected: 'Anmeldung fehlgeschlagen. Bitte E-Mail und Passwort prüfen.',
-		rate_limited: 'Zu viele Anmeldeversuche. Bitte kurz warten und erneut versuchen.',
+		// The rate limiter of the server (ADR-0055) blocks for up to a minute, at "Streng" up to five.
+		rate_limited:
+			'Zu viele Anmeldeversuche. Zum Schutz vor Rateversuchen ist die Anmeldung kurz gesperrt. Bitte ein paar Minuten warten und dann erneut versuchen.',
 		server: 'Der Server hat mit einem Fehler geantwortet. Bitte später erneut versuchen.',
 		network:
 			'Server nicht erreichbar. Bitte prüfen, ob becauseyoulovejira gestartet ist (start.bat), und erneut versuchen.'

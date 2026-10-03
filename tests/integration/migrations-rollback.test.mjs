@@ -22,7 +22,9 @@ import {
 	assertSchema,
 	readDataDir
 } from '../support/schema.mjs';
+import { loadHookLib } from '../support/hook-lib.mjs';
 
+const security = loadHookLib('security-rules.js');
 const RULES_MIGRATION = '1790200900_api_rules.js';
 // First migration of E4 (docs/plan/e4.md); everything from here on runs on existing data.
 const E4_FIRST_MIGRATION = '1790201200_create_inbox_items.js';
@@ -74,6 +76,9 @@ describe('migration rollback', () => {
 				expect(first.userCount).toBe(0);
 				expect(first.superuserCount).toBe(0);
 				expect(authAlerts(first.collections)).toEqual({ _superusers: false, users: false });
+				expect(first.settings.rateLimits.enabled).toBe(true);
+				expect(first.settings.rateLimits.rules).toEqual(security.rateLimitRules('normal'));
+				expect(first.settings.superuserIPs).toEqual(security.SUPERUSER_IPS);
 
 				// Rolling back to before the API rules (package 4) leaves every rule null again.
 				const fromRules = MIGRATION_FILES.slice(MIGRATION_FILES.indexOf(RULES_MIGRATION));
@@ -103,6 +108,9 @@ describe('migration rollback', () => {
 				}
 				expect(reverted.settings.backups).toMatchObject(DEFAULT_BACKUPS);
 				expect(authAlerts(reverted.collections)).toEqual({ _superusers: true, users: true });
+				expect(reverted.settings.rateLimits.enabled).toBe(false);
+				expect(reverted.settings.rateLimits.rules).toEqual(security.POCKETBASE_DEFAULT_RULES);
+				expect(reverted.settings.superuserIPs ?? []).toEqual([]);
 
 				const secondUp = await migrate(args, 'up');
 				expect(appliedFiles(secondUp, 'Applied')).toEqual(MIGRATION_FILES);
@@ -112,6 +120,8 @@ describe('migration rollback', () => {
 					withoutTimestamps(first.collections)
 				);
 				expect(second.settings.backups).toEqual(first.settings.backups);
+				expect(second.settings.rateLimits).toEqual(first.settings.rateLimits);
+				expect(second.settings.superuserIPs).toEqual(first.settings.superuserIPs);
 			});
 		}
 	);
@@ -837,6 +847,9 @@ const SUBTASKS_RULE_FIELDS = ['template_subtasks'];
 // The colors of projects and tickets (ADR-0052, 1790203400), which every earlier test runs along as
 // well: one select field `color` at projects, tickets and recurrence_rules.
 const COLOR_MIGRATION = '1790203400_colors.js';
+// The security hardening (ADR-0055, 1790203500), which every earlier test runs along as well: only
+// settings (rate limiter, superuser addresses), no collection.
+const SECURITY_MIGRATION = '1790203500_security_hardening.js';
 const COLOR_FIELDS = ['color'];
 const COLOR_COLLECTIONS = ['projects', 'tickets', 'recurrence_rules'];
 const LATER_RULE_FIELDS = [
@@ -1283,7 +1296,8 @@ describe('migration rollback of "Jeden Termin einzeln anlegen" (plan OR-5)', () 
 				TARGET_MIGRATION,
 				GITHUB_MIGRATION,
 				FOLDER_MIGRATION,
-				COLOR_MIGRATION
+				COLOR_MIGRATION,
+				SECURITY_MIGRATION
 			]);
 
 			await withTempDataDir(async ({ dataDir, args }) => {
@@ -1430,7 +1444,8 @@ describe('migration rollback of the trash (ADR-0037)', () => {
 				TARGET_MIGRATION,
 				GITHUB_MIGRATION,
 				FOLDER_MIGRATION,
-				COLOR_MIGRATION
+				COLOR_MIGRATION,
+				SECURITY_MIGRATION
 			]);
 
 			await withTempDataDir(async ({ dataDir, args }) => {
@@ -1535,7 +1550,8 @@ describe('migration rollback of the own inbox (ADR-0038)', () => {
 				TARGET_MIGRATION,
 				GITHUB_MIGRATION,
 				FOLDER_MIGRATION,
-				COLOR_MIGRATION
+				COLOR_MIGRATION,
+				SECURITY_MIGRATION
 			]);
 
 			await withTempDataDir(async ({ dataDir, args }) => {
@@ -1662,7 +1678,8 @@ describe('migration rollback of "Status beim Anlegen" (plan WV, ADR-0022 addendu
 				TARGET_MIGRATION,
 				GITHUB_MIGRATION,
 				FOLDER_MIGRATION,
-				COLOR_MIGRATION
+				COLOR_MIGRATION,
+				SECURITY_MIGRATION
 			]);
 			const ruleFields = [...STATUS_RULE_FIELDS, ...SUBTASKS_RULE_FIELDS];
 
@@ -1760,7 +1777,8 @@ describe('migration rollback of the pinned comment (ADR-0044)', () => {
 				TARGET_MIGRATION,
 				GITHUB_MIGRATION,
 				FOLDER_MIGRATION,
-				COLOR_MIGRATION
+				COLOR_MIGRATION,
+				SECURITY_MIGRATION
 			]);
 
 			await withTempDataDir(async ({ dataDir, args }) => {
@@ -1858,7 +1876,8 @@ describe('migration rollback of the sub-tasks of the template (plan WV-3, ADR-00
 				TARGET_MIGRATION,
 				GITHUB_MIGRATION,
 				FOLDER_MIGRATION,
-				COLOR_MIGRATION
+				COLOR_MIGRATION,
+				SECURITY_MIGRATION
 			]);
 
 			await withTempDataDir(async ({ dataDir, args }) => {
@@ -1952,7 +1971,7 @@ describe('migration rollback of the target project (ADR-0049)', () => {
 		async () => {
 			// The GitHub channel (ADR-0050, 1790203200) follows and runs along; it changes no row.
 			const fromTarget = MIGRATION_FILES.slice(MIGRATION_FILES.indexOf(TARGET_MIGRATION));
-			expect(fromTarget).toEqual([TARGET_MIGRATION, GITHUB_MIGRATION, FOLDER_MIGRATION, COLOR_MIGRATION]);
+			expect(fromTarget).toEqual([TARGET_MIGRATION, GITHUB_MIGRATION, FOLDER_MIGRATION, COLOR_MIGRATION, SECURITY_MIGRATION]);
 
 			await withTempDataDir(async ({ dataDir, args }) => {
 				await migrate(args, 'up');
@@ -2047,7 +2066,7 @@ describe('migration rollback of the GitHub channel (ADR-0050)', () => {
 		async () => {
 			// The folder channel (ADR-0051, 1790203300) follows and runs along; it changes no row.
 			const fromGithub = MIGRATION_FILES.slice(MIGRATION_FILES.indexOf(GITHUB_MIGRATION));
-			expect(fromGithub).toEqual([GITHUB_MIGRATION, FOLDER_MIGRATION, COLOR_MIGRATION]);
+			expect(fromGithub).toEqual([GITHUB_MIGRATION, FOLDER_MIGRATION, COLOR_MIGRATION, SECURITY_MIGRATION]);
 
 			await withTempDataDir(async ({ dataDir, args }) => {
 				await migrate(args, 'up');
@@ -2158,7 +2177,7 @@ describe('migration rollback of the folder channel (ADR-0051)', () => {
 		async () => {
 			// The colors (ADR-0052, 1790203400) follow and run along; they change no row.
 			const fromFolder = MIGRATION_FILES.slice(MIGRATION_FILES.indexOf(FOLDER_MIGRATION));
-			expect(fromFolder).toEqual([FOLDER_MIGRATION, COLOR_MIGRATION]);
+			expect(fromFolder).toEqual([FOLDER_MIGRATION, COLOR_MIGRATION, SECURITY_MIGRATION]);
 
 			await withTempDataDir(async ({ dataDir, args }) => {
 				await migrate(args, 'up');
@@ -2265,7 +2284,7 @@ describe('migration rollback of the colors (ADR-0052)', () => {
 		'adds a select field of the palette to projects, tickets and rules without changing a row; the way back loses only the colors',
 		async () => {
 			const fromColor = MIGRATION_FILES.slice(MIGRATION_FILES.indexOf(COLOR_MIGRATION));
-			expect(fromColor).toEqual([COLOR_MIGRATION]);
+			expect(fromColor).toEqual([COLOR_MIGRATION, SECURITY_MIGRATION]);
 
 			await withTempDataDir(async ({ dataDir, args }) => {
 				await migrate(args, 'up');
@@ -2313,6 +2332,58 @@ describe('migration rollback of the colors (ADR-0052)', () => {
 				expect(appliedFiles(await migrate(args, 'up'), 'Applied')).toEqual(fromColor);
 				assertSchema(readDataDir(dataDir).collections);
 				expect(withDatabase(dataDir, projectRows).map((row) => row.color)).toEqual(['', '']);
+			});
+		}
+	);
+});
+
+/** Changes the stored settings of the data folder like the admin UI would. */
+function changeSettings(dataDir, change) {
+	withDatabase(dataDir, (db) => {
+		const row = db.prepare("SELECT value FROM _params WHERE id = 'settings'").get();
+		const settings = JSON.parse(new TextDecoder().decode(row.value));
+		change(settings);
+		db.prepare("UPDATE _params SET value = ? WHERE id = 'settings'").run(new TextEncoder().encode(JSON.stringify(settings)));
+	});
+}
+
+describe('migration of the security hardening (ADR-0055)', () => {
+	it(
+		'switches the rate limiter on with "Normal" and the superusers to this machine, there and back, and keeps settings of the admin UI',
+		async () => {
+			const fromSecurity = MIGRATION_FILES.slice(MIGRATION_FILES.indexOf(SECURITY_MIGRATION));
+			expect(fromSecurity).toEqual([SECURITY_MIGRATION]);
+			const settingsOf = (dataDir) => readDataDir(dataDir).settings;
+
+			await withTempDataDir(async ({ dataDir, args }) => {
+				await migrate(args, 'up');
+				const schema = withoutTimestamps(readDataDir(dataDir).collections);
+				expect(settingsOf(dataDir).rateLimits).toMatchObject({ enabled: true, rules: security.rateLimitRules('normal') });
+
+				const down = await migrate(args, 'down', String(fromSecurity.length));
+				expect(appliedFiles(down, 'Reverted')).toEqual(fromSecurity);
+				expect(settingsOf(dataDir).rateLimits).toMatchObject({ enabled: false, rules: security.POCKETBASE_DEFAULT_RULES });
+				expect(settingsOf(dataDir).superuserIPs ?? []).toEqual([]);
+				expect(withoutTimestamps(readDataDir(dataDir).collections)).toEqual(schema);
+
+				// "Streng" of the page Sicherheit goes back to the defaults as well.
+				expect(appliedFiles(await migrate(args, 'up'), 'Applied')).toEqual(fromSecurity);
+				changeSettings(dataDir, (settings) => (settings.rateLimits.rules = security.rateLimitRules('strict')));
+				await migrate(args, 'down', String(fromSecurity.length));
+				expect(settingsOf(dataDir).rateLimits).toMatchObject({ enabled: false, rules: security.POCKETBASE_DEFAULT_RULES });
+
+				// Rules and addresses of the admin UI stay, up and down.
+				const own = [{ label: '*:auth', audience: '', duration: 30, maxRequests: 3 }];
+				changeSettings(dataDir, (settings) => {
+					settings.rateLimits = { enabled: true, excludedIPs: [], rules: own };
+					settings.superuserIPs = ['10.0.0.0/24'];
+				});
+				await migrate(args, 'up');
+				expect(settingsOf(dataDir).rateLimits).toMatchObject({ enabled: true, rules: own });
+				expect(settingsOf(dataDir).superuserIPs).toEqual(['10.0.0.0/24']);
+				await migrate(args, 'down', String(fromSecurity.length));
+				expect(settingsOf(dataDir).rateLimits).toMatchObject({ enabled: true, rules: own });
+				expect(settingsOf(dataDir).superuserIPs).toEqual(['10.0.0.0/24']);
 			});
 		}
 	);

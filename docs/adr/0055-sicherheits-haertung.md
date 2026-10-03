@@ -1,0 +1,105 @@
+# ADR-0055: Sicherheits-Härtung – Schutz vor Rateversuchen, nur die eigenen Adressen, Sicherheits-Header
+
+- **Status:** Angenommen; SH-1 (Server: Rate-Limiter, Host-Allowlist, CORS, Header, Admin-Oberfläche) umgesetzt nach [Plan „Sicherheit“](../plan/sicherheit.md); SH-2 (Seite „Einstellungen → Sicherheit“) folgt
+- **Datum:** 2026-10-03
+- **Entscheidung durch:** Nutzer (Freigabe der Härtung am 2026-10-03: „Ja, kannst Du starten. Und was auch immer nötig ist, kann man auch (sofern sinnvoll und auch ganzheitlich) in den Einstellungen verankern?“), Advisor (Befunde, Maßnahmen, Pakete), Executor (Werte der Stufen, Ausnahmen, Einzelheiten)
+- **Bezug:** [ADR-0001](0001-betriebsmodell-lokal-mehrgeraete-spaeter.md) §3 (Voraussetzungen für Mehrgeräte: Rate-Limiter, Superuser nur lokal, `--origins`; Nachtrag), [ADR-0035](0035-start-einstieg-und-offene-tabs.md) §4 (Präsenz und Hinweis; Nachtrag), [ADR-0038](0038-eigener-eingang-und-whatsapp-web.md) §2 (CORS der Erweiterung; Nachtrag), [ADR-0039](0039-betriebsskripte.md) (Start-Argumente, Fingerabdruck; Nachtrag), [ADR-0043](0043-system-seite.md) (Host- und Origin-Prüfung der eigenen Routen; Nachtrag), [ADR-0040](0040-veroeffentlichen-ohne-unterbrechung.md) (`Cache-Control`), [ADR-0051](0051-ordner-kanal-verweise-statt-kopien.md) §6 (Kopfzeilen der Datei-Route)
+
+## Kontext
+
+becauseyoulovejira läuft nur auf `127.0.0.1` (ADR-0001). Bedroht ist die App deshalb vor allem aus dem **Browser des Nutzers**: Jede Webseite, die er besucht, kann Anfragen an `http://127.0.0.1:<Port>` schicken. Lokale Programme desselben Windows-Kontos stehen außerhalb des Bedrohungsmodells; sie könnten `pb_data` direkt lesen (ADR-0035 §4).
+
+Die Inventur vom 2026-10-03 ergab:
+
+- **Kein Rate-Limiter:** Keine Migration setzte `rateLimits`, PocketBase 0.40.4 liefert ihn ausgeschaltet aus. Die Anmeldung von App- und Admin-Konten (`/api/collections/users|_superusers/auth-with-password`) ließ sich beliebig oft versuchen. `superuserIPs` (ADR-0001 §3) war leer.
+- **CORS `*`:** PocketBase lief ohne `--origins` (ADR-0035 §4, ADR-0038 §2). Jede Webseite konnte einfache Anfragen schicken **und** die Antworten lesen, etwa die einer Anmeldung mit Formulardaten.
+- **DNS-Rebinding:** Eine fremde Seite, deren Name kurz auf `127.0.0.1` zeigt, spricht aus Sicht des Browsers mit ihrer eigenen Origin. Den Namen sieht der Server nur im `Host`. Geprüft haben ihn nur die eigenen Routen von System, Sicherung, Speicher und Ordner (ADR-0043 §3); die Record-API, Realtime, die Anmeldung und die Admin-Oberfläche nicht.
+- **Header:** PocketBase setzt `X-Content-Type-Options: nosniff`, `X-Frame-Options: SAMEORIGIN` und `Cross-Origin-Opener-Policy: same-origin`. Es fehlten eine Referrer-Regel, eine Permissions-Policy und ein Verbot, die App in Frames fremder Seiten zu laden.
+
+Diese Wege müssen weiter funktionieren: die Erweiterung für WhatsApp Web (Service Worker mit `host_permissions`, `Origin: chrome-extension://…`), der eigene Eingang per PowerShell oder curl (ohne `Origin`), das Bookmarklet (öffnet die Seite der App), der Mail-Helfer (`BYL_INGEST_TOKEN`), die Steuerskripte und die Seite „System“, die Landing-Seite per `file://`, die Admin-Oberfläche `/_/`, Realtime per SSE und alle Testinstanzen auf Zufallsports.
+
+## Entscheidung
+
+### 1. Schutz vor Rateversuchen (Rate-Limiter von PocketBase)
+
+Die Migration `1790203500_security_hardening.js` schaltet den eingebauten Rate-Limiter ein, mit den Regeln der Stufe **„Normal“**. PocketBase zählt in festen Zeitfenstern **je Client-Adresse**. Weil die App nur auf diesem Rechner erreichbar ist, teilen sich alle Programme hier eine Zählung (`127.0.0.1`). Daraus folgen die Regeln:
+
+| Regel (`label`) | Wer (`audience`) | Normal | Streng | Wofür |
+|---|---|---|---|---|
+| `*:auth` | alle | 10 je 60 s | 5 je 300 s | jede Anmeldung (Passwort, OTP, OAuth2), je Collection: App-Konten und Admin-Konten zählen getrennt |
+| `*:requestOTP`, `*:requestPasswordReset`, `*:confirmPasswordReset` | alle | 10 je 60 s | 5 je 300 s | Mail-Abläufe, die man erraten könnte (sie sind ohnehin gesperrt, solange es keinen Mailer gibt, CLAUDE.md §5) |
+| `/api/byl/ingest/` | ohne Anmeldung | 1000 je 10 s | 1000 je 10 s | Ingest-Routen des Mail-Helfers (`BYL_INGEST_TOKEN`): eine Anfrage je Mail einer Vollsuche, nie im Weg |
+| `/api/` | ohne Anmeldung | 300 je 10 s | 100 je 10 s | alles Übrige, was eine Webseite oder ein Programm ohne Konto schicken kann (Gesundheit, Realtime-Verbindung, eigener Eingang, Präsenz) |
+
+- **Begründung der Werte:** 10 Versuche je Minute lassen ein, zwei Tippfehler durch und erlauben doch nur 14 400 Versuche am Tag; „Streng“ (5 je 5 Minuten, höchstens 1 440 am Tag) kostet nach einigen Tippfehlern bis zu fünf Minuten Warten. 300 je 10 s ist der eigene Standard von PocketBase für `/api/`. Die Stufe „Streng“ wählt der Nutzer mit SH-2 auf der Seite „Sicherheit“; ein freies Zahlenfeld gibt es nicht.
+- **Was nie zählt:** Anfragen eines angemeldeten Kontos (die Regel für `/api/` gilt nur ohne Anmeldung): Sammelaktionen, Importe, Realtime-Abos und alle Seiten der App bleiben ohne Grenze. Superuser (PocketBase lässt sie immer durch), die Dateien der Oberfläche (keine Regel für `/`), Cron-Jobs (sie laufen im Server, nicht über HTTP). Die Erweiterung und der eigene Eingang behalten zusätzlich ihre eigene Grenze je Schlüssel (ADR-0038).
+- **Nur aus dem Zustand von PocketBase:** Die Migration schaltet nur ein, solange der Limiter mit den Regeln von PocketBase 0.40.4 aus ist; Regeln aus der Verwaltung bleiben. Der Rückweg stellt den Ausgangszustand nur her, solange „Normal“ oder „Streng“ eingestellt ist. Dieselben Regeln stehen in `lib/security-rules.js` (`rateLimitRules`, `levelOf`; Gleichstand per Test).
+- **Anmeldung gesperrt:** Die Anmeldeseite sagt bei 429 „Zu viele Anmeldeversuche. Zum Schutz vor Rateversuchen ist die Anmeldung kurz gesperrt. Bitte ein paar Minuten warten und dann erneut versuchen.“ (rot wie jede Login-Fehlermeldung, ADR-0009). Sie verrät nichts über das Konto.
+
+### 2. Host-Allowlist gegen DNS-Rebinding
+
+- `app/pb_hooks/security.pb.js` hängt mit `routerUse(new Middleware(…, -1042, 'bylSecurityGuard'))` eine Prüfung vor **jede** Anfrage, vor alle Middlewares von PocketBase außer der www-Weiterleitung: vor CORS (-1041), dem Request-Log, dem Laden des Tokens und dem Rate-Limiter. Eine Anfrage an einen fremden Host liest also nichts und kostet keinen Versuch.
+- **Erlaubt** ist der `Host` `127.0.0.1`, `localhost` oder `[::1]` mit genau dem Port aus `--http` (`listenPort` und `isOwnHost` aus `lib/system-rules.js`, dieselbe Regel wie ADR-0043), dazu die Hosts der CORS-Origins des Starts (§3; ohne zusätzliche Hosts sind das dieselben). Groß- und Kleinschreibung zählen nicht; ein anderer Port, ein Punkt am Ende, Namen wie `127.0.0.1.nip.io` und ein `Host` ohne Port nicht.
+- **Ablehnung:** 403 mit `{ status, message: "Diese Adresse ist für becauseyoulovejira nicht freigegeben.", reason: "host" }` und eine Zeile „byl-security: Anfrage an fremden Host abgelehnt“ im Log (Host und Pfad gekürzt, ohne Steuerzeichen). Die Prüfungen der eigenen Routen (ADR-0043 §3) bleiben dahinter bestehen.
+- Der Port kommt aus den Argumenten des laufenden Servers, also auch bei Testinstanzen auf Zufallsports richtig. Das Steuerskript, der Mail-Helfer, PowerShell und curl schicken `127.0.0.1:<Port>` bzw. `localhost:<Port>`.
+
+### 3. CORS nur für die eigene Oberfläche
+
+- `byl-control.ps1` startet PocketBase mit `--origins=http://127.0.0.1:<Port>,http://localhost:<Port>` (`Get-BylOrigins`, `Get-ServerArgumentString`). Die SPA kommt von derselben Origin und braucht kein CORS; fremde Seiten bekommen keine Freigabe mehr, auch nicht für einen Preflight.
+- **Erweiterung für WhatsApp Web:** Ihr Service Worker ruft die App mit `host_permissions` für `127.0.0.1` und `localhost` auf. Für solche Anfragen gelten in Chrome und Edge keine CORS-Beschränkungen (Origin-Allowlist der Erweiterung, kein Preflight), sie braucht also keine Origin in `--origins`. Als enges Sicherheitsnetz, falls ein Browser doch fragt, beantwortet der Guard aus §2 nur auf `/api/byl/inbox/ingest` und nur für `chrome-extension://<32 Buchstaben a–p>` (dieselbe Regel wie `inbox-key-rules.originAllowed`) den Preflight (GET, POST; Authorization, Content-Type; 10 Minuten) und setzt `Access-Control-Allow-Origin` auf diese Origin. `chrome-extension://*` für die ganze API wurde verworfen: Jede installierte Erweiterung bekäme Lesezugriff.
+- **Landing-Seite per `file://`:** Sie schickt `Origin: null`. Der Guard antwortet nur auf `POST /api/byl/attention` und `GET /api/byl/attention/{nonce}` mit `Access-Control-Allow-Origin: null`, damit sie wie bisher erkennt, ob ein offener Tab bestätigt hat (ADR-0035 §1). Wer die Routen benutzen darf, entscheiden sie weiter selbst. `/api/health` prüft sie ohne Freigabe im Modus `no-cors` (ADR-0035 §1, unverändert).
+- **Zusätzliche Hosts** (Vorbereitung für Mehrgeräte, ADR-0001 §3): `app\byl-config.json` `{ "security": { "hosts": ["rechner.tailnet.ts.net"] } }`, standardmäßig leer. Ein Host ist ein DNS-Name mit mindestens einem Punkt und optionalem Port; IP-Adressen, einzelne Namen wie `localhost` und alles andere fallen weg (höchstens 10; dieselbe Regel in `ConvertTo-BylExtraHost` und `normalizeExtraHost`, Gleichstand per Test). Ungültige Einträge werden ausgelassen, ein Tippfehler kann also nur weniger erlauben. Jeder Host kommt als `https://<Host>` in `--origins`, und der Guard nimmt ihn daraus in seine Liste. Nur HTTPS, weil Mehrgeräte nur über einen HTTPS-Proxy laufen (ADR-0001 §3). Einstellbar mit SH-2; bis dahin von Hand in der Datei.
+- **Neustart:** Der Start-Fingerabdruck (ADR-0039 §5) hat den Teil `hosts`. Eine Änderung der zusätzlichen Hosts heißt „Neustart nötig – andere zusätzliche Adressen eingestellt (byl-config.json)“; ein Zustand von vorher ohne diesen Teil zählt als „keine“.
+- **Testinstanzen** starten gleichwertig: Der Harness gibt jeder Instanz `--origins` mit ihren eigenen Adressen (`ownOrigins`), damit alle Tests unter denselben Regeln laufen wie die App.
+
+### 4. Sicherheits-Header
+
+Der Guard setzt vor jeder Antwort:
+
+- `Referrer-Policy: same-origin`: Innerhalb der App bleibt der Referrer, sonst geht keiner hinaus. `no-referrer` wurde verworfen, weil ein Tab aus einem Link der App am Referrer erkennt, dass er kein neuer Start ist (ADR-0035 §6).
+- `Permissions-Policy: camera=(), microphone=(), geolocation=(), payment=(), usb=()`: Geräte, die die App nie braucht. Zwischenablage und Benachrichtigungen bleiben.
+- `Content-Security-Policy: frame-ancestors 'none'` gegen Clickjacking, außer unter `/_/`: Die Admin-Oberfläche setzt ihre eigene, volle CSP (mit `frame-ancestors 'none'`) nur, wenn keine andere gesetzt ist. `frame-ancestors` gewinnt in allen unterstützten Browsern über das `X-Frame-Options: SAMEORIGIN` von PocketBase, das bleibt.
+- **Keine volle CSP für die App:** SvelteKit startet mit einem Inline-Skript, `app.html` setzt Theme, Akzent und Transparenz per Inline-Skript vor dem ersten Rendern, die Notfallseite hat einen `onclick`, Tiptap und Svelte setzen Inline-Styles. Eine CSP mit Hashes müsste jede dieser Stellen kennen und bräche bei jeder Änderung still. `frame-ancestors` allein kostet nichts davon.
+- **Kein `Cross-Origin-Resource-Policy`:** Die Landing-Seite prüft `/api/health` im Modus `no-cors`; `same-origin` würde diese Antwort sperren.
+- Unverändert: `X-Content-Type-Options: nosniff` von PocketBase, `Cache-Control: no-cache` der Oberfläche (ADR-0040) und die Kopfzeilen der Datei-Route (ADR-0051 §6). Deren Sandbox-CSP für Text, Bilder und Downloads nennt jetzt zusätzlich `frame-ancestors 'none'`, weil sie die CSP der Antwort ersetzt.
+
+### 5. Präsenz und Hinweis bleiben ohne Geheimnis
+
+Die Art „control“ der Präsenz- und Hinweis-Routen (ADR-0035 §4: kein `Origin`, kein `Sec-Fetch-*`, nur Loopback) wird **nicht** an ein Geheimnis gebunden:
+
+- Jeder aktuelle Browser schickt `Sec-Fetch-*` an `127.0.0.1` (eine vertrauenswürdige Adresse), auch beim Aufruf über die Adresszeile. „control“ erreichen also nur Programme auf diesem Rechner, und DNS-Rebinding fängt jetzt §2 ab.
+- Ein Geheimnis, das nur das Steuerskript kennt, gibt es auf einem Einzelplatz-Rechner nicht: Was das Skript lesen kann (Zustandsdatei, Umgebung, Datei unter `run`), kann jedes Programm desselben Kontos lesen. Diese Programme stehen außerhalb des Bedrohungsmodells (sie könnten `pb_data` lesen).
+- Die Wirkung bleibt harmlos: eine Zahl offener Tabs, ein Hinweis im Tab (höchstens einer je 2 s).
+
+### 6. Admin-Oberfläche `/_/`
+
+- Geschützt durch §2 (Host), §1 (eigene Zählung der Admin-Anmeldung) und `superuserIPs` = `127.0.0.1`, `::1` (Migration, nur solange die Liste leer ist; Rückweg leert sie nur, solange sie genau das enthält). Superuser-Anfragen von einer anderen Adresse lehnt PocketBase mit 403 ab. Hinter einem späteren Proxy greift das erst mit dessen Kopfzeilen in `trustedProxy` (ADR-0001 §3).
+- `admin-zuruecksetzen.bat` arbeitet ohne HTTP (`superuser upsert`) und ist davon nicht betroffen.
+
+### 7. Tests
+
+- `tests/unit/security-rules.test.mjs`: Stufen, Erkennung der Stufe, Hosts der Origins, zusätzliche Hosts, Header, CORS-Ausnahmen; die Migration gegen eine Attrappe der App mit denselben Regeln.
+- `tests/unit/security-control-logic.test.mjs` (Windows): zusätzliche Hosts wie in JavaScript, Origins, `byl-config.json` mit Port, Sicherung und Hosts, Server-Argumente; `control-logic`, `start-logic` und `start-scripts` für Fingerabdruck und Start.
+- `tests/integration/security.test.mjs` gegen eigene Instanzen mit eingeschaltetem Limiter: fremder Host 403 auf API, Oberfläche, Admin und Realtime; zusätzliche Hosts aus den Origins; keine CORS-Freigabe für fremde Origins; Landing-Seite und Erweiterung mit Freigabe; Header; zehn falsche Anmeldungen, dann 429 auch mit dem richtigen Passwort, Admin-Konto getrennt; 350 Anfragen der App, 350 des Mail-Helfers, eigener Eingang mit und ohne Erweiterung, Realtime, Seite „System“ und Cron ohne Grenze; die Grenze für Anfragen ohne Konto.
+- `tests/integration/migrations-rollback.test.mjs`: Hin- und Rückweg, „Streng“ zurück, Einstellungen der Verwaltung bleiben.
+- Der Harness schaltet den Limiter nach jedem Start aus (Superuser, `PATCH /api/settings`), weil die Tests von `127.0.0.1` aus sehr oft anmelden; nur die Tests des Limiters behalten ihn (`rateLimits: true`).
+
+## Alternativen
+
+| Alternative | Bewertung |
+|---|---|
+| Grenze für alle Anfragen (auch angemeldete), wie der Standard von PocketBase | Alle Programme hier teilen sich eine Adresse: Eine Sammelaktion über ein paar hundert Tickets hätte sich selbst ausgebremst. Verworfen; angemeldete Anfragen sind ohnehin nur das eigene Konto. |
+| `excludedIPs` mit `127.0.0.1` | schaltet den Limiter für alles ab, was es hier gibt. Verworfen. |
+| Host-Prüfung in jeder Route (wie ADR-0043) | Record-API, Realtime, Anmeldung und Admin-Oberfläche sind Routen von PocketBase; nur eine globale Middleware erreicht sie. |
+| Zusätzliche Hosts als eigene Datei im Hook lesen | zweiter Weg neben `--origins`; so hängen CORS und Host-Prüfung an genau einer Angabe des Starts. |
+| Volle CSP mit Hashes oder Nonces | siehe §4; bricht leicht und still. Neu bewerten, wenn SvelteKit die Inline-Skripte selbst hasht und die Startskripte ausgelagert sind. |
+| Präsenz mit Token des Steuerskripts | siehe §5: schützt nur vor Programmen, die ohnehin alles lesen können. |
+
+## Konsequenzen
+
+- Positiv: Eine fremde Webseite kann die App weder über DNS-Rebinding erreichen noch Antworten lesen; Raten von Passwörtern ist auf 10 Versuche je Minute begrenzt, die Admin-Oberfläche nur von diesem Rechner erreichbar. Die Voraussetzungen von ADR-0001 §3 sind bis auf die Proxy-Kopfzeilen erfüllt.
+- Positiv: Normale Nutzung, Realtime, Mail-Helfer, Erweiterung, eigener Eingang, Bookmarklet, Skripte, Landing-Seite und Admin-Oberfläche funktionieren wie vorher (Tests).
+- Negativ: Wer sich mehr als zehnmal in einer Minute vertippt, wartet bis zu einer Minute („Streng“: fünf Minuten). Alle Programme dieses Rechners teilen sich die Zählung.
+- Negativ: Ein Aufruf der App über einen anderen Namen (etwa den Rechnernamen) geht nicht mehr; er ging wegen der Bindung an `127.0.0.1` auch vorher nicht.
+- Migration, Hooks und `--origins` wirken erst nach einem Neustart der App (`neu-starten.bat`).
+- **Nur im Browser prüfbar** (Test-Manifest, manuell): Sperre nach Fehlversuchen in der Anmeldung, eine fremde Seite (auch über DNS-Rebinding) erreicht nichts, Erweiterung, Bookmarklet und eigener Eingang funktionieren.

@@ -419,6 +419,7 @@ describe('server arguments and autostart shortcut', () => {
 			'pocketbase.exe',
 			'serve',
 			'--http=127.0.0.1:8090',
+			'--origins=http://127.0.0.1:8090,http://localhost:8090',
 			`--dir=${APP}\\pb_data`,
 			`--hooksDir=${APP}\\pb_hooks`,
 			`--migrationsDir=${APP}\\pb_migrations`,
@@ -428,6 +429,7 @@ describe('server arguments and autostart shortcut', () => {
 		]);
 		expect(result.serverArgs).not.toMatch(/--dev\b/);
 		expect(result.serverArgs8091[2]).toBe('--http=127.0.0.1:8091');
+		expect(result.serverArgs8091[3]).toBe('--origins=http://127.0.0.1:8091,http://localhost:8091');
 	});
 
 	it('points the shortcut at start-hidden.vbs via wscript.exe', () => {

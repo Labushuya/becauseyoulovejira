@@ -48,9 +48,42 @@ const SERVER_ENV = {
 };
 
 /**
+ * CORS origins of every instance, as byl-control.ps1 starts the app (ADR-0055 §3): only the own
+ * addresses on this machine, never the default "*" of PocketBase.
+ * @param {number} port
+ */
+export function ownOrigins(port) {
+	return `http://127.0.0.1:${port},http://localhost:${port}`;
+}
+
+/**
+ * Switches the rate limiter of the instance off (ADR-0055 §1). The migration switches it on with
+ * 10 sign-ins per minute and address, and every test signs in from 127.0.0.1; the tests of the
+ * limiter start their instance with `rateLimits: true`.
+ */
+async function switchOffRateLimits(url, email, password) {
+	const signIn = await fetch(`${url}/api/collections/_superusers/auth-with-password`, {
+		method: 'POST',
+		headers: { 'Content-Type': 'application/json' },
+		body: JSON.stringify({ identity: email, password }),
+		signal: AbortSignal.timeout(SERVER_READY_MS)
+	});
+	if (signIn.status !== 200) throw new Error(`Superuser sign-in of the harness failed (${signIn.status}).`);
+	const { token } = await signIn.json();
+	const update = await fetch(`${url}/api/settings`, {
+		method: 'PATCH',
+		headers: { 'Content-Type': 'application/json', Authorization: token },
+		body: JSON.stringify({ rateLimits: { enabled: false } }),
+		signal: AbortSignal.timeout(SERVER_READY_MS)
+	});
+	if (update.status !== 200) throw new Error(`Switching off the rate limiter failed (${update.status}).`);
+}
+
+/**
  * Starts a disposable PocketBase instance.
  * @param {{ publicFiles?: string, prepareDataDir?: (dataDir: string) => Promise<void>,
- *   migrationFilter?: (fileName: string) => boolean, env?: Record<string, string> }} [options]
+ *   migrationFilter?: (fileName: string) => boolean, env?: Record<string, string>,
+ *   rateLimits?: boolean, extraOrigins?: string[] }} [options]
  *   `publicFiles`: folder copied into the public folder of the instance (e.g. the web build);
  *   without it the public folder stays empty. `prepareDataDir`: fills the still empty data folder
  *   before `superuser upsert` and `serve` (e.g. with an unpacked backup). `migrationFilter`:
@@ -59,7 +92,9 @@ const SERVER_ENV = {
  *   access data of a channel (ADR-0018: tests set them only for the disposable instance). Every
  *   pocketbase.exe of the harness gets a clean environment (tests/support/clean-env.mjs): it
  *   never inherits BYL_* variables of the developer, so a channel in a test can reach no real
- *   service.
+ *   service. `rateLimits`: keeps the rate limiter of the migrations switched on (only the tests of
+ *   the limiter); without it every start switches it off, because the tests sign in often.
+ *   `extraOrigins`: further CORS origins after the own ones, as byl-config.json adds further hosts.
  * @returns {Promise<{ url: string, email: string, password: string, dataDir: string,
  *   output: () => string, stop: () => Promise<void>,
  *   restart: (options?: { migrationFilter?: (fileName: string) => boolean }) => Promise<void> }>}
@@ -115,9 +150,13 @@ export async function startPocketBase(options = {}) {
 		const serve = async (args) => {
 			const port = await findFreePort();
 			const url = `http://127.0.0.1:${port}`;
-			const server = startServer(['serve', `--http=127.0.0.1:${port}`, ...args], options.env);
+			const origins = [ownOrigins(port), ...(options.extraOrigins ?? [])].join(',');
+			const server = startServer(['serve', `--http=127.0.0.1:${port}`, `--origins=${origins}`, ...args], options.env);
 			state.child = server.child;
 			await waitForHealth(url, server, secrets);
+			if (options.rateLimits !== true) {
+				await switchOffRateLimits(url, email, password);
+			}
 			return { url, server };
 		};
 		let current = await serve(commonArgs);
